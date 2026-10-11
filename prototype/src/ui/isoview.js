@@ -34,7 +34,7 @@ import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas
 import { paintLights, drawGlow, drawDarkness, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso, drawCartIso, drawCartBoxIso } from "./ground.js";
-import { isCart } from "../sim/carts.js"; // a cart pushed (u.bag)
+import { isCart, parkCells } from "../sim/carts.js"; // a cart pushed (u.bag); Park cart's cells
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
 
 // ---------- constants ----------
@@ -1809,6 +1809,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // Move: the path to the hovered cell; meds: who can be treated.
   const h = H.hover;
   if (H.cone) fillCells(ctx, b, (i) => H.cone.has(i), "rgba(255,140,40,0.32)"); // the pepper spray's cone (ui/nonlethal.js)
+  if (H.mode === "parkCart" && u) { const ps = new Set(parkCells(b, u).map(([x, y]) => y * b.w + x)); fillCells(ctx, b, (i) => ps.has(i), "rgba(224,168,79,0.38)"); } // sim/carts.js: the four cells beside them a cart can be parked on
   if (H.mode === "meds" && u) {
     ctx.strokeStyle = COL.good; ctx.lineWidth = 2; ctx.beginPath();
     for (const p of players) if (!p.dead && !p.left && (p === u || Math.max(Math.abs(u.x - p.x), Math.abs(u.y - p.y)) === 1)) diamond(ctx, p.x, p.y, tileTop(b, p.x, p.y), 1.5);

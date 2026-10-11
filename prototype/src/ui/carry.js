@@ -11,7 +11,7 @@ import { partyMembers, partyTile, cargoRoom } from "../sim/parties.js";
 import { parseLoc, placeOfLoc, itemAt, isCarryable, moveItem, itemLoad } from "../sim/inventory.js";
 import {
   COLLECT, HANDS_KG, PLACE_NAMES, holdView, unitKg, stackText, recText, qtyText, holdName, moveHeld, dropHeld, dropHands,
-  dropItemToGround, pickUpGround, pickUpAll, groundAt, groundItemText, collectInfo, roomAt, setCartHelp,
+  dropItemToGround, pickUpGround, pickUpAll, groundAt, groundItemText, collectInfo, roomAt, setCartHelp, takeFromGroundCart,
 } from "../sim/carry.js";
 import { supplyName } from "../sim/itemnames.js";
 import { cartSpec, feltKg, cartBroken, cartFrac } from "../sim/carts.js"; // a wheelbarrow, a hand cart: a place for the supplies
@@ -65,6 +65,13 @@ function pickBox(state, ui) {
   const p = state.parties.find((x) => x.id === ui.carry.partyId);
   if (!p) { ui.carry = null; return ""; }
   const site = groundAt(state, partyTile(p));
+  // A cart lying here (sim/carts.js): taken whole, or opened: what is in it is had only through it (never loose here).
+  const cartRows = (it, i) => {
+    const c = it.item;
+    const things = [...(c.contents || []).map((x, j) => (x ? `<div class="spread small" style="margin:0.1rem 0 0.1rem 1.2rem"><span class="muted">in it: ${esc(x.name)}</span><button class="mini" data-action="carry-carttake" data-i="${i}" data-item="${j}"${tip(`Take the ${x.name} out of the cart (${kg(itemLoad(x))} kg)`)}>Take out</button></div>` : "")),
+      ...(c.held || []).map((l, j) => `<div class="spread small" style="margin:0.1rem 0 0.1rem 1.2rem"><span class="muted">in it: ${esc(`${qtyText(l.q)} ${String((SUPPLIES[l.k] && SUPPLIES[l.k].name) || l.k).toLowerCase()}`)}</span><button class="mini" data-action="carry-carttake" data-i="${i}" data-lot="${j}"${tip("Take as much of it out of the cart as the team can carry")}>Take out</button></div>`)].join("");
+    return things;
+  };
   const rows = site && site.items.length ? site.items.map((it, i) => {
     const stack = it.kind === "supply";
     const k = it.fresh ? "meat" : it.key;
@@ -72,7 +79,7 @@ function pickBox(state, ui) {
     return `<div class="spread small" style="margin:0.15rem 0"><span>${stack ? ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪" : "🎒"} ${esc(groundItemText(it))}${stack ? ` <span class="muted">(${unitKg(k)} kg each)</span>` : ""}</span><span class="row" style="gap:0.25rem">
       ${stack ? `<input type="number" min="1" max="${Math.max(1, Math.ceil(it.qty))}" value="${Math.max(1, Math.floor(fit))}" data-action="carry-pickn" data-i="${i}" style="width:4rem">` : ""}
       <button class="mini" data-action="carry-take" data-i="${i}"${tip(stack ? `Pick up that many (as far as the team has room: ${kg(cargoRoom(state, p))} kg free)` : `Pick up the ${it.name}`)}>Take</button>
-      ${!stack && it.item && isCarryable(it.item) ? partyMembers(state, p).filter((m) => !m.gear.carry).map((m) => `<button class="mini" data-action="carry-take" data-i="${i}" data-arms="${m.id}"${tip(`${m.name.split(" ")[0]} ${it.cartKg != null ? "pushes" : "carries"} the ${it.name} in their arms, with what is in it (${kg(itemLoad(it.item))} kg): no weapon until it is set down`)}>${first(m)} ${it.cartKg != null ? "pushes" : "carries"}</button>`).join("") : ""}</span></div>`;
+      ${!stack && it.item && isCarryable(it.item) ? partyMembers(state, p).filter((m) => !m.gear.carry).map((m) => `<button class="mini" data-action="carry-take" data-i="${i}" data-arms="${m.id}"${tip(`${m.name.split(" ")[0]} ${it.cartKg != null ? "pushes" : "carries"} the ${it.name} in their arms, with what is in it (${kg(itemLoad(it.item))} kg): no weapon until it is set down`)}>${first(m)} ${it.cartKg != null ? "pushes" : "carries"}</button>`).join("") : ""}</span></div>${it.cartKg != null && it.item ? cartRows(it, i) : ""}`;
   }).join("") : `<div class="small muted">Nothing on the ground here.</div>`;
   return `<div class="askwrap"><div class="askbox" role="dialog" style="max-width:32rem">
     <div class="asktitle">Pick up from the ground</div>
@@ -227,6 +234,10 @@ export const CARRY_ACTIONS = {
     const n = ui.carryPick && ui.carryPick[i] != null ? ui.carryPick[i] : Infinity;
     ui.carryMsg = pickUpGround(state, p, i, n, d.arms ? Number(d.arms) : null);
     ui.carryPick = {};
+  },
+  "carry-carttake": (state, ui, d) => { // sim/carry.js takeFromGroundCart: one thing out of a cart on the ground
+    const p = ui.carry && state.parties.find((x) => x.id === ui.carry.partyId);
+    if (p) ui.carryMsg = takeFromGroundCart(state, p, Number(d.i), d.item != null && d.item !== "" ? { item: Number(d.item) } : { lot: Number(d.lot) });
   },
   "carry-takeall": (state, ui) => {
     const p = ui.carry && state.parties.find((x) => x.id === ui.carry.partyId);

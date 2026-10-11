@@ -4,7 +4,7 @@
 // death-site looting.
 /** @import { State, Base, Survivor } from "./types" */
 import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew, GEAR, supValue } from "./data.js";
-import { isCart, cartWorth } from "./carts.js"; // a cart left on a tile: stripped a thing at a time (deathSitesDaily)
+import { isCart, cartWorth, ROAD_CARTS } from "./carts.js"; // a cart left on a tile: stripped a thing at a time (deathSitesDaily)
 import { itemLoad } from "./inventory.js";
 import { sortParts, rollBuildmat } from "./loot.js"; // parts found by kind; building materials (their own dice)
 import {
@@ -756,7 +756,7 @@ export function deathSitesDaily(state) {
     if (typeof t.owner === "number") traffic += 0.2;
     if (t.loc && (t.loc.type === "town" || t.loc.type === "city")) traffic += 0.1;
     const age = d - site.day;
-    const chance = Math.min(0.9, traffic * (1 + age / 8) + 0.02);
+    const chance = site.abandoned ? Math.min(0.9, traffic + 0.02) * ROAD_CARTS.scav : Math.min(0.9, traffic * (1 + age / 8) + 0.02); // carts.js: a cart abandoned on a road is found slowly
     if (!rng.chance(chance) || !site.items.length) continue;
     // Scavengers take the most valuable item first. A cart (carts.js) is stripped first, the best thing in it at a time;
     // empty, the cart itself goes (the nearest group keeps it: f.carts).

@@ -58,7 +58,7 @@ import { packLights, unpackLights } from "./lights.js"; // a light each from the
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
 import { cartSupOf, cartToArms, cartLotsIn } from "./carry.js"; // carts.js: the supplies in the carts (the weight), a cart fetched into someone's arms (call-time only)
-import { isCart, cartWearStep } from "./carts.js";
+import { isCart, cartWearStep, cartRouteWear } from "./carts.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
@@ -632,7 +632,7 @@ export function moveEstimate(state, p, tile) {
   if (!w) return null;
   const used = moving ? Math.max(frac, hourUsed(p, hour)) : 0;
   const t = travelHours(state, w.path, { vehicle: p.vehicle, ...paceOpts(p), progress: w.progress, used, fuel: p.vehicle === true ? partyFuel(state, p) : 0 });
-  return { path: w.path, progress: w.progress, turn: w.turn, ticks: t.hours, hours: Math.max(0, t.exact - frac), arriveAt: state.hour + t.exact };
+  return { path: w.path, progress: w.progress, turn: w.turn, ticks: t.hours, hours: Math.max(0, t.exact - frac), arriveAt: state.hour + t.exact, cartWear: p.vehicle ? 0 : cartRouteWear(state, w.path) }; // cartWear: carts.js
 }
 
 // The plan the hub knows about: a new move given while in contact replaces it (no way back assumed).
@@ -792,6 +792,7 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   const drink = waterForHours(state, state.hour, segs);
   return {
     path: out.path,
+    cartWearOut: mode ? 0 : cartRouteWear(state, out.path), cartWearBack: backMode || !backPlan ? 0 : cartRouteWear(state, backPlan.path), // carts.js: what the way wears a cart pushed on foot
     hoursOut, hoursBack, hours, noWayBack: !backPlan,
     exactOut: go.exact, // to the minute it gets there (arrivalsDue): the planner and the log say this, less the minutes gone // noWayBack: the team could get there but not home (the autopilot never sends one)
     weatherOut: hoursOut - fairOut, weatherBack: hoursBack - fairBack,

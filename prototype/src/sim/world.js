@@ -93,6 +93,7 @@ import { starterMags } from "./carrykit.js"; // a starting gun's spare magazines
 import { volunteersHour, volunteerFell } from "./volunteers.js"; // people lent between groups, both ways
 import { noteLook, keepLook } from "./intelnotes.js"; // what your people learned of the groups' bases (the State Map's estimates, intelest.js)
 import { jobTripsHour } from "./jobtrips.js"; // the outdoor jobs in trips: out to the base's land and home with the load
+import { seedRoadCarts } from "./carts.js"; // abandoned carts on the roads near towns (a new world)
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -244,6 +245,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
   state.stacks = 1; // stacks in a slot from the start (itemstack.js; save.js tidies older saves)
 
+  seedRoadCarts(state); // carts.js: now and then a cart abandoned on a road near a town (its own dice)
   ensureHives(state); // the hives mapgen.js placed, with their starting resources (hives.js)
   // Pre-war maps: geography is known, current conditions are not.
   updateVision(state);

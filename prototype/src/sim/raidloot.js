@@ -377,7 +377,7 @@ function moveGear(state, b, u, from, to) {
   if (isList(from) && isList(to) && from.o === to.o && from.id === to.id) return "";
   if (isCart(item) && from.o === "s" && from.slot === "carry") return `Let go of the ${item.name.toLowerCase()} to leave it here (Let go: free): it stays on the map with what is in it.`; // carts.js
   if (isCart(item) && !(to.o === "s" && to.slot === "carry")) return `The ${item.name.toLowerCase()} is pushed, not carried loose: Carry in arms.`;
-  if (B.box && B.box.cart && A.box !== B.box) { const why = isCart(item) ? "A cart does not go in a cart." : boxRefusal(B.box, itemLoad(item)); if (why) return why; }
+  if (B.box && B.box.cart && A.box !== B.box) { const why = isCart(item) ? "A cart does not go in a cart." : boxRefusal(B.box, itemLoad(item), true); if (why) return why; }
   let cur = null;
   if (!isList(to)) {
     const why = fitReason(item, to.slot, to.o === "s" ? survivorById(state, to.id) : null); // a cart's grid (carts.js) takes bulky things

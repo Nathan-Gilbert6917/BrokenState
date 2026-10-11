@@ -675,6 +675,39 @@ export function pickUpGround(state, p, i, qty = Infinity, arms = null) {
 }
 const cartToArmsName = (state, p, cart) => { const s = partyMembers(state, p).find((x) => x.gear && x.gear.carry === cart); return s ? s.name.split(" ")[0] : "someone"; };
 const cartWords = (cart) => { const n = (cart.contents || []).filter(Boolean).length + (cart.held || []).length; return n ? `with ${n} thing${n === 1 ? "" : "s"} in it` : "empty"; };
+// Opens a cart lying on the tile's ground (carts.js: what is in a cart is had through the cart, never as loose things
+// on the tile): one thing out of it into the team (ref.item: a slot of its grid, into the cargo; ref.lot: a lot of its
+// supplies, as much as fits, into the pool). The cart stays on the ground. Returns a message.
+export function takeFromGroundCart(state, p, i, ref) {
+  const site = groundAt(state, partyTile(p));
+  const it = site && site.items[i];
+  const cart = it && it.item;
+  if (!isCart(cart)) return "No cart there.";
+  let msg;
+  if (ref.item != null) {
+    const x = (cart.contents || [])[ref.item];
+    if (!x) return "Not in it any more.";
+    if (!addGearToCargo(state, p, x)) return `No room to carry the ${x.name} (${r1(itemLoad(x))} kg; ${r1(cargoRoom(state, p))} kg free).`;
+    cart.contents[ref.item] = null;
+    msg = `Took the ${x.name} out of the ${cart.name.toLowerCase()}.`;
+  } else {
+    const l = (cart.held || [])[ref.lot];
+    if (!l) return "Not in it any more.";
+    const w = SUPPLIES[l.k] ? SUPPLIES[l.k].weight : 1;
+    const n = Math.min(l.q, Math.floor((cargoRoom(state, p) + EPS) / Math.max(1e-6, w)) || 0, Number.isFinite(ref.qty) ? Math.max(0, ref.qty) : l.q);
+    if (!(n > EPS)) return `No room to carry any (${r1(cargoRoom(state, p))} kg free).`;
+    addPool(p, l.k, n, l.egg ? n : 0, l.left ?? null);
+    if (l.k === "rawwater") addWormWater(state, p, n, l.eggs || 0);
+    l.q -= n;
+    if (l.q < 0.05) cart.held.splice(ref.lot, 1);
+    if (!cart.held.length) delete cart.held;
+    msg = `Took ${qtyText(n)} ${String(SUPPLIES[l.k] ? SUPPLIES[l.k].name : l.k).toLowerCase()} out of the ${cart.name.toLowerCase()}.`;
+  }
+  it.value = cartWorth(cart);
+  it.cartKg = r1(itemLoad(cart));
+  touched(state, site);
+  return msg;
+}
 // Everything on the tile that fits: supplies first, then items, the most valuable first. Returns a message.
 export function pickUpAll(state, p) {
   const site = groundAt(state, partyTile(p));

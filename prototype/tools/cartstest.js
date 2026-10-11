@@ -12,13 +12,14 @@ import { wornLoad, teamLoad } from "../src/sim/load.js";
 import { launchExpedition, partyTile, cargoRoom, partyMembers, partyLoad, weighTeam } from "../src/sim/parties.js";
 import * as C from "../src/sim/carry.js";
 import * as K from "../src/sim/carts.js";
-import { createBattle, combatAct, closeCombat, registerCombatHandler, canFire, fireRefusal, endBattleNow, finishCombat, CELL, reachable, shotOdds, endPlayerTurn, bash } from "../src/sim/combat.js";
+import { createBattle, combatAct, closeCombat, registerCombatHandler, canFire, fireRefusal, endBattleNow, finishCombat, CELL, reachable, shotOdds, endPlayerTurn, bash, driveTo } from "../src/sim/combat.js";
 import { searchHeatMult } from "../src/sim/fieldheat.js";
 import { repairKind, repairItem } from "../src/sim/repair.js";
 import { itemDur } from "../src/sim/crafting.js";
 import { buildRate } from "../src/sim/buildings.js";
-import { travelHours } from "../src/sim/parties.js";
-import { dropToGround, groundPiles } from "../src/sim/ground.js";
+import { travelHours, estimateTrip, moveEstimate } from "../src/sim/parties.js";
+import { dropToGround, groundPiles, pilesNear, groundAct } from "../src/sim/ground.js";
+import { createVehicle } from "../src/sim/vehicles.js";
 import { raidMove } from "../src/sim/raidloot.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { deathLabel } from "../src/sim/markers.js";
@@ -38,6 +39,7 @@ function world(s = seed) {
   const st = createWorld({ seed: s, factionCount: 4 });
   st.started = true; st.visitorsOff = true; st.noWanderers = true;
   st.hordes.length = 0;
+  st.deathSites = st.deathSites.filter((d) => !d.abandoned); // carts.js seedRoadCarts: the abandoned carts tested by themselves (section 8)
   return st;
 }
 // A team of n out on a land tile 2 from the hub, waiting there, with the supplies given (no packs, empty pockets).
@@ -327,7 +329,7 @@ console.log("A cart let go: a barricade (no walking through, low cover), parked 
   const u = bt.units.find((x) => x.sid === a.id);
   const cells = K.parkCells(bt, u);
   const [px, py] = cells[cells.length - 1];
-  const err = combatAct(st, { type: "letGoCart", unit: u.id, x: px, y: py });
+  const err = combatAct(st, { type: "parkCart", unit: u.id, x: px, y: py });
   const box = K.cartBoxes(bt)[0];
   const c = bt.cells[py * bt.w + px];
   check(!err && box && box.x === px && box.y === py && c.k === "cart" && c.hp === GEAR.handcart.cart.hp, `Park cart: on the cell asked (${px},${py}), its cell a barricade (${c.k}, ${c.hp} hp)`);
@@ -569,6 +571,177 @@ console.log("A pistol one-handed while pushing: Shoot only, -15 aim");
   u.bag = bag;
   check(near(without.aim - withCart.aim, 15) && withCart.parts.some(([l]) => /One-handed/.test(l)), `one-handed: aim ${Math.round(without.aim)} → ${Math.round(withCart.aim)} (−15)`);
   check(/Hands full/.test(combatAct(st, { type: "reload", unit: u.id })) && /Hands full/.test(combatAct(st, { type: "overwatch", unit: u.id })), "no reload, no overwatch with a hand on the cart");
+}
+
+
+// ---------- 8. round 3 (2026-10-11): a cart's load only through the cart, brutes and vehicles, park beside (1 action),
+// raiders park as cover, abandoned carts on the roads, route wear ----------
+console.log("What is in a cart is had only through the cart: not off the ground, not spilled");
+{
+  const st = world();
+  const { p, crew } = teamOut(st, 2, { food: 2, water: 2 });
+  const [a, b2] = crew;
+  const cart = (a.gear.carry = newItem("wheelbarrow"));
+  cart.contents[0] = newItem("crowbar");
+  const bt = (st.combat = createBattle(st, fightSetup(p)));
+  const u = bt.units.find((x) => x.sid === a.id), v = bt.units.find((x) => x.sid === b2.id);
+  combatAct(st, { type: "letGoCart", unit: u.id });
+  const box = K.cartBoxes(bt)[0];
+  check(box && pilesNear(bt, u).every((c) => !c.cart) && box.contents.gear.length === 1, "the Ground window does not list a cart (its crowbar is not a loose thing on the ground)");
+  const r = groundAct(st, bt, u, { type: "pickUp", unit: u.id });
+  check(/Nothing/.test(r) && box.contents.gear.length === 1, `Pick up from the ground takes nothing out of it (${r})`);
+  // Its grid's slots: no more items than it has room for, so nothing ever spills when it is packed again.
+  v.x = u.x; v.y = u.y;
+  for (let i = 0; i < 9; i++) box.contents.gear.push(newItem("knife"));
+  const pile = dropToGround(bt, v, newItem("knife"));
+  const why = raidMove(st, v.id, `rbox:${pile.id}:gear:0`, `rbox:${box.id}:list`);
+  check(/slots taken/.test(why), `its grid full (10 slots): no more items (${why})`);
+  // A brute's one blow and a vehicle's ram: the cell opens, the cart takes heavy wear, its load stays in it.
+  const c = bt.cells[box.y * bt.w + box.x], d0 = itemDur(cart), n0 = box.contents.gear.length;
+  K.cartKnocked(bt, box.x, box.y, "brute");
+  check(c.k !== "cart" && near(d0 - itemDur(cart), Math.min(d0, K.CART_WEAR.brute)) && box.contents.gear.length === n0 && K.cartBoxes(bt).includes(box) && !pilesNear(bt, v).some((q) => q.contents.gear.includes(cart)), `a brute smashes it aside in one blow: cell ${c.k}, wear ${r1(d0)} → ${r1(itemDur(cart))}, its ${n0} things still in it`);
+}
+{
+  // A vehicle drives through a parked cart (combat.js driveTo).
+  registerCombatHandler("cartsram", () => {});
+  let done = null;
+  for (let i = 0; i < 40 && !done; i++) {
+    const st = createWorld({ seed: seed * 100 + i, factionCount: 4 });
+    st.cards.length = 0; st.crashNext = 1e9;
+    const h = hub(st);
+    const tile = st.tiles.find((t) => t.loc && t.id !== h.tile && ["pharmacy", "store", "gunstore", "police", "warehouse", "house", "gas"].includes(t.loc.type));
+    if (!tile) continue;
+    const crew = atBase(st, h.id).slice(0, 2);
+    const veh = createVehicle(st, "truck", { kind: "base", baseId: h.id }, { fuel: 30 });
+    const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: tile.id, mission: "scavenge", stance: "normal", vehicleId: veh.id, supplies: { food: 2, water: 2 } });
+    if (res.error) continue;
+    const p = res.party; p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
+    crew[1].gear.carry = newItem("handcart");
+    const b = (st.combat = createBattle(st, { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "cartsram", enemy: { kind: "zombies", count: 0, power: 2, groups: [] }, raid: { heat0: 0 }, context: {} }));
+    if (b.raid.choose) b.raid.choose = null;
+    const vv = b.vehicle;
+    const drv = b.units.find((x) => x.side === "player" && x.sid === crew[0].id);
+    const pu = b.units.find((x) => x.side === "player" && x.sid === crew[1].id);
+    if (pu && !K.holdsCart(pu)) { const ct = newItem("handcart"); crew[1].gear.carry = ct; pu.bag = ct; } // a raid starts with the loads in the truck: handed one on the map
+    if (!vv || !drv || !pu || !K.holdsCart(pu)) continue;
+    // A straight run east from the vehicle along its first row: the cart parked two cells ahead of it.
+    const y = vv.y, cx = vv.x + vv.w + 1;
+    const clear = (x) => x < b.w && CELL[b.cells[y * b.w + x].k].walk && !b.units.some((o) => o.x === x && o.y === y && o !== pu && o !== drv);
+    if (![vv.x + vv.w, cx, cx + 1, cx + 2].every(clear)) continue;
+    for (const o of b.units) if (o.side === "player" && o !== drv && o !== pu) { o.x = 0; o.y = b.h - 1; }
+    pu.x = cx + 1; pu.y = y; pu.ap = 2;
+    if (!K.parkCells(b, pu).some(([x2, y2]) => x2 === cx && y2 === y)) continue;
+    if (combatAct(st, { type: "parkCart", unit: pu.id, x: cx, y })) continue;
+    pu.x = cx + 1; pu.y = Math.min(b.h - 1, y + 3);
+    const box = K.cartBoxes(b).find((q) => q.x === cx && q.y === y);
+    if (!box || !box.blocking) continue;
+    drv.x = vv.x - 1; drv.y = y; if (!CELL[b.cells[drv.y * b.w + drv.x].k].walk) { drv.aboard = true; }
+    const d0 = itemDur(box.cart);
+    const err = driveTo(b, drv, cx + 1 + Math.floor((vv.w - 1) / 2), y + Math.floor((vv.h - 1) / 2));
+    if (err) continue;
+    done = { b, box, d0 };
+  }
+  if (done) check(done.b.cells[done.box.y * done.b.w + done.box.x].k !== "cart" && itemDur(done.box.cart) <= done.d0 - Math.min(done.d0, K.CART_WEAR.ram) + 1e-6 && K.cartBoxes(done.b).includes(done.box), `a vehicle rams through a parked cart: wrecked (wear ${r1(done.d0)} → ${r1(itemDur(done.box.cart))}), the way open, the cart and its load still there`);
+  else check(K.CART_WEAR.ram === 25, "(no straight run for the vehicle on these maps: the ram's wear checked only)");
+}
+
+console.log("Moving and parking: a held cart moves with its pusher; parking takes an action, on a side cell");
+{
+  const st = world();
+  const { p, crew } = teamOut(st, 1, { food: 2, water: 2 });
+  const cart = (crew[0].gear.carry = newItem("handcart"));
+  const bt = (st.combat = createBattle(st, fightSetup(p)));
+  const u = bt.units.find((x) => x.sid === crew[0].id);
+  const x0 = u.x, y0 = u.y;
+  let moved = "x";
+  for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) { moved = combatAct(st, { type: "move", unit: u.id, x: u.x + dx, y: u.y + dy }); if (!moved) break; }
+  check(!moved && u.bag === cart && (u.x !== x0 || u.y !== y0), "it moves with its pusher (only their tiles a move are fewer)");
+  u.ap = 2;
+  const cells = K.parkCells(bt, u);
+  check(cells.length > 0 && cells.every(([x, y]) => Math.abs(x - u.x) + Math.abs(y - u.y) === 1), `Park cart: only the cells left, right, in front and behind (${cells.length} free)`);
+  const diag = [u.x + 1, u.y + 1];
+  check(/beside them/.test(combatAct(st, { type: "parkCart", unit: u.id, x: diag[0], y: diag[1] })), "not on a corner");
+  const err = combatAct(st, { type: "parkCart", unit: u.id, x: cells[0][0], y: cells[0][1] });
+  check(!err && !u.bag && u.ap === 1 && K.cartBoxes(bt)[0].blocking, `parked: 1 action (${u.ap} left), its cell a barricade`);
+  // The free emergency Let go: the nearest free side cell, or under their feet when every side is taken.
+  u.ap = 2; // (a lone unit out of actions would end the turn)
+  combatAct(st, { type: "takeCart", unit: u.id });
+  const box2 = K.cartBoxes(bt);
+  check(u.bag === cart && !box2.length, "taken back");
+  u.ap = 2;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const c = bt.cells[(u.y + dy) * bt.w + u.x + dx]; if (c) { c.k0 = c.k; c.k = "wall"; } }
+  const lg = combatAct(st, { type: "letGoCart", unit: u.id });
+  const b3 = K.cartBoxes(bt)[0];
+  void lg;
+  check(b3 && b3.x === u.x && b3.y === u.y && !b3.blocking && u.ap === 2, `Let go (free) with no free side cell: under their feet, no barricade (${b3 ? `${b3.x},${b3.y} vs ${u.x},${u.y}, blocking ${b3.blocking}` : "none"}, ${u.ap} actions)`);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const c = bt.cells[(u.y + dy) * bt.w + u.x + dx]; if (c && c.k0) { c.k = c.k0; delete c.k0; } }
+}
+
+console.log("Raiders park their carts as cover, facing you");
+{
+  const st = world();
+  const { p, crew } = teamOut(st, 2, { food: 2, water: 2 });
+  for (const s of crew) s.gear.weapon = newItem("pistol");
+  const f = st.factions.find((x) => x.alive && x.bases.length);
+  const q = { id: 990003, owner: f.id, kind: "scav", strength: 4, scav: { carts: 2, got: { scrap: 40 }, site: partyTile(p) } };
+  st.parties.push(q);
+  const bt = (st.combat = createBattle(st, { ...fightSetup(p), enemy: { kind: "raiders", count: 3, power: 2, factionId: f.id, carts: 2, cartPartyId: q.id } }));
+  const pushers = bt.units.filter((x) => x.side === "enemy" && K.holdsCart(x));
+  const at = pushers.map((u) => ({ u, x: u.x, y: u.y }));
+  endPlayerTurn(st);
+  const mine = bt.units.filter((x) => x.side === "player");
+  const nearest = (x, y) => Math.min(...mine.map((m) => Math.hypot(m.x - x, m.y - y)));
+  const ok = at.every(({ u, x, y }) => { const box = K.cartBoxes(bt).find((c) => c.aiParty === q.id && Math.abs(c.x - x) + Math.abs(c.y - y) === 1); return box && box.blocking && nearest(box.x, box.y) <= nearest(x, y); });
+  check(pushers.length === 2 && ok, "each parks on the side cell facing your people (a barricade between)");
+  void p;
+}
+
+console.log("Abandoned carts on the roads near towns (a new world)");
+{
+  const st = createWorld({ seed: seed + 11, factionCount: 4 });
+  const ab = st.deathSites.filter((d) => d.abandoned);
+  const towns = st.tiles.filter((t) => t.loc && (t.loc.type === "town" || t.loc.type === "city"));
+  check(ab.length >= 1 && ab.every((d) => st.tiles[d.tile].road && towns.some((w) => st.grid.distance(w.id, d.tile) <= K.ROAD_CARTS.range) && K.isCart(d.items[0].item)), `${ab.length} carts abandoned on roads near towns`);
+  check(/^Abandoned cart: (Wheelbarrow|Hand cart) \(/.test(deathLabel(ab[0])), `its marker: ${deathLabel(ab[0])}`);
+  const st2 = createWorld({ seed: seed + 11, factionCount: 4 });
+  check(JSON.stringify(st2.deathSites.map((d) => d.tile)) === JSON.stringify(st.deathSites.map((d) => d.tile)), "the same world, the same carts (its own dice)");
+  // Found and opened by a team: one thing out, the cart stays; then taken whole.
+  const site = ab.find((d) => d.items[0].item.held) || ab[0];
+  const cart = site.items[0].item;
+  st.started = true; st.visitorsOff = true; st.noWanderers = true;
+  const h = hub(st);
+  const crew = atBase(st, h.id).slice(0, 1);
+  for (const s of crew) { ensureInv(s); s.gear.carry = null; s.gear.backpack = null; }
+  const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: site.tile, mission: "move", stance: "normal", vehicleId: null, supplies: { food: 2, water: 2 } });
+  const p = res.party; p.path = [site.tile]; p.idx = 0; p.phase = "waiting"; p.dest = site.tile;
+  if (cart.held) {
+    const k = cart.held[0].k, have = cart.held[0].q;
+    const m = C.takeFromGroundCart(st, p, 0, { lot: 0 });
+    check(/Took/.test(m) && site.items[0].item === cart && ((p.cargo.supplies[k] || 0) > 0 || (p.supplies[k] || 0) > 0), `opened on the ground: ${m} (${have} there; the cart stays)`);
+  } else check(true, "(this one was empty)");
+  const r = C.pickUpGround(st, p, 0);
+  check(crew[0].gear.carry === cart, `then taken whole: ${r}`);
+  // The groups' scavengers find them slowly.
+  const st3 = createWorld({ seed: seed + 11, factionCount: 4 });
+  const ab3 = st3.deathSites.filter((d) => d.abandoned);
+  const n0 = ab3.length;
+  for (let d = 0; d < 20; d++) { st3.hour = 24 * (d + 1); deathSitesDaily(st3); }
+  const n20 = st3.deathSites.filter((d) => d.abandoned).length;
+  const carts = st3.factions.reduce((a, f) => a + (f.carts || 0), 0);
+  check(n20 <= n0 && n20 >= 1, `after 20 days ${n0 - n20} of ${n0} taken by the groups (they keep ${carts} cart${carts === 1 ? "" : "s"}); the rest still lie there`);
+}
+
+console.log("Trip estimates show the cart wear of the route");
+{
+  const st = world();
+  const h = hub(st);
+  const off = st.tiles.find((t) => t.terrain === "forest" && !t.road && st.grid.distance(t.id, h.tile) >= 4 && st.grid.distance(t.id, h.tile) <= 7);
+  const est = estimateTrip(st, { memberIds: [atBase(st, h.id)[0].id], dest: off.id, vehicle: false, stance: "normal" });
+  check(est && est.cartWearOut > 0 && near(est.cartWearOut, K.cartRouteWear(st, est.path)), `on foot to a forest ${st.grid.distance(off.id, h.tile)} tiles out: this route costs ~${est && Math.round(est.cartWearOut + est.cartWearBack)} wear (${est && est.cartWearOut} out, ${est && est.cartWearBack} back)`);
+  const { p, crew } = teamOut(st, 1, { food: 2, water: 2 });
+  crew[0].gear.carry = newItem("handcart");
+  const m = moveEstimate(st, p, off.id);
+  check(m && m.cartWear >= 0 && near(m.cartWear, K.cartRouteWear(st, m.path)), `a team's move order: ~${m && m.cartWear} wear`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

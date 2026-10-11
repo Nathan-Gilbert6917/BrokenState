@@ -112,7 +112,7 @@ export function perceive(state, p, members, tiles, bonus = 0) {
 // A body that got up and walked off (carriers.js walkOff) is noted: the grave stays, the things do not.
 // Cargo left behind (carry.js: put on the ground) names what is there: "Cargo left behind: 20 un-purified water, Machete".
 const cargoWhat = (d) => { const l = (d.items || []).slice(0, 4).map((it) => (it.kind === "gear" ? (it.cartKg != null ? `${it.name} (${it.cartKg} kg)` : it.name) : `${Math.round(it.qty * 10) / 10} ${it.fresh ? "fresh game" : String(it.name).toLowerCase()}`)); return l.length ? `: ${l.join(", ")}${d.items.length > 4 ? ` and ${d.items.length - 4} more` : ""}` : ""; };
-export const deathLabel = (d) => (d.names.length ? `Death site: ${d.names.join(", ")}${d.walked && d.walked.length ? ` (${d.walked.map((n) => `${n.split(" ")[0]}'s body is gone: they rose and walked`).join("; ")})` : ""}` : `Cargo left behind${cargoWhat(d)}`);
+export const deathLabel = (d) => (!d.names.length && d.abandoned ? `Abandoned cart${cargoWhat(d)}` : d.names.length ? `Death site: ${d.names.join(", ")}${d.walked && d.walked.length ? ` (${d.walked.map((n) => `${n.split(" ")[0]}'s body is gone: they rose and walked`).join("; ")})` : ""}` : `Cargo left behind${cargoWhat(d)}`);
 const deathMark = (state, d) => ({ key: `death:${d.tile}`, type: "death", tile: d.tile, hour: state.hour, label: deathLabel(d), info: { items: d.items.length } });
 const hasCargo = (v) => !!(v.cargo && (v.cargo.gear.length || Object.values(v.cargo.supplies).some((q) => q >= 1)));
 const vehicleMark = (state, v, note = v.found ? (v.found.repair ? "found, needs repair" : "found") : "") => ({ // found: on a map (foundcars.js)

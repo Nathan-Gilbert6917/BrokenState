@@ -967,7 +967,7 @@ export { SEATS }; // vehicles.js (a fleet's seats on the road use them too)
 // other cars, water, railings and trenches stop it.
 export const RAMMING = {
   HIT: [14, 28], ZOMBIE_HIT: [20, 40], SHOVE: 3,
-  WEAR: { unit: 1, zombie: 2, tanktrap: 12, fence: 2, wire: 1, sandbag: 4, crate: 2, hay: 1, barrel: 3, barricade: 8, rock: 6, pump: 10, well: 10, spikes: 6, beartrap: 2 },
+  WEAR: { unit: 1, zombie: 2, cart: 3, tanktrap: 12, fence: 2, wire: 1, sandbag: 4, crate: 2, hay: 1, barrel: 3, barricade: 8, rock: 6, pump: 10, well: 10, spikes: 6, beartrap: 2 },
   LEFT: { tanktrap: "rubble", pump: "rubble", well: "rubble" }, // what a rammed obstacle becomes (else open ground)
 };
 const rammable = (c) => RAMMING.WEAR[c.k] != null;
@@ -1129,6 +1129,7 @@ export function driveTo(b, u, x, y, opts = {}) {
   const hits = [];
   for (const i of swept) {
     const c = b.cells[i];
+    if (c.k === "cart") { wear += RAMMING.WEAR.cart; cartKnocked(b, i % W, (i / W) | 0, "ram"); continue; } // carts.js: driven through, wrecked; it and its load stay there
     if (rammable(c)) { wear += RAMMING.WEAR[c.k]; c.k = RAMMING.LEFT[c.k] || "open"; c.hp = 0; }
   }
   for (const o of b.units) {
@@ -3724,7 +3725,7 @@ export function combatAct(state, act) {
   const t = act.target != null ? unitById(b, act.target) : null;
   { const why = handsRefusal(u, act.type); if (why) return why; } // carry.js: hands full of supplies (or a body): no weapon, no throw, no treating
   switch (act.type) {
-    case "takeCart": { const err = cartAct(state, b, act); if (err) return err; break; } // carts.js: a cart within reach back in the arms (1 action)
+    case "takeCart": case "parkCart": { const err = cartAct(state, b, act); if (err) return err; break; } // carts.js: a cart within reach back in the arms; park the one pushed on a side cell (1 action each)
     case "pickCarried": { const err = pickCarried(state, b, u); if (err) return err; u.ap -= 1; u.hunker = false; break; } // carry.js: a load set down within reach, back in the arms (1 action)
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
@@ -4123,8 +4124,8 @@ export function endPlayerTurn(state) {
   for (const u of b.units) if (u.side === "player") { u.ap = 0; u.suppressed = 0; } // pinned (suppressing fire) until their own turn ends
   stunTurnEnd(b, ["player"]); // throwables.js: a flashbang's stun served this turn wears off
   b.phase = "enemy";
-  enemyCartsLetGo(state, b); // carts.js: theirs let go of their carts before they fight (as your battle AI does)
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
+  for (const u of enemyCartsLetGo(state, b)) u.ap = Math.max(0, u.ap - CART_FIGHT.park); // carts.js: theirs park their carts as cover first (an action, as yours)
   stunTurnStart(b, ["enemy", "third"]); // throwables.js: the ones a flashbang caught lose their actions
   tickEars(b, ["enemy", "third"]); // hearing.js: their deafness and daze wear off a turn
   nlEnemyPhase(b); // nonlethal.js: the stunned lose actions, the blinded stay blind, the beaten may surrender

@@ -34,6 +34,8 @@
 //     dragged, its pusher feels cart.broken.frac (75%) and the team goes at half pace everywhere until it is repaired
 //     (repair.js "cart wheel": 1 part and 1 scrap at a workbench, or a field repair kit). A broken cart helps no job.
 //   Noise: a team searching with a cart makes CART_NOISE.search (×1.05) the Heat (fieldheat.js searchHeatMult).
+//   Route wear (cartRouteWear): what a way costs the carts, shown by the planner (estimateTrip cartWearOut / Back) and
+//     the team's map menu (moveEstimate cartWear): "this route costs the carts ~12 wear".
 //   The base's jobs (baseCarts: its armory's and its people's carts, not broken): the first woodcutters (woodcutting.js
 //     woodTrip) and then the builders (buildings.js buildRate) haul CART_JOB (10%) more, one a cart.
 //
@@ -41,7 +43,8 @@
 // on the tile's ground (state.deathSites, one item with everything in it: carry.js cartToGround: its share of the pool
 // leaves it as lots). The marker names it with its weight ("Cargo left behind: Hand cart (84 kg)", markers.js). Any team
 // on the tile picks it up (pickUpGround: into someone's free arms, else the cargo); the Recover mission and the
-// governor fetch it the same way (parties.js recover: cartToArms first). Scavengers strip it as they strip a site
+// governor fetch it the same way (parties.js recover: cartToArms first). A new world has a few carts abandoned on the
+// roads near towns (seedRoadCarts: site.abandoned, "Abandoned cart: ...", seen when a team or a base sees the tile). Scavengers strip it as they strip a site
 // (economy.js deathSitesDaily: the most valuable thing in it first, then the cart itself, which the nearest group keeps:
 // f.carts).
 //
@@ -54,15 +57,25 @@
 //     It rattles: every move, the unaware within CART_FIGHT.rattle come to look and the dead within CART_FIGHT.wake
 //     wake. A pistol fires one-handed (Shoot only, CART_FIGHT.oneHandAim off the aim; no reload, no overwatch, no long
 //     gun): the pusher and a helper alike.
-//   Let go (letGoCart, free; Drop carried does the same; Park cart picks the cell): it stands on a free cell next to
-//     its pusher (the one nearest the other side, a side before a corner), its items and supplies in it (the supplies
-//     leave the pool, as a load set down does). Its cell is a barricade (the user's pick): CELL cart, nobody walks
-//     through it (both sides' pathing and the dead's go round), low cover (1) for whoever stands beside it, sight
-//     passes. The dead batter it over (c.hp: cart.hp 10 and 16; their siege field counts it): shoved over, the cell is
-//     open again and the cart stays there, worn (CART_WEAR.bash). With no free cell it stays under its pusher, no
-//     barricade. It can plug a doorway (a doorway, a broken door, a breach are parkable).
+//   Park cart (parkCart, CART_FIGHT.park = 1 action): on one of the four cells beside its pusher, left, right, in front
+//     or behind (no corner, nothing further; the UI highlights the free ones). Let go (letGoCart, free; Drop carried
+//     does the same) is the emergency drop: the free side cell nearest the other side, else under their feet (no
+//     barricade). Its items and supplies stay in it (the supplies leave the pool, as a load set down does). Its cell is
+//     a barricade (the user's pick): CELL cart, nobody walks through it (both sides' pathing and the dead's go round),
+//     low cover (1) for whoever stands beside it, sight passes. Knocked out of the way (cartKnocked), the cell is open
+//     again and the cart stays there with all in it: battered over by the dead (c.hp: cart.hp 10 and 16; their siege
+//     field counts it; CART_WEAR.bash), smashed aside by a brute in one blow (zombietypes.js; CART_WEAR.brute 15),
+//     driven through by a vehicle (combat.js driveTo, RAMMING.WEAR.cart 3 to the vehicle; CART_WEAR.ram 25: wrecked).
+//     It can plug a doorway (a doorway, a broken door, a breach are parkable).
+//   What is in a cart is had only through the cart (the user's rule): Load cart (the search window on the cart) or
+//     Take cart; never off the ground (ground.js pilesNear skips carts: the Ground window and Pick up do not list it),
+//     never spilled (its grid's slots and kg are checked going in, boxRefusal, so it always packs back in). On the
+//     State Map the same: take the cart whole, or open it there (carry.js takeFromGroundCart: one thing out of it at a
+//     time); scavengers open it too (economy.js: the best thing in it first, then the cart).
 //   Take cart (takeCart, 1 action, next to it, free arms): back in the arms, what is in it back in its grid and lots
 //     (the pool again), what no longer fits stays on the cell as a pile; the cell is what it was.
+//   The enemy's raiders park theirs (enemyCartsLetGo, an action as yours) on the side cell facing your people, and fight
+//     from behind it.
 //   Two on a hand cart: a pair from the State Map starts the fight so (cartHelpStart) when they stand side by side; the
 //     helper follows each move of the pusher (1 action) onto a free cell next to them, or lets go; moving off alone or
 //     Let go ends it.
@@ -94,14 +107,14 @@ import { itemLoad, itemKg, ensurePack, ensureInv, lootItem } from "./inventory.j
 import { siteSource } from "./itemcond.js";
 import { CELL, alertNear } from "./combat.js"; // the battle map's cells (a cart parked: CELL cart); noise
 import { noiseAt } from "./stealth.js"; // a cart pushed rattles
-import { survivorById, baseById, log } from "./world.js";
+import { survivorById, baseById, log, newId } from "./world.js";
 import { lootLayer, fieldLayer } from "./raidloot.js"; // call-time only (safe in the import cycle)
 import { settlePile, groundAt as pileAt } from "./ground.js";
 import { say } from "./combat.js";
 import { gunLeavesTeam } from "./gunload.js";
 import { weighPlayer } from "./carrykit.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
-import { holdsOwn, settleHold, cartSupOut, cartOnTile, cartToArms } from "./carry.js";
+import { holdsOwn, settleHold, cartSupOut, cartOnTile, cartToArms, groundGearOf } from "./carry.js";
 import { hash01 } from "./skills.js";
 import { itemDur, wear } from "./crafting.js"; // a cart's wear (a broken wheel at 0)
 import { CART_FINDS } from "./loot.js";
@@ -158,7 +171,20 @@ export function cartTerrain(members) {
   return Object.values(out).some((v) => v < 1) ? out : null;
 }
 // Wear a step wears a cart by the ground (CART_WEAR; a road nothing); a blow on its cell in a fight: bash.
-export const CART_WEAR = { road: 0, plains: 0.5, suburb: 0.5, city: 0.5, forest: 1, hills: 1, mountain: 2, bash: 3 };
+export const CART_WEAR = { road: 0, plains: 0.5, suburb: 0.5, city: 0.5, forest: 1, hills: 1, mountain: 2, bash: 3, brute: 15, ram: 25 }; // bash: battered over by the dead; brute: a brute's one blow; ram: driven through
+
+// The wear a way costs the carts of a team on foot (the planner, the team's map menu): every step off a road by its
+// ground (CART_WEAR), as cartWearStep wears them.
+export function cartRouteWear(state, path) {
+  let n = 0;
+  for (let i = 1; i < (path || []).length; i++) {
+    const a = state.tiles[path[i - 1]], t = state.tiles[path[i]];
+    if (!t) continue;
+    if (a && a.roadLinks && a.roadLinks.includes(path[i])) continue;
+    n += CART_WEAR[t.terrain] ?? 0.5;
+  }
+  return Math.round(n * 10) / 10;
+}
 // What it is worth on the ground (economy.js deathSitesDaily takes the most valuable first): itself, its items, its lots.
 export function cartWorth(item) {
   const own = Math.round(((GEAR[item.key] && GEAR[item.key].value) || 0) * (item.quality || 1));
@@ -209,7 +235,7 @@ export function cartWearStep(state, p, from, to) {
 // mob: tiles less a move while pushing one alone; take: actions to take one back; oneHandAim: aim off a one-handed
 // pistol shot while holding a cart (pushing or helping); rattle / wake: tiles a cart pushed is heard (the unaware come
 // to look) and wakes the dead outright.
-export const CART_FIGHT = { mob: 1, take: 1, oneHandAim: 15, rattle: 6, wake: 2 };
+export const CART_FIGHT = { mob: 1, take: 1, park: 1, oneHandAim: 15, rattle: 6, wake: 2 }; // park: actions to park it on a chosen side cell
 const cheb = (u, c) => Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y));
 const battleParty = (state, b) => (state && b && b.setup && b.setup.partyId != null ? state.parties.find((x) => x.id === b.setup.partyId) || null : null);
 // The carts on the battle map (not held).
@@ -221,7 +247,8 @@ export const holdsCart = (u) => !!(u && isCart(u.bag));
 export const boxKg = (c) => (c && c.contents ? c.contents.gear.reduce((a, g) => a + itemLoad(g), 0) + Object.entries(c.contents.sup).reduce((a, [k, v]) => a + (v > 0 ? v * supWeight(k) : 0), 0) : 0);
 export const boxFree = (c) => (c && c.cart ? Math.max(0, cartSpec(c.cart).cap - boxKg(c)) : Infinity);
 // A move into a cart on the map that would overfill it (raidloot.js): "" or why not.
-export const boxRefusal = (c, kg) => (c && c.cart && kg > boxFree(c) + EPS ? `The ${c.cart.name} is full (${r1(boxFree(c))} kg more fits).` : "");
+// item: an item going in (its grid has GEAR slots: what is in a cart always fits back into it, nothing spills).
+export const boxRefusal = (c, kg, item = false) => (!c || !c.cart ? "" : kg > boxFree(c) + EPS ? `The ${c.cart.name} is full (${r1(boxFree(c))} kg more fits).` : item && c.contents.gear.length >= ((GEAR[c.cart.key] && GEAR[c.cart.key].slots) || 0) ? `The ${c.cart.name} is full (all ${GEAR[c.cart.key].slots} slots taken).` : "");
 function reweigh(state, u) {
   if (u.sid == null) { // the enemy's (enemyCarts): its tile back when it lets go
     if (!holdsCart(u) && u.cartMobCut) { u.mob += CART_FIGHT.mob; u.cartMobCut = false; }
@@ -248,18 +275,20 @@ function parkable(b, x, y, f) {
   if (b.units.some((o) => o.x === x && o.y === y && (o.f || 0) === f && !o.left && !o.off && !o.fled && !o.aboard && !o.burnt)) return false;
   return !cartBoxes(b).some((o) => o.x === x && o.y === y && (o.f || 0) === f);
 }
-// Where a let-go cart stands: the cell asked (next to its pusher) if it can, else the free cell next to them nearest
-// the other side (the barricade goes between), else under their feet without blocking (no room). [x, y, blocks].
+// The four cells beside a unit a cart can stand on: left, right, in front, behind (no corner, nothing further).
+const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const isSide = (u, x, y) => Math.abs(x - u.x) + Math.abs(y - u.y) === 1;
+// Where a let-go cart stands: the side cell asked if it can, else the free side cell nearest the other side (the
+// barricade goes between, it covers its pusher from there: coverAgainst counts sides only), else under their feet
+// without blocking (no room). [x, y, blocks].
 function parkAt(b, u, at = null) {
   const f = u.f || 0;
-  if (at && cheb(u, { x: at[0], y: at[1] }) === 1 && parkable(b, at[0], at[1], f)) return [at[0], at[1], true];
-  const foes = b.units.filter((o) => o.side !== u.side && !o.dead && !o.left && !o.fled && !o.off && (o.f || 0) === f);
-  const near = (x, y) => (foes.length ? Math.min(...foes.map((o) => Math.max(Math.abs(o.x - x), Math.abs(o.y - y)))) : 0);
-  const cand = [];
-  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && parkable(b, u.x + dx, u.y + dy, f)) cand.push([u.x + dx, u.y + dy]);
+  if (at && isSide(u, at[0], at[1]) && parkable(b, at[0], at[1], f)) return [at[0], at[1], true];
+  const foes = b.units.filter((o) => o.side !== u.side && !o.dead && !o.left && !o.fled && !o.off && (o.f || 0) === f && (o.kind === "human" || o.kind === "zombie"));
+  const near = (x, y) => (foes.length ? Math.min(...foes.map((o) => Math.hypot(o.x - x, o.y - y))) : 0);
+  const cand = SIDES.map(([dx, dy]) => [u.x + dx, u.y + dy]).filter(([x, y]) => parkable(b, x, y, f));
   if (!cand.length) return [u.x, u.y, false];
-  const diag = (x, y) => (x !== u.x && y !== u.y ? 1 : 0); // a side, not a corner: it covers them from that side (coverAgainst)
-  cand.sort((a, c) => near(a[0], a[1]) - near(c[0], c[1]) || diag(a[0], a[1]) - diag(c[0], c[1]) || a[1] - c[1] || a[0] - c[0]);
+  cand.sort((a, c) => near(a[0], a[1]) - near(c[0], c[1]) || a[1] - c[1] || a[0] - c[0]);
   return [cand[0][0], cand[0][1], true];
 }
 // The cart's cell a barricade (CELL cart: no walking through, low cover; the dead batter it over, cart.hp), what was
@@ -285,16 +314,19 @@ function unblock(b, box) {
   delete box.under;
   if (b.losCache) b.losCache.fill(0);
 }
-// combat.js breakCell: the dead batter a cart over. Its cell is open again (the cart and its load stay there, a cart a
-// unit can take again), the cart worn (CART_WEAR.bash).
-export function cartKnocked(b, x, y) {
+// A cart on its cell knocked out of the way: battered over by the dead (combat.js breakCell, how "bash"), smashed by a
+// brute in one blow (zombietypes.js bruteTurn, "brute"), driven through by a vehicle (combat.js driveTo, "ram"). Its
+// cell is open again; the cart stays there with everything still in it (nothing spills: what is in a cart is had only
+// through the cart, Load cart or Take cart), worn by CART_WEAR[how] (a ram or a brute may break a wheel).
+export function cartKnocked(b, x, y, how = "bash") {
   const box = cartBoxes(b).find((c) => c.blocking && c.x === x && c.y === y && (c.f || 0) === (b.floor || 0));
   if (!box) { const c = b.cells[y * b.w + x]; c.k = "open"; delete c.hp; delete c.mhp; return; }
   const c = b.cells[y * b.w + x];
   c.k = "cart"; // unblock puts back what was there
   unblock(b, box);
-  if (itemDur(box.cart) != null) wear(box.cart, CART_WEAR.bash);
-  say(b, `The ${box.cart.name.toLowerCase()} is shoved over: the way is open.`, "danger");
+  if (itemDur(box.cart) != null) wear(box.cart, CART_WEAR[how] ?? CART_WEAR.bash);
+  const what = box.cart.name.toLowerCase(), broke = cartBroken(box.cart) ? " A wheel is off." : "";
+  say(b, how === "brute" ? `A brute smashes the ${what} aside in one blow: the way is open.${broke}` : how === "ram" ? `The vehicle rams through the ${what}, wrecking it: the way is open.${broke}` : `The ${what} is shoved over: the way is open.${broke}`, "danger");
 }
 
 // ---------- two on a hand cart (twoMan) ----------
@@ -442,21 +474,27 @@ export function takeCart(state, b, u, box = null) {
   say(b, `${u.name} takes the ${cart.name.toLowerCase()} (${r1(itemLoad(cart))} kg): hands full until it is let go.`, "info");
   return "";
 }
-// combatAct: { type: "letGoCart", unit, x?, y? } (free; x, y: the cell next to them to park it on) and
-// { type: "takeCart", unit, box? } (1 action). Returns "" or an error.
+// combatAct: { type: "letGoCart", unit } (free, the emergency: the nearest free side cell, else under their feet),
+// { type: "parkCart", unit, x, y } (CART_FIGHT.park actions: on the side cell asked: left, right, in front or behind)
+// and { type: "takeCart", unit, box? } (1 action). Returns "" or an error.
 export function cartAct(state, b, act) {
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
   const u = b.units.find((x) => x.id === act.unit);
   if (!u || u.side !== "player" || u.dead) return "That unit cannot act.";
-  if (act.type === "letGoCart") {
-    if (act.x != null && holdsCart(u) && !(cheb(u, { x: Number(act.x), y: Number(act.y) }) === 1 && parkable(b, Number(act.x), Number(act.y), u.f || 0))) return "Park it on a free cell right next to them (open ground or a doorway, nobody on it).";
-    return letGoCart(state, b, u, act.x != null ? { at: [Number(act.x), Number(act.y)] } : {});
+  if (act.type === "letGoCart") return letGoCart(state, b, u);
+  if (act.type === "parkCart") {
+    if (!holdsCart(u)) return "Not pushing a cart.";
+    const x = Number(act.x), y = Number(act.y);
+    if (!isSide(u, x, y) || !parkable(b, x, y, u.f || 0)) return "Park it on a free cell beside them: left, right, in front or behind (open ground or a doorway, nobody on it).";
+    if ((u.ap || 0) < CART_FIGHT.park) return "No actions left this turn (parking takes one; Let go is free).";
+    u.ap -= CART_FIGHT.park;
+    return letGoCart(state, b, u, { at: [x, y] });
   }
   const box = act.box != null ? cartBoxes(b).find((c) => c.id === act.box) || null : null;
   return takeCart(state, b, u, box);
 }
-// The free cells a unit could park its cart on (the UI's Park cart).
-export const parkCells = (b, u) => { const out = []; if (!holdsCart(u)) return out; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && parkable(b, u.x + dx, u.y + dy, u.f || 0)) out.push([u.x + dx, u.y + dy]); return out; };
+// The free side cells a unit could park its cart on (the UI's Park cart: the four highlighted).
+export const parkCells = (b, u) => (holdsCart(u) ? SIDES.map(([dx, dy]) => [u.x + dx, u.y + dy]).filter(([x, y]) => parkable(b, x, y, u.f || 0)) : []);
 
 // ---------- carts found on the map ----------
 // A raid's barns, garages, workshops and warehouses (now and then a house or a store), and a fight by a road: an
@@ -540,10 +578,18 @@ export function enemyCarts(state, b) {
   if (who.length) say(b, `${who.length === 1 ? "One of them pushes a cart" : `${who.length} of them push carts`} loaded with what they found.`, "info");
   return who.length;
 }
-// The enemy's side moves (combat.js runEnemyPhase): every one of theirs holding a cart lets go first (the dead too: it
-// falls where they lie).
+// The enemy's side moves (combat.js endPlayerTurn, after their actions are given out): every one of theirs holding a cart
+// parks it as cover (1 action, as yours: on the side cell facing you, parkAt; then they fight from behind it); the dead
+// let go where they lie. Returns the living who parked (combat.js takes the action off them).
 export function enemyCartsLetGo(state, b) {
-  for (const u of b.units) if (u.side !== "player" && holdsCart(u)) letGoCart(state, b, u, { quiet: u.dead });
+  const parked = [];
+  for (const u of b.units) {
+    if (u.side === "player" || !holdsCart(u)) continue;
+    const live = !u.dead && !u.down;
+    letGoCart(state, b, u, { quiet: !live });
+    if (live) { parked.push(u); const box = cartBoxes(b).find((c) => c.aiParty != null && c.blocking && isSide(u, c.x, c.y)); if (box) say(b, `${u.name} shoves the ${box.cart.name.toLowerCase()} out in front as cover.`, "danger"); }
+  }
+  return parked;
 }
 
 // The end of a fight (carry.js armsDropsEnd, settleCarried; before the piles become loot): every cart on the map packed
@@ -583,6 +629,36 @@ export function cartsEnd(state, b, outcome) {
   }
   if (own) settleHold(state, own);
   return left;
+}
+
+// ---------- abandoned on the State Map ----------
+// A new world (world.js createWorld): road tiles near towns and cities (ROAD_CARTS.range tiles of one) now and then
+// have a cart abandoned on them (ROAD_CARTS.p a tile, its own dice: nothing else of the world changes), sometimes with a
+// little in it (scrap, firewood, a fuel can). A ground site like any (state.deathSites, site.abandoned: its marker reads
+// "Abandoned cart: ..."), seen when a team or a base sees the tile (markers.js live markers), taken as any cart on the
+// ground (pickUpGround, the Recover mission). The groups' scavengers find them too, slowly (economy.js deathSitesDaily:
+// ×ROAD_CARTS.scav its chance a day): the nearest group keeps the cart (f.carts).
+export const ROAD_CARTS = { p: 0.08, range: 2, scav: 0.05 }; // scav: × the scavengers' chance a day (no ageing: a cart on a road is not a fresh death site)
+export function seedRoadCarts(state) {
+  const towns = state.tiles.filter((t) => t.loc && (t.loc.type === "town" || t.loc.type === "city"));
+  if (!towns.length) return 0;
+  let n = 0;
+  for (const t of state.tiles) {
+    if (!t.road || t.loc || t.terrain === "water" || state.bases.some((b) => b.tile === t.id)) continue;
+    if (!towns.some((w) => state.grid.distance(w.id, t.id) <= ROAD_CARTS.range)) continue;
+    const roll = (...k) => hash01(state.seed, "roadcart", t.id, ...k);
+    if (roll("p") >= ROAD_CARTS.p) continue;
+    const cart = lootItem(roll("kind") < 0.6 ? "wheelbarrow" : "handcart", siteSource("town"), roll("q"));
+    const r = roll("load");
+    if (r < 0.25) addLot(cart, "scrap", 2 + Math.floor(roll("n") * 5));
+    else if (r < 0.45) addLot(cart, "wood", 30 + Math.floor(roll("n") * 70));
+    else if (r < 0.55) addLot(cart, "fuel", 1 + Math.floor(roll("n") * 2));
+    const site = { id: newId(), tile: t.id, items: [], day: 0, names: [], lastConfirmed: 0, abandoned: true };
+    site.items.push(groundGearOf(cart));
+    state.deathSites.push(site);
+    n++;
+  }
+  return n;
 }
 
 // ---------- the base's jobs ----------
