@@ -36,6 +36,7 @@ import { CARAVAN_HELP } from "../sim/caravanraids.js"; // caravans on the road: 
 import { RESCUE_HELP } from "../sim/rescueraid.js"; // getting captives back: the rescue raid, ransoms
 import { BLOCS_WARS_HELP } from "../sim/playerwars.js"; // blocs between groups, wars with you
 import { traitsHelp } from "./traitpick.js"; // every trait, its tiers and points
+import { fieldWorksHelp } from "../sim/fieldworks.js"; // roadblocks, towers, stockpiles, blinds, snares, caches, spikes
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
@@ -188,6 +189,7 @@ export function helpTopics() {
   if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
   if (!seen.has("training-medics")) add("Training medics", TRAINING_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
+  if (!seen.has("field-works")) add("Field works", fieldWorksHelp()); // sim/fieldworks.js
   add("Machines and machine parts", MACHINES_HELP); // sim/breakdowns.js (freezer-parts: the walk-in freezer, the vacuum sealer)
   add("Magazines, rigs and plates", KIT_HELP); // sim/carrykit.js
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);

@@ -25,6 +25,7 @@ import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
 import { MEDIC } from "../sim/medics.js"; // stabilizing oneself: the odds by item (MEDIC.SELF)
 import { durUnit } from "../sim/crafting.js"; // what an item's uses count (fights, days of fishing...)
 import { day } from "../sim/world.js";
+import { FIELD } from "../sim/fieldworks.js"; // field works: one entry a kind
 import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/blueprints.js"; // what a manual or craft book unlocks
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
 import { HCRAWL, HIVEMIND } from "../sim/hivecrawl.js"; // the hive crawl and the Hivemind
@@ -323,9 +324,20 @@ function groupEntries() {
 }
 
 let ENTRIES = null, BY_KEY = null;
+// Field works (sim/fieldworks.js FIELD.KINDS): opened once one stands on the map where you see it (yours, or a group's).
+function fieldEntries() {
+  return FIELD.ORDER.map((k) => {
+    const d = FIELD.KINDS[k];
+    const stats = [["Costs", Object.entries(d.cost).map(([s, n]) => `${n} ${(SUPPLIES[s] || { name: s }).name.toLowerCase()}`).join(", ")], ["Takes", `${d.hours} work-hours and the walk`], ["Condition", String(d.hp)], ["Goes", d.road ? "on a road tile" : d.terrain ? "on forest, hills or farmland" : d.game ? "where there is game" : "on the base's land"]];
+    if (d.garrison) stats.push(["People", `up to ${d.garrison} a shift`]);
+    if (d.capKg) stats.push(["Holds", `${d.capKg} kg`]);
+    if (d.req) stats.push(["Needs", Object.entries(d.req).map(([s, n]) => `a ${SKILL_NAMES[s] || s} ${n}+ survivor there`).join(", ")]);
+    return { key: `fw:${k}`, cat: "buildings", name: `${d.icon} ${d.name}`, sub: "Field work", stats, text: d.desc, how: "Plan it from a base's Field works tab and click a green tile: the builders walk out and put it up. Help: Field works.", sprite: null };
+  });
+}
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...buildingEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...buildingEntries(), ...fieldEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -375,6 +387,7 @@ function seenNow(state) {
     if (h.mix) for (const k in h.mix) if (h.mix[k] > 0 && ZTYPES[k]) keys.add(`z:${k}`);
     if (h.bosses) keys.add("z:wallbreaker");
   }
+  for (const fw of (state.fieldworks && state.fieldworks.list) || []) if (fw.owner === "player" || (live.has(fw.tile) && (fw.kind !== "cache" || fw.found))) keys.add(`fw:${fw.kind}`); // sim/fieldworks.js
   for (const hv of state.hives || []) if (known(hv.tile)) keys.add("h:hive");
   for (const st of state.hiveSites || []) if (known(st.tile)) keys.add("h:site");
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
