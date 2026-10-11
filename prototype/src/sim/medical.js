@@ -24,6 +24,7 @@ import { noteTreated } from "./relations.js";
 import { FIELD_CARE } from "./medfinds.js";
 import { healMult } from "./traits.js"; // Quick Healer
 import { wormHealMult } from "./worm.js"; // the worm: half the healing while it is in them (full in a hospital bed with meds)
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
 export const SEVERE_NO_BED = 0.4;        // healing speed for severe wounds without a hospital bed
@@ -192,9 +193,11 @@ export function medicalHour(state) {
     const beds = new Set(patients(state, base, hosp).map((s) => s.id));
     const here = residents(state, base.id);
     for (const s of here) if (beds.has(s.id)) s.inBed = true;
+    const medic = here.some((s) => s.role === "medic"); // the Medic job's healing per day (activity.js): with a medic on duty
     for (const s of here) {
       if (!isHurt(s)) continue;
       const rate = healRatePerHour(state, base, s, hosp, beds.has(s.id));
+      if (rate >= 0 && medic) noteOutput(state, base, "medic", Math.min(rate, 100 - s.health), "heal");
       if (rate >= 0) s.health = Math.min(100, s.health + rate);
       else hurt(state, s, -rate, base.tile, `of an infected wound at ${base.name}`, { raw: true });
     }
@@ -561,7 +564,7 @@ export function fieldTreat(state, party, survivorId) {
 export function treatAnywhere(state, survivorId) {
   const s = survivorById(state, survivorId);
   if (!s || !s.alive) return "Nobody to treat.";
-  if (s.location.kind === "base") return treatAtBase(state, baseById(state, s.location.baseId), s.id);
+  if (s.location.kind === "base" || s.location.kind === "post") return treatAtBase(state, baseById(state, s.location.baseId), s.id); // post: fieldworks.js
   if (s.location.kind === "route") return treatAtBase(state, hub(state), s.id); // an escort waiting at the hub between trips
   if (s.location.kind === "party") {
     const p = state.parties.find((x) => x.id === s.location.partyId);

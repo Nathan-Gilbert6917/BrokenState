@@ -38,6 +38,7 @@ export function awayReason(state, s) {
     return p && p.kind === "convoy" ? "is on the road with a convoy" : "is out on a team";
   }
   if (l.kind === "route") return "escorts a trade route";
+  if (l.kind === "post") return "is posted at a field work (call them back from its Field works tab)";
   if (l.kind === "errand") return "is away on an errand";
   if (l.kind === "lent") { const f = factionById(state, l.fid); return `is with ${f ? f.name : "another group"} as a volunteer`; } // volunteers.js
   return "is away";

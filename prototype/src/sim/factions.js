@@ -38,9 +38,10 @@
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
 //   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
 //   bands from outside that settle use it too, visitors.js settleBands).
+import { groupFoodLand, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
 import {
-  newId, log, addCard, day, hub, atBase, combatPower, hurt, playerStrength,
+  newId, log, addCard, day, hub, atBase, homeAt, combatPower, hurt, playerStrength,
   factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue, armedFactor, spendShots, arrowsBack,
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
@@ -76,7 +77,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
-import { groupWorksDaily, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
+import { groupWorksDaily, groupEatMult, groupCookShare, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople, workingPeople, GROUP_ILL } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
@@ -319,8 +320,11 @@ export function factionsDaily(state) {
     // groupworks.js: a group short of wells and fields gets a little less from the land, and one sleeping rough grows
     // slower (CROWDED_GROWTH; both 1 once it has built them; old saves are built up).
     // The ill rest (groupcare.js GROUP_ILL, sickrest.js parity): the day's work counts the people at work (hands).
+    // grouptrips.js: their hunters and foragers by the land each base holds and how far they walk (as your job trips),
+    // fish only where a base holds water, nothing from a besieged base's land. Their kitchens' hot meals stretch the
+    // food and their cooks work no fields (groupworks.js KITCHEN).
     const hands = workingPeople(f);
-    f.stock.food += workingPeople(f, GROUP_ILL.farm) * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) + penFood(state, f) - f.pop; // + their animal pens (groupworks.js PENS)
+    f.stock.food += workingPeople(f, GROUP_ILL.farm) * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) * groupFoodLand(state, f) * (1 - groupCookShare(state, f)) + penFood(state, f) - f.pop * groupEatMult(state, f); // + their animal pens (groupworks.js PENS)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).
     if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25 * growthFactor(state, f) * (0.7 + 0.3 * prio(f, "recruit")))) f.pop += 1; // hcNoGrow: hardcore's besieged military
@@ -343,7 +347,7 @@ export function factionsDaily(state) {
     groupWorldDaily(state, f); // groupworld.js: scouting (and spies at your walls), vehicles taken, stolen, sold, fitted out
     // Firewood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
     // price, trade.js) runs low by the end of a winter and fills again by the autumn.
-    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut - f.pop * GROUP_WOOD.burn * freezeShare(today - 1)));
+    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * freezeShare(today - 1))); // grouptrips.js: the wood land their bases hold
 
     // Expansion: claim a nearby site. Aggressive groups push out more, toward rich sites and toward you.
     const agg = isAggressiveType(f);
@@ -706,7 +710,7 @@ export function raidRepelled(state, f) {
 // surprise (watch.js surpriseAt: raiders over the walls on an unwatched night): everyone but the guards counts
 // SURPRISE.ASLEEP instead of 0.8, until the base is put on alert.
 export function baseDefense(state, base, surprise = false) {
-  const people = atBase(state, base.id);
+  const people = homeAt(state, base.id); // world.js: those out on a job trip (jobtrips.js) are not at the walls
   let d = baseWalls(base) * 2;
   const mult = (s) => (s.role === "guard" ? 1.5 : base.alert ? 1.3 : surprise ? SURPRISE.ASLEEP : 0.8);
   for (const s of people) d += combatPower(s) * mult(s);
@@ -883,7 +887,7 @@ export function resolveRaidOnFaction(state, party, helpers) {
 function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
   const rng = state.rng;
   raidSoured(state, attacker, target);
-  const def = groupBaseDefence(state, target, party.target.tile) + strength(target) * 0.8 + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // 8 for a walled base (groupworks.js: half that bare); vehicles.js: a military group's Humvee at home
+  const def = groupBaseDefence(state, target, party.target.tile) + strength(target) * 0.8 * groupHomeShare(state.hour) + helpPower + (party.target.tile === target.bases[0] ? groupTurretPower(target) : 0); // 8 for a walled base (groupworks.js: half that bare); vehicles.js: a military group's Humvee at home
   const att = party.strength + raidTurretPower(state, party); // and the one a raid brought
   const attN = attacker ? raidCount(attacker, party.strength) : 0; // arsenal.js: the raiders' kit
   // Only report fights you could know about: raids on groups you know, anything you can see. Groups you have not

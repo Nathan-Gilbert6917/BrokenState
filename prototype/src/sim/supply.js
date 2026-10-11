@@ -75,6 +75,7 @@ function crewProblem(state, s, origin) {
   if (loc.kind === "base") return `is at ${baseById(state, loc.baseId)?.name || "another base"}`;
   if (loc.kind === "party") return "is away with a team";
   if (loc.kind === "route") return "escorts a trade route";
+  if (loc.kind === "post") return "is posted at a field work";
   return "is elsewhere";
 }
 

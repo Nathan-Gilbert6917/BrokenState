@@ -46,7 +46,7 @@ function nearestBase(state, tile) {
 // In touch with a person: at a base, escorting a route, or on a team you have contact with (the roster's rule).
 function inTouch(state, s) {
   const k = s.location && s.location.kind;
-  if (k === "base" || k === "route") return true;
+  if (k === "base" || k === "route" || k === "post") return true;
   if (k !== "party") return false;
   const p = state.parties.find((x) => x.id === s.location.partyId);
   return !!p && (p.kind === "convoy" || contactable(p));
@@ -65,6 +65,7 @@ function personStatus(state, it) {
     if (p && (p.kind === "convoy" || contactable(p))) tile = partyTile(p);
   } else if (l.kind === "captive") { const f = factionById(state, l.factionId); where = `held by ${f && f.known ? f.name : "captors"}`; }
   else if (l.kind === "route") where = "escorting a trade route";
+  else if (l.kind === "post") { where = "posted at a field work"; tile = l.tile ?? null; } // sim/fieldworks.js
   else if (l.kind === "errand") where = `on an errand (back ~day ${l.until})`;
   if (!inTouch(state, s)) return { name: s.name, line: `${where} · no contact`, tone: "muted", go: { surv: s.id, tile } };
   const task = s.inBed ? "in a hospital bed" : l.kind === "base" ? ((!isManaged(state, s) && sickRestLabel(state, s)) || taskLabel(state, s) || (roleOf(state, s) ? roleOf(state, s).name : ROLES[s.role] ? ROLES[s.role].name : "")) : "";

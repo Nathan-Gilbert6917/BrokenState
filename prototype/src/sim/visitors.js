@@ -78,7 +78,7 @@
 import { Rng } from "./rng.js";
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, supplyFew } from "./data.js";
 import {
-  newId, log, addCard, day, hub, baseById, atBase, residents, combatPower, hurt, factionById, snapshot, mergeKnowledge, removeBase,
+  newId, log, addCard, day, hub, baseById, atBase, homeAt, residents, combatPower, hurt, factionById, snapshot, mergeKnowledge, removeBase,
   supplyValue, skill, baseVision, localId, spendShots, arrowsBack,
 } from "./world.js";
 import {
@@ -925,7 +925,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
   if (!base) return nextGoal(state, v);
   const info = visitorInfo(state);
   info.stats.raidsOnYou++;
-  const people = beaten ? [] : atBase(state, base.id);
+  const people = beaten ? [] : homeAt(state, base.id); // world.js: those out on a job trip are not at the walls
   const caught = !beaten && v.surprise ? v.surprise : ""; // watch.js surpriseAt: an unwatched night
   delete v.surprise;
   const def = baseDefense(state, base, !!caught);

@@ -28,7 +28,7 @@
 //   loot: { supplies: {}, gear: [] },  // dropped by dead enemies, already added to the party cargo / base stock
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
-import { survivorById, alive, atBase, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
+import { survivorById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
@@ -331,7 +331,7 @@ export function combatants(state, setup) {
   if (setup.partyId) {
     const p = state.parties.find((x) => x.id === setup.partyId);
     list = p ? partyMembers(state, p) : [];
-  } else if (setup.baseId) list = atBase(state, setup.baseId);
+  } else if (setup.baseId) list = homeAt(state, setup.baseId); // world.js: not those out of the walls on a job trip (jobtrips.js)
   else if (setup.lentIds) list = setup.lentIds.map((id) => survivorById(state, id)).filter((s) => s && s.alive); // volunteers.js: your people lent out, in their group's fight you watch
   if (setup.fighterIds) list = list.filter((s) => setup.fighterIds.includes(s.id));
   return list;

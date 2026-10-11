@@ -35,7 +35,9 @@ import { gatheringAlerts } from "../sim/hivebirth.js";
 import { weatherAlerts } from "../sim/rivers.js"; // a frozen river by a base, a storm heading for the hub
 import { tripAlerts } from "./trips.js"; // a team sent from the planner is home: repeat the trip?
 import { pileCount } from "./pacing.js";
-import { recentRepairs } from "../sim/repairwait.js"; // a breakdown repaired on the road: the team drives on
+import { recentRepairs } from "../sim/repairwait.js";
+import { fieldworkAlerts } from "./fieldworks.js"; // field works out on the bases' land // a breakdown repaired on the road: the team drives on
+import { stallAlerts } from "./activity.js"; // a job at a base unable to work for 2+ days
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -48,6 +50,7 @@ const EVENT_HOURS = 24;             // "building finished" and the like stay up 
 // Each alert: { key, kind, icon, text, tip, tone (danger | warn | good | info), go: { team | base+tab | tile | surv } }.
 const teamLabel = (state, p) => `${MISSIONS[p.teamMission || p.mission]?.name || "Team"} (${partyMembers(state, p).map((s) => firstName(s.name)).join(", ")})`;
 const SECTIONS = {
+  stalled: stallAlerts, // ui/activity.js: a job at a base that cannot work (no trees, nothing to build …) for 2+ days
   road: roadAlerts, // no base (hardcore's first hub, the exiles): the team's food and water, a home to set up (Establish base); camps left alone (ui/hardcore.js)
   teams(state, out) {
     for (const p of state.parties) {
@@ -262,7 +265,8 @@ const SECTIONS = {
       out.push({ key: `crash:${c.id}:${c.found ? 1 : 0}`, kind: "crash", icon: def.icon, tone: left < 2 ? "warn" : "info", text: `${name}: ${c.found ? "found" : `search ${c.radius} tiles around ${knownLoc(state, c.center) ? state.tiles[c.center].loc.name : "the circle"}`}, ${left.toFixed(1)} days left`, tip: `${c.found ? "The wreck is on the map: raid it before other groups strip it." : "It came down somewhere in the circle on the map. Send a team to look around there (the planner's “Search the area” step)."} It burns out in about ${left.toFixed(1)} days. Click to see it.`, go: { tile: c.found ? c.tile : c.center } });
     }
   },
-  gatherings(state, out) { out.push(...gatheringAlerts(state)); }, // sim/hivebirth.js: the dead massing for a hive you marked
+  gatherings(state, out) { out.push(...gatheringAlerts(state)); },
+  fieldworks: fieldworkAlerts, // ui/fieldworks.js: a field work attacked, taken or destroyed; one that needs repair // sim/hivebirth.js: the dead massing for a hive you marked
   weather(state, out) { // a frozen river by a base (the dead can cross), a storm or blizzard front heading for the hub
     out.push(...weatherAlerts(state));
   },
@@ -283,7 +287,7 @@ const SECTIONS = {
     if (n > 1) out.push({ key: `cards:${n}`, kind: "cards", icon: "🃏", tone: "info", text: `${n} cards waiting`, tip: "Cards are answered one at a time: these are still in the pile. Close the screens on top to see the next one.", go: { cards: true } });
   },
 };
-const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "crash", "cards", "trip", "caravan", "built"];
+const ORDER = ["breakin", "starve", "thirst", "desert", "outsiders", "tower", "horde", "gathering", "ice", "front", "nomeds", "spread", "food", "teamfood", "water", "worm", "sick", "ill", "fixed", "wait", "plan", "broken", "idle", "stalled", "crash", "cards", "trip", "caravan", "built"];
 
 // Good news (Options → "Good news alerts", options.goodNews, on by default): news that asks nothing of you. Off, these
 // kinds are left out of the stack, so no row, flash or chime (ui/soundcues.js hears only what is shown); the log and the

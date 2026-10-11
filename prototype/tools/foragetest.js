@@ -18,6 +18,8 @@ import { startOrder, queueOrder, queueEstimate, taskHour } from "../src/sim/orde
 import { estimatePlan, stepsToOrders, STEP_KINDS } from "../src/sim/plans.js";
 import * as F from "../src/sim/foraging.js";
 import * as H from "../src/sim/hunting.js";
+import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips (a day of them, then the midnight tally)
+const huntDay = (state, base) => { tripDay(state, base); return H.huntingDaily(state, base); };
 import * as Weather from "../src/sim/weather.js";
 import { WORK_TYPES, WORK_KEYS, workState } from "../src/sim/work.js";
 import { ROLES } from "../src/sim/economy.js";
@@ -314,7 +316,7 @@ section("The Forage job at a base: work type, role, the daily gathering, the lan
     for (let d = 0; d < days; d++) {
       state.hour = (d0 + d) * 24 + 24;
       const before = base.stock.food;
-      H.huntingDaily(state, base);
+      huntDay(state, base);
       food += base.stock.food - before;
       daily.push(base.stock.food - before);
     }
@@ -324,7 +326,10 @@ section("The Forage job at a base: work type, role, the daily gathering, the lan
   const lvl = mean(F.baseForageTiles(state, base).slice(0, 5).map((t) => F.forageLevel(state, t.id)));
   note(`three foragers at the hub through a summer: ${r1(sum.food)} food (${r1(sum.food / 28 / 3)} a forager a day; first week ${r1(sum.daily.slice(0, 7).reduce((a, b) => a + b, 0))}, last ${r1(sum.daily.slice(21).reduce((a, b) => a + b, 0))}); the best land around picked to ${Math.round(lvl * 100)}%`);
   check(sum.food / 28 / 3 > 0.6 && sum.food / 28 / 3 < 2.5, "about a ration or so a forager a day in summer: a help, not a farm");
-  check(lvl < 0.97, "the land around the base is picked down"); // 95–96% after a summer: which days a storm front sat over the hub moves it a point (weather.js fronts)
+  // Job trips (jobtrips.js): the foragers go to the best ground for its walk (forageTripTile), not always the top tiles by
+  // what they hold: the ground they worked is what is picked down.
+  const worked = Math.min(...F.baseForageTiles(state, base).map((t) => F.forageLevel(state, t.id)));
+  check(worked < 0.95, `the land around the base is picked down (the ground they worked to ${Math.round(worked * 100)}%)`); // 95–96% after a summer: which days a storm front sat over the hub moves it a point (weather.js fronts)
   state.forage = {};
   const win = run("winter", 7);
   check(win.food / 7 / 3 < 0.25, `winter: next to nothing (${r2(win.food / 21)} a forager a day)`);

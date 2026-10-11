@@ -10,7 +10,7 @@
 // Preserved food (supply key "preserved": jarred, dried or smoked food, threshed grain and dry beans) barely spoils
 // and needs no cellar room. Eating draws fresh food first (it is the food that rots) and preserved food only once
 // the fresh is gone. It comes from:
-//   - the Preserving kitchen (a workshop station, buildings.js RECIPES.preserve): an operator jars 9 fresh food a
+//   - the Preserving room (a workshop station, buildings.js RECIPES.preserve): an operator jars 9 fresh food a
 //     day into 8 preserved (9 with Farming 8+), using 3 water, 1 scrap (stove fuel and lids) and 4 empty jars;
 //   - Drying racks (no operator): each dries 4 surplus fresh food into 3 preserved a day (half on wet days), taking
 //     food stored outside first, else only food above 15 days of eating;
@@ -222,6 +222,6 @@ export function storeLine(state, base) {
   const short = `in ${where}${s.outside >= 1 ? `, outside ${n0(s.outside)}` : ""} (spoiling ${n1(s.spoil)}/day)`;
   const pres = `preserved ${n0(s.preserved)}${(base.stock.jars || 0) >= 1 || jarsInUse(base) >= 1 ? ` · jars ${n0(base.stock.jars)} empty, ${n0(jarsInUse(base))} filled` : ""}`;
   const rates = s.spaces.map((x) => `${x.name} ${pct(x.rate)}`).concat([`outside ${pct(s.outRate)}`, `preserved ${pct(s.presRate)}`]).join(", ");
-  const tip = `Food storage: ${s.cap} room for fresh food (${s.spaces.map((x) => `${x.name} ${x.cap}`).join(", ") || "none"}). Fresh food fills the best storage of the day first; anything above the room is stored outside and spoils much faster (more in heat and rain, less when it freezes). Spoiling a day today: ${rates}. Preserved food (jarred, dried, grain and dry beans) needs no room and barely spoils; it is eaten once the fresh food is gone. More room: Root cellar (+${STORE.rootCellar}), Storehouse (+${STORE.storehouse}), Cold store (+${STORE.coldStore}, best in winter). Preserve surplus in a Preserving kitchen (needs jars) or on Drying racks.`;
+  const tip = `Food storage: ${s.cap} room for fresh food (${s.spaces.map((x) => `${x.name} ${x.cap}`).join(", ") || "none"}). Fresh food fills the best storage of the day first; anything above the room is stored outside and spoils much faster (more in heat and rain, less when it freezes). Spoiling a day today: ${rates}. Preserved food (jarred, dried, grain and dry beans) needs no room and barely spoils; it is eaten once the fresh food is gone. More room: Root cellar (+${STORE.rootCellar}), Storehouse (+${STORE.storehouse}), Cold store (+${STORE.coldStore}, best in winter). Preserve surplus in a Preserving room (needs jars) or on Drying racks.`;
   return { short, pres, tip, cls: s.outside >= 1 ? "danger" : "", store: s };
 }

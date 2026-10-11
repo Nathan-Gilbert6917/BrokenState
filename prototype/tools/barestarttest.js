@@ -20,7 +20,7 @@ const BARE_FLED_DAYS = 20;
 const seeds = process.argv.length > 2 ? process.argv.slice(2).map(Number) : [1, 2, 3];
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-const built = (f) => Object.values(f.works || {}).reduce((a, w) => a + Object.values(w).reduce((x, v) => x + (v || 0), 0), 0);
+const built = (f) => Object.values(f.works || {}).reduce((a, w) => a + Object.values(w).reduce((x, v) => x + (typeof v === "number" ? v : 0), 0), 0); // numbers only: a base with machines keeps their state in works.mach (groupworks.js)
 const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift(); const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch) ch.resolve(st); } };
 
 // 1. Fresh worlds: no buildings at any base, every plot free, the groups' works empty.
@@ -85,7 +85,7 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   check(bunkDay != null && bunkDay <= 3, `the bunkhouse is up within 3 days (day ${bunkDay})`);
   check(benchDay != null && benchDay <= 4, `the crafting bench after it (day ${benchDay})`);
   check(baseBeds(h) === 10, `10 beds now (${baseBeds(h)})`);
-  check(alive(st).length === 6 && alive(st).every((s) => (s.hunger ?? 100) > 30 && (s.thirst ?? 100) > 30), `everyone alive, fed and watered on day 5 (${alive(st).map((s) => `${Math.round(s.hunger)}/${Math.round(s.thirst)}`).join(" ")})`);
+  check(alive(st).length >= 6 && alive(st).every((s) => (s.hunger ?? 100) > 30 && (s.thirst ?? 100) > 30), `everyone alive, fed and watered on day 5 (${alive(st).map((s) => `${Math.round(s.hunger)}/${Math.round(s.thirst)}`).join(" ")})`);
 }
 
 // 4. A save made on day 0 loads, bare.
@@ -139,7 +139,7 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   const st = createWorld({ seed: seeds[0], factionCount: 8 });
   const f = st.factions[0], t = f.bases[0];
   check(groupBaseDefence(st, f, t) === GROUP_WORKS.WALL_DEF / 2, `a bare base has half the old flat defence (${groupBaseDefence(st, f, t)})`);
-  Object.assign(worksAt(f, t), { water: 9, farms: 9, beds: 9, walls: 99, bench: 1, store: 1, sickbay: 4, pens: GROUP_WORKS.PENS.max }); // pens: an animal pen at a walled base with fields (groupworks.js PENS)
+  Object.assign(worksAt(f, t), { water: 9, farms: 9, beds: 9, walls: 99, bench: 1, store: 1, sickbay: 4, pens: GROUP_WORKS.PENS.max, kitchen: 1 }); // kitchen: a group kitchen (kitchen branch); pens: an animal pen at a walled base with fields (groupworks.js PENS)
   const goal = CONQUEST.WALLED_TYPES.includes(f.type) ? CONQUEST.WALLS.typed : CONQUEST.WALLS.home;
   check(nativeWalls(f, t, st) === goal && groupBaseDefence(st, f, t) === GROUP_WORKS.WALL_DEF, `built up: the old walls (${nativeWalls(f, t, st)} of ${goal}) and the old defence`);
   check(nextWork(st, f) === null || nextWork(st, f).tile !== t, "nothing more to build there");

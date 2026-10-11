@@ -51,7 +51,7 @@ export function progressOf(s, key) {
 // In touch: at a base, escorting a route, or on a team you have contact with (the People tab's rule).
 function known(state, s) {
   const k = s.location && s.location.kind;
-  if (k === "base" || k === "route") return true;
+  if (k === "base" || k === "route" || k === "post") return true;
   if (k !== "party") return false;
   const p = state.parties.find((x) => x.id === s.location.partyId);
   return !!p && (p.kind === "convoy" || contactable(p));
@@ -65,6 +65,7 @@ function where(state, s) {
     return { key: "team", text: p ? (p.kind === "convoy" ? "Convoy" : `${m ? m.name : "Team"} team`) : "On a team", sort: `1 ${m ? m.name : ""}` };
   }
   if (l.kind === "route") return { key: "away", text: "Trade route escort", sort: "2" };
+  if (l.kind === "post") { const b = baseById(state, l.baseId); return { key: "away", text: `Lookout (field work${b ? ` of ${b.name}` : ""})`, sort: "2" }; } // sim/fieldworks.js
   if (l.kind === "errand") return { key: "away", text: `Errand (back ~day ${l.until})`, sort: "2" };
   if (l.kind === "lent") { const f = factionById(state, l.fid); return { key: "away", text: `With ${f ? f.name : "another group"} (back ~day ${l.until})`, sort: "2" }; } // sim/volunteers.js
   if (l.kind === "captive") { const f = factionById(state, l.factionId); return { key: "away", text: `Held by ${f && f.known ? f.name : "captors"}`, sort: "3" }; }

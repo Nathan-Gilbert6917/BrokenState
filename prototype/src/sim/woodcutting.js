@@ -47,6 +47,8 @@ import { econStats } from "./farming.js";
 import { carriedItems } from "./hunting.js";
 import { mouthsAt, HEAT, woodFor } from "./upkeep.js";
 import { boilerUse, WORM } from "./worm.js"; // the water boiler burns firewood a head every day its water needs boiling
+import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { workLand, distFactor, tripScale, TRIP_JOBS } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
 
 // ---------- numbers ----------
 export const WOOD = {
@@ -246,15 +248,27 @@ export function baseWoodTiles(state, base, hour = state.hour) {
     .map((id) => ({ id, v: woodAbundance(state, id) * woodLevel(state, id, hour) }))
     .sort((a, b) => b.v - a.v || a.id - b.id);
 }
+// The tile the base's woodcutters go to (jobtrips.js): the best of its land by what a day there gives, walking
+// included (tripland.js distFactor: one tile out 1, the base's own tile 1.14, two out 0.8): { id, v, d, f } or null.
+export function woodTripTile(state, base, hour = state.hour) {
+  let best = null;
+  for (const id of workLand(state, base.tile)) {
+    const a = woodAbundance(state, id);
+    if (a < 0.04) continue;
+    const d = state.grid.distance(base.tile, id), f = distFactor("wood", d), v = a * woodLevel(state, id, hour);
+    if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
+  }
+  return best;
+}
 // Expected firewood a woodcutter brings in a day at this base (for the job's "worth it", the panels, the autopilot):
-// on a fair day of this season (no storm), from the best land around as it is now. s: that person (with their own
-// tool or the armory's best), else an average one (skill ~3) with the armory's best tool.
+// on a fair day of this season (no storm), from the tile its woodcutters go to (woodTripTile, its walk counted). s:
+// that person (with their own tool or the armory's best), else an average one (skill ~3) with the armory's best tool.
 export function baseWoodDay(state, base, s = null, hour = state.hour) {
-  const tiles = baseWoodTiles(state, base, hour);
-  if (!tiles.length) return 0;
+  const t = woodTripTile(state, base, hour);
+  if (!t) return 0;
   const armory = (base.armory || []).filter(isChopTool);
   const m = s ? chopCrew([s], armory)[0].mult : 0.85 * (armory.length ? Math.max(...armory.map(chopMult)) : 1);
-  return WOOD.rate * tiles[0].v * seasonWood(state, hour) * m * WOOD.base.hours;
+  return WOOD.rate * t.v * seasonWood(state, hour) * m * WOOD.base.hours * t.f;
 }
 export function woodWorkWhy(state, base) {
   const tiles = baseWoodTiles(state, base);
@@ -281,36 +295,38 @@ export function woodHandsWanted(state, base, { w = woodNeed(state, base), days =
   const d = days ?? Math.max(WOOD.base.minDays, Math.min(WOOD.base.stockDays, w.toCold));
   return handsForDay(Math.max(0, w.need - w.have) / d + (w.boiler > 0 ? w.boiler : 0), each);
 }
-// Daily (economy.js baseDaily): the people on the Cut wood role bring in their day's firewood from the best tiles
-// around (each the best tile left, the land thinning as they go), with their own tools or the armory's; each one past
-// the first a little less (woodCrowd).
+// One woodcutter's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them) on `tile`, read
+// at `hour`; their share as the k-th of the base's woodcutters (woodCrowd), with their own tool or the armory's. The
+// land thins by what they cut; the firewood comes home with them. Returns { wood, tool }.
+export function woodTrip(state, base, s, tile, hours, hour) {
+  const people = atBase(state, base.id).filter((x) => x.role === "wood" && !x.inBed && workFactor(x) >= 0.35);
+  if (!people.includes(s)) people.push(s);
+  const crew = chopCrew(people, (base.armory || []).filter(isChopTool));
+  const k = Math.max(0, crew.findIndex((c) => c.s === s)), c = crew[k] || chopCrew([s])[0];
+  const m = c.mult * Math.min(1, workFactor(s)) * woodCrowd(k);
+  const amount = Math.round(woodRate(state, tile, hour, m) * hours * (0.7 + 0.6 * state.rng.next()) * 100) / 100;
+  takeWood(state, tile, amount);
+  const share = hours / WOOD.base.hours;
+  gainXp(state, s, "farming", USE.wood * share); // skills.js
+  gainXp(state, s, "mechanics", USE.woodMech * share);
+  return { wood: amount, tool: !!c.tool };
+}
+// Daily (economy.js baseDaily): the Cut wood job's day is in (its trips brought the firewood home through the day,
+// jobtrips.js): the woodcutters' noise for the base's Heat, the day's total for the panels and the log. Returns
+// { wood, tools } (the day's trips) or null with nobody on the job.
 export function woodDaily(state, base) {
   const people = atBase(state, base.id).filter((s) => s.role === "wood" && !s.inBed && workFactor(s) >= 0.35);
   base.woodNoise = 0;
-  if (!people.length) return null;
-  const dayStart = state.hour - 24;
+  const day = (base.tripTally && base.tripTally.day === Math.floor((state.hour - 1) / 24) && base.tripTally.wood) || null;
+  if (!people.length && !day) return null;
   const crew = chopCrew(people, (base.armory || []).filter(isChopTool));
-  const got = { wood: 0, tools: 0 };
-  for (const [k, c] of crew.entries()) {
-    const tile = (baseWoodTiles(state, base, dayStart + 12)[0] || {}).id;
-    if (tile == null) break;
-    const m = c.mult * Math.min(1, workFactor(c.s)) * woodCrowd(k);
-    let r = 0;
-    for (let i = 0; i < WOOD.base.hours; i++) r += woodRate(state, tile, dayStart + 8 + i * 2, m);
-    const amount = Math.round(r * (0.7 + 0.6 * state.rng.next()) * 100) / 100;
-    got.wood += amount;
-    takeWood(state, tile, amount);
-    if (c.tool) got.tools++;
-    base.woodNoise += c.tool ? WOOD.noise.axe : WOOD.noise.hands;
-    gainXp(state, c.s, "farming", USE.wood); // skills.js
-    gainXp(state, c.s, "mechanics", USE.woodMech);
-  }
+  for (const c of crew) base.woodNoise += c.tool ? WOOD.noise.axe : WOOD.noise.hands;
   base.woodNoise = r1(base.woodNoise);
-  base.stock.wood = (base.stock.wood || 0) + got.wood;
-  const es = econStats(state);
-  es.woodCut = (es.woodCut || 0) + got.wood;
+  const got = { wood: day ? Math.round((day.wood || 0) * 100) / 100 : 0, tools: day ? day.tools || 0 : 0 };
   base.woodToday = r1(got.wood);
-  if (got.wood >= 30) log(state, `${crew.map((c) => first(c.s)).join(" and ")} cut ${Math.round(got.wood)} firewood around ${base.name}${got.tools < crew.length ? ` (${crew.length - got.tools === crew.length ? "no axe: deadfall by hand" : `${crew.length - got.tools} without an axe`})` : ""}.`, "good");
+  if (!day) noteOutput(state, base, "wood", 0, "wood"); // a day on the job that brought nothing (the Work now panel)
+  const who = day ? day.who.map((id) => crew.find((c) => c.s.id === id) || null).filter(Boolean) : [];
+  if (got.wood >= 30) log(state, `${(who.length ? who : crew).map((c) => first(c.s)).join(" and ")} cut ${Math.round(got.wood)} firewood around ${base.name}${got.tools < crew.length ? ` (${crew.length - got.tools === crew.length ? "no axe: deadfall by hand" : `${crew.length - got.tools} without an axe`})` : ""}.`, "good");
   return got;
 }
 

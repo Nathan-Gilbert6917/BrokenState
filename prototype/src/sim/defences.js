@@ -17,7 +17,7 @@
 // The watch (watch.js): an exhausted guard counts half (sleep.js). A horde that reaches a base at night with nobody
 // awake on watch, no tripwire and the defences not manned (surpriseAt) finds the defence buildings counting half and
 // opens a break-in with its first move; someone awake on watch sees one coming 2 tiles sooner (hordeWarnings).
-import { log, addCard, atBase, hurt, combatPower, removeBase, isNight, baseVision, armedFactor, spendShots, arrowsBack } from "./world.js";
+import { log, addCard, atBase, homeAt, hurt, combatPower, removeBase, isNight, baseVision, armedFactor, spendShots, arrowsBack } from "./world.js";
 import { GEAR } from "./data.js";
 import { count, baseWalls } from "./buildings.js";
 import { poweredType } from "./power.js";
@@ -83,7 +83,7 @@ export function guardHold(state, base) {
   let p = 0;
   const all = manned(state, base);
   const alarm = all ? 0 : armoryDefence(base).alarm; // a tripwire alarm: everyone half, warned or not
-  for (const s of atBase(state, base.id)) {
+  for (const s of homeAt(state, base.id)) { // world.js: not those out on a job trip
     if (s.inBed) continue;
     if (s.role === "guard") p += combatPower(s) * (tiredLevel(s) >= 2 ? TIRED.GUARD : 1); // exhausted (sleep.js): half
     else if (all) p += combatPower(s) * DEFENCE.ALERT_WEIGHT;
@@ -149,7 +149,7 @@ export function tierMults(state, base, night = false) {
 // The strength of the best 8 at a base (who would fight a break-in), with too little ammo counting 60% (the bows by
 // the base's arrows: world.js armedFactor).
 export function defendersPower(state, base) {
-  const people = atBase(state, base.id).filter((s) => !s.inBed).sort((a, c) => combatPower(c) - combatPower(a)).slice(0, 8);
+  const people = homeAt(state, base.id).filter((s) => !s.inBed).sort((a, c) => combatPower(c) - combatPower(a)).slice(0, 8); // world.js: not those out on a job trip
   const p = people.reduce((a, s) => a + combatPower(s), 0);
   return p * armedFactor(people, base.stock, base.stock.arrows || 0);
 }
@@ -219,7 +219,7 @@ export function hordeAttackBase(state, h, base) {
   ensureHives(state);
   const rng = state.rng;
   const stats = state.hiveInfo.stats;
-  const people = atBase(state, base.id);
+  const people = homeAt(state, base.id); // world.js: those out on a job trip are not in the fight
   const notes = [];
   base.hordeHits = (base.hordeHits || 0) + 1;
   // Spike pits: one use.
@@ -367,7 +367,7 @@ function wreckEmpty(state, base, h, through) {
 function overrun(state, base, h, through, why = "") {
   const rng = state.rng;
   state.hiveInfo.stats.overrun++;
-  const people = atBase(state, base.id);
+  const people = homeAt(state, base.id); // world.js: those out on a job trip are not caught inside
   const dead = [];
   for (const s of people) {
     if (!rng.chance(0.4)) continue;

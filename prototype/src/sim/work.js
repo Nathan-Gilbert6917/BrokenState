@@ -58,7 +58,7 @@ import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } fro
 import { doctorAt, TRAINING, lessonGap } from "./training.js"; // Medic trainees
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
 import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
-import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity } from "./economy.js";
+import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity, fetchWaterWhy, fetchWaterDay } from "./economy.js";
 import { prisonersAt, prisonGuardsWanted, onJailRoster, jailName } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned, towerHordes } from "./defences.js";
 import { huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap, hunterMult, bestHuntWeapon, fisherMult } from "./hunting.js";
@@ -70,11 +70,12 @@ import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
 import { wormFilterUrgent, woodCritical, farmCrewLimits, FARM_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
+import { KITCHEN, hasKitchen, cooksWanted, isCookHour } from "./kitchen.js"; // the Kitchen's cooks (work type "meals")
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
 // Assignments a queued build may take one hand from (no station, lesson, book or repair job to give back).
-const LOOSE = ["farm", "scavenge", "hunt", "fish", "forage", "wood"];
+const LOOSE = ["farm", "scavenge", "hunt", "fish", "forage", "wood", "water"];
 export const SCRAP_KEEP = { ammo: 50, meds: 40, parts: 60 }; // stations on a steward's or the governor's order stop below this
 export const MOOD_LOW = 25, MOOD_BACK = 40;   // free time below 25 mood, back to work at 40
 export const OFF_MOOD = 0.25;                 // mood an hour of sleep or free time gives (the Rest role's 6 a day)
@@ -181,11 +182,24 @@ export const WORK_TYPES = {
     },
   },
   cook: {
-    name: "Preserve", ing: "Preserving", short: "Cook", role: "operate", skill: "farming",
-    desc: "Runs the preserving kitchen: jars fresh food that would spoil. By its standing order, or without one while food is spoiling outside or piling up for winter.",
-    open: (ctx) => stationOpen(ctx, (k) => k === "preserve", "no preserving kitchen"),
+    name: "Preserve", ing: "Preserving", short: "Jar", role: "operate", skill: "farming",
+    desc: "Runs the preserving room: jars fresh food that would spoil. By its standing order, or without one while food is spoiling outside or piling up for winter.",
+    open: (ctx) => stationOpen(ctx, (k) => k === "preserve", "no preserving room"),
     take: (ctx, s) => takeStation(ctx, s, (k) => k === "preserve"),
     holds: (ctx, s, role, st) => role === "operate" && stationKindById(ctx, st) === "preserve",
+  },
+  // The Kitchen's cooks (kitchen.js): one per KITCHEN.perCook people living here, while a kitchen stands, part-time: only
+  // in the cooking hours (KITCHEN.cookHours: 05:00, 06:00, 16–20), the rest of the day goes to their other priorities
+  // (s.cookHour counts them as the day's cooks). (The key "cook" above is the Preserving room's operator, kept for saved
+  // roles.) Urgency 6 in those hours: the meal will not wait.
+  meals: {
+    name: "Cook", ing: "Cooking", short: "Cook", role: "cook", skill: "farming",
+    desc: `Cooks the base's meals in the Kitchen: one cook for every ${KITCHEN.perCook} people living here, in the cooking hours only (05:00–06:00 breakfast, 16:00–20:00 dinner); the rest of the day they work their other priorities. Hot meals stretch the food (−10% eaten a day, a little more with a Farming 5+ cook), lift spirits and boil a quarter of the day's drinking water. No kitchen, no cooking.`,
+    open(ctx) {
+      if (!hasKitchen(ctx.base)) return { cap: 0, why: "no kitchen (Construction: a building plot)" };
+      if (!isCookHour(hourOfDay(ctx.state))) return { cap: 0, why: "not a cooking hour (05:00–06:00, 16:00–20:00)" };
+      return { cap: cooksWanted(ctx.state, ctx.base), urg: 6 }; // the meals are at set hours: the cooks first at their priority
+    },
   },
   workshop: {
     name: "Workshop", ing: "At the workshop", short: "Shop", role: "operate", skill: "mechanics",
@@ -312,10 +326,11 @@ export const WORK_TYPES = {
     desc: "Picks through the ruins around the base: usually finds nothing, and the area is picked over for good. Real supplies come from trips (crews).",
     open: (ctx) => (scavLeft(ctx.base) > SCAV_FLOOR + 0.02 ? { cap: 99, urg: 0 } : { cap: 0, why: "the surroundings are picked clean" }),
   },
-  // Food from the land (hunting.js): the hunting cabin's hunters and the fishers of a base by the water.
+  // Food from the land (hunting.js): the hunters of any base (a Hunting cabin widens their grounds) and the fishers of a
+  // base that holds water.
   hunt: {
     name: "Hunt", ing: "Hunting", short: "Hunt", role: "hunt", skill: "shooting",
-    desc: "Hunts the land within 2 tiles with a Hunting cabin here while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), 3 hours a day at dawn and dusk by the base's hunting mix (Farming tab: traps, bows, guns): their own rifle or gun (this base's ammo: shots add Heat and can draw the dead), bow (this base's arrows: silent) or snares (silent, less food; also without a weapon). Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
+    desc: "Hunts the base's hunting grounds (the tiles next to it; with a Hunting cabin the land within 2 tiles) while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), at dawn and dusk by the base's hunting mix (Farming tab: traps, bows, guns): their own rifle or gun (this base's ammo: shots add Heat and can draw the dead), bow (this base's arrows: silent) or snares (silent, less food; also without a weapon). Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
     open(ctx) {
       const why = huntWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
@@ -380,6 +395,20 @@ export const WORK_TYPES = {
     },
     emergencyCan: (ctx, s) => (s.health ?? 100) >= 50 && !s.woundInfected && (ctx.people.length <= 3 || !s.leader),
     rank: (s) => woodcutterMult(s) * 10 * bestChop(s).mult,
+  },
+  // Water carried in from the base's own river or lake tile (economy.js fetchWaterWhy, jobtrips.js trips): two buckets
+  // a trip, a few trips a day (fewer the further the water), into the un-purified barrels.
+  water: {
+    name: "Fetch water", ing: "Fetching water", short: "Watr", role: "water", skill: null,
+    desc: "Carries water in buckets from the nearest river or lake tile in the base's own land while the water runs short: a few trips a day (fewer the further the water is), two buckets a trip (fetchWaterDay). River and lake water is un-purified (the worm's eggs): it goes into the un-purified barrels, for the water boiler or the filters, up to their room.",
+    open(ctx) {
+      const why = fetchWaterWhy(ctx.state, ctx.base);
+      if (why) return { cap: 0, why };
+      if (!waterRunningShort(ctx.state, ctx.base)) return { cap: 0, why: "the water holds" };
+      const wo = waterOutlook(ctx.state, ctx.base), each = Math.max(0.5, fetchWaterDay(ctx.state, ctx.base));
+      return { cap: Math.max(1, Math.min(4, Math.ceil(Math.max(0, -wo.net) / each))), urg: wo.daysLeft < 3 ? 7.5 : 5 };
+    },
+    rank: (s) => (s.health ?? 100) / 10 + skill(s, "scouting") * 0.2,
   },
 };
 export const WORK_KEYS = Object.keys(WORK_TYPES);
@@ -519,14 +548,14 @@ function studyFor(ctx, s) {
 // ---------- roles ----------
 const P = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v > 0));
 export const DEFAULT_ROLES = () => [
-  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, teach: 4, study: 4, scavenge: 4 }) },
-  { name: "Farmer", pri: P({ farm: 1, cook: 2, hunt: 3, fish: 3, forage: 3, wood: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
+  { name: "Generalist", pri: P({ doctor: 3, guard: 4, farm: 2, cook: 3, meals: 3, workshop: 3, craft: 4, build: 2, repair: 2, hunt: 4, fish: 4, forage: 4, wood: 3, water: 2, teach: 4, study: 4, scavenge: 4 }) },
+  { name: "Farmer", pri: P({ farm: 1, cook: 2, meals: 2, hunt: 3, fish: 3, forage: 3, wood: 3, water: 3, repair: 3, build: 3, study: 4, scavenge: 4 }) },
   { name: "Builder", pri: P({ build: 1, repair: 1, workshop: 2, craft: 3, farm: 3, wood: 3, study: 4, scavenge: 4 }) },
   { name: "Guard", pri: P({ guard: 1, repair: 3, build: 3, farm: 4 }), sched: SCHED_PRESETS.guard.sched },
   { name: "Medic", pri: P({ doctor: 1, trainee: 2, study: 2, teach: 3, craft: 3, farm: 4, scavenge: 4 }), min: { doctor: 2 } },
   { name: "Crafter", pri: P({ craft: 1, workshop: 1, cook: 2, repair: 3, build: 3, farm: 4, study: 4 }) },
   { name: "Night watch", pri: P({ guard: 2, build: 2, repair: 2, craft: 3, farm: 3 }), sched: SCHED_PRESETS.night.sched },
-  { name: "Hunter", pri: P({ hunt: 1, fish: 1, forage: 2, wood: 2, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
+  { name: "Hunter", pri: P({ hunt: 1, fish: 1, forage: 2, wood: 2, water: 2, guard: 3, farm: 3, repair: 4, build: 4, scavenge: 4 }) },
   { name: "Scavengers", kind: "crew", pri: P({ farm: 2, build: 3, repair: 3, wood: 3, scavenge: 4 }) },
   { name: "Hunting party", kind: "crew", pri: P({ hunt: 2, fish: 2, farm: 3, build: 4 }), crew: { field: { hunt: 1, fish: 2, recover: 3 }, size: 2, rules: { hurt: 45, food: 1, cargo: true } } },
 ];
@@ -763,10 +792,22 @@ export function workHour(state) {
   watchPromotions(state, planned);
   if (!planned) return;
   const w = state.work;
+  mealsDefaults(w);
   if (w.newcomers != null && roleById(state, w.newcomers)) {
     for (const s of state.survivors) if (s.alive && !s.work && s.location.kind === "base") assignRole(state, s, w.newcomers);
   }
   for (const base of state.bases) planBase(state, base);
+}
+
+// The Cook work type (meals, kitchen.js) came after the roles of older saves: the default roles of that name get its
+// default priority once (a role that set it, to anything, keeps its own).
+function mealsDefaults(w) {
+  if (w.mealsV) return;
+  w.mealsV = 1;
+  for (const d of DEFAULT_ROLES()) {
+    if (!d.pri.meals) continue;
+    for (const r of w.roles) if (r.name === d.name && r.pri && r.pri.meals == null) r.pri.meals = d.pri.meals;
+  }
 }
 
 // The watchtower's alarm (defences.js towerWatch, base.towerWatch): everyone on priorities at that base with Guard
@@ -924,16 +965,23 @@ export function planBase(state, base) {
   // all season on many maps (the summer's water filters, dressings for short meds, a weapon for the unarmed): over
   // worktest's 10 seeds × 8 rolls priorities finished a fifth fewer crafts than the governor (373 vs 462; with this
   // 451, food and buildings unchanged).
+  // While food is comfortable (the governor's comfort rule, farmCrewLimits) from any food job (farm, forage, hunt, fish):
+  // the kitchen's saving made food comfortable more often and the governor then crafted more (worktest, 2026-10-10).
   // Never from a build, a station, a lesson, a repair or the walls.
   const co = ctx.open("craft");
   if (co.cap > 0 && ctx.used.craft === 0) {
     const fw = farmersWanted(state, base);
     const farmSpare = ctx.used.farm - (ctx.foodDays >= Math.max(15, foodGoal(state) / 1.5) ? fw.need : fw.ideal);
+    // Food comfortable by the governor's own rule (autopilot.js farmCrewLimits comfy: the food at its target and the
+    // winter stores with their margin): the food jobs have hands to spare, as the governor's capped farm crew frees
+    // them for its crafter (planRoles step 8), so any of them may give one.
+    const comfy = farmCrewLimits(state, base, ctx.foodDays, ctx.people.length).comfy;
+    const FOOD_JOBS = ["farm", "forage", "hunt", "fish"];
     const cands = managed.filter((s) => {
       if (prio(state, s, "craft") <= 0 || !minOk(state, s, "craft") || WORK_TYPES.craft.can(ctx, s)) return false;
       if (ctx.free.has(s)) return true;
       const a = out.get(s.id);
-      return !!a && a.kind === "work" && (a.t === "scavenge" || (a.t === "farm" && farmSpare > 0));
+      return !!a && a.kind === "work" && (a.t === "scavenge" || (a.t === "farm" && farmSpare > 0) || (comfy && FOOD_JOBS.includes(a.t)));
     }).sort((a, b) => prio(state, a, "craft") - prio(state, b, "craft") || rankOf(ctx, b, "craft") - rankOf(ctx, a, "craft") || a.id - b.id);
     const s = cands[0];
     if (s) {
@@ -962,6 +1010,7 @@ export function planBase(state, base) {
     if (a.bp) s.studying = a.bp;
     if (a.repair != null) { const j = (base.repairs || []).find((x) => String(x.id) === String(a.repair)); if (j) j.who = s.id; }
     if (a.kind === "sched" && (a.t === "sleep" || a.t === "free")) s.mood = Math.min(100, s.mood + OFF_MOOD);
+    if (a.t === "meals") s.cookHour = state.hour; // kitchen.js cooksAt: one of the day's cooks for the next 24 hours
     const prev = s.task;
     const last = a.kind === "work" || a.kind === "emerg" && a.role !== "guard" ? { role: a.role, station, hour: state.hour } : prev && prev.last && state.hour - prev.last.hour < 72 ? prev.last : null;
     s.task = { t: a.t, p: a.p || 0, kind: a.kind, why: a.why, note: a.note || "", base: base.id, hour: state.hour, since: prev && prev.t === a.t ? prev.since : state.hour, last };
