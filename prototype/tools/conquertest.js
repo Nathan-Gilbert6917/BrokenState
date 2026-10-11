@@ -6,6 +6,7 @@
 // base's walls weak at first and patched up later, retaking it, a base battle's way out on the side away from the
 // attack and what pulling out of each base battle does, save/load of a captured base and of one they hold.
 // Usage: node tools/conquertest.js [seed=42]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day, alive, makeSurvivor, checkGameOver, newId, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { addBuilding, baseWalls } from "../src/sim/buildings.js";
@@ -78,7 +79,7 @@ section("Taking a base by hand (captureBase)");
   const st = world();
   const { f, tile } = groupWithTwoBases(st);
   const land0 = A.controlledLand(st).pct;
-  const pop0 = f.pop, stock0 = f.stock.food, n0 = st.bases.length;
+  const pop0 = f.pop, stock0 = food(f), n0 = st.bases.length;
   const force = C.assaultForce(st, f, tile);
   check(force.count >= 3 && force.power > 0 && force.fortified >= 1, `defenders: ${force.count} × ${force.power}, walls ×${force.fortified}`);
   check(C.assaultForce(st, f, f.bases[0]).count >= force.count, "the main base holds at least as many defenders");
@@ -86,7 +87,7 @@ section("Taking a base by hand (captureBase)");
   const b = st.bases.find((x) => x.tile === tile);
   check(!!b && b.type === "outpost" && b.captured && b.captured.from === f.id, `the base is your outpost (${text.slice(0, 80)}…)`);
   check(st.bases.length === n0 + 1 && !f.bases.includes(tile), "it left their bases list and joined yours");
-  check(f.pop < pop0 && f.stock.food < stock0 && (b.stock.food || 0) > 0, `their people and stores fell (${pop0}→${f.pop}), part of the stores is yours (${b.stock.food} food)`);
+  check(f.pop < pop0 && food(f) < stock0 && (food(b) || 0) > 0, `their people and stores fell (${pop0}→${f.pop}), part of the stores is yours (${food(b)} food)`);
   check(A.controlledLand(st).pct > land0, `your land grew (${(land0 * 100).toFixed(1)}% → ${(A.controlledLand(st).pct * 100).toFixed(1)}%)`);
   check(A.baseRadius(st, b) === A.controlRadius(st, "stronghold"), `a captured group base reaches ${A.baseRadius(st, b)} tiles (an outpost ${A.controlRadius(st, "outpost")})`);
   check(f.alive && st.conquest.stats.taken === 1 && C.infamy(st) > 0, `the group lives on with ${f.bases.length} base(s); infamy ${C.infamy(st)}`);
@@ -99,7 +100,7 @@ section("Assault their base: the mission end to end (headless, by the numbers)")
   const h = hub(st);
   const { f, tile } = groupWithTwoBases(st);
   const squad = fighters(st, 6, h);
-  Object.assign(h.stock, { ammo: 400, food: 200, water: 200, meds: 20 });
+  Object.assign(h.stock, { ammo: 400, water: 200, meds: 20 }); setFood(h, 200);
   check(orderOptions(st, { path: [tile], idx: 0, supplies: {}, cargo: { supplies: {}, gear: [] } }).some((o) => o.mission === "assault"), "the orders offer Assault their base on a group's base");
   const res = launchExpedition(st, { memberIds: squad.map((s) => s.id), dest: tile, mission: "assault", stance: "normal", supplies: { food: 20, water: 20, ammo: 120, meds: 4 } });
   check(!res.error, `the team leaves (${res.error || "ok"})`);
@@ -250,15 +251,15 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
     const spot = st.tiles.find((t) => t.loc && !t.hive && t.owner == null && st.bases.every((b) => g.distance(b.tile, t.id) >= 8) && st.factions.every((f) => !f.alive || f.bases.every((x) => g.distance(x, t.id) >= 10)));
     v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
     for (const k of Object.keys(v.stock)) v.stock[k] = 0;
-    v.stock.food = 30; v.stock.ammo = 120; // too poor to settle (value below SETTLE.goods)
+    setFood(v, 30); v.stock.ammo = 120; // too poor to settle (value below SETTLE.goods)
     for (let d = 0; d < 30; d++) V.visitorsDaily(st);
     check(st.factions.length === n0, `a band without the goods to start a base does not settle`);
     if (!st.visitors.includes(v)) st.visitors.push(v);
-    v.stock.food = 200; v.stock.scrap = 60; v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
+    setFood(v, 200); v.stock.scrap = 60; v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
     for (let d = 0; d < 120 && st.factions.length === n0; d++) V.visitorsDaily(st);
     const gang = st.factions[st.factions.length - 1];
     check(st.factions.length === n0 + 1 && gang.alive && gang.pop === 9 && attitude(gang) === "Hostile", `with people and loot it digs in: ${gang.name}, ${gang.pop} people, hostile`);
-    check(!st.visitors.includes(v) && (gang.stock.food || 0) >= 200, "the band is gone from the outsiders, its loot is the gang's stores");
+    check(!st.visitors.includes(v) && (food(gang) || 0) >= 200, "the band is gone from the outsiders, its loot is the gang's stores");
     check(st.log.some((l) => /dug in at|digging in/.test(l.text)), "the log says so");
     check((st.stats.bandsSettled || 0) === 1, "counted");
   }
@@ -298,7 +299,7 @@ section("A group breaks at 3 people");
   f.pop = 4;
   factionsDaily(st);
   check(f.alive, "4 people: still a group");
-  f.pop = 3; f.stock.food = 5; // no food to spare: nobody new joins today
+  f.pop = 3; setFood(f, 5); // no food to spare: nobody new joins today
   factionsDaily(st);
   check(!f.alive, "3 people: it collapses (factions.js GROUP_BREAK)");
   // A war grinds a group all the way down (no floor at 8 any more).
@@ -458,7 +459,7 @@ section("Retreat before a raid");
   check(!atBase(st, o.id).length, "everyone left the outpost");
   const team = st.parties.find((p) => p.owner === "player" && p.members.some((id) => people.includes(id)));
   check(!!team && team.phase === "back", "they walk to the hub as a team");
-  check(team && (team.supplies.food || 0) + (team.supplies.water || 0) > 0, `carrying ${team ? Object.entries(team.supplies).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") : "?"}`);
+  check(team && (food(team) || 0) + (team.supplies.water || 0) > 0, `carrying ${team ? Object.entries(team.supplies).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", ") : "?"}`);
   tick(st, 48);
   check(people.every((id) => { const s = st.survivors.find((x) => x.id === id); return !s.alive || (s.location.kind === "base" && s.location.baseId === h.id); }), "they arrive at the hub");
   resolveRaidOnPlayer(st, raid);
@@ -534,7 +535,7 @@ section("Losing the hub: with another base, and with none (the exiles)");
   const ex3 = s3.parties.find((p) => p.exile);
   s3.noWanderers = true;
   for (let i = 0; i < 96 && ex3.phase !== "waiting"; i++) { tickHour(s3); s3.cards.length = 0; }
-  Object.assign(ex3.cargo.supplies, { scrap: 25, parts: 3, food: 40, water: 40, buildmat: 3 });
+  Object.assign(ex3.cargo.supplies, { scrap: 25, parts: 3, water: 40, buildmat: 3 }); setFood(ex3.cargo, 40);
   const { giveOrder } = await import("../src/sim/parties.js");
   const est = orderOptions(s3, ex3).find((o) => o.mission === "establish");
   check(!!est && est.label === S.ESTABLISH_LABEL && !est.disabled, `the exiles get the order ${S.ESTABLISH_LABEL} (${est && est.disabled})`);
@@ -547,7 +548,7 @@ section("Losing the hub: with another base, and with none (the exiles)");
   const d3 = day(s3);
   for (let i = 0; i < 24 * 10 && camp3 && B0.isCamp(camp3); i++) { tickHour(s3); s3.cards.length = 0; }
   check(!!hub(s3) && hub(s3) === camp3 && !B0.isCamp(camp3), `the camp becomes the shelter after the work (${hub(s3) ? `${hub(s3).name}, day ${day(s3)}, started day ${d3}` : "none"})`);
-  check(!hub(s3) || hub(s3).stock.food >= 20, `the camp's stores are its stock (${hub(s3) && hub(s3).stock.food} food)`);
+  check(!hub(s3) || food(hub(s3)) >= 20, `the camp's stores are its stock (${hub(s3) && food(hub(s3)).toFixed(1)} days of food)`);
   // Camp → shelter → base: the exiles' new home is a shelter (tier 0) first, then their builders build it up.
   const B = await import("../src/sim/buildings.js");
   const sh3 = hub(s3);
@@ -657,13 +658,13 @@ section("Base battles: a way out on the side away from the attack, and what pull
   // hordeBreakIn: the dead wreck it and move on, the base stays yours.
   const s2 = world();
   const h2 = hub(s2);
-  const food0 = h2.stock.food;
+  const food0 = food(h2);
   const n2 = atBase(s2, h2.id).length;
   const hz = { id: newId(), tile: h2.tile, size: 120, role: "attack", bosses: 0 };
   s2.hordes.push(hz);
   finishCombat(s2, { tile: h2.tile, baseId: h2.id, enemy: { kind: "zombies", count: 10, power: 3 }, canRetreat: true, handler: "hordeBreakIn", context: { hordeId: hz.id, baseId: h2.id, through: 80, bosses: 0 } },
     { outcome: "retreat", enemiesKilled: 2, enemiesLeft: 8, survivorsHurt: [], survivorsDead: [], ammoUsed: 0, loot: { supplies: {}, gear: [] }, tactical: true, worn: true });
-  check(s2.bases.includes(h2) && atBase(s2, h2.id).length === n2 && h2.stock.food < food0, `pulling out of a horde fight: the hub stays yours, everyone back, food ${food0} → ${h2.stock.food}`);
+  check(s2.bases.includes(h2) && atBase(s2, h2.id).length === n2 && food(h2) < food0, `pulling out of a horde fight: the hub stays yours, everyone back, food ${food0} → ${food(h2)}`);
 }
 
 section("The autopilot conquers (Aggressive, up to 400 days, seeds 3-6)");

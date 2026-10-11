@@ -11,6 +11,7 @@
 //   - the new-run screen: Customize shows the background select and the trait picker, sets skills past the budget;
 //     Ironman locks all of it (the box, Backgrounds…, the skill buttons) and the crew counts as customized after.
 // Usage: node tools/custombgtest.js
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS, TRAITS, TRAIT_CLASH } from "../src/sim/data.js";
@@ -97,7 +98,7 @@ const lib = { c_1: MEDIC, c_2: { ...blankBackground("c_2"), name: "Walker", car:
   }
   check(mine >= 6, `odds ${MEDIC.car.odds}: the car is theirs most of the time (${mine} of 10)`);
   check(mine > 0 && exact, "and then the kind and the back they set (a Hummer, 12 fuel, 3 meds, 5 scrap, sandbags and a rod)");
-  check(p.supplies.food >= MEDIC.supplies.food + HC_START.TEAM_MIN * 2 && p.supplies.food <= MEDIC.supplies.food + HC_START.TEAM_MAX * 2 + 2 + 15, `food: theirs on top of the others' clamped days (${p.supplies.food})`);
+  check(food(p) >= MEDIC.supplies.food + HC_START.TEAM_MIN * 2 - 1 && food(p) <= MEDIC.supplies.food + HC_START.TEAM_MAX * 2 + 2 + 15 + 1, `food: theirs on top of the others' clamped days (${food(p)})`);
   check(totalRounds(p.supplies) >= MEDIC.supplies.ammo && p.supplies.meds >= MEDIC.supplies.meds, `ammo and meds on top (${totalRounds(p.supplies)}, ${p.supplies.meds})`); // ammo.js: their rounds by calibre
   check(a.hardcore.start.grabbed.some((l) => /field medic, patched up a platoon/.test(l)) && a.cards[0].text.includes("field medic"), "the opening blurb names the background");
   check(partyTile(p) === partyTile(pb), "same seed, same spawn");
@@ -291,7 +292,7 @@ section("A normal start: six backgrounds, the same world and the same skill tota
   check(c0.traits[0] === "tough" && c0.traits[1] === "keeneye", "its traits first");
   check(c0.gear.weapon.key === "pistol" && c0.gear.armor.key === "vest" && c0.gear.backpack.key === "hikingpack" && c0.gear.head.key === "milhelmet", "its kit worn and held");
   check(hubC.armory.some((it) => it.key === b0.gear.weapon.key) && hubC.armory.some((it) => it.key === "vest"), `what the hub had handed them is in the armory (${hubC.armory.map((it) => it.key).join(", ")})`);
-  check(hubC.stock.food === hubB.stock.food + MEDIC.supplies.food && totalRounds(hubC.stock) === totalRounds(hubB.stock) + MEDIC.supplies.ammo && hubC.stock.meds === hubB.stock.meds + MEDIC.supplies.meds + MEDIC.car.trunk.meds && hubC.stock.fuel === hubB.stock.fuel + MEDIC.car.trunk.fuel, "its supplies and the car's back in the hub's stores");
+  check(Math.abs(food(hubC) - food(hubB) - MEDIC.supplies.food) < 1.01 && totalRounds(hubC.stock) === totalRounds(hubB.stock) + MEDIC.supplies.ammo && hubC.stock.meds === hubB.stock.meds + MEDIC.supplies.meds + MEDIC.car.trunk.meds && hubC.stock.fuel === hubB.stock.fuel + MEDIC.car.trunk.fuel, "its supplies and the car's back in the hub's stores");
   check(vehiclesAtBase(cus, hubC.id).some((v) => v.type === "hummer") && vehiclesAtBase(cus, hubC.id).length === vehiclesAtBase(base, hubB.id).length + 1 && ["sandbags", "fishrod"].every((k) => hubC.armory.some((it) => it.key === k)), "the car parks at the hub, its things in the armory");
   // A rebuilt world (the snapshot) brings the custom kit once, not twice.
   const again = createWorld({ seed: 42, factionCount: 7, crew: crewSnapshot(cus), customBackgrounds: lib });

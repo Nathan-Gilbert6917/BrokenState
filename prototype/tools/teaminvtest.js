@@ -6,6 +6,9 @@
 // base, a save and load round trip, and a render smoke test of the window, the team panel's buttons and the base's
 // Teams here card.
 // Usage: node tools/teaminvtest.js [seed]
+import { meatIn, meatAt } from "../src/sim/hunting.js";
+import { wormMeatAt, wormMeatIn, wormVegAt } from "../src/sim/worm.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile, poolLoad, partyCapacity, partyMembers } from "../src/sim/parties.js";
 import { vehiclesAtBase } from "../src/sim/vehicles.js";
@@ -25,7 +28,7 @@ function mk(seed = SEED) {
   const state = createWorld({ seed, factionCount: 5 });
   state.started = true;
   state.noWanderers = true;
-  Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, parts: 10, scrap: 100, a_9mm_fmj: 200, a_556_fmj: 120 });
+  Object.assign(hub(state).stock, { water: 300, fuel: 100, meds: 20, parts: 10, scrap: 100, a_9mm_fmj: 200, a_556_fmj: 120 }); setFood(hub(state), 300);
   return state;
 }
 function tileNear(state, from, d, d2) {
@@ -83,7 +86,7 @@ section("Listing: members' kit, the cargo and the supplies");
   b.pockets[0] = mag;
   const box = newItem("primers"); box.dur = 37;
   p.cargo.gear.push(newItem("crowbar"), box);
-  p.cargo.supplies.food = 6; p.cargo.supplies.a_9mm_fmj = 30;
+  setFood(p.cargo, 6); p.cargo.supplies.a_9mm_fmj = 30;
   const H = teamHoldings(state, p);
   const am = H.members.find((m) => m.s === a), bm = H.members.find((m) => m.s === b);
   check(H.members.length === 2, "both members listed");
@@ -94,11 +97,12 @@ section("Listing: members' kit, the cargo and the supplies");
   check(near(am.worn, wornLoad(a)) && am.max === maxLoad(a), "each member's worn load and max load");
   check(H.cargo.vehicle && /team cargo/.test(H.cargo.name), `the vehicle's cargo is named (${H.cargo.name})`);
   check(H.cargo.gear.length === 2 && H.cargo.gear[1].item === box && H.cargo.gear[1].loc === `cargo:${p.id}:list:1`, "the cargo's items with their locations");
-  check(H.cargo.supplies.food.packed === 4 && H.cargo.supplies.food.found === 6 && H.cargo.supplies.food.all === 10, "food: packed and found apart and together");
+  const fr = H.cargo.supplies.f_rationbar; // food by type (sim/foods.js): the hub's ration bars, packed (whole bars) and found
+  check(fr && fr.packed === 4 && fr.found === 5 && fr.all === 9, `food: packed and found apart and together, by item (${JSON.stringify(fr)})`);
   check(H.cargo.supplies.a_9mm_fmj && H.cargo.supplies.a_9mm_fmj.found === 30, "rounds by calibre and type");
   check(near(H.load, poolLoad(p)) && near(H.cap, partyCapacity(state, p)), "load and capacity");
   const B = baseHoldings(state, hub(state));
-  check(B.stock.food === 300 - 4 && B.stock.a_9mm_fmj === 200, "the base's stores");
+  check(near(food(B), 300 - food(p)) && B.stock.a_9mm_fmj === 200, "the base's stores");
 }
 
 section("Drop off: picked items and counts into the base");
@@ -112,14 +116,14 @@ section("Drop off: picked items and counts into the base");
   const box = newItem("primers"); box.dur = 37;
   const crow = newItem("crowbar");
   p.cargo.gear.push(crow, box);
-  p.cargo.supplies.food = 6; p.cargo.supplies.a_9mm_fmj = 30; p.cargo.supplies.scrap = 5;
-  const before = { food: h.stock.food, a9: h.stock.a_9mm_fmj, armory: h.armory.length };
+  setFood(p.cargo, 6); p.cargo.supplies.a_9mm_fmj = 30; p.cargo.supplies.scrap = 5;
+  const before = { food: food(h), a9: h.stock.a_9mm_fmj, armory: h.armory.length, packed: food(p) };
   const r = dropOff(state, p, { items: [`s:${a.id}:pocket:0`, `s:${a.id}:pocket:1`, `cargo:${p.id}:list:1`], supplies: { food: 8, a_9mm_fmj: 12 } });
   check(r.moved.length === 5 && !r.refused.length, `moved: ${r.text}`);
   check(!a.pockets[0] && !a.pockets[1] && h.armory.includes(knife) && h.armory.includes(mag) && h.armory.includes(box), "the picked items left the team and are in the armory");
   check(knife.quality === 0.42 && mag.load === "hp" && box.dur === 37, "condition, a magazine's load and a box's count go with them");
   check(p.cargo.gear.length === 1 && p.cargo.gear[0] === crow, "the item not picked stays in the cargo");
-  check(h.stock.food === before.food + 8 && near(p.cargo.supplies.food, 0) && near(p.supplies.food, 2), "8 food: the 6 found first, then 2 of the 4 packed");
+  check(near(food(h), before.food + 8) && near(food(p.cargo), 0) && near(food(p), before.packed - 2), "8 days of food: the 6 found first, then 2 of the packed");
   check(h.stock.a_9mm_fmj === before.a9 + 12 && p.cargo.supplies.a_9mm_fmj === 18, "12 rounds of 9mm FMJ by their own key");
   check(p.cargo.supplies.scrap === 5, "a supply not picked stays");
   const r2 = dropOff(state, p, { supplies: { meds: 3 } });
@@ -131,22 +135,22 @@ section("Drop off: fresh game, the worm's eggs, bodies, all cargo, all supplies"
   const state = mk();
   const h = hub(state);
   const p = team(state, 2, { vehicle: true });
-  p.cargo.supplies.food = 10; p.cargo.meat = 6; p.cargo.wormMeat = 2;
-  const meat0 = h.meat || 0;
-  dropOff(state, p, { supplies: { food: 4 } });
-  check(near(h.meat - meat0, 4) && near(p.cargo.meat, 2), `fresh game goes first and arrives as fresh game (base +${h.meat - meat0}, team ${p.cargo.meat} left)`);
-  check(near(h.wormMeat || 0, 4 * 2 / 6, 1e-6), `the worm's eggs go with the meat in proportion (${h.wormMeat})`);
-  p.cargo.wormForage = 2;
+  setFood(p.cargo, 4); addDays(p.cargo, 4, "f_venison"); addDays(p.cargo, 2, "f_venison", { egg: true });
+  const meat0 = meatAt(h), egg0 = wormMeatAt(h);
+  dropOff(state, p, { supplies: { meat: 4 } }); // days of raw meat (carry.js hold key)
+  check(near(meatAt(h) - meat0, 4) && near(meatIn(p.cargo), 2) && near(food(p.cargo), 6), `fresh game arrives as fresh game (base +${meatAt(h) - meat0}, team ${meatIn(p.cargo)} left)`);
+  check(near(wormMeatAt(h) - egg0 + wormMeatIn(p.cargo), 2, 1e-6), `the worm's eggs go with their meat (${wormMeatAt(h) - egg0} in, ${wormMeatIn(p.cargo)} still carried)`);
+  addDays(p.cargo, 2, "f_roots", { egg: true });
   p.cargo.bodies = [{ id: 999, name: "Dale Cooper", items: [newItem("knife")], supplies: {}, worm: false }];
   p.cargo.gear.push(newItem("crowbar"));
   p.cargo.supplies.scrap = 3;
   const r = dropAllCargo(state, p);
-  check(!p.cargo.gear.length && near(p.cargo.supplies.food || 0, 0) && near(p.cargo.supplies.scrap || 0, 0), `all cargo: gear and found supplies gone (${r.text})`);
+  check(!p.cargo.gear.length && near(food(p.cargo) || 0, 0) && near(p.cargo.supplies.scrap || 0, 0), `all cargo: gear and found supplies gone (${r.text})`);
   check((h.bodies || []).some((x) => x.name === "Dale Cooper") && !p.cargo.bodies.length, "a body in the car is laid out at the base");
-  check(near(p.cargo.meat || 0, 0) && (h.wormForage || 0) >= 2 - 1e-9, "the rest of the game and the forage with eggs go in as at a homecoming");
-  check(p.supplies.food === 4 && p.supplies.water === 4, "the packed supplies stay with Drop off all cargo");
+  check(near(meatIn(p.cargo), 0) && wormVegAt(h).forage >= 2 - 1e-9, "the rest of the game and the forage with eggs go in as at a homecoming");
+  check(food(p) >= 4 && p.supplies.water === 4, "the packed supplies stay with Drop off all cargo");
   dropAllSupplies(state, p);
-  check(near(p.supplies.food, 0) && near(p.supplies.water, 0), "Drop off all supplies empties the packed ones too");
+  check(near(food(p), 0) && near(p.supplies.water, 0), "Drop off all supplies empties the packed ones too");
 }
 
 section("Drop off: a worn pack the load needs stays");
@@ -185,9 +189,9 @@ section("Load: onto a member and into the vehicle");
   check(h.armory.includes(bike) && r2.refused.length === 1 && /no free place/.test(r2.refused[0]), `a bicycle does not go on a person: ${r2.refused[0]}`);
   const r3 = loadFromBase(state, p, { items: [armoryLoc(h, crow), armoryLoc(h, bike)] }, "cargo");
   check(p.cargo.gear.includes(crow) && p.cargo.gear.includes(bike) && r3.moved.length === 2, `the crowbar and the bike into the vehicle (${r3.text})`);
-  const food0 = p.supplies.food, a9 = h.stock.a_9mm_fmj;
+  const food0 = food(p), a9 = h.stock.a_9mm_fmj;
   const r4 = loadFromBase(state, p, { supplies: { food: 10, a_9mm_fmj: 50, meds: 2 } }, "cargo");
-  check(p.supplies.food === food0 + 10 && p.supplies.a_9mm_fmj === 50 && p.supplies.meds === 2, `supplies into the packed supplies (${r4.text})`);
+  check(food(p) >= food0 + 10 && food(p) < food0 + 10 + 1.21 && p.supplies.a_9mm_fmj === 50 && p.supplies.meds === 2, `supplies into the packed supplies (${r4.text}; whole ration bars)`);
   check(h.stock.a_9mm_fmj === a9 - 50, "rounds left the stores by their own key");
   const r5 = loadFromBase(state, p, { supplies: { meds: 1000 } }, "cargo");
   check(h.stock.meds === 0 && p.supplies.meds === 20 && !r5.refused.length, "asking for more than the stores have takes what there is");
@@ -240,7 +244,7 @@ section("Save and load");
   const [a] = partyMembers(state, p);
   const knife = newItem("knife"); knife.quality = 0.5;
   a.pockets[0] = knife;
-  p.cargo.supplies.food = 3;
+  setFood(p.cargo, 3);
   dropOff(state, p, { items: [`s:${a.id}:pocket:0`], supplies: { food: 3 } });
   const mag = newItem("mag_glock_17"); mag.load = "hp";
   h.armory.push(mag);
@@ -252,7 +256,7 @@ section("Save and load");
   check(!!pb && teamBase(B, pb) === hb, "the team is still at the hub after a load");
   check(hb.armory.some((g) => g.key === "knife" && g.quality === 0.5), "the dropped knife is in the armory, condition kept");
   check(!!ab && ab.pockets.some((g) => g && g.key === "mag_glock_17" && g.load === "hp"), "the loaded magazine is in the pocket, its load kept");
-  check(pb.supplies.a_9mm_fmj === 20 && hb.stock.a_9mm_fmj === h.stock.a_9mm_fmj && hb.stock.food === h.stock.food, "supplies on both sides as saved");
+  check(pb.supplies.a_9mm_fmj === 20 && hb.stock.a_9mm_fmj === h.stock.a_9mm_fmj && food(hb) === food(h), "supplies on both sides as saved");
   const r = dropOff(B, pb, { items: [`s:${a.id}:pocket:${ab.pockets.findIndex((g) => g && g.key === "mag_glock_17")}`], supplies: { a_9mm_fmj: 20 } });
   check(r.moved.length === 2 && hb.armory.some((g) => g.key === "mag_glock_17") && !pb.supplies.a_9mm_fmj, `transfers work on the loaded world (${r.text})`);
   check(saveToString(B).length > 0, "the world saves again after");
@@ -270,7 +274,7 @@ section("Screens");
   const [a, b] = partyMembers(state, p);
   a.pockets[0] = newItem("knife");
   p.cargo.gear.push(newItem("crowbar"));
-  p.cargo.supplies.food = 5;
+  setFood(p.cargo, 5);
   const ui = { inv: null, invSel: null, invMsg: "" };
   check(/Team inventory/.test(teamInvBar(state, p)) && /Drop off at/.test(teamInvBar(state, p)) && /Load from/.test(teamInvBar(state, p)), "the team panel offers the inventory, Drop off and Load at the hub");
   check(/Load team/.test(teamsHereCard(state, h)), "the base's Armory tab lists the team with Load and Drop off");
@@ -285,11 +289,11 @@ section("Screens");
   html = teamInvModal(state, ui) || "";
   check(/Drop off picked/.test(html) && /data-action="ti-pick"/.test(html) && /Drop off all cargo/.test(html), "the drop off view: pickable team items and the quick buttons");
   TEAMINV_ACTIONS["ti-pick"](state, ui, { loc: `cargo:${p.id}:list:0` });
-  TEAMINV_ACTIONS["ti-sup"](state, ui, { key: "food", side: "team" });
-  TEAMINV_CHANGE["ti-qty"](state, ui, { dataset: { key: "food" }, value: "3" });
-  const food0 = h.stock.food;
+  TEAMINV_ACTIONS["ti-sup"](state, ui, { key: "f_rationbar", side: "team" }); // food by type: the item
+  TEAMINV_CHANGE["ti-qty"](state, ui, { dataset: { key: "f_rationbar" }, value: "3" });
+  const food0 = food(h);
   TEAMINV_ACTIONS["ti-go"](state, ui, {});
-  check(h.armory.some((g) => g.key === "crowbar") && h.stock.food === food0 + 3, `picked and dropped off: ${ui.invMsg}`);
+  check(h.armory.some((g) => g.key === "crowbar") && near(food(h), food0 + 3.6), `picked and dropped off (3 ration bars, 3.6 days): ${ui.invMsg}`);
   TEAMINV_ACTIONS["ti-tab"](state, ui, { tab: "load" });
   html = teamInvModal(state, ui) || "";
   check(/Load picked/.test(html) && /data-action="ti-target"/.test(html), "the load view: targets on the team, pickable base items");

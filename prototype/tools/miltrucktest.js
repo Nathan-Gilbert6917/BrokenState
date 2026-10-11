@@ -19,6 +19,7 @@
 //     hours, fails (wasting parts) or works; drive it home; save / load of the vehicle and the car records
 //   - the autopilot plays 40 days with a convoy and a found vehicle on its map without crashing
 // Usage: node tools/miltrucktest.js [seed = 7]
+import { FOODS } from "../src/sim/foods.js";
 import { TRUCK_GEAR } from "../src/sim/data-guns.js";
 import { totalRounds, isRoundKey } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, hub, atBase, tickHour, day } from "../src/sim/world.js";
@@ -176,7 +177,7 @@ section("The raid map (combat.js placeMilTrucks, AREAS.miltrucks; the crews)");
     if (err) { console.log("    search:", err); continue; }
     opened++;
     const allowed = new Set([...Object.values(TRUCK_LOOT).flatMap((T) => [...T.sup.map(([k]) => k), ...T.gear.map(([k]) => k)]), ...Object.values(TRUCK_GEAR).flatMap((r) => r.map(([k]) => k))]); // TRUCK_GEAR: the weapons overhaul's hook (TRUCK_LOOT_HOOKS)
-    if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || (isRoundKey(k) && allowed.has("ammo")) || k === "frag" || k === "smokegren" || k === "flashbang" /* TRUCK_FLASH: crates of them now and then */ || !!(GEAR[k] && GEAR[k].mag))) lootOk++; // GEAR mag: the spare magazines a found gun comes with (carrykit.js gunMags, w2-kit)
+    if (box.contents && [...Object.keys(box.contents.sup).filter((k) => !["arrows", "wood"].includes(k)), ...box.contents.gear.filter((it) => !it.blueprint && !it.book && GEAR[it.key] && !["key"].includes(it.key)).map((it) => it.key)].every((k) => allowed.has(k) || (isRoundKey(k) && allowed.has("ammo")) || (FOODS[k] && (allowed.has("food") || allowed.has("preserved"))) /* food by type: the truck's "food" as the Army's items */ || k === "frag" || k === "smokegren" || k === "flashbang" /* TRUCK_FLASH: crates of them now and then */ || !!(GEAR[k] && GEAR[k].mag))) lootOk++; // GEAR mag: the spare magazines a found gun comes with (carrykit.js gunMags, w2-kit)
     value += box.contents ? valueOf(box.contents) : 0;
     const after = b.units.filter((x) => x.ztype === "soldier" && x.aware).length;
     if (crew > 0 && after > before) rose++;

@@ -9,6 +9,7 @@
 //   older save without it loads and shows nothing; the pulse (a stand-in DOM)
 // - options: the new-run box on for the first campaign only, guideSeen kept; the new-run screen and the menu's row
 // - Help: "Start here" first, its links lead to topics that exist; README and main.js hooks
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, day, alive } from "../src/sim/world.js";
 import { launchExpedition, startReturn, partyTile, partyMembers, giveOrder } from "../src/sim/parties.js";
@@ -221,7 +222,7 @@ section("Hardcore: the road list, founded for real");
   check(guideCheck(st, ui).some((x) => x.id === "water"), "water: the team holds more water than before");
   check(!g.done.camp, "no camp yet");
   st.cards.length = 0;
-  Object.assign(p.cargo.supplies, { scrap: 6, food: 40, water: 40 });
+  Object.assign(p.cargo.supplies, { scrap: 6, water: 40 }); setFood(p.cargo, 40);
   establishNow(st, p);
   check(!!hub(st) && hub(st).camp === true && guideCheck(st, ui).some((x) => x.id === "camp"), "camp: the camp is set up (a base)");
   check(!g.done.needs, "the camp still needs its materials");

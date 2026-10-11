@@ -7,6 +7,7 @@
 // Leadership and a weak leader slow to act; a caravan at the gates traded with and a radio deal for water; a supply run
 // from a led hub to a thirsty outpost; a hunting, fishing or firewood trip; a raid warning answered.
 // Usage: node tools/leadertest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, newId, hourOfDay, makeSurvivor, day } from "../src/sim/world.js";
 import { stewardOf, setSteward, setStewardArea, setLeader, leaderOf, leaderStatus, leaderChoices, stewardHour, actingLeader, actsShare, LEADER } from "../src/sim/steward.js";
 import { crowdInfo, LEADER_LIFT } from "../src/sim/morale.js";
@@ -27,7 +28,7 @@ const check = (ok, msg) => { if (ok) { passes++; if (process.env.V) console.log(
 const W = (sd = seed) => { const st = createWorld({ seed: sd, factionCount: 6 }); st.started = true; return st; };
 function quiet(st, b) {
   for (const s of atBase(st, b.id)) { s.traits = []; s.conditions = []; s.role = "rest"; s.station = null; s.health = 100; s.mood = 80; }
-  Object.assign(b.stock, { food: 500, water: 200, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 50, jars: 40, preserved: 0 });
+  Object.assign(b.stock, { water: 200, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 50, jars: 40 }); setFood(b, 500);
   return b;
 }
 function makeOutpost(st, staff, stock) {
@@ -179,7 +180,7 @@ const logged = (st, re, from) => st.log.slice(0, st.log.length - from).some((l) 
       const all = atBase(st, h.id);
       const o = makeOutpost(st, all.slice(2), { water: 0, food: 200 });
       quiet(st, o);
-      Object.assign(o.stock, { water: 0, food: 200 });
+      Object.assign(o.stock, { water: 0 }); setFood(o, 200);
       for (const k of Object.keys(o.stock)) if (/water|raw/i.test(k)) o.stock[k] = 0;
       setSteward(st, o, true);
       if (off) setStewardArea(st, o, "supplies", false);
@@ -245,7 +246,7 @@ const logged = (st, re, from) => st.log.slice(0, st.log.length - from).some((l) 
   const land = (t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain";
   const f = st.factions.filter((x) => x.alive && x.bases.length && planPath(st, x.bases[0], h.tile, false)).sort((a, b) => st.grid.distance(a.bases[0], h.tile) - st.grid.distance(b.bases[0], h.tile))[0];
   Object.assign(f, { type: "traders", goodwill: 45, known: true, pop: Math.max(f.pop, 24) });
-  Object.assign(f.stock, { food: 300, ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 });
+  Object.assign(f.stock, { ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 }); setFood(f, 300);
   f.bases = [f.bases[0]];
   for (const x of st.factions) if (x !== f) { x.goodwill = Math.max(x.goodwill, -20); x.known = false; }
   if (!canRadioGroup(st, f)) f.bases = [st.grid.within(h.tile, 10).find((t) => land(t) && st.grid.distance(t, h.tile) >= 6 && !st.bases.some((b) => b.tile === t) && planPath(st, t, h.tile, false))];

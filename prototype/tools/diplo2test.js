@@ -8,6 +8,7 @@
 // --pressure [days] [seeds...]: the autopilot on each seed with and without blocs and wars on you (child processes, 3 at
 // a time): days survived, people, bases, raids on you, wars declared on you (and how they ended), blocs formed.
 // Usage: node tools/diplo2test.js [seed] | node tools/diplo2test.js --pressure [240] [1 2 3 4 5]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, day, alive, factionById } from "../src/sim/world.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { recomputeOwnership, resolveRaidOnFaction, changeGoodwill, attitude, strength } from "../src/sim/factions.js";
@@ -94,7 +95,7 @@ function setup(types, s = seed) {
   const h = hub(st);
   addBuilding(h, "radio");
   h.radio = true;
-  Object.assign(h.stock, { food: 600, water: 200, meds: 80, ammo: 600, scrap: 200, fuel: 60, parts: 10 });
+  Object.assign(h.stock, { water: 200, meds: 80, ammo: 600, scrap: 200, fuel: 60, parts: 10 }); setFood(h, 600);
   const g = st.grid;
   const spots = g.within(h.tile, 12).filter((t) => g.distance(t, h.tile) >= 6 && free(st, t) && planPath(st, t, h.tile, false));
   const used = [];
@@ -109,7 +110,7 @@ function setup(types, s = seed) {
     f.pop = 24;
     f.pact = null;
     f.goodwill = 0;
-    f.stock.food = 400;
+    setFood(f, 400);
     fs.push(f);
   }
   for (const f of st.factions) if (!fs.includes(f)) { f.alive = false; f.bases = []; } // a quiet world: only the groups under test
@@ -267,7 +268,7 @@ section("A war declared on you: the goal from their history");
   check(W.declareProblem(st, r) === "" && W.declareChance(st, r) > 0, `a hostile gang that knows your hub may declare (${W.declareProblem(st, r) || "ok"})`);
   check(W.declareProblem(st, tr) !== "", "friendly traders do not");
   // Loot: their spies saw rich stores.
-  h.stock.ammo = 5000; h.stock.food = 3000;
+  h.stock.ammo = 5000; setFood(h, 3000);
   learnBase(st, x, h.tile);
   const gx = W.warGoalFor(st, x);
   check(gx.goal === "loot" && gx.cb === "rich", `a spy's report of rich stores: loot (${gx.goal}, over ${gx.cb})`);
@@ -279,7 +280,7 @@ section("A war declared on you: the goal from their history");
   const out = { id: 999001, name: "Test Outpost", type: "outpost", tile: t, buildings: [], stock: { food: 10 }, armory: [] };
   st.bases.push(out);
   learnBase(st, x, t);
-  h.stock.ammo = 100; h.stock.food = 200; learnBase(st, x, h.tile);
+  h.stock.ammo = 100; setFood(h, 200); learnBase(st, x, h.tile);
   const gt = W.warGoalFor(st, x);
   check(gt.goal === "territory" && gt.target === t, `an outpost of yours by their land: territory (${gt.goal})`);
   st.bases.splice(st.bases.indexOf(out), 1);

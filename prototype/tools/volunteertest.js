@@ -7,6 +7,7 @@
 // lending each other, a hive crawl with volunteers (no double count with the coalition's brood thinning), and the
 // governor (its styles answering asks, asking allies for a marginal hive).
 // Usage: node tools/volunteertest.js [seed=7]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, makeSurvivor, hub, survivorById, hurt, combatPower } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { partyMembers, partyCapacity, rationsPerHour } from "../src/sim/parties.js";
@@ -71,7 +72,7 @@ console.log("Asking a group");
   const qlow = V.askQuote(st, f, hp, { n: 3, days: 10 });
   check(!qlow.yes && !qlow.refuse, `goodwill 45, no pact, three for an assault: no (${qlow.points} points)`);
   const offer = { key: "food", qty: 0 };
-  hub(st).stock.food = 400;
+  setFood(hub(st), 400);
   offer.qty = Math.ceil(-qlow.points * V.VOL.P.goodsPer / 1) + 5;
   const qpay = V.askQuote(st, f, hp, { n: 3, days: 10, offer });
   check(qpay.yes, `an offer of ${offer.qty} food turns it to yes (${qpay.points} points)`);
@@ -98,7 +99,7 @@ console.log("Joining the team");
   const { st, f } = world();
   const { p } = team(st, f.bases[0]);
   const gwBefore = f.goodwill, popBefore = f.pop, arsBefore = f.arsenal ? f.arsenal.items.length : 0;
-  const cap0 = partyCapacity(st, p), eat0 = rationsPerHour(st, p), food0 = p.supplies.food;
+  const cap0 = partyCapacity(st, p), eat0 = rationsPerHour(st, p), food0 = food(p);
   const r = V.askVolunteers(st, f, p, { n: 2, days: 4 });
   check(r.ok && r.people.length === 2, `yes: "${r.text}"`);
   check(f.goodwill === gwBefore - V.VOL.ASK_GW && f.pop === popBefore - 2, `a favour asked with nothing offered: goodwill −${V.VOL.ASK_GW}; their people away (${popBefore} → ${f.pop})`);
@@ -109,12 +110,12 @@ console.log("Joining the team");
   check(joined.length === 2 && partyMembers(st, p).filter((s) => s.vol).length === 2, `they reach the team and join it (${joined.map((s) => s.name).join(", ")})`);
   check(survivorById(st, joined[0].id) === joined[0] && !st.survivors.includes(joined[0]), "they are found by id, but are not your people (not in the roster)");
   check(partyCapacity(st, p) > cap0 && rationsPerHour(st, p) > eat0, `they carry (${Math.round(cap0)} → ${Math.round(partyCapacity(st, p))} kg) and eat (${eat0.toFixed(3)} → ${rationsPerHour(st, p).toFixed(3)} rations an hour)`);
-  check(p.supplies.food > food0 - 5, `they brought their food (${food0} → ${Math.round(p.supplies.food)} after the walk)`);
+  check(food(p) > food0 - 5, `they brought their food (${food0} → ${Math.round(food(p))} after the walk)`);
   const keys = joined.map((s) => (calOf(s.gear.weapon.key) ? baseKey(calOf(s.gear.weapon.key)) : null)).filter(Boolean);
   check(keys.length && keys.every((k) => (p.supplies[k] || 0) > 0), `and rounds for their own guns (${[...new Set(keys)].map((k) => `${k} ${p.supplies[k]}`).join(", ")})`);
-  const foodAt = p.supplies.food;
+  const foodAt = food(p);
   ticks(st, 24);
-  check(p.supplies.food < foodAt, `a day with the team: the food goes down (${Math.round(foodAt)} → ${Math.round(p.supplies.food)})`);
+  check(food(p) < foodAt, `a day with the team: the food goes down (${Math.round(foodAt)} → ${Math.round(food(p))})`);
   // Span over: home, with their kit.
   const s0 = joined[0];
   // Hour by hour: the group's own growth (factions.js factionsDaily, a newcomer some days) goes on meanwhile, so what

@@ -7,12 +7,13 @@
 // night's-care toggle); the boiler burning any burnable (firewood, junk, fuel), breaking things down for firewood and
 // firewood in the loot; save/load of the new state. The dice are pinned where the rule is under test (WORM numbers set to 0 or 1 for a check).
 // Usage: node tools/wormtest.js [seed]
+import { food, setFood, addDays, clearFood, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips: a day of them before the midnight tally
 import { createWorld, hub, atBase, residents, day, makeSurvivor } from "../src/sim/world.js";
 import { addBuilding, count } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
-import { eatFromStore } from "../src/sim/storage.js";
-import { takeMeat, addMeat, expectHunt, huntTeam } from "../src/sim/hunting.js";
+import { eatFromStore, cookDaily, dryFood } from "../src/sim/storage.js";
+import { takeMeat, addMeat, expectHunt, huntTeam, meatIn, unloadGame } from "../src/sim/hunting.js";
 import { launchExpedition, partyMembers, planPath } from "../src/sim/parties.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { readFileSync } from "node:fs";
@@ -21,11 +22,11 @@ import { tickHour } from "../src/sim/world.js";
 import { workFactor } from "../src/sim/health.js";
 import { activeHospital } from "../src/sim/medical.js";
 import {
-  WORM, HERD, catchWorm, hasWorm, clearWorm, wormOf, wormSeen, eggsAt, sourceEggs, baseWater, baseCooks, wormMeatAt, wormMeatIn, cookAtBase,
-  smokeWormMeat, wormKill, eatRaw, addWormWater, packWater, drinkHour, eatRawCargo, wormTeamHour, wormTreatInfo,
+  WORM, HERD, catchWorm, hasWorm, clearWorm, wormOf, wormSeen, eggsAt, sourceEggs, baseWater, baseCooks, wormMeatAt, wormMeatIn,
+  wormKill, eatRaw, addWormWater, packWater, drinkHour, eatRawCargo, wormTeamHour, wormTreatInfo,
   applyWormTreat, wormDaily, herdAt, infestedShare, huntYieldMult, herdsDaily, herdCap, teamWormText,
-  boilerUse, searchChance, wormSearch, wormHome, searchRiskText, cropLandBad, wormVegAt, wormForageIn, addWormCrop, addWormForage,
-  eatRawForageCargo, unloadWormForage, groupWormRisk, groupsDaily, purifyDaily,
+  boilerUse, searchChance, wormSearch, wormHome, searchRiskText, cropLandBad, wormVegAt, wormForageIn, cropEggs,
+  eatRawForageCargo, groupWormRisk, groupsDaily, purifyDaily,
   purifyCap, campFireFed, teamTabCount, teamWaterHow, waterRisk, dayHp, stageFor, wormLabel, wormCureText, putDownOdds, migrateWorm,
   wormOthersAt, wormOthersSeen, otherTreatInfo, applyOtherTreat, treatOtherWorm, othersCareOn,
 } from "../src/sim/worm.js";
@@ -45,7 +46,7 @@ import { waterNeed } from "../src/sim/economy.js";
 import { mouthsAt, HEAT } from "../src/sim/upkeep.js";
 import { woodNeed } from "../src/sim/woodcutting.js"; // (fireLandOk: above)
 import { harvestPlot, farmOf, CROPS } from "../src/sim/farming.js";
-import { foragingDaily } from "../src/sim/foraging.js";
+import { foragingDaily, addForage } from "../src/sim/foraging.js";
 import { takeFood } from "../src/sim/needs.js";
 import { ensureDiplo } from "../src/sim/diplomacy.js";
 
@@ -53,6 +54,7 @@ const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
+const r2 = (v) => Math.round(v * 100) / 100;
 const t0 = Date.now();
 
 // Sets numbers for the length of fn, then puts them back.
@@ -69,14 +71,16 @@ function wormWorld(inf = 0.8, s = seed) {
   for (const id of [h.tile, ...st.grid.neighbors(h.tile)]) { st.tiles[id].infection = inf; st.tiles[id].infBase = inf; }
   h.armory = h.armory.filter((it) => !(it && it.key === "waterfilter"));
   for (const p of atBase(st, h.id)) { p.role = "rest"; p.station = null; p.traits = []; if (p.gear.tool && p.gear.tool.key === "waterfilter") p.gear.tool = null; p.worm = null; p.health = 100; }
-  Object.assign(h.stock, { food: 300, water: 0, rawwater: 300, meds: 40, scrap: 100, preserved: 0 }); // its water all un-purified (water.js)
+  Object.assign(h.stock, { water: 0, rawwater: 300, meds: 40, scrap: 100 }); // its water all un-purified (water.js)
+  setFood(h, 300); // days of food (tools/foodkit.js)
   st.herds = [];
   return { st, h };
 }
 // A team of `n` from the hub, standing on `tile` (a hand-made party: the rules under test read only these fields).
 function team(st, h, tile, n = 2) {
   const members = atBase(st, h.id).slice(0, n);
-  const p = { id: 90000 + st.parties.length, owner: "player", kind: "expedition", members: members.map((s) => s.id), supplies: { food: 20, water: 20, meds: 0 }, cargo: { supplies: {}, gear: [] }, path: [tile], idx: 0, phase: "waiting", stance: "normal" };
+  const p = { id: 90000 + st.parties.length, owner: "player", kind: "expedition", members: members.map((s) => s.id), supplies: { water: 20, meds: 0 }, cargo: { supplies: {}, gear: [] }, path: [tile], idx: 0, phase: "waiting", stance: "normal" };
+  addDays(p, 20);
   for (const s of members) s.location = { kind: "party", partyId: p.id };
   st.parties.push(p);
   return { p, members };
@@ -137,7 +141,8 @@ function drinkDay(st, b) {
   h.armory = h.armory.filter((it) => !(it && it.key === "waterfilter"));
   // An outpost short of it is covered from the hub over its supply line.
   {
-    const o = { id: 777, type: "outpost", name: "Boiler Camp", tile: st.grid.neighbors(h.tile)[0], tier: 1, stock: { food: 50, water: 0, rawwater: 50, wood: 0, fuel: 0 }, armory: [], buildings: [], construction: [], boiling: true, supplyLine: { strength: 1 } };
+    const o = { id: 777, type: "outpost", name: "Boiler Camp", tile: st.grid.neighbors(h.tile)[0], tier: 1, stock: { water: 0, rawwater: 50, wood: 0, fuel: 0 }, armory: [], buildings: [], construction: [], boiling: true, supplyLine: { strength: 1 } };
+    setFood(o, 50);
     st.bases.push(o);
     addBuilding(o, "boiler");
     const mover = people[0];
@@ -276,31 +281,31 @@ function drinkDay(st, b) {
 {
   console.log("Meat: raw and cooked");
   const { st, h } = wormWorld(0.8);
-  Object.assign(h.stock, { food: 30, preserved: 0 });
-  h.meat = 20; h.wormMeat = 20;
-  check(!baseCooks(h) && cookAtBase(st, h) === 0 && near(wormMeatAt(h), 20), "with no cook fire the meat with eggs stays uncooked");
+  setFood(h, 10, "f_beans"); // food by type (sim/foods.js): the meat with eggs is an egg lot of venison
+  addDays(h, 20, "f_venison", { egg: true });
+  check(!baseCooks(h) && cookDaily(st, h, 20) === 0 && near(wormMeatAt(h), 20), "with no cook fire the meat with eggs stays uncooked");
   const miss = eatFromStore(h, 8);
   check(miss === 0 && near(wormMeatAt(h), 20) && !(h.rawEaten > 0), "it is eaten last: the clean food goes first");
   eatFromStore(h, 7);
-  check(near(h.rawEaten, 5) && near(wormMeatAt(h), 15) && near(h.stock.food, 15), `once the rest runs out it is eaten raw (${h.rawEaten} rations)`);
+  check(near(h.rawEaten, 5) && near(wormMeatAt(h), 15) && near(food(h), 15), `once the rest runs out it is eaten raw (${h.rawEaten} rations)`);
   const people = residents(st, h.id);
   const n = withNums(WORM, { RAW: 1, WATER: 0 }, () => { wormDaily(st); return caught(people); });
   check(n === people.length && h.rawEaten === 0, "eating it raw catches the worm (RAW pinned to 1)");
   clearAll(people);
   addBuilding(h, "cookhouse");
-  check(baseCooks(h) && near(cookAtBase(st, h), 15) && wormMeatAt(h) === 0, "a cook fire cooks it all through (the eggs die)");
+  check(baseCooks(h) && cookDaily(st, h, 15) === 0 && wormMeatAt(h) === 0, "a cook fire cooks it (the day's eating, the eggs first: they die; no Kitchen cook, so no meals)");
   const k = wormWorld(0.8);
   addBuilding(k.h, "kitchen");
   check(baseCooks(k.h), "a preserving kitchen cooks too");
-  k.h.meat = 10; k.h.wormMeat = 10; k.h.stock.food = 50;
-  smokeWormMeat(k.h, 4);
+  setFood(k.h, 40); addDays(k.h, 10, "f_venison", { egg: true });
+  dryFood(k.st, k.h, 4, 0.75);
   check(near(wormMeatAt(k.h), 6), "drying racks and the smoke house take the meat with eggs first");
   // A team: clean meat eaten first, raw only as the last resort; the camp fire cooks it.
   const { p, members } = team(st, h, h.tile, 2);
   p.cargo = { supplies: {}, gear: [] };
   addMeat(st, p, 10, 0);
   addMeat(st, p, 10, 10);
-  check(near(wormMeatIn(p.cargo), 10) && near(p.cargo.meat, 20), "a team's cargo keeps the meat with eggs apart (10 of 20)");
+  check(near(wormMeatIn(p.cargo), 10) && near(meatIn(p.cargo), 20), "a team's cargo keeps the meat with eggs apart (10 of 20)");
   const ate = takeMeat(p.cargo, 15, { clean: true });
   check(near(ate, 10) && near(wormMeatIn(p.cargo), 10), "the team eats the clean game first (10 of 15 wanted)");
   const raw = withNums(WORM, { RAW: 1 }, () => eatRawCargo(st, p, members, 4));
@@ -417,19 +422,19 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
   check(s.worm.day === 0 && s.health === hp0, "caught today: nothing until tomorrow (at most a day of quiet)");
   s.worm.since = day(st) - 1;
   s.health = 100; s.mood = 90;
-  const hp = [], mood = [], food = [];
+  const hp = [], mood = [], eaten = [];
   let diedOn = 0;
   for (let d = 1; d <= 10; d++) {
-    const h0 = s.health, m0 = s.mood, f0 = h.stock.food;
+    const h0 = s.health, m0 = s.mood, f0 = food(h);
     withNums(WORM, noSpot, () => wormDaily(st));
     if (!s.alive) { diedOn = d; break; }
-    hp.push(Math.round((h0 - s.health) * 100) / 100); mood.push(Math.round((m0 - s.mood) * 100) / 100); food.push(Math.round((f0 - h.stock.food) * 100) / 100);
+    hp.push(Math.round((h0 - s.health) * 100) / 100); mood.push(Math.round((m0 - s.mood) * 100) / 100); eaten.push(Math.round((f0 - food(h)) * 100) / 100);
     if (d === 1) check(near(workFactor({ ...s, conditions: [] }), Math.round(WORM.GUT_WORK * workFactor({ ...s, worm: null, conditions: [] }) * 100) / 100, 0.011), `day 1: working at ${WORM.GUT_WORK * 100}%`);
     if (d === WORM.BRAIN_FROM) check(s.worm.stage === "brain" && near(workFactor({ ...s, conditions: [] }), Math.round(WORM.BRAIN_WORK * workFactor({ ...s, worm: null, conditions: [] }) * 100) / 100, 0.011), `day ${WORM.BRAIN_FROM}: the brain, working at ${WORM.BRAIN_WORK * 100}%`);
   }
   check(JSON.stringify(hp) === JSON.stringify(WORM.DAY_HP.slice(0, hp.length)), `untreated, the damage grows each day: ${hp.join(", ")} (DAY_HP)`);
   check(JSON.stringify(mood) === JSON.stringify(WORM.DAY_MOOD.slice(0, mood.length)), `and the mood falls each day, more each day: ${mood.join(", ")}`);
-  check(food.slice(0, WORM.BRAIN_FROM - 1).every((f) => near(f, WORM.GUT_EAT)) && near(food[WORM.BRAIN_FROM - 1] || 0, 0), `eats ${WORM.GUT_EAT} more a day in the gut stage (days 1–${WORM.BRAIN_FROM - 1}), not in the brain`);
+  check(eaten.slice(0, WORM.BRAIN_FROM - 1).every((f) => near(f, WORM.GUT_EAT)) && near(eaten[WORM.BRAIN_FROM - 1] || 0, 0), `eats ${WORM.GUT_EAT} more a day in the gut stage (days 1–${WORM.BRAIN_FROM - 1}), not in the brain`);
   check(diedOn >= 6 && diedOn <= 7 && !s.alive, `someone at full health dies of it on day ${diedOn} (6–7)`);
   check(st.log.some((l) => /died of the worm\./.test(l.text)) && st.log.some((l) => new RegExp(`${s.name} died with the worm in them at ${h.name} and got up again`).test(l.text)), "and gets up again at the base (a log line)");
   // Someone hurt dies sooner.
@@ -441,7 +446,7 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
   // Half the healing while it is in them, from every source.
   const u = here[3];
   u.health = 50; u.worm = null;
-  const camp = { supplies: { food: 9 }, members: [] };
+  const camp = { supplies: { f_rationbar: 7.5 }, members: [] }; // 9 days of food
   const clean = { base: healRatePerHour(st, h, u), camp: campHealPerHour(st, camp, u), treat: treatAtBaseInfo(st, h, u).heal };
   u.worm = course(2);
   const sick = { base: healRatePerHour(st, h, u), camp: campHealPerHour(st, camp, u), treat: treatAtBaseInfo(st, h, u).heal };
@@ -504,7 +509,7 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
     const [pr] = takePrisonersAt(hw.st, f, hw.h, 1);
     addBuilding(hw.h, "cells");
     pr.ration = "full"; pr.task = "idle"; pr.s.health = 50;
-    hw.h.stock.food = 200; hw.h.stock.water = 100;
+    setFood(hw.h, 200); hw.h.stock.water = 100;
     withNums(PRISON.ESCAPE, { guarded: 0, unguarded: 0, shed: 0, unfed: 0, lowMood: -1 }, () => withNums(PRISON.RESCUE, { chance: 0 }, () => prisonersDaily(hw.st)));
     const h1 = pr.s.health;
     pr.s.worm = course(1);
@@ -711,7 +716,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   // On a personal errand: alone, a death site where they fell.
   const e = wormWorld(0.05);
   const x = atBase(e.st, e.h.id)[0];
-  x.location = { kind: "errand", baseId: e.h.id, until: day(e.st) + 5, pack: { food: 5, water: 5 } };
+  x.location = { kind: "errand", baseId: e.h.id, until: day(e.st) + 5, pack: { f_rationbar: 4, water: 5 } };
   x.gear.weapon = newItem("machete");
   dying(x);
   wormDaily(e.st);
@@ -721,7 +726,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const cv = wormWorld(0.05);
   cv.h.autoTreat = false;
   const crew = atBase(cv.st, cv.h.id).slice(0, 1);
-  const convoy = { id: 91000, owner: "player", kind: "convoy", routeKind: "supply", phase: "holding", destBaseId: cv.h.id, members: crew.map((s) => s.id), supplies: { food: 5, water: 5 }, cargo: { supplies: {}, gear: [] }, path: [cv.h.tile], idx: 0 };
+  const convoy = { id: 91000, owner: "player", kind: "convoy", routeKind: "supply", phase: "holding", destBaseId: cv.h.id, members: crew.map((s) => s.id), supplies: { f_rationbar: 4, water: 5 }, cargo: { supplies: {}, gear: [] }, path: [cv.h.tile], idx: 0 };
   cv.st.parties.push(convoy);
   crew[0].location = { kind: "party", partyId: convoy.id };
   for (const o of atBase(cv.st, cv.h.id)) o.health = 100;
@@ -813,7 +818,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const f = w.st.factions.find((x) => x.alive && x.bases.length);
   const pris = takePrisonersAt(w.st, f, w.h, 2);
   const crew = atBase(w.st, w.h.id).slice(0, 1);
-  const convoy = { id: 91001, owner: "player", kind: "convoy", routeKind: "supply", phase: "holding", destBaseId: w.h.id, members: crew.map((s) => s.id), supplies: { food: 5, water: 5 }, cargo: { supplies: {}, gear: [] }, path: [w.h.tile], idx: 0 };
+  const convoy = { id: 91001, owner: "player", kind: "convoy", routeKind: "supply", phase: "holding", destBaseId: w.h.id, members: crew.map((s) => s.id), supplies: { f_rationbar: 4, water: 5 }, cargo: { supplies: {}, gear: [] }, path: [w.h.tile], idx: 0 };
   w.st.parties.push(convoy);
   crew[0].location = { kind: "party", partyId: convoy.id };
   const guests = { id: 91002, kind: "explorers", name: "the test travellers", phase: "sheltered", shelterBase: w.h.id, size: 3, stock: {}, wares: [] };
@@ -955,8 +960,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const { st, h } = wormWorld(0.8);
   const clean = st.grid.within(h.tile, 8).find((id) => st.tiles[id].terrain !== "water" && (st.tiles[id].infection || 0) < WORM.CROP_MIN);
   check(cropLandBad(st, h.tile) && !cropLandBad(st, clean), `land at ${WORM.CROP_MIN * 100}%+ infection grows food with eggs; cleaner land does not`);
-  Object.assign(h.stock, { food: 0, preserved: 0 });
-  h.meat = 0; h.wormMeat = 0; h.wormCrop = 0; h.wormForage = 0;
+  clearFood(h);
   h.buildings = h.buildings.filter((b) => b.type !== "cookhouse" && b.type !== "kitchen");
   const people = residents(st, h.id);
   people[0].role = "farm";
@@ -964,14 +968,13 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const plot = f.plots[0];
   Object.assign(plot, { stage: "ripe", crop: "potato", yieldLeft: 10, ripeDays: 1 });
   harvestPlot(st, h, plot.id);
-  check(near(h.stock.food, 10) && near(wormVegAt(h).crop, 10), "a harvest of fresh crops on infected ground carries the eggs (10 of 10)");
+  check(near(food(h), 10) && near(wormVegAt(h).crop, 10), "a harvest of fresh crops on infected ground carries the eggs (10 of 10)");
   Object.assign(plot, { stage: "ripe", crop: "wheat", yieldLeft: 8, ripeDays: 1 });
   harvestPlot(st, h, plot.id);
-  check(near(h.stock.preserved, 8) && near(wormVegAt(h).crop, 10), "dry grain into the preserved stock is threshed and cooked: safe");
-  addWormCrop(st, h, clean, 5, "crop");
-  check(near(wormVegAt(h).crop, 10), "nothing from clean land");
+  check(near(kindsOf(h).f_grain, 8) && near(wormVegAt(h).crop, 10), "dry grain (keeps for years) is threshed and cooked: safe");
+  check(!cropEggs(st, clean), "nothing from clean land");
   // Foraging around the base on infected land.
-  const food0 = h.stock.food;
+  const food0 = food(h);
   for (const id of st.grid.within(h.tile, 2)) st.tiles[id].infection = 0.8; // the foragers' land too
   people[1].role = "forage";
   Object.assign(people[1], { pinned: true, health: 100, inBed: false, conditions: [], mood: 70 });
@@ -979,35 +982,36 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   tripDay(st, h);
   const got = foragingDaily(st, h);
   const fed = (h.tripTally && h.tripTally.forage && h.tripTally.forage.food) || 0; // the trips' food (got.rations is it rounded)
-  check(got && got.rations > 0 && near(wormVegAt(h).forage, fed, 0.01) && near(h.stock.food - food0, fed, 0.01), `forage gathered on infected ground carries eggs too (${got && got.rations.toFixed(1)} rations)`);
-  // Eaten last, after the clean food and the preserved, the crops then the forage, the raw meat last of all.
+  check(got && got.rations > 0 && near(wormVegAt(h).forage, fed, 0.01) && near(food(h) - food0, fed, 0.01), `forage gathered on infected ground carries eggs too (${got && got.rations.toFixed(1)} rations)`);
+  // Eaten last, after the clean food: the crops and forage with eggs (the soonest to spoil first: the summer's forage
+  // before the potatoes), the raw meat last of all.
   const fr = wormVegAt(h).forage;
-  h.stock.food += 20; // 20 clean on top
-  h.stock.preserved = 0;
-  h.meat = 4; h.wormMeat = 4; h.stock.food += 4;
-  eatFromStore(h, 18);
+  addDays(h, 20, "f_beans"); // 20 clean on top of the 8 of grain
+  addDays(h, 4, "f_venison", { egg: true });
+  eatFromStore(h, 28);
   check(near(wormVegAt(h).crop, 10) && near(wormVegAt(h).forage, fr, 0.01) && !(h.rawCropEaten > 0), "the clean food goes first");
-  eatFromStore(h, 2 + 6);
-  check(near(h.rawCropEaten, 6) && near(wormVegAt(h).crop, 4) && near(wormVegAt(h).forage, fr, 0.01) && !(h.rawEaten > 0), `then the crops with eggs, raw (${h.rawCropEaten} rations), before the forage and the meat`);
-  eatFromStore(h, 4 + fr + 1);
-  check(near(h.rawCropEaten, 10) && near(h.rawForageEaten, fr, 0.01) && near(h.rawEaten, 1) && near(wormMeatAt(h), 3), "then the forage, and the raw meat last of all");
+  eatFromStore(h, fr + 6);
+  check(near(h.rawCropEaten + h.rawForageEaten, fr + 6, 0.01) && near(wormVegAt(h).all, 4, 0.01) && !(h.rawEaten > 0), `then the crops and forage with eggs, raw (${r2(h.rawForageEaten)} forage, ${r2(h.rawCropEaten)} crops: the soonest to spoil first), before the meat`);
+  eatFromStore(h, 4 + 1);
+  check(near(h.rawCropEaten + h.rawForageEaten, 10 + fr, 0.01) && near(h.rawEaten, 1, 0.01) && near(wormMeatAt(h), 3, 0.01), "and the raw meat last of all");
   let n = withNums(WORM, { CROP: 1, FORAGE: 1, RAW: 0, WATER: 0 }, () => { wormDaily(st); return caught(people); });
   check(n === people.length && people.every((s) => s.worm.how === "crop" || s.worm.how === "forage") && h.rawCropEaten === 0, "eating them raw catches the worm (CROP and FORAGE pinned to 1)");
   clearAll(people);
   // A cook fire (or a kitchen) boils them.
-  h.wormCrop = 6; h.wormForage = 3; h.stock.food = 20; h.wormMeat = 0; h.meat = 0;
+  const eggVeg = () => { clearFood(h); addDays(h, 11, "f_beans"); addDays(h, 6, "f_potatoes", { egg: true }); addDays(h, 3, "f_roots", { egg: true }); };
+  eggVeg();
   addBuilding(h, "cookhouse");
-  check(near(cookAtBase(st, h), 9) && wormVegAt(h).all === 0, "a cook fire boils the crops and the forage (the eggs die)");
+  check(cookDaily(st, h, 9) >= 0 && wormVegAt(h).all < 1e-9, "a cook fire boils the crops and the forage (the eggs die)");
   h.buildings = h.buildings.filter((b) => b.type !== "cookhouse");
-  h.wormCrop = 6; h.wormForage = 3; h.wormMeat = 2; h.meat = 2;
-  smokeWormMeat(h, 5);
-  check(wormMeatAt(h) === 0 && near(wormVegAt(h).crop, 3) && near(wormVegAt(h).forage, 3), "the drying racks take the meat with eggs first, then the crops");
+  eggVeg(); addDays(h, 2, "f_venison", { egg: true });
+  dryFood(st, h, 5, 0.75);
+  check(wormMeatAt(h) < 1e-9 && near(wormVegAt(h).all, 6) && near(wormVegAt(h).forage, 0), "the drying racks take the meat with eggs first, then the soonest to spoil of the rest with eggs (roots before potatoes)");
   // A team: forage gathered on infected ground rides in the cargo, is left for last, and a camp fire boils it.
   const { p, members } = team(st, h, h.tile, 2);
-  p.cargo = { supplies: { food: 10 }, gear: [] };
-  p.supplies = { food: 0, water: 20, meds: 0, preserved: 0 };
-  addWormForage(st, p, h.tile, 4);
-  p.cargo.supplies.food += 4;
+  p.cargo = { supplies: {}, gear: [] };
+  p.supplies = { water: 20, meds: 0 }; p.foodLots = {};
+  addDays(p.cargo, 10, "f_beans");
+  addForage(st, p.cargo, 4, h.tile);
   check(near(wormForageIn(p.cargo), 4), "forage from infected ground in the team's cargo (4 of 14)");
   const ate = takeFood(p, 12);
   check(near(ate, 10) && near(wormForageIn(p.cargo), 4), "the team eats the clean food first (10 of 12 wanted)");
@@ -1019,12 +1023,13 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   wormTeamHour(st, p, members);
   check(wormForageIn(p.cargo) === 0, "a camp fire boils it");
   st.tiles[h.tile].infection = 0.8;
-  addWormForage(st, p, h.tile, 3);
-  p.cargo.supplies.food = 5;
+  clearFood(p.cargo);
+  addForage(st, p.cargo, 3, h.tile);
+  addDays(p.cargo, 2, "f_beans");
   check(/forage/.test(teamWormText(st, p)), "the team panel says so");
-  h.stock.food = 50; h.wormCrop = 0; h.wormForage = 2; h.wormMeat = 0;
-  unloadWormForage(h, p.cargo);
-  check(near(wormVegAt(h).forage, 5) && !(p.cargo.wormForage > 0), "unloaded at a base it is the base's forage with eggs (2 + 3)");
+  setFood(h, 50, "f_beans"); addDays(h, 2, "f_roots", { egg: true });
+  unloadGame(h, p.cargo, st);
+  check(near(wormVegAt(h).forage, 5) && !(wormForageIn(p.cargo) > 0), "unloaded at a base it is the base's forage with eggs (2 + 3)");
 }
 
 // ---------- 6d. the other groups ----------
@@ -1306,13 +1311,13 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const { st, h } = wormWorld(0.8);
   const s = atBase(st, h.id)[0];
   s.worm = { stage: "gut", day: 4, len: 20, since: 2, why: "drinking unboiled water at the test", how: "water", seen: 3, treatedDay: -99, carded: "gut" };
-  h.meat = 10; h.wormMeat = 6; h.stock.food = 40;
+  setFood(h, 30); addDays(h, 4, "f_venison"); addDays(h, 6, "f_venison", { egg: true });
   st.herds = [{ tile: h.tile + 3, size: 5, kind: "hog", born: 1, until: 80 }];
   const { p } = team(st, h, h.tile, 2);
-  p.supplies.rawwater = 7; p.wormEggs = 0.4; p.cargo.meat = 3; p.cargo.wormMeat = 2; p.cargo.supplies.food = 3;
+  p.supplies.rawwater = 7; p.wormEggs = 0.4; addDays(p.cargo, 1, "f_venison"); addDays(p.cargo, 2, "f_venison", { egg: true });
   st.wormStats = { caught: 3, water: 2, meat: 1, camp: 0, search: 1, crop: 0, forage: 0, spotted: 1, cured: 0, turned: 0, killed: 0, herds: 1, herdKills: 0, groups: 2, road: 0 };
-  h.wormCrop = 5; h.wormForage = 2.5; h.boiling = false; h.boilerBurn = { wood: 1.2, fuel: 0 };
-  p.cargo.wormForage = 1.5; p.cargo.supplies.food += 2; p.wormHands = { day: day(st), chance: 0.02, where: "the test site" };
+  addDays(h, 5, "f_potatoes", { egg: true }); addDays(h, 2.5, "f_roots", { egg: true }); h.boiling = false; h.boilerBurn = { wood: 1.2, fuel: 0 };
+  addDays(p.cargo, 1.5, "f_roots", { egg: true }); p.wormHands = { day: day(st), chance: 0.02, where: "the test site" };
   const f = st.factions.find((x) => x.alive);
   f.wormBoilers = { [f.bases[0]]: true }; f.wormLost = 3;
   const w = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
@@ -1333,9 +1338,9 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   check(g(o1).v === 2 && g(o1).stage === "gut" && g(o1).day === 1 + Math.floor(0.5 * (WORM.BRAIN_FROM - 1)), `an old save's gut stage halfway through → the gut, day ${g(o1).day}`);
   check(g(o2).stage === "brain" && g(o2).day === WORM.BRAIN_FROM, `an old save's brain stage → the brain, day ${g(o2).day}`);
   if (o3 !== o2) check(g(o3).stage === "gut" && g(o3).day === 0, "an old save's eggs → day 0 (it shows tomorrow)");
-  check(h2.wormMeat === 6 && JSON.stringify(w.herds) === JSON.stringify(st.herds) && JSON.stringify(w.wormStats) === JSON.stringify(st.wormStats), "the base's meat with eggs, the herds and the stats come back");
-  check(p2.supplies.rawwater === 7 && p2.wormEggs === 0.4 && wormMeatIn(p2.cargo) === 2, "a team's un-purified water (its eggs) and meat with eggs come back");
-  check(h2.wormCrop === 5 && h2.wormForage === 2.5 && h2.boiling === false && h2.boilerBurn && h2.boilerBurn.wood === 1.2, "the base's crops and forage with eggs and the cold boiler come back");
+  check(near(wormMeatAt(h2), 6) && JSON.stringify(w.herds) === JSON.stringify(st.herds) && JSON.stringify(w.wormStats) === JSON.stringify(st.wormStats), "the base's meat with eggs, the herds and the stats come back");
+  check(p2.supplies.rawwater === 7 && p2.wormEggs === 0.4 && near(wormMeatIn(p2.cargo), 2), "a team's un-purified water (its eggs) and meat with eggs come back");
+  check(near(wormVegAt(h2).crop, 5) && near(wormVegAt(h2).forage, 2.5) && h2.boiling === false && h2.boilerBurn && h2.boilerBurn.wood === 1.2, "the base's crops and forage with eggs and the cold boiler come back");
   check(near(wormForageIn(p2.cargo), 1.5) && p2.wormHands && p2.wormHands.chance === 0.02, "a team's forage with eggs and the day's hands come back");
   check(f2.wormLost === 3 && f2.wormBoilers && f2.wormBoilers[f.bases[0]] === true, "a group's losses and its boilers come back");
 }
@@ -1352,11 +1357,12 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
     st.started = true; st.visitorsOff = true; st.noNewGangs = true;
     for (const f of st.factions) f.raidCooldown = 1e9;
     const h = hub(st);
-    Object.assign(h.stock, { food: 300, water: 100, meds: 20, scrap: 60 });
+    Object.assign(h.stock, { water: 100, meds: 20, scrap: 60 }); setFood(h, 300);
     h.armory = h.armory.filter((it) => !(it && it.key === "dewormer"));
     h.armory.push(newItem("dewormer"));
     const tile = st.tiles.find((t) => { const d = st.grid.distance(t.id, h.tile); return d >= 3 && d <= 4 && t.terrain !== "water" && !st.bases.some((b) => b.tile === t.id) && !st.factions.some((f) => f.bases.some((b) => st.grid.distance(b, t.id) <= 2)) && !!planPath(st, h.tile, t.id, false); });
-    const o = { id: 99001, tile: tile.id, type: "outpost", name: "Sick Camp", tier: 1, stock: { food: outpostFood, water: 30, fuel: 0, meds: 0, ammo: 10, scrap: 0 }, radio: false, watchtower: false, armory: [], buildings: [], construction: [], boiling: true };
+    const o = { id: 99001, tile: tile.id, type: "outpost", name: "Sick Camp", tier: 1, stock: { water: 30, fuel: 0, meds: 0, ammo: 10, scrap: 0 }, radio: false, watchtower: false, armory: [], buildings: [], construction: [], boiling: true };
+    setFood(o, outpostFood);
     st.bases.push(o);
     const [a, b] = atBase(st, h.id).filter((x) => !x.leader);
     for (const x of [a, b]) { x.location = { kind: "base", baseId: o.id }; x.role = "rest"; x.health = 100; }
@@ -1381,7 +1387,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   // 2. No food for the road at the outpost: the hub sends meds and the night's care purges it there.
   {
     const { st, h, o, a } = setup(seed + 1, { outpostFood: 0 });
-    o.stock.food = 0;
+    clearFood(o);
     wormCureRuns(st);
     check(!st.parties.some((x) => x.members.includes(a.id)), "the sick one cannot walk (no food for the road)");
     const p = st.parties.find((x) => x.routeKind === "supply" && x.destBaseId === o.id);
@@ -1406,7 +1412,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   {
     const { st, o, a, b } = setup(seed + 3, { outpostFood: 60 });
     a.worm = null;
-    o.stock.rawwater = 40; o.stock.water = 0; o.stock.food = 60;
+    o.stock.rawwater = 40; o.stock.water = 0; setFood(o, 60);
     o.construction = [{ id: 99101, type: "walls", progress: 0, hours: 12 }, { id: 99102, type: "boiler", progress: 0, hours: 10 }];
     check(!baseWater(st, o).safe, "the outpost drinks un-purified water");
     governRoles(st, o);

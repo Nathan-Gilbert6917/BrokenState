@@ -18,6 +18,7 @@
 // - radio relays on screen: the radio header and a group's radio panel name the base where a relay would reach it,
 //   the Coalition tab's "out of radio reach" line, Construction (offered at an outpost, greyed out beside a station)
 // - every rendered screen: no undefined / NaN / null, balanced tags, and every data-action has a handler
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import vm from "node:vm";
@@ -363,8 +364,8 @@ section("Alerts: each kind appears and clears");
       check(!left.length || Buildings.stations(h).length > 1, `station idle: clears with an operator and stock (${left.map((x) => x.tip).join(" ")})`);
     }
   }
-  appearsClears("starve", () => { h.stock.food = 0; h.stock.preserved = 0; }, () => { h.stock.food = 500; }, "out of food");
-  appearsClears("food", () => { h.stock.food = 3; h.stock.preserved = 0; }, () => { h.stock.food = 500; }, "low on food");
+  appearsClears("starve", () => { setFood(h, 0); setJarred(h, 0); }, () => { setFood(h, 500); }, "out of food");
+  appearsClears("food", () => { setFood(h, 3); setJarred(h, 0); }, () => { setFood(h, 500); }, "low on food");
   appearsClears("thirst", () => { h.stock.water = 0; h.stock.rawwater = 0; }, () => { h.stock.water = 60; }, "out of water"); // both kinds (sim/water.js)
   // Low water: a crowd at the hub drinks more than the well gives.
   const extra = [];
@@ -441,13 +442,13 @@ section("Alerts: each kind appears and clears");
   w.cards.length = 0;
   check(!has("cards").length, "cards waiting: clears");
   // Dismiss and snooze.
-  h.stock.food = 0; h.stock.preserved = 0;
+  setFood(h, 0); setJarred(h, 0);
   const sa = has("starve")[0];
   renderAlerts(w, ui);
   ALERT_ACTIONS["al-dismiss"](w, ui, { key: sa.key });
   renderAlerts(w, ui);
   check(!ui.alertList.some((x) => x.key === sa.key), "dismiss hides an alert");
-  h.stock.food = 500; renderAlerts(w, ui); h.stock.food = 0;
+  setFood(h, 500); renderAlerts(w, ui); setFood(h, 0);
   renderAlerts(w, ui);
   check(ui.alertList.some((x) => x.key === sa.key), "a dismissed alert comes back after it cleared");
   ALERT_ACTIONS["al-snooze"](w, ui, { key: sa.key });
@@ -463,7 +464,7 @@ section("Alerts: each kind appears and clears");
   ALERT_ACTIONS["al-restore"](w, ui, {});
   renderAlerts(w, ui);
   check(ui.alertList.some((x) => x.key === sa.key), "restore shows them");
-  h.stock.food = 500;
+  setFood(h, 500);
   check(computeAlerts(w).every((a) => a.text && a.icon && a.tip && a.key), "every alert has a text, an icon, a tip and a key");
 }
 
@@ -859,8 +860,8 @@ section("Windows and panels: folding, map only, auto-open, window sizes (ui/layo
   // Folded alerts: one button with the count, red with an urgent one; real alerts from a hungry base.
   const w = createWorld({ seed: seed + 13, factionCount: 6 });
   w.started = true;
-  hub(w).stock.food = 0;
-  hub(w).stock.preserved = 0;
+  setFood(hub(w), 0);
+  setJarred(hub(w), 0);
   const au = freshUi();
   renderAlerts(w, au);
   const pill = L.alertsPill(au.alertList);

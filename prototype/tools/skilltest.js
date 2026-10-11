@@ -2,6 +2,7 @@
 // floor, teaching, reading (progress, limits, one reader per copy), books found and sold, perk milestones and
 // choices, every perk's effect where it is coded, determinism, and a 200-day autopilot run without NaN.
 // Usage: node tools/skilltest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, alive, makeSurvivor, skill, combatPower } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
 import * as S from "../src/sim/skills.js";
@@ -487,9 +488,9 @@ console.log("Perk effects");
   S.skillsHour(st);
   check(Math.abs(fast / partySpeed(tp) - 1.1) < 1e-9, `Pathfinder: on foot ${r1(partySpeed(tp))} → ${r1(fast)} speed`);
   give(sc, "forager", "hunter");
-  const food0 = tp.supplies.food;
+  const food0 = food(tp);
   S.skillsDaily(st);
-  check(tp.supplies.food - food0 === 4, `Forager +1 and Hunter +3 food a day on a trip (+${tp.supplies.food - food0})`);
+  check(Math.abs(food(tp) - food0 - 4) < 1e-6, `Forager +1 and Hunter +3 food a day on a trip (+${food(tp) - food0})`);
   sc.perks = [];
   // Searches: Quiet Hands, Salvager (exact), Phantom; Tinker's Eye, Treasure Hunter, Sixth Sense (Monte Carlo).
   const pickSite = (w) => w.tiles.find((t) => t.loc && typeof t.owner !== "number" && ["autoshop", "hardware", "factory", "gas"].includes(t.loc.type)) || w.tiles.find((t) => t.loc);
@@ -598,18 +599,18 @@ console.log("Perk effects");
   };
   [a, b] = [ripeRun([]), ripeRun(["harvester"])];
   check(b === a + 2, `Harvester: ripe plots brought in a day ${a} → ${b}`);
-  h4.stock.food = 500;
+  setFood(h4, 500);
   [a, b] = withPerk(fm, "rootcellar", () => foodStore(w4, h4).spoil);
   check(Math.abs(b - a * 0.75) < 1e-6, `Root Cellar Lore: spoilage ${r1(a)} → ${r1(b)} a day`);
   const farm4 = farmOf(w4, h4);
   const free = farm4.plots.find((x) => x.stage === "empty") || farm4.plots[0];
   Object.assign(free, { stage: "empty", crop: null });
   give(fm, "seedsaver");
-  const food1 = h4.stock.food + (h4.stock.preserved || 0);
+  const food1 = food(h4) + (jarred(h4) || 0);
   const msg = plantPlot(w4, h4, free.id, "beans");
-  const paid = food1 - (h4.stock.food + (h4.stock.preserved || 0));
+  const paid = food1 - (food(h4) + (jarred(h4) || 0));
   without(fm, "seedsaver");
-  check(/sown/.test(msg) ? paid === Math.ceil(3 / 2) : true, `Seed Saver: beans cost ${paid} seed food instead of 3 (${msg.slice(0, 40)}…)`);
+  check(/sown/.test(msg) ? Math.abs(paid - Math.ceil(3 / 2)) < 1e-6 : true, `Seed Saver: beans cost ${paid} seed food instead of 3 (${msg.slice(0, 40)}…)`);
   give(fm, "herbalist");
   while (day(w4) % 3 !== 0) nextDay(w4);
   const meds0 = h4.stock.meds || 0;

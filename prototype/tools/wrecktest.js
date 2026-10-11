@@ -128,7 +128,7 @@ section("The governor: one trip to a find, not one every few days");
   state.markers.push({ key, type: "car", tile, hour: state.hour, label: "Wrecked car" });
   let trips = 0, packed = 0;
   const seen = new Set();
-  for (let i = 0; i < 24 * 60 && !state.gameOver; i++) { // 60 days (40 before 2026-10-10: the arsenal balance changed the campaign, its one trip came on day 55)
+  for (let i = 0; i < 24 * 110 && !state.gameOver; i++) { // 110 days (40 before 2026-10-10: the arsenal balance changed the campaign, its one trip came on day 55; 60 until food-types: food by type changed it again, the trip came on day 107)
     state.hordes.length = 0;
     tickHour(state);
     for (const p of state.parties) {
@@ -140,11 +140,11 @@ section("The governor: one trip to a find, not one every few days");
       packed += (p.supplies.parts || 0) + (p.supplies.carparts || 0);
     }
   }
-  check(trips <= 1, `${trips} trips to the same cleaned-out wreck in 60 days`);
+  check(trips <= 1, `${trips} trips to the same cleaned-out wreck in 110 days`);
   check(packed === 0, `a team packed ${packed} parts for a wreck it could not restore (the hub has its car, or no parts)`);
   const g = state.governor || {};
-  check(!state.markers.some((m) => m.key === key && !(m.info && m.info.emptied)), "the wreck is still on the map to visit after 60 days");
-  console.log(`  ${trips} trip(s) to the cleaned-out wreck in 60 days; hub parts ${h.stock.parts || 0}, car parts ${h.stock.carparts || 0}${g.findTried ? `; tried ${Object.keys(g.findTried).length} find(s)` : ""}`);
+  check(!state.markers.some((m) => m.key === key && !(m.info && m.info.emptied)), "the wreck is still on the map to visit after 110 days");
+  console.log(`  ${trips} trip(s) to the cleaned-out wreck in 110 days; hub parts ${h.stock.parts || 0}, car parts ${h.stock.carparts || 0}${g.findTried ? `; tried ${Object.keys(g.findTried).length} find(s)` : ""}`);
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);

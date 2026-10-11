@@ -10,11 +10,12 @@
 // coarse fuel, breaks it and repairs it with parts its workshop made (kept for the machines: the earmark); 10-day governor runs keeping the freezer on with
 // nobody operating the generator; and a 120-day governor run with nothing NaN or negative.
 // Usage: node tools/freezertest.js [days for the governor run] [seeds...]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
 import { addBuilding, canBuild, queueBuild, constructionHour, BUILDINGS, recipeOutput, CANNER, count, countAll, demolishRefund, canUpgradeKitchen, queueCannerUpgrade, cancelBuild, buildRate, stations } from "../src/sim/buildings.js";
 import { POWER, POWER_USERS, REFUEL, refreshPower, isPowered, hasSealer, freezerLine, powerStatus, setGenReserve, choreShare, refueller } from "../src/sim/power.js";
 import { FIXTURES, WEAR, breakFixture, repairPlan, startRepair, breakdownsHour, useSpares, dailyWear, machineRan, isMachine, machineText, fxDef } from "../src/sim/breakdowns.js";
-import { storeSpaces, foodStore, STORE } from "../src/sim/storage.js";
+import { storeSpaces, foodStore, STORE, FACTOR } from "../src/sim/storage.js";
 import { CRAFTS, queueCraft, canCraft, craftQueue, makeItem } from "../src/sim/crafting.js";
 import { TECH, groupKnows, groupTech, groupTechDaily, groupGotBlueprint, groupFindBlueprint, groupSkill, GROUP_WORKS, groupWorksDaily, nextWork, worksAt, groupFreezerOn, groupSealer, groupMachineCount, worksText, groupPartsDaily, partsRate, partsWant, groupMachParts, groupFreeParts, canPayParts, payParts } from "../src/sim/groupworks.js";
 import { groupPartsTarget, available } from "../src/sim/trade.js";
@@ -34,7 +35,7 @@ const at8 = (st) => { st.hour = Math.ceil(st.hour / 24) * 24 + 8; }; // 08:00 of
 function quietHub(st, { refrig = true } = {}) {
   const h = hub(st);
   for (const s of atBase(st, h.id)) { s.traits = []; s.conditions = []; s.role = "rest"; s.station = null; s.health = 100; s.mood = 80; s.skills.mechanics = 0; }
-  Object.assign(h.stock, { food: 500, water: 200, scrap: 300, parts: 30, electronics: 6, fuel: 40, meds: 20, jars: 40, preserved: 0 });
+  Object.assign(h.stock, { water: 200, scrap: 300, parts: 30, electronics: 6, fuel: 40, meds: 20, jars: 40 }); setFood(h, 500);
   delete h.tier; delete h.camp; // a full base (building plots)
   if (refrig) tech(st).known.push("refrig"); // the walk-in freezer's blueprint (machines-2)
   at8(st);
@@ -147,12 +148,13 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   st.hour++; refreshPower(st, h);
   check(near(t1 - gen.tank, POWER.genFuel / 24) && near(h.stock.fuel, fuel0 - POWER.tank), `the next hour: 1/${24 / POWER.genFuel} fuel from the tank, none from the stores (refuelled once a day)`);
   const on = storeSpaces(h).find((s) => s.key === "freezer");
-  check(on && on.kind === "walkin" && on.cap === STORE.freezer, "on: its room is the freezer's");
-  h.stock.food = 250;
+  check(on && on.kind === "freezer" && on.cap === STORE.freezer, "on: its room is the freezer's");
+  setFood(h, 250, "f_venison"); // fresh food by type (sim/foods.js): it needs a cold room
   const fs = foodStore(st, h);
   const sp = fs.spaces.find((s) => s.key === "freezer");
-  check(fs.spaces[0].key === "freezer" && sp.held === 250, "the food goes into the freezer first (the slowest to spoil)");
-  check(sp.rate < 0.001, `and keeps ~20× longer than in a cellar (${sp.rate})`);
+  const cellar = fs.spaces.find((s) => s.key === "cellar");
+  check(fs.spaces[0].key === "freezer" && Math.abs(sp.held - 250) < 1e-6, "the fresh food goes into the freezer first (the coldest room)");
+  check(cellar && sp.factor === FACTOR.freezer && FACTOR.freezer * 19 < FACTOR.dry && sp.factor * 5 < cellar.factor, `and keeps ~20× longer than at room temperature, several times a cellar (×${sp.factor} of its shelf a day against ×${cellar && cellar.factor.toFixed(2)})`);
   // No fuel in the stores: it runs its tank out (a day and a half's running), then it is off.
   h.stock.fuel = 0;
   let onHours = 0;
@@ -337,9 +339,9 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   check(k1.canner === true && count(h, "kitchen") === 1, "the builders fit it: the kitchen is still a kitchen (key kept), marked with its canner");
   b2.role = "operate"; b2.station = k1.id; b2.skills.farming = 3;
   const k2 = addBuilding(h, "kitchen");
-  const withC = stationIO(st, h, k1, b2).out.preserved, without = stationIO(st, h, k2, b2).out.preserved;
+  const withC = stationIO(st, h, k1, b2).out.f_jarred, without = stationIO(st, h, k2, b2).out.f_jarred;
   check(withC === without + CANNER.out, `the kitchen with the canner jars +${CANNER.out} a day (${withC} against ${without}), the other kitchen not`);
-  check(recipeOutput(b2, "preserve", h, st, k1).preserved === recipeOutput(b2, "preserve", h, st, k2).preserved + CANNER.out, "recipeOutput by the station");
+  check(recipeOutput(b2, "preserve", h, st, k1).f_jarred === recipeOutput(b2, "preserve", h, st, k2).f_jarred + CANNER.out, "recipeOutput by the station");
   check(fxDef(k1) === FIXTURES.canner && fxDef(k2) === FIXTURES.kitchen && FIXTURES.canner.repair.cost.parts >= 1 && FIXTURES.canner.spares > 0, "the fitted kitchen wears like a machine: a part to repair, spares");
   // A canner in the armory pays for a fitting; cancelled, it goes back.
   h.armory.push(makeItem("canner", 0.9));
@@ -398,7 +400,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   groupTech(f).known.push("genschem", "refrig", "machinist"); // studied (the manuals' rules: above)
   const tile = f.bases[0];
   f.pop = 20;
-  Object.assign(f.stock, { food: 600, fuel: 30, parts: 20, scrap: 100 });
+  Object.assign(f.stock, { fuel: 30, parts: 20, scrap: 100 }); setFood(f, 600);
   const w = worksAt(f, tile);
   Object.assign(w, { water: 3, farms: 3, beds: 3, walls: 6, bench: 1, store: 1, sickbay: 4, pens: 1 });
   f.jails = { [tile]: 3 };
@@ -407,7 +409,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
     const nw = !f.job ? nextWork(st, f) : null;
     if (nw && !built.includes(nw.type)) built.push(nw.type);
     groupWorksDaily(st, f);
-    f.stock.food = 600; // keep them fed (the test is the machines)
+    setFood(f, 600); // keep them fed (the test is the machines)
   }
   check(w.still && w.power && w.freezer, `they build a still, a generator and a freezer (${built.join(", ")})`);
   const fuel0 = f.stock.fuel;
@@ -417,14 +419,14 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   check(/walk-in freezer \(on\)/.test(worksText(st, f)), `the Groups tab says so (${worksText(st, f)})`);
   check(f.stock.fuel <= fuel0 + GROUP_WORKS.MACH.still.fuel - POWER.genFuel + 1e-9, `the generator burns fuel (${fuel0} → ${f.stock.fuel})`);
   f.stock.fuel = 0.5;
-  f.stock.food = GROUP_WORKS.MACH.foodDays * f.pop - 1; // no surplus for the still either
+  setFood(f, GROUP_WORKS.MACH.foodDays * f.pop - 1); // no surplus for the still either
   st.hour += 24;
   groupWorksDaily(st, f);
   check(groupFreezerOn(f) && f.stock.fuel === 0, "coarse fuel: the last half a fuel runs the day");
   st.hour += 24;
   groupWorksDaily(st, f);
   check(!groupFreezerOn(f), "no fuel: their freezer is off");
-  f.stock.fuel = 30; f.stock.food = 600;
+  f.stock.fuel = 30; setFood(f, 600);
   w.mach.freezer.broken = true;
   const p0 = f.stock.parts;
   st.hour += 24;
@@ -444,7 +446,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
   check(f.stock.parts <= 10, "a spare part for the running freezer");
   // The sealer comes next with the parts.
   f.stock.parts = 20;
-  for (let i = 0; i < 20 && !w.sealer; i++) { st.hour += 24; groupWorksDaily(st, f); f.stock.food = 600; f.stock.fuel = 30; }
+  for (let i = 0; i < 20 && !w.sealer; i++) { st.hour += 24; groupWorksDaily(st, f); setFood(f, 600); f.stock.fuel = 30; }
   st.hour += 24; groupWorksDaily(st, f);
   check(w.sealer && groupSealer(f), "and a vacuum sealer (the groupSealer hook)");
   // The freezer waits for the blueprint: a group that does not know refrigeration builds the still and stops there.
@@ -457,7 +459,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-6;
     const w3 = worksAt(g, g.bases[0]);
     Object.assign(w3, { water: 3, farms: 3, beds: 3, walls: 6, bench: 1, store: 1, sickbay: 4, pens: 1 });
     g.jails = { [g.bases[0]]: 3 };
-    for (let i = 0; i < 40; i++) { groupWorksDaily(st3, g); g.stock.food = 600; g.stock.parts = 20; }
+    for (let i = 0; i < 40; i++) { groupWorksDaily(st3, g); setFood(g, 600); g.stock.parts = 20; }
     check(w3.still && !w3.power && !w3.freezer, `${g.type}: no Generator Schematics yet, a still but no generator or freezer`);
   } else check(true, "every group here knows refrigeration from the start");
   // Their machine parts: a workshop makes them from scrap, by the mechanic and the people, up to what they want.

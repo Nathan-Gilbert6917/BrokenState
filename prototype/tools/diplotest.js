@@ -8,6 +8,7 @@
 // board, the autopilot's choices, determinism, a 365-day run without NaN and the yearly group collapse rate with
 // and without wars between groups.
 // Usage: node tools/diplotest.js [seed] [days] [collapse seeds, e.g. 1,2,3,4,5,6]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day, alive, newId, checkGameOver, snapshot } from "../src/sim/world.js";
 import { GEAR, SUPPLY_KEYS, STOCK_KEYS } from "../src/sim/data.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -64,7 +65,7 @@ function setup(s = seed) {
   const h = hub(st);
   addBuilding(h, "radio");
   h.radio = true;
-  Object.assign(h.stock, { food: 500, water: 200, meds: 80, ammo: 600, scrap: 200, fuel: 60, parts: 10 });
+  Object.assign(h.stock, { water: 200, meds: 80, ammo: 600, scrap: 200, fuel: 60, parts: 10 }); setFood(h, 500);
   const g = st.grid;
   const spots = g.within(h.tile, 7).filter((t) => g.distance(t, h.tile) >= 4 && free(st, t) && planPath(st, t, h.tile, false));
   const live = st.factions.filter((f) => f.alive);
@@ -342,11 +343,11 @@ section("Jobs: every type");
   const jw = { id: 9999, type: "scout", fid: f3.id, status: "active", data: {}, size: 3, title: "test", desc: "", target: f3.bases[0],
     reward: { goodwill: 18, supplies: { food: 10 }, gear: ["vest"], blueprint: true, recruits: 1, intel: true, outpost: f3.bases[1] } };
   J.ensureJobs(st).list.push(jw);
-  const food0 = h.stock.food, arm0 = h.armory.length, bases0 = st.bases.length, gw3 = f3.goodwill;
-  f3.stock.food = Math.max(f3.stock.food, 50);
+  const food0 = food(h), arm0 = h.armory.length, bases0 = st.bases.length, gw3 = f3.goodwill;
+  setFood(f3, Math.max(food(f3), 50));
   J.completeJob(st, jw, "test");
   const bp = h.armory.slice(arm0).find((it) => GEAR[it.key] && GEAR[it.key].blueprint);
-  check(h.stock.food === food0 + 10 && h.armory.length >= arm0 + 1 && st.bases.length === bases0 + 1 && f3.goodwill > gw3, "rewards: supplies to the hub, gear to the armory, their outpost handed over with goodwill");
+  check(Math.abs(food(h) - food0 - 10) < 1e-6 && h.armory.length >= arm0 + 1 && st.bases.length === bases0 + 1 && f3.goodwill > gw3, "rewards: supplies to the hub, gear to the armory, their outpost handed over with goodwill");
   check(!J.blueprintKeys().length || !!bp || h.stock.ammo >= 40, `a blueprint reward: ${bp ? bp.name : "none left to give (ammo instead)"}`);
   check(st.cards.some((c) => c.recruit || /send people/.test(c.title)), "a recruit reward comes as a recruit card");
   check(J.blueprintKeys().every((k) => GEAR[k]), `blueprint rewards come from GEAR (${J.blueprintKeys().length} blueprint item(s) in this build)`);
@@ -418,15 +419,15 @@ section("Relations between groups, pacts and wars");
   const w2 = D.startWar(st, atk, b, "resources");
   clearCards(st);
   w2.score[atk.id] = 3; w2.score[b.id] = 0;
-  b.stock.food = b.pop * PAYOUT.days * 4; // well above the pay-out reserve
-  const foodB = b.stock.food, foodA = atk.stock.food;
-  check(D.makePeace(st, w2) === "tribute" && b.stock.food < foodB && atk.stock.food > foodA, "a small lead: the loser pays tribute (25% of food, ammo, meds, scrap)");
+  setFood(b, b.pop * PAYOUT.days * 4); // well above the pay-out reserve
+  const foodB = food(b), foodA = food(atk);
+  check(D.makePeace(st, w2) === "tribute" && food(b) < foodB && food(atk) > foodA, "a small lead: the loser pays tribute (25% of food, ammo, meds, scrap)");
   // Short of food the tribute stops at the pay-out reserve (upkeep.js PAYOUT: PAYOUT.days a head).
   const wr = D.startWar(st, atk, b, "resources");
   clearCards(st);
   wr.score[atk.id] = 3; wr.score[b.id] = 0;
-  b.stock.food = b.pop * PAYOUT.days + 2;
-  check(D.makePeace(st, wr) === "tribute" && b.stock.food >= b.pop * PAYOUT.days, `short of food: the tribute leaves ${PAYOUT.days} days a head (${b.stock.food} for ${b.pop})`);
+  setFood(b, b.pop * PAYOUT.days + 2);
+  check(D.makePeace(st, wr) === "tribute" && food(b) >= b.pop * PAYOUT.days, `short of food: the tribute leaves ${PAYOUT.days} days a head (${food(b)} for ${b.pop})`);
   const w3 = D.startWar(st, atk, b, "land");
   clearCards(st);
   check(D.makePeace(st, w3) === "white", "no lead: a white peace");
@@ -560,7 +561,7 @@ section("The coalition");
   check(A.hiveAllies(st, hv).fighters >= 1, "members near a hive send fighters to your assault");
   a.bases.pop();
   // The council: supplies, a job, a ruling.
-  const sup = A.councilCard(st, "supplies", [a, b]) || (() => { a.stock.food = 0; return A.councilCard(st, "supplies", [a, b]); })();
+  const sup = A.councilCard(st, "supplies", [a, b]) || (() => { setFood(a, 0); return A.councilCard(st, "supplies", [a, b]); })();
   if (check(!!sup, "the council asks for supplies")) {
     const before = { ...h.stock }, ga = a.goodwill, gb = b.goodwill;
     const send = pick(sup, /^Send/);
@@ -701,7 +702,7 @@ section("Wants and surplus, the market board");
   const st = setup();
   let bad = 0, nlists = 0;
   for (const f of st.factions.filter((x) => x.alive)) {
-    f.stock.meds = 0; f.stock.food = f.pop * 20;
+    f.stock.meds = 0; setFood(f, f.pop * 20);
     const m = refreshMarket(st, f);
     nlists += m.wants.length + m.surplus.length;
     if (m.wants.some((x) => PART_KINDS.includes(x.key)) || m.surplus.some((x) => PART_KINDS.includes(x.key))) bad++; // they want and offer "parts"

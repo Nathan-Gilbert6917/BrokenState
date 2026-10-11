@@ -16,6 +16,8 @@
 // - Determinism (two worlds in one process), save / load mid-visit (identical after 30 more days), the autopilot's
 //   choices, a [days]-day Balanced run per style without NaN, and the UI pieces (Groups tab section, alerts, trade
 //   window extras) without undefined / NaN and with a handler for every data-action.
+import { foodSplit, foodText, FOODS } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { readFileSync, readdirSync } from "node:fs";
 import { createWorld, tickHour, day, hub, atBase, newId, residents, combatPower } from "../src/sim/world.js";
@@ -152,21 +154,21 @@ section("Raiders at your base");
   // A strong band: a break-in, and what they take, they carry.
   clearCards(st);
   for (const s of atBase(st, h.id)) s.health = 15;
-  const food0 = h.stock.food;
+  const food0 = food(h);
   const strong = V.spawnVisitor(st, "raiders", { size: 14, power: 6 });
   place(st, strong, h.tile);
   strong.goal = { kind: "base", baseId: h.id, tile: h.tile };
-  const carried0 = strong.stock.food;
+  const carried0 = food(strong);
   tick(st);
   check(strong.phase === "siege", "a strong band besieges the hub");
   for (let i = 0; i < 9 && strong.phase === "siege"; i++) tick(st);
-  check(h.stock.food < food0 * 0.85 && strong.stock.food > carried0, `the stock was carried off (${Math.round(food0)} → ${Math.round(h.stock.food)} food; they carry ${strong.stock.food})`);
+  check(food(h) < food0 * 0.85 && food(strong) > carried0, `the stock was carried off (${Math.round(food0)} → ${Math.round(food(h))} food; they carry ${food(strong)})`);
   check(st.log.slice(0, 12).some((l) => /broke into|overran/.test(l.text)), "a break-in or overrun in the log");
   check(strong.phase === "travel" && (strong.spared || []).includes(h.id), "and they move on (never this base again)");
   for (const s of atBase(st, h.id)) s.health = 90;
   // Pay off and talk down.
   clearCards(st);
-  Object.assign(h.stock, { food: 300, ammo: 400, meds: 20 });
+  Object.assign(h.stock, { ammo: 400, meds: 20 }); setFood(h, 300);
   // Someone on watch: the break-in above can kill the hub's only guard (which of them dies is the dice's: with the
   // normal start's backgrounds, seed 42 loses its guard there), and on an unwatched night nobody at the base sees a
   // band coming (watch.js lookoutsSpot) until it is at the walls. The warning card is wanted 2 tiles out.
@@ -210,7 +212,7 @@ section("Raiders at your base");
     answer(st, /^Talk them down/);
     if (t.paid) talked++;
     V.leaveMap(st, t, "broken");
-    h.stock.food = 300; h.stock.ammo = 400;
+    setFood(h, 300); h.stock.ammo = 400;
   }
   console.log(`  talked down ${talked} of ${tries}`);
   check(tries > 20 && talked > 0 && talked < tries, "talking works sometimes, not always");
@@ -224,7 +226,7 @@ section("Raiders and everyone else: groups, their caravans, merchants, sites; le
   clearCards(st);
   const f = st.factions.find((x) => x.alive && x.type !== "military");
   const b = f.bases[0];
-  const pop0 = f.pop, stock0 = f.stock.food;
+  const pop0 = f.pop, stock0 = food(f);
   const v = V.spawnVisitor(st, "raiders", { size: 14, power: 6 });
   place(st, v, b);
   v.goal = { kind: "faction", factionId: f.id, tile: b };
@@ -232,7 +234,7 @@ section("Raiders and everyone else: groups, their caravans, merchants, sites; le
   tick(st);
   check(v.phase === "siege", "a band besieges a group's base");
   for (let i = 0; i < 13 && v.phase === "siege"; i++) tick(st);
-  check(V.visitorInfo(st).stats.raidsOnGroups >= 1 && (f.pop < pop0 || f.stock.food < stock0), `the group's raid is resolved (pop ${pop0} → ${f.pop}, food ${Math.round(stock0)} → ${Math.round(f.stock.food)})`);
+  check(V.visitorInfo(st).stats.raidsOnGroups >= 1 && (f.pop < pop0 || food(f) < stock0), `the group's raid is resolved (pop ${pop0} → ${f.pop}, food ${Math.round(stock0)} → ${Math.round(food(f))})`);
   check(!V.raidTargets(st, v).some((t) => t.goal.kind === "faction"), "one group's base a band at most");
   // A group's convoy.
   const from = st.factions.find((x) => x.alive && x !== f) || f;
@@ -408,12 +410,12 @@ section("Merchants: goods, prices, the trade window, groups, the radio");
   const m = V.spawnVisitor(st, "merchants", { spec: "general" }); // escorts.js: general goods (the others carry by their speciality)
   const bp = m.wares.filter((g) => /^bp_/.test(g.key));
   console.log(`  ${m.name}: ${V.goodsText(m)}`);
-  check(m.stock.fuel >= 15 && m.stock.meds >= 8 && m.stock.preserved >= 20 && m.wares.length >= 3, "rare goods: fuel, meds, preserved food, items");
+  check(m.stock.fuel >= 15 && m.stock.meds >= 8 && foodSplit(m.stock).stable >= 20 && m.wares.length >= 3, `rare goods: fuel, meds, food that keeps, items (${foodText(Object.fromEntries(Object.entries(m.stock).filter(([k]) => FOODS[k])))})`);
   check(m.guards >= 2 && m.size === m.guards + 2 && m.escort, `guards and traders (${m.guards} + 2, ${m.escort && m.escort.tier} escort)`);
-  check(buyPrice(st, m, "fuel", 0, 10) < buyPrice(st, m, "food", 0, 10) * 1.5 + 2 && sellPrice(st, m, "food", 0, 10) > 2 * 0.75 * 1.2, `cheap fuel (${buyPrice(st, m, "fuel", 0, 10).toFixed(2)} a unit), dear food (they pay ${sellPrice(st, m, "food", 0, 10).toFixed(2)})`);
-  check(need(m, "fuel") <= 0.6 && need(m, "food") >= 1.4, "their need: plenty of fuel, short of food");
+  check(buyPrice(st, m, "fuel", 0, 10) < buyPrice(st, m, "food", 0, 10) * 1.5 + 2 && sellPrice(st, m, "food", 0, 10) > 1.5, `cheap fuel (${buyPrice(st, m, "fuel", 0, 10).toFixed(2)} a unit), dear food (they pay ${sellPrice(st, m, "food", 0, 10).toFixed(2)})`);
+  check(need(m, "fuel") <= 0.6 && need(m, "food") > need(m, "fuel") + 0.5, `their need: plenty of fuel, food wanted more (${need(m, "food").toFixed(2)}; food by type: every kind counts, the food that keeps too)`);
   // At the hub: the trade window, a blueprint bought with ammo.
-  Object.assign(h.stock, { ammo: 900, food: 300, scrap: 200 });
+  Object.assign(h.stock, { ammo: 900, scrap: 200 }); setFood(h, 300);
   place(st, m, h.tile);
   m.goal = { kind: "base", baseId: h.id, tile: h.tile };
   m.phase = "travel";
@@ -438,7 +440,7 @@ section("Merchants: goods, prices, the trade window, groups, the radio");
   check(m.phase === "travel" && m.goal.kind !== "base", "after a day they move on");
   // With a group.
   const f = st.factions.find((x) => x.alive && x.type !== "raider" && x.type !== "zealot");
-  f.stock.meds = 0; f.stock.food = f.pop * 20;
+  f.stock.meds = 0; setFood(f, f.pop * 20);
   const m2 = V.spawnVisitor(st, "merchants", { spec: "general" });
   const meds0 = m2.stock.meds, lack0 = ["food", "water", "scrap", "jars"].map((k) => m2.stock[k] || 0);
   const traded = V.tradeWithGroup(st, m2, f);
@@ -521,18 +523,18 @@ section("Explorers: intel, maps, recruits, shelter, thieves");
   const people0 = st.survivors.filter((s) => s.alive).length;
   if (rc) { st.cards.splice(st.cards.indexOf(rc), 1); rc.choices.find((c) => c.kind === "take").resolve(st); }
   check(st.survivors.filter((s) => s.alive).length === people0 + 2, "taken in");
-  Object.assign(h.stock, { food: 200, water: 200 });
+  Object.assign(h.stock, { water: 200 }); setFood(h, 200);
   const mood0 = residents(st, h.id).reduce((a, s) => a + s.mood, 0) / residents(st, h.id).length;
   answer(st, /^Shelter them/);
   check(e.phase === "sheltered", "sheltered");
   const mood1 = residents(st, h.id).reduce((a, s) => a + s.mood, 0) / residents(st, h.id).length;
   check(mood1 > mood0, `mood rises (${mood0.toFixed(1)} → ${mood1.toFixed(1)})`);
   clearCards(st);
-  const food0 = h.stock.food;
+  const food0 = food(h);
   let used = 0;
-  for (let d = 0; d < 3; d++) { const f0 = h.stock.food; V.visitorsDaily(st); used += f0 - h.stock.food; }
-  check(used === e.size * 3, `they eat 1 food each a day (${used} for ${e.size} over 3 days)`);
-  h.stock.food = food0;
+  for (let d = 0; d < 3; d++) { const f0 = food(h); V.visitorsDaily(st); used += f0 - food(h); }
+  check(Math.abs(used - e.size * 3) < 1e-6, `they eat 1 food each a day (${used} for ${e.size} over 3 days)`);
+  setFood(h, food0);
   e.shelterUntil = st.hour;
   tick(st);
   check(e.phase !== "sheltered", "after 3 days they leave");
@@ -566,7 +568,7 @@ section("The autopilot");
   clearCards(st);
   setAutopilot(st, true, "balanced");
   const h = hub(st);
-  Object.assign(h.stock, { ammo: 800, scrap: 150, food: 250 });
+  Object.assign(h.stock, { ammo: 800, scrap: 150 }); setFood(h, 250);
   h.stock.meds = 0;
   const m = V.spawnVisitor(st, "merchants", { spec: "general" });
   place(st, m, h.tile);
@@ -582,7 +584,7 @@ section("The autopilot");
     tick(s2, 24);
     clearCards(s2);
     const hb = hub(s2);
-    Object.assign(hb.stock, { food: 300, ammo: 500 });
+    Object.assign(hb.stock, { ammo: 500 }); setFood(hb, 300);
     const r = V.spawnVisitor(s2, "raiders", { size, power: 3.5 });
     place(s2, r, ringLand(s2, hb.tile, 2)[0]);
     r.goal = { kind: "base", baseId: hb.id, tile: hb.tile };

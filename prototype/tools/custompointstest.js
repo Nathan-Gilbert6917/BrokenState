@@ -15,6 +15,7 @@
 //     Ironman refuses, the seed's map and groups stay put, a save and load after Start, the first days on autopilot;
 //   - the screen: the Points each box, the points bars, the dice and Clear buttons, the trait colours everywhere.
 // Usage: node tools/custompointstest.js
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, day } from "../src/sim/world.js";
 import { GEAR, SKILLS, TRAITS, traitKind } from "../src/sim/data.js";
@@ -236,7 +237,7 @@ section("The vehicle's back");
   check(!lead.startVehicle && other.startVehicle && pricePerson(st, other).vehicle > 0 && pricePerson(st, lead).vehicle === 0, "Paid by: the back moves to them");
   const base = createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL });
   const b = again(st);
-  check(b.bases[0].armory.some((it) => it.key === "ar") && b.bases[0].stock.food === base.bases[0].stock.food + 30 && b.bases[0].stock.meds === base.bases[0].stock.meds + 4, "built: the rifle in the hub's armory, the food and meds in its stores");
+  check(b.bases[0].armory.some((it) => it.key === "ar") && Math.abs(food(b.bases[0]) - food(base.bases[0]) - 30) < 1.01 && b.bases[0].stock.meds === base.bases[0].stock.meds + 4, "built: the rifle in the hub's armory, the food and meds in its stores");
   SG_CHANGE["sg-trunk-sup"](b, ui, { value: "999", dataset: { k: "fuel" } });
   check((b.survivors.find((s) => s.startVehicle).startVehicle.supplies.fuel || 0) === 40, "a supply held to its cap");
   check(SG_ACTIONS["sg-trunk-dice"](b, ui) === false && /comes empty/.test(ui.gearEdit.msg), "normal: the dice's back is empty, it says so");

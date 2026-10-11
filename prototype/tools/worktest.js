@@ -16,6 +16,7 @@
 // ten-seed total by ±30 buildings. So each seed is played with DICE variants of the dice (the world's random
 // numbers advanced 0, 1, 2 … draws before day 1), both ways, in parallel child processes, and the totals compared.
 // Usage: node tools/worktest.js [days] [seeds...] [--dice N]   (seeds 1–10, 4 dice variants by default)
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { spawn } from "node:child_process";
 import { cpus } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -70,7 +71,7 @@ function quiet(seed = 42, n = 6) {
     s.traits = []; s.conditions = []; s.health = 100; s.mood = 70; s.role = "rest"; s.station = null; s.leader = false;
     s.gear.weapon = null; for (const k of Object.keys(s.skills)) s.skills[k] = 2;
   }
-  Object.assign(h.stock, { food: 600, water: 300, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 30, jars: 40, preserved: 0 });
+  Object.assign(h.stock, { water: 300, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 30, jars: 40 }); setFood(h, 600);
   st.hordes = []; st.visitors = [];
   for (const p of st.parties) p.target = null;
   workState(st);
@@ -175,7 +176,7 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
   const gen = st.work.roles.find((x) => x.name === "Generalist"); // Farm 2, Craft 4
   join(st, ppl, gen);
   const fw = farmersWanted(st, h);
-  h.stock.food = ppl.length * 10; h.stock.preserved = 0; // short of food (under 15 days): the farm takes up to 1.6 × 1.2 a plot
+  setFood(h, ppl.length * 10); setJarred(h, 0); // short of food (under 15 days): the farm takes up to 1.6 × 1.2 a plot
   at(st, 10);
   planBase(st, h);
   const farmers0 = ppl.filter((s) => s.role === "farm").length;
@@ -206,9 +207,9 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
   const farmer = st.work.roles.find((x) => x.name === "Farmer"); // Farm 1
   join(st, ppl, farmer);
   const fw = farmersWanted(st, h);
-  h.stock.food = ppl.length * 200; h.stock.preserved = 0; // far over any target, winter stores and all
+  setFood(h, ppl.length * 200); setJarred(h, 0); // far over any target, winter stores and all
   at(st, 10);
-  const lim = farmCrewLimits(st, h, h.stock.food / ppl.length, ppl.length);
+  const lim = farmCrewLimits(st, h, food(h) / ppl.length, ppl.length);
   planBase(st, h);
   const farming = ppl.filter((s) => s.role === "farm");
   const off = ppl.filter((s) => s.role !== "farm");
@@ -220,7 +221,7 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
   check(ppl.slice(0, lim.cap + 2).every((s) => s.role === "farm") && ppl.slice(lim.cap + 2).every((s) => s.role !== "farm"), `${lim.cap + 2} pinned farmers stay, over the cap; nobody more is put on the plots`);
   for (const s of ppl) setPinned(st, s, false);
   // Short of food the cap is off and the extra crew goes out.
-  h.stock.food = ppl.length * 5;
+  setFood(h, ppl.length * 5);
   planBase(st, h);
   check(ppl.filter((s) => s.role === "farm").length > lim.cap, `short of food (5 days): ${ppl.filter((s) => s.role === "farm").length} on the plots, the cap off`);
 }
@@ -329,7 +330,7 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
   join(st, [ppl[3]], grd);
   join(st, ppl.slice(4, 6), f);
   ppl[3].skills.shooting = 9; // the Guard role's lookout is the best shot
-  h.stock.food = ppl.length * 10; h.stock.preserved = 0; // short of food: no farm cap (2c), all with Farm first farm
+  setFood(h, ppl.length * 10); setJarred(h, 0); // short of food: no farm cap (2c), all with Farm first farm
   at(st, 10);
   const ring = (d) => st.grid.within(h.tile, d).find((id) => st.grid.distance(id, h.tile) === d && st.tiles[id].terrain !== "water");
   const hz = { id: 881, tile: ring(3), size: 60, bosses: 0, target: null, goal: null };

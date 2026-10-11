@@ -10,6 +10,8 @@
 // - The witness rule: seen, merchants' reputation −45 or the group hostile; unseen, nothing.
 // - Raider gangs rob merchants, your convoys and the groups' caravans by the numbers and keep the goods.
 // - A save with caravans on the road and a team on the chase loads and plays on the same.
+import { FOODS } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, combatPower } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { launchExpedition, partyTile, planPath, ordersCard } from "../src/sim/parties.js";
@@ -38,7 +40,7 @@ function team(st, d = 5, n = 4) {
   const h = hub(st);
   const away = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === d && planPath(st, h.tile, t.id, false)).id;
   const crew = [...atBase(st, h.id)].sort((a, b) => combatPower(b) - combatPower(a)).slice(0, n).map((s) => s.id);
-  Object.assign(h.stock, { ammo: Math.max(h.stock.ammo || 0, 300), food: Math.max(h.stock.food || 0, 100), water: Math.max(h.stock.water || 0, 100) });
+  Object.assign(h.stock, { ammo: Math.max(h.stock.ammo || 0, 300), water: Math.max(h.stock.water || 0, 100) }); setFood(h, Math.max(food(h) || 0, 100));
   const res = launchExpedition(st, { memberIds: crew, dest: away, mission: "move", stance: "normal", supplies: { food: 12, water: 12, ammo: 120 } });
   if (res.error) throw new Error(`team: ${res.error}`);
   const p = res.party;
@@ -51,7 +53,7 @@ function team(st, d = 5, n = 4) {
 // Where everything taken ended up: the team's cargo, a vehicle parked on the tile, the cargo left on the tile.
 function haul(st, p, tile) {
   const sup = {}, items = [];
-  const add = (s, g) => { for (const [k, q] of Object.entries(s || {})) sup[k] = (sup[k] || 0) + Math.floor(q || 0); items.push(...(g || [])); };
+  const add = (s, g) => { for (const [k, q] of Object.entries(s || {})) sup[k] = (sup[k] || 0) + (FOODS[k] ? q || 0 : Math.floor(q || 0)); items.push(...(g || [])); }; // food by type: items, fractions kept
   add(p.cargo.supplies, p.cargo.gear);
   for (const v of st.vehicles) if (v.loc.kind === "abandoned" && v.loc.tile === tile && v.cargo) add(v.cargo.supplies, v.cargo.gear);
   const site = st.deathSites.find((d) => d.tile === tile);
@@ -85,8 +87,8 @@ section("Escorts: the cargo's wish, capped by the sender's means");
   check(JSON.stringify(E.companyFor(stc, 7, 50)) === JSON.stringify(E.companyFor(stc, 7, 50)), "a company's means are its own dice (the same serial, the same company)");
   check(["guards", "escorts", "contractors"].every((k) => KITS[k] && KITS[k].weapons.every((w) => GEAR[w])) && KITS.contractors.armor.includes("plate") && KITS.contractors.weapons.includes("ar"), "their battle kits exist (combat.js KITS), plate and automatic rifles for the best");
   // Guns and armour count 1.5×.
-  const plain = { stock: { food: 100 }, wares: [] }, guns = { stock: { food: 100 }, wares: [{ key: "ar", name: "AR", quality: 1 }] }, tools = { stock: { food: 100 }, wares: [{ key: "lantern", name: "Lantern", quality: 1 }] };
-  check(E.escortValue(guns.stock, guns.wares) - E.escortValue(plain.stock, plain.wares) === Math.round(GEAR.ar.value * 1.5) && E.escortValue(tools.stock, tools.wares) - 200 === GEAR.lantern.value, "guns count 1.5×, tools at their worth");
+  const plain = { stock: { f_beans: 500 }, wares: [] }, guns = { stock: { f_beans: 500 }, wares: [{ key: "ar", name: "AR", quality: 1 }] }, tools = { stock: { f_beans: 500 }, wares: [{ key: "lantern", name: "Lantern", quality: 1 }] }; // 100 days of canned beans
+  check(E.escortValue(guns.stock, guns.wares) - E.escortValue(plain.stock, plain.wares) === Math.round(GEAR.ar.value * 1.5) && Math.abs(E.escortValue(tools.stock, tools.wares) - E.escortValue(plain.stock, plain.wares) - GEAR.lantern.value) < 1e-6, "guns count 1.5×, tools at their worth");
   // Merchants spawned: every speciality fills the wagons; the escort is the wish × the company.
   const st = world();
   tick(st, 24);
@@ -165,7 +167,7 @@ section("Your team robs a merchant caravan: everything it carries");
     m.guards = 2; m.size = 4; m.power = 1.2;
     place(m, partyTile(p));
     m.phase = "travel";
-    const stock0 = Object.fromEntries(Object.entries(m.stock).filter(([, q]) => q >= 1).map(([k, q]) => [k, Math.floor(q)]));
+    const stock0 = Object.fromEntries(Object.entries(m.stock).filter(([, q]) => q >= 1).map(([k, q]) => [k, FOODS[k] ? q - 1e-6 : Math.floor(q)]));
     const wares0 = [...m.wares];
     const rep0 = V.merchantRep(st);
     const tile = partyTile(p);
@@ -237,7 +239,7 @@ section("Your team robs a group's caravan on the road; the meeting card; Interce
       console.log(`  ${res ? res.text.slice(0, 300) : "no card"}`);
       if (won) {
         const got = haul(st, p, partyTile(p));
-        check(Object.entries(stock0).every(([k, n]) => (got.sup[k] || 0) >= n) && got.items.includes(item), "everything it carried is the team's");
+        check(Object.entries(stock0).every(([k, n]) => (got.sup[k] || 0) >= n - 1e-6) && got.items.includes(item), `everything it carried is the team's (missing ${JSON.stringify(Object.entries(stock0).filter(([k, n]) => (got.sup[k] || 0) < n - 1e-6).map(([k, n]) => [k, n, got.sup[k] || 0]))}, item ${got.items.includes(item)})`);
         const s = st.stats.caravanRaids;
         check(s.seen ? attitude(f) === "Hostile" && f.goodwill < gw0 : f.goodwill === gw0, `consequences by the witnesses (${s.seen ? "seen: hostile" : "unseen: nothing"})`);
       } else check(attitude(f) === "Hostile", "lost: they saw you, and are your enemies");
@@ -313,11 +315,11 @@ section("The groups rob caravans");
   place(m, near); m.phase = "travel";
   const c = C.roadCaravans(st).find((x) => x.ref === m);
   check(!!c && C.wouldRaid(st, r, c), `${r.name} would rob merchants passing by`);
-  const food0 = r.stock.food || 0, meds0 = r.stock.meds || 0, wares0 = (r.wares || []).length;
-  const mf = Math.floor(m.stock.food || 0), mm = Math.floor(m.stock.meds || 0), items = m.wares.length;
+  const food0 = food(r) || 0, meds0 = r.stock.meds || 0, wares0 = (r.wares || []).length;
+  const mf = food(m) || 0, mm = Math.floor(m.stock.meds || 0), items = m.wares.length;
   const won = C.groupRobs(st, r, c, 999, 1);
   check(won && !st.visitors.includes(m), "won by the numbers: the caravan is gone");
-  check((r.stock.food || 0) === food0 + mf && (r.stock.meds || 0) === meds0 + mm && (r.wares || []).length === Math.min(12, wares0 + items), `everything into their stock and onto their shelf (+${mf} food, +${mm} meds, ${items} items)`);
+  check(Math.abs((food(r) || 0) - food0 - mf) < 1e-6 && (r.stock.meds || 0) === meds0 + mm && (r.wares || []).length === Math.min(12, wares0 + items), `everything into their stock and onto their shelf (+${mf} food, +${mm} meds, ${items} items)`);
   // The hourly odds: a gang near the road robs a passing caravan sooner or later.
   let hit = false;
   for (let i = 0; i < 400 && !hit; i++) {
@@ -334,27 +336,29 @@ section("The groups rob caravans");
   // Your convoy.
   const h = hub(st);
   const crew = atBase(st, h.id).slice(0, 1);
-  const q = { id: 9e9, owner: "player", kind: "convoy", members: crew.map((s) => s.id), path: [near], idx: 0, phase: "out", supplies: { food: 2 }, cargo: { supplies: { food: 40, ammo: 50 }, gear: [{ key: "pistol", name: "9mm pistol", quality: 1 }] } };
+  const q = { id: 9e9, owner: "player", kind: "convoy", members: crew.map((s) => s.id), path: [near], idx: 0, phase: "out", supplies: {}, cargo: { supplies: { ammo: 50 }, gear: [{ key: "pistol", name: "9mm pistol", quality: 1 }] } };
+  setFood(q, 2); setFood(q.cargo, 40); // days of ration bars (tools/foodkit.js)
   for (const s of crew) s.location = { kind: "party", partyId: q.id };
   st.parties.push(q);
   r.goodwill = -90;
   const cv = C.roadCaravans(st, { player: true }).find((x) => x.ref === q);
   check(!!cv && C.wouldRaid(st, r, cv), "and your convoys, when hostile");
-  const f0 = r.stock.food;
+  const f0 = food(r);
   C.groupRobs(st, r, cv, 999, 1);
-  check(q.cargo.supplies.food === 0 && q.cargo.supplies.ammo === 0 && !q.cargo.gear.length && r.stock.food === f0 + 40, "your convoy loses its whole load");
+  check(food(q.cargo) < 1e-6 && q.cargo.supplies.ammo === 0 && !q.cargo.gear.length && Math.abs(food(r) - f0 - 40) < 1e-6, `your convoy loses its whole load (food left ${food(q.cargo)}, the group +${food(r) - f0})`);
   st.parties.splice(st.parties.indexOf(q), 1);
   for (const s of crew) s.location = { kind: "base", baseId: h.id };
   // A group's caravan near a raider base (parties.js aiPartyHour: gangAmbush).
   const g = st.factions.find((x) => x.alive && x !== r && x.bases.length && x.type !== "raider");
   if (g) {
-    const cq = { id: 9e9 + 1, owner: g.id, kind: "caravan", path: [near], idx: 0, phase: "out", strength: 1, goods: { supplies: { food: 25, scrap: 5 }, gear: [{ key: "vest", name: "Vest", quality: 1 }] } };
+    const cq = { id: 9e9 + 1, owner: g.id, kind: "caravan", path: [near], idx: 0, phase: "out", strength: 1, goods: { supplies: { scrap: 5 }, gear: [{ key: "vest", name: "Vest", quality: 1 }] } };
+    setFood(cq.goods, 25); // days of ration bars (tools/foodkit.js)
     st.parties.push(cq);
-    const rf = r.stock.food;
+    const rf = food(r);
     r.pop = Math.max(r.pop, 40);
     let ok = false;
     for (let i = 0; i < 6 && !ok; i++) { ok = C.gangAmbush(st, r, cq); st.hour++; } // 5% of the time a strong gang is still beaten off
-    check(ok && r.stock.food === rf + 25 && cq.goods.gear.length === 0 && ((r.wares || []).some((it) => it.key === "vest") || (r.arsenal && r.arsenal.items.some((it) => it.name === "Vest"))), "a gang's ambush on a group's caravan takes everything (the vest to their fighters: arsenal.js)");
+    check(ok && Math.abs(food(r) - rf - 25) < 1e-6 && cq.goods.gear.length === 0 && ((r.wares || []).some((it) => it.key === "vest") || (r.arsenal && r.arsenal.items.some((it) => it.name === "Vest"))), `a gang's ambush on a group's caravan takes everything (the vest to their fighters: arsenal.js; ok ${ok}, food +${food(r) - rf})`);
     st.parties.splice(st.parties.indexOf(cq), 1);
   }
 }

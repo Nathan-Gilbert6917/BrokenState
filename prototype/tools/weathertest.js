@@ -12,6 +12,7 @@
 //     (weather.js `known`): a trip a front that formed after the estimate crossed is counted apart, like a delay.
 //  6. Two years (224 days) of play without NaN in the weather, people or stock.
 // Usage: node tools/weathertest.js [seeds for the climate table, default 20]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, survivorById, alive, day } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, startReturn, STANCES } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate } from "../src/sim/orders.js";
@@ -198,7 +199,7 @@ for (const mode of ["winter", "flip"]) {
     if (mode === "winter") { state.hour = (75 + c) * 24 + 6; W.weatherDaily(state); } // real weather, deep in winter
     else forceFlip(state, 12); // only 12 days set; later days are rolled on demand during the trip
     const h = hub(state);
-    Object.assign(h.stock, { food: 900, water: 900, fuel: 300, meds: 30, ammo: 300, parts: 20 });
+    Object.assign(h.stock, { water: 900, fuel: 300, meds: 30, ammo: 300, parts: 20 }); setFood(h, 900);
     const truck = vehiclesAtBase(state, h.id)[0];
     const byTruck = c % 2 === 1 && truck;
     if (byTruck) { truck.fuel = 60; truck.condition = 100; }
@@ -284,7 +285,7 @@ console.log("Two-year run");
     const h = hub(state);
     if (h && state.hour % 24 === 1) { // a hub lost to raiders (conquest.js) ends the feeding and the trips, not the run
       // Keep the holdout fed so the run lasts; send a team out every 5 days to put travel through the seasons.
-      h.stock.food = Math.max(h.stock.food, 60); h.stock.water = Math.max(h.stock.water, 60);
+      setFood(h, Math.max(food(h), 60)); h.stock.water = Math.max(h.stock.water, 60);
       const w = W.weather(state), se = W.season(state);
       seen.add(`${se.key}`); seen.add(w.key);
       for (const k of ["temp", "hi", "lo", "rain", "snow", "wind", "soil"]) if (!fin(w[k])) nan++;
@@ -293,7 +294,7 @@ console.log("Two-year run");
         const targets = state.tiles.filter((t) => t.loc && state.grid.distance(t.id, h.tile) <= 7 && t.id !== h.tile);
         const dest = state.rng.pick(targets).id;
         const est = estimateTrip(state, { memberIds: people.map((s) => s.id), dest, vehicle: false, stance: "normal" });
-        if (est && people.length) launchExpedition(state, { memberIds: people.map((s) => s.id), dest, mission: "move", stance: "normal", supplies: { food: Math.min(h.stock.food, est.food + 2), water: Math.min(h.stock.water, est.water + 2) } });
+        if (est && people.length) launchExpedition(state, { memberIds: people.map((s) => s.id), dest, mission: "move", stance: "normal", supplies: { food: Math.min(food(h), est.food + 2), water: Math.min(h.stock.water, est.water + 2) } });
       }
     }
     for (const s of state.survivors) if (!fin(s.health)) nan++;

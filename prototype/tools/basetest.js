@@ -2,6 +2,7 @@
 // crafting.js, inventory.js, vehicles.js): game over, the leader card, deaths at a base, lost outposts, cut-off
 // outposts, hunger, starting roles and names, refunds, kits, armor condition and the stock floor.
 // Usage: node tools/basetest.js [seed]
+import { food, setFood, clearFood } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { LIGHTS } from "../src/sim/lights.js";
 import {
   createWorld, tickHour, hub, atBase, alive, skill, hurt, killSurvivor, makeSurvivor, newId, applyCrew, residents,
@@ -30,7 +31,9 @@ const firstOf = (n) => n.split(" ")[0];
 const plain = (s) => { s.traits = []; return s; };
 const addPerson = (st, base, role = "farm") => { const s = plain(makeSurvivor(st, 1)); s.location = { kind: "base", baseId: base.id }; s.role = role; st.survivors.push(s); return s; };
 const mkOutpost = (st, tile, stock = {}) => {
-  const b = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, ...stock }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  const { food: days = 0, ...rest } = stock; // food: days of it (tools/foodkit.js)
+  const b = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, ...rest }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  setFood(b, days);
   st.bases.push(b);
   return b;
 };
@@ -42,7 +45,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   console.log("Game over: desertion and captives changing sides");
   const st = W();
   const h = hub(st);
-  h.stock.food = 9999;
+  setFood(h, 9999);
   const ppl = atBase(st, h.id);
   for (const s of ppl.slice(1)) killSurvivor(st, s, null, "in a test");
   ppl[0].leader = false; // a leader never deserts
@@ -177,7 +180,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   check([a, b].every((s) => s.location.kind === "base" && s.location.baseId === h.id), "the staff fled to the hub");
   check(!stations(h).some((x) => x.id === a.station) ? a.station == null : true, "no station id of the lost base is kept");
   check(st.supplyRuns[0].paused, "supply runs to the lost base are paused");
-  check(logHas(st, /Test Outpost was overrun in a test\..*Lost with it.*30 food.*left behind/), "the log says what was lost");
+  check(logHas(st, /Test Outpost was overrun in a test\..*Lost with it.*30 days of food.*left behind/), "the log says what was lost");
   check(!removeBase(st, h), "the hub cannot be removed");
   check(!st.vehicles.some((x) => x.loc.kind === "base" && !st.bases.some((bb) => bb.id === x.loc.baseId)), "no vehicle is parked at a missing base");
 }
@@ -194,25 +197,25 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     done = true;
     const base = mkOutpost(st, t.id, { scrap: 40 });
     const a = addPerson(st, base, "guard"), b = addPerson(st, base, "guard");
-    h.stock.food = 300;
+    setFood(h, 300);
     const hubScrap = h.stock.scrap;
     check(supplyLine(st, base).strength === 0, `seed ${sd}: the outpost has no land route`);
     // The same day without the outpost (same seed, everyone at the hub resting: no harvests, no finds): the hub's
     // food must end the day exactly the same (crops ripen in batches now, and stored food spoils a little).
     const twin = W(sd);
     const th = hub(twin);
-    th.stock.food = 300;
+    setFood(th, 300);
     for (const s of atBase(twin, th.id)) s.role = "rest";
     for (const s of atBase(st, h.id)) s.role = "rest";
     basesDaily(twin);
     basesDaily(st);
     st.cards.length = 0;
-    check(near(h.stock.food, th.stock.food, 0.11), `the hub's food is not drained by the cut-off outpost (${h.stock.food} vs ${th.stock.food} without it)`);
+    check(near(food(h), food(th), 0.11), `the hub's food is not drained by the cut-off outpost (${food(h)} vs ${food(th)} without it)`);
     check(base.stock.scrap >= 40, `the outpost keeps its stock (${base.stock.scrap} scrap)`);
     check(h.stock.scrap < hubScrap + 20, "nothing was shipped into the void");
     check(logHas(st, /Test Outpost is cut off/), "the log says the outpost is cut off");
-    check(a.health < 100 && b.health < 100 && base.stock.food === 0, "its people go hungry on their own stock");
-    check(Number.isFinite(h.stock.food) && Number.isFinite(base.stock.food), "no NaN or Infinity in the stocks");
+    check(a.health < 100 && b.health < 100 && food(base) === 0, "its people go hungry on their own stock");
+    check(Number.isFinite(food(h)) && Number.isFinite(food(base)), "no NaN or Infinity in the stocks");
   }
   check(done, "found a seed with an unreachable land tile");
 
@@ -235,7 +238,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const h = hub(st);
   const ppl = atBase(st, h.id);
   ppl.forEach((s) => { plain(s); s.role = "rest"; s.skills.medicine = 12; });
-  h.stock.food = 0; h.stock.preserved = 0; h.stock.meds = 0;
+  clearFood(h); h.stock.meds = 0;
   const tough = ppl[1];
   tough.traits = ["tough"];
   tough.gear.armor = newItem("plate"); tough.gear.head = newItem("riothelmet");
@@ -245,7 +248,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   let days = 1;
   while (alive(st).length === 6 && days < 30) {
     for (let i = 0; i < 24; i++) medicalHour(st);
-    h.stock.food = 0; h.stock.preserved = 0;
+    clearFood(h);
     basesDaily(st);
     st.cards.length = 0;
     ppl.forEach((s) => (s.mood = 60)); // keep them from walking away: this is about health
@@ -257,10 +260,10 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const st2 = W();
   const h2 = hub(st2);
   atBase(st2, h2.id).forEach((s) => (s.role = "rest"));
-  h2.stock.food = 0; h2.stock.preserved = 0;
+  clearFood(h2);
   basesDaily(st2);
   check(h2.hungerDays === 1, "a day without food is counted");
-  h2.stock.food = 500;
+  setFood(h2, 500);
   basesDaily(st2);
   check(h2.hungerDays === 0 && healRatePerHour(st2, h2, atBase(st2, h2.id).find((s) => s.health < 100)) > 0, "healing resumes once there is food again");
   // hurt(): plain damage is reduced by armor and Tough, raw damage is not.
@@ -279,24 +282,24 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   console.log("Stock floor and the stranger card");
   const st = W();
   const h = hub(st);
-  h.stock.food = 9999;
+  setFood(h, 9999);
   let card = null, n = 0;
   while (!card && n++ < 2000) { basesDaily(st); card = st.cards.find((c) => c.title === "A stranger at the gate"); if (!card) st.cards.length = 0; }
   check(!!card, "a stranger turned up");
   if (card) {
-    h.stock.food = 2;
+    setFood(h, 2);
     const count = st.survivors.length;
     const msg = card.choices[0].resolve(st);
     check(st.survivors.length === count + 1, `the stranger joined (${msg})`);
-    check(h.stock.food === 0, `the cost is what the hub has when the choice is made, never below zero (${h.stock.food})`);
+    check(food(h) === 0, `the cost is what the hub has when the choice is made, never below zero (${food(h)})`);
     card.choices[0].resolve(st);
     check(st.survivors.length === count + 1, "resolving twice does not add them twice");
   }
   const st2 = W();
   const h2 = hub(st2);
-  h2.stock.food = -5; h2.stock.ammo = -20;
+  h2.stock.f_beans = -5; h2.stock.ammo = -20;
   tickHour(st2);
-  check(h2.stock.food >= 0 && h2.stock.ammo >= 0, "the hourly safety net lifts negative stock to zero");
+  check(h2.stock.f_beans >= 0 && h2.stock.ammo >= 0, "the hourly safety net lifts negative stock to zero");
   for (const sd of [1, 2, 3]) {
     const s3 = W(sd);
     let neg = 0;
@@ -321,7 +324,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   st.routes.push({ id: 777, factionId: st.factions[0].id, escortIds: [e.id], active: true, nextDay: 9999, interval: 5 });
   e.location = { kind: "route", routeId: 777 };
   e.health = 30;
-  h.stock.food = 100; h.stock.meds = 20;
+  setFood(h, 100); h.stock.meds = 20;
   check(residents(st, h.id).includes(e) && !atBase(st, h.id).includes(e), "a waiting escort is a hub resident but not base staff");
   check(near(foodForecast(st, h), farmOutput(st, h) - 6), "the food forecast counts the escort");
   // Nobody farms or scavenges today (no harvest, no finds): the stock drops by six mouths, then spoils a little.
@@ -330,7 +333,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   check(near(eat / 6, eat / residents(st, h.id).length) && residents(st, h.id).length === 6, `six mouths eat (${eat})`);
   basesDaily(st);
   const left = 100 - eat;
-  check(Math.abs(h.stock.food - left * (1 - spoilRate(st, h))) < 0.3, `the hub feeds the escort (${h.stock.food}, expected about ${(left * (1 - spoilRate(st, h))).toFixed(1)})`);
+  check(Math.abs(food(h) - left * (1 - spoilRate(st, h))) < 0.3, `the hub feeds the escort (${food(h)}, expected about ${(left * (1 - spoilRate(st, h))).toFixed(1)})`);
   const hp = e.health;
   for (let i = 0; i < 24; i++) medicalHour(st);
   check(e.health > hp, `the escort heals at the hub (${hp.toFixed(1)} → ${e.health.toFixed(1)})`);
@@ -372,7 +375,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   ppl.forEach((s) => { plain(s); s.role = "farm"; s.skills.medicine = 0; s.skills.farming = 0; s.station = null; });
   const stn = addBuilding(h, "med_station");
   addBuilding(h, "clinic");
-  Object.assign(h.stock, { scrap: 100, food: 100 });
+  Object.assign(h.stock, { scrap: 100 }); setFood(h, 100);
   ppl[0].role = "operate"; ppl[0].station = stn.id;
   check(stationStatus(st, h, stn).out.meds === 1, `an unstaffed clinic adds nothing to the med station (${stationStatus(st, h, stn).out.meds})`);
   ppl[1].role = "medic"; ppl[2].role = "medic";
@@ -554,7 +557,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   check(/Added 12\.6 fuel/.test(msg) && near(v.fuel, tank(v)), `the refuel message is rounded (${msg})`);
   const ppl = atBase(st, h.id);
   ppl.forEach((s) => (s.role = "scavenge"));
-  h.stock.food = 9999;
+  setFood(h, 9999);
   let n = 0;
   // Scavenging around a base brings cuts and sprains (health.js), logged with where it happened.
   while (!logHas(st, /scavenging around the base at/) && n++ < 300) { ppl.forEach((s) => { if (s.alive) { s.health = 100; s.conditions = []; } }); h.stock.water = 80; basesDaily(st); st.cards.length = 0; }

@@ -11,6 +11,7 @@
 //   hardcore's lean start with foraging on and off (the test switch governor.noForaging).
 // - The alerts (base and team food with a "forage nearby" hint, the hardcore road team), the team panel's Forage
 //   buttons and food-nearby list, the tile panel, the right-click menu; save / load mid-forage and determinism.
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, atBase, survivorById, makeSurvivor, setNextId, day, alive } from "../src/sim/world.js";
 import { launchExpedition, partyTile, planPath, partyMembers, carried, cargoRoom } from "../src/sim/parties.js";
@@ -47,7 +48,7 @@ function mk(seed = SEED, extra = {}) {
   const state = createWorld({ seed, factionCount: 6, ...extra });
   state.started = true;
   state.autoCombat = true;
-  if (hub(state)) Object.assign(hub(state).stock, { food: 400, water: 400, fuel: 100, meds: 20, ammo: 400, parts: 10, scrap: 100 });
+  if (hub(state)) { Object.assign(hub(state).stock, { water: 400, fuel: 100, meds: 20, ammo: 400, parts: 10, scrap: 100 }); setFood(hub(state), 400); }
   return state;
 }
 // A clean land tile of a terrain: low infection, no site, no water beside, away from hives and bases.
@@ -68,7 +69,8 @@ function placeTeam(state, tile, { n = 3, skills = { farming: 4, scouting: 4 }, f
   const res = launchExpedition(state, { memberIds: ids, dest: near.id, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
-  Object.assign(p.supplies, { food, water: 20 });
+  p.supplies.water = 20;
+  setFood(p, food); // days of food (tools/foodkit.js)
   p.cargo = { supplies: {}, gear: [] };
   p.path = [tile]; p.idx = 0; p.dest = tile; p.progress = 0; p.orders = []; p.phase = "waiting"; p.task = null;
   return p;
@@ -178,7 +180,7 @@ section("Depletion and regrowth, the expected haul against hour-by-hour rolls");
   note(`it grows back: ${back.map((x) => `${Math.round(x * 100)}%`).join(", ")} after 7, 14 and 28 days`);
   check(back[0] > lvl && back[2] > 0.85, "most of it back within a season (unlike a site's loot)");
   // Room: what does not fit stays.
-  p.supplies.food = 0;
+  setFood(p, 0);
   state.forage = {};
   state.hour = start; p.cargo = { supplies: {}, gear: [] }; p.phase = "task"; p.task = { type: "forage", hours: 8, done: 0 };
   const room = cargoRoom(state, p);
@@ -311,16 +313,16 @@ section("The Forage job at a base: work type, role, the daily gathering, the lan
   state.forage = {};
   const run = (key, days) => {
     const d0 = dayIn(state, key, 1);
-    let food = 0;
+    let got = 0;
     const daily = [];
     for (let d = 0; d < days; d++) {
       state.hour = (d0 + d) * 24 + 24;
-      const before = base.stock.food;
+      const before = food(base);
       huntDay(state, base);
-      food += base.stock.food - before;
-      daily.push(base.stock.food - before);
+      got += food(base) - before;
+      daily.push(food(base) - before);
     }
-    return { food, daily };
+    return { food: got, daily };
   };
   const sum = run("summer", 28);
   const lvl = mean(F.baseForageTiles(state, base).slice(0, 5).map((t) => F.forageLevel(state, t.id)));
@@ -344,8 +346,8 @@ section("The autopilot: a hungry base forages, a team short of food gathers food
   setAutopilot(state, true, "balanced");
   const base = hub(state);
   state.hour = dayIn(state, "summer", 6) * 24 + 5;
-  base.stock.food = atBase(state, base.id).length * 2;
-  base.stock.preserved = 0;
+  setFood(base, atBase(state, base.id).length * 2);
+  setJarred(base, 0);
   for (let i = 0; i < 3; i++) tickHour(state);
   const foragers = atBase(state, base.id).filter((s) => s.role === "forage").length;
   check(foragers >= 1, `food down to 2 days: the governor puts ${foragers} on Forage`);
@@ -360,7 +362,7 @@ section("The autopilot: a hungry base forages, a team short of food gathers food
   st3.hour = dayIn(st3, "summer", 6) * 24 + 7;
   const forest = cleanTile(st3, "forest", (t) => st3.grid.distance(t.id, hub(st3).tile) >= 4 && planPath(st3, hub(st3).tile, t.id, false));
   const p = placeTeam(st3, forest.id, { food: 0.2 });
-  p.supplies.food = 0.2;
+  setFood(p, 0.2);
   let did = null;
   for (let i = 0; i < 6 && !did; i++) {
     tickHour(st3);
@@ -374,7 +376,7 @@ section("The autopilot: a hungry base forages, a team short of food gathers food
   setAutopilot(hc, true, "balanced");
   hc.hour = Math.max(hc.hour, dayIn(hc, "summer", 3) * 24 + 7);
   const rt = roadTeam(hc);
-  rt.supplies.food = 0.3; rt.supplies.preserved = 0; rt.cargo.supplies.food = 0; rt.cargo.supplies.preserved = 0;
+  setFood(rt, 0.3); setJarred(rt, 0); setFood(rt.cargo, 0); setJarred(rt.cargo, 0);
   const at = partyTile(rt);
   rt.path = [at]; rt.idx = 0; rt.dest = at; rt.progress = 0; rt.orders = []; rt.phase = "waiting"; rt.task = null; // waiting for orders, no camp yet
   hc.staging = null;
@@ -396,7 +398,7 @@ section("Alerts and panels: the forage hint, the team panel, the tile panel, the
   state.hour = dayIn(state, "summer", 10) * 24 + 10;
   const forest = cleanTile(state, "forest");
   const p = placeTeam(state, forest.id, { food: 1 });
-  base.stock.food = 2; base.stock.preserved = 0;
+  setFood(base, 2); setJarred(base, 0);
   const al = computeAlerts(state);
   const fa = al.find((a) => a.kind === "food" || a.kind === "starve");
   note(`base alert: ${fa ? fa.text : "none"}`);
@@ -422,7 +424,7 @@ section("Alerts and panels: the forage hint, the team panel, the tile panel, the
   hc.started = true;
   hc.hour = Math.max(hc.hour, dayIn(hc, "summer", 3) * 24 + 9);
   const rt = roadTeam(hc);
-  rt.supplies.food = 1; rt.supplies.preserved = 0; rt.cargo.supplies.food = 0; rt.cargo.supplies.preserved = 0;
+  setFood(rt, 1); setJarred(rt, 0); setFood(rt.cargo, 0); setJarred(rt.cargo, 0);
   const ra = computeAlerts(hc).find((a) => a.kind === "roadfood");
   note(`road alert: ${ra ? ra.text : "none"}`);
   check(!!ra && /forage|hunt|fish/.test(ra.text + ra.tip), "hardcore: the road team's food alert says where to forage or hunt");

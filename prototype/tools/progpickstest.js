@@ -11,6 +11,7 @@
 // 3. The buildings the governor never built (autopilot.js buildWishes): the chapel, the Master workbench, storage
 //    crates and the radio relay (and the radio station it chains from), each in a scenario that calls for it, and
 //    queued by the governor (planBuilds).
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, makeSurvivor, newId, day, alive, atBase } from "../src/sim/world.js";
 import { BUILDINGS, addBuilding, canBuild, runStations, farmSlots, plotsFree, plotCap, assignStations } from "../src/sim/buildings.js";
 import { PEN, livestockYield, plotLimit, winterOutlook, keptPens } from "../src/sim/farming.js";
@@ -145,7 +146,7 @@ section("2a. The animal pen: its food, the pasture, the station, the winter outl
 {
   const st = at(mk(), 40);
   const h = hub(st);
-  Object.assign(h.stock, { scrap: 200, parts: 10, water: 200, food: 100 });
+  Object.assign(h.stock, { scrap: 200, parts: 10, water: 200 }); setFood(h, 100);
   const def = BUILDINGS.animal_pen;
   check(def && def.plot === "building" && def.station === "livestock" && def.cost.scrap === 14 && !def.cost.parts && def.max === 2, "the animal pen: a building plot, 14 scrap, a livestock station, at most 2");
   const p0 = plotLimit(h), s0 = farmSlots(h);
@@ -163,10 +164,10 @@ section("2a. The animal pen: its food, the pasture, the station, the winter outl
   for (const s of atBase(st, h.id)) { if (s.role === "operate") s.role = "farm"; }
   keeper.role = "operate"; keeper.station = pen.id;
   assignStations(st, h);
-  const f0 = h.stock.food, w0 = h.stock.water;
+  const f0 = food(h), w0 = h.stock.water;
   st.hour = summer * 24 + 6;
   runStations(st, h);
-  check(Math.abs(h.stock.food - f0 - (PEN.food + PEN.skilled)) < 1e-9 && Math.abs(w0 - h.stock.water - 1) < 1e-9, `a day at the pen: +${(h.stock.food - f0).toFixed(2)} food, −${(w0 - h.stock.water).toFixed(0)} water`);
+  check(Math.abs(food(h) - f0 - (PEN.food + PEN.skilled)) < 1e-6 && Math.abs(w0 - h.stock.water - 1) < 1e-9, `a day at the pen: +${(food(h) - f0).toFixed(6)} days of food (expected ${PEN.food + PEN.skilled}), −${(w0 - h.stock.water).toFixed(0)} water`);
   // The winter outlook counts a kept pen.
   st.hour = (summer + 20) * 24 + 6;
   const withPen = winterOutlook(st, h).crops;
@@ -185,7 +186,7 @@ section("2b. The AI groups' pens (groupworks.js PENS)");
   f.bases.splice(1);
   const t = f.bases[0];
   f.works = { [t]: { water: 99, farms: 99, beds: 99, walls: 0, bench: 1, store: 1, sickbay: 4 } };
-  f.stock.food = f.pop * 50;
+  setFood(f, f.pop * 50);
   st.groupWorks = st.groupWorks || 1;
   const nw0 = nextWork(st, f);
   check(!nw0 || nw0.type !== "pens", `no walls: no pen (${nw0 ? nw0.type : "nothing"} next)`);
@@ -205,7 +206,7 @@ section("2c. The Turtle governor builds its home food chain and staffs it");
   check(PERSONALITIES.turtle.homeFood === true, "the Turtle style lives on its own land (homeFood)");
   while (atBase(st, h.id).length < 10) person(st, h, { farming: 4, mechanics: 3 });
   for (const b of [...h.buildings]) if (b.type === "walls" || b.type === "animal_pen") h.buildings.splice(h.buildings.indexOf(b), 1);
-  Object.assign(h.stock, { scrap: 400, parts: 30, water: 300, food: 400 });
+  Object.assign(h.stock, { scrap: 400, parts: 30, water: 300 }); setFood(h, 400);
   const w1 = wishes(st, h);
   check(w1.includes("walls"), `no walls yet: it wants walls first (${w1.slice(0, 8).join(", ")})`);
   addBuilding(h, "walls");
@@ -243,7 +244,7 @@ if (LONG) {
       const before = st.parties.length;
       tickHour(st);
       for (const p of st.parties) if (p.owner === "player" && p.apEmergency && p.started == null) { p.started = true; trips++; }
-      if (st.hour % 24 === 12) { const f = h.stock.food + (h.stock.preserved || 0); low = Math.min(low, f); if (f < 1) hungerDays++; }
+      if (st.hour % 24 === 12) { const f = food(h) + (jarred(h) || 0); low = Math.min(low, f); if (f < 1) hungerDays++; }
     }
     const pens = stations(h).filter((b) => b.type === "animal_pen");
     const kept = keptPens(st, h).length;
@@ -258,7 +259,7 @@ section("3a. The chapel: spirits low with a common room, or grief");
   setAutopilot(st, true, "balanced");
   const h = hub(st);
   while (atBase(st, h.id).length < 10) person(st, h);
-  Object.assign(h.stock, { scrap: 120, parts: 10, water: 300, food: 400 });
+  Object.assign(h.stock, { scrap: 120, parts: 10, water: 300 }); setFood(h, 400);
   h.buildings = h.buildings.filter((b) => b.type !== "chapel");
   for (const s of atBase(st, h.id)) s.mood = 80;
   check(!wishes(st, h).includes("chapel"), "spirits high, nobody grieving: no chapel");
@@ -281,7 +282,7 @@ section("3b. The Master workbench: crafting in use, a Mechanics 5 builder");
   const h = hub(st);
   while (atBase(st, h.id).length < 10) person(st, h);
   for (const s of atBase(st, h.id)) s.skills.mechanics = Math.min(s.skills.mechanics || 0, 4);
-  Object.assign(h.stock, { scrap: 150, parts: 12, water: 300, food: 400 });
+  Object.assign(h.stock, { scrap: 150, parts: 12, water: 300 }); setFood(h, 400);
   h.buildings = h.buildings.filter((b) => BUILDINGS[b.type].family !== "bench");
   addBuilding(h, "workbench");
   addBuilding(h, "ammo_bench");
@@ -308,10 +309,10 @@ section("3c. Storage crates: the food overflows and there is no plot for a bigge
   while (plotsFree(h, "building") > 0) addBuilding(h, "bunkhouse") || addBuilding(h, "common_room");
   for (let i = 0; i < 20 && plotsFree(h, "building") > 0; i++) h.buildings.push({ id: newId(), type: "common_room" });
   const cap = foodStore(st, h).cap;
-  h.stock.food = cap + 60;
+  setFood(h, cap + 60, "f_potatoes");
   const w = wishes(st, h);
-  check(plotsFree(h, "building") === 0 && w.includes("crates"), `food over the room (${Math.round(h.stock.food)} for ${cap}) and no building plot: storage crates (${w.slice(0, 6).join(", ")})`);
-  h.stock.food = cap * 0.3;
+  check(plotsFree(h, "building") === 0 && w.includes("crates"), `food over the room (${Math.round(food(h))} for ${cap}) and no building plot: storage crates (${w.slice(0, 6).join(", ")})`);
+  setFood(h, cap * 0.3, "f_potatoes");
   check(!wishes(st, h).includes("crates"), "the food well within the room: none");
   // A free building plot: the cellar first, crates only as the quick stopgap while food spoils outside.
   const st2 = at(mk(13), 60);
@@ -320,11 +321,11 @@ section("3c. Storage crates: the food overflows and there is no plot for a bigge
   while (atBase(st2, h2.id).length < 8) person(st2, h2);
   Object.assign(h2.stock, { scrap: 120, parts: 10, water: 300 });
   h2.buildings = h2.buildings.filter((b) => b.type !== "crates");
-  h2.stock.food = foodStore(st2, h2).cap + 60;
+  setFood(h2, foodStore(st2, h2).cap + 60, "f_potatoes");
   const w2 = wishes(st2, h2);
   check(w2.includes("crates") && w2.indexOf("cellar") >= 0, `a plot free and food spoiling outside: a cellar, and crates as the stopgap (${w2.slice(0, 6).join(", ")})`);
   h.construction.length = 0;
-  h.stock.food = cap + 60;
+  setFood(h, cap + 60, "f_potatoes");
   const q_crates = queueUntil(st, h, "crates", 40, { ...h.stock });
   check(q_crates != null, `the governor queues them${q_crates && q_crates.length ? ` (after ${q_crates.join(", ")})` : ""}`);
 }
@@ -337,7 +338,7 @@ section("3d. The radio station when groups are out of reach, then the relay that
   const g = st.grid;
   BP.unlockAll(st);
   while (atBase(st, h.id).length < 10) person(st, h, { mechanics: 5 });
-  Object.assign(h.stock, { scrap: 200, parts: 20, water: 300, food: 400 });
+  Object.assign(h.stock, { scrap: 200, parts: 20, water: 300 }); setFood(h, 400);
   h.radio = false;
   h.buildings = h.buildings.filter((b) => b.type !== "radio" && b.type !== "relay");
   const far = st.factions.filter((f) => f.alive && f.bases.length && !canRadioGroup(st, f));

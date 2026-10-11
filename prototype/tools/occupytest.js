@@ -5,6 +5,7 @@
 // an empty base; the AI side (a group moving in pays in people); the planner's problems and the team's orders; the
 // governor choosing to occupy instead of founding an outpost; save/load of an abandoned base and of one moved into.
 // Usage: node tools/occupytest.js [seed=42]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day, makeSurvivor, newId, removeBase, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { addBuilding, plotsUsed, plotCap, count, underAttack } from "../src/sim/buildings.js";
@@ -32,7 +33,8 @@ function nearFree(st, from, lo, hi) {
   return g.within(from, hi).find((t) => g.distance(t, from) >= lo && free(st, t) && planPath(st, from, t, false));
 }
 function outpost(st, tile) {
-  const b = { id: newId(), tile, type: "outpost", name: outpostName(st, tile), stock: { food: 60, water: 40, fuel: 4, meds: 6, ammo: 0, parts: 4, scrap: 30, preserved: 0, jars: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  const b = { id: newId(), tile, type: "outpost", name: outpostName(st, tile), stock: { water: 40, fuel: 4, meds: 6, ammo: 0, parts: 4, scrap: 30, jars: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  setFood(b, 60); // 60 days of ration bars (tools/foodkit.js)
   st.bases.push(b);
   recomputeOwnership(st);
   return b;
@@ -71,7 +73,7 @@ let lost; // { st, tile, name } for the next section
   const rec = G.abandonedAt(st, tile);
   check(rec && rec.from === "player" && rec.buildings.length === 4, `the record keeps its 4 buildings (${rec && rec.buildings.length})`);
   check(rec && rec.works.walls === 1 && rec.works.water === 1 && rec.works.bench === 1 && !rec.works.beds, `its works for the groups: ${JSON.stringify(rec && rec.works)} (the broken bunkhouse counts for nothing)`);
-  check(rec && rec.stock.food === 30 && rec.stock.scrap === 15 && !rec.stock.water, `half its stores stay, no water (${JSON.stringify(rec && rec.stock)})`);
+  check(rec && Math.abs(food(rec) - 30) < 1e-6 && rec.stock.scrap === 15 && !rec.stock.water, `half its stores stay, no water (${JSON.stringify(rec && rec.stock)})`);
   check(st.log.some((l) => /Occupy it/.test(l.text || l)), "the log says it can be occupied");
   const th = G.abandonedThreat(st, tile);
   check(th && JSON.stringify(th) === JSON.stringify(G.abandonedThreat(st, tile)), "what is inside is the same each time it is asked on a day");
@@ -101,7 +103,7 @@ section("Reoccupying it: the mission, the card, the fight, the buildings and sto
   const { st, tile, name } = lost;
   const h = hub(st);
   const squad = fighters(st, 4, h);
-  Object.assign(h.stock, { food: 200, water: 200, meds: 20 });
+  Object.assign(h.stock, { water: 200, meds: 20 }); setFood(h, 200);
   const res = launchExpedition(st, { memberIds: squad.map((s) => s.id), dest: tile, mission: "occupy", stance: "normal", supplies: { food: 12, water: 12, meds: 2 } });
   check(!res.error, `the team leaves (${res.error || "ok"})`);
   const p = res.party;
@@ -128,7 +130,7 @@ section("Reoccupying it: the mission, the card, the fight, the buildings and sto
     check(bk && bk.broken, "the broken bunkhouse is still broken (repair it)");
     const wl = b.buildings.find((x) => x.type === "walls");
     check(wl && wl.wear === 20, `the walls kept their wear (${wl && wl.wear})`);
-    check(b.stock.food >= rec.stock.food && b.stock.scrap >= rec.stock.scrap, `the stores left there are its stock (food ${b.stock.food}, scrap ${b.stock.scrap})`);
+    check(food(b) >= food(rec) && b.stock.scrap >= rec.stock.scrap, `the stores left there are its stock (food ${food(b)}, scrap ${b.stock.scrap})`);
     check(atBase(st, b.id).length === squad.filter((s) => s.alive).length, `the team lives there (${atBase(st, b.id).length})`);
     check(!G.abandonedAt(st, tile) && !st.parties.includes(p), "the record and the team are gone");
     check(b.occupiedFrom && b.occupiedFrom.from === "player", "the base remembers it was moved into");
@@ -160,7 +162,7 @@ section("A group's base: its works as buildings, within the plots");
     check(/beyond saving/.test(text), `the log says what was lost (${text.slice(0, 120)}…)`);
     const wear = O.OCCUPY.WEAR + O.OCCUPY.WEAR_AGE;
     check(b.buildings.every((x) => x.wear === wear), `battered: wear ${wear} after a month empty`);
-    check(b.stock.food === 40 && b.stock.scrap === 12 && b.stock.meds === 3, "their stores are yours");
+    check(Math.abs(food(b) - 40) < 1e-6 && b.stock.scrap === 12 && b.stock.meds === 3, "their stores are yours");
     check(st.tiles[tile].owner === "player", "the land round it is yours");
   }
 }
@@ -245,13 +247,13 @@ section("The groups' side: moving in costs people; the former owner minds; an em
   st.tiles[tile].infection = 0.5;
   st.abandoned = [{ tile, from: old.id, fromName: old.name, works: { walls: 3 }, stock: { food: 10 }, day: day(st) - 40 }];
   const th = G.abandonedThreat(st, tile);
-  const pop0 = f.pop, r0 = relation(st, f, old), food0 = f.stock.food;
+  const pop0 = f.pop, r0 = relation(st, f, old), food0 = food(f);
   f.bases.push(tile);
   G.occupyAbandoned(st, f, tile);
   const lost = pop0 - f.pop;
   check(lost >= Math.floor(th.count * G.ABANDON.AI_LOSS) && lost <= Math.ceil(th.count * G.ABANDON.AI_LOSS), `clearing ${th.count} inside cost ${f.name} ${lost} people`);
   check(relation(st, f, old) === Math.max(-100, r0 + G.ABANDON.FORMER_REL), `${old.name} minds: relations ${r0} → ${relation(st, f, old)}`);
-  check(f.works[tile].walls === 3 && f.stock.food === food0 + 10, "they have the walls and the stores");
+  check(f.works[tile].walls === 3 && Math.abs(food(f) - food0 - 10) < 1e-6, "they have the walls and the stores");
   // Your lost outpost rots: one building a period.
   const st2 = world(seed + 5);
   const tile2 = nearFree(st2, hub(st2).tile, 3, 6);
@@ -278,7 +280,7 @@ section("Save and load an empty base");
   G.abandonedAt(st, tile).thinned = { day: day(st), n: 1 };
   const l = roundTrip(st);
   const r = G.abandonedAt(l, tile);
-  check(r && r.buildings.length === 1 && r.buildings[0].wear === 33 && r.stock.food === 30 && r.thinned.n === 1, "save/load: its buildings, wear, stores and the thinned count");
+  check(r && r.buildings.length === 1 && r.buildings[0].wear === 33 && Math.abs(food(r) - 30) < 1e-6 && r.thinned.n === 1, "save/load: its buildings, wear, stores and the thinned count");
   check(JSON.stringify(G.abandonedThreat(l, tile)) === JSON.stringify(G.abandonedThreat(st, tile)), "save/load: the same inside");
   check(l.knowledge[tile] && l.knowledge[tile].abandoned, "save/load: the map remembers it");
 }
@@ -313,7 +315,7 @@ section("The governor moves in instead of founding an outpost");
   st.knowledge[tile] = snapshot(st, tile); // a team saw it (the live view is redrawn every hour)
   // End to end: the governor runs its days and moves in (it wants an outpost: enough people, food, a while since the last).
   for (let i = 0; i < 8; i++) { const s = makeSurvivor(st, 0.8); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); }
-  Object.assign(h.stock, { food: 600, water: 300, meds: 30, scrap: 10 });
+  Object.assign(h.stock, { water: 300, meds: 30, scrap: 10 }); setFood(h, 600);
   st.governor.lastOutpost = -99;
   for (let i = 0; i < 24 * 12 && !st.bases.some((b) => b.tile === tile); i++) { tickHour(st); if (!st.autopilot) break; }
   const got = st.bases.find((b) => b.tile === tile);
@@ -339,7 +341,7 @@ section("Build outpost takes the groups' claims round it, as a group's new base 
   const crew = atBase(st, h.id).slice(0, 2).map((s) => s.id);
   const modal = UI.renderModal(st, { started: true, planner: { dest: tile, mission: "outpost", crew: new Set(crew), vehicleId: null, stance: "normal", supplies: { scrap: 15, food: 6, water: 6 } }, plannerError: "" }) || "";
   check(/Building here takes claims round it and angers/.test(modal), "the planner says so too");
-  Object.assign(h.stock, { scrap: 60, food: 100, water: 100 });
+  Object.assign(h.stock, { scrap: 60, water: 100 }); setFood(h, 100);
   const res = launchExpedition(st, { memberIds: crew, dest: tile, mission: "outpost", stance: "normal", supplies: { scrap: 15, food: 6, water: 6 } });
   check(!res.error, `the team leaves (${res.error || "ok"})`);
   res.party.path = [tile]; res.party.idx = 0;
@@ -373,11 +375,11 @@ section("Abandon outpost: the card, the walk home, the empty base, Reoccupy");
   check(/Abandon/.test(card.title) && pick(card, /^Abandon it/) && pick(card, /^Keep it/) && /Reoccupy/.test(card.text), "a confirm card: Abandon it or Keep it");
   pick(card, /^Keep it/).resolve(st);
   check(st.bases.includes(b), "Keep it: nothing changes");
-  const food0 = b.stock.food;
+  const food0 = food(b);
   const text = pick(card, /^Abandon it/).resolve(st);
   check(!st.bases.includes(b), `abandoned (${text})`);
   const team = st.parties.find((p) => p.owner === "player" && partyMembers(st, p).length === 2);
-  check(team && team.homeBaseId === h.id && (team.supplies.food || 0) > 0, `its people walk home with ${team ? Math.floor(team.supplies.food || 0) : 0} food of the ${food0}`);
+  check(team && team.homeBaseId === h.id && (food(team) || 0) > 0, `its people walk home with ${team ? Math.floor(food(team) || 0) : 0} food of the ${food0}`);
   const rec = G.abandonedAt(st, tile);
   check(rec && rec.from === "player" && rec.left && rec.buildings.length === 2, "it stands empty with its buildings: your old ownership record");
   check(!(st.losses || []).some((l) => l.id === b.id), "no 'why was it lost' for a base you gave up");
@@ -404,17 +406,17 @@ section("The governor gives up a doomed outpost in winter; a group spread too th
   const far = st.tiles.map((t) => t.id).filter((t) => free(st, t) && planPath(st, t, h.tile, false) && supplyLine(st, { tile: t }).strength < 0.5).sort((a, b) => st.grid.distance(a, h.tile) - st.grid.distance(b, h.tile))[0];
   check(far != null, "a far outpost with a weak supply line");
   const b = outpost(st, far);
-  Object.assign(b.stock, { food: 0, preserved: 0 });
-  Object.assign(h.stock, { food: 0, preserved: 0 });
+  setFood(b, 0);
+  setFood(h, 0);
   for (let i = 0; i < 3; i++) { const s = makeSurvivor(st, 0.9); s.location = { kind: "base", baseId: b.id }; st.survivors.push(s); }
   const d = doomedOutpost(st, b);
   check(!!d, `doomed: food runs out in ${d ? d.runsIn : "?"} days, line ${d ? Math.round(d.line * 100) : "?"}%`);
-  h.stock.food = 5000; st.governor.winter = {}; // the winter plan is worked out once a day
+  setFood(h, 5000); st.governor.winter = {}; // the winter plan is worked out once a day
   check(!doomedOutpost(st, b), "not while the hub's winter stores could carry it");
-  h.stock.food = 0; st.governor.winter = {};
-  b.stock.food = 2000;
+  setFood(h, 0); st.governor.winter = {};
+  setFood(b, 2000);
   check(!doomedOutpost(st, b), "not while its own stores last");
-  b.stock.food = 0;
+  setFood(b, 0);
   setAutopilot(st, true, "balanced");
   st.cards.length = 0;
   autopilotDaily(st);

@@ -6,6 +6,7 @@
 // only after a win (revolvers all of it), the black powder craft, the governor's reserves and trade wants, the other
 // groups reloading (and buying powder and primers), merchants' stock, the loot tables, and a save round trip.
 // Usage: node tools/reloadbenchtest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { unlockAll } from "../src/sim/blueprints.js";
 import { createWorld, hub, newId, makeSurvivor } from "../src/sim/world.js";
 import { BUILDINGS, RECIPES, addBuilding, canBuild, constructionHour, runStations, stationStatus, mannedStations, plotsUsed, assignStations, count } from "../src/sim/buildings.js";
@@ -55,7 +56,7 @@ function benchBase(st, mech = 5, reload = true) {
   h.orders = {};
   return { h, b, op };
 }
-const fill = (h, o) => Object.assign(h.stock, o);
+const fill = (h, o) => { const { food: days, ...rest } = o; Object.assign(h.stock, rest); if (days != null) setFood(h, days); }; // food: days of it (tools/foodkit.js)
 const finishAll = (st, b) => { for (let i = 0; i < 50 && b.construction.length; i++) { for (const c of b.construction) c.progress = c.hours; constructionHour(st); } };
 
 // 1. The data.
@@ -376,7 +377,7 @@ function openBattle(st, crew, stock) {
   check(!canCraft(st, h, "blackpowder").ok, "not below Mechanics 4");
   c.skills.mechanics = 4;
   queueCraft(st, h, "blackpowder");
-  check(h.stock.wood === 110 && h.stock.scrap === 19 && h.stock.food === 18, "the materials are paid");
+  check(h.stock.wood === 110 && h.stock.scrap === 19 && Math.abs(food(h) - 18) < 1e-6, "the materials are paid");
   for (let i = 0; i < 60 && craftQueue(h).length; i++) craftingHour(st);
   check(h.stock.blackpowder === 100, `a can of black powder in the stock (${h.stock.blackpowder})`);
   const st2 = W();

@@ -4,6 +4,7 @@
 // repair, ceramic plates and worn-out gear refused, the base queue worked by the crafters, the autopilot's repairs,
 // a save round trip of the lowered maximum, and the item's worth falling with it.
 // Usage: node tools/repairtest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { newItem, stow } from "../src/sim/inventory.js";
@@ -316,7 +317,7 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   for (const k of Object.keys(m.stock)) m.stock[k] = 0; // only parts on their wagons: the deal is about them
   m.stock.gunparts = 6; m.stock.carparts = 2;
   m.wares.push(newItem("kevlarkit"));
-  s2.h.stock.scrap = 400; s2.h.stock.food = 2000;
+  s2.h.stock.scrap = 400; setFood(s2.h, 2000);
   m.goal = { kind: "base", baseId: s2.h.id, tile: s2.h.tile }; m.phase = "stop"; m.tile = s2.h.tile; m.stayUntil = s2.st.hour + 5;
   m.goodwill = 30;
   V.openVisitorTrade(s2.st, m, { baseId: s2.h.id });
@@ -327,10 +328,10 @@ function setup(tier = 2, skills = { mechanics: 6, crafting: 6 }) {
   s2.st.trade = null;
   // A group low on parts buys them from visiting merchants (visitors.js tradeWithGroup).
   const f = s2.st.factions.find((x) => x.alive);
-  f.stock.parts = 0; f.stock.food = 400; f.stock.scrap = 200; f.pop = Math.max(f.pop, 10);
+  f.stock.parts = 0; setFood(f, 400); f.stock.scrap = 200; f.pop = Math.max(f.pop, 10);
   check(groupPartsLow(f) && groupPartsTarget(f) >= 4, `a group below its parts reorder level (${groupPartsTarget(f)})`);
   const m2 = V.spawnVisitor(s2.st, "merchants");
-  Object.assign(m2.stock, { carparts: 4, gunparts: 3, parts: 6, food: 0, scrap: 0, meds: 0, fuel: 0, ammo: 0, preserved: 0, water: 0 });
+  Object.assign(m2.stock, { carparts: 4, gunparts: 3, parts: 6, scrap: 0, meds: 0, fuel: 0, ammo: 0, water: 0 }); setFood(m2, 0);
   V.tradeWithGroup(s2.st, m2, f);
   check(f.stock.parts > 0 && !("carparts" in f.stock) && !("gunparts" in f.stock), `it buys parts from the merchants into its one count (${f.stock.parts})`);
 }

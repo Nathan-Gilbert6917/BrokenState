@@ -3,6 +3,8 @@
 // supplies move as far as they fit, gear goes in slots, what the ones who get out carry joins the team's cargo and
 // what the lost carry is gone, a weapon picked up mid-raid is fought with at once, and a raid saved mid-search loads.
 // Usage: node tools/raidloottest.js [seed]
+import { FOODS } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { SUPPLIES } from "../src/sim/data.js";
 import { launchExpedition, partyCapacity, poolLoad, partyMembers } from "../src/sim/parties.js";
@@ -128,9 +130,9 @@ console.log("On foot: each survivor carries their own share and finds");
   check(s.pockets[0] && s.pockets[0].key === "knife", `the knife goes in a pocket (${m2})`);
   // Take all: what fits.
   u.haul.gear.length = 0;
-  const box4 = boxWith(b, u, { food: 2, water: 2 }, [newItem("pistol")]);
+  const box4 = boxWith(b, u, { f_rationbar: 2, water: 2 }, [newItem("pistol")]);
   const r = RL.raidTakeAll(st, u.id, box4.id);
-  check(r.got.length >= 2 && box4.contents.gear.length === 0 && (u.haul.sup.food || 0) >= 2, `Take all takes everything that fits (${r.got.join(", ")})`);
+  check(r.got.length >= 2 && box4.contents.gear.length === 0 && (u.haul.sup.f_rationbar || 0) >= 2, `Take all takes everything that fits (${r.got.join(", ")})`);
   check(box4.searched, "an emptied container is done");
 
   // Found ammo can be used at once (the haul is one of the battle's pools).
@@ -146,10 +148,10 @@ console.log("On foot: each survivor carries their own share and finds");
 
   // Extraction: those who get out bring what they carry; the lost lose it.
   const lost = us[2];
-  const lostBox = boxWith(b, lost, { food: 3 });
-  RL.raidMove(st, lost.id, `rbox:${lostBox.id}:sup:food`, `haul:${lost.id}:list`);
-  const foodHome = (u.haul.sup.food || 0);
-  const cargoFood0 = p.cargo.supplies.food || 0;
+  const lostBox = boxWith(b, lost, { f_rationbar: 3 });
+  RL.raidMove(st, lost.id, `rbox:${lostBox.id}:sup:f_rationbar`, `haul:${lost.id}:list`);
+  const foodHome = (u.haul.sup.f_rationbar || 0);
+  const cargoFood0 = (p.cargo.supplies.f_rationbar || 0) || 0;
   const zone = b.raid.zones[0];
   for (const x of us) if (x !== lost) { x.x = zone.x0 + 1; x.y = zone.y0 + 1; x.ap = 2; b.phase = "player"; }
   for (const x of us) if (x !== lost) { x.x = zone.x0 + us.indexOf(x); x.y = zone.y0 + 1; combatAct(st, { type: "extract", unit: x.id }); }
@@ -157,9 +159,9 @@ console.log("On foot: each survivor carries their own share and finds");
   combatAct(st, { type: "end" });
   for (let i = 0; i < 20 && !b.over; i++) { runEnemyPhase(st); if (!b.over) combatAct(st, { type: "end" }); }
   check(b.over, "the raid ends when everyone left has extracted");
-  const got = (p.cargo.supplies.food || 0) - cargoFood0;
+  const got = ((p.cargo.supplies.f_rationbar || 0) || 0) - cargoFood0;
   check(Math.abs(got - foodHome) < EPS || b.result.raid.carriedIds.includes(lost.sid), `the extracted bring their finds into the team's cargo (+${got} food, carried ${foodHome})`);
-  if (!b.result.raid.carriedIds.includes(lost.sid)) check(!(b.result.loot.supplies.food >= foodHome + 3), "what the lost carried is not counted as found");
+  if (!b.result.raid.carriedIds.includes(lost.sid)) check(!(((b.result.loot.supplies || {}).f_rationbar || 0) >= foodHome + 3), "what the lost carried is not counted as found");
 }
 
 // ======================================================================================
@@ -193,15 +195,16 @@ console.log("A car: the team's things ride in it, the trunk is opened at the veh
   const m = RL.raidMove(st, u.id, `trunk:${p.id}:gear:${p.cargo.gear.indexOf(it)}`, `haul:${u.id}:list`);
   check(u.haul.gear.includes(it) && !p.cargo.gear.includes(it), `taking a rifle out of the car (${m})`);
   // Packed supplies come out of the trunk too (found first, then packed).
-  const food0 = p.supplies.food;
-  RL.raidMove(st, u.id, `trunk:${p.id}:sup:food`, `haul:${u.id}:list`, 2);
-  check(u.haul.sup.food === 2 && p.supplies.food === food0 - 2 + Math.min(0, 0), "packed food can be taken out of the car");
+  const fk = Object.keys(p.supplies).find((k) => FOODS[k] && p.supplies[k] >= 2) || "f_rationbar"; // the packed food, by type (sim/foods.js)
+  const food0 = p.supplies[fk] || 0, held0 = u.haul.sup[fk] || 0;
+  RL.raidMove(st, u.id, `trunk:${p.id}:sup:${fk}`, `haul:${u.id}:list`, 2);
+  check(u.haul.sup[fk] === held0 + 2 && (p.supplies[fk] || 0) === food0 - 2, `packed food can be taken out of the car (2 ${FOODS[fk].word})`);
   // A full car: nothing more.
   p.cargo.supplies.scrap = (p.cargo.supplies.scrap || 0) + Math.ceil(RL.trunkSpace(st, b) / SUPPLIES.scrap.weight) + 5;
   const boxF = boxWith(b, u, { scrap: 10 });
   u.x = z.x0 + 1; u.y = z.y0 + 1;
   if (RL.atVehicle(b, u) && box.x != null) {
-    const mf = RL.raidMove(st, u.id, `haul:${u.id}:sup:food`, `trunk:${p.id}:list`);
+    const mf = RL.raidMove(st, u.id, `haul:${u.id}:sup:f_rationbar`, `trunk:${p.id}:list`);
     check(!/full/.test(mf), `a full car still takes what a person already carries (it rides home either way): ${mf}`);
   }
   const before = RL.haulLoad(u);
@@ -286,15 +289,15 @@ console.log("Teammates next to each other hand things over");
   const { st, b } = raid();
   const [u, mate, far] = players(b);
   fresh(b, u);
-  const box = boxWith(b, u, { food: 2 }, [newItem("pistol")]);
+  const box = boxWith(b, u, { f_rationbar: 2 }, [newItem("pistol")]);
   const placed = besides(b, u, mate);
   far.x = 0; far.y = 0;
   check(placed && RL.matesOf(b, u).includes(mate) && !RL.matesOf(b, u).includes(far), "the teammate right next to them can hand things over; one across the map cannot");
-  RL.raidMove(st, u.id, `rbox:${box.id}:sup:food`, `haul:${u.id}:list`);
+  RL.raidMove(st, u.id, `rbox:${box.id}:sup:f_rationbar`, `haul:${u.id}:list`);
   const ap0 = u.ap;
-  const m = RL.raidMove(st, u.id, `haul:${u.id}:sup:food`, `haul:${mate.id}:list`);
-  check(mate.haul.sup.food === 2 && !u.haul.sup.food && u.ap === ap0, `handing food over takes no time (${m})`);
-  const nope = RL.raidMove(st, u.id, `haul:${mate.id}:sup:food`, `haul:${far.id}:list`);
+  const m = RL.raidMove(st, u.id, `haul:${u.id}:sup:f_rationbar`, `haul:${mate.id}:list`);
+  check(mate.haul.sup.f_rationbar === 2 && !u.haul.sup.f_rationbar && u.ap === ap0, `handing food over takes no time (${m})`);
+  const nope = RL.raidMove(st, u.id, `haul:${mate.id}:sup:f_rationbar`, `haul:${far.id}:list`);
   check(/right next to/.test(nope), `not to someone who is not next to them (${nope})`);
   // Straight from the box into the teammate's hands: they fight with it at once.
   const ms = survivorById(st, mate.sid);
@@ -308,8 +311,8 @@ console.log("Teammates next to each other hand things over");
   check(/Too heavy/.test(full) && full.includes(mate.name.split(" ")[0]), `a full teammate takes no more (${full})`);
   // A downed teammate can be relieved of what they carry.
   mate.down = true;
-  const rel = RL.raidMove(st, u.id, `haul:${mate.id}:sup:food`, `haul:${u.id}:list`);
-  check(u.haul.sup.food === 2, `taking what a downed teammate carries (${rel})`);
+  const rel = RL.raidMove(st, u.id, `haul:${mate.id}:sup:f_rationbar`, `haul:${u.id}:list`);
+  check(u.haul.sup.f_rationbar === 2, `taking what a downed teammate carries (${rel})`);
 }
 
 // ======================================================================================
@@ -318,25 +321,25 @@ console.log("Someone who bleeds out drops what they carried");
   const { st, b } = raid();
   const [u, lost] = players(b);
   fresh(b, lost);
-  const box = boxWith(b, lost, { food: 3 }, [newItem("pistol")]);
+  const box = boxWith(b, lost, { f_rationbar: 3 }, [newItem("pistol")]);
   RL.raidTakeAll(st, lost.id, box.id);
   const found0 = JSON.stringify(b.raid.found);
   lost.down = true; lost.bleed = 1; lost.stab = false;
   combatAct(st, { type: "end" });
   for (let i = 0; i < 10 && b.phase !== "player" && !b.over; i++) runEnemyPhase(st);
   const pile = b.raid.containers.find((c) => c.drop && c.kind !== "ground"); // not the loads the team set down coming in (carry.js stageLoads)
-  check(lost.dead && pile && pile.x === lost.x && pile.y === lost.y && pile.contents.sup.food === 3, `bleeding out leaves a pile of what they carried where they fell (${pile ? pile.label : "none"})`);
+  check(lost.dead && pile && pile.x === lost.x && pile.y === lost.y && pile.contents.sup.f_rationbar === 3, `bleeding out leaves a pile of what they carried where they fell (${pile ? pile.label : "none"})`);
   check(RL.haulLoad(lost) === 0, "and they carry nothing any more");
   if (pile) {
     fresh(b, u);
     standNext(b, u, pile.x, pile.y);
     const err = combatAct(st, { type: "search", unit: u.id, box: pile.id, open: true });
     check(!err && u.ap === 2, `the pile opens for free (${err || "ok"})`);
-    RL.raidMove(st, u.id, `rbox:${pile.id}:sup:food`, `haul:${u.id}:list`);
-    check(u.haul.sup.food === 3 && JSON.stringify(b.raid.found) === found0, `a teammate picks it up; it is not counted twice (${JSON.stringify(b.raid.found)})`);
+    RL.raidMove(st, u.id, `rbox:${pile.id}:sup:f_rationbar`, `haul:${u.id}:list`);
+    check(u.haul.sup.f_rationbar === 3 && JSON.stringify(b.raid.found) === found0, `a teammate picks it up; it is not counted twice (${JSON.stringify(b.raid.found)})`);
   }
   // Left on the map at the end, a pile is lost and not counted.
-  u.haul.sup.food = 0;
+  u.haul.sup.f_rationbar = 0;
   b.raid.found.water = 4;
   u.haul.sup.water = 4;
   const pile2 = RL.dropHaul(b, u);

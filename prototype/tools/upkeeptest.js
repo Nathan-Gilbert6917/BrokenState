@@ -1,11 +1,12 @@
 // Upkeep per head (src/sim/upkeep.js, economy.js): what a base uses up a day is a rate per person × the people fed
 // there. Checks: food and water scale with the people living at a base; people sent out on a team stop eating the
 // base's food and eat the team's (one ration a person a day); prisoners in the cells, guests you shelter and a supply
-// convoy holding at the base are counted in the base's food and water (and eat fresh, then preserved food); short
+// convoy holding at the base are counted in the base's food and water (and eat the base's food, by type); short
 // rations count everyone fed from the stores; an outpost feeds its own people from its own stock and keeps a reserve
 // by its heads; the governor's days of food count everyone fed; per-building drains (a generator's fuel, spoilage)
 // do not change with the people; the UI lines show per head × heads (base panel, Farming tab, alerts, top bar).
 // Usage: node tools/upkeeptest.js [seed]
+import { food, setFood } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, residents, makeSurvivor, newId } from "../src/sim/world.js";
 import { basesDaily, foodOutlook, waterOutlook, waterNeed, eatPerDay, foodForecast, farmOutput, drinkRate, RATION_DAYS } from "../src/sim/economy.js";
 import { UPKEEP, foodUse, mouthsAt, useText, coldFactor, perHeadText } from "../src/sim/upkeep.js";
@@ -33,7 +34,8 @@ const plain = (s) => { s.traits = []; s.conditions = []; s.perks = []; return s;
 function quietHub(st) {
   const h = hub(st);
   for (const s of atBase(st, h.id)) { plain(s); s.role = "rest"; s.station = null; s.health = 100; s.mood = 80; }
-  Object.assign(h.stock, { food: 500, water: 70, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 50, jars: 40, preserved: 0 });
+  Object.assign(h.stock, { water: 70, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 50, jars: 40 });
+  setFood(h, 500); // days of food (tools/foodkit.js)
   return h;
 }
 const addPerson = (st, base) => { const s = plain(makeSurvivor(st, 1)); s.location = { kind: "base", baseId: base.id }; s.role = "rest"; s.health = 100; st.survivors.push(s); return s; };
@@ -78,11 +80,11 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   check(!res.error, `a team of two leaves (${res.error || "ok"})`);
   const p = st.parties.find((x) => partyMembers(st, x).some((m) => m.id === crew[0].id));
   check(residents(st, h.id).length === n - 2 && foodUse(st, h).heads === n - 2, `the hub feeds ${n - 2} now`);
-  const food0 = h.stock.food, team0 = p.supplies.food;
+  const food0 = food(h), team0 = food(p);
   const hourly = rationsPerHour(st, p);
   check(hourly >= 2 / 24 - 1e-9 && hourly <= (2 / 24) * 2, `the team eats about one ration a person a day (${(hourly * 24).toFixed(2)} a day for 2)`);
   const ate = eatenToday(st);
-  check(near(ate, foodUse(st, h).residents, 1e-6) && h.stock.food < food0 && p.supplies.food === team0, `the hub's daily meal is for those at home (${Math.round(ate * 100) / 100}); the team's packs are not touched by it`);
+  check(near(ate, foodUse(st, h).residents, 1e-6) && food(h) < food0 && food(p) === team0, `the hub's daily meal is for those at home (${Math.round(ate * 100) / 100}); the team's packs are not touched by it`);
 }
 
 // ---------- 3. prisoners, guests, a holding convoy and the dog ----------
@@ -100,15 +102,15 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   const pr = PRISON.FOOD * PRISON.RATIONS[PRISON.RATION_DEFAULT].share; // their rations: Short by default (prisoners.js)
   check(pg && pg.n === 2 && near(pg.total, 2 * pr * coldFactor(st)), `prisoners eat ${pr} each on Short rations × the cold (${pg && pg.total})`);
   check(near(waterNeed(st, h).prisoners, Math.round(2 * drinkRate(st) * 10) / 10) && waterNeed(st, h).nPrisoners === 2, "and drink as anyone");
-  // prisonersDaily takes their food from the base (fresh, then preserved).
-  h.stock.food = 0; h.stock.preserved = 10;
+  // prisonersDaily takes their food from the base (any food: jarred here).
+  setFood(h, 10, "f_jarred");
   const esc0 = { ...PRISON.ESCAPE };
   for (const k of ["guarded", "unguarded", "shed"]) PRISON.ESCAPE[k] = 0; // the meal under test, not the dice of an escape
   prisonersDaily(st);
   Object.assign(PRISON.ESCAPE, esc0);
-  check(near(h.stock.preserved, 10 - 2 * pr * coldFactor(st), 1e-6), `prisoners eat preserved food when the fresh is gone (${h.stock.preserved} left)`);
+  check(near(food(h), 10 - 2 * pr * coldFactor(st), 1e-6), `prisoners eat the base's food (${food(h)} days left)`);
   // Guests sheltering: three travellers.
-  h.stock.food = 0; h.stock.preserved = 20;
+  setFood(h, 20, "f_jarred");
   st.visitors = [{ id: 9001, kind: "explorers", phase: "sheltered", shelterBase: h.id, size: 3, shelterUntil: st.hour + 72, done: {} }];
   const use2 = foodUse(st, h);
   const gg = use2.groups.find((g) => g.key === "guests");
@@ -116,13 +118,13 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   check(waterNeed(st, h).nGuests === 3 && waterNeed(st, h).guests > 0, "guests in the water need");
   check(near(foodOutlook(st, h).eat, use2.total) && foodOutlook(st, h).heads === n + 5, "the food outlook counts residents, prisoners and guests");
   visitorsDaily(st);
-  check(near(h.stock.preserved, 20 - 3 * UPKEEP.guest * coldFactor(st), 1e-6), `guests eat preserved food when the fresh is gone (was free before) (${h.stock.preserved} left)`);
+  check(near(food(h), 20 - 3 * UPKEEP.guest * coldFactor(st), 1e-6), `guests eat the base's food (was free before) (${food(h)} days left)`);
   st.visitors = [];
-  // A supply convoy holding here eats from the base first, fresh then preserved.
-  h.stock.food = 0; h.stock.preserved = 10;
+  // A supply convoy holding here eats from the base first.
+  setFood(h, 10, "f_jarred");
   const crew = atBase(st, h.id).filter((s) => !s.leader).slice(0, 2);
   const job = { id: 7001, originId: h.id, destId: h.id, crewIds: crew.map((s) => s.id), deliver: [], pickup: [], status: "out", repeat: 0 };
-  const party = { id: 7002, owner: "player", kind: "convoy", routeKind: "supply", phase: "holding", destBaseId: h.id, members: crew.map((s) => s.id), supplies: { food: 0, water: 0 }, cargo: { supplies: {}, gear: [] }, path: [h.tile], idx: 0 };
+  const party = { id: 7002, owner: "player", kind: "convoy", routeKind: "supply", phase: "holding", destBaseId: h.id, members: crew.map((s) => s.id), supplies: { water: 0 }, cargo: { supplies: {}, gear: [] }, path: [h.tile], idx: 0 };
   for (const s of crew) s.location = { kind: "party", partyId: party.id };
   job.partyId = party.id;
   st.parties.push(party);
@@ -130,7 +132,7 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   check(mouthsAt(st, h).crew === 2 && foodUse(st, h).groups.some((g) => g.key === "crew" && g.n === 2), "a holding convoy's crew is counted");
   check(waterNeed(st, h).nCrew === 2, "and drinks here");
   supplyDaily(st);
-  check(near(h.stock.preserved, 10 - 2 * UPKEEP.crew * coldFactor(st), 1e-6), `the crew eats the base's preserved food (${h.stock.preserved} left)`);
+  check(near(food(h), 10 - 2 * UPKEEP.crew * coldFactor(st), 1e-6), `the crew eats the base's food (${food(h)} days left)`);
   st.parties.splice(st.parties.indexOf(party), 1);
   st.supplyRuns.splice(st.supplyRuns.indexOf(job), 1);
   for (const s of crew) s.location = { kind: "base", baseId: h.id };
@@ -143,7 +145,7 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   st.prisoners = [];
   takePrisonersAt(st, f, h, 4);
   const resWeek = foodUse(st, h).residents * RATION_DAYS, allWeek = foodUse(st, h).total * RATION_DAYS;
-  h.stock.food = Math.round((resWeek + allWeek) / 2); h.stock.preserved = 0;
+  setFood(h, Math.round((resWeek + allWeek) / 2));
   basesDaily(st);
   check(h.rationing, `short rations when the stock covers the residents' week but not everyone's (${Math.round(resWeek)} < ${Math.round((resWeek + allWeek) / 2)} < ${Math.round(allWeek)})`);
 }
@@ -154,8 +156,9 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   const st = W();
   const h = quietHub(st);
   const tile = st.tiles.find((t) => t.terrain === "plains" && !t.loc && st.grid.distance(t.id, h.tile) === 3) || st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 3);
-  const o = { id: newId(), tile: tile.id, type: "outpost", name: "Test Outpost", stock: { food: 200, water: 40, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  const o = { id: newId(), tile: tile.id, type: "outpost", name: "Test Outpost", stock: { water: 40, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   st.bases.push(o);
+  setFood(o, 200);
   const staff = atBase(st, h.id).filter((s) => !s.leader).slice(0, 3);
   for (const s of staff) s.location = { kind: "base", baseId: o.id };
   const hubUse = foodUse(st, h), oUse = foodUse(st, o);
@@ -165,12 +168,12 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   // The outpost keeps a reserve by its heads and ships the rest: a day past the short-rations line (economy.js
   // RATION_DAYS + 1, so it is not rationing while the hub is full) + 6.
   const keepDays = RATION_DAYS + 1;
-  check(o.stock.food <= Math.ceil(foodUse(st, o).total * keepDays) + 6 + 1 && o.stock.food >= Math.ceil(foodUse(st, o).total * keepDays) + 6 - 1, `the outpost keeps ${keepDays} days for its 3 + 6 (${o.stock.food})`);
+  check(food(o) <= Math.ceil(foodUse(st, o).total * keepDays) + 6 + 1.5 && food(o) >= Math.ceil(foodUse(st, o).total * keepDays) + 6 - 1.5, `the outpost keeps ${keepDays} days for its 3 + 6 (${Math.round(food(o) * 10) / 10}; whole items ship)`);
   check(!o.rationing, "the outpost is not on short rations");
   takePrisonersAt(st, st.factions[0], o, 2);
-  o.stock.food = 200;
+  setFood(o, 200);
   basesDaily(st);
-  check(o.stock.food >= Math.ceil(foodUse(st, o).total * 3) + 6 - 1 && foodUse(st, o).heads === 5, `with two prisoners it keeps more (${o.stock.food} for 5)`);
+  check(food(o) >= Math.ceil(foodUse(st, o).total * 3) + 6 - 1.5 && foodUse(st, o).heads === 5, `with two prisoners it keeps more (${Math.round(food(o) * 10) / 10} for 5)`);
 }
 
 // ---------- 5. the governor's days of food count everyone fed ----------
@@ -227,7 +230,7 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   const left = renderLeft(st, { tab: "bases" });
   check(left.includes(">Upkeep<") && left.includes(`${n} people × `), "the Bases list has the Upkeep row");
   check(renderTopbar(st, { speed: 1, scale: 1 }).includes(`${n} people × `), "the top bar's food tooltip shows per head × heads");
-  h.stock.food = 5; h.stock.preserved = 0;
+  setFood(h, 5);
   const al = computeAlerts(st).find((a) => a.key === `food:${h.id}`);
   check(al && al.tip.includes(useText(foodOutlook(st, h).use)), `the food alert shows it (${al ? al.tip.slice(0, 80) : "no alert"})`);
 }

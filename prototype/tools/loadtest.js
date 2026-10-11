@@ -5,6 +5,8 @@
 // Then bikes as things: found as cargo, parked at a base, split and merged, left and recovered without fuel, rafted
 // across water, saved and loaded; determinism; and the autopilot's packing (no team leaves Overloaded on foot).
 // Usage: node tools/loadtest.js [seed] [autopilot days]
+import { FOODS } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, skill, day } from "../src/sim/world.js";
 import { GEAR, SUPPLIES } from "../src/sim/data.js";
 import {
@@ -30,9 +32,9 @@ import { NEEDS } from "../src/sim/needs.js";
 // Water and food a team used, the gauges counted (needs.js): what it took from its supplies plus the thirst (hunger)
 // points its people lost, in rations. People drink when their gauge is low, so the supplies go in gulps.
 const gaugeSum = (st, p, key) => partyMembers(st, p).reduce((a, s) => a + (s[key] ?? 100), 0);
-const snapNeeds = (st, p) => ({ water: p.supplies.water, food: p.supplies.food, thirst: gaugeSum(st, p, "thirst"), hunger: gaugeSum(st, p, "hunger") });
+const snapNeeds = (st, p) => ({ water: p.supplies.water, food: food(p), thirst: gaugeSum(st, p, "thirst"), hunger: gaugeSum(st, p, "hunger") });
 const usedWater = (st, p, s0) => (s0.water - p.supplies.water) + (s0.thirst - gaugeSum(st, p, "thirst")) / NEEDS.water;
-const usedFood = (st, p, s0) => (s0.food - p.supplies.food) + (s0.hunger - gaugeSum(st, p, "hunger")) / NEEDS.food;
+const usedFood = (st, p, s0) => (s0.food - food(p)) + (s0.hunger - gaugeSum(st, p, "hunger")) / NEEDS.food;
 
 const SEED = Number(process.argv[2] || 42);
 const AP_DAYS = Number(process.argv[3] || 60);
@@ -45,7 +47,7 @@ const r1 = (x) => Math.round(x * 10) / 10;
 function world(seed = SEED) {
   const st = createWorld({ seed, factionCount: 6 });
   st.started = true;
-  Object.assign(hub(st).stock, { food: 600, water: 600, fuel: 300, meds: 30, ammo: 400, parts: 20, scrap: 80 });
+  Object.assign(hub(st).stock, { water: 600, fuel: 300, meds: 30, ammo: 400, parts: 20, scrap: 80 }); setFood(hub(st), 600);
   return st;
 }
 const plain = (s, scouting = 0) => { stripAll(s); s.traits = []; s.perks = []; s.skills.scouting = scouting; return s; };
@@ -83,8 +85,10 @@ section("Weights");
   const missing = Object.entries(GEAR).filter(([, d]) => !(d.weight > 0));
   check(!missing.length, `every item has a weight (missing: ${missing.map(([k]) => k).join(", ")})`);
   check(GEAR.pistol.weight === 1 && GEAR.ar.weight === 4 && GEAR.plate.weight === 1.5 && Math.abs(itemLoad(newItem("plate")) - 6.5) < 1e-9 && GEAR.vest.weight === 4, "pistol 1, assault rifle 4, plate carrier 1.5 (6.5 with its two ceramic plates), vest 4 kg");
-  check(SUPPLIES.food.weight === 0.5 && SUPPLIES.water.weight === 1 && SUPPLIES.fuel.weight === 1 && SUPPLIES.meds.weight === 0.1 && SUPPLIES.ammo.weight === 0.02, "food 0.5, water 1, fuel 1, meds 0.1, ammo 0.02 kg a unit");
-  check(SUPPLIES.preserved.weight < SUPPLIES.food.weight, "preserved food is lighter than fresh");
+  check(SUPPLIES.water.weight === 1 && SUPPLIES.fuel.weight === 1 && SUPPLIES.meds.weight === 0.1 && SUPPLIES.ammo.weight === 0.02, "water 1, fuel 1, meds 0.1, ammo 0.02 kg a unit");
+  // Food by type (sim/foods.js): each item its own weight; a day of ration bars weighs a fifth of a day of cans.
+  const kgDay = (k) => SUPPLIES[k].weight * 2000 / FOODS[k].kcal;
+  check(SUPPLIES.f_rationbar.weight === 0.5 && SUPPLIES.f_beans.weight === 0.45 && kgDay("f_rationbar") < kgDay("f_jerky") && kgDay("f_jerky") < kgDay("f_beans"), `a day of food: ration bars ${kgDay("f_rationbar").toFixed(2)} kg, jerky ${kgDay("f_jerky").toFixed(2)}, canned beans ${kgDay("f_beans").toFixed(2)}`);
   const pack = newItem("assaultpack");
   pack.contents[0] = newItem("ar");
   pack.contents[1] = newItem("pistol");

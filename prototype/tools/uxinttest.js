@@ -14,6 +14,8 @@
 //   6. Fresh game set down stays fresh game: on the pile, picked up again (Pick up load, the Ground window, a win) and
 //      left on the tile's ground after a retreat (still spoiling there).
 // Usage: node tools/uxinttest.js [seed]   ("passed" / "failed" lines; exits 1 on a failure)
+import { FOODS, unitsOf } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { newItem, ensurePack } from "../src/sim/inventory.js";
 import { addMeat, meatIn } from "../src/sim/hunting.js";
@@ -44,7 +46,7 @@ function world(s = seed) {
 // A team of n, waiting on `tile` (default: a land tile 2 from the hub), no packs, empty pockets.
 function teamOut(st, n = 2, supplies = { food: 4, water: 4 }, tile = null) {
   const h = hub(st);
-  Object.assign(h.stock, { food: 300, water: 300, ammo: 300, meds: 20 });
+  Object.assign(h.stock, { water: 300, ammo: 300, meds: 20 }); setFood(h, 300);
   const crew = atBase(st, h.id).slice(0, n);
   for (const s of crew) { s.gear.backpack = null; s.gear.carry = null; s.pockets = s.pockets.map(() => null); s.health = 100; }
   const dest = tile ?? st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 2).id;
@@ -315,6 +317,8 @@ const armsOf = (h) => Object.values(h.by).reduce((a, r) => a + (r.hands.rawwater
   check(done, "(a raid map was found)");
 }
 
+// Days of raw game lying on a pile (food by type: the items, sim/foods.js).
+const rawOn = (pile) => Object.entries((pile && pile.contents && pile.contents.sup) || {}).reduce((a, [k, q]) => a + (FOODS[k] && FOODS[k].raw ? unitsOf(k, q) : 0), 0);
 // ---------- 6. fresh game stays fresh ----------
 section("6. Fresh game set down in a fight stays fresh game");
 {
@@ -323,7 +327,7 @@ section("6. Fresh game set down in a fight stays fresh game");
   p.cargo.supplies.rawwater = 30;
   addMeat(st, p, 8);
   const h = C.settleHold(st, p);
-  const meat0 = meatIn(p.cargo), food0 = (p.cargo.supplies.food || 0) + (p.supplies.food || 0); // found and packed: set down and picked up, the food comes back to the cargo
+  const meat0 = meatIn(p.cargo), food0 = (food(p.cargo) || 0) + (food(p) || 0); // found and packed: set down and picked up, the food comes back to the cargo
   const hold = Object.values(h.by).find((r) => (r.hands.meat || 0) > 0);
   check(!!hold, `fresh game is carried in the arms (${hold ? C.recText(hold.hands) : "none"})`);
   const { b, setup } = openBattle(st, p);
@@ -331,19 +335,19 @@ section("6. Fresh game set down in a fight stays fresh game");
   const m = carrier.hands.meat;
   combatAct(st, { type: "dropCarried", unit: carrier.id });
   const pile = G.groundAt(b, carrier.x, carrier.y, 0);
-  check(near(C.pileMeat(pile), m) && near(meatIn(p.cargo), meat0 - m), `on the pile it is fresh game (${C.pileMeat(pile)} of its ${pile.contents.sup.food} food), out of the cargo's fresh game`);
+  check(near(rawOn(pile), m) && near(meatIn(p.cargo), meat0 - m), `on the pile it is fresh game (${rawOn(pile)} days of food: ${Object.keys(pile.contents.sup).join(", ")}), out of the cargo's fresh game`);
   combatAct(st, { type: "pickCarried", unit: carrier.id });
-  check(near(carrier.hands.meat || 0, m) && near(meatIn(p.cargo), meat0) && near(p.cargo.supplies.food + (p.supplies.food || 0), food0), "Pick up load: fresh game again, in the arms and the cargo");
+  check(near(carrier.hands.meat || 0, m) && near(meatIn(p.cargo), meat0) && near(food(p.cargo) + (food(p) || 0), food0), "Pick up load: fresh game again, in the arms and the cargo");
   // The Ground window.
   combatAct(st, { type: "dropCarried", unit: carrier.id });
   const other = b.units.find((u) => u.side === "player" && u !== carrier);
   if (other.hands || other.bag) combatAct(st, { type: "dropCarried", unit: other.id });
   other.x = carrier.x + 1; other.y = carrier.y; other.ap = 2;
   G.fieldReady(b, st);
-  const pf = pile.contents.sup.food;
-  RL.raidMove(st, other.id, `rbox:${pile.id}:sup:food`, `haul:${other.id}:list`);
-  const tookF = pf - (pile.contents.sup.food || 0);
-  check(tookF >= m && near((other.hands && other.hands.meat) || 0, m) && near(meatIn(p.cargo), meat0) && !C.pileMeat(pile), `the Ground window: fresh game into the arms, fresh in the cargo (${C.recText(other.hands || {})})`);
+  const pf = rawOn(pile), gk = Object.keys(pile.contents.sup).find((k) => FOODS[k] && FOODS[k].raw);
+  RL.raidMove(st, other.id, `rbox:${pile.id}:sup:${gk}`, `haul:${other.id}:list`);
+  const tookF = pf - rawOn(pile);
+  check(tookF >= m * 0.9 && near((other.hands && other.hands.meat) || 0, tookF, 1e-6) && near(meatIn(p.cargo), meat0 - rawOn(pile), 1e-6), `the Ground window: fresh game into the arms, fresh in the cargo (${C.recText(other.hands || {})})`);
   // A win: set down again, picked up after as fresh game.
   combatAct(st, { type: "dropCarried", unit: other.id });
   for (const u of b.units) if (u.side === "enemy") { u.left = true; u.fled = true; u.x = -1; }
@@ -367,12 +371,12 @@ section("6. Fresh game set down in a fight stays fresh game");
   finishCombat(st, setup, b.result);
   closeCombat(st);
   const site = C.groundAt(st, partyTile(p));
-  const it = site && site.items.find((x) => x.kind === "supply" && x.fresh);
-  check(m > 0 && !!it && near(it.qty, m) && near(meatIn(p.cargo), meat0 - m), `retreated: fresh game on the tile's ground (${site ? C.groundText(site) : "nothing"})`);
+  const it = site && site.items.find((x) => x.kind === "supply" && FOODS[x.key] && FOODS[x.key].raw);
+  check(m > 0 && !!it && Math.abs(unitsOf(it.key, it.qty) - m) <= unitsOf(it.key, 1) && near(meatIn(p.cargo), meat0 - m), `retreated: fresh game on the tile's ground (${site ? C.groundText(site) : "nothing"})`);
   if (it) {
-    const q0 = it.qty;
+    const l0 = it.left ?? FOODS[it.key].shelf;
     C.groundDaily(st);
-    check(it.qty < q0, `it spoils there at the field rate (${q0} → ${Math.round(it.qty * 10) / 10})`);
+    check(it.left < l0, `it spoils there at the field rate (shelf left ${Math.round(l0 * 10) / 10} → ${Math.round(it.left * 10) / 10} days; gone at 0)`);
     C.pickUpGround(st, p, site.items.indexOf(it));
     check(meatIn(p.cargo) > meat0 - m + 0.5, `picked up from the team panel: fresh game in the cargo again (${meatIn(p.cargo)})`);
   }

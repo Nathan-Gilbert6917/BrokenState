@@ -3,6 +3,8 @@
 // ground on the State Map (put down, picked up later by another team, spoiling, the marker); how much to collect;
 // a save and load; the autopilot playing on.
 // Usage: node tools/carrytest.js [seed]   ("passed" / "failed" lines; exits 1 on a failure)
+import { FOODS, unitsOf } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, tickHour, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { newItem, moveItem, itemLoad, isCarryable, fitReason } from "../src/sim/inventory.js";
@@ -31,7 +33,7 @@ function world(s = seed) {
 // A team of n out on a land tile 2 from the hub, waiting there, with the supplies given.
 function teamOut(st, n = 2, supplies = { food: 6, water: 6 }) {
   const h = hub(st);
-  Object.assign(h.stock, { food: 300, water: 300, ammo: 300, meds: 20 });
+  Object.assign(h.stock, { water: 300, ammo: 300, meds: 20 }); setFood(h, 300);
   const crew = atBase(st, h.id).slice(0, n);
   for (const s of crew) { s.gear.backpack = null; s.pockets = s.pockets.map(() => null); s.health = 100; }
   const dest = st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 2).id;
@@ -63,7 +65,7 @@ console.log("Placing the team's supplies: packs, pockets, the arms");
   check(handsA + handsB > 0 && handsA <= C.HANDS_KG + 1e-6 && handsB <= C.HANDS_KG + 1e-6, `the rest is carried in the arms, at most ${C.HANDS_KG} kg each (${Math.round(handsA * 10) / 10} kg and ${Math.round(handsB * 10) / 10} kg)`);
   const weak = [a, b].sort((x, y) => (combat(x) - combat(y)))[0];
   check(C.kgOf(h.by[weak.id].hands) >= Math.min(handsA, handsB), "the weaker fighter carries first");
-  check(near(C.kgOf(ra.pack) + C.kgOf(ra.pocket) + C.kgOf(ra.hands) + C.kgOf(rb.pack) + C.kgOf(rb.pocket) + C.kgOf(rb.hands), 6 * 0.5 + 6 + 30 + 5), "the weights add up to the pool's (food 0.5 kg, water 1 kg, firewood 0.1 kg)");
+  check(near(C.kgOf(ra.pack) + C.kgOf(ra.pocket) + C.kgOf(ra.hands) + C.kgOf(rb.pack) + C.kgOf(rb.pocket) + C.kgOf(rb.hands), C.kgOf(tot)), `the weights add up to the pool's (a day of food ${C.unitKg("food")} kg, water 1 kg, firewood 0.1 kg: ${C.kgOf(tot).toFixed(1)} kg)`);
   // Drinking lightens the arms first.
   const before = C.kgOf(h.by[a.id].hands) + C.kgOf(h.by[b.id].hands);
   p.cargo.supplies.rawwater -= 5;
@@ -153,13 +155,13 @@ registerCombatHandler("carrytest", () => {});
   const setup = { tile: partyTile(p), partyId: p.id, enemy: { kind: "zombies", count: 2, power: 2 }, ambush: null, canRetreat: true, handler: "carrytest", context: {} };
   const b = (st.combat = createBattle(st, setup));
   const set = b.units.filter((u) => u.side === "player" && u.hands);
-  const kg = set.reduce((a, u) => a + C.kgOf(u.hands), 0);
+  const kg = set.reduce((a, u) => a + C.kgOf(u.hands), 0), pool0 = C.kgOf(C.holdTotals(p));
   combatAct(st, { type: "dropAllCarried" });
   b.over = true; b.result = { outcome: "retreat", loot: { supplies: {}, gear: [] }, survivorsHurt: [], survivorsDead: [] };
   finishCombat(st, setup, b.result);
   const site = C.groundAt(st, partyTile(p));
-  const onGround = site ? site.items.reduce((a, it) => a + (it.kind === "supply" ? it.qty * C.unitKg(it.fresh ? "meat" : it.key) : 0), 0) : 0;
-  check(site && near(onGround, kg, 0.05) && near(C.kgOf(C.holdTotals(p)), 40 + 2 + 4 - kg, 0.05) && crew.every((s) => !C.handsOf(st, s)), `retreated: ${Math.round(kg)} kg set down stays on the ground (${site ? C.groundText(site) : "none"}), out of the pool`);
+  const onGround = site ? site.items.reduce((a, it) => a + (it.kind !== "supply" ? 0 : FOODS[it.key] ? unitsOf(it.key, it.qty) * C.unitKg(C.holdKeyOf(it.key)) : it.qty * C.unitKg(it.key)), 0) : 0; // food: days of it at the hold's kg a day
+  check(site && near(onGround, kg, 0.05) && near(C.kgOf(C.holdTotals(p)), pool0 - kg, 0.05) && crew.every((s) => !C.handsOf(st, s)), `retreated: ${Math.round(kg)} kg set down stays on the ground (${site ? C.groundText(site) : "none"}), out of the pool`);
 }
 {
   // By the numbers: a fight lost drops what was carried; one won keeps it.
@@ -195,10 +197,10 @@ console.log("The ground: put down by one team, picked up by another");
   check(mk && /Cargo left behind: .*firewood/.test(mk.label) && /Machete/.test(deathLabel(site)), `a marker on the map with the contents (${mk && mk.label})`);
   // Food on the ground spoils.
   C.dropHeld(st, p, "food", 4, { sid: crew[0].id, place: C.settleHold(st, p).by[crew[0].id].pack.food ? "pack" : C.settleHold(st, p).by[crew[0].id].pocket.food ? "pocket" : "hands" });
-  const food0 = (site.items.find((it) => it.key === "food") || {}).qty || 0;
+  const fit = site.items.find((it) => it.kind === "supply" && FOODS[it.key]);
+  const left0 = fit ? fit.left ?? FOODS[fit.key].shelf : 0;
   C.groundDaily(st);
-  const food1 = (site.items.find((it) => it.key === "food") || {}).qty || 0;
-  check(food0 > 0 && food1 < food0 && food1 > food0 * 0.9, `food on the ground spoils (${food0} → ${Math.round(food1 * 100) / 100} in a day)`);
+  check(!!fit && fit.left < left0, `food on the ground spoils: its shelf runs down (${fit ? `${FOODS[fit.key].name} ${Math.round(left0 * 10) / 10} → ${Math.round(fit.left * 10) / 10} days` : "none"})`);
   // Another team comes to the tile and picks part of it up.
   const { p: q } = teamOut(st, 1, { food: 2, water: 2 });
   q.path = [tile]; q.idx = 0; q.dest = tile;

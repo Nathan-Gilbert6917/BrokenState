@@ -12,6 +12,7 @@
 //   (each year in a process of its own; the world goes on after the holdout falls, the groups do not stop).
 // - Determinism and a save / load round trip with parties out.
 // Usage: node tools/depletetest.js [seed] [days] [curve seeds, default 1,2,...,12]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync, readdirSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -195,9 +196,9 @@ section("Contested sites");
   // Win: they leave, dropping their haul into your cargo.
   p.phase = "waiting";
   q.scav.got = { food: 7.6, scrap: 12.2 };
-  const addCargo = (state, team, k, n) => { team.cargo.supplies[k] = (team.cargo.supplies[k] || 0) + n; return n; };
+  const addCargo = (state, team, k, n) => { if (k === "food") addDays(team.cargo, n, "f_beans"); else team.cargo.supplies[k] = (team.cargo.supplies[k] || 0) + n; return n; }; // food: days of it, as cans
   const said = driveOff(st, p, q.id, addCargo);
-  check(!st.parties.includes(q) && p.cargo.supplies.food === 7 && p.cargo.supplies.scrap === 12 && /left/.test(said), `driven off: they leave and drop the haul (${said})`);
+  check(!st.parties.includes(q) && Math.abs(food(p.cargo) - 7) < 1e-6 && p.cargo.supplies.scrap === 12 && /left/.test(said), `driven off: they leave and drop the haul (${said})`);
   // A friendly group keeps to its side.
   const st2 = world();
   tickHour(st2);
@@ -407,7 +408,7 @@ for (const style of ["balanced", "cautious"]) {
   // planTrip: the bare hub's first builds leave it short of scrap, barestart). Picked clean out to the wider one, so a
   // trip beyond it is a far one either way.
   const R = P.range + 5 + (P.reserves ? 4 : 0);
-  Object.assign(h.stock, { food: 400, water: 200, ammo: 200, meds: 20 });
+  Object.assign(h.stock, { water: 200, ammo: 200, meds: 20 }); setFood(h, 400);
   // Everything near home is picked clean (and you know it); farther out the sites are rich (and you know it).
   for (const t of st.tiles) {
     if (!t.loc || t.id === h.tile) continue;
@@ -442,7 +443,7 @@ for (const style of ["balanced", "cautious"]) {
   const h2 = hub(s2);
   // 25 scrap, the old start's: the bare hub's 50 (barestart) pays for a claim trip first (claims.js), and that team
   // walks past the site and sees it stripped before any scavenging trip is planned.
-  Object.assign(h2.stock, { food: 400, water: 200, ammo: 200, meds: 20, scrap: 25 });
+  Object.assign(h2.stock, { water: 200, ammo: 200, meds: 20, scrap: 25 }); setFood(h2, 400);
   const near = s2.tiles.filter((t) => t.loc && t.id !== h2.tile && s2.grid.distance(t.id, h2.tile) <= 6 && t.owner == null).sort((a, b) => a.id - b.id);
   for (const t of s2.tiles) if (t.loc && t.id !== h2.tile && s2.grid.distance(t.id, h2.tile) <= P.range + 5) { t.loot = AISCAV.floor; s2.knowledge[t.id] = snapshot(s2, t.id); }
   const believed = near[0];

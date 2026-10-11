@@ -2,6 +2,7 @@
 // WATER_BARREL, BEDS and the barracks; economy.js waterCapacity / rawRoom / waterLayout; storage.js storeSpaces;
 // autopilot.js housingAI: barracks when plots are short, expansions, a cramped hub sending people to outposts).
 // Usage: node tools/plotstest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, newId, makeSurvivor } from "../src/sim/world.js";
 import {
   BUILDINGS, PLOTS, addBuilding, canBuild, queueBuild, cancelBuild, constructionHour, plotCap, plotsUsed, plotsFree,
@@ -17,7 +18,7 @@ const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const W = () => createWorld({ seed, factionCount: 6 });
-const rich = (b) => Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999, food: 500 });
+const rich = (b) => { Object.assign(b.stock, { scrap: 9999, parts: 999, meds: 999 }); setFood(b, 500); return b.stock; };
 const mkOutpost = (st, tile) => {
   const b = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   st.bases.push(b);
@@ -268,7 +269,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   while (st3.survivors.filter((s) => s.alive && s.location.kind === "base" && s.location.baseId === h3.id).length < baseBeds(h3)) skilled(st3, h3);
   check(housingAI.next(st3, h3) === null && housingAI.cramped(st3), `nothing more fits and the beds are full: the hub is cramped (${baseBeds(h3)} beds)`);
   const o3 = mkOutpost(st3, h3.tile);
-  rich(o3); Object.assign(o3.stock, { water: 300 }); h3.stock.food = 2000; // the hub feeds 10 days a head and more
+  rich(o3); Object.assign(o3.stock, { water: 300 }); setFood(h3, 2000); // the hub feeds 10 days a head and more
   addBuilding(o3, "bunkhouse"); addBuilding(o3, "well"); addBuilding(o3, "well"); addBuilding(o3, "cistern");
   check(housingAI.bedsFree(st3, o3) === 8, `an empty outpost with a bunkhouse has 8 beds free (${housingAI.bedsFree(st3, o3)})`);
   const mv = housingAI.movers(st3, o3);
