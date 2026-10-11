@@ -7,7 +7,7 @@ import { crawlProgressLine } from "../sim/hivecrawl.js"; // the Goals card: how 
 import { SUPPLIES, SUPPLY_KEYS } from "../sim/data.js";
 import { day, factionById, hub } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
-import { worksText } from "../sim/groupworks.js"; // barestart: what the group has built
+import { worksText, groupKitchenText } from "../sim/groupworks.js"; // barestart: what the group has built
 import { arsenalText, arsenalKnown } from "../sim/arsenal.js"; // what they fight with
 import { jailText } from "../sim/groupjails.js"; // jailhouse: their jail and who they hold, once you know it
 import { tileLabel } from "../sim/parties.js";
@@ -206,6 +206,7 @@ export function groupCardExtras(state, f) {
     ${playerWarBlock(state, f)}
     ${f.wormLost ? `<div class="muted"${tip("The worm (Help: The dead and the worm): a group on infected ground loses people to it as a base of yours would catch it; after its first loss a base boils its water and loses far fewer. Heard on the radio and kept in the chronicle.")}>Lost ${f.wormLost} to the worm${f.wormBoilers && Object.keys(f.wormBoilers).length ? "; they boil their water now" : ""}</div>` : ""}
     ${worksText(state, f) ? `<div class="muted"${tip("What they have built at their bases (their bases start bare, as yours does): wells and fields for their food, quarters for their people, walls when they feel threatened (what an assault on them faces), then a workshop and a storehouse.")}>🏗 ${esc(worksText(state, f))}</div>` : ""}
+    ${groupKitchenText(state, f) ? `<div class="muted"${tip("Their kitchens (as yours: sim/kitchen.js): the people they feed eat 10% less, their cooks work no fields, the stoves burn firewood from their woodpile (cold without it), and hot meals keep the group together: it grows a little faster and fewer desert.")}>🍲 ${esc(groupKitchenText(state, f))}</div>` : ""}
     ${arsenalLine(state, f)}
     ${jailText(state, f) ? `<div class="muted"${tip("Their jail and the prisoners in it (your people among them), known from a prisoner of theirs you questioned or from seeing their base. Makeshift cells hold 2 and leak, holding cells 3, a jailhouse 8 and are hard to break out of: a rescue meets the same. They work their prisoners (raiders hardest) and buy, sell and swap them with other groups.")}>⛓ ${esc(jailText(state, f))}</div>` : ""}
     ${marketLine(m)}

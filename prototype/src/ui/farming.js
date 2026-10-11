@@ -16,7 +16,8 @@ import { storeLine } from "../sim/storage.js";
 import { baseById, atBase } from "../sim/world.js";
 import { count } from "../sim/buildings.js";
 import * as Weather from "../sim/weather.js";
-import { baseWater, boilerUse, cropLandBad, WORM, purifyText, baseTabCount } from "../sim/worm.js";
+import { KITCHEN, hasKitchen, kitchenWood, kitchenCold } from "../sim/kitchen.js"; // the Kitchen's stove: firewood every day
+import { baseWater, boilerUse, cropLandBad, WORM, purifyText, baseTabCount, baseCooks } from "../sim/worm.js";
 import {
   HUNT_METHODS, METHOD_NAMES, MIX_PRESETS, huntMixOf, setHuntMix, setHuntShare, huntWorkWhy, ammoKeep, hasBow, ARROW, TRAP, HUNT, baseHuntDay,
 } from "../sim/hunting.js";
@@ -57,6 +58,9 @@ export function upkeepLine(state, b) {
   // The water boiler (sim/worm.js): firewood a head every day the water needs boiling, like heating.
   const boil = count(b, "boiler") ? boilerUse(state, b) : null;
   const boiler = boil && boil.active ? `Water boiler: ${boil.text}${boil.lit ? "" : " (cold today: nothing to burn)"}` : "";
+  // The Kitchen's stove (sim/kitchen.js): firewood every day, after the boiler and the heating.
+  const kw = hasKitchen(b) ? kitchenWood(state, b) : null;
+  const kitchen = kw ? `Kitchen stove: ${Math.round(kw.need * 10) / 10} firewood a day (stove ${kw.stove} + meals ${Math.round(kw.meals * 10) / 10})${kitchenCold(b) ? " (cold today: no firewood to spare)" : ""}` : "";
   const cold = fo.use.cold > 1 ? ` The cold: everyone eats ${Math.round((fo.use.cold - 1) * 100)}% more today.` : "";
   const wn = woodNeed(state, b);
   const woodNote = ` ${n0(b.stock.wood)} firewood and ${n0(b.stock.fuel)} fuel in store${wn.need > 0 && wn.soon ? `; the cold ahead (about ${Math.round(wn.days)} freezing days) needs about ${wn.need} firewood` : ""}.`;
@@ -64,9 +68,11 @@ export function upkeepLine(state, b) {
   const boilTip = boil ? ` The water boiler burns ${WORM.BOILER_WOOD_HEAD} firewood's worth a head a day in every season (firewood, then the armory's burnable junk while the base allows it, then ${Math.round(WORM.BOILER_WOOD_HEAD * HEAT.wood * 100) / 100} fuel a head), on every day un-purified water would be drunk here (any of it can carry the worm) and no water filter covers it${boil.active ? `: today ${boil.text}${boil.lit ? "" : ", and it is cold: the base could not pay, so the water is unboiled today (purification tablets from the armory if there are no filters)"}` : "; today it stands ready (the filters do the job)"}.` : "";
   const tipText = `What the people fed from ${b.name}'s stores use up a day: a rate per person × the people here. Food ${food}; water ${water}${need.crops ? `, and the crops ${n1(need.crops)} on a dry day` : ""}.${cold}${boilTip} Everyone living here eats 1 food a day (more in the cold; a Quartermaster here cuts it 10%) and drinks 1 water (the season's thirst: ${THIRST.summer} in summer, ${THIRST.winter} in winter, at least ${THIRST.heat} on a hot day; dysentery 1 more). Prisoners, guests you shelter and a supply convoy holding here eat and drink the same from these stores. People away on a team eat the team's packed supplies, not the base's; someone on a personal errand takes a day's food and water a day with them.${heatTip} Spoilage goes by the food stored, generator fuel by the day it runs, wear by the building.`;
   const boilerWood = boil && boil.active ? boil.wood : 0;
-  return { food, water, heating, boiler, boilerCold: !!boil && boil.active && !boil.lit, cold: !!b.cold, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)}${heat.total > 0 || boilerWood > 0 ? ` · firewood ${n0(heat.wood + boilerWood)}` : ""} a day`, tip: tipText };
+  const kitchenWoodDay = kw ? kw.need : 0;
+  const kitchenTip = kw ? ` The Kitchen's stove burns ${KITCHEN.wood.stove} firewood a day and ${KITCHEN.wood.meal} a meal served (two a day for everyone fed), after the boiler's and the heating's day: today ${n1(kw.need)}${kitchenCold(b) ? ", and it is cold: no firewood to spare, so the meals are cold" : ""}.` : "";
+  return { food, water, heating, boiler, kitchen, kitchenCold: kitchenCold(b), boilerCold: !!boil && boil.active && !boil.lit, cold: !!b.cold, short: `${fo.heads} fed here: food ${n1(fo.eat)} · water ${n1(need.people + need.prisoners + need.guests)}${heat.total > 0 || boilerWood > 0 || kitchenWoodDay > 0 ? ` · firewood ${n0(heat.wood + boilerWood + kitchenWoodDay)}` : ""} a day`, tip: tipText + kitchenTip };
 }
-export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div>${u.heating ? `<div class="small ${u.cold ? "danger" : "muted"}">${esc(u.heating)}${u.cold ? " · cold: out of firewood and fuel" : ""}</div>` : ""}${u.boiler ? `<div class="small ${u.boilerCold ? "danger" : "muted"}">${esc(u.boiler)}</div>` : ""}</div>`; };
+export const upkeepCellHtml = (state, b) => { const u = upkeepLine(state, b); return `<div${tip(u.tip)}>${esc(u.short)}<div class="small muted">${esc(`food ${u.food}; water ${u.water}`)}</div>${u.heating ? `<div class="small ${u.cold ? "danger" : "muted"}">${esc(u.heating)}${u.cold ? " · cold: out of firewood and fuel" : ""}</div>` : ""}${u.boiler ? `<div class="small ${u.boilerCold ? "danger" : "muted"}">${esc(u.boiler)}</div>` : ""}${u.kitchen ? `<div class="small ${u.kitchenCold ? "danger" : "muted"}">${esc(u.kitchen)}</div>` : ""}</div>`; };
 
 // Firewood (sim/woodcutting.js) for the top bar and the base panel: days of heating left in the cold, else what is in
 // store against what the coming cold needs. { short, cls, tip }.
@@ -74,9 +80,10 @@ export function woodLine(state, b) {
   const w = woodNeed(state, b);
   const heat = heatUse(state, b);
   const burning = heat.total > 0;
-  const short = burning ? `${days(w.have / Math.max(0.01, heat.wood))}d` : w.soon && w.need > 0 ? `${n0(w.have)}/${w.need}` : "";
+  const perDay = (burning ? heat.wood : 0) + (w.daily || 0); // heating, the water boiler and the Kitchen's stove
+  const short = burning || w.kitchen > 0 ? `${days(w.have / Math.max(0.01, perDay))}d` : w.soon && w.need > 0 ? `${n0(w.have)}/${w.need}` : ""; // days left at today's burn (the Kitchen burns every day)
   const cls = !w.soon || !w.short ? "good" : w.cold || w.toCold <= 14 ? "danger" : "";
-  const tipText = `Firewood: the winter's heating. Below 0°C everyone here needs ${woodFor(HEAT.fuel)} firewood a day (${woodFor(HEAT.fuel * HEAT.bitter)} below ${HEAT.bitterAt}°C); fuel covers what the wood does not (30 firewood = ${Math.round(30 * HEAT.wood * 100) / 100} fuel of heat; a firewood is ${SUPPLIES.wood.weight} kg).${burning ? ` Today: ${heat.text}.` : ""}${w.need > 0 ? ` The cold ahead: about ${Math.round(w.days)} freezing days for ${w.heads} ${w.heads === 1 ? "person" : "people"}, about ${w.need} firewood with a fifth to spare (${n0(w.have)} in store${w.short ? `, ${Math.ceil(w.need - w.have)} short` : ""}).` : ""} ${baseWoodHint(state, b)[0].toUpperCase()}${baseWoodHint(state, b).slice(1)}: put people on Cut wood (Work tab), send a team to cut wood (team panel, Land), or trade for it. Cut it in late summer and autumn.`;
+  const tipText = `Firewood: the winter's heating. Below 0°C everyone here needs ${woodFor(HEAT.fuel)} firewood a day (${woodFor(HEAT.fuel * HEAT.bitter)} below ${HEAT.bitterAt}°C); fuel covers what the wood does not (30 firewood = ${Math.round(30 * HEAT.wood * 100) / 100} fuel of heat; a firewood is ${SUPPLIES.wood.weight} kg).${burning ? ` Today: ${heat.text}.` : ""}${w.boiler > 0 ? ` The water boiler burns ${n1(w.boiler)} a day.` : ""}${w.kitchen > 0 ? ` The Kitchen's stove burns ${n1(w.kitchen)} a day (${KITCHEN.wood.keepDays} days of it wanted in store).` : ""}${w.daily > 0 && w.have > 0 ? ` At ${n1(perDay)} a day it lasts about ${days(w.have / Math.max(0.01, perDay))} days.` : ""}${w.need > 0 ? ` The cold ahead: about ${Math.round(w.days)} freezing days for ${w.heads} ${w.heads === 1 ? "person" : "people"}, about ${w.need} firewood with a fifth to spare (${n0(w.have)} in store${w.short ? `, ${Math.ceil(w.need - w.have)} short` : ""}).` : ""} ${baseWoodHint(state, b)[0].toUpperCase()}${baseWoodHint(state, b).slice(1)}: put people on Cut wood (Work tab), send a team to cut wood (team panel, Land), or trade for it. Cut it in late summer and autumn.`;
   return { short, cls, tip: tipText };
 }
 
@@ -166,7 +173,7 @@ function cropOptions(selected, gh, state, b, p) {
   }).join("");
 }
 
-const baseCooksHere = (b) => count(b, "cookhouse") > 0 || count(b, "kitchen") > 0;
+const baseCooksHere = (b) => baseCooks(b); // sim/worm.js: a cook fire, a preserving room, a lit Kitchen
 export function baseFarming(state, b) {
   const f = farmOf(state, b);
   const care = careToday(state, b);
@@ -236,7 +243,7 @@ export function baseFarming(state, b) {
         <div class="kv" style="margin-top:0.3rem">
           <div${tip("Farmers (by how much they can work) per planted plot. More hands give a bigger harvest from the same days, with diminishing returns: 0.5 per plot about 1.0, 1 per plot 1.23, 2 per plot 1.4.")}>Tending</div><div>${n1(care.perPlot)} per plot → ×${n1(care.tend)}</div>
           <div${tip("Average Farming of the farmers who tend (one per planted plot): Farming 0 ×0.75, 7 ×1.0, 20 ×1.45")}>Skill</div><div>Farming ${n1(care.avgSkill)} → ×${n1(care.skill)}</div>
-          <div${tip("Farmland 1.3, forest 0.9, hills 0.85, elsewhere 1")}>Ground</div><div>×${siteFarm(state, b)}${cropLandBad(state, b.tile) ? ` <span class="danger"${tip(`The worm (Help: The dead and the worm): this ground is at ${Math.round((state.tiles[b.tile].infection || 0) * 100)}% infection, ${Math.round(WORM.CROP_MIN * 100)}% or more, so the fresh crops grown here (and anything foraged on land like it) carry its eggs: ${WORM.CROP * 100}% a ration eaten raw (forage ${WORM.FORAGE * 100}%). A cook fire or a preserving room boils everything the base eats; without one that food waits in the stores and is eaten last, raw. Dry crops (grain, dry beans) are threshed and cooked: safe.`)}>infected: the crops carry the worm's eggs${baseCooksHere(b) ? " (boiled here)" : " (build a cook fire)"}</span>` : ""}</div>
+          <div${tip("Farmland 1.3, forest 0.9, hills 0.85, elsewhere 1")}>Ground</div><div>×${siteFarm(state, b)}${cropLandBad(state, b.tile) ? ` <span class="danger"${tip(`The worm (Help: The dead and the worm): this ground is at ${Math.round((state.tiles[b.tile].infection || 0) * 100)}% infection, ${Math.round(WORM.CROP_MIN * 100)}% or more, so the fresh crops grown here (and anything foraged on land like it) carry its eggs: ${WORM.CROP * 100}% a ration eaten raw (forage ${WORM.FORAGE * 100}%). A cook fire, a preserving room or a lit Kitchen boils everything the base eats; without one that food waits in the stores and is eaten last, raw. Dry crops (grain, dry beans) are threshed and cooked: safe.`)}>infected: the crops carry the worm's eggs${baseCooksHere(b) ? " (boiled here)" : " (build a cook fire)"}</span>` : ""}</div>
           <div>Plots</div><div>${plotLimit(b)} outdoor${greenhouseLimit(b) ? ` + ${greenhouseLimit(b)} under glass` : ""} · ${f.plots.filter((p) => p.stage === "growing").length} growing</div>
         </div>
         <label style="display:block;margin-top:0.35rem"${tip("Farmers sow free plots by themselves (the crop picked for the plot, or the best one for the season) and clear dead ones. Off: only what you sow.")}><input type="checkbox" data-action="farm-auto" data-base="${b.id}" ${f.auto ? "checked" : ""}> Replant automatically</label>

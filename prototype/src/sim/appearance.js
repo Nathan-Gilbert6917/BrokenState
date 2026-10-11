@@ -90,6 +90,32 @@ export function meleeBump(seed, who, lo, hi, key = "") {
   return lo + Math.floor(u * (hi - lo + 1));
 }
 
+// Cooking (data.js SKILLS; kitchen.js, 2026-10-10): a new survivor's starting level, with dice of its own (seed + how many
+// people this world has made, salted apart from Crafting's and Melee's), so adding the skill moved none of the world's
+// random numbers: a third of their Farming (people who grow food usually cook it) plus 0-6 × quality, averaging about 5.
+// oldSave: people in a save from before the skill (save.js, world.js fillCooking): half their Farming plus 0-4 by a hash
+// of their name (about the same average).
+export const COOK_START = { fromFarm: 1 / 3, roll: 6, salt: 0x636f6f6b, oldFarm: 0.5, oldRoll: 4, oldSalt: 0x434f4f4b };
+export function cookingStart(seed, n, farming = 0, quality = 1) {
+  const u = new Rng(hashSeed((seed | 0) ^ COOK_START.salt, n)).next();
+  return Math.max(0, Math.min(SKILL_MAX, Math.round(COOK_START.fromFarm * (farming || 0) + u * COOK_START.roll * quality)));
+}
+// Someone from before the skill: deterministic by their name and Farming (world.js skill() uses it too).
+export function cookingOldSave(who, farming = 0) {
+  let w = 0;
+  for (const c of String(who)) w = (Math.imul(w, 31) + c.charCodeAt(0)) | 0;
+  const u = new Rng(hashSeed(COOK_START.oldSalt, w)).next();
+  return Math.max(0, Math.min(SKILL_MAX, Math.round(COOK_START.oldFarm * (farming || 0) + u * COOK_START.oldRoll)));
+}
+// A die of its own for a background's Cooking bump (hardcore-start.js applyArchetype; as meleeBump).
+export function cookingBump(seed, who, lo, hi, key = "") {
+  let h = 0, w = 0;
+  for (const c of String(key)) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0;
+  for (const c of String(who)) w = (Math.imul(w, 31) + c.charCodeAt(0)) | 0;
+  const u = new Rng(hashSeed(((seed | 0) ^ COOK_START.salt ^ h) | 0, w)).next();
+  return lo + Math.floor(u * (hi - lo + 1));
+}
+
 // Fills in a missing or partial appearance in place and returns it.
 export function ensureAppearance(s, seed = 0) {
   const def = appearanceFor(seed, s.id || 0);

@@ -10,7 +10,7 @@ import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, c
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
 import { sanitizeStartGear, hasPicks, normalStartGear, sanitizeStartVehicle } from "./startgear.js"; // gear picked on the new-run screen (Customize)
-import { appearanceFor, craftingStart, CRAFT_START, meleeStart, meleeOldSave } from "./appearance.js";
+import { appearanceFor, craftingStart, CRAFT_START, meleeStart, meleeOldSave, cookingStart, cookingOldSave } from "./appearance.js";
 export { radioBasesInRange };
 
 // Bases with a radio station, or a linked relay, whose range covers a tile (the network is in radio.js).
@@ -43,6 +43,7 @@ import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledge
 import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
+import { cookShiftHour, cooksHour } from "./kitchen.js"; // part-time cooks: the cooking hours (kitchen-plus)
 import { workHour, workDayRoles } from "./work.js";
 import { stallDaily } from "./activity.js";
 import { leaderIdleHour } from "./idlework.js";
@@ -255,6 +256,7 @@ export function makeSurvivor(state, quality = 1) {
   for (const k of ROLLED_SKILLS) skills[k] = Math.min(20, skills[k]);
   skills.crafting = craftingStart(state.seed, (state.peopleMade || 0) + 1, skills.mechanics, quality); // its own dice (appearance.js)
   skills.melee = meleeStart(state.seed, (state.peopleMade || 0) + 1, quality); // its own dice too (appearance.js)
+  skills.cooking = cookingStart(state.seed, (state.peopleMade || 0) + 1, skills.farming, quality); // and Cooking (appearance.js)
   // The world's dice draw the traits as ever; the newer ones come in with dice of their own (traits.js), keyed like the
   // looks below by the seed and how many people this world has made.
   const born = rollTraits(rng, null);
@@ -460,6 +462,14 @@ export function fillMelee(s) {
   if (s.skillFloor && !Number.isFinite(s.skillFloor.melee)) s.skillFloor.melee = s.skills.melee;
   if (s.perkMs && s.perkMs.melee == null) { let ms = 0; for (const m of [5, 10, 15]) if (s.skills.melee >= m) ms = m; if (ms) s.perkMs.melee = ms; }
 }
+// Cooking (data.js SKILLS, 2026-10-10; kitchen.js): people from before the skill get half their Farming plus 0-4 by a
+// hash of their name (appearance.js cookingOldSave), their skill floor too, and no perk point for milestones passed.
+export function fillCooking(s) {
+  if (!s || !s.skills || Number.isFinite(s.skills.cooking)) return;
+  s.skills.cooking = cookingOldSave(s.name, s.skills.farming);
+  if (s.skillFloor && !Number.isFinite(s.skillFloor.cooking)) s.skillFloor.cooking = s.skills.cooking;
+  if (s.perkMs && s.perkMs.cooking == null) { let ms = 0; for (const m of [5, 10, 15]) if (s.skills.cooking >= m) ms = m; if (ms) s.perkMs.cooking = ms; }
+}
 // What the Melee skill does (combat.js playerUnit, meleeOdds; stealth.js subdueOdds; combatPower below). MID: the level
 // that fights as everyone did before the skill (the average rolled colonist is about 5.5); each point above or below it
 // is AIM to hit in melee (75 at MID, 65 at 0, 85 at 10, 95 at 15: the cap) and DMG of melee damage (× 0.85 at 0, × 1.15
@@ -482,6 +492,7 @@ export function skill(s, key) {
   let v = s.skills[key] || 0;
   if (key === "crafting" && s.skills.crafting == null) v = Math.round(CRAFT_START.oldSave * (s.skills.mechanics || 0)); // people from before the skill (save.js fills it in)
   if (key === "melee" && s.skills.melee == null) v = meleeOldSave(s.name, s.skills.shooting); // the same (fillMelee)
+  if (key === "cooking" && s.skills.cooking == null) v = cookingOldSave(s.name, s.skills.farming); // the same (fillCooking)
   v += traitSkill(s, key); // Former Medic, Loud, Farm-Raised, Persuasive, Lucky, Unlucky, Nearsighted, Squeamish, by tier (traits.js)
   return Math.max(0, v);
 }
@@ -970,6 +981,7 @@ function hourOfWorld(state) {
   festivalHour(state); // festival.js: the morning of the harvest festival
   crowdCardsHour(state); // moveout.js: a base of yours with more people than beds says so (once, then after a while or when worse)
   workHour(state); // work.js: people on work priorities get this hour's job (before stewards, which skip them)
+  cookShiftHour(state); // kitchen.js: a Manual "Cook + second job" cooks in the cooking hours, the second job otherwise
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
@@ -977,6 +989,7 @@ function hourOfWorld(state) {
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   sickRestHour(state); // sickrest.js: the ill at a base rest (Manual and pinned: their job back when well); a log line each way
+  cooksHour(state); // kitchen.js: whoever is on Cook in a cooking hour counts as one of the day's cooks (s.cookHour)
   jobTripsHour(state); // jobtrips.js: the outdoor jobs' trips (out to the base's land, the work, home with the load)
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)

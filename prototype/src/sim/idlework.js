@@ -35,7 +35,7 @@ import { edibleFood } from "./storage.js";
 import { actingLeader } from "./steward.js";
 import { ROLE_AREA } from "./autopilot.js";
 import { idlePeople, jobCheck, dayJob } from "./activity.js";
-import { hasKitchen, cooksWanted } from "./kitchen.js"; // the Kitchen's cooks
+import { hasKitchen, cooksWanted, isCook, kitchenCanLight } from "./kitchen.js"; // the Kitchen's cooks
 
 export const IDLE_HOUR = 7; // the leader's and the governor's daily look at the stalled jobs
 const first = (s) => s.name.split(" ")[0];
@@ -82,7 +82,7 @@ export function baseNeeds(state, base) {
     add("build", water ? 7 : 4, (water ? 4 : 3) - on("build"), `${BUILDINGS[job.type] ? BUILDINGS[job.type].name : job.type} queued (${n0(job.hours - job.progress)} work-hours left)`);
   }
   // The Kitchen short of cooks (kitchen.js): hot meals stretch the food (−10%) for the people a cook feeds.
-  if (hasKitchen(base)) add("cook", 3.5, cooksWanted(state, base) - on("cook"), `the kitchen wants ${cooksWanted(state, base)} cook${cooksWanted(state, base) === 1 ? "" : "s"} for ${ppl.length} people: hot meals stretch the food`);
+  if (hasKitchen(base) && kitchenCanLight(state, base)) add("cook", 3.5, cooksWanted(state, base) - ppl.filter((s) => isCook(state, s)).length, `the kitchen wants ${cooksWanted(state, base)} cook${cooksWanted(state, base) === 1 ? "" : "s"} for ${ppl.length} people: hot meals stretch the food`);
   // Stations with work and nobody on them.
   const busy = new Set(ppl.filter((s) => s.role === "operate").map((s) => s.station));
   for (const st of stations(base)) if (!busy.has(st.id) && !st.broken && BUILDINGS[st.type].station !== "power" && !stationWork(state, base, st)) add("operate", 3, 1, `the ${BUILDINGS[st.type].name.toLowerCase()} has work and no operator`, st.id);
@@ -93,7 +93,7 @@ export function baseNeeds(state, base) {
   return out.sort((a, b) => b.score - a.score);
 }
 
-const JOB_SKILL = { water: "scouting", cook: "farming", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
+const JOB_SKILL = { water: "scouting", cook: "cooking", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
 
 // One job each for these people (default: the base's idle), by the base's needs. areas: a leader's areas (only jobs
 // in an area handed over).

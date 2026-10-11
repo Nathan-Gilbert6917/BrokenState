@@ -19,6 +19,7 @@ import { BUILDINGS, isCamp } from "./buildings.js";
 import { partyTile, partyMembers, wipeParty } from "./parties.js";
 import { medKitBonus, useMedKit } from "./crafting.js";
 import { conditionsOf, CONDITIONS, workFactor, tooIllToWork, conditionInfoCtx, applyCondition, autoWantsCondition, conditionDanger } from "./health.js";
+import { jobShare } from "./kitchen.js"; // a part-time cook's share of the medic's day
 import { hasPerk, gainXp, USE } from "./skills.js";
 import { noteTreated } from "./relations.js";
 import { FIELD_CARE } from "./medfinds.js";
@@ -283,8 +284,9 @@ function bestMedic(people) {
 }
 
 // Treatments a Medic-role survivor can give in a day.
-export function medicCapacity(s) {
-  const cap = Math.max(0, Math.floor((TREATS_PER_MEDIC + Math.floor(skill(s, "medicine") / 4)) * workFactor(s) + 1e-9));
+export function medicCapacity(s, state = null) {
+  const share = state ? jobShare(state, s, "medic") : 1; // kitchen.js: a part-time cook's hours at the stove
+  const cap = Math.max(0, Math.floor((TREATS_PER_MEDIC + Math.floor(skill(s, "medicine") / 4)) * workFactor(s) * share + 1e-9));
   return cap > 0 && hasPerk(s, "triage") ? cap + 1 : cap; // Triage (skills.js): +1 treatment a day
 }
 
@@ -294,7 +296,7 @@ export function treaters(state, base) {
   const here = atBase(state, base.id);
   const medics = here.filter((s) => s.role === "medic");
   let list;
-  if (medics.length) list = medics.map((m) => ({ s: m, cap: medicCapacity(m), trained: true }));
+  if (medics.length) list = medics.map((m) => ({ s: m, cap: medicCapacity(m, state), trained: true }));
   else {
     const { medic } = bestMedic(here);
     list = medic ? [{ s: medic, cap: UNTRAINED_TREATS + (hasPerk(medic, "triage") ? 1 : 0), trained: false }] : [];

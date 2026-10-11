@@ -16,7 +16,7 @@ import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner lab
 import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calibre
 import { reloadStatus, runReload } from "./reloading.js"; // the reloading bench: an ammo bench upgraded in place
 import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "livestock")
-import { kitchenService } from "./kitchen.js"; // the Kitchen's meals (buildingSummary)
+import { kitchenService, jobShare } from "./kitchen.js"; // the Kitchen's meals (buildingSummary)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: the builders go out on the odd hours
 
@@ -130,7 +130,7 @@ export const BUILDINGS = {
   // The Kitchen (kitchen.js KITCHEN): meals cooked for the base by the people on the Cook job. A step up from the cook fire
   // (it cooks everything the cook fire does, so a base with one needs no cook fire). Priced as the Preserving room and
   // the storehouse (18 scrap, a part, 24 work-hours): a mid-game building plot for a base of 8 or more.
-  canteen:      { name: "Kitchen",        plot: "building", cost: { scrap: 20, parts: 1 }, hours: 24, max: 1, desc: "Stoves, a big pot and long tables: the base's meals cooked by the people on the Cook job, one cook for every 12 people living here (breakfast 06:00, dinner 20:00). Hot meals stretch the food: everyone fed at the kitchen eats 10% less a day (up to 13% with a good cook: +0.5% a Farming point above 4), +1 mood a day (+1.5 with a Farming 6+ cook; the preserving room's stove gives +1 too, never both), and a quarter of the day's drinking water is boiled for the meals. With too few cooks only that share of the people get hot meals. Like a cook fire, all the game, fish and greens from infected land are cooked through (the worm), cook or no cook. No cook: the food is eaten as before." },
+  canteen:      { name: "Kitchen",        plot: "building", cost: { scrap: 20, parts: 1 }, hours: 24, max: 1, desc: "Stoves, a big pot and long tables: the base's meals cooked by the people on the Cook job, one cook for every 12 people living here (breakfast 06:00, dinner 20:00). Hot meals stretch the food: everyone fed at the kitchen eats 10% less a day (up to 13% with a good cook: +0.5% a Cooking point above 4), +1 mood a day (+1.5 with a Cooking 6+ cook; only the Kitchen serves hot meals), and a quarter of the day's drinking water is boiled for the meals. The stove burns firewood: 4 a day, and 1 a meal (two a day for everyone fed: 28 a day, 2.8 kg, for 12 people), after the water boiler's and the heating's day; without it the meals are cold (nothing saved, no mood). With too few cooks only that share of the people get hot meals. Like a cook fire, all the game, fish and greens from infected land are cooked through (the worm) while the stove is lit, cook or no cook. No cook: the food is eaten as before." },
   smoker:       { name: "Drying rack",    plot: "utility", cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
   // Power (power.js): generators need an operator and fuel; the still turns food into that fuel.
   generator:    { name: "Generator",      plot: "utility", cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, station: "power", req: { mechanics: 3 }, desc: "Workshop station. With an operator it burns 2 fuel a day for 6 power, only while something draws power: a cold store that works in summer, +2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving room, a walk-in freezer, a vacuum sealer. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build." },
@@ -557,6 +557,9 @@ export function runStations(state, base) {
     const status = stationStatus(state, base, st);
     if (!status.running || status.recipe === "power") continue;
     if (base.silent && hash01(state.seed, "silentwork", localId(state, base.id), day(state), localId(state, st.id)) < SILENT.WORK_SKIP) continue; // hiding.js: running silent, the workshops work in quiet spells
+    // kitchen.js jobShare: an operator who cooked part of the day (a part-time cook) runs the station that share of
+    // the days (its own dice: no world rng), so the cooking hours are not free.
+    if (status.op && hash01(state.seed, "cookshare", localId(state, base.id), day(state), localId(state, st.id)) >= jobShare(state, status.op, "operate")) continue;
     if (status.reload) { runReload(state, base, st, status); continue; } // reloading.js: brass, powder and primers into rounds
     const r = RECIPES[status.recipe];
     const inp = status.in || r.in;
@@ -762,8 +765,9 @@ export function buildingSummary(state, base) {
     ["Meals", (() => {
       const ks = kitchenService(state, base);
       if (!ks.built) return count(base, "cookhouse") ? "Cook fire (game and greens cooked through)" : "Each eats their own (no kitchen)";
+      if (ks.cold) return "Kitchen: cold meals (no firewood for the stove)";
       if (!ks.cooks.length) return `Kitchen: no cook (${ks.wanted} wanted: put someone on Cook)`;
-      return `Kitchen: ${ks.cooks.length} cook${ks.cooks.length === 1 ? " feeds" : "s feed"} ${ks.served} of ${ks.fed} hot meals (−${Math.round(ks.save * 1000) / 10}% food, +${Math.round(ks.mood * 10) / 10} mood a day)`;
+      return `Kitchen: ${ks.count} cook${ks.count === 1 ? " feeds" : "s feed"} ${ks.served} of ${ks.fed} hot meals (−${Math.round(ks.save * 1000) / 10}% food, +${Math.round(ks.mood * 10) / 10} mood a day)`;
     })()],
     ["Power", powerLine(state, base)],
     ...(countAll(base, "freezer") ? [["Walk-in freezer", freezerLine(state, base)]] : []),

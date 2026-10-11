@@ -8,6 +8,7 @@ import { atBase, survivorById, baseById, skill, hub } from "../sim/world.js";
 import { ROLES } from "../sim/economy.js";
 import { SKILL_NAMES } from "../sim/data.js";
 import { assignStations } from "../sim/buildings.js";
+import { COOK_SECOND, cookPlusOf, setCookPlus } from "../sim/kitchen.js"; // Cook + a second job (fixed, part-time)
 import { STANCES } from "../sim/parties.js";
 import { vehiclesAtBase } from "../sim/vehicles.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
@@ -34,13 +35,20 @@ const PNAME = ["never", "1 (first)", "2", "3", "4", "5 (last)"];
 // ---------- the role drop-down (base screen, roster, medical tab) ----------
 // One list: the work roles (priorities) first, then the fixed jobs (Manual). Before the Work tab was ever opened
 // the default roles are offered by name.
+// The Cook (sim/kitchen.js) as a fixed job comes two ways: "Cook (kitchen all day)", or a part-time "Cook + <second
+// job>" (value "cook+farm": the cooking hours at the stove, the second job the rest of the day).
+export const COOK_PLUS_LABEL = "Cook (+ second job)";
+export const cookPlusName = (k) => `Cook + ${ROLES[k] ? ROLES[k].name : k}`;
 export function roleSelect(state, s, extra = "") {
   const role = roleOf(state, s);
+  const plus = cookPlusOf(state, s);
   const roles = state.work ? state.work.roles.map((r) => [r.id, r.name, r.kind]) : DEFAULT_ROLES().map((r) => [`@${r.name}`, r.name, r.kind || "base"]);
-  const desc = role ? `${role.name}: works by its priorities (Work tab)${role.kind === "crew" ? " and goes on the crew's trips" : ""}.` : ROLES[s.role] ? `Manual: ${ROLES[s.role].desc}` : "Role";
+  const desc = role ? `${role.name}: works by its priorities (Work tab)${role.kind === "crew" ? " and goes on the crew's trips" : ""}.` : plus ? `Manual: ${cookPlusName(plus)}: cooks in the cooking hours (05:00–06:00, 16:00–20:00) and works as ${ROLES[plus].name} the rest of the day (counted at ${ROLES[plus].name} for the day's work).` : ROLES[s.role] ? `Manual: ${ROLES[s.role].desc}` : "Role";
+  const fixedName = (k, r) => (k === "cook" ? "Cook (kitchen all day)" : r.name);
   return `<select data-action="role" data-id="${s.id}"${tip(desc)}${extra}>
     <optgroup label="Work roles (priorities)">${roles.map(([id, name, kind]) => `<option value="w:${esc(id)}" ${role && role.id === id ? "selected" : ""}>${esc(name)}${kind === "crew" ? " (crew)" : ""}</option>`).join("")}</optgroup>
-    <optgroup label="Fixed job (Manual)">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${!role && s.role === k ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</optgroup>
+    <optgroup label="Fixed job (Manual)">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${!role && !plus && s.role === k ? "selected" : ""}>${esc(fixedName(k, r))}</option>`).join("")}</optgroup>
+    <optgroup label="${esc(COOK_PLUS_LABEL)}">${COOK_SECOND.map((k) => `<option value="cook+${k}" ${!role && plus === k ? "selected" : ""}>${esc(cookPlusName(k))}</option>`).join("")}</optgroup>
   </select>`;
 }
 // What they do now, for people on priorities; for Manual and pinned people only while they rest sick (sickrest.js).
@@ -72,9 +80,14 @@ export function applyRoleChoice(state, s, value) {
     msg = assignRole(state, s, role.id);
   } else if (ROLES[v]) {
     toManual(state, s);
+    delete s.cookPlus; // a fixed job of its own (sim/kitchen.js: not a Cook + second job any more)
     s.role = v;
     if (v !== "operate") s.station = null;
-    msg = `${first(s)}: ${ROLES[v].name} (Manual).`;
+    msg = `${first(s)}: ${v === "cook" ? "Cook, the kitchen all day" : ROLES[v].name} (Manual).`;
+  } else if (v.startsWith("cook+") && COOK_SECOND.includes(v.slice(5))) {
+    toManual(state, s);
+    setCookPlus(state, s, v.slice(5));
+    msg = `${first(s)}: ${cookPlusName(v.slice(5))} (Manual): the cooking hours at the stove, ${ROLES[v.slice(5)].name} the rest of the day.`;
   } else return "";
   if (s.location.kind === "base") {
     const b = baseById(state, s.location.baseId);
