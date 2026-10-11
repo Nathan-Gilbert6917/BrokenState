@@ -8,6 +8,7 @@ import { FOOD_SUPPLIES, DAY_VALUE, DAY_KG } from "./foods.js"; // food by type (
 import { BULK_GEAR } from "./data-stacks.js"; // bulk ammo containers: an ammo can, a carton, a bag (sim/itemstack.js)
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
+import { CART_GEAR } from "./data-carts.js"; // a wheelbarrow and a hand cart, pushed in the arms (carts.js)
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
 import { BLADE_GEAR } from "./data-blades.js"; // knives and swords (blades.js: where they turn up)
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
@@ -664,6 +665,7 @@ for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
 Object.assign(GEAR, BLADE_GEAR); // knives and swords (data-blades.js)
+Object.assign(GEAR, CART_GEAR); // carts (data-carts.js, carts.js)
 // The Melee skill (world.js MELEE_SKILL): every melee weapon goes by Melee, not Shooting (its req, the skill-gap rule).
 for (const d of Object.values(GEAR)) if (d.slot === "weapon" && d.cat === "melee" && d.skill === "shooting") d.skill = "melee";
 

@@ -91,6 +91,10 @@ export const CRAFTS = {
   suppressor:  { gear: "suppressor",  in: { scrap: 4, parts: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" },
   // A bicycle built from frames and wheels (vehicles.js): it joins the base's bikes.
   bicycle:     { gear: "bicycle",     in: { scrap: 8, parts: 2 }, hours: 14, skill: "mechanics", min: 3, needs: "workshop" },
+  // Carts (carts.js, data-carts.js): a tray beaten out of scrap on a wheel and two handles; a plank bed on two wheels
+  // with a T handle. At a workshop (the welding, the wheels' bearings).
+  wheelbarrow: { gear: "wheelbarrow", in: { scrap: 6, parts: 1 }, hours: 8, skill: "mechanics", min: 2, needs: "workshop" },
+  handcart:    { gear: "handcart",    in: { scrap: 6, parts: 2, wood: 40 }, hours: 12, skill: "mechanics", min: 3, needs: "workshop" },
   // gearIn = items used up (from the base armory; in the field from the team's cargo or someone's pockets and pack).
   nailbat:     { gear: "nailbat",     gearIn: { bat: 1 }, in: { scrap: 1 }, hours: 2, skill: "mechanics", min: 0, field: true },
   molotov:     { gear: "molotov",     gearIn: { bottle: 1 }, in: { fuel: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },

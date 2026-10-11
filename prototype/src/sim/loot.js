@@ -19,6 +19,7 @@ import { rollHeadFind, rollAreaHead, headWares } from "./helmets.js"; // helmets
 import { BLADE_TAGS } from "./data-blades.js"; // knives and swords
 import { rollBladeFind, rollAreaBlade, bladeWares } from "./blades.js"; // their own tables and dice, last
 import { KIT_TAGS } from "./data-kit.js"; // carry kit: magazines, rigs, plates (wave 2)
+import { CART_TAGS } from "./data-carts.js"; // a wheelbarrow and a hand cart (carts.js)
 import { rollSiteKit, rollAreaKit, kitWares } from "./carrykit.js"; // their own tables and dice, after the attachments
 import { rollPartFind, rollAreaPart, partWares } from "./partfinds.js"; // the parts catalogue (2026-10-10): by tags and rarity, its own dice, last
 import { PART_INFO } from "./data-gunmods.js"; // the catalogue's parts: where each is kept
@@ -159,6 +160,7 @@ Object.assign(ITEM_TAGS, { a_40mm_he: ["military", "crash"], a_40mm_buck: ["mili
 Object.assign(ITEM_TAGS, KIT_TAGS); // the carry kit (data-kit.js)
 for (const [k, i] of Object.entries(PART_INFO)) ITEM_TAGS[k] = [...i.tags]; // the parts catalogue (data-gunmods.js; budget clones at home, brands at the armoury)
 Object.assign(ITEM_TAGS, BLADE_TAGS); // knives and swords (data-blades.js)
+Object.assign(ITEM_TAGS, CART_TAGS); // carts (data-carts.js)
 
 // ---------- small finds per site type (the hour-by-hour search) ----------
 // p = chance per search hour at full loot (× the approach's pace, Treasure Hunter ×2); items = weights.
@@ -271,7 +273,7 @@ export const WARE_GUNMODS = {
 };
 export function gunmodWares(state, type, name, salt = "") {
   const w = WARE_GUNMODS[type];
-  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt), ...bladeWares(state, type, name, salt), ...partWares(state, type, name, salt)]; // partfinds.js: the parts catalogue // blades.js WARE_BLADES too // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
+  const more = [...modWares(state, type, name, salt), ...headWares(state, type, name, salt), ...bladeWares(state, type, name, salt), ...partWares(state, type, name, salt), ...cartWares(state, type, name, salt)]; // carts (CART_WARES, last) // partfinds.js: the parts catalogue // blades.js WARE_BLADES too // the overhaul's parts (WARE_MODS), helmets and ear protection (helmets.js WARE_HEAD); their own dice
   if (!w || hash01(state.seed, "modware", name, salt) >= w.p) return more;
   const key = pickWeighted(w.items, hash01(state.seed, "modwarepick", name, salt));
   return key ? [lootItem(key, traderSource(type), hash01(state.seed, "modwareq", name, salt)), ...more] : more;
@@ -544,6 +546,34 @@ export function rollHuntFind(state, tileId, mult = 1, salt = "") {
   if (hash01(state.seed, "huntfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
   const key = pickWeighted(site.items, hash01(state.seed, "huntpick", tileId, state.hour, salt));
   return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "huntdur", tileId, state.hour, salt)) : null;
+}
+
+// Carts (data-carts.js, carts.js) where people kept them: a hardware store's yard, a farm's or a barn's, a feed store, a
+// warehouse's loading dock, now and then a garden shed in town. A roll of its own each search hour (its own dice, so
+// adding them changed no other find).
+export const CART_FINDS = {
+  hardware: { p: 0.03, items: { wheelbarrow: 2, handcart: 1 } }, farm: { p: 0.025, items: { wheelbarrow: 2, handcart: 1.5 } },
+  barn: { p: 0.03, items: { wheelbarrow: 1.5, handcart: 1.5 } }, feedstore: { p: 0.025, items: { wheelbarrow: 1.5, handcart: 1 } },
+  ranch: { p: 0.02, items: { wheelbarrow: 1, handcart: 1 } }, warehouse: { p: 0.015, items: { handcart: 1.5, wheelbarrow: 0.5 } },
+  town: { p: 0.006, items: { wheelbarrow: 1 } },
+};
+// A cart at a site this search hour (CART_FINDS; its own dice), or null.
+export function rollCartFind(state, tileId, mult = 1, salt = "") {
+  const t = state.tiles[tileId];
+  const site = t && t.loc ? CART_FINDS[t.loc.type] : null;
+  if (!site) return null;
+  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "cartfind", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const key = pickWeighted(site.items, hash01(state.seed, "cartpick", tileId, state.hour, salt));
+  return key ? lootItem(key, siteSource(t.loc.type), hash01(state.seed, "cartdur", tileId, state.hour, salt)) : null;
+}
+// Carts on a trader's table (gunmodWares: its own dice, last): the merchants and the traders now and then.
+export const WARE_CARTS = { traders: { p: 0.08, items: { wheelbarrow: 2, handcart: 1 } }, merchants: { p: 0.12, items: { handcart: 1.5, wheelbarrow: 1 } } };
+function cartWares(state, type, name, salt) {
+  const w = WARE_CARTS[type];
+  if (!w || hash01(state.seed, "cartware", name, salt) >= w.p) return [];
+  const key = pickWeighted(w.items, hash01(state.seed, "cartwarepick", name, salt));
+  return key ? [lootItem(key, traderSource(type), hash01(state.seed, "cartwareq", name, salt))] : [];
 }
 
 // A small find in a raid container (the battle's random numbers, after the container's own loot), or null. site: the

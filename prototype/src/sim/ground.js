@@ -66,7 +66,7 @@ export const settlePile = settle; // carry.js: a pile a load was taken back from
 export const groundPiles = (b) => (lootLayer(b) ? lootLayer(b).containers.filter(isPile) : []);
 export function groundAt(b, x, y, f = 0) {
   const L = lootLayer(b);
-  return L ? L.containers.find((c) => isPile(c) && c.x === x && c.y === y && (c.f || 0) === f) || null : null;
+  return L ? L.containers.find((c) => isPile(c) && !c.cart && c.x === x && c.y === y && (c.f || 0) === f) || null : null; // a cart (carts.js) is never the pile things are dropped on
 }
 // The pile on a cell, made (empty) when there is none.
 export function groundPile(b, x, y, f = 0) {

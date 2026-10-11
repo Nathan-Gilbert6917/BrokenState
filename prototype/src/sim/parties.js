@@ -56,6 +56,8 @@ import { packSiegeKit } from "./kit.js";
 import { packLights, unpackLights } from "./lights.js"; // a light each from the armory on the way out
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
+import { cartSupOf, cartToArms } from "./carry.js"; // carts.js: the supplies in the carts (the weight), a cart fetched into someone's arms (call-time only)
+import { isCart } from "./carts.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
@@ -250,7 +252,7 @@ export function weighTeam(state, p) {
   if (!p || p.owner !== "player" || p.kind === "convoy") return null;
   const members = partyMembers(state, p);
   const v = partyFleet(state, p); // all its vehicles together (vehicles.js fleetOf)
-  p.burden = burdenRecord(teamLoad(members, poolLoad(p), v), members, v);
+  p.burden = burdenRecord(teamLoad(members, poolLoad(p), v, cartSupOf(state, p)), members, v); // carry.js cartSupOf: the supplies in the carts (carts.js)
   return p.burden;
 }
 /** @param {State} state @param {Party} p */
@@ -276,7 +278,7 @@ function reweigh(state, p) {
 }
 // The team's load as it is now (for the panels): people, bands, a car's fill. Not what its pace uses (p.burden).
 /** @param {State} state @param {Party} p */
-export const partyLoad = (state, p) => teamLoad(partyMembers(state, p), poolLoad(p), partyFleet(state, p));
+export const partyLoad = (state, p) => teamLoad(partyMembers(state, p), poolLoad(p), partyFleet(state, p), cartSupOf(state, p));
 // How many units of a supply fit in the remaining space.
 /** @param {number} room @param {string} key */
 export const unitsThatFit = (room, key) => Math.max(0, Math.floor(room / supWeight(key)));
@@ -420,12 +422,12 @@ export const paceOpts = (p) => ({ speed: partySpeed(p), footSpeed: footSpeed(p),
 export const stepMode = (p) => (p.walkers > 0 && p.vehicle ? false : p.vehicle);
 // × the pace off-road in the vehicle (vehicles.js VEHICLE_TYPES offroad: the Army truck 0.75), from the last weighing.
 /** @param {Party} p */
-export const offroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.offroad || 1 : 1);
+export const offroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.offroad || 1 : p.burden && !p.vehicle ? p.burden.cartOff || 1 : 1); // on foot: a cart off the roads (carts.js)
 // × the pace on roads: bikes among a team's cars hold the convoy to the bikes' road pace (vehicles.js roadPace).
 /** @param {Party} p */
 export const onroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.onroad || 1 : 1);
 // The cost of one step for a team (or a planning copy with its own offroad): an off-road step in a slow vehicle costs more.
-const offroadStep = (state, p, from, to) => (p.vehicle !== true || p.walkers > 0 ? 1 : !state.tiles[from].roadLinks.includes(to) ? 1 / ((p.offroad ?? offroadOf(p)) || 1) : 1 / ((p.onroad ?? onroadOf(p)) || 1));
+const offroadStep = (state, p, from, to) => (!p.vehicle ? (!state.tiles[from].roadLinks.includes(to) ? 1 / ((p.offroad ?? offroadOf(p)) || 1) : 1) : p.vehicle !== true || p.walkers > 0 ? 1 : !state.tiles[from].roadLinks.includes(to) ? 1 / ((p.offroad ?? offroadOf(p)) || 1) : 1 / ((p.onroad ?? onroadOf(p)) || 1));
 
 // The same for a team already out, from its last weighing (p.burden).
 /** @param {State} state @param {Party} p */
@@ -1906,6 +1908,7 @@ function arrive(state, p) {
         if (it.kind === "gear") {
           // The real item if kept (a pack keeps its contents, a worn weapon its condition); it needs carry space.
           const item = it.item || { key: it.key, name: GEAR[it.key]?.name || it.name, quality: 1 };
+          if (isCart(item) && cartToArms(state, p, item)) { site.items.splice(site.items.indexOf(it), 1); got.push(`${it.name} (pushed home)`); continue; } // carts.js: into someone's free arms, whole
           if (!addGearToCargo(state, p, item)) { left.push(it.name); continue; }
         } else {
           const take = addCargo(state, p, it.key, it.qty);

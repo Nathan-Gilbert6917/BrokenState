@@ -26,6 +26,7 @@ import { typeFor, keyFor, withHand } from "./rounds.js";
 import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad, SHELLS } from "./mags.js";
 import { roundItem, mergeInto, canStack } from "./itemstack.js";
 import { feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
+import { itemOnKg, cartOf, CART_FIGHT } from "./carts.js"; // a cart pushed in a fight: its share of the weight, a tile less a move
 import { kitSource, siteSource, areaSource, traderSource } from "./itemcond.js";
 import { armourSpec, armourBroken } from "./armour.js";
 import { itemDur, itemDurMax } from "./crafting.js";
@@ -71,7 +72,7 @@ export function magRoundsKg(s) {
 }
 // Kg a person takes into a fight: everything worn and carried (inventory.js itemLoad: a rig's pouches, a carrier's
 // plates, a gun's parts) and the rounds in their magazines.
-export const battleKg = (s) => (s ? allItems(s).reduce((a, it) => a + itemLoad(it), 0) + magRoundsKg(s) : 0);
+export const battleKg = (s) => (s ? allItems(s).reduce((a, it) => a + itemOnKg(s, it), 0) + magRoundsKg(s) : 0); // carts.js: a cart pushed at its share
 // The band for a kg (felt): { band, mob, dash }.
 export function bandFor(kg) {
   const i = bandIndex(kg);
@@ -85,6 +86,7 @@ export function weighPlayer(u, s) {
   u.mob = B.mob + fleetMob(s); // Fleet-Footed (traits.js): a tile more a move at any load
   u.dash = B.dash;
   u.loadBand = B.band;
+  if (cartOf(s)) u.mob = Math.max(2, u.mob - CART_FIGHT.mob); // carts.js: pushing a cart, a tile less a move
 }
 // An enemy's kg: its gun and parts, armour (a carrier's plates), rig, magazines with their rounds, throwables, a medic's
 // kit, and what its kind carries besides (BASE_KG).

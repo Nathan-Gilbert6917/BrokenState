@@ -48,7 +48,8 @@ import { teamLoad, wornLoad, maxLoad } from "./load.js";
 import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
 import { gunLeavesTeam, unloadInto, teamGuns } from "./gunload.js";
 import { pileToArms } from "./carry.js"; // the team's loads off the ground: into the arms (call-time only: safe in the import cycle) // the rounds in a gun go with it (call-time only: safe in the import cycle)
-import { canStack, mergeInto, isSpent, stackLabel } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
+import { canStack, mergeInto, isSpent, stackLabel } from "./itemstack.js";
+import { isCart, boxFree, boxRefusal } from "./carts.js"; // a cart on the map: a container up to its kg (call-time only) // stacks merge in a slot (2026-10-10)
 
 const EPS = 1e-9;
 export const HAUL = { free: 8, per: 12 }; // kg a turn for free, then kg an action
@@ -342,6 +343,10 @@ function planSupply(state, b, u, from, to, qty) {
   }
   if (n < 1) return { err: tooHeavy(state, b, limit || u.id, name), have };
   const w = supWeight(k);
+  if (B.box && B.box.cart && !(A.box === B.box)) { // carts.js: a cart on the map takes up to its kg
+    n = Math.min(n, Math.floor((boxFree(B.box) + 1e-6) / Math.max(1e-6, w)));
+    if (n < 1) return { err: boxRefusal(B.box, w), have };
+  }
   const timed = hauling(from, to);
   if (timed) {
     const fit = Math.floor((haulBudget(b, u) + 1e-6) / w);
@@ -370,9 +375,12 @@ function moveGear(state, b, u, from, to) {
   const item = getAt(A, from);
   if (!item) return "Nothing there.";
   if (isList(from) && isList(to) && from.o === to.o && from.id === to.id) return "";
+  if (isCart(item) && from.o === "s" && from.slot === "carry") return `Let go of the ${item.name.toLowerCase()} to leave it here (Let go: free): it stays on the map with what is in it.`; // carts.js
+  if (isCart(item) && !(to.o === "s" && to.slot === "carry")) return `The ${item.name.toLowerCase()} is pushed, not carried loose: Carry in arms.`;
+  if (B.box && B.box.cart && A.box !== B.box) { const why = isCart(item) ? "A cart does not go in a cart." : boxRefusal(B.box, itemLoad(item)); if (why) return why; }
   let cur = null;
   if (!isList(to)) {
-    const why = fitReason(item, to.slot);
+    const why = fitReason(item, to.slot, to.o === "s" ? survivorById(state, to.id) : null); // a cart's grid (carts.js) takes bulky things
     if (why) return why;
     if (to.slot === "pack" && from.o === "s" && from.slot === "backpack") return "A pack does not fit inside itself.";
     cur = getAt(B, to);
@@ -447,7 +455,7 @@ function moveGear(state, b, u, from, to) {
 }
 
 function where(state, b, loc) {
-  if (loc.o === "rbox") { const c = lootLayer(b).containers.find((x) => x.id === loc.id); return c && c.kind === "ground" ? "on the ground" : c && c.kind === "body" ? "left on the body" : "left in the container"; }
+  if (loc.o === "rbox") { const c = lootLayer(b).containers.find((x) => x.id === loc.id); return c && c.cart ? `in the ${c.cart.name.toLowerCase()}` : c && c.kind === "ground" ? "on the ground" : c && c.kind === "body" ? "left on the body" : "left in the container"; }
   if (loc.o === "haul") {
     const o = b.units.find((x) => x.id === loc.id);
     return o && o.id !== lootLayer(b).lootBy ? `${o.name.split(" ")[0]} (carried)` : "carried";
