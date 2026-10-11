@@ -2167,10 +2167,17 @@ function planRoles(state, base, areas = ALL_AREAS) {
     }
   }
   if (!cabin && (wShort || plotsShort(state, base))) winterCrew();
-  if (areas.food && !gov(state).noHunting && foodDays < landGoal) {
+  // Game and fish from infected land carry the worm's eggs (worm.js wormKill) and are eaten raw where nothing cooks them
+  // through (worm.js baseCooks: a cook fire, the kitchen's stove while it is lit): no hunters or fishers on the job then
+  // (ap-food: the census at ac1c1c6 had worm deaths up 45%; seed 5004's three-person outpost with no cook fire and no
+  // scrap for one kept a hunter on infected ground for weeks and caught it from the meat). A cabin's hunters go on (its
+  // smoke house dries their meat; the cook fire is wished for while they work: wormWishes).
+  const rawGame = !cabin && !baseCooks(base) && state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
+  if (areas.food && !gov(state).noHunting && foodDays < landGoal && !rawGame) {
     const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
     const hy = huntYield(state, base);
-    const hunters = cabin ? (hy.poor ? Math.min(ahead, 1) : ahead) : hy.poor ? 0 : Math.min(ahead, Math.max(1, Math.floor(people.length / LAND_AP.bareHead)));
+    // (one at a smaller base only while the food is down to FORAGE_AP.low days: food now, while the crops take weeks)
+    const hunters = cabin ? (hy.poor ? Math.min(ahead, 1) : ahead) : hy.poor ? 0 : Math.min(ahead, Math.max(foodDays < FORAGE_AP.low ? 1 : 0, Math.floor(people.length / LAND_AP.bareHead)));
     if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(hunters, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
     if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
   }
