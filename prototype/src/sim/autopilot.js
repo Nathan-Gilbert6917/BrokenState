@@ -2162,7 +2162,8 @@ function planRoles(state, base, areas = ALL_AREAS) {
   if (areas.building && (wShort || plotsShort(state, base)) && foodDays >= 2) {
     const i = base.construction.findIndex((c) => c.type === "farm_plot");
     if (i >= 0) {
-      if (i > 0 && !wormJob(state, base, base.construction[0].type)) base.construction.unshift(base.construction.splice(i, 1)[0]);
+      const first = base.construction[0].type; // not ahead of water, beds or the worm's jobs (the builder works on those first then)
+      if (i > 0 && !wormJob(state, base, first) && !WATER_BUILDS.includes(first) && !BEDS[first]) base.construction.unshift(base.construction.splice(i, 1)[0]);
       if (!people.some((s) => (want.get(s.id) || {}).role === "build")) { const c = ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed)[0]; if (c) give(c, "build"); }
     }
   }
@@ -2175,9 +2176,12 @@ function planRoles(state, base, areas = ALL_AREAS) {
   const rawGame = !cabin && !baseCooks(base) && state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
   if (areas.food && !gov(state).noHunting && foodDays < landGoal && !rawGame) {
     const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
-    const hy = huntYield(state, base);
+    // Poor hunts send the hunters to the plots outside winter only: in winter the crops in the ground hardly grow and a
+    // farmer more adds next to nothing, while a hunter bringing in a third of the estimate still brings food (seed 5021
+    // starved in its second winter with its hunters taken off for poor hunts, 9 of 17 resting).
+    const poor = huntYield(state, base).poor && wxSeason(state).key !== "winter";
     // (one at a smaller base only while the food is down to FORAGE_AP.low days: food now, while the crops take weeks)
-    const hunters = cabin ? (hy.poor ? Math.min(ahead, 1) : ahead) : hy.poor ? 0 : Math.min(ahead, Math.max(foodDays < FORAGE_AP.low ? 1 : 0, Math.floor(people.length / LAND_AP.bareHead)));
+    const hunters = cabin ? (poor ? Math.min(ahead, 1) : ahead) : poor ? 0 : Math.min(ahead, Math.max(foodDays < FORAGE_AP.low ? 1 : 0, Math.floor(people.length / LAND_AP.bareHead)));
     if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(hunters, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
     if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
   }
