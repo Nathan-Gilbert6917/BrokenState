@@ -42,6 +42,7 @@
 // a bow or crossbow with a quiver of ARROWS. Outside Customize (the tools) it also brings the start kit's two spare
 // magazines where it takes them (carrykit.js starterMags); under Customize the magazines are things you place.
 // Player only: the AI groups do not pick gear (a new-run option).
+import { addFoodUnits } from "./foods.js"; // the back's days of food as items
 import { GEAR, SUPPLIES } from "./data.js";
 import { WEAPONS, magCap } from "./combat.js";
 import { CALIBERS } from "./data-ammo.js";
@@ -494,7 +495,10 @@ export function normalStartVehicle(state, base) {
   const v = o && sanitizeStartVehicle(o.startVehicle);
   if (!v) return;
   for (const e of v.items) base.armory.push(pickItem(e));
-  for (const [k, n] of Object.entries(v.supplies)) base.stock[k] = (base.stock[k] || 0) + n;
+  for (const [k, n] of Object.entries(v.supplies)) {
+    if (k === "food" || k === "preserved") addFoodUnits(state, base, k === "preserved" ? "keeps" : "house", n); // foods.js: days of food as a house's kitchen food
+    else base.stock[k] = (base.stock[k] || 0) + n;
+  }
 }
 // Hardcore (hardcore-start.js rollCar): the picked back in place of the dice's. Returns { gear: items, supplies }.
 /** @param {any} v */

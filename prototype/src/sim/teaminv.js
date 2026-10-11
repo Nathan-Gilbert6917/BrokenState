@@ -13,8 +13,8 @@
 // pack or rig dropped off takes its carry bonus with it), nothing loaded takes it over the limit, and nobody is
 // made to wear more than their own max load. Loaded supplies go into the team's packed supplies (eaten first on the
 // road); loaded items go onto the person picked (their own slot if free, a rig pouch, a pocket, the pack) or into
-// the cargo. Fresh game in the cargo (hunting.js) and forage with the worm's eggs (worm.js) go into the base's
-// stores as they do when a team comes home.
+// the cargo. Food moves as items with its lots (foods.js: the shelf they have left, the worm's eggs), the soonest to
+// spoil first; "food" and "meat" (carry.js hold keys) are days of food and of raw meat.
 //
 // Where the team's bulk supplies are held (carry.js p.hold: each member's pockets, pack and arms, the vehicle) is
 // shown per member (teamHoldings hold, cargo held); the pool stays one pool, so a drop off or a load is re-placed
@@ -30,15 +30,14 @@ import { partyMembers, partyTile, partyCapacity, poolLoad, weighTeam, onTheMove 
 import { partyFleet as partyVehicle, vehicleLabel } from "./vehicles.js"; // every vehicle of the team's: the cargo is pooled across them
 import { ensureInv, EQUIP_SLOTS, packOf, rigPouches, isCarrier, insertsOf, INSERT_SIDES, itemLoad, stow, removeAt, parseLoc } from "./inventory.js";
 import { wornLoad, maxLoad } from "./load.js";
-import { meatIn, takeMeat, unloadGame, meatAt } from "./hunting.js";
-import { wormMeatIn, wormMeatAt, wormForageIn, unloadWormForage } from "./worm.js";
+import { FOODS, moveFood, moveFoodUnits, stockOf, foodWord, packPick, foodIn, foodText } from "./foods.js"; // food moves with its lots
 import { bodiesHome } from "./carriers.js";
 import { settleHold, holdView, HOLD_KEYS } from "./carry.js"; // who holds the supplies where (one pool, placed)
 
 const EPS = 1e-6;
 const num = (v) => (Number.isFinite(v) ? v : 0);
 const r1 = (x) => Math.round(x * 10) / 10;
-const supName = (k) => (SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k);
+const supName = (k) => (FOODS[k] ? FOODS[k].word : k === "food" ? "days of food" : k === "meat" ? "days of raw meat" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k);
 const qtyText = (q) => (Math.abs(q - Math.round(q)) < 1e-6 ? String(Math.round(q)) : String(r1(q)));
 
 // ---------- where ----------
@@ -146,36 +145,26 @@ function reweigh(state, p) { if (!onTheMove(p)) weighTeam(state, p); }
 // eggs with it. Returns the amount moved.
 function supplyToBase(p, base, k, want, packed = true) {
   const cs = p.cargo.supplies;
+  // Food: an item from the found cargo first, then the packs, with its lots (shelf left, the worm's eggs); "food" or
+  // "meat" (days, carry.js) the soonest to spoil first.
+  if (FOODS[k]) {
+    let left = Math.max(0, want), moved = 0;
+    for (const h of packed ? [p.cargo, p] : [p.cargo]) {
+      if (!(left > EPS)) break;
+      const q = Math.min(left, Math.max(0, num(stockOf(h)[k])));
+      if (!(q > 0)) continue;
+      const got = moveFood(h, base, { [k]: q })[k] || 0;
+      moved += got;
+      left -= got;
+    }
+    return moved;
+  }
+  if (k === "food" || k === "meat") return moveFoodUnits(packed ? [p.cargo, p] : [p.cargo], base, want, { only: k === "meat" ? (x, f) => !!f.raw : (x, f) => !f.raw, eggs: true }).units;
   let left = Math.max(0, want);
   let moved = 0;
   const fromCargo = Math.min(left, Math.max(0, num(cs[k])));
   if (fromCargo > 0) {
-    if (k === "food") {
-      const all = fromCargo >= Math.max(0, num(cs.food)) - EPS;
-      if (all) {
-        // Everything: exactly as a team coming home (parties.js returnHome).
-        unloadGame(base, p.cargo);
-        unloadWormForage(base, p.cargo);
-        cs.food = num(cs.food) - fromCargo;
-      } else {
-        const plainBefore = Math.max(0, num(cs.food) - meatIn(p.cargo));
-        const wfBefore = wormForageIn(p.cargo);
-        const wmBefore = wormMeatIn(p.cargo);
-        const meatQ = Math.min(meatIn(p.cargo), fromCargo);
-        if (meatQ > 0) {
-          takeMeat(p.cargo, meatQ); // takes the food off the cargo too
-          const wm = Math.max(0, wmBefore - wormMeatIn(p.cargo));
-          if (wm > 0) base.wormMeat = wormMeatAt(base) + wm;
-          base.meat = meatAt(base) + meatQ;
-        }
-        const plainQ = fromCargo - meatQ;
-        if (plainQ > 0) {
-          cs.food = num(cs.food) - plainQ;
-          const wf = plainBefore > 0 ? Math.min(wfBefore, (wfBefore * plainQ) / plainBefore) : 0;
-          if (wf > 0) { p.cargo.wormForage = Math.max(0, num(p.cargo.wormForage) - wf); base.wormForage = num(base.wormForage) + wf; }
-        }
-      }
-    } else cs[k] = num(cs[k]) - fromCargo;
+    cs[k] = num(cs[k]) - fromCargo;
     if (Math.abs(cs[k]) < 1e-9) cs[k] = 0;
     moved += fromCargo;
     left -= fromCargo;
@@ -216,7 +205,7 @@ export function dropOff(state, p, picks = {}) {
     moved.push(it.name);
   }
   for (const [k, q] of Object.entries(picks.supplies || {})) {
-    if (!SUPPLIES[k]) continue;
+    if (!SUPPLIES[k] && k !== "food" && k !== "meat") continue; // food, meat: days of it (supplyToBase)
     const want = q === Infinity ? Infinity : Math.max(0, num(Number(q)));
     if (!(want > 0)) continue;
     const got = supplyToBase(p, base, k, want);
@@ -244,7 +233,7 @@ export function dropHeldOff(state, p, sid, place = null) {
     for (const k of HOLD_KEYS) {
       const q = num(r[pl] && r[pl][k]);
       if (!(q > EPS)) continue;
-      const key = k === "meat" ? "food" : k; // fresh game: the cargo's food, as fresh game at the base
+      const key = k; // "food" / "meat": days of it (supplyToBase moves the items)
       const n = supplyToBase(p, base, key, q);
       r[pl][k] = q - n;
       if (r[pl][k] <= EPS) delete r[pl][k];
@@ -322,6 +311,17 @@ export function loadFromBase(state, p, picks = {}, target = "cargo") {
     base.armory.splice(base.armory.indexOf(it), 1);
     moved.push(`${it.name} (${first})`);
   }
+  // "food" (days of it): the food that keeps and weighs least (foods.js packPick), as far as the room goes.
+  if (picks.supplies && picks.supplies.food > 0) {
+    const room = Math.max(0, partyCapacity(state, p) - poolLoad(p));
+    const pick = packPick(state, base, Math.min(picks.supplies.food, foodIn(base.stock)), { days: 7 });
+    const got = {};
+    let kg = 0;
+    for (const [k, q] of Object.entries(pick)) { const n = Math.min(q, Math.floor((room - kg + EPS) / FOODS[k].kg)); if (n > 0) { got[k] = n; kg += n * FOODS[k].kg; } }
+    const moved0 = moveFood(base, p, got, { state });
+    if (Object.keys(moved0).length) moved.push(foodText(moved0));
+    else refused.push(`No room for food (${r1(room)} kg free).`);
+  }
   for (const [k, q] of Object.entries(picks.supplies || {})) {
     const sup = SUPPLIES[k];
     if (!sup) continue;
@@ -332,6 +332,7 @@ export function loadFromBase(state, p, picks = {}, target = "cargo") {
     const fit = sup.weight > 0 ? Math.min(want, Math.floor((room + EPS) / sup.weight)) : want;
     if (fit < want - EPS) refused.push(fit > 0 ? `Only ${qtyText(fit)} of the ${qtyText(want)} ${supName(k)} fit (${r1(room)} kg free).` : `No room for ${supName(k)} (${r1(room)} kg free).`);
     if (!(fit > 0)) continue;
+    if (FOODS[k]) { moveFood(base, p, { [k]: fit }, { state }); moved.push(`${qtyText(fit)} ${supName(k)}`); continue; } // foods.js: with its lots, the oldest first
     base.stock[k] = have - fit;
     if (Math.abs(base.stock[k]) < 1e-9) base.stock[k] = 0;
     p.supplies[k] = num(p.supplies[k]) + fit;

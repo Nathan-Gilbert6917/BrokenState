@@ -48,6 +48,7 @@
 // there; they thin the dead to SQUAT_DEAD). The same threat for everyone (AI parity): your Occupy order (occupy.js)
 // fights it; a group moving in pays ABANDON.AI_LOSS of its count in people (rounded by the dice), coarse, and the group
 // whose base it was (still standing elsewhere) takes it ill: relations ABANDON.FORMER_REL.
+import { foodIn, takeFood, addFoodsTo, DAY_VALUE, typeGoods, groupMix } from "./foods.js"; // food paid in days
 import { SUPPLIES, GEAR } from "./data.js";
 import { groupStockKey } from "./trade.js"; // a group's one count of parts (part kinds come out of it)
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
@@ -327,13 +328,14 @@ function payGoods(from, to, value) {
   let owed = value;
   for (const k of ["scrap", "fuel", "ammo", "parts", "food", "meds"]) {
     if (owed <= 0) break;
-    const have = Math.max(0, Math.floor((from[k] || 0) - (k === "food" ? 20 : 0)));
-    const q = Math.min(have, Math.ceil(owed / ((SUPPLIES[k] && SUPPLIES[k].value) || 1)));
+    const unit = k === "food" ? DAY_VALUE : (SUPPLIES[k] && SUPPLIES[k].value) || 1; // food: days of it (foods.js)
+    const have = Math.max(0, Math.floor((k === "food" ? foodIn(from) : from[k] || 0) - (k === "food" ? 20 : 0)));
+    const q = Math.min(have, Math.ceil(owed / unit));
     if (q <= 0) continue;
-    from[k] -= q;
-    to[k] = (to[k] || 0) + q;
+    if (k === "food") addFoodsTo(to, takeFood(from, q).items);
+    else { from[k] -= q; to[k] = (to[k] || 0) + q; }
     paid[k] = q;
-    owed -= q * ((SUPPLIES[k] && SUPPLIES[k].value) || 1);
+    owed -= q * unit;
   }
   return { paid, short: Math.max(0, owed) };
 }
@@ -341,7 +343,7 @@ export function sellBetween(state, f, buyer) {
   const v = live(f).filter((x) => !upgradesOf(x).turret).sort((a, b) => vehicleValue(a) - vehicleValue(b))[0];
   if (!v) return null;
   const price = vehiclePrice(buyer, v);
-  const worth = ["scrap", "fuel", "ammo", "parts", "food", "meds"].reduce((a, k) => a + Math.max(0, (buyer.stock[k] || 0) - (k === "food" ? 20 : 0)) * ((SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
+  const worth = ["scrap", "fuel", "ammo", "parts", "food", "meds"].reduce((a, k) => a + Math.max(0, (k === "food" ? foodIn(buyer.stock) : buyer.stock[k] || 0) - (k === "food" ? 20 : 0)) * (k === "food" ? DAY_VALUE : (SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
   if (worth < price) return null;
   payGoods(buyer.stock, f.stock, price);
   factionVehicles(f).splice(factionVehicles(f).indexOf(v), 1);
@@ -364,7 +366,7 @@ export function buyVehicleFrom(state, f, rec, base, createVehicle) {
   const i = factionVehicles(f).indexOf(rec);
   if (i < 0 || !base) return null;
   const price = vehiclePrice(f, rec, false);
-  const worth = ["scrap", "fuel", "ammo", "parts", "food", "meds"].reduce((a, k) => a + Math.max(0, base.stock[k] || 0) * ((SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
+  const worth = ["scrap", "fuel", "ammo", "parts", "food", "meds"].reduce((a, k) => a + Math.max(0, k === "food" ? foodIn(base.stock) : base.stock[k] || 0) * (k === "food" ? DAY_VALUE : (SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
   if (worth < price) return { refused: `They want goods worth ${price}.` };
   payGoods(base.stock, f.stock, price);
   factionVehicles(f).splice(i, 1);
@@ -514,7 +516,7 @@ export function occupyAbandoned(state, f, tile) {
   }
   const w = worksAt(f, tile);
   for (const [k, q] of Object.entries(rec.works || {})) w[k] = Math.max(w[k] || 0, q);
-  for (const [k, q] of Object.entries(rec.stock || {})) f.stock[k] = (f.stock[k] || 0) + q;
+  for (const [k, q] of Object.entries(typeGoods(null, rec.stock || {}, groupMix(f)))) f.stock[k] = (f.stock[k] || 0) + q; // foods.js: an old record's days of food as items
   f.basesOccupied = (f.basesOccupied || 0) + 1;
   const former = typeof rec.from === "number" ? state.factions.find((o) => o.id === rec.from && o.alive && o !== f) : null;
   if (former) changeRelation(state, f, former, ABANDON.FORMER_REL);

@@ -92,7 +92,7 @@ export function itemPoints(key) {
 }
 // What a supply is worth a unit (rounds by calibre too).
 /** @param {string} k */
-const unitValue = (k) => (SUPPLIES[k] ? SUPPLIES[k].value : ROUND_SUPPLIES[k] ? ROUND_SUPPLIES[k].value : 0);
+const unitValue = (k) => (k === "food" ? 2 : SUPPLIES[k] ? SUPPLIES[k].value : ROUND_SUPPLIES[k] ? ROUND_SUPPLIES[k].value : 0); // food: days of it (foods.js), at the old food's worth: 30 days 10 points
 // Supplies { key: n } as points: their worth ÷ SUPPLY_VALUE, rounded up.
 /** @param {Record<string, number>} sup */
 export function suppliesPoints(sup) {

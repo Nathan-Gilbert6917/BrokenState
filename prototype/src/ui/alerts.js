@@ -2,6 +2,7 @@
 // to jump to the place or open the right screen; 💤 snoozes it for a day, ✕ dismisses it until it clears and comes
 // back. Also the map keys added with it (main.js calls mapHotkey before its own keys): tabs, next waiting team,
 // bases, camera spots, the diary and the roster.
+import { foodIn } from "../sim/foods.js"; // days of food (every kind)
 import { day, alive, residents, survivorById, baseById } from "../sim/world.js";
 import { foodOutlook, waterOutlook } from "../sim/economy.js";
 import { useText, HEAT, woodFor } from "../sim/upkeep.js";
@@ -66,7 +67,7 @@ const SECTIONS = {
     for (const b of state.bases) {
       const n = residents(state, b.id).length;
       if (!n) continue;
-      const food = (b.stock.food || 0) + (b.stock.preserved || 0);
+      const food = foodIn(b.stock);
       if (b.hungerDays > 0 || food < 1) out.push({ key: `starve:${b.id}`, kind: "starve", icon: "🍽", tone: "danger", text: `${b.name} is out of food`, tip: "Everyone there goes hungry: they lose health every day and nobody heals. Bring food (supply run, trade) or move people. Click to open the base.", go: { base: b.id, tab: "farming" } });
       else {
         const o = foodOutlook(state, b);
@@ -97,7 +98,7 @@ const SECTIONS = {
       if (p.owner !== "player" || p.kind === "convoy" || p.phase === "back") continue;
       const n = partyMembers(state, p).length;
       if (!n) continue;
-      const days = (carried(p, "food") + carried(p, "preserved")) / n;
+      const days = carried(p, "food") / n; // days of food (sim/foods.js)
       if (days >= 1.5) continue;
       const hint = landFoodHint(state, p);
       out.push({ key: `teamfood:${p.id}`, kind: "teamfood", icon: "🥫", tone: days < 0.5 ? "danger" : "warn", text: `${teamLabel(state, p)}: food for ${Math.round(days * 10) / 10} days${hint ? `: ${hint.replace(/, about.*$/, "")}` : ""}`, tip: `The team is running out of food: out of it, everyone loses health every hour.${hint ? ` ${hint[0].toUpperCase()}${hint.slice(1)}.` : ""} Forage, hunt or fish (team panel), search a farm, grocery or diner, or head home. Click to open the team panel.`, go: { team: p.id } });

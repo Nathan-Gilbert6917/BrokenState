@@ -1,4 +1,5 @@
 // Travel events: choice cards rolled per tile, and the escort table for trade-route convoys.
+import { typedFood, addFood, unitsOf } from "./foods.js"; // food found on the road, by type
 import { TERRAIN, GEAR, LOCATIONS } from "./data.js";
 import { log, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, newId, day, combatPower, armedFactor, arrowsBack, archerCount } from "./world.js";
 import {
@@ -67,6 +68,11 @@ function addCargo(state, p, key, qty) {
     let short = false;
     for (const [k, q] of Object.entries(calRounds(qty, partyCals(state, p)))) { const t = Math.min(unitsThatFit(cargoRoom(state, p), k), q); if (t < q) short = true; if (t > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + t; got[k] = t; } }
     return `${roundsText(got)}${short ? " (no room for the rest)" : ""}`;
+  }
+  if (key === "food" || key === "preserved") { // foods.js: days of food as what is in a crate or a truck (light, keeps), as far as it fits
+    let got = 0, short = false;
+    for (const [k, q] of Object.entries(typedFood(state, key === "preserved" ? "keeps" : "travel", qty))) { const t = Math.min(unitsThatFit(cargoRoom(state, p), k), q); if (t < q) short = true; if (t > 0) { addFood(p.cargo, k, t, { state }); got += unitsOf(k, t); } }
+    return `${Math.round(got * 10) / 10} days of food${short ? " (no room for the rest)" : ""}`;
   }
   const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), qty);

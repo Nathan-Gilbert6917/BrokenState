@@ -1,5 +1,8 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
+import { baseFoodHtml } from "./food.js"; // food by type: the base window's Food section (the top bar's Food row: ui/needsbar.js)
+import { FOODS, packPick, foodText, foodIn } from "../sim/foods.js"; // food by type (foods.js)
+import { foodRows } from "../sim/storage.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts you have not found
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger, SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, SKILLS, SKILL_NAMES, TRAITS, FACTION_TYPES } from "../sim/data.js";
 import { traitChips, traitChip, traitWords } from "./traitpick.js"; // trait chips: coloured by kind, the tier
@@ -45,7 +48,7 @@ import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, isCamp, CAMP, SHELTER, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
   PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, canUpgradeKitchen, BENCH, benchType,
 } from "../sim/buildings.js";
-import { isPowered, POWER_USERS, freezerLine, generatorRunning, generatorLine } from "../sim/power.js"; // freezer-parts: the machines' chips
+import { isPowered, POWER_USERS, freezerLine, generatorRunning, generatorLine, GEN_TIERS, genTier, genName } from "../sim/power.js"; // freezer-parts: the machines' chips; gen-tiers: the generator's tier
 import { isMachine, machineText, machineState } from "../sim/breakdowns.js"; // freezer-parts: machine parts on the cards
 import { CAR_SPARES, carSpares, VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
@@ -74,7 +77,7 @@ import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobS
 import { craftEdge, lockNote } from "../sim/blueprints.js"; // the crafting edge from known manuals and read craft books
 import { canAttempt, meetsNeeds } from "../sim/crafting.js"; // the recipe cards colour their skill and station chips
 import { chip, costChips, chipList, statRows, badge, pbar, sectionHead, infoTip, hint, firstSentence, stockTile, supName, supIcon } from "./uikit.js"; // game-like panel pieces (the base window)
-import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton, reloadCard } from "./production.js";
+import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton, reloadCard, genUpgradeBtn } from "./production.js";
 import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reloading bench: an ammo bench upgraded where it stands
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower, carriedSpots } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
@@ -122,7 +125,8 @@ import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip, sickTip } from "./work.js";
 import { sickRestLabel } from "../sim/sickrest.js"; // "Resting: sick (Flu)" for Manual and pinned people
 import { activityChip, workNowPanel, idleNote, workChip, peopleIdleOn, peopleIdleButton, idleSet, idleBasesSection } from "./activity.js";
-import { kitchenNote } from "./kitchen.js"; // the Kitchen's card: cooks, today's meals, the food saved (sim/kitchen.js)
+import { kitchenNote } from "./kitchen.js";
+import { cookingNote } from "./cooking.js"; // wave 2 cooking: the bills under the Kitchen's and the cook fire's cards // the Kitchen's card: cooks, today's meals, the food saved (sim/kitchen.js)
 import { describeActivity } from "../sim/activity.js"; // the find box also looks through what they are doing ("asleep", "chopping") // what each person is doing now; the base's Work now panel (sim/activity.js)
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
@@ -136,7 +140,8 @@ import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/wor
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
-import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
+import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
+import { packFood, packWater } from "../sim/eating.js"; // the planner's per-person ration line
 import { needsBar } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
@@ -245,12 +250,13 @@ export function renderLeft(state, ui) {
 // workshop stations use up, and what everyone living there eats.
 function foodPerDay(state, b) {
   const farm = farmOutput(state, b);
-  const scav = scavengeOutput(state, b).food || 0;
+  const scav = (scavengeOutput(state, b).food || 0) + (scavengeOutput(state, b).preserved || 0); // days of food (sim/foods.js)
   const eat = farm - foodForecast(state, b); // mouths (the sim's own count)
   let used = 0;
   for (const st of stations(b)) {
     const ss = stationStatus(state, b, st);
-    if (ss.running) used += ((ss.in || RECIPES[ss.recipe].in).food || 0) - (ss.out.preserved || 0); // the kitchen jars food: only its loss counts
+    const inp = ss.in || RECIPES[ss.recipe].in;
+    if (ss.running) used += (inp.food || 0) + (inp.fresh || 0) - foodIn(ss.out || {}); // the kitchen jars food: only its loss counts
   }
   const total = farm + scav - used - eat;
   return { total, text: `Farms +${n1(farm)}${scav >= 0.05 ? `, scavenging +${n1(scav)}` : ""}${used ? `, workshops -${n1(used)}` : ""}, eating -${n1(eat)}. Loot brought home by teams and convoys comes on top.` };
@@ -493,7 +499,7 @@ function renderTeams(state, ui) {
     return `<div class="card small ${waiting ? "attn" : ""}">
       <div class="spread"><b>${sjob ? `Supply run: ${esc(jobName(state, sjob))}` : `${MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team"} → ${esc(tileLabel(state, p.dest))}`}</b>${showLive ? `<button data-action="center" data-tile="${partyTile(p)}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
       <div class="tm-who">${members.filter((m) => !m.vol).map(first).join(", ")}${teamVolLine(state, p)} <span class="muted">· ${v ? esc(isBike(v) ? `on ${vehicleLabel(v)}` : vehicleLabel(v)) : "on foot"} · ${STANCES[p.stance]?.name || ""}</span>${p.burden && p.burden.band >= 2 && p.vehicle !== true ? ` · <span class="warn"${tip("Its load slows it down and it eats and drinks more on the move (team panel)")}>${p.burden.band >= 3 ? "Overloaded" : "Heavy"}</span>` : ""}${p.walkers > 0 && p.vehicle ? ` · <span class="warn"${tip("A vehicle was lost and there are not enough seats: those without one walk, and the whole team goes at walking pace until a seat turns up (or leave them to follow on foot from the card). Its hours and the right-click estimates count walking pace.")}>${p.walkers} walking: foot pace</span>` : ""}</div>
-      ${showLive ? `<div class="tm-stats">${tmStat("Food", n0((p.supplies.food || 0) + (p.supplies.preserved || 0)))}${tmStat("Water", `${n0(waterIn(p.supplies))}${(p.supplies[RAW] || 0) >= 1 ? ` (${n0(p.supplies[RAW])} raw)` : ""}`)}${isCar(v) ? `${tmStat("Fuel", n0(partyFuel(state, p)))}${tmStat("Vehicle", `${Math.round(v.condition)}%`)}` : ""}${tmStat("Load", `${n0(Parties.poolLoad(p))}/${n0(partyCapacity(state, p))} kg`)}</div>` : ""}
+      ${showLive ? `<div class="tm-stats">${tmStat("Food", `${n0(foodIn(p.supplies) + foodIn(p.cargo && p.cargo.supplies))}d`)}${tmStat("Water", `${n0(waterIn(p.supplies))}${(p.supplies[RAW] || 0) >= 1 ? ` (${n0(p.supplies[RAW])} raw)` : ""}`)}${isCar(v) ? `${tmStat("Fuel", n0(partyFuel(state, p)))}${tmStat("Vehicle", `${Math.round(v.condition)}%`)}` : ""}${tmStat("Load", `${n0(Parties.poolLoad(p))}/${n0(partyCapacity(state, p))} kg`)}</div>` : ""}
       <div class="tm-status">${status}</div>
       ${canOrder && p.kind !== "convoy" && !commandable(state, p) ? `<div class="small muted"${tip(NO_RADIO)}>No radio contact: it follows its ${p.plan && p.plan.active ? "plan" : "orders"}; new orders through its cards</div>` : ""}
       ${teamRadioLine(state, p)}
@@ -623,7 +629,7 @@ export function renderRight(state, ui) {
   return `
     <h2>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</h2>
     <div class="small muted">${loc ? LOCATIONS[loc.type].name + " · " : ""}${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}${t.bridge ? " · bridge" : ""}</div>
-    ${loc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[loc.zone || LOCATIONS[loc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(loc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[loc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => SUPPLIES[k].name.toLowerCase()).join(", ")}${LOCATIONS[loc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
+    ${loc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[loc.zone || LOCATIONS[loc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(loc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[loc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => (k === "food" ? "food" : k === "preserved" ? "food that keeps" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k)).join(", ")}${LOCATIONS[loc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
     ${pickBar(state, ui)}
     ${ui.moveParty ? `<div class="card attn small" style="margin-top:0.5rem">Move mode: left-click this or another tile to send the team. Esc cancels.</div>` : ""}
     ${stagingTileCard(state, id)}
@@ -724,14 +730,14 @@ function landRows(state, id, teamsHere) {
     const kitPeople = p ? Parties.partyMembers(state, p) : h ? atBase(state, h.id).slice(0, 2) : [];
     const kit = fishKit(kitPeople, p ? p.cargo.gear : (h && h.armory) || [], { frozen: frozenAt(state) });
     const fe = kit.power ? expectFish(state, kit, id, HUNT.defHours).rations : null;
-    out += `<div${tip(`Fish in ${info.fishSpot.name}: ${Math.round(fishLevel(state, id) * 100)}% left (a fished-out spot comes back in a week or two). Needs a fishing rod, a net or a spear (spears work in daylight, not through ice); ice fishing in a freeze needs a rod or net and a crowbar, machete or axe.`)}>Fish</div><div>${gameWord(info.fishSpot.mult * info.fishLevel)} (${info.fishSpot.name})${fe != null ? `<span class="pk-sub">~${Math.round(fe)} food in ${HUNT.defHours}h${frozenAt(state) ? " (through the ice)" : ""}</span>` : `<span class="pk-sub">no rod, net or spear ${p ? "with the team" : "at the hub"}</span>`}</div>`;
+    out += `<div${tip(`Fish in ${info.fishSpot.name}: ${Math.round(fishLevel(state, id) * 100)}% left (a fished-out spot comes back in a week or two). Needs a fishing rod, a net or a spear (spears work in daylight, not through ice); ice fishing in a freeze needs a rod or net and a crowbar, machete or axe.`)}>Fish</div><div>${gameWord(info.fishSpot.mult * info.fishLevel)} (${info.fishSpot.name})${fe != null ? `<span class="pk-sub">~${Math.round(fe)} days of food in ${HUNT.defHours}h${frozenAt(state) ? " (through the ice)" : ""}</span>` : `<span class="pk-sub">no rod, net or spear ${p ? "with the team" : "at the hub"}</span>`}</div>`;
   }
   // Wild food (sim/foraging.js): what the land holds this season and what 8 hours of foraging would bring.
   const fPeople = p ? Parties.partyMembers(state, p) : h ? [...atBase(state, h.id)].sort((a, b) => foragerMult(b) - foragerMult(a) || a.id - b.id).slice(0, 3) : [];
   const fi = forageInfo(state, id, { members: fPeople, hours: FORAGE.defHours, room: p ? Parties.cargoRoom(state, p) : Infinity });
   if (fi.abundance >= 0.02) {
     const fWho = p ? "this team" : fPeople.length ? fPeople.map((s) => esc(shortName(s))).join(", ") : "";
-    out += `<div${tip(`Wild food here: ${fi.word} (${fi.seasonKey}). The land: ${Math.round(fi.abundance * 100)}% (forest best, farmland and old orchards good, hills some, towns little: overgrown gardens), picked down to ${Math.round(fi.level * 100)}% (it grows back over a season). Summer and autumn are plentiful, spring gives greens, winter almost nothing. Farming and Scouting help. Foraging is time on one spot: it builds Heat like any work there.`)}>Forage</div><div>${fi.word === "plenty" ? `<span class="good">plenty</span>` : fi.word}${fi.est ? `<span class="pk-sub">~${Math.round(fi.est.rations * 10) / 10} food in ${FORAGE.defHours}h (${fWho})</span>` : ""}</div>`;
+    out += `<div${tip(`Wild food here: ${fi.word} (${fi.seasonKey}). The land: ${Math.round(fi.abundance * 100)}% (forest best, farmland and old orchards good, hills some, towns little: overgrown gardens), picked down to ${Math.round(fi.level * 100)}% (it grows back over a season). Summer and autumn are plentiful, spring gives greens, winter almost nothing. Farming and Scouting help. Foraging is time on one spot: it builds Heat like any work there.`)}>Forage</div><div>${fi.word === "plenty" ? `<span class="good">plenty</span>` : fi.word}${fi.est ? `<span class="pk-sub">~${Math.round(fi.est.rations * 10) / 10} days of food in ${FORAGE.defHours}h (${fWho})</span>` : ""}</div>`;
   }
   // Firewood (sim/woodcutting.js): what the land holds and what 8 hours of cutting would bring.
   const wi = woodInfo(state, id, { members: fPeople, spare: p ? p.cargo.gear : (h && h.armory) || [], hours: WOOD.defHours, room: p ? Parties.cargoRoom(state, p) : Infinity });
@@ -893,7 +899,8 @@ export function helpText() {
     <b>World size:</b> chosen on the new-run screen. Small (48×32) is tight and close: fewer towns, 3–6 groups, the hives a short walk away. Normal (64×42) is the standard state with 5–10 groups. Large (80×52) adds a third city and a second outbreak, 7–14 groups. Huge (100×66) has four cities, three outbreaks and 10–18 groups: trips are long (take vehicles, build outposts), the groups mostly keep to their own corner, but more hives are within reach of your walls. Every size has about the same towns, sites and hives per tile.<br>
     <b>Bases (Manage):</b> roles (farm, scavenge, operate, build, guard, rest, medic, craft), workshop stations with operators, the construction queue (beds: the hub 4, an outpost 2, a bunkhouse +6, a barracks +12 on one building plot, or a bunkhouse expanded into a barracks where it stands; more people than beds lowers everyone's mood every day), the armory, hand crafting, vehicles (refuel, repair), supply runs and the medical tab. Click a base's name on its screen to rename it. People in a hospital bed do not work.<br>
     <b>Hunger, thirst and mood:</b> everyone has a Hunger, a Thirst and a Mood gauge (0–100). Below ${NEEDS.lean} hunger and thirst cut work and aim; below ${NEEDS.low} they cost mood by the hour. At a base that is out of food (water), or below ${NEEDS.starving} away from a base, someone is <b>starving</b> (or parched): every morning it lasts costs more mood than the last (hunger −${STARVE.food.step}, −${STARVE.food.step * 2}, −${STARVE.food.step * 3} … up to −${STARVE.food.max} a day; thirst −${STARVE.water.step}, −${STARVE.water.step * 2} … up to −${STARVE.water.max}) until they eat or drink, which resets it. Left alone it ends at rock bottom: under 10 mood for 3 mornings they may break down, below 15 they may walk out, or the empty gauge kills them. <b>Status icons</b> next to a name (the roster, the People tab, a base's people, a team's members, the battle roster) show what is wrong, one each and stacking: ${STATUS_ICONS.mood} low mood (below ${STATUS.mood}), ${STATUS_ICONS.hunger} hungry or starving (hunger below ${STATUS.hunger}), ${STATUS_ICONS.thirst} thirsty or parched (thirst below ${STATUS.thirst}), ${STATUS_ICONS.health} low health (below ${STATUS.health}), ${STATUS_ICONS.infected} infected (an infected wound, or the worm once spotted), ${STATUS_ICONS.sick} sick (${STATUS_ICONS.injured} only injured). A red frame means it is serious; hover one for the detail ("Starving: day 3, mood −${STARVE.food.step * 3} a day").<br>
-    <b>Food and the winter:</b> crops ripen in batches (Farming tab), and nothing grows outdoors in winter: the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored in summer and autumn. Sow kale, winter roots and winter wheat in autumn (they stand the frost); wheat, winter wheat and dry beans go into the <b>preserved</b> stock. Fresh food needs <b>storage room</b>: the hub has a small cellar (200), an outpost a pantry (40); root cellars (+200), a storehouse (+150) and a cold store (+150, best in winter) add more. Food in storage spoils slowly; food above the room is stored outside and spoils fast (more in heat and rain). Preserved food (jarred, dried, canned, grain) barely spoils, needs no room, is eaten once the fresh food is gone, weighs less on a trip and sells well: a <b>Preserving room</b> (operator, water, scrap and empty jars) and <b>Drying racks</b> (no operator) make it from surplus. Jars are found in kitchens, shops and farms; most come back when the food in them is eaten. An <b>Animal pen</b> (hens and goats, a building plot) gives food every day of the year to a keeper (an operator, Farming): 3 a day (4 with Farming 6+), three quarters of it in winter, half without walls; the animals graze two of the base's outdoor crop plots. Greenhouses grow through the winter too. The Farming tab's <i>Winter outlook</i> says whether the food will last to the first spring harvest.<br>
+    <b>Food and the winter:</b> crops ripen in batches (Farming tab), and nothing grows outdoors in winter: the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored in summer and autumn. Sow kale, winter roots and winter wheat in autumn (they stand the frost); wheat, winter wheat and dry beans are threshed or dried and keep for years. Fresh food (crops, game, forage, bread) needs <b>storage room</b>: the hub has a small cellar (200 days of food), an outpost a pantry (40); root cellars (+200), a storehouse (+150), a cold store (+150, best in winter) and a walk-in freezer (+300, while it has power) add more. Food in a cold room keeps longer; food above the room is stored outside and spoils faster (more in heat and rain). Food that keeps (jarred, dried, canned, grain) needs no room, weighs less a day on a trip and sells well: a <b>Preserving room</b> (operator, water, scrap and empty jars) and <b>Drying racks</b> (no operator) make it from surplus. Jars are found in kitchens, shops and farms; most come back when the food in them is eaten. An <b>Animal pen</b> (hens and goats, a building plot) gives eggs and milk every day of the year to a keeper (an operator, Farming): 3 days of food a day (4 with Farming 6+), three quarters of it in winter, half without walls; the animals graze two of the base's outdoor crop plots. Greenhouses grow through the winter too. The Farming tab's <i>Winter outlook</i> says whether the food will last to the first spring harvest.<br>
+    <b>Food by kind:</b> there is no one "food": every food is an item of its own (cans of beans, rice, MREs, bread, raw venison, berries, potatoes, jerky, meals…) with its calories and its shelf life. A day's food is 2000 kcal (a can of beans is a fifth of a day, an MRE more than half), and the screens count food in <b>days of food</b>: the Food chip on the top bar, the Food section of a base and of a team (every kind, how much, its calories, the days before the soonest of it spoils, the room it sits in). Everyone eats the food nearest to spoiling first. Shops in the first weeks have bread, cheese, eggs and fresh produce; later only cans, dry goods and snacks, and less of those every month (other survivors, rats, the years): the town and city shops run down as everyone loots them, so scavenging has to go further out. The Army's trucks and supply drops have MREs and ration bars; hunting brings raw venison, boar, rabbit and fowl, fishing raw fish, foraging berries, nuts, mushrooms, greens and roots by the season, and every crop is a food of its own. <b>Spoilage:</b> each food keeps its own time at room temperature (raw meat 2–3 days, fish a day and a half, bread 5, greens 4, cheese a month, potatoes a month, cans and rice years); where it sits changes that: the hub's cellar (200 days of food) and root cellars (+200) about triple it, a pantry, storehouse or crates keep it as it is, a cold store (+150) is best in winter and little better than a pantry in summer, a walk-in freezer (+300, while it runs) almost stops it; fresh food above the rooms is stored outside (faster, worse in heat and rain, slow once it freezes). The fresh food that spoils fastest goes in the coldest room first; canned, dry and preserved food needs no room. Spoiled food is thrown out (the log says what). <b>Cooking:</b> a <b>Cook fire</b> (or a preserving room) turns the day's raw meat, fish, eggs, greens, roots and crops into simple meals, 15% more filling than the raw makings and safe from the worm's eggs; meals spoil in 4 days. <b>Preserving:</b> a <b>Preserving room</b> (operator, water, scrap and empty jars) jars fresh food (keeps a year and a half), <b>Drying racks</b> dry it into jerky, smoked fish and dried fruit and veg, the hunting cabin smokes game. Jars are found in kitchens, shops and farms; most come back when the food in them is eaten. <b>Teams</b> pack days of food: by default what keeps longest and weighs least for its calories (ration bars, MREs, jerky, peanut butter before cans); the planner can put one kind first, and on the road food spoils by the heat (raw meat fast). <b>Food and the winter:</b> crops ripen in batches (Farming tab), and nothing grows outdoors in winter: the first spring harvest comes weeks into spring, so the food for the hungry gap has to be grown and stored in summer and autumn. Sow kale, winter roots and winter wheat in autumn (they stand the frost); grain and dry beans keep for years. An <b>Animal pen</b> (hens and goats, a building plot) gives eggs and milk every day of the year to a keeper (an operator, Farming): 3 days of food a day (4 with Farming 6+), three quarters of it in winter, half without walls; the animals graze two of the base's outdoor crop plots. Greenhouses grow through the winter too. The Farming tab's <i>Winter outlook</i> says whether the food will last to the first spring harvest.<br>
     <b>Water and the summer:</b> everyone at a base drinks 1 water a day in spring and autumn, <b>1.3 in summer</b>, 0.9 in winter and <b>at least 1.6 on a hot day</b> (a heat wave or 30 °C and up; the forecast marks them); prisoners and guests too, and teams in the field drink their rations times the same (the trip planner counts every hour at its own day's rate). Crops need watering on dry days, a fifth more in summer. In: the hub's well 12 a day, an outpost's spring 3, a river or lake next to the base 3, a Well +6 (less in a dry spell), a Rain catcher +2 per unit of rain, a water filter +3 (it clogs after about 20 days); the tanks hold 80 at the hub, 40 at an outpost, +150 a Cistern. From spring on the Farming tab's <i>Summer water</i> line says whether the water holds through an average summer day and a heat wave, and what would close a gap; a week before summer you are warned if it will not. A team on a tile next to a river or lake can <b>Fetch water</b> (2h: every free container filled, 1 kg a unit; a team panel order or a plan step). <b>Purified and un-purified water:</b> water from the land (the well, springs, streams, Wells, rain catchers, claimed wells, prisoners hauling it, and what teams fetch) comes in <i>un-purified</i>; bottled water found in shops and houses is <i>purified</i>. Each day before drinking a lit Water boiler purifies the day's drinking for everyone at the base, each water filter ${WORM.PURIFY_FILTER} a day, a shelter's lit fire like the boiler. People drink purified water first, then un-purified water (rather than go thirsty; any of it can carry the worm, and on infected ground it carries the worm's eggs), and crops get un-purified water first; the tanks hold both, and thirst counts both. The top bar shows both (purified, + raw). A team packs purified water first; on the road it drinks un-purified water through a water filter, boiled at a lit camp fire (which also boils some of it into purified water each hour), or with <b>purification tablets</b> (one per ${WORM.TABS_WATER} water: on the move, or at a camp whose fire is out or has nothing left to burn; a lit camp fire with firewood comes first and saves them). The tablets are for the road (a team fetching water or out more than two days packs a tube from the armory); a base uses its armory's only in an emergency, when the boiler is cold with nothing to burn (no firewood, no junk it may burn, no fuel) and there is no water filter (a log line says so). Other groups sell purified water and pay about half for un-purified. Thirst kills faster than hunger: build wells and filters before summer, keep the tanks full, and do not take in more people than the summer wells can carry.<br>
     <b>Hunting, fishing and snares:</b> right-click a tile for a <i>Hunting trip</i> or <i>Fishing trip</i> (the planner's presets: go, hunt or fish 8 hours, come home), or give a team on the spot <i>Hunt</i>, <i>Fish</i> or <i>Set snares</i> (team panel, Land). The tile panel shows the game there (plenty, some, scarce) and what an 8-hour hunt should bring. Forest and hills are the best hunting, farmland fair, towns, cities and hive land almost nothing; autumn is the best season, and snow shows tracks in winter. A hunting rifle or a bow is best (a pistol is poor; no weapon, no hunt: set snares); every gunshot costs ammo, adds Heat and can draw the dead nearby, bows and crossbows are silent but shoot <b>arrows</b> (a shot at game loses its arrow about half the time: craft 12 from 30 firewood and 1 scrap, or find them at hunting lodges, gun stores, sports shops and campgrounds; a hunting trip takes up to 12 from the hub when someone has a bow; in a fight a bow uses an arrow a shot too, and about half are picked up again after a win). <b>The hunting mix</b> (each base's Farming tab, <i>Hunting</i>): the share of the hunting hours with <i>traps</i> (snares and deadfalls: small game only, silent, no ammo; about half a rifle's food), <i>bows</i> (silent, arrows; nearly a rifle's food) and <i>guns</i> (each hunter's best weapon: the most food, ammo, Heat, and the dead within 3 tiles may come to the shots), for the base's hunters and for the teams that hunt from it. Short of a gun or ammo the hour goes to a bow, short of a bow or arrows to the traps: never louder than the mix. The governor's cabins go quiet when the dead wander within 3 tiles (unless food is short), and it saves ammo with bows. The land runs out of game as you hunt it and grows back over weeks. <b>Snares</b> (snare wire, or 2 scrap) catch a rabbit a day or so: check them within 2–3 days, before the catch rots or someone takes it. <b>Fishing</b> needs a rod or a net, on a river bank; in a freeze, a crowbar, machete or axe to cut the ice (half the catch). Fresh game and fish weigh twice what packed food does (a deer on foot is a slow walk home; a car carries it all) and spoil fast: the team eats it first, and at home drying racks and a <b>Hunting cabin</b> smoke it. Any base, outpost or camp can put people on the <i>Hunt</i> job: at dawn and dusk they walk out to the best ground of its hunting grounds (its own tile and the tiles next to it, where game is shy of the walls; a <b>Hunting cabin</b> widens them to the land within 2 tiles), hunt by the base's hunting mix (gunshots add to the base's Heat) and bring the catch home. A base that holds a river or lake tile can put people with a rod or net on the <i>Fish</i> job, and anyone on <i>Fetch water</i> (two buckets a trip, un-purified). The outdoor jobs (wood, foraging, hunting, fishing, scavenging, water) go out in trips: the walk to the tile costs working hours (half an hour a tile each way), each load comes into the store as they get home, they head home when the base is on alert, and while out they are not at the walls if it is attacked; the map's <i>Base workers</i> layer shows them.<br>
     <b>Foraging:</b> anyone can gather wild food: berries, nuts, mushrooms, greens, roots, apples from abandoned orchards, now and then herbs (meds) or a wild hive's honey. Give a team <i>Forage</i> (team panel, Land; or right-click <i>Go and forage here</i>; a plan step), a team in camp short of food forages around it in daylight, and at a base the <i>Forage</i> job gathers within 2 tiles while food is short. Forest is best, farmland and old farms good, hills some, towns little; summer and autumn are plentiful, spring gives greens, winter almost nothing. Farming and Scouting help. It stretches the food (a forager brings in a ration or two a day in season), it does not replace the farms; the land picked hard grows back over a season. It is time on one spot (Heat), and a bad mushroom now and then makes someone ill. When food runs low the alerts and the team panel say where to forage or hunt nearby.<br>
@@ -1058,7 +1065,7 @@ export function plannerLoad(state, pl) {
   const v = plannerVehicle(state, pl);
   const cap = carryCapacity(state, members, v);
   const packed = {};
-  for (const [k, q] of Object.entries(pl.supplies || {})) if (SUPPLIES[k] && q > 0) packed[k] = q;
+  for (const [k, q] of Object.entries(pl.supplies || {})) if ((SUPPLIES[k] || k === "food") && q > 0) packed[k] = q; // food: days of it (sim/parties.js supplyLoad)
   const load = supplyLoad(packed);
   const over = members.length > 0 && load > cap + 1e-9;
   const t = members.length ? teamLoad(members, load, v) : null;
@@ -1115,10 +1122,19 @@ function transportPick(state, h, pl, v, ids, where) {
   void v; void where;
   return fleetPicker(state, { base: h, ids: plannerIds(pl), crewN: ids.length, cans: pl.supplies.fuel || 0, action: "pl-vehicle" });
 }
-const PLAN_SUPPLY_KEYS = ["food", "preserved", "water", "fuel", "meds", "ammo", "arrows", "parts", "scrap"];
+const PLAN_SUPPLY_KEYS = ["food", "water", "fuel", "meds", "ammo", "arrows", "parts", "scrap"];
+// The planner's food row: days of food, packed by default as what keeps longest and weighs least a kcal (sim/foods.js
+// packPick: ration bars, MREs, jerky, peanut butter before cans), or a kind picked to go first; what that is now.
+function foodPackCell(state, h, pl) {
+  const days = pl.supplies.food || 0;
+  const pick = days > 0 ? packPick(state, h, days, { days: 7, prefer: pl.packFood || null }) : {};
+  const kinds = foodRows(state, h).filter((r) => r.q >= 1);
+  const sel = `<select data-action="pl-packfood"${tip("Which food goes first in the packs. By default: what keeps longest and weighs least for its calories.")}><option value="">what keeps, lightest</option>${kinds.map((r) => `<option value="${r.key}" ${pl.packFood === r.key ? "selected" : ""}>${FOODS[r.key].icon} ${esc(FOODS[r.key].name)} (${n0(r.q)})</option>`).join("")}</select>`;
+  return `${sel}<div class="small muted">${days > 0 ? esc(foodText(pick, 4)) : ""}</div>`;
+}
 function suppliesTable(state, h, pl, label) {
   const showKeys = PLAN_SUPPLY_KEYS;
-  return `<table class="t">${showKeys.map((k) => `<tr${tip(k === "arrows" ? "Arrows for bows and crossbows: 1 a shot in a fight (about half picked up again after a win, none after a loss or a retreat; with none a bow is only a club) and on a hunt (a shot at game loses its arrow about half the time). Auto-fill packs a dozen for each bow on the team; a hunting trip takes up to 12 from the hub by itself when someone has a bow." : k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "preserved" ? "Jarred, dried or canned food: a ration like food (eaten after the packed food), and lighter to carry (0.6 a ration)" : k === "water" ? "Water for the road: purified water is packed first, then un-purified water (from the wells and rivers: boil it at a camp fire, filter it or drop purification tablets in)" : k === "ammo" ? `Rounds for the team's guns, any calibre: packed as the rounds that fit each person's gun (most for the gun they carry). At ${h.name}, by calibre: ${breakdownText(baseAmmoBreakdown(state, h), "; ")}` : "")}><td>${k === "water" ? "Water" : k === "ammo" ? "Rounds for their guns" : SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">${label} ${k === "water" ? esc(hubWaterText(h)) : n0(k === "ammo" ? totalRounds(h.stock) : h.stock[k])}</td></tr>`).join("")}${tabsRow(state, h, pl)}${lightsRow(state, h, pl)}${sparesRow(state, h, pl)}</table>`;
+  return `<table class="t">${showKeys.map((k) => `<tr${tip(k === "arrows" ? "Arrows for bows and crossbows: 1 a shot in a fight (about half picked up again after a win, none after a loss or a retreat; with none a bow is only a club) and on a hunt (a shot at game loses its arrow about half the time). Auto-fill packs a dozen for each bow on the team; a hunting trip takes up to 12 from the hub by itself when someone has a bow." : k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "food" ? "Days of food for the road (2000 kcal a day). The team eats the food that spoils soonest first; what keeps and weighs least is packed unless you pick a kind to go first." : k === "water" ? "Water for the road: purified water is packed first, then un-purified water (from the wells and rivers: boil it at a camp fire, filter it or drop purification tablets in)" : k === "ammo" ? `Rounds for the team's guns, any calibre: packed as the rounds that fit each person's gun (most for the gun they carry). At ${h.name}, by calibre: ${breakdownText(baseAmmoBreakdown(state, h), "; ")}` : "")}><td>${k === "water" ? "Water" : k === "food" ? "Food (days)" : k === "ammo" ? "Rounds for their guns" : SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}">${k === "food" ? foodPackCell(state, h, pl) : ""}</td><td class="muted small">${label} ${k === "water" ? esc(hubWaterText(h)) : k === "food" ? `${n0(foodIn(h.stock))} days` : n0(k === "ammo" ? totalRounds(h.stock) : h.stock[k])}</td></tr>`).join("")}${tabsRow(state, h, pl)}${lightsRow(state, h, pl)}${sparesRow(state, h, pl)}</table>`;
 }
 function plannerModal(state, ui) {
   const pl = ui.planner;
@@ -1143,9 +1159,9 @@ function plannerModal(state, ui) {
   const problem = Parties.missionProblem ? Parties.missionProblem(state, pl.dest, pl.mission) : null;
   const warn = [];
   if (est) {
-    // Preserved food (storage.js) is a ration like food, and lighter.
-    const rations = (pl.supplies.food || 0) + (pl.supplies.preserved || 0);
-    if (rations < need.food) warn.push(`Food: packing ${rations}${pl.supplies.preserved ? ` (${pl.supplies.preserved} preserved)` : ""}, need about ${need.food} ${needFor}`);
+    // Food in days of food (sim/foods.js: packed as items when the team leaves).
+    const rations = pl.supplies.food || 0;
+    if (rations < need.food) warn.push(`Food: packing ${rations} days, need about ${need.food} ${needFor}`);
     if ((pl.supplies.water || 0) < need.water) warn.push(`Water: packing ${pl.supplies.water || 0}, need about ${need.water} ${needFor}`);
     if ((pl.supplies.water || 0) > Math.floor(h.stock.water || 0) && !pl.tabs && !armoryTabs(h).length) warn.push(`Water: only ${Math.floor(h.stock.water || 0)} of it purified; the rest is packed un-purified (boil it at a camp fire)`);
     if (isCar(v) && v.fuel + (pl.supplies.fuel || 0) < need.fuel) warn.push(`Fuel: tank ${n0(v.fuel)} + cans ${pl.supplies.fuel || 0}, need about ${need.fuel} ${needFor}`);
@@ -1182,6 +1198,7 @@ function plannerModal(state, ui) {
           ${est.dryAt != null ? `<div></div><div class="danger">Fuel runs out near ${esc(tileLabel(state, est.dryAt))}; they walk the rest (vehicle left there)</div>` : ""}
           <div${tip(stays ? "If you order them home as soon as they arrive" : "Out, about 6 hours on site, and back")}>Round trip</div><div>~${est.days.toFixed(1)} days (${Math.round(est.hours)}h: ${est.hoursOut}h out, ${est.hoursBack}h back)${stays ? ` <span class="muted">if sent home on arrival</span>` : ""}</div>
           <div${tip("Food and water for the trip: one ration a person a day, more on the move under a load (Medium +15%, Heavy +35%, Overloaded +60%, less with Scouting or on bikes, none extra in a car), the hours on site at the normal rate. Water is that times each day's thirst: 1.3 in summer, at least 1.6 on a hot day, 0.9 in winter; food times each day's cold: 1.1 below 0 °C, 1.2 below −8 °C (no camp fire on such a trip).")}>Needs</div><div>${est.food} food · ${est.water} water${isCar(v) ? ` · ${est.fuel} fuel${est.fuelMult > 1 ? ` (×${est.fuelMult.toFixed(2)} for the load)` : ""}` : ""}</div>
+          ${members.length ? rationLine(members, est) : ""}
           <div${tip(`What the packed supplies weigh, against what the crew can carry on top of what they wear (max load 40 kg each, 28 with a Bad Back, 48 with a Strong Back, more with a pack or Packrat)${v ? " plus the bikes' racks or the car" : ""}. Loot found on the trip needs what is left. ${BANDS_HELP}`)}>Weight</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} kg packed + ${n1(carry.worn)} kg worn · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more${carry.over ? " · too heavy" : ""}</div></div>
           ${carry.t ? `<div style="margin-top:0.3rem">${paceLine(carry.t)}${carLine(carry.t, v && v.name)}${carry.t.mode === true ? "" : loadRows(carry.t)}</div>` : ""}
           ${settles && v ? `<div class="small muted" style="margin-top:0.3rem">The ${esc(v.name)} stays at the new outpost with the team.</div>` : ""}` : `<div class="danger">No route to this tile${v ? " by vehicle" : ""}.${v ? "" : " Water in the way? Send a team to the shore and build a boat there."}</div>`}
@@ -1283,7 +1300,7 @@ function engagementModal(state) {
     <div class="grid2">
       <div><h3>Log</h3><div class="elog" id="elog">${e.log.map((l) => `<div>${esc(l)}</div>`).join("")}</div></div>
       <div><h3>Team</h3>${members.map((m) => `<div class="row small"><span style="width:7rem">${first(m)}</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div></div>`).join("")}
-        <div class="small muted" style="margin-top:0.3rem"><span${tip(`Every round and arrow the team has, by calibre: ${breakdownText(teamAmmoBreakdown(state, p), "; ")}`)}>Ammo ${n0(p ? teamAmmoBreakdown(state, p).total : 0)}</span> · Food ${n0(p ? p.supplies.food : 0)}</div>
+        <div class="small muted" style="margin-top:0.3rem"><span${tip(`Every round and arrow the team has, by calibre: ${breakdownText(teamAmmoBreakdown(state, p), "; ")}`)}>Ammo ${n0(p ? teamAmmoBreakdown(state, p).total : 0)}</span> · Food ${n0(p ? foodIn(p.supplies) + foodIn(p.cargo && p.cargo.supplies) : 0)} days</div>
         <h3>Found (${Math.ceil(load)} / ${Math.max(0, Math.floor(cap))} kg the team can still carry)</h3>
         <div class="small">${found.length ? found.map((f) => `<span class="chip">${esc(f)}</span>`).join("") : "<span class='muted'>Nothing yet</span>"}</div>
         ${load > cap ? `<div class="small danger">More than you can carry. The cheapest goods will be left behind.</div>` : ""}
@@ -1409,7 +1426,7 @@ function survivorModal(state, ui) {
     ${ui.lookEdit === s.id ? appearanceEditor(state, s) : ""}
     <div class="where">${s.leader ? "Leader · " : ""}${inContact(state, s) ? `Health ${n0(s.health)} · Mood ${n0(s.mood)}` : "Health and mood unknown (no contact)"} · Combat power ${combatPower(s).toFixed(1)}${base ? ` · at ${esc(base.name)}` : ""}${inContact(state, s) && s.woundInfected ? ` · <span class="danger">Infected wound</span>` : ""} ${treatButton(state, s)}</div>
     ${isCaptive(s) ? captiveLine(state, s) : ""}
-    ${s.alive && inContact(state, s) ? `<div class="card small" style="max-width:28rem">${gaugeRows(s)}${needsEffectText(s) ? `<div class="warn">${esc(needsEffectText(s))}</div>` : ""}${isSick(s) ? `<div class="row" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}${treatsRow(state, s)}</div>` : ""}
+    ${s.alive && inContact(state, s) ? `<div class="card small" style="max-width:28rem">${gaugeRows(s)}${needsEffectText(s) ? `<div class="warn">${esc(needsEffectText(s))}</div>` : ""}${foodOnThem(state, s)}${isSick(s) ? `<div class="row" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}${treatsRow(state, s)}</div>` : ""}
     ${s.alive ? workLine(state, s, base) : ""}
     <div class="grid2">
       ${skillsBlock(state, s)}
@@ -1499,6 +1516,7 @@ function campTab(state, b) {
   const out = b.type === "outpost";
   const parked = state.vehicles.filter((x) => x.loc.kind === "base" && x.loc.baseId === b.id);
   const stock = STOCK_KEYS.filter((k) => k !== "jars" && n0(k === "ammo" ? totalRounds(b.stock) : b.stock[k]) >= 1).map((k) => [k, b.stock[k]]);
+  if (foodIn(b.stock) >= 1) stock.unshift(["food", foodIn(b.stock)]); // days of food (sim/foods.js)
   const nameList = (keys) => keys.map((k) => BUILDINGS[k] ? BUILDINGS[k].name : k).join(", ");
   const atShelter = Object.keys(SHELTER.build).filter((k) => !BUILDINGS[k].tierUp && !CAMP.build[k]);
   const ladder = out
@@ -1693,6 +1711,13 @@ function shelterRows(state, b) {
     <div${tip("The shelter's fire: warmth (the tarps are as cold as outside without it), boiled water, better spirits (+0.5 mood a day; cold nights without it cost 1). Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>`;
 }
 
+// The planner's ration line: a day's food and water a person on this trip, and what their packs already hold (sim/eating.js:
+// they count toward the supplies, so the base packs that much less).
+function rationLine(members, est) {
+  const n = Math.max(1, members.length);
+  const pf = members.reduce((a, s) => a + packFood(s), 0), pw = members.reduce((a, s) => a + packWater(s), 0);
+  return `<div${tip("Each person's share of the trip's food and water, and what the packs they carry already hold (sim/eating.js: everyone carries about 1.5 days of food and water; it counts toward what you pack, and they eat the team's shared food first)")}>Per person</div><div>${n1(est.food / n)} food · ${n1(est.water / n)} water <span class="muted">(packs on them: ${n1(pf)} food · ${n1(pw)} water)</span></div>`;
+}
 function baseOverview(state, b) {
   const people = atBase(state, b.id);
   const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
@@ -1701,6 +1726,8 @@ function baseOverview(state, b) {
     <div>
       ${sectionHead(`Stock${b.type === "outpost" ? infoTip("Outposts keep a small reserve and ship the rest to the hub each day.") : ""}`)}
       <div class="sk-tiles">${STOCK_KEYS.map((k) => stockTile(k, k === "ammo" ? totalRounds(b.stock) : b.stock[k], k === "ammo" ? `${SUPPLIES[k].name}. Every calibre: ${roundsLine(b.stock)}` : SUPPLIES[k].name)).join("")}</div>
+      ${sectionHead(`Food${infoTip("Food by kind (no generic food): what each is, how much, its calories, the days before the soonest of it spoils where it is kept today, and the food rooms")}`)}
+      <div class="card">${baseFoodHtml(state, b)}</div>
       <h3>Status</h3>
       <div class="card small"><div class="kv small">
         <div>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
@@ -1708,7 +1735,8 @@ function baseOverview(state, b) {
         <div>Heat</div><div>${baseHeat(state, b)}</div>
         ${shelterRows(state, b)}
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
-        <div${tip("Where the fresh food is kept and what spoils a day (storage room: cellars, storehouse, cold store; above it, food is stored outside and spoils fast), and the preserved stock")}>Food storage</div>${storeCellHtml(state, b)}
+        ${rationRow(state, b)}
+        <div${tip("Where the fresh food is kept (the food rooms: cellars, storehouse, cold store, a freezer; above them it is stored outside and spoils faster), what will spoil before it is eaten, and the food that keeps")}>Food storage</div>${storeCellHtml(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
         <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepCellHtml(state, b)}
         ${illnessRowHtml(state, b)}
@@ -1775,7 +1803,7 @@ function machineChip(state, b, t) {
   }
   if (t === "generator") { // machines-2: no operator; running, standby or its tank dry (the Power card has the rest)
     const on = list.filter((x) => generatorRunning(b, x)).length;
-    return `<span class="chip ${on ? "on" : list.some((x) => x.broken) ? "off" : ""}"${tip(list.map((x) => generatorLine(state, b, x)).join("; "))}>${on ? `⚡ ${on === list.length ? "Running" : `${on} of ${list.length} running`}` : list.some((x) => x.broken) ? "Broken" : "Not running"}</span>`;
+    return `<span class="chip ${on ? "on" : list.some((x) => x.broken) ? "off" : ""}"${tip(list.map((x) => `${genName(x)} (tier ${genTier(x)}): ${generatorLine(state, b, x)}`).join("; "))}>${on ? `⚡ ${on === list.length ? "Running" : `${on} of ${list.length} running`}` : list.some((x) => x.broken) ? "Broken" : "Not running"}</span>`;
   }
   if (t === "kitchen" && list.some((x) => x.canner)) return `<span class="chip on"${tip(BUILDINGS.canner.desc)}>Pressure canner${list.length > 1 ? ` (${list.filter((x) => x.canner).length} of ${list.length})` : ""}</span>`;
   if (POWER_USERS[t] && !BUILDINGS[t].station) {
@@ -1788,7 +1816,7 @@ function machineChip(state, b, t) {
 function machineNote(b, t) {
   const mt = t === "kitchen" && b.buildings.some((x) => x.type === "kitchen" && x.canner) ? "canner" : t; // machines-2: a kitchen with a pressure canner is a machine
   if (!isMachine(mt)) return "";
-  const each = b.buildings.filter((x) => x.type === t && (mt !== "canner" || x.canner)).map((x) => machineState(x)).filter(Boolean);
+  const each = b.buildings.filter((x) => x.type === t && (mt !== "canner" || x.canner)).map((x) => (t === "generator" && machineState(x) ? `${genName(x)} (tier ${genTier(x)}): ${machineState(x)}` : machineState(x))).filter(Boolean); // gen-tiers
   const parts = BUILDINGS[mt].cost.parts ? `${mt === "canner" ? "the canner fitted" : "built"} with ${BUILDINGS[mt].cost.parts} machine part${BUILDINGS[mt].cost.parts === 1 ? "" : "s"}` : "";
   return `<div class="small"${tip("Machines take machine parts to build, to repair and to keep running (Help: Machines and machine parts)")}>⚙ ${esc([parts, machineText(mt)].filter(Boolean).join(" · "))}${each.length ? `<br><span class="muted">${esc(each.join(" | "))}</span>` : ""}</div>`;
 }
@@ -1798,7 +1826,7 @@ function baseBuildings(state, b) {
   return `<div class="grid2">
     <div>${sectionHead("Built here", "", b.buildings.length)}${Object.keys(groups).length ? `<div class="gcard-grid">${Object.entries(groups).map(([t, n]) => {
       const broken = b.buildings.filter((x) => x.type === t && x.broken).length;
-      return `<div class="gcard ${broken ? "blocked" : "ok"}${t === "boiler" ? " wide" : ""}"${tip(BUILDINGS[t].desc)}><div class="gcard-top"><span class="gcard-title">${esc(BUILDINGS[t].name)}${n > 1 ? ` <span class="sk-count">×${n}</span>` : ""}</span>${broken ? badge(`Broken${n > 1 ? ` ${broken}` : ""}`, "bad", "Broken: it gives nothing until it is repaired (Repairs tab)") : machineChip(state, b, t) || badge("Built", "good")}</div><div class="gcard-desc">${esc(BUILDINGS[t].desc)}</div>${t === "boiler" ? boilerNote(state, b) : ""}${t === "canteen" ? kitchenNote(state, b) : ""}${machineNote(b, t)}</div>`;
+      return `<div class="gcard ${broken ? "blocked" : "ok"}${t === "boiler" ? " wide" : ""}"${tip(BUILDINGS[t].desc)}><div class="gcard-top"><span class="gcard-title">${esc(BUILDINGS[t].name)}${n > 1 ? ` <span class="sk-count">×${n}</span>` : ""}</span>${broken ? badge(`Broken${n > 1 ? ` ${broken}` : ""}`, "bad", "Broken: it gives nothing until it is repaired (Repairs tab)") : machineChip(state, b, t) || badge("Built", "good")}</div><div class="gcard-desc">${esc(BUILDINGS[t].desc)}</div>${t === "boiler" ? boilerNote(state, b) : ""}${t === "canteen" ? kitchenNote(state, b) : ""}${t === "canteen" || t === "cookhouse" ? cookingNote(state, b, t) : ""}${machineNote(b, t)}</div>`;
     }).join("")}</div>` : `<div class="muted small">Only a shelter so far. Queue buildings in Construction.</div>`}</div>
     <div>${sectionHead("Bonuses")}<div class="card small">${statRows(buildingSummary(state, b).map(([k, v]) => [k, esc(v)]))}</div>${blueprintsCard(state, b)}</div>
   </div>`;
@@ -1809,6 +1837,14 @@ function lockTag(state, b, kind, key) {
   const note = lockNote(state, b, kind, key);
   if (!note) return "";
   return `<div class="gcard-lock"${tip(`${note} Found and studied at a base (Read role, the blueprint's skill), or a craft book read to the end by anyone at a base. See the Buildings tab's Blueprints list.`)}>🔒 ${esc(note.split(/\.\s*Look in:/)[0].replace(/^Needs:\s*/, "Needs "))}</div>`;
+}
+
+// The generator's build card (gen-tiers, sim/power.js GEN_TIERS): it is built as tier 1; the tiers above are upgrades
+// where it stands, with the tier each one standing here is at.
+function genTiersNote(state, b) {
+  const here = b.buildings.filter((x) => x.type === "generator");
+  const tiers = GEN_TIERS.slice(1).map((t, i) => `${i + 1}. ${t.name}: ${t.out} power, ${t.idle === t.full ? `${t.full}` : `${t.idle}–${t.full}`} fuel a day${t.req ? `, Mechanics ${t.req.mechanics}` : ""}${t.bp ? `, ${lockNote(state, b, "upgrade", `generator${i + 1}`) ? "🔒 " : ""}Industrial Power Manual` : ""}`).join(" · ");
+  return `<div class="small muted"${tip("Built as tier 1. Upgrade a standing generator where it stands (On the utility plots, or the Power card on the Workshops tab): no new plot, each tier more power and more fuel.")}>⚡ Tier 1 of ${GEN_TIERS.length - 1}. ${esc(tiers)}${here.length ? `<br>Here: ${esc(here.map((x) => `${genName(x)} (tier ${genTier(x)})`).join(", "))}` : ""}</div>`;
 }
 
 // Construction (sim/buildings.js): the plots (building and utility, by the base's size), the queue, what stands on
@@ -1846,12 +1882,12 @@ function baseConstruction(state, b, ui) {
     if (x.canner) return `<span class="chip on"${tip(BUILDINGS.canner.desc)}>Canner</span>`;
     if (b.construction.some((c) => c.target === x.id)) return `<span class="chip">Fitting</span>`;
     const chk = canUpgradeKitchen(state, b, x.id);
-    return `<button class="mini" data-action="canner-up" data-base="${b.id}" data-id="${x.id}" ${chk.ok ? "" : "disabled"}${tip(`Fit a pressure canner to this kitchen where it stands: +1 preserved food a day from it. ${chk.item ? "The canner in the armory is fitted (no materials)" : costText(BUILDINGS.canner.cost)}, ${BUILDINGS.canner.hours} work-hours, a Mechanics 3+ survivor here. The kitchen then wears like a machine (repairs take a machine part).${chk.ok ? "" : ` ${chk.reason}.`}`)}>Fit a canner</button>`;
+    return `<button class="mini" data-action="canner-up" data-base="${b.id}" data-id="${x.id}" ${chk.ok ? "" : "disabled"}${tip(`Fit a pressure canner to this kitchen where it stands: +1 portion of jarred food a day from it. ${chk.item ? "The canner in the armory is fitted (no materials)" : costText(BUILDINGS.canner.cost)}, ${BUILDINGS.canner.hours} work-hours, a Mechanics 3+ survivor here. The kitchen then wears like a machine (repairs take a machine part).${chk.ok ? "" : ` ${chk.reason}.`}`)}>Fit a canner</button>`;
   };
   // What stands on the plots, the barrels apart (their own card).
   const plotList = (kind) => {
     const list = b.buildings.filter((x) => BUILDINGS[x.type] && BUILDINGS[x.type].plot === kind && x.type !== "water_barrel");
-    return list.length ? list.map((x) => `<div class="spread small"><span${tip(BUILDINGS[x.type].desc)}>${esc(BUILDINGS[x.type].name)}${x.broken ? ` <span class="chip off">Broken</span>` : ""}</span><span class="row">${x.type === "bunkhouse" ? expandBtn(x) : ""}${x.type === "ammo_bench" ? reloadBtn(x) : ""}${x.type === "kitchen" ? cannerBtn(x) : ""}${demolishBtn(x)}</span></div>`).join("") : `<div class="muted small">Nothing yet.</div>`;
+    return list.length ? list.map((x) => `<div class="spread small"><span${tip(BUILDINGS[x.type].desc)}>${esc(x.type === "generator" ? `${genName(x)} (tier ${genTier(x)})` : BUILDINGS[x.type].name)}${x.broken ? ` <span class="chip off">Broken</span>` : ""}</span><span class="row">${x.type === "bunkhouse" ? expandBtn(x) : ""}${x.type === "ammo_bench" ? reloadBtn(x) : ""}${x.type === "kitchen" ? cannerBtn(x) : ""}${x.type === "generator" ? genUpgradeBtn(state, b, x) : ""}${demolishBtn(x)}</span></div>`).join("") : `<div class="muted small">Nothing yet.</div>`;
   };
   const holdsSel = (x) => `<select data-action="barrel-holds" data-base="${b.id}" data-id="${x.id}"${tip("Un-purified: room for the well, rain and river water. Purified: room only safe water may use (the water filters' surplus, bottled water brought home), never crowded out by the well's water. Switching moves nothing: water of the other kind goes to the tanks, or stands outside if they are full.")}><option value="rawwater" ${barrelHolds(x) === "rawwater" ? "selected" : ""}>Un-purified</option><option value="water" ${barrelHolds(x) === "water" ? "selected" : ""}>Purified</option></select>`;
   const barrelCard = () => {
@@ -1882,7 +1918,7 @@ function baseConstruction(state, b, ui) {
       <div class="gcard-top"><span class="gcard-title">${esc(d.name)}${have ? ` <span class="muted small"${tip(`${have} standing here, ${d.max} at most`)}>${have}/${d.max}</span>` : ""}${status}</span><button class="mini${chk.ok ? " primary" : ""}" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
       <div class="gcard-desc">${esc(firstSentence(d.desc))}</div>${isMachine(k) ? `<div class="small muted"${tip("A machine: it wears, breaks down and takes machine parts to keep (Help: Machines and machine parts)")}>⚙ ${esc(machineText(k))}${POWER_USERS[k] ? ` · draws ${POWER_USERS[k].need} power` : ""}</div>` : ""}
       <div class="gcard-foot">${costChips(d.cost, b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed, ${n0(h)} in the stores${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}</div>
-      ${k === "canteen" ? kitchenNote(state, b) : ""}
+      ${k === "canteen" ? kitchenNote(state, b) : ""}${k === "generator" ? genTiersNote(state, b) : ""}
       ${!chk.ok && !short && !lock ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;
   };

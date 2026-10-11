@@ -3,6 +3,7 @@
 // squad), battles with neutrals and soldiers on the field and raid maps, the people you left (the daily simulation),
 // building interiors, saves, and autopilot games in both modes with the numbers met per 10 trips and raids.
 // Usage: node tools/wanderertest.js [games per mode] [days]   (default 4 games of 90 days; 0 skips the games)
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, partyMembers, planPath, partyTile } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, finishCombat, registerCombatHandler, damage, active } from "../src/sim/combat.js";
@@ -172,7 +173,7 @@ section("Cards: neutral survivors (talk, gift, recruit, leave)");
   const take = asked && asked.choices.find((c) => c.kind === "take");
   const before = partyMembers(s, p).length;
   if (take && !(take.disabled && take.disabled(s))) take.resolve(s);
-  else { p.supplies.food = 60; p.supplies.water = 60; asked.choices.find((c) => c.kind === "take").resolve(s); }
+  else { setFood(p, 60); p.supplies.water = 60; asked.choices.find((c) => c.kind === "take").resolve(s); }
   check(partyMembers(s, p).length > before, `they join the team (${before} → ${partyMembers(s, p).length})`);
   wanderersDaily(s);
   check(!groupById(s, g.wid), "a group that joined you is no longer out there");
@@ -190,10 +191,10 @@ section("Cards: neutral survivors (talk, gift, recruit, leave)");
   check(!!c4 && /again/.test(c4.text), `met again near where they were: "${c4 && c4.text.split(".")[0]}"`);
   WANDER.SIM.AGAIN_CHANCE = 0.6;
   // A gift: costs the team food and water.
-  const food = p.supplies.food;
+  const food0 = food(p);
   const c5 = neutralCard(s, p, g2, {});
   c5.choices[1].resolve(s);
-  check(p.supplies.food < food, "a gift of food and water is paid from what the team carries");
+  check(food(p) < food0, "a gift of food and water is paid from what the team carries");
   Object.assign(WANDER.KIND, saved);
   WANDER.ROAD = R; WANDER.ROAD_MAX = RM;
 }
@@ -205,9 +206,9 @@ section("Cards: armed strangers (hand over, talk, run, fight), a robbery, a mili
   const p = team(s, tile);
   const c = hostileCard(s, p, 3, {});
   check(c.choices.map((x) => x.label).join("/") === "Hand over some of what you carry/Talk them down/Run for it/Fight", `hold-up choices: ${c.choices.map((x) => x.label).join(" / ")}`);
-  const food = p.supplies.food;
+  const food0 = food(p);
   c.choices[0].resolve(s);
-  check(p.supplies.food < food && p.phase !== "engaged", `handing over takes about ${pc(WANDER.ROB_SHARE)} (food ${food} → ${p.supplies.food}) and the team goes on`);
+  check(food(p) < food0 && p.phase !== "engaged", `handing over takes about ${pc(WANDER.ROB_SHARE)} (food ${food0.toFixed(1)} → ${food(p).toFixed(1)} days) and the team goes on`);
   const c2 = hostileCard(s, p, 3, {});
   s.cards.length = 0;
   c2.choices.find((x) => x.label === "Fight").resolve(s);

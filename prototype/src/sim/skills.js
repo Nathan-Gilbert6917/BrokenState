@@ -49,6 +49,7 @@
 // Perks: reaching 5, 10 and 15 in a skill (as shown) gives a perk point for that milestone; each milestone offers two
 // perks (PERKS below), Fallout: New Vegas style. A card lets the player pick (or decide later from the survivor
 // screen); the autopilot picks by its style. Every perk's effect is coded where it applies (see `hook` in PERKS).
+import { giveFood } from "./foods.js"; // the Forager and Hunter perks' food
 import { learnMult } from "./traits.js"; // Quick Study
 import { SKILLS, SKILL_NAMES, GEAR } from "./data.js";
 import { day, log, addCard, atBase, alive, skill, survivorById, fillCrafting, fillMelee, fillCooking, meleeArmed } from "./world.js";
@@ -542,42 +543,44 @@ export function readHours(state, s, key, hours) {
 // Per site type: the books it may hold and the chance per search hour (hour-by-hour search) or per container
 // (a raid on the map) at full loot. Schools, universities, police, the military and homes, as in the request.
 export const BOOK_SITES = {
-  school: { p: 0.15, books: ["gardenbook", "talkbook", "medbook", "comic", "novel", "survivalbook", "diybook"] },
-  univ: { p: 0.18, books: ["surgerybook", "enginebook", "medbook", "leadbook", "talkbook", "gardenbook", "forgebook"] },
+  school: { p: 0.15, books: ["gardenbook", "talkbook", "medbook", "comic", "novel", "survivalbook", "diybook", "cookbook"] },
+  univ: { p: 0.18, books: ["surgerybook", "enginebook", "medbook", "leadbook", "talkbook", "gardenbook", "forgebook", "chefbook"] },
   police: { p: 0.12, books: ["gunbook", "lockbook", "leadbook", "medbook"] },
-  military: { p: 0.15, books: ["armymanual", "gunbook", "survivalbook", "leadbook", "medbook", "bushcraftbook"] },
-  apartments: { p: 0.08, books: ["comic", "novel", "gardenbook", "talkbook", "enginebook", "magazines", "puzzlebook", "diybook"] },
-  town: { p: 0.06, books: ["comic", "novel", "gardenbook", "talkbook", "lockbook", "diybook"] },
+  military: { p: 0.15, books: ["armymanual", "gunbook", "survivalbook", "leadbook", "medbook", "bushcraftbook", "prepbook"] },
+  apartments: { p: 0.08, books: ["comic", "novel", "gardenbook", "talkbook", "enginebook", "magazines", "puzzlebook", "diybook", "cookbook"] },
+  town: { p: 0.06, books: ["comic", "novel", "gardenbook", "talkbook", "lockbook", "diybook", "cookbook"] },
   motel: { p: 0.06, books: ["novel", "comic", "magazines", "puzzlebook"] },
-  cabin: { p: 0.06, books: ["survivalbook", "novel", "bushcraftbook"] },
-  lodge: { p: 0.06, books: ["survivalbook", "gunbook", "bushcraftbook"] },
+  cabin: { p: 0.06, books: ["survivalbook", "novel", "bushcraftbook", "gamebook"] },
+  lodge: { p: 0.06, books: ["survivalbook", "gunbook", "bushcraftbook", "gamebook"] },
   ranger: { p: 0.08, books: ["survivalbook", "medbook", "bushcraftbook"] },
   farm: { p: 0.05, books: ["gardenbook", "diybook", "forgebook"] },
-  ranch: { p: 0.05, books: ["gardenbook", "survivalbook", "forgebook"] },
-  feedstore: { p: 0.06, books: ["gardenbook", "diybook"] },
+  ranch: { p: 0.05, books: ["gardenbook", "survivalbook", "forgebook", "gamebook"] },
+  feedstore: { p: 0.06, books: ["gardenbook", "diybook", "prepbook"] },
   hospital: { p: 0.09, books: ["medbook", "surgerybook", "magazines"] },
   clinic: { p: 0.07, books: ["medbook", "magazines"] },
   firestation: { p: 0.06, books: ["medbook", "leadbook"] },
   autoshop: { p: 0.07, books: ["enginebook", "forgebook"] },
   hardware: { p: 0.05, books: ["enginebook", "scavbook", "diybook", "forgebook"] },
   factory: { p: 0.05, books: ["enginebook", "scavbook", "forgebook"] },
-  gunstore: { p: 0.07, books: ["gunbook"] },
+  gunstore: { p: 0.07, books: ["gunbook", "prepbook"] },
   office: { p: 0.06, books: ["talkbook", "leadbook", "novel"] },
-  mall: { p: 0.06, books: ["comic", "novel", "talkbook", "gardenbook", "diybook"] },
+  mall: { p: 0.06, books: ["comic", "novel", "talkbook", "gardenbook", "diybook", "cookbook", "chefbook"] },
   church: { p: 0.04, books: ["novel"] },
   warehouse: { p: 0.05, books: ["scavbook", "enginebook", "diybook"] },
-  supermarket: { p: 0.06, books: ["comic", "novel", "gardenbook", "magazines", "puzzlebook"] },
+  supermarket: { p: 0.06, books: ["comic", "novel", "gardenbook", "magazines", "puzzlebook", "cookbook"] },
   pharmacy: { p: 0.06, books: ["medbook", "novel"] },
-  grocery: { p: 0.04, books: ["comic", "novel", "gardenbook"] },
-  truckstop: { p: 0.06, books: ["comic", "novel", "enginebook", "magazines", "puzzlebook"] },
+  grocery: { p: 0.04, books: ["comic", "novel", "gardenbook", "cookbook"] },
+  truckstop: { p: 0.06, books: ["comic", "novel", "enginebook", "magazines", "puzzlebook", "chefbook"] },
   gas: { p: 0.05, books: ["comic", "enginebook", "magazines"] },
   prison: { p: 0.06, books: ["novel", "lockbook", "leadbook"] },
-  city: { p: 0.06, books: ["comic", "novel", "talkbook", "leadbook"] },
+  city: { p: 0.06, books: ["comic", "novel", "talkbook", "leadbook", "cookbook", "chefbook"] },
   barn: { p: 0.03, books: ["gardenbook", "forgebook"] },
-  campground: { p: 0.04, books: ["survivalbook", "comic", "bushcraftbook"] },
+  campground: { p: 0.04, books: ["survivalbook", "comic", "bushcraftbook", "gamebook"] },
   radiotower: { p: 0.04, books: ["enginebook"] },
   airport: { p: 0.06, books: ["novel", "comic", "talkbook", "magazines", "puzzlebook"] },
   dam: { p: 0.05, books: ["enginebook"] },
+  // Wave 2 cooking: restaurants (diners) hold cookbooks (houses, schools, malls, colleges and truck stops above too).
+  diner: { p: 0.08, books: ["cookbook", "chefbook", "magazines"] },
 };
 
 // Deterministic roll that never touches the world's random numbers (so adding books shifts no other result).
@@ -607,8 +610,8 @@ export function rollBook(state, tileId, mult = 1, salt = "") {
 
 // Books a group has for sale this week (trade.js ensureWares): traders often, communes and the military sometimes.
 export const WARE_BOOKS = {
-  traders: { p: 0.6, books: ["medbook", "enginebook", "gardenbook", "talkbook", "survivalbook", "comic", "novel", "lockbook", "scavbook", "puzzlebook", "diybook", "forgebook", "bushcraftbook"] },
-  commune: { p: 0.35, books: ["gardenbook", "medbook", "novel", "diybook", "bushcraftbook"] },
+  traders: { p: 0.6, books: ["medbook", "enginebook", "gardenbook", "talkbook", "survivalbook", "comic", "novel", "lockbook", "scavbook", "puzzlebook", "diybook", "forgebook", "bushcraftbook", "cookbook", "chefbook", "gamebook", "prepbook"] },
+  commune: { p: 0.35, books: ["gardenbook", "medbook", "novel", "diybook", "bushcraftbook", "cookbook", "gamebook"] },
   military: { p: 0.3, books: ["armymanual", "gunbook", "leadbook"] },
   fortress: { p: 0.2, books: ["gunbook", "enginebook", "leadbook", "forgebook"] },
 };
@@ -769,7 +772,7 @@ export function skillsDaily(state) {
     if (!team.length) continue;
     if (team.length >= 2) gainXp(state, [...team].sort((a, b) => skill(b, "leadership") - skill(a, "leadership") || a.id - b.id)[0], "leadership", USE.teamLead);
     const food = team.filter((s) => hasPerk(s, "forager")).length + 3 * team.filter((s) => hasPerk(s, "hunter")).length + 2 * team.filter((s) => hasPerk(s, "campcook")).length; // Camp Cook (Cooking 15)
-    if (food && p.supplies) p.supplies.food = (p.supplies.food || 0) + food;
+    if (food && p.supplies) giveFood(state, p, food, { f_berries: 3, f_nuts: 2, f_roots: 2, f_smallgame: 3, f_fowl: 2 }, { whole: false, kinds: 99 }); // foods.js: what a forager, a hunter and a camp cook bring in along the way
     if (team.some((s) => hasPerk(s, "fieldrepair"))) fieldRepair(team);
   }
   for (const s of alive(state)) decay(state, s);

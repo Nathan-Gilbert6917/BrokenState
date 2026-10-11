@@ -81,7 +81,7 @@ function peopleBlock(state, s) {
     let act = "";
     if (s.alive && o.alive && x.kind === "rival") {
       const p = peaceInfo(state, s, o);
-      act = `<button class="mini" data-action="rel-peace" data-id="${s.id}" data-other="${o.id}" ${p.ok && p.who ? "" : "disabled"}${tip(p.ok ? (p.who ? `${first(p.who)} talks it out with them: ${Math.round(p.chance * 100)}% to bury the hatchet (+${PEACE.talkOk / 2} now and lasting history), else it gets a little worse. Once in ${PEACE.cooldown} days.` : "Nobody else at the base can talk them round") : p.reason)}>Talk it out</button><button class="mini" data-action="rel-gift" data-id="${s.id}" data-other="${o.id}" ${p.ok && p.hasFood ? "" : "disabled"}${tip(p.ok ? (p.hasFood ? `A shared meal (${PEACE.food} food from the base): +${PEACE.gift / 2} now and lasting history. Once in ${PEACE.cooldown} days.` : `Needs ${PEACE.food} food at the base`) : p.reason)}>Shared meal</button>`;
+      act = `<button class="mini" data-action="rel-peace" data-id="${s.id}" data-other="${o.id}" ${p.ok && p.who ? "" : "disabled"}${tip(p.ok ? (p.who ? `${first(p.who)} talks it out with them: ${Math.round(p.chance * 100)}% to bury the hatchet (+${PEACE.talkOk / 2} now and lasting history), else it gets a little worse. Once in ${PEACE.cooldown} days.` : "Nobody else at the base can talk them round") : p.reason)}>Talk it out</button><button class="mini" data-action="rel-gift" data-id="${s.id}" data-other="${o.id}" ${p.ok && p.hasFood ? "" : "disabled"}${tip(p.ok ? (p.hasFood ? `A shared meal (${PEACE.food} days of food from the base): +${PEACE.gift / 2} now and lasting history. Once in ${PEACE.cooldown} days.` : `Needs ${PEACE.food} food at the base`) : p.reason)}>Shared meal</button>`;
     }
     return `<div class="row small"${tip(why)}><span style="width:7.5rem"><a data-action="survivor" data-id="${o.id}" class="link">${esc(o.name)}</a>${o.alive ? "" : " †"}</span><span style="width:6rem" class="muted">${esc(x.partner ? "♥ Partner" : KIND_NAMES[x.kind])}</span><div style="flex:1">${bar((x.o + 100) / 2, tone)}</div><span style="width:2rem">${Math.round(x.o)}</span>${act}</div>`;
   });
@@ -132,7 +132,7 @@ export function memorialModal(state, ui) {
       </div>`;
     }).join("") : `<div class="muted">Nobody has died yet.</div>`}</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end">
-      ${b ? `<button data-action="memorial-service" data-base="${b.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `${info.food} food at ${b.name}: everyone there mood +${lift}${info.chapel ? " (in the chapel)" : ""}, the grieving +${lift + MEMORIAL.grievers} and ${MEMORIAL.griefDays} days less grief. Once a week.` : info.reason)}>Hold a memorial service (${info.food} food)</button>` : ""}
+      ${b ? `<button data-action="memorial-service" data-base="${b.id}" ${info.ok ? "" : "disabled"}${tip(info.ok ? `${info.food} food at ${b.name}: everyone there mood +${lift}${info.chapel ? " (in the chapel)" : ""}, the grieving +${lift + MEMORIAL.grievers} and ${MEMORIAL.griefDays} days less grief. Once a week.` : info.reason)}>Hold a memorial service (${info.food} days of food)</button>` : ""}
       <button class="primary" data-action="memorial-close">Close</button>
     </div></div>`;
 }

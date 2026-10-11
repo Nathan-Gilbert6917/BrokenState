@@ -38,6 +38,7 @@
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
 //   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
 //   bands from outside that settle use it too, visitors.js settleBands).
+import { FOODS, foodIn, takeFood, payFood, giveFood, typedFood, typeGoods, typeStray, groupMix, ageCoarse, foodText, addFoodsTo as addItemsTo, groupStartFood, groupFieldFood } from "./foods.js"; // the groups' food by type (coarse: no lots)
 import { groupFoodLand, groupTripLosses, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
 import {
@@ -77,9 +78,13 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
-import { groupWorksDaily, groupEatMult, groupCookShare, groupKitchenDaily, groupKitchenGrowth, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
+import { groupCookDaily } from "./cooking.js"; // wave 2 cooking: the groups' kitchens cook by your recipes, coarsely
+import { groupWorksDaily, groupEatMult, groupCookShare, groupKitchenDaily, groupKitchenGrowth, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp, groupFreezerOn, GROUP_WORKS } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
+import { groupRation, GROUP_EAT } from "./eating.js"; // ration levels for the groups (wave 2 eating)
+import { RATION_LEVELS } from "./meals.js";
+import { festivalDay } from "./festival.js"; // the harvest festival's day: the groups feast too
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople, workingPeople, GROUP_ILL } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
 import { groupWorldDaily, groupWorldWorld, intelDef, knownBase, fearsGroup, KNOW, abandonedAt, abandonedPull, occupyAbandoned, leaveGroupBase } from "./groupworld.js"; // AI parity: what they know, their vehicles, abandoned bases
 import { knowsOf } from "./groupworld.js"; // decoy outposts they believe in (intel.js)
@@ -177,7 +182,7 @@ export function createFactions(state, count) {
       id: newId(), name, type, color: FACTION_COLORS[i % FACTION_COLORS.length],
       bases: [site.id], pop, alive: true, known: false,
       goodwill: def.goodwill + rng.int(-8, 8), lastDiplomacy: 0, pact: null,
-      stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 }, // preserved / jars: storage.js; wood: woodcutting.js; brass..primers: reloading.js
+      stock: { ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0, ...groupStartFood(state, type, pop) }, // food: foods.js (6.5 days a head of its kind's food); jars: storage.js; wood: woodcutting.js; brass..primers: reloading.js
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
     factionVehicles(state.factions[state.factions.length - 1]); // vehicles.js: a military group starts with an Army truck and a Humvee (M2 turret)
@@ -325,15 +330,32 @@ export function factionsDaily(state) {
     // food and their cooks work no fields (groupworks.js KITCHEN).
     const hands = workingPeople(f);
     groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * freezeShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
-    f.stock.food += workingPeople(f, GROUP_ILL.farm) * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) * groupFoodLand(state, f) * (1 - groupCookShare(state, f)) + penFood(state, f) - f.pop * groupEatMult(state, f); // + their animal pens (groupworks.js PENS)
+    // Food by type (foods.js, coarse for the AI: no lots): their fields, hunters and pens bring in their kind of food
+    // (groupFieldFood: crops, grain, game, eggs) by the people at work (their land: grouptrips.js groupFoodLand; their
+    // cooks are in the kitchen), everyone eats a day's food (less where a kitchen feeds them: groupEatMult; the soonest
+    // to spoil first, by the item's shelf), and what they hold ages a day (ageCoarse: bread in days, cans in years).
+    // Short: as before, a hungry day.
+    typeStray(f.stock, state); // an old save's or a module's generic food, typed
+    addItemsTo(f.stock, groupFieldFood(state, workingPeople(f, GROUP_ILL.farm) * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) * groupFoodLand(state, f) * (1 - groupCookShare(state, f)) + penFood(state, f))); // + their animal pens (groupworks.js PENS)
+    groupCookDaily(state, f); // cooking.js (wave 2 cooking): their kitchens cook the fresh ingredients into meals (the same gains), sealer, mill, grinder; food poisoning as illness
+    // Wave 2 eating (AI parity, eating.js, coarse): their ration level (lean when short, a feast on the festival day:
+    // meals.js RATION_LEVELS use) × the day's food; their parties out on the map eat what they carry first.
+    const lvl = groupRation(state, f, festivalDay(state));
+    if (lvl === "feast") f.feastUntil = Math.floor(state.hour / 24) + GROUP_EAT.feastGlow;
+    f.rationLevel = lvl === "feast" ? "normal" : lvl;
+    const mult = groupEatMult(state, f) * RATION_LEVELS[lvl].use;
+    let away = 0;
+    for (const q of state.parties) if (q.owner === f.id && q.rations) away += takeFood(q.rations, Math.max(1, q.heads || 1) * mult, { state }).units;
+    const eat = Math.max(0, f.pop * mult - away);
+    const hungry = takeFood(f.stock, eat, { state }).units < eat - 1e-6;
+    f.foodSpoiled = ageCoarse(f.stock, 1, undefined, { frozen: groupFreezerOn(f) ? GROUP_WORKS.MACH.room : 0 }); // groupworks.js: a running walk-in freezer
     groupTripLosses(state, f); // grouptrips.js: their workers out on the land meet trouble too (fewer losses the better armed)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).
-    if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25 * growthFactor(state, f) * groupKitchenGrowth(state, f) * (0.7 + 0.3 * prio(f, "recruit")))) f.pop += 1; // groupKitchenGrowth: hot meals (groupworks.js) // hcNoGrow: hardcore's besieged military
+    if (foodIn(f.stock) > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25 * growthFactor(state, f) * groupKitchenGrowth(state, f) * (0.7 + 0.3 * prio(f, "recruit")))) f.pop += 1; // groupKitchenGrowth: hot meals (groupworks.js) // hcNoGrow: hardcore's besieged military
     // Drifters, deserters and the desperate join the strong: an aggressive group with food on hand recruits.
-    else if (isAggressiveType(f) && f.pop < RAIDS.RECRUIT_UNTIL + recruitBonus(state) && f.stock.food >= f.pop * 2 && rng.chance(RAIDS.RECRUIT + RAIDS.RECRUIT_BASE * f.bases.length)) f.pop += 1;
-    if (f.stock.food < 0) {
-      f.stock.food = 0;
+    else if (isAggressiveType(f) && f.pop < RAIDS.RECRUIT_UNTIL + recruitBonus(state) && foodIn(f.stock) >= f.pop * 2 && rng.chance(RAIDS.RECRUIT + RAIDS.RECRUIT_BASE * f.bases.length)) f.pop += 1;
+    if (hungry) {
       if (rng.chance(0.35)) f.pop -= 1;
     }
     // groupworks.js: without a workshop they make less, without a storehouse they keep less (1 once built).
@@ -441,7 +463,7 @@ export function factionsDaily(state) {
         const to = rng.pick(mates.length && hash01(state.seed, "convoy", f.name, today) < 0.6 ? mates : partners);
         const q = spawnAiParty(state, f, "convoy", f.bases[0], to.bases[0], { strength: Math.max(2, f.pop * 0.1), targetFaction: to.id });
         // caravans.js escortParty: what it carries (the 10 food and 10 scrap it delivers) is worth a token guard to them.
-        if (q) { q.goods = { supplies: { food: 10, scrap: 10 }, gear: [] }; escortParty(state, f, q, q.goods); }
+        if (q) { q.goods = { supplies: { ...typedFood(state, groupMix(f), 10), scrap: 10 }, gear: [] }; escortParty(state, f, q, q.goods); }
       }
     }
 
@@ -555,10 +577,10 @@ export function makeGang(state, tile, opts = {}) {
     id: newId(), name, type, color: FACTION_COLORS[state.factions.length % FACTION_COLORS.length],
     bases: [tile], pop, alive: true, known: !!opts.known,
     goodwill: Math.min(-45, def.goodwill - rng.int(0, 10)), lastDiplomacy: 0, pact: null,
-    stock: { food: pop * 6, ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, preserved: Math.round(pop * 0.5), jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 }, // brass..primers: reloading.js
+    stock: { ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0, ...groupStartFood(state, type, pop) }, // food: foods.js; brass..primers: reloading.js
     lootedGear: [], raidCooldown: rng.int(6, 12), arrived: day(state), gear: isAggressiveType({ type }) ? gangArms(state) : 1,
   };
-  for (const [k, q] of Object.entries(opts.stock || {})) if (Number.isFinite(q) && q > 0) f.stock[k] = (f.stock[k] || 0) + q;
+  for (const [k, q] of Object.entries(typeGoods(state, opts.stock || {}, groupMix(f)))) if (Number.isFinite(q) && q > 0) f.stock[k] = (f.stock[k] || 0) + q; // foods.js: "food" in days, as its kind's food
   state.factions.push(f);
   ensureArsenal(state, f); // arsenal.js: the kit they bring (later in the run some of their kit's best guns, eras.js gangArms)
   const t = state.tiles[tile];
@@ -698,7 +720,7 @@ export function raidStakes(state, base, party) {
   const breakIn = value * (store ? 0.1 : 0.2) + wrecked(RAID_DAMAGE.outcome.broken, 8) + 2 * 25;
   const overrun = value * (store ? 0.25 : 0.5) + wrecked(RAID_DAMAGE.outcome.overrun, 8) + 3 * 40 + (base.type === "outpost" ? 300 : 0);
   const fight = r >= 1.4 ? held : r >= RAIDS.HOLD ? 0.7 * held + 0.3 * breakIn : r >= 0.9 ? breakIn : r >= RAIDS.BREAK ? (breakIn + overrun) / 2 : overrun;
-  const food = Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3));
+  const food = Math.min(Math.floor(foodIn(base.stock)), Math.ceil(foodIn(base.stock) * 0.3));
   return { ratio: r, fight: Math.round(fight), tribute: Math.round(food * 2 + 30 * 0.5) };
 }
 
@@ -1022,7 +1044,7 @@ function takeOver(state, f, ruins, by) {
 
 export function recruit(state, n, foodCost) {
   const h = hub(state);
-  h.stock.food = Math.max(0, h.stock.food + foodCost);
+  if (foodCost < 0) payFood(h, -foodCost, state); else if (foodCost > 0) giveFood(state, h, foodCost);
   const names = [];
   for (let i = 0; i < n; i++) {
     const s = makeSurvivor(state, 0.9);
@@ -1109,7 +1131,7 @@ export function raidWarning(state, party) {
   base.alert = wasAlert;
   const force = raidForce(f, party.strength);
   // Tribute is a share of the food on hand when it is paid, and never more than there is.
-  const tributeNow = () => ({ food: Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3)), ammo: 30 });
+  const tributeNow = () => ({ food: Math.min(Math.floor(foodIn(base.stock)), Math.ceil(foodIn(base.stock) * 0.3)), ammo: 30 }); // food: days of it (foods.js)
   if (party.viaRadio) log(state, `${f.name} knew where ${base.name} was, though none of theirs was seen near it: someone must have been listening to our radio.`, "danger"); // intel.js
   addCard(state, {
     title: `Raiders heading for ${base.name}`,
@@ -1118,19 +1140,19 @@ export function raidWarning(state, party) {
       { label: "Prepare defenses", hint: `Everyone at the base takes a post: non-guards count 1.3× their combat power instead of 0.8× (guards stay at 1.5×). Defense ${Math.round(def)} → ${Math.round(prepared)}. Building and repairs stop here until the raid is over`, resolve: (st) => { base.alert = true; return `${base.name} prepares for the attack.`; } },
       {
         label: `Pay tribute (30% of the food, ${payWord(state, base, 30)})`, // rounds by calibre: the ones its guns need least
-        hint: `About ${tributeNow().food} food right now. They turn back and goodwill rises by ${RAIDS.TRIBUTE_GW}${isAggressiveType(f) ? `, but it fades again (${RAIDS.TRIBUTE_FADE} a day): they will be back` : ""}`,
+        hint: `About ${tributeNow().food} days of food right now. They turn back and goodwill rises by ${RAIDS.TRIBUTE_GW}${isAggressiveType(f) ? `, but it fades again (${RAIDS.TRIBUTE_FADE} a day): they will be back` : ""}`,
         disabled: (st) => totalRounds(base.stock) < 30 || !st.parties.includes(party),
         resolve: (st) => {
           if (!st.parties.includes(party)) return "The raiders are already gone.";
           if (totalRounds(base.stock) < 30) return `${base.name} no longer has 30 rounds to offer. The raiders keep coming.`;
           const t = tributeNow();
-          base.stock.food = Math.max(0, (base.stock.food || 0) - t.food);
+          const took = takeFood(base, t.food, { eggs: false, state: st }); // the soonest to spoil first
           const paid = payAmmoKeys(st, base, t.ammo); // ammo.js: the rounds its guns need least
           changeGoodwill(st, f, RAIDS.TRIBUTE_GW, "tribute");
           if (isAggressiveType(f)) f.boughtGw = (f.boughtGw || 0) + RAIDS.TRIBUTE_GW; // fades again (factionsDaily)
           party.returning = true;
           base.alert = false; // the raid is off: the base stands down
-          return `${f.name} took the tribute (${t.food} food, ${roundsText(paid)}) and turned back.`;
+          return `${f.name} took the tribute (${foodText(took.items, 3)}, ${roundsText(paid)}) and turned back.`;
         },
       },
       {

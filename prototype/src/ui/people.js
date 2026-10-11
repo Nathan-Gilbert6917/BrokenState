@@ -46,8 +46,8 @@ export function recruitModal(state, card) {
     </div></div>`;
   const teamBox = t ? `<h3>The team</h3><div class="card small"><div class="kv">
       <div>People</div><div>${t.members}${k ? ` <span class="muted">→ ${t.members + k}</span>` : ""}</div>
-      <div${tip("Food and water the team carries (1 of each a day per person)")}>Rations</div><div class="${t.ok ? "" : "danger"}">${Math.floor(t.food)} food, ${Math.floor(t.water)} water · ${n1(t.days)} days${k ? ` <span class="muted">→ ${n1(t.daysWith)} with them</span>` : ""}</div>
-      <div>Way home</div><div>about ${t.hours} hours to ${esc(t.home.name)}${t.ok ? "" : ` · <span class="danger">needs ${t.need} food and ${t.needWater} water</span>`}</div>
+      <div${tip("Food and water the team carries (1 of each a day per person)")}>Rations</div><div class="${t.ok ? "" : "danger"}">${Math.floor(t.food)} days of food, ${Math.floor(t.water)} water · ${n1(t.days)} days${k ? ` <span class="muted">→ ${n1(t.daysWith)} with them</span>` : ""}</div>
+      <div>Way home</div><div>about ${t.hours} hours to ${esc(t.home.name)}${t.ok ? "" : ` · <span class="danger">needs ${t.need} days of food and ${t.needWater} water</span>`}</div>
     </div></div>` : "";
   return `<div class="box wide">
     <h1>${esc(card.title)}</h1>

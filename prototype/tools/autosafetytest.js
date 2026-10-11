@@ -13,6 +13,7 @@
 //   5. the farm crew (FARM_AP): with the food at its target the plots' "need" crew farms, at most FARM_AP.share of the
 //      people however many plots there are; short of it, more.
 // Usage: node tools/autosafetytest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, residents, makeSurvivor, hourOfDay } from "../src/sim/world.js";
 import { setAutopilot, safetyAI, UPKEEP_CREW, GROWTH_WATER, FARM_AP } from "../src/sim/autopilot.js";
 import { PAYOUT, payoutFloor, payoutSpare, payoutBreaks, groupPayoutSpare, foodUse, mouthsAt } from "../src/sim/upkeep.js";
@@ -42,7 +43,7 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
   const st = W();
   setAutopilot(st, true, "balanced");
   const h = hub(st);
-  Object.assign(h.stock, { food: 300, preserved: 0, water: 60, rawwater: 0 });
+  Object.assign(h.stock, { water: 60, rawwater: 0 }); setFood(h, 300);
   const heads = mouthsAt(st, h).heads;
   const wFloor = heads * thirstFactor(st) * PAYOUT.days, fFloor = foodUse(st, h).total * PAYOUT.days;
   check(near(payoutFloor(st, h, "water"), wFloor) && near(payoutFloor(st, h, "food"), fFloor), `the floor is ${PAYOUT.days} days of everyone's need (water ${wFloor.toFixed(1)}, food ${fFloor.toFixed(1)} for ${heads})`);
@@ -54,25 +55,25 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
   check(safetyAI.tradeSpare(st, h).water === 0 && payoutBreaks(st, h, { water: 1 }) && payoutBreaks(st, h, { rawwater: 1 }), "below the floor: no water to trade, any water paid breaks it");
   check(!payoutBreaks(st, h, { scrap: 50, food: 10 }), "food above the floor and scrap: fine");
   // A raid's tribute (30% of the fresh food): paid only while the rest keeps the floor.
-  h.stock.food = Math.ceil(fFloor * 3); h.stock.preserved = 0;
-  check(safetyAI.tributeSpared(st, h), `a tribute out of ${h.stock.food} food leaves the reserve: it may be paid`);
-  h.stock.food = Math.floor(fFloor * 1.2);
-  check(!safetyAI.tributeSpared(st, h), `a tribute out of ${h.stock.food} food would go below ${Math.round(fFloor)}: not paid`);
-  h.stock.preserved = Math.ceil(fFloor); // preserved food counts in the reserve
+  setFood(h, Math.ceil(fFloor * 3)); setJarred(h, 0);
+  check(safetyAI.tributeSpared(st, h), `a tribute out of ${food(h)} food leaves the reserve: it may be paid`);
+  setFood(h, Math.floor(fFloor * 1.2));
+  check(!safetyAI.tributeSpared(st, h), `a tribute out of ${food(h)} food would go below ${Math.round(fFloor)}: not paid`);
+  setJarred(h, Math.ceil(fFloor)); // preserved food counts in the reserve
   check(safetyAI.tributeSpared(st, h), "preserved food counts in the reserve");
   // AI groups: what they sell keeps PAYOUT.days a head; their tribute never goes below it.
   const f = st.factions.find((x) => x.alive && x.pop >= 6 && !x.atWar && x.type !== "zealot"); // zealots never pay
   if (f) {
-    f.stock.food = f.pop * PAYOUT.days + 7;
+    setFood(f, f.pop * PAYOUT.days + 7);
     check(groupPayoutSpare(f, "food") === 7 && available(f, "food") <= 7, `a group sells food only above ${PAYOUT.days} days a head (spare ${groupPayoutSpare(f, "food")}, sells ${available(f, "food")})`);
     const att = st.factions.find((x) => x !== f && x.alive);
     let paid = null;
     for (let i = 0; i < 200 && !paid; i++) {
       st.hour += 1;
-      f.stock.food = f.pop * PAYOUT.days + 4; f.stock.ammo = 100; f.stock.meds = 10; f.stock.scrap = 40;
+      setFood(f, f.pop * PAYOUT.days + 4); f.stock.ammo = 100; f.stock.meds = 10; f.stock.scrap = 40;
       paid = raidAnswer(st, att, f, 100, 10);
     }
-    check(paid === "tribute" && f.stock.food >= f.pop * PAYOUT.days, `a group's tribute leaves it ${PAYOUT.days} days of food a head (${f.stock.food} for ${f.pop})`);
+    check(paid === "tribute" && food(f) >= f.pop * PAYOUT.days, `a group's tribute leaves it ${PAYOUT.days} days of food a head (${food(f)} for ${f.pop})`);
   }
 }
 
@@ -118,7 +119,7 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
     setAutopilot(st, true, "balanced");
     const h = hub(st);
     grow(st, h, UPKEEP_CREW.from + 2);
-    Object.assign(h.stock, { food: 2000, water: 400, scrap: 200, parts: 20 });
+    Object.assign(h.stock, { water: 400, scrap: 200, parts: 20 }); setFood(h, 2000);
     addBuilding(h, "well");
     addBuilding(h, "storehouse"); // a fixture nobody operates (a still would be staffed in one world only)
     for (const fx of fixtures(h)) { fx.wear = fx.type === "storehouse" ? 70 : 50; fx.built = 1; } // built: not the holdout's starting wear (breakdowns.js)
@@ -164,7 +165,7 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
   setAutopilot(st, true, "balanced");
   const h = hub(st);
   grow(st, h, 8);
-  Object.assign(h.stock, { food: 3000, water: 300, scrap: 300, parts: 30 });
+  Object.assign(h.stock, { water: 300, scrap: 300, parts: 30 }); setFood(h, 3000);
   for (let i = 0; i < 6; i++) addBuilding(h, "bunkhouse");
   addBuilding(h, "cistern"); addBuilding(h, "cistern");
   for (let i = 0; i < 18; i++) h.armory.push(newItem("waterfilter", 1, 1)); // filters cover the summer on paper
@@ -185,14 +186,14 @@ const grow = (st, base, n) => { while (residents(st, base.id).length < n) addPer
   grow(st, h, 20);
   for (let i = 0; i < 4; i++) addBuilding(h, "farm_plot");
   const farmersAt = () => atBase(st, h.id).filter((s) => s.role === "farm").length;
-  h.stock.food = 20 * 400; h.stock.preserved = 0;
+  setFood(h, 20 * 400); setJarred(h, 0);
   safetyAI.planRoles(st, h);
   const fw = farmersWanted(st, h);
   check(fw.need > 0 && farmersAt() <= Math.min(fw.need, Math.ceil(20 * FARM_AP.share)), `food far above its target: the plots' need crew, at most ${Math.round(FARM_AP.share * 100)}% of the people (${farmersAt()} of ${fw.need} need / ${fw.ideal} ideal)`);
   for (let i = 0; i < 8; i++) addBuilding(h, "farm_plot"); // more plots than people
   safetyAI.planRoles(st, h);
   check(farmersAt() <= Math.ceil(20 * FARM_AP.share) && farmersWanted(st, h).need > Math.ceil(20 * FARM_AP.share), `more plots than hands: still at most ${Math.ceil(20 * FARM_AP.share)} farmers while food is comfortable (${farmersAt()}, the plots' need ${farmersWanted(st, h).need})`);
-  h.stock.food = 20 * 6;
+  setFood(h, 20 * 6);
   safetyAI.planRoles(st, h);
   check(farmersAt() >= Math.min(fw.ideal, 20 - 4), `food short: the ideal crew and more (${farmersAt()})`);
   check(edibleFood(h) > 0 && waterIn(h.stock) >= 0, "stocks intact");

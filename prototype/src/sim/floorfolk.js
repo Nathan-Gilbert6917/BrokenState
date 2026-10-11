@@ -414,7 +414,7 @@ function talkTo(st, b, S, g, p, chance) {
         const h = haulOf(u);
         h.sup.food = (h.sup.food || 0) + food; h.sup.water = (h.sup.water || 0) + water;
         b.raid.found.food = (b.raid.found.food || 0) + food; b.raid.found.water = (b.raid.found.water || 0) + water;
-        gift = ` They pass ${food} food and ${water} water out through a gap in the barricade; ${first(u.name)} takes it.`;
+        gift = ` They pass ${food} days of food and ${water} water out through a gap in the barricade; ${first(u.name)} takes it.`;
       }
     }
     say(b, `They talk, through the door. ${told}${gift}`, "good");

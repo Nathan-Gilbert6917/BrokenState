@@ -14,6 +14,7 @@
 // Broodmother and the brood; well-armed vs poorly armed team) and break-ins at the
 // hub by horde size.
 // Usage: node tools/hivetest.js [trials=24]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, makeSurvivor, hub, alive } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import {
@@ -40,7 +41,7 @@ const TRIALS = Number(process.argv[2] || 24);
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const world = (seed = 42) => { const st = createWorld({ seed, factionCount: 8 }); st.started = true; return st; };
-const feed = (st) => { const h = hub(st); if (!h) return; const n = alive(st).length; h.stock.food = Math.max(h.stock.food || 0, n * 6); h.stock.water = Math.max(h.stock.water || 0, n * 6); };
+const feed = (st) => { const h = hub(st); if (!h) return; const n = alive(st).length; setFood(h, Math.max(food(h) || 0, n * 6)); h.stock.water = Math.max(h.stock.water || 0, n * 6); };
 const runDays = (st, days, fed = true) => { const end = st.hour + days * 24; while (st.hour < end && !st.gameOver) { tickHour(st); if (fed && st.hour % 24 === 0) feed(st); } };
 const land = (st, id) => st.tiles[id].terrain !== "water" || st.tiles[id].bridge;
 const t0 = Date.now();

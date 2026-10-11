@@ -2,6 +2,7 @@
 // bases (repeat, one-off, with and without a vehicle, hold, disband, recreate, blocked cases) and runs a
 // long campaign. Checks stock moves, schedules, blocked messages and that nothing crashes or gets stuck.
 // Usage: node tools/supplytest.js [days] [seeds...]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, day, hub, atBase, newId, survivorById, baseById } from "../src/sim/world.js";
 import { planPath, partyMembers } from "../src/sim/parties.js";
@@ -78,7 +79,7 @@ for (const seed of seeds) {
   for (const f of state.factions) f.raidCooldown = 1e9;
   state.noNewGangs = true;
   const h = hub(state);
-  Object.assign(h.stock, { food: 700, water: 200, fuel: 120, ammo: 400, meds: 20, parts: 6, scrap: 60 });
+  Object.assign(h.stock, { water: 200, fuel: 120, ammo: 400, meds: 20, parts: 6, scrap: 60 }); setFood(h, 700);
   for (let i = 0; i < 6; i++) state.survivors.push({ ...state.survivors[i], id: newId(), name: `Extra${i} Hand`, leader: false, gear: { weapon: null, armor: null, tool: null }, skills: { ...state.survivors[i].skills }, traits: [], location: { kind: "base", baseId: h.id } });
   addBuilding(h, "bunkhouse"); // beds for the 6 extra hands, so crowding (morale.js) does not drive the crews away
   const people = atBase(state, h.id);
@@ -97,12 +98,12 @@ for (const seed of seeds) {
   check(!est.error && est.hoursOut > 0, `estimate failed: ${est.error}`);
   const j1 = saveSupplyRun(state, form({ originId: h.id, destId: A.id, crew: [hubCrew[0].id, hubCrew[1].id], vehicleId: truck.id,
     deliver: [{ key: "food", qty: 20 }, { key: "ammo", qty: 40 }, { key: "water", qty: 10 }], pickup: [{ key: "scrap", qty: 4 }, { key: "fuel", qty: 5 }], every: 4 })).job;
-  const before = { ammo: totalRounds(h.stock), food: h.stock.food }; // ammo.js: every round, any calibre
+  const before = { ammo: totalRounds(h.stock), food: food(h) }; // ammo.js: every round, any calibre
   dispatchSupplyRun(state, j1, true);
   const p1 = jobParty(state, j1);
   check(p1 && p1.vehicle && p1.routeKind === "supply", "run 1 did not leave by truck");
   check(before.ammo - totalRounds(h.stock) === 40 + totalRounds(p1.supplies), `hub ammo moved ${before.ammo - totalRounds(h.stock)}, expected ${40 + totalRounds(p1.supplies)}`);
-  check(before.food - h.stock.food === 20 + p1.supplies.food, "hub food did not move by delivery + road food");
+  check(Math.abs(food(p1.cargo) - 20) < 1e-6 && Math.abs(before.food - food(h) - (food(p1) + food(p1.cargo))) < 1e-6, `hub food did not move by delivery + road food (${(before.food - food(h)).toFixed(2)}: ${food(p1.cargo).toFixed(2)} delivered + ${food(p1).toFixed(2)} for the road)`);
   let delivered = null, pickedUp = null, hours = 0;
   while (jobParty(state, j1) && hours < 24 * 6) {
     const snapA = { ...A.stock };
@@ -111,7 +112,7 @@ for (const seed of seeds) {
     tickHour(state); resolveCards(state); hours++;
     const q = jobParty(state, j1);
     if (phase === "out" && q && q.phase === "back" && state.hour % 24 !== 0) {
-      delivered = { food: A.stock.food - snapA.food + (snapA.food >= 0 ? 0 : 0), ammo: totalRounds(A.stock) - totalRounds(snapA), cargoAmmo: totalRounds(cargo) };
+      delivered = { food: food(A) - snapA.food + (snapA.food >= 0 ? 0 : 0), ammo: totalRounds(A.stock) - totalRounds(snapA), cargoAmmo: totalRounds(cargo) };
       pickedUp = { scrap: q.cargo.supplies.scrap || 0, fuel: q.cargo.supplies.fuel || 0 };
     }
   }
@@ -129,16 +130,16 @@ for (const seed of seeds) {
   // preserved stores (census seed 3, aggressive: a hub with 0 fresh and 934 preserved kept every run home "for want of
   // food" while an outpost died of thirst).
   {
-    const keep = { food: h.stock.food, preserved: h.stock.preserved };
-    h.stock.food = 0; h.stock.preserved = 60;
+    const keep = { food: food(h), preserved: jarred(h) };
+    setFood(h, 0); setJarred(h, 60);
     const jw = saveSupplyRun(state, form({ originId: h.id, destId: A.id, crew: [hubCrew[2].id], deliver: [{ key: "scrap", qty: 2 }], schedule: "once" })).job;
     dispatchSupplyRun(state, jw, true);
     const pw = jobParty(state, jw);
     check(!!pw, `a run on preserved food alone did not leave (${jw.blocked})`);
-    if (pw) check((pw.supplies.preserved || 0) > 0 && !pw.supplies.food && h.stock.preserved === 60 - pw.supplies.preserved, `road food not packed from the preserved stores (${JSON.stringify(pw.supplies)}, hub preserved ${h.stock.preserved})`);
+    if (pw) check(jarred(pw) > 0 && Math.abs(jarred(h) - (60 - jarred(pw))) < 1e-6, `road food packed from the jarred stores (${JSON.stringify(pw.supplies)}, hub jarred ${jarred(h)})`);
     for (let k = 0; jobParty(state, jw) && k < 24 * 6; k++) { tickHour(state); resolveCards(state); }
     check(!jobParty(state, jw), "the run on preserved food did not come home within 6 days");
-    h.stock.food = keep.food; h.stock.preserved = keep.preserved;
+    setFood(h, keep.food); setJarred(h, keep.preserved);
   }
 
   // 2. Outpost -> outpost on foot, every 6 days.
@@ -192,7 +193,7 @@ for (const seed of seeds) {
       if (h.stock.fuel < 40) h.stock.fuel += 30; // and finds fuel now and then
       // Teams bring food and water home (crops ripen in batches and stored food spoils), and scrap to Outpost A
       // (picking around a base rarely finds anything now): this test is about the supply runs, not about famine.
-      if (h.stock.food < 200) h.stock.food += 100;
+      if (food(h) < 200) addDays(h, 100);
       if (h.stock.water < 60) h.stock.water += 40;
       if (A.stock.scrap < 8 && d % 3 === 0) A.stock.scrap += 6;
       // Release the held convoy after 4 days of holding.
@@ -208,7 +209,7 @@ for (const seed of seeds) {
         check(f.crew.length === 1, "recreate found no crew at B");
         check(!f.deliver.length && f.pickup[0]?.key === "ammo", "recreate did not swap deliver and pick-up");
         f.atDest = "disband";
-        B.stock.food += 10; B.stock.water += 10; // the player tops up B so the crew has road supplies
+        addDays(B, 10); B.stock.water += 10; // the player tops up B so the crew has road supplies
         saveSupplyRun(state, f);
         recreated = d;
       } else if (recreated && !recreateDone && j4.status === "disbanded" && j4.originId === B.id) {
@@ -239,7 +240,7 @@ for (const seed of seeds) {
   const lost = allLogs.filter((l) => /never arrived/.test(l.text)).length;
   const ships = A.stock.scrap;
   console.log(`  runs: j1 ${j1.runs} (every 4d, paused 10d), j2 ${j2.runs}, hold j3 ${j3.runs}, disband+recreate j4 ${j4.runs}, fallback j7 ${j7.runs}; longest road ${maxRoad}h; lost convoys ${lost}; blocked logs ${blockedLogs}`);
-  console.log(`  statuses: ${[j1, j2, j3, j4, j6, j7, j8].filter(Boolean).map((j) => `${j.id}:${supplyStatus(state, j).key}`).join(" ")}; A scrap ${Math.floor(ships)}, hub food ${Math.floor(h.stock.food)}`);
+  console.log(`  statuses: ${[j1, j2, j3, j4, j6, j7, j8].filter(Boolean).map((j) => `${j.id}:${supplyStatus(state, j).key}`).join(" ")}; A scrap ${Math.floor(ships)}, hub food ${Math.floor(food(h))}`);
   for (const j of [j1, j2, j3, j4, j7].filter(Boolean)) console.log(`  job ${j.id}: ${supplyStatus(state, j).text} | ${j.lastResult}`);
   summary.push({ seed, j1: j1.runs, j2: j2.runs, lost });
 }
@@ -258,7 +259,7 @@ for (const seed of seeds) {
     for (const s of people) s.health = 100;
     addBuilding(O, "well");
     O.stock.scrap = 0; O.stock.parts = 0;
-    h.stock.scrap = 60; h.stock.parts = 6; h.stock.food = Math.max(h.stock.food || 0, 80);
+    h.stock.scrap = 60; h.stock.parts = 6; setFood(h, Math.max(food(h) || 0, 80));
     setAutopilot(state, true, "balanced");
     const well = O.buildings.find((b) => b.type === "well");
     breakFixture(state, O, well, "test");

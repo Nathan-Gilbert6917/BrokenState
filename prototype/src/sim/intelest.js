@@ -21,6 +21,7 @@
 // A party on the road (partyIntel): only while in view (state.live: base vision, teams in radio contact, by night as
 //   far as they see); its size as a range (wider at night), its vehicle, the way it is heading, and where it is going
 //   only if you heard it on their channel or your lookouts called it.
+import { foodIn } from "./foods.js"; // days of food, every kind
 import { day, isNight, factionById, localId } from "./world.js";
 import { hash01 } from "./skills.js";
 import { partyTile, tileLabel } from "./parties.js";
@@ -70,7 +71,7 @@ const word = (v, cuts, words = ["low", "some", "plenty"]) => (v < cuts[0] ? word
 // Stores a head, in words (a group eats about 1 food a person a day).
 function storeWords(stock, pop) {
   const p = Math.max(1, pop || 1);
-  return [["food", word((stock.food || 0) / p, [4, 12])], ["ammo", word((stock.ammo || 0) / p, [5, 20])], ["meds", word((stock.meds || 0) / p, [0.5, 2])], ["fuel", word((stock.fuel || 0) / p, [2, 10])]];
+  return [["food", word(foodIn(stock) / p, [4, 12])], ["ammo", word((stock.ammo || 0) / p, [5, 20])], ["meds", word((stock.meds || 0) / p, [0.5, 2])], ["fuel", word((stock.fuel || 0) / p, [2, 10])]];
 }
 // The relationship that makes them tell you what they have.
 export const shares = (state, f) => !!f && f.alive && (isMember(state, f) || !!f.pact || attitude(f) === "Allied");

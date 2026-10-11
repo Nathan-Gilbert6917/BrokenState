@@ -1,5 +1,5 @@
 // Power (suggestions-2 #5): generators burn fuel to power a handful of buildings, and an ethanol still turns surplus
-// or spoiled food into that fuel.
+// fresh food into that fuel (spoiled food is thrown out, user pick 2026-10-10).
 //
 //   Generator (machines-2 2026-10-10, the user's pick: "generators do not need operators just people to repair and fuel
 //     it"; it was a workshop station with an operator): no operator, no Operate role. It gives POWER.genOut (6) power
@@ -21,10 +21,10 @@
 //     Repairs (breakdowns.js): it wears by the days it ran (FIXTURES.generator, b.lastRan), breaks, and a breakdown
 //     needs a Mechanics 3 hand and machine parts, as before. Loud: +POWER.genHeat (4) Heat at the base while it runs
 //     (hordes.js baseHeat).
-//   Ethanol still (station "still", buildings.js RECIPES.still): an operator turns 8 food + 2 water into 3 fuel a
-//     day; up to STILL.mash (4) of the food can be yesterday's spoiled food (storage.js keeps it as mash).
+//   Ethanol still (station "still", buildings.js RECIPES.still): an operator turns 8 days of fresh food (foods.js: the
+//     soonest to spoil first) + 2 water into 3 fuel a day. Spoiled food is thrown out, not distilled (STILL.mash 0).
 //   Users (POWER_USERS, need in power units, served in this order while the supply lasts):
-//     walk-in freezer 2 (freezer-parts: food in it keeps ~20× longer, storage.js; base.freezerOn below), radio station 1
+//     walk-in freezer 2 (freezer-parts: food in it keeps 20× longer than its shelf life, storage.js; base.freezerOn below), radio station 1
 //     (+2 tiles of coverage, radio.js), floodlights 1 (no fuel burned per attack, defences.js), machine shop 2 (2 parts
 //     a day from 9 scrap instead of 1 from 6), preserving room 1 (half as much again a day), vacuum sealer 1
 //     (hasSealer: the hook for the packaged survival meals of a later cooking wave). The cold store is an ice house
@@ -32,6 +32,36 @@
 //     A broken building (breakdowns.js) draws nothing and gets nothing. Workshop stations draw only while their
 //     operator is at work (an order that holds them, or no operator, draws nothing). Each building can be switched off
 //     by hand (base.powerOff[id]).
+//   Tiers (gen-tiers 2026-10-10, the user's request: "Generators have several tier upgrades to increase power for each
+//     tier requires more fuel"; GEN_TIERS, b.tier, a missing tier is 1): a generator is upgraded where it stands (no new
+//     plot, buildings.js canUpgradeGenerator / queueGenUpgrade, a queue job { type: "generator", target, tier }), one
+//     step at a time:
+//       tier                    power  fuel a day (idle → full load)  tank  Heat  upgrade (scrap, parts, el.)  hours  Mechanics  manual
+//       1 Portable generator      6     2 → 2 (flat)                   3     4    built: 20, 4                   30      3        Generator Schematics
+//       2 Standby generator      12     2.25 → 3.5                     5     6    24, 5                          30      4        (the same)
+//       3 Industrial diesel set  24     3 → 6                          9     8    40, 8, 2 electronics           48      5        + Industrial Power Manual
+//     Fuel (the user's "each tier requires more fuel"): a bigger engine burns more at any load. The portable set runs
+//     flat out whatever it powers (no governor on a cheap petrol set: 2 a day running, as it always was, so tier 1 plays
+//     exactly as before); the standby and the industrial sets have a governor and burn idle + (full − idle) × the share
+//     of their power drawn (genBurn): only what they must. A tier-3 set running one freezer (2 of 24) burns 3.25 a day,
+//     not 6; a standby set with the same freezer 2.46, the portable set 2. At full load the bigger sets are a little
+//     thriftier per unit of power (0.33, 0.29, 0.25 fuel a power a day): the one reason to upgrade besides the power
+//     itself; a base that does not need the power pays more fuel for a bigger set, never less. Why a load share and not
+//     a flat burn: it is two numbers a tier and one line here, and a flat 6 a day for an idling tier 3 would punish the
+//     base that built ahead of its needs. The tank holds about a day and a half at that tier's full burn (3, 5, 9), so a
+//     late morning refuelling still never leaves a gap.
+//     Heat (hordes.js baseHeat, generatorHeat): +4 / +6 / +8 while it runs. Wear and spares (breakdowns.js fxDef:
+//     FIXTURES.generator / generator2 / generator3): wears 1.6 / 1.9 / 2.2 a running day, a spare part every 20 / 16 /
+//     12 running days, a proper repair 4 scrap 2 parts Mechanics 3 / 6 scrap 3 parts Mechanics 4 / 8 scrap 4 parts
+//     Mechanics 5. Demolishing gives half of everything put into it back (buildings.js demolishRefund: the build and
+//     the upgrades). Old saves: every generator is tier 1 (migrateGenTiers).
+//     Several generators (max 2 a base, any tiers): the supply is the sum of the running ones; powerStatus runs the
+//     fewest that cover the demand, the cheapest for the load first (a portable set before a standby set idling for
+//     one freezer), the ones already running before an equal one (no flipping), and splits the load between them in
+//     that order (each carries up to its power: its burn).
+//     The governor and stewards (autopilot.js autoGenUpgrade) upgrade one when the demand wants more than the
+//     generators give and the base's fuel can carry the bigger burn (genUpgradeFuelOk); the AI groups by the same
+//     tiers, costs, skill and manual (groupworks.js MACH.tiers).
 // The walk-in freezer (freezer-parts): refreshPower sets base.freezerOn (true while at least one freezer here is
 // served: built, not broken, not switched off, power enough from a running generator with fuel in its tank) and
 // base.freezersOn (how many), every hour and before the stations run each day. That flag is the contract with
@@ -45,26 +75,42 @@
 import { BUILDINGS, RECIPES, stationOperator, assignStations } from "./buildings.js";
 import { day, log, atBase, hourOfDay, skill } from "./world.js";
 import { orderHold } from "./production.js";
+import { stockHas } from "./water.js"; // a recipe's "fresh" in days of fresh food
 import { workFactor } from "./health.js";
 import { sickRestWhy } from "./sickrest.js"; // the ill rest: they do no chores
 
-export const POWER = { genOut: 6, genFuel: 2, genHeat: 4, tank: 3 };
-export const STILL = { mash: 4 };
+export const POWER = { genOut: 6, genFuel: 2, genHeat: 4, tank: 3 }; // tier 1 (GEN_TIERS[1])
+// The generator's tiers (see the header): out (power), idle / full (fuel a day running at no load / at full load: genBurn),
+// tank, heat; the upgrade to a tier: cost, hours (work-hours), req (a survivor's skill at the base), bp (a manual studied).
+export const GEN_TIERS = [
+  null,
+  { name: "Portable generator", out: POWER.genOut, idle: POWER.genFuel, full: POWER.genFuel, tank: POWER.tank, heat: POWER.genHeat, desc: "A petrol generator on a wheeled frame: it runs flat out whatever it powers" },
+  { name: "Standby generator", out: 12, idle: 2.25, full: 3.5, tank: 5, heat: 6, cost: { scrap: 24, parts: 5 }, hours: 30, req: { mechanics: 4 },
+    desc: "A liquid-cooled standby set on a concrete pad, with a governor: it burns 2.25 fuel a day idling, 3.5 at full load" },
+  { name: "Industrial diesel set", out: 24, idle: 3, full: 6, tank: 9, heat: 8, cost: { scrap: 40, parts: 8, electronics: 2 }, hours: 48, req: { mechanics: 5 }, bp: "indpower",
+    desc: "A skid-mounted diesel set out of a factory or a hospital basement, with its control panel: it burns 3 fuel a day idling, 6 at full load" },
+];
+export const genTier = (b) => Math.max(1, Math.min(GEN_TIERS.length - 1, Math.floor(Number(b && b.tier) || 1)));
+export const genDef = (b) => GEN_TIERS[genTier(b)];
+export const genName = (b) => genDef(b).name;
+export const genTank = (b) => genDef(b).tank;
+// Fuel a day a generator of tier def burns while running with `load` power drawn from it (see the header).
+export const genBurn = (def, load) => def.idle + (def.full - def.idle) * Math.max(0, Math.min(1, (Number(load) || 0) / def.out));
+export const STILL = { mash: 0 }; // no spoiled food goes into the still (food-types: food spoils by its lots and is thrown out; kept for old callers)
 // The refuelling chore: from this hour of the day; the share of an hour it takes.
 export const REFUEL = { from: 6, hours: 0.5 };
 export const POWER_USERS = {
-  freezer:      { need: 2, what: "a walk-in freezer: food in it keeps about 20 times longer than in a cellar (300 room)" },
+  freezer:      { need: 2, what: "a walk-in freezer: food in it keeps 20 times longer than its shelf life (×0.05 a day; 300 days of food room)" },
   radio:        { need: 1, what: "+2 tiles of radio coverage" },
   floodlights:  { need: 1, what: "no fuel burned when a horde attacks" },
   machine_shop: { need: 2, what: "power tools: 2 parts a day from 9 scrap (1 from 6 without)" },
-  kitchen:      { need: 1, what: "an electric stove: half as much again a day (14 food → 12 preserved)" },
+  kitchen:      { need: 1, what: "an electric stove: half as much again a day (14 days of fresh food → 12 portions of jarred food)" },
   sealer:       { need: 1, what: "a vacuum sealer: packs cooked food into long-keeping survival meals" },
 };
 // Powered stations: inputs and outputs multiplied (rounded) while they are served.
 export const POWER_BOOST = { machine_shop: { in: 1.5, out: 2 }, kitchen: { in: 1.5, out: 1.5 } };
 export const RADIO_BOOST = 2;
 const PRIORITY = Object.keys(POWER_USERS);
-const HOURLY = POWER.genFuel / 24;
 
 export const isGen = (b) => !!b && b.type === "generator";
 export const generators = (base) => base.buildings.filter(isGen);
@@ -85,7 +131,7 @@ function stationWants(state, base, b) {
   if (!stationOperator(state, base, b)) return false;
   if (orderHold(state, base, b)) return false;
   const r = RECIPES[BUILDINGS[b.type].station];
-  return Object.entries(r.in).every(([k, v]) => (base.stock[k] || 0) >= v);
+  return Object.entries(r.in).every(([k, v]) => (k === "fresh" || k === "food" ? stockHas(base.stock, k) : base.stock[k] || 0) >= v); // fresh: days of fresh food, every kind (foods.js)
 }
 
 // ---------- the refuelling chore ----------
@@ -105,7 +151,7 @@ export function refueller(state, base) {
 export function refuelChore(state, base) {
   const today = day(state);
   if (hourOfDay(state) < REFUEL.from) return 0;
-  const due = generators(base).filter((b) => !b.broken && !switchedOff(base, b) && b.refuelDay !== today && tankOf(b) < POWER.tank - 1e-9);
+  const due = generators(base).filter((b) => !b.broken && !switchedOff(base, b) && b.refuelDay !== today && tankOf(b) < genTank(b) - 1e-9);
   if (!due.length) return 0;
   let avail = Math.max(0, (base.stock.fuel || 0) - genReserve(base));
   if (avail < 1e-6) return 0;
@@ -113,7 +159,7 @@ export function refuelChore(state, base) {
   if (!who) return 0;
   let poured = 0;
   for (const b of due) {
-    const add = Math.min(POWER.tank - tankOf(b), avail);
+    const add = Math.min(genTank(b) - tankOf(b), avail);
     if (add <= 0) break;
     b.tank = tankOf(b) + add;
     b.refuelDay = today;
@@ -130,7 +176,8 @@ export function refuelChore(state, base) {
 export const choreShare = (state, s) => (s && s.chore && s.chore.hour === state.hour - 1 ? 1 - REFUEL.hours : 1);
 
 // Supply, demand and who gets power, worked out from the base as it is now (no side effects).
-// gens: [{ b, off, burned, fueled, ok, running, tank, reason }], users: [{ b, need, wants, served, off }].
+// gens: [{ b, def, off, burned, fueled, ok, running, tank, reason, load, burn }], users: [{ b, need, wants, served, off }].
+// load: the power drawn from a running generator; burn: its fuel a day at that load (genBurn).
 export function powerStatus(state, base) {
   const users = [];
   for (const type of PRIORITY) {
@@ -147,28 +194,42 @@ export function powerStatus(state, base) {
     const burned = b.burnHour === state.hour; // it ran this hour already (the hour's fuel paid)
     const fueled = burned || tankOf(b) > 1e-9;
     const reason = b.broken ? "Broken: needs repair (Repairs tab)" : off ? "Switched off" : "";
-    return { b, off, burned, fueled, ok: !b.broken && !off, running: false, tank: tankOf(b), reason };
+    return { b, def: genDef(b), off, burned, fueled, ok: !b.broken && !off, running: false, tank: tankOf(b), reason, load: 0, burn: 0 };
   });
-  // The ones running already go first (no flipping between two), then the fuller tank.
-  let needed = Math.ceil(demand / POWER.genOut);
+  // The fewest that cover the demand (see the header): one that covers what is left before one that does not, then the
+  // cheapest for that load, then one that ran already (no flipping between two alike), then the fuller tank.
   const ran = (g) => (g.burned || g.b.burnHour === state.hour - 1 ? 1 : 0);
-  for (const g of [...gens].sort((x, y) => ran(y) - ran(x) || y.tank - x.tank)) {
-    if (!g.ok) continue;
-    if (needed <= 0) { g.reason = demand > 0 ? "Standby: the other generator covers the demand" : "Standby: nothing draws power"; continue; }
-    if (!g.fueled) { g.reason = dryWhy(state, base, g.b); continue; }
+  const order = [];
+  let left = demand;
+  while (left > 0) {
+    const cand = gens.filter((g) => g.ok && g.fueled && !g.running);
+    if (!cand.length) break;
+    const covers = (g) => (g.def.out >= left ? 1 : 0);
+    const cost = (g) => genBurn(g.def, Math.min(left, g.def.out));
+    cand.sort((x, y) => covers(y) - covers(x) || (covers(x) ? cost(x) - cost(y) : y.def.out - x.def.out) || ran(y) - ran(x) || y.tank - x.tank);
+    const g = cand[0];
     g.running = true;
     g.reason = "Running";
-    needed--;
+    order.push(g);
+    left -= g.def.out;
   }
-  const running = gens.filter((g) => g.running);
-  const supply = running.length * POWER.genOut;
-  let left = supply;
+  for (const g of gens) {
+    if (!g.ok || g.running) continue;
+    g.reason = left <= 0 ? (demand > 0 ? "Standby: the other generator covers the demand" : "Standby: nothing draws power") : !g.fueled ? dryWhy(state, base, g.b) : "Standby";
+  }
+  const supply = order.reduce((a, g) => a + g.def.out, 0);
+  let room = supply;
   for (const u of users) {
-    if (!u.wants || left < u.need) continue;
+    if (!u.wants || room < u.need) continue;
     u.served = true;
-    left -= u.need;
+    room -= u.need;
   }
-  return { supply, demand, served: users.filter((u) => u.served).reduce((a, u) => a + u.need, 0), gens, users, running: running.length, fuelPerDay: running.length * POWER.genFuel, heat: running.length * POWER.genHeat };
+  const served = users.filter((u) => u.served).reduce((a, u) => a + u.need, 0);
+  // The load each running generator carries, in the order they were started.
+  let draw = served;
+  for (const g of order) { g.load = Math.min(g.def.out, draw); draw -= g.load; g.burn = genBurn(g.def, g.load); }
+  const fuelPerDay = Math.round(order.reduce((a, g) => a + g.burn, 0) * 100) / 100;
+  return { supply, demand, served, gens, users, running: order.length, fuelPerDay, heat: order.reduce((a, g) => a + g.def.heat, 0) };
 }
 // Why a generator's tank is dry: no fuel above the reserve, refuelled today already, nobody able here, or before 06:00.
 export function dryWhy(state, base, b) {
@@ -187,14 +248,14 @@ export function refreshPower(state, base) {
   const ps = powerStatus(state, base);
   for (const g of ps.gens) {
     if (!g.running || g.burned) continue;
-    g.b.tank = Math.max(0, tankOf(g.b) - HOURLY);
+    g.b.tank = Math.max(0, tankOf(g.b) - g.burn / 24); // its tier's burn at the load it carries (genBurn)
     if (g.b.tank < 1e-9) g.b.tank = 0;
     g.b.burnHour = state.hour;
     g.b.lastRan = state.hour; // breakdowns.js: it ran in the last day (wear, spares)
     g.burned = true;
   }
   base.power = {
-    day: day(state), supply: ps.supply, demand: ps.demand, running: ps.running,
+    day: day(state), supply: ps.supply, demand: ps.demand, running: ps.running, heat: ps.heat, fuel: ps.fuelPerDay,
     gens: ps.gens.filter((g) => g.running).map((g) => g.b.id),
     served: ps.users.filter((u) => u.served).map((u) => u.b.id),
   };
@@ -261,16 +322,54 @@ export const isPowered = (base, b) => !!(base && base.power && b && base.power.s
 export const poweredType = (base, type) => !!(base && base.power && base.buildings.some((b) => b.type === type && base.power.served.includes(b.id)));
 export const generatorRunning = (base, b) => !!(base && base.power && base.power.gens.includes(b.id));
 // Engine noise for hordes.js baseHeat.
-export const generatorHeat = (base) => (base && base.power ? base.power.gens.length * POWER.genHeat : 0);
+export const generatorHeat = (base) => (base && base.power ? base.power.heat ?? base.power.gens.length * POWER.genHeat : 0); // by tier (GEN_TIERS heat)
 // Extra radio coverage for radio.js.
 export const radioBoost = (base) => (poweredType(base, "radio") ? RADIO_BOOST : 0);
 
-// A generator's line for the Power card: "Running: 6 power · tank 1.4 of 2" / "Tank dry: ...".
+// A generator's line for the Power card: "Running: 2 of 12 power, 2.46 fuel a day · tank 1.4 of 5" / "Tank dry: ...".
 export function generatorLine(state, base, b, ps = powerStatus(state, base)) {
   const g = ps.gens.find((x) => x.b === b);
-  const tank = `tank ${Math.round(tankOf(b) * 10) / 10} of ${POWER.tank} fuel`;
+  const tank = `tank ${Math.round(tankOf(b) * 10) / 10} of ${genTank(b)} fuel`;
   if (!g) return tank;
-  return g.running ? `Running: ${POWER.genOut} power · ${tank}` : `${g.reason || "Standby"} · ${tank}`;
+  return g.running ? `Running: ${g.load} of ${g.def.out} power, ${Math.round(g.burn * 100) / 100} fuel a day · ${tank}` : `${g.reason || "Standby"} · ${tank}`;
+}
+// "Tier 2 of 3: 12 power, 2.25–3.5 fuel a day (by the load), tank 5, +6 Heat" (the Power card, the Buildings tab).
+export const genTierText = (def, t) => `Tier ${t} of ${GEN_TIERS.length - 1}: ${def.out} power, ${def.idle === def.full ? `${def.full} fuel a day running` : `${def.idle}–${def.full} fuel a day (by the load)`}, tank ${def.tank}, +${def.heat} Heat`;
+
+// ---------- the governor's upgrade (autopilot.js autoGenUpgrade; the AI groups: groupworks.js) ----------
+// The generators' power if all of them ran (broken ones too: they are repaired), and the one to upgrade (the lowest tier
+// that is not broken, has no upgrade queued and has a tier above it), or null.
+export const genCapacity = (base) => generators(base).reduce((a, b) => a + genDef(b).out, 0);
+export function genToUpgrade(base) {
+  const list = generators(base).filter((b) => !b.broken && genTier(b) < GEN_TIERS.length - 1 && !base.construction.some((c) => c.target === b.id));
+  return list.sort((x, y) => genTier(x) - genTier(y) || x.id - y.id)[0] || null;
+}
+// The fuel a day the base's generators (not broken) would burn carrying `need` power, the biggest first: as they are,
+// or with `up` upgraded a tier.
+export function genFuelFor(base, need, up = null) {
+  const defs = generators(base).filter((b) => !b.broken).map((b) => (b === up ? GEN_TIERS[genTier(b) + 1] : genDef(b))).sort((x, y) => y.out - x.out);
+  let left = need, fuel = 0;
+  for (const d of defs) { if (left <= 0) break; const load = Math.min(d.out, left); fuel += genBurn(d, load); left -= load; }
+  return fuel;
+}
+// Never into a fuel deficit (the brief: "fuel income vs burn over the season, including the winter heating need"):
+//   flows: the base's fuel a day in (income) and out over the last weeks (the caller: autopilot.js from history.js; the
+//     generators, the cars, the heating and the floodlights are all in the out; the AI groups': groupworks.js);
+//   extra: what the upgrade adds to the generators' burn at the demand it is for (genFuelFor);
+//   ok when income − out − extra ≥ 0 (the fuel does not run down with the bigger burn) and the fuel above the floor
+//   (the governor's fuel floor: the winter's heating still to come, the cars' and floodlights' 10, the hive campaign's
+//   fires) covers GEN_UP.days of the extra (a bad month does not stop the power).
+// Returns { ok, why, income, out, extra, spare }.
+export const GEN_UP = { window: 28, minDays: 7, days: 30 };
+export function genUpgradeFuelOk(base, need, up, floor = 0, flows = { income: 0, out: 0 }, stock = base.stock.fuel || 0) {
+  const extra = Math.max(0, genFuelFor(base, need, up) - genFuelFor(base, need));
+  const net = flows.income - flows.out - extra;
+  const spare = stock - floor;
+  const r = (v) => Math.round(v * 100) / 100;
+  const out = { income: flows.income, out: flows.out, extra, spare };
+  if (net < -1e-9) return { ok: false, why: `fuel a day: ${r(flows.income)} in, ${r(flows.out)} out; ${r(extra)} more for the generator would run it down`, ...out };
+  if (spare < extra * GEN_UP.days - 1e-9) return { ok: false, why: `${Math.floor(Math.max(0, spare))} fuel above the floor: not ${GEN_UP.days} days of the ${r(extra)} more a day`, ...out };
+  return { ok: true, why: "", ...out };
 }
 
 // One line for the Buildings tab and the base screens.
@@ -278,7 +377,8 @@ export function powerLine(state, base) {
   if (!generators(base).length && !base.buildings.some((b) => POWER_USERS[b.type])) return "No generator";
   const ps = powerStatus(state, base);
   if (!generators(base).length) return `No generator (${ps.demand} power wanted)`;
-  return `${ps.supply} supply / ${ps.demand} demand · ${ps.running} of ${generators(base).length} generator${generators(base).length === 1 ? "" : "s"} running (${ps.fuelPerDay} fuel a day, +${ps.heat} Heat)`;
+  const tiers = generators(base).map((b) => genTier(b)).join(" + ");
+  return `${ps.supply} supply / ${ps.demand} demand · ${ps.running} of ${generators(base).length} generator${generators(base).length === 1 ? "" : "s"} running (tier ${tiers}; ${ps.fuelPerDay} fuel a day, +${ps.heat} Heat)`;
 }
 
 // What a base could draw if every powered building it has were at work (the governor's look-ahead).
@@ -291,6 +391,13 @@ export function powerWanted(state, base, staffed = () => false) {
     need += u.need;
   }
   return need;
+}
+
+// ---------- saves from before the tiers (save.js, once: state.genTiersV) ----------
+// Every generator standing is a portable set (tier 1), and an AI group's generator too (groupworks.js w.powerTier).
+export function migrateGenTiers(state) {
+  for (const base of state.bases || []) for (const b of generators(base)) if (!(b.tier >= 1)) b.tier = 1;
+  for (const f of state.factions || []) for (const w of Object.values(f.works || {})) if (w && w.power && !(w.powerTier >= 1)) w.powerTier = 1;
 }
 
 // ---------- saves from before machines-2 (save.js, once: state.machinesV) ----------

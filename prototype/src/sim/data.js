@@ -4,6 +4,7 @@
 // The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
 import { GUN_GEAR, GEAR_PATCH, LATER_GEAR } from "./data-guns.js";
 import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES, RELOAD_SUPPLIES } from "./data-ammo.js";
+import { FOOD_SUPPLIES, DAY_VALUE, DAY_KG } from "./foods.js"; // food by type (no generic "food" supply)
 import { BULK_GEAR } from "./data-stacks.js"; // bulk ammo containers: an ammo can, a carton, a bag (sim/itemstack.js)
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
@@ -25,10 +26,11 @@ export const TERRAIN = {
 export const ROAD_COST = { walk: 1, vehicle: 0.25 };
 
 // Supplies: value is the hidden base barter value per unit (the player never sees it: every group prices it its own
-// way, trade.js / valuation.js); weight is kg per unit (load.js: what people carry, what a vehicle hauls); a unit of food
-// or water is one person's ration for a day; ammo is per round. cat = trade category (CATEGORIES below).
+// way, trade.js / valuation.js); weight is kg per unit (load.js: what people carry, what a vehicle hauls); a unit of
+// water is one person's ration for a day; ammo is per round. cat = trade category (CATEGORIES below).
+// Food is by type (foods.js FOODS: canned beans, MREs, bread, raw venison…, merged in below as FOOD_SUPPLIES): there is
+// no generic "food" supply. A day's food is 2000 kcal (foods.js DAY_KCAL, foodIn).
 export const SUPPLIES = {
-  food:  { name: "Food",  value: 2,   weight: 0.5, cat: "food" },
   // Water (water.js): purified water is safe to drink (boiled, filtered, treated with tablets, or bottled water found in
   // shops and houses); un-purified water comes from the land (wells, springs, rivers and lakes, rain catchers) and is
   // safe only once purified: drunk as it is, it carries the worm's eggs of the ground it came from (worm.js). A base's
@@ -50,11 +52,8 @@ export const SUPPLIES = {
   // and stripped vehicles; other groups keep one count of parts and offer the kinds out of it (trade.js KIND_MIX).
   parts: { name: "Machine parts", value: 8,   weight: 2, cat: "parts" },
   scrap: { name: "Scrap", value: 1,   weight: 2, cat: "scrap" },
-  // Food storage (storage.js): preserved food is jarred, dried or smoked food (and dry grain and beans) that barely
-  // spoils and needs no cellar space; eaten like food (fresh first), and lighter to carry on a trip. Jars (and lids)
-  // are what the preserving room fills: found in kitchens, shops and farms, and most come back when the food
-  // in them is eaten at a base.
-  preserved: { name: "Preserved food", value: 4, weight: 0.35, cat: "food" },
+  // Jars (and lids) are what the preserving room fills (foods.js f_jarred, two portions a jar): found in kitchens,
+  // shops and farms, and most come back when the food in them is eaten at a base (storage.js).
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
   // Firewood (woodcutting.js): split logs, branches and kindling, 0.1 kg a unit (a 3 kg bundle is 30), cut from the
   // land around a base (the Cut wood job) or by a team (the Cut wood order), found in woodpiles and log baskets, or
@@ -77,9 +76,15 @@ export const SUPPLIES = {
 // "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).
 Object.assign(SUPPLIES, ROUND_SUPPLIES);
 Object.assign(SUPPLIES, RELOAD_SUPPLIES); // the reloading bench's brass, powder and primers (data-ammo.js; reloading.js)
+Object.assign(SUPPLIES, FOOD_SUPPLIES); // food by type (foods.js)
+// A key's value and weight a unit, where a spec may hold days of food ("food", "preserved": a plan's line, a deal, a
+// loot table) as well as real supplies: a day of food is DAY_VALUE and DAY_KG (packed as what keeps and weighs least).
+export const supValue = (k) => (SUPPLIES[k] ? SUPPLIES[k].value : k === "food" ? DAY_VALUE : k === "preserved" ? DAY_VALUE * 1.5 : 0);
+export const supWeight = (k) => (SUPPLIES[k] ? SUPPLIES[k].weight : k === "food" || k === "preserved" ? DAY_KG : 0);
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
-// The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds).
-export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k] && !RELOAD_SUPPLIES[k]); // the bench's inputs: on the reloading card (ui/production.js)
+// The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds) and
+// the food (shown in a Food section of its own, foods.js).
+export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k] && !RELOAD_SUPPLIES[k] && !FOOD_SUPPLIES[k]); // the bench's inputs: on the reloading card (ui/production.js)
 // Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.
 export const WOOD_UNITS = 30;
 // "A few" of a supply in a rule (n to spare, n to lose): n units, × its bulk (firewood: 30 a unit of the old 3 kg bundle).
@@ -340,6 +345,12 @@ export const GEAR = {
   diybook:      { burnShare: 1, name: "The Complete DIY Manual",  slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, book: { skill: "crafting", max: 7, hours: 24 }, desc: "Fixing, fitting and making do around the house. Teaches Crafting up to 7.", weight: 1, cat: "books" },
   forgebook:    { burnShare: 1, name: "Backyard Blacksmithing",   slot: "pack", skill: null, power: 0, req: 0, value: 40, noise: 0, book: { skill: "crafting", max: 11, hours: 40 }, desc: "Coal forges, quenching and riveting, from a hobbyist press. Teaches Crafting up to 11.", weight: 1.2, cat: "books" },
   bushcraftbook:{ burnShare: 1, name: "Bushcraft Field Guide",    slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, book: { skill: "crafting", max: 9, hours: 30 }, desc: "Cordage, camouflage and camp craft from what the woods give. Teaches Crafting up to 9.", weight: 0.6, cat: "books" },
+  // Cookbooks (wave 2 cooking, the user's pick 13; blueprints.js CRAFT_BOOKS cook, cooking.js): they teach Cooking like
+  // any skill book, and once read to the end at a base the cooks make their meals below the usual Cooking.
+  cookbook:     { burnShare: 1, name: "The Family Cookbook",      slot: "pack", skill: null, power: 0, req: 0, value: 15, noise: 0, book: { skill: "cooking", max: 8, hours: 24 }, desc: "A splattered kitchen standard: soups, stews, roasts and a chapter on bread. Teaches Cooking up to 8.", weight: 0.9, cat: "books" },
+  chefbook:     { burnShare: 1, name: "Professional Chef's Handbook", slot: "pack", skill: null, power: 0, req: 0, value: 40, noise: 0, book: { skill: "cooking", max: 14, hours: 40 }, desc: "A culinary-school text: stocks, sauces, butchery and plating for a full dining room. Teaches Cooking up to 14.", weight: 1.6, cat: "books" },
+  gamebook:     { burnShare: 1, name: "Wild Game Cookery",        slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, book: { skill: "cooking", max: 10, hours: 30 }, desc: "A hunting lodge's favourite: field dressing, curing, grinding and sausage, and pemmican the old way. Teaches Cooking up to 10.", weight: 0.7, cat: "books" },
+  prepbook:     { burnShare: 1, name: "The Prepper's Pantry",     slot: "pack", skill: null, power: 0, req: 0, value: 30, noise: 0, book: { skill: "cooking", max: 8, hours: 24 }, desc: "Long-keeping food: drying, vacuum packing, milling grain, hardtack and trail food. Teaches Cooking up to 8.", weight: 0.6, cat: "books" },
   // Special crafted gear: locked until a craft book is read or a blueprint studied; better than ordinary makeshift
   // gear (still wears out). combat.js WEAPONS has the weapons' battle numbers.
   springmachete:{ name: "Leaf-spring machete",      slot: "weapon", skill: "shooting", power: 2.2, req: 0, value: 18, noise: 0, makeshift: true, dur: 22, desc: "A truck leaf spring forged, quenched and ground into a heavy blade: hits harder than a store-bought machete and keeps its edge a long time.", weight: 1.1, cat: "melee" },
@@ -539,7 +550,7 @@ export const TRAITS = {
   badback:   { name: "Bad Back",     bad: true, desc: "Max load 28 kg instead of 40, and loads feel 20% heavier (a worse load band)" },
   // 2026-10-08 (user request: "more tags like Lucky, Tough"): rolled at birth with dice of their own (traits.js).
   quicklearner: { name: "Quick Study",   desc: "Learns 25% faster: +25% XP from everything (use, study, fights)" },
-  ironstomach:  { name: "Iron Stomach",  desc: "Half the chance of an upset stomach from un-purified water or uncooked food, and shrugs off the worm's eggs 1 time in 3 (water, raw food, camping, searching)" },
+  ironstomach:  { name: "Iron Stomach",  desc: "Half the chance of an upset stomach from un-purified water or food poisoning (bad cooking, uncooked food), and shrugs off the worm's eggs 1 time in 3 (water, raw food, camping, searching)" },
   quickheal:    { name: "Quick Healer",  desc: "Wounds heal 30% faster while resting (at a base, in a hospital bed, in camp, as a prisoner)" },
   strongback:   { name: "Strong Back",   desc: "Max load 48 kg instead of 40, and loads feel 10% lighter (a better load band)" },
   fleet:        { name: "Fleet-Footed",  desc: "+1 tile a move in battle, and +10% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)" },
@@ -556,7 +567,7 @@ export const TRAITS = {
   // rolled at birth with the newer traits' own dice like the rest.
   slow:         { name: "Slow",          bad: true, desc: "-1 tile a move in battle, and -10% to break off and get away from a fight (a team on foot with them: -1 to Run for it on the road)" },
   slowlearner:  { name: "Slow Learner",  bad: true, desc: "Learns 20% slower: -20% XP from everything (use, study, fights)" },
-  weakstomach:  { name: "Weak Stomach",  bad: true, desc: "50% more likely to get an upset stomach from un-purified water or uncooked food" },
+  weakstomach:  { name: "Weak Stomach",  bad: true, desc: "50% more likely to get an upset stomach from un-purified water or food poisoning (bad cooking, uncooked food)" },
   nearsighted:  { name: "Nearsighted",   bad: true, desc: "-2 Scouting and -1 Shooting" },
   feeble:       { name: "Feeble",        bad: true, desc: "Max load 4 kg lower, and -5% to hit in melee" },
   squeamish:    { name: "Squeamish",     bad: true, desc: "-2 Medicine, and a death in the group hits their mood 3 points harder (wherever they are)" },
@@ -566,6 +577,12 @@ export const TRAITS = {
   tactical:     { name: "Tactical",      desc: "+10% to hit a flanked target, -5% to be hit while in cover, +3% to hit for allies within 2 tiles; +0.5 fighting strength by the numbers" },
   strategic:    { name: "Strategic",     desc: "Their team meets 10% less trouble on the road, and while they are at a base your estimates of other groups are 15% sharper" },
   diplomatic:   { name: "Diplomatic",    desc: "Goodwill with groups rises 10% faster and falls 10% slower; their team's bribes and tolls cost 10% less; radio deals from their base: delivery fees go 10% lower" },
+  // 2026-10-11 (wave 2 eating, user pick 3: food preferences): eating.js reads them at every meal. Picky Eater and
+  // Vegetarian are rolled at birth after the others (DIET_TRAITS, traits.js dietTraits); a Cannibal only by choice (the
+  // new-run screen, a custom background): the game has no human meat (eating.js).
+  picky:        { name: "Picky Eater",   bad: true, desc: "Fussy about food: a simple meal mood -3 and raw food -4 on top of the usual; a fine meal +2 and a lavish one +3 on top" },
+  vegetarian:   { name: "Vegetarian",    bad: true, desc: "Eats plant food first; meat, fish, eggs, milk, honey or a mixed meal: mood -6 (2 days)" },
+  cannibal:     { name: "Cannibal",      neutral: true, desc: "Human meat lifts their mood (+10) where it turns anyone else's stomach (-20). There is no human meat in the game: the dead carry the worm" },
 };
 // The traits drawn with the world's dice at birth (world.js rollTraits), in this order: the ten there were before
 // 2026-10-08. The draw over them is exactly the old draw, so a seed keeps every roll it made; the newer traits come in
@@ -578,12 +595,17 @@ export const NEW_TRAITS = Object.keys(TRAITS).filter((t) => !BIRTH_TRAITS.includ
 // but for the few a later trait now takes the place of one. Never add to this list: a later wave gets its own.
 export const LATE_TRAITS = ["tactical", "strategic", "diplomatic"];
 // The swap's pool (traits.js swapNewTraits): the 21 newer traits of 2026-10-08, in their order. Never add to it.
-export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t));
+// The food traits of 2026-10-11 (wave 2 eating): rolled after the late ones with their own hash (traits.js dietTraits:
+// Picky Eater and Vegetarian; the Cannibal is never rolled). Never add to this list: a later wave gets its own.
+export const DIET_TRAITS = ["picky", "vegetarian", "cannibal"];
+export const DIET_ROLLED = ["picky", "vegetarian"];
+export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t) && !DIET_TRAITS.includes(t));
 // Traits nobody has together (opposites). The one table: the birth roll, a child's traits, the new-run screen's
 // picker, custom backgrounds, the backgrounds of a start.
 export const TRAIT_CLASH = [["brave", "coward"], ["lucky", "unlucky"], ["tough", "frail"], ["strongback", "badback"], ["quickheal", "sickly"], ["ironwill", "hothead"],
   ["fleet", "slow"], ["quicklearner", "slowlearner"], ["ironstomach", "weakstomach"], ["keeneye", "nearsighted"], ["strongback", "feeble"], ["medic", "squeamish"], ["ironwill", "pessimist"],
-  ["diplomatic", "hothead"]]; // 2026-10-09: a Hothead talks no one round
+  ["diplomatic", "hothead"], // 2026-10-09: a Hothead talks no one round
+  ["vegetarian", "cannibal"]]; // 2026-10-11: one does not eat meat
 // Do traits a and b clash?
 /** @param {string} a @param {string} b @returns {boolean} */
 export const traitsClash = (a, b) => TRAIT_CLASH.some(([x, y]) => (x === a && y === b) || (x === b && y === a));

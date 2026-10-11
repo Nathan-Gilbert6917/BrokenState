@@ -20,6 +20,7 @@ import { assaultBase } from "../src/sim/fort.js";
 import { ARSENAL, arsenalDaily, ensureArsenal, groupCraftable, capSiegeKit } from "../src/sim/arsenal.js";
 import { CRAFTS } from "../src/sim/crafting.js";
 import { BUILDINGS } from "../src/sim/buildings.js";
+import { GEN_TIERS } from "../src/sim/power.js"; // gen-tiers: the generator's upgrades (LOCKS power2 / power3)
 import { VEHICLE_TYPES, VEH_UPGRADES, TURRET_FIT, upgradesOf } from "../src/sim/vehicles.js";
 import { fitUpgrade } from "../src/sim/groupworld.js";
 import { repairMin, repairGear, CARE } from "../src/sim/groupcare.js";
@@ -289,7 +290,9 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   const YOURS = { water: "well", farms: "farm_plot", beds: "bunkhouse", walls: "walls", bench: "workbench", store: "storehouse", pens: "animal_pen", still: "still", power: "generator", freezer: "freezer", sealer: "sealer", kitchen: "canteen", shop: "machine_shop", radio: "radio", garage: "garage", reload: "reload_bench", gate: "gate" };
   const missing = Object.keys(GROUP_WORKS.WORKS).filter((k) => !BUILDINGS[YOURS[k]]);
   check(!missing.length, `every work of theirs is a building of yours${missing.length ? ` (not: ${missing.join(", ")})` : ""}`);
-  const req = Object.entries(GROUP_WORKS.LOCKS).filter(([k, L]) => (BUILDINGS[YOURS[k]].req || {}).mechanics !== L.mech && !(L.mech == null && !(BUILDINGS[YOURS[k]].req || {}).mechanics));
+  // gen-tiers: LOCKS power2 / power3 are your generator's upgrades (power.js GEN_TIERS req), not building types.
+  const reqOf = (k) => (/^power\d$/.test(k) ? GEN_TIERS[Number(k.slice(5))].req : BUILDINGS[YOURS[k]].req) || {};
+  const req = Object.entries(GROUP_WORKS.LOCKS).filter(([k, L]) => reqOf(k).mechanics !== L.mech && !(L.mech == null && !reqOf(k).mechanics));
   check(!req.length, `their Mechanics minimums are yours${req.length ? ` (differ: ${req.map(([k]) => k).join(", ")})` : ""}`);
   const crafts = [...ARSENAL.CRAFT.weapons, ...ARSENAL.CRAFT.ranged, "pipebomb", "molotov"].filter((k) => !CRAFTS[k]);
   check(!crafts.length, `everything their crafting makes is a recipe of yours${crafts.length ? ` (not: ${crafts.join(", ")})` : ""}`);

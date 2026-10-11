@@ -4,6 +4,7 @@
 // shelter's smaller job set), the actions' odds and effects (questioning and rough questioning, asking to join,
 // executing), save/load (old saves default to Short rations and Idle), the tab's HTML and selects, determinism.
 // Usage: node tools/prisonertest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, day, newId } from "../src/sim/world.js";
 import { addBuilding, buildRate } from "../src/sim/buildings.js";
 import { careToday } from "../src/sim/farming.js";
@@ -40,7 +41,7 @@ function prisonWorld(s = seed, n = 2, cells = 1) {
   const fakeB = { setup: { enemy: { kind: "raiders", power: 4, factionId: f.id, name: f.name } }, tileId: h.tile };
   const recs = captiveRecords(st, fakeB, Array.from({ length: n }, (_, i) => ({ kit: "raiders", name: `Raider ${i + 1}`, factionId: f.id })));
   capturePrisoners(st, { baseId: h.id, tile: h.tile, enemy: fakeB.setup.enemy }, { outcome: "victory", tactical: true, prisoners: recs }, null);
-  Object.assign(h.stock, { food: 300, water: 300, preserved: 0 });
+  Object.assign(h.stock, { water: 300 }); setFood(h, 300);
   const list = prisonersAt(st, h.id);
   for (const p of list) { p.s.health = 60; p.s.mood = 30; p.s.traits = []; p.s.traitTier = {}; p.s.skills.stealth = 0; } // no escape kit of their own (Stealth, or a trait that lifts it): the guards are under test
   return { st, h, f, list };
@@ -74,9 +75,9 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
   const g = use.groups.find((x) => x.key === "prisoners");
   const expect = (1 + 0.6 + 0.3 + 0) * PRISON.FOOD * (use.cold || 1);
   check(g && g.n === 4 && near(g.total, expect, 1e-6), `upkeep.js counts them by their rations: 4 prisoners × ${g && g.each} = ${g && r2(g.total)} (Full + Short + Starvation + None = ${r2(expect)})`);
-  const f0 = h.stock.food;
+  const f0 = food(h);
   noEscapes(() => prisonersDaily(st));
-  check(near(f0 - h.stock.food, expect, 1e-6), `the day eats exactly that from the stores (${r2(f0 - h.stock.food)})`);
+  check(near(f0 - food(h), expect, 1e-6), `the day eats exactly that from the stores (${r2(f0 - food(h))})`);
   check(list[3].unfed === 1 && list[0].unfed === 0 && list[2].unfed === 0, "None is unfed (Starvation still eats)");
   setAllRations(st, h.id, "full");
   check(list.every((p) => rationOf(p) === "full") && near(foodUse(st, h).groups.find((x) => x.key === "prisoners").total, 4 * (use.cold || 1)), "set all: everyone on Full eats 1 each");
@@ -91,7 +92,7 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
     guardOn(st, h);
     setRation(st, list[0].id, ration);
     let died = 0;
-    for (let d = 1; d <= days && !died; d++) { h.stock.food = 300; h.stock.water = 300; day1(st); if (!st.prisoners.includes(list[0])) died = d; }
+    for (let d = 1; d <= days && !died; d++) { setFood(h, 300); h.stock.water = 300; day1(st); if (!st.prisoners.includes(list[0])) died = d; }
     return { hp: list[0].s.health, mood: list[0].s.mood, died, opinion: list[0].opinion };
   });
   const full = run("full"), short = run("short"), starve = run("starve"), none = run("none");
@@ -170,10 +171,11 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
   // Kitchen: surplus fresh food dried by hand.
   setTask(st, p.id, "kitchen");
   guardOn(st, h);
-  h.stock.food = 2000; h.stock.preserved = 0;
+  setFood(h, 2000, "f_potatoes"); // fresh food by type (sim/foods.js): the hand driers take it
   const plan = kitchenPlan(st, h);
   noEscapes(() => day1(st));
-  check(plan.take > 0 && h.stock.preserved > 0 && near(h.stock.preserved, plan.out, 0.5), `Kitchen dries ${r2(plan.take)} fresh food into ${r2(h.stock.preserved)} preserved a day`);
+  const dried = kindsOf(h).f_driedfruit || 0;
+  check(plan.take > 0 && dried > 0 && near(dried, plan.out, 0.5), `Kitchen dries ${r2(plan.take)} days of fresh food into ${r2(dried)} days of dried fruit and veg a day`);
   // Clean and mend: wear off the buildings (two identical worlds, one with a prisoner cleaning).
   const wear = (task) => {
     const w = prisonWorld(seed + 4, 1, 1);
@@ -359,9 +361,9 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
   const [a, b] = prisonersAt(w, h.id);
   check(a.ration === "full" && a.task === "build" && a.labourDays === 12, "rations, work and days of labour survive a save");
   check(rationOf(b) === "short" && taskOf(b) === "idle", "an old save's prisoner loads on Short rations, Idle");
-  const f0 = hub(w).stock.food;
+  const f0 = food(hub(w));
   noEscapes(() => { w.hour += 24; prisonersDaily(w); });
-  check(f0 - hub(w).stock.food > 0 && Number.isFinite(b.s.health), "and the day runs on it");
+  check(f0 - food(hub(w)) > 0 && Number.isFinite(b.s.health), "and the day runs on it");
 }
 
 // ---------- 8. the tab ----------
@@ -391,7 +393,7 @@ const day1 = (st) => { st.hour += 24; prisonersDaily(st); };
     const { st, h, list } = prisonWorld(seed + 12, 3, 1);
     guardOn(st, h);
     setTask(st, list[0].id, "farm"); setTask(st, list[1].id, "kitchen"); setRation(st, list[2].id, "starve");
-    for (let d = 0; d < 20; d++) { h.stock.food = 300; h.stock.water = 300; day1(st); }
+    for (let d = 0; d < 20; d++) { setFood(h, 300); h.stock.water = 300; day1(st); }
     return JSON.stringify((st.prisoners || []).map((p) => [p.name, p.s.health, p.s.mood, r2(p.opinion), p.labourDays])) + JSON.stringify(h.stock);
   };
   check(play() === play(), "the same seed plays the same 20 days");

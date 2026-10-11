@@ -18,6 +18,7 @@
 // AI parity: the other groups' raids and escorts carry their vehicles by the numbers (vehicles.js raidHumvees,
 // escorts.js); they have no seats to count, and nothing here touches them.
 /** @import { State, Party } from "./types" */
+import { foodIn, takeFood } from "./foods.js"; // a share of the food
 import { log, addCard, newId } from "./world.js";
 import { partyMembers, partyTile, leaveVehicle, teamName, weighTeam, takeSupply, orderMove, onTheMove } from "./parties.js";
 import { partyVehicles, fleetOf, seatsOf, driversFor, isBike, isCar, createVehicle, vehicleLabel, markLeft } from "./vehicles.js";
@@ -119,7 +120,8 @@ export function splitWalkers(state, p) {
   const tile = partyTile(p);
   const sup = {};
   for (const key of Object.keys(SUPPLIES)) sup[key] = 0;
-  for (const key of ["food", "preserved", "water"]) sup[key] = takeSupply(p, key, Math.floor(((p.supplies[key] || 0) * k) / members.length));
+  for (const key of ["water"]) sup[key] = takeSupply(p, key, Math.floor(((p.supplies[key] || 0) * k) / members.length));
+  Object.assign(sup, takeFood([p], (foodIn(p.supplies) * k) / members.length, { eggs: false, state }).items); // foods.js: their share of the packed food, as the items
   /** @type {any} */
   const q = {
     id: newId(), owner: "player", kind: "expedition", mission: "move", teamMission: p.teamMission || "move", dest: tile, homeBaseId: p.homeBaseId,

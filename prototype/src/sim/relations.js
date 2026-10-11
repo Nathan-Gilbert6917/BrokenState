@@ -17,7 +17,7 @@
 //
 // Daily mood factors added here (the rest stay where they were: beds and the leader in morale.js; food, rationing,
 // rest, hunger and thirst in economy.js; the dog in hubevents.js), all listed with numbers by moodFactors():
-// preserved food only for 7+ days -1 (21+ days -2), hot meals from the Kitchen's cooks +1 (+1.5 with a good cook; only the
+// preserved food only for 7+ days -1 (21+ days -2) (the meals themselves: eating.js's timed thoughts), hot meals from the Kitchen's cooks +1 (+1.5 with a good cook; only the
 // Kitchen: the preserving room jars, kitchen-plus), a common room +1.5 (15 people a
 // room), a chapel +1 (grief weighs half), comfort items (books; the shelf shared, MOODF.shelfShare people a copy;
 // not blueprints) +0.5 each up to +1, the Inspiring perk +0.5 per inspiring person here (up to +1), cabin fever after 14 days of
@@ -25,6 +25,8 @@
 // partner and rivals as above, and high spirits fade (-10% of the mood above 50 a day).
 // Breaks: below 12 mood, 10% + 2% per point below 12 a day (cooldown 5 days): sits out a day, binge eats, wanders
 // off, or picks a fight; mood +8 afterwards; a card for a fight or a second break within 10 days.
+import { foodIn, payFood } from "./foods.js"; // food by type (foods.js)
+import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean: −1 a day)
 import { hasTrait, traitFx, breakMult } from "./traits.js"; // Hothead, Glutton, Unlucky, Iron Will, Squeamish, Pessimist
 import { log, addCard, day, skill, atBase, residents, alive, baseById, hurt, combatPower } from "./world.js";
 import { count } from "./buildings.js";
@@ -326,13 +328,16 @@ export function moodFactors(state, s) {
     if (ci.lift > 0) add(`${ci.leader.leader ? "Leader" : "Base leader"} ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
     if (!(base.hungerDays > 0)) add("Fed", 1, false); // out of food or water: the starving and parched lines below
     if (base.rationing) add("Short rations", -3, false);
+    else if (rationKey(state, base) === "lean") add("Lean rations (smaller portions)", RATION_LEVELS.lean.mood, false); // economy.js, eating.js
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);
     else if (!pl.route && s.inBed) add("In a hospital bed", 3, false);
     if (base.dog) add(`${base.dog.name} the dog`, 0.5, false);
     // Applied here.
     const pres = base.relPreserved || 0;
-    if (pres >= 21) add(`Nothing but preserved food for ${pres} days`, MOODF.preserved21, true);
-    else if (pres >= 7) add(`Nothing but preserved food for ${pres} days`, MOODF.preserved7, true);
+    if (pres >= 21) add(`Nothing fresh to eat for ${pres} days (tins, dry and preserved food)`, MOODF.preserved21, true);
+    else if (pres >= 7) add(`Nothing fresh to eat for ${pres} days (tins, dry and preserved food)`, MOODF.preserved7, true);
+    // Good meals: eating.js's timed thoughts now (a stew +3, a fine meal +6, a lavish meal +12 when eaten, for 3 days;
+    // raw food, the same food again, a feast), listed with the mood notes, not as a daily factor.
     // Hot meals: only the Kitchen's (kitchen.js: +1, +1.5 with a Cooking 6+ cook, Hearty Portions +0.5, × the share its
     // cooks feed; nothing while its stove is cold). The Preserving room jars food and serves no meals (kitchen-plus: its
     // old +1 "hot meals" is gone).
@@ -428,11 +433,11 @@ export function comfortInfo(state, s, base) {
 }
 export function comfortCount(state, s, base) { return comfortInfo(state, s, base).n; }
 
-// Preserved-only streak, per base: called from economy.js after eating (fresh food is eaten first, so no fresh food
-// left and preserved food in store means the day's meals were preserved).
+// Nothing-fresh streak, per base: called from economy.js after eating (storage.js base.ate: what was eaten today). A
+// day whose food was nearly all tins, dry goods and preserved food (under a tenth fresh food or meals) counts.
 export function noteMeals(state, base) {
-  const fresh = Math.max(0, base.stock.food || 0), pres = Math.max(0, base.stock.preserved || 0);
-  base.relPreserved = fresh < 1 && pres >= 1 ? (base.relPreserved || 0) + 1 : 0;
+  const a = base.ate && base.ate.day === Math.floor((state.hour - 1) / 24) ? base.ate : null; // the day that just ended (storage.js noteAte)
+  base.relPreserved = a && a.units > 0.5 && a.fresh < a.units * 0.1 ? (base.relPreserved || 0) + 1 : 0;
 }
 
 // ---------- breaks ----------
@@ -442,7 +447,7 @@ function maybeBreak(state, base, s, rng) {
   if (!rng.chance((BREAK.base + BREAK.per * (BREAK.at - s.mood)) * breakMult(s))) return; // Iron Will (traits.js): half as likely
   const others = atBase(state, base.id).filter((o) => o !== s && o.health > 20);
   const kinds = [["sit", 3], ["wander", 2]];
-  if ((base.stock.food || 0) >= BREAK.binge * 2) kinds.push(["binge", 2]);
+  if (foodIn(base.stock) >= BREAK.binge * 2) kinds.push(["binge", 2]);
   if (others.length) kinds.push(["fight", 2 * (hasTrait(s, "hothead") ? traitFx(s, "hothead", "fight") : 1)]); // a Hothead lashes out (traits.js)
   const kind = rng.weighted(kinds, (k) => k[1])[0];
   const name = first(s);
@@ -450,9 +455,8 @@ function maybeBreak(state, base, s, rng) {
   if (kind === "sit") { s.onBreak = true; text = `${s.name} could not face the day and sat it out (mood ${Math.round(s.mood)}).`; }
   else if (kind === "wander") { s.onBreak = true; text = `${s.name} wandered off around ${base.name} all day and came back at dusk (mood ${Math.round(s.mood)}).`; }
   else if (kind === "binge") {
-    const took = Math.min(BREAK.binge, Math.floor(base.stock.food || 0));
-    base.stock.food -= took;
-    text = `${s.name} broke into the stores at ${base.name} and ate ${took} food in one sitting.`;
+    const took = Math.round(payFood(base, Math.min(BREAK.binge, Math.floor(foodIn(base.stock))), state) * 10) / 10; // foods.js: the soonest to spoil first
+    text = `${s.name} broke into the stores at ${base.name} and ate ${took} days of food in one sitting.`;
   } else {
     const foe = [...others].sort((a, b) => opinion(state, s, a) - opinion(state, s, b))[0];
     const dmg = rng.int(3, 8);
@@ -576,13 +580,13 @@ export function memorialInfo(state, base) {
   if (!n) reason = "Nobody is here.";
   else if (!memorialList(state).length) reason = "Nobody has died yet.";
   else if (wait > 0) reason = `A service was held on day ${last}; the next one in ${wait} day${wait === 1 ? "" : "s"}.`;
-  else if ((base.stock.food || 0) < food) reason = `Needs ${food} food (have ${Math.floor(base.stock.food || 0)}).`;
+  else if (foodIn(base.stock) < food) reason = `Needs ${food} food (have ${Math.floor(foodIn(base.stock))}).`;
   return { ok: !reason, reason, food, n, chapel: count(base, "chapel") > 0, names: unhonored(state).map((m) => m.name.split(" ")[0]) };
 }
 export function holdMemorial(state, base) {
   const info = memorialInfo(state, base);
   if (!info.ok) return info.reason;
-  base.stock.food -= info.food;
+  payFood(base, info.food, state);
   base.memorialDay = day(state);
   const lift = MEMORIAL.all + (info.chapel ? MEMORIAL.chapel : 0);
   for (const s of residents(state, base.id)) {
@@ -591,7 +595,7 @@ export function holdMemorial(state, base) {
   }
   const names = info.names.length ? info.names : memorialList(state).slice(0, 3).map((m) => m.name.split(" ")[0]);
   for (const m of unhonored(state)) m.honored = day(state);
-  const text = `A memorial service at ${base.name}${info.chapel ? " in the chapel" : ""} for ${listText(names)} (${info.food} food): everyone mood +${lift}, the grieving +${lift + MEMORIAL.grievers}.`;
+  const text = `A memorial service at ${base.name}${info.chapel ? " in the chapel" : ""} for ${listText(names)} (${info.food} days of food): everyone mood +${lift}, the grieving +${lift + MEMORIAL.grievers}.`;
   log(state, text, "good");
   return text;
 }
@@ -612,18 +616,18 @@ export function memorialCard(state, base) {
     text: `People at ${base.name} want to mark the passing of ${who}.${grieving().length ? ` ${listText(grieving().map(first))} ${grieving().length === 1 ? "is" : "are"} still grieving.` : ""}`,
     choices: [
       {
-        label: `A proper service (${info.food} food)`,
+        label: `A proper service (${info.food} days of food)`,
         hint: `Everyone here mood +${MEMORIAL.all + (info.chapel ? MEMORIAL.chapel : 0)}${info.chapel ? " (in the chapel)" : ""}, the grieving +${MEMORIAL.grievers} more and ${MEMORIAL.griefDays} days less grief`,
-        disabled: (st) => (base.stock.food || 0) < info.food,
-        ai: () => ((base.stock.food || 0) >= info.food + 30 ? 7 + grieving().length : 1),
+        disabled: (st) => foodIn(base.stock) < info.food,
+        ai: () => (foodIn(base.stock) >= info.food + 30 ? 7 + grieving().length : 1),
         resolve: (st) => {
-          if ((base.stock.food || 0) < info.food) return `${base.name} cannot spare the food now.`;
+          if (foodIn(base.stock) < info.food) return `${base.name} cannot spare the food now.`;
           base.memorialDay = null; // the card is the occasion: no cooldown check here
           if (!memorialList(st).length) {
-            base.stock.food -= info.food;
+            payFood(base, info.food, state);
             for (const s of residents(st, base.id)) addMood(st, s, MEMORIAL.all, "Memorial service");
             base.memorialDay = day(st);
-            return `Candles for the ones lost before (${info.food} food). Everyone mood +${MEMORIAL.all}.`;
+            return `Candles for the ones lost before (${info.food} days of food). Everyone mood +${MEMORIAL.all}.`;
           }
           return holdMemorial(st, base);
         },
@@ -882,7 +886,7 @@ export function peaceInfo(state, a, b) {
   if (!a.alive || !b.alive) reason = "Both have to be alive.";
   else if (!base) reason = "Both have to be at the same base.";
   else if (wait > 0) reason = `Tried on day ${r.peaceDay}; again in ${wait} day${wait === 1 ? "" : "s"}.`;
-  return { ok: !reason, reason, base, who, chance: who ? t.chance : 0, score: t.score, food: PEACE.food, hasFood: !!base && (base.stock.food || 0) >= PEACE.food };
+  return { ok: !reason, reason, base, who, chance: who ? t.chance : 0, score: t.score, food: PEACE.food, hasFood: !!base && foodIn(base.stock) >= PEACE.food };
 }
 export function makePeace(state, a, b, how) {
   const info = peaceInfo(state, a, b);
@@ -890,10 +894,10 @@ export function makePeace(state, a, b, how) {
   const r = getRel(state, a, b, true);
   if (how === "gift") {
     if (!info.hasFood) return `Needs ${PEACE.food} food at ${info.base.name}.`;
-    info.base.stock.food -= PEACE.food;
+    payFood(info.base, PEACE.food, state);
     r.peaceDay = day(state);
     bumpPair(state, a, b, PEACE.gift);
-    return `A shared meal (${PEACE.food} food): ${first(a)} and ${first(b)} get on a little better (opinion ${Math.round(r.o)}).`;
+    return `A shared meal (${PEACE.food} days of food): ${first(a)} and ${first(b)} get on a little better (opinion ${Math.round(r.o)}).`;
   }
   if (!info.who) return "Nobody else here can talk them round.";
   r.peaceDay = day(state);
@@ -913,7 +917,7 @@ export function relAutopilotDaily(state) {
   const ppl = residents(state, h.id);
   const avg = ppl.length ? ppl.reduce((a, s) => a + s.mood, 0) / ppl.length : 100;
   const info = memorialInfo(state, h);
-  if (!info.ok || (h.stock.food || 0) < info.food + 20 + ppl.length * 5) return null;
+  if (!info.ok || foodIn(h.stock) < info.food + 20 + ppl.length * 5) return null;
   if (!grievers(state, h).length && avg >= 55) return null;
   return holdMemorial(state, h);
 }

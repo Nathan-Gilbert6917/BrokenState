@@ -14,7 +14,10 @@
 // through sim/teaminv.js (loadFromBase, dropOff), with the same weight rules.
 // Keys while it is open (teamFormKey, main.js): 1 2 3 the tabs, ↑ ↓ pick a person in the list, Space take or leave
 // them, F the filter, S the sort, Enter Form team (or Done).
-import { SUPPLIES, SKILL_NAMES } from "../sim/data.js";
+import { FOODS } from "../sim/foods.js"; // food by kind on the team form
+import { foodTip } from "./food.js";
+import { FOOD_PACK_KG } from "../sim/parties.js";
+import { SUPPLIES, SKILL_NAMES, supWeight } from "../sim/data.js";
 import { traitWords } from "./traitpick.js"; // "Tough II, Loud I"
 import { survivorById, atBase, baseById, skill } from "../sim/world.js";
 import { partyMembers, teamName, poolLoad, partyCapacity, STANCES } from "../sim/parties.js";
@@ -63,7 +66,7 @@ export const SORTS = {
   ...Object.fromEntries(SKILLS.map((k) => [k, { name: SKILL_NAMES[k] || k, key: (s) => -skill(s, k) }])),
 };
 const TABS = [["people", "1 People and vehicle"], ["gear", "2 Gear"], ["supplies", "3 Supplies and cargo"]];
-const SUPPLY_ROWS = ["food", "preserved", "water", "meds", "fuel", "ammo", "arrows", "parts", "scrap"];
+const SUPPLY_ROWS = ["food", "water", "meds", "fuel", "ammo", "arrows", "parts", "scrap"]; // food: days of it (forming: packed as what keeps); the kinds below
 
 const formOf = (ui) => (ui && ui.inv && ui.inv.form) || null;
 const baseOf = (state, F) => (F ? baseById(state, F.baseId) : null);
@@ -239,26 +242,29 @@ function gearTab(state, ui, F, b, p, crew) {
 
 // ---------- tab 3: supplies and cargo ----------
 function supplyKeys(state, F, b, p) {
-  const keys = SUPPLY_ROWS.filter((k) => SUPPLIES[k] && !(p && k === "ammo"));
+  const keys = SUPPLY_ROWS.filter((k) => (SUPPLIES[k] || (k === "food" && !p)) && !(p && k === "ammo"));
   if (p && (b.stock[RAW] >= 1 || teamHas(p, RAW) >= 1)) keys.splice(keys.indexOf("water") + 1, 0, RAW);
   const rounds = Object.keys(SUPPLIES).filter((k) => SUPPLIES[k].round && ((b.stock[k] || 0) >= 1 || (p ? teamHas(p, k) : F.supplies[k] || 0) >= 1));
   rounds.sort((x, y) => SUPPLIES[x].name.localeCompare(SUPPLIES[y].name));
-  const other = Object.keys(SUPPLIES).filter((k) => !keys.includes(k) && !rounds.includes(k) && k !== RAW && !SUPPLIES[k].reload && !SUPPLIES[k].round && ((b.stock[k] || 0) >= 1 || (p ? teamHas(p, k) : F.supplies[k] || 0) >= 1));
-  return { keys, rounds, other };
+  const other = Object.keys(SUPPLIES).filter((k) => !FOODS[k] && !keys.includes(k) && !rounds.includes(k) && k !== RAW && !SUPPLIES[k].reload && !SUPPLIES[k].round && ((b.stock[k] || 0) >= 1 || (p ? teamHas(p, k) : F.supplies[k] || 0) >= 1));
+  const foods = Object.keys(FOODS).filter((k) => (b.stock[k] || 0) >= 1 || (p ? teamHas(p, k) : F.supplies[k] || 0) >= 0.1); // sim/foods.js: each kind on its own
+  return { keys, rounds, other, foods };
 }
 function suppliesTab(state, ui, F, b, p, crew) {
-  const { keys, rounds, other } = supplyKeys(state, F, b, p);
+  const { keys, rounds, other, foods } = supplyKeys(state, F, b, p);
   const have = (k) => (p ? stockAt(b, k) : stockHas(b.stock, k));
   const row = (k) => {
     const take = p ? teamHas(p, k) : F.supplies[k] || 0;
-    const name = k === "ammo" ? "Rounds for their guns" : k === RAW ? "Un-purified water" : SUPPLIES[k].name;
-    const hint = k === "ammo" ? "Any calibre: packed as the rounds that fit each person's gun (most for the gun they carry), from the stores. Or pick calibres below." : k === "water" ? (p ? "Purified water" : "Purified water first, then un-purified water (boil it at a camp fire, or tablets)") : k === "fuel" ? "Fuel cans: the tank is topped up from them when it runs dry" : `${SUPPLIES[k].weight} kg each`;
-    return `<tr${tip(hint)}><td>${SUPPLY_ICON[k] || (SUPPLIES[k].round ? "⁍" : "▪")} ${esc(name)}</td>
+    const name = k === "ammo" ? "Rounds for their guns" : k === RAW ? "Un-purified water" : k === "food" ? "Food (days)" : SUPPLIES[k].name;
+    const kgEach = k === "food" ? FOOD_PACK_KG : supWeight(k);
+    const hint = k === "food" ? "Days of food for the road (2000 kcal a day): packed as what keeps longest and weighs least (ration bars, MREs, jerky, peanut butter before cans). Or pick kinds below." : FOODS[k] ? foodTip(k) : k === "ammo" ? "Any calibre: packed as the rounds that fit each person's gun (most for the gun they carry), from the stores. Or pick calibres below." : k === "water" ? (p ? "Purified water" : "Purified water first, then un-purified water (boil it at a camp fire, or tablets)") : k === "fuel" ? "Fuel cans: the tank is topped up from them when it runs dry" : `${supWeight(k)} kg each`;
+    return `<tr${tip(hint)}><td>${k === "food" ? "🥫" : FOODS[k] ? FOODS[k].icon : SUPPLY_ICON[k] || (SUPPLIES[k].round ? "⁍" : "▪")} ${esc(name)}</td>
       <td><button class="mini" data-action="tf-sup" data-k="${k}" data-d="-5"${tip("5 fewer")}>−</button><input type="number" min="0" step="1" style="width:4.5em" data-action="tf-qty" data-k="${k}" value="${n1(take)}"><button class="mini" data-action="tf-sup" data-k="${k}" data-d="5"${tip("5 more")}>+</button></td>
-      <td class="muted small">${n0(have(k))} at base</td><td class="muted small">${n1(take * SUPPLIES[k].weight)} kg</td></tr>`;
+      <td class="muted small">${n0(have(k))} at base</td><td class="muted small">${n1(take * kgEach)} kg</td></tr>`;
   };
   const table = `<table class="t small"><tr><th>Supply</th><th>${p ? "Carried" : "Take"}</th><th></th><th>Weight</th></tr>${keys.map(row).join("")}
     ${rounds.length ? `<tr><th colspan="4">Rounds by calibre</th></tr>${rounds.map(row).join("")}` : ""}
+    ${foods.length ? `<tr><th colspan="4"${tip("Food by kind (sim/foods.js): take a kind on its own")}>Food by kind</th></tr>${foods.map(row).join("")}` : ""}
     ${other.length ? `<tr><th colspan="4">Other stores</th></tr>${other.map(row).join("")}` : ""}</table>`;
   const auto = p ? "" : `<div class="row small" style="margin-top:0.4rem;gap:0.3rem"><button class="mini" data-action="tf-auto"${tip(`Food and water for ${F.days} days for everyone picked (with the season's thirst), 2 meds, rounds for their guns, fuel cans for a car; trimmed to what they can carry`)}>Auto-fill for</button><input type="number" min="1" max="30" style="width:3.5em" data-action="tf-days" value="${F.days}"> days <button class="mini" data-action="tf-clearsup"${tip("Take no supplies")}>Clear</button>
     <label${tip("A light each from the armory for those without one, when the team forms (the lightest that works for each)")}><input type="checkbox" data-action="tf-lights" ${F.lights ? "checked" : ""}> a light each</label></div>`;
@@ -288,7 +294,7 @@ function autoFill(state, F) {
   for (const [k, floor] of [["ammo", 5 * n], ["meds", 1], ["fuel", 0], ["food", n], ["water", n]]) {
     const pre = formPreview(state, previewOpts(F));
     const over = pre.load - pre.cap;
-    if (over > 0 && F.supplies[k]) F.supplies[k] = Math.max(Math.min(F.supplies[k], floor), F.supplies[k] - Math.ceil(over / SUPPLIES[k].weight));
+    if (over > 0 && F.supplies[k]) F.supplies[k] = Math.max(Math.min(F.supplies[k], floor), F.supplies[k] - Math.ceil(over / (SUPPLIES[k] ? SUPPLIES[k].weight : FOOD_PACK_KG)));
   }
 }
 

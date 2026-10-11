@@ -76,6 +76,7 @@
 // - A bloc against you (foe: you) comes into your wars together (playerwars.js: members join a war declared on you,
 //   and one you declare on a member).
 // Colours: each bloc a colour (BLOC_COLORS) ringed round its members' bases on the map.
+import { foodIn } from "./foods.js"; // days of food (every kind)
 import { day, log, hub, factionById, addCard, localId } from "./world.js";
 import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, strength } from "./factions.js";
@@ -336,7 +337,7 @@ export function blocsDaily(state) {
     shareIntel(state, ms);
     // A hungry raider turns on a weaker gang-mate.
     if (gang) for (const f of ms) {
-      const hungry = (f.stock.food || 0) < f.pop * 2;
+      const hungry = foodIn(f.stock) < f.pop * 2;
       const prey = ms.filter((m) => m !== f && strength(m) < strength(f)).sort((a, b) => strength(a) - strength(b) || a.id - b.id)[0];
       if (!prey || f.pop < 8 || h(state, f.name, today, "betray") >= BLOC.GANG_BETRAY * (hungry ? 4 : 1)) continue;
       betray(state, f, prey, hungry ? "short of food, it raided its own" : "it wanted what they had", true);

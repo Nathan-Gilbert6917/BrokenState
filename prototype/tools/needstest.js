@@ -1,5 +1,5 @@
 // Needs test (src/sim/needs.js, upkeep.js heating): hunger and thirst gauges fall and refill from the team's
-// inventory out of a base (fresh game first, packed, then found food; found water) and follow the base's stores at a
+// inventory out of a base (the food nearest to spoiling first, packed or found, sim/foods.js; found water) and follow the base's stores at a
 // base (the base's daily totals stay upkeep.js's); low gauges cut work and aim and an empty one costs health away from
 // a base; rations (full / short / none) and who eats first when short; treats used by the simple rule and by hand,
 // keepsakes kept; an errand takes about a day's food and water a day and brings back what is left; heating fuel per head
@@ -8,6 +8,7 @@
 // when they eat, a base out of food counts from its first day in place of the old flat penalty, reaches rock bottom on
 // the road before hunger kills) and the starving status icon.
 // Usage: node tools/needstest.js [seed]
+import { food, setFood, addDays, clearFood, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, residents, makeSurvivor, tickHour } from "../src/sim/world.js";
 import { basesDaily } from "../src/sim/economy.js";
 import { foodUse, heatUse, heatRate, HEAT } from "../src/sim/upkeep.js";
@@ -37,7 +38,8 @@ const plain = (s) => { s.traits = []; s.conditions = []; s.perks = []; s.health 
 function quietHub(st) {
   const h = hub(st);
   for (const s of atBase(st, h.id)) { plain(s); s.role = "rest"; s.station = null; }
-  Object.assign(h.stock, { food: 500, water: 70, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 50, jars: 40, preserved: 0 });
+  Object.assign(h.stock, { water: 70, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 50, jars: 40 });
+  setFood(h, 500); // 500 days of ration bars (tools/foodkit.js)
   return h;
 }
 // A spring day at noon, in the mild weather (no cold appetite, no heating).
@@ -62,33 +64,34 @@ function team(st, n, supplies) {
   quietHub(st);
   st.hour = mildDay(st) * 24 + 12;
   const { p, crew } = team(st, 2, { food: 10, water: 10 });
-  const f0 = p.supplies.food, w0 = p.supplies.water;
+  const f0 = food(p), w0 = p.supplies.water;
   for (let i = 0; i < 6; i++) teamNeedsHour(st, p, crew);
   check(near(crew[0].hunger, 100 - NEEDS.food / 4) && near(crew[0].thirst, 100 - (NEEDS.water * thirstAt(st)) / 4, 1e-6), `six hours at rest: hunger 100 → ${r1(crew[0].hunger)}, thirst → ${r1(crew[0].thirst)}`);
-  check(p.supplies.food === f0 && p.supplies.water === w0, "nobody eats while the gauges are high (above 70)");
+  check(food(p) === f0 && p.supplies.water === w0, "nobody eats while the gauges are high (above 70)");
   for (let i = 0; i < 24; i++) teamNeedsHour(st, p, crew);
-  check(p.supplies.food < f0 && p.supplies.water < w0, `then they eat and drink from the team's supplies (food ${f0} → ${r1(p.supplies.food)}, water ${w0} → ${r1(p.supplies.water)})`);
+  check(food(p) < f0 && p.supplies.water < w0, `then they eat and drink from the team's supplies (food ${f0} → ${r1(food(p))}, water ${w0} → ${r1(p.supplies.water)})`);
   check(crew.every((s) => s.hunger >= 69 && s.thirst >= 69), "and stay fed");
   // A day's food per person in the long run.
-  const g0 = crew.reduce((a, s) => a + s.hunger, 0), fA = p.supplies.food;
+  const g0 = crew.reduce((a, s) => a + s.hunger, 0), fA = food(p);
   for (let i = 0; i < 48; i++) teamNeedsHour(st, p, crew);
-  const ate = fA - p.supplies.food + (g0 - crew.reduce((a, s) => a + s.hunger, 0)) / NEEDS.food;
+  const ate = fA - food(p) + (g0 - crew.reduce((a, s) => a + s.hunger, 0)) / NEEDS.food;
   check(near(ate, 2 * 2, 1e-6), `two days at rest: 1 ration a person a day, the gauges counted (${r1(ate)} for 2 people)`);
-  // Fresh game first, then packed food, then found food.
-  p.cargo.supplies.food = 3; p.cargo.meat = 2; p.cargo.supplies.preserved = 2;
-  const pk = p.supplies.food;
+  // The food nearest to spoiling first, packed or found: raw venison (3 days), then apples (a month), then the packed
+  // beans (years), and the MREs (longer still) last.
+  setFood(p, 3, "f_beans"); clearFood(p.cargo);
+  addDays(p.cargo, 2, "f_venison"); addDays(p.cargo, 1, "f_apples"); addDays(p.cargo, 2, "f_mre");
   const got = takeFood(p, 2.5);
-  check(near(got, 2.5) && near(p.cargo.meat || 0, 0) && near(p.supplies.food, pk - 0.5) && near(p.cargo.supplies.food, 1), "fresh game is eaten first, then the packed food");
-  p.supplies.food = 0; p.supplies.preserved = 0;
-  takeFood(p, 1.5);
-  check(near(p.cargo.supplies.food, 0) && near(p.cargo.supplies.preserved, 1.5), "then found food (foraged, looted), then found preserved food");
+  const kc = kindsOf(p.cargo);
+  check(near(got, 2.5) && !kc.f_venison && near(kc.f_apples, 0.5) && near(food(p), 3) && near(kc.f_mre, 2), "the food nearest to spoiling is eaten first (raw venison, then apples), found or packed");
+  takeFood(p, 2);
+  check(!kindsOf(p.cargo).f_apples && near(food(p), 1.5) && near(kindsOf(p.cargo).f_mre, 2), "then the packed beans before the MREs that keep longer");
   // Found water once the packed water is gone.
   p.supplies.water = 0; p.cargo.supplies.water = 5;
   for (const s of crew) s.thirst = 30;
   teamNeedsHour(st, p, crew);
   check(p.cargo.supplies.water < 5 && crew.every((s) => s.thirst > 90), "found water is drunk when the packed water is gone");
   // Nothing left: the gauges run down, then cost health; no free water.
-  p.supplies.food = 0; p.cargo.supplies.food = 0; p.cargo.supplies.preserved = 0; p.supplies.water = 0; p.cargo.supplies.water = 0;
+  clearFood(p); clearFood(p.cargo); p.supplies.water = 0; p.cargo.supplies.water = 0;
   for (const s of crew) { s.hunger = 2; s.thirst = 2; s.health = 100; }
   for (let i = 0; i < 3; i++) teamNeedsHour(st, p, crew);
   check(p.noFood && p.noWater, "out of food and water: the team is starving (no camp healing)");
@@ -102,30 +105,34 @@ function team(st, n, supplies) {
   const h = quietHub(st);
   st.hour = mildDay(st) * 24 + 1;
   const n = residents(st, h.id).length;
-  const stock0 = JSON.stringify(h.stock);
-  for (let i = 0; i < 23; i++) needsHour(st);
-  check(JSON.stringify(h.stock) === stock0, "the gauges never take from a base's stores by themselves");
-  check(residents(st, h.id).every((s) => s.hunger >= 99.9 && s.thirst >= 99.9), "fed in full, everyone stays full");
-  const e0 = econStats(st).eaten;
+  // eating.js: everyone eats by the hour at the mealtimes, each to their own target (80–100); the stores pay as they eat.
+  // Two days to settle (the gauges start full), then a day measured against upkeep.js's per head × heads.
+  for (let d = 0; d < 2; d++) { for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); } basesDaily(st); }
+  check(residents(st, h.id).every((s) => s.hunger >= 60 && s.hunger <= 100 && s.thirst >= 99.9), `fed in full, everyone stays in their band (${residents(st, h.id).map((s) => r1(s.hunger)).join(", ")})`);
+  const e0 = econStats(st).eaten, f0 = food(h);
+  for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); }
   basesDaily(st);
-  check(near(econStats(st).eaten - e0, foodUse(st, h).residents), `the day's eating is upkeep.js's per head × heads (${r1(econStats(st).eaten - e0)} for ${n})`);
-  // Come home hungry: they recover at the base, at no cost.
+  const ate = econStats(st).eaten - e0;
+  check(Math.abs(ate - foodUse(st, h).residents) < 0.15 * foodUse(st, h).residents && near(f0 - food(h), ate, 0.3), `the day's eating is about upkeep.js's per head × heads (${r1(ate)} for ${n}, ${r1(foodUse(st, h).residents)} expected; the stores ${r1(f0 - food(h))})`);
+  // Come home hungry: they eat at the next mealtime (or now, below the snack line), from the stores.
   const s = residents(st, h.id)[0];
   s.hunger = 20; s.thirst = 20;
-  const st0 = JSON.stringify(h.stock);
-  for (let i = 0; i < 10; i++) needsHour(st);
-  check(s.hunger > 40 && s.thirst > 40 && JSON.stringify(h.stock) === st0, `back home hungry: meals at home bring them back (hunger 20 → ${r1(s.hunger)})`);
+  const fb = food(h);
+  for (let i = 0; i < 10; i++) { st.hour++; needsHour(st); }
+  check(s.hunger > 75 && s.thirst > 40 && food(h) < fb - 0.5, `back home hungry: they eat their fill at home, from the stores (hunger 20 → ${r1(s.hunger)}, ${r1(fb - food(h))} days of food)`);
   // Short rations: the gauges sink to the lean level and hold.
   for (const x of residents(st, h.id)) { x.hunger = 100; x.thirst = 100; }
   h.rationing = true;
-  for (let i = 0; i < 24 * 8; i++) needsHour(st);
+  for (let i = 0; i < 24 * 8; i++) { st.hour++; needsHour(st); }
   const hs = residents(st, h.id).map((x) => x.hunger);
   check(hs.every((v) => v < NEEDS.lean + 1 && v > 20), `a week on short rations: hungry but holding (${hs.map(r1).join(", ")})`);
   h.rationing = false;
   // Out of food: everyone's hunger falls (the base's hunger days do the damage, economy.js).
   h.hungerDays = 1;
+  clearFood(h);
+  for (const x of residents(st, h.id)) if (x.ration) clearFood(x.ration); // nothing in the packs either (eating.js)
   const before = residents(st, h.id).map((x) => x.health);
-  for (let i = 0; i < 24; i++) needsHour(st);
+  for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); }
   check(residents(st, h.id).every((x, i) => x.hunger < hs[i] && x.health === before[i]), "a base out of food: hunger falls, and only economy.js's hunger days cost health");
   h.hungerDays = 0;
 }
@@ -153,19 +160,19 @@ function team(st, n, supplies) {
   const full = team(st, 2, { food: 30, water: 30 });
   const days = 6;
   for (let i = 0; i < 24 * days; i++) teamNeedsHour(st, full.p, full.crew);
-  const usedFull = 30 - full.p.supplies.food;
+  const usedFull = 30 - food(full.p);
   const st2 = W();
   quietHub(st2);
   st2.hour = mildDay(st2) * 24 + 12;
   const sh = team(st2, 2, { food: 30, water: 30 });
   sh.p.ration = "short";
   for (let i = 0; i < 24 * days; i++) teamNeedsHour(st2, sh.p, sh.crew);
-  const usedShort = 30 - sh.p.supplies.food;
+  const usedShort = 30 - food(sh.p);
   check(usedShort < usedFull * 0.7 && sh.crew.every((s) => s.hunger < NEEDS.lean && s.hunger > 25), `short rations stretch the food (${r1(usedShort)} vs ${r1(usedFull)} in ${days} days; hunger ${sh.crew.map((s) => r1(s.hunger)).join(", ")})`);
   sh.p.ration = "none";
-  const f1 = sh.p.supplies.food;
+  const f1 = food(sh.p);
   for (let i = 0; i < 24; i++) teamNeedsHour(st2, sh.p, sh.crew);
-  check(sh.p.supplies.food === f1, "no rations: the food is kept");
+  check(food(sh.p) === f1, "no rations: the food is kept");
   // Scarce food: the hurt eat first (default); evenly when set.
   const st3 = W();
   quietHub(st3);
@@ -223,20 +230,20 @@ function team(st, n, supplies) {
   const h = quietHub(st);
   st.hour = mildDay(st) * 24 + 1;
   const s = atBase(st, h.id).find((x) => !x.leader);
-  const food0 = h.stock.food, water0 = h.stock.water;
-  const pack = packErrand(st, h, s, 4);
-  check(pack.food === 4 && pack.water >= 4 && near(h.stock.food, food0 - 4) && near(h.stock.water, water0 - pack.water), `a 4-day errand takes ${pack.food} food and ${pack.water} water from the base`);
-  s.location = { kind: "errand", baseId: h.id, until: Math.floor(st.hour / 24) + 1 + 4, pack };
-  const gh = s.hunger;
-  for (let i = 0; i < 24 * 4; i++) needsHour(st);
-  check(s.hunger > 50 && s.thirst > 50 && pack.food < 4 && pack.food > 0, `they eat on the way (hunger ${r1(s.hunger)}, ${r1(pack.food)} food left)`);
-  const back = Math.floor(pack.food);
-  const f1 = h.stock.food;
+  const food0 = food(h), water0 = h.stock.water;
+  const add = packErrand(st, h, s, 4); // eating.js: their own pack, topped up to the errand's days
+  const pk = s.ration;
+  check(food(pk) >= 4 && food(pk) < 4 + 1.21 && pk.supplies.water >= 4 && near(food(h), food0 - food(pk)) && near(h.stock.water, water0 - add.water), `a 4-day errand fills their pack with ${r1(food(pk))} days of food (whole ration bars) and ${pk.supplies.water} water from the base`);
+  s.location = { kind: "errand", baseId: h.id, until: Math.floor(st.hour / 24) + 1 + 4 };
+  for (let i = 0; i < 24 * 4; i++) { st.hour++; needsHour(st); }
+  check(s.hunger > 50 && s.thirst > 50 && food(pk) < 4 && food(pk) > 0, `they eat on the way (hunger ${r1(s.hunger)}, ${r1(food(pk))} days of food left)`);
+  const left = food(pk);
+  const f1 = food(h);
   st.hour = (s.location.until - 1) * 24 + 1;
   st.rng.chance = () => false; // never lost, no find
   hubUpkeepDaily(st);
-  check(s.location.kind === "base" && near(h.stock.food, f1 + back), `back home: the ${back} food left comes back`);
-  void gh;
+  const back = food(h) - f1;
+  check(s.location.kind === "base" && near(back + food(pk), left, 1e-6) && food(pk) <= 1.5 + 1.21, `back home: what is over their usual pack comes back (${r1(back)} of ${r1(left)} days; ${r1(food(pk))} kept in the pack)`);
 }
 
 // ---------- 7. heating ----------
@@ -354,17 +361,20 @@ function team(st, n, supplies) {
     const sb = W();
     const hb = quietHub(sb);
     sb.hour = mildDay(sb) * 24;
-    hb.stock.food = 0; hb.stock.preserved = 0; hb.stock.water = 500;
+    clearFood(hb); hb.stock.water = 500;
     const ppl = residents(sb, hb.id);
     for (const x of ppl) { x.mood = 70; x.hunger = 100; x.role = "farm"; }
     const one = ppl.find((x) => !x.leader);
     const moods = [];
-    for (let d = 0; d < 3; d++) { const m0 = one.mood; basesDaily(sb); moods.push([one.starveDays, r1(m0 - one.mood)]); for (let k = 0; k < 23; k++) sb.hour++; sb.hour++; }
+    for (const x of ppl) if (x.ration) clearFood(x.ration); // nothing in their packs (eating.js)
+    // eating.js: they eat by the hour; the day's missed meals make the base's hunger day at midnight.
+    for (let d = 0; d < 3; d++) { const m0 = one.mood; for (let k = 0; k < 24; k++) { sb.hour++; needsHour(sb); } basesDaily(sb); moods.push([one.starveDays, r1(m0 - one.mood)]); }
     check(hb.hungerDays >= 1 && moods[0][0] === 1, `starving from the base's first day out of food (day ${moods[0][0]}, hunger ${Math.round(one.hunger)})`);
     check(moods.map((m) => m[0]).join(",") === "1,2,3", `counted each morning: ${moods.map((m) => m[0]).join(", ")}`);
     const f = moodFactors(sb, one).list;
     check(f.some((x) => /^Starving: day 3 \(.* is out of food/.test(x.label) && x.v === -starveMood(3)) && !f.some((x) => /^Out of food/.test(x.label)), "the breakdown names the base, and the flat 'Out of food' line is gone");
-    hb.stock.food = 500;
+    setFood(hb, 500);
+    for (let k = 0; k < 24; k++) { sb.hour++; needsHour(sb); }
     basesDaily(sb);
     check(!one.starveDays || hungerOf(one) < NEEDS.starving, "fed again: the count ends");
   }

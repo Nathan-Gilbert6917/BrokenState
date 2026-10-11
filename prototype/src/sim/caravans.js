@@ -23,7 +23,8 @@
 //   (known groups' bases, your outposts). It runs on the normal order queue: a move to the next stop, then the
 //   caravan stop order. At each stop a card offers: trade there (the trade window), unload the goods (your
 //   outposts), stay a day (24h camp), go on to the next destination, or return home, each with its ETA.
-import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES } from "./data.js";
+import { takeFood, foodIn, sellPick, foodNeeds, FOODS, addFood } from "./foods.js"; // food by type (foods.js)
+import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES, supValue } from "./data.js";
 import { log, day, hub, baseById, factionById, addCard, atBase, survivorById } from "./world.js";
 import {
   planPath, travelHours, spawnAiParty, removeParty, partyTile, tileLabel, partyMembers, awaitOrders, startReturn, launchExpedition,
@@ -73,10 +74,10 @@ export function caravanSurplus(state, f) {
   const listed = marketOf(state, f).surplus.map((x) => x.key);
   for (const k of [...listed, ...[...SUPPLY_KEYS].filter((x) => !listed.includes(x)).sort((a, b) => need(f, a) - need(f, b))]) {
     if (need(f, k) > 1.1 || value >= 160 || SUPPLIES[k].round) continue; // rounds: their one ammo count goes as "ammo" (sorted by calibre in the deal, trade.js)
-    const q = Math.min(Math.floor(available(f, k) * 0.5), Math.ceil((160 - value) / SUPPLIES[k].value));
+    const q = Math.min(Math.floor(available(f, k) * 0.5), Math.ceil((160 - value) / supValue(k)));
     if (q < 1) continue;
     goods.supplies[k] = q;
-    value += q * SUPPLIES[k].value;
+    value += q * supValue(k);
   }
   goods.gear = (f.wares || []).slice(0, f.type === "traders" ? 4 : 2);
   return goods;
@@ -94,6 +95,10 @@ export function sendCaravan(state, f, base, { goods = null, deal = null, gift = 
   if (!p) return null;
   const g = { supplies: {}, gear: [] };
   for (const [k, q] of Object.entries((goods && goods.supplies) || {})) {
+    if (k === "food" || k === "preserved") { // foods.js: days of food, out of their stores as the items they hold (the soonest to spoil first)
+      for (const [kk, qq] of Object.entries(takeFood(f.stock, q, { state, only: k === "preserved" ? (x, ff) => ff.stable : null }).items)) g.supplies[kk] = (g.supplies[kk] || 0) + qq;
+      continue;
+    }
     const sk = SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : groupStockKey(k, f); // rounds by key come out of their one ammo count, a part kind out of their one count of parts
     const take = Math.max(0, Math.min(Math.floor(q), Math.floor(f.stock[sk] || 0)));
     if (!take) continue;
@@ -233,9 +238,9 @@ function onCaravanCombat(state, result, setup) {
   if (f) f.pop = Math.max(0, f.pop - Math.ceil((result.enemiesKilled || 0) * 0.7));
   let text;
   if (result.outcome === "victory" && p) {
-    const sup = Object.entries(p.goods.supplies).filter(([, q]) => q >= 1);
+    const sup = Object.entries(p.goods.supplies).filter(([k, q]) => q >= (FOODS[k] ? 1e-6 : 1)); // food items: fractions kept (kg)
     if (base) {
-      for (const [k, q] of sup) base.stock[k] = (base.stock[k] || 0) + Math.floor(q);
+      for (const [k, q] of sup) { if (FOODS[k]) addFood(base, k, q, { state }); else base.stock[k] = (base.stock[k] || 0) + Math.floor(q); } // foods.js: into the stores with a lot
       base.armory.push(...p.goods.gear);
     }
     const what = [...sup.map(([k, q]) => `${Math.floor(q)} ${keyWord(k)}`), ...p.goods.gear.map((g) => g.name)];
@@ -269,7 +274,7 @@ export function autoCaravanTrade(state, needs, style, spare = {}) {
     return `attacked the ${f.name.replace(/^The /, "")} caravan`;
   }
   let text = "nothing worth swapping";
-  needs = roundNeeds(state, ctx, needs); // trade.js: ammo asked for and sold as rounds by calibre
+  needs = foodNeeds(roundNeeds(state, ctx, needs), ctx.theirHave, ctx.have); // trade.js: ammo asked for and sold as rounds by calibre; foods.js: food as items
   // A radio deal agreed days ago: paid only while the food or water it costs leaves the base its pay-out reserve
   // (upkeep.js PAYOUT); otherwise the caravan goes home without it.
   if (ctx.t.deal && payoutBreaks(state, base, ctx.t.offer)) text = `${base.name} cannot spare the food or water the deal costs now`;
@@ -366,18 +371,21 @@ export function launchCaravan(state, form) {
   if (!stops.length) return { error: "Add at least one destination." };
   const goods = {}, supplies = {};
   for (const [k, q] of Object.entries(form.goods || {})) if (SUPPLIES[k] && q > 0) goods[k] = Math.floor(q);
+  if ((form.goods || {}).food > 0) for (const [k, q] of Object.entries(sellPick(h, form.goods.food))) goods[k] = (goods[k] || 0) + q; // foods.js: days of food to trade, the items the hub holds most of
   if (goods.ammo > 0) { // ammo.js: "N ammo" to trade goes as the rounds the hub's guns need least
     const n = goods.ammo;
     delete goods.ammo;
     for (const [k, q] of Object.entries(spendAmmo({ ...h.stock }, n, baseCals(state, h)).keys)) goods[k] = (goods[k] || 0) + q;
   }
   for (const k of SUPPLY_KEYS) supplies[k] = (goods[k] || 0) + Math.max(0, Math.floor((form.travel || {})[k] || 0));
+  const travelFood = Math.max(0, Math.floor((form.travel || {}).food || 0)); // days of food to live on: packed as food that keeps (parties.js)
+  if (travelFood > 0) supplies.food = travelFood;
   const idx = [...new Set((form.gear || []).map(Number))].filter((i) => h.armory[i]).sort((a, b) => b - a);
   const items = idx.map((i) => h.armory[i]);
   const members = (form.crew || []).map((id) => survivorById(state, id)).filter(Boolean);
   const v = form.vehicleId ? vehicleById(state, form.vehicleId) : null;
   const cap = carryCapacity(state, members, v);
-  const load = supplyLoad(supplies) + items.reduce((s, g) => s + itemLoad(g), 0);
+  const load = supplyLoad(supplies) + items.reduce((s, g) => s + itemLoad(g), 0); // the road's food in days: parties.js FOOD_PACK_KG a day
   if (members.length && load > cap + 1e-9) return { error: `Too much to carry: goods and supplies weigh ${Math.ceil(load)}, the crew${v ? ` and the ${v.name}` : ""} can carry ${cap}.` };
   const res = launchExpedition(state, { memberIds: form.crew, dest: stops[0], mission: "move", stance: form.stance || "normal", vehicleId: form.vehicleId || null, supplies, fromBaseId: h.id });
   if (res.error) return res;
@@ -453,7 +461,7 @@ export function caravanCard(state, p, text = "") {
     choices.push({
       label: `Unload the goods into ${own.name}`, hint: `Cargo: ${cargo.join(", ")}`,
       resolve: (st) => {
-        for (const [k, q] of Object.entries(p.cargo.supplies)) if (q >= 1) own.stock[k] = (own.stock[k] || 0) + Math.floor(q);
+        for (const [k, q] of Object.entries(p.cargo.supplies)) { if (FOODS[k]) { if (q > 1e-6) addFood(own, k, q, { state: st }); } else if (q >= 1) own.stock[k] = (own.stock[k] || 0) + Math.floor(q); } // foods.js: food items whole or not, with a lot
         own.armory.push(...p.cargo.gear);
         p.cargo = { supplies: {}, gear: [] };
         caravanCard(st, p, `Goods unloaded at ${own.name}.`);
@@ -480,7 +488,7 @@ export function caravanCard(state, p, text = "") {
   choices.push({ label: "Other orders…", hint: "The usual orders card: move anywhere, camp, scavenge, …", resolve: (st) => { awaitOrders(st, p, "The caravan waits for orders."); return ""; } });
   addCard(state, {
     title: `Trade caravan at ${tileLabel(state, tile)}`, partyId: p.id, isCaravan: true,
-    text: `${text ? text + " " : ""}Route: ${route}, then home. Carrying ${cargo.join(", ") || "no trade goods"}. Food ${Math.floor(p.supplies.food || 0)}, water ${Math.floor((p.supplies.water || 0) + (p.supplies.rawwater || 0))}.`,
+    text: `${text ? text + " " : ""}Route: ${route}, then home. Carrying ${cargo.join(", ") || "no trade goods"}. Food ${Math.floor(foodIn(p.supplies))}, water ${Math.floor((p.supplies.water || 0) + (p.supplies.rawwater || 0))}.`,
     choices,
   });
 }

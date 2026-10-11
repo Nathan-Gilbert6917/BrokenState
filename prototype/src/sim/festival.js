@@ -17,6 +17,7 @@
 //
 // state.festival: { year (the calendar year last offered or skipped), postponed (day | null), last: { day, baseId,
 // kind } }; people carry s.festGlow = { until, v }. Saved with the state. The stories use relations.js's own dice.
+import { takeFood, foodIn } from "./foods.js"; // food by type (foods.js)
 import { log, addCard, day, hub, atBase, residents, alive } from "./world.js";
 import { GEAR } from "./data.js";
 import { season } from "./weather.js";
@@ -36,12 +37,10 @@ export const FEST = {
 
 const fest = (state) => state.festival || (state.festival = { year: 0, postponed: null, last: null });
 const first = (s) => s.name.split(" ")[0];
-const foodOf = (b) => (b.stock.food || 0) + (b.stock.preserved || 0);
-// Fresh food first (it spoils), then preserved.
+const foodOf = (b) => foodIn(b.stock);
+// The food that spoils soonest first (foods.js: days of food).
 function eat(b, n) {
-  const fresh = Math.min(b.stock.food || 0, n);
-  b.stock.food = (b.stock.food || 0) - fresh;
-  b.stock.preserved = Math.max(0, (b.stock.preserved || 0) - (n - fresh));
+  takeFood(b, n, { eggs: false });
 }
 // Heads at the table: the people who live at the hub, and its children (family.js: they have no mood of their own,
 // but they eat at the festival, KID_SHARE of a head).
@@ -59,6 +58,9 @@ export function festivalBlocker(state, b) {
   if (b.hungerDays > 0 || foodOf(b) < 1 || (fo.daysLeft != null && fo.daysLeft < FEST.FOOD_DAYS)) return "the stores are nearly empty";
   return "";
 }
+
+// The festival's day in the calendar (the AI groups feast on it: factions.js, eating.js groupRation).
+export const festivalDay = (state) => { const se = season(state); return se.key === FEST.SEASON && se.dayOfSeason === FEST.DAY; };
 
 // Hourly (world.js tickHour): the morning of the festival day, or of the day it was put off to.
 export function festivalHour(state) {
@@ -110,7 +112,7 @@ export function festivalCard(state, b) {
         resolve: (st) => holdFestival(st, b, "FULL"),
       },
       {
-        label: `A small festival (${costOf(n(), "SMALL")} food)`,
+        label: `A small festival (${costOf(n(), "SMALL")} days of food)`,
         hint: `An evening meal and songs, no day off. Everyone at the hub mood +${S.mood}, then +${S.glow} a day for ${S.glowDays} days; elsewhere +${S.outpost}. ${Math.round(S.story * 100)}% chance of a story`,
         default: true, // the safe answer when nobody picks (cheap, no work lost)
         disabled: (st) => foodOf(b) < costOf(n(), "SMALL"),
@@ -141,6 +143,7 @@ export function holdFestival(state, b, kind) {
   if (!state.bases.includes(b)) return `${b.name} is no longer yours.`;
   if (foodOf(b) < cost) return `${b.name} cannot spare ${cost} food now.`;
   eat(b, cost);
+  if (full) b.feastDay = Math.floor(state.hour / 24); // meals.js: a feast day (eating.js: everyone eats their fill and half again, "A feast")
   const d = day(state);
   let lift = K.mood;
   const extras = [];

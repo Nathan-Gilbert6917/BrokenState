@@ -12,6 +12,7 @@
 //   --tune T     what-if balance numbers for these runs only (see applyTune), e.g. --tune HIVE.BOSS_DAY=240
 //   --force X    a forced scenario (not natural play): checks the path end to end (game state, log line, chronicle
 //                caption, the end screen) on seed 1: hive, alliance, conquest, keep (coalition after Keep playing) or loss.
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { cpus } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -166,7 +167,7 @@ function forcedStorm(state) {
     state.survivors.push(p);
     squad.push(p);
   }
-  h.stock.ammo = Math.max(h.stock.ammo || 0, 200); h.stock.food = Math.max(h.stock.food || 0, 100); h.stock.water = Math.max(h.stock.water || 0, 80);
+  h.stock.ammo = Math.max(h.stock.ammo || 0, 200); setFood(h, Math.max(food(h) || 0, 100)); h.stock.water = Math.max(h.stock.water || 0, 80);
   const res = launchExpedition(state, { memberIds: squad.map((p) => p.id), dest: last.tile, mission: "hive", stance: "normal", supplies: { food: 30, water: 30, ammo: 150, meds: 4 } });
   if (res.error) throw new Error(`forced storm: ${res.error}`);
   // Into the hive at once (autopilot.js hiveChoice: a crawl trip), the core taken at the odds it wants: the planner's own

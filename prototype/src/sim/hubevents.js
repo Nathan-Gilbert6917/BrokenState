@@ -8,8 +8,9 @@
 // card, recruits.js), a wandering preacher, food stolen from the stores, a stray dog, storm damage (a leaking roof
 // over the stores, a broken well pump), a request for a feast, someone asking to leave on a personal errand, and two
 // survivors who have grown close (partners, relations.js), and remembering the dead (a memorial service).
+import { foodIn, payFood, takeFood, addFood, addFoodUnits, gainGoods, foodText } from "./foods.js"; // the cards' food in days (a feast, scraps, a theft)
 import { BUILDINGS, BEDS, count, assignStations } from "./buildings.js";
-import { SUPPLIES } from "./data.js";
+import { SUPPLIES, supValue } from "./data.js";
 import { log, addCard, day, hub, baseById, atBase, residents, skill, hurt, killSurvivor, checkGameOver } from "./world.js";
 import { weatherOnDay, season } from "./weather.js";
 import { crowdInfo, talker } from "./morale.js";
@@ -190,7 +191,7 @@ export const HUB_EVENTS = {
       const txt = (o) => suppliesText(o);
       // How much the hub wants a supply: short of its target (by head count) = worth more.
       const target = { food: 15 * Math.max(1, c.n), ammo: 60, meds: 8, parts: 4, fuel: 15, scrap: 40, water: 30 };
-      const want = (k) => (SUPPLIES[k] && SUPPLIES[k].round ? clamp(target.ammo / (baseAmmo(st, c.base) + 1), 0.2, 3) * SUPPLIES[k].value : clamp((target[k] || 20) / (supplyAmt(c.base.stock, k) + 1), 0.2, 3) * ((SUPPLIES[k] && SUPPLIES[k].value) || 1)); // rounds: by the rounds that fit the guns here
+      const want = (k) => (SUPPLIES[k] && SUPPLIES[k].round ? clamp(target.ammo / (baseAmmo(st, c.base) + 1), 0.2, 3) * supValue(k) : clamp((target[k] || 20) / (supplyAmt(c.base.stock, k) + 1), 0.2, 3) * ((SUPPLIES[k] && SUPPLIES[k].value) || 1)); // rounds: by the rounds that fit the guns here
       const deal = (dl) => ({
         label: `Trade ${txt(dl.give)} for ${txt(dl.get)}`, hint: "A fair swap, done at the gate",
         disabled: () => !can(dl),
@@ -198,7 +199,7 @@ export const HUB_EVENTS = {
         resolve: () => {
           if (!can(dl)) return "You no longer have that to trade.";
           for (const [k, q] of Object.entries(dl.give)) useSupply(c.base.stock, k, q); // rounds.js: "ammo" as any rounds
-          for (const [k, q] of Object.entries(dl.get)) c.base.stock[k] = (c.base.stock[k] || 0) + q;
+          gainGoods(st, c.base, dl.get, "travel"); // foods.js: "food" as the peddler's kind of food
           return `Traded ${txt(dl.give)} for ${txt(dl.get)}. The peddler moves on.`;
         },
       });
@@ -234,12 +235,12 @@ export const HUB_EVENTS = {
         text: `A preacher in a dusty coat asks to speak to the people of ${c.base.name} tonight. They talk of a promised land to the north.`,
         choices: [
           {
-            label: `Let them preach tonight (${feed} food for their meal)`,
+            label: `Let them preach tonight (${feed} days of food for their meal)`,
             hint: "Everyone mood +5; anyone already unhappy (mood below 35) may follow them away (25% each, taking what they carry)",
-            disabled: () => (c.base.stock.food || 0) < feed,
+            disabled: () => foodIn(c.base.stock) < feed,
             ai: () => (low().length ? -3 : c.avgMood < 55 ? 6 : 2),
             resolve: (s2) => {
-              c.base.stock.food = Math.max(0, (c.base.stock.food || 0) - feed);
+              payFood(c.base, feed, s2);
               const unhappy = low();
               moodAll(atBase(s2, c.base.id), 5);
               const left = unhappy.filter(() => s2.rng.chance(0.25));
@@ -253,7 +254,7 @@ export const HUB_EVENTS = {
               return `The preacher's words carry through the night (everyone mood +5).${left.length ? ` By morning ${left.map((s) => s.name).join(" and ")} ${left.length === 1 ? "has" : "have"} gone with them.` : ""}`;
             },
           },
-          { label: `Feed them and send them on (${feed} food)`, hint: "Everyone mood +1", disabled: () => (c.base.stock.food || 0) < feed, ai: () => ((c.base.stock.food || 0) >= 30 ? 2 : -1), resolve: (s2) => { c.base.stock.food = Math.max(0, (c.base.stock.food || 0) - feed); moodAll(atBase(s2, c.base.id), 1); return "The preacher blesses the gate and walks on."; } },
+          { label: `Feed them and send them on (${feed} days of food)`, hint: "Everyone mood +1", disabled: () => foodIn(c.base.stock) < feed, ai: () => (foodIn(c.base.stock) >= 30 ? 2 : -1), resolve: (s2) => { payFood(c.base, feed, s2); moodAll(atBase(s2, c.base.id), 1); return "The preacher blesses the gate and walks on."; } },
           { label: "Send them away", hint: "Nothing happens", ai: () => 0, resolve: () => "The preacher walks on, still talking." },
         ],
       };
@@ -262,10 +263,10 @@ export const HUB_EVENTS = {
 
   theft: {
     name: "Theft from the stores",
-    weight: (st, c) => ((c.base.stock.food || 0) >= 25 && c.n >= 4 ? 0.7 * (1 + Math.min(1.5, c.over)) * (c.avgMood < 40 ? 1.6 : 1) * ((c.base.storesLockedUntil || 0) > c.d ? 0.2 : 1) * ((c.base.theftEasyUntil || 0) > c.d ? 1.5 : 1) : 0),
+    weight: (st, c) => (foodIn(c.base.stock) >= 25 && c.n >= 4 ? 0.7 * (1 + Math.min(1.5, c.over)) * (c.avgMood < 40 ? 1.6 : 1) * ((c.base.storesLockedUntil || 0) > c.d ? 0.2 : 1) * ((c.base.theftEasyUntil || 0) > c.d ? 1.5 : 1) : 0),
     card: (st, c) => {
-      const lost = clamp(Math.round((c.base.stock.food || 0) * THEFT.share), THEFT.min, THEFT.max);
-      c.base.stock.food = Math.max(0, (c.base.stock.food || 0) - lost); // already gone when the card comes up
+      const lost = clamp(Math.round(foodIn(c.base.stock) * THEFT.share), THEFT.min, THEFT.max);
+      const stolen = takeFood(c.base, lost, { eggs: false, state: st }).items; // already gone when the card comes up (the soonest to spoil first: what is easiest to grab)
       const pool = adults(c).length ? adults(c) : c.people;
       const culprit = st.rng.weighted(pool, (s) => (s.traits.includes("greedy") ? 3 : 1) * (s.mood < 35 ? 2 : 1));
       const sleuths = c.people.filter((s) => s !== culprit);
@@ -284,7 +285,7 @@ export const HUB_EVENTS = {
             resolve: (s2) => {
               const ppl = atBase(s2, c.base.id);
               if (s2.rng.chance(chance) && culprit.alive) {
-                c.base.stock.food = (c.base.stock.food || 0) + Math.floor(lost / 2);
+                for (const [k, q] of Object.entries(stolen)) addFood(c.base, k, q / 2, { state: s2 });
                 moodAll([culprit], -10);
                 moodAll(ppl.filter((s) => s !== culprit), 2);
                 return `It was ${culprit.name}. ${Math.floor(lost / 2)} food is found under their bunk.`;
@@ -316,7 +317,7 @@ export const HUB_EVENTS = {
         text: `A thin, scruffy dog has been sniffing around ${c.base.name} for days. Someone has already named it ${name}.`,
         choices: [
           { label: `Take ${name} in`, hint: `Eats ${DOG.food} food a day; everyone here mood +${DOG.mood} a day while it stays (it wanders off if the food runs out)`, ai: () => (c.foodDays > 20 ? 5 : 0), resolve: (s2) => { c.base.dog = { name, since: day(s2) }; return `${name} has a home.`; } },
-          { label: "Toss it some scraps (1 food)", hint: "Everyone here mood +1 now; it wanders off", disabled: () => (c.base.stock.food || 0) < 1, ai: () => 1, resolve: (s2) => { c.base.stock.food -= 1; moodAll(atBase(s2, c.base.id), 1); return `${name} wolfs it down and trots off.`; } },
+          { label: "Toss it some scraps (1 food)", hint: "Everyone here mood +1 now; it wanders off", disabled: () => foodIn(c.base.stock) < 1, ai: () => 1, resolve: (s2) => { payFood(c.base, 1, s2); moodAll(atBase(s2, c.base.id), 1); return `${name} wolfs it down and trots off.`; } },
           { label: "Chase it off", hint: "Nothing happens", ai: () => 0, resolve: () => `${name} slinks away.` },
         ],
       };
@@ -327,15 +328,15 @@ export const HUB_EVENTS = {
     name: "Storm damage: a leaking roof",
     weight: (st, c) => (stormy(c) ? 2 : wet(c) ? 0.4 : 0),
     card: (st, c) => {
-      const lose = Math.max(3, Math.round((c.base.stock.food || 0) * 0.08));
-      const spoil = () => { const n = Math.min(lose, c.base.stock.food || 0); c.base.stock.food = Math.max(0, (c.base.stock.food || 0) - n); return n; };
+      const lose = Math.max(3, Math.round(foodIn(c.base.stock) * 0.08));
+      const spoil = () => Math.round(payFood(c.base, Math.min(lose, foodIn(c.base.stock)), st));
       return {
         title: `Storm damage at ${c.base.name}`,
         text: `The roof over the food stores is leaking after the ${stormy(c) ? "storm" : "rain"}. About ${lose} food will spoil if nothing is done.`,
         choices: [
           { label: "Patch it properly (4 scrap)", hint: "Nothing is lost", disabled: () => (c.base.stock.scrap || 0) < 4, ai: () => 6, resolve: () => { c.base.stock.scrap -= 4; return "The roof is patched before anything spoils."; } },
-          { label: "Throw a tarp over it (1 scrap)", hint: `60% it holds; otherwise ${lose} food spoils`, disabled: () => (c.base.stock.scrap || 0) < 1, ai: () => 3, resolve: (s2) => { c.base.stock.scrap -= 1; return s2.rng.chance(0.6) ? "The tarp holds." : `The tarp blows off in the night: ${spoil()} food spoiled.`; } },
-          { label: "Leave it", hint: `${lose} food spoils`, ai: () => 0, resolve: () => `${spoil()} food spoiled in the wet.` },
+          { label: "Throw a tarp over it (1 scrap)", hint: `60% it holds; otherwise ${lose} days of food spoil`, disabled: () => (c.base.stock.scrap || 0) < 1, ai: () => 3, resolve: (s2) => { c.base.stock.scrap -= 1; return s2.rng.chance(0.6) ? "The tarp holds." : `The tarp blows off in the night: ${spoil()} days of food spoiled.`; } },
+          { label: "Leave it", hint: `${lose} days of food spoil`, ai: () => 0, resolve: () => `${spoil()} days of food spoiled in the wet.` },
         ],
       };
     },
@@ -359,8 +360,8 @@ export const HUB_EVENTS = {
         title: `A feast for ${why}?`,
         text: `People at ${c.base.name} want to mark ${why} with a proper meal.`,
         choices: [
-          { label: `A real feast (2 food each, ${2 * c.n})`, hint: "Everyone here mood +10", disabled: () => (c.base.stock.food || 0) < 2 * n(), ai: () => (c.avgMood < 45 && c.foodDays > 30 ? 9 : 2), resolve: (s2) => { c.base.stock.food -= 2 * n(); moodAll(atBase(s2, c.base.id), 10); return "A night to remember (everyone mood +10)."; } },
-          { label: `Something small (1 food each, ${c.n})`, hint: "Everyone here mood +5", disabled: () => (c.base.stock.food || 0) < n(), ai: () => (c.avgMood < 60 && c.foodDays > 15 ? 6 : 1), resolve: (s2) => { c.base.stock.food -= n(); moodAll(atBase(s2, c.base.id), 5); return "A modest meal and a few songs (everyone mood +5)."; } },
+          { label: `A real feast (2 food each, ${2 * c.n})`, hint: "Everyone here mood +10", disabled: () => foodIn(c.base.stock) < 2 * n(), ai: () => (c.avgMood < 45 && c.foodDays > 30 ? 9 : 2), resolve: (s2) => { payFood(c.base, 2 * n(), s2); moodAll(atBase(s2, c.base.id), 10); return "A night to remember (everyone mood +10)."; } },
+          { label: `Something small (1 food each, ${c.n})`, hint: "Everyone here mood +5", disabled: () => foodIn(c.base.stock) < n(), ai: () => (c.avgMood < 60 && c.foodDays > 15 ? 6 : 1), resolve: (s2) => { payFood(c.base, n(), s2); moodAll(atBase(s2, c.base.id), 5); return "A modest meal and a few songs (everyone mood +5)."; } },
           { label: "Not now", hint: "Everyone here mood -2", ai: () => (c.foodDays < 15 ? 5 : 0), resolve: (s2) => { moodAll(atBase(s2, c.base.id), -2); return "Grumbling, people go back to work."; } },
         ],
       };
@@ -373,7 +374,7 @@ export const HUB_EVENTS = {
     card: (st, c) => {
       const s = st.rng.pick(adults(c).filter((x) => x.health >= 60));
       const why = st.rng.pick(["look for their sister", "visit their family's graves", "check on their old house", "find out what happened to an old friend"]);
-      const can = () => (c.base.stock.food || 0) >= ERRAND.food && waterIn(c.base.stock) >= ERRAND.water;
+      const can = () => foodIn(c.base.stock) >= ERRAND.food && waterIn(c.base.stock) >= ERRAND.water;
       return {
         title: `${s.name} asks to leave for a few days`,
         text: `${s.name} wants to ${why}, and asks for ${ERRAND.minDays}–${ERRAND.maxDays} days away from ${c.base.name}.`,
@@ -386,10 +387,10 @@ export const HUB_EVENTS = {
             resolve: (s2) => {
               if (!here(s, c.base)) return `${s.name} is no longer here.`;
               const days = s2.rng.int(ERRAND.minDays, ERRAND.maxDays);
-              const pack = packErrand(s2, c.base, s, days); // needs.js: a day's food and water a day, never below zero
-              s.location = { kind: "errand", baseId: c.base.id, until: day(s2) + days, pack };
+              const pack = packErrand(s2, c.base, s, days); // needs.js: their own pack (eating.js) topped up to a day's food and water a day, never below zero
+              s.location = { kind: "errand", baseId: c.base.id, until: day(s2) + days };
               s.station = null;
-              return `${firstName(s)} sets off at dawn with ${pack.food} food and ${pack.water + (pack[RAW] || 0)} water.`;
+              return `${firstName(s)} sets off at dawn with ${foodText(pack)} and ${pack.water + (pack[RAW] || 0)} water.`;
             },
           },
           { label: "Ask them to stay", hint: `${firstName(s)} mood ${ERRAND.refuse}`, ai: () => 1, resolve: () => { moodAll([s], ERRAND.refuse); return `${firstName(s)} stays, unhappily.`; } },
@@ -411,7 +412,7 @@ export const HUB_EVENTS = {
         text: `${a.name} and ${b.name} have grown close. Everyone at ${c.base.name} has noticed.`,
         choices: [
           { label: "Clear them a corner of their own (3 scrap)", hint: "Both mood +15; they are partners now", disabled: () => (c.base.stock.scrap || 0) < 3, ai: () => ((c.base.stock.scrap || 0) >= 20 ? 6 : 1), resolve: () => { if (!both()) return "Too late."; c.base.stock.scrap -= 3; moodAll([a, b], 15); pair(st); return "A blanket on a line and a door that shuts. They are delighted."; } },
-          { label: "A small party for them (4 food)", hint: "Both mood +10, everyone else here +3; they are partners now", disabled: () => (c.base.stock.food || 0) < 4, ai: () => ((c.base.stock.food || 0) >= 40 ? 5 : 1), resolve: (s2) => { if (!both()) return "Too late."; c.base.stock.food -= 4; moodAll([a, b], 10); moodAll(atBase(s2, c.base.id).filter((s) => s !== a && s !== b), 3); pair(s2); return "Toasts in tin cups."; } },
+          { label: "A small party for them (4 food)", hint: "Both mood +10, everyone else here +3; they are partners now", disabled: () => foodIn(c.base.stock) < 4, ai: () => (foodIn(c.base.stock) >= 40 ? 5 : 1), resolve: (s2) => { if (!both()) return "Too late."; payFood(c.base, 4, s2); moodAll([a, b], 10); moodAll(atBase(s2, c.base.id).filter((s) => s !== a && s !== b), 3); pair(s2); return "Toasts in tin cups."; } },
           { label: "Leave them to it", hint: "Both mood +5; they are partners now", ai: () => 3, resolve: () => { if (!both()) return "Too late."; moodAll([a, b], 5); pair(st); return "Life goes on."; } },
         ],
       };
@@ -471,8 +472,8 @@ export function hubUpkeepDaily(state) {
   const rng = state.rng;
   for (const base of state.bases) {
     if (base.dog) {
-      if ((base.stock.food || 0) >= DOG.food) {
-        base.stock.food -= DOG.food;
+      if (foodIn(base.stock) >= DOG.food) {
+        payFood(base, DOG.food, state);
         moodAll(residents(state, base.id), DOG.mood);
       } else {
         log(state, `${base.dog.name} the dog wandered off: there was nothing left to feed it at ${base.name}.`, "danger");
@@ -492,15 +493,15 @@ export function hubUpkeepDaily(state) {
       killSurvivor(state, s, null, "far from home on a personal errand (never came back)");
       continue;
     }
-    const back = unpackErrand(base, s.location.pack); // needs.js: what is left of their food and water
+    const back = unpackErrand(base, s, state); // needs.js: what is left of their food and water over their usual pack
     s.location = { kind: "base", baseId: base.id };
     s.mood = clamp(s.mood + ERRAND.mood, 0, 100);
-    let found = back.food || back.water ? ` (bringing back ${back.food} food and ${back.water} water they did not need)` : "";
+    let found = back.food >= 0.1 || back.water ? ` (bringing back ${Math.round(back.food * 10) / 10} days of food and ${back.water} water they did not need)` : "";
     if (rng.chance(ERRAND.find)) {
       const [k, lo, hi] = rng.pick([["scrap", 3, 8], ["food", 3, 6], ["meds", 1, 2]]);
       const q = rng.int(lo, hi);
-      base.stock[k] = (base.stock[k] || 0) + q;
-      found = ` with ${q} ${keyWord(k)}${found}`;
+      if (k === "food") found = ` with ${foodText(addFoodUnits(state, base, "house", q))}${found}`; // foods.js: a larder in an empty house
+      else { base.stock[k] = (base.stock[k] || 0) + q; found = ` with ${q} ${keyWord(k)}${found}`; }
     }
     log(state, `${s.name} is back at ${base.name}${found}, in better spirits.`, "good");
   }

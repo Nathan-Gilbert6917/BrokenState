@@ -9,6 +9,7 @@
 //   never use them (a team leaving packs a tube: packTablets); what a team packs at a base is not treated;
 // - the hardcore prepper's kit has both; the loot tables hold both; the recipe; save/load.
 // Usage: node tools/itemstest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, residents, log, day } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -17,6 +18,7 @@ import { partyMembers, partyTile } from "../src/sim/parties.js";
 import { commandable, HAND_RADIO } from "../src/sim/plans.js";
 import { canRadioGroup, canHearGroup, listeners, canListen, hasNetwork, radioScan, radioNodes, inCoverage, heardBy, HEAR_EXTRA, GROUP_REACH, baseListens, teamListens, networksAt, groupNetwork, netCovers } from "../src/sim/radio.js";
 import { RADIO_RANGE } from "../src/sim/world.js";
+import { worksAt } from "../src/sim/groupworks.js";
 import { news, ensureDiplo } from "../src/sim/diplomacy.js";
 import { WORM, baseWater, wormDaily, drinkHour, addWormWater, packWater, packTablets, teamTabCount, baseTabCount, teamWormText, eggsAt } from "../src/sim/worm.js";
 import { HC_START, roadTeam } from "../src/sim/hardcore-start.js";
@@ -46,14 +48,15 @@ function world(inf = 0.8, s = seed) {
   for (const id of [h.tile, ...st.grid.neighbors(h.tile)]) { st.tiles[id].infection = inf; st.tiles[id].infBase = inf; }
   h.armory = h.armory.filter((it) => !(it && GEAR[it.key] && GEAR[it.key].water));
   for (const p of atBase(st, h.id)) { p.role = "rest"; p.station = null; p.traits = []; if (p.gear.tool && GEAR[p.gear.tool.key].water) p.gear.tool = null; p.worm = null; p.health = 100; }
-  Object.assign(h.stock, { food: 300, water: 300, meds: 40, scrap: 100, wood: 0, fuel: 0, preserved: 0 });
+  Object.assign(h.stock, { water: 300, meds: 40, scrap: 100, wood: 0, fuel: 0 }); setFood(h, 300);
   st.herds = []; st.hordes.length = 0;
   return { st, h };
 }
 // A hand-made team of `n` from the hub standing on `tile` (the rules under test read only these fields).
 function team(st, h, tile, n = 2) {
   const members = atBase(st, h.id).slice(0, n);
-  const p = { id: 90000 + st.parties.length, owner: "player", kind: "expedition", mission: "scavenge", members: members.map((s) => s.id), supplies: { food: 20, water: 20, meds: 0 }, cargo: { supplies: {}, gear: [] }, path: [tile], idx: 0, progress: 0, phase: "waiting", stance: "normal", seen: new Map(), spotted: new Map(), sightNow: [], radioLive: false, dest: tile, departed: st.hour };
+  const p = { id: 90000 + st.parties.length, owner: "player", kind: "expedition", mission: "scavenge", members: members.map((s) => s.id), supplies: { water: 20, meds: 0 }, cargo: { supplies: {}, gear: [] }, path: [tile], idx: 0, progress: 0, phase: "waiting", stance: "normal", seen: new Map(), spotted: new Map(), sightNow: [], radioLive: false, dest: tile, departed: st.hour };
+  setFood(p, 20); // 20 days of ration bars (tools/foodkit.js)
   for (const s of members) s.location = { kind: "party", partyId: p.id };
   st.parties.push(p);
   return { p, members };
@@ -65,6 +68,9 @@ const tabsOf = (it) => (it ? (it.dur != null ? it.dur : GEAR[it.key].dur) : 0);
 // hub outside that network), one outside every network (radio.js networksAt).
 function radioSpots(st, h, outside) {
   const g = st.grid;
+  // ai-locks: a group is on the air only from a radio station it built (the military from every base), so a new
+  // world's groups are mostly silent: give each a station at its bases so their networks exist to listen in on.
+  for (const f of st.factions) if (f.alive) for (const tile of f.bases) worksAt(f, tile).radio = 1;
   const ok = (t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.loc && !st.bases.some((b) => b.tile === t.id) && g.distance(h.tile, t.id) > outside;
   const inGroup = st.tiles.find((t) => ok(t) && networksAt(st, t.id).some((n) => n.kind === "group" && !netCovers(st, n, h.tile)));
   const silent = st.tiles.find((t) => ok(t) && networksAt(st, t.id).length === 0);

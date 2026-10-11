@@ -17,7 +17,8 @@ import { toolBonus } from "./crafting.js";
 import { farmingDaily, farmFoodPerDay, cropWaterNeed, nextHarvests, farmOf, econStats, CROPS } from "./farming.js";
 import { healthDaily, workFactor, conditionsOf, CONDITIONS } from "./health.js";
 import * as Weather from "./weather.js";
-import { foodStore, storageDaily, eatFromStore, edibleFood, rackPlan } from "./storage.js";
+import { foodStore, storageDaily, eatFromStore, edibleFood, rackPlan, cookDaily } from "./storage.js";
+import { FOODS, foodIn, payFood, moveFoodUnits, packPick, takeItem, addFood, addFoodFind, shopFood, foodWord } from "./foods.js"; // food by type (days of food here)
 import { baseMoraleDaily } from "./morale.js";
 import { makeCandidate, offerRecruits, recruitsDaily } from "./recruits.js";
 import { hubEventsDaily } from "./hubevents.js";
@@ -26,13 +27,15 @@ import { relationsDaily, noteMeals } from "./relations.js";
 import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
+import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
+import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
 import { heatDaily, starvingDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { fieldWellWater, drawFieldWells } from "./fieldworks.js"; // field wells on the base's land (waterProduction field)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
-import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
-import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
+import { wormDaily, boilerUse, purifyDaily } from "./worm.js";
+import { waterIn, drawWater, RAW, keyWord } from "./water.js"; // purified and un-purified water
 import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
 import { addFind, chooseRounds, baseCals, roundsText } from "./ammo.js"; // rounds by calibre
 import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging find named by calibre in the log)
@@ -145,6 +148,7 @@ export function scavTrip(state, base, s, tile, share, k = 0) {
   const t = state.tiles[tile];
   const got = key0 === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${localId(state, s.id)}${k ? `:${k}` : ""}`) : { [key0]: q }; // loot.js: parts by kind (their own dice; a world-local id: same seed, same game)
   if (key0 === "ammo") { out.ammo = { type: (t && t.loc && t.loc.type) || "", q, tile }; delete got.ammo; out.ammoQ = q; }
+  else if (key0 === "food" || key0 === "preserved") { delete got[key0]; addFoodFind(state, got, (t && t.loc && t.loc.type) || "", q, { tile, preserved: key0 === "preserved" }); } // foods.js: the food a place like this holds, as its shelves have it left
   const bm = rollBuildmat(state, tile, 0.5, `bscav${localId(state, s.id)}${k ? `:${k}` : ""}`); // (the world-local id: tools/sameseedtest.js) building materials around the base too (half a search hour's chance)
   if (bm > 0) got.buildmat = bm;
   out.got = got;
@@ -156,13 +160,13 @@ export function scavCredit(state, base, s, find, stock = base.stock) {
   if (!find || !find.finds) return;
   // ammo.js: rounds by calibre, as the place it came from holds them; the log names them ("6 9mm FMJ", not "6 ammo")
   const rounds = find.ammo ? { ...addFind(stock, find.ammo.type, find.ammo.q, false, "basescav", find.ammo.tile, state.hour, s.name) } : {};
-  for (const [key, n] of Object.entries(find.got)) stock[key] = (stock[key] || 0) + n;
+  for (const [key, n] of Object.entries(find.got)) { if (FOODS[key] && stock === base.stock) addFood(base, key, n, { state }); else stock[key] = (stock[key] || 0) + n; } // foods.js: a food item with a fresh lot
   econStats(state).scavFinds++;
   const all = { ...find.got, ...(find.ammo ? { ammo: find.ammo.q } : {}) };
   for (const [key, n] of Object.entries(all)) noteOutput(state, base, "scavenge", n, key);
   noteOutput(state, base, "scavenge", 1, "finds");
   const named = { ...find.got, ...rounds };
-  log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(named).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : `${n} ${key === "buildmat" ? "building materials" : key}`)).join(", ")} around ${base.name}.`, "good");
+  log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(named).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : FOODS[key] ? foodWord(key, n) : `${n} ${key === "buildmat" ? "building materials" : keyWord(key)}`)).join(", ")} around ${base.name}.`, "good");
 }
 // Daily: the Scavenge job's day is in (its trips brought any finds home, jobtrips.js); the ground round the base is
 // picked over for good by the people on it.
@@ -407,32 +411,38 @@ function thirst(state, base, mouths, short) {
 }
 
 // ---------- food ----------
-// Food storage and spoilage are in storage.js: fresh food fills the base's storage room (the hub's cellar, root
-// cellars, a storehouse, a cold store) and spoils slowly there; food above the room is stored outside and spoils
-// fast; preserved food barely spoils. spoilRate = today's average rate of the fresh food, foodSpoilage = food
-// (fresh and preserved) lost a day.
+// Food is by type (foods.js) and is counted here in days of food (2000 kcal). Storage and spoilage are in storage.js:
+// every item keeps its own time, fresh food fills the base's food rooms (the hub's cellar, root cellars, a storehouse,
+// a cold store, a walk-in freezer) coldest first and the rest is stored outside; spoiled food is thrown out.
+// spoilRate = the share of the food that will spoil before it is eaten a day, foodSpoilage = days of food a day.
 /** @param {State} state @param {Base} base */
 export const spoilRate = (state, base) => foodStore(state, base).rate;
 /** @param {State} state @param {Base} base */
 export const foodSpoilage = (state, base) => foodStore(state, base).spoil;
 export const RATION = 0.6, RATION_DAYS = 7; // short rations: share eaten, below this many days of food
+// A base is out of food for the day (economy starve, an outpost's call on the hub) when its people missed more than this
+// many days of food a head (eating.js: a meal or two not had; a crumb short is not starving).
+export const EAT_SHORT = 0.15;
 // What the people living here eat a day (per head × heads; upkeep.js: the cold, a Quartermaster). Prisoners, guests,
 // a holding convoy's crew and the dog eat on top (foodUse(...).total; each in its own module).
 /** @param {State} state @param {Base} base */
 export const eatPerDay = (state, base) => foodUse(state, base).residents;
 
-// Food outlook for the base panel: stock (fresh + preserved), expected farm food (next 30 days), eaten (everyone fed
-// from these stores, per head × heads: upkeep.js foodUse, in `use`), spoiled and used per day (workshops; the
-// preserving room and drying racks turn fresh food into preserved, so only what they lose counts), days of food
-// left without harvests, the next harvests and the storage.
+// Food outlook for the base panel: stock (days of food: fresh needs a room, the rest keeps), expected farm food (next
+// 30 days), eaten (everyone fed from these stores, per head × heads: upkeep.js foodUse, in `use`), spoiled (what will
+// spoil before it is eaten, storage.js spoilForecast) and used per day (workshops; the preserving room and drying
+// racks turn fresh food into food that keeps, so only what they lose counts), days of food left without harvests, the
+// next harvests and the storage.
 /** @param {State} state @param {Base} base */
 export function foodOutlook(state, base) {
   const farm = farmFoodPerDay(state, base);
-  const scav = (scavengeOutput(state, base).food || 0) + (scavengeOutput(state, base).preserved || 0);
+  const so = scavengeOutput(state, base);
+  const scav = ((so.food || 0) + (so.preserved || 0)) * shopFood(state, state.tiles[base.tile]);
   let used = 0;
   for (const st of stations(base)) {
     const ss = stationStatus(state, base, st);
-    if (ss.running) used += ((ss.in || RECIPES[ss.recipe].in).food || 0) - (ss.out.preserved || 0); // the still (power.js) turns food into fuel
+    const inp = ss.in || RECIPES[ss.recipe].in;
+    if (ss.running) used += (inp.food || 0) + (inp.fresh || 0) - foodIn(ss.out || {}); // the still (power.js) turns food into fuel; the kitchen jars it; the pen makes it
   }
   const rack = rackPlan(state, base);
   used += rack.take - rack.out;
@@ -442,7 +452,7 @@ export function foodOutlook(state, base) {
   const spoil = store.spoil;
   const stock = edibleFood(base);
   const burn = eat + spoil + used - scav;
-  return { stock, fresh: store.fresh, preserved: store.preserved, store, farm, scav, used, eat, use, perHead: use.rate, heads: use.heads, spoil, net: farm + scav - eat - spoil - used, daysLeft: burn > 0 ? stock / burn : Infinity, harvests: nextHarvests(state, base) };
+  return { stock, fresh: store.fresh, preserved: store.stable, stable: store.stable, store, farm, scav, used, eat, use, perHead: use.rate, heads: use.heads, spoil, net: farm + scav - eat - spoil - used, daysLeft: burn > 0 ? stock / burn : Infinity, harvests: nextHarvests(state, base) };
 }
 
 // Expected food a day from the plots less what everyone fed here eats (per head × heads).
@@ -509,7 +519,6 @@ function baseDaily(state, base) {
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
   tripEventsDaily(state, base); // tripevents.js: the day's gunshots out on the land (base.tripNoise, hordes drawn)
   kitchenFireDaily(state, base); // kitchen.js: the stove's day of firewood (after the boiler's and the heating's), or cold meals
-  cookAtBase(state, base); // worm.js: a cook fire or kitchen cooks the game with the worm's eggs (else it is eaten last, raw)
   woodDaily(state, base); // woodcutting.js: the Cut wood job
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
@@ -537,32 +546,40 @@ function baseDaily(state, base) {
   farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
   flowMark(state, base); // history.js: drinking out, the harvest in (before the eating)
 
-  // Eating: fresh food first, then preserved (storage.js). An outpost that runs short is covered from the hub
-  // afterwards (shipFromOutposts). Under a week of food left, everyone goes on short rations (60%): it stretches
-  // the stock and costs mood, not health. The week counts everyone fed from these stores (prisoners, guests, a
-  // holding convoy's crew and the dog eat in their own modules; upkeep.js), but only the people living here ration.
+  // Eating: the people living here eat by the hour, each to their own target at the mealtimes (eating.js baseEatHour:
+  // the cooked meals first, then the food nearest to spoiling); here the day that ended is counted (eatAcc: what they
+  // ate from the stores, and what they wanted and could not get). The cook fire first makes the day's meals of the raw
+  // food (storage.js cookDaily). An outpost that ran short is covered from the hub afterwards (shipFromOutposts:
+  // base.foodShort); the hub starves. Under a week of food left, everyone goes on short rations (60%: eating.js eats to
+  // 48 then): it stretches the stock and costs mood, not health. The week counts everyone fed from these stores
+  // (prisoners, guests, a holding convoy's crew and the dog eat in their own modules; upkeep.js), but only the people
+  // living here ration. A lean base (meals.js RATION_LEVELS, the player's or the governor's) costs −1 mood a day.
   const use = foodUse(state, base);
-  const full = use.residents;
+  const day0 = takeEatAcc(base);
+  cookDaily(state, base, use.total); // the cook fire: a day's meals of raw meat, fish, greens and roots
   const edible = edibleFood(base);
   const rationing = mouths.length > 0 && edible > 0 && edible < use.total * RATION_DAYS;
   if (rationing && !base.rationing) log(state, `${base.name} is on short rations: under ${RATION_DAYS} days of food left.`, "danger");
   base.rationing = rationing;
   if (rationing) for (const s of mouths) s.mood = Math.max(0, s.mood - 3);
-  const eaten = full * (rationing ? RATION : 1);
-  const missing = eatFromStore(base, eaten);
-  if (missing > 0) st.food = (st.food || 0) - missing; // below zero: the hub starves, an outpost asks the hub
-  if (mouths.length) noteMeals(state, base); // relations.js: weeks of nothing but preserved food are grim
-  kitchenDaily(state, base, eaten - missing); // kitchen.js: the hot meals served and the food they saved
-  econStats(state).eaten += eaten - missing;
-  if (st.food < 0 && base.type === "hub") {
-    st.food = 0;
+  else if (mouths.length && rationKey(state, base) === "lean") for (const s of mouths) s.mood = Math.max(0, s.mood + RATION_LEVELS.lean.mood);
+  const eaten = day0.units;
+  // Wanted and not had: at most the day's need (the hungry ask again at every meal).
+  const missing = mouths.length ? Math.min(day0.missed, use.residents) : 0;
+  base.foodShort = missing > EAT_SHORT * mouths.length ? missing : 0; // the hub starves; an outpost asks the hub (shipFromOutposts)
+  base.eatDay = { day: day(state) - 1, eaten: Math.round(eaten * 100) / 100, missed: Math.round(missing * 100) / 100, meals: day0.meals, min: day0.min };
+  if (mouths.length) noteMeals(state, base); // relations.js: weeks of nothing fresh are grim; good meals lift the mood
+  kitchenDaily(state, base, eaten); // kitchen.js: the hot meals served and the food they saved
+  econStats(state).eaten += eaten;
+  if (base.foodShort > 0 && base.type === "hub") {
+    base.foodShort = 0;
     starve(state, base, mouths);
-  } else if (st.food >= 0) {
+  } else if (!(base.foodShort > 0)) {
     base.hungerDays = 0;
     for (const s of mouths) s.mood = Math.min(100, s.mood + 1);
   }
-  // Drying racks, then stored food spoils (storage.js: by the storage it sits in, fast outside).
-  if (st.food >= 0) {
+  // Drying racks and the smokehouse, then every lot of food ages by where it sits (storage.js); spoiled food is gone.
+  {
     const out = storageDaily(state, base);
     const es = econStats(state);
     es.spoiled += out.spoiled;
@@ -576,8 +593,8 @@ function baseDaily(state, base) {
   // desertion and desertion itself (deserters keep their gear and may take supplies; checkGameOver): morale.js.
   baseMoraleDaily(state, base, people, mouths);
   // Stocks never go below zero here (an outpost's food shortfall is settled in shipFromOutposts).
-  for (const k of Object.keys(st)) st[k] = Math.round(st[k] * 10) / 10;
-  for (const k of Object.keys(st)) if (st[k] < 0 && !(k === "food" && base.type === "outpost")) st[k] = 0;
+  for (const k of Object.keys(st)) if (!FOODS[k]) st[k] = Math.round(st[k] * 10) / 10; // food: its lots keep the exact amounts (foods.js)
+  for (const k of Object.keys(st)) if (st[k] < 0) st[k] = 0;
 }
 
 // A stranger at the gate: a recruit card (recruits.js) with the hub's beds, food and water. Taking them in costs
@@ -619,24 +636,18 @@ function shipFromOutposts(state) {
     // No land route to the hub: nothing moves either way. The outpost keeps its stock and lives off it.
     const cutOff = !(line.strength > 0);
     if (cutOff) log(state, `${base.name} is cut off: there is no land route to ${h.name}. No food came in and nothing was shipped out.`, "danger");
-    if (base.stock.food < 0) {
-      if (!cutOff) {
-        // The hub sends food, but the supply line loses some on the way.
-        // Fresh food first, then preserved (storage.js).
-        const need = -base.stock.food;
-        const send = Math.max(0, Math.min(edibleFood(h), need / line.strength));
-        const fresh = Math.min(Math.max(0, h.stock.food || 0), send);
-        h.stock.food = Math.max(0, (h.stock.food || 0) - fresh);
-        h.stock.preserved = Math.max(0, (h.stock.preserved || 0) - (send - fresh));
-        base.stock.food += send * line.strength;
+    if (base.foodShort > 0) {
+      let short = base.foodShort;
+      if (!cutOff && h) {
+        // The hub sends food (the soonest to spoil first), but the supply line loses some on the way; what arrives is
+        // eaten today.
+        // eating.js: the people there eat it as they get it (by the hour), so it goes into the outpost's stores.
+        const send = Math.max(0, Math.min(edibleFood(h), short / line.strength));
+        short -= moveFoodUnits(h, base, send, { scale: line.strength, state }).units * line.strength;
       }
-      if (base.stock.food < -1e-9) {
-        base.stock.food = 0;
-        starve(state, base, staff);
-      } else {
-        base.stock.food = Math.max(0, base.stock.food);
-        base.hungerDays = 0;
-      }
+      base.foodShort = 0;
+      if (short > 1e-9) starve(state, base, staff);
+      else base.hungerDays = 0;
     } else base.hungerDays = 0;
     if (!cutOff) {
       // Ship surplus to the hub, keeping a reserve: enough scrap to save up for a building (and parts once a job is queued).
@@ -652,20 +663,21 @@ function shipFromOutposts(state) {
       if (staff.length) {
         const want = foodUse(state, base).total * lineDays - edibleFood(base);
         const spare = edibleFood(h) - foodUse(state, h).total * lineDays;
-        if (want > 0 && spare > 0) {
-          const send = Math.min(spare, want / line.strength);
-          const fresh = Math.min(Math.max(0, h.stock.food || 0), send);
-          h.stock.food = Math.max(0, (h.stock.food || 0) - fresh);
-          h.stock.preserved = Math.max(0, (h.stock.preserved || 0) - (send - fresh));
-          base.stock.food = (base.stock.food || 0) + send * line.strength;
-        }
+        if (want > 0 && spare > 0) moveFoodUnits(h, base, Math.min(spare, want / line.strength), { scale: line.strength, state }); // foods.js: the soonest to spoil first, with its lots
       }
       const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: boil.active ? Math.ceil(boil.wood * 3) : 0 };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
       for (const [k, v] of Object.entries(chooseRounds(base.stock, keep.ammo, baseCals(state, base)))) keep[k] = (keep[k] || 0) + v; // ammo.js: the rounds kept are the ones its guns shoot
       keep[RAW] = (keep[RAW] || 0) + Math.max(0, keep.water - Math.max(0, base.stock.water || 0)); // the water kept counts both kinds (water.js): purified first
+      // Food: days of food over the keep go to the hub, the food that keeps first (the outpost eats its fresh food).
+      const foodSurplus = edibleFood(base) - keep.food;
+      if (foodSurplus > 1) {
+        const pick = packPick(state, base, foodSurplus, { days: 30 });
+        for (const [k, q] of Object.entries(pick)) { const t = takeItem(base, k, q, { state }); for (const l of t.lots) addFood(h, k, l.q * line.strength, { left: l.left, egg: l.egg, state }); }
+      }
       for (const k of Object.keys(base.stock)) {
+        if (FOODS[k]) continue;
         const surplus = base.stock[k] - (keep[k] || 0);
         if (surplus > supplyFew(k, 1)) {
           base.stock[k] -= surplus;
@@ -673,7 +685,7 @@ function shipFromOutposts(state) {
         }
       }
     }
-    for (const k of Object.keys(base.stock)) base.stock[k] = Math.max(0, Math.round(base.stock[k] * 10) / 10);
+    for (const k of Object.keys(base.stock)) base.stock[k] = Math.max(0, FOODS[k] ? base.stock[k] : Math.round(base.stock[k] * 10) / 10);
   }
 }
 

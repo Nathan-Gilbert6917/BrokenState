@@ -15,6 +15,7 @@
 //   team panel shows it), the expected haul against the real one, rations.
 // - The autopilot in a lean year with and without hunting (hunger days, deaths of hunger, food brought in).
 // - Save / load mid-hunt and determinism; the tile panel, team panel, planner and right-click menu.
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 // n rounds of generic ammo in a stock and no rounds by calibre (generic fits any gun: the hunts here judge the guns, not the calibres).
 const setAmmo = (rec, n) => { setRounds(rec, 0); rec.ammo = n; };
@@ -62,7 +63,7 @@ function mk(seed = SEED) {
   const state = createWorld({ seed, factionCount: 6 });
   state.started = true;
   state.autoCombat = true;
-  Object.assign(hub(state).stock, { food: 400, water: 400, fuel: 100, meds: 20, ammo: 400, arrows: 60, parts: 10, scrap: 100 });
+  Object.assign(hub(state).stock, { water: 400, fuel: 100, meds: 20, ammo: 400, arrows: 60, parts: 10, scrap: 100 }); setFood(hub(state), 400);
   return state;
 }
 // A clean land tile of a terrain: low infection, no site, away from hives and bases (the terrain is what counts).
@@ -90,7 +91,7 @@ function placeTeam(state, tile, { n = 2, weapon = "huntrifle", second = "pistol"
   const res = launchExpedition(state, { memberIds: ids, dest: near.id, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
-  Object.assign(p.supplies, { food: 8, water: 8, ammo, arrows });
+  Object.assign(p.supplies, { water: 8, ammo, arrows }); setFood(p, 8);
   p.path = [tile]; p.idx = 0; p.dest = tile; p.progress = 0; p.orders = []; p.phase = "waiting"; p.task = null;
   return p;
 }
@@ -319,7 +320,7 @@ section("Snares: a line, its catch over days, rot, theft and the wire");
       state.hour = start + days * 24;
       p.cargo = { supplies: {}, gear: [] };
       const text = H.snareWork(state, p, "check");
-      out.food += carried(p, "food") - p.supplies.food;
+      out.food += carried(p, "food") - food(p);
       if (/got to the line/.test(text)) out.robbed++;
       if (/gone bad/.test(text)) out.rotted++;
       if (!H.snareLine(state, forest.id)) out.gone++;
@@ -403,12 +404,13 @@ section("Carcasses: weight on foot and in a car");
   const state = mk();
   const forest = cleanTile(state, "forest");
   const p = placeTeam(state, forest.id, { weapon: "huntrifle", second: "pistol" });
-  p.supplies = { food: 6, water: 6 };
+  p.supplies = { water: 6 }; addDays(p, 6);
   p.cargo = { supplies: {}, gear: [] };
   const members = partyMembers(state, p);
   const before = poolLoad(p);
   const kept = H.addMeat(state, p, 30);
-  check(kept === 30 && Math.abs(poolLoad(p) - before - 30) < 1e-9, "30 food of fresh game weighs 30 kg (1 kg a ration)");
+  const gameKg = poolLoad(p) - before; // food by type (foods.js): small game or fowl, about 0.7 days of food a kilo
+  check(kept === 30 && gameKg > 30 && gameKg < 30 * H.MEAT_KG + 3, `30 days of fresh game weighs about MEAT_KG a day (${r1(gameKg)} kg)`);
   const meatPool = poolLoad(p);
   const foodPool = before + 30 * 0.5;
   const bandOf = (pool, v = null) => Math.max(...teamLoad(members, pool, v).foot.people.map((x) => x.band));
@@ -421,7 +423,7 @@ section("Carcasses: weight on foot and in a car");
   check(bike.ride.speed > sp(meatPool) - 1e-9, "on bikes the racks and riding take part of it");
   // What does not fit is left where it fell.
   const lone = placeTeam(state, forest.id, { n: 1 });
-  lone.supplies = { food: 10, water: 10 };
+  lone.supplies = { water: 10 }; addDays(lone, 10);
   lone.cargo = { supplies: {}, gear: [] };
   const fit = H.addMeat(state, lone, 300);
   check(fit > 0 && fit < 300 && cargoLoad(lone.cargo) <= 40, `a lone hunter keeps what he can carry (${fit} of 300)`);
@@ -435,44 +437,54 @@ section("Spoilage: fresh game in the field and at a base; drying racks and the c
   const p = placeTeam(state, forest.id);
   const hot = dayIn(state, "summer", (w) => w.hi >= 28);
   const freeze = dayIn(state, "winter", (w) => w.hi < -1);
-  const spoilDay = (d) => {
+  // Food by type (foods.js): a kill is a lot with its own shelf (small game 2 days) used up faster in the heat
+  // (CARRIED), thrown out whole when it runs out.
+  const spoilDays = (d, n = 2) => {
     p.cargo = { supplies: {}, gear: [] };
     H.addMeat(state, p, 30);
     state.hour = d * 24;
-    for (let i = 0; i < 24; i++) { state.hour++; H.gameSpoilHour(state, p); }
+    for (let i = 0; i < 24 * n; i++) { state.hour++; H.gameSpoilHour(state, p); }
     return 30 - H.meatIn(p.cargo);
   };
-  const lossHot = hot != null ? spoilDay(hot) : null, lossCold = freeze != null ? spoilDay(freeze) : null;
-  note(`30 fresh game carried for a day: lost ${lossHot != null ? r1(lossHot) : "–"} on a hot summer day, ${lossCold != null ? r1(lossCold) : "–"} on a freezing one`);
-  if (lossHot != null) check(lossHot > 7, "summer heat: a quarter or more spoils in a day");
+  const lossHot = hot != null ? spoilDays(hot) : null, lossCold = freeze != null ? spoilDays(freeze) : null;
+  note(`30 fresh game carried for two days: lost ${lossHot != null ? r1(lossHot) : "–"} in summer heat, ${lossCold != null ? r1(lossCold) : "–"} in a freeze`);
+  if (lossHot != null) check(lossHot > 29, "summer heat: two days carried and it has all gone bad");
   if (lossCold != null) check(lossCold < 1.5, "in a freeze it keeps");
   // Eaten first in the field.
   p.cargo = { supplies: {}, gear: [] };
+  setFood(p, 6); // ration bars (foods.js: eaten spoil-first, so the game goes before them)
   H.addMeat(state, p, 10);
-  const packed = p.supplies.food;
+  const packed = food(p);
   p.phase = "waiting";
   state.hour = dayIn(state, "autumn") * 24;
+  for (const s of partyMembers(state, p)) s.hunger = 30; // hungry (needs.js: a team eats when its gauges run low)
   tickHour(state);
-  check(p.supplies.food === packed && H.meatIn(p.cargo) < 10, "the team eats its fresh game before its packed food");
+  check(food(p) === packed && H.meatIn(p.cargo) < 10, "the team eats its fresh game before its packed food");
   // At a base.
   const twin = (meat, build = []) => {
     const st = mk();
     const b = hub(st);
     st.hour = dayIn(st, "summer") * 24 + 12;
     for (const t of build) addBuilding(b, t);
-    Object.assign(b.stock, { food: 150, preserved: 0 });
-    b.meat = meat;
-    const out = storageDaily(st, b);
-    return { b, out, food: b.stock.food, pres: b.stock.preserved, meat: b.meat };
+    setFood(b, 150 - meat, "f_potatoes"); // food by type (foods.js): potatoes, and the game as venison
+    if (meat) addDays(b, meat, "f_venison");
+    let out = null;
+    for (let d = 0; d < days; d++) { out = storageDaily(st, b); st.hour += 24; }
+    const jerky = kindsOf(b).f_jerky || 0;
+    return { b, out, food: food(b) - jerky, pres: jerky, meat: H.meatAt(b) };
   };
-  const none = twin(0), game = twin(60), racks = twin(60, ["smoker"]), cabin = twin(60, ["huntcabin"]);
-  note(`a summer day, 150 fresh food at the hub: lost ${r1(150 - none.food)} with no game; with 60 of it fresh game ${r1(150 - game.food)}; a drying rack ${r1(150 - racks.food)} (preserved +${r1(racks.pres)}); a hunting cabin ${r1(150 - cabin.food)} (preserved +${r1(cabin.pres)})`);
-  check(150 - game.food > 150 - none.food + 1, "fresh game spoils faster than other fresh food");
+  let days = 12; // the hub's root cellar (×0.35): venison keeps about 9 days there, potatoes 100
+  const none = twin(0), game = twin(60);
+  note(`twelve summer days, 150 fresh food at the hub: lost ${r1(150 - none.food)} with no game; with 60 of it fresh venison ${r1(150 - game.food)}`);
+  check(150 - game.food > 150 - none.food + 50, "fresh game spoils faster than other fresh food (venison 3 days, potatoes 35)");
+  days = 1;
+  const racks = twin(60, ["smoker"]), cabin = twin(60, ["huntcabin"]);
+  note(`a summer day with 60 venison: a drying rack makes ${r1(racks.pres)} days of jerky; a hunting cabin ${r1(cabin.pres)}`);
   check(racks.pres > 0 && racks.meat < 60 - 3, "a drying rack takes the game first, even with no surplus");
-  check(Math.abs(cabin.pres - 5) < 0.05 && cabin.meat < 60 - 6, "a hunting cabin smokes 6 game into 5 preserved");
+  check(Math.abs(cabin.pres - 5) < 0.05 && cabin.meat < 60 - 6 + 1e-9, "a hunting cabin smokes 6 game into 5 of jerky");
   const b2 = twin(40).b;
   eatFromStore(b2, 10);
-  check(Math.abs(b2.meat - (H.meatAt(b2))) < 1e-9 && b2.meat <= 40 - 10 + 1e-9, "a base eats its fresh game first");
+  check(H.meatAt(b2) <= 40 - 10 + 1e-9, "a base eats its fresh game first");
 }
 
 // ======================================================================
@@ -498,8 +510,8 @@ section("The hunting cabin, the Hunt and Fish jobs");
     // tune-jobcaps: no fixed cap (it was 2): the hunters it takes to bring in the food the land must (foraging.js
     // landFoodGap), at least one while the job is open; more with the stores empty.
     const c1 = WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 10 }).cap;
-    const keep = { food: base.stock.food, preserved: base.stock.preserved };
-    base.stock.food = 0; base.stock.preserved = 0;
+    const keep = { food: food(base), preserved: jarred(base) };
+    setFood(base, 0); setJarred(base, 0);
     const extra = Array.from({ length: 20 }, () => { const s = makeSurvivor(state, 1); s.location = { kind: "base", baseId: base.id }; state.survivors.push(s); return s; });
     const c0 = WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 0 }).cap;
     for (const s of extra) state.survivors.splice(state.survivors.indexOf(s), 1);
@@ -516,21 +528,21 @@ section("The hunting cabin, the Hunt and Fish jobs");
   people[0].role = "hunt"; people[1].role = "hunt";
   setAmmo(base.stock, 100);
   const autumn = dayIn(state, "autumn");
-  let food = 0, ammo0 = totalRounds(base.stock);
+  let got0 = 0, ammo0 = totalRounds(base.stock);
   state.game = {};
   const daily = [];
   for (let d = 0; d < 28; d++) {
     state.hour = (autumn + d) * 24 + 24;
     const got = huntDay(state, base);
-    food += got.rations;
+    got0 += got.rations;
     daily.push(got.rations);
   }
   const land = state.grid.within(base.tile, H.CABIN.radius).filter((id) => H.gameAbundance(state, id) > 0.3);
   const lvl = mean(land.map((id) => H.gameLevel(state, id)));
-  note(`two hunters (rifle, crossbow) at a cabin through autumn: ${food} food in 28 days (first week ${daily.slice(0, 7).reduce((a, b) => a + b, 0)}, last week ${daily.slice(21).reduce((a, b) => a + b, 0)}); ${ammo0 - totalRounds(base.stock)} ammo; the land down to ${Math.round(lvl * 100)}% on average`);
-  check(food > 0 && totalRounds(base.stock) < ammo0, "the cabin's hunters bring in game and use the base's ammo");
+  note(`two hunters (rifle, crossbow) at a cabin through autumn: ${got0} days of food in 28 days (first week ${daily.slice(0, 7).reduce((a, b) => a + b, 0)}, last week ${daily.slice(21).reduce((a, b) => a + b, 0)}); ${ammo0 - totalRounds(base.stock)} ammo; the land down to ${Math.round(lvl * 100)}% on average`);
+  check(got0 > 0 && totalRounds(base.stock) < ammo0, "the cabin's hunters bring in game and use the base's ammo");
   check(lvl < 0.95, "the land around the cabin is hunted down");
-  check(food / 28 < 20, `about ${r1(food / 28)} food a day for two hunters: a help, not a farm's worth of the land`);
+  check(got0 / 28 < 20, `about ${r1(got0 / 28)} food a day for two hunters: a help, not a farm's worth of the land`);
   // Fish job: an outpost on a river with a rod in the armory.
   const river = state.tiles.find((t) => t.terrain !== "water" && !t.loc && !state.bases.some((b) => b.tile === t.id) && H.fishSpot(state, t.id));
   const out = { id: newId(), tile: river.id, type: "outpost", name: "Test Landing", stock: { food: 20, water: 20, ammo: 0, scrap: 0, preserved: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
@@ -746,10 +758,10 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.MIX_PRESETS.quiet.mix), "governor: the dead 3 tiles off the cabin: quiet (bows and traps)");
   base.stock.arrows = 0;
   check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.AUTO_MIX.quietNoBows) && H.AUTO_MIX.quietNoBows.guns < 100, "governor: the dead near and no arrows: half traps, half guns (half the shots)");
-  const food0 = [base.stock.food, base.stock.preserved];
-  base.stock.food = 2; base.stock.preserved = 0;
+  const food0 = [food(base), jarred(base)];
+  setFood(base, 2); setJarred(base, 0);
   check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.DEFAULT_MIX), "governor: the dead near but the stores nearly empty: food first (guns)");
-  [base.stock.food, base.stock.preserved] = food0;
+  clearFood(base); addDays(base, food0[0] - food0[1]); setJarred(base, food0[1]);
   const cabin = base.buildings.find((x) => x.type === "huntcabin");
   base.buildings.splice(base.buildings.indexOf(cabin), 1);
   // The rule changed (2026-10-10): without a cabin the Hunt job still hunts the tiles next to the base, so with
@@ -920,7 +932,7 @@ section("Save / load mid-hunt, and determinism");
     st.hour = dayIn(st, "autumn") * 24 + 4;
     const crew = atBase(st, hub(st).id).slice(0, 2);
     crew[0].gear.weapon = newItem("huntrifle");
-    const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: forest.id, mission: "move", stance: "normal", supplies: { food: 10, water: 10, ammo: 20 }, plan: { preset: "hunt", steps: PRESETS.hunt.steps(1), conditions: {} } });
+    const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: forest.id, mission: "move", stance: "normal", supplies: { food: 10, water: 10, ammo: 40 }, plan: { preset: "hunt", steps: PRESETS.hunt.steps(1), conditions: {} } }); // 40 rounds (20 until food-types: on this seed a fight on the way now spends most of them and the hunt stopped in its 4th hour, before the save)
     const p = res.party;
     let text = null, world = st;
     for (let k = 0; k < 24 * 4; k++) {
@@ -990,8 +1002,8 @@ section(`The autopilot in a lean year: hunting and fishing on and off (${AP_DAYS
         st.governor.noHunting = off;
         // Lean: half the starting food, no preserved food.
         const hb = hub(st);
-        hb.stock.food = Math.floor((hb.stock.food || 0) / 2);
-        hb.stock.preserved = 0;
+        setFood(hb, Math.floor((food(hb) || 0) / 2));
+        setJarred(hb, 0);
         for (let i = 0; i < AP_DAYS * 24 && !st.gameOver; i++) tickHour(st);
         const deaths = (st.memorial || []).filter((m) => /hunger|starv/.test(m.cause || "")).length;
         rows.push({ style, seed, off, fell: !!st.gameOver && !st.victory, hungerDays: (st.econStats && st.econStats.hungerDays) || 0, deaths, trips: (st.governor.stats.huntTrips || 0) + (st.governor.stats.fishTrips || 0), hunted: Math.round((st.econStats && st.econStats.hunted) || 0), pop: st.survivors.filter((s) => s.alive).length, cabins: st.bases.filter((b) => count(b, "huntcabin")).length });

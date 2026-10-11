@@ -45,7 +45,8 @@
 //   convoy: someone hurt, the cargo gone, it goes on empty). Lost: the band loses people, the caravan a guard or two.
 // - A group that overheard your convoy's route on the radio (intel.js g.lying) hunts it INTEL.AMBUSH.RANGE tiles further
 //   out and INTEL.AMBUSH.MULT × as often until it has passed.
-import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES } from "./data.js";
+import { typeGoods, FOODS } from "./foods.js"; // a convoy's food as items
+import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES, supValue } from "./data.js";
 import { keyWord } from "./water.js"; // "9mm FMJ"
 import { log, addCard, day, factionById, hurt, newId, combatPower } from "./world.js";
 import {
@@ -98,7 +99,7 @@ function goodsOf(c) {
   if (c.type === "merchants") return { supplies: c.ref.stock, gear: c.ref.wares };
   const q = c.ref;
   if (c.owner === "player") return q.cargo || (q.cargo = { supplies: {}, gear: [] });
-  if (!q.goods) q.goods = { supplies: c.type === "convoy" ? { ...AI_CONVOY_GOODS } : {}, gear: [] };
+  if (!q.goods) q.goods = { supplies: c.type === "convoy" ? typeGoods(null, AI_CONVOY_GOODS, "stores") : {}, gear: [] }; // foods.js: its food as items (no dice)
   return q.goods;
 }
 function aiEnemy(state, q, f) {
@@ -247,7 +248,7 @@ export function lootCaravan(state, p, goods, opts) {
   const out = [];
   const dice = (...k) => hash01(state.seed, "cvloot", opts.key || "", state.hour, ...k);
   const sup = {};
-  for (const [k, q] of Object.entries(goods.supplies || {})) if (SUPPLIES[k] && q >= 1) sup[k] = Math.floor(q);
+  for (const [k, q] of Object.entries(goods.supplies || {})) if (SUPPLIES[k] && q >= (FOODS[k] ? 1e-6 : 1)) sup[k] = FOODS[k] ? q : Math.floor(q); // food items: fractions kept
   const gear = [...(goods.gear || [])];
   for (const k of Object.keys(goods.supplies || {})) goods.supplies[k] = 0;
   if (goods.gear) goods.gear.length = 0;
@@ -330,7 +331,7 @@ export function leaveCache(state, tile, supplies, gear) {
   for (const [k, q] of Object.entries(supplies)) {
     if (!SUPPLIES[k] || q < 1) continue;
     const cur = site.items.find((i) => i.kind === "supply" && i.key === k);
-    if (cur) { cur.qty += q; cur.value = cur.qty * SUPPLIES[k].value; } else site.items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * SUPPLIES[k].value });
+    if (cur) { cur.qty += q; cur.value = cur.qty * supValue(k); } else site.items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * supValue(k) });
   }
   for (const g of gear) site.items.push({ kind: "gear", key: g.key, name: g.name, qty: 1, value: 0, item: g });
   markDeathSite(state, site);
@@ -613,10 +614,11 @@ export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, s
 export function takeInto(f, goods, state = null) {
   const got = {};
   for (const [k, q] of Object.entries(goods.supplies || {})) {
-    if (!SUPPLIES[k] || q < 1) continue;
+    if (!SUPPLIES[k] || !(q >= (FOODS[k] ? 1e-6 : 1))) continue;
     const tk = k === "rawwater" ? "water" : k;
-    f.stock[tk] = (f.stock[tk] || 0) + Math.floor(q);
-    got[k] = Math.floor(q);
+    const n = FOODS[k] ? q : Math.floor(q); // food items (foods.js): fractions kept (kg)
+    f.stock[tk] = (f.stock[tk] || 0) + n;
+    got[k] = n;
     goods.supplies[k] = 0;
   }
   const items = (goods.gear || []).splice(0);

@@ -69,13 +69,14 @@
 //   best first. Tools wear (GEAR dur, days of fishing): a team's every FISH.wearHours fished, a base's each day of
 //   the Fish job; a spear only half the time (FISH.spearWear: it is mostly a weapon). Quiet: Heat × 0.7.
 //
-// Fresh game (cargo.meat, base.meat: the share of the food that is fresh game):
-//   Carried it weighs MEAT_KG (1 kg) a ration instead of 0.5 (load.js bands: a deer on foot is a heavy walk; a car
-//   carries it all). A team eats its fresh game first. In the field it spoils 35% a day above 24 °C, 22% above
-//   12 °C, 12% above 4 °C, 6% around freezing and 2% below.
-//   At a base it is eaten first and the drying racks take it first; on top of the stores' own rate it loses 5% a
-//   day (10% in the heat, 2% below 5 °C, 0.3% below 0 °C), less with a cold store (× 0.4) or a hunting cabin
-//   (× 0.6). A hunting cabin smokes up to 6 a day into 5 preserved food.
+// Fresh game is raw meat by the animal (foods.js 2026-10-10: a deer is raw venison, a wild hog raw boar, small game
+//   raw rabbit or fowl, fish raw fish; a kill's rations are days of food, 2000 kcal):
+//   Carried it weighs what the meat weighs: MEAT_KG (about 1.35 kg) a day of food (load.js bands: a deer on foot is a
+//   heavy walk; a car carries it all). A team eats what spoils first, and raw meat keeps 2–3 days (fish a day and a
+//   half) at room temperature, × CARRIED by the hour's temperature in a pack.
+//   At a base it sits in the food rooms like any fresh food (storage.js: the coldest room first, it spoils fastest),
+//   the cook fire makes meals of it and the drying racks take it first; a hunting cabin's smokehouse keeps it longer
+//   (× CABIN.spoil) and smokes up to 6 days of it a day into 5 of jerky (fish: smoked fish).
 //
 // Hunting cabin (buildings.js "huntcabin", any base with game land within 2 tiles: abundance there adding up to 3):
 //   the people on the Hunt work type / role (no fixed cap: as many as the food the land must bring in wants,
@@ -100,7 +101,8 @@ import * as Weather from "./weather.js";
 import { count } from "./buildings.js";
 import { workFactor } from "./health.js";
 import { foragingDaily, landFoodHands } from "./foraging.js";
-import { wormKill, wormMeatIn, wormMeatAt, smokeWormMeat, shrinkWormMeat, huntYieldMult, WORM } from "./worm.js";
+import { wormKill, huntYieldMult, WORM } from "./worm.js";
+import { FOODS, foodIn, foodUnits, addFood, takeFood, moveFood, ageLots, unitsOf, qtyOf, foodText, foodRng } from "./foods.js"; // game is raw meat by the animal
 import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
 import { huntRounds, huntLoad, takeHuntShots, baseAmmo } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
@@ -113,10 +115,10 @@ export const HUNT = {
   minHours: 2, maxHours: 24, defHours: 8,
 };
 export const ANIMALS = {
-  deer:  { name: "deer", plural: "deer", rations: 30, big: true },
-  hog:   { name: "wild hog", plural: "wild hogs", rations: 16, big: true },
-  small: { name: "small game", plural: "small game", rations: 2, big: false },
-  fish:  { name: "fish", plural: "fish", rations: 1, big: false },
+  deer:  { name: "deer", plural: "deer", rations: 30, big: true, item: "f_venison" },
+  hog:   { name: "wild hog", plural: "wild hogs", rations: 16, big: true, item: "f_boar" },
+  small: { name: "small game", plural: "small game", rations: 2, big: false, item: null }, // rabbit or fowl (gameItem)
+  fish:  { name: "fish", plural: "fish", rations: 1, big: false, item: "f_fish" },
 };
 export const SNARE = { count: 8, perDay: 1, setHours: 2, checkHours: 1, scrap: 2, theft: 0.08, wireLoss: 0.3, deplete: 60, safeDays: 2 };
 export const FISH = { rod: 0.6, net: 1.2, netAlone: 0.7, deplete: 50, halfLife: 10, ice: 0.5, wearHours: 6, spearWear: 0.5 };
@@ -124,9 +126,8 @@ export const FISH = { rod: 0.6, net: 1.2, netAlone: 0.7, deplete: 50, halfLife: 
 // bring in (foraging.js landFoodHands), each takes the best tile left and a kill thins it hard (a deer −0.3), so a
 // crowd soon hunts poor ground. Fishers likewise (one rod or net each: the tools are the cap); the base's one spot
 // gives each fisher past the first fishCrowd less (fishers' bank space and spooked fish; at least fishCrowdFloor).
+export const MEAT_KG = 1.35; // kg of raw game a day of food, about (venison 1.33, boar 1, rabbit and fowl 1.4, fish 1.4)
 export const CABIN = { radius: 2, hours: 3, smoke: 6, smokeOut: 5, land: 3, spoil: 0.6, snareLines: 2, fishCrowd: 0.1, fishCrowdFloor: 0.4 };
-export const MEAT_KG = 1;                                    // a ration of fresh game as carried
-export const MEAT_EXTRA = MEAT_KG - SUPPLIES.food.weight;    // what it adds over packed food
 export const GAME_TERRAIN = { forest: 1, hills: 0.8, mountain: 0.5, plains: 0.55, suburb: 0.12, city: 0.03, water: 0 };
 // Hunting weapons by trade category (data.js GEAR cat); a GEAR entry's own `hunt: { big, small }` overrides it.
 export const HUNT_CAT = {
@@ -480,49 +481,69 @@ export function huntProblem(state, p, tile = partyTile(p)) {
 }
 
 // ---------- fresh game in the cargo ----------
-export const meatIn = (cargo) => (cargo ? Math.max(0, Math.min(cargo.meat || 0, cargo.supplies && cargo.supplies.food > 0 ? cargo.supplies.food : 0)) : 0);
-export const meatAt = (base) => Math.max(0, Math.min(base.meat || 0, base.stock.food || 0));
-// Puts fresh game in a team's cargo, as much as fits. worm: how much of it carries the worm's eggs (worm.js
-// cargo.wormMeat). Returns the rations kept.
-export function addMeat(state, p, rations, worm = 0) {
+// Game is raw meat by the animal (foods.js: a deer is venison, a wild hog boar, small game rabbit or fowl, fish raw
+// fish), in days of food (rations) here and as items in the stocks: it weighs what the item weighs (a kilo of meat a
+// kilo) and spoils by its own shelf (2–3 days, a day and a half for fish) like any food, faster in the heat.
+const isGame = (k, f) => f.group === "rawmeat" || f.group === "rawfish";
+// The item a kill is (small game: rabbit and squirrel or a bird, by the food dice).
+export function gameItem(state, kind) {
+  const a = ANIMALS[kind] || ANIMALS.small;
+  if (kind === "small" || !a.item) return foodRng(state).chance(0.5) ? "f_smallgame" : "f_fowl";
+  return a.item;
+}
+// Days of raw game in a team's cargo, at a base.
+export const meatIn = (cargo) => (cargo && cargo.supplies ? foodUnits(cargo, isGame) : 0);
+export const meatAt = (base) => (base ? foodUnits(base, isGame) : 0);
+// Puts fresh game in a team's cargo, as much as fits. worm: how much of it carries the worm's eggs (worm.js: an
+// egg lot). kind: the animal (ANIMALS). Returns the rations kept.
+export function addMeat(state, p, rations, worm = 0, kind = "small") {
   p.cargo = p.cargo || { supplies: {}, gear: [] };
-  const fit = Math.floor((cargoRoom(state, p) + 1e-9) / MEAT_KG);
-  const kept = Math.max(0, Math.min(rations, fit));
+  const item = gameItem(state, kind);
+  const f = FOODS[item];
+  const kgPerRation = f.kg / unitsOf(item, 1);
+  const fit = Math.max(0, cargoRoom(state, p) + 1e-9) / kgPerRation;
+  const kept = Math.max(0, Math.min(rations, Math.floor(fit * 10) / 10));
   if (kept <= 0) return 0;
-  const m = meatIn(p.cargo), w = wormMeatIn(p.cargo);
-  p.cargo.supplies.food = (p.cargo.supplies.food || 0) + kept;
-  p.cargo.meat = m + kept;
-  if (worm > 0 || w > 0) p.cargo.wormMeat = w + kept * Math.min(1, Math.max(0, worm) / rations);
+  const w = rations > 0 ? kept * Math.min(1, Math.max(0, worm) / rations) : 0;
+  if (kept - w > 1e-9) addFood(p.cargo, item, qtyOf(item, kept - w), { state });
+  if (w > 1e-9) addFood(p.cargo, item, qtyOf(item, w), { state, egg: true });
   return kept;
 }
-// Takes `qty` of fresh game out of a cargo (spoiled, dropped: the meat with eggs goes in proportion). clean: eaten,
-// only the meat without eggs (worm.js: that is eaten last, raw). Returns what was taken.
+// Takes `qty` days of fresh game out of a cargo (dropped: the soonest to spoil first). clean: eaten, only the meat
+// without eggs (worm.js: that is eaten last, raw). Returns the days taken.
 export function takeMeat(cargo, qty, { clean = false } = {}) {
-  const m = meatIn(cargo), w = wormMeatIn(cargo);
-  const q = Math.max(0, Math.min(clean ? m - w : m, qty));
-  if (q <= 0) { if (cargo) cargo.meat = m; return 0; }
-  cargo.supplies.food -= q;
-  cargo.meat = m - q;
-  if (!clean && w > 0) cargo.wormMeat = (w * (m - q)) / m;
-  return q;
+  if (!cargo || !(qty > 0)) return 0;
+  return takeFood(cargo, qty, { only: isGame, eggs: !clean }).units;
 }
+// A day's spoiling of carried food in the field at a mean temperature (the screens: × the shelf, foods.js).
 export function fieldSpoilRate(temp) {
   return temp > 24 ? 0.35 : temp > 12 ? 0.22 : temp > 4 ? 0.12 : temp > -1 ? 0.06 : 0.02;
 }
-// Hourly for a team (parties.js): its fresh game spoils by the temperature.
+// Carried food (a team's packs and cargo): shelf used an hour × this (foods.js lots), by the hour's temperature: a
+// pack in the sun is warm, a frozen one keeps.
+export const CARRIED = { base: 1.2, hot: 1.6, cold: 0.6, frozen: 0.15 };
+export const carriedFactor = (temp) => (temp > 24 ? CARRIED.hot : temp < -1 ? CARRIED.frozen : temp < 5 ? CARRIED.cold : CARRIED.base);
+// Hourly for a team (parties.js): everything it carries ages by the hour's temperature; what spoils is thrown out.
+// p.gameSpoiled adds up the days of food lost (the trip's summary).
 export function gameSpoilHour(state, p) {
-  const m = meatIn(p.cargo);
-  if (!(m > 0)) { if (p.cargo && p.cargo.meat) p.cargo.meat = 0; return 0; }
-  const lost = takeMeat(p.cargo, (m * fieldSpoilRate(Weather.weather(state).temp)) / 24);
-  p.gameSpoiled = (p.gameSpoiled || 0) + lost;
+  const temp = Weather.weather(state).temp;
+  const fac = carriedFactor(temp);
+  let lost = 0;
+  const items = {};
+  for (const h of [p, p.cargo]) {
+    if (!h || !(h.supplies || h.stock)) continue;
+    const got = ageLots(h, 1 / 24, () => fac, state);
+    for (const [k, q] of Object.entries(got)) { items[k] = (items[k] || 0) + q; lost += unitsOf(k, q); }
+  }
+  if (lost > 0) {
+    p.gameSpoiled = (p.gameSpoiled || 0) + lost;
+    if (p.owner === "player" && Object.values(items).some((q) => q >= 0.5)) log(state, `${teamName(state, p)} threw out food that had gone bad: ${foodText(items)}.`, "info");
+  }
   return lost;
 }
-// A team unloading at a base (parties.js): its fresh game is fresh game there too.
-export function unloadGame(base, cargo) {
-  const m = meatIn(cargo), w = wormMeatIn(cargo);
-  if (cargo) { cargo.meat = 0; cargo.wormMeat = 0; }
-  if (w > 0) base.wormMeat = wormMeatAt(base) + w; // before the meat: wormMeatAt is capped by it
-  if (m > 0) base.meat = meatAt(base) + m;
+// A team unloading at a base (parties.js): its food goes into the base's stores with its lots (shelf left, eggs).
+export function unloadGame(base, cargo, state = null) {
+  if (cargo && cargo.supplies) moveFood(cargo, base, null, { state });
 }
 
 // ---------- one hour of hunting (orders.js taskHour) ----------
@@ -556,7 +577,7 @@ export function huntHour(state, p) {
     // Snares and deadfalls worked this hour: small game now and then, not a sound.
     if (state.rng.chance(Math.min(0.9, trapRate(state, tile, state.hour, gameLevel(state, tile), members.length) * bm))) {
       const wk = wormKill(state, tile, ANIMALS.small.rations);
-      const kept = addMeat(state, p, wk.rations, wk.worm);
+      const kept = addMeat(state, p, wk.rations, wk.worm, "small");
       bagged(got, "small");
       got.trapped = (got.trapped || 0) + 1;
       if (wk.infested) got.infested = (got.infested || 0) + 1;
@@ -592,7 +613,7 @@ export function huntHour(state, p) {
       got.arrows = (got.arrows || 0) + takeSupply(p, "arrows", lost);
     }
     const wk = wormKill(state, tile, a.rations); // worm.js: an infested animal yields a quarter, all of it with eggs
-    const kept = addMeat(state, p, wk.rations, wk.worm);
+    const kept = addMeat(state, p, wk.rations, wk.worm, k);
     bagged(got, k);
     if (wk.infested) got.infested = (got.infested || 0) + 1;
     got.rations += kept;
@@ -624,9 +645,9 @@ export function huntSummary(state, p, t) {
   p.lastHaul = { kind: "hunt", rations: got.rations, hour: state.hour }; // for the trip report (and tests)
   const worm = wormNote(state, partyTile(p), got.infested);
   const text = got.rations > 0
-    ? `Hunted ${t.done}h: ${what} (${Math.floor(got.rations)} food of fresh game, it spoils fast: eat it, or dry or smoke it at home).${worm}${heat}${left} Game left here: ${level}.${stop}`
+    ? `Hunted ${t.done}h: ${what} (${Math.floor(got.rations)} days of food in raw meat, it spoils in days: eat it, cook it, or dry or smoke it at home).${worm}${heat}${left} Game left here: ${level}.${stop}`
     : `Hunted ${t.done}h and found nothing worth a shot.${heat} Game left here: ${level}.${stop}`;
-  if (got.rations > 0) log(state, `${teamName(state, p)} hunted near ${tileLabel(state, partyTile(p))}: ${what}, ${Math.floor(got.rations)} food of game.`, "good");
+  if (got.rations > 0) log(state, `${teamName(state, p)} hunted near ${tileLabel(state, partyTile(p))}: ${what}, ${Math.floor(got.rations)} days of food in raw meat.`, "good");
   return text;
 }
 
@@ -716,7 +737,7 @@ export function fishHour(state, p) {
   let n = 0;
   for (let i = 0; i < 3; i++) if (state.rng.chance(rate / 3)) n++;
   if (n) {
-    const kept = addMeat(state, p, n, wormKill(state, tile, n, { fish: true }).worm); // worm.js: fish from infected water carry eggs
+    const kept = addMeat(state, p, n, wormKill(state, tile, n, { fish: true }).worm, "fish"); // worm.js: fish from infected water carry eggs
     got.fish += n;
     got.rations += kept;
     got.left += n - kept;
@@ -732,9 +753,9 @@ export function fishSummary(state, p, t) {
   const left = got.left >= 1 ? ` No room for ${Math.floor(got.left)} more.` : "";
   const word = gameWord(fishLevel(state, partyTile(p)));
   p.lastHaul = { kind: "fish", rations: got.rations, hour: state.hour };
-  if (got.rations > 0) log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice}: ${Math.floor(got.rations)} food of fish.`, "good");
+  if (got.rations > 0) log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice}: ${Math.floor(got.rations)} days of food in raw fish.`, "good");
   return got.rations > 0
-    ? `Fished ${t.done}h${ice}: ${Math.floor(got.rations)} food of fresh fish (it spoils fast).${wormNote(state, partyTile(p))}${left} Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`
+    ? `Fished ${t.done}h${ice}: ${Math.floor(got.rations)} days of food in raw fish (it spoils in a day or two).${wormNote(state, partyTile(p))}${left} Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`
     : `Fished ${t.done}h${ice} and caught nothing worth keeping. Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`;
 }
 
@@ -839,9 +860,9 @@ export function snareWork(state, p, mode) {
     worm += wk.worm;
     if (wk.infested) infested++;
   }
-  const kept = addMeat(state, p, rations, worm);
+  const kept = addMeat(state, p, rations, worm, "small");
   for (const m of members) gainXp(state, m, "scouting", 1);
-  let text = r.animals ? `The snares held ${r.animals} small game (${kept} food of fresh game${kept < rations ? `; no room for ${rations - kept}` : ""}).${wormNote(state, tile, infested)}` : "The snares were empty.";
+  let text = r.animals ? `The snares held ${r.animals} small game (${Math.round(kept * 10) / 10} days of food in raw meat${kept < rations - 0.05 ? `; no room for ${Math.round((rations - kept) * 10) / 10}` : ""}).${wormNote(state, tile, infested)}` : "The snares were empty.";
   if (r.rotted) text += ` ${r.rotted} caught earlier had gone bad.`;
   if (r.robbed) text += ` Something got to the line first: ${r.robbed} taken.`;
   const lift = mode === "lift" || r.gone;
@@ -1088,7 +1109,7 @@ export function huntTrip(state, base, s, tile, hours, hour) {
         got.arrows = (got.arrows || 0) + lost;
       }
       bagged(got, k);
-      cabinKill(state, got, tile, ANIMALS[k].rations);
+      cabinKill(state, got, tile, ANIMALS[k].rations, k); // foods.js: the animal's meat by item
       takeGame(state, tile, ANIMALS[k].rations, ANIMALS[k].big ? HUNT.bigDeplete : HUNT.smallDeplete);
       gainXp(state, s, "shooting", ANIMALS[k].big ? 6 : 2);
     }
@@ -1103,7 +1124,7 @@ export function huntTrip(state, base, s, tile, hours, hour) {
     if (n) {
       got.small = (got.small || 0) + n;
       got.trapped = (got.trapped || 0) + n;
-      for (let i = 0; i < n; i++) cabinKill(state, got, tile, ANIMALS.small.rations);
+      for (let i = 0; i < n; i++) cabinKill(state, got, tile, ANIMALS.small.rations, "small");
       takeGame(state, tile, n * ANIMALS.small.rations, SNARE.deplete);
     }
   }
@@ -1124,7 +1145,7 @@ export function fishTrip(state, base, s, shore, hours, hour) {
   const rolls = Math.max(3, Math.ceil(want * 2)); // three rolls a trip at least (more for a big catch)
   let n = 0;
   for (let i = 0; i < rolls; i++) if (state.rng.chance(Math.min(1, want / rolls))) n++;
-  if (n) { got.fish = n; cabinKill(state, got, shore, n, true); lower(state, "fish", shore, n / FISH.deplete); }
+  if (n) { got.fish = n; cabinKill(state, got, shore, n, "fish"); lower(state, "fish", shore, n / FISH.deplete); }
   return got;
 }
 // Daily (economy.js baseDaily): the Hunt and Fish jobs' day is in (their trips brought the catch home through the day,
@@ -1157,45 +1178,54 @@ export function huntingDaily(state, base) {
   if (got.rations > 0) {
     const who = [...new Set([...((h && h.who) || []), ...((fi && fi.who) || [])])].map((id) => state.survivors.find((x) => x.id === id)).filter(Boolean);
     const worm = got.infested ? ` ${got.infested} of them infested: a quarter of the meat, with the worm's eggs.` : got.worm > 0 ? " Some of it is from infected land and needs cooking through." : "";
-    log(state, `${(who.length ? who : [...hunters, ...fishers]).map(first).join(" and ")} brought in ${countText(got)} at ${base.name} (${Math.floor(got.rations)} food of fresh game).${worm}`, "good");
+    log(state, `${(who.length ? who : [...hunters, ...fishers]).map(first).join(" and ")} brought in ${countText(got)} at ${base.name} (${Math.floor(got.rations)} days of food in raw meat and fish).${worm}`, "good");
   }
   return got;
 }
-// One kill by a base's hunters, snares or fishers (worm.js wormKill): what it adds to the day's catch.
-function cabinKill(state, got, tile, rations, fish = false) {
-  const wk = wormKill(state, tile, rations, { fish });
+// One kill by a base's hunters, snares or fishers (worm.js wormKill): what it adds to the day's catch, by the item
+// (got.items / got.eggItems: { key: q }, the meat with the worm's eggs apart).
+function cabinKill(state, got, tile, rations, kind = "small") {
+  const wk = wormKill(state, tile, rations, { fish: kind === "fish" });
   got.rations += wk.rations;
   if (wk.worm > 0) got.worm = (got.worm || 0) + wk.worm;
   if (wk.infested) got.infested = (got.infested || 0) + 1;
+  const item = gameItem(state, kind);
+  const clean = Math.max(0, wk.rations - wk.worm);
+  if (clean > 0) { got.items = got.items || {}; got.items[item] = (got.items[item] || 0) + qtyOf(item, clean); }
+  if (wk.worm > 0) { got.eggItems = got.eggItems || {}; got.eggItems[item] = (got.eggItems[item] || 0) + qtyOf(item, wk.worm); }
+}
+// A day's catch into a base's stores (or a hunter's trip home, job-trips): got.items and got.eggItems ({ key: q }), or
+// a bare count of rations (got.rations) of `kind` (the deer, hog, small game or fish of an older caller).
+export function depositGame(state, base, got, kind = "small") {
+  if (!got) return 0;
+  let n = 0;
+  if (!got.items && !got.eggItems && got.rations > 0) {
+    const item = gameItem(state, kind), w = Math.max(0, Math.min(got.rations, got.worm || 0));
+    n += addFood(base, item, qtyOf(item, got.rations - w), { state });
+    if (w > 0) n += addFood(base, item, qtyOf(item, w), { state, egg: true });
+    return n;
+  }
+  for (const [k, q] of Object.entries(got.items || {})) n += addFood(base, k, q, { state });
+  for (const [k, q] of Object.entries(got.eggItems || {})) n += addFood(base, k, q, { state, egg: true });
+  return n;
 }
 
 // ---------- fresh game at a base (storage.js storageDaily) ----------
-export function baseMeatRate(temp) {
-  return temp < 0 ? 0.003 : temp < 5 ? 0.02 : temp > 24 ? 0.1 : 0.05;
-}
-// Before the stores spoil: the cabin smokes its share, then the rest of the fresh game spoils faster than other food.
-// Returns { smoked, dried (preserved made), spoiled }.
-export function baseGameDaily(state, base, temp) {
-  let m = meatAt(base);
-  base.meat = m;
+// The hunting cabin's smokehouse: up to CABIN.smoke days of raw meat and fish a day (those with the worm's eggs
+// first: smoked, they are safe) into CABIN.smokeOut of jerky (fish: smoked fish). Returns { smoked, dried }.
+export function baseGameDaily(state, base) {
   const out = { smoked: 0, dried: 0, spoiled: 0 };
-  if (!(m > 0)) return out;
-  if (baseHasHunting(base) && atBase(state, base.id).length) {
-    const s = Math.min(CABIN.smoke, m);
-    smokeWormMeat(base, s); // worm.js: the meat with eggs is smoked first (smoked is safe)
-    base.stock.food -= s;
-    base.stock.preserved = (base.stock.preserved || 0) + (s * CABIN.smokeOut) / CABIN.smoke;
-    m -= s;
-    out.smoked = s;
-    out.dried = (s * CABIN.smokeOut) / CABIN.smoke;
+  if (!baseHasHunting(base) || !atBase(state, base.id).length || !(meatAt(base) > 0)) return out;
+  const isGame = (k, f) => f.group === "rawmeat" || f.group === "rawfish";
+  const a = takeFood(base, CABIN.smoke, { only: isGame, clean: false, state });
+  const b = CABIN.smoke - a.units > 1e-9 ? takeFood(base, CABIN.smoke - a.units, { only: isGame, eggs: false, state }) : { units: 0, items: {} };
+  for (const r of [a, b]) for (const [k, q] of Object.entries(r.items)) {
+    const into = FOODS[k].group === "rawfish" ? "f_smokedfish" : "f_jerky";
+    const u = unitsOf(k, q) * (CABIN.smokeOut / CABIN.smoke);
+    addFood(base, into, qtyOf(into, u), { state });
+    out.dried += u;
   }
-  const mult = (count(base, "coldstore") ? 0.4 : 1) * (baseHasHunting(base) ? CABIN.spoil : 1);
-  const lost = m * baseMeatRate(temp) * mult;
-  base.stock.food = Math.max(0, base.stock.food - lost);
-  shrinkWormMeat(base, m, m - lost);
-  m = Math.max(0, m - lost);
-  base.meat = Math.round(m * 100) / 100;
-  out.spoiled = lost;
+  out.smoked = a.units + b.units;
   return out;
 }
 
@@ -1264,7 +1294,7 @@ export const AUTO_MIX = { ammo: 30, arrows: 4, hungry: 5, quietNoBows: { traps: 
 export function autoHuntMix(state, base) {
   const people = atBase(state, base.id);
   const bows = hasBow(people) && (base.stock.arrows || 0) >= AUTO_MIX.arrows;
-  const food = ((base.stock.food || 0) + (base.stock.preserved || 0)) / Math.max(1, people.length);
+  const food = foodIn(base.stock) / Math.max(1, people.length);
   const near = (baseHasHunting(base) || people.some((s) => s.role === "hunt")) && food >= AUTO_MIX.hungry && state.hordes.some((h) => (["roam", "border", undefined, null].includes(h.role) && state.grid.distance(h.tile, base.tile) <= HUNT.drawRange) ||
     (h.role === "attack" && h.goal && h.goal.baseId === base.id));
   if (near) return bows ? { ...MIX_PRESETS.quiet.mix } : { ...AUTO_MIX.quietNoBows };

@@ -30,7 +30,7 @@
 //
 // The vehicle adds its strength to the caravan's (vStrength) and stands on the battle map behind the guards (a
 // Humvee's or MRAP's M2 by the numbers: vehicles.js TURRET_ODDS). Won, it is yours if it still runs (caravanraids.js).
-import { SUPPLIES, SUPPLY_KEYS, GEAR, FACTION_TYPES } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, GEAR, FACTION_TYPES, supValue } from "./data.js";
 import { lootItem } from "./inventory.js";
 import { kitSource } from "./itemcond.js"; // the condition of a guard's gun by their kit (a contractor's kept like a soldier's)
 import { itemValue, itemCat } from "./valuation.js";
@@ -70,7 +70,7 @@ export const TIER_KEYS = ["light", "armed", "armoured"];
 // What a caravan carries is worth: supplies at their base value, every item at its worth (condition, uses left).
 export function cargoValue(stock, wares) {
   let v = 0;
-  for (const k of SUPPLY_KEYS) v += Math.max(0, (stock && stock[k]) || 0) * SUPPLIES[k].value;
+  for (const k of SUPPLY_KEYS) v += Math.max(0, (stock && stock[k]) || 0) * supValue(k);
   for (const it of wares || []) v += itemValue(it);
   return Math.round(v);
 }

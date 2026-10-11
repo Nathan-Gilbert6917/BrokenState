@@ -49,6 +49,7 @@
 // You declaring war (declareByPlayer, the group's card): goal tribute, land (a base of theirs) or to break them; the
 // group turns hostile (−60), its pact and trade route go, its bloc comes in on its side, groups friendly with it −4,
 // infamy +INFAMY unless it was a hostile aggressive group. The same weariness and terms; they sue when worn out.
+import { moveFoodUnits, foodIn, DAY_VALUE } from "./foods.js"; // food by type (foods.js)
 import { day, log, hub, factionById, addCard, alive, atBase, supplyValue, playerStrength, baseById, checkGameOver } from "./world.js";
 import { SUPPLIES } from "./data.js";
 import { totalRounds, spendAmmo } from "./rounds.js"; // tribute in rounds by calibre
@@ -167,7 +168,7 @@ export function warGoalFor(state, f) {
   const rich = mine.slice().sort((a, b) => (b.k.value || 0) - (a.k.value || 0) || a.tile - b.tile)[0] || null;
   const richV = rich ? rich.k.value || 0 : 0;
   const near = mine.filter((x) => x.base.type !== "hub" && nearest(state, f, x.tile) <= PW.LAND_NEAR).sort((a, b) => nearest(state, f, a.tile) - nearest(state, f, b.tile) || a.tile - b.tile)[0] || null;
-  const hungry = (f.stock.food || 0) < f.pop * 3;
+  const hungry = foodIn(f.stock) < f.pop * 3;
   const land = controlledLand(state).pct;
   const scores = {
     revenge: g.raid + 1.5 * g.execution + g.prisoners + 0.5 * g.theft,
@@ -239,7 +240,7 @@ export function declareChance(state, f) {
   const g = grievanceOf(state, f);
   const goal = warGoalFor(state, f);
   const rich = goal.richTile != null && (knowsOf(state, f).bases[goal.richTile] || {}).value >= PW.RICH;
-  return PW.BASE * weightOf(f, "warlike") * (1 + g.total / 40) * (rich ? 1.4 : 1) * ((f.stock.food || 0) < f.pop * 3 ? 1.3 : 1);
+  return PW.BASE * weightOf(f, "warlike") * (1 + g.total / 40) * (rich ? 1.4 : 1) * (foodIn(f.stock) < f.pop * 3 ? 1.3 : 1);
 }
 function declarations(state) {
   if (state.noPlayerWars || !hub(state) || state.gameOver || hcGroupRaidsQuiet(state)) return;
@@ -345,7 +346,7 @@ function warDay(state, w) {
   for (const x of belligerents(state, w)) { if (x.goodwill > PW.HOSTILE_GW) x.goodwill = PW.HOSTILE_GW; if (x.pact) x.pact = null; }
   // Weariness.
   let e = PW.EXH_DAY;
-  if ((f.stock.food || 0) < f.pop * 2) e += PW.EXH_HUNGRY;
+  if (foodIn(f.stock) < f.pop * 2) e += PW.EXH_HUNGRY;
   if ((f.stock.ammo || 0) < f.pop * 3) e += PW.EXH_HUNGRY / 2;
   const des = (f.deserted || 0) - (w.deserted || 0);
   if (des > 0) e += des * PW.EXH_DESERT;
@@ -446,7 +447,7 @@ function share(stock, frac, f = null) {
   const out = {};
   for (const k of ["food", "ammo", "meds", "scrap"]) {
     if (k === "ammo" && !f) { const n = Math.floor(totalRounds(stock) * frac); if (n > 0) for (const [kk, q] of Object.entries(spendAmmo({ ...stock }, n).keys)) if (kk !== "ammo") out[kk] = q; continue; }
-    const q = Math.floor((stock[k] || 0) * frac);
+    const q = Math.floor((k === "food" ? foodIn(stock) : stock[k] || 0) * frac); // food: days of it (foods.js)
     if (!(q > 0)) continue;
     if (k === "ammo") Object.assign(out, findRounds(kindTheme(f.type), q, "pwtribute", f.name)); // f.name: a world-local salt (an id is not: tools/sameseedtest.js)
     else out[k] = q;
@@ -462,7 +463,7 @@ export function demandTerms(state, w) {
   switch (w.goal) {
     case "territory": { const b = baseAt(state, w.target); if (b && b.type !== "hub") t.push({ kind: "cede", payer: "you", tile: b.tile }); else t.push({ kind: "tribute", payer: "you", goods: share(hb.stock, PW.TRIBUTE) }); break; }
     case "revenge": { const n = theirPrisoners(state, f).length; if (n) t.push({ kind: "prisoners", payer: "you", n }); t.push({ kind: "tribute", payer: "you", goods: share(hb.stock, PW.TRIBUTE / 2) }); break; }
-    case "conversion": t.push({ kind: "convert", goods: { food: Math.floor((hb.stock.food || 0) * PW.TITHE) } }); break;
+    case "conversion": t.push({ kind: "convert", goods: { food: Math.floor(foodIn(hb.stock) * PW.TITHE) } }); break;
     case "rival": { const b = outpostNearest(state, f); if (b) t.push({ kind: "cede", payer: "you", tile: b.tile }); t.push({ kind: "tribute", payer: "you", goods: share(hb.stock, PW.TRIBUTE * 0.75) }); break; }
     case "loot": t.push({ kind: "tribute", payer: "you", goods: share(hb.stock, PW.TRIBUTE + 0.05) }); break;
     default: break; // a war you started: they only want it over
@@ -485,7 +486,7 @@ export function sueTerms(state, w) {
   return t;
 }
 const goodsWords = (g) => Object.entries(g || {}).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ") || "nothing";
-const goodsValue = (g) => Object.entries(g || {}).reduce((a, [k, q]) => a + q * ((SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
+const goodsValue = (g) => Object.entries(g || {}).reduce((a, [k, q]) => a + q * (k === "food" ? DAY_VALUE : (SUPPLIES[k] && SUPPLIES[k].value) || 1), 0); // food: days of it
 export function termsText(state, w, terms) {
   const f = mainOf(state, w);
   const who = f ? f.name : "they";
@@ -510,7 +511,7 @@ export function termsProblem(state, w, terms) {
   if (!pwarById(state, w.id)) return "That war is over.";
   if (!f || !f.alive) return "They are gone.";
   for (const t of terms) {
-    if (t.kind === "tribute" && t.payer === "you") { if (!hb || Object.entries(t.goods).some(([k, q]) => (hb.stock[k] || 0) < q)) return `${hb ? hb.name : "Your hub"} does not have it.`; }
+    if (t.kind === "tribute" && t.payer === "you") { if (!hb || Object.entries(t.goods).some(([k, q]) => (k === "food" ? foodIn(hb.stock) : hb.stock[k] || 0) < q)) return `${hb ? hb.name : "Your hub"} does not have it.`; }
     if (t.kind === "cede" && t.payer === "you") { const b = baseAt(state, t.tile); if (!b || b.type === "hub") return "That base is not yours to give."; }
     if (t.kind === "cede" && t.payer === "them" && (!f.bases.includes(t.tile) || f.bases.length < 2)) return "That base is not theirs to give.";
     if (t.kind === "prisoners" && t.payer === "you" && theirPrisoners(state, f).length < t.n) return "You no longer hold them.";
@@ -589,13 +590,13 @@ export function settle(state, warId, terms, lead = "Peace") {
   const f = mainOf(state, w), hb = hub(state);
   const bits = [];
   for (const t of terms) {
-    if (t.kind === "tribute" && t.payer === "you") { for (const [k, q] of Object.entries(t.goods)) { const n = Math.min(q, Math.floor(hb.stock[k] || 0)); hb.stock[k] -= n; f.stock[k] = (f.stock[k] || 0) + n; } bits.push(`you paid ${goodsWords(t.goods)}`); }
-    else if (t.kind === "tribute" && t.payer === "them") { for (const [k, q] of Object.entries(t.goods)) { const fk = SUPPLIES[k] && SUPPLIES[k].round && !(f.stock[k] >= q) ? "ammo" : k; /* a round key: out of their one ammo count */ const n = Math.min(q, Math.floor(f.stock[fk] || 0)); f.stock[fk] -= n; hb.stock[k] = (hb.stock[k] || 0) + n; } bits.push(`${f.name} paid ${goodsWords(t.goods)} to ${hb.name}`); }
+    if (t.kind === "tribute" && t.payer === "you") { for (const [k, q] of Object.entries(t.goods)) { if (k === "food") { moveFoodUnits(hb, f, Math.min(q, foodIn(hb.stock)), { state }); continue; } const n = Math.min(q, Math.floor(hb.stock[k] || 0)); hb.stock[k] -= n; f.stock[k] = (f.stock[k] || 0) + n; } bits.push(`you paid ${goodsWords(t.goods)}`); }
+    else if (t.kind === "tribute" && t.payer === "them") { for (const [k, q] of Object.entries(t.goods)) { if (k === "food") { moveFoodUnits(f, hb, Math.min(q, foodIn(f.stock)), { state }); continue; } const fk = SUPPLIES[k] && SUPPLIES[k].round && !(f.stock[k] >= q) ? "ammo" : k; /* a round key: out of their one ammo count */ const n = Math.min(q, Math.floor(f.stock[fk] || 0)); f.stock[fk] -= n; hb.stock[k] = (hb.stock[k] || 0) + n; } bits.push(`${f.name} paid ${goodsWords(t.goods)} to ${hb.name}`); }
     else if (t.kind === "prisoners" && t.payer === "you") { const ps = theirPrisoners(state, f).slice(0, t.n); for (const p of ps) tradeBack(state, p.id); bits.push(`${ps.length} of their people went home`); }
     else if (t.kind === "prisoners" && t.payer === "them") { const cs = captivesOf(state, f.id); for (const s of cs) { s.location = { kind: "base", baseId: hb.id }; s.role = "rest"; s.mood = Math.min(100, (s.mood || 50) + 15); } if (cs.length) bits.push(`${cs.map((s) => s.name).join(", ")} came home`); }
     else if (t.kind === "cede" && t.payer === "you") { const b = baseAt(state, t.tile); const name = b.name; occupyPlayerBase(state, b, f, { garrison: 4, outcome: "ceded", ceded: true }); bits.push(`you handed over ${name}`); }
     else if (t.kind === "cede" && t.payer === "them") { captureBase(state, f, t.tile, null, { people: 0, ceded: true }); bits.push(`${f.name} handed over their base at ${tileLabel(state, t.tile)}`); }
-    else if (t.kind === "convert") { const food = Math.min(t.goods.food || 0, Math.floor(hb.stock.food || 0)); hb.stock.food -= food; f.stock.food = (f.stock.food || 0) + food; const who = convert(state, f, hb); bits.push(`their preachers took ${food} food${who ? ` and ${who.name} went with them` : ""}`); }
+    else if (t.kind === "convert") { const food = Math.round(moveFoodUnits(hb, f, Math.min(t.goods.food || 0, Math.floor(foodIn(hb.stock))), { state }).units); /* foods.js: days of food, the soonest to spoil first */ const who = convert(state, f, hb); bits.push(`their preachers took ${food} food${who ? ` and ${who.name} went with them` : ""}`); }
   }
   const cf = terms.find((t) => t.kind === "ceasefire");
   const text = `${lead}: ${bits.length ? `${bits.join("; ")}; ` : ""}a ceasefire for ${cf ? cf.days : PW.CEASEFIRE} days.`;

@@ -30,6 +30,7 @@
 // at the base -FAMILY.lossBase.
 // The new-run screen's "Children" box (state.childrenOff) turns all of it off. Own dice (state.family.rng): the
 // world's dice are untouched. birthsOn(state, day) / state.family.births: counts for the history (stats).
+import { giveFood } from "./foods.js"; // the children's chores bring in a little food
 import { log, day, hub, baseById, survivorById, residents, atBase, skill, makeSurvivor, rollTraits, newId } from "./world.js";
 import { getRel, makePartners, addMood, addMoment, relationsOf } from "./relations.js";
 import { FIRST_NAMES, SKILLS, clashIn } from "./data.js";
@@ -325,7 +326,7 @@ function childrenDaily(state) {
     const use = foodUse(state, base);
     const g = use.groups.find((x) => x.key === "children");
     const want = g ? g.total : 0;
-    const missing = eatFromStore(base, want);
+    const missing = eatFromStore(base, want, state);
     const water = childRations(state, base) * drinkRate(state);
     const short = Math.max(0, water - waterIn(base.stock));
     drawWater(base.stock, Math.min(water, waterIn(base.stock)));
@@ -346,7 +347,7 @@ function childrenDaily(state) {
       if (fed) { c.grown = (c.grown || 0) + 1; c.hungry = 0; } else c.hungry = (c.hungry || 0) + 1;
       if (st !== "baby" && farms) {
         const q = FAMILY.chores[st] || 0;
-        base.stock.food = (base.stock.food || 0) + q;
+        giveFood(state, base, q, "farm"); // foods.js: eggs collected, a basket of potatoes
         c.chores = r1((c.chores || 0) + q);
       }
       if (st !== "baby") for (const k of roles) c.seen[k] = (c.seen[k] || 0) + 1 / Math.max(1, roles.length);

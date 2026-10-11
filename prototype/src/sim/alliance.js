@@ -49,6 +49,7 @@
 // governor's land planner (autopilot.js landOutpostSite, aimAt, the war council) reads the land with the members that
 // will count by time alone (landCentres(state, true)): it does not found outposts over a new member's land.
 // world.js checkGameOver ends the run with the coalition's victory (hives standing or not).
+import { moveFoodUnits } from "./foods.js"; // food sent in days
 import { day, log, hub, factionById, addCard, atBase, skill, snapshot, alive, RADIO_RANGE } from "./world.js";
 import { attitude, changeGoodwill, strength, baseDefense } from "./factions.js";
 import { tileLabel, partyTile } from "./parties.js";
@@ -353,7 +354,7 @@ export function councilCard(state, kind, ms = allianceMembers(state)) {
           ai: (st) => (supplyAmt(hub(st).stock, k) >= qty * 3 ? 4 : -1), resolve: (st) => {
             if (supplyAmt(hub(st).stock, k) < qty) return `${h.name} no longer has ${qty} ${k}.`;
             const sent = sendOf(st); // rounds: by calibre, out of the stock by key (their store keeps one ammo count: settleAll folds them)
-            for (const [kk, q] of Object.entries(sent)) { useSupply(hub(st).stock, kk, q); f.stock[kk] = (f.stock[kk] || 0) + q; }
+            for (const [kk, q] of Object.entries(sent)) { if (kk === "food") { moveFoodUnits(hub(st), f, q, { state: st }); continue; } useSupply(hub(st).stock, kk, q); f.stock[kk] = (f.stock[kk] || 0) + q; } // foods.js: days of food, the soonest to spoil first
             changeGoodwill(st, f, 6, "the council's request"); everyone(st, others, 3, "the council's request");
             A.stats.granted++; A.history.unshift({ day: day(st), text: `You sent ${suppliesText(sent)} to ${f.name}.` });
             return `${suppliesText(sent)} sent to ${f.name}.`;

@@ -39,7 +39,7 @@
 // over), your vehicles when a team is taken whole, a smoke grenade now and then while short (SMOKE_RESTOCK). Outflows:
 // the dead's kit, wear (a use a fight; broken is gone), rounds spent, explosives thrown at walls, smoke thrown over a
 // retreat by the numbers (smokeCover), what they sell, what others steal.
-import { GEAR, FACTION_TYPES, LOCATIONS } from "./data.js";
+import { GEAR, FACTION_TYPES, LOCATIONS, supValue } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
 import { lootItem } from "./inventory.js";
 import { scavBlade } from "./blades.js"; // knives and swords their scavengers find
@@ -814,8 +814,8 @@ function groupBuysGun(state, f, A, salt, dd) {
   const price = (GEAR[key].value || 0) * B.markup;
   const pay = {};
   let left = price;
-  for (const k of [...B.keys].sort((a, b) => available(f, b) * (SUPPLIES[b].value || 1) - available(f, a) * (SUPPLIES[a].value || 1) || (a < b ? -1 : 1))) {
-    const v = SUPPLIES[k].value || 1, q = Math.min(Math.floor(available(f, k) * B.share), Math.ceil(left / v));
+  for (const k of [...B.keys].sort((a, b) => available(f, b) * (supValue(b) || 1) - available(f, a) * (supValue(a) || 1) || (a < b ? -1 : 1))) {
+    const v = supValue(k) || 1, q = Math.min(Math.floor(available(f, k) * B.share), Math.ceil(left / v));
     if (q > 0) { pay[k] = q; left -= q * v; }
     if (left <= 0) break;
   }

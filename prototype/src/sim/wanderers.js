@@ -403,7 +403,7 @@ export function neutralCard(state, p, g, opts = {}) {
       label: "Talk to them", hint: `${pct(talk)} they trust you enough to ask to join (your best talker's Speech or Leadership; they are ${g.mood})${g.talked ? "; you have talked before" : ""}. Otherwise they keep their distance`,
       // The autopilot talks to everyone, except with no hub yet (hardcore's road team) and under AI_FOOD days of food a
       // head for them all: a bare first hub cannot feed many more mouths.
-      ai: (st) => (hub(st) || (carried(p, "food") + carried(p, "preserved")) / Math.max(1, team + n) >= W.AI_FOOD ? 1 : 0),
+      ai: (st) => (hub(st) || carried(p, "food") / Math.max(1, team + n) >= W.AI_FOOD ? 1 : 0),
       resolve: (st) => {
         if (st.rng.chance(talk)) return win(st, false);
         gainXp(st, talker(st, p), "speech", USE.talk);
@@ -678,7 +678,7 @@ function onWandererCombat(state, result, setup) {
   if (result.outcome === "victory") {
     lines.push(`You won. ${result.enemiesKilled || "Several"} of ${c.enemy.name} are down.`);
     if (!result.tactical && c.enemy.kind !== "zombies") {
-      lines.push(`Taken from them: ${addCargoRounds(state, p, rng.int(c.type === "attackSquad" ? 20 : 3, c.type === "attackSquad" ? 50 : 12), c.type === "attackSquad" ? "military" : "raider", "wanderer", c.id ? localId(state, c.id) : 0, state.hour)}, ${addCargo(state, p, "food", rng.int(1, 4))} food.`); // rounds by calibre: what such people shoot (ammo.js)
+      lines.push(`Taken from them: ${addCargoRounds(state, p, rng.int(c.type === "attackSquad" ? 20 : 3, c.type === "attackSquad" ? 50 : 12), c.type === "attackSquad" ? "military" : "raider", "wanderer", c.id ? localId(state, c.id) : 0, state.hour)}, ${addCargo(state, p, "food", rng.int(1, 4))} days of food.`); // rounds by calibre: what such people shoot (ammo.js)
       if (rng.chance(c.type === "attackSquad" ? 0.35 : 0.2)) {
         const key = swapGun(bodyGunSource(c.enemy.kind), rng.pick(c.type === "attackSquad" ? ["ar", "vest", "carbine"] : ["pistol", "knife", "bat", "revolver"]), rng); // gundist.js: a gun of their kind
         const item = lootItem(key, kitSource(c.enemy.kind), spend(rng)); // itemcond.js: by who they were

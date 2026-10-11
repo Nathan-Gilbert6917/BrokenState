@@ -22,6 +22,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { GEAR } from "../src/sim/data.js";
+import { FOODS, foodIn, foodSplit } from "../src/sim/foods.js"; // food by type
 import { Rng } from "../src/sim/rng.js";
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -298,7 +299,10 @@ check(kitTails, "the later guns sit at the end of each kit's lists (ARSENAL_KITS
 for (const kind of Object.keys(TRUCK_GEAR)) { nlStash.push([TRUCK_GEAR, kind, TRUCK_GEAR[kind]]); TRUCK_GEAR[kind] = TRUCK_GEAR[kind].filter((r) => !ARSENAL_GEAR[r[0]]); }
 const BASE = {
   bodies: { keys: "917048c944387995", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "ddd64fb55272735e",
-  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "8b17671c3192515c", rng: 2670422955354 }, visitors: { keys: "3bdc366902700698", merchants: "706e068b336b9d26", rng: 12580090440502 },
+  // groupWares.keys and visitors: re-baselined for gen-tiers' Industrial Power Manual (blueprints.js indpower, now in
+  // the military's wares and the traders' manuals); with it taken out they come back to 8b17671c3192515c,
+  // 3bdc366902700698 / 706e068b336b9d26 / 12580090440502 exactly.
+  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "2474e79ab28f41c7", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
 };
 // The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
 // own and only add: off for these samples, like the commune's extras below, so the old baselines hold.
@@ -416,7 +420,7 @@ KIT_LOOT.on = false; // the carry kit's finds and wares (carrykit.js SITE_KIT / 
   for (let i = 0; i < 60; i++) for (const kind of ["merchants", "explorers"]) {
     const v = V.spawnVisitor(w, kind);
     if (!v) continue;
-    (kind === "merchants" ? mk : vk).push(`${v.name}:${v.tile}:${kind === "merchants" ? Object.keys(v.stock).filter((k) => k !== "buildmat").length : keysOf(v.wares)}`); // buildmat: building materials (the base ladder, staging.js), a stock key added later
+    (kind === "merchants" ? mk : vk).push(`${v.name}:${v.tile}:${kind === "merchants" ? Object.keys(v.stock).filter((k) => k !== "buildmat" && !FOODS[k]).length + 2 : keysOf(v.wares)}`); // buildmat: building materials (the base ladder, staging.js), a stock key added later; food by type (foods.js): their food and preserved food are items now, counted as the two keys they were
     w.visitors.length = 0;
   }
   check(h16(vk.join("|")) === BASE.visitors.keys, "travellers: the same wares");
@@ -444,9 +448,10 @@ section("5. Merchants' specialities");
     const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : []), ...(k === "arms" ? newGuns("merchants") : []), ...Object.keys(gunsFrom("trader:merchants"))]); // gundist.js: a merchant's gun // an arms dealer's newer guns (visitors.js gunWares)
     within(`${S.name.toLowerCase()}' wares`, vs.flatMap((v) => v.wares), allowed);
     check(vs.every((v) => v.wares.filter((it) => S.gear.includes(it.key)).length >= 2), `${S.name.toLowerCase()} carry 2–4 things of their trade each`);
-    const mean = (sup) => vs.reduce((a, v) => a + (v.stock[sup] || 0), 0) / Math.max(1, vs.length);
+    const amt = (v, sup) => (sup === "food" ? foodIn(v.stock) : sup === "preserved" ? foodSplit(v.stock).stable : v.stock[sup] || 0); // food by type (foods.js): days of it, every item / the kinds that keep
+    const mean = (sup) => vs.reduce((a, v) => a + amt(v, sup), 0) / Math.max(1, vs.length);
     const others = Object.keys(V.MERCHANT_SPECS).filter((x) => x !== k).flatMap((x) => by[x] || []);
-    const oMean = (sup) => others.reduce((a, v) => a + (v.stock[sup] || 0), 0) / Math.max(1, others.length);
+    const oMean = (sup) => others.reduce((a, v) => a + amt(v, sup), 0) / Math.max(1, others.length);
     for (const sup of Object.keys(S.stock)) check(mean(sup) > oMean(sup) * 1.15, `${S.name.toLowerCase()} bring more ${sup} (${mean(sup).toFixed(0)} vs ${oMean(sup).toFixed(0)})`);
     const gear = vs.flatMap((v) => v.wares).filter((it) => rollsQuality(it.key));
     check(gear.every((it) => it.quality >= 0.6 && it.quality <= 1), `${S.name.toLowerCase()}' gear is fair to good (merchant: 60–100%)`);

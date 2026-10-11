@@ -6,6 +6,11 @@
 // the fog only where paid, determinism, a render check of the trade window and its handlers, and 200-day runs
 // (simple auto-play and the autopilot) without NaN.
 // Usage: node tools/tradetest.js [seed] [days]
+import { typedFood, bestFoodKey, FOODS } from "../src/sim/foods.js";
+const FK = "f_cannedmeat"; // the food traded in these tests (sim/foods.js)
+const noFood = (s) => Object.fromEntries(Object.entries(s).filter(([k]) => !FOODS[k] && k !== "food" && k !== "preserved"));
+import { payFood } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 // Your side trades rounds by calibre (ammo.js): a box of 9mm stands in for the old generic "ammo" as a currency.
 const AMMO = "a_9mm_fmj";
@@ -72,7 +77,7 @@ function friend(state, skip = []) {
   f.goodwill = 45;
   f.known = true;
   f.pop = Math.max(f.pop, 24);
-  Object.assign(f.stock, { food: 300, ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 });
+  Object.assign(f.stock, { ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 }); setFood(f, 300);
   return f;
 }
 // Ticks hours, answering cards that are not the one we wait for; stops when pred() is true.
@@ -138,11 +143,11 @@ function drive(state, pred, maxHours, keep = null) {
   check(friendly.sell > cold.sell && friendly.buy < cold.buy, "goodwill narrows the spread");
   check(friendly.buy > friendly.sell, "they always charge more than they pay");
   f.goodwill = 45;
-  const rich = f.stock.food;
+  const rich = food(f);
   const pRich = sellPrice(st, f, "food", 0);
-  f.stock.food = 0;
+  setFood(f, 0);
   check(sellPrice(st, f, "food", 0) > pRich, "they pay more for what they are short of");
-  f.stock.food = rich;
+  setFood(f, rich);
   f.stock.meds = 10;
   check(sellPrice(st, f, "meds", 0, 40) < sellPrice(st, f, "meds", 0, 1), "a big sale pays less per unit");
   const g = st.factions.find((x) => x !== f);
@@ -157,7 +162,7 @@ function visit(st, f, n = 2, cargo = {}) {
   const h = hub(st);
   const crew = [];
   for (let i = 0; i < n; i++) crew.push(fighter(st));
-  h.stock.food += 20; h.stock.water += 20;
+  addDays(h, 20); h.stock.water += 20;
   const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: f.bases[0], mission: "move", stance: "normal", supplies: { food: 4, water: 4 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
@@ -172,26 +177,27 @@ function visit(st, f, n = 2, cargo = {}) {
   console.log("Deals");
   const st = world();
   const f = friend(st);
-  const p = visit(st, f, 2, { food: 40 });
+  const p = visit(st, f, 2, { [FK]: 40 }); // food by type (sim/foods.js): 40 cans of meat
   check(!!st.trade && tradeContext(st)?.kind === "visit", "a trade visit opens the trade window");
   setQty(st, "theirs", "meds", 20);
-  setQty(st, "mine", "food", 1);
+  setQty(st, "mine", FK, 1);
   const v = tradeVerdict(st);
   const meds0 = f.stock.meds;
   check(!v.ok && /Not enough|cannot carry/.test(v.reason) && executeTrade(st) === v.reason && f.stock.meds === meds0, `an unfair deal is refused and nothing moves ("${v.reason}")`);
-  // Sell 40 food for ammo, then buy food back with all that ammo: less food than before.
+  // Sell 40 cans for ammo, then buy them back with all that ammo: fewer than before.
   st.trade.ask = {}; st.trade.offer = {};
-  setQty(st, "mine", "food", 40);
+  setQty(st, "mine", FK, 40);
   balanceWith(st, AMMO);
   const t1 = tradeTotals(st);
-  check(tradeVerdict(st).ok && t1.ask <= t1.offer && st.trade.ask[AMMO] > 0, `balance with ammo: ${st.trade.ask[AMMO]} ${AMMO} for 40 food`);
+  check(tradeVerdict(st).ok && t1.ask <= t1.offer && st.trade.ask[AMMO] > 0, `balance with ammo: ${st.trade.ask[AMMO]} ${AMMO} for 40 cans of meat`);
   executeTrade(st);
   const ammo = p.cargo.supplies[AMMO];
   setQty(st, "mine", AMMO, ammo);
-  balanceWith(st, "food");
-  const back = st.trade.ask.food || 0;
+  if (!(f.stock[FK] > 0)) f.stock[FK] = 40; // they have it on the shelf (they took ours)
+  balanceWith(st, FK);
+  const back = st.trade.ask[FK] || 0;
   executeTrade(st);
-  check(back < 40 && (p.cargo.supplies.food || 0) === back, `buying the food back with that ammo gets only ${back} of 40`);
+  check(back < 40 && (p.cargo.supplies[FK] || 0) === back, `buying the cans back with that ammo gets only ${back} of 40`);
   // Gear: buy an item from their wares.
   const item = (f.wares || [])[0];
   if (check(!!item, "the group has gear for sale")) {
@@ -209,7 +215,8 @@ function visit(st, f, n = 2, cargo = {}) {
   p.members = p.members.slice(0, 1);
   p.cargo.supplies = { [AMMO]: 400 };
   setQty(st, "mine", AMMO, 400);
-  setQty(st, "theirs", "food", 60);
+  f.stock[FK] = Math.max(f.stock[FK] || 0, 150);
+  setQty(st, "theirs", FK, 150); // 60 kg of cans
   const vc = tradeVerdict(st);
   check(!vc.ok && /cannot carry/.test(vc.reason), `the team's carry space limits what it takes ("${vc.reason}")`);
   // Goodwill: twenty generous little trades in one day give at most 4.
@@ -232,7 +239,7 @@ function visit(st, f, n = 2, cargo = {}) {
   const base = st.factions[0];
   base.pop = 20;
   // A group of each kind in the same shape: comfortable stock, no war, nothing on the shelf.
-  const comfy = { food: 120, water: 100, fuel: 40, meds: 20, ammo: 200, parts: 10, scrap: 60, preserved: 40, jars: 20, wood: 80, arrows: 40, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 }; // the reloading bench's inputs: a group keeps them (factions.js), none here
+  const comfy = { ...typedFood(null, "stores", 120), f_jarred: 40, water: 100, fuel: 40, meds: 20, ammo: 200, parts: 10, scrap: 60, jars: 20, wood: 80, arrows: 40, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 }; // the reloading bench's inputs: a group keeps them (factions.js), none here
   const group = (type, extra = {}) => ({ ...base, type, stock: { ...comfy }, wares: [], atWar: 0, goodwill: 30, hitDay: undefined, hordeHitDay: undefined, lostBaseDay: undefined, ...extra });
   const mil = group("military"), com = group("commune"), rai = group("raider"), zea = group("zealot"), tra = group("traders"), fort = group("fortress");
   const ar = newItem("ar", 1), gold = newItem("goldring", 1), whiskey = newItem("whiskey", 1), coffee = newItem("coffee", 1), batt = newItem("batteries", 1);
@@ -262,7 +269,7 @@ function visit(st, f, n = 2, cargo = {}) {
   check(near(pay(r1, ar) / pay(com, ar), 1.15) && near(pay(r2, ar) / pay(com, ar), 1.25) && near(pay(r2, gold) / pay(com, gold), 0.75), "raided lately: weapons ×1.15; a base lost: ×1.25, and they sell off gold");
   const s1 = group("raider");
   const food0 = sellPrice(st, s1, "food", 0, 10), gold0 = pay(s1, gold);
-  s1.stock.food = 0; s1.stock.preserved = 0;
+  setFood(s1, 0); setJarred(s1, 0);
   const sf = sellPrice(st, s1, "food", 0, 10) / food0;
   check(sf > 2.6 && pay(s1, gold) / gold0 <= 0.6 + 1e-9 && priceWhy(st, s1, gold).some((x) => /Starving/.test(x.text)) && priceWhy(st, s1, "food").some((x) => /Starving/.test(x.text)), `starving: food ×${sf.toFixed(2)} (shortage alone would be at most ×2.2), gold ×${(pay(s1, gold) / gold0).toFixed(2)} ("they cannot eat it")`);
   const t1 = group("raider");
@@ -292,7 +299,7 @@ function visit(st, f, n = 2, cargo = {}) {
   check(near(pay(rich, gold) / pay(com, gold), 1.2) && near(pay(rich, ar) / pay(com, ar), 1), "rich and at peace: fine things ×1.2 (weapons as before)");
   // Selling and buying back loses, for every kind, in every state, for every good and item.
   let worst = Infinity, cases = 0;
-  const states = [{}, { atWar: 1 }, { hitDay: day(st), lostBaseDay: day(st) }, { stock: { ...comfy, food: 0, preserved: 0, water: 0 } }];
+  const states = [{}, { atWar: 1 }, { hitDay: day(st), lostBaseDay: day(st) }, { stock: { ...noFood(comfy), water: 0 } }];
   for (const type of [...Object.keys(TRADE_PREFS).filter((k) => FACTION_TYPES[k])]) for (const s of states) for (const hour of [5 * 24, 80 * 24]) {
     st.hour = hour;
     const f = group(type, s);
@@ -332,12 +339,12 @@ function visit(st, f, n = 2, cargo = {}) {
   }
   const firstLoss = margins.findIndex((m) => m <= 0);
   check(margins[0] > 0 && margins.every((m, i) => !i || m <= margins[i - 1] + 1e-9) && firstLoss > 0, `rifles from a commune to the military at war: +${margins[0].toFixed(1)} on the first, shrinking, a loss from rifle ${firstLoss + 1}`);
-  const farm = group("commune", { stock: { ...comfy, food: 600 } });
-  const hungry = group("raider", { stock: { ...comfy, food: 0, preserved: 0 } });
+  const farm = group("commune", { stock: { ...noFood(comfy), ...typedFood(null, "commune", 600) } });
+  const hungry = group("raider", { stock: noFood(comfy) });
   const lots = [];
   for (let i = 0; i < 30; i++) {
     const cost = 20 * buyPrice(st, farm, "food", 10, 20), got = 20 * sellPrice(st, hungry, "food", 10, 20);
-    farm.stock.food -= 20; hungry.stock.food += 20;
+    payFood(farm, 20); addDays(hungry, 20);
     lots.push(got - cost);
   }
   const lossAt = lots.findIndex((m) => m <= 0);
@@ -492,16 +499,18 @@ function dealWorld(s) {
   const { st, h, f } = dealWorld(seed + 1);
   f.pact = "trade";
   for (let i = 0; i < 4; i++) fighter(st);
-  const res = radioDeal(st, f, { wantKey: "food", wantQty: 10, payKey: "ammo", payQty: 200 });
+  const fk = bestFoodKey(f.stock) || FK;
+  if (!(f.stock[fk] > 20)) f.stock[fk] = 40;
+  const res = radioDeal(st, f, { wantKey: fk, wantQty: 10, payKey: "ammo", payQty: 200 }); // food by type: an item they hold
   if (check(res.ok, "a caravan is on its way")) {
     const c = res.caravan;
     drive(st, () => c.phase === "trading", 24 * 40, (x) => x === "trade");
-    const loot = c.goods.supplies.food || 0;
-    const food0 = h.stock.food;
+    const loot = food(c.goods) || 0;
+    const food0 = food(h);
     attackCaravan(st, c);
     check(attitude(f) === "Hostile" && f.pact === null && f.grudgeUntil > day(st), "attacking makes the whole group hostile and tears up the pact");
     const won = !st.parties.includes(c);
-    check(won ? h.stock.food >= food0 + loot : c.leaving, won ? `won: its ${loot} food is yours` : "lost: the caravan gets away");
+    check(won ? food(h) >= food0 + loot : c.leaving, won ? `won: its ${loot} food is yours` : "lost: the caravan gets away");
     f.pop = 30;
     let raids = 0;
     const seen = new Set();
@@ -526,7 +535,7 @@ function dealWorld(s) {
   const oTile = st.tiles.find((t) => land(st, t.id) && st.grid.distance(t.id, h.tile) === 4 && planPath(st, h.tile, t.id, false) && !st.factions.some((f) => f.bases.includes(t.id))).id;
   const o = outpost(st, oTile, "Test Outpost");
   const crew = [fighter(st), fighter(st), fighter(st)];
-  Object.assign(h.stock, { food: 300, water: 300, ammo: 400, fuel: 100 });
+  Object.assign(h.stock, { water: 300, ammo: 400, fuel: 100 }); setFood(h, 300);
   const stops = [g1.bases[0], oTile, g2.bases[0]];
   const truck = st.vehicles.find((v) => v.loc.kind === "base" && v.loc.baseId === h.id);
   const byTruck = truck && stops.every((t, i) => planPath(st, i ? stops[i - 1] : h.tile, t, true)) && planPath(st, stops[2], h.tile, true);

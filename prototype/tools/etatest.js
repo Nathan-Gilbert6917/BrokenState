@@ -7,6 +7,7 @@
 // still fire (resolved automatically) and their delays are counted separately. The hour-by-hour check
 // re-estimates the remaining time every hour: arrival must match the last re-estimate exactly.
 // Usage: node tools/etatest.js [cases per seed] [seeds...]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, survivorById } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad, travelHours, paceOpts } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate } from "../src/sim/orders.js";
@@ -70,7 +71,7 @@ for (const seed of seeds) {
     const state = createWorld({ seed: seed * 100 + c, factionCount: 6 });
     state.started = true;
     const h = hub(state);
-    Object.assign(h.stock, { food: 500, water: 500, fuel: 200, meds: 20, ammo: 300, parts: 10 });
+    Object.assign(h.stock, { water: 500, fuel: 200, meds: 20, ammo: 300, parts: 10 }); setFood(h, 500);
     const rng = state.rng;
     const truck = vehiclesAtBase(state, h.id)[0];
     const byTruck = c % 2 === 1 && truck;
@@ -156,7 +157,7 @@ for (const seed of seeds) {
     const state = createWorld({ seed: seed * 100 + 77, factionCount: 6 });
     state.started = true;
     const h = hub(state);
-    Object.assign(h.stock, { food: 500, water: 500, fuel: 200, meds: 20, ammo: 300, parts: 10, scrap: 200 });
+    Object.assign(h.stock, { water: 500, fuel: 200, meds: 20, ammo: 300, parts: 10, scrap: 200 }); setFood(h, 500);
     const truck = vehiclesAtBase(state, h.id)[0];
     const byTruck = mode !== "foot" && truck;
     if (mode !== "foot" && !truck) continue;

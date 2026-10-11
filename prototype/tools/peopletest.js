@@ -1,6 +1,8 @@
 // People: newcomers ask first (recruits.js), crowding and the leader (morale.js), hub events (hubevents.js),
 // warnings before desertion and what deserters take (morale.js), and long runs without NaN.
 // Usage: node tools/peopletest.js [seed] [days]
+import { FOODS, foodIn, foodWord } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, alive, residents, day, makeSurvivor, killSurvivor } from "../src/sim/world.js";
 import { basesDaily } from "../src/sim/economy.js";
 import { baseBeds, addBuilding } from "../src/sim/buildings.js";
@@ -118,9 +120,9 @@ section("Recruit options: what each one does");
   // Base card: take in.
   let st = W(); let h = hub(st);
   let s = makeCandidate(st); let card = recruitCard(st, [s], { source: "stranger", baseId: h.id });
-  h.stock.food = 50; let n = st.survivors.length; const saved = st.stats.peopleSaved;
+  setFood(h, 50); let n = st.survivors.length; const saved = st.stats.peopleSaved;
   card.choices[0].resolve(st);
-  check(st.survivors.length === n + 1 && s.alive && s.location.baseId === h.id && !s.pending && h.stock.food === 50 - JOIN_FOOD && st.stats.peopleSaved === saved + 1, `take in: joins the hub, ${JOIN_FOOD} food`);
+  check(st.survivors.length === n + 1 && s.alive && s.location.baseId === h.id && !s.pending && food(h) === 50 - JOIN_FOOD && st.stats.peopleSaved === saved + 1, `take in: joins the hub, ${JOIN_FOOD} food`);
   card.choices[0].resolve(st);
   check(st.survivors.length === n + 1, "answering twice does not add them twice");
   // Take only one.
@@ -154,18 +156,18 @@ section("Recruit options: what each one does");
   st = W(); h = hub(st);
   const f = st.factions.find((x) => x.alive && x.bases.length);
   f.known = true; f.goodwill = 10; f.bases = [st.tiles.find((t) => t.terrain !== "water" && st.grid.distance(t.id, h.tile) === 4).id, ...f.bases];
-  h.stock.food = 40; h.stock.water = 40;
+  setFood(h, 40); h.stock.water = 40;
   const before = atBase(st, h.id).map((x) => x.mood);
   s = makeCandidate(st); card = recruitCard(st, [s], { source: "stranger", baseId: h.id });
   choice(card, "part").resolve(st);
-  check(h.stock.food === 40 - PART_BASE.food && h.stock.water === 40 - PART_BASE.water, `part ways: ${PART_BASE.food} food and ${PART_BASE.water} water`);
+  check(food(h) === 40 - PART_BASE.food && h.stock.water === 40 - PART_BASE.water, `part ways: ${PART_BASE.food} food and ${PART_BASE.water} water`);
   check(atBase(st, h.id).every((x, i) => x.mood >= Math.min(100, before[i] + 2) - 1e-9), "part ways: everyone at the hub mood +2");
   check(f.goodwill === 12 && !st.survivors.includes(s), `part ways: goodwill +2 with a known group nearby (${f.goodwill})`);
   // Turn away.
   s = makeCandidate(st); card = recruitCard(st, [s], { source: "stranger", baseId: h.id });
-  const fd = h.stock.food;
+  const fd = food(h);
   choice(card, "away").resolve(st);
-  check(!st.survivors.includes(s) && h.stock.food === fd && !s.pending, "turn away: no cost, not in the group");
+  check(!st.survivors.includes(s) && food(h) === fd && !s.pending, "turn away: no cost, not in the group");
   // Road card: take along only if the rations cover the way home.
   st = W(); h = hub(st);
   const p = sendOut(st, 2, { food: 2, water: 2 });
@@ -173,7 +175,7 @@ section("Recruit options: what each one does");
   card = recruitCard(st, [s], { source: "road", partyId: p.id });
   const t = teamOutlook(st, p, 1);
   check(!enabled(st, choice(card, "take")) === !t.ok, `take along disabled when rations are short (${t.food} food for ${t.members}+1, need ${t.need})`);
-  p.supplies.food = 40; p.supplies.water = 40;
+  setFood(p, 40); p.supplies.water = 40;
   check(enabled(st, choice(card, "take")), "take along allowed with enough rations");
   choice(card, "take").resolve(st);
   check(p.members.includes(s.id) && s.location.kind === "party" && st.survivors.includes(s), "take along: joins the team");
@@ -255,7 +257,7 @@ section("Hub events: weights, frequency and effects");
       nextDay(s2);
       for (const s of alive(s2)) { s.mood = 60; s.health = 100; if (s.location.kind === "errand") s.location = { kind: "base", baseId: hb.id }; }
       while (atBase(s2, hb.id).length < people) addPerson(s2, hb);
-      hb.stock.food = 300; hb.stock.water = 80; hb.stock.scrap = 40;
+      setFood(hb, 300); hb.stock.water = 80; hb.stock.scrap = 40;
       s2.cards.length = 0;
       hubEventsDaily(s2);
       if (s2.cards.some((c) => c.hubEvent)) events++;
@@ -274,7 +276,7 @@ section("Hub events: weights, frequency and effects");
     const s2 = W(seed + 3);
     const hb = hub(s2);
     while (atBase(s2, hb.id).length < 8) addPerson(s2, hb, 50);
-    Object.assign(hb.stock, { food: 150, water: 60, scrap: 40, parts: 6, meds: 10, ammo: 80, fuel: 20 });
+    Object.assign(hb.stock, { water: 60, scrap: 40, parts: 6, meds: 10, ammo: 80, fuel: 20 }); setFood(hb, 150);
     s2.hour = 24 * 30 + 12;
     return { s2, hb };
   };
@@ -324,9 +326,9 @@ section("Hub events: weights, frequency and effects");
   {
     const { s2, hb } = fresh();
     hubEventCard(s2, "dog", hb).choices[0].resolve(s2);
-    const fd = hb.stock.food, m = residents(s2, hb.id).map((s) => s.mood);
+    const fd = food(hb), m = residents(s2, hb.id).map((s) => s.mood);
     hubUpkeepDaily(s2);
-    check(hb.dog && Math.abs(hb.stock.food - (fd - DOG.food)) < 1e-9 && residents(s2, hb.id).every((s, i) => s.mood >= Math.min(100, m[i] + DOG.mood) - 1e-9), "dog: eats 0.5 food, +0.5 mood a day");
+    check(hb.dog && Math.abs(food(hb) - (fd - DOG.food)) < 1e-9 && residents(s2, hb.id).every((s, i) => s.mood >= Math.min(100, m[i] + DOG.mood) - 1e-9), "dog: eats 0.5 food, +0.5 mood a day");
   }
   {
     const { s2, hb } = fresh();
@@ -340,18 +342,18 @@ section("Hub events: weights, frequency and effects");
   }
   {
     const { s2, hb } = fresh();
-    const fd = hb.stock.food;
+    const fd = food(hb);
     const card = hubEventCard(s2, "theft", hb);
     const lost = Number(/(\d+) food is gone/.exec(card.text)[1]);
-    check(hb.stock.food === fd - lost, `theft: ${lost} food gone when the card comes up`);
+    check(food(hb) === fd - lost, `theft: ${lost} food gone when the card comes up`);
   }
   {
     const { s2, hb } = fresh();
     const card = hubEventCard(s2, "feast", hb);
-    const n = atBase(s2, hb.id).length, fd = hb.stock.food;
+    const n = atBase(s2, hb.id).length, fd = food(hb);
     const m = atBase(s2, hb.id).map((s) => s.mood);
     card.choices[0].resolve(s2);
-    check(hb.stock.food === fd - 2 * n && atBase(s2, hb.id).every((s, i) => Math.abs(s.mood - Math.min(100, m[i] + 10)) < 1e-9), "feast: 2 food each, everyone +10");
+    check(food(hb) === fd - 2 * n && atBase(s2, hb.id).every((s, i) => Math.abs(s.mood - Math.min(100, m[i] + 10)) < 1e-9), "feast: 2 food each, everyone +10");
   }
 }
 
@@ -360,7 +362,7 @@ section("Warnings before desertion");
 {
   const st = W();
   const h = hub(st);
-  h.stock.food = 9999;
+  setFood(h, 9999);
   const s = atBase(st, h.id).find((x) => !x.leader);
   s.mood = 25;
   baseMoraleDaily(st, h, atBase(st, h.id), residents(st, h.id));
@@ -385,14 +387,14 @@ section("Warnings before desertion");
   // Card options.
   const st2 = W();
   const h2 = hub(st2);
-  h2.stock.food = 50; h2.stock.meds = 5;
+  setFood(h2, 50); h2.stock.meds = 5;
   const v = atBase(st2, h2.id).find((x) => !x.leader);
   v.mood = 22; v.traits = [];
   baseMoraleDaily(st2, h2, atBase(st2, h2.id), residents(st2, h2.id));
   const wc = st2.cards.find((c) => c.moraleFor === v.id);
   const m0 = v.mood;
   wc.choices[2].resolve(st2);
-  check(h2.stock.food === 46 && h2.stock.meds === 4 && Math.abs(v.mood - (m0 + 20)) < 1e-9, "gift: 4 food and 1 meds, mood +20");
+  check(Math.abs(food(h2) - 46) < 1e-6 && h2.stock.meds === 4 && Math.abs(v.mood - (m0 + 20)) < 1e-9, "gift: 4 food and 1 meds, mood +20");
   const m1 = v.mood;
   wc.choices[1].resolve(st2);
   check(v.role === "rest" && v.restUntil === day(st2) + 3 && Math.abs(v.mood - (m1 + 5)) < 1e-9, "rest: Rest role for 3 days, +5 now");
@@ -410,7 +412,7 @@ section("Warnings before desertion");
     s3.log.unshift = (...x) => { lines.push(...x); return unshift(...x); };
     for (let d = 0; d < 60 && !s3.gameOver; d++) {
       for (let k = 0; k < 24; k++) tickHour(s3);
-      h3.stock.food = Math.max(h3.stock.food, 200); h3.stock.water = Math.max(h3.stock.water, 60);
+      setFood(h3, Math.max(food(h3), 200)); h3.stock.water = Math.max(h3.stock.water, 60);
       while (s3.cards.length) { const c = s3.cards.shift(); const ch = c.choices.find((x) => /Let them be|Turn .* away|Leave them|Not now|Return home/.test(x.label)) || c.choices.find((x) => enabled(s3, x)); if (ch) ch.resolve(s3); }
       s3.engagement = null; s3.trade = null;
     }
@@ -431,7 +433,7 @@ section("Deserters take their gear and some supplies");
 {
   const st = W();
   const h = hub(st);
-  Object.assign(h.stock, { food: 100, water: 100, meds: 20, ammo: 200 });
+  Object.assign(h.stock, { water: 100, meds: 20, ammo: 200 }); setFood(h, 100);
   const s = atBase(st, h.id).find((x) => !x.leader);
   s.traits = [];
   stow(s, newItem("backpack"));
@@ -443,15 +445,15 @@ section("Deserters take their gear and some supplies");
   const line = st.log.find((l) => l.text.startsWith(`${s.name} lost hope`)).text;
   check(!s.alive && s.left && h.armory.length === armory && allItems(s).length === items.length, "they keep what they carry (nothing goes to the armory)");
   check(items.every((n) => line.includes(n)), `the log names every item (${line})`);
-  check(Object.entries(took).every(([k, q]) => line.includes(`${q} ${k}`) && h.stock[k] === before[k] - q), `the log says what supplies left with them (${JSON.stringify(took)})`);
-  check(took.food >= 2 && took.water >= 2, "a few days' food and water");
+  check(Object.entries(took).every(([k, q]) => line.includes(FOODS[k] ? foodWord(k, q) : `${q} ${k}`) && Math.abs(h.stock[k] - (before[k] - q)) < 1e-6), `the log says what supplies left with them (${JSON.stringify(took)})`);
+  check(foodIn(took) >= 2 && took.water >= 2, "a few days' food and water");
   // Greedy takes more; never more than a quarter of a stock.
   const avg = (greedy) => {
     let tot = 0;
     for (let i = 0; i < 150; i++) {
       const s2 = W(seed + i);
       const h2 = hub(s2);
-      Object.assign(h2.stock, { food: 100, water: 100, meds: 20, ammo: 200 });
+      Object.assign(h2.stock, { water: 100, meds: 20, ammo: 200 }); setFood(h2, 100);
       const v = atBase(s2, h2.id).find((x) => !x.leader);
       v.traits = greedy ? ["greedy"] : [];
       tot += Object.values(desert(s2, h2, v).took).reduce((a, q) => a + q, 0);
@@ -461,7 +463,7 @@ section("Deserters take their gear and some supplies");
   const g = avg(true), n = avg(false);
   check(g > n * 1.6, `Greedy takes more (${g.toFixed(1)} vs ${n.toFixed(1)} units)`);
   const s3 = W(); const h3 = hub(s3);
-  Object.assign(h3.stock, { food: 4, water: 2, meds: 0, ammo: 0 });
+  Object.assign(h3.stock, { water: 2, meds: 0, ammo: 0 }); setFood(h3, 4);
   const t3 = desert(s3, h3, atBase(s3, h3.id).find((x) => !x.leader)).took;
   check((t3.food || 0) <= 1 && !t3.water && !t3.meds, `never more than a quarter of a stock (${JSON.stringify(t3)})`);
   // The last one deserting ends the run.

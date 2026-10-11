@@ -12,6 +12,7 @@
 //   shows where it was last seen (never where it is), click goes there, the panel folds, saved and loaded, old saves
 // - Map notes: add, edit, delete (twice), hide, the editor's state, the right-click menu, drawn on the map (calls
 //   counted on a stub canvas), the tooltip, the redraw fingerprint, saved and loaded
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, makeSurvivor, newId, killSurvivor } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -50,7 +51,9 @@ const addPerson = (st, base, role = "farm") => { const s = makeSurvivor(st, 1); 
 function mkOutpost(st, stock = {}) {
   const h = hub(st), g = st.grid;
   const t = st.tiles.find((x) => x.terrain !== "water" && !x.loc && g.distance(x.id, h.tile) >= 5 && g.distance(x.id, h.tile) <= 9 && planPath(st, h.tile, x.id, false));
-  const b = { id: newId(), tile: t.id, type: "outpost", name: "Test Outpost", stock: { food: 60, water: 60, fuel: 0, meds: 0, ammo: 10, parts: 0, scrap: 0, ...stock }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  const { food: days = 60, ...rest } = stock; // food: days of it (tools/foodkit.js)
+  const b = { id: newId(), tile: t.id, type: "outpost", name: "Test Outpost", stock: { water: 60, fuel: 0, meds: 0, ammo: 10, parts: 0, scrap: 0, ...rest }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  setFood(b, days);
   st.bases.push(b);
   return b;
 }
@@ -169,7 +172,7 @@ const allItems = (st) => st.survivors.filter((s) => s.alive).reduce((a, s) => a 
   check(movers.every((s) => s.location.kind === "base" && s.location.baseId === op.id), `they joined the outpost after ${hours}h`);
   check(supplyRuns(st).some((j) => j.transfer && j.status === "disbanded"), "the finished transfer job is marked disbanded");
   // The next transfer clears the finished one; a base with no road food cannot send.
-  op.stock.food = 0; op.stock.preserved = 0;
+  setFood(op, 0); setJarred(op, 0);
   const r3 = moveToBase(st, movers, h.id);
   check(!r3.sent.length && r3.failed.length === 1 && /food/.test(r3.failed[0].why), `no road food: nobody leaves ("${r3.failed[0] && r3.failed[0].why}")`);
   check(!supplyRuns(st).some((j) => j.transfer), "no transfer job is left behind (the finished one cleared, the failed one removed)");

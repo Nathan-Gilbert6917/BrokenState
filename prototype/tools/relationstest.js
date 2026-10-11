@@ -5,6 +5,8 @@
 // autopilot's crews, determinism, a render check of the survivor screen and the memorial wall, and a long
 // autopilot run without NaN.
 // Usage: node tools/relationstest.js [seed] [days]
+import { eatFromStore } from "../src/sim/storage.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, alive, residents, day, makeSurvivor, killSurvivor } from "../src/sim/world.js";
 import { addBuilding, buildRate, BUILDINGS } from "../src/sim/buildings.js";
 import { workFactor } from "../src/sim/health.js";
@@ -138,10 +140,10 @@ section("Grief on a death, and the memorial wall");
   killSurvivor(s2, ppl[0], h2.tile, "in a test");
   const g = ppl[1];
   check(memorialWeight(s2, h2) > 0, `the memorial hub event comes after an unmarked death (weight ${memorialWeight(s2, h2).toFixed(2)})`);
-  const food0 = h2.stock.food, days0 = g.grief.days, m0 = residents(s2, h2.id).map((s) => s.mood);
+  const food0 = food(h2), days0 = g.grief.days, m0 = residents(s2, h2.id).map((s) => s.mood);
   const info = memorialInfo(s2, h2);
   const txt = holdMemorial(s2, h2);
-  check(h2.stock.food === food0 - info.food && info.food === Math.max(2, residents(s2, h2.id).length * MEMORIAL.food), `a service costs ${info.food} food (${txt})`);
+  check(food(h2) === food0 - info.food && info.food === Math.max(2, residents(s2, h2.id).length * MEMORIAL.food), `a service costs ${info.food} food (${txt})`);
   check(residents(s2, h2.id).every((s, i) => near(s.mood, Math.min(100, m0[i] + MEMORIAL.all + (s.grief ? MEMORIAL.grievers : 0)), 0.11)) && g.grief.days === days0 - MEMORIAL.griefDays, "everyone +3, the grieving +8 more and 2 days less grief");
   check(!memorialInfo(s2, h2).ok && /next one/.test(holdMemorial(s2, h2)) && memorialWeight(s2, h2) === 0, "once a week; no memorial event right after a service");
   addBuilding(h2, "chapel");
@@ -244,7 +246,7 @@ section("Breaks near the bottom");
   for (let i = 0; i < 12; i++) {
     const st = W(seed + i);
     const h = hub(st);
-    h.stock.food = 500;
+    setFood(h, 500);
     const s = atBase(st, h.id).find((x) => !x.leader);
     for (let d = 0; d < 30; d++) {
       nextDay(st);
@@ -283,13 +285,16 @@ section("New mood sources, and the breakdown adds up");
   const s = atBase(st, h.id).find((x) => !x.leader);
   s.mood = 50;
   // Preserved food only.
-  h.stock.food = 0; h.stock.preserved = 200;
-  for (let i = 0; i < 7; i++) noteMeals(st, h);
-  check(factor(st, s, /preserved food for 7 days/)?.v === MOODF.preserved7, "7 days of nothing but preserved food: -1");
-  for (let i = 0; i < 14; i++) noteMeals(st, h);
-  check(factor(st, s, /preserved food for 21 days/)?.v === MOODF.preserved21, "21 days: -2");
-  h.stock.food = 30; noteMeals(st, h);
-  check(!factor(st, s, /preserved/), "fresh food again: gone");
+  setFood(h, 0); setJarred(h, 200);
+  const hourM = st.hour;
+  const eatDay = () => { st.hour += 24; eatFromStore(h, 6, st); noteMeals(st, h); }; // a day's meals (storage.js base.ate), then the note
+  for (let i = 0; i < 7; i++) eatDay();
+  check(factor(st, s, /Nothing fresh to eat for 7 days/)?.v === MOODF.preserved7, "7 days of nothing but preserved food: -1");
+  for (let i = 0; i < 14; i++) eatDay();
+  check(factor(st, s, /Nothing fresh to eat for 21 days/)?.v === MOODF.preserved21, "21 days: -2");
+  setFood(h, 30, "f_potatoes"); eatDay();
+  check(!factor(st, s, /Nothing fresh/), "fresh food again: gone");
+  st.hour = hourM; delete h.ate;
   addBuilding(h, "kitchen");
   check(!factor(st, s, /Hot meals/), "a preserving room: no hot meals (only the Kitchen serves them, kitchen-plus)");
   addBuilding(h, "common_room");
@@ -409,9 +414,9 @@ section("Hub events, road events, combat and crews");
   // Making peace on the survivor screen.
   const [ra, rb] = [pool[0], pool[1]];
   const pi = peaceInfo(st, ra, rb);
-  const o1 = opinion(st, ra, rb), f1 = h.stock.food;
+  const o1 = opinion(st, ra, rb), f1 = food(h);
   const msg = makePeace(st, ra, rb, "gift");
-  check(pi.ok && h.stock.food === f1 - 3 && opinion(st, ra, rb) > o1 && !peaceInfo(st, ra, rb).ok, `a shared meal: 3 food, better opinion, then a 10-day wait (${msg})`);
+  check(pi.ok && food(h) === f1 - 3 && opinion(st, ra, rb) > o1 && !peaceInfo(st, ra, rb).ok, `a shared meal: 3 food, better opinion, then a 10-day wait (${msg})`);
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -421,7 +426,7 @@ section("Hub event choices (memorial)");
     const s2 = W(seed + 3);
     const hb = hub(s2);
     while (atBase(s2, hb.id).length < 8) addPerson(s2, hb, 50);
-    Object.assign(hb.stock, { food: 150, water: 60, scrap: 40 });
+    Object.assign(hb.stock, { water: 60, scrap: 40 }); setFood(hb, 150);
     const v = atBase(s2, hb.id)[1];
     setO(s2, v, atBase(s2, hb.id)[2], 80);
     killSurvivor(s2, v, hb.tile, "in a test");
@@ -433,7 +438,7 @@ section("Hub event choices (memorial)");
     const { s2, hb } = fresh();
     const card = hubEventCard(s2, "memorial", hb);
     const c = card.choices[i];
-    const snap = () => JSON.stringify([hb.stock.food, residents(s2, hb.id).map((s) => Math.round(s.mood * 10))]);
+    const snap = () => JSON.stringify([food(hb), residents(s2, hb.id).map((s) => Math.round(s.mood * 10))]);
     const before = snap();
     const text = c.resolve(s2);
     check(typeof c.ai === "function" && typeof text === "string" && !/undefined|NaN/.test(text) && snap() !== before, `memorial → ${c.label}: ${text}`);
@@ -561,7 +566,7 @@ section(`Determinism, and ${longDays} days on autopilot without NaN`);
     for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(h2, t);
     while (atBase(s2, h2.id).length < 10) addPerson(s2, h2, 60);
     for (const p of atBase(s2, h2.id)) p.mood = 60;
-    Object.assign(h2.stock, { scrap: 400, parts: 40, food: 400, water: 300, meds: 20 });
+    Object.assign(h2.stock, { scrap: 400, parts: 40, water: 300, meds: 20 }); setFood(h2, 400);
     setAutopilot(s2, true, "balanced");
     let hours = 0;
     const wants = () => h2.buildings.some((b) => b.type === "common_room") || h2.construction.some((c) => c.type === "common_room");

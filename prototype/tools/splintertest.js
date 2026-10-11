@@ -8,6 +8,7 @@
 //   - strife and the split survive a save and load
 // Usage: node tools/splintertest.js [seed]            the checks
 //        node tools/splintertest.js rate [days] [seeds...]   splits per world-year on the Balanced autopilot (normal worlds)
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -51,11 +52,11 @@ section("Strife: pressure, deserters, the dead of a fight, a fallen leader, a lo
 {
   const st = world();
   const f = typed(st, "raider");
-  f.pop = 30; f.stock.food = 0; f.strife = 0;
+  f.pop = 30; setFood(f, 0); f.strife = 0;
   for (let i = 0; i < 20; i++) { tickGroup(f); strifeDay(st, f); }
   const hungry = strifeOf(f);
   check(hungry > 0.5, `20 hungry days build strife (${hungry.toFixed(2)})`);
-  f.stock.food = f.pop * 20; f.lossRecent = 0; f.wounded = 0;
+  setFood(f, f.pop * 20); f.lossRecent = 0; f.wounded = 0;
   for (let i = 0; i < 60; i++) { tickGroup(f); strifeDay(st, f); }
   check(strifeOf(f) < hungry * 0.5, `60 fed, quiet days and it fades (${strifeOf(f).toFixed(2)})`);
   const s0 = strifeOf(f);

@@ -39,7 +39,10 @@
 // recruit card. Recruiting: wanderers near their bases join by the profile, food and beds (wandererJoinChance); your
 // own deserters who do not come back may join a group near the base they left (playerDeserters).
 // Every roll is a hash (skills.js hash01): the world's dice are not touched (bar a recruit card's own).
-import { SUPPLIES, GEAR } from "./data.js";
+import { moveFoodUnits, DAY_VALUE, foodIn } from "./foods.js"; // food by type (foods.js)
+import { groupDietPressure } from "./eating.js"; // their rations and the sameness of their food (wave 2 eating)
+import { supplyAmt } from "./rounds.js"; // "food": days of food
+import { SUPPLIES, GEAR, supValue } from "./data.js";
 import { day, log, hub } from "./world.js";
 import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { Rng } from "./rng.js";
@@ -169,7 +172,7 @@ export const weightOf = (f, act, dflt = 1) => ((GROUP_PRIORITIES[f && f.type] ||
 export function prio(f, act) {
   const w = weightOf(f, act);
   const pop = Math.max(1, (f && f.pop) || 0);
-  const hungry = f && f.stock && (f.stock.food || 0) < pop * 3 ? 1 : 0;
+  const hungry = f && f.stock && foodIn(f.stock) < pop * 3 ? 1 : 0;
   const hurt = woundedOf(f) / pop;
   switch (act) {
     case "raid": return w * (1 + 0.5 * hungry * w) * (1 - Math.min(0.6, hurt)); // the hungry raid more (raiders most), the hurt less
@@ -403,35 +406,34 @@ function repairVehicles(state, f) {
 // ---------- hunger: buy food ----------
 export function hungerTrade(state, f, d = day(state)) {
   const H = CARE.HUNGER;
-  if ((f.stock.food || 0) >= f.pop * H.below || (f.foodDeal != null && d - f.foodDeal < H.gap)) return null;
+  if (foodIn(f.stock) >= f.pop * H.below || (f.foodDeal != null && d - f.foodDeal < H.gap)) return null;
   if (h(state, f.name, tickOf(f), "trade") >= Math.min(1, 0.5 * weightOf(f, "trade") + 0.2)) return null; // raiders would rather take it
   const wars = new Set(warsOf(state, f).flatMap((w) => [w.a, w.b]));
-  const partners = state.factions.filter((o) => o.alive && o !== f && !o.outsider && !wars.has(o.id) && (o.stock.food || 0) >= o.pop * H.rich && relation(state, f, o) > H.rel);
+  const partners = state.factions.filter((o) => o.alive && o !== f && !o.outsider && !wars.has(o.id) && foodIn(o.stock) >= o.pop * H.rich && relation(state, f, o) > H.rel);
   if (!partners.length) return null;
   const mate = (o) => (sameBloc(state, f, o) ? 1 : 0); // blocs.js: a member of their bloc first, at cost
-  const o = partners.sort((a, b) => mate(b) - mate(a) || b.stock.food / b.pop - a.stock.food / a.pop || a.id - b.id)[0];
+  const o = partners.sort((a, b) => mate(b) - mate(a) || foodIn(b.stock) / b.pop - foodIn(a.stock) / a.pop || a.id - b.id)[0];
   const markup = mate(o) ? 1 : H.markup;
-  let want = Math.min(Math.floor(f.pop * H.want - (f.stock.food || 0)), Math.floor((o.stock.food || 0) - o.pop * (H.rich - 2)));
+  let want = Math.min(Math.floor(f.pop * H.want - foodIn(f.stock)), Math.floor(foodIn(o.stock) - o.pop * (H.rich - 2)));
   if (want <= 0) return null;
   // Pay with what they can spare most (ammo above 3 a head, scrap, fuel, meds above 1 a head), at their worth.
   const spare = { ammo: (f.stock.ammo || 0) - f.pop * 3, scrap: f.stock.scrap || 0, fuel: (f.stock.fuel || 0) - f.pop * 0.5, meds: (f.stock.meds || 0) - f.pop };
-  let owed = want * SUPPLIES.food.value * markup;
+  let owed = want * DAY_VALUE * markup; // foods.js: a day's food at an ordinary price
   const paid = {};
   for (const k of ["scrap", "ammo", "fuel", "meds"]) {
     if (owed <= 0) break;
-    const q = Math.min(Math.max(0, Math.floor(spare[k])), Math.ceil(owed / SUPPLIES[k].value));
+    const q = Math.min(Math.max(0, Math.floor(spare[k])), Math.ceil(owed / supValue(k)));
     if (q <= 0) continue;
     paid[k] = q;
-    owed -= q * SUPPLIES[k].value;
+    owed -= q * supValue(k);
   }
-  if (owed > 0) want = Math.floor(want * (1 - owed / (want * SUPPLIES.food.value * markup)));
+  if (owed > 0) want = Math.floor(want * (1 - owed / (want * DAY_VALUE * markup)));
   if (want <= 0) return null;
   for (const [k, q] of Object.entries(paid)) { f.stock[k] -= q; o.stock[k] = (o.stock[k] || 0) + q; }
-  f.stock.food = (f.stock.food || 0) + want;
-  o.stock.food -= want;
+  moveFoodUnits(o, f, want, { state }); // foods.js: the seller's food that spoils soonest
   f.foodDeal = d;
   f.foodBought = (f.foodBought || 0) + want;
-  if (known(state, f, o) && f.known && o.known) log(state, `${f.name}, short of food, bought ${want} food from ${o.name}.`, "info");
+  if (known(state, f, o) && f.known && o.known) log(state, `${f.name}, short of food, bought ${want} days of food from ${o.name}.`, "info");
   return { from: o, food: want, paid };
 }
 
@@ -442,7 +444,8 @@ export function raidAnswer(state, attacker, target, att, def) {
   if (h(state, target.name, attacker.name, state.hour, "tribute") >= CARE.TRIBUTE_ODDS * weightOf(target, "yield")) return null; // zealots never pay
   for (const k of ["food", "ammo", "meds", "scrap"]) {
     // Food never out of the pay-out reserve (upkeep.js PAYOUT: PAYOUT.days a head), as your governor's tribute.
-    const q = Math.min(Math.floor((target.stock[k] || 0) * CARE.TRIBUTE), groupPayoutSpare(target, k));
+    const q = Math.min(Math.floor(supplyAmt(target.stock, k) * CARE.TRIBUTE), groupPayoutSpare(target, k));
+    if (k === "food") { moveFoodUnits(target, attacker, q, { state }); continue; } // foods.js: days of food, the soonest to spoil first
     target.stock[k] -= q;
     attacker.stock[k] = (attacker.stock[k] || 0) + q;
   }
@@ -458,12 +461,13 @@ export function expanded(f) { f.stock.scrap -= CARE.EXPAND.scrap; }
 // What pushes people out: hunger, sleeping rough, recent losses, the wounded, a war; x the type's harshness.
 export function desertPressure(state, f) {
   const pop = Math.max(1, f.pop);
-  const food = (f.stock.food || 0) / pop;
+  const food = foodIn(f.stock) / pop;
   let p = food < 1 ? 2 : food < 2 ? 1 : 0;
   if (growthFactor(state, f) < 1) p += 0.5; // no quarters for everyone (groupworks.js)
   p += Math.min(2, ((f.lossRecent || 0) / pop) * 5);
   p += (woundedOf(f) / pop) * 2;
   if (warsOf(state, f).length || atWarWithYou(state, f)) p += 0.5; // playerwars.js: a war with you weighs the same
+  p += groupDietPressure(state, f); // eating.js: lean rations +, a recent feast −, the same few foods + (wave 2 eating)
   p = Math.max(0, p - groupKitchenMorale(state, f)); // groupworks.js: hot meals from their kitchens keep people (kitchen-plus)
   return p * weightOf(f, "harsh");
 }
@@ -498,7 +502,7 @@ export function desertOne(state, f, d = day(state), where = null) {
   }
   if (r < D.toPlayer + D.toGroup && home != null) {
     const wars = new Set(warsOf(state, f).flatMap((w) => [w.a, w.b]));
-    const per = (o) => (o.stock.food || 0) / Math.max(1, o.pop);
+    const per = (o) => foodIn(o.stock) / Math.max(1, o.pop);
     const o = state.factions.filter((x) => x.alive && x !== f && !x.outsider && x.bases.length && !wars.has(x.id) && Math.min(...x.bases.map((b) => g.distance(b, home))) <= D.range && (where === "group" || per(x) > per(f)))
       .sort((a, b) => per(b) - per(a) || a.id - b.id)[0];
     if (o) {
@@ -525,7 +529,7 @@ export function desertOne(state, f, d = day(state), where = null) {
 // Raiders press-gang: mood does not matter, the weak go along. Their gear goes into the arsenal.
 export function wandererJoinChance(state, f, wg) {
   if (!f || !f.alive) return 0;
-  const fed = (f.stock.food || 0) >= f.pop * 4 ? 1 : (f.stock.food || 0) >= f.pop * 2 ? 0.5 : 0.1;
+  const fed = foodIn(f.stock) >= f.pop * 4 ? 1 : foodIn(f.stock) >= f.pop * 2 ? 0.5 : 0.1;
   const beds = growthFactor(state, f) < 1 ? 0.6 : 1;
   const mood = weightOf(f, "pressGang", 0) || (wg.mood === "desperate" ? 1.5 : wg.mood === "wary" ? 0.5 : 1);
   return Math.min(0.5, CARE.WANDER_JOIN * prio(f, "recruit") * fed * beds * mood);

@@ -15,7 +15,8 @@ import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoa
 import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
 import { partyEnter as fieldPartyEnter, teamEnter as fieldTeamEnter, fieldRaidArrive, teamActs as fieldActs } from "./fieldworks.js"; // field works: roadblocks, raids on them
-import { TERRAIN, ROAD_COST, GEAR, SUPPLIES } from "./data.js";
+import { TERRAIN, ROAD_COST, GEAR, SUPPLIES, supValue, supWeight, FACTION_TYPES } from "./data.js";
+import { FOODS, foodIn, takeFood, moveFood, packPick, addFood, foodText, typedFood, addFoods, unitsOf, DAY_KG } from "./foods.js"; // food by type: packed with its lots, eaten the soonest to spoil first
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
   factionById, snapshot, mergeKnowledge, gearEffect, radioBasesInRange, isNight, archerCount, usesArrows, armedFactor, arrowsBack, ARROWS, localId,
@@ -35,6 +36,7 @@ import {
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
 import { teamLoad, burdenRecord, rationRate, personRation, wornLoad } from "./load.js";
+import { packFood, packWater as personWater, aiPartyHeads, PACK } from "./eating.js"; // the packs everyone carries (wave 2 eating)
 import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDeathSite, deathLabel } from "./markers.js";
 import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
 import { handoverArrive } from "./ransom.js";
@@ -72,9 +74,9 @@ import { packMags, packShells } from "./carrykit.js"; // magazines as items (sec
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
-import { meatIn, MEAT_EXTRA, MEAT_KG, gameSpoilHour, unloadGame, takeMeat } from "./hunting.js";
+import { gameSpoilHour, unloadGame } from "./hunting.js";
 import { teamNeedsHour } from "./needs.js";
-import { wormTeamHour, packWater, wormHome, unloadWormForage, packTablets } from "./worm.js";
+import { wormTeamHour, packWater, wormHome, packTablets } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { lookoutsSpot, surpriseAt, watchSawText } from "./watch.js"; // the lookouts' warning; an unwatched night
 import { startSweep, sweepOpts, sweeping } from "./survey.js";
@@ -205,15 +207,28 @@ export function carryCapacity(state, members, vehicle) {
 export const partyCapacity = (state, p) => carryCapacity(state, partyMembers(state, p), partyFleet(state, p)); // every vehicle of the team's (vehicles.js fleets)
 
 /** @param {Stock} supplies */
-export const supplyLoad = (supplies) => Object.entries(supplies || {}).reduce((s, [k, v]) => s + (SUPPLIES[k] && Number.isFinite(v) && v > 0 ? v * SUPPLIES[k].weight : 0), 0);
+// "food" / "preserved" in a plan (days of food, packed as what keeps and weighs least: foods.js packPick) weigh
+// FOOD_PACK_KG a day, about (MREs 1.1, ration bars 0.4, jerky and peanut butter 0.4–0.5, cans 2.2).
+export const FOOD_PACK_KG = DAY_KG; // foods.js
+// The items a team asking for `days` of food packs at `home` (launchExpedition; the planner's estimate weighs the same).
+export const packFoodPick = (state, home, days, opts = {}) => (home && days > 0 ? packPick(state, home, days, { days: opts.foodDays || 7, prefer: opts.packFood || null }) : {});
+// A planned team's supplies as it would pack them: "food" (days) as the items (packFoodPick), the rest as they are.
+export function packedSupplies(state, home, supplies, opts = {}) {
+  const days = Number(supplies && supplies.food) || 0;
+  if (!(days > 0) || !home) return supplies || {};
+  const out = { ...supplies };
+  delete out.food;
+  for (const [k, q] of Object.entries(packFoodPick(state, home, days, opts))) out[k] = (out[k] || 0) + q;
+  return out;
+}
+export const supplyLoad = (supplies) => Object.entries(supplies || {}).reduce((s, [k, v]) => s + (!Number.isFinite(v) || !(v > 0) ? 0 : SUPPLIES[k] ? v * supWeight(k) : k === "food" || k === "preserved" ? v * FOOD_PACK_KG : 0), 0);
 // Kg of found cargo: supplies, and items by weight (a pack in the cargo also counts what is inside it, inventory.js itemLoad).
-// Fresh game (hunting.js) is food that weighs MEAT_KG a ration instead of 0.5: carcasses, bones and hide.
 // A body brought home in the car (carriers.js stowBody / endBodies): the body itself (hiveconst.js CARRIER.BODY_KG) and its things.
 export const bodyLoad = (body) => CARRIER.BODY_KG + supplyLoad(body.supplies) + (body.items || []).reduce((s, g) => s + itemLoad(g), 0);
 /** @param {Cargo} cargo */
 export const bodiesLoad = (cargo) => (cargo && cargo.bodies ? cargo.bodies.reduce((s, body) => s + bodyLoad(body), 0) : 0);
 /** @param {Cargo} cargo */
-export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + meatIn(cargo) * MEAT_EXTRA + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) + bodiesLoad(cargo) : 0);
+export const cargoLoad = (cargo) => (cargo ? supplyLoad(cargo.supplies) + cargo.gear.reduce((s, g) => s + itemLoad(g), 0) + bodiesLoad(cargo) : 0);
 // Everything the team shares out: packed supplies and found cargo (load.js).
 /** @param {Party} p */
 export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
@@ -265,11 +280,12 @@ function reweigh(state, p) {
 export const partyLoad = (state, p) => teamLoad(partyMembers(state, p), poolLoad(p), partyFleet(state, p));
 // How many units of a supply fit in the remaining space.
 /** @param {number} room @param {string} key */
-export const unitsThatFit = (room, key) => Math.max(0, Math.floor(room / SUPPLIES[key].weight));
+export const unitsThatFit = (room, key) => Math.max(0, Math.floor(room / supWeight(key)));
 // What a team carries of one supply: packed plus found (never negative).
 /** @param {Party} p @param {string} key */
-// "ammo": every round the team carries, any calibre (rounds.js totalRounds).
-export const carried = (p, key) => (key === "ammo" ? totalRounds(p.supplies) + totalRounds(p.cargo && p.cargo.supplies) : Math.max(0, p.supplies[key] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0));
+// "ammo": every round the team carries, any calibre (rounds.js totalRounds); "food": days of food of every kind
+// (foods.js foodIn: packed and found).
+export const carried = (p, key) => (key === "ammo" ? totalRounds(p.supplies) + totalRounds(p.cargo && p.cargo.supplies) : key === "food" ? foodIn(p.supplies) + foodIn(p.cargo && p.cargo.supplies) : Math.max(0, p.supplies[key] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0));
 // A supply a team carries for a check or a cost, water counting both kinds (water.js), and taking it (water: purified
 // first).
 /** @param {Party} p @param {string} key */
@@ -282,6 +298,7 @@ export const takeAny = (p, key, qty) => (key === "water" ? takeTeamWater(p, qty)
 export function takeSupply(p, key, qty) {
   const want = Math.max(0, Number(qty) || 0);
   if (key === "ammo") { const c = p.cargo && p.cargo.supplies ? spendAmmo(p.cargo.supplies, Math.floor(want), p.ammoCals).n : 0; return c + spendAmmo(p.supplies, Math.floor(want) - c, p.ammoCals).n; } // rounds.js: any calibre, the ones its guns need last (p.ammoCals, ammo.js settleParty), the cheapest first
+  if (key === "food") return takeFood([p, p.cargo].filter((h) => h && h.supplies), want, { eggs: false }).units; // days of food, the soonest to spoil first (foods.js)
   const fromCargo = Math.min(want, Math.max(0, (p.cargo && p.cargo.supplies[key]) || 0));
   if (fromCargo) p.cargo.supplies[key] -= fromCargo;
   const packed = Math.max(0, p.supplies[key] || 0);
@@ -735,7 +752,7 @@ export function estimateTrip(state, { memberIds, dest, vehicle, stance, homeBase
   const mode = travelMode(veh);
   const out = planPath(state, home.tile, dest, mode);
   if (!out) return null;
-  const pace = plannedPace(state, { members, supplies, v: veh, stance });
+  const pace = plannedPace(state, { members, supplies: packedSupplies(state, home, supplies), v: veh, stance }); // days of food weighed as packed
   const po = { speed: pace.speed, footSpeed: pace.footSpeed, fuelMult: pace.fuelMult, offroad: pace.offroad || 1, onroad: pace.onroad || 1 };
   // It sets off this minute: the part of the hour already gone is not travelled (wayOn; 0 headless).
   const start = -clockFrac(state) * pace.speed;
@@ -834,8 +851,18 @@ export function launchExpedition(state, opts) {
   // Every supply key is present and a plain number (no missing keys, NaN or negative amounts later on).
   /** @type {Stock} */
   const supplies = {};
-  for (const k of Object.keys(SUPPLIES)) supplies[k] = 0;
+  for (const k of Object.keys(SUPPLIES)) if (!FOODS[k]) supplies[k] = 0;
   for (const [k, q] of Object.entries(opts.supplies || {})) if (SUPPLIES[k] && Number.isFinite(q) && q > 0) supplies[k] = q;
+  // Food asked for in days ("food": N, the planners and the autopilot) is packed as items (foods.js packPick: by
+  // default what keeps longest and weighs least a kcal; opts.packFood: an item to take first).
+  // The crew's own packs (eating.js: everyone carries about a day and a half of food and water) count toward what was
+  // asked for: the base packs that much less, so the team carries and weighs what it did. They eat the shared supplies
+  // first and their packs after (needs.js teamNeedsHour).
+  const crew0 = memberIds.map((id) => survivorById(state, id)).filter((m) => m && m.alive && m.location && m.location.kind === "base" && m.location.baseId === home.id);
+  const packDays = crew0.reduce((a, m) => a + packFood(m), 0), packW = crew0.reduce((a, m) => a + personWater(m), 0);
+  const foodDays = Math.max(0, (Number(opts.supplies && opts.supplies.food) || 0) - packDays);
+  if (supplies.water > 0 && packW > 0) supplies.water = Math.max(0, supplies.water - Math.floor(packW + 1e-9));
+  if (foodDays > 0) for (const [k, q] of Object.entries(packFoodPick(state, home, foodDays, opts))) supplies[k] = (supplies[k] || 0) + q;
   if (!memberIds.length) return { error: "Pick at least one survivor." };
   // The crew: alive, at the hub, and not already on a team, a trade route or held somewhere.
   const members = [];
@@ -907,8 +934,10 @@ export function launchExpedition(state, opts) {
   if (bikes) v = takeBikes(state, home, members.length);
   if (fleet) fleet.real = [...fleet.cars, ...(fleet.bikes ? [takeBikes(state, home, bikeN)] : [])];
   const packed = { ...supplies };
+  const foodReq = Object.fromEntries(Object.entries(supplies).filter(([k, q]) => FOODS[k] && q > 0)); // moved with its lots below
   for (const [k, val] of Object.entries(supplies)) {
     if (k === "ammo") continue; // last: what is asked for by key first
+    if (FOODS[k]) { packed[k] = 0; continue; } // food goes with its lots (shelf left) once the team exists
     if (k !== "water") { home.stock[k] = (home.stock[k] || 0) - val; continue; }
     const d = drawWater(home.stock, val); // purified first, then un-purified (water.js)
     packed.water = d.pure;
@@ -937,6 +966,7 @@ export function launchExpedition(state, opts) {
   else p.vehicleIds = [];
   for (const m of members) m.location = { kind: "party", partyId: p.id };
   state.parties.push(p);
+  moveFood(home, p, foodReq, { state }); // foods.js: the lots go with it (what they have left of their shelf)
   packMags(home.armory, members); // carrykit.js: spare magazines for their guns from the armory (rig pouches, pockets, then the pack)
   if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each shotgunner's shells at hand (a pocket or a rig pouch) out of the packed rounds, so the shotgun reloads without digging in the pack
   packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
@@ -994,6 +1024,13 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
     strength: opts.strength, target: opts.target || null, targetFaction: opts.targetFaction || null,
     phase: "out", warned: false,
   };
+  // AI parity (eating.js): the party carries PACK.food days of the group's food a head (its heads by strength) and eats
+  // it on the road (factions.js); what is left comes home (removeParty).
+  if (f.stock && foodIn(f.stock) > 0) {
+    const heads = aiPartyHeads(f, opts.strength, ((FACTION_TYPES[f.type] && FACTION_TYPES[f.type].arms) || 1) * (f.gear || 1));
+    const got = takeFood(f.stock, Math.min(foodIn(f.stock), heads * PACK.food), { eggs: false, state });
+    if (got.units > 0) { p.rations = got.items; p.heads = heads; }
+  }
   state.parties.push(p);
   if (kind === "raid" && f.vehicles) assignRaidHumvee(state, f, p); // vehicles.js: a group's turreted Humvee comes along (lost if the raid fails)
   return p;
@@ -1290,8 +1327,8 @@ function shedOverload(state, p) {
     }
     for (const [k, q] of Object.entries(drop.supplies)) {
       const cur = site.items.find((i) => i.kind === "supply" && i.key === k);
-      if (cur) { cur.qty += q; cur.value = cur.qty * SUPPLIES[k].value; }
-      else site.items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * SUPPLIES[k].value });
+      if (cur) { cur.qty += q; cur.value = cur.qty * supValue(k); }
+      else site.items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * supValue(k) });
     }
     for (const g of drop.gear) site.items.push({ kind: "gear", key: g.key, name: g.name, qty: 1, value: (GEAR[g.key]?.value || 0) * (g.quality || 1), item: g });
     spot(p, { key: `death:${tile}`, type: "death", tile, hour: state.hour, label: deathLabel(site), info: { items: site.items.length } });
@@ -1460,27 +1497,19 @@ function onEnterTile(state, p, tileId, hour = state.hour) {
 export function trimCargo(state, p, into = null) {
   const dropped = { supplies: {}, gear: [], text: "" };
   let over = poolLoad(p) - partyCapacity(state, p); // found cargo goes first; packed supplies stay with the team
-  // Fresh game (hunting.js) goes in its place by worth per kg (food's value at MEAT_KG a ration): after un-purified
-  // water and scrap, before packed food, meds and ammo.
-  let meatDone = false;
-  const dropMeat = () => {
-    meatDone = true;
-    if (over <= 1e-9 || !(meatIn(p.cargo) > 0)) return;
-    const drop = takeMeat(p.cargo, Math.min(meatIn(p.cargo), Math.ceil(over / MEAT_KG - 1e-9)));
-    if (drop > 0) { dropped.supplies.food = drop; over -= drop * MEAT_KG; }
-  };
-  const meatWorth = SUPPLIES.food.value / MEAT_KG;
-  const keys = Object.keys(p.cargo.supplies).sort((a, b) => SUPPLIES[a].value / SUPPLIES[a].weight - SUPPLIES[b].value / SUPPLIES[b].weight);
+  // Food goes in its place by worth per kg like anything else (raw meat and wilting greens are worth little a kilo:
+  // they go after un-purified water and scrap; MREs and jerky last). Part of a kilo of meat counts.
+  const keys = Object.keys(p.cargo.supplies).filter((k) => SUPPLIES[k]).sort((a, b) => supValue(a) / supWeight(a) - supValue(b) / supWeight(b));
   for (const k of keys) {
-    if (!meatDone && SUPPLIES[k].value / SUPPLIES[k].weight >= meatWorth) dropMeat();
     if (over <= 1e-9) break;
-    const drop = Math.min(Math.ceil(over / SUPPLIES[k].weight - 1e-9), Math.floor(p.cargo.supplies[k] || 0));
+    const have = FOODS[k] ? Math.max(0, p.cargo.supplies[k] || 0) : Math.floor(p.cargo.supplies[k] || 0);
+    const drop = Math.min(Math.ceil(over / supWeight(k) - 1e-9), have);
     if (drop <= 0) continue;
-    p.cargo.supplies[k] -= drop;
+    if (FOODS[k]) takeFood(p.cargo, (drop * FOODS[k].kcal) / 2000, { only: (x) => x === k, state });
+    else p.cargo.supplies[k] -= drop;
     dropped.supplies[k] = (dropped.supplies[k] || 0) + drop;
-    over -= drop * SUPPLIES[k].weight;
+    over -= drop * supWeight(k);
   }
-  if (!meatDone) dropMeat();
   const byValue = [...p.cargo.gear].sort((a, b) => (GEAR[a.key]?.value || 0) * (a.quality || 1) - (GEAR[b.key]?.value || 0) * (b.quality || 1));
   for (const g of byValue) {
     if (over <= 1e-9) break;
@@ -1528,7 +1557,19 @@ export function leaveVehicle(state, p, tile, reason, which = null) {
 }
 
 /** @param {State} state @param {Party} p @param {string} key @param {number} qty */
+// "food" / "preserved" (days of food: a robbers' haul, a crate, a thank-you) into a team's cargo: what such people
+// carry (foods.js mixes: raider, keeps), the items that fit. Returns the days of food taken.
+export function addFoodCargo(state, p, key, qty, mix = "raider") {
+  p.cargo = p.cargo || { supplies: {}, gear: [] };
+  let got = 0;
+  for (const [k, q] of Object.entries(typedFood(state, key === "preserved" ? "keeps" : mix, qty))) {
+    const n = Math.min(q, unitsThatFit(cargoRoom(state, p), k));
+    if (n > 0) { addFood(p.cargo, k, n, { state }); got += unitsOf(k, n); }
+  }
+  return Math.round(got * 10) / 10;
+}
 function addCargo(state, p, key, qty) {
+  if (key === "food" || key === "preserved") return addFoodCargo(state, p, key, qty);
   const room = cargoRoom(state, p);
   const take = Math.max(0, Math.min(unitsThatFit(room, key), Math.floor(qty) || 0));
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
@@ -1614,7 +1655,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
   return {
     title: title || (doneLabel ? `Done: ${doneLabel}` : `Orders: team at ${tileLabel(state, tile)}`),
     isOrders: true,
-    text: `${text ? text + " " : ""}${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")} ${partyMembers(state, p).length === 1 ? "waits" : "wait"} for your call at ${tileLabel(state, tile)}. Supplies: ${Math.floor(p.supplies.food || 0)} food, ${waterText(p.supplies.water, p.supplies[RAW])}${p.vehicle ? `, ${Math.floor(partyFuel(state, p))} fuel` : ""}.${queued ? ` Queued orders on hold: ${queueText(state, p)}.` : ""}`,
+    text: `${text ? text + " " : ""}${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")} ${partyMembers(state, p).length === 1 ? "waits" : "wait"} for your call at ${tileLabel(state, tile)}. Supplies: ${Math.floor(carried(p, "food"))} days of food, ${waterText(p.supplies.water, p.supplies[RAW])}${p.vehicle ? `, ${Math.floor(partyFuel(state, p))} fuel` : ""}.${queued ? ` Queued orders on hold: ${queueText(state, p)}.` : ""}`,
     partyId: p.id,
     choices: [
       ...(queued ? [{ label: `Resume queued orders (${queued})`, hint: `Carry on with: ${queueText(state, p)}`, order: true, resolve: (st) => resumeQueue(st, p) }] : []),
@@ -1884,7 +1925,7 @@ function arrive(state, p) {
           const take = addCargo(state, p, it.key, it.qty);
           if (take > 0) got.push(`${take} ${it.name.toLowerCase()}`);
           it.qty -= take;
-          it.value = it.qty * SUPPLIES[it.key].value;
+          it.value = it.qty * supValue(it.key);
           if (it.qty >= 1) { left.push(`${Math.floor(it.qty)} ${it.name.toLowerCase()}`); continue; }
           site.items.splice(site.items.indexOf(it), 1);
           continue;
@@ -1969,7 +2010,9 @@ function investigate(state, p) {
   const key = `${h.type}:${tile}`;
   if (h.type === "cache" || h.type === "camp") {
     const got = [];
-    const loot = h.type === "cache" ? { food: rng.int(6, 14), meds: rng.int(1, 3), ammo: rng.int(15, 40) } : { food: rng.int(3, 8), scrap: rng.int(4, 10), ammo: rng.int(10, 25) };
+    const food = h.type === "cache" ? rng.int(6, 14) : rng.int(3, 8);
+    const loot = h.type === "cache" ? { meds: rng.int(1, 3), ammo: rng.int(15, 40) } : { scrap: rng.int(4, 10), ammo: rng.int(10, 25) };
+    Object.assign(loot, typedFood(state, h.type === "cache" ? "keeps" : "raider", food)); // foods.js: a cache's food keeps; a camp's is what raiders eat
     sortFind(loot, h.type === "cache" ? "guns" : "raider", key); // ammo.js: the rounds by calibre
     for (const [k, q] of Object.entries(loot)) {
       const took = addCargo(state, p, k, q);
@@ -2253,9 +2296,9 @@ function addStock(base, supplies) {
 /** @param {State} state @param {Party} p @param {Base} base @param {Survivor[]} members */
 function unloadAt(state, p, base, members) {
   wormHome(state, p, members, base); // worm.js: the hands that searched today, washed if the water here is safe
+  moveFood(p, base, null, { state }); // foods.js: its food into the stores with its lots (shelf left, the worm's eggs)
+  unloadGame(base, p.cargo, state); // the found food and game too
   addStock(base, p.supplies);
-  unloadGame(base, p.cargo);
-  unloadWormForage(base, p.cargo); // worm.js: forage gathered on infected ground
   addStock(base, p.cargo.supplies);
   base.armory.push(...p.cargo.gear);
   bodiesHome(state, p, base); // carriers.js
@@ -2286,6 +2329,7 @@ function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
   const members = partyMembers(state, p);
+  const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${keyWord(k)}`); // "un-purified water", not the key (before the food goes into the stores)
   unloadAt(state, p, home, members); // the stores, armory, vehicle, bikes, bodies and prisoners
   const routeActive = p.kind === "convoy" && state.routes.some((r) => r.id === p.routeId && r.active);
   for (const m of members) m.location = routeActive ? { kind: "route", routeId: p.routeId } : { kind: "base", baseId: home.id };
@@ -2296,7 +2340,6 @@ function returnHome(state, p) {
   mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
   const revealed = state.knowledge.filter(Boolean).length - before;
   const newMarkers = state.markers.length - markersBefore;
-  const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${keyWord(k)}`); // "un-purified water", not the key
   if (p.cargo.gear.length) loot.push(...p.cargo.gear.map((g) => g.name));
   if (p.routeKind === "supply") {
     supplyReturned(state, p, home, loot);
@@ -2314,6 +2357,12 @@ function returnHome(state, p) {
 export function removeParty(state, p) {
   const i = state.parties.indexOf(p);
   if (i >= 0) state.parties.splice(i, 1);
+  // A group's party home again: what is left of its rations goes back into the stock (eating.js; lost elsewhere).
+  if (p.owner !== "player" && p.rations) {
+    const f = state.factions.find((x) => x.id === p.owner);
+    if (f && f.alive && f.stock && (f.bases || []).includes(partyTile(p))) for (const [k, q] of Object.entries(p.rations)) if (q > 0) f.stock[k] = (f.stock[k] || 0) + q;
+    delete p.rations;
+  }
   // Nothing may outlive the team: its cards (events, orders, conflicts) and an open trade go with it.
   for (let j = state.cards.length - 1; j >= 0; j--) if (state.cards[j].partyId === p.id) state.cards.splice(j, 1);
   if (state.trade && state.trade.partyId === p.id) state.trade = null;
@@ -2330,8 +2379,9 @@ export function wipeParty(state, p) {
   const vs = partyVehicles(state, p); // every vehicle it had (vehicles.js fleets)
   const base = state.bases.find((b) => b.tile === tile);
   if (base) {
+    moveFood(p, base, null, { state });
+    unloadGame(base, p.cargo, state);
     addStock(base, p.supplies);
-    unloadGame(base, p.cargo);
     addStock(base, p.cargo.supplies);
     base.armory.push(...p.cargo.gear);
     for (const x of vs) x.loc = { kind: "base", baseId: base.id };
@@ -2341,7 +2391,7 @@ export function wipeParty(state, p) {
     const items = [];
     const sup = {};
     for (const pool of [p.supplies, p.cargo.supplies]) for (const [k, q] of Object.entries(pool)) if (SUPPLIES[k] && Number.isFinite(q) && q >= 1) sup[k] = (sup[k] || 0) + Math.floor(q);
-    for (const [k, q] of Object.entries(sup)) items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * SUPPLIES[k].value });
+    for (const [k, q] of Object.entries(sup)) items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * supValue(k) });
     // item: the real object, so a pack keeps its contents and a worn weapon its condition when recovered.
     for (const g of p.cargo.gear) items.push({ kind: "gear", key: g.key, name: g.name, qty: 1, value: (GEAR[g.key]?.value || 0) * (g.quality || 1), item: g });
     let site = state.deathSites.find((d) => d.tile === tile);
@@ -2388,10 +2438,10 @@ export function dispatchConvoy(state, route) {
   if (!res) return;
   const hours = res.cost * 2 + 4;
   const food = Math.ceil((escorts.length * hours) / 24);
-  if (h.stock.food < food) return log(state, `Not enough food to supply the convoy to ${f.name}.`, "danger");
-  if (route.sendKey === "ammo") takeStock(h.stock, "ammo", route.sendQty); // any rounds, the cheapest first (rounds.js)
+  if (foodIn(h.stock) < food + (route.sendKey === "food" ? route.sendQty : 0)) return log(state, `Not enough food to supply the convoy to ${f.name}.`, "danger");
+  if (route.sendKey === "ammo" || route.sendKey === "food") takeStock(h.stock, route.sendKey, route.sendQty); // any rounds, the cheapest first (rounds.js); food: days of it, the soonest to spoil first
   else h.stock[route.sendKey] -= route.sendQty;
-  h.stock.food -= food;
+  const convoyFood = packPick(state, h, food, { days: Math.ceil(hours / 24) });
   const wantWater = Math.ceil(food * thirstAhead(state, hours / 24)); // more in summer and a heat wave (weather.js)
   const w = drawWater(h.stock, wantWater); // purified first (water.js)
   if (useTruck) {
@@ -2402,14 +2452,15 @@ export function dispatchConvoy(state, route) {
   const p = {
     id: newId(), owner: "player", kind: "convoy", mission: "route", routeId: route.id, dest: f.bases[0], homeBaseId: h.id,
     members: escorts.map((s) => s.id), stance: "normal", vehicle: useTruck, vehicleId: useTruck ? v.id : null,
-    supplies: { food, water: Math.max(w.pure, wantWater - w.raw), [RAW]: w.raw, fuel: 0, meds: 0, ammo: route.escort === "heavy" ? 40 : route.escort === "standard" ? 20 : 8 },
-    cargo: { supplies: { [route.sendKey]: route.sendQty }, gear: [] },
+    supplies: { water: Math.max(w.pure, wantWater - w.raw), [RAW]: w.raw, fuel: 0, meds: 0, ammo: route.escort === "heavy" ? 40 : route.escort === "standard" ? 20 : 8 },
+    cargo: { supplies: route.sendKey === "food" ? typedFood(state, "stores", route.sendQty, { whole: false }) : { [route.sendKey]: route.sendQty }, gear: [] },
     path: res.path, idx: 0, progress: 0, phase: "out", seen: new Map(), spotted: new Map(), sightNow: [], radioLive: false,
     departed: state.hour, plannedHours: hours, eventsSeen: 0,
   };
   if (useTruck) v.loc = { kind: "party", partyId: p.id };
   for (const s of escorts) s.location = { kind: "party", partyId: p.id };
   state.parties.push(p);
+  moveFood(h, p, convoyFood, { state }); // the escorts' food for the road, with its lots
   log(state, `Convoy left for ${f.name} with ${route.sendQty} ${route.sendKey} (${route.escort} escort, ${useTruck ? `in the ${v.name}` : "with hand carts"}).`, "info");
 }
 
@@ -2516,7 +2567,7 @@ function aiPartyHour(state, p) {
     if (p.kind === "convoy") {
       const to = factionById(state, p.targetFaction);
       if (to && to.alive) {
-        to.stock.food += 10;
+        addFoods(to, typedFood(state, "stores", 10));
         to.stock.scrap += 10;
       }
       removeParty(state, p);

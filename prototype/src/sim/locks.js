@@ -383,7 +383,7 @@ export function lockedLoot(state, b, u, box, sup, gear) {
   if (lk) {
     const L = LOCK_LOOT[lk.loot] || LOCK_LOOT.cash;
     L.sup.forEach(([k, p, lo, hi], i) => {
-      if (!SUPPLIES[k] || roll("s", i) >= p) return;
+      if ((!SUPPLIES[k] && k !== "food") || roll("s", i) >= p) return; // food: days of it, typed with the box (combat.js typeFind)
       sup[k] = (sup[k] || 0) + lo + Math.floor(roll("q", i) * (hi - lo + 1));
     });
     L.gear.forEach(([k, p], i) => { if (GEAR[k] && roll("g", i) < p) gear.push(lootItem(swapGun(`lock:${lk.loot}`, k, [roll("gs", i)]), lockSource(lk.loot, siteTypeAt(state, b.tileId)), roll("gd", i))); }); // itemcond.js: a gun cage keeps its guns well (a gun store's as the Army's)
@@ -491,7 +491,7 @@ export function lockedSearchHour(state, e, p, members) {
   // Inside.
   const L = LOCK_LOOT[def.loot] || LOCK_LOOT.cash;
   L.sup.forEach(([k, pp, lo, hi], i) => {
-    if (!SUPPLIES[k] || roll("s", i) >= pp) return;
+    if ((!SUPPLIES[k] && k !== "food") || roll("s", i) >= pp) return; // food: days of it, typed this hour (scavenge.js typeFound)
     const q = lo + Math.floor(roll("q", i) * (hi - lo + 1));
     if (k === "ammo") addFindVia((kk, qq) => { e.found.supplies[kk] = (e.found.supplies[kk] || 0) + qq; return qq; }, LOCK_AMMO[def.loot] || "home", q, "lock", e.tile, e.hours, i); // ammo.js: rounds by calibre
     else e.found.supplies[k] = (e.found.supplies[k] || 0) + q;

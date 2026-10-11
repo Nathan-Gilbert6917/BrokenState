@@ -12,14 +12,15 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
+import { FOODS, FOOD_KEYS, foodIn, foodSplit, unitsOf, qtyOf, sellPick, foodNeeds, foodUnits } from "./foods.js"; // food by type (foods.js)
 import { gearOutdoorWorkers } from "./tripgear.js"; // the outdoor workers' kit for their trips (trips-plus #2)
-import { govFieldWorks, fieldJobs } from "./fieldworks.js"; // field works: the governor's and a base leader's share
+import { govFieldWorks, fieldJobs, govSnares, snareLinesWanted, playerWorks, gatheredScrap } from "./fieldworks.js"; // field works: the governor's and a base leader's share
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
 import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, partPlan, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
-import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
+import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES, supValue, supWeight } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, survivorById, snapshot, armedFactor, archerCount, ARROWS, meleeAimBonus, meleeDmgMult } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
@@ -47,7 +48,8 @@ import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchenWood, isCookHour, cookedLately } from "./kitchen.js"; // the Kitchen: built at 8+ people, its cooks staffed (planRoles 5c)
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
-import { canUpgradeKitchen, queueCannerUpgrade } from "./buildings.js"; // machines-2: the pressure canner
+import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
+import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
@@ -65,7 +67,8 @@ import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
 import { planBlueprintStudy, buildLock } from "./blueprints.js";
 import { stationOrder, setStationOrder, orderHold } from "./production.js";
-import { generators, setGenReserve } from "./power.js"; // machines-2: the generators' fuel reserve (govOrders)
+import { generators, setGenReserve, powerStatus, powerWanted, genCapacity, genToUpgrade, genUpgradeFuelOk, GEN_UP } from "./power.js"; // machines-2: the generators' fuel reserve (govOrders); gen-tiers: the upgrade (autoGenUpgrade)
+import { column } from "./history.js"; // gen-tiers: the base's fuel in and out over the last weeks
 import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
 import { autoDiplomacyDaily, hiveAllies, broodAfterAllies, goalsProgress, allianceMembers, ALLIANCE, isMember, inviteProblem, inviteToAlliance, landCentres, controlRadius, coalitionMask } from "./alliance.js";
 import { ensureDiplo, joinProblem, joinWar } from "./diplomacy.js";
@@ -352,10 +355,16 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.building) planBuilds(state, base, areas);
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job
   if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's firewood before the stove
-  if (areas.building && hourOfDay(state) === PLAN_HOUR + 1) for (const line of govFieldWorks(state, base, { threatened: fieldThreat(state, base), waterShort: waterRunningShort(state, base) })) say(state, line); // fieldworks.js: a well, a tower and its lookouts, repairs
+  if (areas.production && hourOfDay(state) === PLAN_HOUR) govCookBills(state, base); // cooking.js (wave 2 cooking): their bills at the Kitchen and the cook fire (the player's bills left alone)
+  if (areas.building && hourOfDay(state) === PLAN_HOUR + 1) for (const line of govFieldWorks(state, base, { threatened: fieldThreat(state, base), waterShort: waterRunningShort(state, base), foodShort: snareFoodLevel(state, base) })) say(state, line); // fieldworks.js: snare lines, a well, a tower and its lookouts, repairs
+  // Hardcore: a snare line wanted and not set at the morning's look (a camp's scrap comes in with a delivery and goes
+  // into its building materials within hours) is looked at again every hour while the base has fewer than it wants
+  // and has the scrap or the snare wire (else not before the next delivery).
+  else if (areas.building && state.mode === "hardcore" && hourlySnares(state, base)) { const line = govSnares(state, base, snareFoodLevel(state, base)); if (line) say(state, line); }
   if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
   if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
   if (areas.building) { const up = autoCanner(state, base); if (up) say(state, up); } // machines-2: a pressure canner fitted to a working preserving room
+  if (areas.building && hourOfDay(state) === PLAN_HOUR + 3) { const up = autoGenUpgrade(state, base); if (up) say(state, up); } // gen-tiers: a generator upgraded when the power is short and the fuel can carry it
   if (areas.production && hourOfDay(state) === PLAN_HOUR) stripDeadCars(state, base); // a car worth less than its parts
 }
 // The cook fire comes down once the Kitchen does its job (kitchen-plus pick 5): a kitchen here with its stove lit (it
@@ -395,6 +404,17 @@ function cookFireDown(state, base) {
   if (!cf || !canDemolish(state, base, cf.id).ok) return "";
   demolish(state, base, cf.id);
   return `The cook fire at ${base.name} came down: the kitchen's stove cooks everything through now, and its utility plot is free.`;
+}
+// The hourly look (hardcore): fewer lines than it would want short of food, no field job queued, and 2 scrap there
+// (or gathered for the step up, or a coil of snare wire): govSnares decides.
+const hourlySnares = (state, base) => playerWorks(state, base).filter((x) => x.kind === "snares").length < snareLinesWanted(state, base, 2) && !fieldJobs(state, base).length
+  && ((base.stock.scrap || 0) + gatheredScrap(base) >= 2 || (base.armory || []).some((it) => it && it.key === "snarewire"));
+// The food level for the snare lines (fieldworks.js govSnares, hc-food 2026-10-11): 0 fed, 1 under the base's food
+// target in days a head (foodTarget, everyone fed here: upkeep.js mouthsAt), 2 under half of it.
+function snareFoodLevel(state, base) {
+  const days = edibleFood(base) / Math.max(1, mouthsAt(state, base).heads);
+  const t = foodTarget(state, base);
+  return days < t / 2 ? 2 : days < t ? 1 : 0;
 }
 // A base threatened enough for a watch tower out on its land (fieldworks.js govFieldWorks): the dead within 6 tiles, a
 // hive within 10, a hostile group (or a raid on its way) within 12.
@@ -650,9 +670,10 @@ function dealCaravanPlan(state, deal) {
   const need = needs(state, base), spare = tradeSpare(state, base);
   for (const [k, q] of Object.entries(deal.give.supplies || {})) {
     if (q <= 0) continue;
-    const kk = SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : k; // rounds by calibre count as ammo here (ammo.js)
+    const kk = SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : FOODS[k] ? "food" : k; // rounds by calibre count as ammo here (ammo.js); a food item as food (foods.js)
+    const qd = FOODS[k] ? unitsOf(k, q) : q; // food: days of it
     if ((need[kk] ?? 0) > 0.8) return { why: `${base.name} is short of ${kk}` };
-    if ((kk === "food" || kk === "ammo" || kk === "water") && q > spare[kk]) return { why: `${base.name} cannot spare ${q} ${keyWord(k)}` };
+    if ((kk === "food" || kk === "ammo" || kk === "water") && qd > spare[kk]) return { why: `${base.name} cannot spare ${q} ${keyWord(k)}` };
     if (payoutBreaks(state, base, { [k]: q })) return { why: `${base.name} cannot spare ${q} ${keyWord(k)} (its reserve)` }; // preserved, un-purified water
     if (supplyAmt(base.stock, k) < q) return { why: `${base.name} has only ${Math.floor(supplyAmt(base.stock, k))} ${keyWord(k)}` };
   }
@@ -676,14 +697,14 @@ function dealCaravanPlan(state, deal) {
       if (!e.ok || (v && e.fuel > v.fuel)) continue;
       if (e.hours > P.maxHoursOut * 2 + 24) { why = `${f.name} is too far for a caravan`; continue; }
       if (e.hours > 36 && n < 3 && hands >= 3) continue; // a long trip goes three strong
-      if (theirs + supplyLoad({ food: e.food * 0.5, water: e.water * 0.5 }) > carryCapacity(state, crew, v)) { why = `their side is too heavy to carry home`; continue; }
+      if (theirs + supplyLoad({ water: e.water * 0.5 }) + e.food * 0.5 > carryCapacity(state, crew, v)) { why = `their side is too heavy to carry home`; continue; } // the road's food: about half a kilo a day of what keeps
       est = e; form.crew = crew.map((s) => s.id); form.vehicleId = v ? v.id : null;
       break;
     }
   }
   if (!est) return { why };
   const left = Math.max(1, home.length - form.crew.length);
-  const food = (base.stock.food || 0) - (deal.give.supplies.food || 0) - est.food;
+  const food = foodIn(base.stock) - foodIn(deal.give.supplies) - est.food;
   const water = (base.stock.water || 0) - (deal.give.supplies.water || 0) - est.water;
   if (food < left * 3 || water < left * 3) return { why: `${base.name} cannot spare the food and water for the trip` };
   form.travel = { food: est.food, water: est.water, fuel: 0 };
@@ -734,7 +755,7 @@ function reserveRadio(state) {
   const keep = (k) => (k === "food" ? n * (foodTarget(state, h) * 1.2 + 10) : rs[k] ? rs[k].target * 1.3 + 2 : Infinity);
   const spare = (k) => Math.max(0, Math.floor(supplyAmt(h.stock, k) - keep(k)));
   const short = [...RESERVE_KEYS, "food"].filter((k) => rs[k] && rs[k].short).sort((a, b) => rs[a].have / Math.max(1, rs[a].target) - rs[b].have / Math.max(1, rs[b].target));
-  const pays = Object.keys(RADIO_CAP).filter((k) => spare(k) >= 3).sort((a, b) => spare(b) * SUPPLIES[b].value - spare(a) * SUPPLIES[a].value);
+  const pays = Object.keys(RADIO_CAP).filter((k) => spare(k) >= 3).sort((a, b) => spare(b) * supValue(b) - spare(a) * supValue(a));
   if (!short.length || !pays.length) return false;
   const groups = state.factions.filter((f) => f.known && !refusal(state, f, true));
   for (const want of short) {
@@ -1287,11 +1308,11 @@ function winterReport(state) {
   if (!h) return;
   const w = winterPlan(state, h);
   const st = foodStore(state, h);
-  const fresh = Math.floor(st.fresh), pres = Math.floor(st.preserved);
+  const fresh = Math.floor(st.fresh), pres = Math.floor(st.stable); // storage.js: days of fresh food (needs a room) and of food that keeps
   const verdict = w.short > 0
     ? `short by about ${w.short}${w.runsOut != null ? `, out of food around day ${w.runsOut + 1}` : ""}: more farmers, food trips and preserving, and no newcomers until it is covered`
     : `enough, about ${Math.max(0, w.end)} to spare`;
-  say(state, `Winter stores at ${h.name}: ${fresh + pres} food (${fresh} fresh, ${pres} preserved; cellar room ${st.cap}${st.outside >= 1 ? `, ${Math.floor(st.outside)} stored outside` : ""})${w.bases > 1 ? ` plus ${Math.max(0, w.have - fresh - pres)} at the outposts` : ""}, about ${w.crops} still to come from the fields. The ${w.people} people${w.bases > 1 ? " (outposts and teams too)" : ""} need about ${w.need + w.spoil + w.seed} (eating ${w.need}, spoilage ${w.spoil}, spring seed ${w.seed}) to reach the first spring harvest around day ${w.gap.end + 1}, plus ${w.margin} to spare for bad luck: ${verdict}.`, w.short > 0 ? "danger" : "info");
+  say(state, `Winter stores at ${h.name}: ${fresh + pres} days of food (${fresh} fresh, ${pres} that keeps; food rooms ${st.cap}${st.outside >= 1 ? `, ${Math.floor(st.outside)} stored outside` : ""})${w.bases > 1 ? ` plus ${Math.max(0, w.have - fresh - pres)} at the outposts` : ""}, about ${w.crops} still to come from the fields. The ${w.people} people${w.bases > 1 ? " (outposts and teams too)" : ""} need about ${w.need + w.spoil + w.seed} (eating ${w.need}, spoilage ${w.spoil}, spring seed ${w.seed}) to reach the first spring harvest around day ${w.gap.end + 1}, plus ${w.margin} to spare for bad luck: ${verdict}.`, w.short > 0 ? "danger" : "info");
 }
 
 const partyFuelOf = (state, p) => partyFuel(state, p); // every car's tank and the cans (vehicles.js fleets)
@@ -1302,7 +1323,7 @@ const tripHoursLeft = (state, p) => (p.phase === "back" ? hoursLeft(state, p) : 
 function carriedDays(state, p, extra = 0) {
   const n = partyMembers(state, p).length;
   const perDay = (n ? partyPace(state, p).eatMove : 0) + extra;
-  const have = (k) => (k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0)); // water: both kinds
+  const have = (k) => (k === "water" ? teamWaterIn(p) : k === "food" ? foodIn(p.supplies || {}) + foodIn((p.cargo && p.cargo.supplies) || {}) : (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0)); // water: both kinds; food: days of it (foods.js)
   return Math.min(have("food") / foodNeedFactor(state), have("water") / thirstAt(state)) / Math.max(1, perDay); // water: at today's thirst, food at today's cold (weather.js)
 }
 
@@ -1362,7 +1383,7 @@ const RAID_BREAK = 0.8; // factions.js RAIDS.BREAK: below it a raid overruns the
 // Never out of the food reserve (upkeep.js PAYOUT): a group's tribute (factions.js tributeNow: 30% of the fresh food)
 // that would leave the base under PAYOUT.days of food is not paid.
 function tributeSpared(state, base) {
-  const food = Math.min(Math.floor(base.stock.food || 0), Math.ceil((base.stock.food || 0) * 0.3));
+  const food = Math.min(Math.floor(foodIn(base.stock)), Math.ceil(foodIn(base.stock) * 0.3));
   return !payoutBreaks(state, base, { food });
 }
 function raidWarningChoice(state, card, opts, P) {
@@ -1603,7 +1624,7 @@ function handleTrade(state) {
   const have = {};
   for (const k of Object.keys(SUPPLIES)) have[k] = Math.floor(p.supplies[k] || 0) + Math.floor(p.cargo.supplies[k] || 0);
   const g = gov(state);
-  const need = needs(state);
+  const need = foodNeeds(needs(state), ctx.theirHave, have); // foods.js: food bought and sold as items
   const home = state.bases.find((b) => b.id === p.homeBaseId) || hub(state);
   const back = planPath(state, partyTile(p), home.tile, p.vehicle);
   const n = partyMembers(state, p).length;
@@ -1611,7 +1632,7 @@ function handleTrade(state) {
   // Offer what the hub has plenty of (keeping food and water for the road), ask for what it needs most.
   const spare = {};
   const keep = { food: road, water: road, meds: 2, ammo: 5 * n, fuel: p.vehicle === true && back ? Math.ceil(back.cost) : 0 };
-  for (const k of Object.keys(SUPPLIES)) if (need[k] <= 0.8) spare[k] = Math.max(0, (have[k] || 0) - (keep[k] || 0));
+  for (const k of Object.keys(SUPPLIES)) if (need[k] <= 0.8) spare[k] = Math.max(0, (have[k] || 0) - (keep[k] || (FOODS[k] ? Math.ceil(qtyOf(k, keep.food)) : 0))); // a food item keeps the road's days of it
   // Prices move with the amount (trade.js: a big sale pays less a unit, a big buy costs more), so every amount is
   // priced as a whole, the way the trade window totals it; asking at single-unit prices got deals refused.
   let budget = Object.entries(spare).reduce((a, [k, q]) => a + (q > 0 ? q * sellPrice(state, f, k, speech, q) : 0), 0);
@@ -1639,10 +1660,10 @@ function handleTrade(state) {
     if (need[k] < 1.2 || budget <= 0 || !SUPPLIES[k]) continue;
     const kk = k === "ammo" ? wantedKey(partyCals(state, p), ctx.theirHave) : k; // ammo.js: generic ammo asked for as the rounds that fit the team's guns
     if (!kk) continue;
-    const q = maxBuyable(state, f, kk, speech, budget, Math.min(caps[k] || 10, Math.floor(room / SUPPLIES[kk].weight)));
+    const q = maxBuyable(state, f, kk, speech, budget, Math.min(caps[k] || (FOODS[k] ? Math.ceil(qtyOf(k, caps.food)) : 10), Math.floor(room / supWeight(kk))));
     if (q <= 0) continue;
     const cost = q * buyPrice(state, f, kk, speech, q);
-    room -= q * SUPPLIES[kk].weight;
+    room -= q * supWeight(kk);
     ask[kk] = q;
     askValue += cost;
     budget -= cost;
@@ -1677,7 +1698,8 @@ function handleTrade(state) {
   // An envoy (envoyCandidate) gives what it brought and did not trade as a gift while their goodwill is short.
   if (p.apEnvoy === f.id && f.goodwill < ALLIANCE.GOODWILL + 10 && state.trade) {
     const gift = {};
-    for (const k of ["food", "meds"]) { const q = Math.floor((p.supplies[k] || 0) - (keep[k] || 0)); if (q > 0) gift[k] = q; }
+    { const q = Math.floor(foodIn(p.supplies) - (keep.food || 0)); if (q > 0) Object.assign(gift, sellPick({ supplies: p.supplies }, q)); } // foods.js: days of food as the items it holds most of
+    { const q = Math.floor((p.supplies.meds || 0) - (keep.meds || 0)); if (q > 0) gift.meds = q; }
     Object.assign(gift, spareRounds(p.supplies, keep.ammo, partyCals(state, p))); // ammo.js: rounds above the keep, the ones its guns need least
     if (Object.keys(gift).length) {
       state.trade.offer = gift;
@@ -2418,10 +2440,10 @@ function stationWorth(state, base, recipe, station = null) {
   // Cautious: a short supply is made from the scrap there is (down to the last day's worth when it is low).
   if (persona(state).reserves && (recipe === "ammo" || recipe === "meds")) {
     const r = reserveStatus(state, base)[recipe];
-    if (r.short && (st.scrap || 0) >= (recipe === "ammo" ? (r.low ? 3 : 10) : (r.low ? 2 : 8)) && (recipe === "ammo" || (st.food || 0) >= n * 6)) return true;
+    if (r.short && (st.scrap || 0) >= (recipe === "ammo" ? (r.low ? 3 : 10) : (r.low ? 2 : 8)) && (recipe === "ammo" || foodIn(st) >= n * 6)) return true;
   }
   if (recipe === "ammo") return (byOrder || baseAmmo(state, base) < Math.max(n * 15 + 60, campaignAmmoTarget(state, base))) && (st.scrap || 0) >= 30; // the hive campaign's stockpile first
-  if (recipe === "meds") return (byOrder || (st.meds || 0) < Math.max(5, n)) && (st.scrap || 0) >= 15 && (st.food || 0) >= n * 6;
+  if (recipe === "meds") return (byOrder || (st.meds || 0) < Math.max(5, n)) && (st.scrap || 0) >= 15 && foodIn(st) >= n * 6;
   if (recipe === "parts") return (byOrder || (st.parts || 0) < 8) && (st.scrap || 0) >= 45 && atBase(state, base.id).some((s) => skill(s, "mechanics") >= 4);
   if (recipe === "preserve") return preserveWorth(state, base);
   if (recipe === "still") return stillWorth(state, base);
@@ -2442,6 +2464,56 @@ function autoCanner(state, base) {
   const chk = canUpgradeKitchen(state, base, k.id);
   if (!chk.ok || (!chk.item && ((base.stock.parts || 0) < BUILDINGS.canner.cost.parts + CANNER_SPARE || (base.stock.scrap || 0) < 40))) return "";
   return queueCannerUpgrade(state, base, k.id);
+}
+// A generator upgraded a tier (gen-tiers, power.js GEN_TIERS; once a day, PLAN_HOUR + 3, for the governor and a steward
+// with Building on). Only when:
+//   the power is short: what the base would draw (powerWanted: every powered building not switched off, a workshop
+//     station only while someone operates it; or what draws now, if more) is more than all its generators give at their
+//     tiers (genCapacity, broken ones counted: they are repaired); the lowest tier is upgraded first (genToUpgrade);
+//   it can be done (buildings.js canUpgradeGenerator: the materials, the Mechanics 4 / 5 hand, the Industrial Power
+//     Manual for tier 3), with GEN_SPARE parts and 30 scrap left over (repairs and spares come first), nothing else for
+//     a generator queued;
+//   never into a fuel deficit (power.js genUpgradeFuelOk): the base's fuel in and out a day over the last 28 days
+//     (genFuelFlows: history.js; the cars' refuelling, the heating, the generators, the outposts' runs are in it) less
+//     the extra burn at that demand stays at 0 or more, and the fuel above the floor covers 30 days of the extra; the
+//     floor is the governor's fuel floor (fuelFloor: 10, the hive campaign's fires, the winter's heating once it is
+//     near) plus the heating the next 60 days' cold will burn (heatFuelWant) even before it is near. The hub's fuel is
+//     drained by the cars often (2026-10-10 finding): the 28-day out counts them, so a hub whose cars eat its fuel does
+//     not upgrade.
+// It never builds a second generator (the build wishes do the first; the second is the player's call). Returns the
+// log line or "". base.genUp records the last look ({ day, need, cap, ok, why }: the Power card shows it).
+const GEN_SPARE = 4;
+export function genFuelFlows(state, base, days = GEN_UP.window) {
+  const today = day(state);
+  const sum = (name) => column(state, base.id, name).filter((x) => x.day > today - 1 - days).reduce((a, x) => ({ v: a.v + x.v * x.span, n: a.n + x.span }), { v: 0, n: 0 });
+  const i = sum("i_fuel"), o = sum("o_fuel"), m = sum("m_fuel");
+  if (i.n < GEN_UP.minDays) return null; // too little history (a new base, an old save): no upgrade on a guess
+  const moved = m.v / Math.max(1, m.n);
+  return { income: i.v / i.n + Math.max(0, moved), out: o.v / o.n + Math.max(0, -moved), days: i.n };
+}
+export function autoGenUpgrade(state, base) {
+  const gens = generators(base);
+  if (!gens.length || base.construction.some((c) => c.type === "generator")) return "";
+  const staffed = (b) => !!stationOperator(state, base, b);
+  const need = Math.max(powerStatus(state, base).demand, powerWanted(state, base, staffed));
+  const cap = genCapacity(base);
+  const note = (ok, why) => { base.genUp = { day: day(state), need, cap, ok, why }; return ""; };
+  if (need <= cap) return note(false, `the generators give ${cap} power for ${need} wanted`);
+  const up = genToUpgrade(base);
+  if (!up) return note(false, "no generator to upgrade (top tier, broken or queued)");
+  const chk = canUpgradeGenerator(state, base, up.id);
+  if (!chk.ok) return note(false, chk.reason);
+  if ((base.stock.parts || 0) < chk.next.cost.parts + GEN_SPARE || (base.stock.scrap || 0) < chk.next.cost.scrap + 30) return note(false, `saving the parts and scrap (${chk.next.cost.parts} + ${GEN_SPARE} parts, ${chk.next.cost.scrap} + 30 scrap)`);
+  const flows = genFuelFlows(state, base);
+  if (!flows) return note(false, "too little fuel history yet");
+  const hw = heatFuelWant(state, base);
+  const floor = fuelFloor(state, base) + (hw.want ? 0 : hw.need);
+  const fc = genUpgradeFuelOk(base, need, up, floor, flows);
+  if (!fc.ok) return note(false, fc.why);
+  base.genUp = { day: day(state), need, cap, ok: true, why: "" };
+  const g = gov(state);
+  g.stats.genUps = (g.stats.genUps || 0) + 1;
+  return `${queueGenUpgrade(state, base, up.id)} (${need} power wanted, ${cap} from the generators; fuel ${Math.round(fc.income * 10) / 10} in and ${Math.round(fc.out * 10) / 10} out a day, ${Math.round(fc.extra * 100) / 100} more for it)`;
 }
 // Fuel the governor keeps out of the generator: a decoy fire, the floodlights and the truck (Cautious: its reserve).
 const fuelFloor = (state, base) => (persona(state).reserves ? reserveStatus(state, base).fuel.target : 10 + (heatFuelWant(state, base).want ? heatFuelWant(state, base).need : 0)) + campaignFuelHold(state, base); // needs-gauges: winter heating first, and the campaign's fires
@@ -2469,7 +2541,7 @@ function govOrders(state, base) {
     if (recipe === "ammo") want = { mode: "until", n: Math.max(n * 15 + 60, rs ? Math.ceil(rs.ammo.target) + 20 : 0, campaignAmmoTarget(state, base) + 20) }; // the hive campaign's stockpile too
     else if (recipe === "meds") want = { mode: "until", n: Math.max(5, n, rs ? Math.ceil(rs.meds.target) + 2 : 0) };
     else if (recipe === "parts") want = { mode: "until", n: Math.max(8, rs ? Math.ceil(rs.parts.target) + 2 : 0) };
-    else if (recipe === "still") want = { mode: "keep", key: "food", n: n * 25 };
+    else if (recipe === "still") want = { mode: "keep", key: "fresh", n: n * 25 }; // days of fresh food (foods.js)
     if (!want) continue;
     if (cur.mode === want.mode && (want.key || cur.key) === cur.key && Math.abs(cur.n - want.n) <= Math.max(2, want.n * 0.1)) continue;
     setStationOrder(state, base, station.id, want, "ai");
@@ -2489,10 +2561,11 @@ function preserveWorth(state, base) {
   const n = Math.max(1, atBase(state, base.id).length);
   const r = RECIPES.preserve;
   if ((st.jars || 0) < r.in.jars || waterIn(st) < n * 2 + r.in.water || waterTight(state, base) || (st.scrap || 0) < 4) return false;
-  if ((st.food || 0) < n * 14 + r.in.food) return false;
+  const fresh = foodSplit(st).fresh; // days of the food that needs a cold room (foods.js): what the kitchen jars
+  if (fresh < n * 14 + r.in.fresh) return false;
   const store = foodStore(state, base);
   const sk = wxSeason(state).key;
-  return store.outside >= 1 || ((sk === "summer" || sk === "autumn") && (st.food || 0) >= Math.min(store.cap * 0.6, n * 25));
+  return store.outside >= 1 || ((sk === "summer" || sk === "autumn") && fresh >= Math.min(store.cap * 0.6, n * 25));
 }
 
 // Daily: one log line per base when its roles changed since the last one.
@@ -2515,7 +2588,7 @@ const BUILD_AREA = {
   walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
   huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", freezer: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
-  boiler: "food", cookhouse: "food", canteen: "food",
+  boiler: "food", cookhouse: "food", canteen: "food", grainmill: "food", meatgrinder: "food",
   ammo_bench: "production", machine_shop: "production", still: "production", generator: "production", sealer: "production",
   craftbench: "production", workbench: "production", toolbench: "production",
 };
@@ -2687,7 +2760,7 @@ function buildWishes(state, base) {
   }
   if (!isHub && count(base, "farm_plot") + queued("farm_plot") < 1) add("farm_plot", "an outpost should feed itself", true);
   // An outpost's pantry holds 40 (storage.js): a root cellar once four or more live there and the food fills most of it.
-  if (!isHub && here.length >= 4 && (st.food || 0) > storeCapacity(base) * 0.8 && countAll(base, "cellar") + queued("cellar") < 1) add("cellar", "room for the outpost's food");
+  if (!isHub && here.length >= 4 && foodSplit(st).fresh > storeCapacity(base) * 0.8 && countAll(base, "cellar") + queued("cellar") < 1) add("cellar", "room for the outpost's food");
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
   // Hordes (defences.js): walls when a horde in sight would break in, then barricades, spike pits and the rest.
   const hz = hordeThreat(state, base);
@@ -2773,7 +2846,7 @@ function buildWishes(state, base) {
   }
   // Power (power.js): a still for the surplus once the hub is big enough, then a generator for what it powers.
   if (!count(base, "still") && !queued("still") && pop >= 9 && (st.parts || 0) >= 4 && stillWorth(state, base)) add("still", "turn the surplus food into fuel");
-  if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || countAll(base, "freezer") + queued("freezer") || (!buildLock(state, base, "freezer") && edibleFood(base) >= pop * 15)) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and a walk-in freezer"); // machines-2: the cold store needs no power; the freezer waits for the Refrigeration Schematics
+  if (countAll(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || countAll(base, "freezer") + queued("freezer") || (!buildLock(state, base, "freezer") && edibleFood(base) >= pop * 15)) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and a walk-in freezer"); // machines-2: the cold store needs no power; the freezer waits for the Refrigeration Schematics. gen-tiers: countAll (a broken generator is repaired, not replaced by a second one)
   if (!base.radio && pop >= 8 && (st.parts || 0) >= 9 && best("mechanics") >= 4) add("radio", "live contact with teams out in the field");
   // The coalition is made on the radio (greetings, pacts, invitations: alliance.js): from a dozen people with a
   // Mechanics 4 builder, the station is built once the parts are there (not saved up for: scrap goes to walls first).
@@ -2833,6 +2906,9 @@ function wormWishes(state, base, queued) {
   const cropBad = cropLandBad(state, base.tile) || state.grid.within(base.tile, 2).some((id) => cropLandBad(state, id));
   if (!baseCooks(base) && !queued("cookhouse") && (wormMeatAt(base) > 0 || base.rawWarned || (working && landBad))) out.push({ type: "cookhouse", why: "game from infected land has to be cooked through (the worm)", save: true });
   else if (!baseCooks(base) && !queued("cookhouse") && (wormVegAt(base).all > 0 || base.rawVegWarned || (growing && cropBad))) out.push({ type: "cookhouse", why: "crops and forage from infected ground have to be boiled (the worm)", save: true });
+  // Wave 2 cooking (cooking.js POISON.raw): raw meat and fish eaten uncooked give food poisoning, so a base whose
+  // hunters or fishers bring it in gets a cook fire (6 scrap) too.
+  else if (!baseCooks(base) && !queued("cookhouse") && (working || foodUnits(base, (k, f) => !!f.raw) >= 1)) out.push({ type: "cookhouse", why: "raw meat and fish eaten uncooked give food poisoning", save: false });
   return out;
 }
 // A queued job that keeps the worm out (planRoles 1c): the water boiler while the base drinks un-purified water, a
@@ -2867,12 +2943,12 @@ function foodStoreWishes(state, base, people, queued) {
   const add = (type, why, save = false) => out.push({ type, why, save });
   const can = (t) => count(base, t) + queued(t) < BUILDINGS[t].max;
   const cap = storeCapacity(base) + queued("cellar") * 200 + queued("storehouse") * 150 + queued("coldstore") * 150;
-  const fresh = st.food || 0;
+  const fresh = foodSplit(st).fresh; // days of the food that needs a room (foods.js)
   const s = wxSeason(state);
   const coming = winterActive(state, base) ? winterPlan(state, base).crops : 0;
   const outside = fresh > cap;
   if (outside || fresh + coming * 0.7 > cap * 0.9) {
-    const why = outside ? `${Math.floor(fresh - cap)} food is stored outside and spoiling fast` : `room for the winter stock (${Math.floor(fresh)} in store, about ${Math.floor(coming)} still to come, room for ${cap})`;
+    const why = outside ? `${Math.floor(fresh - cap)} days of fresh food are stored outside and spoiling fast` : `room for the winter stock (${Math.floor(fresh)} days of fresh food in store, about ${Math.floor(coming)} still to come, room for ${cap})`;
     if (can("cellar")) add("cellar", why, outside);
     else if (s.key !== "summer" && can("coldstore")) add("coldstore", why, outside);
     else if (can("storehouse")) add("storehouse", why, outside);
@@ -2882,7 +2958,7 @@ function foodStoreWishes(state, base, people, queued) {
   // limit), and as the quick stopgap while food already spoils outside (one, while the bigger store is built).
   if (can("crates") && plotsFree(base, "utility") >= 2 && (outside || fresh + coming * 0.7 > cap * 0.9)) {
     const bigger = plotsFree(base, "building") > 0 && ["cellar", "coldstore", "storehouse"].some((t) => can(t));
-    if (!bigger) add("crates", outside ? `${Math.floor(fresh - cap)} food spoiling outside and no room for a bigger store` : "room for the winter stock (no plot for a bigger store)", outside);
+    if (!bigger) add("crates", outside ? `${Math.floor(fresh - cap)} days of fresh food spoiling outside and no room for a bigger store` : "room for the winter stock (no plot for a bigger store)", outside);
     else if (outside && !count(base, "crates") && !queued("crates")) add("crates", "a quick stopgap for the food spoiling outside");
   }
   if (can("smoker") && !count(base, "smoker") && people >= 4 && (outside || ((s.key === "summer" || s.key === "autumn") && fresh >= people * 20))) add("smoker", "dry the surplus for the winter");
@@ -2894,6 +2970,13 @@ function foodStoreWishes(state, base, people, queued) {
   if (!countAll(base, "freezer") && !queued("freezer") && !buildLock(state, base, "freezer") && count(base, "generator") && people >= 10 && (count(base, "still") || (st.fuel || 0) >= 30) &&
       (outside || fresh >= people * 15) && (st.parts || 0) >= BUILDINGS.freezer.cost.parts + FREEZER_SPARE && (st.electronics || 0) >= BUILDINGS.freezer.cost.electronics) add("freezer", "a walk-in freezer: the fresh food keeps twenty times longer");
   if (can("kitchen") && !count(base, "kitchen") && people >= 5 && (st.jars || 0) >= 8 && (st.parts || 0) >= 2 && (outside || (winterActive(state, base) && fresh >= people * 20))) add("kitchen", "jar the surplus for the winter");
+  // Wave 2 cooking (cooking.js): by a Kitchen, a grain mill once there is grain to mill (flour and bread) and a meat
+  // grinder once the hunters bring in more game than the meals take (sausage keeps months); a machine part each, kept
+  // only while the parts stock has 2 more.
+  if (count(base, "canteen") && (st.parts || 0) >= 3 && plotsFree(base, "utility") >= 2) {
+    if (can("grainmill") && !countAll(base, "grainmill") && (st.f_grain || 0) >= 15) add("grainmill", "a grain mill: the grain into flour and bread");
+    else if (can("meatgrinder") && !countAll(base, "meatgrinder") && (count(base, "huntcabin") || atBase(state, base.id).some((x) => x.role === "hunt")) && foodUnits(base, (k, f) => !!f.raw) >= people) add("meatgrinder", "a meat grinder: surplus game into sausage that keeps");
+  }
   return out;
 }
 
@@ -3230,7 +3313,7 @@ function planTrip(state) {
   // bed free (built or queued: they build ahead of the people sent to them; taken bases get nobody, planSupplyRuns).
   const cramped = hubCramped(state, h) && state.bases.filter((b) => b.type === "outpost" && !b.captured).every((o) => outpostBedsFree(state, o) <= 0);
   const wantsOutpost = outposts < P.outposts + (cramped ? 1 : 0) + (push ? (goalsProgress(state).alliance.allIn ? LAND_OUTPOSTS_ALL_IN : LAND_OUTPOSTS) : 0) && alive(state).length >= P.outpostPop && today - g.lastOutpost >= 15 &&
-    (h.stock.food || 0) >= home.length * 10 && spareHands >= 2;
+    foodIn(h.stock) >= home.length * 10 && spareHands >= 2;
   // occupy.js: a base standing empty nearby that the crew can clear comes first (no scrap, and it is built already).
   const oc = wantsOutpost ? occupyCandidate(state, h, pool, spareHands) : null;
   if (oc) cands.push(oc);
@@ -3403,10 +3486,10 @@ function envoyGoods(state) {
   const n = Math.max(1, atBase(state, h.id).length);
   const goods = {};
   const spare = tradeSpare(state); // never the food the winter plan needs (seed 5062)
-  if ((h.stock.food || 0) > n * 30 + 20 && spare.food > 0) goods.food = Math.min(20, Math.floor(h.stock.food - n * 30), spare.food);
+  if (foodIn(h.stock) > n * 30 + 20 && spare.food > 0) Object.assign(goods, sellPick(h, Math.min(20, Math.floor(foodIn(h.stock) - n * 30), spare.food))); // foods.js: as the items the hub holds most of
   if (baseAmmo(state, h) > n * 15 + 100 && !campaignAmmoWant(state)) goods.ammo = Math.min(60, Math.floor(baseAmmo(state, h) - n * 15 - 60)); // not the campaign's stockpile
   if ((h.stock.meds || 0) > n + 8) goods.meds = Math.min(4, Math.floor(h.stock.meds - n - 6));
-  const value = Object.entries(goods).reduce((a, [k, q]) => a + q * SUPPLIES[k].value, 0);
+  const value = Object.entries(goods).reduce((a, [k, q]) => a + q * supValue(k), 0);
   return value >= 40 ? goods : null;
 }
 function envoyCandidate(state, need) {
@@ -3945,8 +4028,7 @@ const ROAD = { reach: 6, wide: 11, low: 2, heal: 40, foundReach: 4, fetchExtra: 
 const CAMP = { pitchShare: 0.3, pitchDay: 3, ferryShare: 0.5, ferryReach: 6, pull: 0.15, workDays: 3, range: 7, waterReach: 9 }; // waterReach: camp sites by water (staging.js)
 const roadDays = (state, p, k) => {
   const n = Math.max(1, partyMembers(state, p).length);
-  const have = (x) => (p.supplies[x] || 0) + ((p.cargo && p.cargo.supplies[x]) || 0);
-  return k === "water" ? teamWaterIn(p) / (n * thirstAt(state)) : (have("food") + have("preserved")) / (n * teamCold(state, p)); // food: the cold unless by a lit camp fire (needs.js)
+  return k === "water" ? teamWaterIn(p) / (n * thirstAt(state)) : carried(p, "food") / (n * teamCold(state, p)); // food: days of it (foods.js); the cold unless by a lit camp fire (needs.js)
 };
 // What the team should still gather: what the camp lacks (or the whole need with no camp yet) less what it carries,
 // plus food and water to live on while it works there. { key: qty }.
@@ -3960,7 +4042,7 @@ function roadMissing(state, p) {
   // up camp itself takes none: staging.js STAGING.PITCH).
   const bmLack = Math.max(0, (needs.buildmat || 0) - carried(p, "buildmat") - 0);
   for (const k of ["scrap", "parts", "food", "water"]) {
-    const have = (k === "water" ? teamWaterIn(p) : carried(p, k)) + (k === "food" ? carried(p, "preserved") : 0) + 0;
+    const have = k === "water" ? teamWaterIn(p) : carried(p, k); // food: days of it (parties.js carried)
     const own = k === "food" ? n * days : k === "water" ? n * days * thirstAt(state) : k === "scrap" ? bmLack * CRAFTS.buildmat.in.scrap + (camp ? 0 : STAGING.PITCH.scrap) : 0;
     const want = (needs[k] || 0) + own;
     if (have < want - 0.5) out[k] = Math.ceil(want - have);
@@ -3970,11 +4052,13 @@ function roadMissing(state, p) {
 function roadNeeds(state, p) {
   const miss = roadMissing(state, p);
   const wLow = roadDays(state, p, "water") < ROAD.low, fLow = roadDays(state, p, "food") < ROAD.low;
-  return {
-    water: wLow ? 3 : miss.water ? 1.4 : 0.25, food: fLow ? 3 : miss.food ? 1.4 : 0.3, preserved: fLow ? 3 : miss.food ? 1.4 : 0.3,
+  const out = {
+    water: wLow ? 3 : miss.water ? 1.4 : 0.25, food: fLow ? 3 : miss.food ? 1.4 : 0.3,
     scrap: miss.scrap ? (wLow || fLow ? 0.8 : 2) : 0.1, parts: miss.parts ? (wLow || fLow ? 1 : 2.6) : 0.2,
     meds: 0.6, ammo: 0.5, fuel: 0.05, jars: 0,
   };
+  for (const k of FOOD_KEYS) out[k] = out.food; // every food item (foods.js) as food
+  return out;
 }
 // The camp: with no base at all the team sets up camp with its step up queued (Establish base, staging.js) at the best
 // spot near it (hubSites: water beside, sites around, few of the dead). From then on the camp is a base and the
@@ -4170,16 +4254,16 @@ function tradeGoods(state, need) {
   const n = Math.max(1, atBase(state, h.id).length);
   const goods = {};
   if (need.ammo <= 0.35 && baseAmmo(state, h) > n * 40 + 100) goods.ammo = Math.floor(Math.min(300, baseAmmo(state, h) - n * 40));
-  if (need.food <= 0.6 && (h.stock.food || 0) > n * 30) goods.food = Math.floor(Math.min(16, h.stock.food - n * 30));
+  if (need.food <= 0.6 && foodIn(h.stock) > n * 30) Object.assign(goods, sellPick(h, Math.floor(Math.min(16, foodIn(h.stock) - n * 30)))); // foods.js: the items the hub holds most of
   if (need.meds <= 0.3 && (h.stock.meds || 0) > n * 2 + 4) goods.meds = Math.floor(Math.min(6, h.stock.meds - n * 2));
   if (persona(state).reserves) {
     // Cautious: what is well above its reserve goes to market (parts, and food beyond the food planner's target).
     const rs = reserveStatus(state, h);
     if ((h.stock.parts || 0) > rs.parts.target + 4) goods.parts = Math.floor(Math.min(10, h.stock.parts - rs.parts.target - 2));
     const keepFood = n * (foodTarget(state, h) * 1.2 + 10);
-    if (need.food <= 0.6 && (h.stock.food || 0) > keepFood + 10) goods.food = Math.floor(Math.min(40, h.stock.food - keepFood));
+    if (need.food <= 0.6 && foodIn(h.stock) > keepFood + 10) { for (const k of Object.keys(goods)) if (FOODS[k]) delete goods[k]; Object.assign(goods, sellPick(h, Math.floor(Math.min(40, foodIn(h.stock) - keepFood)))); }
   }
-  const value = Object.entries(goods).reduce((a, [k, q]) => a + q * SUPPLIES[k].value, 0);
+  const value = Object.entries(goods).reduce((a, [k, q]) => a + q * supValue(k), 0);
   return value >= 50 ? goods : null;
 }
 
@@ -4515,8 +4599,7 @@ function launchTrip(state, c, pool, spareHands) {
   }
   for (const k of Object.keys(sup)) sup[k] = Math.max(0, Math.min(sup[k], stock(k)));
   // The rations: fresh food first, preserved food for the rest (lighter, and the team eats it the same: parties.js).
-  const freshFood = Math.floor(Math.max(0, h.stock.food || 0));
-  if (sup.food > freshFood) { sup.preserved = Math.min(Math.floor(Math.max(0, h.stock.preserved || 0)), (sup.preserved || 0) + sup.food - freshFood); sup.food = freshFood; }
+  // sup.food: days of food, packed as the items that keep and weigh least (parties.js launchExpedition, foods.js packPick).
   // Too heavy: less ammo, then drop the extras down to what the job needs (an outpost needs 15 scrap).
   const cap = carryCapacity(state, crew, plannedV);
   if (supplyLoad(sup) > cap) sup.ammo = Math.min(sup.ammo, 5 * n);
@@ -4524,7 +4607,7 @@ function launchTrip(state, c, pool, spareHands) {
   if (!v && worstBand(estimateTrip(state, tripOpts(sup))) >= 3) sup.ammo = Math.min(sup.ammo, 5 * n);
   for (const [k, q] of Object.entries(c.supplies || {})) {
     const over = supplyLoad(sup) - cap;
-    if (over > 0) sup[k] = Math.max((c.min && c.min[k]) || 0, sup[k] - Math.ceil(over / SUPPLIES[k].weight));
+    if (over > 0) sup[k] = Math.max((c.min && c.min[k]) || 0, sup[k] - Math.ceil(over / supWeight(k)));
   }
   if (supplyLoad(sup) > cap) return off();
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return off();
@@ -4795,7 +4878,7 @@ function trackHauls(state) {
     if (p.owner !== "player" || !p.apHaulWatch) continue;
     seen.add(String(p.id));
     const cs = (p.cargo && p.cargo.supplies) || {};
-    w[p.id] = { water: Math.floor(waterIn(cs)), food: Math.floor((cs.food || 0) + (cs.preserved || 0)) };
+    w[p.id] = { water: Math.floor(waterIn(cs)), food: Math.floor(foodIn(cs)) };
   }
   for (const id of Object.keys(w)) if (!seen.has(id)) { const L = ledger(state); L.water.hauled += w[id].water; L.food.hauled += w[id].food; delete w[id]; }
 }
@@ -5028,8 +5111,7 @@ function woodTripCands(state, h, pool, P) {
 const LAND = { hours: 8, min: 4, urgentMin: 1.5, walkMore: 1.3, tries: 4, critical: 0.5 };
 const foodDaysOf = (state, p) => {
   const n = partyMembers(state, p).length;
-  const have = (k) => (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0);
-  return (have("food") + have("preserved")) / (Math.max(1, n ? partyPace(state, p).eatMove : 1) * foodNeedFactor(state)); // on the move: today's cold (weather.js)
+  return carried(p, "food") / (Math.max(1, n ? partyPace(state, p).eatMove : 1) * foodNeedFactor(state)); // days of food (foods.js); on the move: today's cold (weather.js)
 };
 function landFoodAct(state, p, { urgent = false, ok = () => true } = {}) {
   if (gov(state).noForaging && gov(state).noHunting) return false;
@@ -5050,7 +5132,7 @@ function landFoodAct(state, p, { urgent = false, ok = () => true } = {}) {
   const g = gov(state);
   const k = best.kind === "forage" ? "forageOrders" : best.kind === "hunt" ? "landHunts" : "landFish";
   g.stats[k] = (g.stats[k] || 0) + 1;
-  say(state, `${teamName(state, p)} is short of food: it goes to ${what} ${best.tile === here ? "here" : `${best.dist === 1 ? "a tile" : `${best.dist} tiles`} to the ${best.dir}`} (${best.terrain}, about ${Math.round(best.rations)} food in ${LAND.hours}h).`);
+  say(state, `${teamName(state, p)} is short of food: it goes to ${what} ${best.tile === here ? "here" : `${best.dist === 1 ? "a tile" : `${best.dist} tiles`} to the ${best.dir}`} (${best.terrain}, about ${Math.round(best.rations)} days of food in ${LAND.hours}h).`);
   return true;
 }
 
@@ -5112,9 +5194,9 @@ function planWaterRun(state) {
   const est = estimatePlan(state, { memberIds: ids, dest: shore, vehicle: false, stance: "normal", mission: "move", steps });
   if (!est || !est.returns || est.total > WATER_RUN_HOURS * 2 + 6) return;
   // Rations: fresh food first, preserved for the rest (storage.js).
-  const eat = est.food + 1, fresh = Math.min(eat, Math.floor(h.stock.food || 0));
-  const sup = { food: fresh, preserved: eat - fresh, water: est.water + 1 };
-  if (edibleFood(h) < eat + home.length * 2 || (h.stock.preserved || 0) < sup.preserved || waterIn(h.stock) < sup.water) return;
+  const eat = est.food + 1;
+  const sup = { food: eat, water: est.water + 1 }; // food: days of it (packed as what keeps: parties.js)
+  if (edibleFood(h) < eat + home.length * 2 || waterIn(h.stock) < sup.water) return;
   const res = launchExpedition(state, { memberIds: ids, dest: shore, mission: "move", stance: "normal", supplies: sup, plan: { preset: "custom", steps }, tabs: armoryTabs(h).length > 0 }); // tablets for the river water on the way (worm.js)
   if (res.error) return;
   res.party.apWater = true;
@@ -5175,7 +5257,7 @@ export function wormCureRuns(state) {
   }
 }
 // The food and water for the way out are there (supply.js dispatchSupplyRun would refuse the run).
-const roadFed = (base, plan) => (base.stock.food || 0) >= plan.need && waterIn(base.stock) >= plan.needWater;
+const roadFed = (base, plan) => foodIn(base.stock) >= plan.need && waterIn(base.stock) >= plan.needWater;
 // Sets up and sends a one-off run for the worm; true when it left.
 function wormRun(state, form, why) {
   const res = saveSupplyRun(state, { jobId: null, vehicleId: null, pickup: [], schedule: "once", every: 5, stance: "normal", allowPartial: false, ...form });
@@ -5223,7 +5305,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       const qty = Math.min(30, Math.floor(waterIn(h.stock) - home.length * 5), payoutSpare(state, h, "water"));
       const crew = [];
       const along = [...(fix || []), ...(camp || [])];
-      const fixKg = along.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0); // the repair's scrap and parts (and a camp's) ride along
+      const fixKg = along.reduce((a, l) => a + l.qty * supWeight(l.key), 0); // the repair's scrap and parts (and a camp's) ride along
       for (const s of crewPool) if (carryCapacity(state, crew, null) < qty * SUPPLIES.water.weight + fixKg && crew.length < Math.min(spare, 2)) crew.push(s);
       const load = Math.min(qty, Math.floor((carryCapacity(state, crew, null) - fixKg) / SUPPLIES.water.weight));
       // Purified water first, the rest un-purified (water.js: the outpost purifies it like its own).
@@ -5233,7 +5315,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
     } else if (camp && crewPool.length) {
       // An outpost camp waiting for the materials of its step up (buildings.js outpost_up): what it lacks, from the hub.
       const deliver = camp;
-      const load = deliver.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0);
+      const load = deliver.reduce((a, l) => a + l.qty * supWeight(l.key), 0);
       const crew = [];
       for (const s of crewPool) if (carryCapacity(state, crew, null) < load && crew.length < Math.min(spare, 2)) crew.push(s);
       if (carryCapacity(state, crew, null) >= load) form = { crew: crew.map((s) => s.id), deliver, atDest: "return" };
@@ -5253,7 +5335,7 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       // Farmers first (an outpost has to feed itself); the hub's medics, builders and station hands last.
       const keepHome = (s) => (s.role === "medic" || s.role === "build" || s.role === "operate" ? 6 : 0);
       const crew = [...crewPool].sort((a, b) => skill(b, "farming") - keepHome(b) - (skill(a, "farming") - keepHome(a))).slice(0, n);
-      const food = Math.min(HOUSING.moveFood * n, Math.max(0, Math.floor((h.stock.food || 0) - home.length * 5)), payoutSpare(state, h, "food"));
+      const food = Math.min(HOUSING.moveFood * n, Math.max(0, Math.floor(foodIn(h.stock) - home.length * 5)), payoutSpare(state, h, "food"));
       form = { crew: crew.map((s) => s.id), deliver: food > 0 ? [{ key: "food", qty: food }] : [], atDest: "disband" };
       why = `${names(crew)} move${crew.length === 1 ? "s" : ""} there: ${h.name} has outgrown its building plots (${residents(state, h.id).length} people for ${baseBeds(h)} beds), ${o.name} has ${outpostBedsFree(state, o)} free`;
     } else {
@@ -5267,9 +5349,9 @@ function supplyRunTo(state, h, o, { moves = false, keep = new Set() } = {}) {
       if (wish && (scrapShort ? (h.stock.scrap || 0) >= scrap + 25 : partsShort) && home.length >= 5 && crewPool.length >= 1) {
         const deliver = scrapShort ? [{ key: "scrap", qty: scrap + 2 }] : [];
         if (partsShort) deliver.push({ key: "parts", qty: parts - Math.floor(o.stock.parts || 0) });
-        if ((o.stock.food || 0) < staff * 3 && payoutSpare(state, h, "food") >= 8) deliver.push({ key: "food", qty: 8 });
+        if (foodIn(o.stock) < staff * 3 && payoutSpare(state, h, "food") >= 8) deliver.push({ key: "food", qty: 8 });
         // Enough hands to carry it (people stay home: at most a third of the hub goes).
-        const load = deliver.reduce((a, l) => a + l.qty * SUPPLIES[l.key].weight, 0);
+        const load = deliver.reduce((a, l) => a + l.qty * supWeight(l.key), 0);
         const crew = [];
         for (const s of crewPool) if (carryCapacity(state, crew, null) < load && crew.length < Math.min(spare, Math.max(1, Math.floor(home.length / 3)))) crew.push(s);
         if (carryCapacity(state, crew, null) >= load) form = { crew: crew.map((s) => s.id), deliver, atDest: "return" };

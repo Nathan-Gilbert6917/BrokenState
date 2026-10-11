@@ -2,6 +2,8 @@
 // The panel shows a team's people, gear, supplies, vehicle and order queue, with actions on the spot
 // (camp, scavenge, look around, repair, treat, move, go home). Timed actions go through the order queue
 // (sim/orders.js); buttons use data-action handlers in main.js.
+import { foodIn } from "../sim/foods.js"; // days of food
+import { teamFoodHtml } from "./food.js"; // the team's food by kind
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
@@ -25,7 +27,7 @@ import { fireButton, campStatusCard } from "./hardcore.js"; // Establish base wh
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
 import { teamWaterIn, teamRawIn, keyWord } from "../sim/water.js"; // purified and un-purified water
-import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
+import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock, foodOnThem } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
@@ -225,9 +227,9 @@ function landBlock(state, p, at, queueing) {
   const sp = queueing ? "" : snareProblem(state, p, at, line ? "check" : "set");
   const se = line ? expectSnare(state, at, line.check ?? line.set, state.hour) : null;
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
-  const meat = meatIn(p.cargo);
-  const hunts = [4, 8, 12].map((h) => ord("hunt", ` data-hours="${h}"`, `Hunt ${h}h`, hp ? `Hunt: ${hp}` : `Hunt ${h} hours here. Game: ${info.word}${info.est && h === HUNT.defHours ? `; about ${Math.round(info.est.rations)} food expected in ${h}h` : ""}. A rifle or a bow is best; firearms use ammo, and every shot adds Heat and can draw the dead (bows are silent).${mixNote} Fresh game weighs 1 kg a ration and spoils fast.`, !!hp)).join("");
-  const fishBtns = fs ? [4, 8].map((h) => ord("fish", ` data-hours="${h}"`, `Fish ${h}h`, fp ? `Fish: ${fp}` : `Fish ${h} hours in ${fs.name}${fe && h === HUNT.defHours ? `: about ${Math.round(fe)} food expected` : ""}${frozenAt(state) ? " (ice fishing: half the catch)" : ""}. Quiet.`, !!fp)).join("") : "";
+  const meat = meatIn(p.cargo); // days of raw meat and fish carried
+  const hunts = [4, 8, 12].map((h) => ord("hunt", ` data-hours="${h}"`, `Hunt ${h}h`, hp ? `Hunt: ${hp}` : `Hunt ${h} hours here. Game: ${info.word}${info.est && h === HUNT.defHours ? `; about ${Math.round(info.est.rations)} days of food in raw meat expected in ${h}h` : ""}. A rifle or a bow is best; firearms use ammo, and every shot adds Heat and can draw the dead (bows are silent).${mixNote} Fresh game weighs 1 kg a ration and spoils fast.`, !!hp)).join("");
+  const fishBtns = fs ? [4, 8].map((h) => ord("fish", ` data-hours="${h}"`, `Fish ${h}h`, fp ? `Fish: ${fp}` : `Fish ${h} hours in ${fs.name}${fe && h === HUNT.defHours ? `: about ${Math.round(fe)} days of food in fish expected` : ""}${frozenAt(state) ? " (ice fishing: half the catch)" : ""}. Quiet.`, !!fp)).join("") : "";
   const snareBtns = line
     ? ord("snare", ` data-mode="check"`, "Check snares (1h)", sp ? `Snares: ${sp}` : `Collect the catch (about ${Math.round(se.animals)} small game by now, if nothing got to it) and leave the line set.`, !!sp) +
       ord("snare", ` data-mode="lift"`, "Lift snares (1h)", sp ? `Snares: ${sp}` : "Collect the catch and take the line up (the snare wire comes back).", !!sp)
@@ -253,12 +255,12 @@ const KIND_NAME = { forage: "Forage", hunt: "Hunt", fish: "Fish" };
 function lowFoodBlock(state, p, at, queueing) {
   const members = partyMembers(state, p);
   if (!members.length) return "";
-  const days = (carried(p, "food") + carried(p, "preserved")) / members.length;
+  const days = carried(p, "food") / members.length; // days of food (sim/foods.js)
   if (days >= 2) return "";
   const opts = landFoodOptions(state, p, { from: at, range: 2, walk: false, hours: FORAGE.defHours }).filter((o) => o.rations >= 1);
   const seen = new Set();
   const top = opts.filter((o) => { const k = `${o.kind}:${o.dist === 0}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 4);
-  const rows = top.map((o) => `<div>${KIND_NAME[o.kind]} ${o.dist === 0 ? "here" : `${o.dist} tile${o.dist === 1 ? "" : "s"} ${o.dir}`} <span class="muted">(${esc(o.terrain)})</span>: ~${Math.round(o.rations)} food in ${o.hours}h${o.dist ? ` <button class="mini" data-action="ctxhunt" data-id="${p.id}" data-tile="${o.tile}" data-type="${o.kind}"${tip(`Go there (about ${Math.round(o.travel)}h) and ${o.kind} ${o.hours} hours.`)}>Go</button>` : ""}</div>`).join("");
+  const rows = top.map((o) => `<div>${KIND_NAME[o.kind]} ${o.dist === 0 ? "here" : `${o.dist} tile${o.dist === 1 ? "" : "s"} ${o.dir}`} <span class="muted">(${esc(o.terrain)})</span>: ~${Math.round(o.rations)} days of food in ${o.hours}h${o.dist ? ` <button class="mini" data-action="ctxhunt" data-id="${p.id}" data-tile="${o.tile}" data-type="${o.kind}"${tip(`Go there (about ${Math.round(o.travel)}h) and ${o.kind} ${o.hours} hours.`)}>Go</button>` : ""}</div>`).join("");
   return `<div class="card small ${days < 1 ? "danger" : "warn"}" style="margin-top:0.3rem"${tip("Food for under 2 days. Food from the land around: what each would bring in 8 hours (an average: the season, the land, the team). Walking there costs time and food too.")}><b>Food for ${Math.round(days * 10) / 10} days.</b> ${top.length ? "Food from the land nearby:" : "Little to gather or hunt nearby: search farms, groceries and diners."}${rows}</div>`;
 }
 
@@ -358,7 +360,7 @@ function memberCard(state, p, m, live, queueing) {
     <div class="spread"><b>${m.leader ? "★ " : ""}${m.vol ? `<span class="vol-tag">VOL</span> ` : ""}${esc(m.name)}${live ? statusIcons(state, m) : ""}</b><span>${inv}${treat}</span></div>
     ${m.vol ? `<div class="vol-text"${tip("Another group's person: they carry, eat the team's food and fight beside your people, but their own group's AI moves them in a battle. They keep their kit.")}>${esc(volLine(state, m))}</div>` : ""}
     ${live ? `<div class="row"><span class="muted" style="width:3.5rem">Health</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.2rem;text-align:right">${n0(m.health)}</span></div>
-    ${gaugeRows(m, { label: "3.5rem" })}${needsEffectText(m) ? `<div class="warn">${esc(needsEffectText(m))}</div>` : ""}${treatsRow(state, m)}
+    ${gaugeRows(m, { label: "3.5rem" })}${needsEffectText(m) ? `<div class="warn">${esc(needsEffectText(m))}</div>` : ""}${foodOnThem(state, m)}${treatsRow(state, m)}
     ${m.woundInfected ? `<div class="danger"${tip("Gets worse every hour away from a base. Treat with meds.")}>Infected wound</div>` : ""}
     ${isSick(m) ? `<div class="row" style="flex-wrap:wrap">${conditionChips(state, m)}</div>` : ""}
     ${heal ? `<div class="good">Resting: +${heal.toFixed(2)} health/h</div>` : ""}` : ""}
@@ -373,7 +375,7 @@ function suppliesBlock(state, p) {
   const packed = STOCK_KEYS.filter((k) => (k === "ammo" ? totalRounds(p.supplies) + totalRounds(p.cargo.supplies) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0)) >= 0.5); // rounds together as "ammo" (sim/rounds.js)
   // Days at the rate it eats on the move (more under a load, sim/load.js; food at today's cold, sim/weather.js).
   const n = Math.max(1, partyPace(state, p).eatMove);
-  const daysOf = (k) => n0((k === "water" ? teamWaterIn(p) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) + (k === "food" ? (p.supplies.preserved || 0) + (p.cargo.supplies.preserved || 0) : 0)) / (n * (k === "food" ? foodNeedFactor(state) : 1))); // water: both kinds
+  const daysOf = (k) => n0((k === "water" ? teamWaterIn(p) : k === "food" ? foodIn(p.supplies) + foodIn(p.cargo.supplies) : (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0)) / (n * (k === "food" ? foodNeedFactor(state) : 1))); // water: both kinds; food: days of it (sim/foods.js)
   const t = partyLoad(state, p);
   const b = p.burden;
   const pace = b ? (p.vehicle ? b.ride : b.foot) : 1;
@@ -382,6 +384,7 @@ function suppliesBlock(state, p) {
       ${packed.map((k) => k === "ammo" ? `<tr><td${tip(`Every calibre (a gun fires only its own): ${roundsLine(sumRecs(p.supplies, p.cargo.supplies))}`)}>${SUPPLIES[k].name}</td><td>${n0(totalRounds(p.supplies))}</td><td>${n0(totalRounds(p.cargo.supplies))}</td></tr>` : `<tr><td>${SUPPLIES[k].name}</td><td>${n0(p.supplies[k])}</td><td>${n0(p.cargo.supplies[k])}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">Nothing carried</td></tr>`}
     </table>
     <div class="muted" style="margin-top:0.3rem">Food for ~${daysOf("food")} days, water for ~${daysOf("water")} days on the move · meds ${n0(partyMeds(p))}</div>
+    <div style="margin-top:0.3rem"${tip("The team's food by kind (sim/foods.js): packed and found, the days before the soonest of it spoils as it is carried today (heat makes it worse, frost better). The team eats the food that spoils soonest first.")}>${teamFoodHtml(state, p)}</div>
     ${teamWaterNote(state, p)}
     <div class="row" style="margin-top:0.3rem"><span class="muted" style="width:7rem"${tip(`Supplies and cargo (kg) against what the team can carry on top of what it wears${p.vehicle ? " (plus the vehicle)" : ""}. ${BANDS_HELP}`)}>Load ${n0(load)}/${n0(cap)} kg</span><div style="flex:1">${bar((load / Math.max(1, cap)) * 100, load > cap * 0.9 ? "var(--danger)" : "var(--info)")}</div></div>
     <div style="margin-top:0.3rem"${tip("The team is weighed when it sets off and each hour it waits: eating on the way does not lighten its pace until it stops, but anything picked up on the move counts at once.")}>${p.vehicle === true ? "" : `<div class="small">Pace from its load: ${pace < 1 ? `<span class="warn">−${Math.round((1 - pace) * 100)}%</span>` : "full"}${b && b.band >= 0 ? ` (worst band when weighed: ${bandName(b.band)})` : ""}</div>`}${paceLine(t)}${carLine(t, partyVehicle(state, p)?.name)}${t.mode === true ? "" : loadRows(t)}</div>

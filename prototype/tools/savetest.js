@@ -12,6 +12,7 @@
 //   saves are refused with a reason), a damaged save.
 // - The settings view rendered for every tab, before and during a game: no undefined / NaN / null, balanced tags,
 //   and every data-action has a handler.
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -213,7 +214,7 @@ console.log("Saved at awkward moments");
   const fakeB = { setup: { enemy: { kind: "raiders", power: 4, factionId: f.id, name: f.name } }, tileId: h.tile };
   const recs = captiveRecords(st, fakeB, [{ kit: "raiders", name: "Raider One", factionId: f.id }, { kit: "raiders", name: "Raider Two", factionId: f.id }]);
   capturePrisoners(st, { baseId: h.id, tile: h.tile, enemy: fakeB.setup.enemy }, { outcome: "victory", tactical: true, prisoners: recs }, null);
-  h.stock.food = Math.max(h.stock.food, 200);
+  setFood(h, Math.max(food(h), 200));
   check(prisonersAt(st, h.id).length === 2, `two prisoners in ${h.name}'s cells`);
   tickHour(st);
   branch("with prisoners, 20 more days", st, (w) => playTo(w, day(w) + 20), (w) => JSON.stringify((w.prisoners || []).map((x) => [x.name, x.at, Math.round(x.opinion * 1000)])));

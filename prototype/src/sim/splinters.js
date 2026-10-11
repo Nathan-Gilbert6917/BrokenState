@@ -25,6 +25,7 @@
 // Expected (tools/splintertest.js rate measures it; 2026-10-08, six Normal worlds of 8 groups, a year each on the Balanced
 // autopilot): 7 splits, about one a world-year (0 to 3 a world), five of them raider gangs and expansionists going
 // raiding, one zealot sect; the triggers were a fallen leader (3), a lost war (2) and heavy losses (2).
+import { foodIn } from "./foods.js"; // days of food (every kind)
 import { day, log } from "./world.js";
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
@@ -105,7 +106,7 @@ export function splinterSite(state, f) {
   return pool[Math.floor(h(state, f.name, tickOf(f), "site") * pool.length) % pool.length].id;
 }
 const WHY_TEXT = { leader: "after their leader fell", losses: "after the losses they took", war: "after the war they lost", hunger: "over empty bellies", deserters: "as more and more of them slipped away" };
-const whyOf = (state, f) => f.strifeWhy || ((f.stock.food || 0) < f.pop * 2 ? "hunger" : "deserters");
+const whyOf = (state, f) => f.strifeWhy || (foodIn(f.stock) < f.pop * 2 ? "hunger" : "deserters");
 // The split itself: returns the new group, or null.
 export function splitGroup(state, f, d = day(state)) {
   const S = SPLINTER;

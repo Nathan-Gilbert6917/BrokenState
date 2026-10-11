@@ -2,6 +2,9 @@
 // vehicles and cargo left behind, markers, gathering, camps, supply-run edits and names.
 // Each block builds a small scripted case (stock, wounds and positions are set by hand; the rules are the game's).
 // Usage: node tools/teamtest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js";
+import { FOODS } from "../src/sim/foods.js";
+import { FOOD_PACK_KG } from "../src/sim/parties.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, hurt, survivorById, addCard } from "../src/sim/world.js";
 import {
   launchExpedition, planPath, partyTile, partyMembers, partyCapacity, cargoLoad, carryCapacity, supplyLoad, orderOptions, giveOrder,
@@ -28,7 +31,9 @@ function mk(seed = SEED, stock = {}) {
   state.started = true;
   state.autoCombat = true;
   state.noWanderers = true; // people met on the road (wanderers.js) would stop the teams under test with their own cards
-  Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100, ...stock });
+  const { food: days = 300, ...rest } = stock; // food: days of it (tools/foodkit.js)
+  Object.assign(hub(state).stock, { water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100, ...rest });
+  setFood(hub(state), days);
   return state;
 }
 const crewOf = (state, n) => atBase(state, hub(state).id).slice(0, n);
@@ -59,7 +64,9 @@ function tileNear(state, from, d, d2, { vehicle = false, filter = () => true } =
 function send(state, ids, dest, mission, { vehicleId = null, grant = {}, stance = "normal", supplies = null } = {}) {
   const res = launchExpedition(state, { memberIds: ids, dest, mission, stance, vehicleId, supplies: supplies || { food: 5, water: 5, ammo: 20, meds: 1 } });
   if (res.error) throw new Error(`launch: ${res.error}`);
-  Object.assign(res.party.supplies, grant);
+  const { food: days, ...rest } = grant; // food: days of it, as ration bars (tools/foodkit.js)
+  Object.assign(res.party.supplies, rest);
+  if (days != null) setFood(res.party, days);
   return res.party;
 }
 const arriveAt = (state, p) => tick(state, 24 * 6, p, () => p.phase === "waiting" || !state.parties.includes(p));
@@ -76,14 +83,15 @@ section("Launch: carry limit, crew and mission checks (T-9, T-15, T-29, P-16)");
   const dest = tileNear(state, h.tile, 3, 4);
   const heavy = launchExpedition(state, { memberIds: [a.id], dest, mission: "move", stance: "normal", supplies: { food: 40, water: 35, scrap: 25 } });
   check(heavy.error && /carry/i.test(heavy.error), `one walker left with a 100 load: ${heavy.error || "no error"}`);
-  check(h.stock.food === 300, "a refused launch took stock from the hub");
-  // By weight (sim/load.js): 10 food (5 kg) + 5 water (5 kg) + scrap (2 kg each) up to the walker's 40 kg.
+  check(food(h) === 300, "a refused launch took stock from the hub");
+  // By weight (sim/load.js): 10 days of food (FOOD_PACK_KG a day: 9 kg) + 5 water (5 kg) + scrap (2 kg each) up to
+  // the walker's 40 kg.
   const cap = carryCapacity(state, [a], null);
-  const fits = { food: 10, water: 5, scrap: (cap - 10) / 2 };
+  const fits = { food: 10, water: 5, scrap: (cap - 10 * FOOD_PACK_KG - 5) / 2 };
   check(cap === 40 && supplyLoad(fits) === cap, `test setup: load equals capacity (${supplyLoad(fits)} of ${cap})`);
   const ok = launchExpedition(state, { memberIds: [a.id], dest, mission: "move", stance: "normal", supplies: fits });
   check(!ok.error, `a load equal to the carry space was refused: ${ok.error}`);
-  check(ok.party && ["food", "water", "fuel", "meds", "ammo", "parts", "scrap"].every((k) => Number.isFinite(ok.party.supplies[k])), "a supply key is missing on the team (later maths would give NaN)");
+  check(ok.party && ["water", "fuel", "meds", "ammo", "parts", "scrap"].every((k) => Number.isFinite(ok.party.supplies[k])) && food(ok.party) >= 10, "a supply key is missing on the team (later maths would give NaN), or its days of food");
   check(/Arrives in about (\d+h( \d\dm)?|\d+m)\./.test(state.log[0].text) && !/back in about/.test(state.log[0].text), `a one-way move says when it is back: "${state.log[0].text}"`);
   // A worn pack adds carry space, at launch like everywhere else.
   b.gear.backpack = newItem("assaultpack");
@@ -179,13 +187,13 @@ section("A team with nobody left is always wiped: cargo to a death site, vehicle
   const truck = truckOf(state);
   const p = send(state, [a.id, b.id], tileNear(state, h.tile, 5, 6, { vehicle: true }), "move", { vehicleId: truck.id });
   tick(state, 2, p);
-  p.cargo.supplies.food = 12;
+  setFood(p.cargo, 12);
   a.alive = false; b.alive = false; // lost without wipeParty (a battle started some other way, a card, ...)
   const at = partyTile(p);
   tick(state, 1, null);
   check(!state.parties.includes(p), "a team of the dead was not swept after an hour");
   check(truck.loc.kind === "abandoned" && truck.loc.tile === at && state.markers.some((m) => m.key === `vehicle:${truck.id}`), "the swept team's truck is not abandoned with a marker");
-  check(state.deathSites.some((d) => d.tile === at && d.items.some((i) => i.key === "food")), "the swept team's cargo is not at a death site");
+  check(state.deathSites.some((d) => d.tile === at && d.items.some((i) => !!FOODS[i.key])), "the swept team's cargo is not at a death site");
 }
 {
   // "Cold feet" on a one-person team: the team turns around with everything, nobody is teleported.
@@ -244,9 +252,9 @@ section("Cards never outlive their team or the person they are about (T-2, P-13)
     arriveAt(state, p);
     check(!state.parties.includes(p), "test setup: the team did not get home");
     check(!state.cards.some((c) => c.partyId === p.id), "a card is still open for a team that is home");
-    const food = h.stock.food;
+    const food0 = food(h);
     for (const ch of other.choices) check(/Too late/.test(ch.resolve(state)), `"${other.title} → ${ch.label}" still ran for a team that is gone`);
-    check(h.stock.food === food && !state.deathSites.some((d) => d.names.includes("the lost team")), "a stale card changed the world");
+    check(food(h) === food0 && !state.deathSites.some((d) => d.names.includes("the lost team")), "a stale card changed the world");
     check(!state.survivors.some((s) => s.alive && s.location.kind === "party" && !state.parties.some((q) => q.id === s.location.partyId)), "a survivor is on a team that does not exist");
   }
 }
@@ -578,8 +586,8 @@ section("Camp without food or water does not heal (T-7)");
   const p = send(state, [s.id], tileNear(state, h.tile, 3, 4), "move", { grant: { water: 60 } });
   arriveAt(state, p);
   state.cards.length = 0;
-  p.supplies.food = 0;
-  p.cargo.supplies.food = 0;
+  setFood(p, 0);
+  setFood(p.cargo, 0);
   s.health = 80;
   s.mood = 50;
   s.hunger = 5; // needs.js: already hungry (a full gauge would carry them about three days first)
@@ -588,7 +596,7 @@ section("Camp without food or water does not heal (T-7)");
   check(s.health < 80 - 20, `two days camping with no food and an empty stomach: health 80 → ${s.health.toFixed(1)} (hunger should cost about 26)`);
   check(s.mood <= 50, `spirits rose in a starving camp (${s.mood.toFixed(1)})`);
   check(campHealPerHour(state, p, s) === 0, "the panel still shows camp healing while starving");
-  p.supplies.food = 10;
+  setFood(p, 10);
   tick(state, 24, p);
   check(campHealPerHour(state, p, s) > 0, "camp healing did not come back once the team ate");
 }
@@ -685,7 +693,7 @@ section("Supply runs: an edit changes the next run only; held convoys drink (T-1
   tick(state, 24 * 3, founders, () => !state.parties.includes(founders));
   const op = state.bases.find((b) => b.type === "outpost");
   if (check(!!op, "test setup: no outpost")) {
-    Object.assign(op.stock, { food: 50, water: 0 });
+    Object.assign(op.stock, { water: 0 }); setFood(op, 50);
     const res = saveSupplyRun(state, { jobId: null, originId: h.id, destId: op.id, crew: [crew[1].id, crew[2].id], vehicleId: null, deliver: [{ key: "scrap", qty: 5 }], pickup: [], atDest: "hold", schedule: "once", every: 5, stance: "normal", allowPartial: false });
     const job = res.job;
     dispatchSupplyRun(state, job, true);

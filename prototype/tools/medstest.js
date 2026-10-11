@@ -10,8 +10,9 @@
 //   - a team in the field treats a bad wound or an illness from its own meds; a base from its stock
 // Usage: node tools/medstest.js [raids per site = 16] [seed = 7]
 //        node tools/medstest.js sample [games = 20] [days = 112]   (the autopilot: meds stock, meds spent, deaths)
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, alive, day, survivorById } from "../src/sim/world.js";
-import { LOCATIONS, SUPPLIES } from "../src/sim/data.js";
+import { LOCATIONS, SUPPLIES, supValue } from "../src/sim/data.js";
 import { AREAS, AREA_SETS, createBattle, registerCombatHandler, autoPlayerTurn, runEnemyPhase, enemyUnit } from "../src/sim/combat.js";
 import { raidEnemies, searchHour } from "../src/sim/scavenge.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -124,7 +125,9 @@ if (!SAMPLE) {
   // LOCK_LOOT, the upper storeys' richness).
   const each = (x) => x.r.meds / Math.max(1, x.r.searched);
   const worstOrd = ord.slice().sort((a, b) => each(b) - each(a))[0];
-  check(mR >= 4 * oR && ord.every((x) => each(x) <= 0.3) && med.every((x) => each(x) >= 1), `a raid: medical sites ${r2(mR)} a raid vs ordinary ${r2(oR)}; per container searched, every medical site 1+ (least ${r2(Math.min(...med.map(each)))}), no ordinary place above 0.3 (most ${label(worstOrd.type)} ${r2(each(worstOrd))})`);
+  // 0.4: food by type (sim/foods.js) weighs what it does (a day of a shop's cans about 2 kg): the bot fills its packs in
+  // fewer containers at a supermarket, and the few it takes first are the ones it picks for meds.
+  check(mR >= 4 * oR && ord.every((x) => each(x) <= 0.4) && med.every((x) => each(x) >= 1), `a raid: medical sites ${r2(mR)} a raid vs ordinary ${r2(oR)}; per container searched, every medical site 1+ (least ${r2(Math.min(...med.map(each)))}), no ordinary place above 0.4 (most ${label(worstOrd.type)} ${r2(each(worstOrd))})`);
   check(med.every((x) => x.s.perHour >= 1.5), `every medical site is worth the trip: ${med.map((x) => `${label(x.type)} ${r2(x.s.perHour)}/h`).join(", ")}`);
   check(!["town", "city", "mall"].some((k) => (AREA_SETS[k] || []).includes("pharmacy") || (AREA_SETS[k] || []).includes("clinic")), "the street maps of a town, a city centre and a mall have no pharmacy or clinic area (their pharmacy building can still be raided)");
 
@@ -152,7 +155,7 @@ if (!SAMPLE) {
     const lines = [];
     for (const k of ["meds", "ammo", "food", "fuel"]) lines.push(`${k} sells ${r2(sellPrice(st, f, k, 0))} / buys ${r2(buyPrice(st, f, k, 0))}`);
     console.log(`    ${f.name} (${f.type}, ${f.pop} people, ${Math.round(f.stock.meds)} meds): ${lines.join("; ")}; meds base value ${SUPPLIES.meds.value}`);
-    check(SUPPLIES.meds.value >= 8, `meds are dear: base value ${SUPPLIES.meds.value} (ammo ${SUPPLIES.ammo.value}, food ${SUPPLIES.food.value})`);
+    check(SUPPLIES.meds.value >= 8, `meds are dear: base value ${SUPPLIES.meds.value} (ammo ${SUPPLIES.ammo.value}, a day of food ${supValue("food")})`);
   }
 
   section("Meds go on need only (medical.js, health.js; teams from their own meds, bases from their stock)");
@@ -161,7 +164,7 @@ if (!SAMPLE) {
     const st = createWorld({ seed: SEED, factionCount: 4 });
     st.started = true;
     const h = hub(st);
-    h.stock.meds = 30; h.stock.food = 400; h.stock.water = 400;
+    h.stock.meds = 30; setFood(h, 400); h.stock.water = 400;
     // Everyone is made well at the top of each hour, but the hour's own dice can still give someone a cold (health.js
     // SICK.common, about 0.6% a head a day: a 10-day run of six catches one about a third of the time, by seed) and the
     // night's care then treats it: that is need, not a drain. So the drain is meds spent in an hour that ends with

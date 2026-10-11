@@ -15,6 +15,7 @@
 // raises a card (once each per trip): a horde in sight, a rich site in sight that is not on the plan, supplies
 // running short of the way home. The plan's "If … then come home" conditions turn the team home by themselves
 // (anyone hurt below N health, food below N days, cargo full) and say so on a card that can undo it.
+import { forageKg } from "./foraging.js"; // what a day of forage weighs
 import { log, addCard, baseById, hub, snapshot, survivorById } from "./world.js";
 import { LOCATIONS, siteDanger, SUPPLIES } from "./data.js";
 import { siteKnownTo } from "./discovery.js";
@@ -37,7 +38,7 @@ import { teamLoad, burdenRecord, wornLoad } from "./load.js";
 import { expectForage } from "./foraging.js";
 import { expectWood, chopCrew, chopPower, fireLandOk, WOOD } from "./woodcutting.js";
 import { partyFleet } from "./vehicles.js";
-import { supplyLoad, poolLoad } from "./parties.js";
+import { supplyLoad, poolLoad, packedSupplies } from "./parties.js";
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 
 export const SEARCH_HOURS = 6;      // time on site the estimates assume for a search (as estimateTrip does)
@@ -171,7 +172,8 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   if (!home) return null; // no base left (conquest.js exiles)
   const members = (memberIds || []).map((id) => survivorById(state, id)).filter(Boolean);
   const pv = p ? null : plannedVehicle(state, vehicle, v, members.length || (memberIds || []).length);
-  let pace = p ? partyPace(state, p) : plannedPace(state, { members, supplies, v: pv, stance });
+  const packed = p ? supplies : packedSupplies(state, home, supplies); // days of food weighed as the items it would pack (parties.js)
+  let pace = p ? partyPace(state, p) : plannedPace(state, { members, supplies: packed, v: pv, stance });
   // Hunting and fishing (hunting.js): the expected haul of fresh game makes the team heavier for the rest of the plan,
   // as the real team is weighed again when it bags something (parties.js reweigh). It is heavier only if the game
   // outweighs what was eaten since it set off (eating does not lighten a team on the move).
@@ -183,7 +185,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   const arrows = p ? arrows0 : arrows0 + ((steps || []).some((s) => s.kind === "hunt") ? huntArrowsFor(state, home0, members, arrows0) : 0);
   const huntMix = huntMixOf(home0); // the home base's hunting mix
   const pv0 = p ? partyFleet(state, p) : pv; // every vehicle of the team's (vehicles.js fleets)
-  const pool0 = p ? poolLoad(p) : supplyLoad(supplies);
+  const pool0 = p ? poolLoad(p) : supplyLoad(packed);
   const worn = members.reduce((a, s) => a + wornLoad(s), 0);
   let haul = 0, haulKg = 0, woodHaul = 0; // woodHaul: firewood (woodcutting.js), not food
   const reweigh = (eaten) => {
@@ -307,7 +309,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
       else if (snareLine(state, tile) && s.mode !== "set") { const l = snareLine(state, tile); got = expectSnare(state, tile, l.check ?? l.set, start + hours).rations * 0.8; }
       if (got > 0) {
         haul += got;
-        haulKg += got * (s.kind === "forage" ? 0.5 : MEAT_KG); // foraged food weighs as packed food (foraging.js)
+        haulKg += got * (s.kind === "forage" ? forageKg(state, start) : MEAT_KG); // forage weighs what the season's forage weighs (foraging.js)
         legs[legs.length - 1].haul = Math.round(got * 10) / 10;
         reweigh(eatenNow);
       }
@@ -444,7 +446,7 @@ function checkIn(state, p) {
 const foodDays = (state, p) => {
   const m = partyMembers(state, p);
   const perDay = Math.max(1, partyPace(state, p).eatMove, m.length) * foodNeedFactor(state);
-  return (carried(p, "food") + carried(p, "preserved")) / perDay;
+  return carried(p, "food") / perDay; // days of food (foods.js)
 };
 function hoursHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);

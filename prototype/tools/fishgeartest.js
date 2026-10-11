@@ -7,6 +7,7 @@
 // - Durability on real gear: weapons and armor wear a use a fight, found gear is part-worn (FOUND_DUR) without moving
 //   the world's dice, starting gear START_DUR, crafted gear by its quality; camp kit wears a day in the field; worn
 //   gear is worth less; the governor makes a rod for a base by the water with nothing to fish with.
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, makeSurvivor, survivorById } from "../src/sim/world.js";
 import { GEAR, GEAR_DUR } from "../src/sim/data.js";
 import { CRAFTS, canCraft, makeItem, itemDur, itemDurMax, wearAfterFight, craftingDaily, craftedDur, fieldCraftOptions } from "../src/sim/crafting.js";
@@ -31,7 +32,7 @@ function mk(seed = SEED) {
   const state = createWorld({ seed, factionCount: 6 });
   state.started = true;
   state.autoCombat = true;
-  Object.assign(hub(state).stock, { food: 400, water: 400, fuel: 100, meds: 20, ammo: 400, parts: 10, scrap: 100 });
+  Object.assign(hub(state).stock, { water: 400, fuel: 100, meds: 20, ammo: 400, parts: 10, scrap: 100 }); setFood(hub(state), 400);
   return state;
 }
 // A team of n fresh people on a tile, empty-handed (hunttest.js placeTeam, kept short).
@@ -161,7 +162,7 @@ section("Fishing wears the tools");
   for (let i = h.armory.length - 1; i >= 0; i--) if (GEAR[h.armory[i].key].fish) h.armory.splice(i, 1);
   check(H.fishWorkWhy(state, h) === "no fishing rod, net or spear here", "no tools left: the job cannot be worked");
   // The governor makes a rod for it.
-  Object.assign(h.stock, { scrap: 300, parts: 20, meds: 40, water: 400, food: 400 });
+  Object.assign(h.stock, { scrap: 300, parts: 20, meds: 40, water: 400 }); setFood(h, 400);
   // Its other wants met first (filters, a weapon and armor for everyone), so the rod is what is left to make.
   for (let i = 0; i < 4; i++) h.armory.push(newItem("waterfilter"));
   for (const s of atBase(state, h.id)) { if (!s.gear.weapon) s.gear.weapon = newItem("machete"); if (!s.gear.armor) s.gear.armor = newItem("vest"); }

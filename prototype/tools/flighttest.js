@@ -8,6 +8,7 @@
 //   - it survives a save and load
 // Usage: node tools/flighttest.js [seed]                checks
 //        node tools/flighttest.js rate [days] [seeds...]  flights per world-year on the Balanced autopilot (normal worlds)
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -63,7 +64,7 @@ section("Ahead of a horde they cannot hold: a new site");
   const st = world();
   const { f, tile, h } = setup(st);
   check(hordesComing(st, tile).includes(h) && cannotHold(st, f, tile, [h]), `a horde of ${h.size} (${hordeWallPower(h).toFixed(1)} on the walls) against a defence of ${baseHold(st, f, tile).toFixed(1)}: they cannot hold`);
-  const pop0 = f.pop, food0 = f.stock.food, ammo0 = f.stock.ammo;
+  const pop0 = f.pop, food0 = food(f), ammo0 = f.stock.ammo;
   const odds = FLIGHT.ODDS;
   FLIGHT.ODDS = 99; // they always go
   flightDaily(st);
@@ -72,9 +73,9 @@ section("Ahead of a horde they cannot hold: a new site");
   check(!f.bases.includes(tile) && f.bases.length === 1 && f.alive, `they left (${f.bases[0] === tile ? "still there" : `now at ${f.bases[0]}`})`);
   check(g.distance(f.bases[0], h.tile) >= g.distance(tile, h.tile) + FLIGHT.AWAY, `the new site is farther from the dead (${g.distance(f.bases[0], h.tile)} tiles against ${g.distance(tile, h.tile)})`);
   check(f.pop < pop0 && f.pop >= pop0 * (1 - FLIGHT.STRAGGLE[1]) - 1, `a few lost on the way (${pop0} → ${f.pop})`);
-  check(f.stock.food < food0 && f.stock.ammo < ammo0 && f.stock.food >= food0 * (1 - FLIGHT.LEAVE) - 1, `the stores they could not carry stayed (food ${Math.round(food0)} → ${Math.round(f.stock.food)})`);
+  check(food(f) < food0 && f.stock.ammo < ammo0 && food(f) >= food0 * (1 - FLIGHT.LEAVE) - 1, `the stores they could not carry stayed (food ${Math.round(food0)} → ${Math.round(food(f))})`);
   const rec = abandonedAt(st, tile);
-  check(!!rec && rec.from === f.id && (rec.stock.food || 0) > 0, `the old base stands abandoned with some stores (${rec ? JSON.stringify(rec.stock) : "none"})`);
+  check(!!rec && rec.from === f.id && (food(rec) || 0) > 0, `the old base stands abandoned with some stores (${rec ? JSON.stringify(rec.stock) : "none"})`);
   check(f.fledDay === day(st) && (st.stats.groupFlights || 0) === 1, "counted (stats.groupFlights)");
   // Someone else can take it over.
   const o = st.factions.find((x) => x.alive && x !== f);

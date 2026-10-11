@@ -21,6 +21,7 @@
 //   { $: "M", e: [[k, v]…] } Map · { $: "S", e: […] } Set · { $: "WM", e } WeakMap · { $: "WS", e } WeakSet
 //   { $: "T", t: "Uint16Array", b: base64 } typed array · { $: "Rng", s } · { $: "Grid", w, h } · { $: "O", v }
 //   { $: "u" } undefined · { $: "N", v: "NaN" | "Infinity" | "-Infinity" | "-0" }
+import { migrateFood } from "./foods.js"; // old saves: generic food into food by type
 import { migrateAllMods, relocateMisfits, misfitNote, migrateParts } from "./gunmods.js"; // old saves: gun parts onto the attachment slots; parts that no longer fit taken off
 import { migrateAmmo, findRounds, kindTheme } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
 import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds: their old generic ammo as rounds
@@ -37,7 +38,7 @@ import { noteLootAge } from "./itemcond.js"; // the years since the fall, for lo
 import { migrateStaging } from "./staging.js"; // the old staging camp becomes a camp base
 import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
-import { migrateGenerators } from "./power.js"; // machines-2: generators without operators
+import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
 import { migrateCanners } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 /** @import { State } from "./types" */
 /**
@@ -219,6 +220,10 @@ export function deserializeState(save) {
   // hub, the teams working on it its residents; outpost camps (tier-0 outposts) are camps. After the ammo steps above,
   // so the old camp's stores come in as rounds by calibre.
   migrateStaging(state);
+  // Food by type (foods.js, 2026-10-10: no generic "food" any more): a save from before has every generic food and
+  // preserved food turned into typed items of the same calories (migrateFood), base.meat as raw venison, the worm's
+  // eggs kept on egg lots. After the staging step (the old camp's stores come in as a base's). Once: state.foodTypes.
+  if (!state.foodTypes) { migrateFood(state); state.foodTypes = 1; }
   // A stock amount that is NaN is 0: before 7212b81 a team packing a supply its base had no key for (firewood on a
   // hardcore hub) made the base's stock NaN, and saves of that time carry it (tools/savecorpustest.js found it).
   const unNaN = (o) => { if (o) for (const k of Object.keys(o)) if (Number.isNaN(o[k])) o[k] = 0; };
@@ -255,6 +260,8 @@ export function deserializeState(save) {
   // job, the generator's standing order to the fuel reserve or its switch); the pressure canner is fitted to a
   // preserving room (buildings.js migrateCanners: one in an armory to a kitchen there, else kept to fit later). Once.
   if (!(state.machinesV >= 1)) { migrateGenerators(state); migrateCanners(state); state.machinesV = 1; }
+  // gen-tiers (2026-10-10): generator tiers (power.js GEN_TIERS); every generator standing (yours and the groups') is tier 1. Once.
+  if (!(state.genTiersV >= 1)) { migrateGenTiers(state); state.genTiersV = 1; }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points

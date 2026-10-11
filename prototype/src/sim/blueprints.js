@@ -12,7 +12,9 @@
 //
 // Early buildings are never locked; only the upper tiers listed in LOCKED (the Clinic and Trauma hospital, the
 // machine shop and generator, the reinforced gate and trench, the cistern, the cold store and the walk-in freezer, a
-// second preserving room, the radio relay) and three crafts (scrap crossbow, pipe shotgun, scrap plate vest).
+// second preserving room, the radio relay), the generator's third tier (unlocks.upgrades: an upgrade where it stands,
+// not a building type: gen-tiers, the Industrial Power Manual) and three crafts (scrap crossbow, pipe shotgun, scrap
+// plate vest).
 // The AI groups (machines-2 2026-10-10, the user's rule: "AI groups need to have the same restrictions and gameplay
 // features") find, buy and study these too, coarsely, and their works wait for the same ones (groupworks.js groupTech).
 // Rolls use hash01 (skills.js): finds never move the world's random numbers.
@@ -34,6 +36,10 @@ export const BLUEPRINTS = {
     sites: ["factory", "univ", "hardware", "dam", "airport", "autoshop"], desc: "Lathes, mills, tolerances: making spare parts from scrap." },
   genschem: { name: "Generator Schematics", skill: "mechanics", min: 3, hours: 24, value: 60, unlocks: { buildings: ["generator"] },
     sites: ["dam", "factory", "military", "airport", "hospital", "radiotower"], desc: "Wiring diagrams for standby generators and transfer switches." },
+  // gen-tiers 2026-10-10: the generator's tier 3 (power.js GEN_TIERS[3].bp; an upgrade, not a building: unlocks.upgrades).
+  // Mechanics 4 to study (the standby generator's hand), as the Hospital Operations Manual is a step above the clinic's.
+  indpower: { name: "Industrial Power Manual", skill: "mechanics", min: 4, hours: 30, value: 70, unlocks: { upgrades: ["generator3"] },
+    sites: ["dam", "factory", "quarry", "military", "hospital", "airport"], desc: "Service manuals for skid-mounted diesel sets: load banks, governors, paralleling and day tanks." },
   armyeng: { name: "Army Engineering Manual", skill: "mechanics", min: 2, hours: 30, value: 70, unlocks: { buildings: ["gate", "trench"] },
     sites: ["military", "prison", "police"], desc: "Field fortifications: obstacles, ditches, gates that hold." },
   watertreat: { name: "Water Treatment Schematics", skill: "mechanics", min: 2, hours: 20, value: 45, unlocks: { buildings: ["cistern"] },
@@ -72,6 +78,16 @@ export const CRAFT_BOOKS = {
   forgebook: { unlocks: { crafts: ["springmachete", "rivethelmet"] }, covers: ["sawmachete", "spikedbat", "pipespear", "nailbat", "scrapvest"] },
   bushcraftbook: { unlocks: { crafts: ["woodghillie"] }, covers: ["ghillie", "ragboots", "scentmask", "torch", "arrows", "waterfilter"] },
   enginebook: { unlocks: {}, covers: ["bicycle", "lantern", "headlamp", "flashlight", "spotlight"] }, // Small Engine Repair (teaches Mechanics)
+  // Cookbooks (wave 2 cooking, the user's pick 13: "cookbooks found while scavenging unlock meals even when not at the
+  // correct level"). No craft recipes: cook maps a cooking recipe (cooking.js COOK_RECIPES) to the Cooking a cook needs
+  // for it once the book is read (below the recipe's own level, at a poisoning cost a level short: cooking.js
+  // POISON.below), and its recipes go cooking.js COOK.bookSpeed faster. They stack with skill: the lowest level of the
+  // books read counts. cookText: the item's text and the log line. The AI groups learn them coarsely (cooking.js
+  // groupCookbooks).
+  cookbook: { unlocks: {}, covers: [], cook: { stew: 0, bread: 0, fine: 3 }, cookText: "the cooks make stew and bread at any Cooking and fine meals from Cooking 3 (2, 2 and 6 without it)" },
+  chefbook: { unlocks: {}, covers: [], cook: { fine: 2, lavish: 4 }, cookText: "the cooks make fine meals from Cooking 2 and lavish meals from Cooking 4 (6 and 8 without it)" },
+  gamebook: { unlocks: {}, covers: [], cook: { pemmican: 0, ground: 0, sausage: 1 }, cookText: "the cooks make pemmican and ground meat at any Cooking and smoked sausage from Cooking 1 (3, 0 and 3 without it)" },
+  prepbook: { unlocks: {}, covers: [], cook: { survival: 1, pemmican: 1, flour: 0, bread: 0 }, cookText: "the cooks pack survival meals from Cooking 1 (4 without it), make pemmican from Cooking 1, and flour and bread at any Cooking" },
 };
 export const CRAFT_BOOK_KEYS = Object.keys(CRAFT_BOOKS);
 const isBookTech = (id) => !!CRAFT_BOOKS[id];
@@ -83,9 +99,10 @@ export const techName = (id) => (BLUEPRINTS[id] ? BLUEPRINTS[id].name : GEAR[id]
 export const CRAFT_EDGE = { quality: 0.05, speed: 0.1, max: 2 };
 
 // What each blueprint locks: building type → { bp, from }, craft key → bp (or craft book).
-export const LOCKED = { buildings: {}, crafts: {} };
+export const LOCKED = { buildings: {}, crafts: {}, upgrades: {} }; // upgrades: an upgrade key ("generator3") → bp
 for (const [id, d] of Object.entries(BLUEPRINTS)) {
   for (const t of d.unlocks.buildings || []) LOCKED.buildings[t] = { bp: id, from: (d.unlocks.from && d.unlocks.from[t]) || 0 };
+  for (const k of d.unlocks.upgrades || []) LOCKED.upgrades[k] = id;
   for (const k of d.unlocks.crafts || []) LOCKED.crafts[k] = id;
 }
 for (const [id, d] of Object.entries(CRAFT_BOOKS)) for (const k of d.unlocks.crafts || []) LOCKED.crafts[k] = id;
@@ -114,7 +131,7 @@ function edgeText(d) {
 // The items (registered with the gear so trade, armories, cargo and the inventory know them). Not worn: a pack
 // item, kept in an armory, like a book.
 for (const [id, d] of Object.entries(BLUEPRINTS)) {
-  const opens = [...(d.unlocks.buildings || []).map((t) => t), ...(d.unlocks.crafts || [])];
+  const opens = [...(d.unlocks.buildings || []).map((t) => t), ...(d.unlocks.upgrades || []), ...(d.unlocks.crafts || [])];
   const edge = d.unlocks.crafts || d.covers ? edgeText(d) : "";
   GEAR[bpItemKey(id)] = {
     name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: d.value, noise: 0, blueprint: id, cat: "manuals", weight: 0.2, // a folder of papers (load.js)
@@ -125,6 +142,7 @@ for (const [id, d] of Object.entries(BLUEPRINTS)) {
 for (const [key, d] of Object.entries(CRAFT_BOOKS)) {
   if (!GEAR[key] || GEAR[key].craftBook) continue;
   GEAR[key].craftBook = true;
+  if (d.cook) { GEAR[key].cookBook = true; GEAR[key].desc += ` Once anyone has read it to the end at a base, for good: ${d.cookText}, and those meals are made 10% faster.`; continue; } // wave 2 cooking
   const opens = (d.unlocks.crafts || []).map(unlockName);
   GEAR[key].desc += ` Once anyone has read it to the end at a base, for good:${opens.length ? ` unlocks ${opens.join(", ")};` : ""} ${edgeText(d)}.`;
 }
@@ -133,6 +151,7 @@ function unlockName(k) {
     clinic: "the Clinic", hospital: "the Trauma hospital", machine_shop: "the machine shop", generator: "the generator", gate: "the reinforced gate",
     trench: "the trench", cistern: "the cistern", coldstore: "the cold store", freezer: "the walk-in freezer", kitchen: "a second preserving room", relay: "the radio relay",
     crossbow: "the scrap crossbow", pipegun: "the pipe shotgun", scrapvest: "the scrap plate vest",
+    generator3: "the industrial diesel set (a generator's third tier)",
   };
   if (names[k]) return names[k];
   const g = GEAR[CRAFTS_GEAR[k] || k];
@@ -168,6 +187,11 @@ export function buildLock(state, base, type) {
   if (L.from && base && base.buildings.filter((b) => b.type === type).length + base.construction.filter((c) => c.type === type).length < L.from) return "";
   return `Needs the ${BLUEPRINTS[L.bp].name} (studied)`;
 }
+// "" when an upgrade (LOCKED.upgrades: "generator3") is open as far as tech goes, else why not.
+export function upgradeLock(state, key) {
+  const id = LOCKED.upgrades[key];
+  return !id || isKnown(state, id) ? "" : `Needs the ${BLUEPRINTS[id].name} (studied)`;
+}
 export function craftLock(state, key) {
   const id = LOCKED.crafts[key];
   if (!id || isKnown(state, id)) return "";
@@ -176,6 +200,7 @@ export function craftLock(state, key) {
 // The blueprint a building or craft waits for (for the UI's "Needs: … (where)" lines), or null.
 export function lockOf(state, base, kind, key) {
   if (kind === "craft") { const id = LOCKED.crafts[key]; return id && !isKnown(state, id) ? id : null; }
+  if (kind === "upgrade") { const id = LOCKED.upgrades[key]; return id && !isKnown(state, id) ? id : null; }
   const L = LOCKED.buildings[key];
   return L && buildLock(state, base, key) ? L.bp : null;
 }
@@ -216,6 +241,7 @@ export function learnBook(state, key, s = null) {
   if (!isBookTech(key) || isKnown(state, key)) return false;
   tech(state).known.push(key);
   const d = CRAFT_BOOKS[key];
+  if (d.cook) { log(state, `📗 ${s ? `${s.name.split(" ")[0]} read ${GEAR[key].name} to the end` : `${GEAR[key].name} is read`}: ${d.cookText}.`, "good"); return true; } // wave 2 cooking
   const opens = (d.unlocks.crafts || []).map(unlockName);
   const n = new Set([...(d.unlocks.crafts || []), ...(d.covers || [])]).size;
   log(state, `📗 ${s ? `${s.name.split(" ")[0]} read ${GEAR[key].name} to the end` : `${GEAR[key].name} is read`}: ${opens.length ? `${opens.join(", ")} can now be made, and ` : ""}${n} recipes come out better and faster.`, "good");
@@ -223,10 +249,14 @@ export function learnBook(state, key, s = null) {
 }
 // For the UI: every craft book with its state.
 export function craftBookRows(state) {
-  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k]).map((key) => {
+  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k] && !CRAFT_BOOKS[k].cook).map((key) => { // the cookbooks have their own rows (cookBookRows)
     const d = CRAFT_BOOKS[key];
     return { key, name: GEAR[key].name, known: isKnown(state, key), held: booksHeld(state, key), opens: (d.unlocks.crafts || []).map(unlockName), covers: (d.covers || []).map(unlockName), where: bookWhere(key), desc: GEAR[key].desc };
   });
+}
+// Wave 2 cooking: the cookbooks (CRAFT_BOOKS with cook) with their state, for the Blueprints card.
+export function cookBookRows(state) {
+  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k] && CRAFT_BOOKS[k].cook).map((key) => ({ key, name: GEAR[key].name, known: isKnown(state, key), held: booksHeld(state, key), what: CRAFT_BOOKS[key].cookText, where: bookWhere(key), desc: GEAR[key].desc }));
 }
 
 // ---------- copies held ----------
@@ -243,7 +273,7 @@ export function copiesHeld(state) {
 // Chance per search hour (hour-by-hour search) or per container (raid map) by the site's zone, at full loot.
 export const ZONE_P = { urban: 0.018, town: 0.012, rural: 0.008, special: 0.03 }; // the groups' finds too (groupworks.js groupFindBlueprint)
 export const CRASH_BP = {
-  crash_mil: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic"],
+  crash_mil: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic", "indpower"],
   crash_med: ["fieldsurgery", "hospitalops", "watertreat", "combatmedic"],
   crash_news: ["radioeng", "genschem"],
   crash_cargo: ["refrig", "canning", "machinist", "watertreat"],
@@ -279,7 +309,7 @@ export function noteFound(state, id) {
 
 // A blueprint as a job reward (for diplomacy jobs): one you do not have, fitting the group, or null.
 export function blueprintReward(state, f, salt = "") {
-  const pref = { military: ["armyeng", "genschem", "weaponplans", "armorsmith", "combatmedic"], traders: BP_KEYS, commune: ["canning", "watertreat", "refrig"], fortress: ["armyeng", "armorsmith", "machinist"] }[f && f.type] || BP_KEYS;
+  const pref = { military: ["armyeng", "genschem", "weaponplans", "armorsmith", "combatmedic", "indpower"], traders: BP_KEYS, commune: ["canning", "watertreat", "refrig"], fortress: ["armyeng", "armorsmith", "machinist"] }[f && f.type] || BP_KEYS;
   const held = copiesHeld(state);
   const open = pref.filter((id) => !isKnown(state, id) && !held[id]);
   if (!open.length) return null;
@@ -291,7 +321,7 @@ export function blueprintReward(state, f, salt = "") {
 // What a group sells this week (skills.js bookWares adds it to their books): traders often, the military its manuals.
 export const WARE_BP = { // machines-2: also what a group starts with (groupworks.js groupTech)
   traders: { p: 0.3, list: BP_KEYS },
-  military: { p: 0.3, list: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic"] },
+  military: { p: 0.3, list: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic", "indpower"] },
   commune: { p: 0.2, list: ["canning", "watertreat", "refrig"] },
   fortress: { p: 0.15, list: ["armyeng", "armorsmith", "machinist"] },
 };
@@ -347,7 +377,7 @@ export function learn(state, id, s = null, base = null) {
   if (t.known.includes(id)) return;
   t.known.push(id);
   const d = BLUEPRINTS[id];
-  const opens = [...(d.unlocks.buildings || []), ...(d.unlocks.crafts || [])].map(unlockName).join(", ");
+  const opens = [...(d.unlocks.buildings || []), ...(d.unlocks.upgrades || []), ...(d.unlocks.crafts || [])].map(unlockName).join(", ");
   log(state, `📘 ${s ? `${s.name.split(" ")[0]} finished studying` : "Studied"} the ${d.name}${base ? ` at ${base.name}` : ""}: ${opens} can now be ${d.unlocks.crafts ? "made" : "built"}.`, "good");
   for (const o of state.survivors) if (o.studying === id) delete o.studying;
 }
@@ -392,7 +422,7 @@ export function blueprintRows(state) {
     const known = isKnown(state, id);
     return {
       id, d, known, held: held[id] || 0, hours: studyHours(state, id),
-      who: readers.filter((s) => s.studying === id), opens: [...(d.unlocks.buildings || []), ...(d.unlocks.crafts || [])].map(unlockName),
+      who: readers.filter((s) => s.studying === id), opens: [...(d.unlocks.buildings || []), ...(d.unlocks.upgrades || []), ...(d.unlocks.crafts || [])].map(unlockName),
       where: whereFound(id),
     };
   });

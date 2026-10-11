@@ -66,9 +66,10 @@ import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // 
 import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
+import { COOK_ACTIONS, COOK_CHANGE } from "./ui/cooking.js"; // wave 2 cooking: the stations' bills
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { queueReloadUpgrade } from "./sim/reloading.js"; // the reloading bench
-import { queueCannerUpgrade } from "./sim/buildings.js"; // machines-2: the pressure canner fitted to a preserving room
+import { queueCannerUpgrade, queueGenUpgrade } from "./sim/buildings.js"; // machines-2: the pressure canner fitted to a preserving room; gen-tiers: a generator upgraded
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
@@ -674,7 +675,7 @@ function autofill(pl) {
   const trim = (k, floor) => {
     const c = plannerLoad(state, pl);
     const over = c.load - c.cap;
-    if (over > 0) pl.supplies[k] = Math.max(Math.min(pl.supplies[k], floor), pl.supplies[k] - Math.ceil(over / SUPPLIES[k].weight));
+    if (over > 0) pl.supplies[k] = Math.max(Math.min(pl.supplies[k], floor), pl.supplies[k] - Math.ceil(over / (SUPPLIES[k] ? SUPPLIES[k].weight : Parties.FOOD_PACK_KG))); // food: days of it (sim/parties.js)
   };
   trim("ammo", 5 * n);
   trim("meds", 1);
@@ -807,6 +808,7 @@ const actions = {
   "bunk-expand": (d) => { ui.baseMsg = queueBunkhouseExpand(state, baseOf(d), Number(d.id)); },
   "reload-up": (d) => { ui.baseMsg = queueReloadUpgrade(state, baseOf(d), Number(d.id)); }, // sim/reloading.js: an ammo bench into a reloading bench
   "canner-up": (d) => { ui.baseMsg = queueCannerUpgrade(state, baseOf(d), Number(d.id)); }, // sim/buildings.js: a pressure canner fitted to a preserving room (machines-2)
+  "gen-up": (d) => { ui.baseMsg = queueGenUpgrade(state, baseOf(d), Number(d.id)); }, // sim/buildings.js: a generator upgraded a tier where it stands (gen-tiers)
   demolish: (d) => {
     const id = Number(d.id), b = baseOf(d), what = b && b.buildings.find((x) => x.id === id);
     const name = what && BUILDINGS[what.type] ? BUILDINGS[what.type].name : "this building";
@@ -1038,7 +1040,7 @@ const actions = {
       }
       return;
     }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, packFood: pl.packFood || null, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     plannerVolAsk(state, pl, res.party); // ui/volunteers.js: volunteers asked for in the planner (the answer is in the log)
@@ -1167,6 +1169,7 @@ for (const [k, fn] of Object.entries({ ...FARM_ACTIONS, ...HEALTH_ACTIONS })) ac
 for (const [k, fn] of Object.entries(SKILL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Production orders, power, standing craft orders, stewards and pins (ui/production.js).
 for (const [k, fn] of Object.entries(PROD_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+for (const [k, fn] of Object.entries(COOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/cooking.js: bills at the Kitchen and the cook fire
 // Trade window, radio panel and trade caravans (ui/tradewindow.js); these replace the older trade handlers above.
 for (const [k, fn] of Object.entries(TRADE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Outsiders (ui/visitors.js): the Groups tab's radio calls, trading with merchants, robbing them.
@@ -1350,6 +1353,7 @@ const changeActions = {
   "sr-every": (el) => { ui.supplyForm.every = Math.max(1, Math.floor(Number(el.value) || 1)); },
   "pl-mission": (el) => { ui.planner.mission = el.value; autofill(ui.planner); ui.plannerError = ""; },
   "pl-supply": (el) => { ui.planner.supplies[el.dataset.k] = Math.max(0, Math.floor(Number(el.value) || 0)); ui.plannerError = ""; },
+  "pl-packfood": (el) => { ui.planner.packFood = el.value || null; }, // sim/foods.js packPick: a food to pack first
   ...Object.fromEntries(Object.entries(LOOK_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(TRADE_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(DIPLO_CHANGE).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
@@ -1442,6 +1446,7 @@ for (const [k, fn] of Object.entries(SG_CHANGE)) changeActions[k] = (el) => { if
 for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 Object.assign(changeActions, fieldworksChange(() => state, ui)); // ui/fieldworks.js: post a lookout
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(COOK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/cooking.js
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);

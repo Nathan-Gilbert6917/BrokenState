@@ -20,7 +20,8 @@
 //   holding halfway through it, so selling something and buying it back always loses (the spread decides it).
 // Effects that depend on a group's supplies (starving, rich, poor) apply only to gear, so trading supplies never
 // moves the price of the same supplies through them.
-import { SUPPLIES, GEAR, CATEGORIES, TRADE_PREFS, FACTION_TYPES } from "./data.js";
+import { foodIn } from "./foods.js"; // a group's food in days (every kind)
+import { SUPPLIES, GEAR, CATEGORIES, TRADE_PREFS, FACTION_TYPES, supValue } from "./data.js";
 import { day } from "./world.js";
 import { season } from "./weather.js";
 import { hash01 } from "./skills.js";
@@ -116,7 +117,7 @@ export function groupSick(state, f) {
   return hash01(state.seed ?? 0, "groupsick", f.name, Math.floor(d / SICK.cycle)) < (season(state).key === "winter" ? SICK.winter : SICK.chance);
 }
 const perHead = (f, key) => Math.max(0, (f.stock && f.stock[key]) || 0) / Math.max(1, f.pop || 1);
-const wealthOf = (f) => Object.keys(SUPPLIES).reduce((a, k) => a + Math.max(0, (f.stock && f.stock[k]) || 0) * SUPPLIES[k].value, 0) / Math.max(1, f.pop || 1) / 50;
+const wealthOf = (f) => Object.keys(SUPPLIES).reduce((a, k) => a + Math.max(0, (f.stock && f.stock[k]) || 0) * supValue(k), 0) / Math.max(1, f.pop || 1) / 50;
 // Everything about their situation that moves prices: { war, hordes, raided, lostBase, sick, season, winterSoon,
 // starving, thirsty, rich, poor }.
 export function conditions(state, f) {
@@ -131,7 +132,7 @@ export function conditions(state, f) {
     sick: groupSick(state, f),
     season: s.key,
     winterSoon: s.key === "autumn" && s.daysLeft <= 10,
-    starving: perHead(f, "food") + perHead(f, "preserved") < 2,
+    starving: foodIn(f.stock) / Math.max(1, f.pop || 1) < 2, // days of food a head (foods.js)
     thirsty: f.stock && f.stock.water != null && perHead(f, "water") < 1.5,
     rich: wealth >= 1.6 && !f.atWar,
     poor: wealth < 0.6,
@@ -184,14 +185,13 @@ export function priceInfo(state, f, cat, gear = false) {
 }
 
 // ---------- holdings ----------
-// Starving or thirsty: food (and preserved food) or water cost up to 60% more again as their stock runs out. stock =
-// their stock of this key at the point of the deal (the rest of their food counts as it is).
+// Starving or thirsty: food or water cost up to 60% more again as their stock runs out. stock = their food in days
+// (every kind, foods.js foodIn: trade.js passes it for any food item, key "food") or their water at the point of the deal.
 export function starveBoost(f, key, stock) {
-  const cat = SUPPLIES[key] && SUPPLIES[key].cat;
+  const cat = key === "food" ? "food" : SUPPLIES[key] && SUPPLIES[key].cat;
   const pop = Math.max(1, f.pop || 1);
   if (cat === "food") {
-    const other = key === "food" ? "preserved" : "food";
-    const e = (Math.max(0, stock) + Math.max(0, (f.stock && f.stock[other]) || 0)) / pop;
+    const e = Math.max(0, stock) / pop;
     return 1 + 0.6 * clamp((2 - e) / 2, 0, 1);
   }
   if (key === "water") return 1 + 0.6 * clamp((1.5 - Math.max(0, stock) / pop) / 1.5, 0, 1);

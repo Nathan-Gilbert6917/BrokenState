@@ -15,6 +15,7 @@
 //   - Strike camp: everyone a team with what they can carry, the rest a cache, the camp gone (and with nobody there);
 //   - a camp beside a hub is an outpost camp; a real base retaken takes the hub's place; a camp holds only its tile.
 // Usage: node tools/campmenutest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
 import { BUILDINGS, CAMP, SHELTER, isCamp, isShelter, tierName, tierUpJob, canBuild, queueBuild, plotCap, baseBeds, farmSlots, gatherRows } from "../src/sim/buildings.js";
 import { partyMembers, partyTile, giveOrder, orderOptions, launchExpedition, planPath, carried } from "../src/sim/parties.js";
@@ -46,7 +47,7 @@ const tile = partyTile(p);
 const people = partyMembers(st, p).map((s) => s.id);
 const car = st.vehicles.find((v) => v.loc.kind === "party" && v.loc.partyId === p.id);
 p.cargo.gear.push(item("crowbar"));
-Object.assign(p.cargo.supplies, { scrap: 9, food: 30, water: 30 });
+Object.assign(p.cargo.supplies, { scrap: 9, water: 30 }); setFood(p.cargo, 30);
 const opt = campOption(st, p);
 check(opt && opt.label === "Set up camp" && !opt.disabled && orderOptions(st, p).some((o) => o.mission === "camp"), "Set up camp is on the team's orders (and the right-click menu, the team panel)");
 st.cards.length = 0;
@@ -58,7 +59,7 @@ check(!!camp && isCamp(camp) && camp.tile === tile && tierName(camp) === "Camp" 
 check(st.campOpen === camp.id || st.log.some((l) => /set up camp/.test(l.text)), "the base window is asked to open (state.campOpen; main.js opens it on the Camp tab)");
 check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((s) => s.id === id)), "the team moved in: its people are the camp's");
 check(car && car.loc.kind === "base" && car.loc.baseId === camp.id, "its vehicle is parked at the camp");
-check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 && camp.stock.food >= 30, "what it carried is in the camp's stores and armory");
+check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 && food(camp) >= 30, "what it carried is in the camp's stores and armory");
 check(!tierUpJob(camp), "a plain camp: nothing building until you queue the step up");
 check(baseBeds(camp) === CAMP.beds && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 1, "barebones: bedrolls, no crop plots, no building plot, one utility plot");
 let html = modal(st, { id: camp.id, tab: "camp" });
@@ -73,9 +74,9 @@ let f = formTeam(st, { baseId: camp.id, memberIds: people.slice(0, 2), supplies:
 check(!f.error && f.party && partyTile(f.party) === camp.tile && f.party.phase === "waiting", `a team formed at the camp waits on its tile (${f.error || "ok"})`);
 const q = f.party;
 check(atBase(st, camp.id).length === people.length - 2, "the others stay at the camp");
-const foodBefore = camp.stock.food;
+const foodBefore = food(camp), packed = carried(q, "food"); // whole items: a little over 6 days
 let r = dropOff(st, q, { supplies: { food: 4 } });
-check(r.moved.length && camp.stock.food === foodBefore + 4 && carried(q, "food") === 2, `supplies set down in the stores (${r.text})`);
+check(r.moved.length && Math.abs(food(camp) - foodBefore - 4) < 1e-6 && Math.abs(carried(q, "food") - (packed - 4)) < 1e-6, `supplies set down in the stores (${r.text})`);
 r = loadFromBase(st, q, { supplies: { food: 10 } });
 check(r.moved.length && carried(q, "food") >= 12, `and taken back (${r.text})`);
 const bar = camp.armory.find((it) => it.key === "crowbar");
@@ -99,7 +100,7 @@ check(!f2.error && f2.party, "a second team split off at the camp");
 const q2 = f2.party;
 setVehicles(st, q2, [car.id]);
 check(car.loc.kind === "party" && car.loc.partyId === q2.id, "it takes the parked car");
-const cargoBefore = q2.cargo.supplies.food || 0;
+const cargoBefore = food(q2.cargo) || 0;
 loadFromBase(st, q2, { supplies: { food: 5 } }, "cargo");
 check(carried(q2, "food") >= cargoBefore + 5, "cargo loaded into the vehicle's team from the stores");
 r = dropOff(st, q2, { supplies: { food: Infinity } });
@@ -172,7 +173,7 @@ section("Strike camp: everyone a team with what they can carry, the rest a cache
   const c3 = s2.bases.find((b) => b.tile === tileC);
   const left = launchExpedition(s2, { memberIds: atBase(s2, c3.id).map((s) => s.id), dest: h.tile, mission: "move", stance: "normal", fromBaseId: c3.id, supplies: { food: 4, water: 4 } });
   check(!left.error && !atBase(s2, c3.id).length, "everyone leaves the camp");
-  c3.stock.food += 5;
+  addDays(c3, 5);
   const re = strikeCamp(s2, c3);
   check(!re.error && !re.party && !s2.bases.includes(c3), "an empty camp struck: gone, its stores a cache");
 }

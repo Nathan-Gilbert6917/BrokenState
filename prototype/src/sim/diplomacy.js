@@ -48,9 +48,10 @@
 //   least 0.4× the enemy's. Raids on your bases count for the war (held +2 your side, broken in +2 theirs). When
 //   your side wins you get half the tribute, and land taken in the terms is left free for your outpost (reserved
 //   from the groups' expansion for 60 days). After the peace the enemy settles at goodwill −35 (wary, not hostile).
+import { foodIn, takeFood, addFoodsTo, foodShare, bestFoodKey, scaleFood } from "./foods.js"; // the groups' food by type
 import { Rng } from "./rng.js";
 import { groupCapture, jailsOn } from "./groupjails.js"; // jailhouse: war captives into the raider's jail
-import { SUPPLIES, SUPPLY_KEYS, supplyFew } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, supplyFew, supValue } from "./data.js";
 import { day, log, hub, factionById, addCard, playerStrength, atBase, skill } from "./world.js";
 import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { attitude, changeGoodwill, isAggressiveType, strength, recomputeOwnership, keepChance } from "./factions.js";
@@ -221,7 +222,8 @@ function shocksDaily(state) {
   for (const f of state.factions) {
     if (!f.alive || !rng.chance(0.01)) continue;
     const sh = rng.pick(SHOCKS);
-    f.stock[sh.key] = Math.floor((f.stock[sh.key] || 0) * (1 - sh.frac));
+    if (sh.key === "food") scaleFood(f.stock, 1 - sh.frac); // foods.js: every kind of food
+    else f.stock[sh.key] = Math.floor((f.stock[sh.key] || 0) * (1 - sh.frac));
     f.shock = { key: sh.key, day: day(state) };
     refreshMarket(state, f);
     news(state, sh.text(knownAs(state, f), s), "info", [f]);
@@ -398,11 +400,12 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
     const loss = hit - smokeCover(state, target, hit); // arsenal.js: smoke over their retreat spares a few
     target.pop -= loss;
     clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, 0, target, loss, "a", 0.1, true, "war"); // arsenal.js
-    for (const k of ["food", "ammo", "meds", "scrap"]) {
+    for (const k of ["ammo", "meds", "scrap"]) {
       const take = Math.floor((target.stock[k] || 0) * 0.1);
       target.stock[k] -= take;
       if (attacker) attacker.stock[k] = (attacker.stock[k] || 0) + take;
     }
+    { const got = takeFood(target.stock, Math.floor(foodIn(target.stock) * 0.1), { state }); if (attacker) addFoodsTo(attacker.stock, got.items); } // foods.js: a tenth of their food, the soonest to spoil first
     let took = false;
     const tile = party.target.tile;
     if (attacker && target.bases.length > 1 && tile !== target.bases[0] && attacker.bases.length < 5 && rng.chance(0.35 * Math.min(1, keepChance(state, attacker, tile) / 0.6))) { // factions.js keepChance: the same wish to keep a base as an ordinary raid
@@ -477,6 +480,13 @@ export function makePeace(state, w, how = "terms") {
     const paid = {};
     for (const k of ["food", "ammo", "meds", "scrap"]) {
       // Food never out of the loser's pay-out reserve (upkeep.js PAYOUT, as your governor's).
+      if (k === "food") { // foods.js: days of food, as the items the loser holds
+        const items = takeFood(lose.stock, Math.min(Math.floor(foodIn(lose.stock) * DIPLO.TRIBUTE), groupPayoutSpare(lose, "food")), { state }).items;
+        const mine = youWon ? foodShare(items, 0.5) : {};
+        addFoodsTo(win.stock, foodShare(items, youWon ? 0.5 : 1));
+        if (youWon) { const h = hub(state); if (h) { addFoodsTo(h.stock, mine); const d0 = Math.floor(foodIn(mine)); if (d0 > 0) paid.food = d0; } }
+        continue;
+      }
       const q = Math.min(Math.floor((lose.stock[k] || 0) * DIPLO.TRIBUTE), groupPayoutSpare(lose, k));
       lose.stock[k] -= q;
       const h = youWon ? hub(state) : null; // ai-locks: no hub left (lost, outposts only): the winner keeps it all (was a crash)
@@ -650,7 +660,7 @@ export function brokerCeasefire(state, warId) {
     f.lastDiplomacy = day(state);
     const k = SUPPLY_KEYS.filter((x) => available(f, x) >= supplyFew(x, 3) && x !== "water" && x !== "rawwater").sort((x, y) => need(f, x) - need(f, y))[0];
     if (!k) continue;
-    const q = Math.max(1, Math.min(available(f, k), Math.round(40 / (SUPPLIES[k].value * Math.max(0.5, need(f, k))))));
+    const q = Math.max(1, Math.min(available(f, k), Math.round(40 / (supValue(k) * Math.max(0.5, need(f, k))))));
     f.stock[k] -= q;
     h.stock[k] = (h.stock[k] || 0) + q;
     gifts.push(`${q} ${keyWord(k)} from ${f.name}`);
@@ -698,7 +708,7 @@ export function autoWarTrade(state, style, deal) {
   if (spare < 30) return "";
   for (const f of state.factions) {
     if (!f.alive || !f.known || !atWar(state, f) || !canRadioGroup(state, f) || attitude(f) === "Hostile") continue;
-    const want = ["meds", "food", "fuel", "parts", "scrap"].filter((k) => available(f, k) >= 3).sort((x, y) => need(f, x) - need(f, y))[0];
+    const want = ["meds", bestFoodKey(f.stock, true), "fuel", "parts", "scrap"].filter((k) => k && available(f, k) >= 3).sort((x, y) => need(f, x) - need(f, y))[0]; // foods.js: food as the item they hold most of
     if (!want) continue;
     const payQty = Math.min(spare, 120);
     const r = deal(state, f, want, payQty);

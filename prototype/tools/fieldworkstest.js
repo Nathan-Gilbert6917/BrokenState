@@ -22,6 +22,10 @@
 //   game hook); a snare line (catch, check, rot, robbery, a team's check); a fuel cache (restock, draw, hidden);
 //   the standing haul order; the groups' stockpiles and caches, their raids on each other's structures; the
 //   governor's roadblock on a raid road and stockpile by far crews; Help and the codex
+// - hc-food (2026-10-11): the snare line as field craft: 2 scrap and an hour, no builders needed, at a camp on a tile
+//   next to it nobody holds, its own cap outside the field works', paid with a coil of snare wire from the armory or
+//   the scrap gathered for a step up, checked by anyone fit with no hunter home; the governor's lines (hardcore from
+//   the start, more while food is short; one field job at a time) and the groups' (wanted first, ready the next day)
 import { createWorld, tickHour, hub, atBase, residents, newId, liveTiles, baseVision, day, outOnTrip, homeAt } from "../src/sim/world.js";
 import { launchExpedition, partyTile, carried, outpostName, spawnAiParty } from "../src/sim/parties.js";
 import { queueOrder, startOrder } from "../src/sim/orders.js";
@@ -38,6 +42,7 @@ import { createVehicle } from "../src/sim/vehicles.js";
 import { startWar } from "../src/sim/diplomacy.js";
 import { huntTripTile, gameAbundance, expectHunt } from "../src/sim/hunting.js";
 import { fieldworkAlerts } from "../src/ui/fieldworks.js";
+import { food, setFood, clearFood, addDays } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { LAYERS } from "../src/sim/markers.js";
 import { distFactor, tileGameMult } from "../src/sim/tripland.js";
 import { codexEntry } from "../src/ui/codex.js";
@@ -616,7 +621,7 @@ section("Snare line: catches day by day, a hunter checks it, the catch rots or i
   if (check(!!fw, "a snare line on forest, hills or farmland")) {
     const city = FW.placeTiles(state, h, "snares").find((x) => !["forest", "hills", "plains"].includes(state.tiles[x.tile].terrain));
     if (city) check(/forest, hills or farmland/.test(city.why), `refused off game land: "${city.why}"`);
-    // Nobody on Hunt: the catch waits in the snares.
+    // Nobody on Hunt (and only the day's roll here, not the morning's check): the catch waits in the snares.
     for (const s of atBase(state, h.id)) if (s.role === "hunt") s.role = "rest";
     const keepRob = FW.FIELD.SNARES.theft, keepNear = FW.FIELD.SNARES.near;
     FW.FIELD.SNARES.theft = 0; FW.FIELD.SNARES.near = 0;
@@ -626,9 +631,9 @@ section("Snare line: catches day by day, a hunter checks it, the catch rots or i
     // A hunter at the base checks them in the morning.
     const hunter = atBase(state, h.id).find((x) => !x.leader);
     Object.assign(hunter, { role: "hunt", health: 100, conditions: [], inBed: false });
-    const food0 = h.stock.food, n = FW.snareHeld(fw);
+    const food0 = food(h), n = FW.snareHeld(fw);
     toHour(state, FW.FIELD.HAUL.hour);
-    check(!FW.snareHeld(fw) && h.stock.food > food0 && fw.checked, `a hunter brought ${n} small game in (food ${Math.round(food0)} → ${Math.round(h.stock.food)})`);
+    check(!FW.snareHeld(fw) && food(h) > food0 && fw.checked, `a hunter brought ${n} small game in (food ${Math.round(food0)} → ${Math.round(food(h))})`);
     // Robbed: the catch gone and the wires torn.
     FW.FIELD.SNARES.theft = 1;
     fw.held = [{ day: day(state), n: 2 }];
@@ -645,6 +650,106 @@ section("Snare line: catches day by day, a hunter checks it, the catch rots or i
     startOrder(state, t, { type: "fwork", act: "check" });
     tick(state, 3, () => t.phase === "waiting");
     check(!FW.snareHeld(fw), "checked by the team: the catch is in its cargo");
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets it, a camp too); the governor and the groups set theirs");
+{
+  const S = FW.FIELD.KINDS.snares;
+  check(S.craft && S.cost.scrap === 2 && Object.keys(S.cost).length === 1 && S.hours === 1, `cheap: ${FW.costText(S.cost)}, ${S.hours} work-hour (was 4 scrap, 15 firewood, 3 hours)`);
+  const state = mk();
+  const h = hub(state);
+  // A camp: it holds only its own tile and keeps no field works, but snare lines next to it.
+  Object.assign(h, { tier: 0, camp: true });
+  recomputeOwnership(state);
+  check(FW.maxWorks(h) === 0 && FW.maxSnares(h) === FW.FIELD.SNARES.max.camp, `a camp: ${FW.maxWorks(h)} field works, ${FW.maxSnares(h)} snare lines`);
+  check(!FW.placeTiles(state, h, "tower").some((x) => !x.why), "a camp: no watch tower anywhere");
+  const ok = FW.placeTiles(state, h, "snares").filter((x) => !x.why);
+  const far = state.grid.within(h.tile, 2).find((id) => state.grid.distance(h.tile, id) === 2 && ["forest", "hills", "plains"].includes(state.tiles[id].terrain));
+  check(ok.length > 0 && ok.every((x) => state.grid.distance(h.tile, x.tile) <= FW.FIELD.SNARES.reach), `a camp: snare lines on ${ok.length} tiles next to it`);
+  if (far != null) check(!!FW.placeProblem(state, h, "snares", far), `a camp: not 2 tiles out on land it does not hold ("${FW.placeProblem(state, h, "snares", far)}")`);
+  // Nobody on Build: anyone at home sets it, in about an hour plus the walk.
+  for (const s of atBase(state, h.id)) Object.assign(s, { role: "rest", health: 100, conditions: [], inBed: false });
+  h.construction.length = 0;
+  h.stock.scrap = 2; h.stock.wood = 0;
+  const r = ok.length ? FW.planFieldWork(state, h, "snares", ok[0].tile) : { error: "no tile" };
+  if (check(!r.error && h.stock.scrap === 0, `planned with 2 scrap and no firewood (${r.error || r.text})`)) {
+    const job = FW.jobFor(state, r.fw);
+    check(job.hours <= 2, `an hour's work and the walk: ${job.hours} hours`);
+    let hrs = 0;
+    while (!r.fw.built && hrs < 6) { FW.fieldBuildHour(state, h); hrs++; }
+    check(r.fw.built && hrs <= 2, `set by anyone at the camp with nobody on Build (${hrs} hours)`);
+    // The cap: SNARES.max lines, and they do not count against the field works.
+    h.stock.scrap = 20;
+    const ok2 = FW.placeTiles(state, h, "snares").filter((x) => !x.why);
+    if (ok2.length) { const r2 = FW.planFieldWork(state, h, "snares", ok2[0].tile); FW.jobFor(state, r2.fw).progress = 99; FW.fieldBuildHour(state, h); }
+    const third = FW.placeTiles(state, h, "snares").find((x) => !FW.fwAt(state, x.tile) && state.grid.distance(h.tile, x.tile) === 1);
+    if (third) check(/at most/.test(FW.placeProblem(state, h, "snares", third.tile)), `a camp keeps ${FW.maxSnares(h)} lines: "${FW.placeProblem(state, h, "snares", third.tile)}"`);
+    // Checked each morning with no hunter at the base: anyone fit at home brings the catch in.
+    tick(state, 1); // the old generic stores typed first (foods.js), so the food count below is the catch's
+    r.fw.held = [{ day: day(state), n: 2 }];
+    delete r.fw.checked;
+    const game0 = (h.stock.f_smallgame || 0) + (h.stock.f_fowl || 0);
+    toHour(state, FW.FIELD.HAUL.hour);
+    const by = r.fw.checked && state.survivors.find((x) => x.id === r.fw.checked.by);
+    check(!FW.snareHeld(r.fw) && by && by.role !== "hunt" && (h.stock.f_smallgame || 0) + (h.stock.f_fowl || 0) > game0, `no hunter: ${by ? by.name : "nobody"} (${by ? by.role : "-"}) checked it and brought the small game in`);
+  }
+  // No scrap in the stores: a coil of snare wire from the armory (it comes back on a cancel), or the scrap gathered
+  // for the camp's step up (not yet worked in).
+  {
+    const w = mk();
+    const wh = hub(w);
+    Object.assign(wh, { tier: 0, camp: true });
+    recomputeOwnership(w);
+    wh.stock.scrap = 0; wh.construction.length = 0;
+    const at = FW.placeTiles(w, wh, "snares").find((x) => !x.why);
+    check(/snare wire/.test(FW.placeProblem(w, wh, "snares", at.tile)), `no scrap, no wire: "${FW.placeProblem(w, wh, "snares", at.tile)}"`);
+    wh.armory.push({ key: "snarewire", id: newId() });
+    const rw = FW.planFieldWork(w, wh, "snares", at.tile);
+    check(!rw.error && rw.fw.wire && !wh.armory.some((it) => it && it.key === "snarewire") && /snare wire/.test(rw.text), `set with the armory's coil of snare wire (${rw.error || rw.text})`);
+    FW.cancelFieldJob(w, FW.jobFor(w, rw.fw).id);
+    check(wh.armory.some((it) => it && it.key === "snarewire"), "cancelled: the coil is back in the armory");
+    wh.armory = wh.armory.filter((it) => !(it && it.key === "snarewire"));
+    wh.construction.push({ id: newId(), type: "camp_up", progress: 0, hours: 20, paid: { scrap: 10 } });
+    check(FW.gatheredScrap(wh) === 10 && !FW.placeProblem(w, wh, "snares", at.tile), `the step up's gathered scrap pays (${FW.gatheredScrap(wh)} there)`);
+    const rg = FW.planFieldWork(w, wh, "snares", at.tile);
+    check(!rg.error && wh.construction[0].paid.scrap === 8, `2 scrap off the step up's pile (${wh.construction[0].paid.scrap} left)`);
+  }
+  // The governor: a line at the camp from the start in hardcore; none in a normal game while fed, one when food is short.
+  const g = mk();
+  const gh = hub(g);
+  Object.assign(gh, { tier: 0, camp: true });
+  recomputeOwnership(g);
+  check(FW.govFieldWorks(g, gh, { foodShort: 0 }).length === 0 && !FW.playerWorks(g, gh).length, "normal, fed: no snare line");
+  check(FW.snareLinesWanted(g, gh, 1) === 1 && FW.snareLinesWanted(g, gh, 2) === 2, "normal: one line under the food target, two under half of it");
+  g.mode = "hardcore";
+  check(FW.snareLinesWanted(g, gh, 0) === 1 && FW.snareLinesWanted(g, gh, 2) === FW.maxSnares(gh), `hardcore: one line from the start, up to ${FW.maxSnares(gh)} while short`);
+  const said = FW.govFieldWorks(g, gh, { foodShort: 0 });
+  const line = FW.playerWorks(g, gh).find((x) => x.kind === "snares");
+  check(!!line && said.some((x) => /Snare line planned/.test(x)), `hardcore: the governor sets a line at the camp (${said.join(" ") || "nothing"})`);
+  check(FW.govFieldWorks(g, gh, { foodShort: 2 }).every((x) => !/Snare line planned/.test(x)), "one field job at a time: no second line while the first is going up");
+  // The steward and the governor at a full base (maxWorks > 0): the line comes before the rest, then nothing else that day.
+  const n = mk();
+  const nh = hub(n);
+  n.mode = "hardcore";
+  const nl = FW.govFieldWorks(n, nh, { foodShort: 0, waterShort: true });
+  check(FW.playerWorks(n, nh).filter((x) => x.kind === "snares").length === 1 && FW.playerWorks(n, nh).length === 1, `hub: the snare line first, the well waits (${nl.join(" ")})`);
+  // The groups: the same cheap line, wanted first, outside their field works' count.
+  const f = state.factions.find((x) => x.alive && x.bases.length && state.grid.within(x.bases[0], 2).some((id) => id !== x.bases[0] && state.tiles[id].owner === x.id && ["forest", "hills", "plains"].includes(state.tiles[id].terrain) && FW.snareRateOk(state, id)));
+  if (check(!!f, "a group with game land")) {
+    clearFood(f.stock); setFood(f.stock, f.pop * 2);
+    check(FW.groupSnaresWanted(state, f) === 2, `a group short of food wants ${FW.groupSnaresWanted(state, f)} lines`);
+    const w = FW.groupWants(state, f, [], true);
+    check(w && w.kind === "snares", `wanted first, even with their field works full (${w && w.kind})`);
+    check(FW.groupFieldCost("snares").scrap === 2 && !FW.groupFieldCost("snares").wood, `their cost: ${FW.groupFieldCost("snares").scrap} scrap`);
+    const gl = FW.buildGroupWork(state, f, "snares", w.tile, false);
+    check(gl.readyDay === day(state) + 1, "theirs is ready the next day");
+    setFood(f.stock, f.pop * 50);
+    state.mode = "normal";
+    check(FW.groupSnaresWanted(state, f) === 0, "a fed group in a normal game wants none");
+    state.mode = "hardcore";
+    check(FW.groupSnaresWanted(state, f) === 1, "a fed group in hardcore keeps one");
   }
 }
 
@@ -746,17 +851,17 @@ section("AI parity: the groups' stockpiles and caches feed them; they raid each 
   const state = mk();
   const f = state.factions.find((x) => x.alive && x.bases.length && x.pop >= 6);
   const land = state.grid.within(f.bases[0], 2).filter((id) => id !== f.bases[0] && state.tiles[id].terrain !== "water" && !FW.fwAt(state, id));
-  f.stock.food = 1000; f.stock.scrap = 500;
+  setFood(f.stock, 1000); f.stock.scrap = 500;
   const pile = FW.buildGroupWork(state, f, "stockpile", land[0], true);
   check(Object.keys(pile.contents).length > 0, `their stockpile stocked from their stores (${FW.contentsText(pile)})`);
   // Short of food: they draw on it.
-  pile.contents.food = 40;
-  f.stock.food = 0;
+  clearFood(pile.contents); addDays(pile.contents, 40);
+  clearFood(f.stock);
   for (let i = 0; i < 1; i++) { state.hour += 24; FW.groupFieldDaily(state); }
-  check(f.stock.food >= 40 && !(pile.contents.food > 0), `short of food: drawn into their stores (${f.stock.food})`);
+  check(food(f.stock) >= 40 - 1e-6 && !(food(pile.contents) > 1e-6), `short of food: drawn into their stores (${food(f.stock)})`);
   // Hauled home every AI.haulEvery days.
   pile.contents = { scrap: 20 };
-  f.stock.food = 1000;
+  setFood(f.stock, 1000);
   let hauled = false;
   for (let i = 0; i < FW.FIELD.AI.haulEvery + 1 && !hauled; i++) { state.hour += 24; FW.groupFieldDaily(state); hauled = pile.hauled === day(state); }
   check(hauled, `hauled home within ${FW.FIELD.AI.haulEvery} days (day ${pile.hauled})`);

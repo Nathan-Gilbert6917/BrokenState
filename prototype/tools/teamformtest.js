@@ -6,6 +6,8 @@
 // load and drop off gear) with the same totals kept; Enter base disbands it back in; a save and load round trip of a
 // waiting formed team (and editing it after the load); and a render smoke test of the window and its buttons.
 // Usage: node tools/teamformtest.js [seed]
+import { payFood } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { partyTile, partyMembers, poolLoad, partyCapacity, teamName, orderOptions, MISSIONS, planPath, travelHours, paceOpts, carryCapacity, leaveVehicle, wipeParty, launchExpedition, movePartiesHour, orderMove, hoursLeft, partySpeed } from "../src/sim/parties.js";
 import { reseat } from "../src/sim/walkers.js";
@@ -30,7 +32,7 @@ function mk(seed = SEED) {
   const state = createWorld({ seed, factionCount: 5 });
   state.started = true;
   state.noWanderers = true;
-  Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, parts: 10, scrap: 100, a_9mm_fmj: 200, a_556_fmj: 120 });
+  Object.assign(hub(state).stock, { water: 300, fuel: 100, meds: 20, parts: 10, scrap: 100, a_9mm_fmj: 200, a_556_fmj: 120 }); setFood(hub(state), 300);
   return state;
 }
 // Every item object anywhere that matters here (people at the base and on teams, the armory, cargo), walked into packs,
@@ -124,7 +126,7 @@ section("Forming: people, a car, supplies and cargo leave the base, nothing lost
   check(a.gear.weapon === rifle && a.gear.backpack === pack, "they keep the kit set at the base");
   check(car.loc.kind === "party" && car.loc.partyId === p.id && partyVehicle(state, p) === car, "the car went with the team");
   check(p.cargo.gear.includes(crowbar) && !h.armory.includes(crowbar), "the crowbar went into the cargo");
-  check(teamHas(p, "food") === 10 && teamHas(p, "a_556_fmj") === 30 && teamHas(p, "fuel") === 5, "the supplies were packed");
+  check(teamHas(p, "food") >= 10 && teamHas(p, "food") < 11.21 && teamHas(p, "a_556_fmj") === 30 && teamHas(p, "fuel") === 5, "the supplies were packed");
   check(!!enterOption(state, p), "Enter base is offered on its own tile");
   check(editBase(state, p) === h && editProblem(state, p) === "" && editableTeams(state, h).includes(p), "it can be changed at the base");
   check(poolLoad(p) <= partyCapacity(state, p) + 1e-9, "within what it can carry");
@@ -189,7 +191,7 @@ section("Editing at the base: people, vehicle, supplies, gear");
   check(/joins/.test(addMember(state, p, crew[1].id)) && p.members.includes(crew[1].id) && crew[1].location.partyId === p.id, "add a person from the base");
   check(/not at/.test(addMember(state, p, crew[1].id)), "not twice");
   check(/now has the/.test(setVehicle(state, p, car.id)) && partyVehicle(state, p) === car && p.vehicle === true && car.loc.partyId === p.id, "take the car");
-  check(/food/.test(setSupply(state, p, "food", 20)) && near(teamHas(p, "food"), 20), "load more food (20)");
+  check(/food|ration bars/.test(setSupply(state, p, "food", 20)) && teamHas(p, "food") >= 20 - 1e-6 && teamHas(p, "food") < 21.21, "load more food (20 days: whole ration bars)");
   check(/food/.test(setSupply(state, p, "food", 6)) && near(teamHas(p, "food"), 6), "drop some off (6)");
   const lr = loadFromBase(state, p, { items: [armoryLoc(h, knife)] }, crew[1].id);
   check(lr.moved.length === 1 && !h.armory.includes(knife), "a knife from the armory onto a member");
@@ -458,7 +460,7 @@ section("Keep or undo the gear changes");
   quickMove(state, armoryLoc(h, rifle), a.id);
   quickMove(state, armoryLoc(h, pack), b.id);
   quickMove(state, armoryLoc(h, knife), b.id);
-  h.stock.food -= 5;
+  payFood(h, 5); // foods.js: the soonest to spoil first
   check(gearChanged(state, snap), "the moves count as changes");
   restoreGear(state, snap);
   check(!gearChanged(state, snap), "undone: nothing differs from the snapshot");
@@ -467,11 +469,11 @@ section("Keep or undo the gear changes");
   sameCensus({ items: new Set(placesBefore.keys()), n: placesBefore.size, sup: suppliesOf(state), people: state.survivors.filter((s) => s.alive).length, cars: state.vehicles.filter((v) => !isBike(v)).length, bikes: bikesTotal(state) }, census(state), "after undo");
   // Editing a team: load, then undo puts it back in the armory and the stores.
   const p = formTeam(state, { baseId: h.id, memberIds: [a.id, b.id], supplies: { food: 4 } }).party;
-  const s2 = gearSnapshot(state, h, p);
+  const s2 = gearSnapshot(state, h, p), f2 = teamHas(p, "food");
   loadFromBase(state, p, { items: [armoryLoc(h, rifle)], supplies: { food: 6 } }, a.id);
   check(gearChanged(state, s2) && !h.armory.includes(rifle), "a load from the base is a change");
   restoreGear(state, s2);
-  check(h.armory.includes(rifle) && near(teamHas(p, "food"), 4) && !gearChanged(state, s2), "undone: the rifle back in the armory, the food back in the stores");
+  check(h.armory.includes(rifle) && near(teamHas(p, "food"), f2) && !gearChanged(state, s2), "undone: the rifle back in the armory, the food back in the stores");
   // ux-carry: where the team holds its supplies (p.hold) and a bag in someone's arms (s.gear.carry) undo exactly too.
   {
     const CA = await import("../src/sim/carry.js");
