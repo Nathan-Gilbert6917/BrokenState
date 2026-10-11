@@ -73,7 +73,8 @@
 //   COOK_AI.fine of it with a Cooking 6+ cook or a cookbook's lower level, else simple), packs survival meals from
 //   the surplus while its vacuum sealer runs, grinds grain (a grain mill) into bread and surplus game (a meat grinder)
 //   into sausage; food poisoning is a daily illness rate (f.ill, groupcare.js) of the people fed × the cook's pz at
-//   COOK_AI.dirt. Their Cooking: COOK_AI.skill by type, + a point per 15 people (to 3). Cookbooks: traders and communes
+//   COOK_AI.dirt, each case COOK_AI.days of an ill head (their ill mend over about ten days: GROUP_ILL.mend). Their
+//   Cooking: COOK_AI.skill by type, + a point per 15 people (to 3). Cookbooks: traders and communes
 //   know the Family Cookbook from the start; any group finds one now and then (COOK_AI.bookP a day: their scavengers and
 //   trade). Mills and grinders are built with your locks (groupworks.js LOCKS mill / grinder: a workshop, Mechanics 1)
 //   and wear by the same fixtures. Abstract for them: no bills, no dirt (a fixed level), no water for cooking (their
@@ -94,16 +95,17 @@ import { GEAR } from "./data.js";
 import { hash01 } from "./skills.js";
 import { worksAt, groupKitchenShare, groupSealer, groupTech, groupKnows, groupsBuild, canPayParts, payParts, GROUP_WORKS } from "./groupworks.js";
 import { FIXTURES, WEAR } from "./breakdowns.js";
+import { GROUP_ILL } from "./groupcare.js"; // their ill and how fast they mend
 import { baseCooks } from "./worm.js";
 
 export const COOK = {
   speed: { base: 0.6, per: 0.04, max: 1.4 },
   fullDay: 12, fireHours: 4, fireWood: 1, boilWood: 0.5, bookSpeed: 0.1, autoDays: 2,
   dirt: { perHour: 3, cleanAt: 10, rate: 30, share: 0.3, max: 100 },
-  team: { perHour: 0.5 },
+  team: { perHour: 0.5, keep: 1.5 },
 };
 export const POISON = { base: 0.03, per: 0.82, dirt: 2, below: 0.3, raw: 0.05, camp: 25, max: 0.5, sev: [35, 60], severe: 0.05, severeSev: [75, 90] };
-export const COOK_AI = { fine: 0.3, dirt: 20, skill: { commune: 7, traders: 6, fortress: 5, military: 5, expansionist: 5, zealot: 4, explorers: 5, merchants: 6, raider: 3, band: 3, dflt: 5 }, bookP: 0.004,
+export const COOK_AI = { fine: 0.3, dirt: 20, days: 1.5, skill: { commune: 7, traders: 6, fortress: 5, military: 5, expansionist: 5, zealot: 4, explorers: 5, merchants: 6, raider: 3, band: 3, dflt: 5 }, bookP: 0.004,
   seal: { surplus: 20, share: 0.1 }, bread: 0.15, sausage: { keep: 0.5, max: 4 }, millGrain: 10, grinderMeat: 4 };
 
 // The stations (base.cooking keys).
@@ -278,6 +280,7 @@ const crewOf = (state, base, key) => (key === "canteen" ? kitchenCrew(state, bas
 // Midnight, before the eating (storage.js cookDaily): every station works its bills. Returns the days of food that went
 // into the pots (ingredients). base.cookDay records the day for the screens.
 export function cookBills(state, base) {
+  if (state.cookOff) return 0; // test switch (balance A/B): no cooking at all
   ensureStations(state, base);
   const rec = { day: day(state), hours: 0, clean: 0, batches: 0, made: {}, kcalIn: 0, kcalOut: 0, water: 0, wood: 0, st: {} };
   for (const key of stationsAt(base)) runStation(state, base, key, rec);
@@ -326,7 +329,7 @@ function runStation(state, base, key, rec) {
       if (block) { b.why = block; break; }
       const h = Math.min(cook.left, batchHours - b.prog);
       cook.left -= h; b.prog += h; sr.hours += h; rec.hours += h;
-      if (perHour > 0) { const w = Math.min(base.stock.wood || 0, h * perHour); base.stock.wood -= w; rec.wood += w; }
+      if (perHour > 0) { const w = Math.min(base.stock.wood || 0, (h / speedOf(cook.lvl)) * perHour); base.stock.wood -= w; rec.wood += w; } // the fire burns by the clock hour, not the cook's speed
       if (b.prog + 1e-9 < batchHours) continue; // the next cook carries on, or tomorrow
       b.prog = 0;
       makeBatch(state, base, key, b, cook, Math.max(0, R.skill - cook.lvl), rec);
@@ -425,6 +428,7 @@ export function recipeSkillOk(state, base, key, recipe) {
 // trips); flour and bread with a grain mill and grain; ground meat and sausage with a meat grinder and surplus game;
 // survival meals while the vacuum sealer runs and the stores are deep. A cook fire with no Kitchen: simple meals.
 export function govCookBills(state, base) {
+  if (state.cookOff) return;
   ensureStations(state, base);
   const eaters = Math.max(1, residents(state, base.id).length);
   const units = (cls, fresh = true) => foodUnits(base, (k, f) => CLASSES[cls].test(k, f, { fresh, human: false }));
@@ -457,6 +461,7 @@ export function govCookBills(state, base) {
 // counts as cooked here (a cook fire, a lit stove or a team's lit fire); opts.where: " at Base" text. Returns the people
 // who came down with it.
 export function poisonRoll(state, eaters, lots, opts = {}) {
+  if (state.cookOff) return [];
   const people = (eaters || []).filter((s) => s && s.alive);
   if (!people.length || !lots || !lots.length) return [];
   const n = people.length;
@@ -515,8 +520,9 @@ export function teamPoisonHour(state, p, members) {
 // ---------- a team's camp pot ----------
 // worm.js wormTeamHour, while the camp fire is lit and fed: up to COOK.team.perHour days of the team's raw meat and
 // fish × the best cook's speed is roasted into simple meals (COOK_RECIPES.roast), with its little purified water (none
-// left: it waits). The lots carry the camp pot's pz (POISON.camp dirt) and the cook.
+// left: it waits), up to COOK.team.keep days of the team's eating in meals. The lots carry the camp pot's pz (POISON.camp dirt) and the cook.
 export function teamCookHour(state, p, members) {
+  if (state.cookOff) return 0;
   const R = COOK_RECIPES.roast;
   const hs = [p, p.cargo].filter((h) => h && h.supplies);
   const only = (k, f) => CLASSES.raw.test(k, f, { fresh: true, human: false });
@@ -526,7 +532,11 @@ export function teamCookHour(state, p, members) {
   if (!crew.length) return 0;
   const cook = [...crew].sort((a, b) => skill(b, "cooking") - skill(a, "cooking") || a.id - b.id)[0];
   const lvl = skill(cook, "cooking");
-  let units = Math.min(have, COOK.team.perHour * speedOf(lvl));
+  // Only what the team will eat soon: meals in its packs up to COOK.team.keep days of its eating (the rest stays raw:
+  // the water it would take is the team's drinking).
+  const ready = hs.reduce((a, h) => a + foodUnits(h, (k) => k === R.out), 0);
+  const room = Math.max(0, crew.length * COOK.team.keep - ready) / R.gain;
+  let units = Math.min(have, COOK.team.perHour * speedOf(lvl), room);
   const water = (u) => (R.water * u) / R.units;
   const pure = hs.reduce((a, h) => a + Math.max(0, h.supplies.water || 0), 0);
   if (pure + 1e-9 < water(units)) units = R.water > 0 ? (pure * R.units) / R.water : units;
@@ -586,7 +596,7 @@ function groupFitWear(state, f, ran) {
 }
 // Daily (factions.js, after the day's food comes in and before they eat).
 export function groupCookDaily(state, f) {
-  if (!f || !f.alive || !f.stock) return;
+  if (!f || !f.alive || !f.stock || state.cookOff) return;
   groupCookbooks(state, f);
   const ran = {};
   const share = groupKitchenShare(state, f);
@@ -609,7 +619,9 @@ export function groupCookDaily(state, f) {
       cs.kcalIn += got.kcal;
       // Food poisoning: a daily illness rate of the people who ate the meals (groupcare.js f.ill).
       const cases = Math.min(fed, got.units * poisonChance(lvl, COOK_AI.dirt)); // a day of the meals' food a head: pz a head
-      f.ill = Math.round(((f.ill || 0) + cases) * 1000) / 1000;
+      // Their ill (groupcare.js) mend GROUP_ILL.mend a day (about ten days a case); food poisoning lasts COOK_AI.days, so a
+      // case adds that share of an ill head (the same ill-days as yours).
+      f.ill = Math.round(((f.ill || 0) + cases * COOK_AI.days * GROUP_ILL.mend) * 1000) / 1000;
       f.poisoned = (f.poisoned || 0) + cases;
       cs.cases += cases;
     }
