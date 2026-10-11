@@ -379,11 +379,14 @@ export function cookFireRedundant(state, base) {
 // In the cold itself (ap-food) the stove goes cold while the woodpile is under what the heating alone needs for the rest
 // of it (woodNeed heat, without its fifth to spare): it burned the heating's wood until the pile was down to a day of
 // heat (kitchen.js kitchenCanLight), then the base froze (the census at ac1c1c6: 7.4 base-days without heat a game).
+// Only with a cook fire standing, or no infected land around: the stove is what cooks the worm's game and greens.
+// Land within 2 tiles infected enough that its game carries the worm's eggs (worm.js WORM.MEAT_AT).
+const wormLandNear = (state, base) => state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
 function stoveSave(state, base) {
   if (!hasKitchen(base) || gov(state).noWood) { delete base.stoveSave; return; }
   const w = woodNeed(state, base);
   if (w.toCold > 0 && w.toCold <= WOOD_AP.autumn && w.need > 0 && w.have < w.need * WOOD_AP.behind) base.stoveSave = w.need;
-  else if (w.cold && w.heat > 0 && w.have < w.heat / WOOD.spare) base.stoveSave = Math.ceil(w.heat / WOOD.spare);
+  else if (w.cold && w.heat > 0 && w.have < w.heat / WOOD.spare && (count(base, "cookhouse") > 0 || !wormLandNear(state, base))) base.stoveSave = Math.ceil(w.heat / WOOD.spare); // a cook fire does the worm's cooking meanwhile
   else delete base.stoveSave;
 }
 function cookFireDown(state, base) {
@@ -2173,7 +2176,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // (ap-food: the census at ac1c1c6 had worm deaths up 45%; seed 5004's three-person outpost with no cook fire and no
   // scrap for one kept a hunter on infected ground for weeks and caught it from the meat). A cabin's hunters go on (its
   // smoke house dries their meat; the cook fire is wished for while they work: wormWishes).
-  const rawGame = !cabin && !baseCooks(base) && state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
+  const rawGame = !cabin && !baseCooks(base) && wormLandNear(state, base);
   if (areas.food && !gov(state).noHunting && foodDays < landGoal && !rawGame) {
     const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
     // Poor hunts send the hunters to the plots outside winter only: in winter the crops in the ground hardly grow and a
