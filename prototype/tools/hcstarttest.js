@@ -880,7 +880,7 @@ section(`Autopilot: a hubless start sets up a camp, builds it up into the shelte
     const st = hc(9000 + i * 13);
     st.started = true;
     setAutopilot(st, true, "balanced");
-    let pitched = null, trips = 0, lastIn = 0, up = null, wet = null, thirst = 0;
+    let pitched = null, trips = 0, lastIn = 0, up = null, wet = null, thirst = 0, snared = null;
     try {
       while (day(st) <= apDays && !st.gameOver) {
         tickHour(st);
@@ -888,10 +888,11 @@ section(`Autopilot: a hubless start sets up a camp, builds it up into the shelte
         if (c && c.type === "hub" && pitched == null) { pitched = day(st); wet = !!waterSource(st, c.tile, 1); }
         if (c && c.type === "hub") { const j = tierUpJob(c); const s = (c.stock.scrap || 0) + (c.stock.buildmat || 0) + (j ? (j.paid.scrap || 0) + (j.paid.buildmat || 0) : 0); if (s > lastIn) trips++; lastIn = s; }
         if (up == null && hub(st) && !isShelter(hub(st))) up = day(st);
+        if (snared == null && st.fieldworks && st.fieldworks.list.some((x) => x.kind === "snares" && x.owner === "player")) snared = day(st); // hc-food: the field-craft snare line
       }
     } catch (e) { check(false, `autopilot game ${i}: ${e.stack.split("\n").slice(0, 3).join(" | ")}`); }
     thirst = st.log.filter((l) => l.kind === "death" && /thirst|dehydrat/i.test(l.text)).length;
-    res.push({ pitched, trips, founded: st.hardcore.start.foundedDay, up, wet, thirst, alive: alive(st).length, hub: hub(st) });
+    res.push({ pitched, trips, founded: st.hardcore.start.foundedDay, up, wet, thirst, alive: alive(st).length, hub: hub(st), snared });
   }
   const founded = res.filter((r) => r.founded != null && r.founded <= 28).length;
   const living = res.filter((r) => r.alive > 0).length;
@@ -899,6 +900,8 @@ section(`Autopilot: a hubless start sets up a camp, builds it up into the shelte
   console.log(`  camp set up on days ${res.map((r) => r.pitched ?? "-").join(", ")}; beside water ${res.filter((r) => r.wet).length}/${apGames}; deliveries ${res.map((r) => r.trips).join(", ")}`);
   console.log(`  shelter within 4 weeks: ${founded}/${apGames} (days ${res.map((r) => r.founded ?? "-").join(", ")}; median ${med(res.map((r) => r.founded))}); built up into a base: ${res.filter((r) => r.up != null).length}/${apGames} (days ${res.map((r) => r.up ?? "-").join(", ")}; median ${med(res.map((r) => r.up))})`);
   console.log(`  alive at day ${apDays}: ${living}/${apGames}; deaths from thirst ${res.reduce((a, r) => a + r.thirst, 0)}`);
+  console.log(`  a snare line set (field craft, hc-food) on days ${res.map((r) => r.snared ?? "-").join(", ")}`);
+  check(res.filter((r) => r.pitched != null && r.snared != null).length >= Math.ceil(res.filter((r) => r.pitched != null).length * 0.5), "most camps set a snare line (2 scrap, an hour: the governor's field craft in hardcore)");
   check(res.every((r) => r.pitched != null), "every game sets up a camp");
   check(res.filter((r) => r.wet).length >= Math.ceil(apGames * 0.6), "most camps go up beside a river or lake (no spring)");
   check(founded >= Math.ceil(apGames * 0.6), "most games found a shelter within four weeks");
