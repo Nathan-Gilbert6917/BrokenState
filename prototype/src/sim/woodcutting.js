@@ -48,7 +48,7 @@ import { carriedItems } from "./hunting.js";
 import { mouthsAt, HEAT, woodFor } from "./upkeep.js";
 import { boilerUse, WORM } from "./worm.js"; // the water boiler burns firewood a head every day its water needs boiling
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
+import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult, tileFactor } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
 
 // ---------- numbers ----------
 export const WOOD = {
@@ -256,7 +256,7 @@ export function woodTripTile(state, base, hour = state.hour) {
   for (const id of workLand(state, base.tile)) {
     const a = woodAbundance(state, id);
     if (a < 0.04) continue;
-    const d = state.grid.distance(base.tile, id), f = distFactor("wood", d, m), v = a * woodLevel(state, id, hour);
+    const d = state.grid.distance(base.tile, id), f = tileFactor(state, base, "wood", id, d, m), v = a * woodLevel(state, id, hour); // tileFactor: a stockpile near it means less walking (tripland.js)
     if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
   }
   return best;

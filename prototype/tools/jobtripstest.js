@@ -313,12 +313,23 @@ section("Stockpiles as drop points: a trip that is not the window's last leaves 
   // Without a stockpile: the morning's trip walks home.
   const d0 = Math.floor(state.hour / 24) * 24 + 24;
   const plain = planTrip(state, base, cutter, "wood", d0 + 7);
+  const noPileSave = saveToString(state);
   const r = FW.planFieldWork(state, base, "stockpile", at);
   const job = FW.jobFor(state, r.fw);
   job.progress = job.hours;
   const bld = atBase(state, base.id)[1]; bld.role = "build"; bld.pinned = true;
   FW.fieldBuildHour(state, base);
   const pile = r.fw;
+  // A day's output from the ground 2 tiles out, with and without the stockpile beside it (the same world from here: a
+  // copy made before it stood, the walk back to the base each time).
+  const dayEnd = Math.floor(state.hour / 24) * 24 + 48;
+  const noPile = loadFromString(noPileSave);
+  const wd = (T) => (T && T.wood && T.wood.wood) || 0;
+  const without = wd(tripDay(noPile, hub(noPile), dayEnd)), withIt = wd(tripDay(state, base, dayEnd));
+  const tgWith = Wd.woodTripTile(state, base);
+  note(`a woodcutter's day 2 tiles out: ${Math.round(without)} firewood walking home, ${Math.round(withIt)} with the stockpile beside the ground (now going to ${tgWith.d} out)`);
+  check(without > 0 && tgWith.d === 2 && withIt > without * 1.05, "far ground pays with a stockpile next to it: the day's firewood rises (the midday load dropped there, out again from it, home at the end of the hours)");
+  delete base.tripTally;
   check(pile && pile.built, `a stockpile stands next to the woods (${state.tiles[at].x},${state.tiles[at].y}), 1 tile from the hub`);
   const t1 = planTrip(state, base, cutter, "wood", d0 + 7);
   check(t1 && t1.drop === pile.tile && t1.workEnd - t1.arrive > plain.workEnd - plain.arrive + 0.2, `the morning trip drops at the stockpile: ${Math.round((t1.workEnd - t1.arrive) * 100) / 100} h at the work against ${Math.round((plain.workEnd - plain.arrive) * 100) / 100} walking home`);

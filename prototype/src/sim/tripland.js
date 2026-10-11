@@ -155,6 +155,28 @@ export function waterSources(state, base, job = "fish") {
   const list = ownedWater(state, base.tile);
   return TRIP_HOOKS.water ? TRIP_HOOKS.water(state, base, job, list) || list : list;
 }
+// Stockpiles as drop points (trips-plus #3, jobtrips.js planTrip): with a drop point dd tiles from the work, a day's
+// trips that are not their window's last leave the load there and set out again from it, so the walking is the first
+// walk out (d), the last walk home (d) and 2·dd for each leg between: far ground near a stockpile is worth working.
+export function onTileHoursDrop(job, d, dd, m = 1) {
+  const c = TRIP_JOBS[job];
+  if (!c || c.fixed || !(c.trips > 1)) return onTileHours(job, d, m);
+  return c.windows.reduce((s, [a, b]) => s + Math.max(0, b - a - 2 * walkHours(job, d, m) - (c.trips - 1) * 2 * walkHours("wood", dd, m)), 0);
+}
+// The drop point a worker at `at` would use (the deposit hook: a stockpile of the base with room, nearer the work than
+// the base): its distance from the work, or null.
+export function dropDist(state, base, job, at) {
+  const c = TRIP_JOBS[job];
+  if (!c || c.fixed || !(c.trips > 1) || !TRIP_HOOKS.deposit) return null;
+  const dp = TRIP_HOOKS.deposit(state, base, { trip: { at, job } }, job);
+  return dp && dp.tile != null && dp.tile !== base.tile ? state.grid.distance(at, dp.tile) : null;
+}
+// What a tile d out gives a day against the job's reference distance (distFactor), a drop point near it counted.
+export function tileFactor(state, base, job, id, d, m = 1) {
+  const f = distFactor(job, d, m);
+  const dd = d >= 1 ? dropDist(state, base, job, id) : null;
+  return dd != null && dd < d ? Math.max(f, onTileHoursDrop(job, d, dd, m) / Math.max(0.1, onTileHours(job, refD(job)))) : f;
+}
 // Where a worker's trip ends and the load goes: { tile, stock } (default the base itself).
 export function depositPoint(state, base, s, job) {
   const d = TRIP_HOOKS.deposit ? TRIP_HOOKS.deposit(state, base, s, job) : null;

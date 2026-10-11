@@ -37,7 +37,7 @@ import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (ma
 import { addFind, chooseRounds, baseCals, roundsText } from "./ammo.js"; // rounds by calibre
 import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging find named by calibre in the log)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
+import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult, tileFactor } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
 import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2)
 import { kitchenDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 
@@ -127,7 +127,7 @@ export function scavTripTile(state, base) {
   for (const id of workLand(state, base.tile)) {
     const t = state.tiles[id];
     if (!t || t.terrain === "water" || (id !== base.tile && !t.loc && t.terrain !== "city" && t.terrain !== "suburb")) continue;
-    const d = state.grid.distance(base.tile, id), f = distFactor("scavenge", d, walkMult(state)), v = siteBonus(state, base, id).scav;
+    const d = state.grid.distance(base.tile, id), f = tileFactor(state, base, "scavenge", id, d, walkMult(state)), v = siteBonus(state, base, id).scav;
     if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
   }
   return best;
