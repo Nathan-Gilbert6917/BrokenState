@@ -1531,6 +1531,8 @@ button.mini.tp-chip:disabled { opacity: 0.4; }
 .wn-people { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0.2rem 0; }
 .wn-who { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.75rem; padding: 0 0.35rem; border-radius: 99px; background: color-mix(in srgb, var(--act, var(--muted)) 20%, #23272e); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--act, var(--muted)) 45%, transparent); cursor: pointer; }
 .wn-who i { font-style: normal; }
+.wn-kit { font-size: 0.68rem; font-weight: 600; margin-left: 0.15rem; } /* trips-plus: an outdoor worker going out without a weapon, rounds or a light (sim/tripgear.js) */
+.wn-gear { margin: 0 0 0.35rem; } /* the Work now panel's Gear outdoor workers */
 .wn-prog { margin-top: 0.15rem; }
 .wn-bar { height: 0.35rem; border-radius: 99px; background: #2c3139; overflow: hidden; }
 .wn-bar > i { display: block; height: 100%; background: var(--good); }

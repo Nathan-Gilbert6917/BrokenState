@@ -144,7 +144,9 @@ function tripJobActivity(state, base, s, job, h, opts) {
   const nowH = h === hourOfDay(state);
   if (opts.trips !== false && nowH) {
     const st = tripState(state, s, state.hour);
-    if (st) return act("work", st.text, st.phase === "back" ? "The load goes into the store when they are home." : tripTip(state, base, s, job), job);
+    const dropAt = s.trip && s.trip.drop != null && state.tiles[s.trip.drop] ? `stockpile (${state.tiles[s.trip.drop].x},${state.tiles[s.trip.drop].y})` : ""; // jobtrips.js: a drop trip
+    const dropWhy = dropAt ? `This load goes to the ${dropAt}, nearer the work than the walls (more time at the work); a haul team brings it in, and they set out again from there.` : "";
+    if (st) return act("work", st.text, st.held ? "Trouble out on the land: they hold where they are until you answer the card (or do what seems best after a few hours)." : st.phase === "back" ? dropWhy || "The load goes into the store when they are home." : [tripTip(state, base, s, job), dropWhy].filter(Boolean).join(" "), job);
   }
   if (!inTripHours(job, h)) return offActivity(job);
   if (opts.trips === false || !nowH) return act("work", TRIP_JOBS[job].ing, "", job);
@@ -164,9 +166,9 @@ function tripWhy(state, base, job) {
     case "wood": { const why = woodWorkWhy(state, base); return why ? act("stalled", `Can't cut wood: ${why}`, `Nothing worth cutting around ${base.name}: ${why}. Send a team to cut wood on a forest tile, or trade for firewood.`, job) : null; }
     case "forage": { const why = forageWorkWhy(state, base); return why ? act("stalled", `Can't forage: ${why}`, `Nothing worth gathering around ${base.name}: ${why}.`, job) : null; }
     case "hunt": { const why = huntWorkWhy(state, base); return why ? act("stalled", `Can't hunt: ${why}`, `The Hunt job needs game on the base's hunting grounds (the tiles next to it; with a Hunting cabin the land within 2 tiles): ${why}.`, job) : null; }
-    case "fish": { const why = fishWorkWhy(state, base); return why ? act("stalled", `Can't fish: ${why}`, `The Fish job needs a river or lake tile in the base's own land and a rod, net or spear: ${why}.`, job) : null; }
+    case "fish": { const why = fishWorkWhy(state, base); return why ? act("stalled", `Can't fish: ${why}`, `The Fish job needs a river or lake tile in the base's own land (or right next to it, if nobody holds it: a camp's river bank) and a rod, net or spear: ${why}.`, job) : null; }
     case "scavenge": return scavLeft(base) <= SCAV_FLOOR + 0.02 ? act("stalled", "Scavenger – area picked clean", "The ruins around the base are picked over: send a team on a trip instead.", job) : null;
-    case "water": { const why = fetchWaterWhy(state, base); return why ? act("stalled", `Can't fetch water: ${why}`, `Fetch water needs a river or lake tile in the base's own land, and room in the un-purified barrels: ${why}.`, job) : null; }
+    case "water": { const why = fetchWaterWhy(state, base); return why ? act("stalled", `Can't fetch water: ${why}`, `Fetch water needs a river or lake tile in the base's own land (or right next to it, if nobody holds it: a camp's river bank), and room in the un-purified barrels: ${why}.`, job) : null; }
     default: return null;
   }
 }

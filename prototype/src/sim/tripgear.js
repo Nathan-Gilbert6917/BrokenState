@@ -20,7 +20,7 @@ import { GEAR } from "./data.js";
 import { atBase, gearEffect, combatPower, usesArrows } from "./world.js";
 import { calOf, drawShots } from "./ammo.js";
 import { armorPower, allCarried, stow, isSmall, itemArmor } from "./inventory.js";
-import { lightOf, packLights } from "./lights.js";
+import { lightOf, packLights, LIGHTS, LIGHT_KEYS } from "./lights.js";
 import { TRIP_JOBS } from "./tripland.js";
 import { isChopTool } from "./woodcutting.js";
 
@@ -84,42 +84,48 @@ function weaponScore(base, s, it) {
 export function gearOutdoorWorkers(state, base, opts = {}) {
   const out = [];
   if (!base || !Array.isArray(base.armory)) return out;
+  const dry = !!opts.dry; // what it would hand out, nothing moved (the button's tooltip)
+  const pool = dry ? [...base.armory] : base.armory;
   let people = atBase(state, base.id).filter((s) => isOut(s) && (opts.pinned || !s.pinned));
   if (opts.who) people = people.filter((s) => opts.who.includes(s));
   people.sort((a, b) => (a.role === "hunt" ? 0 : 1) - (b.role === "hunt" ? 0 : 1) || combatPower(b) - combatPower(a) || a.id - b.id);
-  const take = (it) => { const i = base.armory.indexOf(it); if (i >= 0) base.armory.splice(i, 1); };
+  const take = (it) => { const i = pool.indexOf(it); if (i >= 0) pool.splice(i, 1); };
   for (const s of people) {
     const k = tripKit(state, base, s);
+    let handFree = !s.gear.tool;
     // A weapon: someone with none they can use (or a gun with nothing to shoot), from the armory.
     if (!k.weapon || !k.ready) {
       const cur = k.weapon && k.ready ? weaponScore(base, s, k.weapon) : 0;
-      const best = base.armory.filter((it) => GEAR[it.key] && GEAR[it.key].slot === "weapon").map((it) => ({ it, v: weaponScore(base, s, it) })).filter((x) => x.v > cur).sort((a, b) => b.v - a.v || a.it.key.localeCompare(b.it.key))[0];
+      const best = pool.filter((it) => GEAR[it.key] && GEAR[it.key].slot === "weapon").map((it) => ({ it, v: weaponScore(base, s, it) })).filter((x) => x.v > cur).sort((a, b) => b.v - a.v || a.it.key.localeCompare(b.it.key))[0];
       if (best) {
         take(best.it);
-        if (s.gear.weapon) base.armory.push(s.gear.weapon);
-        s.gear.weapon = best.it;
+        if (!dry) { if (s.gear.weapon) pool.push(s.gear.weapon); s.gear.weapon = best.it; }
         out.push({ s, item: best.it, what: "weapon" });
       }
     }
-    // A light for the dusk jobs.
-    if (DUSK.has(s.role) && !lightOf(s)) for (const name of packLights(base, [s])) out.push({ s, item: { name }, what: "light" });
+    // A light for the dusk jobs (lights.js packLights: the lightest that works for them).
+    if (DUSK.has(s.role) && !lightOf(s)) {
+      if (!dry) for (const name of packLights(base, [s])) out.push({ s, item: { name }, what: "light" });
+      else { const it = LIGHT_KEYS.map((key) => (LIGHTS[key].free || handFree ? pool.find((x) => x && x.key === key) : null)).find(Boolean); if (it) { take(it); if (!LIGHTS[it.key].free) handFree = false; out.push({ s, item: it, what: "light" }); } }
+    }
     // Basic body armour, if there is a light piece spare.
     if (!s.gear.armor && armorPower(s) < 1) {
-      const a = base.armory.filter((it) => GEAR[it.key] && GEAR[it.key].slot === "armor" && itemArmor(it) > 0 && (GEAR[it.key].weight || 0) <= GEAR_OUT.armourKg)
+      const a = pool.filter((it) => GEAR[it.key] && GEAR[it.key].slot === "armor" && itemArmor(it) > 0 && (GEAR[it.key].weight || 0) <= GEAR_OUT.armourKg)
         .sort((x, y) => (GEAR[x.key].weight || 0) - (GEAR[y.key].weight || 0) || itemArmor(y) - itemArmor(x) || x.key.localeCompare(y.key))[0];
-      if (a) { take(a); s.gear.armor = a; out.push({ s, item: a, what: "armour" }); }
+      if (a) { take(a); if (!dry) s.gear.armor = a; out.push({ s, item: a, what: "armour" }); }
     }
     // Something to stop a bleed.
     if (!aidOf(s)) {
-      const tqs = base.armory.filter((it) => GEAR[it.key] && GEAR[it.key].selfStab && !GEAR[it.key].medKit);
+      const tqs = pool.filter((it) => GEAR[it.key] && GEAR[it.key].selfStab && !GEAR[it.key].medKit);
       const tq = tqs.length > GEAR_OUT.tqKept ? tqs[0] : null;
-      const kits = base.armory.filter((it) => GEAR[it.key] && GEAR[it.key].medKit && isSmall(it.key) && (GEAR[it.key].req || 0) <= 4);
+      const kits = pool.filter((it) => GEAR[it.key] && GEAR[it.key].medKit && isSmall(it.key) && (GEAR[it.key].req || 0) <= 4);
       const it = tq || (kits.length > GEAR_OUT.kitsKept ? kits.sort((a, b) => (GEAR[b.key].selfStab ? 1 : 0) - (GEAR[a.key].selfStab ? 1 : 0) || a.key.localeCompare(b.key))[0] : null);
       if (it) {
         take(it);
-        const was = s.gear.tool;
-        if (GEAR[it.key].slot === "tool" && !was) s.gear.tool = it; // an empty off hand: held (a medic's kit there too)
-        else if (!stow(s, it)) { base.armory.push(it); continue; }
+        if (!dry) {
+          if (GEAR[it.key].slot === "tool" && !s.gear.tool) s.gear.tool = it; // an empty off hand: held (a medic's kit there too)
+          else if (!stow(s, it)) { pool.push(it); continue; }
+        }
         out.push({ s, item: it, what: "aid" });
       }
     }

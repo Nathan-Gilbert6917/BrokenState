@@ -400,7 +400,7 @@ export const WORK_TYPES = {
   // a trip, a few trips a day (fewer the further the water), into the un-purified barrels.
   water: {
     name: "Fetch water", ing: "Fetching water", short: "Watr", role: "water", skill: null,
-    desc: "Carries water in buckets from the nearest river or lake tile in the base's own land while the water runs short: a few trips a day (fewer the further the water is), two buckets a trip (fetchWaterDay). River and lake water is un-purified (the worm's eggs): it goes into the un-purified barrels, for the water boiler or the filters, up to their room.",
+    desc: "Carries water in buckets from the nearest river or lake tile in the base's own land (or right next to it, nobody else's) while the water runs short: a few trips a day (fewer the further the water is), two buckets a trip (fetchWaterDay). River and lake water is un-purified (the worm's eggs): it goes into the un-purified barrels, for the water boiler or the filters, up to their room.",
     open(ctx) {
       const why = fetchWaterWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
