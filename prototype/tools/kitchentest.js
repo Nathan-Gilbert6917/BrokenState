@@ -241,7 +241,9 @@ section("Assign all idle: the kitchen short of cooks");
 // ======================================================================
 section("The governor");
 {
-  const { st, h, ppl } = mk(9);
+  // 12 people: the governor may found an outpost with three of them in the first days (dev 0c22861 on seed 42: a hub
+  // of 9 kept 6), and the hub must stay at 8+.
+  const { st, h, ppl } = mk(12);
   for (const s of ppl) s.pinned = false;
   setAutopilot(st, true);
   st.hour = 24 * 5 + 9;
