@@ -26,7 +26,7 @@ export function kitchenNote(state, b) {
   const meals = ks.cold
     ? `<span class="danger"${tip("The stove had no firewood to spare at midnight (after the water boiler's and the heating's day): cold meals, nothing saved, no mood, no water boiled, and the game and greens from infected land wait for a cook fire. It is lit again at midnight once the firewood is in.")}>Cold meals today: no firewood for the stove</span>`
     : ks.cooks.length
-      ? `<span${tip("Breakfast at 06:00 (the hunters and fishers at 08:00) and dinner at 20:00 at the kitchen. With too few cooks only that share of the people get hot meals.")}>Hot meals today: ${ks.served * 2} (${ks.served} of ${ks.fed} fed)</span> · −${pct(ks.save)} food a day · +${r1(ks.mood)} mood${ks.boil > 0 ? ` · ${Math.round(ks.boil * 100)}% of the drinking water boiled for the meals` : ""}`
+      ? `<span${tip("Breakfast at 06:00 (the hunters and fishers at 10:00) and dinner at 20:00 at the kitchen. With too few cooks only that share of the people get hot meals.")}>Hot meals today: ${ks.served * 2} (${ks.served} of ${ks.fed} fed)</span> · −${pct(ks.save)} food a day · +${r1(ks.mood)} mood${ks.boil > 0 ? ` · ${Math.round(ks.boil * 100)}% of the drinking water boiled for the meals` : ""}`
       : "";
   const w = kitchenWood(state, b);
   const have = Math.max(0, b.stock.wood || 0);

@@ -43,6 +43,7 @@
 // cold } for the base's Kitchen card, and the Work now panel's Cook row (output.js: meals and food saved).
 // AI groups (groupworks.js KITCHEN): a group base of KITCHEN size builds one; the people it serves eat 10% less, burn
 // the same firewood a head from the group's woodpile, and their groups grow a little faster (no skills by name).
+import { MEALS } from "./meals.js"; // the mealtimes (the hunters' late breakfast)
 import { atBase, residents, skill, hourOfDay, log } from "./world.js";
 import { count } from "./buildings.js";
 import { isManaged } from "./work.js";
@@ -220,7 +221,7 @@ export function cookActivity(h) {
   if (h === 5) return { text: "Cooking breakfast", why: "Up before the others: porridge, eggs and tea on for breakfast at 06:00." };
   if (h === 6) return { text: "Serving breakfast", why: "Breakfast at the kitchen; the cooks eat when everyone is served." };
   if (h === 7) return { text: "Washing up after breakfast", why: "" };
-  if (h === 8) return { text: "Serving the hunters' breakfast", why: "The hunters and fishers eat after the dawn hunt." };
+  if (h === MEALS.lateBreakfast) return { text: "Serving the hunters' breakfast", why: "The hunters and fishers eat when they are back from the dawn trip." };
   if (h < 16) return { text: "Kitchen work: bread, stock, soaking beans", why: "Between the meals: the bread, the stock pot and tomorrow's beans." };
   if (h < 20) return { text: "Cooking dinner", why: "Dinner is at 20:00." };
   if (h === 20) return { text: "Serving dinner", why: "Dinner at the kitchen; the cooks eat when everyone is served." };

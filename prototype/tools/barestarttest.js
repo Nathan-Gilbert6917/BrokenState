@@ -20,7 +20,7 @@ const BARE_FLED_DAYS = 20;
 const seeds = process.argv.length > 2 ? process.argv.slice(2).map(Number) : [1, 2, 3];
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
-const built = (f) => Object.values(f.works || {}).reduce((a, w) => a + Object.values(w).reduce((x, v) => x + (v || 0), 0), 0);
+const built = (f) => Object.values(f.works || {}).reduce((a, w) => a + Object.values(w).reduce((x, v) => x + (typeof v === "number" ? v : 0), 0), 0); // numbers only: a base with machines keeps their state in works.mach (groupworks.js)
 const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift(); const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch) ch.resolve(st); } };
 
 // 1. Fresh worlds: no buildings at any base, every plot free, the groups' works empty.
