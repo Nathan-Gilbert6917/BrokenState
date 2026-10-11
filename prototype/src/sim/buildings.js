@@ -3,11 +3,11 @@
 import { campBecameShelter } from "./staging.js"; // a camp built up into a shelter (the founding)
 import { log, atBase, skill, newId, day, localId } from "./world.js";
 import { SILENT } from "./hiding.js"; // a base running silent: its stations work in quiet spells
-import { SKILL_NAMES, SUPPLIES } from "./data.js";
+import { SKILL_NAMES, SUPPLIES, GEAR } from "./data.js";
 import { workFactor } from "./health.js";
 import { storeCapacity, storeSpaces } from "./storage.js";
 import { stationIO, orderHold } from "./production.js";
-import { refreshPower, generatorStatus, powerLine } from "./power.js";
+import { refreshPower, generatorStatus, powerLine, freezerLine, hasSealer } from "./power.js";
 import { buildMult, hash01 } from "./skills.js";
 import { buildLock } from "./blueprints.js";
 import { cabinProblem } from "./hunting.js";
@@ -16,7 +16,9 @@ import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner lab
 import { benchRounds } from "./ammo.js"; // the ammo bench makes rounds by calibre
 import { reloadStatus, runReload } from "./reloading.js"; // the reloading bench: an ammo bench upgraded in place
 import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "livestock")
+import { kitchenService } from "./kitchen.js"; // the Kitchen's meals (buildingSummary)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { fieldBuildHour } from "./fieldworks.js"; // field works: the builders go out on the odd hours
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -119,13 +121,35 @@ export const BUILDINGS = {
   // Food storage (storage.js): room for fresh food; food above the room is stored outside and spoils fast.
   cellar:       { name: "Root cellar",    plot: "building", cost: { scrap: 15 },            hours: 20, max: 2, desc: "+200 food storage room underground: food in a cellar spoils slowly (0.5% a day, 0.3% in the cold). The hub already has a small cellar (200), an outpost only a pantry (40); food above the room is stored outside and spoils fast (3% a day, more in heat and rain)." },
   coldstore:    { name: "Cold store",     plot: "building", cost: { scrap: 20 },            hours: 24, max: 1, desc: "An ice house packed with ice and snow: +150 food storage room, the best there is in winter (0.1–0.2% a day), still good in spring and autumn (0.5%), poor in summer once the ice is gone (1.2%)." },
-  kitchen:      { name: "Preserving kitchen", plot: "building", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 food + 3 water + 1 scrap + 4 empty jars → 8 preserved food a day (9 with Farming 8+). Jars are found in kitchens, shops and farms; most come back when the food is eaten here." },
+  // The Preserving room (key "kitchen" in saves; it was the "Preserving room"): jars food. The Kitchen that cooks the
+  // meals is "canteen" below (kitchen.js).
+  kitchen:      { name: "Preserving room", plot: "building", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 food + 3 water + 1 scrap + 4 empty jars → 8 preserved food a day (9 with Farming 8+). Jars are found in kitchens, shops and farms; most come back when the food is eaten here." },
   // Hunting (hunting.js): the land around the base, hunted by the people on the Hunt job.
   huntcabin:    { name: "Hunting cabin",  plot: "building", cost: { scrap: 12 },            hours: 16, max: 1, desc: "A skinning shed, a smoke house and game trails around it. Any base can put people on the Hunt job (they hunt its own tile and the tiles next to it, where game is shy of the walls); the cabin widens the hunting grounds to the land within 2 tiles. The land runs out of game if hunted hard (it grows back over weeks). Smokes up to 6 fresh game a day into 5 preserved food, and fresh game here spoils slower. Needs game land within 2 tiles (forest, hills, farmland)." },
-  cookhouse:    { name: "Cook fire",      plot: "utility", cost: { scrap: 6 },             hours: 6,  max: 1, desc: "A stone-lined fire pit with spits and a big pot: all the game and fish eaten here is cooked through, and the greens, roots and crops from infected ground are boiled, which kills the worm's eggs in meat from infected land and infested animals and in food grown or gathered on land at 40%+ infection. Without it (or a preserving kitchen) that food waits in the stores and is eaten raw, last, when the clean food is gone." },
+  cookhouse:    { name: "Cook fire",      plot: "utility", cost: { scrap: 6 },             hours: 6,  max: 1, desc: "A stone-lined fire pit with spits and a big pot: all the game and fish eaten here is cooked through, and the greens, roots and crops from infected ground are boiled, which kills the worm's eggs in meat from infected land and infested animals and in food grown or gathered on land at 40%+ infection. Without it (or a preserving room, or a Kitchen, which does all of this) that food waits in the stores and is eaten raw, last, when the clean food is gone." },
+  // The Kitchen (kitchen.js KITCHEN): meals cooked for the base by the people on the Cook job. A step up from the cook fire
+  // (it cooks everything the cook fire does, so a base with one needs no cook fire). Priced as the Preserving room and
+  // the storehouse (18 scrap, a part, 24 work-hours): a mid-game building plot for a base of 8 or more.
+  canteen:      { name: "Kitchen",        plot: "building", cost: { scrap: 20, parts: 1 }, hours: 24, max: 1, desc: "Stoves, a big pot and long tables: the base's meals cooked by the people on the Cook job, one cook for every 12 people living here (breakfast 06:00, dinner 20:00). Hot meals stretch the food: everyone fed at the kitchen eats 10% less a day (up to 13% with a good cook: +0.5% a Farming point above 4), +1 mood a day (+1.5 with a Farming 6+ cook; the preserving room's stove gives +1 too, never both), and a quarter of the day's drinking water is boiled for the meals. With too few cooks only that share of the people get hot meals. Like a cook fire, all the game, fish and greens from infected land are cooked through (the worm), cook or no cook. No cook: the food is eaten as before." },
   smoker:       { name: "Drying rack",    plot: "utility", cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
   // Power (power.js): generators need an operator and fuel; the still turns food into that fuel.
-  generator:    { name: "Generator",      plot: "utility", cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, station: "power", req: { mechanics: 3 }, desc: "Workshop station. With an operator it burns 2 fuel a day for 6 power, only while something draws power: a cold store that works in summer, +2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving kitchen. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build." },
+  generator:    { name: "Generator",      plot: "utility", cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, station: "power", req: { mechanics: 3 }, desc: "Workshop station. With an operator it burns 2 fuel a day for 6 power, only while something draws power: a cold store that works in summer, +2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving room, a walk-in freezer, a vacuum sealer. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build." },
+  // The walk-in freezer (freezer-parts 2026-10-10, user request "add a building called walk in freezer"; power.js
+  // POWER_USERS.freezer, breakdowns.js FIXTURES.freezer, storage.js): an insulated room with a compressor on the
+  // generator. +300 food room; while it is on (base.freezerOn: power served, not broken, not switched off) food in it
+  // ages at about a twentieth of the cellar's rate (the food-types branch: STORE.freezer); off, it keeps like a pantry.
+  // Priced as a mid-game machine between the generator (20 scrap, 4 parts) and the radio station (30, 6): 30 scrap, 5
+  // machine parts and 2 electronics (the thermostat and the compressor's controls), 40 work-hours, Mechanics 3. Draws 2
+  // of a generator's 6 power every day, wears like a machine (0.9 a day while it runs) and uses a spare part every 12
+  // days on (breakdowns.js spares).
+  freezer:      { name: "Walk-in freezer", plot: "building", cost: { scrap: 30, parts: 5, electronics: 2 }, hours: 40, max: 2, req: { mechanics: 3 }, machine: true,
+                  desc: "An insulated room with a compressor: +300 food storage room, and while it has power the food in it keeps about twenty times longer than in a cellar. Draws 2 power every day from a running generator (Power card, Workshops tab); with no power, no fuel for the generator or a breakdown it is off and warms up, and the food in it keeps only as in a pantry. Wears like a machine: breakdowns need machine parts and a Mechanics 3+ survivor to fix, and it uses a spare part about every 12 days it runs. Needs a Mechanics 3+ survivor here to build." },
+  // The vacuum sealer (freezer-parts 2026-10-10, the user's pick): a powered packing machine on a utility plot, no
+  // operator (like the freezer it is a power user, not a workshop station). A later cooking wave makes packaged survival
+  // meals with it: hasSealer (power.js) is that hook. 12 scrap, 2 machine parts, 2 electronics (the heat bar and its
+  // controls), 16 work-hours, Mechanics 3; draws 1 power while switched on; wears 0.5 a day while powered.
+  sealer:       { name: "Vacuum sealer",  plot: "utility", cost: { scrap: 12, parts: 2, electronics: 2 }, hours: 16, max: 1, req: { mechanics: 3 }, machine: true,
+                  desc: "A chamber vacuum sealer with a heat bar, bolted to a steel table: it will pack cooked food into light, long-keeping survival meals for the road (the cooking recipes come later). Draws 1 power while switched on (Power card, Workshops tab; switch it off to save fuel while it has no work). Wears like a machine: breakdowns need machine parts and a Mechanics 2+ survivor to fix. Needs a Mechanics 3+ survivor here to build." },
   still:        { name: "Ethanol still",  plot: "utility", cost: { scrap: 15, parts: 2 },  hours: 24, max: 1, station: "still", desc: "Workshop station. One operator ferments and distils 8 food + 2 water into 3 fuel a day; up to 4 of the food can be yesterday's spoiled food. Set a Keep-at-least order so it only takes the surplus." },
   greenhouse:   { name: "Greenhouse",     plot: "building", cost: { scrap: 20, parts: 3 },  hours: 36, max: 2, desc: "+2 sheltered crop plots: grow in every season (winter too), stand 10 °C more cold, and the weather rarely harms them." },
   // Mood (relations.js moodFactors): no operator needed.
@@ -293,11 +317,11 @@ export function queueBunkhouseExpand(state, base, id) {
 export const jobName = (job) => (job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
 
 // ---------- demolishing ----------
-// Pulls a building down to free its plot: half its scrap and parts back (rounded down), and for a barrel half of its
+// Pulls a building down to free its plot: half its scrap, parts and electronics back (rounded down), and for a barrel half of its
 // upgrades' too. Not while the base is under attack, nor with an upgrade of it in the queue.
 export function demolishRefund(b) {
   const out = {};
-  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (k === "scrap" || k === "parts") out[k] = (out[k] || 0) + v; };
+  const add = (cost) => { for (const [k, v] of Object.entries(cost || {})) if (k === "scrap" || k === "parts" || k === "electronics") out[k] = (out[k] || 0) + v; };
   add(BUILDINGS[b.type].cost);
   if (b.type === "water_barrel") for (let t = 2; t <= barrelTier(b); t++) add(WATER_BARREL.tiers[t].cost);
   for (const k of Object.keys(out)) out[k] = Math.floor(out[k] / 2);
@@ -482,6 +506,11 @@ function hospitalCraft(state, base) {
   }));
 }
 
+// The pressure canner (crafting.js CRAFTS.canner, data.js GEAR.canner; freezer-parts): one in a base's armory and every
+// preserving room there jars CANNER.out more preserved food a day (bigger batches under pressure).
+export const CANNER = { out: 1 };
+export const hasCanner = (base) => !!(base && base.armory && base.armory.some((it) => it && GEAR[it.key] && GEAR[it.key].canner));
+
 // state is needed for the hospital bonus on meds (staffing); without it the bonus is left out.
 export function recipeOutput(s, recipe, base = null, state = null) {
   const r = RECIPES[recipe];
@@ -492,6 +521,7 @@ export function recipeOutput(s, recipe, base = null, state = null) {
     if (recipe === "meds" && skill(s, "medicine") >= 8) q += 1;
     if (recipe === "meds") q += hospitalCraft(state, base);
     if (recipe === "preserve" && skill(s, "farming") >= 8) q += 1;
+    if (recipe === "preserve" && k === "preserved" && hasCanner(base)) q += CANNER.out; // crafting.js canner: a pressure canner in the armory (TODO(food-types): typed jarred food)
     if (recipe === "livestock" && k === "food") q = base && state ? livestockYield(state, base, s) : v; // farming.js: the season, the walls, the keeper
     out[k] = q;
   }
@@ -676,7 +706,9 @@ function campMaterialsHour(state, base) {
 // Builders work on the first job in the queue, hour by hour (a job waiting for its materials lets the next one go on).
 export function constructionHour(state) {
   for (const base of state.bases) {
-    if (!base.construction.length || underAttack(state, base)) continue;
+    if (underAttack(state, base)) continue;
+    if (fieldBuildHour(state, base)) continue; // fieldworks.js: the builders are out at a field work this hour
+    if (!base.construction.length) continue;
     gatherHour(base);
     if (campMaterialsHour(state, base)) continue; // a camp's builders make the building materials its step up waits for
     const job = base.construction.find((c) => !gatherStalled(c));
@@ -726,8 +758,16 @@ export function buildingSummary(state, base) {
     ["Water", `${isShelter(base) ? "no well (a river or lake beside it, rain catchers, or water brought in)" : `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells`}${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150 + barrelRoom(base, "water") + barrelRoom(base, "rawwater")}${barrels(base).length ? ` (barrels: ${barrelRoom(base, "rawwater")} un-purified, ${barrelRoom(base, "water")} purified)` : ""}`],
     ["Plots", `building ${plotsUsed(base, "building")}/${plotCap(base, "building")}, utility ${plotsUsed(base, "utility")}/${plotCap(base, "utility")}`],
     ["Food storage", `${storeCapacity(base)} room for fresh food (${storeSpaces(base).map((x) => `${x.name.toLowerCase()} ${x.cap}`).join(", ")}); more is stored outside and spoils fast`],
-    ["Preserving", [count(base, "kitchen") ? `${count(base, "kitchen")} kitchen${count(base, "kitchen") > 1 ? "s" : ""}` : "", count(base, "smoker") ? `${count(base, "smoker")} drying rack${count(base, "smoker") > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ") || "None"],
+    ["Preserving", [count(base, "kitchen") ? `${count(base, "kitchen")} preserving room${count(base, "kitchen") > 1 ? "s" : ""}` : "", count(base, "smoker") ? `${count(base, "smoker")} drying rack${count(base, "smoker") > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ") || "None"],
+    ["Meals", (() => {
+      const ks = kitchenService(state, base);
+      if (!ks.built) return count(base, "cookhouse") ? "Cook fire (game and greens cooked through)" : "Each eats their own (no kitchen)";
+      if (!ks.cooks.length) return `Kitchen: no cook (${ks.wanted} wanted: put someone on Cook)`;
+      return `Kitchen: ${ks.cooks.length} cook${ks.cooks.length === 1 ? " feeds" : "s feed"} ${ks.served} of ${ks.fed} hot meals (−${Math.round(ks.save * 1000) / 10}% food, +${Math.round(ks.mood * 10) / 10} mood a day)`;
+    })()],
     ["Power", powerLine(state, base)],
+    ...(countAll(base, "freezer") ? [["Walk-in freezer", freezerLine(state, base)]] : []),
+    ...(countAll(base, "sealer") ? [["Vacuum sealer", hasSealer(state, base) ? "Ready (powered)" : base.buildings.some((b) => b.type === "sealer" && b.broken) ? "Broken: needs repair" : "Off (no power)"]] : []),
     ["Medical", (() => {
       const h = base.buildings.find((x) => BUILDINGS[x.type].family === "hospital");
       if (!h) return "No hospital (severe wounds heal slowly)";

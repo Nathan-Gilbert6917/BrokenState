@@ -77,10 +77,10 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
-import { groupWorksDaily, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
+import { groupWorksDaily, groupEatMult, groupCookShare, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
-import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
+import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople, workingPeople, GROUP_ILL } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
 import { groupWorldDaily, groupWorldWorld, intelDef, knownBase, fearsGroup, KNOW, abandonedAt, abandonedPull, occupyAbandoned, leaveGroupBase } from "./groupworld.js"; // AI parity: what they know, their vehicles, abandoned bases
 import { knowsOf } from "./groupworld.js"; // decoy outposts they believe in (intel.js)
 import { decoyRaid, heardPull, knownByRadio, INTEL } from "./intel.js"; // what they overheard of yours on the radio
@@ -319,9 +319,12 @@ export function factionsDaily(state) {
     const off = !!state.aiScavOff; // test switch (tools/depletetest.js): the old economy, no scavenging groups
     // groupworks.js: a group short of wells and fields gets a little less from the land, and one sleeping rough grows
     // slower (CROWDED_GROWTH; both 1 once it has built them; old saves are built up).
+    // The ill rest (groupcare.js GROUP_ILL, sickrest.js parity): the day's work counts the people at work (hands).
     // grouptrips.js: their hunters and foragers by the land each base holds and how far they walk (as your job trips),
-    // fish only where a base holds water, nothing from a besieged base's land.
-    f.stock.food += f.pop * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) * groupFoodLand(state, f) + penFood(state, f) - f.pop; // + their animal pens (groupworks.js PENS)
+    // fish only where a base holds water, nothing from a besieged base's land. Their kitchens' hot meals stretch the
+    // food and their cooks work no fields (groupworks.js KITCHEN).
+    const hands = workingPeople(f);
+    f.stock.food += workingPeople(f, GROUP_ILL.farm) * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) * groupFoodLand(state, f) * (1 - groupCookShare(state, f)) + penFood(state, f) - f.pop * groupEatMult(state, f); // + their animal pens (groupworks.js PENS)
     groupTripLosses(state, f); // grouptrips.js: their workers out on the land meet trouble too (fewer losses the better armed)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).
@@ -334,18 +337,18 @@ export function factionsDaily(state) {
     }
     // groupworks.js: without a workshop they make less, without a storehouse they keep less (1 once built).
     const mk = (off ? 1 : FACTION_MAKE) * workshopFactor(state, f), cap = storeFactor(state, f);
-    f.stock.ammo = Math.min(f.pop * 30 * cap, f.stock.ammo + f.pop * 0.3 * def.arms * mk);
-    f.stock.scrap = Math.min(f.pop * 10 * cap, f.stock.scrap + f.pop * 0.2 * mk);
-    f.stock.fuel = Math.min(f.pop * 3 * cap, f.stock.fuel + f.pop * 0.04 * mk); // fuel is scarce (economy rework)
-    f.stock.meds = Math.min(f.pop * 3 * cap, f.stock.meds + f.pop * 0.04 * mk);
-    f.stock.buildmat = Math.min(f.pop * 2 * cap, (f.stock.buildmat || 0) + f.pop * 0.03 * mk); // building materials (data.js): salvaged lumber and blocks, for their outpost camps (groupworks.js CAMP)
+    f.stock.ammo = Math.min(f.pop * 30 * cap, f.stock.ammo + hands * 0.3 * def.arms * mk);
+    f.stock.scrap = Math.min(f.pop * 10 * cap, f.stock.scrap + hands * 0.2 * mk);
+    f.stock.fuel = Math.min(f.pop * 3 * cap, f.stock.fuel + hands * 0.04 * mk); // fuel is scarce (economy rework)
+    f.stock.meds = Math.min(f.pop * 3 * cap, f.stock.meds + hands * 0.04 * mk);
+    f.stock.buildmat = Math.min(f.pop * 2 * cap, (f.stock.buildmat || 0) + hands * 0.03 * mk); // building materials (data.js): salvaged lumber and blocks, for their outpost camps (groupworks.js CAMP)
     groupWorksDaily(state, f); // groupworks.js: the base starts bare; water, fields, quarters, walls, by need
     arsenalDaily(state, f); // arsenal.js: newcomers' weapons, makeshift weapons and explosives from their scrap
     groupCareDaily(state, f); // groupcare.js: the wounded heal (meds, medics), repairs at a workshop, food bought when short, desertion
     groupWorldDaily(state, f); // groupworld.js: scouting (and spies at your walls), vehicles taken, stolen, sold, fitted out
     // Firewood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
     // price, trade.js) runs low by the end of a winter and fills again by the autumn.
-    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + f.pop * (GROUP_WOOD.cut * groupWoodLand(state, f) - GROUP_WOOD.burn * freezeShare(today - 1)))); // grouptrips.js: the wood land their bases hold
+    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * freezeShare(today - 1))); // grouptrips.js: the wood land their bases hold
 
     // Expansion: claim a nearby site. Aggressive groups push out more, toward rich sites and toward you.
     const agg = isAggressiveType(f);

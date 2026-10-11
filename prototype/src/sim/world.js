@@ -19,7 +19,8 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
-import { movePartiesHour } from "./parties.js";
+import { movePartiesHour, clockFrac, setClockFrac } from "./parties.js";
+import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
 import { growthAt, growthInfo } from "./hivetech.js";
@@ -43,7 +44,11 @@ import { autopilotHour } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { workHour, workDayRoles } from "./work.js";
+import { stallDaily } from "./activity.js";
+import { leaderIdleHour } from "./idlework.js";
+import { isMealHour } from "./meals.js"; // the leader and the governor move people off stalled jobs once a day // the day each job at a base was first found unable to work (the stalled-job alert)
 import { watchHour, watchDayRoles } from "./watch.js";
+import { sickRestHour } from "./sickrest.js"; // sick people rest: Manual and pinned people's jobs kept and given back
 import { tiredHour } from "./sleep.js";
 import { crewHour } from "./crews.js";
 import { woundTrauma } from "./health.js";
@@ -139,6 +144,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     kitV: 2, magFitV: 1, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
+    sickRest: "all", // sickrest.js: the Work tab's "Sick people rest" (all, serious, off; save.js: older saves get "all")
     groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
@@ -426,13 +432,14 @@ export const isHome = (state, s, t = state.hour) => !!s && s.alive && s.location
 export const homeAt = (state, baseId, t = state.hour) => atBase(state, baseId).filter((s) => !outOnTrip(state, s, t));
 /** @type {(state: State, id: any) => import("./types").Faction | undefined} */
 export const factionById = (state, id) => state.factions.find((f) => f.id === id);
-// Everyone who lives at a base: the people there, plus (at the hub) trade-route escorts waiting between trips.
-// Waiting escorts eat, heal and can be treated at the hub; they do no base work (atBase leaves them out).
+// Everyone who lives at a base: the people there, plus (at the hub) trade-route escorts waiting between trips, and the
+// lookouts posted at the base's field works (fieldworks.js). They eat, heal and can be treated there; they do no base
+// work and are not in a base battle (atBase leaves them out).
 /** @param {State} state @param {number} baseId @returns {Survivor[]} */
 export function residents(state, baseId) {
   const h = hub(state);
   const hubId = h ? h.id : null;
-  return alive(state).filter((s) => (s.location.kind === "base" && s.location.baseId === baseId) || (s.location.kind === "route" && baseId === hubId));
+  return alive(state).filter((s) => (s.location.kind === "base" && s.location.baseId === baseId) || (s.location.kind === "route" && baseId === hubId) || (s.location.kind === "post" && s.location.baseId === baseId)); // fieldworks.js: lookouts posted at a field work, fed from their base
 }
 /** @param {Survivor} s */
 const isFree = (s) => s.alive && !(s.location && s.location.kind === "captive");
@@ -835,6 +842,7 @@ export const radioBases = (state) => state.bases.filter((b) => b.radio);
 export function liveTiles(state) {
   const set = new Set();
   for (const b of state.bases) for (const id of state.grid.within(b.tile, baseVision(b, state))) set.add(id);
+  for (const id of fieldSight(state)) set.add(id); // fieldworks.js: your manned watch towers
   // Radio: parties in range report what they see right now.
   for (const p of state.parties) {
     if (p.owner === "player" && p.radioLive) for (const id of p.sightNow || []) set.add(id);
@@ -877,6 +885,14 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
 // ---------- tick ----------
 /** One hour of the world. @param {State} state */
 export function tickHour(state) {
+  // The tick is the hour's end: anything it sets moving starts on the hour, whatever the clock's minutes showed
+  // (parties.js wayOn).
+  const frac = clockFrac(state);
+  setClockFrac(0, false);
+  try { hourOfWorld(state); } finally { setClockFrac(frac, false); }
+}
+/** @param {State} state */
+function hourOfWorld(state) {
   if (state.gameOver) return;
   state.hour += 1;
   noteLootAge(state); // itemcond.js: the years since the fall, for every piece of loot rolled this hour
@@ -892,10 +908,12 @@ export function tickHour(state) {
   caravanRaidsHour(state); // caravanraids.js: caravans met on the road, chased, robbed (by you or by the groups)
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
-  constructionHour(state);
-  repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
+  fieldworksHour(state); // fieldworks.js: the lookouts posted at field works (gone, moved, enemies there)
+  const meal = isMealHour(state.hour); // meals.js: breakfast and dinner, the builders, crafters and the bench stop for them
+  if (!meal) constructionHour(state);
+  if (!meal) repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   rezeroHour(state); // repair.js: budget sights re-zeroed at a workbench every morning (gunmods.js driftOf)
-  craftingHour(state);
+  if (!meal) craftingHour(state);
   garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
@@ -910,6 +928,7 @@ export function tickHour(state) {
     weatherDaily(state); // first, so the day's farming, water and sickness read today's weather
     basesDaily(state);
     craftingDaily(state);
+    stallDaily(state); // activity.js: read-only but for base.stall (no dice)
     vehiclesDaily(state);
     factionVehiclesDaily(state); // vehicles.js: a military group replaces a lost Humvee, slowly
     factionsDaily(state);
@@ -934,6 +953,7 @@ export function tickHour(state) {
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
+    fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead
     // eras.js: the Accord's and the containment's clocks (the victories need them to have run: checkGameOver).
     if (!state.gameOver) erasVictoryDaily(state, !state.allianceWon && accordHolds(state), hivesSecured(state));
     causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or firewood ran out
@@ -953,8 +973,10 @@ export function tickHour(state) {
   crewHour(state); // crews.js: crew roles run their own trips and answer their teams' small cards
   if (state.autopilot) autopilotHour(state); // dev tool: the AI governor runs the holdout (autopilot.js)
   else stewardHour(state); // steward.js: bases handed to a steward
+  leaderIdleHour(state); // idlework.js: at 07:00, people on a job stalled since a day moved to what the base needs
   watchHour(state); // watch.js: Manual people on the watch roster stand guard on their shift (after the stewards)
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
+  sickRestHour(state); // sickrest.js: the ill at a base rest (Manual and pinned: their job back when well); a log line each way
   jobTripsHour(state); // jobtrips.js: the outdoor jobs' trips (out to the base's land, the work, home with the load)
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)

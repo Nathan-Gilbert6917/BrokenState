@@ -6,7 +6,7 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
-  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom, pitchHoursFor, pitchDone,
+  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, clockFrac, byMinute, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom, pitchHoursFor, pitchDone,
 } from "./parties.js";
 import { SUPPLIES } from "./data.js";
 import { partyVehicle, partyVehicles, partyFuel } from "./vehicles.js";
@@ -26,6 +26,7 @@ import { woodProblem, woodHour, woodSummary, campFireHour } from "./woodcutting.
 import { CLAIM, canClaim, claimTile, wellProblem, digWell } from "./claims.js"; // land claims and wells on them
 import { LISTEN, listenProblem, listenIn } from "./radiolisten.js"; // Listen in: tune a receiver to a radio network
 import { networkById } from "./radio.js";
+import { teamActProblem, teamActHours, teamActDone } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collect (o.qty: the team panel asks)
 
 export const REPAIR_HOURS = 3;   // a roadside repair
@@ -63,6 +64,7 @@ export function describeOrder(state, o) {
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
     case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (buildings.js CAMP.setupHours); then the camp stands (pitchDone)
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
+    case "fwork": return { load: "Load from the stockpile", unload: "Leave finds at the stockpile", destroy: "Wreck the field work", capture: "Take the field work", loot: "Take the stockpile's goods" }[o.act] || "Field work"; // fieldworks.js
     case "listen": { const n = o.net != null ? networkById(state, o.net) : null; return `Listen in${n ? ` on ${n.name}` : ""}`; } // radiolisten.js
   }
   return o.type;
@@ -92,10 +94,10 @@ export function orderStatus(state, p) {
   const label = orderLabel(state, p);
   let left = null, elapsed = 0;
   if (p.phase === "task" && p.task) {
-    elapsed = p.task.done;
-    left = p.task.hours != null ? Math.max(0, p.task.hours - p.task.done) : null;
+    elapsed = Math.max(0, p.task.done - (p.task.owed || 0));
+    left = taskLeft(p.task); // from the top of this hour: it ends at its minute (tasksDue)
   } else if (p.phase === "out" || p.phase === "back") {
-    left = hoursLeft(state, p);
+    left = hoursLeft(state, p, byMinute()); // to the minute it gets there (parties.js arrivalsDue; whole hours headless)
     elapsed = Math.max(0, state.hour - (p.orderStart ?? p.departed ?? state.hour));
   } else if (p.phase === "waiting") left = 0;
   const pct = left == null ? null : elapsed + left > 0 ? elapsed / (elapsed + left) : 1;
@@ -112,12 +114,16 @@ export function queueEstimate(state, p) {
   if (p.phase === "task" && p.task?.type === "cross" && p.task.mode === "leave" && !p.task.afloat) { vehicle = false; fuel = 0; }
   // A road delay still owed (negative progress, e.g. from a card on the last step) is paid by the next move.
   let owed = Math.min(0, p.progress || 0);
-  // at: the hour each queued order starts (weather sets travel times by the hour, weather.js).
-  let at = state.hour + (p.phase === "task" && p.task?.hours != null ? Math.max(0, p.task.hours - p.task.done) : 0);
+  // at: the time each queued order starts, to the minute (weather sets travel times by the hour, weather.js): the
+  // order under way ends at its minute (a move arrives, a timed job ends: parties.js arrivalsDue), and an order with
+  // nothing before it starts now.
+  // Headless (no clock with minutes: byMinute) everything starts and ends as the hour ticks, so the hours are whole.
+  const exactly = byMinute();
+  let at = state.hour + (p.phase === "task" && p.task?.hours != null ? taskLeft(p.task) : clockFrac(state));
   let left = p.progress || 0; // progress left over on arrival (a recon spends it first)
   if ((p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1) {
     const cur = travelHours(state, p.path.slice(p.idx), { vehicle, ...paceOpts(p), speed: modeSpeed(p, vehicle), progress: p.progress, fuel });
-    at += cur.hours;
+    at = exactly ? state.hour + hoursLeft(state, p, true) : at + cur.hours;
     tile = p.path[p.path.length - 1];
     vehicle = cur.vehicle;
     fuel = cur.fuelLeft;
@@ -132,14 +138,21 @@ export function queueEstimate(state, p) {
     at += sw.hours;
     if (vehicle === true) fuel = Math.max(0, fuel - sw.fuel);
   }
+  // A move starting at `at`: from that minute, the minutes of its hour already gone not travelled (parties.js wayOn).
+  /** @param {number[]} path */
+  const leg = (path) => {
+    const h0 = Math.floor(at + 1e-9), fs = Math.max(0, at - h0), sp = modeSpeed(p, vehicle);
+    const t = travelHours(state, path, { vehicle, ...paceOpts(p), speed: sp, fuel, progress: owed - fs * sp, startHour: h0 });
+    return { t, hours: exactly ? Math.max(0, t.exact - fs) : t.hours };
+  };
   return (p.orders || []).map((o) => {
     let hours = null;
     if (o.type === "move") {
       const res = planPath(state, tile, o.tile, vehicle);
       if (res) {
-        const t = travelHours(state, res.path, { vehicle, ...paceOpts(p), speed: modeSpeed(p, vehicle), fuel, progress: owed, startHour: at });
+        const { t, hours: h } = leg(res.path);
         owed = 0;
-        hours = t.hours;
+        hours = h;
         vehicle = t.vehicle;
         fuel = t.fuelLeft;
         tile = o.tile;
@@ -160,12 +173,13 @@ export function queueEstimate(state, p) {
     else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
     else if (o.type === "claim") hours = CLAIM.HOURS;
     else if (o.type === "well") hours = CLAIM.WELL_HOURS;
+    else if (o.type === "fwork") hours = teamActHours(o.act); // fieldworks.js
     else if (o.type === "listen") hours = LISTEN.HOURS;
     else if (o.type === "craft") hours = fieldCraftOptions(state, p).find((x) => x.key === o.recipe)?.hours ?? null;
     else if (o.type === "wait") hours = o.hours;
     else if (o.type === "nearby") {
       // The sites the team would pick from here now (plans.js); the real pick happens when the step starts.
-      const r = estimatePlan(state, { memberIds: p.members, dest: tile, vehicle, stance: p.stance, fuel, mission: "move", steps: [{ kind: "nearby", radius: o.radius, count: o.count, center: o.center }], homeBaseId: p.homeBaseId, from: tile, startHour: at, p });
+      const r = estimatePlan(state, { memberIds: p.members, dest: tile, vehicle, stance: p.stance, fuel, mission: "move", steps: [{ kind: "nearby", radius: o.radius, count: o.count, center: o.center }], homeBaseId: p.homeBaseId, from: tile, startHour: Math.floor(at + 1e-9), p });
       if (r) { hours = r.hours; tile = r.endTile; vehicle = r.vehicle; fuel = r.fuelLeft; owed = 0; }
     }
     else if (o.type === "home") {
@@ -175,9 +189,9 @@ export function queueEstimate(state, p) {
       let res = home ? planPath(state, tile, home.tile, vehicle) : null; // no base left (conquest.js exiles): no way home
       if (!res && vehicle && home) { res = planPath(state, tile, home.tile, false); vehicle = false; fuel = 0; }
       if (res) {
-        const t = travelHours(state, res.path, { vehicle, ...paceOpts(p), speed: modeSpeed(p, vehicle), fuel, progress: owed, startHour: at });
+        const { t, hours: h } = leg(res.path);
         owed = 0;
-        hours = t.hours;
+        hours = h;
         vehicle = t.vehicle;
         fuel = t.fuelLeft;
         tile = home.tile;
@@ -275,7 +289,7 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "wood", "snare", "claim", "well"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "wood", "snare", "claim", "well", "fwork"]; // order types tied to the tile they were queued for
 // Hours of a hunt, fishing or foraging order: as given, within 2–24 (8 if none).
 export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours)));
 
@@ -407,6 +421,14 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "claim", hours: CLAIM.HOURS });
       return `The team paces out the tile and raises a marker post (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap).`;
     }
+    case "fwork": {
+      // A field work on this tile (fieldworks.js): load or unload a stockpile of yours, wreck, take or loot a group's.
+      const why = teamActProblem(state, p, o.act);
+      if (why) return fail(`${describeOrder(state, o)}: ${why}`);
+      const hours = teamActHours(o.act);
+      startTask(state, p, { type: "fwork", act: o.act, hours });
+      return `${describeOrder(state, o)} (${hours}h).`;
+    }
     case "well": {
       // A well on a claim of yours next to one of your bases (claims.js): the yield by the ground, 24 hours of digging.
       const why = wellProblem(state, p, partyTile(p));
@@ -467,7 +489,11 @@ export function startTask(state, p, task) {
   p.idx = 0;
   p.progress = Math.min(0, p.progress);
   p.dest = tile;
+  // owed: the share of the hour already gone when it starts (parties.js clockFrac): the tick credits the whole hour, so the
+  // job runs that much longer and ends at its minute (tasksDue). Not a boat crossing (its launch goes by the hour).
   p.task = { ...task, done: 0 };
+  const owed = task.type === "cross" ? 0 : clockFrac(state);
+  if (owed > 0) p.task.owed = owed;
   if (p.task.qty == null) delete p.task.qty;
   else capTask(p, p.task); // carry.js: stop collecting at the quantity asked (parties.js cargoRoom)
   p.orderStart = state.hour;
@@ -491,8 +517,26 @@ export function taskHour(state, p) {
     if (err) return awaitOrders(state, p, err, { failed: true });
   }
   if (!state.parties.includes(p)) return;
-  if (t.hours != null && t.done >= t.hours) finishTask(state, p);
+  if (t.hours != null && t.done - (t.owed || 0) >= t.hours - 1e-9) finishTask(state, p);
 }
+
+// Timed jobs started part-way through an hour (task.owed) end at their minute, not at the tick after: the main loop
+// (parties.js arrivalsDue) calls this every frame with the minutes gone. Returns true if one ended.
+/** @param {State} state @param {number} frac */
+export function tasksDue(state, frac) {
+  let any = false;
+  for (const p of [...state.parties]) {
+    const t = p.phase === "task" ? p.task : null;
+    if (!t || !t.owed || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue;
+    if (t.done - t.owed + frac < t.hours - 1e-9) continue;
+    finishTask(state, p);
+    any = true;
+  }
+  return any;
+}
+// Hours of the job under way left from the top of this hour (null: open-ended).
+/** @param {any} t */
+const taskLeft = (t) => (t.hours != null ? Math.max(0, t.hours - t.done + (t.owed || 0)) : null);
 
 // Stop the current task now (stop resting, or give up on a repair/treatment before it is done).
 export function stopTask(state, p) {
@@ -526,6 +570,7 @@ function finishTask(state, p) {
   else if (t.type === "snare") text = snareWork(state, p, t.mode);
   else if (t.type === "claim") text = claimTile(state, p, partyTile(p)); // claims.js (checked again now: it may have been taken meanwhile)
   else if (t.type === "well") text = digWell(state, p, partyTile(p));
+  else if (t.type === "fwork") text = teamActDone(state, p, t.act); // fieldworks.js
   else if (t.type === "listen") text = listenIn(state, p, t.net, false).text; // radiolisten.js: tuned, and the last few days caught up
   awaitOrders(state, p, text); // keeps p.task until then, so the card can say what finished
   return text;

@@ -113,6 +113,8 @@ section("A woodcutter's day: home outside the hours, out on the base's land, the
   check(cutter.trip && cutter.trip.n >= 1, "out again after the deposit (the second trip)");
   tickTo(state, 20);
   check(!cutter.trip && !outOnTrip(state, cutter), "20:00: the hours over, home");
+  check(/Eating dinner/.test(describeActivity(state, cutter).text), `20:00, dinner (meals.js): "${describeActivity(state, cutter).text}"`);
+  tickTo(state, 21);
   check(/Done chopping/.test(describeActivity(state, cutter).text), `the evening: "${describeActivity(state, cutter).text}"`);
   const day0 = Math.floor((state.hour - 1) / 24) + 1;
   const T = base.tripTally && base.tripTally.wood;
@@ -160,7 +162,8 @@ section("Hunters: out at dawn and dusk, the catch in as they arrive");
   check(T && T.who.includes(hunter.id) && counter && near(counter.by.food, T.rations || 0, 0.05), `the day's catch: ${T ? r1(T.rations || 0) : 0} food on ${T ? T.hrs ? r1((T.hrs.guns || 0) + (T.hrs.bows || 0) + (T.hrs.traps || 0)) : 0 : 0} hours, = the output counter`);
   // Many days: the deposits add up to what the job brings in by the old reckoning (one hunter, two tiles out: 3 hours).
   let got = 0;
-  for (let d = 0; d < 10; d++) { tickTo(state, 0); tickTo(state, 21); got += (base.tripTally && base.tripTally.hunt && base.tripTally.hunt.rations) || 0; }
+  for (let d = 0; d < 10; d++) { tickTo(state, 0); onJob(state, base, hunter, "hunt"); tickTo(state, 21); // kept fit and on the job (sickrest.js would rest an ill one)
+    got += (base.tripTally && base.tripTally.hunt && base.tripTally.hunt.rations) || 0; }
   note(`a hunter with a hunting rifle, 10 more days: ${r1(got)} food (≈ ${r1(H.baseHuntDay(state, base) * 10)} for an average hunter)`);
   check(got > 0, "the hunter brings in game");
 }

@@ -63,6 +63,7 @@
 // sim/stacks.js lootFit); this file only asks how many and where.
 import { SUPPLIES } from "../sim/data.js";
 import { isRoundKey } from "../sim/rounds.js";
+import { supplyName } from "../sim/itemnames.js"; // the stack's title: rounds say "— loose"
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -116,7 +117,7 @@ function resolve(state, ui, ns = null) {
   const fit = Math.max(0, Math.min(have, Math.floor(dest.fit || 0)));
   const def = fit > 0 ? fit : have; // what fits (all of it when it all fits)
   const qty = Math.max(1, Math.min(have, Math.floor(st.qty == null ? def : st.qty)));
-  return { ns: st.ns, P, m, dest, to: dest.id, have, stack, sp, store, fit, qty, unit: sup.weight, name: sup.name.toLowerCase(), title: sup.name };
+  return { ns: st.ns, P, m, dest, to: dest.id, have, stack, sp, store, fit, qty, unit: sup.weight, name: sup.name.toLowerCase(), title: supplyName(m.key) };
 }
 export const chosenQty = (state, ui, ns) => { const r = resolve(state, ui, ns); return r ? r.qty : Infinity; };
 export const stackOpen = (state, ui, ns) => !!resolve(state, ui, ns);

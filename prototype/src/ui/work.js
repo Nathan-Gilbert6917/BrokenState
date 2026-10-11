@@ -18,6 +18,7 @@ import {
   renameRole, deleteRole, roleMembers, everyoneOnPriorities, setNewcomers, taskLabel, taskWhy, planBase, MOOD_LOW, MOOD_BACK,
 } from "../sim/work.js";
 import { FIELD_TYPES, FIELD_KEYS, crewStatus, planCrewTrip, crewHold } from "../sim/crews.js";
+import { SICK_REST_MODES, sickRestMode, setSickRest, sickRestLabel } from "../sim/sickrest.js"; // "Sick people rest"
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { undoBtn } from "./undo.js"; // ↶ Undo (and Ctrl+Z) for the edits on this tab
 import { ask } from "./confirm.js"; // deleting a role asks first (one confirmation style)
@@ -42,11 +43,20 @@ export function roleSelect(state, s, extra = "") {
     <optgroup label="Fixed job (Manual)">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${!role && s.role === k ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</optgroup>
   </select>`;
 }
-// What they do now, for people on priorities (empty for Manual).
+// What they do now, for people on priorities; for Manual and pinned people only while they rest sick (sickrest.js).
 export function taskChip(state, s) {
+  if (!isManaged(state, s)) { const l = sickRestLabel(state, s); return l ? `<span class="small muted wtask"${tip(sickTip(s))}>→ ${esc(l)}</span>` : ""; }
   const t = taskLabel(state, s);
-  if (!t || !isManaged(state, s)) return "";
+  if (!t) return "";
   return `<span class="small muted wtask"${tip(taskWhy(state, s))}>→ ${esc(t)}</span>`;
+}
+// A Manual or pinned person resting sick: what comes back when they are well.
+export const sickTip = (s) => `Sick people rest (the Work tab): resting until it is gone (resting heals it faster)${s.sickWas && ROLES[s.sickWas.role] ? `; back to ${ROLES[s.sickWas.role].name} when well` : ""}.`;
+// The Work tab's "Sick people rest" setting (sim/sickrest.js), for every base.
+function sickRestSelect(state) {
+  const m = sickRestMode(state);
+  const desc = `Sick people rest, at every base: ${Object.values(SICK_REST_MODES).map((x) => `${x.name}: ${x.desc}`).join(" ")} Manual and pinned people too; they go back to their job when well. Any illness counts (an upset stomach from un-purified water or uncooked food too); injuries keep their own rules. A raid or a horde at the walls still takes them, and they fight if the base is attacked.`;
+  return `<span${tip(desc)}>Sick people rest</span><select data-action="wsick"${tip(desc)}>${Object.entries(SICK_REST_MODES).map(([k, x]) => `<option value="${k}" ${m === k ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`;
 }
 
 // The role drop-down's change: a work role ("w:…") or a fixed job (Manual). Returns a message.
@@ -93,14 +103,15 @@ export function workTab(state, b, ui) {
     const role = roleOf(state, s);
     const name = `<a class="link" data-action="survivor" data-id="${s.id}">${s.leader ? "★ " : ""}${esc(s.name)}</a>${statusIcons(state, s)}`; // people at a base: always in touch
     if (!role) {
-      return `<tr class="wmanual"><td>${name}</td><td>${roleSelect(state, s)}</td><td colspan="${WORK_KEYS.length}" class="small muted">Manual: always ${esc(ROLES[s.role] ? ROLES[s.role].name : s.role)}. Pick a work role to let them choose their work by priorities.</td><td></td></tr>`;
+      const sl = sickRestLabel(state, s);
+      return `<tr class="wmanual"><td>${name}</td><td>${roleSelect(state, s)}</td><td colspan="${WORK_KEYS.length}" class="small muted">Manual: always ${esc(ROLES[s.role] ? ROLES[s.role].name : s.role)}. Pick a work role to let them choose their work by priorities.</td><td>${sl ? `<b${tip(sickTip(s))}>${esc(sl)}</b>` : ""}</td></tr>`;
     }
     const cells = WORK_KEYS.map((k) => {
       const c = cellOf(state, s, k);
       const min = role.min && role.min[k] && WORK_TYPES[k].skill && skill(s, WORK_TYPES[k].skill) < role.min[k];
       return `<td>${cellHtml(c, `data-action="wc" data-rc="1" data-id="${s.id}" data-k="${k}"`, cellTip(WORK_TYPES[k], c, first(s), role) + (min ? ` Below ${role.name}'s minimum (${SKILL_NAMES[WORK_TYPES[k].skill]} ${role.min[k]}): skipped.` : ""), min ? " below" : "")}</td>`;
     }).join("");
-    const now = s.pinned ? `<span class="muted"${tip("Pinned: keeps their job; priorities wait until you unpin them")}>📌 Pinned (${esc(ROLES[s.role] ? ROLES[s.role].name : s.role)})</span>` :
+    const now = s.pinned ? `<span class="muted"${tip(`Pinned: keeps their job; priorities wait until you unpin them${sickRestLabel(state, s) ? `. ${sickTip(s)}` : ""}`)}>📌 Pinned (${esc(sickRestLabel(state, s) || (ROLES[s.role] ? ROLES[s.role].name : s.role))})</span>` :
       `<b>${esc(taskLabel(state, s) || "—")}</b><div class="small muted wwhy">${esc(taskWhy(state, s) || "Planned at the start of the next hour.")}</div>`;
     const overs = s.work && s.work.over && Object.keys(s.work.over).length;
     return `<tr><td>${name}${overs ? ` <button class="mini" data-action="wreset" data-id="${s.id}"${tip("Clear their own settings: back to the role's defaults")}>↺</button>` : ""}</td><td>${roleSelect(state, s)}</td>${cells}<td class="wnow">${now}</td></tr>`;
@@ -113,6 +124,7 @@ export function workTab(state, b, ui) {
       <button class="primary" data-action="weveryone" data-base="${b.id}"${tip("Everyone here on Manual gets a work role by what they do now: farmers Farmer, builders Builder, medics Medic, crafters and operators Crafter, everyone else (guards too) Generalist. Newcomers join Generalist.")}>Everyone here on priorities</button>
       <span${tip("The role new people get when they join (recruits, strangers, rescued people). Manual: they keep the job they come with.")}>Newcomers join</span>
       <select data-action="wnew">${[["", "Manual"], ...roles.map((r) => [r.id, r.name])].map(([v, l]) => `<option value="${esc(v)}" ${String(newcomers || "") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+      ${sickRestSelect(state)}
       <span class="muted small">${managed} of ${people.length} here on priorities</span>
       ${undoBtn(state, ui, "work")}
     </div>
@@ -278,6 +290,7 @@ export const WORK_ACTIONS = {
 export const WORK_CHANGE = {
   wfilter: (state, ui, el) => { prefs(ui).filter = el.value || "all"; },
   wnew: (state, ui, el) => { setNewcomers(state, el.value || null); say(ui, el.value ? `Newcomers join ${roleById(state, el.value).name}.` : "Newcomers keep the job they come with (Manual)."); },
+  wsick: (state, ui, el) => { const m = setSickRest(state, el.value); if (m) { for (const b of state.bases) planBase(state, b); say(ui, m); } },
   "wrole-name": (state, ui, el) => { say(ui, renameRole(state, roleById(state, el.dataset.role), el.value)); },
   wmin: (state, ui, el) => { setRoleMin(state, roleById(state, el.dataset.role), el.dataset.k, el.value); replanAll(state); },
   "wsched-preset": (state, ui, el) => { const r = roleById(state, el.dataset.role); const p = SCHED_PRESETS[el.value]; if (r && p) { r.sched = p.sched; replanAll(state); say(ui, `${r.name}: ${p.name}.`); } },

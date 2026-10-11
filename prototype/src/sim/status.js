@@ -34,11 +34,11 @@ function needLine(state, s, kind) {
   const days = food ? s.starveDays || 0 : s.parchDays || 0;
   const word = food ? hungerWord(v) : thirstWord(v);
   const gauge = food ? "hunger" : "thirst";
-  if (!now && !days) return `${word} (${gauge} ${n0(v)}): ${s.location && (s.location.kind === "base" || s.location.kind === "route") ? `if the base runs out of ${food ? "food" : "water"}` : `below ${STATUS.starving}`} they start losing mood every morning, more each day.`;
+  if (!now && !days) return `${word} (${gauge} ${n0(v)}): ${s.location && (s.location.kind === "base" || s.location.kind === "route" || s.location.kind === "post") ? `if the base runs out of ${food ? "food" : "water"}` : `below ${STATUS.starving}`} they start losing mood every morning, more each day.`;
   if (!now) return `${food ? "Fed" : "Watered"} again (${gauge} ${n0(v)}) after ${days} day${days === 1 ? "" : "s"} ${food ? "starving" : "parched"}: tomorrow morning it no longer costs mood.`;
   const name = food ? "Starving" : "Parched";
   const fix = food ? "eat" : "drink";
-  const atBase = s.location && (s.location.kind === "base" || s.location.kind === "route");
+  const atBase = s.location && (s.location.kind === "base" || s.location.kind === "route" || s.location.kind === "post");
   const why = atBase ? `their base is out of ${food ? "food" : "water"}; ${gauge} ${n0(v)}` : `${gauge} ${n0(v)}`;
   if (!days) return `${name} (${why}): from tomorrow morning mood −${starveMood(1, kind)} a day, more each day until they ${fix}.`;
   return `${name}: day ${days}, mood −${starveMood(days, kind)} a day (${why}); tomorrow −${starveMood(days + 1, kind)} unless they ${fix}.${v <= 0 ? ` Empty: it costs health${food ? "" : " fast"}.` : ""}`;

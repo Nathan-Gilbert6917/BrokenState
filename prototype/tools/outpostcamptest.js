@@ -17,6 +17,7 @@ import { GROUP_WORKS, nextWork, groupWorksDaily, groupBaseDefence, isCamp, pitch
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { STAGING } from "../src/sim/staging.js";
 import { CRAFTS } from "../src/sim/crafting.js";
+const plain = (h) => String(h).replace(/<[^>]+>/g, ""); // the text without markup (cost chips split name and count into spans)
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -141,10 +142,10 @@ section("The panels and the map");
     const UI = await import("../src/ui/ui.js");
     const html = UI.renderModal(st, { started: true, baseView: { id: b.id, tab: "overview" } }) || "";
     check(/Outpost camp → <b>Outpost<\/b>/.test(html), "the overview shows the stage");
-    check(/Scrap 4\/20/.test(html) && /Building materials 0\/2/.test(html), "and each material against its need");
+    check(/Scrap 4\/20/.test(plain(html)) && /Building materials 0\/2/.test(plain(html)), "and each material against its need");
     check(/% built/.test(html), "and the bar");
     const con = UI.renderModal(st, { started: true, baseView: { id: b.id, tab: "construction" } }) || "";
-    check(/Establish the outpost/.test(con) && /scrap 4\/20/.test(con) && /building materials 0\/2/.test(con), "the construction queue shows its materials");
+    check(/Establish the outpost/.test(con) && /scrap 4\/20/i.test(plain(con)) && /building materials 0\/2/i.test(plain(con)), "the construction queue shows its materials");
     const left = UI.renderLeft ? UI.renderLeft(st, { started: true, tab: "bases" }) : "";
     check(!left || /Outpost camp/.test(left), "the bases list calls it an outpost camp");
   }

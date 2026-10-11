@@ -7,6 +7,7 @@
 // night's-care toggle); the boiler burning any burnable (firewood, junk, fuel), breaking things down for firewood and
 // firewood in the loot; save/load of the new state. The dice are pinned where the rule is under test (WORM numbers set to 0 or 1 for a check).
 // Usage: node tools/wormtest.js [seed]
+import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips: a day of them before the midnight tally
 import { createWorld, hub, atBase, residents, day, makeSurvivor } from "../src/sim/world.js";
 import { addBuilding, count } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -973,9 +974,12 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const food0 = h.stock.food;
   for (const id of st.grid.within(h.tile, 2)) st.tiles[id].infection = 0.8; // the foragers' land too
   people[1].role = "forage";
-  st.hour = 24 * 50 + 12; // summer: there is something to gather
+  Object.assign(people[1], { pinned: true, health: 100, inBed: false, conditions: [], mood: 70 });
+  st.hour = 24 * 51; // summer (day 50): there is something to gather; the day's job trips (jobtrips.js), then its midnight
+  tripDay(st, h);
   const got = foragingDaily(st, h);
-  check(got && got.rations > 0 && near(wormVegAt(h).forage, got.rations, 0.01) && near(h.stock.food - food0, got.rations, 0.01), `forage gathered on infected ground carries eggs too (${got && got.rations.toFixed(1)} rations)`);
+  const fed = (h.tripTally && h.tripTally.forage && h.tripTally.forage.food) || 0; // the trips' food (got.rations is it rounded)
+  check(got && got.rations > 0 && near(wormVegAt(h).forage, fed, 0.01) && near(h.stock.food - food0, fed, 0.01), `forage gathered on infected ground carries eggs too (${got && got.rations.toFixed(1)} rations)`);
   // Eaten last, after the clean food and the preserved, the crops then the forage, the raw meat last of all.
   const fr = wormVegAt(h).forage;
   h.stock.food += 20; // 20 clean on top

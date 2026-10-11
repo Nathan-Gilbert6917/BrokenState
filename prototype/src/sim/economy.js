@@ -29,19 +29,22 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { heatDaily, starvingDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
+import { fieldWellWater, drawFieldWells } from "./fieldworks.js"; // field wells on the base's land (waterProduction field)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
 import { cookAtBase, wormDaily, boilerUse, purifyDaily } from "./worm.js";
 import { waterIn, drawWater, RAW } from "./water.js"; // purified and un-purified water
 import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
-import { addFind, chooseRounds, baseCals } from "./ammo.js"; // rounds by calibre
+import { addFind, chooseRounds, baseCals, roundsText } from "./ammo.js"; // rounds by calibre
+import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging find named by calibre in the log)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult } from "./tripland.js";
-import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2) // the Scavenge and Fetch water jobs in trips (jobtrips.js)
+import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
+import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2)
+import { kitchenDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
   scavenge: { name: "Scavenge", desc: "Picks through the ruins right around this base. Usually finds nothing: a small chance a day of a small find (better with Scavenging, worse as the area is picked over). Expeditions to real sites are where supplies come from." },
-  operate:  { name: "Operate",  desc: "Runs a workshop station (ammo, meds, parts or the preserving kitchen). Loud: raises Heat." },
+  operate:  { name: "Operate",  desc: "Runs a workshop station (ammo, meds, parts or the preserving room). Loud: raises Heat." },
   build:    { name: "Build",    desc: "Works on the construction queue. More builders finish faster; Mechanics helps." },
   guard:    { name: "Guard",    desc: "Defends the base. Guards count 1.5× in fights." },
   rest:     { name: "Rest",     desc: "Recovers mood, and the sick get better faster. Injured people heal either way." },
@@ -54,6 +57,8 @@ export const ROLES = {
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
   wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
   water:    { name: "Fetch water", desc: "Carries water from the nearest water in the base's own land (a river or lake tile the base holds) in two buckets: out, filling them, back, a few trips a day (fewer the further the water). River and lake water is un-purified: it goes into the base's un-purified water (the worm's eggs; a water boiler or filters make it safe), up to the barrels' room. Needs a water tile in the base's land." },
+  // kitchen.js: the Kitchen's cooks (one per 12 people living here).
+  cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: up before the others for breakfast (06:00), dinner from 16:00 (20:00). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Farming 5+), lift spirits (+1 mood a day, +1.5 with Farming 6+) and boil a quarter of the day's drinking water. Without a kitchen there is nothing to cook." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
@@ -149,13 +154,15 @@ export function scavTrip(state, base, s, tile, share, k = 0) {
 // A scavenger's find brought home (jobtrips.js, on arrival): into the stock, the stats and the log.
 export function scavCredit(state, base, s, find, stock = base.stock) {
   if (!find || !find.finds) return;
-  if (find.ammo) addFind(stock, find.ammo.type, find.ammo.q, false, "basescav", find.ammo.tile, state.hour, s.name); // ammo.js: rounds by calibre, as the place it came from holds them
+  // ammo.js: rounds by calibre, as the place it came from holds them; the log names them ("6 9mm FMJ", not "6 ammo")
+  const rounds = find.ammo ? { ...addFind(stock, find.ammo.type, find.ammo.q, false, "basescav", find.ammo.tile, state.hour, s.name) } : {};
   for (const [key, n] of Object.entries(find.got)) stock[key] = (stock[key] || 0) + n;
   econStats(state).scavFinds++;
   const all = { ...find.got, ...(find.ammo ? { ammo: find.ammo.q } : {}) };
   for (const [key, n] of Object.entries(all)) noteOutput(state, base, "scavenge", n, key);
   noteOutput(state, base, "scavenge", 1, "finds");
-  log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(all).map(([key, n]) => `${n} ${key === "buildmat" ? "building materials" : key}`).join(", ")} around ${base.name}.`, "good");
+  const named = { ...find.got, ...rounds };
+  log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(named).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : `${n} ${key === "buildmat" ? "building materials" : key}`)).join(", ")} around ${base.name}.`, "good");
 }
 // Daily: the Scavenge job's day is in (its trips brought any finds home, jobtrips.js); the ground round the base is
 // picked over for good by the people on it.
@@ -248,8 +255,11 @@ export function waterProduction(state, base) {
   // (claims.js hauledWells: at most one well per 4 people at the base; claimWells lists them for the base card).
   const cw = hauledWells(state, base);
   const hauled = prisonWater(state, base) + cw.total;
-  const total = own + stream + wells + rain + hauled;
-  return { own, stream, wells, rain, filters, hauled, claimWells: cw.wells, claimWellCap: cw.cap, factor, total: Math.round(total * 10) / 10 };
+  // field: the field wells planned from the base (fieldworks.js), hauled by the people left after the claim wells.
+  const fw = fieldWellWater(state, base);
+  const field = fw.total;
+  const total = own + stream + wells + rain + hauled + field;
+  return { own, stream, wells, rain, filters, hauled, field, fieldWells: fw.wells, claimWells: cw.wells, claimWellCap: cw.cap, factor, total: Math.round(total * 10) / 10 };
 }
 
 /** @param {State} state @param {Base} base */
@@ -413,7 +423,7 @@ export const eatPerDay = (state, base) => foodUse(state, base).residents;
 
 // Food outlook for the base panel: stock (fresh + preserved), expected farm food (next 30 days), eaten (everyone fed
 // from these stores, per head × heads: upkeep.js foodUse, in `use`), spoiled and used per day (workshops; the
-// preserving kitchen and drying racks turn fresh food into preserved, so only what they lose counts), days of food
+// preserving room and drying racks turn fresh food into preserved, so only what they lose counts), days of food
 // left without harvests, the next harvests and the storage.
 /** @param {State} state @param {Base} base */
 export function foodOutlook(state, base) {
@@ -490,6 +500,7 @@ function baseDaily(state, base) {
   const room = rawRoom(base); // the un-purified barrels and the tanks (the purified barrels stay for safe water)
   st[RAW] = Math.max(0, st[RAW] || 0) + Math.min(room, prod.total);
   drawWells(state, base); // claims.js: the wells hauled from today lose what was drawn; one at 0 is dry
+  drawFieldWells(state, base); // fieldworks.js: the field wells likewise
   // Summer: some of the water kept outside the tanks and cisterns (above the capacity) evaporates (un-purified first).
   const over = waterLayout(base).outside;
   if (over > 0 && Weather.season && Weather.season(state).key === "summer") drawWater(st, Math.round(over * WATER.evaporate * 10) / 10, { rawFirst: true });
@@ -540,6 +551,7 @@ function baseDaily(state, base) {
   const missing = eatFromStore(base, eaten);
   if (missing > 0) st.food = (st.food || 0) - missing; // below zero: the hub starves, an outpost asks the hub
   if (mouths.length) noteMeals(state, base); // relations.js: weeks of nothing but preserved food are grim
+  kitchenDaily(state, base, eaten - missing); // kitchen.js: the hot meals served and the food they saved
   econStats(state).eaten += eaten - missing;
   if (st.food < 0 && base.type === "hub") {
     st.food = 0;

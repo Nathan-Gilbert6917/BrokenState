@@ -55,7 +55,7 @@ const homeTeams = (state, g) => g.sent.filter((x) => !state.parties.some((p) => 
 // to pulse. Show-me helpers below.
 const STEPS = {
   stores: {
-    title: "Check your food and water", why: "Food and water run out first. The top bar and the base's Farming tab show how many days you have left.",
+    title: "Check your food and water", why: "Food and water run out first. The top bar's Needs button (hover it for every supply) and the base's Farming tab show how many days you have left.",
     done: (state, g, ui) => !!ui.baseView && ["farming", "overview"].includes(ui.baseView.tab),
     show: (state, ui, act) => (openHub(state, ui, act, "farming") ? ["#tb-stock", '[data-action="basetab"][data-tab="farming"]'] : ["#tb-stock"]),
   },
@@ -75,7 +75,7 @@ const STEPS = {
     show: (state, ui, act) => showSite(state, ui, act),
   },
   clock: {
-    title: "Start the clock", why: "A new game waits paused while you look around and give orders. Space (or ▶ Run on the banner) runs it; 1–4 pick the speed.",
+    title: "Start the clock", why: "A new game waits paused while you look around and give orders. Space (or ▶ Run on the banner) runs it; 0–5 pick the speed.",
     done: (state, g) => state.hour > g.h0,
     show: (state, ui) => { closeWindows(ui); return ['#tb-speed [data-action="speed"][data-speed="1"]', '#banner [data-action="speed"]']; },
   },

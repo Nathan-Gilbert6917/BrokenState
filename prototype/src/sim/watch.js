@@ -5,7 +5,7 @@
 //   ids: the people on that shift. Someone can stand more than one shift.
 //
 // Every hour the people on the shift that covers it, at that base and fit (not in a hospital bed, not badly hurt or
-// ill: work.js healthRest), stand guard (role "guard": they count in the walls' hold limit, defences.js guardHold,
+// ill: work.js healthRest; any illness by the Work tab's "Sick people rest", sickrest.js), stand guard (role "guard": they count in the walls' hold limit, defences.js guardHold,
 // guard the cells, put down someone who turns, worm.js):
 //   - People on work priorities (work.js planBase): the watch comes after health and the emergencies (a raid sends
 //     everyone with Guard set to the walls anyway) and before the role's schedule, so a night watch replaces the
@@ -23,6 +23,7 @@ import { manned, armoryDefence } from "./defences.js";
 import { isManaged, healthRest } from "./work.js";
 import { hash01 } from "./skills.js";
 import { tiredLevel, TIRED } from "./sleep.js";
+import { towerSees, towerSawText } from "./fieldworks.js"; // a manned watch tower out on the base's land
 
 export const WATCH_PRESETS = {
   two:   { name: "Two 12-hour watches", shifts: [["Day", 6, 18], ["Night", 18, 6]] },
@@ -47,7 +48,7 @@ export function watchShift(base, s, h) {
 // On watch now: rostered for this hour, here, alive, fit and not pinned.
 export function onWatchNow(state, base, s, h = hourOfDay(state)) {
   if (!s || !s.alive || s.pinned || s.inBed || s.location.kind !== "base" || s.location.baseId !== base.id) return null;
-  if (healthRest(s)) return null;
+  if (healthRest(s, state)) return null; // the ill rest too (sickrest.js)
   return watchShift(base, s, h);
 }
 
@@ -142,7 +143,7 @@ export function watchWhy(state, base, s) {
   if (s.pinned) return "pinned (keeps their job)";
   if (s.location.kind !== "base" || s.location.baseId !== base.id) return "away from this base";
   if (s.inBed) return "in a hospital bed";
-  return healthRest(s);
+  return healthRest(s, state);
 }
 
 // ---------- the hourly pass for Manual people (world.js, after the stewards) ----------
@@ -249,6 +250,7 @@ export const WATCH_WARN = { tiles: 2, day: 1, night: 2 };
 export function lookoutsSpot(state, base, tile, range, seen = state.live.has(tile)) {
   if (!base) return false;
   const d = state.grid.distance(tile, base.tile);
+  if (d <= range + WATCH_WARN.tiles + 2 && towerSees(state, base, tile)) return true; // fieldworks.js: lookouts on a manned watch tower of this base saw it
   const r = readiness(state, base);
   if (r.manned || r.alert >= 1) return d <= range + WATCH_WARN.tiles && (seen || d <= baseVision(base, state) + (r.night ? WATCH_WARN.night : WATCH_WARN.day));
   if (d > range || !seen) return false;
@@ -257,6 +259,8 @@ export function lookoutsSpot(state, base, tile, range, seen = state.live.has(til
 // The watch's early warning, for the warning cards: a line when only the watch saw it (out of sight, or out of the
 // usual range), else "".
 export function watchSawText(state, base, tile, range, seen = state.live.has(tile)) {
+  const tower = base ? towerSawText(state, base, tile) : ""; // fieldworks.js
+  if (tower) return tower;
   if (!base || (seen && state.grid.distance(tile, base.tile) <= range)) return "";
   const r = readiness(state, base);
   return r.manned || r.alert >= 1 ? " The watch on the walls saw them early." : "";

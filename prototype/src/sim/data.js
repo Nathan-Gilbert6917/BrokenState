@@ -52,7 +52,7 @@ export const SUPPLIES = {
   scrap: { name: "Scrap", value: 1,   weight: 2, cat: "scrap" },
   // Food storage (storage.js): preserved food is jarred, dried or smoked food (and dry grain and beans) that barely
   // spoils and needs no cellar space; eaten like food (fresh first), and lighter to carry on a trip. Jars (and lids)
-  // are what the preserving kitchen fills: found in kitchens, shops and farms, and most come back when the food
+  // are what the preserving room fills: found in kitchens, shops and farms, and most come back when the food
   // in them is eaten at a base.
   preserved: { name: "Preserved food", value: 4, weight: 0.35, cat: "food" },
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
@@ -631,6 +631,12 @@ Object.assign(GEAR, {
   snarewire: { name: "Snare wire",   slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, small: true, weight: 0.4, cat: "tools", desc: "A coil of brass wire: a line of 8 snares (team order, 2 hours). Quiet; about a rabbit a day in good country. The wire stays with the line and comes back when it is lifted." },
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
+
+// ---------- machines for food (freezer-parts 2026-10-10; crafted only: crafting.js CRAFTS) ----------
+// The pressure canner: kept in a base's armory, every preserving room there jars buildings.js CANNER.out more a day.
+Object.assign(GEAR, {
+  canner: { name: "Pressure canner", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, bulky: true, canner: true, weight: 7, cat: "tools", desc: "A heavy pot with a locking lid, a gauge and a relief valve, its gasket and clamps machined at the workshop. In a base's armory: every preserving room there jars 1 more preserved food a day (bigger batches, safely, under pressure)." },
+});
 
 // ---------- gun safes and gun cases (gunsafes.js, locks.js; docs/weapons-overhaul-plan.md section 19) ----------
 // The safe-cracking tools (carried, never worn: locks.js reads them on the person) and the gun cases, which hold a gun

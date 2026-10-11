@@ -36,6 +36,7 @@ import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's 
 import { noteLootAge } from "./itemcond.js"; // the years since the fall, for loot rolled after a load
 import { migrateStaging } from "./staging.js"; // the old staging camp becomes a camp base
 import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
+import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -189,6 +190,8 @@ export function deserializeState(save) {
   // Rounds by calibre (ammo.js, the weapons overhaul): a save from before (no state.ammoCal) has every generic ammo
   // stock of yours split across the calibres of the guns that holder owns (9mm and 12 gauge with none), the same total.
   if (!state.ammoCal) { migrateAmmo(state); state.ammoCal = 1; }
+  // sickrest.js (2026-10-10): saves from before "Sick people rest" have it on (every illness rests).
+  if (!SICK_REST_MODES[state.sickRest]) state.sickRest = "all";
   // Stacks in a slot (2026-10-10: consumables ×n, rounds loose or in stacks of boxes, bulk ammo containers): an old save
   // needs nothing but a tidy (itemstack.js migrateStacks).
   if (!state.stacks) { migrateStacks(state); state.stacks = 1; }

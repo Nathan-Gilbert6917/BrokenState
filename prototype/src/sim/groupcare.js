@@ -52,7 +52,7 @@ import { relation, warsOf } from "./diplomacy.js";
 import { sameBloc } from "./blocs.js"; // AI blocs: food bought from a member first
 import { atWarWithYou } from "./playerwars.js"; // a war with you presses on desertion
 import { noteStrife, SPLINTER } from "./splinters.js"; // deserters, and the dead of a fight, stir up strife (splinter bands)
-import { groupsBuild, sickbayTier } from "./groupworks.js"; // bare-start groups build their sick bays (groupworks.js sickbayWork)
+import { groupsBuild, sickbayTier, sleepingRough } from "./groupworks.js"; // bare-start groups build their sick bays (groupworks.js sickbayWork); the ill (illDaily)
 import { BUILDINGS } from "./buildings.js";
 import { hospitalTypes } from "./medical.js";
 import { USE, CAP_USE, CAP_STUDY, CAP_WARD, xpNeed, SKILL_MAX } from "./skills.js";
@@ -288,6 +288,30 @@ function heal(state, f, d) {
   const dead = Math.min(f.wounded, Math.floor(f.wounded * r.die + h(state, f.name, tickOf(f), "die")));
   if (dead > 0) { f.wounded -= dead; f.pop = Math.max(0, f.pop - dead); f.diedOfWounds = (f.diedOfWounds || 0) + dead; }
 }
+// ---------- the ill (AI parity for sickrest.js: your sick rest at a base, the groups' too) ----------
+// Coarse: one number a group, once a day (groupCareDaily). f.ill = how many of its people are ill and resting (an
+// average, fractions kept). Each day GROUP_ILL.rate of the rest fall ill (× rough while some sleep without a bed,
+// groupworks.js sleepingRough; × (1 − bay × the sick bay's tier), as a hospital lowers your people's risk) and
+// GROUP_ILL.mend of the ill are well again. Sized to your bases under the governor with every illness resting (three
+// governor years, seeds 1-3: 3-8% of the people at a base ill at any time, 6% on average): a group settles at
+// rate / mend, 7.5%, and about 4% with its sick bay. The ill do not work: the day's work counts workingPeople
+// (factions.js: the workshops' makes, the woodpile and, at GROUP_ILL.farm a head, the food from their land;
+// groupworks.js: the building crew). They still fight and count for strength (fitPeople
+// counts the wounded only), as your sick still fight when the base is attacked. No dice: a hash-free running average.
+// farm: the share of the ill's food work lost: their fields grow untended all the same (farming.js tendMult: an
+// untended plot gives 55%), so an ill head costs 0.45 of a hand on the land (workingPeople(f, GROUP_ILL.farm)). The
+// first cut took the whole head off the land too: over three governor years (seeds 1-3) the groups ended with a
+// quarter fewer people, their food line being tuned to a hair under what they eat.
+export const GROUP_ILL = { rate: 0.0075, mend: 0.1, rough: 1.25, bay: 0.12, farm: 0.45 };
+export const illOf = (f) => (f ? Math.max(0, Math.min(f.pop || 0, f.ill || 0)) : 0);
+export const workingPeople = (f, share = 1) => Math.max(0, (f.pop || 0) - illOf(f) * share);
+export function illDaily(state, f) {
+  const ill = illOf(f);
+  const rest = Math.max(0, (f.pop || 0) - woundedOf(f) - ill);
+  const mult = (sleepingRough(state, f) ? GROUP_ILL.rough : 1) * (1 - GROUP_ILL.bay * groupHospitalTier(state, f));
+  f.ill = Math.round((ill * (1 - GROUP_ILL.mend) + rest * GROUP_ILL.rate * Math.max(0, mult)) * 1000) / 1000;
+}
+
 // After a fight: the group's dead and wounded (and the losses that make people think of leaving).
 export function noteFight(f, dead, wounded = null) {
   if (!f || f.outsider) return;
@@ -529,6 +553,7 @@ export function playerDeserters(state, d = day(state), force = false) {
 export function groupCareDaily(state, f) {
   const d = day(state);
   heal(state, f, d);
+  illDaily(state, f); // the ill rest (sickrest.js parity): their work is lost (workingPeople)
   medicTraining(state, f); // the medics learn on the job and from their doctor (training.js, coarsely)
   repairGear(state, f, d);
   repairVehicles(state, f);

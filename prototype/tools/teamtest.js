@@ -84,7 +84,7 @@ section("Launch: carry limit, crew and mission checks (T-9, T-15, T-29, P-16)");
   const ok = launchExpedition(state, { memberIds: [a.id], dest, mission: "move", stance: "normal", supplies: fits });
   check(!ok.error, `a load equal to the carry space was refused: ${ok.error}`);
   check(ok.party && ["food", "water", "fuel", "meds", "ammo", "parts", "scrap"].every((k) => Number.isFinite(ok.party.supplies[k])), "a supply key is missing on the team (later maths would give NaN)");
-  check(/Arrives in about \d+h\./.test(state.log[0].text) && !/back in about/.test(state.log[0].text), `a one-way move says when it is back: "${state.log[0].text}"`);
+  check(/Arrives in about (\d+h( \d\dm)?|\d+m)\./.test(state.log[0].text) && !/back in about/.test(state.log[0].text), `a one-way move says when it is back: "${state.log[0].text}"`);
   // A worn pack adds carry space, at launch like everywhere else.
   b.gear.backpack = newItem("assaultpack");
   const capB = carryCapacity(state, [b], null);

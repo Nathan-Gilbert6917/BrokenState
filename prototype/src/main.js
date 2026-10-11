@@ -1,11 +1,13 @@
 // Entry point: game loop, input, and the action dispatcher that connects the UI to the simulation.
+import { togglePeopleIdle, assignIdlePreview } from "./ui/activity.js"; // the People tab's Idle filter, Assign all idle
+import { applyIdlePlan } from "./sim/idlework.js";
 import {
   createWorld, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
 } from "./sim/world.js";
 import { GEAR, SUPPLIES, SUPPLY_KEYS } from "./sim/data.js";
 import * as Parties from "./sim/parties.js";
 import { abandonProblem, abandonCard } from "./sim/occupy.js"; // Abandon outpost
-import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile } from "./sim/parties.js";
+import { launchExpedition, estimateTrip, ordersCard, orderMove, startReturn, planPath, partyTile, setClockFrac, arrivalsDue } from "./sim/parties.js";
 import { stockHas } from "./sim/water.js"; // purified and un-purified water
 import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
 import { thirstAhead } from "./sim/weather.js";
@@ -27,7 +29,10 @@ import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated t
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
 import { workerAt } from "./ui/workermap.js"; // the base workers on the map: their tooltip, a click opens the person
+import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel, teamFieldItems } from "./ui/fieldworks.js";
+import { fwAt as fieldWorkAt, FIELD, placeProblem, planFieldWork } from "./sim/fieldworks.js"; // field works: the base tab, the tile picker
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
+import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's Needs button and its list of every supply
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
@@ -50,6 +55,7 @@ import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting
 import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
+import { ARMV_ACTIONS, ARMV_INPUT } from "./ui/armoryview.js"; // the armory list: grouped, cards or compact rows
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
@@ -95,7 +101,7 @@ import { NEEDS_ACTIONS } from "./ui/needs.js";
 import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traffic: a team order, a base's set (sim/radiolisten.js)
 import { activeCrawl } from "./sim/citycrawl.js";
 import { activeHiveCrawl } from "./sim/hivecrawl.js";
-import { MAX_SPEED, SPEEDS, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
+import { MAX_SPEED, SPEEDS, SLOWEST_SPEED, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, holdsNextHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
 document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
@@ -262,9 +268,10 @@ function step(now) {
   let ticks = 0;
   if (state.autopilot && ui.started && !ui.settings && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click (the menu holds everything)
   pacingFrame(state, ui); // ui/pacing.js: new cards get their kind, cards out of date leave the tray
-  if (!blocked() && ui.speed > 0 && !ui.moveParty) {
+  if (!blocked() && ui.speed > 0 && !ui.moveParty && !ui.fwPlace) { // ui/fieldworks.js: the clock waits for a field work's tile
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
+      setClockFrac(0); // the hour's end: what the tick and its tray rules start, starts on the hour (sim/parties.js)
       if (beforeHour(state, ui)) dirty = true; // tray cards past their time answer themselves; their teams hold
       if (blocked()) { acc = 0; break; }       // a default answer that opened a battle
       tickHour(state);
@@ -279,9 +286,19 @@ function step(now) {
     }
     if (ticks >= 12) acc = Math.min(acc, 1); // too slow to keep up: drop the backlog instead of running on after a speed change
     if (ticks) ui.armed = newArmed();        // time moved: nothing is waiting for the unpause any more
+    // Teams that get where they are going at this minute arrive now, as the glide reaches the centre of the tile
+    // (sim/parties.js arrivalsDue; a team held by a card in the tray does not move); their new cards follow the pause
+    // rules as a tick's do.
+    setClockFrac(Math.min(0.999, acc));
+    if (!blocked() && arrivalsDue(state, Math.min(0.999, acc), (p) => holdsNextHour(state, p))) {
+      afterHour(state, ui);
+      dirty = true;
+    }
   }
   // The minutes of the coming hour tick by on the clock, and your moving teams glide towards their next tile by them.
   view.hourFrac = Math.max(0, Math.min(0.999, acc));
+  view.clockSpeed = ui.speed; // the map draws a glide often enough at slow speeds too (ui/render.js)
+  setClockFrac(view.hourFrac); // orders given from now on start this far into the hour (sim/parties.js wayOn)
   const mins = $("tb-min"), mm = String(Math.floor(view.hourFrac * 60)).padStart(2, "0");
   if (mins && mins.textContent !== mm) mins.textContent = mm;
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
@@ -302,7 +319,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist", "ask"];
+const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -320,6 +337,18 @@ function selectOpenIn(el) {
   if (searchOpenIn(el)) return true; // a long drop-down's filter box (ui/selectsearch.js) is open over it
   const a = document.activeElement;
   return !!a && a.tagName === "SELECT" && el.contains(a) && performance.now() - selectFocusAt < 20000;
+}
+// The top bar's Needs button and drop-down (ui/needsbar.js): the frame once, then its button, head and list each as a
+// slot of its own, so an open panel keeps the mouse, the focus and the list's scroll position while the stock changes.
+function writeNeeds(nb, user) {
+  const root = $("tb-stock");
+  if (!root) return;
+  if (!$("nb-list")) { root.innerHTML = needsSkeleton(); shown.delete("nb-btn"); shown.delete("nb-head"); shown.delete("nb-list"); }
+  initNeedsBar(root);
+  setHTML("nb-btn", nb.btn, user);
+  setHTML("nb-head", nb.head, user);
+  const list = $("nb-list"), top = list.scrollTop;
+  if (setHTML("nb-list", nb.list, user) && top) list.scrollTop = top;
 }
 // Writes a panel's HTML if it changed. Returns true when the DOM was touched.
 function setHTML(id, html, user) {
@@ -386,6 +415,8 @@ function tidyUi() {
   if (ui.expedition != null && !partyById(ui.expedition)) { ui.expedition = null; ui.xpMsg = ""; ui.xpQueue = false; ui.qSel = null; }
   if (ui.qSel != null && (ui.expedition == null || ui.qSel >= (partyById(ui.expedition).orders || []).length)) ui.qSel = null; // the queue got shorter
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
+  if (ui.fwPlace && !baseById(state, ui.fwPlace.baseId)) { ui.fwPlace = null; ui.fwMsg = ""; }
+  view.fwPlace = ui.fwPlace ? fwPlaceTiles(state, ui) : null; // ui/fieldworks.js: the tile picker's highlight
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
   if (state.combat && ui.gunb) ui.gunb = null; // the gun builder: never during a battle
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
@@ -451,7 +482,7 @@ function refresh(user = true) {
   const tb = topbarParts(state, ui);
   setHTML("tb-clock", tb.clock, user);
   setHTML("tb-speed", tb.speed, user);
-  setHTML("tb-stock", tb.stock, user);
+  writeNeeds(tb.needs, user);
   setHTML("tb-people", tb.people, user);
   setHTML("tb-tools", tb.tools, user);
   // A folded panel is not drawn (it is drawn again when it opens).
@@ -547,6 +578,7 @@ function bannerHTML() {
       `<button class="mini" data-action="help-open" data-sec="time" data-tip="Help: time, pausing and speeds">?</button>` +
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
   }
+  html += fwPlaceBanner(state, ui); // ui/fieldworks.js: placing a field work
   if (ui.moveParty) {
     html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>click a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"} · <b>Esc</b> cancels` +
       (ui.moveMsg ? `<br><span class="danger">${esc(ui.moveMsg)}</span>` : "") + `</div>`;
@@ -1122,6 +1154,7 @@ for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(st
 for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
 for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
+for (const [k, fn] of Object.entries(ARMV_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/armoryview.js: the armory list's groups, view, find box and type chips
 // The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
 for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1403,6 +1436,7 @@ for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) chan
 for (const [k, fn] of Object.entries(BG_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the custom backgrounds window (ui/backgrounds.js)
 for (const [k, fn] of Object.entries(SG_CHANGE)) changeActions[k] = (el) => { if (fn(state, ui, el)) gearRebuild(); }; // the starting gear window (ui/startgear.js)
 for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+Object.assign(changeActions, fieldworksChange(() => state, ui)); // ui/fieldworks.js: post a lookout
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
@@ -1556,8 +1590,19 @@ for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(stat
 // planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).
 // The People tab's view switch and find box (ui/panelfold.js; the box also filters as you type: the input listener).
 Object.assign(actions, { "ppl-view": (d) => PANEL_ACTIONS["ppl-view"](d), "ppl-clear": (d) => PANEL_ACTIONS["ppl-clear"](d) });
+Object.assign(actions, { "ppl-idle": () => togglePeopleIdle() }); // ui/activity.js: the People tab's Idle filter
+// "Assign all idle" (the Work now panel, the Bases tab's Idle drop-downs): a preview to confirm, then the jobs (idlework.js).
+actions["idle-assign"] = (d) => {
+  const b = baseById(state, Number(d.base));
+  if (!b) return;
+  const pv = assignIdlePreview(state, b);
+  if (!pv.plan.length) { baseSay(`${b.name}: nothing here has room for the idle now.`); return; }
+  if (ask(ui, d, "idle-assign", { kind: "assignidle", title: `Put ${pv.plan.length} idle ${pv.plan.length === 1 ? "person" : "people"} at ${b.name} to work?`, text: `${pv.text}. They go on these jobs by hand (Manual).`, yes: "Assign" })) return;
+  baseSay(`Assigned the idle at ${applyIdlePlan(state, b, pv.plan)}`);
+};
 Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
 for (const [k, fn] of Object.entries(BN_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the naming window's box: the draft as you type
+for (const [k, fn] of Object.entries(ARMV_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the armory's find box (ui/armoryview.js)
 const tripApi = { plan: (d) => actions.plan(d), autofill: (pl) => autofill(pl) };
 const tripAct = (fn) => (d) => fn(state, ui, d, tripApi), tripChange = (fn) => (el) => fn(state, ui, el);
 Object.assign(actions, {
@@ -1566,6 +1611,7 @@ Object.assign(actions, {
   "undo-step": tripAct(UNDO_ACTIONS["undo-step"]), "bq-move": tripAct(UNDO_ACTIONS["bq-move"]),
 });
 Object.assign(changeActions, { "tpl-name": tripChange(TRIP_CHANGE["tpl-name"]), "tpl-rename": tripChange(TRIP_CHANGE["tpl-rename"]), "pl-policy": tripChange(TRIP_CHANGE["pl-policy"]) });
+Object.assign(actions, fieldworksActions(() => state, ui, { centerOn: (tile) => centerOn(state, tile) })); // ui/fieldworks.js: the Field works tab
 installUndo(actions, changeActions, () => state, ui);
 if (!/[?&]notitle\b/.test(location.search)) showTitle(ui); // ?notitle: straight to the new-run screen (tests)
 
@@ -1648,6 +1694,7 @@ document.addEventListener("mouseover", (e) => {
   const el = e.target.closest("[data-tip]");
   if (!el || !el.dataset.tip) return hideTip();
   tipTarget = el;
+  if (showTipText(el, e.shiftKey)) { tipEl.classList.remove("hidden"); placeTip(e); return; } // an item row: short, Shift the whole (ui/itemlabels.js)
   tipEl.textContent = el.dataset.tip;
   tipEl.classList.toggle("pre", el.hasAttribute("data-tip-pre")); // multi-line tips (the weather report)
   if (el.dataset.tipSpark) tipEl.appendChild(sparkNode(el.dataset.tipSpark)); // a stock's last 14 days (ui/ledger.js)
@@ -1658,6 +1705,15 @@ document.addEventListener("mousemove", (e) => {
   if (held && e.buttons === 0) releaseHold(); // the button was let go where we did not see it (a drop-down, another window)
   if (tipTarget) placeTip(e);
 });
+// An item row's tip (data-tip-full: ui/itemlabels.js tipAttrs): the short one, the whole one while Shift is held.
+// Returns false for any other tip.
+function showTipText(el, full) {
+  if (!el || !el.dataset.tipFull) return false;
+  tipEl.textContent = full ? el.dataset.tipFull : el.dataset.tip;
+  tipEl.classList.toggle("pre", !full);
+  return true;
+}
+for (const ev of ["keydown", "keyup"]) document.addEventListener(ev, (e) => { if (e.key === "Shift" && tipTarget && document.contains(tipTarget)) showTipText(tipTarget, ev === "keydown"); });
 function placeTip(e) {
   const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
   let x = e.clientX + 14, y = e.clientY + 16;
@@ -1716,8 +1772,9 @@ window.addEventListener("mouseup", (e) => {
     const r = canvas.getBoundingClientRect();
     const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
-    const wk = !p && ui.moveParty == null && !e.shiftKey ? workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y) : null;
-    if (p) act(() => pickMove(p, id));
+    const wk = !ui.fwPlace && !p && ui.moveParty == null && !e.shiftKey ? workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y) : null;
+    if (ui.fwPlace && id >= 0) act(() => fwPlaceClick(state, ui, id)); // ui/fieldworks.js: a field work placed here (or why not)
+    else if (p) act(() => pickMove(p, id));
     else if (wk && wk.sid != null) { ui.survivor = wk.sid; mapClicked = true; } // a base worker out on the map: their survivor screen (ui/workermap.js)
     else if (id >= 0 && ui.moveParty == null) {
       // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
@@ -1802,7 +1859,7 @@ function ctxTeams(teams, id) {
   const t = state.tiles[id];
   return teams.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
     (t.terrain === "water" && !t.bridge ? "" : teams.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id);
+    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id) + ctxField(teams, id) + ctxFieldPlan(id);
 }
 // Keep the menu on the map: flipped left or up at the edges, never taller than the map (it scrolls); sizes follow the
 // interface scale (rem).
@@ -1870,6 +1927,43 @@ function ctxClaim(teams, id) {
     !ww ? `<button data-action="ctxclaim" data-id="${p.id}" data-tile="${id}" data-type="well" data-tip="${esc(`Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): the people at your base next to it haul its water.`)}">${partyTile(p) === id ? "Dig a well here" : "Go and dig a well here"}, team (${p.members.length}) · ${CLAIM.WELL_HOURS}h</button>` : "",
   ]).join("");
 }
+// Field works (sim/fieldworks.js): a team's acts at a structure on the tile (load or leave finds at your stockpile; wreck,
+// take or loot a group's), and planning one on land of yours from the base that holds it.
+function ctxField(teams, id) {
+  const fw = fieldWorkAt(state, id);
+  if (!fw) return "";
+  return teams.filter((p) => p.kind !== "convoy").flatMap((p) => teamFieldItems(state, p, id).map((it) =>
+    `<button data-action="ctxfwork" data-id="${p.id}" data-tile="${id}" data-act="${it.order.act}" ${it.why && partyTile(p) === id ? "disabled" : ""} data-tip="${esc(it.why || it.hint)}">${partyTile(p) === id ? "" : "Go: "}${esc(it.label)}, team (${p.members.length})</button>`)).join("");
+}
+function ctxFieldPlan(id) {
+  if (fieldWorkAt(state, id)) return "";
+  return state.bases.flatMap((b) => FIELD.ORDER.filter((k) => !placeProblem(state, b, k, id)).map((k) =>
+    `<button data-action="ctxfwplan" data-base="${b.id}" data-tile="${id}" data-kind="${k}" data-tip="${esc(`${FIELD.KINDS[k].desc} Paid now from ${b.name}'s stores; its builders walk out and put it up.`)}">Plan ${FIELD.KINDS[k].icon} ${FIELD.KINDS[k].name.toLowerCase()} here (${esc(b.name)})</button>`)).join("");
+}
+actions.ctxfwplan = (d) => {
+  const b = baseById(state, Number(d.base));
+  const r = b ? planFieldWork(state, b, d.kind, Number(d.tile)) : { error: "No base." };
+  if (r.error) log(state, r.error, "info");
+  hideCtx();
+};
+actions.ctxfwork = (d) => {
+  const p = partyById(d.id);
+  if (p) {
+    const tile = Number(d.tile);
+    const job = { type: "fwork", act: d.act };
+    let msg;
+    if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
+    else {
+      p.orders = [];
+      msg = orderMove(state, p, tile);
+      if (p.phase === "out" && p.dest === tile) msg = `${msg} ${queueOrder(state, p, { ...job, at: tile })}`;
+    }
+    if (msg) log(state, msg, "info");
+    if (ui.expedition === p.id) ui.xpMsg = msg;
+  }
+  endMoveMode();
+  hideCtx();
+};
 actions.ctxclaim = (d) => {
   const p = partyById(d.id);
   if (p) {
@@ -1934,11 +2028,11 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "tc-do"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "ctxfwork", "tc-do"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
-    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "ctxfwork" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
     return fn(d);
   };
 }
@@ -2038,6 +2132,7 @@ function closeTopLayer() {
   if (ui.diary) { ui.diary = null; return true; }
   if (ui.codex) { ui.codex = null; return true; } // ui/codex.js
   if (ui.moveParty != null) { endMoveMode(); return true; }
+  if (fwPlaceCancel(ui)) return true; // ui/fieldworks.js: placing a field work: back to the base's tab
   if (ui.expedition != null && ui.qSel != null) { ui.qSel = null; return true; } // a selected queued order: unselect first
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
   return false;
@@ -2108,6 +2203,9 @@ window.addEventListener("keydown", (e) => {
   if (k === "time.pause") {
     e.preventDefault();
     if (ui.speed > 0) { if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; ui.speed = 0; } else ui.speed = ui.lastSpeed || 1;
+  } else if (k === "time.speed0") { // 0: 0.25× (ui/pacing.js SLOWEST_SPEED)
+    ui.speed = SLOWEST_SPEED;
+    ui.lastSpeed = ui.speed;
   } else if (speed) { // 1–5: 0.5× 1× 2× 3× 5× (ui/pacing.js SPEEDS; the keys by the key table)
     ui.speed = SPEEDS[Number(speed[1]) - 1];
     ui.lastSpeed = ui.speed;

@@ -28,7 +28,7 @@
 //     passes in a few days (sickRoll). Only the worm hurts.
 //   - raw meat: RAW per ration of meat with eggs eaten uncooked. Game, fish and snares taken on land at MEAT_AT+
 //     infection carry eggs, and infested animals always do (base.wormMeat, cargo.wormMeat: the share of the fresh
-//     game that has them). A base with a cook fire or a preserving kitchen (a shelter with its fire lit) cooks it;
+//     game that has them). A base with a cook fire or a preserving room (a shelter with its fire lit) cooks it;
 //     drying racks and a hunting cabin's smoke house take it first (smoked is safe). Otherwise it waits in the stores
 //     and is eaten last, raw, when the other food runs out. A team cooks it at a camp fire (COOK an hour) and eats it
 //     raw only when nothing else is left.
@@ -143,6 +143,7 @@ import { crawlTurned } from "./citycrawl.js"; // one of you turned on a city blo
 import { hiveCrawlTurned } from "./hivecrawl.js"; // one of you turned inside a hive
 import { prisonersAt, inCell, taskOf, dropPrisoner } from "./prisoners.js";
 import { leaveMap } from "./visitors.js";
+import { kitchenService } from "./kitchen.js"; // the Kitchen boils the meals' water (purifyCap) and cooks like a cook fire (baseCooks)
 import { fireLandOk, WOOD, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
 
 export const WORM = {
@@ -302,8 +303,13 @@ export function rawWaterEggs(state, base) {
   const raw = sourceEggs(state, base.tile);
   if (!(raw > 0)) return { raw: 0, ground: 0, eggs: 0 };
   const prod = waterProduction(state, base);
-  const ground = prod.own + prod.stream + prod.wells + prod.hauled;
-  const all = ground + prod.rain;
+  // Field wells (fieldworks.js) draw deep ground water: half the eggs of the ground's (still un-purified: boil it).
+  // With the job trips (FIELD.PASSIVE_WELLS off) the field wells' water comes in by the water carriers: the day's
+  // carried well water (jobtrips.js base.tripTally.water.well) counts the same way.
+  const T = base.tripTally && base.tripTally.day === Math.floor((state.hour - 1) / 24) ? base.tripTally.water : null;
+  const field = (prod.field || 0) + ((T && T.well) || 0);
+  const ground = prod.own + prod.stream + prod.wells + prod.hauled + field * 0.5;
+  const all = prod.own + prod.stream + prod.wells + prod.hauled + field + prod.rain;
   const share = all > 0 ? ground / all : 0;
   return { raw, ground: share, eggs: raw * share };
 }
@@ -316,7 +322,10 @@ export function purifyCap(state, base, burned = null) {
   const boiler = hasBoiler(base) && (burned == null ? base.boiling !== false : burned) ? drink : 0;
   const fire = isShelter(base) && fireLit(base) && base.fireFed !== false ? drink : 0; // a fire with nothing to burn boils nothing (woodcutting.js shelterFire)
   const filters = nFilters * WORM.PURIFY_FILTER;
-  return { drink, boiler, fire, filters, nFilters, total: r2(boiler + fire + filters) };
+  // The Kitchen (kitchen.js KITCHEN.boil): the meals' water (soup, tea, porridge) is boiled, a share of the day's
+  // drinking by the cooks' cover; nothing to add where a boiler or a shelter's fire boils it all already.
+  const kitchen = boiler > 0 || fire > 0 ? 0 : r2(drink * kitchenService(state, base).boil);
+  return { drink, boiler, fire, filters, nFilters, kitchen, total: r2(boiler + fire + filters + kitchen) };
 }
 // The share of a day's drinking that will be un-purified: what the purified water in store and what can be purified
 // today leave.
@@ -340,6 +349,7 @@ export function baseWater(state, base) {
   const how = [];
   if (cap.boiler > 0) how.push(`boiled in the water boiler (${boil.text})`);
   if (cap.fire > 0) how.push("boiled on the fire");
+  if (cap.kitchen > 0) how.push(`boiled for the meals in the kitchen (${Math.round(cap.kitchen)} a day)`);
   if (cap.filters > 0) how.push(`through ${cap.nFilters === 1 ? "a water filter" : `${cap.nFilters} water filters`} (${cap.filters} a day)`);
   if (!(share > 0)) return { eggs: 0, risk: 0, raw: e.raw, ground: e.ground, rawShare: 0, drawn, safe: true, cap, why: how.length ? how.join(" and ") : drawn ? "purified water in store" : "no un-purified water here" };
   const cold = boil && base.boiling === false ? `the water boiler is cold (nothing to burn: it needs ${boil.text}); ` : "";
@@ -469,13 +479,13 @@ function emergencyTabs(state, base, cap) {
 export function purifyText(state, base) {
   const cap = purifyCap(state, base);
   const tabs = base.purified && base.purified.day === day(state) && base.purified.tabs > 0 ? base.purified.tabs : 0;
-  const bits = [cap.boiler > 0 ? `boiler ${Math.round(cap.boiler)}` : "", cap.fire > 0 ? `fire ${Math.round(cap.fire)}` : "", cap.filters > 0 ? `${cap.nFilters === 1 ? "filter" : `${cap.nFilters} filters`} ${cap.filters}` : "", tabs > 0 ? `tablets ${Math.round(tabs)} (out of firewood)` : ""].filter(Boolean);
+  const bits = [cap.boiler > 0 ? `boiler ${Math.round(cap.boiler)}` : "", cap.fire > 0 ? `fire ${Math.round(cap.fire)}` : "", cap.kitchen > 0 ? `kitchen ${Math.round(cap.kitchen)}` : "", cap.filters > 0 ? `${cap.nFilters === 1 ? "filter" : `${cap.nFilters} filters`} ${cap.filters}` : "", tabs > 0 ? `tablets ${Math.round(tabs)} (out of firewood)` : ""].filter(Boolean);
   return { total: cap.total, text: bits.join(", "), cap };
 }
 
 // ---------- meat ----------
-// A base cooks what it eats: a cook fire, a preserving kitchen, or a shelter with its fire lit.
-export const baseCooks = (base) => count(base, "cookhouse") > 0 || count(base, "kitchen") > 0 || (isShelter(base) && fireLit(base));
+// A base cooks what it eats: a cook fire, a preserving room, the Kitchen (kitchen.js: cook or no cook), or a shelter with its fire lit.
+export const baseCooks = (base) => count(base, "cookhouse") > 0 || count(base, "kitchen") > 0 || count(base, "canteen") > 0 || (isShelter(base) && fireLit(base));
 export const wormMeatAt = (base) => Math.max(0, Math.min(base.wormMeat || 0, base.meat || 0, base.stock.food || 0));
 export const wormMeatIn = (cargo) => (cargo ? Math.max(0, Math.min(cargo.wormMeat || 0, cargo.meat || 0, (cargo.supplies && cargo.supplies.food) || 0)) : 0);
 // Crops and forage with eggs in the base's fresh food (grown or gathered on land at CROP_MIN+ infection): what is
@@ -1107,7 +1117,7 @@ function captivesWormDaily(state) {
 // stores feed them), { party }, { captive: faction, tile }, { errand: base, tile }.
 function where(state, s) {
   const L = s.location || {};
-  if (L.kind === "base") return { base: baseById(state, L.baseId) };
+  if (L.kind === "base" || L.kind === "post") return { base: baseById(state, L.baseId) }; // post: a lookout at a field work, fed from the base (fieldworks.js)
   if (L.kind === "route") return { base: state.bases.find((b) => b.type === "hub") || null };
   if (L.kind === "party") {
     const p = state.parties.find((x) => x.id === L.partyId) || null;
@@ -1251,8 +1261,8 @@ export function wormRise(state, s, tileId) {
   const L = s.location || {};
   const locked = !!(s.worm && s.worm.locked);
   const done = () => { clearWorm(s); stats(state).turned++; return true; };
-  if (L.kind === "base" || L.kind === "route") {
-    const base = L.kind === "base" ? baseById(state, L.baseId) : hub(state);
+  if (L.kind === "base" || L.kind === "route" || L.kind === "post") {
+    const base = L.kind === "route" ? hub(state) : baseById(state, L.baseId);
     if (!base) return false;
     done();
     riseAtBase(state, base, s.name, { locked, short: first(s) });

@@ -34,6 +34,7 @@ import { doll, storageBox, selBar, tile, SUPPLY_ICON, INV_ACTIONS, invDrop } fro
 import { fleetPicker, toggleFleetIds } from "./fleetpick.js"; // the vehicle picker the planners share
 import { loadWarnings, paceLine, carLine } from "./loadview.js";
 import { statusIcons } from "./status.js";
+import { sickRestWhy } from "../sim/sickrest.js"; // the sick rest at the base (the Fit filter, a warning when picked)
 import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
 
@@ -49,7 +50,7 @@ const SKILLS = ["shooting", "melee", "scouting", "stealth", "medicine", "mechani
 const SKILL_SHORT = { shooting: "Sho", melee: "Mel", scouting: "Sco", stealth: "Ste", medicine: "Med", mechanics: "Mec", scavenging: "Scv", speech: "Spe" };
 export const FILTERS = {
   all:     { name: "Everyone",   tip: "Everyone at the base", test: () => true },
-  fit:     { name: "Fit",        tip: "Health 70 or more and not exhausted", test: (s) => s.health >= 70 && tiredLevel(s) < 2 },
+  fit:     { name: "Fit",        tip: "Health 70 or more, not exhausted and not resting sick (Sick people rest, the Work tab)", test: (s, picked, state) => s.health >= 70 && tiredLevel(s) < 2 && !(state && sickRestWhy(state, s)) },
   armed:   { name: "Armed",      tip: "Holding a weapon", test: (s) => !!(s.gear && s.gear.weapon) },
   idle:    { name: "Not on the team", tip: "Only people not picked yet", test: (s, picked) => !picked },
 };
@@ -85,7 +86,7 @@ function crewOf(state, F) {
 function listed(state, F) {
   const f = FILTERS[F.filter] || FILTERS.all;
   const S = SORTS[F.sort] || SORTS.name;
-  const rows = pool(state, F).filter((s) => f.test(s, picked(state, F, s)));
+  const rows = pool(state, F).filter((s) => f.test(s, picked(state, F, s), state));
   return rows.sort((a, b) => {
     const ka = S.key(a), kb = S.key(b);
     return ka < kb ? -1 : ka > kb ? 1 : a.name < b.name ? -1 : 1;
@@ -165,6 +166,8 @@ function summary(state, F, b, p, crew) {
   const cars = v ? (v.fleet ? v.fleet.filter(isCar) : isCar(v) ? [v] : []) : [];
   if (cars.length && !p && n0(v.fuel) + n0(F.supplies.fuel) < 6 * cars.length) warn.push(`Fuel: ${n0(v.fuel)} in the tank${cars.length > 1 ? "s" : ""}${F.supplies.fuel ? ` + ${n0(F.supplies.fuel)} in cans` : ""}: about ${Math.floor((n0(v.fuel) + n0(F.supplies.fuel)) / (0.6 * cars.length))} road tiles${cars.length > 1 ? ` for ${cars.length} cars` : ""}`);
   if (crew.some((s) => s.health < 50)) warn.push(`Hurt: ${crew.filter((s) => s.health < 50).map((s) => shortName(s)).join(", ")} (under 50 health)`);
+  const sickOnes = crew.map((s) => [s, sickRestWhy(state, s)]).filter(([, w]) => w);
+  if (sickOnes.length) warn.push(`Sick: ${sickOnes.map(([s, w]) => `${shortName(s)} (${w.slice(6)})`).join(", ")} (resting at the base until it is gone; they can still go)`);
   if (crew.some((s) => tiredLevel(s) >= 2)) warn.push(`Exhausted: ${crew.filter((s) => tiredLevel(s) >= 2).map((s) => shortName(s)).join(", ")} (they rest on the way only when they stop)`);
   const how = isBike(v) ? `on ${vehicleLabel(pv)}` : v ? `in the ${esc(vehicleLabel(v))}${v.fleet ? ` (${seatsOf(v)} seats)` : ""}` : "on foot";
   const html = `<div class="card small" style="margin-top:0.3rem">

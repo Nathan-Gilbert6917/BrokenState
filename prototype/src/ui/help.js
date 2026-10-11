@@ -11,6 +11,7 @@ import { HIVE_BIRTH_HELP } from "../sim/hivebirth.js";
 import { HIVE_CRAWL_HELP } from "../sim/hivecrawl.js";
 import { VOLUNTEERS_HELP } from "../sim/volunteers.js"; // volunteers lent between groups // the hive crawl: from the mouth to the Hivemind
 import { FESTIVAL_HELP } from "../sim/festival.js";
+import { MACHINES_HELP } from "../sim/breakdowns.js"; // machines, parts, the freezer
 import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
 import { keyLabel } from "./keymap.js";
 import { tripsHelp } from "./trips.js"; // templates, Repeat trip and undo
@@ -126,7 +127,7 @@ function startHereTopic() {
     <b>Teams.</b> Everything beyond the walls is done by teams. Click a site on the map, pick a mission (scavenge, recon, trade…), choose who goes and what they carry, and launch. They walk there, search, fight if they must and bring home what they found. Out of radio range they report when they get back.${see(["sending-a-team", "Sending a team"], ["team-panel", "Team panel"], ["raids-scavenging-a-site", "Raids"])}<br><br>
     <b>The State Map.</b> Bright land is what your people see now, dim land your last report of it, dark land unknown. Hordes of the dead roam it, hives breed them, and other groups hold towns of their own: trade with them, ally or fight.${see(["map", "Map"], ["map-legend", "Map legend"], ["groups", "Groups"])}<br><br>
     <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card asks what to do. The big ones (a fight, a raid, a death, a team waiting for orders) stop the clock; the rest wait in the card tray at the top of the map while the clock runs, and take their safest answer if left for 8 hours (⚙ Menu → Options → Pause for… sets which stop it). The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["pause-rules-and-the-card-tray", "Pause rules and the card tray"], ["alerts", "Alerts"])}<br><br>
-    <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 1–5 set the speed (5× for quiet stretches; it drops back to 1× when something happens); windows and the cards that stop the clock hold it while they are open.<br><br>
+    <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 0–5 set the speed (0 is 0.25× to watch up close, 5× for quiet stretches; it drops back to 1× when something happens); windows and the cards that stop the clock hold it while they are open.<br><br>
     <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than half the land for a year (a member's land counts after a year in the coalition, and not while it is at war); neither comes before year ${ERAS.WIN_FROM_YEAR}. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
 }
 
@@ -187,6 +188,7 @@ export function helpTopics() {
   if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
   if (!seen.has("training-medics")) add("Training medics", TRAINING_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
+  add("Machines and machine parts", MACHINES_HELP); // sim/breakdowns.js (freezer-parts: the walk-in freezer, the vacuum sealer)
   add("Magazines, rigs and plates", KIT_HELP); // sim/carrykit.js
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);
   if (!seen.has("blocs-and-wars")) add("Blocs and wars", BLOCS_WARS_HELP);

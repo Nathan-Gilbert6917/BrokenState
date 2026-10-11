@@ -60,21 +60,28 @@ function teamDays(state, p) {
   const n = Math.max(1, partyMembers(state, p).length);
   return { food: (carried(p, "food") + carried(p, "preserved")) / n, water: (carried(p, "water") + carried(p, "rawwater")) / (n * thirstAt(state)) }; // both kinds (sim/water.js)
 }
-// The top bar's stock slot while there is no base: what the team carries.
-// The team's ammo as one figure (every round of every calibre, every arrow and bolt), by calibre on hover.
-function ammoCell(state, p) {
-  const bd = teamAmmoBreakdown(state, p);
-  return `<span${tip(`Ammo the team has: every round and every arrow and bolt, packed, in the cargo and in their pockets and packs (a gun fires only its own calibre). By calibre, most first: ${breakdownText(bd, "; ")}.`)}><b>Ammo</b>${n0(bd.total)}</span>`;
-}
-export function roadStock(state) {
+// The top bar's Needs list while there is no base (ui/needsbar.js): what the road team carries, its days of food
+// and water, and the camp still to set up. null when there is no team on the road.
+export function roadNeeds(state) {
   const v = view(state);
   if (!v || !v.p) return null;
   const d = teamDays(state, v.p);
-  const cell = (k, extra = "") => `<span${tip(`${SUPPLIES[k].name} the team carries (packed and found). ${extra}`)}><b>${SUPPLIES[k].name}</b>${n0(carried(v.p, k) + (k === "food" ? carried(v.p, "preserved") : 0))}</span>`;
+  const bd = teamAmmoBreakdown(state, v.p);
+  const heads = Math.max(1, v.people);
+  const lvl = (days, crit, low) => (days < crit ? 2 : days < low ? 1 : 0);
+  const row = (k, extra = "", more = {}) => ({ k, name: SUPPLIES[k].name, amt: n0(carried(v.p, k) + (k === "food" ? carried(v.p, "preserved") : 0)), tip: `${SUPPLIES[k].name} the team carries (packed and found). ${extra}`.trim(), level: null, note: "", ...more });
   const head = v.first ? `Hardcore: no hub yet. Your ${v.people} survivors are a team on the road; you are with them, so they always take orders.` : "You have no base left: your people are on the road.";
-  const campCell = `<span class="muted"${tip(`Give a team the order ${ESTABLISH_LABEL} where your home should stand: a camp (the barest base) with its step up into a shelter queued (${needText(v.needs)} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders).`)}>No camp yet</span>`;
-  return `<span class="${v.first ? "warn" : "danger"}"${tip(`${head} ${ESTABLISH_LABEL} sets up a camp you build up into your hub.`)}>On the road</span>` +
-    cell("food", `About ${r1(d.food)} days for the team.`) + cell("water", `About ${r1(d.water)} days for the team at today's thirst.`) + cell("scrap") + cell("parts") + ammoCell(state, v.p) + cell("meds") + campCell;
+  return {
+    status: { cls: v.first ? "warn" : "danger", text: "On the road", tip: `${head} ${ESTABLISH_LABEL} sets up a camp you build up into your hub.` },
+    camp: { text: "No camp yet", tip: `Give a team the order ${ESTABLISH_LABEL} where your home should stand: a camp (the barest base) with its step up into a shelter queued (${needText(v.needs)} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders).` },
+    rows: [
+      row("food", `About ${r1(d.food)} days for the team.`, { level: lvl(d.food, 1, 3), note: `${r1(d.food)}d` }),
+      row("water", `About ${r1(d.water)} days for the team at today's thirst.`, { level: lvl(d.water, 1, 2), note: `${r1(d.water)}d` }),
+      row("scrap"), row("parts"),
+      { k: "ammo", name: "Ammo", amt: n0(bd.total), tip: `Ammo the team has: every round and every arrow and bolt, packed, in the cargo and in their pockets and packs (a gun fires only its own calibre). By calibre, most first: ${breakdownText(bd, "; ")}.`, level: null, note: bd.total ? `${Math.floor(bd.total / heads)}/head` : "" },
+      row("meds"),
+    ],
+  };
 }
 
 // The three stages and what the next one takes (sim/staging.js tierInfo), with a bar while the step up is building.

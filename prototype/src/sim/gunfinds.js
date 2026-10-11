@@ -15,6 +15,7 @@ import { siteSource, areaSource, traderSource } from "./itemcond.js";
 import { ARSENAL_FINDS, THEME_DRAWS } from "./data-guns.js";
 import { gunsFrom, drawGun, areaSourceName } from "./gundist.js";
 import { gunMags } from "./carrykit.js";
+import { foundFill } from "./gunrounds.js"; // a found gun's few rounds (its own dice)
 
 const FRESH = { fresh: true }; // the extra rolls: new guns × GUN_NEWNESS.mult (data-guns.js; the lists' swaps and kits keep their weights)
 
@@ -33,10 +34,12 @@ export function gunPool(tags, kinds = null) {
   for (const [k, w] of Object.entries(gunsFrom(name, { def }))) out[k] = w;
   return out;
 }
-// A gun and its spare magazines.
-/** @param {string} key @param {string} source @param {any[]} tag */
-function found(key, source, tag) {
+// A gun and its spare magazines. lying: found lying in a building or a container (a few rounds in it now and then:
+// gunrounds.js foundFill), not on a trader's shelf.
+/** @param {string} key @param {string} source @param {any[]} tag @param {boolean} [lying] */
+function found(key, source, tag, lying = false) {
   const gun = lootItem(key, source, [...tag, "q"]);
+  if (lying) foundFill(gun, ...tag);
   return [gun, ...gunMags(gun, source, ...tag)];
 }
 
@@ -50,7 +53,7 @@ export function rollSiteGuns(state, tileId, mult = 1, salt = "") {
   const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
   if (hash01(state.seed, "arsfind", tileId, state.hour, salt) >= p * loot * mult) return [];
   const key = drawGun(`site:${type}`, hash01(state.seed, "arspick", tileId, state.hour, salt), FRESH);
-  return key ? found(key, siteSource(type), [state.seed, "arsf", tileId, state.hour, salt]) : [];
+  return key ? found(key, siteSource(type), [state.seed, "arsf", tileId, state.hour, salt], true) : [];
 }
 // A raid container's find (combat.js searchBox), by its area type.
 /** @param {any} state @param {number} tileId @param {string} areaType @param {string | null} [site] @param {string} [salt] @returns {any[]} */
@@ -58,7 +61,7 @@ export function rollAreaGuns(state, tileId, areaType, site = null, salt = "") {
   const p = ARSENAL_FINDS.area[areaType];
   if (!p || hash01(state.seed, "arsarea", tileId, salt) >= p) return [];
   const key = drawGun(areaSourceName(areaType, site), hash01(state.seed, "arsareapick", tileId, salt), FRESH);
-  return key ? found(key, areaSource(areaType, site), [state.seed, "arsa", tileId, areaType, salt]) : [];
+  return key ? found(key, areaSource(areaType, site), [state.seed, "arsa", tileId, areaType, salt], true) : [];
 }
 // A city crawl's container (citycrawl.js rollArea, by the numbers): the same chance by its area as a raid container's,
 // the gun by the room at its building (a police station's armoury: police guns; an Army checkpoint's: the Army's), on
@@ -69,7 +72,7 @@ export function crawlGuns(areaType, site, rng) {
   const seed = rng && Number.isFinite(rng.state) ? rng.state : 0;
   if (!p || hash01(seed, "crawlgun", areaType) >= p) return [];
   const key = drawGun(areaSourceName(areaType, site), hash01(seed, "crawlgunpick", areaType), FRESH);
-  return key ? found(key, areaSource(areaType, site || "city"), [seed, "crawlg", areaType]) : [];
+  return key ? found(key, areaSource(areaType, site || "city"), [seed, "crawlg", areaType], true) : [];
 }
 // A group's shelf a week (trade.js ensureWares): now and then one of the arsenal's guns, by what the group stocks.
 /** @param {any} state @param {string} type @param {string} name @param {any} [salt] @returns {any[]} */

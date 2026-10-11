@@ -22,6 +22,7 @@ import { hordeMilitaryPickup } from "./deadsoldiers.js";
 import { shelterHeat } from "./fieldheat.js";
 import { hordeOverrun, baseHold } from "./groupflight.js"; // a group whose base the dead overran may leave it
 import { SILENT } from "./hiding.js"; // a base running silent makes less noise
+import { hordeEnter as fieldHordeEnter } from "./fieldworks.js"; // field works in the dead's way
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
 // ({ runner: 0.15, brute: 0.08 }), kept through merges (weighted) and splits; h.elite from a mutation vat. Many
 // runners move it a quarter faster; screamers in it pull wandering hordes within 3 tiles along with it.
@@ -198,6 +199,7 @@ function onHordeEnter(state, h) {
   if (!state.hordes.includes(h)) return;
   hordeMilitaryPickup(state, h); // deadsoldiers.js: crossing a military site, some of its dead soldiers fall in
   sowTile(state, h); // middead.js: Sowers seed the land they cross with the worm's eggs
+  fieldHordeEnter(state, h); // fieldworks.js: a field work on the tile is battered (a roadblock holds the horde)
   const base = state.bases.find((b) => b.tile === h.tile);
   if (base) return hordeAttackBase(state, h, base);
   const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));

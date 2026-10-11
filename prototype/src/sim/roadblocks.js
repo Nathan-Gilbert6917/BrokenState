@@ -37,13 +37,14 @@ export function rollRoadblock(state, p, tile, hour = state.hour) {
 
 // A team entering a road tile in a vehicle: rolls a blockage and, if there is one, holds the team up.
 // speed: the team's pace (parties.js partySpeed): the delay is in real hours whatever the pace (events.js delay).
-// name / where: the team's name and the tile's label for the log. Returns the blockage or null.
-export function roadblockOnEnter(state, p, tile, speed, name, where) {
+// name / where: the team's name and the tile's label for the log. hour: the hour travelled (a team arriving part-way
+// through the coming hour steps it early: parties.js arrivalsDue). Returns the blockage or null.
+export function roadblockOnEnter(state, p, tile, speed, name, where, hour = state.hour) {
   if (!p.vehicle) return null;
-  const b = rollRoadblock(state, p, tile);
+  const b = rollRoadblock(state, p, tile, hour);
   if (!b) return null;
   p.progress -= (b.mins / 60) * speed;
-  p.roadblock = { key: b.key, tile, hour: state.hour, mins: b.mins };
+  p.roadblock = { key: b.key, tile, hour, mins: b.mins };
   const t = b.mins >= 60 ? `${Math.floor(b.mins / 60)} h${b.mins % 60 ? ` ${b.mins % 60} min` : ""}` : `${b.mins} min`;
   log(state, `Road blocked near ${where}: ${name} ${b.text} (${t} lost).`, "info");
   return b;
