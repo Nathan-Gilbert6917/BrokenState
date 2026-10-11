@@ -15,6 +15,8 @@
 //   their night's sleep, stays as it is). After a 22–06 watch that is about 06–14; a day watch (06–14, 14–22) has none.
 //   Away from a base (a team, a crew, a captive): no more tired, and TIRED.AWAY (2) an hour off in the default night,
 //   or any hour while they still owe the sleep of a watch (s.sleepIn: sent out right after it, they doze on the way).
+//   Out at a field work on a shift (location "post", sim/fieldworks.js: a tower's lookouts, a roadblock's guards): awake,
+//   as on the watch; home from a shift that ran into their sleep hours (s.postNight), they sleep in as off a watch.
 // Tired (TIRED.TIRED, 24 owed: a whole day up): aim −5 in battle (combat.js playerUnit), mood −0.1 an hour.
 // Exhausted (TIRED.EXHAUSTED, 36): aim −12, mood −0.3 an hour; on guard they count half in the walls' hold limit
 // (defences.js guardHold) and half as alert on watch (watch.js readiness: two exhausted watchers are one awake one;
@@ -55,6 +57,14 @@ export function tiredHour(state) {
   for (const s of state.survivors) {
     if (!s.alive) continue;
     const t = s.tired || 0;
+    if (s.location.kind === "post") { // a field work's shift: up out there
+      s.tired = Math.min(TIRED.MAX, t + TIRED.AWAKE);
+      if (sleepHour(state, s, h) && (s.location.at ?? 0) <= state.hour) s.postNight = true; // out there through their sleep hours (not just the early walk out)
+      const lv = tiredLevel(s);
+      if (lv) s.mood = Math.max(0, (s.mood || 0) - TIRED.MOOD[lv]);
+      continue;
+    }
+    if (s.postNight) { if (t >= TIRED.SLEEP_IN) s.sleepIn = true; delete s.postNight; } // home off a night shift: sleep it off
     if (s.location.kind !== "base") {
       if (t > 0 && (defaultNight(h) || s.sleepIn)) s.tired = Math.max(0, t - TIRED.AWAY);
       if (s.sleepIn && !(s.tired > 0)) delete s.sleepIn;

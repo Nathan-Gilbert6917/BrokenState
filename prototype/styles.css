@@ -1066,13 +1066,13 @@ body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
 .ro-bar { flex-wrap: wrap; }
 .ro-report { margin: 0.2rem 0 0.5rem; }
 /* The Defence tab (ui/defence.js): the watch roster's 24-hour strip and its watches. */
-.deftab .dcov { display: flex; gap: 2px; height: 2.6rem; align-items: stretch; margin: 0.4rem 0 0.1rem; }
-.deftab .dcell { flex: 1; position: relative; background: #23272e; border-radius: 2px; display: flex; flex-direction: column; justify-content: flex-end; }
-.deftab .dcell i { display: block; background: #3f6b48; border-radius: 2px; min-height: 0; }
-.deftab .dcell.gap { background: #3a2222; }
-.deftab .dcell.cur { outline: 1px solid var(--accent, #e0a84f); }
-.deftab .dcell span { position: absolute; bottom: -1.05rem; left: 0; font-size: 0.65rem; color: var(--muted); }
-.deftab .dcov + div { margin-top: 1.1rem !important; }
+.deftab .dcov, .fwshifts .dcov { display: flex; gap: 2px; height: 2.6rem; align-items: stretch; margin: 0.4rem 0 0.1rem; }
+.deftab .dcell, .fwshifts .dcell { flex: 1; position: relative; background: #23272e; border-radius: 2px; display: flex; flex-direction: column; justify-content: flex-end; }
+.deftab .dcell i, .fwshifts .dcell i { display: block; background: #3f6b48; border-radius: 2px; min-height: 0; }
+.deftab .dcell.gap, .fwshifts .dcell.gap { background: #3a2222; }
+.deftab .dcell.cur, .fwshifts .dcell.cur { outline: 1px solid var(--accent, #e0a84f); }
+.deftab .dcell span, .fwshifts .dcell span { position: absolute; bottom: -1.05rem; left: 0; font-size: 0.65rem; color: var(--muted); }
+.deftab .dcov + div, .fwshifts .dcov + div { margin-top: 1.1rem !important; }
 .deftab .dshift.now { border-color: #6c8f5a; }
 .deftab .dshname { width: 7rem; font-weight: 700; }
 .deftab button.chip { border: none; cursor: pointer; }

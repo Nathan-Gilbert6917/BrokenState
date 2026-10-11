@@ -1620,7 +1620,7 @@ Object.assign(actions, {
   "undo-step": tripAct(UNDO_ACTIONS["undo-step"]), "bq-move": tripAct(UNDO_ACTIONS["bq-move"]),
 });
 Object.assign(changeActions, { "tpl-name": tripChange(TRIP_CHANGE["tpl-name"]), "tpl-rename": tripChange(TRIP_CHANGE["tpl-rename"]), "pl-policy": tripChange(TRIP_CHANGE["pl-policy"]) });
-Object.assign(actions, fieldworksActions(() => state, ui, { centerOn: (tile) => centerOn(state, tile) })); // ui/fieldworks.js: the Field works tab
+Object.assign(actions, fieldworksActions(() => state, ui, { centerOn: (tile) => centerOn(state, tile), select: (tile) => { ui.selected = tile; view.selected = tile; } })); // ui/fieldworks.js: the Field works tab
 installUndo(actions, changeActions, () => state, ui);
 if (!/[?&]notitle\b/.test(location.search)) showTitle(ui); // ?notitle: straight to the new-run screen (tests)
 

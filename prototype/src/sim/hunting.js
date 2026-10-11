@@ -104,7 +104,7 @@ import { wormKill, wormMeatIn, wormMeatAt, smokeWormMeat, shrinkWormMeat, huntYi
 import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
 import { huntRounds, huntLoad, takeHuntShots, baseAmmo } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, shoreOf, NO_WATER, walkMult } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
+import { workLand, distFactor, waterSources, shoreOf, NO_WATER, walkMult, tileGameMult } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
 
 // ---------- numbers ----------
 export const HUNT = {
@@ -949,15 +949,17 @@ export const huntWorkCap = (state, base, goalDays) => landFoodHands(state, base,
 // The Fish job's room: fishers to close it, at most one a rod (two a net).
 export const fishWorkHands = (state, base, goalDays) => Math.min(fishWorkCap(state, base), landFoodHands(state, base, goalDays, baseFishDay(state, base)));
 // The tile the base's hunters go to (jobtrips.js): the best of its hunting grounds (huntRadius) by the game it holds now,
-// walking included (tripland.js distFactor: two tiles out 1, one 1.5): { id, v, d, f }.
+// walking included (tripland.js distFactor: two tiles out 1, one 1.5): { id, v, d, f }. A hunting blind on a tile
+// (sim/fieldworks.js, tripland.js tileGameMult) adds to what it is worth, and opens it past a cabinless base's grounds.
 // radius: the grounds' reach (default the base's own: huntRadius; cabinGain asks what 2 would give).
 export function huntTripTile(state, base, hour = state.hour, radius = huntRadius(base)) {
   let best = null;
   const m = walkMult(state); // the game's walking pace (tripland.js PACES)
   for (const id of workLand(state, base.tile)) {
     const a = gameAbundance(state, id);
-    if (a <= 0.02 || state.grid.distance(base.tile, id) > radius) continue;
-    const d = state.grid.distance(base.tile, id), f = distFactor("hunt", d, m), v = a * gameLevel(state, id, hour);
+    const gm = tileGameMult(state, base, id);
+    if (a <= 0.02 || (state.grid.distance(base.tile, id) > radius && gm <= 1)) continue;
+    const d = state.grid.distance(base.tile, id), f = distFactor("hunt", d, m), v = a * gameLevel(state, id, hour) * gm;
     if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
   }
   return best;
@@ -1024,6 +1026,7 @@ export function hunterDayPlan(state, base, s) {
 export function huntTrip(state, base, s, tile, hours, hour) {
   const row = hunterDayPlan(state, base, s);
   const frac = hours / CABIN.hours;
+  const blind = tileGameMult(state, base, tile); // a hunting blind there (sim/fieldworks.js): more game for the hunters
   const got = { rations: 0, shots: 0, hrs: { traps: 0, bows: 0, guns: 0 }, noise: 0, gunfire: {} };
   const spare = () => Math.max(0, totalRounds(base.stock) - ammoKeep(state, base));
   const spareFor = () => (spare() > 0 ? base.stock : 0); // ammo.js: a gun needs rounds of its own calibre (and the walls' keep left)
@@ -1035,7 +1038,7 @@ export function huntTrip(state, base, s, tile, hours, hour) {
     if (!b) { trapHours += w; continue; }
     shot = true;
     got.hrs[b.w.arrows ? "bows" : "guns"] += w;
-    const mult = hunterMult(s) * b.eff;
+    const mult = hunterMult(s) * b.eff * blind;
     const team = { big: mult * b.w.big, small: mult * b.w.small };
     const o = huntOdds(state, team, tile, hour);
     const kills = [];
@@ -1069,7 +1072,7 @@ export function huntTrip(state, base, s, tile, hours, hour) {
     // Trap hours (and a hunter without a weapon): the cabin's snare lines (two lines; a full day's work is
     // CABIN.hours on them).
     got.hrs.traps += trapHours;
-    const rate = snareDayRate(state, tile, hour) * CABIN.snareLines * (trapHours / CABIN.hours);
+    const rate = snareDayRate(state, tile, hour) * CABIN.snareLines * (trapHours / CABIN.hours) * blind;
     let n = 0;
     for (let i = 0; i < SNARE.count * CABIN.snareLines; i++) if (state.rng.chance(Math.min(0.9, rate / (SNARE.count * CABIN.snareLines)))) n++;
     if (n) {
