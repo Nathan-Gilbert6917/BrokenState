@@ -47,7 +47,7 @@ import { farmersWanted, farmOf, seasonKey, winterOutlook } from "./farming.js";
 import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchenWood, isCookHour, cookedLately } from "./kitchen.js"; // the Kitchen: built at 8+ people, its cooks staffed (planRoles 5c)
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
-import { canUpgradeKitchen, queueCannerUpgrade } from "./buildings.js"; // machines-2: the pressure canner
+import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
@@ -65,7 +65,8 @@ import { autoRecruitPick } from "./recruits.js";
 import { planStudy } from "./skills.js";
 import { planBlueprintStudy, buildLock } from "./blueprints.js";
 import { stationOrder, setStationOrder, orderHold } from "./production.js";
-import { generators, setGenReserve } from "./power.js"; // machines-2: the generators' fuel reserve (govOrders)
+import { generators, setGenReserve, powerStatus, powerWanted, genCapacity, genToUpgrade, genUpgradeFuelOk, GEN_UP } from "./power.js"; // machines-2: the generators' fuel reserve (govOrders); gen-tiers: the upgrade (autoGenUpgrade)
+import { column } from "./history.js"; // gen-tiers: the base's fuel in and out over the last weeks
 import { friendlyCrew, wantsRest, relAutopilotDaily } from "./relations.js";
 import { autoDiplomacyDaily, hiveAllies, broodAfterAllies, goalsProgress, allianceMembers, ALLIANCE, isMember, inviteProblem, inviteToAlliance, landCentres, controlRadius, coalitionMask } from "./alliance.js";
 import { ensureDiplo, joinProblem, joinWar } from "./diplomacy.js";
@@ -355,6 +356,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
   if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
   if (areas.building) { const up = autoCanner(state, base); if (up) say(state, up); } // machines-2: a pressure canner fitted to a working preserving room
+  if (areas.building && hourOfDay(state) === PLAN_HOUR + 3) { const up = autoGenUpgrade(state, base); if (up) say(state, up); } // gen-tiers: a generator upgraded when the power is short and the fuel can carry it
   if (areas.production && hourOfDay(state) === PLAN_HOUR) stripDeadCars(state, base); // a car worth less than its parts
 }
 // The cook fire comes down once the Kitchen does its job (kitchen-plus pick 5): a kitchen here with its stove lit (it
@@ -2349,6 +2351,56 @@ function autoCanner(state, base) {
   if (!chk.ok || (!chk.item && ((base.stock.parts || 0) < BUILDINGS.canner.cost.parts + CANNER_SPARE || (base.stock.scrap || 0) < 40))) return "";
   return queueCannerUpgrade(state, base, k.id);
 }
+// A generator upgraded a tier (gen-tiers, power.js GEN_TIERS; once a day, PLAN_HOUR + 3, for the governor and a steward
+// with Building on). Only when:
+//   the power is short: what the base would draw (powerWanted: every powered building not switched off, a workshop
+//     station only while someone operates it; or what draws now, if more) is more than all its generators give at their
+//     tiers (genCapacity, broken ones counted: they are repaired); the lowest tier is upgraded first (genToUpgrade);
+//   it can be done (buildings.js canUpgradeGenerator: the materials, the Mechanics 4 / 5 hand, the Industrial Power
+//     Manual for tier 3), with GEN_SPARE parts and 30 scrap left over (repairs and spares come first), nothing else for
+//     a generator queued;
+//   never into a fuel deficit (power.js genUpgradeFuelOk): the base's fuel in and out a day over the last 28 days
+//     (genFuelFlows: history.js; the cars' refuelling, the heating, the generators, the outposts' runs are in it) less
+//     the extra burn at that demand stays at 0 or more, and the fuel above the floor covers 30 days of the extra; the
+//     floor is the governor's fuel floor (fuelFloor: 10, the hive campaign's fires, the winter's heating once it is
+//     near) plus the heating the next 60 days' cold will burn (heatFuelWant) even before it is near. The hub's fuel is
+//     drained by the cars often (2026-10-10 finding): the 28-day out counts them, so a hub whose cars eat its fuel does
+//     not upgrade.
+// It never builds a second generator (the build wishes do the first; the second is the player's call). Returns the
+// log line or "". base.genUp records the last look ({ day, need, cap, ok, why }: the Power card shows it).
+const GEN_SPARE = 4;
+export function genFuelFlows(state, base, days = GEN_UP.window) {
+  const today = day(state);
+  const sum = (name) => column(state, base.id, name).filter((x) => x.day > today - 1 - days).reduce((a, x) => ({ v: a.v + x.v * x.span, n: a.n + x.span }), { v: 0, n: 0 });
+  const i = sum("i_fuel"), o = sum("o_fuel"), m = sum("m_fuel");
+  if (i.n < GEN_UP.minDays) return null; // too little history (a new base, an old save): no upgrade on a guess
+  const moved = m.v / Math.max(1, m.n);
+  return { income: i.v / i.n + Math.max(0, moved), out: o.v / o.n + Math.max(0, -moved), days: i.n };
+}
+export function autoGenUpgrade(state, base) {
+  const gens = generators(base);
+  if (!gens.length || base.construction.some((c) => c.type === "generator")) return "";
+  const staffed = (b) => !!stationOperator(state, base, b);
+  const need = Math.max(powerStatus(state, base).demand, powerWanted(state, base, staffed));
+  const cap = genCapacity(base);
+  const note = (ok, why) => { base.genUp = { day: day(state), need, cap, ok, why }; return ""; };
+  if (need <= cap) return note(false, `the generators give ${cap} power for ${need} wanted`);
+  const up = genToUpgrade(base);
+  if (!up) return note(false, "no generator to upgrade (top tier, broken or queued)");
+  const chk = canUpgradeGenerator(state, base, up.id);
+  if (!chk.ok) return note(false, chk.reason);
+  if ((base.stock.parts || 0) < chk.next.cost.parts + GEN_SPARE || (base.stock.scrap || 0) < chk.next.cost.scrap + 30) return note(false, `saving the parts and scrap (${chk.next.cost.parts} + ${GEN_SPARE} parts, ${chk.next.cost.scrap} + 30 scrap)`);
+  const flows = genFuelFlows(state, base);
+  if (!flows) return note(false, "too little fuel history yet");
+  const hw = heatFuelWant(state, base);
+  const floor = fuelFloor(state, base) + (hw.want ? 0 : hw.need);
+  const fc = genUpgradeFuelOk(base, need, up, floor, flows);
+  if (!fc.ok) return note(false, fc.why);
+  base.genUp = { day: day(state), need, cap, ok: true, why: "" };
+  const g = gov(state);
+  g.stats.genUps = (g.stats.genUps || 0) + 1;
+  return `${queueGenUpgrade(state, base, up.id)} (${need} power wanted, ${cap} from the generators; fuel ${Math.round(fc.income * 10) / 10} in and ${Math.round(fc.out * 10) / 10} out a day, ${Math.round(fc.extra * 100) / 100} more for it)`;
+}
 // Fuel the governor keeps out of the generator: a decoy fire, the floodlights and the truck (Cautious: its reserve).
 const fuelFloor = (state, base) => (persona(state).reserves ? reserveStatus(state, base).fuel.target : 10 + (heatFuelWant(state, base).want ? heatFuelWant(state, base).need : 0)) + campaignFuelHold(state, base); // needs-gauges: winter heating first, and the campaign's fires
 // The ethanol still (power.js): only the surplus, never while the winter stores fall short.
@@ -2679,7 +2731,7 @@ function buildWishes(state, base) {
   }
   // Power (power.js): a still for the surplus once the hub is big enough, then a generator for what it powers.
   if (!count(base, "still") && !queued("still") && pop >= 9 && (st.parts || 0) >= 4 && stillWorth(state, base)) add("still", "turn the surplus food into fuel");
-  if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || countAll(base, "freezer") + queued("freezer") || (!buildLock(state, base, "freezer") && edibleFood(base) >= pop * 15)) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and a walk-in freezer"); // machines-2: the cold store needs no power; the freezer waits for the Refrigeration Schematics
+  if (countAll(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || countAll(base, "freezer") + queued("freezer") || (!buildLock(state, base, "freezer") && edibleFood(base) >= pop * 15)) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and a walk-in freezer"); // machines-2: the cold store needs no power; the freezer waits for the Refrigeration Schematics. gen-tiers: countAll (a broken generator is repaired, not replaced by a second one)
   if (!base.radio && pop >= 8 && (st.parts || 0) >= 9 && best("mechanics") >= 4) add("radio", "live contact with teams out in the field");
   // The coalition is made on the radio (greetings, pacts, invitations: alliance.js): from a dozen people with a
   // Mechanics 4 builder, the station is built once the parts are there (not saved up for: scrap goes to walls first).

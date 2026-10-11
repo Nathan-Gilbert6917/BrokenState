@@ -7,9 +7,9 @@ import { SKILL_NAMES, SUPPLIES } from "./data.js";
 import { workFactor } from "./health.js";
 import { storeCapacity, storeSpaces } from "./storage.js";
 import { stationIO, orderHold } from "./production.js";
-import { refreshPower, powerLine, freezerLine, hasSealer, choreShare } from "./power.js";
+import { refreshPower, powerLine, freezerLine, hasSealer, choreShare, GEN_TIERS, genTier, genName } from "./power.js"; // gen-tiers: a generator upgraded where it stands
 import { buildMult, hash01 } from "./skills.js";
-import { buildLock } from "./blueprints.js";
+import { buildLock, upgradeLock } from "./blueprints.js";
 import { cabinProblem } from "./hunting.js";
 import { stockHas, useStock, keyWord } from "./water.js"; // recipes: water counts both kinds, un-purified used first
 import { prisonBuildRate } from "./prisoners.js"; // prisoners-tab: prisoner labour on the build queue
@@ -142,8 +142,9 @@ export const BUILDINGS = {
   canteen:      { name: "Kitchen",        plot: "building", cost: { scrap: 20, parts: 1 }, hours: 24, max: 1, desc: "Stoves, a big pot and long tables: the base's meals cooked by the people on the Cook job, one cook for every 12 people living here (breakfast 06:00, dinner 20:00). Hot meals stretch the food: everyone fed at the kitchen eats 10% less a day (up to 13% with a good cook: +0.5% a Cooking point above 4), +1 mood a day (+1.5 with a Cooking 6+ cook; only the Kitchen serves hot meals), and a quarter of the day's drinking water is boiled for the meals. The stove burns firewood: 4 a day, and 1 a meal (two a day for everyone fed: 28 a day, 2.8 kg, for 12 people), after the water boiler's and the heating's day; without it the meals are cold (nothing saved, no mood). With too few cooks only that share of the people get hot meals. Like a cook fire, all the game, fish and greens from infected land are cooked through (the worm) while the stove is lit, cook or no cook. No cook: the food is eaten as before." },
   smoker:       { name: "Drying rack",    plot: "utility", cost: { scrap: 6 },             hours: 8,  max: 3, desc: "Racks and a smoke pit, no operator: dries 4 surplus fresh food into 3 preserved food a day (half on wet days). Takes food stored outside first, else only food above 15 days of eating." },
   // Power (power.js): generators need fuel, a daily refuelling and repairs, no operator (machines-2); the still turns
-  // food into that fuel.
-  generator:    { name: "Generator",      plot: "utility", cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, req: { mechanics: 3 }, machine: true, desc: "Runs by itself, no operator: 6 power for 2 fuel a day while something draws power (+2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving room, a walk-in freezer, a vacuum sealer), burned by the hour from its own tank of 3 fuel (a day and a half's running). Someone able at the base refuels it every morning (half an hour, from the fuel above the reserve set on the Power card); with nobody to refuel it, it runs a day and a half and goes dry. Breakdowns need a Mechanics 3+ survivor and machine parts. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build." },
+  // food into that fuel. This is tier 1 (power.js GEN_TIERS: the portable set); tiers 2 and 3 are upgrades where it
+  // stands (canUpgradeGenerator below, gen-tiers).
+  generator:    { name: "Generator",      plot: "utility", cost: { scrap: 20, parts: 4 },  hours: 30, max: 2, req: { mechanics: 3 }, machine: true, desc: "Runs by itself, no operator: 6 power for 2 fuel a day while something draws power (+2 radio range, floodlights without fuel, a machine shop making 2 parts a day, a faster preserving room, a walk-in freezer, a vacuum sealer), burned by the hour from its own tank of 3 fuel (a day and a half's running). Someone able at the base refuels it every morning (half an hour, from the fuel above the reserve set on the Power card); with nobody to refuel it, it runs a day and a half and goes dry. Breakdowns need a Mechanics 3+ survivor and machine parts. Loud: +4 Heat while it runs. Needs a Mechanics 3+ survivor here to build. Upgrade it where it stands (no new plot): a standby generator (12 power, 2.25 fuel a day idling to 3.5 at full load; Mechanics 4), then an industrial diesel set (24 power, 3 to 6 fuel a day; Mechanics 5 and the Industrial Power Manual). Each tier burns more fuel." },
   // The walk-in freezer (freezer-parts 2026-10-10, user request "add a building called walk in freezer"; power.js
   // POWER_USERS.freezer, breakdowns.js FIXTURES.freezer, storage.js): an insulated room with a compressor on the
   // generator. +300 food room; while it is on (base.freezerOn: power served, not broken, not switched off) food in it
@@ -323,8 +324,36 @@ export function queueBunkhouseExpand(state, base, id) {
   return `Bunkhouse → barracks queued at ${base.name}.`;
 }
 
+// ---------- upgrading a generator (gen-tiers 2026-10-10; power.js GEN_TIERS, the tiers and their numbers) ----------
+// A generator is upgraded a tier where it stands: a queue job { type: "generator", target: its id, tier, cost } (no new
+// plot; it does not count against the generators' max). It keeps running at its old tier until the work is done (the
+// tank is kept; the next refuelling fills the bigger one). Gates: not broken (repair it first), one upgrade at a time,
+// the materials, a survivor at the base with the tier's Mechanics, and for tier 3 the Industrial Power Manual studied
+// (blueprints.js upgradeLock). It cannot be pulled down meanwhile (canDemolish). The AI groups: groupworks.js MACH.
+export function canUpgradeGenerator(state, base, id) {
+  const b = base && base.buildings.find((x) => x.id === id && x.type === "generator");
+  if (!b) return { ok: false, reason: "That generator is gone" };
+  const tier = genTier(b), next = GEN_TIERS[tier + 1];
+  if (!next) return { ok: false, top: true, reason: `Already an ${GEN_TIERS[tier].name.toLowerCase()} (the top tier)` };
+  if (base.construction.some((c) => c.target === id)) return { ok: false, queued: true, reason: "An upgrade is already queued" };
+  if (b.broken) return { ok: false, reason: "Repair it first (Repairs tab)" };
+  for (const [k, v] of Object.entries(next.cost)) if ((base.stock[k] || 0) < v) return { ok: false, short: true, reason: `Needs ${v} ${keyWord(k)}`, next, tier: tier + 1 };
+  for (const [sk, lvl] of Object.entries(next.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here`, next, tier: tier + 1 };
+  const lock = upgradeLock(state, `generator${tier + 1}`);
+  if (lock) return { ok: false, locked: true, reason: lock, next, tier: tier + 1 };
+  return { ok: true, next, tier: tier + 1 };
+}
+export function queueGenUpgrade(state, base, id) {
+  const chk = canUpgradeGenerator(state, base, id);
+  if (!chk.ok) return chk.reason;
+  const b = base.buildings.find((x) => x.id === id);
+  for (const [k, v] of Object.entries(chk.next.cost)) base.stock[k] -= v;
+  base.construction.push({ id: newId(), type: "generator", target: id, tier: chk.tier, cost: { ...chk.next.cost }, progress: 0, hours: chk.next.hours });
+  return `${genName(b)} → ${chk.next.name} queued at ${base.name}.`;
+}
+
 // The name of a queue job: a new building, a barrel's upgrade or a bunkhouse expanded into a barracks.
-export const jobName = (job) => (job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
+export const jobName = (job) => (job.target && job.type === "generator" ? `Upgrade a generator to ${GEN_TIERS[job.tier] ? `a ${GEN_TIERS[job.tier].name.toLowerCase()}` : "the next tier"}` : job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
 
 // ---------- demolishing ----------
 // Pulls a building down to free its plot: half its scrap, parts and electronics back (rounded down), and for a barrel half of its
@@ -335,6 +364,7 @@ export function demolishRefund(b) {
   add(BUILDINGS[b.type].cost);
   if (b.type === "water_barrel") for (let t = 2; t <= barrelTier(b); t++) add(WATER_BARREL.tiers[t].cost);
   if (b.type === "kitchen" && b.canner) add(BUILDINGS.canner.cost); // machines-2: its pressure canner's half too
+  if (b.type === "generator") for (let t = 2; t <= genTier(b); t++) add(GEN_TIERS[t].cost); // gen-tiers: half of its upgrades too
   for (const k of Object.keys(out)) out[k] = Math.floor(out[k] / 2);
   return out;
 }
@@ -356,7 +386,7 @@ export function demolish(state, base, id) {
   if (b.type === "watchtower") base.watchtower = count(base, "watchtower") > 0;
   for (const s of atBase(state, base.id)) if (s.station === b.id) s.station = null;
   assignStations(state, base);
-  const name = b.type === "water_barrel" ? barrelName(b) : BUILDINGS[b.type].name;
+  const name = b.type === "water_barrel" ? barrelName(b) : b.type === "generator" ? genName(b) : BUILDINGS[b.type].name;
   const got = Object.entries(back).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${keyWord(k)}`).join(", ");
   log(state, `${name} at ${base.name} pulled down${got ? ` (${got} salvaged)` : ""}.`, "info");
   return `${name} pulled down${got ? `: ${got} salvaged` : ""}. Its plot is free.`;
@@ -474,6 +504,7 @@ export function addBuilding(base, type) {
   if (type === "radio") base.radio = true;
   if (type === "watchtower") base.watchtower = true;
   if (BUILDINGS[type].barrel) { b.tier = 1; b.holds = WATER_BARREL.holds; }
+  if (type === "generator") b.tier = 1; // gen-tiers: a portable set (power.js GEN_TIERS)
   return b;
 }
 
@@ -790,6 +821,11 @@ export function constructionHour(state) {
         const b = base.buildings.find((x) => x.id === job.target && x.type === "kitchen");
         if (b) { b.canner = true; log(state, `${base.name}: a pressure canner is fitted in the preserving room (+${CANNER.out} preserved food a day).`, "good"); }
         else if (job.item) base.armory.push(job.item);
+        continue;
+      }
+      if (job.target && job.type === "generator") { // a generator upgraded a tier (gen-tiers); nothing if it was lost meanwhile
+        const b = base.buildings.find((x) => x.id === job.target && x.type === "generator");
+        if (b) { b.tier = Math.max(genTier(b), job.tier); log(state, `${base.name}: the generator is now a ${genName(b).toLowerCase()} (${GEN_TIERS[genTier(b)].out} power).`, "good"); }
         continue;
       }
       if (job.target && job.type === "reload_bench") { // an ammo bench upgraded (reloading.js); nothing if it was lost meanwhile

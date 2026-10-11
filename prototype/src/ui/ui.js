@@ -45,7 +45,7 @@ import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, isCamp, CAMP, SHELTER, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
   PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, canUpgradeKitchen, BENCH, benchType,
 } from "../sim/buildings.js";
-import { isPowered, POWER_USERS, freezerLine, generatorRunning, generatorLine } from "../sim/power.js"; // freezer-parts: the machines' chips
+import { isPowered, POWER_USERS, freezerLine, generatorRunning, generatorLine, GEN_TIERS, genTier, genName } from "../sim/power.js"; // freezer-parts: the machines' chips; gen-tiers: the generator's tier
 import { isMachine, machineText, machineState } from "../sim/breakdowns.js"; // freezer-parts: machine parts on the cards
 import { CAR_SPARES, carSpares, VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
@@ -74,7 +74,7 @@ import { CRAFTS, craftName, craftQueue, crafters, craftRate, canCraft, craftJobS
 import { craftEdge, lockNote } from "../sim/blueprints.js"; // the crafting edge from known manuals and read craft books
 import { canAttempt, meetsNeeds } from "../sim/crafting.js"; // the recipe cards colour their skill and station chips
 import { chip, costChips, chipList, statRows, badge, pbar, sectionHead, infoTip, hint, firstSentence, stockTile, supName, supIcon } from "./uikit.js"; // game-like panel pieces (the base window)
-import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton, reloadCard } from "./production.js";
+import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButton, reloadCard, genUpgradeBtn } from "./production.js";
 import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reloading bench: an ammo bench upgraded where it stands
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower, carriedSpots } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
@@ -1775,7 +1775,7 @@ function machineChip(state, b, t) {
   }
   if (t === "generator") { // machines-2: no operator; running, standby or its tank dry (the Power card has the rest)
     const on = list.filter((x) => generatorRunning(b, x)).length;
-    return `<span class="chip ${on ? "on" : list.some((x) => x.broken) ? "off" : ""}"${tip(list.map((x) => generatorLine(state, b, x)).join("; "))}>${on ? `⚡ ${on === list.length ? "Running" : `${on} of ${list.length} running`}` : list.some((x) => x.broken) ? "Broken" : "Not running"}</span>`;
+    return `<span class="chip ${on ? "on" : list.some((x) => x.broken) ? "off" : ""}"${tip(list.map((x) => `${genName(x)} (tier ${genTier(x)}): ${generatorLine(state, b, x)}`).join("; "))}>${on ? `⚡ ${on === list.length ? "Running" : `${on} of ${list.length} running`}` : list.some((x) => x.broken) ? "Broken" : "Not running"}</span>`;
   }
   if (t === "kitchen" && list.some((x) => x.canner)) return `<span class="chip on"${tip(BUILDINGS.canner.desc)}>Pressure canner${list.length > 1 ? ` (${list.filter((x) => x.canner).length} of ${list.length})` : ""}</span>`;
   if (POWER_USERS[t] && !BUILDINGS[t].station) {
@@ -1788,7 +1788,7 @@ function machineChip(state, b, t) {
 function machineNote(b, t) {
   const mt = t === "kitchen" && b.buildings.some((x) => x.type === "kitchen" && x.canner) ? "canner" : t; // machines-2: a kitchen with a pressure canner is a machine
   if (!isMachine(mt)) return "";
-  const each = b.buildings.filter((x) => x.type === t && (mt !== "canner" || x.canner)).map((x) => machineState(x)).filter(Boolean);
+  const each = b.buildings.filter((x) => x.type === t && (mt !== "canner" || x.canner)).map((x) => (t === "generator" && machineState(x) ? `${genName(x)} (tier ${genTier(x)}): ${machineState(x)}` : machineState(x))).filter(Boolean); // gen-tiers
   const parts = BUILDINGS[mt].cost.parts ? `${mt === "canner" ? "the canner fitted" : "built"} with ${BUILDINGS[mt].cost.parts} machine part${BUILDINGS[mt].cost.parts === 1 ? "" : "s"}` : "";
   return `<div class="small"${tip("Machines take machine parts to build, to repair and to keep running (Help: Machines and machine parts)")}>⚙ ${esc([parts, machineText(mt)].filter(Boolean).join(" · "))}${each.length ? `<br><span class="muted">${esc(each.join(" | "))}</span>` : ""}</div>`;
 }
@@ -1809,6 +1809,14 @@ function lockTag(state, b, kind, key) {
   const note = lockNote(state, b, kind, key);
   if (!note) return "";
   return `<div class="gcard-lock"${tip(`${note} Found and studied at a base (Read role, the blueprint's skill), or a craft book read to the end by anyone at a base. See the Buildings tab's Blueprints list.`)}>🔒 ${esc(note.split(/\.\s*Look in:/)[0].replace(/^Needs:\s*/, "Needs "))}</div>`;
+}
+
+// The generator's build card (gen-tiers, sim/power.js GEN_TIERS): it is built as tier 1; the tiers above are upgrades
+// where it stands, with the tier each one standing here is at.
+function genTiersNote(state, b) {
+  const here = b.buildings.filter((x) => x.type === "generator");
+  const tiers = GEN_TIERS.slice(1).map((t, i) => `${i + 1}. ${t.name}: ${t.out} power, ${t.idle === t.full ? `${t.full}` : `${t.idle}–${t.full}`} fuel a day${t.req ? `, Mechanics ${t.req.mechanics}` : ""}${t.bp ? `, ${lockNote(state, b, "upgrade", `generator${i + 1}`) ? "🔒 " : ""}Industrial Power Manual` : ""}`).join(" · ");
+  return `<div class="small muted"${tip("Built as tier 1. Upgrade a standing generator where it stands (On the utility plots, or the Power card on the Workshops tab): no new plot, each tier more power and more fuel.")}>⚡ Tier 1 of ${GEN_TIERS.length - 1}. ${esc(tiers)}${here.length ? `<br>Here: ${esc(here.map((x) => `${genName(x)} (tier ${genTier(x)})`).join(", "))}` : ""}</div>`;
 }
 
 // Construction (sim/buildings.js): the plots (building and utility, by the base's size), the queue, what stands on
@@ -1851,7 +1859,7 @@ function baseConstruction(state, b, ui) {
   // What stands on the plots, the barrels apart (their own card).
   const plotList = (kind) => {
     const list = b.buildings.filter((x) => BUILDINGS[x.type] && BUILDINGS[x.type].plot === kind && x.type !== "water_barrel");
-    return list.length ? list.map((x) => `<div class="spread small"><span${tip(BUILDINGS[x.type].desc)}>${esc(BUILDINGS[x.type].name)}${x.broken ? ` <span class="chip off">Broken</span>` : ""}</span><span class="row">${x.type === "bunkhouse" ? expandBtn(x) : ""}${x.type === "ammo_bench" ? reloadBtn(x) : ""}${x.type === "kitchen" ? cannerBtn(x) : ""}${demolishBtn(x)}</span></div>`).join("") : `<div class="muted small">Nothing yet.</div>`;
+    return list.length ? list.map((x) => `<div class="spread small"><span${tip(BUILDINGS[x.type].desc)}>${esc(x.type === "generator" ? `${genName(x)} (tier ${genTier(x)})` : BUILDINGS[x.type].name)}${x.broken ? ` <span class="chip off">Broken</span>` : ""}</span><span class="row">${x.type === "bunkhouse" ? expandBtn(x) : ""}${x.type === "ammo_bench" ? reloadBtn(x) : ""}${x.type === "kitchen" ? cannerBtn(x) : ""}${x.type === "generator" ? genUpgradeBtn(state, b, x) : ""}${demolishBtn(x)}</span></div>`).join("") : `<div class="muted small">Nothing yet.</div>`;
   };
   const holdsSel = (x) => `<select data-action="barrel-holds" data-base="${b.id}" data-id="${x.id}"${tip("Un-purified: room for the well, rain and river water. Purified: room only safe water may use (the water filters' surplus, bottled water brought home), never crowded out by the well's water. Switching moves nothing: water of the other kind goes to the tanks, or stands outside if they are full.")}><option value="rawwater" ${barrelHolds(x) === "rawwater" ? "selected" : ""}>Un-purified</option><option value="water" ${barrelHolds(x) === "water" ? "selected" : ""}>Purified</option></select>`;
   const barrelCard = () => {
@@ -1882,7 +1890,7 @@ function baseConstruction(state, b, ui) {
       <div class="gcard-top"><span class="gcard-title">${esc(d.name)}${have ? ` <span class="muted small"${tip(`${have} standing here, ${d.max} at most`)}>${have}/${d.max}</span>` : ""}${status}</span><button class="mini${chk.ok ? " primary" : ""}" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
       <div class="gcard-desc">${esc(firstSentence(d.desc))}</div>${isMachine(k) ? `<div class="small muted"${tip("A machine: it wears, breaks down and takes machine parts to keep (Help: Machines and machine parts)")}>⚙ ${esc(machineText(k))}${POWER_USERS[k] ? ` · draws ${POWER_USERS[k].need} power` : ""}</div>` : ""}
       <div class="gcard-foot">${costChips(d.cost, b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed, ${n0(h)} in the stores${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}</div>
-      ${k === "canteen" ? kitchenNote(state, b) : ""}
+      ${k === "canteen" ? kitchenNote(state, b) : ""}${k === "generator" ? genTiersNote(state, b) : ""}
       ${!chk.ok && !short && !lock ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;
   };

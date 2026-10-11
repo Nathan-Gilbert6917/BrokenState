@@ -185,7 +185,7 @@ function itemEntries() {
     // Manuals and craft books (blueprints.js): what they open, and the recipes they make better and faster.
     const tech = g.blueprint ? BLUEPRINTS[g.blueprint] : CRAFT_BOOKS[k];
     if (tech) {
-      const opens = [...(tech.unlocks.buildings || []), ...(tech.unlocks.crafts || [])].map(unlockName);
+      const opens = [...(tech.unlocks.buildings || []), ...(tech.unlocks.upgrades || []), ...(tech.unlocks.crafts || [])].map(unlockName); // upgrades: the generator's tier 3 (gen-tiers)
       if (opens.length) stats.push(["Unlocks", opens.join(", ")]);
       const edge = [...new Set([...(tech.unlocks.crafts || []), ...(tech.covers || [])])].map(unlockName);
       if (edge.length) stats.push(["Crafting edge", edge.join(", ")]);
