@@ -564,6 +564,26 @@ export function shiftCoverage(state, fw) {
   }
   return out;
 }
+// A planned shift nobody can stand now: the shift on this hour has people on it, but every one of them (and anyone on
+// another shift covering the hour) is hurt, ill, in a bed, away from the base or dead. Gaps the roster leaves on purpose
+// (no shift for the hour, or a shift with nobody on it) are not this. { shift, who: [{ name, why }] } or null.
+export function uncovered(state, fw, h = hourOfDay(state)) {
+  if (!fw || fw.owner !== "player" || !fw.built || !fw.roster) return null;
+  const on = fw.roster.shifts.filter((sh) => inShift(sh, h) && sh.ids.length);
+  if (!on.length) return null;
+  const cov = shiftCoverage(state, fw)[h];
+  if (cov.n > 0) return null;
+  const who = [];
+  for (const sh of on) for (const id of sh.ids) {
+    const s = survivorById(state, id);
+    if (!s) continue;
+    const L = s.location || {};
+    const why = !s.alive ? "dead" : s.inBed ? "in a hospital bed" : healthRest(s, state) || (L.kind === "base" && L.baseId === fw.baseId ? "" : L.kind === "post" && L.fw === fw.id ? "" : "away from the base");
+    who.push({ name: s.name.split(" ")[0], why: why || "unavailable" });
+  }
+  return { shift: on[0], who };
+}
+
 // "On duty now: Ann · gaps 18–06" for the tab.
 export function shiftLine(state, fw) {
   const cov = shiftCoverage(state, fw);
@@ -937,10 +957,11 @@ export function stashInCache(state, p, fw) {
 }
 
 // ---------- hunting blinds (the job trips' hunters: tripland.js TRIP_HOOKS.game) ----------
-// × on the game a base's hunters find on this tile (a blind of yours there): FIELD.BLIND.mult, else 1.
-export function blindMult(state, base, tile) {
+// × on the game hunters find on this tile (a blind of their owner's there: yours for your base's hunters and teams, a
+// group's for its own hunting parties): FIELD.BLIND.mult, else 1.
+export function blindMult(state, base, tile, owner = "player") {
   const fw = fwAt(state, tile);
-  return fw && fw.kind === "blind" && fw.built && fw.owner === "player" && fw.hp > 0 ? FIELD.BLIND.mult : 1;
+  return fw && fw.kind === "blind" && fw.built && fw.owner === owner && fw.hp > 0 ? FIELD.BLIND.mult : 1;
 }
 
 // ---------- the job trips' plug-in points (job-trips branch: tripland.js TRIP_HOOKS) ----------
@@ -968,7 +989,7 @@ export function installTripHooks(hooks, { passiveWells = false } = {}) {
     return drop ? { tile: drop.tile, stock: drop.fw.contents, fw: drop.fw, put: (key, q) => depositAt(state, drop.fw, key, q) } : null; // put: up to its room (no overfill)
   };
   const prevGame = hooks.game;
-  hooks.game = (state, base, tile) => blindMult(state, base, tile) * (prevGame ? prevGame(state, base, tile) || 1 : 1); // a hunting blind
+  hooks.game = (state, base, tile, owner = "player") => blindMult(state, base, tile, owner) * (prevGame ? prevGame(state, base, tile, owner) || 1 : 1); // a hunting blind
   const prevDraw = hooks.draw;
   hooks.draw = (state, base, tile, q) => (fwAt(state, tile) && fwAt(state, tile).kind === "well" ? drawWell(state, tile, q) : prevDraw ? prevDraw(state, base, tile, q) : q);
   FIELD.PASSIVE_WELLS = !!passiveWells;
@@ -1717,7 +1738,7 @@ export function fieldWorksHelp() {
   const kinds = FIELD.ORDER.map((k) => { const d = K[k]; return `<tr><td>${d.icon}</td><td><b>${d.name}</b></td><td><span class="muted">${costText(d.cost)}; ${d.hours} work-hours + the walk; condition ${d.hp}${d.req ? "; a Mechanics 3+ survivor" : ""}.</span> ${d.desc}</td></tr>`; }).join("");
   return `Structures a base puts up on the land it holds outside its walls: open a base's <b>Field works</b> tab, pick a kind and click a green tile on the map (at most ${FIELD.RANGE} tiles out, on the base's own ground or a claim of yours; a hub keeps ${FIELD.MAX.hub}, an outpost ${FIELD.MAX.outpost}, a shelter ${FIELD.MAX.shelter}, a camp none). The materials leave the stores when you place it; the base's builders walk out and put it up (their hours include the walk, ${FIELD.WALK.pace} h a tile each way), sharing their time with the base's own building queue.
     <table class="helptable">${kinds}</table>
-    <b>Lookouts and guards on shifts.</b> A watch tower's lookouts and a roadblock's guards stand shifts, like the base's watch roster: pick how the day is split (${Object.values(FIELD.SHIFTS).map((x) => x.name.toLowerCase()).join(", ")}) and who stands each shift (up to ${garrisonCap({ kind: "tower" })} a shift). They walk out for their shift (leaving early by the walk, so the one coming relieves the one going) and come home after it to eat and sleep; off duty they work at the base like anyone. A night shift keeps them up: they sleep in after it. The strip under the shifts shows each hour of the day: red hours nobody covers (an empty shift, someone hurt, ill, away or in a bed). One person on each of two 12-hour shifts keeps a tower watched round the clock. A manned tower shows ${T.day} tiles round it by day and ${T.night} at night, live on the map (hover or select it for the ring), and its lookouts warn the base of raids and hordes they see. A guarded roadblock holds ${R.guardHold}× as long and the guards shoot back.<br><br>
+    <b>Lookouts and guards on shifts.</b> A watch tower's lookouts and a roadblock's guards stand shifts, like the base's watch roster: pick how the day is split (${Object.values(FIELD.SHIFTS).map((x) => x.name.toLowerCase()).join(", ")}) and who stands each shift (up to ${garrisonCap({ kind: "tower" })} a shift). They walk out for their shift (leaving early by the walk, so the one coming relieves the one going) and come home after it to eat and sleep; off duty they work at the base like anyone. A night shift keeps them up: they sleep in after it. The strip under the shifts shows each hour of the day: red hours nobody covers (an empty shift, someone hurt, ill, away or in a bed); when a shift you planned is left with nobody fit to stand it, an alert says so until someone covers it. One person on each of two 12-hour shifts keeps a tower watched round the clock. A manned tower shows ${T.day} tiles round it by day and ${T.night} at night, live on the map (hover or select it for the ring, or tick the Tower sight layer for all of them), and its lookouts warn the base of raids and hordes they see. A guarded roadblock holds ${R.guardHold}× as long and the guards shoot back.<br><br>
     <b>Threats.</b> A horde entering a structure's tile batters it (a roadblock holds it while it forces a lane: up to ${R.hordeHold} hours, the lookouts or guards shoot down some of it first; spike traps cut it down instead; a buried cache is left alone). A hostile group within ${Rd.range} tiles may send a small raid at one (about ${Math.round(Rd.chance * 100)}% a day for each structure while one is near, more for a full stockpile, half for an aggressive group that is not Hostile, ${Math.round(Rd.cacheW * 100)}% as often for a cache, which they find only ${Math.round(Rd.find * 100)}% of the time). The people on duty fight it by the numbers; if they lose or nobody is there, the raiders take it over when it is within ${Rd.near} tiles of their land (${Math.round(Rd.capture * 100)}% of the time) or empty it and wreck it. Raiders passing over a stockpile empty it. The groups raid each other's structures by the same rules (war enemies, and aggressive groups their neighbours); you see it where you have eyes. Send a team to take one back (Capture), or to wreck, take or loot a group's.<br><br>
     <b>Repairs.</b> Damaged ones show a 🔧 on the map and an alert. Repair from the tab (materials by the damage, about ${Math.round(FIELD.REPAIR.share * 100)}% of the cost for a wreck; the builders walk out), or Repair all. Spike traps are reset the same way once sprung (under ${Math.round(FIELD.SPIKES.dead * 100)}%); a robbed snare line's wires too.<br><br>
     <b>Hauling.</b> Outdoor workers drop their loads at a stockpile out past them; Send a haul team brings it in (two people, the base's best running vehicle if there is one), or set a standing order on the stockpile: every few days, or once it holds enough (with a vehicle; skipped under attack, with no vehicle or nobody fit, and tried again the next day). A fuel cache is the other way round: the builders carry supplies out (Restock) and teams on the road take them.<br><br>

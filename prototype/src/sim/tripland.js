@@ -126,11 +126,12 @@ export function tripRoute(state, from, to, owner = "player") {
 //     put(key, q) → what a drop point with a room limit takes (the rest comes home: jobtrips.js credit).
 //   TRIP_HOOKS.draw(state, base, tile, q) → what a water carrier fills at a source the water hook added ({ well: true }:
 //     a field well gives its day's yield and is drawn down by it), at most q.
-//   TRIP_HOOKS.game(state, base, tile) → × on the game the base's hunters find on that tile (a hunting blind: 1.35).
+//   TRIP_HOOKS.game(state, base, tile, owner) → × on the game hunters of that owner ("player" or a group's id) find on
+//     that tile (a hunting blind of theirs: 1.35): the base's hunters and a team's hunt (hunting.js huntHour).
 // sim/fieldworks.js installs them at load (installTripHooks).
 export const TRIP_HOOKS = { water: null, deposit: null, draw: null, game: null };
-// × on the game a base's hunters find on a tile (TRIP_HOOKS.game; 1 without).
-export const tileGameMult = (state, base, tile) => (TRIP_HOOKS.game ? TRIP_HOOKS.game(state, base, tile) || 1 : 1);
+// × on the game a base's hunters or a team find on a tile (TRIP_HOOKS.game; 1 without). owner: whose hunters.
+export const tileGameMult = (state, base, tile, owner = "player") => (TRIP_HOOKS.game ? TRIP_HOOKS.game(state, base, tile, owner) || 1 : 1);
 // The water a carrier fills at `src` ({ id, well? }): a well's day's yield left (TRIP_HOOKS.draw), else all of q.
 export const drawSource = (state, base, src, q) => (src && src.well && TRIP_HOOKS.draw ? Math.max(0, Math.min(q, TRIP_HOOKS.draw(state, base, src.id, q) || 0)) : q);
 // The water a base's fishers ("fish") or water carriers ("water") go to, nearest first: [{ id, d }].

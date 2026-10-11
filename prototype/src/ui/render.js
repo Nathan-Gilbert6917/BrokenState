@@ -1490,7 +1490,7 @@ export function render(state) {
   }
   ctx.restore();
   // Field works (sim/fieldworks.js): yours and the groups' you know of, and the tile picker's green tiles.
-  drawFieldWorks(state, { ctx, G, inView, s: zoomBoost(), zoom: camera.zoom, hover: view.hover, selected: view.selected, live, knowledge: k, place: state.timelapse ? null : view.fwPlace, colorOf: (o) => (o === "player" ? PLAYER_COLOR : (state.factions.find((f) => f.id === o) || {}).color || "#cccccc") });
+  drawFieldWorks(state, { ctx, G, inView, s: zoomBoost(), zoom: camera.zoom, hover: view.hover, selected: view.selected, sight: on("towersight"), live, knowledge: k, place: state.timelapse ? null : view.fwPlace, colorOf: (o) => (o === "player" ? PLAYER_COLOR : (state.factions.find((f) => f.id === o) || {}).color || "#cccccc") });
   drawSurveys(state, minX, maxX, minY, maxY, labels);
   // Hordes: a crowd of the dead (more figures for bigger hordes) facing where they drift, their size on a badge;
   // stale ghosts (faded, "N?") where you saw them last. On a base's tile they stand beside it, not on top of it.

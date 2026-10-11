@@ -36,8 +36,10 @@ import * as FW from "../src/sim/fieldworks.js";
 import { wellYield } from "../src/sim/claims.js";
 import { createVehicle } from "../src/sim/vehicles.js";
 import { startWar } from "../src/sim/diplomacy.js";
-import { huntTripTile, gameAbundance } from "../src/sim/hunting.js";
-import { distFactor } from "../src/sim/tripland.js";
+import { huntTripTile, gameAbundance, expectHunt } from "../src/sim/hunting.js";
+import { fieldworkAlerts } from "../src/ui/fieldworks.js";
+import { LAYERS } from "../src/sim/markers.js";
+import { distFactor, tileGameMult } from "../src/sim/tripland.js";
 import { codexEntry } from "../src/ui/codex.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -827,6 +829,57 @@ section("The governor: a roadblock on the road raids keep using; a stockpile by 
 }
 
 // ---------------------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------------------
+section("fw-picks: a blind helps a team's hunt on its tile; the uncovered-shift alert; the Tower sight layer");
+{
+  const state = mk();
+  const h = hub(state);
+  const fw = standing(state, "blind", 2, (id) => ["forest", "hills", "plains"].includes(state.tiles[id].terrain)) || standing(state, "blind", 1);
+  if (check(!!fw, "a blind for the team hunt")) {
+    check(tileGameMult(state, null, fw.tile, "player") === FW.FIELD.BLIND.mult && tileGameMult(state, null, fw.tile, 999) === 1, "the blind counts for your teams, not a group's");
+    const team = { big: 1, small: 0.8 }; // a rifleman's power
+    const keep = FW.FIELD.BLIND.mult;
+    const withB = expectHunt(state, team, fw.tile, 6, state.hour, 0, Infinity, "player");
+    FW.FIELD.BLIND.mult = 1;
+    const without = expectHunt(state, team, fw.tile, 6, state.hour, 0, Infinity, "player");
+    FW.FIELD.BLIND.mult = keep;
+    check(withB.rations > without.rations, `a team's expected hunt there: ${withB.rations} food with the blind, ${without.rations} without`);
+    // A team actually hunting there: the summary says so.
+    const ids = atBase(state, h.id).filter((x) => !x.leader).slice(0, 2).map((x) => x.id);
+    const t = launchExpedition(state, { memberIds: ids, dest: fw.tile, mission: "move", stance: "normal", supplies: { food: 5, water: 5, ...Object.fromEntries(Object.entries(h.stock).filter(([k]) => /^a_/.test(k)).slice(0, 2).map(([k, v]) => [k, Math.min(30, Math.floor(v))])) } }).party;
+    tick(state, 24, () => t.phase === "waiting" && partyTile(t) === fw.tile);
+    const r = startOrder(state, t, { type: "hunt", hours: 3 });
+    tick(state, 5, () => t.phase === "waiting");
+    check(t.lastHaul || /hunt/i.test(r || ""), `a team hunt at the blind ran (${(r || "").slice(0, 80)})`);
+  }
+  // The uncovered-shift alert.
+  const st = mk(), hb = hub(st);
+  const tower = standing(st, "tower", 2);
+  toHour(st, 10);
+  const a = atBase(st, hb.id).find((x) => !x.leader), b = atBase(st, hb.id).find((x) => !x.leader && x !== a);
+  for (const s of [a, b]) Object.assign(s, { health: 100, conditions: [], inBed: false });
+  FW.setRosterPreset(st, tower, "day"); // daylight only: the night is a gap left on purpose
+  FW.postPerson(st, tower.id, a.id, 0);
+  tick(st, 2);
+  const alerts = () => { const out = []; fieldworkAlerts(st, out); return out.filter((x) => x.kind === "fwgap"); };
+  check(!alerts().length && !FW.uncovered(st, tower), "covered: no alert");
+  check(!FW.uncovered(st, tower, 23), "a daylight-only roster at 23:00: a gap on purpose, no alert");
+  a.health = 20; // badly hurt: home, and the day shift has nobody else
+  tick(st, 1);
+  const al = alerts();
+  check(al.length === 1 && /uncovered/.test(al[0].text) && al[0].key === `fwgap:${tower.id}` && /hurt|rest|ill/i.test(al[0].tip), `hurt: one alert (${al[0] ? al[0].text : "none"})`);
+  FW.postPerson(st, tower.id, b.id, 0);
+  tick(st, 2);
+  check(!alerts().length, "someone else on the shift: the alert clears");
+  // Away on a team: uncovered too.
+  a.health = 100; a.conditions = [];
+  FW.recallPerson(st, b.id);
+  const tm = launchExpedition(st, { memberIds: [a.id], dest: st.grid.neighbors(hb.tile).find((id) => st.tiles[id].terrain !== "water"), mission: "move", stance: "normal", supplies: { food: 2, water: 2 } }).party;
+  check(!!tm && FW.uncovered(st, tower) && /away/.test(FW.uncovered(st, tower).who[0].why), `away on a team: uncovered (${FW.uncovered(st, tower) ? FW.uncovered(st, tower).who.map((x) => x.why).join(", ") : "covered"})`);
+  // The Tower sight layer.
+  check(LAYERS.towersight && /Tower sight/.test(LAYERS.towersight.name), "a Tower sight map layer");
+}
+
 section("Help and Codex");
 {
   const html = FW.fieldWorksHelp();

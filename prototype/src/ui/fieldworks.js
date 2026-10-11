@@ -187,6 +187,16 @@ export function fieldworkAlerts(state, out) {
     if (n.tone !== "danger") continue;
     out.push({ key: `fw:${n.fw}:${n.hour}`, kind: "fieldwork", icon: n.text.includes("destroyed") || n.text.includes("took") ? "🏚" : "⚔", tone: "danger", text: n.text.length > 90 ? `${n.text.slice(0, 88)}…` : n.text, tip: `${n.text} Click to look.`, go: { tile: n.tile }, event: true });
   }
+  // A planned shift at a tower or roadblock nobody can stand now (hurt, ill, away): one alert a structure, gone once
+  // someone covers it again (or the roster is changed).
+  for (const fw of FW.playerWorks(state)) {
+    if (!FW.garrisonCap(fw)) continue;
+    const u = FW.uncovered(state, fw);
+    if (!u) continue;
+    const b = baseById(state, fw.baseId);
+    const why = u.who.map((x) => `${x.name} ${x.why}`).join(", ");
+    out.push({ key: `fwgap:${fw.id}`, kind: "fwgap", icon: fw.kind === "tower" ? "👁" : "🛡", tone: "warn", text: `${FW.kindName(fw)} at ${where(state, fw.tile)} uncovered: ${u.shift.name.toLowerCase()} shift (${why})`.slice(0, 90), tip: `The ${u.shift.name.toLowerCase()} shift (${shiftText(u.shift)}) has nobody fit to stand it: ${why}. Put someone else on it from ${b ? b.name : "its base"}'s Field works tab. Click to open it.`, go: b ? { base: b.id, tab: "fieldworks" } : { tile: fw.tile } });
+  }
   for (const fw of FW.playerWorks(state)) {
     const band = FW.damageBand(fw);
     if (!band || FW.jobFor(state, fw)) continue;
@@ -294,14 +304,14 @@ function badge(state, ctx, fw, x, y, s, color) {
   }
   ctx.restore();
 }
-// A watch tower of yours under the mouse or selected: the ring of what its lookouts see now (towerRadius), faint gold
-// when someone is on duty, grey dashed when not.
+// A watch tower of yours under the mouse or selected (and with the Tower sight layer on, every manned one): the ring of
+// what its lookouts see now (towerRadius), faint gold when someone is on duty, grey dashed when not.
 function sightRings(state, o) {
   const { ctx, G } = o;
   const tiles = new Set([o.hover, o.selected].filter((x) => x != null && x >= 0));
-  if (!tiles.size) return;
+  if (!tiles.size && !o.sight) return;
   for (const fw of FW.playerWorks(state)) {
-    if (fw.kind !== "tower" || !fw.built || !tiles.has(fw.tile)) continue;
+    if (fw.kind !== "tower" || !fw.built || !(tiles.has(fw.tile) || (o.sight && FW.manned(state, fw)))) continue; // o.sight: the Tower sight layer (every manned tower)
     const nb = state.grid.neighbors(fw.tile)[0];
     if (nb == null) continue;
     const step = Math.hypot(G.x[nb] - G.x[fw.tile], G.y[nb] - G.y[fw.tile]);

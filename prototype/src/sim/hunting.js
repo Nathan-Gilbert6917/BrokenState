@@ -361,7 +361,10 @@ const bigAvg = (deer) => deer * ANIMALS.deer.rations + (1 - deer) * ANIMALS.hog.
 // team: teamPower, or a huntTeam's team with its mix (team.mix: each hour's method in turn, methodSeq); loud: share of
 // kills by firearms (without a mix); room: kg the team can still carry (what does not fit is left: rations are capped
 // by it, all = what was bagged).
-export function expectHunt(state, team, tile, hours, startHour = state.hour, loud = 0, room = Infinity) {
+// A team's power × a hunting blind's game (sim/fieldworks.js, tripland.js tileGameMult): more game on that tile.
+const blindTeam = (T, bm) => (bm > 1 && T ? { ...T, big: T.big * bm, small: T.small * bm } : T);
+export function expectHunt(state, team, tile, hours, startHour = state.hour, loud = 0, room = Infinity, owner = "player") {
+  const bm = tileGameMult(state, null, tile, owner); // a blind of yours on the tile
   let level = gameLevel(state, tile, startHour), rations = 0, big = 0, small = 0, shots = 0, arrows = 0, trapped = 0;
   const mix = team && team.mix;
   const seq = mix ? methodSeq(mix.shares, hours) : null;
@@ -376,14 +379,14 @@ export function expectHunt(state, team, tile, hours, startHour = state.hour, lou
     let nb, ns, deer = 0.7, bigs, smalls, dep;
     if (mix && m === "traps") {
       // Snares and deadfalls: one small game at most an hour, silent.
-      const p = trapRate(state, tile, startHour + h, level, mix.methods.traps.n);
+      const p = Math.min(0.9, trapRate(state, tile, startHour + h, level, mix.methods.traps.n) * bm);
       nb = 0; ns = p; trapped += p;
       bigs = [[0, 1]];
       smalls = [[0, 1 - p], [ANIMALS.small.rations, p]];
       dep = (ns * ANIMALS.small.rations) / SNARE.deplete;
     } else {
       const T = mix ? mix.methods[m].team : team;
-      const o = huntOdds(state, T, tile, startHour + h, level);
+      const o = huntOdds(state, blindTeam(T, bm), tile, startHour + h, level);
       nb = o.big; ns = o.small * (1 + o.small / 3); deer = o.deer;
       // Shots by who makes the kills (a kill goes to one of the best three by their power for that game: huntHour).
       const fired = (k) => nb * (1 + HUNT.missChance) * T[`${k}Big`] + ns * (1 + HUNT.missSmall) * T[`${k}Small`];
@@ -545,11 +548,13 @@ export function huntHour(state, p) {
   // The hour's method by the home base's mix (all guns: the best weapon every hour).
   const mix = h.team.mix;
   const m = mix ? methodAt(mix.shares, Math.max(0, (t.done || 1) - 1)) : "guns";
+  const bm = tileGameMult(state, null, tile, p.owner); // a hunting blind of the team's owner there (sim/fieldworks.js)
+  if (bm > 1) got.blind = bm;
   got.hrs = got.hrs || { traps: 0, bows: 0, guns: 0 };
   got.hrs[m]++;
   if (m === "traps") {
     // Snares and deadfalls worked this hour: small game now and then, not a sound.
-    if (state.rng.chance(trapRate(state, tile, state.hour, gameLevel(state, tile), members.length))) {
+    if (state.rng.chance(Math.min(0.9, trapRate(state, tile, state.hour, gameLevel(state, tile), members.length) * bm))) {
       const wk = wormKill(state, tile, ANIMALS.small.rations);
       const kept = addMeat(state, p, wk.rations, wk.worm);
       bagged(got, "small");
@@ -564,7 +569,7 @@ export function huntHour(state, p) {
   }
   const team = m === "bows" ? mix.methods.bows.team : h.team;
   const hs = m === "bows" ? h.bowHs : h.hs;
-  const o = huntOdds(state, team, tile, state.hour);
+  const o = huntOdds(state, blindTeam(team, bm), tile, state.hour);
   const kills = [];
   if (state.rng.chance(o.big)) kills.push(state.rng.chance(o.deer) ? "deer" : "hog");
   if (state.rng.chance(o.small)) { kills.push("small"); if (state.rng.chance(o.small / 3)) kills.push("small"); }
@@ -614,7 +619,7 @@ export function huntSummary(state, p, t) {
   const how = (hrs.traps || 0) + (hrs.bows || 0) > 0 ? ` By the hunting mix: ${HUNT_METHODS.filter((k) => hrs[k]).map((k) => `${METHOD_NAMES[k].toLowerCase()} ${hrs[k]}h`).join(", ")}${got.trapped ? ` (the traps took ${got.trapped} small game)` : ""}.` : "";
   const arrows = got.arrowShots ? ` ${got.arrowShots} arrow${got.arrowShots === 1 ? "" : "s"} loosed, ${got.arrows || 0} lost.` : "";
   const left = (got.left >= 1 ? ` No room to carry ${Math.floor(got.left)} more: left where it fell.` : "") + how + arrows;
-  const stop = got.stopped ? ` Stopped: ${got.stopped}` : "";
+  const stop = (got.stopped ? ` Stopped: ${got.stopped}` : "") + (got.blind ? " Hunted from your blind here (more game)." : "");
   const level = gameWord(gameAbundance(state, partyTile(p)) * gameLevel(state, partyTile(p)));
   p.lastHaul = { kind: "hunt", rations: got.rations, hour: state.hour }; // for the trip report (and tests)
   const worm = wormNote(state, partyTile(p), got.infested);
