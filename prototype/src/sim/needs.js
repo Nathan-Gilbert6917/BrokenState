@@ -174,9 +174,9 @@ function feed(members, key, rule, pts, have, take, share) {
     for (const x of want) { const q = take(x.w, x.s); x.s[key] = clamp(x.s[key] + q * pts); }
     return false;
   }
-  if (share === "even") {
-    const f = left / total;
-    for (const x of want) { const q = take(x.w * f, x.s); x.s[key] = clamp(x.s[key] + q * pts); }
+  if (share === "even") { // the same amount each (no more than they want: the rest goes round the others)
+    const list = [...want].sort((a, b) => a.w - b.w);
+    for (let i = 0; i < list.length; i++) { const x = list[i]; const q = take(Math.min(x.w, left / (list.length - i)), x.s); left -= q; x.s[key] = clamp(x.s[key] + q * pts); }
     return true;
   }
   for (const x of order(want, key, share)) {

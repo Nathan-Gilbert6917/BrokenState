@@ -300,7 +300,7 @@ export function baseEatHour(state, base, people) {
       const r = eatAtBase(state, base, s, (wantPts / NEEDS.food) * ctx.stretch, ctx);
       const pts = (r.units / ctx.stretch) * NEEDS.food;
       s.hunger = clamp(s.hunger + pts);
-      got = { ...r, from: ctx.kitchen ? "kitchen" : "store" };
+      got = { ...r, from: r.units > EPS ? (ctx.kitchen ? "kitchen" : "store") : "" };
       acc(base).units += r.units;
       if (r.units > EPS) ateFromStore(state, base, r.items);
       if (packFood(s) < PACK.food * PACK.half && r.units > EPS) topUpPack(state, base, s, undefined, memo);
