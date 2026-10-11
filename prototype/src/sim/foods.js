@@ -243,7 +243,7 @@ function trimLots(arr, q, { eggs = true, clean = true } = {}) {
     if ((l.egg && !eggs) || (!l.egg && !clean)) continue;
     const t = Math.min(need, l.q);
     l.q -= t; need -= t;
-    out.push({ q: t, left: l.left, egg: !!l.egg });
+    out.push({ ...l, q: t, left: l.left, egg: !!l.egg }); // ...l: a lot's own fields go with it (wave 2: a cooked lot's poisonChance, eating.js)
   }
   for (let i = arr.length - 1; i >= 0; i--) if (arr[i].q <= EPS) arr.splice(i, 1);
   return out;

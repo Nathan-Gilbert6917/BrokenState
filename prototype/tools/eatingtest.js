@@ -167,6 +167,20 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
   check(o.meal.k === "f_beans", `tired of the canned meat two days running, they pick something else (${o.meal.k})`);
 }
 
+// The cooking branch's lots may carry poisonChance: rolled as it is eaten (none in this wave's food).
+{
+  const st = W();
+  const h = quietHub(st, 0);
+  st.hour = mildHour(st, 5);
+  addFood(h, "f_simplemeal", 20, { state: st });
+  h.foodLots.f_simplemeal[0].poisonChance = 1;
+  const s = residents(st, h.id)[0];
+  for (const x of residents(st, h.id)) x.hunger = 95;
+  s.hunger = 50;
+  at(st, 6);
+  check((s.conditions || []).some((c) => c.key === "stomach") && thoughtsOf(st, s).some((t) => t.id === "poison"), "a lot with poisonChance 1: food poisoning (an upset stomach) as it is eaten");
+}
+
 // ---------- 3. work time ----------
 {
   console.log("Work time");
@@ -304,7 +318,7 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
   // Same food again: three days of nothing but beans.
   clearFood(h); addFood(h, "f_beans", 400, { state: st });
   delete s.food; s.thoughts = [];
-  days(st, 4);
+  days(st, EAT.sameDays + 1);
   check(thoughtsOf(st, s).some((t) => t.id === "same" && t.v === THOUGHTS.same.v), `the same food ${EAT.sameDays} days running: "Same food again" ${THOUGHTS.same.v} (${(s.food.log || []).join(", ")})`);
   // A feast.
   setRationLevel(st, h, "feast");

@@ -51,7 +51,7 @@
 // has run out; s.thoughts, listed in the survivor screen and the mood notes):
 //   Ate raw food −7 (2 days) · a cooked meal: the catalog's moodLift × 3 for 3 days (stew +3, fine +6, lavish +12;
 //   a simple meal 0: the old daily "Good meals" averaged the same) · Same food again −3 (2 days) once the same food was
-//   most of what they ate EAT.sameDays (3) days running · A feast +6 (3 days) · Lean rations −1 a day and the short
+//   most (EAT.sameShare, 60%+) of what they ate EAT.sameDays (4) days running · A feast +6 (3 days) · Lean rations −1 a day and the short
 //   rations' −3 a day (economy.js). No dining tables exist, so there is no "ate without a table".
 // Traits (traits.js TRAIT_TIERS, by tier): Picky eater (simple meals and raw food worse, fine and lavish meals better),
 // Vegetarian (meat, animal products and mixed food −6 and plant food first), Cannibal (human meat +10; anyone else −20).
@@ -85,7 +85,7 @@ import { stomachMult } from "./traits.js";
 export const EAT = {
   band: [80, 100], spread: [82, 96], meal: 5, snack: 55, night: 30, nightFrom: 22, nightTo: 6, short: [40, 48],
   min: { base: 12, per: 28, meal: 20, max: 45 },
-  variety: 2, urgent: 2, sameDays: 3, log: 5,
+  variety: 2, urgent: 2, sameDays: 4, log: 5, sameShare: 0.6,
   rawMin: 0.1, dietMin: 0.1, // days of food that count for a thought (a bite of jerky is not "ate meat")
 };
 export const PACK = { food: 1.5, water: 1.5, hour: 5, keepDays: 3, keepShelf: 7, half: 0.5 };
@@ -418,9 +418,10 @@ function rollDay(state, s, nd) {
   const keys = Object.entries(fd.u || {});
   if (keys.length) {
     keys.sort((a, b) => b[1] - a[1]);
-    fd.log = [...(fd.log || []), keys[0][0]].slice(-EAT.log);
+    const all = keys.reduce((a, x) => a + x[1], 0);
+    fd.log = [...(fd.log || []), keys[0][1] >= EAT.sameShare * all ? keys[0][0] : ""].slice(-EAT.log); // "" a mixed day
     const tail = fd.log.slice(-EAT.sameDays);
-    if (tail.length >= EAT.sameDays && tail.every((k) => k === tail[0])) thought(state, s, "same", { label: `Same food again (${FOODS[tail[0]] ? FOODS[tail[0]].name.toLowerCase() : tail[0]})` });
+    if (tail.length >= EAT.sameDays && tail[0] && tail.every((k) => k === tail[0])) thought(state, s, "same", { label: `Same food again (${FOODS[tail[0]] ? FOODS[tail[0]].name.toLowerCase() : tail[0]})` });
   }
   fd.u = {};
   fd.d = nd;

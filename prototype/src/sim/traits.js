@@ -97,7 +97,7 @@ export const TRAIT_TIERS = {
   // 2026-10-11 (wave 2 eating, user pick 3): eating.js noteEat, the timed food thoughts (mood once, lasting 2–5 days).
   // picky: a simple meal −simple, raw food −raw (on top of "Ate raw food"), a fine meal +fine (a lavish one × 1.5).
   picky:        { pts: [-2, -3, -5], fx: { simple: [3, 4, 6], raw: [4, 6, 8], fine: [2, 3, 4] }, say: (f) => `Fussy about food: a simple meal mood −${f.simple} and raw food −${f.raw} on top of the usual; a fine meal +${f.fine} and a lavish one +${Math.round(f.fine * 1.5)} on top` },
-  vegetarian:   { pts: [-3],         fx: { meat: [6] }, say: (f) => `Eats plant food first (the menu puts it first); meat, fish, eggs, milk, honey or a mixed meal: mood −${f.meat} (2 days)` },
+  vegetarian:   { pts: [-3, -4, -6], fx: { meat: [6, 8, 10] }, say: (f) => `Eats plant food first (the menu puts it first); meat, fish, eggs, milk, honey or a mixed meal: mood −${f.meat} (2 days)` },
   cannibal:     { pts: [0],          fx: { lift: [10] }, say: (f) => `Human meat lifts their mood (+${f.lift}) where it turns anyone else's stomach (−20). There is no human meat in the game: the dead carry the worm` },
   // The prepper's background trait (hardcore-start.js): changes nothing in play, worth nothing.
   prepper:      { pts: [0],          fx: {}, say: () => TRAITS.prepper.desc },

@@ -225,8 +225,16 @@ export function teamNeedsHour(state, p, members) {
     for (const [k, q] of Object.entries(t.items || {})) a.items[k] = (a.items[k] || 0) + q;
     ate.set(s2, a);
   };
-  const fire = teamFire(state, p) === true; // raw meat at a lit camp fire is cooked
-  const takeShared = (q, s2) => { const t = takeFoodFrom([p, p.cargo || (p.cargo = { supplies: {}, gear: [] })], q, { eggs: false }); note(s2, t, fire ? 0 : t.raw); return t.units; };
+  // Raw game is cooked at a lit camp fire and at a stop (the team at rest: a cooking fire for the meal); on the move they
+  // eat what needs no cooking first and the raw meat only when nothing else is left ("Ate raw food", eating.js).
+  const fire = teamFire(state, p) === true || !moving;
+  const cargo = p.cargo || (p.cargo = { supplies: {}, gear: [] });
+  const takeShared = (q, s2) => {
+    let t = takeFoodFrom([p, cargo], q, { eggs: false, only: fire ? null : (k, f) => !f.raw });
+    if (!fire && t.units < q - 1e-9) { const t2 = takeFoodFrom([p, cargo], q - t.units, { eggs: false }); t = { ...t2, units: t.units + t2.units, raw: t2.raw, items: { ...t.items, ...Object.fromEntries(Object.entries(t2.items).map(([k, v]) => [k, v + (t.items[k] || 0)])) } }; }
+    note(s2, t, fire ? 0 : t.raw);
+    return t.units;
+  };
   let shortFood = feed(members, "hunger", rule, NEEDS.food, teamFood(p) - raw - rawVeg, takeShared, share);
   if (shortFood && rawVeg > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, rawVeg, (q, s2) => { const u = eatRawForageCargo(state, p, members, q); note(s2, { units: u, items: {} }, fire ? 0 : u); return u; }, share);
   if (shortFood && raw > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, raw, (q, s2) => { const u = eatRawCargo(state, p, members, q); note(s2, { units: u, items: {} }, fire ? 0 : u); return u; }, share);
