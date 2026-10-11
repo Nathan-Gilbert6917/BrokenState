@@ -56,6 +56,7 @@ export const LAYER_SWATCH = {
   fronts: { bg: "radial-gradient(circle,#3a4a78 0 45%,rgba(120,140,190,0.5) 70%,transparent 72%)" },
   known: { bg: "repeating-linear-gradient(135deg,rgba(165,240,230,0.85) 0 2px,rgba(30,60,58,0.9) 2px 5px)" },
   coalition: { bg: "linear-gradient(90deg,rgba(79,143,214,0.55) 0 50%,rgba(150,200,110,0.55) 50%)", border: "#f3d27a" },
+  towersight: { bg: "radial-gradient(circle,rgba(255,209,102,0.15) 0 55%,rgba(255,209,102,0.9) 58% 66%,transparent 70%)" },
 };
 export function swatch(k) {
   const s = LAYER_SWATCH[k];
@@ -66,6 +67,7 @@ export function swatch(k) {
 // What each layer shows, in full (the popup keeps one short line per layer). A layer added later without an entry
 // here shows its own description from sim/markers.js.
 const LAYER_HELP = {
+  towersight: "A faint gold ring round each of your watch towers with a lookout on duty now: the tiles it shows live on the map (3 by day, 1 at night; sim/fieldworks.js). Without the layer, hover or select a tower to see its ring. Off by default.",
   pois: "Towns and sites with their names. A site is a building for its type on a plate colored by its zone; the more faded, the less loot was left when you last saw it. Skulls under a name show its danger when zoomed in; small sites become dots when zoomed out. The ruins of a razed base (yours or a group's) stand in its place, named \"Ruins of …\".",
   territory: "Land held by you and by the groups you know, tinted in their color. Their bases are compounds in that color. Tiles your teams claimed (Claim this tile) are a lighter blue; hover one for Claimed by you (day N) and its well.",
   teams: "Your teams (! waiting for orders, ? an estimated position out of radio contact), plus the raiders, convoys, caravans and scavengers of other groups you can see. Their parties look like the group: bikers, humvees, robed zealots, caravans; scavengers carry a stuffed sack.",

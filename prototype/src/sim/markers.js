@@ -30,6 +30,7 @@ export const LAYERS = {
   fronts:    { name: "Weather fronts",   desc: "Storms, rain, snow and fog fronts and where they head" },
   known:     { name: "Known area",       desc: "Hatched where your people searched for hidden places" },
   coalition: { name: "Coalition land",   desc: "Land you and the coalition's members hold (goal: 50%)" },
+  towersight: { name: "Tower sight",     desc: "Rings round your manned watch towers: what they see" }, // sim/fieldworks.js
 };
 export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds", miltruck: "finds" };
 
