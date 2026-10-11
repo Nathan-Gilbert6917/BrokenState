@@ -19,6 +19,7 @@
 //   themselves), the leader, or roles in an area the leader was not handed. One log line each:
 //   "Leader Ana moved Sam from Build (nothing to build) to Cut wood (firewood 120 of 900 for the cold)."
 // The AI groups have no people with jobs of their own (factions.js: counts and stores), so nothing of theirs idles.
+import { gearOutdoorWorkers, gearText } from "./tripgear.js"; // Assign all idle: the outdoor workers geared for the land (trips-plus #2)
 import { atBase, hourOfDay, day, log, skill } from "./world.js";
 import { ROLES, scavLeft, SCAV_FLOOR, waterRunningShort, waterOutlook, fetchWaterWhy, fetchWaterDay } from "./economy.js";
 import { isManaged, toManual, stationWork } from "./work.js";
@@ -126,7 +127,9 @@ export function applyIdlePlan(state, base, plan, hold = 0) {
     if (hold > 0) p.s.govIdle = { role: p.job, station: p.station ?? null, until: state.hour + hold };
   }
   if (plan.length) assignStations(state, base);
-  return plan.length ? `${base.name}: ${planText(plan)}.` : `${base.name}: nothing here has room for them now.`;
+  // tripgear.js (trips-plus #2): those put on an outdoor job get what the armory can spare for the land
+  const geared = plan.length ? gearOutdoorWorkers(state, base, { who: plan.map((p) => p.s), pinned: true }) : [];
+  return plan.length ? `${base.name}: ${planText(plan)}.${geared.length ? ` Geared for the land: ${gearText(geared)}.` : ""}` : `${base.name}: nothing here has room for them now.`;
 }
 
 // Hourly (world.js, after the governor and the stewards); acts once a day at IDLE_HOUR.

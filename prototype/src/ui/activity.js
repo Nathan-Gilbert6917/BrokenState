@@ -8,6 +8,7 @@ import { roleSelect } from "./work.js"; // the role drop-down (work roles and fi
 import { planIdle, planText } from "../sim/idlework.js"; // "Assign all idle": each to what the base needs most
 import { fold } from "./panelfold.js"; // the Bases tab's per-base Idle drop-downs (open state kept)
 import { TRIP_JOBS } from "../sim/tripland.js"; // the outdoor jobs: their loads come in as they get home (sim/jobtrips.js)
+import { kitWarnings, gearOutdoorWorkers } from "../sim/tripgear.js"; // the outdoor workers' kit: the chips, Gear outdoor workers (trips-plus #2)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -59,17 +60,30 @@ function wnLast(state, base, row) {
   const [a, b] = row.last;
   return `<div class="wn-last small">${sparkline(state, base, row.job)}<span class="${a.zero ? "warn" : "good"}">${esc(a.text)}</span> <span class="muted">${esc(a.when)}</span>${b ? ` <span class="muted">· ${esc(b.text)} ${esc(b.when)}</span>` : ""}</div>`;
 }
-function wnPerson(state, x) {
+function wnPerson(state, x, base) {
   const a = x.act;
-  return `<span class="wn-who act-${a.kind}" data-action="survivor" data-id="${x.s.id}"${tip(`${x.s.name}: ${a.text}${a.why ? `. ${a.why}` : ""}`)}><i aria-hidden="true">${a.icon}</i>${esc(first(x.s))}</span>`;
+  const warn = base ? kitWarnings(state, base, x.s) : []; // an outdoor worker going out without a weapon, rounds or a light
+  const chip = warn.length ? ` <b class="wn-kit warn"${tip(warn.map((w) => w.tip).join(" "))}>⚠ ${esc(warn.map((w) => w.text).join(", "))}</b>` : "";
+  return `<span class="wn-who act-${a.kind}" data-action="survivor" data-id="${x.s.id}"${tip(`${x.s.name}: ${a.text}${a.why ? `. ${a.why}` : ""}`)}><i aria-hidden="true">${a.icon}</i>${esc(first(x.s))}${chip}</span>`;
 }
+// "Gear outdoor workers": what the armory can spare to those going out (sim/tripgear.js). Shown while one of them is
+// short of something; greyed out when the armory has nothing that would help.
+export function gearOutButton(state, base) {
+  const short = atBaseOut(state, base).filter((s) => kitWarnings(state, base, s).length);
+  if (!short.length) return "";
+  const dry = gearPreview(state, base);
+  return `<button class="mini wn-gear" data-action="gear-out" data-base="${base.id}"${dry.length ? "" : " disabled"}${tip(dry.length ? `From ${base.name}'s armory: ${dry.join(", ")}. A weapon for the job, a light for the dusk hunt or fishing, light armour, a tourniquet or kit (one of each kept for a team and the medics).` : `Nothing in ${base.name}'s armory would help ${short.map(first).join(", ")} (no spare weapon, light, armour or tourniquet): craft or find some.`)}>🗡 Gear outdoor workers</button>`;
+}
+const atBaseOut = (state, base) => (state.survivors || []).filter((s) => s.alive && s.location && s.location.kind === "base" && s.location.baseId === base.id && TRIP_JOBS[s.role]);
+// What the button would hand out, without moving anything.
+const gearPreview = (state, base) => gearOutdoorWorkers(state, base, { pinned: true, dry: true }).map((x) => `${first(x.s)}: ${String(x.item.name || "").toLowerCase()}`);
 function wnRow(state, base, row) {
   const n = row.people.length;
   const busy = row.job === "rest" ? "" : `<span class="wn-count small ${row.now ? "good" : "muted"}">${row.now} of ${n} at it now${row.out ? ` · ${row.out} out on the land` : ""}</span>`;
   const days = row.stalledDays >= 1 ? ` (${plural(row.stalledDays, "day")})` : "";
   return `<div class="wn-row wn-${row.job}">
     <div class="wn-head"><span class="wn-ico" aria-hidden="true">${row.icon}</span><b class="wn-name">${esc(row.name)}</b>${busy}</div>
-    <div class="wn-people">${row.people.map((x) => wnPerson(state, x)).join("")}</div>
+    <div class="wn-people">${row.people.map((x) => wnPerson(state, x, TRIP_JOBS[row.job] ? base : null)).join("")}</div>
     ${row.why ? `<div class="wn-why small ${row.stalledDays >= STALL_ALERT_DAYS ? "danger" : "warn"}">⚠️ ${esc(row.why)}${days}</div>` : ""}
     ${row.progress ? wnBar(row.progress) : ""}
     ${row.goal ? wnBar(row.goal, "wn-goal") : ""}
@@ -110,7 +124,7 @@ export function assignIdlePreview(state, base) {
 export function workNowPanel(state, base) {
   const rows = baseWork(state, base);
   if (!rows.length) return "";
-  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). The outdoor jobs (wood, foraging, hunting, fishing, scavenging, fetching water) go out in trips to the base's land and bring each load into the store as they get home (on the map: the Base workers layer); the workshops, teaching and reading bring theirs in at midnight. Breakfast (06:00, hunters and fishers 10:00) and dinner (20:00): building and crafting stop for them; someone out on a trip eats when back.")}>Work now</h3>${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
+  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). The outdoor jobs (wood, foraging, hunting, fishing, scavenging, fetching water) go out in trips to the base's land and bring each load into the store as they get home (on the map: the Base workers layer); the workshops, teaching and reading bring theirs in at midnight. Breakfast (06:00, hunters and fishers 10:00) and dinner (20:00): building and crafting stop for them; someone out on a trip eats when back.")}>Work now</h3>${gearOutButton(state, base)}${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
 }
 
 // ---------- the Bases card and the alerts ----------

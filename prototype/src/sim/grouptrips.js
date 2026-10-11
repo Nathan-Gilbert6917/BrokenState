@@ -16,10 +16,16 @@ import { workLand, distFactor, ownedWater, TRIP_JOBS } from "./tripland.js";
 import { gameAbundance, gameLevel } from "./hunting.js";
 import { forageAbundance, forageLevel } from "./foraging.js";
 import { woodAbundance, woodLevel } from "./woodcutting.js";
+import { kitFactor } from "./arsenal.js"; // their kit: how well their workers out on the land are armed (trips-plus #2)
+import { woundGroup } from "./groupcare.js";
+import { hash01 } from "./skills.js";
+import { localId } from "./world.js"; // ids are process-wide: the dice take the world-local one
+import { FACTION_TYPES } from "./data.js";
 
 // foodRef / woodRef: a usual base's land score (measured over 60 worlds' group bases: the median), so the median base
 // keeps its food and firewood as before.
-export const GROUP_TRIPS = { foodRef: 1.08, woodRef: 0.67, foodSpread: 0.1, fish: 0.02, fetchServes: 4, outShare: 0.15, hours: [7, 19] };
+export const GROUP_TRIPS = { foodRef: 1.08, woodRef: 0.67, foodSpread: 0.1, fish: 0.02, fetchServes: 4, outShare: 0.15, hours: [7, 19],
+  lossDay: 1.2e-5, woundDay: 0.004, gearMin: 0.3 }; // trouble on the land (groupTripLosses)
 const besieged = (state, f, tile) => state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "faction" && q.target.factionId === f.id && q.target.tile === tile);
 // The best of a base's land for a job: max over its tiles of what a tile holds × its walk.
 function bestLand(state, f, tile, job, value, radius = 2) {
@@ -80,5 +86,28 @@ export function groupWalkers(state, f, tile, t) {
     out.push({ job: terr === "forest" ? (i ? "hunt" : "wood") : terr === "hills" || terr === "mountain" ? "hunt" : i && ownsWater(state, f, tile) ? "water" : "forage", tile: target, i });
   }
   return out;
+}
+// Trouble on the land (trips-plus #2, as yours meet it: sim/tripevents.js), by the numbers once a day: their workers out
+// (outShare of their people at the bases not under siege) each have lossDay / g² of being killed and woundDay / g of
+// coming home with a wound worth tending (groupcare.js woundGroup: they heal there), g their kit (FACTION_TYPES arms ×
+// arsenal.js kitFactor, at least gearMin): a usual group's 1, a commune's about 0.6 (2.8× the deaths), a military
+// group's about 2 (a quarter). Calibrated on yours: an ungeared worker of yours meets death about 2.7e-5 of their days
+// out (tools/tripeventstest.js), a commune's the same. The trip's own dice: a hash of the seed, the group and the day.
+// Returns { out, dead, wounded }.
+export const groupGear = (f) => Math.max(GROUP_TRIPS.gearMin, ((FACTION_TYPES[f.type] && FACTION_TYPES[f.type].arms) || 1) * kitFactor(f));
+export function groupTripLosses(state, f, d = Math.floor(state.hour / 24)) {
+  const res = { out: 0, dead: 0, wounded: 0 };
+  if (!f || !f.alive || !f.bases.length || !(f.pop > 0)) return res;
+  const free = f.bases.filter((tile) => !besieged(state, f, tile)).length / f.bases.length;
+  const out = f.pop * GROUP_TRIPS.outShare * free;
+  if (!(out > 0)) return res;
+  const g = groupGear(f);
+  res.out = Math.round(out * 10) / 10;
+  if (hash01("grouptripdead", state.seed, localId(state, f.id), d) < out * GROUP_TRIPS.lossDay / (g * g) && f.pop > 1) { f.pop -= 1; res.dead = 1; }
+  const w = out * GROUP_TRIPS.woundDay / g;
+  res.wounded = Math.floor(w) + (hash01("grouptripwound", state.seed, localId(state, f.id), d) < w - Math.floor(w) ? 1 : 0);
+  if (res.wounded) woundGroup(f, res.wounded);
+  f.tripLoss = { dead: (f.tripLoss && f.tripLoss.dead || 0) + res.dead, wounded: (f.tripLoss && f.tripLoss.wounded || 0) + res.wounded };
+  return res;
 }
 export { TRIP_JOBS };

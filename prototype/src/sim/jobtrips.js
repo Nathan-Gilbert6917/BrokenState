@@ -21,7 +21,7 @@
 // The day's totals: base.tripTally = { day, [job]: { …sums, who: [ids] } } (the daily systems read it at midnight for
 // the noise, the log and the summaries); base.tripPops: the last deposits (the map's "+12 food" pops, ui/render.js).
 import { atBase, survivorById } from "./world.js";
-import { TRIP, TRIP_JOBS, tripWindow, walkHours, tripScale, depositPoint, drawSource } from "./tripland.js";
+import { TRIP, TRIP_JOBS, tripWindow, walkHours, tripScale, depositPoint, drawSource, walkMult } from "./tripland.js";
 import { describeActivity } from "./activity.js";
 import { woodTripTile, woodTrip } from "./woodcutting.js";
 import { forageTripTile, forageTrip, FORAGE } from "./foraging.js";
@@ -32,6 +32,7 @@ import { addWormCrop, wormMeatAt } from "./worm.js";
 import { noteOutput } from "./output.js";
 import { tileLabel } from "./parties.js";
 import { RAW } from "./water.js";
+import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText } from "./tripevents.js"; // trouble on the way (trips-plus #2)
 
 const r2 = (v) => Math.round((v || 0) * 100) / 100;
 const POPS = 12; // deposits kept for the map
@@ -61,29 +62,43 @@ function mayGo(state, base, s, h) {
 }
 
 // A trip for s on `job` from time `start` (in one of the job's windows), or null (no tile, or no time left).
-export function planTrip(state, base, s, job, start) {
+// from: where they set out from when it is not the base (a stockpile they left the last load at: a shorter walk out).
+// Drop points (trips-plus #3): a trip that is not the last of its window leaves its load at a stockpile of the base
+// (tripland.js depositPoint: sim/fieldworks' hook, the nearest with room) when walking there from the work is shorter
+// than walking home: t.drop = its tile, the walk back that much shorter (more hours at the work), and the next trip
+// sets out from it (t.from). The window's last trip brings its load home (they sleep at the base), and a trip cut
+// short walks home (cutShort). A team (fieldworks' Send a haul team) brings a stockpile's goods in.
+export function planTrip(state, base, s, job, start, from = null) {
   const c = TRIP_JOBS[job];
   const win = tripWindow(job, start);
   if (!c || !win) return null;
   const tg = tripTarget(state, base, job);
   if (!tg) return null;
   const d0 = Math.floor(start / 24) * 24, wa = d0 + win[0], wb = d0 + win[1];
-  const walk = walkHours(job, tg.d);
-  let home, next = null;
+  const m = walkMult(state); // the game's pace (tripland.js PACES)
+  const walk = walkHours(job, tg.d, m);
+  const leg = (a, b) => walkHours("wood", state.grid.distance(a, b), m); // a walk between two land tiles
+  const out = from != null && from !== base.tile && !c.fixed ? Math.min(walk, leg(from, tg.at)) : walk;
+  let home, next = null, back = walk, drop = null;
   if (c.fixed) {
     home = start + 2 * walk + c.fixed.fill;
     if (home > wb + 1e-9) return null;
     next = home + c.fixed.rest;
   } else {
     const L = (wb - wa) / c.trips;
-    const k = Math.min(c.trips - 1, Math.floor((start - wa) / L + 1e-9));
+    let k = Math.min(c.trips - 1, Math.floor((start - wa) / L + 1e-9));
     home = wa + (k + 1) * L;
-    if (home - start - 2 * walk < TRIP.minWork) {
+    if (home - start - out - walk < TRIP.minWork) {
       if (k + 1 >= c.trips) return null;
       home = wa + (k + 2) * L; // too late in this slot: one longer trip into the next
+      k++;
+    }
+    if (k + 1 < c.trips) { // not the window's last: a stockpile nearer the work takes the load
+      const dp = depositPoint(state, base, { ...s, trip: { at: tg.at, job } }, job);
+      if (dp && dp.tile != null && dp.tile !== base.tile) { const b2 = leg(tg.at, dp.tile); if (b2 < back - 1e-9) { back = b2; drop = dp.tile; } }
     }
   }
-  return { job, base: base.id, tile: tg.tile, at: tg.at, d: tg.d, leave: start, arrive: start + walk, workEnd: home - walk, home, ...(next != null ? { next } : {}), ...(tg.well ? { well: true } : {}) };
+  return { job, base: base.id, tile: tg.tile, at: tg.at, d: tg.d, leave: start, arrive: start + out, workEnd: home - back, home, ...(next != null ? { next } : {}), ...(drop != null ? { drop, wh: walk } : {}), ...(from != null && from !== base.tile && !c.fixed ? { from } : {}), ...(tg.well ? { well: true } : {}) };
 }
 
 // The old job's hours a trip's work counts as (Fetch water: its share of a full fill).
@@ -164,7 +179,7 @@ function tally(state, base, job, sid, add, now) {
 // The load into the store (the deposit point: the base unless something else takes it, tripland.js depositPoint).
 function credit(state, base, s, t, now) {
   const c = t.carry;
-  const dp = depositPoint(state, base, s, t.job);
+  const dp = t.drop != null ? depositPoint(state, base, s, t.job) : { tile: base.tile, stock: base.stock }; // a drop trip (planTrip t.drop): the stockpile, else home
   // A drop point with a room limit (a stockpile: dp.put(key, q) → what it took) gets the load through a scratch store:
   // what fits is left there, the rest comes home with them (no overfill).
   const st = dp.put ? {} : dp.stock || base.stock;
@@ -213,6 +228,7 @@ function credit(state, base, s, t, now) {
       }
     }
   }
+  const bonus = creditBonus(state, base, t, st); // tripevents.js: a find, a boar's meat (with the load: a stockpile's room too)
   let popTile = dp.tile;
   if (dp.put) {
     let left = 0, home = 0;
@@ -225,7 +241,7 @@ function credit(state, base, s, t, now) {
     if (!(left > 0)) popTile = base.tile; // nothing fitted: all of it came home
     if (home > 0) t.overflow = Math.round(home * 100) / 100; // the rest walked home with them
   }
-  const text = popText(t);
+  const text = [popText(t), bonus].filter(Boolean).join(" ");
   if (text) {
     const pops = base.tripPops || (base.tripPops = []);
     pops.push({ t: r2(t.home), sid: s.id, job: t.job, text, tile: popTile });
@@ -234,17 +250,18 @@ function credit(state, base, s, t, now) {
 }
 
 // Ends the work now (time `now`): on the way out they turn back, at work they pack up and walk home.
-function cutShort(t, now, why) {
+export function cutShort(t, now, why) {
   if (now >= t.workEnd) return;
   if (now < t.arrive) {
     t.reach = Math.max(0, Math.min(1, (now - t.leave) / Math.max(1e-6, t.arrive - t.leave)));
     t.home = now + (now - t.leave);
     t.arrive = t.workEnd = now;
   } else {
-    t.home = now + (t.home - t.workEnd);
+    t.home = now + (t.drop != null && t.wh != null ? t.wh : t.home - t.workEnd); // cut short: home, not to the stockpile
     t.workEnd = now;
   }
   delete t.next;
+  delete t.drop;
   t.cut = why;
 }
 
@@ -254,21 +271,30 @@ function stepPerson(state, base, s, now) {
   for (let guard = 0; guard < 6; guard++) {
     const t = s.trip;
     if (t) {
+      if (!t.evr) armTripEvent(state, base, s, t); // tripevents.js: the trip's trouble, if any (its own dice, once)
+      if (t.ev && t.ev.pending && holdTrip(state, base, s, t, now)) return; // a card waits: they hold where they are
+      if (!s.alive || s.trip !== t) return;
       if (t.workEnd > now) {
         const job = mayGo(state, base, s, now);
         if (job !== t.job) cutShort(t, now, job ? "another job" : describeActivity(state, s, ((now % 24) + 24) % 24, { trips: false }).text);
       }
-      if (!t.carry && t.workEnd < end) t.carry = rollLoad(state, base, s, t);
+      if (t.ev && !t.ev.done && t.ev.at < end && t.ev.at < t.home) {
+        if (!t.carry && t.workEnd <= t.ev.at) t.carry = t.noLoad ? { empty: true } : rollLoad(state, base, s, t); // on the way home: the load is on their back
+        fireTripEvent(state, base, s, t, now);
+        if (!s.alive || s.trip !== t || t.ev.pending) return;
+      }
+      if (!t.carry && t.workEnd < end) t.carry = t.noLoad ? { empty: true } : rollLoad(state, base, s, t);
       if (t.home >= end) return;
       credit(state, base, s, t, now);
       delete s.trip;
       const from = Math.max(t.home + TRIP.deposit, t.next || 0);
       const n = (t.n || 0) + 1;
+      const at = t.drop != null ? t.drop : null; // left the load at a stockpile: the next trip sets out from there
       if (from < end && dayOf(from) === dayOf(t.leave)) {
         const job = mayGo(state, base, s, Math.floor(from));
-        const nt = job === t.job ? planTrip(state, base, s, job, from) : null;
+        const nt = job === t.job ? planTrip(state, base, s, job, from, at) : null;
         if (nt) { nt.n = n; s.trip = nt; continue; }
-      } else if (t.next != null || dayOf(from) === dayOf(t.leave)) s.tripNext = { t: r2(from), n, day: dayOf(t.leave) };
+      } else if (t.next != null || dayOf(from) === dayOf(t.leave)) s.tripNext = { t: r2(from), n, day: dayOf(t.leave), ...(at != null ? { from: at } : {}) };
       return;
     }
     const job = mayGo(state, base, s, now);
@@ -276,7 +302,7 @@ function stepPerson(state, base, s, now) {
     const nx = s.tripNext && s.tripNext.day === dayOf(now) ? s.tripNext : null;
     const start = Math.max(now, nx ? nx.t : now);
     if (start >= end) return;
-    const nt = planTrip(state, base, s, job, start);
+    const nt = planTrip(state, base, s, job, start, nx && nx.from != null ? nx.from : null);
     if (!nt) return;
     nt.n = nx ? nx.n : 0;
     delete s.tripNext;
@@ -316,6 +342,8 @@ export function tripState(state, s, t = state.hour) {
   const tr = s && s.trip;
   if (!tr || t < tr.leave || t >= tr.home) return null;
   const c = TRIP_JOBS[tr.job];
+  const held = holdText(tr); // tripevents.js: a card waits ("Facing a bear")
+  if (held) return { phase: tr.ev.phase || "work", f: tr.ev.f ?? 0.5, progress: tr.ev.f ?? 0.5, text: `${held} near ${tileLabel(state, tr.tile)}`, stage: "", job: tr.job, held: true };
   const where = tileLabel(state, tr.tile);
   const wtext = tr.job === "fish" || tr.job === "water" ? (state.tiles[tr.tile] && state.tiles[tr.tile].river ? "the river" : "the water") : where;
   const span = Math.max(1e-6, tr.workEnd - tr.arrive);
@@ -327,6 +355,7 @@ export function tripState(state, s, t = state.hour) {
   }
   const load = loadText(tr);
   const f = (t - tr.workEnd) / Math.max(1e-6, tr.home - tr.workEnd);
+  if (tr.drop != null) { const T = state.tiles[tr.drop]; const at = `stockpile (${T ? `${T.x},${T.y}` : tr.drop})`; return { phase: "back", f, progress: 1, text: load ? `Dropping ${load} at ${at}` : `Dropping at ${at}`, stage: "", job: tr.job, load, drop: tr.drop }; }
   return { phase: "back", f, progress: 1, text: load ? `Bringing ${load} back` : tr.carry ? "Heading home empty-handed" : "Heading home", stage: "", job: tr.job, load };
 }
 // The people of a base out on trips at time t: [{ s, st (tripState), trip }].
