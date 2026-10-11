@@ -308,7 +308,7 @@ section("Assign all idle: what the base needs, a job they can do there");
   const ppl = atBase(st, b.id);
   for (const s of ppl) { s.pinned = true; s.role = "farm"; s.inBed = false; s.conditions = []; s.health = 100; }
   const [x, y] = ppl;
-  x.role = "hunt"; x.pinned = false; // no hunting cabin: stalled
+  x.role = "scavenge"; x.pinned = false; b.scavLeft = SCAV_FLOOR; // the ruins picked clean: stalled (job trips: hunting needs no cabin now)
   y.role = "build"; y.pinned = false; b.construction = []; b.repairs = [];
   for (const f of (b.buildings || [])) if (f.wear) f.wear = 0;
   tickTo(st, 10);
@@ -317,7 +317,7 @@ section("Assign all idle: what the base needs, a job they can do there");
   check(needs.some((n) => n.job === "build"), `the base's needs: ${needs.map((n) => `${n.job} ${n.score}`).join(", ")}`);
   const plan = planIdle(st, b);
   note(`plan: ${plan.map((p) => `${p.s.name}: ${p.from} → ${p.job} (${p.why})`).join("; ")}`);
-  check(plan.some((p) => p.s === x) && plan.every((p) => p.job !== p.from && p.why), "the stalled hunter gets a job the base needs, with why");
+  check(plan.some((p) => p.s === x) && plan.every((p) => p.job !== p.from && p.why), "the stalled scavenger gets a job the base needs, with why");
   check(plan.every((p) => jobCheckOk(st, b, p)), "every job in the plan can run for them");
   const pv = assignIdlePreview(st, b);
   check(/→/.test(pv.text) && pv.plan.length === plan.length, `the preview: ${pv.text}`);

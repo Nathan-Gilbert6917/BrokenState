@@ -270,7 +270,7 @@ section("AI groups");
   if (check(!!f, "a group that builds")) {
     f.pop = 20; f.bases = [f.bases[0]];
     const w = worksAt(f, f.bases[0]);
-    Object.assign(w, { water: 5, farms: 5, beds: 5, walls: 7, bench: 1, store: 1, pens: 1, sickbay: 4, still: 1, power: 1, freezer: 1, sealer: 1 }); // the machines (freezer-parts) come first
+    Object.assign(w, { water: 5, farms: 5, beds: 5, walls: 7, bench: 1, store: 1, pens: 1, sickbay: 4, still: 1, power: 1, freezer: 1, sealer: 1 }); // dev's machines (freezer-parts) come before the kitchen at the main base: built here
     f.jails = { [f.bases[0]]: 3 };
     f.stock.food = 20 * 30; f.stock.scrap = 50; f.stock.parts = 5;
     const nw = nextWork(st, f);

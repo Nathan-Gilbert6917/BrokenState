@@ -12,7 +12,7 @@
 // It only uses the same calls as the UI (canBuild / queueBuild, queueCraft, treatAtBase, launchExpedition,
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
-import { govFieldWorks } from "./fieldworks.js"; // field works: the governor's and a base leader's share
+import { govFieldWorks, fieldJobs } from "./fieldworks.js"; // field works: the governor's and a base leader's share
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
@@ -2195,9 +2195,11 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // 4c. A manual or blueprint in the armory: the best qualified free person studies it (blueprints.js; the Read role).
   if (!threat.urgent && foodDays >= 4) planBlueprintStudy(state, base, free, give);
 
-  // 5. Builders while something is queued: more for big jobs.
-  if (areas.building && base.construction.length) {
-    const left = base.construction.reduce((a, j) => a + j.hours - j.progress, 0);
+  // 5. Builders while something is queued: more for big jobs. The field works planned from here (fieldworks.js: a
+  // tower, a well …) are built by the same builders (buildings.js constructionHour → fieldBuildHour), so they count.
+  const fieldLeft = fieldJobs(state, base).reduce((a, j) => a + Math.max(0, j.hours - j.progress), 0);
+  if (areas.building && (base.construction.length || fieldLeft > 0)) {
+    const left = base.construction.reduce((a, j) => a + j.hours - j.progress, 0) + fieldLeft;
     const n = Math.min(3, Math.max(1, Math.ceil(left / 40)), Math.max(1, Math.floor(free.size / 2)));
     for (const s of ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed).slice(0, n)) give(s, "build");
   }

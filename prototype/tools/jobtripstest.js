@@ -113,6 +113,8 @@ section("A woodcutter's day: home outside the hours, out on the base's land, the
   check(cutter.trip && cutter.trip.n >= 1, "out again after the deposit (the second trip)");
   tickTo(state, 20);
   check(!cutter.trip && !outOnTrip(state, cutter), "20:00: the hours over, home");
+  check(/Eating dinner/.test(describeActivity(state, cutter).text), `20:00, dinner (meals.js): "${describeActivity(state, cutter).text}"`);
+  tickTo(state, 21);
   check(/Done chopping/.test(describeActivity(state, cutter).text), `the evening: "${describeActivity(state, cutter).text}"`);
   const day0 = Math.floor((state.hour - 1) / 24) + 1;
   const T = base.tripTally && base.tripTally.wood;

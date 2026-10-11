@@ -7,7 +7,7 @@
 //   the build queue's builders, one crafter, a free station each, one medic …), and only a job this person can do
 //   here (activity.js jobCheck: not "stalled" for them: the land, the tools, the skill a craft needs …).
 //   Needs, highest first: a patient in danger with nobody on Medic; firewood short as the cold comes (by how near);
-//   food under a week (the plots first, then wild food: forage, hunt, fish); a broken well, pump or wall to repair; the
+//   food under a week (the plots first, then wild food: forage, hunt, fish); water running short (Fetch water); a broken well, pump or wall to repair; the
 //   build queue (water builds first); food under 20 days; the Kitchen short of cooks (kitchen.js: one per 12 people);
 //   a free station with work; the craft queue; firewood for the
 //   coming season; scavenging around the base while it is not picked clean (the last resort).
@@ -20,7 +20,7 @@
 //   "Leader Ana moved Sam from Build (nothing to build) to Cut wood (firewood 120 of 900 for the cold)."
 // The AI groups have no people with jobs of their own (factions.js: counts and stores), so nothing of theirs idles.
 import { atBase, hourOfDay, day, log, skill } from "./world.js";
-import { ROLES, scavLeft, SCAV_FLOOR } from "./economy.js";
+import { ROLES, scavLeft, SCAV_FLOOR, waterRunningShort, waterOutlook, fetchWaterWhy, fetchWaterDay } from "./economy.js";
 import { isManaged, toManual, stationWork } from "./work.js";
 import { BUILDINGS, stations, underAttack, assignStations, gatherStalled } from "./buildings.js";
 import { craftQueue, craftJobStatus } from "./crafting.js";
@@ -66,6 +66,11 @@ export function baseNeeds(state, base) {
     if (!huntWorkWhy(state, base)) add("hunt", hungry - 0.2, 2 - on("hunt"), foodWhy);
     if (!fishWorkWhy(state, base)) add("fish", hungry - 0.4, 1 - on("fish"), foodWhy);
   }
+  // Water running short with water to fetch on the base's land (job trips: Fetch water, as work.js WORK_TYPES.water sizes it).
+  if (waterRunningShort(state, base) && !fetchWaterWhy(state, base)) {
+    const wo = waterOutlook(state, base), each = Math.max(0.5, fetchWaterDay(state, base));
+    add("water", wo.daysLeft < 3 ? 8 : 5, Math.max(1, Math.min(4, Math.ceil(Math.max(0, -wo.net) / each))) - on("water"), isFinite(wo.daysLeft) ? `water for ${Math.floor(Math.max(0, wo.daysLeft))} days` : "the water is low");
+  }
   // Repairs: a broken well, pump or wall with nobody on it.
   const open = (base.repairs || []).filter((j) => j.who == null).length;
   if (open) add("build", 6.5, open, `${open} repair${open === 1 ? "" : "s"} waiting`);
@@ -87,7 +92,7 @@ export function baseNeeds(state, base) {
   return out.sort((a, b) => b.score - a.score);
 }
 
-const JOB_SKILL = { cook: "farming", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
+const JOB_SKILL = { water: "scouting", cook: "cooking", medic: "medicine", wood: "farming", farm: "farming", forage: "farming", hunt: "shooting", fish: "scouting", build: "mechanics", operate: "mechanics", craft: "crafting", scavenge: "scavenging" };
 
 // One job each for these people (default: the base's idle), by the base's needs. areas: a leader's areas (only jobs
 // in an area handed over).
