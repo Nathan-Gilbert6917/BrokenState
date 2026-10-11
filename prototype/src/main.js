@@ -66,6 +66,7 @@ import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // 
 import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
+import { COOK_ACTIONS, COOK_CHANGE } from "./ui/cooking.js"; // wave 2 cooking: the stations' bills
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { queueReloadUpgrade } from "./sim/reloading.js"; // the reloading bench
 import { queueCannerUpgrade, queueGenUpgrade } from "./sim/buildings.js"; // machines-2: the pressure canner fitted to a preserving room; gen-tiers: a generator upgraded
@@ -1168,6 +1169,7 @@ for (const [k, fn] of Object.entries({ ...FARM_ACTIONS, ...HEALTH_ACTIONS })) ac
 for (const [k, fn] of Object.entries(SKILL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Production orders, power, standing craft orders, stewards and pins (ui/production.js).
 for (const [k, fn] of Object.entries(PROD_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+for (const [k, fn] of Object.entries(COOK_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/cooking.js: bills at the Kitchen and the cook fire
 // Trade window, radio panel and trade caravans (ui/tradewindow.js); these replace the older trade handlers above.
 for (const [k, fn] of Object.entries(TRADE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Outsiders (ui/visitors.js): the Groups tab's radio calls, trading with merchants, robbing them.
@@ -1444,6 +1446,7 @@ for (const [k, fn] of Object.entries(SG_CHANGE)) changeActions[k] = (el) => { if
 for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 Object.assign(changeActions, fieldworksChange(() => state, ui)); // ui/fieldworks.js: post a lookout
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(COOK_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/cooking.js
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(EXPLORE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);

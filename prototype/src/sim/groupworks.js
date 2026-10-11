@@ -127,6 +127,7 @@ import { READ_HOURS } from "./skills.js"; // a reader's day of study
 import { relation } from "./diplomacy.js"; // buying a manual from traders they are not hostile to
 import { SUPPLIES } from "./data.js";
 import { groupFieldDefence, groupFieldWells } from "./fieldworks.js"; // the groups' field works: towers, wells
+import { groupWantsMill, groupWantsGrinder } from "./cooking.js"; // wave 2 cooking: a grain mill and a meat grinder by a kitchen
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
 
@@ -153,6 +154,10 @@ export const GROUP_WORKS = {
     garage: { name: "a garage", cost: { scrap: 5, parts: 1 }, work: 4 },
     reload: { name: "a reloading bench", cost: { scrap: 5, parts: 2 }, work: 4 },
     gate: { name: "a reinforced gate", cost: { scrap: 4, parts: 1 }, work: 3 },
+    // Wave 2 cooking (cooking.js): your grain mill (8 scrap + a part, 8 work-hours) and meat grinder (5 + a part, 6),
+    // scaled as the rest; their wear and repairs are cooking.js groupFitWear (your FIXTURES grainmill / meatgrinder).
+    mill: { name: "a grain mill", cost: { scrap: 2, parts: 1 }, work: 1 },
+    grinder: { name: "a meat grinder", cost: { scrap: 2, parts: 1 }, work: 1 },
   },
   // ai-locks: your build rules for those works (buildings.js req and blueprints.js LOCKED), read by workLock. mech: the
   // group's mechanic (groupSkill) at your Mechanics minimum; bp: the manual they must have studied; bench: a workshop
@@ -163,6 +168,7 @@ export const GROUP_WORKS = {
     reload: { mech: 3, bench: true }, gate: { bp: "armyeng" },
     // gen-tiers: the generator's upgrades (MACH.tiers), your canUpgradeGenerator's Mechanics and manual.
     power2: { mech: 4, bench: true }, power3: { mech: 5, bp: "indpower", bench: true },
+    mill: { mech: 1, bench: true }, grinder: { mech: 1, bench: true }, // wave 2 cooking: your Mechanics 1 to build them
   },
   RADIO_POP: 10, RELOAD_BRASS: 30,
   // Their machine parts (machines-2; groupPartsDaily, see the header).
@@ -368,6 +374,9 @@ export function nextWork(state, f) {
       if (ex) return ex;
     }
     if (peopleAt(f, tile) >= W.KITCHEN.size && !n(w, "kitchen") && hasAny(f, "bench")) return { tile, type: "kitchen", why: "hot meals for the people there" };
+    // Wave 2 cooking: a grain mill and a meat grinder by a kitchen, by your locks, once there is grain to mill or game to grind.
+    if (n(w, "kitchen") && !hasAny(f, "mill") && !workLock(state, f, "mill") && groupWantsMill(f)) return { tile, type: "mill", why: "a grain mill: flour and bread" };
+    if (n(w, "kitchen") && !hasAny(f, "grinder") && !workLock(state, f, "grinder") && groupWantsGrinder(f)) return { tile, type: "grinder", why: "a meat grinder: sausage that keeps" };
   }
   for (const tile of f.bases) if (n(worksAt(f, tile), "walls") < wallGoal(f, tile)) return { tile, type: "walls", why: "walls" };
   // ai-locks: a reinforced gate in the main base's walls once they stand at their goal (your gate: the Army Engineering
@@ -686,7 +695,7 @@ const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; r
 // "water, 2 fields, quarters for 16, walls 2/4 · building a wall" (the Groups tab).
 export function worksText(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return "";
-  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, still: 0, power: 0, freezer: 0, sealer: 0, kitchen: 0, shop: 0, radio: 0, garage: 0, reload: 0, gate: 0 };
+  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, still: 0, power: 0, freezer: 0, sealer: 0, kitchen: 0, mill: 0, grinder: 0, shop: 0, radio: 0, garage: 0, reload: 0, gate: 0 };
   for (const b of f.bases) for (const k of Object.keys(t)) t[k] += n(f.works && f.works[b], k);
   const main = mainOf(f);
   const bits = [];
@@ -701,6 +710,8 @@ export function worksText(state, f) {
   if (t.freezer) bits.push(`a walk-in freezer${groupFreezerOn(f) ? " (on)" : " (off)"}`);
   if (t.sealer) bits.push("a vacuum sealer");
   if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no firewood)" : ""}`);
+  if (t.mill) bits.push("a grain mill"); // wave 2 cooking
+  if (t.grinder) bits.push("a meat grinder");
   for (const k of ["shop", "radio", "garage", "reload", "gate"]) if (t[k]) bits.push(W.WORKS[k].name); // ai-locks
   const bay = sickbayTier(f);
   if (bay) bits.push(W.SICKBAY[Math.min(W.SICKBAY.length, bay) - 1].name);

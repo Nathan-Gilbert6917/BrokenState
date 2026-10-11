@@ -144,6 +144,7 @@ import { crawlTurned } from "./citycrawl.js"; // one of you turned on a city blo
 import { hiveCrawlTurned } from "./hivecrawl.js"; // one of you turned inside a hive
 import { prisonersAt, inCell, taskOf, dropPrisoner } from "./prisoners.js";
 import { leaveMap } from "./visitors.js";
+import { teamCookHour } from "./cooking.js"; // wave 2 cooking: a team's camp fire cooks its raw meat into meals
 import { kitchenService, kitchenCold } from "./kitchen.js"; // the Kitchen boils the meals' water (purifyCap) and cooks like a cook fire (baseCooks)
 import { fireLandOk, WOOD, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
 
@@ -550,18 +551,19 @@ export function eatRaw(state, people, rations, why, rate = WORM.RAW, how = "meat
   let n = 0;
   for (const s of people) {
     if (wormRng(state).chance(per) && catchWorm(state, s, why, how)) n++;
-    sickRoll(state, s, sick, why);
+    sickRoll(state, s, sick, why, "poisoning"); // wave 2 cooking: uncooked food is food poisoning now (health.js), not an upset stomach
   }
   return n;
 }
-// An upset stomach (health.js stomach: mood only, it passes) from un-purified water or uncooked food, `chance` this
-// roll (at most SICK_MAX). Someone who already has one is not rolled again. Returns true when it started.
-export function sickRoll(state, s, chance, why = "") {
+// An upset stomach (health.js stomach: mood only, it passes) from un-purified water, or food poisoning (key "poisoning":
+// wave 2 cooking, uncooked food), `chance` this roll (at most SICK_MAX). Someone who already has it is not rolled again.
+// Returns true when it started.
+export function sickRoll(state, s, chance, why = "", key = "stomach") {
   if (!s || !s.alive) return false;
-  if ((s.conditions || []).some((c) => c.key === "stomach")) return false;
+  if ((s.conditions || []).some((c) => c.key === key)) return false;
   chance *= stomachMult(s); // Iron Stomach, Weak Stomach by tier (traits.js): the same one roll
   if (!(chance > 0) || !wormRng(state).chance(Math.min(WORM.SICK_MAX, chance))) return false;
-  return !!addCondition(state, s, "stomach", why, { cause: /water/.test(why) ? "water" : "food" });
+  return !!addCondition(state, s, key, why, { cause: key === "poisoning" || !/water/.test(why) ? "food" : "water" });
 }
 
 // ---------- teams ----------
@@ -666,6 +668,7 @@ export function wormTeamHour(state, p, members) {
     const m = cookEggs(p.cargo, WORM.COOK, isMeat) + cookEggs(p, WORM.COOK, isMeat); // the camp fire cooks the meat with eggs through
     cookEggs(p.cargo, WORM.COOK, (k, f) => !isMeat(k, f)); cookEggs(p, WORM.COOK, (k, f) => !isMeat(k, f)); // and boils the greens
     void m;
+    if (fire === true && campFireFed(state, p)) teamCookHour(state, p, members); // cooking.js: the camp fire's pot (raw meat into simple meals)
   }
   const inf = (state.tiles[partyTile(p)] || {}).infection || 0;
   if (inf < WORM.CAMP_AT) return;

@@ -62,6 +62,7 @@ import { shelterFire } from "./woodcutting.js";
 import { econStats } from "./farming.js";
 import { conditionsOf } from "./health.js";
 import { eatRawCargo, eatRawForageCargo, drinkHour } from "./worm.js";
+import { teamPoisonHour } from "./cooking.js"; // wave 2 cooking: food poisoning from what the team ate this hour
 import { teamWaterIn, takeTeamWater, drawWater, waterIn, RAW } from "./water.js"; // purified and un-purified water
 
 export const NEEDS = {
@@ -135,7 +136,9 @@ export const teamWater = (p) => teamWaterIn(p);
 export function takeFood(p, want) {
   if (!(want > 0)) return 0;
   p.cargo = p.cargo || { supplies: {}, gear: [] };
-  return takeFoodFrom([p, p.cargo], want, { eggs: false }).units;
+  const got = takeFoodFrom([p, p.cargo], want, { eggs: false });
+  if (got.lots.length) (p.ateLots || (p.ateLots = [])).push(...got.lots); // cooking.js teamPoisonHour: the hour's lots (food poisoning: the eating contract)
+  return got.units;
 }
 // Takes up to `want` water: purified first (packed, then found), then un-purified (packed, then found). p.rawDrunk adds
 // up the un-purified share for worm.js drinkHour.
@@ -209,6 +212,7 @@ export function teamNeedsHour(state, p, members) {
   let shortFood = feed(members, "hunger", rule, NEEDS.food, teamFood(p) - raw - rawVeg, (q) => takeFood(p, q), share);
   if (shortFood && rawVeg > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, rawVeg, (q) => eatRawForageCargo(state, p, members, q), share);
   if (shortFood && raw > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, raw, (q) => eatRawCargo(state, p, members, q), share);
+  teamPoisonHour(state, p, members); // cooking.js: the hour's meals (their cook's pz) and raw meat eaten with no fire lit
   const water0 = teamWater(p);
   p.rawDrunk = 0;
   const shortWater = feed(members, "thirst", NEEDS.drink, NEEDS.water, water0, (q) => takeWater(p, q), share);

@@ -25,9 +25,10 @@
 //     no heating fuel below 0°C; a shelter with its fire out): then indoors is as cold as out. Cold brings a chest cold
 //     or flu (pneumonia on top of flu), heat a fever;
 //   - hunger or thirst gauges below 25 (needs.js): a fever from weakness, dysentery from drinking whatever there is;
-//   - un-purified water and uncooked food (worm.js: the water a base or a team drinks un-purified, game, crops and
-//     forage with the worm's eggs eaten raw): an upset stomach (stomach), WORM.SICK_X times the worm's own chance, rolled
-//     where the worm is (worm.js sickRoll). It costs no health, no thirst and hardly any work: a little mood a day for
+//   - un-purified water (worm.js: the water a base or a team drinks un-purified): an upset stomach (stomach),
+//     WORM.SICK_X times the worm's own chance, rolled where the worm is (worm.js sickRoll). Game, crops and forage with
+//     the worm's eggs eaten raw give food poisoning (poisoning) at that chance instead (wave 2 cooking), as do cooked
+//     meals by their cook's skill and the kitchen's dirt, and raw meat eaten uncooked (cooking.js poisonRoll). It costs no health, no thirst and hardly any work: a little mood a day for
 //     two to four days, then it passes. Treating it is optional: one dose by hand (1 meds, the Medical tab or a team's
 //     panel) cures it at once; automatic care and the autopilot leave it alone. Only the worm hurts.
 //     Spoiled food stays dysentery: SICK.spoiled × the share of the fresh food stored outside in the warm (storage.js);
@@ -83,7 +84,16 @@ export const CONDITIONS = {
   // amount a day in place of SICK.mood × severity). mild: automatic care (a base's and a team's) does not spend meds on
   // it; cure: treating it is optional, and one dose (by hand: the Medical tab, a team panel) ends it at once.
   stomach:   { name: "Upset stomach", kind: "illness", icon: "🥴", sev: [20, 40], drift: -7, hp: 0, work: 0.95, meds: 1, treat: 60, spread: 0, mood: 1.5, mild: true, cure: true,
-               desc: "Cramps and an uneasy gut from un-purified water or food that was not cooked: no health lost, just a low mood for a few days, then it passes. If you want it gone now, 1 meds cures it at once (automatic care leaves it alone). It is not the worm: the worm hurts more every day." },
+               desc: "Cramps and an uneasy gut from un-purified water: no health lost, just a low mood for a few days, then it passes. If you want it gone now, 1 meds cures it at once (automatic care leaves it alone). It is not the worm: the worm hurts more every day. (Uncooked food gives food poisoning now.)" },
+  // Food poisoning (cooking.js, wave 2 cooking, the user's pick 1: "low Cooking skill, raw food or a dirty kitchen can
+  // cause vomiting for a day, RimWorld-like"): rolled where a meal is eaten (cooking.js poisonRoll: each cooked lot's pz,
+  // raw meat or fish eaten uncooked) and for game, crops and forage with the worm's eggs eaten raw (worm.js eatRaw: it
+  // was the upset stomach). Vomiting: work ×0.35 at severity 100 (an illness, so the sick-rest rule sends them to bed),
+  // a flat 4 mood a day, about a day and a half (drift −35); a severe case (cooking.js POISON.severe of them, severity
+  // 75–90) costs a little health and runs three days. Never spreads. selfLimit: automatic care (a base's, a team's)
+  // spends no meds on it; one dose by hand (cure) ends it at once.
+  poisoning: { name: "Food poisoning", kind: "illness", icon: "🤮", sev: [35, 60], drift: -35, hp: 4, work: 0.35, meds: 1, treat: 60, spread: 0, mood: 4, cure: true, selfLimit: true,
+               desc: "Vomiting and cramps from a meal: bad cooking, a dirty kitchen or raw meat. Off work for about a day (they rest it out), a low mood, then it passes; a bad case costs a little health and lasts a few days. 1 meds ends it at once (automatic care leaves it to pass). Better cooks and a clean kitchen make it rarer." },
   pneumonia: { name: "Pneumonia",  kind: "illness", icon: "🫁", sev: [50, 75], drift: 4,  hp: 12, work: 0,    meds: 1, treat: 30, spread: 0.01,
                desc: "Fluid in the lungs: cannot work, and it kills without meds. A hospital bed helps a lot." },
 };
@@ -317,7 +327,7 @@ export const autoTreatOn = (...a) => autoCareOn(...a); // a call, not the bindin
 // or can kill, any deep cut (it can get infected), the rest from severity 30.
 export function autoWantsCondition(c) {
   const d = CONDITIONS[c.key];
-  if (!d || !needsDose(c) || d.mild) return false; // an upset stomach passes on its own: meds by hand only
+  if (!d || !needsDose(c) || d.mild || d.selfLimit) return false; // an upset stomach, food poisoning: they pass on their own (meds by hand only)
   if (c.course != null) return true;
   const urgent = d.hp * c.sev / 100 >= 6 || c.key === "pneumonia";
   return urgent || c.sev >= 30 || c.key === "cut";
@@ -381,7 +391,7 @@ export function treatConditionAnywhere(state, survivorId, key) {
 // Does the team dose this on its own tonight?
 export function teamWants(c) {
   const d = CONDITIONS[c.key];
-  if (!d || !needsDose(c) || d.mild) return false;
+  if (!d || !needsDose(c) || d.mild || d.selfLimit) return false;
   if (c.course != null) return true;
   return c.key === "pneumonia" || d.hp * c.sev / 100 >= 5 || c.sev >= SICK.teamAuto || (c.key === "cut" && c.sev >= 30);
 }
