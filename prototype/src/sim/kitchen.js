@@ -37,6 +37,10 @@
 //   - The governor's and a steward's cooks: it plans roles every hour (autopilot.js planRoles 5c), so it puts its cooks
 //     on Cook in the cooking hours only (the same person each day: whoever cooked last) and plans them like anyone else
 //     the rest of the day.
+// The meals themselves (wave 2 cooking, cooking.js): the cooks' hours work the Kitchen's bills (recipes that turn raw
+// ingredients into meals more filling than their makings, with purified water and a chance of food poisoning); a fixed
+// Cook gives cooking.js COOK.fullDay hours, a part-time cook their cooking hours (cookHoursLately). This file keeps the
+// service: who is fed hot meals, the saving, the mood, the boiled water, the firewood.
 // A cook too ill to work (work factor under KITCHEN.minWork) feeds nobody; a weaker one feeds fewer (× work factor).
 // No kitchen, or nobody on Cook: the food is eaten as before (no penalty beyond the worm's raw-food rules).
 // The day (kitchenDaily, economy.js after the eating): base.kitchenDay = { day, cooks, served, meals, saved, cover, wood,

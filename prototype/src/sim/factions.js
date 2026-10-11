@@ -78,6 +78,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
+import { groupCookDaily } from "./cooking.js"; // wave 2 cooking: the groups' kitchens cook by your recipes, coarsely
 import { groupWorksDaily, groupEatMult, groupCookShare, groupKitchenDaily, groupKitchenGrowth, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp, groupFreezerOn, GROUP_WORKS } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
@@ -336,6 +337,7 @@ export function factionsDaily(state) {
     // Short: as before, a hungry day.
     typeStray(f.stock, state); // an old save's or a module's generic food, typed
     addItemsTo(f.stock, groupFieldFood(state, workingPeople(f, GROUP_ILL.farm) * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) * groupFoodLand(state, f) * (1 - groupCookShare(state, f)) + penFood(state, f))); // + their animal pens (groupworks.js PENS)
+    groupCookDaily(state, f); // cooking.js (wave 2 cooking): their kitchens cook the fresh ingredients into meals (the same gains), sealer, mill, grinder; food poisoning as illness
     // Wave 2 eating (AI parity, eating.js, coarse): their ration level (lean when short, a feast on the festival day:
     // meals.js RATION_LEVELS use) × the day's food; their parties out on the map eat what they carry first.
     const lvl = groupRation(state, f, festivalDay(state));

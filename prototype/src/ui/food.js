@@ -8,6 +8,7 @@ import { foodRows, foodStore, storeSpaces, kindWord, STORE, MEAL } from "../sim/
 import { carriedFactor } from "../sim/hunting.js";
 import * as Weather from "../sim/weather.js";
 import { count } from "../sim/buildings.js";
+import { mealTag } from "./cooking.js"; // wave 2 cooking: a meal's tier and mood
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -22,7 +23,7 @@ export function foodTip(k) {
   const f = FOODS[k];
   if (!f) return "";
   const keeps = f.shelf >= 365 ? `${Math.round(f.shelf / 365)} years` : `${f.shelf} days`;
-  return `${f.name}: ${f.desc} ${f.kcal} kcal (${n1(f.kcal / DAY_KCAL)} of a day's food), ${f.kg} kg. Keeps about ${keeps} at room temperature${f.stable ? " (needs no cold room)" : "; a root cellar about triples that, a cold store in winter or a freezer much more"}. ${FOOD_GROUPS[f.group] ? FOOD_GROUPS[f.group].name : ""}${f.raw ? ": raw, wants cooking (a cook fire makes meals of it; eaten raw it can turn the stomach)" : ""}.`;
+  return `${f.name}: ${f.desc} ${f.kcal} kcal (${n1(f.kcal / DAY_KCAL)} of a day's food), ${f.kg} kg. Keeps about ${keeps} at room temperature${f.stable ? " (needs no cold room)" : "; a root cellar about triples that, a cold store in winter or a freezer much more"}. ${FOOD_GROUPS[f.group] ? FOOD_GROUPS[f.group].name : ""}${f.raw ? ": raw, wants cooking (a Kitchen's or a cook fire's bills make meals of it; eaten raw it can give food poisoning)" : ""}.`;
 }
 
 // The food rooms at a base, one row each: name, kind, held/room, today's shelf factor; outside; what keeps.
@@ -36,7 +37,7 @@ function roomsHtml(store) {
 // One item row: icon, name (eggs: a warning), how many, kcal in all, days until the soonest lot spoils, where.
 function itemRow(r) {
   const egg = r.egg > 0 ? ` <span class="danger"${tip("Some of it carries the worm's eggs (grown, gathered or hunted on infected land): eaten last, and raw unless a cook fire or a kitchen cooks it.")}>eggs</span>` : "";
-  return `<tr${tip(foodTip(r.key))}><td>${FOODS[r.key].icon} ${esc(r.name)}${egg}</td><td>${qty(r.q)}</td><td class="small muted">${n1(r.units)}d · ${Math.round(r.kcal).toLocaleString("en-US")} kcal</td><td class="small ${spoilCls(r.days)}">${daysText(r.days)}</td><td class="small muted">${esc(r.where)}</td></tr>`;
+  return `<tr${tip(foodTip(r.key))}><td>${FOODS[r.key].icon} ${esc(r.name)}${egg}${mealTag(r.key)}</td><td>${qty(r.q)}</td><td class="small muted">${n1(r.units)}d · ${Math.round(r.kcal).toLocaleString("en-US")} kcal</td><td class="small ${spoilCls(r.days)}">${daysText(r.days)}</td><td class="small muted">${esc(r.where)}</td></tr>`;
 }
 
 // A base's Food section (the base screen's Stock, the Farming tab).
@@ -45,11 +46,11 @@ export function baseFoodHtml(state, b, { max = 40 } = {}) {
   const store = foodStore(state, b);
   const split = foodSplit(b.stock);
   const soon = store.forecast.soon.filter((x) => x.q >= 0.5);
-  const cooks = count(b, "cookhouse") || count(b, "kitchen");
+  const cooks = count(b, "cookhouse") || count(b, "canteen") || (b.tier === 0 && b.fire !== false);
   const list = rows.length ? `<table class="t small"><tr><th>Food</th><th>Qty</th><th${tip("Days of food it comes to (2000 kcal a day) and its calories")}>Days · kcal</th><th${tip("Days before the soonest lot of it spoils, where it sits today")}>Spoils</th><th>Where</th></tr>${rows.slice(0, max).map(itemRow).join("")}${rows.length > max ? `<tr><td colspan="5" class="muted">and ${rows.length - max} more kinds</td></tr>` : ""}</table>` : `<div class="muted small">No food in store.</div>`;
   const warn = soon.length ? `<div class="small warn" style="margin-top:0.3rem"${tip("What will spoil before it is eaten at today's rate (the soonest to spoil is eaten first). Spoiled food is thrown out.")}>Will spoil within the week: ${soon.slice(0, 5).map((x) => `${FOODS[x.key].icon} ${qty(x.q)} ${esc(FOODS[x.key].word)}`).join(", ")}</div>` : "";
   const spoiled = b.spoiledToday && b.spoiledToday.units >= 0.1 ? `<div class="small muted">Thrown out yesterday: ${n1(b.spoiledToday.units)} days of food.</div>` : "";
-  const cook = `<div class="small muted">${cooks ? `The ${count(b, "cookhouse") ? "cook fire" : "kitchen"} makes the day's meals of the raw food first (${Math.round((MEAL.gain - 1) * 100)}% more filling).` : "No cook fire: raw meat and fish are eaten as they are, and food with the worm's eggs waits to the last."}</div>`;
+  const cook = `<div class="small muted">${cooks ? `The ${count(b, "canteen") ? "Kitchen" : count(b, "cookhouse") ? "cook fire" : "camp fire"} cooks by its bills (the Farming tab's Cooking: a simple meal is ${Math.round((MEAL.gain - 1) * 100)}% more filling than its makings).` : "No cook fire: raw meat and fish are eaten as they are (food poisoning), and food with the worm's eggs waits to the last."}</div>`;
   return `<div class="spread"><b${tip("Days of food in store: every kind together, at 2000 kcal a day")}>${n1(split.all)} days of food</b><span class="small muted">${n1(split.fresh)} fresh · ${n1(split.stable)} keeps</span></div>${list}${warn}${spoiled}${cook}<div style="margin-top:0.3rem">${roomsHtml(store)}</div>`;
 }
 

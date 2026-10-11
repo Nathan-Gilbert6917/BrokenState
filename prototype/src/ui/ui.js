@@ -125,7 +125,8 @@ import { outsidersSection } from "./visitors.js";
 import { workTab, roleSelect as workRoleSelect, taskChip, sickTip } from "./work.js";
 import { sickRestLabel } from "../sim/sickrest.js"; // "Resting: sick (Flu)" for Manual and pinned people
 import { activityChip, workNowPanel, idleNote, workChip, peopleIdleOn, peopleIdleButton, idleSet, idleBasesSection } from "./activity.js";
-import { kitchenNote } from "./kitchen.js"; // the Kitchen's card: cooks, today's meals, the food saved (sim/kitchen.js)
+import { kitchenNote } from "./kitchen.js";
+import { cookingNote } from "./cooking.js"; // wave 2 cooking: the bills under the Kitchen's and the cook fire's cards // the Kitchen's card: cooks, today's meals, the food saved (sim/kitchen.js)
 import { describeActivity } from "../sim/activity.js"; // the find box also looks through what they are doing ("asleep", "chopping") // what each person is doing now; the base's Work now panel (sim/activity.js)
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
@@ -1825,7 +1826,7 @@ function baseBuildings(state, b) {
   return `<div class="grid2">
     <div>${sectionHead("Built here", "", b.buildings.length)}${Object.keys(groups).length ? `<div class="gcard-grid">${Object.entries(groups).map(([t, n]) => {
       const broken = b.buildings.filter((x) => x.type === t && x.broken).length;
-      return `<div class="gcard ${broken ? "blocked" : "ok"}${t === "boiler" ? " wide" : ""}"${tip(BUILDINGS[t].desc)}><div class="gcard-top"><span class="gcard-title">${esc(BUILDINGS[t].name)}${n > 1 ? ` <span class="sk-count">×${n}</span>` : ""}</span>${broken ? badge(`Broken${n > 1 ? ` ${broken}` : ""}`, "bad", "Broken: it gives nothing until it is repaired (Repairs tab)") : machineChip(state, b, t) || badge("Built", "good")}</div><div class="gcard-desc">${esc(BUILDINGS[t].desc)}</div>${t === "boiler" ? boilerNote(state, b) : ""}${t === "canteen" ? kitchenNote(state, b) : ""}${machineNote(b, t)}</div>`;
+      return `<div class="gcard ${broken ? "blocked" : "ok"}${t === "boiler" ? " wide" : ""}"${tip(BUILDINGS[t].desc)}><div class="gcard-top"><span class="gcard-title">${esc(BUILDINGS[t].name)}${n > 1 ? ` <span class="sk-count">×${n}</span>` : ""}</span>${broken ? badge(`Broken${n > 1 ? ` ${broken}` : ""}`, "bad", "Broken: it gives nothing until it is repaired (Repairs tab)") : machineChip(state, b, t) || badge("Built", "good")}</div><div class="gcard-desc">${esc(BUILDINGS[t].desc)}</div>${t === "boiler" ? boilerNote(state, b) : ""}${t === "canteen" ? kitchenNote(state, b) : ""}${t === "canteen" || t === "cookhouse" ? cookingNote(state, b, t) : ""}${machineNote(b, t)}</div>`;
     }).join("")}</div>` : `<div class="muted small">Only a shelter so far. Queue buildings in Construction.</div>`}</div>
     <div>${sectionHead("Bonuses")}<div class="card small">${statRows(buildingSummary(state, b).map(([k, v]) => [k, esc(v)]))}</div>${blueprintsCard(state, b)}</div>
   </div>`;

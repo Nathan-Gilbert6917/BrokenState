@@ -23,9 +23,10 @@
 //     water an hour into purified water (× STOVE with a smokeless stove); purification tablets (data.js puritabs: one
 //     per TABS_WATER water) on the move (travelling, exploring, searching) and at a camp whose fire is out or has
 //     nothing left to burn; otherwise it is drunk as it is.
-//   - an upset stomach (health.js stomach), not the worm: un-purified water and uncooked food also turn the stomach,
-//     SICK_X times the worm's chance for the same drink or meal (at most SICK_MAX a roll): mood only, no health, it
-//     passes in a few days (sickRoll). Only the worm hurts.
+//   - an upset stomach (health.js stomach), not the worm: un-purified water also turns the stomach, SICK_X times the
+//     worm's chance for the same drink (at most SICK_MAX a roll): mood only, no health, it passes in a few days
+//     (sickRoll). Uncooked food with the eggs gives food poisoning (health.js poisoning: wave 2 cooking) at that chance
+//     instead: vomiting for a day or two. Only the worm hurts.
 //   - raw meat: RAW per ration of meat with eggs eaten uncooked. Game, fish and snares taken on land at MEAT_AT+
 //     infection carry eggs, and infested animals always do (foods.js: an egg lot of the raw meat or fish, kept apart
 //     from the clean). A base with a cook fire or a preserving room (a shelter with its fire lit) cooks it into meals;
@@ -144,6 +145,7 @@ import { crawlTurned } from "./citycrawl.js"; // one of you turned on a city blo
 import { hiveCrawlTurned } from "./hivecrawl.js"; // one of you turned inside a hive
 import { prisonersAt, inCell, taskOf, dropPrisoner } from "./prisoners.js";
 import { leaveMap } from "./visitors.js";
+import { teamCookHour } from "./cooking.js"; // wave 2 cooking: a team's camp fire cooks its raw meat into meals
 import { kitchenService, kitchenCold } from "./kitchen.js"; // the Kitchen boils the meals' water (purifyCap) and cooks like a cook fire (baseCooks)
 import { fireLandOk, WOOD, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
 
@@ -550,18 +552,19 @@ export function eatRaw(state, people, rations, why, rate = WORM.RAW, how = "meat
   let n = 0;
   for (const s of people) {
     if (wormRng(state).chance(per) && catchWorm(state, s, why, how)) n++;
-    sickRoll(state, s, sick, why);
+    sickRoll(state, s, sick, why, "poisoning"); // wave 2 cooking: uncooked food is food poisoning now (health.js), not an upset stomach
   }
   return n;
 }
-// An upset stomach (health.js stomach: mood only, it passes) from un-purified water or uncooked food, `chance` this
-// roll (at most SICK_MAX). Someone who already has one is not rolled again. Returns true when it started.
-export function sickRoll(state, s, chance, why = "") {
+// An upset stomach (health.js stomach: mood only, it passes) from un-purified water, or food poisoning (key "poisoning":
+// wave 2 cooking, uncooked food), `chance` this roll (at most SICK_MAX). Someone who already has it is not rolled again.
+// Returns true when it started.
+export function sickRoll(state, s, chance, why = "", key = "stomach") {
   if (!s || !s.alive) return false;
-  if ((s.conditions || []).some((c) => c.key === "stomach")) return false;
+  if ((s.conditions || []).some((c) => c.key === key)) return false;
   chance *= stomachMult(s); // Iron Stomach, Weak Stomach by tier (traits.js): the same one roll
   if (!(chance > 0) || !wormRng(state).chance(Math.min(WORM.SICK_MAX, chance))) return false;
-  return !!addCondition(state, s, "stomach", why, { cause: /water/.test(why) ? "water" : "food" });
+  return !!addCondition(state, s, key, why, { cause: key === "poisoning" || !/water/.test(why) ? "food" : "water" });
 }
 
 // ---------- teams ----------
@@ -666,6 +669,7 @@ export function wormTeamHour(state, p, members) {
     const m = cookEggs(p.cargo, WORM.COOK, isMeat) + cookEggs(p, WORM.COOK, isMeat); // the camp fire cooks the meat with eggs through
     cookEggs(p.cargo, WORM.COOK, (k, f) => !isMeat(k, f)); cookEggs(p, WORM.COOK, (k, f) => !isMeat(k, f)); // and boils the greens
     void m;
+    if (fire === true && campFireFed(state, p)) teamCookHour(state, p, members); // cooking.js: the camp fire's pot (raw meat into simple meals)
   }
   const inf = (state.tiles[partyTile(p)] || {}).infection || 0;
   if (inf < WORM.CAMP_AT) return;

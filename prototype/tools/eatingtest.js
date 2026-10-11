@@ -167,18 +167,22 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
   check(o.meal.k === "f_beans", `tired of the canned meat two days running, they pick something else (${o.meal.k})`);
 }
 
-// The cooking branch's lots may carry poisonChance: rolled as it is eaten (none in this wave's food).
+// Food poisoning (cooking.js, the eating contract): a cooked lot's pz is rolled for each person on what they ate.
 {
   const st = W();
   const h = quietHub(st, 0);
   st.hour = mildHour(st, 5);
-  addFood(h, "f_simplemeal", 20, { state: st });
-  h.foodLots.f_simplemeal[0].poisonChance = 1;
-  const s = residents(st, h.id)[0];
-  for (const x of residents(st, h.id)) x.hunger = 95;
-  s.hunger = 50;
-  at(st, 6);
-  check((s.conditions || []).some((c) => c.key === "stomach") && thoughtsOf(st, s).some((t) => t.id === "poison"), "a lot with poisonChance 1: food poisoning (an upset stomach) as it is eaten");
+  addFood(h, "f_simplemeal", 40, { state: st });
+  h.foodLots.f_simplemeal[0].pz = 0.95;
+  h.foodLots.f_simplemeal[0].by = residents(st, h.id)[0].id;
+  const clean = W();
+  const hc = quietHub(clean, 0);
+  clean.hour = mildHour(clean, 5);
+  addFood(hc, "f_simplemeal", 40, { state: clean });
+  for (const x of [...residents(st, h.id), ...residents(clean, hc.id)]) x.hunger = 40;
+  at(st, 6); at(clean, 6);
+  const sick = residents(st, h.id).filter((x) => (x.conditions || []).some((c) => c.key === "poisoning")).length;
+  check(sick > 0 && residents(clean, hc.id).every((x) => !(x.conditions || []).some((c) => c.key === "poisoning")), `meals from a lot with pz 0.95: ${sick} of ${residents(st, h.id).length} poisoned; a clean lot: none`);
 }
 
 // ---------- 3. work time ----------

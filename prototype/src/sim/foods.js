@@ -29,7 +29,7 @@
 // bodies later: there is no source for it (do not add one here).
 // Fields: name, word (after a count: "12 cans of beans"), icon, group (FOOD_GROUPS), tier (quality), kcal, kg, shelf
 // (days at room temperature), diet, raw (raw meat or fish: wants cooking; eaten raw it turns the stomach, worm.js),
-// ingredient (the cook fire's pot takes it, storage.js cookDaily), until (an early-only shop item: days after the
+// ingredient (a cooking bill takes it: cooking.js CLASSES), until (an early-only shop item: days after the
 // outbreak it can still be found), shopOnly (only shops have it: a new lot is as old as the outbreak), moodLift (a meal: wave 2's mood ladder), desc.
 import { Rng } from "./rng.js";
 
@@ -82,7 +82,7 @@ export const FOODS = {
   // ---- military and survival rations: light, very long keeping, the best food to carry ----
   f_mre:        { name: "MRE",                word: "MREs",                 icon: "🍱", group: "military", tier: "survival", kcal: 1250, kg: 0.7, shelf: 1800, diet: "mixed", desc: "Meal, Ready-to-Eat: an Army ration with its own flameless heater. Keeps five years." },
   f_rationbar:  { name: "Ration bar",         word: "ration bars",          icon: "🧱", group: "military", tier: "survival", kcal: 2400, kg: 0.5, shelf: 1800, diet: "veg",   desc: "A lifeboat ration block: a day's calories in half a kilo, dry and dull." },
-  f_survivalmeal:{ name: "Survival meal",     word: "survival meals",       icon: "🍱", group: "military", tier: "survival", kcal: 600,  kg: 0.15, shelf: 3600, diet: "mixed", desc: "A freeze-dried pouch meal: add hot water. Keeps ten years and weighs nothing. (Made later with a vacuum sealer.)" },
+  f_survivalmeal:{ name: "Survival meal",     word: "survival meals",       icon: "🍱", group: "military", tier: "survival", kcal: 600,  kg: 0.15, shelf: 3600, diet: "mixed", desc: "A freeze-dried pouch meal: add hot water. Keeps ten years and weighs nothing. Found, or made in a Kitchen with a vacuum sealer (cooking.js)." },
   // ---- fresh shop food: only in the first weeks after the outbreak (until), then gone or rotten ----
   f_bread:      { name: "Bread",              word: "loaves of bread",      icon: "🍞", group: "fresh", tier: "plain", kcal: 1800, kg: 0.7, shelf: 5,  shopOnly: true, until: 6,  diet: "veg",    desc: "A loaf of sliced bread. Stale in days, green in a week." },
   f_cheese:     { name: "Cheese",             word: "blocks of cheese",     icon: "🧀", group: "fresh", tier: "plain", kcal: 2000, kg: 0.5, shelf: 30, shopOnly: true, until: 40, diet: "animal", desc: "A block of hard cheese: keeps weeks out of the fridge, months in a cold room." },
@@ -113,16 +113,16 @@ export const FOODS = {
   f_fowl:       { name: "Raw fowl",           word: "kg of fowl",           icon: "🍗", group: "rawmeat", tier: "raw", kcal: 1500, kg: 1, shelf: 2, diet: "meat", raw: true, ingredient: true, desc: "Wild turkey, duck and pheasant." },
   f_fish:       { name: "Raw fish",           word: "kg of fish",           icon: "🐟", group: "rawfish", tier: "raw", kcal: 1400, kg: 1, shelf: 1.5, diet: "meat", raw: true, ingredient: true, desc: "Trout, bass and catfish from the river. Spoils in a day or two." },
   // ---- preserved (the racks, the hunting cabin's smokehouse, the preserving kitchen's jars) ----
-  // For the grain mill and the meat grinder (after this wave: no machine or recipe makes them yet): flour above.
+  // The meat grinder's (wave 2 cooking: cooking.js COOK_RECIPES ground, sausage; the grain mill makes the flour above).
   f_groundmeat: { name: "Ground meat",        word: "kg of ground meat",    icon: "🥩", group: "rawmeat", tier: "raw", kcal: 2000, kg: 1, shelf: 2, diet: "meat", raw: true, ingredient: true, desc: "Game run through a meat grinder: the tough cuts made good for meals and sausages. Spoils in a day or two." },
   f_sausage:    { name: "Smoked sausage",     word: "kg of smoked sausage", icon: "🌭", group: "preserved", tier: "preserved", kcal: 3000, kg: 1, shelf: 90, diet: "meat", ingredient: true, desc: "Ground meat salted, stuffed and smoked: keeps for months in a cool room." },
   f_jerky:      { name: "Jerky",              word: "bags of jerky",        icon: "🥓", group: "preserved", tier: "preserved", kcal: 2000, kg: 0.5, shelf: 365, diet: "meat", desc: "Meat dried and smoked on the racks or in the hunting cabin. Light, keeps a year." },
   f_smokedfish: { name: "Smoked fish",        word: "packs of smoked fish", icon: "🐟", group: "preserved", tier: "preserved", kcal: 1500, kg: 0.5, shelf: 180, diet: "meat", desc: "Fish split and smoked. Keeps half a year." },
   f_driedfruit: { name: "Dried fruit and veg", word: "bags of dried fruit and veg",  icon: "🍇", group: "preserved", tier: "preserved", kcal: 1500, kg: 0.5, shelf: 365, diet: "veg",  desc: "Berries, apples and squash dried on the racks." },
   f_jarred:     { name: "Jarred food",        word: "portions of jarred food", icon: "🫙", group: "preserved", tier: "preserved", kcal: 2000, kg: 0.6, shelf: 540, diet: "mixed", desc: "Stew, vegetables and preserves put up in jars by the preserving kitchen: two portions a jar; the jars come back when it is eaten at a base." },
-  // ---- meals (the cook fire now; wave 2: recipes and bills) ----
+  // ---- meals (wave 2 cooking: the Kitchen's and the cook fire's bills, cooking.js COOK_RECIPES; lots carry pz / by) ----
   f_simplemeal: { name: "Simple meal",        word: "simple meals",         icon: "🍲", group: "meal", tier: "simple", kcal: 800, kg: 0.5, shelf: 4, diet: "mixed", moodLift: 0, desc: "Whatever was to hand, cooked through: meat, fish or greens in a pot. More filling than its raw makings (nothing is wasted) and safe to eat. Spoils in a few days." },
-  f_stew:       { name: "Stew",               word: "pots of stew",         icon: "🍲", group: "meal", tier: "simple", kcal: 1600, kg: 1.2, shelf: 3, diet: "mixed", moodLift: 1, desc: "A pot of stew for two: meat, roots and water simmered for hours. (Wave 2: made with water.)" },
+  f_stew:       { name: "Stew",               word: "pots of stew",         icon: "🍲", group: "meal", tier: "simple", kcal: 1600, kg: 1.2, shelf: 3, diet: "mixed", moodLift: 1, desc: "A pot of stew for two: meat, roots and plenty of water simmered for hours." },
   f_finemeal:   { name: "Fine meal",          word: "fine meals",           icon: "🍛", group: "meal", tier: "fine",   kcal: 900, kg: 0.5, shelf: 4, diet: "mixed", moodLift: 2, desc: "A proper cooked meal with meat and vegetables. Lifts the mood." },
   f_lavishmeal: { name: "Lavish meal",        word: "lavish meals",         icon: "🍽", group: "meal", tier: "lavish", kcal: 1000, kg: 0.6, shelf: 4, diet: "mixed", moodLift: 4, desc: "A feast on a plate: worth the ingredients for what it does for the mood." },
   f_pemmican:   { name: "Pemmican",           word: "blocks of pemmican",   icon: "🧱", group: "meal", tier: "survival", kcal: 1500, kg: 0.25, shelf: 365, diet: "meat", moodLift: 0, desc: "Dried meat pounded with fat and berries: the old travelling food. Light and keeps a year." },
@@ -218,19 +218,23 @@ export function lotsOf(h) {
 }
 const lotSum = (arr) => arr.reduce((a, l) => a + l.q, 0);
 const LOT_CAP = 6;
-// Adds q to a key's lots: into a lot of the same kind (eggs or not) within a day of the same shelf left, else a new
-// lot; more than LOT_CAP lots merge the two closest.
-function pushLot(arr, q, left, egg) {
+// Adds q to a key's lots: into a lot of the same kind (eggs or not, the same cook) within a day of the same shelf left,
+// else a new lot; more than LOT_CAP lots merge the two closest. x: { pz, by } of a cooked lot (cooking.js: the chance
+// a day of food of it gives food poisoning, and the cook's id), kept on the lot (pz averaged by quantity on a merge).
+const sameBy = (l, by) => (l.by ?? null) === (by ?? null);
+function mixPz(a, bq, bpz) { const p = ((a.pz || 0) * a.q + (bpz || 0) * bq) / Math.max(EPS, a.q + bq); if (p > 0) a.pz = p; else delete a.pz; }
+function pushLot(arr, q, left, egg, x = null) {
   if (!(q > EPS)) return;
   const e = !!egg;
-  const near = arr.find((l) => !!l.egg === e && Math.abs(l.left - left) < 1);
-  if (near) { near.left = (near.left * near.q + left * q) / (near.q + q); near.q += q; }
-  else arr.push(e ? { q, left, egg: true } : { q, left });
+  const pz = x && x.pz > 0 ? x.pz : 0, by = x && x.by != null ? x.by : null;
+  const near = arr.find((l) => !!l.egg === e && Math.abs(l.left - left) < 1 && sameBy(l, by));
+  if (near) { near.left = (near.left * near.q + left * q) / (near.q + q); mixPz(near, q, pz); near.q += q; }
+  else { const l = e ? { q, left, egg: true } : { q, left }; if (pz > 0) l.pz = pz; if (by != null) l.by = by; arr.push(l); }
   if (arr.length > LOT_CAP) {
     arr.sort((a, b) => a.left - b.left);
     let bi = 0, bd = Infinity;
     for (let i = 0; i + 1 < arr.length; i++) { if (!!arr[i].egg !== !!arr[i + 1].egg) continue; const d = arr[i + 1].left - arr[i].left; if (d < bd) { bd = d; bi = i; } }
-    if (bd < Infinity) { const a = arr[bi], b = arr[bi + 1]; a.left = (a.left * a.q + b.left * b.q) / (a.q + b.q); a.q += b.q; arr.splice(bi + 1, 1); }
+    if (bd < Infinity) { const a = arr[bi], b = arr[bi + 1]; a.left = (a.left * a.q + b.left * b.q) / (a.q + b.q); mixPz(a, b.q, b.pz); if (!sameBy(a, b.by)) delete a.by; a.q += b.q; arr.splice(bi + 1, 1); }
   }
 }
 // Takes q from a key's lots, the soonest to spoil first. Returns [{ q, left, egg }] taken.
@@ -243,7 +247,10 @@ function trimLots(arr, q, { eggs = true, clean = true } = {}) {
     if ((l.egg && !eggs) || (!l.egg && !clean)) continue;
     const t = Math.min(need, l.q);
     l.q -= t; need -= t;
-    out.push({ ...l, q: t, left: l.left, egg: !!l.egg }); // ...l: a lot's own fields go with it (wave 2: a cooked lot's poisonChance, eating.js)
+    const o = { q: t, left: l.left, egg: !!l.egg };
+    if (l.pz > 0) o.pz = l.pz;
+    if (l.by != null) o.by = l.by;
+    out.push(o);
   }
   for (let i = arr.length - 1; i >= 0; i--) if (arr[i].q <= EPS) arr.splice(i, 1);
   return out;
@@ -283,14 +290,15 @@ export function typeStray(st, state = null) {
 const addItems = (st, items) => { for (const [k, q] of Object.entries(items)) if (q > 0) st[k] = (st[k] || 0) + q; };
 
 // Adds q of an item to a holder (a base, a team, a cargo, a group or a bare stock): left (days of shelf; default the
-// item's shelf, or what an early shop item has left), egg (it carries the worm's eggs: worm.js).
-export function addFood(h, k, q, { left = null, egg = false, state = null } = {}) {
+// item's shelf, or what an early shop item has left), egg (it carries the worm's eggs: worm.js), pz / by (a cooked
+// lot: cooking.js, the food-poisoning chance a day of food of it and the cook's id; the eating contract there).
+export function addFood(h, k, q, { left = null, egg = false, state = null, pz = 0, by = null } = {}) {
   const st = stockOf(h);
   if (!st || !FOODS[k] || !(q > EPS)) return 0;
   const L = lotsOf(h);
   if (L) syncLots(h, state);
   st[k] = (st[k] || 0) + q;
-  if (L) pushLot(L[k] || (L[k] = []), q, left == null ? newLeft(k, state) : Math.max(0.01, left), egg);
+  if (L) pushLot(L[k] || (L[k] = []), q, left == null ? newLeft(k, state) : Math.max(0.01, left), egg, pz > 0 || by != null ? { pz, by } : null);
   return q;
 }
 // Adds a set of items { key: q } (same options for all).
@@ -357,7 +365,10 @@ export function takeFood(holders, units, opts = {}) {
     if (c.lot) c.lot.q -= q;
     need -= q * c.f.kcal;
     res.items[c.k] = (res.items[c.k] || 0) + q;
-    res.lots.push({ k: c.k, q, left: c.left, egg: !!(c.lot && c.lot.egg) });
+    const lot = { k: c.k, q, left: c.left, egg: !!(c.lot && c.lot.egg) };
+    if (c.lot && c.lot.pz > 0) lot.pz = c.lot.pz; // cooking.js: a cooked lot's food-poisoning chance and its cook (the eating contract)
+    if (c.lot && c.lot.by != null) lot.by = c.lot.by;
+    res.lots.push(lot);
     const u = (q * c.f.kcal) / DAY_KCAL;
     res.units += u;
     if (c.lot && c.lot.egg) { res.eggs[eggKind(c.f)] += u; res.eggs.all += u; }
@@ -394,7 +405,7 @@ export function moveFood(from, to, items = null, { state = null } = {}) {
   for (const [k, q] of Object.entries(want)) {
     const t = takeItem(from, k, q, { state });
     if (!(t.q > EPS)) continue;
-    for (const l of t.lots) addFood(to, k, l.q, { left: l.left, egg: l.egg, state });
+    for (const l of t.lots) addFood(to, k, l.q, { left: l.left, egg: l.egg, state, pz: l.pz || 0, by: l.by ?? null });
     moved[k] = (moved[k] || 0) + t.q;
   }
   return moved;
@@ -403,7 +414,7 @@ export function moveFood(from, to, items = null, { state = null } = {}) {
 // with its lots; scale: the share that arrives (a supply line loses some on the way). Returns takeFood's result.
 export function moveFoodUnits(from, to, units, { scale = 1, state = null, only = null, eggs = false } = {}) {
   const got = takeFood(from, units, { eggs, state, only });
-  for (const l of got.lots) addFood(to, l.k, l.q * scale, { left: l.left, egg: l.egg, state });
+  for (const l of got.lots) addFood(to, l.k, l.q * scale, { left: l.left, egg: l.egg, state, pz: l.pz || 0, by: l.by ?? null });
   return got;
 }
 

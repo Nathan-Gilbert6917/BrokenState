@@ -19,13 +19,12 @@
 //
 // Eating (eatFromStore): the lot nearest to spoiling first, whatever it is (the Kitchen's meals, bread, cheese, the
 // cans last); food with the worm's eggs is left to the end (crops and forage, then meat: worm.js, eaten raw).
-// Cooking (cookDaily, before the eating): a base whose Kitchen serves hot meals (kitchen.js: a lit stove and its
-// cooks, `cover` the share of the people they feed) turns up to that share of the day's eating of raw ingredients (raw
-// meat and fish, eggs and milk, produce, crops, forage: FOODS ingredient) into simple meals, safe to eat (the worm's
-// eggs die), spoiling in 4 days; the ones with eggs go in the pot first. The kitchen's own saving (kitchen.js
-// KITCHEN.save, upkeep.js kitchenEatMult) is the stretch: the meals hold the calories of their makings (MEAL.gain 1).
-// Wave 2 replaces this with recipes and bills. A base that cooks without a kitchen (worm.js baseCooks: a shelter's lit
-// fire, an old cook fire, the Preserving room) still kills the eggs in what it eats (the egg lots count as cooked).
+// Cooking (cookDaily, before the eating; wave 2 cooking, cooking.js): the Kitchen and a cook fire (a shelter's own
+// fire) work their bills: recipes that turn raw ingredients into meals more filling than their makings (MEAL.gain 1.25
+// for a simple meal), with purified water, the cook's time and skill, and a chance of food poisoning (eatFromStore
+// rolls it for the day's eating: cooking.js poisonAtBase). The Kitchen's own saving (kitchen.js KITCHEN.save,
+// upkeep.js kitchenEatMult) stays on top. A base that cooks (worm.js baseCooks: a lit stove, a cook fire, a shelter's
+// lit fire, the Preserving room) still kills the eggs in what it eats (the egg lots count as cooked).
 // Preserving:
 //   - the Preserving room (buildings.js "kitchen", RECIPES.preserve, an operator): 9 days of fresh food + 3 water + 1
 //     scrap + 4 empty jars → 8 portions of jarred food a day (9 with Farming 8+; the pressure canner fitting +1);
@@ -42,7 +41,7 @@ import * as Weather from "./weather.js";
 import { spoilMult } from "./skills.js";
 import { baseGameDaily, CABIN } from "./hunting.js";
 import { baseCooks, cookEggs } from "./worm.js";
-import { hasKitchen, kitchenService } from "./kitchen.js"; // the Kitchen's cooks: the share of the day's eating they make into meals
+import { cookBills, poisonRoll, COOK_RECIPES } from "./cooking.js"; // wave 2 cooking: bills at the stations, food poisoning from the day's meals
 import { FOODS, DAY_KCAL, foodIn, foodSplit, syncLots, lotsOf, takeFood, addFood, ageLots, unitsOf, qtyOf, foodText, eggFood } from "./foods.js";
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30, freezer: 300 };
@@ -50,7 +49,9 @@ export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 
 export const FACTOR = { outside: 1.5, dry: 1, cellar: 0.35, freezer: 0.05, stable: 1 };
 export const RACK = { food: 4, out: 3, keepDays: 15 };   // drying rack: days of food in, out, days of eating kept fresh
 export const JAR_RATIONS = 2, JAR_RETURN = 0.85;
-export const MEAL = { key: "f_simplemeal", gain: 1 };  // the Kitchen's meals: kcal out per kcal of raw makings (its saving is kitchen.js KITCHEN.save)
+// The simple meal: kcal out per kcal of raw makings (wave 2 cooking: cooking.js COOK_RECIPES.simple.gain, 1.25: more
+// filling than the raw food, RimWorld's simple meal; the Kitchen's own saving is kitchen.js KITCHEN.save on top).
+export const MEAL = { key: "f_simplemeal", get gain() { return COOK_RECIPES.simple.gain; } };
 // The items the racks dry into, by what went on them.
 const RACK_OUT = { rawmeat: "f_jerky", rawfish: "f_smokedfish" };
 const rackable = (k, f) => !f.stable && f.group !== "meal" && k !== "f_milk" && k !== "f_eggs" && k !== "f_bread" && k !== "f_cheese";
@@ -200,34 +201,18 @@ export const stableLoss = (temp) => storeFactor("stable", temp) / 900;
 export const edibleFood = (base) => foodIn(base.stock);
 
 // ---------- cooking ----------
-// Before a base eats (economy.js): a base that cooks turns up to `units` days of raw ingredients into simple meals
-// (MEAL.gain more filling), the ones with the worm's eggs first, less the meals already standing. Returns the days of
-// raw makings cooked.
+// Before a base eats (economy.js): every cooking station works its bills (cooking.js cookBills: the Kitchen's cooks, a
+// cook fire's or a shelter's fire's pot; recipes, gain, purified water, food poisoning), then whatever else cooks here
+// (a lit stove for the rest, a cook fire, a shelter's fire, the Preserving room's stove: worm.js baseCooks) cooks the
+// food with the worm's eggs in the rest of the day's eating through (worm.js cookEggs: the eggs die). Returns the days
+// of food that went into the pots.
 export function cookDaily(state, base, units) {
   base.cooked = 0;
-  if (!(units > 0) || !baseCooks(base)) return 0;
-  // The Kitchen's hot meals (kitchen.js): its cooks feed `cover` of the people; their share of the day's eating is
-  // cooked from the raw ingredients (the ones with eggs first), less the meals already standing.
-  const ks = hasKitchen(base) ? kitchenService(state, base) : null;
-  const cover = ks && !ks.cold ? Math.max(0, Math.min(1, ks.cover || 0)) : 0;
-  let cooked = 0;
-  if (cover > 0) {
-    const ready = unitsOf(MEAL.key, base.stock[MEAL.key] || 0);
-    let want = Math.max(0, units * cover - ready);
-    if (want > 1e-6) {
-      const only = (k, f) => !!f.ingredient;
-      const a = takeFood(base, want, { only, clean: false, state });
-      want -= a.units;
-      const b = want > 1e-6 ? takeFood(base, want, { only, eggs: false, state }) : { units: 0 };
-      cooked = a.units + b.units;
-      if (cooked > 0) addFood(base, MEAL.key, qtyOf(MEAL.key, cooked * MEAL.gain), { state });
-    }
-  }
-  // Whatever else cooks here (the stove for the rest, a shelter's fire, the Preserving room's stove): the food with the
-  // worm's eggs in the rest of the day's eating is cooked through (worm.js cookEggs: the eggs die).
+  const cooked = state ? cookBills(state, base) : 0;
+  base.cooked = Math.round(cooked * 10) / 10;
+  if (!(units > 0) || !baseCooks(base)) return cooked;
   const left = Math.max(0, units - cooked);
   if (left > 1e-6) cookEggs(base, left);
-  base.cooked = Math.round(cooked * 10) / 10;
   return cooked;
 }
 
@@ -236,7 +221,7 @@ export function cookDaily(state, base, units) {
 // worm's eggs (eaten uncooked: base.rawCropEaten / rawForageEaten), then the meat with eggs (base.rawEaten; worm.js
 // rolls them). Jarred food frees its jars (most come back). Records what was eaten today (base.ate: the mood from the
 // meals, relations.js). Returns the days of food that could not be covered.
-export function eatFromStore(base, amount, state = null) {
+export function eatFromStore(base, amount, state = null, eaters = null) {
   let need = Math.max(0, amount);
   if (!(need > 0)) return 0;
   const ate = takeFood(base, need, { eggs: false, state });
@@ -257,7 +242,17 @@ export function eatFromStore(base, amount, state = null) {
   }
   if (items.f_jarred > 0) jarsBack(base, items.f_jarred);
   noteAte(state, base, items);
+  // cooking.js: food poisoning from the lots eaten, rolled for `eaters` when the caller knows them (the people living here
+  // eat person by person: eating.js rolls each one's own meal; children, prisoners and guests have no illness of it).
+  if (state && eaters && eaters.length) notePoisoned(state, base, poisonRoll(state, eaters, ate.lots, { cooked: baseCooks(base), where: ` at ${base.name}` }));
   return Math.max(0, need);
+}
+// The base's record of the day's food poisoning (cooking.js poisonAtBase's base.poisonDay): the people who came down with it.
+export function notePoisoned(state, base, hit) {
+  if (!state || !base || !hit || !hit.length) return;
+  const d = Math.floor(state.hour / 24) + 1;
+  if (base.poisonDay && base.poisonDay.day === d) base.poisonDay.n += hit.length;
+  else base.poisonDay = { day: d, n: hit.length };
 }
 // What a base ate today (relations.js noteMeals: the mood of the meals, weeks of nothing fresh). The day: the midnight
 // tick closes the day before (eating.js eats by the hour; economy.js reads the day that ended at midnight).

@@ -74,13 +74,12 @@ import { coldFactor, foodUse } from "./upkeep.js";
 import { eatMult } from "./skills.js";
 import { kitchenEatMult, kitchenService, hasKitchen } from "./kitchen.js";
 import { baseCooks } from "./worm.js";
-import { ateFromStore, edibleFood } from "./storage.js";
+import { ateFromStore, edibleFood, notePoisoned } from "./storage.js";
 import { addMood } from "./relations.js";
 import { drawWater, waterIn, RAW } from "./water.js";
 import { carriedFactor } from "./hunting.js";
 import * as Weather from "./weather.js";
-import { addCondition } from "./health.js";
-import { stomachMult } from "./traits.js";
+import { poisonRoll } from "./cooking.js"; // wave 2 cooking: food poisoning from the lots each person ate (the eating contract)
 
 export const EAT = {
   band: [80, 100], spread: [82, 96], meal: 5, snack: 55, night: 30, nightFrom: 22, nightTo: 6, short: [40, 48],
@@ -100,7 +99,6 @@ export const THOUGHTS = {
   veg:      { label: "Ate meat (vegetarian)", v: 0, hours: 48 }, // v by tier: traits.js vegetarian
   cannibal: { label: "Ate human meat (cannibal)", v: 0, hours: 72 },
   human:    { label: "Ate human meat", v: -20, hours: 120 },
-  poison:   { label: "Food poisoning", v: -4, hours: 48 },
 };
 export const MEAL_NAMES = { simple: "a simple meal", fine: "a fine meal", lavish: "a lavish meal" };
 
@@ -322,7 +320,7 @@ export function baseEatHour(state, base, people) {
       const min = breakMin(got.units, !!meal);
       acc(base).meals++;
       acc(base).min += min;
-      noteEat(state, s, got, { meal, min, key, base });
+      noteEat(state, s, got, { meal, min, key, base, cooked: !!(ctx && ctx.cooks) && got.from !== "pack" });
     }
   }
 }
@@ -400,16 +398,10 @@ export function noteEat(state, s, got, ctx = {}) {
     else thought(state, s, "human");
   }
   if (ctx.key === "feast") thought(state, s, "feast");
-  // Food poisoning (the cooking branch's lots may carry poisonChance: rolled here with dice of their own).
-  for (const l of got.lots || []) {
-    const pc = Number(l.poisonChance) || 0;
-    if (!(pc > 0)) continue;
-    if (traitHash(state.seed || 1, nameHash(s), state.hour, nameHash({ name: l.k })) < Math.min(1, pc * stomachMult(s))) {
-      addCondition(state, s, "stomach", `food poisoning (${FOODS[l.k] ? FOODS[l.k].name.toLowerCase() : "bad food"})`);
-      thought(state, s, "poison");
-      break;
-    }
-  }
+  // Food poisoning (cooking.js, the eating contract): the lots this person ate, rolled for them alone (a cooked lot's pz:
+  // its cook's Cooking, the kitchen's dirt; raw meat or fish eaten uncooked 5%; egg lots are worm.js's). The illness
+  // ("poisoning", health.js) carries its own mood and sends them to bed (sickrest.js).
+  if (got.lots && got.lots.length) { const hit = poisonRoll(state, [s], got.lots, { cooked: !!ctx.cooked, where: ctx.base ? ` at ${ctx.base.name}` : "" }); if (ctx.base) notePoisoned(state, ctx.base, hit); }
 }
 const r3 = (v) => Math.round(v * 1000) / 1000;
 // The day closes: the food they ate most of goes on the log; the same food EAT.sameDays days running: "Same food again".

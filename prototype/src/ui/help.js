@@ -12,6 +12,7 @@ import { HIVE_CRAWL_HELP } from "../sim/hivecrawl.js";
 import { VOLUNTEERS_HELP } from "../sim/volunteers.js"; // volunteers lent between groups // the hive crawl: from the mouth to the Hivemind
 import { FESTIVAL_HELP } from "../sim/festival.js";
 import { EATING_HELP } from "../sim/eating.js"; // meal breaks, carried rations, ration levels, food and mood
+import { cookingHelp } from "../sim/cooking.js"; // wave 2 cooking
 import { machinesHelp } from "../sim/breakdowns.js"; // machines, parts, the freezer
 import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
 import { keyLabel } from "./keymap.js";
@@ -194,6 +195,7 @@ export function helpTopics() {
   if (!seen.has("training-medics")) add("Training medics", TRAINING_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
   if (!seen.has("field-works")) add("Field works", fieldWorksHelp()); // sim/fieldworks.js
+  add("Cooking and meals", cookingHelp()); // sim/cooking.js (wave 2 cooking: bills, recipes, cookbooks, food poisoning)
   add("Machines and machine parts", machinesHelp()); // sim/breakdowns.js (freezer-parts: the walk-in freezer, the vacuum sealer)
   add("Magazines, rigs and plates", KIT_HELP); // sim/carrykit.js
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);

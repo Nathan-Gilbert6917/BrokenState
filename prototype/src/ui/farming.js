@@ -3,6 +3,7 @@
 // FARM_CHANGE).
 import { FOODS } from "../sim/foods.js"; // a crop's harvest item
 import { foodTip, baseFoodHtml } from "./food.js";
+import { cookingCard } from "./cooking.js"; // wave 2 cooking: the stations' bills
 import {
   CROPS, CROP_KEYS, farmOf, careToday, expectedYield, daysToRipe, plotWeatherNote, plantCheck, bestCrop, plantPlot,
   harvestPlot, clearPlot, setPlotWant, setAutoReplant, plotLimit, greenhouseLimit, siteFarm, farmers, recentGrowth,
@@ -252,6 +253,7 @@ export function baseFarming(state, b) {
       </div>
       <h3${tip("Food by kind: how much, the days before the soonest of it spoils where it is kept today, and the food rooms")}>Food in store</h3>
       <div class="card">${baseFoodHtml(state, b, { max: 24 })}</div>
+      ${cookingCard(state, b)}
       ${huntingCard(state, b)}
     </div>
     <div>
