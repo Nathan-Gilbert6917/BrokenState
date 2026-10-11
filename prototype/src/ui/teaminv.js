@@ -109,8 +109,8 @@ const whereLabel = (loc) => { const L = parseLoc(loc); return L.slot === "rig" &
 function heldLine(m, drop) {
   const h = m.hold;
   if (!h || !(h.kg > 0.05)) return "";
-  const parts = [["hands", "arms"], ["pack", "pack"], ["pocket", "pockets"]].filter(([pl]) => Object.keys(h[pl] || {}).length).map(([pl, w]) => `${w}: ${esc(recText(h[pl]))}`);
-  return `<div class="small ${h.handsKg > 0 ? "warn" : "muted"}" style="margin-top:0.2rem"${tip(`The team's supplies ${m.s.name.split(" ")[0]} holds (part of the totals in the cargo below)${h.handsKg > 0 ? `; ${kg(h.handsKg)}/${HANDS_KG} kg in the arms: no weapon in a fight until it is set down` : ""}`)}>Holds ${kg(h.kg)} kg: ${parts.join(" · ")}${drop ? ` <button class="mini" data-action="ti-dropheld" data-sid="${m.s.id}"${tip(`Put everything of the team's supplies ${m.s.name.split(" ")[0]} holds (arms, pack, pockets) in the stores`)}>Drop off what ${first(m.s)} holds</button>` : ""}</div>`;
+  const parts = [["hands", "arms"], ["cart", h.cartItem ? h.cartItem.name.toLowerCase() : "cart"], ["pack", "pack"], ["pocket", "pockets"]].filter(([pl]) => Object.keys(h[pl] || {}).length).map(([pl, w]) => `${esc(w)}: ${esc(recText(h[pl]))}`); // cart: sim/carts.js
+  return `<div class="small ${h.handsKg > 0 ? "warn" : "muted"}" style="margin-top:0.2rem"${tip(`The team's supplies ${m.s.name.split(" ")[0]} holds (part of the totals in the cargo below)${h.handsKg > 0 ? `; ${kg(h.handsKg)}/${HANDS_KG} kg in the arms: no weapon in a fight until it is set down` : ""}`)}>Holds ${kg(h.kg)} kg: ${parts.join(" · ")}${drop ? ` <button class="mini" data-action="ti-dropheld" data-sid="${m.s.id}"${tip(`Put everything of the team's supplies ${m.s.name.split(" ")[0]} holds (arms, ${h.cartItem ? "cart, " : ""}pack, pockets) in the stores`)}>Drop off what ${first(m.s)} holds</button>` : ""}</div>`;
 }
 // Drop off (team → base) and Load (base → team): the team on the left, the base on the right.
 function transferTab(state, ui, p, base, tab) {

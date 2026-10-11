@@ -29,6 +29,7 @@ import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad
 import { combatAct } from "../sim/combat.js";
 import { lootLayer } from "../sim/raidloot.js";
 import { groundPile, fieldReady, pileCount } from "../sim/ground.js"; // bodies searched where they fell, things on the ground
+import { isCart, cartSpec, cartFree, feltKg, boxFree } from "../sim/carts.js"; // a wheelbarrow, a hand cart: In arms with its own grid; on a battle map a container up to its kg
 import { SEARCH } from "../sim/search.js";
 import { ask } from "./confirm.js"; // breaking down anything above junk asks first (one confirmation style)
 import { isGunKey, gunIconHtml } from "./gunart.js"; // a gun (not a bow or a blade): the gun builder opens on it; its picture on its tile
@@ -170,6 +171,11 @@ function carriedBagBoxes(state, ui, holder, prefix, user, readonly) {
   const bag = holder.gear && holder.gear.carry;
   if (!bag) return "";
   const cells = packSize(bag) ? ensurePack(bag) : null;
+  if (isCart(bag)) { // sim/carts.js: what counts on the person against what it weighs
+    const sp = cartSpec(bag), all = itemLoad(bag);
+    return `<div class="invlabel warn"${tip(`Pushed in the arms: the ${bag.name.toLowerCase()} weighs ${kg(all)} kg with its ${cells ? cells.filter(Boolean).length : 0} things (and the lots it carries); ${holder.name ? holder.name.split(" ")[0] : "its pusher"} feels ${Math.round(sp.frac * 100)}% of it: ${kg(feltKg(bag))} kg on their load, plus ${Math.round(sp.frac * 100)}% of the team's supplies put in it (Supplies carried, below). Up to ${sp.cap} kg in it: ${kg(cartFree(bag))} kg more fits. Off the roads the team goes at ×${sp.offroad} pace. Hands full: in a fight Let go (free) to shoot, Take cart (1 action) to push it on. Set it down to leave it on this tile's ground with everything in it.`)}>In arms: ${esc(bag.name)} · ${kg(all)} kg in all, ${kg(feltKg(bag))} kg on ${holder.name ? esc(holder.name.split(" ")[0]) : "them"}${cells ? ` · ${cells.filter(Boolean).length}/${cells.length}` : ""}</div>
+    ${cells ? `<div class="invgrid">${cells.map((_, i) => slotBox(state, ui, `${prefix}:bag:${i}`, "", user, readonly)).join("")}</div>` : ""}`;
+  }
   return `<div class="invlabel warn"${tip(`Carried in the arms, not worn: ${Math.round(itemLoad(bag) * 10) / 10} kg with what is in it, on top of the load. Hands full: no shooting, blows with a weapon, reloading, throwing or treating until it is set down (free in a fight). Move it to Backpack to wear it (if the back is free), or take things out of it here.`)}>In arms: ${esc(bag.name)} (${Math.round(itemLoad(bag) * 10) / 10} kg${cells ? `, ${cells.filter(Boolean).length}/${cells.length}` : ""})</div>
     ${cells ? `<div class="invgrid">${cells.map((_, i) => slotBox(state, ui, `${prefix}:bag:${i}`, "", user, readonly)).join("")}</div>` : ""}`;
 }
@@ -535,8 +541,8 @@ function raidModal(state, ui) {
     const sups = Object.entries(box.contents.sup).filter(([, v]) => v >= 1);
     const n = box.contents.gear.length + sups.length;
     const w = sups.reduce((a, [k, v]) => a + supWeight(k) * v, 0) + box.contents.gear.reduce((a, g) => a + itemLoad(g), 0);
-    mid = `<div><div class="spread"><b${tip(box.kind === "ground" ? "Things on the ground here. Taking them is hauling (the first kg a turn free); putting things down is free." : box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)} kg</span></div>
-      <div class="istore" data-action="inv-click" data-loc="${bl}:list" data-drop="${bl}:list"${tip("Drop here to leave it in the container")}>${sups.map(([k, v]) => supTile(ui, `${bl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, box.contents.gear, bl, s) || (sups.length ? "" : `<span class="small muted">Empty.</span>`)}</div>
+    mid = `<div><div class="spread"><b${tip(box.cart ? `The ${box.cart.name.toLowerCase()} on the map: up to ${cartSpec(box.cart).cap} kg (${kg(boxFree(box))} kg more fits). Drag things in from bodies, piles and your people; taking things out is hauling time. Take cart (1 action, next to it) to push it on with all in it.` : box.kind === "ground" ? "Things on the ground here. Taking them is hauling (the first kg a turn free); putting things down is free." : box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)}${box.cart ? `/${cartSpec(box.cart).cap}` : ""} kg</span></div>
+      <div class="istore" data-action="inv-click" data-loc="${bl}:list" data-drop="${bl}:list"${tip(box.cart ? `Drop here to put it in the ${box.cart.name.toLowerCase()}` : "Drop here to leave it in the container")}>${sups.map(([k, v]) => supTile(ui, `${bl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, box.contents.gear, bl, s) || (sups.length ? "" : `<span class="small muted">Empty.</span>`)}</div>
       ${box.quick ? `<div class="small warn" style="margin-top:0.3rem"${tip(`Rummaged through in a hurry (Quick search): only part of what is inside turned up. A full search turns up the rest, if there is more: ${SEARCH.ap} action, quiet.`)}>Rummaged in a hurry: a full search may turn up more.</div>` : ""}
       <div class="row" style="margin-top:0.4rem"><button class="mini" data-action="rl-takeall"${tip(`Everything that fits on ${first}: supplies carried, small things in pockets, the rest in the pack or carried.`)} ${n ? "" : "disabled"}>Take all</button>${box.quick ? `<button class="mini" data-action="rl-full"${tip(`${first} goes through it properly: ${SEARCH.ap} action, quiet. Whatever the rummage missed turns up here.`)} ${u.ap >= SEARCH.ap && !b.over && b.phase === "player" ? "" : "disabled"}>Search it in full (${SEARCH.ap} action)</button>` : ""}</div></div>`;
   }
@@ -575,7 +581,7 @@ function raidModal(state, ui) {
   if (SL && SL.slot === "sup" && (!ui.stack || ui.stack.ns !== "raid")) openStack(ui, "raid"); // a stack picked another way: the mover opens on it
   const selLine = (what) => `<div class="invsel small">Selected: <b>${esc(what)}</b>. Nowhere to move it from here. <button class="mini" data-action="inv-cancel">Cancel</button></div>`;
   return `<div class="box wide invbox${cols.length > 2 ? " loot" : ""}">
-    <div class="spread"><h1>${box ? (box.kind === "ground" ? "On the ground" : "Search") : trunk ? "Vehicle" : "On the ground"}: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}</span></div>
+    <div class="spread"><h1>${box ? (box.cart ? esc(box.cart.name) : box.kind === "ground" ? "On the ground" : "Search") : trunk ? "Vehicle" : "On the ground"}: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}</span></div>
     <div class="result small"${ui.invMsg ? "" : ' style="visibility:hidden"'}>${ui.invMsg ? esc(ui.invMsg) : "&nbsp;"}</div>
     <div class="invcols${cols.length > 2 ? " three" : ""}">${cols.join("")}</div>
     ${SL && SL.slot === "sup" ? stackPanel(state, ui, "raid") || selLine(sel) : sel ? `<div class="invsel small">Selected: <b>${esc(sel)}</b>. Click where it should go: a slot, a pocket or pack cell, Carried${mates.length ? ", a teammate" : ""}${box ? ", the container" : ""}, the ground${trunk ? ", the vehicle" : ""}.${armsBtn} <button class="mini" data-action="inv-cancel">Cancel</button></div>` : ""}

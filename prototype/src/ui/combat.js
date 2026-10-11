@@ -27,7 +27,8 @@ import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chi
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { roomText, totalRoom } from "../sim/prisoners.js"; // jailhouse: prisoner room at your bases
-import { bodyEmpty } from "../sim/inventory.js";
+import { bodyEmpty, itemLoad } from "../sim/inventory.js";
+import { fieldReady } from "../sim/ground.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js"; // the rounds a reload can take (the ammo chooser)
 import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
 import { SEARCH, quickable, quickRefusal, quickRadius, quickHurtPct } from "../sim/search.js";
@@ -40,6 +41,7 @@ import { ACID, acidAt } from "../sim/acid.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, RAM, LADDER, DROP } from "../sim/siege.js";
 import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
+import { holdsCart, cartsNear, takeRefusal, boxKg, cartSpec } from "../sim/carts.js"; // a wheelbarrow, a hand cart in a fight: Let go, Take cart, Load cart
 import { recText, handsKg, carriedNear, handsBusy, armsText } from "../sim/carry.js"; // supplies carried in the arms in a fight: Drop carried (free), Pick up load
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
 import { barkFrame } from "./barks.js"; // combat barks: short speech bubbles over the units' heads
@@ -1114,6 +1116,8 @@ export function combatAction(state, key, d) {
   }
   if (v === "stowbody") return void act(state, { type: "stowbody", unit: u.id });
   if (v === "dropCarried" || v === "dropAllCarried" || v === "pickCarried") return void act(state, { type: v, unit: u.id }); // sim/carry.js
+  if (v === "letGoCart" || v === "takeCart") return void act(state, { type: v, unit: u.id }); // sim/carts.js
+  if (v === "loadCart") { const c = cartsNear(b, u)[0]; fieldReady(b, state); if (c) cui.lootReq = { uid: u.id, box: c.id }; else cui.lootReq = { uid: u.id, box: null }; return; } // sim/carts.js: the search window on the cart (or the one pushed: its grid on the person)
   // A building's doors (sim/buildingmaps.js): with one door next to the unit act at once, else click the door.
   if (v === "peek" || v === "close" || v === "brace") {
     const list = v === "peek" ? peekOptions(b, u) : v === "close" ? closeOptions(b, u) : braceOptions(b, u);
@@ -1543,7 +1547,10 @@ function medicButtons(state, b, u, btn) {
 function bodyButtons(state, b, u, btn) {
   let html = "";
   // sim/carry.js: the team's supplies carried in the arms (no weapon until set down), and loads set down nearby.
-  if (handsBusy(u)) html += btn("dropCarried", "Drop carried", `Free: ${u.name.split(" ")[0]} sets down ${armsText(u)} (${Math.round(handsKg(u) * 10) / 10} kg) on this cell, and can shoot and fight again. Won, the team picks it all up after the fight; retreating, it stays on the ground of this tile.`, true);
+  // sim/carts.js: a wheelbarrow or a hand cart: let go (free), take it back (1 action), load it from the bodies and piles round it.
+  if (holdsCart(u)) html += btn("letGoCart", "Let go", `Free: ${u.name.split(" ")[0]} lets go of the ${u.bag.name.toLowerCase()} (${Math.round(itemLoad(u.bag) * 10) / 10} kg with what is in it): it stays on this cell with everything in it, and ${u.name.split(" ")[0]} can shoot and fight again. Anyone next to it can load or unload it; Take cart (1 action) to push it on. Won, it comes back after the fight; on an evac or a retreat only a cart someone is pushing leaves with them.`, true);
+  { const c = cartsNear(b, u)[0]; if (c) { const why = takeRefusal(state, b, u, c); html += btn("takeCart", "Take cart", `1 action, next to it: ${u.name.split(" ")[0]} takes the ${c.cart.name.toLowerCase()} (${Math.round((itemLoad(c.cart) + boxKg(c)) * 10) / 10} kg with what is in it) and pushes it: hands full (no weapon) until it is let go, a tile less a move. It leaves with its pusher on an evac.${why ? ` ${why}` : ""}`, !why); html += btn("loadCart", "Load cart", `Free to open: load or unload the ${c.cart.name.toLowerCase()} next to ${u.name.split(" ")[0]} (${Math.round(boxKg(c) * 10) / 10} of ${cartSpec(c.cart).cap} kg). Drag things from bodies, piles or ${u.name.split(" ")[0]} into it: taking things off a body or the ground is hauling time as usual.`, true); } }
+  if (handsBusy(u) && !holdsCart(u)) html += btn("dropCarried", "Drop carried", `Free: ${u.name.split(" ")[0]} sets down ${armsText(u)} (${Math.round(handsKg(u) * 10) / 10} kg) on this cell, and can shoot and fight again. Won, the team picks it all up after the fight; retreating, it stays on the ground of this tile.`, true);
   if (handsBusy(u) && b.units.filter((x) => x.side === "player" && handsBusy(x)).length > 1) html += btn("dropAllCarried", "All drop carried", "Free: everyone of yours sets down what they carry in their arms.", true);
   if (carriedNear(b, u).length) html += btn("pickCarried", "Pick up load", `1 action: take ${[recText(carriedNear(b, u).reduce((a, c) => { for (const [k, q] of Object.entries(c.sup || {})) a[k] = (a[k] || 0) + q; return a; }, {})), ...carriedNear(b, u).filter((c) => c.item).map((c) => `the ${c.item.name}`)].filter(Boolean).join(", ")} back in the arms (hands full again: no weapon; one bag at a time).`, u.ap > 0 && u.carrying == null && u.dragging == null);
   const held = carriedBy(b, u);

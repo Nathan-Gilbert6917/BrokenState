@@ -101,7 +101,7 @@ export function teamHoldings(state, p) {
       spots: spotsOf(s).map(({ item, where, loc }) => ({ item, where, loc, kg: itemLoad(item) })),
       worn: wornLoad(s),
       max: maxLoad(s),
-      hold: h ? { pocket: h.pocket, pack: h.pack, hands: h.hands, kg: h.kg, handsKg: h.handsKg } : null,
+      hold: h ? { pocket: h.pocket, pack: h.pack, hands: h.hands, cart: h.cart, cartItem: h.cartItem, kg: h.kg, handsKg: h.handsKg } : null, // cart: the team's supplies in the cart they push (carts.js)
     };
   });
   p.cargo = p.cargo || { supplies: {}, gear: [] };
@@ -228,7 +228,7 @@ export function dropHeldOff(state, p, sid, place = null) {
   const s = survivorById(state, sid);
   if (!r || !s) return result([], ["That person is not on the team."], "");
   const got = {};
-  for (const pl of ["hands", "pack", "pocket"]) {
+  for (const pl of ["hands", "cart", "pack", "pocket"]) { // cart: what is in the cart they push (carts.js)
     if (place && pl !== place) continue;
     for (const k of HOLD_KEYS) {
       const q = num(r[pl] && r[pl][k]);

@@ -33,7 +33,8 @@ import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (s
 import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
 import { paintLights, drawGlow, drawDarkness, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
-import { drawGroundIso, drawPileIso } from "./ground.js";
+import { drawGroundIso, drawPileIso, drawCartIso, drawCartBoxIso } from "./ground.js";
+import { isCart } from "../sim/carts.js"; // a cart pushed (u.bag)
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
 
 // ---------- constants ----------
@@ -1562,7 +1563,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   for (const c of b.corpses || []) { if (!onFloor(b, c)) continue; const [cu, cv] = toView(c.x, c.y, r, b.w, b.h); const d = cu + cv; const a = bodies.get(d); if (a) a.push(c); else bodies.set(d, [c]); }
   // Things on the ground (sim/ground.js piles), by the same depth.
   const piles = new Map();
-  for (const p of groundPiles(b)) { if (!pileCount(p) || !onFloor(b, p)) continue; const [cu, cv] = toView(p.x, p.y, r, b.w, b.h); const d = cu + cv; const a = piles.get(d); if (a) a.push(p); else piles.set(d, [p]); }
+  for (const p of groundPiles(b)) { if ((!pileCount(p) && !p.cart) || !onFloor(b, p)) continue; const [cu, cv] = toView(p.x, p.y, r, b.w, b.h); const d = cu + cv; const a = piles.get(d); if (a) a.push(p); else piles.set(d, [p]); } // a cart (sim/carts.js) is drawn even empty
   // An upper floor: which sides of a footprint cell face the outside (the wall mass below is drawn there).
   const massFaces = (uu, vv) => {
     let faces = 0;
@@ -1616,10 +1617,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
-    for (const p of piles.get(d) || []) drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); // ui/ground.js
+    for (const p of piles.get(d) || []) if (p.cart) drawCartBoxIso(ctx, p, project, (x, y) => standZ(b, x, y), S); else drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); // ui/ground.js (a cart: its own sprite)
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
-    for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) drawUnitIso(ctx, state, b, s, H, now);
+    for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) {
+      drawUnitIso(ctx, state, b, s, H, now);
+      if (isCart(s.t.bag) && !s.t.dead) { const [X, Y] = project(s.wx + 0.32, s.wy + 0.32, s.z); drawCartIso(ctx, s.t.bag, X, Y, S, (s.t.bag.contents || []).filter(Boolean).length); } // sim/carts.js: the cart rolls with its pusher
+    }
     for (const f of siegeOver.get(d) || []) f();
     for (const [L, , , sx, sy, fog, faded] of fronts) {
       const spr = sprOf(L, fog, true);

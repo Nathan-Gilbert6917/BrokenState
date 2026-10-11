@@ -5,6 +5,7 @@ import { bodiesNear, bodyBoxOf, pilesNear, pileCount, searchBody, fieldReady, do
 import { searchableNear } from "../sim/combat.js";
 import { SEARCH } from "../sim/search.js";
 import { HAUL } from "../sim/raidloot.js";
+import { GEAR } from "../sim/data.js"; // a cart's look (sim/data-carts.js)
 
 const first = (u) => u.name.split(" ")[0];
 
@@ -81,6 +82,54 @@ export function drawPileIso(ctx, p, project, zAt, S) {
   ctx.font = `700 ${Math.max(9, Math.round(3.4 * S))}px Segoe UI, sans-serif`;
   ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)";
   ctx.strokeText(String(n), X, Y - 6 * S); ctx.fillStyle = "#e0a84f"; ctx.fillText(String(n), X, Y - 6 * S);
+}
+// A cart (sim/carts.js): a wheelbarrow (a green steel tray on one wheel, two handles) or a hand cart (a plank bed on
+// two spoked wheels, a T handle), at screen X, Y (its feet), with a mound in it when it holds something and the count
+// over it as a pile's. Drawn on its cell when it stands on the map, beside its pusher when held (ui/isoview.js).
+export function drawCartIso(ctx, cart, X, Y, S, n = 0) {
+  const look = (GEAR[cart.key] && GEAR[cart.key].cart && GEAR[cart.key].cart.look) || "barrow";
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.beginPath(); ctx.ellipse(X, Y + 0.6 * S, (look === "cart" ? 9.5 : 7.5) * S, 3 * S, 0, 0, Math.PI * 2); ctx.fill();
+  const poly = (pts, fill, stroke = "#1a1712") => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(X + x * S, Y + y * S) : ctx.moveTo(X + x * S, Y + y * S))); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(1, 0.5 * S); ctx.stroke(); };
+  const line = (x0, y0, x1, y1, col, w) => { ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, w * S); ctx.beginPath(); ctx.moveTo(X + x0 * S, Y + y0 * S); ctx.lineTo(X + x1 * S, Y + y1 * S); ctx.stroke(); };
+  const wheel = (x, y, r, spokes) => {
+    ctx.fillStyle = "#1f1d1a"; ctx.beginPath(); ctx.ellipse(X + x * S, Y + y * S, r * 0.62 * S, r * S, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#6d6a64"; ctx.lineWidth = Math.max(1, 0.45 * S); ctx.stroke();
+    if (spokes) for (let k = 0; k < 4; k++) { const a = (k * Math.PI) / 4; line(x - Math.cos(a) * r * 0.55, y - Math.sin(a) * r * 0.9, x + Math.cos(a) * r * 0.55, y + Math.sin(a) * r * 0.9, "#8a6a44", 0.35); }
+    ctx.fillStyle = "#a9a59c"; ctx.beginPath(); ctx.arc(X + x * S, Y + y * S, 0.6 * S, 0, Math.PI * 2); ctx.fill();
+  };
+  const mound = (x, y, rx, ry) => { if (!n) return; ctx.fillStyle = "#8a7350"; ctx.strokeStyle = "#2a2118"; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(X + x * S, Y + y * S, rx * S, ry * S, 0, Math.PI, 0); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#5d6066"; ctx.fillRect(X + (x - rx * 0.5) * S, Y + (y - ry * 0.6) * S, rx * 0.7 * S, 0.9 * S); };
+  if (look === "cart") {
+    wheel(-4.2, -2.4, 3.4, true); // the far wheel
+    line(5.5, -5.2, 11.5, -2.2, "#5b3d22", 1.1); // the T handle
+    line(10.6, -3.6, 12.4, -0.8, "#5b3d22", 1);
+    poly([[-7.5, -7.4], [5.8, -7.4], [7.4, -3.6], [-5.9, -3.6]], "#7a5532");
+    line(-6.9, -6.2, 6.3, -6.2, "#5e4027", 0.4); line(-6.3, -4.9, 6.9, -4.9, "#5e4027", 0.4); // the planks
+    poly([[-7.5, -7.4], [5.8, -7.4], [5.8, -8.6], [-7.5, -8.6]], "#8d6640"); // the side board
+    mound(-0.8, -7.6, 5.2, 2.6);
+    wheel(3.6, -1.6, 3.4, true); // the near wheel
+  } else {
+    line(-3.6, -3.4, -9.8, -5.6, "#6b4a2a", 1.1); // the handles
+    line(-2.4, -2.4, -8.6, -3.2, "#6b4a2a", 1.1);
+    line(-3.2, -2.6, -3.6, 0.2, "#3a3a38", 0.7); // a leg
+    wheel(5.4, -1.8, 2.6, false);
+    poly([[-6.4, -7], [5.2, -7], [3.4, -2.4], [-4.4, -2.4]], "#3f6b4a");
+    line(-6.4, -7, 5.2, -7, "#6d9a76", 0.6); // the tray's rolled rim
+    mound(-0.6, -7.2, 4.4, 2.2);
+  }
+  if (n) {
+    ctx.font = `700 ${Math.max(9, Math.round(3.4 * S))}px Segoe UI, sans-serif`;
+    ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    ctx.strokeText(String(n), X, Y - 11 * S); ctx.fillStyle = "#e0a84f"; ctx.fillText(String(n), X, Y - 11 * S);
+  }
+  ctx.restore();
+}
+// One cart standing on the map (a loot-layer container, sim/carts.js), on its cell.
+export function drawCartBoxIso(ctx, c, project, zAt, S) {
+  const [X, Y] = project(c.x + 0.5, c.y + 0.6, zAt(c.x, c.y));
+  drawCartIso(ctx, c.cart, X, Y, S, pileCount(c));
 }
 // The bodies searched in a field battle with things still on them: a small orange tag over them (with the markers).
 export function drawGroundIso(ctx, b, project, zAt, S, floor = 0) {

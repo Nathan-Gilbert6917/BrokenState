@@ -694,7 +694,7 @@ export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag)
 // Arms full of supplies or a bag (combat.js canFire, fireRefusal, reloadRefusal).
 export const handsBusy = (u) => !!(u && (u.hands || u.bag));
 export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.bag.name}` : ""].filter(Boolean).join(" and ");
-export const handsWord = (u) => `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free).`;
+export const handsWord = (u) => (isCart(u.bag) ? `Hands full: ${u.name.split(" ")[0]} pushes the ${u.bag.name.toLowerCase()} (${r1(handsKg(u))} kg). Let go first (free).` : `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free).`);
 // Why this act cannot be done with what the unit holds ("" when it can).
 export function handsRefusal(u, type) {
   if (!u || !HAND_ACTS.has(type)) return "";
