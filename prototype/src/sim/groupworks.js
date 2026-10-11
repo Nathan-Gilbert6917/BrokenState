@@ -57,7 +57,7 @@
 //   an ethanol still, then a generator, then a walk-in freezer, then a vacuum sealer, each only with its machine parts
 //   and MACH.spare more in the stores (their one count of parts: your electronics are folded into it). Each day
 //   (groupMachinesDaily): the still turns MACH.still.food of their food surplus into MACH.still.fuel fuel (as yours: 8
-//   → 3); the generator burns your generator's POWER.genFuel a day while the freezer or the sealer draws, and with no
+//   → 3); the generator burns your generator's fuel a day for its tier (gen-tiers: genBurn; tier 1 POWER.genFuel) while the freezer or the sealer draws, and with no
 //   fuel they are off; the freezer on saves the food yours would (the cellar's spoilage on up to 300 food it holds,
 //   MACH.save a day: their food does not spoil in this model, so it is paid as food kept); the sealer on is the
 //   cooking wave's hook (groupSealer). Every machine that ran wears by your machine's use (breakdowns.js FIXTURES)
@@ -110,7 +110,7 @@ import { season, THIRST } from "./weather.js"; // summer water: the season and i
 import { weightOf, medOf, workingPeople } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
 import { FIXTURES, WEAR, genFixture } from "./breakdowns.js"; // freezer-parts: the groups' machines wear and break as yours; gen-tiers: a generator's by its tier
-import { POWER, POWER_USERS, GEN_TIERS, genBurn, genUpgradeFuelOk, GEN_UP } from "./power.js"; // gen-tiers: your generator's tiers
+import { POWER_USERS, GEN_TIERS, genBurn, genUpgradeFuelOk, GEN_UP } from "./power.js"; // gen-tiers: your generator's tiers
 import { hash01 } from "./skills.js";
 import { BLUEPRINTS, BP_KEYS, WARE_BP, ZONE_P, CRASH_BP, siteBlueprints } from "./blueprints.js"; // machines-2: the groups' manuals (groupTech)
 import { READ_HOURS } from "./skills.js"; // a reader's day of study

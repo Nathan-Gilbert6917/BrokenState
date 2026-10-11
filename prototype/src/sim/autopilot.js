@@ -2731,7 +2731,7 @@ function buildWishes(state, base) {
   }
   // Power (power.js): a still for the surplus once the hub is big enough, then a generator for what it powers.
   if (!count(base, "still") && !queued("still") && pop >= 9 && (st.parts || 0) >= 4 && stillWorth(state, base)) add("still", "turn the surplus food into fuel");
-  if (count(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || countAll(base, "freezer") + queued("freezer") || (!buildLock(state, base, "freezer") && edibleFood(base) >= pop * 15)) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and a walk-in freezer"); // machines-2: the cold store needs no power; the freezer waits for the Refrigeration Schematics
+  if (countAll(base, "generator") + queued("generator") < 1 && pop >= 10 && (count(base, "still") || (st.fuel || 0) >= 40) && (count(base, "machine_shop") || countAll(base, "freezer") + queued("freezer") || (!buildLock(state, base, "freezer") && edibleFood(base) >= pop * 15)) && (st.parts || 0) >= 8 && best("mechanics") >= 3) add("generator", "power for the machine shop and a walk-in freezer"); // machines-2: the cold store needs no power; the freezer waits for the Refrigeration Schematics. gen-tiers: countAll (a broken generator is repaired, not replaced by a second one)
   if (!base.radio && pop >= 8 && (st.parts || 0) >= 9 && best("mechanics") >= 4) add("radio", "live contact with teams out in the field");
   // The coalition is made on the radio (greetings, pacts, invitations: alliance.js): from a dozen people with a
   // Mechanics 4 builder, the station is built once the parts are there (not saved up for: scrap goes to walls first).
