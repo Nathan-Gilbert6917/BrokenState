@@ -309,7 +309,8 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   const after = scavLeft(h);
   const scavs = atBase(s2, h.id).filter((s) => s.role === "scavenge" && !s.inBed).length;
   check(after < 0.5 && after >= 0.5 - SCAV_DEPLETE * 2 * 10 - 1e-9, `two scavengers for 10 days: ${pct(0.5)} → ${pct(after)} (−${SCAV_DEPLETE} per scavenger a day)`);
-  for (const s of atBase(s2, h.id)) if (s.role === "scavenge") s.role = "farm";
+  // sick-rest (sickrest.js): an ill scavenger rests with the job kept in s.sickWas and goes back to it when well.
+  for (const s of atBase(s2, h.id)) { if (s.role === "scavenge") s.role = "farm"; if (s.sickWas && s.sickWas.role === "scavenge") s.sickWas.role = "farm"; }
   for (let i = 0; i < 24 * 30; i++) tickHour(s2);
   check(scavLeft(h) === after, `then nobody for 30 days: still ${pct(scavLeft(h))}`);
   h.scavLeft = SCAV_FLOOR + 0.001;
