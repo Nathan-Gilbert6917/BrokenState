@@ -2175,8 +2175,9 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // through (worm.js baseCooks: a cook fire, the kitchen's stove while it is lit): no hunters or fishers on the job then
   // (ap-food: the census at ac1c1c6 had worm deaths up 45%; seed 5004's three-person outpost with no cook fire and no
   // scrap for one kept a hunter on infected ground for weeks and caught it from the meat). A cabin's hunters go on (its
-  // smoke house dries their meat; the cook fire is wished for while they work: wormWishes).
-  const rawGame = !cabin && !baseCooks(base) && wormLandNear(state, base);
+  // smoke house dries their meat). The cook fire is wished for meanwhile (wormWishes), and with the food down to
+  // FORAGE_AP.critical days they go anyway: raw game beats none (seed 5040, hardcore: no cook fire, no hunter, starved).
+  const rawGame = !cabin && !baseCooks(base) && wormLandNear(state, base) && foodDays >= FORAGE_AP.critical; // down to days of food, raw game beats none
   const huntScore = (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5);
   if (areas.food && !gov(state).noHunting && foodDays < landGoal && !rawGame) {
     const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
@@ -2290,7 +2291,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   const fsNow = fw.active + fw.toSow >= slots && (foodOutlook(state, base).daysLeft < 30 || winterShort(state, base) > 0) && farmers >= slots * 0.45;
   const fsTill = g.farmShortTill || (g.farmShortTill = {});
   if (fsNow) fsTill[base.id] = state.hour + FARM_SHORT_HOLD;
-  else if (farmLim.comfy || fw.active + fw.toSow < slots) delete fsTill[base.id];
+  else if (farmLim.comfy) delete fsTill[base.id];
   g.farmShort[base.id] = fsNow || state.hour < (fsTill[base.id] ?? -1);
 
   // 7. Workshop stations that are worth running today and whose standing order wants them run (production.js). The
@@ -2690,7 +2691,7 @@ function buildWishes(state, base) {
   // calls for and the defences, before the relay, the benches, the jails, the infirmary and the workshops.
   // eaters: the people who live here, teams out included (at the hub everyone not living at an outpost).
   const eaters = isHub ? Math.max(people, alive(state).filter((s) => s.location.kind !== "base" || s.location.baseId === base.id).length) : people;
-  if (BUILDINGS.canteen && !countAll(base, "canteen") && !queued("canteen") && eaters >= KITCHEN.govFrom && plotsFree(base, "building") >= (isHub ? 2 : 1)) add("canteen", `hot meals for ${eaters} people (−10% food a day, mood)`, true);
+  if (BUILDINGS.canteen && !countAll(base, "canteen") && !queued("canteen") && eaters >= KITCHEN.govFrom && plotsFree(base, "building") >= (isHub ? 2 : 1)) add("canteen", `hot meals for ${eaters} people (−10% food a day, mood)`, !plotsShort(state, base)); // ap-food: not saved for (nor its scrap held: kitchenKeep) ahead of the farm plot the farmers are short of (seed 5058, hardcore: the Kitchen took the scrap, 2 plots for 13 people, starved)
   // Crafting benches (buildings.js BENCH): all but the simple field recipes need one, and crafters work faster and
   // better at one. A crafting bench where someone is on the Craft role or a job is queued, after the essentials above.
   const benchQueued = base.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].family === "bench");
@@ -2803,7 +2804,9 @@ function wormWishes(state, base, queued) {
     // until someone here has caught it.
     if (!woodShort || sick) out.push({ type: "boiler", why: `un-purified water can carry the worm${w.raw > 0 ? " (and the ground here is infected)" : ""}${filter ? " (the filters cover it while they last)" : ""}`, save: !filter || sick });
   }
-  const working = atBase(state, base.id).some((s) => s.role === "hunt" || s.role === "fish") || count(base, "huntcabin") > 0;
+  // ...or would, but for the raw game (ap-food: planRoles keeps its hunters and fishers home while nothing here cooks
+  // the game from infected land, so the cook fire is wished for wherever they could work, or the two wait on each other).
+  const working = atBase(state, base.id).some((s) => s.role === "hunt" || s.role === "fish") || count(base, "huntcabin") > 0 || (!gov(state).noHunting && (!huntWorkWhy(state, base) || !fishWorkWhy(state, base)));
   const landBad = state.grid.within(base.tile, 2).some((id) => (state.tiles[id].infection || 0) >= WORM.MEAT_AT);
   const growing = atBase(state, base.id).some((s) => s.role === "farm" || s.role === "forage");
   const cropBad = cropLandBad(state, base.tile) || state.grid.within(base.tile, 2).some((id) => cropLandBad(state, id));
