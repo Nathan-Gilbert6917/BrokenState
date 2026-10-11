@@ -17,6 +17,7 @@ import { partyMembers, partyTile } from "../src/sim/parties.js";
 import { commandable, HAND_RADIO } from "../src/sim/plans.js";
 import { canRadioGroup, canHearGroup, listeners, canListen, hasNetwork, radioScan, radioNodes, inCoverage, heardBy, HEAR_EXTRA, GROUP_REACH, baseListens, teamListens, networksAt, groupNetwork, netCovers } from "../src/sim/radio.js";
 import { RADIO_RANGE } from "../src/sim/world.js";
+import { worksAt } from "../src/sim/groupworks.js";
 import { news, ensureDiplo } from "../src/sim/diplomacy.js";
 import { WORM, baseWater, wormDaily, drinkHour, addWormWater, packWater, packTablets, teamTabCount, baseTabCount, teamWormText, eggsAt } from "../src/sim/worm.js";
 import { HC_START, roadTeam } from "../src/sim/hardcore-start.js";
@@ -65,6 +66,9 @@ const tabsOf = (it) => (it ? (it.dur != null ? it.dur : GEAR[it.key].dur) : 0);
 // hub outside that network), one outside every network (radio.js networksAt).
 function radioSpots(st, h, outside) {
   const g = st.grid;
+  // ai-locks: a group is on the air only from a radio station it built (the military from every base), so a new
+  // world's groups are mostly silent: give each a station at its bases so their networks exist to listen in on.
+  for (const f of st.factions) if (f.alive) for (const tile of f.bases) worksAt(f, tile).radio = 1;
   const ok = (t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.loc && !st.bases.some((b) => b.tile === t.id) && g.distance(h.tile, t.id) > outside;
   const inGroup = st.tiles.find((t) => ok(t) && networksAt(st, t.id).some((n) => n.kind === "group" && !netCovers(st, n, h.tile)));
   const silent = st.tiles.find((t) => ok(t) && networksAt(st, t.id).length === 0);
