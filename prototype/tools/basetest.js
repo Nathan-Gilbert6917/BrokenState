@@ -456,6 +456,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (d.suppressor) check(!/power|armor/.test(text) && /halves the noise/.test(text) && /shots/.test(text), `${key}: the suppressor says what it does and how long it lasts (${text})`);
     else if (d.siege) check(!/power|armor/.test(text) && /wall|gate/.test(text), `${key}: siege kit says what it is for (${text})`); // sim/siege.js
     else if (d.cat === "gunmod") check(!/power|armor/.test(text) && /gun attachment/.test(text) && /fits/.test(text), `${key}: a gun attachment says what it does and what it fits (${text})`); // sim/gunmods.js
+    else if (d.cart) check(!/power|armor/.test(text) && /cart/.test(text) && /kg in \d+ slots/.test(text), `${key}: a cart says what it holds and what its pusher feels (${text})`); // sim/carts.js
     else if (d.slot === "cargo") check(!/power|armor/.test(text) && /bike/.test(text), `${key}: a bicycle says it is a bike for the base (${text})`); // sim/vehicles.js
     // Camp kit against Heat (fieldheat.js) and a base's defence kit (defences.js): carried or kept, not worn.
     else if (d.heat) check(!/power|armor/.test(text) && /Heat ×/.test(text), `${key}: camp kit says how much less Heat (${text})`);
