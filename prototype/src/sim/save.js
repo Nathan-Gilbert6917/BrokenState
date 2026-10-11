@@ -37,7 +37,7 @@ import { noteLootAge } from "./itemcond.js"; // the years since the fall, for lo
 import { migrateStaging } from "./staging.js"; // the old staging camp becomes a camp base
 import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
-import { migrateGenerators } from "./power.js"; // machines-2: generators without operators
+import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
 import { migrateCanners } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 /** @import { State } from "./types" */
 /**
@@ -255,6 +255,8 @@ export function deserializeState(save) {
   // job, the generator's standing order to the fuel reserve or its switch); the pressure canner is fitted to a
   // preserving room (buildings.js migrateCanners: one in an armory to a kitchen there, else kept to fit later). Once.
   if (!(state.machinesV >= 1)) { migrateGenerators(state); migrateCanners(state); state.machinesV = 1; }
+  // gen-tiers (2026-10-10): generator tiers (power.js GEN_TIERS); every generator standing (yours and the groups') is tier 1. Once.
+  if (!(state.genTiersV >= 1)) { migrateGenTiers(state); state.genTiersV = 1; }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points

@@ -88,6 +88,19 @@
 //   vehicle repair takes car parts first and machine parts only by your two-for-one fallback (vehicles.js groupCost:
 //   the free parts go before the earmark; payParts "vehicle" is that rule too). Losses (raids, tribute) take from the whole count; the earmark shrinks
 //   with it.
+//   gen-tiers (2026-10-10, the user's rule "AI groups need to have the same restrictions and gameplay features"): their
+//   generator has your tiers (power.js GEN_TIERS: w.powerTier, 1 when missing) and burns your fuel for them: genBurn at
+//   the power its machines draw (the walk-in freezer 2, the vacuum sealer 1: your POWER_USERS; served in that order up
+//   to the tier's power), so a tier-1 set burns its flat 2 a day as before. It wears, eats spares and is repaired by
+//   your tier's fixture (breakdowns.js genFixture: more parts, Mechanics 4 / 5). It is upgraded (a job, groupPowerUp)
+//   by your rules: their machines want more power than the tier gives, a group mechanic at the tier's Mechanics (4, 5),
+//   tier 3 behind the Industrial Power Manual (groupKnows "indpower": found, bought, studied as the rest), the tier's
+//   materials scaled as the rest of WORKS (MACH.tiers: yours 24 scrap + 5 parts, 40 + 8 + 2 electronics, the
+//   electronics folded into the parts) with MACH.spare parts over, and never into a fuel deficit (power.js
+//   genUpgradeFuelOk, as your governor's: their fuel in and out a day, measured as a 28-day average of the stock's
+//   changes, f.fuelFlow, less the extra burn stays at 0 or more, and their fuel above half a fuel a head covers 30 days
+//   of it). With a freezer and a sealer (3 power) a tier-1 set covers them, so today they stay at tier 1, as most of
+//   your bases do; the rule is there for the day their machines draw more.
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
@@ -96,8 +109,8 @@ import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast 
 import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
 import { weightOf, medOf, workingPeople } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)
-import { FIXTURES, WEAR } from "./breakdowns.js"; // freezer-parts: the groups' machines wear and break as yours
-import { POWER } from "./power.js";
+import { FIXTURES, WEAR, genFixture } from "./breakdowns.js"; // freezer-parts: the groups' machines wear and break as yours; gen-tiers: a generator's by its tier
+import { POWER, POWER_USERS, GEN_TIERS, genBurn, genUpgradeFuelOk, GEN_UP } from "./power.js"; // gen-tiers: your generator's tiers
 import { hash01 } from "./skills.js";
 import { BLUEPRINTS, BP_KEYS, WARE_BP, ZONE_P, CRASH_BP, siteBlueprints } from "./blueprints.js"; // machines-2: the groups' manuals (groupTech)
 import { READ_HOURS } from "./skills.js"; // a reader's day of study
@@ -105,7 +118,7 @@ import { relation } from "./diplomacy.js"; // buying a manual from traders they 
 import { SUPPLIES } from "./data.js";
 import { groupFieldDefence, groupFieldWells } from "./fieldworks.js"; // the groups' field works: towers, wells
 
-/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, freezer?: number, sealer?: number, kitchen?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
+/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
@@ -127,7 +140,14 @@ export const GROUP_WORKS = {
   PARTS: { rate: 0.25, mech: 4, pop: 16, popMax: 1.5, popMin: 0.4, scrap: 6, keep: 4, perMachine: 1, scrapKeep: 1 },
   // The groups' machines (see the header). fx: the fixture each is (breakdowns.js FIXTURES).
   MACH: { pop: 14, foodDays: 12, spare: 2, mend: 0.6, save: 0.00475, room: 300, still: { food: 8, fuel: 3 }, req: { power: 3, freezer: 3, sealer: 3 }, // req: Mechanics to build (yours, buildings.js)
-    fx: { still: "still", power: "generator", freezer: "freezer", sealer: "sealer" } },
+    fx: { still: "still", power: "generator", freezer: "freezer", sealer: "sealer" },
+    // gen-tiers: the generator's upgrades (see the header), by the tier it becomes: your GEN_TIERS cost scaled as WORKS
+    // (yours 24 scrap + 5 parts, 30 work-hours; 40 + 8 + 2 electronics, 48), req: your Mechanics, bp: your manual.
+    tiers: [null, null,
+      { name: "a standby generator", cost: { scrap: 6, parts: 3 }, work: 4, req: 4 },
+      { name: "an industrial diesel set", cost: { scrap: 10, parts: 5 }, work: 6, req: 5, bp: "indpower" }],
+    floor: 0.5, // fuel a head kept back from a bigger generator's burn (groupcare.js keeps the same before selling)
+  },
   CREW: 6, SALVAGE: 2,
   SERVES: { water: 10, farms: 8, beds: 8 }, // people one of each serves
   WALL_GOAL: { typed: 7, home: 4, open: 1 }, WALLED_TYPES: ["fortress", "military"], // as conquest.js CONQUEST.WALLS (the old fixed walls)
@@ -329,14 +349,54 @@ function machineWork(state, f, tile) {
   const why = { still: "fuel from the food surplus", power: "power for a freezer", freezer: "a walk-in freezer for the food", sealer: "a vacuum sealer for packed meals" };
   for (const k of MACH_ORDER) {
     if (n(w, k)) continue;
-    if (k === "power" && !(groupKnows(state, f, "genschem") && groupKnows(state, f, "refrig"))) return null; // your lock; and they build it for a freezer
-    if (k === "freezer" && !groupKnows(state, f, "refrig")) return null; // your lock (the sealer has none: it waits for the generator)
-    if (groupSkill(f, "mechanics") < (W.MACH.req[k] || 0)) return null; // your build rule: a Mechanics 3 hand for the generator, the freezer, the sealer
+    if (k === "power" && !(groupKnows(state, f, "genschem") && groupKnows(state, f, "refrig"))) return groupPowerUp(state, f, tile); // your lock; and they build it for a freezer
+    if (k === "freezer" && !groupKnows(state, f, "refrig")) return groupPowerUp(state, f, tile); // your lock (the sealer has none: it waits for the generator)
+    if (groupSkill(f, "mechanics") < (W.MACH.req[k] || 0)) return groupPowerUp(state, f, tile); // your build rule: a Mechanics 3 hand for the generator, the freezer, the sealer
     const c = W.WORKS[k].cost;
-    if ((f.stock.parts || 0) < (c.parts || 0) + M.spare || (f.stock.scrap || 0) < (c.scrap || 0)) return null;
+    if ((f.stock.parts || 0) < (c.parts || 0) + M.spare || (f.stock.scrap || 0) < (c.scrap || 0)) return groupPowerUp(state, f, tile);
     return { tile, type: k, why: why[k] };
   }
-  return null;
+  return groupPowerUp(state, f, tile);
+}
+// ---------- their generator's tiers (gen-tiers; see the header) ----------
+export const groupGenTier = (w) => (w && n(w, "power") ? Math.max(1, Math.min(GEN_TIERS.length - 1, Math.floor(w.powerTier || 1))) : 0);
+// The power their machines at a base want (your POWER_USERS: the freezer 2, the sealer 1), broken ones too (repaired).
+export const groupPowerNeed = (w) => (n(w, "freezer") ? POWER_USERS.freezer.need : 0) + (n(w, "sealer") ? POWER_USERS.sealer.need : 0);
+// Their generator's fuel a day at a base with `need` drawn, at its tier or at `tier`.
+export const groupGenBurn = (w, need, tier = groupGenTier(w)) => (tier ? genBurn(GEN_TIERS[tier], Math.min(need, GEN_TIERS[tier].out)) : 0);
+// Why they would not upgrade it now ("" when they would): your governor's rule (autopilot.js autoGenUpgrade).
+export function groupPowerUpWhy(state, f, tile) {
+  const w = worksAt(f, tile), t = groupGenTier(w), next = W.MACH.tiers[t + 1];
+  if (!t) return "no generator";
+  if (!next) return "the top tier";
+  const need = groupPowerNeed(w);
+  if (need <= GEN_TIERS[t].out) return `the generator gives ${GEN_TIERS[t].out} power for ${need} wanted`;
+  if (machOf(w, "power").broken) return "broken";
+  if (next.bp && !groupKnows(state, f, next.bp)) return `no ${BLUEPRINTS[next.bp].name}`;
+  if (groupSkill(f, "mechanics") < next.req) return `no Mechanics ${next.req} hand`;
+  if ((f.stock.parts || 0) < next.cost.parts + W.MACH.spare || (f.stock.scrap || 0) < next.cost.scrap) return "short of parts or scrap";
+  const ff = f.fuelFlow;
+  if (!ff || ff.days < GEN_UP.minDays) return "too little fuel history";
+  // genUpgradeFuelOk on a stand-in base: their one generator at this tier, the group's fuel.
+  const fake = { stock: { fuel: f.stock.fuel || 0 }, buildings: [{ type: "generator", tier: t }], construction: [] };
+  const fc = genUpgradeFuelOk(fake, need, fake.buildings[0], W.MACH.floor * f.pop, { income: ff.in, out: ff.out });
+  return fc.ok ? "" : fc.why;
+}
+function groupPowerUp(state, f, tile) {
+  if (groupPowerUpWhy(state, f, tile)) return null;
+  const t = groupGenTier(worksAt(f, tile));
+  return { tile, type: "powerup", why: `more power for their machines (${W.MACH.tiers[t + 1].name})`, def: W.MACH.tiers[t + 1] };
+}
+// Their fuel in and out a day (f.fuelFlow: 28-day averages of the stock's daily changes, the still's fuel in, the
+// generators' burn out), measured once a day before their machines run (groupMachinesDaily).
+function groupFuelFlowDaily(f) {
+  const st = f.stock, ff = f.fuelFlow || (f.fuelFlow = { in: 0, out: 0, days: 0, mark: st.fuel || 0 });
+  const d = (st.fuel || 0) - ff.mark;
+  const a = 1 / Math.min(GEN_UP.window, ff.days + 1);
+  ff.in += a * (Math.max(0, d) + (ff.made || 0) - ff.in);
+  ff.out += a * (Math.max(0, -d) + (ff.burned || 0) - ff.out);
+  ff.days++;
+  ff.made = 0; ff.burned = 0;
 }
 // How many machines a group has (trade.js groupPartsTarget: a spare part each on top of its reorder level).
 export const groupMachineCount = (f) => (f && f.works ? Object.values(f.works).reduce((a, w) => a + MACH_ORDER.reduce((b, k) => b + Math.min(1, n(w, k)), 0), 0) : 0);
@@ -347,6 +407,7 @@ export const groupSealer = (f) => !!(f && f.works && f.bases.some((t) => f.works
 export function groupMachinesDaily(state, f) {
   if (!groupsBuild(state, f)) return;
   const M = W.MACH, d = day(state);
+  if (f.works && f.bases.some((t) => n(f.works[t], "power"))) groupFuelFlowDaily(f); // gen-tiers: their fuel in and out (the upgrade's fuel rule)
   for (const tile of f.bases) {
     const w = f.works && f.works[tile];
     if (!w || !MACH_ORDER.some((k) => n(w, k))) continue;
@@ -356,8 +417,9 @@ export function groupMachinesDaily(state, f) {
       if (!n(w, k)) continue;
       const m = machOf(w, k);
       if (!m.broken) continue;
-      const cost = FIXTURES[M.fx[k]].repair.cost;
-      if (groupSkill(f, "mechanics") < (FIXTURES[M.fx[k]].repair.min || 0)) continue; // your proper repair's Mechanics (machines-2)
+      const fx = k === "power" ? genFixture(groupGenTier(w)) : FIXTURES[M.fx[k]]; // gen-tiers: a bigger generator's repair
+      const cost = fx.repair.cost;
+      if (groupSkill(f, "mechanics") < (fx.repair.min || 0)) continue; // your proper repair's Mechanics (machines-2)
       if (Object.entries(cost).every(([key, v]) => (key === "parts" ? canPayParts(f, v, "machine") : (st[key] || 0) >= v))) {
         for (const [key, v] of Object.entries(cost)) { if (key === "parts") payParts(f, v, "machine"); else st[key] -= v; }
         m.broken = false; m.wear = WEAR.repairWear; f.machParts = (f.machParts || 0) + (cost.parts || 0);
@@ -366,16 +428,27 @@ export function groupMachinesDaily(state, f) {
     const ok = (k) => n(w, k) > 0 && !machOf(w, k).broken;
     const ran = {};
     // The still: their surplus food into fuel.
-    if (ok("still") && (st.food || 0) - M.still.food >= f.pop * M.foodDays && (st.fuel || 0) < f.pop * 3) { st.food -= M.still.food; st.fuel = (st.fuel || 0) + M.still.fuel; ran.still = true; }
-    // The generator, while the freezer or the sealer draws and there is any fuel (coarse: a day's fuel, or the last of it).
-    const draws = ok("freezer") || ok("sealer");
-    if (ok("power") && draws && (st.fuel || 0) > 1e-6) { st.fuel = Math.max(0, st.fuel - POWER.genFuel); ran.power = true; }
-    for (const k of ["freezer", "sealer"]) { if (n(w, k)) { machOf(w, k).on = !!ran.power && ok(k); ran[k] = machOf(w, k).on; } }
+    const ff = f.fuelFlow;
+    if (ok("still") && (st.food || 0) - M.still.food >= f.pop * M.foodDays && (st.fuel || 0) < f.pop * 3) { st.food -= M.still.food; st.fuel = (st.fuel || 0) + M.still.fuel; ran.still = true; if (ff) ff.made = (ff.made || 0) + M.still.fuel; }
+    // The generator, while the freezer or the sealer draws and there is any fuel (coarse: a day's fuel at its tier and
+    // the load, or the last of it). gen-tiers: the machines served in your order (the freezer, then the sealer) up to
+    // the tier's power; the burn by your genBurn (tier 1: the flat 2).
+    const t = groupGenTier(w), out = t ? GEN_TIERS[t].out : 0;
+    let load = 0;
+    const served = {};
+    for (const k of ["freezer", "sealer"]) if (ok(k) && load + POWER_USERS[k].need <= out) { served[k] = true; load += POWER_USERS[k].need; }
+    if (ok("power") && load > 0 && (st.fuel || 0) > 1e-6) {
+      const burn = groupGenBurn(w, load);
+      const was = st.fuel;
+      st.fuel = Math.max(0, st.fuel - burn); ran.power = true;
+      if (ff) ff.burned = (ff.burned || 0) + (was - st.fuel);
+    }
+    for (const k of ["freezer", "sealer"]) { if (n(w, k)) { machOf(w, k).on = !!ran.power && ok(k) && !!served[k]; ran[k] = machOf(w, k).on; } }
     if (ran.freezer) st.food += Math.min(M.room, Math.max(0, st.food || 0)) * M.save; // the cellar spoilage it saves
     // Wear, spares, breaking (your fixtures' numbers, coarse).
     for (const k of MACH_ORDER) {
       if (!n(w, k)) continue;
-      const m = machOf(w, k), def = FIXTURES[M.fx[k]];
+      const m = machOf(w, k), def = k === "power" ? genFixture(groupGenTier(w)) : FIXTURES[M.fx[k]]; // gen-tiers: a bigger generator wears faster
       if (m.broken) continue;
       if (ran[k]) {
         m.spares += 1 / (def.spares || 1e9);
@@ -386,6 +459,7 @@ export function groupMachinesDaily(state, f) {
       if (p > 0 && hash01(state.seed, "gbrk", f.name, tile, k, d) < p) { m.broken = true; m.on = false; f.machBroke = (f.machBroke || 0) + 1; }
     }
   }
+  if (f.fuelFlow) f.fuelFlow.mark = f.stock.fuel || 0; // the day's machines done: the mark for tomorrow's flows (groupFuelFlowDaily)
 }
 
 // ---------- their machine parts (machines-2; see the header) ----------
@@ -517,7 +591,7 @@ export function groupWorksDaily(state, f) {
     // Short of building materials: made from their scrap, as you would (crafting.js buildmat).
     const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
     if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
-    const use = MACH_ORDER.includes(next.type) ? "machine" : "free"; // the earmark only for a machine
+    const use = MACH_ORDER.includes(next.type) || next.type === "powerup" ? "machine" : "free"; // the earmark only for a machine (gen-tiers: an upgrade too)
     const can = Object.entries(def.cost).every(([k, v]) => (k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
     if (can) for (const [k, v] of Object.entries(def.cost)) { if (k === "parts") payParts(f, v, use); else f.stock[k] -= v; }
     f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE), paid: can };
@@ -527,6 +601,7 @@ export function groupWorksDaily(state, f) {
   if (f.job.left > 0) return;
   if (f.job.type === "jail") jailBuilt(state, f, f.job.tile);
   else if (f.job.type === "camp") delete worksAt(f, f.job.tile).camp; // established
+  else if (f.job.type === "powerup") { const w = worksAt(f, f.job.tile); if (n(w, "power")) w.powerTier = groupGenTier(w) + 1; } // gen-tiers: the generator a tier up
   else { const w = worksAt(f, f.job.tile); w[f.job.type] = n(w, f.job.type) + 1; }
   f.built = (f.built || 0) + 1;
   f.job = null;
@@ -555,7 +630,7 @@ export function worksText(state, f) {
   if (t.bench) bits.push("a workshop");
   if (t.store) bits.push("a storehouse");
   if (t.still) bits.push("an ethanol still");
-  if (t.power) bits.push("a generator");
+  if (t.power) { const tiers = f.bases.map((b) => groupGenTier(f.works && f.works[b])).filter(Boolean); const top = Math.max(1, ...tiers); bits.push(top > 1 ? W.MACH.tiers[top].name : "a generator"); } // gen-tiers
   if (t.freezer) bits.push(`a walk-in freezer${groupFreezerOn(f) ? " (on)" : " (off)"}`);
   if (t.sealer) bits.push("a vacuum sealer");
   if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no firewood)" : ""}`);
@@ -563,7 +638,7 @@ export function worksText(state, f) {
   if (bay) bits.push(W.SICKBAY[Math.min(W.SICKBAY.length, bay) - 1].name);
   const camps = f.bases.filter((b) => isCamp(f, b)).length;
   if (camps) bits.push(`${camps === 1 ? "an outpost camp" : `${camps} outpost camps`} not yet established`);
-  const jobName = () => (f.job.type === "jail" ? jailStepName(f) : f.job.type === "camp" ? W.CAMP.name : f.job.type === "sickbay" ? (W.SICKBAY[n(worksAt(f, f.job.tile), "sickbay")] || W.SICKBAY[W.SICKBAY.length - 1]).name : W.WORKS[f.job.type].name);
+  const jobName = () => (f.job.type === "jail" ? jailStepName(f) : f.job.type === "camp" ? W.CAMP.name : f.job.type === "powerup" ? `${(W.MACH.tiers[groupGenTier(worksAt(f, f.job.tile)) + 1] || W.MACH.tiers[W.MACH.tiers.length - 1]).name} (the generator upgraded)` : f.job.type === "sickbay" ? (W.SICKBAY[n(worksAt(f, f.job.tile), "sickbay")] || W.SICKBAY[W.SICKBAY.length - 1]).name : W.WORKS[f.job.type].name);
   const job = f.job ? ` · building ${jobName()}` : "";
   return `${bits.join(", ")}${job}`;
 }
