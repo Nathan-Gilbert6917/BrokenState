@@ -554,13 +554,14 @@ export function addFoodUnits(state, h, mix, units, opts = {}) {
 }
 
 // ---------- the shops run down (user pick 2026-10-10) ----------
-// Food at town and city shops (and houses) runs down: each site tile keeps t.foodStock (1 full; 0.5 at the start of a
-// hardcore game: the panic buying), lowered as food is taken there (anyone: your teams, the AI groups' scavengers,
+// Food at town and city shops (and houses) runs down: each site tile keeps t.foodStock (1 full; SHOP.hardcoreStart 0.75
+// at the start of a hardcore game: the panic buying. hc-food 2026-10-11: was 0.5, and with cans at about 2.25 kg a day
+// of food the hardcore crews stayed too small to take people in: 3 of 10 fell in the 730-day census), lowered as food is taken there (anyone: your teams, the AI groups' scavengers,
 // SHOP_FOOD days of food empties a full one), and every site's food falls with time since the outbreak as well
 // (other survivors, rats, burst packets: half every SHOP.halfLife days after a normal game's start, never below
 // SHOP.floor). Food found there × shopFood(state, t). Later scavenging must go further out.
 export const SHOP_FOOD = { supermarket: 300, grocery: 150, mall: 220, diner: 60, gas: 40, truckstop: 60, pharmacy: 20, warehouse: 200, feedstore: 80, town: 160, apartments: 120, motel: 50, school: 60, church: 40, city: 100 };
-export const SHOP = { halfLife: 300, floor: 0.2, hardcoreStart: 0.5 };
+export const SHOP = { halfLife: 300, floor: 0.2, hardcoreStart: 0.75 };
 export const isShop = (type) => !!SHOP_FOOD[type];
 export function shopTime(state) {
   const d = outbreakDays(state) - NORMAL_START;

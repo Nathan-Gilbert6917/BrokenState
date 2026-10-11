@@ -14,7 +14,7 @@
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { FOODS, FOOD_KEYS, foodIn, foodSplit, unitsOf, qtyOf, sellPick, foodNeeds } from "./foods.js"; // food by type (foods.js)
 import { gearOutdoorWorkers } from "./tripgear.js"; // the outdoor workers' kit for their trips (trips-plus #2)
-import { govFieldWorks, fieldJobs } from "./fieldworks.js"; // field works: the governor's and a base leader's share
+import { govFieldWorks, fieldJobs, govSnares, snareLinesWanted, playerWorks, gatheredScrap } from "./fieldworks.js"; // field works: the governor's and a base leader's share
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
@@ -353,7 +353,11 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.building) planBuilds(state, base, areas);
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job
   if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's firewood before the stove
-  if (areas.building && hourOfDay(state) === PLAN_HOUR + 1) for (const line of govFieldWorks(state, base, { threatened: fieldThreat(state, base), waterShort: waterRunningShort(state, base) })) say(state, line); // fieldworks.js: a well, a tower and its lookouts, repairs
+  if (areas.building && hourOfDay(state) === PLAN_HOUR + 1) for (const line of govFieldWorks(state, base, { threatened: fieldThreat(state, base), waterShort: waterRunningShort(state, base), foodShort: snareFoodLevel(state, base) })) say(state, line); // fieldworks.js: snare lines, a well, a tower and its lookouts, repairs
+  // Hardcore: a snare line wanted and not set at the morning's look (a camp's scrap comes in with a delivery and goes
+  // into its building materials within hours) is looked at again every hour while the base has fewer than it wants
+  // and has the scrap or the snare wire (else not before the next delivery).
+  else if (areas.building && state.mode === "hardcore" && hourlySnares(state, base)) { const line = govSnares(state, base, snareFoodLevel(state, base)); if (line) say(state, line); }
   if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
   if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
   if (areas.building) { const up = autoCanner(state, base); if (up) say(state, up); } // machines-2: a pressure canner fitted to a working preserving room
@@ -386,6 +390,17 @@ function cookFireDown(state, base) {
   if (!cf || !canDemolish(state, base, cf.id).ok) return "";
   demolish(state, base, cf.id);
   return `The cook fire at ${base.name} came down: the kitchen's stove cooks everything through now, and its utility plot is free.`;
+}
+// The hourly look (hardcore): fewer lines than it would want short of food, no field job queued, and 2 scrap there
+// (or gathered for the step up, or a coil of snare wire): govSnares decides.
+const hourlySnares = (state, base) => playerWorks(state, base).filter((x) => x.kind === "snares").length < snareLinesWanted(state, base, 2) && !fieldJobs(state, base).length
+  && ((base.stock.scrap || 0) + gatheredScrap(base) >= 2 || (base.armory || []).some((it) => it && it.key === "snarewire"));
+// The food level for the snare lines (fieldworks.js govSnares, hc-food 2026-10-11): 0 fed, 1 under the base's food
+// target in days a head (foodTarget, everyone fed here: upkeep.js mouthsAt), 2 under half of it.
+function snareFoodLevel(state, base) {
+  const days = edibleFood(base) / Math.max(1, mouthsAt(state, base).heads);
+  const t = foodTarget(state, base);
+  return days < t / 2 ? 2 : days < t ? 1 : 0;
 }
 // A base threatened enough for a watch tower out on its land (fieldworks.js govFieldWorks): the dead within 6 tiles, a
 // hive within 10, a hostile group (or a raid on its way) within 12.
