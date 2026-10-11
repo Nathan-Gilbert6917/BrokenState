@@ -47,7 +47,7 @@ import {
 } from "../sim/buildings.js";
 import { isPowered, POWER_USERS, freezerLine } from "../sim/power.js"; // freezer-parts: the machines' chips
 import { isMachine, machineText, machineState } from "../sim/breakdowns.js"; // freezer-parts: machine parts on the cards
-import { VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
+import { CAR_SPARES, carSpares, VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
@@ -1077,6 +1077,18 @@ function lightsRow(state, h, pl) {
   const what = !on ? "none packed" : pv.names.length ? `${pv.names.join(", ")} (+${pv.kg} kg)` : stock ? "none that fits (off hands full)" : "none in the armory";
   return `<tr${tip(why)}><td>Lights</td><td><label><input type="checkbox" data-action="pl-lights" ${on ? "checked" : ""}> one each</label></td><td class="muted small">${have}/${crew.length} lit · ${esc(what)}</td></tr>`;
 }
+// The planner's car spares row: up to CAR_SPARES.n car parts from the stores for a drive of CAR_SPARES.tiles+ tiles
+// (sim/vehicles.js carSpares, packed by parties.js launchExpedition), on by default; what would go.
+function sparesRow(state, h, pl) {
+  const v = plannerVehicle(state, pl);
+  if (!pl.crew.size || !isCar(v)) return "";
+  const on = pl.spares !== false;
+  const dist = pl.dest != null ? state.grid.distance(h.tile, pl.dest) : 0;
+  const n = carSpares(dist, (h.stock.carparts || 0) - (pl.supplies.carparts || 0), pl.supplies.carparts || 0);
+  const why = `Spare car parts for the road: on a drive of ${CAR_SPARES.tiles} tiles or more the team takes up to ${CAR_SPARES.n} car parts from the stores (3 kg each). A breakdown on the way then uses one ("Use a spare part": +10 condition, an hour) instead of a repair on the spot (a Mechanics check: 8 hours and more wear when it fails). Unused spares come home with the team.`;
+  const what = !on ? "none packed" : dist < CAR_SPARES.tiles ? `a short drive (${dist} tiles): none` : n ? `${n} car part${n === 1 ? "" : "s"} (+${n * SUPPLIES.carparts.weight} kg)` : "none in the stores";
+  return `<tr${tip(why)}><td>Car spares</td><td><label><input type="checkbox" data-action="pl-spares" ${on ? "checked" : ""}> for a long drive</label></td><td class="muted small">${esc(what)} · stores ${n0(h.stock.carparts || 0)}</td></tr>`;
+}
 // The planners' crew list (who is at the base: skills, gear, what they wear), transport (on foot, the base's bikes,
 // its cars) and supplies table (from the base's stores): the trip planner (from the hub) and the move-out planner
 // (from any base of yours, sim/moveout.js). where: how the base is named in the text ("the hub").
@@ -1097,7 +1109,7 @@ function transportPick(state, h, pl, v, ids, where) {
 const PLAN_SUPPLY_KEYS = ["food", "preserved", "water", "fuel", "meds", "ammo", "arrows", "parts", "scrap"];
 function suppliesTable(state, h, pl, label) {
   const showKeys = PLAN_SUPPLY_KEYS;
-  return `<table class="t">${showKeys.map((k) => `<tr${tip(k === "arrows" ? "Arrows for bows and crossbows: 1 a shot in a fight (about half picked up again after a win, none after a loss or a retreat; with none a bow is only a club) and on a hunt (a shot at game loses its arrow about half the time). Auto-fill packs a dozen for each bow on the team; a hunting trip takes up to 12 from the hub by itself when someone has a bow." : k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "preserved" ? "Jarred, dried or canned food: a ration like food (eaten after the packed food), and lighter to carry (0.6 a ration)" : k === "water" ? "Water for the road: purified water is packed first, then un-purified water (from the wells and rivers: boil it at a camp fire, filter it or drop purification tablets in)" : k === "ammo" ? `Rounds for the team's guns, any calibre: packed as the rounds that fit each person's gun (most for the gun they carry). At ${h.name}, by calibre: ${breakdownText(baseAmmoBreakdown(state, h), "; ")}` : "")}><td>${k === "water" ? "Water" : k === "ammo" ? "Rounds for their guns" : SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">${label} ${k === "water" ? esc(hubWaterText(h)) : n0(k === "ammo" ? totalRounds(h.stock) : h.stock[k])}</td></tr>`).join("")}${tabsRow(state, h, pl)}${lightsRow(state, h, pl)}</table>`;
+  return `<table class="t">${showKeys.map((k) => `<tr${tip(k === "arrows" ? "Arrows for bows and crossbows: 1 a shot in a fight (about half picked up again after a win, none after a loss or a retreat; with none a bow is only a club) and on a hunt (a shot at game loses its arrow about half the time). Auto-fill packs a dozen for each bow on the team; a hunting trip takes up to 12 from the hub by itself when someone has a bow." : k === "fuel" ? "Fuel cans: used when the tank runs dry, and to restart abandoned vehicles" : k === "parts" ? "For roadside repairs, restoring wrecks and recovering damaged vehicles" : k === "scrap" ? "Needed to build an outpost (15)" : k === "preserved" ? "Jarred, dried or canned food: a ration like food (eaten after the packed food), and lighter to carry (0.6 a ration)" : k === "water" ? "Water for the road: purified water is packed first, then un-purified water (from the wells and rivers: boil it at a camp fire, filter it or drop purification tablets in)" : k === "ammo" ? `Rounds for the team's guns, any calibre: packed as the rounds that fit each person's gun (most for the gun they carry). At ${h.name}, by calibre: ${breakdownText(baseAmmoBreakdown(state, h), "; ")}` : "")}><td>${k === "water" ? "Water" : k === "ammo" ? "Rounds for their guns" : SUPPLIES[k].name}</td><td><input type="number" min="0" data-action="pl-supply" data-k="${k}" value="${pl.supplies[k] || 0}"></td><td class="muted small">${label} ${k === "water" ? esc(hubWaterText(h)) : n0(k === "ammo" ? totalRounds(h.stock) : h.stock[k])}</td></tr>`).join("")}${tabsRow(state, h, pl)}${lightsRow(state, h, pl)}${sparesRow(state, h, pl)}</table>`;
 }
 function plannerModal(state, ui) {
   const pl = ui.planner;

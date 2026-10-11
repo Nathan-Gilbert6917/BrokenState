@@ -45,6 +45,7 @@ import { attitude } from "./factions.js";
 import { triggerConflict } from "./conflicts.js";
 import { ZONE_RICHNESS } from "./mapgen.js";
 import { haulMult } from "./medfinds.js";
+import { PARTS_MIX } from "./loot.js"; // car parts by the kind of site (a group keeps them apart)
 import { scavFinds, partyLost } from "./arsenal.js";
 import { prio } from "./groupcare.js";
 import { scavVehicle, scavSaw } from "./groupworld.js"; // a wreck brought home now and then; the bases they saw // GROUP_PRIORITIES scavenge: how often a type sends parties out // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
@@ -109,6 +110,10 @@ export function haulFor(t, taken, level, eff) {
   const units = taken * AISCAV.perLoot * Math.max(0, level) * eff;
   const out = {};
   for (const [k, w] of Object.entries(weights)) out[k] = units * (w / total) * (MULT[k] || 1);
+  // Car parts are a group's own stock (trade.js POOLED_KINDS): the site's share of its parts (loot.js PARTS_MIX: an
+  // auto shop's are mostly car parts) comes home as car parts; the other kinds stay in the one count of parts.
+  const car = out.parts && PARTS_MIX[t.loc && t.loc.type] ? out.parts * (PARTS_MIX[t.loc.type].carparts || 0) : 0;
+  if (car > 0) { out.parts -= car; out.carparts = car; }
   return out;
 }
 const addTo = (into, goods, k = 1) => { for (const [g, q] of Object.entries(goods)) into[g] = (into[g] || 0) + q * k; };

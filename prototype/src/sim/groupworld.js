@@ -52,7 +52,7 @@ import { groupStockKey } from "./trade.js"; // a group's one count of parts (par
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
 import { hash01 } from "./skills.js";
-import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT } from "./vehicles.js";
+import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT } from "./vehicles.js";
 import { workshopFactor, worksAt } from "./groupworks.js";
 import { weightOf, tickOf, fitPeople } from "./groupcare.js";
 import { removeFromArsenal, issueKit } from "./arsenal.js";
@@ -387,9 +387,8 @@ export function fitUpgrade(state, f) {
   const mg = f.arsenal && f.arsenal.items.find((it) => it.key === TURRET_FIT.item && TURRET_KG[it.key]);
   const bare = cars.find((v) => !upgradesOf(v).turret);
   if (mg && bare) {
-    const cost = {};
-    for (const [k, q] of Object.entries(upgradeCost("turret"))) { const sk = groupStockKey(k, f); cost[sk] = (cost[sk] || 0) + q; }
-    if (!Object.entries(cost).some(([k, q]) => (f.stock[k] || 0) < q + (k === "scrap" ? 5 : 0))) {
+    const { cost, ok } = groupCost(f, upgradeCost("turret"), groupStockKey, { scrap: 5 }); // vehicles.js: car parts first, 2 machine parts for each short
+    if (ok) {
       for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
       removeFromArsenal(f, mg, "turret");
       bare.upgrades = { ...upgradesOf(bare), turret: { gun: TURRET_FIT.gun, item: mg } };
@@ -399,10 +398,9 @@ export function fitUpgrade(state, f) {
   for (const key of weightOf(f, "fits", null) || []) {
     const v = cars.find((x) => { const u = upgradesOf(x); return key === "plating" ? u.plating < 1 && !u.scrapPlate : key === "scrapPlate" ? !u.plating && !u.scrapPlate : !u[key] && !(key === "mesh" && u.glass) && !(key === "glass" && u.mesh); });
     if (!v) continue;
-    // (trade.js groupStockKey: a group keeps one count of parts, so car parts come out of it)
-    const cost = {};
-    for (const [k, q] of Object.entries(upgradeCost(key))) { const sk = groupStockKey(k, f); cost[sk] = (cost[sk] || 0) + q; }
-    if (Object.entries(cost).some(([k, q]) => (f.stock[k] || 0) < q + (k === "scrap" ? 5 : 0))) continue;
+    // (trade.js groupStockKey: their car parts first, 2 machine parts for each one short: vehicles.js groupCost)
+    const { cost, ok } = groupCost(f, upgradeCost(key), groupStockKey, { scrap: 5 });
+    if (!ok) continue;
     for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
     const u = upgradesOf(v);
     u[key] = (u[key] || 0) + 1;

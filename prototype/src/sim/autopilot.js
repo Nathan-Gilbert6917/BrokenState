@@ -49,7 +49,7 @@ import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill, fieldCraftOptions } from "./crafting.js";
-import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies, partyFuel, CARPART_SUB } from "./vehicles.js";
+import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies, partyFuel, CARPART_SUB, stripVehicle } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
@@ -347,6 +347,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.building) planBuilds(state, base, areas);
   if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
   if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
+  if (areas.production && hourOfDay(state) === PLAN_HOUR) stripDeadCars(state, base); // a car worth less than its parts
 }
 // ---------- a broken well waiting for scrap ----------
 // A broken well or pump the repairs cannot start for want of scrap (breakdowns.js: a proper repair 3 scrap and a part,
@@ -4184,6 +4185,28 @@ export function tripUndo(base, v, took) {
   took.cond = took.carparts = took.parts = took.fuel = 0;
 }
 
+// ---------- a car worth less than its parts (vehicle-wear picks, 2026-10-10) ----------
+// Once a day the governor (and a steward with Production on) strips a car parked at a base for its parts (vehicles.js
+// stripVehicle: 3–8 car parts by its condition, 20 scrap and its fuel) when it is a burnt-out wreck, or when it is under
+// STRIP_AT.below% and nobody there could mend it (no garage, no Mechanics 4+ hand: vehicles.js canRepair). It never
+// strips the base's last car that runs (a mechanic or a garage may come; the next trip needs it once it is mended).
+// A car under 30% does not drive (launchTrip), so such a spare only stood in the frost losing what its parts are worth.
+export const STRIP_AT = { below: 20 };
+export function stripDeadCars(state, base) {
+  const cars = carsAtBase(state, base.id);
+  const out = [];
+  const strip = (v, why) => { say(state, `Stripping the ${v.name} at ${base.name} for parts: ${why}.`); out.push(stripVehicle(state, base, v)); }; // stripVehicle logs what it gave
+  for (const v of cars.filter((x) => x.destroyed)) strip(v, "a burnt-out wreck");
+  if (!canRepair(state, base).ok) {
+    const running = () => carsAtBase(state, base.id).filter((x) => !x.destroyed);
+    for (const v of running().filter((x) => x.condition < STRIP_AT.below && !(base.garage || []).some((j) => j.vehicleId === x.id)).sort((a, b) => a.condition - b.condition)) {
+      if (running().length <= 1) break;
+      strip(v, `${Math.round(v.condition)}% and nobody here can mend it (no garage, no Mechanics 4+)`);
+    }
+  }
+  return out;
+}
+
 // Pick the crew, a vehicle if it pays, pack supplies and send the team. Returns the party or null.
 function launchTrip(state, c, pool, spareHands) {
   const P = persona(state);
@@ -4333,7 +4356,7 @@ function launchTrip(state, c, pool, spareHands) {
   // A tube of purification tablets (worm.js packTablets) for a water haul or a trip of more than TABS_TRIP_DAYS: river
   // water fetched or un-purified water packed is drunk safe on the way without stopping to boil it.
   const tabs = armoryTabs(h).length > 0 && ((c.steps || []).some((x) => x.kind === "water") || days > TABS_TRIP_DAYS);
-  const res = launchExpedition(state, { memberIds: ids, fromBaseId: h.id, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup, sweep: c.sweep, tabs,
+  const res = launchExpedition(state, { memberIds: ids, fromBaseId: h.id, dest: c.tile, mission: c.mission, stance: P.stance, vehicleId: v ? v.id : null, supplies: sup, sweep: c.sweep, tabs, spares: true, // vehicles.js carSpares: a car part or two for a long drive
     plan: steps ? { preset: c.preset || "custom", steps: steps.map((x) => ({ ...x })), conditions: {} } : undefined }); // hunting and fishing trips: their steps (plans.js)
   if (res.error) return off();
   if (kit.length) say(state, `Kit for the trip: ${kit.join(", ")}.`);

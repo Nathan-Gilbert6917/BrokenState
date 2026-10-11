@@ -344,9 +344,41 @@ export function carPartsCost(have, n) {
   const parts = (n - car) * CARPART_SUB;
   return { car, parts, ok: parts <= Math.max(0, have("parts")) + 1e-9 };
 }
+// An AI group's bill for vehicle work in its own stock keys (trade.js groupStockKey: gun parts and electronics come out
+// of its one count of parts, car parts out of its own): car parts first, CARPART_SUB machine parts for each one short,
+// as yours. { cost: { key: qty }, ok } (ok: the stock holds it all, plus `spare` of each key held back).
+/** @param {any} f @param {Record<string, number>} raw @param {(k: string, f: any) => string} keyOf */
+export function groupCost(f, raw, keyOf, spare = {}) {
+  const cost = {};
+  for (const [k, q] of Object.entries(raw)) {
+    if (k === "carparts") {
+      const pay = carPartsCost((x) => Math.max(0, (f.stock[x] || 0) - (cost[x] || 0) - (spare[x] || 0)), q);
+      if (pay.car) cost.carparts = (cost.carparts || 0) + pay.car;
+      if (pay.parts) cost.parts = (cost.parts || 0) + pay.parts;
+      continue;
+    }
+    const sk = keyOf(k, f);
+    cost[sk] = (cost[sk] || 0) + q;
+  }
+  return { cost, ok: Object.entries(cost).every(([k, q]) => (f.stock[k] || 0) >= q + (spare[k] || 0) - 1e-9) };
+}
 // "1 car part" / "2 car parts (or 2 machine parts each)".
 /** @param {number} n */
 export const carPartsText = (n) => `${n} car part${n === 1 ? "" : "s"} (or ${CARPART_SUB} machine parts for each)`;
+// Spare car parts for the road (vehicle-wear picks, 2026-10-10): a team that drives a car CAR_SPARES.tiles or more
+// tiles out (as the crow flies from its base) packs up to CAR_SPARES.n car parts from the base's stores, when it has
+// them and the car has the room (parties.js launchExpedition, opts.spares: on for the governor's and the stewards' trips
+// and the planner's "Car spares" line, on by default). A breakdown on the road then takes "Use a spare part" (events.js:
+// +10, an hour) instead of the on-the-spot repair (a Mechanics check: 8 hours and −10 when it fails); what is not used
+// comes home with the rest of the supplies. Car parts only: machine parts stay home for the machines.
+export const CAR_SPARES = { tiles: 5, n: 2 };
+// How many spare car parts to pack: dist (tiles out), have (the base's car parts after what is packed already),
+// packed (car parts already in the supplies), room (kg the team can still carry).
+export function carSpares(dist, have, packed = 0, room = Infinity) {
+  if (dist < CAR_SPARES.tiles) return 0;
+  const kg = SUPPLIES.carparts ? SUPPLIES.carparts.weight : 3;
+  return Math.max(0, Math.min(CAR_SPARES.n - Math.floor(packed), Math.floor(Math.max(0, have) + 1e-9), Math.floor(room / kg + 1e-9)));
+}
 // A wrecked car found on the map (a hidden "car", parties.js investigate): restoring it takes WRECK.parts car parts (or
 // machine parts for them) and WRECK.fuel fuel. What a stock or a team's load would pay: { ok, car, parts, fuel }.
 export const WRECK = { parts: 2, fuel: 6 };

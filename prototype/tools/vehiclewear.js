@@ -3,7 +3,8 @@
 //   node tools/vehiclewear.js check
 //       The rules (seconds): the governor's repair before a trip (car parts first, a called-off trip gives back what
 //       it took, of either kind; no top-up past the threshold), parked cars in a garage kept out of the frost,
-//       AI groups' vehicle repairs (car-part parity).
+//       AI groups' vehicle repairs and car parts (parity), spare car parts for a long drive, a car worth less than
+//       its parts stripped.
 //   node tools/vehiclewear.js census [days=730] [styles=balanced] [seeds=1,2,3] [--json path]
 //       Plays autopilot campaigns and watches, without changing a rule, where vehicle condition goes and where parts
 //       go: every change to a vehicle's condition and fuel and every change to a stock's machine / car parts is
@@ -11,12 +12,14 @@
 //       (the call stack). Reports condition lost by cause (road / off-road wear, breakdown cards, battles, frost, river
 //       crossings, passers-by stripping an abandoned car), restored by cause, parts used by purpose, the repairs (the
 //       condition they started from, the kind of parts, whether the car then left on a trip), cars lost, trips by car
-//       / bikes / on foot and fuel burnt. Rough cost: a 730-day run is 1–3 minutes.
+//       / bikes / on foot, why a trip went without a car (whyNoCar) and fuel burnt. Rough cost: a 730-day run is 10–25
+//       minutes (one process each; run them detached).
 //   node tools/vehiclewear.js report a.json[,a2.json…] [b.json[,b2.json…]]
-//       The census tables again from --json files (comma-joined: one column), side by side when two are given
-//       (before / after).
+//       The census tables again from --json files (comma-joined: one column), side by side when several are given
+//       (two: before / after).
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot, PERSONALITIES } from "../src/sim/autopilot.js";
+import * as AP from "../src/sim/autopilot.js";
 import * as V from "../src/sim/vehicles.js";
 import * as BD from "../src/sim/breakdowns.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -104,6 +107,29 @@ function census() {
   printReport([runs]);
 }
 
+// Why a trip the governor launched went without a car, read just after it left (launchTrip's rules: a car for a
+// drive of 3+ tiles, or 1+ for wood; never an outpost, occupy, rescue or sweep; the best-kept car at 30%+; fuel for
+// the round trip from its tank and the base's fuel past 4 and the winter's heating). "fuel?" is a rough round-trip
+// figure (1 a tile each way), so "car fit, fuel enough (rough)" means the planner turned it down for something else.
+const NO_CAR_MISSIONS = ["outpost", "occupy", "rescue", "sweep"];
+function whyNoCar(state, p) {
+  const home = state.bases.find((b) => b.id === p.homeBaseId);
+  if (!home) return "no home base";
+  if (NO_CAR_MISSIONS.includes(p.mission)) return `mission (${p.mission})`;
+  const dist = state.grid.distance(home.tile, p.dest);
+  const wood = p.plan && p.plan.steps && p.plan.steps.some((x) => x.kind === "wood");
+  if (dist < (wood ? 1 : 3)) return "under 3 tiles";
+  const owned = state.vehicles.filter((v) => V.isCar(v) && !v.destroyed && v.loc.kind !== "abandoned");
+  if (!owned.length) return "no car owned";
+  const cars = V.carsAtBase(state, home.id).filter((v) => v.condition > 0);
+  if (!cars.length) return "car out with another team / at another base";
+  const best = cars.sort((a, b) => b.condition - a.condition)[0];
+  if (best.condition < 30) return "car under 30%";
+  const hold = AP.heatHold ? AP.heatHold(state, home) : 0;
+  const need = 2 * dist;
+  if (best.fuel + Math.max(0, (home.stock.fuel || 0) - 4 - hold) < need) return (best.fuel + Math.max(0, (home.stock.fuel || 0) - 4) >= need ? "fuel: held back for heating" : "fuel: not enough");
+  return "car fit, fuel enough (rough): planner chose foot";
+}
 function runOne(seed, style, days) {
   const state = createWorld({ seed, factionCount: 8 });
   state.started = true;
@@ -114,7 +140,9 @@ function runOne(seed, style, days) {
     repairs: [], // { from, to, pay: { parts, carparts }, caller, left: hours until it left on a trip (null: not in 7 days), cars: cars at the base }
     fuel: { tank: 0, cans: 0 },
     trips: { car: 0, bike: 0, foot: 0, carTiles: 0 }, carsLost: {}, aiVeh: { lost: 0, gained: 0, parts: 0 },
+    noCar: {}, // why a trip went without a car (whyNoCar)
     cars: [], // hourly: [cars, at bases, mean condition]
+    out: { alive: 0, deaths: 0, left: 0, fuelDays0: 0, fuelSum: 0, fuelDays: 0 }, // the run's outcome: people, the hub's fuel at noon
   };
   const add = (o, k, q) => { o[k] = (o[k] || 0) + q; };
   const pending = new Map(); // vehicle -> repair records waiting to see it leave
@@ -144,8 +172,7 @@ function runOne(seed, style, days) {
             pending.set(curRepair, v);
           }
           if (!ai && c === "trip called off: repair undone") {
-            const last = [...R.repairs].reverse().find((r) => r.veh === v && r.hour === state.hour && !r.undone);
-            if (last) { last.undone = true; pending.delete(last); }
+            for (const r of R.repairs.filter((y) => y.veh === v && y.hour === state.hour && !y.undone)) { r.undone = true; pending.delete(r); } // tripUndo: every repair of the hour at once
           }
         }
         cond = x;
@@ -224,6 +251,7 @@ function runOne(seed, style, days) {
       seenParty.add(p.id);
       const vs = V.partyVehicles(state, p);
       if (vs.some((x) => V.isCar(x))) R.trips.car++; else if (vs.length) R.trips.bike++; else R.trips.foot++;
+      if (!vs.some((x) => V.isCar(x))) add(R.noCar, whyNoCar(state, p), 1);
     }
     for (const [r, v] of pending) {
       if (v.loc.kind === "party") { r.left = state.hour - r.hour; pending.delete(r); }
@@ -241,6 +269,7 @@ function runOne(seed, style, days) {
     for (const id of prevIds) if (!ids.has(id)) add(R.carsLost, vehLoc.get(id) === "abandoned" ? "abandoned car stripped / gone" : "gone from a base or team (stripped, sold, given)", 1);
     prevIds.clear();
     for (const id of ids) prevIds.add(id);
+    if (state.hour % 24 === 12 && hub(state)) { const f = hub(state).stock.fuel || 0; R.out.fuelDays++; R.out.fuelSum += f; if (f < 1) R.out.fuelDays0++; }
     { // every hour (car-hours; the report shows them as days)
       const cars = state.vehicles.filter((v) => V.isCar(v) && v.loc.kind !== "abandoned");
       const parked = cars.filter((v) => v.loc.kind === "base");
@@ -248,6 +277,9 @@ function runOne(seed, style, days) {
     }
   }
   R.days = day(state);
+  R.out.alive = state.survivors.filter((s) => s.alive).length;
+  R.out.deaths = state.survivors.filter((s) => !s.alive && !s.left).length;
+  R.out.left = state.survivors.filter((s) => s.left).length;
   R.fell = !!state.gameOver;
   for (const r of R.repairs) delete r.veh;
   return R;
@@ -257,22 +289,25 @@ function runOne(seed, style, days) {
 const sum = (o) => Object.values(o || {}).reduce((a, b) => a + b, 0);
 const r1 = (x) => (Math.abs(x) >= 100 ? Math.round(x) : Math.round(x * 10) / 10);
 function merge(runs) {
-  const out = { runs: runs.length, days: 0, lost: {}, gained: {}, partsUsed: {}, partsIn: {}, repairs: [], fuel: { tank: 0, cans: 0 }, trips: { car: 0, bike: 0, foot: 0 }, carsLost: {}, aiVeh: { lost: 0, gained: 0, parts: 0 }, carDays: 0, parkedDays: 0, condSum: 0 };
+  const out = { runs: runs.length, days: 0, lost: {}, gained: {}, partsUsed: {}, partsIn: {}, noCar: {}, repairs: [], fuel: { tank: 0, cans: 0 }, trips: { car: 0, bike: 0, foot: 0 }, carsLost: {}, aiVeh: { lost: 0, gained: 0, parts: 0 }, carDays: 0, parkedDays: 0, condSum: 0, out: { alive: 0, deaths: 0, left: 0, fuelDays0: 0, fuelSum: 0, fuelDays: 0, fell: 0 } };
   for (const r of runs) {
     out.days += r.days;
-    for (const k of ["lost", "gained", "partsUsed", "partsIn", "carsLost"]) for (const [a, b] of Object.entries(r[k])) out[k][a] = (out[k][a] || 0) + b;
+    for (const k of ["lost", "gained", "partsUsed", "partsIn", "carsLost", "noCar"]) for (const [a, b] of Object.entries(r[k] || {})) out[k][a] = (out[k][a] || 0) + b;
     out.repairs.push(...r.repairs);
     for (const k of ["tank", "cans"]) out.fuel[k] += r.fuel[k];
+    if (r.out) for (const k of Object.keys(r.out)) out.out[k] += r.out[k];
+    if (r.fell) out.out.fell++;
     for (const k of ["car", "bike", "foot"]) out.trips[k] += r.trips[k];
     for (const k of ["lost", "gained", "parts"]) out.aiVeh[k] += r.aiVeh[k];
     for (const [c, p, m] of r.cars) { out.carDays += c / 24; out.parkedDays += p / 24; out.condSum += (m * c) / 24; }
   }
   return out;
 }
+const colName = (i, n) => (n === 1 ? "value" : n === 2 ? (i ? "after" : "before") : `#${i + 1}`);
 function table(title, cols, keysOf, cell) {
   const keys = [...new Set(cols.flatMap(keysOf))].sort((a, b) => cell(cols[0], b) - cell(cols[0], a) || cell(cols[cols.length - 1], b) - cell(cols[cols.length - 1], a));
   console.log(`\n${title}`);
-  console.log(`| | ${cols.map((_, i) => (cols.length > 1 ? (i ? "after" : "before") : "value")).join(" | ")} |`);
+  console.log(`| | ${cols.map((_, i) => colName(i, cols.length)).join(" | ")} |`);
   console.log(`|---|${cols.map(() => "---:").join("|")}|`);
   for (const k of keys) console.log(`| ${k} | ${cols.map((c) => r1(cell(c, k))).join(" | ")} |`);
 }
@@ -290,7 +325,7 @@ function printReport(sets) {
   const rep = (m) => m.repairs.filter((r) => !r.undone);
   const S = (f) => M.map(f);
   console.log("\nSummary");
-  console.log(`| | ${M.map((_, i) => (M.length > 1 ? (i ? "after" : "before") : "value")).join(" | ")} |`);
+  console.log(`| | ${M.map((_, i) => colName(i, M.length)).join(" | ")} |`);
   console.log(`|---|${M.map(() => "---:").join("|")}|`);
   const row = (k, f) => console.log(`| ${k} | ${S(f).map((x) => (typeof x === "number" ? r1(x) : x)).join(" | ")} |`);
   row("condition lost per 100 days", (m) => (100 * sum(m.lost)) / m.days);
@@ -310,7 +345,10 @@ function printReport(sets) {
   row("car-days (cars owned × days)", (m) => m.carDays);
   row("share of car-days parked", (m) => `${Math.round((100 * m.parkedDays) / Math.max(1, m.carDays))}%`);
   row("mean condition of the cars", (m) => m.condSum / Math.max(1, m.carDays));
+  row("people alive at the end / dead / left (runs that fell)", (m) => `${m.out.alive} / ${m.out.deaths} / ${m.out.left} (${m.out.fell})`);
+  row("days the hub had under 1 fuel at noon / mean hub fuel", (m) => `${m.out.fuelDays0} / ${r1(m.out.fuelSum / Math.max(1, m.out.fuelDays))}`);
   row("AI groups' vehicles: lost / restored / parts", (m) => `${r1(m.aiVeh.lost)} / ${r1(m.aiVeh.gained)} / ${r1(m.aiVeh.parts)}`);
+  table("Trips without a car: why (whyNoCar)", M, (m) => Object.keys(m.noCar), (m, k) => m.noCar[k] || 0);
   table("Cars lost and found", M, (m) => Object.keys(m.carsLost), (m, k) => m.carsLost[k] || 0);
   const hist = (m) => { const h = {}; for (const r of rep(m)) { const b = `${Math.floor(r.from / 10) * 10}–${Math.floor(r.from / 10) * 10 + 9}`; h[b] = (h[b] || 0) + 1; } return h; };
   const H = M.map(hist);
@@ -391,7 +429,60 @@ async function checks() {
   {
     const C = GC.CARE.VEHICLE;
     check(C.below <= 60, `an AI group mends a vehicle under ${C.below}% (the governor's threshold is ${AP.VEH_REPAIR.below}%)`);
-    check(C.step >= 15 && C.parts >= 1, `${C.parts} part${C.parts === 1 ? "" : "s"} a repair, +${C.step}`);
+    check(C.step >= 15 && C.carparts >= 1, `${C.carparts} car part${C.carparts === 1 ? "" : "s"} a repair, +${C.step}`);
+    const TR = await import("../src/sim/trade.js");
+    const st = world();
+    const f = st.factions.find((x) => x.alive && x.bases.length && !x.outsider);
+    f.stock.parts = 10; f.stock.carparts = 2; f.stock.scrap = 10;
+    const a = V.groupCost(f, { carparts: 1, scrap: 2 }, TR.groupStockKey);
+    check(a.ok && a.cost.carparts === 1 && !a.cost.parts, "a group pays a vehicle repair in car parts first");
+    f.stock.carparts = 0;
+    const b2 = V.groupCost(f, { carparts: 1, scrap: 2 }, TR.groupStockKey);
+    check(b2.ok && b2.cost.parts === V.CARPART_SUB && !b2.cost.carparts, "none: two machine parts stand in");
+    f.stock.parts = 1;
+    check(!V.groupCost(f, { carparts: 1, scrap: 2 }, TR.groupStockKey).ok, "neither: it waits");
+    const SC = await import("../src/sim/aiscav.js");
+    const t = st.tiles.find((x) => x.loc && x.loc.type === "autoshop") || st.tiles.find((x) => x.loc && x.loc.type === "gas");
+    if (t) {
+      const hl = SC.haulFor({ ...t, loot: 1 }, 1, 1, 1);
+      check(hl.carparts > 0, `a group's haul from an ${t.loc.type} brings car parts home (${hl.carparts.toFixed(2)} car, ${(hl.parts || 0).toFixed(2)} machine)`);
+    }
+  }
+  console.log("Spare car parts for a long drive");
+  {
+    check(V.carSpares(V.CAR_SPARES.tiles - 1, 5) === 0, `under ${V.CAR_SPARES.tiles} tiles: none`);
+    check(V.carSpares(V.CAR_SPARES.tiles, 5) === V.CAR_SPARES.n, `${V.CAR_SPARES.tiles}+ tiles: ${V.CAR_SPARES.n}`);
+    check(V.carSpares(9, 1) === 1 && V.carSpares(9, 0) === 0, "never more than the stores hold");
+    check(V.carSpares(9, 5, 1) === V.CAR_SPARES.n - 1 && V.carSpares(9, 5, 0, 3) === 1, "less what is packed already, and what the room takes (3 kg each)");
+    const P = await import("../src/sim/parties.js");
+    const st = world(), h = hub(st);
+    for (const v of V.carsAtBase(st, h.id)) st.vehicles.splice(st.vehicles.indexOf(v), 1);
+    const v = V.createVehicle(st, "truck", { kind: "base", baseId: h.id }, { condition: 80, fuel: 30 });
+    h.stock.carparts = 3; h.stock.food = 200; h.stock.water = 200;
+    const crew = st.survivors.filter((x) => x.alive && x.location.kind === "base" && x.location.baseId === h.id).slice(0, 2);
+    const far = st.tiles.filter((x) => x.road && st.grid.distance(h.tile, x.id) >= V.CAR_SPARES.tiles + 1 && st.grid.distance(h.tile, x.id) <= 9 && P.planPath(st, h.tile, x.id, true)).map((x) => x.id)[0];
+    if (check(far != null, "a road tile 6–9 tiles out to drive to")) {
+      const r = P.launchExpedition(st, { memberIds: crew.map((x) => x.id), dest: far, mission: "scavenge", stance: "normal", vehicleId: v.id, supplies: { food: 6, water: 6 }, spares: true });
+      check(!r.error && r.party.supplies.carparts === V.CAR_SPARES.n && h.stock.carparts === 3 - V.CAR_SPARES.n, `the team packs ${r.party && r.party.supplies.carparts} car parts, the stores keep ${h.stock.carparts}${r.error ? ` (${r.error})` : ""}`);
+    }
+  }
+  console.log("A car worth less than its parts");
+  {
+    const st = world(), h = hub(st);
+    for (const v of V.carsAtBase(st, h.id)) st.vehicles.splice(st.vehicles.indexOf(v), 1);
+    for (const s of st.survivors) if (s.skills) s.skills.mechanics = Math.min(3, s.skills.mechanics || 0);
+    for (const b of h.buildings.filter((x) => x.type === "garage")) h.buildings.splice(h.buildings.indexOf(b), 1);
+    const good = V.createVehicle(st, "truck", { kind: "base", baseId: h.id }, { condition: 15 });
+    check(AP.stripDeadCars(st, h).length === 0 && st.vehicles.includes(good), "the base's last running car is kept, however worn");
+    const bad = V.createVehicle(st, "sedan", { kind: "base", baseId: h.id }, { condition: 12 });
+    const c0 = h.stock.carparts || 0;
+    check(AP.stripDeadCars(st, h).length === 1 && !st.vehicles.includes(bad) && st.vehicles.includes(good) && (h.stock.carparts || 0) > c0, `a second car under ${AP.STRIP_AT.below}% with nobody to mend it is stripped (the worse one): +${(h.stock.carparts || 0) - c0} car parts`);
+    const mid = V.createVehicle(st, "sedan", { kind: "base", baseId: h.id }, { condition: 12 });
+    addBuilding(h, "garage");
+    check(AP.stripDeadCars(st, h).length === 0 && st.vehicles.includes(mid), "with a garage it is kept for repairs");
+    const wreck = V.createVehicle(st, "sedan", { kind: "base", baseId: h.id }, { condition: 0 });
+    wreck.destroyed = true;
+    check(AP.stripDeadCars(st, h).length === 1 && !st.vehicles.includes(wreck), "a burnt-out wreck is always stripped");
   }
   console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
   if (fail) process.exitCode = 1;

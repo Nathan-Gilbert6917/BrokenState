@@ -24,7 +24,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // What each wrapped action is called on the button's tooltip ("Undo: crew").
 const LABELS = {
   "pl-crew": "crew", "pl-vehicle": "transport", "pl-stance": "stance", "pl-mission": "mission", "pl-supply": "supplies",
-  "pl-autofill": "auto-fill", "pl-tabs": "tablets", "pl-lights": "lights", "pl-policy": "retreat policy",
+  "pl-autofill": "auto-fill", "pl-tabs": "tablets", "pl-lights": "lights", "pl-spares": "car spares", "pl-policy": "retreat policy",
   "pl-preset": "plan preset", "pl-step": "plan step", "pl-add": "added step", "pl-addmove": "added move", "pl-cond": "condition",
   "pl-condv": "condition", "pl-days": "days", "pl-addv": "step setting", "pl-sweep-r": "survey radius", "pl-sweep-h": "survey hours",
   "tpl-use": "template", queuebuild: "queued build", cancelbuild: "cancelled build", "barrel-up": "barrel upgrade", "bq-move": "queue order",
@@ -59,10 +59,10 @@ export const undoCount = (state, ui, kind, baseId = null) => { const st = stack(
 
 // ---------- snapshots ----------
 function snapPlanner(pl) {
-  return { mission: pl.mission, stance: pl.stance, crew: [...pl.crew], vehicleId: pl.vehicleId ?? null, vehicleIds: [...(pl.vehicleIds || [])], supplies: { ...pl.supplies }, plan: clone(pl.plan) ?? null, sweep: clone(pl.sweep) ?? null, tabs: !!pl.tabs, lights: pl.lights !== false, policy: pl.policy ?? null, tplNotes: clone(pl.tplNotes) ?? null };
+  return { mission: pl.mission, stance: pl.stance, crew: [...pl.crew], vehicleId: pl.vehicleId ?? null, vehicleIds: [...(pl.vehicleIds || [])], supplies: { ...pl.supplies }, plan: clone(pl.plan) ?? null, sweep: clone(pl.sweep) ?? null, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false, policy: pl.policy ?? null, tplNotes: clone(pl.tplNotes) ?? null };
 }
 function restorePlanner(pl, s) {
-  Object.assign(pl, { mission: s.mission, stance: s.stance, crew: new Set(s.crew), vehicleId: s.vehicleId, vehicleIds: [...(s.vehicleIds || [])], supplies: { ...s.supplies }, plan: clone(s.plan) || undefined, sweep: clone(s.sweep) || undefined, tabs: s.tabs, lights: s.lights, policy: s.policy, tplNotes: clone(s.tplNotes) });
+  Object.assign(pl, { mission: s.mission, stance: s.stance, crew: new Set(s.crew), vehicleId: s.vehicleId, vehicleIds: [...(s.vehicleIds || [])], supplies: { ...s.supplies }, plan: clone(s.plan) || undefined, sweep: clone(s.sweep) || undefined, tabs: s.tabs, lights: s.lights, spares: s.spares, policy: s.policy, tplNotes: clone(s.tplNotes) });
   if (!pl.plan) delete pl.plan;
   if (!pl.sweep) delete pl.sweep;
   if (!pl.tplNotes) delete pl.tplNotes; // what a template changed (ui/trips.js)

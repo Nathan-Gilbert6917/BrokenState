@@ -1207,9 +1207,10 @@ function merchantsAtBase(state, v, base) {
 // the merchants lack, at the group's need on both sides (value for value), at most a third of the merchants' stock.
 export function tradeWithGroup(state, v, f) {
   // demand (trade.js): stock, kind and state on each side (a group at war wants ammo; merchants want food and scrap).
-  // A group below its parts reorder level (trade.js groupPartsLow) buys parts of any kind (into its one count).
+  // A group below its parts reorder level (trade.js groupPartsLow) buys parts of the kinds in its one count; car parts
+  // (their own count) by their own need (trade.js need: only a group with vehicles wants them).
   const low = groupPartsLow(f);
-  const want = (x, k) => (x === f && low && PART_KEYS.includes(k) ? Math.max(1.5, demand(state, x, k)) : demand(state, x, k));
+  const want = (x, k) => (x === f && low && PART_KEYS.includes(k) && k !== "carparts" ? Math.max(1.5, demand(state, x, k)) : demand(state, x, k));
   const sells = SUPPLY_KEYS.filter((k) => want(f, k) >= 1.2 && available(v, k) > 0).sort((a, b) => want(f, b) - want(f, a));
   const wants = SUPPLY_KEYS.filter((k) => want(v, k) >= 1.2 && available(f, k) > 0).sort((a, b) => want(v, b) - want(v, a));
   const gave = [], got = [];
@@ -1228,7 +1229,7 @@ export function tradeWithGroup(state, v, f) {
     }
     if (!Object.keys(pay).length) continue;
     v.stock[k] -= q;
-    f.stock[groupStockKey(k, f)] = (f.stock[groupStockKey(k, f)] || 0) + q; // part kinds into the group's one count of parts
+    f.stock[groupStockKey(k, f)] = (f.stock[groupStockKey(k, f)] || 0) + q; // part kinds into the group's one count of parts (car parts: their own)
     for (const [w, n] of Object.entries(pay)) { f.stock[w] -= n; v.stock[w] = (v.stock[w] || 0) + n; got.push(`${n} ${w}`); }
     gave.push(`${q} ${keyWord(k)}`);
   }
