@@ -26,6 +26,7 @@ import { guideMenuRow, GUIDE_MENU_ACTIONS } from "./guide.js"; // the first-week
 import { pacingOptionsHTML, MAX_SPEED, PACE_ACTIONS } from "./pacing.js"; // Options → Pause for… (the card tray, the speeds)
 import { displayRows, applyDisplay } from "./display.js"; // Display: colour-blind colours, map text, reduce motion, minimap, dev tools
 import { askBoxHtml, confirmRows } from "./confirm.js"; // the one confirmation box, and Confirmations (Don't ask again)
+import { PACES, PACE_KEYS, paceOf } from "../sim/tripland.js"; // Outdoor work pace: this game's job trips (trips-plus #7)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -178,6 +179,7 @@ function optionsTab(state, ui, api) {
       ${box("confirmEnd", !!cui.confirmEnd, "Battles: ask before ending a turn with actions left", "Space or End turn asks once while units still have actions (Enter always ends at once)")}
       ${box("autoRedeploy", !!cui.autoRedeploy, "Base battles: skip the redeploy after falling back", "When your people fall back from the walls to the yard and the buildings, keep the default posts and fight on at once instead of placing them again")}
       <label${tip("Short speech bubbles over heads in battle (Reloading!, I'm hit!, Man down!). Important only: just someone of yours going down and the shout that they are (with a short chirp). Enemies are heard only while your people see them.")}>Combat barks <select data-action="set-barks">${BARK_MODES.map(([v, l]) => `<option value="${v}" ${barkMode() === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      ${ui.started && state ? `<label${tip(`This game's outdoor workers (wood, foraging, hunting, fishing, scavenging, fetching water: their job trips): how fast they walk out to the land and back. Saved with this game. ${PACE_KEYS.map((k) => `${PACES[k].name}: ${PACES[k].desc}.`).join(" ")}`)}>Outdoor work pace <select data-action="set-trippace">${PACE_KEYS.map((k) => `<option value="${k}" ${paceOf(state).key === k ? "selected" : ""}>${PACES[k].name}</option>`).join("")}</select></label>` : ""}
     </div>
     ${soundOptionsHtml(o)}
     ${pacingOptionsHTML()}
@@ -397,6 +399,7 @@ export const SETTINGS_ACTIONS = {
 export const SETTINGS_CHANGE = {
   ...SOUND_CHANGE, // ui/audio.js: the volume sliders, the sound to hear
   "set-barks": (state, ui, el) => setBarkMode(String(el.value)), // ui/barks.js (remembered in this browser)
+  "set-trippace": (state, ui, el) => { if (state && PACES[el.value]) state.tripPace = el.value === "normal" ? undefined : el.value; }, // sim/tripland.js PACES: this game's (saved with it)
   "set-name": (state, ui, el) => { if (ui.settings) ui.settings.name = String(el.value ?? "").slice(0, 60); },
   "set-mapanim": (state, ui, el, api) => {
     api.options.mapAnim = el.value !== "off";

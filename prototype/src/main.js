@@ -1,5 +1,6 @@
 // Entry point: game loop, input, and the action dispatcher that connects the UI to the simulation.
 import { togglePeopleIdle, assignIdlePreview } from "./ui/activity.js"; // the People tab's Idle filter, Assign all idle
+import { gearOutdoorWorkers, gearText } from "./sim/tripgear.js"; // the Work now panel's Gear outdoor workers (trips-plus #2)
 import { applyIdlePlan } from "./sim/idlework.js";
 import {
   createWorld, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
@@ -1600,6 +1601,14 @@ actions["idle-assign"] = (d) => {
   if (ask(ui, d, "idle-assign", { kind: "assignidle", title: `Put ${pv.plan.length} idle ${pv.plan.length === 1 ? "person" : "people"} at ${b.name} to work?`, text: `${pv.text}. They go on these jobs by hand (Manual).`, yes: "Assign" })) return;
   baseSay(`Assigned the idle at ${applyIdlePlan(state, b, pv.plan)}`);
 };
+// "Gear outdoor workers" (the Work now panel): the armory's spare weapons, lights, light armour and tourniquets to the
+// people going out on the land (sim/tripgear.js; your own order: pinned people too).
+actions["gear-out"] = (d) => {
+  const b = baseById(state, Number(d.base));
+  if (!b) return;
+  const got = gearOutdoorWorkers(state, b, { pinned: true });
+  baseSay(got.length ? `${b.name}: geared the outdoor workers: ${gearText(got)}.` : `${b.name}: nothing in the armory would help them.`);
+};
 Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
 for (const [k, fn] of Object.entries(BN_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the naming window's box: the draft as you type
 for (const [k, fn] of Object.entries(ARMV_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the armory's find box (ui/armoryview.js)
@@ -1754,6 +1763,7 @@ window.addEventListener("mousemove", (e) => {
     view.hover = id;
     if (id >= 0) {
       const wk = workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y); // ui/workermap.js: a base worker out on a job trip
+      view.workerHover = wk && wk.sid != null ? wk.sid : null; // ui/workermap.js: their route drawn faintly
       tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
       tip.style.left = `${e.clientX - r.left + 16}px`;
       tip.style.top = `${e.clientY - r.top + 16}px`;
@@ -1761,6 +1771,7 @@ window.addEventListener("mousemove", (e) => {
     } else tip.classList.add("hidden");
   } else {
     view.hover = -1;
+    view.workerHover = null;
     tip.classList.add("hidden");
   }
 });
