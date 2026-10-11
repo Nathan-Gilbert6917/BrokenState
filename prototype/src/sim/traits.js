@@ -60,7 +60,7 @@ export const TRAIT_TIERS = {
   keeneye:      { pts: [3, 5, 8],    fx: { sight: [1, 1, 2], notice: [0.15, 0.25, 0.35] }, say: (f) => `+${f.sight} sight radius for their team, and it notices hidden finds more often (+${pc(f.notice)})` },
   lucky:        { pts: [8, 15],      fx: { all: [1, 2] }, say: (f) => `+${f.all} to every skill` },
   quicklearner: { pts: [3, 5, 7],    fx: { learn: [1.25, 1.4, 1.6] }, say: (f) => `Learns ${pc(f.learn - 1)} faster: +${pc(f.learn - 1)} XP from everything (use, study, fights)` },
-  ironstomach:  { pts: [2, 3, 4],    fx: { sick: [0.5, 0.35, 0.2], shrug: [1 / 3, 1 / 2, 2 / 3] }, say: (f) => `${pc(1 - f.sick)} less chance of an upset stomach from un-purified water or uncooked food, and shrugs off the worm's eggs ${shrugText(f.shrug)} (water, raw food, camping, searching)` },
+  ironstomach:  { pts: [2, 3, 4],    fx: { sick: [0.5, 0.35, 0.2], shrug: [1 / 3, 1 / 2, 2 / 3] }, say: (f) => `${pc(1 - f.sick)} less chance of an upset stomach from un-purified water or food poisoning from bad cooking or uncooked food, and shrugs off the worm's eggs ${shrugText(f.shrug)} (water, raw food, camping, searching)` },
   quickheal:    { pts: [3, 5, 7],    fx: { heal: [1.3, 1.5, 1.75] }, say: (f) => `Wounds heal ${pc(f.heal - 1)} faster while resting (at a base, in a hospital bed, in camp, as a prisoner)` },
   strongback:   { pts: [3, 5, 7],    fx: { max: [48, 52, 56], feel: [0.9, 0.85, 0.8] }, say: (f) => `Max load ${f.max} kg instead of 40, and loads feel ${pc(1 - f.feel)} lighter (a better load band)` },
   fleet:        { pts: [3, 5, 8],    fx: { mob: [1, 1, 2], escape: [10, 15, 20] }, say: (f) => `+${f.mob} tile${f.mob === 1 ? "" : "s"} a move in battle, and +${f.escape}% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)` },
@@ -86,7 +86,7 @@ export const TRAIT_TIERS = {
   hothead:      { pts: [-3, -5, -7], fx: { opinion: [10, 15, 20], fight: [3, 4, 5], attack: [2, 2.5, 3] }, say: (f) => `Gets along worse with everyone (−${f.opinion} opinion), and when they break they lash out: fights ×${f.fight} and attacks ×${f.attack} as likely` },
   slow:         { pts: [-3, -5, -8], fx: { mob: [1, 1, 2], escape: [10, 15, 20] }, say: (f) => `−${f.mob} tile${f.mob === 1 ? "" : "s"} a move in battle, and −${f.escape}% to break off and get away from a fight (a team on foot with them: −1 to Run for it on the road)` },
   slowlearner:  { pts: [-3, -5, -7], fx: { learn: [0.8, 0.65, 0.5] }, say: (f) => `Learns ${pc(1 - f.learn)} slower: −${pc(1 - f.learn)} XP from everything (use, study, fights)` },
-  weakstomach:  { pts: [-2, -3, -4], fx: { sick: [1.5, 2, 2.5] }, say: (f) => `${pc(f.sick - 1)} more likely to get an upset stomach from un-purified water or uncooked food` },
+  weakstomach:  { pts: [-2, -3, -4], fx: { sick: [1.5, 2, 2.5] }, say: (f) => `${pc(f.sick - 1)} more likely to get an upset stomach from un-purified water or food poisoning from bad cooking or uncooked food` },
   nearsighted:  { pts: [-3, -5, -7], fx: { scout: [2, 3, 4], shoot: [1, 2, 3] }, say: (f) => `−${f.scout} Scouting and −${f.shoot} Shooting` },
   feeble:       { pts: [-2, -4, -6], fx: { kg: [4, 7, 10], melee: [5, 10, 15] }, say: (f) => `Max load ${f.kg} kg lower, and −${f.melee}% to hit in melee` },
   squeamish:    { pts: [-2, -4, -6], fx: { skill: [2, 3, 4], grief: [3, 5, 8] }, say: (f) => `−${f.skill} Medicine, and a death in the group hits their mood ${f.grief} points harder (wherever they are)` },
@@ -213,7 +213,7 @@ export const accidentMult = (s) => (hasTrait(s, "clumsy") ? traitFx(s, "clumsy",
 export const fleetMob = (s) => traitFx(s, "fleet", "mob") - traitFx(s, "slow", "mob");
 /** @param {any} s @returns {number} */
 export const fleetEscape = (s) => traitFx(s, "fleet", "escape") - traitFx(s, "slow", "escape");
-// An upset stomach × (Iron Stomach, Weak Stomach).
+// An upset stomach, food poisoning (cooking.js poisonRoll, worm.js sickRoll) × (Iron Stomach, Weak Stomach).
 /** @param {any} s @returns {number} */
 export const stomachMult = (s) => (hasTrait(s, "ironstomach") ? traitFx(s, "ironstomach", "sick") : 1) * (hasTrait(s, "weakstomach") ? traitFx(s, "weakstomach", "sick") : 1);
 // Falling ill × and the slower clearing (Sickly).

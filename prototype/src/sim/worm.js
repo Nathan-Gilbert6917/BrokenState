@@ -23,9 +23,10 @@
 //     water an hour into purified water (× STOVE with a smokeless stove); purification tablets (data.js puritabs: one
 //     per TABS_WATER water) on the move (travelling, exploring, searching) and at a camp whose fire is out or has
 //     nothing left to burn; otherwise it is drunk as it is.
-//   - an upset stomach (health.js stomach), not the worm: un-purified water and uncooked food also turn the stomach,
-//     SICK_X times the worm's chance for the same drink or meal (at most SICK_MAX a roll): mood only, no health, it
-//     passes in a few days (sickRoll). Only the worm hurts.
+//   - an upset stomach (health.js stomach), not the worm: un-purified water also turns the stomach, SICK_X times the
+//     worm's chance for the same drink (at most SICK_MAX a roll): mood only, no health, it passes in a few days
+//     (sickRoll). Uncooked food with the eggs gives food poisoning (health.js poisoning: wave 2 cooking) at that chance
+//     instead: vomiting for a day or two. Only the worm hurts.
 //   - raw meat: RAW per ration of meat with eggs eaten uncooked. Game, fish and snares taken on land at MEAT_AT+
 //     infection carry eggs, and infested animals always do (foods.js: an egg lot of the raw meat or fish, kept apart
 //     from the clean). A base with a cook fire or a preserving room (a shelter with its fire lit) cooks it into meals;

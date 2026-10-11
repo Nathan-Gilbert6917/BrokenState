@@ -12,7 +12,7 @@ import {
   setStationClean, billTarget, poisonChance, skillPz, poisonRoll, recipeMin, booksFor, cookbookIds, teamCookHour, groupCookDaily, groupCookSkill,
   govCookBills, cookStats, speedOf, kitchenCrew, fireCrew, cookingHelp, newBill,
 } from "../src/sim/cooking.js";
-import { CRAFT_BOOKS, isKnown, tech, learnBook } from "../src/sim/blueprints.js";
+import { CRAFT_BOOKS, isKnown, tech, learnBook, cookBookRows, craftBookRows } from "../src/sim/blueprints.js";
 import { GEAR } from "../src/sim/data.js";
 import { BOOK_SITES, WARE_BOOKS } from "../src/sim/skills.js";
 import { CONDITIONS, autoWantsCondition, teamWants, isIll, conditionWork, sickStats } from "../src/sim/health.js";
@@ -22,6 +22,8 @@ import { worksAt, nextWork, groupsBuild, GROUP_WORKS } from "../src/sim/groupwor
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { cookingCard, cookingNote, COOK_ACTIONS, COOK_CHANGE, mealTag } from "../src/ui/cooking.js";
 import { baseFoodHtml } from "../src/ui/food.js";
+import { blueprintsCard } from "../src/ui/explore.js";
+import { condChip } from "../src/ui/health.js";
 import { helpTopics } from "../src/ui/help.js";
 import { clearFood, addDays } from "./foodkit.js";
 
@@ -71,6 +73,10 @@ section("The recipes, the cookbooks, where they turn up");
   check(["apartments", "town", "school", "univ", "mall", "diner"].every((t) => BOOK_SITES[t] && BOOK_SITES[t].books.some((k) => ids.includes(k))), "found in houses, schools, colleges (libraries), malls (bookshops) and diners (restaurants)");
   check(ids.every((id) => sites(id).length >= 2) && ids.every((id) => WARE_BOOKS.traders.books.includes(id)), "every cookbook has two sites or more and traders sell them all");
   check(booksFor("fine").length >= 2 && booksFor("survival").length >= 1, "fine meals and survival meals have cookbooks");
+  const st0 = createWorld({ seed: SEED, factionCount: 2 });
+  check(cookBookRows(st0).length === 4 && craftBookRows(st0).every((r) => !CRAFT_BOOKS[r.key].cook), "the Blueprints card: the cookbooks in their own rows, not with the craft books");
+  const card = blueprintsCard(st0, hub(st0));
+  check(/Cookbooks \(0 of 4 read\)/.test(card) && /Family Cookbook/.test(card) && !BAD.test(card), "the Cookbooks card (Blueprints)");
 }
 
 // ======================================================================
@@ -489,6 +495,11 @@ section("The UI, the Help topic, save and load");
   check(S.clean === false, "Clean first off");
   COOK_ACTIONS["ck-del"](st, ui, { base: String(h.id), st: "canteen", id: String(id) });
   check(!S.bills.some((b) => b.id === id), "removed");
+  const vic = atBase(st, h.id)[3];
+  vic.conditions = [{ key: "poisoning", sev: 50, days: 0, since: 1, why: "after a simple meal", treatedDay: -99, course: null, dosed: 0, mending: false }];
+  const chipHtml = condChip(st, vic, vic.conditions[0]);
+  check(/🤮/.test(chipHtml) && /Food poisoning/.test(chipHtml) && !BAD.test(chipHtml), "the condition chip");
+  vic.conditions = [];
   const note = cookingNote(st, h, "canteen");
   check(/Bills:/.test(note) && !BAD.test(note), `the building card's line (${note.replace(/<[^>]+>/g, "")})`);
   const food = baseFoodHtml(st, h);

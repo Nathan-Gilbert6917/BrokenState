@@ -2795,6 +2795,9 @@ function wormWishes(state, base, queued) {
   const cropBad = cropLandBad(state, base.tile) || state.grid.within(base.tile, 2).some((id) => cropLandBad(state, id));
   if (!baseCooks(base) && !queued("cookhouse") && (wormMeatAt(base) > 0 || base.rawWarned || (working && landBad))) out.push({ type: "cookhouse", why: "game from infected land has to be cooked through (the worm)", save: true });
   else if (!baseCooks(base) && !queued("cookhouse") && (wormVegAt(base).all > 0 || base.rawVegWarned || (growing && cropBad))) out.push({ type: "cookhouse", why: "crops and forage from infected ground have to be boiled (the worm)", save: true });
+  // Wave 2 cooking (cooking.js POISON.raw): raw meat and fish eaten uncooked give food poisoning, so a base whose
+  // hunters or fishers bring it in gets a cook fire (6 scrap) too.
+  else if (!baseCooks(base) && !queued("cookhouse") && (working || foodUnits(base, (k, f) => !!f.raw) >= 1)) out.push({ type: "cookhouse", why: "raw meat and fish eaten uncooked give food poisoning", save: false });
   return out;
 }
 // A queued job that keeps the worm out (planRoles 1c): the water boiler while the base drinks un-purified water, a

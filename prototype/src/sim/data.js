@@ -550,7 +550,7 @@ export const TRAITS = {
   badback:   { name: "Bad Back",     bad: true, desc: "Max load 28 kg instead of 40, and loads feel 20% heavier (a worse load band)" },
   // 2026-10-08 (user request: "more tags like Lucky, Tough"): rolled at birth with dice of their own (traits.js).
   quicklearner: { name: "Quick Study",   desc: "Learns 25% faster: +25% XP from everything (use, study, fights)" },
-  ironstomach:  { name: "Iron Stomach",  desc: "Half the chance of an upset stomach from un-purified water or uncooked food, and shrugs off the worm's eggs 1 time in 3 (water, raw food, camping, searching)" },
+  ironstomach:  { name: "Iron Stomach",  desc: "Half the chance of an upset stomach from un-purified water or food poisoning (bad cooking, uncooked food), and shrugs off the worm's eggs 1 time in 3 (water, raw food, camping, searching)" },
   quickheal:    { name: "Quick Healer",  desc: "Wounds heal 30% faster while resting (at a base, in a hospital bed, in camp, as a prisoner)" },
   strongback:   { name: "Strong Back",   desc: "Max load 48 kg instead of 40, and loads feel 10% lighter (a better load band)" },
   fleet:        { name: "Fleet-Footed",  desc: "+1 tile a move in battle, and +10% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)" },
@@ -567,7 +567,7 @@ export const TRAITS = {
   // rolled at birth with the newer traits' own dice like the rest.
   slow:         { name: "Slow",          bad: true, desc: "-1 tile a move in battle, and -10% to break off and get away from a fight (a team on foot with them: -1 to Run for it on the road)" },
   slowlearner:  { name: "Slow Learner",  bad: true, desc: "Learns 20% slower: -20% XP from everything (use, study, fights)" },
-  weakstomach:  { name: "Weak Stomach",  bad: true, desc: "50% more likely to get an upset stomach from un-purified water or uncooked food" },
+  weakstomach:  { name: "Weak Stomach",  bad: true, desc: "50% more likely to get an upset stomach from un-purified water or food poisoning (bad cooking, uncooked food)" },
   nearsighted:  { name: "Nearsighted",   bad: true, desc: "-2 Scouting and -1 Shooting" },
   feeble:       { name: "Feeble",        bad: true, desc: "Max load 4 kg lower, and -5% to hit in melee" },
   squeamish:    { name: "Squeamish",     bad: true, desc: "-2 Medicine, and a death in the group hits their mood 3 points harder (wherever they are)" },

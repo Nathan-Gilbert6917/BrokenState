@@ -249,10 +249,14 @@ export function learnBook(state, key, s = null) {
 }
 // For the UI: every craft book with its state.
 export function craftBookRows(state) {
-  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k]).map((key) => {
+  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k] && !CRAFT_BOOKS[k].cook).map((key) => { // the cookbooks have their own rows (cookBookRows)
     const d = CRAFT_BOOKS[key];
     return { key, name: GEAR[key].name, known: isKnown(state, key), held: booksHeld(state, key), opens: (d.unlocks.crafts || []).map(unlockName), covers: (d.covers || []).map(unlockName), where: bookWhere(key), desc: GEAR[key].desc };
   });
+}
+// Wave 2 cooking: the cookbooks (CRAFT_BOOKS with cook) with their state, for the Blueprints card.
+export function cookBookRows(state) {
+  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k] && CRAFT_BOOKS[k].cook).map((key) => ({ key, name: GEAR[key].name, known: isKnown(state, key), held: booksHeld(state, key), what: CRAFT_BOOKS[key].cookText, where: bookWhere(key), desc: GEAR[key].desc }));
 }
 
 // ---------- copies held ----------

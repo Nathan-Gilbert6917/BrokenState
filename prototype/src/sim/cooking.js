@@ -639,7 +639,8 @@ export const groupWantsGrinder = (f) => foodUnits(f.stock, (k, x) => CLASSES.gam
 
 // ---------- text ----------
 export function recipeText(R) {
-  const ins = R.in.map((i) => `${r1(R.units * i.share)} days of ${CLASSES[i.cls].name}`).join(" + ");
+  const one = { grain: "f_grain", flour: "f_flour", ground: "f_groundmeat" }; // a single item: its own count ("4.5 kg of grain")
+  const ins = R.in.map((i) => (one[i.cls] ? foodWord(one[i.cls], qtyOf(one[i.cls], R.units * i.share)) : `${r1(R.units * i.share)} days of ${CLASSES[i.cls].name}`)).join(" + ");
   return `${ins}${R.water ? ` + ${R.water} purified water` : ""}${R.wood ? ` + ${R.wood} firewood` : ""} → ${foodWord(R.out, R.n)} (${Math.round((R.gain - 1) * 100) >= 0 ? "+" : ""}${Math.round((R.gain - 1) * 100)}% food)`;
 }
 export function cookingHelp() {

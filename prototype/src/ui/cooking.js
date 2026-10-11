@@ -53,7 +53,7 @@ function billRow(state, b, key, x, i, n) {
 function filterPanel(state, b, key, x) {
   const R = COOK_RECIPES[x.recipe];
   const data = `data-base="${b.id}" data-st="${key}" data-id="${x.id}"`;
-  const items = Object.keys(FOODS).filter((k) => R.in.some((inp) => CLASSES[inp.cls].test(k, FOODS[k], { fresh: false, human: true })));
+  const items = Object.keys(FOODS).filter((k) => R.in.some((inp) => CLASSES[inp.cls].test(k, FOODS[k], { fresh: !!x.flt.fresh, human: true }))); // with Fresh only, the fresh ones
   const boxes = items.map((k) => `<label style="white-space:nowrap;margin-right:0.5rem"${tip(`${FOODS[k].name}: ${Math.floor(b.stock[k] || 0)} in store`)}><input type="checkbox" data-action="ck-no" ${data} data-key="${k}" ${(x.flt.no || []).includes(k) ? "" : "checked"}> ${FOODS[k].icon} ${esc(FOODS[k].name)}</label>`).join(" ");
   return `<div class="card small" style="margin:0.2rem 0">
     <label${tip("Only fresh ingredients (raw meat and fish, eggs and milk, produce, crops and forage). Off: also rice, pasta, oats, dry beans, nuts, jerky, cheese, canned meat and vegetables (food that keeps).")}><input type="checkbox" data-action="ck-fresh" ${data} ${x.flt.fresh ? "checked" : ""}> Fresh only</label>
