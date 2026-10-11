@@ -105,7 +105,7 @@
 import { GEAR, SUPPLIES, supWeight, supValue } from "./data.js";
 import { itemLoad, itemKg, ensurePack, ensureInv, lootItem } from "./inventory.js";
 import { siteSource } from "./itemcond.js";
-import { CELL, alertNear } from "./combat.js"; // the battle map's cells (a cart parked: CELL cart); noise
+import { CELL, alertNear, evacAt } from "./combat.js"; // the battle map's cells (a cart parked: CELL cart); noise
 import { noiseAt } from "./stealth.js"; // a cart pushed rattles
 import { survivorById, baseById, log, newId } from "./world.js";
 import { lootLayer, fieldLayer } from "./raidloot.js"; // call-time only (safe in the import cycle)
@@ -502,7 +502,7 @@ export const parkCells = (b, u) => (holdsCart(u) ? SIDES.map(([dx, dy]) => [u.x 
 // map changes). Taken (Take cart) it is the team's; untouched it stays part of the place when the fight ends.
 export const MAP_CARTS = { areas: { barn: 0.35, garage: 0.25, workshop: 0.2, warehouse: 0.25, farmhouse: 0.2, house: 0.05, store: 0.05 }, road: 0.12 };
 function foundCart(state, b, x, y, f, key, tag) {
-  if (!parkable(b, x, y, f)) return null;
+  if (!parkable(b, x, y, f) || x < 2 || y < 1 || x > b.w - 3 || y > b.h - 2 || evacAt(b, x, y)) return null; // not on the way out (the evac strip, the edges)
   const roll = (...k) => hash01(state.seed, "mapcart", b.tileId ?? 0, tag, ...k);
   const cart = lootItem(key, siteSource(key === "handcart" ? "farm" : "hardware"), roll("q"));
   const box = { id: b.nextId++, x, y, f, kind: "ground", drop: true, cart, sid: null, side: null, found: true, area: null, searched: true, partial: false, label: `${cart.name} (abandoned)`, contents: { sup: {}, gear: [] } };
