@@ -325,6 +325,7 @@ section("Vehicles: found, taken, repaired, fitted out, stolen, traded");
   const rai = typed(st, "raider"), mil = typed(st, "military", [rai]);
   st.groupWorks = st.groupWorks || {};
   for (const f of [rai, mil]) worksAt(f, f.bases[0]).bench = 1;
+  worksAt(rai, rai.bases[0]).garage = 1; // ai-locks: raiders (Mechanics 3) repair vehicles only with a garage, as you do
   // A car left on the map by their base.
   const car = createVehicle(st, "truck", { kind: "abandoned", tile: rai.bases[0], since: 0 }, { condition: 30 });
   const v0 = factionVehicles(rai).length;
@@ -663,6 +664,7 @@ section("They know your bases as far as they have scouted");
   friend.bases = [g.within(near.bases[0], 5).find((t) => g.distance(t, near.bases[0]) === 5 && st.tiles[t].terrain !== "water" && !st.factions.some((o) => o.bases.includes(t)) && g.distance(t, h.tile) > G.KNOW.PASS)];
   D.ensureDiplo(st);
   D.changeRelation(st, friend, near, 60 - D.relation(st, friend, near));
+  if (st.groupWorks) worksAt(near, near.bases[0]).radio = 1; // ai-locks: one of them on the air (a radio station: radio.js groupNetwork)
   let heard = 0;
   for (let d = 0; d < 40 && !heard; d++) { st.hour += 24; heard = G.radioGossip(st, friend, day(st)); }
   check(heard > 0 && !!G.knownBase(st, friend, h.tile), `a friend on the radio tells them where you are (${heard})`);

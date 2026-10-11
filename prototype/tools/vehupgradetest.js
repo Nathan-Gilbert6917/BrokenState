@@ -630,9 +630,16 @@ section("Turrets: an LMG turret built round an LMG item; the M2 bolted to its mi
   addToArsenal(st, f, glmg, "found");
   f.stock.scrap = 100; f.stock.parts = 50;
   let fit = null;
+  // ai-locks (2026-10-11): your turret wants a Mechanics 6 hand; a group's mechanic stands in (raiders 3: never).
+  const type0 = f.type;
+  f.type = "raider";
+  for (let i = 0; i < 400 && !fit; i++) { f.careTick = i; const r = fitUpgrade(st, f); if (r && r.key === "turret") fit = r; }
+  check(!fit && f.arsenal.items.includes(glmg), "raiders (Mechanics 3) fit no turret (your Mechanics 6)");
+  f.type = "military"; f.stock.scrap = 100; f.stock.parts = 50; f.partsMach = 0;
   for (let i = 0; i < 400 && !fit; i++) { f.careTick = i; const r = fitUpgrade(st, f); if (r && r.key === "turret") fit = r; }
   const tt = fit && upgradesOf(fit.v).turret;
-  check(tt && tt.gun === "lmg" && tt.item === glmg && !f.arsenal.items.includes(glmg) && f.stock.scrap < 100, `an AI group fits an LMG turret from its arsenal, paying scrap and parts (${tt ? `${tt.gun}, scrap ${f.stock.scrap}` : "none"})`);
+  check(tt && tt.gun === "lmg" && tt.item === glmg && !f.arsenal.items.includes(glmg) && f.stock.scrap < 100, `an AI group with a Mechanics 6 hand (the military) fits an LMG turret from its arsenal, paying scrap and parts (${tt ? `${tt.gun}, scrap ${f.stock.scrap}` : "none"})`);
+  f.type = type0;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

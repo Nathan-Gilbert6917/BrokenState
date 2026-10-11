@@ -12,9 +12,11 @@
 // dropping by restored × max(0.08, 0.25 − 0.01 × skill) (the group's mechanic: GROUP_PRIORITIES mechanic). Inputs from
 // their stock: guns a part per 20% of full durability restored and a scrap; hard armour a part and 2 scrap; soft
 // armour 2 scrap and a part (for the kevlar kit); makeshift and melee 1 scrap. Ceramic plates and worn-out pieces
-// (maximum under 20% of full) are not mended.
+// (maximum under 20% of full) are not mended, nor (ai-locks 2026-10-11) a piece their mechanic is under your repair's
+// skill for (repairMin: repair.js REPAIR_KINDS, guns Mechanics 3, armour of AC 4+ Mechanics 5: zealots mend no guns).
 // Vehicles (f.vehicles): a turreted vehicle loses VEHICLE.fight condition a fight it is in (VEHICLE.lost when its side
-// loses); at 0 it is out (vehicles.js groupTurret). With a workshop, one in need (under VEHICLE.below) gets
+// loses); at 0 it is out (vehicles.js groupTurret). With a workshop and a garage (ai-locks: your rule; without a garage
+// only a Mechanics 4 mechanic, at your 12-of-25 rate: groupworks.js groupGarageMult), one in need (under VEHICLE.below) gets
 // VEHICLE.step back a day for a car part (2 machine parts when they have none: vehicles.js groupCost) and 2 scrap. Under 50%, as the governor mends your car for a trip (autopilot.js
 // VEH_REPAIR; AI parity, vehicle-wear pass 2026-10-10): at 80% the groups topped up every scratch from a fight (42 parts in a
 // 730-day census run for condition nothing used: a vehicle is only out at 0).
@@ -55,7 +57,8 @@ import { relation, warsOf } from "./diplomacy.js";
 import { sameBloc } from "./blocs.js"; // AI blocs: food bought from a member first
 import { atWarWithYou } from "./playerwars.js"; // a war with you presses on desertion
 import { noteStrife, SPLINTER } from "./splinters.js"; // deserters, and the dead of a fight, stir up strife (splinter bands)
-import { groupsBuild, sickbayTier, sleepingRough, groupFreeParts } from "./groupworks.js"; // bare-start groups build their sick bays (groupworks.js sickbayWork); the ill (illDaily)
+import { groupsBuild, sickbayTier, sleepingRough, groupFreeParts, groupGarageMult } from "./groupworks.js"; // bare-start groups build their sick bays (groupworks.js sickbayWork); the ill (illDaily)
+import { repairKind, acOf } from "./repair.js"; // ai-locks: your repairs' skill gates
 import { BUILDINGS } from "./buildings.js";
 import { hospitalTypes } from "./medical.js";
 import { USE, CAP_USE, CAP_STUDY, CAP_WARD, xpNeed, SKILL_MAX } from "./skills.js";
@@ -343,6 +346,14 @@ export function groupRepairPlan(item, skill) {
   const newMax = Math.round(Math.max(1, max - restore * groupLossRate(skill)) * 10) / 10;
   return { restore, newMax, parts, scrap };
 }
+// Your repair's skill minimum for an item (repair.js REPAIR_KINDS: its kind's, Mechanics 5 for armour of AC 4+); the
+// group's mechanic stands for the hand that mends it (Crafting too: groupworks.js groupSkill).
+export function repairMin(it) {
+  const rk = repairKind(it);
+  if (!rk || !rk.def) return 0;
+  const d = GEAR[it.key];
+  return d && ["armor", "head", "arms", "legs", "insert"].includes(d.slot) && acOf(it.key) >= 4 ? Math.max(rk.def.min, 5) : rk.def.min;
+}
 export function repairGear(state, f, d = day(state)) {
   const A = f.arsenal;
   const R = CARE.REPAIR;
@@ -355,6 +366,7 @@ export function repairGear(state, f, d = day(state)) {
     if (n >= Math.max(1, Math.round((f.pop / R.perPop) * weightOf(f, "repair")))) break;
     const p = groupRepairPlan(it, skill);
     if (!p || groupFreeParts(f) < p.parts || (f.stock.scrap || 0) < p.scrap) continue; // machines-2: not the parts kept for their machines
+    if (skill < repairMin(it)) continue; // ai-locks: your repair's skill (guns Mechanics 3, armour of AC 4+ Mechanics 5)
     f.stock.parts = (f.stock.parts || 0) - p.parts;
     f.stock.scrap -= p.scrap;
     if (it.durBase == null) it.durBase = itemDurMax(it);
@@ -377,14 +389,15 @@ export function wearGroupVehicles(state, f, lost = false, tag = "") {
   if (v.condition <= 0 && f.known) log(state, `${f.name}'s ${v.name} was knocked out; it is out of action until they repair it.`, "info");
 }
 function repairVehicles(state, f) {
-  if (workshopFactor(state, f) < 1) return;
+  const mult = groupGarageMult(state, f); // ai-locks: your rule, a garage (full step) or a Mechanics 4 hand (12 of 25), else none
+  if (workshopFactor(state, f) < 1 || !(mult > 0)) return;
   const V = CARE.VEHICLE;
   const v = factionVehicles(f).filter((x) => x.condition < V.below && !x.destroyed).sort((a, b) => a.condition - b.condition)[0]; // a wreck (launchers.js) is past repair
   if (!v) return; // machines-2: car parts first; machine parts only by your two-for-one fallback (vehicles.js carPartsCost), the free ones before the machines' earmark (groupworks.js groupMachParts)
   const { cost, ok } = groupCost(f, { carparts: V.carparts, scrap: V.scrap }, groupStockKey);
   if (!ok) return;
   for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
-  v.condition = Math.min(100, v.condition + V.step);
+  v.condition = Math.min(100, v.condition + Math.round(V.step * mult));
 }
 
 // ---------- hunger: buy food ----------

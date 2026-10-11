@@ -12,6 +12,7 @@ import { lyingFor } from "../src/sim/intel.js";
 import * as I from "../src/sim/intel.js";
 import * as H from "../src/sim/hiding.js";
 import * as G from "../src/sim/groupworld.js";
+import { worksAt } from "../src/sim/groupworks.js"; // ai-locks: a group's radio station
 
 const seed = Number(process.argv[2] || 7);
 let passed = 0, failed = 0;
@@ -286,6 +287,7 @@ section("AI parity: the groups listen to each other, run silent and hide outpost
   const o = st.factions.find((f) => f.alive && f !== g && f.bases.length);
   o.type = "traders";
   o.bases = [ringTile(st, g.bases[0], 4, [hub(st).tile])];
+  if (st.groupWorks) worksAt(o, o.bases[0]).radio = 1; // ai-locks: their channel is on the air from a radio station (traders: Mechanics 4)
   // A caravan of theirs on the road: the gang hears it and waits for it.
   const q = { id: 770001, owner: o.id, kind: "caravan", phase: "out", path: [o.bases[0], ...st.grid.neighbors(o.bases[0]).filter((t) => free(st, t)).slice(0, 2)], idx: 0, progress: 0, strength: 3 };
   st.parties.push(q);
@@ -311,7 +313,9 @@ section("AI parity: the groups listen to each other, run silent and hide outpost
   if (tile != null) {
     H.hidingDaily(st);
     check(H.unseenOutpost(st, tile) && snapshot(st, tile).factionBase == null, "you have not found it: bare ground on your map");
-    check(!groupNetwork(st, hider).nodes.some((n) => n.tile === tile), "it keeps off their radio network");
+    if (st.groupWorks) for (const t of [hider.bases[0], tile]) worksAt(hider, t).radio = 1; // ai-locks: on the air only from radio stations (radio.js groupNetwork)
+    const hn = groupNetwork(st, hider);
+    check(!!hn && hn.nodes.some((n) => n.tile === hider.bases[0]) && !hn.nodes.some((n) => n.tile === tile), "it keeps off their radio network (its station silent, the main base's on the air)");
     st.parties.push({ id: 660001, owner: "player", kind: "team", phase: "out", path: [st.grid.neighbors(tile)[0]], idx: 0 });
     H.hidingDaily(st);
     check(!H.unseenOutpost(st, tile) && snapshot(st, tile).factionBase === hider.id && st.log.slice(-3).some((l) => /hidden outpost/.test(l.text || l)), "a team walking past finds it, and it is on the map");

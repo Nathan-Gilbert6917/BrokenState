@@ -334,7 +334,7 @@ export function assaultBase(state, setup) {
   const n = Math.max(2, Math.min(kinds.length, Math.round(people / 3)));
   const buildings = [{ type: "walls" }, ...Array.from({ length: Math.max(0, Math.min(4, Math.round(walls / 3))) }, () => ({ type: "walls" })), ...kinds.slice(0, n).map((type) => ({ type }))];
   if (walls >= 4) buildings.push({ type: "watchtower" });
-  if (walls >= 6) buildings.push({ type: "gate" });
+  if (e.gate ?? walls >= 6) buildings.push({ type: "gate" }); // conquest.js nativeGate: the reinforced gate they built (ai-locks: your manual), else walls of 6+
   setup.fortBase = { id: -1, tile, type: walls >= 5 ? "hub" : "outpost", name: e.name || "their base", buildings, construction: [], armory: [], stock: { fuel: 0 }, radio: false, watchtower: walls >= 4 };
   return setup.fortBase;
 }

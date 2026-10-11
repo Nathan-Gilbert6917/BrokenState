@@ -15,7 +15,8 @@
 // scavenging parties (bases within KNOW.SEE of the site they worked), questioning the people of yours it holds (all
 // your bases, every KNOW.QUESTION days), its bloc (blocs.js shareIntel) and the radio (radioGossip: every
 // KNOW.RADIO.EVERY days a group hears what a friend of its knows of your bases: a pact or relations KNOW.RADIO.REL+,
-// bases within KNOW.RADIO.RANGE, KNOW.RADIO.CHANCE a friend). Saved with the group. def is what the base was worth when they looked (your base: its defence with
+// bases within KNOW.RADIO.RANGE, KNOW.RADIO.CHANCE a friend, and one of them on the air where the other is: a radio
+// station, ai-locks). Saved with the group. def is what the base was worth when they looked (your base: its defence with
 // everyone at a post; a group's: its strength), and stays what it was: a raid sized on old intel can meet new walls.
 // Raids only go for bases they know (factions.js launchRaid); a group they think too strong for them (known strength
 // over KNOW.AVOID × theirs) they leave alone. A scout at your base: your lookouts (watch.js lookoutsSpot) see them
@@ -52,8 +53,8 @@ import { groupStockKey } from "./trade.js"; // a group's one count of parts (par
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
 import { hash01 } from "./skills.js";
-import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT } from "./vehicles.js";
-import { workshopFactor, worksAt } from "./groupworks.js";
+import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT, VEH_UPGRADES, WRECK } from "./vehicles.js";
+import { workshopFactor, worksAt, groupSkill, groupFreeParts } from "./groupworks.js";
 import { weightOf, tickOf, fitPeople } from "./groupcare.js";
 import { removeFromArsenal, issueKit } from "./arsenal.js";
 import { relation, changeRelation, pactBetween } from "./diplomacy.js"; // changeRelation: also a group moving into another's old base
@@ -64,6 +65,7 @@ import { vehicleDeliveriesDaily } from "./vehicletrade.js"; // vehicles bought o
 import { HIDE, missesBase, forgetDaily } from "./hiding.js"; // hidden bases: missed by scouts and parties, forgotten
 import { scoutFalse, scoutKilled, falseOdds, INTEL } from "./intel.js"; // counter-intel at the walls
 import { surrenderPrisoners } from "./prisoners.js"; // a captured scout goes to the cells
+import { groupNetwork, netCovers } from "./radio.js"; // ai-locks: radio gossip needs a station on the air
 
 export const KNOW = {
   START: 18, WATCH: 12, WATCH_DAYS: 10, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
@@ -186,7 +188,10 @@ export function partySaw(state, f, tile) {
   }
   return n;
 }
-// Over the radio: friends tell each other what they know of your bases (see the header). Returns how many they learned.
+// Does a's network (its stations: radio.js groupNetwork) cover one of b's bases?
+const onTheAir = (state, a, b) => { const net = groupNetwork(state, a); return !!net && b.bases.some((t) => netCovers(state, net, t)); };
+// Over the radio: friends tell each other what they know of your bases (see the header): one of them must be on the
+// air where the other is (ai-locks: a radio station, as yours). Returns how many they learned.
 export function radioGossip(state, f, d = day(state)) {
   const R = KNOW.RADIO;
   if ((d + Math.floor(h(state, f.name, "gossipph") * R.EVERY)) % R.EVERY !== 0) return 0;
@@ -196,6 +201,7 @@ export function radioGossip(state, f, d = day(state)) {
     if (o === f || !o.alive || o.outsider || !o.bases.length || !o.knows) continue;
     if (!pactBetween(state, f, o) && relation(state, f, o) < R.REL) continue;
     if (Math.min(...o.bases.map((t) => nearOwn(state, f, t))) > R.RANGE) continue;
+    if (!onTheAir(state, o, f) && !onTheAir(state, f, o)) continue; // ai-locks: one of them broadcasts to the other (a station, radio.js groupNetwork)
     if (h(state, f.name, o.name, d, "gossip") >= R.CHANCE) continue;
     for (const [t, k] of Object.entries(o.knows.bases)) {
       if (k.kind !== "player" || !state.bases.some((b) => b.tile === Number(t))) continue;
@@ -367,6 +373,8 @@ export function buyVehicleFrom(state, f, rec, base, createVehicle) {
   return { v, price };
 }
 // A scavenging party brings a wreck home now and then (aiscav.js): by the site, wanted, repaired at their workshop.
+// ai-locks (2026-10-11): restored as you restore one (vehicles.js WRECK: 2 car parts, machine parts for any short at
+// two for one, the free ones before their machines' earmark, and 6 fuel), else it stays where it lies.
 export function scavVehicle(state, f, site) {
   if (live(f).length >= vehicleWant(f) || h(state, f.name, state.hour, "vfind") >= VEH.FIND * weightOf(f, "vehicles")) return null;
   const t = state.tiles[site];
@@ -374,21 +382,28 @@ export function scavVehicle(state, f, site) {
   const types = mil ? ["miltruck", "hummer", "truck"] : ["truck", "sedan", "van", "suv"];
   const type = types[Math.floor(h(state, f.name, state.hour, "vtype") * types.length) % types.length];
   if (!VEHICLE_TYPES[type]) return null;
+  const { cost, ok } = groupCost(f, { carparts: WRECK.parts, fuel: WRECK.fuel }, groupStockKey);
+  if (!ok || !freePartsOk(f, cost)) return null;
+  for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
   return record(f, { id: state.hour, type, name: VEHICLE_TYPES[type].name, fuel: 2, condition: 25 + Math.round(35 * h(state, f.name, state.hour, "vcond")) }, { salt: "s" });
 }
+// The machine parts of a cost come from the parts above their machines' earmark (groupworks.js groupFreeParts).
+const freePartsOk = (f, cost) => !(cost.parts > 0) || groupFreeParts(f) >= cost.parts - 1e-9;
 // Fit one upgrade by type (GROUP_PRIORITIES fits: raiders scrap plating; the military plate, then glass; a fortress
 // plate; traders and communes mesh; × fitting, communes seldom bother), paid from the stock; an LMG from the arsenal
 // on a turret (vehicles.js TURRET_FIT: the same rule and cost as yours; the M2 only ever comes mounted on a military
-// vehicle).
+// vehicle). ai-locks (2026-10-11): only at your Mechanics for the job (groupworks.js groupSkill: the fortress's 5 plates
+// nothing, raiders and communes fit no turret), at a workshop (their "bench", your workbench: the garage jobs' shop),
+// the machine parts from those above their machines' earmark.
 export function fitUpgrade(state, f) {
   const cars = live(f).filter((v) => v.type !== "bike");
   if (!cars.length || h(state, f.name, tickOf(f), "fit") >= VEH.FIT * 10 * weightOf(f, "vehicles") * weightOf(f, "fitting", 1)) return null;
   // An LMG from the arsenal on a turret (it leaves the fighters' pool; lost with the vehicle), paid like yours.
   const mg = f.arsenal && f.arsenal.items.find((it) => it.key === TURRET_FIT.item && TURRET_KG[it.key]);
   const bare = cars.find((v) => !upgradesOf(v).turret);
-  if (mg && bare) {
+  if (mg && bare && groupSkill(f, "mechanics") >= TURRET_FIT.mech) { // ai-locks: your turret's Mechanics 6
     const { cost, ok } = groupCost(f, upgradeCost("turret"), groupStockKey, { scrap: 5 }); // vehicles.js: car parts first, 2 machine parts for each short
-    if (ok) {
+    if (ok && freePartsOk(f, cost)) {
       for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
       removeFromArsenal(f, mg, "turret");
       bare.upgrades = { ...upgradesOf(bare), turret: { gun: TURRET_FIT.gun, item: mg } };
@@ -398,9 +413,10 @@ export function fitUpgrade(state, f) {
   for (const key of weightOf(f, "fits", null) || []) {
     const v = cars.find((x) => { const u = upgradesOf(x); return key === "plating" ? u.plating < 1 && !u.scrapPlate : key === "scrapPlate" ? !u.plating && !u.scrapPlate : !u[key] && !(key === "mesh" && u.glass) && !(key === "glass" && u.mesh); });
     if (!v) continue;
+    if (groupSkill(f, "mechanics") < (VEH_UPGRADES[key].mech || 0)) continue; // ai-locks: your Mechanics for the job (glass 5, plate 6, scrap plating 3, mesh 2)
     // (trade.js groupStockKey: their car parts first, 2 machine parts for each one short: vehicles.js groupCost)
     const { cost, ok } = groupCost(f, upgradeCost(key), groupStockKey, { scrap: 5 });
-    if (!ok) continue;
+    if (!ok || !freePartsOk(f, cost)) continue;
     for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;
     const u = upgradesOf(v);
     u[key] = (u[key] || 0) + 1;
@@ -416,11 +432,13 @@ export const abandonedList = (state) => state.abandoned || (state.abandoned = []
 export const abandonedAt = (state, tile) => (state.abandoned || []).find((a) => a.tile === tile) || null;
 // Your buildings as a group's works (the keys are buildings.js BUILDINGS: this table used some names no building has,
 // "farm", "raincatcher", "bench", so a lost outpost's fields, catchers and benches were never counted).
-const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", animal_pen: "pens", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: "bench", ammo_bench: "bench", storehouse: "store", cellar: "store" };
+// ai-locks (2026-10-11): a machine shop is a workshop and their machine shop, a reloading bench a workshop and their
+// reloading bench; a radio station, a garage and a reinforced gate are those works of theirs (groupworks.js LOCKS).
+const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", animal_pen: "pens", well: "water", rain_catcher: "water", cistern: "water", bunkhouse: "beds", barracks: "beds", craftbench: "bench", workbench: "bench", toolbench: "bench", machine_shop: ["bench", "shop"], ammo_bench: "bench", reload_bench: ["bench", "reload"], storehouse: "store", cellar: "store", radio: "radio", garage: "garage", gate: "gate" };
 // A lost outpost's buildings as works (standing ones only).
 function worksOfBuildings(list) {
   const works = {};
-  for (const b of list || []) { const k = PLAYER_WORKS[b.type]; if (k && !b.broken) works[k] = (works[k] || 0) + 1; }
+  for (const b of list || []) { if (b.broken) continue; for (const k of [].concat(PLAYER_WORKS[b.type] || [])) works[k] = (works[k] || 0) + 1; }
   return works;
 }
 // A group's base its people left (it died out): the works stay, and some of the stores.

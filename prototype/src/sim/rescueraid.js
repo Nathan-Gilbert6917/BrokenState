@@ -146,7 +146,7 @@ export function startRescueRaid(state, p, f, mode = "assault") {
   p.phase = "engaged";
   startCombat(state, {
     tile, partyId: p.id,
-    enemy: { kind: force.kind, count: force.count, power: force.power, factionId: f.id, name: `${f.name} guards`, walls: force.walls, fortified: mode === "sneak" ? 1 : force.fortified },
+    enemy: { kind: force.kind, count: force.count, power: force.power, factionId: f.id, name: `${f.name} guards`, walls: force.walls, gate: force.gate, fortified: mode === "sneak" ? 1 : force.fortified },
     ambush: mode === "sneak" ? "player" : null, canRetreat: true, handler: "rescueRaid", layout: "rescueRaid",
     context: { partyId: p.id, factionId: f.id, tile, mode, captiveIds: list.map((s) => s.id), people: force.people, night, tier: jailTier(f, tile, state) },
   });

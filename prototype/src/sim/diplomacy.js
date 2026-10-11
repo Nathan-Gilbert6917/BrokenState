@@ -479,9 +479,10 @@ export function makePeace(state, w, how = "terms") {
       // Food never out of the loser's pay-out reserve (upkeep.js PAYOUT, as your governor's).
       const q = Math.min(Math.floor((lose.stock[k] || 0) * DIPLO.TRIBUTE), groupPayoutSpare(lose, k));
       lose.stock[k] -= q;
-      const mine = youWon ? Math.floor(q / 2) : 0;
+      const h = youWon ? hub(state) : null; // ai-locks: no hub left (lost, outposts only): the winner keeps it all (was a crash)
+      const mine = h ? Math.floor(q / 2) : 0;
       win.stock[k] = (win.stock[k] || 0) + q - mine;
-      if (mine > 0) { const h = hub(state); h.stock[k] = (h.stock[k] || 0) + mine; paid[k] = mine; }
+      if (h && mine > 0) { h.stock[k] = (h.stock[k] || 0) + mine; paid[k] = mine; }
     }
     d.stats.tribute++;
     const share = Object.entries(paid).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
