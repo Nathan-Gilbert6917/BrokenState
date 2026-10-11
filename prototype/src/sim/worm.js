@@ -27,8 +27,8 @@
 //     SICK_X times the worm's chance for the same drink or meal (at most SICK_MAX a roll): mood only, no health, it
 //     passes in a few days (sickRoll). Only the worm hurts.
 //   - raw meat: RAW per ration of meat with eggs eaten uncooked. Game, fish and snares taken on land at MEAT_AT+
-//     infection carry eggs, and infested animals always do (base.wormMeat, cargo.wormMeat: the share of the fresh
-//     game that has them). A base with a cook fire or a preserving room (a shelter with its fire lit) cooks it;
+//     infection carry eggs, and infested animals always do (foods.js: an egg lot of the raw meat or fish, kept apart
+//     from the clean). A base with a cook fire or a preserving room (a shelter with its fire lit) cooks it into meals;
 //     drying racks and a hunting cabin's smoke house take it first (smoked is safe). Otherwise it waits in the stores
 //     and is eaten last, raw, when the other food runs out. A team cooks it at a camp fire (COOK an hour) and eats it
 //     raw only when nothing else is left.
@@ -39,9 +39,9 @@
 //     the team gets home: a team that washes (camped with its fire lit that night, or home the same day to a base
 //     whose water is safe) skips the roll SEARCH_WASH of the time. (No gloves in GEAR yet: nothing halves it.)
 //   - crops and forage: food grown (farming.js harvest) or gathered (foraging.js, the base job and the team order) on
-//     land at CROP_MIN+ infection carries eggs: CROP per ration of crops eaten, FORAGE per ration of forage (base.wormCrop,
-//     base.wormForage, cargo.wormForage: like the meat, eaten last; dry crops threshed into the preserved stock are
-//     safe). A cook fire or a kitchen cooks them (boiling greens counts); a team's camp fire too.
+//     land at CROP_MIN+ infection carries eggs: CROP per ration of crops eaten, FORAGE per ration of forage (egg lots of
+//     the crop or forage item: like the meat, eaten last; threshed grain and dry beans are safe). A cook fire or a
+//     kitchen cooks them (boiling greens counts); a team's camp fire too.
 //   - Iron Stomach (traits.js): whoever has it shrugs off the eggs caught from water, raw food, camping and searching
 //     a third of the time (catchWorm: own dice, nothing drawn from the worm's), and an upset stomach is half as likely.
 // The water boiler burns BOILER_WOOD_HEAD firewood's worth a head at the base a day (everyone fed there), on every day
@@ -127,6 +127,7 @@ import { activeHospital, careCtx, pickTreater, spendMedicTime, autoCareOn, noTim
 import { waterProduction, waterNeed } from "./economy.js";
 import { RAW, teamRawIn, waterIn } from "./water.js"; // purified and un-purified water
 import { eatFromStore } from "./storage.js";
+import { FOODS, eggFood, eggKind, takeFood, unitsOf, qtyOf } from "./foods.js"; // egg lots (food with the worm's eggs)
 import { teamFire, teamKit, fireLit } from "./fieldheat.js";
 import { packOf } from "./inventory.js";
 import { takeOneAt, countKey } from "./itemstack.js"; // a stack of dewormers: one at a time
@@ -484,66 +485,40 @@ export function purifyText(state, base) {
 }
 
 // ---------- meat ----------
+// Food with the worm's eggs is a lot of its own (foods.js: egg lots of raw meat and fish, crops, forage), kept apart
+// from the clean food of the same item: eaten last and raw; cooking (the Kitchen's meals, storage.js cookDaily; a
+// team's camp fire), smoking and drying kill the eggs.
 // A base cooks what it eats: a cook fire, a preserving room, the Kitchen while its stove is lit (kitchen.js: cook or no
 // cook; a cold stove, out of firewood, cooks nothing), or a shelter with its fire lit.
 export const baseCooks = (base) => count(base, "cookhouse") > 0 || count(base, "kitchen") > 0 || (count(base, "canteen") > 0 && !kitchenCold(base)) || (isShelter(base) && fireLit(base));
-export const wormMeatAt = (base) => Math.max(0, Math.min(base.wormMeat || 0, base.meat || 0, base.stock.food || 0));
-export const wormMeatIn = (cargo) => (cargo ? Math.max(0, Math.min(cargo.wormMeat || 0, cargo.meat || 0, (cargo.supplies && cargo.supplies.food) || 0)) : 0);
-// Crops and forage with eggs in the base's fresh food (grown or gathered on land at CROP_MIN+ infection): what is
-// really there, capped by the fresh food that is not meat with eggs. { crop, forage, all }.
+export const wormMeatAt = (base) => eggFood(base).meat;
+export const wormMeatIn = (cargo) => (cargo ? eggFood(cargo).meat : 0);
+// Crops and forage with eggs in the base's food (grown or gathered on land at CROP_MIN+ infection): { crop, forage, all }.
 export function wormVegAt(base) {
-  const room = Math.max(0, (base.stock.food || 0) - wormMeatAt(base));
-  const crop = Math.max(0, base.wormCrop || 0), forage = Math.max(0, base.wormForage || 0);
-  const all = crop + forage;
-  if (!(all > 0)) return { crop: 0, forage: 0, all: 0 };
-  const k = Math.min(1, room / all);
-  return { crop: crop * k, forage: forage * k, all: all * k };
+  const e = eggFood(base);
+  return { crop: e.crop, forage: e.forage, all: e.crop + e.forage };
 }
-export const wormForageIn = (cargo) => (cargo ? Math.max(0, Math.min(cargo.wormForage || 0, Math.max(0, ((cargo.supplies && cargo.supplies.food) || 0) - wormMeatIn(cargo)))) : 0);
+export const wormForageIn = (cargo) => (cargo ? eggFood(cargo).forage : 0);
+// Makes up to `units` days of egg lots in a holder safe (a camp fire cooks them; `only` which items). Returns days.
+export function cookEggs(h, units, only = null) {
+  const L = h && h.foodLots;
+  let left = units;
+  if (!L) return 0;
+  for (const k of Object.keys(L)) {
+    if (only && !only(k, FOODS[k])) continue;
+    for (const l of L[k]) {
+      if (!l.egg || left <= 1e-9) continue;
+      const u = unitsOf(k, l.q);
+      if (u <= left) { delete l.egg; left -= u; }
+      else { const q = qtyOf(k, left); l.q -= q; L[k].push({ q, left: l.left }); left = 0; }
+    }
+  }
+  return units - left;
+}
 // Land infected enough for what grows or is gathered on it to carry the eggs (farming.js, foraging.js).
 export const cropLandBad = (state, tile) => !!state.tiles[tile] && (state.tiles[tile].infection || 0) >= WORM.CROP_MIN;
-// A harvest of fresh crops (farming.js takeHarvest) or forage (foraging.js) into a base's stores from `tile`.
-export function addWormCrop(state, base, tile, rations, kind = "crop") {
-  if (!(rations > 0) || !cropLandBad(state, tile)) return;
-  const k = kind === "forage" ? "wormForage" : "wormCrop";
-  base[k] = (base[k] || 0) + rations;
-}
-// Forage gathered into a team's cargo (foraging.js gatherHour).
-export function addWormForage(state, p, tile, rations) {
-  if (!(rations > 0) || !cropLandBad(state, tile)) return;
-  p.cargo.wormForage = wormForageIn(p.cargo) + rations;
-}
-// A team unloading at a base (parties.js returnHome, after hunting.js unloadGame).
-export function unloadWormForage(base, cargo) {
-  const w = wormForageIn(cargo);
-  if (cargo) cargo.wormForage = 0;
-  if (w > 0) base.wormForage = (base.wormForage || 0) + w;
-}
-// Before a base eats (economy.js): its cook fire cooks the meat with eggs, and the crops and forage (boiled greens);
-// it is ordinary fresh food after that. Returns the rations cooked.
-export function cookAtBase(state, base) {
-  const m = wormMeatAt(base), v = wormVegAt(base);
-  if (!baseCooks(base)) { base.wormMeat = m; base.wormCrop = v.crop; base.wormForage = v.forage; return 0; }
-  base.wormMeat = 0; base.wormCrop = 0; base.wormForage = 0;
-  return m + v.all;
-}
-// Smoked or dried food (the racks, the hunting cabin): the eggs die first, the meat with eggs goes first, then the
-// crops and forage with eggs.
-export function smokeWormMeat(base, qty) {
-  let q = Math.max(0, qty);
-  if (base.wormMeat > 0) { const m = wormMeatAt(base); base.wormMeat = Math.max(0, m - q); q = Math.max(0, q - m); }
-  if (q > 0 && (base.wormCrop > 0 || base.wormForage > 0)) {
-    const v = wormVegAt(base);
-    const c = Math.min(v.crop, q);
-    base.wormCrop = v.crop - c;
-    base.wormForage = Math.max(0, v.forage - (q - c));
-  }
-}
-// Fresh game lost (spoiled): the meat with eggs goes in proportion.
-export function shrinkWormMeat(holder, before, after) {
-  if (!(holder.wormMeat > 0)) return;
-  holder.wormMeat = before > 0 ? Math.max(0, holder.wormMeat * Math.max(0, after) / before) : 0;
-}
+// Does food grown or gathered on `tile` carry the eggs (farming.js, foraging.js: add it as an egg lot)?
+export const cropEggs = (state, tile) => cropLandBad(state, tile);
 // A kill on a tile (hunting.js): { rations, worm (rations with eggs), infested }. Rolls only where there are infested
 // animals, so clean land hunts exactly as before.
 export function wormKill(state, tile, rations, { fish = false } = {}) {
@@ -664,26 +639,21 @@ function boilTeamWater(p, q) {
   }
   return q - left;
 }
-// An hour's eating raw (parties.js consume): meat with eggs from the cargo, when nothing else is left. Returns rations.
+// An hour's eating raw (needs.js teamNeedsHour): meat with eggs from the team's food, when nothing else is left.
+// Returns days of food eaten.
+const isMeat = (k, f) => eggKind(f) === "meat";
 export function eatRawCargo(state, p, members, need) {
-  const m = wormMeatIn(p.cargo);
-  const q = Math.max(0, Math.min(m, need));
-  if (!(q > 0)) return 0;
-  p.cargo.supplies.food -= q;
-  p.cargo.meat = Math.max(0, (p.cargo.meat || 0) - q);
-  p.cargo.wormMeat = m - q;
-  eatRaw(state, members, q, "eating half-raw game on the road");
-  return q;
+  const got = takeFood([p, p.cargo].filter(Boolean), need, { clean: false, only: isMeat, state });
+  if (!(got.units > 0)) return 0;
+  eatRaw(state, members, got.units, "eating half-raw game on the road");
+  return got.units;
 }
-// Forage with eggs from the cargo, eaten uncooked when the clean food is gone (before the raw meat). Returns rations.
+// Crops and forage with eggs from the team's food, eaten uncooked when the clean food is gone (before the raw meat).
 export function eatRawForageCargo(state, p, members, need) {
-  const w = wormForageIn(p.cargo);
-  const q = Math.max(0, Math.min(w, need));
-  if (!(q > 0)) return 0;
-  p.cargo.supplies.food -= q;
-  p.cargo.wormForage = w - q;
-  eatRaw(state, members, q, "eating greens and roots gathered on infected ground", WORM.FORAGE, "forage");
-  return q;
+  const got = takeFood([p, p.cargo].filter(Boolean), need, { clean: false, only: (k, f) => !isMeat(k, f), state });
+  if (!(got.units > 0)) return 0;
+  eatRaw(state, members, got.units, "eating greens and roots gathered on infected ground", WORM.FORAGE, "forage");
+  return got.units;
 }
 // Hourly for a team (parties.js playerPartyHour): a camp fire boils un-purified water and cooks meat and forage; camping on badly
 // infected land is a risk in itself; and when the day turns, the hands that searched yesterday are rolled.
@@ -693,8 +663,9 @@ export function wormTeamHour(state, p, members) {
   if (fire == null) return;
   if (fire) {
     if (teamRawIn(p) > 0 && campFireFed(state, p)) { boilTeamWater(p, WORM.BOIL * (hasStove(state, p) ? WORM.STOVE : 1)); if (!(teamRawIn(p) > 0)) p.wormEggs = 0; } // un-purified water boiled into purified water
-    if (p.cargo && p.cargo.wormMeat > 0) p.cargo.wormMeat = Math.max(0, wormMeatIn(p.cargo) - WORM.COOK);
-    if (p.cargo && p.cargo.wormForage > 0) p.cargo.wormForage = Math.max(0, wormForageIn(p.cargo) - WORM.COOK);
+    const m = cookEggs(p.cargo, WORM.COOK, isMeat) + cookEggs(p, WORM.COOK, isMeat); // the camp fire cooks the meat with eggs through
+    cookEggs(p.cargo, WORM.COOK, (k, f) => !isMeat(k, f)); cookEggs(p, WORM.COOK, (k, f) => !isMeat(k, f)); // and boils the greens
+    void m;
   }
   const inf = (state.tiles[partyTile(p)] || {}).infection || 0;
   if (inf < WORM.CAMP_AT) return;
@@ -1154,8 +1125,8 @@ function stageDaily(state, s) {
   w.paid = 0;
   // Eats like two in the gut stage: the extra food comes out of the base's stores or the team's packs.
   if (w.stage === "gut") {
-    if (at.base) eatFromStore(at.base, WORM.GUT_EAT);
-    else if (at.party) takeSupply(at.party, "food", WORM.GUT_EAT);
+    if (at.base) eatFromStore(at.base, WORM.GUT_EAT, state);
+    else if (at.party) takeFood([at.party, at.party.cargo].filter(Boolean), WORM.GUT_EAT, { eggs: false, state });
   }
   if (was === "gut" && w.stage === "brain" && w.seen != null) log(state, `${s.name}'s worm has reached the brain: fits and staggering. Only surgery in a Clinic can save them now.`, "danger");
   hurt(state, s, dmg, tileOf(state, s, at), "of the worm", { raw: true });
@@ -1632,10 +1603,10 @@ export function teamWormText(state, p) {
   if (ww >= 1 && how !== "filter" && how !== "fire") bits.push(`${Math.floor(ww)} un-purified water${(p.wormEggs || 0) > 0 ? " carries the worm's eggs" : " can carry the worm"} (${
     how === "tabs" ? `dropping a tablet in it: ${tabs} purification tablet${tabs === 1 ? "" : "s"} carried, one per ${WORM.TABS_WATER} water drunk` :
     "drunk as it is: a lit camp fire with firewood boils it, a water filter or purification tablets make it safe"})`);
-  const wm = wormMeatIn(p.cargo);
-  if (wm >= 1) bits.push(`${Math.floor(wm)} of the game carries the worm's eggs (cook it at a camp fire or a base's cook fire)`);
-  const wf = wormForageIn(p.cargo);
-  if (wf >= 1) bits.push(`${Math.floor(wf)} of the forage was gathered on infected ground (boil it at a camp fire or a base's cook fire)`);
+  const e = eggFood(p.cargo), e2 = eggFood(p);
+  const wm = e.meat + e2.meat, wf = e.forage + e.crop + e2.forage + e2.crop;
+  if (wm >= 0.5) bits.push(`${Math.round(wm * 10) / 10} days of the raw meat carry the worm's eggs (cook it at a camp fire or a base's cook fire)`);
+  if (wf >= 0.5) bits.push(`${Math.round(wf * 10) / 10} days of the forage was gathered on infected ground (boil it at a camp fire or a base's cook fire)`);
   if (p.wormHands && p.wormHands.chance >= 0.005) bits.push(`hands that handled the dead at ${p.wormHands.where} (${Math.round(p.wormHands.chance * 1000) / 10}% each tonight; a lit fire or safe water at home washes it off, mostly)`);
   return bits.join("; ");
 }

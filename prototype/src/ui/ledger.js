@@ -471,7 +471,7 @@ export function stockChipTrend(state, base, key) {
   if (!t) return none;
   const spark = t.spark.length > 1 ? ` data-tip-spark="${t.spark.map((v) => Math.round(v * 10) / 10).join(",")}"` : "";
   if (t.before == null) return { arrow: ` <span class="trend muted">–</span>`, tip: " Trend: not enough days recorded yet.", attr: spark };
-  const what = key === "water" ? "water (both kinds)" : (SUPPLIES[key] ? SUPPLIES[key].name.toLowerCase() : key);
+  const what = key === "water" ? "water (both kinds)" : key === "food" ? "days of food (every kind)" : (SUPPLIES[key] ? SUPPLIES[key].name.toLowerCase() : key);
   const still = Math.abs(t.delta) < Math.max(0.5, Math.abs(t.before) * 0.01);
   const arrow = still ? "–" : t.delta > 0 ? "▲" : "▼";
   const cls = still ? "muted" : t.delta > 0 ? "good" : "danger";

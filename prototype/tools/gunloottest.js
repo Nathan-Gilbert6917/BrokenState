@@ -13,6 +13,7 @@
 //   first days under the autopilot on the same number of draws; the swaps are the same for the same roll;
 // - the Customize catalogue offers every gun.
 // Prints the sources table (each source's top guns). Usage: node tools/gunloottest.js
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { GEAR, LOCATIONS } from "../src/sim/data.js";
 import { KITS, AREAS, enemyUnit } from "../src/sim/combat.js";
 import { createWorld, tickHour } from "../src/sim/world.js";
@@ -312,7 +313,7 @@ console.log("The governor buys guns");
     h.armory = h.armory.filter((it) => !isGun(it.key));
     const ppl = atBase(st, h.id);
     for (const [i, s] of ppl.entries()) s.gear.weapon = i < unarmed ? null : lootItem("pistol", "home", ["gw", i]);
-    Object.assign(h.stock, { food: 600, scrap: 200, fuel: 80 });
+    Object.assign(h.stock, { scrap: 200, fuel: 80 }); setFood(h, 600);
     const v = spawnVisitor(st, "merchants");
     v.spec = "arms";
     v.wares = ["pistol", "huntrifle", "shotgun", "ar", "revolver"].map((k, i) => lootItem(k, "merchant", ["gw", k, i]));
@@ -355,7 +356,7 @@ console.log("The governor buys guns");
     for (const x of st2.factions) if (x !== f) x.known = false;
     h2.armory = h2.armory.filter((it) => !isGun(it.key));
     for (const s of atBase(st2, h2.id).slice(0, 2)) s.gear.weapon = null;
-    Object.assign(h2.stock, { food: 900, scrap: 200, fuel: 100 });
+    Object.assign(h2.stock, { scrap: 200, fuel: 100 }); setFood(h2, 900);
     TR.ensureWares(st2, f);
     f.wares.push(lootItem("shotgun", "merchant", ["radio", 1]));
     const deps = { hasNetwork: RA.hasNetwork, refusal: RA.refusal, caravanEnRoute, tradeBase: RA.tradeBase, deliveryRefusal: RT.deliveryRefusal, openRadioTrade: RT.openRadioTrade, tradeContext: TR.tradeContext, balanceWith: TR.balanceWith, tradeVerdict: TR.tradeVerdict, executeTrade: TR.executeTrade, endTrade: TR.endTrade, gearBuyPrice: TR.gearBuyPrice, pendingDeal: RT.pendingDeal, ensureWares: TR.ensureWares,
@@ -377,7 +378,7 @@ console.log("AI groups buy guns");
   const A = ensureArsenal(st, f);
   const guns = () => A.items.filter((it) => isGun(it.key)).length;
   A.items = A.items.filter((it) => !isGun(it.key));
-  Object.assign(f.stock, { scrap: 2000, fuel: 2000, food: 5000, meds: 500 });
+  Object.assign(f.stock, { scrap: 2000, fuel: 2000, meds: 500 }); setFood(f, 5000);
   const pop = f.pop;
   for (let d = 0; d < 72; d++) { st.hour += 24; arsenalDaily(st, f); f.pop = pop; }
   const bought = (A.stats && A.stats.in && A.stats.in.purchased) || 0;
@@ -387,7 +388,7 @@ console.log("AI groups buy guns");
   check(guns() - before <= 2, "with buying off none are bought (its gunsmith aside)");
   const g2 = st.factions.find((x) => x !== f && x.alive);
   const A2 = ensureArsenal(st, g2);
-  Object.assign(g2.stock, { scrap: 0, fuel: 0, food: 0, meds: 0 });
+  Object.assign(g2.stock, { scrap: 0, fuel: 0, meds: 0 }); setFood(g2, 0);
   A2.items = A2.items.filter((it) => !isGun(it.key));
   for (let d = 0; d < 40; d++) { st.hour += 24; arsenalDaily(st, g2); }
   check(!((A2.stats && A2.stats.in && A2.stats.in.purchased) || 0), "nothing to spare: none bought");

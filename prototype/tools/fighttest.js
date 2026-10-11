@@ -3,6 +3,7 @@
 // halted, raids carried out of, base defence in person, hordes, pacts, collapsed groups and trade-route terms; raids on
 // you (size, escalation, siege pace, damage and repairs, tribute fading, provoked groups) and groups that grow.
 // Usage: node tools/fighttest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, survivorById, killSurvivor, usesArrows, armedFactor, spendShots, ARROWS } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
@@ -150,7 +151,8 @@ const groupOf = (state, type) => {
     const f = groupOf(st, type);
     f.goodwill = 0;
     const p = team(st, 2);
-    p.supplies = { food: 10, water: 10, ammo: 50, meds: 0, scrap: 0, fuel: 0, parts: 0 };
+    p.supplies = { water: 10, ammo: 50, meds: 0, scrap: 0, fuel: 0, parts: 0 }; p.foodLots = {};
+    setFood(p, 10); // days of ration bars (tools/foodkit.js)
     p.cargo.gear.push(newItem("ar"), newItem("plate"));
     const card = triggerConflict(st, p, "challenge", f.id);
     st.cards.length = 0;
@@ -159,7 +161,7 @@ const groupOf = (state, type) => {
     const says = /gear/.test(ch.hint) && !/left alone/.test(ch.hint);
     check((p.cargo.gear.length === 2) === keepsGear, `${type}: cargo gear ${keepsGear ? "kept" : "taken"} (${p.cargo.gear.length} left)`);
     check(says === !keepsGear, `${type}: the terms ${keepsGear ? "do not claim" : "name"} the gear`);
-    if (type === "traders") check(p.supplies.food === 8 && p.supplies.ammo === 40, `traders take a fifth of the supplies (food ${p.supplies.food}, ammo ${p.supplies.ammo})`);
+    if (type === "traders") check(food(p) >= 8 - 1e-6 && food(p) <= 9 && p.supplies.ammo === 40, `traders take a fifth of the supplies, food by whole items (food ${food(p).toFixed(1)} of 10, ammo ${p.supplies.ammo})`);
   }
 }
 
@@ -280,11 +282,11 @@ const groupOf = (state, type) => {
       playOut(st);
       if (!b.over || b.result.outcome !== "victory") { st.combat = null; continue; }
       wins++;
-      const ammo0 = p.cargo.supplies.ammo || 0, food0 = p.cargo.supplies.food || 0, gear0 = p.cargo.gear.length;
+      const ammo0 = p.cargo.supplies.ammo || 0, food0 = food(p.cargo) || 0, gear0 = p.cargo.gear.length;
       closeCombat(st, { take: true });
       const loot = b.result.loot;
       const after = st.cards.find((c) => c.title === "After the fight");
-      check((p.cargo.supplies.ammo || 0) - ammo0 === (loot.supplies.ammo || 0) && (p.cargo.supplies.food || 0) - food0 === (loot.supplies.food || 0),
+      check((p.cargo.supplies.ammo || 0) - ammo0 === (loot.supplies.ammo || 0) && Math.abs((food(p.cargo) || 0) - food0 - (food(loot) || 0)) < 1e-6,
         `the team gains exactly what was on the bodies (ammo +${(p.cargo.supplies.ammo || 0) - ammo0}, on bodies ${loot.supplies.ammo || 0})`);
       check(p.cargo.gear.length - gear0 === loot.gear.length, "no bonus gun on top of the looted ones");
       check(poolLoad(p) <= partyCapacity(st, p) + 1e-6, "the team is not over what it can carry");
@@ -402,7 +404,7 @@ const groupOf = (state, type) => {
   const h = hub(st);
   const f = groupOf(st, "raider");
   f.goodwill = -80; f.known = false;
-  Object.assign(h.stock, { food: 100, ammo: 100 });
+  Object.assign(h.stock, { ammo: 100 }); setFood(h, 100);
   const raid = spawnAiParty(st, f, "raid", f.bases[0], h.tile, { strength: 12, target: { kind: "player", baseId: h.id, tile: h.tile } });
   if (check(!!raid, "a raid can be sent at the hub")) {
     raidWarning(st, raid);
@@ -414,14 +416,14 @@ const groupOf = (state, type) => {
     h.alert = true; const ready = baseDefense(st, h); h.alert = false;
     check(prep.hint.includes(`Defense ${Math.round(def)} → ${Math.round(ready)}`) && /1\.3×/.test(prep.hint) && !/\+30%/.test(prep.hint), "\"Prepare defenses\" shows its real effect");
     const pay = pick(card, /^Pay tribute/);
-    Object.assign(h.stock, { food: 5 }); setRounds(h.stock, 10); // ammo.js: rounds by calibre
+    setFood(h, 5); setRounds(h.stock, 10); // ammo.js: rounds by calibre
     check(isOff(st, pay), "tribute is refused when the ammo is gone");
     pay.resolve(st);
-    check(h.stock.food === 5 && totalRounds(h.stock) === 10 && !raid.returning, "choosing it anyway takes nothing");
-    Object.assign(h.stock, { food: 5 }); setRounds(h.stock, 35);
+    check(Math.abs(food(h) - 5) < 1e-6 && totalRounds(h.stock) === 10 && !raid.returning, "choosing it anyway takes nothing");
+    setFood(h, 5); setRounds(h.stock, 35);
     h.alert = true;
     const said = pay.resolve(st);
-    check(h.stock.food === 3 && totalRounds(h.stock) === 5 && raid.returning === true && /2 food, \d+ [^)]*(FMJ|buckshot)[^)]*\)/.test(said) && !/30 ammo/.test(said), `tribute is 30% of the food on hand when paid (food ${h.stock.food}, ammo ${totalRounds(h.stock)}: ${said})`);
+    check(Math.abs(food(h) - 3) < 1e-6 && totalRounds(h.stock) === 5 && raid.returning === true && /\(\d+(\.\d+)? [a-z ]+, \d+ [^)]*(FMJ|buckshot)[^)]*\)/.test(said) && !/30 ammo/.test(said), `tribute is 30% of the food on hand when paid (food ${food(h)}, ammo ${totalRounds(h.stock)}: ${said})`);
     check(h.alert === false, "the base stands down when the raid is bought off");
   }
   h.alert = true;
@@ -435,7 +437,7 @@ const groupOf = (state, type) => {
     const h3 = hub(s3);
     const f3 = groupOf(s3, "raider");
     f3.goodwill = -80; f3.raidCooldown = 99;
-    Object.assign(h3.stock, { food: 100, ammo: 100, scrap: 100 });
+    Object.assign(h3.stock, { ammo: 100, scrap: 100 }); setFood(h3, 100);
     const r3 = spawnAiParty(s3, f3, "raid", f3.bases[0], h3.tile, { strength: 300, target: { kind: "player", baseId: h3.id, tile: h3.tile } });
     if (check(!!r3, "a raid can be sent at the hub (tribute at the walls)")) {
       r3.path = [h3.tile]; r3.idx = 0; r3.phase = "siege"; r3.siegeLeft = 8; r3.warned = true;
@@ -567,7 +569,7 @@ const groupOf = (state, type) => {
     const h = hub(s2);
     const f = groupOf(s2, "raider");
     f.goodwill = -80; f.pop = 40;
-    Object.assign(h.stock, { scrap: 100, food: 100, ammo: 100 });
+    Object.assign(h.stock, { scrap: 100, ammo: 100 }); setFood(h, 100);
     const raid = spawnAiParty(s2, f, "raid", f.bases[0], h.tile, { strength: 300, target: { kind: "player", baseId: h.id, tile: h.tile } });
     if (!raid) continue;
     raid.phase = "siege"; raid.siegeLeft = 8;
@@ -593,7 +595,7 @@ const groupOf = (state, type) => {
   const h = hub(st);
   const f = groupOf(st, "traders");
   f.goodwill = 40; f.known = true; f.pact = "trade";
-  Object.assign(f.stock, { food: 100, ammo: 300, meds: 500, scrap: 60 });
+  Object.assign(f.stock, { ammo: 300, meds: 500, scrap: 60 }); setFood(f, 100);
   const bad = { factionId: f.id, sendKey: "scrap", sendQty: 1, recvKey: "meds", recvQty: 400, interval: 2, escort: "light", escortIds: [] };
   check(routeProblem(st, bad) !== "" && !!createRoute(st, bad).error && st.routes.length === 0, `1 scrap for 400 meds is refused: "${routeProblem(st, bad)}"`);
   const fair = routeWorth(st, f, "food", 20, "ammo").maxRecv;
@@ -614,14 +616,14 @@ const groupOf = (state, type) => {
   // A fair route delivers what was agreed.
   const okConvoy = { cargo: { supplies: { food: 20 }, gear: [] }, supplies: {} };
   const ex2 = routeExchange(st, okConvoy, { id: 2, factionId: f.id, sendKey: "food", sendQty: 20, recvKey: "ammo", recvQty: fair }, f);
-  check(ex2.give === fair && okConvoy.cargo.supplies.ammo === fair && okConvoy.cargo.supplies.food === 0, `a fair route pays in full (${ex2.give} ammo)`);
+  check(ex2.give === fair && okConvoy.cargo.supplies.ammo === fair && food(okConvoy.cargo) === 0, `a fair route pays in full (${ex2.give} ammo)`);
 
   // No escort left: the route pauses itself, once.
   const escort = atBase(st, h.id)[1];
   const made = createRoute(st, { factionId: f.id, sendKey: "food", sendQty: 10, recvKey: "ammo", recvQty: 1, interval: 2, escort: "light", escortIds: [escort.id] });
   if (check(!!made.route && escort.location.kind === "route", "a route with fair terms is set up")) {
     killSurvivor(st, escort, h.tile, "in a test");
-    h.stock.food = 200;
+    setFood(h, 200);
     for (let d = 0; d < 6; d++) { st.hour += 24; routesDaily(st); }
     const said = st.log.filter((l) => /no escort left/.test(l.text)).length;
     check(made.route.active === false && said === 1, `a route with no escort pauses itself with one log line (${said})`);
@@ -667,7 +669,7 @@ const groupOf = (state, type) => {
   check(siegePace(st, h, 1) === RAIDS.PACE_MAX && siegePace(st, h, baseDefense(st, h) * 5) === 1, "siege pace: 4 hours an hour against a tiny raid, 1 against a strong one");
   // A raid that broke in: stock taken, buildings wrecked, a card with the bill; escalation reset, recruits won.
   for (const t of ["walls", "walls", "gate", "barricades", "bunkhouse", "ammo_bench", "cistern"]) addBuilding(h, t);
-  Object.assign(h.stock, { food: 200, ammo: 200, scrap: 100, parts: 10 });
+  Object.assign(h.stock, { ammo: 200, scrap: 100, parts: 10 }); setFood(h, 200);
   const pop0 = f.pop;
   const r1 = spawnAiParty(st, f, "raid", f.bases[0], h.tile, { strength: baseDefense(st, h) / 0.9, target: { kind: "player", baseId: h.id, tile: h.tile } });
   if (check(!!r1, "a raid can be sent at the hub (break-in)")) {
@@ -729,7 +731,7 @@ const groupOf = (state, type) => {
   {
     const s6 = world(seed + 403), h6 = hub(s6), g = groupOf(s6, "raider");
     g.goodwill = -60; g.raidCooldown = 999; g.pop = 30;
-    Object.assign(h6.stock, { food: 100, ammo: 100 });
+    Object.assign(h6.stock, { ammo: 100 }); setFood(h6, 100);
     const r6 = spawnAiParty(s6, g, "raid", g.bases[0], h6.tile, { strength: 20, target: { kind: "player", baseId: h6.id, tile: h6.tile } });
     if (check(!!r6, "a raid can be sent (tribute)")) {
       raidWarning(s6, r6);

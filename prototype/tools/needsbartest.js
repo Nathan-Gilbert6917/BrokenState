@@ -3,6 +3,7 @@
 // critical ones first; the road team's list with no base; and opening and closing it (hover, click, focus, Esc, a
 // click elsewhere) on a stand-in for the page.
 // Usage: node tools/needsbartest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { STOCK_KEYS } from "../src/sim/data.js";
 import { RAW } from "../src/sim/water.js";
@@ -30,15 +31,15 @@ section("The bar: one Needs button, the list behind it");
   check(shown.every((k) => rowOf(tb.stock, k).length), `a row for every supply (${shown.length}: ${shown.join(", ")})`);
   check(!rowOf(tb.stock, "jars").length && !rowOf(tb.stock, "arrows").length && !rowOf(tb.stock, RAW).length, "no rows for jars, arrows (in Ammo) or raw water (in Water)");
   check(shown.every((k) => (rowOf(tb.stock, k)[2] || "").includes(NEEDS_ICON[k])), "each row has its icon");
-  const food = rowOf(tb.stock, "food")[2] || "";
-  check(new RegExp(`<span class="nb-amt">${Math.floor(h.stock.food)}<`).test(food) && /<span class="nb-note">(\d+d|<1d|99\+d|∞)<\/span>/.test(food), `Food: the amount and the days left (${food.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()})`);
+  const fr = rowOf(tb.stock, "food")[2] || "";
+  check(new RegExp(`<span class="nb-amt">${Math.floor(food(h))}<`).test(fr) && /<span class="nb-note">(\d+d|<1d|99\+d|∞)<\/span>/.test(fr), `Food: the amount and the days left (${fr.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()})`);
   check(renderTopbar(st, { speed: 1 }).includes('id="nb-btn"'), "the whole bar as one string has it too");
 }
 
 section("Urgency: colours, the critical first, the button's summary");
 {
   const st = mk(), h = hub(st);
-  Object.assign(h.stock, { food: 0, preserved: 5000, water: 5000, [RAW]: 0, wood: 50000, fuel: 200, meds: 50 });
+  Object.assign(h.stock, { water: 5000, [RAW]: 0, wood: 50000, fuel: 200, meds: 50 }); setFood(h, 0); setJarred(h, 5000);
   for (const k of Object.keys(h.stock)) if (k.startsWith("a_")) h.stock[k] = 0;
   h.stock.a_9mm_fmj = 5000; h.stock.a_12ga_buck = 5000; h.stock.a_556_fmj = 5000; h.stock.a_308_fmj = 5000; h.stock.a_22lr = 5000; h.stock.arrows = 2000;
   let rows = baseNeeds(st, h);
@@ -47,7 +48,7 @@ section("Urgency: colours, the critical first, the button's summary");
   check(lv("meds") === 0, `plenty of meds: fine (${lv("meds")})`);
   check(lv("scrap") == null && lv("parts") == null, "scrap and parts: a count only, no outlook");
   h.stock.water = 0; h.stock[RAW] = 0;
-  h.stock.food = 2; h.stock.preserved = 0;
+  setFood(h, 2); setJarred(h, 0);
   h.stock.meds = 0;
   rows = baseNeeds(st, h);
   check(lv("food") === 2, `2 food for ${atBase(st, h.id).length} people: critical`);

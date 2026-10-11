@@ -61,6 +61,7 @@
 // State: ui.stack = { ns, qty (null: the default), to (null: the default), pop ({ x, y } or null) }.
 // The sim does the moving and the limits (sim/raidloot.js raidMove / supplyFit, sim/inventory.js takeSupply,
 // sim/stacks.js lootFit); this file only asks how many and where.
+import { FOODS } from "../sim/foods.js"; // a food item's word
 import { SUPPLIES } from "../sim/data.js";
 import { isRoundKey } from "../sim/rounds.js";
 import { supplyName } from "../sim/itemnames.js"; // the stack's title: rounds say "— loose"
@@ -69,7 +70,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const kg = (x) => `${Math.round(x * 10) / 10}`;
 export const SUPPLY_ICON = { food: "🥫", preserved: "🫙", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", arrows: "➶", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", jars: "🫙" };
-export const supplyIcon = (k) => SUPPLY_ICON[k] || (isRoundKey(k) ? "⁍" : "▪");
+export const supplyIcon = (k) => SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || (isRoundKey(k) ? "⁍" : "▪"); // a food item: its own icon (sim/foods.js)
 
 const PROVIDERS = {};
 export function registerStackScreen(ns, provider) { PROVIDERS[ns] = provider; }
@@ -117,7 +118,7 @@ function resolve(state, ui, ns = null) {
   const fit = Math.max(0, Math.min(have, Math.floor(dest.fit || 0)));
   const def = fit > 0 ? fit : have; // what fits (all of it when it all fits)
   const qty = Math.max(1, Math.min(have, Math.floor(st.qty == null ? def : st.qty)));
-  return { ns: st.ns, P, m, dest, to: dest.id, have, stack, sp, store, fit, qty, unit: sup.weight, name: sup.name.toLowerCase(), title: supplyName(m.key) };
+  return { ns: st.ns, P, m, dest, to: dest.id, have, stack, sp, store, fit, qty, unit: sup.weight, name: FOODS[m.key] ? FOODS[m.key].word : sup.name.toLowerCase(), title: supplyName(m.key) }; // a food item: "14 ration bars"
 }
 export const chosenQty = (state, ui, ns) => { const r = resolve(state, ui, ns); return r ? r.qty : Infinity; };
 export const stackOpen = (state, ui, ns) => !!resolve(state, ui, ns);

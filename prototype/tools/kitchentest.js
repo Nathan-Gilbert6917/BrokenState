@@ -18,7 +18,9 @@ import { KITCHEN, kitchenService, kitchenEatMult, hasKitchen, cooksWanted } from
 import { foodUse } from "../src/sim/upkeep.js";
 import { basesDaily } from "../src/sim/economy.js";
 import { econStats } from "../src/sim/farming.js";
-import { baseCooks, cookAtBase, purifyCap } from "../src/sim/worm.js";
+import { baseCooks, purifyCap, wormMeatAt } from "../src/sim/worm.js";
+import { cookDaily } from "../src/sim/storage.js";
+import { addDays, setFood, setJarred, clearFood } from "./foodkit.js"; // food by type (sim/foods.js): the meat with eggs is an egg lot
 import { describeActivity, baseWork, workingActivity } from "../src/sim/activity.js";
 import { moodFactors } from "../src/sim/relations.js";
 import { workState, assignRole, planBase, WORK_TYPES, workHour } from "../src/sim/work.js";
@@ -63,7 +65,8 @@ function mk(n = 12, seed = SEED) {
   const h = hub(st);
   for (const s of atBase(st, h.id)) { s.location = { kind: "away" }; s.alive = false; }
   for (let i = 0; i < n; i++) { const s = plain(makeSurvivor(st, 1)); s.location = { kind: "base", baseId: h.id }; s.role = "rest"; s.pinned = true; st.survivors.push(s); }
-  Object.assign(h.stock, { food: 2000, water: 600, scrap: 200, parts: 20, fuel: 50, meds: 20, wood: 2000 });
+  Object.assign(h.stock, { water: 600, scrap: 200, parts: 20, fuel: 50, meds: 20, wood: 2000 });
+  setFood(h, 2000); // food by type (sim/foods.js): ration bars
   return { st, h, ppl: atBase(st, h.id) };
 }
 const cook = (s, cooking = 3) => { s.role = "cook"; s.skills.cooking = cooking; return s; }; // kitchen-plus: the Cooking skill
@@ -86,8 +89,9 @@ section("The building");
   for (let i = 0; i < 60 && !count(h, "canteen"); i++) { st.hour++; constructionHour(st); }
   check(count(h, "canteen") === 1, "built by the builders");
   check(baseCooks(h), "a kitchen cooks like a cook fire (the worm)");
-  h.wormMeat = 5; h.meat = 5;
-  check(cookAtBase(st, h) > 0 && !h.wormMeat, "the game with the worm's eggs is cooked through, cook or no cook");
+  addDays(h, 5, "f_venison", { egg: true });
+  cookDaily(st, h, 5);
+  check(wormMeatAt(h) === 0, "the game with the worm's eggs is cooked through, cook or no cook");
 }
 
 // ======================================================================
@@ -126,7 +130,7 @@ section("The day: eating, the record, the Work now row");
   const pair = [mk(12), mk(12)];
   addBuilding(pair[1].h, "canteen");
   cook(pair[1].ppl[0], 3);
-  for (const { st, h } of pair) { st.hour = 24 * 3; h.stock.food = 150; h.stock.preserved = 0; }
+  for (const { st, h } of pair) { st.hour = 24 * 3; setFood(h, 150); setJarred(h, 0); }
   const eat = pair.map(({ st }) => { const e0 = econStats(st).eaten; basesDaily(st); return econStats(st).eaten - e0; });
   console.log(`  a day's food at a 12-person hub: ${eat[0].toFixed(2)} without a kitchen, ${eat[1].toFixed(2)} with a cook`);
   check(near(eat[1], eat[0] * 0.9, 0.01), `the kitchen's hub ate 10% less (${eat[1].toFixed(2)} vs ${eat[0].toFixed(2)})`);
@@ -278,7 +282,7 @@ section("AI groups");
     const w = worksAt(f, f.bases[0]);
     Object.assign(w, { water: 5, farms: 5, beds: 5, walls: 7, bench: 1, store: 1, pens: 1, sickbay: 4, still: 1, power: 1, freezer: 1, sealer: 1 }); // dev's machines (freezer-parts) come before the kitchen at the main base: built here
     f.jails = { [f.bases[0]]: 3 };
-    f.stock.food = 20 * 30; f.stock.scrap = 50; f.stock.parts = 5;
+    setFood(f.stock, 20 * 30); f.stock.scrap = 50; f.stock.parts = 5;
     const nw = nextWork(st, f);
     check(nw && nw.type === "kitchen", `the next work at a base of 20: a kitchen (${nw && nw.type})`);
     check(groupEatMult(st, f) === 1, "no kitchen: eats as before");
@@ -303,7 +307,7 @@ section("Firewood: the stove (kitchen-plus pick 1)");
   check(kw.need === KITCHEN.wood.stove + 12 * 2 * KITCHEN.wood.meal && kw.need === 28, `12 fed: 4 + 24 = 28 a day (${kw.need})`);
   const w = woodNeed(st, h);
   check(w.kitchen === 28 && w.daily >= 28 && w.need >= 28 * KITCHEN.wood.keepDays, `the firewood forecast counts it (kitchen ${w.kitchen}, need ${w.need})`);
-  st.hour = 24 * 3; h.stock.wood = 2000; h.stock.food = 150; h.stock.preserved = 0;
+  st.hour = 24 * 3; h.stock.wood = 2000; setFood(h, 150); setJarred(h, 0);
   basesDaily(st);
   check(!kitchenCold(h) && h.kitchenDay && h.kitchenDay.wood === 28 && near(h.stock.wood, 2000 - 28, 0.01), `midnight: the stove burned 28 (${h.kitchenDay && h.kitchenDay.wood}, ${h.stock.wood} left)`);
   check(kitchenCanLight(st, h), "can light with firewood in store");
@@ -516,7 +520,7 @@ section("AI groups: firewood, growth, morale, the Groups card (pick 7)");
     groupKitchenDaily(st, f, 0);
     check(f.stock.wood === 956 && !f.kitchenCold && near(groupEatMult(st, f), 0.9), "burned from the woodpile: hot meals");
     check(near(groupKitchenGrowth(st, f), 1.2) && near(groupKitchenMorale(st, f), 0.25), "growth ×1.2, desertion pressure −0.25");
-    f.stock.food = 0;
+    clearFood(f.stock);
     const p1 = desertPressure(st, f);
     const txt = groupKitchenText(st, f);
     check(/Kitchen: hot meals for 20 of 20/.test(txt), `the Groups card line: ${txt}`);

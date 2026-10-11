@@ -19,6 +19,7 @@
 //   unknown hidden site removed), and no team is sent to scavenge a site nobody has found
 // - save / load mid-survey plays on the same; determinism (two worlds, one process)
 // - how fast the autopilot finds the hidden sites near the hub (≤ 12 tiles) with surveys and without (state.surveyOff)
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, day, atBase, snapshot, survivorById, baseVision } from "../src/sim/world.js";
 import { appetite } from "../src/sim/traits.js";
 import { NEEDS, teamCold } from "../src/sim/needs.js";
@@ -281,7 +282,7 @@ console.log("Estimates: hours, rations and fuel");
   for (let c = 0; c < 30; c++) {
     const st = W(300 + c);
     const h = hub(st);
-    Object.assign(h.stock, { food: 500, water: 500, fuel: 200 });
+    Object.assign(h.stock, { water: 500, fuel: 200 }); setFood(h, 500);
     const mode = ["foot", "bike", "car"][c % 3];
     const stance = Object.keys(STANCES)[Math.floor(c / 3) % 3];
     const crew = atBase(st, h.id).slice(0, 2);
@@ -385,7 +386,7 @@ console.log("Estimates in winter: the cold and the camp fire");
     const st = W(500 + c);
     st.hour = (WINTER_DAY + (c % 6)) * 24 + 7;
     const h = hub(st);
-    Object.assign(h.stock, { food: 500, water: 500, fuel: 200 });
+    Object.assign(h.stock, { water: 500, fuel: 200 }); setFood(h, 500);
     const kind = c % 3 === 0 ? "survey" : c % 3 === 1 ? "camp" : "cold camp"; // cold camp: the fire kept out
     const mode = kind === "survey" && c % 2 ? "bike" : "foot";
     const crew = atBase(st, h.id).slice(0, 2);

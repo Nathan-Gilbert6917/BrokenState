@@ -187,9 +187,9 @@ section("3. Put down, picked up, blasts, an enemy takes a gun");
   check(!!pile && pile.contents.gear.includes(knife) && sa.pockets[0] === null, "it lies on the survivor's cell");
   check(a.ap === ap0, "putting down is free");
   G.fieldReady(b, st);
-  a.haul.sup.food = 6;
-  const msg = G.dropAt(st, a.id, `haul:${a.id}:sup:food`, 2);
-  check(pile.contents.sup.food === 2 && a.haul.sup.food === 4, `part of a stack put down: 2 of 6 food (${msg})`);
+  a.haul.sup.f_beans = 6; // food by type (sim/foods.js): six cans of beans
+  const msg = G.dropAt(st, a.id, `haul:${a.id}:sup:f_beans`, 2);
+  check(pile.contents.sup.f_beans === 2 && a.haul.sup.f_beans === 4, `part of a stack put down: 2 of 6 cans of beans (${msg})`);
   const api = G.dropToGround(b, a, newItem("crowbar", 1));
   check(api === pile && pile.contents.gear.some((g) => g.key === "crowbar"), "dropToGround (the API) adds to the same pile");
   // Picked up from the next cell.

@@ -6,6 +6,7 @@
 // autopilot's answers by its food, the extra fires on the map's festival day, stories over many festivals, and
 // save/load.
 // Usage: node tools/festivaltest.js [seed=42]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, alive, atBase, residents, day } from "../src/sim/world.js";
 import { season, SEASON_DAYS, START_OFFSET } from "../src/sim/weather.js";
 import { moodFactors, getRel } from "../src/sim/relations.js";
@@ -24,7 +25,7 @@ const logged = (st, re) => st.log.some((l) => re.test(l.text));
 const FEST_DAY = 2 * SEASON_DAYS + FEST.DAY - START_OFFSET;
 // Jump to the morning of a campaign day (no ticking: the festival is checked on its own).
 const morning = (st, d) => { st.hour = (d - 1) * 24 + FEST.HOUR; };
-const stock = (st, food = 500) => { const h = hub(st); h.stock.food = food; h.stock.preserved = 0; h.stock.firewood = 200; return h; };
+const stock = (st, food = 500) => { const h = hub(st); setFood(h, food); setJarred(h, 0); h.stock.firewood = 200; return h; };
 const festCard = (st) => st.cards.find((c) => c.festival);
 const t0 = Date.now();
 
@@ -46,9 +47,9 @@ const t0 = Date.now();
   check(!!card && card.title === "The harvest festival" && card.choices.length === 3, `${FEST.HOUR}:00: the card, three choices`);
   check(card && card.choices.filter((c) => c.default).length === 1 && /^A small festival/.test(card.choices.find((c) => c.default).label), "the small festival is the one default answer");
   check(card && cardKind(st, card) === "other" && defaultChoice(st, card) === card.choices[1], "pause rules (cardrules.js): it waits in the tray; its default is the small festival");
-  const food0 = hub(st).stock.food;
+  const food0 = food(hub(st));
   const line = card ? autoAnswer(st, card) : "";
-  check(/took its default: A small festival/.test(line) && hub(st).stock.food < food0 && !festCard(st), `left in the tray it holds the small one: "${line.slice(0, 90)}…"`);
+  check(/took its default: A small festival/.test(line) && food(hub(st)) < food0 && !festCard(st), `left in the tray it holds the small one: "${line.slice(0, 90)}…"`);
   const h0 = hub(st), c2 = festivalCard(st, h0), at = st.bases.indexOf(h0);
   st.bases.splice(at, 1);
   check(trayStale(st, c2) === "the base is gone", "a festival card for a hub that is lost is out of date");
@@ -77,7 +78,7 @@ const t0 = Date.now();
   const o0 = getRel(st, a, b, true).o;
   const cost = Math.ceil(people.length * FEST.FULL.food);
   const text = holdFestival(st, h, "FULL");
-  check(h.stock.food === 300 - cost, `${cost} food for ${people.length} people`);
+  check(food(h) === 300 - cost, `${cost} food for ${people.length} people`);
   check(h.stock.firewood === 200 - FEST.FULL.wood && !h.armory.some((it) => it.key === "vodka" || it.key === "whiskey"), `a bonfire (${FEST.FULL.wood} firewood) and the bottles`);
   const lift = FEST.FULL.mood + FEST.FULL.fire + FEST.FULL.drink;
   check(people.every((s) => Math.abs(s.mood - (50 + lift)) < 0.01), `everyone at the hub mood +${lift}`);
@@ -106,7 +107,7 @@ const t0 = Date.now();
   const n = residents(st, h.id).length;
   childrenOf(st).push({ id: 9001, name: "Pip", baseId: h.id, parents: [], bornDay: 1, grown: 30 }, { id: 9002, name: "Wren", baseId: h.id, parents: [], bornDay: 1, grown: 40 });
   const text = holdFestival(st, h, "FULL");
-  check(h.stock.food === 300 - Math.ceil((n + 2 * FEST.KID_SHARE) * FEST.FULL.food), `two children at the hub: ${Math.ceil((n + 2 * FEST.KID_SHARE) * FEST.FULL.food)} food for ${n} people and 2 children`);
+  check(food(h) === 300 - Math.ceil((n + 2 * FEST.KID_SHARE) * FEST.FULL.food), `two children at the hub: ${Math.ceil((n + 2 * FEST.KID_SHARE) * FEST.FULL.food)} food for ${n} people and 2 children`);
   check(/children ran wild/.test(text), "the diary line mentions them");
 }
 
@@ -121,7 +122,7 @@ const t0 = Date.now();
   const away = alive(st).find((s) => !people.includes(s));
   if (away) away.mood = 50;
   holdFestival(st, h, "SMALL");
-  check(h.stock.food === 300 - Math.ceil(people.length * FEST.SMALL.food) && h.stock.firewood === 200, `a small one: ${Math.ceil(people.length * FEST.SMALL.food)} food, no firewood`);
+  check(food(h) === 300 - Math.ceil(people.length * FEST.SMALL.food) && h.stock.firewood === 200, `a small one: ${Math.ceil(people.length * FEST.SMALL.food)} food, no firewood`);
   check(people.every((s) => Math.abs(s.mood - (50 + FEST.SMALL.mood)) < 0.01) && people.every((s) => s.restUntil == null || s.role !== "rest" || s.inBed), `mood +${FEST.SMALL.mood}, no day off`);
   check(!away || Math.abs(away.mood - (50 + FEST.SMALL.outpost)) < 0.01, away ? `someone away from the hub +${FEST.SMALL.outpost}` : "(nobody away from the hub)");
   const st2 = world();
@@ -134,7 +135,7 @@ const t0 = Date.now();
   festivalCard(st2, h2).choices[2].resolve(st2);
   check(residents(st2, h2.id).every((s) => s.mood === 30 + FEST.SKIP.mood), `skipped with spirits low: mood ${FEST.SKIP.mood}`);
   check(festivalCard(st2, h2).choices[0].disabled(st2) === false, "full festival affordable with the food");
-  h2.stock.food = 1; h2.stock.preserved = 0;
+  setFood(h2, 1); setJarred(h2, 0);
   check(festivalCard(st2, h2).choices[0].disabled(st2) === true, "with no food it cannot be held");
 }
 
@@ -176,9 +177,9 @@ const t0 = Date.now();
   morning(st, FEST_DAY);
   check(/^Hold the festival/.test(pick(st, h)), `plenty of food: ${pick(st, h)}`);
   const n = residents(st, h.id).length;
-  h.stock.food = n * 25;
+  setFood(h, n * 25);
   check(/^A small festival|^Skip/.test(pick(st, h)), `about 25 days' food: ${pick(st, h)}`);
-  h.stock.food = n * 3;
+  setFood(h, n * 3);
   check(/^Skip/.test(pick(st, h)), `a few days' food: ${pick(st, h)}`);
 }
 

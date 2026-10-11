@@ -3,6 +3,7 @@
 // force on the road; destroying the base's hive saves it), no raiders before state.hardcore.raidersFrom, save/load
 // mid-founding, a normal world untouched.
 // Usage: node tools/hcgroupstest.js [--quick]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, supplyValue, hub } from "../src/sim/world.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { bandsOf, hcMilitary, hardcoreGroupsHour, HC_GROUPS, HC_MILITARY } from "../src/sim/hardcore-groups.js";
@@ -18,8 +19,8 @@ const t0 = Date.now();
 // Keeps your side alive and fed (this test is about the other groups, not your start): health and food topped up.
 function keepAlive(s) {
   for (const x of s.survivors) if (x.alive) x.health = Math.max(x.health, 80);
-  for (const b of s.bases) { b.stock.food = Math.max(b.stock.food || 0, 60); b.stock.water = Math.max(b.stock.water || 0, 60); }
-  for (const p of s.parties) if (p.owner === "player" && p.supplies) { p.supplies.food = Math.max(p.supplies.food || 0, 10); p.supplies.water = Math.max(p.supplies.water || 0, 10); }
+  for (const b of s.bases) { setFood(b, Math.max(food(b) || 0, 60)); b.stock.water = Math.max(b.stock.water || 0, 60); }
+  for (const p of s.parties) if (p.owner === "player" && p.supplies) { setFood(p, Math.max(food(p) || 0, 10)); p.supplies.water = Math.max(p.supplies.water || 0, 10); }
 }
 // Runs whole days; watch(s) after each day. Cards are answered by the autopilot when it is on, else dropped.
 function runDays(s, n, watch = null) {
@@ -79,10 +80,10 @@ for (const { seed, s } of worlds) {
 // Resources by type: the commune carries the most food, traders the most fuel, a fortress or expansionists the most ammo.
 {
   const all = worlds.flatMap(({ s }) => bandsOf(s));
-  const avg = (type, k) => { const l = all.filter((b) => b.type === type); return l.length ? l.reduce((a, b) => a + b.stock[k], 0) / l.length : null; };
+  const avg = (type, k) => { const l = all.filter((b) => b.type === type); return l.length ? l.reduce((a, b) => a + (k === "food" ? food(b) : b.stock[k]), 0) / l.length : null; };
   const kinds = new Set(all.map((b) => b.type));
   check(kinds.size >= 4, `the bands come as ${[...kinds].join(", ")}`);
-  if (avg("commune", "food") != null) check(all.filter((b) => b.type !== "commune").every((b) => b.stock.food < avg("commune", "food")), `communes carry the most food (${Math.round(avg("commune", "food"))})`);
+  if (avg("commune", "food") != null) check(all.filter((b) => b.type !== "commune").every((b) => food(b) < avg("commune", "food")), `communes carry the most food (${Math.round(avg("commune", "food"))})`);
   if (avg("traders", "fuel") != null) check(all.filter((b) => b.type !== "traders").every((b) => b.stock.fuel < avg("traders", "fuel")), `traders carry the most fuel (${Math.round(avg("traders", "fuel"))})`);
   const ammoTop = Math.max(avg("fortress", "ammo") || 0, avg("expansionist", "ammo") || 0);
   check(all.filter((b) => b.type === "traders" || b.type === "commune").every((b) => b.stock.ammo < ammoTop), `fortresses and expansionists carry the most ammo (${Math.round(ammoTop)})`);
@@ -151,7 +152,7 @@ console.log("Save and load mid-founding");
   runDays(s, 10);
   s.cards.length = 0;
   const saved = JSON.stringify(serializeState(s));
-  const fp = (st) => JSON.stringify([st.factions.map((f) => [f.id, f.name, f.type, f.bases, f.pop]), bandsOf(st).map((b) => [b.id, b.tile, b.pop, b.phase, b.goal, Math.round(b.stock.food)]), hcMilitary(st).sorties, hcMilitary(st).killed]);
+  const fp = (st) => JSON.stringify([st.factions.map((f) => [f.id, f.name, f.type, f.bases, f.pop]), bandsOf(st).map((b) => [b.id, b.tile, b.pop, b.phase, b.goal, Math.round(food(b))]), hcMilitary(st).sorties, hcMilitary(st).killed]);
   runDays(s, 12);
   const a = fp(s);
   const t = deserializeState(JSON.parse(saved));

@@ -11,6 +11,8 @@
 //     day), below 20 "X is close to leaving" (log line and card); a warning is re-armed once mood is back to 40;
 //   - desertion: below 15 mood, only after the second warning was given on an earlier night, 8% a day (+0.6% per
 //     point below 15). Leaders never desert.
+import { foodIn, takeFood, FOODS, foodWord } from "./foods.js"; // food by type (foods.js)
+import { supplyAmt, useSupply } from "./rounds.js"; // food in days
 import { keyWord } from "./water.js";
 import { breakMult } from "./traits.js"; // Iron Will
 import { log, addCard, day, skill, atBase, residents, checkGameOver } from "./world.js";
@@ -166,8 +168,9 @@ export function desertionHaul(state, base, s) {
   if (rng.chance(greedy ? 0.8 : 0.4)) want.ammo = rng.int(5, 12) * (greedy ? 2 : 1);
   const took = {};
   for (const [k, q] of Object.entries(want)) {
-    const n = Math.min(q, Math.floor(Math.max(0, k === "ammo" ? totalRounds(base.stock) : base.stock[k] || 0) * 0.25));
+    const n = Math.min(q, Math.floor(Math.max(0, k === "ammo" ? totalRounds(base.stock) : k === "food" ? foodIn(base.stock) : base.stock[k] || 0) * 0.25));
     if (n > 0 && k === "ammo") Object.assign(took, spendAmmo(base.stock, n).keys); // rounds.js: any calibre, the cheapest first (by key: named where it is told)
+    else if (n > 0 && k === "food") Object.assign(took, takeFood(base, n, { eggs: false, state }).items); // foods.js: days of food, the soonest to spoil first
     else if (n > 0) { base.stock[k] -= n; took[k] = n; }
   }
   return took;
@@ -185,7 +188,7 @@ export function desert(state, base, s, opts = {}) {
   s.inBed = false;
   const items = allItems(s).map(itemText);
   const took = opts.haul === false ? {} : desertionHaul(state, base, s);
-  const parts = [...items, ...Object.entries(took).map(([k, q]) => `${q} ${keyWord(k)}`)]; // rounds named by calibre
+  const parts = [...items, ...Object.entries(took).map(([k, q]) => (FOODS[k] ? foodWord(k, q) : `${q} ${keyWord(k)}`))]; // rounds named by calibre; food items in words (foods.js)
   log(state, `${opts.why || `${s.name} lost hope and walked away from ${base.name} in the night`}${parts.length ? `, taking ${listText(parts)}` : " with nothing but the clothes on their back"}.`, "death");
   (state.deserters || (state.deserters = [])).push({ id: s.id, baseId: base.id, day: day(state), took });
   onLeave(state, s, base); // relations.js: friends and a partner take it hard
@@ -210,7 +213,7 @@ function warningCard(state, base, s) {
   const gone = () => `${s.name} is no longer at ${base.name}.`;
   // Lifted back over a threshold: the warnings re-arm (the daily check does the same).
   const reset = () => { if (s.mood >= MOOD.rearm) s.moodWarn = 0; else if (s.mood >= MOOD.warn1 && s.moodWarn >= 2) s.moodWarn = 1; };
-  const has = () => Object.entries(GIFT).every(([k, q]) => (base.stock[k] || 0) >= q);
+  const has = () => Object.entries(GIFT).every(([k, q]) => supplyAmt(base.stock, k) >= q); // food: days of it (rounds.js supplyAmt)
   return {
     title: second ? `${s.name} is close to leaving` : `${s.name} talks about leaving`,
     text: `${s.name} (mood ${Math.round(s.mood)}) ${second ? `has started packing a bag. Below ${MOOD.desert} mood they may walk out any night, taking what they carry and some supplies.` : `talks about leaving ${base.name}.`}${why.length ? ` On their mind: ${why.join("; ")}.` : ""}`,
@@ -250,14 +253,14 @@ function warningCard(state, base, s) {
         },
       },
       {
-        label: `A gift from the stores (${GIFT.food} food, ${GIFT.meds} meds)`,
+        label: `A gift from the stores (${GIFT.food} days of food, ${GIFT.meds} meds)`,
         hint: `Mood +${greedy ? GIFT_MOOD_GREEDY : GIFT_MOOD}${greedy ? " (Greedy: a gift goes a long way)" : ""}`,
         disabled: (st) => !has(st),
-        ai: () => ((base.stock.food || 0) >= 40 && (base.stock.meds || 0) >= 6 ? 22 : -1),
+        ai: () => (foodIn(base.stock) >= 40 && (base.stock.meds || 0) >= 6 ? 22 : -1),
         resolve: (st) => {
           if (!live()) return gone();
           if (!has(st)) return `${base.name} no longer has that to give.`;
-          for (const [k, q] of Object.entries(GIFT)) base.stock[k] -= q;
+          for (const [k, q] of Object.entries(GIFT)) useSupply(base.stock, k, q); // food: the soonest to spoil first
           s.mood = clamp(s.mood + (greedy ? GIFT_MOOD_GREEDY : GIFT_MOOD), 0, 100);
           noteMood(st, s, greedy ? GIFT_MOOD_GREEDY : GIFT_MOOD, "A gift from the stores");
           reset();

@@ -29,7 +29,8 @@
 //   water, spirits; its light and smoke raise the camp's Heat (fieldheat.js shelterHeat), most at night.
 // AI parity: the groups' camps stay their own coarse things (groupworks.js outpost camps, hardcore-groups.js bands
 // camping on the road): nothing here is on their path.
-import { SUPPLIES, GEAR } from "./data.js";
+import { foodIn, packPick } from "./foods.js"; // the food packed when a camp is struck
+import { SUPPLIES, GEAR, supValue } from "./data.js";
 import { ROUND_SUPPLIES } from "./data-ammo.js"; // rounds by calibre: packed with the ammo when a camp is struck
 import { newId, log, addCard, day, hub, atBase } from "./world.js";
 import { recomputeOwnership } from "./factions.js";
@@ -171,7 +172,7 @@ export function makeCamp(state, p, tile, { up = false } = {}) {
   const people = partyMembers(state, p);
   const base = {
     id: newId(), tile, type: hubNow ? "outpost" : "hub", name: campName(state, tile),
-    stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
+    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow,
   };
@@ -233,7 +234,8 @@ export function strikeCamp(state, base) {
     let room = carryCapacity(state, people, plan.fleet || null);
     const supplies = {};
     const rounds = Object.keys(base.stock).filter((k) => ROUND_SUPPLIES[k] && !PACK_ORDER.includes(k)).sort((a, b) => (base.stock[b] || 0) - (base.stock[a] || 0) || (a < b ? -1 : 1)); // rounds by calibre (ammo.js) where "ammo" stands, most first
-    const order = PACK_ORDER.flatMap((k) => (k === "ammo" ? [k, ...rounds] : [k]));
+    const foodOrder = Object.keys(packPick(state, base, foodIn(base.stock), { days: 7 })); // foods.js: what keeps and weighs least first
+    const order = PACK_ORDER.flatMap((k) => (k === "ammo" ? [k, ...rounds] : k === "food" ? foodOrder : k === "preserved" ? [] : [k]));
     for (const k of [...order, ...Object.keys(base.stock).filter((k) => !order.includes(k))]) {
       const w = SUPPLIES[k] ? SUPPLIES[k].weight : 0;
       const have = n0(base.stock[k]);
@@ -269,7 +271,7 @@ export function removeCamp(state, base, why) {
   const items = [];
   for (const [k, v] of Object.entries(base.stock)) {
     const q = n0(v);
-    if (q >= 1 && SUPPLIES[k]) items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * SUPPLIES[k].value });
+    if (q >= 1 && SUPPLIES[k]) items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * supValue(k) });
   }
   for (const it of base.armory) if (it) items.push({ kind: "gear", key: it.key, name: it.name, item: it, value: (GEAR[it.key] && GEAR[it.key].value) || 0 });
   for (const v of state.vehicles) {
@@ -289,7 +291,7 @@ export function removeCamp(state, base, why) {
   if (!site) { site = { id: newId(), tile: base.tile, items: [], day: day(state), names: [], lastConfirmed: day(state) }; state.deathSites.push(site); }
   for (const it of items) {
     const cur = it.kind === "supply" ? site.items.find((x) => x.kind === "supply" && x.key === it.key) : null;
-    if (cur) { cur.qty += it.qty; cur.value = cur.qty * SUPPLIES[it.key].value; } else site.items.push(it);
+    if (cur) { cur.qty += it.qty; cur.value = cur.qty * supValue(it.key); } else site.items.push(it);
   }
   markDeathSite(state, site);
   const sup = items.filter((x) => x.kind === "supply").map((x) => `${x.qty} ${keyWord(x.key)}`);
@@ -448,7 +450,7 @@ export function migrateStaging(state) {
   const hubNow = hub(state);
   const base = {
     id: old.id || newId(), tile: old.tile, type: hubNow ? "outpost" : "hub", name: campName(state, old.tile),
-    stock: { food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
+    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: old.fire !== false, campDay: old.started || day(state), lastPresent: old.lastPresent ?? state.hour, first: !!old.first,
   };

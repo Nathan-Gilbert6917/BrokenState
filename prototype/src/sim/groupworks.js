@@ -58,8 +58,8 @@
 //   and MACH.spare more in the stores (their one count of parts: your electronics are folded into it). Each day
 //   (groupMachinesDaily): the still turns MACH.still.food of their food surplus into MACH.still.fuel fuel (as yours: 8
 //   → 3); the generator burns your generator's fuel a day for its tier (gen-tiers: genBurn; tier 1 POWER.genFuel) while the freezer or the sealer draws, and with no
-//   fuel they are off; the freezer on saves the food yours would (the cellar's spoilage on up to 300 food it holds,
-//   MACH.save a day: their food does not spoil in this model, so it is paid as food kept); the sealer on is the
+//   fuel they are off; the freezer on keeps up to MACH.room days of their soonest-to-spoil food at a twentieth of its
+//   aging (food-types: factions.js ageCoarse frozen, as yours keeps at ×0.05); the sealer on is the
 //   cooking wave's hook (groupSealer). Every machine that ran wears by your machine's use (breakdowns.js FIXTURES)
 //   less MACH.mend (their hands keep it), breaks by your risk curve, uses a spare part by your spares days (no part:
 //   +3 wear a day), and is repaired the next day it can pay your proper repair (scrap and parts); short of parts they
@@ -112,6 +112,7 @@
 //   your bases do; the rule is there for the day their machines draw more.
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
+import { foodIn, takeFood } from "./foods.js"; // days of food (every kind)
 import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
 import { day } from "./world.js";
 import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast and dinner too (22 of 24 hours)
@@ -167,7 +168,7 @@ export const GROUP_WORKS = {
   // Their machine parts (machines-2; groupPartsDaily, see the header).
   PARTS: { rate: 0.25, mech: 4, below: 0.5, pop: 16, popMax: 1.5, popMin: 0.4, scrap: 6, keep: 4, perMachine: 1, scrapKeep: 1 },
   // The groups' machines (see the header). fx: the fixture each is (breakdowns.js FIXTURES).
-  MACH: { pop: 14, foodDays: 12, spare: 2, mend: 0.6, save: 0.00475, room: 300, still: { food: 8, fuel: 3 }, req: { power: 3, freezer: 3, sealer: 3 }, // req: Mechanics to build (yours, buildings.js)
+  MACH: { pop: 14, foodDays: 12, spare: 2, mend: 0.6, room: 300, still: { food: 8, fuel: 3 }, req: { power: 3, freezer: 3, sealer: 3 }, // req: Mechanics to build (yours, buildings.js)
     fx: { still: "still", power: "generator", freezer: "freezer", sealer: "sealer" },
     // gen-tiers: the generator's upgrades (see the header), by the tier it becomes: your GEN_TIERS cost scaled as WORKS
     // (yours 24 scrap + 5 parts, 30 work-hours; 40 + 8 + 2 electronics, 48). Their Mechanics and manual: LOCKS power2 /
@@ -317,7 +318,7 @@ export function threatened(state, f, tile) {
 // Their stores are filling up (a storehouse): any capped stock near its cap (factionsDaily's caps), or a big larder.
 function storesFull(state, f) {
   const p = Math.max(1, f.pop), c = storeFactor(state, f), s = f.stock || {};
-  return (s.scrap || 0) >= p * 10 * c * W.STORE_FULL || (s.ammo || 0) >= p * 30 * c * W.STORE_FULL || (s.food || 0) >= p * 20;
+  return (s.scrap || 0) >= p * 10 * c * W.STORE_FULL || (s.ammo || 0) >= p * 30 * c * W.STORE_FULL || foodIn(s) >= p * 20; // days of food (foods.js)
 }
 
 // The sick bay's tier at a group's bases (the best of them; 0 = none).
@@ -341,7 +342,7 @@ function sickbayWork(state, f, upper) {
 // The next job a group would start: { tile, type, why } or null (all built).
 export function nextWork(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return null;
-  const foodShort = (f.stock.food || 0) < f.pop * W.FOOD_SHORT;
+  const foodShort = foodIn(f.stock) < f.pop * W.FOOD_SHORT;
   for (const tile of f.bases) {
     const w = worksAt(f, tile);
     if (n(w, "camp")) return { tile, type: "camp", why: "an outpost camp to establish", def: W.CAMP }; // nothing else there before it
@@ -410,7 +411,7 @@ const MACH_ORDER = ["still", "power", "freezer", "sealer"];
 // The next machine at a base: the still, the generator, the freezer, the sealer, each with its parts and spares.
 function machineWork(state, f, tile) {
   const M = W.MACH, w = worksAt(f, tile);
-  if (f.pop < M.pop || !hasAny(f, "bench") || (f.stock.food || 0) < f.pop * M.foodDays) return null;
+  if (f.pop < M.pop || !hasAny(f, "bench") || foodIn(f.stock) < f.pop * M.foodDays) return null;
   const why = { still: "fuel from the food surplus", power: "power for a freezer", freezer: "a walk-in freezer for the food", sealer: "a vacuum sealer for packed meals" };
   for (const k of MACH_ORDER) {
     if (n(w, k)) continue;
@@ -494,7 +495,8 @@ export function groupMachinesDaily(state, f) {
     const ran = {};
     // The still: their surplus food into fuel.
     const ff = f.fuelFlow;
-    if (ok("still") && (st.food || 0) - M.still.food >= f.pop * M.foodDays && (st.fuel || 0) < f.pop * 3) { st.food -= M.still.food; st.fuel = (st.fuel || 0) + M.still.fuel; ran.still = true; if (ff) ff.made = (ff.made || 0) + M.still.fuel; }
+    if (ok("still") && foodIn(st) - M.still.food >= f.pop * M.foodDays && (st.fuel || 0) < f.pop * 3) { takeFood(st, M.still.food, { state }); // foods.js: the soonest to spoil goes in the mash
+      st.fuel = (st.fuel || 0) + M.still.fuel; ran.still = true; if (ff) ff.made = (ff.made || 0) + M.still.fuel; }
     // The generator, while the freezer or the sealer draws and there is any fuel (coarse: a day's fuel at its tier and
     // the load, or the last of it). gen-tiers: the machines served in your order (the freezer, then the sealer) up to
     // the tier's power; the burn by your genBurn (tier 1: the flat 2).
@@ -509,7 +511,7 @@ export function groupMachinesDaily(state, f) {
       if (ff) ff.burned = (ff.burned || 0) + (was - st.fuel);
     }
     for (const k of ["freezer", "sealer"]) { if (n(w, k)) { machOf(w, k).on = !!ran.power && ok(k) && !!served[k]; ran[k] = machOf(w, k).on; } }
-    if (ran.freezer) st.food += Math.min(M.room, Math.max(0, st.food || 0)) * M.save; // the cellar spoilage it saves
+    // The freezer on: their soonest-to-spoil food (up to M.room days) ages at a twentieth (factions.js ageCoarse frozen).
     // Wear, spares, breaking (your fixtures' numbers, coarse).
     for (const k of MACH_ORDER) {
       if (!n(w, k)) continue;

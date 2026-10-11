@@ -45,14 +45,15 @@ const DEFAULT = { mode: "forever", n: 0, key: null, fallback: "idle" };
 const r1 = (v) => Math.round(v * 10) / 10;
 
 const recipeOf = (st) => (st.id === RACK.id ? null : BUILDINGS[st.type] && BUILDINGS[st.type].station);
-// What a station makes and uses: the drying racks turn food into preserved food.
+// What a station makes and uses: the drying racks turn fresh food (days of it, foods.js) into preserved food (jerky,
+// smoked fish, dried fruit and veg: "preserved" counts the preserved food, rounds.js supplyAmt).
 export function productKey(st) {
   if (st.id === RACK.id) return "preserved";
   const r = RECIPES[recipeOf(st)];
   return r ? Object.keys(r.out)[0] || null : null;
 }
 export function inputKeys(st) {
-  if (st.id === RACK.id) return ["food"];
+  if (st.id === RACK.id) return ["fresh"];
   const r = RECIPES[recipeOf(st)];
   return r ? Object.keys(r.in) : [];
 }
@@ -65,7 +66,7 @@ export const untilMargin = (n) => Math.max(1, Math.round(n * 0.1));
 // The order on a station (never creates one).
 export function stationOrder(base, st) {
   const o = base && base.orders && st ? base.orders[st.id] : null;
-  return o ? { ...DEFAULT, ...o, key: o.key || mainInput(st) } : { ...DEFAULT, key: mainInput(st) };
+  return o ? { ...DEFAULT, ...o, key: (o.key === "food" ? "fresh" : o.key) || mainInput(st) } : { ...DEFAULT, key: mainInput(st) }; // an order kept on "food" before food was by type: its fresh food
 }
 export const hasOrder = (base, st) => !!(base && base.orders && st && base.orders[st.id]);
 
@@ -98,8 +99,8 @@ function validFallback(base, st, fb) {
 }
 export const stationName = (base, st) => (st.id === RACK.id ? "Drying racks" : BUILDINGS[st.type].name);
 
-// Inputs and outputs of a station today: power (power.js) boosts the machine shop and the kitchen, and the still
-// uses yesterday's spoiled food (base.mash, storage.js) before fresh food. op: the operator (skill bonuses), or null.
+// Inputs and outputs of a station today: power (power.js) boosts the machine shop and the kitchen. op: the operator
+// (skill bonuses), or null.
 export function stationIO(state, base, st, op = null) {
   const recipe = recipeOf(st);
   const r = RECIPES[recipe];
@@ -111,12 +112,7 @@ export function stationIO(state, base, st, op = null) {
     for (const k of Object.keys(inp)) inp[k] = Math.round(inp[k] * boost.in);
     for (const k of Object.keys(out)) out[k] = Math.round(out[k] * boost.out);
   }
-  let mash = 0;
-  if (recipe === "still") {
-    mash = Math.floor(Math.max(0, Math.min(STILL.mash, inp.food, base.mash || 0)) * 10) / 10;
-    inp.food = r1(inp.food - mash);
-  }
-  return { in: inp, out, powered, mash };
+  return { in: inp, out, powered, mash: 0 };
 }
 
 // Why an order holds a station now ("" = it may run). Pure: reads the hysteresis flag (o.paused) but never sets it.
@@ -148,7 +144,7 @@ function tickOrder(state, base, st) {
 }
 
 // The drying racks: the most food they may take today under their order (Infinity = no limit).
-export function rackLimit(state, base, fresh = base.stock.food || 0) {
+export function rackLimit(state, base, fresh = stockHas(base.stock, "fresh")) {
   if (!hasOrder(base, RACK)) return Infinity;
   const o = stationOrder(base, RACK);
   if (o.mode === "off") return 0;

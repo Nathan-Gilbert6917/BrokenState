@@ -4,6 +4,7 @@
 // a base lost, a child lost, the Children box, the world's dice untouched, save / load mid-pregnancy and an old
 // save, the UI (People tab, roster, survivor screen, help) and an autopilot run with a family in it.
 // Usage: node tools/familytest.js [seed] [days]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, alive, residents, day, makeSurvivor, removeBase, newId } from "../src/sim/world.js";
 import { addBuilding, baseBeds, BUILDINGS } from "../src/sim/buildings.js";
 import { getRel, moodFactors, partnerOf, makePartners } from "../src/sim/relations.js";
@@ -47,7 +48,7 @@ const logHas = (st, re) => st.log.some((l) => re.test(l.text));
 // A couple at the hub with everything right: plenty of food, beds, good spirits.
 function couple(st) {
   const h = hub(st);
-  h.stock.food = 600;
+  setFood(h, 600);
   h.stock.water = 300;
   const [a, b] = atBase(st, h.id);
   a.appearance.facial = "none";
@@ -103,10 +104,10 @@ section("Expecting");
   h.rationing = true;
   check(conceiveInfo(st, a, b, h).why && conceiveInfo(st, a, b, h).p === 0, "never on short rations");
   h.rationing = false;
-  const food = h.stock.food;
-  h.stock.food = 20; h.stock.preserved = 0;
+  const food0 = food(h);
+  setFood(h, 20); setJarred(h, 0);
   check(conceiveInfo(st, a, b, h).p === 0, "never under 10 days of food");
-  h.stock.food = food;
+  setFood(h, food0);
   const beds = baseBeds(h);
   for (let i = residents(st, h.id).length; i < beds; i++) { const s = makeSurvivor(st, 1); s.location = { kind: "base", baseId: h.id }; st.survivors.push(s); }
   check(/bed/.test(conceiveInfo(st, a, b, h).why), "never with no free bed (the cap by housing)");
@@ -153,21 +154,21 @@ section("Birth and the child");
   check(mouthsAt(st, h).children === 1, "fed at the base");
   const g = foodUse(st, h).groups.find((x) => x.key === "children");
   check(g && Math.abs(g.total - foodUse(st, h).rate * FAMILY.food.baby) < 0.01, "a baby eats a quarter of a ration (upkeep.js foodUse)");
-  const f0 = h.stock.food;
+  const f0 = food(h);
   nextDay(st); familyDaily(st);
-  check(h.stock.food < f0 && f0 - h.stock.food <= g.total + 0.01, "eaten from the store");
+  check(food(h) < f0 && f0 - food(h) <= g.total + 0.01, "eaten from the store");
   check(!(h.kidBeds > 0), "a baby sleeps with a parent");
   kid.grown = FAMILY.baby + 1;
   const beds = baseBeds(h);
   updateKidBeds(st);
   check(baseBeds(h) === beds - 1, "a child takes a bed's half (two to a bed)");
   // Chores.
-  const f1 = h.stock.food;
+  const f1 = food(h);
   nextDay(st); familyDaily(st);
   check(kid.chores > 0, "a child does chores at a base with fields");
   check(familyBlock(st, a).includes(kid.name.split(" ")[0]) && familyChip(st, a).includes("👪"), "the parent's Family card and chip");
   // Hunger: the parents go without.
-  h.stock.food = 0; h.stock.preserved = 0;
+  setFood(h, 0); setJarred(h, 0);
   const hu = a.hunger;
   const gr = kid.grown;
   nextDay(st); familyDaily(st);
@@ -179,7 +180,7 @@ section("Growing up");
 {
   const st = W();
   const { h, a, b, kid } = withChild(st);
-  h.stock.food = 600;
+  setFood(h, 600);
   kid.grown = FAMILY.adult - 1;
   kid.seen = { mechanics: 50, medicine: 20 };
   kid.chores = 10;

@@ -33,6 +33,7 @@
 // The governor (autopilot) asks allies when a hive crawl or a base assault looks marginal (autoAskVolunteers, by its
 // style's STYLES row) and answers the groups' asks by its style (the card's ai scores: Diplomat generous, Turtle stingy).
 // Dice: state.volRng (its own, saved), never the world's.
+import { giveFood, foodIn, DAY_VALUE, moveFoodUnits } from "./foods.js"; // food by type (foods.js)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
 import { log, addCard, day, hub, atBase, factionById, combatPower, hurt, makeSurvivor, baseById, skill } from "./world.js";
@@ -43,7 +44,7 @@ import { jobsDoneFor } from "./jobs.js";
 import { isMember, reachVia } from "./alliance.js";
 import { issueKit, removeFromArsenal, addToArsenal, takeArsenalRounds, unitPower, arsenalWorthy, kitOf } from "./arsenal.js";
 import { allItems, newItem, stripAll } from "./inventory.js";
-import { SUPPLIES, GEAR } from "./data.js";
+import { SUPPLIES, GEAR, supValue } from "./data.js";
 import { blocOf } from "./blocs.js";
 import { hiveAt } from "./hives.js";
 import { hiveTier } from "./hivetech.js";
@@ -170,7 +171,8 @@ export function teamProblem(state, p) {
   if (n >= VOL.TEAM_MAX) return `That team already has ${n} volunteers (at most ${VOL.TEAM_MAX}).`;
   return "";
 }
-const supplyValue = (key, qty) => (SUPPLIES[key] ? (SUPPLIES[key].value || 1) * qty : 0);
+const supplyValue = (key, qty) => (key === "food" ? DAY_VALUE * qty : SUPPLIES[key] ? (supValue(key) || 1) * qty : 0); // food: days of it (foods.js)
+const offerOk = (o) => !!(o && o.qty > 0 && (SUPPLIES[o.key] || o.key === "food"));
 // The answer they would give: { yes, points, parts: [{ label, v }], refuse (an outright no), n, days }.
 // opts: { n, days, offer: { key, qty } | null, favour }.
 export function askQuote(state, f, p, opts = {}) {
@@ -199,7 +201,7 @@ export function askQuote(state, f, p, opts = {}) {
   const d = day(state);
   const fallen = (f.volFallen || []).filter((x) => d - x.day <= P.fallenDays);
   if (fallen.length) add(`${fallen.length} of theirs died with your teams lately`, -fallen.reduce((a, x) => a + (x.how === "fight" ? P.fallen : P.fallenBad), 0));
-  if (opts.offer && opts.offer.qty > 0 && SUPPLIES[opts.offer.key]) add(`your offer: ${opts.offer.key === "ammo" ? payWord(state, payBase(state, p), opts.offer.qty) : `${opts.offer.qty} ${SUPPLIES[opts.offer.key].name.toLowerCase()}`}`, supplyValue(opts.offer.key, opts.offer.qty) / P.goodsPer);
+  if (offerOk(opts.offer)) add(`your offer: ${opts.offer.key === "ammo" ? payWord(state, payBase(state, p), opts.offer.qty) : opts.offer.key === "food" ? `${opts.offer.qty} days of food` : `${opts.offer.qty} ${SUPPLIES[opts.offer.key].name.toLowerCase()}`}`, supplyValue(opts.offer.key, opts.offer.qty) / P.goodsPer);
   if (opts.favour) add("a favour owed (they will ask one of you)", P.favour);
   if (opts.share > 0) add(`a ${Math.round(opts.share * 100)}% share of the haul`, opts.share * VOL.SHARE.points);
   out.points = Math.round(out.parts.reduce((a, x) => a + x.v, 0) * 100) / 100;
@@ -231,7 +233,7 @@ export function askVolunteers(state, f, p, opts = {}) {
   const V = ensureVols(state);
   const q = askQuote(state, f, p, opts);
   if (q.refuse) return { ok: false, text: q.refuse, people: [] };
-  const offer = opts.offer && opts.offer.qty > 0 && SUPPLIES[opts.offer.key] ? opts.offer : null;
+  const offer = offerOk(opts.offer) ? opts.offer : null;
   const op = offerProblem(state, p, offer);
   if (op) return { ok: false, text: op, people: [] };
   V.stats.asked++;
@@ -249,8 +251,9 @@ export function askVolunteers(state, f, p, opts = {}) {
   if (offer) {
     const b = payBase(state, p);
     if (offer.key === "ammo") { const sent = payAmmoKeys(state, b, offer.qty); offer.paid = roundsText(sent); } // rounds by calibre: the ones the guns there need least (their store keeps one count)
+    else if (offer.key === "food") moveFoodUnits(b, f, offer.qty, { state }); // foods.js: days of food, the soonest to spoil first
     else b.stock[offer.key] -= offer.qty;
-    f.stock[offer.key] = (f.stock[offer.key] || 0) + offer.qty;
+    if (offer.key !== "food") f.stock[offer.key] = (f.stock[offer.key] || 0) + offer.qty;
   }
   if (opts.favour) f.volFavour = { day: day(state) };
   if (!offer && !opts.favour && !(opts.share > 0)) changeGoodwill(state, f, -VOL.ASK_GW, "you asked them for people"); // a share of the haul is something in return too
@@ -338,7 +341,7 @@ function join(state, s, p) {
   V.stats.joined++;
   // What they bring: a day's food and water each day of the span (up to BRING.days), rounds for their gun.
   const days = Math.min(VOL.BRING.days, s.vol.days || VOL.SPAN.def);
-  p.supplies.food = (p.supplies.food || 0) + days;
+  giveFood(state, p, days, "travel"); // foods.js: a day's food each day of the span, what travellers carry
   p.supplies.water = (p.supplies.water || 0) + days;
   const f = factionById(state, s.vol.fid);
   if (f && s.gear.weapon && calOf(s.gear.weapon.key)) { // a gun: rounds of its calibre
@@ -798,7 +801,7 @@ export function autoAskVolunteers(state) {
     V.stats.autoChecked = (V.stats.autoChecked || 0) + 1;
     if (!marginal) continue;
     V.stats.autoMarginal = (V.stats.autoMarginal || 0) + 1;
-    const offer = S.offer && h && (h.stock.food || 0) >= 80 ? { key: "food", qty: 20 } : null;
+    const offer = S.offer && h && foodIn(h.stock) >= 80 ? { key: "food", qty: 20 } : null;
     const cands = state.factions.filter((f) => f.alive && f.known && !groupProblem(state, f));
     let best = null;
     for (const n of [2, 1]) {

@@ -6,6 +6,7 @@
 // appends a move and the job, a job on the team's own tile starts at once; the hub's menu (tileActions) unchanged; and
 // a render smoke test of the menu's HTML.
 // Usage: node tools/teamctxtest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, snapshot } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile } from "../src/sim/parties.js";
 import { stripAll, newItem } from "../src/sim/inventory.js";
@@ -27,7 +28,7 @@ function mk(seed = SEED) {
   state.started = true;
   state.noWanderers = true;
   state.cards = [];
-  Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, parts: 10, scrap: 100 });
+  Object.assign(hub(state).stock, { water: 300, fuel: 100, meds: 20, parts: 10, scrap: 100 }); setFood(hub(state), 300);
   return state;
 }
 const reach = (state, from, id) => !!planPath(state, from, id, false);
@@ -190,7 +191,7 @@ section("Your own base: enter, drop off, load, resupply; away from it they wait 
   const state = mk();
   const h = hub(state);
   const p = team(state, 2);
-  p.supplies.food = 0; p.supplies.water = 0;
+  setFood(p, 0); p.supplies.water = 0;
   let m = teamTileMenu(state, {}, p, h.tile);
   for (const k of ["mission:enter", "drop", "load", "resupply", "home"]) check(has(m, k), `own base: ${k}`);
   for (const k of ["mission:scavenge", "claim", "setcamp", "mission:outpost"]) check(!has(m, k), `own base: no ${k}`);
@@ -198,7 +199,7 @@ section("Your own base: enter, drop off, load, resupply; away from it they wait 
   const acts = { opened: null, "ti-open": (d) => { acts.opened = d; } };
   check(runTeamAction(state, {}, { id: p.id, tile: h.tile, key: "load", mode: "replace" }, acts) === "" && acts.opened && acts.opened.tab === "load", "Load from… opens the team inventory on its load tab");
   const msg = runTeamAction(state, {}, { id: p.id, tile: h.tile, key: "resupply", mode: "replace" });
-  check(p.supplies.food >= 6 && p.supplies.water >= 6, `resupply: 3 days of food and water for 2 (${p.supplies.food} food, ${p.supplies.water} water; ${msg})`);
+  check(food(p) >= 6 && p.supplies.water >= 6, `resupply: 3 days of food and water for 2 (${food(p)} food, ${p.supplies.water} water; ${msg})`);
   m = teamTileMenu(state, {}, p, h.tile);
   check(/already carries/.test(item(m, "resupply").disabled || ""), "resupplied: nothing more to take");
   const away = team(state, 1, { tile: find(state, h.tile, () => true, 3, 6) });

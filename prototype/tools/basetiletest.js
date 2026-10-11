@@ -5,6 +5,7 @@
 // that ended another order there, a queued Enter) from the orders card, the team panel, the Teams tab and the tile
 // panel. Every merge leaves nothing pointing at the gone team; saves before and after.
 // Usage: node tools/basetiletest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, residents, makeSurvivor, newId, alive } from "../src/sim/world.js";
 import { partyTile, partyMembers, orderMove, giveOrder, orderOptions, outpostName, launchExpedition, ordersCard, planPath, MISSIONS } from "../src/sim/parties.js";
 import { startOrder, queueOrder } from "../src/sim/orders.js";
@@ -63,7 +64,7 @@ section("Establish base: the team that sets up the camp moves into it and is dis
   const id = p.id;
   const people = partyMembers(st, p).map((s) => s.id);
   const car = st.vehicles.find((v) => v.loc.kind === "party" && v.loc.partyId === id);
-  Object.assign(p.cargo.supplies, { scrap: 30, parts: 5, food: 40, water: 40, fuel: 3, buildmat: 4 });
+  Object.assign(p.cargo.supplies, { scrap: 30, parts: 5, water: 40, fuel: 3, buildmat: 4 }); setFood(p.cargo, 40);
   p.cargo.gear.push({ key: "crowbar", name: GEAR.crowbar.name, quality: 1 });
   establishNow(st, p);
   const h = hub(st);
@@ -85,7 +86,7 @@ section("A camp takes in a team that comes back with a Move order (the Enter car
   const st = createWorld({ seed: 23, factionCount: 7, mode: "hardcore" });
   st.noWanderers = true;
   const p = roadTeam(st);
-  Object.assign(p.cargo.supplies, { scrap: 30, parts: 5, food: 40, water: 40, buildmat: 4 });
+  Object.assign(p.cargo.supplies, { scrap: 30, parts: 5, water: 40, buildmat: 4 }); setFood(p.cargo, 40);
   giveOrder(st, p, "camp"); p.pitched = true; giveOrder(st, p, "camp");
   const camp = st.bases[0];
   check(!!camp && camp.camp === true && !camp.construction.length, "Set up camp: a plain camp, nothing building");
@@ -110,7 +111,7 @@ function mk(seed = SEED) {
   st.started = true;
   st.autoCombat = true;
   st.noWanderers = true;
-  Object.assign(hub(st).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100 });
+  Object.assign(hub(st).stock, { water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100 }); setFood(hub(st), 300);
   addBuilding(hub(st), "bunkhouse");
   delete hub(st).crowdNote;
   return st;
@@ -135,7 +136,7 @@ section("Enter base: a team at its own base that waited outside (moved out with 
   const st = mk();
   const h = hub(st);
   const crew = atBase(st, h.id).filter((s) => !s.leader).slice(0, 2);
-  const food0 = h.stock.food;
+  const food0 = food(h);
   const res = moveTeamOut(st, { baseId: h.id, memberIds: crew.map((s) => s.id), supplies: { food: 6, water: 6 } });
   const p = res.party;
   check(p && p.phase === "waiting" && partyTile(p) === h.tile, "a team waits outside the hub");
@@ -156,7 +157,7 @@ section("Enter base: a team at its own base that waited outside (moved out with 
   const msg = startOrder(st, p, { type: "mission", mission: "enter" });
   check(!st.parties.includes(p), `Enter: the team is disbanded (${msg})`);
   check(crew.every((s) => s.location.kind === "base" && s.location.baseId === h.id), "its people live at the hub again");
-  check(h.stock.food >= food0 && h.stock.scrap >= 109 && h.armory.some((g) => g.key === "crowbar"), "what it carried is in the stores and the armory");
+  check(food(h) >= food0 && h.stock.scrap >= 109 && h.armory.some((g) => g.key === "crowbar"), "what it carried is in the stores and the armory");
   check(st.log.some((l) => /is home/.test(l.text)), "the log: the team is home (its own base)");
   check(dangling(st, p.id).length === 0, "nothing points at the gone team");
 }

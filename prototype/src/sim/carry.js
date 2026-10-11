@@ -17,7 +17,10 @@
 //   car     the team's car or truck takes all of it; bikes' racks up to their rack kg (vehicles.js).
 // Packs and pockets are the slots left free by the items kept there (inventory.js): putting an item in the pack
 // pushes supplies out of it, into someone's hands. Quantities are units of the supply (floats: food is eaten in
-// parts). "meat" is fresh game (hunting.js cargo.meat, a part of the cargo's food, MEAT_KG a ration).
+// parts). Food is by type (foods.js) but held here in days of food: "food" (everything but raw meat and fish, FOOD_KG
+// a day as a rough figure for the places: the team's real weight is the items', load.js) and "meat" (raw meat and
+// fish, hunting.js MEAT_KG a day). On the ground and in a fight's piles it is the items themselves (cans of beans,
+// kilos of venison), each with its shelf left.
 // The small kit (meds, rounds, arrows, gun parts, electronics, the reloading bench's brass) stays abstract: spread in
 // pouches and pockets, never in the hands.
 //
@@ -34,8 +37,8 @@
 // (markers.js: "Cargo left behind: 20 un-purified water, a machete", the contents in its label and tooltip),
 // scavengers strip it (economy.js deathSitesDaily: the most valuable stack first, faster by roads and towns), the
 // Recover mission (and the governor) fetches what fits, and any team standing on the tile can Pick up… what and how
-// much it wants (pickUpGround). Food on the ground spoils (groundDaily): fresh food at the stores' "outside" rate
-// (storage.js RATE.outside), preserved at its own, fresh game at the field rate by the temperature (hunting.js).
+// much it wants (pickUpGround). Food on the ground spoils (groundDaily): each stack's shelf left runs at the stores'
+// "outside" factor (storage.js storeFactor; cans and rations hardly at all, raw meat in a day or two).
 //
 // FIGHTS (decided: carriers start a tactical battle with their hands full, a fight by the numbers drops at once).
 //   - On the battle map (combat.js createBattle → fitHands): u.hands = what they carry. Drop carried is free (no
@@ -48,8 +51,8 @@
 //     free hands: what the arms held goes into the vehicle as far as it has room, the rest is set down where each one
 //     starts (stageLoads, marked staged: it comes back after unless the team is beaten). A base's fight: no loads.
 //     The team's kind of supplies taken off a pile with the Ground window go into the taker's arms too (pileToArms).
-//     Fresh game stays fresh game on the ground (a pile's contents.meat, a part of its food; the tile's ground: a
-//     fresh stack, spoiling at the field rate).
+//     Food set down lies there as its items (a pile's supplies: raw venison, cans of beans), spoiling as on the
+//     tile's ground once the fight is over.
 //   - By the numbers: the carriers set it down when it starts.
 //   - Afterwards: won, what is left of the loads set down goes back (combat.js endBattle → armsDropsEnd, before the
 //     piles become loot: the supplies into the pool, a bag into its carrier's arms or the cargo); retreated, broken
@@ -72,29 +75,30 @@
 // collecting at that many units (orders.js startTask: task.capKg, parties.js cargoRoom). The team panel asks (a
 // slider, the team's room and the weight a unit, defaulting to the most that fits); the governor, the autopilot
 // and the AI give no quantity: the most that fits, as before.
-import { SUPPLIES, GEAR } from "./data.js";
+import { SUPPLIES, GEAR, supValue } from "./data.js";
 import { packOf, ensureInv, itemAt, removeAt, parseLoc, placeOfLoc, itemLoad, isCarryable } from "./inventory.js";
 import { partyMembers, cargoRoom, partyTile, addGearToCargo, poolLoad } from "./parties.js";
-import { meatIn, takeMeat, addMeat, fieldSpoilRate } from "./hunting.js";
+import { FOODS, foodUnits, takeFood, addFood, giveFood, unitsOf } from "./foods.js"; // food by type, held in days of food
 import { partyVehicle, partyVehicles, isCar, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { combatPower, survivorById, day, newId, log, baseById } from "./world.js";
 import { markDeathSite } from "./markers.js";
-import { RATE } from "./storage.js";
+import { storeFactor } from "./storage.js";
+import { forageKg } from "./foraging.js"; // what a day of the season's forage weighs (call-time only)
 import * as Weather from "./weather.js";
-import { addWormWater, wormMeatIn } from "./worm.js";
+import { addWormWater } from "./worm.js";
 import { say, active } from "./combat.js";
 import { dropToGround, pilesNear, settlePile } from "./ground.js"; // the battle map's piles (call-time only: safe in the import cycle)
 import { lootLayer, raidShares } from "./raidloot.js";
 import { gunLeavesTeam } from "./gunload.js"; // a gun in a bag set down leaves the team loaded
 
 // ---------- the table ----------
-// pack: units a pack slot holds, pocket: units a pocket holds (0: never there). kg: per unit (meat: MEAT_KG).
+// pack: units a pack slot holds, pocket: units a pocket holds (0: never there). kg: per unit (food: FOOD_KG a day,
+// meat: MEAT_KG a day).
 export const HOLD = {
   water:     { pack: 2,  pocket: 1, name: "purified water" },
   rawwater:  { pack: 2,  pocket: 1, name: "un-purified water" },
-  food:      { pack: 4,  pocket: 1, name: "food" },
-  preserved: { pack: 5,  pocket: 1, name: "preserved food" },
-  meat:      { pack: 2,  pocket: 0, name: "fresh game" },
+  food:      { pack: 4,  pocket: 1, name: "days of food" },
+  meat:      { pack: 2,  pocket: 0, name: "days of raw meat" },
   fuel:      { pack: 2,  pocket: 0, name: "fuel" },
   jars:      { pack: 4,  pocket: 0, name: "jars" },
   wood:      { pack: 20, pocket: 0, name: "firewood" },
@@ -111,9 +115,14 @@ export const PLACE_NAMES = { pocket: "Pockets", pack: "Pack", hands: "Carried (h
 // The order kinds that collect a resource, the supply they bring and what a unit weighs (the quantity prompt).
 export const COLLECT = { water: "rawwater", wood: "wood", forage: "food", hunt: "meat", fish: "meat" };
 const EPS = 1e-6;
-const MEAT_KG = 1; // hunting.js MEAT_KG (a literal: no use of an import while the module graph loads)
+const MEAT_KG = 1.35; // hunting.js MEAT_KG (a literal: no use of an import while the module graph loads)
+export const FOOD_KG = 1; // a day of packed food, roughly (cans 2.2 kg, MREs 1.1, jerky 0.5): the places' figure
+// Raw meat and fish (hold "meat") and the rest of the food (hold "food").
+const isRaw = (k, f) => !!f.raw;
+const notRaw = (k, f) => !f.raw;
+export const holdKeyOf = (k) => (FOODS[k] ? (FOODS[k].raw ? "meat" : "food") : k);
 
-export const unitKg = (k) => (k === "meat" ? MEAT_KG : SUPPLIES[k] ? SUPPLIES[k].weight : 1);
+export const unitKg = (k) => (k === "meat" ? MEAT_KG : k === "food" ? FOOD_KG : SUPPLIES[k] ? SUPPLIES[k].weight : 1);
 export const holdName = (k) => (HOLD[k] ? HOLD[k].name : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k);
 const r1 = (x) => Math.round(x * 10) / 10;
 export const qtyText = (q) => (Math.abs(q - Math.round(q)) < 0.05 ? String(Math.round(q)) : String(r1(q)));
@@ -125,34 +134,45 @@ export const recText = (rec) => Object.entries(rec || {}).filter(([, q]) => q > 
 
 // ---------- the pool ----------
 export const holdsOwn = (p) => !!(p && p.owner === "player" && p.kind !== "convoy" && p.supplies);
-// Units of each hold key the team has (packed and found; food without its fresh game).
+// Units of each hold key the team has (packed and found; food and raw meat in days of food).
 export function holdTotals(p) {
   const out = {};
   const cs = (p.cargo && p.cargo.supplies) || {};
-  const meat = meatIn(p.cargo);
   for (const k of HOLD_KEYS) {
-    if (k === "meat") { out.meat = meat; continue; }
-    out[k] = Math.max(0, Math.max(0, (p.supplies && p.supplies[k]) || 0) + Math.max(0, cs[k] || 0) - (k === "food" ? meat : 0));
+    if (k === "food" || k === "meat") { const f = k === "meat" ? isRaw : notRaw; out[k] = foodUnits(p, f) + (p.cargo && p.cargo.supplies ? foodUnits(p.cargo, f) : 0); continue; }
+    out[k] = Math.max(0, Math.max(0, (p.supplies && p.supplies[k]) || 0) + Math.max(0, cs[k] || 0));
   }
   return out;
 }
-// Puts `qty` of a hold key back in the pool (the found cargo; fresh game as fresh game, worm: how much of it carries
-// the worm's eggs, worm.js cargo.wormMeat).
-function addPool(p, key, qty, worm = 0) {
+// Puts `qty` of a key back in the pool (the found cargo): a food item as itself (egg: how much of it carries the
+// worm's eggs, left: its shelf left), days of "food"/"meat" as the stores' mix or game (a fallback).
+function addPool(p, key, qty, egg = 0, left = null) {
   if (!(qty > 0) || !p) return;
   p.cargo = p.cargo || { supplies: {}, gear: [] };
   p.cargo.supplies = p.cargo.supplies || {};
-  if (key === "meat") { const m = meatIn(p.cargo), w = wormMeatIn(p.cargo); p.cargo.supplies.food = (p.cargo.supplies.food || 0) + qty; p.cargo.meat = m + qty; if (worm > 0 || w > 0) p.cargo.wormMeat = w + Math.max(0, worm); return; }
+  if (FOODS[key]) {
+    const e = Math.max(0, Math.min(qty, egg || 0));
+    if (qty - e > EPS) addFood(p.cargo, key, qty - e, { left });
+    if (e > EPS) addFood(p.cargo, key, e, { left, egg: true });
+    return;
+  }
+  if (key === "food" || key === "meat") { giveFood(null, p.cargo, qty, key === "meat" ? "game" : "stores"); return; }
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + qty;
+}
+// Takes `qty` days of "food" or "meat" out of the pool as items (the found cargo and the packs, the soonest to spoil
+// first): [{ k, q, left, egg }].
+function takePoolLots(p, key, qty) {
+  if (!(qty > 0)) return [];
+  return takeFood([p.cargo, p].filter((h) => h && h.supplies), qty, { only: key === "meat" ? isRaw : notRaw }).lots;
 }
 // Takes `qty` of a hold key out of the pool (the found cargo first, then what was packed). Returns what it took.
 function takePool(p, key, qty) {
   if (!(qty > 0)) return 0;
-  if (key === "meat") return takeMeat(p.cargo, qty);
+  if (key === "food" || key === "meat") return takePoolLots(p, key, qty).reduce((a, l) => a + unitsOf(l.k, l.q), 0);
   let want = qty, got = 0;
   const cs = p.cargo && p.cargo.supplies;
   if (cs) {
-    const free = Math.max(0, (cs[key] || 0) - (key === "food" ? meatIn(p.cargo) : 0));
+    const free = Math.max(0, cs[key] || 0);
     const t = Math.min(want, free);
     if (t > 0) { cs[key] -= t; got += t; want -= t; }
   }
@@ -383,18 +403,20 @@ export function groundAt(state, tile, make = false) {
   if (!site && make) { site = { id: newId(), tile, items: [], day: day(state), names: [], lastConfirmed: day(state) }; state.deathSites.push(site); }
   return site;
 }
-export const groundItemText = (it) => (it.kind === "gear" ? it.name : `${qtyText(it.qty)} ${it.fresh ? "fresh game" : it.name.toLowerCase()}`);
+export const groundItemText = (it) => (it.kind === "gear" ? it.name : `${qtyText(it.qty)} ${FOODS[it.key] ? FOODS[it.key].word : it.name.toLowerCase()}`);
 export const groundText = (site, n = 6) => (site && site.items.length ? site.items.slice(0, n).map(groundItemText).join(", ") + (site.items.length > n ? `, and ${site.items.length - n} more` : "") : "nothing");
-function addGroundSupply(site, k, q, extra = {}) {
-  const key = k === "meat" ? "food" : k;
-  const fresh = k === "meat";
-  const cur = site.items.find((i) => i.kind === "supply" && i.key === key && !!i.fresh === fresh);
+// A stack of a supply on the ground. Food: extra.left (its shelf left, averaged with a stack already there) and
+// extra.worm (how much of it carries the worm's eggs).
+function addGroundSupply(site, key, q, extra = {}) {
+  if (!SUPPLIES[key]) return;
+  const cur = site.items.find((i) => i.kind === "supply" && i.key === key);
   if (cur) {
     if (extra.eggs != null) cur.eggs = ((cur.eggs || 0) * cur.qty + extra.eggs * q) / (cur.qty + q);
     if (extra.worm != null) cur.worm = (cur.worm || 0) + extra.worm;
+    if (FOODS[key]) cur.left = ((cur.left ?? FOODS[key].shelf) * cur.qty + (extra.left ?? FOODS[key].shelf) * q) / (cur.qty + q);
     cur.qty += q;
-    cur.value = cur.qty * SUPPLIES[key].value;
-  } else site.items.push({ kind: "supply", key, name: fresh ? "Fresh game" : SUPPLIES[key].name, qty: q, value: q * SUPPLIES[key].value, ...(fresh ? { fresh: true } : {}), ...extra });
+    cur.value = cur.qty * supValue(key);
+  } else site.items.push({ kind: "supply", key, name: SUPPLIES[key].name, qty: q, value: q * supValue(key), ...(FOODS[key] ? { left: extra.left ?? FOODS[key].shelf } : {}), ...(extra.eggs != null ? { eggs: extra.eggs } : {}), ...(extra.worm > 0 ? { worm: extra.worm } : {}) });
 }
 const touched = (state, site) => { site.lastConfirmed = day(state); markDeathSite(state, site); };
 function dropSite(state, site) {
@@ -425,9 +447,9 @@ function groundPut(state, p, sup, from = null) {
     for (const r of Object.values(h.by)) off(r.hands);
     off(h.car);
     for (const r of Object.values(h.by)) { off(r.pack); off(r.pocket); }
-    const worm = k === "meat" && p.cargo && p.cargo.wormMeat > 0 && meatIn(p.cargo) > 0 ? (p.cargo.wormMeat * Math.min(1, want / meatIn(p.cargo))) : 0;
+    if (k === "food" || k === "meat") { for (const l of takePoolLots(p, k, want)) addGroundSupply(site, l.k, l.q, { left: l.left, worm: l.egg ? l.q : 0 }); continue; } // the items themselves
     const got = takePool(p, k, want);
-    if (got > EPS) addGroundSupply(site, k, got, k === "rawwater" ? { eggs: p.wormEggs || 0 } : k === "meat" && worm > 0 ? { worm } : {});
+    if (got > EPS) addGroundSupply(site, k, got, k === "rawwater" ? { eggs: p.wormEggs || 0 } : {});
   }
   touched(state, site);
   dropSite(state, site);
@@ -478,26 +500,23 @@ export function pickUpGround(state, p, i, qty = Infinity, arms = null) {
     site.items.splice(i, 1);
     msg = `Picked up the ${it.name}.`;
   } else {
-    const k = it.fresh ? "meat" : it.key;
+    const k = it.key;
     const want = Math.min(it.qty, Number.isFinite(qty) ? Math.max(0, qty) : it.qty);
     let n;
-    if (it.fresh) {
-      const worm = it.worm > 0 ? it.worm * Math.min(1, want / it.qty) : 0;
-      n = addMeat(state, p, Math.floor(want + EPS), worm);
-      if (worm > 0) it.worm = Math.max(0, it.worm - worm * (n / Math.max(EPS, Math.floor(want + EPS))));
-    } else {
+    {
       const fit = cargoRoom(state, p) / unitKg(k);
-      n = Math.min(want, Math.floor(fit + EPS)); // whole units, but a last part-unit (spoiled food) goes when it fits
+      n = Math.min(want, Math.floor(fit + EPS)); // whole units, but a last part-unit (a kilo of meat) goes when it fits
       if (want - n < 1 && want <= fit + EPS) n = want;
       if (n > EPS) {
         p.cargo = p.cargo || { supplies: {}, gear: [] };
-        p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + n;
+        if (FOODS[k]) { const egg = it.worm > 0 ? it.worm * Math.min(1, n / it.qty) : 0; addPool(p, k, n, egg, it.left ?? null); if (egg > 0) it.worm = Math.max(0, it.worm - egg); } // foods.js: with its shelf left and the worm's eggs
+        else p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + n;
         if (k === "rawwater") addWormWater(state, p, n, it.eggs || 0);
       }
     }
     if (!(n > EPS)) return `No room to carry any ${groundItemText({ ...it, qty: 1 }).replace(/^1 /, "")} (${unitKg(k)} kg each; ${r1(cargoRoom(state, p))} kg free).`;
     it.qty -= n;
-    it.value = Math.max(0, it.qty) * SUPPLIES[it.key].value;
+    it.value = Math.max(0, it.qty) * supValue(it.key);
     if (it.qty < 0.05) site.items.splice(i, 1);
     msg = `Picked up ${stackText(k, n)}${it.qty >= 0.05 ? ` (${qtyText(it.qty)} left on the ground)` : ""}.`;
   }
@@ -516,23 +535,23 @@ export function pickUpAll(state, p) {
     if (i < 0) continue;
     const before = it.kind === "gear" ? 1 : it.qty;
     const m = pickUpGround(state, p, i);
-    if (/^Picked up/.test(m)) got.push(it.kind === "gear" ? it.name : stackText(it.fresh ? "meat" : it.key, before - Math.max(0, site.items.includes(it) ? it.qty : 0)));
+    if (/^Picked up/.test(m)) got.push(it.kind === "gear" ? it.name : stackText(it.key, before - Math.max(0, site.items.includes(it) ? it.qty : 0)));
   }
   const left = groundAt(state, partyTile(p));
   return got.length ? `Picked up ${got.join(", ")}.${left && left.items.length ? ` No room for the rest: ${groundText(left)}.` : ""}` : `No room to carry any of it (${r1(cargoRoom(state, p))} kg free).`;
 }
-// Daily: food on the ground spoils (the stores' outside rate; fresh game by the temperature).
+// Daily: food on the ground spoils: each stack's shelf left runs at the stores' outside factor (cans and rations by
+// the "stable" one), and a stack at 0 is gone.
 export function groundDaily(state) {
-  const temp = Weather.weather ? Weather.weather(state).temp : 15;
+  const w = Weather.weather ? Weather.weather(state) : { temp: 15, key: "clear" };
+  const temp = w.temp ?? 15, wet = w.key === "rain" || w.key === "storm", heat = w.key === "heat";
   for (const site of [...(state.deathSites || [])]) {
     let changed = false;
     for (const it of [...site.items]) {
-      if (it.kind !== "supply" || (it.key !== "food" && it.key !== "preserved")) continue;
-      const rate = it.fresh ? fieldSpoilRate(temp) : it.key === "preserved" ? RATE.preserved : RATE.outside;
-      it.qty *= 1 - rate;
-      if (it.worm) it.worm *= 1 - rate;
-      it.value = it.qty * SUPPLIES[it.key].value;
-      if (it.qty < 0.5) site.items.splice(site.items.indexOf(it), 1);
+      const f = it.kind === "supply" && FOODS[it.key];
+      if (!f) continue;
+      it.left = (it.left ?? f.shelf) - storeFactor(f.stable ? "stable" : "outside", temp, { wet, heat });
+      if (it.left <= 0 || it.qty < 0.05) site.items.splice(site.items.indexOf(it), 1);
       changed = true;
     }
     if (changed && !site.items.length) dropSite(state, site);
@@ -542,19 +561,21 @@ export function groundDaily(state) {
 // ---------- how much to collect ----------
 // What a collecting order would bring and how much the team has room for: { key, kg (a unit), max (units that fit
 // by weight), stowed (units that fit with nobody's hands full), name }.
+// Forage weighs what the season's forage weighs (foraging.js forageKg: berries and greens are heavy), game MEAT_KG.
+const collectKg = (state, type) => (type === "forage" ? (state ? forageKg(state) : 3.5) : unitKg(COLLECT[type]));
 export function collectInfo(state, p, type) {
   const k = COLLECT[type];
   if (!k) return null;
-  const kg = unitKg(k);
+  const kg = collectKg(state, type);
   const room = cargoRoom(state, p);
   const max = Math.max(0, Math.floor(room / kg + EPS));
   return { key: k, kg, max, stowed: Math.min(max, Math.floor(fitsStowed(state, p, k) + EPS)), name: holdName(k), room };
 }
 // orders.js startTask: a collecting task with a quantity stops at that many units (parties.js cargoRoom reads it).
-export function capTask(p, task) {
+export function capTask(p, task, state = null) {
   if (!task || task.qty == null || !COLLECT[task.type]) return;
   task.qty = Math.max(0, Math.floor(Number(task.qty) || 0));
-  task.capKg = task.qty * unitKg(COLLECT[task.type]);
+  task.capKg = task.qty * collectKg(state, task.type); // forage: the season's mix (foraging.js forageKg)
   task.pool0 = poolLoad(p);
 }
 
@@ -653,7 +674,7 @@ export function stageLoads(state, b, p) {
 }
 // The battle's team (its party; null for a base's battle).
 const battleParty = (state, b) => (b && b.setup && b.setup.partyId != null ? state.parties.find((x) => x.id === b.setup.partyId) || null : null);
-const pileKey = (k) => (k === "meat" ? "food" : k); // fresh game lies on the ground as food
+const pileKey = (k) => k; // food lies in a pile as its items
 // The one place a load set down on the battle map lands: a ground pile on the unit's cell (ground.js dropToGround).
 // The supplies leave the pool now (what lies there is anyone's: fire, the search window, the enemy); a bag goes down
 // whole (a gun in it leaves the team loaded, gunload.js). b.armsDrops remembers it: Pick up load and the end of the
@@ -662,15 +683,14 @@ export function groundDropCell(state, b, u, sup, item = null) {
   const p = battleParty(state, b);
   const rec = { pile: null, sup: {}, item: null, sid: u.sid };
   for (const [k, q] of Object.entries(sup || {})) {
-    const w0 = k === "meat" && p && p.cargo ? wormMeatIn(p.cargo) : 0;
-    const n = p ? takePool(p, k, q) : 0;
-    if (!(n > EPS)) continue;
-    const worm = k === "meat" && p.cargo ? Math.max(0, w0 - wormMeatIn(p.cargo)) : 0;
-    const pile = dropToGround(b, u, pileKey(k), n);
-    if (pile) {
-      rec.pile = pile.id; rec.sup[k] = (rec.sup[k] || 0) + n;
-      if (k === "meat") { pile.contents.meat = (pile.contents.meat || 0) + n; if (worm > 0) pile.contents.wormMeat = (pile.contents.wormMeat || 0) + worm; } // fresh game stays fresh: a part of the pile's food (as hunting.js cargo.meat)
-    } else addPool(p, k, n, worm);
+    // Days of "food"/"meat" go down as the items they are (the soonest to spoil first); anything else as itself.
+    const parts = (k === "food" || k === "meat") && p ? takePoolLots(p, k, q).map((l) => [l.k, l.q]) : [[k, p ? takePool(p, k, q) : 0]];
+    for (const [kk, n] of parts) {
+      if (!(n > EPS)) continue;
+      const pile = dropToGround(b, u, pileKey(kk), n);
+      if (pile) { rec.pile = pile.id; rec.sup[kk] = (rec.sup[kk] || 0) + n; }
+      else addPool(p, kk, n);
+    }
   }
   if (item) {
     const pile = dropToGround(b, u, item);
@@ -692,12 +712,10 @@ export function dropCarried(state, b, u, quiet = false) {
 }
 // A record's pile, and what of it still lies there ({ sup: { key: qty }, item }).
 const dropPile = (b, d) => { const L = lootLayer(b); return L && d.pile != null ? L.containers.find((c) => c.id === d.pile) || null : null; };
-// Fresh game in a pile: a part of its food (contents.meat, as a cargo's), never more than the food left (fire).
-export const pileMeat = (c) => Math.max(0, Math.min((c && c.contents && c.contents.meat) || 0, (c && c.contents && c.contents.sup.food) || 0));
 function dropLeft(c, d) {
   const sup = {};
   for (const [k, q] of Object.entries(d.sup || {})) {
-    const there = k === "meat" ? pileMeat(c) : k === "food" ? Math.max(0, (c.contents.sup.food || 0) - pileMeat(c)) : c.contents.sup[pileKey(k)] || 0;
+    const there = c.contents.sup[pileKey(k)] || 0;
     const n = Math.min(q, there);
     if (n > EPS) sup[k] = n;
   }
@@ -717,17 +735,10 @@ export function carriedNear(b, u) {
   }
   return out;
 }
-// Takes n of key k of a record off its pile.
-// Returns the worm's share that went with fresh game.
+// Takes n of key k of a record off its pile. Returns 0 (the worm's eggs do not follow food through a fight's piles).
 function offPile(c, d, k, n) {
   const pk = pileKey(k);
-  let worm = 0;
-  if (k === "meat") {
-    const m = Math.max(EPS, c.contents.meat || 0);
-    worm = (c.contents.wormMeat || 0) * Math.min(1, n / m);
-    c.contents.meat = Math.max(0, (c.contents.meat || 0) - n);
-    if (worm > 0) c.contents.wormMeat = Math.max(0, (c.contents.wormMeat || 0) - worm);
-  }
+  const worm = 0;
   c.contents.sup[pk] = (c.contents.sup[pk] || 0) - n;
   if (c.contents.sup[pk] <= EPS) delete c.contents.sup[pk];
   if (d) { d.sup[k] = (d.sup[k] || 0) - n; if (d.sup[k] <= EPS) delete d.sup[k]; }
@@ -749,7 +760,7 @@ export function pickCarried(state, b, u) {
   let took = false;
   for (const c of near) {
     if (c.item && !u.bag && !carryBag(state, b, u, c.item)) { offPileItem(c.pile, c.d); took = true; } // one bag in the arms at a time
-    if (p) for (const [k, n] of Object.entries(c.sup)) { const worm = offPile(c.pile, c.d, k, n); addPool(p, k, n, worm); u.hands = u.hands || {}; add(u.hands, k, n); took = true; }
+    if (p) for (const [k, n] of Object.entries(c.sup)) { offPile(c.pile, c.d, k, n); addPool(p, k, n); u.hands = u.hands || {}; add(u.hands, holdKeyOf(k), FOODS[k] ? unitsOf(k, n) : n); took = true; } // food items back in the arms as days of food / fresh game
     settlePile(c.pile);
   }
   prune(b);
@@ -794,8 +805,8 @@ function reclaimDrops(state, b, outcome, keep = false) {
     const left = dropLeft(c, d);
     for (const [k, n] of Object.entries(left.sup)) {
       if (won && !own) continue;
-      const worm = offPile(c, d, k, n);
-      if (won) addPool(own, k, n, worm); else add(loose, k, n);
+      offPile(c, d, k, n);
+      if (won) addPool(own, k, n); else add(loose, k, n);
     }
     if (left.item) {
       const it = left.item;
@@ -817,29 +828,13 @@ function reclaimDrops(state, b, outcome, keep = false) {
 // start of a fight the team was not beaten in. Otherwise the piles stay where they are.
 export function armsDropsEnd(state, b, outcome) {
   if (!b || !b.armsDrops || !b.armsDrops.length) return;
-  reclaimDrops(state, b, outcome, true);
-  // Fresh game left lying (the rest of a pile goes to the tile's death site as plain things, inventory.js leaveBodies):
-  // onto the tile's ground as fresh game, still spoiling at the field rate (groundDaily).
-  const p = battleParty(state, b);
-  const tile = p ? partyTile(p) : b.tileId;
-  if (tile == null) return;
-  for (const d of b.armsDrops || []) {
-    const c = dropPile(b, d);
-    const n = c && d.sup && d.sup.meat ? Math.min(d.sup.meat, pileMeat(c)) : 0;
-    if (!(n > EPS)) continue;
-    const worm = offPile(c, d, "meat", n);
-    const site = groundAt(state, tile, true);
-    addGroundSupply(site, "meat", n, worm > 0 ? { worm } : {});
-    touched(state, site);
-    settlePile(c);
-  }
-  prune(b);
+  reclaimDrops(state, b, outcome, true); // food left lying goes to the tile's death site as its items (inventory.js leaveBodies) and spoils there (groundDaily)
 }
 // The Ground window (raidloot.js moveSupply): the team's kind of supplies (HOLD) taken off a pile on the ground in a
 // team's fight go into the taker's arms (hands full, as Pick up load) and back into the pool, not loose; fresh game
 // stays fresh. n: what the move put in their haul. Returns the words for the message ("" when nothing changed).
 export function pileToArms(state, b, box, uid, k, n) {
-  if (!b || !box || box.kind !== "ground" || !HOLD[k] || k === "meat" || !(n > EPS)) return "";
+  if (!b || !box || box.kind !== "ground" || !HOLD[holdKeyOf(k)] || !(n > EPS)) return "";
   const p = battleParty(state, b);
   if (!holdsOwn(p)) return "";
   const u = b.units.find((x) => x.id === uid && x.side === "player");
@@ -848,25 +843,16 @@ export function pileToArms(state, b, box, uid, k, n) {
   if (!(take > EPS)) return "";
   u.haul.sup[k] -= take;
   if (u.haul.sup[k] <= EPS) u.haul.sup[k] = 0;
-  // Fresh game first (the move took the pile's food, its fresh game among it).
-  const fresh = k === "food" ? Math.min(take, Math.max(0, box.contents.meat || 0)) : 0;
-  let worm = 0;
-  if (fresh > EPS) {
-    const m = Math.max(EPS, box.contents.meat || 0);
-    worm = (box.contents.wormMeat || 0) * Math.min(1, fresh / m);
-    box.contents.meat = Math.max(0, box.contents.meat - fresh);
-    if (worm > 0) box.contents.wormMeat = Math.max(0, box.contents.wormMeat - worm);
-  }
   // The team's own loads on that pile: what is left of them is less now (Pick up load, the end of the fight).
-  let owed = { meat: fresh, [k]: take - fresh };
+  const owed = { [k]: take };
   for (const d of b.armsDrops || []) {
     if (d.pile !== box.id) continue;
     for (const kk of Object.keys(owed)) { const t = Math.min(owed[kk], d.sup[kk] || 0); if (t > EPS) { d.sup[kk] -= t; if (d.sup[kk] <= EPS) delete d.sup[kk]; owed[kk] -= t; } }
   }
   prune(b);
   u.hands = u.hands || {};
-  if (fresh > EPS) { addPool(p, "meat", fresh, worm); add(u.hands, "meat", fresh); }
-  if (take - fresh > EPS) { addPool(p, k, take - fresh); add(u.hands, k, take - fresh); }
+  addPool(p, k, take);
+  add(u.hands, holdKeyOf(k), FOODS[k] ? unitsOf(k, take) : take); // a food item in the arms: days of food or fresh game
   return ` ${u.name.split(" ")[0]} carries it in the arms (hands full: no weapon until it is set down).`;
 }
 // After a fight (combat.js finishCombat, before its handler). Loads still in their piles (a raid's, or a battle that

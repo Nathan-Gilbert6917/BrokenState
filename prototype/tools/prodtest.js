@@ -10,6 +10,8 @@
 // alone, one log line a day, taking over keeps everything, nothing while the autopilot runs); the governor using
 // the orders; and 200 days with all of it on two seeds with no NaN or negative stock.
 // Usage: node tools/prodtest.js [days for the long runs] [seeds...]
+import { food, setFood, addDays, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
+import { lotsOf } from "../src/sim/foods.js";
 import { setRounds, totalRounds } from "../src/sim/ammo.js"; // the bench makes rounds by calibre (ammo.js)
 import { createWorld, tickHour, hub, atBase, makeSurvivor, newId, day, hourOfDay, RADIO_RANGE } from "../src/sim/world.js";
 import { addBuilding, stations, stationStatus, runStations, mannedStations, RECIPES, BUILDINGS } from "../src/sim/buildings.js";
@@ -21,7 +23,7 @@ import { POWER, powerStatus, refreshPower, isPowered, poweredType, generatorHeat
 import { stewardOf, setSteward, setStewardArea, setPinned, stewardHour, STEWARD_LOG_HOUR } from "../src/sim/steward.js";
 import { setAutopilot, autopilotHour, stewardRun } from "../src/sim/autopilot.js";
 import { craftQueue, craftingHour, craftJobStatus, makeItem, craftQuality, CRAFTS } from "../src/sim/crafting.js";
-import { storeSpaces, storeRate, rackPlan } from "../src/sim/storage.js";
+import { storeSpaces, storeFactor, rackPlan } from "../src/sim/storage.js";
 import { defenceMult, hordeAttackBase } from "../src/sim/defences.js";
 import { makeHorde, baseHeat } from "../src/sim/hordes.js";
 import { radioNodes } from "../src/sim/radio.js";
@@ -33,13 +35,15 @@ const longDays = Number(process.argv[2] || 200);
 const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [42, 7];
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
+const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 const W = (seed = 42) => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; return st; };
 const plain = (s) => { s.traits = []; s.conditions = []; return s; };
 // A quiet hub: everyone resting, plenty of everything, no illness to make people unfit to work.
 function quietHub(st) {
   const h = hub(st);
   for (const s of atBase(st, h.id)) { plain(s); s.role = "rest"; s.station = null; s.health = 100; s.mood = 80; }
-  Object.assign(h.stock, { food: 500, water: 200, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 50, jars: 40, preserved: 0 });
+  Object.assign(h.stock, { water: 200, scrap: 300, parts: 30, fuel: 40, meds: 20, ammo: 50, jars: 40 });
+  setFood(h, 500); // days of food by type (tools/foodkit.js)
   return h;
 }
 const people = (st, h) => atBase(st, h.id);
@@ -148,15 +152,15 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   const st3 = W();
   const h3 = quietHub(st3);
   addBuilding(h3, "smoker");
-  h3.stock.food = 900;
+  setFood(h3, 900, "f_potatoes"); // fresh food the racks can take (sim/foods.js)
   check(rackPlan(st3, h3).take > 0, "the racks dry surplus food with no order");
   setStationOrder(st3, h3, "rack", { mode: "off" });
   check(rackPlan(st3, h3).take === 0 && rackLimit(st3, h3) === 0, "racks Off: nothing dried");
-  setStationOrder(st3, h3, "rack", { mode: "keep", key: "food", n: 898 });
-  check(Math.abs(rackPlan(st3, h3).take - 2) < 1e-9, `racks Keep 898 food: take 2 (${rackPlan(st3, h3).take})`);
+  setStationOrder(st3, h3, "rack", { mode: "keep", key: "fresh", n: 898 });
+  check(Math.abs(rackPlan(st3, h3).take - 2) < 1e-6, `racks Keep 898 days of fresh food: take 2 (${rackPlan(st3, h3).take})`);
   setStationOrder(st3, h3, "rack", { mode: "until", n: 10 });
-  h3.stock.preserved = 12;
-  check(rackPlan(st3, h3).take === 0, "racks Until 10 preserved: stop at 12");
+  setJarred(h3, 12);
+  check(rackPlan(st3, h3).take === 0, "racks Until 10 days of food that keeps: stop at 12");
 }
 
 // ---------- 2. craft orders and quality ----------
@@ -214,6 +218,7 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   console.log("Power");
   const st = W();
   const h = quietHub(st);
+  addDays(h, 300, "f_potatoes"); // fresh food for the kitchens to jar
   st.hour = Math.ceil(st.hour / 24) * 24 + 8;
   const ppl = people(st, h);
   const gen = addBuilding(h, "generator");
@@ -265,7 +270,7 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   refreshPower(st, h);
   // Effects.
   check(!poweredType(h, "coldstore") && storeSpaces(h).find((x) => x.key === "coldstore").kind === "cold", "the cold store is an ice house, generator or not");
-  check(storeRate("cold", 26) === 0.012, "summer: 1.2% a day in the cold store");
+  check(storeFactor("cold", 26) === 0.9 && storeFactor("cold", -2) === 0.15, `an ice house: ×0.9 of the shelf a day in summer, ×0.15 in a freeze`);
   const node = radioNodes(st).find((n) => n.base === h);
   // A radio station reaches RADIO_RANGE (12, world.js), +RADIO_BOOST (2) on generator power: 14.
   check(node && poweredType(h, "radio") && !node.military && node.range === RADIO_RANGE + RADIO_BOOST, `radio coverage ${RADIO_RANGE} + ${RADIO_BOOST} on power (${node && node.range})`);
@@ -276,7 +281,7 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   hordeAttackBase(st, horde, h);
   check(h.stock.fuel === 10, `no fuel burned by powered floodlights in an attack (${h.stock.fuel})`);
   const kst = stationStatus(st, h, kitchens[0]);
-  check(kst.powered && kst.in.food === 14 && kst.out.preserved >= 12, `the powered kitchen: ${kst.in.food} food → ${kst.out.preserved} preserved`);
+  check(kst.powered && kst.in.fresh === 14 && kst.out.f_jarred >= 12, `the powered kitchen: ${kst.in.fresh} days of fresh food → ${kst.out.f_jarred} portions of jarred food`);
   // Switching a building off.
   h.powerOff = { [kitchens[0].id]: true };
   check(powerStatus(st, h).demand === 6, "a building switched off draws nothing");
@@ -296,22 +301,22 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   const still = addBuilding(h, "still");
   const [s] = people(st, h);
   op(s, still);
-  h.stock.food = 100; h.stock.fuel = 0; h.mash = 0;
+  setFood(h, 96, "f_potatoes"); addDays(h, 4, "f_greens"); h.stock.fuel = 0;
   runStations(st, h);
-  check(h.stock.fuel === 3 && h.stock.food === 92, `8 food + 2 water → 3 fuel (${h.stock.food} food, ${h.stock.fuel} fuel)`);
-  h.mash = 10;
+  check(h.stock.fuel === 3 && near(food(h), 92, 1e-6) && !kindsOf(h).f_greens, `8 days of fresh food + 2 water → 3 fuel, the soonest to spoil first (${food(h)} days of food, ${h.stock.fuel} fuel)`);
+  setStationOrder(st, h, still.id, { mode: "keep", key: "fresh", n: 84 });
   runStations(st, h);
-  check(h.stock.fuel === 6 && h.stock.food === 88 && h.mash === 6, `spoiled food first: 4 mash + 4 food (${h.stock.food} food, mash ${h.mash})`);
-  setStationOrder(st, h, still.id, { mode: "keep", key: "food", n: 85 });
+  check(h.stock.fuel === 6 && near(food(h), 84, 1e-6), "Keep 84 days of fresh food: runs at 92 (84 after)");
   runStations(st, h);
-  check(h.stock.fuel === 6, "Keep 85 food: stops (88 - 4 would be 84)");
-  // storage.js leaves the day's spoiled food as mash.
+  check(h.stock.fuel === 6, "then stops (84 - 8 would be 76)");
+  // Spoiled food is gone (no mash: user pick 2026-10-10): thrown out and logged.
   const st2 = W();
   const h2 = quietHub(st2);
-  h2.stock.food = 2000;
+  setFood(h2, 2000, "f_greens");
+  for (const l of lotsOf(h2).f_greens) l.left = 0.5;
   st2.hour = 24 * 40;
   for (let i = 0; i < 24; i++) tickHour(st2);
-  check(h2.mash > 0, `food spoiling outside leaves mash for tomorrow (${h2.mash})`);
+  check(h2.mash == null && food(h2) < 1000 && st2.log.some((l) => /food spoiled and was thrown out/.test(l.text)), `food spoiling is thrown out and logged, no mash left (${Math.round(food(h2))} days left)`);
 }
 
 // ---------- 5. stewards ----------

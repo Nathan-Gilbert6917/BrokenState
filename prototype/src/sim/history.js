@@ -25,17 +25,18 @@
 // 28-day rows. Numbers are rounded (one decimal under 10, whole numbers above). Measured on a Balanced autopilot run:
 // 21 KB of JSON at day 90 (one base), 38 KB at a year, 134 KB at two years with 8 bases (20 KB gzipped, under 3%
 // of the save).
+import { foodIn, preservedIn } from "./foods.js"; // food columns in days of food
 import { day, alive } from "./world.js";
 import { baseHeat } from "./hordes.js";
 import { attitude } from "./factions.js";
 import { controlledLand, allianceMembers } from "./alliance.js";
 import { birthsTotal } from "./family.js"; // births happen in state.children, not state.survivors
 import { causeKind, CAUSE_KINDS } from "./causes.js"; // the kind of each death, as the "Why?" chain recorded it
-import { ROUND_KEYS, totalRounds } from "./rounds.js"; // rounds by calibre
+import { GENERIC_KEYS, totalRounds } from "./rounds.js"; // rounds by calibre
 
 export const STOCK_KEYS = ["food", "preserved", "water", "rawwater", "fuel", "wood", "meds", "ammo", "parts", "scrap"];
 // Flow groups: the stock keys each one sums.
-export const FLOWS = { food: ["food", "preserved"], water: ["water", "rawwater"], fuel: ["fuel"], wood: ["wood"], meds: ["meds"], ammo: ["ammo", ...ROUND_KEYS], parts: ["parts"], scrap: ["scrap"] }; // ammo: every round, any calibre (rounds.js)
+export const FLOWS = { food: ["food", "preserved"], water: ["water", "rawwater"], fuel: ["fuel"], wood: ["wood"], meds: ["meds"], ammo: ["ammo", ...GENERIC_KEYS], parts: ["parts"], scrap: ["scrap"] }; // ammo: every round, any calibre, as the stock column counts them (rounds.js totalRounds: the rounds generic ammo stands for, not 40 mm grenades or rockets)
 export const FLOW_KEYS = Object.keys(FLOWS);
 const BASE_COLS = ["day", "span", ...STOCK_KEYS.map((k) => `s_${k}`), ...FLOW_KEYS.map((k) => `i_${k}`), ...FLOW_KEYS.map((k) => `o_${k}`), ...FLOW_KEYS.map((k) => `m_${k}`), "people", "mood", "heat"];
 const COLONY_COLS = [...BASE_COLS, "pop", "deaths", "arrivals", "births", "hivesKnown", "hivesDestroyed", "groups", "allied", "hostile", "land"];
@@ -69,11 +70,19 @@ export const historyOf = (state) => (state.history && state.history.v === 1 ? st
 const deadCount = (state) => state.survivors.reduce((n, s) => n + (!s.alive && !s.left ? 1 : 0), 0);
 
 // ---------- marks ----------
+// A stock's figure for a column: "food" the days of food but the preserved (foods.js), "preserved" the preserved food's
+// days (jerky, smoked fish, dried fruit, jarred food), the rest by key.
+function stockKey(stock, k) {
+  if (!stock) return 0;
+  if (k === "food") return Math.max(0, foodIn(stock) - preservedIn(stock));
+  if (k === "preserved") return preservedIn(stock);
+  return Number(stock[k]) || 0;
+}
 function totals(stock) {
   const out = new Array(FLOW_KEYS.length);
   for (let i = 0; i < FLOW_KEYS.length; i++) {
     let v = 0;
-    for (const k of FLOWS[FLOW_KEYS[i]]) v += Number(stock && stock[k]) || 0;
+    for (const k of FLOWS[FLOW_KEYS[i]]) v += stockKey(stock, k);
     out[i] = v;
   }
   return out;
@@ -133,7 +142,7 @@ export function currentRows(state) {
     const mood = here.length ? here.reduce((a, s) => a + (Number(s.mood) || 0), 0) / here.length : 0;
     const h = safeHeat(state, b);
     const acc = H.acc[String(b.id)] || freshAcc();
-    const stock = STOCK_KEYS.map((k) => Math.max(0, k === "ammo" ? totalRounds(b.stock) : Number(b.stock && b.stock[k]) || 0)); // ammo: every round (rounds.js)
+    const stock = STOCK_KEYS.map((k) => Math.max(0, k === "ammo" ? totalRounds(b.stock) : stockKey(b.stock, k))); // ammo: every round (rounds.js); food: days of it (foods.js)
     stock.forEach((v, i) => (sumStock[i] += v));
     people += here.length;
     moodSum += mood * here.length;

@@ -47,12 +47,12 @@ const topSkills = (s) => Object.keys(SKILL_NAMES).sort((a, b) => skill(s, b) - s
 export function specOf(state, pl) {
   const v = pl.vehicleId ? state.vehicles.find((x) => x.id === pl.vehicleId) : null;
   const supplies = {};
-  for (const [k, q] of Object.entries(pl.supplies || {})) if (SUPPLIES[k] && Number.isFinite(q) && q > 0) supplies[k] = Math.floor(q);
+  for (const [k, q] of Object.entries(pl.supplies || {})) if ((SUPPLIES[k] || k === "food") && Number.isFinite(q) && q > 0) supplies[k] = Math.floor(q); // food: days of it (foods.js)
   return {
     mission: pl.mission, stance: pl.stance, policy: RETREAT_POLICIES[pl.policy] ? pl.policy : null,
     members: [...pl.crew].map((id) => survivorById(state, id)).filter(Boolean).map((s) => ({ id: s.id, name: s.name, role: s.role, wrole: (s.work && s.work.role) || null, top: topSkills(s) })),
     vehicleId: v ? v.id : null, vehicleType: v ? v.type : null, vehicleName: v ? v.name : null,
-    supplies, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false,
+    supplies, packFood: pl.packFood || null, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false, // packFood: the planner's Pack first (a food item)
     plan: pl.mission === "outpost" || pl.mission === "occupy" ? null : clone(pl.plan) || null, sweep: clone(pl.sweep) || null,
   };
 }
@@ -204,12 +204,13 @@ export function applyPacking(state, pl, spec) {
   const short = [];
   pl.supplies = {};
   for (const [k, want] of Object.entries(spec.supplies || {})) {
-    if (!SUPPLIES[k] || !(want > 0)) continue;
+    if ((!SUPPLIES[k] && k !== "food") || !(want > 0)) continue; // food: days of it (packed as items at launch)
     const have = Math.max(0, Math.floor(stockHas(h.stock, k)));
     pl.supplies[k] = Math.min(want, have);
-    if (have < want) short.push(`${k === "water" ? "water" : SUPPLIES[k].name.toLowerCase()} ${have} of ${want}`);
+    if (have < want) short.push(`${k === "water" ? "water" : k === "food" ? "days of food" : SUPPLIES[k].name.toLowerCase()} ${have} of ${want}`);
   }
   if (spec.tabs != null) pl.tabs = !!spec.tabs;
+  if (spec.packFood && (h.stock[spec.packFood] || 0) > 0) pl.packFood = spec.packFood; // the planner's Pack first, while the hub has it
   pl.lights = spec.lights !== false;
   pl.spares = spec.spares !== false;
   return short.length ? [`Short at the hub: ${short.join(", ")}.`] : [];

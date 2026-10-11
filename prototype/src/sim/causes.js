@@ -16,6 +16,7 @@
 //
 // For other modules (the run summary's "deaths by cause"): deathCause(state, survivorOrEntryOrId), deathsByCause(state),
 // lossesOf(state), causeKind(state, causeText).
+import { foodIn } from "./foods.js"; // days of food
 import { day, baseById, factionById, atBase, residents, alive } from "./world.js";
 import { diaryEntries } from "./diary.js";
 import { fixtures, fixtureName, jobFor, fxDef, isBroken, isWaterFixture } from "./breakdowns.js";
@@ -107,7 +108,7 @@ const STOCK_WORD = { water: "water", food: "food", scrap: "scrap", meds: "meds",
 const stockOf = (base, k) => {
   const st = base.stock || {};
   if (k === "water") return (st.water || 0) + (st.rawwater || 0);
-  if (k === "food") return (st.food || 0) + (st.preserved || 0);
+  if (k === "food") return foodIn(st); // days of food (foods.js)
   if (k === "heat") return (st.wood || 0) + (st.fuel || 0);
   if (k === "ammo") return totalRounds(st); // every round, any calibre (rounds.js)
   return st[k] || 0;

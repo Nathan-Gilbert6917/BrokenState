@@ -38,7 +38,7 @@
 //   "haul:<unitId>:gear:<i>"       "haul:<uid>:sup:<key>" "haul:<uid>:list"       what a survivor carries loose
 //   "trunk:<partyId>:gear:<i>"     "trunk:<pid>:sup:<key>" "trunk:<pid>:list"     the vehicle (the team's cargo)
 //   "s:<survivorId>:<slot>[:<i>]"                                                  the survivor's own slots
-import { GEAR, SUPPLIES } from "./data.js";
+import { GEAR, SUPPLIES, supWeight } from "./data.js";
 const worthPerKg = (it) => ((GEAR[it.key] && GEAR[it.key].value) || 1) / Math.max(0.1, itemLoad(it));
 import { survivorById } from "./world.js";
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
@@ -107,7 +107,7 @@ export const haulOf = (u) => u.haul || (u.haul = { sup: {}, gear: [] });
 export const haulLoad = (u) => {
   const h = u.haul;
   if (!h) return 0;
-  return Object.entries(h.sup).reduce((a, [k, v]) => a + (SUPPLIES[k] && v > 0 ? v * SUPPLIES[k].weight : 0), 0) + h.gear.reduce((a, g) => a + itemLoad(g), 0);
+  return Object.entries(h.sup).reduce((a, [k, v]) => a + (SUPPLIES[k] && v > 0 ? v * supWeight(k) : 0), 0) + h.gear.reduce((a, g) => a + itemLoad(g), 0);
 };
 // Kg this survivor still has room for (negative: over their max).
 export function personalRoom(state, u) {
@@ -341,7 +341,7 @@ function planSupply(state, b, u, from, to, qty) {
     if (fit < n) { n = fit; limit = key; }
   }
   if (n < 1) return { err: tooHeavy(state, b, limit || u.id, name), have };
-  const w = SUPPLIES[k].weight;
+  const w = supWeight(k);
   const timed = hauling(from, to);
   if (timed) {
     const fit = Math.floor((haulBudget(b, u) + 1e-6) / w);

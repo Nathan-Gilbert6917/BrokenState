@@ -4,6 +4,8 @@
 // background, a small team's skills and loaded seats, armed strangers sized to the team), saves before, during and
 // after the camp, and the autopilot founding one.
 // Usage: node tools/hcstarttest.js [autopilot games] [days] (default 8 games, 40 days)
+import { FOODS, foodIn } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { totalRounds, foldRounds } from "../src/sim/ammo.js"; // rounds by calibre
 // A record with its rounds counted together as "ammo" (the archetypes give ammo as one figure); no "ammo" key with none.
 const asGeneric = (rec) => { const r = { ...rec }; foldRounds(r); if (!r.ammo) delete r.ammo; return r; };
@@ -104,8 +106,9 @@ for (const st of worlds) {
   const prep = partyMembers(st, p).some((x) => x.background === "prepper");
   const pf = prep ? P.FOOD : 0, pw = prep ? P.WATER : 0;
   const lo = HC_START.TEAM_MIN * n, hi = HC_START.TEAM_MAX * n, fhi = teamFoodCap(partyMembers(st, p)); // per head (3–9 for three)
-  check(sup.food >= lo + pf && sup.food <= fhi + pf && sup.water >= lo + pw && sup.water <= hi + pw, `seed ${st.seed}: the others' 1–3 days${prep ? " plus the prepper's five" : ""} (${sup.food} food, ${sup.water} water)`);
-  check(sup.food / n <= 5 + pf / n && sup.water / n <= 3 + pw / n, `seed ${st.seed}: no more than 3 days each (5 food for a farmer's team) beyond a prepper's bag`);
+  const fd = food(p); // days of food, typed as a house's kitchen food (sim/foods.js: whole items by the dice, about a day either way)
+  check(fd >= lo + pf - 1 && fd <= fhi + pf + 1 && sup.water >= lo + pw && sup.water <= hi + pw, `seed ${st.seed}: the others' 1–3 days${prep ? " plus the prepper's five" : ""} (${fd.toFixed(1)} days of food, ${sup.water} water)`);
+  check(fd / n <= 5 + (pf + 1) / n && sup.water / n <= 3 + pw / n, `seed ${st.seed}: no more than 3 days each (5 food for a farmer's team) beyond a prepper's bag`);
   check(!sup.fuel && !sup.scrap && !sup.parts && (sup.ammo || 0) <= 72 + (prep ? P.AMMO : 0) && (sup.meds || 0) <= 6 + (prep ? P.MEDS : 0), `seed ${st.seed}: no fuel, scrap or parts in the packs, little ammo (${sup.ammo || 0}) or meds beyond the bags`);
   check(Object.values(sup).every((v) => Number.isFinite(v) && v >= 0), `seed ${st.seed}: clean supply numbers`);
 }
@@ -149,8 +152,8 @@ section("The prepper: when one of the three is a prepper, they fled with a duffl
     check(traited ? pr.traits.length <= P.MAX_TRAITS : pr.traits.length >= P.MAX_TRAITS, `seed ${st.seed}: the trait when a slot allows (${pr.traits.join(", ")})`);
     const line = st.log.find((l) => /was a prepper/.test(l.text));
     check(!!line && line.text.startsWith(pr.name.split(" ")[0]) && Math.floor(line.hour / 24) === 0 && (traited || /no room for the trait/.test(line.text)), `seed ${st.seed}: day 1's log names the prepper (${line ? line.text.slice(0, 60) : "no line"}…)`);
-    check(hc0.grabbed[0].startsWith(pr.name.split(" ")[0]) && /packed by the door: 15 food, 15 water/.test(hc0.grabbed[0]) && /15 food, 15 water/.test(st.cards[0].text), "the opening blurb tells the bag's contents first");
-    check(/15 food, 15 water/.test(st.cards[0].text), "the opening blurb tells the bag's contents");
+    check(hc0.grabbed[0].startsWith(pr.name.split(" ")[0]) && /packed by the door: 15 days of food, 15 water/.test(hc0.grabbed[0]) && /15 days of food, 15 water/.test(st.cards[0].text), "the opening blurb tells the bag's contents first");
+    check(/15 days of food, 15 water/.test(st.cards[0].text), "the opening blurb tells the bag's contents");
     check(p.supplies.meds >= P.MEDS, `seed ${st.seed}: the bag's meds are pooled (${p.supplies.meds})`);
     check(!p.burden || p.burden.band <= 1, `seed ${st.seed}: the team still walks (load band ${p.burden && p.burden.band})`);
   }
@@ -177,7 +180,7 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
   check(Object.keys(A).length >= 10 && ["prepper", "veteran", "student", "office", "bluecollar"].every((k) => A[k]) && Object.keys(BACKGROUNDS).join() === Object.keys(A).join(), `${Object.keys(A).length} backgrounds: ${Object.values(A).map((x) => x.name).join(", ")}`);
   for (const [k, a] of Object.entries(A)) {
     check(Object.keys(a.cars).every((t) => VEHICLE_TYPES[t] && VEHICLE_TYPES[t].motor), `${k}: its cars exist (${Object.keys(a.cars).join(", ")})`);
-    check(Object.keys(a.trunk.gear || {}).every((g) => GEAR[g]) && Object.keys(a.trunk).filter((x) => x !== "gear" && x !== "n").every((x) => SUPPLIES[x]), `${k}: everything in its trunk exists`);
+    check(Object.keys(a.trunk.gear || {}).every((g) => GEAR[g]) && Object.keys(a.trunk).filter((x) => x !== "gear" && x !== "n").every((x) => SUPPLIES[x] || x === "food" || x === "preserved"), `${k}: everything in its trunk exists (food: days of it, typed when packed)`);
     check(Object.keys(a.skills).every((x) => SKILLS_ALL.includes(x)) && Object.keys(a.traits || {}).every((t) => TRAITS[t]), `${k}: its skills and traits exist`);
   }
   check(["suv", "hummer", "van"].every((t) => VEHICLE_TYPES[t] && VEHICLE_TYPES[t].motor && VEHICLE_TYPES[t].tank > 0 && VEHICLE_TYPES[t].payload > 0), "the SUV, the Hummer and the work van are cars (vehicles.js)");
@@ -198,8 +201,9 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
     const T = VEHICLE_TYPES[v.type];
     check(v.fuel >= T.tank * HC_START.CAR.FUEL[0] - 1e-9 && v.fuel <= T.tank && v.condition >= HC_START.CAR.CONDITION[0] && v.condition <= HC_START.CAR.CONDITION[1], `seed ${st.seed}: the tank at least half full (${v.fuel} of ${T.tank}), condition ${v.condition}`);
     const TR = A[owner.background].trunk;
-    const cs = asGeneric(p.cargo.supplies); // ammo.js: the rounds in the back, counted as the old "ammo"
-    check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && Object.keys(TR).filter((k) => SUPPLIES[k] && TR[k][0] > 0).every((k) => cs[k] >= TR[k][0]), `seed ${st.seed}: the supplies in the back are the owner's (${JSON.stringify(cs)})`);
+    const cs = asGeneric(Object.fromEntries(Object.entries(p.cargo.supplies).filter(([k]) => !FOODS[k]))); // ammo.js: the rounds in the back, counted as the old "ammo"; food by type apart
+    const fd = foodIn(p.cargo.supplies), flo = ((TR.food || [0])[0] || 0) + ((TR.preserved || [0])[0] || 0), fhi = ((TR.food || [0, 0])[1] || 0) + ((TR.preserved || [0, 0])[1] || 0);
+    check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && Object.keys(TR).filter((k) => SUPPLIES[k] && TR[k][0] > 0).every((k) => cs[k] >= TR[k][0]) && fd >= flo - 1 && fd <= fhi + 1, `seed ${st.seed}: the supplies in the back are the owner's (${JSON.stringify(cs)}, ${fd.toFixed(1)} days of food)`);
     check(p.cargo.gear.every((g) => TR.gear && TR.gear[g.key]) && p.cargo.gear.length >= TR.n[0] && p.cargo.gear.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${p.cargo.gear.map((g) => g.key).join(", ")})`);
     const line = hc0.grabbed[hc0.grabbed.length - 1];
     check(new RegExp(`^${owner.name.split(" ")[0]} got everyone into their ${v.name.toLowerCase()}`).test(line) && /tank \d+% full/.test(line) && /in the back/.test(line) && st.cards[0].text.includes(line), `seed ${st.seed}: the opening blurb says whose car and what is in the back`);
@@ -267,7 +271,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   const tile0 = partyTile(p);
   const people = partyMembers(st, p).map((s) => s.id);
   p.cargo.gear.push({ key: "crowbar", name: GEAR.crowbar.name, quality: 1 });
-  Object.assign(p.cargo.supplies, { food: 40, water: 40, parts: 1 });
+  Object.assign(p.cargo.supplies, { water: 40, parts: 1 }); setFood(p.cargo, 40);
   st.cards.length = 0;
   giveOrder(st, p, "establish");
   check(!st.bases.length && p.phase === "task" && p.task.type === "pitch", `the team sets up the camp first (${STAGING.PITCH.hours} hour of work)`);
@@ -275,7 +279,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   const camp = campOf(st);
   check(!!camp && camp.tile === tile0 && camp.first && camp.type === "hub" && hub(st) === camp, "a camp stands on the team's tile: a base, your hub");
   check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((s) => s.id === id)), "the team moved in: its people live at the camp");
-  check(camp && camp.armory.some((it) => it.key === "crowbar") && camp.stock.food + camp.stock.preserved >= 30 && st.vehicles[0].loc.kind === "base" && st.vehicles[0].loc.baseId === camp.id, "its cargo is the camp's stores and armory, the car parked there");
+  check(camp && camp.armory.some((it) => it.key === "crowbar") && food(camp) + jarred(camp) >= 30 && st.vehicles[0].loc.kind === "base" && st.vehicles[0].loc.baseId === camp.id, "its cargo is the camp's stores and armory, the car parked there");
   check(firstHubPending(st) && tierName(camp) === "Camp" && tierInfo(st).stage === 0 && tierInfo(st).next === "Shelter", "not founded yet: a camp, the next stage the shelter");
   const job = tierUpJob(camp);
   const needScrap = st.tiles[tile0].ruin ? STAGING.HARDCORE.needs.scrap - STAGING.RUIN_SCRAP : STAGING.HARDCORE.needs.scrap;
@@ -334,7 +338,7 @@ section("Camp danger: the camp's Heat (its fire, vehicles parked, shooting latel
   const st = hc(202);
   st.noWanderers = true;
   const p = roadTeam(st);
-  Object.assign(p.cargo.supplies, { scrap: 4, food: 30, water: 30 });
+  Object.assign(p.cargo.supplies, { scrap: 4, water: 30 }); setFood(p.cargo, 30);
   st.cards.length = 0;
   establishNow(st, p);
   const camp = campOf(st);
@@ -422,7 +426,7 @@ section("The camp's step up: days by builders, neglect, striking it, a team lost
   const st = hc(303);
   st.noWanderers = true;
   const p = roadTeam(st);
-  Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, food: 40, water: 45, buildmat: 4 });
+  Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 45, buildmat: 4 }); setFood(p.cargo, 40);
   st.cards.length = 0;
   establishNow(st, p);
   const t0 = st.hour;
@@ -433,7 +437,7 @@ section("The camp's step up: days by builders, neglect, striking it, a team lost
   const s3 = hc(505);
   s3.noWanderers = true;
   const p3 = roadTeam(s3);
-  Object.assign(p3.cargo.supplies, { scrap: 14, buildmat: 1, food: 30, water: 30 });
+  Object.assign(p3.cargo.supplies, { scrap: 14, buildmat: 1, water: 30 }); setFood(p3.cargo, 30);
   s3.cards.length = 0;
   establishNow(s3, p3);
   const c3 = campOf(s3);
@@ -446,7 +450,7 @@ section("The camp's step up: days by builders, neglect, striking it, a team lost
   c3.stock.scrap = (c3.stock.scrap || 0) + 30;
   const job3 = tierUpJob(c3);
   const before = { scrap: c3.stock.scrap, prog: job3 ? job3.progress : 0 };
-  run(s3, 24 * (STAGING.ABANDON + 8), () => false, () => { if (s3.parties.includes(t3)) { t3.supplies.food = 20; t3.supplies.water = 20; for (const s of partyMembers(s3, t3)) s.health = Math.max(s.health, 60); } });
+  run(s3, 24 * (STAGING.ABANDON + 8), () => false, () => { if (s3.parties.includes(t3)) { setFood(t3, 20); t3.supplies.water = 20; for (const s of partyMembers(s3, t3)) s.health = Math.max(s.health, 60); } });
   check(s3.bases.includes(c3) && c3.looted > 0 && c3.stock.scrap < before.scrap && (!job3 || job3.progress <= before.prog), `alone for ${STAGING.ABANDON}+ days the camp is looted (${c3.looted}×: scrap ${before.scrap} → ${c3.stock.scrap})`);
   check(s3.log.some((l) => /left alone too long/.test(l.text)), "the log says so");
   check(computeAlerts(s3).some((a) => a.kind === "campalone"), "an alert: nobody at the camp");
@@ -552,7 +556,7 @@ function views(st, label) {
     for (let i = 0; i < 24 * 14; i++) {
       tickHour(st);
       const p = roadTeam(st);
-      if (p) { p.supplies.food = 20; p.supplies.water = 20; for (const s of partyMembers(st, p)) s.health = Math.max(s.health, 60); }
+      if (p) { setFood(p, 20); p.supplies.water = 20; for (const s of partyMembers(st, p)) s.health = Math.max(s.health, 60); }
       while (st.cards.length) {
         const c = st.cards.shift();
         const ch = c.choices.find((x) => /^Hold|^OK$|^Leave|^Back off|^Mark it/.test(x.label)) || c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled));
@@ -617,10 +621,11 @@ section("Starting people (hardcore.js START_PEOPLE): 1, 2, 3 and 4 flee together
       check(st.vehicles.filter((v) => v.loc.kind === "party" && v.loc.partyId === p.id).length === 1, `${tag}: one car`);
       const prep = team.some((s) => s.background === "prepper"), P = HC_START.PREPPER;
       const sup = p.supplies, lo = HC_START.TEAM_MIN * n, hi = HC_START.TEAM_MAX * n, pf = prep ? P.FOOD : 0, pw = prep ? P.WATER : 0;
-      check(sup.food >= lo + pf && sup.food <= teamFoodCap(team) + pf && sup.water >= lo + pw && sup.water <= hi + pw, `${tag}: 1–3 days each (food by background)${prep ? " plus the prepper's bag" : ""} (${sup.food} food, ${sup.water} water)`);
+      const fd = food(p); // days of food, typed (sim/foods.js: whole items by the dice, about a day either way)
+      check(fd >= lo + pf - 1 && fd <= teamFoodCap(team) + pf + 1 && sup.water >= lo + pw && sup.water <= hi + pw, `${tag}: 1–3 days each (food by background)${prep ? " plus the prepper's bag" : ""} (${fd.toFixed(1)} days of food, ${sup.water} water)`);
       check(n === 1 ? /got out alone/.test(st.log.map((l) => l.text).join(" ")) : st.log.some((l) => new RegExp(`of you got out`).test(l.text)), `${tag}: the day-1 log counts them`);
       check(st.cards[0] && st.cards[0].intro && !st.cards[0].isOrders && /Calder is falling/.test(st.cards[0].text) && p.phase === "waiting", `${tag}: the opening blurb, the team waiting`);
-      if (!prep) { foodPer += sup.food / n; games++; }
+      if (!prep) { foodPer += food(p) / n; games++; }
       try { for (let i = 0; i < 48; i++) { tickHour(st); st.cards.length = 0; } check(true, `${tag}: two days run`); } catch (e) { check(false, `${tag}: two days run: ${e.message}`); }
     }
     sizes[n] = games ? (foodPer / games).toFixed(1) : "-";
@@ -706,7 +711,7 @@ section("Food by background; one or two get a skill bump and the empty seats loa
     const st = hc(seed, { startPeople: 4 });
     const m = partyMembers(st, roadTeam(st));
     if (m.some((s) => s.background === "prepper")) continue;
-    const per = roadTeam(st).supplies.food / m.length;
+    const per = food(roadTeam(st)) / m.length;
     const into = m.some((s) => ["farmer", "hunter", "trucker"].includes(s.background)) ? withF : without;
     into[0] += per; into[1]++;
   }
@@ -729,12 +734,16 @@ section("Food by background; one or two get a skill bump and the empty seats loa
     const before = JSON.stringify(people.map((s) => s.skills)), r0 = st0.rng.state;
     check(smallTeamSkills(st0, people) === null && JSON.stringify(people.map((s) => s.skills)) === before && st0.rng.state === r0, `${n}: no bump and no dice drawn`);
   }
+  // Food by type (sim/foods.js): the car's food counted in days (every kind), the trunk's food and preserved food
+  // together, a day either way for the dice that make whole items.
+  const carGoods = (p) => { const cs = asGeneric(Object.fromEntries(Object.entries(p.cargo.supplies).filter(([k]) => !FOODS[k]))); const fd = foodIn(p.cargo.supplies); if (fd > 0) cs.food = fd; return cs; };
+  const trunkDays = (T) => { const f = T.food || [0, 0], pr = T.preserved || [0, 0]; const out = { ...T }; delete out.preserved; if (T.food || T.preserved) out.food = [f[0] + pr[0] - 1, f[1] + pr[1] + 1]; return out; };
   const seatFood = { 1: [], 2: [] };
   for (const n of [1, 2, 3, 4]) for (const seed of [11, 42, 77, 303, 505, 808]) {
     const st = hc(seed, { startPeople: n });
     const p = roadTeam(st), seats = emptySeats(n);
-    const owner = st.survivors.find((x) => x.id === st.hardcore.start.carOwner), TR = A[owner.background].trunk;
-    const cs = asGeneric(p.cargo.supplies), line = st.hardcore.start.grabbed[st.hardcore.start.grabbed.length - 1];
+    const owner = st.survivors.find((x) => x.id === st.hardcore.start.carOwner), TR = trunkDays(A[owner.background].trunk);
+    const cs = carGoods(p), line = st.hardcore.start.grabbed[st.hardcore.start.grabbed.length - 1];
     const tag = `${n} people, seed ${seed}`;
     if (!seats) {
       check(Object.entries(cs).every(([k, q]) => TR[k] && q >= TR[k][0] && q <= TR[k][1]) && !/empty seat/.test(line) && !st.log.some((l) => /got out (alone|on their own):/.test(l.text)), `${tag}: only the owner's trunk in the back, no seats loaded`);
@@ -742,10 +751,10 @@ section("Food by background; one or two get a skill bump and the empty seats loa
     }
     const ok = Object.entries(S.SEAT).every(([k, [lo, hi]]) => { const q = cs[k] || 0, t = TR[k] || [0, 0]; return q >= lo * seats + t[0] && q <= hi * seats + t[1]; });
     check(ok, `${tag}: the empty seat${seats > 1 ? "s" : ""} loaded (${JSON.stringify(cs)})`);
-    check(/on the empty seats?, what else they could grab: \d+ food/.test(line) && st.cards[0].text.includes(line), `${tag}: the opening blurb says what is on the seat${seats > 1 ? "s" : ""}`);
+    check(/on the empty seats?, what else they could grab: \d+ days of food/.test(line) && st.cards[0].text.includes(line), `${tag}: the opening blurb says what is on the seat${seats > 1 ? "s" : ""}`);
     check(st.log.some((l) => (n === 1 ? /got out alone: the kind who can look after themselves \(Scouting, Stealth and Medicine up\)/ : /got out on their own: the kind who can look after each other/).test(l.text)), `${tag}: day 1's log says why`);
     check(!p.burden || p.burden.band <= 2, `${tag}: the car is not overloaded (load band ${p.burden && p.burden.band})`);
-    seatFood[n].push(cs.food || 0);
+    seatFood[n].push(Math.round((cs.food || 0) * 10) / 10);
   }
   console.log(`  food in the car, alone: ${seatFood[1].join(", ")}; a pair: ${seatFood[2].join(", ")}`);
   // Deterministic with the seed, and through a save.
@@ -821,7 +830,7 @@ section("Saves: hubless, mid-build and after founding; an old save's staging cam
   ld.noWanderers = true;
   if (p) {
     if (p.phase !== "waiting") { p.phase = "waiting"; p.task = null; p.path = [partyTile(p)]; p.idx = 0; }
-    Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, food: 30, water: 35, buildmat: 4 });
+    Object.assign(p.cargo.supplies, { scrap: 40, parts: 5, water: 35, buildmat: 4 }); setFood(p.cargo, 30);
     establishNow(ld, p);
   }
   const jobOf = (w) => { const c = campOf(w); return c ? tierUpJob(c) : null; };
@@ -854,7 +863,7 @@ section("Saves: hubless, mid-build and after founding; an old save's staging cam
     const bc = campOf(back);
     const bj = bc && tierUpJob(bc);
     check(!!bc && back.staging === undefined && bc.tile === tile && hub(back) === bc && bc.fire === false, `an old save's staging camp loads as the camp base that is your hub (${bc ? bc.name : "none"})`);
-    check(bj && bj.type === "camp_up" && bj.paid.scrap === 14 && bj.paid.buildmat === 2 && Math.abs(bj.progress - 5) < 1e-9 && bc.stock.food >= 12 && bc.stock.rawwater >= 3, `its stores are the stock, the scrap and building materials and the work the step up's (${bj && JSON.stringify(bj.paid)}, ${bj && bj.progress}h)`);
+    check(bj && bj.type === "camp_up" && bj.paid.scrap === 14 && bj.paid.buildmat === 2 && Math.abs(bj.progress - 5) < 1e-9 && food(bc) >= 12 && bc.stock.rawwater >= 3, `its stores are the stock, the scrap and building materials and the work the step up's (${bj && JSON.stringify(bj.paid)}, ${bj && bj.progress}h)`);
     check(atBase(back, bc.id).length === partyMembers(old, q).length && !back.parties.some((x) => x.owner === "player"), "the team on its tile moved in");
     bc.stock.scrap = (bc.stock.scrap || 0) + 10; // the rest of its scrap brought in
     const hb = finish(back);

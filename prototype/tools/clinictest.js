@@ -7,6 +7,7 @@
 // pinned on Medic duty): the subject (Medicine 3) pinned on the Medic role (no lessons) against the same person on the
 // Trainee role, on a few seeds.
 // Usage: node tools/clinictest.js [seed] [--measure] [--days 180] [--seeds 1,2,3]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, alive, makeSurvivor, skill } from "../src/sim/world.js";
 import { SKILLS } from "../src/sim/data.js";
 import { BUILDINGS, addBuilding } from "../src/sim/buildings.js";
@@ -197,7 +198,7 @@ console.log("Staffing");
 console.log("Governor");
 {
   const { st, h } = world(SEED, "infirmary");
-  h.stock.food = 400;
+  setFood(h, 400);
   const doc = person(st, 10, "medic");
   const cand = [1, 4, 2, 0].map((m) => person(st, m, "farm"));
   doc.pinned = true;
@@ -213,7 +214,7 @@ console.log("Governor");
   check(!atBase(st, h.id).some((s) => s.role === "trainee"), "two people with Medicine 6+ at an infirmary: no trainee");
   // Food short: none.
   cand[1].skills.medicine = 3;
-  h.stock.food = 5;
+  setFood(h, 5);
   for (const k of Object.keys(h.stock)) if (/food|preserved/.test(k)) h.stock[k] = 0;
   governRoles(st, h);
   check(!atBase(st, h.id).some((s) => s.role === "trainee"), "food short: no trainee");
@@ -223,7 +224,7 @@ console.log("Governor");
 console.log("Work priorities");
 {
   const { st, h } = world(SEED, "infirmary");
-  h.stock.food = 400;
+  setFood(h, 400);
   workState(st);
   const medicRole = st.work.roles.find((r) => r.name === "Medic");
   check(medicRole && medicRole.pri.trainee === 2, "the default Medic role has Trainee at 2");
@@ -280,7 +281,7 @@ console.log("AI sick bays");
   check(!!st.groupWorks && groupsBuild(st, f), "a new world's groups build");
   const main = f.bases[0];
   f.works = { [main]: { water: 9, farms: 9, beds: 9, walls: 9, bench: 1, store: 1 } };
-  f.pop = 30; f.wounded = 3; f.stock.food = 9999;
+  f.pop = 30; f.wounded = 3; setFood(f, 9999);
   const nw = nextWork(st, f);
   check(nw && nw.type === "sickbay" && nw.tile === main, `with wounded and quarters up, the next job is the sick bay (${nw && nw.type}: ${nw && nw.why})`);
   const before = healRate(f, 0).rate, bay = healRate(f, 1).rate;
@@ -311,7 +312,7 @@ console.log("AI sick bays");
 console.log("Doctor on duty, career, graduation");
 {
   const { st, h } = world(SEED, "infirmary");
-  h.stock.food = 400;
+  setFood(h, 400);
   const doc = person(st, 10, "farm");
   const tr = person(st, 2, "trainee"); tr.pinned = true;
   [1, 2, 3].forEach((m) => person(st, m, "farm"));
@@ -319,12 +320,12 @@ console.log("Doctor on duty, career, graduation");
   check(doc.role === "medic" && T.wardPoints(st, h) === 0, `a quiet ward with a trainee: the governor keeps the doctor on Medic duty (${doc.role})`);
   tr.role = "farm"; tr.pinned = false;
   for (const s of atBase(st, h.id)) if (s.role === "trainee") s.role = "farm";
-  const st2 = world(SEED, "infirmary"); st2.h.stock.food = 5;
+  const st2 = world(SEED, "infirmary"); setFood(st2.h, 5);
   const d2 = person(st2.st, 10, "farm"); [1, 2, 3, 4].forEach((m) => person(st2.st, m, "farm"));
   governRoles(st2.st, st2.h);
   check(d2.role !== "medic", "no trainees and nobody hurt: the doctor is not kept on duty");
   // Work priorities: the Doctor type opens for trainees on a quiet ward.
-  const w3 = world(SEED, "infirmary"); w3.h.stock.food = 400;
+  const w3 = world(SEED, "infirmary"); setFood(w3.h, 400);
   workState(w3.st);
   const medicRole = w3.st.work.roles.find((r) => r.name === "Medic");
   const dd = person(w3.st, 10, "farm"); dd.work = { role: medicRole.id, over: {} };
@@ -364,7 +365,7 @@ console.log("Doctor on duty, career, graduation");
   nextDay(g.st); T.trainingDaily(g.st);
   check(!already.graduated, "someone who was already past 6 when put on the ward does not graduate");
   // The governor moves a graduate to Medic while the hospital is short of medics.
-  const gv = world(SEED, "clinic"); gv.h.stock.food = 400;
+  const gv = world(SEED, "clinic"); setFood(gv.h, 400);
   const gd = person(gv.st, 12, "medic"); gd.pinned = true;
   const grad = person(gv.st, 7, "trainee");
   [1, 2, 3].forEach((m) => person(gv.st, m, "farm"));

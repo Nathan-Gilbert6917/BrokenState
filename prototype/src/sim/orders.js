@@ -495,7 +495,7 @@ export function startTask(state, p, task) {
   const owed = task.type === "cross" ? 0 : clockFrac(state);
   if (owed > 0) p.task.owed = owed;
   if (p.task.qty == null) delete p.task.qty;
-  else capTask(p, p.task); // carry.js: stop collecting at the quantity asked (parties.js cargoRoom)
+  else capTask(p, p.task, state); // carry.js: stop collecting at the quantity asked (parties.js cargoRoom)
   p.orderStart = state.hour;
 }
 

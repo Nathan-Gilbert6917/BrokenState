@@ -674,7 +674,7 @@ function autofill(pl) {
   const trim = (k, floor) => {
     const c = plannerLoad(state, pl);
     const over = c.load - c.cap;
-    if (over > 0) pl.supplies[k] = Math.max(Math.min(pl.supplies[k], floor), pl.supplies[k] - Math.ceil(over / SUPPLIES[k].weight));
+    if (over > 0) pl.supplies[k] = Math.max(Math.min(pl.supplies[k], floor), pl.supplies[k] - Math.ceil(over / (SUPPLIES[k] ? SUPPLIES[k].weight : Parties.FOOD_PACK_KG))); // food: days of it (sim/parties.js)
   };
   trim("ammo", 5 * n);
   trim("meds", 1);
@@ -1039,7 +1039,7 @@ const actions = {
       }
       return;
     }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, packFood: pl.packFood || null, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     plannerVolAsk(state, pl, res.party); // ui/volunteers.js: volunteers asked for in the planner (the answer is in the log)
@@ -1351,6 +1351,7 @@ const changeActions = {
   "sr-every": (el) => { ui.supplyForm.every = Math.max(1, Math.floor(Number(el.value) || 1)); },
   "pl-mission": (el) => { ui.planner.mission = el.value; autofill(ui.planner); ui.plannerError = ""; },
   "pl-supply": (el) => { ui.planner.supplies[el.dataset.k] = Math.max(0, Math.floor(Number(el.value) || 0)); ui.plannerError = ""; },
+  "pl-packfood": (el) => { ui.planner.packFood = el.value || null; }, // sim/foods.js packPick: a food to pack first
   ...Object.fromEntries(Object.entries(LOOK_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(TRADE_CHANGE_ACTIONS).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),
   ...Object.fromEntries(Object.entries(DIPLO_CHANGE).map(([k, fn]) => [k, (el) => fn(state, ui, el)])),

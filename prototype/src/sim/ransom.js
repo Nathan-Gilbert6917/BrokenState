@@ -30,14 +30,15 @@
 // worth it; else decline. The offer card left in the tray lapses as Decline unless those decide (then the value
 // rule's answer). A team at their gates pays out of what it carries only by the same rule (teamPayOk). The groups
 // buying back their own people from each other weigh them the same way (groupMemberWorth, groupjails.js).
-import { SUPPLIES, FACTION_TYPES, GEAR } from "./data.js";
+import { FOODS, foodIn, bestFoodKey, qtyOf, unitsOf } from "./foods.js"; // food in a ransom by type
+import { SUPPLIES, FACTION_TYPES, GEAR, supValue } from "./data.js";
 import { totalRounds, spendAmmo, isRoundKey } from "./rounds.js"; // a ransom's "ammo" paid as rounds by calibre
 import { keyWord } from "./water.js";
 import { log, addCard, day, hub, factionById, survivorById, skill, combatPower, atBase, newId } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { captivesOf, allCaptives, freeCaptive, isCaptive, payPlan } from "./conflicts.js";
 import { canRadioGroup } from "./radio.js";
-import { launchExpedition, partyMembers, partyTile, tileLabel, awaitOrders, planPath, wipeIfEmpty } from "./parties.js";
+import { launchExpedition, partyMembers, partyTile, tileLabel, awaitOrders, planPath, wipeIfEmpty, carried } from "./parties.js";
 import { prisonersOf, teamPace, handOver } from "./prisoners.js";
 import { registerCombatHandler, startCombat, winOdds, WEAPONS } from "./combat.js";
 import { afterRescueBattle, tacticalPossible, groupArmory, kindOf } from "./rescueraid.js";
@@ -148,7 +149,8 @@ export function teamPayOk(state, p, f, captives, value) {
   if (!plan || !captives.length) return false;
   const n = Math.max(1, partyMembers(state, p).length);
   const left = (k) => (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0) - (plan[k] || 0);
-  if (left("food") < n * RANSOM.VALUE.teamDays || left("water") + left("rawwater") < n * RANSOM.VALUE.teamDays) return false;
+  const foodLeft = carried(p, "food") - Object.entries(plan).reduce((a, [k, q]) => a + (FOODS[k] ? unitsOf(k, q) : 0), 0); // days of food (foods.js)
+  if (foodLeft < n * RANSOM.VALUE.teamDays || left("water") + left("rawwater") < n * RANSOM.VALUE.teamDays) return false;
   return captives.reduce((a, s) => a + captiveValue(state, s), 0) >= value * RANSOM.VALUE.pay;
 }
 export function ransomOffer(state, f, captives) {
@@ -165,8 +167,12 @@ export const meetsOnRoad = (f) => RANSOM.MEET.includes(f.type) || attitude(f) ==
 
 // Goods worth `value` to them out of a stock and an armory: { supplies, gear, worth } or null if short. keep: what
 // stays back (a key each).
-export function goodsPlan(f, stock, armory, value, keep = RANSOM.KEEP) {
-  const wants = wantsOf(f);
+export function goodsPlan(f, stock, armory, value, keep0 = RANSOM.KEEP) {
+  // Food (foods.js): what they want of it is the food item the stock holds most of, its keep in days of food.
+  const foodKey = bestFoodKey(stock);
+  const keep = { ...keep0 };
+  if (foodKey) keep[foodKey] = Math.ceil(qtyOf(foodKey, keep0.food || 0));
+  const wants = wantsOf(f).map((k) => (k === "food" ? foodKey : k)).filter(Boolean);
   const only = RANSOM.ONLY_WANTS.includes(f.type);
   const rate = (k) => (wants.includes(k) ? RANSOM.WANT : RANSOM.OTHER);
   const plan = { supplies: {}, gear: [], worth: 0 };
@@ -187,7 +193,7 @@ export function goodsPlan(f, stock, armory, value, keep = RANSOM.KEEP) {
       left -= n * per;
       return;
     }
-    const per = SUPPLIES[k].value * rate(k);
+    const per = supValue(k) * rate(k);
     const q = Math.min(spare(k), Math.ceil(Math.min(left, cap) / per));
     if (q <= 0) return;
     plan.supplies[k] = (plan.supplies[k] || 0) + q;
@@ -207,7 +213,7 @@ export function goodsPlan(f, stock, armory, value, keep = RANSOM.KEEP) {
   const keys = wants.filter((k) => k !== "guns");
   for (const k of keys) takeKey(k, value * 0.45); // spread over what they want
   for (const k of keys) takeKey(k, Infinity);
-  if (!only) for (const k of ["scrap", "parts", "food", "water", "ammo", "meds", "fuel"]) if (!wants.includes(k)) takeKey(k, Infinity);
+  if (!only) for (const k of ["scrap", "parts", foodKey, "water", "ammo", "meds", "fuel"]) if (k && !wants.includes(k)) takeKey(k, Infinity);
   if (left > 0.5) return null;
   plan.worth = Math.round(plan.worth);
   return plan;
@@ -388,7 +394,7 @@ export function sendHandover(state, deal, opts = {}) {
   const f = factionById(state, deal.factionId);
   if (!h || !f || !f.alive) return "Nobody to hand them over to.";
   if (state.parties.some((p) => p.dealId === deal.id)) return "The handover team is already on its way.";
-  for (const [k, q] of Object.entries(deal.supplies)) if ((h.stock[k] || 0) < q) return `Not enough ${SUPPLIES[k].name.toLowerCase()} at the hub for the deal.`;
+  for (const [k, q] of Object.entries(deal.supplies)) if ((h.stock[k] || 0) < q) return `Not enough ${FOODS[k] ? FOODS[k].word : SUPPLIES[k].name.toLowerCase()} at the hub for the deal.`;
   // The governor (opts.reserve) never pays food or water out of the hub's pay-out reserve (upkeep.js PAYOUT): the
   // handover waits (until the deal runs out) while the stores are that low.
   if (opts.reserve && payoutBreaks(state, h, deal.supplies)) return "The hub cannot spare the food or water the deal costs now.";
@@ -397,7 +403,7 @@ export function sendHandover(state, deal, opts = {}) {
   const crew = atBase(state, h.id).filter((s) => !s.inBed && s.health >= 40).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, n);
   if (!crew.length) return "Nobody at the hub can go.";
   const days = 3;
-  const have = (k) => Math.max(0, Math.floor((h.stock[k] || 0) - (deal.supplies[k] || 0)));
+  const have = (k) => Math.max(0, Math.floor((k === "food" ? foodIn(h.stock) - foodIn(deal.supplies) : (h.stock[k] || 0) - (deal.supplies[k] || 0)))); // food: days of it (foods.js)
   const supplies = { food: Math.min(have("food"), days * crew.length), water: Math.min(have("water"), Math.ceil(days * crew.length * thirstAhead(state, days))), ammo: Math.min(have("ammo"), 15 * crew.length), meds: Math.min(have("meds"), 1) };
   const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest: deal.tile, mission: "handover", stance: "normal", supplies, quiet: true });
   if (res.error) return res.error;
@@ -565,7 +571,7 @@ function spareValue(state) {
   const h = hub(state);
   if (!h) return 0;
   const keep = autoKeep(state);
-  return Object.keys(SUPPLIES).reduce((a, k) => a + Math.max(0, (h.stock[k] || 0) - (keep[k] || 0)) * SUPPLIES[k].value, 0);
+  return Object.keys(SUPPLIES).reduce((a, k) => a + Math.max(0, (h.stock[k] || 0) - (keep[k] || 0)) * supValue(k), 0);
 }
 export function autoCanPay(state, f, value) {
   const h = hub(state);

@@ -36,7 +36,7 @@
 // and primers from a trading or military group when short (the hunger trade's pattern). Arms dealers and the
 // traders' and soldiers' groups keep powder and primers to sell (merchantReload, groupReloadDaily).
 import { LOAD_CLASS, POWDER_PER10, loadRecipe, handKey, CALIBERS, ammoKey, RELOAD_FX } from "./data-ammo.js";
-import { SUPPLIES } from "./data.js";
+import { SUPPLIES, supValue } from "./data.js";
 import { count, countAll } from "./buildings.js";
 import { atBase, skill, log, newId, day } from "./world.js";
 import { WEAPON_PLATFORM } from "./data-gunmods.js";
@@ -540,7 +540,7 @@ export function groupBuyReload(state, f, d = day(state)) {
   for (const k of ["powder", "primers"]) {
     const cap = Math.min(G.want[k], num(f.stock.brass) * (k === "powder" ? G.pc : 1));
     const q = Math.max(0, Math.min(Math.floor(cap - num(f.stock[k])), Math.floor(num(o.stock[k]) / 2)));
-    if (q > 0) { got[k] = q; owed += q * SUPPLIES[k].value * G.markup; }
+    if (q > 0) { got[k] = q; owed += q * supValue(k) * G.markup; }
   }
   if (!Object.keys(got).length) return null;
   const spare = Math.floor(Math.max(0, num(f.stock.scrap) - Math.max(10, f.pop * G.keepScrap)) / 2);

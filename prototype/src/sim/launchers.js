@@ -38,6 +38,7 @@
 // (a gate or a wall section of the other side's, a battering ram, your vehicle, their Humvee: need 1), else on three
 // people; never inside the arming range, never with a friend in the backblast cone, never a rocket from inside.
 // Every die is the battle's (b.rng) for what the player sees happen; wear and cook-off use hashes of their own.
+import { FOODS } from "./foods.js"; // food in a pile burns
 import { GEAR } from "./data.js";
 import { WEAPONS, say, fx, active, damage, canSeeAt, los, coverAgainst, COVER_DEF, unitAt, alertNear, sidearmOf, heldTerms, loadMag, magCap } from "./combat.js";
 import { fitMags } from "./mags.js"; // the sidearm's magazines when the launcher is in the hands (w2-kit)
@@ -734,7 +735,7 @@ export function fireStuff(gear, sup, ...salt) {
   });
   if (sup) {
     cookRecord(sup, ...salt);
-    for (const k of GROUND_FIRE.SUPPLIES) if (sup[k] > 0) { lost += Math.floor(sup[k]); delete sup[k]; }
+    for (const k of Object.keys(sup)) if ((GROUND_FIRE.SUPPLIES.includes(k) || FOODS[k]) && sup[k] > 0) { lost += Math.floor(sup[k]); delete sup[k]; } // food of every kind burns (foods.js)
   }
   return { gear: keep, lost };
 }

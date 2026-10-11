@@ -22,6 +22,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { GEAR } from "../src/sim/data.js";
+import { FOODS, foodIn, foodSplit } from "../src/sim/foods.js"; // food by type
 import { Rng } from "../src/sim/rng.js";
 import { createWorld, tickHour, day, hub } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -416,7 +417,7 @@ KIT_LOOT.on = false; // the carry kit's finds and wares (carrykit.js SITE_KIT / 
   for (let i = 0; i < 60; i++) for (const kind of ["merchants", "explorers"]) {
     const v = V.spawnVisitor(w, kind);
     if (!v) continue;
-    (kind === "merchants" ? mk : vk).push(`${v.name}:${v.tile}:${kind === "merchants" ? Object.keys(v.stock).filter((k) => k !== "buildmat").length : keysOf(v.wares)}`); // buildmat: building materials (the base ladder, staging.js), a stock key added later
+    (kind === "merchants" ? mk : vk).push(`${v.name}:${v.tile}:${kind === "merchants" ? Object.keys(v.stock).filter((k) => k !== "buildmat" && !FOODS[k]).length + 2 : keysOf(v.wares)}`); // buildmat: building materials (the base ladder, staging.js), a stock key added later; food by type (foods.js): their food and preserved food are items now, counted as the two keys they were
     w.visitors.length = 0;
   }
   check(h16(vk.join("|")) === BASE.visitors.keys, "travellers: the same wares");
@@ -444,9 +445,10 @@ section("5. Merchants' specialities");
     const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : []), ...(k === "arms" ? newGuns("merchants") : []), ...Object.keys(gunsFrom("trader:merchants"))]); // gundist.js: a merchant's gun // an arms dealer's newer guns (visitors.js gunWares)
     within(`${S.name.toLowerCase()}' wares`, vs.flatMap((v) => v.wares), allowed);
     check(vs.every((v) => v.wares.filter((it) => S.gear.includes(it.key)).length >= 2), `${S.name.toLowerCase()} carry 2–4 things of their trade each`);
-    const mean = (sup) => vs.reduce((a, v) => a + (v.stock[sup] || 0), 0) / Math.max(1, vs.length);
+    const amt = (v, sup) => (sup === "food" ? foodIn(v.stock) : sup === "preserved" ? foodSplit(v.stock).stable : v.stock[sup] || 0); // food by type (foods.js): days of it, every item / the kinds that keep
+    const mean = (sup) => vs.reduce((a, v) => a + amt(v, sup), 0) / Math.max(1, vs.length);
     const others = Object.keys(V.MERCHANT_SPECS).filter((x) => x !== k).flatMap((x) => by[x] || []);
-    const oMean = (sup) => others.reduce((a, v) => a + (v.stock[sup] || 0), 0) / Math.max(1, others.length);
+    const oMean = (sup) => others.reduce((a, v) => a + amt(v, sup), 0) / Math.max(1, others.length);
     for (const sup of Object.keys(S.stock)) check(mean(sup) > oMean(sup) * 1.15, `${S.name.toLowerCase()} bring more ${sup} (${mean(sup).toFixed(0)} vs ${oMean(sup).toFixed(0)})`);
     const gear = vs.flatMap((v) => v.wares).filter((it) => rollsQuality(it.key));
     check(gear.every((it) => it.quality >= 0.6 && it.quality <= 1), `${S.name.toLowerCase()}' gear is fair to good (merchant: 60–100%)`);

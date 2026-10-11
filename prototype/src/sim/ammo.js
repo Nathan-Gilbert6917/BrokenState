@@ -13,10 +13,11 @@
 // settled into the rounds that fit the guns there (settleRec, every hour and when a fight starts); generic ammo taken
 // from one (negative) comes out of the rounds the guns there need least. totalRounds counts both, so a figure read in
 // between is right.
+import { FOODS, foodWord } from "./foods.js"; // a food item in a list of supplies
 import { ROUND_ECON, RARITY_FIND, roundTier } from "./data-ammo.js"; // a round's rarity tier (commonness)
 import { CALIBERS, AMMO_TYPES, ammoKey, AMMO_MIX, KIND_MIX, KIT_AMMO, STARTER_AMMO, ROUND_SUPPLIES, RELOAD_SUPPLIES, HAND_SUPPLIES, LOAD_CLASS, spreadMult } from "./data-ammo.js";
 import { CAL_DMG, CAL_REFUSE, KIT_ALT_CAL, gunCalList } from "./data-ammo.js"; // calibre compatibility (2026-10-10)
-import { SUPPLIES, GEAR } from "./data.js";
+import { SUPPLIES, GEAR, supValue } from "./data.js";
 import { WEAPONS } from "./combat.js";
 import { hash01 } from "./skills.js";
 import { SITE_TAGS, AREA_TAGS } from "./loot.js";
@@ -149,7 +150,7 @@ export function chooseRounds(rec, n, cals = null) {
   if (!rec || !(left > 0)) return out;
   const order = [];
   for (const [c] of Object.entries(cals || {}).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))) for (const t of typesOf(c)) order.push(...withHand(ammoKey(c, t))); // handloads after their factory round
-  for (const k of GENERIC_KEYS.filter((x) => !order.includes(x)).sort((a, b) => SUPPLIES[a].value - SUPPLIES[b].value || (a < b ? -1 : 1))) order.push(k);
+  for (const k of GENERIC_KEYS.filter((x) => !order.includes(x)).sort((a, b) => supValue(a) - supValue(b) || (a < b ? -1 : 1))) order.push(k);
   for (const k of order) {
     if (left <= 0) break;
     const q = Math.min(left, Math.max(0, Math.floor(num(rec[k]))));
@@ -1000,6 +1001,8 @@ export function suppliesText(rec) {
   for (const [k, q] of Object.entries(rec || {})) {
     if (!(q >= 1)) continue;
     if (k === "ammo" || ROUND_SUPPLIES[k] || HAND_SUPPLIES[k]) parts.push(roundsText({ [k]: q }));
+    else if (FOODS[k]) parts.push(foodWord(k, Math.floor(q))); // "12 cans of beans"
+    else if (k === "food" || k === "preserved") parts.push(`${Math.floor(q)} days of ${k === "preserved" ? "food that keeps" : "food"}`);
     else parts.push(`${Math.floor(q)} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}`);
   }
   return parts.join(", ") || "nothing";

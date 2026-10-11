@@ -8,6 +8,7 @@
 // untouched; a move takes the part picked, nothing lost or doubled on any screen; Join) and the fit bars under the
 // slider (one per destination, on the slider's scale; only on a wide panel).
 // Usage: node tools/stackmovetest.js [seed] [v]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { SUPPLIES } from "../src/sim/data.js";
 import { launchExpedition, cargoRoom, unitsThatFit } from "../src/sim/parties.js";
@@ -36,26 +37,26 @@ console.log("The panel: amount, weight, what fits, destinations");
   let cancelled = 0;
   const T = { have: 20, dests: [{ id: "a", label: "Cargo", fit: 14 }, { id: "b", label: "Pack", fit: 0, err: "The pack is full." }] };
   registerStackScreen("t", {
-    spec: () => ({ key: "food", have: T.have, from: "The shelf", dests: T.dests, to: "a" }),
+    spec: () => ({ key: "f_rationbar", have: T.have, from: "The shelf", dests: T.dests, to: "a" }),
     move: (s, ui, to, qty) => moved.push([to, qty]),
     cancel: () => { cancelled++; },
   });
   const ui = {};
   openStack(ui, "t");
-  const w = SUPPLIES.food.weight;
+  const w = SUPPLIES.f_rationbar.weight;
   let h = stackPanel(st, ui, "t");
   check(/class="smove dock"/.test(h) && /The shelf/.test(h) && /active smto"[^>]*>(<i class="smsw[^>]*><\/i>)?<span>Cargo</.test(h), "docked, with the stack's place and its destination in words");
   check(chosenQty(st, ui, "t") === 14 && /value="14"/.test(h), `default: what fits (14 of 20): ${chosenQty(st, ui, "t")}`);
   check(h.includes(`<b class="smkg">${kg1(14 * w)}</b> kg`), `the weight of the amount: ${kg1(14 * w)} kg`);
   check(/14 fit in Cargo now/.test(h) && /class="smfit good"/.test(h), "how many fit at the destination");
-  check(/Move 14 food → Cargo/.test(h), "one clear button: Move 14 food → Cargo");
+  check(/Move 14 ration bars → Cargo/.test(h), "one clear button: Move 14 ration bars → Cargo");
   check(/All <small>20<\/small>/.test(h) && /What fits <small>14<\/small>/.test(h) && /½ <small>10<\/small>/.test(h) && /data-v="one"/.test(h), "quick chips: 1, half, All, What fits");
   check(/data-action="sm-to" data-to="b"[^>]*>.*full/.test(h.replace(/\n/g, " ")), "a second destination, marked full");
   check(/type="range"[^>]*max="20"/.test(h) && /type="number"[^>]*max="20"/.test(h), "a slider and a number box, 1 to the stack");
   STACK_ACTIONS["sm-qty"](st, ui, { v: "all" });
   h = stackPanel(st, ui, "t");
   check(chosenQty(st, ui, "t") === 20 && /Only 14 fit in Cargo now: 6 stay/.test(h) && /class="smfit warn"/.test(h), "All 20: a warning that only 14 fit");
-  check(/Move 14 food → Cargo/.test(h), "the button says what will move (14)");
+  check(/Move 14 ration bars → Cargo/.test(h), "the button says what will move (14)");
   check(/var\(--danger\)/.test(h), "the slider's track shows the part past what fits");
   STACK_ACTIONS["sm-qty"](st, ui, { v: "half" });
   check(chosenQty(st, ui, "t") === 10, "½: 10");
@@ -89,16 +90,16 @@ console.log("The panel: amount, weight, what fits, destinations");
   check(stackPanel(st, ui, "other") === "", "another screen's panel stays shut");
   T.have = 1;
   h = stackPanel(st, ui, "t");
-  check(!/type="range"/.test(h) && /Move 1 food → Cargo/.test(h), "a stack of one: no slider, just the button");
+  check(!/type="range"/.test(h) && /Move 1 ration bars → Cargo/.test(h), "a stack of one: no slider, just the button");
   T.have = 0;
   check(stackPanel(st, ui, "t") === "", "an empty stack: no panel");
   // The slider moving: the panel follows without a redraw (stackInput).
   const node = (props = {}) => ({ textContent: "", className: "", value: "", style: {}, classList: { remove() {} }, ...props });
   const els = { ".smrange": node(), ".smkg": node(), ".smfit": node(), ".smbtn": node() };
   const other = node();
-  const root = { dataset: { have: "20", fit: "14", unit: String(w), name: "food", to: "Cargo", verb: "Move" }, querySelector: (q) => els[q] || null, querySelectorAll: (q) => (q.includes("sm-qtyset") ? [other] : []) };
+  const root = { dataset: { have: "20", fit: "14", unit: String(w), name: "ration bars", to: "Cargo", verb: "Move" }, querySelector: (q) => els[q] || null, querySelectorAll: (q) => (q.includes("sm-qtyset") ? [other] : []) };
   const range = { dataset: { action: "sm-qtyset" }, value: "17", closest: () => root };
-  check(stackInput(range) && other.value === "17" && els[".smkg"].textContent === kg1(14 * w) && /Only 14 fit/.test(els[".smfit"].textContent) && els[".smbtn"].textContent === "Move 14 food → Cargo" && /linear-gradient/.test(els[".smrange"].style.background), "the slider dragged to 17: number box, weight, warning and button follow");
+  check(stackInput(range) && other.value === "17" && els[".smkg"].textContent === kg1(14 * w) && /Only 14 fit/.test(els[".smfit"].textContent) && els[".smbtn"].textContent === "Move 14 ration bars → Cargo" && /linear-gradient/.test(els[".smrange"].style.background), "the slider dragged to 17: number box, weight, warning and button follow");
 }
 
 // ---------- a raid: crew of 3 on a town site, no enemies ----------
@@ -150,9 +151,9 @@ console.log("The search window (a raid)");
   const { st, b } = raid(1);
   const [u] = players(b);
   fresh(b, u);
-  const box = boxWith(b, u, { food: 10 });
+  const box = boxWith(b, u, { f_rationbar: 10 });
   const ui = { inv: { raid: true, uid: u.id, box: box.id }, invSel: null, invMsg: "" };
-  const src = `rbox:${box.id}:sup:food`, me = `haul:${u.id}:list`;
+  const src = `rbox:${box.id}:sup:f_rationbar`, me = `haul:${u.id}:list`;
   INV_ACTIONS["inv-click"](st, ui, { loc: src });
   let h = render(st, ui);
   check(/class="smove dock"/.test(h) && h.includes(`>${box.label}<`) && /\(carried\)/.test(h), `a stack clicked: the mover docks, from ${box.label} to ${u.name.split(" ")[0]} (carried)`);
@@ -162,41 +163,41 @@ console.log("The search window (a raid)");
   check(chosenQty(st, ui, "raid") === Math.min(10, fit), `default: what fits (${chosenQty(st, ui, "raid")})`);
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "4" });
   INV_ACTIONS["sm-go"](st, ui);
-  check(u.haul.sup.food === 4 && box.contents.sup.food === 6 && !ui.invSel && !ui.stack, `Move 4: 4 carried, 6 left (${ui.invMsg})`);
+  check(u.haul.sup.f_rationbar === 4 && box.contents.sup.f_rationbar === 6 && !ui.invSel && !ui.stack, `Move 4: 4 carried, 6 left (${ui.invMsg})`);
   // The fast path: pick, set 1, click the destination.
   INV_ACTIONS["inv-click"](st, ui, { loc: src });
   INV_ACTIONS["sm-qty"](st, ui, { v: "one" });
   INV_ACTIONS["inv-click"](st, ui, { loc: me });
-  check(u.haul.sup.food === 5 && box.contents.sup.food === 5, "pick, 1, then click Carried: 1 moves");
+  check(u.haul.sup.f_rationbar === 5 && box.contents.sup.f_rationbar === 5, "pick, 1, then click Carried: 1 moves");
   // A drop: the popover asks; Enter moves what fits.
   invDrop(st, ui, src, me, false, false, { x: 300, y: 200 });
   h = render(st, ui);
-  check(box.contents.sup.food === 5 && ui.stack && ui.stack.pop && /class="smove pop"/.test(h) && /Move 5 food →/.test(h), "a plain drop moves nothing yet: a popover at the drop, \"Move 5 food → …\"");
-  check(stackKey(st, ui, key("Enter")) && u.haul.sup.food === 10 && !(box.contents.sup.food >= 1) && !ui.stack, "Enter: all 5 move");
-  invDrop(st, ui, `haul:${u.id}:sup:food`, `rbox:${box.id}:list`, false, false, { x: 1, y: 1 });
-  check(stackKey(st, ui, key("Escape")) && u.haul.sup.food === 10 && !ui.stack && !ui.invSel, "drop then Esc: nothing moves");
-  invDrop(st, ui, `haul:${u.id}:sup:food`, `rbox:${box.id}:list`, true);
-  check(u.haul.sup.food === 5 && box.contents.sup.food === 5 && !ui.stack, "Shift-drop: half, straight away");
-  invDrop(st, ui, `haul:${u.id}:sup:food`, `rbox:${box.id}:list`, false, true);
-  check(u.haul.sup.food === 4 && box.contents.sup.food === 6, "Ctrl-drop: one");
+  check(box.contents.sup.f_rationbar === 5 && ui.stack && ui.stack.pop && /class="smove pop"/.test(h) && /Move 5 ration bars →/.test(h), "a plain drop moves nothing yet: a popover at the drop, \"Move 5 ration bars → …\"");
+  check(stackKey(st, ui, key("Enter")) && u.haul.sup.f_rationbar === 10 && !(box.contents.sup.f_rationbar >= 1) && !ui.stack, "Enter: all 5 move");
+  invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `rbox:${box.id}:list`, false, false, { x: 1, y: 1 });
+  check(stackKey(st, ui, key("Escape")) && u.haul.sup.f_rationbar === 10 && !ui.stack && !ui.invSel, "drop then Esc: nothing moves");
+  invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `rbox:${box.id}:list`, true);
+  check(u.haul.sup.f_rationbar === 5 && box.contents.sup.f_rationbar === 5 && !ui.stack, "Shift-drop: half, straight away");
+  invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `rbox:${box.id}:list`, false, true);
+  check(u.haul.sup.f_rationbar === 4 && box.contents.sup.f_rationbar === 6, "Ctrl-drop: one");
   INV_ACTIONS["inv-click"](st, ui, { loc: src }, { shiftKey: true });
-  check(u.haul.sup.food === 10 && !(box.contents.sup.food >= 1), "Shift+click: all that fit, straight across");
+  check(u.haul.sup.f_rationbar === 10 && !(box.contents.sup.f_rationbar >= 1), "Shift+click: all that fit, straight across");
   // Dropped on a teammate's paper doll: into their arms.
   const m = players(b)[1];
   standNext(b, m, u.x, u.y);
-  invDrop(st, ui, `haul:${u.id}:sup:food`, `s:${m.sid}:pocket:0`, false, false, { x: 5, y: 5 });
+  invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `s:${m.sid}:pocket:0`, false, false, { x: 5, y: 5 });
   check(ui.stack && ui.stack.to === `haul:${m.id}:list`, `a stack dropped on a teammate's pocket: the popover sends it to their arms (${ui.stack && ui.stack.to})`);
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "3" });
   INV_ACTIONS["sm-go"](st, ui);
-  check(m.haul && m.haul.sup.food === 3 && u.haul.sup.food === 7, `handed 3 over (${ui.invMsg})`);
+  check(m.haul && m.haul.sup.f_rationbar === 3 && u.haul.sup.f_rationbar === 7, `handed 3 over (${ui.invMsg})`);
   // Several destinations: the searcher, the teammate, the container.
-  INV_ACTIONS["inv-click"](st, ui, { loc: `haul:${u.id}:sup:food` });
+  INV_ACTIONS["inv-click"](st, ui, { loc: `haul:${u.id}:sup:f_rationbar` });
   h = render(st, ui);
   check((h.match(/data-action="sm-to"/g) || []).length >= 2 && h.includes(`data-to="rbox:${box.id}:list"`) && h.includes(`data-to="haul:${m.id}:list"`), "a stack carried: the container and the teammate to pick from");
   INV_ACTIONS["sm-to"](st, ui, { to: `rbox:${box.id}:list` });
   INV_ACTIONS["sm-qty"](st, ui, { v: "all" });
   INV_ACTIONS["sm-go"](st, ui);
-  check(!(u.haul.sup.food >= 1) && box.contents.sup.food === 7, "picked the container, All: 7 put back");
+  check(!(u.haul.sup.f_rationbar >= 1) && box.contents.sup.f_rationbar === 7, "picked the container, All: 7 put back");
   // Never more than fits.
   RL.HAUL.free = 1e9;
   fresh(b, u);
@@ -227,34 +228,34 @@ console.log("Loot the bodies");
   const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: h.tile + 3, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 2, water: 2 } });
   const p = res.party;
   p.phase = "engaged";
-  const body = ensureInv({ name: "Raider", kind: "human", uid: 999, kit: null, supplies: { food: 9, scrap: 400 } });
+  const body = ensureInv({ name: "Raider", kind: "human", uid: 999, kit: null, supplies: { f_rationbar: 9, scrap: 400 } });
   st.combat = { over: true, bodies: [body], setup: { partyId: p.id }, units: [], place: "A road", result: { outcome: "victory", loot: { supplies: {}, gear: [] } } };
   const ui = { inv: { sid: null, loot: true, body: 0 }, invSel: null, invMsg: "" };
   let html = render(st, ui);
-  check(html.includes('data-loc="body:0:sup:food"') && html.includes('data-drag="body:0:sup:food"') && !/data-action="loot-sup"/.test(html), "the body's supplies are stack tiles (click or drag), no 1 / ½ buttons");
-  const food0 = p.cargo.supplies.food || 0;
-  INV_ACTIONS["inv-click"](st, ui, { loc: "body:0:sup:food" });
+  check(html.includes('data-loc="body:0:sup:f_rationbar"') && html.includes('data-drag="body:0:sup:f_rationbar"') && !/data-action="loot-sup"/.test(html), "the body's supplies are stack tiles (click or drag), no 1 / ½ buttons");
+  const food0 = (p.cargo.supplies.f_rationbar || 0) || 0;
+  INV_ACTIONS["inv-click"](st, ui, { loc: "body:0:sup:f_rationbar" });
   html = render(st, ui);
-  check(/class="smove dock"/.test(html) && /Take 9 food → Team cargo/.test(html) && />Raider</.test(html), "a stack clicked: the mover, \"Take 9 food → Team cargo\", from the body");
+  check(/class="smove dock"/.test(html) && /Take 9 ration bars → Team cargo/.test(html) && />Raider</.test(html), "a stack clicked: the mover, \"Take 9 ration bars → Team cargo\", from the body");
   INV_ACTIONS["sm-qty"](st, ui, { v: "half" });
   INV_ACTIONS["sm-go"](st, ui);
-  check(p.cargo.supplies.food === food0 + 4 && body.supplies.food === 5 && !ui.stack, `½ then Take: 4 taken, 5 left (${ui.invMsg})`);
+  check((p.cargo.supplies.f_rationbar || 0) === food0 + 4 && (body.supplies.f_rationbar || 0) === 5 && !ui.stack, `½ then Take: 4 taken, 5 left (${ui.invMsg})`);
   // The fast path: pick, 1, click the cargo box.
-  INV_ACTIONS["inv-click"](st, ui, { loc: "body:0:sup:food" });
+  INV_ACTIONS["inv-click"](st, ui, { loc: "body:0:sup:f_rationbar" });
   INV_ACTIONS["sm-qty"](st, ui, { v: "one" });
   INV_ACTIONS["inv-click"](st, ui, { loc: `cargo:${p.id}:list` });
-  check(p.cargo.supplies.food === food0 + 5 && body.supplies.food === 4, "pick, 1, click the cargo: 1 taken");
+  check((p.cargo.supplies.f_rationbar || 0) === food0 + 5 && (body.supplies.f_rationbar || 0) === 4, "pick, 1, click the cargo: 1 taken");
   // A drop on the cargo: the popover; Enter takes.
-  invDrop(st, ui, "body:0:sup:food", `cargo:${p.id}:list`, false, false, { x: 40, y: 40 });
+  invDrop(st, ui, "body:0:sup:f_rationbar", `cargo:${p.id}:list`, false, false, { x: 40, y: 40 });
   html = render(st, ui);
-  check(body.supplies.food === 4 && /class="smove pop"/.test(html) && /Take 4 food → Team cargo/.test(html), "dropped on the cargo: a popover \"Take 4 food\"");
+  check((body.supplies.f_rationbar || 0) === 4 && /class="smove pop"/.test(html) && /Take 4 ration bars → Team cargo/.test(html), "dropped on the cargo: a popover \"Take 4 ration bars\"");
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "2" });
   stackKey(st, ui, key("Enter"));
-  check(body.supplies.food === 2 && p.cargo.supplies.food === food0 + 7, "2 typed, Enter: 2 taken");
-  invDrop(st, ui, "body:0:sup:food", `cargo:${p.id}:list`, false, true);
-  check(body.supplies.food === 1, "Ctrl-drop: one");
-  INV_ACTIONS["inv-click"](st, ui, { loc: "body:0:sup:food" }, { shiftKey: true });
-  check(!body.supplies.food && p.cargo.supplies.food === food0 + 9, "Shift+click: the rest");
+  check((body.supplies.f_rationbar || 0) === 2 && (p.cargo.supplies.f_rationbar || 0) === food0 + 7, "2 typed, Enter: 2 taken");
+  invDrop(st, ui, "body:0:sup:f_rationbar", `cargo:${p.id}:list`, false, true);
+  check((body.supplies.f_rationbar || 0) === 1, "Ctrl-drop: one");
+  INV_ACTIONS["inv-click"](st, ui, { loc: "body:0:sup:f_rationbar" }, { shiftKey: true });
+  check(!(body.supplies.f_rationbar || 0) && (p.cargo.supplies.f_rationbar || 0) === food0 + 9, "Shift+click: the rest");
   // The team's room caps it.
   const fit = lootFit(st, 0, "scrap");
   check(fit.have === 400 && fit.n === Math.min(400, unitsThatFit(cargoRoom(st, p), "scrap")) && fit.n < 400, `400 scrap: ${fit.n} fit in the team's room (sim/stacks.js lootFit)`);
@@ -274,12 +275,12 @@ console.log("The inventory window");
   const st = createWorld({ seed: seed + 1, factionCount: 5 });
   st.cards.length = 0;
   const h = hub(st);
-  h.stock.food = 120;
+  clearFood(h); h.stock.f_rationbar = 120; // 120 ration bars
   const s = atBase(st, h.id)[0];
   const ui = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   let html = render(st, ui);
-  const loc = `armory:${h.id}:sup:food`;
-  check(/In the stores \(/.test(html) && html.includes('<span class="iname">Food</span><span class="icount">×120</span>') && /islot store stack[^"]*still/.test(html) && !html.includes(`data-loc="${loc}"`), "the base's stores are stack tiles (nowhere to move them on their own: shown, not clickable)");
+  const loc = `armory:${h.id}:sup:f_rationbar`;
+  check(/In the stores \(/.test(html) && html.includes('<span class="iname">Ration bar</span><span class="icount">×120</span>') && /islot store stack[^"]*still/.test(html) && !html.includes(`data-loc="${loc}"`), "the base's stores are stack tiles (nowhere to move them on their own: shown, not clickable)");
   INV_ACTIONS["inv-click"](st, ui, { loc });
   check(!ui.stack || !render(st, ui).includes("smove"), "clicked anyway: no mover with nowhere to go");
   // A destination hook (as ux-carry's held supplies would add): the tile turns movable and the mover uses it.
@@ -291,7 +292,7 @@ console.log("The inventory window");
   check(html.includes(`data-loc="${loc}"`) && html.includes(`data-drag="${loc}"`), "with a destination: the tile is clickable and draggable");
   INV_ACTIONS["inv-click"](st, ui, { loc });
   html = render(st, ui);
-  check(/class="smove dock"/.test(html) && /Move 8 food →/.test(html) && /Only|8 fit in/.test(html), "the mover opens on it: what fits there (8)");
+  check(/class="smove dock"/.test(html) && /Move 8 ration bars →/.test(html) && /Only|8 fit in/.test(html), "the mover opens on it: what fits there (8)");
   INV_ACTIONS["sm-go"](st, ui);
   check(got[0] === 8 && ui.invMsg === "Packed 8." && !ui.stack && !ui.invSel, "Move: the hook's move gets the amount");
   invDrop(st, ui, loc, `s:${s.id}:pocket:0`, false, false, { x: 9, y: 9 });
@@ -327,15 +328,15 @@ console.log("The mouse wheel");
   const S = { have: 30, fit: 12, splits: {} };
   const moved = [];
   registerStackScreen("w", {
-    spec: (s, ui) => (ui.sel ? { key: "food", have: S.have, at: ui.sel, splits: S.splits, from: "The shelf", dests: [{ id: "a", label: "Cargo", fit: S.fit }, { id: "b", label: "Pack", fit: 5 }], to: "a" } : null),
+    spec: (s, ui) => (ui.sel ? { key: "f_rationbar", have: S.have, at: ui.sel, splits: S.splits, from: "The shelf", dests: [{ id: "a", label: "Cargo", fit: S.fit }, { id: "b", label: "Pack", fit: 5 }], to: "a" } : null),
     move: (s, ui, to, qty) => { moved.push([to, qty]); S.have -= qty; },
     cancel: (s, ui) => { ui.sel = null; },
     pick: (s, ui, at) => { ui.sel = at; },
   });
   const ui = { sel: null };
-  const tile = wheelOn("tile", { stack: "shelf:food", smns: "w" });
+  const tile = wheelOn("tile", { stack: "shelf:f_rationbar", smns: "w" });
   let r = wheel(st, ui, tile, -100);
-  check(r.w === 2 && r.prevented && ui.sel === "shelf:food" && ui.stack && ui.stack.ns === "w" && chosenQty(st, ui, "w") === 12, `a tile not picked: the first tick picks it and opens the mover, the amount still what fits (${chosenQty(st, ui, "w")})`);
+  check(r.w === 2 && r.prevented && ui.sel === "shelf:f_rationbar" && ui.stack && ui.stack.ns === "w" && chosenQty(st, ui, "w") === 12, `a tile not picked: the first tick picks it and opens the mover, the amount still what fits (${chosenQty(st, ui, "w")})`);
   r = wheel(st, ui, tile, -100);
   check(r.w === 2 && chosenQty(st, ui, "w") === 13, "the tile again, wheel up: one more (13)");
   r = wheel(st, ui, tile, 100);
@@ -377,10 +378,10 @@ console.log("Split and Join (the mover)");
   const S = { have: 24, splits: {}, fitA: 30 };
   const moved = [];
   registerStackScreen("sp", {
-    spec: () => ({ key: "food", have: S.have, at: "box:food", splits: S.splits, from: "The box", dests: [{ id: "a", label: "Cargo", fit: Math.min(S.have, S.fitA) }], to: "a" }),
+    spec: () => ({ key: "f_rationbar", have: S.have, at: "box:f_rationbar", splits: S.splits, from: "The box", dests: [{ id: "a", label: "Cargo", fit: Math.min(S.have, S.fitA) }], to: "a" }),
     move: (s, ui, to, qty) => { moved.push(qty); S.have -= qty; },
   });
-  registerStackScreen("nosplit", { spec: () => ({ key: "food", have: 24, from: "Here", dests: [{ id: "a", label: "Cargo", fit: 24 }] }), move: () => {} });
+  registerStackScreen("nosplit", { spec: () => ({ key: "f_rationbar", have: 24, from: "Here", dests: [{ id: "a", label: "Cargo", fit: 24 }] }), move: () => {} });
   const ui = {};
   openStack(ui, "nosplit");
   check(!/sm-split/.test(stackPanel(st, ui, "nosplit")), "a screen that keeps no splits: no Split button");
@@ -392,18 +393,18 @@ console.log("Split and Join (the mover)");
   check(/data-action="sm-split" [^d]/.test(h) && /✂ Split <small>16 \+ 8<\/small>/.test(h), "8 chosen: \"✂ Split 16 + 8\"");
   STACK_ACTIONS["sm-split"](st, ui);
   h = stackPanel(st, ui, "sp");
-  check(S.have === 24 && S.splits["box:food"] && S.splits["box:food"].n === 8 && /24 in the stack \(16 \+ 8\)/.test(h), "Split: 16 + 8, the stack itself still 24");
+  check(S.have === 24 && S.splits["box:f_rationbar"] && S.splits["box:f_rationbar"].n === 8 && /24 in the stack \(16 \+ 8\)/.test(h), "Split: 16 + 8, the stack itself still 24");
   check(/data-part="b" role="radio" aria-checked="true"/.test(h) && /type="range"[^>]*max="8"/.test(h) && chosenQty(st, ui, "sp") === 8, "the 8 is picked: the slider goes to 8, the amount all of it");
-  check(splitCount(S.splits, "box:food", 24).includes("16 + <b>8</b>"), "the tile says 16 + 8, the part that moves in bold");
+  check(splitCount(S.splits, "box:f_rationbar", 24).includes("16 + <b>8</b>"), "the tile says 16 + 8, the part that moves in bold");
   STACK_ACTIONS["sm-part"](st, ui, { part: "a" });
-  check(chosenQty(st, ui, "sp") === 16 && /type="range"[^>]*max="16"/.test(stackPanel(st, ui, "sp")) && splitCount(S.splits, "box:food", 24).includes("<b>16</b> + 8"), "pick the 16: the slider goes to 16");
+  check(chosenQty(st, ui, "sp") === 16 && /type="range"[^>]*max="16"/.test(stackPanel(st, ui, "sp")) && splitCount(S.splits, "box:f_rationbar", 24).includes("<b>16</b> + 8"), "pick the 16: the slider goes to 16");
   STACK_ACTIONS["sm-join"](st, ui);
-  check(!S.splits["box:food"] && chosenQty(st, ui, "sp") === 24 && splitCount(S.splits, "box:food", 24) === "24", "Join: one stack of 24 again");
+  check(!S.splits["box:f_rationbar"] && chosenQty(st, ui, "sp") === 24 && splitCount(S.splits, "box:f_rationbar", 24) === "24", "Join: one stack of 24 again");
   // Split, move the part: the rest stays, and the split ends.
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "8" });
   STACK_ACTIONS["sm-split"](st, ui);
   STACK_ACTIONS["sm-go"](st, ui);
-  check(moved.at(-1) === 8 && S.have === 16 && splitParts(S.splits, "box:food", S.have) === null, "the 8 moved: 16 stay, one stack again");
+  check(moved.at(-1) === 8 && S.have === 16 && splitParts(S.splits, "box:f_rationbar", S.have) === null, "the 8 moved: 16 stay, one stack again");
   // Part of a part (room for 5 of the 8): 16 + 3 stay.
   S.have = 24; S.fitA = 5;
   openStack(ui, "sp");
@@ -412,14 +413,14 @@ console.log("Split and Join (the mover)");
   STACK_ACTIONS["sm-qty"](st, ui, { v: "all" });
   check(/Only 5 fit in Cargo now: 3 stay/.test(stackPanel(st, ui, "sp")), "room for 5 of the part's 8: the warning");
   STACK_ACTIONS["sm-go"](st, ui);
-  const p1 = splitParts(S.splits, "box:food", S.have);
+  const p1 = splitParts(S.splits, "box:f_rationbar", S.have);
   check(moved.at(-1) === 5 && S.have === 19 && p1 && p1.a === 16 && p1.b === 3, `5 moved: 16 + 3 left (${p1 && `${p1.a} + ${p1.b}`})`);
   // The other part picked and moved: the split ends (the 3 are all that is left).
   S.fitA = 99;
   openStack(ui, "sp");
   STACK_ACTIONS["sm-part"](st, ui, { part: "a" });
   STACK_ACTIONS["sm-go"](st, ui);
-  check(moved.at(-1) === 16 && S.have === 3 && !splitParts(S.splits, "box:food", 3), "the 16 picked and moved: 3 stay, one stack");
+  check(moved.at(-1) === 16 && S.have === 3 && !splitParts(S.splits, "box:f_rationbar", 3), "the 16 picked and moved: 3 stay, one stack");
   // Squared with the stack: taken from the picked part first, what comes in joins part a.
   const store = { k: { n: 8, total: 24, pick: "a" } };
   let q = splitParts(store, "k", 20);
@@ -477,10 +478,10 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   RL.HAUL.free = 1e9;
   fresh(b, u);
   u.haul = { sup: {}, gear: [] };
-  const box = boxWith(b, u, { food: 24 });
+  const box = boxWith(b, u, { f_rationbar: 24 });
   const ui = { inv: { raid: true, uid: u.id, box: box.id }, invSel: null, invMsg: "" };
-  const src = `rbox:${box.id}:sup:food`, me = `haul:${u.id}:list`;
-  const total = () => (box.contents.sup.food || 0) + ((u.haul && u.haul.sup.food) || 0);
+  const src = `rbox:${box.id}:sup:f_rationbar`, me = `haul:${u.id}:list`;
+  const total = () => (box.contents.sup.f_rationbar || 0) + ((u.haul && u.haul.sup.f_rationbar) || 0);
   let h = render(st, ui);
   check(h.includes(`data-stack="${src}" data-smns="raid"`), "a stack tile carries its id and screen (for the wheel)");
   const r0 = wheel(st, ui, wheelOn("tile", { stack: src, smns: "raid" }), -100);
@@ -488,9 +489,9 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "8" });
   STACK_ACTIONS["sm-split"](st, ui);
   h = render(st, ui);
-  check(/<span class="iname">Food<\/span><span class="icount"><span class="smsplit"[^>]*>16 \+ <b>8<\/b><\/span>/.test(h) && box.contents.sup.food === 24, "split: the tile says 16 + 8, the container still holds 24");
+  check(/<span class="iname">Ration bar<\/span><span class="icount"><span class="smsplit"[^>]*>16 \+ <b>8<\/b><\/span>/.test(h) && box.contents.sup.f_rationbar === 24, "split: the tile says 16 + 8, the container still holds 24");
   INV_ACTIONS["sm-go"](st, ui);
-  check(box.contents.sup.food === 16 && u.haul.sup.food === 8 && total() === 24 && !(ui.inv.splits || {})[src], `Move: the 8 go, 16 stay, one stack again (${ui.invMsg})`);
+  check(box.contents.sup.f_rationbar === 16 && u.haul.sup.f_rationbar === 8 && total() === 24 && !(ui.inv.splits || {})[src], `Move: the 8 go, 16 stay, one stack again (${ui.invMsg})`);
   // Split again, the other part picked, the fast path (click Carried).
   INV_ACTIONS["inv-click"](st, ui, { loc: src });
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "6" });
@@ -499,16 +500,16 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   check(chosenQty(st, ui, "raid") === 10, "10 + 6, the 10 picked");
   INV_ACTIONS["inv-click"](st, ui, { loc: me });
   render(st, ui);
-  check(box.contents.sup.food === 6 && u.haul.sup.food === 18 && total() === 24 && !(ui.inv.splits || {})[src], "picked the 10, clicked Carried: 10 go, the 6 stay as one stack");
+  check(box.contents.sup.f_rationbar === 6 && u.haul.sup.f_rationbar === 18 && total() === 24 && !(ui.inv.splits || {})[src], "picked the 10, clicked Carried: 10 go, the 6 stay as one stack");
   // Split, then a Shift-drop of half the whole stack: the count stays true, the parts square up.
-  INV_ACTIONS["inv-click"](st, ui, { loc: `haul:${u.id}:sup:food` });
+  INV_ACTIONS["inv-click"](st, ui, { loc: `haul:${u.id}:sup:f_rationbar` });
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "4" });
   STACK_ACTIONS["sm-split"](st, ui);
   STACK_ACTIONS["sm-part"](st, ui, { part: "a" });
   INV_ACTIONS["inv-cancel"](st, ui);
-  invDrop(st, ui, `haul:${u.id}:sup:food`, `rbox:${box.id}:list`, true);
+  invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `rbox:${box.id}:list`, true);
   h = render(st, ui);
-  check(u.haul.sup.food === 9 && box.contents.sup.food === 15 && total() === 24 && /<span class="iname">Food<\/span><span class="icount"><span class="smsplit"[^>]*><b>5<\/b> \+ 4<\/span>/.test(h), "14 + 4 carried (the 14 picked), a Shift-drop sends half (9) back: 9 carried, taken from the 14: 5 + 4");
+  check(u.haul.sup.f_rationbar === 9 && box.contents.sup.f_rationbar === 15 && total() === 24 && /<span class="iname">Ration bar<\/span><span class="icount"><span class="smsplit"[^>]*><b>5<\/b> \+ 4<\/span>/.test(h), "14 + 4 carried (the 14 picked), a Shift-drop sends half (9) back: 9 carried, taken from the 14: 5 + 4");
   RL.HAUL.free = 8;
 
   // Loot the bodies.
@@ -518,28 +519,28 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   const crew = atBase(w, hb.id).slice(0, 2);
   const p = launchExpedition(w, { memberIds: crew.map((s) => s.id), dest: hb.tile + 3, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 2, water: 2 } }).party;
   p.phase = "engaged";
-  const body = ensureInv({ name: "Raider", kind: "human", uid: 998, kit: null, supplies: { food: 20 } });
+  const body = ensureInv({ name: "Raider", kind: "human", uid: 998, kit: null, supplies: { f_rationbar: 20 } });
   w.combat = { over: true, bodies: [body], setup: { partyId: p.id }, units: [], place: "A road", result: { outcome: "victory", loot: { supplies: {}, gear: [] } } };
   const lui = { inv: { sid: null, loot: true, body: 0 }, invSel: null, invMsg: "" };
-  const f0 = p.cargo.supplies.food || 0;
-  INV_ACTIONS["inv-click"](w, lui, { loc: "body:0:sup:food" });
+  const f0 = (p.cargo.supplies.f_rationbar || 0) || 0;
+  INV_ACTIONS["inv-click"](w, lui, { loc: "body:0:sup:f_rationbar" });
   STACK_CHANGE["sm-qtyset"](w, lui, { value: "8" });
   STACK_ACTIONS["sm-split"](w, lui);
   const lh = render(w, lui);
-  check(/<span class="iname">Food<\/span><span class="icount"><span class="smsplit"[^>]*>12 \+ <b>8<\/b><\/span>/.test(lh) && /Take 8 food → Team cargo/.test(lh), "a body's 20 food: split 12 + 8, \"Take 8 food\"");
+  check(/<span class="iname">Ration bar<\/span><span class="icount"><span class="smsplit"[^>]*>12 \+ <b>8<\/b><\/span>/.test(lh) && /Take 8 ration bars → Team cargo/.test(lh), "a body's 20 ration bars: split 12 + 8, \"Take 8 ration bars\"");
   INV_ACTIONS["sm-go"](w, lui);
-  check(body.supplies.food === 12 && p.cargo.supplies.food === f0 + 8, `8 taken, 12 left on the body (${lui.invMsg})`);
+  check((body.supplies.f_rationbar || 0) === 12 && (p.cargo.supplies.f_rationbar || 0) === f0 + 8, `8 taken, 12 left on the body (${lui.invMsg})`);
   w.combat = null;
 
   // The inventory window (a destination hook that really moves them).
   const v = createWorld({ seed: seed + 1, factionCount: 5 });
   v.cards.length = 0;
   const hv = hub(v);
-  hv.stock.food = 120;
+  clearFood(hv); hv.stock.f_rationbar = 120;
   const s = atBase(v, hv.id)[0];
-  const loc = `armory:${hv.id}:sup:food`;
+  const loc = `armory:${hv.id}:sup:f_rationbar`;
   let packed = 0;
-  INV_STACK_DESTS.push((state, u2, l) => (l === loc ? [{ id: "pack", label: "Pack", fit: 8, err: "", move: (state2, ui2, qty) => { hv.stock.food -= qty; packed += qty; return `Packed ${qty}.`; } }] : []));
+  INV_STACK_DESTS.push((state, u2, l) => (l === loc ? [{ id: "pack", label: "Pack", fit: 8, err: "", move: (state2, ui2, qty) => { hv.stock.f_rationbar -= qty; packed += qty; return `Packed ${qty}.`; } }] : []));
   const iui = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   INV_ACTIONS["inv-click"](v, iui, { loc });
   STACK_CHANGE["sm-qtyset"](v, iui, { value: "5" });
@@ -547,10 +548,10 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   STACK_ACTIONS["sm-part"](v, iui, { part: "a" });
   INV_ACTIONS["sm-go"](v, iui);
   const ih = render(v, iui);
-  check(packed === 8 && hv.stock.food === 112 && /<span class="iname">Food<\/span><span class="icount"><span class="smsplit"[^>]*><b>107<\/b> \+ 5<\/span>/.test(ih), `the stores' 120 split 115 + 5, the 115 picked, room for 8: 8 packed, 107 + 5 stay (${iui.invMsg})`);
+  check(packed === 8 && (hv.stock.f_rationbar || 0) === 112 && /<span class="iname">Ration bar<\/span><span class="icount"><span class="smsplit"[^>]*><b>107<\/b> \+ 5<\/span>/.test(ih), `the stores' 120 split 115 + 5, the 115 picked, room for 8: 8 packed, 107 + 5 stay (${iui.invMsg})`);
   INV_ACTIONS["inv-click"](v, iui, { loc });
   STACK_ACTIONS["sm-join"](v, iui);
-  check(/>Food<\/span><span class="icount">×112</.test(render(v, iui)) && hv.stock.food + packed === 120, "Join: 112 again, none lost");
+  check(/>Ration bar<\/span><span class="icount">×112</.test(render(v, iui)) && (hv.stock.f_rationbar || 0) + packed === 120, "Join: 112 again, none lost");
   INV_ACTIONS["inv-close"](v, iui);
   INV_STACK_DESTS.length = 0;
 }

@@ -5,7 +5,7 @@
 // ui.inv = { sid, team: partyId, tab: "team" | "drop" | "load" } (ui.inv.sid: the member whose inventory a click on
 // a cargo item sends things to, as in ui/inventory.js); ui.tiPick = { items: { loc: true }, sup: { key: qty } };
 // ui.tiTarget = "cargo" | a member's id (where loaded items go).
-import { SUPPLIES } from "../sim/data.js";
+import { SUPPLIES, supWeight } from "../sim/data.js";
 import { survivorById } from "../sim/world.js";
 import { partyMembers, partyTile, tileLabel } from "../sim/parties.js";
 import { SLOT_NAMES, parseLoc, itemLoad } from "../sim/inventory.js";
@@ -83,7 +83,7 @@ export function teamInvModal(state, ui) {
 function teamTab(state, ui, p, members) {
   const user = survivorById(state, ui.inv.sid);
   const cols = members.map((s) => `<div class="invcol" style="flex:0 0 17rem"><div class="spread"><b>${s.leader ? "★ " : ""}${first(s)}</b>${s.id === ui.inv.sid ? `<span class="small muted"${tip("A cargo item clicked twice goes to this person")}>receives</span>` : ""}</div>${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 5), { user: s })}${holdSection(state, ui, s)}</div>`).join("");
-  const packed = Object.entries(p.supplies || {}).filter(([k, v]) => SUPPLIES[k] && v >= 1).map(([k, v]) => `${SUPPLY_ICON[k] || "▪"} ${Math.floor(v)} ${SUPPLIES[k].name.toLowerCase()}`).join(" · ");
+  const packed = Object.entries(p.supplies || {}).filter(([k, v]) => SUPPLIES[k] && v >= 1).map(([k, v]) => `${SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪"} ${Math.floor(v)} ${SUPPLIES[k].name.toLowerCase()}`).join(" · ");
   const cargo = `<div class="invcol" style="flex:1 0 17rem">${storageBox(state, ui, `party:${p.id}`, user)}${packed ? `<div class="small muted"${tip("Packed at the start: shared out among the people (or riding in the vehicle) and eaten first on the road")}>Packed: ${esc(packed)}</div>` : ""}</div>`;
   const html = `<div class="row" style="align-items:flex-start;gap:1rem;overflow-x:auto;padding-bottom:0.4rem">${cols}${cargo}</div>
     ${selBar(state, ui, `party:${p.id}`)}
@@ -100,7 +100,7 @@ function supTiles(ui, sup, pickable, side) {
     const amt = typeof n === "number" ? n : n.all;
     const extra = typeof n === "number" ? "" : n.packed >= 0.05 && n.found >= 0.05 ? ` (${qty(n.packed)} packed, ${qty(n.found)} found)` : n.found >= 0.05 ? " (found)" : " (packed)";
     const picked = ui.tiPick.sup[k] != null;
-    return `<div class="islot store${picked ? " sel" : ""}"${pickable ? ` data-action="ti-sup" data-key="${k}" data-side="${side}"` : ""}${tip(`${qty(amt)} ${SUPPLIES[k].name.toLowerCase()}${extra}, ${kg(SUPPLIES[k].weight * amt)} kg (${SUPPLIES[k].weight} kg each)${pickable ? ". Click to pick it; set how many below." : ""}`)}><div class="itile"><span class="iico">${SUPPLY_ICON[k] || "▪"}</span><span class="iname">${esc(supplyName(k))}</span><span class="icount">×${qty(amt)}</span><span class="ikg">${kg(SUPPLIES[k].weight * amt)}</span></div></div>`;
+    return `<div class="islot store${picked ? " sel" : ""}"${pickable ? ` data-action="ti-sup" data-key="${k}" data-side="${side}"` : ""}${tip(`${qty(amt)} ${SUPPLIES[k].name.toLowerCase()}${extra}, ${kg(supWeight(k) * amt)} kg (${supWeight(k)} kg each)${pickable ? ". Click to pick it; set how many below." : ""}`)}><div class="itile"><span class="iico">${SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪"}</span><span class="iname">${esc(supplyName(k))}</span><span class="icount">×${qty(amt)}</span><span class="ikg">${kg(supWeight(k) * amt)}</span></div></div>`;
   }).join("");
 }
 const whereLabel = (loc) => { const L = parseLoc(loc); return L.slot === "rig" && L.i != null ? SLOT_NAMES.pouch : L.slot === "insert" ? `${L.i === "front" ? "Front" : "Back"} plate` : SLOT_NAMES[L.slot] || L.slot; };
@@ -137,7 +137,7 @@ function transferTab(state, ui, p, base, tab) {
     const have = drop ? (H.cargo.supplies[k] ? H.cargo.supplies[k].all : 0) : B.stock[k] || 0;
     if (!(have > 0) || !SUPPLIES[k]) return "";
     const v = Math.min(have, q);
-    return `<span class="chip">${SUPPLY_ICON[k] || "▪"} <input type="number" class="qty" min="0" max="${qty(have)}" step="1" value="${qty(v)}" data-action="ti-qty" data-key="${k}" style="width:4em"${tip(`How many of the ${qty(have)} ${SUPPLIES[k].name.toLowerCase()} (${SUPPLIES[k].weight} kg each)`)}> of ${qty(have)} ${esc(SUPPLIES[k].name.toLowerCase())} <button class="mini" data-action="ti-sup" data-key="${k}" data-side="${drop ? "team" : "base"}"${tip("Leave it")}>×</button></span>`;
+    return `<span class="chip">${SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪"} <input type="number" class="qty" min="0" max="${qty(have)}" step="1" value="${qty(v)}" data-action="ti-qty" data-key="${k}" style="width:4em"${tip(`How many of the ${qty(have)} ${SUPPLIES[k].name.toLowerCase()} (${supWeight(k)} kg each)`)}> of ${qty(have)} ${esc(SUPPLIES[k].name.toLowerCase())} <button class="mini" data-action="ti-sup" data-key="${k}" data-side="${drop ? "team" : "base"}"${tip("Leave it")}>×</button></span>`;
   }).join(" ");
   const tgtName = String(target) === "cargo" ? `the team's cargo${H.cargo.vehicle ? ` (${esc(H.cargo.name.replace(/ \(team cargo\)$/, ""))})` : ""}` : (() => { const s = survivorById(state, Number(target)); return s ? first(s) : "the cargo"; })();
   const any = pickedItems || supRows;

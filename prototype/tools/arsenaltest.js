@@ -1,6 +1,7 @@
 // Group arsenals and AI parity (sim/arsenal.js, sim/groupcare.js, sim/groupworld.js): every group fights with what it
 // has gathered, and looks after itself with the systems you use.
 // Usage: node tools/arsenaltest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, killSurvivor, makeSurvivor } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
 import { strength, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction } from "../src/sim/factions.js";
@@ -194,7 +195,7 @@ section("Healing: meds and medics");
   const run = (type, meds, n = 10) => {
     const s2 = world(seed + 5);
     const f = typed(s2, type);
-    f.pop = 30; f.stock.food = 1000; f.stock.meds = meds; f.wounded = 12;
+    f.pop = 30; setFood(f, 1000); f.stock.meds = meds; f.wounded = 12;
     for (let i = 0; i < n; i++) { s2.hour += 24; C.groupCareDaily(s2, f); f.stock.meds = meds ? Math.max(f.stock.meds, meds) : 0; }
     return f.wounded;
   };
@@ -229,11 +230,11 @@ section("Desertion and recruiting");
 {
   const st = world();
   const hungry = typed(st, "raider"), fed = typed(st, "fortress", [hungry]);
-  hungry.pop = 30; hungry.stock.food = 0; hungry.lossRecent = 6;
-  fed.pop = 30; fed.stock.food = 1000;
+  hungry.pop = 30; setFood(hungry, 0); hungry.lossRecent = 6;
+  fed.pop = 30; setFood(fed, 1000);
   let lostH = 0, lostF = 0;
   for (let i = 0; i < 60; i++) {
-    hungry.stock.food = 0; fed.stock.food = 1000;
+    setFood(hungry, 0); setFood(fed, 1000);
     if (C.desertDaily(st, hungry, i)) lostH++;
     if (C.desertDaily(st, fed, i)) lostF++;
     C.tickGroup(hungry); C.tickGroup(fed);
@@ -251,7 +252,7 @@ section("Desertion and recruiting");
   // Wanderers near a commune's base join it.
   const s2 = world(seed + 2);
   const com = typed(s2, "commune");
-  com.stock.food = com.pop * 10;
+  setFood(com, com.pop * 10);
   const wg = newNeutralGroup(s2, com.bases[0], new Rng(99));
   wg.mood = "desperate";
   const pistol = newItem("pistol", 0.8);
@@ -260,7 +261,7 @@ section("Desertion and recruiting");
   for (let i = 0; i < 120 && s2.wanderers.groups.includes(wg); i++) { s2.hour += 24; wg.tile = com.bases[0]; wanderersDaily(s2); }
   check(com.pop === pop0 + n && com.arsenal.items.includes(pistol), `wanderers at the commune's gate join it (people ${pop0} → ${com.pop}, the pistol in its arsenal)`);
   const rai = typed(s2, "raider", [com]);
-  rai.stock.food = rai.pop * 10;
+  setFood(rai, rai.pop * 10);
   check(C.wandererJoinChance(s2, rai, { mood: "wary" }) === C.wandererJoinChance(s2, rai, { mood: "desperate" }) && C.wandererJoinChance(s2, rai, { mood: "wary" }) > C.wandererJoinChance(s2, com, { mood: "wary" }), "raiders press-gang: the wary go along as well");
   // Your deserter joins a group near the base they left.
   const s3 = world(seed + 3), h3 = hub(s3);
@@ -308,8 +309,8 @@ section("Type profiles: different mixes of what they do");
     for (let i = 0; i < 40; i++) {
       const st = world(seed + 20 + i);
       const f = typed(st, type);
-      f.stock.food = 0; f.stock.scrap = 200; f.foodDeal = null;
-      for (const o of st.factions) if (o !== f) o.stock.food = o.pop * 20;
+      setFood(f, 0); f.stock.scrap = 200; f.foodDeal = null;
+      for (const o of st.factions) if (o !== f) setFood(o, o.pop * 20);
       C.tickGroup(f);
       if (C.hungerTrade(st, f)) bought[type]++;
     }
@@ -517,14 +518,14 @@ section("Vehicles in the trade window, the governor, their motor pool");
   const msg = V.buyVehicle(st, 0);
   check(st.vehicles.length === v0 + 1 && h.stock.scrap < s0 && !factionVehicles(f).length, `bought: ${msg}`);
   const mine = st.vehicles[st.vehicles.length - 1];
-  mine.cargo = { supplies: { food: 7 }, gear: [] };
-  const f0 = h.stock.food || 0;
+  mine.cargo = { supplies: {}, gear: [] }; setFood(mine.cargo, 7); // 7 days of ration bars (tools/foodkit.js)
+  const f0 = food(h) || 0;
   const sell = V.vehicleOffers(st, tradeContext(st)).mine;
   const worth = vehicleValue(mine);
   const i = sell.findIndex((o) => o.v === mine);
   f.stock.scrap = 3000;
   const m2 = V.sellVehicle(st, i);
-  check(!st.vehicles.includes(mine) && factionVehicles(f).length === 1 && (h.stock.food || 0) === f0 + 7 && sell[i].price < worth * 1.5 && sell[i].price > worth * 0.4, `sold back at about its worth (${worth} -> ${sell[i].price}), its cargo unloaded: ${m2}`);
+  check(!st.vehicles.includes(mine) && factionVehicles(f).length === 1 && Math.abs((food(h) || 0) - f0 - 7) < 1e-6 && sell[i].price < worth * 1.5 && sell[i].price > worth * 0.4, `sold back at about its worth (${worth} -> ${sell[i].price}), its cargo unloaded: ${m2}`);
   // The governor: no car at all, rich: buys one.
   for (const v of [...st.vehicles]) if (v.type !== "bike") st.vehicles.splice(st.vehicles.indexOf(v), 1);
   const g1 = V.governorVehicles(st);

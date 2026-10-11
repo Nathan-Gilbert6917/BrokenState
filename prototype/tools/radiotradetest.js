@@ -4,6 +4,8 @@
 // window honours the deal with items), deals that lapse or are called off, a group asking you to bring your side
 // (agree books a deal, decline does nothing), a save and load with a deal waiting, and the HTML of every screen.
 // Usage: node tools/radiotradetest.js [seed]
+import { bestFoodKey } from "../src/sim/foods.js";
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { setRounds } from "../src/sim/ammo.js"; // rounds by calibre
 const AMMO = "a_9mm_fmj"; // your side pays in a box of 9mm (rounds go by calibre: ammo.js)
 import { readFileSync } from "node:fs";
@@ -51,10 +53,10 @@ function setup(s) {
   Object.assign(f, { type: "traders", goodwill: 45, known: true, pop: Math.max(f.pop, 24) });
   f.bases = [f.bases[0]];
   if (!canRadioGroup(st, f)) f.bases = [st.grid.within(h.tile, 10).find((t) => land(st, t) && st.grid.distance(t, h.tile) >= 6 && !st.bases.some((b) => b.tile === t) && planPath(st, t, h.tile, false))];
-  Object.assign(f.stock, { food: 300, ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 });
+  Object.assign(f.stock, { ammo: 600, meds: 60, fuel: 60, parts: 10, scrap: 120, water: 150 }); setFood(f, 300);
   for (const x of st.factions) if (x !== f) x.goodwill = Math.max(x.goodwill, -20);
   st.hordes = st.hordes.filter((x) => st.grid.distance(x.tile, f.bases[0]) > 6);
-  Object.assign(h.stock, { food: 200, water: 200 }); setRounds(h.stock, 0); h.stock[AMMO] = 600; // ammo.js: your side pays in rounds by calibre
+  Object.assign(h.stock, { water: 200 }); setFood(h, 200); setRounds(h.stock, 0); h.stock[AMMO] = 600; // ammo.js: your side pays in rounds by calibre
   for (let i = 0; i < 3; i++) fighter(st);
   for (const s of st.survivors) s.traits = s.traits.filter((t) => t !== "diplomatic"); // a Diplomatic crew softens the goodwill lost (traits.js): the checks count the plain numbers
   return { st, h, f };
@@ -130,7 +132,7 @@ function drive(state, pred, maxHours, keep = () => false) {
   check(h.stock.meds === hubMeds && h.stock[AMMO] === hubAmmo && h.armory.includes(pistol), "nothing leaves your base yet");
   check(d.give.supplies[AMMO] === ammo && d.give.gear.length === 1, "your side is on the deal: ammo and the pistol");
   openRadioTrade(st, f, h.id);
-  setQty(st, "theirs", "food", 2);
+  setQty(st, "theirs", bestFoodKey(f.stock) || "meds", 2); // food by type: an item they hold
   check(!tradeVerdict(st).ok && /still waiting/.test(tradeVerdict(st).reason), "one deal at a time with a group");
   endTrade(st);
   const form = dealCaravanForm(st, d);
@@ -294,8 +296,8 @@ function drive(state, pred, maxHours, keep = () => false) {
   // They pay in light goods (meds): a caravan of two carries it home. No ammo to spare: rounds come first among their
   // surplus, and their kind's share of one calibre (spread over more calibres since ar-platform and calibres-more) is
   // about the price itself, leaving nothing over for the delivery fee.
-  f.pop = 5; Object.assign(f.stock, { meds: 200, wood: 0, scrap: 0, food: 0, ammo: 0 });
-  Object.assign(h.stock, { ammo: 2000, scrap: 400, parts: 40, fuel: 40, meds: 40, food: 600, water: 400 });
+  f.pop = 5; Object.assign(f.stock, { meds: 200, wood: 0, scrap: 0, ammo: 0 }); setFood(f, 0);
+  Object.assign(h.stock, { ammo: 2000, scrap: 400, parts: 40, fuel: 40, meds: 40, water: 400 }); setFood(h, 600);
   let card = null;
   for (let i = 0; i < 60 && !card; i++) { const c = offerCard(st, f); if (c && c.bring) card = c; }
   if (check(!!card, "a call asking you to bring it")) {
@@ -325,7 +327,7 @@ function drive(state, pred, maxHours, keep = () => false) {
   const { st: s3, h: h3, f: f3 } = setup(seed + 12);
   for (let i = 0; i < 4; i++) fighter(s3);
   setAutopilot(s3, true, "balanced");
-  Object.assign(h3.stock, { ammo: 2000, food: 600, water: 400 });
+  Object.assign(h3.stock, { ammo: 2000, water: 400 }); setFood(h3, 600);
   const d3 = bookDeal(s3, f3, h3, { supplies: { ammo: 60 }, gear: [] }, { supplies: { meds: 4 }, gear: [] }, "you");
   autopilotDaily(s3);
   check(s3.parties.some((q) => q.owner === "player" && q.dealId === d3.id), "a deal already waiting: the daily check sends the caravan");

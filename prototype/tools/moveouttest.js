@@ -3,6 +3,7 @@
 // an outpost with it, and the "Enter <base>?" card when a team ends a move on another of your bases (yes: they live
 // there, the cargo is unloaded; no: the team stays on the map), and the autopilot's answers.
 // Usage: node tools/moveouttest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, residents, makeSurvivor, newId } from "../src/sim/world.js";
 import { planPath, partyTile, partyMembers, orderMove, giveOrder, orderOptions, outpostName, launchExpedition, teamName, MISSIONS } from "../src/sim/parties.js";
 import { baseBeds, addBuilding } from "../src/sim/buildings.js";
@@ -19,7 +20,7 @@ function mk(seed = SEED) {
   state.started = true;
   state.autoCombat = true;
   state.noWanderers = true; // people met on the road (wanderers.js) bring cards of their own
-  Object.assign(hub(state).stock, { food: 300, water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100 });
+  Object.assign(hub(state).stock, { water: 300, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100 }); setFood(hub(state), 300);
   // The hub starts bare (barestart: 6 people in 4 beds, the card held back for its first days); these checks start
   // from a hub where everyone has a bed, as the old start's bunkhouse gave.
   addBuilding(hub(state), "bunkhouse");
@@ -29,7 +30,8 @@ function mk(seed = SEED) {
 const addPerson = (st, base) => { const s = makeSurvivor(st, 1); s.traits = []; s.location = { kind: "base", baseId: base.id }; s.role = "farm"; st.survivors.push(s); return s; };
 const crowd = (st, base, over = 1) => { while (overBeds(st, base) < over) addPerson(st, base); };
 const mkOutpost = (st, tile) => {
-  const b = { id: newId(), tile, type: "outpost", name: outpostName(st, tile), stock: { food: 40, water: 40, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  const b = { id: newId(), tile, type: "outpost", name: outpostName(st, tile), stock: { water: 40, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, jars: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
+  setFood(b, 40); // days of ration bars (tools/foodkit.js)
   st.bases.push(b);
   return b;
 };
@@ -104,14 +106,14 @@ section("Move a team out: from that base's people and stores, waiting outside, t
   st.cards.length = 0;
   const before = residents(st, h.id).length;
   const crew = atBase(st, h.id).filter((s) => !s.leader).slice(0, 3);
-  const food0 = h.stock.food, scrap0 = h.stock.scrap;
+  const food0 = food(h), scrap0 = h.stock.scrap;
   const res = moveTeamOut(st, { baseId: h.id, memberIds: crew.map((s) => s.id), supplies: { food: 9, water: 9, scrap: MOVE_OUT.scrap, ammo: 30 } });
   const p = res.party;
   check(p && !res.error, `the team leaves (${res.error || "ok"})`);
   if (p) {
     check(residents(st, h.id).length === before - 3, "three fewer people live at the hub");
     check(overBeds(st, h) === -1, `and it has a bed to spare now (${residents(st, h.id).length} in ${baseBeds(h)})`);
-    check(h.stock.food === food0 - 9 && h.stock.scrap === scrap0 - MOVE_OUT.scrap, "what they take comes out of the hub's stores");
+    check(Math.abs(food(h) - (food0 - food(p))) < 1e-6 && food(p) >= 9 && h.stock.scrap === scrap0 - MOVE_OUT.scrap, `what they take comes out of the hub's stores (${food(p).toFixed(1)} days of food, whole items)`);
     check(p.phase === "waiting" && partyTile(p) === h.tile, "with nowhere picked yet the team waits outside the hub");
     check(p.homeBaseId === h.id && p.teamMission === "moveout" && /^Moving out team/.test(teamName(st, p)), `still from the hub, named "${teamName(st, p)}"`);
     check(!st.cards.some((c) => c.partyId === p.id), "no card in the way of the map pick");
@@ -139,7 +141,7 @@ section("Move a team out: from that base's people and stores, waiting outside, t
     check(wrong.error && /is not at/.test(wrong.error), `someone from another base cannot be picked (${wrong.error})`);
     const ok = moveTeamOut(st, { baseId: o.id, memberIds: atBase(st, o.id).slice(0, 2).map((s) => s.id), supplies: { food: 4, water: 4 } });
     check(ok.party && ok.party.homeBaseId === o.id, "two leave the outpost; it stays their home");
-    check(ok.party && o.stock.food === 36, "their food came from the outpost's stores");
+    check(ok.party && Math.abs(food(o) + food(ok.party) - 40) < 1e-6 && food(ok.party) >= 4, "their food came from the outpost's stores");
     const tooMuch = moveTeamOut(st, { baseId: o.id, memberIds: atBase(st, o.id).slice(0, 1).map((s) => s.id), supplies: { meds: 5 } });
     check(tooMuch.error && new RegExp(o.name).test(tooMuch.error), `the outpost's stock is the limit (${tooMuch.error})`);
   }
@@ -161,7 +163,7 @@ section("Enter card: a team that ends a move on another of your bases");
   if (p) {
     p.cargo.supplies.scrap = 7; // found on the way
     addPerson(st, o); // one there already: with the two it is one over its 2 beds
-    const food0 = o.stock.food;
+    const food0 = food(o);
     tick(st, 200, (c) => c.partyId === p.id && (c.enterBase != null || c.isOrders), () => st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)));
     const card = st.cards.find((c) => c.partyId === p.id);
     check(card && card.enterBase === o.id && card.title === `Enter ${o.name}?`, `on arrival: "${card && card.title}"`);
@@ -174,7 +176,7 @@ section("Enter card: a team that ends a move on another of your bases");
     yes.resolve(st);
     check(!st.parties.includes(p), "yes: the team ends");
     check(crew.every((s) => s.location.kind === "base" && s.location.baseId === o.id), "its people live at the outpost now");
-    check(o.stock.food >= food0 + 8 && o.stock.scrap >= 7, "what they carried went into the outpost's stores");
+    check(food(o) >= food0 + 8 && o.stock.scrap >= 7, "what they carried went into the outpost's stores");
     check(st.log.some((l) => /moved into/.test(l.text)), "the log says they moved in");
     check(overBeds(st, o) === 1, `the outpost is one over its beds now (${residents(st, o.id).length} in ${baseBeds(o)})`);
     crowdCardsHour(st);

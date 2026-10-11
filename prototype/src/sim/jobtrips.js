@@ -24,11 +24,11 @@ import { atBase, survivorById } from "./world.js";
 import { TRIP, TRIP_JOBS, tripWindow, walkHours, tripScale, depositPoint, drawSource, walkMult } from "./tripland.js";
 import { describeActivity } from "./activity.js";
 import { woodTripTile, woodTrip } from "./woodcutting.js";
-import { forageTripTile, forageTrip, FORAGE } from "./foraging.js";
-import { huntTripTile, huntTrip, fishWater, fishTrip, meatAt } from "./hunting.js";
+import { forageTripTile, forageTrip, FORAGE, addForage } from "./foraging.js";
+import { huntTripTile, huntTrip, fishWater, fishTrip, meatAt, depositGame } from "./hunting.js";
 import { scavTripTile, scavTrip, scavCredit, fetchWaterTile, rawRoom } from "./economy.js";
 import { econStats } from "./farming.js";
-import { addWormCrop, wormMeatAt } from "./worm.js";
+import { addFood, qtyOf } from "./foods.js"; // food by type: the loads come home as items
 import { noteOutput } from "./output.js";
 import { tileLabel } from "./parties.js";
 import { RAW } from "./water.js";
@@ -193,10 +193,11 @@ function credit(state, base, s, t, now) {
         tally(state, base, "wood", s.id, { wood: c.wood, tool: c.tool ? s.id : null }, now);
         break;
       case "forage":
-        st.food = (st.food || 0) + c.food;
-        if (st === base.stock) addWormCrop(state, base, t.at, c.food, "forage"); // worm.js: gathered on infected land
+        // foods.js: the season's forage as its items (egg lots when gathered on infected land, worm.js cropEggs), with lots
+        // at home; honey as jars of honey.
+        if (c.food > 0) addForage(state, st === base.stock ? base : st, c.food, t.at);
         if (c.herbs) st.meds = (st.meds || 0) + c.herbs;
-        if (c.honey) st.preserved = (st.preserved || 0) + c.honey * FORAGE.honeyFood;
+        if (c.honey) addFood(st === base.stock ? base : st, "f_honey", qtyOf("f_honey", c.honey * FORAGE.honeyFood), { state });
         es.foraged = (es.foraged || 0) + c.food + c.honey * FORAGE.honeyFood;
         noteOutput(state, base, "forage", c.food + c.honey * FORAGE.honeyFood, "food");
         if (c.herbs) noteOutput(state, base, "forage", c.herbs, "meds");
@@ -204,11 +205,7 @@ function credit(state, base, s, t, now) {
         break;
       case "hunt": case "fish":
         if (c.rations > 0) {
-          if (st === base.stock) {
-            if (c.worm > 0) base.wormMeat = wormMeatAt(base) + c.worm; // worm.js: before the meat (it is capped by it)
-            base.stock.food = (base.stock.food || 0) + c.rations;
-            base.meat = meatAt(base) + c.rations;
-          } else st.food = (st.food || 0) + c.rations;
+          depositGame(state, st === base.stock ? base : st, c, t.job === "fish" ? "fish" : "small"); // hunting.js: the raw meat and fish by item, the worm's eggs on their own lots
           es.hunted = (es.hunted || 0) + c.rations;
         }
         noteOutput(state, base, t.job, c.rations || 0, "food");

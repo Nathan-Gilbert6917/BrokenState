@@ -5,6 +5,8 @@
 // raising the alarm and dragging them away, the deploy step (valid default posts, placing, the gate, floodlights,
 // the attack side and the turned map), the autopilot's rules, determinism, and a 120-day soak without NaN.
 // Usage: node tools/stealthtest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
+import { foodIn } from "../src/sim/foods.js";
 import { createWorld, tickHour, hub, atBase, makeSurvivor, day, factionById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { totalRounds } from "../src/sim/rounds.js"; // an ammo ransom comes in as rounds by calibre
@@ -147,7 +149,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const held = prisonersWith(st, p.id);
   check(held.length === 1 && f.pop === pop0 - 1, `the prisoner walks with the team (their group ${pop0} → ${f.pop})`);
   check(Math.abs(partySpeed(p) - speed0 * (1 - PRISON.ROAD_SLOW)) < 1e-9, `a team on foot walks 10% slower per prisoner (${speed0} → ${partySpeed(p).toFixed(2)})`);
-  const before = { food: p.supplies.food + (p.cargo.supplies.food || 0) };
+  const before = { food: food(p) + (food(p.cargo) || 0) };
   st.hour = Math.ceil(st.hour / 24) * 24 - 1;
   startReturn(st, p);
   for (let i = 0; i < 24 * 6 && st.parties.includes(p); i++) tickHour(st);
@@ -187,7 +189,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   const fakeB = { setup: { enemy: { kind: "raiders", power: 4, factionId: f.id, name: f.name } }, tileId: h.tile };
   const recs = captiveRecords(st, fakeB, Array.from({ length: n }, (_, i) => ({ kit: "raiders", name: `Raider ${i + 1}`, factionId: f.id })));
   capturePrisoners(st, { baseId: h.id, tile: h.tile, enemy: fakeB.setup.enemy }, { outcome: "victory", tactical: true, prisoners: recs }, null);
-  h.stock.food = 200; h.stock.water = 200;
+  setFood(h, 200); h.stock.water = 200;
   return { st, h, f, list: prisonersAt(st, h.id) };
 }
 
@@ -195,11 +197,11 @@ function prisonWorld(s, n = 2, cells = 1) {
 {
   console.log("Cells");
   const { st, h, list } = prisonWorld(seed, 2);
-  const food0 = h.stock.food, water0 = h.stock.water;
+  const food0 = food(h), water0 = h.stock.water;
   st.hour = (day(st)) * 24; // midnight
   prisonersDaily(st);
   const pr = PRISON.FOOD * PRISON.RATIONS[PRISON.RATION_DEFAULT].share; // Short rations by default (prisoners.js)
-  check(Math.abs(food0 - h.stock.food - 2 * pr) < 1e-6 && water0 - h.stock.water === 2 * PRISON.WATER, `two prisoners on Short rations cost ${Math.round((food0 - h.stock.food) * 100) / 100} food and ${water0 - h.stock.water} water a day`);
+  check(Math.abs(food0 - food(h) - 2 * pr) < 1e-6 && water0 - h.stock.water === 2 * PRISON.WATER, `two prisoners on Short rations cost ${Math.round((food0 - food(h)) * 100) / 100} food and ${water0 - h.stock.water} water a day`);
   check(list.length === 2 && freeCells(st, h) === 1, `one Holding cells building holds ${PRISON.CELL_CAP} (${freeCells(st, h)} free)`);
   // Escape rates (Monte Carlo): guarded, unguarded, shed.
   const rate = (setup) => {
@@ -217,7 +219,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   check(g < 0.012 && u > 0.015 && u < 0.05 && shed > 0.05 && shed < 0.12, `escapes a day: guarded cell ${pct(g)}, unguarded ${pct(u)}, shed ${pct(shed)} (rules ${pct(PRISON.ESCAPE.guarded)} / ${pct(PRISON.ESCAPE.unguarded)} / ${pct(PRISON.ESCAPE.shed)})`);
   // Starving.
   const w = prisonWorld(seed + 7, 1);
-  w.h.stock.food = 0; w.h.stock.preserved = 0; w.h.stock.water = 0;
+  setFood(w.h, 0); setJarred(w.h, 0); w.h.stock.water = 0;
   atBase(w.st, w.h.id)[0].role = "guard";
   let gone = -1;
   for (let d = 1; d <= 10; d++) { prisonersDaily(w.st); if (!w.st.prisoners.length) { gone = d; break; } }
@@ -260,7 +262,7 @@ function prisonWorld(s, n = 2, cells = 1) {
     prisonersDaily(st);
     Object.assign(PRISON.ESCAPE, esc0);
     // An "ammo" ransom is paid as rounds by calibre (prisoners.js findRounds since ammo-calibre): count every round in.
-    const stockUp = key === "ammo" ? totalRounds(h.stock) > totalRounds(stock0) : (h.stock[key] || 0) > (stock0[key] || 0);
+    const stockUp = key === "ammo" ? totalRounds(h.stock) > totalRounds(stock0) : key === "food" ? foodIn(h.stock) > foodIn(stock0) : (h.stock[key] || 0) > (stock0[key] || 0); // food: days of it, every item (foods.js)
     if (!st.prisoners.includes(p)) { if (stockUp && f.goodwill <= g0) paid++; }
     else if (f.goodwill < g0 && f.angryUntil) refused++;
     if (i === 0) console.log(`    ${msg}`);
@@ -297,7 +299,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   setMode(st, p.id, "recruit");
   const rate = recruitRate(st, p);
   let days = 0;
-  while (st.prisoners.includes(p) && days < 400) { h.stock.food = 200; h.stock.water = 200; prisonersDaily(st); days++; }
+  while (st.prisoners.includes(p) && days < 400) { setFood(h, 200); h.stock.water = 200; prisonersDaily(st); days++; }
   const card = st.cards.find((c) => c.recruit && c.recruit.source === "prisoner");
   check(rate > 0.4 && rate < 2.5, `progress ${rate.toFixed(2)} a day toward 100`);
   check(!!card && days >= 40 && days <= 250, `after ${days} days ${p.name} asks to join (a recruit card from recruits.js)${st.prisoners.includes(p) ? "" : ""}`);
@@ -570,7 +572,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   let taken = 0;
   for (let i = 0; i < 40; i++) taken += capturePrisoners(st, { baseId: h.id, tile: h.tile, enemy: { kind: "raiders", power: 3, factionId: f.id, name: f.name } }, { outcome: "victory", tactical: false }, null).length;
   check(taken >= 1 && taken <= PRISON.CELL_CAP, `Aggressive subdues for intel in fights by the numbers, up to its free cells (${taken} taken)`);
-  h.stock.food = 500; h.stock.water = 500;
+  setFood(h, 500); h.stock.water = 500;
   const line = autopilotPrisoners(st);
   check(/talk|says nothing|Win|decent food|Word goes/.test(line), `it deals with them: "${line.slice(0, 100)}"`);
   setAutopilot(st, false);
@@ -583,7 +585,7 @@ function prisonWorld(s, n = 2, cells = 1) {
     const { st, h } = prisonWorld(s, 3);
     setAutopilot(st, true, "balanced");
     for (let i = 0; i < 24 * 40; i++) tickHour(st);
-    return JSON.stringify([st.prisoners.map((p) => [p.name, Math.round(p.opinion), p.at.kind]), Math.round(h.stock.food), st.log.length]);
+    return JSON.stringify([st.prisoners.map((p) => [p.name, Math.round(p.opinion), p.at.kind]), Math.round(food(h)), st.log.length]);
   };
   // The tactical side: a raid with the whole kit, and a deployed break-in, played twice from the same seed.
   const tactical = (s) => {

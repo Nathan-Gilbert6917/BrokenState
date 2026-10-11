@@ -4,6 +4,7 @@
 // The weapons overhaul's content lives in data-*.js modules (they import nothing) and is merged into GEAR at the end.
 import { GUN_GEAR, GEAR_PATCH, LATER_GEAR } from "./data-guns.js";
 import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES, RELOAD_SUPPLIES } from "./data-ammo.js";
+import { FOOD_SUPPLIES, DAY_VALUE, DAY_KG } from "./foods.js"; // food by type (no generic "food" supply)
 import { BULK_GEAR } from "./data-stacks.js"; // bulk ammo containers: an ammo can, a carton, a bag (sim/itemstack.js)
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
@@ -25,10 +26,11 @@ export const TERRAIN = {
 export const ROAD_COST = { walk: 1, vehicle: 0.25 };
 
 // Supplies: value is the hidden base barter value per unit (the player never sees it: every group prices it its own
-// way, trade.js / valuation.js); weight is kg per unit (load.js: what people carry, what a vehicle hauls); a unit of food
-// or water is one person's ration for a day; ammo is per round. cat = trade category (CATEGORIES below).
+// way, trade.js / valuation.js); weight is kg per unit (load.js: what people carry, what a vehicle hauls); a unit of
+// water is one person's ration for a day; ammo is per round. cat = trade category (CATEGORIES below).
+// Food is by type (foods.js FOODS: canned beans, MREs, bread, raw venison…, merged in below as FOOD_SUPPLIES): there is
+// no generic "food" supply. A day's food is 2000 kcal (foods.js DAY_KCAL, foodIn).
 export const SUPPLIES = {
-  food:  { name: "Food",  value: 2,   weight: 0.5, cat: "food" },
   // Water (water.js): purified water is safe to drink (boiled, filtered, treated with tablets, or bottled water found in
   // shops and houses); un-purified water comes from the land (wells, springs, rivers and lakes, rain catchers) and is
   // safe only once purified: drunk as it is, it carries the worm's eggs of the ground it came from (worm.js). A base's
@@ -50,11 +52,8 @@ export const SUPPLIES = {
   // and stripped vehicles; other groups keep one count of parts and offer the kinds out of it (trade.js KIND_MIX).
   parts: { name: "Machine parts", value: 8,   weight: 2, cat: "parts" },
   scrap: { name: "Scrap", value: 1,   weight: 2, cat: "scrap" },
-  // Food storage (storage.js): preserved food is jarred, dried or smoked food (and dry grain and beans) that barely
-  // spoils and needs no cellar space; eaten like food (fresh first), and lighter to carry on a trip. Jars (and lids)
-  // are what the preserving room fills: found in kitchens, shops and farms, and most come back when the food
-  // in them is eaten at a base.
-  preserved: { name: "Preserved food", value: 4, weight: 0.35, cat: "food" },
+  // Jars (and lids) are what the preserving room fills (foods.js f_jarred, two portions a jar): found in kitchens,
+  // shops and farms, and most come back when the food in them is eaten at a base (storage.js).
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
   // Firewood (woodcutting.js): split logs, branches and kindling, 0.1 kg a unit (a 3 kg bundle is 30), cut from the
   // land around a base (the Cut wood job) or by a team (the Cut wood order), found in woodpiles and log baskets, or
@@ -77,9 +76,15 @@ export const SUPPLIES = {
 // "ammo" above stays as the abstract count (other groups' stores, what a plan or a deal asks for).
 Object.assign(SUPPLIES, ROUND_SUPPLIES);
 Object.assign(SUPPLIES, RELOAD_SUPPLIES); // the reloading bench's brass, powder and primers (data-ammo.js; reloading.js)
+Object.assign(SUPPLIES, FOOD_SUPPLIES); // food by type (foods.js)
+// A key's value and weight a unit, where a spec may hold days of food ("food", "preserved": a plan's line, a deal, a
+// loot table) as well as real supplies: a day of food is DAY_VALUE and DAY_KG (packed as what keeps and weighs least).
+export const supValue = (k) => (SUPPLIES[k] ? SUPPLIES[k].value : k === "food" ? DAY_VALUE : k === "preserved" ? DAY_VALUE * 1.5 : 0);
+export const supWeight = (k) => (SUPPLIES[k] ? SUPPLIES[k].weight : k === "food" || k === "preserved" ? DAY_KG : 0);
 export const SUPPLY_KEYS = Object.keys(SUPPLIES);
-// The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds).
-export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k] && !RELOAD_SUPPLIES[k]); // the bench's inputs: on the reloading card (ui/production.js)
+// The supplies a screen lists one by one: every key but the rounds (shown together as "Ammo", ammo.js totalRounds) and
+// the food (shown in a Food section of its own, foods.js).
+export const STOCK_KEYS = SUPPLY_KEYS.filter((k) => !ROUND_SUPPLIES[k] && !RELOAD_SUPPLIES[k] && !FOOD_SUPPLIES[k]); // the bench's inputs: on the reloading card (ui/production.js)
 // Firewood units to one before firewood was 0.1 kg a unit (a 3 kg bundle): save.js scales an older save's firewood by it.
 export const WOOD_UNITS = 30;
 // "A few" of a supply in a rule (n to spare, n to lose): n units, × its bulk (firewood: 30 a unit of the old 3 kg bundle).

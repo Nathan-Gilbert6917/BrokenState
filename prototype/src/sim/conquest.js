@@ -54,10 +54,11 @@
 // - Razing (factions.js baseFate / razeChance, aggressive gangs): razePlayerBase burns a base of yours to the ground
 //   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
+import { foodIn, packPick, takeItem } from "./foods.js"; // food packed by the days
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { packRounds } from "./ammo.js";
 import { teamKit, assaultCut, kitText, spendGrenades } from "./siege.js";
-import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { FACTION_TYPES, SUPPLIES, SUPPLY_KEYS, supWeight } from "./data.js";
 import { log, addCard, day, hub, atBase, factionById, newId, combatPower, baseById, checkGameOver, alive, supplyValue, snapshot, armedFactor } from "./world.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeOwnership, clearStaleAlerts, groupBroken, GROUP_BREAK } from "./factions.js";
 import {
@@ -359,7 +360,7 @@ function behindWall(ctx, u, X) {
 }
 
 // ---------- taking a base ----------
-const emptyStock = () => ({ food: 0, water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, wood: 0, buildmat: 0 }); // arrows, wood: every base keeps the count (farmtest 43: an outpost moved into read arrows = undefined)
+const emptyStock = () => ({ water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0 }); // arrows, wood: every base keeps the count (farmtest 43: an outpost moved into read arrows = undefined)
 function newOutpost(state, tile) {
   return { id: newId(), tile, type: "outpost", name: outpostName(state, tile), stock: emptyStock(), radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
 }
@@ -498,12 +499,22 @@ function packFor(state, members, base, v) {
   let room = carryCapacity(state, members, v);
   const out = {};
   const take = (k, q) => {
+    if (k === "food" || k === "preserved") { // foods.js: days of food, what keeps and weighs least first, as far as the room goes
+      for (const [kk, qq] of Object.entries(packPick(state, base, Math.min(q, foodIn(base.stock)), { days: 7, only: k === "preserved" ? (x, f) => f.stable : null }))) {
+        const n = Math.max(0, Math.min(Math.floor(qq + 1e-9), Math.floor(room / supWeight(kk))));
+        if (!n) continue;
+        takeItem(base, kk, n, { state });
+        out[kk] = (out[kk] || 0) + n;
+        room -= n * supWeight(kk);
+      }
+      return;
+    }
     if (k === "ammo") { // ammo.js: the rounds that fit their guns, as far as the room goes
       const got = packRounds(base.stock, members, Math.min(Math.floor(q), Math.floor(room / 0.03)));
       for (const [kk, qq] of Object.entries(got)) { out[kk] = (out[kk] || 0) + qq; room -= qq * (SUPPLIES[kk] ? SUPPLIES[kk].weight : 0.02); }
       return;
     }
-    const w = SUPPLIES[k].weight;
+    const w = supWeight(k);
     const have = Math.floor(base.stock[k] || 0);
     const qty = Math.max(0, Math.min(have, Math.floor(q), Math.floor(room / w)));
     if (!qty) return;

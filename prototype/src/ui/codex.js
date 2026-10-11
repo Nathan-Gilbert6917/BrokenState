@@ -11,6 +11,7 @@
 // worm once spotted, an infected wound), a group you know, an outsider party on a live tile. Until then it shows as
 // "???" with its category. state.codex = { seen: { key: day }, fresh: [keys not looked at yet] } is saved with the
 // campaign (sim/save.js writes the whole state); an older save without it opens what its world already shows.
+import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES } from "../sim/data.js";
@@ -203,7 +204,6 @@ function itemEntries() {
   return out;
 }
 const SUPPLY_HOW = {
-  food: "Everyone eats a ration a day. Fresh food needs storage room or it spoils: preserve the surplus, grow and store enough for the winter.",
   water: "Safe to drink. Everyone drinks about 1 a day (more in summer, a hot day 1.6+). Keep the tanks full before summer.",
   rawwater: "Purify it (the water boiler, water filters, a camp fire, tablets) before drinking: drunk as it is, it can carry the worm's eggs.",
   fuel: "Vehicles burn it, generators and floodlights use it; it heats a base in winter after the firewood.",
@@ -212,7 +212,6 @@ const SUPPLY_HOW = {
   arrows: "What bows and crossbows shoot, in fights and on hunts (1 a shot). After a won fight about half are picked up again, after a loss or a retreat none; a hunt loses about half. Teams with a bow pack a dozen each. Made by hand from firewood and a little scrap; found at hunting lodges, gun stores, sports shops and campgrounds.",
   parts: "Buildings, vehicle repairs and gear need them. A machine shop makes them from scrap.",
   scrap: "What almost everything is built and crafted from. Scavenging brings it in.",
-  preserved: "Eaten after the fresh food; barely spoils, needs no cellar, lighter on a trip and sells well.",
   jars: "The preserving room fills them; most come back when the food in them is eaten.",
   wood: "Heats a base in winter before fuel, boils the water, fires camp fires. Anyone with an axe can cut it.",
   carparts: "Vehicle repairs, garage upgrades and car-part recipes take them. Garages, gas stations and wrecks hold them; stripping a car gives several.",
@@ -227,7 +226,12 @@ const SUPPLY_HOW = {
   matchprimers: "Made at a reloading bench (crafting, Mechanics 8): used when the factory primers run out. They fail three times as often.",
 };
 function supplyEntries() {
-  return Object.entries(SUPPLIES).map(([k, v]) => ({
+  return Object.entries(SUPPLIES).map(([k, v]) => (FOODS[k] ? {
+    // Food by type (sim/foods.js): its calories, weight and shelf life, its kind and quality.
+    key: `s:${k}`, cat: "supplies", name: `${FOODS[k].icon} ${v.name}`, sub: "Food",
+    stats: [["Kind", FOOD_GROUPS[FOODS[k].group].name], ["Calories", `${FOODS[k].kcal} kcal (${Math.round((FOODS[k].kcal / 2000) * 100) / 100} of a day)`], ["Weight", `${v.weight} kg`], ["Keeps", FOODS[k].shelf >= 365 ? `about ${Math.round(FOODS[k].shelf / 365)} years` : `about ${FOODS[k].shelf} days at room temperature`], ["Quality", FOODS[k].tier]],
+    text: FOODS[k].desc, how: FOODS[k].stable ? "Needs no cold room. Eaten after the food that spoils sooner." : "Fresh: it fills the base's food rooms, coldest first (a root cellar triples its life, a cold store in winter or a freezer much more); outside it spoils faster. The soonest to spoil is eaten first; spoiled food is thrown out.", sprite: null,
+  } : {
     key: `s:${k}`, cat: "supplies", name: v.name, sub: "Supply",
     stats: [["Kind", cap((CATEGORIES[v.cat] || { name: v.cat }).name)], ["Weight", `${v.weight} kg a unit`]],
     text: "", how: SUPPLY_HOW[k] || (v.round && v.round.hand ? "Rounds loaded at a reloading bench (sim/reloading.js): fired like factory rounds of the same type (the factory ones first), but they jam more, less the better the loader was; loaded below Mechanics 8 they aim 1 worse." : v.round ? "Rounds of one calibre and type (ammo.js): the guns of that calibre fire them, the type loaded decides (Reload picks another when there is some). Counted together as Ammo on the screens; carried in boxes." : ""), sprite: null,

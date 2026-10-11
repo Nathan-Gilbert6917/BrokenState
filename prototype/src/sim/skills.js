@@ -49,6 +49,7 @@
 // Perks: reaching 5, 10 and 15 in a skill (as shown) gives a perk point for that milestone; each milestone offers two
 // perks (PERKS below), Fallout: New Vegas style. A card lets the player pick (or decide later from the survivor
 // screen); the autopilot picks by its style. Every perk's effect is coded where it applies (see `hook` in PERKS).
+import { giveFood } from "./foods.js"; // the Forager and Hunter perks' food
 import { learnMult } from "./traits.js"; // Quick Study
 import { SKILLS, SKILL_NAMES, GEAR } from "./data.js";
 import { day, log, addCard, atBase, alive, skill, survivorById, fillCrafting, fillMelee, fillCooking, meleeArmed } from "./world.js";
@@ -769,7 +770,7 @@ export function skillsDaily(state) {
     if (!team.length) continue;
     if (team.length >= 2) gainXp(state, [...team].sort((a, b) => skill(b, "leadership") - skill(a, "leadership") || a.id - b.id)[0], "leadership", USE.teamLead);
     const food = team.filter((s) => hasPerk(s, "forager")).length + 3 * team.filter((s) => hasPerk(s, "hunter")).length + 2 * team.filter((s) => hasPerk(s, "campcook")).length; // Camp Cook (Cooking 15)
-    if (food && p.supplies) p.supplies.food = (p.supplies.food || 0) + food;
+    if (food && p.supplies) giveFood(state, p, food, { f_berries: 3, f_nuts: 2, f_roots: 2, f_smallgame: 3, f_fowl: 2 }, { whole: false, kinds: 99 }); // foods.js: what a forager, a hunter and a camp cook bring in along the way
     if (team.some((s) => hasPerk(s, "fieldrepair"))) fieldRepair(team);
   }
   for (const s of alive(state)) decay(state, s);

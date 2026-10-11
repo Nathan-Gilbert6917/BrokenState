@@ -27,7 +27,7 @@ const first = (s) => s.name.split(" ")[0];
 const pct = (q) => `${Math.round(q * 100)}%`;
 // Default amounts when an order is switched to Until / Keep.
 const UNTIL_N = { ammo: 200, meds: 10, parts: 8, preserved: 100, fuel: 30 };
-const KEEP_N = { scrap: 30, food: 60, fuel: 10, water: 20, jars: 4 };
+const KEEP_N = { scrap: 30, fresh: 60, food: 60, fuel: 10, water: 20, jars: 4 }; // fresh / food: days of it (sim/foods.js)
 const stationOf = (b, id) => (id === "rack" ? RACK : stations(b).find((x) => x.id === Number(id)));
 
 // ---------- Workshops tab ----------

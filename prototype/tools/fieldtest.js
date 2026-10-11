@@ -2,6 +2,7 @@
 // Heat and danger), trip plans (presets run in order, ETA and rations for the whole plan, "come home" conditions,
 // cards on finds), the radio rule (no orders out of contact except through the team's cards) and the battle's
 // end-turn confirmation. Usage: node tools/fieldtest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, addCard, survivorById, makeSurvivor } from "../src/sim/world.js";
 import {
   launchExpedition, planPath, partyTile, partyMembers, partyCapacity, cargoLoad, awaitOrders, orderMove, tileLabel, waterPerHour,
@@ -29,7 +30,7 @@ function mk(seed = SEED) {
   const state = createWorld({ seed, factionCount: 7 });
   state.started = true;
   state.autoCombat = true;
-  Object.assign(hub(state).stock, { food: 400, water: 400, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100 });
+  Object.assign(hub(state).stock, { water: 400, fuel: 100, meds: 20, ammo: 300, parts: 10, scrap: 100 }); setFood(hub(state), 400);
   return state;
 }
 const crewOf = (state, n) => atBase(state, hub(state).id).slice(0, n).map((s) => s.id);
@@ -47,7 +48,7 @@ function placeTeam(state, tile, n = 3, task = { type: "camp", hours: null }) {
   const res = launchExpedition(state, { memberIds: crewOf(state, n), dest: tileNear(state, 2, 6), mission: "move", stance: "normal", supplies: { food: 8, water: 8, ammo: 10 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
-  Object.assign(p.supplies, { food: 40, water: 40 }); // plenty for the case (not carried weight that matters here)
+  Object.assign(p.supplies, { water: 40 }); setFood(p, 40); // plenty for the case (not carried weight that matters here)
   p.path = [tile]; p.idx = 0; p.dest = tile; p.progress = 0; p.orders = [];
   if (task) startOrder(state, p, task);
   else { p.phase = "waiting"; p.task = null; }
@@ -280,9 +281,12 @@ section("ETA and rations for a whole plan match the trip");
       const v = vehicle ? state.vehicles.find((x) => x.loc.kind === "base") : null;
       if (v) { v.fuel = 30; v.condition = 100; }
       const ids = crewOf(state, 3);
-      const est = estimatePlan(state, { memberIds: ids, dest, vehicle: !!v, stance: "normal", fuel: v ? v.fuel : 0, mission, steps });
-      check(est && est.returns && est.food === Math.ceil((3 * est.total) / 24) && est.water === est.food, `${mission} + ${steps.length} steps: rations cover the whole plan (${est && est.food} for ${est && est.total}h)`);
-      const res = launchExpedition(state, { memberIds: ids, dest, mission, stance: "normal", vehicleId: v ? v.id : null, supplies: { food: est.food + 2, water: est.water + 2, ammo: 10 }, plan: { preset: "custom", steps } });
+      const est0 = estimatePlan(state, { memberIds: ids, dest, vehicle: !!v, stance: "normal", fuel: v ? v.fuel : 0, mission, steps });
+      check(est0 && est0.returns && est0.food === Math.ceil((3 * est0.total) / 24) && est0.water === est0.food, `${mission} + ${steps.length} steps: rations cover the whole plan (${est0 && est0.food} for ${est0 && est0.total}h)`);
+      // The plan weighed with what the team packs (food by type: the items it would take, parties.js packedSupplies).
+      const supplies = { food: est0.food + 2, water: est0.water + 2, ammo: 10 };
+      const est = estimatePlan(state, { memberIds: ids, dest, vehicle: !!v, stance: "normal", fuel: v ? v.fuel : 0, mission, steps, supplies });
+      const res = launchExpedition(state, { memberIds: ids, dest, mission, stance: "normal", vehicleId: v ? v.id : null, supplies, plan: { preset: "custom", steps } });
       const p = res.party;
       // The team panel's queue estimate agrees with the planner at launch.
       const q = queueEstimate(state, p);
@@ -304,6 +308,7 @@ section("ETA and rations for a whole plan match the trip");
           const ch = c.choices.find((x) => !x.uiAction && choiceOk(state, x));
           if (ch) ch.resolve(state);
           if (c.partyId === p.id) cards++;
+          if (c.partyId === p.id && /^Armed strangers$/.test(c.title)) delay += 1; // a hold-up stops the team where it stands for the hour (wanderers.js)
           if (p.progress < before) delay += before - p.progress;
         }
         if (state.combat) state.combat = null;
@@ -433,7 +438,7 @@ section("Plan conditions: if … then come home");
   { // food
     const { state, p } = mkTrip({ food: 2 });
     play(state, p, 2);
-    p.supplies.food = 4; p.cargo.supplies.food = 0; p.supplies.preserved = 0;
+    setFood(p, 4); setFood(p.cargo, 0); setJarred(p, 0);
     play(state, p, 1, { pick: (c) => c.choices.find((x) => x.label === "Continue home") });
     check(p.phase === "back", "food below 2 days: home");
   }
@@ -441,7 +446,7 @@ section("Plan conditions: if … then come home");
     const { state, p } = mkTrip({ cargo: true });
     play(state, p, 2);
     p.cargo.supplies.scrap = Math.ceil(partyCapacity(state, p));
-    p.cargo.supplies.food = 0;
+    setFood(p.cargo, 0);
     check(cargoLoad(p.cargo) >= partyCapacity(state, p) * 0.95, "cargo filled");
     play(state, p, 1, { pick: (c) => c.choices.find((x) => x.label === "Continue home") });
     check(p.phase === "back", "cargo full: home");
@@ -520,7 +525,7 @@ section("Cards on finds while following a plan: a horde, a rich site, supplies s
     check(card && p.orders[0] && p.orders[0].type === "move" && p.orders[0].tile === site.id && p.orders[1].mission === "scavenge", `a rich site raises a card; "Search it next" puts it at the front of the plan`);
   } else note("no site next to the team on this seed: rich-site card not checked");
   // Supplies short of the way home.
-  p.supplies.food = 1; p.cargo.supplies.food = 0;
+  setFood(p, 1); setFood(p.cargo, 0);
   card = null;
   play(state, p, 2, { pick: (c) => { if (c.title === "Supplies running low") card = c; return null; } });
   check(card && card.planCard, "food short of the way home raises a card");

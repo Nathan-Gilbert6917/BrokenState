@@ -20,6 +20,7 @@ import { GROUP_WORKS, groupTech, worksAt, nextWork, groupWorksDaily, groupGenTie
 import { POWER_USERS } from "../src/sim/power.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { seasonOfDay } from "../src/sim/weather.js";
+import { setFood, clearFood } from "./foodkit.js"; // food by type (sim/foods.js)
 
 const govDays = Number(process.argv[2] || 60);
 const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [1];
@@ -31,7 +32,7 @@ const at8 = (st) => { st.hour = Math.ceil(st.hour / 24) * 24 + 8; };
 function quietHub(st) {
   const h = hub(st);
   for (const s of atBase(st, h.id)) { s.traits = []; s.conditions = []; s.role = "rest"; s.station = null; s.health = 100; s.mood = 80; s.skills.mechanics = 0; }
-  Object.assign(h.stock, { food: 500, water: 200, scrap: 300, parts: 40, electronics: 6, fuel: 200, meds: 20 });
+  Object.assign(h.stock, { water: 200, scrap: 300, parts: 40, electronics: 6, fuel: 200, meds: 20 }); setFood(h, 500); // days of ration bars (tools/foodkit.js)
   delete h.tier; delete h.camp;
   tech(st).known.push("refrig", "genschem");
   at8(st);
@@ -298,7 +299,7 @@ function govHub(seed, { summer = true } = {}) {
   f.type = "military"; // mechanic 6
   groupTech(f).known.push("genschem", "refrig", "machinist");
   f.pop = 20;
-  Object.assign(f.stock, { food: 600, fuel: 40, parts: 30, scrap: 100 });
+  Object.assign(f.stock, { fuel: 40, parts: 30, scrap: 100 }); setFood(f.stock, 600); // days of ration bars
   const tile = f.bases[0];
   const w = worksAt(f, tile);
   Object.assign(w, { water: 3, farms: 3, beds: 3, walls: 7, bench: 1, store: 1, sickbay: 4, pens: 1, still: 1, power: 1, freezer: 1, sealer: 1, kitchen: 1 });
@@ -306,7 +307,7 @@ function govHub(seed, { summer = true } = {}) {
   check(groupGenTier(w) === 1 && groupPowerNeed(w) === 3, "a freezer and a sealer: 3 power wanted of a tier-1 set");
   check(/6 power for 3 wanted/.test(groupPowerUpWhy(st, f, tile)), `no upgrade while it covers them (${groupPowerUpWhy(st, f, tile)})`);
   // Tier 1's burn as before: the flat 2.
-  f.stock.food = 600; const fuel0 = f.stock.fuel = 40;
+  setFood(f.stock, 600); const fuel0 = f.stock.fuel = 40;
   groupMachinesDaily(st, f);
   check(near(fuel0 - f.stock.fuel, 2, 1e-9) || near(fuel0 - f.stock.fuel, 2 - GROUP_WORKS.MACH.still.fuel, 1e-9), `tier 1 burns its flat 2 a day (${fuel0} → ${f.stock.fuel})`);
   // A test need: their freezer draws 7.
@@ -325,23 +326,23 @@ function govHub(seed, { summer = true } = {}) {
   w.bench = 1;
   const p0 = f.stock.parts;
   let done = 0;
-  for (let i = 0; i < 20 && groupGenTier(w) < 2; i++) { const nw = !f.job ? nextWork(st, f) : null; if (nw && nw.type === "powerup") done++; f.fuelFlow.in = 6; f.fuelFlow.days = 30; f.stock.food = 600; f.stock.fuel = 60; groupWorksDaily(st, f); st.hour += 24; }
+  for (let i = 0; i < 20 && groupGenTier(w) < 2; i++) { const nw = !f.job ? nextWork(st, f) : null; if (nw && nw.type === "powerup") done++; f.fuelFlow.in = 6; f.fuelFlow.days = 30; setFood(f.stock, 600); f.stock.fuel = 60; groupWorksDaily(st, f); st.hour += 24; }
   check(groupGenTier(w) === 2 && done >= 1 && f.stock.parts <= p0 - GROUP_WORKS.MACH.tiers[2].cost.parts + 2, `upgraded to a standby generator (parts ${p0} → ${f.stock.parts})`);
   check(/standby generator/.test(worksText(st, f)), `the Groups tab (${worksText(st, f)})`);
   // Tier 2's burn: genBurn at the load.
-  f.stock.food = 0; f.stock.fuel = 40; // no still today
+  clearFood(f.stock); f.stock.fuel = 40; // no still today
   groupMachinesDaily(st, f);
   check(near(40 - f.stock.fuel, genBurn(T[2], 8), 1e-9) && near(groupGenBurn(w, 8), genBurn(T[2], 8)), `tier 2 burns ${genBurn(T[2], 8).toFixed(3)} a day at 8 power (${(40 - f.stock.fuel).toFixed(3)})`);
   // Tier 3: the manual.
   POWER_USERS.freezer.need = 13;
-  f.stock.food = 600; f.stock.fuel = 60; f.stock.parts = 30; f.fuelFlow.in = 9;
+  setFood(f.stock, 600); f.stock.fuel = 60; f.stock.parts = 30; f.fuelFlow.in = 9;
   check(/Industrial Power Manual/.test(groupPowerUpWhy(st, f, tile)), `tier 3 waits for the manual (${groupPowerUpWhy(st, f, tile)})`);
   groupTech(f).known.push("indpower");
   check(groupPowerUpWhy(st, f, tile) === "", "the manual known: they would");
   f.type = "traders"; // mechanic 4
   check(/Mechanics 5/.test(groupPowerUpWhy(st, f, tile)), "tier 3 needs a Mechanics 5 hand");
   f.type = "military";
-  for (let i = 0; i < 20 && groupGenTier(w) < 3; i++) { f.fuelFlow.in = 9; f.fuelFlow.days = 30; f.stock.food = 600; f.stock.fuel = 60; groupWorksDaily(st, f); st.hour += 24; }
+  for (let i = 0; i < 20 && groupGenTier(w) < 3; i++) { f.fuelFlow.in = 9; f.fuelFlow.days = 30; setFood(f.stock, 600); f.stock.fuel = 60; groupWorksDaily(st, f); st.hour += 24; }
   check(groupGenTier(w) === 3, "an industrial diesel set");
   // Wear and repair by tier.
   const m = w.mach.power;

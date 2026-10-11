@@ -212,6 +212,7 @@ function runOne(job) {
       // Known groups outside the coalition, out of radio reach, that a relay at one of your bases would bring in.
       relaySpots: state.factions.filter((f) => f.alive && f.known && !isMember(state, f) && /out of radio reach/.test(inviteProblem(state, f)) && relaySpotFor(state, f)).length,
       reason: state.victoryReason || null, conquest, mapW: state.grid.width, mapH: state.grid.height,
+      econ: { ...(state.econStats || {}) }, // farming.js econStats: days of food harvested, eaten, spoiled; hunger days
       world: { collapsed: state.factions.filter((f) => !f.alive).length, newGangs: state.stats.newGangs || 0, razedYours: state.stats.razedYours || 0, razedGroups: state.stats.razedGroups || 0 },
     },
     log: logN ? state.log.slice(0, logN).reverse().map((l) => `d${Math.floor(l.hour / 24) + 1} ${l.text}`) : null,
@@ -362,6 +363,10 @@ function report(results, label) {
   }
   const ends = results.filter((r) => r.end);
   if (ends.length) console.log(`  members at the end: ${ends.reduce((a, r) => a + (r.end.members || 0), 0)} over ${ends.length} runs; radio relays standing: ${ends.reduce((a, r) => a + (r.end.relays || 0), 0)} (in ${ends.filter((r) => r.end.relays).length} runs); runs with a radio station on the air: ${ends.filter((r) => r.end.stations).length}; groups out of radio reach a relay would bring in: ${ends.reduce((a, r) => a + (r.end.relaySpots || 0), 0)}`);
+
+  // Food (farming.js econStats): days of food a run, your bases.
+  const ec = ends.filter((r) => r.end.econ);
+  if (ec.length) { const avg = (k) => Math.round(ec.reduce((a, r) => a + (r.end.econ[k] || 0), 0) / ec.length); console.log(`  food a run (days of food, your bases): eaten ${avg("eaten")}, harvested ${avg("harvested")}, spoiled ${avg("spoiled")}; hunger days ${avg("hungerDays")}, thirst days ${avg("thirstDays")}`); }
 
   // Hive storm rejections (the census's testing item 4): why the autopilot offered no storm each morning, summed.
   const withRej = results.filter((r) => r.hiveRejects);

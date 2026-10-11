@@ -20,6 +20,7 @@
 //   - The dice's gear (and Start from the dice, Hardcore's As rolled back) keeps the parts the dice put on a gun;
 //   - the background's Total follows every key press (only its line redrawn, so the box keeps its focus).
 // Usage: node tools/newrunpointstest.js [-v]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync } from "node:fs";
 import { createWorld } from "../src/sim/world.js";
 import { GEAR, SKILLS } from "../src/sim/data.js";
@@ -387,7 +388,7 @@ section("A custom background's car's back at a normal start: on the vehicle's ba
   // Built: it goes to the hub (it used to be dropped under Customize), the gun in it loaded.
   const plain = mk("normal", crewSnapshot(st0));
   const b = mk("normal", crewSnapshot(st));
-  check(b.bases[0].stock.fuel === plain.bases[0].stock.fuel + 20 && b.bases[0].stock.food >= plain.bases[0].stock.food + 10, "built: its fuel and food in the hub's stores");
+  check(b.bases[0].stock.fuel === plain.bases[0].stock.fuel + 20 && food(b.bases[0]) >= food(plain.bases[0]) + 10, "built: its fuel and food in the hub's stores");
   const pz = b.bases[0].armory.find((it) => it.key === "pistol" && it.loaded);
   check(b.bases[0].armory.some((it) => it.key === "crowbar") && !!pz, "and its crowbar and pistol in the armory");
   // Hardcore: the car's back is the dice's back (As rolled, priced as picks): nothing extra on the bill.

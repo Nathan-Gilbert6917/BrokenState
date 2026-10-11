@@ -10,6 +10,7 @@
 //   - the aftermath card: confine, cast out, put down and forgive each do what they say
 //   - 300 days of autopilot on three seeds with everyone's mood pinned at 2: no NaN, cards all answered
 // Usage: node tools/snaptest.js [seed]
+import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, alive, day, makeSurvivor, survivorById } from "../src/sim/world.js";
 import { basesDaily } from "../src/sim/economy.js";
 import { relationsDaily } from "../src/sim/relations.js";
@@ -67,7 +68,7 @@ section("The odds and the kinds");
   for (let i = 0; i < 30; i++) {
     const st = W(seed + i);
     const h = hub(st);
-    h.stock.food = 200; h.stock.water = 200;
+    setFood(h, 200); h.stock.water = 200;
     for (let k = 0; k < 3; k++) addPerson(st, h, 60);
     const s = atBase(st, h.id).find((x) => !x.leader);
     let last = -99;
@@ -97,7 +98,7 @@ section("Each kind");
 {
   // Running off: a deserter with the haul, who may come back.
   let st = W(), h = hub(st);
-  h.stock.food = 50; h.stock.water = 50;
+  setFood(h, 50); h.stock.water = 50;
   let s = atBase(st, h.id).find((x) => !x.leader);
   s.mood = 2;
   snap(st, h, s, st.rng, "runoff");
@@ -134,10 +135,10 @@ section("Each kind");
   check(h.buildings.length === nb - 1 && /set fire to/.test(st.log.find((l) => /set fire/.test(l.text)).text) && st.cards.some((c) => c.snapFor === s.id), "fire: a building burned down, the aftermath card");
   // The stores.
   st = W(); h = hub(st);
-  h.stock.food = 100; h.stock.water = 100;
+  setFood(h, 100); h.stock.water = 100;
   s = atBase(st, h.id).find((x) => !x.leader);
   snap(st, h, s, st.rng, "stores");
-  check(h.stock.food === 100 - Math.min(SNAP.STORES.max, 100 * SNAP.STORES.share) && h.stock.water === h.stock.food, `the stores: food and water ${h.stock.food} of 100`);
+  check(food(h) === 100 - Math.min(SNAP.STORES.max, 100 * SNAP.STORES.share) && h.stock.water === food(h), `the stores: food and water ${food(h)} of 100`);
   // Shutting down.
   st = W(); h = hub(st);
   s = atBase(st, h.id).find((x) => !x.leader);
@@ -203,15 +204,16 @@ section("On the road");
   // Slipping away: gone from the team, a deserter who may come back, a little food and water with them.
   st = W(); p = sendOut(st);
   s = partyMembers(st, p)[0];
-  const n0 = partyMembers(st, p).length, f0 = p.supplies.food;
+  const n0 = partyMembers(st, p).length, f0 = food(p);
   s.mood = 2;
   const k1 = snap(st, { party: p }, s, st.rng, "runoff");
-  check(k1 === "runoff" && !s.alive && s.left && partyMembers(st, p).length === n0 - 1 && (st.deserters || []).some((e) => e.id === s.id && e.road) && p.supplies.food < f0 && /slipped away/.test(lastLog(st)), `slipped away from the team: ${n0 - 1} left, a deserter, ${f0 - p.supplies.food} food gone with them`);
+  check(k1 === "runoff" && !s.alive && s.left && partyMembers(st, p).length === n0 - 1 && (st.deserters || []).some((e) => e.id === s.id && e.road) && food(p) < f0 && /slipped away/.test(lastLog(st)), `slipped away from the team: ${n0 - 1} left, a deserter, ${f0 - food(p)} food gone with them`);
   // The packs.
   st = W(); p = sendOut(st, 3, { food: 20, water: 20 });
+  const f20 = food(p); // whole items: a little over 20 days
   s = partyMembers(st, p)[0];
   snap(st, { party: p }, s, st.rng, "stores");
-  check(p.supplies.food === 17 && p.supplies.water === 17 && st.cards.some((c) => c.snapFor === s.id && c.partyId === p.id), "the packs: 15% of the team's food and water gone, the card on the team");
+  check(Math.abs(food(p) - (f20 - 3)) < 1e-6 && p.supplies.water === 17 && st.cards.some((c) => c.snapFor === s.id && c.partyId === p.id), "the packs: 15% of the team's food and water gone, the card on the team");
   st.cards.length = 0;
   // Shutting down: the team loses half a day.
   st = W(); p = sendOut(st);

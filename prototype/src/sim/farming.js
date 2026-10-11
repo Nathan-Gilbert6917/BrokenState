@@ -7,8 +7,10 @@
 // Yield = base yield x care x site, where care is averaged over the days the crop stood:
 //   care = tending (farmers per planted plot, diminishing returns) x skill (the tending farmers' Farming).
 // More and better farmers give more food from the same days, never a faster crop.
-// Dry crops (wheat, winter wheat, dry beans) go into the preserved stock when harvested: threshed grain and dry
-// beans keep a year and need no cellar room (storage.js). Everything else is fresh food and spoils in store.
+// Every crop is a food item (foods.js, CROPS item: potatoes, green beans, corn, grain…); a harvest of `yield` days of
+// food is that many days of the item (by its kcal). Dry crops (wheat, winter wheat, dry beans) are threshed grain and
+// dry beans: they keep years and need no cold room (storage.js). The rest is fresh and keeps by its own shelf
+// (greens days, potatoes, squash and roots a month or two, longer in a root cellar).
 // Planning (bestCrop, the winter outlook): farmers judge a crop by the usual weather for the time of year (the
 // climate table below), so they stop sowing tender crops that the first frosts would kill and sow hardy ones
 // (kale, winter roots, winter wheat) for the winter and the hungry gap before the first spring harvest.
@@ -17,51 +19,52 @@ import { log, atBase, skill, day, residents } from "./world.js";
 import { count } from "./buildings.js";
 import { workFactor } from "./health.js";
 import { jobShare } from "./kitchen.js"; // a part-time cook's share of the farm's day
-import { storeCapacity, storeRate, edibleFood, spoilFresh } from "./storage.js";
+import { storeCapacity, storeFactor, stableLoss, edibleFood, spoilFresh } from "./storage.js";
+import { FOODS, addFood, qtyOf, foodSplit, takeFood, takeItem, unitsOf } from "./foods.js"; // a crop is a food item
 import { hasPerk, seedCost } from "./skills.js";
 import { prisonersAt } from "./upkeep.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Farm (careToday)
-import { addWormCrop } from "./worm.js"; // the worm: fresh crops from infected ground carry its eggs
+import { cropEggs } from "./worm.js"; // the worm: fresh crops from infected ground carry its eggs
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // days = growing days at a growth factor of 1 (a cold or dry spell makes it longer); yield = food per plot at
 // care 1; seed = food to plant one plot; water = water per plot per dry day; spoil = days a ripe crop keeps in the
 // field before it is lost; heatTol = 0..1 heat tolerance (frost tolerance is climate.hardy, drought tolerance is
 // 1 - climate.thirst). climate goes to weather.js as is (and is registered there by key). Optional: store
-// "preserved" = the harvest goes into the preserved stock (dry goods); sowIn = seasons it can be sown outdoors
+// "preserved" = a dry crop (its item keeps: foods.js); item = the food item the harvest is (foods.js); sowIn = seasons it can be sown outdoors
 // (default: its growing seasons); snowproof = a ripe crop stands in snow without rotting.
 export const CROPS = {
-  potato: { name: "Potatoes",     days: 28, yield: 65, seed: 4, water: 0.2, spoil: 10, heatTol: 0.3,
+  potato: { name: "Potatoes",     item: "f_potatoes", days: 28, yield: 65, seed: 4, water: 0.2, spoil: 10, heatTol: 0.3,
     climate: { seasons: ["spring", "summer", "autumn"], hardy: 0.5, thirst: 0.5, tMin: 6, tOpt: [12, 23], tall: 0.1 },
     desc: "A safe staple: steady yield, stands a light frost, keeps well once dug." },
-  beans:  { name: "Beans",        days: 18, yield: 36, seed: 3, water: 0.2, spoil: 5,  heatTol: 0.6,
+  beans:  { name: "Beans",        item: "f_greenbeans", days: 18, yield: 36, seed: 3, water: 0.2, spoil: 5,  heatTol: 0.6,
     climate: { seasons: ["spring", "summer"], hardy: 0.1, thirst: 0.5, tMin: 9, tOpt: [16, 28], tall: 0.5 },
     desc: "Quick and warm-loving. Frost kills them; pick them fast once ripe." },
-  corn:   { name: "Corn",         days: 32, yield: 80, seed: 3, water: 0.35, spoil: 7,  heatTol: 0.8,
+  corn:   { name: "Corn",         item: "f_corn", days: 32, yield: 80, seed: 3, water: 0.35, spoil: 7,  heatTol: 0.8,
     climate: { seasons: ["spring", "summer"], hardy: 0, thirst: 0.7, tMin: 10, tOpt: [18, 30], tall: 1 },
     desc: "The biggest summer harvest, but thirsty, tender to frost and flattened by storms." },
-  wheat:  { name: "Wheat",        days: 42, yield: 72, seed: 4, water: 0.15, spoil: 12, heatTol: 0.5, store: "preserved",
+  wheat:  { name: "Wheat",        item: "f_grain", days: 42, yield: 72, seed: 4, water: 0.15, spoil: 12, heatTol: 0.5, store: "preserved",
     climate: { seasons: ["spring", "summer", "autumn"], hardy: 0.8, thirst: 0.3, tMin: 3, tOpt: [10, 24], tall: 0.7 },
-    desc: "Slow, hardy and needs little water. Storms can lodge it. Threshed grain keeps: the harvest goes into the preserved stock." },
-  squash: { name: "Squash",       days: 24, yield: 52, seed: 3, water: 0.3, spoil: 14, heatTol: 0.7,
+    desc: "Slow, hardy and needs little water. Storms can lodge it. Threshed grain keeps for years and needs no cold room." },
+  squash: { name: "Squash",       item: "f_squash", days: 24, yield: 52, seed: 3, water: 0.3, spoil: 14, heatTol: 0.7,
     climate: { seasons: ["summer", "autumn"], hardy: 0.1, thirst: 0.6, tMin: 9, tOpt: [16, 28], tall: 0.2 },
     desc: "A summer and autumn crop that keeps a long time in the field." },
-  greens: { name: "Greens",       days: 12, yield: 19, seed: 2, water: 0.2, spoil: 3,  heatTol: 0.1,
+  greens: { name: "Greens",       item: "f_greens", days: 12, yield: 19, seed: 2, water: 0.2, spoil: 3,  heatTol: 0.1,
     climate: { seasons: ["spring", "summer", "autumn"], hardy: 0.6, thirst: 0.5, tMin: 4, tOpt: [8, 22], tall: 0 },
     desc: "Lettuce, spinach and chard: the fastest food there is, but small, and it wilts in heat or in a few days ripe." },
-  turnip: { name: "Winter roots", days: 30, yield: 40, seed: 3, water: 0.15, spoil: 14, heatTol: 0.2,
+  turnip: { name: "Winter roots", item: "f_turnips", days: 30, yield: 40, seed: 3, water: 0.15, spoil: 14, heatTol: 0.2,
     climate: { seasons: ["spring", "autumn", "winter"], hardy: 1, thirst: 0.3, tMin: 0, tOpt: [6, 18], tall: 0 },
     desc: "Turnips and swedes: frost-proof, for late autumn and (under glass) winter. Small yield." },
   // Winter crops (the hungry gap): each one is a trade-off.
-  kale:   { name: "Kale",         days: 16, yield: 22, seed: 2, water: 0.15, spoil: 24, heatTol: 0.1, snowproof: true,
+  kale:   { name: "Kale",         item: "f_kale", days: 16, yield: 22, seed: 2, water: 0.15, spoil: 24, heatTol: 0.1, snowproof: true,
     climate: { seasons: ["spring", "autumn", "winter"], hardy: 1, thirst: 0.4, tMin: 0, tOpt: [6, 18], tall: 0.1 },
     desc: "Kale and collards: shrugs off frost and snow and stands ripe in the field for weeks, so it can be picked into early winter. Small yield, and it hardly grows in deep cold: sow it in the first half of autumn." },
-  winterwheat: { name: "Winter wheat", days: 40, yield: 88, seed: 6, water: 0.1, spoil: 14, heatTol: 0.4, store: "preserved", sowIn: ["autumn"],
+  winterwheat: { name: "Winter wheat", item: "f_grain", days: 40, yield: 88, seed: 6, water: 0.1, spoil: 14, heatTol: 0.4, store: "preserved", sowIn: ["autumn"],
     climate: { seasons: ["spring", "autumn", "winter"], hardy: 1, thirst: 0.25, tMin: 1, tOpt: [6, 18], tall: 0.6 },
-    desc: "Sown in autumn only: it sprouts, sleeps under the snow and ripens in late spring. The biggest grain harvest and it keeps a year (preserved stock), but it ties up the plot for months, costs the most seed and comes in after the worst of the hungry gap." },
-  drybeans: { name: "Dry beans",  days: 32, yield: 40, seed: 4, water: 0.25, spoil: 12, heatTol: 0.6, store: "preserved",
+    desc: "Sown in autumn only: it sprouts, sleeps under the snow and ripens in late spring. The biggest grain harvest and the grain keeps for years, but it ties up the plot for months, costs the most seed and comes in after the worst of the hungry gap." },
+  drybeans: { name: "Dry beans",  item: "f_drybeans", days: 32, yield: 40, seed: 4, water: 0.25, spoil: 12, heatTol: 0.6, store: "preserved",
     climate: { seasons: ["spring", "summer", "autumn"], hardy: 0.1, thirst: 0.55, tMin: 8, tOpt: [15, 28], tall: 0.4 },
-    desc: "Beans left to dry on the vine: twice as slow as green beans for a little more food, thirstier and tender to frost, but the harvest keeps all year and needs no cellar room (preserved stock)." },
+    desc: "Beans left to dry on the vine: twice as slow as green beans for a little more food, thirstier and tender to frost, but the harvest keeps for years and needs no cold room." },
 };
 export const CROP_KEYS = Object.keys(CROPS);
 // Every crop's climate is registered with weather.js by key (done on first use: weather.js may still be loading
@@ -299,11 +302,13 @@ function newPlot(f, gh) {
   return { id: f.nextId++, gh: !!gh, stage: "empty", crop: null, want: null, grown: 0, care: 0, careDays: 0, ripeDays: 0, yieldLeft: 0, note: "" };
 }
 
-// Seed comes out of the fresh food first, then the preserved stock (seed grain and dry beans).
-function paySeed(base, amount) {
-  const fresh = Math.min(Math.max(0, base.stock.food || 0), amount);
-  base.stock.food = (base.stock.food || 0) - fresh;
-  if (amount > fresh) base.stock.preserved = Math.max(0, (base.stock.preserved || 0) - (amount - fresh));
+// Seed (days of food) comes out of the crop's own item first (seed potatoes, seed grain), then the food that spoils
+// soonest.
+function paySeed(state, base, crop, amount) {
+  const item = CROPS[crop] && CROPS[crop].item;
+  let left = amount;
+  if (item && (base.stock[item] || 0) > 0) left -= unitsOf(item, takeItem(base, item, Math.min(base.stock[item], qtyOf(item, left)), { state, eggs: false }).q);
+  if (left > 1e-9) takeFood(base, left, { eggs: false, state });
 }
 
 function sow(p, crop) {
@@ -354,7 +359,7 @@ export function plantCheck(state, base, p, crop) {
   if (!p.gh && c.sowIn && !c.sowIn.includes(seasonKey(state))) return { ok: false, reason: `${c.name} can only be sown in ${c.sowIn.join(" or ")}` };
   const need = c.days / Math.max(0.5, Math.min(EXPECTED_GROWTH, recentGrowth(state, crop, p.gh) + 0.25));
   if (!p.gh && W.daysLeft(state, clim) < need) return { ok: false, reason: `Would not ripen before the season ends (needs about ${Math.ceil(need)} days)` };
-  if (edibleFood(base) < c.seed) return { ok: false, reason: `Needs ${c.seed} food as seed` };
+  if (edibleFood(base) < c.seed) return { ok: false, reason: `Needs ${c.seed} days of food as seed` };
   return { ok: true, reason: "" };
 }
 
@@ -363,7 +368,7 @@ export function plantCheck(state, base, p, crop) {
 // tender crops are not sown into the first frosts. Food that comes in during the hungry gap (winter and early
 // spring) counts more: 1.6× in its first half, 1.25× in the second. Fresh food harvested for the winter store
 // counts what will be left of it by midwinter (it spoils in the cellar, fast outside once the stores are full);
-// dry crops go into the preserved stock and keep. Each plot already growing the same crop marks it down 15% (a mix
+// dry crops (grain, dry beans) keep. Each plot already growing the same crop marks it down 15% (a mix
 // of harvest dates and risks beats one big bet). Thirsty crops are marked down while water is short. null when
 // nothing fits (winter outdoors).
 export function bestCrop(state, base, p, { waterShort = false } = {}) {
@@ -392,7 +397,8 @@ export function bestCrop(state, base, p, { waterShort = false } = {}) {
     // Stored until midwinter: what is left of it then (a harvest after the gap starts is eaten as it comes in).
     if (ripe < gap.start && foodDays >= 20) {
       const wait = Math.max(0, mid - ripe);
-      const rate = c.store === "preserved" ? 0.001 : (base.stock.food || 0) + c.yield > cap ? 0.03 : 0.005;
+      const fi = FOODS[c.item];
+      const rate = fi.stable ? 0.001 : Math.min(0.5, storeFactor(foodSplit(base.stock).fresh + c.yield > cap ? "outside" : "cellar", 5) / fi.shelf); // its own shelf, in the cellar or outside (storage.js)
       food *= Math.pow(1 - rate, wait);
     }
     food -= c.seed;
@@ -417,10 +423,10 @@ export function plantPlot(state, base, plotId, crop) {
   if (!hasFarmer(state, base)) return "Nobody is on the Farm role here to plant it.";
   const chk = plantCheck(state, base, p, crop);
   if (!chk.ok) return chk.reason;
-  paySeed(base, seedCost(state, base, CROPS[crop].seed)); // seedCost: Seed Saver halves it (skills.js)
+  paySeed(state, base, crop, seedCost(state, base, CROPS[crop].seed)); // seedCost: Seed Saver halves it (skills.js)
   sow(p, crop);
   p.want = crop;
-  return `${CROPS[crop].name} sown on plot ${p.id} at ${base.name} (${seedCost(state, base, CROPS[crop].seed)} food as seed). Ripe in about ${daysToRipe(p)} days.`;
+  return `${CROPS[crop].name} sown on plot ${p.id} at ${base.name} (${seedCost(state, base, CROPS[crop].seed)} days of food as seed). Ripe in about ${daysToRipe(p)} days.`;
 }
 
 export function harvestPlot(state, base, plotId) {
@@ -429,7 +435,7 @@ export function harvestPlot(state, base, plotId) {
   if (p.stage !== "ripe") return "Nothing ripe on that plot.";
   if (!hasFarmer(state, base)) return "Nobody is on the Farm role here to harvest it.";
   const got = takeHarvest(state, base, p);
-  return `Harvested ${got} food from plot ${p.id} at ${base.name}.`;
+  return `Harvested ${got} days of food from plot ${p.id} at ${base.name}.`;
 }
 
 export function clearPlot(state, base, plotId) {
@@ -453,13 +459,14 @@ export function setAutoReplant(state, base, on) {
   return on ? `Farmers at ${base.name} replant free plots automatically.` : `Farmers at ${base.name} only plant what you sow.`;
 }
 
+// A harvest: `yieldLeft` days of food of the crop's item into the stores (worm.js: an egg lot when grown on land at
+// CROP_MIN+ infection; threshed grain and dry beans are cooked before they are eaten: safe).
 function takeHarvest(state, base, p) {
   const got = Math.round(p.yieldLeft * 10) / 10;
-  const key = CROPS[p.crop] && CROPS[p.crop].store === "preserved" ? "preserved" : "food";
-  base.stock[key] = (base.stock[key] || 0) + got;
-  noteOutput(state, base, "farm", got, key);
-  if (key === "food") addWormCrop(state, base, base.tile, got, "crop"); // worm.js: grown on land at CROP_MIN+ infection (dry goods are threshed and cooked: safe)
-  Object.assign(p, { stage: "empty", crop: null, grown: 0, care: 0, careDays: 0, ripeDays: 0, yieldLeft: 0, note: `Last harvest ${got} food` });
+  const item = (CROPS[p.crop] && CROPS[p.crop].item) || "f_potatoes";
+  addFood(base, item, qtyOf(item, got), { state, egg: !FOODS[item].stable && cropEggs(state, base.tile) });
+  noteOutput(state, base, "farm", got, "food");
+  Object.assign(p, { stage: "empty", crop: null, grown: 0, care: 0, careDays: 0, ripeDays: 0, yieldLeft: 0, note: `Last harvest ${got} days of food (${Math.round(qtyOf(item, got))} ${FOODS[item].word})` });
   return got;
 }
 
@@ -557,7 +564,7 @@ export function farmingDaily(state, base, watered = 1) {
     const pick = p.want && plantCheck(state, base, { ...p, stage: "empty" }, p.want).ok ? p.want : f.auto ? bestCrop(state, base, p, { waterShort: short }) : null;
     // Seed never comes out of the last two days of food.
     if (!pick || edibleFood(base) - CROPS[pick].seed < 2 * residents(state, base.id).length) continue;
-    paySeed(base, seedCost(state, base, CROPS[pick].seed)); // Seed Saver (skills.js)
+    paySeed(state, base, pick, seedCost(state, base, CROPS[pick].seed)); // Seed Saver (skills.js)
     econStats(state).seed += seedCost(state, base, CROPS[pick].seed);
     sow(p, pick);
     out.sown++;
@@ -569,7 +576,7 @@ export function farmingDaily(state, base, watered = 1) {
   es.cropsLost += out.died.length + out.rotted.length;
   if (out.harvested > 0) {
     f.lastHarvest = { day: day(state), food: out.harvested };
-    log(state, `${base.name}: harvested ${out.harvested} food from ${out.plots} plot${out.plots === 1 ? "" : "s"}.`, "good");
+    log(state, `${base.name}: harvested ${out.harvested} days of food from ${out.plots} plot${out.plots === 1 ? "" : "s"}.`, "good");
   }
   if (out.died.length) log(state, `${base.name}: crops lost to the weather: ${out.died.join(", ")}.`, "danger");
   if (out.rotted.length) log(state, `${base.name}: ${out.rotted.join(", ")} rotted in the field (nobody harvested in time).`, "danger");
@@ -673,7 +680,7 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
   const events = new Map();
   const add = (i, food, key) => { const e = events.get(i) || { food: 0, preserved: 0 }; e[key] += food; events.set(i, e); };
   let crops = 0, plots = 0;
-  const keyOf = (crop) => (CROPS[crop].store === "preserved" ? "preserved" : "food");
+  const keyOf = (crop) => (FOODS[CROPS[crop].item].stable ? "preserved" : "food");
   for (const b of pool) {
   const f = farmOf(state, b);
   const ct = careToday(state, b);
@@ -721,7 +728,7 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
   }
   // The animal pens with a keeper: their eggs and milk every day until the first spring harvest (PEN).
   for (const b of pool) for (let n = keptPens(state, b).length, i = today + 1; n > 0 && i < gap.end; i++) { const q = n * livestockYield(state, b, null, i); add(i, q, "food"); crops += q; }
-  let fresh = pool.reduce((a, b) => a + Math.max(0, b.stock.food || 0), 0), pres = pool.reduce((a, b) => a + Math.max(0, b.stock.preserved || 0), 0);
+  let fresh = pool.reduce((a, b) => a + foodSplit(b.stock).fresh, 0), pres = pool.reduce((a, b) => a + foodSplit(b.stock).stable, 0);
   const have = fresh + pres;
   let need = 0, gapNeed = 0, spoil = 0, unmet = 0, runsOut = null, low = { food: have, day: today };
   for (let i = today; i < gap.end; i++) {
@@ -738,7 +745,7 @@ export function winterOutlook(state, base, { extra = 0, also = [] } = {}) {
     if (missing > 1e-9) { unmet += missing; if (runsOut == null) runsOut = i; }
     const t = usualTemp(i);
     const freshLoss = Math.min(fresh, spoilFresh(base, fresh, t));
-    const presLoss = pres * storeRate("preserved", t);
+    const presLoss = pres * stableLoss(t);
     fresh -= freshLoss;
     pres -= presLoss;
     spoil += freshLoss + presLoss;

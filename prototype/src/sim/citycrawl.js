@@ -19,10 +19,11 @@
 // left open when the autopilot comes on: crawlAutoStep), main.js / ui.js (the crawl window, ui/citycrawl.js).
 // Headless (tools, the autopilot) a city is still searched hour by hour (scavenge.js): nothing here runs unless a crawl
 // was started, so a normal game and the census tools take exactly the old path.
+import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
 import { hash01, gainXpAll, USE } from "./skills.js";
-import { GEAR, SUPPLIES } from "./data.js";
+import { GEAR, SUPPLIES, supWeight } from "./data.js";
 import { log, hurt, isNight, tickHour, day } from "./world.js";
 import {
   partyMembers, partyTile, bestSkill, cargoRoom, unitsThatFit, carryCapacity, poolLoad, wipeParty, awaitOrders, tileLabel, teamName, giveOrder,
@@ -410,6 +411,7 @@ function lureOf(state, p) {
 // Things found go into the team's cargo while there is room; the rest is left. Returns the line.
 function give(state, p, c, sup = {}, gear = []) {
   p.cargo = p.cargo || { supplies: {}, gear: [] };
+  typeFind(state, sup, "house", c.tile); // foods.js: "food" as a city's food (cans, rice, snacks), as much as its shelves still hold
   let room = cargoRoom(state, p);
   const got = [], left = [];
   for (const [k, q] of Object.entries(sup)) {
@@ -418,7 +420,7 @@ function give(state, p, c, sup = {}, gear = []) {
     if (take > 0) {
       p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take;
       c.tally.supplies[k] = (c.tally.supplies[k] || 0) + take;
-      room -= take * SUPPLIES[k].weight;
+      room -= take * supWeight(k);
       got.push(`${take} ${keyWord(k)}`);
     }
     if (q - take > 0) left.push(`${q - take} ${keyWord(k)}`);

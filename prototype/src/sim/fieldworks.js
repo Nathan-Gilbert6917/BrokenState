@@ -50,6 +50,7 @@
 //   job = { id, type: "build" | "repair" | "demolish" | "stock", fw, baseId, progress, hours, paid: { key: qty } }
 //   base.raidRoads = { tile: { n, last } }: the road tiles raids on that base came down (the governor's roadblocks).
 // Older saves have no state.fieldworks: ensureFW makes an empty one.
+import { FOODS, foodIn, packPick, giveFood, bestFoodKey } from "./foods.js"; // food by type: caches, stockpiles and catches hold items
 import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId } from "./world.js";
 import { BUILDINGS, buildRate, isCamp, isShelter, gatherStalled, underAttack, matName, onUpkeep } from "./buildings.js";
 import { ownsTile, wellYield, wellRate, WELL_LEFT, CLAIM, claimOwner, hauledWells } from "./claims.js";
@@ -63,7 +64,7 @@ import { hordeWallPower } from "./hordes.js";
 import { RELAY_RANGE, RELAY_UPKEEP_DAYS } from "./radio.js";
 import { woodNeed } from "./woodcutting.js"; // the governor keeps the winter's firewood (govFieldWorks)
 import { TRIP_HOOKS } from "./tripland.js"; // the job trips' plug-in points: installed at load (installTripHooks, end of file)
-import { GAME_TERRAIN, ANIMALS, SNARE, snareDayRate, takeGame, meatAt, addMeat } from "./hunting.js"; // blinds and snare lines
+import { GAME_TERRAIN, ANIMALS, SNARE, snareDayRate, takeGame, meatAt, addMeat, depositGame } from "./hunting.js"; // blinds and snare lines
 import { wormKill, wormMeatAt } from "./worm.js"; // a snare's catch may be infested, as the hunters'
 import { inShift, shiftText, shiftHours } from "./watch.js"; // the shifts at a tower or a roadblock: the watch roster's hours
 import { warBetween, raidWeight } from "./diplomacy.js"; // the groups' raids on each other's structures
@@ -719,12 +720,12 @@ export function loadFromStockpile(state, p, fw) {
   return got.length ? `Loaded from the stockpile: ${got.join(", ")}.${Object.keys(fw.contents).length ? ` Left there: ${contentsText(fw)} (no room).` : ""}` : Object.keys(fw.contents || {}).length ? "No room to carry anything more." : "The stockpile is empty.";
 }
 // A team leaves what it found (not its own food, water, meds and ammo) at a stockpile of yours.
-const KEEP = new Set(["food", "water", "rawwater", "meds", "ammo", "arrows", "fuel"]);
+const KEEP = new Set(["food", "water", "rawwater", "meds", "ammo", "arrows", "fuel"]); // and every food item (foods.js): the team keeps its food
 export function unloadToStockpile(state, p, fw) {
   const got = [];
   const keys = new Set([...Object.keys((p.cargo && p.cargo.supplies) || {}), ...Object.keys(p.supplies || {})]);
   for (const k of keys) {
-    if (KEEP.has(k) || !SUPPLIES[k] || SUPPLIES[k].cat === "ammo") continue;
+    if (KEEP.has(k) || FOODS[k] || !SUPPLIES[k] || SUPPLIES[k].cat === "ammo") continue;
     const have = carried(p, k);
     if (have < 1) continue;
     const put = depositAt(state, fw, k, Math.floor(have));
@@ -745,7 +746,7 @@ export function sendHaul(state, fwId, { needCar = false } = {}) {
   const cars = state.vehicles.filter((v) => v.loc.kind === "base" && v.loc.baseId === base.id && v.condition > 0 && !v.count && (v.fuel || 0) >= 2).sort((a, b) => (b.cargo || 0) - (a.cargo || 0));
   if (needCar && !cars.length) return { error: `No running vehicle with fuel at ${base.name}.` };
   const crew = people.slice(0, 2).map((s) => s.id);
-  const sup = { food: Math.min(Math.floor(base.stock.food || 0), crew.length), water: Math.min(Math.floor(base.stock.water || 0), crew.length) };
+  const sup = { food: Math.min(Math.floor(foodIn(base.stock)), crew.length), water: Math.min(Math.floor(base.stock.water || 0), crew.length) };
   let res = cars.length ? launchExpedition(state, { memberIds: crew, dest: fw.tile, mission: "move", stance: "normal", supplies: sup, vehicleId: cars[0].id, fromBaseId: base.id, quiet: true }) : null;
   if ((!res || res.error) && !needCar) res = launchExpedition(state, { memberIds: crew, dest: fw.tile, mission: "move", stance: "normal", supplies: sup, fromBaseId: base.id, quiet: true });
   if (!res || res.error) return { error: res ? res.error : "The vehicle could not set out." };
@@ -856,14 +857,12 @@ export function takeSnares(state, fw, { party = null, base = null, rob = false }
     return `${rob ? "Took the catch from their snares" : "The snares held"}: ${n} small game (${kept} food of fresh game${kept < rations ? `; no room for ${rations - kept}` : ""}).`;
   }
   if (base) {
-    if (worm > 0) base.wormMeat = wormMeatAt(base) + worm;
-    base.stock.food = (base.stock.food || 0) + rations;
-    base.meat = meatAt(base) + rations;
+    depositGame(state, base, { rations, worm }, "small"); // hunting.js: raw small game, the worm's eggs on their own lots
     noteOutput(state, base, "hunt", rations, "food");
-    return `${n} small game from the snare line at ${tileLabel(state, fw.tile)} (${rations} food).`;
+    return `${n} small game from the snare line at ${tileLabel(state, fw.tile)} (${rations} days of food).`;
   }
   const f = factionById(state, fw.owner);
-  if (f) f.stock.food = (f.stock.food || 0) + rations;
+  if (f) depositGame(state, f.stock, { rations }, "small"); // their stores (no lots)
   return "";
 }
 // Daily (fieldworksDaily): every snare line's day; a group's people take their catch in.
@@ -889,7 +888,7 @@ function snareCheckHour(state) {
 }
 
 // ---------- caches ----------
-const cacheKey = (k) => FIELD.CACHE.keys.includes(k) || (!!SUPPLIES[k] && SUPPLIES[k].cat === "ammo");
+const cacheKey = (k) => FIELD.CACHE.keys.includes(k) || (!!SUPPLIES[k] && SUPPLIES[k].cat === "ammo") || !!FOODS[k]; // food by type: any food item
 // What a restock would take from the base's stores to fill the cache (by FIELD.CACHE.mix of its room in kg; at most
 // half of the base's own of each; ammo: its most plentiful rounds). { key: qty }
 export function cachePlan(state, fw) {
@@ -899,11 +898,12 @@ export function cachePlan(state, fw) {
   const out = {};
   for (const [k, share] of Object.entries(FIELD.CACHE.mix)) {
     let kg = room * share;
-    const keys = k === "ammo" ? Object.keys(base.stock).filter((x) => SUPPLIES[x] && SUPPLIES[x].cat === "ammo" && (base.stock[x] || 0) >= 2).sort((a, b) => (base.stock[b] || 0) - (base.stock[a] || 0) || (a < b ? -1 : 1)).slice(0, 2) : [k];
+    // food: what keeps and weighs least of what the base has (foods.js packPick: a cache sits for weeks)
+    const keys = k === "ammo" ? Object.keys(base.stock).filter((x) => SUPPLIES[x] && SUPPLIES[x].cat === "ammo" && (base.stock[x] || 0) >= 2).sort((a, b) => (base.stock[b] || 0) - (base.stock[a] || 0) || (a < b ? -1 : 1)).slice(0, 2) : k === "food" ? Object.keys(packPick(state, base, foodIn(base.stock) / 2, { days: 60 })).filter((x) => (base.stock[x] || 0) >= 2).slice(0, 2) : [k];
     for (const key of keys) {
       if (!SUPPLIES[key] || kg <= 0) continue;
       const w = SUPPLIES[key].weight || 1;
-      const q = Math.floor(Math.min((base.stock[key] || 0) / 2, kg / w / (k === "ammo" ? keys.length : 1)));
+      const q = Math.floor(Math.min((base.stock[key] || 0) / 2, kg / w / (k === "ammo" || k === "food" ? keys.length : 1)));
       if (q > 0) { out[key] = q; kg -= q * w; }
     }
   }
@@ -1527,21 +1527,26 @@ export function groupFieldLock(state, f, kind) {
 // A group's stockpile or cache, and its blind, for the day (groupFieldDaily).
 function groupStores(state, f, fw) {
   const A = FIELD.AI;
-  if (fw.kind === "blind") { f.stock.food = (f.stock.food || 0) + FIELD.BLIND.groupFood; return; }
+  if (fw.kind === "blind") { giveFood(state, f.stock, FIELD.BLIND.groupFood, "game"); return; } // foods.js: game
   if (fw.kind !== "stockpile" && fw.kind !== "cache") return;
   if (threatOn(state, fw.tile)) return; // hostile people or the dead on it: nobody goes near
   const c = fw.contents || (fw.contents = {});
-  const move = (k) => { if ((c[k] || 0) > 0) { f.stock[k] = (f.stock[k] || 0) + c[k]; delete c[k]; return true; } return false; };
+  const move = (k) => {
+    if (k === "food") { let any = false; for (const kk of Object.keys(c)) if (FOODS[kk]) any = move(kk) || any; return any; } // every food item there
+    if ((c[k] || 0) > 0) { f.stock[k] = (f.stock[k] || 0) + c[k]; delete c[k]; return true; }
+    return false;
+  };
   // Short: into the stores.
   let drew = false;
-  if ((f.stock.food || 0) < f.pop * A.short) drew = move("food") || drew;
+  if (foodIn(f.stock) < f.pop * A.short) drew = move("food") || drew;
   for (const k of ["fuel", "ammo"]) if ((f.stock[k] || 0) < 1) drew = move(k) || drew;
   if (drew) { fw.drawn = day(state); fwStat(state, "aiDrawn"); }
   if (fw.kind !== "stockpile") return;
   // Their outdoor people drop goods here: AI.pileDaily kg a person (scrap, food, firewood), out of their stores.
   const kg = Math.min(stockRoom(fw), f.pop * A.pileDaily);
-  if (kg >= 1) for (const [k, share] of [["scrap", 0.5], ["food", 0.3], ["wood", 0.2]]) {
-    if (!SUPPLIES[k] || (k === "food" && (f.stock.food || 0) < f.pop * A.short * 2)) continue; // none of their food while it runs short
+  if (kg >= 1) for (const [k0, share] of [["scrap", 0.5], ["food", 0.3], ["wood", 0.2]]) {
+    const k = k0 === "food" ? bestFoodKey(f.stock, true) : k0; // foods.js: the food they have most of (what keeps first)
+    if (!k || !SUPPLIES[k] || (k0 === "food" && foodIn(f.stock) < f.pop * A.short * 2)) continue; // none of their food while it runs short
     const q = Math.min(Math.floor((kg * share) / SUPPLIES[k].weight), Math.floor((f.stock[k] || 0) * 0.1));
     if (q > 0) { f.stock[k] -= q; c[k] = (c[k] || 0) + q; }
   }
@@ -1560,7 +1565,7 @@ export function buildGroupWork(state, f, kind, tile, now = true) {
   const fw = { id: newId(), kind, tile, owner: f.id, baseTile: f.bases[0], hp: def.hp, max: def.hp, built: !!now, readyDay: day(state) + FIELD.AI.work, garrison: [], gar: now && garrisonCap({ kind }) ? FIELD.AI.gar : 0, contents: {}, since: state.hour };
   if (kind === "stockpile" || kind === "cache") {
     // A share of their stores goes out there (a forward cache), within its room.
-    const keys = kind === "cache" ? ["fuel", "ammo", "food"] : ["food", "scrap", "ammo", "fuel"];
+    const keys = (kind === "cache" ? ["fuel", "ammo", "food"] : ["food", "scrap", "ammo", "fuel"]).map((k) => (k === "food" ? bestFoodKey(f.stock, true) : k)).filter(Boolean); // foods.js: food as their most plentiful item
     for (const k of keys) {
       const put = Math.min(Math.floor((f.stock[k] || 0) * (kind === "cache" ? FIELD.AI.cache : FIELD.AI.stock)), Math.floor(stockRoomOf(fw) / SUPPLIES[k].weight));
       if (put > 0) { fw.contents[k] = (fw.contents[k] || 0) + put; f.stock[k] -= put; }
@@ -1590,11 +1595,11 @@ export function groupWants(state, f, mine = groupWorks(state, f)) {
   const pickBy = (fn, from = land) => from.slice().sort((a, b) => fn(b) - fn(a) || a - b)[0];
   if (!has("tower") && threat) return { kind: "tower", tile: pickBy((id) => g.distance(id, main) * 10 + (state.tiles[id].terrain === "hills" ? 5 : 0)) };
   if (!has("well") && (f.stock.water == null || (f.stock.water || 0) < f.pop * 3)) { const t = pickBy((id) => wellYield(state, id)); if (wellYield(state, t) > 0) return { kind: "well", tile: t }; }
-  if (!has("stockpile") && ((f.stock.scrap || 0) + (f.stock.food || 0)) > f.pop * 20) return { kind: "stockpile", tile: pickBy((id) => -g.distance(id, main)) };
+  if (!has("stockpile") && ((f.stock.scrap || 0) + foodIn(f.stock)) > f.pop * 20) return { kind: "stockpile", tile: pickBy((id) => -g.distance(id, main)) };
   if (!has("roadblock") && isAggressiveType(f)) { const roads = land.filter((id) => state.tiles[id].road); if (roads.length) return { kind: "roadblock", tile: roads.sort((a, b) => g.distance(b, main) - g.distance(a, main) || a - b)[0] }; }
   if (!has("spikes") && hordeNear) return { kind: "spikes", tile: pickBy((id) => -g.distance(id, hordeNear.tile) * 10 + g.distance(id, main)) };
   const game = land.filter((id) => K.snares.terrain.includes(state.tiles[id].terrain));
-  if (!has("snares") && game.length && (f.stock.food || 0) < f.pop * 10) return { kind: "snares", tile: pickBy((id) => GAME_TERRAIN[state.tiles[id].terrain] || 0, game) };
+  if (!has("snares") && game.length && foodIn(f.stock) < f.pop * 10) return { kind: "snares", tile: pickBy((id) => GAME_TERRAIN[state.tiles[id].terrain] || 0, game) };
   if (!has("blind") && has("snares") && game.length) return { kind: "blind", tile: pickBy((id) => (GAME_TERRAIN[state.tiles[id].terrain] || 0) * 10 + g.distance(id, main), game) };
   if (!has("cache") && isAggressiveType(f) && (f.stock.fuel || 0) + (f.stock.ammo || 0) * 0.05 > 20) return { kind: "cache", tile: pickBy((id) => g.distance(id, main) * 10 - (state.tiles[id].road ? 5 : 0)) };
   return null;

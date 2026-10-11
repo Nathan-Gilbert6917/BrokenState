@@ -38,6 +38,7 @@ import { createVehicle } from "../src/sim/vehicles.js";
 import { startWar } from "../src/sim/diplomacy.js";
 import { huntTripTile, gameAbundance, expectHunt } from "../src/sim/hunting.js";
 import { fieldworkAlerts } from "../src/ui/fieldworks.js";
+import { food, setFood, clearFood, addDays } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { LAYERS } from "../src/sim/markers.js";
 import { distFactor, tileGameMult } from "../src/sim/tripland.js";
 import { codexEntry } from "../src/ui/codex.js";
@@ -626,9 +627,9 @@ section("Snare line: catches day by day, a hunter checks it, the catch rots or i
     // A hunter at the base checks them in the morning.
     const hunter = atBase(state, h.id).find((x) => !x.leader);
     Object.assign(hunter, { role: "hunt", health: 100, conditions: [], inBed: false });
-    const food0 = h.stock.food, n = FW.snareHeld(fw);
+    const food0 = food(h), n = FW.snareHeld(fw);
     toHour(state, FW.FIELD.HAUL.hour);
-    check(!FW.snareHeld(fw) && h.stock.food > food0 && fw.checked, `a hunter brought ${n} small game in (food ${Math.round(food0)} → ${Math.round(h.stock.food)})`);
+    check(!FW.snareHeld(fw) && food(h) > food0 && fw.checked, `a hunter brought ${n} small game in (food ${Math.round(food0)} → ${Math.round(food(h))})`);
     // Robbed: the catch gone and the wires torn.
     FW.FIELD.SNARES.theft = 1;
     fw.held = [{ day: day(state), n: 2 }];
@@ -746,17 +747,17 @@ section("AI parity: the groups' stockpiles and caches feed them; they raid each 
   const state = mk();
   const f = state.factions.find((x) => x.alive && x.bases.length && x.pop >= 6);
   const land = state.grid.within(f.bases[0], 2).filter((id) => id !== f.bases[0] && state.tiles[id].terrain !== "water" && !FW.fwAt(state, id));
-  f.stock.food = 1000; f.stock.scrap = 500;
+  setFood(f.stock, 1000); f.stock.scrap = 500;
   const pile = FW.buildGroupWork(state, f, "stockpile", land[0], true);
   check(Object.keys(pile.contents).length > 0, `their stockpile stocked from their stores (${FW.contentsText(pile)})`);
   // Short of food: they draw on it.
-  pile.contents.food = 40;
-  f.stock.food = 0;
+  clearFood(pile.contents); addDays(pile.contents, 40);
+  clearFood(f.stock);
   for (let i = 0; i < 1; i++) { state.hour += 24; FW.groupFieldDaily(state); }
-  check(f.stock.food >= 40 && !(pile.contents.food > 0), `short of food: drawn into their stores (${f.stock.food})`);
+  check(food(f.stock) >= 40 - 1e-6 && !(food(pile.contents) > 1e-6), `short of food: drawn into their stores (${food(f.stock)})`);
   // Hauled home every AI.haulEvery days.
   pile.contents = { scrap: 20 };
-  f.stock.food = 1000;
+  setFood(f.stock, 1000);
   let hauled = false;
   for (let i = 0; i < FW.FIELD.AI.haulEvery + 1 && !hauled; i++) { state.hour += 24; FW.groupFieldDaily(state); hauled = pile.hauled === day(state); }
   check(hauled, `hauled home within ${FW.FIELD.AI.haulEvery} days (day ${pile.hauled})`);

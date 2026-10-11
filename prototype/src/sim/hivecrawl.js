@@ -33,7 +33,7 @@
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
 import { hash01, gainXpAll, USE } from "./skills.js";
-import { SUPPLIES, GEAR } from "./data.js";
+import { SUPPLIES, GEAR, supWeight } from "./data.js";
 import { log, hurt, tickHour, day, snapshot, survivorById } from "./world.js";
 import { partyMembers, partyTile, bestSkill, awaitOrders, wipeParty, tileLabel, teamName, cargoRoom, unitsThatFit } from "./parties.js";
 import {
@@ -805,7 +805,7 @@ function takeHoard(state, p, hive, c) {
   const takeSup = (k, q) => {
     if (!(q > 0) || !SUPPLIES[k]) return;
     const take = Math.min(q, unitsThatFit(room, k));
-    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; tally.supplies[k] = (tally.supplies[k] || 0) + take; room -= take * SUPPLIES[k].weight; got.push(`${take} ${SUPPLIES[k].name.toLowerCase()}`); }
+    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; tally.supplies[k] = (tally.supplies[k] || 0) + take; room -= take * supWeight(k); got.push(`${take} ${SUPPLIES[k].name.toLowerCase()}`); }
     if (q - take > 0) leftSup[k] = q - take;
   };
   takeSup("meds", h.supplies.meds); // the meds first, then the best of the gear, then the rest
@@ -1204,7 +1204,7 @@ function give(state, p, c, sup = {}, gear = []) {
   for (const [k, q] of Object.entries(sup)) {
     if (!(q > 0) || !SUPPLIES[k]) continue;
     const take = Math.min(q, unitsThatFit(room, k));
-    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; c.tally.supplies[k] = (c.tally.supplies[k] || 0) + take; room -= take * SUPPLIES[k].weight; got.push(`${take} ${keyWord(k)}`); }
+    if (take > 0) { p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take; c.tally.supplies[k] = (c.tally.supplies[k] || 0) + take; room -= take * supWeight(k); got.push(`${take} ${keyWord(k)}`); }
     if (q - take > 0) left.push(`${q - take} ${keyWord(k)}`);
   }
   for (const g of gear) {

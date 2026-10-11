@@ -28,6 +28,7 @@
 //   loot: { supplies: {}, gear: [] },  // dropped by dead enemies, already added to the party cargo / base stock
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
+import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as items
 import { survivorById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
@@ -6114,6 +6115,7 @@ function searchBox(state, b, u, box, open = false, quick = false) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
     const rTheme = box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house");
+    typeFind(state, sup, box.kind === "body" ? "raider" : box.kind === "zombie" ? "travel" : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" || box.kind === "zombie" ? null : b.tileId); // foods.js: the food as the items a place like this holds (a site's shelves run down)
     sortFind(sup, rTheme, "box", b.tileId, box.id); // ammo.js: what turns up there, by calibre
     if (box.kind !== "body") formFinds(sup, gear, rTheme, "box", b.tileId, box.id); // ammo.js: some of it boxed (stacks of boxes), now and then a bulk ammo container; the rest loose
     box.contents = { sup, gear };

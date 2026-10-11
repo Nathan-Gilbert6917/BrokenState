@@ -75,8 +75,9 @@
 //
 // Seen only when you can see them (state.live) or hear them (radio coverage, a faded sprite on the map); the
 // Groups tab lists those you know with their last known position. Decisions use state.visitorInfo.rng.
+import { FOODS, foodIn, typedFood, typeGoods, takeFood, addFoodsTo, DAY_VALUE, foodNeeds } from "./foods.js"; // food by type (foods.js)
 import { Rng } from "./rng.js";
-import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, supplyFew } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, supplyFew, supValue, supWeight } from "./data.js";
 import {
   newId, log, addCard, day, hub, baseById, atBase, homeAt, residents, combatPower, hurt, factionById, snapshot, mergeKnowledge, removeBase,
   supplyValue, skill, baseVision, localId, spendShots, arrowsBack,
@@ -286,7 +287,7 @@ function makeVisitor(state, kind, tile, opts = {}) {
     v.capacity = 40 + v.size * 25;
     v.greed = Math.round(vStrength(v) * R.greed);
     v.hostile = true;
-    v.stock.food = v.size * 3;
+    addFoodsTo(v.stock, typedFood(state, "raider", v.size * 3)); // foods.js: what raiders eat
     v.stock.ammo = v.size * 10;
   } else if (kind === "merchants") {
     const M = O.merchants;
@@ -322,7 +323,7 @@ function makeVisitor(state, kind, tile, opts = {}) {
     v.wantsYou = opts.wantsYou != null ? !!opts.wantsYou : rng.chance(E.hubChance[v.sub]);
     v.until = state.hour + 24 * E.stay;
     v.capacity = 20 * v.size;
-    v.stock.food = rng.int(2, 6) * v.size;
+    addFoodsTo(v.stock, typedFood(state, "travel", rng.int(2, 6) * v.size)); // foods.js: travellers' food (light, keeps)
     v.stock.water = rng.int(2, 5) * v.size;
     v.stock.ammo = v.sub === "scouts" ? rng.int(20, 40) : rng.int(0, 12);
     v.stock.meds = v.sub === "scouts" ? rng.int(1, 3) : 0;
@@ -346,6 +347,11 @@ function merchantGoods(state, v, rng) {
   v.spec = merchantSpec(state, v);
   const S = MERCHANT_SPECS[v.spec];
   for (const [k, m] of Object.entries(S.stock)) if (v.stock[k] != null) v.stock[k] = Math.round(v.stock[k] * m);
+  // Their food as items (foods.js: days drawn as before; the travellers' kind of food, and food that keeps).
+  const days = { food: v.stock.food || 0, preserved: v.stock.preserved || 0 };
+  delete v.stock.food; delete v.stock.preserved;
+  addFoodsTo(v.stock, typedFood(state, "travel", days.food));
+  addFoodsTo(v.stock, typedFood(state, "keeps", days.preserved));
   merchantReload(state, v); // reloading.js: an arms dealer's powder, primers and brass (dice of their own)
   const local = new Rng(Math.floor(hash01(state.seed, "mgoods", v.serial) * 4294967296) >>> 0);
   const roll = (i) => [state.seed, "mware", v.serial, i];
@@ -694,7 +700,7 @@ export const nearGroups = (state, tile) => state.factions.some((f) => f.alive &&
 
 // ---------- raiders: choosing a target ----------
 const teamPower = (state, p) => partyMembers(state, p).reduce((a, s) => a + combatPower(s), 0);
-export const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + carried(p, k) * SUPPLIES[k].value, 0);
+export const carriedValue = (p) => SUPPLY_KEYS.reduce((a, k) => a + carried(p, k) * supValue(k), 0);
 
 export function raidTargets(state, v) {
   const g = state.grid, S = vStrength(v), R = O.raiders, out = [];
@@ -783,16 +789,18 @@ export function stockPlan(stock, value, keep = null) {
     if (left <= 0) break;
     const have = Math.floor(supplyAmt(stock, k));
     if (have <= 0) continue;
-    const q = Math.min(have, Math.ceil(left / SUPPLIES[k].value));
-    if (k === "ammo") { for (const [kk, qq] of Object.entries(spendAmmo({ ...stock }, q, keep).keys)) if (qq > 0) { plan[kk] = (plan[kk] || 0) + qq; left -= qq * SUPPLIES[kk].value; } continue; }
+    const unit = k === "food" ? DAY_VALUE : k === "preserved" ? DAY_VALUE * 1.5 : supValue(k); // food: days of it (foods.js)
+    const q = Math.min(have, Math.ceil(left / unit));
+    if (k === "ammo") { for (const [kk, qq] of Object.entries(spendAmmo({ ...stock }, q, keep).keys)) if (qq > 0) { plan[kk] = (plan[kk] || 0) + qq; left -= qq * supValue(kk); } continue; }
     plan[k] = q;
-    left -= q * SUPPLIES[k].value;
+    left -= q * unit;
   }
   return left > 0 ? null : plan;
 }
 const planText = (plan) => Object.entries(plan).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`).join(", "); // rounds named by calibre
 function payFromStock(stock, plan, to) {
   for (const [k, q] of Object.entries(plan)) {
+    if (k === "food" || k === "preserved") { const got = takeFood(stock, q, { eggs: false, only: k === "preserved" ? (x, f) => f.group === "preserved" : null }); if (to) addFoodsTo(to, got.items); continue; } // foods.js: days of food, the soonest to spoil first
     if (k === "ammo") spendAmmo(stock, q); // rounds.js: any calibre, the cheapest first
     else stock[k] = Math.max(0, (stock[k] || 0) - q);
     if (to) to[k] = (to[k] || 0) + q;
@@ -998,25 +1006,25 @@ function raidGroup(state, v) {
     let room = Math.max(0, v.capacity - cargoWeight(v.stock));
     for (const k of SUPPLY_KEYS) {
       const lost = Math.max(0, (before[k] || 0) - (f.stock[k] || 0));
-      const q = Math.min(Math.floor(lost * O.raiders.groupKeep), Math.floor(room / SUPPLIES[k].weight));
+      const q = Math.min(Math.floor(lost * O.raiders.groupKeep), Math.floor(room / supWeight(k)));
       if (q <= 0) continue;
       v.stock[k] = (v.stock[k] || 0) + q;
-      room -= q * SUPPLIES[k].weight;
+      room -= q * supWeight(k);
     }
     v.size -= rng.chance(0.5) ? 1 : 0;
   }
   chronicleNote(state, held ? `${f.name} held off ${v.name}, raiders from outside.` : `${cap1(v.name)}, raiders from outside, hit ${f.name} hard.`, "world", v.goal.tile);
   if (v.size <= 0) leaveMap(state, v, "broken");
 }
-const cargoWeight = (stock) => SUPPLY_KEYS.reduce((a, k) => a + Math.max(0, stock[k] || 0) * SUPPLIES[k].weight, 0);
+const cargoWeight = (stock) => SUPPLY_KEYS.reduce((a, k) => a + Math.max(0, stock[k] || 0) * supWeight(k), 0);
 function addToStock(v, sup) {
   let room = Math.max(0, v.capacity - cargoWeight(v.stock));
-  for (const [k, q0] of Object.entries(sup)) {
+  for (const [k, q0] of Object.entries(typeGoods(null, sup, v.kind === "raiders" ? "raider" : "travel"))) { // foods.js: days of food as items (no dice here)
     if (!SUPPLIES[k]) continue;
-    const q = Math.min(Math.floor(q0), Math.floor(room / SUPPLIES[k].weight));
+    const q = Math.min(FOODS[k] ? q0 : Math.floor(q0), Math.floor(room / supWeight(k)));
     if (q <= 0) continue;
     v.stock[k] = (v.stock[k] || 0) + q;
-    room -= q * SUPPLIES[k].weight;
+    room -= q * supWeight(k);
   }
 }
 
@@ -1217,11 +1225,11 @@ export function tradeWithGroup(state, v, f) {
   for (const k of sells.slice(0, 2)) {
     const q = Math.min(available(v, k), Math.ceil((v.stock[k] || 0) / 3));
     if (q <= 0) continue;
-    let value = q * SUPPLIES[k].value * want(f, k) * 0.9;
+    let value = q * supValue(k) * want(f, k) * 0.9;
     const pay = {};
     for (const w of wants) {
       if (value <= 0) break;
-      const per = SUPPLIES[w].value * want(v, w);
+      const per = supValue(w) * want(v, w);
       const take = Math.min(available(f, w) - (pay[w] || 0), Math.ceil(value / per));
       if (take <= 0) continue;
       pay[w] = (pay[w] || 0) + take;
@@ -1270,7 +1278,7 @@ function merchantCall(state, v) {
 // What a merchant caravan deals in, for the UI ("arms dealers"), or "".
 export const specName = (v) => (v && v.kind === "merchants" && MERCHANT_SPECS[v.spec] ? MERCHANT_SPECS[v.spec].name.toLowerCase() : "");
 export function goodsText(v) {
-  const sup = SUPPLY_KEYS.filter((k) => (v.stock[k] || 0) >= supplyFew(k, 5)).sort((a, b) => (v.stock[b] || 0) * SUPPLIES[b].value - (v.stock[a] || 0) * SUPPLIES[a].value).slice(0, 4).map((k) => (k === "ammo" ? "rounds of several calibres" : keyWord(k) === k ? SUPPLIES[k].name.toLowerCase() : keyWord(k)));
+  const sup = SUPPLY_KEYS.filter((k) => (v.stock[k] || 0) >= supplyFew(k, 5)).sort((a, b) => (v.stock[b] || 0) * supValue(b) - (v.stock[a] || 0) * supValue(a)).slice(0, 4).map((k) => (k === "ammo" ? "rounds of several calibres" : keyWord(k) === k ? SUPPLIES[k].name.toLowerCase() : keyWord(k)));
   const items = v.wares.slice(0, 4).map((g) => g.name);
   return [...sup, ...items].join(", ") + (v.wares.length > 4 ? ` and ${v.wares.length - 4} more item${v.wares.length - 4 === 1 ? "" : "s"}` : "") || "very little";
 }
@@ -1350,7 +1358,7 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   const t = ctx.t;
   t.offer = {}; t.ask = {}; t.offerGear = []; t.askGear = []; t.deal = null;
   const out = [];
-  needs = roundNeeds(state, ctx, needs); // trade.js: ammo asked for and sold as rounds by calibre
+  needs = foodNeeds(roundNeeds(state, ctx, needs), ctx.theirHave, ctx.have); // trade.js: ammo asked for and sold as rounds by calibre; foods.js: food as items
   // Pay with what they want most (trade.js demand) among what the hub has plenty of.
   const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.6 && (ctx.have[k] || 0) > 0).sort((a, b) => demand(state, ctx.f, b) - demand(state, ctx.f, a) || needs[a] - needs[b]);
   const short = Object.keys(needs).filter((k) => needs[k] >= 1.2 && (ctx.theirHave[k] || 0) > 0).sort((a, b) => needs[b] - needs[a]);
@@ -1404,7 +1412,7 @@ function tributeStarves(st, base, plan) {
   const paid = (plan.food || 0) + (plan.preserved || 0);
   if (paid <= 0) return false;
   const mouths = Math.max(1, atBase(st, base.id).length);
-  return (base.stock.food || 0) + (base.stock.preserved || 0) - paid < mouths * TRIBUTE_FOOD_DAYS;
+  return foodIn(base.stock) - paid < mouths * TRIBUTE_FOOD_DAYS;
 }
 
 // Attacking merchants (the trade window at your base, or a team's road card): reputation first, then the fight.
@@ -1547,9 +1555,9 @@ function gateCard(state, v, base, lead) {
     const cost = n * O.explorers.shelterDays;
     const wcost = Math.ceil(cost * thirstAhead(state, O.explorers.shelterDays) - 1e-9); // more in summer and a heat wave
     choices.push({
-      label: `Shelter them for ${O.explorers.shelterDays} days (${cost} food, ${wcost} water)`, hint: `${n} ${n === 1 ? "person" : "people"} eat and drink at ${base.name} (1 food and 1 water each a day, more water in summer). Everyone there feels better for it (mood +${O.explorers.shelterMood}); guests often leave a gift`,
-      disabled: (st) => !here(st) || (base.stock.food || 0) < cost || waterIn(base.stock) < wcost,
-      ai: (st) => { const d = (base.stock.food || 0) / Math.max(1, residents(st, base.id).length + n); return style(st) === "aggressive" || waterIn(base.stock) < wcost + residents(st, base.id).length * 5 ? -10 : d >= (style(st) === "cautious" ? 30 : 18) ? 35 : -10; },
+      label: `Shelter them for ${O.explorers.shelterDays} days (${cost} days of food, ${wcost} water)`, hint: `${n} ${n === 1 ? "person" : "people"} eat and drink at ${base.name} (1 food and 1 water each a day, more water in summer). Everyone there feels better for it (mood +${O.explorers.shelterMood}); guests often leave a gift`,
+      disabled: (st) => !here(st) || foodIn(base.stock) < cost || waterIn(base.stock) < wcost,
+      ai: (st) => { const d = foodIn(base.stock) / Math.max(1, residents(st, base.id).length + n); return style(st) === "aggressive" || waterIn(base.stock) < wcost + residents(st, base.id).length * 5 ? -10 : d >= (style(st) === "cautious" ? 30 : 18) ? 35 : -10; },
       resolve: (st) => {
         if (!here(st)) return gone;
         v.done.shelter = true;
@@ -1581,8 +1589,7 @@ function shelterDay(state, v) {
   const base = baseById(state, v.shelterBase);
   if (!base) return endShelter(state, v);
   // Per head, as anyone at the base (upkeep.js): food times the cold, fresh then preserved; water times the day's thirst.
-  eatFromStore(base, v.size * UPKEEP.guest * coldFactor(state));
-  base.stock.food = Math.max(0, base.stock.food || 0);
+  eatFromStore(base, v.size * UPKEEP.guest * coldFactor(state), state);
   drawWater(base.stock, v.size * thirstAt(state)); // the day's thirst (weather.js), purified first (water.js)
 }
 function endShelter(state, v) {
@@ -1591,7 +1598,7 @@ function endShelter(state, v) {
   v.phase = "travel";
   if (base && v.hostile) {
     const took = {};
-    for (const k of ["food", "meds", "ammo"]) { const q = Math.floor(supplyAmt(base.stock, k) * 0.12); if (q > 0) { if (k === "ammo") Object.assign(took, spendAmmo(base.stock, q).keys); else { base.stock[k] -= q; took[k] = q; } } } // ammo: any calibre, by key (rounds.js)
+    for (const k of ["food", "meds", "ammo"]) { const q = Math.floor(supplyAmt(base.stock, k) * 0.12); if (q > 0) { if (k === "ammo") Object.assign(took, spendAmmo(base.stock, q).keys); else if (k === "food") Object.assign(took, takeFood(base, q, { eggs: false, state }).items); else { base.stock[k] -= q; took[k] = q; } } } // ammo: any calibre, by key (rounds.js)
     addToStock(v, took);
     v.hostile = false;
     log(state, `The guests at ${base.name} were thieves: ${cap1(v.name)} slipped away in the night with ${planText(took) || "what they could carry"}.`, "danger");
@@ -1699,10 +1706,11 @@ function tollStrands(state, p, plan) {
   if (!partyMembers(state, p).length) return false;
   const hours = p.phase === "back" ? Parties.hoursLeft(state, p) : 2 * Parties.hoursLeft(state, p) + 10;
   const perDay = Math.max(1, Parties.partyPace(state, p).eatMove);
-  const left = (k) => (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0) - (plan[k] || 0);
+  const paidFood = foodIn(plan) + (plan.food || 0); // food by type: the items the toll takes, in days (foods.js)
+  const left = (k) => (k === "food" ? Parties.carried(p, "food") - paidFood : (p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0) - (plan[k] || 0));
   const need = hours / 24 + 0.5;
   if ((plan.water || plan.rawwater) && (left("water") + left("rawwater")) / thirstAt(state) / perDay < need) return true;
-  if (plan.food && left("food") / perDay < need) return true;
+  if (paidFood > 0 && left("food") / perDay < need) return true;
   return p.mission === "hive" && (plan.fuel || 0) > 0;
 }
 const fightAi = (st, odds) => { const need = { cautious: 0.8, balanced: 0.65, aggressive: 0.5 }[style(st)] ?? 0.65; return odds >= need ? 80 + odds * 10 : odds * 40; };
@@ -1823,7 +1831,7 @@ function explorerRoadCard(state, v, p) {
   }
   const give = { food: 2 * n, water: 2 * n };
   choices.push({
-    label: `Share supplies (${give.food} food, ${give.water} water)`, hint: "The team feels better for it (mood +2), and they share their map", disabled: (st) => carried(p, "food") < give.food || carriedAny(p, "water") < give.water,
+    label: `Share supplies (${give.food} days of food, ${give.water} water)`, hint: "The team feels better for it (mood +2), and they share their map", disabled: (st) => carried(p, "food") < give.food || carriedAny(p, "water") < give.water,
     ai: (st) => (carried(p, "food") >= give.food * 3 ? 25 : -20),
     resolve: (st) => {
       if (!ok(st)) return done(st, "They are gone.");

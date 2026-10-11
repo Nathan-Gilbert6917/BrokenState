@@ -8,6 +8,7 @@
 // A game lost after every base was gone (a Retreat, or the last base taken while its people were on the road): the
 // last frame marks where the last base stood (frameState lastBase, drawn as your empty base) and the game-over
 // caption says so.
+import { foodIn } from "./foods.js"; // the hub's days of food
 import { hub, alive } from "./world.js";
 import { vehicleById } from "./vehicles.js";
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
@@ -195,7 +196,7 @@ function record(state, c) {
   const deltas = key ? 0 : ownD.length + infD.length;
   const d = new Uint16Array(HEAD + nF * 3 + deltas + hz.length + pt.length);
   const hb = hub(state), st = hb ? hb.stock : {};
-  d.set([alive(state).length, clamp16(st.food), clamp16((st.water || 0) + (st.rawwater || 0)), clamp16(totalRounds(st)), clamp16(st.meds),
+  d.set([alive(state).length, clamp16(foodIn(st)), clamp16((st.water || 0) + (st.rawwater || 0)), clamp16(totalRounds(st)), clamp16(st.meds),
     key ? 0 : ownD.length / 2, key ? 0 : infD.length / 2, hz.length / 3, pt.length / 4, nF, land[1] || 0]);
   let o = HEAD;
   const live = new Map(state.factions.map((f) => [f.id, f]));
