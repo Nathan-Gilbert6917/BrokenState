@@ -715,7 +715,6 @@ export function releaseEscorts(state, r) {
 }
 
 // ---------- death sites ----------
-/** @param {State} state */
 // A cart on the ground with something in it loses the most valuable thing (an item, else a lot of supplies). Returns
 // true when it did (the cart stays, worth less).
 function stripCart(e) {
@@ -734,6 +733,7 @@ function stripCart(e) {
   e.cartKg = Math.round(itemLoad(c) * 10) / 10;
   return true;
 }
+/** @param {State} state */
 export function deathSitesDaily(state) {
   const rng = state.rng;
   const d = day(state);
