@@ -350,6 +350,19 @@ export function coldDaysAhead(state, hour = state.hour, horizon = 130) {
   }
   return days;
 }
+// Calendar days of the coming (or current) cold spell still ahead (any freezing days: late autumn to early spring, 56
+// days in all; from today while it lasts), for what burns every day of it, frost or not (the Kitchen's stove: woodNeed).
+// The days before it starts are not counted (what burns then is cut then: woodHandsWanted's daily).
+export function coldSpanAhead(state, hour = state.hour, horizon = 130) {
+  const today = Math.floor(hour / 24);
+  let start = null;
+  for (let d = today; d < today + horizon; d++) {
+    const f = freezeShare(d);
+    if (!f && start != null) return d - start;
+    if (f && start == null) start = d;
+  }
+  return start != null ? today + horizon - start : 0;
+}
 // Days until the hard cold (winter: most days freezing) begins; 0 while it lasts.
 export const COLD_SHARE = 0.5;
 export function daysToCold(state, hour = state.hour) {
@@ -368,7 +381,8 @@ export function woodSeason(state, hour = state.hour) {
 // WORM.BOILER_DAYS days of it are wanted in store on top, and the stocking season is always on while it burns.
 // { need, have, days (freezing days ahead), soon (the stocking season), short (have < need), cold (winter: the hard
 // cold is here), toCold (days until it is), boiler (the boiler's firewood a day, 0 when it does not burn), kitchen (the
-// Kitchen's stove a day, kitchen.js kitchenWood: KITCHEN.wood.keepDays of it wanted in store like the boiler's), daily
+// Kitchen's stove a day, kitchen.js kitchenWood: every day of the cold spell of it wanted in store, coldSpanAhead, at least
+// KITCHEN.wood.keepDays; heat: the heating's part of need; stoveDays: the stove's days counted), daily
 // (boiler + kitchen: what burns every day in every season), pressing (the boiler burns, or the pile is under the
 // kitchen's keepDays: wood is wanted in any season) }.
 export function woodNeed(state, base, extraHeads = 0) {
@@ -377,14 +391,19 @@ export function woodNeed(state, base, extraHeads = 0) {
   const boil = base.tier === 0 ? null : boilerUse(state, base);
   const boiler = boil && boil.active ? r1((boil.wood + extraHeads * WORM.BOILER_WOOD_HEAD) * (boil.share ?? 1)) : 0; // the days it burns: the filters' share of the drinking needs no boiling
   const kitchen = base.tier === 0 || !hasKitchen(base) ? 0 : r1(kitchenWood(state, base).need);
-  const need = base.tier === 0 ? 0 : Math.ceil(heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare + boiler * WORM.BOILER_DAYS + kitchen * KITCHEN.wood.keepDays);
+  // The stove burns every day of the cold spell, frost or not (ap-food, 2026-10-11: it counted only its
+  // KITCHEN.wood.keepDays, a quarter of the spell, and the census at ac1c1c6 met the second winter with the woodpile at
+  // 10% of the cold's need and 7.4 base-days without heat a game, 0.9 before the stove burned firewood).
+  const stoveDays = kitchen > 0 ? Math.max(KITCHEN.wood.keepDays, coldSpanAhead(state)) : 0;
+  const heat = base.tier === 0 ? 0 : heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare;
+  const need = base.tier === 0 ? 0 : Math.ceil(heat + boiler * WORM.BOILER_DAYS + kitchen * stoveDays);
   const have = Math.max(0, base.stock.wood || 0);
   const daily = r1(boiler + kitchen);
   // The kitchen makes it pressing out of season only while the pile is under its KITCHEN.wood.keepDays (the boiler, as
   // ever, always: it is the worm's water).
   const pressing = boiler > 0 || (kitchen > 0 && have < kitchen * KITCHEN.wood.keepDays);
   const season = woodSeason(state);
-  return { need, have, days: r1(days), soon: season || pressing, season, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler, kitchen, daily, pressing };
+  return { need, have, days: r1(days), soon: season || pressing, season, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler, kitchen, daily, pressing, heat: Math.ceil(heat), stoveDays };
 }
 // A base the winter will catch short of firewood (the alert, the Upkeep line): in the stocking season, with less than
 // the coming cold needs and less heat in store (firewood and fuel) than that. null when it is fine.

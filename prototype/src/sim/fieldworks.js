@@ -27,7 +27,16 @@
 //   blind      A hunting blind: the base's hunters on its tile find BLIND.mult × the game (tripland.js TRIP_HOOKS.game),
 //              and it opens its tile to them past a cabinless base's grounds.
 //   snares     A snare line (forest, hills, farmland): small game day by day (hunting.js snare rules × SNARES.lines),
-//              checked by a hunter of the base each morning; rots, can be robbed (its wires torn).
+//              checked by a hunter of the base each morning (with no hunter there, anyone fit at home: it is close);
+//              rots, can be robbed (its wires torn). Field craft (hc-food 2026-10-11, user pick: "field craft for snare
+//              line is cheap couple scrap"; was 4 scrap, 15 firewood and 3 work-hours, a base's builders only, never at
+//              a camp, and the governor never set one): 2 scrap and 1 work-hour plus the walk, no bench and no builders
+//              needed (with nobody on Build anyone at home sets it, CRAFT_RATE), at every base from a camp up. It does
+//              not count against FIELD.MAX (its own cap, SNARES.max a base), and besides the base's land it goes on a
+//              tile next to the base (SNARES.reach) nobody else holds: a camp holds only its own tile. The governor and
+//              a steward set one at every base from the start in hardcore, more while food is short (snareLinesWanted);
+//              the groups the same (groupWants, a line ready the next day). A team on the road has the snare order
+//              (hunting.js SNARE: 2 scrap or snare wire, 2 hours).
 //   cache      A buried fuel cache (CACHE: fuel, food, ammo, meds; capKg): restocked by the builders, drawn by teams;
 //              the dead and passing raiders leave it alone, a raid sent for it finds it RAID.find of the time.
 //   spikes     Spike traps: the dead and hostile parties crossing lose some of their number / strength; worn by it,
@@ -89,8 +98,8 @@ export const FIELD = {
       desc: "A fenced drop point: outdoor workers and teams leave goods here instead of walking home (up to 200 kg), and a haul team brings it in (Send a haul team: a vehicle carries the most; or a standing order: every few days, or once it holds enough). Raiders passing over it take what is there." },
     blind: { name: "Hunting blind", icon: "🦌", cost: { wood: 60, scrap: 2 }, hours: 6, hp: 30, game: 0.3,
       desc: "A screened hide on game land. The base's hunters who hunt its tile get a third more game there (they pick it out when it is the best ground), and it opens its tile to them even past a base's hunting grounds without a cabin (up to 2 tiles). Only where there is game (forest, hills, farmland, mountains)." },
-    snares: { name: "Snare line", icon: "🪤", cost: { scrap: 4, wood: 15 }, hours: 3, hp: 20, terrain: ["forest", "hills", "plains"],
-      desc: "Two lines of snares left set on forest, hills or farmland: small game caught day by day, about 1–2 a day on good ground (less as the game thins). The base's hunters check it each morning and bring the catch in; with no hunter at the base it waits, and rots in 2–6 days by the heat. Someone may rob it (more often near towns, the dead or hostile people), tearing the wires: repair it." },
+    snares: { name: "Snare line", icon: "🪤", cost: { scrap: 2 }, hours: 1, hp: 20, terrain: ["forest", "hills", "plains"], craft: true,
+      desc: "Field craft: two lines of snares from a couple of scrap of fence wire, set in an hour by anyone at the base (no bench, no builders needed), at any base from a camp up, on its land or a tile next to it nobody holds. Forest, hills or farmland: small game caught day by day, about 1–2 a day on good ground (less as the game thins). The base's hunters check it each morning and bring the catch in (with no hunter, anyone fit at home); left unchecked it rots in 2–6 days by the heat. Someone may rob it (more often near towns, the dead or hostile people), tearing the wires: repair it. It does not count against the base's field works." },
     cache: { name: "Fuel cache", icon: "🛢️", cost: { scrap: 6, wood: 40 }, hours: 5, hp: 40, capKg: 60, hidden: true,
       desc: "A buried, hidden store of fuel, ammo, food and meds (up to 60 kg) for teams on the road: they take what they need there (or leave some). The builders stock it from the base's stores (Restock). Hard to find: raiders passing over it and the dead leave it alone, and a raid sent for it often finds nothing." },
     spikes: { name: "Spike traps", icon: "🔺", cost: { scrap: 12, wood: 50 }, hours: 6, hp: 40,
@@ -117,7 +126,9 @@ export const FIELD = {
   TEAM: { destroy: 3, capture: 4, load: 1, unload: 1, check: 1, gw: -8, garPower: 2.5 },
   // pileDaily: kg a person a day their outdoor people drop at a group's stockpile; haulEvery: days between their haul
   // home; short: days of food under which they draw on it; cache: share of fuel/ammo/food sent out to a cache.
-  AI: { every: 5, max: [1, 12, 4], stock: 0.15, gar: 2, garPop: 10, work: 3, pileDaily: 0.4, haulEvery: 6, short: 3, cache: 0.1, costShare: 0.6 },
+  // snareShort: days of food a person under which a group wants a snare line (another under half that; hc-food: was 10
+  // and one line, among their other works).
+  AI: { every: 5, max: [1, 12, 4], stock: 0.15, gar: 2, garPop: 10, work: 3, pileDaily: 0.4, haulEvery: 6, short: 3, cache: 0.1, costShare: 0.6, snareShort: 10 },
   GOV: { towerPop: 6, garrisonPop: 10, repairAt: 0.7, roadRaids: 2, pileHands: 2, pileEvery: 5, woodKeep: 0.5 }, // woodKeep: the share of the cold's firewood kept back from field works
   // Shifts at a tower or a roadblock (the base's watch roster's way, watch.js): who walks out for which hours. Each shift
   // holds up to the structure's garrison; a person stands one shift at one structure. They leave the base `walk` hours
@@ -132,7 +143,11 @@ export const FIELD = {
   // Snare lines: lines × the hunting snares' line (hunting.js SNARE.count snares, snareDayRate); the catch keeps keep[]
   // days (hot / mild / cold), robbed theft a day (+near with the dead, hostile people or a town within 2), tearing
   // `tear` of its condition; under `dead` condition it catches nothing.
-  SNARES: { lines: 2, keep: [2, 3, 6], theft: 0.04, near: 0.06, tear: 6, dead: 0.3 },
+  // Field craft (hc-food): reach: tiles from the base a line may go on land nobody holds (a camp holds only its own
+  // tile); max: lines a base keeps (outside FIELD.MAX); minRate: the least small game a day (both lines) worth a line,
+  // for the governor and the groups (snareDayRate × lines: forest next to a base about 1.2, farmland 0.6, suburbs 0.1).
+  SNARES: { lines: 2, keep: [2, 3, 6], theft: 0.04, near: 0.06, tear: 6, dead: 0.3, reach: 1, max: { hub: 3, outpost: 2, shelter: 2, camp: 2 }, minRate: 0.3 },
+  CRAFT_RATE: 1, // work-hours an hour on a field-craft job (KINDS craft) at a base with nobody on Build: one person at it
   CACHE: { mix: { fuel: 0.4, food: 0.3, ammo: 0.2, meds: 0.1 }, keys: ["fuel", "food", "water", "ammo", "meds"], spot: 0.4, spotPer: 0.05 },
   // Spike traps: the dead crossing lose horde + hordePer × size (at most hordeMax of them) × condition; a hostile party
   // `party` of its strength (× condition) and is held `hold` hours; each trigger wears wear (+ wearPer a kill) hp.
@@ -192,6 +207,32 @@ const r1 = (v) => Math.round(v * 10) / 10;
 
 // ---------- where they can go ----------
 export const maxWorks = (base) => FIELD.MAX[isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost"];
+// Field craft (KINDS craft: the snare line): its own cap a base (SNARES.max), outside maxWorks.
+export const isCraft = (kind) => !!(K[kind] && K[kind].craft);
+export const maxSnares = (base) => FIELD.SNARES.max[isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost"];
+// The structures that count against maxWorks (not the field craft).
+export const countedWorks = (state, base) => playerWorks(state, base).filter((x) => !isCraft(x.kind));
+// Scrap a field craft may take from the pile gathered for a step up (buildings.js gather jobs: taken from the stores
+// as the work goes, so a camp's stores show none for weeks while its step up waits): what is paid in beyond the work
+// done so far. The step up gathers it again (its work waits a little longer).
+const spareScrap = (j) => {
+  if (!j.paid || !(j.paid.scrap > 0)) return 0;
+  const need = (j.cost || (BUILDINGS[j.type] && BUILDINGS[j.type].cost) || {}).scrap || 0;
+  return Math.max(0, Math.floor(j.paid.scrap - Math.ceil((need * j.progress) / Math.max(1, j.hours))));
+};
+export const gatheredScrap = (base) => (base.construction || []).reduce((a, j) => a + spareScrap(j), 0);
+const haveFor = (base, kind, k) => Math.floor(base.stock[k] || 0) + (isCraft(kind) && k === "scrap" ? gatheredScrap(base) : 0);
+// A snare line goes up with a coil of snare wire from the base's armory instead of its scrap (as the team's snares,
+// hunting.js SNARE): the coil stays with the line (fw.wire) and comes back when it is pulled down or cancelled.
+const armoryWire = (base, kind) => (kind === "snares" ? (base.armory || []).find((it) => it && it.key === "snarewire") || null : null);
+const wireUp = (state, base, kind) => !!armoryWire(base, kind) && haveFor(base, kind, "scrap") < (K[kind].cost.scrap || 0);
+// A tile next to the base (SNARES.reach) that nobody else holds: a field craft goes there even off the base's land.
+function craftLand(state, base, tile) {
+  const t = state.tiles[tile];
+  if (!t || state.grid.distance(base.tile, tile) > FIELD.SNARES.reach) return false;
+  const c = claimOwner(state, tile);
+  return (t.owner == null || t.owner === "player") && (c == null || c === "player");
+}
 // Why this kind cannot go on this tile for this base ("" = it can). costs: also check the stores and the skill.
 export function placeProblem(state, base, kind, tile, costs = true) {
   const def = K[kind];
@@ -205,7 +246,7 @@ export function placeProblem(state, base, kind, tile, costs = true) {
   if (t.hive) return "A hive stands there.";
   if (state.factions.some((f) => f.alive && f.bases.includes(tile))) return "A group's base stands there.";
   if (state.grid.distance(base.tile, tile) > FIELD.RANGE) return `Too far from ${base.name} (at most ${FIELD.RANGE} tiles).`;
-  if (!ownsTile(state, tile)) return "Only on land you hold: the ground around a base or a claim of yours.";
+  if (!ownsTile(state, tile) && !(def.craft && craftLand(state, base, tile))) return def.craft ? `Only on land you hold, or a tile next to ${base.name} nobody holds.` : "Only on land you hold: the ground around a base or a claim of yours.";
   const there = fwAt(state, tile);
   if (there) return `${there.owner === "player" ? "Your" : "A"} ${kindName(there).toLowerCase()} stands there already.`;
   if (def.road && !t.road) return "Roadblocks go on a road tile.";
@@ -215,9 +256,10 @@ export function placeProblem(state, base, kind, tile, costs = true) {
     if (!wellYield(state, tile)) return "Solid rock: no water to dig for.";
     if (state.claims && state.claims[tile] && state.claims[tile].well) return "A well is dug on that claim already.";
   }
-  if (playerWorks(state, base).length >= maxWorks(base)) return maxWorks(base) ? `${base.name} has all the field works it can keep (${maxWorks(base)}).` : "A camp builds no field works: build it up first.";
+  if (def.craft) { if (playerWorks(state, base).filter((x) => x.kind === kind).length >= maxSnares(base)) return `${base.name} keeps ${maxSnares(base)} ${def.name.toLowerCase()}s at most.`; }
+  else if (countedWorks(state, base).length >= maxWorks(base)) return maxWorks(base) ? `${base.name} has all the field works it can keep (${maxWorks(base)}).` : "A camp builds no field works but a snare line: build it up first.";
   if (costs) {
-    for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return `Needs ${v} ${matName(k, v)} at ${base.name} (have ${Math.floor(base.stock[k] || 0)}).`;
+    if (!armoryWire(base, kind)) for (const [k, v] of Object.entries(def.cost)) if (haveFor(base, kind, k) < v) return `Needs ${v} ${matName(k, v)}${kind === "snares" ? " or a coil of snare wire" : ""} at ${base.name} (have ${haveFor(base, kind, k)}).`;
     if (def.req) for (const [sk, lvl] of Object.entries(def.req)) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor at ${base.name}.`;
   }
   return "";
@@ -225,7 +267,7 @@ export function placeProblem(state, base, kind, tile, costs = true) {
 // Every tile of the base's land within range, with why not (for the map's highlight and the tab's list).
 export function placeTiles(state, base, kind) {
   if (!base) return [];
-  return state.grid.within(base.tile, FIELD.RANGE).filter((id) => id !== base.tile && ownsTile(state, id))
+  return state.grid.within(base.tile, FIELD.RANGE).filter((id) => id !== base.tile && (ownsTile(state, id) || (isCraft(kind) && craftLand(state, base, id))))
     .map((id) => ({ tile: id, why: placeProblem(state, base, kind, id, false) }));
 }
 // The walk: hours there and back for each trip of FIELD.WALK.shift work-hours.
@@ -238,13 +280,21 @@ export function planFieldWork(state, base, kind, tile) {
   const why = placeProblem(state, base, kind, tile);
   if (why) return { error: why };
   const def = K[kind];
-  for (const [k, v] of Object.entries(def.cost)) base.stock[k] -= v;
-  const fw = { id: newId(), kind, tile, owner: "player", baseId: base.id, hp: def.hp, max: def.hp, built: false, garrison: [], contents: {}, since: state.hour };
+  const wire = wireUp(state, base, kind) ? armoryWire(base, kind) : null;
+  if (wire) base.armory.splice(base.armory.indexOf(wire), 1);
+  else for (const [k, v] of Object.entries(def.cost)) {
+    const fromStock = isCraft(kind) && k === "scrap" ? Math.min(v, Math.max(0, Math.floor(base.stock[k] || 0))) : v;
+    base.stock[k] = (base.stock[k] || 0) - fromStock;
+    // The rest of a field craft's scrap off a step up's gathered pile (gatheredScrap).
+    let rest = v - fromStock;
+    for (const j of base.construction || []) { if (rest <= 0) break; const t = Math.min(rest, spareScrap(j)); if (t > 0) { j.paid.scrap -= t; rest -= t; } }
+  }
+  const fw = { id: newId(), kind, tile, owner: "player", baseId: base.id, hp: def.hp, max: def.hp, built: false, garrison: [], contents: {}, since: state.hour, ...(wire ? { wire } : {}) };
   const F = ensureFW(state);
   F.list.push(fw);
   const walk = walkHours(state, base, tile, def.hours);
-  F.jobs.push({ id: newId(), type: "build", fw: fw.id, baseId: base.id, progress: 0, hours: r1(def.hours + walk), paid: { ...def.cost } });
-  const text = `${def.name} planned at ${tileLabel(state, tile)} for ${base.name}: ${def.hours} work-hours and ${walk} hours of walking for the builders.`;
+  F.jobs.push({ id: newId(), type: "build", fw: fw.id, baseId: base.id, progress: 0, hours: r1(def.hours + walk), paid: wire ? {} : { ...def.cost } });
+  const text = `${def.name} planned at ${tileLabel(state, tile)} for ${base.name}${wire ? " (with the coil of snare wire)" : ""}: ${def.hours} work-hours and ${walk} hours of walking for the builders.`;
   log(state, text, "info");
   return { text, fw };
 }
@@ -259,7 +309,7 @@ export function cancelFieldJob(state, jobId) {
   const full = job.progress <= 0 || job.type === "stock"; // a restock's goods all come back
   if (base) for (const [k, v] of Object.entries(job.paid || {})) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2));
   F.jobs.splice(F.jobs.indexOf(job), 1);
-  if (job.type === "build" && fw && !fw.built) F.list.splice(F.list.indexOf(fw), 1);
+  if (job.type === "build" && fw && !fw.built) { F.list.splice(F.list.indexOf(fw), 1); if (fw.wire && base) base.armory.push(fw.wire); } // a snare line's coil comes back
   return `Cancelled: ${jobText(state, job)}. ${Object.keys(job.paid || {}).length ? `${full ? "All" : "Half"} the materials were returned.` : ""}`.trim();
 }
 export function jobText(state, job) {
@@ -342,10 +392,12 @@ function fieldBuildWork(state, base) {
   if (!state.fieldworks || !state.fieldworks.jobs.length) return false;
   const jobs = jobsOf(state, base);
   if (!jobs.length) return false;
-  const rate = buildRate(state, base);
-  if (rate <= 0) return false;
-  const job = jobs.find((j) => { const fw = fwById(state, j.fw); return fw && !threatOn(state, fw.tile); });
+  const built = buildRate(state, base);
+  // Field craft (a snare line) goes up with nobody on Build: anyone fit at home sets it (CRAFT_RATE).
+  const craftHands = built <= 0 && atBase(state, base.id).some((s) => !s.inBed && !healthRest(s, state));
+  const job = jobs.find((j) => { const fw = fwById(state, j.fw); return fw && !threatOn(state, fw.tile) && (built > 0 || (craftHands && isCraft(fw.kind))); });
   if (!job) return false;
+  const rate = built > 0 ? built : FIELD.CRAFT_RATE;
   const baseWork = base.construction.some((c) => !gatherStalled(c));
   if (baseWork && state.hour % 2 === 0) return false;
   job.progress += rate;
@@ -379,8 +431,9 @@ function finishJob(state, job) {
     for (const [k, v] of Object.entries(job.paid || {})) fw.contents[k] = r1((fw.contents[k] || 0) + v);
     log(state, `The cache at ${tileLabel(state, fw.tile)} is stocked: ${contentsText(fw)}.`, "good");
   } else if (job.type === "demolish") {
-    if (base) for (const [k, v] of Object.entries(K[fw.kind].cost)) base.stock[k] = (base.stock[k] || 0) + Math.floor(v * FIELD.DEMOLISH.refund * condition(fw));
+    if (base && !fw.wire) for (const [k, v] of Object.entries(K[fw.kind].cost)) base.stock[k] = (base.stock[k] || 0) + Math.floor(v * FIELD.DEMOLISH.refund * condition(fw));
     if (base && fw.contents) for (const [k, v] of Object.entries(fw.contents)) base.stock[k] = (base.stock[k] || 0) + v;
+    if (base && fw.wire) base.armory.push(fw.wire); // a snare line's coil of snare wire
     removeWork(state, fw);
     log(state, `The ${kindName(fw).toLowerCase()} at ${tileLabel(state, fw.tile)} is pulled down; what could be saved is back at ${base ? base.name : "the base"}.`, "info");
   }
@@ -818,6 +871,8 @@ function keepDaysAt(state, tile) {
 }
 // Expected small game a day on that tile now (the tab's guide).
 export const snareExpect = (state, fw) => r1(snareDayRate(state, fw.tile, state.hour) * FIELD.SNARES.lines);
+// Worth a line (the governor's and the groups' test): at least SNARES.minRate small game a day for both lines.
+export const snareRateOk = (state, tile) => snareDayRate(state, tile, state.hour) * FIELD.SNARES.lines >= FIELD.SNARES.minRate;
 function snareRobbers(state, fw) {
   const g = state.grid;
   if (state.grid.within(fw.tile, 2).some((id) => ["city", "suburb"].includes(state.tiles[id].terrain))) return true;
@@ -873,13 +928,15 @@ function snareLinesDaily(state) {
     if (fw.owner !== "player") takeSnares(state, fw);
   }
 }
-// Each morning (FIELD.HAUL.hour − 1): a hunter at the base checks its snare lines.
+// Each morning (FIELD.HAUL.hour − 1): a hunter at the base checks its snare lines; with no hunter at home, anyone fit
+// there (hc-food: the line is a field craft next to the base; a camp has no hunters at first).
 function snareCheckHour(state) {
   for (const fw of fwList(state)) {
     if (fw.owner !== "player" || fw.kind !== "snares" || !fw.built || !snareHeld(fw)) continue;
     const base = baseById(state, fw.baseId);
     if (!base || threatOn(state, fw.tile)) continue;
-    const hunter = atBase(state, base.id).find((s) => s.role === "hunt" && !healthRest(s, state) && !s.inBed);
+    const fit = atBase(state, base.id).filter((s) => !healthRest(s, state) && !s.inBed);
+    const hunter = fit.find((s) => s.role === "hunt") || fit[0];
     if (!hunter) continue;
     const line = takeSnares(state, fw, { base });
     fw.checked = { day: day(state), by: hunter.id };
@@ -1490,7 +1547,8 @@ export function teamActDone(state, p, act) {
 // (AI.pileDaily kg a person, out of their stores) and goes home every AI.haulEvery days (not while hostile people or
 // the dead stand on it); they draw on their stockpiles and caches when short (food under AI.short days a person, fuel
 // or ammo run out); their snare lines' catch (snareLinesDaily) and their blinds' game (BLIND.groupFood) feed them.
-// At most max[0] + people / max[1], up to max[2].
+// At most max[0] + people / max[1], up to max[2]; their snare lines (field craft, hc-food) do not count, as yours do not
+// (groupSnaresWanted of them, ready the next day).
 export function groupFieldDaily(state) {
   const A = FIELD.AI;
   for (const f of state.factions) {
@@ -1504,8 +1562,7 @@ export function groupFieldDaily(state) {
     }
     if ((day(state) + localId(state, f.id)) % A.every !== 0) continue; // localId: the same days in a replay of the seed
     const maxN = Math.min(A.max[2], A.max[0] + Math.floor(f.pop / A.max[1]));
-    if (mine.length >= maxN) continue;
-    const pick = groupWants(state, f, mine);
+    const pick = groupWants(state, f, mine, mine.filter((x) => !isCraft(x.kind)).length >= maxN);
     if (!pick || groupFieldLock(state, f, pick.kind)) continue; // ai-locks: your build rule (the relay mast: Mechanics 3 and the manual)
     const cost = groupFieldCost(pick.kind);
     if ((f.stock.scrap || 0) < cost.scrap + 5 || !canPayParts(f, cost.parts) || (f.stock.wood || 0) < cost.wood) continue;
@@ -1562,7 +1619,7 @@ function groupStores(state, f, fw) {
 // Puts a group's structure on a tile (now: built; else ready in FIELD.AI.work days). Also the tests.
 export function buildGroupWork(state, f, kind, tile, now = true) {
   const def = K[kind];
-  const fw = { id: newId(), kind, tile, owner: f.id, baseTile: f.bases[0], hp: def.hp, max: def.hp, built: !!now, readyDay: day(state) + FIELD.AI.work, garrison: [], gar: now && garrisonCap({ kind }) ? FIELD.AI.gar : 0, contents: {}, since: state.hour };
+  const fw = { id: newId(), kind, tile, owner: f.id, baseTile: f.bases[0], hp: def.hp, max: def.hp, built: !!now, readyDay: day(state) + (def.craft ? 1 : FIELD.AI.work), garrison: [], gar: now && garrisonCap({ kind }) ? FIELD.AI.gar : 0, contents: {}, since: state.hour }; // field craft (a snare line): the next day
   if (kind === "stockpile" || kind === "cache") {
     // A share of their stores goes out there (a forward cache), within its room.
     const keys = (kind === "cache" ? ["fuel", "ammo", "food"] : ["food", "scrap", "ammo", "fuel"]).map((k) => (k === "food" ? bestFoodKey(f.stock, true) : k)).filter(Boolean); // foods.js: food as their most plentiful item
@@ -1583,13 +1640,24 @@ const stockRoomOf = (fw) => Math.max(0, (K[fw.kind].capKg || 0) - kgIn(fw.conten
 // What a group would put up next, and where: { kind, tile } or null. In order: a tower when threatened, a well while
 // its water is short, a stockpile when its stores are big, a roadblock on a road through its land (aggressive), spike
 // traps toward the dead when a horde is near, a snare line while food is short, a blind beside it, a cache (an
-// aggressive group with fuel and ammo to hide).
-export function groupWants(state, f, mine = groupWorks(state, f)) {
+// aggressive group with fuel and ammo to hide). hc-food: a snare line is field craft, as yours: first of all while
+// they have fewer than groupSnaresWanted, on the tile with the most small game (at least SNARES.minRate a day), and
+// it is the only kind left once full (the rest count against FIELD.AI.max).
+// Their snare lines: one from the start in hardcore, one more under AI.snareShort days of food a person, another under
+// half that (yours: snareLinesWanted, by the governor's food target), at most SNARES.max.camp (2).
+export const groupSnaresWanted = (state, f) => {
+  const days = foodIn(f.stock) / Math.max(1, f.pop);
+  return Math.min(FIELD.SNARES.max.camp, (state.mode === "hardcore" ? 1 : 0) + (days < FIELD.AI.snareShort ? 1 : 0) + (days < FIELD.AI.snareShort / 2 ? 1 : 0));
+};
+export function groupWants(state, f, mine = groupWorks(state, f), full = false) {
   const has = (k) => mine.some((x) => x.kind === k);
   const main = f.bases[0];
   const land = state.grid.within(main, 2).filter((id) => id !== main && state.tiles[id].owner === f.id && state.tiles[id].terrain !== "water" && !state.tiles[id].hive && !fwAt(state, id) && !state.bases.some((b) => b.tile === id) && !state.factions.some((o) => o.alive && o.bases.includes(id)));
   if (!land.length) return null;
   const g = state.grid;
+  const game = land.filter((id) => K.snares.terrain.includes(state.tiles[id].terrain) && snareRateOk(state, id));
+  if (game.length && mine.filter((x) => x.kind === "snares").length < groupSnaresWanted(state, f)) return { kind: "snares", tile: game.slice().sort((a, b) => snareDayRate(state, b, state.hour) - snareDayRate(state, a, state.hour) || g.distance(a, main) - g.distance(b, main) || a - b)[0] };
+  if (full) return null;
   const hordeNear = state.hordes.filter((h) => g.distance(h.tile, main) <= 6).sort((a, b) => g.distance(a.tile, main) - g.distance(b.tile, main))[0] || null;
   const threat = !!hordeNear || state.factions.some((o) => o !== f && o.alive && isAggressiveType(o) && o.bases.some((b) => g.distance(b, main) <= 12)) || state.bases.some((b) => g.distance(b.tile, main) <= 8 && attitude(f) === "Hostile");
   const pickBy = (fn, from = land) => from.slice().sort((a, b) => fn(b) - fn(a) || a - b)[0];
@@ -1598,8 +1666,6 @@ export function groupWants(state, f, mine = groupWorks(state, f)) {
   if (!has("stockpile") && ((f.stock.scrap || 0) + foodIn(f.stock)) > f.pop * 20) return { kind: "stockpile", tile: pickBy((id) => -g.distance(id, main)) };
   if (!has("roadblock") && isAggressiveType(f)) { const roads = land.filter((id) => state.tiles[id].road); if (roads.length) return { kind: "roadblock", tile: roads.sort((a, b) => g.distance(b, main) - g.distance(a, main) || a - b)[0] }; }
   if (!has("spikes") && hordeNear) return { kind: "spikes", tile: pickBy((id) => -g.distance(id, hordeNear.tile) * 10 + g.distance(id, main)) };
-  const game = land.filter((id) => K.snares.terrain.includes(state.tiles[id].terrain));
-  if (!has("snares") && game.length && foodIn(f.stock) < f.pop * 10) return { kind: "snares", tile: pickBy((id) => GAME_TERRAIN[state.tiles[id].terrain] || 0, game) };
   if (!has("blind") && has("snares") && game.length) return { kind: "blind", tile: pickBy((id) => (GAME_TERRAIN[state.tiles[id].terrain] || 0) * 10 + g.distance(id, main), game) };
   if (!has("cache") && isAggressiveType(f) && (f.stock.fuel || 0) + (f.stock.ammo || 0) * 0.05 > 20) return { kind: "cache", tile: pickBy((id) => g.distance(id, main) * 10 - (state.tiles[id].road ? 5 : 0)) };
   return null;
@@ -1620,10 +1686,19 @@ export const groupFieldWells = (state, f) => fwList(state).filter((fw) => fw.own
 // vehicle a standing haul order every GOV.pileEvery days, else a haul on foot once it holds 150 kg). People on the
 // shifts: tower lookouts while threatened (one at a base of GOV.garrisonPop, two at twice that), roadblock guards while
 // a raid on the base is on its way or the road has seen raids and the base is threatened. Returns the lines said.
-export function govFieldWorks(state, base, { threatened = false, waterShort = false } = {}) {
+// Snare lines first (hc-food, govSnares): at every base, a camp too; foodShort (the governor's food level: 0 fed, 1 under
+// its food target, 2 under half of it) says how many.
+export function govFieldWorks(state, base, { threatened = false, waterShort = false, foodShort = 0 } = {}) {
   const lines = [];
-  if (!base || maxWorks(base) <= 0) return lines;
+  if (!base) return lines;
   const mine = playerWorks(state, base);
+  // A camp keeps no field works but its snare lines: their repairs, and a new line.
+  if (maxWorks(base) <= 0) {
+    for (const fw of mine) if (fw.built && condition(fw) < FIELD.GOV.repairAt && !jobFor(state, fw)) { const r = queueRepair(state, fw.id); if (!r.error) lines.push(r.text); }
+    const sn = govSnares(state, base, foodShort);
+    if (sn) lines.push(sn);
+    return lines;
+  }
   const n = atBase(state, base.id).length + mine.reduce((a, fw) => a + postedAt(state, fw).length, 0);
   const busy = jobsOf(state, base).length > 0;
   // Firewood is the winter's: the governor spends none of it on a field work (a tower 120, a roadblock 150, their repairs)
@@ -1636,6 +1711,8 @@ export function govFieldWorks(state, base, { threatened = false, waterShort = fa
   const plan = (kind, t) => { if (planned || !t || !woodOk(K[kind].cost)) return; const r = planFieldWork(state, base, kind, t.tile); if (!r.error) { lines.push(r.text); planned = true; } };
   // Repairs first.
   for (const fw of mine) if (fw.built && condition(fw) < FIELD.GOV.repairAt && !jobFor(state, fw) && woodOk(repairCost(state, fw).cost)) { const r = queueRepair(state, fw.id); if (!r.error) lines.push(r.text); }
+  // Then a snare line when one is wanted (a cheap field craft: an hour's work, the rest of the day stays free).
+  if (!planned) { const sn = govSnares(state, base, foodShort); if (sn) { lines.push(sn); planned = true; } }
   if (!mine.some((x) => x.kind === "well") && waterShort) {
     const t = pickTile("well", (id) => wellYield(state, id) * 10 - state.grid.distance(base.tile, id));
     if (t && wellYield(state, t.tile) >= 4) plan("well", t);
@@ -1674,6 +1751,25 @@ export function govFieldWorks(state, base, { threatened = false, waterShort = fa
     } else if (have.length > want) for (const id of have.slice(want)) { const t = recallPerson(state, id, "the danger has passed"); if (t) lines.push(t); }
   }
   return lines;
+}
+// Snare lines a base of yours should keep (hc-food): one from the start in hardcore, one more for each step of the
+// governor's food level (foodShort 1: under the food target, 2: under half of it), at most SNARES.max for the base.
+export const snareLinesWanted = (state, base, foodShort = 0) => Math.min(maxSnares(base), (state.mode === "hardcore" ? 1 : 0) + Math.max(0, Math.min(2, foodShort)));
+// The governor's snare line: when the base has fewer than snareLinesWanted and no field job queued, one on the tile
+// with the most small game (snareDayRate × lines, at least SNARES.minRate a day), the nearer first. Returns the line.
+export function govSnares(state, base, foodShort = 0) {
+  if (playerWorks(state, base).filter((x) => x.kind === "snares").length >= snareLinesWanted(state, base, foodShort)) return "";
+  if (jobsOf(state, base).length) return "";
+  const g = state.grid;
+  const best = placeTiles(state, base, "snares").filter((x) => !x.why && !placeProblem(state, base, "snares", x.tile))
+    .map((x) => ({ tile: x.tile, rate: snareDayRate(state, x.tile, state.hour) * FIELD.SNARES.lines }))
+    .filter((x) => x.rate >= FIELD.SNARES.minRate)
+    .sort((a, b) => b.rate - a.rate || g.distance(base.tile, a.tile) - g.distance(base.tile, b.tile) || a.tile - b.tile)[0];
+  if (!best) return "";
+  const r = planFieldWork(state, base, "snares", best.tile);
+  if (r.error) return "";
+  fwStat(state, "govSnares");
+  return `${r.text} Snares for small game (about ${r1(best.rate)} a day there)${foodShort ? ": food is short" : ""}.`;
 }
 // The road tile of the base's land the raids keep coming down (base.raidRoads: the most raids, at least GOV.roadRaids),
 // or null.
@@ -1753,13 +1849,13 @@ export function fieldworksDaily(state) {
 export function fieldWorksHelp() {
   const R = FIELD.ROADBLOCK, T = FIELD.TOWER, Rd = FIELD.RAID;
   const kinds = FIELD.ORDER.map((k) => { const d = K[k]; return `<tr><td>${d.icon}</td><td><b>${d.name}</b></td><td><span class="muted">${costText(d.cost)}; ${d.hours} work-hours + the walk; condition ${d.hp}${d.req ? "; a Mechanics 3+ survivor" : ""}.</span> ${d.desc}</td></tr>`; }).join("");
-  return `Structures a base puts up on the land it holds outside its walls: open a base's <b>Field works</b> tab, pick a kind and click a green tile on the map (at most ${FIELD.RANGE} tiles out, on the base's own ground or a claim of yours; a hub keeps ${FIELD.MAX.hub}, an outpost ${FIELD.MAX.outpost}, a shelter ${FIELD.MAX.shelter}, a camp none). The materials leave the stores when you place it; the base's builders walk out and put it up (their hours include the walk, ${FIELD.WALK.pace} h a tile each way), sharing their time with the base's own building queue.
+  return `Structures a base puts up on the land it holds outside its walls: open a base's <b>Field works</b> tab, pick a kind and click a green tile on the map (at most ${FIELD.RANGE} tiles out, on the base's own ground or a claim of yours; a hub keeps ${FIELD.MAX.hub}, an outpost ${FIELD.MAX.outpost}, a shelter ${FIELD.MAX.shelter}, a camp none). A snare line is field craft: a couple of scrap and an hour, set by anyone at the base (builders or not), at any base from a camp up, on its land or a tile next to it nobody holds, and it does not count against those (a hub keeps ${FIELD.SNARES.max.hub} lines, an outpost, shelter or camp ${FIELD.SNARES.max.camp}). The materials leave the stores when you place it; the base's builders walk out and put it up (their hours include the walk, ${FIELD.WALK.pace} h a tile each way), sharing their time with the base's own building queue.
     <table class="helptable">${kinds}</table>
     <b>Lookouts and guards on shifts.</b> A watch tower's lookouts and a roadblock's guards stand shifts, like the base's watch roster: pick how the day is split (${Object.values(FIELD.SHIFTS).map((x) => x.name.toLowerCase()).join(", ")}) and who stands each shift (up to ${garrisonCap({ kind: "tower" })} a shift). They walk out for their shift (leaving early by the walk, so the one coming relieves the one going) and come home after it to eat and sleep; off duty they work at the base like anyone. A night shift keeps them up: they sleep in after it. The strip under the shifts shows each hour of the day: red hours nobody covers (an empty shift, someone hurt, ill, away or in a bed); when a shift you planned is left with nobody fit to stand it, an alert says so until someone covers it. One person on each of two 12-hour shifts keeps a tower watched round the clock. A manned tower shows ${T.day} tiles round it by day and ${T.night} at night, live on the map (hover or select it for the ring, or tick the Tower sight layer for all of them), and its lookouts warn the base of raids and hordes they see. A guarded roadblock holds ${R.guardHold}× as long and the guards shoot back.<br><br>
     <b>Threats.</b> A horde entering a structure's tile batters it (a roadblock holds it while it forces a lane: up to ${R.hordeHold} hours, the lookouts or guards shoot down some of it first; spike traps cut it down instead; a buried cache is left alone). A hostile group within ${Rd.range} tiles may send a small raid at one (about ${Math.round(Rd.chance * 100)}% a day for each structure while one is near, more for a full stockpile, half for an aggressive group that is not Hostile, ${Math.round(Rd.cacheW * 100)}% as often for a cache, which they find only ${Math.round(Rd.find * 100)}% of the time). The people on duty fight it by the numbers; if they lose or nobody is there, the raiders take it over when it is within ${Rd.near} tiles of their land (${Math.round(Rd.capture * 100)}% of the time) or empty it and wreck it. Raiders passing over a stockpile empty it. The groups raid each other's structures by the same rules (war enemies, and aggressive groups their neighbours); you see it where you have eyes. Send a team to take one back (Capture), or to wreck, take or loot a group's.<br><br>
     <b>Repairs.</b> Damaged ones show a 🔧 on the map and an alert. Repair from the tab (materials by the damage, about ${Math.round(FIELD.REPAIR.share * 100)}% of the cost for a wreck; the builders walk out), or Repair all. Spike traps are reset the same way once sprung (under ${Math.round(FIELD.SPIKES.dead * 100)}%); a robbed snare line's wires too.<br><br>
     <b>Hauling.</b> Outdoor workers drop their loads at a stockpile out past them; Send a haul team brings it in (two people, the base's best running vehicle if there is one), or set a standing order on the stockpile: every few days, or once it holds enough (with a vehicle; skipped under attack, with no vehicle or nobody fit, and tried again the next day). A fuel cache is the other way round: the builders carry supplies out (Restock) and teams on the road take them.<br><br>
-    <b>The groups</b> build their own (towers when threatened, wells, stockpiles, roadblocks, spike traps, snare lines, blinds and hidden caches), guard them, draw on their stockpiles and caches when short and haul them home now and then. The governor (and a base steward) repairs, digs a well when water runs short, puts up a tower when threatened and staffs its shifts, a roadblock on a road raids have come down ${FIELD.GOV.roadRaids}+ times, and a stockpile out by scavengers or foragers working 2 tiles out (with a standing haul order when there is a vehicle).`;
+    <b>The groups</b> build their own (towers when threatened, wells, stockpiles, roadblocks, spike traps, snare lines, blinds and hidden caches), guard them, draw on their stockpiles and caches when short and haul them home now and then. The governor (and a base steward) sets a snare line at every base from the start in hardcore and more while food is short, repairs, digs a well when water runs short, puts up a tower when threatened and staffs its shifts, a roadblock on a road raids have come down ${FIELD.GOV.roadRaids}+ times, and a stockpile out by scavengers or foragers working 2 tiles out (with a standing haul order when there is a vehicle).`;
 }
 
 // ---------- text ----------

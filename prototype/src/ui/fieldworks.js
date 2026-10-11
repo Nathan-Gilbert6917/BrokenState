@@ -32,8 +32,8 @@ export function fieldWorksTab(state, b, ui) {
   const max = FW.maxWorks(b);
   const rate = buildRate(state, b);
   const head = `<div class="card small">
-    <div class="spread"><b>Field works</b><span class="muted">${mine.length} of ${max} · land within ${FW.FIELD.RANGE} tiles that ${esc(b.name)} holds</span></div>
-    <div class="muted">Roadblocks, wells, watch towers, stockpiles, hunting blinds, snare lines, fuel caches, spike traps and relay masts out on the base's land. <button class="mini" data-action="help-open" data-sec="field-works"${tip("Help: Field works")}>?</button> The materials leave the stores when you place one; the builders here walk out and put it up (their hours include the walk), sharing their time with the base's own queue (every other hour while it has work). Out there they can be battered by the dead, raided and taken by other groups: repair them here.${rate > 0 ? "" : ` <span class="warn">Nobody here is on the Build job: nothing will go up.</span>`}</div>
+    <div class="spread"><b>Field works</b><span class="muted">${FW.countedWorks(state, b).length} of ${max} · snare lines ${mine.filter((x) => x.kind === "snares").length} of ${FW.maxSnares(b)} · land within ${FW.FIELD.RANGE} tiles that ${esc(b.name)} holds</span></div>
+    <div class="muted">Roadblocks, wells, watch towers, stockpiles, hunting blinds, snare lines, fuel caches, spike traps and relay masts out on the base's land. <button class="mini" data-action="help-open" data-sec="field-works"${tip("Help: Field works")}>?</button> The materials leave the stores when you place one; the builders here walk out and put it up (their hours include the walk), sharing their time with the base's own queue (every other hour while it has work). Out there they can be battered by the dead, raided and taken by other groups: repair them here.${rate > 0 ? "" : ` <span class="warn">Nobody here is on the Build job: nothing will go up but a snare line (field craft: anyone sets it).</span>`}</div>
   </div>`;
   const plan = FW.FIELD.ORDER.map((k) => {
     const d = K[k];

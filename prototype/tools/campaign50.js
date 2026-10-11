@@ -119,6 +119,11 @@ function runOne(job) {
   }
   state.started = true;
   setAutopilot(state, true, style);
+  // Food tuning (hc-food 2026-10-11): people who joined over the run (state.survivors grows: newcomers, recruits,
+  // prisoners, births) and the small game your snare lines brought in (the check lines in the log: a team's or a
+  // base hunter's), so a food change can be judged on crew size and on the snares.
+  const people0 = state.survivors.length;
+  let snareGame = 0, snareChecks = 0;
   const samples = [], events = [], deaths = {};
   const newDeaths = deathCounter(state);
   const prog = progTracker(state, () => Object.entries(deaths).reduce((a, [k, v]) => a + (k === "left" ? 0 : v), 0));
@@ -162,6 +167,7 @@ function runOne(job) {
         fresh.push(l);
         if (EVENT.test(l.text) && (!l.text.startsWith("🤖") || /\(hive\) to/.test(l.text))) { events.push({ day: day(state), text: l.text.replace(/^🤖 /, "") }); lastEventDay = day(state); }
         if (grepRe && grepLines.length < 300 && grepRe.test(l.text)) grepLines.push(`d${day(state)} ${l.text}`);
+        { const m = /checked the snares.*?(\d+) small game/.exec(l.text); if (m) { snareGame += Number(m[1]); snareChecks++; } }
         if (!(l.kind === "death" && / died /.test(l.text)) && /walked away|deserted|changed sides/.test(l.text)) deaths.left = (deaths.left || 0) + 1;
       }
       // One death per survivor (deathcount.js: a worm death logs a second "died" line when they get up again).
@@ -213,6 +219,7 @@ function runOne(job) {
       relaySpots: state.factions.filter((f) => f.alive && f.known && !isMember(state, f) && /out of radio reach/.test(inviteProblem(state, f)) && relaySpotFor(state, f)).length,
       reason: state.victoryReason || null, conquest, mapW: state.grid.width, mapH: state.grid.height,
       econ: { ...(state.econStats || {}) }, // farming.js econStats: days of food harvested, eaten, spoiled; hunger days
+      food: { joined: state.survivors.length - people0, snareGame, snareChecks }, // people who joined; snare-line small game
       world: { collapsed: state.factions.filter((f) => !f.alive).length, newGangs: state.stats.newGangs || 0, razedYours: state.stats.razedYours || 0, razedGroups: state.stats.razedGroups || 0 },
     },
     log: logN ? state.log.slice(0, logN).reverse().map((l) => `d${Math.floor(l.hour / 24) + 1} ${l.text}`) : null,
@@ -367,6 +374,10 @@ function report(results, label) {
   // Food (farming.js econStats): days of food a run, your bases.
   const ec = ends.filter((r) => r.end.econ);
   if (ec.length) { const avg = (k) => Math.round(ec.reduce((a, r) => a + (r.end.econ[k] || 0), 0) / ec.length); console.log(`  food a run (days of food, your bases): eaten ${avg("eaten")}, harvested ${avg("harvested")}, spoiled ${avg("spoiled")}; hunger days ${avg("hungerDays")}, thirst days ${avg("thirstDays")}`); }
+  for (const m of ["normal", "hardcore"]) {
+    const fr = ends.filter((r) => r.mode === m && r.end.food);
+    if (fr.length) { const avg = (f) => Math.round((fr.reduce((a, r) => a + f(r), 0) / fr.length) * 10) / 10; console.log(`  ${m} (${fr.length} runs, averages): pop ${avg((r) => r.end.pop || 0)}, people joined ${avg((r) => r.end.food.joined)}, snare-line small game ${avg((r) => r.end.food.snareGame)} in ${avg((r) => r.end.food.snareChecks)} checks, hunger days ${avg((r) => (r.end.econ || {}).hungerDays || 0)}, spoiled ${avg((r) => (r.end.econ || {}).spoiled || 0)}`); }
+  }
 
   // Hive storm rejections (the census's testing item 4): why the autopilot offered no storm each morning, summed.
   const withRej = results.filter((r) => r.hiveRejects);

@@ -4,8 +4,8 @@
 // foraging: the dice keep the average); lots age by the room they sit in (cellar, dry, cold store, outside, food that
 // keeps) and a walk-in freezer freezes only while base.freezerOn; a base eats the soonest to spoil first and leaves the
 // food with the worm's eggs to the end; a team packs what keeps longest and weighs least and eats the soonest to spoil
-// first; spoiled food is thrown out (gone) and logged; the shops run down as they are looted and with time (half full at
-// the start of a hardcore game); an old save's generic food is typed on load with its calories; the AI groups keep
+// first; spoiled food is thrown out (gone) and logged; the shops run down as they are looted and with time (three
+// quarters full at the start of a hardcore game, hc-food 2026-10-11); an old save's generic food is typed on load with its calories; the AI groups keep
 // typed food, aged coarsely, with no generic keys left after a fortnight of play.
 // Usage: node tools/foodtypestest.js [seed]
 import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
@@ -212,7 +212,11 @@ const W = (opts = {}) => { const st = createWorld({ seed, factionCount: 6, ...op
   const hc = W({ mode: "hardcore" });
   hc.mode = "hardcore";
   const t2 = hc.tiles.find((x) => x.loc && SHOP_FOOD[x.loc.type]);
-  check(t2 && near(shopFood(hc, t2), SHOP.hardcoreStart), `hardcore: the shops start half full (${t2 && r2(shopFood(hc, t2))})`);
+  check(t2 && near(shopFood(hc, t2), SHOP.hardcoreStart), `hardcore: the shops start ${Math.round(SHOP.hardcoreStart * 100)}% full (${t2 && r2(shopFood(hc, t2))})`);
+  check(near(SHOP.hardcoreStart, 0.75), `hc-food: hardcore's shops start three quarters full, not half (${SHOP.hardcoreStart})`);
+  const nm = W();
+  const t3 = nm.tiles.find((x) => x.loc && SHOP_FOOD[x.loc.type]);
+  check(t3 && near(shopFood(nm, t3), shopTime(nm)), `normal: the shops start full (${t3 && r2(shopFood(nm, t3))}, × the outbreak's time ${r2(shopTime(nm))})`);
 }
 
 // ---------- 7. an old save ----------
