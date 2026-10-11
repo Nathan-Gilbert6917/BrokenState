@@ -46,7 +46,6 @@ import { atBase, skill, combatPower, hourOfDay, baseById, log } from "./world.js
 import { SKILLS, SKILL_NAMES } from "./data.js";
 import { BUILDINGS, RECIPES, stations, underAttack, assignStations } from "./buildings.js";
 import { hasOrder, orderHold, stationIO, stationOrder } from "./production.js";
-import { POWER, powerWanted } from "./power.js";
 import { farmersWanted, farmOf } from "./farming.js";
 import { edibleFood, foodStore } from "./storage.js";
 import { season } from "./weather.js";
@@ -57,7 +56,7 @@ import { CRAFTS, craftQueue, craftQuality, meetsNeeds, craftHeld, isFilterJob, b
 import { learnersFor, lessonOf, bestBook, bookDef, MAX_LEARNERS, TEACH_GAP } from "./skills.js";
 import { doctorAt, TRAINING, lessonGap } from "./training.js"; // Medic trainees
 import { studyable, canStudy, BLUEPRINTS } from "./blueprints.js";
-import { FIXTURES, fixtures, brokenAt, WEAR } from "./breakdowns.js";
+import { fxDef, fixtures, brokenAt, WEAR } from "./breakdowns.js";
 import { scavLeft, SCAV_FLOOR, waterOutlook, waterRunningShort, waterCapacity, fetchWaterWhy, fetchWaterDay } from "./economy.js";
 import { prisonersAt, prisonGuardsWanted, onJailRoster, jailName } from "./prisoners.js";
 import { DEFENCE, wallHold, defenceMult, spikeKill, manned, towerHordes } from "./defences.js";
@@ -205,7 +204,7 @@ export const WORK_TYPES = {
   },
   workshop: {
     name: "Workshop", ing: "At the workshop", short: "Shop", role: "operate", skill: "mechanics",
-    desc: "Runs a workshop station: ammo bench, med station, machine shop, still or generator, one operator each. By the station's standing order (Workshops tab); without one only while the base is short of what it makes. Unless the order is yours, the scrap the next building needs is left alone (ammo under 50, meds 40, parts 60).",
+    desc: "Runs a workshop station: ammo bench, med station, machine shop or still, one operator each (the generator runs by itself). By the station's standing order (Workshops tab); without one only while the base is short of what it makes. Unless the order is yours, the scrap the next building needs is left alone (ammo under 50, meds 40, parts 60).",
     open: (ctx) => stationOpen(ctx, (k) => k !== "preserve", "no workshop station"),
     take: (ctx, s) => takeStation(ctx, s, (k) => k !== "preserve"),
     holds: (ctx, s, role, st) => role === "operate" && st != null && stationKindById(ctx, st) !== "preserve",
@@ -486,10 +485,6 @@ export function stationWork(state, base, st, opsNow = new Set()) {
   } else if (!hasOrder(base, st) && k === "still") {
     if (!(foodStore(state, base).outside >= 1 || edibleFood(base) / n >= 30)) return "no surplus food (no order set)";
     if (waterIn(s) < n * 2 + 2) return "water kept for drinking";
-  }
-  if (k === "power") {
-    if ((s.fuel || 0) < POWER.genFuel) return "no fuel";
-    return powerWanted(state, base, (b) => opsNow.has(b.id) || !BUILDINGS[b.type].station) > 0 ? "" : "nothing to power";
   }
   const io = stationIO(state, base, st);
   const missing = Object.entries(io.in).filter(([key, v]) => (s[key] || 0) < v).map(([key]) => key);
@@ -1049,7 +1044,7 @@ function makeCtx(state, base, people) {
   // Repair jobs at this base: open (nobody on it, or its worker is gone) or already a planned person's.
   ctx.repairJobs = (base.repairs || []).map((j) => {
     const fx = fixtures(base).find((f) => String(f.id) === String(j.fx));
-    const def = fx && FIXTURES[fx.type];
+    const def = fx && fxDef(fx);
     const here = j.who != null && people.some((s) => s.id === j.who);
     return { id: j.id, who: here ? j.who : null, min: def && def[j.method] ? def[j.method].min || 0 : 0, name: fx ? (fx.type === "pump" ? "well pump" : (BUILDINGS[fx.type] && BUILDINGS[fx.type].name.toLowerCase()) || fx.type) : "fixture" };
   });

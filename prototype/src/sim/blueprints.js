@@ -11,8 +11,10 @@
 //   3. Done: the blueprint is known for good (state.tech.known); the copy stays in the armory (sell it or keep it).
 //
 // Early buildings are never locked; only the upper tiers listed in LOCKED (the Clinic and Trauma hospital, the
-// machine shop and generator, the reinforced gate and trench, the cistern and cold store, a second preserving
-// kitchen, the radio relay) and three crafts (scrap crossbow, pipe shotgun, scrap plate vest).
+// machine shop and generator, the reinforced gate and trench, the cistern, the cold store and the walk-in freezer, a
+// second preserving room, the radio relay) and three crafts (scrap crossbow, pipe shotgun, scrap plate vest).
+// The AI groups (machines-2 2026-10-10, the user's rule: "AI groups need to have the same restrictions and gameplay
+// features") find, buy and study these too, coarsely, and their works wait for the same ones (groupworks.js groupTech).
 // Rolls use hash01 (skills.js): finds never move the world's random numbers.
 import { GEAR, LOCATIONS, SKILL_NAMES } from "./data.js";
 import { log, atBase, skill } from "./world.js";
@@ -36,7 +38,7 @@ export const BLUEPRINTS = {
     sites: ["military", "prison", "police"], desc: "Field fortifications: obstacles, ditches, gates that hold." },
   watertreat: { name: "Water Treatment Schematics", skill: "mechanics", min: 2, hours: 20, value: 45, unlocks: { buildings: ["cistern"] },
     sites: ["dam", "univ", "factory", "firestation"], desc: "Settling tanks, sand filters and sealed storage." },
-  refrig: { name: "Refrigeration Schematics", skill: "mechanics", min: 3, hours: 20, value: 45, unlocks: { buildings: ["coldstore"] },
+  refrig: { name: "Refrigeration Schematics", skill: "mechanics", min: 3, hours: 20, value: 45, unlocks: { buildings: ["coldstore", "freezer"] }, // machines-2: the walk-in freezer too
     sites: ["supermarket", "warehouse", "factory", "truckstop", "univ", "grocery"], desc: "Insulated cold rooms, ice packing and compressor loops." },
   canning: { name: "Commercial Canning Guide", skill: "farming", min: 3, hours: 16, value: 40, unlocks: { buildings: ["kitchen"], from: { kitchen: 1 } },
     sites: ["farm", "feedstore", "school", "grocery", "supermarket", "church", "ranch"], desc: "Pressure canning in batches: a second preserving room." },
@@ -129,7 +131,7 @@ for (const [key, d] of Object.entries(CRAFT_BOOKS)) {
 function unlockName(k) {
   const names = {
     clinic: "the Clinic", hospital: "the Trauma hospital", machine_shop: "the machine shop", generator: "the generator", gate: "the reinforced gate",
-    trench: "the trench", cistern: "the cistern", coldstore: "the cold store", kitchen: "a second preserving room", relay: "the radio relay",
+    trench: "the trench", cistern: "the cistern", coldstore: "the cold store", freezer: "the walk-in freezer", kitchen: "a second preserving room", relay: "the radio relay",
     crossbow: "the scrap crossbow", pipegun: "the pipe shotgun", scrapvest: "the scrap plate vest",
   };
   if (names[k]) return names[k];
@@ -239,7 +241,7 @@ export function copiesHeld(state) {
 
 // ---------- finds ----------
 // Chance per search hour (hour-by-hour search) or per container (raid map) by the site's zone, at full loot.
-const ZONE_P = { urban: 0.018, town: 0.012, rural: 0.008, special: 0.03 };
+export const ZONE_P = { urban: 0.018, town: 0.012, rural: 0.008, special: 0.03 }; // the groups' finds too (groupworks.js groupFindBlueprint)
 export const CRASH_BP = {
   crash_mil: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic"],
   crash_med: ["fieldsurgery", "hospitalops", "watertreat", "combatmedic"],
@@ -287,7 +289,7 @@ export function blueprintReward(state, f, salt = "") {
 }
 
 // What a group sells this week (skills.js bookWares adds it to their books): traders often, the military its manuals.
-const WARE_BP = {
+export const WARE_BP = { // machines-2: also what a group starts with (groupworks.js groupTech)
   traders: { p: 0.3, list: BP_KEYS },
   military: { p: 0.3, list: ["armyeng", "genschem", "weaponplans", "armorsmith", "radioeng", "combatmedic"] },
   commune: { p: 0.2, list: ["canning", "watertreat", "refrig"] },

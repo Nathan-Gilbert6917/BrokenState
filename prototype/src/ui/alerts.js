@@ -18,7 +18,7 @@ import { needAlerts } from "../sim/needs.js";
 import { contactable } from "../sim/orders.js";
 import { diaryEntries, diarySync, decodeRefs } from "../sim/diary.js";
 import { camera } from "./render.js";
-import { brokenAt, fixtureName, jobFor, FIXTURES } from "../sim/breakdowns.js";
+import { brokenAt, fixtureName, jobFor, fxDef } from "../sim/breakdowns.js";
 import { freezerLine } from "../sim/power.js"; // freezer-parts: the freezer-off alert
 import { activeCrashes, CRASH_KINDS, daysLeft } from "../sim/crashes.js";
 import { knownLoc } from "../sim/discovery.js";
@@ -251,7 +251,7 @@ const SECTIONS = {
       const broken = brokenAt(b);
       if (!broken.length) continue;
       const idle = broken.filter((fx) => !jobFor(b, fx));
-      out.push({ key: `broken:${b.id}:${broken.map((fx) => fx.id).join(",")}`, kind: "broken", icon: "🔧", tone: idle.length ? "warn" : "info", text: `${broken.length === 1 ? `${fixtureName(broken[0])} broken` : `${broken.length} things broken`} at ${b.name}${idle.length ? "" : " (being fixed)"}`, tip: `${broken.map((fx) => `${fixtureName(fx)}: ${FIXTURES[fx.type].what}${jobFor(b, fx) ? " (being fixed)" : ""}`).join("; ")}. Click to open the Repairs tab.`, go: { base: b.id, tab: "repairs" } });
+      out.push({ key: `broken:${b.id}:${broken.map((fx) => fx.id).join(",")}`, kind: "broken", icon: "🔧", tone: idle.length ? "warn" : "info", text: `${broken.length === 1 ? `${fixtureName(broken[0])} broken` : `${broken.length} things broken`} at ${b.name}${idle.length ? "" : " (being fixed)"}`, tip: `${broken.map((fx) => `${fixtureName(fx)}: ${fxDef(fx).what}${jobFor(b, fx) ? " (being fixed)" : ""}`).join("; ")}. Click to open the Repairs tab.`, go: { base: b.id, tab: "repairs" } });
     }
     // freezer-parts: a walk-in freezer that is off (power.js base.freezerOn) while it is not broken (that is above).
     for (const b of state.bases) {

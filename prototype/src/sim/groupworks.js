@@ -65,6 +65,29 @@
 //   +3 wear a day), and is repaired the next day it can pay your proper repair (scrap and parts); short of parts they
 //   buy them from merchants (trade.js groupPartsTarget counts their machines). Abstract: no operators, no power
 //   budget (one generator runs what they have), no storage rooms.
+//   machines-2 (2026-10-10): their works wait for the same manuals as yours (groupTech below: found, bought, studied):
+//   the generator for the Generator Schematics (and, since they build it for a freezer, the Refrigeration Schematics),
+//   the walk-in freezer for the Refrigeration Schematics, the sick bay's clinic and trauma hospital for the Field
+//   Surgery Manual and the Hospital Operations Manual, their workshop's parts for the Machinist's Handbook (your machine
+//   shop's); and a group mechanic (groupSkill) of your Mechanics rules: 3 to build the generator, the freezer and the
+//   sealer (MACH.req), the proper repair's minimum to repair a machine. The
+//   generator's fuel is coarse, as your unattended generator's: POWER.genFuel a day is spent while the freezer or the
+//   sealer draws and there is any fuel (the last of it runs the day). Machine parts of their own (groupPartsDaily, PARTS):
+//   a group with a workshop machines parts from its scrap, as your machine shop does, coarse: PARTS.rate a day × its
+//   mechanic (groupcare.js GROUP_PRIORITIES mechanic ÷ PARTS.mech: zealots 2, raiders and communes 3, expansionists and
+//   traders 4, the fortress 5, the military 6) × its people (÷ PARTS.pop, at most PARTS.popMax, at least PARTS.popMin),
+//   PARTS.scrap scrap a part (yours: 6), while its parts are under what it wants (partsWant: PARTS.keep, a part a
+//   machine it has, and the next machine's parts and spares) and its scrap is over PARTS.scrapKeep a head. A group of
+//   16 with a mechanic 4 makes a part every 4 days; 8 people with a mechanic 3 one every 11 days; a military base of
+//   25 one every 1.8 days. Before this they sat near 1 part, and their machines and repairs rarely happened.
+//   The earmark (the user's intent: "a small parts income so their machines and repairs happen more often", not more
+//   guns): the workshop's parts are kept for the machines (f.partsMach, at most their parts on hand). The workshop
+//   works only while that earmark is under partsWant. Machine spending (builds, proper repairs, spares) takes the
+//   earmark first, then any other part; everything else (making guns, mending kit, buying guns, trade, deals, jail and
+//   sick bay works) may use only the parts above it (groupFreeParts; trade.js available leaves the earmark out); a
+//   vehicle repair takes car parts first and machine parts only by your two-for-one fallback (vehicles.js groupCost:
+//   the free parts go before the earmark; payParts "vehicle" is that rule too). Losses (raids, tribute) take from the whole count; the earmark shrinks
+//   with it.
 // - Old saves (no state.groupWorks) and the hardcore military (an army base built before the fall) count as built
 //   up: none of this changes them. tools/barestarttest.js.
 import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
@@ -76,6 +99,10 @@ import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse:
 import { FIXTURES, WEAR } from "./breakdowns.js"; // freezer-parts: the groups' machines wear and break as yours
 import { POWER } from "./power.js";
 import { hash01 } from "./skills.js";
+import { BLUEPRINTS, BP_KEYS, WARE_BP, ZONE_P, CRASH_BP, siteBlueprints } from "./blueprints.js"; // machines-2: the groups' manuals (groupTech)
+import { READ_HOURS } from "./skills.js"; // a reader's day of study
+import { relation } from "./diplomacy.js"; // buying a manual from traders they are not hostile to
+import { SUPPLIES } from "./data.js";
 import { groupFieldDefence, groupFieldWells } from "./fieldworks.js"; // the groups' field works: towers, wells
 
 /** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, freezer?: number, sealer?: number, kitchen?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
@@ -96,8 +123,10 @@ export const GROUP_WORKS = {
     sealer: { name: "a vacuum sealer", cost: { scrap: 3, parts: 2 }, work: 2 },
     kitchen: { name: "a kitchen", cost: { scrap: 5, parts: 1 }, work: 4 }, // yours: 20 scrap, a part, 24 work-hours (scaled as the rest)
   },
+  // Their machine parts (machines-2; groupPartsDaily, see the header).
+  PARTS: { rate: 0.25, mech: 4, pop: 16, popMax: 1.5, popMin: 0.4, scrap: 6, keep: 4, perMachine: 1, scrapKeep: 1 },
   // The groups' machines (see the header). fx: the fixture each is (breakdowns.js FIXTURES).
-  MACH: { pop: 14, foodDays: 12, spare: 2, mend: 0.6, save: 0.00475, room: 300, still: { food: 8, fuel: 3 },
+  MACH: { pop: 14, foodDays: 12, spare: 2, mend: 0.6, save: 0.00475, room: 300, still: { food: 8, fuel: 3 }, req: { power: 3, freezer: 3, sealer: 3 }, // req: Mechanics to build (yours, buildings.js)
     fx: { still: "still", power: "generator", freezer: "freezer", sealer: "sealer" } },
   CREW: 6, SALVAGE: 2,
   SERVES: { water: 10, farms: 8, beds: 8 }, // people one of each serves
@@ -256,6 +285,7 @@ function sickbayWork(state, f, upper) {
   }
   if (t === 0) return null;
   if (f.pop < next.pop / Math.max(0.3, weightOf(f, "heal")) || medOf(f).doc < next.doc) return null;
+  if (SICKBAY_BP[t + 1] && !groupKnows(state, f, SICKBAY_BP[t + 1])) return null; // machines-2: your clinic's and trauma hospital's manuals
   return { tile, type: "sickbay", why: `${next.name} (the sick bay upgraded)`, def: next };
 }
 
@@ -299,6 +329,9 @@ function machineWork(state, f, tile) {
   const why = { still: "fuel from the food surplus", power: "power for a freezer", freezer: "a walk-in freezer for the food", sealer: "a vacuum sealer for packed meals" };
   for (const k of MACH_ORDER) {
     if (n(w, k)) continue;
+    if (k === "power" && !(groupKnows(state, f, "genschem") && groupKnows(state, f, "refrig"))) return null; // your lock; and they build it for a freezer
+    if (k === "freezer" && !groupKnows(state, f, "refrig")) return null; // your lock (the sealer has none: it waits for the generator)
+    if (groupSkill(f, "mechanics") < (W.MACH.req[k] || 0)) return null; // your build rule: a Mechanics 3 hand for the generator, the freezer, the sealer
     const c = W.WORKS[k].cost;
     if ((f.stock.parts || 0) < (c.parts || 0) + M.spare || (f.stock.scrap || 0) < (c.scrap || 0)) return null;
     return { tile, type: k, why: why[k] };
@@ -324,8 +357,9 @@ export function groupMachinesDaily(state, f) {
       const m = machOf(w, k);
       if (!m.broken) continue;
       const cost = FIXTURES[M.fx[k]].repair.cost;
-      if (Object.entries(cost).every(([key, v]) => (st[key] || 0) >= v)) {
-        for (const [key, v] of Object.entries(cost)) st[key] -= v;
+      if (groupSkill(f, "mechanics") < (FIXTURES[M.fx[k]].repair.min || 0)) continue; // your proper repair's Mechanics (machines-2)
+      if (Object.entries(cost).every(([key, v]) => (key === "parts" ? canPayParts(f, v, "machine") : (st[key] || 0) >= v))) {
+        for (const [key, v] of Object.entries(cost)) { if (key === "parts") payParts(f, v, "machine"); else st[key] -= v; }
         m.broken = false; m.wear = WEAR.repairWear; f.machParts = (f.machParts || 0) + (cost.parts || 0);
       }
     }
@@ -333,9 +367,9 @@ export function groupMachinesDaily(state, f) {
     const ran = {};
     // The still: their surplus food into fuel.
     if (ok("still") && (st.food || 0) - M.still.food >= f.pop * M.foodDays && (st.fuel || 0) < f.pop * 3) { st.food -= M.still.food; st.fuel = (st.fuel || 0) + M.still.fuel; ran.still = true; }
-    // The generator, while the freezer or the sealer draws.
+    // The generator, while the freezer or the sealer draws and there is any fuel (coarse: a day's fuel, or the last of it).
     const draws = ok("freezer") || ok("sealer");
-    if (ok("power") && draws && (st.fuel || 0) >= POWER.genFuel) { st.fuel -= POWER.genFuel; ran.power = true; }
+    if (ok("power") && draws && (st.fuel || 0) > 1e-6) { st.fuel = Math.max(0, st.fuel - POWER.genFuel); ran.power = true; }
     for (const k of ["freezer", "sealer"]) { if (n(w, k)) { machOf(w, k).on = !!ran.power && ok(k); ran[k] = machOf(w, k).on; } }
     if (ran.freezer) st.food += Math.min(M.room, Math.max(0, st.food || 0)) * M.save; // the cellar spoilage it saves
     // Wear, spares, breaking (your fixtures' numbers, coarse).
@@ -345,7 +379,7 @@ export function groupMachinesDaily(state, f) {
       if (m.broken) continue;
       if (ran[k]) {
         m.spares += 1 / (def.spares || 1e9);
-        if (m.spares >= 1) { if ((st.parts || 0) >= 1) { st.parts -= 1; m.spares -= 1; m.noSpares = false; f.machParts = (f.machParts || 0) + 1; } else m.noSpares = true; }
+        if (m.spares >= 1) { if (payParts(f, 1, "machine")) { m.spares -= 1; m.noSpares = false; f.machParts = (f.machParts || 0) + 1; } else m.noSpares = true; }
       }
       m.wear = Math.max(0, m.wear + (ran[k] ? def.use : def.idle || 0) - M.mend + (m.noSpares ? WEAR.noSpares : 0));
       const p = m.wear >= WEAR.breakAt ? 1 : m.wear >= WEAR.riskFrom ? ((m.wear - WEAR.riskFrom) / (WEAR.breakAt - WEAR.riskFrom)) ** 2 * WEAR.riskMax : 0;
@@ -354,9 +388,126 @@ export function groupMachinesDaily(state, f) {
   }
 }
 
+// ---------- their machine parts (machines-2; see the header) ----------
+// What they keep in parts: PARTS.keep, a part a machine they have, and the next machine's parts and spares.
+export function partsWant(state, f) {
+  const P = W.PARTS, M = W.MACH;
+  let next = 0;
+  const w = f.bases.length ? f.works && f.works[mainOf(f)] : null;
+  if (w && f.pop >= M.pop) { const k = MACH_ORDER.find((x) => !n(w, x)); if (k) next = (W.WORKS[k].cost.parts || 0) + M.spare; }
+  return P.keep + P.perMachine * groupMachineCount(f) + next;
+}
+// Parts a day at their workshop (0 without one): rate × mechanic × people, see the header.
+export function partsRate(state, f) {
+  const P = W.PARTS;
+  if (!groupsBuild(state, f) || !hasAny(f, "bench") || !groupKnows(state, f, "machinist")) return 0; // your machine shop's manual
+  return P.rate * (weightOf(f, "mechanic", 3) / P.mech) * Math.min(P.popMax, Math.max(P.popMin, (f.pop || 0) / P.pop));
+}
+export function groupPartsDaily(state, f) {
+  const P = W.PARTS, st = f.stock;
+  const rate = partsRate(state, f);
+  if (!rate || groupMachParts(f) >= partsWant(state, f)) return 0; // the earmark full: the workshop rests
+  const scrap = rate * P.scrap;
+  if ((st.scrap || 0) - scrap < P.scrapKeep * Math.max(1, f.pop)) return 0;
+  st.scrap -= scrap;
+  f.partsWip = (f.partsWip || 0) + rate;
+  const made = Math.floor(f.partsWip + 1e-9);
+  if (made > 0) { f.partsMach = groupMachParts(f) + made; f.partsWip -= made; st.parts = (st.parts || 0) + made; f.partsMade = (f.partsMade || 0) + made; } // earmarked for the machines
+  return made;
+}
+
+// ---------- the earmark (see the header) ----------
+// Parts kept for the machines (the workshop's), and the parts anything else may use.
+export const groupMachParts = (f) => Math.min(Math.max(0, (f && f.partsMach) || 0), Math.max(0, (f && f.stock && f.stock.parts) || 0));
+export const groupFreeParts = (f) => Math.max(0, ((f && f.stock && f.stock.parts) || 0) - groupMachParts(f));
+// Can they pay n parts for this use? machine: any part (the earmark first); free: only the parts above the earmark;
+// vehicle: the free parts, the rest from the earmark at two for one.
+export function canPayParts(f, n, use = "free") {
+  if (n <= 0) return true;
+  if (use === "machine") return (f.stock.parts || 0) >= n - 1e-9;
+  const free = groupFreeParts(f);
+  if (use === "vehicle") return free >= n - 1e-9 || groupMachParts(f) >= 2 * (n - free) - 1e-9;
+  return free >= n - 1e-9;
+}
+// Pays them (false, and nothing paid, when they cannot).
+export function payParts(f, n, use = "free") {
+  if (n <= 0) return true;
+  if (!canPayParts(f, n, use)) return false;
+  const e = groupMachParts(f), free = groupFreeParts(f);
+  if (use === "machine") { f.stock.parts -= n; f.partsMach = Math.max(0, e - n); return true; }
+  if (use === "vehicle" && free < n) { const fromE = 2 * (n - free); f.stock.parts -= free + fromE; f.partsMach = Math.max(0, e - fromE); return true; }
+  f.stock.parts -= n;
+  return true;
+}
+
+// ---------- the groups' manuals (machines-2, the user's rule "AI groups need to have the same restrictions and
+// gameplay features"; your blueprints, blueprints.js, done coarsely) ----------
+// f.tech = { known: [ids], held: [ids], study: { id: hours } }.
+//   Start: what a start of yours has (nothing known), but traders and communes know what their wares lists hold
+//   (blueprints.js WARE_BP: traders every one, communes the canning, water and refrigeration papers), and the military
+//   and the fortress hold the copies of theirs, to study.
+//   Found: every hour a scavenging party searches a site (aiscav.js), a manual by your odds (blueprints.js rollBlueprint:
+//   the site's list, ZONE_P by its zone or 0.25 at a crash, × the loot left), one they neither know nor hold, carried home.
+//   Bought: every TECH.buyEvery days, with TECH.buyP (the traders' wares chance), one they lack from a traders group
+//   that knows it and is not hostile to them (relation over TECH.buyRel), for its value × TECH.markup in scrap they
+//   can spare (above TECH.keepScrap a head).
+//   Studied: one at a time, READ_HOURS (6) a day, as one reader of yours, while they have someone at the manual's
+//   skill: their mechanic (groupcare.js GROUP_PRIORITIES mechanic) for Mechanics and Crafting, their doctor (medOf) for
+//   Medicine, TECH.farm for Farming. Done after its hours: known for good.
+// Old worlds (no state.groupWorks) and the hardcore military know everything (built up, as their works).
+export const TECH = { buyEvery: 7, buyP: 0.3, buyRel: -10, markup: 1.25, keepScrap: 3, farm: { commune: 6, dflt: 3 } };
+const SICKBAY_BP = { 3: "fieldsurgery", 4: "hospitalops" }; // the sick bay tier → your hospital's manual
+export function groupTech(f) {
+  if (!f.tech || !Array.isArray(f.tech.known)) {
+    const w = WARE_BP[f.type];
+    const knows = f.type === "traders" || f.type === "commune";
+    f.tech = { known: knows && w ? [...w.list] : [], held: !knows && w ? [...w.list] : [], study: {} };
+  }
+  return f.tech;
+}
+export const groupKnows = (state, f, id) => !!f && (!groupsBuild(state, f) || groupTech(f).known.includes(id));
+const lacks = (f, id) => { const T = groupTech(f); return !T.known.includes(id) && !T.held.includes(id); };
+// The group's best at a skill, coarse.
+export function groupSkill(f, sk) {
+  if (sk === "medicine") return medOf(f).doc;
+  if (sk === "farming") return TECH.farm[f.type] ?? TECH.farm.dflt;
+  return weightOf(f, "mechanic", 3);
+}
+// A manual found in a search hour at a site (aiscav.js), by your odds; its id or null. salt: the party.
+export function groupFindBlueprint(state, f, tileId, salt = "") {
+  const t = state.tiles[tileId];
+  if (!groupsBuild(state, f) || !t || !t.loc) return null;
+  const open = siteBlueprints(t.loc.type).filter((id) => lacks(f, id));
+  if (!open.length) return null;
+  const p = (CRASH_BP[t.loc.type] ? 0.25 : ZONE_P[t.loc.zone] || 0.03) * Math.max(0.15, Math.min(1, t.loot ?? 1));
+  if (hash01(state.seed, "gbpf", f.name, tileId, state.hour, salt) >= Math.min(0.9, p)) return null;
+  return open[Math.floor(hash01(state.seed, "gbpk", f.name, tileId, state.hour, salt) * open.length) % open.length];
+}
+export function groupGotBlueprint(f, id) { if (BLUEPRINTS[id] && lacks(f, id)) groupTech(f).held.push(id); }
+// A day of it: a purchase now and then, a day's study.
+export function groupTechDaily(state, f) {
+  if (!groupsBuild(state, f)) return;
+  const T = groupTech(f), d = day(state);
+  if (f.type !== "traders" && (d + Math.floor(hash01(state.seed, "gbpb", f.name) * TECH.buyEvery)) % TECH.buyEvery === 0 && hash01(state.seed, "gbpbp", f.name, d) < TECH.buyP) {
+    const traders = state.factions.filter((o) => o !== f && o.alive && o.type === "traders" && relation(state, f, o) > TECH.buyRel);
+    const want = BP_KEYS.filter((id) => lacks(f, id) && traders.some((o) => groupKnows(state, o, id)));
+    if (want.length) {
+      const id = want[Math.floor(hash01(state.seed, "gbpbk", f.name, d) * want.length) % want.length];
+      const cost = Math.ceil((BLUEPRINTS[id].value * TECH.markup) / Math.max(0.1, SUPPLIES.scrap.value || 1));
+      if ((f.stock.scrap || 0) - cost >= TECH.keepScrap * f.pop) { f.stock.scrap -= cost; T.held.push(id); f.bpBought = (f.bpBought || 0) + 1; }
+    }
+  }
+  const id = T.held.find((x) => !T.known.includes(x) && groupSkill(f, BLUEPRINTS[x].skill) >= BLUEPRINTS[x].min);
+  if (!id) return;
+  T.study[id] = (T.study[id] || 0) + READ_HOURS;
+  if (T.study[id] >= BLUEPRINTS[id].hours - 1e-9) { T.known.push(id); T.held = T.held.filter((x) => x !== id); delete T.study[id]; }
+}
+
 // A day of building for one group (factions.js factionsDaily).
 export function groupWorksDaily(state, f) {
   if (!groupsBuild(state, f)) return;
+  groupTechDaily(state, f); // machines-2: their manuals, bought and studied
+  groupPartsDaily(state, f); // machines-2: parts from their workshop before the day's machines and builds
   // A job at a base they no longer hold is dropped (the materials are lost with the base).
   if (f.job && !f.bases.includes(f.job.tile)) f.job = null;
   if (!f.job) {
@@ -366,8 +517,9 @@ export function groupWorksDaily(state, f) {
     // Short of building materials: made from their scrap, as you would (crafting.js buildmat).
     const bmShort = Math.max(0, (def.cost.buildmat || 0) - (f.stock.buildmat || 0));
     if (bmShort && (f.stock.scrap || 0) >= bmShort * W.BUILDMAT_SCRAP + (def.cost.scrap || 0)) { f.stock.scrap -= bmShort * W.BUILDMAT_SCRAP; f.stock.buildmat = (f.stock.buildmat || 0) + bmShort; }
-    const can = Object.entries(def.cost).every(([k, v]) => (f.stock[k] || 0) >= v);
-    if (can) for (const [k, v] of Object.entries(def.cost)) f.stock[k] -= v;
+    const use = MACH_ORDER.includes(next.type) ? "machine" : "free"; // the earmark only for a machine
+    const can = Object.entries(def.cost).every(([k, v]) => (k === "parts" ? canPayParts(f, v, use) : (f.stock[k] || 0) >= v));
+    if (can) for (const [k, v] of Object.entries(def.cost)) { if (k === "parts") payParts(f, v, use); else f.stock[k] -= v; }
     f.job = { tile: next.tile, type: next.type, left: def.work * (can ? 1 : W.SALVAGE), paid: can };
   }
   f.job.left -= (Math.max(1, workingPeople(f) / W.CREW) + (f.prisonWork || 0) / W.CREW) * MEAL_WORK_SHARE; // their prisoners work too (groupjails.js); the ill rest (groupcare.js GROUP_ILL); meals.js: the meal hours off

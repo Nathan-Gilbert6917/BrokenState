@@ -18,7 +18,7 @@
 // lossesOf(state), causeKind(state, causeText).
 import { day, baseById, factionById, atBase, residents, alive } from "./world.js";
 import { diaryEntries } from "./diary.js";
-import { fixtures, fixtureName, jobFor, FIXTURES, isBroken, isWaterFixture } from "./breakdowns.js";
+import { fixtures, fixtureName, jobFor, fxDef, isBroken, isWaterFixture } from "./breakdowns.js";
 import { count } from "./buildings.js";
 import { CONDITIONS, conditionsOf } from "./health.js";
 import { weatherOnDay } from "./weather.js";
@@ -126,7 +126,7 @@ function brokenFactors(state, base, test, today) {
     if (!isBroken(fx) || !test(fx)) continue;
     const name = fixtureName(fx).toLowerCase();
     const job = jobFor(base, fx);
-    const cost = (FIXTURES[fx.type] && FIXTURES[fx.type].repair && FIXTURES[fx.type].repair.cost) || {};
+    const cost = (fxDef(fx) && fxDef(fx).repair && fxDef(fx).repair.cost) || {};
     const scrap = Math.floor(base.stock.scrap || 0);
     const since = lowSince(base, "scrap");
     let why;

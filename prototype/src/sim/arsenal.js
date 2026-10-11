@@ -54,7 +54,7 @@ import { enemyPieces } from "./armour.js"; // its armour pieces: the arsenal's i
 import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { day, factionById } from "./world.js";
 import { factionVehicles, groupTurret } from "./vehicles.js";
-import { workshopFactor } from "./groupworks.js";
+import { workshopFactor, groupFreeParts } from "./groupworks.js";
 import { groupBrass, groupReloadDaily } from "./reloading.js"; // the reloading bench, theirs: brass from their fights, rounds from their workshop
 import { fitPeople, noteFight, weightOf, woundsFor, wearGroupVehicles, tickOf } from "./groupcare.js"; // AI parity: the wounded do not fight; a fight's dead and wounded
 import { armLauncher, settleArsenalLauncher } from "./launchers.js"; // a launcher issued beside the gun (section 13), its rounds from the stores
@@ -826,11 +826,12 @@ export function arsenalDaily(state, f) {
     const key = C.weapons[Math.floor(hash01(...salt, "cw") * C.weapons.length) % C.weapons.length];
     if (GEAR[key]) addToArsenal(state, f, lootItem(key, "militia", [...salt, "c"]), "crafted");
   }
-  if ((d + phase) % C.gunEvery === 0 && hasWorkshop(state, f) && sortedKit(A).W.filter((it) => usesRounds(it.key)).length < f.pop * C.guns && (f.stock.scrap || 0) >= C.gunScrap + 2 && (f.stock.parts || 0) >= C.gunParts) {
+  if ((d + phase) % C.gunEvery === 0 && hasWorkshop(state, f) && sortedKit(A).W.filter((it) => usesRounds(it.key)).length < f.pop * C.guns && (f.stock.scrap || 0) >= C.gunScrap + 2 && groupFreeParts(f) >= C.gunParts) { // machines-2: never the workshop's parts kept for their machines
     const list = KITS[kitOf(f)].weapons.filter((k) => usesRounds(k));
     const key = swapGun(kitGunSource(kitOf(f)), list[Math.floor(hash01(...salt, "gw") * list.length) % list.length], [...salt, "gwg"]); // gundist.js
     f.stock.scrap -= C.gunScrap;
     f.stock.parts -= C.gunParts;
+    f.partsGuns = (f.partsGuns || 0) + C.gunParts; // the parts that went into guns (tools/machinecensus.js)
     if (key) addToArsenal(state, f, lootItem(key, "militia", [...salt, "g"]), "crafted");
   }
   const kind = kitOf(f), want = Math.round(f.pop * (ARSENAL.THROW_PER[kind] || 0));

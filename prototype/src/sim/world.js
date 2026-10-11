@@ -148,6 +148,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     sickRest: "all", // sickrest.js: the Work tab's "Sick people rest" (all, serious, off; save.js: older saves get "all")
     groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
+    machinesV: 1, // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrates older saves)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,

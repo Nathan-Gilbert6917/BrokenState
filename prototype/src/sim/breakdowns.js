@@ -40,21 +40,24 @@
 // Machines and machine parts (freezer-parts 2026-10-10, user request "add mechanical parts as something to use in
 // buildings that use machines"): every building with a motor, pump, compressor or press is a machine fixture. It costs
 // machine parts to build (buildings.js), its proper repair takes parts, and it wears with use: a station by the days it
-// ran, a powered building (power: true: the walk-in freezer, the vacuum sealer, a powered cold store) by the days it
-// had power, the radio every day it is on the air, floodlights in every horde attack (attack), the garage with age.
+// ran, the generator by the days it ran (machines-2: no operator, power.js b.lastRan), a powered building (power: true:
+// the walk-in freezer, the vacuum sealer) by the days it had power, the radio every day it is on the air, floodlights
+// in every horde attack (attack), the garage with age. A preserving room fitted with a pressure canner (machines-2,
+// buildings.js b.canner) is a machine too: FIXTURES.canner instead of the kitchen's (fxDef).
 // Spares (spares: days of running a part lasts): a running machine uses up a spare part every that many days of work
 // (fx.spares builds up 1/spares a running day): from this base's stock, else the hub's, as the relay does (radio.js).
 // With no part anywhere the machine runs on worn bits: +WEAR.noSpares wear a day until one comes in (one log line).
-// Generator 20 days, walk-in freezer 12, radio 20, machine shop 30, still 40, vacuum sealer 30. Buildings with no
-// machine (walls, cellar, bunkhouse, drying rack, boiler, cook fire) take no parts. Broken, a machine stops (a
-// station has no operator, a powered building draws no power: power.js; the freezer is then off and warms up).
+// Generator 20 days, walk-in freezer 12, radio 20, machine shop 30, still 40, vacuum sealer 30, a kitchen's pressure
+// canner 30. Buildings with no machine (walls, cellar, bunkhouse, cold store, drying rack, boiler, cook fire) take no
+// parts. Broken, a machine stops (a station does nothing, a generator gives no power, a powered building draws none:
+// power.js; the freezer is then off and warms up).
 // Rolls use hash01 (skills.js), never the world's random numbers.
 import { BUILDINGS, count, assignStations, underAttack, onUpkeep } from "./buildings.js";
 import { log, addCard, day, hourOfDay, atBase, survivorById, skill } from "./world.js";
 import { hash01, gainXp, buildMult, hasPerk, USE } from "./skills.js";
 import { workFactor } from "./health.js";
 import { stationStatus } from "./buildings.js";
-import { isPowered } from "./power.js"; // powered machines wear by the days they had power (freezer-parts)
+import { isPowered, generatorRanToday, POWER, REFUEL } from "./power.js"; // powered machines wear by the days they had power (freezer-parts); generators by the days they ran (machines-2)
 import { weatherOnDay } from "./weather.js";
 import { stewardOn } from "./steward.js";
 import { vehiclesAtBase, shelteredAt, frostWear } from "./vehicles.js";
@@ -75,6 +78,9 @@ export const FIXTURES = {
   reload_bench: { use: 0.8, idle: 0.05, repair: { hours: 4, cost: { scrap: 2, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no rounds from it" }, // reloading.js: an ammo bench upgraded
   med_station: { use: 0.6, idle: 0.05, repair: { hours: 4, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no meds from it" },
   kitchen:     { use: 0.8, idle: 0.05, repair: { hours: 4, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no preserving" },
+  // A preserving room with a pressure canner fitted (machines-2; not a building type: fxDef): wears a little faster
+  // with the canner's seals and gauge, its repair takes a machine part, a spare part every 30 days it runs (the sealer's).
+  canner:      { use: 1.0, idle: 0.05, spares: 30, repair: { hours: 5, cost: { scrap: 2, parts: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 1 }, min: 1 }, what: "no preserving (the kitchen and its pressure canner)" },
   radio:       { use: 0.7, storm: 6, spares: 20, repair: { hours: 10, cost: { scrap: 4, parts: 2 }, min: 4 }, rig: { hours: 3, cost: { scrap: 2 }, min: 2 }, what: "the radio station is off the air" },
   walls:       { age: 0.05, attack: 18, repair: { hours: 12, cost: { scrap: 10 }, min: 0 }, rig: { hours: 4, cost: { scrap: 4 }, min: 0 }, what: "−3 wall strength" },
   gate:        { age: 0.05, attack: 22, repair: { hours: 8, cost: { scrap: 6, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "the gate no longer holds hordes back" },
@@ -87,7 +93,7 @@ export const FIXTURES = {
   barracks:    { raidOnly: true, repair: { hours: 12, cost: { scrap: 14 }, min: 0 }, rig: { hours: 4, cost: { scrap: 6 }, min: 0 }, what: "12 fewer beds" },
   cistern:     { raidOnly: true, repair: { hours: 8, cost: { scrap: 8 }, min: 0 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a holed tank: 150 less water room" },
   cellar:      { raidOnly: true, repair: { hours: 6, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a caved-in cellar: 200 less food room" },
-  coldstore:   { power: true, use: 0.4, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a smashed ice house: 150 less food room" },
+  coldstore:   { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "a smashed ice house: 150 less food room" }, // an ice house again (machines-2: no power)
   garage:      { age: 0.12, repair: { hours: 8, cost: { scrap: 6, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "vehicle repairs at the field rate" },
   cells:       { raidOnly: true, repair: { hours: 6, cost: { scrap: 5, parts: 1 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "broken bars: 3 fewer places for prisoners" },
   common_room: { raidOnly: true, repair: { hours: 6, cost: { scrap: 6 }, min: 0 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "no mood from the common room" },
@@ -113,6 +119,8 @@ export const RAID_DAMAGE = {
 };
 export const WEAR = { noSpares: 3, ageDays: 240, breakAt: 100, riskFrom: 60, riskMax: 0.3, rigWear: 65, repairWear: 8, rigMult: 1.6, upkeep: 1.5, greaseMonkey: 0.8, handy: 0.85, workFrom: 8, workTo: 20, vehicleFrost: 1, vehicleBlizzard: 2 };
 
+// A fixture's entry: a kitchen with a pressure canner fitted counts as the canner (machines-2), the rest by type.
+export const fxDef = (fx) => (fx && fx.type === "kitchen" && fx.canner ? FIXTURES.canner : FIXTURES[fx.type]);
 // ---------- fixtures at a base ----------
 // The hub's pump is a fixture of its own (base.pump); everything else is a building with an entry in FIXTURES.
 export function fixtures(base) {
@@ -140,7 +148,7 @@ export function breakFixture(state, base, fx, cause = "worn out", { card = true,
   fx.lastBroke = day(state); // the buildings view's "last breakdown"
   fx.wear = Math.max(fx.wear || 0, WEAR.breakAt);
   applyEffect(state, base, fx);
-  const def = FIXTURES[fx.type];
+  const def = fxDef(fx);
   if (!quiet) log(state, `⚠ The ${fixtureName(fx).toLowerCase()} at ${base.name} broke (${cause}): ${def.what} until it is repaired.`, "danger");
   state.stats.breakdowns = (state.stats.breakdowns || 0) + 1;
   if (autoHands(state, base)) autoRepair(state, base, fx);
@@ -165,7 +173,7 @@ function fixed(state, base, fx, method) {
 
 // What a repair takes: { ok, why, who, hours, cost, method }.
 export function repairPlan(state, base, fx, method = "repair", whoId = null) {
-  const def = FIXTURES[fx.type];
+  const def = fxDef(fx);
   const r = def[method];
   const busy = new Set(jobs(base).filter((j) => String(j.fx) !== String(fx.id)).map((j) => j.who));
   const able = atBase(state, base.id).filter((s) => !s.inBed && workFactor(s) >= 0.35 && !busy.has(s.id) && skill(s, "mechanics") >= r.min)
@@ -206,7 +214,7 @@ export function reassignRepair(state, base, fxId, whoId) {
   const fx = fixtureById(base, fxId);
   if (!j || !fx) return "No such job.";
   const s = survivorById(state, whoId);
-  const r = FIXTURES[fx.type][j.method];
+  const r = fxDef(fx)[j.method];
   if (!s || !atBase(state, base.id).includes(s) || skill(s, "mechanics") < r.min) return "They cannot do it.";
   j.who = s.id;
   return `${s.name.split(" ")[0]} takes over the ${fixtureName(fx).toLowerCase()}.`;
@@ -214,7 +222,7 @@ export function reassignRepair(state, base, fxId, whoId) {
 
 // The card when something breaks (and the merged storm "well pump" hub event, hubevents.js).
 export function breakCard(state, base, fx, { pumpStorm = null } = {}) {
-  const def = FIXTURES[fx.type];
+  const def = fxDef(fx);
   const rep = repairPlan(state, base, { ...fx, broken: fx.broken || { day: day(state) } }, "repair");
   const rig = repairPlan(state, base, { ...fx, broken: fx.broken || { day: day(state) } }, "rig");
   const first = (s) => (s ? s.name.split(" ")[0] : "");
@@ -281,7 +289,7 @@ export function breakdownsHour(state) {
       const here = s && s.alive && s.location.kind === "base" && s.location.baseId === base.id;
       if (!here) { j.who = null; }
       if (j.who == null && autoHands(state, base)) {
-        const r = FIXTURES[fx.type][j.method];
+        const r = fxDef(fx)[j.method];
         const busy = new Set(list.map((x) => x.who));
         const pick = atBase(state, base.id).filter((o) => !o.inBed && workFactor(o) >= 0.35 && !busy.has(o.id) && skill(o, "mechanics") >= r.min).sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics") || a.id - b.id)[0];
         if (pick) j.who = pick.id;
@@ -310,7 +318,7 @@ export function breakdownsHour(state) {
       }
       if (waterWaits) continue;
       // Damaged defences (wear 60+) are patched before they give way, while the scrap lasts (20 kept back).
-      for (const fx of fixtures(base).filter((x) => !x.broken && FIXTURES[x.type].outer && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x))) {
+      for (const fx of fixtures(base).filter((x) => !x.broken && fxDef(x).outer && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x))) {
         const plan = repairPlan(state, base, fx, "repair");
         if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= 20) log(state, `${handIcon(state, base)} ${startRepair(state, base, fx, "repair")}`, "info");
       }
@@ -325,7 +333,7 @@ function attackWear(state, base) {
   base.wearHits = hits;
   if (attacks <= 0) return;
   for (const fx of fixtures(base)) {
-    const def = FIXTURES[fx.type];
+    const def = fxDef(fx);
     if (!def.attack || fx.broken) continue;
     const add = def.attack * attacks * (0.7 + 0.6 * hash01(state.seed, "atk", fxKey(base, fx), state.hour));
     fx.wear = Math.min(WEAR.breakAt, (fx.wear || 0) + add);
@@ -345,17 +353,19 @@ export function wearMult(state, base, fx) {
 // Did this machine work today (its spares)? A station that ran, a powered building with power, the radio on the air,
 // a well or the pump; anything else (walls, the storehouse roof: age and weather only) counts as not.
 export function machineRan(state, base, fx) {
-  const def = FIXTURES[fx.type];
+  const def = fxDef(fx);
   if (!def || fx.broken) return false;
+  if (fx.type === "generator") return generatorRanToday(state, fx); // machines-2: no operator, it ran when it burned fuel
   if (BUILDINGS[fx.type] && BUILDINGS[fx.type].station) return !!stationStatus(state, base, fx).running;
   if (def.power) return isPowered(base, fx);
   return !!def.use;
 }
 export function dailyWear(state, base, fx, wx) {
-  const def = FIXTURES[fx.type];
+  const def = fxDef(fx);
   const age = Math.max(0, day(state) - (fx.built || day(state)));
   let use = 0;
-  if (BUILDINGS[fx.type] && BUILDINGS[fx.type].station) {
+  if (fx.type === "generator") use = generatorRanToday(state, fx) ? def.use : def.idle || 0; // machines-2: by the days it ran
+  else if (BUILDINGS[fx.type] && BUILDINGS[fx.type].station) {
     const st = stationStatus(state, base, fx);
     use = st.running ? def.use : def.idle || 0;
     if (st.running && st.op) use *= Math.max(0.65, 1.15 - 0.025 * skill(st.op, "mechanics"));
@@ -373,7 +383,7 @@ export function dailyWear(state, base, fx, wx) {
 // Spares (see the header): a running machine uses a spare part every def.spares days it runs. Returns the base the
 // part came from when one was used today, null otherwise.
 export function useSpares(state, base, fx) {
-  const def = FIXTURES[fx.type];
+  const def = fxDef(fx);
   if (!def || !def.spares || fx.broken) return null;
   if (machineRan(state, base, fx)) fx.spares = (fx.spares || 0) + 1 / def.spares;
   if ((fx.spares || 0) < 1 - 1e-9) { fx.noSpares = false; return null; }
@@ -396,7 +406,7 @@ export function breakdownsDaily(state) {
   for (const base of state.bases) {
     const list = fixtures(base);
     // What the holdout started with is not new: the hub's pump 30–50 wear, the rest 5–25.
-    for (const fx of list) if (fx.built == null) { fx.built = d; if (d <= 2 && !FIXTURES[fx.type].raidOnly) fx.wear = (fx.type === "pump" ? 30 : 5) + 20 * hash01(state.seed, "wear0", fxKey(base, fx)); }
+    for (const fx of list) if (fx.built == null) { fx.built = d; if (d <= 2 && !fxDef(fx).raidOnly) fx.wear = (fx.type === "pump" ? 30 : 5) + 20 * hash01(state.seed, "wear0", fxKey(base, fx)); }
     for (const fx of list) {
       if (fx.broken) continue;
       useSpares(state, base, fx); // machine parts for a machine that ran (freezer-parts)
@@ -450,17 +460,17 @@ export function machineText(type) {
 }
 // One building's wear, spares and last breakdown: "wear 34% · last breakdown day 81 · needs a spare part".
 export function machineState(fx) {
-  if (!fx || !FIXTURES[fx.type]) return "";
+  if (!fx || !fxDef(fx)) return "";
   const bits = [fx.broken ? `broken since day ${fx.broken.day}` : `wear ${Math.round(fx.wear || 0)}%${fx.rigged ? " (jury-rigged)" : ""}`];
   if (fx.lastBroke != null && !fx.broken) bits.push(`last breakdown day ${fx.lastBroke}`);
   if (fx.noSpares) bits.push("needs a spare part");
   return bits.join(" · ");
 }
-export const MACHINES_HELP = `Machines are the buildings with a motor, a pump, a compressor or a press: the generator, the wells and the hub's pump, the ethanol still, the machine shop, the ammo and reloading benches, the radio station and relays, the floodlights, the garage, the walk-in freezer, the vacuum sealer (and a cold store while it has power). They cost machine parts to build, a proper repair takes machine parts and a Mechanics hand, and they wear: a workshop station on the days it runs, a powered building on the days it has power, the radio every day on the air, floodlights in every horde attack, the garage with age. A running machine also uses up a spare part now and then (the generator and the radio every ${FIXTURES.generator.spares} days they run, the freezer every ${FIXTURES.freezer.spares}, the machine shop and the sealer every ${FIXTURES.machine_shop.spares}, the still every ${FIXTURES.still.spares}), from its base's stock or else the hub's; with none, it runs on worn bits and wears ${WEAR.noSpares} more a day until a part comes in. Broken, a machine stops: a station has no operator, a powered building draws no power. Walls, cellars, bunkhouses and drying racks have no machine and never need parts.<br><br><b>The walk-in freezer</b> (a building plot: 30 scrap, 5 machine parts, 2 electronics, Mechanics 3) adds 300 food room and draws 2 power every day from a running generator (an operator on it, and ${2} fuel a day). While it is on, the food in it keeps about twenty times longer than in a cellar. With no power (no generator, no operator, no fuel, too little power, switched off on the Power card) or a breakdown it is off and warms up: the food in it keeps only as in a pantry, and the log and the Buildings tab say why. <b>The vacuum sealer</b> (a utility plot: 12 scrap, 2 parts, 2 electronics, Mechanics 3) draws 1 power while switched on; it will pack cooked food into light, long-keeping survival meals once the cooking recipes come. <b>Parts in crafting:</b> recipes with a mechanism take machine parts: the scrap crossbow, pipe gun, lights, suppressor, bicycle, ram, repair kit and pulley bow, a real fishing rod with a reel, a bear trap, and a pressure canner (kept in a base's armory, every preserving room there jars 1 more a day). The other groups build stills, generators, freezers and sealers too, wear them out and buy parts from merchants to keep them going.`;
+export const machinesHelp = () => `Machines are the buildings with a motor, a pump, a compressor or a press: the generator, the wells and the hub's pump, the ethanol still, the machine shop, the ammo and reloading benches, the radio station and relays, the floodlights, the garage, the walk-in freezer, the vacuum sealer, and a preserving room fitted with a pressure canner. They cost machine parts to build, a proper repair takes machine parts and a Mechanics hand, and they wear: a workshop station on the days it runs, the generator on the days it runs, a powered building on the days it has power, the radio every day on the air, floodlights in every horde attack, the garage with age. A running machine also uses up a spare part now and then (the generator and the radio every ${FIXTURES.generator.spares} days they run, the freezer every ${FIXTURES.freezer.spares}, the machine shop, the sealer and a kitchen's canner every ${FIXTURES.machine_shop.spares}, the still every ${FIXTURES.still.spares}), from its base's stock or else the hub's; with none, it runs on worn bits and wears ${WEAR.noSpares} more a day until a part comes in. Broken, a machine stops: a station does nothing, a generator gives no power, a powered building draws none. Walls, cellars, bunkhouses, the cold store (an ice house) and drying racks have no machine and never need parts.<br><br><b>The generator</b> needs no operator: it runs by itself while something draws power, ${POWER.genOut} power for ${POWER.genFuel} fuel a day of running, burned by the hour from its own tank of ${POWER.tank} fuel (a day and a half's running). Every morning from ${String(REFUEL.from).padStart(2, "0")}:00 someone able at the base (not in a bed, not resting sick) refuels it: half an hour of the least busy hand's day, from the fuel above the reserve you set on the Power card (Workshops tab; at the reserve the tanks are not filled and the power goes off when they run dry). With nobody able at the base (everyone away, ill or in beds) it runs its tank dry: power for a day and a half at most. Breakdowns need a Mechanics 3+ hand and machine parts. It is loud: +${POWER.genHeat} Heat while it runs.<br><br><b>The walk-in freezer</b> (a building plot: 30 scrap, 5 machine parts, 2 electronics, Mechanics 3; needs the Refrigeration Schematics studied) adds 300 food room and draws 2 power every day from a running generator. While it is on, the food in it keeps about twenty times longer than in a cellar. With no power (no generator, its tank dry, too little power, switched off on the Power card) or a breakdown it is off and warms up: the food in it keeps only as in a pantry, and the log and the Buildings tab say why. <b>The vacuum sealer</b> (a utility plot: 12 scrap, 2 parts, 2 electronics, Mechanics 3) draws 1 power while switched on; it will pack cooked food into light, long-keeping survival meals once the cooking recipes come. <b>The pressure canner</b> is fitted to a preserving room where it stands (Construction: 6 scrap, 2 machine parts, 12 work-hours, Mechanics 3): that kitchen jars 1 more preserved food a day, and wears like a machine. <b>Parts in crafting:</b> recipes with a mechanism take machine parts: the scrap crossbow, pipe gun, lights, suppressor, bicycle, ram, repair kit and pulley bow, a real fishing rod with a reel and a bear trap. The other groups build stills, generators, freezers and sealers too, make machine parts at their workshops, wear their machines out and buy parts from merchants to keep them going.`;
 
 // For the UI and the alerts.
 export function repairRows(state, base) {
-  return fixtures(base).map((fx) => ({ fx, name: fixtureName(fx), def: FIXTURES[fx.type], job: jobFor(base, fx), wear: Math.round(fx.wear || 0) }));
+  return fixtures(base).map((fx) => ({ fx, name: fixtureName(fx), def: fxDef(fx), job: jobFor(base, fx), wear: Math.round(fx.wear || 0) }));
 }
 
 // ---------- raid damage (see the header) ----------
@@ -483,7 +493,7 @@ function namesText(list, base = null) {
 export function repairBill(list) {
   const cost = {};
   let hours = 0;
-  for (const fx of list) { addCost(cost, FIXTURES[fx.type].repair.cost); hours += FIXTURES[fx.type].repair.hours; }
+  for (const fx of list) { addCost(cost, fxDef(fx).repair.cost); hours += fxDef(fx).repair.hours; }
   return { cost, hours };
 }
 // A raid on your base has been settled: smash what they reached. opts: strength (the raid's), hours (how long the
@@ -501,7 +511,7 @@ export function raidDamage(state, base, { strength = 0, hours = 8, outcome = "he
   for (let i = 0; budget > 0 && i < 40; i++) {
     const all = fixtures(base).filter((fx) => !fx.broken && (fx.wear || 0) < WEAR.breakAt);
     if (!all.length) break;
-    const outer = all.filter((fx) => FIXTURES[fx.type].outer), inner = all.filter((fx) => !FIXTURES[fx.type].outer);
+    const outer = all.filter((fx) => fxDef(fx).outer), inner = all.filter((fx) => !fxDef(fx).outer);
     const pool = outer.length && (!inner.length || hash01(state.seed, "rdo", key, i) < (R.outerShare[outcome] ?? 0.85)) ? outer : inner;
     const again = last && all.includes(last) && hash01(state.seed, "rdf", key, i) < R.focus;
     const fx = again ? last : pool[Math.min(pool.length - 1, Math.floor(hash01(state.seed, "rdp", key, i) * pool.length))];

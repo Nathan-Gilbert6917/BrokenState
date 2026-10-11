@@ -423,7 +423,7 @@ function jobProgress(state, base, job, list, h) {
     }
   } else if (job === "operate") {
     const sts = stations(base).map((st) => ({ st, status: stationStatus(state, base, st) })).filter((x) => x.status.op && list.includes(x.status.op));
-    const running = sts.filter((x) => x.status.running && x.status.recipe !== "power");
+    const running = sts.filter((x) => x.status.running);
     const sum = {};
     for (const x of running) for (const [k, v] of Object.entries(x.status.out || {})) sum[k] = (sum[k] || 0) + v;
     if (sts.length) out.progress = { frac: dayShare(awakeHour, h), text: running.length ? `≈ ${outText(sum)} at midnight (${running.length} of ${sts.length} station${sts.length === 1 ? "" : "s"} running)` : "no station running today" };

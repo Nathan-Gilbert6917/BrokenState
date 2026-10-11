@@ -37,6 +37,8 @@ import { noteLootAge } from "./itemcond.js"; // the years since the fall, for lo
 import { migrateStaging } from "./staging.js"; // the old staging camp becomes a camp base
 import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
+import { migrateGenerators } from "./power.js"; // machines-2: generators without operators
+import { migrateCanners } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -249,6 +251,10 @@ export function deserializeState(save) {
     if (!A.joined || typeof A.joined !== "object") A.joined = {};
     for (const id of A.members) if (A.joined[id] == null) A.joined[id] = d;
   }
+  // machines-2 (2026-10-10): generators need no operators (power.js migrateGenerators: their operators back to the next
+  // job, the generator's standing order to the fuel reserve or its switch); the pressure canner is fitted to a
+  // preserving room (buildings.js migrateCanners: one in an armory to a kitchen there, else kept to fit later). Once.
+  if (!(state.machinesV >= 1)) { migrateGenerators(state); migrateCanners(state); state.machinesV = 1; }
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points

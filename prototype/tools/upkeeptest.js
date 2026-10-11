@@ -192,17 +192,18 @@ const eatenToday = (st) => { const e = econStats(st).eaten; basesDaily(st); retu
   const st = W();
   const h = quietHub(st);
   const ppl = atBase(st, h.id);
-  const gen = addBuilding(h, "generator");
+  addBuilding(h, "generator"); // no operator (machines-2): the morning's refuelling fills its tank
   const shop = addBuilding(h, "machine_shop");
-  ppl[0].role = "operate"; ppl[0].station = gen.id;
   ppl[1].role = "operate"; ppl[1].station = shop.id; ppl[1].skills.mechanics = 6;
+  st.hour = Math.ceil(st.hour / 24) * 24 + 8;
+  const fuel0 = h.stock.fuel;
+  refreshPower(st, h);
   const ps = powerStatus(st, h);
   check(ps.fuelPerDay === POWER.genFuel, `a running generator burns ${POWER.genFuel} fuel a day`);
   for (let i = 0; i < 6; i++) addPerson(st, h);
   check(powerStatus(st, h).fuelPerDay === POWER.genFuel, "six more people: the generator still burns the same");
-  const fuel0 = h.stock.fuel;
   refreshPower(st, h);
-  check(h.stock.fuel === fuel0 - POWER.genFuel, "and pays it once for the day");
+  check(h.stock.fuel === fuel0 - POWER.tank, "and its tank is filled once for the day");
   const sp0 = foodStore(st, h).spoil;
   for (let i = 0; i < 6; i++) addPerson(st, h);
   check(near(foodStore(st, h).spoil, sp0), "spoilage goes by the food stored, not the people");

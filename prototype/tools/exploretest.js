@@ -17,7 +17,7 @@ import { hubEventCard, hubUpkeepDaily, WELL_DOWN } from "../src/sim/hubevents.js
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { setSteward } from "../src/sim/steward.js";
 import { vehiclesAtBase } from "../src/sim/vehicles.js";
-import { refreshPower } from "../src/sim/power.js";
+import { refreshPower, powerStatus } from "../src/sim/power.js";
 import * as BP from "../src/sim/blueprints.js";
 import * as L from "../src/sim/locks.js";
 import * as C from "../src/sim/crashes.js";
@@ -275,7 +275,7 @@ console.log("Blueprints: locks, finding, studying");
 {
   const st = W();
   const h = hub(st);
-  Object.assign(h.stock, { scrap: 500, parts: 60, meds: 40 });
+  Object.assign(h.stock, { scrap: 500, parts: 60, meds: 40, electronics: 10 }); // electronics: the walk-in freezer's (locked with the cold store, machines-2)
   addPerson(st, h, "build", { mechanics: 12, medicine: 12 });
   // Early buildings are open; the top tiers are locked.
   for (const t of ["farm_plot", "bunkhouse", "walls", "well", "barricades", "infirmary", "ammo_bench", "med_station", "storehouse", "radio", "still", "greenhouse", "cellar", "kitchen"]) {
@@ -447,23 +447,24 @@ console.log("Breakdowns and repairs");
   const st = W();
   const h = hub(st);
   Object.assign(h.stock, { scrap: 200, parts: 30, fuel: 60, food: 300 });
-  const mech = addPerson(st, h, "operate", { mechanics: 8 });
-  const gen = addBuilding(h, "generator");
-  addBuilding(h, "coldstore");
-  mech.station = gen.id;
+  const mech = addPerson(st, h, "build", { mechanics: 8 });
+  const gen = addBuilding(h, "generator"); // no operator (machines-2): it runs while something draws power
+  const fz = addBuilding(h, "freezer"); // something that draws power (the cold store draws none since machines-2)
   // Wear: a running generator wears faster than one standing by; age adds to it.
   BD.fixtures(h).forEach((f) => { f.built = 1; f.wear = 0; });
-  st.hour = 24 * 5;
+  st.hour = 24 * 5 + 8;
   refreshPower(st, h);
   const wx = null;
   const run = BD.dailyWear(st, h, gen, wx);
-  mech.role = "farm";
+  h.powerOff = { [fz.id]: true };
+  st.hour += 24;
   refreshPower(st, h);
   const idle = BD.dailyWear(st, h, gen, wx);
-  mech.role = "operate";
+  h.powerOff = {};
   refreshPower(st, h);
   check(run > idle && idle >= 0, `a running generator wears ${run.toFixed(2)} a day, standing by ${idle.toFixed(2)}`);
   st.hour = 24 * 245;
+  gen.lastRan = st.hour; // it ran today
   const old = BD.dailyWear(st, h, gen, wx);
   check(old > run * 1.8, `an old one wears more (${old.toFixed(2)} at 8 months)`);
   check(BD.dailyWear(st, h, BD.fixtures(h)[0], { key: "fair", lo: -6 }) > BD.dailyWear(st, h, BD.fixtures(h)[0], { key: "fair", lo: 5 }) + 2, "frost wears the pump");
@@ -478,8 +479,8 @@ console.log("Breakdowns and repairs");
   gen.wear = 100; st.cards.length = 0;
   BD.breakdownsDaily(st);
   check(!!gen.broken && st.cards.some((c) => c.breakdown), "breaks at 100, with a card");
-  const ss = stationStatus(st, h, gen);
-  check(!ss.running && ss.broken, `a broken generator does not run (${ss.reason})`);
+  const ss = powerStatus(st, h).gens.find((g) => g.b === gen);
+  check(!ss.running && gen.broken, `a broken generator does not run (${ss.reason})`);
   // Repair: costs paid, worked only 08:00–20:00, then fixed.
   const card = st.cards.find((c) => c.breakdown);
   const s0 = { ...h.stock };

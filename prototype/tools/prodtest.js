@@ -3,8 +3,9 @@
 // an input, Off, the drying racks), the fallback (another role, another station, pinned people idle, back when
 // needed), idle stations make no Heat; repeating craft orders (keep N in the armory, the minimum-quality rule both
 // for queuing and for counting, supplies); power (generator standby, supply and demand, two generators, the
-// machine shop's 2 parts, the kitchen, the cold store in summer, floodlights without fuel, +2 radio range, fuel
-// paid once a day, the generator's Heat, no operator no power); the ethanol still (food and spoiled food → fuel,
+// machine shop's 2 parts, the kitchen, floodlights without fuel, +2 radio range; machines-2: no operator, its tank
+// filled by the morning's refuelling and burned by the hour, 2 fuel a day of running, the generator's Heat, switched
+// off no power, the cold store an ice house); the ethanol still (food and spoiled food → fuel,
 // a keep order); stewards (run one base and leave another alone, pinned people and areas switched off left
 // alone, one log line a day, taking over keeps everything, nothing while the autopilot runs); the governor using
 // the orders; and 200 days with all of it on two seeds with no NaN or negative stock.
@@ -94,10 +95,9 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   setStationOrder(st, h, bench.id, { mode: "forever" });
   check(mannedStations(st, h) === 1, "a running station does");
   check(/cleared/.test(clearStationOrder(st, h, bench.id)) && !h.orders[bench.id], "an order can be cleared");
-  // A generator makes nothing to count: Until falls back to Forever.
+  // A generator is no station (machines-2: no operator): it takes no station order (its fuel reserve is on the Power card).
   const gen = addBuilding(h, "generator");
-  setStationOrder(st, h, gen.id, { mode: "until", n: 5 });
-  check(stationOrder(h, gen).mode === "forever", "no Until order on a generator");
+  check(/gone/.test(setStationOrder(st, h, gen.id, { mode: "until", n: 5 })) && !(h.orders && h.orders[gen.id]), "no station order on a generator");
 
   // Fallback to a role, and back.
   const st2 = W();
@@ -214,56 +214,58 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   console.log("Power");
   const st = W();
   const h = quietHub(st);
+  st.hour = Math.ceil(st.hour / 24) * 24 + 8;
   const ppl = people(st, h);
   const gen = addBuilding(h, "generator");
-  op(ppl[0], gen);
   const fuel0 = h.stock.fuel;
   refreshPower(st, h);
-  check(h.stock.fuel === fuel0 && !h.power.running && /Standby/.test(stationStatus(st, h, gen).reason), "a generator with nothing to power stands by and burns nothing");
+  check(!h.power.running && gen.tank === POWER.tank && h.stock.fuel === fuel0 - POWER.tank, "a generator with nothing to power stands by: the morning's refuelling fills its tank, nothing burned");
+  st.hour += 3; refreshPower(st, h);
+  check(gen.tank === POWER.tank && h.stock.fuel === fuel0 - POWER.tank, "standing by it burns nothing");
   const shop = addBuilding(h, "machine_shop");
   op(ppl[1], shop);
   ppl[1].skills.mechanics = 6;
   let ps = powerStatus(st, h);
-  check(ps.demand === 2 && ps.supply === POWER.genOut && ps.running === 1, `a staffed machine shop draws 2: supply ${ps.supply}, demand ${ps.demand}`);
+  check(ps.demand === 2 && ps.supply === POWER.genOut && ps.running === 1 && !ppl.some((s) => s.station === gen.id), `a staffed machine shop draws 2, nobody on the generator: supply ${ps.supply}, demand ${ps.demand}`);
   const parts0 = h.stock.parts, scrap0 = h.stock.scrap;
   runStations(st, h);
-  check(h.stock.fuel === fuel0 - POWER.genFuel, `the generator burns ${POWER.genFuel} fuel for the day (${fuel0 - h.stock.fuel})`);
   check(h.stock.parts - parts0 === 2 && scrap0 - h.stock.scrap === 9, `powered machine shop: 2 parts from 9 scrap (${h.stock.parts - parts0} from ${scrap0 - h.stock.scrap})`);
-  refreshPower(st, h);
+  check(Math.abs(gen.tank - (POWER.tank - POWER.genFuel / 24)) < 1e-9 && h.stock.fuel === fuel0 - POWER.tank, "it burns its hour's fuel from the tank, none from the stores");
   productionHour(st);
-  check(h.stock.fuel === fuel0 - POWER.genFuel, "fuel is paid once a day, not every hour");
-  st.hour += 24;
-  refreshPower(st, h);
-  check(h.stock.fuel === fuel0 - 2 * POWER.genFuel, "and again the next day");
+  check(Math.abs(gen.tank - (POWER.tank - POWER.genFuel / 24)) < 1e-9, "once an hour, however often it is asked");
+  for (let i = 0; i < 24; i++) nextHour(st);
+  for (let i = 0; i < 24; i++) nextHour(st);
+  const burned = fuel0 - h.stock.fuel - gen.tank; // what went into the tank, less what is still in it
+  check(Math.abs(burned - 49 * POWER.genFuel / 24) < 1e-6 && h.power.running === 1 && h.refuel.day === day(st), `${POWER.genFuel} fuel a day of running (${burned.toFixed(2)} in 49 hours), from a tank refuelled each morning`);
   // Heat: a running generator is loud.
   const heatOn = baseHeat(st, h);
   check(generatorHeat(h) === POWER.genHeat, `a running generator adds ${POWER.genHeat} Heat`);
-  // Without an operator: no power, no Heat from it.
-  ppl[0].role = "rest"; ppl[0].station = null;
-  st.hour += 24;
+  // Switched off: no power, no Heat from it.
+  h.powerOff = { [gen.id]: true };
+  st.hour += 1;
   refreshPower(st, h);
-  check(!isPowered(h, shop) && h.power.supply === 0, "no operator on the generator: no power");
-  check(baseHeat(st, h) <= heatOn - POWER.genHeat - 3, `quieter without it (${heatOn} → ${baseHeat(st, h)})`);
+  check(!isPowered(h, shop) && h.power.supply === 0, "the generator switched off: no power");
+  check(baseHeat(st, h) <= heatOn - POWER.genHeat, `quieter without it (${heatOn} → ${baseHeat(st, h)})`);
   const parts1 = h.stock.parts;
   runStations(st, h);
   check(h.stock.parts - parts1 === 1, "the unpowered machine shop makes 1 part");
-  op(ppl[0], gen);
-  // Every user: cold store, radio, floodlights, kitchen (one more), and a second generator.
-  for (const t of ["coldstore", "radio", "floodlights", "kitchen", "kitchen"]) addBuilding(h, t);
+  h.powerOff = {};
+  // Every user: radio, floodlights, kitchen (two), a vacuum sealer, and a second generator. The cold store draws nothing.
+  for (const t of ["coldstore", "radio", "floodlights", "kitchen", "kitchen", "sealer"]) addBuilding(h, t);
   const kitchens = stations(h).filter((x) => x.type === "kitchen");
   op(ppl[2], kitchens[0]); op(ppl[3], kitchens[1]);
   ps = powerStatus(st, h);
-  check(ps.demand === 1 + 1 + 1 + 2 + 1 + 1 && ps.supply === POWER.genOut, `demand 7 against one generator's 6 (${ps.demand}/${ps.supply})`);
-  check(ps.users.filter((u) => u.served).length === 5 && !ps.users.find((u) => u.b.id === kitchens[1].id).served, "served in order while it lasts: the last kitchen goes without");
+  check(ps.demand === 1 + 1 + 2 + 1 + 1 + 1 && ps.supply === POWER.genOut && !ps.users.some((u) => u.b.type === "coldstore"), `demand 7 against one generator's 6, the cold store none (${ps.demand}/${ps.supply})`);
+  check(ps.users.filter((u) => u.served).length === 5 && !ps.users.find((u) => u.b.type === "sealer").served, "served in order while it lasts: the sealer, last, goes without");
   const gen2 = addBuilding(h, "generator");
-  op(ppl[4], gen2);
+  refreshPower(st, h);
   ps = powerStatus(st, h);
-  check(ps.running === 2 && ps.supply === 12 && ps.users.every((u) => u.served), "a second staffed generator covers it");
+  check(gen2.tank > 0 && ps.running === 2 && ps.supply === 12 && ps.users.every((u) => u.served), "a second generator (refuelled the hour it stands) covers it");
   st.hour += 24;
   refreshPower(st, h);
   // Effects.
-  check(poweredType(h, "coldstore") && storeSpaces(h).find((x) => x.key === "coldstore").kind === "freezer", "the powered cold store is a freezer");
-  check(storeRate("freezer", 26) === 0.002 && storeRate("cold", 26) === 0.012, `summer: 0.2% a day powered, 1.2% without`);
+  check(!poweredType(h, "coldstore") && storeSpaces(h).find((x) => x.key === "coldstore").kind === "cold", "the cold store is an ice house, generator or not");
+  check(storeRate("cold", 26) === 0.012, "summer: 1.2% a day in the cold store");
   const node = radioNodes(st).find((n) => n.base === h);
   // A radio station reaches RADIO_RANGE (12, world.js), +RADIO_BOOST (2) on generator power: 14.
   check(node && poweredType(h, "radio") && !node.military && node.range === RADIO_RANGE + RADIO_BOOST, `radio coverage ${RADIO_RANGE} + ${RADIO_BOOST} on power (${node && node.range})`);
@@ -278,11 +280,12 @@ const nextHour = (st) => { st.hour += 1; productionHour(st); };
   // Switching a building off.
   h.powerOff = { [kitchens[0].id]: true };
   check(powerStatus(st, h).demand === 6, "a building switched off draws nothing");
-  // No generator fuel: no power.
+  // No fuel for the generators: their tanks run dry, no power.
   st.hour += 24;
-  h.stock.fuel = 1;
+  h.stock.fuel = 0; gen.tank = 0; gen2.tank = 0;
   refreshPower(st, h);
-  check(h.power.supply === 0 && /fuel/.test(stationStatus(st, h, gen).reason), "no fuel, no power");
+  ps = powerStatus(st, h);
+  check(h.power.supply === 0 && ps.gens.every((g) => /Tank dry/.test(g.reason)), `no fuel, no power (${ps.gens[0].reason})`);
 }
 
 // ---------- 4. the ethanol still ----------
@@ -403,7 +406,7 @@ function makeOutpost(state, staff) {
 
 // ---------- 6. long runs ----------
 {
-  console.log(`Long runs (${longDays} days, seeds ${seeds.join(", ")}): a steward with two pinned operators, and the dev autopilot`);
+  console.log(`Long runs (${longDays} days, seeds ${seeds.join(", ")}): a steward with a pinned operator, and the dev autopilot`);
   for (const seed of seeds) for (const mode of ["steward", "autopilot"]) {
     const st = W(seed);
     const h = hub(st);
@@ -415,12 +418,10 @@ function makeOutpost(state, staff) {
     addCraftOrder(st, h, "dressings", 6, 0);
     setStationOrder(st, h, "rack", { mode: "keep", key: "food", n: 120 });
     if (mode === "steward") {
-      // Two pinned operators keep the generator and the machine shop going under the steward.
-      const [g0, m0] = atBase(st, h.id).sort((x, y) => y.skills.mechanics - x.skills.mechanics);
+      // A pinned operator keeps the machine shop going under the steward (the generator needs nobody: machines-2).
+      const [m0] = atBase(st, h.id).sort((x, y) => y.skills.mechanics - x.skills.mechanics);
       const sts = stations(h);
       op(m0, sts.find((x) => x.type === "machine_shop"));
-      op(g0, sts.find((x) => x.type === "generator"));
-      setPinned(st, g0, true);
       setPinned(st, m0, true);
       setSteward(st, h, true);
     } else setAutopilot(st, true, "balanced");

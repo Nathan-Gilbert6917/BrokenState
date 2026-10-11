@@ -55,7 +55,7 @@ import { relation, warsOf } from "./diplomacy.js";
 import { sameBloc } from "./blocs.js"; // AI blocs: food bought from a member first
 import { atWarWithYou } from "./playerwars.js"; // a war with you presses on desertion
 import { noteStrife, SPLINTER } from "./splinters.js"; // deserters, and the dead of a fight, stir up strife (splinter bands)
-import { groupsBuild, sickbayTier, sleepingRough } from "./groupworks.js"; // bare-start groups build their sick bays (groupworks.js sickbayWork); the ill (illDaily)
+import { groupsBuild, sickbayTier, sleepingRough, groupFreeParts } from "./groupworks.js"; // bare-start groups build their sick bays (groupworks.js sickbayWork); the ill (illDaily)
 import { BUILDINGS } from "./buildings.js";
 import { hospitalTypes } from "./medical.js";
 import { USE, CAP_USE, CAP_STUDY, CAP_WARD, xpNeed, SKILL_MAX } from "./skills.js";
@@ -354,7 +354,7 @@ export function repairGear(state, f, d = day(state)) {
   for (const it of worn) {
     if (n >= Math.max(1, Math.round((f.pop / R.perPop) * weightOf(f, "repair")))) break;
     const p = groupRepairPlan(it, skill);
-    if (!p || (f.stock.parts || 0) < p.parts || (f.stock.scrap || 0) < p.scrap) continue;
+    if (!p || groupFreeParts(f) < p.parts || (f.stock.scrap || 0) < p.scrap) continue; // machines-2: not the parts kept for their machines
     f.stock.parts = (f.stock.parts || 0) - p.parts;
     f.stock.scrap -= p.scrap;
     if (it.durBase == null) it.durBase = itemDurMax(it);
@@ -380,7 +380,7 @@ function repairVehicles(state, f) {
   if (workshopFactor(state, f) < 1) return;
   const V = CARE.VEHICLE;
   const v = factionVehicles(f).filter((x) => x.condition < V.below && !x.destroyed).sort((a, b) => a.condition - b.condition)[0]; // a wreck (launchers.js) is past repair
-  if (!v) return;
+  if (!v) return; // machines-2: car parts first; machine parts only by your two-for-one fallback (vehicles.js carPartsCost), the free ones before the machines' earmark (groupworks.js groupMachParts)
   const { cost, ok } = groupCost(f, { carparts: V.carparts, scrap: V.scrap }, groupStockKey);
   if (!ok) return;
   for (const [k, q] of Object.entries(cost)) f.stock[k] -= q;

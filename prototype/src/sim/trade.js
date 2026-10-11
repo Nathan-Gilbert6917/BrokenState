@@ -46,7 +46,7 @@ import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedK
 import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGear } from "./radiotrade.js"; // the trade window over the radio
 import { intoArsenalFromShelf, shelfSurplus } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
 import { swapGun } from "./gundist.js";
-import { groupMachineCount } from "./groupworks.js"; // freezer-parts: their machines want spare parts // the gun distribution: which gun a group's shelf holds
+import { groupMachineCount, groupMachParts } from "./groupworks.js"; // freezer-parts: their machines want spare parts // the gun distribution: which gun a group's shelf holds
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -219,7 +219,8 @@ export function available(f, key, { kinds = false } = {}) {
   if (isRoundKey(key)) return roundsAvailable(f, key);
   const split = pooled(f) && (POOLED_KINDS.includes(key) || key === "parts");
   if (split && !kinds && key !== "parts") return 0;
-  const stock = split && kinds ? stockOf(f, key) * partShare(f, key) : stockOf(f, key);
+  const held = split ? Math.max(0, stockOf(f, key) - groupMachParts(f)) : stockOf(f, key); // machines-2: the workshop's parts kept for their machines are not for sale
+  const stock = split && kinds ? held * partShare(f, key) : held;
   return Math.max(0, Math.floor(stock - (RESERVE[poolKey(key)] || 0) * f.pop * (f.atWar ? WAR_RESERVE[poolKey(key)] || 1 : 1)));
 }
 // A round key they can spare: its share of the ammo they can spare (they keep their ammo reserve over all of it).

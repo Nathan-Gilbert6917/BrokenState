@@ -6,7 +6,7 @@ import { baseById, day, atBase, skill, survivorById } from "../sim/world.js";
 import { tileLabel } from "../sim/parties.js";
 import { blueprintRows, lockNote, craftBookRows } from "../sim/blueprints.js";
 import { keyRing } from "../sim/locks.js";
-import { repairRows, repairPlan, startRepair, cancelRepair, reassignRepair, fixtureById, costText, FIXTURES, WEAR, RAID_DAMAGE, repairBill, startAllRepairs, brokenAt, jobFor } from "../sim/breakdowns.js";
+import { repairRows, repairPlan, startRepair, cancelRepair, reassignRepair, fixtureById, costText, fxDef, WEAR, RAID_DAMAGE, repairBill, startAllRepairs, brokenAt, jobFor } from "../sim/breakdowns.js";
 import { vehiclesAtBase, canRepair, carPartsCost, carPartsText } from "../sim/vehicles.js";
 import { activeCrashes, CRASH_KINDS, daysLeft } from "../sim/crashes.js";
 
@@ -66,7 +66,7 @@ export function repairsTab(state, base) {
   const brokenHtml = broken.length ? broken.map((r) => {
     const j = r.job;
     const who = j && j.who != null ? survivorById(state, j.who) : null;
-    const able = people.filter((s) => skill(s, "mechanics") >= (FIXTURES[r.fx.type][j ? j.method : "repair"] || {}).min);
+    const able = people.filter((s) => skill(s, "mechanics") >= (fxDef(r.fx)[j ? j.method : "repair"] || {}).min);
     return `<div class="card small">
       <div class="spread"><b>⚠ ${esc(r.name)}</b><span class="muted">broken since day ${r.fx.broken.day} (${esc(r.fx.broken.cause)})</span></div>
       <div class="danger">${esc(r.def.what[0].toUpperCase() + r.def.what.slice(1))}.</div>

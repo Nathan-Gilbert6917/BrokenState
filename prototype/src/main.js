@@ -68,6 +68,7 @@ import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { queueReloadUpgrade } from "./sim/reloading.js"; // the reloading bench
+import { queueCannerUpgrade } from "./sim/buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
@@ -805,6 +806,7 @@ const actions = {
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
   "bunk-expand": (d) => { ui.baseMsg = queueBunkhouseExpand(state, baseOf(d), Number(d.id)); },
   "reload-up": (d) => { ui.baseMsg = queueReloadUpgrade(state, baseOf(d), Number(d.id)); }, // sim/reloading.js: an ammo bench into a reloading bench
+  "canner-up": (d) => { ui.baseMsg = queueCannerUpgrade(state, baseOf(d), Number(d.id)); }, // sim/buildings.js: a pressure canner fitted to a preserving room (machines-2)
   demolish: (d) => {
     const id = Number(d.id), b = baseOf(d), what = b && b.buildings.find((x) => x.id === id);
     const name = what && BUILDINGS[what.type] ? BUILDINGS[what.type].name : "this building";
