@@ -85,7 +85,7 @@ function snapWork(state) {
   return {
     has: !!w, next: w ? w.next : 1, newcomers: w ? w.newcomers ?? null : null, roles: w ? w.roles.map(roleSettings) : [],
     sickRest: state.sickRest ?? null, // the Work tab's "Sick people rest" (sim/sickrest.js)
-    people: state.survivors.filter((s) => s.alive).map((s) => [s.id, s.work ? clone(s.work) : null, s.role]),
+    people: state.survivors.filter((s) => s.alive).map((s) => [s.id, s.work ? clone(s.work) : null, s.role, s.cookPlus || null]), // cookPlus: a Cook + second job (sim/kitchen.js)
   };
 }
 
@@ -150,10 +150,11 @@ function undoWork(state, snap) {
     ww.next = Math.max(ww.next || 1, snap.next || 1);
     ww.newcomers = snap.newcomers;
   }
-  for (const [id, work, role] of snap.people) {
+  for (const [id, work, role, plus] of snap.people) {
     const s = survivorById(state, id);
-    if (!s || !s.alive || (same(s.work || null, work) && s.role === role)) continue;
+    if (!s || !s.alive || (same(s.work || null, work) && s.role === role && (s.cookPlus || null) === (plus || null))) continue;
     if (work) s.work = clone(work); else delete s.work;
+    if (plus) s.cookPlus = plus; else delete s.cookPlus;
     s.role = role;
     s.task = null;
   }

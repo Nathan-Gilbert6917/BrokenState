@@ -59,7 +59,7 @@ import { tripState, tripTarget } from "./jobtrips.js"; // where someone out on a
 import { fetchWaterWhy, fetchWaterDay } from "./economy.js"; // Fetch water
 
 import { MEALS, MEAL_WORK_SHARE } from "./meals.js";
-import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity } from "./kitchen.js"; // the Kitchen's cooks and its hot meals
+import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity, cookPlusOf, cookShiftRole } from "./kitchen.js"; // the Kitchen's cooks and its hot meals
 
 // Icons by job, and by kind for everything that is not a job.
 export const JOB_ICONS = { water: "🪣", wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕", cook: "🍳" };
@@ -98,10 +98,13 @@ export function describeActivity(state, s, h = hourOfDay(state), opts = {}) {
   if (!t && s.role === "guard" && underAttack(state, base)) return act("guard", "Manning the walls", "The base is on alert: the guards are on the walls.", "guard");
   const ws = onWatchNow(state, base, s, h);
   if (ws) return act("guard", `On watch (${ws.name})`, "Their shift on the base's watch roster (Defence tab).", "guard");
-  // The Kitchen's cooks (kitchen.js): up at 05:00 for breakfast, serving at the meals, until 22:00.
-  const ck = (t ? t.t === "meals" : s.role === "cook") && hasKitchen(base) && !(t && t.t === "sleep") ? cookActivity(h) : null;
+  // A Manual "Cook + second job" (kitchen.js s.cookPlus): Cook in the cooking hours, the second job the rest of the day.
+  const role = cookPlusOf(state, s) && !s.sickWas && !s.watchWas && !s.jailWas ? cookShiftRole(base, s, h) : s.role;
+  // The Kitchen's cooks (kitchen.js): a full-day cook up at 05:00 for breakfast, serving at the meals, until 22:00; a
+  // part-time one (work priorities, Cook + second job) in the cooking hours.
+  const ck = (t ? t.t === "meals" : role === "cook") && hasKitchen(base) && !(t && t.t === "sleep") ? cookActivity(h) : null;
   if (ck) return act("work", ck.text, ck.why, "cook");
-  const meal = mealAt(s.role, h);
+  const meal = mealAt(role, h);
   const outNow = h === hourOfDay(state) && !!s.trip && s.trip.leave <= state.hour && state.hour < s.trip.home; // out on a job trip (jobtrips.js): the trip's line, they eat when back
   if (meal && !outNow && s.role !== "guard" && !(t && (t.t === "sleep" || t.t === "guard")) && !sleepHour(state, s, h) && !sleepingIn(state, base, s, h)) {
     if (edibleFood(base) > 0 || (base.stock.food || 0) > 0) {
@@ -117,7 +120,7 @@ export function describeActivity(state, s, h = hourOfDay(state), opts = {}) {
     if (t.t === "rest") return act("hurt", "Resting", t.why);
   }
   if (sleepingIn(state, base, s, h)) return act("sleep", "Sleeping off the watch", `Owes ${Math.ceil(s.tired || 0)} hours of sleep after a night watch.`);
-  const job = s.role;
+  const job = role;
   if (job !== "guard" && sleepHour(state, s, h)) {
     const name = ROLES[job] ? ROLES[job].name : "work";
     return act("sleep", "Asleep", job === "rest" ? "Asleep for the night." : `Asleep for the night; ${name} again in the morning.`, job);

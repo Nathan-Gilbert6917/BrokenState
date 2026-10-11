@@ -291,7 +291,7 @@ section("New mood sources, and the breakdown adds up");
   h.stock.food = 30; noteMeals(st, h);
   check(!factor(st, s, /preserved/), "fresh food again: gone");
   addBuilding(h, "kitchen");
-  check(factor(st, s, /Hot meals/)?.v === MOODF.hotMeals, "a kitchen: hot meals +1");
+  check(!factor(st, s, /Hot meals/), "a preserving room: no hot meals (only the Kitchen serves them, kitchen-plus)");
   addBuilding(h, "common_room");
   check(factor(st, s, /Common room/)?.v === MOODF.common, "a common room: +1.5");
   while (residents(st, h.id).length < 30) addPerson(st, h, 50);

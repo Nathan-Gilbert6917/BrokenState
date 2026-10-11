@@ -143,7 +143,7 @@ import { crawlTurned } from "./citycrawl.js"; // one of you turned on a city blo
 import { hiveCrawlTurned } from "./hivecrawl.js"; // one of you turned inside a hive
 import { prisonersAt, inCell, taskOf, dropPrisoner } from "./prisoners.js";
 import { leaveMap } from "./visitors.js";
-import { kitchenService } from "./kitchen.js"; // the Kitchen boils the meals' water (purifyCap) and cooks like a cook fire (baseCooks)
+import { kitchenService, kitchenCold } from "./kitchen.js"; // the Kitchen boils the meals' water (purifyCap) and cooks like a cook fire (baseCooks)
 import { fireLandOk, WOOD, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
 
 export const WORM = {
@@ -484,8 +484,9 @@ export function purifyText(state, base) {
 }
 
 // ---------- meat ----------
-// A base cooks what it eats: a cook fire, a preserving room, the Kitchen (kitchen.js: cook or no cook), or a shelter with its fire lit.
-export const baseCooks = (base) => count(base, "cookhouse") > 0 || count(base, "kitchen") > 0 || count(base, "canteen") > 0 || (isShelter(base) && fireLit(base));
+// A base cooks what it eats: a cook fire, a preserving room, the Kitchen while its stove is lit (kitchen.js: cook or no
+// cook; a cold stove, out of firewood, cooks nothing), or a shelter with its fire lit.
+export const baseCooks = (base) => count(base, "cookhouse") > 0 || count(base, "kitchen") > 0 || (count(base, "canteen") > 0 && !kitchenCold(base)) || (isShelter(base) && fireLit(base));
 export const wormMeatAt = (base) => Math.max(0, Math.min(base.wormMeat || 0, base.meat || 0, base.stock.food || 0));
 export const wormMeatIn = (cargo) => (cargo ? Math.max(0, Math.min(cargo.wormMeat || 0, cargo.meat || 0, (cargo.supplies && cargo.supplies.food) || 0)) : 0);
 // Crops and forage with eggs in the base's fresh food (grown or gathered on land at CROP_MIN+ infection): what is

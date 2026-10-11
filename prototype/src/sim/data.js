@@ -508,17 +508,18 @@ export const siteDanger = (loc) => {
   return loc.zone === "town" || loc.zone === "rural" ? Math.min(1, d) : d;
 };
 
-export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership", "crafting", "melee"];
-// The skills a new survivor draws with the world's dice (world.js makeSurvivor): every skill but Crafting and Melee,
-// which came later and are rolled with dice of their own (appearance.js craftingStart, meleeStart), so the same seed
-// still makes the same people. Melee is last in SKILLS so every loop over SKILLS that draws dice draws the older
-// skills' dice as it did.
-export const ROLLED_SKILLS = SKILLS.filter((k) => k !== "crafting" && k !== "melee");
+export const SKILLS = ["shooting", "stealth", "scavenging", "scouting", "medicine", "mechanics", "farming", "speech", "leadership", "crafting", "melee", "cooking"];
+// The skills a new survivor draws with the world's dice (world.js makeSurvivor): every skill but Crafting, Melee and
+// Cooking, which came later and are rolled with dice of their own (appearance.js craftingStart, meleeStart,
+// cookingStart), so the same seed still makes the same people. Melee and Cooking are last in SKILLS so every loop over
+// SKILLS that draws dice draws the older skills' dice as it did.
+export const ROLLED_SKILLS = SKILLS.filter((k) => k !== "crafting" && k !== "melee" && k !== "cooking");
 export const SKILL_NAMES = {
   shooting: "Shooting", stealth: "Stealth", scavenging: "Scavenging", scouting: "Scouting",
   medicine: "Medicine", mechanics: "Mechanics", farming: "Farming", speech: "Speech", leadership: "Leadership",
   crafting: "Crafting", // crafting.js: the quality, speed and XP of everything made by hand (each recipe's own skill is only its minimum)
   melee: "Melee", // world.js MELEE_SKILL: to hit and damage with melee weapons and bare hands, takedowns, a melee wielder's fighting strength
+  cooking: "Cooking", // kitchen.js (2026-10-10): how far the Kitchen's hot meals stretch the food and lift the mood; learned at the stove
 };
 
 // Survivor traits. bad: a drawback; neutral: a real trade-off, good and bad at once (worth no points under Customize);
@@ -542,7 +543,7 @@ export const TRAITS = {
   quickheal:    { name: "Quick Healer",  desc: "Wounds heal 30% faster while resting (at a base, in a hospital bed, in camp, as a prisoner)" },
   strongback:   { name: "Strong Back",   desc: "Max load 48 kg instead of 40, and loads feel 10% lighter (a better load band)" },
   fleet:        { name: "Fleet-Footed",  desc: "+1 tile a move in battle, and +10% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)" },
-  farmraised:   { name: "Farm-Raised",   desc: "+3 Farming" },
+  farmraised:   { name: "Farm-Raised",   desc: "+3 Farming, +1 Cooking" },
   persuasive:   { name: "Persuasive",    desc: "+3 Speech (better prices, talks, recruiting)" },
   ironwill:     { name: "Iron Will",     desc: "Half as likely to break down (small breaks and mental breaks) or walk out when mood is low" },
   unlucky:      { name: "Unlucky",       bad: true, desc: "-1 to every skill" },
