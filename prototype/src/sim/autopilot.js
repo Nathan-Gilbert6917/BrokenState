@@ -13,7 +13,7 @@
 // startOrder, saveSupplyRun ...), plays by what the player knows of the map (knowledge snapshots, markers,
 // known groups), and never draws from state.rng. Turning it off hands everything back as it is.
 import { FOODS, FOOD_KEYS, foodIn, foodSplit, unitsOf, qtyOf, sellPick, foodNeeds, foodUnits } from "./foods.js"; // food by type (foods.js)
-import { gearOutdoorWorkers } from "./tripgear.js"; // the outdoor workers' kit for their trips (trips-plus #2)
+import { gearOutdoorWorkers, outReady, tripKit } from "./tripgear.js"; // the outdoor workers' kit for their trips (trips-plus #2)
 import { govFieldWorks, fieldJobs, govSnares, snareLinesWanted, playerWorks, gatheredScrap } from "./fieldworks.js"; // field works: the governor's and a base leader's share
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
@@ -2004,7 +2004,7 @@ function threatAt(state, base) {
 // day food was not plentiful); share = the most of the people here on the plots while the food is comfortable;
 // winterMargin = the winter outlook's safety margin (15% of the hungry gap's food) times this left over to count as
 // comfortable.
-export const FARM_AP = { extra: 1.6, share: 0.35, winterMargin: 2, plotHands: 0.75 }; // plotHands: planRoles farmShort
+export const FARM_AP = { extra: 1.6, share: 0.35, winterMargin: 2, plotHands: 1.0 }; // plotHands: planRoles farmShort
 // The farmers short of plots (planRoles g.farmShort) is held this many hours once seen; plotsShort reads it.
 const FARM_SHORT_HOLD = 72;
 const plotsShort = (state, base) => !!(state.governor && state.governor.farmShort && state.governor.farmShort[base.id]);
@@ -3132,6 +3132,9 @@ function equipFromArmory(state, base) {
       if (!items.length) break;
       const best = items.sort((a, b) => itemScore(s, b) - itemScore(s, a))[0];
       if (itemScore(s, best) < itemScore(s, s.gear[slot]) + (s.gear[slot] ? 0.3 : 0.05)) continue; // only real upgrades
+      // Someone with a weapon that works keeps it over a gun with nothing to shoot here (tripgear.js outReady: the outdoor kit
+      // swapped it back for the knife within the hour and the two hand-outs took turns, every hour).
+      if (slot === "weapon" && !outReady(base, s, best) && tripKit(state, base, s).ready) continue;
       base.armory.splice(base.armory.indexOf(best), 1);
       if (s.gear[slot]) base.armory.push(s.gear[slot]);
       s.gear[slot] = best;
