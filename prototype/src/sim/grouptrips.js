@@ -19,6 +19,7 @@ import { woodAbundance, woodLevel } from "./woodcutting.js";
 import { kitFactor } from "./arsenal.js"; // their kit: how well their workers out on the land are armed (trips-plus #2)
 import { woundGroup } from "./groupcare.js";
 import { hash01 } from "./skills.js";
+import { localId } from "./world.js"; // ids are process-wide: the dice take the world-local one
 import { FACTION_TYPES } from "./data.js";
 
 // foodRef / woodRef: a usual base's land score (measured over 60 worlds' group bases: the median), so the median base
@@ -102,9 +103,9 @@ export function groupTripLosses(state, f, d = Math.floor(state.hour / 24)) {
   if (!(out > 0)) return res;
   const g = groupGear(f);
   res.out = Math.round(out * 10) / 10;
-  if (hash01("grouptripdead", state.seed, f.id, d) < out * GROUP_TRIPS.lossDay / (g * g) && f.pop > 1) { f.pop -= 1; res.dead = 1; }
+  if (hash01("grouptripdead", state.seed, localId(state, f.id), d) < out * GROUP_TRIPS.lossDay / (g * g) && f.pop > 1) { f.pop -= 1; res.dead = 1; }
   const w = out * GROUP_TRIPS.woundDay / g;
-  res.wounded = Math.floor(w) + (hash01("grouptripwound", state.seed, f.id, d) < w - Math.floor(w) ? 1 : 0);
+  res.wounded = Math.floor(w) + (hash01("grouptripwound", state.seed, localId(state, f.id), d) < w - Math.floor(w) ? 1 : 0);
   if (res.wounded) woundGroup(f, res.wounded);
   f.tripLoss = { dead: (f.tripLoss && f.tripLoss.dead || 0) + res.dead, wounded: (f.tripLoss && f.tripLoss.wounded || 0) + res.wounded };
   return res;

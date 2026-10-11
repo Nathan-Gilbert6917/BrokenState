@@ -28,7 +28,7 @@
 import { Rng } from "./rng.js";
 import { hash01, gainXp } from "./skills.js";
 import { GEAR } from "./data.js";
-import { log, hurt, skill, combatPower, addCard } from "./world.js";
+import { log, hurt, skill, combatPower, addCard, localId } from "./world.js";
 import { woundMult, accidentMult } from "./traits.js";
 import { armorMult, carriedSpots, newItem } from "./inventory.js";
 import { addCondition, CONDITIONS } from "./health.js";
@@ -37,7 +37,7 @@ import { gunMods } from "./gunmods.js";
 import { tripKit } from "./tripgear.js";
 import { TRIP_JOBS, paceOf } from "./tripland.js";
 import { tileLabel } from "./parties.js";
-import { HUNT, meatAt } from "./hunting.js";
+import { HUNT, meatAt, huntMixOf } from "./hunting.js";
 import { stewardOn } from "./steward.js";
 import { cutShort, loadText } from "./jobtrips.js";
 import * as Weather from "./weather.js";
@@ -103,8 +103,9 @@ const hod = (h) => ((Math.floor(h) % 24) + 24) % 24;
 const wpick = (rng, list) => rng.weighted(list, (x) => Math.max(0, x.w));
 const sumStock = (st, want) => Object.entries(want).every(([k, q]) => (st[k] || 0) >= q);
 const managed = (state, base) => !state.autopilot && !stewardOn(base);
-// The trip's own dice: the seed, the person, the day, the trip of the day and its job (never the world's rng).
-const diceFor = (state, s, t, salt = "") => new Rng(Math.floor(hash01("tripev", state.seed, s.id, Math.floor(t.leave / 24), t.n || 0, t.job, salt) * 4294967296));
+// The trip's own dice: the seed, the person, the day, the trip of the day and its job (never the world's rng; the
+// person by their world-local id: ids are process-wide, tools/sameseedtest.js).
+const diceFor = (state, s, t, salt = "") => new Rng(Math.floor(hash01("tripev", state.seed, localId(state, s.id), Math.floor(t.leave / 24), t.n || 0, t.job, salt) * 4294967296));
 export const evStats = (state) => {
   if (!state.stats) state.stats = {};
   return state.stats.tripEv || (state.stats.tripEv = { trips: 0, n: 0, kinds: {}, hurt: 0, killed: 0, fled: 0, dropped: 0, won: 0, shots: 0, found: 0, cards: 0, meat: 0, lostHours: 0 });
@@ -158,9 +159,13 @@ function kindWeights(state, base, s, t, phase, h) {
 }
 
 // ---------- fighting and getting away ----------
-// Their fighting worth on a trip: combatPower with a gun or bow that has nothing to shoot counted as a club.
-export function tripPower(state, base, s) {
+// Their fighting worth on a trip: combatPower with a gun or bow that has nothing to shoot counted as a club. A gun is
+// also held quiet (a club) where shots are not wanted: a hunter while the base's hunting mix has no guns (Quiet, Bows,
+// Traps: hunting.js huntMixOf), anyone from a base running silent (hiding.js).
+export const holdFire = (base, t) => !!(base && (base.silent || (t && t.job === "hunt" && huntMixOf(base).guns <= 0)));
+export function tripPower(state, base, s, t = null) {
   const k = tripKit(state, base, s);
+  if (k.gun && k.ready && holdFire(base, t)) { k.ready = false; k.quiet = true; }
   let p = combatPower(s);
   if (k.weapon && !k.ready) { const d = GEAR[k.weapon.key]; p = Math.max(0.5, p - (d.power || 0) * (k.weapon.quality || 1) + 0.8); }
   return { p, k };
@@ -317,7 +322,7 @@ export function fireTripEvent(state, base, s, t, now) {
 // The choices of a big moment: [{ key, label, hint, def? }] (the default first-marked).
 function choicesFor(state, base, s, t) {
   const ev = t.ev;
-  const { p: my, k } = tripPower(state, base, s);
+  const { p: my, k } = tripPower(state, base, s, t);
   const phase = ev.phase;
   if (ev.kind === "animal") {
     const A = TRIP_ANIMALS[ev.animal];
@@ -348,7 +353,7 @@ function choicesFor(state, base, s, t) {
 // What the worker (or the governor) picks by themselves.
 function autoChoice(state, base, s, t) {
   const ev = t.ev;
-  const { p: my, k } = tripPower(state, base, s);
+  const { p: my, k } = tripPower(state, base, s, t);
   if (ev.kind === "animal") {
     const A = TRIP_ANIMALS[ev.animal];
     const r = my / (my + A.power * ev.n);
@@ -416,7 +421,7 @@ export function settle(state, base, s, t, choice, now, how = "") {
   const pick = choice || autoChoice(state, base, s, t);
   const st = evStats(state);
   const T = dayTally(state, base, now);
-  const { p: my, k } = tripPower(state, base, s);
+  const { p: my, k } = tripPower(state, base, s, t);
   const timeout = how === "timeout" ? ` (no word came: ${first(s)} did what seemed best)` : "";
   let text = "", level = "info", pop = "!";
   const hurtText = (w) => (w.dead ? "" : w.dmg > 0 ? ` (−${w.dmg + w.bled} health${w.aid ? `, stopped the bleeding with a ${w.aid}` : w.bled ? ", bleeding" : ""})` : "");
@@ -647,7 +652,7 @@ export function tripEventsDaily(state, base) {
     for (const h of state.hordes || []) {
       if (!["roam", "border", undefined, null].includes(h.role)) continue;
       if (state.grid.distance(h.tile, Number(tile)) > HUNT.drawRange || h.tile === Number(tile)) continue;
-      if (hash01("tripdraw", state.seed, base.tripTally.day, tile, h.id ?? h.tile) < HUNT.drawChance * quiet) { h.target = Number(tile); h.path = null; drawn++; }
+      if (hash01("tripdraw", state.seed, base.tripTally.day, tile, h.id != null ? localId(state, h.id) : h.tile) < HUNT.drawChance * quiet) { h.target = Number(tile); h.path = null; drawn++; }
     }
   }
   return drawn;
