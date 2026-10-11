@@ -129,7 +129,7 @@ const FLOORED = new Set(["open", "counter", "cabinet", "shelf", "locker", "crate
 // Furniture that stands on a building's upper floor (sim/buildingmaps.js: a cell with a height that is not walked on)
 // is drawn on a slab of the upper floor, raised with it.
 const FURNITURE = new Set(["counter", "cabinet", "shelf", "locker", "crate", "rack", "table", "bed", "hay", "bars"]);
-FLOORED.add("gunsafe"); FURNITURE.add("gunsafe"); // sim/locks.js gun safes: a steel box standing on the floor
+FLOORED.add("gunsafe"); FURNITURE.add("gunsafe"); FLOORED.add("cart"); // sim/carts.js: a cart parked on a cell (drawn as its sprite, ui/ground.js) // sim/locks.js gun safes: a steel box standing on the floor
 // Buildings: 4-connected cells with floorboards (houses, shops, the base's buildings; flat-roofed blocks are solid).
 const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
 function sceneFor(b) {

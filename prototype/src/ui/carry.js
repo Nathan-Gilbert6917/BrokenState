@@ -11,10 +11,10 @@ import { partyMembers, partyTile, cargoRoom } from "../sim/parties.js";
 import { parseLoc, placeOfLoc, itemAt, isCarryable, moveItem, itemLoad } from "../sim/inventory.js";
 import {
   COLLECT, HANDS_KG, PLACE_NAMES, holdView, unitKg, stackText, recText, qtyText, holdName, moveHeld, dropHeld, dropHands,
-  dropItemToGround, pickUpGround, pickUpAll, groundAt, groundItemText, collectInfo, roomAt,
+  dropItemToGround, pickUpGround, pickUpAll, groundAt, groundItemText, collectInfo, roomAt, setCartHelp,
 } from "../sim/carry.js";
 import { supplyName } from "../sim/itemnames.js";
-import { cartSpec, feltKg } from "../sim/carts.js"; // a wheelbarrow, a hand cart: a place for the supplies
+import { cartSpec, feltKg, cartBroken, cartFrac } from "../sim/carts.js"; // a wheelbarrow, a hand cart: a place for the supplies
 import { isRoundKey } from "../sim/rounds.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -113,7 +113,7 @@ export function holdSection(state, ui, s) {
     ${placeRow(ui, pid, s.id, "pocket", me.pocket, ` <span class="muted">(${me.pocketUsed} of ${me.freePockets} free pocket${me.freePockets === 1 ? "" : "s"} used)</span>`)}
     ${placeRow(ui, pid, s.id, "pack", me.pack, me.freePack || me.packUsed ? ` <span class="muted">(${me.packUsed} of ${me.freePack} free pack slot${me.freePack === 1 ? "" : "s"} used)</span>` : ` <span class="muted">(no pack, or it is full of items)</span>`)}
     ${me.cartItem ? "" : placeRow(ui, pid, s.id, "hands", me.hands, ` <span class="${me.handsKg > 0 ? "warn" : "muted"}">(${kg(me.handsKg)}/${HANDS_KG} kg${me.handsKg > 0 ? ": hands full, no weapon in a fight until it is set down" : ""})</span>`)}
-    ${me.cartItem ? placeRow(ui, pid, s.id, "cart", me.cart, ` <span class="muted"${tip(`The team's supplies in the ${me.cartItem.name.toLowerCase()}: ${first(s)} feels ${Math.round(cartSpec(me.cartItem).frac * 100)}% of them. Its items are in its grid above; together up to ${cartSpec(me.cartItem).cap} kg.`)}>(${esc(me.cartItem.name)}: ${kg(me.cartKg)} kg, ${kg(me.cartRoom)} kg free)</span>`) : ""}
+    ${me.cartItem ? placeRow(ui, pid, s.id, "cart", me.cart, ` <span class="muted"${tip(`The team's supplies in the ${me.cartItem.name.toLowerCase()}: ${first(s)} feels ${Math.round(cartFrac(me.cartItem, s) * 100)}% of them. Its items are in its grid above; together up to ${cartSpec(me.cartItem).cap} kg.`)}>(${esc(me.cartItem.name)}: ${kg(me.cartKg)} kg, ${kg(me.cartRoom)} kg free)</span>`) : ""}
     ${v.hasCar || v.rack ? placeRow(ui, pid, null, "car", v.car, v.rack ? ` <span class="muted">(${kg(v.carKg)}/${v.rack} kg on the racks)</span>` : "") : ""}`;
   const sel = ui.carrySel && ui.carrySel.pid === pid ? ui.carrySel : null;
   if (sel) {
@@ -132,9 +132,14 @@ export function holdSection(state, ui, s) {
         <button class="mini" data-action="carry-unsel">Cancel</button></div>`;
     }
   }
-  if (me.bag && me.cartItem) html += `<div class="small warn" style="margin-top:0.2rem">Pushing the ${esc(me.bag.name.toLowerCase())} (${kg(me.bagKg + me.cartKg)} kg in all, ${kg(feltKg(me.bag) + me.cartKg * cartSpec(me.bag).frac)} kg felt): hands full, no weapon in a fight until it is let go. Set it down to leave it on this tile with everything in it.</div>`;
+  if (me.bag && me.cartItem) html += `<div class="small warn" style="margin-top:0.2rem">Pushing the ${esc(me.bag.name.toLowerCase())} (${kg(me.bagKg + me.cartKg)} kg in all, ${kg(feltKg(me.bag, s) + me.cartKg * cartFrac(me.bag, s))} kg felt): hands full, no weapon in a fight until it is let go. Set it down to leave it on this tile with everything in it.</div>`;
   else if (me.bag) html += `<div class="small warn" style="margin-top:0.2rem">In arms: the ${esc(me.bag.name)} (${kg(me.bagKg)} kg with what is in it): hands full, no weapon in a fight until it is set down. Move it to Backpack to wear it.</div>`;
   if (me.handsKg > 0 || me.bag) html += `<div style="margin-top:0.3rem"><button class="mini" data-action="carry-drophands" data-pid="${pid}" data-sid="${s.id}"${tip("Put everything carried in the arms on the ground of this tile (pick it up again from the team panel)")}>Set down what ${first(s)} carries</button></div>`;
+  // Two on a hand cart (sim/carts.js twoMan): help a teammate pull theirs, or stop.
+  if (s.cartHelp != null) { const pu = v.people.find((x) => x.s.id === s.cartHelp); html += `<div class="small" style="margin-top:0.3rem">Helping ${pu ? first(pu.s) : "someone"} pull the ${pu && pu.cartItem ? esc(pu.cartItem.name.toLowerCase()) : "cart"} (hands full). <button class="mini" data-action="carry-help" data-pid="${pid}" data-sid="${s.id}" data-pusher=""${tip("Stop helping: hands free again; the cart drags and weighs on its puller as before")}>Stop helping</button></div>`; }
+  else if (!s.gear.carry) for (const x of v.people) if (x.s.id !== s.id && x.cartItem && cartSpec(x.cartItem).twoMan && x.s.cartHelper == null) html += `<div style="margin-top:0.3rem"><button class="mini" data-action="carry-help" data-pid="${pid}" data-sid="${s.id}" data-pusher="${x.s.id}"${tip(`${first(s)} helps ${first(x.s)} pull the ${x.cartItem.name.toLowerCase()}: ${first(x.s)} feels half the weight and the team goes at half the drag off the roads. ${first(s)}'s hands are full too (no supplies in the arms; in a fight a pistol at most, one-handed, until they let go).`)}>Help ${first(x.s)} pull the ${esc(x.cartItem.name.toLowerCase())}</button></div>`;
+  if (me.cartItem && s.cartHelper != null) { const hx = v.people.find((x) => x.s.id === s.cartHelper); if (hx) html += `<div class="small muted" style="margin-top:0.2rem">${first(hx.s)} helps pull it: half the weight felt, half the drag.</div>`; }
+  if (me.cartItem && cartBroken(me.cartItem)) html += `<div class="small danger" style="margin-top:0.2rem">A wheel is off: the ${esc(me.cartItem.name.toLowerCase())} drags (the team at half pace, ${Math.round(cartFrac(me.cartItem, s) * 100)}% of it felt). Repair it at a workbench or with a field repair kit (parts).</div>`;
   const loc = ui.invSel ? parseLoc(ui.invSel) : null;
   const place = loc && loc.o !== "body" ? placeOfLoc(state, loc) : null;
   const selItem = ui.invSel && loc && loc.o !== "body" ? itemAt(state, ui.invSel) : null;
@@ -208,6 +213,7 @@ export const CARRY_ACTIONS = {
     ui.carryMsg = msg;
     if (!/^(Only|Items only|Too heavy|That slot|Nothing|Bodies|No room)/.test(msg)) ui.invSel = null;
   },
+  "carry-help": (state, ui, d) => { const p = state.parties.find((x) => x.id === Number(d.pid)); if (p) ui.carryMsg = setCartHelp(state, p, Number(d.sid), d.pusher === "" || d.pusher == null ? null : Number(d.pusher)); }, // sim/carry.js: two on a hand cart
   "carry-dropitem": (state, ui) => {
     if (!ui.invSel) return;
     ui.carryMsg = dropItemToGround(state, ui.invSel);

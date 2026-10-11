@@ -86,7 +86,7 @@ export function weighPlayer(u, s) {
   u.mob = B.mob + fleetMob(s); // Fleet-Footed (traits.js): a tile more a move at any load
   u.dash = B.dash;
   u.loadBand = B.band;
-  if (cartOf(s)) u.mob = Math.max(2, u.mob - CART_FIGHT.mob); // carts.js: pushing a cart, a tile less a move
+  if (cartOf(s) && u.cartHelped == null) u.mob = Math.max(2, u.mob - CART_FIGHT.mob); // carts.js: pushing a cart alone, a tile less a move (a helper: full pace)
 }
 // An enemy's kg: its gun and parts, armour (a carrier's plates), rig, magazines with their rounds, throwables, a medic's
 // kit, and what its kind carries besides (BASE_KG).

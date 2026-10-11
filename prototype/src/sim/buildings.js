@@ -20,6 +20,7 @@ import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "
 import { kitchenService, jobShare } from "./kitchen.js"; // the Kitchen's meals (buildingSummary)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: the builders go out on the odd hours
+import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -745,7 +746,8 @@ export function cancelBuild(state, base, id) {
 // governed: one left behind when the autopilot or the leader is switched off is ignored.
 export const onUpkeep = (state, base, s) => !!s.upkeep && s.role === "build" && (!!state.autopilot || !!(base.steward && base.steward.on));
 export function buildRate(state, base) {
-  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed && !onUpkeep(state, base, s)).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s) * choreShare(state, s), 0) // buildMult: Handy / Master Builder (skills.js); choreShare: half an hour on the generator's refuelling (power.js)
+  let carts = Math.max(0, baseCarts(state, base) - atBase(state, base.id).filter((s) => s.role === "wood" && !s.inBed).length); // carts.js: the carts the woodcutters leave, one a builder (hauling the materials)
+  return atBase(state, base.id).filter((s) => s.role === "build" && !s.inBed && !onUpkeep(state, base, s)).reduce((a, s) => a + (1 + skill(s, "mechanics") * 0.03) * workFactor(s) * buildMult(s) * choreShare(state, s) * (carts-- > 0 ? 1 + CART_JOB : 1), 0) // buildMult: Handy / Master Builder (skills.js); choreShare: half an hour on the generator's refuelling (power.js)
     + prisonBuildRate(state, base); // prisoners-tab: prisoners set to Build (prisoners.js labour, 12 hours a day at 50–70%)
 }
 

@@ -7,7 +7,7 @@
  * travelHours' options: the way of travel and pace, where on the path it starts, the fuel there is, the hours to
  * step through and whether the weather counts.
  * @typedef {{ vehicle?: boolean | "bike", speed?: number, footSpeed?: number | null, fuelMult?: number, progress?: number,
- *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, maxHours?: number, startHour?: number, weather?: boolean, known?: number, used?: number }} TravelOpts
+ *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, cartTer?: any, maxHours?: number, startHour?: number, weather?: boolean, known?: number, used?: number }} TravelOpts
  */
 import { teamTraitFx, appetite } from "./traits.js"; // Keen Eye: the team's sight; Glutton: the food a trip takes
 import { repairPaid, repairWaitHour } from "./repairwait.js"; // a breakdown repaired on the road: told when it is over
@@ -58,7 +58,7 @@ import { packLights, unpackLights } from "./lights.js"; // a light each from the
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
 import { cartSupOf, cartToArms, cartLotsIn } from "./carry.js"; // carts.js: the supplies in the carts (the weight), a cart fetched into someone's arms (call-time only)
-import { isCart } from "./carts.js";
+import { isCart, cartWearStep } from "./carts.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
 import { caravanGuarded } from "./jobs.js";
@@ -416,20 +416,31 @@ export const modeSpeed = (p, mode) => (!!mode === !!p.vehicle ? partySpeed(p) : 
 export const fuelMultOf = (p) =>(p.burden && p.vehicle === true ? p.burden.fuelMult || 1 : 1);
 // The options travelHours needs for a team as it is: { speed, footSpeed, fuelMult }.
 /** @param {Party} p */
-export const paceOpts = (p) => ({ speed: partySpeed(p), footSpeed: footSpeed(p), fuelMult: fuelMultOf(p), offroad: offroadOf(p), onroad: onroadOf(p), walkers: p.walkers > 0 && p.vehicle ? p.walkers : 0 });
+export const paceOpts = (p) => ({ speed: partySpeed(p), footSpeed: footSpeed(p), fuelMult: fuelMultOf(p), offroad: offroadOf(p), onroad: onroadOf(p), walkers: p.walkers > 0 && p.vehicle ? p.walkers : 0, cartTer: cartTerOf(p) });
 // How a team's steps are costed: as it travels, except that with walkers (walkers.js) the vehicles keep to their road
 // but every step takes a walker's time.
 /** @param {any} p */
 export const stepMode = (p) => (p.walkers > 0 && p.vehicle ? false : p.vehicle);
 // × the pace off-road in the vehicle (vehicles.js VEHICLE_TYPES offroad: the Army truck 0.75), from the last weighing.
 /** @param {Party} p */
-export const offroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.offroad || 1 : p.burden && !p.vehicle ? p.burden.cartOff || 1 : 1); // on foot: a cart off the roads (carts.js)
+export const offroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.offroad || 1 : 1);
+// On foot with a cart (carts.js cartTerrain): the slowest cart's pace by terrain, from the last weighing; null: none.
+/** @param {any} p */
+export const cartTerOf = (p) => (p.cartTer !== undefined ? p.cartTer : p.burden && !p.vehicle ? p.burden.cartTer || null : null);
 // × the pace on roads: bikes among a team's cars hold the convoy to the bikes' road pace (vehicles.js roadPace).
 /** @param {Party} p */
 export const onroadOf = (p) => (p.burden && p.vehicle === true ? p.burden.onroad || 1 : 1);
 // The cost of one step for a team (or a planning copy with its own offroad): an off-road step in a slow vehicle costs more.
-const offroadStep = (state, p, from, to) => (!p.vehicle ? (!state.tiles[from].roadLinks.includes(to) ? 1 / ((p.offroad ?? offroadOf(p)) || 1) : 1) : p.vehicle !== true || p.walkers > 0 ? 1 : !state.tiles[from].roadLinks.includes(to) ? 1 / ((p.offroad ?? offroadOf(p)) || 1) : 1 / ((p.onroad ?? onroadOf(p)) || 1));
+const offroadStep = (state, p, from, to) => (!p.vehicle ? cartStep(state, p, from, to) : p.vehicle !== true || p.walkers > 0 ? 1 : !state.tiles[from].roadLinks.includes(to) ? 1 / ((p.offroad ?? offroadOf(p)) || 1) : 1 / ((p.onroad ?? onroadOf(p)) || 1));
 
+// On foot: a cart's pace onto that ground (carts.js cartTerrain), 1 with no cart.
+/** @param {State} state @param {any} p @param {number} from @param {number} to */
+function cartStep(state, p, from, to) {
+  const ct = cartTerOf(p);
+  if (!ct) return 1;
+  const m = state.tiles[from].roadLinks.includes(to) ? ct.road : ct[state.tiles[to].terrain];
+  return 1 / (m || 1);
+}
 // The same for a team already out, from its last weighing (p.burden).
 /** @param {State} state @param {Party} p */
 export function partyPace(state, p) {
@@ -480,8 +491,8 @@ export function plannedPace(state, { members, supplies = {}, v = null, stance = 
 // known: the hour the estimate is made in (now): only the weather fronts already on the map by then count (weather.js),
 // so a front that forms later can still make the trip slower than estimated.
 /** @param {State} state @param {number[]} path @param {TravelOpts} [opts] */
-export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, offroad = 1, onroad = 1, walkers = 0, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour, used = 0 } = {}) {
-  const sim = { path: [...path], idx, progress, vehicle: vehicle || false, offroad, onroad, walkers };
+export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed = null, fuelMult = 1, offroad = 1, onroad = 1, walkers = 0, cartTer = null, progress = 0, idx = 0, fuel = Infinity, maxHours = 24 * 90, startHour = state.hour, weather = true, known = state.hour, used = 0 } = {}) {
+  const sim = { path: [...path], idx, progress, vehicle: vehicle || false, offroad, onroad, walkers, cartTer }; // cartTer: carts.js
   let f = fuel, hours = 0, dryAt = null, rideHours = 0, lastSp = 0;
   while (sim.idx < sim.path.length - 1 && hours < maxHours) {
     hours += 1;
@@ -688,7 +699,7 @@ function legPos(state, path, o, hrs) {
   const r = travelHours(state, path, { ...o, maxHours: whole });
   if (r.idx >= path.length - 1) return path.length - 1;
   const sp = r.vehicle || o.footSpeed == null ? o.speed : o.footSpeed;
-  const q = { path, idx: r.idx, progress: r.progress, vehicle: r.vehicle, offroad: o.offroad ?? 1, onroad: o.onroad ?? 1, walkers: o.walkers ?? 0 };
+  const q = { path, idx: r.idx, progress: r.progress, vehicle: r.vehicle, offroad: o.offroad ?? 1, onroad: o.onroad ?? 1, walkers: o.walkers ?? 0, cartTer: o.cartTer ?? null };
   const hour = o.startHour + whole + 1;
   const used = whole === 0 ? o.used || 0 : 0;
   let prog = r.progress + sp * Math.max(0, f - used), i = r.idx;
@@ -1393,6 +1404,7 @@ function moveHour(state, p, hour, upTo = 1) {
   if (rolling) repairPaid(p, pace, entered.length > 0); // repairwait.js: an hour on the road pays off a breakdown repair's wait
   for (let k = 0; k < entered.length; k++) {
     const tileId = entered[k], block = p.roadblock;
+    if (!p.vehicle && p.owner === "player" && cartWearStep(state, p, k ? entered[k - 1] : p.path[p.path.lastIndexOf(tileId, p.idx) - 1], tileId)) weighTeam(state, p); // carts.js: rough ground wears a cart's wheels (a broken one drags)
     thinIceStep(state, p, tileId); // rivers.js: thin ice may give way under a team on foot
     onEnterTile(state, p, tileId, hour);
     if (!state.parties.includes(p) || p.phase === "engaged") return;

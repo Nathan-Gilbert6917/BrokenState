@@ -104,7 +104,7 @@ import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear,
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
-import { cartAct } from "./carts.js"; // a wheelbarrow, a hand cart: let go (free), take it back (1 action)
+import { cartAct, cartKnocked, oneHandOk, CART_FIGHT, cartMoved, enemyCartsLetGo, enemyCarts, placeMapCarts, cartHelpStart } from "./carts.js"; // a wheelbarrow, a hand cart: let go (free), take it back (1 action)
 import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies or a bag carried in the arms: no weapon until set down (Drop carried: free)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
@@ -610,6 +610,8 @@ export const CELL = {
   counter: { walk: false, cover: 1, los: false, name: "Counter" },
   gunsafe: { walk: false, cover: 2, los: false, name: "Gun safe" }, // locks.js / gunsafes.js: a steel safe, waist to head high
   vehicle: { walk: false, cover: 2, los: true,  name: "Your vehicle" },
+  // A cart let go (carts.js): a mini barricade on its cell, low cover, battered over by the dead (c.hp: cart.hp).
+  cart:    { walk: false, cover: 1, los: false, name: "Cart" },
   // Base defences against hordes and the inside of a hive (defences.js, hives.js). trap: what happens to one of
   // the dead that steps in (spikes hurt, a trench stops it for the turn).
   barricade: { walk: false, cover: 2, los: false, name: "Barricade" },
@@ -2456,6 +2458,7 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   aim += (af.aim || 0); P && mark("The round loaded");
   aim -= nlAimPen(a); P && mark("Tasered or pepper-sprayed"); // nonlethal.js: a taser's daze, pepper spray
   aim -= (a.loadAim || 0); P && mark("Handloads"); // reloading.js: handloads loaded below Mechanics 8
+  if (handsBusy(a) && oneHandOk(a)) { aim -= CART_FIGHT.oneHandAim; P && mark("One-handed (a hand on the cart)"); } // carts.js: a pistol fired one-handed
   if (a.loadAim) notes.push(`handloads −${Math.round(a.loadAim)}`); // reloading.js
   if (d > opt && !a.noFall) aim -= (d - opt) * fall; // noFall: the Sniper perk (skills.js)
   P && mark(`Range (${Math.round(d)} tiles, best within ${Math.round(opt)})`);
@@ -2894,7 +2897,7 @@ function spendRounds(b, u, w) {
 }
 // Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the rounds of its calibre and
 // loaded type there; a bow or crossbow, arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
-export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && u.dragging == null && !handsBusy(u) && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon], u)) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js) or dragging a downed ally (medics.js); a jammed gun (gunfire.js)
+export const canFire = (b, u) => isRanged(u) && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)) && u.carrying == null && u.dragging == null && (!handsBusy(u) || oneHandOk(u)) && (u.side !== "player" || hasShot(b, WEAPONS[u.weapon], u)) && !magEmpty(b, u) && !u.jam; // a ram's crew has its hands full (siege.js); so does someone carrying a body (carriers.js) or dragging a downed ally (medics.js); a jammed gun (gunfire.js)
 // A gun that can shoot now or after a reload (the AI's sense of a side's firepower, the threat preview): a reload of
 // its type, or of another type of its calibre when its own has run out.
 export const hasShots = (b, u) => canFire(b, u) || (isRanged(u) && (magEmpty(b, u) || (u.side === "player" && !!WEAPONS[u.weapon].ammo && !hasShot(b, WEAPONS[u.weapon], u))) && reloadType(b, u) != null && !(u.cd > 0) && !(u.ram != null && b.rams && isCrew(b, u)));
@@ -3278,6 +3281,7 @@ export function createBattle(state, setup) {
   if (setup.watch) { for (const u of b.units) if (u.side === "player") { u.vol = setup.watch.fid; u.volGroup = setup.watch.group; u.watched = true; } say(b, `You watch your people fight beside ${setup.watch.group}: their orders, not yours.`, "info"); }
   if (b.evacCols) say(b, `The green strip on the ${b.evacSide || "left"} edge is your way out. Units standing there can retreat, or sound the retreat to pull everyone out at once.`, "info");
   stageAtStart(state, b); // carry.js: a fight the team starts: the loads into the vehicle, the rest set down where they start
+  enemyCarts(state, b); placeMapCarts(state, b); cartHelpStart(state, b); // carts.js: the scavengers' carts, an abandoned cart by the road, two on a hand cart
   checkEnd(state, b);
   return b;
 }
@@ -3730,6 +3734,7 @@ export function combatAct(state, act) {
       u.ap -= c <= u.mob ? 1 : 2;
       u.hunker = false;
       moveAlong(b, u, pathTo(r, act.x, act.y));
+      cartMoved(state, b, u); // carts.js: a helper follows the pusher (or lets go), a cart pushed rattles
       // skills.js: Stealth XP for moving while enemies still have not noticed anyone.
       if (u.xpT && active(u) && b.units.some((e) => e.side === "enemy" && !e.aware && active(e))) u.xpT.sneak++;
       break;
@@ -4118,6 +4123,7 @@ export function endPlayerTurn(state) {
   for (const u of b.units) if (u.side === "player") { u.ap = 0; u.suppressed = 0; } // pinned (suppressing fire) until their own turn ends
   stunTurnEnd(b, ["player"]); // throwables.js: a flashbang's stun served this turn wears off
   b.phase = "enemy";
+  enemyCartsLetGo(state, b); // carts.js: theirs let go of their carts before they fight (as your battle AI does)
   for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
   stunTurnStart(b, ["enemy", "third"]); // throwables.js: the ones a flashbang caught lose their actions
   tickEars(b, ["enemy", "third"]); // hearing.js: their deafness and daze wear off a turn
@@ -4701,6 +4707,7 @@ export function breakCell(b, x, y, by = null) {
   else if (c.k === "idoor" || c.k === "door") doorBroken(b, x, y); // a building's door stays broken (buildingmaps.js)
   else if (c.k === "window") c.k = "smashed";
   else if (c.k === "tanktrap") c.k = "rubble"; // a bridge barricade's trap, broken up: open ground again (a vehicle can pass)
+  else if (c.k === "cart") cartKnocked(b, x, y); // carts.js: shoved over, its cell open again (the cart and its load stay there)
   b.losCache.fill(0);
   if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;
   say(b, by && by.side === "enemy" ? `${by.kind === "zombie" ? "The dead" : by.name} break${by.kind === "zombie" ? "" : "s"} through the ${name}!` : `The ${name} gives way!`, "danger");
@@ -5850,6 +5857,7 @@ export function createRaid(state, setup) {
   say(b, "Search next to a container (S). Heat rises every turn and with gunfire; more of the dead arrive as it climbs. Reach a green zone and Extract (X).", "info");
   if (withVehicle) say(b, "Your vehicle waits in the entry zone. Extract there to keep it; leave from another zone and it stays behind.", "info");
   stageAtStart(state, b); // carry.js: the loads into the vehicle, the rest set down in the entry zone
+  placeMapCarts(state, b); cartHelpStart(state, b); // carts.js: carts standing in the barns and garages; two on a hand cart
   return b;
 }
 

@@ -33,7 +33,7 @@ import { GEAR } from "./data.js";
 import { skill } from "./world.js";
 import { hasPerk } from "./skills.js";
 import { allItems, itemLoad, carryBonus } from "./inventory.js";
-import { itemOnKg, cartOf, cartFree, cartSpec, cartOffroad } from "./carts.js"; // a cart in the arms: its share of the weight
+import { itemOnKg, cartOf, cartFree, cartFrac, feltKg, cartTerrain } from "./carts.js"; // a cart in the arms: its share of the weight
 import { packKg } from "./eating.js"; // the food and water everyone carries (wave 2 eating)
 import { VEHICLE_TYPES, RIDER_KG, OVERLOAD_MAX, OVERLOAD_SPEED, fuelMultFor, isBike, isCar, typeSpeed, typeFuel, typeOffroad, payloadOf, roadPace } from "./vehicles.js";
 
@@ -119,19 +119,23 @@ export function teamLoad(members, pool, v = null, inCart = null) {
   // The carts first (carts.js): the supplies in each felt at its share by its pusher; the rest is shared out. What a
   // cart adds to the team's room: the kg its pusher can push in it (their room / its share, up to its free kg), less
   // the share of it they feel.
-  let rest = pool, cartCap = 0;
+  // On bikes (a bike trailer): a bike tows one cart, its own weight and what is in it off its rider, its free kg added
+  // to the racks' (towRoom).
+  let rest = pool, cartCap = 0, towRoom = 0, bikesFree = isBike(v) ? v.count || 1 : 0;
   for (const q of base) {
     const c = cartOf(q.s);
     if (!c) continue;
-    const room = cartFree(c), frac = cartSpec(c).frac;
+    const room = cartFree(c), frac = cartFrac(c, q.s);
     cartCap += Math.min(room, Math.max(0, q.max - q.worn) / frac) * (1 - frac);
     const kg = Math.max(0, Math.min(rest, inCart ? Math.min(room, inCart[q.s.id] || 0) : room));
+    q.rideWorn = q.worn - feltKg(c, q.s); // towed: none of it on the rider
+    if (bikesFree > 0) { bikesFree--; q.towed = true; towRoom += room; }
     q.worn += kg * frac;
     rest -= kg;
   }
   const footCap = Math.max(0, base.reduce((a, q) => a + q.max, 0) - worn + cartCap); // worn: before the carts' supplies (the room they take is in cartCap)
-  const side = (shares, negate) => {
-    const people = base.map((q, j) => personLoad(q.s, q.worn + shares[j], negate));
+  const side = (shares, negate, bs = base) => {
+    const people = bs.map((q, j) => personLoad(q.s, q.worn + shares[j], negate));
     const eat = {};
     for (const x of people) eat[x.sid] = x.eat;
     return { speed: people.length ? Math.min(...people.map((x) => x.speed)) : 1, eat, people };
@@ -140,10 +144,12 @@ export function teamLoad(members, pool, v = null, inCart = null) {
   const out = { pool: r4(pool), worn: r4(worn), total: r4(pool + worn), foot, ride: null, people: foot.people, fill: 0, fuelMult: 1, capacity: footCap, footCap, mode: false };
   if (isBike(v)) {
     const rack = (v.count || 1) * VEHICLE_TYPES.bike.rack;
-    out.ride = side(shareLoad(base, Math.max(0, rest - rack), true), BIKE_EASE);
+    const rideBase = base.map((q) => (q.towed ? { ...q, worn: q.rideWorn } : q)); // carts.js: a towed cart is the bike's
+    out.ride = side(shareLoad(rideBase, Math.max(0, rest - rack), true), BIKE_EASE, rideBase);
     out.rack = rack;
+    out.trailer = r4(towRoom); // carts.js: the towed carts' free kg on top of the racks
     out.onRack = Math.min(pool, rack);
-    out.capacity = footCap + rack;
+    out.capacity = Math.max(0, rideBase.reduce((a, q) => a + q.max - (q.towed ? q.rideWorn : wornLoad(q.s)), 0)) + rack + towRoom;
     out.people = out.ride.people;
     out.mode = "bike";
   } else if (v) {
@@ -197,7 +203,7 @@ export function poolAtBand(members, band) {
 // The compact record a team keeps (p.burden) once weighed: paces, rations by person, a car's fuel multiplier.
 export function burdenRecord(t, members, v) {
   return {
-    ...(!v && cartOffroad(members) < 1 ? { cartOff: cartOffroad(members) } : {}), // carts.js: on foot, the slowest cart's pace off the roads (parties.js offroadStep)
+    ...(!v && cartTerrain(members) ? { cartTer: cartTerrain(members) } : {}), // carts.js: on foot, the slowest cart's pace by terrain (parties.js offroadStep)
     total: t.total, ids: members.map((s) => s.id).sort((a, b) => a - b).join(","), vid: v ? v.id : null,
     onroad: t.mode === true ? roadPace(v) : 1, // bikes among the cars: the convoy keeps to the bikes on roads (vehicles.js)
     foot: t.foot.speed, eatFoot: t.foot.eat,

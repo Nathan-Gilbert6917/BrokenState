@@ -52,7 +52,7 @@ import { ZONE_RICHNESS } from "./mapgen.js";
 import { haulMult } from "./medfinds.js";
 import { PARTS_MIX } from "./loot.js"; // car parts by the kind of site (a group keeps them apart)
 import { scavFinds, partyLost } from "./arsenal.js";
-import { aiCartsOut, aiCartMult, aiCartsHome } from "./carts.js"; // a group's carts (AI parity, coarse)
+import { aiCartsOut, aiCartMult, aiCartsHome, aiWorkMult } from "./carts.js"; // a group's carts (AI parity, coarse)
 import { groupFindBlueprint, groupGotBlueprint } from "./groupworks.js"; // machines-2: the groups' manuals
 import { prio } from "./groupcare.js";
 import { scavVehicle, scavSaw } from "./groupworld.js"; // a wreck brought home now and then; the bases they saw // GROUP_PRIORITIES scavenge: how often a type sends parties out // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
@@ -186,7 +186,7 @@ export function aiScavDaily(state) {
       const t = state.tiles[id];
       const take = Math.min(t.loot - AISCAV.floor, t.loot * AISCAV.landRate);
       if (!(take > 0)) continue;
-      addTo(f.stock, haulFor(t, take, t.loot, AISCAV.landEff, state));
+      addTo(f.stock, haulFor(t, take, t.loot, AISCAV.landEff * aiWorkMult(f), state)); // carts.js: their carts haul a little more in (coarse)
       t.loot -= take;
       S.stats.land += take;
     }

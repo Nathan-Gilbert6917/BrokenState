@@ -98,7 +98,7 @@ import { say, active } from "./combat.js";
 import { dropToGround, pilesNear, settlePile } from "./ground.js"; // the battle map's piles (call-time only: safe in the import cycle)
 import { lootLayer, raidShares } from "./raidloot.js";
 import { gunLeavesTeam } from "./gunload.js"; // a gun in a bag set down leaves the team loaded
-import { isCart, cartOf, cartFree, addLot, cartWorth, letGoCart, cartsEnd } from "./carts.js"; // carts: a place for the supplies, a 1x1 thing in a fight (call-time only)
+import { isCart, cartOf, cartFree, addLot, cartWorth, letGoCart, cartsEnd, oneHandOk, cartSpec } from "./carts.js"; // carts: a place for the supplies, a 1x1 thing in a fight (call-time only)
 
 // ---------- the table ----------
 // pack: units a pack slot holds, pocket: units a pocket holds (0: never there). kg: per unit (food: FOOD_KG a day,
@@ -238,6 +238,7 @@ export function settleHold(state, p) {
   for (const id of Object.keys(h.by)) if (!ids.has(id)) delete h.by[id]; // gone home, dead, captured: theirs comes loose
   for (const s of members) { const r = h.by[s.id] || (h.by[s.id] = {}); for (const pl of PLACES) if (!r[pl]) r[pl] = {}; }
   for (const s of members) { const c = cartOf(s); if (c && c.held && c.held.length) absorbHeld(state, p, h.by[s.id].cart, c); } // a cart picked up with what it carried
+  tidyHelp(members); // two on a hand cart (carts.js): only while both are on the team, the cart pushed, the helper's arms free
   const { car, rack } = carOf(state, p);
   if (!car && !rack) h.car = {};
   const tot = holdTotals(p);
@@ -254,7 +255,7 @@ export function settleHold(state, p) {
     for (const s of members) if (over > EPS) take(h.by[s.id].pocket);
   }
   // 2. Containers that shrank (an item put in the pack, the pack taken off, the bikes gone): the overflow comes loose.
-  for (const s of members) { const r = h.by[s.id]; trimTo(r.pack, "pack", freePack(s)); trimTo(r.pocket, "pocket", freePockets(s)); trimKg(r.cart, cartFree(cartOf(s))); } // a cart gone or fuller of items: the overflow comes loose
+  for (const s of members) { const r = h.by[s.id]; trimTo(r.pack, "pack", freePack(s)); trimTo(r.pocket, "pocket", freePockets(s)); trimKg(r.cart, cartFree(cartOf(s))); if (cartOf(s) || s.cartHelp != null) trimKg(r.hands, 0); } // a cart gone or fuller of items: the overflow comes loose
   if (rack) for (const k of [...HOLD_KEYS].reverse()) { const over = kgOf(h.car) - rack; if (over > EPS && h.car[k]) { h.car[k] = Math.max(0, h.car[k] - over / unitKg(k)); if (h.car[k] <= EPS) delete h.car[k]; } }
   // 3. What is not placed yet: the car, the carts, the packs, the pockets, then the hands.
   const loose = {};
@@ -318,7 +319,7 @@ function placeLoose(h, members, loose, car, rack) {
   }
   // The hands: the weakest fighters first, each up to HANDS_KG; past that, the one with the least in their arms.
   const order = [...members].sort((a, b) => Number(bagKg(a) > 0) - Number(bagKg(b) > 0) || combatPower(a) - combatPower(b) || a.id - b.id); // a bag in the arms: last
-  const armsKg = (s) => (cartOf(s) ? HANDS_KG : kgOf(h.by[s.id].hands) + bagKg(s)); // a cart's pusher: hands on the handles
+  const armsKg = (s) => (cartOf(s) || s.cartHelp != null ? HANDS_KG : kgOf(h.by[s.id].hands) + bagKg(s)); // a cart's pusher (and a helper): hands on the handles
   for (const k of HOLD_KEYS) {
     for (const s of order) {
       if (!(loose[k] > EPS)) break;
@@ -445,6 +446,41 @@ export function cartToGround(state, p, s) {
   cartOnTile(state, partyTile(p), cart);
   return cart.name;
 }
+// ---------- two on a hand cart (carts.js twoMan) ----------
+// A helper (s.cartHelp: the pusher's id) and the pusher (s.cartHelper: the helper's id): the pusher feels half their
+// share of the cart and the team goes at half the drag (carts.js cartFrac, cartPace); the helper's arms are full too
+// (nothing carried in them; in a fight hands full until they let go). Kept only while it makes sense (tidyHelp).
+function tidyHelp(members) {
+  const byId = new Map(members.map((s) => [s.id, s]));
+  for (const s of members) {
+    if (s.cartHelper != null) { const h = byId.get(s.cartHelper); const c = cartOf(s); if (!h || h.cartHelp !== s.id || !c || !cartSpec(c).twoMan || (h.gear && h.gear.carry)) delete s.cartHelper; }
+    if (s.cartHelp != null) { const pu = byId.get(s.cartHelp); if (!pu || pu.cartHelper !== s.id) delete s.cartHelp; }
+  }
+}
+// Has someone help pull a teammate's hand cart (pusher: a survivor id; null: stop helping). Returns a message.
+export function setCartHelp(state, p, helperId, pusherId) {
+  const members = partyMembers(state, p);
+  const h = members.find((s) => s.id === helperId);
+  if (!h) return "Not on this team.";
+  if (pusherId == null) {
+    const pu = members.find((s) => s.id === h.cartHelp);
+    if (pu && pu.cartHelper === h.id) delete pu.cartHelper;
+    delete h.cartHelp;
+    settleHold(state, p);
+    return `${h.name.split(" ")[0]} stops helping with the cart.`;
+  }
+  const pu = members.find((s) => s.id === pusherId);
+  const c = cartOf(pu);
+  if (!pu || !c) return "Nobody pushes a cart there.";
+  if (!cartSpec(c).twoMan) return `The ${c.name.toLowerCase()} takes one person.`;
+  ensureInv(h);
+  if (h.gear.carry) return `${h.name.split(" ")[0]} has their arms full (the ${h.gear.carry.name}).`;
+  if (pu.cartHelper != null && pu.cartHelper !== h.id) return `Someone already helps ${pu.name.split(" ")[0]}.`;
+  if (h.cartHelp != null && h.cartHelp !== pu.id) setCartHelp(state, p, h.id, null);
+  h.cartHelp = pu.id; pu.cartHelper = h.id;
+  settleHold(state, p);
+  return `${h.name.split(" ")[0]} helps ${pu.name.split(" ")[0]} pull the ${c.name.toLowerCase()}: half the weight felt, half the drag off the roads (both have their hands full).`;
+}
 // The lots of the carts in a team's cargo (and pushed by its people) into its pool (parties.js unloadAt: a team coming
 // into a base empties them into the stores).
 export function cartLotsIn(state, p) {
@@ -483,7 +519,7 @@ export function roomAt(state, p, w, k) {
   const s = survivorById(state, w.sid);
   const rec = h.by[w.sid] && h.by[w.sid][w.place];
   if (!s || !rec) return 0;
-  if (w.place === "hands") return cartOf(s) ? 0 : Math.max(0, HANDS_KG - kgOf(rec) - bagKg(s)) / unitKg(k); // a cart's pusher: hands on the handles
+  if (w.place === "hands") return cartOf(s) || s.cartHelp != null ? 0 : Math.max(0, HANDS_KG - kgOf(rec) - bagKg(s)) / unitKg(k); // a cart's pusher: hands on the handles
   if (w.place === "cart") return cartOf(s) ? Math.max(0, cartFree(cartOf(s)) - kgOf(rec)) / unitKg(k) : 0;
   return roomFor(rec, k, w.place, slotsOf(s, w.place));
 }
@@ -699,12 +735,13 @@ export function capTask(p, task, state = null) {
 const HAND_ACTS = new Set(["shoot", "melee", "reload", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner"]);
 export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0);
 // Arms full of supplies or a bag (combat.js canFire, fireRefusal, reloadRefusal).
-export const handsBusy = (u) => !!(u && (u.hands || u.bag));
-export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.bag.name}` : ""].filter(Boolean).join(" and ");
-export const handsWord = (u) => (isCart(u.bag) ? `Hands full: ${u.name.split(" ")[0]} pushes the ${u.bag.name.toLowerCase()} (${r1(handsKg(u))} kg). Let go first (free).` : `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free).`);
+export const handsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null)); // cartHelp: helping pull a hand cart (carts.js)
+export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.bag.name}` : "", u.cartHelp != null ? "a hand on the cart (helping pull it)" : ""].filter(Boolean).join(" and ");
+export const handsWord = (u) => (u.cartHelp != null && !u.bag ? `Hands full: ${u.name.split(" ")[0]} helps pull the cart. Let go first (free); a pistol fires one-handed.` : isCart(u.bag) ? `Hands full: ${u.name.split(" ")[0]} pushes the ${u.bag.name.toLowerCase()} (${r1(handsKg(u))} kg). Let go first (free); a pistol fires one-handed.` : `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free).`);
 // Why this act cannot be done with what the unit holds ("" when it can).
 export function handsRefusal(u, type) {
   if (!u || !HAND_ACTS.has(type)) return "";
+  if (type === "shoot" && oneHandOk(u)) return ""; // carts.js: a pistol, one-handed (an aim penalty, shotOdds)
   if (handsBusy(u)) return handsWord(u);
   if ((u.carrying != null || u.dragging != null) && (type === "melee" || type === "throw" || type === "throwspear" || type === "launch" || type === "finish" || type === "subdue" || type === "taser" || type === "pepper")) return u.carrying != null ? "Hands full: put the body down first." : "Hands full: dragging someone (put them down first, Shift+D).";
   return "";
@@ -820,6 +857,7 @@ export function groundDropCell(state, b, u, sup, item = null) {
 // Drop carried: free. Supplies and the bag in the arms go down on the unit's cell. Returns "" or an error.
 export function dropCarried(state, b, u, quiet = false) {
   if (!u || !handsBusy(u)) return "Not carrying anything in the arms.";
+  if (u.cartHelp != null && !u.bag && !u.hands) return letGoCart(state, b, u, { quiet }); // carts.js: a helper lets go
   const what = armsText(u);
   if (isCart(u.bag)) { letGoCart(state, b, u, { quiet }); if (!u.hands) return ""; } // carts.js: let go, a cart on the map
   const bag = u.bag || null;
