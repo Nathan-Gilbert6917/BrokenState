@@ -312,6 +312,21 @@ export function refuel(state, base, v) {
   return give > 0.05 ? `Added ${Math.round(give * 10) / 10} fuel to the ${v.name}.` : want > 0.05 ? "No fuel to add." : "The tank is full.";
 }
 
+// Parked out of the weather (breakdowns.js: a car parked at a base loses WEAR.vehicleFrost a frost day, vehicleBlizzard
+// in a blizzard). A garage (standing or broken: it is still a roof) keeps GARAGE_SHELTER cars inside, the best-kept
+// first (the one the next trip takes); bikes and the rest stand in the open. The vehicle-wear census (tools/vehiclewear.js,
+// 2026-10-10) found the frost the biggest real loss of a car the autopilot mostly leaves parked: 57 condition in 730
+// days (Cautious seed 1), more than its driving (21).
+export const GARAGE_SHELTER = 2;
+/** @returns {Set<any>} */
+export function shelteredAt(state, base) {
+  const n = count(base, "garage") * GARAGE_SHELTER;
+  if (!n) return new Set();
+  return new Set(carsAtBase(state, base.id).filter((v) => !v.destroyed).sort((a, b) => b.condition - a.condition).slice(0, n));
+}
+// The frost's wear on a parked vehicle today: none for one in the garage.
+export const frostWear = (state, base, v, w, inside = shelteredAt(state, base)) => (inside.has(v) ? 0 : w);
+
 export function canRepair(state, base) {
   const grease = atBase(state, base.id).some((s) => hasPerk(s, "greasemonkey")); // Grease Monkey (skills.js)
   if (count(base, "garage")) return { ok: true, per: grease ? 35 : 25 };

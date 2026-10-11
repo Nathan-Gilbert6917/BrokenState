@@ -15,7 +15,9 @@
 // (maximum under 20% of full) are not mended.
 // Vehicles (f.vehicles): a turreted vehicle loses VEHICLE.fight condition a fight it is in (VEHICLE.lost when its side
 // loses); at 0 it is out (vehicles.js groupTurret). With a workshop, one in need (under VEHICLE.below) gets
-// VEHICLE.step back a day for a part and 2 scrap.
+// VEHICLE.step back a day for a part and 2 scrap. Under 50%, as the governor mends your car for a trip (autopilot.js
+// VEH_REPAIR; AI parity, vehicle-wear pass 2026-10-10): at 80% the groups topped up every scratch from a fight (42 parts in a
+// 730-day census run for condition nothing used: a vehicle is only out at 0).
 // Hunger (hungerTrade): a group with under HUNGER.below days of food a head buys food from a group that has HUNGER.rich
 // (not one at war with it, relation above HUNGER.rel; a member of its bloc first, blocs.js), paying with ammo, scrap,
 // fuel and meds at their worth (data.js SUPPLIES) × HUNGER.markup (1 from a bloc member), once every HUNGER.gap days.
@@ -185,7 +187,7 @@ export const CARE = {
   WANDER_JOIN: 0.04, // a day, a wanderer group within 3 tiles of a base (wanderers.js SIM.JOIN_GROUP, now by profile)
   REPAIR: { every: 2, below: 0.6, perPop: 10, mechanic: 3, // mechanic: an unknown type's (each type's: GROUP_PRIORITIES mechanic)
     lossBase: 0.25, lossPer: 0.01, lossMin: 0.08, wornOut: 0.2, gunStep: 0.2 },
-  VEHICLE: { fight: [2, 6], lost: [10, 25], below: 80, step: 15, parts: 1, scrap: 2 },
+  VEHICLE: { fight: [2, 6], lost: [10, 25], below: 50, step: 15, parts: 1, scrap: 2 },
   HUNGER: { below: 2, rich: 8, want: 4, markup: 1.3, gap: 5, rel: -15 },
   HOLD_RATIO: 1.4, TRIBUTE_ODDS: 0.4, TRIBUTE: 0.25,
   EXPAND: { scrap: 8, fit: 8 },

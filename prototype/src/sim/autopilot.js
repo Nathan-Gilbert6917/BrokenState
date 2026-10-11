@@ -15,7 +15,7 @@
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
-import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
+import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, partPlan, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES } from "./data.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, survivorById, snapshot, armedFactor, archerCount, ARROWS, meleeAimBonus, meleeDmgMult } from "./world.js";
@@ -49,7 +49,7 @@ import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill, fieldCraftOptions } from "./crafting.js";
-import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies, partyFuel } from "./vehicles.js";
+import { vehiclesAtBase, carsAtBase, bikesAtBase, parkBikes, isBike, isCar, travelMode, refuel, repair, canRepair, wreckSupplies, partyFuel, CARPART_SUB } from "./vehicles.js";
 import { LOAD_BANDS, wornLoad, poolAtBand } from "./load.js";
 import { saveSupplyRun, dispatchSupplyRun, supplyRuns, jobParty, deleteSupplyRun, planSupplyRun, linesText } from "./supply.js";
 import { autoPlayerTurn, runEnemyPhase, closeCombat, endBattleNow, WEAPONS } from "./combat.js";
@@ -4133,6 +4133,57 @@ export function occupyCandidate(state, h, pool, spareHands) {
     supplies: { ammo: 10 * n, meds: 1 } };
 }
 
+// ---------- the trip's car, mended before it leaves (vehicle-wear pass, 2026-10-10) ----------
+// launchTrip takes the best-kept car at the base for a drive of 3+ tiles (none under 30%). Under VEH_REPAIR.below%
+// condition the governor mends it first, up to VEH_REPAIR.most repairs until it is back to VEH_REPAIR.below% (vehicles.js
+// repair: +25 at a garage, +12 with a Mechanics 4+ hand, a car part a time): one +12 repair of a car at 10% left it
+// under the 30% a drive needs, so it stayed home, the repair was undone, and the same repair was made and undone on
+// every trip after (a Cautious run: 564 of them in two years, the car at about 10% and 4 trips by car). Car parts pay first; machine parts stand in (vehicles.js CARPART_SUB, 2 for one) only for a car under
+// VEH_REPAIR.machineBelow% (where it breaks down every few tiles) and only out of what the base keeps past its machines'
+// reorder level (repair.js partPlan: generators, wells, benches, the machine shop): machine parts are what keeps the
+// water and the power going, and car parts are found at auto shops, gas stations and wrecks and sold by most traders.
+// Before this pass every repair under 50% took machine parts whenever the hub held 2 (a third of the autopilot's machine
+// parts went on cars over two years: tools/vehiclewear.js census).
+// A trip called off after the repair (or the car left home) gives back exactly what the repair and the refuelling took
+// (tripUndo): before, the hub's machine parts and fuel were set back to what they were, which lost the car part a repair
+// paid and gave back twice what the trip had packed of them (a well-digging team's parts, a hive trip's fire fuel).
+export const VEH_REPAIR = {
+  below: 50, machineBelow: 35, most: 4,
+  machineKeep: (state, base) => partPlan(state, base).targets.parts || 0,
+};
+/** @returns {{ cond: number, carparts: number, parts: number, fuel: number }} */
+export const tripTook = () => ({ cond: 0, carparts: 0, parts: 0, fuel: 0 });
+// Mends the trip's car when it needs it and the base can pay (see above); `took` adds what it took. True when it did.
+export function tripRepair(state, base, v, took = tripTook()) {
+  if (!v || !canRepair(state, base).ok) return false;
+  let did = false;
+  for (let i = 0; i < VEH_REPAIR.most && v.condition < VEH_REPAIR.below; i++) {
+    const car = Math.floor(Math.max(0, base.stock.carparts || 0) + 1e-9);
+    if (car < 1) {
+      if (v.condition >= VEH_REPAIR.machineBelow) break;
+      if ((base.stock.parts || 0) - CARPART_SUB < VEH_REPAIR.machineKeep(state, base) - 1e-9) break;
+    }
+    const c0 = v.condition, k0 = base.stock.carparts || 0, p0 = base.stock.parts || 0;
+    repair(state, base, v);
+    if (v.condition <= c0) break;
+    took.cond += v.condition - c0;
+    took.carparts += k0 - (base.stock.carparts || 0);
+    took.parts += p0 - (base.stock.parts || 0);
+    did = true;
+  }
+  return did;
+}
+// Gives back what tripRepair and the refuelling took (the trip is off, or the car stays home).
+export function tripUndo(base, v, took) {
+  if (!v || !took) return;
+  v.condition -= took.cond;
+  v.fuel -= took.fuel;
+  if (took.carparts) base.stock.carparts = (base.stock.carparts || 0) + took.carparts;
+  if (took.parts) base.stock.parts = (base.stock.parts || 0) + took.parts;
+  if (took.fuel) base.stock.fuel = (base.stock.fuel || 0) + took.fuel;
+  took.cond = took.carparts = took.parts = took.fuel = 0;
+}
+
 // Pick the crew, a vehicle if it pays, pack supplies and send the team. Returns the party or null.
 function launchTrip(state, c, pool, spareHands) {
   const P = persona(state);
@@ -4151,21 +4202,21 @@ function launchTrip(state, c, pool, spareHands) {
   const cand = carsAtBase(state, h.id).filter((x) => x.condition > 0).sort((a, b) => b.condition - a.condition)[0];
   // The vehicle is repaired and refuelled for the estimate; if the trip is called off, the parts and the fuel
   // go back (a trip that never leaves costs nothing). Armor left home for the trip goes back on too.
-  const before = cand ? { condition: cand.condition, fuel: cand.fuel, parts: h.stock.parts, hubFuel: h.stock.fuel } : null;
+  const took = tripTook(); // what the repair and the refuelling took (tripUndo gives back exactly that)
   const stashed = []; // [survivor, armor] left at the hub for this trip
   const off = () => {
-    if (before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; }
+    if (cand) tripUndo(h, cand, took);
     for (const [s, a] of stashed) { const i = h.armory.indexOf(a); if (i >= 0 && !s.gear.armor) { h.armory.splice(i, 1); s.gear.armor = a; } }
     stashed.length = 0;
     return null;
   };
   const n = ids.length;
   if (cand && (dist >= 3 || (c.wood && dist >= 1)) && c.mission !== "outpost" && c.mission !== "occupy" && c.mission !== "rescue" && c.mission !== "sweep") { // a survey goes on foot or bikes (a car sees little off the road)
-    if (cand.condition < 50 && (h.stock.parts || 0) >= 2 && canRepair(state, h).ok) repair(state, h, cand);
+    tripRepair(state, h, cand, took);
     const vEst = cand.condition >= 30 && estimateTrip(state, { memberIds: ids, dest: c.tile, vehicle: true, v: cand, stance: P.stance, homeBaseId: h.id, supplies: roughSupplies(n, 2) });
     if (vEst && vEst.fuel <= cand.fuel + Math.max(0, (h.stock.fuel || 0) - 4 - tripFuelHold(state, h, c))) v = cand; // needs-gauges: not the heating fuel, nor the campaign's fires
   }
-  if (v) refuelKeeping(state, h, v, tripFuelHold(state, h, c)); // needs-gauges: the winter's heating fuel stays home (and the campaign's fires')
+  if (v) { const f0 = v.fuel; refuelKeeping(state, h, v, tripFuelHold(state, h, c)); took.fuel += v.fuel - f0; } // needs-gauges: the winter's heating fuel stays home (and the campaign's fires')
   // No car: bikes, one each, for anything past the next couple of tiles (no fuel, faster on roads, racks for the haul).
   if (!v && dist >= 2 && c.mission !== "outpost" && c.mission !== "occupy" && c.mission !== "rescue" && bikesAtBase(state, h.id) >= n) {
     const stack = parkBikes(state, h);
@@ -4290,7 +4341,7 @@ function launchTrip(state, c, pool, spareHands) {
     const without = crew.filter((x) => !bestChop(x).item).length;
     for (let i = 0; i < without; i++) { const j = (h.armory || []).findIndex(isChopTool); if (j < 0) break; res.party.cargo.gear.push(h.armory.splice(j, 1)[0]); }
   }
-  if (!isCar(v) && before) { cand.condition = before.condition; cand.fuel = before.fuel; h.stock.parts = before.parts; h.stock.fuel = before.hubFuel; } // repaired or looked at, but the car stayed
+  if (!isCar(v) && cand) tripUndo(h, cand, took); // repaired or looked at, but the car stayed
   res.party.ap = { mission: c.mission, tile: c.tile, day: day(state) };
   if (c.survey) surveySent(state);
   if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);
