@@ -17,7 +17,7 @@ import { addCondition } from "../src/sim/health.js";
 import { governRoles, setAutopilot } from "../src/sim/autopilot.js";
 import { WORK_TYPES, workState, planBase } from "../src/sim/work.js";
 import { medicTraining, medOf, medicSkillMult, groupHospitalTier, healRate, GROUP_MED, weightOf } from "../src/sim/groupcare.js";
-import { nextWork, groupWorksDaily, sickbayTier, worksText, groupsBuild, GROUP_WORKS } from "../src/sim/groupworks.js";
+import { nextWork, groupWorksDaily, sickbayTier, worksText, groupsBuild, GROUP_WORKS, groupTech, groupSkill } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { ROLES } from "../src/sim/economy.js";
 
@@ -293,8 +293,18 @@ console.log("AI sick bays");
   for (let d = 0; d < 200; d++) groupWorksDaily(st, f);
   check(sickbayTier(f) === 2, `no clinic without a Medicine ${GROUP_WORKS.SICKBAY[2].doc} doctor (tier ${sickbayTier(f)})`);
   medOf(f).doc = 12;
+  // ai-locks (2026-10-11): your trauma hospital also wants a Mechanics 4 hand; with the two manuals studied, a group whose
+  // mechanic is under 4 (a commune's 3) stops at the clinic, one with a 4 (traders) goes on.
+  for (const id of ["fieldsurgery", "hospitalops"]) if (!groupTech(f).known.includes(id)) groupTech(f).known.push(id);
+  const type0 = f.type;
+  f.type = "commune";
+  for (let d = 0; d < 400 && sickbayTier(f) < 3; d++) groupWorksDaily(st, f);
+  for (let d = 0; d < 60; d++) groupWorksDaily(st, f);
+  check(sickbayTier(f) === 3, `a commune (Mechanics ${groupSkill(f, "mechanics")}) stops at the clinic (tier ${sickbayTier(f)})`);
+  f.type = "traders";
   for (let d = 0; d < 400 && sickbayTier(f) < 4; d++) groupWorksDaily(st, f);
-  check(sickbayTier(f) === 4, `with a Medicine 12 doctor they reach the trauma hospital (tier ${sickbayTier(f)})`);
+  check(sickbayTier(f) === 4, `with a Medicine 12 doctor and a Mechanics ${groupSkill(f, "mechanics")} hand they reach the trauma hospital (tier ${sickbayTier(f)})`);
+  f.type = type0;
 }
 
 // ---------- 6c. the doctor stays on duty, the doctor's career, graduation ----------
