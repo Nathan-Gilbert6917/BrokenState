@@ -2177,15 +2177,17 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // scrap for one kept a hunter on infected ground for weeks and caught it from the meat). A cabin's hunters go on (its
   // smoke house dries their meat; the cook fire is wished for while they work: wormWishes).
   const rawGame = !cabin && !baseCooks(base) && wormLandNear(state, base);
+  const huntScore = (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5);
   if (areas.food && !gov(state).noHunting && foodDays < landGoal && !rawGame) {
     const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
-    // Poor hunts send the hunters to the plots outside winter only: in winter the crops in the ground hardly grow and a
-    // farmer more adds next to nothing, while a hunter bringing in a third of the estimate still brings food (seed 5021
-    // starved in its second winter with its hunters taken off for poor hunts, 9 of 17 resting).
-    const poor = huntYield(state, base).poor && wxSeason(state).key !== "winter";
+    // In winter neither the cap nor poor hunts hold them back: the crops in the ground hardly grow and a farmer more adds
+    // next to nothing, while a hunter bringing in a third of the estimate still brings food (seed 5021 starved in its
+    // second winter with its hunters taken off for poor hunts, 9 of 17 resting; seed 5000 with 12 and no hunter).
+    const winter = wxSeason(state).key === "winter";
+    const poor = huntYield(state, base).poor && !winter;
     // (one at a smaller base only while the food is down to FORAGE_AP.low days: food now, while the crops take weeks)
-    const hunters = cabin ? (poor ? Math.min(ahead, 1) : ahead) : poor ? 0 : Math.min(ahead, Math.max(foodDays < FORAGE_AP.low ? 1 : 0, Math.floor(people.length / LAND_AP.bareHead)));
-    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(hunters, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
+    const hunters = cabin || winter ? (poor ? Math.min(ahead, 1) : ahead) : poor ? 0 : Math.min(ahead, Math.max(foodDays < FORAGE_AP.low ? 1 : 0, Math.floor(people.length / LAND_AP.bareHead)));
+    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", huntScore, (x) => !x.inBed && !x.leader).slice(0, Math.min(hunters, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
     if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
   }
   if (wShort) winterCrew();
@@ -2331,6 +2333,19 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // plot 1.39), and "until food is plentiful" kept two thirds of every colony on the plots with months of food in
   // store (2026-10-08: 65-85% of the colonist-days at a base on Farm, 100+ days of food at the hub). The rest scavenge
   // around the base, cut wood, study and teach: the other skills rise.
+  // The hands the farm crew does not need hunt before the extra farm hands go out (ap-food): past the ideal crew a farmer
+  // adds little (farming.js tendMult) and in winter next to nothing, and the cautious hubs of the census that kept their
+  // hunters lived through second winters the capped ones starved in (seeds 5000 and 5021: 12-17 people, every plot
+  // tended, no hunter). While the food is below its target or the winter stores fall short the base's hunters are topped
+  // up to its share (LAND_AP.share, as before the cap) from the hands left here, unless the recent hunts brought in under
+  // LAND_AP.spareYield of their estimates (hunting.js huntYield). Only once the plots have their ideal crew (in winter
+  // the share goes out ahead of the farm: 2b).
+  if (farmLim.hungry && farmers >= fw.ideal && areas.food && !gov(state).noHunting && !rawGame && foodDays < landGoal && !huntWorkWhy(state, base)) {
+    const have = [...want.values()].filter((w) => w.role === "hunt").length;
+    const ratio = huntYield(state, base).ratio;
+    const room = Math.min(Math.max(1, Math.ceil(people.length * LAND_AP.share)), huntWorkCap(state, base, landGoal)) - have;
+    if (room > 0 && !(ratio != null && ratio < LAND_AP.spareYield)) for (const s of ranked("hunt", huntScore, (x) => !x.inBed && !x.leader).slice(0, room)) give(s, "hunt");
+  }
   if (farmLim.hungry) farmTo(Math.ceil(fw.ideal * FARM_AP.extra));
   // ...and while food is short the hands left over forage instead of picking through the ruins (foraging.js).
   if (foraging) {
@@ -4858,7 +4873,8 @@ function claimAct(state, p) {
 const FORAGE_AP = { low: 12, critical: 4, minDay: 0.5 };
 // The land's hunters and fishers ahead of the farm (planRoles 2b): at most this share of the people (at least one).
 // bareHead: a base without a hunting cabin keeps at most one hunter per this many people (planRoles, ap-food).
-const LAND_AP = { share: 0.2, bareHead: 8 };
+// spareYield: the hands the farm does not need hunt unless the recent hunts brought in under this share of their estimates.
+const LAND_AP = { share: 0.2, bareHead: 8, spareYield: 0.25 };
 function planForage(state, base, people, foodDays, areas) {
   // Days of food for everyone fed here (upkeep.js: prisoners, guests, a holding convoy's crew too).
   foodDays = Math.min(foodDays, edibleFood(base) / Math.max(1, foodUse(state, base).total));
