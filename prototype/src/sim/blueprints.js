@@ -78,6 +78,16 @@ export const CRAFT_BOOKS = {
   forgebook: { unlocks: { crafts: ["springmachete", "rivethelmet"] }, covers: ["sawmachete", "spikedbat", "pipespear", "nailbat", "scrapvest"] },
   bushcraftbook: { unlocks: { crafts: ["woodghillie"] }, covers: ["ghillie", "ragboots", "scentmask", "torch", "arrows", "waterfilter"] },
   enginebook: { unlocks: {}, covers: ["bicycle", "lantern", "headlamp", "flashlight", "spotlight"] }, // Small Engine Repair (teaches Mechanics)
+  // Cookbooks (wave 2 cooking, the user's pick 13: "cookbooks found while scavenging unlock meals even when not at the
+  // correct level"). No craft recipes: cook maps a cooking recipe (cooking.js COOK_RECIPES) to the Cooking a cook needs
+  // for it once the book is read (below the recipe's own level, at a poisoning cost a level short: cooking.js
+  // POISON.below), and its recipes go cooking.js COOK.bookSpeed faster. They stack with skill: the lowest level of the
+  // books read counts. cookText: the item's text and the log line. The AI groups learn them coarsely (cooking.js
+  // groupCookbooks).
+  cookbook: { unlocks: {}, covers: [], cook: { stew: 0, bread: 0, fine: 3 }, cookText: "the cooks make stew and bread at any Cooking and fine meals from Cooking 3 (2, 2 and 6 without it)" },
+  chefbook: { unlocks: {}, covers: [], cook: { fine: 2, lavish: 4 }, cookText: "the cooks make fine meals from Cooking 2 and lavish meals from Cooking 4 (6 and 8 without it)" },
+  gamebook: { unlocks: {}, covers: [], cook: { pemmican: 0, ground: 0, sausage: 1 }, cookText: "the cooks make pemmican and ground meat at any Cooking and smoked sausage from Cooking 1 (3, 0 and 3 without it)" },
+  prepbook: { unlocks: {}, covers: [], cook: { survival: 1, pemmican: 1, flour: 0, bread: 0 }, cookText: "the cooks pack survival meals from Cooking 1 (4 without it), make pemmican from Cooking 1, and flour and bread at any Cooking" },
 };
 export const CRAFT_BOOK_KEYS = Object.keys(CRAFT_BOOKS);
 const isBookTech = (id) => !!CRAFT_BOOKS[id];
@@ -132,6 +142,7 @@ for (const [id, d] of Object.entries(BLUEPRINTS)) {
 for (const [key, d] of Object.entries(CRAFT_BOOKS)) {
   if (!GEAR[key] || GEAR[key].craftBook) continue;
   GEAR[key].craftBook = true;
+  if (d.cook) { GEAR[key].cookBook = true; GEAR[key].desc += ` Once anyone has read it to the end at a base, for good: ${d.cookText}, and those meals are made 10% faster.`; continue; } // wave 2 cooking
   const opens = (d.unlocks.crafts || []).map(unlockName);
   GEAR[key].desc += ` Once anyone has read it to the end at a base, for good:${opens.length ? ` unlocks ${opens.join(", ")};` : ""} ${edgeText(d)}.`;
 }
@@ -230,6 +241,7 @@ export function learnBook(state, key, s = null) {
   if (!isBookTech(key) || isKnown(state, key)) return false;
   tech(state).known.push(key);
   const d = CRAFT_BOOKS[key];
+  if (d.cook) { log(state, `📗 ${s ? `${s.name.split(" ")[0]} read ${GEAR[key].name} to the end` : `${GEAR[key].name} is read`}: ${d.cookText}.`, "good"); return true; } // wave 2 cooking
   const opens = (d.unlocks.crafts || []).map(unlockName);
   const n = new Set([...(d.unlocks.crafts || []), ...(d.covers || [])]).size;
   log(state, `📗 ${s ? `${s.name.split(" ")[0]} read ${GEAR[key].name} to the end` : `${GEAR[key].name} is read`}: ${opens.length ? `${opens.join(", ")} can now be made, and ` : ""}${n} recipes come out better and faster.`, "good");
@@ -237,10 +249,14 @@ export function learnBook(state, key, s = null) {
 }
 // For the UI: every craft book with its state.
 export function craftBookRows(state) {
-  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k]).map((key) => {
+  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k] && !CRAFT_BOOKS[k].cook).map((key) => { // the cookbooks have their own rows (cookBookRows)
     const d = CRAFT_BOOKS[key];
     return { key, name: GEAR[key].name, known: isKnown(state, key), held: booksHeld(state, key), opens: (d.unlocks.crafts || []).map(unlockName), covers: (d.covers || []).map(unlockName), where: bookWhere(key), desc: GEAR[key].desc };
   });
+}
+// Wave 2 cooking: the cookbooks (CRAFT_BOOKS with cook) with their state, for the Blueprints card.
+export function cookBookRows(state) {
+  return CRAFT_BOOK_KEYS.filter((k) => GEAR[k] && CRAFT_BOOKS[k].cook).map((key) => ({ key, name: GEAR[key].name, known: isKnown(state, key), held: booksHeld(state, key), what: CRAFT_BOOKS[key].cookText, where: bookWhere(key), desc: GEAR[key].desc }));
 }
 
 // ---------- copies held ----------

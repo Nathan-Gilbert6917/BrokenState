@@ -891,12 +891,12 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const untreated = lasts(false), treated = lasts(true);
   check(treated < untreated, `meds shorten it (${untreated} days untreated, ${treated} with a dose)`);
   check(!autoWantsCondition({ key: "stomach", sev: 40, course: null, dosed: 0, mending: false }), "automatic care leaves it alone (it passes; meds by hand)");
-  // Uncooked food too.
+  // Uncooked food too (wave 2 cooking: food poisoning, cooking.js / health.js poisoning).
   const fw = wormWorld(0.8);
   const fp = residents(fw.st, fw.h.id);
   for (const o of fp) o.conditions = [];
   withNums(WORM, { RAW: 1e-7, SICK_X: 1e8, SICK_MAX: 1 }, () => eatRaw(fw.st, fp, fp.length * 2, "eating game that was not cooked through"));
-  check(fp.every((o) => conditionsOf(o).some((k) => k.key === "stomach")) && fp.every((o) => !o.worm), "uncooked food turns the stomach too (pinned), without the worm");
+  check(fp.every((o) => conditionsOf(o).some((k) => k.key === "poisoning")) && fp.every((o) => !o.worm), "uncooked food gives food poisoning (pinned; wave 2 cooking: it was an upset stomach), without the worm");
 }
 
 // ---------- 6b. hands that handled the dead ----------
