@@ -259,9 +259,10 @@ export function eatFromStore(base, amount, state = null) {
   noteAte(state, base, items);
   return Math.max(0, need);
 }
-// What a base ate today (relations.js noteMeals: the mood of the meals, weeks of nothing fresh).
+// What a base ate today (relations.js noteMeals: the mood of the meals, weeks of nothing fresh). The day: the midnight
+// tick closes the day before (eating.js eats by the hour; economy.js reads the day that ended at midnight).
 function noteAte(state, base, items) {
-  const d = state ? Math.floor(state.hour / 24) : null;
+  const d = state ? Math.floor((state.hour - 1) / 24) : null;
   if (!base.ate || base.ate.day !== d) base.ate = { day: d, units: 0, fresh: 0, meals: 0, lift: 0 };
   for (const [k, q] of Object.entries(items)) {
     const f = FOODS[k], u = unitsOf(k, q);
@@ -272,6 +273,15 @@ function noteAte(state, base, items) {
 }
 // The mood the day's meals give (relations.js): the eaten meals' moodLift, by their share of the day's food.
 export const mealLift = (base, d) => (base.ate && base.ate.day === d && base.ate.units > 0 ? base.ate.lift / base.ate.units : 0);
+
+// Food eaten from the stores by someone at the table (eating.js, hourly): jarred food frees its jars, and the day's
+// record (noteAte).
+export function ateFromStore(state, base, items) {
+  if (items.f_jarred > 0) jarsBack(base, items.f_jarred);
+  noteAte(state, base, items);
+}
+// The day a base's meals count for now (see noteAte).
+export const ateDay = (state) => Math.floor((state.hour - 1) / 24);
 
 // Jars in use follow the jarred food: eating it frees its jars, most come back.
 function jarsBack(base, eaten) {

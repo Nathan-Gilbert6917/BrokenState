@@ -23,7 +23,10 @@
 //                    conflicts.js runBonus (+1 a team on foot all Fleet-Footed, −1 a team on foot with anyone Slow)
 //   Iron Will        breakMult: relations.js maybeBreak, mentalbreaks.js mentalBreaksDaily, morale.js desertion
 //   Clumsy / Feeble  meleeTraitAim (combat.js playerUnit); Clumsy accidentMult: health.js work accidents, searchHazards
-//   Glutton          appetite: upkeep.js foodUse (a base's residents), needs.js teamNeedsHour (hunger on the road)
+//   Glutton          appetite: upkeep.js foodUse (a base's residents), needs.js teamNeedsHour (hunger on the road),
+//                    eating.js (hunger at a base, and they eat to 100)
+//   Picky Eater / Vegetarian / Cannibal (2026-10-11)   eating.js noteEat (timed food thoughts) and the menu (a
+//                    Vegetarian's plant food first)
 //   Sickly           health.js frailty (× sicklyMult) and conditionDrift (+ sicklyDrift)
 //   Hothead          relations.js compat (− opinion), maybeBreak (a fight × fight), mentalbreaks.js snap (× attack)
 //   Keen Eye         markers.js perceptionChance (+ notice), parties.js sight (+ sight), survey.js (the keen eye):
@@ -42,7 +45,7 @@
 // Everyone with traits plays by these: your people, the autopilot's, recruits, wanderers, prisoners, children grown
 // up, and anyone of yours in a fight by the numbers. Other groups' people are numbers (factions.js strength), not
 // survivors, so no trait touches them until they join you or are taken prisoner.
-import { TRAITS, BIRTH_TRAITS, SWAP_TRAITS, LATE_TRAITS, clashIn, traitKind } from "./data.js";
+import { TRAITS, BIRTH_TRAITS, SWAP_TRAITS, LATE_TRAITS, DIET_TRAITS, DIET_ROLLED, clashIn, traitKind } from "./data.js";
 import { Rng } from "./rng.js";
 
 // ---------- the tiers: points and numbers (tune here) ----------
@@ -91,6 +94,11 @@ export const TRAIT_TIERS = {
   feeble:       { pts: [-2, -4, -6], fx: { kg: [4, 7, 10], melee: [5, 10, 15] }, say: (f) => `Max load ${f.kg} kg lower, and −${f.melee}% to hit in melee` },
   squeamish:    { pts: [-2, -4, -6], fx: { skill: [2, 3, 4], grief: [3, 5, 8] }, say: (f) => `−${f.skill} Medicine, and a death in the group hits their mood ${f.grief} points harder (wherever they are)` },
   pessimist:    { pts: [-2, -4, -6], fx: { mood: [0.5, 1, 1.5] }, say: (f) => `Always expects the worst: mood −${f.mood} a day` },
+  // 2026-10-11 (wave 2 eating, user pick 3): eating.js noteEat, the timed food thoughts (mood once, lasting 2–5 days).
+  // picky: a simple meal −simple, raw food −raw (on top of "Ate raw food"), a fine meal +fine (a lavish one × 1.5).
+  picky:        { pts: [-2, -3, -5], fx: { simple: [3, 4, 6], raw: [4, 6, 8], fine: [2, 3, 4] }, say: (f) => `Fussy about food: a simple meal mood −${f.simple} and raw food −${f.raw} on top of the usual; a fine meal +${f.fine} and a lavish one +${Math.round(f.fine * 1.5)} on top` },
+  vegetarian:   { pts: [-3],         fx: { meat: [6] }, say: (f) => `Eats plant food first (the menu puts it first); meat, fish, eggs, milk, honey or a mixed meal: mood −${f.meat} (2 days)` },
+  cannibal:     { pts: [0],          fx: { lift: [10] }, say: (f) => `Human meat lifts their mood (+${f.lift}) where it turns anyone else's stomach (−20). There is no human meat in the game: the dead carry the worm` },
   // The prepper's background trait (hardcore-start.js): changes nothing in play, worth nothing.
   prepper:      { pts: [0],          fx: {}, say: () => TRAITS.prepper.desc },
 };
@@ -299,7 +307,10 @@ export function traitHash(...n) {
 // LATE_TRAITS (2026-10-09: Tactical, Strategic, Diplomatic) come in after the swap (lateTraits): each trait then is,
 // LATE_SHARE of the time, one of them, with numbers hashed from where the swap's dice stand (read, not drawn), so the
 // swap and everything else are as they were. LATE_SHARE is their share of all the traits.
-export const TRAIT_ROLL = { SALT: 0x7a17, NEW_SHARE: SWAP_TRAITS.length / (SWAP_TRAITS.length + BIRTH_TRAITS.length), LATE_SALT: 0x1a7e, LATE_SHARE: LATE_TRAITS.length / Object.keys(TRAITS).length, ON: true };
+// DIET_* (2026-10-11): Picky Eater and Vegetarian come in last (dietTraits), DIET_SHARE of the time each; LATE_SHARE is
+// fixed at what it was before them (3 of the 34 traits then), so every seed keeps its rolls but for the few a food trait
+// now takes the place of.
+export const TRAIT_ROLL = { SALT: 0x7a17, NEW_SHARE: SWAP_TRAITS.length / (SWAP_TRAITS.length + BIRTH_TRAITS.length), LATE_SALT: 0x1a7e, LATE_SHARE: LATE_TRAITS.length / (Object.keys(TRAITS).length - DIET_TRAITS.length), DIET_SALT: 0xd1e7, DIET_SHARE: DIET_ROLLED.length / Object.keys(TRAITS).length, ON: true };
 // The dice for the n-th person a world makes.
 /** @param {number} seed @param {number} n @returns {Rng} */
 export const traitDice = (seed, n) => new Rng(((Math.imul((seed | 0) ^ TRAIT_ROLL.SALT, 2654435761) ^ Math.imul((n | 0) + 0x3c6e, 1597334677)) >>> 0) || 1);
@@ -327,6 +338,19 @@ export function lateTraits(traits, dice) {
     const others = traits.filter((_, j) => j !== i);
     const pool = LATE_TRAITS.filter((t) => !others.includes(t) && !clashIn(others, t));
     if (pool.length) traits[i] = pool[Math.floor(traitHash(key, TRAIT_ROLL.LATE_SALT, i, 1) * pool.length)];
+  }
+  return dietTraits(traits, key);
+}
+// The food traits (2026-10-11): each of someone's traits, DIET_SHARE of the time, becomes Picky Eater or Vegetarian
+// (none twice, none that clashes). Hashed from the same key as lateTraits: nothing is drawn.
+/** @param {string[]} traits @param {number} key @returns {string[]} */
+export function dietTraits(traits, key) {
+  if (!TRAIT_ROLL.ON || !(TRAIT_ROLL.DIET_SHARE > 0)) return traits;
+  for (let i = 0; i < traits.length; i++) {
+    if (traitHash(key, TRAIT_ROLL.DIET_SALT, i, 0) >= TRAIT_ROLL.DIET_SHARE) continue;
+    const others = traits.filter((_, j) => j !== i);
+    const pool = DIET_ROLLED.filter((t) => !others.includes(t) && !clashIn(others, t));
+    if (pool.length) traits[i] = pool[Math.floor(traitHash(key, TRAIT_ROLL.DIET_SALT, i, 1) * pool.length)];
   }
   return traits;
 }

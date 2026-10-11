@@ -40,6 +40,7 @@
 // own deserters who do not come back may join a group near the base they left (playerDeserters).
 // Every roll is a hash (skills.js hash01): the world's dice are not touched (bar a recruit card's own).
 import { moveFoodUnits, DAY_VALUE, foodIn } from "./foods.js"; // food by type (foods.js)
+import { groupDietPressure } from "./eating.js"; // their rations and the sameness of their food (wave 2 eating)
 import { supplyAmt } from "./rounds.js"; // "food": days of food
 import { SUPPLIES, GEAR, supValue } from "./data.js";
 import { day, log, hub } from "./world.js";
@@ -466,6 +467,7 @@ export function desertPressure(state, f) {
   p += Math.min(2, ((f.lossRecent || 0) / pop) * 5);
   p += (woundedOf(f) / pop) * 2;
   if (warsOf(state, f).length || atWarWithYou(state, f)) p += 0.5; // playerwars.js: a war with you weighs the same
+  p += groupDietPressure(state, f); // eating.js: lean rations +, a recent feast −, the same few foods + (wave 2 eating)
   p = Math.max(0, p - groupKitchenMorale(state, f)); // groupworks.js: hot meals from their kitchens keep people (kitchen-plus)
   return p * weightOf(f, "harsh");
 }
