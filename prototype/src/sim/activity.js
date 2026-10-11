@@ -456,7 +456,7 @@ function jobProgress(state, base, job, list, h) {
     out.progress = { frac: sp.reduce((a, x) => a + x.p.frac, 0) / sp.length, text: sp.map((x) => `${first(x.s)} Medicine ${x.p.level}→${x.p.level + 1} ${x.p.pct}%`).join(" · ") };
   } else if (job === "cook" && hasKitchen(base)) {
     const ks = kitchenService(state, base);
-    const short = ks.wanted > ks.cooks.length ? ` · ${ks.wanted} cook${ks.wanted === 1 ? "" : "s"} wanted for ${ks.fed}` : "";
+    const short = ks.wanted > ks.count ? ` · ${ks.wanted} cook${ks.wanted === 1 ? "" : "s"} wanted for ${ks.fed}` : "";
     out.progress = { frac: ks.cover, text: ks.cooks.length ? `Hot meals for ${ks.served} of ${ks.fed} · −${Math.round(ks.save * 1000) / 10}% food a day, +${r1(ks.mood)} mood${short}` : `No cook able to work${short}` };
   } else if (job === "scavenge" && scavLeft(base) > SCAV_FLOOR + 0.02) {
     const exp = Object.values(scavengeOutput(state, base)).reduce((a, v) => a + v, 0);

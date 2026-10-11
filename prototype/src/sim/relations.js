@@ -338,7 +338,7 @@ export function moodFactors(state, s) {
     // old +1 "hot meals" is gone).
     if (!(base.hungerDays > 0)) {
       const ks = kitchenService(state, base);
-      if (ks.mood > 0) add(`Hot meals from the kitchen (${ks.cooks.length} cook${ks.cooks.length === 1 ? "" : "s"}${ks.served < ks.fed ? `, ${ks.served} of ${ks.fed} fed` : ""})`, ks.mood, true);
+      if (ks.mood > 0) add(`Hot meals from the kitchen (${ks.count} cook${ks.count === 1 ? "" : "s"}${ks.served < ks.fed ? `, ${ks.served} of ${ks.fed} fed` : ""})`, ks.mood, true);
     }
     const rooms = count(base, "common_room");
     if (rooms) {

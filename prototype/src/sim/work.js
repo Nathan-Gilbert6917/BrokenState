@@ -70,7 +70,7 @@ import { watchShift, shiftText } from "./watch.js"; // the base's watch roster (
 import { sleepingIn } from "./sleep.js"; // off a watch: sleep until rested
 import { wormFilterUrgent, woodCritical, farmCrewLimits, FARM_AP } from "./autopilot.js"; // the governor's rules: a filter while the worm is in the water (planRoles 1b), the autumn's woodcutters (4a)
 import { baseAmmo } from "./ammo.js"; // rounds by calibre: what fits the guns there
-import { KITCHEN, hasKitchen, cooksWanted, isCookHour, kitchenCanLight } from "./kitchen.js"; // the Kitchen's cooks (work type "meals")
+import { KITCHEN, hasKitchen, cooksWanted, isCookHour, kitchenCanLight, markCooked } from "./kitchen.js"; // the Kitchen's cooks (work type "meals")
 
 export const PRIO_MAX = 5;
 const WATER_BUILDS = ["well", "rain_catcher", "cistern"]; // water first (autopilot.js waterPlan)
@@ -1012,7 +1012,7 @@ export function planBase(state, base) {
     if (a.bp) s.studying = a.bp;
     if (a.repair != null) { const j = (base.repairs || []).find((x) => String(x.id) === String(a.repair)); if (j) j.who = s.id; }
     if (a.kind === "sched" && (a.t === "sleep" || a.t === "free")) s.mood = Math.min(100, s.mood + OFF_MOOD);
-    if (a.t === "meals") s.cookHour = state.hour; // kitchen.js cooksAt: one of the day's cooks for the next 24 hours
+    if (a.t === "meals") markCooked(state, s); // kitchen.js cooksAt: one of the day's cooks for the next 24 hours (and the hours, jobShare)
     const prev = s.task;
     const last = a.kind === "work" || a.kind === "emerg" && a.role !== "guard" ? { role: a.role, station, hour: state.hour } : prev && prev.last && state.hour - prev.last.hour < 72 ? prev.last : null;
     s.task = { t: a.t, p: a.p || 0, kind: a.kind, why: a.why, note: a.note || "", base: base.id, hour: state.hour, since: prev && prev.t === a.t ? prev.since : state.hour, last };

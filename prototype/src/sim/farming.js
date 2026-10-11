@@ -16,6 +16,7 @@ import * as Weather from "./weather.js";
 import { log, atBase, skill, day, residents } from "./world.js";
 import { count } from "./buildings.js";
 import { workFactor } from "./health.js";
+import { jobShare } from "./kitchen.js"; // a part-time cook's share of the farm's day
 import { storeCapacity, storeRate, edibleFood, spoilFresh } from "./storage.js";
 import { hasPerk, seedCost } from "./skills.js";
 import { prisonersAt } from "./upkeep.js";
@@ -316,7 +317,7 @@ export function farmers(state, base) {
   return atBase(state, base.id).filter((s) => s.role === "farm" && !s.inBed && workFactor(s) > 0)
     .sort((a, b) => skill(b, "farming") - skill(a, "farming"));
 }
-export const farmLabour = (state, base) => farmers(state, base).reduce((a, s) => a + workFactor(s), 0);
+export const farmLabour = (state, base) => farmers(state, base).reduce((a, s) => a + workFactor(s) * jobShare(state, s, "farm"), 0); // jobShare: a part-time cook farms the rest of the day (kitchen.js)
 
 // Today's care for a standing crop: tending (labour per planted plot) x skill (average Farming of the best farmers,
 // one per planted plot).
@@ -324,7 +325,7 @@ export function careToday(state, base) {
   const f = farmOf(state, base);
   const list = farmers(state, base);
   const planted = Math.max(1, f.plots.filter((p) => p.stage === "growing").length);
-  const labour = list.reduce((a, s) => a + workFactor(s), 0) + prisonLabour(state, base, "farm"); // prisoners-tab: prisoners set to Farm help tend (prisoners.js, 50–70% of a farmer)
+  const labour = list.reduce((a, s) => a + workFactor(s) * jobShare(state, s, "farm"), 0) + prisonLabour(state, base, "farm"); // jobShare: a part-time cook's hours at the stove (kitchen.js) // prisoners-tab: prisoners set to Farm help tend (prisoners.js, 50–70% of a farmer)
   const tenders = list.slice(0, Math.max(1, planted));
   // Perks (skills.js): Early Riser counts Farming +3 when tending; Green Thumb +15% while one of the tenders.
   const avg = tenders.length ? tenders.reduce((a, s) => a + skill(s, "farming") + (hasPerk(s, "earlyriser") ? 3 : 0), 0) / tenders.length : 0;

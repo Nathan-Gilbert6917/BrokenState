@@ -58,7 +58,7 @@ import { BUILDINGS, RECIPES } from "./buildings.js";
 import { CRAFTS, craftQueue } from "./crafting.js";
 import { studyBlueprint, blueprintWares, bookUnlocksPending, learnBook } from "./blueprints.js";
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { hasKitchen, cookedLately } from "./kitchen.js"; // the Kitchen's cooks learn Cooking (full-day and part-time)
+import { hasKitchen, cookedLately, jobShare } from "./kitchen.js"; // the Kitchen's cooks learn Cooking (full-day and part-time)
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
@@ -514,7 +514,7 @@ function readingDaily(state, base) {
     }
     s.readIdle = false;
     s.reading = k;
-    noteOutput(state, base, "read", readHours(state, s, k, READ_HOURS * Math.max(0.5, workFactor(s))), "readh");
+    noteOutput(state, base, "read", readHours(state, s, k, READ_HOURS * Math.max(0.5, workFactor(s)) * jobShare(state, s, "read")), "readh");
   }
 }
 
@@ -672,7 +672,7 @@ function teachingDaily(state, base) {
     }
     T.teachIdle = false;
     if (!T.teach || !lesson.set) T.teach = { skill: lesson.skill, learners: lesson.learners.slice() };
-    const rate = teachRate(T, lesson.skill);
+    const rate = teachRate(T, lesson.skill) * jobShare(state, T, "teach"); // kitchen.js: a part-time cook teaches the rest of the day
     let taught = 0;
     for (const id of lesson.learners) taught += gainXp(state, survivorById(state, id), lesson.skill, rate, "study");
     noteOutput(state, base, "teach", taught, "xp");
@@ -689,11 +689,11 @@ const RECIPE_SKILL = { ammo: "mechanics", meds: "medicine", parts: "mechanics", 
 // Use XP from a day's work at a base, by role (× work factor: the ill do less and learn less).
 function roleXp(state, base, s) {
   if (s.inBed) return;
-  const wf = workFactor(s);
+  const wf = workFactor(s) * jobShare(state, s); // kitchen.js: a part-time cook's job gets the hours away from the stove
   if (wf <= 0) return;
   // A part-time cook (work priorities' Cook type, or a fixed Cook + second job: kitchen.js) counted at another job today
   // learns Cooking from the cooking hours too.
-  if (s.role !== "cook" && cookedLately(state, s) && hasKitchen(base)) gainXp(state, s, "cooking", USE.cookPart * wf);
+  if (s.role !== "cook" && cookedLately(state, s) && hasKitchen(base)) gainXp(state, s, "cooking", USE.cookPart * workFactor(s));
   switch (s.role) {
     case "farm": gainXp(state, s, "farming", USE.farm * wf); break;
     case "medic": gainXp(state, s, "medicine", USE.medicRole * wf); break;

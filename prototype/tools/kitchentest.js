@@ -30,7 +30,9 @@ import { workNowPanel } from "../src/ui/activity.js";
 import { kitchenNote } from "../src/ui/kitchen.js";
 import { baseNeeds, planIdle } from "../src/sim/idlework.js";
 // kitchen-plus (2026-10-10): firewood, part-time fixed cooks, the Cooking skill, the cook fire down, the kitchen's slot, AI parity.
-import { kitchenWood, kitchenCanLight, kitchenCold, cookShiftHour, cooksHour, cookPlusOf, isCookHour, COOK_SECOND } from "../src/sim/kitchen.js";
+import { kitchenWood, kitchenCanLight, kitchenCold, cookShiftHour, cooksHour, cookPlusOf, isCookHour, COOK_SECOND, jobShare } from "../src/sim/kitchen.js";
+import { farmLabour } from "../src/sim/farming.js";
+import { workFactor } from "../src/sim/health.js";
 import { woodNeed } from "../src/sim/woodcutting.js";
 import { applyRoleChoice, roleSelect } from "../src/ui/work.js";
 import { upkeepLine, woodLine } from "../src/ui/farming.js";
@@ -206,6 +208,8 @@ section("Work priorities: the Cook type");
   st.hour = 24 * 2 + 20; planBase(st, h);
   st.hour = 24 * 2 + 21; planBase(st, h);
   check(!atBase(st, h.id).some((s) => s.role === "cook"), "21:00: no washing-up block");
+  for (const hr of KITCHEN.cookHours) { st.hour = 24 * 2 + hr; planBase(st, h); } // the day's cooking hours (the kitchen counts the hours they cooked)
+  st.hour = 24 * 2 + 21; planBase(st, h);
   st.hour = 24 * 3; // midnight: the day's eating
   const ks = kitchenService(st, h);
   check(ks.cooks.length === 2 && ks.cover === 1, `at midnight the day's two priority cooks count (${ks.cooks.length}, cover ${ks.cover})`);
@@ -349,6 +353,19 @@ section("Part-time fixed cooks: Cook + second job (kitchen-plus pick 2)");
   check(hourOfDay(st) === 0 && c.role === "farm", "at midnight the day's systems count them at Farm");
   const ks = kitchenService(st, h);
   check(ks.cooks.includes(c) && ks.cover === 1, "...and the kitchen counts them as the day's cook (s.cookHour)");
+  // The farm's day: the cooking hours are not free (jobShare: 6 of the 16 working hours at the stove).
+  check(near(jobShare(st, c, "farm"), 1 - 6 / 16) && jobShare(st, c, "wood") === 1, `the day's farm credit: ${jobShare(st, c, "farm")} (the trip jobs lose the hours by themselves: 1)`);
+  const other = ppl[5]; other.role = "farm"; other.pinned = true;
+  check(near(farmLabour(st, h), workFactor(c) * 0.625 + workFactor(other) * (other.role === "farm" ? jobShare(st, other) : 0)) && farmLabour(st, h) < workFactor(c) + workFactor(other), `farm labour counts the part-time cook at 0.625 (${farmLabour(st, h).toFixed(3)})`);
+  other.role = "rest";
+  // A handover at noon: the morning's cook and the evening's are one cook's day between them, not "2 of 1".
+  const c2 = ppl[6];
+  c2.cookLog = [st.hour - 19, st.hour - 18]; c2.cookHour = st.hour - 18; c2.role = "farm";
+  c.cookLog = c.cookLog.filter((x) => st.hour - x <= 8);
+  const ksh = kitchenService(st, h);
+  check(ksh.cooks.length === 2 && ksh.count === 1 && ksh.main[0] === c && ksh.cover === 1, `two cooks sharing the day: ${ksh.count} of ${ksh.wanted} (main ${ksh.main.map((x) => x.name).join(", ")}, cover ${ksh.cover})`);
+  check(/1 of 1 wanted/.test(kitchenNote(st, h)) && /for some of the hours/.test(kitchenNote(st, h)), "the card: 1 of 1 wanted, the other for some of the hours");
+  c2.cookLog = []; delete c2.cookHour;
   check(describeActivity(st, c, 17).text === "Cooking dinner" && describeActivity(st, c, 10).job === "farm", `the People tab: 17:00 ${describeActivity(st, c, 17).text}, 10:00 ${describeActivity(st, c, 10).text}`);
   // Cooking XP from the cooking hours, counted at Farm.
   ensureSkills(st, c);

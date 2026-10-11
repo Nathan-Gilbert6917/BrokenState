@@ -65,6 +65,8 @@ export const KITCHEN = {
   day: [5, 21], // a fixed-role cook's working hours (05:00–21:59)
   cookHours: [5, 6, 16, 17, 18, 19, 20], // the hours a part-time cook cooks: before and at the meals
   cookedFor: 24, // hours a cook who cooked counts as one of the day's cooks (s.cookHour)
+  workDay: [6, 22], // the working day a daily job's credit is counted against (jobShare: 16 hours)
+
 };
 // The second jobs a fixed "Cook + …" may have (economy.js ROLES keys): the jobs that need no station, lesson or book.
 export const COOK_SECOND = ["farm", "scavenge", "wood", "forage", "hunt", "fish", "water", "build", "craft", "guard", "rest"];
@@ -86,6 +88,31 @@ export const cookPlusOf = (state, s) => (s && s.cookPlus && COOK_SECOND.includes
 export const isCook = (state, s) => s.role === "cook" || !!cookPlusOf(state, s) || cookedLately(state, s);
 // What a Manual "Cook + second job" does at hour h here: Cook in the cooking hours (with a kitchen), else the second job.
 export const cookShiftRole = (base, s, h) => (hasKitchen(base) && isCookHour(h) ? "cook" : s.cookPlus);
+// The cooking hours someone worked in the last KITCHEN.cookedFor hours (s.cookLog: the absolute hours, kept 24 h).
+export const cookHoursLately = (state, s) => (Array.isArray(s.cookLog) ? s.cookLog.filter((h) => state.hour - h >= 0 && state.hour - h < KITCHEN.cookedFor).length : 0);
+// Someone on Cook this hour at a kitchen: s.cookHour and the hour in s.cookLog (work.js planBase, cooksHour).
+export function markCooked(state, s) {
+  s.cookHour = state.hour;
+  const log = (Array.isArray(s.cookLog) ? s.cookLog : []).filter((h) => state.hour - h < KITCHEN.cookedFor);
+  if (log[log.length - 1] !== state.hour) log.push(state.hour);
+  s.cookLog = log;
+}
+// The jobs whose day is not counted once at midnight: the job trips (jobtrips.js: the cooking hours cut a trip short)
+// and the hourly ones (building, crafting, the walls) lose the cooking hours by themselves.
+const HOURLY_JOBS = new Set(["wood", "forage", "hunt", "fish", "scavenge", "water", "build", "craft", "guard", "rest", "cook"]);
+// A part-time cook's credit for the job the day's systems count them at (farming, a workshop station, medic duty,
+// teaching, reading, use XP): the share of that job's working day (KITCHEN.workDay, 16 hours) they did not spend at
+// the stove: 1 − the cooking hours inside the working day / 16 (the usual 06:00 and 16–20 are 6 hours: 0.625).
+// 1 for a full-day job of their own and for the hourly and trip jobs (the cooking hours already cost them those).
+export function jobShare(state, s, job = s && s.role) {
+  if (!s || HOURLY_JOBS.has(job) || !Array.isArray(s.cookLog)) return 1;
+  const [a, b] = KITCHEN.workDay;
+  const hrs = s.cookLog.filter((h) => state.hour - h >= 0 && state.hour - h < KITCHEN.cookedFor && ((h % 24) + 24) % 24 >= a && ((h % 24) + 24) % 24 < b).length;
+  return hrs ? Math.max(0, 1 - hrs / (b - a)) : 1;
+}
+// How much of the day's cooking someone did (0–1): a cook on Cook now (or counted at Cook for the day) 1; a part-time
+// one their cooking hours of KITCHEN.cookHours (one cook who handed over at noon and the one after: about 1 between them).
+export const cookShare = (state, s) => (dayRole(state, s) === "cook" ? 1 : Math.min(1, cookHoursLately(state, s) / KITCHEN.cookHours.length) || (cookedLately(state, s) ? 1 : 0));
 export const cooksAt = (state, base) => atBase(state, base.id).filter((s) => (dayRole(state, s) === "cook" || cookedLately(state, s)) && !s.inBed && workFactor(s) >= KITCHEN.minWork);
 // Cooks a base's kitchen wants: one per KITCHEN.perCook people living here (0 without a kitchen).
 export const cooksWanted = (state, base) => (hasKitchen(base) ? Math.max(1, Math.ceil(residents(state, base.id).length / KITCHEN.perCook)) : 0);
@@ -97,18 +124,22 @@ export const kitchenCold = (base) => !!base && hasKitchen(base) && base.kitchenC
 function serviceOf(state, base) {
   const built = hasKitchen(base);
   const fed = built ? residents(state, base.id).length : 0;
-  const none = { built, cooks: [], wanted: built ? cooksWanted(state, base) : 0, fed, served: 0, cover: 0, skill: 0, rate: 0, save: 0, mood: 0, boil: 0, cold: false };
+  const none = { built, cooks: [], main: [], count: 0, wanted: built ? cooksWanted(state, base) : 0, fed, served: 0, cover: 0, skill: 0, rate: 0, save: 0, mood: 0, boil: 0, cold: false };
   if (!built || !fed) return none;
   const cooks = cooksAt(state, base);
   if (!cooks.length) return none;
-  const hands = cooks.reduce((a, s) => a + Math.min(1, workFactor(s)) * (hasPerk(s, "bigpot") ? KITCHEN.perk.bigpot : KITCHEN.perCook), 0);
+  const hands = cooks.reduce((a, s) => a + Math.min(1, workFactor(s)) * cookShare(state, s) * (hasPerk(s, "bigpot") ? KITCHEN.perk.bigpot : KITCHEN.perCook), 0);
   const cover = Math.min(1, hands / fed);
   const best = Math.max(...cooks.map((s) => skill(s, KITCHEN.skill)));
   const any = (id) => cooks.some((s) => hasPerk(s, id));
   const perkSave = (any("thrifty") ? KITCHEN.perk.thrifty : 0) + (any("nowaste") ? KITCHEN.perk.nowaste : 0);
   const rate = Math.min(KITCHEN.saveMax, KITCHEN.save + KITCHEN.skillStep * Math.max(0, best - KITCHEN.skillFrom)) + perkSave;
   const mood = (best >= KITCHEN.moodSkillAt ? KITCHEN.moodSkilled : KITCHEN.mood) + (any("hearty") ? KITCHEN.perk.hearty : 0);
-  return { built, cooks, wanted: cooksWanted(state, base), fed, served: Math.min(fed, Math.round(fed * cover)), cover, skill: best, rate, save: rate * cover, mood: mood * cover, boil: KITCHEN.boil * cover, cold: false };
+  // The day's main cooks (count): the cooks' shares of the day's cooking added up (one who handed over at noon and the
+  // one after it: one cook's day between them), the biggest shares first (main), never more than cooked.
+  const shares = cooks.map((s) => ({ s, v: cookShare(state, s) })).sort((x, y) => y.v - x.v || x.s.id - y.s.id);
+  const count = Math.min(cooks.length, Math.max(1, Math.ceil(shares.reduce((a, x) => a + x.v, 0) - 0.15)));
+  return { built, cooks, main: shares.slice(0, count).map((x) => x.s), count, wanted: cooksWanted(state, base), fed, served: Math.min(fed, Math.round(fed * cover)), cover, skill: best, rate, save: rate * cover, mood: mood * cover, boil: KITCHEN.boil * cover, cold: false };
 }
 // The kitchen's day: as serviceOf, with a cold stove (no firewood) serving nothing: { …, cold: true, served 0, cover 0,
 // save 0, mood 0, boil 0 } (the cooks still listed).
@@ -171,7 +202,7 @@ export function kitchenDaily(state, base, eaten) {
   if (!ks.built) { delete base.kitchenDay; return; }
   const saved = ks.save > 0 && ks.save < 1 ? Math.max(0, eaten) * ks.save / (1 - ks.save) : 0;
   const wood = base.kitchenBurn && base.kitchenBurn.day === workDay(state.hour) ? base.kitchenBurn.wood : 0;
-  base.kitchenDay = { day: workDay(state.hour), cooks: ks.cooks.length, served: ks.served, meals: ks.served * 2, saved: Math.round(saved * 100) / 100, cover: Math.round(ks.cover * 100) / 100, wood, cold: !!ks.cold };
+  base.kitchenDay = { day: workDay(state.hour), cooks: ks.count, served: ks.served, meals: ks.served * 2, saved: Math.round(saved * 100) / 100, cover: Math.round(ks.cover * 100) / 100, wood, cold: !!ks.cold };
   if (ks.cooks.length) {
     noteOutput(state, base, "cook", ks.served * 2, "meals");
     noteOutput(state, base, "cook", saved, "foodsaved");
@@ -202,7 +233,7 @@ export function cooksHour(state) {
   if (!isCookHour(hourOfDay(state))) return;
   for (const base of state.bases) {
     if (!hasKitchen(base)) continue;
-    for (const s of atBase(state, base.id)) if (s.role === "cook" && !s.inBed) s.cookHour = state.hour;
+    for (const s of atBase(state, base.id)) if (s.role === "cook" && !s.inBed) markCooked(state, s);
   }
 }
 // The role drop-down's choice "cook+farm" (ui/work.js applyRoleChoice): a Manual Cook with a second job.

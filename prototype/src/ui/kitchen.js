@@ -18,10 +18,10 @@ export function kitchenNote(state, b) {
   const ks = kitchenService(state, b);
   if (!ks.built) return "";
   const rec = b.kitchenDay && b.kitchenDay.day >= day(state) - 1 ? b.kitchenDay : null;
-  const short = ks.cooks.length < ks.wanted;
+  const short = ks.count < ks.wanted; // the day's main cooks (sim/kitchen.js: a cook who handed over mid-day is not a second one)
   const who = (s) => { const k = cookPlusOf(state, s); return `${esc(first(s))}${k && ROLES[k] ? ` (+ ${esc(ROLES[k].name)})` : ""}`; };
   const cooks = ks.cooks.length
-    ? `<span class="${short ? "warn" : "good"}"${tip("A cook on Cook + a second job (or on work priorities) cooks in the cooking hours (05:00–06:00, 16:00–20:00) and does the other job the rest of the day; plain Cook is the kitchen all day.")}>Cooks: ${ks.cooks.map(who).join(", ")} (${ks.cooks.length} of ${ks.wanted} wanted)</span>`
+    ? `<span class="${short ? "warn" : "good"}"${tip("A cook on Cook + a second job (or on work priorities) cooks in the cooking hours (05:00–06:00, 16:00–20:00) and does the other job the rest of the day; plain Cook is the kitchen all day.")}>Cooks: ${ks.main.map(who).join(", ")}${ks.cooks.length > ks.main.length ? ` (with ${ks.cooks.filter((s) => !ks.main.includes(s)).map((s) => esc(first(s))).join(", ")} for some of the hours)` : ""} (${ks.count} of ${ks.wanted} wanted)</span>`
     : `<span class="warn">No cook: put someone on Cook (${ks.wanted} wanted, one per ${KITCHEN.perCook} people). Until then the food is eaten as before.</span>`;
   const meals = ks.cold
     ? `<span class="danger"${tip("The stove had no firewood to spare at midnight (after the water boiler's and the heating's day): cold meals, nothing saved, no mood, no water boiled, and the game and greens from infected land wait for a cook fire. It is lit again at midnight once the firewood is in.")}>Cold meals today: no firewood for the stove</span>`
