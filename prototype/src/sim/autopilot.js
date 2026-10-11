@@ -2154,7 +2154,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // the farm crew while the winter stores fall short or the farmers are short of plots (farmShort): the census at
   // ac1c1c6 kept 2-3 hunters all year, mostly off the plots (farming 54% → 33% of the person-days), the farm crew fell
   // under the "more plots" bar and the plots were never wished for (seed 5021: 0-1 plots until day 250, starved on day
-  // 326). Then at most one hunter per LAND_AP.bareHead people, and none while the recent hunts brought in under
+  // 326). Then at most one hunter per LAND_AP.bareHead people (one from LAND_AP.smallFrom), and none while the recent hunts brought in under
   // HUNT_YIELD.low of what was expected (a cabin's crew is cut to one then): they farm, and try again once those days
   // have passed (HUNT_YIELD.days).
   const cabin = count(base, "huntcabin") > 0;
@@ -2187,8 +2187,10 @@ function planRoles(state, base, areas = ALL_AREAS) {
     // second winter with its hunters taken off for poor hunts, 9 of 17 resting; seed 5000 with 12 and no hunter).
     const winter = wxSeason(state).key === "winter";
     const poor = huntYield(state, base).poor && !winter;
-    // (one at a smaller base only while the food is down to FORAGE_AP.low days: food now, while the crops take weeks)
-    const hunters = cabin || winter ? (poor ? Math.min(ahead, 1) : ahead) : poor ? 0 : Math.min(ahead, Math.max(foodDays < FORAGE_AP.low ? 1 : 0, Math.floor(people.length / LAND_AP.bareHead)));
+    // (one at a base of LAND_AP.smallFrom to bareHead people, as at a bigger one; under that, only while the food is down to
+    // FORAGE_AP.low days: food now, while the crops take weeks. Hardcore's small turtles that kept a hunter lived where the
+    // census before the cabinless hunting lost them: seeds 5042, 5049.)
+    const hunters = cabin || winter ? (poor ? Math.min(ahead, 1) : ahead) : poor ? 0 : Math.min(ahead, Math.max(foodDays < FORAGE_AP.low || people.length >= LAND_AP.smallFrom ? 1 : 0, Math.floor(people.length / LAND_AP.bareHead)));
     if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", huntScore, (x) => !x.inBed && !x.leader).slice(0, Math.min(hunters, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
     if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
   }
@@ -4878,7 +4880,8 @@ const FORAGE_AP = { low: 12, critical: 4, minDay: 0.5 };
 // The land's hunters and fishers ahead of the farm (planRoles 2b): at most this share of the people (at least one).
 // bareHead: a base without a hunting cabin keeps at most one hunter per this many people (planRoles, ap-food).
 // spareYield: the hands the farm does not need hunt unless the recent hunts brought in under this share of their estimates.
-const LAND_AP = { share: 0.2, bareHead: 8, spareYield: 0.25 };
+// smallFrom: from this many people a base without a cabin keeps one hunter (below bareHead).
+const LAND_AP = { share: 0.2, bareHead: 8, smallFrom: 4, spareYield: 0.25 };
 function planForage(state, base, people, foodDays, areas) {
   // Days of food for everyone fed here (upkeep.js: prisoners, guests, a holding convoy's crew too).
   foodDays = Math.min(foodDays, edibleFood(base) / Math.max(1, foodUse(state, base).total));
