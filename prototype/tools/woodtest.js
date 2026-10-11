@@ -21,6 +21,7 @@ import { launchExpedition, planPath, partyMembers, carried, cargoRoom, travelHou
 import { startOrder, queueOrder, queueEstimate, taskHour } from "../src/sim/orders.js";
 import { estimatePlan, stepsToOrders, STEP_KINDS } from "../src/sim/plans.js";
 import * as Wd from "../src/sim/woodcutting.js";
+import { tripDay } from "../src/sim/jobtrips.js"; // the Cut wood job in trips: a day of them before the midnight tally
 import * as Weather from "../src/sim/weather.js";
 import { WORK_TYPES, WORK_KEYS, workState, DEFAULT_ROLES } from "../src/sim/work.js";
 import { ROLES } from "../src/sim/economy.js";
@@ -257,10 +258,12 @@ section("The Cut wood job at a base: work type, role, the daily cutting, the arm
   state.wood = {};
   const d0 = dayIn(state, "summer", 20);
   state.hour = (d0 + 1) * 24;
+  tripDay(state, base);
   const bare = Wd.woodDaily(state, base);
   base.armory.push(newItem("fireaxe"));
   state.wood = {};
   const w0 = base.stock.wood;
+  tripDay(state, base);
   const axe = Wd.woodDaily(state, base);
   note(`three on Cut wood at the hub, one summer day: ${r1(bare.wood)} bare-handed, ${r1(axe.wood)} with the armory's fire axe; base Heat from the axes ${base.woodNoise}`);
   check(axe.wood > bare.wood && axe.tools === 1, "the armory's axe is used and cuts more");
@@ -269,7 +272,7 @@ section("The Cut wood job at a base: work type, role, the daily cutting, the arm
   // A month of it thins the land around.
   state.wood = {};
   let month = 0;
-  for (let d = 0; d < 28; d++) { state.hour = (d0 + d + 1) * 24; month += Wd.woodDaily(state, base).wood; }
+  for (let d = 0; d < 28; d++) { state.hour = (d0 + d + 1) * 24; tripDay(state, base); month += Wd.woodDaily(state, base).wood; }
   const lvl = Wd.baseWoodTiles(state, base)[0];
   note(`a month of three woodcutters: ${Math.round(month)} firewood; the best land left ${Math.round(Wd.woodLevel(state, lvl.id) * 100)}%`);
   check(Object.values(state.wood).some((r) => r[0] < 0.9), "the land around the base is cut down");
@@ -364,6 +367,7 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
     const h = hub(st);
     return { wood: Math.round(h.stock.wood || 0), need: Wd.woodNeed(st, h).need, woodDays, earliest, boiled, fuel: Math.round(h.stock.fuel || 0), trips: st.governor.stats.woodTrips || 0, cut: Math.round((st.econStats.woodCut || 0) + (st.econStats.woodField || 0)) };
   };
+  const shares = [];
   for (const seed of [SEED, SEED + 1]) {
     const on = run(seed, false), off = run(seed, true);
     note(`seed ${seed}: at the start of winter the hub has ${on.wood} firewood (the cold ahead needs ${on.need}); ${on.woodDays} woodcutter-days from ${on.earliest ? `${on.earliest.name} day ${on.earliest.dayOfSeason}` : "never"}, ${on.trips} wood trips; fuel ${on.fuel} · switch off: ${off.wood} firewood, fuel ${off.fuel}`);
@@ -371,9 +375,22 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
     // At HEAT.wood 0.2 (tune-winter) a winter takes 0.5 firewood a head a freezing day: about half the plan (the
     // whole cold with WOOD.bitter and a fifth to spare) is in by its first day, and the fuel and the woodcutters
     // must carry the rest (a hub that falls short goes cold for a day or two late in the winter: winter bites).
-    check(on.wood >= on.need * 0.5, `the woodpile is half in by the winter or more (${on.wood} of ${on.need})`);
+    // Job trips (jobtrips.js, 2026-10-10): a woodcutter now brings in only the hours they are out on the land (not a
+    // whole day for whoever held the role at midnight: the watch, the walls on alert, a mid-day job change cost them
+    // hours), about 10% less a woodcutter-day for the governor's crews; seed 42's run also ends with half again more
+    // mouths (the need 7939, was 5293). The bar was half; 40% now (seed 44 missed even the old half before the trips).
+    shares.push(on.wood / Math.max(1, on.need));
     check(off.woodDays === 0 && off.cut === 0, "gov.noWood: nobody cuts wood");
   }
+  // Every seed of six (ui-int2, after job trips, field works and the kitchen): the governor puts the winter's
+  // woodcutters ahead of the hunters and the winter's extra farm hands while the food holds (autopilot.js WOOD_AP
+  // foodFirst) and keeps half the cold's firewood back from field works (fieldworks.js GOV.woodKeep). Before that fix
+  // seed 43 met the winter with no firewood and 48 with a quarter (85 0 52 69 55 96 24 110% over seeds 42–49).
+  for (const seed of [SEED + 2, SEED + 3, SEED + 4, SEED + 5]) { const on = run(seed, false); shares.push(on.wood / Math.max(1, on.need)); }
+  const avg = shares.reduce((a, v) => a + v, 0) / shares.length;
+  note(`the woodpile at the start of winter, seeds ${SEED}–${SEED + 5}: ${shares.map((v) => `${Math.round(v * 100)}%`).join(" ")} of the cold's need (average ${Math.round(avg * 100)}%)`);
+  check(shares.every((v) => v >= 0.4), "every seed's woodpile is two-fifths in by the winter or more");
+  check(avg >= 0.6, `on average three-fifths or more (${Math.round(avg * 100)}%)`);
   // The crews' field job and the governor's wood trips plan a Cut wood step.
   check(!!FIELD_TYPES.wood && typeof FIELD_TYPES.wood.cands === "function", "crews: a Cut wood field job");
 }

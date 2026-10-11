@@ -1,4 +1,6 @@
 // Entry point: game loop, input, and the action dispatcher that connects the UI to the simulation.
+import { togglePeopleIdle, assignIdlePreview } from "./ui/activity.js"; // the People tab's Idle filter, Assign all idle
+import { applyIdlePlan } from "./sim/idlework.js";
 import {
   createWorld, tickHour, hub, survivorById, baseById, log, day, atBase, factionById, addCard, newId, renameSurvivor, assignStartingRoles, archerCount, ARROWS,
 } from "./sim/world.js";
@@ -26,6 +28,9 @@ import { treatAtBase } from "./sim/medical.js";
 import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
+import { workerAt } from "./ui/workermap.js"; // the base workers on the map: their tooltip, a click opens the person
+import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel, teamFieldItems } from "./ui/fieldworks.js";
+import { fwAt as fieldWorkAt, FIELD, placeProblem, planFieldWork } from "./sim/fieldworks.js"; // field works: the base tab, the tile picker
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's Needs button and its list of every supply
 import { isCar, travelMode } from "./sim/vehicles.js";
@@ -263,7 +268,7 @@ function step(now) {
   let ticks = 0;
   if (state.autopilot && ui.started && !ui.settings && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click (the menu holds everything)
   pacingFrame(state, ui); // ui/pacing.js: new cards get their kind, cards out of date leave the tray
-  if (!blocked() && ui.speed > 0 && !ui.moveParty) {
+  if (!blocked() && ui.speed > 0 && !ui.moveParty && !ui.fwPlace) { // ui/fieldworks.js: the clock waits for a field work's tile
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
       setClockFrac(0); // the hour's end: what the tick and its tray rules start, starts on the hour (sim/parties.js)
@@ -410,6 +415,8 @@ function tidyUi() {
   if (ui.expedition != null && !partyById(ui.expedition)) { ui.expedition = null; ui.xpMsg = ""; ui.xpQueue = false; ui.qSel = null; }
   if (ui.qSel != null && (ui.expedition == null || ui.qSel >= (partyById(ui.expedition).orders || []).length)) ui.qSel = null; // the queue got shorter
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
+  if (ui.fwPlace && !baseById(state, ui.fwPlace.baseId)) { ui.fwPlace = null; ui.fwMsg = ""; }
+  view.fwPlace = ui.fwPlace ? fwPlaceTiles(state, ui) : null; // ui/fieldworks.js: the tile picker's highlight
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
   if (state.combat && ui.gunb) ui.gunb = null; // the gun builder: never during a battle
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
@@ -571,6 +578,7 @@ function bannerHTML() {
       `<button class="mini" data-action="help-open" data-sec="time" data-tip="Help: time, pausing and speeds">?</button>` +
       (n ? `<span class="armed" data-tip="${esc(waiting.join(" · "))}">${n} order${n === 1 ? "" : "s"} will start when you unpause</span>` : "") + `</div>`;
   }
+  html += fwPlaceBanner(state, ui); // ui/fieldworks.js: placing a field work
   if (ui.moveParty) {
     html += `<div class="movemode" data-tip="The clock waits until you pick a tile.">Move: <b>click a tile</b> to ${ui.moveQueue ? "queue a move" : "send the team"} · <b>Esc</b> cancels` +
       (ui.moveMsg ? `<br><span class="danger">${esc(ui.moveMsg)}</span>` : "") + `</div>`;
@@ -1428,6 +1436,7 @@ for (const [k, fn] of Object.entries({ ...FARM_CHANGE, ...HEALTH_CHANGE })) chan
 for (const [k, fn] of Object.entries(BG_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // the custom backgrounds window (ui/backgrounds.js)
 for (const [k, fn] of Object.entries(SG_CHANGE)) changeActions[k] = (el) => { if (fn(state, ui, el)) gearRebuild(); }; // the starting gear window (ui/startgear.js)
 for (const [k, fn] of Object.entries(SKILL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+Object.assign(changeActions, fieldworksChange(() => state, ui)); // ui/fieldworks.js: post a lookout
 for (const [k, fn] of Object.entries(PROD_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
 for (const [k, fn] of Object.entries(PLAN_CHANGE)) changeActions[k] = (el) => { if (!ui.planner) return; fn(state, ui, el); autofill(ui.planner); ui.plannerError = ""; };
 for (const [k, fn] of Object.entries({ ...DIARY_CHANGE, ...ROSTER_CHANGE })) changeActions[k] = (el) => fn(state, ui, el);
@@ -1581,6 +1590,16 @@ for (const [k, fn] of Object.entries(TITLE_ACTIONS)) actions[k] = (d) => fn(stat
 // planner, build-queue and Work tab action is wrapped so its edits can be undone (installUndo, last).
 // The People tab's view switch and find box (ui/panelfold.js; the box also filters as you type: the input listener).
 Object.assign(actions, { "ppl-view": (d) => PANEL_ACTIONS["ppl-view"](d), "ppl-clear": (d) => PANEL_ACTIONS["ppl-clear"](d) });
+Object.assign(actions, { "ppl-idle": () => togglePeopleIdle() }); // ui/activity.js: the People tab's Idle filter
+// "Assign all idle" (the Work now panel, the Bases tab's Idle drop-downs): a preview to confirm, then the jobs (idlework.js).
+actions["idle-assign"] = (d) => {
+  const b = baseById(state, Number(d.base));
+  if (!b) return;
+  const pv = assignIdlePreview(state, b);
+  if (!pv.plan.length) { baseSay(`${b.name}: nothing here has room for the idle now.`); return; }
+  if (ask(ui, d, "idle-assign", { kind: "assignidle", title: `Put ${pv.plan.length} idle ${pv.plan.length === 1 ? "person" : "people"} at ${b.name} to work?`, text: `${pv.text}. They go on these jobs by hand (Manual).`, yes: "Assign" })) return;
+  baseSay(`Assigned the idle at ${applyIdlePlan(state, b, pv.plan)}`);
+};
 Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
 for (const [k, fn] of Object.entries(BN_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the naming window's box: the draft as you type
 for (const [k, fn] of Object.entries(ARMV_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the armory's find box (ui/armoryview.js)
@@ -1592,6 +1611,7 @@ Object.assign(actions, {
   "undo-step": tripAct(UNDO_ACTIONS["undo-step"]), "bq-move": tripAct(UNDO_ACTIONS["bq-move"]),
 });
 Object.assign(changeActions, { "tpl-name": tripChange(TRIP_CHANGE["tpl-name"]), "tpl-rename": tripChange(TRIP_CHANGE["tpl-rename"]), "pl-policy": tripChange(TRIP_CHANGE["pl-policy"]) });
+Object.assign(actions, fieldworksActions(() => state, ui, { centerOn: (tile) => centerOn(state, tile) })); // ui/fieldworks.js: the Field works tab
 installUndo(actions, changeActions, () => state, ui);
 if (!/[?&]notitle\b/.test(location.search)) showTitle(ui); // ?notitle: straight to the new-run screen (tests)
 
@@ -1733,7 +1753,8 @@ window.addEventListener("mousemove", (e) => {
     }
     view.hover = id;
     if (id >= 0) {
-      tip.innerHTML = tileTooltip(state, id);
+      const wk = workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y); // ui/workermap.js: a base worker out on a job trip
+      tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
       tip.style.left = `${e.clientX - r.left + 16}px`;
       tip.style.top = `${e.clientY - r.top + 16}px`;
       tip.classList.remove("hidden");
@@ -1749,7 +1770,10 @@ window.addEventListener("mouseup", (e) => {
     const r = canvas.getBoundingClientRect();
     const id = screenToTile(state, e.clientX - r.left, e.clientY - r.top);
     const p = ui.moveParty != null && id >= 0 ? partyById(ui.moveParty) : null;
-    if (p) act(() => pickMove(p, id));
+    const wk = !ui.fwPlace && !p && ui.moveParty == null && !e.shiftKey ? workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y) : null;
+    if (ui.fwPlace && id >= 0) act(() => fwPlaceClick(state, ui, id)); // ui/fieldworks.js: a field work placed here (or why not)
+    else if (p) act(() => pickMove(p, id));
+    else if (wk && wk.sid != null) { ui.survivor = wk.sid; mapClicked = true; } // a base worker out on the map: their survivor screen (ui/workermap.js)
     else if (id >= 0 && ui.moveParty == null) {
       // A team, another group's party, a band or outsiders on the tile are selected first (a team opens its panel),
       // the same tile again goes on to the next and then the tile; Shift+click picks the tile (ui/mapselect.js).
@@ -1833,7 +1857,7 @@ function ctxTeams(teams, id) {
   const t = state.tiles[id];
   return teams.map((p) => `<button data-action="ctxmove" data-id="${p.id}" data-tile="${id}">Move team (${p.members.length}) here</button>`).join("") +
     (t.terrain === "water" && !t.bridge ? "" : teams.filter((p) => p.kind !== "convoy").map((p) => `<button data-action="ctxsweep" data-id="${p.id}" data-tile="${id}" data-tip="Go there and survey 3 tiles around it for 12 hours: hidden places and finds (sim/survey.js). Then it waits for orders.">Survey here with team (${p.members.length}): 3 tiles, 12h</button>`).join("")) +
-    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id);
+    ctxBoats(teams, id) + ctxLand(teams, id) + ctxClaim(teams, id) + ctxField(teams, id) + ctxFieldPlan(id);
 }
 // Keep the menu on the map: flipped left or up at the edges, never taller than the map (it scrolls); sizes follow the
 // interface scale (rem).
@@ -1901,6 +1925,43 @@ function ctxClaim(teams, id) {
     !ww ? `<button data-action="ctxclaim" data-id="${p.id}" data-tile="${id}" data-type="well" data-tip="${esc(`Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): the people at your base next to it haul its water.`)}">${partyTile(p) === id ? "Dig a well here" : "Go and dig a well here"}, team (${p.members.length}) · ${CLAIM.WELL_HOURS}h</button>` : "",
   ]).join("");
 }
+// Field works (sim/fieldworks.js): a team's acts at a structure on the tile (load or leave finds at your stockpile; wreck,
+// take or loot a group's), and planning one on land of yours from the base that holds it.
+function ctxField(teams, id) {
+  const fw = fieldWorkAt(state, id);
+  if (!fw) return "";
+  return teams.filter((p) => p.kind !== "convoy").flatMap((p) => teamFieldItems(state, p, id).map((it) =>
+    `<button data-action="ctxfwork" data-id="${p.id}" data-tile="${id}" data-act="${it.order.act}" ${it.why && partyTile(p) === id ? "disabled" : ""} data-tip="${esc(it.why || it.hint)}">${partyTile(p) === id ? "" : "Go: "}${esc(it.label)}, team (${p.members.length})</button>`)).join("");
+}
+function ctxFieldPlan(id) {
+  if (fieldWorkAt(state, id)) return "";
+  return state.bases.flatMap((b) => FIELD.ORDER.filter((k) => !placeProblem(state, b, k, id)).map((k) =>
+    `<button data-action="ctxfwplan" data-base="${b.id}" data-tile="${id}" data-kind="${k}" data-tip="${esc(`${FIELD.KINDS[k].desc} Paid now from ${b.name}'s stores; its builders walk out and put it up.`)}">Plan ${FIELD.KINDS[k].icon} ${FIELD.KINDS[k].name.toLowerCase()} here (${esc(b.name)})</button>`)).join("");
+}
+actions.ctxfwplan = (d) => {
+  const b = baseById(state, Number(d.base));
+  const r = b ? planFieldWork(state, b, d.kind, Number(d.tile)) : { error: "No base." };
+  if (r.error) log(state, r.error, "info");
+  hideCtx();
+};
+actions.ctxfwork = (d) => {
+  const p = partyById(d.id);
+  if (p) {
+    const tile = Number(d.tile);
+    const job = { type: "fwork", act: d.act };
+    let msg;
+    if (partyTile(p) === tile && (p.phase === "waiting" || p.phase === "task")) msg = startOrder(state, p, job);
+    else {
+      p.orders = [];
+      msg = orderMove(state, p, tile);
+      if (p.phase === "out" && p.dest === tile) msg = `${msg} ${queueOrder(state, p, { ...job, at: tile })}`;
+    }
+    if (msg) log(state, msg, "info");
+    if (ui.expedition === p.id) ui.xpMsg = msg;
+  }
+  endMoveMode();
+  hideCtx();
+};
 actions.ctxclaim = (d) => {
   const p = partyById(d.id);
   if (p) {
@@ -1965,11 +2026,11 @@ actions.ctxmove = (d) => {
 };
 // Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
 // cards it raises (answering one opens contact for that hour) or once it is back in coverage.
-for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "tc-do"]) {
+for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "ctxfwork", "tc-do"]) {
   const fn = actions[k];
   actions[k] = (d) => {
     const p = partyById(d.id);
-    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
+    if (p && !commandable(state, p)) { ui.xpMsg = NO_RADIO; if (k === "ctxmove" || k === "ctxcross" || k === "ctxhunt" || k === "ctxsweep" || k === "ctxclaim" || k === "ctxfwork" || k === "tc-do") hideCtx(); else if (ui.expedition == null) log(state, NO_RADIO, "info"); return; }
     return fn(d);
   };
 }
@@ -2069,6 +2130,7 @@ function closeTopLayer() {
   if (ui.diary) { ui.diary = null; return true; }
   if (ui.codex) { ui.codex = null; return true; } // ui/codex.js
   if (ui.moveParty != null) { endMoveMode(); return true; }
+  if (fwPlaceCancel(ui)) return true; // ui/fieldworks.js: placing a field work: back to the base's tab
   if (ui.expedition != null && ui.qSel != null) { ui.qSel = null; return true; } // a selected queued order: unselect first
   if (ui.expedition != null) { ui.expedition = null; ui.xpMsg = ""; return true; }
   return false;

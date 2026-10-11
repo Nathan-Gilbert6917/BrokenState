@@ -20,6 +20,7 @@ export const LAYERS = {
   pois:      { name: "Locations",        desc: "Towns, sites and their names" },
   territory: { name: "Territory",        desc: "Land held by you and known groups" },
   teams:     { name: "Teams and convoys", desc: "Your teams, plus raiders and convoys you can see" },
+  workers:   { name: "Base workers",     desc: "Your bases' people out on their jobs (wood, hunting, fishing, foraging, scavenging, water): walking out, at work, bringing the load home; the groups' people by their bases you can see" },
   hordes:    { name: "Hordes and hives", desc: "Live hordes, last-seen hordes, known hives with their land and red-skull ring, and hives being built" },
   deaths:    { name: "Death sites",      desc: "Where your people died, with what is left" },
   vehicles:  { name: "Vehicles",         desc: "Abandoned vehicles you know about" },

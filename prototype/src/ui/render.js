@@ -33,6 +33,7 @@ import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { countedMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { claimText, wellText } from "../sim/claims.js"; // land claims: the Territory layer and the hover text
+import { drawFieldWorks, fwTooltipLine } from "./fieldworks.js"; // field works: sprites, the tile picker, hover lines
 import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas, emptyBaseSpriteCanvas } from "./mapsprites.js";
 import { occupyPreview } from "../sim/occupy.js"; // empty bases: the tooltip
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } from "./hivesprites.js";
@@ -44,6 +45,7 @@ import {
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in the bloc's colour round its members' bases
+import { drawWorkers } from "./workermap.js"; // your bases' people out on job trips (sim/jobtrips.js), the groups' walkers
 import { drawNight } from "./nightfx.js"; // the time-of-day shade and the lights through it
 import { lightningFrame, drawLightning, lightningWants } from "./lightningfx.js"; // lightning in storms: lifts the night shade, flashes after it
 
@@ -51,7 +53,7 @@ export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
 
 export const camera = { x: 0, y: 0, zoom: 1 };
-const DEFAULT_LAYERS = ["pois", "territory", "teams", "hordes", "deaths", "vehicles", "finds", "weather"];
+const DEFAULT_LAYERS = ["pois", "territory", "teams", "workers", "hordes", "deaths", "vehicles", "finds", "weather"];
 // hourFrac: how much of the coming hour has gone by (main.js): your moving teams glide between tiles by it.
 export const view = { selected: -1, hover: -1, preview: null, devReveal: false, layers: new Set(DEFAULT_LAYERS), hourFrac: 0, clockSpeed: 1, pick: null }; // pick: "kind:id" ringed in gold (ui/mapselect.js)
 const on = (k) => view.layers.has(k);
@@ -1032,7 +1034,10 @@ function moverHash(state) {
   if (state.knowledge && !state.timelapse) for (const id of hiddenSites(state)) if (state.knowledge[id]) h = (h * 31 + id) % 2147483647;
   // The overlays' data: a report of searched ground, the coalition's members (an invitation answered while paused).
   h = (h * 31 + searchedVersion() * 7 + (state.alliance ? state.alliance.members.length * 3 : 0) + (state.claims ? Object.keys(state.claims).length * 11 : 0)) % 2147483647; // claims (sim/claims.js) made or lost while paused
-  if (state.mapNotes) h = (h * 31 + notesHash(state)) % 2147483647; // map notes added or edited while paused (ui/mapnotes.js)
+  if (state.mapNotes) h = (h * 31 + notesHash(state)) % 2147483647;
+  if (state.fieldworks) for (const fw of state.fieldworks.list) h = (h * 31 + fw.tile * 3 + Math.round(fw.hp) + (fw.built ? 7 : 0) + (fw.garrison ? fw.garrison.length * 5 : 0) + (typeof fw.owner === "number" ? fw.owner * 11 : 0)) % 2147483647; // field works (sim/fieldworks.js)
+  if (state.fieldworks) for (const j of state.fieldworks.jobs) h = (h * 31 + Math.floor(j.progress)) % 2147483647;
+  if (view.fwPlace) h = (h * 31 + view.fwPlace.length * 13 + 1) % 2147483647; // the tile picker's highlight // map notes added or edited while paused (ui/mapnotes.js)
   return h;
 }
 function unchanged(state, now) {
@@ -1350,7 +1355,7 @@ export function render(state) {
     const upPct = up ? Math.round((up.hours ? up.progress / up.hours : 0) * 100) : 0;
     labels.push({ text: b.tier === 0 ? `${b.name} (${b.type === "outpost" ? (up ? `camp: establishing ${upPct}%` : "camp") : up ? `building a base: ${upPct}%` : "shelter"})` : b.name, x: px, y: crowded(b.tile) ? py + BESIDE_LABEL_Y * Math.min(s, BESIDE_MAX) : cy + h / 2 + 6, pri: -1, screen: true, color: "#cfe2f7", size: 10, bold: isHub });
     // Radio coverage (radio.js): a station's circle, and a relay's when it is linked (red when it is not, or offline).
-    const node = nodes.find((n) => n.base === b);
+    const node = nodes.find((n) => n.base === b && !n.field); // a relay mast out on its land (sim/fieldworks.js) is not the base's own
     if (node) {
       ctx.strokeStyle = node.linked ? "rgba(143,180,224,0.18)" : "rgba(224,120,110,0.3)";
       ctx.lineWidth = 1.5;
@@ -1484,6 +1489,8 @@ export function render(state) {
     labels.push({ text: "Army convoy", x: px, y: py + 7 * s + 12, pri: 1, screen: true, color: "#c8d48a", size: 9 });
   }
   ctx.restore();
+  // Field works (sim/fieldworks.js): yours and the groups' you know of, and the tile picker's green tiles.
+  drawFieldWorks(state, { ctx, G, inView, s: zoomBoost(), live, knowledge: k, place: state.timelapse ? null : view.fwPlace, colorOf: (o) => (o === "player" ? PLAYER_COLOR : (state.factions.find((f) => f.id === o) || {}).color || "#cccccc") });
   drawSurveys(state, minX, maxX, minY, maxY, labels);
   // Hordes: a crowd of the dead (more figures for bigger hordes) facing where they drift, their size on a badge;
   // stale ghosts (faded, "N?") where you saw them last. On a base's tile they stand beside it, not on top of it.
@@ -1620,6 +1627,16 @@ export function render(state) {
     else sprite(cv, x, y - 3 + (onWay ? stepBob((v.id || v.tile) * 17 + 3, 1.1 * s, v.kind === "merchants" ? 520 : 380) : 0), w * k2, { facing, alpha: heard ? 0.55 : 1 });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
     if (v.phase === "siege") sprite(iconCanvas("siege"), x, y - 26 * s, ICON_W * s);
+  }
+  // Your bases' people out on job trips (ui/workermap.js, sim/jobtrips.js): walking out over the base's land, at work
+  // with a ring filling over them, home with the load and a "+18 meat" over the base; the groups' walkers in view.
+  if (on("workers") && !state.timelapse) {
+    const t = state.hour + hourFrac();
+    const walking = drawWorkers(ctx, state, {
+      HEX, toPixel: (id) => [G.x[id], G.y[id]], sprite, walkFrame, stepBob, zoom: zoomBoost(), baseHalf: (PLACE_W.hub * zoomBoost()) / 2, t, color: PLAYER_COLOR, live, groups: true,
+      near: (x, y) => !(x < minX - HEX * 3 || x > maxX + HEX * 3 || y < minY - HEX * 3 || y > maxY + HEX * 3),
+    });
+    if (walking && !readable.still) glidingNow = true; // drawn again as the minutes go by
   }
   // Your parties: actual position with radio contact, otherwise only the plan.
   for (const p of state.parties) {
@@ -2274,6 +2291,9 @@ export function tileTooltip(state, id) {
   if (ct) lines.push(`<span style="color:#8db9ea">${esc(ct)}</span>`);
   const wt = wellText(state, id);
   if (wt) lines.push(`<span style="color:#8db9ea">${esc(wt)}</span>`);
+  const fwt = fwTooltipLine(state, id); // sim/fieldworks.js: a field work here
+  if (fwt && (isLive || state.bases.length && fwt.includes("yours") || snap)) lines.push(`<span style="color:#cfe2f7">${esc(fwt)}</span>`);
+  if (view.fwPlace) { const pl = view.fwPlace.find((x) => x.tile === id); if (pl) lines.push(pl.why ? `<span class="danger">${esc(pl.why)}</span>` : `<span class="good">Click to place it here</span>`); }
   // Loot left as you know it (aiscav.js bands): the live value, else the last you saw or heard (it may be gone since).
   if (loc && !ownHere && (isLive || snap)) lines.push(`<span class="muted">Loot: ${LOOT_BANDS[lootBand(t, isLive ? t.loot : snap.loot)].toLowerCase()}${isLive ? "" : " (then)"}</span>`);
   for (const m of state.markers.filter((m) => m.tile === id)) lines.push(`${MARKER_TYPES[m.type].glyph} ${esc(m.label)} <span class="muted">· spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}</span>`);

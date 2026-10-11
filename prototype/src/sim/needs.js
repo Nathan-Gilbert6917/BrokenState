@@ -316,7 +316,7 @@ export function needsHour(state) {
 // The base someone lives at today (a trade-route escort lives at the hub), or null.
 function homeBase(state, s) {
   const L = s.location || {};
-  if (L.kind === "base") return baseById(state, L.baseId);
+  if (L.kind === "base" || L.kind === "post") return baseById(state, L.baseId); // post: a lookout at a field work (fieldworks.js)
   if (L.kind === "route") return hub(state);
   return null;
 }

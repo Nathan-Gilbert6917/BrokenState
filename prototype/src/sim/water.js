@@ -31,7 +31,7 @@ export const teamWaterIn = (p) => (p ? waterIn(p.supplies) + waterIn(p.cargo && 
 export const teamRawIn = (p) => (p ? pos(p.supplies && p.supplies[RAW]) + pos(p.cargo && p.cargo.supplies && p.cargo.supplies[RAW]) : 0);
 
 // Takes up to `qty` water from a stock: purified first (drinking), or un-purified first (rawFirst: crops, a fire, a
-// still or the preserving kitchen, where it is boiled anyway). Never below zero. Returns { pure, raw, got }.
+// still or the preserving room, where it is boiled anyway). Never below zero. Returns { pure, raw, got }.
 export function drawWater(o, qty, { rawFirst = false } = {}) {
   const out = { pure: 0, raw: 0, got: 0 };
   let want = pos(qty);

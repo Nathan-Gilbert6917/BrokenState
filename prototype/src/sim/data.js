@@ -52,7 +52,7 @@ export const SUPPLIES = {
   scrap: { name: "Scrap", value: 1,   weight: 2, cat: "scrap" },
   // Food storage (storage.js): preserved food is jarred, dried or smoked food (and dry grain and beans) that barely
   // spoils and needs no cellar space; eaten like food (fresh first), and lighter to carry on a trip. Jars (and lids)
-  // are what the preserving kitchen fills: found in kitchens, shops and farms, and most come back when the food
+  // are what the preserving room fills: found in kitchens, shops and farms, and most come back when the food
   // in them is eaten at a base.
   preserved: { name: "Preserved food", value: 4, weight: 0.35, cat: "food" },
   jars:  { name: "Jars",  value: 0.5, weight: 0.4, cat: "containers" },
@@ -633,9 +633,9 @@ Object.assign(GEAR, {
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
 
 // ---------- machines for food (freezer-parts 2026-10-10; crafted only: crafting.js CRAFTS) ----------
-// The pressure canner: kept in a base's armory, every preserving kitchen there jars buildings.js CANNER.out more a day.
+// The pressure canner: kept in a base's armory, every preserving room there jars buildings.js CANNER.out more a day.
 Object.assign(GEAR, {
-  canner: { name: "Pressure canner", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, bulky: true, canner: true, weight: 7, cat: "tools", desc: "A heavy pot with a locking lid, a gauge and a relief valve, its gasket and clamps machined at the workshop. In a base's armory: every preserving kitchen there jars 1 more preserved food a day (bigger batches, safely, under pressure)." },
+  canner: { name: "Pressure canner", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, bulky: true, canner: true, weight: 7, cat: "tools", desc: "A heavy pot with a locking lid, a gauge and a relief valve, its gasket and clamps machined at the workshop. In a base's armory: every preserving room there jars 1 more preserved food a day (bigger batches, safely, under pressure)." },
 });
 
 // ---------- gun safes and gun cases (gunsafes.js, locks.js; docs/weapons-overhaul-plan.md section 19) ----------

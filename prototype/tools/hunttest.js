@@ -30,7 +30,10 @@ import {
 } from "../src/sim/parties.js";
 import { startOrder, queueOrder, queueEstimate } from "../src/sim/orders.js";
 import { estimatePlan, PRESETS } from "../src/sim/plans.js";
+import { recomputeOwnership } from "../src/sim/factions.js";
 import * as H from "../src/sim/hunting.js";
+import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips (a day of them, then the midnight tally)
+const huntDay = (state, base) => { tripDay(state, base); return H.huntingDaily(state, base); };
 import { newItem } from "../src/sim/inventory.js";
 import { teamLoad, LOAD_BANDS } from "../src/sim/load.js";
 import { makeHorde } from "../src/sim/hordes.js";
@@ -485,8 +488,12 @@ section("The hunting cabin, the Hunt and Fish jobs");
   const city = { ...base, id: -1, tile: state.tiles.find((t) => t.terrain === "city").id, type: "outpost", buildings: [], construction: [], stock: { scrap: 50 }, armory: [] };
   check(!canBuild(state, city, "huntcabin").ok && /game land/.test(canBuild(state, city, "huntcabin").reason), "no hunting cabin in a city");
   check(canBuild(state, base, "huntcabin").ok, "a hunting cabin where the land has game");
-  check(/no hunting cabin/.test(H.huntWorkWhy(state, base)) && WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 10 }).cap === 0, "no cabin: no Hunt work");
+  // The rule changed (user 2026-10-10): any base hunts without a cabin, on the tiles next to it; the cabin widens the
+  // grounds to 2 tiles (it was: no cabin, no Hunt job).
+  check(H.huntWorkWhy(state, base) === "" && H.huntRadius(base) === 1 && H.huntGrounds(state, base).every((id) => state.grid.distance(base.tile, id) <= 1) && WORK_TYPES.hunt.open({ state, base, people: [], foodDays: 10 }).cap > 0, "no cabin: the Hunt job on the tiles next to the base");
+  const bare = H.baseHuntDay(state, base);
   addBuilding(base, "huntcabin");
+  check(H.huntRadius(base) === 2 && H.huntGrounds(state, base).some((id) => state.grid.distance(base.tile, id) === 2) && H.baseHuntDay(state, base) >= bare, `a cabin widens the grounds to 2 tiles (an average hunter ${r1(bare)} → ${r1(H.baseHuntDay(state, base))} food a day)`);
   {
     // tune-jobcaps: no fixed cap (it was 2): the hunters it takes to bring in the food the land must (foraging.js
     // landFoodGap), at least one while the job is open; more with the stores empty.
@@ -514,7 +521,7 @@ section("The hunting cabin, the Hunt and Fish jobs");
   const daily = [];
   for (let d = 0; d < 28; d++) {
     state.hour = (autumn + d) * 24 + 24;
-    const got = H.huntingDaily(state, base);
+    const got = huntDay(state, base);
     food += got.rations;
     daily.push(got.rations);
   }
@@ -528,6 +535,7 @@ section("The hunting cabin, the Hunt and Fish jobs");
   const river = state.tiles.find((t) => t.terrain !== "water" && !t.loc && !state.bases.some((b) => b.tile === t.id) && H.fishSpot(state, t.id));
   const out = { id: newId(), tile: river.id, type: "outpost", name: "Test Landing", stock: { food: 20, water: 20, ammo: 0, scrap: 0, preserved: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   state.bases.push(out);
+  recomputeOwnership(state); // factions.js: the ground round the new outpost is yours (the Fish job needs water in the base's own land)
   const f = people[2];
   f.location = { kind: "base", baseId: out.id };
   f.role = "fish";
@@ -535,7 +543,7 @@ section("The hunting cabin, the Hunt and Fish jobs");
   out.armory.push(newItem("fishrod"));
   check(H.fishWorkWhy(state, out) === "" && H.fishWorkCap(state, out) === 1, "a rod in the armory: Fish work for one");
   let fish = 0;
-  for (let d = 0; d < 14; d++) { state.hour = (dayIn(state, "summer") + d) * 24 + 24; fish += H.huntingDaily(state, out).rations; }
+  for (let d = 0; d < 14; d++) { state.hour = (dayIn(state, "summer") + d) * 24 + 24; fish += huntDay(state, out).rations; }
   note(`one fisher with a rod on a river through two summer weeks: ${fish} food`);
   check(fish > 0 && H.meatAt(out) > 0, "the fisher brings in fresh fish");
 }
@@ -648,7 +656,7 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
       setAmmo(base.stock, 300); base.stock.arrows = 100;
       for (let d = 0; d < 20; d++) {
         state.hour = (autumn + d) * 24 + 24;
-        const got = H.huntingDaily(state, base);
+        const got = huntDay(state, base);
         r.food += got.rations / RUNS; r.noise += base.huntNoise / RUNS;
         for (const m of H.HUNT_METHODS) r.hrs[m] += got.hrs[m] / RUNS;
       }
@@ -664,27 +672,31 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   check(rows.mixed.noise > 0 && rows.mixed.noise < rows.guns.noise * 0.75 && rows.mixed.ammo < rows.guns.ammo * 0.75, `bows and guns half and half: about half the shots (${r1(rows.mixed.ammo)} ammo vs ${r1(rows.guns.ammo)})`);
   check(rows.bows.arrows > 0 && rows.traps.arrows === 0 && rows.guns.arrows === 0, "bows use arrows; guns and traps none");
   const hr = (k, m) => Math.round(rows[k].hrs[m]);
-  check(hr("traps", "traps") === 180 && hr("bows", "bows") === 180 && hr("guns", "guns") === 180 && hr("mixed", "guns") === 90 && hr("mixed", "bows") === 90, "the hours by the mix (180 hunter-hours in 20 days)");
-  check(hr("quiet", "guns") === 0 && hr("quiet", "traps") === 72 && hr("quiet", "bows") === 108, `quiet (40% traps, 60% bows): ${hr("quiet", "traps")} trap and ${hr("quiet", "bows")} bow hours, no gun`);
+  // Job trips (jobtrips.js): a hunter's hours on the ground are 3 a day two tiles out (the walk out and back eats into
+  // the dawn and dusk; a closer ground gives more), so 180 hunter-hours in 20 days, give or take where they went.
+  const tot = (k) => H.HUNT_METHODS.reduce((a, m) => a + rows[k].hrs[m], 0);
+  const share = (k, m) => rows[k].hrs[m] / Math.max(1e-9, tot(k));
+  check(["traps", "bows", "guns"].every((k) => tot(k) > 150 && tot(k) < 280 && share(k, k) > 0.999) && Math.abs(share("mixed", "guns") - 0.5) < 0.02 && Math.abs(share("mixed", "bows") - 0.5) < 0.02, `the hours by the mix (${["traps", "bows", "guns", "mixed"].map((k) => Math.round(tot(k))).join(", ")} hunter-hours in 20 days)`);
+  check(hr("quiet", "guns") === 0 && Math.abs(share("quiet", "traps") - 0.4) < 0.02 && Math.abs(share("quiet", "bows") - 0.6) < 0.02, `quiet (40% traps, 60% bows): ${hr("quiet", "traps")} trap and ${hr("quiet", "bows")} bow hours, no gun`);
   // Bows with no arrows go to the traps.
   H.setHuntMix(base, { traps: 0, bows: 100, guns: 0 });
   base.stock.arrows = 0;
   state.hour += 24;
-  const dry = H.huntingDaily(state, base);
-  check(dry.hrs.traps === 9 && !dry.shots && !dry.arrows, "bow hours with no arrows: the snare lines");
+  const dry = huntDay(state, base);
+  check(dry.hrs.traps > 0 && !dry.hrs.bows && !dry.hrs.guns && !dry.shots && !dry.arrows, "bow hours with no arrows: the snare lines");
   // Guns with no ammo above the walls' keep: the bows (never louder than the mix).
   H.setHuntMix(base, H.DEFAULT_MIX);
   base.stock.arrows = 50; setAmmo(base.stock, H.ammoKeep(state, base));
   state.hour += 24;
-  const noAmmo = H.huntingDaily(state, base);
-  check(noAmmo.hrs.bows === 9 && !noAmmo.shots && totalRounds(base.stock) === H.ammoKeep(state, base), "gun hours with the ammo down to the walls' keep: the bows");
+  const noAmmo = huntDay(state, base);
+  check(noAmmo.hrs.bows > 0 && !noAmmo.hrs.guns && !noAmmo.hrs.traps && !noAmmo.shots && totalRounds(base.stock) === H.ammoKeep(state, base), "gun hours with the ammo down to the walls' keep: the bows");
   // A hunter with only a rifle at 100% bows: the snare lines.
   hunters.forEach((s) => { s.gear.backpack.contents[0] = null; });
   H.setHuntMix(base, { traps: 0, bows: 100, guns: 0 });
   setAmmo(base.stock, 300);
   state.hour += 24;
-  const rifles = H.huntingDaily(state, base);
-  check(rifles.hrs.traps === 9 && !rifles.shots, "100% bows with only rifles: the snare lines, not a shot");
+  const rifles = huntDay(state, base);
+  check(rifles.hrs.traps > 0 && !rifles.hrs.bows && !rifles.hrs.guns && !rifles.shots, "100% bows with only rifles: the snare lines, not a shot");
   hunters[2].gear.weapon = newItem("compbow");
   // The day's hours: one hunter at 50% guns shoots 1 or 2 of 3 in turn (the fraction carries over).
   const one = [hunters[0]];
@@ -708,7 +720,7 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
       state.game = {};
       setAmmo(base.stock, 300); base.stock.arrows = 100;
       state.hour = (autumn + d % 20) * 24 + 24;
-      const got = H.huntingDaily(state, base);
+      const got = huntDay(state, base);
       if (got.shots || mix.guns === 0) days++;
       if (hz.target != null && hz.target !== ring) n++;
     }
@@ -740,7 +752,13 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   [base.stock.food, base.stock.preserved] = food0;
   const cabin = base.buildings.find((x) => x.type === "huntcabin");
   base.buildings.splice(base.buildings.indexOf(cabin), 1);
-  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.DEFAULT_MIX), "governor: no hunting cabin (only teams hunt, away from the walls): the dead near change nothing");
+  // The rule changed (2026-10-10): without a cabin the Hunt job still hunts the tiles next to the base, so with
+  // hunters on it the dead near quiet it too; with nobody on it only teams hunt, away from the walls.
+  const onHunt = atBase(state, base.id).filter((x) => x.role === "hunt"), roles0 = onHunt.map((x) => x.role);
+  check(!onHunt.length || JSON.stringify(H.autoHuntMix(state, base)) !== JSON.stringify(H.DEFAULT_MIX), "governor: no cabin, hunters on the job by the walls: the dead near still quiet it");
+  onHunt.forEach((x) => { x.role = "rest"; });
+  check(JSON.stringify(H.autoHuntMix(state, base)) === JSON.stringify(H.DEFAULT_MIX), "governor: no hunting cabin and nobody on the Hunt job (only teams hunt, away from the walls): the dead near change nothing");
+  onHunt.forEach((x, i) => { x.role = roles0[i]; });
   base.buildings.push(cabin);
   state.hordes.length = 0;
   // Saved with the base.

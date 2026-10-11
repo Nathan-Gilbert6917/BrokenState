@@ -1509,3 +1509,49 @@ button.mini.tp-chip:disabled { opacity: 0.4; }
 .asubs .asubblk { display: flex; flex-direction: column; max-width: 100%; }
 .asubs .acards { display: flex; flex-wrap: wrap; }
 .asubs .acard { width: 7.4rem; }
+/* What people are doing now (ui/activity.js, sim/activity.js): the People tab's chip and the base's Work now panel */
+.act { display: inline-flex; align-items: center; gap: 0.25rem; max-width: 100%; padding: 0.05rem 0.45rem; border-radius: 99px; font-size: 0.78rem; background: color-mix(in srgb, var(--act, var(--muted)) 20%, #23272e); color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--act, var(--muted)) 45%, transparent); }
+.act .act-ico { font-style: normal; flex: none; }
+.act .act-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-line { margin: 0.15rem 0 0.1rem; }
+.prow-stack { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 0.05rem; }
+.prow-stack > .prow-name { width: 100%; }
+.prow-stack > .act.act-short { font-size: 0.7rem; padding: 0 0.4rem; }
+.act-work { --act: var(--good); }
+.act-guard { --act: var(--accent); }
+.act-sleep { --act: var(--info); }
+.act-off, .act-free { --act: var(--muted); }
+.act-hurt, .act-stalled { --act: var(--danger); }
+.act-idle { --act: #ffd166; }
+.act-away { --act: #b98fe0; }
+.worknow { margin-top: 0.6rem; }
+.wn-row { padding: 0.35rem 0.5rem; margin-bottom: 0.35rem; border-radius: 6px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line); }
+.wn-head { display: flex; align-items: center; gap: 0.35rem; }
+.wn-head .wn-name { flex: 1 1 auto; }
+.wn-people { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0.2rem 0; }
+.wn-who { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 0.75rem; padding: 0 0.35rem; border-radius: 99px; background: color-mix(in srgb, var(--act, var(--muted)) 20%, #23272e); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--act, var(--muted)) 45%, transparent); cursor: pointer; }
+.wn-who i { font-style: normal; }
+.wn-prog { margin-top: 0.15rem; }
+.wn-bar { height: 0.35rem; border-radius: 99px; background: #2c3139; overflow: hidden; }
+.wn-bar > i { display: block; height: 100%; background: var(--good); }
+.wn-goal .wn-bar > i { background: var(--accent); }
+.wn-ptxt { display: block; color: var(--muted); }
+.wn-last, .wn-why { margin-top: 0.15rem; }
+.act-eat { --act: #e0a84f; }
+.idle-note { margin: 0.05rem 0 0.1rem; }
+.idle-badge { display: inline-block; min-width: 1.1rem; padding: 0 0.3rem; border-radius: 99px; background: #45380f; color: #ffd166; font-size: 0.72rem; text-align: center; }
+button.ppl-idle.on { background: #45380f; color: #ffd166; }
+.idle-list { padding: 0.35rem 0.5rem; margin-bottom: 0.45rem; border-radius: 6px; border: 1px solid color-mix(in srgb, #ffd166 45%, transparent); background: rgba(255, 209, 102, 0.05); }
+.idle-head { margin-bottom: 0.2rem; }
+.idle-row { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; padding: 0.15rem 0; border-top: 1px solid var(--line); }
+.idle-who { display: flex; flex-direction: column; min-width: 0; }
+.idle-why { overflow: hidden; text-overflow: ellipsis; }
+.wn-spark { display: inline-block; vertical-align: middle; margin-right: 0.35rem; color: var(--good); }
+.wn-spark svg { display: block; }
+.idle-bases { border-color: color-mix(in srgb, #ffd166 45%, transparent); }
+.idle-bases .idle-fold { margin-top: 0.25rem; }
+.idle-sum { display: inline-flex; align-items: center; gap: 0.35rem; min-width: 0; }
+.idle-foot { justify-content: flex-end; margin-top: 0.25rem; }
+.idle-bases .idle-row { flex-wrap: wrap; }
+.idle-bases .idle-who { flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 0.4rem; }
+.idle-bases .idle-row > select { margin-left: auto; max-width: 100%; }
