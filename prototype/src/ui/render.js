@@ -1035,7 +1035,7 @@ function moverHash(state) {
   // The overlays' data: a report of searched ground, the coalition's members (an invitation answered while paused).
   h = (h * 31 + searchedVersion() * 7 + (state.alliance ? state.alliance.members.length * 3 : 0) + (state.claims ? Object.keys(state.claims).length * 11 : 0)) % 2147483647; // claims (sim/claims.js) made or lost while paused
   if (state.mapNotes) h = (h * 31 + notesHash(state)) % 2147483647;
-  if (state.fieldworks) for (const fw of state.fieldworks.list) h = (h * 31 + fw.tile * 3 + Math.round(fw.hp) + (fw.built ? 7 : 0) + (fw.garrison ? fw.garrison.length * 5 : 0) + (typeof fw.owner === "number" ? fw.owner * 11 : 0)) % 2147483647; // field works (sim/fieldworks.js)
+  if (state.fieldworks) for (const fw of state.fieldworks.list) h = (h * 31 + fw.tile * 3 + Math.round(fw.hp) + (fw.built ? 7 : 0) + (fw.garrison ? fw.garrison.length * 5 : 0) + (typeof fw.owner === "number" ? fw.owner * 11 : 0) + (fw.found ? 13 : 0) + (fw.held ? fw.held.length * 17 : 0)) % 2147483647; // field works (sim/fieldworks.js)
   if (state.fieldworks) for (const j of state.fieldworks.jobs) h = (h * 31 + Math.floor(j.progress)) % 2147483647;
   if (view.fwPlace) h = (h * 31 + view.fwPlace.length * 13 + 1) % 2147483647; // the tile picker's highlight // map notes added or edited while paused (ui/mapnotes.js)
   return h;
@@ -1490,7 +1490,7 @@ export function render(state) {
   }
   ctx.restore();
   // Field works (sim/fieldworks.js): yours and the groups' you know of, and the tile picker's green tiles.
-  drawFieldWorks(state, { ctx, G, inView, s: zoomBoost(), live, knowledge: k, place: state.timelapse ? null : view.fwPlace, colorOf: (o) => (o === "player" ? PLAYER_COLOR : (state.factions.find((f) => f.id === o) || {}).color || "#cccccc") });
+  drawFieldWorks(state, { ctx, G, inView, s: zoomBoost(), zoom: camera.zoom, hover: view.hover, selected: view.selected, live, knowledge: k, place: state.timelapse ? null : view.fwPlace, colorOf: (o) => (o === "player" ? PLAYER_COLOR : (state.factions.find((f) => f.id === o) || {}).color || "#cccccc") });
   drawSurveys(state, minX, maxX, minY, maxY, labels);
   // Hordes: a crowd of the dead (more figures for bigger hordes) facing where they drift, their size on a badge;
   // stale ghosts (faded, "N?") where you saw them last. On a base's tile they stand beside it, not on top of it.
