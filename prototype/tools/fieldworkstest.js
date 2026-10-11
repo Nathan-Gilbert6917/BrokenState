@@ -22,6 +22,10 @@
 //   game hook); a snare line (catch, check, rot, robbery, a team's check); a fuel cache (restock, draw, hidden);
 //   the standing haul order; the groups' stockpiles and caches, their raids on each other's structures; the
 //   governor's roadblock on a raid road and stockpile by far crews; Help and the codex
+// - hc-food (2026-10-11): the snare line as field craft: 2 scrap and an hour, no builders needed, at a camp on a tile
+//   next to it nobody holds, its own cap outside the field works', paid with a coil of snare wire from the armory or
+//   the scrap gathered for a step up, checked by anyone fit with no hunter home; the governor's lines (hardcore from
+//   the start, more while food is short; one field job at a time) and the groups' (wanted first, ready the next day)
 import { createWorld, tickHour, hub, atBase, residents, newId, liveTiles, baseVision, day, outOnTrip, homeAt } from "../src/sim/world.js";
 import { launchExpedition, partyTile, carried, outpostName, spawnAiParty } from "../src/sim/parties.js";
 import { queueOrder, startOrder } from "../src/sim/orders.js";
