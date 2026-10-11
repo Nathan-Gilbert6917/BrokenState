@@ -2818,6 +2818,12 @@ const byPriorityHere = (state, base) => (!state.autopilot || gov(state).priority
 // 2571 buildings to its 2711; with this hold 3968 and 2664, food unchanged. A water filter while the water runs short,
 // a weapon for the unarmed and dressings for short meds still go first.
 const buildKeep = (state, base) => (byPriorityHere(state, base) ? nextBuildScrap(state, base) : 0);
+// The Kitchen saved for (buildWishes, kitchen-plus pick 6): its scrap is held from the crafts that are not urgent (armour,
+// packs, tools and the rest below a filter, a dewormer and the hive kit), so a scrap-tight hub still gets it built.
+function kitchenKeep(state, base) {
+  if (!BUILDINGS.canteen || countAll(base, "canteen") || base.construction.some((c) => c.type === "canteen")) return 0;
+  return buildWishes(state, base).some((w) => w.type === "canteen" && w.save) ? BUILDINGS.canteen.cost.scrap : 0;
+}
 export function planCrafts(state, base) {
   const q = craftQueue(base);
   const people = atBase(state, base.id);
@@ -2894,7 +2900,7 @@ export function planCrafts(state, base) {
     if (kitHave("flare") < HIVE_KIT.flare && (st.fuel || 0) >= 6 && baseAmmo(state, base) >= 40 && tryCraft(["flare"], "road flares to light the hive's passages", 5)) return;
   }
   if (rs) floor = rs.scrap.target;
-  keep = buildKeep(state, base); // on priorities: the rest only from scrap past the next building's (and the floors)
+  keep = Math.max(buildKeep(state, base), kitchenKeep(state, base)); // on priorities: the rest only from scrap past the next building's (and the floors); the kitchen's scrap held while it is saved for
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
   if (lacking("head") > 0 && tryCraft(["rivethelmet"], "someone has no helmet", 40)) return; // only once Backyard Blacksmithing is read (blueprints.js)
   if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "the well cannot keep up (and purified water means less of the worm)", 15)) return;
