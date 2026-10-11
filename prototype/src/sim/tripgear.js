@@ -37,6 +37,11 @@ function ammoFor(base, s, it) {
   return true;
 }
 // The aid they carry: a tourniquet or a kit that stops a bleed (selfStab), else any med kit; or null.
+// Would this weapon shoot for them here (a gun with rounds of its calibre at the base, a bow with arrows; anything else:
+// yes)? The governor's armory hand-out asks it (autopilot.js equipFromArmory): a gun with nothing to shoot is not handed
+// to someone whose weapon works, or the outdoor kit took it off them again for a knife within the hour and the two
+// hand-outs took turns (seed 5004: "Mae Ranch rifle, Mae Kitchen knife" every hour for days).
+export const outReady = (base, s, it) => !it || ammoFor(base, s, it);
 export const aidOf = (s) => allCarried(s).find((it) => GEAR[it.key] && GEAR[it.key].selfStab) || allCarried(s).find((it) => GEAR[it.key] && GEAR[it.key].medKit) || null;
 
 // What someone has to meet trouble with on a trip: { weapon (item they can use, or null), gun, bow, melee, ready (a gun

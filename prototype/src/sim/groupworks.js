@@ -365,6 +365,9 @@ export function nextWork(state, f) {
     if (tile === mainOf(f)) {
       if (!hasAny(f, "bench")) return { tile, type: "bench", why: "a workshop for their gear and ammo" };
       if (!hasAny(f, "store") && storesFull(state, f)) return { tile, type: "store", why: "the stores are full" };
+      // The kitchen before the workshop's machines (ap-food, user pick 2026-10-11): hot meals stretch the food and lift the
+      // group's growth from the day it stands; the machine shop, the upgraded sick bay and the machines come after it.
+      if (peopleAt(f, tile) >= W.KITCHEN.size && !n(w, "kitchen")) return { tile, type: "kitchen", why: "hot meals for the people there" };
       if (!hasAny(f, "shop") && !workLock(state, f, "shop")) return { tile, type: "shop", why: "machine parts from their scrap" }; // ai-locks: your machine shop
       const sb = sickbayWork(state, f, true);
       if (sb) return sb;
