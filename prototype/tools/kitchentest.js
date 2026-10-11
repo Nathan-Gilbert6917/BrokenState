@@ -276,11 +276,11 @@ section("AI groups");
   if (check(!!f, "a group that builds")) {
     f.pop = 20; f.bases = [f.bases[0]];
     const w = worksAt(f, f.bases[0]);
-    Object.assign(w, { water: 5, farms: 5, beds: 5, walls: 7, bench: 1, store: 1, pens: 1, sickbay: 4, still: 1, power: 1, freezer: 1, sealer: 1 }); // dev's machines (freezer-parts) come before the kitchen at the main base: built here
+    Object.assign(w, { water: 5, farms: 5, beds: 5, walls: 7, bench: 1, store: 1, pens: 1, sickbay: 1 }); // the kitchen comes before the machine shop, the sick bay's upgrades and the machines (ap-food, user pick 2026-10-11): none built here
     f.jails = { [f.bases[0]]: 3 };
     f.stock.food = 20 * 30; f.stock.scrap = 50; f.stock.parts = 5;
     const nw = nextWork(st, f);
-    check(nw && nw.type === "kitchen", `the next work at a base of 20: a kitchen (${nw && nw.type})`);
+    check(nw && nw.type === "kitchen", `the next work at a base of 20: a kitchen, ahead of the workshop's machines (${nw && nw.type})`);
     check(groupEatMult(st, f) === 1, "no kitchen: eats as before");
     w.kitchen = 1;
     check(near(groupEatMult(st, f), 1 - GROUP_WORKS.KITCHEN.save), `with one: ×${groupEatMult(st, f)}`);

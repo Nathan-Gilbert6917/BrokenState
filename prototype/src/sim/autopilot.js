@@ -133,7 +133,7 @@ export const PERSONALITIES = {
     name: "Cautious", crowdSlack: 0, desc: "One small, stealthy team at a time close to home, short searches, more guards, pays tribute, avoids fights. Keeps a reserve of every supply and goes for more as soon as one runs below it.",
     maxTeams: 1, cooldown: 4, crew: 3, homeFrac: 0.6, minHealth: 80, range: 8, maxHoursOut: 18, stance: "stealthy",
     searchHours: 3, searchHeat: 25, hurtStop: 60, risk: 0.8, riskAversion: 1.5, lossFear: 12, fightBias: -1, raidBias: -3,
-    curious: 0.5, baseGuards: 2, guardMargin: 1.4, restMood: 35, chain: 0, outposts: 1, outpostPop: 12, strangerDays: 8,
+    curious: 0.5, baseGuards: 2, guardMargin: 1.4, restMood: 35, chain: 0, outposts: 1, outpostPop: 12, strangerDays: 8, strictWinter: true, // strictWinter: roomAt
     holdRatio: 1.5, raid: false, rescue: false, tradeEvery: 14,
     reserves: true, shortCooldown: 2, shortReach: 2, homeHorde: 5,
     hiveFrom: 150, hiveOdds: 1.35, hiveRest: 10,
@@ -189,7 +189,7 @@ export const PERSONALITIES = {
     name: "Turtle", base: "cautious", crowdSlack: 0, desc: "Fortifies and stays home: walls first, then lives on its own land (animal pens, greenhouses, spare beds, a chapel), one short trip at a time, three guards on the walls, a single outpost only once the hub is big, keeps a reserve of everything, storms a hive only late and at great odds, never goes to war.",
     maxTeams: 1, cooldown: 5, crew: 3, homeFrac: 0.7, minHealth: 85, range: 7, maxHoursOut: 16, stance: "stealthy",
     searchHours: 3, searchHeat: 20, hurtStop: 65, risk: 0.85, riskAversion: 1.8, lossFear: 14, fightBias: -1.5, raidBias: -4,
-    curious: 0.3, baseGuards: 3, guardMargin: 1.6, restMood: 38, chain: 0, outposts: 1, outpostPop: 20, strangerDays: 10,
+    curious: 0.3, baseGuards: 3, guardMargin: 1.6, restMood: 38, chain: 0, outposts: 1, outpostPop: 20, strangerDays: 10, strictWinter: true,
     holdRatio: 1.6, raid: false, rescue: false, tradeEvery: 14,
     reserves: true, shortCooldown: 3, shortReach: 1.5, homeHorde: 6,
     hiveFrom: 400, hiveOdds: 1.5, hiveRest: 14,
@@ -987,7 +987,19 @@ function roomAt(state, h, k) {
   // summer (GROWTH_WATER): filters clog and cost scrap, so they do not count towards newcomers.
   if (isHub && !GROWTH_WATER.ok(state, h, k)) return false;
   // No newcomers while the winter stores would not feed them too (farming.js winterOutlook with k more mouths).
-  return !winterActive(state, fh) || winterOutlook(state, fh, { extra: k + homeMouths(state, fh), also: winterPool(state, fh) }).short <= 0;
+  if (winterActive(state, fh) && winterOutlook(state, fh, { extra: k + homeMouths(state, fh), also: winterPool(state, fh) }).short > 0) return false;
+  // Cautious and Turtle (strictWinter; user pick 2026-10-11, ap-food): none either while the winter-stores check itself
+  // comes up short (winterPlan, the people there now, as the weekly Winter stores line reads it), in any season: the
+  // census at ac1c1c6 lost four cautious and turtle colonies to whole-colony starvation in their second winter.
+  if (persona(state).strictWinter && winterPlan(state, fh).short > 0) { noteWinterRefusal(state); return false; }
+  return true;
+}
+// The joins the strict winter rule turned away (gov stats.winterRefused: the hours it said no; the census reads it).
+function noteWinterRefusal(state) {
+  const g = gov(state);
+  if (g.stats.winterRefusedHour === state.hour) return;
+  g.stats.winterRefusedHour = state.hour;
+  g.stats.winterRefused = (g.stats.winterRefused || 0) + 1;
 }
 
 // For the headless tests (tools/autosafetytest.js): the pay-out reserve, a broken well waiting for scrap, the upkeep
