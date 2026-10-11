@@ -37,7 +37,8 @@ import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (ma
 import { addFind, chooseRounds, baseCals, roundsText } from "./ammo.js"; // rounds by calibre
 import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging find named by calibre in the log)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
+import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult, tileFactor } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
+import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2)
 import { kitchenDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 
 export const ROLES = {
@@ -55,7 +56,7 @@ export const ROLES = {
   fish:     { name: "Fish",     desc: "Fishes the river or lake by a base 3 hours a day, with a fishing rod, a net or a spear (carried, or in the armory: one each, a net for two). Brings in fresh fish, which spoils fast. The tools wear a use a day." },
   forage:   { name: "Forage",   desc: "Gathers wild food within 2 tiles of the base 6 hours a day (foraging.js): berries, nuts, mushrooms, greens, roots, apples, now and then herbs (meds) or honey. About a ration a day each in summer, more in autumn, little in spring, next to nothing in winter; Farming and Scouting help. The land picked hard grows back over weeks." },
   wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
-  water:    { name: "Fetch water", desc: "Carries water from the nearest water in the base's own land (a river or lake tile the base holds) in two buckets: out, filling them, back, a few trips a day (fewer the further the water). River and lake water is un-purified: it goes into the base's un-purified water (the worm's eggs; a water boiler or filters make it safe), up to the barrels' room. Needs a water tile in the base's land." },
+  water:    { name: "Fetch water", desc: "Carries water from the nearest water in the base's own land (a river or lake tile the base holds, or one right next to it that nobody holds: a camp's river bank) in two buckets: out, filling them, back, a few trips a day (fewer the further the water). River and lake water is un-purified: it goes into the base's un-purified water (the worm's eggs; a water boiler or filters make it safe), up to the barrels' room. Needs a water tile in the base's land." },
   // kitchen.js: the Kitchen's cooks (one per 12 people living here).
   cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: up before the others for breakfast (06:00), dinner from 16:00 (20:00). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Farming 5+), lift spirits (+1 mood a day, +1.5 with Farming 6+) and boil a quarter of the day's drinking water. Without a kitchen there is nothing to cook." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
@@ -126,7 +127,7 @@ export function scavTripTile(state, base) {
   for (const id of workLand(state, base.tile)) {
     const t = state.tiles[id];
     if (!t || t.terrain === "water" || (id !== base.tile && !t.loc && t.terrain !== "city" && t.terrain !== "suburb")) continue;
-    const d = state.grid.distance(base.tile, id), f = distFactor("scavenge", d), v = siteBonus(state, base, id).scav;
+    const d = state.grid.distance(base.tile, id), f = tileFactor(state, base, "scavenge", id, d, walkMult(state)), v = siteBonus(state, base, id).scav;
     if (!best || v * f > best.v * best.f + 1e-12 || (Math.abs(v * f - best.v * best.f) <= 1e-12 && id < best.id)) best = { id, v, d, f };
   }
   return best;
@@ -184,7 +185,7 @@ export function fetchWaterWhy(state, base) {
 // Water a carrier brings in a day (trips that fit × two buckets).
 export function fetchWaterDay(state, base) {
   const w = fetchWaterTile(state, base);
-  return w ? waterTripsADay(w.d) * TRIP_JOBS.water.perTrip : 0;
+  return w ? waterTripsADay(w.d, walkMult(state)) * TRIP_JOBS.water.perTrip : 0;
 }
 
 // ---------- water ----------
@@ -506,6 +507,7 @@ function baseDaily(state, base) {
 
   baseScavenging(state, base, people);
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
+  tripEventsDaily(state, base); // tripevents.js: the day's gunshots out on the land (base.tripNoise, hordes drawn)
   cookAtBase(state, base); // worm.js: a cook fire or kitchen cooks the game with the worm's eggs (else it is eaten last, raw)
   woodDaily(state, base); // woodcutting.js: the Cut wood job
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));

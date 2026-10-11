@@ -19,8 +19,20 @@
 //   - The tile: the best of the base's land for the job by what it holds × that distance factor (tripTile, jobtrips.js).
 // The base's land: the tiles within TRIP.radius (2) of the base that no other group holds (tile.owner null or yours).
 // Water jobs (fish, water) need a water tile the base OWNS (tile.owner "player": the ground round a base, factions.js
-// recomputeOwnership): "No water in the base's land" otherwise.
-export const TRIP = { pace: 0.5, gate: 0.3, deposit: 0.15, radius: 2, minWork: 0.25, ref: 1 };
+// recomputeOwnership), or one right next to the base that nobody holds (TRIP.waterNext: a camp holds only its own tile,
+// so the river beside it would be out of reach otherwise; trips-plus #1): "No water in the base's land" otherwise.
+// The walking pace (state.tripPace, Settings → Options → Play: PACES): Relaxed walks 1.3× as long and meets trouble
+// 0.7× as often (sim/tripevents.js), Brisk 0.75× as long and 1.35× as often; Normal is the numbers above.
+export const TRIP = { pace: 0.5, gate: 0.3, deposit: 0.15, radius: 2, minWork: 0.25, ref: 1, waterNext: 1 };
+export const PACES = {
+  relaxed: { key: "relaxed", name: "Relaxed", walk: 1.3, ev: 0.7, desc: "They take their time: 1.3× the walking (less time at the work), 0.7× the trouble on the way" },
+  normal:  { key: "normal",  name: "Normal",  walk: 1,   ev: 1,   desc: "The usual pace: half an hour a tile each way" },
+  brisk:   { key: "brisk",   name: "Brisk",   walk: 0.75, ev: 1.35, desc: "They hurry: 0.75× the walking (more time at the work), 1.35× the trouble on the way (slips, getting lost, running into things)" },
+};
+export const PACE_KEYS = Object.keys(PACES);
+// The pace a game's outdoor workers keep (a per-game option, saved with the game).
+export const paceOf = (state) => PACES[state && state.tripPace] || PACES.normal;
+export const walkMult = (state) => paceOf(state).walk;
 // windows: [from, to) hours of the day; trips: trips per window; nominal: the old daily job's hours (its scale); prime:
 // the hour the odds are read at (hunt and fish: dawn and dusk, as the old job read them); water: works a water tile.
 // fixed (Fetch water): a short trip of `fill` hours at the water, then `rest` hours hauling it into the barrels and
@@ -46,17 +58,18 @@ export function tripWindow(job, h) {
 export const inTripHours = (job, h) => !!tripWindow(job, h);
 // Tiles walked each way to a tile d away (a water job's shore half a tile short of the water tile).
 export const walkTiles = (job, d) => Math.max(TRIP.gate, (TRIP_JOBS[job] && TRIP_JOBS[job].water ? d - 0.5 : d));
-export const walkHours = (job, d) => walkTiles(job, d) * TRIP.pace;
+// m: the pace's walk multiplier (walkMult(state); 1 = Normal).
+export const walkHours = (job, d, m = 1) => walkTiles(job, d) * TRIP.pace * m;
 // Hours a day on the tile at distance d (the windows less the walking).
-export function onTileHours(job, d) {
+export function onTileHours(job, d, m = 1) {
   const c = TRIP_JOBS[job];
   if (!c) return 0;
   if (c.fixed) { // as many short trips as fit
     let n = 0;
-    for (const [a, b] of c.windows) n += Math.max(0, Math.floor((b - a + c.fixed.rest) / (2 * walkHours(job, d) + c.fixed.fill + c.fixed.rest)));
+    for (const [a, b] of c.windows) n += Math.max(0, Math.floor((b - a + c.fixed.rest) / (2 * walkHours(job, d, m) + c.fixed.fill + c.fixed.rest)));
     return n * c.fixed.fill;
   }
-  return c.windows.reduce((s, [a, b]) => s + Math.max(0, b - a - c.trips * 2 * walkHours(job, d)), 0);
+  return c.windows.reduce((s, [a, b]) => s + Math.max(0, b - a - c.trips * 2 * walkHours(job, d, m)), 0);
 }
 // The reference distance (the scale is set there), so a typical base brings in what it did before the trips (measured
 // over 80 hubs, the old best tile against the new choice with its walk: wood and forage 1 (the old job took the best tile
@@ -65,10 +78,11 @@ export function onTileHours(job, d) {
 const refD = (job) => TRIP_JOBS[job].ref ?? TRIP.ref;
 // The old daily hours an hour on the tile counts as.
 export const tripScale = (job) => (TRIP_JOBS[job] && !TRIP_JOBS[job].fixed ? TRIP_JOBS[job].nominal / Math.max(0.1, onTileHours(job, refD(job))) : 1);
-// What a tile d away gives a day against one at the job's reference distance (1 there).
-export const distFactor = (job, d) => onTileHours(job, d) / Math.max(0.1, onTileHours(job, refD(job)));
+// What a tile d away gives a day against one at the job's reference distance (1 there) at the Normal pace; m: the
+// game's pace (walkMult: a Brisk pace gives a little more, a Relaxed one less).
+export const distFactor = (job, d, m = 1) => onTileHours(job, d, m) / Math.max(0.1, onTileHours(job, refD(job)));
 // Fetch water: trips a day at distance d.
-export const waterTripsADay = (d) => Math.round(onTileHours("water", d) / TRIP_JOBS.water.fixed.fill);
+export const waterTripsADay = (d, m = 1) => Math.round(onTileHours("water", d, m) / TRIP_JOBS.water.fixed.fill);
 
 // ---------- the land ----------
 // Tiles a base's workers may work (any base: yours, or a group's by its tile and owner): within TRIP.radius, not
@@ -82,16 +96,19 @@ export function workLand(state, tile, owner = "player") {
   }
   return out;
 }
-// Water tiles the base owns (its ground: tile.owner), nearest first: [{ id, d }].
+// Water tiles the base owns (its ground: tile.owner), and those right next to it that nobody holds (TRIP.waterNext: a
+// camp's river bank), nearest first: [{ id, d }].
 export function ownedWater(state, tile, owner = "player") {
   const out = [];
   for (const id of state.grid.within(tile, TRIP.radius)) {
     const t = state.tiles[id];
-    if (t && t.terrain === "water" && !t.bridge && t.owner === owner) out.push({ id, d: state.grid.distance(tile, id) });
+    if (!t || t.terrain !== "water" || t.bridge) continue;
+    const d = state.grid.distance(tile, id);
+    if (t.owner === owner || (t.owner == null && d <= TRIP.waterNext)) out.push({ id, d });
   }
   return out.sort((a, b) => a.d - b.d || a.id - b.id);
 }
-export const NO_WATER = "no water in the base's land";
+export const NO_WATER = "no water in the base's land or right next to it";
 // The land tile a fisher or water carrier stands on at a water tile: the base's own tile if it is on that shore, else
 // the shore tile nearest the base (ties by id).
 export function shoreOf(state, tile, water, owner = "player") {
@@ -138,6 +155,28 @@ export const drawSource = (state, base, src, q) => (src && src.well && TRIP_HOOK
 export function waterSources(state, base, job = "fish") {
   const list = ownedWater(state, base.tile);
   return TRIP_HOOKS.water ? TRIP_HOOKS.water(state, base, job, list) || list : list;
+}
+// Stockpiles as drop points (trips-plus #3, jobtrips.js planTrip): with a drop point dd tiles from the work, a day's
+// trips that are not their window's last leave the load there and set out again from it, so the walking is the first
+// walk out (d), the last walk home (d) and 2·dd for each leg between: far ground near a stockpile is worth working.
+export function onTileHoursDrop(job, d, dd, m = 1) {
+  const c = TRIP_JOBS[job];
+  if (!c || c.fixed || !(c.trips > 1)) return onTileHours(job, d, m);
+  return c.windows.reduce((s, [a, b]) => s + Math.max(0, b - a - 2 * walkHours(job, d, m) - (c.trips - 1) * 2 * walkHours("wood", dd, m)), 0);
+}
+// The drop point a worker at `at` would use (the deposit hook: a stockpile of the base with room, nearer the work than
+// the base): its distance from the work, or null.
+export function dropDist(state, base, job, at) {
+  const c = TRIP_JOBS[job];
+  if (!c || c.fixed || !(c.trips > 1) || !TRIP_HOOKS.deposit) return null;
+  const dp = TRIP_HOOKS.deposit(state, base, { trip: { at, job } }, job);
+  return dp && dp.tile != null && dp.tile !== base.tile ? state.grid.distance(at, dp.tile) : null;
+}
+// What a tile d out gives a day against the job's reference distance (distFactor), a drop point near it counted.
+export function tileFactor(state, base, job, id, d, m = 1) {
+  const f = distFactor(job, d, m);
+  const dd = d >= 1 ? dropDist(state, base, job, id) : null;
+  return dd != null && dd < d ? Math.max(f, onTileHoursDrop(job, d, dd, m) / Math.max(0.1, onTileHours(job, refD(job)))) : f;
 }
 // Where a worker's trip ends and the load goes: { tile, stock } (default the base itself).
 export function depositPoint(state, base, s, job) {
