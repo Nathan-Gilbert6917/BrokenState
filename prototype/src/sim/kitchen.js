@@ -18,13 +18,14 @@
 // (KITCHEN.cookHours: 05:00 breakfast, serving at 06:00, dinner 16–19, serving at 20:00) and the rest of their day goes
 // to their other priorities; s.cookHour (the last hour they cooked) counts them as the day's cooks for 24 hours.
 // Fixed-role cooks (Manual, the governor's) cook the full day: up before the others to cook
-// breakfast (05:00), serving at the mealtimes (activity.js MEALS: 06:00, the hunters' 08:00, dinner 20:00), bread,
+// breakfast (05:00), serving at the mealtimes (activity.js MEALS: 06:00, the hunters' 10:00, dinner 20:00), bread,
 // stock and washing up between, dinner from 16:00 (cookActivity: what the People tab shows). A cook too ill to work
 // (work factor under KITCHEN.minWork) feeds nobody; a weaker one feeds fewer (× work factor).
 // No kitchen, or nobody on Cook: the food is eaten as before (no penalty beyond the worm's raw-food rules).
 // The day (kitchenDaily, economy.js after the eating): base.kitchenDay = { day, cooks, served, meals, saved, cover }
 // for the base's Kitchen card, and the Work now panel's Cook row (output.js: meals and food saved).
 // AI groups (groupworks.js KITCHEN): a group base of KITCHEN size builds one; the people it serves eat 10% less.
+import { MEALS } from "./meals.js"; // the mealtimes (the hunters' late breakfast)
 import { atBase, residents, skill } from "./world.js";
 import { count } from "./buildings.js";
 import { isManaged } from "./work.js";
@@ -101,7 +102,7 @@ export function cookActivity(h) {
   if (h === 5) return { text: "Cooking breakfast", why: "Up before the others: porridge, eggs and tea on for breakfast at 06:00." };
   if (h === 6) return { text: "Serving breakfast", why: "Breakfast at the kitchen; the cooks eat when everyone is served." };
   if (h === 7) return { text: "Washing up after breakfast", why: "" };
-  if (h === 8) return { text: "Serving the hunters' breakfast", why: "The hunters and fishers eat after the dawn hunt." };
+  if (h === MEALS.lateBreakfast) return { text: "Serving the hunters' breakfast", why: "The hunters and fishers eat when they are back from the dawn trip." };
   if (h < 16) return { text: "Kitchen work: bread, stock, soaking beans", why: "Between the meals: the bread, the stock pot and tomorrow's beans." };
   if (h < 20) return { text: "Cooking dinner", why: "Dinner is at 20:00." };
   if (h === 20) return { text: "Serving dinner", why: "Dinner at the kitchen; the cooks eat when everyone is served." };

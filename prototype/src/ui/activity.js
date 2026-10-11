@@ -124,7 +124,7 @@ export function assignIdlePreview(state, base) {
 export function workNowPanel(state, base) {
   const rows = baseWork(state, base);
   if (!rows.length) return "";
-  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). The outdoor jobs (wood, foraging, hunting, fishing, scavenging, fetching water) go out in trips to the base's land and bring each load into the store as they get home (on the map: the Base workers layer); the workshops, teaching and reading bring theirs in at midnight. Breakfast (06:00, hunters and fishers 08:00) and dinner (20:00): building and crafting stop for them; someone out on a trip eats when back.")}>Work now</h3>${gearOutButton(state, base)}${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
+  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). The outdoor jobs (wood, foraging, hunting, fishing, scavenging, fetching water) go out in trips to the base's land and bring each load into the store as they get home (on the map: the Base workers layer); the workshops, teaching and reading bring theirs in at midnight. Breakfast (06:00, hunters and fishers 10:00) and dinner (20:00): building and crafting stop for them; someone out on a trip eats when back.")}>Work now</h3>${gearOutButton(state, base)}${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
 }
 
 // ---------- the Bases card and the alerts ----------

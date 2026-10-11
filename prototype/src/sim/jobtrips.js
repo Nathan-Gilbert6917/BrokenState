@@ -179,8 +179,10 @@ function tally(state, base, job, sid, add, now) {
 // The load into the store (the deposit point: the base unless something else takes it, tripland.js depositPoint).
 function credit(state, base, s, t, now) {
   const c = t.carry;
-  const dp = t.drop != null ? depositPoint(state, base, s, t.job) : { tile: base.tile, stock: base.stock }; // a drop trip: the stockpile (if it still has room), else home
-  const st = dp.stock || base.stock;
+  const dp = t.drop != null ? depositPoint(state, base, s, t.job) : { tile: base.tile, stock: base.stock }; // a drop trip (planTrip t.drop): the stockpile, else home
+  // A drop point with a room limit (a stockpile: dp.put(key, q) → what it took) gets the load through a scratch store:
+  // what fits is left there, the rest comes home with them (no overfill).
+  const st = dp.put ? {} : dp.stock || base.stock;
   const es = econStats(state);
   if (c && !c.empty) {
     switch (t.job) {
@@ -226,11 +228,23 @@ function credit(state, base, s, t, now) {
       }
     }
   }
-  const bonus = creditBonus(state, base, t, st); // tripevents.js: a find, a boar's meat
+  const bonus = creditBonus(state, base, t, st); // tripevents.js: a find, a boar's meat (with the load: a stockpile's room too)
+  let popTile = dp.tile;
+  if (dp.put) {
+    let left = 0, home = 0;
+    for (const [k, q] of Object.entries(st)) {
+      if (!(q > 0)) continue;
+      const took = Math.max(0, Math.min(q, dp.put(k, q) || 0)), rest = Math.round((q - took) * 100) / 100;
+      left += took;
+      if (rest > 0) { base.stock[k] = (base.stock[k] || 0) + rest; home += rest; }
+    }
+    if (!(left > 0)) popTile = base.tile; // nothing fitted: all of it came home
+    if (home > 0) t.overflow = Math.round(home * 100) / 100; // the rest walked home with them
+  }
   const text = [popText(t), bonus].filter(Boolean).join(" ");
   if (text) {
     const pops = base.tripPops || (base.tripPops = []);
-    pops.push({ t: r2(t.home), sid: s.id, job: t.job, text, tile: dp.tile });
+    pops.push({ t: r2(t.home), sid: s.id, job: t.job, text, tile: popTile });
     while (pops.length > POPS) pops.shift();
   }
 }

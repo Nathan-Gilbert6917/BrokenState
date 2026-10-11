@@ -382,13 +382,15 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
     shares.push(on.wood / Math.max(1, on.need));
     check(off.woodDays === 0 && off.cut === 0, "gov.noWood: nobody cuts wood");
   }
-  // The woodpile over six seeds (ui-int2, after job trips, field works and the kitchen: one seed's run swings from a
-  // full pile to an empty one on a few early choices, as the per-seed bar failed on single seeds of each branch):
-  // two-fifths in on average.
+  // Every seed of six (ui-int2, after job trips, field works and the kitchen): the governor puts the winter's
+  // woodcutters ahead of the hunters and the winter's extra farm hands while the food holds (autopilot.js WOOD_AP
+  // foodFirst) and keeps half the cold's firewood back from field works (fieldworks.js GOV.woodKeep). Before that fix
+  // seed 43 met the winter with no firewood and 48 with a quarter (85 0 52 69 55 96 24 110% over seeds 42–49).
   for (const seed of [SEED + 2, SEED + 3, SEED + 4, SEED + 5]) { const on = run(seed, false); shares.push(on.wood / Math.max(1, on.need)); }
   const avg = shares.reduce((a, v) => a + v, 0) / shares.length;
-  note(`the woodpile at the start of winter, seeds ${SEED}–${SEED + 5}: ${shares.map((v) => `${Math.round(v * 100)}%`).join(" ")} of the cold's need`);
-  check(avg >= 0.4, `the woodpile is two-fifths in by the winter or more, on average over six seeds (${Math.round(avg * 100)}%)`);
+  note(`the woodpile at the start of winter, seeds ${SEED}–${SEED + 5}: ${shares.map((v) => `${Math.round(v * 100)}%`).join(" ")} of the cold's need (average ${Math.round(avg * 100)}%)`);
+  check(shares.every((v) => v >= 0.4), "every seed's woodpile is two-fifths in by the winter or more");
+  check(avg >= 0.6, `on average three-fifths or more (${Math.round(avg * 100)}%)`);
   // The crews' field job and the governor's wood trips plan a Cut wood step.
   check(!!FIELD_TYPES.wood && typeof FIELD_TYPES.wood.cands === "function", "crews: a Cut wood field job");
 }

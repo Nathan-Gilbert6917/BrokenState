@@ -2077,6 +2077,13 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // else one, and as many fishers): as many as close the food the land must bring in (huntWorkCap / fishWorkHands:
   // the day's eating and the stores refilled, less the plots), up to a fifth of the people ahead of the farm
   // (LAND_AP.share: the governor's order of work, not the job's room; one at a base under 5).
+  // 2a''. Firewood before the food from the land and the winter's extra farm hands while the food holds (WOOD_AP.foodFirst
+  // days a head) in the two months before the cold: the crew it takes to have the woodpile in by the cold (planWood's critical). Job trips (2026-10-10)
+  // let any base hunt, and the hunters and a short winter outlook's farm crew took every hand of a small hub ahead of
+  // step 4a: woodtest seed 43 met the winter with no firewood at all (30 woodcutter-days from late summer).
+  const wood = planWood(state, base, people, areas);
+  const woodFirst = !!wood && foodDays >= WOOD_AP.foodFirst && wood.w.toCold > 0 && wood.w.toCold <= WOOD_AP.autumn * 2; // the run-up to the coming cold (not the tail of the last one: a spring start builds first)
+  if (woodFirst) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
   const landGoal = Math.max(40, foodTarget(state, base) * 1.5);
   // The hunting mix (hunting.js autoHuntMix): quiet with the dead near, bows when the ammo is short, else guns.
   if (areas.food) {
@@ -2143,8 +2150,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
 
   // 4a. Firewood (woodcutting.js, planWood): with the cold near and the woodpile under half of what it needs, a
   // woodcutter or two go before the builders and the stations.
-  const wood = planWood(state, base, people, areas);
-  if (wood) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
+  if (wood && !woodFirst) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
 
   // 4b. Cautious (reserves): while food is not short, the stations that refill a short supply (the ammo bench,
   // the med station: stationWorth) get their operator before the plots take every hand, and standing guards
@@ -4692,7 +4698,7 @@ function planForage(state, base, people, foodDays, areas) {
 // one; and the spare hands cut wood too (step 10, up to the cap) until it is stocked. Only where the land around gives
 // a woodcutter at least WOOD.worth a day; the best woodcutters with axes first. gov.noWood: the test switch
 // (woodtest.js, the balance runs) that leaves it out.
-export const WOOD_AP = { autumn: 28, minDays: 5, behind: 0.5 };
+export const WOOD_AP = { autumn: 28, minDays: 5, behind: 0.5, foodFirst: 10 };
 // tune-jobcaps: the Cut wood job has no fixed cap (it was 2, 3 at 10+ people). The woodcutters it takes to have the pile
 // in by the cold (and keep up with the boiler) go ahead of the builders and stations up to a quarter of the people
 // (woodCrewMax: the governor's order of work; a third while the pile is under WOOD_AP.behind of what the cold needs:
@@ -4726,6 +4732,7 @@ function planWood(state, base, people, areas) {
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
   return {
     cap,
+    w,
     critical: Math.min(want, woodCritical(state, base, w, people.length)),
     stock: true,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 50 && !x.woundInfected,

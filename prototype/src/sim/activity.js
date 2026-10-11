@@ -26,7 +26,7 @@
 //   base with nothing to do (a work role with no work, or a job that cannot be done here), not counting anyone
 //   resting (the Rest job, free time), in bed, ill or hurt, on watch or away. workCount(state, base) → { total,
 //   working, idle, hurt, resting }.
-// Mealtimes (meals.js MEALS): breakfast at 06:00 (08:00 for hunters and fishers, after the dawn hunt) and dinner at
+// Mealtimes (meals.js MEALS): breakfast at 06:00 (10:00 for hunters and fishers, after the dawn trip) and dinner at
 //   20:00, an hour each, show as "Eating". The food and water still come out of the store once a day (economy.js
 //   baseDaily); the jobs that work every hour (construction, crafting, gear repairs) stop for them (meals.js), the
 //   jobs with set hours have no meal in them.
@@ -64,7 +64,7 @@ import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity } from "./kitch
 // Icons by job, and by kind for everything that is not a job.
 export const JOB_ICONS = { water: "🪣", wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕", cook: "🍳" };
 export const KIND_ICONS = { sleep: "💤", guard: "🛡️", hurt: "🩹", free: "☕", idle: "⏸", stalled: "⚠️", off: "🕓", away: "🚶", captive: "⛓️", eat: "🍲" };
-// Mealtimes (meals.js: the hour each starts; an hour each). Hunters and fishers are out at dawn (05–07), so they eat after.
+// Mealtimes (meals.js: the hour each starts; an hour each). Hunters and fishers are out on the dawn trip (06–10), so they eat after.
 export { MEALS };
 export function mealAt(job, h) {
   const b = job === "hunt" || job === "fish" ? MEALS.lateBreakfast : MEALS.breakfast;
@@ -191,6 +191,7 @@ function fixedJobActivity(state, base, s, job, h) {
       return act("work", "Tending the crops", "", job);
     }
     case "build": {
+      if (s.away && s.away.text && s.away.until > state.hour && h === hourOfDay(state)) return act("work", s.away.text, "Field works (Field works tab): the builders walk out to the site and work there, away from the walls.", job); // fieldworks.js fieldBuildHour
       const rep = (base.repairs || []).find((j) => j.who === s.id);
       if (rep) {
         const fx = fixtures(base).find((f) => String(f.id) === String(rep.fx));
