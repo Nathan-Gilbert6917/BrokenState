@@ -11,6 +11,8 @@ import { HIVE_BIRTH_HELP } from "../sim/hivebirth.js";
 import { HIVE_CRAWL_HELP } from "../sim/hivecrawl.js";
 import { VOLUNTEERS_HELP } from "../sim/volunteers.js"; // volunteers lent between groups // the hive crawl: from the mouth to the Hivemind
 import { FESTIVAL_HELP } from "../sim/festival.js";
+import { EATING_HELP } from "../sim/eating.js"; // meal breaks, carried rations, ration levels, food and mood
+import { cookingHelp } from "../sim/cooking.js"; // wave 2 cooking
 import { machinesHelp } from "../sim/breakdowns.js"; // machines, parts, the freezer
 import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
 import { keyLabel } from "./keymap.js";
@@ -158,7 +160,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
     if (out[out.length - 1].id === "hives-and-hordes") { add("The hive crawl", HIVE_CRAWL_HELP); add("Hives being born", HIVE_BIRTH_HELP); } // sim/hivecrawl.js, sim/hivebirth.js
-    if (out[out.length - 1].id === "food-and-the-winter") add("The harvest festival", FESTIVAL_HELP); // sim/festival.js
+    if (out[out.length - 1].id === "food-and-the-winter") { add("Meals and rations", EATING_HELP); add("The harvest festival", FESTIVAL_HELP); } // sim/eating.js, sim/festival.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
     if (out[out.length - 1].id === "moving-people-between-bases") add("Traits", traitsHelp()); // ui/traitpick.js
     if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
@@ -184,6 +186,7 @@ export function helpTopics() {
   if (!seen.has("the-hive-crawl")) add("The hive crawl", HIVE_CRAWL_HELP);
   if (!seen.has("volunteers")) add("Volunteers", VOLUNTEERS_HELP); // sim/volunteers.js
   if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
+  if (!seen.has("meals-and-rations")) add("Meals and rations", EATING_HELP); // sim/eating.js
   if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   if (!seen.has("gun-attachments")) add("Gun attachments", GUNMODS_HELP);
   if (!seen.has("guns-and-melee-weapons")) add("Guns and melee weapons", ROSTER_HELP);
@@ -192,6 +195,7 @@ export function helpTopics() {
   if (!seen.has("training-medics")) add("Training medics", TRAINING_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
   if (!seen.has("field-works")) add("Field works", fieldWorksHelp()); // sim/fieldworks.js
+  add("Cooking and meals", cookingHelp()); // sim/cooking.js (wave 2 cooking: bills, recipes, cookbooks, food poisoning)
   add("Machines and machine parts", machinesHelp()); // sim/breakdowns.js (freezer-parts: the walk-in freezer, the vacuum sealer)
   add("Magazines, rigs and plates", KIT_HELP); // sim/carrykit.js
   if (!seen.has("caravans-on-the-road")) add("Caravans on the road", CARAVAN_HELP);

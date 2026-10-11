@@ -59,6 +59,9 @@ export function festivalBlocker(state, b) {
   return "";
 }
 
+// The festival's day in the calendar (the AI groups feast on it: factions.js, eating.js groupRation).
+export const festivalDay = (state) => { const se = season(state); return se.key === FEST.SEASON && se.dayOfSeason === FEST.DAY; };
+
 // Hourly (world.js tickHour): the morning of the festival day, or of the day it was put off to.
 export function festivalHour(state) {
   if (state.hour % 24 !== FEST.HOUR || state.timelapse) return;
@@ -140,6 +143,7 @@ export function holdFestival(state, b, kind) {
   if (!state.bases.includes(b)) return `${b.name} is no longer yours.`;
   if (foodOf(b) < cost) return `${b.name} cannot spare ${cost} food now.`;
   eat(b, cost);
+  if (full) b.feastDay = Math.floor(state.hour / 24); // meals.js: a feast day (eating.js: everyone eats their fill and half again, "A feast")
   const d = day(state);
   let lift = K.mood;
   const extras = [];

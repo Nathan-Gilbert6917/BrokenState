@@ -345,6 +345,12 @@ export const GEAR = {
   diybook:      { burnShare: 1, name: "The Complete DIY Manual",  slot: "pack", skill: null, power: 0, req: 0, value: 18, noise: 0, book: { skill: "crafting", max: 7, hours: 24 }, desc: "Fixing, fitting and making do around the house. Teaches Crafting up to 7.", weight: 1, cat: "books" },
   forgebook:    { burnShare: 1, name: "Backyard Blacksmithing",   slot: "pack", skill: null, power: 0, req: 0, value: 40, noise: 0, book: { skill: "crafting", max: 11, hours: 40 }, desc: "Coal forges, quenching and riveting, from a hobbyist press. Teaches Crafting up to 11.", weight: 1.2, cat: "books" },
   bushcraftbook:{ burnShare: 1, name: "Bushcraft Field Guide",    slot: "pack", skill: null, power: 0, req: 0, value: 25, noise: 0, book: { skill: "crafting", max: 9, hours: 30 }, desc: "Cordage, camouflage and camp craft from what the woods give. Teaches Crafting up to 9.", weight: 0.6, cat: "books" },
+  // Cookbooks (wave 2 cooking, the user's pick 13; blueprints.js CRAFT_BOOKS cook, cooking.js): they teach Cooking like
+  // any skill book, and once read to the end at a base the cooks make their meals below the usual Cooking.
+  cookbook:     { burnShare: 1, name: "The Family Cookbook",      slot: "pack", skill: null, power: 0, req: 0, value: 15, noise: 0, book: { skill: "cooking", max: 8, hours: 24 }, desc: "A splattered kitchen standard: soups, stews, roasts and a chapter on bread. Teaches Cooking up to 8.", weight: 0.9, cat: "books" },
+  chefbook:     { burnShare: 1, name: "Professional Chef's Handbook", slot: "pack", skill: null, power: 0, req: 0, value: 40, noise: 0, book: { skill: "cooking", max: 14, hours: 40 }, desc: "A culinary-school text: stocks, sauces, butchery and plating for a full dining room. Teaches Cooking up to 14.", weight: 1.6, cat: "books" },
+  gamebook:     { burnShare: 1, name: "Wild Game Cookery",        slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, book: { skill: "cooking", max: 10, hours: 30 }, desc: "A hunting lodge's favourite: field dressing, curing, grinding and sausage, and pemmican the old way. Teaches Cooking up to 10.", weight: 0.7, cat: "books" },
+  prepbook:     { burnShare: 1, name: "The Prepper's Pantry",     slot: "pack", skill: null, power: 0, req: 0, value: 30, noise: 0, book: { skill: "cooking", max: 8, hours: 24 }, desc: "Long-keeping food: drying, vacuum packing, milling grain, hardtack and trail food. Teaches Cooking up to 8.", weight: 0.6, cat: "books" },
   // Special crafted gear: locked until a craft book is read or a blueprint studied; better than ordinary makeshift
   // gear (still wears out). combat.js WEAPONS has the weapons' battle numbers.
   springmachete:{ name: "Leaf-spring machete",      slot: "weapon", skill: "shooting", power: 2.2, req: 0, value: 18, noise: 0, makeshift: true, dur: 22, desc: "A truck leaf spring forged, quenched and ground into a heavy blade: hits harder than a store-bought machete and keeps its edge a long time.", weight: 1.1, cat: "melee" },
@@ -544,7 +550,7 @@ export const TRAITS = {
   badback:   { name: "Bad Back",     bad: true, desc: "Max load 28 kg instead of 40, and loads feel 20% heavier (a worse load band)" },
   // 2026-10-08 (user request: "more tags like Lucky, Tough"): rolled at birth with dice of their own (traits.js).
   quicklearner: { name: "Quick Study",   desc: "Learns 25% faster: +25% XP from everything (use, study, fights)" },
-  ironstomach:  { name: "Iron Stomach",  desc: "Half the chance of an upset stomach from un-purified water or uncooked food, and shrugs off the worm's eggs 1 time in 3 (water, raw food, camping, searching)" },
+  ironstomach:  { name: "Iron Stomach",  desc: "Half the chance of an upset stomach from un-purified water or food poisoning (bad cooking, uncooked food), and shrugs off the worm's eggs 1 time in 3 (water, raw food, camping, searching)" },
   quickheal:    { name: "Quick Healer",  desc: "Wounds heal 30% faster while resting (at a base, in a hospital bed, in camp, as a prisoner)" },
   strongback:   { name: "Strong Back",   desc: "Max load 48 kg instead of 40, and loads feel 10% lighter (a better load band)" },
   fleet:        { name: "Fleet-Footed",  desc: "+1 tile a move in battle, and +10% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)" },
@@ -561,7 +567,7 @@ export const TRAITS = {
   // rolled at birth with the newer traits' own dice like the rest.
   slow:         { name: "Slow",          bad: true, desc: "-1 tile a move in battle, and -10% to break off and get away from a fight (a team on foot with them: -1 to Run for it on the road)" },
   slowlearner:  { name: "Slow Learner",  bad: true, desc: "Learns 20% slower: -20% XP from everything (use, study, fights)" },
-  weakstomach:  { name: "Weak Stomach",  bad: true, desc: "50% more likely to get an upset stomach from un-purified water or uncooked food" },
+  weakstomach:  { name: "Weak Stomach",  bad: true, desc: "50% more likely to get an upset stomach from un-purified water or food poisoning (bad cooking, uncooked food)" },
   nearsighted:  { name: "Nearsighted",   bad: true, desc: "-2 Scouting and -1 Shooting" },
   feeble:       { name: "Feeble",        bad: true, desc: "Max load 4 kg lower, and -5% to hit in melee" },
   squeamish:    { name: "Squeamish",     bad: true, desc: "-2 Medicine, and a death in the group hits their mood 3 points harder (wherever they are)" },
@@ -571,6 +577,12 @@ export const TRAITS = {
   tactical:     { name: "Tactical",      desc: "+10% to hit a flanked target, -5% to be hit while in cover, +3% to hit for allies within 2 tiles; +0.5 fighting strength by the numbers" },
   strategic:    { name: "Strategic",     desc: "Their team meets 10% less trouble on the road, and while they are at a base your estimates of other groups are 15% sharper" },
   diplomatic:   { name: "Diplomatic",    desc: "Goodwill with groups rises 10% faster and falls 10% slower; their team's bribes and tolls cost 10% less; radio deals from their base: delivery fees go 10% lower" },
+  // 2026-10-11 (wave 2 eating, user pick 3: food preferences): eating.js reads them at every meal. Picky Eater and
+  // Vegetarian are rolled at birth after the others (DIET_TRAITS, traits.js dietTraits); a Cannibal only by choice (the
+  // new-run screen, a custom background): the game has no human meat (eating.js).
+  picky:        { name: "Picky Eater",   bad: true, desc: "Fussy about food: a simple meal mood -3 and raw food -4 on top of the usual; a fine meal +2 and a lavish one +3 on top" },
+  vegetarian:   { name: "Vegetarian",    bad: true, desc: "Eats plant food first; meat, fish, eggs, milk, honey or a mixed meal: mood -6 (2 days)" },
+  cannibal:     { name: "Cannibal",      neutral: true, desc: "Human meat lifts their mood (+10) where it turns anyone else's stomach (-20). There is no human meat in the game: the dead carry the worm" },
 };
 // The traits drawn with the world's dice at birth (world.js rollTraits), in this order: the ten there were before
 // 2026-10-08. The draw over them is exactly the old draw, so a seed keeps every roll it made; the newer traits come in
@@ -583,12 +595,17 @@ export const NEW_TRAITS = Object.keys(TRAITS).filter((t) => !BIRTH_TRAITS.includ
 // but for the few a later trait now takes the place of one. Never add to this list: a later wave gets its own.
 export const LATE_TRAITS = ["tactical", "strategic", "diplomatic"];
 // The swap's pool (traits.js swapNewTraits): the 21 newer traits of 2026-10-08, in their order. Never add to it.
-export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t));
+// The food traits of 2026-10-11 (wave 2 eating): rolled after the late ones with their own hash (traits.js dietTraits:
+// Picky Eater and Vegetarian; the Cannibal is never rolled). Never add to this list: a later wave gets its own.
+export const DIET_TRAITS = ["picky", "vegetarian", "cannibal"];
+export const DIET_ROLLED = ["picky", "vegetarian"];
+export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t) && !DIET_TRAITS.includes(t));
 // Traits nobody has together (opposites). The one table: the birth roll, a child's traits, the new-run screen's
 // picker, custom backgrounds, the backgrounds of a start.
 export const TRAIT_CLASH = [["brave", "coward"], ["lucky", "unlucky"], ["tough", "frail"], ["strongback", "badback"], ["quickheal", "sickly"], ["ironwill", "hothead"],
   ["fleet", "slow"], ["quicklearner", "slowlearner"], ["ironstomach", "weakstomach"], ["keeneye", "nearsighted"], ["strongback", "feeble"], ["medic", "squeamish"], ["ironwill", "pessimist"],
-  ["diplomatic", "hothead"]]; // 2026-10-09: a Hothead talks no one round
+  ["diplomatic", "hothead"], // 2026-10-09: a Hothead talks no one round
+  ["vegetarian", "cannibal"]]; // 2026-10-11: one does not eat meat
 // Do traits a and b clash?
 /** @param {string} a @param {string} b @returns {boolean} */
 export const traitsClash = (a, b) => TRAIT_CLASH.some(([x, y]) => (x === a && y === b) || (x === b && y === a));

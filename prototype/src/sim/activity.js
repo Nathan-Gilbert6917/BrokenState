@@ -27,9 +27,10 @@
 //   resting (the Rest job, free time), in bed, ill or hurt, on watch or away. workCount(state, base) → { total,
 //   working, idle, hurt, resting }.
 // Mealtimes (meals.js MEALS): breakfast at 06:00 (10:00 for hunters and fishers, after the dawn trip) and dinner at
-//   20:00, an hour each, show as "Eating". The food and water still come out of the store once a day (economy.js
-//   baseDaily); the jobs that work every hour (construction, crafting, gear repairs) stop for them (meals.js), the
-//   jobs with set hours have no meal in them.
+//   20:00, an hour each, show as "Eating" ("Eating breakfast (24 min)": eating.js s.meal, the break they took this
+//   hour; from their pack when the stores are empty). The food comes out of the store as they eat (eating.js); the
+//   jobs that work every hour (construction, crafting, gear repairs) stop for the meal hours (meals.js), the jobs with
+//   set hours have no meal in them.
 // stallDaily(state) (world.js, after the bases' day): base.stall[job] = the day a job here was first found with nobody
 //   on it able to work (row.why), cleared when it can work again; the alert (ui/activity.js stallAlerts) comes at 2 days.
 import { atBase, baseById, factionById, hourOfDay, survivorById, day, skill } from "./world.js";
@@ -107,9 +108,14 @@ export function describeActivity(state, s, h = hourOfDay(state), opts = {}) {
   const meal = mealAt(role, h);
   const outNow = h === hourOfDay(state) && !!s.trip && s.trip.leave <= state.hour && state.hour < s.trip.home; // out on a job trip (jobtrips.js): the trip's line, they eat when back
   if (meal && !outNow && s.role !== "guard" && !(t && (t.t === "sleep" || t.t === "guard")) && !sleepHour(state, s, h) && !sleepingIn(state, base, s, h)) {
+    // eating.js: the meal they just had (s.meal: this hour) gives its minutes; the food is taken from the stores as they eat.
+    const now = h === hourOfDay(state) && s.meal && s.meal.h === state.hour ? s.meal : null;
+    const mins = now ? ` (${now.min} min)` : "";
+    const how = "They eat until they are 80–100% full (each their own target), cooked meals first; building and crafting stop for the hour.";
+    if (now && now.from === "pack") return act("eat", `Eating ${meal} from their pack${mins}`, `${base.name}'s stores are empty: they eat the food they carry.`, s.role);
     if (edibleFood(base) > 0 || (base.stock.food || 0) > 0) {
-      if (eatsAtKitchen(state, base, s)) return act("eat", `Eating ${meal} at the kitchen`, `A hot ${meal} at ${base.name}'s kitchen: hot meals stretch the food and lift spirits. The day's food comes out of the store once a day; building and crafting stop for the hour.`, s.role);
-      return act("eat", `Eating ${meal}`, `${meal === "breakfast" ? "Breakfast" : "Dinner"} at ${base.name}. The day's food comes out of the store once a day; building and crafting stop for the hour.`, s.role);
+      if (eatsAtKitchen(state, base, s)) return act("eat", `Eating ${meal} at the kitchen${mins}`, `A hot ${meal} at ${base.name}'s kitchen: hot meals stretch the food and lift spirits. ${how}`, s.role);
+      return act("eat", `Eating ${meal}${mins}`, `${meal === "breakfast" ? "Breakfast" : "Dinner"} at ${base.name}. ${how}`, s.role);
     }
     return act("eat", "Mealtime – nothing to eat", `${base.name} is out of food.`, s.role, "🍽️");
   }

@@ -90,7 +90,7 @@ row = baseWork(state, base).find((r) => r.job === "wood");
 check(row && row.progress && row.progress.frac > 0 && /firewood \(.*in today/.test(row.progress.text), `after the morning trip: ${row && row.progress && Math.round(row.progress.frac * 100)}% (${row && row.progress && row.progress.text})`);
 tickTo(state, 20);
 a = describeActivity(state, cutter);
-check(a.kind === "eat" && a.text === "Eating dinner", `20:00: dinner (${a.text})`);
+check(a.kind === "eat" && /^Eating dinner \(\d+ min\)$/.test(a.text), `20:00: dinner (${a.text})`);
 tickTo(state, 21);
 a = describeActivity(state, cutter);
 check(a.kind === "off" && /Done chopping/.test(a.text), `21:00: done for the day (${a.text})`);
@@ -109,7 +109,7 @@ const last = lastOutput(state, base, "wood");
 check(last[0] && last[0].when === "yesterday" && /\+\d+ firewood \([\d.]+ kg\)/.test(last[0].text), `last output: "${last[0] && last[0].text} ${last[0] && last[0].when}"`);
 check(workDay(24) === 1 && workDay(25) === 2 && workDay(23) === 1, "the midnight tick counts for the day before it");
 tickTo(state, 6);
-check(describeActivity(state, cutter).text === "Eating breakfast", `06:00: breakfast (${describeActivity(state, cutter).text})`);
+check(/^Eating breakfast \(\d+ min\)$/.test(describeActivity(state, cutter).text), `06:00: breakfast (${describeActivity(state, cutter).text})`);
 check(mealAt("hunt", 6) === null && mealAt("hunt", 10) === "breakfast" && mealAt("wood", 6) === "breakfast" && mealAt("farm", 20) === "dinner", "hunters and fishers eat after the dawn trip (10:00); everyone dines at 20:00");
 // Meals are outside the jobs' hours: the daily jobs' sampled hours (wood 08–18, forage 09–19, hunt/fish 06, 07, 17).
 check([8, 10, 12, 14, 16, 18].every((h) => !mealAt("wood", h)) && [9, 11, 13, 15, 17, 19].every((h) => !mealAt("forage", h)) && [6, 7, 17].every((h) => !mealAt("hunt", h)), "no meal falls on a daily job's working hours");

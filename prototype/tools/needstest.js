@@ -105,30 +105,34 @@ function team(st, n, supplies) {
   const h = quietHub(st);
   st.hour = mildDay(st) * 24 + 1;
   const n = residents(st, h.id).length;
-  const stock0 = JSON.stringify(h.stock);
-  for (let i = 0; i < 23; i++) needsHour(st);
-  check(JSON.stringify(h.stock) === stock0, "the gauges never take from a base's stores by themselves");
-  check(residents(st, h.id).every((s) => s.hunger >= 99.9 && s.thirst >= 99.9), "fed in full, everyone stays full");
-  const e0 = econStats(st).eaten;
+  // eating.js: everyone eats by the hour at the mealtimes, each to their own target (80–100); the stores pay as they eat.
+  // Two days to settle (the gauges start full), then a day measured against upkeep.js's per head × heads.
+  for (let d = 0; d < 2; d++) { for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); } basesDaily(st); }
+  check(residents(st, h.id).every((s) => s.hunger >= 60 && s.hunger <= 100 && s.thirst >= 99.9), `fed in full, everyone stays in their band (${residents(st, h.id).map((s) => r1(s.hunger)).join(", ")})`);
+  const e0 = econStats(st).eaten, f0 = food(h);
+  for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); }
   basesDaily(st);
-  check(near(econStats(st).eaten - e0, foodUse(st, h).residents), `the day's eating is upkeep.js's per head × heads (${r1(econStats(st).eaten - e0)} for ${n})`);
-  // Come home hungry: they recover at the base, at no cost.
+  const ate = econStats(st).eaten - e0;
+  check(Math.abs(ate - foodUse(st, h).residents) < 0.15 * foodUse(st, h).residents && near(f0 - food(h), ate, 0.3), `the day's eating is about upkeep.js's per head × heads (${r1(ate)} for ${n}, ${r1(foodUse(st, h).residents)} expected; the stores ${r1(f0 - food(h))})`);
+  // Come home hungry: they eat at the next mealtime (or now, below the snack line), from the stores.
   const s = residents(st, h.id)[0];
   s.hunger = 20; s.thirst = 20;
-  const st0 = JSON.stringify(h.stock);
-  for (let i = 0; i < 10; i++) needsHour(st);
-  check(s.hunger > 40 && s.thirst > 40 && JSON.stringify(h.stock) === st0, `back home hungry: meals at home bring them back (hunger 20 → ${r1(s.hunger)})`);
+  const fb = food(h);
+  for (let i = 0; i < 10; i++) { st.hour++; needsHour(st); }
+  check(s.hunger > 75 && s.thirst > 40 && food(h) < fb - 0.5, `back home hungry: they eat their fill at home, from the stores (hunger 20 → ${r1(s.hunger)}, ${r1(fb - food(h))} days of food)`);
   // Short rations: the gauges sink to the lean level and hold.
   for (const x of residents(st, h.id)) { x.hunger = 100; x.thirst = 100; }
   h.rationing = true;
-  for (let i = 0; i < 24 * 8; i++) needsHour(st);
+  for (let i = 0; i < 24 * 8; i++) { st.hour++; needsHour(st); }
   const hs = residents(st, h.id).map((x) => x.hunger);
   check(hs.every((v) => v < NEEDS.lean + 1 && v > 20), `a week on short rations: hungry but holding (${hs.map(r1).join(", ")})`);
   h.rationing = false;
   // Out of food: everyone's hunger falls (the base's hunger days do the damage, economy.js).
   h.hungerDays = 1;
+  clearFood(h);
+  for (const x of residents(st, h.id)) if (x.ration) clearFood(x.ration); // nothing in the packs either (eating.js)
   const before = residents(st, h.id).map((x) => x.health);
-  for (let i = 0; i < 24; i++) needsHour(st);
+  for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); }
   check(residents(st, h.id).every((x, i) => x.hunger < hs[i] && x.health === before[i]), "a base out of food: hunger falls, and only economy.js's hunger days cost health");
   h.hungerDays = 0;
 }
@@ -227,19 +231,19 @@ function team(st, n, supplies) {
   st.hour = mildDay(st) * 24 + 1;
   const s = atBase(st, h.id).find((x) => !x.leader);
   const food0 = food(h), water0 = h.stock.water;
-  const pack = packErrand(st, h, s, 4);
-  check(food(pack) >= 4 && food(pack) < 4 + 1.21 && pack.water >= 4 && near(food(h), food0 - food(pack)) && near(h.stock.water, water0 - pack.water), `a 4-day errand takes ${r1(food(pack))} days of food (whole ration bars) and ${pack.water} water from the base`);
-  s.location = { kind: "errand", baseId: h.id, until: Math.floor(st.hour / 24) + 1 + 4, pack };
-  const gh = s.hunger;
-  for (let i = 0; i < 24 * 4; i++) needsHour(st);
-  check(s.hunger > 50 && s.thirst > 50 && food(pack) < 4 && food(pack) > 0, `they eat on the way (hunger ${r1(s.hunger)}, ${r1(food(pack))} days of food left)`);
-  const back = food(pack);
+  const add = packErrand(st, h, s, 4); // eating.js: their own pack, topped up to the errand's days
+  const pk = s.ration;
+  check(food(pk) >= 4 && food(pk) < 4 + 1.21 && pk.supplies.water >= 4 && near(food(h), food0 - food(pk)) && near(h.stock.water, water0 - add.water), `a 4-day errand fills their pack with ${r1(food(pk))} days of food (whole ration bars) and ${pk.supplies.water} water from the base`);
+  s.location = { kind: "errand", baseId: h.id, until: Math.floor(st.hour / 24) + 1 + 4 };
+  for (let i = 0; i < 24 * 4; i++) { st.hour++; needsHour(st); }
+  check(s.hunger > 50 && s.thirst > 50 && food(pk) < 4 && food(pk) > 0, `they eat on the way (hunger ${r1(s.hunger)}, ${r1(food(pk))} days of food left)`);
+  const left = food(pk);
   const f1 = food(h);
   st.hour = (s.location.until - 1) * 24 + 1;
   st.rng.chance = () => false; // never lost, no find
   hubUpkeepDaily(st);
-  check(s.location.kind === "base" && near(food(h), f1 + back, 1e-6), `back home: the ${r1(back)} days of food left come back`);
-  void gh;
+  const back = food(h) - f1;
+  check(s.location.kind === "base" && near(back + food(pk), left, 1e-6) && food(pk) <= 1.5 + 1.21, `back home: what is over their usual pack comes back (${r1(back)} of ${r1(left)} days; ${r1(food(pk))} kept in the pack)`);
 }
 
 // ---------- 7. heating ----------
@@ -362,12 +366,15 @@ function team(st, n, supplies) {
     for (const x of ppl) { x.mood = 70; x.hunger = 100; x.role = "farm"; }
     const one = ppl.find((x) => !x.leader);
     const moods = [];
-    for (let d = 0; d < 3; d++) { const m0 = one.mood; basesDaily(sb); moods.push([one.starveDays, r1(m0 - one.mood)]); for (let k = 0; k < 23; k++) sb.hour++; sb.hour++; }
+    for (const x of ppl) if (x.ration) clearFood(x.ration); // nothing in their packs (eating.js)
+    // eating.js: they eat by the hour; the day's missed meals make the base's hunger day at midnight.
+    for (let d = 0; d < 3; d++) { const m0 = one.mood; for (let k = 0; k < 24; k++) { sb.hour++; needsHour(sb); } basesDaily(sb); moods.push([one.starveDays, r1(m0 - one.mood)]); }
     check(hb.hungerDays >= 1 && moods[0][0] === 1, `starving from the base's first day out of food (day ${moods[0][0]}, hunger ${Math.round(one.hunger)})`);
     check(moods.map((m) => m[0]).join(",") === "1,2,3", `counted each morning: ${moods.map((m) => m[0]).join(", ")}`);
     const f = moodFactors(sb, one).list;
     check(f.some((x) => /^Starving: day 3 \(.* is out of food/.test(x.label) && x.v === -starveMood(3)) && !f.some((x) => /^Out of food/.test(x.label)), "the breakdown names the base, and the flat 'Out of food' line is gone");
     setFood(hb, 500);
+    for (let k = 0; k < 24; k++) { sb.hour++; needsHour(sb); }
     basesDaily(sb);
     check(!one.starveDays || hungerOf(one) < NEEDS.starving, "fed again: the count ends");
   }

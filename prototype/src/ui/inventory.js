@@ -9,6 +9,7 @@ import { GEAR, SUPPLIES, SKILL_NAMES, supWeight } from "../sim/data.js";
 import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/world.js";
 import { partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad } from "../sim/parties.js";
 import { wornLoad, maxLoad, personLoad, bandName, feelFactor } from "../sim/load.js";
+import { packFood, packWater, packKg, PACK } from "../sim/eating.js"; // the food and water everyone carries
 import { bandChip, BANDS_HELP } from "./loadview.js";
 import { itemDur, itemDurMax, durUnit } from "../sim/crafting.js";
 import { worthTier } from "../sim/valuation.js";
@@ -137,6 +138,8 @@ function gearCog(state, ui, item, loc) {
 
 // The paper doll: portrait in the middle, hands / off hand / pack on the left, head / body / arms / legs on the
 // right, pockets and pack below. holder = survivor or body; prefix = "s:<id>" or "body:<i>".
+// "Food on them": the pack of food and water everyone carries (sim/eating.js), counted in their load.
+const foodLine = (s) => `<div class="small muted"${tip(`Their pack of food and water (sim/eating.js: about ${PACK.food} days of each, topped up from the stores at a base each morning; eaten away from the stores). Counted in the load above.`)}>Food on them: ${Math.round(packFood(s) * 10) / 10} d · water ${Math.round(packWater(s) * 10) / 10} (${Math.round(packKg(s) * 10) / 10} kg)</div>`;
 export function doll(state, ui, holder, prefix, portrait, { readonly = false, user = null, weightLine = null } = {}) {
   ensureInv(holder);
   const box = (slot) => slotBox(state, ui, `${prefix}:${slot}`, SLOT_NAMES[slot], user, readonly);
@@ -154,7 +157,7 @@ export function doll(state, ui, holder, prefix, portrait, { readonly = false, us
   }
   return `<div class="doll">
       <div class="dollside">${box("weapon")}${box("tool")}${box("rig")}${box("backpack")}${box("carry")}</div>
-      <div class="dollport">${portrait}<div class="small muted"${tip("Armor from every worn piece (body, head, arms, legs) adds up, to a cap of 5.5. Each point cuts damage taken by 6%.")}>Armor ${Math.round(arm * 10) / 10}</div>${weight}${battleLine(holder)}</div>
+      <div class="dollport">${portrait}<div class="small muted"${tip("Armor from every worn piece (body, head, arms, legs) adds up, to a cap of 5.5. Each point cuts damage taken by 6%.")}>Armor ${Math.round(arm * 10) / 10}</div>${weight}${holder.traits ? foodLine(holder) : ""}${battleLine(holder)}</div>
       <div class="dollside">${box("head")}${box("armor")}${insertBoxes(state, ui, holder, prefix, user, readonly)}${box("arms")}${box("legs")}</div>
     </div>
     <div class="invlabel"${tip("Pockets hold small things: knives, pistols, kits, radios, goggles. Nothing in a pocket is in use until it is moved to a hand.")}>Pockets</div>

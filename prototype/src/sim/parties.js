@@ -15,7 +15,7 @@ import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoa
 import { findPath } from "./hex.js";
 import { roadblockOnEnter, rollRoadblock } from "./roadblocks.js";
 import { partyEnter as fieldPartyEnter, teamEnter as fieldTeamEnter, fieldRaidArrive, teamActs as fieldActs } from "./fieldworks.js"; // field works: roadblocks, raids on them
-import { TERRAIN, ROAD_COST, GEAR, SUPPLIES, supValue, supWeight } from "./data.js";
+import { TERRAIN, ROAD_COST, GEAR, SUPPLIES, supValue, supWeight, FACTION_TYPES } from "./data.js";
 import { FOODS, foodIn, takeFood, moveFood, packPick, addFood, foodText, typedFood, addFoods, unitsOf, DAY_KG } from "./foods.js"; // food by type: packed with its lots, eaten the soonest to spoil first
 import {
   newId, log, addCard, day, hub, baseById, survivorById, atBase, skill, combatPower, hurt,
@@ -36,6 +36,7 @@ import {
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
 import { teamLoad, burdenRecord, rationRate, personRation, wornLoad } from "./load.js";
+import { packFood, packWater as personWater, aiPartyHeads, PACK } from "./eating.js"; // the packs everyone carries (wave 2 eating)
 import { perceive, spot, mergeSpots, MARKER_TYPES, markAbandonedVehicle, markDeathSite, deathLabel } from "./markers.js";
 import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
 import { handoverArrive } from "./ransom.js";
@@ -854,7 +855,13 @@ export function launchExpedition(state, opts) {
   for (const [k, q] of Object.entries(opts.supplies || {})) if (SUPPLIES[k] && Number.isFinite(q) && q > 0) supplies[k] = q;
   // Food asked for in days ("food": N, the planners and the autopilot) is packed as items (foods.js packPick: by
   // default what keeps longest and weighs least a kcal; opts.packFood: an item to take first).
-  const foodDays = Number(opts.supplies && opts.supplies.food) || 0;
+  // The crew's own packs (eating.js: everyone carries about a day and a half of food and water) count toward what was
+  // asked for: the base packs that much less, so the team carries and weighs what it did. They eat the shared supplies
+  // first and their packs after (needs.js teamNeedsHour).
+  const crew0 = memberIds.map((id) => survivorById(state, id)).filter((m) => m && m.alive && m.location && m.location.kind === "base" && m.location.baseId === home.id);
+  const packDays = crew0.reduce((a, m) => a + packFood(m), 0), packW = crew0.reduce((a, m) => a + personWater(m), 0);
+  const foodDays = Math.max(0, (Number(opts.supplies && opts.supplies.food) || 0) - packDays);
+  if (supplies.water > 0 && packW > 0) supplies.water = Math.max(0, supplies.water - Math.floor(packW + 1e-9));
   if (foodDays > 0) for (const [k, q] of Object.entries(packFoodPick(state, home, foodDays, opts))) supplies[k] = (supplies[k] || 0) + q;
   if (!memberIds.length) return { error: "Pick at least one survivor." };
   // The crew: alive, at the hub, and not already on a team, a trade route or held somewhere.
@@ -1017,6 +1024,13 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
     strength: opts.strength, target: opts.target || null, targetFaction: opts.targetFaction || null,
     phase: "out", warned: false,
   };
+  // AI parity (eating.js): the party carries PACK.food days of the group's food a head (its heads by strength) and eats
+  // it on the road (factions.js); what is left comes home (removeParty).
+  if (f.stock && foodIn(f.stock) > 0) {
+    const heads = aiPartyHeads(f, opts.strength, ((FACTION_TYPES[f.type] && FACTION_TYPES[f.type].arms) || 1) * (f.gear || 1));
+    const got = takeFood(f.stock, Math.min(foodIn(f.stock), heads * PACK.food), { eggs: false, state });
+    if (got.units > 0) { p.rations = got.items; p.heads = heads; }
+  }
   state.parties.push(p);
   if (kind === "raid" && f.vehicles) assignRaidHumvee(state, f, p); // vehicles.js: a group's turreted Humvee comes along (lost if the raid fails)
   return p;
@@ -2343,6 +2357,12 @@ function returnHome(state, p) {
 export function removeParty(state, p) {
   const i = state.parties.indexOf(p);
   if (i >= 0) state.parties.splice(i, 1);
+  // A group's party home again: what is left of its rations goes back into the stock (eating.js; lost elsewhere).
+  if (p.owner !== "player" && p.rations) {
+    const f = state.factions.find((x) => x.id === p.owner);
+    if (f && f.alive && f.stock && (f.bases || []).includes(partyTile(p))) for (const [k, q] of Object.entries(p.rations)) if (q > 0) f.stock[k] = (f.stock[k] || 0) + q;
+    delete p.rations;
+  }
   // Nothing may outlive the team: its cards (events, orders, conflicts) and an open trade go with it.
   for (let j = state.cards.length - 1; j >= 0; j--) if (state.cards[j].partyId === p.id) state.cards.splice(j, 1);
   if (state.trade && state.trade.partyId === p.id) state.trade = null;

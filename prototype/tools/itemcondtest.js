@@ -299,7 +299,10 @@ check(kitTails, "the later guns sit at the end of each kit's lists (ARSENAL_KITS
 for (const kind of Object.keys(TRUCK_GEAR)) { nlStash.push([TRUCK_GEAR, kind, TRUCK_GEAR[kind]]); TRUCK_GEAR[kind] = TRUCK_GEAR[kind].filter((r) => !ARSENAL_GEAR[r[0]]); }
 const BASE = {
   bodies: { keys: "917048c944387995", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "ddd64fb55272735e",
-  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "8b17671c3192515c", rng: 2670422955354 }, visitors: { keys: "3bdc366902700698", merchants: "706e068b336b9d26", rng: 12580090440502 },
+  // groupWares.keys and visitors: re-baselined for gen-tiers' Industrial Power Manual (blueprints.js indpower, now in
+  // the military's wares and the traders' manuals); with it taken out they come back to 8b17671c3192515c,
+  // 3bdc366902700698 / 706e068b336b9d26 / 12580090440502 exactly.
+  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "2474e79ab28f41c7", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
 };
 // The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
 // own and only add: off for these samples, like the commune's extras below, so the old baselines hold.

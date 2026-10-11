@@ -44,8 +44,9 @@ export const CRAFTS = {
   // bicycle, ram, repair kit, pulley bow as before, and these two for food: a real fishing rod with a reel (the
   // makeshift rod above is a sapling and a bent hook) and a spring-jawed bear trap. The pressure canner is no recipe
   // any more (machines-2: an upgrade fitted to a preserving room, buildings.js BUILDINGS.canner, its old 4 scrap and
-  // 2 parts now the fitting's cost). TODO(food-types wave 2, cooking): a hand-crank grain mill (foods.js f_grain →
-  // f_flour); a meat grinder for game (f_venison, f_boar → f_groundmeat, f_sausage).
+  // 2 parts now the fitting's cost). The food-types TODO (a hand-crank grain mill, a meat
+  // grinder) is done by wave 2 cooking as machines, not crafts: buildings.js grainmill / meatgrinder on a utility plot,
+  // turned by the cooks' bills (cooking.js COOK_RECIPES flour, ground, sausage).
   fishrod:     { gear: "fishrod",     in: { scrap: 2, parts: 1 }, hours: 6,  skill: "mechanics", min: 2 },
   beartrap:    { gear: "beartrap",    in: { scrap: 5, parts: 1 }, hours: 8,  skill: "mechanics", min: 2, needs: "workshop" },
   padding:     { gear: "padding",     in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0, field: true },
