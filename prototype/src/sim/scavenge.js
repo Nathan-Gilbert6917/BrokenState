@@ -1,6 +1,7 @@
 // Abstract extraction raid: search hour by hour while Heat rises, then extract.
+import { addFoodFind, foodText, typeFind, siteMix } from "./foods.js"; // a food find: the items a place like this holds
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
-import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger } from "./data.js";
+import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger, supValue, supWeight } from "./data.js";
 import { log, hurt, isNight, combatPower, gearEffect, factionById, spendShots, armedFactor, arrowsBack } from "./world.js";
 import {
   partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, cargoRoom, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
@@ -205,6 +206,11 @@ export function searchHour(state) {
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
     if (qty > 0 && key === "ammo") {
       finds.push(roundsText(addFind(e.found.supplies, t.loc ? t.loc.type : "", qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named
+    } else if (qty > 0 && (key === "food" || key === "preserved")) {
+      // foods.js: the food a place like this holds (cans, rice and MREs; bread only in the first days), as much as its
+      // shelves still have (a shop runs down as it is looted and with the months: shopFood).
+      const got = addFoodFind(state, e.found.supplies, t.loc ? t.loc.type : "", qty, { tile: e.tile, preserved: key === "preserved" });
+      if (Object.keys(got).length) finds.push(foodText(got));
     } else if (qty > 0) {
       // Parts by kind (loot.js sortParts: an auto shop's are mostly car parts; their own dice).
       const got = key === "parts" && t.loc ? sortParts(state, t.loc.type, qty, `h${e.hours}:${i}`) : { [key]: qty };
@@ -297,6 +303,7 @@ export function searchHour(state) {
       }
     }
   }
+  typeFound(state, e); // foods.js: any "food" a locked cabinet, a truck or a cache added this hour, as items
   e.log.push(`Hour ${e.hours} [${stage.name}]: ${line}`);
   gainXpAll(state, partyMembers(state, p), "scavenging", USE.searchHour); // skills.js
   gainXpAll(state, partyMembers(state, p), "stealth", e.approach === "sneak" ? USE.sneakSearch : USE.searchStealth); // moving quietly through the ruins; more sneaking
@@ -317,8 +324,16 @@ export function foundLoad(e) {
   return Math.round(supplyLoad(e.found.supplies) + e.found.gear.reduce((a, g) => a + itemLoad(g), 0));
 }
 
+// What the search turned up, its food as the items the site holds (foods.js typeFind: locks.js, miltrucks.js and the
+// caches add "food" in days).
+function typeFound(state, e) {
+  if (!e || !e.found || !e.found.supplies) return;
+  const t = state.tiles[e.tile];
+  typeFind(state, e.found.supplies, siteMix(t && t.loc ? t.loc.type : ""), e.tile);
+}
 export function extract(state) {
   const e = state.engagement;
+  typeFound(state, e);
   const p = engagementParty(state);
   if (!e || !p) {
     state.engagement = null;
@@ -360,11 +375,11 @@ export function extract(state) {
   for (const g of gear) if (perKg(g) >= 2 && !addGearToCargo(state, p, g)) left.push(g.name);
   let room = cargoRoom(state, p);
   // Best value per unit of carry space goes in first.
-  const keys = Object.keys(e.found.supplies).sort((a, b) => SUPPLIES[b].value / SUPPLIES[b].weight - SUPPLIES[a].value / SUPPLIES[a].weight);
+  const keys = Object.keys(e.found.supplies).sort((a, b) => supValue(b) / supWeight(b) - supValue(a) / supWeight(a));
   for (const k of keys) {
     const take = Math.min(unitsThatFit(room, k), e.found.supplies[k]);
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take;
-    room -= take * SUPPLIES[k].weight;
+    room -= take * supWeight(k);
     if (take < e.found.supplies[k]) left.push(`${e.found.supplies[k] - take} ${keyWord(k)}`);
   }
   for (const g of gear) if (perKg(g) < 2 && !addGearToCargo(state, p, g)) left.push(g.name);

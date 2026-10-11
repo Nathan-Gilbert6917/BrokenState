@@ -23,6 +23,7 @@
 //   costs their relations the same).
 // - The governor (autopilot.js) moves into a nearby abandoned base it can clear instead of founding an outpost when it
 //   wants one (occupyCandidate there).
+import { typeGoods, FOODS } from "./foods.js"; // an abandoned base's food by type
 import { BUILDINGS, plotsFree, countAll, count, assignStations, underAttack } from "./buildings.js";
 import { SUPPLIES, STOCK_KEYS } from "./data.js";
 import { log, addCard, day, hub, newId, combatPower, armedFactor, snapshot, atBase, removeBase } from "./world.js";
@@ -54,7 +55,7 @@ export const OCCUPY = {
   DOOM_DAYS: 14, DOOM_LINE: 0.5, DOOM_EVERY: 30,
 };
 const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const emptyStock = () => ({ food: 0, water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, preserved: 0, jars: 0, wood: 0, buildmat: 0 }); // arrows, wood: every base keeps the count (farmtest 43: an outpost moved into read arrows = undefined)
+const emptyStock = () => ({ water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0 }); // arrows, wood: every base keeps the count (farmtest 43: an outpost moved into read arrows = undefined)
 
 // ---------- what is there ----------
 // Why a team cannot occupy this tile ("" = it can). The sim's truth: the planner offers the mission where your map
@@ -238,7 +239,7 @@ export function takeAbandoned(state, tile, p = null) {
   const list = standingAt(state, rec);
   const rubble = raise(base, list);
   const got = stockText(rec.stock || {});
-  for (const [k, q] of Object.entries(rec.stock || {})) if (SUPPLIES[k] && q >= 1) base.stock[k] = (base.stock[k] || 0) + Math.floor(q);
+  for (const [k, q] of Object.entries(typeGoods(null, rec.stock || {}))) if (SUPPLIES[k] && q > 0) base.stock[k] = (base.stock[k] || 0) + (FOODS[k] ? q : Math.floor(q)); // foods.js: an old record's days of food as items
   // The grievances before the record goes and the land changes hands (occupyGrievance reads both as they are).
   const griev = occupyGrievance(state, tile);
   state.abandoned.splice(state.abandoned.indexOf(rec), 1);

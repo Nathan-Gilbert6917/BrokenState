@@ -5,7 +5,7 @@
 // (click the selected item again to send it across: onto the person, or into storage). Drag and drop works too.
 import { finishOf, FINISH_NAME, GUN_FINISH } from "../sim/data-finish.js"; // a gun's finish in its tooltip
 import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
-import { GEAR, SUPPLIES, SKILL_NAMES } from "../sim/data.js";
+import { GEAR, SUPPLIES, SKILL_NAMES, supWeight } from "../sim/data.js";
 import { survivorById, atBase, baseById, gearEffect, combatPower } from "../sim/world.js";
 import { partyMembers, partyCapacity, cargoLoad, poolLoad, partyLoad } from "../sim/parties.js";
 import { wornLoad, maxLoad, personLoad, bandName, feelFactor } from "../sim/load.js";
@@ -216,7 +216,7 @@ export function storageBox(state, ui, place, user) {
   const pool = st.o === "cargo" ? st.party.cargo.supplies : ((baseById(state, st.id) || {}).stock || {});
   // Stack tiles (ui/stackmove.js): movable where something can take them (INV_STACK_DESTS), else just shown.
   const sups = Object.entries(pool).filter(([k, v]) => SUPPLIES[k] && v >= 1);
-  const supKg = sups.reduce((a, [k, v]) => a + SUPPLIES[k].weight * v, 0);
+  const supKg = sups.reduce((a, [k, v]) => a + supWeight(k) * v, 0);
   const supHtml = sups.length ? `<div class="invlabel"${tip(st.o === "cargo" ? "Supplies the team found on the way, by weight: shared out among the people with the packed supplies (or riding in the vehicle)" : "The base's stores: food, water, firewood, fuel, meds, rounds by calibre and type, parts")}>${st.o === "cargo" ? "Found supplies" : "In the stores"} (${kg(supKg)} kg)</div>
     <div class="istore supgrid">${sups.map(([k, v]) => { const l = `${st.o}:${st.id}:sup:${k}`; return supTile(ui, l, k, v, "", invDests(state, ui, l).length > 0); }).join("")}</div>` : "";
   return `${head}${storageGroups(state, ui, st, loc, user)}
@@ -534,7 +534,7 @@ function raidModal(state, ui) {
     const bl = `rbox:${box.id}`;
     const sups = Object.entries(box.contents.sup).filter(([, v]) => v >= 1);
     const n = box.contents.gear.length + sups.length;
-    const w = sups.reduce((a, [k, v]) => a + SUPPLIES[k].weight * v, 0) + box.contents.gear.reduce((a, g) => a + itemLoad(g), 0);
+    const w = sups.reduce((a, [k, v]) => a + supWeight(k) * v, 0) + box.contents.gear.reduce((a, g) => a + itemLoad(g), 0);
     mid = `<div><div class="spread"><b${tip(box.kind === "ground" ? "Things on the ground here. Taking them is hauling (the first kg a turn free); putting things down is free." : box.drop ? "What a fallen teammate carried. Take it home for them." : "")}>${esc(box.label)}</b><span class="small muted">${n} thing${n === 1 ? "" : "s"} · ${kg(w)} kg</span></div>
       <div class="istore" data-action="inv-click" data-loc="${bl}:list" data-drop="${bl}:list"${tip("Drop here to leave it in the container")}>${sups.map(([k, v]) => supTile(ui, `${bl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, box.contents.gear, bl, s) || (sups.length ? "" : `<span class="small muted">Empty.</span>`)}</div>
       ${box.quick ? `<div class="small warn" style="margin-top:0.3rem"${tip(`Rummaged through in a hurry (Quick search): only part of what is inside turned up. A full search turns up the rest, if there is more: ${SEARCH.ap} action, quiet.`)}>Rummaged in a hurry: a full search may turn up more.</div>` : ""}

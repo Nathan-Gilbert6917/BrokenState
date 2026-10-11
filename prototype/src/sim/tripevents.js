@@ -25,6 +25,8 @@
 // Player-facing: one log line each; the map shows a "!" over the walker (base.tripAlerts, ui/workermap.js).
 // The day's tally: base.tripTally.ev = { n, kinds, hurt, killed, fled, shots, noise, gunfire { tile: quiet } }.
 // The run's: state.stats.tripEv (tools/tripeventstest.js reads it).
+import { depositGame } from "./hunting.js"; // a boar's meat as raw boar (foods.js)
+import { foodIn, payFood, giveFood, gainGoods } from "./foods.js"; // food by type: days of it paid, tins found
 import { Rng } from "./rng.js";
 import { hash01, gainXp } from "./skills.js";
 import { GEAR } from "./data.js";
@@ -101,7 +103,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const tallyDay = (now) => Math.floor((now - 1) / 24);
 const hod = (h) => ((Math.floor(h) % 24) + 24) % 24;
 const wpick = (rng, list) => rng.weighted(list, (x) => Math.max(0, x.w));
-const sumStock = (st, want) => Object.entries(want).every(([k, q]) => (st[k] || 0) >= q);
+const sumStock = (st, want) => Object.entries(want).every(([k, q]) => (k === "food" ? foodIn(st) : st[k] || 0) >= q); // food: days of it (foods.js)
 const managed = (state, base) => !state.autopilot && !stewardOn(base);
 // The trip's own dice: the seed, the person, the day, the trip of the day and its job (never the world's rng; the
 // person by their world-local id: ids are process-wide, tools/sameseedtest.js).
@@ -586,8 +588,8 @@ export function settle(state, base, s, t, choice, now, how = "") {
       }
       const o = TRIP_OFFERS[ev.offer];
       if (pick === "trade" && sumStock(base.stock, o.want)) {
-        for (const [k2, q] of Object.entries(o.want)) base.stock[k2] -= q;
-        if (o.give) for (const [k2, q] of Object.entries(o.give)) base.stock[k2] = (base.stock[k2] || 0) + q;
+        for (const [k2, q] of Object.entries(o.want)) { if (k2 === "food") payFood(base, q, state); else base.stock[k2] -= q; } // foods.js: days of food, the soonest to spoil first
+        if (o.give) gainGoods(state, base, o.give, "keeps"); // foods.js: tins of food as cans
         if (o.item) base.armory.push(newItem(o.item, 1, rng));
         delay(t, when, 0.5, phase);
         gainXp(state, s, "speech", 2);
@@ -630,11 +632,10 @@ export function creditBonus(state, base, t, st) {
   if (!b) return "";
   const out = [];
   if (b.meat > 0) {
-    if (st === base.stock) { base.stock.food = (base.stock.food || 0) + b.meat; base.meat = meatAt(base) + b.meat; }
-    else st.food = (st.food || 0) + b.meat;
+    depositGame(state, st === base.stock ? base : st, { rations: b.meat }, "hog"); // hunting.js: the boar's raw meat, by item
     out.push(`+${b.meat} meat`);
   }
-  for (const k of ["scrap", "preserved", "meds"]) if (b[k] > 0) { st[k] = (st[k] || 0) + b[k]; out.push(`+${b[k]} ${k === "preserved" ? "tins" : k}`); }
+  for (const k of ["scrap", "preserved", "meds"]) if (b[k] > 0) { if (k === "preserved") giveFood(state, st === base.stock ? base : st, b[k], "keeps"); else st[k] = (st[k] || 0) + b[k]; out.push(`+${b[k]} ${k === "preserved" ? "tins" : k}`); } // foods.js: tins of food as cans and jars
   for (const it of b.items || []) { base.armory.push(it); out.push(`+${it.name.toLowerCase()}`); }
   delete t.bonus;
   return out.join(" ");

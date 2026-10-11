@@ -17,6 +17,7 @@
 // The watch (watch.js): an exhausted guard counts half (sleep.js). A horde that reaches a base at night with nobody
 // awake on watch, no tripwire and the defences not manned (surpriseAt) finds the defence buildings counting half and
 // opens a break-in with its first move; someone awake on watch sees one coming 2 tiles sooner (hordeWarnings).
+import { scaleFood } from "./foods.js"; // the dead spoil every kind of food
 import { log, addCard, atBase, homeAt, hurt, combatPower, removeBase, isNight, baseVision, armedFactor, spendShots, arrowsBack } from "./world.js";
 import { GEAR } from "./data.js";
 import { count, baseWalls } from "./buildings.js";
@@ -320,7 +321,8 @@ registerCombatHandler("crawlerSlip", (state, result, setup) => {
   if (!base) return;
   const what = c.climb && c.climb >= c.slip ? "Climbers" : c.climb ? "crawlers and Climbers" : "crawlers";
   if (result.outcome === "victory") { log(state, `The ${what} inside ${base.name} were hunted down.`, "good"); return; }
-  for (const k of ["food", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.85);
+  base.stock.meds = Math.floor((base.stock.meds || 0) * 0.85);
+  scaleFood(base, 0.85); // foods.js: every kind of food
   log(state, `The ${what} inside ${base.name} were not stopped: they tore through the stores before they slunk off (food and meds spoiled). ${c.climb ? "Defenders inside the walls and a watchtower over the yard catch Climbers; " : ""}Watchtowers and floodlights see crawlers coming.`, "danger");
 });
 
@@ -355,7 +357,8 @@ function smash(state, base, bosses) {
 // spoil half the food, water and meds, batter what was built and move on. Nobody is there to lose it: it stays yours.
 function wreckEmpty(state, base, h, through) {
   state.hiveInfo.stats.overrun++;
-  for (const k of ["food", "water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
+  for (const k of ["water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
+  scaleFood(base, 0.5); // foods.js: every kind of food
   const dmg = raidDamage(state, base, { strength: Math.min(60, through * 0.4), hours: 8, outcome: "broken", by: "the dead" });
   log(state, `The dead tore through ${base.name}: nobody was there. Half the food, water and meds were spoiled. ${dmg.text}`, "danger");
   if (h && state.hordes.includes(h)) {
@@ -374,7 +377,8 @@ function overrun(state, base, h, through, why = "") {
     hurt(state, s, rng.int(20, 60), base.tile, `when the dead overran ${base.name}`);
     if (!s.alive) dead.push(s.name);
   }
-  for (const k of ["food", "water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.65);
+  for (const k of ["water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.65);
+  scaleFood(base, 0.65);
   log(state, `The dead overran ${base.name}.${why ? ` ${why}` : ""}${dead.length ? ` Killed: ${dead.join(", ")}.` : ""} A third of the food, water and meds were spoiled.`, "death");
   if (base.type === "outpost" && state.bases.includes(base)) removeBase(state, base, "was overrun by the dead");
   if (h && state.hordes.includes(h)) {
@@ -407,7 +411,8 @@ registerCombatHandler("hordeBreakIn", (state, result, setup) => {
     // (half the food, water and meds spoiled, the walls and defences battered), then come back once the horde has
     // moved on. Nobody else is hurt and the base (an outpost too) stays yours.
     state.hiveInfo.stats.overrun++;
-    for (const k of ["food", "water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
+    for (const k of ["water", "rawwater", "meds"]) base.stock[k] = Math.floor((base.stock[k] || 0) * 0.5);
+    scaleFood(base, 0.5);
     const dmg = raidDamage(state, base, { strength: Math.min(60, c.through * 0.4), hours: 8, outcome: "broken", by: "the dead" });
     if (h && state.hordes.includes(h)) retreat(state, h, base);
     const text = `Your people pulled out of ${base.name} and waited outside while the dead tore through it. Half the food, water and meds were spoiled. ${dmg.text} The horde has moved on and everyone who got out is back inside.`;

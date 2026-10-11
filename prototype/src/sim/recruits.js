@@ -9,6 +9,7 @@
 //               the nearest base or the hub on foot, give them supplies and part ways (2 food and 2 water each from
 //               the team: +2 mood for the team, +2 goodwill with known groups nearby), or turn them away.
 // People walking to a base arrive after their days on the road (or never). Deserters (morale.js) sometimes come back.
+import { foodIn, payFood } from "./foods.js"; // food by type (foods.js)
 import { SKILL_NAMES, TRAITS } from "./data.js";
 import { log, addCard, day, hub, baseById, residents, survivorById, makeSurvivor, skill } from "./world.js";
 import { baseBeds } from "./buildings.js";
@@ -72,7 +73,7 @@ export function baseOutlook(state, base, k = 0) {
   const fo = foodOutlook(state, base) || {};
   const perHead = fo.perHead != null ? fo.perHead : foodNeedFactor(state); // a resident's share (upkeep.js); fo.eat counts prisoners and guests too
   const burn = Math.max(0, (fo.eat || 0) + (fo.spoil || 0) + (fo.used || 0) - (fo.scav || 0));
-  const stock = Math.max(0, fo.stock != null ? fo.stock : base.stock.food || 0); // fresh and preserved food
+  const stock = Math.max(0, fo.stock != null ? fo.stock : foodIn(base.stock)); // days of food, every kind
   const burnK = burn + k * perHead;
   const wo = waterOutlook(state, base);
   const waterNet = wo.net, waterNetWith = r1(wo.net - k * drinkRate(state)); // today's rate: more in summer
@@ -114,8 +115,7 @@ export function teamOutlook(state, p, k = 0) {
 
 // ---------- joining ----------
 function joinBase(state, s, base, foodEach = 0) {
-  const cost = Math.max(0, Math.min(foodEach, base.stock.food || 0));
-  base.stock.food = Math.max(0, (base.stock.food || 0) - cost);
+  const cost = payFood(base, Math.max(0, Math.min(foodEach, foodIn(base.stock))), state); // foods.js: the soonest to spoil first
   const back = s.left;
   delete s.pending;
   delete s.left;
@@ -186,7 +186,7 @@ export function recruitCard(state, candidates, ctx) {
   if (p) {
     choices.push({
       label: `Take ${them} along`, kind: "take",
-      hint: (() => { const t = teamOutlook(state, p, n); return `They join the team and carry their own share. Team food ${Math.floor(t.food)}, water ${Math.floor(t.water)}: ${r1(t.days)} days for ${t.members}, ${r1(t.daysWith)} with them; about ${t.hours} hours from ${t.home.name}${t.ok ? "" : ` (not enough: ${t.need} food and ${t.needWater} water needed)`}`; })(),
+      hint: (() => { const t = teamOutlook(state, p, n); return `They join the team and carry their own share. Team food ${Math.floor(t.food)}, water ${Math.floor(t.water)}: ${r1(t.days)} days for ${t.members}, ${r1(t.daysWith)} with them; about ${t.hours} hours from ${t.home.name}${t.ok ? "" : ` (not enough: ${t.need} days of food and ${t.needWater} water needed)`}`; })(),
       disabled: (st) => !waiting().length || !state.parties.includes(p) || !teamOutlook(st, p, waiting().length).ok,
       resolve: (st) => {
         const list = waiting();
@@ -199,7 +199,7 @@ export function recruitCard(state, candidates, ctx) {
   } else {
     choices.push({
       label: `Take ${them} in`, kind: "take",
-      hint: `${n === 1 ? "Joins" : "They join"} ${base.name} now (${JOIN_FOOD * n} food on arrival)`,
+      hint: `${n === 1 ? "Joins" : "They join"} ${base.name} now (${JOIN_FOOD * n} days of food on arrival)`,
       disabled: (st) => !waiting().length || !st.bases.includes(base),
       resolve: (st) => {
         const list = waiting();
@@ -207,20 +207,20 @@ export function recruitCard(state, candidates, ctx) {
         let paid = 0;
         for (const s of list) paid += joinBase(st, s, base, JOIN_FOOD);
         moodAll(st, base, ctx.takeMood);
-        return `${listNames(list)} ${list.length === 1 ? "joined" : "joined the group"}${paid < JOIN_FOOD * list.length ? ` (there was only ${Math.floor(paid)} food to share)` : ""}.${ctx.takeMood ? ` Everyone at ${base.name} feels better for it (mood +${ctx.takeMood}).` : ""}`;
+        return `${listNames(list)} ${list.length === 1 ? "joined" : "joined the group"}${paid < JOIN_FOOD * list.length ? ` (there was only ${Math.floor(paid)} days of food to share)` : ""}.${ctx.takeMood ? ` Everyone at ${base.name} feels better for it (mood +${ctx.takeMood}).` : ""}`;
       },
     });
     if (n > 1) {
       for (const s of candidates) {
         choices.push({
           label: `Take only ${firstName(s)} in`, kind: "takeOne", who: s,
-          hint: `${JOIN_FOOD} food on arrival; the others walk on`,
+          hint: `${JOIN_FOOD} days of food on arrival; the others walk on`,
           disabled: () => !s.pending,
           resolve: (st) => {
             if (!s.pending) return notWaiting();
             const paid = joinBase(st, s, base, JOIN_FOOD);
             for (const o of candidates) if (o !== s && o.pending) { delete o.pending; o.gone = true; }
-            return `${s.name} joined${paid < JOIN_FOOD ? ` (there was only ${Math.floor(paid)} food to share)` : ""}. The others walk on.`;
+            return `${s.name} joined${paid < JOIN_FOOD ? ` (there was only ${Math.floor(paid)} days of food to share)` : ""}. The others walk on.`;
           },
         });
       }
@@ -276,7 +276,7 @@ export function recruitCard(state, candidates, ctx) {
       return `${listNames(list)} ${list.length === 1 ? "walks" : "walk"} on.`;
     },
   });
-  const where = p ? `The team: ${(() => { const t = teamOutlook(state, p, n); return `${Math.floor(t.food)} food and ${Math.floor(t.water)} water, ${r1(t.days)} days for ${t.members} (${r1(t.daysWith)} with them), ${t.hours} hours from ${t.home.name}`; })()}. ` : "";
+  const where = p ? `The team: ${(() => { const t = teamOutlook(state, p, n); return `${Math.floor(t.food)} days of food and ${Math.floor(t.water)} water, ${r1(t.days)} days for ${t.members} (${r1(t.daysWith)} with them), ${t.hours} hours from ${t.home.name}`; })()}. ` : "";
   const h = p ? hub(state) : base;
   return {
     title: ctx.title || (n === 1 ? "Someone asks to join" : "Survivors ask to join"),
@@ -347,7 +347,7 @@ export function autoRecruitPick(state, card, opts, roomFor) {
   const send = kind("send").filter((c) => c.room >= n && roomFor(n, c.sendTo)).sort((a, b) => b.room - a.room)[0];
   if (send) return send;
   const h = hub(state);
-  if (kind("part")[0] && h && (h.stock.food || 0) >= 120 && stockHas(h.stock, "water") >= 40) return kind("part")[0];
+  if (kind("part")[0] && h && foodIn(h.stock) >= 120 && stockHas(h.stock, "water") >= 40) return kind("part")[0];
   return kind("away")[0] || null;
 }
 

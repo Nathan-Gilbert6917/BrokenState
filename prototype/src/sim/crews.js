@@ -18,7 +18,8 @@
 // Trips leave from the hub (launchExpedition); crew members at an outpost only work it.
 // Adding a field job (hunting, fishing …) is one FIELD_TYPES entry: name, desc, and cands(ctx) → candidate trips
 // { tile, mission, score, why, supplies? } (or launch(ctx, cand) for one that is not a team trip, as supply runs).
-import { SUPPLIES } from "./data.js";
+import { typeFind, foodIn } from "./foods.js"; // food by type (foods.js)
+import { SUPPLIES, supWeight } from "./data.js";
 import { log, day, hub, hourOfDay, atBase, skill, combatPower, survivorById, archerCount, ARROWS } from "./world.js";
 import {
   launchExpedition, estimateTrip, partyMembers, partyTile, tileLabel, startReturn, carried, partyCapacity, cargoLoad,
@@ -98,7 +99,7 @@ export const FIELD_TYPES = {
         const staff = atBase(state, o.id).length;
         const deliver = [];
         if (staff && crewAI.outpostThirsty(state, o) && waterIn(base.stock) >= 30) deliver.push({ key: (base.stock.water || 0) >= 20 ? "water" : RAW, qty: 20 }); // purified when the hub has it
-        if (staff && (o.stock.food || 0) < staff * 4 && (base.stock.food || 0) >= 40) deliver.push({ key: "food", qty: 12 });
+        if (staff && foodIn(o.stock) < staff * 4 && foodIn(base.stock) >= 40) deliver.push({ key: "food", qty: 12 });
         if ((o.stock.scrap || 0) < 10 && (base.stock.scrap || 0) >= 60) deliver.push({ key: "scrap", qty: 20 });
         if (deliver.length) out.push({ tile: o.tile, mission: "supply", outpost: o.id, deliver, score: 1 + deliver.length, why: `${deliver.map((l) => `${l.qty} ${l.key}`).join(", ")} for ${o.name}` });
       }
@@ -307,7 +308,7 @@ function launchTeam(ctx, c) {
   if (supplyLoad(sup) > cap) sup.ammo = Math.min(sup.ammo, 5 * n);
   for (const [k] of Object.entries(c.supplies || {})) {
     const over = supplyLoad(sup) - cap;
-    if (over > 0 && sup[k]) sup[k] = Math.max((c.min && c.min[k]) || 0, sup[k] - Math.ceil(over / SUPPLIES[k].weight));
+    if (over > 0 && sup[k]) sup[k] = Math.max((c.min && c.min[k]) || 0, sup[k] - Math.ceil(over / supWeight(k)));
   }
   if (supplyLoad(sup) > cap) return { error: "too much to carry" };
   for (const [k, q] of Object.entries(c.min || {})) if ((sup[k] || 0) < q) return { error: `needs ${q} ${keyWord(k)}` };
@@ -349,7 +350,7 @@ function teamFit(state, role, p) {
   const r = role.crew.rules || {};
   if (!members.length || members.some((s) => s.health < Math.max(55, (r.hurt || 0) + 10) || s.woundInfected)) return false;
   if (partyCapacity(state, p) - cargoLoad(p.cargo) < partyCapacity(state, p) * 0.4) return false;
-  const food = (carried(p, "food") + carried(p, "preserved")) / members.length;
+  const food = carried(p, "food") / members.length; // days of food (foods.js)
   return food >= Math.max(2, (r.food || 0) + 1.5);
 }
 
@@ -376,12 +377,13 @@ function searchStep(state, role, p) {
   if (!e) return;
   if (p.phase !== "task" || !p.task || p.task.type !== "crewsearch") {
     // Turned home by a rule or a card mid-search: what was found and fits goes into the cargo.
+    typeFind(state, e.found.supplies, "house"); // foods.js: its food as items
     let room = partyCapacity(state, p) - cargoLoad(p.cargo);
     for (const g of e.found.gear) if (addGearToCargo(state, p, g)) room = partyCapacity(state, p) - cargoLoad(p.cargo);
     for (const [k, q] of Object.entries(e.found.supplies)) {
       const take = Math.min(unitsThatFit(room, k), q);
       p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take;
-      room -= take * SUPPLIES[k].weight;
+      room -= take * supWeight(k);
     }
     delete p.crewSearch;
     return;

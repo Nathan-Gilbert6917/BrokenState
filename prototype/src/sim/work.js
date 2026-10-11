@@ -487,8 +487,8 @@ export function stationWork(state, base, st, opsNow = new Set()) {
     if (waterIn(s) < n * 2 + 2) return "water kept for drinking";
   }
   const io = stationIO(state, base, st);
-  const missing = Object.entries(io.in).filter(([key, v]) => (s[key] || 0) < v).map(([key]) => key);
-  return missing.length ? `waiting for ${missing.join(", ")}` : "";
+  const missing = Object.entries(io.in).filter(([key, v]) => (key === "fresh" || key === "food" ? stockHas(s, key) : s[key] || 0) < v).map(([key]) => key); // fresh: days of fresh food (foods.js)
+  return missing.length ? `waiting for ${missing.map((key) => (key === "fresh" ? "fresh food" : key)).join(", ")}` : "";
 }
 
 function stationOpen(ctx, kindOk, none) {

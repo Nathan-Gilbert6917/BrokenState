@@ -17,7 +17,8 @@
 // ransomed (by radio or envoy with any group, raiders included: ransom.js; during a trade visit or at the gates), or
 // released when goodwill is high. Over time they may escape (likelier with a pin, lockpicks or the keys they kept:
 // location.tool), be recruited by their captors, or die.
-import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES } from "./data.js";
+import { takeFood, FOODS } from "./foods.js"; // their food, days of it
+import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES, supValue } from "./data.js";
 import { zombieToughness } from "./hives.js";
 import { stripAll, itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { kitSource, spend } from "./itemcond.js";
@@ -115,6 +116,7 @@ function check(state, p, key, dc, bonus = 0) {
 }
 
 export function addCargo(state, p, key, qty) {
+  if (key === "food" || key === "preserved") return Parties.addFoodCargo(state, p, key, qty); // parties.js: days of food as items (foods.js)
   const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), Math.max(0, Math.floor(qty)));
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
@@ -206,20 +208,22 @@ function minBaseDist(state, f, tileId) {
   return Math.min(...f.bases.map((b) => state.grid.distance(b, tileId)));
 }
 
-// Pay a value from what the team carries (found cargo first). Returns the plan, or null if short.
+// Pay a value from what the team carries (found cargo first). Returns the plan, or null if short. Food by type
+// (foods.js): whole items, the soonest to spoil first (by the catalog's shelf).
 export function payPlan(p, value) {
-  const order = ["scrap", "parts", "ammo", ...ROUND_KEYS, "meds", "fuel", "food", "rawwater", "water"]; // rounds by calibre after any generic ammo (rounds.js)
   const plan = {};
   let left = value;
   for (const pool of [p.cargo.supplies, p.supplies]) {
+    const foods = Object.keys(pool).filter((k) => FOODS[k]).sort((a, b) => FOODS[a].shelf - FOODS[b].shelf);
+    const order = ["scrap", "parts", "ammo", ...ROUND_KEYS, "meds", "fuel", ...foods, "rawwater", "water"]; // rounds by calibre after any generic ammo (rounds.js)
     for (const k of order) {
       if (left <= 0) break;
       const have = Math.floor(pool[k] || 0);
-      if (have <= 0) continue;
-      const q = Math.min(have, Math.ceil(left / SUPPLIES[k].value));
+      if (have <= 0 || !SUPPLIES[k]) continue;
+      const q = Math.min(have, Math.ceil(left / supValue(k)));
       if (q <= 0) continue;
       plan[k] = (plan[k] || 0) + q;
-      left -= q * SUPPLIES[k].value;
+      left -= q * supValue(k);
     }
   }
   return left > 0 ? null : plan;
@@ -233,7 +237,7 @@ function payFrom(p, plan, f) {
     if (f) { const fk = isRoundKey(k) ? "ammo" : k; f.stock[fk] = (f.stock[fk] || 0) + q; } // a group keeps one ammo count
   }
 }
-const carriedValue = (p) => Object.keys(SUPPLIES).reduce((a, k) => a + (Math.floor(p.supplies[k] || 0) + Math.floor(p.cargo.supplies[k] || 0)) * SUPPLIES[k].value, 0);
+const carriedValue = (p) => Object.keys(SUPPLIES).reduce((a, k) => a + (Math.floor(p.supplies[k] || 0) + Math.floor(p.cargo.supplies[k] || 0)) * supValue(k), 0);
 
 // Robbery: a share of everything carried goes to the faction (or is lost).
 export function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
@@ -1090,9 +1094,9 @@ function stealChoice(state, p, c, f) {
         const stolen = addCargoRoundsRec(st, p, st.rng.int(15, 40), f ? kindTheme(f.type) : "raider", "steal", partyTile(p), st.hour); // ammo.js: their rounds, by calibre
         const ammo = Object.values(stolen).reduce((a, q) => a + q, 0);
         const food = addCargo(st, p, "food", st.rng.int(4, 10));
-        if (f) { f.stock.ammo = Math.max(0, f.stock.ammo - ammo); f.stock.food = Math.max(0, f.stock.food - food); }
+        if (f) { f.stock.ammo = Math.max(0, f.stock.ammo - ammo); takeFood(f.stock, food); } // foods.js: out of their stores
         resume(st, p);
-        return `You crawl out with ${roundsText(stolen)} and ${food} food. Nobody saw a thing.`;
+        return `You crawl out with ${roundsText(stolen)} and ${food} days of food. Nobody saw a thing.`;
       }
       bump(st, "outcomes", "steal-fail");
       if (f) changeGoodwill(st, f, -8, "you tried to rob them");
@@ -1171,7 +1175,7 @@ function joinRobberyChoice(state, p, c, f) {
       if (victim && st.rng.chance(0.5)) changeGoodwill(st, victim, -15, "you robbed their people");
       for (const m of partyMembers(st, p)) m.mood = Math.max(0, m.mood - 6);
       resume(st, p);
-      return `You take ${food} food and ${scrap} scrap. Nobody on the team meets anyone's eyes.`;
+      return `You take ${food} days of food and ${scrap} scrap. Nobody on the team meets anyone's eyes.`;
     },
   };
 }
@@ -1289,7 +1293,7 @@ function victoryRewards(state, p, c, result) {
     for (let i = 0; i < (c.strangers || 0); i++) fresh.push(newRecruit(state, p));
     if (fresh.length) out.push(`${names(fresh)} ${fresh.length === 1 ? "asks" : "ask"} to come with you.`);
     askToJoin(state, p, fresh, "The robbers' victims are free.");
-    out.push(`The robbers' haul: ${addCargo(state, p, "food", rng.int(6, 14))} food, ${addCargo(state, p, "scrap", rng.int(4, 10))} scrap.`);
+    out.push(`The robbers' haul: ${addCargo(state, p, "food", rng.int(6, 14))} days of food, ${addCargo(state, p, "scrap", rng.int(4, 10))} scrap.`);
   } else if (c.type === "prisoners") {
     const held = (c.held || []).map((id) => survivorById(state, id)).filter((s) => s && isCaptive(s));
     for (const s of held) freeCaptive(state, s, p);
@@ -1306,7 +1310,7 @@ function victoryRewards(state, p, c, result) {
       if (got.length) out.push(`Taken from the bodies: ${got.join(", ")}.`);
     } else {
       // Resolved by the numbers: there were no bodies to search, so the haul is rolled here.
-      out.push(`Taken from the bodies: ${addCargoRounds(state, p, rng.int(15, 45), f ? kindTheme(f.type) : "raider", "bodies", partyTile(p), state.hour)}, ${addCargo(state, p, "food", rng.int(2, 8))} food.`); // rounds by calibre
+      out.push(`Taken from the bodies: ${addCargoRounds(state, p, rng.int(15, 45), f ? kindTheme(f.type) : "raider", "bodies", partyTile(p), state.hour)}, ${addCargo(state, p, "food", rng.int(2, 8))} days of food.`); // rounds by calibre
       if (rng.chance(0.3)) {
         const key = swapGun(bodyGunSource(c.enemy && c.enemy.kind || (f && KIND_OF[f.type]) || "raiders"), rng.pick(["pistol", "shotgun", "huntrifle", "vest"]), rng); // gundist.js: a gun of their kind
         const dropped = (result && result.arsDropped) || []; // arsenal.js settleArsenal: what their dead carried (a group's people)

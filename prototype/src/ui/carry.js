@@ -6,6 +6,7 @@
 //   ui.carryMsg  the last message
 // main.js: CARRY_ACTIONS / CARRY_CHANGE are registered like the inventory's; askQty runs first in "xp-order";
 // carryHtml is drawn with the confirmation box; carryKey takes Enter / Esc while a box is up.
+import { SUPPLIES } from "../sim/data.js"; // a food item's icon (sim/foods.js)
 import { partyMembers, partyTile, cargoRoom } from "../sim/parties.js";
 import { parseLoc, placeOfLoc, itemAt, isCarryable, moveItem, itemLoad } from "../sim/inventory.js";
 import {
@@ -19,7 +20,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const first = (s) => esc(String(s.name).split(" ")[0]);
 const kg = (x) => Math.round(x * 10) / 10;
-const ICON = { water: "💧", rawwater: "🪣", food: "🥫", preserved: "🫙", meat: "🍖", fuel: "⛽", jars: "🫙", wood: "🪵", parts: "⚙", scrap: "🔩", carparts: "🛞" };
+const ICON = { water: "💧", rawwater: "🪣", food: "🥫", meat: "🍖", fuel: "⛽", jars: "🫙", wood: "🪵", parts: "⚙", scrap: "🔩", carparts: "🛞" };
 const partyOfSurvivor = (state, s) => (s && s.location && s.location.kind === "party" ? state.parties.find((x) => x.id === s.location.partyId && x.owner === "player") : null);
 
 // ---------- how much to collect ----------
@@ -67,7 +68,7 @@ function pickBox(state, ui) {
     const stack = it.kind === "supply";
     const k = it.fresh ? "meat" : it.key;
     const fit = stack ? Math.min(it.qty, Math.floor(cargoRoom(state, p) / unitKg(k) + 1e-6)) : 1;
-    return `<div class="spread small" style="margin:0.15rem 0"><span>${stack ? ICON[k] || "▪" : "🎒"} ${esc(groundItemText(it))}${stack ? ` <span class="muted">(${unitKg(k)} kg each)</span>` : ""}</span><span class="row" style="gap:0.25rem">
+    return `<div class="spread small" style="margin:0.15rem 0"><span>${stack ? ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪" : "🎒"} ${esc(groundItemText(it))}${stack ? ` <span class="muted">(${unitKg(k)} kg each)</span>` : ""}</span><span class="row" style="gap:0.25rem">
       ${stack ? `<input type="number" min="1" max="${Math.max(1, Math.ceil(it.qty))}" value="${Math.max(1, Math.floor(fit))}" data-action="carry-pickn" data-i="${i}" style="width:4rem">` : ""}
       <button class="mini" data-action="carry-take" data-i="${i}"${tip(stack ? `Pick up that many (as far as the team has room: ${kg(cargoRoom(state, p))} kg free)` : `Pick up the ${it.name}`)}>Take</button>
       ${!stack && it.item && isCarryable(it.item) ? partyMembers(state, p).filter((m) => !m.gear.carry).map((m) => `<button class="mini" data-action="carry-take" data-i="${i}" data-arms="${m.id}"${tip(`${m.name.split(" ")[0]} carries the ${it.name} in their arms, with what is in it (${kg(itemLoad(it.item))} kg): no weapon until it is set down`)}>${first(m)} carries</button>`).join("") : ""}</span></div>`;
@@ -96,7 +97,7 @@ export function carryKey(state, ui, e, actions) {
 const chipName = (k) => (isRoundKey(k) ? supplyName(k) : holdName(k));
 const chip = (ui, pid, sid, place, k, q) => {
   const sel = ui.carrySel && ui.carrySel.pid === pid && ui.carrySel.sid === sid && ui.carrySel.place === place && ui.carrySel.key === k;
-  return `<button class="mini${sel ? " active" : ""}" data-action="carry-sel" data-pid="${pid}" data-sid="${sid ?? ""}" data-place="${place}" data-key="${k}"${tip(`${stackText(k, q)}, ${kg(q * unitKg(k))} kg. Click to choose it, then where it goes.`)}>${ICON[k] || "▪"} ${esc(chipName(k))} <span class="icount">×${qtyText(q)}</span></button>`;
+  return `<button class="mini${sel ? " active" : ""}" data-action="carry-sel" data-pid="${pid}" data-sid="${sid ?? ""}" data-place="${place}" data-key="${k}"${tip(`${stackText(k, q)}, ${kg(q * unitKg(k))} kg. Click to choose it, then where it goes.`)}>${ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪"} ${esc(chipName(k))} <span class="icount">×${qtyText(q)}</span></button>`;
 };
 const placeRow = (ui, pid, sid, place, rec, extra = "") => `<div class="small" style="margin:0.15rem 0"><b>${PLACE_NAMES[place]}</b>${extra} ${Object.keys(rec).length ? Object.entries(rec).map(([k, q]) => chip(ui, pid, sid, place, k, q)).join(" ") : `<span class="muted">nothing</span>`}</div>`;
 // The "Supplies carried" box under a team member's paper doll (ui/inventory.js inventoryModal).

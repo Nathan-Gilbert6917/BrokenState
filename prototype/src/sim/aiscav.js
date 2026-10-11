@@ -36,6 +36,8 @@
 //     a site at most every AISCAV.newsGap days); the radio line also updates the loot you know there (only the loot,
 //     knowledge.lootHour / lootSrc "radio"; the rest of what you know keeps its age).
 // Decisions use hash01 (skills.js), never the world's random numbers, so the rest of a run draws the same dice.
+import { typedFood, siteMix, shopFood, drawShop, unitsOf } from "./foods.js"; // the food a site holds, as items; the shops run down
+import { supplyAmt } from "./rounds.js"; // "food": days of food (foods.js)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, FACTION_TYPES } from "./data.js";
 import { log, factionById, localId } from "./world.js"; // localId: dice keys that do not depend on the process (two worlds in one)
@@ -94,7 +96,7 @@ export function groupWants(f) {
 }
 export function groupNeeds(f) {
   const want = groupWants(f), out = {};
-  for (const [k, w] of Object.entries(want)) out[k] = w > 0 ? Math.max(0, Math.min(1, 1 - (f.stock[k] || 0) / w)) : 0;
+  for (const [k, w] of Object.entries(want)) out[k] = w > 0 ? Math.max(0, Math.min(1, 1 - supplyAmt(f.stock, k) / w)) : 0; // rounds.js: food and preserved in days of food (foods.js)
   return out;
 }
 
@@ -102,7 +104,10 @@ export function groupNeeds(f) {
 // Meds are rare away from medical sites (medfinds.js haulMult): there the meds weight of the site's table is cut to a
 // quarter and the share it loses goes to the site's other goods, so a haul brings home the same number of finds
 // (perLoot) either way, only fewer of them meds. Cutting the meds alone made every group poorer for it.
-export function haulFor(t, taken, level, eff) {
+// Food (the table's food and preserved, days of food) comes as the items the site holds (foods.js: the site's mix,
+// whole items by the food dice), as much as a shop still has (shopFood: AI parity, the same shelves your teams empty),
+// and the shop runs down by it (drawShop). state: null for an estimate (no dice, no shop drawn).
+export function haulFor(t, taken, level, eff, state = null) {
   const table = t.loc && LOCATIONS[t.loc.type] ? LOCATIONS[t.loc.type].loot : { scrap: 2, food: 1 };
   const mm = haulMult(t);
   const weights = {};
@@ -111,6 +116,18 @@ export function haulFor(t, taken, level, eff) {
   const units = taken * AISCAV.perLoot * Math.max(0, level) * eff;
   const out = {};
   for (const [k, w] of Object.entries(weights)) out[k] = units * (w / total) * (MULT[k] || 1);
+  if (state && (out.food > 0 || out.preserved > 0)) {
+    const type = t.loc ? t.loc.type : "";
+    const shop = shopFood(state, t);
+    let drawn = 0;
+    for (const key of ["food", "preserved"]) {
+      if (!(out[key] > 0)) continue;
+      const items = typedFood(state, siteMix(type, key === "preserved"), out[key] * shop);
+      for (const [k, q] of Object.entries(items)) { out[k] = (out[k] || 0) + q; drawn += unitsOf(k, q); }
+      delete out[key];
+    }
+    drawShop(state, t, drawn);
+  }
   // Car parts are a group's own stock (trade.js POOLED_KINDS): the site's share of its parts (loot.js PARTS_MIX: an
   // auto shop's are mostly car parts) comes home as car parts; the other kinds stay in the one count of parts.
   const car = out.parts && PARTS_MIX[t.loc && t.loc.type] ? out.parts * (PARTS_MIX[t.loc.type].carparts || 0) : 0;
@@ -165,7 +182,7 @@ export function aiScavDaily(state) {
       const t = state.tiles[id];
       const take = Math.min(t.loot - AISCAV.floor, t.loot * AISCAV.landRate);
       if (!(take > 0)) continue;
-      addTo(f.stock, haulFor(t, take, t.loot, AISCAV.landEff));
+      addTo(f.stock, haulFor(t, take, t.loot, AISCAV.landEff, state));
       t.loot -= take;
       S.stats.land += take;
     }
@@ -249,7 +266,7 @@ export function scavSearchHour(state, p) {
     const crew = Math.min(AISCAV.crewMax, hands); // more hands than that pick it cleaner, not faster
     const take = Math.min(Math.max(0, t.loot - AISCAV.floor), AISCAV.take * crew);
     if (take > 0) {
-      addTo(p.scav.got, haulFor(t, take, t.loot, AISCAV.eff * hands / crew));
+      addTo(p.scav.got, haulFor(t, take, t.loot, AISCAV.eff * hands / crew, state));
       const fg = !p.scav.bp && factionById(state, p.owner);
       if (fg) p.scav.bp = groupFindBlueprint(state, fg, t.id, localId(state, p.id)) || undefined; // machines-2: a manual on the shelves, by your odds (groupworks.js)
       t.loot -= take;

@@ -35,6 +35,7 @@
 //   STAGING.HARDCORE). The shelter is the hub, empty: no buildings, no truck. Losing every base later is the normal
 //   game's exile (conquest.js): Establish base again; later outposts are camps too (Build outpost).
 // Everything here runs only in a hardcore world (hardcore.js isHardcore).
+import { typedFood, typeFind, addFoodsTo } from "./foods.js"; // the first food, by type
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
 import { bornTraits, tidyTiers } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
@@ -550,14 +551,15 @@ export function normalStartKit(state, base) {
     if (!A || !A.custom) continue;
     for (const slot of Object.keys(A.gear || {})) if (s.gear[slot]) { if (!s.startPoints) base.armory.push(s.gear[slot]); s.gear[slot] = null; } // built on points: the dice's kit is not handed out on top
     const got = rollCustom(state, s, A);
-    for (const k of ["food", "water", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
+    for (const k of ["water", "meds", "arrows"]) if (got[k]) base.stock[k] = (base.stock[k] || 0) + got[k];
+    if (got.food) addFoodsTo(base.stock, typedFood(state, "house", got.food)); // foods.js: days of food as a house's food
     addRecord(base.stock, got.roundKeys); // rounds by calibre
     if (A.car.type && A.car.odds > 0) {
       const T = VEHICLE_TYPES[A.car.type];
       createVehicle(state, A.car.type, { kind: "base", baseId: base.id }, { fuel: Math.round(T.tank * 0.5 * 10) / 10, condition: 70 });
     }
     // The car's back to the hub too (Customize: on the vehicle's back's bill, custompoints.js bgBacks).
-    for (const [k, q] of Object.entries(A.car.trunk || {})) if (SUPPLY_KEYS.includes(k) && q > 0) base.stock[k] = (base.stock[k] || 0) + q;
+    for (const [k, q] of Object.entries(typeFind(state, { ...(A.car.trunk || {}) }, "travel"))) if (SUPPLY_KEYS.includes(k) && q > 0) base.stock[k] = (base.stock[k] || 0) + q; // foods.js: the back's food as items
     for (const key of A.car.items || []) if (GEAR[key]) { const it = startKit(newItem(key, 1)); base.armory.push(s.startPoints ? loadGun(it) : it); } // Customize: a gun in it loaded (priced so)
   }
 }
@@ -585,11 +587,11 @@ export function rollCar(state, p, people) {
   p.vehicleId = car.id;
   const trunk = { supplies: {}, gear: [] };
   if (A.custom) { // exactly what the player put in the back
-    for (const [k, q] of Object.entries(A.car.trunk)) if (SUPPLY_KEYS.includes(k) && q > 0) trunk.supplies[k] = q;
+    for (const [k, q] of Object.entries(A.car.trunk)) if ((SUPPLY_KEYS.includes(k) || k === "food" || k === "preserved") && q > 0) trunk.supplies[k] = q;
     for (const key of A.car.items) if (GEAR[key]) trunk.gear.push(startKit(newItem(key, 1)));
   }
   const TR = A.custom ? {} : A.trunk || {};
-  for (const k of SUPPLY_KEYS) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) trunk.supplies[k] = q; } // ammo: a count, made rounds below
+  for (const k of ["food", "preserved", ...SUPPLY_KEYS]) if (TR[k]) { const q = rng.int(TR[k][0], TR[k][1]); if (q > 0) trunk.supplies[k] = q; } // ammo: a count, made rounds below; food: days of it (typed below)
   if (TR.gear) {
     const table = { ...TR.gear };
     for (let n = rng.int(TR.n[0], TR.n[1]); n > 0 && Object.keys(table).length; n--) {
@@ -603,6 +605,7 @@ export function rollCar(state, p, people) {
   calibrate(trunk.supplies, gunCals(people, trunk.gear)); // ammo.js: the back's rounds are for the guns they have (theirs, and any in the back); none: 9mm and 12 gauge
   owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // the dice's back (until Start); a gun with the parts it came with
   if (picked) { const mine = trunkFromPicks(owner.startVehicle); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
+  typeFind(state, trunk.supplies, "travel"); // foods.js: the back's food as what people threw in a car (light, keeps; bread and cheese in the first days)
   for (const [k, q] of Object.entries(trunk.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
   p.cargo.gear.push(...trunk.gear);
   // A team of one or two loaded the empty seats too (HC_START.SMALL SEAT per seat short of three): trunk.seats.
@@ -612,14 +615,15 @@ export function rollCar(state, p, people) {
     for (const [k, [lo, hi]] of Object.entries(C.SMALL.SEAT)) {
       let q = 0;
       for (let i = 0; i < seats; i++) q += rng.int(lo, hi);
-      if (q > 0) { trunk.seats[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; }
+      if (q > 0 && k === "food") { trunk.seats[k] = q; addFoodsTo(p.cargo.supplies, typedFood(state, "house", q)); } // foods.js: days of food as a house's food
+      else if (q > 0) { trunk.seats[k] = q; p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q; }
     }
   }
   return { owner, car, trunk };
 }
 export function carLine(owner, car, trunk, people = HC_START.CREW) {
   const rounds = roundsOnly(trunk.supplies);
-  const back = [...Object.entries(trunk.supplies).filter(([k]) => !rounds[k]).map(([k, q]) => `${q} ${k}`), ...(Object.keys(rounds).length ? [roundsText(rounds)] : []), ...wordsOf(trunk.gear)];
+  const back = [...Object.entries(trunk.supplies).filter(([k]) => !rounds[k]).map(([k, q]) => `${Math.round(q * 10) / 10} ${keyWord(k)}`), ...(Object.keys(rounds).length ? [roundsText(rounds)] : []), ...wordsOf(trunk.gear)];
   const fill = Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100);
   const seat = trunk.seats ? Object.entries(trunk.seats).map(([k, q]) => `${q} ${keyWord(k)}`) : [];
   return `${firstName(owner)} got ${people === 1 ? "into" : "everyone into"} their ${car.name.toLowerCase()} (tank ${fill}% full, ${Math.round(car.condition)}% condition)${back.length ? `; in the back: ${andList(back)}` : ""}${seat.length ? `; on the empty ${people === 1 ? "seats" : "seat"}, what else they could grab: ${andList(seat)}` : ""}.`;
@@ -642,7 +646,7 @@ function grabLine(state, s, got) {
   const who = A ? `${firstName(s)} (${A.name.toLowerCase()}${A.blurb ? `, ${A.blurb}` : ""})` : firstName(s);
   const rounds = (got.ammo || 0) + (got.rounds || 0); // got.rounds: a gun picked on the new-run screen (startgear.js)
   const weapon = got.weapon ? `${/^[aeiou]/i.test(got.weapon.name) ? "an" : "a"} ${got.weapon.name.toLowerCase()}${rounds ? ` (${rounds} rounds)` : ""}` : "";
-  if (got.prepper && got.bag) return `${who} had a ${got.bag.name.toLowerCase()} packed by the door: ${got.food} food, ${got.water} water${got.meds ? `, ${got.meds} meds` : ""}${things.length ? `, ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
+  if (got.prepper && got.bag) return `${who} had a ${got.bag.name.toLowerCase()} packed by the door: ${got.food} days of food, ${got.water} water${got.meds ? `, ${got.meds} meds` : ""}${things.length ? `, ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
   const worn = got.armor ? ` (in ${/^[aeiou]/i.test(got.armor.name) ? "an" : "a"} ${got.armor.name.toLowerCase()})` : "";
   if (got.bag) return `${who}${worn} grabbed a ${got.bag.name.toLowerCase()}${things.length ? ` with ${things.join(", ")}` : ""}${weapon ? `, and ${weapon}` : ""}.`;
   return `${who}${worn} ran with only the clothes on their back${things.length ? ` and ${things.join(", ")} in their pockets` : " and empty pockets"}${weapon ? `, and ${weapon}` : ""}.`;
@@ -676,7 +680,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   if (!people.some((s) => s.leader)) people[0].leader = true; // the crew's leader was one of the six of a normal start (or past the head count)
   // What each one grabbed. A prepper's bag's five days come on top of the others' 1–3 days (TEAM_MIN..TEAM_MAX clamps
   // what the others carried, as before).
-  const sup = {};
+  const sup = { food: 0 }; // food: days of it until the team sets off (typed below, foods.js)
   for (const k of SUPPLY_KEYS) sup[k] = 0;
   const lines = [];
   let prepper = null, prepGot = null;
@@ -713,6 +717,9 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
     sup.meds += prepGot.meds;
     lines.unshift(grabLine(state, prepper, prepGot));
   }
+  const foodDays = sup.food;
+  delete sup.food;
+  addFoodsTo(sup, typedFood(state, "house", foodDays)); // foods.js: what they grabbed from their kitchens (bread and cheese in the first days, cans, rice)
   const p = {
     id: newId(), owner: "player", kind: "expedition", mission: "move", teamMission: "flee", dest: tile.id, homeBaseId: null,
     members: people.map((s) => s.id), stance: "normal", vehicle: false, vehicleId: null, supplies: sup, cargo: { supplies: {}, gear: [] },
@@ -739,7 +746,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // team stands waiting for orders (phase "waiting", the alerts' "Waiting for orders" row) and they are given from its
   // panel as usual; the game starts paused (main.js begin) and an order never unpauses it (ui/expedition.js).
   weighTeam(state, p);
-  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(sup.food)} food, ${Math.floor(sup.water)} water${Object.keys(roundsOnly(sup)).length ? `, ${roundsText(roundsOnly(sup))}` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: you set up camp there (an hour, nothing carried), bring in ${needText(STAGING.HARDCORE.needs)} and its builders build it up into a shelter (${STAGING.HARDCORE.work} work-hours), later into your hub.`;
+  const intro = `Calder is falling. ${lines.join(" ")} ${people.length === 1 ? "On you" : "Between you"}: ${Math.floor(foodDays)} days of food, ${Math.floor(sup.water)} water${Object.keys(roundsOnly(sup)).length ? `, ${roundsText(roundsOnly(sup))}` : ""}${sup.meds ? `, ${Math.floor(sup.meds)} meds` : ""}, and what is in the car. Find food and water first, then pick a good spot and give the order ${ESTABLISH_LABEL}: you set up camp there (an hour, nothing carried), bring in ${needText(STAGING.HARDCORE.needs)} and its builders build it up into a shelter (${STAGING.HARDCORE.work} work-hours), later into your hub.`;
   addCard(state, introCard(INTRO_TITLE, intro, "The team waits for orders: open its panel (click it on the map, or the Teams tab) and give the first one. The clock is stopped until you press Space."));
   return p;
 }

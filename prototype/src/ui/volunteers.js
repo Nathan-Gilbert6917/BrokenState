@@ -2,6 +2,7 @@
 // offer, and their answer before you ask), the "choose who" window for a group's ask of you, the team panel's
 // Volunteers card, the Ask for volunteers buttons (a group's card, the radio panel, a team card) and the trip
 // planner's row. Handlers: VOL_ACTIONS / VOL_CHANGE (main.js registers them).
+import { supplyAmt } from "../sim/rounds.js"; // food in days
 import { SUPPLIES } from "../sim/data.js";
 import { factionById, hub, combatPower } from "../sim/world.js";
 import { partyMembers, tileLabel, MISSIONS } from "../sim/parties.js";
@@ -82,8 +83,8 @@ export function volRequestModal(state, ui) {
       </div>
       <div>
         <h3${tip(`Goods from ${p ? "the team's home base" : "the hub"}: every ${VOL.P.goodsPer} worth of trade value is a point.`)}>What you offer</h3>
-        <div class="row"><select data-action="vol-offer-key">${VOL.OFFER_KEYS.map((k) => `<option value="${k}" ${(r.offerKey || "food") === k ? "selected" : ""}>${esc(k === "ammo" ? "Rounds (the calibres your guns need least)" : SUPPLIES[k].name)}</option>`).join("")}</select>
-          <input type="number" min="0" step="5" value="${r.offerQty || 0}" data-action="vol-offer-qty" style="width:5rem"${tip(h ? `${h.name} has ${Math.floor(h.stock[r.offerKey || "food"] || 0)}` : "")}></div>
+        <div class="row"><select data-action="vol-offer-key">${VOL.OFFER_KEYS.map((k) => `<option value="${k}" ${(r.offerKey || "food") === k ? "selected" : ""}>${esc(k === "ammo" ? "Rounds (the calibres your guns need least)" : k === "food" ? "Food (days of it)" : SUPPLIES[k].name)}</option>`).join("")}</select>
+          <input type="number" min="0" step="5" value="${r.offerQty || 0}" data-action="vol-offer-qty" style="width:5rem"${tip(h ? `${h.name} has ${Math.floor(supplyAmt(h.stock, r.offerKey || "food"))}${(r.offerKey || "food") === "food" ? " days of food" : ""}` : "")}></div>
         <label class="small"${tip(`+${VOL.P.favour} points. They will ask you for people one day soon; declining then costs three times the usual.`)}><input type="checkbox" data-action="vol-favour" ${r.favour ? "checked" : ""}> Owe them a favour</label>
         <div class="row small" style="margin-top:0.3rem"${tip(`A share of what the team's cargo gains while they are with it, to their group's stores when the last of them leaves (+goodwill). Points: the share × ${VOL.SHARE.points}.`)}>Share of the haul: ${VOL.SHARE.choices.map((v) => `<button class="mini ${(r.share || 0) === v ? "active" : ""}" data-action="vol-share" data-v="${v}">${Math.round(v * 100)}%</button>`).join("")}</div>
         ${op ? `<div class="small danger">${esc(op)}</div>` : ""}

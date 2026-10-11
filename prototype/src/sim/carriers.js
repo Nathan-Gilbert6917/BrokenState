@@ -61,7 +61,7 @@ import { applyZType } from "./zombietypes.js";
 import { fireAt } from "./throwables.js";
 import { survivorById, log, day, hurt, atBase, newId, baseById } from "./world.js";
 import { armorMult, enemyBody, allItems, stripAll, ensureInv, stow, unlistFromSites, EQUIP_SLOTS } from "./inventory.js";
-import { GEAR, SUPPLIES } from "./data.js";
+import { GEAR, SUPPLIES, supValue } from "./data.js";
 import { partyMembers, cargoRoom, bodyLoad } from "./parties.js";
 import { partyVehicle, isCar } from "./vehicles.js";
 import { atVehicle, raidVehicle } from "./raidloot.js";
@@ -452,7 +452,7 @@ function markWalked(state, tile, name) {
 function siteDrop(state, tile, items, supplies, who) {
   const list = [];
   for (const it of items) list.push({ kind: "gear", key: it.key, name: `${first(who)}'s ${it.name}`, qty: 1, value: Math.round((GEAR[it.key] ? GEAR[it.key].value : 0) * (it.quality || 1)), item: it });
-  for (const [k, v] of Object.entries(supplies || {})) if (v >= 1 && SUPPLIES[k]) list.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: Math.floor(v), value: Math.floor(v) * SUPPLIES[k].value });
+  for (const [k, v] of Object.entries(supplies || {})) if (v >= 1 && SUPPLIES[k]) list.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: Math.floor(v), value: Math.floor(v) * supValue(k) });
   if (!list.length || tile == null) return;
   let site = state.deathSites.find((d) => d.tile === tile);
   if (site) { site.items.push(...list); if (!site.names.includes(who)) site.names.push(who); }

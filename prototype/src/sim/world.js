@@ -2,11 +2,12 @@
 // World state, shared helpers and the hourly/daily tick.
 // Pure simulation: no DOM or canvas code lives here.
 /** @import { State, Survivor, Base, Item, Card, Stock, TileSnapshot, Marker } from "./types" */
+import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
-import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
 import { traitDice, swapNewTraits, noteBornTraits, woundMult, traitSkill, traitPower, rollTiers, tidyTiers, cleanTier } from "./traits.js"; // the newer traits: own dice at birth, their rules
 import { sanitizeLibrary } from "./custombg.js";
 import { sanitizeStartGear, hasPicks, normalStartGear, sanitizeStartVehicle } from "./startgear.js"; // gear picked on the new-run screen (Customize)
@@ -145,6 +146,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     kitV: 2, magFitV: 1, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
     woodcutting: 2, // a world with firewood, 0.1 kg a unit (save.js: older saves are given it, or scaled to it, on load)
     rawWater: 1, // a world with purified and un-purified water (water.js; save.js: older saves are given it on load)
+    foodTypes: 1, // a world with food by type (foods.js; save.js migrateFood: older saves are typed on load)
     sickRest: "all", // sickrest.js: the Work tab's "Sick people rest" (all, serious, off; save.js: older saves get "all")
     groupWorks: 1, // barestart: the AI groups' bases start bare and they build (groupworks.js); an older save has them built up
     gunSlots: 1, attachV: 2, // (attachV: gunmods.js migrateParts, save.js) // a world with gun attachment slots (gunmods.js; save.js: older saves have their guns' parts moved on load)
@@ -202,7 +204,9 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 6 crop plots, the well,
     // the cellar, 3 wall strength: buildings.js) is all there is. The scrap and parts are for the first builds, the
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
-    stock: { food: 80, water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, preserved: 10, jars: 12, wood: 300, buildmat: 0 },
+    // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
+    // and 10 of food that keeps (jars, jerky, peanut butter).
+    stock: { water: 50, rawwater: 0, fuel: 12, meds: 6, ammo: 80, arrows: 0, parts: HUB_START.parts, scrap: HUB_START.scrap, jars: 12, wood: 300, buildmat: 0, ...addFoodsTo(typedFood(state, "stores", 80), typedFood(state, "keeps", 10)) },
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
@@ -786,7 +790,8 @@ export function removeBase(state, base, cause = "was lost", opts = {}) {
   leavePlayerBase(state, base); // groupworld.js: it stands empty, its buildings there for a group to move into
   state.knowledge[base.tile] = snapshot(state, base.tile); // the people who fled know it stands empty (the map's Occupy, occupy.js)
   assignStations(state, h);
-  const stock = SUPPLY_KEYS.filter((k) => (base.stock[k] || 0) >= 1).map((k) => `${Math.floor(base.stock[k])} ${keyWord(k)}`); // water.js keyWord: "un-purified water", not the key
+  const stock = SUPPLY_KEYS.filter((k) => !FOODS[k] && (base.stock[k] || 0) >= 1).map((k) => `${Math.floor(base.stock[k])} ${keyWord(k)}`); // water.js keyWord: "un-purified water", not the key
+  if (foodIn(base.stock) >= 1) stock.unshift(`${Math.floor(foodIn(base.stock))} days of food`); // foods.js: every kind together
   const bits = [];
   if (base.buildings.length) bits.push(`${base.buildings.length} building${base.buildings.length === 1 ? "" : "s"}`);
   if (stock.length) bits.push(`its stock (${stock.join(", ")})`);
@@ -802,7 +807,7 @@ export function removeBase(state, base, cause = "was lost", opts = {}) {
 
 /** @param {Stock} stock @returns {number} */
 export function supplyValue(stock) {
-  return SUPPLY_KEYS.reduce((s, k) => s + (stock[k] || 0) * SUPPLIES[k].value, 0);
+  return SUPPLY_KEYS.reduce((s, k) => s + (stock[k] || 0) * supValue(k), 0);
 }
 
 // ---------- vision and knowledge ----------

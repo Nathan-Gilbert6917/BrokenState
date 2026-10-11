@@ -7,6 +7,7 @@
 // Pins: watchlistPin (the survivor screen, the team panel, the Groups and Bases tabs, the tile panel's horde row) and the
 // right-click menu (ctxWatchlist: the base, group base, hordes and teams on the tile, plus Add note / Edit note).
 // The note editor is a small box on the map (#noteedit), kept apart from the panels so a redraw never eats the typing.
+import { foodIn } from "../sim/foods.js"; // days of food (every kind)
 import { watchlistOf, onWatchlist, toggleWatchlist, unpinWatchlist, WATCHLIST_MAX } from "../sim/watchlist.js";
 import { mapNotes, noteById, notesAt, addNote, editNote, deleteNote, setNotesHidden, NOTE_ICONS, NOTE_KEYS, NOTE_TEXT_MAX } from "../sim/mapnotes.js";
 import { survivorById, baseById, factionById, playerStrength } from "../sim/world.js";
@@ -90,7 +91,7 @@ function teamStatus(state, it) {
   const moving = p.phase === "out" || p.phase === "back";
   const left = st.left != null ? clockText(Math.max(0, st.left - clockFrac(state))) : ""; // from this minute on the clock (sim/parties.js arrivalsDue)
   const eta = moving && st.left != null ? ` · ETA ${left}` : p.phase === "task" && st.left ? ` · ${left} left` : "";
-  const food = n0((p.supplies.food || 0) + (p.supplies.preserved || 0)), water = n0(waterIn(p.supplies));
+  const food = n0(foodIn(p.supplies)), water = n0(waterIn(p.supplies));
   const heat = p.kind !== "convoy" ? Math.round(p.heat || 0) : 0;
   const short = food < members.length || water < members.length;
   return {

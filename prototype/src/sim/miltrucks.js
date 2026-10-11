@@ -21,6 +21,7 @@
 // The headless search (scavenge.js searchHour) reaches the trucks too: truckSearchHour.
 // The dead: a tile with unopened trucks has soldiers among its dead (truckDeadShare, read by deadsoldiers.js
 // siteDeadMix), so raids, fights by the numbers and the hour-by-hour search all meet them.
+import { typeFind } from "./foods.js"; // a truck's food as items
 import { LOCATIONS, SUPPLIES } from "./data.js";
 import { isRoundKey } from "./rounds.js"; // a truck's rounds by calibre, into a group's one ammo count
 import { itemValue } from "./valuation.js";
@@ -422,12 +423,12 @@ function salvageSupplies(state, c, crew) {
   if (!path) return { ok: false, why: "No way there on foot." };
   const n = crew.length, days = (path.cost * 2 + 8) / 24;
   const stock = (k) => Math.floor(stockHas(h.stock, k));
-  const sup = { food: Math.ceil(n * days * 1.3) + n, water: Math.ceil(n * days * 1.3) + n, ammo: Math.max(0, Math.min(stock("ammo") - 10, 10 * n)), meds: stock("meds") >= 4 ? 1 : 0 };
+  const sup = { food: Math.ceil(n * days * 1.3) + n, water: Math.ceil(n * days * 1.3) + n, ammo: Math.max(0, Math.min(stock("ammo") - 10, 10 * n)), meds: stock("meds") >= 4 ? 1 : 0 }; // food: days of it (packed as what keeps: parties.js)
   const cap = carryCapacity(state, crew, null);
   while (supplyLoad(sup) > cap && sup.ammo > 0) sup.ammo = Math.max(0, sup.ammo - 4);
   if (supplyLoad(sup) > cap) return { ok: false, why: "They cannot carry the food and water for it." };
-  if (sup.food > stock("food") || sup.water > stock("water")) return { ok: false, why: `The hub cannot spare ${sup.food} food and ${sup.water} water.` };
-  return { ok: true, sup, days, text: `${sup.food} food, ${sup.water} water${sup.ammo ? `, ${sup.ammo} rounds for their guns` : ""}${sup.meds ? ", 1 meds" : ""}` };
+  if (sup.food > stock("food") || sup.water > stock("water")) return { ok: false, why: `The hub cannot spare ${sup.food} days of food and ${sup.water} water.` };
+  return { ok: true, sup, days, text: `${sup.food} days of food, ${sup.water} water${sup.ammo ? `, ${sup.ammo} rounds for their guns` : ""}${sup.meds ? ", 1 meds" : ""}` };
 }
 export function sendSalvageTeam(state, c) {
   if (!c || c.gone) return "The convoy is gone.";
@@ -513,6 +514,7 @@ export function convoyHaul(state, c) {
   for (const x of unopenedTrucks(state, c.tile)) {
     if (x.src !== "convoy") continue;
     const got = truckLoot(truckRng(state, x, `ai${c.stripped || 0}`), x.kind, x.cond, { rich: x.rich * (1 - CONVOY.stripKeep), src: x.src });
+    typeFind(state, got.sup, "military"); // foods.js: the trucks' food as MREs and ration bars
     for (const [k, q] of Object.entries(got.sup)) {
       const kk = isRoundKey(k) ? "ammo" : k;
       supplies[kk] = (supplies[kk] || 0) + q;

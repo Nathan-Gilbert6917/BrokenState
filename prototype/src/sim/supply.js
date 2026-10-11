@@ -5,6 +5,7 @@
 // every X days). Convoys travel with the shared party system (kind "convoy", routeKind "supply"):
 // supplies drain, the escort-table events hit them, vehicles burn fuel and can be left behind, and the
 // dead leave death sites. Dispatch happens on the daily tick, like trade routes.
+import { FOODS, foodIn, takeFood, moveFood, moveFoodUnits, packPick, foodText } from "./foods.js"; // food by type (foods.js)
 import { SUPPLIES } from "./data.js";
 import { newId, log, day, hub, baseById, survivorById, hurt, mergeKnowledge } from "./world.js";
 import {
@@ -43,7 +44,7 @@ const first = (s) => s.name.split(" ")[0];
 // aggressive, day 318-331).
 function roadLeft(stock, deliver, k) {
   if (k === "water") return Math.floor(waterIn(stock)) - (deliver.water || 0) - (deliver[RAW] || 0);
-  if (k === "food") return Math.floor(Math.max(0, stock.food || 0) + Math.max(0, stock.preserved || 0)) - (deliver.food || 0) - (deliver.preserved || 0);
+  if (k === "food") return Math.floor(foodIn(stock)) - (deliver.food || 0) - (deliver.preserved || 0) - foodIn(deliver); // days of food (foods.js): "food" in a delivery is days, an item its own
   return Math.floor(supplyAmt(stock, k)) - (deliver[k] || 0);
 }
 
@@ -57,7 +58,7 @@ export function cleanLines(lines) {
   const out = {};
   for (const l of lines || []) {
     const q = Math.floor(Number(l.qty) || 0);
-    if (!SUPPLIES[l.key] || q <= 0) continue;
+    if ((!SUPPLIES[l.key] && l.key !== "food" && l.key !== "preserved") || q <= 0) continue; // food, preserved: days of it (foods.js)
     out[l.key] = (out[l.key] || 0) + q;
   }
   return Object.entries(out).map(([key, qty]) => ({ key, qty }));
@@ -208,13 +209,14 @@ export function dispatchSupplyRun(state, job, manual = false) {
     const need = k === "water" ? plan.needWater : plan.need;
     if (left(k) < need) return blockRun(state, job, `not enough ${k} at ${origin.name} for the road (needs ${need} after the delivery, has ${Math.max(0, left(k))})`, manual);
   }
-  // The road's food: fresh first, preserved for the rest (the convoy eats both: parties.js).
+  // The road's food: days of it, packed as the food that keeps (foods.js packPick), moved with its lots once the convoy
+  // exists; the delivery's food (days, or items by key) goes into its cargo the same way.
   const food = Math.min(plan.want, left("food"));
-  const fresh = Math.min(food, Math.max(0, Math.floor(supplyAmt(origin.stock, "food")) - (deliver.food || 0)));
-  const supplies = { food: fresh, water: Math.min(plan.wantWater, left("water")), fuel: 0, meds: 0, ammo: Math.max(0, Math.min(ready.length * 5, left("ammo"))) };
-  if (food > fresh) supplies.preserved = food - fresh;
+  const supplies = { water: Math.min(plan.wantWater, left("water")), fuel: 0, meds: 0, ammo: Math.max(0, Math.min(ready.length * 5, left("ammo"))) };
+  const foodDeliver = {};
+  for (const k of Object.keys(deliver)) if (k === "food" || k === "preserved" || FOODS[k]) { foodDeliver[k] = deliver[k]; delete deliver[k]; }
   for (const [k, q] of Object.entries(deliver)) useSupply(origin.stock, k, q); // rounds.js: "ammo" as any rounds
-  for (const k of ["food", "preserved", "ammo"]) useSupply(origin.stock, k, supplies[k]);
+  useSupply(origin.stock, "ammo", supplies.ammo);
   const w = drawWater(origin.stock, supplies.water); // purified first (water.js)
   supplies.water = w.pure;
   supplies[RAW] = w.raw;
@@ -241,6 +243,14 @@ export function dispatchSupplyRun(state, job, manual = false) {
   if (v) v.loc = { kind: "party", partyId: p.id };
   for (const s of ready) s.location = { kind: "party", partyId: p.id };
   state.parties.push(p);
+  // foods.js: the delivery's food into the cargo (days: the soonest to spoil first; an item by key) and the road's
+  // food into the packs, each with its lots.
+  for (const [k, q] of Object.entries(foodDeliver)) {
+    if (FOODS[k]) moveFood(origin, p.cargo, { [k]: q }, { state });
+    else moveFoodUnits(origin, p.cargo, q, { state, only: k === "preserved" ? (x, f) => f.group === "preserved" : null });
+    deliver[k] = q;
+  }
+  moveFood(origin, p, packPick(state, origin, food, { days: Math.ceil(plan.hours / 24) }), { state });
   job.partyId = p.id;
   job.status = "road";
   job.blocked = null;
@@ -268,6 +278,8 @@ export function supplyArrive(state, p) {
     return;
   }
   const got = [];
+  const foodGot = moveFood(p.cargo, dest, null, { state }); // foods.js: the food with its lots
+  if (Object.keys(foodGot).length) got.push(foodText(foodGot, 6));
   for (const [k, v] of Object.entries(p.cargo.supplies)) {
     const q = Math.floor(v);
     if (q > 0) {
@@ -306,9 +318,8 @@ function headHome(state, p, job) {
     const back = planPath(state, dest.tile, home.tile, p.vehicle) || planPath(state, dest.tile, home.tile, false);
     if (back) {
       const need = Math.ceil((n * (back.cost / (STANCES[p.stance]?.speed || 1) + 2)) / 24) + 1;
-      const topFood = Math.max(0, Math.min(need - Math.floor(p.supplies.food || 0), Math.floor(dest.stock.food || 0)));
-      dest.stock.food -= topFood;
-      p.supplies.food = (p.supplies.food || 0) + topFood;
+      const topFood = Math.max(0, Math.min(need - Math.floor(foodIn(p.supplies)), Math.floor(foodIn(dest.stock))));
+      if (topFood > 0) moveFood(dest, p, packPick(state, dest, topFood, { days: 3 }), { state }); // foods.js: food that keeps, with its lots
       moveWater(dest.stock, p.supplies, Math.max(0, Math.min(need - Math.floor(waterIn(p.supplies)), Math.floor(waterIn(dest.stock))))); // purified first
       const v = partyVehicle(state, p);
       if (v) {
@@ -322,11 +333,13 @@ function headHome(state, p, job) {
       const got = [], short = [];
       for (const l of cleanLines(p.pickup || job.pickup)) {
         const room = cargoRoom(state, p);
-        const take = Math.max(0, Math.min(l.qty, Math.floor(supplyAmt(dest.stock, l.key)), unitsThatFit(room, l.key)));
+        const fk = l.key === "food" || l.key === "preserved";
+        const take = Math.max(0, Math.min(l.qty, Math.floor(supplyAmt(dest.stock, l.key)), fk ? Math.floor(room / 1.2) : unitsThatFit(room, l.key))); // food: days of it, about 1.2 kg a day
         if (take > 0) {
-          useSupply(dest.stock, l.key, take);
-          p.cargo.supplies[l.key] = (p.cargo.supplies[l.key] || 0) + take;
-          got.push(`${take} ${l.key}`);
+          if (fk) moveFoodUnits(dest, p.cargo, take, { state, only: l.key === "preserved" ? (x, f) => f.group === "preserved" : null }); // foods.js: with its lots
+          else if (FOODS[l.key]) moveFood(dest, p.cargo, { [l.key]: take }, { state });
+          else { useSupply(dest.stock, l.key, take); p.cargo.supplies[l.key] = (p.cargo.supplies[l.key] || 0) + take; }
+          got.push(`${take} ${keyWord(l.key)}`);
         }
         if (take < l.qty) short.push(`${l.qty - take} ${l.key}`);
       }
@@ -535,10 +548,10 @@ function holdUpkeep(state, p, job) {
   // day's thirst), from the base first (fresh food, then preserved), then from what the convoy carries.
   const draw = (k) => {
     const q = k === "water" ? thirstAt(state) : UPKEEP.crew * coldFactor(state);
-    if (k === "food" && edibleFood(dest) >= q) eatFromStore(dest, q);
+    if (k === "food" && edibleFood(dest) >= q) eatFromStore(dest, q, state);
     else if (k === "water" && waterIn(dest.stock) >= q) drawWater(dest.stock, q); // purified first (water.js)
     else if (k === "water" && waterIn(p.supplies) >= q) drawWater(p.supplies, q);
-    else if (k !== "water" && (p.supplies[k] || 0) >= q) p.supplies[k] -= q;
+    else if (k === "food" && foodIn(p.supplies) >= q) takeFood(p, q, { eggs: false, state }); // foods.js: its packs, the soonest to spoil first
     else return false;
     return true;
   };

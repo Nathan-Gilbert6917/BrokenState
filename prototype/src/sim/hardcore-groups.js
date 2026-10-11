@@ -62,6 +62,7 @@
 // - The aggressive groups (zealots, expansionists) do not raid and nobody declares war while the bands are still
 //   founding: until QUIET_GRACE days after the last band has its hub (QUIET_MAX at the latest).
 // Decisions draw from their own generator (state.hardcore.groups.rng), so they never shift the world's dice.
+import { FOODS, typeFind, GROUP_MIX, foodShare, addFoodsTo, foodIn, giveFood, takeFood, typeStray, ageCoarse } from "./foods.js"; // food by type (foods.js)
 import { Rng } from "./rng.js";
 import { FACTION_TYPES, FACTION_COLORS } from "./data.js";
 import { newId, log, addCard, day, hub, factionById, snapshot, hourOfDay } from "./world.js";
@@ -231,7 +232,7 @@ function createMilitary(state, name, color) {
   const f = {
     id: newId(), name, type: "military", color, bases: [tile], pop, alive: true, known: true,
     goodwill: def.goodwill + rng.int(-5, 10), lastDiplomacy: 0, pact: null,
-    stock: { food: pop * 8, ammo: pop * 25, fuel: pop * 2, meds: Math.round(pop * 1.5), parts: 6, scrap: pop * 3, preserved: pop, jars: 0, water: pop * 6 },
+    stock: typeFind(state, { food: pop * 8, ammo: pop * 25, fuel: pop * 2, meds: Math.round(pop * 1.5), parts: 6, scrap: pop * 3, preserved: pop, jars: 0, water: pop * 6 }, "army"), // foods.js: their food as the Army's (MREs, ration bars, cans)
     lootedGear: [], raidCooldown: rng.int(8, 16), hcMilitary: true, hcNoExpand: true, hcNoGrow: true,
   };
   state.factions.push(f);
@@ -259,6 +260,7 @@ export function makeBand(state, type, opts = {}) {
   for (const k of STOCK_KEYS) stock[k] = 0;
   const src = opts.stock || cfg.stock;
   for (const [k, q] of Object.entries(src)) stock[k] = Math.max(0, Math.round(q * (opts.stock ? 1 : rng.range(0.85, 1.15))));
+  typeFind(state, stock, GROUP_MIX[type] || "stores"); // foods.js: the band's food (days in the tables) as its kind's items
   const d = day(state);
   const foundAt = opts.foundAt != null ? opts.foundAt : d - 1 + B.FOUND_DAYS[0] + Math.floor(hash01(state.seed, "hc-found", H.bands.length, type) * (B.FOUND_DAYS[1] - B.FOUND_DAYS[0] + 1));
   const b = {
@@ -562,10 +564,12 @@ export function hardcoreGroupsDaily(state) {
 function bandDay(state, b) {
   const rng = grng(state), d = day(state), g = state.grid;
   // Food: they eat on the road and forage a little; the jars and tins go last.
-  b.stock.food += b.pop * (B.FORAGE - B.EAT);
-  if (b.stock.food < 0 && b.stock.preserved > 0) { const x = Math.min(b.stock.preserved, -b.stock.food); b.stock.preserved -= x; b.stock.food += x; }
-  if (b.stock.food < 0) {
-    b.stock.food = 0;
+  // (foods.js: what they forage comes in as forage, what they eat goes the soonest to spoil first: the tins last.)
+  typeStray(b.stock, state);
+  if (B.FORAGE > 0) giveFood(state, b.stock, b.pop * B.FORAGE, { f_berries: 3, f_roots: 3, f_wildgreens: 2, f_nuts: 1, f_smallgame: 2 });
+  const short = b.pop * B.EAT - takeFood(b.stock, b.pop * B.EAT, { state }).units;
+  ageCoarse(b.stock);
+  if (short > 1e-6) {
     if (rng.chance(B.STARVE)) { loseBandPeople(state, b, 1, "to hunger"); if (!bandsOf(state).includes(b)) return; }
   }
   if (rng.chance(B.ROAD_DEATH)) { loseBandPeople(state, b, 1, "on the road"); if (!bandsOf(state).includes(b)) return; }
@@ -575,9 +579,9 @@ function bandDay(state, b) {
   const t = state.tiles[b.tile];
   if (b.phase === "camp" && t.loc && (t.loot || 0) > AISCAV.floor && !t.hive) {
     const take = Math.min(B.SCAV_TAKE, t.loot - AISCAV.floor);
-    const got = haulFor(t, take, t.loot, B.SCAV_EFF);
+    const got = haulFor(t, take, t.loot, B.SCAV_EFF, state);
     t.loot -= take;
-    for (const [k, q] of Object.entries(got)) if (k in b.stock || STOCK_KEYS.includes(k)) b.stock[k] = (b.stock[k] || 0) + q;
+    for (const [k, q] of Object.entries(got)) if (k in b.stock || STOCK_KEYS.includes(k) || FOODS[k]) b.stock[k] = (b.stock[k] || 0) + q;
   }
   const stop = b.stops[0];
   // Joining another group (a remnant): at its gates they are taken in.
@@ -609,12 +613,12 @@ function bandDay(state, b) {
 function foundHub(state, b, tile) {
   const H = hcGroups(state), rng = H.rng, d = day(state);
   if (b.pop < M.FOUND_MIN) return breakBand(state, b); // too few to hold a hub of their own
-  const desperate = d >= hcRaidersFrom(state) && !b.remnant && b.type !== "military" && b.stock.food < b.pop * 2;
+  const desperate = d >= hcRaidersFrom(state) && !b.remnant && b.type !== "military" && foodIn(b.stock) < b.pop * 2;
   const type = desperate ? "raider" : b.type;
   const f = {
     id: b.id, name: b.name, type, color: b.color, bases: [tile], pop: b.pop, alive: true, known: b.known,
     goodwill: desperate ? Math.min(b.goodwill, -50) : b.goodwill, lastDiplomacy: 0, pact: null,
-    stock: Object.fromEntries(STOCK_KEYS.map((k) => [k, Math.round(b.stock[k] || 0)])),
+    stock: Object.fromEntries([...STOCK_KEYS.filter((k) => k !== "food" && k !== "preserved").map((k) => [k, Math.round(b.stock[k] || 0)]), ...Object.entries(foodShare(b.stock))]), // foods.js: their food, item by item
     lootedGear: [], raidCooldown: rng.int(8, 16), founded: d, hcBand: true,
   };
   if (b.remnant) f.hcRemnant = true;
@@ -644,7 +648,8 @@ function noteFounding(state) {
 
 function joinGroup(state, b, f) {
   f.pop += b.pop;
-  for (const k of STOCK_KEYS) f.stock[k] = (f.stock[k] || 0) + Math.round(b.stock[k] || 0);
+  for (const k of STOCK_KEYS) if (k !== "food" && k !== "preserved") f.stock[k] = (f.stock[k] || 0) + Math.round(b.stock[k] || 0);
+  addFoodsTo(f.stock, foodShare(b.stock)); // foods.js: their food, item by item
   const list = bandsOf(state);
   list.splice(list.indexOf(b), 1);
   if (b.known || f.known) log(state, `${b.name} reached ${f.known ? f.name : "another group"} and were taken in (${b.pop} people).`, "info");
@@ -1100,7 +1105,7 @@ function militaryFalls(state, f, how) {
 function makeSplinter(state, f, type, name, pop, tile, color, of, strike = null) {
   const rng = grng(state), d = day(state);
   const st = f.stock || {}, k = strike ? 0 : M.SPLINTER_GRAB;
-  const grab = (key, min) => Math.max(min, Math.round((st[key] || 0) * k));
+  const grab = (key, min) => Math.max(min, Math.round((key === "food" ? foodIn(st) : key === "preserved" ? 0 : st[key] || 0) * k)); // food: days of it (foods.js)
   const b = makeBand(state, type, {
     name, color, tile, pop, remnant: true, splinter: of,
     stock: {
@@ -1150,7 +1155,7 @@ function raidersDaily(state) {
   const elig = state.factions.filter((f) => f.alive && f.bases.length && f.type !== "raider" && f.type !== "military" && !f.pact && !isMember(state, f) && f.goodwill < 40);
   if (!elig.length) return;
   // A splinter of the fallen military (militaryFalls) has guns, grievances and nobody to answer to.
-  const desperation = (f) => (f.stock.food < f.pop * 3 ? 1 : 0) + (f.pop < 12 ? 0.5 : 0) + (isAggressiveType(f) ? 1 : 0) + (f.bases.length === 1 ? 0.3 : 0) + (f.hcSplinter ? M.SPLINTER_TURN : 0);
+  const desperation = (f) => (foodIn(f.stock) < f.pop * 3 ? 1 : 0) + (f.pop < 12 ? 0.5 : 0) + (isAggressiveType(f) ? 1 : 0) + (f.bases.length === 1 ? 0.3 : 0) + (f.hcSplinter ? M.SPLINTER_TURN : 0);
   for (const f of elig) {
     if (rng.chance(B.TURN_BASE * (1 + 3 * desperation(f)))) { turnRaider(state, f); if (H.turned >= B.TURN_MAX) return; }
   }

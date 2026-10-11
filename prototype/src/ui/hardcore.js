@@ -35,7 +35,7 @@ export function stageSteps(stage) {
 // The camp's needs against its stores, and (with a team) what that team carries toward each.
 function suppliesTable(state, v, p = null) {
   const rows = v.camp ? v.rows : NEED_KEYS.filter((k) => v.needs[k]).map((k) => ({ key: k, need: v.needs[k], have: 0, short: v.needs[k], ok: false }));
-  const carry = (k) => (p ? n0(k === "food" ? carried(p, "food") + carried(p, "preserved") : k === "water" ? carried(p, "water") + carried(p, RAW) : carried(p, k)) : 0);
+  const carry = (k) => (p ? n0(k === "food" ? carried(p, "food") : k === "water" ? carried(p, "water") + carried(p, RAW) : carried(p, k)) : 0);
   const head = `<div class="muted">Supply</div><div class="muted">${v.camp ? "At the camp" : "Needed"}</div>${p ? `<div class="muted"${tip("What this team carries now. Food and water: it keeps two days of each for the road and unloads the rest.")}>Team has</div>` : ""}`;
   const body = rows.map((r) => {
     const c = carry(r.key), fills = !r.ok && c >= r.short;
@@ -58,7 +58,7 @@ function view(state) {
 // Days of food and water the team carries at today's thirst.
 function teamDays(state, p) {
   const n = Math.max(1, partyMembers(state, p).length);
-  return { food: (carried(p, "food") + carried(p, "preserved")) / n, water: (carried(p, "water") + carried(p, "rawwater")) / (n * thirstAt(state)) }; // both kinds (sim/water.js)
+  return { food: carried(p, "food") / n, water: (carried(p, "water") + carried(p, "rawwater")) / (n * thirstAt(state)) }; // both kinds (sim/water.js)
 }
 // The top bar's Needs list while there is no base (ui/needsbar.js): what the road team carries, its days of food
 // and water, and the camp still to set up. null when there is no team on the road.
@@ -69,7 +69,8 @@ export function roadNeeds(state) {
   const bd = teamAmmoBreakdown(state, v.p);
   const heads = Math.max(1, v.people);
   const lvl = (days, crit, low) => (days < crit ? 2 : days < low ? 1 : 0);
-  const row = (k, extra = "", more = {}) => ({ k, name: SUPPLIES[k].name, amt: n0(carried(v.p, k) + (k === "food" ? carried(v.p, "preserved") : 0)), tip: `${SUPPLIES[k].name} the team carries (packed and found). ${extra}`.trim(), level: null, note: "", ...more });
+  const name = (k) => (k === "food" ? "Food (days)" : SUPPLIES[k].name); // food: days of it, every kind (sim/foods.js)
+  const row = (k, extra = "", more = {}) => ({ k, name: name(k), amt: n0(carried(v.p, k)), tip: `${name(k)} the team carries (packed and found). ${extra}`.trim(), level: null, note: "", ...more });
   const head = v.first ? `Hardcore: no hub yet. Your ${v.people} survivors are a team on the road; you are with them, so they always take orders.` : "You have no base left: your people are on the road.";
   return {
     status: { cls: v.first ? "warn" : "danger", text: "On the road", tip: `${head} ${ESTABLISH_LABEL} sets up a camp you build up into your hub.` },

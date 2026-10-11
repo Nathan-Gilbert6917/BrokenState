@@ -26,6 +26,7 @@
 // raised from their own people and arsenal when they set out (sim/arsenal.js, escorts.js, aiscav.js, caravans.js) and
 // move by the numbers (parties.js spawnAiParty); nothing here is on their path, and nothing of theirs is changed.
 /** @import { State, Party, Base, Item, Stock } from "./types" */
+import { foodIn } from "./foods.js"; // days of food on a team
 import { SUPPLIES } from "./data.js";
 import { log, baseById, survivorById } from "./world.js";
 import { launchExpedition, partyMembers, carryCapacity, supplyLoad, poolLoad, weighTeam, onTheMove } from "./parties.js";
@@ -119,7 +120,7 @@ export function formPreview(state, opts) {
   const cap = carryCapacity(state, members, v || null);
   /** @type {Stock} */
   const supplies = {};
-  for (const [k, q] of Object.entries(opts.supplies || {})) if (SUPPLIES[k] && num(q) > 0) supplies[k] = q;
+  for (const [k, q] of Object.entries(opts.supplies || {})) if ((SUPPLIES[k] || k === "food") && num(q) > 0) supplies[k] = q; // food: days of it (packed as items by parties.js launchExpedition)
   const cargo = base ? armoryItems(base, opts.cargo || []) : [];
   const cargoKg = cargo.reduce((a, it) => a + itemLoad(it), 0);
   const load = supplyLoad(supplies) + cargoKg;
@@ -139,7 +140,7 @@ function formProblem(state, base, members, plan, supplies, load, cap) {
   if (load > cap + EPS) return `Too much to carry: the supplies and cargo weigh ${Math.ceil(load)} kg, ${members.length === 1 ? "they" : "the team"}${v ? ` and the ${vehicleLabel(v)}` : ""} can carry ${Math.floor(cap)} kg on top of what they wear. Take less${v ? "" : ", more people, bikes or a vehicle"}.`;
   for (const [k, q] of Object.entries(supplies)) {
     const have = num(stockHas(base.stock, k));
-    if (have + EPS < q) return `Not enough ${SUPPLIES[k].name.toLowerCase()} at ${base.name} (${Math.floor(have)}).`;
+    if (have + EPS < q) return `Not enough ${k === "food" ? "food" : SUPPLIES[k].name.toLowerCase()} at ${base.name} (${Math.floor(have)}${k === "food" ? " days" : ""}).`;
   }
   return "";
 }
@@ -282,14 +283,14 @@ export function toggleVehicle(state, p, vehicleId) {
 
 // What the team carries of a supply (packed and found).
 /** @param {Party} p @param {string} k */
-export const teamHas = (p, k) => num(p.supplies && p.supplies[k]) + num(p.cargo && p.cargo.supplies && p.cargo.supplies[k]);
+export const teamHas = (p, k) => (k === "food" ? foodIn(p.supplies || {}) + foodIn((p.cargo && p.cargo.supplies) || {}) : num(p.supplies && p.supplies[k]) + num(p.cargo && p.cargo.supplies && p.cargo.supplies[k])); // food: days of it (foods.js)
 // Sets how much of a supply the team carries: more is loaded from the base's stores (as much as it can carry),
 // less is dropped off into them. Returns the line to show.
 /** @param {State} state @param {Party} p @param {string} k @param {number} qty */
 export function setSupply(state, p, k, qty) {
   const why = editProblem(state, p);
   if (why) return why;
-  if (!SUPPLIES[k]) return "Unknown supply.";
+  if (!SUPPLIES[k] && k !== "food") return "Unknown supply."; // food: days of it (teaminv.js loads and drops the items)
   const want = Math.max(0, num(Number(qty)));
   const have = teamHas(p, k);
   if (Math.abs(want - have) < EPS) return "";

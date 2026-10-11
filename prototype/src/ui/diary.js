@@ -124,7 +124,7 @@ export function leaderEntry(state, dayNo) {
   const joined = names(/^(.+?) joined the group\./);
   if (joined.length) out.push(joined.length === 1 ? `A new face: ${joined[0]}.` : `New faces: ${list(joined)}.`);
   if (sum.battles) out.push(sum.battles === 1 ? pick(["We had to fight.", "A fight today."]) : `${sum.battles} fights today.`);
-  if (sum.harvest) out.push(`Brought in ${sum.harvest} food from the fields.`);
+  if (sum.harvest) out.push(`Brought in ${sum.harvest} days of food from the fields.`);
   const built = [...new Set(entries.map((e) => /^(.+?) finished at /.exec(e.text)).filter(Boolean).map((m) => m[1]))].filter(isBuilding).slice(0, 2);
   if (sum.builds && built.length) out.push(`The ${built.join(" and the ").toLowerCase()} ${sum.builds === 1 ? "is" : "are"} done.`);
   if (sum.trades) out.push(sum.trades === 1 ? "Did some trading." : `${sum.trades} trades.`);

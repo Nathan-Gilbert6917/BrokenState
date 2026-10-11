@@ -6,7 +6,7 @@
 // critical ones first. The list scrolls; it stays open while the mouse is over it and closes on leaving, Esc or a
 // click elsewhere. main.js writes the button, the head and the list as slots of their own (setHTML compares the
 // strings), so the panel updates live without being rebuilt around the mouse, the focus or the scroll position.
-import { SUPPLIES, STOCK_KEYS } from "../sim/data.js";
+import { SUPPLIES, STOCK_KEYS, supWeight } from "../sim/data.js";
 import { foodOutlook, waterOutlook } from "../sim/economy.js";
 import { atBase } from "../sim/world.js";
 import { RAW } from "../sim/water.js";
@@ -16,6 +16,8 @@ import { foodLine, waterLine, woodLine } from "./farming.js";
 import { illnessSummary } from "./health.js";
 import { stockChipTrend } from "./ledger.js";
 import { roadNeeds } from "./hardcore.js";
+import { foodIn } from "../sim/foods.js"; // days of food, every kind
+import { foodTipText } from "./food.js"; // the Food row's tooltip
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -23,7 +25,7 @@ const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const n1 = (v) => (Math.round((v || 0) * 10) / 10).toString();
 const dd = (d) => (!isFinite(d) ? "∞" : d >= 99 ? "99+d" : d < 1 ? "<1d" : `${Math.floor(d)}d`);
 
-export const NEEDS_ICON = { food: "🥫", preserved: "🫙", water: "💧", fuel: "⛽", wood: "🪵", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", buildmat: "🧱" };
+export const NEEDS_ICON = { food: "🥫", water: "💧", fuel: "⛽", wood: "🪵", meds: "✚", ammo: "⁍", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", buildmat: "🧱" };
 // Urgency: 2 critical (red), 1 low (amber), 0 fine (green), null no outlook (a count only, grey).
 export const LEVEL_CLS = { 2: "nb-crit", 1: "nb-low", 0: "nb-ok" };
 // The thresholds (days left, rounds a head): food as the Bases tab colours it (farming.js foodLine), water as the
@@ -35,19 +37,17 @@ export const NEEDS_AT = { foodCrit: 7, foodLow: 20, waterCrit: 3, waterLow: 10, 
 export function baseNeeds(state, h) {
   const heads = atBase(state, h.id).length;
   const rows = [];
-  for (const k of STOCK_KEYS) {
+  // Food (sim/foods.js): one row, the days of food of every kind (no generic food, no preserved stock of its own).
+  for (const k of ["food", ...STOCK_KEYS]) {
     if (k === "jars" || k === RAW || k === "arrows") continue;
     const tr = stockChipTrend(state, h, k);
-    const r = { k, name: k === "preserved" ? "Preserved" : k === "water" ? "Water" : SUPPLIES[k].name, amt: n0(h.stock[k]), extra: "", note: "", level: null, tip: "", tr };
-    let base = `${SUPPLIES[k].name} at ${h.name}. Weight ${SUPPLIES[k].weight} each; what it fetches depends on who you trade with.`;
+    const r = { k, name: k === "food" ? "Food (days)" : k === "water" ? "Water" : SUPPLIES[k].name, amt: k === "food" ? n0(foodIn(h.stock)) : n0(h.stock[k]), extra: "", note: "", level: null, tip: "", tr };
+    let base = k === "food" ? "" : `${SUPPLIES[k].name} at ${h.name}. Weight ${supWeight(k)} each; what it fetches depends on who you trade with.`;
     if (k === "food") {
       const o = foodOutlook(state, h), ln = foodLine(state, h);
       r.level = o.daysLeft < NEEDS_AT.foodCrit ? 2 : o.daysLeft < NEEDS_AT.foodLow || o.store.outside >= 1 ? 1 : 0;
       r.note = dd(o.daysLeft);
-      r.amt = n0(h.stock.food);
-      base += ` ${ln.tip}`;
-    } else if (k === "preserved") {
-      base += ` Jarred, dried and canned food and dry grain: barely spoils, needs no cellar room, eaten once the fresh food is gone (Food's days left count it). Empty jars: ${n0(h.stock.jars)}.`;
+      base = `${foodTipText(state, h, ln)} Empty jars: ${n0(h.stock.jars)}.`;
     } else if (k === "water") {
       const o = waterOutlook(state, h), ln = waterLine(state, h), safe = baseWater(state, h).safe;
       const raw = Math.floor(Math.max(0, h.stock[RAW] || 0));

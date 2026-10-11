@@ -33,7 +33,7 @@ export function childAgeText(state, c) {
 function childTip(state, c) {
   const st = stageOf(c);
   const lines = [`${c.name}: ${childAgeText(state, c)}.`, STAGES[st].desc, `Eats ${FAMILY.food[st]} of a ration a day.`];
-  if (c.chores) lines.push(`Chores so far: ${c.chores} food from the fields and the kitchen.`);
+  if (c.chores) lines.push(`Chores so far: ${c.chores} days of food from the fields and the kitchen.`);
   if (c.hungry) lines.push(`Hungry for ${c.hungry} day${c.hungry === 1 ? "" : "s"}: not growing while there is nothing to eat.`);
   const seen = Object.entries(c.seen || {}).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => SKILL_NAMES[k] || k);
   if (seen.length) lines.push(`Picking up ${seen.join(" and ")} from watching the work here.`);

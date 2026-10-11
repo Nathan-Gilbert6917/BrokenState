@@ -47,8 +47,9 @@
 // commune, 6% for others, at most one every 6 days per group, never while one of their caravans is out. Mostly they
 // bring their side; 30% of the time (always when they cannot send a caravan) they ask you to bring yours to them
 // and add the delivery fee to what they pay (radiotrade.js: agreeing books a deal your caravan fetches).
+import { FOODS, bestFoodKey, qtyOf, unitsOf, foodIn } from "./foods.js"; // food by type (foods.js)
 import { RADIO_RANGE, day, log, hub, baseById, addCard, atBase, skill, snapshot } from "./world.js";
-import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew, supValue } from "./data.js";
 import { count } from "./buildings.js";
 import { fieldRelayNodes, groupRelayTiles } from "./fieldworks.js"; // relay masts out on the land
 import { radioBoost } from "./power.js";
@@ -458,7 +459,7 @@ export function radioHelp(state, f) {
     changeGoodwill(state, f, -4, "a favour");
     return note(state, f, `${f.name} send fighters to harry the raiders heading for ${baseById(state, raid.target.baseId)?.name || "your base"}. The raid is weaker (strength about ${Math.round(raid.strength)}).`);
   }
-  if ((h.stock.food || 0) < mouths * 3) {
+  if (foodIn(h.stock) < mouths * 3) {
     const base = tradeBase(state, f);
     const food = Math.min(available(f, "food"), state.rng.int(20, 30));
     if (!base || food < 5) return note(state, f, `${f.name} have no food to spare.`);
@@ -466,7 +467,7 @@ export function radioHelp(state, f) {
     const c = sendCaravan(state, f, base, { goods: { supplies: { food }, gear: [] }, gift: true });
     if (!c) return note(state, f, `${f.name} cannot reach ${base.name}.`);
     changeGoodwill(state, f, -4, "a favour");
-    return note(state, f, `${f.name} send ${food} food as aid (about ${c.eta}h).`);
+    return note(state, f, `${f.name} send ${food} days of food as aid (about ${c.eta}h).`);
   }
   return note(state, f, `${f.name}: "You look fine from here. Call us when you are in real trouble."`);
 }
@@ -646,7 +647,7 @@ function bringCard(state, f, base, b, said) {
   };
 }
 const REF_QTY = { food: 25, water: 25, fuel: 12, meds: 8, ammo: 60, parts: 3, scrap: 20, wood: 600 }; // wood: woodcutting.js (60 kg)
-const refQty = (k) => REF_QTY[SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : k]; // a round key: a lot of rounds, as "ammo" was
+const refQty = (k) => (FOODS[k] ? Math.max(1, Math.round(qtyOf(k, REF_QTY.food))) : REF_QTY[SUPPLIES[k] && SUPPLIES[k].round ? "ammo" : k]); // a food item: 25 days of food of it // a round key: a lot of rounds, as "ammo" was
 
 // ---------- autopilot: radio trade when the hub runs short ----------
 // needs: the governor's needs table (0 plenty … 3 urgent). Picks the most urgent good, a group in reach that has
@@ -659,15 +660,21 @@ export function radioTradeIfShort(state, needs, { base = null, keys = null, cap 
   if (!base && state.radioAutoDay != null && day(state) - state.radioAutoDay < 6) return "";
   const at = base || hub(state);
   if (!at) return "";
-  const short = Object.keys(needs).filter((k) => needs[k] >= 1.8 && (!keys || keys.includes(k))).sort((a, b) => needs[b] - needs[a]);
-  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.4 && hubSpare(state, k, at) >= supplyFew(k, 5)).sort((a, b) => needs[a] - needs[b]);
+  // Food (foods.js): paid with the item the base holds most of; asked for as each group's food that keeps (below).
+  const sellFood = needs.food != null && needs.food <= 0.4 ? bestFoodKey(at.stock) : null;
+  needs = { ...needs };
+  if (sellFood) needs[sellFood] = needs.food;
+  const short = Object.keys(needs).filter((k) => needs[k] >= 1.8 && (!keys || keys.includes(k)) && k !== "preserved" && !FOODS[k]).sort((a, b) => needs[b] - needs[a]);
+  const plenty = Object.keys(needs).filter((k) => k !== "food" && k !== "preserved" && needs[k] <= 0.4 && hubSpare(state, k, at) >= supplyFew(k, 5)).sort((a, b) => needs[a] - needs[b]);
   if (!short.length || !plenty.length) return "";
   const speech = base ? tradeSpeech(atBase(state, base.id)) : radioSpeech(state);
-  for (const want of short) {
+  for (const want0 of short) {
     // Every group and every way to pay, cheapest first (what the payment is worth to the hub per unit got): the
     // group that sells it cheap and wants what you pay with most (their kind and state, trade.js) wins.
     const deals = [];
     for (const f of state.factions) {
+      const want = want0 === "food" ? bestFoodKey(f.stock, true) : want0; // foods.js: their food that keeps, the item they hold most of
+      if (!want) continue;
       if (!f.known || refusal(state, f, true) || caravanEnRoute(state, f) || available(f, want, { kinds: true }) < 3) continue; // part kinds: out of their parts (trade.js KIND_MIX)
       const tb = tradeBase(state, f);
       if (base && tb !== base) continue; // their caravan would go to another base
@@ -677,20 +684,20 @@ export function radioTradeIfShort(state, needs, { base = null, keys = null, cap 
         if (pay === want) continue;
         const budgetUnits = hubSpare(state, pay, at);
         const value = budgetUnits * sellPrice(state, f, pay, speech, budgetUnits);
-        const qty = Math.min((cap && cap[want]) || refQty(want) || 10, maxBuyable(state, f, want, speech, Math.max(0, value - fee), Infinity, true));
+        const qty = Math.min((cap && cap[want0]) ? (FOODS[want] ? Math.ceil(qtyOf(want, cap[want0])) : cap[want0]) : FOODS[want] ? Math.ceil(qtyOf(want, refQty("food") || 20)) : refQty(want) || 10, maxBuyable(state, f, want, speech, Math.max(0, value - fee), Infinity, true));
         if (qty < 2) continue;
         const cost = qty * buyPrice(state, f, want, speech, qty) + fee;
         const payQty = minSellable(state, f, pay, speech, cost, budgetUnits);
         if (!Number.isFinite(payQty)) continue;
-        deals.push({ f, pay, qty, payQty, per: (payQty * SUPPLIES[pay].value * (needs[pay] + 0.2)) / qty });
+        deals.push({ f, pay, qty, payQty, want, per: (payQty * supValue(pay) * (needs[pay] + 0.2)) / (qty * (FOODS[want] ? unitsOf(want, 1) : 1)) });
       }
     }
     deals.sort((a, b) => a.per - b.per || a.f.id - b.f.id);
     for (const d of deals) {
-      const res = radioDeal(state, d.f, { wantKey: want, wantQty: d.qty, payKey: d.pay, payQty: d.payQty });
+      const res = radioDeal(state, d.f, { wantKey: d.want, wantQty: d.qty, payKey: d.pay, payQty: d.payQty });
       if (res.ok) {
         if (!base) state.radioAutoDay = day(state);
-        return `radio deal with ${d.f.name}: ${d.qty} ${keyWord(want)} for ${d.payQty} ${keyWord(d.pay)}`;
+        return `radio deal with ${d.f.name}: ${d.qty} ${keyWord(d.want)} for ${d.payQty} ${keyWord(d.pay)}`;
       }
     }
   }

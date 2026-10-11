@@ -1,3 +1,4 @@
+import { foodIn } from "./foods.js"; // days of food
 // What your people have learned about other groups' bases, written down when they learn it (sim/intelest.js turns it
 // into the estimates the State Map shows when you select a group's base). No imports: the world (world.js), the
 // teams (parties.js), the survey (survey.js), trade visits and radio listening (radiolisten.js) all note here.
@@ -46,7 +47,7 @@ export function baseLook(state, tile, src = "sight", err = null) {
     built: !!state.groupWorks && !f.hcMilitary, // groupworks.js groupsBuild: built up from bare (else the old fixed walls)
     cars: main ? carsOf(f) : 0,
   };
-  if (src === "visit") { const s = f.stock || {}; look.stock = { food: s.food || 0, ammo: s.ammo || 0, meds: s.meds || 0, fuel: s.fuel || 0, scrap: s.scrap || 0 }; }
+  if (src === "visit") { const s = f.stock || {}; look.stock = { food: Math.round(foodIn(s)), ammo: s.ammo || 0, meds: s.meds || 0, fuel: s.fuel || 0, scrap: s.scrap || 0 }; }
   return look;
 }
 // How rough a close look is (a survey, a Look around): optics.js opticsFor's look (binoculars ×1.25, a spotting scope

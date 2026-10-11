@@ -29,8 +29,11 @@
 //   0.25% (summer and autumn; × (1 − skill/20), at least a fifth): dysentery, mild (health.js).
 // Danger: foraging is time on one tile, so it builds field Heat like any work on the spot (fieldheat.js, ×1) and the
 //   dead and raiders find foragers like they find a camp.
-// Foraged food is plain food (0.5 kg a ration): fresh, so at a base it spoils like other food and the drying racks
-// and the preserving room take it (storage.js).
+// Foraged food is by kind (foods.js, FORAGE_MIX by the season: wild greens, mushrooms and roots in spring, berries in
+// summer, apples, nuts, mushrooms and roots in autumn, roots and rose hips in winter), weighing what it weighs (greens
+// and berries are heavy for their food: 3–7 kg a day of food, nuts light): fresh, so it spoils in days (nuts keep for
+// months), at a base the Kitchen makes meals of it and the drying racks and the preserving room take it (storage.js).
+// Gathered on infected ground it is an egg lot (worm.js). A wild hive's honey is honey (it never spoils).
 import { log, skill, atBase } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, planPath, partySpeed } from "./parties.js";
 import { hasPerk, gainXp, USE } from "./skills.js";
@@ -42,7 +45,8 @@ import { econStats, farmFoodPerDay } from "./farming.js";
 import { foodUse } from "./upkeep.js"; // landFoodGap: everyone fed here
 import { edibleFood } from "./storage.js";
 import { huntInfo, huntProblem, fishProblem, fishKit, expectFish, fishSpot, partyHuntMix } from "./hunting.js";
-import { addWormCrop, addWormForage } from "./worm.js"; // the worm: forage from infected ground carries its eggs
+import { cropEggs } from "./worm.js"; // the worm: forage from infected ground carries its eggs
+import { FOODS, addFood, typedFood, unitsOf, qtyOf, foodIn, foodText } from "./foods.js"; // forage by kind
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, walkMult, tileFactor } from "./tripland.js"; // the Forage job in trips: the land and its walking (jobtrips.js)
@@ -64,6 +68,29 @@ export const FORAGE = {
   base: { radius: 2, hours: 6 },
   refill: 20,                // landFoodGap: the stores are refilled to the goal over this many days
 };
+// What a day's gathering is by the season: shares of the calories (foods.js items).
+export const FORAGE_MIX = {
+  spring: { f_wildgreens: 45, f_mushrooms: 20, f_roots: 25, f_berries: 10 },
+  summer: { f_berries: 55, f_wildgreens: 20, f_roots: 15, f_mushrooms: 10 },
+  autumn: { f_apples: 25, f_nuts: 30, f_mushrooms: 15, f_roots: 20, f_berries: 10 },
+  winter: { f_roots: 70, f_berries: 20, f_nuts: 10 },
+};
+const mixOf = (state, hour) => FORAGE_MIX[seasonKey(state, hour)] || FORAGE_MIX.summer;
+// Kg a day of food (2000 kcal) of the season's forage weighs (what a team can carry home).
+export function forageKg(state, hour = state.hour) {
+  const m = mixOf(state, hour);
+  const w = Object.values(m).reduce((a, v) => a + v, 0);
+  return Object.entries(m).reduce((a, [k, v]) => a + (v / w) * (FOODS[k].kg / unitsOf(k, 1)), 0);
+}
+// `rations` days of the season's forage as items (every kind of the mix in its share: no dice).
+export const forageItems = (state, rations, hour = state.hour) => typedFood(state, mixOf(state, hour), rations, { whole: false, kinds: 99 });
+// Forage gathered on `tile` into a holder (a team's cargo, a base): egg lots on infected ground. Returns the items.
+export function addForage(state, h, rations, tile, hour = state.hour) {
+  const items = forageItems(state, rations, hour);
+  const egg = tile != null && cropEggs(state, tile);
+  for (const [k, q] of Object.entries(items)) addFood(h, k, q, { state, egg });
+  return items;
+}
 export const FORAGE_TERRAIN = { forest: 1, plains: 0.8, hills: 0.6, mountain: 0.35, suburb: 0.3, city: 0.08, water: 0 };
 // What foraging turns up by season (the summary's words; the yields are all just food).
 export const FORAGE_FINDS = {
@@ -151,7 +178,7 @@ export function expectForage(state, members, tile, hours, startHour = state.hour
     rations += r;
     level = Math.max(0, level - r * per);
   }
-  const kept = Math.min(rations, Math.max(0, room) / SUPPLIES.food.weight);
+  const kept = Math.min(rations, Math.max(0, room) / forageKg(state, startHour));
   return { rations: r1(kept), all: r1(rations), levelAfter: level, perHour: hours ? kept / hours : 0 };
 }
 // The tile panel's and team panel's line: what the land holds and what foraging would bring.
@@ -183,11 +210,10 @@ function gatherHour(state, p, members, got, share = 1) {
   if (!(rate > 0)) return 0;
   // A good hour or a poor one: 40% to 160% of the expected.
   const amount = Math.round(rate * (0.4 + 1.2 * state.rng.next()) * 100) / 100;
-  const fit = Math.max(0, cargoRoom(state, p) / SUPPLIES.food.weight);
+  const fit = Math.max(0, cargoRoom(state, p) / forageKg(state));
   const kept = Math.max(0, Math.min(amount, fit));
   p.cargo = p.cargo || { supplies: {}, gear: [] };
-  if (kept > 0) p.cargo.supplies.food = (p.cargo.supplies.food || 0) + kept;
-  addWormForage(state, p, tile, kept); // worm.js: gathered on land at CROP_MIN+ infection (a camp fire boils it)
+  if (kept > 0) addForage(state, p.cargo, kept, tile); // foods.js: by the season; worm.js: an egg lot on land at CROP_MIN+ infection (a camp fire boils it)
   got.rations += kept;
   got.left += amount - kept;
   takeForage(state, tile, amount);
@@ -203,7 +229,7 @@ function gatherHour(state, p, members, got, share = 1) {
       got.herbs = (got.herbs || 0) + 1;
     }
     if ((key === "summer" || key === "autumn") && (terr === "forest" || terr === "plains") && state.rng.chance(Math.min(0.5, FORAGE.honey * people))) {
-      p.cargo.supplies.preserved = (p.cargo.supplies.preserved || 0) + FORAGE.honeyFood;
+      addFood(p.cargo, "f_honey", qtyOf("f_honey", FORAGE.honeyFood), { state });
       got.honey = (got.honey || 0) + 1;
     }
     if (key === "summer" || key === "autumn") {
@@ -232,13 +258,13 @@ export function campForageHour(state, p) {
   if (!daylight(state.hour) || !p.task) return 0;
   // Only while the team is short of food: a well-fed camp rests (and carries home what its plan expected).
   const all = partyMembers(state, p);
-  if (!all.length || (carried(p, "food") + carried(p, "preserved")) / all.length >= FORAGE.camp.below) return 0;
+  if (!all.length || carried(p, "food") / all.length >= FORAGE.camp.below) return 0;
   const members = all.filter((s) => s.health >= FORAGE.camp.health && !s.woundInfected && workFactor(s) >= 0.35);
   if (!members.length || forageAbundance(state, partyTile(p)) < 0.02) return 0;
   const got = p.task.forage || (p.task.forage = { rations: 0, left: 0 });
   return gatherHour(state, p, members, got, FORAGE.camp.share);
 }
-const findsText = (got) => [got.herbs ? `${got.herbs === 1 ? "a handful" : `${got.herbs} handfuls`} of medicinal herbs (${got.herbs} meds)` : "", got.honey ? `${got.honey === 1 ? "a wild hive's honey" : `${got.honey} wild hives' honey`} (${got.honey * FORAGE.honeyFood} preserved food)` : ""].filter(Boolean).join(" and ");
+const findsText = (got) => [got.herbs ? `${got.herbs === 1 ? "a handful" : `${got.herbs} handfuls`} of medicinal herbs (${got.herbs} meds)` : "", got.honey ? `${got.honey === 1 ? "a wild hive's honey" : `${got.honey} wild hives' honey`} (${got.honey * FORAGE.honeyFood} days of food in honey)` : ""].filter(Boolean).join(" and ");
 const sickText = (state, got) => (got.sick && got.sick.length ? ` ${got.sick.map((id) => state.survivors.find((s) => s.id === id)).filter(Boolean).map(first).join(" and ")} ate a bad mushroom and fell ill.` : "");
 export function forageWhat(state, hour = state.hour) {
   const list = FORAGE_FINDS[seasonKey(state, hour)] || FORAGE_FINDS.summer;
@@ -253,9 +279,9 @@ export function forageSummary(state, p, t) {
   const word = forageWord(forageAbundance(state, tile) * forageLevel(state, tile) * Math.min(1, seasonForage(state)));
   p.lastHaul = { kind: "forage", rations: got.rations, hour: state.hour };
   const stop = got.stopped ? ` Stopped: ${got.stopped}` : "";
-  if (got.rations >= 1) log(state, `${teamName(state, p)} foraged near ${tileLabel(state, tile)}: ${Math.floor(got.rations)} food (${forageWhat(state)}).`, "good");
+  if (got.rations >= 1) log(state, `${teamName(state, p)} foraged near ${tileLabel(state, tile)}: ${Math.floor(got.rations)} days of food (${forageWhat(state)}).`, "good");
   return got.rations >= 0.5
-    ? `Foraged ${t.done}h: ${r1(got.rations)} food (${forageWhat(state)})${finds ? `, and ${finds}` : ""}.${left}${sickText(state, got)} Left to gather here: ${word}.${stop}`
+    ? `Foraged ${t.done}h: ${r1(got.rations)} days of food (${forageWhat(state)})${finds ? `, and ${finds}` : ""}.${left}${sickText(state, got)} Left to gather here: ${word}.${stop}`
     : `Foraged ${t.done}h and found next to nothing${seasonKey(state) === "winter" ? " (winter: little grows)" : ""}.${finds ? ` Still: ${finds}.` : ""}${sickText(state, got)} Left to gather here: ${word}.${stop}`;
 }
 // What a camp gathered (orders.js finishTask, the break-camp line).
@@ -263,7 +289,7 @@ export function campForageNote(state, p, t) {
   const got = t && t.forage;
   if (!got || !(got.rations >= 0.5 || got.herbs || got.honey || (got.sick && got.sick.length))) return "";
   const finds = findsText(got);
-  return ` Foraged around the camp: ${r1(got.rations)} food${finds ? `, ${finds}` : ""}.${sickText(state, got)}`;
+  return ` Foraged around the camp: ${r1(got.rations)} days of food${finds ? `, ${finds}` : ""}.${sickText(state, got)}`;
 }
 
 // ---------- the Forage job at a base ----------
@@ -354,7 +380,7 @@ export function foragingDaily(state, base) {
   const who = day ? day.who.map((id) => people.find((x) => x.id === id) || null).filter(Boolean) : people;
   if (got.rations >= 1 || got.herbs || got.honey) {
     const finds = findsText(got);
-    log(state, `${(who.length ? who : people).map(first).join(" and ")} foraged around ${base.name}: ${r1(got.rations)} food (${forageWhat(state, state.hour - 12)})${finds ? `, and ${finds}` : ""}.`, "good");
+    log(state, `${(who.length ? who : people).map(first).join(" and ")} foraged around ${base.name}: ${r1(got.rations)} days of food (${forageWhat(state, state.hour - 12)})${finds ? `, and ${finds}` : ""}.`, "good");
   }
   return got;
 }
@@ -410,7 +436,7 @@ export function landFoodHint(state, p, opts = {}) {
   const b = list[0];
   const kinds = [...new Set(list.filter((x) => x.rations >= 1).slice(0, 4).map((x) => KIND_VERB[x.kind]))];
   const where = b.dist === 0 ? `right here (${TERRAIN_WORD[b.terrain] || b.terrain})` : `${TERRAIN_WORD[b.terrain] || b.terrain} to the ${b.dir}`;
-  return `${kinds.join(" or ")} nearby: ${where}, about ${Math.round(b.rations)} food in ${b.hours}h of ${b.kind === "forage" ? "foraging" : b.kind === "hunt" ? "hunting" : "fishing"}`;
+  return `${kinds.join(" or ")} nearby: ${where}, about ${Math.round(b.rations)} days of food in ${b.hours}h of ${b.kind === "forage" ? "foraging" : b.kind === "hunt" ? "hunting" : "fishing"}`;
 }
 // A base short of food: the land around it (foraging and game), for the alert.
 export function baseFoodHint(state, base) {

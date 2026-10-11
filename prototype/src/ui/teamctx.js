@@ -12,6 +12,7 @@
 // teamTileMenu(state, ui, p, tile, { append }) → { p, tile, append, forced, head, items }: the model (tools/teamctxtest.js)
 // teamCtxHtml(state, ui, menu)                 → the menu's team section
 // runTeamAction(state, ui, d)                  → does it (d: { id, tile, key, mode, ok }); returns the message, null when it asked first
+import { foodIn } from "../sim/foods.js"; // days of food (every kind)
 import { baseById, hub } from "../sim/world.js";
 import { MISSIONS, partyTile, partyMembers, tileLabel, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText, onTheMove, glideAt } from "../sim/parties.js";
 import { queueOrder, startOrder, queueEstimate, queueEndTile, orderStatus, orderLabel, queueText, cancelMove, besideWater, repairInfo, FETCH_WATER_HOURS, SURVEY_HOURS } from "../sim/orders.js";
@@ -252,10 +253,10 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
 function resupplyWants(state, p, base) {
   const n = partyMembers(state, p).length;
   const need = (k) => Math.max(0, Math.ceil(n * RESUPPLY_DAYS - carried(p, k)));
-  const food = Math.min(need("food"), Math.floor(base.stock.food || 0)), water = Math.min(need("water"), Math.floor(base.stock.water || 0));
+  const food = Math.min(need("food"), Math.floor(foodIn(base.stock))), water = Math.min(need("water"), Math.floor(base.stock.water || 0));
   if (!need("food") && !need("water")) return { food, water, why: `The team already carries ${RESUPPLY_DAYS} days of food and water.`, text: "" };
   if (!food && !water) return { food, water, why: `${base.name} has no food or water to spare.`, text: "" };
-  return { food, water, why: "", text: [food ? `${food} food` : "", water ? `${water} water` : ""].filter(Boolean).join(", ") };
+  return { food, water, why: "", text: [food ? `${food} days of food` : "", water ? `${water} water` : ""].filter(Boolean).join(", ") };
 }
 
 // ---------- the menu ----------

@@ -18,6 +18,7 @@
 //   sold to them goes into it at about half the price (trade.js).
 import { totalRounds, spendAmmo, isRoundKey } from "./rounds.js"; // "ammo" as every round (rounds.js imports only data)
 import { SUPPLIES } from "./data.js";
+import { FOODS, foodIn, foodSplit, takeFood } from "./foods.js"; // a food item's word after a count ("cans of beans")
 export const RAW = "rawwater";
 export const WATER_KEYS = ["water", RAW];
 const pos = (v) => Math.max(0, Number(v) || 0);
@@ -81,11 +82,15 @@ export function waterText(pure, raw, { word = "water" } = {}) {
 }
 // A supply in a stock for a recipe (a station, a craft, a field craft), water counting both kinds: the amount there is.
 // "ammo": every round there, any calibre (rounds.js totalRounds; a recipe or a cost in generic ammo).
-export const stockHas = (o, k) => (k === "water" ? waterIn(o) : k === "ammo" ? totalRounds(o) : (o && o[k]) || 0);
+// "food": days of food of any kind (foods.js foodIn), "fresh": days of the food that needs a cold room (what a
+// preserving kitchen jars and a still ferments).
+export const stockHas = (o, k) => (k === "water" ? waterIn(o) : k === "ammo" ? totalRounds(o) : k === "food" ? foodIn(o) : k === "fresh" ? foodSplit(o).fresh : (o && o[k]) || 0);
+const isFresh = (k, f) => !f.stable;
 // Uses up `qty` of a supply from a stock for a recipe; water: un-purified first (it is boiled in the work anyway).
 export function useStock(o, k, qty) {
   if (k === "water") return drawWater(o, qty, { rawFirst: true }).got;
   if (k === "ammo") return spendAmmo(o, qty).n; // rounds.js: the cheapest rounds first
+  if (k === "food" || k === "fresh") return takeFood(o, qty, k === "fresh" ? { only: isFresh } : {}).units; // the soonest to spoil first (foods.js)
   o[k] = (o[k] || 0) - qty;
   return qty;
 }
@@ -93,9 +98,10 @@ export function useStock(o, k, qty) {
 export function takeStock(o, k, qty) {
   if (k === "water") return drawWater(o, qty).got;
   if (k === "ammo") return spendAmmo(o, qty).n; // rounds.js: the cheapest rounds first
+  if (k === "food" || k === "fresh") return takeFood(o, pos(qty), k === "fresh" ? { only: isFresh } : {}).units; // days of food (foods.js)
   const q = Math.min(pos(o[k]), pos(qty));
   o[k] = Math.max(0, (o[k] || 0) - qty);
   return q;
 }
 // A supply key as a word in a text ("12 un-purified water", "12 scrap").
-export const keyWord = (k) => (k === RAW ? "un-purified water" : isRoundKey(k) ? SUPPLIES[k].name : k === "ammo" ? "rounds" : k); // rounds: "9mm FMJ" (rounds.js); a generic count: "rounds" (any calibre)
+export const keyWord = (k) => (k === RAW ? "un-purified water" : FOODS[k] ? FOODS[k].word : k === "food" ? "days of food" : k === "fresh" ? "days of fresh food" : isRoundKey(k) ? SUPPLIES[k].name : k === "ammo" ? "rounds" : k); // rounds: "9mm FMJ" (rounds.js); a generic count: "rounds" (any calibre)

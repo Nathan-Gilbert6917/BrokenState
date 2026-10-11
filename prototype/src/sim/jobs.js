@@ -37,7 +37,8 @@
 // when the game has blueprint items; 40 ammo if they have none you lack), 1–2 recruits (a
 // recruit card), intel (their region and the hives and hordes near them), or, for a big job from a group with two
 // or more bases, one of their outposts handed over to you with two of their people as its staff.
-import { GEAR, SUPPLIES, SUPPLY_KEYS, LOCATIONS } from "./data.js";
+import { FOODS, unitsOf, DAY_VALUE, takeFood, addFoodsTo, typedFood, GROUP_MIX, moveFoodUnits, foodIn } from "./foods.js"; // food by type (foods.js)
+import { GEAR, SUPPLIES, SUPPLY_KEYS, LOCATIONS, supValue } from "./data.js";
 import { day, log, hub, factionById, addCard, atBase, snapshot, skill, combatPower, makeSurvivor, newId, localId } from "./world.js";
 import { siteKnown } from "./discovery.js";
 import { attitude, changeGoodwill, isAggressiveType, recomputeOwnership } from "./factions.js";
@@ -123,16 +124,16 @@ const DELIVER_CAP = { meds: [6, 20], food: [30, 60], ammo: [60, 150], fuel: [10,
 function deliverJob(state, f) {
   const m = marketOf(state, f);
   const rng = diploRng(state);
-  const wants = m.wants.filter((w) => DELIVER_CAP[w.key]);
+  const wants = m.wants.map((w) => (FOODS[w.key] ? { ...w, key: "food", qty: Math.round(w.qty * unitsOf(w.key, 1)) } : w)).filter((w) => DELIVER_CAP[w.key]); // foods.js: a food they want as days of food (any kind)
   if (f.atWar && !wants.some((w) => w.key === "ammo")) wants.push({ key: "ammo", need: 1.5, qty: 100 });
   if (!wants.length) return null;
   const w = f.shock && wants.some((x) => x.key === f.shock.key) ? wants.find((x) => x.key === f.shock.key) : wants[0];
   const [lo, hi] = DELIVER_CAP[w.key];
   const qty = clamp(Math.round(Math.min(w.qty, rng.int(lo, hi))), lo, hi);
-  const value = qty * SUPPLIES[w.key].value;
+  const value = qty * (w.key === "food" ? DAY_VALUE : supValue(w.key));
   const why = f.shock && f.shock.key === w.key ? (w.key === "meds" ? "Sickness is going round" : w.key === "food" ? "They lost a harvest" : "They lost a store") : f.atWar && w.key === "ammo" ? "They are at war" : "They are running short";
   return { type: "deliver", target: f.bases[0], size: value < 60 ? 1 : value < 150 ? 2 : 3, data: { key: w.key, qty, left: qty, value },
-    desc: `${why}: they need ${w.key === "ammo" ? `${qty} rounds (any calibre: their stores keep one count; the ones your guns need least go)` : `${qty} ${w.key}`}. Hand it over at their base with a team, or have it ready at your trade base and ask them to fetch it.` };
+    desc: `${why}: they need ${w.key === "ammo" ? `${qty} rounds (any calibre: their stores keep one count; the ones your guns need least go)` : w.key === "food" ? `${qty} days of food (any kind)` : `${qty} ${w.key}`}. Hand it over at their base with a team, or have it ready at your trade base and ask them to fetch it.` };
 }
 function rescueJob(state, f) {
   const rng = diploRng(state);
@@ -215,7 +216,7 @@ export function makeReward(state, f, type, size) {
       const m = marketOf(state, f);
       const list = m.surplus.length ? m.surplus : [{ key: "ammo" }];
       const key = rng.pick(list).key;
-      r.supplies[key] = Math.max(1, Math.round((40 * size) / SUPPLIES[key].value));
+      r.supplies[key] = Math.max(1, Math.round((40 * size) / supValue(key)));
     } else if (k === "gear") {
       const pool = rareGear(f);
       if (pool.length) r.gear.push(swapGun(`trader:${f.type}`, rng.pick(pool), rng)); // gundist.js: which gun (a hash of the draw)
@@ -367,6 +368,11 @@ export function completeJob(state, job, how = "") {
     changeGoodwill(state, f, r.goodwill, "a job well done");
     f.lastDiplomacy = day(state);
     for (const [k, q] of Object.entries(r.supplies)) {
+      if (k === "food" || k === "preserved") { // days of food (foods.js): out of their stores as the items they hold, into the hub's with lots
+        const m = moveFoodUnits(f.stock, h, Math.min(q, foodIn(f.stock)), { state, only: k === "preserved" ? (kk, ff) => !!ff.stable : null });
+        if (m.units > 1e-6) got.push(`${Math.round(m.units)} days of food`);
+        continue;
+      }
       const fk = SUPPLIES[k] && SUPPLIES[k].round && !(f.stock[k] >= q) ? "ammo" : k; // a round key: out of their one ammo count (ammo.js)
       const n = Math.max(0, Math.min(q, Math.floor(f.stock[fk] || 0)));
       if (!n) continue;
@@ -411,7 +417,7 @@ export function handOver(state, f, tile) {
   f.bases = f.bases.filter((x) => x !== tile);
   const base = {
     id: newId(), tile, type: "outpost", name: outpostName(state, tile),
-    stock: { food: 20, water: 15, fuel: 0, meds: 2, ammo: 20, arrows: 0, parts: 0, scrap: 10, preserved: 0, jars: 0, buildmat: 0 }, // arrows: every base keeps the count (a base without it read undefined)
+    stock: { water: 15, fuel: 0, meds: 2, ammo: 20, arrows: 0, parts: 0, scrap: 10, jars: 0, buildmat: 0, ...typedFood(state, GROUP_MIX[f.type] || "stores", 20) }, // foods.js: 20 days of their kind of food // arrows: every base keeps the count (a base without it read undefined)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   };
   state.bases.push(base);
@@ -523,8 +529,8 @@ function checkJob(state, j, teams) {
         if (!f.bases.includes(partyTile(p)) || d.left <= 0) continue;
         const n = Math.min(d.left, Math.floor(carried(p, d.key)));
         if (n <= 0) continue;
-        takeSupply(p, d.key, n);
-        f.stock[d.key] = (f.stock[d.key] || 0) + n;
+        if (d.key === "food") addFoodsTo(f.stock, takeFood([p, p.cargo].filter(Boolean), n, { eggs: false, state }).items); // foods.js: days of food as the items the team carries
+        else { takeSupply(p, d.key, n); f.stock[d.key] = (f.stock[d.key] || 0) + n; }
         d.left -= n;
         log(state, `Your team handed ${n} ${d.key === "ammo" ? "rounds" : d.key} to ${f.name}${d.left > 0 ? ` (${d.left} still to bring)` : ""}.`, "info");
       }
@@ -578,8 +584,9 @@ function escortHour(state, j, f, teams) {
     if (!near(state, teams, f.bases[0], 1).length) return;
     const p = spawnAiParty(state, f, "caravan", f.bases[0], to.bases[0], { strength: 3 * guardPower(f) });
     if (!p) return voidJob(state, j, "there is no road to them");
-    const goods = { food: Math.min(Math.floor(available(f, "food") * 0.3), 30), scrap: Math.min(Math.floor(available(f, "scrap") * 0.3), 20) };
+    const goods = { scrap: Math.min(Math.floor(available(f, "scrap") * 0.3), 20) };
     p.goods = { supplies: {}, gear: [] };
+    addFoodsTo(p.goods.supplies, takeFood(f.stock, Math.min(Math.floor(available(f, "food") * 0.3), 30), { state }).items); // foods.js: days of food as the items they hold
     for (const [k, q] of Object.entries(goods)) if (q > 0) { f.stock[k] -= q; p.goods.supplies[k] = q; }
     Object.assign(p, { escortJob: j.id, home: f.bases[0], leaving: false, capacity: 120, toFaction: to.id });
     escortParty(state, f, p, p.goods); // caravans.js: their own guards too (escorts.js), besides your team
@@ -647,6 +654,7 @@ export function pickupArrived(state, p, base) {
   let took = `${n} ${j.data.key}`;
   if (n > 0) {
     if (j.data.key === "ammo") { const g = spendAmmo(base.stock, n, baseCals(state, base)).keys; took = suppliesText(g); for (const [k, q] of Object.entries(g)) p.goods.supplies[k] = (p.goods.supplies[k] || 0) + q; } // rounds by calibre: the ones the guns there need least
+    else if (j.data.key === "food") addFoodsTo(p.goods.supplies, takeFood(base, n, { eggs: false, state }).items); // foods.js: days of food as the items they take
     else { useSupply(base.stock, j.data.key, n); p.goods.supplies[j.data.key] = (p.goods.supplies[j.data.key] || 0) + n; }
     j.data.left -= n;
   }
@@ -677,8 +685,9 @@ function rescueCard(state, j, p, f, holder) {
   const speech = Math.max(0, ...members.map((s) => skill(s, "speech")));
   const talk = clamp(0.25 + speech * 0.04 + holder.goodwill / 200, 0.05, 0.85);
   const price = 40 * j.data.count;
-  const payKey = ["ammo", "food", "meds"].find((k) => carried(p, k) * SUPPLIES[k].value >= price);
-  const payQty = payKey ? Math.ceil(price / SUPPLIES[payKey].value) : 0;
+  const unitValue = (k) => (k === "food" ? DAY_VALUE : supValue(k)); // food: days of it (foods.js)
+  const payKey = ["ammo", "food", "meds"].find((k) => carried(p, k) * unitValue(k) >= price);
+  const payQty = payKey ? Math.ceil(price / unitValue(payKey)) : 0;
   const hostile = attitude(holder) === "Hostile";
   const gone = (st) => j.status !== "active" || !st.parties.includes(p);
   const free = (st, how) => { f.pop += j.data.count; j.data.freed = true; completeJob(st, j, how); awaitOrders(st, p, `${plural(j.data.count, "of their people")} freed for ${f.name}.`); return `${plural(j.data.count, "of their people")} are free and on their way home to ${f.name}.`; };
@@ -705,8 +714,8 @@ function rescueCard(state, j, p, f, holder) {
       { label: payKey ? `Pay ${payQty} ${payKey === "ammo" ? "rounds (the calibres your guns need least)" : payKey}` : "Pay (not enough carried)", hint: `40 a head, from what the team carries`, disabled: !payKey,
         ai: () => (payKey ? 2 : -9), resolve: (st) => {
           if (gone(st) || !payKey || carried(p, payKey) < payQty) return "The team cannot pay that now.";
-          takeSupply(p, payKey, payQty);
-          holder.stock[payKey] = (holder.stock[payKey] || 0) + payQty;
+          if (payKey === "food") addFoodsTo(holder.stock, takeFood([p, p.cargo].filter(Boolean), payQty, { eggs: false, state: st }).items); // foods.js: days of food as the items carried
+          else { takeSupply(p, payKey, payQty); holder.stock[payKey] = (holder.stock[payKey] || 0) + payQty; }
           return free(st, "ransom paid");
         } },
       { label: "Leave it for now", ai: () => 0, resolve: (st) => { awaitOrders(st, p, "The team pulled back."); return "The team pulls back."; } },

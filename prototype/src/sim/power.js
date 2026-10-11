@@ -1,5 +1,5 @@
 // Power (suggestions-2 #5): generators burn fuel to power a handful of buildings, and an ethanol still turns surplus
-// or spoiled food into that fuel.
+// fresh food into that fuel (spoiled food is thrown out, user pick 2026-10-10).
 //
 //   Generator (machines-2 2026-10-10, the user's pick: "generators do not need operators just people to repair and fuel
 //     it"; it was a workshop station with an operator): no operator, no Operate role. It gives POWER.genOut (6) power
@@ -21,10 +21,10 @@
 //     Repairs (breakdowns.js): it wears by the days it ran (FIXTURES.generator, b.lastRan), breaks, and a breakdown
 //     needs a Mechanics 3 hand and machine parts, as before. Loud: +POWER.genHeat (4) Heat at the base while it runs
 //     (hordes.js baseHeat).
-//   Ethanol still (station "still", buildings.js RECIPES.still): an operator turns 8 food + 2 water into 3 fuel a
-//     day; up to STILL.mash (4) of the food can be yesterday's spoiled food (storage.js keeps it as mash).
+//   Ethanol still (station "still", buildings.js RECIPES.still): an operator turns 8 days of fresh food (foods.js: the
+//     soonest to spoil first) + 2 water into 3 fuel a day. Spoiled food is thrown out, not distilled (STILL.mash 0).
 //   Users (POWER_USERS, need in power units, served in this order while the supply lasts):
-//     walk-in freezer 2 (freezer-parts: food in it keeps ~20× longer, storage.js; base.freezerOn below), radio station 1
+//     walk-in freezer 2 (freezer-parts: food in it keeps 20× longer than its shelf life, storage.js; base.freezerOn below), radio station 1
 //     (+2 tiles of coverage, radio.js), floodlights 1 (no fuel burned per attack, defences.js), machine shop 2 (2 parts
 //     a day from 9 scrap instead of 1 from 6), preserving room 1 (half as much again a day), vacuum sealer 1
 //     (hasSealer: the hook for the packaged survival meals of a later cooking wave). The cold store is an ice house
@@ -75,6 +75,7 @@
 import { BUILDINGS, RECIPES, stationOperator, assignStations } from "./buildings.js";
 import { day, log, atBase, hourOfDay, skill } from "./world.js";
 import { orderHold } from "./production.js";
+import { stockHas } from "./water.js"; // a recipe's "fresh" in days of fresh food
 import { workFactor } from "./health.js";
 import { sickRestWhy } from "./sickrest.js"; // the ill rest: they do no chores
 
@@ -95,15 +96,15 @@ export const genName = (b) => genDef(b).name;
 export const genTank = (b) => genDef(b).tank;
 // Fuel a day a generator of tier def burns while running with `load` power drawn from it (see the header).
 export const genBurn = (def, load) => def.idle + (def.full - def.idle) * Math.max(0, Math.min(1, (Number(load) || 0) / def.out));
-export const STILL = { mash: 4 };
+export const STILL = { mash: 0 }; // no spoiled food goes into the still (food-types: food spoils by its lots and is thrown out; kept for old callers)
 // The refuelling chore: from this hour of the day; the share of an hour it takes.
 export const REFUEL = { from: 6, hours: 0.5 };
 export const POWER_USERS = {
-  freezer:      { need: 2, what: "a walk-in freezer: food in it keeps about 20 times longer than in a cellar (300 room)" },
+  freezer:      { need: 2, what: "a walk-in freezer: food in it keeps 20 times longer than its shelf life (×0.05 a day; 300 days of food room)" },
   radio:        { need: 1, what: "+2 tiles of radio coverage" },
   floodlights:  { need: 1, what: "no fuel burned when a horde attacks" },
   machine_shop: { need: 2, what: "power tools: 2 parts a day from 9 scrap (1 from 6 without)" },
-  kitchen:      { need: 1, what: "an electric stove: half as much again a day (14 food → 12 preserved)" },
+  kitchen:      { need: 1, what: "an electric stove: half as much again a day (14 days of fresh food → 12 portions of jarred food)" },
   sealer:       { need: 1, what: "a vacuum sealer: packs cooked food into long-keeping survival meals" },
 };
 // Powered stations: inputs and outputs multiplied (rounded) while they are served.
@@ -130,7 +131,7 @@ function stationWants(state, base, b) {
   if (!stationOperator(state, base, b)) return false;
   if (orderHold(state, base, b)) return false;
   const r = RECIPES[BUILDINGS[b.type].station];
-  return Object.entries(r.in).every(([k, v]) => (base.stock[k] || 0) >= v);
+  return Object.entries(r.in).every(([k, v]) => (k === "fresh" || k === "food" ? stockHas(base.stock, k) : base.stock[k] || 0) >= v); // fresh: days of fresh food, every kind (foods.js)
 }
 
 // ---------- the refuelling chore ----------

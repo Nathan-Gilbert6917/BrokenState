@@ -17,6 +17,7 @@ import { atBase, gearEffect, day } from "./world.js";
 import { isGun } from "./gundist.js";
 import { gunCalsOf } from "./ammo.js";
 import { roundsIn } from "./rounds.js";
+import { foodIn, bestFoodKey } from "./foods.js"; // food by type: days of it, sold as an item
 
 export const GOV_GUNS = {
   off: false, // tests: the governor buys no guns
@@ -101,7 +102,7 @@ export function radioGunDeal(state, base, needs, deps) {
   const T = state.govGuns || {};
   if (T.radioDay != null && day(state) - T.radioDay < GOV_GUNS.RADIO_EVERY) return "";
   if (!gunWant(state, base).n) return "";
-  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.5 && (base.stock[k] || 0) > 0).sort((a, b) => needs[a] - needs[b]);
+  const plenty = Object.keys(needs).filter((k) => needs[k] <= 0.5 && (k === "food" ? foodIn(base.stock) : base.stock[k] || 0) > 0).sort((a, b) => needs[a] - needs[b]); // food: days of it (foods.js)
   if (!plenty.length) return "";
   for (const f of [...state.factions].sort((a, b) => a.id - b.id)) {
     if (!f.alive || !f.known || refusal(state, f, true) || caravanEnRoute(state, f) || pendingDeal(state, f)) continue;
@@ -116,7 +117,7 @@ export function radioGunDeal(state, base, needs, deps) {
       const gun = pickGunToBuy(state, base, ctx.theirGear, (it) => gearBuyPrice(state, f, it, ctx.speech), budget);
       if (gun) {
         state.trade.askGear = [gun];
-        for (const k of plenty) { if (tradeVerdict(state).ok) break; balanceWith(state, k); }
+        for (const k of plenty) { if (tradeVerdict(state).ok) break; balanceWith(state, k === "food" ? bestFoodKey(base.stock) || k : k); } // food sold as the item there is most of
         if (tradeVerdict(state).ok) {
           const cost = gearBuyPrice(state, f, gun, ctx.speech);
           const res = executeTrade(state);

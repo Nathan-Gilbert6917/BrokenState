@@ -34,6 +34,7 @@ import { appetite } from "./traits.js"; // Glutton
 import * as Weather from "./weather.js";
 import { childRations, childrenAt } from "./family.js"; // children (family.js): fed here, eaten in familyDaily
 import { edibleFood } from "./storage.js";
+import { FOODS, foodIn, unitsOf } from "./foods.js"; // food by type: the reserve counts days of food
 import { waterIn } from "./water.js";
 import { kitchenEatMult } from "./kitchen.js"; // hot meals stretch the food
 
@@ -105,20 +106,25 @@ export function payoutFloor(state, base, kind) {
 // What a base holds of a kind for the reserve (food: fresh + preserved; water: purified + un-purified).
 const payoutHave = (base, kind) => (kind === "food" ? edibleFood(base) : kind === "water" || kind === "rawwater" ? waterIn(base.stock) : Math.max(0, base.stock[kind] || 0));
 // What a base can pay out of a kind without going below its floor (Infinity for kinds the reserve does not cover).
-// "preserved" counts as food and "rawwater" as water.
+// "preserved" counts as food (days of it) and "rawwater" as water; a food item (foods.js) as many of it as the days of
+// food over the floor allow (never more than there is).
 export function payoutSpare(state, base, kind) {
+  if (FOODS[kind]) {
+    const days = payoutSpare(state, base, "food");
+    return base ? Math.max(0, Math.floor(Math.min(base.stock[kind] || 0, days / unitsOf(kind, 1)) + 1e-9)) : Infinity;
+  }
   const k = kind === "preserved" ? "food" : kind === "rawwater" ? "water" : kind;
   if (!base || !PAYOUT_KINDS.includes(k)) return Infinity;
   return Math.max(0, Math.floor(payoutHave(base, k) - payoutFloor(state, base, k)));
 }
-// The goods { key: qty } would take a base's food or water below its floor.
+// The goods { key: qty } would take a base's food or water below its floor (food items count in days of food).
 export const payoutBreaks = (state, base, goods) => {
   const by = { food: 0, water: 0 };
-  for (const [k, q] of Object.entries(goods || {})) { const kk = k === "preserved" ? "food" : k === "rawwater" ? "water" : k; if (kk in by) by[kk] += Math.max(0, q || 0); }
+  for (const [k, q] of Object.entries(goods || {})) { if (FOODS[k]) { by.food += unitsOf(k, Math.max(0, q || 0)); continue; } const kk = k === "preserved" ? "food" : k === "rawwater" ? "water" : k; if (kk in by) by[kk] += Math.max(0, q || 0); }
   return PAYOUT_KINDS.some((k) => by[k] > 0 && by[k] > payoutSpare(state, base, k));
 };
-// An AI group (its coarse stock: a ration of food and water a head a day): what it can pay out of a kind.
-export const groupPayoutSpare = (f, kind) => (PAYOUT_KINDS.includes(kind) ? Math.max(0, Math.floor((f.stock[kind] || 0) - (f.pop || 0) * PAYOUT.days)) : Math.max(0, Math.floor(f.stock[kind] || 0)));
+// An AI group (its coarse stock: a day's food and water a head a day): what it can pay out of a kind (food in days).
+export const groupPayoutSpare = (f, kind) => (PAYOUT_KINDS.includes(kind) ? Math.max(0, Math.floor((kind === "food" ? foodIn(f.stock) : f.stock[kind] || 0) - (f.pop || 0) * PAYOUT.days)) : Math.max(0, Math.floor(f.stock[kind] || 0)));
 
 // ---------- heating ----------
 // The need is counted in fuel (HEAT.fuel a head a day below 0°C); a base burns firewood first (woodcutting.js: a

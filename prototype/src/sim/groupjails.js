@@ -38,8 +38,9 @@
 //   and tile change, so rescue missions follow).
 // - groupJailTier(f, tile, state): the rescue raid's base map (a chain-link cage, barred cells or a jailhouse block:
 //   prisoners.js JAIL block).
+import { DAY_VALUE, takeFood, addFoodsTo, giveFood, foodIn } from "./foods.js"; // food by type (foods.js)
 import { day, log, addCard, factionById, hub, skill, hurt, newId, checkGameOver } from "./world.js";
-import { SUPPLIES } from "./data.js";
+import { SUPPLIES, supValue } from "./data.js";
 import { JAIL_TIERS, PRISON, cellEscape, guardTighten, groupGuardStrength } from "./prisoners.js";
 import { allCaptives, CAPTIVE_TOOL } from "./conflicts.js";
 import { changeRelation, relation, warBetween, atWar, news, knownAs } from "./diplomacy.js";
@@ -150,7 +151,7 @@ export function groupJailGuards(state, f) {
   if (!held) return 0;
   const U = G.GUARDS;
   if (f.hcMilitary) return U.max;
-  const hungry = (f.stock && (f.stock.food || 0) < f.pop * 3) ? U.hungry : 1;
+  const hungry = (f.stock && foodIn(f.stock) < f.pop * 3) ? U.hungry : 1;
   const n = Math.round(f.pop * U.perPop * weightOf(f, "prisoners") * weightOf(f, "patrol") * hungry * (atWar(state, f) ? U.war : 1));
   return clamp(n, 0, Math.min(U.max, held + 1));
 }
@@ -248,13 +249,14 @@ function buyerFor(state, f, fromId, price) {
 // What o can pay `value` with: { key, qty } or null.
 function payWith(o, value) {
   for (const key of ["ammo", "food", "scrap", "meds", "fuel", "parts"]) {
-    const qty = Math.ceil(value / SUPPLIES[key].value);
+    const qty = Math.ceil(value / (key === "food" ? DAY_VALUE : supValue(key))); // food: days of it (foods.js)
     if (available(o, key) >= qty) return { key, qty };
   }
   return null;
 }
 const priceOf = (rec) => G.TRADE.value + G.TRADE.perPower * (rec.power || 3);
 function pay(from, to, terms) {
+  if (terms.key === "food") { addFoodsTo(to.stock, takeFood(from.stock, terms.qty).items); return; } // foods.js: days of food as the items they hold
   from.stock[terms.key] = Math.max(0, (from.stock[terms.key] || 0) - terms.qty);
   to.stock[terms.key] = (to.stock[terms.key] || 0) + terms.qty;
 }
@@ -388,7 +390,7 @@ export function groupJailsDaily(state) {
     const work = groupLabour(state, f);
     f.prisonWork = Math.round(work * 100) / 100;
     const eat = (list.length + yours.length) * jailOf(f).eat;
-    f.stock.food = Math.max(0, (f.stock.food || 0) + work * G.WORK.food - eat);
+    { const net = work * G.WORK.food - eat; if (net > 0) giveFood(state, f, net, "fields"); else if (net < 0) takeFood(f.stock, -net, { state }); } // foods.js: the prisoners' field work, their meals
     f.stock.scrap = (f.stock.scrap || 0) + work * G.WORK.scrap;
     for (const rec of [...list]) {
       if (!list.includes(rec)) continue;
@@ -399,7 +401,7 @@ export function groupJailsDaily(state) {
       if (from && from.alive && !warBetween(state, f, from) && rng.chance(T.ransom)) {
         const terms = payWith(from, priceOf(rec));
         // The value rule (ransom.js groupMemberWorth, as yours): worth the price to them, and not out of their last days of food.
-        if (terms && groupMemberWorth(from, rec.power) >= priceOf(rec) && (terms.key !== "food" || (from.stock.food || 0) - terms.qty >= from.pop * G.RANSOM_KEEP_DAYS)) {
+        if (terms && groupMemberWorth(from, rec.power) >= priceOf(rec) && (terms.key !== "food" || foodIn(from.stock) - terms.qty >= from.pop * G.RANSOM_KEEP_DAYS)) {
           pay(from, f, terms);
           list.splice(list.indexOf(rec), 1);
           from.pop += 1;

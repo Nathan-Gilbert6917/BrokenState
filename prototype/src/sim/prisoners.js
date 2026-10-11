@@ -74,7 +74,8 @@
 //   every prisoner of theirs there and carry off a tenth of the stores.
 // Your own people taken captive by other groups are conflicts.js captives, not these; the groups' jails, labour and
 // prisoner trades are groupjails.js (the same JAIL tiers).
-import { SUPPLIES } from "./data.js";
+import { DAY_VALUE, foodText, foodIn, payFood, takeFood, preservedIn, FOODS, addFood } from "./foods.js"; // food by type (foods.js)
+import { SUPPLIES, supValue } from "./data.js";
 import {
   log, addCard, day, baseById, atBase, factionById, makeSurvivor, skill, snapshot, mergeKnowledge, hurt, newId, survivorById, localId,
 } from "./world.js";
@@ -91,7 +92,7 @@ import { startCombat, registerCombatHandler } from "./combat.js";
 import { raidForce } from "./conflicts.js";
 import { thirstAt } from "./weather.js";
 import { coldFactor, foodUse } from "./upkeep.js";
-import { eatFromStore, foodStore } from "./storage.js";
+import { eatFromStore, foodStore, dryFood, rackableFood } from "./storage.js";
 import { underAttack, isShelter } from "./buildings.js";
 import { ensureConquest, CONQUEST } from "./conquest.js";
 import { baseWoodTiles, seasonWood, takeWood, WOOD } from "./woodcutting.js"; // prisoners on Cut wood (by hand)
@@ -457,7 +458,7 @@ export function escapeOdds(state, p, { watch = null, fed = null } = {}) {
   e *= R.escape;
   if (mood(p) < E.lowMood) e *= E.lowMoodMult;
   if (base.prisonFear && day(state) <= base.prisonFear) e *= PRISON.EXECUTE.fear;
-  const willEat = fed ?? (R.share > 0 && (base.stock.food || 0) + (base.stock.preserved || 0) >= PRISON.FOOD * R.share * coldFactor(state) && waterIn(base.stock) >= PRISON.WATER * thirstAt(state));
+  const willEat = fed ?? (R.share > 0 && foodIn(base.stock) >= PRISON.FOOD * R.share * coldFactor(state) && waterIn(base.stock) >= PRISON.WATER * thirstAt(state));
   if (!willEat) e += E.unfed;
   return clamp(e, 0, 1);
 }
@@ -853,8 +854,8 @@ export function gatherIntel(state, p, full = true) {
     if (full) {
       for (const t of f.bases) tiles.add(t);
       f.known = true;
-      f.intel = { day: day(state), pop: f.pop, food: Math.round(f.stock.food || 0), ammo: Math.round(f.stock.ammo || 0), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
-      lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} food, ${f.intel.ammo} rounds, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
+      f.intel = { day: day(state), pop: f.pop, food: Math.round(foodIn(f.stock)), ammo: Math.round(f.stock.ammo || 0), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
+      lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} days of food, ${f.intel.ammo} rounds, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
       const jt = jailText(state, f); // groupjails.js: their jail and who is in it (now known)
       if (jt) lines.push(`Their jail: ${jt}.`);
       foundAllOf(state, f); // hiding.js: their hidden outposts too
@@ -882,7 +883,7 @@ export function ransomTerms(state, p) {
   const value = PRISON.RANSOM.value + PRISON.RANSOM.perPower * (p.power || 3);
   let best = null;
   for (const key of ["ammo", "food", "meds", "scrap", "fuel", "parts"]) {
-    const qty = Math.ceil(value / SUPPLIES[key].value);
+    const qty = Math.ceil(value / (key === "food" ? DAY_VALUE : supValue(key))); // food: days of it (foods.js)
     const spare = available(f, key);
     const score = Math.min(1, spare / qty);
     if (!best || score > best.score) best = { key, qty, score };
@@ -912,11 +913,11 @@ function ransomAnswer(state, p) {
   // The value rule (ransom.js groupMemberWorth, as for your own people): a big group will not pay over the odds for one of its weaker people.
   const worth = groupMemberWorth(f, p.power || 3) >= R.value + R.perPower * (p.power || 3);
   if (worth && can >= Math.ceil(r.qty * 0.5) && state.rng.chance(chance)) {
-    f.stock[r.key] = Math.max(0, (f.stock[r.key] || 0) - can);
-    const got = r.key === "ammo" ? findRounds(kindTheme(f.type), can, "ransom", localId(state, p.id)) : { [r.key]: can }; // their one ammo count paid as the rounds their kind keeps (ammo.js)
-    for (const [k, q] of Object.entries(got)) base.stock[k] = (base.stock[k] || 0) + q;
+    const got = r.key === "food" ? takeFood(f.stock, can, { state }).items : r.key === "ammo" ? findRounds(kindTheme(f.type), can, "ransom", localId(state, p.id)) : { [r.key]: can }; // their one ammo count paid as the rounds their kind keeps (ammo.js); food: days of it, as the items they hold (foods.js)
+    if (r.key !== "food") f.stock[r.key] = Math.max(0, (f.stock[r.key] || 0) - can);
+    for (const [k, q] of Object.entries(got)) { if (FOODS[k]) addFood(base, k, q, { state }); else base.stock[k] = (base.stock[k] || 0) + q; } // food items into the stores with a lot (foods.js)
     goHome(state, p, R.goodwillPaid, "you ransomed their people");
-    const text = `${f.name} paid ${r.key === "ammo" ? roundsText(got) : `${can} ${keyWord(r.key)}`} for ${p.name}, who walks home.`;
+    const text = `${f.name} paid ${r.key === "ammo" ? roundsText(got) : r.key === "food" ? foodText(got) : `${can} ${keyWord(r.key)}`} for ${p.name}, who walks home.`;
     log(state, text, "good");
     addCard(state, { title: "Ransom paid", text, choices: [{ label: "OK", resolve: () => "" }] });
   } else {
@@ -1070,10 +1071,10 @@ export function prisonersDaily(state) {
       const watch = watchAt(base);
       const RD = rationDef(p);
       const work = labourOutput(state, p, base); // before today's meal and tiredness
-      const food = (base.stock.food || 0) + (base.stock.preserved || 0);
+      const food = foodIn(base.stock);
       const eat = PRISON.FOOD * RD.share * coldFactor(state); // their rations, more in the cold, as for anyone at a base (upkeep.js)
       if (RD.share > 0 && food >= eat && waterIn(base.stock) >= drink) {
-        eatFromStore(base, eat); // fresh first, then preserved (its jars come back: storage.js)
+        eatFromStore(base, eat, state); // the soonest to spoil first (jarred food's jars come back: storage.js)
         drawWater(base.stock, drink);
         fed = true;
       } else if (RD.share === 0 && waterIn(base.stock) >= drink) drawWater(base.stock, drink); // no food, but they drink
@@ -1160,9 +1161,9 @@ function sabotage(state, p, base) {
   const n = S[task] || 0;
   let what = "";
   if (task === "build" && base.construction[0]) { base.construction[0].progress = Math.max(0, base.construction[0].progress - n); what = `${n} hours of work on the build undone`; }
-  else if (task === "farm" && (base.stock.food || 0) > n) { base.stock.food -= n; what = `${n} food trampled`; }
+  else if (task === "farm" && foodIn(base.stock) > n) { payFood(base, n, state); what = `${n} days of food trampled`; }
   else if (task === "water" && (base.stock.rawwater || 0) > n) { base.stock.rawwater -= n; what = `${n} water spilled`; }
-  else if (task === "kitchen" && (base.stock.preserved || 0) > n) { base.stock.preserved -= n; what = `${n} preserved food spoiled`; }
+  else if (task === "kitchen" && preservedIn(base.stock) > n) { takeFood(base, n, { only: (k, f) => f.group === "preserved", state }); what = `${n} days of preserved food spoiled`; }
   else if (task === "wood" && (base.stock.wood || 0) > n) { base.stock.wood -= n; what = `${n} firewood left to rot`; }
   else if (task === "scrap" && (base.stock.scrap || 0) > n) { base.stock.scrap -= n; what = `${n} scrap gone missing`; }
   if (!what) return;
@@ -1173,22 +1174,20 @@ function sabotage(state, p, base) {
 // keepDays of everyone's eating, → preserved.
 function handDry(state, base, work) {
   const K = PRISON.LABOUR.kitchen;
-  const fresh = Math.max(0, base.stock.food || 0);
+  const fresh = rackableFood(base); // storage.js: days of fresh food that can be dried
   if (fresh <= 0) return 0;
-  const spare = Math.max(foodStore(state, base).outside, fresh - foodUse(state, base).total * K.keepDays);
+  const spare = Math.max(Math.min(fresh, foodStore(state, base).outside), fresh - foodUse(state, base).total * K.keepDays);
   const take = Math.max(0, Math.min(K.food * work, spare));
   if (take <= 0) return 0;
-  base.stock.food = fresh - take;
-  if (base.meat) base.meat = Math.min(base.meat, base.stock.food); // fresh game (hunting.js) is part of the fresh food
-  base.stock.preserved = (base.stock.preserved || 0) + take * (K.out / K.food);
+  dryFood(state, base, take, K.out / K.food); // storage.js: raw meat first, into jerky, dried fruit and veg
   return take;
 }
 // What the kitchen hands at a base could dry today (the UI): { take, out }.
 export function kitchenPlan(state, base) {
   const K = PRISON.LABOUR.kitchen;
   const work = prisonLabour(state, base, "kitchen");
-  const fresh = Math.max(0, base.stock.food || 0);
-  const spare = Math.max(foodStore(state, base).outside, fresh - foodUse(state, base).total * K.keepDays);
+  const fresh = rackableFood(base);
+  const spare = Math.max(Math.min(fresh, foodStore(state, base).outside), fresh - foodUse(state, base).total * K.keepDays);
   const take = Math.max(0, Math.min(K.food * work, spare, fresh));
   return { work, take, out: take * (K.out / K.food), cap: K.food * work };
 }
@@ -1362,7 +1361,7 @@ export function autopilotPrisoners(state) {
     if (style === "cautious" || (att && (att === "Friendly" || att === "Allied"))) { if (p.intelDone || !f) done.push(tradeBack(state, p.id)); continue; }
     if (style === "aggressive") {
       const base = heldAt(state, p);
-      const fat = base && (base.stock.food || 0) + (base.stock.preserved || 0) >= atBase(state, base.id).length * 10;
+      const fat = base && foodIn(base.stock) >= atBase(state, base.id).length * 10;
       if (fat || !f || !f.alive) { if (p.mode !== "recruit") done.push(setMode(state, p.id, "recruit")); continue; }
     }
     if (!f || !f.alive) { if (p.mode !== "recruit") done.push(setMode(state, p.id, "recruit")); continue; }

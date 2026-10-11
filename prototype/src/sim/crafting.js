@@ -19,6 +19,7 @@ import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "
 import { workFactor } from "./health.js";
 import { hasPerk, hash01, gainXp } from "./skills.js";
 import { craftLock, craftEdgeQuality, craftEdgeSpeed } from "./blueprints.js";
+import { foodIn, takeFood } from "./foods.js"; // a recipe's food: days of it
 import { stockHas, useStock, teamWaterIn, takeTeamWater, waterIn, RAW, keyWord } from "./water.js"; // recipes: water counts both kinds, un-purified used first
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
 const carriedRounds = (p) => totalRounds(p.supplies) + totalRounds(p.cargo && p.cargo.supplies);
@@ -43,8 +44,8 @@ export const CRAFTS = {
   // bicycle, ram, repair kit, pulley bow as before, and these two for food: a real fishing rod with a reel (the
   // makeshift rod above is a sapling and a bent hook) and a spring-jawed bear trap. The pressure canner is no recipe
   // any more (machines-2: an upgrade fitted to a preserving room, buildings.js BUILDINGS.canner, its old 4 scrap and
-  // 2 parts now the fitting's cost). TODO(food-types): a hand-crank grain mill (grain → flour) once typed foods exist;
-  // a meat grinder for game.
+  // 2 parts now the fitting's cost). TODO(food-types wave 2, cooking): a hand-crank grain mill (foods.js f_grain →
+  // f_flour); a meat grinder for game (f_venison, f_boar → f_groundmeat, f_sausage).
   fishrod:     { gear: "fishrod",     in: { scrap: 2, parts: 1 }, hours: 6,  skill: "mechanics", min: 2 },
   beartrap:    { gear: "beartrap",    in: { scrap: 5, parts: 1 }, hours: 8,  skill: "mechanics", min: 2, needs: "workshop" },
   padding:     { gear: "padding",     in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0, field: true },
@@ -572,10 +573,11 @@ export function craftingDaily(state) {
 const heldItems = (s) => [...Object.values(s.gear || {}), ...(s.pockets || []), ...((packOf(s)) || [])].filter(Boolean);
 
 // ---------- field crafting (a team on the road) ----------
-const partyHas = (p, k) => (k === "water" ? teamWaterIn(p) : k === "ammo" ? carriedRounds(p) : Math.max(0, p.supplies[k] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));
+const partyHas = (p, k) => (k === "water" ? teamWaterIn(p) : k === "ammo" ? carriedRounds(p) : k === "food" ? foodIn(p.supplies || {}) + foodIn((p.cargo && p.cargo.supplies) || {}) : Math.max(0, p.supplies[k] || 0) + Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0)); // food: days of it (foods.js)
 function partyTake(p, k, qty) {
   if (k === "water") { takeTeamWater(p, qty, { rawFirst: true }); return; } // boiled in the work: un-purified first (water.js)
   if (k === "ammo") { const c = spendAmmo(p.cargo && p.cargo.supplies, qty, p.ammoCals).n; spendAmmo(p.supplies, qty - c, p.ammoCals); return; } // rounds.js: any calibre, the ones its guns need least
+  if (k === "food") { takeFood([p.cargo, p].filter(Boolean), qty, { eggs: false }); return; } // foods.js: days of food, the soonest to spoil first
   const fromCargo = Math.min(qty, Math.max(0, (p.cargo && p.cargo.supplies[k]) || 0));
   if (fromCargo) p.cargo.supplies[k] -= fromCargo;
   p.supplies[k] = (p.supplies[k] || 0) - (qty - fromCargo);

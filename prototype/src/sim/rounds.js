@@ -2,7 +2,8 @@
 // Rounds in stock records: the plain half of the ammo API (ammo.js re-exports all of it). Imports only the data
 // modules, so the low-level helpers (water.js stockHas / useStock / takeStock) can use it without an import cycle.
 import { CALIBERS, AMMO_TYPES, ammoKey, ROUND_SUPPLIES, HAND_SUPPLIES, handKey } from "./data-ammo.js";
-import { SUPPLIES } from "./data.js";
+import { SUPPLIES, supValue } from "./data.js";
+import { foodIn, preservedIn, takeFood } from "./foods.js"; // "food" in a deal or a request: days of food of any kind
 
 // ---------- keys ----------
 /** every round supply key (a_<cal>_<type>) */
@@ -126,7 +127,7 @@ export function takeRounds(rec, cal, type, n, strict = true) {
 // cheapest first.
 /** @param {string} cal @param {string | null} [type] */
 function orderFor(cal, type = null) {
-  const keys = typesOf(cal).map((t) => ammoKey(cal, t)).sort((a, b) => (a === baseKey(cal) ? -1 : b === baseKey(cal) ? 1 : SUPPLIES[a].value - SUPPLIES[b].value));
+  const keys = typesOf(cal).map((t) => ammoKey(cal, t)).sort((a, b) => (a === baseKey(cal) ? -1 : b === baseKey(cal) ? 1 : supValue(a) - supValue(b)));
   if (type) { const k = keyFor(cal, type); return [k, ...keys.filter((x) => x !== k)].flatMap(withHand); }
   return keys.flatMap(withHand); // each factory round, then its handloads
 }
@@ -141,7 +142,7 @@ export function spendAmmo(rec, n, keep = null) {
   if (g > 0) { rec.ammo -= g; out.n += g; out.keys.ammo = g; }
   const order = GENERIC_KEYS.filter((k) => rec[k] >= 1).sort((a, b) => { // never a launcher's rounds
     const ka = keep && ROUND_SUPPLIES[a].round.cal in keep ? 1 : 0, kb = keep && ROUND_SUPPLIES[b].round.cal in keep ? 1 : 0; // (a calibre its guns take besides their own: weight 0, kept too)
-    return ka - kb || SUPPLIES[a].value - SUPPLIES[b].value || num(rec[b]) - num(rec[a]) || (a < b ? -1 : 1);
+    return ka - kb || supValue(a) - supValue(b) || num(rec[b]) - num(rec[a]) || (a < b ? -1 : 1);
   });
   for (const k of order) {
     if (out.n >= n) break;
@@ -207,13 +208,14 @@ export function foldRounds(rec) {
 // A supply in a record by key, "ammo" counting every round there (the generic reads of a stock: a deal, an order's
 // target, a council's request). Everything else is the plain figure.
 /** @param {Record<string, number> | null | undefined} rec @param {string} k */
-export const supplyAmt = (rec, k) => (!rec ? 0 : k === "ammo" ? totalRounds(rec) : rec[k] || 0);
+export const supplyAmt = (rec, k) => (!rec ? 0 : k === "ammo" ? totalRounds(rec) : k === "food" ? foodIn(rec) : k === "preserved" ? preservedIn(rec) : rec[k] || 0);
 // Takes q of a supply out of a record by key, "ammo" as any rounds there (the cheapest first, never below zero). The
 // generic writes of a stock (a deal, a delivery, a request) go through here so generic ammo is never owed.
 /** @param {Record<string, number>} rec @param {string} k @param {number} q @param {Record<string, number> | null} [keep] */
 export function useSupply(rec, k, q, keep = null) {
   if (!rec || !(q > 0)) return 0;
   if (k === "ammo") return spendAmmo(rec, q, keep).n;
+  if (k === "food" || k === "preserved") return takeFood(rec, q, { eggs: false, only: k === "preserved" ? (x, f) => f.group === "preserved" : null }).units; // days of food, the soonest to spoil first (foods.js)
   rec[k] = (rec[k] || 0) - q;
   return q;
 }
