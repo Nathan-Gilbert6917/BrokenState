@@ -71,7 +71,7 @@ import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
-import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob } from "./buildings.js";
+import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt } from "./buildings.js"; // countBuilt: assaultForce has its own count
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
@@ -79,7 +79,7 @@ import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { noteBaseLoss } from "./causes.js"; // "Why?": the chain of causes of a lost base
-import { groupWalls, groupsBuild } from "./groupworks.js"; // barestart: the walls a group has built at its base
+import { groupWalls, groupsBuild, worksAt } from "./groupworks.js"; // barestart: the walls a group has built at its base
 import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at an ally's walls
 import { askBaseName } from "./basenames.js"; // name a base you take
 import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
@@ -123,6 +123,12 @@ export function nativeWalls(f, tile, state = null) {
   const goal = CONQUEST.WALLED_TYPES.includes(f.type) ? CONQUEST.WALLS.typed : f.bases[0] === tile ? CONQUEST.WALLS.home : CONQUEST.WALLS.open;
   return state ? Math.min(goal, groupWalls(state, f, tile)) : goal;
 }
+// A reinforced gate in their walls (fort.js assaultBase): one they built (groupworks.js "gate": your Army Engineering
+// Manual, ai-locks 2026-10-11); a group that does not build (old saves, the hardcore military) as before, walls of 6+.
+export function nativeGate(state, f, tile, walls) {
+  if (!state || !groupsBuild(state, f)) return walls >= 6;
+  return f.bases.includes(tile) && ((worksAt(f, tile).gate || 0) > 0);
+}
 // What an assault on this base faces: { kind, count, power, fortified, walls, people, occupied }.
 const ALLY_SHARE = 0.4; // coalition fighters keep at most 40% of the defenders off your squad (at least MIN_DEF left)
 // p: the team going in: its siege kit (ladders, the ram, grenades: siege.js assaultCut) takes part of the walls away.
@@ -150,6 +156,7 @@ export function assaultForce(state, f, tile, p = null) {
   return {
     kind: KIND_OF[f.type], count, power: Math.round(unitPower(f, 2.6) * 10) / 10, factionId: f.id, name: `${f.name} defenders`, arsTask: "home", // arsenal.js: by their kit, all of it at home
     fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls * (1 - (walls >= 1 ? assaultCut(kit) : 0))) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
+    gate: occ && occ.factionId === f.id ? countBuilt(occ.base, "gate") > 0 : nativeGate(state, f, tile, walls), // fort.js assaultBase: their reinforced gate
     siegeKit: kit && (kit.ladders || kit.ram || kit.grenades) ? kit : null,
     allies: held ? { held, names: allies.names } : null,
     bloc: bloc.fighters ? bloc : null,

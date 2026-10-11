@@ -16,7 +16,7 @@ import { FIXTURES, fxDef, dailyWear, useSpares, repairPlan, fixtureName, machine
 import { tech, BLUEPRINTS, LOCKED, upgradeLock, siteBlueprints } from "../src/sim/blueprints.js";
 import { setAutopilot, autopilotResolve, autoGenUpgrade, genFuelFlows, heatFuelWant } from "../src/sim/autopilot.js";
 import { ensureHistory } from "../src/sim/history.js";
-import { GROUP_WORKS, groupTech, worksAt, nextWork, groupWorksDaily, groupGenTier, groupPowerNeed, groupPowerUpWhy, groupGenBurn, worksText, groupMachinesDaily } from "../src/sim/groupworks.js";
+import { GROUP_WORKS, groupTech, worksAt, nextWork, groupWorksDaily, groupGenTier, groupPowerNeed, groupPowerUpWhy, groupGenBurn, worksText, groupMachinesDaily, workLock } from "../src/sim/groupworks.js";
 import { POWER_USERS } from "../src/sim/power.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { seasonOfDay } from "../src/sim/weather.js";
@@ -320,6 +320,9 @@ function govHub(seed, { summer = true } = {}) {
   f.type = "commune"; // mechanic 3
   check(/Mechanics 4/.test(groupPowerUpWhy(st, f, tile)), `no Mechanics 4 hand (${groupPowerUpWhy(st, f, tile)})`);
   f.type = "military";
+  w.bench = 0;
+  check(/workshop/.test(groupPowerUpWhy(st, f, tile)) && /workshop/.test(workLock(st, f, "power2")), `ai-locks' workLock: no workshop, no upgrade (${groupPowerUpWhy(st, f, tile)})`);
+  w.bench = 1;
   const p0 = f.stock.parts;
   let done = 0;
   for (let i = 0; i < 20 && groupGenTier(w) < 2; i++) { const nw = !f.job ? nextWork(st, f) : null; if (nw && nw.type === "powerup") done++; f.fuelFlow.in = 6; f.fuelFlow.days = 30; f.stock.food = 600; f.stock.fuel = 60; groupWorksDaily(st, f); st.hour += 24; }

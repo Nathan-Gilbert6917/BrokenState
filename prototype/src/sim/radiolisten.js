@@ -1,6 +1,7 @@
 // Listening in on radio traffic: the groups' own channels (radio.js radioNetworks), tuned with "Listen in".
 //
-// - Channels. Every group with a base talks on its own network (radio.js GROUP_NET_RANGE around each of its bases).
+// - Channels. Every group with a radio station talks on its own network (radio.js groupNetwork: its stations, the
+//   military's every base, its linked relays; ai-locks: none without a station).
 //   Each day (radio.js radioDaily, after the groups' own day) its traffic is written down (channelTraffic, kept
 //   LISTEN.KEEP_DAYS days): caravans and convoys setting out (route, destination, rough day of arrival), its
 //   scavengers out, raids and war parties on the way (target, rough day), its war parties against the hives (which

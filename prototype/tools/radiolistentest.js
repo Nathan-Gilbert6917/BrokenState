@@ -12,7 +12,8 @@
 // - transmitting is unchanged: a hand-crank radio calls nobody; being caught listening (−5 goodwill); the governor's
 //   tuning; the UI pieces and their handlers; save / load (old saves: untuned).
 // Usage: node tools/radiolistentest.js [seed]
-import { createWorld, tickHour, hub, atBase, day, peekNextId, setNextId } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, day, peekNextId, setNextId, RADIO_RANGE } from "../src/sim/world.js";
+import { worksAt } from "../src/sim/groupworks.js"; // ai-locks: a group's radio station
 import { newItem } from "../src/sim/inventory.js";
 import { spawnAiParty, partyTile } from "../src/sim/parties.js";
 import { startOrder } from "../src/sim/orders.js";
@@ -34,9 +35,12 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 const section = (t) => console.log(t);
 const t0 = Date.now();
 
-function world(s = seed) {
+// stations: the groups' networks by your rules (ai-locks: radio stations only); by default an older save's groups, every
+// base on the air by type (radio.js GROUP_NET_RANGE), so the listening below has networks to hear.
+function world(s = seed, stations = false) {
   const st = createWorld({ seed: s, factionCount: 7 });
   st.started = true; st.visitorsOff = true; st.noWanderers = true;
+  if (!stations) st.groupWorks = null;
   const h = hub(st);
   h.radio = false;
   st.hordes.length = 0;
@@ -66,6 +70,19 @@ function twoNets(st, h) {
 const clearCards = (st) => { st.cards.length = 0; };
 const nextDay = (st) => { st.hour = (day(st) + 1) * 24; };
 
+// ---------- 0. the groups' stations (ai-locks 2026-10-11: they broadcast by your rules) ----------
+section("Networks by your rules: a group is on the air from its radio stations");
+{
+  const { st } = world(seed, true);
+  const groups = st.factions.filter((f) => f.alive && f.bases.length && f.type !== "military");
+  check(groups.length > 0 && groups.every((f) => groupNetwork(st, f) === null), `no station built: no network (${groups.length} groups)`);
+  const f = groups[0];
+  worksAt(f, f.bases[0]).radio = 1;
+  const n = groupNetwork(st, f);
+  check(n && n.nodes.length === 1 && n.nodes[0].tile === f.bases[0] && n.nodes[0].range === RADIO_RANGE, `a station at its main base: one node of ${RADIO_RANGE} tiles (yours)`);
+  const mil = st.factions.find((x) => x.alive && x.bases.length && x.type === "military");
+  if (mil) check(groupNetwork(st, mil).nodes.every((x) => x.range === 24), "the military: every base on the air at 24 (their army sets)");
+}
 // ---------- 1. networks ----------
 section("Networks: yours and one per group, ranges by type");
 {

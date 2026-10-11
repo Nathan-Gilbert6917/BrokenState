@@ -71,6 +71,7 @@ import { FACTION_TYPES } from "./data.js";
 import * as Weather from "./weather.js";
 import { noteOutput } from "./output.js";
 import { tripTarget } from "./jobtrips.js"; // where the base's scavengers and foragers go (the governor's stockpiles)
+import { groupSkill, canPayParts, payParts } from "./groupworks.js"; // ai-locks: the groups' field works by your rules
 
 // ---------- the numbers ----------
 export const FIELD = {
@@ -115,7 +116,7 @@ export const FIELD = {
   TEAM: { destroy: 3, capture: 4, load: 1, unload: 1, check: 1, gw: -8, garPower: 2.5 },
   // pileDaily: kg a person a day their outdoor people drop at a group's stockpile; haulEvery: days between their haul
   // home; short: days of food under which they draw on it; cache: share of fuel/ammo/food sent out to a cache.
-  AI: { every: 5, max: [1, 12, 4], stock: 0.15, gar: 2, garPop: 10, work: 3, pileDaily: 0.4, haulEvery: 6, short: 3, cache: 0.1 },
+  AI: { every: 5, max: [1, 12, 4], stock: 0.15, gar: 2, garPop: 10, work: 3, pileDaily: 0.4, haulEvery: 6, short: 3, cache: 0.1, costShare: 0.6 },
   GOV: { towerPop: 6, garrisonPop: 10, repairAt: 0.7, roadRaids: 2, pileHands: 2, pileEvery: 5, woodKeep: 0.5 }, // woodKeep: the share of the cold's firewood kept back from field works
   // Shifts at a tower or a roadblock (the base's watch roster's way, watch.js): who walks out for which hours. Each shift
   // holds up to the structure's garrison; a person stands one shift at one structure. They leave the base `walk` hours
@@ -1483,7 +1484,8 @@ export function teamActDone(state, p, act) {
 
 // ---------- the groups' own (AI parity) ----------
 // Every FIELD.AI.every days a group may put one up near its main base (coarse, paid from its stores, standing after
-// FIELD.AI.work days): groupWants. Daily: repairs from scrap; guards on their towers and roadblocks once they have the
+// FIELD.AI.work days): groupWants; by your rules (ai-locks 2026-10-11: groupFieldLock, your Mechanics; paid
+// AI.costShare of your scrap and firewood, a part from those above their machines' earmark). Daily: repairs from scrap; guards on their towers and roadblocks once they have the
 // people (AI.gar: 2, round the clock; 1 by day); their stockpile fills with what their outdoor people drop there
 // (AI.pileDaily kg a person, out of their stores) and goes home every AI.haulEvery days (not while hostile people or
 // the dead stand on it); they draw on their stockpiles and caches when short (food under AI.short days a person, fuel
@@ -1504,13 +1506,23 @@ export function groupFieldDaily(state) {
     const maxN = Math.min(A.max[2], A.max[0] + Math.floor(f.pop / A.max[1]));
     if (mine.length >= maxN) continue;
     const pick = groupWants(state, f, mine);
-    if (!pick) continue;
-    const cost = { scrap: Math.ceil((K[pick.kind].cost.scrap || 0) * 0.6), parts: K[pick.kind].cost.parts ? 1 : 0 };
-    if ((f.stock.scrap || 0) < cost.scrap + 5 || (f.stock.parts || 0) < cost.parts) continue;
+    if (!pick || groupFieldLock(state, f, pick.kind)) continue; // ai-locks: your build rule (the relay mast: Mechanics 3 and the manual)
+    const cost = groupFieldCost(pick.kind);
+    if ((f.stock.scrap || 0) < cost.scrap + 5 || !canPayParts(f, cost.parts) || (f.stock.wood || 0) < cost.wood) continue;
     f.stock.scrap -= cost.scrap;
-    if (cost.parts) f.stock.parts -= cost.parts;
+    if (cost.wood) f.stock.wood -= cost.wood;
+    if (cost.parts) payParts(f, cost.parts); // the parts above their machines' earmark (groupworks.js)
     buildGroupWork(state, f, pick.kind, pick.tile, false);
   }
+}
+// What a group pays for one (coarse: AI.costShare of your scrap and firewood, a machine part where yours takes any).
+// ai-locks (2026-10-11): the firewood was not paid before (a tower is 120 of yours, a roadblock 150).
+export const groupFieldCost = (kind) => ({ scrap: Math.ceil((K[kind].cost.scrap || 0) * FIELD.AI.costShare), wood: Math.ceil((K[kind].cost.wood || 0) * FIELD.AI.costShare), parts: K[kind].cost.parts ? 1 : 0 });
+// "" when the group may put one up by your rules (placeProblem's: FIELD.KINDS req, your Mechanics, their mechanic
+// standing in: the relay mast's 3; your mast needs no manual, unlike the relay built at a base), else why not.
+export function groupFieldLock(state, f, kind) {
+  for (const [sk, lvl] of Object.entries(K[kind].req || {})) if (groupSkill(f, sk) < lvl) return `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ hand`;
+  return "";
 }
 // A group's stockpile or cache, and its blind, for the day (groupFieldDaily).
 function groupStores(state, f, fw) {

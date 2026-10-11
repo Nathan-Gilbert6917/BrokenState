@@ -73,13 +73,21 @@
 //   sealer (MACH.req), the proper repair's minimum to repair a machine. The
 //   generator's fuel is coarse, as your unattended generator's: POWER.genFuel a day is spent while the freezer or the
 //   sealer draws and there is any fuel (the last of it runs the day). Machine parts of their own (groupPartsDaily, PARTS):
-//   a group with a workshop machines parts from its scrap, as your machine shop does, coarse: PARTS.rate a day × its
-//   mechanic (groupcare.js GROUP_PRIORITIES mechanic ÷ PARTS.mech: zealots 2, raiders and communes 3, expansionists and
-//   traders 4, the fortress 5, the military 6) × its people (÷ PARTS.pop, at most PARTS.popMax, at least PARTS.popMin),
-//   PARTS.scrap scrap a part (yours: 6), while its parts are under what it wants (partsWant: PARTS.keep, a part a
-//   machine it has, and the next machine's parts and spares) and its scrap is over PARTS.scrapKeep a head. A group of
-//   16 with a mechanic 4 makes a part every 4 days; 8 people with a mechanic 3 one every 11 days; a military base of
-//   25 one every 1.8 days. Before this they sat near 1 part, and their machines and repairs rarely happened.
+//   a group with a machine shop (ai-locks: the "shop" work, your machine shop's Machinist's Handbook and Mechanics 4 to
+//   build; or one taken over with a base of yours) machines parts from its scrap, coarse: PARTS.rate a day × its people
+//   (÷ PARTS.pop, at most PARTS.popMax, at least PARTS.popMin), PARTS.scrap scrap a part (yours: 6), × PARTS.below
+//   (half) when its mechanic (groupcare.js GROUP_PRIORITIES mechanic: zealots 2, raiders and communes 3, expansionists and
+//   traders 4, the fortress 5, the military 6) is under PARTS.mech, your station's rule (Mechanics 4+, else half the
+//   days fail, their scrap spent all the same); no more for a better mechanic (yours makes a part a day whoever runs
+//   it). It works while its parts are under what it wants (partsWant: PARTS.keep, a part a machine it has, and the next
+//   machine's parts and spares) and its scrap is over PARTS.scrapKeep a head. A group of 16 makes a part every 4 days;
+//   8 people (the floor) one every 8; 24+ one every 2.7. (Before ai-locks: any workshop with the manual, × mechanic ÷ 4.)
+// - The works your rules ask for (ai-locks 2026-10-11, LOCKS, workLock): a machine shop (above), a radio station (your
+//   Mechanics 4: their network is their stations, radio.js groupNetwork; the military's army sets are stations), a
+//   garage (vehicle repairs at full step; without one only a Mechanics 4 mechanic mends them, at your 12-of-25 rate:
+//   groupcare.js repairVehicles), a reloading bench (your Mechanics 3; their brass loaded into rounds only with one:
+//   reloading.js groupReloadDaily) and a reinforced gate (your Army Engineering Manual: the gate on the map of an assault
+//   on their main base, fort.js assaultBase), and the sick bay's trauma hospital wants your Mechanics 4 as well.
 //   The earmark (the user's intent: "a small parts income so their machines and repairs happen more often", not more
 //   guns): the workshop's parts are kept for the machines (f.partsMach, at most their parts on hand). The workshop
 //   works only while that earmark is under partsWant. Machine spending (builds, proper repairs, spares) takes the
@@ -93,8 +101,9 @@
 //   the power its machines draw (the walk-in freezer 2, the vacuum sealer 1: your POWER_USERS; served in that order up
 //   to the tier's power), so a tier-1 set burns its flat 2 a day as before. It wears, eats spares and is repaired by
 //   your tier's fixture (breakdowns.js genFixture: more parts, Mechanics 4 / 5). It is upgraded (a job, groupPowerUp)
-//   by your rules: their machines want more power than the tier gives, a group mechanic at the tier's Mechanics (4, 5),
-//   tier 3 behind the Industrial Power Manual (groupKnows "indpower": found, bought, studied as the rest), the tier's
+//   by your rules: their machines want more power than the tier gives, ai-locks' workLock (LOCKS power2 / power3: a
+//   workshop, a group mechanic at the tier's Mechanics 4 / 5, tier 3 the Industrial Power Manual by groupKnows
+//   "indpower": found, bought, studied as the rest), the tier's
 //   materials scaled as the rest of WORKS (MACH.tiers: yours 24 scrap + 5 parts, 40 + 8 + 2 electronics, the
 //   electronics folded into the parts) with MACH.spare parts over, and never into a fuel deficit (power.js
 //   genUpgradeFuelOk, as your governor's: their fuel in and out a day, measured as a 28-day average of the stock's
@@ -118,7 +127,7 @@ import { relation } from "./diplomacy.js"; // buying a manual from traders they 
 import { SUPPLIES } from "./data.js";
 import { groupFieldDefence, groupFieldWells } from "./fieldworks.js"; // the groups' field works: towers, wells
 
-/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
+/** @typedef {{ water?: number, farms?: number, beds?: number, walls?: number, bench?: number, store?: number, sickbay?: number, pens?: number, camp?: number, still?: number, power?: number, powerTier?: number, freezer?: number, sealer?: number, kitchen?: number, shop?: number, radio?: number, garage?: number, reload?: number, gate?: number, mach?: Object<string, { wear: number, spares: number, broken: boolean, on?: boolean, noSpares?: boolean }> }} Works */
 
 export const GROUP_WORKS = {
   WORKS: {
@@ -135,17 +144,37 @@ export const GROUP_WORKS = {
     freezer: { name: "a walk-in freezer", cost: { scrap: 8, parts: 3 }, work: 5 },
     sealer: { name: "a vacuum sealer", cost: { scrap: 3, parts: 2 }, work: 2 },
     kitchen: { name: "a kitchen", cost: { scrap: 5, parts: 1 }, work: 4 }, // yours: 20 scrap, a part, 24 work-hours (scaled as the rest)
+    // ai-locks (2026-10-11; LOCKS below): the buildings your rules ask for, scaled as the rest (about a quarter of your
+    // scrap, half your parts). Yours: a machine shop 25 scrap + 3 parts, a radio station 30 + 6, a garage 20 + 2, a
+    // reloading bench 20 scrap + a part + 3 gun parts (on an ammo bench), a reinforced gate 14 + a part.
+    shop: { name: "a machine shop", cost: { scrap: 6, parts: 2 }, work: 6 },
+    radio: { name: "a radio station", cost: { scrap: 8, parts: 3 }, work: 6 },
+    garage: { name: "a garage", cost: { scrap: 5, parts: 1 }, work: 4 },
+    reload: { name: "a reloading bench", cost: { scrap: 5, parts: 2 }, work: 4 },
+    gate: { name: "a reinforced gate", cost: { scrap: 4, parts: 1 }, work: 3 },
   },
+  // ai-locks: your build rules for those works (buildings.js req and blueprints.js LOCKED), read by workLock. mech: the
+  // group's mechanic (groupSkill) at your Mechanics minimum; bp: the manual they must have studied; bench: a workshop
+  // (their "bench", your workbench) at any base first. RADIO_POP: the people before they want a station; RELOAD_BRASS:
+  // the brass before they want a reloading bench (reloading.js RELOAD.GROUP.buyBrass).
+  LOCKS: {
+    shop: { mech: 4, bp: "machinist", bench: true }, radio: { mech: 4, bench: true }, garage: { bench: true },
+    reload: { mech: 3, bench: true }, gate: { bp: "armyeng" },
+    // gen-tiers: the generator's upgrades (MACH.tiers), your canUpgradeGenerator's Mechanics and manual.
+    power2: { mech: 4, bench: true }, power3: { mech: 5, bp: "indpower", bench: true },
+  },
+  RADIO_POP: 10, RELOAD_BRASS: 30,
   // Their machine parts (machines-2; groupPartsDaily, see the header).
-  PARTS: { rate: 0.25, mech: 4, pop: 16, popMax: 1.5, popMin: 0.4, scrap: 6, keep: 4, perMachine: 1, scrapKeep: 1 },
+  PARTS: { rate: 0.25, mech: 4, below: 0.5, pop: 16, popMax: 1.5, popMin: 0.4, scrap: 6, keep: 4, perMachine: 1, scrapKeep: 1 },
   // The groups' machines (see the header). fx: the fixture each is (breakdowns.js FIXTURES).
   MACH: { pop: 14, foodDays: 12, spare: 2, mend: 0.6, save: 0.00475, room: 300, still: { food: 8, fuel: 3 }, req: { power: 3, freezer: 3, sealer: 3 }, // req: Mechanics to build (yours, buildings.js)
     fx: { still: "still", power: "generator", freezer: "freezer", sealer: "sealer" },
     // gen-tiers: the generator's upgrades (see the header), by the tier it becomes: your GEN_TIERS cost scaled as WORKS
-    // (yours 24 scrap + 5 parts, 30 work-hours; 40 + 8 + 2 electronics, 48), req: your Mechanics, bp: your manual.
+    // (yours 24 scrap + 5 parts, 30 work-hours; 40 + 8 + 2 electronics, 48). Their Mechanics and manual: LOCKS power2 /
+    // power3 (workLock, as ai-locks' other works).
     tiers: [null, null,
-      { name: "a standby generator", cost: { scrap: 6, parts: 3 }, work: 4, req: 4 },
-      { name: "an industrial diesel set", cost: { scrap: 10, parts: 5 }, work: 6, req: 5, bp: "indpower" }],
+      { name: "a standby generator", cost: { scrap: 6, parts: 3 }, work: 4 },
+      { name: "an industrial diesel set", cost: { scrap: 10, parts: 5 }, work: 6 }],
     floor: 0.5, // fuel a head kept back from a bigger generator's burn (groupcare.js keeps the same before selling)
   },
   CREW: 6, SALVAGE: 2,
@@ -163,7 +192,7 @@ export const GROUP_WORKS = {
     { name: "an infirmary", cost: { scrap: 5, meds: 1 }, work: 3, pop: 0, doc: 0 },
     { name: "a field hospital", cost: { scrap: 8, parts: 1, meds: 2 }, work: 5, pop: 10, doc: 0 },
     { name: "a clinic", cost: { scrap: 12, parts: 2, meds: 3 }, work: 7, pop: 16, doc: 6 },
-    { name: "a trauma hospital", cost: { scrap: 18, parts: 3, meds: 4 }, work: 10, pop: 25, doc: 10 },
+    { name: "a trauma hospital", cost: { scrap: 18, parts: 3, meds: 4 }, work: 10, pop: 25, doc: 10, mech: 4 }, // mech: your Trauma hospital's Mechanics 4 (ai-locks)
   ],
   SICKBAY_FIRST: 6,
   // Animal pens (farming.js PEN, your animal pen: the same option, coarse): a base with walls and fields puts up one
@@ -304,7 +333,7 @@ function sickbayWork(state, f, upper) {
     return { tile, type: "sickbay", why: "a sick bay for the wounded", def: next };
   }
   if (t === 0) return null;
-  if (f.pop < next.pop / Math.max(0.3, weightOf(f, "heal")) || medOf(f).doc < next.doc) return null;
+  if (f.pop < next.pop / Math.max(0.3, weightOf(f, "heal")) || medOf(f).doc < next.doc || groupSkill(f, "mechanics") < (next.mech || 0)) return null;
   if (SICKBAY_BP[t + 1] && !groupKnows(state, f, SICKBAY_BP[t + 1])) return null; // machines-2: your clinic's and trauma hospital's manuals
   return { tile, type: "sickbay", why: `${next.name} (the sick bay upgraded)`, def: next };
 }
@@ -329,14 +358,50 @@ export function nextWork(state, f) {
     if (tile === mainOf(f)) {
       if (!hasAny(f, "bench")) return { tile, type: "bench", why: "a workshop for their gear and ammo" };
       if (!hasAny(f, "store") && storesFull(state, f)) return { tile, type: "store", why: "the stores are full" };
+      if (!hasAny(f, "shop") && !workLock(state, f, "shop")) return { tile, type: "shop", why: "machine parts from their scrap" }; // ai-locks: your machine shop
       const sb = sickbayWork(state, f, true);
       if (sb) return sb;
       const mw = machineWork(state, f, tile);
       if (mw) return mw;
+      const ex = lockedWork(state, f, tile);
+      if (ex) return ex;
     }
     if (peopleAt(f, tile) >= W.KITCHEN.size && !n(w, "kitchen") && hasAny(f, "bench")) return { tile, type: "kitchen", why: "hot meals for the people there" };
   }
   for (const tile of f.bases) if (n(worksAt(f, tile), "walls") < wallGoal(f, tile)) return { tile, type: "walls", why: "walls" };
+  // ai-locks: a reinforced gate in the main base's walls once they stand at their goal (your gate: the Army Engineering
+  // Manual; it "needs walls to matter").
+  const main = mainOf(f), mw = worksAt(f, main);
+  if (!n(mw, "gate") && n(mw, "walls") >= wallGoal(f, main) && !workLock(state, f, "gate")) return { tile: main, type: "gate", why: "a reinforced gate" };
+  return null;
+}
+
+// ---------- the works your rules ask for (ai-locks 2026-10-11, the user's rule: "AI groups need to have the same
+// restrictions and gameplay features") ----------
+// What a group must have before it may put one up (LOCKS: your Mechanics minimum, your manual, a workshop first): "" when
+// it may, else what it lacks ("Mechanics 4", "the Machinist's Handbook", "a workshop").
+export function workLock(state, f, k) {
+  const L = W.LOCKS[k];
+  if (!L) return "";
+  if (L.bench && !hasAny(f, "bench")) return "a workshop";
+  if (L.mech && groupSkill(f, "mechanics") < L.mech) return `Mechanics ${L.mech}`;
+  if (L.bp && !groupKnows(state, f, L.bp)) return `the ${BLUEPRINTS[L.bp].name}`;
+  return "";
+}
+// Has the group this work at any base? Old saves and the hardcore military (they do not build) count as built up.
+export const groupHas = (state, f, k) => !groupsBuild(state, f) || hasAny(f, k);
+// A garage's step of a vehicle repair (groupcare.js repairVehicles: yours restores 25 a part with one, 12 without and a
+// Mechanics 4+ hand, nothing without either): × 1, × GARAGE_LESS, 0.
+export const GARAGE_LESS = 12 / 25;
+export const groupGarageMult = (state, f) => (groupHas(state, f, "garage") ? 1 : groupSkill(f, "mechanics") >= 4 ? GARAGE_LESS : 0);
+// The rest of them at the main base, in order: a radio station once they are RADIO_POP strong (not the military: an
+// army set is a station, as a Military encrypted radio in your armory), a garage once they have a car, a reloading
+// bench once they hold the brass for one.
+function lockedWork(state, f, tile) {
+  const ok = (k) => !hasAny(f, k) && !workLock(state, f, k);
+  if (f.type !== "military" && f.pop >= W.RADIO_POP && ok("radio")) return { tile, type: "radio", why: "a radio station" };
+  if ((f.vehicles || []).some((v) => v && v.type !== "bike" && !v.destroyed) && ok("garage")) return { tile, type: "garage", why: "a garage for their vehicles" };
+  if ((f.stock.brass || 0) >= W.RELOAD_BRASS && ok("reload")) return { tile, type: "reload", why: "a reloading bench for their brass" };
   return null;
 }
 
@@ -372,8 +437,8 @@ export function groupPowerUpWhy(state, f, tile) {
   const need = groupPowerNeed(w);
   if (need <= GEN_TIERS[t].out) return `the generator gives ${GEN_TIERS[t].out} power for ${need} wanted`;
   if (machOf(w, "power").broken) return "broken";
-  if (next.bp && !groupKnows(state, f, next.bp)) return `no ${BLUEPRINTS[next.bp].name}`;
-  if (groupSkill(f, "mechanics") < next.req) return `no Mechanics ${next.req} hand`;
+  const lock = workLock(state, f, `power${t + 1}`); // ai-locks' rules: your Mechanics, your manual (groupKnows), a workshop
+  if (lock) return `no ${lock}`;
   if ((f.stock.parts || 0) < next.cost.parts + W.MACH.spare || (f.stock.scrap || 0) < next.cost.scrap) return "short of parts or scrap";
   const ff = f.fuelFlow;
   if (!ff || ff.days < GEN_UP.minDays) return "too little fuel history";
@@ -471,17 +536,17 @@ export function partsWant(state, f) {
   if (w && f.pop >= M.pop) { const k = MACH_ORDER.find((x) => !n(w, x)); if (k) next = (W.WORKS[k].cost.parts || 0) + M.spare; }
   return P.keep + P.perMachine * groupMachineCount(f) + next;
 }
-// Parts a day at their workshop (0 without one): rate × mechanic × people, see the header.
+// Parts a day at their machine shop (0 without one): rate × people, half under Mechanics 4, see the header.
 export function partsRate(state, f) {
   const P = W.PARTS;
-  if (!groupsBuild(state, f) || !hasAny(f, "bench") || !groupKnows(state, f, "machinist")) return 0; // your machine shop's manual
-  return P.rate * (weightOf(f, "mechanic", 3) / P.mech) * Math.min(P.popMax, Math.max(P.popMin, (f.pop || 0) / P.pop));
+  if (!groupsBuild(state, f) || !hasAny(f, "shop")) return 0; // ai-locks: a machine shop of theirs (built with your manual and Mechanics 4, or taken over)
+  return P.rate * (groupSkill(f, "mechanics") >= P.mech ? 1 : P.below) * Math.min(P.popMax, Math.max(P.popMin, (f.pop || 0) / P.pop)); // your station's rule: Mechanics 4+, else half the days fail
 }
 export function groupPartsDaily(state, f) {
   const P = W.PARTS, st = f.stock;
   const rate = partsRate(state, f);
   if (!rate || groupMachParts(f) >= partsWant(state, f)) return 0; // the earmark full: the workshop rests
-  const scrap = rate * P.scrap;
+  const scrap = (rate * P.scrap) / (groupSkill(f, "mechanics") >= P.mech ? 1 : P.below); // a failed day's scrap is spent too (as yours)
   if ((st.scrap || 0) - scrap < P.scrapKeep * Math.max(1, f.pop)) return 0;
   st.scrap -= scrap;
   f.partsWip = (f.partsWip || 0) + rate;
@@ -619,7 +684,7 @@ const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; r
 // "water, 2 fields, quarters for 16, walls 2/4 · building a wall" (the Groups tab).
 export function worksText(state, f) {
   if (!groupsBuild(state, f) || !f.bases.length) return "";
-  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, still: 0, power: 0, freezer: 0, sealer: 0, kitchen: 0 };
+  const t = { water: 0, farms: 0, beds: 0, bench: 0, store: 0, still: 0, power: 0, freezer: 0, sealer: 0, kitchen: 0, shop: 0, radio: 0, garage: 0, reload: 0, gate: 0 };
   for (const b of f.bases) for (const k of Object.keys(t)) t[k] += n(f.works && f.works[b], k);
   const main = mainOf(f);
   const bits = [];
@@ -634,6 +699,7 @@ export function worksText(state, f) {
   if (t.freezer) bits.push(`a walk-in freezer${groupFreezerOn(f) ? " (on)" : " (off)"}`);
   if (t.sealer) bits.push("a vacuum sealer");
   if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no firewood)" : ""}`);
+  for (const k of ["shop", "radio", "garage", "reload", "gate"]) if (t[k]) bits.push(W.WORKS[k].name); // ai-locks
   const bay = sickbayTier(f);
   if (bay) bits.push(W.SICKBAY[Math.min(W.SICKBAY.length, bay) - 1].name);
   const camps = f.bases.filter((b) => isCamp(f, b)).length;

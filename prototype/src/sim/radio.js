@@ -65,6 +65,7 @@ import { diplomacyDaily, knownAs } from "./diplomacy.js";
 import { listenDaily } from "./radiolisten.js"; // listening in on a network's traffic (Listen in)
 import { intelDaily, discipline, INTEL } from "./intel.js"; // the groups listen in on you: radio discipline, decoys
 import { groupHides } from "./hiding.js"; // a group's hidden outposts keep off the air
+import { groupsBuild } from "./groupworks.js"; // ai-locks: a group that builds broadcasts from its radio stations
 import { thirstFactor } from "./weather.js";
 import { rumourFromNews, RUMOUR } from "./survey.js";
 import { raidPaceOpen, noteRaid } from "./eras.js";
@@ -80,11 +81,17 @@ export const hasMilRadio = (b) => !!b.armory && b.armory.some((it) => it && it.k
 export const COOLDOWN = { greet: 3, news: 5, caravan: 4, help: 10, scan: 1, offer: 6 };
 
 // ---------- radio networks (who broadcasts where; listening: radiolisten.js) ----------
-// Yours (every linked station and relay: radioNodes) and one per AI group with a base: each of its bases broadcasts
-// GROUP_NET_RANGE tiles by the group's type (military 24, traders and fortresses 12, communes, zealots and
-// expansionists 8, raiders 6), so a base taken or lost changes the group's coverage. A receiver hears a network only
-// while it stands inside that network's coverage: nothing beyond it (the old "+6 tiles past coverage" band is gone,
-// HEAR_EXTRA 0). Transmitting is unchanged: canRadioGroup (your coverage + GROUP_REACH) decides who can be called.
+// Yours (every linked station and relay: radioNodes) and one per AI group with a radio station: since ai-locks
+// (2026-10-11, the user's rule "AI groups need to have the same restrictions and gameplay features") a group broadcasts
+// only as you do: from its radio stations (groupworks.js "radio" work: your Mechanics 4) at your RADIO_RANGE, the
+// military from every base at MIL_RADIO_RANGE (their army sets: as a Military encrypted radio in your armory makes a
+// base a station), and its relay masts (fieldworks.js) while linked to one of those (your relays' rule). A group with
+// no station has no network (nothing to listen in on, nothing heard of it). Old saves' groups and the hardcore military
+// (they do not build: groupworks.js groupsBuild) keep the old ranges by type, GROUP_NET_RANGE (military 24, traders and
+// fortresses 12, communes, zealots and expansionists 8, raiders 6) around each base. So a base taken or lost changes
+// the group's coverage. A receiver hears a network only while it stands inside that network's coverage: nothing beyond
+// it (the old "+6 tiles past coverage" band is gone, HEAR_EXTRA 0). Transmitting is unchanged: canRadioGroup (your
+// coverage + GROUP_REACH) decides who can be called.
 export const GROUP_NET_RANGE = { military: 24, traders: 12, fortress: 12, commune: 8, zealot: 8, expansionist: 8, raider: 6 };
 export const PLAYER_NET = "player";
 export const PLAYER_NET_COLOR = "#4f8fd6"; // render.js PLAYER_COLOR
@@ -95,9 +102,26 @@ export function playerNetwork(state) {
 }
 export function groupNetwork(state, f) {
   if (!f || !f.alive || !f.bases || !f.bases.length) return null;
-  const range = GROUP_NET_RANGE[f.type] ?? 8;
-  const on = f.bases.filter((tile) => !groupHides(state, f, tile)); // hiding.js: a hidden outpost keeps off the air
-  return { id: f.id, name: f.known ? f.name : knownAs(state, f), color: f.color, kind: "group", faction: f, nodes: [...(on.length ? on : f.bases), ...groupRelayTiles(state, f)].map((tile) => ({ tile, range })) }; // fieldworks.js: their relay masts
+  const net = (nodes) => (nodes.length ? { id: f.id, name: f.known ? f.name : knownAs(state, f), color: f.color, kind: "group", faction: f, nodes } : null);
+  if (!groupsBuild(state, f)) { // old saves, the hardcore military: every base by type, as before
+    const range = GROUP_NET_RANGE[f.type] ?? 8;
+    const on = f.bases.filter((tile) => !groupHides(state, f, tile)); // hiding.js: a hidden outpost keeps off the air
+    return net([...(on.length ? on : f.bases), ...groupRelayTiles(state, f)].map((tile) => ({ tile, range }))); // fieldworks.js: their relay masts
+  }
+  // ai-locks: their stations (the military: every base), the hidden ones kept off the air unless all are hidden.
+  const mil = f.type === "military";
+  const st = f.bases.filter((tile) => mil || (f.works && f.works[tile] && f.works[tile].radio > 0));
+  const on = st.filter((tile) => !groupHides(state, f, tile));
+  const nodes = (on.length ? on : st).map((tile) => ({ tile, range: mil ? MIL_RADIO_RANGE : RADIO_RANGE }));
+  // Their relay masts, linked as yours are: within reach of a station or of a linked relay.
+  const g = state.grid;
+  let relays = groupRelayTiles(state, f);
+  for (let grew = true; grew && relays.length;) {
+    grew = false;
+    const linked = relays.filter((t) => nodes.some((n) => g.distance(n.tile, t) <= n.range));
+    if (linked.length) { nodes.push(...linked.map((tile) => ({ tile, range: RELAY_RANGE }))); relays = relays.filter((t) => !linked.includes(t)); grew = true; }
+  }
+  return net(nodes);
 }
 export function radioNetworks(state) {
   const out = [];
