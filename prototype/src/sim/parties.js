@@ -30,7 +30,7 @@ import { offerCrawl, crawlOffered } from "./citycrawl.js"; // a team moved onto 
 import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
   partyVehicles, partyVehicleIds, partyFleet, fleetOf, fleetProblem, setPartyVehicles, roadPace, MAX_VEHICLES,
-  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK, stripYield,
+  takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK, stripYield, carSpares,
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
@@ -901,6 +901,9 @@ export function launchExpedition(state, opts) {
   if (load > cap + 1e-9) {
     return fail(`Too much to carry: the packed supplies weigh ${Math.ceil(load)} kg, the crew${v ? ` and the ${vehicleLabel(plannedV)}` : ""} can carry ${Math.floor(cap)} kg more than they wear. Pack less${v ? "" : ", or take more people, bikes or a vehicle"}.`);
   }
+  // Spare car parts for a long drive (vehicles.js carSpares): packed with the rest, home again if unused.
+  const spares = opts.spares && isCar(v) ? carSpares(state.grid.distance(home.tile, dest), (home.stock.carparts || 0) - supplies.carparts, supplies.carparts, cap - load) : 0;
+  if (spares) supplies.carparts += spares;
   if (bikes) v = takeBikes(state, home, members.length);
   if (fleet) fleet.real = [...fleet.cars, ...(fleet.bikes ? [takeBikes(state, home, bikeN)] : [])];
   const packed = { ...supplies };
@@ -953,6 +956,7 @@ export function launchExpedition(state, opts) {
     mission === "occupy" ? ` It clears out whoever is inside and moves in as its first staff${v ? `, the ${v.name} with it` : ""}.` :
     opts.plan ? ` Plan: ${p.plan.name}${p.orders.length ? ` (${queueText(state, p)})` : ""}.${waits ? " Then it waits for orders." : ""}` : stays ? " The team waits there for orders." : "";
   if (lights.length) log(state, `${teamName(state, p)} takes lights from the armory: ${lights.join(", ")}.`, "info");
+  if (spares) log(state, `${teamName(state, p)} packs ${spares} spare car part${spares === 1 ? "" : "s"} for the road (a breakdown on the way: a quick fix).`, "info");
   if (siegeKit.length) log(state, `The assault team takes siege kit from the armory: ${siegeKit.join(", ")}.`, "info");
   if (!opts.quiet) log(state, `${teamName(state, p)} left for ${tileLabel(state, dest)}${bikes ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}. Arrives in about ${clockText(est.exactOut - clockFrac(state))}${waits ? "" : `; back in about ${days} day${days === 1 ? "" : "s"}`}.${after}`, "info");
   return { party: p };

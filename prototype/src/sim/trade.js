@@ -58,7 +58,7 @@ export { itemValue };
 // Preserved food (storage.js) keeps, so every group wants some; jars matter only to those who preserve. Firewood
 // (woodcutting.js): groups cut their own; the seasons move its price (valuation.js: dear in winter, cheap in summer).
 // Arrows (hunting.js): groups fletch their own and keep them (comfortable, none to spare) until they hold more.
-const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120, carparts: 0.5, gunparts: 0.5, electronics: 0.5, buildmat: 1, brass: 5, powder: 3, primers: 3, blackpowder: 1, matchprimers: 1 }; // reloading.js: the bench's inputs (cases, charges, primers); wood: 12 kg a head; the part kinds are priced by the group's one count of parts
+const REF = { food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120, carparts: 0.15, gunparts: 0.5, electronics: 0.5, buildmat: 1, brass: 5, powder: 3, primers: 3, blackpowder: 1, matchprimers: 1 }; // reloading.js: the bench's inputs (cases, charges, primers); wood: 12 kg a head; gun parts and electronics are priced by the group's one count of parts, car parts by their own (a group with vehicles is comfortable at 0.15 a head)
 // Per head a group never sells: it keeps this much for itself. Food and water: the pay-out reserve your governor keeps
 // (upkeep.js PAYOUT.days a head, read when used: the modules load in a cycle; it was 2 and 1.5).
 const RESERVE = { get food() { return PAYOUT.days; }, get water() { return PAYOUT.days; }, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, carparts: 0, gunparts: 0, electronics: 0, buildmat: 0, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 };
@@ -72,11 +72,17 @@ const RESERVE = { get food() { return PAYOUT.days; }, get water() { return PAYOU
 // military 5.56, a commune shotgun shells and .22); a caravan's or an outsider's goods hold rounds by key.
 export const poolKey = (key) => (key === RAW ? "water" : isRoundKey(key) ? "ammo" : key);
 // Parts by kind (data.js SUPPLIES: machine parts, car parts, gun parts, electronics; section 10): other groups keep one
-// count of parts (f.stock.parts) and price every kind by it; what they offer of each kind is their share of it by the
-// kind of group (KIND_MIX: the military's parts are a third electronics and a third gun parts), and whatever kind you
-// buy from them or sell them comes out of or goes into that one count (groupStockKey). Outsiders (visitors.js) and
+// count of parts (f.stock.parts) for machine parts, gun parts and electronics and price those kinds by it; what they
+// offer of each is its share of that count by the kind of group (KIND_MIX without its car parts: the military's are
+// close to two fifths electronics and two fifths gun parts), and whatever of those kinds you buy from them or sell them
+// comes out of or goes into that one count (groupStockKey). Car parts are their own stock (f.stock.carparts, since the
+// vehicle-wear picks of 2026-10-10): found at auto shops, gas stations and wrecks (aiscav.js haulFor), bought from
+// merchants and you, spent on their vehicles first (vehicles.js groupCost: CARPART_SUB machine parts for each one short),
+// priced and offered by their own count (REF.carparts: wanted only by a group with vehicles, groupHasCars). An older
+// save's groups split their one count once (splitCarParts: KIND_MIX's car share of it). Outsiders (visitors.js) and
 // caravans' loads keep each kind as it is.
 export const PART_KINDS = ["carparts", "gunparts", "electronics"];
+export const POOLED_KINDS = ["gunparts", "electronics"]; // the kinds that live in a group's one count of parts
 export const KIND_MIX = {
   "*":          { parts: 0.7,  carparts: 0.15, gunparts: 0.08, electronics: 0.07 },
   military:     { parts: 0.2,  carparts: 0.2,  gunparts: 0.3,  electronics: 0.3 },
@@ -88,9 +94,14 @@ export const KIND_MIX = {
   zealot:       { parts: 0.85, carparts: 0.1,  gunparts: 0.05, electronics: 0 },
 };
 const pooled = (f) => !!(f && !f.outsider && f.stock);
-export const partShare = (f, key) => ((KIND_MIX[f && f.type] || KIND_MIX["*"])[key] ?? 0); // (not ammo.js kindShare: rounds by a group's kind)
+const mixOf = (f) => KIND_MIX[f && f.type] || KIND_MIX["*"];
+// The share of a group's one count of parts that is this kind (KIND_MIX without its car parts); car parts: 1 (their own).
+export const partShare = (f, key) => (key === "carparts" ? 1 : (mixOf(f)[key] ?? 0) / Math.max(0.01, 1 - (mixOf(f).carparts || 0))); // (not ammo.js kindShare: rounds by a group's kind)
 // Where a supply goes in a group's stores: one water pool, one count of parts.
-export const groupStockKey = (key, f = null) => (PART_KINDS.includes(key) && (!f || pooled(f)) ? "parts" : poolKey(key));
+export const groupStockKey = (key, f = null) => (POOLED_KINDS.includes(key) && (!f || pooled(f)) ? "parts" : poolKey(key));
+// Does a group run vehicles (factions.js f.vehicles: their motor pool, found and captured cars)? Car parts are wanted by
+// it only then.
+export const groupHasCars = (f) => !!(f && Array.isArray(f.vehicles) && f.vehicles.some((v) => v && v.type !== "bike" && !v.destroyed));
 const stockOf = (f, key) => {
   if (isRoundKey(key)) return Math.max(0, (f.stock[key] || 0) + kindShare(Math.max(0, f.stock.ammo || 0), f.type, key)); // its own rounds of that key and its kind's share of its generic ammo
   if (key === "ammo") return Math.max(0, totalRounds(f.stock));
@@ -107,11 +118,24 @@ export const groupPartsLow = (f) => pooled(f) && Math.max(0, f.stock.parts || 0)
 // into its one count of parts (refreshMarkets, each day, and after a trade).
 export function foldPartKinds(f) {
   if (!pooled(f)) return;
-  for (const k of PART_KINDS) if (k in f.stock) { f.stock.parts = Math.max(0, (Number.isFinite(f.stock.parts) ? f.stock.parts : 0) + (Number.isFinite(f.stock[k]) ? f.stock[k] : 0)); delete f.stock[k]; }
+  splitCarParts(f);
+  for (const k of POOLED_KINDS) if (k in f.stock) { f.stock.parts = Math.max(0, (Number.isFinite(f.stock.parts) ? f.stock.parts : 0) + (Number.isFinite(f.stock[k]) ? f.stock[k] : 0)); delete f.stock[k]; }
 }
 
-// How much this group values one unit at a given stock level (default: what they hold now).
+// A group with no car parts count yet (an older save, a group just made) takes KIND_MIX's car share of its one count of
+// parts as its car parts, once.
+export function splitCarParts(f) {
+  if (!pooled(f) || Number.isFinite(f.stock.carparts)) return;
+  const all = Math.max(0, Number.isFinite(f.stock.parts) ? f.stock.parts : 0);
+  const car = Math.floor(all * (mixOf(f).carparts || 0));
+  f.stock.carparts = car;
+  f.stock.parts = all - car;
+}
+
+// How much this group values one unit at a given stock level (default: what they hold now). Car parts: a group with
+// no vehicles has no use for them (it sells them as it would any surplus, never buys).
 export function need(f, key, stock = priceStock(f, key)) {
+  if (key === "carparts" && pooled(f) && !groupHasCars(f)) return 0.7;
   const per = Math.max(0, stock) / Math.max(1, f.pop);
   return clamp(2 - per / (REF[poolKey(key)] || 1), 0.5, 2.2);
 }
@@ -193,7 +217,7 @@ export function gearBuyPrice(state, f, item, speech, { pool = null, nth = 0 } = 
 export function available(f, key, { kinds = false } = {}) {
   if (refuses(f, key) || key === RAW) return 0;
   if (isRoundKey(key)) return roundsAvailable(f, key);
-  const split = pooled(f) && (PART_KINDS.includes(key) || key === "parts");
+  const split = pooled(f) && (POOLED_KINDS.includes(key) || key === "parts");
   if (split && !kinds && key !== "parts") return 0;
   const stock = split && kinds ? stockOf(f, key) * partShare(f, key) : stockOf(f, key);
   return Math.max(0, Math.floor(stock - (RESERVE[poolKey(key)] || 0) * f.pop * (f.atWar ? WAR_RESERVE[poolKey(key)] || 1 : 1)));
@@ -304,7 +328,7 @@ export function marketLists(state, f, speech = 0) {
     if (refuses(f, k) || k === RAW) continue; // un-purified water: priced, but the lists ask for and offer purified water
     if (isRoundKey(k)) continue; // rounds: the lists ask for and offer ammo as one good (sold by calibre in the window)
     if (SUPPLIES[k].reload && !(stockOf(f, k) >= 1)) continue; // the reloading bench's inputs: on the board only from a group that holds some
-    if (PART_KINDS.includes(k) && pooled(f)) continue; // they want and offer "parts"; the kinds are in the trade window
+    if (POOLED_KINDS.includes(k) && pooled(f)) continue; // they want and offer "parts"; the kinds are in the trade window (car parts: their own count)
     const n = demand(state, f, k);
     if (n >= WANT_NEED) wants.push({ key: k, need: n, qty: wantQty(f, k), price: prices[k].pay });
     else if (n <= SURPLUS_NEED && available(f, k) >= supplyFew(k, 5)) surplus.push({ key: k, need: n, qty: available(f, k), price: prices[k].ask });

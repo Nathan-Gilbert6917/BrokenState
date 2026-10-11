@@ -52,7 +52,7 @@ export function specOf(state, pl) {
     mission: pl.mission, stance: pl.stance, policy: RETREAT_POLICIES[pl.policy] ? pl.policy : null,
     members: [...pl.crew].map((id) => survivorById(state, id)).filter(Boolean).map((s) => ({ id: s.id, name: s.name, role: s.role, wrole: (s.work && s.work.role) || null, top: topSkills(s) })),
     vehicleId: v ? v.id : null, vehicleType: v ? v.type : null, vehicleName: v ? v.name : null,
-    supplies, tabs: !!pl.tabs, lights: pl.lights !== false,
+    supplies, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false,
     plan: pl.mission === "outpost" || pl.mission === "occupy" ? null : clone(pl.plan) || null, sweep: clone(pl.sweep) || null,
   };
 }
@@ -211,6 +211,7 @@ export function applyPacking(state, pl, spec) {
   }
   if (spec.tabs != null) pl.tabs = !!spec.tabs;
   pl.lights = spec.lights !== false;
+  pl.spares = spec.spares !== false;
   return short.length ? [`Short at the hub: ${short.join(", ")}.`] : [];
 }
 

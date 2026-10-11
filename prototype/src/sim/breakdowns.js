@@ -2,7 +2,7 @@
 // broken one stops (or weakens) until a named survivor repairs it. Fixtures: the hub's own well pump, wells, the
 // generator, the still, the machine shop, the ammo bench, the med station, the preserving room, the radio
 // station, walls and the reinforced gate (damaged by attacks), and the storehouse roof (storms). Parked vehicles
-// lose condition on frost days (repaired as before, from the Vehicles tab or the Repairs list).
+// lose condition on frost days, but not the cars in a garage (vehicles.js frostWear; repaired as before, from the Vehicles tab or the Repairs list).
 //
 // Wear (0–100) builds up every day: use (a station that ran, a well that pumped) × age (+1/240 a day since it was
 // built) + weather (frost for pumps, storms for pumps, masts and roofs) + attacks (a horde at the walls; raids: raidDamage below),
@@ -57,7 +57,7 @@ import { stationStatus } from "./buildings.js";
 import { isPowered } from "./power.js"; // powered machines wear by the days they had power (freezer-parts)
 import { weatherOnDay } from "./weather.js";
 import { stewardOn } from "./steward.js";
-import { vehiclesAtBase } from "./vehicles.js";
+import { vehiclesAtBase, shelteredAt, frostWear } from "./vehicles.js";
 import { isManaged, prio } from "./work.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Clean and mend (breakdownsDaily upkeep)
 
@@ -430,8 +430,8 @@ export function breakdownsDaily(state) {
       pts += mend(list.filter(isWaterFixture), keep);
       mend(list, pts);
     }
-    // Parked vehicles in the frost.
-    if (wx && wx.lo <= -3) for (const v of vehiclesAtBase(state, base.id)) v.condition = Math.max(1, v.condition - (wx.key === "blizzard" ? WEAR.vehicleBlizzard : WEAR.vehicleFrost));
+    // Parked vehicles in the frost; the garage keeps its cars out of it (vehicles.js frostWear).
+    if (wx && wx.lo <= -3) { const inside = shelteredAt(state, base); for (const v of vehiclesAtBase(state, base.id)) v.condition = Math.max(1, v.condition - frostWear(state, base, v, wx.key === "blizzard" ? WEAR.vehicleBlizzard : WEAR.vehicleFrost, inside)); }
   }
 }
 

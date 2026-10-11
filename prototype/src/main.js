@@ -992,6 +992,7 @@ const actions = {
   },
   "pl-tabs": () => { ui.planner.tabs = !ui.planner.tabs; ui.plannerError = ""; }, // a tube of purification tablets from the armory
   "pl-lights": () => { ui.planner.lights = ui.planner.lights === false; ui.plannerError = ""; }, // a light each from the armory (sim/lights.js), on by default
+  "pl-spares": () => { ui.planner.spares = ui.planner.spares === false; ui.plannerError = ""; }, // spare car parts for a long drive (sim/vehicles.js carSpares), on by default
   "pl-crew": (d) => { const s = ui.planner.crew, id = Number(d.id); s.has(id) ? s.delete(id) : s.add(id); autofill(ui.planner); ui.plannerError = ""; },
   "pl-vehicle": (d) => { // ui/fleetpick.js: up to four vehicles, click to take or leave each; vehicleId the lead
     const pl = ui.planner;
@@ -1035,7 +1036,7 @@ const actions = {
       }
       return;
     }
-    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false });
+    const res = launchExpedition(state, { memberIds: [...pl.crew], dest: pl.dest, mission: pl.mission, stance: pl.stance, vehicleId: pl.vehicleId, vehicleIds: pl.vehicleIds || [], supplies: { ...pl.supplies }, plan: Parties.SETTLE_MISSIONS.includes(pl.mission) ? null : planLaunchOpts(pl), sweep: pl.sweep, tabs: !!pl.tabs, lights: pl.lights !== false, spares: pl.spares !== false });
     if (res.error) { ui.plannerError = res.error; return; }
     rememberLaunch(state, res.party, pl); // sim/trips.js: for Repeat trip when it gets home, and its retreat policy
     plannerVolAsk(state, pl, res.party); // ui/volunteers.js: volunteers asked for in the planner (the answer is in the log)

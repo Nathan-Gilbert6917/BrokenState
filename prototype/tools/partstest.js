@@ -10,7 +10,7 @@ import { GEAR, SUPPLIES, SUPPLY_KEYS } from "../src/sim/data.js";
 import { newItem, salvageInfo, salvageAt, salvageYield, itemAt } from "../src/sim/inventory.js";
 import { fitMod } from "../src/sim/gunmods.js";
 import { PARTS_MIX, sortParts, splitParts } from "../src/sim/loot.js";
-import { LOT, KIND_MIX, PART_KINDS, available, groupStockKey, foldPartKinds, tradeContext, setQty, balanceWith, executeTrade, tradeVerdict, need } from "../src/sim/trade.js";
+import { LOT, KIND_MIX, PART_KINDS, available, groupStockKey, foldPartKinds, splitCarParts, tradeContext, setQty, balanceWith, executeTrade, tradeVerdict, need } from "../src/sim/trade.js";
 import { repair, stripVehicle, stripYield, createVehicle, carPartsCost, CARPART_SUB } from "../src/sim/vehicles.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { launchExpedition, planPath, giveOrder } from "../src/sim/parties.js";
@@ -61,20 +61,34 @@ const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 
   check(w.rng.state === r, "sorting moves none of the world's dice");
 }
 
-// 3. Other groups: one count of parts, the kinds offered out of it.
+// 3. Other groups: one count of parts for machine parts, gun parts and electronics, the kinds offered out of it; car parts
+// their own count (vehicle-wear picks 2026-10-10: trade.js POOLED_KINDS, splitCarParts, groupHasCars).
 {
   console.log("Groups");
   const st = world();
   const f = st.factions.find((x) => x.alive && x.bases.length);
   f.type = "military"; f.pop = 20; f.stock.parts = 30; f.goodwill = 40; f.known = true;
-  check(groupStockKey("gunparts", f) === "parts" && groupStockKey("carparts", f) === "parts" && groupStockKey("food", f) === "food", "a group's part kinds all point at its one count of parts");
+  delete f.stock.carparts;
+  splitCarParts(f);
+  check(f.stock.carparts === Math.floor(30 * KIND_MIX.military.carparts) && f.stock.parts === 30 - f.stock.carparts, `an older save's group splits its one count once: ${f.stock.carparts} car parts, ${f.stock.parts} parts`);
+  splitCarParts(f);
+  check(f.stock.carparts === Math.floor(30 * KIND_MIX.military.carparts), "only once");
+  f.stock.parts = 30; f.stock.carparts = 6;
+  check(groupStockKey("gunparts", f) === "parts" && groupStockKey("electronics", f) === "parts" && groupStockKey("carparts", f) === "carparts" && groupStockKey("food", f) === "food", "gun parts and electronics point at its one count of parts, car parts at their own");
   check(available(f, "gunparts") === 0 && available(f, "parts") === 30, "in the AI's own dealings they offer only parts, as before");
   const k = { parts: available(f, "parts", { kinds: true }), gunparts: available(f, "gunparts", { kinds: true }), electronics: available(f, "electronics", { kinds: true }), carparts: available(f, "carparts", { kinds: true }) };
-  check(k.gunparts === Math.floor(30 * KIND_MIX.military.gunparts) && k.electronics === Math.floor(30 * KIND_MIX.military.electronics) && Object.values(k).reduce((a, b) => a + b, 0) <= 30, `in the trade window the military offer their parts by kind (${JSON.stringify(k)})`);
+  const rest = 1 - KIND_MIX.military.carparts;
+  check(k.gunparts === Math.floor((30 * KIND_MIX.military.gunparts) / rest) && k.electronics === Math.floor((30 * KIND_MIX.military.electronics) / rest) && k.parts + k.gunparts + k.electronics <= 30 && k.carparts === 6, `in the trade window the military offer their parts by kind, car parts their own 6 (${JSON.stringify(k)})`);
+  f.vehicles = [];
+  check(need(f, "carparts") <= 0.7, "a group with no vehicles never wants car parts");
+  f.vehicles = [{ id: "f-x", type: "hummer", condition: 60 }];
+  f.stock.carparts = 0;
+  check(need(f, "carparts") >= 1.25, "one with vehicles and none in store wants them");
+  f.stock.carparts = 6;
   check(need(f, "gunparts") === need(f, "parts"), "and price every kind by the one count");
-  f.stock.carparts = 4; f.stock.electronics = -2;
+  f.stock.gunparts = 4; f.stock.electronics = -2;
   foldPartKinds(f);
-  check(f.stock.parts === 32 && !("carparts" in f.stock) && !("electronics" in f.stock), "kinds left in their stores by a delivery go into the one count");
+  check(f.stock.parts === 32 && !("gunparts" in f.stock) && !("electronics" in f.stock) && f.stock.carparts === 6, "gun parts and electronics left in their stores by a delivery go into the one count; car parts stay their own");
   // A real trade: buying gun parts from them takes from their parts.
   const h = hub(st);
   const s = makeSurvivor(st); s.skills.speech = 8; s.traits = []; s.health = 100; s.location = { kind: "base", baseId: h.id }; st.survivors.push(s);
@@ -100,7 +114,7 @@ const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 
       balanceWith(st, "ammo");
       const p1 = f.stock.parts;
       executeTrade(st);
-      check(f.stock.parts === p1 + 5 && !("carparts" in f.stock), "5 car parts sold go into their one count of parts");
+      check(f.stock.parts === p1 && f.stock.carparts === 11, `5 car parts sold go into their car parts (${f.stock.carparts}), not the one count`);
     }
   }
 }
