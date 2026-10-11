@@ -100,7 +100,7 @@ import { tiredLevel } from "./sleep.js";
 import {
   HUNT, huntTargets, fishTargets, hunterMult, bestHuntWeapon, fisherMult, fishKit, snareLine, huntWorkWhy, fishWorkWhy, fishWorkHands, huntWorkCap,
   cabinProblem, cabinGain, CABIN_GAIN, hasFishingGear, huntInfo, huntProblem, fishProblem, expectFish,
-  hasBow, autoHuntMix, setHuntMix, huntMixOf, huntArrowsFor, huntMixText,
+  hasBow, autoHuntMix, setHuntMix, huntMixOf, huntArrowsFor, huntMixText, huntYield,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
 import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, WOOD } from "./woodcutting.js";
@@ -312,6 +312,7 @@ export function autopilotHour(state) {
     guardArrivals(state);
     idleTeams(state);
     trackHauls(state); // the water and food the haul teams bring home (the daily Water / Food line)
+    trackHuntTrips(state); // the hunting trips' catch against what they were sent for (huntTripYield)
     for (const b of state.bases) if (b.owner == null || b.owner === "player") b.filterFill = filterFill(state, b); // crafting.js filtersInUse
     for (const b of [...state.bases]) governBase(state, b);
     if (hourOfDay(state) === PLAN_HOUR) autopilotDaily(state);
@@ -362,8 +363,12 @@ export function governBase(state, base, areas = ALL_AREAS) {
 // of the stove beyond the day's boiler and heating in store, and wood land around the base (woodcutting.js
 // woodWorkWhy) or no shortfall for the cold ahead (woodNeed). Short of firewood the cook fire stays (it burns
 // nothing: it is the fallback for a cold stove). Its utility plot is free again; half its scrap comes back.
+// Never while the stove is let go cold for the winter's wood (stoveSave) or has been cold in the last
+// KITCHEN.coldKeep days (ap-food, 2026-10-11: a stove cold for want of firewood left the game and greens from infected
+// land raw at a base whose cook fire had come down, until a new one was saved for and built).
 export function cookFireRedundant(state, base) {
   if (!count(base, "cookhouse") || !hasKitchen(base) || kitchenCold(base) || !kitchenCanLight(state, base)) return false;
+  if (base.stoveSave || (base.kitchenColdDay != null && day(state) - base.kitchenColdDay < KITCHEN.coldKeep)) return false;
   const kw = kitchenWood(state, base);
   if (Math.max(0, base.stock.wood || 0) < kw.need * KITCHEN.wood.keepDays) return false;
   return !woodWorkWhy(state, base) || !woodNeed(state, base).short;
@@ -371,10 +376,14 @@ export function cookFireRedundant(state, base) {
 // The stove kept cold for the winter's wood (kitchen.js kitchenFireDaily reads base.stoveSave): in the run-up to the cold
 // (WOOD_AP.autumn days) while the woodpile is under WOOD_AP.behind of what the cold needs, the Kitchen's daily firewood
 // (20-40 a day) goes to the winter instead (woodtest seed 42: 28% of the cold's need with the stove lit all autumn).
+// In the cold itself (ap-food) the stove goes cold while the woodpile is under what the heating alone needs for the rest
+// of it (woodNeed heat, without its fifth to spare): it burned the heating's wood until the pile was down to a day of
+// heat (kitchen.js kitchenCanLight), then the base froze (the census at ac1c1c6: 7.4 base-days without heat a game).
 function stoveSave(state, base) {
   if (!hasKitchen(base) || gov(state).noWood) { delete base.stoveSave; return; }
   const w = woodNeed(state, base);
   if (w.toCold > 0 && w.toCold <= WOOD_AP.autumn && w.need > 0 && w.have < w.need * WOOD_AP.behind) base.stoveSave = w.need;
+  else if (w.cold && w.heat > 0 && w.have < w.heat / WOOD.spare) base.stoveSave = Math.ceil(w.heat / WOOD.spare);
   else delete base.stoveSave;
 }
 function cookFireDown(state, base) {
@@ -1959,6 +1968,9 @@ function threatAt(state, base) {
 // winterMargin = the winter outlook's safety margin (15% of the hungry gap's food) times this left over to count as
 // comfortable.
 export const FARM_AP = { extra: 1.6, share: 0.35, winterMargin: 2 };
+// The farmers short of plots (planRoles g.farmShort) is held this many hours once seen; plotsShort reads it.
+const FARM_SHORT_HOLD = 72;
+const plotsShort = (state, base) => !!(state.governor && state.governor.farmShort && state.governor.farmShort[base.id]);
 // The farm crew's limits by the food, one rule for the governor (planRoles, and so the base leaders' stewards) and the
 // work priorities (work.js Farm): hungry = the food below its target (at least 15 days) or the winter stores short:
 // the extra crew (FARM_AP.extra × the ideal) may go out; comfy = the food at its target and the winter outlook left
@@ -2129,16 +2141,40 @@ function planRoles(state, base, areas = ALL_AREAS) {
       if (!huntWorkWhy(state, base)) say(state, `${base.name}'s hunters: ${huntMixText(base)}${why}.`);
     }
   }
-  if (areas.food && !gov(state).noHunting && foodDays < landGoal) {
-    const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
-    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
-    if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
-  }
-
   // The winter stores fall short (winterShort): the plots get their tenders before builders, medics and stations,
   // but one hand stays free for a queued build (often the very farm plots and stores the winter needs: with every
   // hand on the plots they were never built).
-  if (winterShort(state, base) > 0) farmTo(Math.min(fw.need, people.filter((s) => !s.inBed).length - (areas.building && base.construction.length ? 1 : 0)));
+  const wShort = winterShort(state, base) > 0;
+  const winterCrew = () => farmTo(Math.min(fw.need, people.filter((s) => !s.inBed).length - (areas.building && base.construction.length ? 1 : 0)));
+  // A base without a hunting cabin (ap-food, 2026-10-11): its hunters work the tiles next to it (hunting.js
+  // HUNT_GROUND.bare) for a few food a day each, under half of that in practice (huntYield), so they never come out of
+  // the farm crew while the winter stores fall short or the farmers are short of plots (farmShort): the census at
+  // ac1c1c6 kept 2-3 hunters all year, mostly off the plots (farming 54% → 33% of the person-days), the farm crew fell
+  // under the "more plots" bar and the plots were never wished for (seed 5021: 0-1 plots until day 250, starved on day
+  // 326). Then at most one hunter per LAND_AP.bareHead people, and none while the recent hunts brought in under
+  // HUNT_YIELD.low of what was expected (a cabin's crew is cut to one then): they farm, and try again once those days
+  // have passed (HUNT_YIELD.days).
+  const cabin = count(base, "huntcabin") > 0;
+  // A farm plot queued while the farmers are short of plots (or the winter stores fall short) gets its builder here,
+  // ahead of the winter's farm crew, the hunters and the woodcutters, and goes to the front of the queue (behind a worm
+  // job: 1c): the hand "left free for a queued build" was taken by whatever came next, and seed 5021's plots stood
+  // queued for 18 days and more with 5 of 6 people on the plots there were.
+  if (areas.building && (wShort || plotsShort(state, base)) && foodDays >= 2) {
+    const i = base.construction.findIndex((c) => c.type === "farm_plot");
+    if (i >= 0) {
+      if (i > 0 && !wormJob(state, base, base.construction[0].type)) base.construction.unshift(base.construction.splice(i, 1)[0]);
+      if (!people.some((s) => (want.get(s.id) || {}).role === "build")) { const c = ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed)[0]; if (c) give(c, "build"); }
+    }
+  }
+  if (!cabin && (wShort || plotsShort(state, base))) winterCrew();
+  if (areas.food && !gov(state).noHunting && foodDays < landGoal) {
+    const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
+    const hy = huntYield(state, base);
+    const hunters = cabin ? (hy.poor ? Math.min(ahead, 1) : ahead) : hy.poor ? 0 : Math.min(ahead, Math.max(1, Math.floor(people.length / LAND_AP.bareHead)));
+    if (!huntWorkWhy(state, base)) for (const s of ranked("hunt", (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5), (x) => !x.inBed && !x.leader).slice(0, Math.min(hunters, huntWorkCap(state, base, landGoal)))) give(s, "hunt");
+    if (!fishWorkWhy(state, base)) for (const s of ranked("fish", (x) => fisherMult(x), (x) => !x.inBed && !x.leader).slice(0, Math.min(ahead, fishWorkHands(state, base, landGoal)))) give(s, "fish");
+  }
+  if (wShort) winterCrew();
 
   // 1d. The jail's guards (prisoners.js JAIL_GUARD): with anyone held here the roster is the governor's (a leader's
   // with Defence): one per 4 held, enough to watch the work detail, at most a quarter of the people, the sharpest
@@ -2232,7 +2268,14 @@ function planRoles(state, base, areas = ALL_AREAS) {
   farmTo(foodDays < Math.max(15, foodTarget(state)) ? fw.ideal : fw.need);
   // Before winter (no outdoor harvests for four weeks) a month's stock is the aim.
   // ...and only while there are hands to tend them (a plot nobody tends gives little).
-  g.farmShort[base.id] = fw.active + fw.toSow >= slots && (foodOutlook(state, base).daysLeft < 30 || winterShort(state, base) > 0) && farmers >= slots * 0.45;
+  // Held for FARM_SHORT_HOLD hours once set (ap-food): the farmers on a trip that day, or a hand taken for a build, flipped
+  // it off for hours at a time, and the plot wished for (saved up for: buildWishes) let the scrap go to barricades and
+  // crafts in between (seed 5021: wanted on day 30, built on day 104). Off at once when the food is comfortable.
+  const fsNow = fw.active + fw.toSow >= slots && (foodOutlook(state, base).daysLeft < 30 || winterShort(state, base) > 0) && farmers >= slots * 0.45;
+  const fsTill = g.farmShortTill || (g.farmShortTill = {});
+  if (fsNow) fsTill[base.id] = state.hour + FARM_SHORT_HOLD;
+  else if (farmLim.comfy || fw.active + fw.toSow < slots) delete fsTill[base.id];
+  g.farmShort[base.id] = fsNow || state.hour < (fsTill[base.id] ?? -1);
 
   // 7. Workshop stations that are worth running today and whose standing order wants them run (production.js). The
   // generators need nobody (machines-2: power.js runs them for what draws power).
@@ -2825,6 +2868,9 @@ function kitchenKeep(state, base) {
   if (!BUILDINGS.canteen || countAll(base, "canteen") || base.construction.some((c) => c.type === "canteen")) return 0;
   return buildWishes(state, base).some((w) => w.type === "canteen" && w.save) ? BUILDINGS.canteen.cost.scrap : 0;
 }
+// The farm plot the farmers are short of (buildWishes, saved for): its scrap held the same way (ap-food: seed 5021 wished
+// for one from day 30 and built it on day 104, its scrap gone to whatever came first each time a run brought some in).
+const plotKeep = (state, base) => (plotsShort(state, base) && !base.construction.some((c) => c.type === "farm_plot") && count(base, "farm_plot") < (base.type === "hub" ? BUILDINGS.farm_plot.max : 3) ? BUILDINGS.farm_plot.cost.scrap || 0 : 0);
 export function planCrafts(state, base) {
   const q = craftQueue(base);
   const people = atBase(state, base.id);
@@ -2901,7 +2947,7 @@ export function planCrafts(state, base) {
     if (kitHave("flare") < HIVE_KIT.flare && (st.fuel || 0) >= 6 && baseAmmo(state, base) >= 40 && tryCraft(["flare"], "road flares to light the hive's passages", 5)) return;
   }
   if (rs) floor = rs.scrap.target;
-  keep = Math.max(buildKeep(state, base), kitchenKeep(state, base)); // on priorities: the rest only from scrap past the next building's (and the floors); the kitchen's scrap held while it is saved for
+  keep = Math.max(buildKeep(state, base), kitchenKeep(state, base) + plotKeep(state, base)); // on priorities: the rest only from scrap past the next building's (and the floors); the kitchen's scrap held while it is saved for
   if (lacking("armor") > 0 && tryCraft(["scrapvest", "tirevest"], "someone has no body armor", 35)) return;
   if (lacking("head") > 0 && tryCraft(["rivethelmet"], "someone has no helmet", 40)) return; // only once Backyard Blacksmithing is read (blueprints.js)
   if (waterIn(st) < n * 6 && filters < (base.type === "hub" ? 2 : 1) && tryCraft([filterRecipe(base)], "the well cannot keep up (and purified water means less of the worm)", 15)) return;
@@ -4443,6 +4489,7 @@ function launchTrip(state, c, pool, spareHands) {
   }
   if (!isCar(v) && cand) tripUndo(h, cand, took); // repaired or looked at, but the car stayed
   res.party.ap = { mission: c.mission, tile: c.tile, day: day(state) };
+  if (c.food === "huntTrips" && c.est > 0) res.party.ap.huntEst = c.est; // huntTripYield: what it brings back against this
   if (c.survey) surveySent(state);
   if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);
   if (isCar(v)) res.party.apFuelHome = Math.ceil((est.fuel / 2) * 1.2); // hiveChoice: fires never burn the fuel for the drive home
@@ -4491,15 +4538,17 @@ function foodTripCands(state, h, pool, need, P) {
   if (hunters.some((s) => bestHuntWeapon(s, ammo, arrows))) {
     const wire = (h.armory || []).some((it) => it && it.key === "snarewire");
     const snareKit = wire || (h.stock.scrap || 0) >= 25;
+    const yieldShare = huntTripYield(state); // the recent trips' catch against their estimates
     for (const x of huntTargets(state, h.tile, P.range, hunters, { ammo, arrows, mix: huntMixOf(h), hours: HUNT.defHours, limit: 8 }).filter((x) => walkable(state, h.tile, x)).slice(0, 3)) {
-      if (x.est.rations < 8) continue;
+      const est = x.est.rations * yieldShare;
+      if (est < 8) continue;
       const line = snareLine(state, x.tile);
       const snare = line ? state.hour - (line.check ?? line.set) >= 48 : snareKit;
       out.push({ mission: "move", tile: x.tile, crew: size, fit: huntFit, haul: true, food: "huntTrips", onSite: HUNT.defHours + (snare ? 2 : 0),
         steps: [...(snare ? [{ kind: "snare" }] : []), { kind: "hunt", hours: HUNT.defHours }, { kind: "home" }],
         supplies: snare && !line && !wire ? { scrap: 2 } : undefined,
-        score: (need.food * Math.min(3, x.est.rations / 12) * boost) / (1 + x.dist / 6),
-        why: `hunt for food${short ? " (the winter stores fall short)" : season === "autumn" ? " (stocking up in autumn)" : ""}: ~${Math.round(x.est.rations)} expected` });
+        score: (need.food * Math.min(3, est / 12) * boost) / (1 + x.dist / 6), est: x.est.rations,
+        why: `hunt for food${short ? " (the winter stores fall short)" : season === "autumn" ? " (stocking up in autumn)" : ""}: ~${Math.round(est)} expected${yieldShare < 1 ? ` (the recent hunts brought ${Math.round(yieldShare * 100)}% of their estimates)` : ""}` });
     }
   }
   const fishers = [...pool].sort((a, b) => fishFit(b) - fishFit(a) || a.id - b.id).slice(0, 2);
@@ -4665,6 +4714,26 @@ function noteTrade(state, text) {
   const m = /(\d+) (water|food)\b/.exec(String(text || "")); // the good bought comes first in a deal's text
   if (m) ledger(state)[m[2]].traded += Number(m[1]);
 }
+// The hunting trips' catch against the haul they were sent for (ap-food, 2026-10-11): the trip planner's estimate
+// (hunting.js expectHunt) is the average of a lottery (a deer or nothing), and the census's winter hunts brought in
+// 4-10 against ~25 (seed 5021 at f77236e: 34 trips, about 13 a trip against ~20). foodTripCands counts a trip at the
+// recent trips' share of their estimates (HUNT_TRIPS: the last `days` days, from `min` trips; never under `floor` of it).
+// g.huntTrips: [day, got, est] a trip, when its hunt is done (hunting.js huntSummary: p.lastHaul).
+const HUNT_TRIPS = { days: 40, min: 3, floor: 0.25 };
+function trackHuntTrips(state) {
+  const g = gov(state);
+  for (const p of state.parties) {
+    if (p.owner !== "player" || !p.ap || !(p.ap.huntEst > 0) || p.ap.huntSeen || !p.lastHaul || p.lastHaul.kind !== "hunt") continue;
+    p.ap.huntSeen = true;
+    (g.huntTrips || (g.huntTrips = [])).push([day(state), Math.round((p.lastHaul.rations || 0) * 10) / 10, Math.round(p.ap.huntEst * 10) / 10]);
+  }
+  if (g.huntTrips) g.huntTrips = g.huntTrips.filter((x) => day(state) - x[0] < HUNT_TRIPS.days);
+}
+function huntTripYield(state) {
+  const rec = (gov(state).huntTrips || []).filter((x) => day(state) - x[0] < HUNT_TRIPS.days);
+  const got = rec.reduce((a, x) => a + x[1], 0), est = rec.reduce((a, x) => a + x[2], 0);
+  return rec.length >= HUNT_TRIPS.min && est > 0 ? Math.max(HUNT_TRIPS.floor, Math.min(1, got / est)) : 1;
+}
 function trackHauls(state) {
   const g = gov(state);
   const w = g.hauls || (g.hauls = {});
@@ -4774,7 +4843,8 @@ function claimAct(state, p) {
 // gov.noForaging: the test switch (foragetest.js) that leaves foraging out of the governor's plans.
 const FORAGE_AP = { low: 12, critical: 4, minDay: 0.5 };
 // The land's hunters and fishers ahead of the farm (planRoles 2b): at most this share of the people (at least one).
-const LAND_AP = { share: 0.2 };
+// bareHead: a base without a hunting cabin keeps at most one hunter per this many people (planRoles, ap-food).
+const LAND_AP = { share: 0.2, bareHead: 8 };
 function planForage(state, base, people, foodDays, areas) {
   // Days of food for everyone fed here (upkeep.js: prisoners, guests, a holding convoy's crew too).
   foodDays = Math.min(foodDays, edibleFood(base) / Math.max(1, foodUse(state, base).total));

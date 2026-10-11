@@ -62,6 +62,7 @@ export const KITCHEN = {
   // Cooking perks (skills.js PERK_TREE.cooking).
   perk: { hearty: 0.5, thrifty: 0.02, nowaste: 0.03, bigpot: 18, lowflame: 2 / 3 },
   govFrom: 8, // the governor (and a steward with Building and Farming & food) builds one at a base of 8+ people
+  coldKeep: 30, // the governor keeps the cook fire this many days after the stove was last cold (autopilot.js cookFireRedundant)
   day: [5, 21], // a fixed-role cook's working hours (05:00–21:59)
   cookHours: [5, 6, 16, 17, 18, 19, 20], // the hours a part-time cook cooks: before and at the meals
   cookedFor: 24, // hours a cook who cooked counts as one of the day's cooks (s.cookHour)
@@ -196,6 +197,7 @@ export function kitchenFireDaily(state, base) {
     if (!base.kitchenCold && residents(state, base.id).length && base.stoveSave) log(state, `The kitchen's stove at ${base.name} is let go cold: the woodpile is kept for the winter's heating (${Math.round(base.stock.wood || 0)} of the ${base.stoveSave} the cold needs). Cold meals until the wood is in.`, "info");
     else if (!base.kitchenCold && residents(state, base.id).length) log(state, `The kitchen at ${base.name} is cold: no firewood to spare for the stove (it needs ${Math.ceil(w.need)} a day after the water boiler and the heating). Cold meals: no food saved, no lift to the mood${count(base, "cookhouse") ? "; the cook fire cooks the game and greens" : ", and nothing cooks the game and greens from infected land"}.`, "danger");
     base.kitchenCold = true;
+    if (residents(state, base.id).length) base.kitchenColdDay = workDay(state.hour); // the cook fire stays a while after (autopilot.js cookFireRedundant)
   }
 }
 

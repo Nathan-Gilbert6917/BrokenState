@@ -951,6 +951,26 @@ export function baseFishDay(state, base, hour = state.hour) {
 }
 // The Hunt job's room (no fixed cap): hunters to close the land food gap to goalDays (foraging.js landFoodHands).
 export const huntWorkCap = (state, base, goalDays) => landFoodHands(state, base, goalDays, baseHuntDay(state, base));
+// What the Hunt job has brought in lately against what its sizing expected (ap-food, 2026-10-11): the job's hunters are
+// sized by baseHuntDay (an average hunter with a hunting rifle on the best tile), and at a base without a cabin they
+// brought in well under half of it (seed 5021: 40 of 96 over the first 27 hunter-days; pistols, quiet mixes, thinned
+// ground). base.huntRec: [day, got, expected] for each day the job went out, the last HUNT_YIELD.days. huntYield:
+// { got, exp, days, ratio (got / exp, null under HUNT_YIELD.min days), poor (ratio under HUNT_YIELD.low) }. The
+// governor sends its no-cabin hunters back to the plots while it is poor (autopilot.js planRoles).
+export const HUNT_YIELD = { days: 14, min: 4, low: 0.5 };
+export function recordHuntYield(state, base, got, exp) {
+  const d = Math.floor(state.hour / 24);
+  const rec = (Array.isArray(base.huntRec) ? base.huntRec : []).filter((x) => d - x[0] < HUNT_YIELD.days);
+  if (exp > 0) rec.push([d, r1(Math.max(0, got)), r1(exp)]);
+  if (rec.length) base.huntRec = rec; else delete base.huntRec;
+}
+export function huntYield(state, base) {
+  const d = Math.floor(state.hour / 24);
+  const rec = (Array.isArray(base.huntRec) ? base.huntRec : []).filter((x) => d - x[0] < HUNT_YIELD.days);
+  const got = rec.reduce((a, x) => a + x[1], 0), exp = rec.reduce((a, x) => a + x[2], 0);
+  const ratio = rec.length >= HUNT_YIELD.min && exp > 0 ? got / exp : null;
+  return { got: r1(got), exp: r1(exp), days: rec.length, ratio, poor: ratio != null && ratio < HUNT_YIELD.low };
+}
 // The Fish job's room: fishers to close it, at most one a rod (two a net).
 export const fishWorkHands = (state, base, goalDays) => Math.min(fishWorkCap(state, base), landFoodHands(state, base, goalDays, baseFishDay(state, base)));
 // The tile the base's hunters go to (jobtrips.js): the best of its hunting grounds (huntRadius) by the game it holds now,
@@ -1125,6 +1145,8 @@ export function huntingDaily(state, base) {
   // Gunfire carries: each wandering horde within 3 tiles of a hunting ground with shots today may turn toward it.
   for (const [tile, quiet] of Object.entries((h && h.gunfire) || {})) got.drawn = (got.drawn || 0) + drawHordes(state, Number(tile), quiet);
   if (got.hrs) base.huntLast = { day: Math.floor(state.hour / 24), mix: huntMixOf(base), hrs: got.hrs, rations: Math.round(((h && h.rations) || 0) * 10) / 10, shots: got.shots, arrows: got.arrows || 0, trapped: got.trapped || 0, drawn: got.drawn || 0, noise: base.huntNoise };
+  // The day's catch against what the job's sizing expected of those who went out (huntYield).
+  if (h && h.who && h.who.length) recordHuntYield(state, base, h.rations || 0, h.who.length * baseHuntDay(state, base, state.hour - 12));
   if (hunters.length && !h) noteOutput(state, base, "hunt", 0, "food");
   if (fishers.length && !fishWorkWhy(state, base)) {
     const k0 = fishTools(state, base, fishers, { frozen: frozenAt(state) });
