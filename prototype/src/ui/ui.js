@@ -140,7 +140,8 @@ import { roleOf, isManaged, taskLabel, taskWhy, priorityCount } from "../sim/wor
 import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // naming and renaming bases
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
-import { gaugeRows, treatsRow, needsEffectText } from "./needs.js";
+import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
+import { packFood, packWater } from "../sim/eating.js"; // the planner's per-person ration line
 import { needsBar } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
@@ -1197,6 +1198,7 @@ function plannerModal(state, ui) {
           ${est.dryAt != null ? `<div></div><div class="danger">Fuel runs out near ${esc(tileLabel(state, est.dryAt))}; they walk the rest (vehicle left there)</div>` : ""}
           <div${tip(stays ? "If you order them home as soon as they arrive" : "Out, about 6 hours on site, and back")}>Round trip</div><div>~${est.days.toFixed(1)} days (${Math.round(est.hours)}h: ${est.hoursOut}h out, ${est.hoursBack}h back)${stays ? ` <span class="muted">if sent home on arrival</span>` : ""}</div>
           <div${tip("Food and water for the trip: one ration a person a day, more on the move under a load (Medium +15%, Heavy +35%, Overloaded +60%, less with Scouting or on bikes, none extra in a car), the hours on site at the normal rate. Water is that times each day's thirst: 1.3 in summer, at least 1.6 on a hot day, 0.9 in winter; food times each day's cold: 1.1 below 0 °C, 1.2 below −8 °C (no camp fire on such a trip).")}>Needs</div><div>${est.food} food · ${est.water} water${isCar(v) ? ` · ${est.fuel} fuel${est.fuelMult > 1 ? ` (×${est.fuelMult.toFixed(2)} for the load)` : ""}` : ""}</div>
+          ${members.length ? rationLine(members, est) : ""}
           <div${tip(`What the packed supplies weigh, against what the crew can carry on top of what they wear (max load 40 kg each, 28 with a Bad Back, 48 with a Strong Back, more with a pack or Packrat)${v ? " plus the bikes' racks or the car" : ""}. Loot found on the trip needs what is left. ${BANDS_HELP}`)}>Weight</div><div class="${carry.over ? "danger" : ""}">${n1(carry.load)} kg packed + ${n1(carry.worn)} kg worn · room for ${n1(Math.max(0, carry.cap - carry.load))} kg more${carry.over ? " · too heavy" : ""}</div></div>
           ${carry.t ? `<div style="margin-top:0.3rem">${paceLine(carry.t)}${carLine(carry.t, v && v.name)}${carry.t.mode === true ? "" : loadRows(carry.t)}</div>` : ""}
           ${settles && v ? `<div class="small muted" style="margin-top:0.3rem">The ${esc(v.name)} stays at the new outpost with the team.</div>` : ""}` : `<div class="danger">No route to this tile${v ? " by vehicle" : ""}.${v ? "" : " Water in the way? Send a team to the shore and build a boat there."}</div>`}
@@ -1424,7 +1426,7 @@ function survivorModal(state, ui) {
     ${ui.lookEdit === s.id ? appearanceEditor(state, s) : ""}
     <div class="where">${s.leader ? "Leader · " : ""}${inContact(state, s) ? `Health ${n0(s.health)} · Mood ${n0(s.mood)}` : "Health and mood unknown (no contact)"} · Combat power ${combatPower(s).toFixed(1)}${base ? ` · at ${esc(base.name)}` : ""}${inContact(state, s) && s.woundInfected ? ` · <span class="danger">Infected wound</span>` : ""} ${treatButton(state, s)}</div>
     ${isCaptive(s) ? captiveLine(state, s) : ""}
-    ${s.alive && inContact(state, s) ? `<div class="card small" style="max-width:28rem">${gaugeRows(s)}${needsEffectText(s) ? `<div class="warn">${esc(needsEffectText(s))}</div>` : ""}${isSick(s) ? `<div class="row" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}${treatsRow(state, s)}</div>` : ""}
+    ${s.alive && inContact(state, s) ? `<div class="card small" style="max-width:28rem">${gaugeRows(s)}${needsEffectText(s) ? `<div class="warn">${esc(needsEffectText(s))}</div>` : ""}${foodOnThem(state, s)}${isSick(s) ? `<div class="row" style="flex-wrap:wrap">${conditionChips(state, s)}</div>` : ""}${treatsRow(state, s)}</div>` : ""}
     ${s.alive ? workLine(state, s, base) : ""}
     <div class="grid2">
       ${skillsBlock(state, s)}
@@ -1709,6 +1711,13 @@ function shelterRows(state, b) {
     <div${tip("The shelter's fire: warmth (the tarps are as cold as outside without it), boiled water, better spirits (+0.5 mood a day; cold nights without it cost 1). Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>`;
 }
 
+// The planner's ration line: a day's food and water a person on this trip, and what their packs already hold (sim/eating.js:
+// they count toward the supplies, so the base packs that much less).
+function rationLine(members, est) {
+  const n = Math.max(1, members.length);
+  const pf = members.reduce((a, s) => a + packFood(s), 0), pw = members.reduce((a, s) => a + packWater(s), 0);
+  return `<div${tip("Each person's share of the trip's food and water, and what the packs they carry already hold (sim/eating.js: everyone carries about 1.5 days of food and water; it counts toward what you pack, and they eat the team's shared food first)")}>Per person</div><div>${n1(est.food / n)} food · ${n1(est.water / n)} water <span class="muted">(packs on them: ${n1(pf)} food · ${n1(pw)} water)</span></div>`;
+}
 function baseOverview(state, b) {
   const people = atBase(state, b.id);
   const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
@@ -1726,6 +1735,7 @@ function baseOverview(state, b) {
         <div>Heat</div><div>${baseHeat(state, b)}</div>
         ${shelterRows(state, b)}
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
+        ${rationRow(state, b)}
         <div${tip("Where the fresh food is kept (the food rooms: cellars, storehouse, cold store, a freezer; above them it is stored outside and spoils faster), what will spoil before it is eaten, and the food that keeps")}>Food storage</div>${storeCellHtml(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
         <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepCellHtml(state, b)}

@@ -577,6 +577,12 @@ export const TRAITS = {
   tactical:     { name: "Tactical",      desc: "+10% to hit a flanked target, -5% to be hit while in cover, +3% to hit for allies within 2 tiles; +0.5 fighting strength by the numbers" },
   strategic:    { name: "Strategic",     desc: "Their team meets 10% less trouble on the road, and while they are at a base your estimates of other groups are 15% sharper" },
   diplomatic:   { name: "Diplomatic",    desc: "Goodwill with groups rises 10% faster and falls 10% slower; their team's bribes and tolls cost 10% less; radio deals from their base: delivery fees go 10% lower" },
+  // 2026-10-11 (wave 2 eating, user pick 3: food preferences): eating.js reads them at every meal. Picky Eater and
+  // Vegetarian are rolled at birth after the others (DIET_TRAITS, traits.js dietTraits); a Cannibal only by choice (the
+  // new-run screen, a custom background): the game has no human meat (eating.js).
+  picky:        { name: "Picky Eater",   bad: true, desc: "Fussy about food: a simple meal mood -3 and raw food -4 on top of the usual; a fine meal +2 and a lavish one +3 on top" },
+  vegetarian:   { name: "Vegetarian",    bad: true, desc: "Eats plant food first; meat, fish, eggs, milk, honey or a mixed meal: mood -6 (2 days)" },
+  cannibal:     { name: "Cannibal",      neutral: true, desc: "Human meat lifts their mood (+10) where it turns anyone else's stomach (-20). There is no human meat in the game: the dead carry the worm" },
 };
 // The traits drawn with the world's dice at birth (world.js rollTraits), in this order: the ten there were before
 // 2026-10-08. The draw over them is exactly the old draw, so a seed keeps every roll it made; the newer traits come in
@@ -589,12 +595,17 @@ export const NEW_TRAITS = Object.keys(TRAITS).filter((t) => !BIRTH_TRAITS.includ
 // but for the few a later trait now takes the place of one. Never add to this list: a later wave gets its own.
 export const LATE_TRAITS = ["tactical", "strategic", "diplomatic"];
 // The swap's pool (traits.js swapNewTraits): the 21 newer traits of 2026-10-08, in their order. Never add to it.
-export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t));
+// The food traits of 2026-10-11 (wave 2 eating): rolled after the late ones with their own hash (traits.js dietTraits:
+// Picky Eater and Vegetarian; the Cannibal is never rolled). Never add to this list: a later wave gets its own.
+export const DIET_TRAITS = ["picky", "vegetarian", "cannibal"];
+export const DIET_ROLLED = ["picky", "vegetarian"];
+export const SWAP_TRAITS = NEW_TRAITS.filter((t) => !LATE_TRAITS.includes(t) && !DIET_TRAITS.includes(t));
 // Traits nobody has together (opposites). The one table: the birth roll, a child's traits, the new-run screen's
 // picker, custom backgrounds, the backgrounds of a start.
 export const TRAIT_CLASH = [["brave", "coward"], ["lucky", "unlucky"], ["tough", "frail"], ["strongback", "badback"], ["quickheal", "sickly"], ["ironwill", "hothead"],
   ["fleet", "slow"], ["quicklearner", "slowlearner"], ["ironstomach", "weakstomach"], ["keeneye", "nearsighted"], ["strongback", "feeble"], ["medic", "squeamish"], ["ironwill", "pessimist"],
-  ["diplomatic", "hothead"]]; // 2026-10-09: a Hothead talks no one round
+  ["diplomatic", "hothead"], // 2026-10-09: a Hothead talks no one round
+  ["vegetarian", "cannibal"]]; // 2026-10-11: one does not eat meat
 // Do traits a and b clash?
 /** @param {string} a @param {string} b @returns {boolean} */
 export const traitsClash = (a, b) => TRAIT_CLASH.some(([x, y]) => (x === a && y === b) || (x === b && y === a));

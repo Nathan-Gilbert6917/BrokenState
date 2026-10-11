@@ -27,7 +27,7 @@ import { fireButton, campStatusCard } from "./hardcore.js"; // Establish base wh
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
 import { teamWaterIn, teamRawIn, keyWord } from "../sim/water.js"; // purified and un-purified water
-import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock } from "./needs.js";
+import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock, foodOnThem } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
@@ -360,7 +360,7 @@ function memberCard(state, p, m, live, queueing) {
     <div class="spread"><b>${m.leader ? "★ " : ""}${m.vol ? `<span class="vol-tag">VOL</span> ` : ""}${esc(m.name)}${live ? statusIcons(state, m) : ""}</b><span>${inv}${treat}</span></div>
     ${m.vol ? `<div class="vol-text"${tip("Another group's person: they carry, eat the team's food and fight beside your people, but their own group's AI moves them in a battle. They keep their kit.")}>${esc(volLine(state, m))}</div>` : ""}
     ${live ? `<div class="row"><span class="muted" style="width:3.5rem">Health</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.2rem;text-align:right">${n0(m.health)}</span></div>
-    ${gaugeRows(m, { label: "3.5rem" })}${needsEffectText(m) ? `<div class="warn">${esc(needsEffectText(m))}</div>` : ""}${treatsRow(state, m)}
+    ${gaugeRows(m, { label: "3.5rem" })}${needsEffectText(m) ? `<div class="warn">${esc(needsEffectText(m))}</div>` : ""}${foodOnThem(state, m)}${treatsRow(state, m)}
     ${m.woundInfected ? `<div class="danger"${tip("Gets worse every hour away from a base. Treat with meds.")}>Infected wound</div>` : ""}
     ${isSick(m) ? `<div class="row" style="flex-wrap:wrap">${conditionChips(state, m)}</div>` : ""}
     ${heal ? `<div class="good">Resting: +${heal.toFixed(2)} health/h</div>` : ""}` : ""}

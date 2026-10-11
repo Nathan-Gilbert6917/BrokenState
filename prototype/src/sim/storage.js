@@ -41,7 +41,7 @@ import * as Weather from "./weather.js";
 import { spoilMult } from "./skills.js";
 import { baseGameDaily, CABIN } from "./hunting.js";
 import { baseCooks, cookEggs } from "./worm.js";
-import { cookBills, poisonAtBase, COOK_RECIPES } from "./cooking.js"; // wave 2 cooking: bills at the stations, food poisoning from the day's meals
+import { cookBills, poisonRoll, COOK_RECIPES } from "./cooking.js"; // wave 2 cooking: bills at the stations, food poisoning from the day's meals
 import { FOODS, DAY_KCAL, foodIn, foodSplit, syncLots, lotsOf, takeFood, addFood, ageLots, unitsOf, qtyOf, foodText, eggFood } from "./foods.js";
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30, freezer: 300 };
@@ -221,7 +221,7 @@ export function cookDaily(state, base, units) {
 // worm's eggs (eaten uncooked: base.rawCropEaten / rawForageEaten), then the meat with eggs (base.rawEaten; worm.js
 // rolls them). Jarred food frees its jars (most come back). Records what was eaten today (base.ate: the mood from the
 // meals, relations.js). Returns the days of food that could not be covered.
-export function eatFromStore(base, amount, state = null) {
+export function eatFromStore(base, amount, state = null, eaters = null) {
   let need = Math.max(0, amount);
   if (!(need > 0)) return 0;
   const ate = takeFood(base, need, { eggs: false, state });
@@ -242,12 +242,22 @@ export function eatFromStore(base, amount, state = null) {
   }
   if (items.f_jarred > 0) jarsBack(base, items.f_jarred);
   noteAte(state, base, items);
-  if (state) poisonAtBase(state, base, ate.lots); // cooking.js: food poisoning from the day's meals (their cook, the kitchen's dirt) and raw meat eaten uncooked
+  // cooking.js: food poisoning from the lots eaten, rolled for `eaters` when the caller knows them (the people living here
+  // eat person by person: eating.js rolls each one's own meal; children, prisoners and guests have no illness of it).
+  if (state && eaters && eaters.length) notePoisoned(state, base, poisonRoll(state, eaters, ate.lots, { cooked: baseCooks(base), where: ` at ${base.name}` }));
   return Math.max(0, need);
 }
-// What a base ate today (relations.js noteMeals: the mood of the meals, weeks of nothing fresh).
+// The base's record of the day's food poisoning (cooking.js poisonAtBase's base.poisonDay): the people who came down with it.
+export function notePoisoned(state, base, hit) {
+  if (!state || !base || !hit || !hit.length) return;
+  const d = Math.floor(state.hour / 24) + 1;
+  if (base.poisonDay && base.poisonDay.day === d) base.poisonDay.n += hit.length;
+  else base.poisonDay = { day: d, n: hit.length };
+}
+// What a base ate today (relations.js noteMeals: the mood of the meals, weeks of nothing fresh). The day: the midnight
+// tick closes the day before (eating.js eats by the hour; economy.js reads the day that ended at midnight).
 function noteAte(state, base, items) {
-  const d = state ? Math.floor(state.hour / 24) : null;
+  const d = state ? Math.floor((state.hour - 1) / 24) : null;
   if (!base.ate || base.ate.day !== d) base.ate = { day: d, units: 0, fresh: 0, meals: 0, lift: 0 };
   for (const [k, q] of Object.entries(items)) {
     const f = FOODS[k], u = unitsOf(k, q);
@@ -258,6 +268,15 @@ function noteAte(state, base, items) {
 }
 // The mood the day's meals give (relations.js): the eaten meals' moodLift, by their share of the day's food.
 export const mealLift = (base, d) => (base.ate && base.ate.day === d && base.ate.units > 0 ? base.ate.lift / base.ate.units : 0);
+
+// Food eaten from the stores by someone at the table (eating.js, hourly): jarred food frees its jars, and the day's
+// record (noteAte).
+export function ateFromStore(state, base, items) {
+  if (items.f_jarred > 0) jarsBack(base, items.f_jarred);
+  noteAte(state, base, items);
+}
+// The day a base's meals count for now (see noteAte).
+export const ateDay = (state) => Math.floor((state.hour - 1) / 24);
 
 // Jars in use follow the jarred food: eating it frees its jars, most come back.
 function jarsBack(base, eaten) {

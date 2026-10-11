@@ -16,9 +16,10 @@
 //     lots evenly (pass one person and their own lots for per-person meals). Raw meat or fish (FOODS[k].raw) eaten from a
 //     clean lot where nothing cooks it (cooked: false) counts POISON.raw a day of food. Lots with the worm's eggs are
 //     skipped (worm.js eatRaw rolls them: food poisoning at its own odds). Iron Stomach / Weak Stomach scale it.
-//   - Until the eating branch lands, the existing eat sites call it: a base's day of eating (storage.js eatFromStore →
-//     poisonAtBase: everyone living there shares the day's lots) and a team's hour (needs.js takeFood stores the hour's
-//     lots on p.ateLots → teamPoisonHour shares them among the members).
+//   - The eating branch (eating.js, wave 2) rolls it per person on the lots each one ate: at a base (baseEatHour), from a
+//     pack, on an errand, and on a team (needs.js teamNeedsHour: cooked at a lit camp fire or a stop). storage.js
+//     eatFromStore rolls it only for eaters its caller names; poisonAtBase and teamPoisonHour (p.ateLots from needs.js
+//     takeFood) are left for other callers.
 //   - Meals keep their catalogue fields (foods.js: tier, moodLift, diet) for the eating branch's mood ladder.
 //
 // STATIONS AND BILLS (RimWorld's bills). A station is the Kitchen (buildings.js "canteen", kitchen.js) or a cook fire

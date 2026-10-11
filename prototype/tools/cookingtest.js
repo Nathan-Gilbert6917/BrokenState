@@ -265,7 +265,7 @@ section("Food poisoning: odds by skill, dirt, raw food; the condition");
   // at a base: the day's eating rolls it
   const w = mk(30);
   addFood(w.h, "f_simplemeal", 400, { left: 4, state: w.st, pz: 0.3, by: w.ppl[0].id });
-  eatFromStore(w.h, 30, w.st);
+  eatFromStore(w.h, 30, w.st, w.ppl); // eating.js: the people at a base eat by the hour; a caller that knows the eaters rolls them
   const sick = w.ppl.filter((s) => (s.conditions || []).some((c) => c.key === "poisoning"));
   check(sick.length >= 3 && sick.length <= 18 && sick.every((s) => isIll(s)), `30 people ate a day of bad meals (pz 30%): ${sick.length} came down with it`);
   check(w.h.poisonDay && w.h.poisonDay.n === sick.length && w.st.log.some((l) => /food poisoning/.test(l.text || l.msg || String(l))), "a log line and the base's record");

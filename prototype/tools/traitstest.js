@@ -71,7 +71,7 @@ function plain(st, lvl = 5) {
 
 section("The table");
 {
-  check(Object.keys(TRAITS).length === BIRTH_TRAITS.length + NEW_TRAITS.length && NEW_TRAITS.length === 24, `${BIRTH_TRAITS.length} old + ${NEW_TRAITS.length} new traits (14 on 2026-10-08, 7 more bad ones with the tiers; Tactical, Strategic, Diplomatic on 2026-10-09: tools/traitstsdtest.js)`);
+  check(Object.keys(TRAITS).length === BIRTH_TRAITS.length + NEW_TRAITS.length && NEW_TRAITS.length === 27, `${BIRTH_TRAITS.length} old + ${NEW_TRAITS.length} new traits (14 on 2026-10-08, 7 more bad ones with the tiers; Tactical, Strategic, Diplomatic on 2026-10-09: tools/traitstsdtest.js; Picky Eater, Vegetarian, Cannibal on 2026-10-11: tools/eatingtest.js)`);
   check(BIRTH_TRAITS.join() === "brave,coward,nightowl,medic,greedy,tough,keeneye,loud,lucky,badback", "the birth draw's list is the old one, in its order");
   check(!Object.keys(TRAITS).includes("prepper") && !!TRAITS.prepper, "the prepper's background trait is still not enumerable");
   check(Object.values(TRAITS).every((t) => t.name && t.desc), "every trait has a name and a desc");
@@ -303,7 +303,7 @@ section("Tiers: the table, good, bad and neutral");
   const keys = Object.keys(TRAITS);
   check(keys.every((t) => TRAIT_TIERS[t]) && TRAIT_TIERS.prepper, `every trait has a row in TRAIT_TIERS (${keys.length} and the prepper)`);
   const good = keys.filter((t) => traitKind(t) === "good"), bad = keys.filter((t) => traitKind(t) === "bad"), neutral = keys.filter((t) => traitKind(t) === "neutral");
-  check(good.length === 16 && bad.length === 16 && neutral.length === 2 && traitKind("prepper") === "neutral", `${good.length} good, ${bad.length} bad, ${neutral.length} neutral (${neutral.join(", ")}), the prepper neutral`);
+  check(good.length === 16 && bad.length === 18 && neutral.length === 3 && traitKind("prepper") === "neutral", `${good.length} good, ${bad.length} bad, ${neutral.length} neutral (${neutral.join(", ")}), the prepper neutral`);
   const up = (a) => a.every((v, i) => i === 0 || v > a[i - 1]), down = (a) => a.every((v, i) => i === 0 || v < a[i - 1]);
   check(good.every((t) => TRAIT_TIERS[t].pts.every((p) => p > 0) && up(TRAIT_TIERS[t].pts)), "good traits cost points, more for each tier");
   check(bad.every((t) => TRAIT_TIERS[t].pts.every((p) => p < 0) && down(TRAIT_TIERS[t].pts)), "bad traits give points back, more for each tier");
@@ -520,7 +520,7 @@ section("The clash table everywhere");
     if (t.length === 2) two++;
   }
   check(bad === 0, `20000 birth rolls: no duplicate, no clash (${bad} bad)`);
-  check(Object.keys(TRAITS).every((t) => seen[t] > 0), "every trait comes up");
+  check(Object.keys(TRAITS).every((t) => seen[t] > 0 || t === "cannibal"), "every trait comes up (but the Cannibal: by choice only, eating.js)");
   check(Math.abs(nNew / slots - NEW_TRAITS.length / Object.keys(TRAITS).length) < 0.02, `the newer traits' share ${r3(nNew / slots)} (aimed at ${r3(NEW_TRAITS.length / Object.keys(TRAITS).length)}: the swap's ${r3(TRAIT_ROLL.NEW_SHARE)}, then the 2026-10-09 three's ${r3(TRAIT_ROLL.LATE_SHARE)})`);
   check(Math.abs(two / 20000 - 0.4) < 0.02, `two traits ${r3(two / 20000)} of the time (as before)`);
   const st = world(3);

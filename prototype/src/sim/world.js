@@ -49,6 +49,7 @@ import { workHour, workDayRoles } from "./work.js";
 import { stallDaily } from "./activity.js";
 import { leaderIdleHour } from "./idlework.js";
 import { isMealHour } from "./meals.js"; // the leader and the governor move people off stalled jobs once a day // the day each job at a base was first found unable to work (the stalled-job alert)
+import { packOnDeath } from "./eating.js"; // a death: their pack of food and water
 import { watchHour, watchDayRoles } from "./watch.js";
 import { sickRestHour } from "./sickrest.js"; // sick people rest: Manual and pinned people's jobs kept and given back
 import { tiredHour } from "./sleep.js";
@@ -622,6 +623,7 @@ export function killSurvivor(state, s, tileId, cause, extraItems = []) {
   const teamBattle = !!(fight && fight.tileId === tileId && fight.setup && fight.setup.partyId != null
     && s.location && s.location.kind === "party" && s.location.partyId === fight.setup.partyId);
   const home = here && !teamBattle ? here : null;
+  packOnDeath(state, s, home); // eating.js: their pack of food and water to the stores at a base, else lost with them
   if (home) {
     const kept = stripAll(s);
     home.armory.push(...kept);
