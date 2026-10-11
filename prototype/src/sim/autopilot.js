@@ -2175,9 +2175,10 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // through (worm.js baseCooks: a cook fire, the kitchen's stove while it is lit): no hunters or fishers on the job then
   // (ap-food: the census at ac1c1c6 had worm deaths up 45%; seed 5004's three-person outpost with no cook fire and no
   // scrap for one kept a hunter on infected ground for weeks and caught it from the meat). A cabin's hunters go on (its
-  // smoke house dries their meat). The cook fire is wished for meanwhile (wormWishes), and with the food down to
-  // FORAGE_AP.critical days they go anyway: raw game beats none (seed 5040, hardcore: no cook fire, no hunter, starved).
-  const rawGame = !cabin && !baseCooks(base) && wormLandNear(state, base) && foodDays >= FORAGE_AP.critical; // down to days of food, raw game beats none
+  // smoke house dries their meat). The cook fire is wished for meanwhile (wormWishes), and with the food under
+  // FORAGE_AP.low days they go anyway: raw game beats none (seed 5040, hardcore: no cook fire, no hunter, starved). Not at a
+  // shelter: its own fire is its cooking (worm.js baseCooks), out now and then, and a cook fire cannot go up there.
+  const rawGame = !cabin && !isShelter(base) && !baseCooks(base) && wormLandNear(state, base) && foodDays >= FORAGE_AP.low; // short of food, raw game beats none
   const huntScore = (x) => hunterMult(x) * (bestHuntWeapon(x, st, st.arrows || 0) ? 3 : 0.5);
   if (areas.food && !gov(state).noHunting && foodDays < landGoal && !rawGame) {
     const ahead = Math.max(1, Math.ceil(people.length * LAND_AP.share));
