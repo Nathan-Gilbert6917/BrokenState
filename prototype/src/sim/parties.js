@@ -56,7 +56,7 @@ import { packSiegeKit } from "./kit.js";
 import { packLights, unpackLights } from "./lights.js"; // a light each from the armory on the way out
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
-import { cartSupOf, cartToArms } from "./carry.js"; // carts.js: the supplies in the carts (the weight), a cart fetched into someone's arms (call-time only)
+import { cartSupOf, cartToArms, cartLotsIn } from "./carry.js"; // carts.js: the supplies in the carts (the weight), a cart fetched into someone's arms (call-time only)
 import { isCart } from "./carts.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
@@ -2284,6 +2284,7 @@ function addStock(base, supplies) {
 // the cells. Its people are moved by the caller.
 /** @param {State} state @param {Party} p @param {Base} base @param {Survivor[]} members */
 function unloadAt(state, p, base, members) {
+  cartLotsIn(state, p); // carry.js: what the carts in the cargo carry into the pool first (then the stores, food with its lots)
   wormHome(state, p, members, base); // worm.js: the hands that searched today, washed if the water here is safe
   moveFood(p, base, null, { state }); // foods.js: its food into the stores with its lots (shelf left, the worm's eggs)
   unloadGame(base, p.cargo, state); // the found food and game too

@@ -1622,7 +1622,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) {
       drawUnitIso(ctx, state, b, s, H, now);
-      if (isCart(s.t.bag) && !s.t.dead) { const [X, Y] = project(s.wx + 0.32, s.wy + 0.32, s.z); drawCartIso(ctx, s.t.bag, X, Y, S, (s.t.bag.contents || []).filter(Boolean).length); } // sim/carts.js: the cart rolls with its pusher
+      if (isCart(s.t.bag) && !s.t.dead) { const [X, Y] = project(s.wx + 0.5, s.wy - 0.05, s.z); drawCartIso(ctx, s.t.bag, X, Y, S, (s.t.bag.contents || []).filter(Boolean).length); } // sim/carts.js: the cart rolls with its pusher
     }
     for (const f of siegeOver.get(d) || []) f();
     for (const [L, , , sx, sy, fog, faded] of fronts) {

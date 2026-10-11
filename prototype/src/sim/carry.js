@@ -445,6 +445,13 @@ export function cartToGround(state, p, s) {
   cartOnTile(state, partyTile(p), cart);
   return cart.name;
 }
+// The lots of the carts in a team's cargo (and pushed by its people) into its pool (parties.js unloadAt: a team coming
+// into a base empties them into the stores).
+export function cartLotsIn(state, p) {
+  if (!p) return;
+  const carts = [...((p.cargo && p.cargo.gear) || []), ...partyMembers(state, p).map((s) => cartOf(s))].filter((c) => isCart(c) && c.held && c.held.length);
+  for (const c of carts) absorbHeld(state, p, {}, c);
+}
 // A cart into the free arms of someone on the team (the weakest fighter first: the others keep their hands free).
 // Returns their first name, or "" when nobody's arms are free.
 export function cartToArms(state, p, cart) {

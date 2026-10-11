@@ -42,7 +42,7 @@ import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, RA
 import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
 import { holdsCart, cartsNear, takeRefusal, boxKg, cartSpec } from "../sim/carts.js"; // a wheelbarrow, a hand cart in a fight: Let go, Take cart, Load cart
-import { recText, handsKg, carriedNear, handsBusy, armsText } from "../sim/carry.js"; // supplies carried in the arms in a fight: Drop carried (free), Pick up load
+import { recText, handsKg, carriedNear, handsBusy, armsText, cartSupOf } from "../sim/carry.js"; // supplies carried in the arms in a fight: Drop carried (free), Pick up load
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
 import { barkFrame } from "./barks.js"; // combat barks: short speech bubbles over the units' heads
 import { ingestMarks } from "./battlemarks.js"; // blood, brass and scorch read off each action's fx before the short fx list drops them
@@ -1544,11 +1544,13 @@ function medicButtons(state, b, u, btn) {
   return html;
 }
 
+// The team's supplies in the cart a unit pushes (sim/carry.js cartSupOf), kg.
+const cartSupKg = (state, b, u) => { const p = b.setup && b.setup.partyId != null ? state.parties.find((x) => x.id === b.setup.partyId) : null; const m = p ? cartSupOf(state, p) : null; return (m && m[u.sid]) || 0; };
 function bodyButtons(state, b, u, btn) {
   let html = "";
   // sim/carry.js: the team's supplies carried in the arms (no weapon until set down), and loads set down nearby.
   // sim/carts.js: a wheelbarrow or a hand cart: let go (free), take it back (1 action), load it from the bodies and piles round it.
-  if (holdsCart(u)) html += btn("letGoCart", "Let go", `Free: ${u.name.split(" ")[0]} lets go of the ${u.bag.name.toLowerCase()} (${Math.round(itemLoad(u.bag) * 10) / 10} kg with what is in it): it stays on this cell with everything in it, and ${u.name.split(" ")[0]} can shoot and fight again. Anyone next to it can load or unload it; Take cart (1 action) to push it on. Won, it comes back after the fight; on an evac or a retreat only a cart someone is pushing leaves with them.`, true);
+  if (holdsCart(u)) html += btn("letGoCart", "Let go", `Free: ${u.name.split(" ")[0]} lets go of the ${u.bag.name.toLowerCase()} (${Math.round((itemLoad(u.bag) + cartSupKg(state, b, u)) * 10) / 10} kg with what is in it): it stays on this cell with everything in it, and ${u.name.split(" ")[0]} can shoot and fight again. Anyone next to it can load or unload it; Take cart (1 action) to push it on. Won, it comes back after the fight; on an evac or a retreat only a cart someone is pushing leaves with them.`, true);
   { const c = cartsNear(b, u)[0]; if (c) { const why = takeRefusal(state, b, u, c); html += btn("takeCart", "Take cart", `1 action, next to it: ${u.name.split(" ")[0]} takes the ${c.cart.name.toLowerCase()} (${Math.round((itemLoad(c.cart) + boxKg(c)) * 10) / 10} kg with what is in it) and pushes it: hands full (no weapon) until it is let go, a tile less a move. It leaves with its pusher on an evac.${why ? ` ${why}` : ""}`, !why); html += btn("loadCart", "Load cart", `Free to open: load or unload the ${c.cart.name.toLowerCase()} next to ${u.name.split(" ")[0]} (${Math.round(boxKg(c) * 10) / 10} of ${cartSpec(c.cart).cap} kg). Drag things from bodies, piles or ${u.name.split(" ")[0]} into it: taking things off a body or the ground is hauling time as usual.`, true); } }
   if (handsBusy(u) && !holdsCart(u)) html += btn("dropCarried", "Drop carried", `Free: ${u.name.split(" ")[0]} sets down ${armsText(u)} (${Math.round(handsKg(u) * 10) / 10} kg) on this cell, and can shoot and fight again. Won, the team picks it all up after the fight; retreating, it stays on the ground of this tile.`, true);
   if (handsBusy(u) && b.units.filter((x) => x.side === "player" && handsBusy(x)).length > 1) html += btn("dropAllCarried", "All drop carried", "Free: everyone of yours sets down what they carry in their arms.", true);
