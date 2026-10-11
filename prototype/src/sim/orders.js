@@ -64,7 +64,7 @@ export function describeOrder(state, o) {
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
     case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (buildings.js CAMP.setupHours); then the camp stands (pitchDone)
     case "well": return "Dig a well"; // claims.js: on a claim next to one of your bases
-    case "fwork": return { load: "Load from the stockpile", unload: "Leave finds at the stockpile", destroy: "Wreck the field work", capture: "Take the field work", loot: "Take the stockpile's goods" }[o.act] || "Field work"; // fieldworks.js
+    case "fwork": return { load: "Load from the stockpile", unload: "Leave finds at the stockpile", destroy: "Wreck the field work", capture: "Take the field work", loot: "Take their stores there", draw: "Take supplies from the cache", stash: "Leave supplies in the cache", check: "Check the snare line", rob: "Rob their snare line" }[o.act] || "Field work"; // fieldworks.js
     case "listen": { const n = o.net != null ? networkById(state, o.net) : null; return `Listen in${n ? ` on ${n.name}` : ""}`; } // radiolisten.js
   }
   return o.type;
