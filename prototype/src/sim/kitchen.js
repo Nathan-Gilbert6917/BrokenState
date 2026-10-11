@@ -183,7 +183,9 @@ export function kitchenFireDaily(state, base) {
   if (!hasKitchen(base)) { delete base.kitchenCold; delete base.kitchenBurn; return; }
   const w = kitchenWood(state, base);
   const st = base.stock;
-  const lit = residents(state, base.id).length > 0 && kitchenCanLight(state, base);
+  // base.stoveSave: the governor (or a steward with Production) keeps the stove cold in the run-up to the cold while the
+  // woodpile is well short of the winter's need (autopilot.js stoveSave): the winter's heating comes first.
+  const lit = residents(state, base.id).length > 0 && !base.stoveSave && kitchenCanLight(state, base);
   if (lit) {
     st.wood = Math.max(0, (st.wood || 0) - w.need);
     base.kitchenBurn = { day: workDay(state.hour), wood: w.need };
@@ -191,7 +193,8 @@ export function kitchenFireDaily(state, base) {
     base.kitchenCold = false;
   } else {
     base.kitchenBurn = { day: workDay(state.hour), wood: 0 };
-    if (!base.kitchenCold && residents(state, base.id).length) log(state, `The kitchen at ${base.name} is cold: no firewood to spare for the stove (it needs ${Math.ceil(w.need)} a day after the water boiler and the heating). Cold meals: no food saved, no lift to the mood${count(base, "cookhouse") ? "; the cook fire cooks the game and greens" : ", and nothing cooks the game and greens from infected land"}.`, "danger");
+    if (!base.kitchenCold && residents(state, base.id).length && base.stoveSave) log(state, `The kitchen's stove at ${base.name} is let go cold: the woodpile is kept for the winter's heating (${Math.round(base.stock.wood || 0)} of the ${base.stoveSave} the cold needs). Cold meals until the wood is in.`, "info");
+    else if (!base.kitchenCold && residents(state, base.id).length) log(state, `The kitchen at ${base.name} is cold: no firewood to spare for the stove (it needs ${Math.ceil(w.need)} a day after the water boiler and the heating). Cold meals: no food saved, no lift to the mood${count(base, "cookhouse") ? "; the cook fire cooks the game and greens" : ", and nothing cooks the game and greens from infected land"}.`, "danger");
     base.kitchenCold = true;
   }
 }

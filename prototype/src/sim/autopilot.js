@@ -348,6 +348,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.building && hourOfDay(state) === WATER_WAIT.hour) waterSalvage(state, base);
   if (areas.building) planBuilds(state, base, areas);
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 2) { const msg = cookFireDown(state, base); if (msg) say(state, msg); } // kitchen.js: a lit kitchen does the cook fire's job
+  if (areas.production && hourOfDay(state) === 23) stoveSave(state, base); // kitchen.js: the winter's firewood before the stove
   if (areas.building && hourOfDay(state) === PLAN_HOUR + 1) for (const line of govFieldWorks(state, base, { threatened: fieldThreat(state, base), waterShort: waterRunningShort(state, base) })) say(state, line); // fieldworks.js: a well, a tower and its lookouts, repairs
   if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
   if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
@@ -362,6 +363,15 @@ export function cookFireRedundant(state, base) {
   const kw = kitchenWood(state, base);
   if (Math.max(0, base.stock.wood || 0) < kw.need * KITCHEN.wood.keepDays) return false;
   return !woodWorkWhy(state, base) || !woodNeed(state, base).short;
+}
+// The stove kept cold for the winter's wood (kitchen.js kitchenFireDaily reads base.stoveSave): in the run-up to the cold
+// (WOOD_AP.autumn days) while the woodpile is under WOOD_AP.behind of what the cold needs, the Kitchen's daily firewood
+// (20-40 a day) goes to the winter instead (woodtest seed 42: 28% of the cold's need with the stove lit all autumn).
+function stoveSave(state, base) {
+  if (!hasKitchen(base) || gov(state).noWood) { delete base.stoveSave; return; }
+  const w = woodNeed(state, base);
+  if (w.toCold > 0 && w.toCold <= WOOD_AP.autumn && w.need > 0 && w.have < w.need * WOOD_AP.behind) base.stoveSave = w.need;
+  else delete base.stoveSave;
 }
 function cookFireDown(state, base) {
   if (!cookFireRedundant(state, base)) return "";
@@ -4734,7 +4744,9 @@ export const WOOD_AP = { autumn: 28, minDays: 5, behind: 0.5, foodFirst: 10 };
 // third in: woodtest seed 42, 400 kg of 1,060); the spare hands cut toward having it in within three weeks
 // (woodcutting.js woodHandsWanted), each one past the first a little less (woodCrowd).
 const woodCuttersFor = (state, base, w) => woodHandsWanted(state, base, { w, days: Math.max(WOOD_AP.minDays, w.toCold) });
-const woodCrewMax = (n, w = null) => (n <= 3 ? 1 : Math.ceil(n / (w && w.have < w.need * WOOD_AP.behind ? 3 : 4)));
+// A Kitchen's stove (kitchen.js) burns firewood every day of the stocking season too: one woodcutter more may go ahead
+// (kitchen-plus; woodtest seed 42 met the winter at 28% of the cold's need with a kitchen burning 20 a day, 43% without).
+const woodCrewMax = (n, w = null) => (n <= 3 ? 1 : Math.ceil(n / (w && w.have < w.need * WOOD_AP.behind ? 3 : 4)) + (w && w.kitchen > 0 ? 1 : 0));
 const crewDays = (k) => Array.from({ length: Math.max(0, k) }, (_, i) => woodCrowd(i)).reduce((a, v) => a + v, 0); // k woodcutters' day in woodcutters (woodCrowd)
 // The woodcutters that go ahead of the builders and stations (planWood's critical, work.js's emergency): from autumn
 // (the cold within WOOD_AP.autumn days, or here, or the boiler burning wood) the crew it takes to have the pile in by
@@ -4751,7 +4763,8 @@ export function woodCritical(state, base, w, n) {
   const full = Math.min(want, woodCrewMax(n, w));
   if (w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0) return full; // the boiler burns wood every day
   const each = baseWoodDay(state, base);
-  const left = Math.max(0, w.need - w.have - each * crewDays(full) * WOOD_AP.autumn); // what the autumn's crew will not cut
+  // What the autumn's crew will not cut, and what the Kitchen's stove (kitchen.js) burns every day until the cold.
+  const left = Math.max(0, w.need - w.have + (w.kitchen || 0) * w.toCold - each * crewDays(full) * WOOD_AP.autumn);
   return Math.min(full, Math.max(1, handsForDay(left / Math.max(1, w.toCold - WOOD_AP.autumn), each, woodCrowd)));
 }
 function planWood(state, base, people, areas) {
