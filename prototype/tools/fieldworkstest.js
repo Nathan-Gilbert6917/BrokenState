@@ -22,7 +22,7 @@
 //   game hook); a snare line (catch, check, rot, robbery, a team's check); a fuel cache (restock, draw, hidden);
 //   the standing haul order; the groups' stockpiles and caches, their raids on each other's structures; the
 //   governor's roadblock on a raid road and stockpile by far crews; Help and the codex
-import { createWorld, tickHour, hub, atBase, residents, newId, liveTiles, baseVision, day } from "../src/sim/world.js";
+import { createWorld, tickHour, hub, atBase, residents, newId, liveTiles, baseVision, day, outOnTrip, homeAt } from "../src/sim/world.js";
 import { launchExpedition, partyTile, carried, outpostName, spawnAiParty } from "../src/sim/parties.js";
 import { queueOrder, startOrder } from "../src/sim/orders.js";
 import { makeHorde } from "../src/sim/hordes.js";
@@ -133,6 +133,9 @@ section("Building: the builders go out, the walk counts, the base queue shares t
   const at = spot(state, "tower", 2);
   const r = FW.planFieldWork(state, h, "tower", at.tile);
   const job = FW.jobFor(state, r.fw);
+  tick(state, 1);
+  const bs = atBase(state, h.id).filter((s) => s.role === "build");
+  check(job.progress > 0 && bs.length >= 2 && bs.every((s) => outOnTrip(state, s)) && !homeAt(state, h.id).some((s) => s.role === "build"), "the builders out at the site are away from the walls (world.js outOnTrip: not in a battle at the base)");
   const ok = tick(state, 60, () => r.fw.built);
   check(ok && r.fw.built && r.fw.hp === r.fw.max, `the tower stands after ${state.hour} hours (${job.hours} work-hours with two builders)`);
   check(state.log.some((l) => /Watch tower finished/.test(l.text)), "a log line says so");
@@ -269,6 +272,11 @@ section("The job trips' plug-in points (installTripHooks)");
   const dp = hooks.deposit(state, h, { trip: { at: far } }, "wood");
   check(dp && dp.tile === pile.tile && dp.stock === pile.contents, "a worker out past the stockpile drops the load there");
   check(hooks.deposit(state, h, { trip: { at: h.tile } }, "wood") == null, "one at the base's own tile goes home");
+  // No overfill: the stockpile takes up to its room (dp.put), the rest comes home (jobtrips.js credit).
+  const roomKg = FW.stockRoom(pile);
+  const tookWood = dp.put("wood", 1e6);
+  check(tookWood > 0 && FW.stockKg(pile) <= FW.FIELD.KINDS.stockpile.capKg + 0.01 && dp.put("wood", 50) === 0, `a full stockpile takes no more (${Math.round(roomKg)} kg of room took ${Math.round(tookWood)} firewood; ${FW.stockKg(pile)} of ${FW.FIELD.KINDS.stockpile.capKg} kg)`);
+  check(hooks.deposit(state, h, { trip: { at: far } }, "wood") == null, "full: the next worker out past it walks home with the load");
   FW.FIELD.PASSIVE_WELLS = passive0;
 }
 

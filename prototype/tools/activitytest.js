@@ -8,7 +8,7 @@
 // - Health, the walls, away on a team; people on work priorities (sleep, idle).
 // - The People tab (cards and compact rows) and the base Overview show it; the find box finds "chopping".
 // - Saves: base.output survives a save and load; an older save without it reads as nothing recorded; 7 days kept.
-// - Mealtimes: breakfast 06:00 (hunters 08:00) and dinner 20:00 show as Eating, outside the daily jobs' hours; asking
+// - Mealtimes: breakfast 06:00 (hunters 10:00) and dinner 20:00 show as Eating, outside the daily jobs' hours; asking
 //   what everyone does changes nothing (a day's output with and without looking is the same).
 // - The Idle list (by the job, not the clock), the People tab's Idle filter and badge, the Bases card's N of M
 //   working, the stalled-job alert after 2 days (gone when the job can work again).
@@ -110,7 +110,7 @@ check(last[0] && last[0].when === "yesterday" && /\+\d+ firewood \([\d.]+ kg\)/.
 check(workDay(24) === 1 && workDay(25) === 2 && workDay(23) === 1, "the midnight tick counts for the day before it");
 tickTo(state, 6);
 check(describeActivity(state, cutter).text === "Eating breakfast", `06:00: breakfast (${describeActivity(state, cutter).text})`);
-check(mealAt("hunt", 6) === null && mealAt("hunt", 8) === "breakfast" && mealAt("wood", 6) === "breakfast" && mealAt("farm", 20) === "dinner", "hunters and fishers eat after the dawn hunt (08:00); everyone dines at 20:00");
+check(mealAt("hunt", 6) === null && mealAt("hunt", 10) === "breakfast" && mealAt("wood", 6) === "breakfast" && mealAt("farm", 20) === "dinner", "hunters and fishers eat after the dawn trip (10:00); everyone dines at 20:00");
 // Meals are outside the jobs' hours: the daily jobs' sampled hours (wood 08–18, forage 09–19, hunt/fish 06, 07, 17).
 check([8, 10, 12, 14, 16, 18].every((h) => !mealAt("wood", h)) && [9, 11, 13, 15, 17, 19].every((h) => !mealAt("forage", h)) && [6, 7, 17].every((h) => !mealAt("hunt", h)), "no meal falls on a daily job's working hours");
 row = baseWork(state, base).find((r) => r.job === "wood");

@@ -51,7 +51,7 @@
 //   base.raidRoads = { tile: { n, last } }: the road tiles raids on that base came down (the governor's roadblocks).
 // Older saves have no state.fieldworks: ensureFW makes an empty one.
 import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId } from "./world.js";
-import { BUILDINGS, buildRate, isCamp, isShelter, gatherStalled, underAttack, matName } from "./buildings.js";
+import { BUILDINGS, buildRate, isCamp, isShelter, gatherStalled, underAttack, matName, onUpkeep } from "./buildings.js";
 import { ownsTile, wellYield, wellRate, WELL_LEFT, CLAIM, claimOwner, hauledWells } from "./claims.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { tileLabel, spawnAiParty, partyTile, cargoRoom, carried, takeSupply, partyMembers, launchExpedition, removeParty } from "./parties.js";
@@ -61,6 +61,7 @@ import { healthRest } from "./work.js";
 import { SUPPLIES, SKILL_NAMES } from "./data.js";
 import { hordeWallPower } from "./hordes.js";
 import { RELAY_RANGE, RELAY_UPKEEP_DAYS } from "./radio.js";
+import { woodNeed } from "./woodcutting.js"; // the governor keeps the winter's firewood (govFieldWorks)
 import { TRIP_HOOKS } from "./tripland.js"; // the job trips' plug-in points: installed at load (installTripHooks, end of file)
 import { GAME_TERRAIN, ANIMALS, SNARE, snareDayRate, takeGame, meatAt, addMeat } from "./hunting.js"; // blinds and snare lines
 import { wormKill, wormMeatAt } from "./worm.js"; // a snare's catch may be infested, as the hunters'
@@ -115,7 +116,7 @@ export const FIELD = {
   // pileDaily: kg a person a day their outdoor people drop at a group's stockpile; haulEvery: days between their haul
   // home; short: days of food under which they draw on it; cache: share of fuel/ammo/food sent out to a cache.
   AI: { every: 5, max: [1, 12, 4], stock: 0.15, gar: 2, garPop: 10, work: 3, pileDaily: 0.4, haulEvery: 6, short: 3, cache: 0.1 },
-  GOV: { towerPop: 6, garrisonPop: 10, repairAt: 0.7, roadRaids: 2, pileHands: 2, pileEvery: 5 },
+  GOV: { towerPop: 6, garrisonPop: 10, repairAt: 0.7, roadRaids: 2, pileHands: 2, pileEvery: 5, woodKeep: 0.5 }, // woodKeep: the share of the cold's firewood kept back from field works
   // Shifts at a tower or a roadblock (the base's watch roster's way, watch.js): who walks out for which hours. Each shift
   // holds up to the structure's garrison; a person stands one shift at one structure. They leave the base `walk` hours
   // (the tiles × WALK.pace, whole hours) before it starts and are home that long after it ends.
@@ -328,6 +329,14 @@ export const costText = (cost) => Object.entries(cost || {}).map(([k, v]) => `${
 // hour when it has none. The job in hand is the first one in the field queue whose site is clear (no hostile
 // party or horde on it). Returns true when this hour went to the field (constructionHour then skips the base).
 export function fieldBuildHour(state, base) {
+  const out = fieldBuildWork(state, base);
+  // The builders back at the base's own work this hour: not out at a site any more (they were marked away until the
+  // end of the next tick: the parties and hordes move before the construction hour, world.js hourOfWorld).
+  if (!out) fieldAwayEnd(state, base);
+  return out;
+}
+export function fieldAwayEnd(state, base) { for (const s of atBase(state, base.id)) if (s.away && s.away.fw != null) delete s.away; }
+function fieldBuildWork(state, base) {
   if (!state.fieldworks || !state.fieldworks.jobs.length) return false;
   const jobs = jobsOf(state, base);
   if (!jobs.length) return false;
@@ -338,6 +347,10 @@ export function fieldBuildHour(state, base) {
   const baseWork = base.construction.some((c) => !gatherStalled(c));
   if (baseWork && state.hour % 2 === 0) return false;
   job.progress += rate;
+  // The builders are out at the site this hour: away from the walls (world.js outOnTrip: not in a battle at the base).
+  const fw = fwById(state, job.fw);
+  const text = `Out ${job.type === "repair" ? "repairing" : job.type === "demolish" ? "pulling down" : job.type === "stock" ? "stocking" : "building"} the ${kindName(fw).toLowerCase()} at ${tileLabel(state, fw.tile)}`;
+  for (const s of atBase(state, base.id)) if (s.role === "build" && !s.inBed && !onUpkeep(state, base, s)) s.away = { until: state.hour + 2, fw: fw.id, text }; // through the next hour's moves, until the next construction hour
   if (job.progress >= job.hours - 1e-9) finishJob(state, job);
   return true;
 }
@@ -952,7 +965,7 @@ export function installTripHooks(hooks, { passiveWells = false } = {}) {
     const at = s && s.trip && s.trip.at != null ? s.trip.at : null;
     if (at == null || job === "water") return null;
     const drop = dropPointsFor(state, base, at).find((d) => d.room >= FIELD.DROP_MIN_KG && state.grid.distance(d.tile, at) < state.grid.distance(base.tile, at));
-    return drop ? { tile: drop.tile, stock: drop.fw.contents, fw: drop.fw } : null;
+    return drop ? { tile: drop.tile, stock: drop.fw.contents, fw: drop.fw, put: (key, q) => depositAt(state, drop.fw, key, q) } : null; // put: up to its room (no overfill)
   };
   const prevGame = hooks.game;
   hooks.game = (state, base, tile) => blindMult(state, base, tile) * (prevGame ? prevGame(state, base, tile) || 1 : 1); // a hunting blind
@@ -1575,11 +1588,16 @@ export function govFieldWorks(state, base, { threatened = false, waterShort = fa
   const mine = playerWorks(state, base);
   const n = atBase(state, base.id).length + mine.reduce((a, fw) => a + postedAt(state, fw).length, 0);
   const busy = jobsOf(state, base).length > 0;
+  // Firewood is the winter's: the governor spends none of it on a field work (a tower 120, a roadblock 150, their repairs)
+  // while the woodpile, less the cost, is behind GOV.woodKeep of what the coming cold needs (woodcutting.js woodNeed).
+  // (woodtest seed 43: a tower bought from the starting 300 in spring, then rebuilt, left the hub nothing to start on.)
+  const w = woodNeed(state, base);
+  const woodOk = (cost) => !(cost && cost.wood > 0) || w.need <= 0 || (base.stock.wood || 0) - cost.wood >= w.need * FIELD.GOV.woodKeep;
   const pickTile = (kind, score, only = null) => placeTiles(state, base, kind).filter((x) => (!only || only(x.tile)) && !placeProblem(state, base, kind, x.tile)).sort((a, b) => score(b.tile) - score(a.tile) || a.tile - b.tile)[0];
   let planned = busy;
-  const plan = (kind, t) => { if (planned || !t) return; const r = planFieldWork(state, base, kind, t.tile); if (!r.error) { lines.push(r.text); planned = true; } };
+  const plan = (kind, t) => { if (planned || !t || !woodOk(K[kind].cost)) return; const r = planFieldWork(state, base, kind, t.tile); if (!r.error) { lines.push(r.text); planned = true; } };
   // Repairs first.
-  for (const fw of mine) if (fw.built && condition(fw) < FIELD.GOV.repairAt && !jobFor(state, fw)) { const r = queueRepair(state, fw.id); if (!r.error) lines.push(r.text); }
+  for (const fw of mine) if (fw.built && condition(fw) < FIELD.GOV.repairAt && !jobFor(state, fw) && woodOk(repairCost(state, fw).cost)) { const r = queueRepair(state, fw.id); if (!r.error) lines.push(r.text); }
   if (!mine.some((x) => x.kind === "well") && waterShort) {
     const t = pickTile("well", (id) => wellYield(state, id) * 10 - state.grid.distance(base.tile, id));
     if (t && wellYield(state, t.tile) >= 4) plan("well", t);

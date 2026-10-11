@@ -122,7 +122,8 @@ export function tripRoute(state, from, to, owner = "player") {
 // ---------- plug-in points (sim/fieldworks and the like) ----------
 // Where the trips go and where they bring the load, each from one small function so other systems can add to them:
 //   TRIP_HOOKS.water(state, base, job, list) → the list of water sources ({ id, d }, nearest first) for "fish" or "water";
-//   TRIP_HOOKS.deposit(state, base, s, job) → { tile, stock } where a trip drops its load (default: the base, its stock).
+//   TRIP_HOOKS.deposit(state, base, s, job) → { tile, stock, put? } where a trip drops its load (default: the base, its stock);
+//     put(key, q) → what a drop point with a room limit takes (the rest comes home: jobtrips.js credit).
 //   TRIP_HOOKS.draw(state, base, tile, q) → what a water carrier fills at a source the water hook added ({ well: true }:
 //     a field well gives its day's yield and is drawn down by it), at most q.
 //   TRIP_HOOKS.game(state, base, tile) → × on the game the base's hunters find on that tile (a hunting blind: 1.35).
