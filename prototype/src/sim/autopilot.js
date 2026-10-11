@@ -1982,7 +1982,7 @@ function threatAt(state, base) {
 // day food was not plentiful); share = the most of the people here on the plots while the food is comfortable;
 // winterMargin = the winter outlook's safety margin (15% of the hungry gap's food) times this left over to count as
 // comfortable.
-export const FARM_AP = { extra: 1.6, share: 0.35, winterMargin: 2 };
+export const FARM_AP = { extra: 1.6, share: 0.35, winterMargin: 2, plotHands: 0.75 }; // plotHands: planRoles farmShort
 // The farmers short of plots (planRoles g.farmShort) is held this many hours once seen; plotsShort reads it.
 const FARM_SHORT_HOLD = 72;
 const plotsShort = (state, base) => !!(state.governor && state.governor.farmShort && state.governor.farmShort[base.id]);
@@ -2160,7 +2160,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // but one hand stays free for a queued build (often the very farm plots and stores the winter needs: with every
   // hand on the plots they were never built).
   const wShort = winterShort(state, base) > 0;
-  const winterCrew = () => farmTo(Math.min(fw.need, people.filter((s) => !s.inBed).length - (areas.building && base.construction.length ? 1 : 0)));
+  const winterCrew = (most = Infinity) => farmTo(Math.min(fw.need, most, people.filter((s) => !s.inBed).length - (areas.building && base.construction.length ? 1 : 0)));
   // A base without a hunting cabin (ap-food, 2026-10-11): its hunters work the tiles next to it (hunting.js
   // HUNT_GROUND.bare) for a few food a day each, under half of that in practice (huntYield), so they never come out of
   // the farm crew while the winter stores fall short or the farmers are short of plots (farmShort): the census at
@@ -2182,7 +2182,9 @@ function planRoles(state, base, areas = ALL_AREAS) {
       if (!people.some((s) => (want.get(s.id) || {}).role === "build")) { const c = ranked("build", (x) => skill(x, "mechanics"), (x) => !x.inBed)[0]; if (c) give(c, "build"); }
     }
   }
-  if (!cabin && (wShort || plotsShort(state, base))) winterCrew();
+  // (the land's share of the people, LAND_AP.share, is left out of it: with more plots than hands every hand went to the
+  // plots, nobody hunted and the farmers kept the plots "short": seed 5024 built 26 crop plots for 11 people and starved)
+  if (!cabin && (wShort || plotsShort(state, base))) winterCrew(people.length - Math.max(1, Math.ceil(people.length * LAND_AP.share)));
   // Game and fish from infected land carry the worm's eggs (worm.js wormKill) and are eaten raw where nothing cooks them
   // through (worm.js baseCooks: a cook fire, the kitchen's stove while it is lit): no hunters or fishers on the job then
   // (ap-food: the census at ac1c1c6 had worm deaths up 45%; seed 5004's three-person outpost with no cook fire and no
@@ -2305,7 +2307,9 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // Held for FARM_SHORT_HOLD hours once set (ap-food): the farmers on a trip that day, or a hand taken for a build, flipped
   // it off for hours at a time, and the plot wished for (saved up for: buildWishes) let the scrap go to barricades and
   // crafts in between (seed 5021: wanted on day 30, built on day 104). Off at once when the food is comfortable.
-  const fsNow = fw.active + fw.toSow >= slots && (foodOutlook(state, base).daysLeft < 30 || winterShort(state, base) > 0) && farmers >= slots * 0.45;
+  // ...and only while the plots there are want under FARM_AP.plotHands of the people here for their crew (ap-food: plots
+  // past the hands to tend them took the hunters too and were "short" for ever).
+  const fsNow = fw.active + fw.toSow >= slots && (foodOutlook(state, base).daysLeft < 30 || winterShort(state, base) > 0) && farmers >= slots * 0.45 && fw.need < people.length * FARM_AP.plotHands;
   const fsTill = g.farmShortTill || (g.farmShortTill = {});
   if (fsNow) fsTill[base.id] = state.hour + FARM_SHORT_HOLD;
   else if (farmLim.comfy) delete fsTill[base.id];
