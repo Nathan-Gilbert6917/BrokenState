@@ -64,6 +64,12 @@
 // (groupcare.js desertPressure: groupDietPressure). Their parties carry PACK.food a head out of the group's stock and
 // eat it on the road (parties.js spawnAiParty / removeParty: what is left comes home). Their people's traits stay
 // abstract (they are numbers until they join you).
+//
+// Balance (2026-10-11, the governor, Balanced, 112 days, against dev a447855 with cooking): normal seeds 1–9 ate 1.017
+// days of food a head a day (dev 1.078: the lean days, 61 base-days over nine games), no hunger days in either, deaths
+// 40 vs 35 (hive assaults and fights, none from food), mean mood 85.6 vs 84.5, buildings 199 vs 155, harvest 6534 vs
+// 6518, alive at the end 100 vs 95; hardcore seeds 11–12: both alive (12 and 6, no hunger days) where dev's seed 11
+// starved out on day 106.
 import { FOODS, foodIn, takeItem, takeFood, lotsOf, syncLots, packPick, moveFood, unitsOf, ageLots, foodKg } from "./foods.js";
 import { NEEDS, ensureNeeds } from "./needs.js";
 import { hourOfDay, outOnTrip, residents, log } from "./world.js";
