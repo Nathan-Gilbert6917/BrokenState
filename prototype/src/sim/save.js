@@ -27,7 +27,7 @@ import { sanitizeLibrary } from "./custombg.js"; // a save's custom backgrounds:
 import { migrateKit, migrateMagFits } from "./carrykit.js"; // old saves: carriers' plates, spare magazines
 import { Rng } from "./rng.js";
 import { HexGrid } from "./hex.js";
-import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, log } from "./world.js";
+import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, fillCooking, log } from "./world.js";
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
@@ -150,6 +150,8 @@ export function deserializeState(save) {
   // Melee (data.js SKILLS, world.js fillMelee): the same for people from before it: half their Shooting plus 0-6 by a
   // hash of their name (appearance.js meleeOldSave), their floor too, and no perk point for milestones already passed.
   for (const sv of state.survivors || []) fillMelee(sv);
+  // Cooking (data.js SKILLS, world.js fillCooking, 2026-10-10): half their Farming plus 0-4 by a hash of their name.
+  for (const sv of state.survivors || []) fillCooking(sv);
   // Craft books (blueprints.js CRAFT_BOOKS): one someone had already read to the end before they unlocked anything
   // (Small Engine Repair) counts as read.
   for (const sv of state.survivors || []) for (const [k, h] of Object.entries(sv.books || {})) {

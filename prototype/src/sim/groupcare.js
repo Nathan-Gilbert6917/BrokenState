@@ -41,7 +41,7 @@ import { SUPPLIES, GEAR } from "./data.js";
 import { day, log, hub } from "./world.js";
 import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { Rng } from "./rng.js";
-import { growthFactor } from "./groupworks.js";
+import { growthFactor, groupKitchenMorale } from "./groupworks.js";
 import { issueKit, removeFromArsenal, addToArsenal } from "./arsenal.js";
 import { stripAll } from "./inventory.js";
 import { makeCandidate, offerRecruits, RETURN } from "./recruits.js";
@@ -451,6 +451,7 @@ export function desertPressure(state, f) {
   p += Math.min(2, ((f.lossRecent || 0) / pop) * 5);
   p += (woundedOf(f) / pop) * 2;
   if (warsOf(state, f).length || atWarWithYou(state, f)) p += 0.5; // playerwars.js: a war with you weighs the same
+  p = Math.max(0, p - groupKitchenMorale(state, f)); // groupworks.js: hot meals from their kitchens keep people (kitchen-plus)
   return p * weightOf(f, "harsh");
 }
 export function desertDaily(state, f, d = day(state)) {

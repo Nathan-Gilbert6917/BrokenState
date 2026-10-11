@@ -16,7 +16,8 @@ import { contactable } from "../sim/orders.js";
 import { MISSIONS } from "../sim/parties.js";
 import * as Skills from "../sim/skills.js";
 import { roleOf, roleById, toManual } from "../sim/work.js";
-import { roleSelect, taskChip, applyRoleChoice } from "./work.js";
+import { roleSelect, taskChip, applyRoleChoice, cookPlusName, COOK_PLUS_LABEL } from "./work.js";
+import { COOK_SECOND } from "../sim/kitchen.js"; // Cook + a second job
 import { gaugeMini } from "./needs.js";
 import { hungerOf, thirstOf } from "../sim/needs.js";
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
@@ -26,7 +27,7 @@ import { bulkBar, bulkReport, BULK_ACTIONS, BULK_CHANGE } from "./rosterbulk.js"
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
-const SHORT = { shooting: "Shoot", stealth: "Stealth", scavenging: "Scav", scouting: "Scout", medicine: "Med", mechanics: "Mech", farming: "Farm", speech: "Speech", leadership: "Lead", crafting: "Craft", melee: "Melee" };
+const SHORT = { shooting: "Shoot", stealth: "Stealth", scavenging: "Scav", scouting: "Scout", medicine: "Med", mechanics: "Mech", farming: "Farm", speech: "Speech", leadership: "Lead", crafting: "Craft", melee: "Melee", cooking: "Cook" };
 
 // Skill progress from skills.js (XP to the next point), when it offers skillProgress(s, key).
 let skillProgress = typeof Skills.skillProgress === "function" ? Skills.skillProgress : null;
@@ -160,7 +161,7 @@ export function rosterModal(state, ui) {
       ${sel1("ro-filter-status", p.status, Object.entries(STATUS).map(([k, v]) => [k, v[0]]), "Show by health and mood")}
       <span class="ro-sep"></span>
       <span${tip("People away from a base keep their role until they are back")}>Set role for ${sel.size} ticked:</span>
-      <select data-action="ro-bulkrole" ${sel.size ? "" : "disabled"}${tip("Pick a role: everyone ticked who is at a base gets it")}><option value="">Choose…</option>${state.work ? `<optgroup label="Work roles (priorities)">${state.work.roles.map((r) => `<option value="w:${esc(r.id)}">${esc(r.name)}</option>`).join("")}</optgroup>` : ""}<optgroup label="Fixed job (Manual)">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}">${esc(r.name)}</option>`).join("")}</optgroup></select>
+      <select data-action="ro-bulkrole" ${sel.size ? "" : "disabled"}${tip("Pick a role: everyone ticked who is at a base gets it")}><option value="">Choose…</option>${state.work ? `<optgroup label="Work roles (priorities)">${state.work.roles.map((r) => `<option value="w:${esc(r.id)}">${esc(r.name)}</option>`).join("")}</optgroup>` : ""}<optgroup label="Fixed job (Manual)">${Object.entries(ROLES).map(([k, r]) => `<option value="${k}">${esc(k === "cook" ? "Cook (kitchen all day)" : r.name)}</option>`).join("")}</optgroup><optgroup label="${esc(COOK_PLUS_LABEL)}">${COOK_SECOND.map((k) => `<option value="cook+${k}">${esc(cookPlusName(k))}</option>`).join("")}</optgroup></select>
       ${bulkBar(state, ui, p)}
       ${sel.size ? `<button data-action="ro-clearsel"${tip("Untick everyone")}>Clear</button>` : ""}
       ${p.msg ? `<span class="warn">${esc(p.msg)}</span>` : ""}
@@ -181,8 +182,10 @@ export function rosterModal(state, ui) {
 export function setRole(state, s, role) {
   if (!s || !s.location || s.location.kind !== "base") return false;
   if (String(role).startsWith("w:")) return !!applyRoleChoice(state, s, role) && !!roleOf(state, s); // a work role (ui/work.js)
+  if (String(role).startsWith("cook+")) return !!applyRoleChoice(state, s, role) && !!s.cookPlus; // Cook + a second job (ui/work.js)
   if (!ROLES[role]) return false;
   toManual(state, s); // a fixed job: off work priorities
+  delete s.cookPlus; // sim/kitchen.js: no longer a Cook + second job
   s.role = role;
   if (role !== "operate") s.station = null;
   const b = baseById(state, s.location.baseId);
@@ -211,9 +214,10 @@ export const ROSTER_CHANGE = {
   "ro-bulkrole": (state, ui, el) => {
     const p = prefs(ui), role = el.value;
     const work = String(role).startsWith("w:") ? roleById(state, role.slice(2)) : null;
-    if (!ROLES[role] && !work) return;
+    const plus = String(role).startsWith("cook+") && ROLES[role.slice(5)] ? cookPlusName(role.slice(5)) : ""; // Cook + a second job
+    if (!ROLES[role] && !work && !plus) return;
     let done = 0, skipped = 0;
     for (const id of p.sel) setRole(state, state.survivors.find((s) => s.id === id), role) ? done++ : skipped++;
-    p.msg = `${done} set to ${work ? work.name : ROLES[role].name}${skipped ? `; ${skipped} not at a base kept their role` : ""}.`;
+    p.msg = `${done} set to ${work ? work.name : plus || ROLES[role].name}${skipped ? `; ${skipped} not at a base kept their role` : ""}.`;
   },
 };

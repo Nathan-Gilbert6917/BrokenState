@@ -24,6 +24,9 @@
 //                                                                         pulled blow, a thrown spear too), a melee kill
 //                                                                         2; fight by the numbers 8 (+4 won) with a
 //                                                                         melee weapon in hand
+//   Cooking     Cook role 11 at a kitchen (2 without one); a part-time    -
+//               cook (work priorities, or a fixed Cook + second job) 6
+//               on a day they cooked (kitchen.js cookedLately)
 //   Scavenging  Scavenge role 9; 4 an hour searching                     a container in a raid 3
 //   Stealth     Scavenge role 4; 1 an hour searching (3 sneaking);       hiding 5, lockpicks, sneaking in battle 2
 //               0.15 an hour on the move on foot (0.6 stealthy)
@@ -48,14 +51,14 @@
 // screen); the autopilot picks by its style. Every perk's effect is coded where it applies (see `hook` in PERKS).
 import { learnMult } from "./traits.js"; // Quick Study
 import { SKILLS, SKILL_NAMES, GEAR } from "./data.js";
-import { day, log, addCard, atBase, alive, skill, survivorById, fillCrafting, fillMelee, meleeArmed } from "./world.js";
+import { day, log, addCard, atBase, alive, skill, survivorById, fillCrafting, fillMelee, fillCooking, meleeArmed } from "./world.js";
 import { workFactor } from "./health.js";
 import { newItem } from "./inventory.js";
 import { BUILDINGS, RECIPES } from "./buildings.js";
 import { CRAFTS, craftQueue } from "./crafting.js";
 import { studyBlueprint, blueprintWares, bookUnlocksPending, learnBook } from "./blueprints.js";
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { hasKitchen } from "./kitchen.js"; // the Kitchen's cooks learn Farming (the cooking skill here)
+import { hasKitchen, cookedLately, jobShare } from "./kitchen.js"; // the Kitchen's cooks learn Cooking (full-day and part-time)
 
 export const MILESTONES = [5, 10, 15];
 export const SKILL_MAX = 20;
@@ -79,6 +82,7 @@ export const xpNeed = (L) => Math.round(40 + 0.32 * Math.max(0, L) ** 3);
 export const USE = {
   farm: 11, medicRole: 8, operate: 11, craft: 11, build: 11, idle: 2, guard: 6, watchHour: 0.25, scavRole: 9, scavStealth: 4,
   leader: 8, teamLead: 6, baseLead: 4, campTalk: 5, forage: 7, forageScout: 3, wood: 6, woodMech: 2,
+  cookPart: 6, // a part-time cook's cooking hours (kitchen.js cookedLately; the full Cook role is `operate`)
   travelHour: 0.5, stealthyHour: 0.6, footHour: 0.15, survey: 4, shot: 1, hit: 2, swing: 1, melee: 2, kill: 2, heal: 4, sneak: 2, box: 3,
   autoFight: 8, autoWin: 4, searchHour: 4, sneakSearch: 3, searchStealth: 1, wound: 5, surgery: 10, illness: 4, field: 6,
   talk: 5, talkWon: 5, hide: 5, bribe: 2, trade: 10, radio: 6, repair: 6, teachLead: 6, teachSpeech: 4,
@@ -175,6 +179,16 @@ export const PERK_TREE = {
     15: [P("bonebreaker", "Bonebreaker", "+10% critical-hit chance in melee, and a critical melee hit always staggers (not brutes or bosses).", [1, 2, 3], "skills.js battlePerks; combat.js meleeOdds, meleeAfter"),
          P("pitfighter", "Pit Fighter", "+1.5 fighting strength while they hold a melee weapon: counts in fights resolved by the numbers, search encounters and base defence.", [2, 2, 2], "world.js combatPower")],
   },
+  // Cooking (kitchen.js, 2026-10-10): the Kitchen's hot meals. Each works while they are one of the day's cooks at their
+  // base's kitchen (kitchen.js kitchenService; Camp Cook on a trip).
+  cooking: {
+    5: [P("hearty", "Hearty Portions", "While they cook at their base's kitchen, its hot meals give +0.5 mood a day more.", [2, 2, 2], "kitchen.js kitchenService"),
+        P("thrifty", "Thrifty Cook", "While they cook at their base's kitchen, its meals stretch the food 2% further (−12% instead of −10%, more with skill).", [3, 2, 1], "kitchen.js kitchenService")],
+    10: [P("bigpot", "Big Pot", "They feed 18 people at the kitchen instead of 12 (one cook covers a bigger base).", [2, 2, 2], "kitchen.js kitchenService"),
+         P("lowflame", "Low Flame", "While they cook at their base's kitchen, it burns a third less firewood.", [3, 2, 1], "kitchen.js kitchenWood")],
+    15: [P("nowaste", "Nothing Wasted", "While they cook at their base's kitchen, its meals stretch the food 3% further (adds to Thrifty Cook; past the usual −13% cap).", [3, 2, 1], "kitchen.js kitchenService"),
+         P("campcook", "Camp Cook", "+2 food a day for their team while it is out on a trip (camp stews stretch the rations; adds to Forager and Hunter).", [2, 2, 2], "skills.js skillsDaily")],
+  },
   speech: {
     5: [P("smooth", "Smooth Talker", "+2 to their team's talk checks (road stand-offs: Talk them down, Talk your way through; and talks during a rescue).", [2, 2, 1], "conflicts.js talkSkill"),
         P("charming", "Charming", "A road talk their team wins raises goodwill by 6 instead of 3.", [2, 2, 1], "conflicts.js talkChoice")],
@@ -230,6 +244,7 @@ export function ensureSkills(state, s) {
   if (!s) return s;
   fillCrafting(s); // world.js: people from before the Crafting skill
   fillMelee(s); // world.js: people from before the Melee skill
+  fillCooking(s); // world.js: people from before the Cooking skill
   if (s.xp && s.perkMs) return s;
   const d = state ? day(state) : 1;
   s.xp = s.xp || {};
@@ -416,6 +431,7 @@ export function perkScore(state, s, id) {
   if (role === "build" && ["handy", "masterbuilder"].includes(id)) v += 1.5;
   if (role === "craft" && ["tinkerer", "machinist", "quickhands", "goodeye", "steadybench", "scrapsaver", "mastercrafter", "foreman"].includes(id)) v += 1.5;
   if (role === "scavenge" && id === "scrounger") v += 1.5;
+  if ((role === "cook" || s.cookPlus) && ["hearty", "thrifty", "bigpot", "lowflame", "nowaste"].includes(id)) v += 1.5; // kitchen.js
   return v - (Number(id.length) % 3) * 0.01; // stable tie-break
 }
 
@@ -498,7 +514,7 @@ function readingDaily(state, base) {
     }
     s.readIdle = false;
     s.reading = k;
-    noteOutput(state, base, "read", readHours(state, s, k, READ_HOURS * Math.max(0.5, workFactor(s))), "readh");
+    noteOutput(state, base, "read", readHours(state, s, k, READ_HOURS * Math.max(0.5, workFactor(s)) * jobShare(state, s, "read")), "readh");
   }
 }
 
@@ -656,7 +672,7 @@ function teachingDaily(state, base) {
     }
     T.teachIdle = false;
     if (!T.teach || !lesson.set) T.teach = { skill: lesson.skill, learners: lesson.learners.slice() };
-    const rate = teachRate(T, lesson.skill);
+    const rate = teachRate(T, lesson.skill) * jobShare(state, T, "teach"); // kitchen.js: a part-time cook teaches the rest of the day
     let taught = 0;
     for (const id of lesson.learners) taught += gainXp(state, survivorById(state, id), lesson.skill, rate, "study");
     noteOutput(state, base, "teach", taught, "xp");
@@ -673,12 +689,15 @@ const RECIPE_SKILL = { ammo: "mechanics", meds: "medicine", parts: "mechanics", 
 // Use XP from a day's work at a base, by role (× work factor: the ill do less and learn less).
 function roleXp(state, base, s) {
   if (s.inBed) return;
-  const wf = workFactor(s);
+  const wf = workFactor(s) * jobShare(state, s); // kitchen.js: a part-time cook's job gets the hours away from the stove
   if (wf <= 0) return;
+  // A part-time cook (work priorities' Cook type, or a fixed Cook + second job: kitchen.js) counted at another job today
+  // learns Cooking from the cooking hours too.
+  if (s.role !== "cook" && cookedLately(state, s) && hasKitchen(base)) gainXp(state, s, "cooking", USE.cookPart * workFactor(s));
   switch (s.role) {
     case "farm": gainXp(state, s, "farming", USE.farm * wf); break;
     case "medic": gainXp(state, s, "medicine", USE.medicRole * wf); break;
-    case "cook": gainXp(state, s, "farming", (hasKitchen(base) ? USE.operate : USE.idle) * wf); break; // kitchen.js: Farming is the cooking skill
+    case "cook": gainXp(state, s, "cooking", (hasKitchen(base) ? USE.operate : USE.idle) * wf); break; // kitchen.js: the Cooking skill
     case "guard": gainXp(state, s, "shooting", USE.guard * wf); break; // + the hours on guard (skillsHour)
     case "scavenge": gainXp(state, s, "scavenging", USE.scavRole * wf); gainXp(state, s, "stealth", USE.scavStealth * wf); break;
     case "build": gainXp(state, s, "mechanics", (base.construction && base.construction.length ? USE.build : USE.idle) * wf); break;
@@ -749,7 +768,7 @@ export function skillsDaily(state) {
     const team = teamOf(state, p);
     if (!team.length) continue;
     if (team.length >= 2) gainXp(state, [...team].sort((a, b) => skill(b, "leadership") - skill(a, "leadership") || a.id - b.id)[0], "leadership", USE.teamLead);
-    const food = team.filter((s) => hasPerk(s, "forager")).length + 3 * team.filter((s) => hasPerk(s, "hunter")).length;
+    const food = team.filter((s) => hasPerk(s, "forager")).length + 3 * team.filter((s) => hasPerk(s, "hunter")).length + 2 * team.filter((s) => hasPerk(s, "campcook")).length; // Camp Cook (Cooking 15)
     if (food && p.supplies) p.supplies.food = (p.supplies.food || 0) + food;
     if (team.some((s) => hasPerk(s, "fieldrepair"))) fieldRepair(team);
   }

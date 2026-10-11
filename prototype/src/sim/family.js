@@ -360,7 +360,7 @@ function grownSkills(rng, c, parents) {
     const best = parents.length ? Math.max(...parents.map((p) => skill(p, k))) : 0;
     skills[k] = rng.int(0, 3) + Math.round(best * 0.3);
   }
-  if ((c.chores || 0) > 0) skills.farming += 2;
+  if ((c.chores || 0) > 0) { skills.farming += 2; skills.cooking = (skills.cooking || 0) + 1; } // the fields and the kitchen
   const seen = Object.entries(c.seen || {}).sort((x, y) => y[1] - x[1]);
   if (seen[0]) skills[seen[0][0]] += 3;
   if (seen[1]) skills[seen[1][0]] += 2;

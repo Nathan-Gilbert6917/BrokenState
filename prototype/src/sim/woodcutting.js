@@ -46,6 +46,7 @@ import { SUPPLIES, GEAR } from "./data.js";
 import { econStats } from "./farming.js";
 import { carriedItems } from "./hunting.js";
 import { mouthsAt, HEAT, woodFor } from "./upkeep.js";
+import { KITCHEN, hasKitchen, kitchenWood } from "./kitchen.js"; // the Kitchen's stove burns firewood every day (woodNeed)
 import { boilerUse, WORM } from "./worm.js"; // the water boiler burns firewood a head every day its water needs boiling
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult, tileFactor } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
@@ -289,12 +290,12 @@ export function handsForDay(perDay, each, crowd = woodCrowd, max = 40) {
 }
 // The woodcutters a base wants (no fixed cap: sized to the need): enough to cut what the coming cold still needs
 // (woodNeed) within `days` (default: WOOD.base.stockDays, or the days to the cold if sooner; at least minDays) and to
-// keep up with the water boiler's daily firewood. 0 when the pile holds it.
+// keep up with the water boiler's and the Kitchen's daily firewood. 0 when the pile holds it.
 export function woodHandsWanted(state, base, { w = woodNeed(state, base), days = null } = {}) {
   if (!w.short || w.need <= 0) return 0;
   const each = baseWoodDay(state, base);
   const d = days ?? Math.max(WOOD.base.minDays, Math.min(WOOD.base.stockDays, w.toCold));
-  return handsForDay(Math.max(0, w.need - w.have) / d + (w.boiler > 0 ? w.boiler : 0), each);
+  return handsForDay(Math.max(0, w.need - w.have) / d + (w.daily > 0 ? w.daily : 0), each); // the boiler's and the kitchen's day too
 }
 // One woodcutter's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them) on `tile`, read
 // at `hour`; their share as the k-th of the base's woodcutters (woodCrowd), with their own tool or the armory's. The
@@ -365,15 +366,24 @@ export function woodSeason(state, hour = state.hour) {
 // The water boiler (worm.js boilerUse) burns the same a head every day its water needs boiling, in every season:
 // WORM.BOILER_DAYS days of it are wanted in store on top, and the stocking season is always on while it burns.
 // { need, have, days (freezing days ahead), soon (the stocking season), short (have < need), cold (winter: the hard
-// cold is here), toCold (days until it is), boiler (the boiler's firewood a day, 0 when it does not burn) }.
+// cold is here), toCold (days until it is), boiler (the boiler's firewood a day, 0 when it does not burn), kitchen (the
+// Kitchen's stove a day, kitchen.js kitchenWood: KITCHEN.wood.keepDays of it wanted in store like the boiler's), daily
+// (boiler + kitchen: what burns every day in every season), pressing (the boiler burns, or the pile is under the
+// kitchen's keepDays: wood is wanted in any season) }.
 export function woodNeed(state, base, extraHeads = 0) {
   const days = coldDaysAhead(state);
   const heads = mouthsAt(state, base).heads + extraHeads;
   const boil = base.tier === 0 ? null : boilerUse(state, base);
   const boiler = boil && boil.active ? r1((boil.wood + extraHeads * WORM.BOILER_WOOD_HEAD) * (boil.share ?? 1)) : 0; // the days it burns: the filters' share of the drinking needs no boiling
-  const need = base.tier === 0 ? 0 : Math.ceil(heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare + boiler * WORM.BOILER_DAYS);
+  const kitchen = base.tier === 0 || !hasKitchen(base) ? 0 : r1(kitchenWood(state, base).need);
+  const need = base.tier === 0 ? 0 : Math.ceil(heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare + boiler * WORM.BOILER_DAYS + kitchen * KITCHEN.wood.keepDays);
   const have = Math.max(0, base.stock.wood || 0);
-  return { need, have, days: r1(days), soon: woodSeason(state) || boiler > 0, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler };
+  const daily = r1(boiler + kitchen);
+  // The kitchen makes it pressing out of season only while the pile is under its KITCHEN.wood.keepDays (the boiler, as
+  // ever, always: it is the worm's water).
+  const pressing = boiler > 0 || (kitchen > 0 && have < kitchen * KITCHEN.wood.keepDays);
+  const season = woodSeason(state);
+  return { need, have, days: r1(days), soon: season || pressing, season, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler, kitchen, daily, pressing };
 }
 // A base the winter will catch short of firewood (the alert, the Upkeep line): in the stocking season, with less than
 // the coming cold needs and less heat in store (firewood and fuel) than that. null when it is fine.

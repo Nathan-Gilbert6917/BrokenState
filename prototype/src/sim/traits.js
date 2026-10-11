@@ -64,7 +64,7 @@ export const TRAIT_TIERS = {
   quickheal:    { pts: [3, 5, 7],    fx: { heal: [1.3, 1.5, 1.75] }, say: (f) => `Wounds heal ${pc(f.heal - 1)} faster while resting (at a base, in a hospital bed, in camp, as a prisoner)` },
   strongback:   { pts: [3, 5, 7],    fx: { max: [48, 52, 56], feel: [0.9, 0.85, 0.8] }, say: (f) => `Max load ${f.max} kg instead of 40, and loads feel ${pc(1 - f.feel)} lighter (a better load band)` },
   fleet:        { pts: [3, 5, 8],    fx: { mob: [1, 1, 2], escape: [10, 15, 20] }, say: (f) => `+${f.mob} tile${f.mob === 1 ? "" : "s"} a move in battle, and +${f.escape}% to break off and get away from a fight (a team on foot all Fleet-Footed: +1 to Run for it on the road)` },
-  farmraised:   { pts: [3, 5, 7],    fx: { skill: [3, 5, 7] }, say: (f) => `+${f.skill} Farming` },
+  farmraised:   { pts: [3, 5, 7],    fx: { skill: [3, 5, 7], cook: [1, 2, 3] }, say: (f) => `+${f.skill} Farming, +${f.cook} Cooking` }, // cook: kitchen-plus (Cooking, 2026-10-10)
   persuasive:   { pts: [3, 5, 7],    fx: { skill: [3, 5, 7] }, say: (f) => `+${f.skill} Speech (better prices, talks, recruiting)` },
   ironwill:     { pts: [3, 5, 7],    fx: { mult: [0.5, 0.35, 0.2] }, say: (f) => `${pc(1 - f.mult)} less likely to break down (small breaks and mental breaks) or walk out when mood is low` },
   // 2026-10-09 (user request): Tactical (the battle), Strategic (the State Map), Diplomatic (the other groups).
@@ -264,6 +264,7 @@ export function traitSkill(s, k) {
   if (k === "medicine") v += traitFx(s, "medic", "skill") - traitFx(s, "squeamish", "skill");
   else if (k === "stealth") v -= traitFx(s, "loud", "skill");
   else if (k === "farming") v += traitFx(s, "farmraised", "skill");
+  else if (k === "cooking") v += traitFx(s, "farmraised", "cook"); // farm kitchens
   else if (k === "speech") v += traitFx(s, "persuasive", "skill");
   else if (k === "scouting") v -= traitFx(s, "nearsighted", "scout");
   else if (k === "shooting") v -= traitFx(s, "nearsighted", "shoot");

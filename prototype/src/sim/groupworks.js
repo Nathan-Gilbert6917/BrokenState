@@ -44,7 +44,12 @@
 //   workshop is up, the others after their fields and pens), one a base; the people it serves (peopleAt) eat
 //   KITCHEN.save less a day (groupEatMult, factions.js: their food a day), as your cooks' hot meals do, and its cooks
 //   (one per KITCHEN.perCook of them, as yours) bring in nothing from the fields (groupCookShare: their food from the
-//   land × (1 − the share of their people cooking)). Coarse: no cooks by name, no mood (their morale is not tracked), no boiled water (they keep no water stock).
+//   land × (1 − the share of their people cooking)). Coarse: no cooks by name and no skills, no boiled water (they keep
+//   no water stock). kitchen-plus (2026-10-10): the stoves burn firewood from the group's woodpile as yours do
+//   (KITCHEN.wood: a kitchen's stove and two meals a person fed a day, after the day's heating; short of it the kitchens
+//   are cold: no saving, the cooks back in the fields: f.kitchenCold), and hot meals keep the group together: its growth
+//   chance × (1 + KITCHEN.growth × the share fed) and its desertion pressure − KITCHEN.morale × the share fed
+//   (groupcare.js desertPressure), the morale your people get from the mood.
 //   animal pens (2026-10-09, your animal pen's parity): at a base with walls and fields, after the fields for
 //   everyone, PENS.max a base; each adds PENS.food food a day (penFood, factions.js), winter or not.
 // - Machines (freezer-parts 2026-10-10, parity with your still, generator, walk-in freezer and vacuum sealer; coarse,
@@ -117,7 +122,7 @@ export const GROUP_WORKS = {
   PENS: { max: 1, food: 2 },
   // A kitchen (your Kitchen, kitchen.js KITCHEN: −10% food for the people its cooks feed, one cook per 12): at a base of
   // KITCHEN.size+ people (your governor's KITCHEN.govFrom), the people living there eat KITCHEN.save less.
-  KITCHEN: { size: 8, save: 0.1, perCook: 12 },
+  KITCHEN: { size: 8, save: 0.1, perCook: 12, wood: { stove: 4, head: 2 }, growth: 0.2, morale: 0.25 },
   // An outpost camp's step up (yours: 12 scrap, a part, 36 work-hours; scaled as the rest of WORKS) and the camp's
   // defence share until then.
   CAMP: { name: "the outpost camp established", cost: { scrap: 10, buildmat: 1 }, work: 3, DEF: 0.5 }, // yours: 20 scrap, 2 building materials, 20 work-hours
@@ -192,9 +197,30 @@ function kitchenFed(state, f) {
   const fed = f.bases.reduce((a, t) => a + (n(f.works && f.works[t], "kitchen") > 0 ? peopleAt(f, t) : 0), 0);
   return Math.min(1, fed / f.pop);
 }
-export const groupEatMult = (state, f) => 1 - W.KITCHEN.save * kitchenFed(state, f);
+// The share fed hot meals today: as kitchenFed, 0 while the kitchens are cold (no firewood: groupKitchenDaily).
+export const groupKitchenShare = (state, f) => (f.kitchenCold ? 0 : kitchenFed(state, f));
+export const groupEatMult = (state, f) => 1 - W.KITCHEN.save * groupKitchenShare(state, f);
 // The share of the group's people cooking in its kitchens (one per KITCHEN.perCook fed): they work no fields.
-export const groupCookShare = (state, f) => kitchenFed(state, f) / W.KITCHEN.perCook;
+export const groupCookShare = (state, f) => groupKitchenShare(state, f) / W.KITCHEN.perCook;
+// Hot meals keep a group together (factions.js growth, groupcare.js desertion).
+export const groupKitchenGrowth = (state, f) => 1 + W.KITCHEN.growth * groupKitchenShare(state, f);
+export const groupKitchenMorale = (state, f) => W.KITCHEN.morale * groupKitchenShare(state, f);
+// The kitchens' firewood a day: a stove each and two meals a person they feed (yours: kitchen.js KITCHEN.wood).
+export function groupKitchenWood(state, f) {
+  if (!groupsBuild(state, f)) return 0;
+  let k = 0, fed = 0;
+  for (const t of f.bases) if (n(f.works && f.works[t], "kitchen") > 0) { k++; fed += peopleAt(f, t); }
+  return k ? k * W.KITCHEN.wood.stove + fed * W.KITCHEN.wood.head : 0;
+}
+// Daily (factions.js, before the day's food): the kitchens burn their firewood from the woodpile, after `heat` (the
+// day's heating); short of it they are cold today (f.kitchenCold). wood0: the woodpile (an unset one at its start).
+export function groupKitchenDaily(state, f, heat = 0, wood0 = f.stock.wood) {
+  const need = groupKitchenWood(state, f);
+  if (!need) { delete f.kitchenCold; return; }
+  const wood = Math.max(0, wood0 || 0);
+  if (wood - heat >= need) { f.stock.wood = wood - need; f.kitchenCold = false; }
+  else f.kitchenCold = true;
+}
 export const fieldsFactor = (state, f) => W.FIELDS_MIN + (1 - W.FIELDS_MIN) * provisioned(state, f);
 export const sleepingRough = (state, f) => groupsBuild(state, f) && served(f, "beds") < f.pop;
 export const growthFactor = (state, f) => (sleepingRough(state, f) ? W.CROWDED_GROWTH : 1);
@@ -354,6 +380,14 @@ export function groupWorksDaily(state, f) {
   f.job = null;
 }
 
+// The Groups card's Kitchen line (ui/diplomacy.js): "Kitchen: hot meals for 24 of 31 (−8% food, growth +15%)" or "".
+export function groupKitchenText(state, f) {
+  const fed = kitchenFed(state, f);
+  if (!(fed > 0)) return "";
+  const people = Math.round(fed * f.pop);
+  if (f.kitchenCold) return `Kitchen: cold, no firewood (${people} of ${f.pop} would be fed)`;
+  return `Kitchen: hot meals for ${people} of ${f.pop} (−${Math.round(W.KITCHEN.save * fed * 1000) / 10}% food, growth +${Math.round(W.KITCHEN.growth * fed * 100)}%, fewer desert)`;
+}
 const jailStepName = (f) => { const t = (f.jails && f.jails[f.job.tile]) || 0; return (GROUP_JAIL.STEPS[t + 1] || GROUP_JAIL.STEPS[1]).name; };
 // "water, 2 fields, quarters for 16, walls 2/4 · building a wall" (the Groups tab).
 export function worksText(state, f) {
@@ -372,7 +406,7 @@ export function worksText(state, f) {
   if (t.power) bits.push("a generator");
   if (t.freezer) bits.push(`a walk-in freezer${groupFreezerOn(f) ? " (on)" : " (off)"}`);
   if (t.sealer) bits.push("a vacuum sealer");
-  if (t.kitchen) bits.push(t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen");
+  if (t.kitchen) bits.push(`${t.kitchen > 1 ? `${t.kitchen} kitchens` : "a kitchen"}${f.kitchenCold ? " (cold: no firewood)" : ""}`);
   const bay = sickbayTier(f);
   if (bay) bits.push(W.SICKBAY[Math.min(W.SICKBAY.length, bay) - 1].name);
   const camps = f.bases.filter((b) => isCamp(f, b)).length;

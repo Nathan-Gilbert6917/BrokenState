@@ -39,7 +39,7 @@ import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging fin
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult, tileFactor } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
 import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2)
-import { kitchenDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
+import { kitchenDaily, kitchenFireDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -58,7 +58,7 @@ export const ROLES = {
   wood:     { name: "Cut wood", desc: "Cuts firewood within 2 tiles of the base 6 hours a day (woodcutting.js): the winter's heating (a base burns firewood before fuel: 15, 1.5 kg, a head a day below freezing). Forest gives most (about 140 a day each with an axe), hills fair, farmland and suburbs little, a city next to nothing. An axe (their own or one from the armory), a machete or a sledgehammer cuts much faster than bare hands; Farming and Mechanics help. Loud (base Heat), and axes slip. The land cut hard grows back over seasons." },
   water:    { name: "Fetch water", desc: "Carries water from the nearest water in the base's own land (a river or lake tile the base holds, or one right next to it that nobody holds: a camp's river bank) in two buckets: out, filling them, back, a few trips a day (fewer the further the water). River and lake water is un-purified: it goes into the base's un-purified water (the worm's eggs; a water boiler or filters make it safe), up to the barrels' room. Needs a water tile in the base's land." },
   // kitchen.js: the Kitchen's cooks (one per 12 people living here).
-  cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: up before the others for breakfast (06:00), dinner from 16:00 (20:00). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Farming 5+), lift spirits (+1 mood a day, +1.5 with Farming 6+) and boil a quarter of the day's drinking water. Without a kitchen there is nothing to cook." },
+  cook:     { name: "Cook",     desc: "Cooks the base's meals in the Kitchen (Construction: a building plot), one cook for every 12 people living here: cooks only in the cooking hours (05:00–06:00, 16:00–20:00) with a second job the rest of the day (Cook + Farm …), or the kitchen all day (plain Cook). Hot meals stretch the food (everyone fed at the kitchen eats 10% less a day, up to 13% with a good cook: Cooking 5+), lift spirits (+1 mood a day, +1.5 with Cooking 6+) and boil a quarter of the day's drinking water; the stove burns firewood (28 a day for 12 people). Trains Cooking. Without a kitchen there is nothing to cook." },
   read:     { name: "Read",     desc: "Reads a book from this base's armory 6 hours a day (pick it on their survivor screen, or leave it to them): skill books give 4 XP an hour up to the book's level, comics and novels give mood. One reader per copy at a time; a reader does no other work." },
 };
 
@@ -508,6 +508,7 @@ function baseDaily(state, base) {
   baseScavenging(state, base, people);
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
   tripEventsDaily(state, base); // tripevents.js: the day's gunshots out on the land (base.tripNoise, hordes drawn)
+  kitchenFireDaily(state, base); // kitchen.js: the stove's day of firewood (after the boiler's and the heating's), or cold meals
   cookAtBase(state, base); // worm.js: a cook fire or kitchen cooks the game with the worm's eggs (else it is eaten last, raw)
   woodDaily(state, base); // woodcutting.js: the Cut wood job
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));

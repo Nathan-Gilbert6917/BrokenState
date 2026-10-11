@@ -77,7 +77,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
 import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a collapsed group held walk home
-import { groupWorksDaily, groupEatMult, groupCookShare, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
+import { groupWorksDaily, groupEatMult, groupCookShare, groupKitchenDaily, groupKitchenGrowth, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
 import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupCareDaily, groupCareWorld, tickGroup, prio, weightOf, canExpand, expanded, raidAnswer, fitPeople, workingPeople, GROUP_ILL } from "./groupcare.js"; // AI parity: healing, repairs, hunger, desertion; the type profiles
@@ -324,11 +324,12 @@ export function factionsDaily(state) {
     // fish only where a base holds water, nothing from a besieged base's land. Their kitchens' hot meals stretch the
     // food and their cooks work no fields (groupworks.js KITCHEN).
     const hands = workingPeople(f);
+    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * freezeShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
     f.stock.food += workingPeople(f, GROUP_ILL.farm) * ((off ? 0.88 : 0.86) + 0.25 * def.food) * fieldsFactor(state, f) * groupFoodLand(state, f) * (1 - groupCookShare(state, f)) + penFood(state, f) - f.pop * groupEatMult(state, f); // + their animal pens (groupworks.js PENS)
     groupTripLosses(state, f); // grouptrips.js: their workers out on the land meet trouble too (fewer losses the better armed)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).
-    if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25 * growthFactor(state, f) * (0.7 + 0.3 * prio(f, "recruit")))) f.pop += 1; // hcNoGrow: hardcore's besieged military
+    if (f.stock.food > f.pop * 4 && f.pop < 50 && !f.hcNoGrow && rng.chance(0.25 * growthFactor(state, f) * groupKitchenGrowth(state, f) * (0.7 + 0.3 * prio(f, "recruit")))) f.pop += 1; // groupKitchenGrowth: hot meals (groupworks.js) // hcNoGrow: hardcore's besieged military
     // Drifters, deserters and the desperate join the strong: an aggressive group with food on hand recruits.
     else if (isAggressiveType(f) && f.pop < RAIDS.RECRUIT_UNTIL + recruitBonus(state) && f.stock.food >= f.pop * 2 && rng.chance(RAIDS.RECRUIT + RAIDS.RECRUIT_BASE * f.bases.length)) f.pop += 1;
     if (f.stock.food < 0) {
