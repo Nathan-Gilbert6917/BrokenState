@@ -88,7 +88,8 @@ export function gearOutdoorWorkers(state, base, opts = {}) {
   const pool = dry ? [...base.armory] : base.armory;
   let people = atBase(state, base.id).filter((s) => isOut(s) && (opts.pinned || !s.pinned));
   if (opts.who) people = people.filter((s) => opts.who.includes(s));
-  people.sort((a, b) => (a.role === "hunt" ? 0 : 1) - (b.role === "hunt" ? 0 : 1) || combatPower(b) - combatPower(a) || a.id - b.id);
+  const order = (x) => (x.role === "wood" ? 0 : x.role === "hunt" ? 1 : 2); // woodcutters first (an axe cuts wood too), hunters (a gun or bow), the rest
+  people.sort((a, b) => order(a) - order(b) || combatPower(b) - combatPower(a) || a.id - b.id);
   const take = (it) => { const i = pool.indexOf(it); if (i >= 0) pool.splice(i, 1); };
   for (const s of people) {
     const k = tripKit(state, base, s);
