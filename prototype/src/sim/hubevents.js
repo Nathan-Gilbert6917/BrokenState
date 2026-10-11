@@ -387,8 +387,8 @@ export const HUB_EVENTS = {
             resolve: (s2) => {
               if (!here(s, c.base)) return `${s.name} is no longer here.`;
               const days = s2.rng.int(ERRAND.minDays, ERRAND.maxDays);
-              const pack = packErrand(s2, c.base, s, days); // needs.js: a day's food and water a day, never below zero
-              s.location = { kind: "errand", baseId: c.base.id, until: day(s2) + days, pack };
+              const pack = packErrand(s2, c.base, s, days); // needs.js: their own pack (eating.js) topped up to a day's food and water a day, never below zero
+              s.location = { kind: "errand", baseId: c.base.id, until: day(s2) + days };
               s.station = null;
               return `${firstName(s)} sets off at dawn with ${foodText(pack)} and ${pack.water + (pack[RAW] || 0)} water.`;
             },
@@ -493,7 +493,7 @@ export function hubUpkeepDaily(state) {
       killSurvivor(state, s, null, "far from home on a personal errand (never came back)");
       continue;
     }
-    const back = unpackErrand(base, s.location.pack); // needs.js: what is left of their food and water
+    const back = unpackErrand(base, s, state); // needs.js: what is left of their food and water over their usual pack
     s.location = { kind: "base", baseId: base.id };
     s.mood = clamp(s.mood + ERRAND.mood, 0, 100);
     let found = back.food >= 0.1 || back.water ? ` (bringing back ${Math.round(back.food * 10) / 10} days of food and ${back.water} water they did not need)` : "";

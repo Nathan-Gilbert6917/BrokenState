@@ -260,7 +260,8 @@ const CONDITION_HOW = {
   fever: "Treat it early: untreated it climbs, and above 60 it can turn into pneumonia.",
   flu: "Catching and fast in a crowded base: treat it, and keep the sick off the road. In the cold it can become pneumonia.",
   dysentery: "Treat it and keep the water up (it drinks more). Good food storage and full tanks make it rarer.",
-  stomach: "It passes in a few days; 1 meds ends it at once if you want. Purified water and cooked food prevent it.",
+  stomach: "It passes in a few days; 1 meds ends it at once if you want. Purified water prevents it.",
+  poisoning: "It passes in a day or two (they rest it out); 1 meds ends it at once. A better cook, a clean kitchen (Clean first) and cooked meat prevent it.",
   pneumonia: "It kills without meds: treat it at once and get them into a hospital bed. They cannot work until it clears.",
 };
 function conditionEntries() {

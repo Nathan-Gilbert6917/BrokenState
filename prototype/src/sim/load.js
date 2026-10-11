@@ -34,6 +34,7 @@ import { skill } from "./world.js";
 import { hasPerk } from "./skills.js";
 import { allItems, itemLoad, carryBonus } from "./inventory.js";
 import { itemOnKg, cartOf, cartFree, cartSpec, cartOffroad } from "./carts.js"; // a cart in the arms: its share of the weight
+import { packKg } from "./eating.js"; // the food and water everyone carries (wave 2 eating)
 import { VEHICLE_TYPES, RIDER_KG, OVERLOAD_MAX, OVERLOAD_SPEED, fuelMultFor, isBike, isCar, typeSpeed, typeFuel, typeOffroad, payloadOf, roadPace } from "./vehicles.js";
 
 export const LOAD_BANDS = [
@@ -55,7 +56,8 @@ const r4 = (x) => Math.round(x * 1e4) / 1e4;
 
 // ---------- one person ----------
 export const kgOf = (key) => GEAR[key]?.weight ?? 1;
-export const wornLoad = (s) => (s ? allItems(s).reduce((a, it) => a + itemOnKg(s, it), 0) : 0); // carts.js: a cart pushed counts at its share
+// + their pack of food and water (eating.js s.ration: about 1.5 days of each, 2–3 kg).
+export const wornLoad = (s) => (s ? allItems(s).reduce((a, it) => a + itemOnKg(s, it), 0) + packKg(s) : 0); // carts.js: a cart pushed counts at its share
 // Bad Back and Strong Back set the base (their tier's kg: traits.js; tier I is BADBACK_MAX, 48), Feeble takes kg off it.
 export const maxLoad = (s) => (hasTrait(s, "badback") ? traitFx(s, "badback", "max") : hasTrait(s, "strongback") ? traitFx(s, "strongback", "max") : MAX_LOAD) - traitFx(s, "feeble", "kg") + carryBonus(s) + (hasPerk(s, "packrat") ? PACKRAT_KG : 0);
 export const packEase = (s) => {

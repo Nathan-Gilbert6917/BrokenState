@@ -4,7 +4,7 @@
 import { SKILL_NAMES } from "../sim/data.js";
 import { baseById, day, atBase, skill, survivorById } from "../sim/world.js";
 import { tileLabel } from "../sim/parties.js";
-import { blueprintRows, lockNote, craftBookRows } from "../sim/blueprints.js";
+import { blueprintRows, lockNote, craftBookRows, cookBookRows } from "../sim/blueprints.js";
 import { keyRing } from "../sim/locks.js";
 import { repairRows, repairPlan, startRepair, cancelRepair, reassignRepair, fixtureById, costText, fxDef, WEAR, RAID_DAMAGE, repairBill, startAllRepairs, brokenAt, jobFor } from "../sim/breakdowns.js";
 import { vehiclesAtBase, canRepair, carPartsCost, carPartsText } from "../sim/vehicles.js";
@@ -42,6 +42,16 @@ function craftBooksCard(state) {
     const status = r.known ? `<span class="chip on">Read</span>` : r.held ? `<span class="chip">Copy held</span>` : `<span class="muted"${tip(`Look in: ${r.where}.`)}>Not found</span>`;
     const what = [r.opens.length ? `unlocks ${r.opens.join(", ")}` : "", `better at ${r.covers.join(", ")}`].filter(Boolean).join("; ");
     return `<tr${tip(`${r.desc} Look in: ${r.where}.`)}><td><b>${esc(r.name)}</b><br><span class="muted">${esc(what)}</span></td><td>${status}</td></tr>`;
+  }).join("")}</table>${cookBooksCard(state)}`;
+}
+// Cookbooks (wave 2 cooking, blueprints.js CRAFT_BOOKS cook): read to the end, the cooks make their meals below the usual Cooking.
+function cookBooksCard(state) {
+  const rows = cookBookRows(state);
+  if (!rows.length) return "";
+  return `<h3${tip("Cookbooks teach Cooking, and once anyone has read one to the end at a base (Read role) the cooks may make its meals below the usual Cooking level (a little more food poisoning when they do), and those meals go faster. Help: Cooking and meals.")}>Cookbooks (${rows.filter((r) => r.known).length} of ${rows.length} read)</h3>
+  <table class="t small">${rows.map((r) => {
+    const status = r.known ? `<span class="chip on">Read</span>` : r.held ? `<span class="chip">Copy held</span>` : `<span class="muted"${tip(`Look in: ${r.where}.`)}>Not found</span>`;
+    return `<tr${tip(`${r.desc} Look in: ${r.where}.`)}><td><b>${esc(r.name)}</b><br><span class="muted">${esc(r.what)}</span></td><td>${status}</td></tr>`;
   }).join("")}</table>`;
 }
 

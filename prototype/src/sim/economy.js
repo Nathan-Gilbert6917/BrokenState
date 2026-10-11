@@ -29,6 +29,8 @@ import { relationsDaily, noteMeals } from "./relations.js";
 import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
+import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
+import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
 import { heatDaily, starvingDaily } from "./needs.js";
 import { woodDaily } from "./woodcutting.js";
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
@@ -420,6 +422,9 @@ export const spoilRate = (state, base) => foodStore(state, base).rate;
 /** @param {State} state @param {Base} base */
 export const foodSpoilage = (state, base) => foodStore(state, base).spoil;
 export const RATION = 0.6, RATION_DAYS = 7; // short rations: share eaten, below this many days of food
+// A base is out of food for the day (economy starve, an outpost's call on the hub) when its people missed more than this
+// many days of food a head (eating.js: a meal or two not had; a crumb short is not starving).
+export const EAT_SHORT = 0.15;
 // What the people living here eat a day (per head × heads; upkeep.js: the cold, a Quartermaster). Prisoners, guests,
 // a holding convoy's crew and the dog eat on top (foodUse(...).total; each in its own module).
 /** @param {State} state @param {Base} base */
@@ -543,25 +548,31 @@ function baseDaily(state, base) {
   farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
   flowMark(state, base); // history.js: drinking out, the harvest in (before the eating)
 
-  // Eating: the cook fire first makes the day's meals of the raw food (storage.js cookDaily), then the food nearest to
-  // spoiling is eaten first (storage.js eatFromStore). An outpost that runs short is covered from the hub afterwards
-  // (shipFromOutposts: base.foodShort). Under a week of food left, everyone goes on short rations (60%): it stretches
-  // the stock and costs mood, not health. The week counts everyone fed from these stores (prisoners, guests, a
-  // holding convoy's crew and the dog eat in their own modules; upkeep.js), but only the people living here ration.
+  // Eating: the people living here eat by the hour, each to their own target at the mealtimes (eating.js baseEatHour:
+  // the cooked meals first, then the food nearest to spoiling); here the day that ended is counted (eatAcc: what they
+  // ate from the stores, and what they wanted and could not get). The cook fire first makes the day's meals of the raw
+  // food (storage.js cookDaily). An outpost that ran short is covered from the hub afterwards (shipFromOutposts:
+  // base.foodShort); the hub starves. Under a week of food left, everyone goes on short rations (60%: eating.js eats to
+  // 48 then): it stretches the stock and costs mood, not health. The week counts everyone fed from these stores
+  // (prisoners, guests, a holding convoy's crew and the dog eat in their own modules; upkeep.js), but only the people
+  // living here ration. A lean base (meals.js RATION_LEVELS, the player's or the governor's) costs −1 mood a day.
   const use = foodUse(state, base);
-  const full = use.residents;
+  const day0 = takeEatAcc(base);
   cookDaily(state, base, use.total); // the cook fire: a day's meals of raw meat, fish, greens and roots
   const edible = edibleFood(base);
   const rationing = mouths.length > 0 && edible > 0 && edible < use.total * RATION_DAYS;
   if (rationing && !base.rationing) log(state, `${base.name} is on short rations: under ${RATION_DAYS} days of food left.`, "danger");
   base.rationing = rationing;
   if (rationing) for (const s of mouths) s.mood = Math.max(0, s.mood - 3);
-  const eaten = full * (rationing ? RATION : 1);
-  const missing = eatFromStore(base, eaten, state);
-  base.foodShort = missing > 1e-9 ? missing : 0; // the hub starves; an outpost asks the hub (shipFromOutposts)
+  else if (mouths.length && rationKey(state, base) === "lean") for (const s of mouths) s.mood = Math.max(0, s.mood + RATION_LEVELS.lean.mood);
+  const eaten = day0.units;
+  // Wanted and not had: at most the day's need (the hungry ask again at every meal).
+  const missing = mouths.length ? Math.min(day0.missed, use.residents) : 0;
+  base.foodShort = missing > EAT_SHORT * mouths.length ? missing : 0; // the hub starves; an outpost asks the hub (shipFromOutposts)
+  base.eatDay = { day: day(state) - 1, eaten: Math.round(eaten * 100) / 100, missed: Math.round(missing * 100) / 100, meals: day0.meals, min: day0.min };
   if (mouths.length) noteMeals(state, base); // relations.js: weeks of nothing fresh are grim; good meals lift the mood
-  kitchenDaily(state, base, eaten - missing); // kitchen.js: the hot meals served and the food they saved
-  econStats(state).eaten += eaten - missing;
+  kitchenDaily(state, base, eaten); // kitchen.js: the hot meals served and the food they saved
+  econStats(state).eaten += eaten;
   if (base.foodShort > 0 && base.type === "hub") {
     base.foodShort = 0;
     starve(state, base, mouths);
@@ -632,8 +643,9 @@ function shipFromOutposts(state) {
       if (!cutOff && h) {
         // The hub sends food (the soonest to spoil first), but the supply line loses some on the way; what arrives is
         // eaten today.
+        // eating.js: the people there eat it as they get it (by the hour), so it goes into the outpost's stores.
         const send = Math.max(0, Math.min(edibleFood(h), short / line.strength));
-        short -= payFood(h, send, state) * line.strength;
+        short -= moveFoodUnits(h, base, send, { scale: line.strength, state }).units * line.strength;
       }
       base.foodShort = 0;
       if (short > 1e-9) starve(state, base, staff);

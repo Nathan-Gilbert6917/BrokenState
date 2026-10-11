@@ -4,7 +4,8 @@
 //   residents   everyone living at the base (atBase; at the hub also trade-route escorts waiting between trips,
 //               world.js residents): UPKEEP.food food each × the cold (weather.foodNeedFactor: ×1.1 on a day below
 //               0°C, ×1.2 below −8°C) × a Quartermaster living there (×0.9, skills.js) × the Kitchen's hot meals
-//               (kitchen.js kitchenEatMult: ×0.9 with its cooks feeding everyone, ×0.87 at best); water UPKEEP.water each × the
+//               (kitchen.js kitchenEatMult: ×0.9 with its cooks feeding everyone, ×0.87 at best) × the base's ration level
+//               (meals.js: lean ×0.8, a feast day ×1.5; eaten person by person at meal breaks: eating.js); water UPKEEP.water each × the
 //               day's thirst (weather.thirstFactor: spring and autumn 1, summer 1.3, winter 0.9, a hot day at least
 //               1.6), +1 for each case of dysentery (economy.waterNeed). Under a week of food left they go on short
 //               rations (economy.RATION, 60%).
@@ -37,6 +38,7 @@ import { edibleFood } from "./storage.js";
 import { FOODS, foodIn, unitsOf } from "./foods.js"; // food by type: the reserve counts days of food
 import { waterIn } from "./water.js";
 import { kitchenEatMult } from "./kitchen.js"; // hot meals stretch the food
+import { rationUse } from "./meals.js"; // the base's ration level (lean 0.8, a feast day 1.5)
 
 export const UPKEEP = { food: 1, water: 1, guest: 1, crew: 1 };
 
@@ -67,7 +69,8 @@ export function mouthsAt(state, base) {
 export function foodUse(state, base, dayIdx) {
   const m = mouthsAt(state, base);
   const cold = coldFactor(state, dayIdx);
-  const rate = UPKEEP.food * cold * (m.residents ? eatMult(state, base) * kitchenEatMult(state, base) : 1);
+  // × the base's ration level (meals.js RATION_LEVELS: eating.js eats to it person by person, so the forecasts agree).
+  const rate = UPKEEP.food * cold * (m.residents ? eatMult(state, base) * kitchenEatMult(state, base) * rationUse(state, base) : 1);
   // A Glutton eats a quarter ration more (traits.js): the residents' each is their average.
   const gluttons = m.residents ? residents(state, base.id).reduce((a, s) => a + appetite(s) - 1, 0) : 0;
   const groups = [];

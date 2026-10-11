@@ -17,7 +17,7 @@
 //
 // Daily mood factors added here (the rest stay where they were: beds and the leader in morale.js; food, rationing,
 // rest, hunger and thirst in economy.js; the dog in hubevents.js), all listed with numbers by moodFactors():
-// preserved food only for 7+ days -1 (21+ days -2), hot meals from the Kitchen's cooks +1 (+1.5 with a good cook; only the
+// preserved food only for 7+ days -1 (21+ days -2) (the meals themselves: eating.js's timed thoughts), hot meals from the Kitchen's cooks +1 (+1.5 with a good cook; only the
 // Kitchen: the preserving room jars, kitchen-plus), a common room +1.5 (15 people a
 // room), a chapel +1 (grief weighs half), comfort items (books; the shelf shared, MOODF.shelfShare people a copy;
 // not blueprints) +0.5 each up to +1, the Inspiring perk +0.5 per inspiring person here (up to +1), cabin fever after 14 days of
@@ -26,7 +26,7 @@
 // Breaks: below 12 mood, 10% + 2% per point below 12 a day (cooldown 5 days): sits out a day, binge eats, wanders
 // off, or picks a fight; mood +8 afterwards; a card for a fight or a second break within 10 days.
 import { foodIn, payFood } from "./foods.js"; // food by type (foods.js)
-import { mealLift } from "./storage.js"; // the mood of the day's meals
+import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean: −1 a day)
 import { hasTrait, traitFx, breakMult } from "./traits.js"; // Hothead, Glutton, Unlucky, Iron Will, Squeamish, Pessimist
 import { log, addCard, day, skill, atBase, residents, alive, baseById, hurt, combatPower } from "./world.js";
 import { count } from "./buildings.js";
@@ -328,6 +328,7 @@ export function moodFactors(state, s) {
     if (ci.lift > 0) add(`${ci.leader.leader ? "Leader" : "Base leader"} ${first(ci.leader)} (Leadership ${skill(ci.leader, "leadership")})`, ci.lift, false);
     if (!(base.hungerDays > 0)) add("Fed", 1, false); // out of food or water: the starving and parched lines below
     if (base.rationing) add("Short rations", -3, false);
+    else if (rationKey(state, base) === "lean") add("Lean rations (smaller portions)", RATION_LEVELS.lean.mood, false); // economy.js, eating.js
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);
     else if (!pl.route && s.inBed) add("In a hospital bed", 3, false);
     if (base.dog) add(`${base.dog.name} the dog`, 0.5, false);
@@ -335,8 +336,8 @@ export function moodFactors(state, s) {
     const pres = base.relPreserved || 0;
     if (pres >= 21) add(`Nothing fresh to eat for ${pres} days (tins, dry and preserved food)`, MOODF.preserved21, true);
     else if (pres >= 7) add(`Nothing fresh to eat for ${pres} days (tins, dry and preserved food)`, MOODF.preserved7, true);
-    const lift = mealLift(base, Math.floor(state.hour / 24)); // storage.js: today's meals (a fine or lavish meal lifts the mood; wave 2's cooking bills)
-    if (lift >= 0.05) add("Good meals", Math.round(lift * 10) / 10, true);
+    // Good meals: eating.js's timed thoughts now (a stew +3, a fine meal +6, a lavish meal +12 when eaten, for 3 days;
+    // raw food, the same food again, a feast), listed with the mood notes, not as a daily factor.
     // Hot meals: only the Kitchen's (kitchen.js: +1, +1.5 with a Cooking 6+ cook, Hearty Portions +0.5, × the share its
     // cooks feed; nothing while its stove is cold). The Preserving room jars food and serves no meals (kitchen-plus: its
     // old +1 "hot meals" is gone).
@@ -435,7 +436,7 @@ export function comfortCount(state, s, base) { return comfortInfo(state, s, base
 // Nothing-fresh streak, per base: called from economy.js after eating (storage.js base.ate: what was eaten today). A
 // day whose food was nearly all tins, dry goods and preserved food (under a tenth fresh food or meals) counts.
 export function noteMeals(state, base) {
-  const a = base.ate && base.ate.day === Math.floor(state.hour / 24) ? base.ate : null;
+  const a = base.ate && base.ate.day === Math.floor((state.hour - 1) / 24) ? base.ate : null; // the day that just ended (storage.js noteAte)
   base.relPreserved = a && a.units > 0.5 && a.fresh < a.units * 0.1 ? (base.relPreserved || 0) + 1 : 0;
 }
 

@@ -110,6 +110,9 @@ export const FIXTURES = {
   // Powered machines (power: wear only on days they have power; idle otherwise). freezer-parts.
   freezer:     { power: true, use: 0.9, idle: 0.05, spares: 12, repair: { hours: 8, cost: { scrap: 3, parts: 2 }, min: 3 }, rig: { hours: 3, cost: { scrap: 2 }, min: 1 }, what: "the walk-in freezer is off: the food in it warms up and keeps only as in a pantry" },
   sealer:      { power: true, use: 0.5, idle: 0.02, spares: 30, repair: { hours: 4, cost: { scrap: 2, parts: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "no vacuum sealing (no packaged meals)" },
+  // Wave 2 cooking (cooking.js): hand-cranked, worn on the days the cooks turned them (ranDay: b.ran is the day).
+  grainmill:   { ranDay: true, use: 0.5, idle: 0.01, spares: 40, repair: { hours: 3, cost: { scrap: 2, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no flour (the grain mill)" },
+  meatgrinder: { ranDay: true, use: 0.6, idle: 0.01, spares: 40, repair: { hours: 3, cost: { scrap: 2, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no ground meat or sausage (the meat grinder)" },
   canteen:     { raidOnly: true, repair: { hours: 5, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no hot meals: the food is eaten as before" }, // kitchen.js
   animal_pen:  { raidOnly: true, repair: { hours: 4, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a broken fence: the animals scattered, no food from the pen" },
 };
@@ -364,9 +367,13 @@ export function machineRan(state, base, fx) {
   if (!def || fx.broken) return false;
   if (fx.type === "generator") return generatorRanToday(state, fx); // machines-2: no operator, it ran when it burned fuel
   if (BUILDINGS[fx.type] && BUILDINGS[fx.type].station) return !!stationStatus(state, base, fx).running;
+  if (def.ranDay) return ranLately(state, fx); // wave 2 cooking: the grain mill, the meat grinder
   if (def.power) return isPowered(base, fx);
   return !!def.use;
 }
+// A hand-cranked machine (FIXTURES ranDay) turned today or yesterday (cooking.js sets b.ran at a batch; the wear runs at
+// its own point of the day).
+const ranLately = (state, fx) => fx.ran != null && day(state) - fx.ran <= 1;
 export function dailyWear(state, base, fx, wx) {
   const def = fxDef(fx);
   const age = Math.max(0, day(state) - (fx.built || day(state)));
@@ -376,7 +383,8 @@ export function dailyWear(state, base, fx, wx) {
     const st = stationStatus(state, base, fx);
     use = st.running ? def.use : def.idle || 0;
     if (st.running && st.op) use *= Math.max(0.65, 1.15 - 0.025 * skill(st.op, "mechanics"));
-  } else if (def.power) use = isPowered(base, fx) ? def.use : def.idle || 0; // a freezer, a sealer: by the days it had power
+  } else if (def.ranDay) use = ranLately(state, fx) ? def.use : def.idle || 0; // wave 2 cooking: by the days the cooks turned it
+  else if (def.power) use = isPowered(base, fx) ? def.use : def.idle || 0; // a freezer, a sealer: by the days it had power
   else use = def.use || 0;
   let w = (use + (def.age || 0)) * (1 + age / WEAR.ageDays);
   if (wx) {

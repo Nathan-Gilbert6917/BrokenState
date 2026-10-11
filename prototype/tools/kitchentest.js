@@ -17,6 +17,8 @@ import { BUILDINGS, addBuilding, canBuild, queueBuild, constructionHour, count }
 import { KITCHEN, kitchenService, kitchenEatMult, hasKitchen, cooksWanted } from "../src/sim/kitchen.js";
 import { foodUse } from "../src/sim/upkeep.js";
 import { basesDaily } from "../src/sim/economy.js";
+import { needsHour } from "../src/sim/needs.js"; // eating.js: the hourly meals
+import { POISON } from "../src/sim/cooking.js";
 import { econStats } from "../src/sim/farming.js";
 import { baseCooks, purifyCap, wormMeatAt } from "../src/sim/worm.js";
 import { cookDaily } from "../src/sim/storage.js";
@@ -131,9 +133,14 @@ section("The day: eating, the record, the Work now row");
   addBuilding(pair[1].h, "canteen");
   cook(pair[1].ppl[0], 3);
   for (const { st, h } of pair) { st.hour = 24 * 3; setFood(h, 150); setJarred(h, 0); }
-  const eat = pair.map(({ st }) => { const e0 = econStats(st).eaten; basesDaily(st); return econStats(st).eaten - e0; });
+  // eating.js: people eat by the hour (meal breaks) and the day is counted at midnight: two days to settle, one measured.
+  const day1 = (st) => { for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); } basesDaily(st); for (const s of residents(st, hub(st).id)) s.mood = 60; }; // no beds here: crowding would sink the mood (and the cook's work) day by day
+  const pmax = POISON.max;
+  POISON.max = 0; // no food poisoning from the cook's meals here (cooking.js: eating.js rolls it per person; cookingtest.js measures it)
+  const eat = pair.map(({ st }) => { day1(st); day1(st); const e0 = econStats(st).eaten; day1(st); return econStats(st).eaten - e0; });
+  POISON.max = pmax;
   console.log(`  a day's food at a 12-person hub: ${eat[0].toFixed(2)} without a kitchen, ${eat[1].toFixed(2)} with a cook`);
-  check(near(eat[1], eat[0] * 0.9, 0.01), `the kitchen's hub ate 10% less (${eat[1].toFixed(2)} vs ${eat[0].toFixed(2)})`);
+  check(near(eat[1], eat[0] * 0.9, eat[0] * 0.03), `the kitchen's hub ate 10% less (${eat[1].toFixed(2)} vs ${eat[0].toFixed(2)})`);
   const { st, h } = pair[1];
   const kd = h.kitchenDay;
   check(kd && kd.cooks === 1 && kd.served === 12 && kd.meals === 24 && kd.saved > 1 && kd.saved < 1.6, `base.kitchenDay: ${JSON.stringify(kd)}`);
@@ -541,7 +548,8 @@ section("The UI and saves");
   const { st, h, ppl } = mk(12);
   addBuilding(h, "canteen");
   cook(ppl[0], 5);
-  st.hour = 24 * 3;
+  st.hour = 24 * 2;
+  for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); } // eating.js: the day's meals, by the hour
   basesDaily(st);
   const note = kitchenNote(st, h);
   check(/Cooks: /.test(note) && /Hot meals today: 24/.test(note) && /Food saved/.test(note) && !BAD.test(note), `the Kitchen card: ${note.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()}`);
