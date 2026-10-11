@@ -2186,7 +2186,9 @@ function planRoles(state, base, areas = ALL_AREAS) {
     // next to nothing, while a hunter bringing in a third of the estimate still brings food (seed 5021 starved in its
     // second winter with its hunters taken off for poor hunts, 9 of 17 resting; seed 5000 with 12 and no hunter).
     const winter = wxSeason(state).key === "winter";
-    const poor = huntYield(state, base).poor && !winter;
+    // Nor with the food down to FORAGE_AP.low days: the plots take weeks, the hunt brings food today (seed 5024: 12 people
+    // on 2 days of food in autumn, the hunters sent to the new plots for poor hunts, starved in the first winter).
+    const poor = huntYield(state, base).poor && !winter && foodDays >= FORAGE_AP.low;
     // (one at a base of LAND_AP.smallFrom to bareHead people, as at a bigger one; under that, only while the food is down to
     // FORAGE_AP.low days: food now, while the crops take weeks. Hardcore's small turtles that kept a hunter lived where the
     // census before the cabinless hunting lost them: seeds 5042, 5049.)
