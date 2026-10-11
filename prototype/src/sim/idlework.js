@@ -85,7 +85,7 @@ export function baseNeeds(state, base) {
   if (hasKitchen(base) && kitchenCanLight(state, base)) add("cook", 3.5, cooksWanted(state, base) - ppl.filter((s) => isCook(state, s)).length, `the kitchen wants ${cooksWanted(state, base)} cook${cooksWanted(state, base) === 1 ? "" : "s"} for ${ppl.length} people: hot meals stretch the food`);
   // Stations with work and nobody on them.
   const busy = new Set(ppl.filter((s) => s.role === "operate").map((s) => s.station));
-  for (const st of stations(base)) if (!busy.has(st.id) && !st.broken && BUILDINGS[st.type].station !== "power" && !stationWork(state, base, st)) add("operate", 3, 1, `the ${BUILDINGS[st.type].name.toLowerCase()} has work and no operator`, st.id);
+  for (const st of stations(base)) if (!busy.has(st.id) && !st.broken && !stationWork(state, base, st)) add("operate", 3, 1, `the ${BUILDINGS[st.type].name.toLowerCase()} has work and no operator`, st.id);
   // The craft queue.
   if (!on("craft") && craftQueue(base).length) add("craft", 3, 1, `${craftQueue(base).length} in the craft queue`);
   // The last resort.

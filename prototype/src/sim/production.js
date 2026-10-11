@@ -77,7 +77,7 @@ export function setStationOrder(state, base, stId, patch, by = "player") {
   const cur = stationOrder(base, st);
   const next = { ...cur, ...patch, by };
   if (!ORDER_MODES[next.mode]) next.mode = "forever";
-  if (next.mode === "until" && !productKey(st)) next.mode = "forever"; // a generator makes nothing to count
+  if (next.mode === "until" && !productKey(st)) next.mode = "forever"; // a station that makes nothing to count
   next.n = Math.max(0, Math.min(99999, Math.floor(Number(next.n) || 0)));
   if (!inputKeys(st).includes(next.key)) next.key = mainInput(st);
   if (!validFallback(base, st, next.fallback)) next.fallback = "idle";
@@ -104,7 +104,7 @@ export function stationIO(state, base, st, op = null) {
   const recipe = recipeOf(st);
   const r = RECIPES[recipe];
   const inp = { ...r.in };
-  const out = op ? recipeOutput(op, recipe, base, state) : { ...r.out };
+  const out = op ? recipeOutput(op, recipe, base, state, st) : { ...r.out };
   const powered = !!POWER_USERS[st.type] && isPowered(base, st);
   const boost = powered && POWER_BOOST[st.type];
   if (boost) {

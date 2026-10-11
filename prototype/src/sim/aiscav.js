@@ -38,7 +38,7 @@
 // Decisions use hash01 (skills.js), never the world's random numbers, so the rest of a run draws the same dice.
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, FACTION_TYPES } from "./data.js";
-import { log, factionById } from "./world.js";
+import { log, factionById, localId } from "./world.js"; // localId: dice keys that do not depend on the process (two worlds in one)
 import { spawnAiParty, planPath, partyTile, partyMembers, tileLabel, removeParty } from "./parties.js";
 import { hash01 } from "./skills.js";
 import { attitude } from "./factions.js";
@@ -47,6 +47,7 @@ import { ZONE_RICHNESS } from "./mapgen.js";
 import { haulMult } from "./medfinds.js";
 import { PARTS_MIX } from "./loot.js"; // car parts by the kind of site (a group keeps them apart)
 import { scavFinds, partyLost } from "./arsenal.js";
+import { groupFindBlueprint, groupGotBlueprint } from "./groupworks.js"; // machines-2: the groups' manuals
 import { prio } from "./groupcare.js";
 import { scavVehicle, scavSaw } from "./groupworld.js"; // a wreck brought home now and then; the bases they saw // GROUP_PRIORITIES scavenge: how often a type sends parties out // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
 
@@ -216,6 +217,7 @@ export function scavArrived(state, p) {
       S.stats.goods += Object.values(p.scav.got).reduce((a, q) => a + Math.floor(q), 0);
       S.stats.gear = (S.stats.gear || 0) + scavFinds(state, f, p).length; // arsenal.js: guns, armour, explosives by the site's gear list
       if (scavVehicle(state, f, p.scav.site)) S.stats.vehicles = (S.stats.vehicles || 0) + 1; // groupworld.js
+      if (p.scav.bp) { groupGotBlueprint(f, p.scav.bp); S.stats.manuals = (S.stats.manuals || 0) + 1; } // machines-2: a manual to study
     }
     S.stats.home++;
     removeParty(state, p);
@@ -248,6 +250,8 @@ export function scavSearchHour(state, p) {
     const take = Math.min(Math.max(0, t.loot - AISCAV.floor), AISCAV.take * crew);
     if (take > 0) {
       addTo(p.scav.got, haulFor(t, take, t.loot, AISCAV.eff * hands / crew));
+      const fg = !p.scav.bp && factionById(state, p.owner);
+      if (fg) p.scav.bp = groupFindBlueprint(state, fg, t.id, localId(state, p.id)) || undefined; // machines-2: a manual on the shelves, by your odds (groupworks.js)
       t.loot -= take;
       p.scav.taken += take;
       aiScav(state).stats.taken += take;

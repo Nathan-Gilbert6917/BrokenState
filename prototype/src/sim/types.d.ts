@@ -395,6 +395,7 @@ export interface State {
   groupWorks?: number; // barestart: the AI groups build their bases up (groupworks.js); absent in older saves
   gunSlots?: number; // gunmods.js: guns have attachment slots (save.js moves an older save's parts on load)
   groupJails?: number; // jailhouse: the AI groups keep prisoners in jails, work and trade them (groupjails.js); absent in older saves
+  machinesV?: number; // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrateGenerators / migrateCanners for older saves)
   grid: HexGrid;
   tiles: Tile[];
   cityId: number;

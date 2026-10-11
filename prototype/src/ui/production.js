@@ -2,7 +2,7 @@
 // the Order column of the Workshops tab, the drying racks' order, the Power card, the standing craft orders on the
 // Crafting tab, the Steward card on the Overview tab and the pin toggle next to a person. Actions are merged into
 // main.js's dispatcher (PROD_ACTIONS on click, PROD_CHANGE on change).
-import { baseById, survivorById, atBase, skill } from "../sim/world.js";
+import { baseById, survivorById, atBase, skill, day, hourOfDay } from "../sim/world.js";
 import { BUILDINGS, stations, count } from "../sim/buildings.js";
 import { SKILL_NAMES, SUPPLIES } from "../sim/data.js";
 import { CRAFTS, craftName, MAX_CRAFT_QUEUE } from "../sim/crafting.js";
@@ -11,7 +11,7 @@ import {
   ORDER_MODES, FALLBACK_ROLES, QUALITY_STEPS, RACK, stationOrder, hasOrder, setStationOrder, clearStationOrder, orderHold,
   productKey, inputKeys, untilMargin, craftOrders, addCraftOrder, setCraftOrder, removeCraftOrder, craftOrderStatus, bestQuality,
 } from "../sim/production.js";
-import { POWER, POWER_USERS, STILL, powerStatus, refreshPower, generators } from "../sim/power.js";
+import { POWER, POWER_USERS, STILL, REFUEL, powerStatus, refreshPower, generators, generatorLine, setGenReserve } from "../sim/power.js";
 import { STEWARD_AREAS, stewardOf, setSteward, setStewardArea, setStewardStyle, setPinned, stewardSummary, STEWARD_LOG_HOUR, leaderChoices, leaderOf, leaderStatus, leaderScore, ledBy, setLeader, actingLeader, actsShare } from "../sim/steward.js";
 import { LEADER_LIFT } from "../sim/morale.js";
 import { PERSONALITIES } from "../sim/autopilot.js";
@@ -45,7 +45,7 @@ export function orderCell(state, b, st) {
   const what = o.mode === "until" ? `<span>${esc(prod)}</span>`
     : o.mode === "keep" ? (ins.length > 1 ? `<select data-action="po-key" ${data}${tip("The input to keep")}>${ins.map((k) => `<option value="${k}" ${k === o.key ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>` : `<span>${esc(ins[0] || "")}</span>`) : "";
   const fbOpts = [["idle", "Idle at the station"], ...FALLBACK_ROLES.map((k) => [k, `Go to ${ROLES[k] ? ROLES[k].name : k}`]),
-    ...stations(b).filter((x) => x.id !== st.id && BUILDINGS[x.type].station !== "power").map((x) => [`st:${x.id}`, `Run the ${BUILDINGS[x.type].name.toLowerCase()}`])];
+    ...stations(b).filter((x) => x.id !== st.id).map((x) => [`st:${x.id}`, `Run the ${BUILDINGS[x.type].name.toLowerCase()}`])];
   const fb = isRack || o.mode === "forever" ? "" : `<div class="row po-fb">When it stops: <select data-action="po-fb" ${data}${tip("What the operator does while this order holds the station. They come back by themselves when it wants work again. While a steward (Roles) or the autopilot runs this base, they decide.")}>${fbOpts.map(([k, l]) => `<option value="${k}" ${k === o.fallback ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>`;
   const who = hasOrder(b, st) ? (o.by === "ai" ? `<span class="chip"${tip("Set by this base's steward (or the autopilot). Change it and it becomes yours: stewards leave your orders alone.")}>steward</span>` : `<button class="mini" data-action="po-reset" ${data}${tip("Clear your order: back to Forever, or to what the steward decides")}>Reset</button>`) : "";
   return `<div class="prodctl">
@@ -61,25 +61,34 @@ export function racksCard(state, b) {
   return `<h3>Drying racks</h3><div class="card small"><div class="spread"><b>${racks} drying rack${racks === 1 ? "" : "s"}</b><span class="muted">no operator · surplus food → preserved</span></div>${orderCell(state, b, RACK)}</div>`;
 }
 
-// Supply and demand, the generators and every powered building with its switch.
+// Supply and demand, the generators (no operator: machines-2) with their tanks and switches, the fuel kept back, the
+// morning's refuelling, and every powered building with its switch.
 export function powerCard(state, b) {
   const gens = generators(b);
   const users = b.buildings.filter((x) => POWER_USERS[x.type]);
   const usesText = Object.entries(POWER_USERS).map(([k, u]) => `${BUILDINGS[k].name} (${u.need}): ${u.what}`).join("; ");
-  if (!gens.length && !users.length) return `<h3>Power</h3><div class="small muted"${tip(`A generator (Construction) burns ${POWER.genFuel} fuel a day for ${POWER.genOut} power and needs an operator; an ethanol still makes fuel from surplus or spoiled food. ${usesText}`)}>⚡ No generator and nothing to power <span class="sk-info">ⓘ</span></div>`;
+  if (!gens.length && !users.length) return `<h3>Power</h3><div class="small muted"${tip(`A generator (Construction) runs by itself: ${POWER.genOut} power for ${POWER.genFuel} fuel a day while something draws power, from a tank refuelled every morning by someone at the base; an ethanol still makes fuel from surplus or spoiled food. ${usesText}`)}>⚡ No generator and nothing to power <span class="sk-info">ⓘ</span></div>`;
   const ps = powerStatus(state, b);
+  const toggle = (x, off) => `<button class="mini" data-action="pw-toggle" data-base="${b.id}" data-id="${x.id}"${tip(off ? "Let it run (or draw power) again" : "Switch it off (saves fuel)")}>${off ? "Switch on" : "Switch off"}</button>`;
   const row = (u) => {
     const d = BUILDINGS[u.b.type];
-    const st = u.b.broken ? `<span class="chip off"${tip("Broken: it draws no power until it is repaired (Repairs tab)")}>Broken</span>` : u.off ? `<span class="chip off">Switched off</span>` : u.served ? `<span class="chip on">Powered</span>` : u.wants ? `<span class="chip off"${tip("Not enough power: build or staff another generator, or switch something off")}>No power</span>` : `<span class="chip"${tip("A workshop station draws power only while its operator works it")}>Not working</span>`;
-    return `<tr><td${tip(`${d.desc} Powered: ${POWER_USERS[u.b.type].what}.`)}>${esc(d.name)}</td><td>${u.need}</td><td class="small">${esc(POWER_USERS[u.b.type].what)}</td><td>${st}</td><td><button class="mini" data-action="pw-toggle" data-base="${b.id}" data-id="${u.b.id}"${tip(u.off ? "Let it draw power again" : "Switch its power off (saves fuel)")}>${u.off ? "Switch on" : "Switch off"}</button></td></tr>`;
+    const st = u.b.broken ? `<span class="chip off"${tip("Broken: it draws no power until it is repaired (Repairs tab)")}>Broken</span>` : u.off ? `<span class="chip off">Switched off</span>` : u.served ? `<span class="chip on">Powered</span>` : u.wants ? `<span class="chip off"${tip("Not enough power: build another generator, fill its tank, or switch something off")}>No power</span>` : `<span class="chip"${tip("A workshop station draws power only while its operator works it")}>Not working</span>`;
+    return `<tr><td${tip(`${d.desc} Powered: ${POWER_USERS[u.b.type].what}.`)}>${esc(d.name)}</td><td>${u.need}</td><td class="small">${esc(POWER_USERS[u.b.type].what)}</td><td>${st}</td><td>${toggle(u.b, u.off)}</td></tr>`;
   };
+  const genRow = (g) => `<tr><td${tip(BUILDINGS.generator.desc)}>Generator</td><td>+${POWER.genOut}</td><td class="small">${esc(generatorLine(state, b, g.b, ps))}</td><td>${g.running ? `<span class="chip on">Running</span>` : g.b.broken ? `<span class="chip off">Broken</span>` : g.off ? `<span class="chip off">Switched off</span>` : /^Tank dry/.test(g.reason) ? `<span class="chip off"${tip(g.reason)}>Tank dry</span>` : `<span class="chip">Standby</span>`}</td><td>${g.b.broken ? "" : toggle(g.b, g.off)}</td></tr>`;
+  const R = b.refuel && b.refuel.day === day(state) ? b.refuel : null;
+  const refuel = !gens.length ? "" : R ? `Refuelled today at ${String(R.hour % 24).padStart(2, "0")}:00 by ${esc(R.name ? R.name.split(" ")[0] : "someone")} (${R.fuel} fuel, half an hour).` : hourOfDay(state) < REFUEL.from ? `Refuelled from ${String(REFUEL.from).padStart(2, "0")}:00 by whoever is least busy here.` : gens.every((x) => (x.tank || 0) >= POWER.tank - 1e-9) ? "The tanks are full." : "Not refuelled yet today.";
+  const res = b.genReserve || null;
+  const reserve = gens.length ? `<div class="row prodctl" style="margin-top:0.3rem">Keep <input type="number" min="0" max="99999" step="1" class="po-n" data-action="pw-reserve" data-base="${b.id}" value="${res ? res.n : 0}"${tip("Fuel kept back for the vehicles, the floodlights, the winter's heating: the generators' tanks are filled only from the fuel above it. At the reserve they run their tanks dry and the power goes off.")}> fuel back from the generators${res && res.by === "ai" ? ` <span class="chip"${tip("Set by this base's steward (or the autopilot). Change it and it becomes yours: stewards leave it alone.")}>steward</span>` : ""}</div>` : "";
   const cls = ps.demand > ps.supply ? "danger" : "";
   return `<h3>Power</h3>
     <div class="card small">
       <div class="spread"><b class="${cls}">${ps.supply} supply / ${ps.demand} demand</b><span class="muted">${ps.running} of ${gens.length} generator${gens.length === 1 ? "" : "s"} running · ${ps.fuelPerDay} fuel a day · +${ps.heat} Heat · ${Math.floor(b.stock.fuel || 0)} fuel here</span></div>
       ${gens.length ? "" : `<div class="danger">No generator: build one in Construction (Mechanics 3+).</div>`}
-      ${users.length ? `<table class="t"><tr><th>Building</th><th${tip("Power it draws")}>Need</th><th>With power</th><th>Status</th><th></th></tr>${ps.users.map(row).join("")}</table>` : `<div class="muted">Nothing here draws power yet. ${esc(usesText)}.</div>`}
-      <div class="muted" style="margin-top:0.3rem">A generator runs only while something draws power and burns its ${POWER.genFuel} fuel for the day when it starts. Each generator and each powered station needs its operator (Operate role). The still turns 8 food (up to ${STILL.mash} of it yesterday's spoiled food) and 2 water into 3 fuel a day.</div>
+      <table class="t"><tr><th>Building</th><th${tip("Power it gives (+) or draws")}>Power</th><th>With power</th><th>Status</th><th></th></tr>${ps.gens.map(genRow).join("")}${ps.users.map(row).join("")}</table>
+      ${users.length ? "" : `<div class="muted">Nothing here draws power yet. ${esc(usesText)}.</div>`}
+      ${refuel ? `<div class="muted" style="margin-top:0.3rem">⛽ ${refuel}</div>` : ""}${reserve}
+      <div class="muted" style="margin-top:0.3rem">A generator needs no operator: it runs only while something draws power, ${POWER.genFuel} fuel a day of running from its own tank of ${POWER.tank} (a day and a half). Every morning from ${String(REFUEL.from).padStart(2, "0")}:00 someone able at the base refuels it (half an hour); with nobody able here (away, ill or in a bed) it runs its tank dry. A breakdown needs a Mechanics 3+ hand and machine parts (Repairs tab). Powered stations still need their operators. The still turns 8 food (up to ${STILL.mash} of it yesterday's spoiled food) and 2 water into 3 fuel a day.</div>
     </div>`;
 }
 
@@ -252,6 +261,7 @@ export const PROD_CHANGE = {
     if (mode === "keep" && (cur.mode !== "keep" || !cur.n)) patch.n = KEEP_N[cur.key] ?? 10;
     say(ui, setStationOrder(state, b, el.dataset.station, patch));
   },
+  "pw-reserve": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) { say(ui, setGenReserve(b, el.value, "player")); refreshPower(state, b); } }, // machines-2: the generators' fuel reserve
   "po-n": (state, ui, el) => { const b = baseOf(state, el.dataset); if (b) say(ui, setStationOrder(state, b, el.dataset.station, { n: el.value })); },
   "po-key": (state, ui, el) => {
     const b = baseOf(state, el.dataset);

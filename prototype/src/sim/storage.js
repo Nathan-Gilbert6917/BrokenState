@@ -22,7 +22,6 @@
 // the racks, and spoils faster than other fresh food on top of the stores' rate (hunting.js baseGameDaily).
 import { log, residents, atBase } from "./world.js";
 import { count, countAll } from "./buildings.js";
-import { poweredType } from "./power.js";
 import { rackLimit } from "./production.js";
 import * as Weather from "./weather.js";
 import { spoilMult } from "./skills.js";
@@ -48,7 +47,6 @@ export function storeRate(kind, temp, { wet = false, heat = false } = {}) {
   if (kind === "cellar") return RATE.cellar * (cold ? 0.6 : hot ? 1.3 : 1);
   if (kind === "dry") return RATE.dry * (cold ? 0.6 : hot ? 1.4 : 1) * (wet ? 1.15 : 1);
   if (kind === "cold") return temp < 0 ? 0.001 : temp < 5 ? 0.002 : temp < 15 ? 0.005 : 0.012;
-  if (kind === "freezer") return temp < 0 ? 0.001 : 0.002; // a cold store on generator power (power.js)
   if (kind === "walkin") return RATE.cellar * 0.05; // freezer-parts hook: the walk-in freezer while on (base.freezerOn)
   if (kind === "preserved") return RATE.preserved * (hot ? 1.5 : 1);
   // Outside: frozen food keeps fairly well; heat and rain rot it fast.
@@ -63,7 +61,9 @@ export function storeSpaces(base) {
   if (base.type !== "hub") out.push({ key: "pantry", name: "Pantry", kind: "dry", cap: STORE.pantry });
   if (count(base, "storehouse")) out.push({ key: "storehouse", name: "Storehouse", kind: "dry", cap: count(base, "storehouse") * STORE.storehouse });
   if (count(base, "crates")) out.push({ key: "crates", name: "Storage crates", kind: "dry", cap: count(base, "crates") * STORE.crates });
-  if (count(base, "coldstore")) out.push({ key: "coldstore", name: poweredType(base, "coldstore") ? "Cold store (powered)" : "Cold store", kind: poweredType(base, "coldstore") ? "freezer" : "cold", cap: count(base, "coldstore") * STORE.coldStore });
+  // machines-2 (2026-10-10): the cold store is an ice house again; its powered mode ("freezer" kind) is gone. Nothing
+  // else here changed (the food-types branch rewrites this file: take its version and drop the powered cold store).
+  if (count(base, "coldstore")) out.push({ key: "coldstore", name: "Cold store", kind: "cold", cap: count(base, "coldstore") * STORE.coldStore });
   // freezer-parts MINIMAL HOOK, to be replaced by the food-types branch (STORE.freezer, base.freezerOn): the walk-in
   // freezers (buildings.js freezer) add their room; the ones on (power.js base.freezersOn) keep food at ~0.05× the
   // cellar's rate, the ones off (no power, broken, switched off) as a pantry. A broken freezer keeps its room.

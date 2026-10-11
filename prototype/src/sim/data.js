@@ -633,10 +633,12 @@ Object.assign(GEAR, {
 });
 // Where they turn up: loot.js SITE_FINDS (their own dice, so adding them changes no other loot roll).
 
-// ---------- machines for food (freezer-parts 2026-10-10; crafted only: crafting.js CRAFTS) ----------
-// The pressure canner: kept in a base's armory, every preserving room there jars buildings.js CANNER.out more a day.
+// ---------- machines for food (freezer-parts 2026-10-10) ----------
+// The pressure canner: no longer made or found (machines-2: it is fitted to a preserving room, buildings.js
+// BUILDINGS.canner). One kept from an old save is fitted to a kitchen when loaded (buildings.js migrateCanners), or
+// waits in the armory and pays for a fitting later.
 Object.assign(GEAR, {
-  canner: { name: "Pressure canner", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, bulky: true, canner: true, weight: 7, cat: "tools", desc: "A heavy pot with a locking lid, a gauge and a relief valve, its gasket and clamps machined at the workshop. In a base's armory: every preserving room there jars 1 more preserved food a day (bigger batches, safely, under pressure)." },
+  canner: { name: "Pressure canner", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, bulky: true, canner: true, weight: 7, cat: "tools", desc: "A heavy pot with a locking lid, a gauge and a relief valve, its gasket and clamps machined at the workshop. Fit it to a preserving room (Construction, the preserving room's Fit a canner: no materials needed with this one in the base's armory): that kitchen jars 1 more preserved food a day (bigger batches, safely, under pressure)." },
 });
 
 // ---------- gun safes and gun cases (gunsafes.js, locks.js; docs/weapons-overhaul-plan.md section 19) ----------

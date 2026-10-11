@@ -360,10 +360,10 @@ export function completeJob(state, job, how = "") {
   job.status = "done";
   job.endDay = day(state);
   ensureJobs(state).stats.done++;
-  const h = hub(state);
+  const h = hub(state) || state.bases[0]; // machines-2: a run that lost its hub but kept an outpost (tradetest crashed here)
   const r = job.reward;
   const got = [];
-  if (f && f.alive) {
+  if (f && f.alive && h) {
     changeGoodwill(state, f, r.goodwill, "a job well done");
     f.lastDiplomacy = day(state);
     for (const [k, q] of Object.entries(r.supplies)) {
