@@ -22,7 +22,7 @@ import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, 
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal, glReloadRefusal, backblastCells, enclosedAt, LAUNCH, GL_HE, ROCKET } from "../sim/launchers.js"; // grenade launchers and rockets (section 13)
 import { LIGHTS } from "../sim/lights.js";
-import { VISION, viewWedges, faceAng, hasFront, setFacing, nightWord, darkSight } from "../sim/vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12)
+import { VISION, viewWedges, faceAng, hasFront, setFacing, nightWord, darkSight, activeLight, nvgOn, nvgSight } from "../sim/vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12)
 import { noticeRange, earshot } from "../sim/stealth.js";
 import { switchOptions, switchAt, roomAt, roomLit, INDOOR } from "../sim/indoorlight.js"; // a raid's dark rooms and light switches
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
@@ -1129,6 +1129,7 @@ export function combatAction(state, key, d) {
   if (v === "face") { cui.mode = cui.mode === "face" ? "move" : "face"; cui.msg = cui.mode === "face" ? `Click the way ${u.name.split(" ")[0]} should face (free; it needs an action left). The cone is what they watch${b.night ? " and see in the dark" : ""}: a guard is noticed and an overwatch reacts only in it, and loot is searched only facing it.` : ""; return; }
   if (v === "sneak") return void act(state, { type: "sneak", unit: u.id });
   if (v === "lights") return void act(state, { type: "lights", unit: u.id }); // sim/indoorlight.js: the switch in reach (the sim says why not)
+  if (v === "light" || v === "nvg") { if (v === "light" ? u.light : u.nvg) return void act(state, { type: v, unit: u.id }); cui.msg = v === "light" ? `${u.name.split(" ")[0]} has no light.` : `${u.name.split(" ")[0]} has no night vision.`; return; } // sim/combat.js switchAct: free, even with no actions left
   if (v === "overwatch") {
     if (cui.mode === "overwatch") return void act(state, { type: "overwatch", unit: u.id });
     if (!canFire(b, u)) return void act(state, { type: "overwatch", unit: u.id }); // the sim says why not
@@ -1378,6 +1379,8 @@ export function renderCombatPanel(state) {
       ${btn("move", "Move", `Click a blue tile to move (1 action) or a yellow tile to dash (2 actions), then click the way to face there.${u.sneaking ? " Sneaking: slower, and silent." : ` A dash is heard ${VISION.DASH_NOISE} tiles off (the dead come to look); a plain move only now and then a scuff.`}`, ap > 0)}
       ${btn("face", "Face", `Free (with an action left): turn where they stand. The cone is what they watch${b.night ? ` and all they see in the dark (${darkSight(b)} tiles ahead at ${nightWord(b)}, more down a flashlight's beam)` : ""}: an overwatch reacts only in it, and loot is searched only facing it.`, ap > 0, "⇧W")}
       ${btn("sneak", u.sneaking ? "Stop sneaking" : "Sneak", u.sneaking ? "Free: back to walking pace (a dash is heard, a plain move now and then)." : `Free: keep low. ${Math.round(VISION.SNEAK_MOB * 100)}% of the pace, no sound at all, and the enemy cannot see them behind half or full cover facing them (from further than a tile). Not while an aware enemy has eyes on them; a loud shot ends it (a suppressed one or a bow does not).`, ap > 0 || u.sneaking, "⇧Z")}
+      ${u.light ? btn("light", activeLight(u) ? "Light off" : "Light on", lightTip(b, u), true, "Alt+L") : ""}
+      ${u.nvg ? btn("nvg", nvgOn(u) ? "NVG off" : "NVG on", nvgTip(b, u), true, "Alt+N") : ""}
       ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
       ${btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F")}
       ${gun && SIM.cabTarget(b, u) ? (() => { const tg = SIM.cabTarget(b, u), o = SIM.cabOdds(b, u, tg), who = SIM.cabSeat(b, tg.v); return btn("cab", "Shoot the cab", `Fire at their ${esc(tg.v.name || tg.v.kind)} (${o.chance}% a round): each hit wears it (heavy and armour-piercing rounds; ${SIM.HULL.PEN + 1}+ penetration) and half get in at the windscreen${tg.v.up && tg.v.up.plating ? " (less with the plate)" : ""}, at ${who ? "whoever is at the wheel" : "nobody: the cab is empty"}${tg.v.up && tg.v.up.glass ? " through bulletproof glass" : ""}. A driver down stops it. Ends this unit's turn.`, ap > 0 && ammo); })() : ""}
@@ -1550,7 +1553,7 @@ function raidButtons(state, b, u, btn) {
   const sws = switchOptions(b, u);
   if (sws.length) {
     const a = sws[0];
-    html += btn("lights", a.on ? "Lights off" : "Lights on", `${INDOOR.AP} action, quiet: switch the lights ${a.on ? "off" : "on"} in the ${a.name.toLowerCase()}. ${a.on ? `Dark again${!b.night && !a.dark ? " (by day the windows still light it)" : ""}: it is seen only as at night, down the cone or a light's beam.` : `Lit, it is seen as by day by everyone, yours and theirs: whoever stands in it can be noticed, and a guard in it sees all round.`}`, u.ap >= INDOOR.AP, "⌥L");
+    html += btn("lights", a.on ? "Lights off" : "Lights on", `${INDOOR.AP} action, quiet: switch the lights ${a.on ? "off" : "on"} in the ${a.name.toLowerCase()}. ${a.on ? `Dark again${!b.night && !a.dark ? " (by day the windows still light it)" : ""}: it is seen only as at night, down the cone or a light's beam.` : `Lit, it is seen as by day by everyone, yours and theirs: whoever stands in it can be noticed, and a guard in it sees all round.`}`, u.ap >= INDOOR.AP, "⌥K");
   }
   return html;
 }
@@ -2026,7 +2029,7 @@ function previewHtml(b, state = null) {
     if (b.phase === "deploy") return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${esc(t.weaponName)}${t.post === "gate" ? " · holds the gate" : t.post === "tower" ? " · on a tower" : ""}</span>`;
     const hh = heightAt(b, t.x, t.y);
     const thr = active(t) ? threatHtml(b, v, t.x, t.y, ` to ${esc(t.name.split(" ")[0])}`) : "";
-    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${gunText(b, t)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}` : ""}${t.nvg ? " · night vision" : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · ${t.supFitted ? "" : "carried "}suppressor${GEAR[t.suppressor.key] && GEAR[t.suppressor.key].dur ? ` (${t.suppressor.dur ?? GEAR[t.suppressor.key].dur} shots)` : ""}` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}${thr}`;
+    return `<b>${esc(t.name)}</b> <span class="muted">${Math.round(t.hp)} hp · ${gunText(b, t)}${t.light ? ` · ${LIGHTS[t.light]?.name || "light"}${activeLight(t) ? "" : " (off)"}` : ""}${t.nvg ? ` · night vision${nvgOn(t) ? "" : " (off)"}` : ""}${t.optic ? ` · optics +${t.optic}` : ""}${t.suppressor ? ` · ${t.supFitted ? "" : "carried "}suppressor${GEAR[t.suppressor.key] && GEAR[t.suppressor.key].dur ? ` (${t.suppressor.dur ?? GEAR[t.suppressor.key].dur} shots)` : ""}` : ""} · sees ${Math.round(sightRange(b, t))} tiles</span>${hh ? `<br><span class="good">${"▲".repeat(hh)} On high ground (height ${hh}): +${HEIGHT.SIGHT * hh} sight, +${Math.min(HEIGHT.MAX_AIM, HEIGHT.AIM * hh)} aim at anything lower, half cover against shooters below.</span>` : ""}${thr}`;
   }
   // A human body (sim/carriers.js): its state, and what can be done with it.
   const body = v.vis[h.y * W + h.x] ? humanBodyAt(b, h.x, h.y) : null;
@@ -2087,7 +2090,7 @@ function previewHtml(b, state = null) {
   const sw = b.raid ? switchAt(b, h.x, h.y) : null;
   if (sw) {
     const reach = u && active(u) && switchOptions(b, u).includes(sw);
-    return `<b>Light switch: ${sw.on ? "on" : "off"}</b> · ${esc(sw.name)}<br><span class="muted">${reach ? `Click or press ${esc(keyLabel("battle.lights", 1) || "Alt+L")} to flip it (${INDOOR.AP} action, quiet).` : "From next to it, inside the room or in its doorway: click it or Lights to flip it (1 action, quiet)."} ${sw.on ? "Lit, the room is seen as by day by both sides." : `Off, the room is dark${!b.night && !sw.dark ? " but for the daylight through its windows" : ""}: seen only as at night, down the cone or a light's beam.`}</span>`;
+    return `<b>Light switch: ${sw.on ? "on" : "off"}</b> · ${esc(sw.name)}<br><span class="muted">${reach ? `Click or press ${esc(keyLabel("battle.lights", 1) || "Alt+K")} to flip it (${INDOOR.AP} action, quiet).` : "From next to it, inside the room or in its doorway: click it or Lights to flip it (1 action, quiet)."} ${sw.on ? "Lit, the room is seen as by day by both sides." : `Off, the room is dark${!b.night && !sw.dark ? " but for the daylight through its windows" : ""}: seen only as at night, down the cone or a light's beam.`}</span>`;
   }
   if (b.raid && b.raid.interior && cobj.k === "window") return `<b>Window</b>: half cover; you see through it. Cannot stand here.<br><span class="muted">From right next to it (not diagonally): Climb window (L) smashes it and climbs through. Loud: Heat +${BMAP.CLIMB.heat}, wakes what is within ${BMAP.CLIMB.radius} tiles.</span>`;
   if (b.raid && b.raid.interior && (cobj.k === "idoor" || cobj.k === "odoor")) {
@@ -2208,9 +2211,21 @@ const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 // The night line (sim/vision.js): how far anyone sees ahead in the dark at this hour, the lights.
 function nightHtml(b) {
-  const lit = players(b).filter((p) => p.light || p.nvg).length;
-  const tip = `Night (${nightWord(b)}): everyone on foot sees down a cone the way they face, ${darkSight(b)} tiles ahead in the dark and only the cells right around them; the dead see ${STEALTH.NIGHT_ZOMBIE_SIGHT} all round. A light is a beam the way its carrier faces: ${Object.values(LIGHTS).map((L) => `a ${L.name} ${L.round ? `a pool ${L.pool} all round` : `${L.sight} ahead`} (seen +${L.seen})`).join(", ")}; whoever carries one is seen from far off by anyone facing it. Night vision: the day's sight down the cone. Guards notice you from closer, and only in their own cone (behind them they hear you; sneaking, not at all). Soldiers carry military flashlights, other people now and then a flashlight. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further.`;
-  return `<div class="small warn" style="margin-top:0.25rem" data-tip="${esc(tip)}">Night, ${esc(nightWord(b))}: ${darkSight(b)} tiles ahead in the dark, more down a light's beam. ${lit} of ${players(b).length} have a light or night vision.</div>`;
+  const lit = players(b).filter((p) => activeLight(p) || nvgOn(p)).length;
+  const keys = `${keyLabel("battle.light", 1) || "Light on / off"}, ${keyLabel("battle.nvg", 1) || "NVG on / off"}`;
+  const tip = `Night (${nightWord(b)}): everyone on foot sees down a cone the way they face, ${darkSight(b)} tiles ahead in the dark and only the cells right around them; the dead see ${STEALTH.NIGHT_ZOMBIE_SIGHT} all round. A light is a beam the way its carrier faces: ${Object.values(LIGHTS).map((L) => `a ${L.name} ${L.round ? `a pool ${L.pool} all round` : `${L.sight} ahead`} (seen +${L.seen})`).join(", ")}; whoever has one switched on is seen from far off by anyone facing it, and a raider, a soldier or anyone else of theirs (not the dead) who sees it knows you are there: their group is alerted. Night vision: ${LIGHTS.tacflash.sight} tiles down the cone (as far as a military flashlight), and no light at all to be seen by. Lights and night vision switch on and off for free, even with no actions left (${keys}); someone with both starts with the goggles on and the light off. Off, they see only what the dark lets them. Guards notice you from closer, and only in their own cone (behind them they hear you; sneaking, not at all). Soldiers carry military flashlights, other people now and then a flashlight. A quick rummage without a light or night vision on is heard ${SEARCH.quick.dark} tiles further.`;
+  return `<div class="small warn" style="margin-top:0.25rem" data-tip="${esc(tip)}">Night, ${esc(nightWord(b))}: ${darkSight(b)} tiles ahead in the dark, more down a light's beam, ${LIGHTS.tacflash.sight} with night vision. ${lit} of ${players(b).length} have a light or night vision on.</div>`;
+}
+// What a light does, for the button (sim/vision.js, sim/combat.js lightSpotted): a beam or a pool to see by, but seen.
+const lampText = (L) => (L.round ? `a pool of light ${L.pool} tiles all round` : `${L.sight} tiles down its beam`);
+function lightTip(b, u) {
+  const L = LIGHTS[u.light] || LIGHTS.flashlight, on = !!activeLight(u);
+  const dark = nvgOn(u) ? `night vision's ${nvgSight(u)} tiles down the cone` : b.night ? `the dark: ${darkSight(b)} tiles ahead at ${nightWord(b)}` : "the dark";
+  return `Free (even with no actions left): switch the ${L.name} ${on ? "off" : "on"}. On: ${lampText(L)} to see by, but whoever carries a light is seen from far off by anyone facing it (noticed ${L.seen} tiles further), and any raider or soldier who sees it knows they are there and alerts their group. Off: ${dark}, and nothing to give them away.${u.sneaking && !on ? " Sneaking with a light on: the light still shows over cover." : ""}${b.night ? "" : " It counts at night (by day it changes nothing)."}`;
+}
+function nvgTip(b, u) {
+  const on = nvgOn(u), lamp = activeLight(u) ? LIGHTS[activeLight(u)] : null;
+  return `Free (even with no actions left): night vision ${on ? "off (flipped up)" : "on"}. On: ${nvgSight(u)} tiles down the cone (as far as a military flashlight), and no light to give them away. Off: ${lamp ? `the ${lamp.name}'s ${lampText(lamp)}` : b.night ? `the dark: ${darkSight(b)} tiles ahead at ${nightWord(b)}` : "the dark"}.${on && lamp ? ` Their ${lamp.name} is on as well: it gives them away whatever the goggles do.` : ""}${b.night ? "" : " It counts at night (by day it changes nothing)."}`;
 }
 
 // ---------- view cones (sim/vision.js) ----------

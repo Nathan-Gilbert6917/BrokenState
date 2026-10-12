@@ -5,7 +5,7 @@
 // a dark room as at night; at night every room starts dark; Lights (1 action, next to the switch, inside the room or
 // in its doorway) lights the room: seen as by day by both sides, and back off again; the light state survives a save;
 // a street map's barn is dark too; a battle that is not a raid keeps the old rules; the battle screen (stub canvases):
-// the Lights button next to a switch, Alt+L, the hover texts, the dark and lit rooms drawn without error.
+// the Lights button next to a switch, Alt+K, the hover texts, the dark and lit rooms drawn without error.
 // Usage: node tools/indoorlighttest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -216,7 +216,7 @@ console.log("The battle screen: the Lights button, the key, the hover, the drawi
   ISO.setIsoCanvas(cvs);
   UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => ctx2d() });
   K.initKeymap({});
-  check(K.keyAction({ code: "KeyL", altKey: true, shiftKey: false, ctrlKey: false, metaKey: false }, "battle") === "battle.lights" && !K.conflicts().length, "Alt+L is Lights in a battle, no clash with any other key");
+  check(K.keyAction({ code: "KeyK", altKey: true, shiftKey: false, ctrlKey: false, metaKey: false }, "battle") === "battle.lights" && !K.conflicts().length, "Alt+K is Lights in a battle, no clash with any other key");
   let clock = 1e6;
   const draw = (st) => { try { clock += 50; UI.drawCombat(st, clock); return ""; } catch (e) { return e.stack.split("\n").slice(0, 3).join(" "); } };
   const r = raidAt("farmhouse", 23);
@@ -239,8 +239,8 @@ console.log("The battle screen: the Lights button, the key, the hover, the drawi
   check(/Dark inside/.test(hov2), "hovering the dark room: Dark inside");
   UI.cui.hover = null;
   check(draw(st) === "" && nan === 0, "the dark farmhouse at night draws (switch markers), no error or NaN");
-  UI.combatKey(st, { code: "KeyL", altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, preventDefault() {} });
-  check(room.on && u.ap === 1, "Alt+L flips the switch in reach (1 action)");
+  UI.combatKey(st, { code: "KeyK", altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, preventDefault() {} });
+  check(room.on && u.ap === 1, "Alt+K flips the switch in reach (1 action)");
   check(/Lights off/.test(UI.renderCombatPanel(st)) && draw(st) === "" && nan === 0, "lit: the button says Lights off; the lit room draws");
   const rb = raidAt("barn", 12);
   const fl = rb.b.raid.areas.find((a) => a.role === "barnfloor");

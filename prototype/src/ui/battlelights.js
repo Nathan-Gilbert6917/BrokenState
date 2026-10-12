@@ -1,5 +1,6 @@
-// Lights in a night battle (b.night; dusk, b.dark, lighter): everyone carrying a light (sim/lights.js, u.light: set by
-// sim/stealth.js) shines it. A headlamp, a flashlight (a weapon light or a helmet light counts as one) and a spotlight
+// Lights in a night battle (b.night; dusk, b.dark, lighter): everyone carrying a light switched on (sim/lights.js,
+// u.light: set by sim/stealth.js; sim/vision.js activeLight: not switched off, u.lightOff) shines it; night vision
+// gives off no light and draws nothing. A headlamp, a flashlight (a weapon light or a helmet light counts as one) and a spotlight
 // throw a soft cone the way the unit faces (u.face, the sim's: set by every move, shot and blow), as long as the light
 // lets them see (LIGHTS sight: 6–9 tiles; a spotlight the full 12) and as wide as its cone; a torch and a lantern a warm
 // flickering pool all around (LIGHTS cone: the pool's radius). Fires, flares and the base's floodlit cells light the
@@ -16,6 +17,7 @@
 // (cut out of the darkness); by day the floors of the dark rooms (a barn, a storeroom) are shaded (drawShade, under the
 // units and walls), and only there does a light switched on by day shine (its beam cut out of the shade).
 import { LIGHTS } from "../sim/lights.js";
+import { activeLight } from "../sim/vision.js";
 import { FLARE } from "../sim/throwables.js";
 import { activeLight } from "../sim/vision.js"; // the light a unit has switched on
 import { roomCells, darkAt } from "../sim/indoorlight.js";
@@ -58,12 +60,13 @@ export function lightSources(b, v, pos = (t) => [t.x + 0.5, t.y + 0.5]) {
   const day = !b.night && !b.dark; // by day: only lights switched on in a dark room (sim/indoorlight.js)
   if (day && !b.indoor) return out;
   for (const t of b.units) {
-    if (!t.light || t.dead || t.down || t.left || t.fled || t.off || t.x < 0) continue;
-    if (day && !(activeLight(t) && darkAt(b, t.x, t.y, t.f))) continue;
+    const key = activeLight(t);
+    if (!key || t.dead || t.down || t.left || t.fled || t.off || t.x < 0) continue;
+    if (day && !darkAt(b, t.x, t.y, t.f)) continue;
     if (t.side !== "player" && !(v && v.seen && v.seen.has(t.id))) continue; // an enemy's light only once you see them
     if (b.floors && (t.f || 0) !== (b.floor || 0)) continue;
     const [x, y] = pos(t);
-    out.push({ x, y, beam: beamOf(t.light), ang: facingAngle(b, t), id: t.id, unit: t });
+    out.push({ x, y, beam: beamOf(key), ang: facingAngle(b, t), id: t.id, unit: t, key });
   }
   return out;
 }
@@ -123,8 +126,8 @@ export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
     c.setTransform(...base);
     c.translate(s.x, s.y);
     if (B.kind === "pool") {
-      const fl = s.unit.light === "torch" ? 1 + 0.06 * Math.sin(now / 83 + s.id * 1.7) + 0.03 * Math.sin(now / 37 + s.id) : 1 + 0.015 * Math.sin(now / 140 + s.id);
-      c.globalAlpha = s.unit.light === "torch" ? 0.88 + 0.12 * Math.sin(now / 61 + s.id * 2.3) : 1;
+      const fl = s.key === "torch" ? 1 + 0.06 * Math.sin(now / 83 + s.id * 1.7) + 0.03 * Math.sin(now / 37 + s.id) : 1 + 0.015 * Math.sin(now / 140 + s.id);
+      c.globalAlpha = s.key === "torch" ? 0.88 + 0.12 * Math.sin(now / 61 + s.id * 2.3) : 1;
       c.scale(B.r * fl, B.r * fl);
       c.fillStyle = grad(c, B.col, B.a, true);
       c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();

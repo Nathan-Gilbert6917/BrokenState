@@ -6,12 +6,18 @@
 // hidden behind cover (full cover; half cover too when sneaking); sneaking (slower, silent, not while seen, a loud
 // shot ends it); footsteps (a dash is heard, a plain move only now and then; the dead come to look); overwatch only in
 // the watcher's cone; looting only facing it; the aware AI turning to the nearest foe; the new lights as items.
+// The switches (the user's request: night vision and lights on and off): night vision 12 down the cone (a military
+// flashlight's reach) and nothing to be seen by; a light switched off is no beam and no detection bonus; both switches
+// free with no actions left; with both carried the goggles start on and the light off; an unaware guard who sees a
+// light at night knows you are there (and not with it off, out of its plain noticing range).
 // Usage: node tools/visiontest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
-import { createBattle, combatAct, registerCombatHandler, unitAt, canSee, canSeeAt, playerVision, endPlayerTurn, runEnemyPhase, dashRange, moveMob, moveAlong } from "../src/sim/combat.js";
-import { detectRange } from "../src/sim/stealth.js";
-import { VISION, darkSight, faceAng, setFacing, inArc, facesBox, nightReach } from "../src/sim/vision.js";
+import { createBattle, combatAct, registerCombatHandler, unitAt, canSee, canSeeAt, playerVision, endPlayerTurn, runEnemyPhase, dashRange, moveMob, moveAlong, notice, lightSpotted } from "../src/sim/combat.js";
+import { detectRange, noticeRange, lightSeen } from "../src/sim/stealth.js";
+import { VISION, darkSight, faceAng, setFacing, inArc, facesBox, nightReach, activeLight, nvgOn, defaultSwitches } from "../src/sim/vision.js";
+import { lightSources } from "../src/ui/battlelights.js";
+import { newItem } from "../src/sim/inventory.js";
 import { LIGHTS, LIGHT_KEYS } from "../src/sim/lights.js";
 import { ITEM_TAGS, LIGHT_FINDS } from "../src/sim/loot.js";
 import { CRAFTS } from "../src/sim/crafting.js";
@@ -216,6 +222,97 @@ console.log("Overwatch reacts in its cone only; the aware turn to face you; a lo
   const err3 = combatAct(st3, { type: "shoot", unit: s3.id, target: t3.id });
   if (!err3) check(!s3.sneaking, `a loud shot ends sneaking (${s3.weaponName})`);
   else console.log(`  (no shot to test: ${err3})`);
+}
+
+console.log("Night vision and lights: on and off");
+{
+  const st = world(2);
+  const b = battle(st);
+  const [u, w] = b.units.filter((x) => x.side === "player");
+  const e = b.units.find((x) => x.side === "enemy");
+  place(w, 2, 20, 0); w.light = null; w.nvg = false;
+  place(e, 30, 2, Math.PI); e.light = null; e.aware = false;
+  place(u, 10, 10, 0); u.light = null; u.nvg = true; u.nvgOff = false; u.optic = 0; u.daySight = 13; u.stealth = 0; u.sneak = 0; u.ghost = false;
+  check(canSeeAt(b, u, 22, 10) && !canSeeAt(b, u, 23, 10) && nightReach(b, u) === 12, "night vision: 12 tiles down the cone (a military flashlight's reach), not 13");
+  check(!canSeeAt(b, u, 7, 10) && !canSeeAt(b, u, 13, 17), "night vision: down the cone only, not behind nor round to the flank");
+  place(e, 18, 10, Math.PI);
+  const nvgR = detectRange(b, e, u);
+  u.nvg = false;
+  const darkR = detectRange(b, e, u);
+  u.nvg = true;
+  check(nvgR === darkR && lightSeen(u) === 0, `night vision on adds no detection range (${nvgR}, ${darkR} without it)`);
+  check(!lightSources(b, { seen: new Set() }).some((L) => L.id === u.id), "night vision draws no beam");
+  // The switches: free, even with no actions left.
+  u.ap = 0;
+  const err = combatAct(st, { type: "nvg", unit: u.id });
+  check(!err && !nvgOn(u) && u.ap === 0, `NVG off with no actions left: free (${err || "ok"})`);
+  check(canSeeAt(b, u, 14, 10) && !canSeeAt(b, u, 15, 10) && u.sight === darkSight(b), `night vision off: the dark's ${darkSight(b)} ahead, u.sight follows (${u.sight})`);
+  combatAct(st, { type: "nvg", unit: u.id, on: true });
+  check(nvgOn(u) && u.sight === 12 && u.ap === 0, `NVG on again: u.sight ${u.sight}`);
+  u.nvg = false; delete u.nvgOff; u.light = "flashlight"; u.lightOff = false;
+  const litR = detectRange(b, e, u);
+  check(canSeeAt(b, u, 19, 10) && litR === darkR + 3, `a flashlight on: 9 down the beam, noticed 3 tiles further (${litR})`);
+  check(lightSources(b, { seen: new Set() }).some((L) => L.id === u.id), "a light on draws its beam");
+  const err2 = combatAct(st, { type: "light", unit: u.id });
+  check(!err2 && !activeLight(u) && u.ap === 0, `light off with no actions left: free (${err2 || "ok"})`);
+  check(!canSeeAt(b, u, 19, 10) && !canSeeAt(b, u, 15, 10) && detectRange(b, e, u) === darkR && u.sight === darkSight(b), "the light off: no beam to see by, no detection bonus, u.sight back to the dark");
+  check(!lightSources(b, { seen: new Set() }).some((L) => L.id === u.id), "the light off: no beam drawn");
+  const err3 = combatAct(st, { type: "nvg", unit: u.id });
+  check(!!err3 && /no night vision/.test(err3), `no goggles: refused (${err3})`);
+  const err4 = combatAct(st, { type: "light", unit: w.id });
+  check(!!err4 && /no light/.test(err4), `no light: refused (${err4})`);
+  // Both carried: the goggles on, the light off.
+  const v = { light: "headlamp", nvg: true };
+  defaultSwitches(v);
+  check(nvgOn(v) && !activeLight(v), "with both carried: night vision on, the light off");
+  const st2 = world(2);
+  const s2 = atBase(st2, hub(st2).id)[0];
+  s2.gear.tool = newItem("nvg");
+  if (s2.pockets) s2.pockets[0] = newItem("headlamp");
+  const b2 = battle(st2);
+  const u2 = b2.units.find((x) => x.sid === s2.id);
+  check(u2 && u2.nvg && u2.light === "headlamp" && nvgOn(u2) && !activeLight(u2) && u2.sight === 12, `a battle at night: the goggles on, the headlamp off (sight ${u2 && u2.sight})`);
+}
+
+console.log("A light at night gives you away");
+{
+  const st = world(2);
+  const b = battle(st, { count: 1 });
+  const [u, w] = b.units.filter((x) => x.side === "player");
+  const e = b.units.find((x) => x.side === "enemy");
+  place(w, 2, 20, 0); w.light = null; w.nvg = false;
+  place(e, 25, 10, Math.PI); e.light = null; e.aware = false;
+  place(u, 12, 10, 0); u.nvg = false; u.light = "flashlight"; u.lightOff = true; u.stealth = 0; u.sneak = 0; u.ghost = false; u.sneaking = false; u.ap = 2;
+  check(noticeRange(b, e, u, false) < 12 && noticeRange(b, e, { ...u, lightOff: false }, false) < 12, `the guard 12 tiles off, out of its plain noticing range (${noticeRange(b, e, u, false)}; lit ${noticeRange(b, e, { ...u, lightOff: false }, false)})`);
+  combatAct(st, { type: "move", unit: u.id, x: 13, y: 10, face: 0 });
+  check(u.x === 13 && !e.aware, "the light off: a move in front of the guard goes unseen");
+  notice(b, e);
+  check(!e.aware, "the light off: the guard's look round sees nothing");
+  check(!lightSpotted(b, e, u), "no light to see");
+  const err = combatAct(st, { type: "light", unit: u.id, on: true });
+  check(!err && activeLight(u) && e.aware && b.log.some((l) => /sees .*light!/.test(l.text)), `the light on: the guard sees it and is aware (${(b.log.find((l) => /light!/.test(l.text)) || {}).text})`);
+  // At the start of the enemy turn, and a wandering guard's own look.
+  e.aware = false; e.surprised = false;
+  endPlayerTurn(st);
+  check(e.aware, "the start of the enemy turn: a guard facing a lit survivor becomes aware");
+  const st3 = world(2);
+  const b3 = battle(st3, { count: 1 });
+  const [p3, q3] = b3.units.filter((x) => x.side === "player");
+  const g3 = b3.units.find((x) => x.side === "enemy");
+  place(q3, 2, 20, 0); q3.light = null; q3.nvg = false;
+  place(g3, 25, 10, Math.PI); g3.light = null; g3.aware = false;
+  place(p3, 13, 10, 0); p3.nvg = false; p3.light = "headlamp"; p3.lightOff = false; p3.stealth = 0; p3.sneak = 0; p3.ghost = false;
+  notice(b3, g3);
+  check(g3.aware, "a guard's look round (notice) sees the light too");
+  g3.aware = false; setFacing(g3, 0);
+  notice(b3, g3);
+  check(!g3.aware, "facing away, the guard does not see it");
+  // Sneaking behind cover with a light on: the light shows over it.
+  setFacing(g3, Math.PI); p3.sneaking = true;
+  b3.cells[10 * b3.w + 14].k = "crate"; b3.losCache.fill(0);
+  check(canSee(b3, g3, p3), "sneaking behind cover with a light on: still seen");
+  p3.lightOff = true;
+  check(!canSee(b3, g3, p3), "the light off: hidden behind the cover");
 }
 
 console.log("Looting faces the loot");

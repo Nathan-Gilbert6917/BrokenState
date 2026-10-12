@@ -21,13 +21,16 @@
 //     shots). An oil filter only carried (anywhere on them, a save from before attachments) still halves the shot of
 //     a 9mm pistol or a rifle without anything on its muzzle. Enemies' guns count their attachments the same way.
 //   night raids: enemy sight 7 (the dead 5), detection range ×0.6 (at least 2); your people see 7 too, more with a
-//     light (lights.js: a headlamp 8, a flashlight or torch 9, a lantern 10, a spotlight 12; noticed 1–6 tiles further)
-//     and normally with night vision goggles; a quick rummage in the dark without either is heard 2 tiles further
-//     (search.js; a full search is 1 action either way).
+//     light switched on (lights.js: a headlamp 8, a flashlight or torch 9, a lantern 10, a spotlight 11, a military
+//     flashlight 12; noticed 1–6 tiles further, and an enemy person who sees it knows they are there: combat.js
+//     lightSpotted) and 12 down the cone with night vision on (vision.js nvgSight; nothing to be seen by); a quick
+//     rummage in the dark without either is heard 2 tiles further (search.js; a full search is 1 action either way).
+//     Both switch on and off for free (combat.js switchAct); with both, a battle starts with the goggles on and the
+//     light off (vision.js defaultSwitches).
 import { GEAR } from "./data.js";
 import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunmods.js"; // gun attachments: suppressors, brakes
 import { isNight, survivorById, baseById, hourOfDay } from "./world.js";
-import { VISION, darkSight, nightReach, faceToward, hasFront, inArc, enemyLight, faceAng, setFacing } from "./vision.js"; // facing, view cones, sneaking
+import { VISION, darkSight, nightReach, faceToward, hasFront, inArc, enemyLight, faceAng, setFacing, activeLight, nvgOn, defaultSwitches } from "./vision.js"; // facing, view cones, sneaking; the switches (a light, night vision on or off)
 import { hash01 } from "./skills.js";
 import { darkAt } from "./indoorlight.js"; // a raid's dark rooms (a barn by day, any unlit room at night) and lit ones
 import { carriedSpots } from "./inventory.js"; // everything carried, the rig's pouches too
@@ -148,14 +151,15 @@ export function stealthSetup(state, b) {
     if (u.side === "player") {
       const s = survivorById(state, u.sid);
       const tool = s && s.gear.tool;
+      const had = { light: u.light, nvg: u.nvg };
       setLight(u, s);
       u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal || helmetNvg(s); // a thermal monocular sees in the dark like night vision (optics.js); so does a thermal sight on the gun (gunmods.js); goggles on the helmet leave the off hand free (helmets.js)
+      defaultSwitches(u, had); // vision.js: with both, night vision on and the light off
       const t = s ? s.traits || [] : [];
       u.str = (t.includes("tough") ? 5 : 0) - (t.includes("frail") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
       setSuppressor(u, s);
       u.daySight = u.sight; // refitSenses
-      if (b.night && !u.nvg) u.sight = Math.min(u.sight, nightSight(b, u));
-      u.optic = battleOptic(s, b.night); // optics.js: binoculars and scopes see further (by day; a thermal at night too)
+      senses(b, u, s); // the night caps the sight (night vision too: 12 down the cone); optics.js: binoculars and scopes see further (by day; a thermal at night too)
       if (!u.face) faceToward(u, Math.round(ex), Math.round(ey)); // vision.js: toward the enemy (the map's middle when none is placed)
     } else {
       // Toward your people; a raid's guards (unaware, at their posts) any way at all (their own dice).
@@ -169,14 +173,23 @@ export function stealthSetup(state, b) {
     }
   }
 }
-// The light a unit carries (lights.js): u.light is its key (or null), read by the night sight, detection, the dark
-// rummage (search.js) and the battle views (their beams and glows).
+// The light a unit carries (lights.js): u.light is its key (or null); switched on or off by u.lightOff (vision.js
+// activeLight: what the night sight, detection, the dark rummage (search.js) and the battle views' beams read).
 function setLight(u, s) {
   u.light = lightOf(s);
 }
 // How far someone sees at night at most (vision.js: the dark ahead by the hour, a light's beam or pool, night vision).
 const nightSight = (b, u) => nightReach(b, u);
-export const lightSeen = (u) => (u.light && LIGHTS[u.light] ? LIGHTS[u.light].seen : 0);
+// What one of your people sees with what they have switched on (their sight: the day's, capped at night by the dark, a
+// light's beam or pool, night vision's 12) and through their optics (by day; at night only a thermal, and only while
+// night vision is on: switched off, the thermal monocular is not looked through either). s: the survivor (the
+// optics; left out, they stay as they are). After a switch (combat.js switchAct) and a refit.
+export function senses(b, u, s) {
+  if (u.daySight != null) u.sight = b.night ? Math.min(u.daySight, nightSight(b, u)) : u.daySight;
+  if (s !== undefined) u.optic = b.night && u.nvg && !nvgOn(u) ? 0 : battleOptic(s, b.night);
+}
+// How many tiles further off a light switched on is noticed (lights.js seen); none for night vision (it gives off no light).
+export const lightSeen = (u) => { const k = activeLight(u); return k && LIGHTS[k] ? LIGHTS[k].seen : 0; };
 function nightEyes(b, u) {
   if (!b.night || u.nightEyes || u.side === "player") return;
   u.nightEyes = true;
@@ -207,7 +220,8 @@ export function noticeRange(b, e, mover, perks = true) {
   if (dark) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + lightSeen(mover)); // a light is seen from further off
   if (dark && mover.sparks === b.turn) r += 2; // locks.js: an angle grinder's sparks this turn (SAFE.grind.sparks)
   // A light the guard carries (vision.js: a soldier's military flashlight): down its beam they see further.
-  if (b.night && e.light && LIGHTS[e.light] && !LIGHTS[e.light].round && inArc(e, mover.x, mover.y, (LIGHTS[e.light].beam || 20) * Math.PI / 180)) r = Math.max(r, Math.min(range, LIGHTS[e.light].sight));
+  const el = activeLight(e);
+  if (b.night && el && LIGHTS[el] && !LIGHTS[el].round && inArc(e, mover.x, mover.y, (LIGHTS[el].beam || 20) * Math.PI / 180)) r = Math.max(r, Math.min(range, LIGHTS[el].sight));
   if (perks && mover.ghost) r = Math.min(r, 2);
   return r;
 }
@@ -663,10 +677,11 @@ export function botRetreatSmoke(state, b, inEvac) {
 export function refitSenses(b, u, s) {
   if (!s) return;
   const tool = s.gear.tool;
+  const had = { light: u.light, nvg: u.nvg };
   setLight(u, s);
   u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal || helmetNvg(s); // helmets.js: goggles on the helmet
-  if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(b, u)) : u.daySight;
-  u.optic = battleOptic(s, b.night);
+  defaultSwitches(u, had); // vision.js: what comes to hand is on (a light not, with night vision on); the rest keep their switches
+  senses(b, u, s);
   setSuppressor(u, s);
 }
 // The suppressor a player unit shoots with: the one fitted to its gun (gunmods.js), else an oil filter it only carries
