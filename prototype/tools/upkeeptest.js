@@ -9,9 +9,9 @@
 import { food, setFood } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, residents, makeSurvivor, newId } from "../src/sim/world.js";
 import { basesDaily, foodOutlook, waterOutlook, waterNeed, eatPerDay, foodForecast, farmOutput, drinkRate, RATION_DAYS } from "../src/sim/economy.js";
+import { needsHour } from "../src/sim/needs.js";
 import { UPKEEP, foodUse, mouthsAt, useText, coldFactor, perHeadText } from "../src/sim/upkeep.js";
 import { econStats } from "../src/sim/farming.js";
-import { needsHour } from "../src/sim/needs.js";
 import { launchExpedition, partyMembers, rationsPerHour } from "../src/sim/parties.js";
 import { prisonersDaily, takePrisonersAt, PRISON } from "../src/sim/prisoners.js";
 import { visitorsDaily } from "../src/sim/visitors.js";
@@ -40,12 +40,12 @@ function quietHub(st) {
   return h;
 }
 const addPerson = (st, base) => { const s = plain(makeSurvivor(st, 1)); s.location = { kind: "base", baseId: base.id }; s.role = "rest"; s.health = 100; st.survivors.push(s); return s; };
-// A day of meals (eating.js: people eat by the hour at mealtimes, to their hunger target; the daily tick counts the day
-// that ended): one day to settle everyone's hunger, then the day measured, its daily tick counting what was eaten.
-const mealDay = (st) => { for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); } }; // needs.js: hunger, thirst and the meals, hour by hour
-const eatenToday = (st) => { mealDay(st); basesDaily(st); const e = econStats(st).eaten; mealDay(st); basesDaily(st); return econStats(st).eaten - e; };
-// Eaten against the per-head figure: within a tenth (hunger is eaten to a target at mealtimes, not by the unit).
-const about = (a, b) => Math.abs(a - b) <= Math.max(0.15, 0.1 * b);
+// A day's eating: people eat hourly at their meals (eating.js baseEatHour, needs.js needsHour) and the midnight tally
+// (economy.js basesDaily) adds the day up. A day first to settle everyone's hunger, then the day measured.
+const eatDay = (st) => { for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); } basesDaily(st); };
+const eatenToday = (st) => { eatDay(st); const e = econStats(st).eaten; eatDay(st); return econStats(st).eaten - e; };
+// Eating goes by each person's fullness band (80–100%), not an exact ration: about the day's use.
+const about = (a, b, tol = 0.15) => b > 0 && Math.abs(a - b) <= tol * b;
 
 // ---------- 1. food and water scale with the people at the base ----------
 {
@@ -68,7 +68,7 @@ const about = (a, b) => Math.abs(a - b) <= Math.max(0.15, 0.1 * b);
   check(near(waterNeed(st, h).people, Math.round(2 * n * drinkRate(st) * 10) / 10), "and drink twice as much");
   // The daily tick eats exactly that.
   const ate = eatenToday(st);
-  check(about(ate, use2.residents), `a day's meals eat about per head × heads (${Math.round(ate * 100) / 100} for ${2 * n})`);
+  check(about(ate, use2.residents), `the day's meals eat about eats per head × heads (${Math.round(ate * 100) / 100} for ${2 * n})`);
   const ate1 = (() => { for (const s of extra) s.location = { kind: "errand", baseId: h.id, until: 99999 }; return eatenToday(st); })();
   check(about(ate1, foodUse(st, h).residents) && ate1 < ate * 0.6, `people away on an errand do not eat here (${Math.round(ate1 * 100) / 100})`);
 }
@@ -174,7 +174,9 @@ const about = (a, b) => Math.abs(a - b) <= Math.max(0.15, 0.1 * b);
   // The outpost keeps a reserve by its heads and ships the rest: a day past the short-rations line (economy.js
   // RATION_DAYS + 1, so it is not rationing while the hub is full) + 6.
   const keepDays = RATION_DAYS + 1;
-  check(food(o) <= Math.ceil(foodUse(st, o).total * keepDays) + 6 + 1.5 && food(o) >= Math.ceil(foodUse(st, o).total * keepDays) + 6 - 1.5 - foodUse(st, o).total, `the outpost keeps ${keepDays} days for its 3 + 6, less the day's meals since (eating.js: they eat by the hour) (${Math.round(food(o) * 10) / 10}; whole items ship)`);
+  setFood(o, 200); // a full store again, then one day: what is left after the midnight shipping is the reserve
+  eatDay(st);
+  check(food(o) <= Math.ceil(foodUse(st, o).total * keepDays) + 6 + 1.5 && food(o) >= Math.ceil(foodUse(st, o).total * keepDays) + 6 - 1.5, `the outpost keeps ${keepDays} days for its 3 + 6 (${Math.round(food(o) * 10) / 10}; whole items ship)`);
   check(!o.rationing, "the outpost is not on short rations");
   takePrisonersAt(st, st.factions[0], o, 2);
   setFood(o, 200);

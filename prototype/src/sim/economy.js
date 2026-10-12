@@ -40,13 +40,13 @@ import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (ma
 import { addFind, chooseRounds, baseCals, roundsText } from "./ammo.js"; // rounds by calibre
 import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging find named by calibre in the log)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult, tileFactor } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
+import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult, tileFactor, onTileHours } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
 import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2)
 import { kitchenDaily, kitchenFireDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
-  scavenge: { name: "Scavenge", desc: "Picks through the ruins right around this base. Usually finds nothing: a small chance a day of a small find (better with Scavenging, worse as the area is picked over). Expeditions to real sites are where supplies come from." },
+  scavenge: { name: "Scavenge", desc: "Picks through the ruins right around this base: about 1.5 supplies a day each on average at Scavenging 0 (scrap, food, water, now and then ammo, meds, fuel or parts, by what the ground around holds; more in a town or at a site, less in open country), up to 4 with good Scavenging (+8% a point; a crowbar helps). The area is picked over for good as they work it. Expeditions to real sites bring in far more." },
   operate:  { name: "Operate",  desc: "Runs a workshop station (ammo, meds, parts or the preserving room). Loud: raises Heat." },
   build:    { name: "Build",    desc: "Works on the construction queue. More builders finish faster; Mechanics helps." },
   guard:    { name: "Guard",    desc: "Defends the base. Guards count 1.5× in fights." },
@@ -84,22 +84,33 @@ export function farmOutput(state, base) {
 }
 
 // ---------- base scavenging ----------
-// Rare by design: each scavenger has a small chance a day of a small find. The chance grows with Scavenging (and a
-// crowbar), Greedy, and the site; it drops as the surroundings get picked over (base.scavLeft, 1 → 0.2, 0.004 per
-// scavenger a day; it never comes back: nothing out there grows back, aiscav.js). Expeditions to real sites are where
-// supplies come from.
+// WORLD-01 (2026-10-12, user request; was a 7% chance a day of one small find, about 0.2 supplies a day): a scavenger
+// picking through the ruins round a base turns up BASE_SCAV_YIELD (1.5) supplies a day on average at Scavenging 0 in
+// ruins (a site, a town or the suburbs: siteBonus scav SCAV_REF, 1.2; open country 0.8 gives two-thirds of it), the
+// surroundings fresh and a full day out. More with Scavenging (+SCAV_SKILL a point, a crowbar's bonus counts as points), Greedy and
+// Scrounger; less as the surroundings are picked over (base.scavLeft, 1 → 0.2, 0.004 per scavenger a day; it never
+// comes back: nothing out there grows back, aiscav.js) and for someone hurt or worn out (health.js workFactor). At most
+// SCAV_YIELD_CAP a scavenger a day. scavYield is that expectation; the trips (scavTrip) and the Work panel's average
+// (scavengeOutput) both read it, so what is rolled, logged and shown agree.
+// A day's supplies come as finds: finds = the expected supplies / the average find of the tile's table (SCAV_FIND),
+// the whole part for sure and the rest as a chance, each find a whole number of its units (rng.int over its range), so
+// the long-run average is the expectation exactly.
 export const GREEDY_SCAV = 1.15; // the Greedy trait: finds more when scavenging around a base
-export const BASE_SCAV_CHANCE = 0.07;   // per scavenger per day at Scavenging 0, fresh surroundings
+export const BASE_SCAV_YIELD = 1.5; // supplies a scavenger a day at Scavenging 0 in ruins, fresh surroundings
+export const SCAV_REF = 1.2;        // the ruins' siteBonus scav: the ground the baseline is for
+export const SCAV_SKILL = 0.08;     // + this share of the yield a point of Scavenging (Scavenging 10: × 1.8)
+export const SCAV_YIELD_CAP = 4;    // the most a scavenger turns up a day, on average
 export const SCAV_FIND = { scrap: [2, 5], food: [1, 3], water: [2, 4], rawwater: [2, 4], ammo: [3, 8], meds: [1, 1], fuel: [1, 2], parts: [1, 1], preserved: [1, 3], jars: [2, 6] };
 export const SCAV_DEPLETE = 0.004, SCAV_FLOOR = 0.2;
 /** @param {Base} base */
 export const scavLeft = (base) => (base.scavLeft == null ? 1 : base.scavLeft);
 
+// Expected supplies a day from this scavenger on `tile` (a full day: the trips scale it by their share).
 /** @param {State} state @param {Base} base @param {Survivor} s */
-export function scavChance(state, base, s, tile = base.tile) {
+export function scavYield(state, base, s, tile = base.tile) {
   const b = siteBonus(state, base, tile);
-  const p = BASE_SCAV_CHANCE * (1 + (skill(s, "scavenging") + toolBonus(s, "scavenging")) * 0.04) * b.scav * (s.traits.includes("greedy") ? GREEDY_SCAV : 1) * scavLeft(base) * workFactor(s) * (hasPerk(s, "scrounger") ? 1.3 : 1); // Scrounger (skills.js)
-  return Math.min(0.5, p);
+  const y = BASE_SCAV_YIELD * (1 + (skill(s, "scavenging") + toolBonus(s, "scavenging")) * SCAV_SKILL) * (b.scav / SCAV_REF) * (s.traits.includes("greedy") ? GREEDY_SCAV : 1) * scavLeft(base) * workFactor(s) * (hasPerk(s, "scrounger") ? 1.3 : 1); // Scrounger (skills.js)
+  return Math.min(SCAV_YIELD_CAP, y);
 }
 // What a find is drawn from: the site's own table, with scrap always likely; fuel and parts are rare.
 /** @param {State} state @param {Base} base */
@@ -108,18 +119,40 @@ function scavTable(state, base, tile = base.tile) {
   t.scrap = (t.scrap || 0) + 2;
   if (t.fuel) t.fuel *= 0.4;
   if (t.parts) t.parts *= 0.5;
+  for (const k of Object.keys(t)) if (!SCAV_FIND[k]) delete t[k]; // only what a find can be (SCAV_FIND)
   return t;
 }
-// Expected supplies per day (for the UI and tests).
+const findMid = (k) => (SCAV_FIND[k][0] + SCAV_FIND[k][1]) / 2;
+// Lunch (meals.js: the lunch hour, 11:00–15:00, always inside the scavengers' 08–18 window) is an hour off their day
+// (jobtrips.js tripHours). SCAV_LUNCH scales a trip's share so that a full day on the job's reference ground, less that
+// hour, still finds the yield; scavDayShare is the shares a day really adds up to on the trips' tile (the walk and the
+// lunch hour out of it), so the panel shows what the trips bring in.
+const scavRefHours = () => onTileHours("scavenge", TRIP_JOBS.scavenge.ref);
+const SCAV_LUNCH_OFF = 1;
+export const scavLunch = () => scavRefHours() / Math.max(0.1, scavRefHours() - SCAV_LUNCH_OFF);
+/** @param {State} state @param {Base} base */
+export function scavDayShare(state, base, st = scavTripTile(state, base)) {
+  if (!st) return 1;
+  const h = onTileHours("scavenge", st.d, walkMult(state));
+  return st.f * (h > SCAV_LUNCH_OFF ? (h - SCAV_LUNCH_OFF) / h : 0);
+}
+// The average find (supplies) of a table, by its weights.
+function meanFind(table) {
+  const w = Object.values(table).reduce((a, v) => a + v, 0) || 1;
+  return Object.entries(table).reduce((a, [k, v]) => a + (v / w) * findMid(k), 0) || 1;
+}
+// Expected supplies per day by kind (the Work panel, the base window and the tests): each scavenger's scavYield on
+// the tile the trips go to, by the share of the day the walk and lunch leave (scavDayShare × scavLunch: 1 on the
+// reference ground), split by the tile's table.
 /** @param {State} state @param {Base} base */
 export function scavengeOutput(state, base) {
   const people = atBase(state, base.id).filter((s) => s.role === "scavenge" && !s.inBed);
-  const st = scavTripTile(state, base), tile = st ? st.id : base.tile, f = st ? st.f : 1;
+  const st = scavTripTile(state, base), tile = st ? st.id : base.tile, f = scavDayShare(state, base, st) * scavLunch();
   const table = scavTable(state, base, tile);
   const w = Object.values(table).reduce((a, v) => a + v, 0) || 1;
-  const p = people.reduce((a, s) => a + Math.min(0.5, scavChance(state, base, s, tile)) * f, 0);
+  const finds = people.reduce((a, s) => a + scavYield(state, base, s, tile) * f, 0) / meanFind(table); // finds a day
   const out = {};
-  for (const [k, v] of Object.entries(table)) out[k] = (p * v / w) * (SCAV_FIND[k][0] + SCAV_FIND[k][1]) / 2;
+  for (const [k, v] of Object.entries(table)) out[k] = (finds * v / w) * findMid(k);
   return out;
 }
 
@@ -136,23 +169,33 @@ export function scavTripTile(state, base) {
   return best;
 }
 // One scavenger's trip (jobtrips.js): `share` of a day's scavenging (the walk already out of it: a day one tile out is
-// 1) on `tile`: the day's small chance of a find at that share, drawn from that tile's site. Returns { finds, got: { key: n } }.
+// 1; the lunch hour already off it) on `tile`: scavYield × share (× scavLunch) as finds drawn from that tile's site.
+// Returns { finds, got: { key: n }, ammo? }.
 export function scavTrip(state, base, s, tile, share, k = 0) {
   const rng = state.rng;
   const out = { finds: 0, got: {} };
-  if (!rng.chance(Math.min(0.5, scavChance(state, base, s, tile)) * share)) return out;
   const table = scavTable(state, base, tile);
+  const lambda = (scavYield(state, base, s, tile) * share * scavLunch()) / meanFind(table);
+  const n = Math.floor(lambda) + (rng.chance(lambda - Math.floor(lambda)) ? 1 : 0);
+  if (n <= 0) return out;
   const keys = Object.keys(table);
-  const key0 = rng.weighted(keys, (x) => table[x]);
-  const q = rng.int(SCAV_FIND[key0][0], SCAV_FIND[key0][1]);
   const t = state.tiles[tile];
-  const got = key0 === "parts" && t && t.loc ? sortParts(state, t.loc.type, q, `scav${localId(state, s.id)}${k ? `:${k}` : ""}`) : { [key0]: q }; // loot.js: parts by kind (their own dice; a world-local id: same seed, same game)
-  if (key0 === "ammo") { out.ammo = { type: (t && t.loc && t.loc.type) || "", q, tile }; delete got.ammo; out.ammoQ = q; }
-  else if (key0 === "food" || key0 === "preserved") { delete got[key0]; addFoodFind(state, got, (t && t.loc && t.loc.type) || "", q, { tile, preserved: key0 === "preserved" }); } // foods.js: the food a place like this holds, as its shelves have it left
-  const bm = rollBuildmat(state, tile, 0.5, `bscav${localId(state, s.id)}${k ? `:${k}` : ""}`); // (the world-local id: tools/sameseedtest.js) building materials around the base too (half a search hour's chance)
-  if (bm > 0) got.buildmat = bm;
+  const type = (t && t.loc && t.loc.type) || "";
+  const got = {};
+  for (let i = 0; i < n; i++) {
+    const key0 = rng.weighted(keys, (x) => table[x]);
+    const q = rng.int(SCAV_FIND[key0][0], SCAV_FIND[key0][1]);
+    const tag = `scav${localId(state, s.id)}${k ? `:${k}` : ""}${i ? `/${i}` : ""}`; // (a world-local id: tools/sameseedtest.js)
+    if (key0 === "ammo") out.ammo = { type, q: (out.ammo ? out.ammo.q : 0) + q, tile };
+    else if (key0 === "food" || key0 === "preserved") addFoodFind(state, got, type, q, { tile, preserved: key0 === "preserved" }); // foods.js: the food a place like this holds, as its shelves have it left
+    else if (key0 === "parts" && t && t.loc) for (const [pk, pq] of Object.entries(sortParts(state, t.loc.type, q, tag))) got[pk] = (got[pk] || 0) + pq; // loot.js: parts by kind (their own dice)
+    else got[key0] = (got[key0] || 0) + q;
+  }
+  if (out.ammo) out.ammoQ = out.ammo.q;
+  const bm = rollBuildmat(state, tile, 0.5, `bscav${localId(state, s.id)}${k ? `:${k}` : ""}`); // building materials around the base too (half a search hour's chance, once a trip)
+  if (bm > 0) got.buildmat = (got.buildmat || 0) + bm;
   out.got = got;
-  out.finds = 1;
+  out.finds = n;
   return out;
 }
 // A scavenger's find brought home (jobtrips.js, on arrival): into the stock, the stats and the log.
@@ -161,10 +204,10 @@ export function scavCredit(state, base, s, find, stock = base.stock) {
   // ammo.js: rounds by calibre, as the place it came from holds them; the log names them ("6 9mm FMJ", not "6 ammo")
   const rounds = find.ammo ? { ...addFind(stock, find.ammo.type, find.ammo.q, false, "basescav", find.ammo.tile, state.hour, s.name) } : {};
   for (const [key, n] of Object.entries(find.got)) { if (FOODS[key] && stock === base.stock) addFood(base, key, n, { state }); else stock[key] = (stock[key] || 0) + n; } // foods.js: a food item with a fresh lot
-  econStats(state).scavFinds++;
+  econStats(state).scavFinds += find.finds;
   const all = { ...find.got, ...(find.ammo ? { ammo: find.ammo.q } : {}) };
   for (const [key, n] of Object.entries(all)) noteOutput(state, base, "scavenge", n, key);
-  noteOutput(state, base, "scavenge", 1, "finds");
+  noteOutput(state, base, "scavenge", find.finds, "finds");
   const named = { ...find.got, ...rounds };
   log(state, `${s.name.split(" ")[0]} turned up ${Object.entries(named).map(([key, n]) => (ROUND_SUPPLIES[key] ? roundsText({ [key]: n }) : FOODS[key] ? foodWord(key, n) : `${n} ${key === "buildmat" ? "building materials" : keyWord(key)}`)).join(", ")} around ${base.name}.`, "good");
 }

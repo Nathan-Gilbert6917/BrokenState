@@ -12,15 +12,16 @@
 // teamTileMenu(state, ui, p, tile, { append }) → { p, tile, append, forced, head, items }: the model (tools/teamctxtest.js)
 // teamCtxHtml(state, ui, menu)                 → the menu's team section
 // runTeamAction(state, ui, d)                  → does it (d: { id, tile, key, mode, ok }); returns the message, null when it asked first
+import { teamsTogether, meetProblem } from "../sim/teammeet.js"; // your other teams on the same tile
 import { foodIn } from "../sim/foods.js"; // days of food (every kind)
 import { baseById, hub } from "../sim/world.js";
-import { MISSIONS, partyTile, partyMembers, tileLabel, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText, onTheMove, glideAt } from "../sim/parties.js";
+import { MISSIONS, partyTile, partyMembers, tileLabel, teamName, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText, onTheMove, glideAt } from "../sim/parties.js";
 import { queueOrder, startOrder, queueEstimate, queueEndTile, orderStatus, orderLabel, queueText, cancelMove, besideWater, repairInfo, FETCH_WATER_HOURS, SURVEY_HOURS } from "../sim/orders.js";
 import { commandable, NO_RADIO } from "../sim/plans.js";
 import { partyVehicle } from "../sim/vehicles.js";
 import { HUNT, SNARE, gameAbundance, fishSpot, huntProblem, fishProblem, snareLine, snareProblem } from "../sim/hunting.js";
 import { forageAbundance, forageProblem } from "../sim/foraging.js";
-import { woodAbundance, woodProblem, fireLandOk } from "../sim/woodcutting.js";
+import { woodAbundance, woodProblem, canLight } from "../sim/woodcutting.js";
 import { CLAIM, canClaim, wellProblem, claimOwner } from "../sim/claims.js";
 import { teamFieldItems } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { LISTEN } from "../sim/radiolisten.js";
@@ -30,7 +31,7 @@ import { setFire, fireLit } from "../sim/fieldheat.js";
 import { sweepOpts } from "../sim/survey.js";
 import { campProblem } from "../sim/staging.js"; // Set up camp: where a camp may stand
 import { crawlTile } from "../sim/citycrawl.js";
-import { transferProblem, loadFromBase } from "../sim/teaminv.js";
+import { transferProblem, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
 import { siteMissions } from "./ui.js";
 import { ask } from "./confirm.js";
 
@@ -207,8 +208,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   if (!water && !base && !theirs) {
     const camping = p.phase === "task" && p.task && p.task.type === "camp" && partyTile(p) === tile;
     const lit = fireLit(p);
-    const burn = fireLandOk(state, tile) || carried(p, "wood") >= 1;
-    const noFire = burn ? "" : "Nothing to burn on this bare ground and no firewood carried.";
+    const burn = canLight(state, p);
+    const noFire = burn ? "" : "No firewood carried: a fire burns firewood (deadfall about only stretches it). Cut wood or bring some.";
     // Set up camp (sim/staging.js): a camp is the barest base; its base window opens when it stands (Strike camp there).
     if (p.owner === "player" && p.kind === "expedition" && !p.caravan && p.crewRole == null) add("Camp", "setcamp", "Set up camp here", [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || ""), hint: "Make camp (1 hour, no materials): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again." });
     if (camping) add("Camp", lit ? "fireout" : "fire", lit ? "Put the camp fire out" : "Light a camp fire", [], { special: lit ? "fireout" : "fire", why: lit ? "" : noFire, hint: lit ? "Darker and quieter, but cold food, unboiled water and cold nights." : "Warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." });
@@ -216,6 +217,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   }
 
   // The team's own gear and land you hold
+  // (on the team's own tile: its inventory, ui/teaminv.js, as its panel's 🎒 Team inventory)
+  if (partyTile(p) === tile && isPlayerTeam(p)) add("Team", "inventory", "🎒 Team inventory…", [], { special: "inventory", hint: "Every member's kit (worn, held, pockets, rig, pack) and the team's cargo side by side: move things between them." });
   if (!water) {
     const vrep = v && !v.destroyed && v.condition < 100 && here;
     if (vrep) { const r = repairInfo(state, p); add("Team", "repair", `Field repair: ${v.name} (${r.hours}h)`, [{ type: "repair" }], { why: r.ok ? "" : r.reason, hint: `${r.hours} hours, 1 part: about +${r.gain}% condition (best Mechanics ${r.mech}).` }); }
@@ -231,6 +234,11 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
       if (!mine && !hopeless) add("Team", "claim", `Claim this tile (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap)`, [{ type: "claim" }], { why: cw || (carried(p, "scrap") < CLAIM.SCRAP ? `Needs ${CLAIM.SCRAP} scrap carried for the marker post (have ${Math.floor(carried(p, "scrap"))}).` : ""), hint: "Raise a marker post: the tile counts as land the coalition holds, toward the 50% the alliance victory needs." });
       if (mine) add("Team", "well", `Dig a well (${CLAIM.WELL_HOURS}h)`, [{ type: "well" }], { why: wellProblem(state, p, tile), hint: `Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): the people at your base next to it haul its water.` });
     }
+  }
+  // Your other teams on the team's own tile (sim/teammeet.js): people, goods and merging, in their own window.
+  if (partyTile(p) === tile && !append) {
+    const others = teamsTogether(state, p);
+    if (others.length) add("Team", "meet", `Teams together (${others.length + 1})…`, [], { special: "meet", why: others.every((q) => meetProblem(state, p, q)) ? meetProblem(state, p, others[0]) : "", hint: `With ${others.map((q) => teamName(state, q)).join(", ")}: move people between the teams, split some off, merge them, or hand goods over.` });
   }
   // Field works on this tile (sim/fieldworks.js): your stockpile (load, unload), a group's structure (wreck, take, loot).
   if (!water) for (const it of teamFieldItems(state, p, tile)) add("Field work", it.key, it.label, [it.order], { why: it.why, hint: it.hint });
@@ -345,8 +353,12 @@ export function runTeamAction(state, ui, d, acts = {}) {
   const it = m.items.find((x) => x.key === d.key);
   if (!it) return "That is not possible there any more.";
   if (it.disabled) return `${it.label}: ${it.disabled}`;
-  if (it.special === "drop" || it.special === "load") {
-    if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special });
+  if (it.special === "drop" || it.special === "load" || it.special === "inventory") {
+    if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special === "inventory" ? "team" : it.special });
+    return "";
+  }
+  if (it.special === "meet") {
+    if (acts["tm-open"]) acts["tm-open"]({ tile, a: p.id });
     return "";
   }
   if (it.special === "resupply") {

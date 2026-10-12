@@ -20,7 +20,7 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
-import { movePartiesHour, clockFrac, setClockFrac } from "./parties.js";
+import { movePartiesHour, clockFrac, setClockFrac, reportsLive } from "./parties.js";
 import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
@@ -202,7 +202,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
-    // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 8 crop plots, the well,
+    // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 6 crop plots, the well,
     // the cellar, 3 wall strength: buildings.js) is all there is. The scrap and parts are for the first builds, the
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
@@ -865,7 +865,7 @@ export function liveTiles(state) {
   for (const id of fieldSight(state)) set.add(id); // fieldworks.js: your manned watch towers
   // Radio: parties in range report what they see right now.
   for (const p of state.parties) {
-    if (p.owner === "player" && p.radioLive) for (const id of p.sightNow || []) set.add(id);
+    if (p.owner === "player" && reportsLive(p)) for (const id of p.sightNow || []) set.add(id); // parties.js: live intel
   }
   return set;
 }
@@ -1004,7 +1004,5 @@ function hourOfWorld(state) {
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
   historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
-  // The governor's cards raised after its pass (a skill milestone from the job trips, which run after it): answered
-  // before the hour ends, as the browser does every frame (autopilotResolve), so none waits an hour headless.
-  if (state.autopilot) autopilotResolve(state);
+  if (state.autopilot) autopilotResolve(state); // cards the hour raised after the governor's turn (a job trip's perk milestone): answered now, as the browser does every frame
 }

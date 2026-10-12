@@ -30,10 +30,11 @@
 //   its Heat (base.woodNoise: 0.8 with an axe, 0.3 gathering by hand; hordes.js baseHeat). Axes slip: a team order
 //   rolls 0.15% a person-hour for a deep cut or a sprain (half without a tool); the base job is a work accident risk
 //   like the others (health.js WORK_RISK.wood).
-// Fires: a camp fire burns deadfall picked up around it for free wherever there is any (wood abundance 0.15+ on the
-//   tile or next to it). On bare ground (a city centre) a lit fire needs firewood: a shelter's WOOD.fire.shelter a
-//   day from its store, a team's camp WOOD.fire.camp a day from what it carries; without any the fire cannot be kept
-//   going (a shelter's fire then does not warm it; a team's goes out).
+// Fires (camp fires, 2026-10-12, user request "Lit camp fires use fire wood it goes out"): every lit fire burns
+//   firewood: a shelter's or camp's WOOD.fire.shelter a day from its store, a team's camp WOOD.fire.camp a day from
+//   what it carries. Deadfall picked up around it (wood abundance 0.15+ on the tile or next to it) stretches the pile
+//   (× WOOD.fire.deadfall) but no longer feeds it for free. With no firewood left the fire goes out (a team's, a
+//   camp's or a shelter's alike): no warmth, no boiled water, no cooking on it until firewood comes and it is lit again.
 // Firewood is a supply (data.js SUPPLIES.wood: 0.1 kg a unit, cheap, dear in winter; every firewood figure here was a
 // 30th of this when a unit was a 3 kg bundle): stored at bases with no limit, carried by teams, traded.
 import { log, skill, atBase } from "./world.js";
@@ -69,7 +70,7 @@ export const WOOD = {
   // to the cold, if sooner; at least minDays), plus the boiler's.
   base: { radius: 2, hours: 6, crowd: 0.05, crowdFloor: 0.5, stockDays: 21, minDays: 5 },
   worth: 12,                 // a woodcutter must be expected to bring in this much a day for the job to be open
-  fire: { land: 0.15, shelter: 18, camp: 9, keepDays: 14 }, // deadfall enough for a fire (abundance), firewood a lit fire burns a day without it; keepDays: a shelter's days of it wanted in store (woodNeed)
+  fire: { land: 0.15, shelter: 18, camp: 9, deadfall: 0.5, keepDays: 4 }, // deadfall enough to help (abundance), firewood a lit fire burns a day, × deadfall where there is some
   bitter: 1.05, spare: 1.2,  // the winter's need: bitter days a little more, and a fifth to spare
 };
 export const WOOD_TERRAIN = { forest: 1, hills: 0.6, mountain: 0.35, plains: 0.25, suburb: 0.2, city: 0.05, water: 0 };
@@ -375,20 +376,20 @@ export function woodSeason(state, hour = state.hour) {
   return s.key === "autumn" || s.key === "winter" || (s.key === "summer" && s.dayOfSeason > 14) || (s.key === "spring" && s.dayOfSeason <= 14);
 }
 // The firewood a base wants for the rest of the coming cold: everyone fed there (+ extra heads, e.g. teams coming
-// home) × 0.5 a day (woodFor(HEAT.fuel)) × the freezing days ahead × WOOD.bitter, with a fifth to spare. Shelters keep warm by their fire.
+// home) × 0.5 a day (woodFor(HEAT.fuel)) × the freezing days ahead × WOOD.bitter, with a fifth to spare. Shelters keep warm by their fire: a camp or shelter wants WOOD.fire.keepDays of
+// its fire's burn (fire) in store instead.
 // The water boiler (worm.js boilerUse) burns the same a head every day its water needs boiling, in every season:
 // WORM.BOILER_DAYS days of it are wanted in store on top, and the stocking season is always on while it burns.
 // { need, have, days (freezing days ahead), soon (the stocking season), short (have < need), cold (winter: the hard
 // cold is here), toCold (days until it is), boiler (the boiler's firewood a day, 0 when it does not burn), kitchen (the
 // Kitchen's stove a day, kitchen.js kitchenWood: every day of the cold spell of it wanted in store, coldSpanAhead, at least
 // KITCHEN.wood.keepDays; heat: the heating's part of need; stoveDays: the stove's days counted), fire (a camp's or a
-// shelter's lit fire on bare ground a day), daily (boiler + kitchen + fire: what burns every day in every season),
-// pressing (the boiler or such a fire burns, or the pile is under the kitchen's keepDays: wood is wanted in any season) }.
-// A camp or a shelter (tier 0, BASE-05: it wanted nothing, so its Cut wood job never opened and the woodpile was never
-// cut for it): its lit fire keeps it warm and boils its water, free where there is deadfall about; on bare ground it
-// burns WOOD.fire.shelter a day from the store, every day it is lit (fire: WOOD.fire.keepDays of it wanted in store).
-// With the fire put out, it is heated from the woodpile like a base; a boiler burns only on days the fire does not
-// boil the water (worm.js boilerUse).
+// shelter's lit fire a day: fireBurn), daily (boiler + kitchen + fire: what burns every day in every season), pressing
+// (the boiler burns, the pile is under the kitchen's keepDays, or under what the fire wants) }.
+// A camp or a shelter (tier 0): its lit fire burns firewood every day (fireBurn: less where deadfall lies about), and
+// WOOD.fire.keepDays of it are wanted in store; it keeps the place warm and boils its water. With the fire put out
+// (BASE-05) it is heated from the woodpile like a base, and a boiler burns only on days the fire does not boil the
+// water (worm.js boilerUse).
 export function woodNeed(state, base, extraHeads = 0) {
   const days = coldDaysAhead(state);
   const heads = mouthsAt(state, base).heads + extraHeads;
@@ -396,7 +397,7 @@ export function woodNeed(state, base, extraHeads = 0) {
   // The governor lights and puts out the fire by the hour (autopilot.js autoFires: lit in the cold): count it kept, so
   // the need does not swing between day and night; by hand, as the player left it.
   const fireOn = shelter && (!!state.autopilot || (base.campFire ?? base.fire) !== false);
-  const fire = fireOn && !fireLandOk(state, base.tile) ? WOOD.fire.shelter : 0;
+  const fire = fireOn ? r1(fireBurn(state, base.tile, WOOD.fire.shelter)) : 0; // a day's burn (less on deadfall land)
   const boil = boilerUse(state, base);
   const boiler = boil && boil.active ? r1((boil.wood + extraHeads * WORM.BOILER_WOOD_HEAD) * (boil.share ?? 1)) : 0; // the days it burns: the filters' share of the drinking needs no boiling
   const kitchen = shelter || !hasKitchen(base) ? 0 : r1(kitchenWood(state, base).need);
@@ -409,8 +410,8 @@ export function woodNeed(state, base, extraHeads = 0) {
   const have = Math.max(0, base.stock.wood || 0);
   const daily = r1(boiler + kitchen + fire);
   // The kitchen makes it pressing out of season only while the pile is under its KITCHEN.wood.keepDays (the boiler, as
-  // ever, always: it is the worm's water; a fire on bare ground too: it is the camp's warmth and its water).
-  const pressing = boiler > 0 || fire > 0 || (kitchen > 0 && have < kitchen * KITCHEN.wood.keepDays);
+  // ever, always: it is the worm's water; a camp's fire while the pile is short of its days).
+  const pressing = boiler > 0 || (kitchen > 0 && have < kitchen * KITCHEN.wood.keepDays) || (fire > 0 && have < need);
   const season = woodSeason(state);
   return { need, have, days: r1(days), soon: season || pressing, season, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler, kitchen, fire, daily, pressing, heat: Math.ceil(heat), stoveDays };
 }
@@ -431,27 +432,36 @@ export function woodShortfall(state, base) {
 // Deadfall within reach of a fire (the tile or one next to it).
 export const fireWood = (state, tile) => Math.max(woodAbundance(state, tile), ...state.grid.neighbors(tile).map((n) => woodAbundance(state, n)));
 export const fireLandOk = (state, tile) => fireWood(state, tile) >= WOOD.fire.land;
-// Daily (needs.js heatDaily): a shelter's lit fire on bare ground burns firewood from its store; base.fireFed false =
-// nothing to burn, so it does not warm the shelter (upkeep.js fireWarmed).
+// Firewood a lit fire burns a day on this tile (deadfall picked up around it stretches the pile).
+export const fireBurn = (state, tile, perDay) => perDay * (fireLandOk(state, tile) ? WOOD.fire.deadfall : 1);
+// Can this fire be lit now (the autopilot and the fire toggles): a camp's or shelter's store, or a team's carried
+// firewood, holds at least an hour of its burn.
+export function canLight(state, x) {
+  if (!x) return false;
+  if (x.members) return carried(x, "wood") >= fireBurn(state, partyTile(x), WOOD.fire.camp) / 24 - 1e-9;
+  return (x.stock && x.stock.wood || 0) >= fireBurn(state, x.tile, WOOD.fire.shelter) / 24 - 1e-9;
+}
+// Hourly (needs.js needsHour): a camp's or shelter's lit fire burns an hour's firewood from its store; with too little
+// it burns what there is and goes out (base.fire = false: no warmth, boiled water or cooking until it is lit again).
 export function shelterFire(state, base) {
   if (!base || base.tier !== 0 || (base.campFire ?? base.fire) === false) { if (base) delete base.fireFed; return; }
-  if (fireLandOk(state, base.tile)) { delete base.fireFed; return; }
-  const need = WOOD.fire.shelter;
-  const was = base.fireFed;
-  if ((base.stock.wood || 0) >= need) { base.stock.wood -= need; base.fireFed = true; return; }
-  base.fireFed = false;
-  if (was !== false) log(state, `${base.name}'s fire is burning low: nothing to burn on this bare ground and no firewood in store. It does not keep anyone warm until firewood comes in.`, "danger");
+  const need = fireBurn(state, base.tile, WOOD.fire.shelter) / 24;
+  if ((base.stock.wood || 0) >= need - 1e-9) { base.stock.wood = Math.max(0, base.stock.wood - need); base.fireFed = true; base.fireAt = state.hour; return; } // fireAt: cooking.js, the day's bills cook on it
+  base.stock.wood = 0;
+  base.fire = false;
+  delete base.campFire;
+  delete base.fireFed;
+  log(state, `${base.name}'s fire went out: no firewood left to burn. No warmth, boiled water or cooking on it until firewood comes in and it is lit again.`, "danger");
 }
-// Hourly in camp (orders.js campHour): a team's lit fire on bare ground burns a little of the firewood it carries;
-// with none it goes out. Returns true when the fire went out this hour.
+// Hourly in camp (orders.js campHour): a team's lit fire burns a little of the firewood it carries (less where
+// deadfall lies about); with none it goes out. Returns true when the fire went out this hour.
 export function campFireHour(state, p) {
   if (!p || (p.campFire ?? p.fire) === false) return false;
   const tile = partyTile(p);
-  if (fireLandOk(state, tile)) return false;
-  const per = WOOD.fire.camp / 24;
-  if (carried(p, "wood") >= per) { takeSupply(p, "wood", per); return false; }
+  const per = fireBurn(state, tile, WOOD.fire.camp) / 24;
+  if (carried(p, "wood") >= per - 1e-9) { takeSupply(p, "wood", per); return false; }
   p.campFire = false;
-  log(state, `${teamName(state, p)}: the camp fire went out at ${tileLabel(state, tile)}: nothing to burn on this bare ground and no firewood carried.`, "info");
+  log(state, `${teamName(state, p)}: the camp fire went out at ${tileLabel(state, tile)}: no firewood left to burn. Cut wood or bring some to light it again.`, "info");
   return true;
 }
 

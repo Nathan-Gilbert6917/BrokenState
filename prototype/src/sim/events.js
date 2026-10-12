@@ -25,6 +25,7 @@ import { teamPolicy, wantsOut, breakOff, RETREAT_POLICIES } from "./breakoff.js"
 import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
 import { calRounds, partyCals, roundsText } from "./ammo.js"; // a find of rounds named by calibre
 import { swapGun } from "./gundist.js"; // the gun distribution: a crashed Humvee's gun
+import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more trouble on the road
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
 export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren", "frag"];
@@ -383,7 +384,7 @@ export function rollTravelEvent(state, p, tileId) {
   if (v) return guarded(state, p, breakdownCard(state, p, v), tileId);
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   let chance = 0.05 + t.infection * 0.1 + TERRAIN[t.terrain].traffic * 0.4 + (owner && attitude(owner) === "Hostile" ? 0.12 : 0) + (owner && attitude(owner) !== "Hostile" ? 0.06 : 0);
-  chance *= STANCES[p.stance].events * (isNight(state) ? 1.2 : 1) * travelEffects(state, state.hour, tileId).events; // storms and blizzards where the team is: more trouble on the road (weather.js)
+  chance *= STANCES[p.stance].events * (marchingNow(state, p) ? NIGHT_MARCH.EVENTS : isNight(state) ? 1.2 : 1) * travelEffects(state, state.hour, tileId).events; // storms and blizzards where the team is: more trouble on the road (weather.js)
   if (state.bases.some((b) => b.tile === tileId)) return null;
   // Conflicts with other people (or a surge of the dead): see conflicts.js. Roadblocks and ambushes live there.
   const conflict = rollConflict(state, p, tileId);

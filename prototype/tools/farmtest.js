@@ -4,8 +4,9 @@
 // drying racks), the winter crops, the winter outlook, rare base scavenging, illness and injuries (chances, contagion, treatment, work),
 // fuel scarcity, and no NaN or negative stock over long campaigns.
 // Usage: node tools/farmtest.js [seed] [days for the long runs]
+import { outputDays } from "../src/sim/output.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js";
-import { lotsOf, FOODS } from "../src/sim/foods.js"; // days of food by type (sim/foods.js)
+import { lotsOf, FOODS, unitsOf } from "../src/sim/foods.js"; // days of food by type (sim/foods.js)
 import { ROUND_KEYS } from "../src/sim/ammo.js";
 import { PART_KINDS } from "../src/sim/trade.js";
 import { RELOAD_SUPPLIES } from "../src/sim/data-ammo.js"; // the reloading bench's brass, powder, primers: like rounds, kept only where there are some
@@ -20,7 +21,7 @@ import {
 } from "../src/sim/storage.js";
 import {
   basesDaily, waterProduction, waterNeed, waterCapacity, waterOutlook, WATER, thirstDamage, spoilRate, foodSpoilage,
-  scavengeOutput, scavChance, foodOutlook, eatPerDay, summerWater, summerWaterOk, summerFixText, summerWarningDaily, SUMMER_WARN_DAYS,
+  scavengeOutput, scavYield, scavTrip, scavTripTile, scavDayShare, scavLunch, siteBonus, BASE_SCAV_YIELD, SCAV_REF, SCAV_SKILL, SCAV_YIELD_CAP, foodOutlook, eatPerDay, summerWater, summerWaterOk, summerFixText, summerWarningDaily, SUMMER_WARN_DAYS,
 } from "../src/sim/economy.js";
 import {
   CONDITIONS, addCondition, treatCondition, treatConditionInfo, workFactor, healthDaily, conditionsOf, isSick,
@@ -37,6 +38,7 @@ const longDays = Number(process.argv[3] || 224);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
+const r1 = (v) => Math.round(v * 10) / 10;
 const wtot = (b) => Math.round(((b.stock.water || 0) + (b.stock.rawwater || 0)) * 100) / 100; // purified and un-purified water (sim/water.js)
 const W = (s = seed) => { const st = createWorld({ seed: s, factionCount: 6 }); st.started = true; return st; };
 const plain = (s) => { s.traits = []; return s; };
@@ -537,20 +539,59 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   check(t0 >= 15 && Number.isFinite(t0), `the governor's food target comes from the outlook in autumn (${t0.toFixed(0)} days)`);
 }
 
-// 5. Base scavenging is rare.
+// 5. Base scavenging (WORLD-01): 1.5 supplies a day at Scavenging 0 in ruins (site factor 1.2), more with the skill,
+// at most SCAV_YIELD_CAP; the trips' rolls, the Work panel's average and the stock agree.
 {
   console.log("Base scavenging");
   const st = W();
   const h = hub(st);
   const ppl = atBase(st, h.id);
-  ppl.forEach((s) => { plain(s); s.role = "scavenge"; s.skills.scavenging = 5; });
+  ppl.forEach((s) => { plain(s); s.role = "guard"; s.gear.tool = null; s.health = 100; s.skills.scavenging = 0; });
+  const s0 = ppl[0];
+  s0.role = "scavenge";
+  const tt = scavTripTile(st, h), tile = tt ? tt.id : h.tile, site = siteBonus(st, h, tile).scav;
+  const y0 = scavYield(st, h, s0, tile);
+  check(near(y0 * SCAV_REF / site, BASE_SCAV_YIELD, 1e-9), `baseline: ${BASE_SCAV_YIELD} supplies a day at Scavenging 0 in ruins (here ${r1(y0)} at site factor ${site})`);
+  if (site === SCAV_REF) check(near(y0, BASE_SCAV_YIELD, 1e-9), `the hub's ruins give the baseline itself (${r1(y0)})`);
+  s0.skills.scavenging = 5;
+  const y5 = scavYield(st, h, s0, tile);
+  s0.skills.scavenging = 10;
+  const y10 = scavYield(st, h, s0, tile);
+  check(y5 > y0 && y10 > y5, `the yield grows with Scavenging (0: ${r1(y0)}, 5: ${r1(y5)}, 10: ${r1(y10)})`);
+  check(near(y10 / y0, Math.min(SCAV_YIELD_CAP / y0, 1 + 10 * SCAV_SKILL), 1e-9), `Scavenging 10 finds ×${1 + 10 * SCAV_SKILL} (${r1(y10 / y0)})`);
+  s0.skills.scavenging = 40; s0.traits = ["greedy"];
+  check(near(scavYield(st, h, s0, tile), SCAV_YIELD_CAP, 1e-9), `capped at ${SCAV_YIELD_CAP} a day (${r1(scavYield(st, h, s0, tile))})`);
+  s0.traits = []; s0.skills.scavenging = 5;
+  // The Work panel's average is the sum of the scavengers' yields by the share of the day the walk and lunch leave.
   const exp = Object.values(scavengeOutput(st, h)).reduce((a, v) => a + v, 0);
-  check(exp / ppl.length < 0.5, `a scavenger expects well under one item a day (${(exp / ppl.length).toFixed(2)})`);
-  check(scavChance(st, h, ppl[0]) < 0.15, `the daily chance of any find is small (${(scavChance(st, h, ppl[0]) * 100).toFixed(1)}%)`);
-  const scrap0 = h.stock.scrap;
+  check(near(exp, scavYield(st, h, s0, tile) * scavDayShare(st, h) * scavLunch(), 1e-6), `the panel's average is the yield by the walk and lunch (${r1(exp)} a day)`);
+  if (tt && tt.d === 0) check(near(exp, scavYield(st, h, s0, tile), 1e-6), `a full day at the hub, lunch and all, finds the yield itself (${r1(exp)})`);
+  // The trips roll what the panel shows: whole finds, the long-run average within 5% (the day's shares, lunch out).
+  let units = 0, whole = true;
+  const N = 3000, share = scavDayShare(st, h);
+  const sv = st.rng;
+  for (let i = 0; i < N; i++) {
+    const r = scavTrip(st, h, s0, tile, share, i);
+    for (const [k, q] of Object.entries(r.got)) { if (k === "buildmat") continue; if (!Number.isInteger(q)) whole = false; units += FOODS[k] ? unitsOf(k, q) : q; }
+    if (r.ammo) { if (!Number.isInteger(r.ammo.q)) whole = false; units += r.ammo.q; }
+    st.tiles[tile].foodStock = null; // keep the shelves full for the measure (foods.js shopFood)
+  }
+  st.rng = sv;
+  check(whole, "finds come in whole units");
+  check(Math.abs(units / N - exp) / exp < 0.05, `the trips' average matches the panel (${(units / N).toFixed(2)} rolled against ${exp.toFixed(2)} expected a day)`);
+  // Six scavengers over 60 days: real supplies, the ground picked over.
+  ppl.forEach((s) => { s.role = "scavenge"; s.skills.scavenging = 0; });
+  // What came in by the Scavenge job's own record (output.js; the stock itself moves with the base's other work).
+  const finds0 = econStats(st).scavFinds || 0, seen = new Set();
+  let brought = 0;
   setFood(h, 2000); h.stock.water = 80;
-  for (let i = 0; i < 60; i++) { basesDaily(st); st.cards.length = 0; nextDay(st); h.stock.water = 80; setFood(h, 2000); alive(st).forEach((s) => { s.health = 100; s.mood = 60; }); }
-  check(h.stock.scrap - scrap0 < 60, `six scavengers turn up little in 60 days (${Math.round(h.stock.scrap - scrap0)} scrap)`);
+  for (let i = 0; i < 60; i++) {
+    for (let k = 0; k < 24; k++) tickHour(st);
+    for (const r of outputDays(h, "scavenge")) if (!seen.has(r.day) && r.day < day(st)) { seen.add(r.day); for (const [u, n] of Object.entries(r.by)) if (u !== "finds" && u !== "buildmat") brought += n; }
+    st.cards.length = 0; h.stock.water = 80; setFood(h, 2000); alive(st).forEach((s) => { s.health = 100; s.mood = 60; });
+  }
+  const finds = (econStats(st).scavFinds || 0) - finds0;
+  check(finds >= 60 && brought >= 150, `six scavengers bring in real supplies in 60 days (${finds} finds, ${Math.round(brought)} supplies)`);
   check(h.scavLeft < 1, `the surroundings get picked over (${h.scavLeft.toFixed(2)} left)`);
 }
 

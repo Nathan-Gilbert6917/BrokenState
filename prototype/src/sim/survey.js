@@ -41,7 +41,7 @@ import { TERRAIN, LOCATIONS } from "./data.js";
 import { log, snapshot, hub, day, skill, atBase } from "./world.js";
 import {
   partyMembers, partyTile, tileLabel, teamName, planPath, moveCost, leaveVehicle, fuelMultOf, sightRadius,
-  awaitOrders, launchExpedition, orderMove,
+  awaitOrders, launchExpedition, orderMove, reportsLive,
 } from "./parties.js";
 import { partyVehicle, partyVehicles, wear, useFuel, tileFuel } from "./vehicles.js";
 import { perceive, MARKER_TYPES } from "./markers.js";
@@ -262,7 +262,7 @@ export function sweepHour(state, p) {
   for (const id of candidates(state, t.center, t.radius + 2 + OPTICS.maxReach)) {
     if (t.found.includes(id) || (t.known0 || []).includes(id) || !siteKnownTo(state, id, p)) continue;
     t.found.push(id);
-    if (!p.radioLive) log(state, `${teamName(state, p)} spotted ${placeText(state, id)} while surveying (out of radio range: it goes on the map once they report).`, "info");
+    if (!reportsLive(p)) log(state, `${teamName(state, p)} spotted ${placeText(state, id)} while surveying (out of radio range: it goes on the map once they report).`, "info");
   }
   // Caches, wrecks and camps (tile.hidden): the look-around roll, a little better with optics, near the team.
   const opt = opticsFor(members, p.cargo, { still: true, night: isNightAt(state.hour) });
@@ -335,7 +335,7 @@ export function sweepDone(state, p) {
   stats.done++; stats.hours += t.done; stats.found += t.found.length; stats.finds += t.finds.length;
   const crash = crashSurvey(state, p);
   const what = names.length || finds.length ? `found ${[...(names.length ? [`${names.length === 1 ? "a place off the map" : `${names.length} places off the map`}: ${names.join(", ")}`] : []), ...(finds.length ? [finds.join(", ")] : [])].join("; and ")}` : "found nothing new";
-  return `Surveyed ${t.radius} tiles around ${tileLabel(state, t.center)} for ${t.done}h (${t.tiles || 1} spots): ${what}.${!p.radioLive && names.length ? " They go on the hub's map once the team reports." : ""}${crash ? ` ${crash}` : ""}`;
+  return `Surveyed ${t.radius} tiles around ${tileLabel(state, t.center)} for ${t.done}h (${t.tiles || 1} spots): ${what}.${!reportsLive(p) && names.length ? " They go on the hub's map once the team reports." : ""}${crash ? ` ${crash}` : ""}`;
 }
 // For the panels: "Surveying: 14 of 24 hours, 1 place found".
 export function sweepStatus(state, p) {

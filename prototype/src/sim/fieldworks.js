@@ -37,6 +37,17 @@
 //              a steward set one at every base from the start in hardcore, more while food is short (snareLinesWanted);
 //              the groups the same (groupWants, a line ready the next day). A team on the road has the snare order
 //              (hunting.js SNARE: 2 scrap or snare wire, 2 hours).
+//              Team-set and team-checked (WORLD-02, 2026-10-12, user request): yours is no longer set by the people at
+//              home nor checked by a hunter each morning. Placing one sends a team (SNARES.crew, the base's hunters
+//              first) out to the tile to set it (the "set" act, 1 hour there; sendSnareTeam), and what it holds is not
+//              known at the base until a team goes back and checks it (the "check" act: the catch into its cargo, what
+//              rotted or was taken, one of the dead caught in the wires: hunting.js SNARE.zombie, under 10% a day). Send
+//              one from the Field works tab, or give the line a standing check every N days (fw.check: a team goes out
+//              at CHECK_HOUR when it is due; the governor keeps one every SNARES.govCheck days on its lines). The way
+//              out (snareRoute): on foot over land within SNARES.walk steps (bridges yes, river ice no: it thaws and
+//              strands the line), else by boat across one stretch of river (crossing.js: the team builds one there and
+//              one back, the scrap for both from the base's stores). A line across a river with no way over by land
+//              and no boat the base can build cannot be placed.
 //   cache      A buried fuel cache (CACHE: fuel, food, ammo, meds; capKg): restocked by the builders, drawn by teams;
 //              the dead and passing raiders leave it alone, a raid sent for it finds it RAID.find of the time.
 //   spikes     Spike traps: the dead and hostile parties crossing lose some of their number / strength; worn by it,
@@ -60,11 +71,12 @@
 //   base.raidRoads = { tile: { n, last } }: the road tiles raids on that base came down (the governor's roadblocks).
 // Older saves have no state.fieldworks: ensureFW makes an empty one.
 import { FOODS, foodIn, packPick, giveFood, bestFoodKey } from "./foods.js"; // food by type: caches, stockpiles and catches hold items
-import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId } from "./world.js";
+import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId, archerCount, ARROWS } from "./world.js";
 import { BUILDINGS, buildRate, isCamp, isShelter, gatherStalled, underAttack, matName, onUpkeep } from "./buildings.js";
 import { ownsTile, wellYield, wellRate, WELL_LEFT, CLAIM, claimOwner, hauledWells } from "./claims.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
-import { tileLabel, spawnAiParty, partyTile, cargoRoom, carried, takeSupply, partyMembers, launchExpedition, removeParty } from "./parties.js";
+import { tileLabel, spawnAiParty, partyTile, cargoRoom, carried, takeSupply, partyMembers, launchExpedition, removeParty, moveCost, teamName } from "./parties.js";
+import { BOAT, crossingsFrom } from "./crossing.js"; // a snare line across a river: the team's boats (snareRoute)
 import { queueOrder } from "./orders.js";
 import { winOdds } from "./combat.js";
 import { healthRest } from "./work.js";
@@ -73,7 +85,7 @@ import { hordeWallPower } from "./hordes.js";
 import { RELAY_RANGE, RELAY_UPKEEP_DAYS } from "./radio.js";
 import { woodNeed } from "./woodcutting.js"; // the governor keeps the winter's firewood (govFieldWorks)
 import { TRIP_HOOKS } from "./tripland.js"; // the job trips' plug-in points: installed at load (installTripHooks, end of file)
-import { GAME_TERRAIN, ANIMALS, SNARE, snareDayRate, takeGame, meatAt, addMeat, depositGame } from "./hunting.js"; // blinds and snare lines
+import { GAME_TERRAIN, ANIMALS, SNARE, snareDayRate, takeGame, meatAt, addMeat, depositGame, snareZombieChance, putDownSnared } from "./hunting.js"; // blinds and snare lines
 import { wormKill, wormMeatAt } from "./worm.js"; // a snare's catch may be infested, as the hunters'
 import { inShift, shiftText, shiftHours } from "./watch.js"; // the shifts at a tower or a roadblock: the watch roster's hours
 import { warBetween, raidWeight } from "./diplomacy.js"; // the groups' raids on each other's structures
@@ -99,7 +111,7 @@ export const FIELD = {
     blind: { name: "Hunting blind", icon: "🦌", cost: { wood: 60, scrap: 2 }, hours: 6, hp: 30, game: 0.3,
       desc: "A screened hide on game land. The base's hunters who hunt its tile get a third more game there (they pick it out when it is the best ground), and it opens its tile to them even past a base's hunting grounds without a cabin (up to 2 tiles). Only where there is game (forest, hills, farmland, mountains)." },
     snares: { name: "Snare line", icon: "🪤", cost: { scrap: 2 }, hours: 1, hp: 20, terrain: ["forest", "hills", "plains"], craft: true,
-      desc: "Field craft: two lines of snares from a couple of scrap of fence wire, set in an hour by anyone at the base (no bench, no builders needed), at any base from a camp up, on its land or a tile next to it nobody holds. Forest, hills or farmland: small game caught day by day, about 1–2 a day on good ground (less as the game thins). The base's hunters check it each morning and bring the catch in (with no hunter, anyone fit at home); left unchecked it rots in 2–6 days by the heat. Someone may rob it (more often near towns, the dead or hostile people), tearing the wires: repair it. It does not count against the base's field works." },
+      desc: "Field craft: two lines of snares from a couple of scrap of fence wire (or a coil of snare wire), at any base from a camp up, on its land or a tile next to it nobody holds. Placing it sends a team out to the tile to set it (an hour's work there, plus the walk); across a river with no way over by land the team needs a boat (the scrap for one there and one back). Forest, hills or farmland: small game caught day by day, about 1–2 a day on good ground (less as the game thins). Nobody at home knows what it has caught: send a team to check it (or give it a standing check every few days), and they bring the catch home. Left unchecked the catch rots in 2–6 days by the heat; someone may rob it (more often near towns, the dead or hostile people), tearing the wires; now and then (under 10% a day) one of the dead blunders into it and hangs there, keeping the game away until a team puts it down. It does not count against the base's field works." },
     cache: { name: "Fuel cache", icon: "🛢️", cost: { scrap: 6, wood: 40 }, hours: 5, hp: 40, capKg: 60, hidden: true,
       desc: "A buried, hidden store of fuel, ammo, food and meds (up to 60 kg) for teams on the road: they take what they need there (or leave some). The builders stock it from the base's stores (Restock). Hard to find: raiders passing over it and the dead leave it alone, and a raid sent for it often finds nothing." },
     spikes: { name: "Spike traps", icon: "🔺", cost: { scrap: 12, wood: 50 }, hours: 6, hp: 40,
@@ -146,7 +158,11 @@ export const FIELD = {
   // Field craft (hc-food): reach: tiles from the base a line may go on land nobody holds (a camp holds only its own
   // tile); max: lines a base keeps (outside FIELD.MAX); minRate: the least small game a day (both lines) worth a line,
   // for the governor and the groups (snareDayRate × lines: forest next to a base about 1.2, farmland 0.6, suburbs 0.1).
-  SNARES: { lines: 2, keep: [2, 3, 6], theft: 0.04, near: 0.06, tear: 6, dead: 0.3, reach: 1, max: { hub: 3, outpost: 2, shelter: 2, camp: 2 }, minRate: 0.3 },
+  // WORLD-02: crew: people a team sent to set or check a line; walk: the most steps over land (no river ice) a line's
+  // team walks out, past that it needs a boat; boatSpare: scrap packed for each boat over the frame and the crew's
+  // (crossing.js boatPlan: a little load); every: the standing check's choices (days, 0 off); govCheck: the governor's.
+  SNARES: { lines: 2, keep: [2, 3, 6], theft: 0.04, near: 0.06, tear: 6, dead: 0.3, reach: 1, max: { hub: 3, outpost: 2, shelter: 2, camp: 2 }, minRate: 0.3,
+    crew: 1, walk: 5, boatSpare: 2, every: [0, 1, 2, 3, 4, 5, 7], govCheck: 2 },
   CRAFT_RATE: 1, // work-hours an hour on a field-craft job (KINDS craft) at a base with nobody on Build: one person at it
   CACHE: { mix: { fuel: 0.4, food: 0.3, ammo: 0.2, meds: 0.1 }, keys: ["fuel", "food", "water", "ammo", "meds"], spot: 0.4, spotPer: 0.05 },
   // Spike traps: the dead crossing lose horde + hordePer × size (at most hordeMax of them) × condition; a hostile party
@@ -187,7 +203,8 @@ export const kindName = (fw) => (fw && K[fw.kind] ? K[fw.kind].name : "Field wor
 export const isMine = (fw) => !!fw && fw.owner === "player";
 export const playerWorks = (state, base = null) => fwList(state).filter((x) => x.owner === "player" && (!base || x.baseId === base.id));
 export const groupWorks = (state, f) => fwList(state).filter((x) => x.owner === f.id);
-const jobsOf = (state, base) => (state.fieldworks ? state.fieldworks.jobs.filter((j) => j.baseId === base.id) : []);
+// The builders' jobs (a snare line's "team" job is a team's to do, sendSnareTeam: never the builders').
+const jobsOf = (state, base) => (state.fieldworks ? state.fieldworks.jobs.filter((j) => j.baseId === base.id && j.type !== "team") : []);
 export const jobFor = (state, fw) => (state.fieldworks ? state.fieldworks.jobs.find((j) => j.fw === fw.id) || null : null);
 export const fieldJobs = jobsOf;
 export const condition = (fw) => (fw.max > 0 ? Math.max(0, Math.min(1, fw.hp / fw.max)) : 1);
@@ -257,6 +274,12 @@ export function placeProblem(state, base, kind, tile, costs = true) {
     if (state.claims && state.claims[tile] && state.claims[tile].well) return "A well is dug on that claim already.";
   }
   if (def.craft) { if (playerWorks(state, base).filter((x) => x.kind === kind).length >= maxSnares(base)) return `${base.name} keeps ${maxSnares(base)} ${def.name.toLowerCase()}s at most.`; }
+  // A snare line is set by a team walking out (WORLD-02): there must be a way there over land, or by boat.
+  if (kind === "snares") {
+    const r = snareRoute(state, base, tile);
+    if (!r) return `Across the water from ${base.name}: no way over by land within ${FIELD.SNARES.walk} tiles and nowhere a boat could cross.`;
+    if (r.boat && costs && haveFor(base, "", "scrap") < r.scrap + (armoryWire(base, kind) ? 0 : def.cost.scrap || 0)) return `Across the river from ${base.name}: no bridge near, so the team needs a boat there and one back (${r.scrap} scrap${armoryWire(base, kind) ? "" : ` on top of the line's ${def.cost.scrap}`}; have ${haveFor(base, "", "scrap")}).`;
+  }
   else if (countedWorks(state, base).length >= maxWorks(base)) return maxWorks(base) ? `${base.name} has all the field works it can keep (${maxWorks(base)}).` : "A camp builds no field works but a snare line: build it up first.";
   if (costs) {
     if (!armoryWire(base, kind)) for (const [k, v] of Object.entries(def.cost)) if (haveFor(base, kind, k) < v) return `Needs ${v} ${matName(k, v)}${kind === "snares" ? " or a coil of snare wire" : ""} at ${base.name} (have ${haveFor(base, kind, k)}).`;
@@ -292,6 +315,13 @@ export function planFieldWork(state, base, kind, tile) {
   const fw = { id: newId(), kind, tile, owner: "player", baseId: base.id, hp: def.hp, max: def.hp, built: false, garrison: [], contents: {}, since: state.hour, ...(wire ? { wire } : {}) };
   const F = ensureFW(state);
   F.list.push(fw);
+  if (kind === "snares") { // WORLD-02: a team walks out and sets it (sendSnareTeam), not the builders
+    F.jobs.push({ id: newId(), type: "team", act: "set", fw: fw.id, baseId: base.id, progress: 0, hours: def.hours, paid: wire ? {} : { ...def.cost } });
+    const sent = sendSnareTeam(state, fw.id);
+    const text = `${def.name} planned at ${tileLabel(state, tile)} for ${base.name}${wire ? " (with the coil of snare wire)" : ""}. ${sent.error ? `No team could set out: ${sent.error} It waits for one (Field works tab: Send a team; tried again each morning).` : sent.text}`;
+    log(state, `${def.name} planned at ${tileLabel(state, tile)} for ${base.name}.`, "info");
+    return { text, fw };
+  }
   const walk = walkHours(state, base, tile, def.hours);
   F.jobs.push({ id: newId(), type: "build", fw: fw.id, baseId: base.id, progress: 0, hours: r1(def.hours + walk), paid: wire ? {} : { ...def.cost } });
   const text = `${def.name} planned at ${tileLabel(state, tile)} for ${base.name}${wire ? " (with the coil of snare wire)" : ""}: ${def.hours} work-hours and ${walk} hours of walking for the builders.`;
@@ -309,12 +339,13 @@ export function cancelFieldJob(state, jobId) {
   const full = job.progress <= 0 || job.type === "stock"; // a restock's goods all come back
   if (base) for (const [k, v] of Object.entries(job.paid || {})) base.stock[k] = (base.stock[k] || 0) + (full ? v : Math.ceil(v / 2));
   F.jobs.splice(F.jobs.indexOf(job), 1);
-  if (job.type === "build" && fw && !fw.built) { F.list.splice(F.list.indexOf(fw), 1); if (fw.wire && base) base.armory.push(fw.wire); } // a snare line's coil comes back
+  if ((job.type === "build" || job.type === "team") && fw && !fw.built) { F.list.splice(F.list.indexOf(fw), 1); callOffSnareTeam(state, fw); if (fw.wire && base) base.armory.push(fw.wire); } // a snare line's coil comes back
   return `Cancelled: ${jobText(state, job)}. ${Object.keys(job.paid || {}).length ? `${full ? "All" : "Half"} the materials were returned.` : ""}`.trim();
 }
 export function jobText(state, job) {
   const fw = fwById(state, job.fw);
   const n = fw ? kindName(fw).toLowerCase() : "field work";
+  if (job.type === "team") return `send a team to set the ${n}`;
   return job.type === "repair" ? `${fw && fw.kind === "spikes" ? "reset" : "repair"} the ${n}` : job.type === "demolish" ? `pull down the ${n}` : job.type === "stock" ? `carry supplies out to the ${n}` : `build a ${n}`;
 }
 // Repairs: materials by kind and damage (repairBase × the share missing, rounded up), hours by the damage (half the
@@ -360,7 +391,7 @@ export function repairAll(state, base) {
 }
 export function demolishProblem(state, fw) {
   if (!fw || !isMine(fw)) return "Not yours.";
-  if (jobFor(state, fw)) return "A job is queued there already: cancel it first.";
+  if (jobFor(state, fw) && fw.built) return "A job is queued there already: cancel it first.";
   if (!baseById(state, fw.baseId)) return "Its base is gone.";
   return "";
 }
@@ -368,7 +399,7 @@ export function queueDemolish(state, fwId) {
   const fw = fwById(state, fwId);
   const why = demolishProblem(state, fw);
   if (why) return { error: why };
-  if (!fw.built) return { text: cancelFieldJob(state, jobFor(state, fw).id) };
+  if (!fw.built) { const j = jobFor(state, fw); if (j) return { text: cancelFieldJob(state, j.id) }; removeWork(state, fw); return { text: `${kindName(fw)} at ${tileLabel(state, fw.tile)}: the site is cleared.` }; }
   const base = baseById(state, fw.baseId);
   const hours = r1(FIELD.DEMOLISH.hours + walkHours(state, base, fw.tile, FIELD.DEMOLISH.hours));
   ensureFW(state).jobs.push({ id: newId(), type: "demolish", fw: fw.id, baseId: base.id, progress: 0, hours, paid: {} });
@@ -442,6 +473,7 @@ function finishJob(state, job) {
 function removeWork(state, fw) {
   const F = ensureFW(state);
   recallAll(state, fw);
+  callOffSnareTeam(state, fw);
   F.jobs = F.jobs.filter((j) => j.fw !== fw.id);
   const i = F.list.indexOf(fw);
   if (i >= 0) F.list.splice(i, 1);
@@ -860,8 +892,10 @@ function haulHour(state) {
 // fw.held = [{ day, n }]: the catch waiting in the snares by the day it was caught. Rolled each day (snareLinesDaily)
 // as the hunting snares are (hunting.js snareDayRate a line, SNARE.count snares to a line; the game thinned by it); kept
 // SNARES.keep days by the heat (over 22°: 2, under 3°: 6, else 3); robbed SNARES.theft a day (+near: a town, the dead or
-// a stranger's party within 2), the wires torn (SNARES.tear of its condition). Checked: yours each morning by a hunter
-// of its base (any of them at home), into the base's food; a group's by their own people, into their stores.
+// a stranger's party within 2), the wires torn (SNARES.tear of its condition); one of the dead caught in the wires
+// (fw.zombie, hunting.js snareZombieChance: under 10% a day) keeps the game away until someone puts it down. Checked:
+// yours only by a team at the line (the "check" act; WORLD-02: what it holds is not known at home until then, and
+// fw.checked keeps what the last check found); a group's by their own people each day, into their stores.
 export const snareHeld = (fw) => (fw.held || []).reduce((a, x) => a + x.n, 0);
 export const snareHeldText = (fw) => { const n = snareHeld(fw); return n ? `${n} small game` : "nothing yet"; };
 export const snaresWork = (fw) => !!fw && fw.built && condition(fw) >= FIELD.SNARES.dead;
@@ -884,32 +918,39 @@ function snareDay(state, fw) {
   const today = day(state);
   fw.held = (fw.held || []).filter((x) => today - x.day < keepDaysAt(state, fw.tile) || void (fw.rotted = (fw.rotted || 0) + x.n));
   if (snaresWork(fw)) {
-    const n0 = SNARE.count * S.lines;
-    const per = Math.min(0.9, (snareDayRate(state, fw.tile, state.hour) * S.lines) / n0);
-    let n = 0;
-    for (let i = 0; i < n0; i++) if (state.rng.chance(per)) n++;
-    if (n) { fw.held.push({ day: today, n }); takeGame(state, fw.tile, n * ANIMALS.small.rations, SNARE.deplete); fw.caught = (fw.caught || 0) + n; }
+    // One of the dead in the wires: it stays until someone comes, and no game comes near meanwhile.
+    if (!fw.zombie && state.rng.chance(snareZombieChance(state, fw.tile))) { fw.zombie = { day: today }; fw.zombies = (fw.zombies || 0) + 1; }
+    if (!fw.zombie) {
+      const n0 = SNARE.count * S.lines;
+      const per = Math.min(0.9, (snareDayRate(state, fw.tile, state.hour) * S.lines) / n0);
+      let n = 0;
+      for (let i = 0; i < n0; i++) if (state.rng.chance(per)) n++;
+      if (n) { fw.held.push({ day: today, n }); takeGame(state, fw.tile, n * ANIMALS.small.rations, SNARE.deplete); fw.caught = (fw.caught || 0) + n; }
+    }
   }
   const held = snareHeld(fw);
   if (held && state.rng.chance(S.theft + (snareRobbers(state, fw) ? S.near : 0))) {
     fw.held = [];
     fw.robbed = (fw.robbed || 0) + held;
-    if (fw.owner === "player") news(state, fw, `Someone robbed the snare line at ${tileLabel(state, fw.tile)}: ${held} small game taken and wires torn.`, "warn");
+    // Yours: nobody at home sees it happen; the team that checks the line finds it robbed (checkSnares).
     if (fw.hp - S.tear <= 0) damageWork(state, fw, S.tear, "thieves");
     else fw.hp = r1(fw.hp - S.tear);
   }
 }
 // The catch out of the snares: into a team's cargo (party), a base's stores (base) or a group's (else). Each animal
-// may be infested (worm.js wormKill), as the hunters'. Returns the line.
+// may be infested (worm.js wormKill), as the hunters'. One of the dead caught in the wires is put down by whoever came
+// (a team's people; a group's own). Returns the line.
 export function takeSnares(state, fw, { party = null, base = null, rob = false } = {}) {
   const n = snareHeld(fw);
-  if (!n) return rob ? "Nothing in their snares." : "The snares were empty.";
+  let dead = "";
+  if (fw.zombie) { dead = party ? putDownSnared(state, partyMembers(state, party), fw.tile, tileLabel(state, fw.tile)) : ""; delete fw.zombie; }
+  if (!n) return [rob ? "Nothing in their snares." : "The snares were empty.", dead].filter(Boolean).join(" ");
   let rations = 0, worm = 0;
   for (let i = 0; i < n; i++) { const wk = wormKill(state, fw.tile, ANIMALS.small.rations); rations += wk.rations; worm += wk.worm; }
   fw.held = [];
   if (party) {
     const kept = addMeat(state, party, rations, worm);
-    return `${rob ? "Took the catch from their snares" : "The snares held"}: ${n} small game (${kept} food of fresh game${kept < rations ? `; no room for ${rations - kept}` : ""}).`;
+    return [`${rob ? "Took the catch from their snares" : "The snares held"}: ${n} small game (${kept} food of fresh game${kept < rations ? `; no room for ${rations - kept}` : ""}).`, dead].filter(Boolean).join(" ");
   }
   if (base) {
     depositGame(state, base, { rations, worm }, "small"); // hunting.js: raw small game, the worm's eggs on their own lots
@@ -920,6 +961,152 @@ export function takeSnares(state, fw, { party = null, base = null, rob = false }
   if (f) depositGame(state, f.stock, { rations }, "small"); // their stores (no lots)
   return "";
 }
+// A team of yours checks the line (the "check" act): the catch into its cargo, and the news of what happened out there
+// since the last check (rotted, robbed); fw.checked keeps it for the tab and the map. Returns the line.
+function checkSnares(state, p, fw) {
+  const was = fw.seen || { rotted: 0, robbed: 0 };
+  const n = snareHeld(fw), zombie = !!fw.zombie;
+  let text = takeSnares(state, fw, { party: p });
+  const rotted = (fw.rotted || 0) - (was.rotted || 0), robbed = (fw.robbed || 0) - (was.robbed || 0);
+  if (rotted > 0) text += ` ${rotted} caught earlier had gone bad.`;
+  if (robbed > 0) text += ` Someone had got to the line first: ${robbed} taken and the wires torn.`;
+  fw.seen = { rotted: fw.rotted || 0, robbed: fw.robbed || 0 };
+  fw.checked = { day: day(state), hour: state.hour, n, zombie, rotted: Math.max(0, rotted), robbed: Math.max(0, robbed), by: p.id };
+  const where = tileLabel(state, fw.tile);
+  log(state, `${teamName(state, p)} checked the snare line at ${where}: ${n ? `${n} small game` : "nothing in it"}${zombie ? ", one of the dead caught in the wires" : ""}${robbed > 0 ? `, robbed of ${robbed}` : ""}.`, n ? "good" : "info");
+  return text;
+}
+// A team of yours sets a planned line (the "set" act): it stands from now, the planned job is done. Returns the line.
+function setSnares(state, p, fw) {
+  if (fw.built) return "The snare line is set already.";
+  const F = ensureFW(state);
+  const job = F.jobs.find((j) => j.fw === fw.id && j.type === "team");
+  if (job) F.jobs.splice(F.jobs.indexOf(job), 1);
+  fw.built = true;
+  fw.hp = fw.max;
+  fw.since = state.hour;
+  fw.seen = { rotted: fw.rotted || 0, robbed: fw.robbed || 0 };
+  fw.checked = { day: day(state), hour: state.hour, n: 0, set: true, by: p.id };
+  if (fw.check && fw.check.every) fw.check.next = day(state) + fw.check.every;
+  const base = baseById(state, fw.baseId);
+  log(state, `${teamName(state, p)} set the snare line at ${tileLabel(state, fw.tile)}${base ? ` for ${base.name}` : ""}.`, "good");
+  return `Set two lines of snares at ${tileLabel(state, fw.tile)}: about ${snareExpect(state, fw)} small game a day here. Nobody at ${base ? base.name : "home"} will know what it catches until a team comes back to check it (within 2–3 days, before the catch rots).`;
+}
+
+// ---------- snare teams (WORLD-02) ----------
+// The way out to a line from its base: { land: true, steps } on foot over land (bridges, never river ice: it thaws)
+// within SNARES.walk steps; else { boat: { from, water, to }, steps, scrap } across one stretch of water (crossing.js:
+// a boat built on the base's shore `from` lands on `to`, and one back), scrap: the base's scrap for both boats (the
+// frame, the crew, SNARES.boatSpare for the load); else null (no way: the line cannot go there).
+const landStep = (state, a, b) => { const t = state.tiles[b]; return !(t.terrain === "water" && !t.bridge) && Number.isFinite(moveCost(state, a, b, false, "player")); };
+function landSteps(state, from, max) {
+  const dist = new Map([[from, 0]]);
+  const queue = [from];
+  while (queue.length) {
+    const a = queue.shift(), d = dist.get(a);
+    if (d >= max) continue;
+    for (const b of state.grid.neighbors(a)) if (!dist.has(b) && landStep(state, a, b)) { dist.set(b, d + 1); queue.push(b); }
+  }
+  return dist;
+}
+export const boatScrap = (crew = FIELD.SNARES.crew) => 2 * (BOAT.scrap + crew * BOAT.perPerson + FIELD.SNARES.boatSpare);
+export function snareRoute(state, base, tile, crew = FIELD.SNARES.crew) {
+  const W = FIELD.SNARES.walk;
+  if (!state.tiles[tile] || state.tiles[tile].terrain === "water") return null;
+  const near = landSteps(state, base.tile, W);
+  if (near.has(tile)) return { land: true, steps: near.get(tile) };
+  const far = landSteps(state, tile, W);
+  let best = null;
+  for (const [from, d] of near) for (const c of crossingsFrom(state, from)) {
+    if (!far.has(c.tile)) continue;
+    const steps = d + 1 + far.get(c.tile);
+    if (!best || steps < best.steps || (steps === best.steps && from < best.boat.from)) best = { boat: { from, water: c.water, to: c.tile }, steps };
+  }
+  if (!best) return null;
+  best.scrap = boatScrap(crew);
+  return best;
+}
+// The team out to a line (setting it, or checking it) now: the party or null.
+export const snareTeam = (state, fw) => state.parties.find((q) => q.snareFor === fw.id && q.owner === "player") || null;
+// Send a team from the line's base to set it (a planned line) or check it (a set one): SNARES.crew fit people (its
+// hunters first, then the best scouts; never its leader, someone pinned, a medic or a builder while others are free),
+// with a day's food and water and, across a river, the scrap for the boats. They walk out, do it, and come home with
+// the catch. Returns { text, party } or { error }.
+export function sendSnareTeam(state, fwId) {
+  const fw = fwById(state, fwId);
+  if (!fw || !isMine(fw) || fw.kind !== "snares") return { error: "No snare line of yours." };
+  const base = baseById(state, fw.baseId);
+  if (!base) return { error: "Its base is gone." };
+  if (snareTeam(state, fw)) return { error: "A team is on its way there already." };
+  const act = fw.built ? "check" : "set";
+  if (act === "set" && !jobFor(state, fw)) return { error: "Nothing planned there." };
+  if (threatOn(state, fw.tile)) return { error: "Enemies at the snare line." };
+  if (underAttack(state, base)) return { error: `${base.name} is under attack.` };
+  const route = snareRoute(state, base, fw.tile);
+  if (!route) return { error: `No way out to it from ${base.name} (water in the way).` };
+  const fit = atBase(state, base.id).filter((s) => !healthRest(s, state) && !s.inBed && !s.pinned && !s.leader && s.health >= 50);
+  const rank = (s) => (s.role === "hunt" ? 0 : s.role === "medic" || s.role === "build" || s.role === "doctor" ? 2 : 1);
+  const crew = fit.sort((a, b) => rank(a) - rank(b) || skill(b, "scouting") - skill(a, "scouting") || a.id - b.id).slice(0, FIELD.SNARES.crew);
+  if (!crew.length) return { error: `Nobody fit at ${base.name} to send.` };
+  const scrap = route.boat ? boatScrap(crew.length) : 0;
+  if (scrap && Math.floor(base.stock.scrap || 0) < scrap) return { error: `The river is in the way and a boat there and back needs ${scrap} scrap (${base.name} has ${Math.floor(base.stock.scrap || 0)}).` };
+  const sup = { food: Math.min(Math.floor(foodIn(base.stock)), crew.length), water: Math.min(Math.floor(base.stock.water || 0), crew.length), ...(scrap ? { scrap } : {}) };
+  const archers = archerCount(crew); // the bows' arrows go along, as on every trip (a dozen each, what the base has: world.js ARROWS)
+  if (archers) sup.arrows = Math.min(Math.max(0, Math.floor(base.stock.arrows || 0)), archers * ARROWS.PACK);
+  const dest = route.boat ? route.boat.from : fw.tile;
+  // (dest may be the base's own tile: a boat put in from its own bank; the team is "there" at once and goes on.)
+  const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest, mission: "move", stance: "stealthy", supplies: sup, fromBaseId: base.id, quiet: true });
+  if (!res || res.error || !res.party) return { error: (res && res.error) || "The team could not set out." };
+  const p = res.party;
+  p.snareFor = fw.id;
+  if (route.boat) queueOrder(state, p, { type: "cross", tile: route.boat.to });
+  if (route.boat && route.boat.to !== fw.tile) queueOrder(state, p, { type: "move", tile: fw.tile });
+  queueOrder(state, p, { type: "fwork", act, at: fw.tile });
+  if (route.boat) {
+    if (route.boat.to !== fw.tile) queueOrder(state, p, { type: "move", tile: route.boat.to });
+    queueOrder(state, p, { type: "cross", tile: route.boat.from });
+  }
+  queueOrder(state, p, { type: "home" });
+  const names = crew.map((s) => s.name.split(" ")[0]).join(" and ");
+  const text = `${names} set${crew.length === 1 ? "s" : ""} out from ${base.name} to ${act} the snare line at ${tileLabel(state, fw.tile)}${route.boat ? ` (by boat over the river: ${scrap} scrap for the boats there and back)` : ""}.`;
+  log(state, text, "info");
+  return { text, party: p };
+}
+// The line is gone (cancelled, pulled down, destroyed): a team out for it drops that job and comes home as planned.
+function callOffSnareTeam(state, fw) {
+  const p = fw && fw.kind === "snares" ? snareTeam(state, fw) : null;
+  if (!p) return;
+  p.orders = (p.orders || []).filter((o) => o.type !== "fwork");
+  delete p.snareFor;
+}
+// The standing check (fw.check = { every: days, next: the day, last: { day, ok?, why? } }): on its day at
+// CHECK_HOUR a team goes out (sendSnareTeam); skipped (tried again the next day) with a team out there already,
+// nobody fit, the base under attack, enemies at the line or no scrap for the boats.
+export const CHECK_HOUR = FIELD.HAUL.hour - 1;
+export function setSnareCheck(state, fw, every) {
+  if (!fw || !isMine(fw) || fw.kind !== "snares") return "";
+  const e = Math.max(0, Math.round(Number(every) || 0));
+  if (!e) { delete fw.check; return `The snare line at ${tileLabel(state, fw.tile)}: checked only when you send a team.`; }
+  const was = fw.check || {};
+  const last = fw.checked ? fw.checked.day : day(state);
+  fw.check = { every: e, next: was.every === e && was.next != null ? was.next : Math.max(day(state), last + e), last: was.last || null };
+  return `The snare line at ${tileLabel(state, fw.tile)}: a team goes out to check it every ${e} day${e === 1 ? "" : "s"} (at ${String(CHECK_HOUR).padStart(2, "0")}:00).`;
+}
+// "next check: day 12 · last: …" or "".
+export function snareCheckText(state, fw) {
+  const C = fw.check;
+  if (!C || !C.every) return "";
+  const next = C.next != null && C.next <= day(state) ? `next check: today (${String(CHECK_HOUR).padStart(2, "0")}:00)` : `next check: day ${C.next}`;
+  return `${next}${C.last && C.last.why ? ` · day ${C.last.day} skipped: ${C.last.why}` : ""}`;
+}
+// What the base knows of the line: "last checked day 9: 3 small game" / "set day 9, not checked since" / "".
+export function snareKnownText(state, fw) {
+  const c = fw.checked;
+  if (!c) return "";
+  const what = c.set ? "set" : `last checked: ${c.n ? `${c.n} small game` : "empty"}${c.zombie ? ", one of the dead in the wires" : ""}${c.robbed ? `, robbed of ${c.robbed}` : ""}${c.rotted ? `, ${c.rotted} gone bad` : ""}`;
+  const ago = day(state) - c.day;
+  return `${what} ${ago <= 0 ? "today" : ago === 1 ? "yesterday" : `${ago} days ago`}${c.set ? ", not checked since" : ""}`;
+}
 // Daily (fieldworksDaily): every snare line's day; a group's people take their catch in.
 function snareLinesDaily(state) {
   for (const fw of fwList(state)) {
@@ -928,19 +1115,20 @@ function snareLinesDaily(state) {
     if (fw.owner !== "player") takeSnares(state, fw);
   }
 }
-// Each morning (FIELD.HAUL.hour − 1): a hunter at the base checks its snare lines; with no hunter at home, anyone fit
-// there (hc-food: the line is a field craft next to the base; a camp has no hunters at first).
-function snareCheckHour(state) {
+// Each morning (CHECK_HOUR): a planned line still waiting for its team gets one, and the standing checks that are due
+// go out. Nobody at home checks a line by themselves (WORLD-02).
+function snareTeamHour(state) {
+  const today = day(state);
   for (const fw of fwList(state)) {
-    if (fw.owner !== "player" || fw.kind !== "snares" || !fw.built || !snareHeld(fw)) continue;
-    const base = baseById(state, fw.baseId);
-    if (!base || threatOn(state, fw.tile)) continue;
-    const fit = atBase(state, base.id).filter((s) => !healthRest(s, state) && !s.inBed);
-    const hunter = fit.find((s) => s.role === "hunt") || fit[0];
-    if (!hunter) continue;
-    const line = takeSnares(state, fw, { base });
-    fw.checked = { day: day(state), by: hunter.id };
-    if (line) log(state, `${firstName(hunter)} checked the snares: ${line}`, "good");
+    if (fw.owner !== "player" || fw.kind !== "snares" || snareTeam(state, fw)) continue;
+    if (!fw.built) { if (jobFor(state, fw)) sendSnareTeam(state, fw.id); continue; }
+    const C = fw.check;
+    if (!C || !C.every || today < (C.next ?? 0)) continue;
+    const r = sendSnareTeam(state, fw.id);
+    if (r.error) { C.last = { day: today, why: r.error.replace(/\.$/, "").replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase()) }; continue; }
+    C.last = { day: today, ok: true };
+    C.next = today + C.every;
+    fwStat(state, "snareChecks");
   }
 }
 
@@ -1471,7 +1659,8 @@ export function teamActs(state, p, tile) {
       out.push({ act: "draw", label: `Take supplies from the cache (${T.load}h)`, hours: T.load, why: Object.keys(fw.contents || {}).length ? (cargoRoom(state, p) < 1 ? "No room to carry anything." : "") : "The cache is empty.", hint: `Fuel, food, water, meds and ammo into the team's supplies, as far as there is room (${contentsText(fw)}).` });
       out.push({ act: "stash", label: `Leave supplies in the cache (${T.unload}h)`, hours: T.unload, why: stockRoom(fw) < 1 ? "The cache is full." : "", hint: "Leave the fuel, food, water, meds and ammo the team carries as cargo (not its own packs) for a later team." });
     }
-    if (fw.kind === "snares" && fw.built) out.push({ act: "check", label: `Check the snare line (${T.check}h)`, hours: T.check, why: "", hint: `Take the catch (${snareHeldText(fw)}) into the cargo; the line stays set.` });
+    if (fw.kind === "snares" && !fw.built) out.push({ act: "set", label: `Set the snare line (${K.snares.hours}h)`, hours: K.snares.hours, why: jobFor(state, fw) ? "" : "Nothing planned here.", hint: "Set the two lines of snares planned here (the base paid for the wire); it starts catching today." });
+    if (fw.kind === "snares" && fw.built) out.push({ act: "check", label: `Check the snare line (${T.check}h)`, hours: T.check, why: "", hint: "See what it has caught and take it into the cargo; the line stays set." });
     return out;
   }
   if (fw.kind === "cache" && !fw.found) return []; // a group's hidden cache: not found yet (teamEnter)
@@ -1490,7 +1679,7 @@ export function teamActProblem(state, p, act) {
   if (!a) return "Nothing of that kind here.";
   return a.why;
 }
-export const teamActHours = (act) => (act === "destroy" ? FIELD.TEAM.destroy : act === "capture" ? FIELD.TEAM.capture : act === "unload" || act === "stash" ? FIELD.TEAM.unload : act === "check" || act === "rob" ? FIELD.TEAM.check : FIELD.TEAM.load);
+export const teamActHours = (act) => (act === "destroy" ? FIELD.TEAM.destroy : act === "capture" ? FIELD.TEAM.capture : act === "unload" || act === "stash" ? FIELD.TEAM.unload : act === "check" || act === "rob" ? FIELD.TEAM.check : act === "set" ? K.snares.hours : FIELD.TEAM.load);
 // The task is done (orders.js finishTask). Returns the line.
 export function teamActDone(state, p, act) {
   const tile = partyTile(p);
@@ -1500,7 +1689,8 @@ export function teamActDone(state, p, act) {
   if (act === "unload" && fw.owner === "player") return unloadToStockpile(state, p, fw);
   if (act === "draw" && fw.owner === "player") return drawFromCache(state, p, fw);
   if (act === "stash" && fw.owner === "player") return stashInCache(state, p, fw);
-  if (act === "check" && fw.owner === "player") return takeSnares(state, fw, { party: p });
+  if (act === "check" && fw.owner === "player") return checkSnares(state, p, fw);
+  if (act === "set" && fw.owner === "player" && fw.kind === "snares") return setSnares(state, p, fw);
   if (fw.owner === "player") return "It is yours already.";
   const f = factionById(state, fw.owner);
   // Their guard first, by the numbers.
@@ -1692,6 +1882,8 @@ export function govFieldWorks(state, base, { threatened = false, waterShort = fa
   const lines = [];
   if (!base) return lines;
   const mine = playerWorks(state, base);
+  // Every snare line of the base checked by a team every few days (WORLD-02: nobody at home checks them).
+  for (const fw of mine) if (fw.kind === "snares" && !(fw.check && fw.check.every)) lines.push(setSnareCheck(state, fw, FIELD.SNARES.govCheck));
   // A camp keeps no field works but its snare lines: their repairs, and a new line.
   if (maxWorks(base) <= 0) {
     for (const fw of mine) if (fw.built && condition(fw) < FIELD.GOV.repairAt && !jobFor(state, fw)) { const r = queueRepair(state, fw.id); if (!r.error) lines.push(r.text); }
@@ -1768,6 +1960,7 @@ export function govSnares(state, base, foodShort = 0) {
   if (!best) return "";
   const r = planFieldWork(state, base, "snares", best.tile);
   if (r.error) return "";
+  setSnareCheck(state, r.fw, FIELD.SNARES.govCheck); // a team checks it every few days (WORLD-02)
   fwStat(state, "govSnares");
   return `${r.text} Snares for small game (about ${r1(best.rate)} a day there)${foodShort ? ": food is short" : ""}.`;
 }
@@ -1813,7 +2006,7 @@ export function fieldworksHour(state) {
   }
   rosterHour(state);
   const h = hourOfDay(state);
-  if (h === FIELD.HAUL.hour - 1) snareCheckHour(state);
+  if (h === CHECK_HOUR) snareTeamHour(state);
   if (h === FIELD.HAUL.hour) haulHour(state);
 }
 // Daily (world.js, with the groups): relays' upkeep, the raids on structures, the groups' own building, the snare
@@ -1848,25 +2041,29 @@ export function fieldworksDaily(state) {
 // The Help topic, built from the numbers above so it never drifts from them.
 export function fieldWorksHelp() {
   const R = FIELD.ROADBLOCK, T = FIELD.TOWER, Rd = FIELD.RAID;
-  const kinds = FIELD.ORDER.map((k) => { const d = K[k]; return `<tr><td>${d.icon}</td><td><b>${d.name}</b></td><td><span class="muted">${costText(d.cost)}; ${d.hours} work-hours + the walk; condition ${d.hp}${d.req ? "; a Mechanics 3+ survivor" : ""}.</span> ${d.desc}</td></tr>`; }).join("");
-  return `Structures a base puts up on the land it holds outside its walls: open a base's <b>Field works</b> tab, pick a kind and click a green tile on the map (at most ${FIELD.RANGE} tiles out, on the base's own ground or a claim of yours; a hub keeps ${FIELD.MAX.hub}, an outpost ${FIELD.MAX.outpost}, a shelter ${FIELD.MAX.shelter}, a camp none). A snare line is field craft: a couple of scrap and an hour, set by anyone at the base (builders or not), at any base from a camp up, on its land or a tile next to it nobody holds, and it does not count against those (a hub keeps ${FIELD.SNARES.max.hub} lines, an outpost, shelter or camp ${FIELD.SNARES.max.camp}). The materials leave the stores when you place it; the base's builders walk out and put it up (their hours include the walk, ${FIELD.WALK.pace} h a tile each way), sharing their time with the base's own building queue.
+  const kinds = FIELD.ORDER.map((k) => { const d = K[k]; return `<tr><td>${d.icon}</td><td><b>${d.name}</b></td><td><span class="muted">${costText(d.cost)}; ${d.craft ? `a team walks out and sets it (${d.hours} h there)` : `${d.hours} work-hours + the walk`}; condition ${d.hp}${d.req ? "; a Mechanics 3+ survivor" : ""}.</span> ${d.desc}</td></tr>`; }).join("");
+  return `Structures a base puts up on the land it holds outside its walls: open a base's <b>Field works</b> tab, pick a kind and click a green tile on the map (at most ${FIELD.RANGE} tiles out, on the base's own ground or a claim of yours; a hub keeps ${FIELD.MAX.hub}, an outpost ${FIELD.MAX.outpost}, a shelter ${FIELD.MAX.shelter}, a camp none). A snare line is field craft: a couple of scrap, at any base from a camp up, on its land or a tile next to it nobody holds, and it does not count against those (a hub keeps ${FIELD.SNARES.max.hub} lines, an outpost, shelter or camp ${FIELD.SNARES.max.camp}). Placing one sends a team of ${FIELD.SNARES.crew} out to set it (its hunters first); nobody at home knows what it catches until a team goes back to check it (the tab's Send a team, or a standing check every few days), and they bring the catch home. Its team walks over land (bridges, not river ice); a line across a river with no bridge within ${FIELD.SNARES.walk} tiles needs a boat there and one back (${boatScrap()} scrap from the base), and with no crossing at all it cannot be placed. Now and then (under 10% a day) one of the dead blunders into a line and hangs there, keeping the game away, until a team puts it down. For the rest, the materials leave the stores when you place it; the base's builders walk out and put it up (their hours include the walk, ${FIELD.WALK.pace} h a tile each way), sharing their time with the base's own building queue.
     <table class="helptable">${kinds}</table>
     <b>Lookouts and guards on shifts.</b> A watch tower's lookouts and a roadblock's guards stand shifts, like the base's watch roster: pick how the day is split (${Object.values(FIELD.SHIFTS).map((x) => x.name.toLowerCase()).join(", ")}) and who stands each shift (up to ${garrisonCap({ kind: "tower" })} a shift). They walk out for their shift (leaving early by the walk, so the one coming relieves the one going) and come home after it to eat and sleep; off duty they work at the base like anyone. A night shift keeps them up: they sleep in after it. The strip under the shifts shows each hour of the day: red hours nobody covers (an empty shift, someone hurt, ill, away or in a bed); when a shift you planned is left with nobody fit to stand it, an alert says so until someone covers it. One person on each of two 12-hour shifts keeps a tower watched round the clock. A manned tower shows ${T.day} tiles round it by day and ${T.night} at night, live on the map (hover or select it for the ring, or tick the Tower sight layer for all of them), and its lookouts warn the base of raids and hordes they see. A guarded roadblock holds ${R.guardHold}× as long and the guards shoot back.<br><br>
     <b>Threats.</b> A horde entering a structure's tile batters it (a roadblock holds it while it forces a lane: up to ${R.hordeHold} hours, the lookouts or guards shoot down some of it first; spike traps cut it down instead; a buried cache is left alone). A hostile group within ${Rd.range} tiles may send a small raid at one (about ${Math.round(Rd.chance * 100)}% a day for each structure while one is near, more for a full stockpile, half for an aggressive group that is not Hostile, ${Math.round(Rd.cacheW * 100)}% as often for a cache, which they find only ${Math.round(Rd.find * 100)}% of the time). The people on duty fight it by the numbers; if they lose or nobody is there, the raiders take it over when it is within ${Rd.near} tiles of their land (${Math.round(Rd.capture * 100)}% of the time) or empty it and wreck it. Raiders passing over a stockpile empty it. The groups raid each other's structures by the same rules (war enemies, and aggressive groups their neighbours); you see it where you have eyes. Send a team to take one back (Capture), or to wreck, take or loot a group's.<br><br>
     <b>Repairs.</b> Damaged ones show a 🔧 on the map and an alert. Repair from the tab (materials by the damage, about ${Math.round(FIELD.REPAIR.share * 100)}% of the cost for a wreck; the builders walk out), or Repair all. Spike traps are reset the same way once sprung (under ${Math.round(FIELD.SPIKES.dead * 100)}%); a robbed snare line's wires too.<br><br>
     <b>Hauling.</b> Outdoor workers drop their loads at a stockpile out past them; Send a haul team brings it in (two people, the base's best running vehicle if there is one), or set a standing order on the stockpile: every few days, or once it holds enough (with a vehicle; skipped under attack, with no vehicle or nobody fit, and tried again the next day). A fuel cache is the other way round: the builders carry supplies out (Restock) and teams on the road take them.<br><br>
-    <b>The groups</b> build their own (towers when threatened, wells, stockpiles, roadblocks, spike traps, snare lines, blinds and hidden caches), guard them, draw on their stockpiles and caches when short and haul them home now and then. The governor (and a base steward) sets a snare line at every base from the start in hardcore and more while food is short, repairs, digs a well when water runs short, puts up a tower when threatened and staffs its shifts, a roadblock on a road raids have come down ${FIELD.GOV.roadRaids}+ times, and a stockpile out by scavengers or foragers working 2 tiles out (with a standing haul order when there is a vehicle).`;
+    <b>The groups</b> build their own (towers when threatened, wells, stockpiles, roadblocks, spike traps, snare lines, blinds and hidden caches), guard them, draw on their stockpiles and caches when short and haul them home now and then. The governor (and a base steward) sets a snare line at every base from the start in hardcore and more while food is short (with a team, and a standing check every ${FIELD.SNARES.govCheck} days), repairs, digs a well when water runs short, puts up a tower when threatened and staffs its shifts, a roadblock on a road raids have come down ${FIELD.GOV.roadRaids}+ times, and a stockpile out by scavengers or foragers working 2 tiles out (with a standing haul order when there is a vehicle).`;
 }
 
 // ---------- text ----------
 export function fwStatusText(state, fw) {
   const bits = [];
-  if (!fw.built) { const j = jobFor(state, fw); bits.push(j ? `going up: ${Math.round((j.progress / j.hours) * 100)}%` : "a site"); }
+  if (!fw.built) { const j = jobFor(state, fw); bits.push(j && j.type === "team" ? (snareTeam(state, fw) ? "a team is on its way to set it" : "waiting for a team to set it") : j ? `going up: ${Math.round((j.progress / j.hours) * 100)}%` : "a site"); }
   else {
     bits.push(`condition ${Math.round(condition(fw) * 100)}%`);
     if (fw.kind === "tower") bits.push(fw.owner === "player" ? (rosterIds(fw).length ? `${rosterIds(fw).length} on its shifts, ${manned(state, fw) ? `${lookouts(state, fw)} watching now` : "dark now"}` : "unmanned: sees nothing") : `${fw.gar || 0} on guard`);
     if (fw.kind === "roadblock") bits.push(fw.owner === "player" ? (rosterIds(fw).length ? `${rosterIds(fw).length} on its shifts, ${guards(state, fw) ? `${guards(state, fw)} on guard now` : "unguarded now"}` : "unguarded") : fw.gar ? `${fw.gar} on guard` : "unguarded");
-    if (fw.kind === "snares") bits.push(`${snaresWork(fw) ? `about ${snareExpect(state, fw)} small game a day` : "torn: catches nothing until repaired"} · in the snares: ${snareHeldText(fw)}`);
+    if (fw.kind === "snares" && fw.owner === "player") { // WORLD-02: what it holds is known only from the last check
+      bits.push(`${snaresWork(fw) ? `about ${snareExpect(state, fw)} small game a day` : "torn: catches nothing until repaired"} · ${snareKnownText(state, fw) || "not checked yet"} · what it holds now: unknown until a team checks it`);
+      if (snareTeam(state, fw)) bits.push("a team is on its way to check it");
+      if (snareCheckText(state, fw)) bits.push(snareCheckText(state, fw));
+    } else if (fw.kind === "snares") bits.push(`${snaresWork(fw) ? `about ${snareExpect(state, fw)} small game a day` : "torn: catches nothing until repaired"} · in the snares: ${snareHeldText(fw)}`);
     if (fw.kind === "blind") bits.push(`hunters here find ×${FIELD.BLIND.mult} game`);
     if (fw.kind === "cache") bits.push(`${stockKg(fw)}/${K.cache.capKg} kg: ${contentsText(fw)}${fw.owner !== "player" && !fw.found ? " (hidden)" : ""}`);
     if (fw.kind === "spikes") bits.push(spikesLive(fw) ? `set${fw.triggered ? ` (sprung ${fw.triggered}×)` : ""}` : "sprung: reset them (Repair)");

@@ -57,7 +57,9 @@
 //   it (1h) also takes it up. Each day a line catches 1 small game (2 rations) × abundance × level × season, caught
 //   game keeps 3 days (2 in the heat, 6 in the cold), and from the third day without a check each day has an 8%
 //   chance (more by towns, in hive land, with a horde near) that it is robbed or sprung: the catch is gone, and
-//   30% of the time the line with it. Quiet: Heat × 0.8 while setting or checking.
+//   30% of the time the line with it. Each day one of the dead may blunder into it (SNARE.zombie: 4%, 7% with the dead
+//   about, always under 10%): it hangs in the wires keeping the game away until the team checking it puts it down.
+//   Quiet: Heat × 0.8 while setting or checking.
 // Fish (team order, N hours on a river bank or a lake shore, with a fishing rod, a net or a spear carried): 0.6
 //   rations an hour a rod (a makeshift rod 0.42), 1.2 a net worked by two (0.7 by one), a spear 0.5 (a pipe spear
 //   0.35; GEAR fishPower), each × its condition (0.6 + 0.4 × quality: a well-made rod catches more) × water (a deep river bend or a lake 1, a river 0.85, a pond 0.6)
@@ -92,10 +94,10 @@
 import { gunMods, wearMuzzle, hasScope, isScope } from "./gunmods.js"; // a suppressed gun is quieter on a hunt; a scoped one hunts better
 import { FACTORY_FIT } from "./data-guns.js"; // a gun that comes with its scope (the hunting rifle): its hunting numbers have it in
 import { GEAR, SUPPLIES } from "./data.js";
-import { log, skill, gearEffect, atBase, newId, baseById, hub } from "./world.js";
+import { log, skill, gearEffect, atBase, newId, baseById, hub, hurt } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
 import { packOf, allCarried } from "./inventory.js";
-import { wearHeld } from "./crafting.js"; // fishing tools wear by the day's fishing
+import { wearHeld, CRAFTS, CRAFT_SKILL, craftSkill, canAttempt } from "./crafting.js"; // fishing tools wear by the day's fishing; arrows made before a bow hunt
 import { hasPerk, gainXp } from "./skills.js";
 import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
@@ -121,7 +123,29 @@ export const ANIMALS = {
   small: { name: "small game", plural: "small game", rations: 2, big: false, item: null }, // rabbit or fowl (gameItem)
   fish:  { name: "fish", plural: "fish", rations: 1, big: false, item: "f_fish" },
 };
-export const SNARE = { count: 8, perDay: 1, setHours: 2, checkHours: 1, scrap: 2, theft: 0.08, wireLoss: 0.3, deplete: 60, safeDays: 2 };
+export const SNARE = { count: 8, perDay: 1, setHours: 2, checkHours: 1, scrap: 2, theft: 0.08, wireLoss: 0.3, deplete: 60, safeDays: 2,
+  // One of the dead caught in a line (WORLD-02, 2026-10-12: under 10%): zombie a day, + zombieNear with the dead about
+  // (a horde within 2 tiles, or a hive's land), never zombieMax or more. Caught, it hangs in the wires until someone
+  // comes: no game comes near the line meanwhile (rot and theft go on as before). Putting it down: zombieHurt of the
+  // time it gets a hand on someone (zombieDmg).
+  zombie: 0.04, zombieNear: 0.03, zombieMax: 0.09, zombieHurt: 0.1, zombieDmg: [5, 15] };
+// The day's chance that one of the dead blunders into a snare line on this tile (always under 10%).
+export function snareZombieChance(state, tile) {
+  const near = (state.hordes || []).some((h) => state.grid.distance(h.tile, tile) <= 2) || (state.hives && !!zombieToughness(state, tile));
+  return Math.min(SNARE.zombieMax, SNARE.zombie + (near ? SNARE.zombieNear : 0));
+}
+// The dead in a line, put down by the people who came to check it (a team, a base's hunter): a line for the report,
+// maybe a scratch for one of them (SNARE.zombieHurt).
+export function putDownSnared(state, people, tile, where) {
+  const live = people.filter((s) => s && s.alive);
+  if (!live.length) return "One of the dead hangs in the wires.";
+  const s = live[state.rng.int(0, live.length - 1)];
+  if (state.rng.chance(SNARE.zombieHurt)) {
+    hurt(state, s, state.rng.int(SNARE.zombieDmg[0], SNARE.zombieDmg[1]), tile, `putting down one of the dead caught in the snares near ${where}`);
+    return `One of the dead was caught in the wires; ${s.name.split(" ")[0]} put it down, ${s.alive ? "but not before it got a hand on them" : "and did not survive it"}.`;
+  }
+  return `One of the dead was caught in the wires; ${s.name.split(" ")[0]} put it down.`;
+}
 export const FISH = { rod: 0.6, net: 1.2, netAlone: 0.7, deplete: 50, halfLife: 10, ice: 0.5, wearHours: 6, spearWear: 0.5 };
 // The cabin's Hunt job has no head-count cap (tune-jobcaps: it was 2): hunters are sized to the food the land must
 // bring in (foraging.js landFoodHands), each takes the best tile left and a kill thins it hard (a deer −0.3), so a
@@ -285,6 +309,27 @@ export function huntLoans(state, base, hunters = null) {
 }
 // Does anyone here carry a bow or crossbow they can use (arrows aside)?
 export const hasBow = (people) => people.some((s) => !!bestHuntWeapon(s, 0, Infinity, "bow"));
+// Arrows before the bow (2026-10-12, user request "If a bow is in the inventory craft arrows before using"): someone
+// about to hunt with a bow or crossbow carried anywhere on them (hands, pockets, pack) and no arrows to hand makes a
+// dozen first from the firewood and scrap there (crafting.js CRAFTS.arrows: 30 firewood + 1 scrap, its hours). A team:
+// orders.js runs a field craft before the hunt (its hours pass first). A base's Hunt job: the day's plan
+// (hunterDayPlan) has the best crafter among the bow hunters make them from the base's stores at home before the dawn
+// trip (the materials, not the hunting hours: a hunter's day on the ground is CABIN.hours).
+export const bowmen = (people) => people.filter((s) => !!bestHuntWeapon(s, 0, Infinity, "bow"));
+export const arrowsWanted = (people, arrows) => bowmen(people).length > 0 && Math.floor(arrows || 0) < 1;
+function baseArrowsFirst(state, base, hunters) {
+  if (!arrowsWanted(hunters, base.stock.arrows)) return null;
+  const R = CRAFTS.arrows;
+  if (Object.entries(R.in).some(([k, v]) => (base.stock[k] || 0) < v)) return null;
+  const able = bowmen(hunters).filter((s) => canAttempt(s, R));
+  if (!able.length) return null;
+  const maker = able.reduce((a, s) => (craftSkill(s) > craftSkill(a) ? s : a), able[0]);
+  for (const [k, v] of Object.entries(R.in)) base.stock[k] -= v;
+  for (const [k, v] of Object.entries(R.supplies)) base.stock[k] = (base.stock[k] || 0) + v;
+  gainXp(state, maker, CRAFT_SKILL, 0.3);
+  log(state, `${maker.name.split(" ")[0]} makes ${R.supplies.arrows} arrows at ${base.name} before the hunt (none in store for the bows): ${Object.entries(R.in).map(([k, v]) => `${v} ${k === "wood" ? "firewood" : k}`).join(" and ")}, made at home before the dawn trip.`, "info");
+  return maker;
+}
 
 // ---------- the hunting mix (base.huntMix) ----------
 const tens = (v) => Math.max(0, Math.min(100, Math.round((Number(v) || 0) / 10) * 10));
@@ -844,11 +889,13 @@ export function expectSnare(state, tile, from, to) {
 function rollSnares(state, line) {
   const start = line.check ?? line.set;
   const days = Math.max(0, (state.hour - start) / 24);
-  let held = [], robbed = 0, rotted = 0, gone = false;
+  let held = [], robbed = 0, rotted = 0, gone = false, zombie = false;
   for (let d = 0; d < Math.ceil(days - 1e-9); d++) {
     const frac = Math.min(1, days - d);
     const hour = start + d * 24;
-    const per = Math.min(0.9, snareDayRate(state, line.tile, hour) / SNARE.count) * frac;
+    // One of the dead in the wires (SNARE.zombie): no game comes near the line until someone puts it down.
+    if (!zombie && state.rng.chance(snareZombieChance(state, line.tile) * frac)) zombie = true;
+    const per = zombie ? 0 : Math.min(0.9, snareDayRate(state, line.tile, hour) / SNARE.count) * frac;
     let n = 0;
     for (let i = 0; i < SNARE.count; i++) if (state.rng.chance(per)) n++;
     for (let i = 0; i < n; i++) held.push(d);
@@ -863,7 +910,7 @@ function rollSnares(state, line) {
       if (state.rng.chance(SNARE.wireLoss)) { gone = true; break; }
     }
   }
-  return { animals: held.length, robbed, rotted, gone, days };
+  return { animals: held.length, robbed, rotted, gone, days, zombie };
 }
 // The snare order's work, when its hours are done (orders.js finishTask). mode: set, check or lift.
 export function snareWork(state, p, mode) {
@@ -899,6 +946,7 @@ export function snareWork(state, p, mode) {
   let text = r.animals ? `The snares held ${r.animals} small game (${Math.round(kept * 10) / 10} days of food in raw meat${kept < rations - 0.05 ? `; no room for ${Math.round((rations - kept) * 10) / 10}` : ""}).${wormNote(state, tile, infested)}` : "The snares were empty.";
   if (r.rotted) text += ` ${r.rotted} caught earlier had gone bad.`;
   if (r.robbed) text += ` Something got to the line first: ${r.robbed} taken.`;
+  if (r.zombie) text += ` ${putDownSnared(state, members, tile, where)}`;
   const lift = mode === "lift" || r.gone;
   if (lift) {
     state.snares.splice(state.snares.indexOf(line), 1);
@@ -909,7 +957,7 @@ export function snareWork(state, p, mode) {
       text += " Lifted the line: the snare wire is back in the cargo.";
     } else text += " Lifted the line.";
   } else text += " The line stays set.";
-  if (r.animals || r.robbed) log(state, `${teamName(state, p)} checked the snares near ${where}: ${r.animals} small game${r.robbed ? `, ${r.robbed} stolen` : ""}.`, r.animals ? "good" : "info");
+  if (r.animals || r.robbed || r.zombie) log(state, `${teamName(state, p)} checked the snares near ${where}: ${r.animals} small game${r.robbed ? `, ${r.robbed} stolen` : ""}${r.zombie ? ", one of the dead caught in the wires" : ""}.`, r.animals ? "good" : "info");
   return text;
 }
 // Lines nobody comes back for: after 30 days unchecked a line is gone (torn up, rusted, sprung for good).
@@ -1089,7 +1137,10 @@ export function hunterDayPlan(state, base, s) {
   if (!P || P.day !== dayIdx) {
     const hunters = atBase(state, base.id).filter((x) => x.role === "hunt" && !x.inBed && workFactor(x) >= 0.35);
     P = base.huntPlan = { day: dayIdx, rows: {} };
-    for (const r of cabinPlan(state, base, hunters, spare, quiver)) P.rows[r.s.id] = { guns: r.guns, bows: r.bows, traps: r.traps, hours: r.hours };
+    const maker = baseArrowsFirst(state, base, hunters); // a bow and no arrows: a dozen made first
+    const quiver1 = Math.max(0, base.stock.arrows || 0);
+    for (const r of cabinPlan(state, base, hunters, spare, quiver1)) P.rows[r.s.id] = { guns: r.guns, bows: r.bows, traps: r.traps, hours: r.hours };
+    void maker;
   }
   if (!P.rows[s.id]) {
     const keep = base.huntCarry;
