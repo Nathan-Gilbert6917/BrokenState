@@ -1,6 +1,7 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
 import { baseFoodHtml } from "./food.js"; // food by type: the base window's Food section (the top bar's Food row: ui/needsbar.js)
+import { foodChainTab } from "./foodchain.js"; // the base window's Food tab: the food chain (sources, stores, kitchen, eating, losses)
 import { FOODS, packPick, foodText, foodIn } from "../sim/foods.js"; // food by type (foods.js)
 import { foodRows } from "../sim/storage.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts you have not found
@@ -1473,6 +1474,7 @@ function gearControls(state, base, s, slot) {
 const BASE_TABS = [
   ["camp", "Camp", "The camp at a glance: its stage and what it can become, who is there, the teams at the camp, its stores and vehicles; set up teams, build it up, or strike it"],
   ["overview", "Overview", "Stock, people and roles"],
+  ["food", "Food", "The food chain: where the food comes from, what is in store and how fast it spoils, the kitchen's bills and the fire's firewood, the eating and the losses, and how long it lasts"],
   ["work", "Work", "Work priorities (like RimWorld's work tab): roles with a 1–5 priority per kind of work, a schedule, and crews that run trips by themselves"],
   ["defence", "Defence", "The watch roster (who stands guard at which hours) and the defence plan (where everyone stands when the base is attacked)"],
   ["farming", "Farming", "Crop plots: what grows, when it ripens, expected harvests, weather risks; the food and water outlook"],
@@ -1495,7 +1497,7 @@ function baseModal(state, ui) {
   // A camp (sim/staging.js, the barest base): its own Camp tab first, and only the tabs a camp has use for.
   const tabs = isCamp(b) ? BASE_TABS.filter(([k]) => CAMP_TABS.includes(k)) : BASE_TABS.filter(([k]) => k !== "camp");
   const tab = tabs.some(([k]) => k === ui.baseView.tab) ? ui.baseView.tab : tabs[0][0];
-  const body = { camp: campTab, overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  const body = { camp: campTab, overview: baseOverview, food: foodChainTab, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
@@ -1506,7 +1508,7 @@ function baseModal(state, ui) {
 }
 
 // The tabs a camp shows (BASE_TABS keys).
-const CAMP_TABS = ["camp", "overview", "construction", "armory", "vehicles", "crafting", "work", "medical"];
+const CAMP_TABS = ["camp", "overview", "food", "construction", "armory", "vehicles", "crafting", "work", "medical"];
 
 // ---------- the camp (sim/staging.js) ----------
 // The Camp tab: the stage ladder and the step up (tierUpRows), what each stage opens up, the people at the camp, the

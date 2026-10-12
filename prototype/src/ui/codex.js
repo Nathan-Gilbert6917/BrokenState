@@ -12,6 +12,11 @@
 // "???" with its category. state.codex = { seen: { key: day }, fresh: [keys not looked at yet] } is saved with the
 // campaign (sim/save.js writes the whole state); an older save without it opens what its world already shows.
 import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
+import { STORE, FACTOR } from "../sim/storage.js"; // the food chain entries: food rooms and spoilage
+import { WOOD } from "../sim/woodcutting.js"; // a camp's fire a day
+import { COOK } from "../sim/cooking.js"; // a cook fire's firewood
+import { EAT } from "../sim/eating.js"; // "No hot food"
+import { KITCHEN } from "../sim/kitchen.js"; // the stove's firewood
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES } from "../sim/data.js";
@@ -340,9 +345,29 @@ function fieldEntries() {
     return { key: `fw:${k}`, cat: "buildings", name: `${d.icon} ${d.name}`, sub: "Field work", stats, text: d.desc, how: "Plan it from a base's Field works tab and click a green tile: the builders walk out and put it up. Help: Field works.", sprite: null };
   });
 }
+// How food works (the base window's Food tab, ui/foodchain.js): the chain, spoilage, fires. Open from the start.
+const FOOD_CHAIN_KEYS = ["k:foodchain", "k:spoilage", "k:fires"];
+function foodChainEntries() {
+  return [{
+    key: "k:foodchain", cat: "supplies", name: "🍽️ The food chain", sub: "How food works",
+    stats: [["Where", "a base's window, Food tab"], ["Record", "the last 7 days, saved with the game"], ["A day of food", "2000 kcal (one person's day)"]],
+    text: "Food runs left to right: Sources (farms and harvests, hunting and snares, fishing, foraging, scavenging and teams home, trade and gifts, your other bases; and the crops ripening), Stores (days of food on hand for everyone fed there, each food room and the days until its next lot spoils), Kitchen (the cooking stations, their bills, purified water and the fire's firewood), Eating (heads, eaten a day, the ration level, what kind of food, hot food) and Losses (spoiled, eaten raw, sent out with teams, into packs). It ends with how long the food lasts at this rate and the biggest drain.",
+    how: "Open the Food tab when the food chip turns yellow: the verdict names the biggest drain and one or two things to do (a root cellar, cooking the meat before it turns, more people on Farm, Hunt, Fish or Forage, Lean rations).", sprite: null,
+  }, {
+    key: "k:spoilage", cat: "supplies", name: "🗑️ Spoilage", sub: "How food works",
+    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`]],
+    text: "Every food keeps its own time at room temperature (bread days, raw meat two or three, potatoes a month, cans years). Fresh food fills the base's food rooms, the food that spoils fastest in the coldest room first; what does not fit sits outside and spoils fastest. Canned, dry and preserved food needs no room. A lot whose time runs out is thrown out (a line in the log). The soonest to spoil is eaten first.",
+    how: "Build a root cellar (or a storehouse, a cold store, a freezer) before the harvest, dry the surplus on drying racks, cook raw meat into meals, and do not hunt more than the base eats in a few days.", sprite: null,
+  }, {
+    key: "k:fires", cat: "supplies", name: "🔥 Fires and firewood", sub: "How food works",
+    stats: [["Camp or shelter fire", `${WOOD.fire.shelter} firewood a day (half where deadfall lies about)`], ["Cook fire", `${COOK.fireWood} firewood an hour it cooks (${COOK.fireHours} hours a day)`], ["Kitchen stove", `${KITCHEN.wood.stove} a day + ${KITCHEN.wood.meal} a meal served`], ["No hot food", `${EAT.coldV[0]} mood after ${EAT.cold[0]} days, ${EAT.coldV[1]} after ${EAT.cold[1]}`]],
+    text: "A camp's or shelter's fire burns its firewood by the hour and goes out when the woodpile runs dry: no warmth, boiled water or cooking on it until it is lit again. A cook fire burns firewood while it cooks; the Kitchen's stove every day. No fire, nothing cooks: raw meat is eaten raw (food poisoning, Ate raw food −7) and after a few days without a cooked meal everyone minds it (No hot food).",
+    how: "Keep a few days of firewood in store (the Food tab shows the hours left), put someone on Cut wood, and light the fire again once wood comes in.", sprite: null,
+  }];
+}
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...buildingEntries(), ...fieldEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -369,7 +394,7 @@ export function codexUnlock(state, key, quiet = false) {
 
 // Everything the player can see now, as codex keys.
 function seenNow(state) {
-  const keys = new Set(["z:walker"]); // everyone knows the ordinary dead
+  const keys = new Set(["z:walker", ...FOOD_CHAIN_KEYS]); // everyone knows the ordinary dead, and how food works
   const live = state.live || new Set();
   const known = (tile) => live.has(tile) || !!(state.knowledge && state.knowledge[tile]);
   const item = (it) => { if (it && it.key && GEAR[it.key]) keys.add(`i:${it.key}`); if (it && Array.isArray(it.contents)) it.contents.forEach(item); };
