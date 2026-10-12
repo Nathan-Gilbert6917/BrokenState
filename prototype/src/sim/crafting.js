@@ -101,6 +101,8 @@ export const CRAFTS = {
   ram:         { gear: "ram",         in: { scrap: 8, parts: 2 }, hours: 10, skill: "mechanics", min: 3, needs: "workshop" },
   tripwire:    { gear: "tripwire",    in: { scrap: 1 },           hours: 2,  skill: "mechanics", min: 0, field: true },
   slingbag:    { gear: "slingbag",    in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0 },
+  // The camp cook pot (cooking.js POT): small meals at a base with no Kitchen or cook fire, or on a team's camp fire.
+  cookpot:     { gear: "cookpot",     in: { scrap: 3 },           hours: 3,  skill: "cooking",   min: 0, field: true },
   // Camp kit against Heat (fieldheat.js): made by whoever knows how to keep quiet.
   ghillie:     { gear: "ghillie",     in: { scrap: 2 },           hours: 6,  skill: "stealth",   min: 2, field: true },
   ragboots:    { gear: "ragboots",    in: { scrap: 1 },           hours: 2,  skill: "stealth",   min: 0, field: true },

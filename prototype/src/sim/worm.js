@@ -19,7 +19,7 @@
 //   - water on the road (drinkHour): RAW_BASE + WATER × the eggs of the un-purified water the team drinks (p.wormEggs:
 //     from where it was filled), × the share of the hour's drinking it was. A team drinks purified water first; the
 //     un-purified water is made safe by, in this order: a water filter carried; boiling at a camp fire that is lit and
-//     fed (firewood carried, or deadfall on the land: woodcutting.js campFireHour), which also boils BOIL un-purified
+//     fed (firewood carried, stretched by deadfall on the land: woodcutting.js campFireHour), which also boils BOIL un-purified
 //     water an hour into purified water (× STOVE with a smokeless stove); purification tablets (data.js puritabs: one
 //     per TABS_WATER water) on the move (travelling, exploring, searching) and at a camp whose fire is out or has
 //     nothing left to burn; otherwise it is drunk as it is.
@@ -153,7 +153,7 @@ import { prisonersAt, inCell, taskOf, dropPrisoner } from "./prisoners.js";
 import { leaveMap } from "./visitors.js";
 import { teamCookHour } from "./cooking.js"; // wave 2 cooking: a team's camp fire cooks its raw meat into meals
 import { kitchenService, kitchenCold } from "./kitchen.js"; // the Kitchen boils the meals' water (purifyCap) and cooks like a cook fire (baseCooks)
-import { fireLandOk, WOOD, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
+import { canLight, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
 
 export const WORM = {
   // Catching it
@@ -630,14 +630,14 @@ export function packWater(state, p, base) {
   delete p.wormWater; // the old single-water model (save.js)
   p.wormEggs = teamRawIn(p) > 0 ? r2(rawWaterEggs(state, base).eggs) : 0;
 }
-// A camp fire that boils the water: lit, and with something to keep it going this hour (deadfall on the land, or
-// firewood carried: woodcutting.js campFireHour; a camp's or shelter's fire burns what lies about it). A camp whose fire
+// A camp fire that boils the water: lit, and with firewood to keep it going this hour (carried: woodcutting.js
+// campFireHour; a camp's or shelter's fire burns its store, shelterFire, and is out once it runs dry). A camp whose fire
 // is out or has nothing left to burn does not boil: the team uses its tablets.
 export function campFireFed(state, p) {
   if (teamFire(state, p) !== true) return false;
   const camp = p.owner === "player" ? state.bases.find((b) => b.tier === 0 && b.tile === partyTile(p)) : null;
-  if (camp) return true; // a camp's or shelter's fire burns what lies about it
-  return fireLandOk(state, partyTile(p)) || carried(p, "wood") >= WOOD.fire.camp / 24 - 1e-9;
+  if (camp) return true; // a camp's or shelter's fire: lit only while its store feeds it (shelterFire puts it out)
+  return canLight(state, p);
 }
 // How a team drinks its un-purified water now: "filter" (a water filter carried), "fire" (a lit, fed camp fire boils
 // it), "tabs" (purification tablets carried: on the move, or at a camp whose fire is out or unfed), "unsafe" (drunk as
@@ -712,7 +712,7 @@ export function wormTeamHour(state, p, members) {
     const m = cookEggs(p.cargo, WORM.COOK, isMeat) + cookEggs(p, WORM.COOK, isMeat); // the camp fire cooks the meat with eggs through
     cookEggs(p.cargo, WORM.COOK, (k, f) => !isMeat(k, f)); cookEggs(p, WORM.COOK, (k, f) => !isMeat(k, f)); // and boils the greens
     void m;
-    if (fire === true && campFireFed(state, p)) teamCookHour(state, p, members); // cooking.js: the camp fire's pot (raw meat into simple meals)
+    if (fire === true && campFireFed(state, p)) teamCookHour(state, p, members); // cooking.js: the camp fire's pot (raw meat into simple meals; anything fresh with a cook pot)
   }
   const inf = (state.tiles[partyTile(p)] || {}).infection || 0;
   if (inf < WORM.CAMP_AT) return;

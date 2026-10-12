@@ -21,7 +21,7 @@ import { commandable, NO_RADIO } from "../sim/plans.js";
 import { partyVehicle } from "../sim/vehicles.js";
 import { HUNT, SNARE, gameAbundance, fishSpot, huntProblem, fishProblem, snareLine, snareProblem } from "../sim/hunting.js";
 import { forageAbundance, forageProblem } from "../sim/foraging.js";
-import { woodAbundance, woodProblem, fireLandOk } from "../sim/woodcutting.js";
+import { woodAbundance, woodProblem, canLight } from "../sim/woodcutting.js";
 import { CLAIM, canClaim, wellProblem, claimOwner } from "../sim/claims.js";
 import { teamFieldItems } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { LISTEN } from "../sim/radiolisten.js";
@@ -208,8 +208,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   if (!water && !base && !theirs) {
     const camping = p.phase === "task" && p.task && p.task.type === "camp" && partyTile(p) === tile;
     const lit = fireLit(p);
-    const burn = fireLandOk(state, tile) || carried(p, "wood") >= 1;
-    const noFire = burn ? "" : "Nothing to burn on this bare ground and no firewood carried.";
+    const burn = canLight(state, p);
+    const noFire = burn ? "" : "No firewood carried: a fire burns firewood (deadfall about only stretches it). Cut wood or bring some.";
     // Set up camp (sim/staging.js): a camp is the barest base; its base window opens when it stands (Strike camp there).
     if (p.owner === "player" && p.kind === "expedition" && !p.caravan && p.crewRole == null) add("Camp", "setcamp", "Set up camp here", [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || ""), hint: "Make camp (1 hour, no materials): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again." });
     if (camping) add("Camp", lit ? "fireout" : "fire", lit ? "Put the camp fire out" : "Light a camp fire", [], { special: lit ? "fireout" : "fire", why: lit ? "" : noFire, hint: lit ? "Darker and quieter, but cold food, unboiled water and cold nights." : "Warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." });
