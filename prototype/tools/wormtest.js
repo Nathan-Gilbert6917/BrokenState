@@ -976,14 +976,18 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   check(near(kindsOf(h).f_grain, 8) && near(wormVegAt(h).crop, 10), "dry grain (keeps for years) is threshed and cooked: safe");
   check(!cropEggs(st, clean), "nothing from clean land");
   // Foraging around the base on infected land.
-  const food0 = food(h);
   for (const id of st.grid.within(h.tile, 2)) st.tiles[id].infection = 0.8; // the foragers' land too
   people[1].role = "forage";
   Object.assign(people[1], { pinned: true, health: 100, inBed: false, conditions: [], mood: 70 });
   st.hour = 24 * 51; // summer (day 50): there is something to gather; the day's job trips (jobtrips.js), then its midnight
+  const food0 = food(h);
   tripDay(st, h);
   const got = foragingDaily(st, h);
   const fed = (h.tripTally && h.tripTally.forage && h.tripTally.forage.food) || 0; // the trips' food (got.rations is it rounded)
+  // The forager set out with a day's food in the pack for lunch (eating.js PACK.trip): the grain packed from the stores
+  // goes back, so the stores below are the harvest and what the forage brought in.
+  const packed = 8 - (kindsOf(h).f_grain || 0);
+  addDays(h, packed, "f_grain");
   check(got && got.rations > 0 && near(wormVegAt(h).forage, fed, 0.01) && near(food(h) - food0, fed, 0.01), `forage gathered on infected ground carries eggs too (${got && got.rations.toFixed(1)} rations)`);
   // Eaten last, after the clean food: the crops and forage with eggs (the soonest to spoil first: the summer's forage
   // before the potatoes), the raw meat last of all.
