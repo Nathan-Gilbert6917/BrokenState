@@ -2351,6 +2351,20 @@ export function distField(b, sources, walker = null) {
   const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
   const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
+  // What each cell is for this walker, worked out once (the cells do not change while the field is made): passable,
+  // walkable for the corner rule, its height (climbCost's h), a ladder or stairs, the cost of battering it. The same
+  // sums as asking each cell again for each of its eight neighbours, which was most of a siege's enemy turn (sizetest).
+  const N = W * H, h = climber ? hAt : siege ? hSiege : hAt;
+  const okA = new Uint8Array(N), sideA = new Uint8Array(N), climbA = new Uint8Array(N), hA = new Float64Array(N), overA = new Float64Array(N), bashA = new Float64Array(N);
+  for (let y = 0, i = 0; y < H; y++) for (let x = 0; x < W; x++, i++) {
+    const c = b.cells[i], ov = over(x, y);
+    okA[i] = pass(x, y) ? 1 : 0;
+    sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0;
+    climbA[i] = climbAt(b, x, y) ? 1 : 0;
+    hA[i] = h(b, x, y);
+    overA[i] = ov ? MIDDEAD.CLIMBER.COST : 0;
+    bashA[i] = !ov && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
+  }
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
   // in a fraction of the time on the bigger maps (battlesize.js).
   const heap = new MinHeap();
@@ -2359,16 +2373,18 @@ export function distField(b, sources, walker = null) {
     const key = heap.topKey(), cur = heap.pop();
     if (key > d[cur]) continue;
     const x = cur % W, y = (cur / W) | 0;
-    for (const [dx, dy] of DIRS8) {
-      const nx = x + dx, ny = y + dy;
-      if (!inside(nx, ny) || !pass(nx, ny)) continue;
+    for (let k = 0; k < 8; k++) {
+      const dx = DIRS8[k][0], dy = DIRS8[k][1], nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const j = ny * W + nx;
+      if (!okA[j]) continue;
       const diag = dx && dy;
-      if (diag && (!(cellAt(b, x + dx, y).walk || over(x + dx, y)) || !(cellAt(b, x, y + dy).walk || over(x, y + dy)))) continue; // no corner cutting (as reachable)
-      const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (over(nx, ny) ? MIDDEAD.CLIMBER.COST : 0) : climbCost(b, x, y, nx, ny, diag, per, siege ? hSiege : hAt);
+      if (diag && (!sideA[cur + dx] || !sideA[cur + dy * W])) continue; // no corner cutting (as reachable)
+      // climbCost (a Climber: the height either way, and its cost over a wall)
+      const dh = Math.abs(hA[j] - hA[cur]);
+      const climb = climber ? dh + overA[j] : !dh ? 0 : diag || !(climbA[cur] || climbA[j]) ? Infinity : dh * per;
       if (climb === Infinity) continue;
-      const c = b.cells[idx(nx, ny)];
-      const bash = !over(nx, ny) && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
-      const j = idx(nx, ny), nd = d[cur] + (diag ? 1.5 : 1) + climb + bash + (aw ? aw[j] : 0); // aw: acid.js
+      const nd = d[cur] + (diag ? 1.5 : 1) + climb + bashA[j] + (aw ? aw[j] : 0); // aw: acid.js
       if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); }
     }
   }
