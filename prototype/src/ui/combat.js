@@ -22,6 +22,8 @@ import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, 
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal, glReloadRefusal, backblastCells, enclosedAt, LAUNCH, GL_HE, ROCKET } from "../sim/launchers.js"; // grenade launchers and rockets (section 13)
 import { LIGHTS } from "../sim/lights.js";
+import { VISION, viewWedges, faceAng, hasFront, setFacing, nightWord, darkSight } from "../sim/vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12)
+import { noticeRange, earshot } from "../sim/stealth.js";
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
 import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chips, the Visor toggle (sim/helmets.js)
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
@@ -57,7 +59,11 @@ const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screame
 let W = MAP_W, H = MAP_H;
 const ENEMY_STEP_MS = 420;
 
-export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false, pickedDown: null }; // autoPlay: the AI plays your side (cb-autoplay); pickedDown: one of the downed picked in the roster (autoSelect keeps them)
+export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false };
+// The view cones of everyone (yours and the enemies you see), on or off (Shift+B, the view bar), kept per machine.
+const CONES_KEY = "bs.battle.cones";
+try { cui.cones = typeof localStorage !== "undefined" && localStorage.getItem(CONES_KEY) === "1"; } catch { cui.cones = false; }
+export function setCones(on) { cui.cones = !!on; try { if (typeof localStorage !== "undefined") localStorage.setItem(CONES_KEY, on ? "1" : "0"); } catch { /* private mode */ } } // autoPlay: the AI plays your side (cb-autoplay); pickedDown: one of the downed picked in the roster (autoSelect keeps them)
 LISTEN.sel = () => cui.sel; // ui/soundcues.js: whose ears the battle is heard through
 // ui/gunsfx.js: where on screen a sound is (pan, distance from the middle) and what your people see (out of sight: muffled).
 LISTEN.cam = () => { if (!iso.cw) return null; const [x0, y0] = project(0, 0, 0), [x1, y1] = project(1, 0, 0); return { cw: iso.cw, ch: iso.ch, S: Math.hypot(x1 - x0, y1 - y0) / Math.hypot(16, 8), project }; };
@@ -155,12 +161,34 @@ function view(b) {
   // enemies they see; ghosts where unseen ones were last seen.
   const vis = playerVision(b);
   const u = selUnit(b);
-  const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, u.mob * u.ap, { manual: true }) : null; // an order by hand may walk into fire
+  const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, SIM.moveMob(u) * u.ap, { manual: true }) : null; // an order by hand may walk into fire
   const seen = new Set(b.units.filter((e) => e.side !== "player" && active(e) && (b.over || playerSees(b, e))).map((e) => e.id)); // the enemy and the third side (sim/thirdside.js)
   const ghosts = b.over ? [] : enemyGhosts(b);
-  cui.cache = { key, vis, reach, seen, u, ghosts };
+  const known = rememberSeen(b, vis);
+  cui.cache = { key, vis, reach, seen, u, ghosts, known };
   return cui.cache;
 }
+// What your people have ever seen on each floor of this battle (the fog of war indoors, ui/isoview.js): the cells,
+// and each container's state when last seen (its marker under the fog shows that, not what it is now). Kept here, off
+// the sim (a save reloaded mid-battle starts it again from what they see).
+const MEMO = new WeakMap();
+function rememberSeen(b, vis) {
+  let m = MEMO.get(b);
+  if (!m) MEMO.set(b, (m = {}));
+  const f = floorNo(b);
+  let k = m[f];
+  if (!k || k.cells.length !== vis.length) k = m[f] = { cells: new Uint8Array(vis.length), boxes: new Map() };
+  for (let i = 0; i < vis.length; i++) if (vis[i]) k.cells[i] = 1;
+  if (b.raid) for (const c of b.raid.containers) {
+    if ((c.f || 0) !== f) continue;
+    let now = false;
+    for (let y = c.y; y < c.y + (c.h || 1) && !now; y++) for (let x = c.x; x < c.x + (c.w || 1); x++) if (vis[y * b.w + x]) { now = true; break; }
+    if (now) k.boxes.set(c.id, { searched: c.searched, quick: c.quick, partial: c.partial, lock: c.lock ? { ...c.lock } : c.lock });
+  }
+  return k;
+}
+// Your own base (its yard, its buildings, a fall back to them): known inside out, no fog indoors.
+const ownGround = (b) => !!b.tier || (!b.raid && b.setup && b.setup.baseId != null);
 
 const selUnit = (b) => (cui.sel != null ? unitById(b, cui.sel) : null);
 // A rescue raid's actions for the selected unit (sim/rescueraid.js rescueOptions): the ropes, cut free, the cell's
@@ -327,7 +355,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
   }
   autoSelect(b);
@@ -355,6 +383,18 @@ export function combatClick(state, px, py) {
   const v = view(b);
   const u = selUnit(b);
   const who = unitAt(b, c.x, c.y);
+  // vision.js: the way to face. After a move's tile is picked (facemove), Face (face) and Overwatch (overwatch): the
+  // click picks the direction from where they stand (or will stand); the tile itself keeps the way they walk.
+  if (u && active(u) && (cui.mode === "facemove" || cui.mode === "face" || cui.mode === "overwatch")) {
+    const fp = cui.mode === "facemove" ? cui.facePick : null;
+    if (cui.mode === "facemove" && (!fp || fp.uid !== u.id || fp.rev !== b.rev)) { cui.mode = "move"; cui.facePick = null; }
+    else {
+      const from = fp || u, ang = mouseAngle(b, from.x, from.y, px, py);
+      if (cui.mode === "facemove") { cui.mode = "move"; cui.facePick = null; return void act(state, { type: "move", unit: u.id, x: fp.x, y: fp.y, ...(ang != null ? { face: ang } : {}) }); }
+      if (cui.mode === "face") { if (ang == null) { cui.msg = "Click away from them, the way they should face."; return; } return void act(state, { type: "face", unit: u.id, face: ang }); }
+      return void act(state, { type: "overwatch", unit: u.id, ...(ang != null ? { face: ang } : {}) });
+    }
+  }
   if (u && active(u) && groundClick(state, b, u, c, cui, act)) return; // ui/ground.js: the body picked to search
   // The team's vehicle (sim/combat.js driveTo): Drive, then click where it goes.
   if (u && active(u) && u.ap > 0 && cui.mode === "drive") return void act(state, { type: "drive", unit: u.id, x: c.x, y: c.y });
@@ -443,8 +483,12 @@ export function combatClick(state, px, py) {
     }
   }
   if (cui.mode !== "move") { cui.mode = "move"; cui.msg = ""; return; }
-  if (v.reach && isFinite(v.reach.dist[c.y * W + c.x]) && v.reach.dist[c.y * W + c.x] > 0) act(state, { type: "move", unit: u.id, x: c.x, y: c.y });
-  else cui.msg = "Out of reach.";
+  // vision.js: a move takes two clicks, where to and the way to face there (the cone follows the mouse).
+  if (v.reach && isFinite(v.reach.dist[c.y * W + c.x]) && v.reach.dist[c.y * W + c.x] > 0) {
+    cui.facePick = { uid: u.id, x: c.x, y: c.y, rev: b.rev };
+    cui.mode = "facemove";
+    cui.msg = `Now click the way ${u.name.split(" ")[0]} will face there: the cone shows what they will watch${b.night ? " and see in the dark" : ""}. The tile itself: the way they walk. Right-click or Esc: pick another tile.`;
+  } else cui.msg = "Out of reach.";
 }
 
 // Search: the first look costs the action and rolls what is inside (sim/combat.js searchBox); then the search window
@@ -881,6 +925,7 @@ function viewKey(state, b, e, k) {
   if (k === "bview.rotLeft" || k === "bview.rotRight") { isoRotate(b, k === "bview.rotRight" ? 1 : -1); return true; }
   if (k === "bview.zoomIn" || k === "bview.zoomOut") { isoZoom(b, k === "bview.zoomIn" ? 1 : -1); return true; }
   if (k === "bview.roofs") { setRoofs(!iso.roofs); return true; }
+  if (k === "bview.cones") { setCones(!cui.cones); return true; } // vision.js: everyone's view cones
   if (k === "bview.center") { const u = selUnit(b); if (u) isoCenterOn(b, u.x, u.y); return true; }
   if (k === "bview.hud") { toggleHud(); return true; } // ui/battlehud.js: fold or open the squad strip and the weapon panel
   return false;
@@ -951,6 +996,7 @@ export function combatAction(state, key, d) {
   if (key === "cb-view") {
     if (d.v === "rotl" || d.v === "rotr") isoRotate(b, d.v === "rotr" ? 1 : -1);
     else if (d.v === "roofs") setRoofs(!iso.roofs);
+    else if (d.v === "cones") setCones(!cui.cones);
     else if (d.v === "zin" || d.v === "zout") isoZoom(b, d.v === "zin" ? 1 : -1);
     else if (d.v === "center" && u) { followFloor(b, u); isoCenterOn(b, u.x, u.y); }
     // A building with storeys: the Floor control (▲ ▼), or back to the selected unit's floor.
@@ -1061,6 +1107,16 @@ export function combatAction(state, key, d) {
   // R is the retreat key of a normal battle. A raid has no retreat strip: say how to leave instead.
   if (v === "retreat" && b.raid) { cui.msg = "In a raid you leave by extracting: move into a green extraction zone and press X."; return; }
   if (v === "move") { cui.mode = "move"; return; }
+  // vision.js: Face (pick the way, free), Sneak (on / off, free), Overwatch (pick the way to watch; again: as they face).
+  if (v === "face") { cui.mode = cui.mode === "face" ? "move" : "face"; cui.msg = cui.mode === "face" ? `Click the way ${u.name.split(" ")[0]} should face (free; it needs an action left). The cone is what they watch${b.night ? " and see in the dark" : ""}: a guard is noticed and an overwatch reacts only in it, and loot is searched only facing it.` : ""; return; }
+  if (v === "sneak") return void act(state, { type: "sneak", unit: u.id });
+  if (v === "overwatch") {
+    if (cui.mode === "overwatch") return void act(state, { type: "overwatch", unit: u.id });
+    if (!canFire(b, u)) return void act(state, { type: "overwatch", unit: u.id }); // the sim says why not
+    cui.mode = "overwatch";
+    cui.msg = `Click the way to watch: ${u.name.split(" ")[0]} reacts only to what moves in the cone. ${keyLabel("battle.overwatch", 1) || "O"} again: the way they face now.`;
+    return;
+  }
   if (v === "shoot" || v === "melee") { cui.mode = cui.mode === v ? "move" : v; cui.msg = v === "shoot" ? "Click a visible enemy to shoot." : "Click an adjacent enemy to strike."; return; }
   if (nlCbAct(state, b, u, v, cui, act)) return; // tasers, pepper spray, pulled blows, Execute, Surrender, Take them alive (ui/nonlethal.js)
   // The stealth kit (sim/stealth.js).
@@ -1282,6 +1338,7 @@ export function renderCombatPanel(state) {
   if (b.over) return html + resultHtml(state, b);
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
   if (b.raid && b.raid.choose) html += chooseHtml(b);
+  if (b.night && !b.raid && b.phase !== "deploy") html += nightHtml(b); // sim/vision.js: the dark, by the hour
   if (retreatAskOpen(b)) html += retreatConfirmHtml(b, askPlan(b)); // right under the team, where it is seen
   // Looking at another floor than the selected unit's (PageUp / PageDown, the Floor control): say so, with the way back.
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
@@ -1299,7 +1356,9 @@ export function renderCombatPanel(state) {
     const foesAdj = b.units.some((t) => t.side === "enemy" && active(t) && meleeReach(b, u, t)); // not across a wall's corner
     const btn = actBtn;
     html += `<h3>${esc(u.name)} · ${ap} action${ap === 1 ? "" : "s"}</h3><div class="cbactions">
-      ${btn("move", "Move", "Click a blue tile to move (1 action) or a yellow tile to dash (2 actions).", ap > 0)}
+      ${btn("move", "Move", `Click a blue tile to move (1 action) or a yellow tile to dash (2 actions), then click the way to face there.${u.sneaking ? " Sneaking: slower, and silent." : ` A dash is heard ${VISION.DASH_NOISE} tiles off (the dead come to look); a plain move only now and then a scuff.`}`, ap > 0)}
+      ${btn("face", "Face", `Free (with an action left): turn where they stand. The cone is what they watch${b.night ? ` and all they see in the dark (${darkSight(b)} tiles ahead at ${nightWord(b)}, more down a flashlight's beam)` : ""}: an overwatch reacts only in it, and loot is searched only facing it.`, ap > 0, "⇧W")}
+      ${btn("sneak", u.sneaking ? "Stop sneaking" : "Sneak", u.sneaking ? "Free: back to walking pace (a dash is heard, a plain move now and then)." : `Free: keep low. ${Math.round(VISION.SNEAK_MOB * 100)}% of the pace, no sound at all, and the enemy cannot see them behind half or full cover facing them (from further than a tile). Not while an aware enemy has eyes on them; a loud shot ends it (a suppressed one or a bow does not).`, ap > 0 || u.sneaking, "⇧Z")}
       ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
       ${btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F")}
       ${gun && SIM.cabTarget(b, u) ? (() => { const tg = SIM.cabTarget(b, u), o = SIM.cabOdds(b, u, tg), who = SIM.cabSeat(b, tg.v); return btn("cab", "Shoot the cab", `Fire at their ${esc(tg.v.name || tg.v.kind)} (${o.chance}% a round): each hit wears it (heavy and armour-piercing rounds; ${SIM.HULL.PEN + 1}+ penetration) and half get in at the windscreen${tg.v.up && tg.v.up.plating ? " (less with the plate)" : ""}, at ${who ? "whoever is at the wheel" : "nobody: the cab is empty"}${tg.v.up && tg.v.up.glass ? " through bulletproof glass" : ""}. A driver down stops it. Ends this unit's turn.`, ap > 0 && ammo); })() : ""}
@@ -1308,7 +1367,7 @@ export function renderCombatPanel(state) {
       ${gunButtons(state, b, u, btn)}
       ${plateButton(state, b, u, btn)}
       ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
-      ${btn("overwatch", "Overwatch", OVERWATCH_TIP, ap > 0 && ammo, "O")}
+      ${btn("overwatch", "Overwatch", `${OVERWATCH_TIP} Click the way to watch: only what moves in its cone draws a reaction.`, ap > 0 && ammo, "O")}
       ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
       ${b.vehicle ? btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u))) : ""}
       ${b.vehicle && !u.aboard ? btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4)) : ""}
@@ -1379,7 +1438,8 @@ export function viewBar(b = cui.battle) {
   html += btn("rotl", "⟲", `Turn the view a quarter to the left (${kl("bview.rotLeft", "Q")})`) + btn("rotr", "⟳", `Turn the view a quarter to the right (${kl("bview.rotRight", "E")})`);
   html += btn("zout", "−", `Zoom out (${kl("bview.zoomOut", "−")} or the mouse wheel)`) + btn("zin", "+", `Zoom in (${kl("bview.zoomIn", "+")} or the mouse wheel)`);
   html += btn("center", "◎", `Center on the selected unit (${kl("bview.center", "Home")}). Drag the map, hold W A S D or the arrow keys, or push the mouse to the edge to pan.`);
-  html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", `Roofs on the buildings (${kl("bview.roofs", "B")}). A building with one of your people, an enemy you see or the mouse inside is always shown cut away; off shows every one that way.`, iso.roofs);
+  html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", `Roofs on the buildings (${kl("bview.roofs", "B")}). A building is shown cut away only with the selected survivor inside it (inside, you see only the rooms your people see; the rest is fogged, what was seen before greyed with what was there then); off shows every one cut away, still fogged.`, iso.roofs);
+  html += btn("cones", cui.cones ? "Cones ✔" : "Cones ✗", `View cones (${kl("bview.cones", "Shift+B")}): what each of your people watches and, for the enemies you see, how near an unaware one notices the selected unit in its cone (orange; the dashed ring: what it hears behind it) or where an aware one is looking (red). The selected unit's own cone is always shown.`, cui.cones);
   const F = b && floorsOf(b);
   if (F) {
     const f = floorNo(b), name = F[f] && F[f].name ? ` (${F[f].name})` : "";
@@ -1434,7 +1494,7 @@ function raidHead(state, b, phase) {
     <div class="small muted" style="margin-top:0.3rem">${found.length ? `Found: ${esc(found.join(", "))}` : "Nothing found yet."}</div>
     ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<div class="small muted" style="margin-top:0.25rem" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. The cut costs a few health and needs dressing (meds); less likely with Scavenging or Stealth, more in the dark without a light.`)}">Quick search: shows ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}%, loud, ${quickHurtPct(state, b, sel)} chance of cutting yourself</div>` : ""}
     ${(R.hasVehicle ?? R.vehicleZone >= 0) ? `<div class="small warn" style="margin-top:0.25rem" data-tip="Leave from another zone and the vehicle stays here, marked on the map. It can be driven (Drive) and extracts with whoever leaves from the zone it stands at.">${R.vehicleZone >= 0 ? "Your vehicle stands at an extraction zone. Extract there to keep it." : "Your vehicle stands away from the zones: drive it back to one before extracting, or it stays behind."}</div>` : ""}
-    ${b.night ? `<div class="small warn" style="margin-top:0.25rem" data-tip="At night guards see ${STEALTH.NIGHT_SIGHT} tiles (the dead ${STEALTH.NIGHT_ZOMBIE_SIGHT}) and notice you from closer. Your people see ${STEALTH.NIGHT_SIGHT} too, more with a light, and the light is seen from further off: ${Object.values(LIGHTS).map((L) => `a ${L.name} ${L.sight} (+${L.seen})`).join(", ")}; all the way with night vision goggles. A headlamp works from anywhere on them; the others in the off hand. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further (a full search is 1 action either way).">Night raid: short sight both ways. ${players(b).filter((p) => p.light || p.nvg).length} of ${players(b).length} have a light or night vision.</div>` : ""}
+    ${b.night ? nightHtml(b) : ""}
     ${raidKeyLine(state, b)}
   </div>`;
 }
@@ -2015,7 +2075,7 @@ function previewHtml(b, state = null) {
   let s = best === 2 ? "Full cover next to this tile." : best === 1 ? "Half cover next to this tile." : "No cover here.";
   if (v.reach && u) {
     const d = v.reach.dist[h.y * W + h.x];
-    if (isFinite(d) && d > 0) s = `${d <= u.mob ? "Move: 1 action" : "Dash: 2 actions"}. ${s}`;
+    if (isFinite(d) && d > 0) s = `${d <= SIM.moveMob(u) ? `Move: 1 action${u.sneaking ? ", silent (sneaking)" : ", a small chance of a scuff heard nearby"}` : `Dash: 2 actions${u.sneaking ? ", silent (sneaking)" : `, loud: heard ${VISION.DASH_NOISE} tiles off`}`}. ${s}`;
     // A spitter's acid (sim/acid.js) on the way there.
     if (isFinite(d) && d > 0 && !acidAt(b, h.x, h.y) && pathTo(v.reach, h.x, h.y).some(([x, y]) => acidAt(b, x, y)) && u.acidT !== b.turn) s += ` <span class="danger">The way there crosses acid: ${ACID.pool[0]}–${ACID.pool[1]} damage.</span>`;
   }
@@ -2111,12 +2171,106 @@ function throwPreview(b, u) {
 }
 const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
+// The night line (sim/vision.js): how far anyone sees ahead in the dark at this hour, the lights.
+function nightHtml(b) {
+  const lit = players(b).filter((p) => p.light || p.nvg).length;
+  const tip = `Night (${nightWord(b)}): everyone on foot sees down a cone the way they face, ${darkSight(b)} tiles ahead in the dark and only the cells right around them; the dead see ${STEALTH.NIGHT_ZOMBIE_SIGHT} all round. A light is a beam the way its carrier faces: ${Object.values(LIGHTS).map((L) => `a ${L.name} ${L.round ? `a pool ${L.pool} all round` : `${L.sight} ahead`} (seen +${L.seen})`).join(", ")}; whoever carries one is seen from far off by anyone facing it. Night vision: the day's sight down the cone. Guards notice you from closer, and only in their own cone (behind them they hear you; sneaking, not at all). Soldiers carry military flashlights, other people now and then a flashlight. A quick rummage without a light is heard ${SEARCH.quick.dark} tiles further.`;
+  return `<div class="small warn" style="margin-top:0.25rem" data-tip="${esc(tip)}">Night, ${esc(nightWord(b))}: ${darkSight(b)} tiles ahead in the dark, more down a light's beam. ${lit} of ${players(b).length} have a light or night vision.</div>`;
+}
+
+// ---------- view cones (sim/vision.js) ----------
+// How far a unit sees from (x, y) (sim/combat.js sightRange, read off this battle's own size).
+const hz = (b, x, y) => (x >= 0 && y >= 0 && x < b.w && y < b.h && b.cells[y * b.w + x] ? heightAt(b, x, y) : 0);
+const sightAt = (b, o, x = o.x, y = o.y) => o.sight + HEIGHT.SIGHT * hz(b, x, y) + (o.optic || 0) + (o.vsight || 0);
+// The way from the middle of (x, y) toward the mouse at (px, py), in map radians (null when the mouse is on the
+// tile's own middle): the ground's projection turned back.
+function mouseAngle(b, x, y, px, py) {
+  const z = hz(b, x, y) * LV + liftOf(b);
+  const [X0, Y0] = project(x + 0.5, y + 0.5, z), [X1, Y1] = project(x + 1.5, y + 0.5, z), [X2, Y2] = project(x + 0.5, y + 1.5, z);
+  const ax = X1 - X0, ay = Y1 - Y0, bx = X2 - X0, by = Y2 - Y0, mx = px - X0, my = py - Y0;
+  const det = ax * by - bx * ay;
+  if (!det) return null;
+  const dx = (mx * by - bx * my) / det, dy = (ax * my - mx * ay) / det;
+  return Math.hypot(dx, dy) < 0.45 ? null : Math.atan2(dy, dx);
+}
+// A cone on the ground: its wedges (sim/vision.js viewWedges) from the middle of (x, y), and the ring all round.
+function drawCone(b, x, y, view, fill, stroke, dashed = false) {
+  const z = hz(b, x, y) * LV + liftOf(b) + 1, cx = x + 0.5, cy = y + 0.5;
+  ctx.save();
+  ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 1.5;
+  if (dashed) ctx.setLineDash([5, 4]);
+  const shapes = view.round ? [{ r: view.near, half: Math.PI }] : view.wedges;
+  for (const w of shapes) {
+    if (!(w.r > 0)) continue;
+    ctx.beginPath();
+    const full = w.half >= Math.PI - 1e-6, n = Math.max(6, Math.ceil(w.half * 2 * w.r / 0.5));
+    if (!full) { const [X, Y] = project(cx, cy, z); ctx.moveTo(X, Y); }
+    for (let i = 0; i <= n; i++) {
+      const a = view.ang - w.half + (2 * w.half * i) / n;
+      const [X, Y] = project(cx + Math.cos(a) * w.r, cy + Math.sin(a) * w.r, z);
+      if (full && i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+    }
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
+  if (!view.round && view.near > 0) {
+    ctx.beginPath();
+    for (let i = 0; i <= 24; i++) { const a = (i / 24) * Math.PI * 2, [X, Y] = project(cx + Math.cos(a) * view.near, cy + Math.sin(a) * view.near, z); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+// What a unit's cone shows: one of yours, what they watch (and see at night); an enemy you see, unaware: how near it
+// notices the selected one in its cone (and hears them out of it, dashed); aware: what it watches.
+function coneOf(b, t, sel) {
+  const sight = (o) => sightAt(b, o);
+  if (t.side !== "player" && !t.aware && sel) {
+    const near = (o) => noticeRange(b, o, sel);
+    const v = viewWedges(b, t, sight, near);
+    return { view: v, hear: !v.round && hasFront(t) ? earshot(t, sel, near(t)) : 0 };
+  }
+  return { view: viewWedges(b, t, sight), hear: 0 };
+}
+function drawCones(b, v) {
+  const u = v.u, sel = u && u.side === "player" ? u : null;
+  const shown = (t) => onFloor(b, t) && !t.dead && !t.down && !t.left && !t.fled && !t.off && t.x >= 0 && t.y >= 0 && t.x < b.w && t.y < b.h;
+  if (cui.cones) {
+    for (const t of b.units) {
+      if (!shown(t) || (t.side !== "player" && !v.seen.has(t.id)) || t === u) continue;
+      const c = coneOf(b, t, sel);
+      if (t.side === "player") drawCone(b, t.x, t.y, c.view, "rgba(110,170,255,0.08)", "rgba(140,190,255,0.45)");
+      else {
+        const warm = !t.aware;
+        drawCone(b, t.x, t.y, c.view, warm ? "rgba(255,190,80,0.12)" : "rgba(255,90,80,0.1)", warm ? "rgba(255,200,100,0.7)" : "rgba(255,110,100,0.6)");
+        if (c.hear > 0) drawCone(b, t.x, t.y, { round: true, near: c.hear, ang: 0, wedges: [] }, "rgba(255,190,80,0.04)", "rgba(255,200,100,0.45)", true);
+      }
+    }
+  }
+  if (!u || !shown(u) || u.side !== "player") return;
+  // The selected one: always, faintly; picking a way (a move's second click, Face, Overwatch): where the mouse points.
+  const h = cui.hover, fp = cui.mode === "facemove" ? cui.facePick : null;
+  const picking = (fp && fp.uid === u.id) || ((cui.mode === "face" || cui.mode === "overwatch") && u.ap > 0);
+  if (picking && h && h.px != null) {
+    const at = fp || u, ang = mouseAngle(b, at.x, at.y, h.px, h.py);
+    const ghost = { ...u, x: at.x, y: at.y };
+    if (ang != null) setFacing(ghost, ang);
+    else if (fp) { const path = v.reach ? pathTo(v.reach, fp.x, fp.y) : []; const p = path[path.length - 1], q = path.length > 1 ? path[path.length - 2] : [u.x, u.y]; if (p && q) setFacing(ghost, Math.atan2(p[1] - q[1], p[0] - q[0])); }
+    const view = viewWedges(b, ghost, (o) => sightAt(b, o, at.x, at.y));
+    if (cui.mode === "overwatch" && !view.round) view.wedges = [{ r: Math.min(sightAt(b, u), (WEAPONS[u.weapon] ? (WEAPONS[u.weapon].opt || 8) + 8 : 16)), half: VISION.HALF }];
+    drawCone(b, at.x, at.y, view, "rgba(140,200,255,0.16)", "rgba(170,215,255,0.95)");
+    return;
+  }
+  if (hasFront(u)) drawCone(b, u.x, u.y, viewWedges(b, u, (o) => sightAt(b, o)), "rgba(140,200,255,0.06)", "rgba(170,215,255,0.5)");
+}
+
 // The isometric view (ui/isoview.js) with what it needs from here.
 function drawIsoView(state, b, now, cw, ch) {
   const v = view(b);
   const plan = retreatAskOpen(b) ? askPlan(b) : null;
+  const fp = cui.mode === "facemove" && cui.facePick && v.u && cui.facePick.uid === v.u.id ? cui.facePick : null; // a move's tile picked: its path stays drawn while the way to face is picked
   drawIso(ctx, cw, ch, state, b, now, {
-    v, u: v.u, sel: cui.sel, mode: cui.mode, hover: cui.hover, salt: cui.salt,
+    known: v.known, allKnown: ownGround(b), // the fog of war indoors (ui/isoview.js)
+    v, u: v.u, sel: cui.sel, mode: fp ? "move" : cui.mode, hover: fp ? { x: fp.x, y: fp.y } : cui.hover, salt: cui.salt,
     animPos: (t, n) => { const [x, y] = animTile(b, t, n); return [x + 0.5, y + 0.5]; },
     fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return Math.max(0, n - cui.anim.get(f.seq)); },
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble: noBubble, // the hover card is ui/battlehud.js's
@@ -2125,6 +2279,7 @@ function drawIsoView(state, b, now, cw, ch) {
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
   });
+  if (!b.over && b.phase !== "deploy") drawCones(b, v); // sim/vision.js: the view cones (the selected one's, the toggle's, the way being picked)
   // Suppressing fire's cone, a thrown spear's reach: ground diamonds over the scene (isoview.js project).
   if (v.u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) {
     const band = aimArea(b, v.u, v.vis, cui.hover, cui.mode);

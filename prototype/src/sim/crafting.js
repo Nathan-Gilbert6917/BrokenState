@@ -87,6 +87,7 @@ export const CRAFTS = {
   // Lights (lights.js): a torch from firewood anywhere, a headlamp and a lantern at the bench, a spotlight in a workshop.
   torch:       { gear: "torch",       in: { wood: 1, scrap: 1 },  hours: 1,  skill: "mechanics", min: 0, field: true },
   headlamp:    { gear: "headlamp",    in: { scrap: 1, parts: 1 }, hours: 5,  skill: "mechanics", min: 3 },
+  windlight:   { gear: "windlight",   in: { scrap: 2, parts: 1 }, hours: 4,  skill: "mechanics", min: 2 }, // a dynamo from a motor out of the scrap
   lantern:     { gear: "lantern",     in: { scrap: 3, parts: 1, fuel: 1 }, hours: 6, skill: "mechanics", min: 2 },
   spotlight:   { gear: "spotlight",   in: { scrap: 4, parts: 3 }, hours: 12, skill: "mechanics", min: 5, needs: "workshop" },
   suppressor:  { gear: "suppressor",  in: { scrap: 4, parts: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" },

@@ -83,6 +83,7 @@ export const KEYMAP = [
   { id: "bview.zoomOut", label: "Zoom out", group: "Battle view", ctx: "battle", keys: ["Minus", "NumpadSubtract"] },
   { id: "bview.center", label: "Center on the selected unit", group: "Battle view", ctx: "battle", keys: ["Home"] }, // V before (V is Melee now)
   { id: "bview.roofs", label: "Roofs on / off", group: "Battle view", ctx: "battle", keys: ["KeyB"] },
+  { id: "bview.cones", label: "View cones on / off (your people and the enemies you see)", group: "Battle view", ctx: "battle", keys: ["Shift+KeyB"] },
   { id: "bview.floorUp", label: "Show the floor above", group: "Battle view", ctx: "battle", keys: ["PageUp"] },
   { id: "bview.floorDown", label: "Show the floor below", group: "Battle view", ctx: "battle", keys: ["PageDown"] },
   { id: "battle.cancel", label: "Cancel the current action, close a question", group: "Battle", ctx: "battle", keys: ["Escape"], fixed: true },
@@ -117,6 +118,7 @@ export const KEYMAP = [
   ...[["firemode", "Fire mode: single, burst, auto (free)", "Shift+KeyF"], ["unjam", "Clear a jam (Unjam)", "Shift+KeyJ"], ["suppress", "Suppressing fire (pick where)", "Shift+KeyO"],
     ["throwspear", "Throw the spear", "Shift+KeyG"], ["pickspear", "Pick up your thrown spear", "Shift+KeyP"], ["ammocycle", "Reload: pick the next kind of round", "Shift+KeyI"],
     ["visor", "Raise or lower the visor (free)", "Shift+KeyY"],
+    ["face", "Face: pick the way to face (free)", "Shift+KeyW"], ["sneak", "Sneak on / off (free)", "Shift+KeyZ"],
     ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 

@@ -21,7 +21,7 @@
 // tile it hits (raised floors, walls and roofs included) or the unit sprite under it.
 import { PAL as COL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
-import { CELL, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
+import { CELL, active, coverSides, evacAt, barredCell, moveMob } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
@@ -162,8 +162,19 @@ function sceneFor(b) {
     for (const j of cells) { const c = b.cells[j]; if (c.t === 2 || c.k === "loft") two = true; if (!WALLISH.has(c.k)) inner++; }
     blds.push({ id, cells, top: two ? WALL2 : WALL1, two, inner, mat: Math.floor(hash3(i, b.w, 7) * 4) });
   }
+  // The shell: a building's cells on its outside edge (next to a cell of no building or the map's edge). Seen from the
+  // street, so drawn even where nobody has looked inside (the interior's fog of war: drawIso).
+  const ext = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (comp[i] < 0) continue;
+    const x = i % b.w, y = (i / b.w) | 0;
+    for (let dy = -1; dy <= 1 && !ext[i]; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || comp[ny * b.w + nx] !== comp[i]) { ext[i] = 1; break; }
+    }
+  }
   // Single wall cells (no floor: a raid's locked doors in the open) stand alone.
-  sceneCache = { b, key, comp, blds, sig, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
+  sceneCache = { b, key, comp, blds, ext, sig, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
   iso.builds.scene++;
   return sceneCache;
 }
@@ -1333,6 +1344,10 @@ function tag(ctx, text, x, y, col, size) {
   ctx.fillText(text, x, y - h * 0.28);
 }
 
+// Someone sneaking (sim/vision.js u.sneaking): drawn crouched (squashed and leaning), darker and a little see-through,
+// on a broken violet ring.
+export const SNEAK_LOOK = { squash: 0.8, alpha: 0.82, filter: "brightness(0.62) saturate(0.55)", ring: "#a98ce0" };
+
 // Draw the battle. H: what ui/combat.js knows (the cached view, the selected unit, the mode, the hover, helpers).
 export function drawIso(ctx, cw, ch, state, b, now, H) {
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
@@ -1348,12 +1363,18 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   ctx.fillStyle = fogCss(fog);
   ctx.fillRect(0, 0, cw, ch);
 
-  // Buildings cut away: one of your people inside, an enemy you see inside, the mouse inside, or roofs off.
+  // Buildings cut away (the user's request 2026-10-12): only the one the selected survivor is in; from outside a
+  // building nothing in it shows, the roof stays on (a click on it still picks the cell under it: moving in works as
+  // before). Roofs off cuts every one away. Placing defenders (the deploy step), your own base and a battle that is
+  // over keep the old rule: one of your people inside, an enemy you see inside, the mouse inside.
   const cut = new Set();
   const cutAt = (x, y) => { const bid = scene.comp[y * b.w + x]; if (bid >= 0) cut.add(bid); };
   if (!iso.roofs) scene.blds.forEach((B) => cut.add(B.id));
-  for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && (p.side === "player" || v.seen.has(p.id))) cutAt(p.x, p.y);
-  if (H.hover) cutAt(H.hover.x, H.hover.y);
+  const open = !!H.allKnown || b.over || b.phase === "deploy";
+  if (open) {
+    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && (p.side === "player" || v.seen.has(p.id))) cutAt(p.x, p.y);
+    if (H.hover) cutAt(H.hover.x, H.hover.y);
+  } else if (u && u.side === "player" && !u.dead && !u.left && !u.off && onFloor(b, u) && u.x >= 0) cutAt(u.x, u.y);
   const peeks = (b.peeks || []).filter((p) => p.turn === b.turn); // a peek through a door (sim/buildingmaps.js) lifts the roof too
   for (const p of peeks) cutAt(p.x, p.y);
   // A building's own map (sim/buildingmaps.js): the walls are lowered around your people, the enemies you see and the
@@ -1368,6 +1389,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const looks = looksFor(b, scene, cut, "draw", focus);
   const seenB = new Set(); // buildings any of whose cells your people see: their roof is not fogged
   for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { seenB.add(B.id); break; }
+  // Inside a building (the fog of war indoors, the user's request 2026-10-12): you see the rooms your people see; a
+  // cell nobody has seen yet (H.known: ui/combat.js, what your people have ever seen on this floor) is dark and empty
+  // (its furniture, containers and room name not drawn; the building's shell is seen from outside); a cell seen
+  // before but not now is greyed under the fog, with what was there when it was last seen.
+  const known = !open && H.known ? H.known : null;
+  const unknownCell = (i) => !!known && scene.comp[i] >= 0 && !v.vis[i] && !known.cells[i] && !scene.ext[i];
 
   // The ground and the fog.
   const lift = liftOf(b), F = floorsOf(b); // an upper floor of a building with storeys: the footprint raised `lift`
@@ -1414,6 +1441,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.drawImage(fg.cv, gx, gy - (fg.oy || 0) * S, g.gw * S, g.gh * S);
   }
 
+  if (known) fillCells(ctx, b, unknownCell, "rgba(4,5,9,0.78)"); // never seen inside: dark (drawn on the floor; nothing stands there)
   // Highlights on the ground: the floodlit area, the evac strip, a raid's zones, the deploy cells, the move range.
   const N = b.w * b.h;
   // Seen only through a peek this turn (sim/buildingmaps.js): a warm tint and a dashed edge.
@@ -1449,7 +1477,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   let bands = null;
   if (v.reach && H.mode === "move" && u) {
     bands = new Uint8Array(N);
-    for (let i = 0; i < N; i++) { const d = v.reach.dist[i]; bands[i] = isFinite(d) ? (d <= u.mob ? 1 : 2) : 0; }
+    for (let i = 0; i < N; i++) { const d = v.reach.dist[i]; bands[i] = isFinite(d) ? (d <= moveMob(u) ? 1 : 2) : 0; }
     bands[u.y * b.w + u.x] = 1;
     fillCells(ctx, b, (i) => bands[i] === 1, "rgba(80,150,255,0.24)", false);
     fillCells(ctx, b, (i) => bands[i] === 2, "rgba(255,200,60,0.16)", false);
@@ -1594,7 +1622,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         const mass = faces ? massSprite(scene.comp[i] >= 0 ? scene.blds[scene.comp[i]].mat : 0, lift, faces, fog) : null;
         if (mass) ctx.drawImage(mass.cv, Math.round(sx + mass.ox * S), Math.round(sy0 + mass.oy * S), Math.ceil(mass.w * S), Math.ceil(mass.h * S));
       }
-      if (L) {
+      if (L && !unknownCell(i)) {
         const spr = sprOf(L, fog);
         const up = L.o.raise || 0; // furniture on an upper floor: the floor's slab under it, the piece raised
         if (up) {
@@ -1616,7 +1644,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
-    for (const p of piles.get(d) || []) drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); // ui/ground.js
+    for (const p of piles.get(d) || []) if (!unknownCell(p.y * b.w + p.x)) drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); // ui/ground.js
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) drawUnitIso(ctx, state, b, s, H, now);
@@ -1738,8 +1766,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // A raid: names on the areas, a marker on every container.
   if (b.raid) {
     ctx.textAlign = "center";
+    const roomKnown = (a) => {
+      const bid = scene.comp[(a.y0 + 1) * b.w + a.x0 + 1];
+      if (bid >= 0 && !cut.has(bid)) return false;
+      for (let yy = a.y0 + 1; yy < a.y0 + a.h - 1; yy++) for (let xx = a.x0 + 1; xx < a.x0 + a.w - 1; xx++) { const j = yy * b.w + xx; if (j >= 0 && j < b.w * b.h && (known.cells[j] || v.vis[j]) && !WALLISH.has(b.cells[j].k)) return true; } // its floor, not the walls it shares
+      return false;
+    };
     for (const a of b.raid.areas) {
       if (a.noLabel || !onFloor(b, a)) continue; // halls and corridors (sim/buildingmaps.js); rooms of other floors
+      if (!a.outdoor && known && !roomKnown(a)) continue; // a room nobody has seen into (or a roofed building's): not named
       // A room of a building whose roof is off: its name low over its floor; else over the roof (no roof below the
       // top floor of a building with storeys: low).
       const ai = (a.y0 + 1) * b.w + a.x0 + 1, bid = a.outdoor ? -1 : scene.comp[ai];
@@ -1747,8 +1782,19 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const [X, Y] = project(a.x0 + a.w / 2, a.y0 + a.h / 2, (a.outdoor ? 6 : low ? (a.up ? LV : 0) + 14 : (scene.blds[bid] ? scene.blds[bid].top : WALL1) + 12) + (a.outdoor ? 0 : liftAt(b, ai)));
       tag(ctx, a.locked && !(b.raid.doors || []).some((d) => d.area === a.id && d.lock.open) ? `🔒 ${a.name}` : a.name, X, Y, low ? "#c9bfa6" : "#e6d8b8", Math.max(10, (low ? 3.4 : 4.2) * S));
     }
-    for (const c of b.raid.containers) {
-      if (!onFloor(b, c) || c.kind === "ground") continue; // b.raid.containers holds every floor's; piles on the ground: ui/ground.js
+    for (const c0 of b.raid.containers) {
+      if (!onFloor(b, c0) || c0.kind === "ground") continue; // b.raid.containers holds every floor's; piles on the ground: ui/ground.js
+      // Indoors under the fog: a roofed building's or one nobody has seen are not drawn; one seen before but out of
+      // sight now shows as it was then (faded).
+      const ci = c0.y * b.w + c0.x, bid = scene.comp[ci];
+      let c = c0, stale = false;
+      if (known && bid >= 0) {
+        if (!cut.has(bid)) continue;
+        let now = false;
+        for (let yy = c0.y; yy < c0.y + (c0.h || 1) && !now; yy++) for (let xx = c0.x; xx < c0.x + (c0.w || 1); xx++) if (v.vis[yy * b.w + xx]) { now = true; break; }
+        if (!now) { const snap = known.boxes && known.boxes.get(c0.id); if (!snap) continue; c = { ...c0, ...snap }; stale = true; }
+      }
+      if (stale) ctx.globalAlpha = 0.5;
       const L = looks[c.y * b.w + c.x], top = (L ? L.top : 4) + liftAt(b, c.y * b.w + c.x);
       const [X, Y] = project(c.x + (c.w || 1) / 2, c.y + (c.h || 1) / 2, top + 4); // over the middle of a car's cells
       const s = Math.max(7, 3.2 * S);
@@ -1759,6 +1805,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.fillStyle = c.searched ? "#9aa0a8" : "#1a1a1a";
       ctx.font = `700 ${Math.round(s * 1.5)}px Segoe UI, sans-serif`;
       ctx.fillText(c.searched ? "✓" : c.lock && !c.lock.open ? "🔒" : c.quick ? "…" : "?", X, Y - s * 0.45);
+      ctx.globalAlpha = 1;
     }
     if (!floorNo(b)) for (const z of b.raid.zones) { // ground floor only (see the zone highlights above)
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);
@@ -1812,7 +1859,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   if (h && v.reach && u && H.mode === "move" && !H.unitAt(h.x, h.y) && isFinite(v.reach.dist[h.y * b.w + h.x])) {
     const path = H.pathTo(v.reach, h.x, h.y);
-    ctx.strokeStyle = path.some(([x, y]) => acidAt(b, x, y)) ? "#9ad63a" : v.reach.dist[h.y * b.w + h.x] <= u.mob ? "#8fc1ff" : "#ffd166"; // green: through a spitter's acid (sim/acid.js)
+    ctx.strokeStyle = path.some(([x, y]) => acidAt(b, x, y)) ? "#9ad63a" : v.reach.dist[h.y * b.w + h.x] <= moveMob(u) ? "#8fc1ff" : "#ffd166"; // green: through a spitter's acid (sim/acid.js)
     ctx.lineWidth = Math.max(2, 0.8 * S);
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
@@ -2007,7 +2054,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   }
   const cv = unitCanvas(state, b, t, H.salt);
   if (!cv) return;
-  const facing = viewFacing(unitFacing(b, t), FR.r);
+  const facing = sideFacing(b, t, FR.r);
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -2015,11 +2062,27 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   if (facing < 0) ctx.scale(-1, 1);
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
   if (!silhouette && spent) ctx.globalAlpha *= 0.65;
+  // Sneaking (sim/vision.js): crouched low and leaning in, in shadow.
+  if (t.sneaking && !silhouette) {
+    ctx.transform(1, 0, -0.12, SNEAK_LOOK.squash, 0, 0);
+    ctx.globalAlpha *= SNEAK_LOOK.alpha;
+    if ("filter" in ctx) ctx.filter = SNEAK_LOOK.filter;
+  }
   ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
 }
 // The sprite's facing on screen: the view turned a half (rotation 1 or 2) shows the world mirrored.
 const viewFacing = (facing, r) => (r === 1 || r === 2 ? -facing : facing);
+// A person's facing (sim/vision.js u.face: the way picked with a move, Face or a shot) as left or right on screen in
+// view rotation r; null when it points straight up or down the screen (the last move's way is kept then).
+function screenSide(b, t, r) {
+  const f = t.face;
+  if (!f || (!f[0] && !f[1]) || t.kind !== "human") return null;
+  const [u0, v0] = ptView(t.x + 0.5, t.y + 0.5, r, b.w, b.h), [u1, v1] = ptView(t.x + 0.5 + f[0], t.y + 0.5 + f[1], r, b.w, b.h);
+  const d = (u1 - v1) - (u0 - v0);
+  return Math.abs(d) < 0.05 ? null : d > 0 ? 1 : -1;
+}
+const sideFacing = (b, t, r) => screenSide(b, t, r) ?? viewFacing(unitFacing(b, t), r);
 const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1);
 // Where a unit's gun muzzle is on screen, from its feet, in view rotation r at zoom S: the muzzle pixel of the gun
 // in its sprite's hand (ui/sprites.js muzzleOf; ui/gunpaint.js paintMini: past a fitted suppressor), the sprite drawn
@@ -2027,7 +2090,7 @@ const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype ==
 export function muzzlePoint(state, b, t, salt, r, S = 1) {
   const mz = muzzleOf(unitCanvas(state, b, t, salt));
   if (!mz) return null;
-  const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26), f = viewFacing(unitFacing(b, t), r);
+  const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26), f = sideFacing(b, t, r);
   return [f * ((mz.mx + 0.5) / 22 - 0.5) * w, -hgt * 0.94 + ((mz.my + 0.5) / 26) * hgt];
 }
 // A body on the ground (sim/sleepers.js), laid flat like the fallen.
@@ -2063,9 +2126,11 @@ function drawUnitIso(ctx, state, b, s, H, now) {
     ctx.fillStyle = "rgba(0,0,0,0.38)";
     ctx.beginPath(); ctx.ellipse(X + 1.5 * S, Y + 0.5 * S, 10 * S, 4.6 * S, 0, 0, Math.PI * 2); ctx.fill();
     const sel = t.id === H.sel;
-    ctx.strokeStyle = sel ? "#e0a84f" : ring;
+    ctx.strokeStyle = sel ? "#e0a84f" : t.sneaking ? SNEAK_LOOK.ring : ring;
     ctx.lineWidth = sel ? 3 : 2;
+    if (t.sneaking) ctx.setLineDash([4, 3]); // sneaking (sim/vision.js): a broken ring
     ctx.beginPath(); ctx.ellipse(X, Y, 11 * S, 5.2 * S, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
     if (sel) { ctx.strokeStyle = "rgba(224,168,79,0.45)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X, Y, 14 * S, 6.8 * S, 0, 0, Math.PI * 2); ctx.stroke(); }
   }
   drawBody(ctx, state, b, s, H);

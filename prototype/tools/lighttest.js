@@ -4,6 +4,7 @@
 // puts them back, the weight counts in the estimate), night battles (sight and how far off the light is noticed, by
 // light), surveys at night (the best light carried), and where they come from (finds, crafting).
 // Usage: node tools/lighttest.js [seed]
+import { darkSight } from "../src/sim/vision.js"; // night sight by the hour (the user's request 2026-10-12)
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -108,17 +109,20 @@ console.log("Night battles");
     const p = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: tile, mission: "scavenge", stance: "normal", supplies: { food: 6, water: 6 } }).party;
     p.path = [tile]; p.idx = 0; p.phase = "engaged";
     const b = createBattle(st, { mode: "raid", tile, partyId: p.id, canRetreat: true, ambush: null, handler: "lt", enemy: { kind: "raiders", count: 2, power: 3 }, raid: { heat0: 0 }, context: {} });
+    for (let y = 3; y <= 7; y++) for (let x = 8; x <= 14; x++) b.cells[y * b.w + x].k = "open"; // no cover between them (vision.js: behind cover they are only heard)
+    b.losCache.fill(0);
     return { b, me: b.units.find((u) => u.sid === crew[0].id), guard: b.units.find((u) => u.side === "enemy") };
   };
   const dark = raid(null);
-  const front = (g) => ({ ...g, face: [1, 0], x: 10, y: 5 });
+  const front = (g) => ({ ...g, face: [1, 0], x: 10, y: 5, light: null }); // (a guard's own flashlight: vision.js enemyLight, visiontest.js)
   const at = (u) => ({ ...u, x: 12, y: 5, sneak: 0, ghost: false });
   const r0 = detectRange(dark.b, front(dark.guard), at(dark.me));
-  check(dark.b.night && dark.me.sight === STEALTH.NIGHT_SIGHT && !dark.me.light, `in the dark: sees ${dark.me.sight}, noticed from ${r0}`);
+  check(dark.b.night && dark.me.sight === darkSight(dark.b) && !dark.me.light, `in the dark: sees ${dark.me.sight} (22:00), noticed from ${r0}`);
   for (const k of Object.keys(LIGHTS)) {
     const r = raid(k);
     const rr = detectRange(r.b, front(r.guard), at(r.me));
-    check(r.me.light === k && r.me.sight === Math.min(r.me.daySight, LIGHTS[k].sight) && rr === r0 + LIGHTS[k].seen, `${k}: sees ${r.me.sight}, noticed from ${rr} (+${LIGHTS[k].seen})`);
+    const reach = Math.max(darkSight(r.b), LIGHTS[k].round ? LIGHTS[k].pool : LIGHTS[k].sight); // vision.js: a beam ahead, a pool all round, the dark's own
+    check(r.me.light === k && r.me.sight === Math.min(r.me.daySight, reach) && rr === r0 + LIGHTS[k].seen, `${k}: sees ${r.me.sight}, noticed from ${rr} (+${LIGHTS[k].seen})`);
   }
 }
 
@@ -137,7 +141,8 @@ console.log("Where they come from");
 {
   const found = new Set(Object.values(LIGHT_FINDS).flatMap((f) => Object.keys(f.items)));
   check(["headlamp", "lantern", "spotlight"].every((k) => found.has(k)), "headlamps, lanterns and spotlights are found");
-  check(Object.keys(LIGHTS).every((k) => CRAFTS[k]), "every light can be made");
+  check(Object.keys(LIGHTS).filter((k) => k !== "tacflash").every((k) => CRAFTS[k]), "every light can be made (but the military flashlight: issue kit, found)");
+  check(found.has("tacflash") && found.has("windlight"), "military and wind-up flashlights are found");
   check(CRAFTS.torch.in.wood >= 1 && CRAFTS.torch.field, "a torch from firewood, anywhere");
 }
 

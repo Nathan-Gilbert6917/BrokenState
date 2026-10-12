@@ -26,12 +26,14 @@
 //     (search.js; a full search is 1 action either way).
 import { GEAR } from "./data.js";
 import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunmods.js"; // gun attachments: suppressors, brakes
-import { isNight, survivorById, baseById } from "./world.js";
+import { isNight, survivorById, baseById, hourOfDay } from "./world.js";
+import { VISION, darkSight, nightReach, faceToward, hasFront, inArc, enemyLight, faceAng, setFacing } from "./vision.js"; // facing, view cones, sneaking
+import { hash01 } from "./skills.js";
 import { carriedSpots } from "./inventory.js"; // everything carried, the rig's pouches too
 import { helmetNvg } from "./helmets.js"; // night vision goggles on a helmet
 import { hearMult, hearSetup } from "./hearing.js"; // the ears: what a guard hears behind them
 import {
-  CELL, WEAPONS, active, adjacent, cornerBlocked, meleeReach, unitAt, reachable, pathTo, los, coverSides, meleeOdds, zoneAt,
+  CELL, WEAPONS, active, adjacent, cornerBlocked, meleeReach, unitAt, reachable, pathTo, los, coverSides, coverAgainst, meleeOdds, zoneAt,
   say, fx, moveAlong, alertPod, notice, distField, damage, siegeTarget, bash, bossThrowTarget,
 } from "./combat.js";
 import { landEffect, blastSpot, throwBlind, throwLanding, flashSpot, doorToss, BLAST, FRAG, FIRE } from "./throwables.js";
@@ -129,13 +131,18 @@ function takeThrowable(state, b, u, key) {
 // ---------- battle setup (createBattle / createRaid) ----------
 export function stealthSetup(state, b) {
   hearSetup(state, b); // hearing.js: visors fog up in freezing or wet weather
-  // Night counts in raids and in base battles (a break-in, a raid at the walls: deploy.js, where the floodlights light
-  // the dark); other battles keep daylight sight as before.
+  // Night counts in every battle that starts between 20:00 and 06:00 (a base's battle by its context: a break-in, a
+  // raid at the walls, deploy.js, where the floodlights light the dark). b.hour: the hour it started, which sets how
+  // far anyone sees ahead in the dark (vision.js DARK); a night forced by the context counts as the dead of night.
   const ctxNight = b.setup && b.setup.context ? b.setup.context.night : undefined;
-  b.night = !!b.raid ? isNight(state) : b.setup && b.setup.layout === "baseDefence" ? !!(ctxNight ?? isNight(state)) : false;
+  const underground = !!(b.setup && (b.setup.layout === "hivechamber" || b.setup.layout === "hivecore")); // a hive's caves: their own dark (hivecrawl.js caveDark), whatever the hour
+  b.night = !!b.raid ? isNight(state) : underground ? false : !!(ctxNight ?? isNight(state));
+  b.hour = b.night && !isNight(state) ? 0 : hourOfDay(state);
   b.lures = b.lures || [];
   const mine = b.units.filter((u) => u.side === "player");
   const cx = mine.reduce((a, u) => a + u.x, 0) / Math.max(1, mine.length), cy = mine.reduce((a, u) => a + u.y, 0) / Math.max(1, mine.length);
+  const theirs = b.units.filter((u) => u.side !== "player" && !u.off);
+  const ex = theirs.length ? theirs.reduce((a, u) => a + u.x, 0) / theirs.length : b.w / 2, ey = theirs.length ? theirs.reduce((a, u) => a + u.y, 0) / theirs.length : b.h / 2;
   for (const u of b.units) {
     if (u.side === "player") {
       const s = survivorById(state, u.sid);
@@ -146,10 +153,17 @@ export function stealthSetup(state, b) {
       u.str = (t.includes("tough") ? 5 : 0) - (t.includes("frail") ? 5 : 0) + (t.includes("brave") ? 5 : 0) - (t.includes("coward") ? 5 : 0);
       setSuppressor(u, s);
       u.daySight = u.sight; // refitSenses
-      if (b.night && !u.nvg) u.sight = Math.min(u.sight, nightSight(u));
+      if (b.night && !u.nvg) u.sight = Math.min(u.sight, nightSight(b, u));
       u.optic = battleOptic(s, b.night); // optics.js: binoculars and scopes see further (by day; a thermal at night too)
+      if (!u.face) faceToward(u, Math.round(ex), Math.round(ey)); // vision.js: toward the enemy (the map's middle when none is placed)
     } else {
-      if (!u.face) u.face = [sign(Math.round(cx - u.x)), sign(Math.round(cy - u.y))];
+      // Toward your people; a raid's guards (unaware, at their posts) any way at all (their own dice).
+      if (!u.face) {
+        if (b.raid && u.kind === "human" && !u.aware) setFacing(u, Math.floor(hash01("post", u.id, b.hour, u.x, u.y) * 8) * Math.PI / 4);
+        else faceToward(u, Math.round(cx), Math.round(cy));
+      }
+      if (u.daySight == null) u.daySight = u.sight;
+      enemyLight(b, u); // vision.js: a soldier's military flashlight, a raider's flashlight one time in three
       nightEyes(b, u);
     }
   }
@@ -159,26 +173,45 @@ export function stealthSetup(state, b) {
 function setLight(u, s) {
   u.light = lightOf(s);
 }
-const nightSight = (u) => (u.light && LIGHTS[u.light] ? LIGHTS[u.light].sight : STEALTH.NIGHT_SIGHT);
+// How far someone sees at night at most (vision.js: the dark ahead by the hour, a light's beam or pool, night vision).
+const nightSight = (b, u) => nightReach(b, u);
 export const lightSeen = (u) => (u.light && LIGHTS[u.light] ? LIGHTS[u.light].seen : 0);
 function nightEyes(b, u) {
   if (!b.night || u.nightEyes || u.side === "player") return;
   u.nightEyes = true;
-  u.sight = Math.min(u.sight, u.kind === "zombie" ? STEALTH.NIGHT_ZOMBIE_SIGHT : STEALTH.NIGHT_SIGHT);
+  u.sight = Math.min(u.sight, u.kind === "zombie" ? STEALTH.NIGHT_ZOMBIE_SIGHT : Math.max(STEALTH.NIGHT_SIGHT, nightReach(b, u)));
 }
 
 // How close an unaware enemy notices one of your people. perks: Light Step and Ghost (skills.js) count (the
 // enemy-turn check, combat.js detect); a wandering guard's own look around (notice) uses the plain range.
 export function detectRange(b, e, mover, perks = true) {
+  let r = noticeRange(b, e, mover, perks);
+  // A person looks the way they face (vision.js: the view cone, HALF either side): outside it only what they hear
+  // (half the range), and nothing of someone sneaking. The dead have no front. Behind cover facing the guard (full
+  // cover; half cover too for someone sneaking) they are not seen either: heard, or not at all.
+  const near = Math.hypot(e.x - mover.x, e.y - mover.y) < 1.5;
+  const unseen = !near && ((e.kind === "human" && !inArc(e, mover.x, mover.y, VISION.HALF)) || coverAgainst(b, mover.x, mover.y, e.x, e.y).level >= (mover.sneaking ? 1 : 2));
+  if (unseen) r = earshot(e, mover, r);
+  if (perks && mover.ghost) r = Math.min(r, 2);
+  return r;
+}
+// The range in the guard's view cone, in the open (the cone overlay draws it: ui/combat.js).
+export function noticeRange(b, e, mover, perks = true) {
   const range = Math.max(3, 8 - Math.floor(mover.stealth / 4));
   let r = e.kind === "zombie" ? Math.min(range, 5) : range;
   if (perks && mover.sneak) r = Math.max(1, r - mover.sneak);
   if (b.night) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + lightSeen(mover)); // a light is seen from further off
   if (b.night && mover.sparks === b.turn) r += 2; // locks.js: an angle grinder's sparks this turn (SAFE.grind.sparks)
-  // A person looks the way they face: behind them only what they hear (half the range). The dead have no front.
-  if (e.kind === "human" && isBehind(mover, e)) r = Math.max(1, Math.ceil(r * STEALTH.BEHIND_DETECT * hearMult(e))); // hearing.js: deafened by a bang (from a tile only), ear protection
+  // A light the guard carries (vision.js: a soldier's military flashlight): down its beam they see further.
+  if (b.night && e.light && LIGHTS[e.light] && !LIGHTS[e.light].round && inArc(e, mover.x, mover.y, (LIGHTS[e.light].beam || 20) * Math.PI / 180)) r = Math.max(r, Math.min(range, LIGHTS[e.light].sight));
   if (perks && mover.ghost) r = Math.min(r, 2);
   return r;
+}
+// What a guard hears of someone out of its sight r tiles in view would be noticed at: half of it (hearing.js: less
+// deafened or behind ear protection), nothing of someone sneaking.
+export function earshot(e, mover, r) {
+  if (mover.sneaking) return 0;
+  return Math.max(1, Math.ceil(r * STEALTH.BEHIND_DETECT * (e.kind === "human" ? hearMult(e) : 1))); // hearing.js: deafened by a bang (from a tile only), ear protection
 }
 
 // A full search takes 1 action, by day or in the dark (search.js). The dark now shows in the quick rummage instead:
@@ -263,7 +296,7 @@ export function knockOut(b, t, by) {
 function takedown(b, a, t) {
   const rng = b.rng;
   const o = subdueOdds(b, a, t);
-  a.face = [sign(t.x - a.x), sign(t.y - a.y)];
+  faceToward(a, t.x, t.y);
   if (a.xpT) a.xpT.melee++;
   if (o.takedown && rng.chance(o.chance / 100)) {
     say(b, `${a.name} takes ${t.name} down${o.behind ? " from behind" : ""} (${o.chance}%).`, "good");
@@ -490,7 +523,7 @@ function investigate(b, u) {
     if (best < 0 || !isFinite(field[best])) delete u.investigate;
     else if (r.dist[best] > 0) moveAlong(b, u, pathTo(r, best % b.w, (best / b.w) | 0));
     else if (inside && u.kind === "zombie") { const door = siegeTarget(b, u, field); if (door) bash(b, u, door[0], door[1]); }
-    u.face = [sign(inv.x - u.x), sign(inv.y - u.y)];
+    faceToward(u, inv.x, inv.y);
   }
   notice(b, u);
   if (!u.aware) spotBodies(b, u);
@@ -628,7 +661,7 @@ export function refitSenses(b, u, s) {
   const tool = s.gear.tool;
   setLight(u, s);
   u.nvg = !!(tool && (tool.key === "nvg" || tool.key === "thermal")) || unitMods(u).thermal || helmetNvg(s); // helmets.js: goggles on the helmet
-  if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(u)) : u.daySight;
+  if (u.daySight != null) u.sight = b.night && !u.nvg ? Math.min(u.daySight, nightSight(b, u)) : u.daySight;
   u.optic = battleOptic(s, b.night);
   setSuppressor(u, s);
 }

@@ -5,6 +5,7 @@
 // raising the alarm and dragging them away, the deploy step (valid default posts, placing, the gate, floodlights,
 // the attack side and the turned map), the autopilot's rules, determinism, and a 120-day soak without NaN.
 // Usage: node tools/stealthtest.js [seed]
+import { darkSight } from "../src/sim/vision.js"; // night sight by the hour (2026-10-12)
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { foodIn } from "../src/sim/foods.js";
 import { createWorld, tickHour, hub, atBase, makeSurvivor, day, factionById } from "../src/sim/world.js";
@@ -430,7 +431,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   const zn = nite.units.find((u) => u.side === "enemy" && u.kind === "zombie");
   check(!day0.night && nite.night && gd.sight === 13 && gn.sight === STEALTH.NIGHT_SIGHT && zn.sight === STEALTH.NIGHT_ZOMBIE_SIGHT, `enemy sight by day ${gd.sight}, at night ${gn.sight} (the dead ${zn.sight})`);
   const me = (b) => b.units.find((u) => u.side === "player");
-  check(me(nite).sight === STEALTH.NIGHT_SIGHT && me(lit).sight === STEALTH.LIGHT_SIGHT && me(nvg).sight === 13, `your sight at night: ${me(nite).sight}, with a flashlight ${me(lit).sight}, with night vision ${me(nvg).sight}`);
+  check(me(nite).sight === darkSight(nite) && me(lit).sight === STEALTH.LIGHT_SIGHT && me(nvg).sight === 13, `your sight at night: ${me(nite).sight}, with a flashlight ${me(lit).sight}, with night vision ${me(nvg).sight}`);
   const front = { ...gn, face: [1, 0], x: 10, y: 5 };
   const mover = (b) => ({ ...me(b), x: 12, y: 5, sneak: 0, ghost: false });
   const rd = detectRange(day0, { ...front }, mover(day0)), rn = detectRange(nite, front, mover(nite)), rl = detectRange(lit, front, mover(lit));
