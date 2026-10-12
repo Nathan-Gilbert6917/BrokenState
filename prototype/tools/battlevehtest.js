@@ -43,27 +43,27 @@ console.log("The camera follows the next survivor");
 {
   const { st, b } = battles(seed0, ["field-town"])[0];
   draw(st);
-  UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st);
   const mine = b.units.filter((u) => u.side === "player" && u.vol == null && !u.dead && !u.off);
   check(mine.length >= 2 && b.phase === "player", `a field battle in your turn with ${mine.length} of yours`);
   const [a, nx] = [mine.find((u) => u.id === cui.sel) || mine[0], null];
   cui.sel = a.id;
   ISO.iso.target = null;
   a.ap = 0; // out of actions
-  UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st);
   const next = b.units.find((u) => u.id === cui.sel);
   check(next && next.id !== a.id && next.ap > 0, `the turn passes to the next one with actions (${next && next.name})`);
   check(same(ISO.iso.target, aimAt(b, next.x, next.y)), "the camera centers on them");
   // Still actions: no jump.
   ISO.iso.target = null;
-  UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st);
   check(ISO.iso.target === null && cui.sel === next.id, "while the selected one has actions, the camera stays put");
   // A pick by hand (Tab) still only brings an off-screen one into view: unchanged.
   // The enemy's turn: nobody is picked for you and the camera is left alone.
   b.phase = "enemy";
   next.ap = 0;
   ISO.iso.target = null;
-  UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st);
   check(ISO.iso.target === null, "not in the enemy's turn");
   b.phase = "player";
   void nx;
@@ -111,7 +111,7 @@ function vehiclePx(b) {
 {
   const { st, b, p } = fieldWithCar(seed0);
   draw(st);
-  UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st);
   const u = b.units.find((x) => x.id === cui.sel);
   check(!!b.vehicle && !b.raid && !!RL.trunkVehicle(st, b), "a field battle with the team's car on the map has a trunk");
   check(RL.trunkVehicle(st, b) && RL.trunkSpace(st, b) != null, "its room is known (cargo room less what is carried loose)");
@@ -140,7 +140,7 @@ function vehiclePx(b) {
   const html = INV.inventoryModal ? INV.inventoryModal(st, ui) : "";
   check(typeof html === "string" && html.includes(`trunk:${p.id}:list`) && /Vehicle:/.test(html), "the window shows the vehicle's trunk");
   // The panel's Vehicle button (N) opens it too.
-  check(/data-v="vehicle"(?![^>]*disabled)/.test(UI.renderCombatPanel(st)), "the panel has an enabled Vehicle button next to it");
+  check(/data-v="vehicle"(?![^>]*disabled)/.test(UI.renderCombatScreen(st)), "the panel has an enabled Vehicle button next to it");
   cui.lootReq = null;
   UI.combatAction(st, "cb-act", { v: "vehicle" });
   check(cui.lootReq && cui.lootReq.uid === u.id, "N / Vehicle opens it");
@@ -193,7 +193,7 @@ function vehiclePx(b) {
   UI.combatAction(st, "cb-act", { v: "vehicle" });
   msg = RL.raidMove(st, u.id, `trunk:${p.id}:sup:${food0}`, `haul:${u.id}:list`, 1);
   check(!cui.lootReq && /wreck/.test(cui.msg) && !(u.haul.sup[food0] >= 1) && !RL.trunkVehicle(st, b), `a blown-up car is not opened (${cui.msg}; ${msg})`);
-  check(!/data-v="vehicle"/.test(UI.renderCombatPanel(st)), "and has no Vehicle button");
+  check(/data-v="vehicle" disabled data-tip="[^"]*burnt-out wreck/.test(UI.renderCombatScreen(st)), "and its Vehicle button is greyed: a burnt-out wreck");
   b.vehicle.blownUp = false;
   // What is carried loose still comes home in the cargo.
   u.haul.sup[food0] = 3;
@@ -206,7 +206,7 @@ function vehiclePx(b) {
   const { st, b } = fieldWithCar(seed0 + 1, null);
   check(!b.vehicle && !RL.trunkVehicle(st, b), "on foot: no trunk");
   draw(st);
-  check(!/data-v="vehicle"/.test(UI.renderCombatPanel(st)), "and no Vehicle button");
+  check(/data-v="vehicle" disabled data-tip="[^"]*on foot/.test(UI.renderCombatScreen(st)), "and its Vehicle button is greyed: you came on foot");
   st.combat = null;
 }
 {

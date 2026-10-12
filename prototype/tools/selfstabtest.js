@@ -264,15 +264,15 @@ section("The battle panel: the downed one's button, greyed with the reason; the 
   const { st, b, ps } = arena({ carry: [{ where: "pocket", key: "tourniquet" }, { where: "pack", key: "tourniquet" }, null], med: 2 });
   const [a, c] = ps;
   downPlayer(b, a); downPlayer(b, c);
-  UI.renderCombatPanel(st); UI.cui.sel = a.id;
-  const html = UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st); UI.cui.sel = a.id;
+  const html = UI.renderCombatScreen(st);
   check(/data-v="selfStab"(?![^>]*disabled)[^>]*>Tourniquet: stabilize yourself \(45%\)/.test(html), "the downed one's panel: “Tourniquet: stabilize yourself (45%)”");
   check(/can stabilize themselves \(Tourniquet 45%\)/.test(html), "the roster's note: can stabilize themselves");
   check(/they can save themselves/.test(html), "the roster tip says they can save themselves");
   UI.combatAction(st, "cb-act", { v: "selfStab" });
   check(a.selfTry === b.turn, "the button tries it");
   UI.combatAction(st, "cb-sel", { id: String(c.id) }); // picked in the roster
-  const h2 = UI.renderCombatPanel(st);
+  const h2 = UI.renderCombatScreen(st);
   check(/data-v="selfStab" disabled/.test(h2) && /in the pack: out of reach/.test(h2), "one in the pack: the button greyed, with the reason");
   // The sound cue: the fx of the try plays the tourniquet's voice.
   const mem = {};
