@@ -119,8 +119,11 @@ section("Pulled back: badly battered, it drives off with everyone inside");
   check(!b.cells.some((c) => c.car && c.car.mil && c.car.mil.enemy), "its cells are open ground again");
   // The field waits for it while it can still drive off; once it is gone, beating the rest is a win.
   const c0 = raidHumvee(st, raid).condition;
-  for (const u of b.units) if (u.side === "enemy" && !u.dead && !u.fled) { u.dead = true; }
-  enemyTurn(st);
+  // Beat the rest (and any of the dead the noise draws in during that turn: combat.js reinforcements).
+  for (let i = 0; i < 4 && !b.over; i++) {
+    for (const u of b.units) if (u.side === "enemy" && !u.dead && !u.fled) { u.dead = true; }
+    enemyTurn(st);
+  }
   check(b.over && b.result && b.result.outcome === "victory" && b.result.humveeOut && b.result.humveeWear === v.wear, "won: the result says it got away, with the wear it took");
   inBrowser(() => finishCombat(st, b.setup, b.result));
   const hv = f.vehicles.find((x) => x.id === raid.humvee) || (f.vehicles || []).find((x) => x.type === "hummer");
