@@ -427,7 +427,8 @@ export const baseTier = (base) => (isShelter(base) ? 0 : 1);
 // only barer. isCamp is the one test (keep camp checks to it). What it changes from a shelter:
 //   beds       CAMP.beds (bedrolls round the fire)
 //   plots      PLOTS.camp: no building plot, one utility plot; no crop plots (CAMP.plots)
-//   build      CAMP.build: a barricade, a rain catcher, crates or a barrel on its one plot, and the step up
+//   build      CAMP.build: a barricade, a rain catcher, crates or a barrel, a crafting bench, a water boiler, a cook
+//              fire or a drying rack on its one plot, and the step up
 //   step up    camp_up (the camp that is your hub → a shelter) or outpost_up (a camp beside a hub → an outpost);
 //              queued by Establish base / Build outpost, by hand from Construction for a plain camp
 //   materials  its builders make the building materials the step up waits for from scrap in its stores (campMaterialsHour)
@@ -439,7 +440,9 @@ export const CAMP = {
   name: "Camp",
   beds: 6, plots: 0, vision: 1,
   setupHours: 1,     // Set up camp: an hour of work, no materials (the materials come with the step up)
-  build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, camp_up: 1, outpost_up: 1 },
+  // The yard things a camp may build (the most of each; they share its one utility plot). The crafting bench, the
+  // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too.
+  build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1 },
   ruinScrap: 10,     // on the ruins of a burned base: 10 scrap less for the step up (salvage)
   matScrap: 3, matHours: 3, // its builders make building materials for the step up from scrap (= crafting.js buildmat)
 };
@@ -667,10 +670,32 @@ export function runStations(state, base) {
   }
 }
 
+// Where a building may stand at all (BASE-02/03): "" when this kind of base (a camp, a shelter, an outpost camp, an
+// outpost, the main base) takes it, else why not. The one rule for both canBuild (it refuses every one of these, with
+// these words) and the Construction tab (it lists them apart as not buildable here; the rest as ready, or not yet:
+// materials, skills, a free plot, the tier below, a manual).
+export function placeProblem(base, type) {
+  const def = BUILDINGS[type];
+  if (!def) return "Unknown building";
+  if (def.outpostOnly && base.type !== "outpost") return "Outposts only";
+  if (def.hubOnly && base.type !== "hub") return "The main base only (an outpost camp is established instead)";
+  // A shelter (tier 0) builds only a few survival buildings, and the step up into a base; a base never the step.
+  if (def.shelterOnly && !isShelter(base)) return "Shelters only (this is a base already)";
+  if (def.campOnly && !isCamp(base)) return isShelter(base) ? "Camps only (this is a shelter already)" : "Camps only (this is a base already)";
+  if (isCamp(base)) {
+    if (!CAMP.build[type]) return type === "hub_up" ? "Build the camp up into a shelter first" : base.type === "outpost" ? "Available once the camp is an outpost (Establish the outpost)" : SHELTER.build[type] ? "Available once the shelter stands (build the camp up first)" : "Available once it is a base (camp → shelter → base)";
+  } else if (isShelter(base) && !SHELTER.build[type]) return "Not at a shelter: build it up into a base first";
+  if (def.plot && !plotCap(base, def.plot)) return `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[def.plot].toLowerCase()}s`;
+  return "";
+}
+
 export function canBuild(state, base, type) {
   const def = BUILDINGS[type];
   const queued = base.construction.filter((c) => c.type === type && (!c.target || def.from)).length; // a barrel's upgrade is not a new one; a bunkhouse expanded into a barracks is one more barracks
   if (countAll(base, type) + queued >= def.max) return { ok: false, reason: `Limit reached (${def.max})` };
+  // Not at this kind of base (placeProblem): said before anything else it would need.
+  const where = placeProblem(base, type);
+  if (where) return { ok: false, where: true, camp: isCamp(base) || undefined, reason: where };
   if (def.upgradeOnly && type === "canner") return { ok: false, reason: "Fitted to a preserving room where it stands (Construction: the preserving room's Fit a canner)" }; // machines-2
   if (def.upgradeOnly) return { ok: false, reason: `Upgrade a${/^[aeiou]/i.test(BUILDINGS[def.from].name) ? "n" : ""} ${BUILDINGS[def.from].name.toLowerCase()} into one (Construction)` }; // the reloading bench
   if (def.family) {
@@ -680,23 +705,12 @@ export function canBuild(state, base, type) {
     if (have >= def.tier) return { ok: false, reason: "Already built (or a better tier)" };
     if (def.upgrades && !count(base, def.upgrades)) return { ok: false, reason: `Upgrade a ${BUILDINGS[def.upgrades].name.toLowerCase()} first` };
   }
-  if (def.outpostOnly && base.type !== "outpost") return { ok: false, reason: "Outposts only" };
-  if (def.hubOnly && base.type !== "hub") return { ok: false, reason: "The main base only (an outpost camp is established instead)" };
   // A relay where a radio station stands (or is queued) would add nothing: the station's range covers the relay's
   // (radio.js radioNodes counts the base as a station only). A broken station still counts: it is repaired.
   if (type === "relay" && (base.radio || countAll(base, "radio") || base.construction.some((c) => c.type === "radio"))) return { ok: false, reason: "A radio station here already covers more than a relay would" };
-  // A shelter (tier 0) builds only a few survival buildings, and the step up into a base; a base never the step.
-  if (def.shelterOnly && !isShelter(base)) return { ok: false, reason: "Shelters only (this is a base already)" };
-  if (def.campOnly && !isCamp(base)) return { ok: false, reason: isShelter(base) ? "Camps only (this is a shelter already)" : "Camps only (this is a base already)" };
-  if (isCamp(base)) {
-    const cap = CAMP.build[type];
-    if (!cap) return { ok: false, camp: true, reason: type === "hub_up" ? "Build the camp up into a shelter first" : base.type === "outpost" ? "Available once the camp is an outpost (Establish the outpost)" : SHELTER.build[type] ? "Available once the shelter stands (build the camp up first)" : "Available once it is a base (camp → shelter → base)" };
-    if (countAll(base, type) + queued >= cap) return { ok: false, reason: `A camp has room for ${cap}` };
-  } else if (isShelter(base)) {
-    const cap = SHELTER.build[type];
-    if (!cap) return { ok: false, reason: "Not at a shelter: build it up into a base first" };
-    if (countAll(base, type) + queued >= cap) return { ok: false, reason: `A shelter has room for ${cap}` };
-  }
+  // A camp or a shelter has room for so many of each (CAMP.build, SHELTER.build).
+  const cap = isCamp(base) ? CAMP.build[type] : isShelter(base) ? SHELTER.build[type] : null;
+  if (cap != null && countAll(base, type) + queued >= cap) return { ok: false, reason: `A ${isCamp(base) ? "camp" : "shelter"} has room for ${cap}` };
   // A station that needs a bench of some tier here (BENCH): the ammo bench a workbench.
   if (def.bench && benchTier(base, true) < def.bench) return { ok: false, reason: `Needs a ${BUILDINGS[Object.keys(BENCH)[def.bench - 1]].name.toLowerCase()} here first (upgrade the crafting bench)` };
   // Plots (PLOTS): a new building needs a free plot of its kind; a hospital upgrade stands on the old one's.

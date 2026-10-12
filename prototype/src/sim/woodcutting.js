@@ -69,7 +69,7 @@ export const WOOD = {
   // to the cold, if sooner; at least minDays), plus the boiler's.
   base: { radius: 2, hours: 6, crowd: 0.05, crowdFloor: 0.5, stockDays: 21, minDays: 5 },
   worth: 12,                 // a woodcutter must be expected to bring in this much a day for the job to be open
-  fire: { land: 0.15, shelter: 18, camp: 9 }, // deadfall enough for a fire (abundance), firewood a lit fire burns a day without it
+  fire: { land: 0.15, shelter: 18, camp: 9, keepDays: 14 }, // deadfall enough for a fire (abundance), firewood a lit fire burns a day without it; keepDays: a shelter's days of it wanted in store (woodNeed)
   bitter: 1.05, spare: 1.2,  // the winter's need: bitter days a little more, and a fifth to spare
 };
 export const WOOD_TERRAIN = { forest: 1, hills: 0.6, mountain: 0.35, plains: 0.25, suburb: 0.2, city: 0.05, water: 0 };
@@ -381,28 +381,38 @@ export function woodSeason(state, hour = state.hour) {
 // { need, have, days (freezing days ahead), soon (the stocking season), short (have < need), cold (winter: the hard
 // cold is here), toCold (days until it is), boiler (the boiler's firewood a day, 0 when it does not burn), kitchen (the
 // Kitchen's stove a day, kitchen.js kitchenWood: every day of the cold spell of it wanted in store, coldSpanAhead, at least
-// KITCHEN.wood.keepDays; heat: the heating's part of need; stoveDays: the stove's days counted), daily
-// (boiler + kitchen: what burns every day in every season), pressing (the boiler burns, or the pile is under the
-// kitchen's keepDays: wood is wanted in any season) }.
+// KITCHEN.wood.keepDays; heat: the heating's part of need; stoveDays: the stove's days counted), fire (a camp's or a
+// shelter's lit fire on bare ground a day), daily (boiler + kitchen + fire: what burns every day in every season),
+// pressing (the boiler or such a fire burns, or the pile is under the kitchen's keepDays: wood is wanted in any season) }.
+// A camp or a shelter (tier 0, BASE-05: it wanted nothing, so its Cut wood job never opened and the woodpile was never
+// cut for it): its lit fire keeps it warm and boils its water, free where there is deadfall about; on bare ground it
+// burns WOOD.fire.shelter a day from the store, every day it is lit (fire: WOOD.fire.keepDays of it wanted in store).
+// With the fire put out, it is heated from the woodpile like a base; a boiler burns only on days the fire does not
+// boil the water (worm.js boilerUse).
 export function woodNeed(state, base, extraHeads = 0) {
   const days = coldDaysAhead(state);
   const heads = mouthsAt(state, base).heads + extraHeads;
-  const boil = base.tier === 0 ? null : boilerUse(state, base);
+  const shelter = base.tier === 0;
+  // The governor lights and puts out the fire by the hour (autopilot.js autoFires: lit in the cold): count it kept, so
+  // the need does not swing between day and night; by hand, as the player left it.
+  const fireOn = shelter && (!!state.autopilot || (base.campFire ?? base.fire) !== false);
+  const fire = fireOn && !fireLandOk(state, base.tile) ? WOOD.fire.shelter : 0;
+  const boil = boilerUse(state, base);
   const boiler = boil && boil.active ? r1((boil.wood + extraHeads * WORM.BOILER_WOOD_HEAD) * (boil.share ?? 1)) : 0; // the days it burns: the filters' share of the drinking needs no boiling
-  const kitchen = base.tier === 0 || !hasKitchen(base) ? 0 : r1(kitchenWood(state, base).need);
+  const kitchen = shelter || !hasKitchen(base) ? 0 : r1(kitchenWood(state, base).need);
   // The stove burns every day of the cold spell, frost or not (ap-food, 2026-10-11: it counted only its
   // KITCHEN.wood.keepDays, a quarter of the spell, and the census at ac1c1c6 met the second winter with the woodpile at
   // 10% of the cold's need and 7.4 base-days without heat a game, 0.9 before the stove burned firewood).
   const stoveDays = kitchen > 0 ? Math.max(KITCHEN.wood.keepDays, coldSpanAhead(state)) : 0;
-  const heat = base.tier === 0 ? 0 : heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare;
-  const need = base.tier === 0 ? 0 : Math.ceil(heat + boiler * WORM.BOILER_DAYS + kitchen * stoveDays);
+  const heat = fireOn ? 0 : heads * woodFor(HEAT.fuel) * WOOD.bitter * days * WOOD.spare; // a lit fire warms a camp or a shelter
+  const need = Math.ceil(heat + boiler * WORM.BOILER_DAYS + kitchen * stoveDays + fire * WOOD.fire.keepDays);
   const have = Math.max(0, base.stock.wood || 0);
-  const daily = r1(boiler + kitchen);
+  const daily = r1(boiler + kitchen + fire);
   // The kitchen makes it pressing out of season only while the pile is under its KITCHEN.wood.keepDays (the boiler, as
-  // ever, always: it is the worm's water).
-  const pressing = boiler > 0 || (kitchen > 0 && have < kitchen * KITCHEN.wood.keepDays);
+  // ever, always: it is the worm's water; a fire on bare ground too: it is the camp's warmth and its water).
+  const pressing = boiler > 0 || fire > 0 || (kitchen > 0 && have < kitchen * KITCHEN.wood.keepDays);
   const season = woodSeason(state);
-  return { need, have, days: r1(days), soon: season || pressing, season, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler, kitchen, daily, pressing, heat: Math.ceil(heat), stoveDays };
+  return { need, have, days: r1(days), soon: season || pressing, season, short: have < need, cold: daysToCold(state) === 0, toCold: daysToCold(state), heads, boiler, kitchen, fire, daily, pressing, heat: Math.ceil(heat), stoveDays };
 }
 // A base the winter will catch short of firewood (the alert, the Upkeep line): in the stocking season, with less than
 // the coming cold needs and less heat in store (firewood and fuel) than that. null when it is fine.

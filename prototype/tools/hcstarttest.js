@@ -286,7 +286,8 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(job && job.type === "camp_up" && gatherRows(job).find((r) => r.key === "scrap").need === needScrap && gatherRows(job).find((r) => r.key === "buildmat").need === STAGING.HARDCORE.needs.buildmat && job.hours === STAGING.HARDCORE.work, `its step up is queued: ${needText(STAGING.HARDCORE.needs)}, ${job && job.hours} work-hours`);
   check(atBase(st, camp.id).every((s) => s.role === "build"), "everyone on Build");
   check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 1, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, no crop plots, one utility plot`);
-  check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "smoker").ok && /shelter stands/.test(canBuild(st, camp, "smoker").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
+  // (BASE-03, 2026-10-12: the drying rack, bench, boiler and cook fire are camp buildings now; the watchtower still waits.)
+  check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "watchtower").ok && /shelter stands/.test(canBuild(st, camp, "watchtower").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
   check(establishOption(st, null, landNear(st, tile0, 2).id) === null, "with a base (the camp): no Establish base");
   // Half the materials: the work goes as far as they allow and waits.
   Object.assign(camp.stock, { scrap: Math.ceil(needScrap / 2), buildmat: STAGING.HARDCORE.needs.buildmat / 2 });

@@ -129,7 +129,16 @@ check(/Available once the shelter stands/.test(html) && /Available once it is a 
 check(canBuild(st, camp, "camp_up").ok && !canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "outpost_up").ok, "the camp's step up is buildable; the shelter's and an outpost's are not");
 camp.stock.scrap = (camp.stock.scrap || 0) + 30;
 check(canBuild(st, camp, "barricades").ok && /queued/.test(queueBuild(st, camp, "barricades")), "a barricade can be built at a camp");
-check(canBuild(st, camp, "rain_catcher").ok && !canBuild(st, camp, "smoker").ok, "one utility plot: a rain catcher fits; a drying rack waits for the shelter");
+// BASE-03 (2026-10-12): the crafting bench, water boiler, cook fire and drying rack are camp buildings too; they share
+// the camp's one utility plot with the rain catcher, crates and barrel.
+check(["rain_catcher", "smoker", "craftbench", "boiler", "cookhouse"].every((k) => canBuild(st, camp, k).ok), "one utility plot: a rain catcher, drying rack, crafting bench, water boiler or cook fire fits");
+{
+  const scrap0 = camp.stock.scrap;
+  queueBuild(st, camp, "smoker");
+  const full = canBuild(st, camp, "boiler");
+  check(!full.ok && full.noPlot && !canBuild(st, camp, "rain_catcher").ok, `the plot taken by a drying rack: the boiler waits for a free plot (${full.reason})`);
+  camp.construction.pop(); camp.stock.scrap = scrap0;
+}
 check(/queued/.test(queueBuild(st, camp, "camp_up")) && tierUpJob(camp) && tierUpJob(camp).type === "camp_up", "the step up queued from Construction");
 
 // ---------- save / load, the step up ----------

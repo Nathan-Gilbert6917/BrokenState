@@ -50,7 +50,7 @@ import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchen
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
-import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
+import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, isCamp, tierUpJob, gatherRows, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
@@ -2670,7 +2670,15 @@ function jailWishes(state, base, best) {
   return [];
 }
 
+// The governor keeps a camp's one utility plot for what it built there before camps took the yard buildings
+// (BASE-03: the crafting bench, boiler, cook fire and drying rack are the player's to put up at a camp): the step up,
+// a rain catcher, crates, a barrel and the barricade.
+const CAMP_WISHES = ["camp_up", "outpost_up", "rain_catcher", "crates", "water_barrel", "barricades"];
 function buildWishes(state, base) {
+  const out = allBuildWishes(state, base);
+  return isCamp(base) ? out.filter((w) => CAMP_WISHES.includes(w.type)) : out;
+}
+function allBuildWishes(state, base) {
   const g = gov(state);
   const out = [];
   const add = (type, why, save = false) => out.push({ type, why, save });

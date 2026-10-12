@@ -375,10 +375,13 @@ export function boilerUse(state, base) {
   const wood = r2(heads * WORM.BOILER_WOOD_HEAD);
   const fuel = r2(wood * HEAT.wood);
   const cap = purifyCap(state, base);
-  const active = hasBoiler(base) && heads > 0 && cap.filters < cap.drink;
+  // A camp's or a shelter's own lit, fed fire boils the day's drinking already (cap.fire): the boiler stands ready
+  // beside it and burns nothing (BASE-05: it burned its firewood on top of the fire's, the wood twice for one pot).
+  const covered = cap.filters + cap.fire;
+  const active = hasBoiler(base) && heads > 0 && covered < cap.drink;
   // share: the days it burns, about (the share of the drinking the filters leave un-purified): each day it burns
   // purifies a whole day's drinking, so with filters covering part of it the purified water carries over.
-  const share = active && cap.drink > 0 ? r2(Math.max(0, Math.min(1, 1 - cap.filters / cap.drink))) : 0;
+  const share = active && cap.drink > 0 ? r2(Math.max(0, Math.min(1, 1 - covered / cap.drink))) : 0;
   const text = heads ? `${perHeadText(heads, heads === 1 ? "person" : "people", WORM.BOILER_WOOD_HEAD)} firewood a day (or burnable junk, or ${fuel.toFixed(1)} fuel)` : "nobody here";
   return { active, heads, wood, fuel, share, lit: base.boiling !== false, text };
 }

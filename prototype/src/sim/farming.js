@@ -489,6 +489,33 @@ export function cropWaterNeed(state, base, { dry = false } = {}) {
   return Math.round(need * 10) / 10;
 }
 
+// The Crops section of a camp's or a base's window (BASE-04, ui/farming.js cropsCard): the crop plots as they stand
+// (farmOf: the same plots the Farming tab and farmingDaily work), read at the hour it is drawn. Growth is counted once
+// a day at midnight (farmingDaily, from economy.js basesDaily), so `nextIn` is the hours until the next count.
+// { plots, growing [{ id, gh, crop, name, grown, days, frac (0..1 of its growing days), ripeIn (days, about), yield
+// (food at harvest, about), thirsty, note }], ripe [{ …, yield (what is left to harvest), keeps (days before it rots in
+// the field) }], dead [{ id, name, note }], empty (plots with nothing sown), farmers, tended (anyone on Farm), auto
+// (farmers replant by themselves), care (today's), day, nextIn }.
+export function cropProgress(state, base) {
+  const f = farmOf(state, base);
+  const care = careToday(state, base);
+  const row = (p) => {
+    const c = CROPS[p.crop];
+    return { id: p.id, gh: !!p.gh, crop: p.crop, name: c.name, grown: Math.round(p.grown * 10) / 10, days: c.days, frac: Math.max(0, Math.min(1, p.grown / c.days)), thirsty: !!p.thirsty, note: p.note || "" };
+  };
+  const has = (p) => !!p.crop && !!CROPS[p.crop];
+  const n = farmers(state, base).length;
+  return {
+    plots: f.plots.length,
+    growing: f.plots.filter((p) => p.stage === "growing" && has(p)).map((p) => ({ ...row(p), ripeIn: daysToRipe(p), yield: expectedYield(state, base, p, care.care) })),
+    ripe: f.plots.filter((p) => p.stage === "ripe" && has(p)).map((p) => ({ ...row(p), frac: 1, yield: p.yieldLeft, keeps: Math.max(0, CROPS[p.crop].spoil - (p.ripeDays || 0)) })),
+    dead: f.plots.filter((p) => p.stage === "dead").map((p) => ({ id: p.id, name: has(p) ? CROPS[p.crop].name : "", note: p.note || "" })),
+    empty: f.plots.filter((p) => p.stage === "empty").length,
+    farmers: n, tended: n > 0 || care.labour > 0, auto: f.auto !== false, care: Math.round(care.care * 100) / 100,
+    day: Math.floor(state.hour / 24) + 1, nextIn: 24 - (((state.hour % 24) + 24) % 24),
+  };
+}
+
 // ---------- the daily tick ----------
 // watered: share (0..1) of today's crop water the base could give (economy.js decides, people drink first).
 // Returns { harvested, sown, died, rotted } for the log and tests.

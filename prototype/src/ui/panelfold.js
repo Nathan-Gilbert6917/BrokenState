@@ -4,7 +4,7 @@
 //   scroll fades the top / bottom edge of a box that scrolls fades out while there is more to see that way
 //   focus        a text box in a panel keeps the focus and the caret when the panel is redrawn under it
 //   People tab   the find box's text and the compact / cards view (remembered in this browser)
-const opened = new Set();
+const opened = new Map(); // key → open (true) or closed (false) by the player; a fold never touched shows its default
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const hasDoc = typeof document !== "undefined" && !!document.addEventListener;
 
@@ -13,14 +13,14 @@ const hasDoc = typeof document !== "undefined" && !!document.addEventListener;
 //   summary  the line you click (HTML)
 //   body     what it opens (HTML)
 //   tipText  hover text on the line
-export const foldIsOpen = (key) => opened.has(String(key));
+//   open     open until the player closes it (closed by default)
+export const foldIsOpen = (key, def = false) => (opened.has(String(key)) ? opened.get(String(key)) : def);
 export function setFoldOpen(key, open) {
-  if (open) opened.add(String(key));
-  else opened.delete(String(key));
+  opened.set(String(key), !!open);
 }
-export function fold(key, summary, body, { cls = "", tipText = "" } = {}) {
+export function fold(key, summary, body, { cls = "", tipText = "", open = false } = {}) {
   if (!body) return "";
-  return `<details class="pf${cls ? ` ${cls}` : ""}" data-fold="${esc(key)}"${foldIsOpen(key) ? " open" : ""}><summary${tipText ? ` data-tip="${esc(tipText)}"` : ""}>${summary}</summary><div class="pf-body">${body}</div></details>`;
+  return `<details class="pf${cls ? ` ${cls}` : ""}" data-fold="${esc(key)}"${foldIsOpen(key, open) ? " open" : ""}><summary${tipText ? ` data-tip="${esc(tipText)}"` : ""}>${summary}</summary><div class="pf-body">${body}</div></details>`;
 }
 
 // ---------- scroll fades ----------

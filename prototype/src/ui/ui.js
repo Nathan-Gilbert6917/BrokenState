@@ -35,7 +35,7 @@ import { snapshot } from "../sim/world.js";
 const specialTip = (mix) => Object.keys(mix || {}).filter((k) => ZTYPES[k]).map((k) => `${ZTYPES[k].name}: ${ZTYPES[k].special} Counter: ${ZTYPES[k].counter}`).join(" · ");
 import { ERAS } from "../sim/eras.js";
 import { ROLES, ESCORTS, supplyLine, farmOutput, scavengeOutput, foodForecast } from "../sim/economy.js";
-import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, woodLine, storeCellHtml, upkeepCellHtml, upkeepLine } from "./farming.js";
+import { baseFarming, cropsCard, foodCellHtml, waterCellHtml, foodLine, waterLine, woodLine, storeCellHtml, upkeepCellHtml, upkeepLine } from "./farming.js";
 import { HEAT } from "../sim/upkeep.js"; // the boiler's fuel a head in the help (firewood × HEAT.wood)
 import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine, illnessRowHtml, illnessSummary, othersWormHtml } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
@@ -46,7 +46,7 @@ import { hiveCrawlModal } from "./hivecrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, isCamp, CAMP, SHELTER, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
-  PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, canUpgradeKitchen, BENCH, benchType,
+  PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, canUpgradeKitchen, BENCH, benchType, placeProblem,
 } from "../sim/buildings.js";
 import { isPowered, POWER_USERS, freezerLine, generatorRunning, generatorLine, GEN_TIERS, genTier, genName } from "../sim/power.js"; // freezer-parts: the machines' chips; gen-tiers: the generator's tier
 import { isMachine, machineText, machineState } from "../sim/breakdowns.js"; // freezer-parts: machine parts on the cards
@@ -1537,6 +1537,7 @@ function campTab(state, b) {
       <div class="card small">${people.length ? people.map((s) => `<div class="spread"><a class="link" data-action="survivor" data-id="${s.id}">${first(s)}</a><span class="muted">${esc(ROLES[s.role] ? ROLES[s.role].name : s.role || "")} · health ${n0(s.health)}</span></div>`).join("") : `<span class="muted">Nobody lives at the camp now.</span>`}
         <div class="row" style="margin-top:0.4rem">${formTeamButton(state, b)}${infoTip("Form a team: pick people, vehicles, gear and supplies from the camp's stores; they stand outside as a team (split as many teams as you like). A team at the camp is edited here (people in or out, vehicles, loading and dropping off by weight) or moves back in with Enter.")}</div>
       </div>
+      ${cropsCard(state, b, { farmTab: false })}
       <h3>Teams at the camp (${teams.length})</h3>
       <div class="card small">${teams.length ? teams.map((p) => `<div class="spread"><a class="link" data-action="xp-open" data-id="${p.id}">${esc(teamName(state, p))}</a><span class="row">${editTeamButton(state, p)}<button class="mini" data-action="xp-order" data-id="${p.id}" data-type="mission" data-mission="enter"${tip(`Move this team into ${b.name}: its people live at the camp, what it carries goes into the stores and armory, its vehicles park here`)}>Enter</button></span></div>`).join("") : `<span class="muted">No team stands at the camp.</span>`}</div>
     </div>
@@ -1697,16 +1698,14 @@ function tierUpRows(state, b) {
     <div>Needs</div><div class="small">${rows}</div>
     <div></div><div class="small">${status}</div>`;
 }
-// A shelter (tier 0, sim/buildings.js) or an outpost camp: its step up (tierUpRows: the bar and the materials), its
-// water, its fire and (a shelter) what its Heat is made of (sim/fieldheat.js shelterHeat).
+// A shelter (tier 0, sim/buildings.js) or an outpost camp: its water, its fire and (a shelter) what its Heat is made of
+// (sim/fieldheat.js shelterHeat). Its step up has its own section at the top of the Overview (upgradeCard).
 function shelterRows(state, b) {
   const v = shelterView(state, b);
   if (!v) return "";
-  if (b.type === "outpost") return `${tierUpRows(state, b)}
-    <div${tip("A camp has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams and the hub bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+  if (b.type === "outpost") return `<div${tip("A camp has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams and the hub bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
     <div${tip("The camp's fire: warmth, boiled water, better spirits. Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>`;
-  return `${tierUpRows(state, b)}
-    <div${tip("A shelter has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+  return `<div${tip("A shelter has no well: water from a river or lake beside it (its people haul it), rain catchers, or what teams bring in.")}>Water source</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
     <div${tip("A shelter's Heat in place of the hub's flat 3: its fire (most at night), vehicles parked here and shooting nearby lately; its people count as at any base.")}>Heat from</div><div>${esc(v.heat.text || "nothing but its people")}</div>
     <div${tip("The shelter's fire: warmth (the tarps are as cold as outside without it), boiled water, better spirits (+0.5 mood a day; cold nights without it cost 1). Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>`;
 }
@@ -1718,12 +1717,48 @@ function rationLine(members, est) {
   const pf = members.reduce((a, s) => a + packFood(s), 0), pw = members.reduce((a, s) => a + packWater(s), 0);
   return `<div${tip("Each person's share of the trip's food and water, and what the packs they carry already hold (sim/eating.js: everyone carries about 1.5 days of food and water; it counts toward what you pack, and they eat the team's shared food first)")}>Per person</div><div>${n1(est.food / n)} food · ${n1(est.water / n)} water <span class="muted">(packs on them: ${n1(pf)} food · ${n1(pw)} water)</span></div>`;
 }
+// BASE-01: the base's upgrades, at the top of its Overview. A shelter or a camp: the step up to the next stage
+// (tierUpRows: its bar, the materials against the stores, the Build button) and what that stage opens up. A base:
+// the next tier of each tiered building standing here (the hospital, the bench, the jail) and its bunkhouses to
+// expand into barracks, each ready (Upgrade), queued or why not yet; nothing when there is nothing to step up.
+function upgradeCard(state, b) {
+  const toCx = `<button class="mini" data-action="basetab" data-tab="construction"${tip("Everything this base can build, in Construction")}>Construction</button>`;
+  if (isShelter(b)) {
+    const out = b.type === "outpost";
+    const next = out ? "A real outpost: a dug spring (3 water a day), a fence (wall 1), 6 building plots and 6 utility plots, room for every building an outpost takes."
+      : isCamp(b) ? `A shelter: a roof and beds for ${SHELTER.beds}, two utility plots and a garden patch; later the step up into a base.`
+      : "A real base: a main house, a dug well, a cellar, walls, beds for four, 16 building and 14 utility plots: every building (workshops, the hospital, bunkhouses, the radio station…).";
+    return `${sectionHead(`⬆ Build up${out ? "" : ` ${stageSteps(isCamp(b) ? 0 : 1)}`}`, toCx, null, "The step up to this base's next stage: materials taken from the stores as they come in, then the builders' work")}
+      <div class="card attn small upgradecard"><div class="kv small">
+        ${tierUpRows(state, b)}
+      </div><div class="small muted" style="margin-top:0.35rem"><b>Opens up:</b> ${esc(next)}</div></div>`;
+  }
+  const rows = [];
+  for (const [k, d] of Object.entries(BUILDINGS)) {
+    if (!d.family || !d.upgrades || !count(b, d.upgrades) || placeProblem(b, k)) continue; // the next tier of one standing here
+    const queued = b.construction.some((c) => c.type === k);
+    const chk = queued ? null : canBuild(state, b, k);
+    const act = queued ? badge("Queued", "busy") : chk.ok ? `<button class="mini primary" data-action="queuebuild" data-base="${b.id}" data-type="${k}"${tip(`${d.desc} Pay now; builders do the rest.`)}>Upgrade</button>` : badge(chk.locked ? "Locked" : /^Needs \d/.test(chk.reason) ? "Short" : "Not yet", chk.locked ? "muted" : /^Needs \d/.test(chk.reason) ? "bad" : "muted", chk.reason);
+    rows.push({ ok: queued || chk.ok, html: `<div class="spread"><span${tip(d.desc)}>${esc(BUILDINGS[d.upgrades].name)} → <b>${esc(d.name)}</b>${queued || chk.ok ? "" : ` <span class="muted">· ${esc(chk.reason)}</span>`}</span>${act}</div>` });
+  }
+  const bunk = b.buildings.find((x) => x.type === "bunkhouse" && !b.construction.some((c) => c.target === x.id));
+  if (bunk) {
+    const chk = canExpandBunkhouse(state, b, bunk.id);
+    rows.push({ ok: chk.ok, html: `<div class="spread"><span${tip(`12 beds instead of 6 on the same plot. ${Object.entries(BARRACKS_UP.cost).map(([c, v]) => `${v} ${c}`).join(", ")}, ${BARRACKS_UP.hours} work-hours.`)}>Bunkhouse → <b>Barracks</b>${chk.ok ? "" : ` <span class="muted">· ${esc(chk.reason)}</span>`}</span>${chk.ok ? `<button class="mini primary" data-action="bunk-expand" data-base="${b.id}" data-id="${bunk.id}">Upgrade</button>` : badge("Not yet", "muted", chk.reason)}</div>` });
+  }
+  if (!rows.length) return "";
+  const ready = rows.filter((r) => r.ok).length;
+  return `${sectionHead("⬆ Upgrades", toCx, ready || null, "Buildings here that step up to their next tier where they stand (no new plot)")}
+    <div class="card small${ready ? " attn" : ""} upgradecard">${rows.sort((x, y) => y.ok - x.ok).map((r) => r.html).join("")}</div>`;
+}
+
 function baseOverview(state, b) {
   const people = atBase(state, b.id);
   const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
   const fc = foodPerDay(state, b);
   return `<div class="grid2">
     <div>
+      ${upgradeCard(state, b)}
       ${sectionHead(`Stock${b.type === "outpost" ? infoTip("Outposts keep a small reserve and ship the rest to the hub each day.") : ""}`)}
       <div class="sk-tiles">${STOCK_KEYS.map((k) => stockTile(k, k === "ammo" ? totalRounds(b.stock) : b.stock[k], k === "ammo" ? `${SUPPLIES[k].name}. Every calibre: ${roundsLine(b.stock)}` : SUPPLIES[k].name)).join("")}</div>
       ${sectionHead(`Food${infoTip("Food by kind (no generic food): what each is, how much, its calories, the days before the soonest of it spoils where it is kept today, and the food rooms")}`)}
@@ -1751,6 +1786,7 @@ function baseOverview(state, b) {
       ${people.length ? `<table class="t">${people.map((s) => `<tr><td><a data-action="survivor" data-id="${s.id}" class="link">${s.leader ? "★ " : ""}${esc(s.name)}</a>${stIcons(state, s)}</td><td>${roleSelect(state, s)}</td><td class="small" style="min-width:5.5rem"${tip(`${n0(s.health)} health`)}>${pbar(s.health, s.health < 40 ? "bad" : s.health < 70 ? "warn" : "good", `${n0(s.health)} HP`)}</td><td>${pinButton(s)}</td></tr>`).join("")}</table>` : `<div class="muted small">Nobody is here.</div>`}
       <div class="sk-chips" style="margin-top:0.4rem"${tip("Everyone here by role (roles with nobody on them are left out)")}>${Object.entries(ROLES).map(([k, r]) => [r.name, people.filter((s) => s.role === k).length]).filter(([, n]) => n).map(([name, n]) => chip({ name, need: n })).join("") || `<span class="muted small">No roles.</span>`}</div>
       ${workNowPanel(state, b)}
+      ${cropsCard(state, b, { farmTab: !isCamp(b) })}
       ${priorityCount(state, b) ? hint(`⚙ ${priorityCount(state, b)} here work by priorities (Work tab)`, "A base leader only moves the people on Manual.") : ""}
       ${stewardCard(state, b)}
     </div>
@@ -1790,7 +1826,8 @@ function boilerNote(state, b) {
   const u = boilerUse(state, b);
   const junk = burnablesWood(boilerBurnables(b));
   const toggle = `<label class="small" style="display:block"${tip("When the firewood runs short the boiler may burn cheap wooden, paper and cloth things from the armory (novels, magazines, rag boots, toilet paper, candles: worth 5 or less, never weapons, tools, armour or bags), before it touches the fuel. Items you mark in the inventory (Boiler may burn it / Keep from the fire) go by their mark.")}><input type="checkbox" data-action="boiler-junk" data-base="${b.id}" ${boilerJunkOn(b) ? "checked" : ""}> Boiler may burn spare wooden items and paper${junk > 0 ? ` <span class="muted">(${junk} firewood's worth in the armory)</span>` : ""}</label>`;
-  if (!u.active) return `<div class="small good"${tip("Nothing burned while the filters cover the drinking")}>✓ Standing ready: ${u.heads ? "the water filters here purify the day's drinking" : "nobody here"}</div>${toggle}`;
+  const byFire = isShelter(b) && b.fire !== false && b.fireFed !== false; // a camp's or shelter's lit fire boils it (worm.js boilerUse)
+  if (!u.active) return `<div class="small good"${tip("Nothing burned while the filters or the fire cover the drinking")}>✓ Standing ready: ${!u.heads ? "nobody here" : byFire ? "the fire boils the day's drinking" : "the water filters here purify the day's drinking"}</div>${toggle}`;
   return `<div class="small ${u.lit ? "" : "danger"}" style="margin-top:0.2rem"${tip(`${u.lit ? "Lit" : "Cold today (nothing to burn: the water is drunk un-purified, or treated with the armory's purification tablets if there is no water filter)"}: burns ${u.text} on the days the purified water in store and the filters do not cover the drinking (about ${Math.round(u.share * 100)}% of days); it purifies the day's drinking for everyone here. Firewood first, then the armory's burnable junk and anything marked to burn, then fuel.`)}>${u.lit ? `🔥 <b>Lit</b>` : `❄ <b>Cold today</b>: nothing to burn`} · burns ${esc(u.text)} · ~${Math.round(u.share * 100)}% of days</div>${toggle}`;
 }
 // Machines (sim/breakdowns.js isMachine; freezer-parts): the on/off chip of a powered one (the freezer says why it is
@@ -1906,29 +1943,47 @@ function baseConstruction(state, b, ui) {
     </div>`;
   };
   // A building card: name, how many stand here, a status badge and Build; one line of what it does (the rest in its
-  // tooltip); its cost as chips against the stores, the work-hours; why it cannot be built now.
-  const buildCard = (k, d) => {
-    const chk = canBuild(state, b, k);
+  // tooltip); its cost as chips against the stores, the work-hours; why it cannot be built now. One that this kind of
+  // base never takes (placeProblem: a camp's, a shelter's, the main base's or an outpost's rules) has no Build button,
+  // only a "Not here" badge and the stage it opens at.
+  const buildCard = (k, d, chk = canBuild(state, b, k), where = placeProblem(b, k)) => {
     const have = count(b, k), queuedN = b.construction.filter((c) => c.type === k && !c.target).length;
-    const lock = lockTag(state, b, "building", k);
+    const lock = where ? "" : lockTag(state, b, "building", k);
     const short = !chk.ok && /^Needs \d/.test(chk.reason); // the stores are short: the red chips say it
-    const state_ = chk.ok ? "ok" : lock ? "locked" : "blocked";
-    const status = queuedN ? badge(`Queued${queuedN > 1 ? ` ×${queuedN}` : ""}`, "busy") : chk.ok ? "" : lock ? badge("Locked", "muted") : chk.noPlot ? badge("No plot", "bad") : short ? badge("Short", "bad") : /Limit reached|Already built/.test(chk.reason) ? badge("Max", "muted") : badge("Not yet", "muted");
-    return `<div class="gcard ${state_}"${tip(d.desc)}>
-      <div class="gcard-top"><span class="gcard-title">${esc(d.name)}${have ? ` <span class="muted small"${tip(`${have} standing here, ${d.max} at most`)}>${have}/${d.max}</span>` : ""}${status}</span><button class="mini${chk.ok ? " primary" : ""}" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button></div>
+    const state_ = chk.ok ? "ok" : lock || where ? "locked" : "blocked";
+    const status = queuedN ? badge(`Queued${queuedN > 1 ? ` ×${queuedN}` : ""}`, "busy") : chk.ok ? "" : where ? badge("Not here", "muted", where) : lock ? badge("Locked", "muted") : chk.noPlot ? badge("No plot", "bad") : short ? badge("Short", "bad") : /Limit reached|Already built|has room for/.test(chk.reason) ? badge("Max", "muted") : badge("Not yet", "muted");
+    const btn = where ? "" : `<button class="mini${chk.ok ? " primary" : ""}" data-action="queuebuild" data-base="${b.id}" data-type="${k}" ${chk.ok ? "" : "disabled"}${tip(chk.ok ? "Pay now; builders do the rest" : chk.reason)}>Build</button>`;
+    return `<div class="gcard ${state_}${where ? " cx-na" : ""}"${tip(d.desc)}>
+      <div class="gcard-top"><span class="gcard-title">${esc(d.name)}${have ? ` <span class="muted small"${tip(`${have} standing here, ${d.max} at most`)}>${have}/${d.max}</span>` : ""}${status}</span>${btn}</div>
       <div class="gcard-desc">${esc(firstSentence(d.desc))}</div>${isMachine(k) ? `<div class="small muted"${tip("A machine: it wears, breaks down and takes machine parts to keep (Help: Machines and machine parts)")}>⚙ ${esc(machineText(k))}${POWER_USERS[k] ? ` · draws ${POWER_USERS[k].need} power` : ""}</div>` : ""}
-      <div class="gcard-foot">${costChips(d.cost, b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed, ${n0(h)} in the stores${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}</div>
-      ${k === "canteen" ? kitchenNote(state, b) : ""}${k === "generator" ? genTiersNote(state, b) : ""}
-      ${!chk.ok && !short && !lock ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
+      <div class="gcard-foot">${costChips(d.cost, where ? null : b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed${h != null ? `, ${n0(h)} in the stores` : ""}${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}</div>
+      ${!where && k === "canteen" ? kitchenNote(state, b) : ""}${!where && k === "generator" ? genTiersNote(state, b) : ""}
+      ${where ? `<div class="gcard-why">${esc(where)}</div>` : !chk.ok && !short && !lock ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;
   };
   const up = tierUpType(b);
   const types = Object.entries(BUILDINGS).filter(([k, d]) => (!d.shelterOnly || isShelter(b)) && (!d.tierUp || k === up)).sort(([ka], [kb]) => (isShelter(b) ? (kb === up) - (ka === up) : 0));
-  // Buildable first, then what is short of materials, then the rest (locked, no plot, at the limit) at the bottom.
-  const rank = ([k]) => { const c = canBuild(state, b, k); return k === up ? -1 : c.ok ? 0 : /^Needs \d/.test(c.reason) ? 1 : 2; };
-  const section = (title, list, right = "", t = "") => `${sectionHead(title, right, null, t)}${list.map((e, i) => [e, i]).sort(([x, i], [y, j]) => rank(x) - rank(y) || i - j).map(([[k, d]]) => buildCard(k, d)).join("") || `<div class="muted small">None.</div>`}`;
+  // BASE-02: each building's check once (canBuild: can it go up now; placeProblem: does this kind of base take it).
+  const fit = Object.fromEntries(types.map(([k]) => [k, { chk: canBuild(state, b, k), where: placeProblem(b, k) }]));
+  // Buildable first, then what is short of materials, then the rest (locked, no plot, at the limit); what this kind of
+  // base never takes goes in its own closed fold at the bottom of the section.
+  const rank = ([k]) => { const c = fit[k].chk; return k === up ? -1 : c.ok ? 0 : /^Needs \d/.test(c.reason) ? 1 : 2; };
+  const here = tierName(b).toLowerCase();
+  // A section (Buildings, Utilities, Walls…): a fold that remembers being opened or closed (ui/panelfold.js), its own
+  // scroll box, the count ready to build and not yet in its line.
+  const section = (key, title, list, right = "", t = "") => {
+    const fits = list.filter(([k]) => !fit[k].where).map((e, i) => [e, i]).sort(([x, i], [y, j]) => rank(x) - rank(y) || i - j).map(([e]) => e);
+    const away = list.filter(([k]) => fit[k].where);
+    const ready = fits.filter(([k]) => fit[k].chk.ok).length;
+    const card = ([k, d]) => buildCard(k, d, fit[k].chk, fit[k].where);
+    const summary = `<b${tip(t)}>${title}</b>${badge(`${ready} ready`, ready ? "good" : "muted", `${ready} can be built now`)}${fits.length > ready ? badge(`${fits.length - ready} not yet`, "muted", "Not yet: short of materials, skills or a free plot, waiting for the tier below or a manual, or at their limit") : ""}${away.length ? badge(`${away.length} not here`, "muted", `Not at a ${here}: listed at the bottom, closed`) : ""}<span class="cx-right">${right}</span>`;
+    const body = (fits.map(card).join("") || `<div class="muted small">${away.length ? `None at a ${esc(here)}: these open at a later stage (below).` : "None."}</div>`)
+      + (away.length ? fold(`cx-na:${key}`, `Not at a ${esc(here)} (${away.length})`, away.map(card).join(""), { cls: "pf-card cx-na-fold", tipText: `What a ${here} never takes: each says the stage it opens at` }) : "");
+    return fold(`cx:${key}`, summary, body, { cls: "pf-card cx-sec", open: fits.length > 0 }); // nothing this base takes: closed
+  };
   const free = (kind) => Math.max(0, plotCap(b, kind) - plotsUsed(b, kind));
   const freeText = (kind) => badge(`${free(kind)} plot${free(kind) === 1 ? "" : "s"} free`, free(kind) ? "info" : "warn", `${free(kind)} ${PLOT_NAMES[kind].toLowerCase()}${free(kind) === 1 ? "" : "s"} free`);
+  const readyAll = types.filter(([k]) => fit[k].chk.ok && k !== up).length;
   return `<div class="grid2">
     <div>
       ${sectionHead("Plots", "", null)}
@@ -1961,9 +2016,11 @@ function baseConstruction(state, b, ui) {
       ${barrels(b).length ? barrelCard() : ""}
     </div>
     <div>
-      ${section("Buildings", types.filter(([, d]) => d.plot === "building"), freeText("building"))}
-      ${section("Utilities", types.filter(([, d]) => d.plot === "utility"), freeText("utility"))}
-      ${section("Walls, defences and fields", types.filter(([, d]) => !d.plot), badge("No plot", "muted"))}
+      ${hint(`🔨 At this ${esc(here)}: <b>${readyAll}</b> ready to build${infoTip("Each list puts what can be built now first, then what is not yet (materials, skills, a free plot, the tier below, a manual); what this kind of base never takes is folded away at the bottom, with the stage it opens at. Click a list's title to fold it.")}`)}
+      ${up && fit[up] && !fit[up].where ? section("stage", "Next stage", types.filter(([k]) => k === up), "", "The step up to the next stage of this base") : ""}
+      ${section("buildings", "Buildings", types.filter(([k, d]) => d.plot === "building" && k !== up), freeText("building"), "Anything with a roof, on a building plot")}
+      ${section("utilities", "Utilities", types.filter(([k, d]) => d.plot === "utility" && k !== up), freeText("utility"), "The small things in the yard, on a utility plot")}
+      ${section("fields", "Walls, defences and fields", types.filter(([k, d]) => !d.plot && k !== up), badge("No plot", "muted"), "Need no plot")}
     </div>
   </div>`;
 }
