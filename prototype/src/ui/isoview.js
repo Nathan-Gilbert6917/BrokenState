@@ -350,6 +350,11 @@ function wallFace(mat, dmg) {
   };
 }
 const capFace = (f, s, t, X, Y) => mul(PAL.cap, 0.92 + n2(X, Y, 4) * 0.14);
+// Doors (sim/combat.js CELL door, idoor, odoor): a painted leaf, a light frame, brass; a locked one oxblood.
+const DOORC = { leaf: hex("#b0602c"), locked: hex("#7a2622"), trim: hex("#e6d6ac"), brass: hex("#f0c440") };
+// A door's top seen from above, in its colour with a light rim (roofs off, cut away or seen past): a locked one with
+// its brass lock in the middle.
+const doorCap = (k, o) => (f, s, t, X, Y) => (s < 1.5 || t < 1.5 || s >= 14.5 || t >= 14.5 ? DOORC.trim : k === "door" && !o.vault && s >= 6 && s < 10 && t >= 6 && t < 10 ? DOORC.brass : mul(o.vault ? PAL.metal : k === "door" ? DOORC.locked : DOORC.leaf, 1.02 + n2(X, Y, 4) * 0.1));
 
 // ---------- what each kind of cell is made of ----------
 // o: { v: a variant 0..3 from the cell's place, j: joins (bits 1 +u, 2 −u, 4 +v, 8 −v: same-kind neighbours), n:
@@ -453,18 +458,22 @@ function prims(k, o) {
           if (k === "window" && s >= w0 && s < w1 && t >= 11 && t < 25) return s < w0 + 1 || s >= w1 - 1 || t < 12 || t >= 24 ? PAL.frame : mul(PAL.glass, 0.85 + (s - t) % 5 * 0.04 + (o.dmg ? -0.3 : 0));
           // A roller door (a garage bay, a loading dock): metal slats across the whole cell.
           if (o.roll && t < 25) return t >= 24 ? PAL.frame : mul(PAL.metal, Math.floor(t) % 3 < 1 ? 0.7 : 0.92 + n2(s, t, 2) * 0.08);
-          // A locked door (sim/locks.js): dark wood or a steel vault door, a brass lock plate; a closed door: lighter.
-          if ((k === "door" || k === "idoor") && s >= 4 && s < 12 && t < 25) {
-            if (s < 5 || s >= 11 || t >= 24) return PAL.frame;
-            if (k === "door" && s >= 8 && s < 10 && t >= 11 && t < 15) return hex("#d9b23a");
-            if (k === "idoor" && s === 9 && t === 12) return hex("#a8a49a");
-            return mul(o.vault ? PAL.metal : k === "door" ? PAL.woodDk : PAL.wood, 0.95 + n2(s, t, 1) * 0.1);
+          // A door, big and bright enough to find across the map: a painted leaf with panels in a light frame and a
+          // brass knob (a closed door); a locked one (sim/locks.js) oxblood with a steel bar across and a brass lock
+          // plate, a vault door steel.
+          if ((k === "door" || k === "idoor") && s >= 3 && s < 13 && t < 27) {
+            if (s < 4 || s >= 12 || t >= 26) return DOORC.trim;
+            if (k === "door" && t >= 13 && t < 15) return PAL.metalDk;
+            if (k === "door" && s >= 7 && s < 10 && t >= 9 && t < 13) return DOORC.brass;
+            if (k === "idoor" && s >= 9 && s < 11 && t >= 12 && t < 14) return DOORC.brass;
+            return mul(o.vault ? PAL.metal : k === "door" ? DOORC.locked : DOORC.leaf, (Math.floor(t) % 9 < 1 || Math.floor(s) === 7 ? 0.8 : 0.95) + n2(s, t, 1) * 0.1);
           }
         }
         return face(f, s, t, X, Y);
       };
       const wf = o.n === "u" ? "east" : o.n === "v" ? "south" : null;
-      const m = (f, s, t, X, Y, sw, sh) => (f === "top" ? capFace(f, s, t, X, Y) : wf ? winFace(wf)(f, s, t, X, Y, sw, sh) : winFace("south")(f, s, t, X, Y, sw, sh) || winFace("east")(f, s, t, X, Y, sw, sh));
+      const cap = k === "door" || k === "idoor" ? doorCap(k, o) : capFace; // a door's top in its colour: found from above at any turn of the view
+      const m = (f, s, t, X, Y, sw, sh) => (f === "top" ? cap(f, s, t, X, Y) : wf ?winFace(wf)(f, s, t, X, Y, sw, sh) : winFace("south")(f, s, t, X, Y, sw, sh) || winFace("east")(f, s, t, X, Y, sw, sh));
       return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: top, m }];
     }
     case "bdoor": case "doorway": case "smashed": case "odoor": {
@@ -474,10 +483,13 @@ function prims(k, o) {
       const top = o.stub ? STUB : o.top, face = wallFace(o.mat ?? 0, 0), lin = top - 7;
       const back = [run(ax, 0, 1, 0, top, face, 0, 0.2)];
       const front = [run(ax, 0, 1, 0, top, face, 0.8, 1)];
-      if (!o.stub) front.unshift(run(ax, 0, 1, lin, top, face, 0.2, 0.8));
+      // An open door's lintel and posts are topped in the door's colour (found from above, as a shut one: doorCap).
+      const lintel = k === "odoor" ? (f, s, t, X, Y) => (f === "top" ? mul(DOORC.leaf, 1.05 + n2(X, Y, 4) * 0.1) : face(f, s, t, X, Y)) : face;
+      if (k === "odoor") { back[0] = run(ax, 0, 1, 0, top, lintel, 0, 0.2); front[0] = run(ax, 0, 1, 0, top, lintel, 0.8, 1); }
+      if (!o.stub) front.unshift(run(ax, 0, 1, lin, top, lintel, 0.2, 0.8));
       if (k === "bdoor") back.push(run(ax, 0.42, 0.58, 0, o.stub ? STUB : lin, (f, s, t) => (t > 9 && t < 12 ? PAL.metal : mul(PAL.wood, 0.85 + ((s | 0) % 3 === 0 ? -0.15 : 0.08))), 0.2, 0.8));
       if (k === "doorway" || (k === "odoor" && !o.roll)) {
-        const wood = k === "odoor" ? tex(PAL.wood, 0.12) : tex(PAL.woodDk, 0.15);
+        const wood = k === "odoor" ? tex(DOORC.leaf, 0.12) : tex(PAL.woodDk, 0.15);
         back.push(ax === "u" ? { u0: 0.2, u1: 0.28, v0: 0.1, v1: 0.62, z0: 0, z1: Math.min(lin, k === "odoor" ? 24 : 22), m: wood } : { u0: 0.1, u1: 0.62, v0: 0.2, v1: 0.28, z0: 0, z1: Math.min(lin, k === "odoor" ? 24 : 22), m: wood });
       }
       if (k === "odoor" && o.roll && !o.stub) front.unshift(run(ax, 0.3, 0.7, lin - 4, lin, tex(PAL.metal, 0.12), 0.2, 0.8));
@@ -999,7 +1011,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (c.mhp) o.dmg = Math.round(clamp01(1 - c.hp / c.mhp) * 3) / 3;
   if (k === "gate") o.barred = barredCell(c);
   if (k === "palisade" && c.t === 1) o.top = PALISADE;
-  if (k === "door" && b.raid) { const d = (b.raid.doors || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); }
+  if (k === "door") { const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); } // a raid's, a field map's houses' (sim/combat.js b.doors)
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
   if (k === "ladder" || k === "stairs") {
@@ -1360,6 +1372,36 @@ function outlineCells(ctx, b, test, color, width = 2) {
     if (edge(x + 1, y)) seg(P(x + 1, y), P(x + 1, y + 1));
   }
   ctx.stroke();
+}
+// The doors, so they are found at any zoom and turn of the view: a padlock badge over every locked door (sim/locks.js:
+// a raid's, a field map's houses': sim/combat.js b.doors), and over a building whose roof is on a door badge on each
+// way in (a closed door filled, an open one hollow), at the roof's height (the roof hides the door's own colours). Dim
+// where nobody sees it now.
+function drawDoorMarks(ctx, b, scene, cut, looks, vis, S, topFloor) {
+  const locked = new Set(((b.raid ? b.raid.doors : b.doors) || []).filter((d) => !d.lock.open && onFloor(b, d)).map((d) => d.y * b.w + d.x));
+  const s = Math.max(4, 2.2 * S);
+  for (let i = 0; i < b.w * b.h; i++) {
+    const c = b.cells[i], k = c.k;
+    if (k !== "door" && k !== "idoor" && k !== "odoor") continue;
+    const x = i % b.w, y = (i / b.w) | 0, bid = scene.comp[i], roofed = topFloor && bid >= 0 && !cut.has(bid);
+    const out = VD.some(([dx, dy]) => { const nx = x + dx, ny = y + dy; return nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || b.cells[ny * b.w + nx].f !== "floor"; });
+    const lock = locked.has(i);
+    if (!lock && !(roofed && out)) continue;
+    const L = looks[i], top = (roofed ? scene.blds[bid].top + 4 : L ? L.top : WALL1) + liftAt(b, i);
+    const [X, Y] = project(x + 0.5, y + 0.5, top + 3);
+    ctx.globalAlpha = vis[i] ? 1 : 0.6;
+    ctx.lineWidth = Math.max(1, S * 0.45); ctx.strokeStyle = "#141414";
+    if (lock) { // a padlock: the shackle, the brass body
+      ctx.beginPath(); ctx.arc(X, Y - s * 1.3, s * 0.55, Math.PI, 0); ctx.stroke();
+      ctx.fillStyle = "#7a2622"; rr(ctx, X - s * 0.95, Y - s * 1.35, s * 1.9, s * 1.45, 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#f0c440"; ctx.fillRect(X - s * 0.18, Y - s * 0.95, s * 0.36, s * 0.6);
+    } else { // a door leaf in its frame, hollow when it stands open
+      ctx.fillStyle = "#e6d6ac"; rr(ctx, X - s * 0.75, Y - s * 2, s * 1.5, s * 2, 2); ctx.fill(); ctx.stroke();
+      if (k !== "odoor") { ctx.fillStyle = "#b0602c"; ctx.fillRect(X - s * 0.5, Y - s * 1.75, s, s * 1.75); ctx.fillStyle = "#f0c440"; ctx.fillRect(X + s * 0.18, Y - s * 0.95, s * 0.2, s * 0.2); }
+      else { ctx.fillStyle = "#2a2018"; ctx.fillRect(X - s * 0.5, Y - s * 1.75, s, s * 1.75); ctx.fillStyle = "#b0602c"; ctx.fillRect(X - s * 0.5, Y - s * 1.75, s * 0.3, s * 1.75); }
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -1814,6 +1856,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       tag(ctx, z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle ? "#a9cbff" : COL.good, Math.max(10, 4 * S));
     }
   }
+  drawDoorMarks(ctx, b, scene, cut, looks, vis, S, topFloor);
   // The base's buildings by name; hit points of a battered wall, gate, door or window.
   if (b.tier && b.tier.buildings) for (const s of b.tier.buildings) {
     if (!s.cells.length) continue;

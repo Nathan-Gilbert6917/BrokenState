@@ -666,6 +666,11 @@ export const CELL = {
 export const HEIGHT = { SIGHT: 2, AIM: 5, MAX_AIM: 10, COVER: 1, CLIMB: 1, CLIMB_DEAD: 2, MELEE_UP: 10, EYE: 0.6 };
 // Battering a door, a window, the gate or a wall section (base battles): the cost in tiles the AI weighs it at.
 export const SIEGE = { COST: 2, PER_HP: 0.4 };
+// A field map's houses (genMap building): real doors, never a gap in the wall. The first door of a house is closed
+// (walked through it opens: openDoor), each other one locked LOCKED of the time (locks.js: key, lockpicks or force; the
+// dead and the enemy batter it, BMAP.DOOR) or left open OPEN of the time. hash01 dice: the map's own rolls are as before.
+export const FIELD_DOOR = { LOCKED: 0.4, OPEN: 0.2 };
+const DOORS = new Set(["door", "idoor", "odoor"]);
 // Battering and climbing by the kind of unit (base battles): bash multiplies its blows against a structure, climb is
 // the moves a level up or down. Looked up by its kind, then its variant (more kinds of the dead slot in here: a
 // "variant" or "zkind" key on the unit), then its boss; anything not listed takes its kind's.
@@ -1994,6 +1999,13 @@ function genMap(rng, tile, opts = {}) {
     return x0 >= 0 && y0 >= 0 && x0 + w <= W && y0 + h <= H;
   };
   let built = 0;
+  const houses = [], locked = []; // houses: { x0, y0, w, h, doors } (a locked one cut off is unlocked at the end)
+  const fieldDoor = (x, y, i) => {
+    const c = at(x, y), roll = hash01(rng.state, "fdoor", x, y);
+    c.f = "floor";
+    if (i && opts.locks !== false && roll < FIELD_DOOR.LOCKED) { c.k = "door"; c.hp = c.mhp = BMAP.DOOR.locked; locked.push([x, y]); }
+    else { c.k = i && roll >= FIELD_DOOR.LOCKED && roll < FIELD_DOOR.LOCKED + FIELD_DOOR.OPEN ? "odoor" : "idoor"; c.hp = c.mhp = BMAP.DOOR.outer; }
+  };
   const building = (w, h, lo = X(4), hi = W - X(5) - w) => {
     for (let tries = 0; tries < 25; tries++) {
       const x0 = rng.int(lo, Math.max(lo, hi)), y0 = rng.int(0, H - h);
@@ -2007,8 +2019,9 @@ function genMap(rng, tile, opts = {}) {
       }
       rng.shuffle(edge);
       const doors = w * h > 30 ? 3 : 2;
-      edge.slice(0, doors).forEach(([x, y]) => put(x, y, "open", "floor"));
+      edge.slice(0, doors).forEach(([x, y], i) => fieldDoor(x, y, i));
       edge.slice(doors, doors + rng.int(1, 3)).forEach(([x, y]) => put(x, y, "window"));
+      houses.push({ x0, y0, w, h, doors: edge.slice(0, doors) });
       built++;
       return true;
     }
@@ -2079,12 +2092,25 @@ function genMap(rng, tile, opts = {}) {
   const mid = Math.floor(H / 2);
   const rowsToTry = road ? [road.rows[Math.floor(road.width / 2)], road.rows[1], road.rows[road.width - 2]] : [mid - 1, mid, mid + 1];
   const KEEP = new Set(["open", "water", "rail", "car", "truck"]); // never through the river, a railing or a car (cars leave the road open: layRoad)
+  const done = (reach) => ({ cells, reach: unlockCut(reach), locked: locked.filter(([x, y]) => cells[idx(x, y)].k === "door") });
+  // A house the lane or the clutter outside left with only locked ways in: its locked doors become closed doors.
+  const unlockCut = (reach) => {
+    for (const hs of houses) {
+      const ins = [];
+      for (let y = hs.y0 + 1; y < hs.y0 + hs.h - 1; y++) for (let x = hs.x0 + 1; x < hs.x0 + hs.w - 1; x++) if (CELL[cells[idx(x, y)].k].walk) ins.push(idx(x, y));
+      if (!ins.length || ins.some((j) => reach[j]) || !hs.doors.some(([x, y]) => cells[idx(x, y)].k === "door")) continue;
+      for (const [x, y] of hs.doors) if (cells[idx(x, y)].k === "door") { cells[idx(x, y)].k = "idoor"; cells[idx(x, y)].hp = cells[idx(x, y)].mhp = BMAP.DOOR.outer; }
+      reach = flood(cells, 0, mid);
+    }
+    return reach;
+  };
   for (let tries = 0; tries < 3; tries++) {
     const r = flood(cells, 0, mid);
-    if (r[idx(W - 1, mid)]) return { cells, reach: r };
-    for (let x = 0; x < W; x++) { const c = cells[idx(x, rowsToTry[tries])]; if (!KEEP.has(c.k)) c.k = "open"; }
+    if (r[idx(W - 1, mid)]) return done(r);
+    const row = Array.from({ length: W }, (_, x) => cells[idx(x, rowsToTry[tries])].k), run = (x) => ["wall", "window", ...DOORS].includes(row[x]); // a house's wall across the lane, not along it
+    for (let x = 0; x < W; x++) { const c = cells[idx(x, rowsToTry[tries])]; if (c.k === "door" || (c.k === "wall" && c.f === "floor" && !run(x - 1) && !run(x + 1))) { c.k = "idoor"; c.hp = c.mhp = BMAP.DOOR.outer; } else if (!KEEP.has(c.k) && c.k !== "idoor" && c.k !== "odoor") c.k = "open"; } // through a house: a door in its wall, never a gap
   }
-  return { cells, reach: flood(cells, 0, mid) };
+  return done(flood(cells, 0, mid));
 }
 
 // Blocks of houses in a suburb or a city: one on the old 26 × 18 map (area 2 at the 18 × 13 scale), more on bigger ones.
@@ -3107,7 +3133,7 @@ export function createBattle(state, setup) {
   if (party) settleParty(state, party); else if (base) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened)
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.
-  const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId) }); // Army trucks (miltrucks.js), not on a base's wall map
+  const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId), locks: !setup.layout }); // Army trucks (miltrucks.js), not on a base's wall map; locked doors only on an open field
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
@@ -3117,19 +3143,22 @@ export function createBattle(state, setup) {
     evacCols: setup.canRetreat ? 2 : 0, over: false, result: null, acted: false, queue: [],
     losCache: makeLosCache(W, H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
   };
+  // The houses' locked doors (genMap FIELD_DOOR): opened like a raid's (locks.js openLock, combatAct "open").
+  if (map.locked.length) b.doors = map.locked.map(([x, y], i) => ({ id: i + 1, x, y, lock: { kind: "door", open: false, tries: 0 } }));
   b.reinfMax = Math.round(b.infection * 5);
   b.zmix = armoredOf(setup.enemy && setup.enemy.mix); // the dead drawn in later: soldiers among them at a military site
   const layout = setup.layout && layouts ? layouts.get(setup.layout) : null;
   const layoutCtx = (phase) => ({
     phase, state, rng, W, H, inside, cellAt: (x, y) => b.cells[idx(x, y)],
     free: (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "open" && !unitAt(b, x, y),
-    put: (x, y, k) => { if (inside(x, y)) b.cells[idx(x, y)].k = k; },
+    put: (x, y, k) => { if (!inside(x, y)) return; const c = b.cells[idx(x, y)]; if (DOORS.has(c.k)) { delete c.hp; delete c.mhp; } c.k = k; }, // a house's door built over: not a door's strength
     standable: (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !unitAt(b, x, y),
   });
   if (layout) {
     layout(b, layoutCtx("map"));
     b.reach = flood(b.cells, 0, Math.floor(H / 2));
   }
+  if (b.doors) b.doors = b.doors.filter((d) => b.cells[idx(d.x, d.y)].k === "door");
   // The team's car or truck on the field (placeVehicle): by the west edge, on the road when there is one. It can be
   // driven (DRIVE) and the siege ram rides in it (siege.js), so nobody has to carry it to the wall.
   if (party && party.vehicle && setup.layout !== "baseDefence") {
@@ -3991,13 +4020,12 @@ export function combatAct(state, act) {
       break;
     }
     case "open": { // locks.js: a locked container or door next to the unit, by key, lockpicks or force
-      if (!b.raid) return "Nothing to open.";
+      if (!b.raid && !b.doors) return "Nothing to open."; // a field map's houses' locked doors (genMap FIELD_DOOR)
       const err = openLock(state, b, u, act, { say, alertNear, fx });
       if (err) return err;
       break;
     }
-    case "close": case "brace": case "peek": { // buildingmaps.js: a building's doors (close one, brace one, peek through one)
-      if (!b.raid) return "No doors here.";
+    case "close": case "brace": case "peek": { // buildingmaps.js: a building's doors (close one, brace one, peek through one); a field map's houses too
       const err = doorAct(state, b, u, act, { say, alertNear, fx });
       if (err) return err;
       break;
@@ -4424,6 +4452,8 @@ function aiUnit(b, u) {
     // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
     const wall = siegeTarget(b, u);
     if (wall) { bash(b, u, wall[0], wall[1]); u.ap = 0; return; }
+    const bi = breakIn(b, u, field); // no way to them but through a locked door: on to it (breakIn)
+    if (bi === "moved") continue;
     if (!u.stun && (u.side === "player" || isSniper(u) || rng.chance(0.6) || MED.coveringRescue(b, u))) u.ow = true; // a sniper always watches; stun: no overwatch through a flashbang's glare; medics.js: covering a rescue
     else if (coverSides(b, u.x, u.y).some((c) => c)) u.hunker = true;
     u.ap = 0;
@@ -4537,6 +4567,22 @@ function aiMeds(b, u) {
   return true;
 }
 
+// A field map's houses (genMap FIELD_DOOR): an attacker with nobody to shoot and no way to them on foot but through a
+// locked door goes on along its siege field (distField: the door at its battering cost) toward that door, as
+// the dead do (aiMelee); next to it siegeTarget batters it. Not in a raid (its guards keep to their own rules) nor on a
+// base's map (fortApproach, the tiers). "moved" (one action spent) or null.
+function breakIn(b, u, field) {
+  if (b.raid || b.tier || u.side === (b.holders || "player") || u.side === "third" || u.ap < 1) return null;
+  const foes = foesOf(b, u);
+  if (!foes.length || isFinite(distField(b, foes.map((f) => [f.x, f.y]))[idx(u.x, u.y)])) return null; // a way round on foot (closed doors open)
+  const r = reachable(b, u, u.mob);
+  let best = -1, bestV = field[idx(u.x, u.y)];
+  for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && field[i] < bestV && !unitAt(b, i % W, (i / W) | 0)) { bestV = field[i]; best = i; }
+  if (best < 0) return null;
+  u.ap -= 1;
+  moveAlong(b, u, pathTo(r, best % W, (best / W) | 0));
+  return "moved";
+}
 // An attacker outside a fort's wall (fort.js): on toward the nearest opening (a gate, a breach) rather than trading long
 // shots with whoever stands on the wall, or waiting in the margin; at the gate (or a wall section), batter it. Also once
 // the fight is in the yard (the wall fell with only some of them through): the ones still outside follow them in.
@@ -5643,7 +5689,7 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
       }
       rng.shuffle(edge);
       const doors = edge.slice(0, 2);
-      doors.forEach(([x, y]) => put(x, y, "open", "floor"));
+      doors.forEach(([x, y]) => { put(x, y, "idoor", "floor"); at(x, y).hp = at(x, y).mhp = BMAP.DOOR.outer; }); // a closed door, not a gap in the wall (as a building's map: buildingmaps.js)
       edge.slice(2, 2 + rng.int(1, 2)).forEach(([x, y]) => put(x, y, "window"));
       // Inside cells touching a wall, away from doors.
       const spots = [];
