@@ -27,6 +27,7 @@
 //     rummage in the dark without either is heard 2 tiles further (search.js; a full search is 1 action either way).
 //     Both switch on and off for free (combat.js switchAct); with both, a battle starts with the goggles on and the
 //     light off (vision.js defaultSwitches).
+import { aiLights } from "./ailights.js"; // an investigating guard's light and the room's switch
 import { GEAR } from "./data.js";
 import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunmods.js"; // gun attachments: suppressors, brakes
 import { isNight, survivorById, baseById, hourOfDay } from "./world.js";
@@ -169,6 +170,7 @@ export function stealthSetup(state, b) {
       }
       if (u.daySight == null) u.daySight = u.sight;
       enemyLight(b, u); // vision.js: a soldier's military flashlight, a raider's flashlight one time in three
+      if (u.light && !u.aware) u.lightOff = true; // ailights.js: a guard at his post keeps it off until he is alerted
       nightEyes(b, u);
     }
   }
@@ -542,6 +544,7 @@ function investigate(b, u) {
     else if (r.dist[best] > 0) moveAlong(b, u, pathTo(r, best % b.w, (best / b.w) | 0));
     else if (inside && u.kind === "zombie") { const door = siegeTarget(b, u, field); if (door) bash(b, u, door[0], door[1]); }
     faceToward(u, inv.x, inv.y);
+    if (active(u)) aiLights(b, u); // ailights.js: the light on to look, and the room's switch when it is right there
   }
   notice(b, u);
   if (!u.aware) spotBodies(b, u);

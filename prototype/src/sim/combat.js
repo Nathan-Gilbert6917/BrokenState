@@ -109,6 +109,7 @@ import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, 
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
+import { aiLights, aiFlashlight, aiRoomLights, wakeLights } from "./ailights.js"; // the AI's flashlights and room lights (the user's request 2026-10-12)
 import { indoorSetup, lightAt, indoorSees, lightsAct } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
 import { VISION, hasFront, inArc, coned, nightSees, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox, activeLight, nvgOn, nvgSight } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
@@ -3394,6 +3395,7 @@ function alertAll(b, why) {
   const sleepers = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u));
   if (!sleepers.length) return;
   for (const u of sleepers) { u.aware = true; if (b.phase === "player") u.surprised = true; }
+  wakeLights(b, sleepers); // ailights.js: their flashlights on in the dark
   say(b, b.phase === "player" ? "Your shots catch them by surprise. They scramble but cannot react this turn." : why, "good");
 }
 
@@ -3401,6 +3403,7 @@ export function alertPod(b, pod, why) {
   const sleepers = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u) && u.pod === pod);
   if (!sleepers.length) return;
   for (const u of sleepers) u.aware = true;
+  wakeLights(b, sleepers); // ailights.js: their flashlights on in the dark
   say(b, why, "danger");
   if (b.phase === "player") for (const u of sleepers) scramble(b, u);
 }
@@ -4477,6 +4480,7 @@ function aiUnit(b, u) {
     if (plan === "flee") return flee(b, u);
   }
   const rng = b.rng;
+  if (u.kind === "human") aiFlashlight(b, u, true); // ailights.js: a flashlight on once they know the fight is on, in the dark
   if (!u.aware && stealthAI(b, u)) return; // stealth.js: finding bodies, going to look where a bottle landed
   if (!u.aware && b.raid) {
     patrol(b, u);
@@ -4497,6 +4501,7 @@ function aiUnit(b, u) {
     return;
   }
   aiLook(b, u); // vision.js: an aware person turns to the nearest foe it can make out
+  if (u.kind === "human" && aiRoomLights(b, u, true) && (u.ap < 1 || !active(u))) return; // ailights.js: a dark room's switch flipped on (walked to first when it is near and quiet)
   const flees = u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b);
   // medics.js: a downed ally to drag out of the line of fire, stabilize or revive; a medic healing the badly hurt;
   // raiders finishing (or taking) your downed. The rest of the turn goes on as usual.
@@ -4530,7 +4535,7 @@ function aiUnit(b, u) {
     const here = scoreCell(b, u, u.x, u.y, foes, 0, field);
     if (shot && (u.ap === 1 || (shot.o.chance >= 55 && here > -6))) { fire(b, u, shot.t); u.ap = 0; return; }
     const mv = bestMove(b, u, foes, field);
-    if (mv && mv.sc > here + 1) { u.ap -= 1; moveAlong(b, u, mv.path); continue; }
+    if (mv && mv.sc > here + 1) { u.ap -= 1; moveAlong(b, u, mv.path); if (u.kind === "human" && active(u) && u.ap > 0) aiRoomLights(b, u, true); continue; } // ailights.js: a dark room walked into: its switch, when it is right there
     // An attacker outside a fort's wall with no fair shot: on toward the nearest opening, or batter the gate (fortApproach).
     if (!shot || shot.o.chance < 45) { const fa = fortApproach(b, u, field); if (fa === "bash") return; if (fa === "moved") continue; }
     if (shot) { fire(b, u, shot.t); u.ap = 0; return; }
@@ -5269,6 +5274,7 @@ export function volunteerTurn(state, b) {
       if (b.floors && (u.f || 0) !== view) setFloor(b, u.f || 0);
       bindDims(b);
       const hot = b.units.some((e) => e.side === "enemy" && active(e) && e.aware && (u.f || 0) === (e.f || 0) && (!b.raid || dist(u.x, u.y, e.x, e.y) <= VOL_RAID));
+      aiFlashlight(b, u, true); // ailights.js: their light on once the team is found, in the dark
       const order = u.volOrder || "free";
       const lead = order === "follow" ? unitById(b, u.volLead) : null;
       if (order === "hold") volHold(b, u, hot);
@@ -6052,7 +6058,7 @@ export function alertNear(b, x, y, radius, why) {
   const near = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u) && dist(u.x, u.y, x, y) <= radius);
   if (!near.length && !b.floors) return;
   const pods = new Set(near.map((u) => u.pod));
-  for (const u of b.units) if (u.side === "enemy" && !u.aware && active(u) && pods.has(u.pod)) { u.aware = true; if (b.phase === "player") u.surprised = true; }
+  for (const u of b.units) if (u.side === "enemy" && !u.aware && active(u) && pods.has(u.pod)) { u.aware = true; if (b.phase === "player") u.surprised = true; wakeLights(b, [u]); } // ailights.js: flashlights on
   // Through the floors (buildingmaps.js storeys): the dead on other storeys hear it too, FLOOR_DAMP tiles further off a
   // storey; they wake (no surprise: they are not in the fight) and drift to the stairs (floorDrift).
   let other = 0;
@@ -6466,6 +6472,7 @@ function autoRaidTurn(state) {
       if (grew) R.botOut = { turn: b.turn, why: "cut off" };
       u.exitHist = [...h.slice(-(n - 1)), detour];
     }
+    if (active(u)) aiLights(b, u, true); // ailights.js: the bot's lights on once the team is found, a dark room's switch
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
       // raidloot.js: each survivor carries their own finds; with a vehicle, a full one walks back to load it.
       const mine = party ? personalRoom(state, u) : 0, space = party ? trunkSpace(state, b) : null;
