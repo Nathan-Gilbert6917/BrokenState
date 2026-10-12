@@ -24,6 +24,7 @@ import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal,
 import { LIGHTS } from "../sim/lights.js";
 import { VISION, viewWedges, faceAng, hasFront, setFacing, nightWord, darkSight } from "../sim/vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12)
 import { noticeRange, earshot } from "../sim/stealth.js";
+import { switchOptions, switchAt, roomAt, roomLit, INDOOR } from "../sim/indoorlight.js"; // a raid's dark rooms and light switches
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
 import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chips, the Visor toggle (sim/helmets.js)
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
@@ -473,6 +474,10 @@ export function combatClick(state, px, py) {
   // A door picked for Peek, Close door or Brace (sim/buildingmaps.js).
   if (u && active(u) && ["peek", "close", "brace"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
   if (b.raid) {
+    // A light switch next to the selected unit (sim/indoorlight.js): flip it.
+    const sw = switchAt(b, c.x, c.y);
+    if (sw && switchOptions(b, u).includes(sw)) return void act(state, { type: "lights", unit: u.id, area: sw.id });
+    if (sw) { cui.msg = "Stand next to the switch, inside the room or in its doorway, to flip it."; return; }
     // A window right next to the selected unit (sim/buildingmaps.js): climb through it.
     if (b.raid.interior && b.cells[c.y * W + c.x].k === "window" && windowsNear(b, u).some((o) => o.x === c.x && o.y === c.y)) return void act(state, { type: "climb", unit: u.id, x: c.x, y: c.y });
     const box = boxAt(b, c.x, c.y);
@@ -1110,6 +1115,7 @@ export function combatAction(state, key, d) {
   // vision.js: Face (pick the way, free), Sneak (on / off, free), Overwatch (pick the way to watch; again: as they face).
   if (v === "face") { cui.mode = cui.mode === "face" ? "move" : "face"; cui.msg = cui.mode === "face" ? `Click the way ${u.name.split(" ")[0]} should face (free; it needs an action left). The cone is what they watch${b.night ? " and see in the dark" : ""}: a guard is noticed and an overwatch reacts only in it, and loot is searched only facing it.` : ""; return; }
   if (v === "sneak") return void act(state, { type: "sneak", unit: u.id });
+  if (v === "lights") return void act(state, { type: "lights", unit: u.id }); // sim/indoorlight.js: the switch in reach (the sim says why not)
   if (v === "overwatch") {
     if (cui.mode === "overwatch") return void act(state, { type: "overwatch", unit: u.id });
     if (!canFire(b, u)) return void act(state, { type: "overwatch", unit: u.id }); // the sim says why not
@@ -1526,6 +1532,12 @@ function raidButtons(state, b, u, btn) {
     html += btn("brace", "Brace door", braces.length ? `The rest of the turn: ${first} puts a shoulder to the closed door next to them. People cannot open it (they must break it) and it takes half of each blow, until ${first} moves.` : "Stand next to a closed door (not diagonally) to brace it.", u.ap > 0 && braces.length > 0, "Y");
     const wins = windowsNear(b, u);
     html += btn("climb", "Climb window", wins.length ? `${BMAP.CLIMB.ap} action: smash the window next to ${first} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays open after.` : "Stand right next to a window (not diagonally) with room on the far side to climb through it (loud).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
+  }
+  // A light switch in reach (sim/indoorlight.js): the room's lights on or off.
+  const sws = switchOptions(b, u);
+  if (sws.length) {
+    const a = sws[0];
+    html += btn("lights", a.on ? "Lights off" : "Lights on", `${INDOOR.AP} action, quiet: switch the lights ${a.on ? "off" : "on"} in the ${a.name.toLowerCase()}. ${a.on ? `Dark again${!b.night && !a.dark ? " (by day the windows still light it)" : ""}: it is seen only as at night, down the cone or a light's beam.` : `Lit, it is seen as by day by everyone, yours and theirs: whoever stands in it can be noticed, and a guard in it sees all round.`}`, u.ap >= INDOOR.AP, "⌥L");
   }
   return html;
 }
@@ -2058,6 +2070,12 @@ function previewHtml(b, state = null) {
   }
   // A building's map (sim/buildingmaps.js): windows to climb, doors, the room under the mouse.
   const room = b.raid && b.raid.interior ? b.raid.areas.find((a) => !a.outdoor && h.x > a.x0 && h.x < a.x0 + a.w - 1 && h.y > a.y0 && h.y < a.y0 + a.h - 1) : null;
+  // A light switch (sim/indoorlight.js).
+  const sw = b.raid ? switchAt(b, h.x, h.y) : null;
+  if (sw) {
+    const reach = u && active(u) && switchOptions(b, u).includes(sw);
+    return `<b>Light switch: ${sw.on ? "on" : "off"}</b> · ${esc(sw.name)}<br><span class="muted">${reach ? `Click or press ${esc(keyLabel("battle.lights", 1) || "Alt+L")} to flip it (${INDOOR.AP} action, quiet).` : "From next to it, inside the room or in its doorway: click it or Lights to flip it (1 action, quiet)."} ${sw.on ? "Lit, the room is seen as by day by both sides." : `Off, the room is dark${!b.night && !sw.dark ? " but for the daylight through its windows" : ""}: seen only as at night, down the cone or a light's beam.`}</span>`;
+  }
   if (b.raid && b.raid.interior && cobj.k === "window") return `<b>Window</b>: half cover; you see through it. Cannot stand here.<br><span class="muted">From right next to it (not diagonally): Climb window (L) smashes it and climbs through. Loud: Heat +${BMAP.CLIMB.heat}, wakes what is within ${BMAP.CLIMB.radius} tiles.</span>`;
   if (b.raid && b.raid.interior && (cobj.k === "idoor" || cobj.k === "odoor")) {
     const shut = cobj.k === "idoor";
@@ -2089,6 +2107,10 @@ function previewHtml(b, state = null) {
   if (cobj.mhp) s += ` ${structureName(cobj)}:${struct}`;
   if (b.tier && b.tier.indoor && b.tier.indoor[h.y * W + h.x]) s += ` Inside ${esc((b.tier.buildings || []).find((x) => x.cells.some(([cx, cy]) => cx === h.x && cy === h.y))?.name || "a building")}.`;
   if (room) s += ` ${esc(room.name)}${room.type ? ` (${esc(areaHint(room.type).replace(/^Likely: /, "likely ").toLowerCase())})` : ""}.`;
+  // A raid's dark room (sim/indoorlight.js): a barn, a storeroom by day, any room at night with its lights off.
+  const lroom = b.indoor ? roomAt(b, h.x, h.y) : null;
+  if (lroom && !roomLit(b, lroom)) s += ` <span class="warn">Dark inside</span><span class="muted">: seen only as at night (${INDOOR.DARK} tiles down the cone, more down a light's beam, night vision the day's sight)${lroom.sw ? "; its light switch is by the door" : "; no power here"}.</span>`;
+  else if (lroom && lroom.on && b.night) s += ' <span class="good">Lights on</span><span class="muted">: seen as by day, by both sides.</span>';
   if (!v.vis[h.y * W + h.x]) s += " Not in sight right now.";
   return s + threatHtml(b, v, h.x, h.y);
 }
