@@ -1,5 +1,5 @@
-// Skills in the survivor screen (sim/skills.js): levels with XP progress, perk points, the skill tree (nodes per
-// skill and milestone: taken / available / locked / passed over), and the Teach and Read settings for people on
+// Skills in the survivor screen (sim/skills.js): levels with XP progress, perk points, the skill tree window (nodes
+// per skill and milestone: taken / available / locked / passed over), and the Teach and Read settings for people on
 // those roles. Actions: SKILL_ACTIONS (clicks) and SKILL_CHANGE (drop-downs), wired in main.js.
 import { SKILLS, SKILL_NAMES, GEAR } from "../sim/data.js";
 import { skill, survivorById, baseById, atBase } from "../sim/world.js";
@@ -32,7 +32,10 @@ export function skillsBlock(state, s) {
       <span class="sk-perk">${perks.length ? "★".repeat(perks.length) : ""}</span>
     </div>`;
   }).join("");
-  return `<div><div class="spread"><h3${tip(CURVE_TIP)}>Skills</h3>${pend.length ? `<button class="mini primary" data-action="skilltree" data-id="${s.id}"${tip("Open the skill tree to spend them")}>★ ${pend.length} perk point${pend.length === 1 ? "" : "s"}</button>` : ""}</div>
+  const treeBtn = !s.alive ? ""
+    : pend.length ? `<button class="mini primary" data-action="skilltree" data-id="${s.id}"${tip("Open the skill tree in a window to spend them")}>★ ${pend.length} perk point${pend.length === 1 ? "" : "s"}</button>`
+    : `<button class="mini" data-action="skilltree" data-id="${s.id}"${tip("Perks at Skill 5, 10 and 15: one of two per milestone, for good")}>Skill tree</button>`;
+  return `<div><div class="spread"><h3${tip(CURVE_TIP)}>Skills</h3>${treeBtn}</div>
     <div class="small muted">Gold: level · blue: XP to the next level · ★ perks taken</div>${rows}</div>`;
 }
 
@@ -41,12 +44,13 @@ const findPerk = (id) => {
   return EARNED_PERKS[id] || { name: id, desc: "" };
 };
 
-// The skill tree: a row per skill, a column per milestone, two perk nodes in each.
-export function skillTree(state, s, ui) {
-  const open = ui.skillTree === s.id;
+// The skill tree window (perk points), over the survivor screen (ui.js pickModal; Esc or Close goes back to it):
+// a row per skill, a column per milestone, two perk nodes in each.
+export function skillTreeModal(state, ui) {
+  const s = survivorById(state, ui.skillTree);
+  if (!s || !s.alive) { ui.skillTree = null; return null; }
   const pend = pendingPerks(s);
-  const head = `<div class="spread"><h3>Skill tree</h3><button class="mini ${open ? "active" : ""}" data-action="skilltree" data-id="${s.id}"${tip("Perks at Skill 5, 10 and 15: one of two per milestone, for good")}>${open ? "Hide" : "Show"} skill tree${pend.length ? ` (★ ${pend.length})` : ""}</button></div>`;
-  if (!open) return head;
+  const head = `<div class="spread"><h1${tip("Perks at Skill 5, 10 and 15: one of two per milestone, for good")}>Skill tree · ${esc(s.name)}</h1><span class="muted">${pend.length ? `★ ${pend.length} perk point${pend.length === 1 ? "" : "s"} to spend` : "No perk points to spend"}</span></div>`;
   const rows = SKILLS.map((k) => {
     const lv = skill(s, k);
     const cells = MILESTONES.map((ms) => {
@@ -67,9 +71,10 @@ export function skillTree(state, s, ui) {
     }).join("");
     return `<div class="tree-row"><div class="tree-skill"><b>${SKILL_NAMES[k]}</b> <span class="muted">${lv}</span></div>${cells}</div>`;
   }).join("");
-  return `${head}${ui.skillMsg ? `<div class="result small">${esc(ui.skillMsg)}</div>` : ""}
+  return `<div class="box treebox">${head}${ui.skillMsg ? `<div class="result small">${esc(ui.skillMsg)}</div>` : ""}
     <div class="skilltree"><div class="tree-row tree-head"><div></div>${MILESTONES.map((m) => `<div>Skill ${m}</div>`).join("")}</div>${rows}</div>
-    <div class="small muted">Gold border: a perk point to spend · green: taken · grey: locked or passed over. Hover a perk for its exact effect.</div>`;
+    <div class="small muted">Gold border: a perk point to spend · green: taken · grey: locked or passed over. Hover a perk for its exact effect.</div>
+    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="skilltree-close">Close</button></div></div>`;
 }
 
 // Teach and Read: the settings for people on those roles, and the books they have read.
@@ -131,7 +136,8 @@ export const SKILL_ACTIONS = {
     s.station = null;
     assignStations(state, baseById(state, s.location.baseId));
   },
-  skilltree: (state, ui, d) => { const id = Number(d.id); ui.skillTree = ui.skillTree === id ? null : id; ui.skillMsg = ""; },
+  skilltree: (state, ui, d) => { ui.skillTree = Number(d.id); ui.skillMsg = ""; }, // opens the window (skillTreeModal)
+  "skilltree-close": (state, ui) => { ui.skillTree = null; ui.skillMsg = ""; },
   "perk-pick": (state, ui, d) => {
     const s = survivorById(state, Number(d.id));
     if (!s) return;

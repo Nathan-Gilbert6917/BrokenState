@@ -26,11 +26,12 @@
 //   base with nothing to do (a work role with no work, or a job that cannot be done here), not counting anyone
 //   resting (the Rest job, free time), in bed, ill or hurt, on watch or away. workCount(state, base) → { total,
 //   working, idle, hurt, resting }.
-// Mealtimes (meals.js MEALS): breakfast at 06:00 (10:00 for hunters and fishers, after the dawn trip) and dinner at
-//   20:00, an hour each, show as "Eating" ("Eating breakfast (24 min)": eating.js s.meal, the break they took this
-//   hour; from their pack when the stores are empty). The food comes out of the store as they eat (eating.js); the
-//   jobs that work every hour (construction, crafting, gear repairs) stop for the meal hours (meals.js), the jobs with
-//   set hours have no meal in them.
+// Mealtimes (meals.js MEALS): breakfast at 06:00 (10:00 for hunters and fishers, after the dawn trip), lunch at the
+//   lunch hour (12:00 unless the Work tab moves it) and dinner at 20:00, an hour each, show as "Eating" ("Eating
+//   breakfast (24 min)": eating.js s.meal, the break they took this hour; from their pack when the stores are empty).
+//   The food comes out of the store as they eat (eating.js); the jobs that work every hour (construction, crafting,
+//   repairs) stop for the meal hours (meals.js); someone out on a job trip at lunch stops where they are and eats from
+//   their pack (jobtrips.js tripState: "Lunch break at …").
 // stallDaily(state) (world.js, after the bases' day): base.stall[job] = the day a job here was first found with nobody
 //   on it able to work (row.why), cleared when it can work again; the alert (ui/activity.js stallAlerts) comes at 2 days.
 import { atBase, baseById, factionById, hourOfDay, survivorById, day, skill } from "./world.js";
@@ -59,7 +60,7 @@ import { TRIP_JOBS, tripWindow, inTripHours } from "./tripland.js"; // the outdo
 import { tripState, tripTarget } from "./jobtrips.js"; // where someone out on a trip is: "Heading to forest (3,7)", "Bringing 18 kg meat back"
 import { fetchWaterWhy, fetchWaterDay } from "./economy.js"; // Fetch water
 
-import { MEALS, MEAL_WORK_SHARE } from "./meals.js";
+import { MEALS, MEAL_WORK_SHARE, mealOf, lunchHour } from "./meals.js";
 import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity, cookPlusOf, cookShiftRole } from "./kitchen.js"; // the Kitchen's cooks and its hot meals
 
 // Icons by job, and by kind for everything that is not a job.
@@ -67,10 +68,8 @@ export const JOB_ICONS = { water: "🪣", wood: "🪓", farm: "🌱", forage: "�
 export const KIND_ICONS = { sleep: "💤", guard: "🛡️", hurt: "🩹", free: "☕", idle: "⏸", stalled: "⚠️", off: "🕓", away: "🚶", captive: "⛓️", eat: "🍲" };
 // Mealtimes (meals.js: the hour each starts; an hour each). Hunters and fishers are out on the dawn trip (06–10), so they eat after.
 export { MEALS };
-export function mealAt(job, h) {
-  const b = job === "hunt" || job === "fish" ? MEALS.lateBreakfast : MEALS.breakfast;
-  return h === b ? "breakfast" : h === MEALS.dinner ? "dinner" : null;
-}
+/** @param {string} job @param {number} h @param {any} [state] */
+export const mealAt = (job, h, state) => mealOf(job, h, state);
 export const STALL_ALERT_DAYS = 2;
 const UPKEEP_WORTH = 20; // wear on a building that makes a builder's upkeep worth a day (breakdowns.js: they mend any wear)
 const MIN_WORK = 0.35; // the daily jobs skip anyone below this work factor (woodDaily, foragingDaily, huntingDaily)
@@ -103,19 +102,19 @@ export function describeActivity(state, s, h = hourOfDay(state), opts = {}) {
   const role = cookPlusOf(state, s) && !s.sickWas && !s.watchWas && !s.jailWas ? cookShiftRole(base, s, h) : s.role;
   // The Kitchen's cooks (kitchen.js): a full-day cook up at 05:00 for breakfast, serving at the meals, until 22:00; a
   // part-time one (work priorities, Cook + second job) in the cooking hours.
-  const ck = (t ? t.t === "meals" : role === "cook") && hasKitchen(base) && !(t && t.t === "sleep") ? cookActivity(h) : null;
+  const ck = (t ? t.t === "meals" : role === "cook") && hasKitchen(base) && !(t && t.t === "sleep") ? cookActivity(h, lunchHour(state)) : null;
   if (ck) return act("work", ck.text, ck.why, "cook");
-  const meal = mealAt(role, h);
+  const meal = mealAt(role, h, state);
   const outNow = h === hourOfDay(state) && !!s.trip && s.trip.leave <= state.hour && state.hour < s.trip.home; // out on a job trip (jobtrips.js): the trip's line, they eat when back
   if (meal && !outNow && s.role !== "guard" && !(t && (t.t === "sleep" || t.t === "guard")) && !sleepHour(state, s, h) && !sleepingIn(state, base, s, h)) {
     // eating.js: the meal they just had (s.meal: this hour) gives its minutes; the food is taken from the stores as they eat.
     const now = h === hourOfDay(state) && s.meal && s.meal.h === state.hour ? s.meal : null;
     const mins = now ? ` (${now.min} min)` : "";
-    const how = "They eat until they are 80–100% full (each their own target), cooked meals first; building and crafting stop for the hour.";
+    const how = `They eat until they are 80–100% full (each their own target), cooked meals first; ${meal === "lunch" ? "all work stops for the hour (a small lift to their mood)" : "building and crafting stop for the hour"}.`;
     if (now && now.from === "pack") return act("eat", `Eating ${meal} from their pack${mins}`, `${base.name}'s stores are empty: they eat the food they carry.`, s.role);
     if (edibleFood(base) > 0 || (base.stock.food || 0) > 0) {
       if (eatsAtKitchen(state, base, s)) return act("eat", `Eating ${meal} at the kitchen${mins}`, `A hot ${meal} at ${base.name}'s kitchen: hot meals stretch the food and lift spirits. ${how}`, s.role);
-      return act("eat", `Eating ${meal}${mins}`, `${meal === "breakfast" ? "Breakfast" : "Dinner"} at ${base.name}. ${how}`, s.role);
+      return act("eat", `Eating ${meal}${mins}`, `${meal[0].toUpperCase()}${meal.slice(1)} at ${base.name}. ${how}`, s.role);
     }
     return act("eat", "Mealtime – nothing to eat", `${base.name} is out of food.`, s.role, "🍽️");
   }
@@ -238,7 +237,7 @@ function fixedJobActivity(state, base, s, job, h) {
     case "trainee": return act("work", "Training on the ward", "", job);
     case "cook": {
       if (!hasKitchen(base)) return act("stalled", "Cook – no kitchen", `Nothing to cook on: build a Kitchen at ${base.name} (Construction, a building plot) or give them another job.`, job);
-      const ck = cookActivity(h);
+      const ck = cookActivity(h, lunchHour(state));
       return ck ? act("work", ck.text, ck.why, job) : act("off", "Cook – off until 05:00", "The cooks are up before the others for breakfast.", job);
     }
     case "guard": return act("guard", "On guard", "A lookout on the walls (counts 1.5× in a fight).", job);

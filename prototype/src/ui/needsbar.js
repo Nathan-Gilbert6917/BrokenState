@@ -41,13 +41,16 @@ export function baseNeeds(state, h) {
   for (const k of ["food", ...STOCK_KEYS]) {
     if (k === "jars" || k === RAW || k === "arrows") continue;
     const tr = stockChipTrend(state, h, k);
-    const r = { k, name: k === "food" ? "Food (days)" : k === "water" ? "Water" : SUPPLIES[k].name, amt: k === "food" ? n0(foodIn(h.stock)) : n0(h.stock[k]), extra: "", note: "", level: null, tip: "", tr };
+    const r = { k, name: k === "food" ? "Food (rations)" : k === "water" ? "Water" : SUPPLIES[k].name, amt: k === "food" ? n0(foodIn(h.stock)) : n0(h.stock[k]), extra: "", note: "", level: null, tip: "", tr };
     let base = k === "food" ? "" : `${SUPPLIES[k].name} at ${h.name}. Weight ${supWeight(k)} each; what it fetches depends on who you trade with.`;
     if (k === "food") {
       const o = foodOutlook(state, h), ln = foodLine(state, h);
       r.level = o.daysLeft < NEEDS_AT.foodCrit ? 2 : o.daysLeft < NEEDS_AT.foodLow || o.store.outside >= 1 ? 1 : 0;
-      r.note = dd(o.daysLeft);
-      base = `${foodTipText(state, h, ln)} Empty jars: ${n0(h.stock.jars)}.`;
+      // The days it lasts at today's eating (foodOutlook: everyone fed here, spoiling, the kitchens); the amount is in
+      // rations (one person's food for a day), so 12 rations for 2 people read 6d. Food that does not last a whole day
+      // still feeds today: 1d, not "<1d" (INV-04); empty stores 0d.
+      r.note = !(o.stock > 0.05) ? (isFinite(o.daysLeft) ? "0d" : dd(o.daysLeft)) : o.daysLeft < 1 ? "1d" : dd(o.daysLeft);
+      base = `Food: ${n1(o.stock)} rations (one ration is a person's food for a day) for ${o.heads} ${o.heads === 1 ? "person" : "people"} eating ${n1(o.eat)} a day${o.spoil > 0.05 ? `, ${n1(o.spoil)} a day spoiling` : ""}${o.used > 0.05 ? `, ${n1(o.used)} a day into the stations` : ""}: ${isFinite(o.daysLeft) ? `about ${n1(o.daysLeft)} days` : "it keeps up"}. ${foodTipText(state, h, ln)} Empty jars: ${n0(h.stock.jars)}.`;
     } else if (k === "water") {
       const o = waterOutlook(state, h), ln = waterLine(state, h), safe = baseWater(state, h).safe;
       const raw = Math.floor(Math.max(0, h.stock[RAW] || 0));

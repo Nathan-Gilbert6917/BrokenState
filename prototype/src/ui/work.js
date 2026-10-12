@@ -20,6 +20,7 @@ import {
 } from "../sim/work.js";
 import { FIELD_TYPES, FIELD_KEYS, crewStatus, planCrewTrip, crewHold } from "../sim/crews.js";
 import { SICK_REST_MODES, sickRestMode, setSickRest, sickRestLabel } from "../sim/sickrest.js"; // "Sick people rest"
+import { LUNCH_HOURS, lunchHour, setLunchHour } from "../sim/meals.js"; // the lunch hour (every base)
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
 import { undoBtn } from "./undo.js"; // ↶ Undo (and Ctrl+Z) for the edits on this tab
 import { ask } from "./confirm.js"; // deleting a role asks first (one confirmation style)
@@ -65,6 +66,14 @@ function sickRestSelect(state) {
   const m = sickRestMode(state);
   const desc = `Sick people rest, at every base: ${Object.values(SICK_REST_MODES).map((x) => `${x.name}: ${x.desc}`).join(" ")} Manual and pinned people too; they go back to their job when well. Any illness counts (an upset stomach from un-purified water or uncooked food too); injuries keep their own rules. A raid or a horde at the walls still takes them, and they fight if the base is attacked.`;
   return `<span${tip(desc)}>Sick people rest</span><select data-action="wsick"${tip(desc)}>${Object.entries(SICK_REST_MODES).map(([k, x]) => `<option value="${k}" ${m === k ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`;
+}
+
+// The lunch hour, at every base (sim/meals.js): an hour's break from all work, eaten to 80–100% full.
+const hh = (h) => `${String(h).padStart(2, "0")}:00`;
+const LUNCH_DESC = "Lunch, at every base: an hour when all work stops and everyone eats until they are 80–100% full (each their own target), with a small lift to mood. Building, crafting, repairs and the garage stop for it; people out on a job trip (wood, foraging, scavenging, water) stop where they are and eat from their pack (they take at least a day of food out with them), and that hour does not count toward their load. Guards stay on the walls. Breakfast (06:00; 10:00 for hunters and fishers) and dinner (20:00) stay where they are.";
+function lunchSelect(state) {
+  const L = lunchHour(state);
+  return `<span class="row" style="flex-wrap:nowrap"><span${tip(LUNCH_DESC)}>Lunch</span><select data-action="wlunch"${tip(LUNCH_DESC)}>${LUNCH_HOURS.map((h) => `<option value="${h}" ${L === h ? "selected" : ""}>${hh(h)}–${hh(h + 1)}</option>`).join("")}</select></span>`;
 }
 
 // The role drop-down's change: a work role ("w:…") or a fixed job (Manual). Returns a message.
@@ -138,6 +147,7 @@ export function workTab(state, b, ui) {
       <span${tip("The role new people get when they join (recruits, strangers, rescued people). Manual: they keep the job they come with.")}>Newcomers join</span>
       <select data-action="wnew">${[["", "Manual"], ...roles.map((r) => [r.id, r.name])].map(([v, l]) => `<option value="${esc(v)}" ${String(newcomers || "") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
       ${sickRestSelect(state)}
+      ${lunchSelect(state)}
       <span class="muted small">${managed} of ${people.length} here on priorities</span>
       ${undoBtn(state, ui, "work")}
     </div>
@@ -167,9 +177,11 @@ function roleEditor(state, ui, b) {
     const v = (role.min && role.min[k]) || 0;
     return `<td><select class="wmin" data-action="wmin" data-role="${role.id}" data-k="${k}"${tip(`Minimum ${SKILL_NAMES[T.skill] || T.skill} for ${T.name} in this role (members below it skip it)`)}>${[0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15].map((n) => `<option value="${n}" ${v === n ? "selected" : ""}>${n ? `${n}+` : "–"}</option>`).join("")}</select></td>`;
   }).join("");
+  const L = lunchHour(state);
   const sched = Array.from({ length: 24 }, (_, h) => {
     const c = schedAt(role, h);
-    return `<button class="wsch s-${c}" data-action="wsched" data-rc="1" data-role="${role.id}" data-h="${h}"${tip(`${String(h).padStart(2, "0")}:00 ${SCHED[c].name}: ${SCHED[c].desc} Click to change (Work → Guard → Free → Sleep), right-click back.`)}>${SCHED[c].short}</button>`;
+    const lunch = h === L && c === "w" ? " Lunch: all work stops for this hour (set at the top of the tab)." : "";
+    return `<button class="wsch s-${c}${lunch ? " lunch" : ""}" data-action="wsched" data-rc="1" data-role="${role.id}" data-h="${h}"${tip(`${String(h).padStart(2, "0")}:00 ${SCHED[c].name}: ${SCHED[c].desc}${lunch} Click to change (Work → Guard → Free → Sleep), right-click back.`)}>${SCHED[c].short}</button>`;
   }).join("");
   return `<h3>Roles</h3>
     <div class="row wroles">${list}<button data-action="wrole-new"${tip("A new base role")}>+ New role</button><button data-action="wrole-new-crew"${tip("A new crew: its members go on trips by themselves (Crews below)")}>+ New crew</button></div>
@@ -182,7 +194,7 @@ function roleEditor(state, ui, b) {
       <div class="spread" style="margin-top:0.5rem"><b class="small">Schedule</b><span class="small muted">${esc(schedText(role))}</span>
         <select data-action="wsched-preset" data-role="${role.id}"${tip("Set the whole day at once")}><option value="">Preset…</option>${Object.entries(SCHED_PRESETS).map(([k, p]) => `<option value="${k}">${esc(p.name)}</option>`).join("")}</select></div>
       <div class="wsched">${sched}</div>
-      <div class="small muted">W work · G guard watch · F free time · S sleep. Free time and sleep give the Rest role's mood by the hour. Farming, stations, scavenging and study are counted at midnight: someone asleep then counts at their last work of the day.</div>
+      <div class="small muted">W work · G guard watch · F free time · S sleep. The underlined hour is lunch (${hh(L)}): all work stops for it. Free time and sleep give the Rest role's mood by the hour. Farming, stations, scavenging and study are counted at midnight: someone asleep then counts at their last work of the day.</div>
     </div>`;
 }
 
@@ -303,6 +315,7 @@ export const WORK_ACTIONS = {
 export const WORK_CHANGE = {
   wfilter: (state, ui, el) => { prefs(ui).filter = el.value || "all"; },
   wnew: (state, ui, el) => { setNewcomers(state, el.value || null); say(ui, el.value ? `Newcomers join ${roleById(state, el.value).name}.` : "Newcomers keep the job they come with (Manual)."); },
+  wlunch: (state, ui, el) => { if (setLunchHour(state, el.value)) say(ui, `Lunch at every base: ${hh(state.lunchHour)}–${hh(state.lunchHour + 1)}. All work stops for the hour.`); },
   wsick: (state, ui, el) => { const m = setSickRest(state, el.value); if (m) { for (const b of state.bases) planBase(state, b); say(ui, m); } },
   "wrole-name": (state, ui, el) => { say(ui, renameRole(state, roleById(state, el.dataset.role), el.value)); },
   wmin: (state, ui, el) => { setRoleMin(state, roleById(state, el.dataset.role), el.dataset.k, el.value); replanAll(state); },
