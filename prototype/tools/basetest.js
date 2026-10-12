@@ -11,6 +11,7 @@ import {
 import { GEAR, TRAITS, FIRST_NAMES } from "../src/sim/data.js";
 import { basesDaily, farmOutput, scavengeOutput, supplyLine, hungerDamage, foodForecast, GREEDY_SCAV, eatPerDay, spoilRate } from "../src/sim/economy.js";
 import { careToday } from "../src/sim/farming.js";
+import { needsHour } from "../src/sim/needs.js"; // the hourly eating (eating.js baseEatHour)
 import { addBuilding, queueBuild, cancelBuild, canBuild, stations, stationStatus, assignStations, constructionHour, BUILDINGS } from "../src/sim/buildings.js";
 import { treatAtBase, treatAtBaseInfo, fieldTreatInfo, treatAnywhere, medicalHour, healRatePerHour } from "../src/sim/medical.js";
 import { craftOutputText, CRAFTS, medKitBonus, makeItem, queueCraft, cancelCraft } from "../src/sim/crafting.js";
@@ -38,6 +39,11 @@ const mkOutpost = (st, tile, stock = {}) => {
   return b;
 };
 const logHas = (st, re) => st.log.some((l) => re.test(l.text));
+// Eating is by the hour since wave 2 (eating.js baseEatHour, from needs.js needsHour): people eat at their mealtimes
+// from the stores, then from the pack they carry (eating.js PACK); the base's day (basesDaily) only counts what they
+// wanted and could not get (base.foodShort: economy.js starve). A day of food or hunger is its hours, then the day.
+const eatHours = (st, n = 24, each = null) => { for (let i = 0; i < n; i++) { st.hour++; needsHour(st); if (each) each(); } };
+const noPacks = (ppl) => ppl.forEach((s) => { delete s.ration; }); // nothing in store or in the packs: hungry at once
 const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
 
 // 1. Game over when the last person leaves (B-1).
@@ -207,6 +213,9 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     setFood(th, 300);
     for (const s of atBase(twin, th.id)) s.role = "rest";
     for (const s of atBase(st, h.id)) s.role = "rest";
+    noPacks([a, b]); // the outpost's two have only its (empty) stores to eat from
+    eatHours(twin);
+    eatHours(st);
     basesDaily(twin);
     basesDaily(st);
     st.cards.length = 0;
@@ -239,16 +248,18 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const ppl = atBase(st, h.id);
   ppl.forEach((s) => { plain(s); s.role = "rest"; s.skills.medicine = 12; });
   clearFood(h); h.stock.meds = 0;
+  noPacks(ppl);
   const tough = ppl[1];
   tough.traits = ["tough"];
   tough.gear.armor = newItem("plate"); tough.gear.head = newItem("riothelmet");
+  eatHours(st);
   basesDaily(st);
   check(near(ppl[2].health, 100 - hungerDamage(1)) && near(tough.health, 100 - hungerDamage(1)), `armor and Tough do not reduce hunger (${ppl[2].health} / ${tough.health})`);
   check(healRatePerHour(st, h, ppl[2]) === 0, "no passive healing while the base is out of food");
   let days = 1;
   while (alive(st).length === 6 && days < 30) {
-    for (let i = 0; i < 24; i++) medicalHour(st);
-    clearFood(h);
+    clearFood(h); // the day's harvest, if any, gone too
+    eatHours(st, 24, () => medicalHour(st));
     basesDaily(st);
     st.cards.length = 0;
     ppl.forEach((s) => (s.mood = 60)); // keep them from walking away: this is about health
@@ -261,9 +272,12 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const h2 = hub(st2);
   atBase(st2, h2.id).forEach((s) => (s.role = "rest"));
   clearFood(h2);
+  noPacks(atBase(st2, h2.id));
+  eatHours(st2);
   basesDaily(st2);
   check(h2.hungerDays === 1, "a day without food is counted");
   setFood(h2, 500);
+  eatHours(st2);
   basesDaily(st2);
   check(h2.hungerDays === 0 && healRatePerHour(st2, h2, atBase(st2, h2.id).find((s) => s.health < 100)) > 0, "healing resumes once there is food again");
   // hurt(): plain damage is reduced by armor and Tough, raw damage is not.
@@ -331,9 +345,17 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   for (const s of atBase(st, h.id)) s.role = "rest";
   const eat = eatPerDay(st, h);
   check(near(eat / 6, eat / residents(st, h.id).length) && residents(st, h.id).length === 6, `six mouths eat (${eat})`);
+  // A first day settles the hourly eating (eating.js): the packs filled from the stores, everyone in their fullness
+  // band. From then on a day's meals take the six mouths' day of food from the stores.
+  eatHours(st);
   basesDaily(st);
-  const left = 100 - eat;
-  check(Math.abs(food(h) - left * (1 - spoilRate(st, h))) < 0.3, `the hub feeds the escort (${food(h)}, expected about ${(left * (1 - spoilRate(st, h))).toFixed(1)})`);
+  st.cards.length = 0;
+  const f0 = food(h);
+  eatHours(st);
+  check(e.meal && e.meal.from === "store", `the escort eats from the hub's stores (${e.meal && e.meal.from})`);
+  basesDaily(st);
+  const left = f0 - eat;
+  check(Math.abs(food(h) - left * (1 - spoilRate(st, h))) < 0.3, `the hub feeds the escort (${food(h).toFixed(2)}, expected about ${(left * (1 - spoilRate(st, h))).toFixed(1)})`);
   const hp = e.health;
   for (let i = 0; i < 24; i++) medicalHour(st);
   check(e.health > hp, `the escort heals at the hub (${hp.toFixed(1)} → ${e.health.toFixed(1)})`);
@@ -465,6 +487,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (r.gear === "repairkit") check(!/power|armor /.test(text) && /repair kit/.test(text) && /repairs/.test(text), `${key}: the field repair kit says what it mends and how many repairs (${text})`); // sim/repair.js
     else if (r.gear === "puritabs") check(!/power|armor/.test(text) && /10 un-purified water safe/.test(text) && /lasts 10 tablets/.test(text), `${key}: the tablets say what one treats and how many there are (${text})`); // sim/worm.js
     else if (r.gear === "tourniquet") check(!/power|armor/.test(text) && /stabilize themselves/.test(text) && /one use/.test(text), `${key}: the tourniquet says it lets the downed stabilize themselves, once (${text})`); // sim/medics.js selfStabilize
+    else if (r.gear === "cookpot") check(!/power|armor/.test(text) && /tool/.test(text) && /cooks/.test(text) && /firewood/.test(text), `${key}: the camp cook pot is a tool that says what it cooks (${text})`); // wave 2 cooking (cooking.js): carried, not worn
     else if (d.fish) check(!/power|armor/.test(text) && /food an hour/.test(text) && /days of fishing/.test(text), `${key}: fishing gear says what it catches and how long it lasts (${text})`); // sim/hunting.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
