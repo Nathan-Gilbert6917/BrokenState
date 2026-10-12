@@ -40,7 +40,7 @@ import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (ma
 import { addFind, chooseRounds, baseCals, roundsText } from "./ammo.js"; // rounds by calibre
 import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging find named by calibre in the log)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult, tileFactor } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
+import { workLand, distFactor, waterSources, walkHours, TRIP_JOBS, NO_WATER, waterTripsADay, walkMult, tileFactor, onTileHours } from "./tripland.js"; // the Scavenge and Fetch water jobs in trips (jobtrips.js)
 import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the day's shots (trips-plus #2)
 import { kitchenDaily, kitchenFireDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 
@@ -123,17 +123,31 @@ function scavTable(state, base, tile = base.tile) {
   return t;
 }
 const findMid = (k) => (SCAV_FIND[k][0] + SCAV_FIND[k][1]) / 2;
+// Lunch (meals.js: the lunch hour, 11:00–15:00, always inside the scavengers' 08–18 window) is an hour off their day
+// (jobtrips.js tripHours). SCAV_LUNCH scales a trip's share so that a full day on the job's reference ground, less that
+// hour, still finds the yield; scavDayShare is the shares a day really adds up to on the trips' tile (the walk and the
+// lunch hour out of it), so the panel shows what the trips bring in.
+const scavRefHours = () => onTileHours("scavenge", TRIP_JOBS.scavenge.ref);
+const SCAV_LUNCH_OFF = 1;
+export const scavLunch = () => scavRefHours() / Math.max(0.1, scavRefHours() - SCAV_LUNCH_OFF);
+/** @param {State} state @param {Base} base */
+export function scavDayShare(state, base, st = scavTripTile(state, base)) {
+  if (!st) return 1;
+  const h = onTileHours("scavenge", st.d, walkMult(state));
+  return st.f * (h > SCAV_LUNCH_OFF ? (h - SCAV_LUNCH_OFF) / h : 0);
+}
 // The average find (supplies) of a table, by its weights.
 function meanFind(table) {
   const w = Object.values(table).reduce((a, v) => a + v, 0) || 1;
   return Object.entries(table).reduce((a, [k, v]) => a + (v / w) * findMid(k), 0) || 1;
 }
 // Expected supplies per day by kind (the Work panel, the base window and the tests): each scavenger's scavYield on
-// the tile the trips go to, by the walk's share of the day, split by the tile's table.
+// the tile the trips go to, by the share of the day the walk and lunch leave (scavDayShare × scavLunch: 1 on the
+// reference ground), split by the tile's table.
 /** @param {State} state @param {Base} base */
 export function scavengeOutput(state, base) {
   const people = atBase(state, base.id).filter((s) => s.role === "scavenge" && !s.inBed);
-  const st = scavTripTile(state, base), tile = st ? st.id : base.tile, f = st ? st.f : 1;
+  const st = scavTripTile(state, base), tile = st ? st.id : base.tile, f = scavDayShare(state, base, st) * scavLunch();
   const table = scavTable(state, base, tile);
   const w = Object.values(table).reduce((a, v) => a + v, 0) || 1;
   const finds = people.reduce((a, s) => a + scavYield(state, base, s, tile) * f, 0) / meanFind(table); // finds a day
@@ -155,12 +169,13 @@ export function scavTripTile(state, base) {
   return best;
 }
 // One scavenger's trip (jobtrips.js): `share` of a day's scavenging (the walk already out of it: a day one tile out is
-// 1) on `tile`: scavYield × share as finds drawn from that tile's site. Returns { finds, got: { key: n }, ammo? }.
+// 1; the lunch hour already off it) on `tile`: scavYield × share (× scavLunch) as finds drawn from that tile's site.
+// Returns { finds, got: { key: n }, ammo? }.
 export function scavTrip(state, base, s, tile, share, k = 0) {
   const rng = state.rng;
   const out = { finds: 0, got: {} };
   const table = scavTable(state, base, tile);
-  const lambda = (scavYield(state, base, s, tile) * share) / meanFind(table);
+  const lambda = (scavYield(state, base, s, tile) * share * scavLunch()) / meanFind(table);
   const n = Math.floor(lambda) + (rng.chance(lambda - Math.floor(lambda)) ? 1 : 0);
   if (n <= 0) return out;
   const keys = Object.keys(table);

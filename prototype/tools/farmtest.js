@@ -21,7 +21,7 @@ import {
 } from "../src/sim/storage.js";
 import {
   basesDaily, waterProduction, waterNeed, waterCapacity, waterOutlook, WATER, thirstDamage, spoilRate, foodSpoilage,
-  scavengeOutput, scavYield, scavTrip, scavTripTile, siteBonus, BASE_SCAV_YIELD, SCAV_REF, SCAV_SKILL, SCAV_YIELD_CAP, foodOutlook, eatPerDay, summerWater, summerWaterOk, summerFixText, summerWarningDaily, SUMMER_WARN_DAYS,
+  scavengeOutput, scavYield, scavTrip, scavTripTile, scavDayShare, scavLunch, siteBonus, BASE_SCAV_YIELD, SCAV_REF, SCAV_SKILL, SCAV_YIELD_CAP, foodOutlook, eatPerDay, summerWater, summerWaterOk, summerFixText, summerWarningDaily, SUMMER_WARN_DAYS,
 } from "../src/sim/economy.js";
 import {
   CONDITIONS, addCondition, treatCondition, treatConditionInfo, workFactor, healthDaily, conditionsOf, isSick,
@@ -558,12 +558,13 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   s0.skills.scavenging = 40; s0.traits = ["greedy"];
   check(near(scavYield(st, h, s0, tile), SCAV_YIELD_CAP, 1e-9), `capped at ${SCAV_YIELD_CAP} a day (${r1(scavYield(st, h, s0, tile))})`);
   s0.traits = []; s0.skills.scavenging = 5;
-  // The Work panel's average is the sum of the scavengers' yields by the walk's share of the day.
+  // The Work panel's average is the sum of the scavengers' yields by the share of the day the walk and lunch leave.
   const exp = Object.values(scavengeOutput(st, h)).reduce((a, v) => a + v, 0);
-  check(near(exp, scavYield(st, h, s0, tile) * (tt ? tt.f : 1), 1e-6), `the panel's average is the yield by the walk (${r1(exp)} a day)`);
-  // The trips roll what the panel shows: whole finds, the long-run average within 5%.
+  check(near(exp, scavYield(st, h, s0, tile) * scavDayShare(st, h) * scavLunch(), 1e-6), `the panel's average is the yield by the walk and lunch (${r1(exp)} a day)`);
+  if (tt && tt.d === 0) check(near(exp, scavYield(st, h, s0, tile), 1e-6), `a full day at the hub, lunch and all, finds the yield itself (${r1(exp)})`);
+  // The trips roll what the panel shows: whole finds, the long-run average within 5% (the day's shares, lunch out).
   let units = 0, whole = true;
-  const N = 3000, share = tt ? tt.f : 1;
+  const N = 3000, share = scavDayShare(st, h);
   const sv = st.rng;
   for (let i = 0; i < N; i++) {
     const r = scavTrip(st, h, s0, tile, share, i);
