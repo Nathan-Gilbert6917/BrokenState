@@ -164,8 +164,12 @@ section("Enter base: a team at its own base that waited outside (moved out with 
 
 section("Enter card: a team that ends a Move on its own home tile is asked; No leaves it waiting with Enter base");
 {
-  // Ticks keeping only the team's own cards, until its Enter card or orders card is up.
-  const until = (st, p) => { for (let i = 0; i < 200 && !st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)); i++) { st.hordes.length = 0; tickHour(st); if (st.combat) st.combat = null; if (st.engagement) st.engagement = null; for (let j = st.cards.length - 1; j >= 0; j--) if (st.cards[j].partyId !== p.id) st.cards.splice(j, 1); } return st.cards.find((c) => c.partyId === p.id); };
+  // Ticks keeping only the team's own cards, until its Enter card or orders card is up, or it has got there and waits
+  // (a plain Move that got there pops up no card: parties.js quietArrival, a log line instead, as orders reach a team
+  // anywhere since TEAM-01). The card returned is the Enter or orders card before any other of the team's (an
+  // encounter on the road, "A survivor alone", may sit there too).
+  const mine = (st, p) => st.cards.find((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)) || st.cards.find((c) => c.partyId === p.id);
+  const until = (st, p) => { for (let i = 0; i < 200 && !st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)) && !(i && p.phase === "waiting"); i++) { st.hordes.length = 0; tickHour(st); if (st.combat) st.combat = null; if (st.engagement) st.engagement = null; for (let j = st.cards.length - 1; j >= 0; j--) if (st.cards[j].partyId !== p.id) st.cards.splice(j, 1); } return mine(st, p); };
   for (const answer of ["No", "Yes"]) {
     const st = mk();
     const h = hub(st);
@@ -173,8 +177,9 @@ section("Enter card: a team that ends a Move on its own home tile is asked; No l
     const out = tileNear(st, h.tile, 2, 3);
     const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: out, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
     const p = res.party;
+    const h0 = st.hour;
     const c0 = until(st, p);
-    check(c0 && c0.isOrders && partyTile(p) === out, `${answer}: a Move to an empty tile ends with the orders card, not the Enter card`);
+    check(p.phase === "waiting" && partyTile(p) === out && !(c0 && (c0.isOrders || c0.enterBase != null)) && st.log.some((l) => l.hour > h0 && /reached .* and waits for orders/.test(l.text)),`${answer}: a Move to an empty tile ends quietly (a log line, no orders card), not with the Enter card`);
     st.cards.length = 0;
     orderMove(st, p, h.tile);
     const card = until(st, p);
