@@ -12,6 +12,7 @@ import { noteLooked } from "./discovery.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { zombieToughness } from "./hives.js";
 import { tickHour } from "./world.js";
+import { engLootMult } from "./raidplan.js"; // a scout sent first: the team knows where to look
 import { searchHazards } from "./health.js";
 import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
 import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
@@ -124,6 +125,7 @@ export function startScavenge(state, p) {
       mode: "raid", tile: p.dest, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge",
       enemy: { kind: foes.length > 1 ? "mixed" : foes[0]?.kind || "zombies", count: total, power: 3, name: names || "nobody", groups },
       raid: { heat0: isNight(state) ? 0 : 5, choose: true }, // choose: a site with several buildings offers them first (buildingmaps.js)
+      plan: true, // raidplan.js: before going in, the side to come in from, a scout first, or wait for night
       context: { factionIds: foes.filter((g) => g.factionId).map((g) => g.factionId) },
     });
     return true;
@@ -203,7 +205,7 @@ export function searchHour(state) {
   const rolls = 1 + (ap.loot > 1 ? 1 : 0);
   for (let i = 0; i < rolls; i++) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
-    let qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
+    let qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * engLootMult(e) * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
     if (qty > 0 && key === "ammo") {
       finds.push(roundsText(addFind(e.found.supplies, t.loc ? t.loc.type : "", qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named

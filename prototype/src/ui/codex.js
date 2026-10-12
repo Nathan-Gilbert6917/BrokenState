@@ -160,7 +160,7 @@ const ITEM_HOW = {
   electronics: "In the Off hand, or kept in a base's armory: see its description.",
   packs: "Worn on the Backpack slot: more pack slots and a higher load.",
   tools: "In the Off hand or the pack: see its description for where it helps.",
-  optics: "Carried by anyone on a team: the team sees further (see its description).",
+  optics: "Carried by anyone on a team: the team sees further (see its description). A scout sent before a raid looks from further off with it (binoculars or a spotting scope +3 tiles by day, a monocular or a thermal +2; at night only a thermal): better odds of going unseen (Help: Choices before a raid).",
   camp: "Carried by a team: it helps where the team camps.",
   books: "Read at a base: it teaches its skill up to the level it names (or lifts the mood).",
   manuals: "Studied at a base: it opens buildings or recipes that need it.",
@@ -169,6 +169,7 @@ const ITEM_HOW = {
 };
 // Items with a line of their own (over their kind's).
 const ITEM_HOW_KEY = {
+  nvg: "In the Off hand (or on a helmet's mount): at night it sees 12 tiles down the cone with no light to give you away; switch it off and on for free (Alt+N). A scout sent before a night raid looks from 12 tiles with it, not the dark's 4–7 (Help: Choices before a raid).",
   flashbang: "Throw (G) it into a room before you go in, or at two or more of them bunched in cover: the stunned lose actions and aim and cannot overwatch the doorway. Keep your own people out of its 2 tiles (or facing away). Useless against the dead, except as a loud lure.",
 };
 const TRADE_HOW = "A trade good: groups pay for it by their kind (raiders love liquor and drugs; zealots will not touch them). Use it at a base for mood, or sell it.";

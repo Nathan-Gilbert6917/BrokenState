@@ -248,7 +248,7 @@ export function startAssault(state, p, f) {
   changeGoodwill(state, f, CONQUEST.ATTACK_GW, "you attacked their base");
   p.phase = "engaged";
   startCombat(state, {
-    tile, partyId: p.id, enemy: { ...force }, ambush: null, canRetreat: true, handler: "baseAssault", layout: "baseAssault",
+    tile, partyId: p.id, enemy: { ...force }, ambush: null, canRetreat: true, handler: "baseAssault", layout: "baseAssault", plan: true, // raidplan.js: a scout first, or the night
     context: { partyId: p.id, factionId: f.id, tile, people: force.people },
   });
   return "";

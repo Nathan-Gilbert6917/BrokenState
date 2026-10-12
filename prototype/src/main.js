@@ -13,7 +13,8 @@ import { stockHas } from "./sim/water.js"; // purified and un-purified water
 import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
 import { thirstAhead } from "./sim/weather.js";
 import { armoryTabs, TABS_TRIP_DAYS } from "./sim/worm.js"; // purification tablets for the road
-import { searchHour, extract } from "./sim/scavenge.js";
+import { searchHour, extract, engagementParty } from "./sim/scavenge.js";
+import { engScout, engWaitNight } from "./sim/raidplan.js"; // before the search: a scout first, or the night
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
@@ -1116,6 +1117,8 @@ const actions = {
   // The card's "Retreat if it goes badly" buttons (breakoff.js): kept on the team for fights resolved by the numbers.
   "retreat-policy": (d) => { const card = state.cards[0]; const p = card && card.partyId != null ? partyById(card.partyId) : null; if (p) setTeamPolicy(state, p, d.v); },
   approach: (d) => { state.engagement.approach = d.v; },
+  engscout: (d) => { const p = engagementParty(state); if (p && !engScout(state, p, Number(d.id))) tickHour(state); }, // sim/raidplan.js: the scout's hour
+  engnight: () => { engWaitNight(state); }, // sim/raidplan.js: the clock runs to nightfall
   search: () => { searchHour(state); tickHour(state); },
   extract: () => { extract(state); },
   engclose: () => { state.engagement = null; },
@@ -1167,7 +1170,7 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv", "cb-bar"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-plan", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv", "cb-bar"]) actions[k] = (d) => combatAction(state, k, d);
 // Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
 for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.

@@ -52,6 +52,8 @@ import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // 
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, vehicleOf, pullTargets, pullRefusal, layInStab, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy, pulling one out of a vehicle
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
+import { planHtml, planAction } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (sim/raidplan.js)
+import { planOpen, botPlan } from "../sim/raidplan.js";
 import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
 import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's card, the orders, the turn controls (user request 2026-10-12)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
@@ -128,15 +130,16 @@ const hpColor = (f) => (f > 0.6 ? PAL.good : f > 0.3 ? PAL.mid : PAL.bad);
 function sync(b) {
   W = b.w; H = b.h;
   if (cui.battle === b) return;
+  const again = !!(cui.battle && cui.battle.setup === b.setup); // the same fight made again (a building picked, sim/raidplan.js: a side, a scout, the night)
   cui.battle = b;
   cui.sel = null;
   cui.mode = "move";
   cui.msg = "";
   cui.hover = null;
   cui.anim.clear();
-  cui.salt = Math.floor(Math.random() * 9973); // varies zombie / enemy looks between battles
+  if (!again) cui.salt = Math.floor(Math.random() * 9973); // varies zombie / enemy looks between battles (the same fight made again keeps them)
   cui.lastStep = performance.now();
-  cui.autoPlay = !!(b.setup && b.setup.watch); // a new battle starts in your hands (a fight you only watch plays itself: sim/volunteers.js)
+  if (!again) cui.autoPlay = !!(b.setup && b.setup.watch); // a new battle starts in your hands (a fight you only watch plays itself: sim/volunteers.js)
   for (const f of b.fx) cui.anim.set(f.seq, performance.now());
   autoSelect(b, false); // the battle's opening camera stays as the view sets it
 }
@@ -1167,6 +1170,8 @@ export function combatAction(state, key, d) {
     if (u && t) attack(state, u, t);
     return;
   }
+  // Before going in (sim/raidplan.js): the side, a scout, the night, Go in.
+  if (key === "cb-plan") { cui.msg = planAction(state, d) || ""; return; }
   // A site with several buildings (sim/buildingmaps.js): which one to explore, or the street.
   if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;
@@ -1352,6 +1357,7 @@ export function combatTick(state, now) {
     cui.lastStep = now;
     cui.endAsk = cui.retreatAsk = cui.fallAsk = null;
     cui.mode = "move";
+    if (planOpen(b)) { botPlan(state, b); return true; } // sim/raidplan.js: a good scout first, the night if near and the team is stealthy
     SIM.autoPlayerTurn(state);
     ingestMarks(b, now);
     cui.sel = null;
@@ -1397,6 +1403,7 @@ export function renderCombatPanel(state) {
     ${tierHtml(b)}
   </div>`;
 
+  if (planOpen(b) && !b.over) html += planHtml(state, b); // sim/raidplan.js: before going in (first, under the title)
   html += `<h3>Your team</h3><div class="cbroster">`; // the 🎒 Inventory of the selected one: the bottom bar (ui/battlebar.js)
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})${selfNote(b, p)}`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
