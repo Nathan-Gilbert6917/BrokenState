@@ -259,6 +259,51 @@ section("TEAM-05: teams together on a tile");
 }
 
 // ---------------------------------------------------------------------------------------------------------
+section("TEAM-05: vehicles go with their drivers; every vehicle keeps someone on its team to drive it");
+{
+  const state = mk();
+  const h = hub(state);
+  for (let i = 0; i < 6; i++) { const ns = makeSurvivor(state, 1); ns.location = { kind: "base", baseId: h.id }; state.survivors.push(ns); }
+  const tile = find(state, h.tile, (t) => !t.loc, 3, 6);
+  const X = team(state, 2, tile), Y = team(state, 2, tile), Z = team(state, 1, tile);
+  const car = (n) => createVehicle(state, "sedan", { kind: "base", baseId: h.id }, { name: n });
+  const c1 = car("Car one"), c2 = car("Car two"), c3 = car("Car three");
+  setPartyVehicles(state, X, [c1, c2]); // two cars, two people: each has its driver
+  setPartyVehicles(state, Z, [c3]);     // one car, one person
+  const ok = (what) => { const f = teamCheck(state); check(!f.length, `${what}: no stray ids (${f.join("; ")})`); };
+  const vs = (p) => partyVehicles(state, p).map((v) => v.id).sort().join(",");
+  const [x0, x1] = partyMembers(state, X);
+  // The driver alone: the car he would leave has nobody to drive it.
+  let r = moveMembers(state, X, Y, [x0.id]);
+  check(/driv|person/i.test(r.error) && X.members.includes(x0.id) && vs(X) === [c1.id, c2.id].sort().join(","), `a driver alone, leaving a car with nobody to drive it: refused, nothing moved (${r.text})`);
+  // The driver with the car: allowed.
+  r = moveMembers(state, X, Y, [x0.id], [c2.id]);
+  check(!r.error && Y.members.includes(x0.id) && partyVehicles(state, Y).includes(c2) && c2.loc.partyId === Y.id && !partyVehicles(state, X).includes(c2), `the driver with the car: both go (${r.text})`);
+  ok("after driver and car");
+  // Y has 3 people and one car: one of them can go alone (someone else drives it).
+  const y0 = partyMembers(state, Y).find((s) => s.id !== x0.id);
+  r = moveMembers(state, Y, X, [y0.id]);
+  check(!r.error && X.members.includes(y0.id), `a driver alone when someone left can drive the car: allowed (${r.text})`);
+  ok("after a lone driver");
+  // A car alone to a team with nobody free to drive it (Z: one person, one car): refused.
+  r = moveMembers(state, X, Z, [], [c1.id]);
+  check(/driv|person/i.test(r.error) && partyVehicles(state, X).includes(c1), `a car alone to a team with no spare driver: refused (${r.text})`);
+  // A car alone to a team with someone free to drive it (Y now: 2 people, 1 car → 2 cars, 2 people): allowed.
+  check(partyMembers(state, Y).length >= partyVehicles(state, Y).length + 1, "(setup: Y has a spare driver)");
+  r = moveMembers(state, X, Y, [], [c1.id]);
+  check(!r.error && partyVehicles(state, Y).includes(c1) && c1.loc.partyId === Y.id && !partyVehicles(state, X).includes(c1), `a car alone to a team with a spare driver: allowed (${r.text})`);
+  ok("after a car alone");
+  // Split with a vehicle: the new team drives it.
+  const z0 = partyMembers(state, Y)[0];
+  const yv = partyVehicles(state, Y)[0];
+  const ny = partyMembers(state, Y).length, nv = partyVehicles(state, Y).length;
+  r = moveMembers(state, Y, null, [z0.id], [yv.id]);
+  if (ny - 1 >= nv - 1) check(!r.error && r.party && partyVehicles(state, r.party).includes(yv) && yv.loc.partyId === r.party.id, `split off with a car: the new team has it (${r.text})`);
+  check(moveMembers(state, X, null, [], partyVehicles(state, X).map((v) => v.id)).error, "a car cannot split off with nobody in it");
+  ok("at the end");
+}
+
+// ---------------------------------------------------------------------------------------------------------
 section("TEAM-05: the Teams together window, its ways in and its buttons");
 {
   const state = mk();

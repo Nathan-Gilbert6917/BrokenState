@@ -3,8 +3,9 @@
 //   - hand goods over (giveGoods): items off a member or out of the cargo, onto a member or into the other team's
 //     cargo; supplies by key (food with its lots, every calibre on its own key), the found cargo staying found cargo
 //     and the packed supplies staying packed;
-//   - move people (moveMembers): picked members go over to another team there, or split off as a new team on the tile
-//     with their share of the packed food and water (as walkers.js splitWalkers does); moving everyone is a merge;
+//   - move people and vehicles (moveMembers): picked members (and vehicles) go over to another team there, or split off
+//     as a new team on the tile with their share of the packed food and water (as walkers.js splitWalkers does); a
+//     vehicle goes with its driver, or alone to a team with someone free to drive it; moving everyone is a merge;
 //   - merge (mergeTeams): one team takes in another whole (its people, supplies, cargo, vehicles, prisoners, bodies,
 //     what it has seen), and the emptied team is gone.
 // Every operation checks first and changes nothing when it refuses: both teams yours, on the same tile, standing (not
@@ -191,47 +192,61 @@ export function giveGoods(state, from, to, picks = {}, target = "cargo") {
   return result(moved, refused, `to ${teamName(state, to)}`);
 }
 
-// ---------- people: one team to another, or split off ----------
-// Moves the members `sids` from one team to another on the tile (to), or to a new team of their own there (to null:
-// a split, with their share of the packed food and water). Moving everyone into another team merges the two.
+// ---------- people and vehicles: one team to another, or split off ----------
+// Moves the members `sids` and the vehicles `vehicleIds` from one team to another on the tile (to), or to a new team of
+// their own there (to null: a split, with their share of the packed food and water). A vehicle can go with its driver,
+// or on its own to a team that has someone to drive it; a driver can go alone when someone left can drive what stays.
+// The rule both ways: every vehicle has a person on its team to drive it (a rider for each bike), and with two or more
+// vehicles a seat for everyone (vehicles.js fleetProblem). Moving everyone into another team merges the two.
 // Returns { text, error, party } (party: the team they are on now).
-/** @param {State} state @param {Party} from @param {Party | null} to @param {number[]} sids */
-export function moveMembers(state, from, to, sids) {
+/** @param {State} state @param {Party} from @param {Party | null} to @param {number[]} sids @param {number[]} [vehicleIds] */
+export function moveMembers(state, from, to, sids, vehicleIds = []) {
   const fail = (error) => ({ text: error, error, party: null });
   const why = to ? meetProblem(state, from, to) : standProblem(state, from);
   if (why) return fail(why);
   const members = partyMembers(state, from);
   const ids = [...new Set((sids || []).map(Number))];
   const go = members.filter((s) => ids.includes(s.id));
-  if (!go.length || go.length !== ids.length) return fail("Pick people on that team.");
+  if (go.length !== ids.length) return fail("Pick people on that team.");
+  const fromVs = partyVehicles(state, from);
+  const vids = [...new Set((vehicleIds || []).map(Number))];
+  const moving = fromVs.filter((v) => vids.includes(v.id));
+  if (moving.length !== vids.length) return fail("Pick vehicles of that team.");
+  if (!go.length && !moving.length) return fail("Pick people or vehicles to move.");
+  if (!go.length && !to) return fail("A new team needs people: pick who goes with the vehicle.");
   if (go.length === members.length) {
     if (!to) return fail("Everyone would leave: pick fewer people to split off as a new team.");
-    const r = mergeTeams(state, to, from);
+    const r = mergeTeams(state, to, from); // nobody left to drive them: its vehicles go along
     return { text: r.text, error: r.error, party: r.error ? null : to };
   }
   const stay = members.filter((s) => !ids.includes(s.id));
-  // Each vehicle keeps its driver (vehicles.js fleetProblem), and the people left can carry what the team holds.
-  const fromVs = partyVehicles(state, from);
-  const left = fleetProblem(fromVs, stay.length);
-  if (left) return fail(`${teamName(state, from)} keeps its vehicles: ${left}`);
+  const keep = fromVs.filter((v) => !moving.includes(v));
+  // Every vehicle left keeps someone on its team to drive it.
+  const left = fleetProblem(keep, stay.length);
+  if (left) return fail(`${teamName(state, from)} cannot keep its vehicles: ${left} Send the vehicle along with its driver, or keep a driver back.`);
+  const toVs = to ? partyVehicles(state, to) : [];
+  const gets = fleetProblem([...toVs, ...moving], (to ? partyMembers(state, to).length : 0) + go.length);
+  if (gets) return fail(`${to ? teamName(state, to) : "The new team"}: ${gets}`);
+  // Loads: the team that gives people or vehicles can still carry what it holds; the team that takes them in (a lone
+  // car counts its riders against its payload) is no worse off.
+  const ids0 = (vs) => ({ vehicleIds: vs.map((v) => v.id), vehicleId: vs.length ? vs[0].id : null });
+  const fromAfter = { ...from, members: stay.map((s) => s.id), ...ids0(keep) };
+  if (overBy(state, fromAfter) > overBy(state, from) + EPS) return fail(`Without ${list([...go.map(firstName), ...moving.map((v) => `the ${v.name}`)])} ${teamName(state, from)} could not carry its load: move some of its cargo first.`);
   if (to) {
-    const toVs = partyVehicles(state, to);
-    const seats = fleetProblem(toVs, partyMembers(state, to).length + go.length);
-    if (seats) return fail(`${teamName(state, to)}: ${seats}`);
+    const toAfter = { ...to, members: [...to.members, ...go.map((s) => s.id)], ...ids0([...toVs, ...moving]) };
+    if (overBy(state, toAfter) > overBy(state, to) + EPS) return fail(`${teamName(state, to)} could not carry its load with them aboard: move some of its cargo first.`);
   }
   const toName = to ? teamName(state, to) : "";
-  const fromBefore = overBy(state, from);
-  const after = { ...from, members: stay.map((s) => s.id) };
-  if (overBy(state, after) > fromBefore + EPS) return fail(`Without ${list(go.map(firstName))} ${teamName(state, from)} could not carry its load: move some of its cargo first.`);
   let q = to;
-  if (!q) {
-    q = splitTeam(state, from, go);
-  } else {
+  if (!q) q = splitTeam(state, from, go);
+  else {
     from.members = stay.map((s) => s.id);
     for (const s of go) { s.location = { kind: "party", partyId: q.id }; q.members.push(s.id); }
   }
+  if (moving.length) { setPartyVehicles(state, from, keep); setPartyVehicles(state, q, [...toVs, ...moving]); }
   settle(state, [from, q]);
-  const text = to ? `${list(go.map(firstName))} join${go.length === 1 ? "s" : ""} ${toName}.` : `${list(go.map(firstName))} split off as a team of their own.`;
+  const what = list([...go.map(firstName), ...moving.map((v) => `the ${v.name}`)]);
+  const text = to ? (go.length ? `${what} join${go.length === 1 && !moving.length ? "s" : ""} ${toName}.` : `${what} ${moving.length === 1 ? "goes" : "go"} to ${toName}.`) : `${what} split off as a team of their own.`;
   log(state, text, "info");
   return { text, error: "", party: q };
 }

@@ -20,7 +20,7 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
-import { movePartiesHour, clockFrac, setClockFrac } from "./parties.js";
+import { movePartiesHour, clockFrac, setClockFrac, reportsLive } from "./parties.js";
 import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
@@ -865,7 +865,7 @@ export function liveTiles(state) {
   for (const id of fieldSight(state)) set.add(id); // fieldworks.js: your manned watch towers
   // Radio: parties in range report what they see right now.
   for (const p of state.parties) {
-    if (p.owner === "player" && p.radioLive) for (const id of p.sightNow || []) set.add(id);
+    if (p.owner === "player" && reportsLive(p)) for (const id of p.sightNow || []) set.add(id); // parties.js: live intel
   }
   return set;
 }

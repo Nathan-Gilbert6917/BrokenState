@@ -1475,7 +1475,7 @@ export function giveIntel(state, v, r = 1, to = null) {
     if (to) { const cur = to.seen.get(id); if (!cur || cur.hour < snap.hour) { to.seen.set(id, snap); n++; } }
     else { const cur = state.knowledge[id]; if (!cur || cur.hour < snap.hour) { state.knowledge[id] = snap; n++; } }
   }
-  if (to && to.radioLive) mergeKnowledge(state, to.seen);
+  if (to && Parties.reportsLive(to)) mergeKnowledge(state, to.seen);
   visitorInfo(state).stats.intel++;
   return n;
 }

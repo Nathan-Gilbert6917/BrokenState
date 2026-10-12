@@ -1,7 +1,7 @@
 // The "Teams together" window: your teams standing on one tile (any number of them) side by side, two at a time (pick
 // either side from the chips), to move people across, split some off as a new team, merge two teams, or hand goods
 // from one to the other. Rules live in sim/teammeet.js; this file draws and picks.
-// ui.meet = { tile, a, b (party ids), tab: "people" | "goods", people: { sid: true }, items: { loc: true },
+// ui.meet = { tile, a, b (party ids), tab: "people" | "goods", people: { sid: true }, vehicles: { id: true }, items: { loc: true },
 //             sup: { key: qty }, target: "cargo" | a survivor id of team b, msg }.
 // Ways in: the tile panel's "Your teams here" (two or more teams), the team panel, the right-click menu (ui/teamctx.js).
 import { SUPPLIES, supWeight } from "../sim/data.js";
@@ -10,7 +10,7 @@ import { itemLoad } from "../sim/inventory.js";
 import { wornLoad, maxLoad } from "../sim/load.js";
 import { teamHoldings } from "../sim/teaminv.js";
 import { teamsOnTile, teamsTogether, meetProblem, standProblem, giveGoods, moveMembers, mergeTeams } from "../sim/teammeet.js";
-import { partyFleet, vehicleLabel } from "../sim/vehicles.js";
+import { partyFleet, partyVehicles, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { supplyName } from "../sim/itemnames.js";
 import { shortName } from "./names.js";
 
@@ -20,7 +20,7 @@ const kg = (x) => `${Math.round(x * 10) / 10}`;
 const qty = (q) => (Math.abs(q - Math.round(q)) < 1e-6 ? String(Math.round(q)) : kg(q));
 const first = (s) => esc(shortName(s));
 const byId = (state, id) => state.parties.find((q) => q.id === Number(id)) || null;
-const fresh = (m) => { m.people = {}; m.items = {}; m.sup = {}; m.target = "cargo"; };
+const fresh = (m) => { m.people = {}; m.vehicles = {}; m.items = {}; m.sup = {}; m.target = "cargo"; };
 
 // ---------- ways in ----------
 // The tile panel's line under "Your teams here" when two or more of your teams stand on the tile.
@@ -71,13 +71,18 @@ function peopleTab(state, m, A, B, why) {
       const on = !!m.people[s.id];
       return `<div class="row small" style="gap:0.3rem"><button class="mini ${on ? "active" : ""}" data-action="tm-person" data-id="${s.id}" data-side="${side}"${tip(on ? "Picked: click to leave them" : "Pick them")}>${on ? "✓" : "○"}</button><span style="flex:1">${s.leader ? "★ " : ""}${first(s)}${s.vol ? ` <span class="muted">(volunteer)</span>` : ""}</span><span class="muted"${tip("Worn and carried on them against their max load")}>${kg(wornLoad(s))}/${maxLoad(s)} kg</span></div>`;
     }).join("");
+    const vrows = partyVehicles(state, p).map((v) => {
+      const on = !!m.vehicles[v.id];
+      return `<div class="row small" style="gap:0.3rem"><button class="mini ${on ? "active" : ""}" data-action="tm-veh" data-id="${v.id}"${tip(on ? "Picked: click to leave it" : "Pick it: it goes with the picked people (its driver), or alone to a team that has someone to drive it")}>${on ? "✓" : "○"}</button><span style="flex:1">🚗 ${esc(vehicleLabel(v))}</span><span class="muted">${isBike(v) ? `${v.count || 1} rider${(v.count || 1) === 1 ? "" : "s"}` : `${Math.round(v.fuel || 0)} fuel · ${Math.round(v.condition)}%`}</span></div>`;
+    }).join("");
     const picked = partyMembers(state, p).filter((s) => m.people[s.id]).map((s) => s.id);
+    const pickedV = partyVehicles(state, p).filter((v) => m.vehicles[v.id]).length;
     const other = side === "a" ? B : A;
     const busy = standProblem(state, p);
-    return `<div class="invcol">${teamHead(state, p)}${rows}
+    return `<div class="invcol">${teamHead(state, p)}${rows}${vrows ? `<div class="small muted" style="margin-top:0.3rem"${tip("Every vehicle needs someone on its team to drive it (a rider for each bike), and with two or more vehicles a seat for everyone. A vehicle moves with its driver, or alone to a team with someone to drive it.")}>Vehicles</div>${vrows}` : ""}
       <div class="row" style="margin-top:0.4rem;gap:0.3rem;flex-wrap:wrap">
-        <button class="mini" data-action="tm-move" data-from="${p.id}" data-to="${other.id}" ${picked.length && !why ? "" : "disabled"}${tip(why || (picked.length ? `They join ${teamName(state, other)}, with what they wear and carry on them` : "Pick people first"))}>Move picked ${side === "a" ? "→" : "←"}</button>
-        <button class="mini" data-action="tm-split" data-from="${p.id}" ${picked.length && !busy ? "" : "disabled"}${tip(busy || (picked.length ? "They become a team of their own on this tile, waiting for orders, with their share of the packed food and water" : "Pick people first"))}>Split picked off</button>
+        <button class="mini" data-action="tm-move" data-from="${p.id}" data-to="${other.id}" ${(picked.length || pickedV) && !why ? "" : "disabled"}${tip(why || (picked.length || pickedV ? `To ${teamName(state, other)}: the people with what they wear and carry on them, and the picked vehicles` : "Pick people or vehicles first"))}>Move picked ${side === "a" ? "→" : "←"}</button>
+        <button class="mini" data-action="tm-split" data-from="${p.id}" ${picked.length && !busy ? "" : "disabled"}${tip(busy || (picked.length ? "They become a team of their own on this tile, waiting for orders, with their share of the packed food and water (and the picked vehicles)" : "Pick people first"))}>Split picked off</button>
       </div></div>`;
   };
   const merge = (into, from, label) => `<button class="mini" data-action="tm-merge" data-into="${into.id}" data-from="${from.id}" ${why ? "disabled" : ""}${tip(why || `${teamName(state, from)} joins ${teamName(state, into)}: its people, supplies, cargo, vehicles and prisoners; ${teamName(state, into)} keeps its orders`)}>${label}</button>`;
@@ -122,19 +127,22 @@ export const TEAMMEET_ACTIONS = {
   "tm-tab": (state, ui, d) => { if (ui.meet) { ui.meet.tab = d.tab; ui.meet.msg = ""; fresh(ui.meet); } },
   "tm-side": (state, ui, d) => { if (ui.meet) { ui.meet[d.side === "a" ? "a" : "b"] = Number(d.id); ui.meet.msg = ""; fresh(ui.meet); } },
   "tm-swap": (state, ui) => { const m = ui.meet; if (m) { [m.a, m.b] = [m.b, m.a]; m.msg = ""; fresh(m); } },
+  "tm-veh": (state, ui, d) => { const m = ui.meet; if (!m) return; if (m.vehicles[d.id]) delete m.vehicles[d.id]; else m.vehicles[d.id] = true; },
   "tm-person": (state, ui, d) => { const m = ui.meet; if (!m) return; if (m.people[d.id]) delete m.people[d.id]; else m.people[d.id] = true; },
   "tm-move": (state, ui, d) => {
     const m = ui.meet, from = byId(state, d.from), to = byId(state, d.to);
     if (!m || !from || !to) return;
     const sids = partyMembers(state, from).filter((s) => m.people[s.id]).map((s) => s.id);
-    m.msg = moveMembers(state, from, to, sids).text;
+    const vids = partyVehicles(state, from).filter((v) => m.vehicles[v.id]).map((v) => v.id);
+    m.msg = moveMembers(state, from, to, sids, vids).text;
     fresh(m);
   },
   "tm-split": (state, ui, d) => {
     const m = ui.meet, from = byId(state, d.from);
     if (!m || !from) return;
     const sids = partyMembers(state, from).filter((s) => m.people[s.id]).map((s) => s.id);
-    const r = moveMembers(state, from, null, sids);
+    const vids = partyVehicles(state, from).filter((v) => m.vehicles[v.id]).map((v) => v.id);
+    const r = moveMembers(state, from, null, sids, vids);
     m.msg = r.text;
     if (r.party && !r.error) { if (from.id === m.a) m.b = r.party.id; else m.a = r.party.id; } // the new team on the other side
     fresh(m);

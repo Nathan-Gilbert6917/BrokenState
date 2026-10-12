@@ -6,6 +6,7 @@ import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from ".
 import { createWorld, tickHour, hub, atBase, addCard, survivorById, makeSurvivor } from "../src/sim/world.js";
 import {
   launchExpedition, planPath, partyTile, partyMembers, partyCapacity, cargoLoad, awaitOrders, orderMove, tileLabel, waterPerHour,
+  TEAM_INTEL_EVERYWHERE,
 } from "../src/sim/parties.js";
 import { queueEstimate, startOrder, contactable, queueText, besideWater, FETCH_WATER_HOURS } from "../src/sim/orders.js";
 import { createBattle, registerCombatHandler } from "../src/sim/combat.js";
@@ -461,7 +462,7 @@ section("Plan conditions: if … then come home");
 }
 
 // ======================================================================
-section("Orders reach a team anywhere (TEAM-01: no radio-range limit); radio range still decides live intel");
+section("Orders reach a team anywhere (TEAM-01: no radio-range limit); live intel everywhere while TEAM_INTEL_EVERYWHERE");
 {
   const state = mk();
   const far = tileNear(state, 12, 20, (t) => !t.loc);
@@ -472,7 +473,7 @@ section("Orders reach a team anywhere (TEAM-01: no radio-range limit); radio ran
   if (check(out, "the team left radio range on its way")) {
     check(commandable(state, p), "out of radio range on the road: orders allowed");
     check(contactable(p), "…and it counts as in reach for every order screen");
-    check(p.sightNow.length === 0, "out of radio range: its sightings do not reach the map live");
+    check(TEAM_INTEL_EVERYWHERE ? p.sightNow.length > 0 && p.sightNow.every((id) => state.live.has(id)) : p.sightNow.length === 0, `out of radio range: its sightings reach the map live only with TEAM_INTEL_EVERYWHERE (${TEAM_INTEL_EVERYWHERE})`);
     const back = tileNear(state, 2, 4, (t) => !t.loc);
     const msg = startOrder(state, p, { type: "move", tile: back });
     check(p.phase === "out" && p.path[p.path.length - 1] === back, `a redirect out of radio range takes (${msg})`);

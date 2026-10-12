@@ -1293,12 +1293,20 @@ export function hourCourse(state, p, held = false) {
 /** @param {Party} p @param {number} hour */
 const hourUsed = (p, hour) => (p.hourUsed && p.hourUsed.hour === hour ? p.hourUsed.f : 0);
 
+// Live intel from your teams. TEAM_INTEL_EVERYWHERE (for now): every team of yours reports what it sees as it sees it,
+// wherever it is, as orders reach it anywhere (plans.js commandable). Off: only teams in radio coverage (p.radioLive)
+// report live, the rest when they get home or come into range. Everything that asks "does this team's sight reach the
+// map now?" goes through reportsLive; p.radioLive itself stays "in your radio coverage" (the 📻 badge, listening in).
+export const TEAM_INTEL_EVERYWHERE = true;
+/** @param {Party | null | undefined} p */
+export const reportsLive = (p) => !!p && (!!p.radioLive || (TEAM_INTEL_EVERYWHERE && p.owner === "player" && p.kind !== "convoy"));
+
 /** @param {State} state @param {Party} p */
 function updateRadio(state, p) {
   // Hardcore before the first hub (hardcore-start.js): you are with this team, so it is always in contact.
   p.radioLive = withYou(state, p) || radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
-  p.sightNow = p.radioLive ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
-  if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
+  p.sightNow = reportsLive(p) ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
+  if (reportsLive(p)) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
   // Listening (radio.js networks): a team carrying a receiver (a hand-crank or military radio) out of two-way reach
   // hears a radio network only while it stands inside that network's coverage (a group's, or yours: nothing beyond
   // it). It does not report live (its sightings wait until it reports); orders reach it anyway (plans.js commandable). What it picks up on the channel it tuned to (Listen
@@ -2250,7 +2258,7 @@ function cullCard(state, p, horde) {
 /** @param {State} state @param {Party} p */
 export function startReturn(state, p) {
   if (wipeIfEmpty(state, p)) return "That team is gone.";
-  const known = p.radioLive || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
+  const known = reportsLive(p) || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { // no base left at all (conquest.js): the team stays on the road until it founds or takes one
     if (p.phase !== "waiting") awaitOrders(state, p, "There is no base to go home to. Found a new one (Establish base: a camp you build up into your hub) or take one back (Assault their base).", { failed: true, hold: true });
