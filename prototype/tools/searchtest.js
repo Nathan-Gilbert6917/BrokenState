@@ -20,7 +20,7 @@ import { BMAP } from "../src/sim/buildingmaps.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { inventoryModal, INV_ACTIONS, INV_CHANGE, invDrop } from "../src/ui/inventory.js";
 import { chosenQty } from "../src/ui/stackmove.js";
-import { renderCombatPanel } from "../src/ui/combat.js";
+import { renderCombatScreen as renderCombatPanel } from "../src/ui/combat.js"; // the panel and the bottom bar
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;

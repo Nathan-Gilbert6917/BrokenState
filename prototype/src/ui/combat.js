@@ -9,7 +9,7 @@ import {
   playerVision, enemyGhosts, vehicleExit, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js";
-import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsRefusal, shellsLine, SHELLS } from "../sim/mags.js"; // magazines as items (section 15): spares, what a Reload does
+import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsRefusal, shellsLine, SHELLS, tracksMags, reloadPlan } from "../sim/mags.js"; // magazines as items (section 15): spares, what a Reload does
 import { plateSwapPlan, PLATE_AP } from "../sim/carrykit.js"; // a broken plate swapped from the pack (2 actions)
 import { loadsFor, roundName } from "../sim/ammo.js"; // the reload chooser: the types of the gun's calibre to hand // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
@@ -22,7 +22,7 @@ import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, 
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
 import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal, glReloadRefusal, backblastCells, enclosedAt, LAUNCH, GL_HE, ROCKET } from "../sim/launchers.js"; // grenade launchers and rockets (section 13)
 import { LIGHTS } from "../sim/lights.js";
-import { VISION, viewWedges, faceAng, hasFront, setFacing, nightWord, darkSight, activeLight, nvgOn, nvgSight } from "../sim/vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12)
+import { VISION, viewWedges, faceAng, hasFront, setFacing, nightWord, darkSight, activeLight, nvgOn, nvgSight, facesBox, faceRefusal } from "../sim/vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12)
 import { noticeRange, earshot } from "../sim/stealth.js";
 import { switchOptions, switchAt, roomAt, roomLit, INDOOR } from "../sim/indoorlight.js"; // a raid's dark rooms and light switches
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
@@ -53,6 +53,7 @@ import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusa
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
 import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
+import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's card, the orders, the turn controls (user request 2026-10-12)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
@@ -831,12 +832,82 @@ export function BATTLE_GUNS_HELP() {
   return `<b>Fire modes, jams and suppressing fire:</b> automatic guns have fire modes, switched with <i>Fire</i> (${k("battle.firemode", "Shift+F")}, free): single (1 round, the best aim), burst (2–3 rounds, each its own roll) and auto (10–15 rounds, worse aim). A gun can jam: its line says JAMMED and <i>Unjam</i> (${k("battle.unjam", "Shift+J")}) clears it (1 or 2 actions; a Reload clears a double feed); revolvers and bolt, lever, pump and double guns misfire instead (the round is lost). <i>Suppress</i> (${k("battle.suppress", "Shift+O")}) fires a stream at an enemy or a spot: everyone living in the cone shown on the map keeps their head down until their turn ends (−20 aim, no overwatch); the dead do not care. A spear can be thrown (${k("battle.throwspear", "Shift+G")}, 4–5 tiles); walk onto it or <i>Pick up spear</i> from next to it (${k("battle.pickspear", "Shift+P")}, 1 action), and after a won fight it comes back anyway. <i>Overwatch</i> reacts to every enemy that moves in range until your next turn or the magazine runs dry. When more than one kind of round for a gun is to hand, Reload asks which (${k("battle.ammocycle", "Shift+I")} picks the next). You see an enemy's gun and its parts, never what it is loaded with: you learn that from what it does.`;
 }
 
-// An order button in the panel. key: its default hint; an order in the key table (battle.<v>) shows the key it is
-// bound to now (Menu → Controls), Shift as ⇧.
+// An order's key hint. key: its default hint; an order in the key table (battle.<v>) shows the key it is bound to now
+// (Menu → Controls), Shift as ⇧.
 const keyHint = (v, key) => (key && KEY_BY_ID.has(`battle.${v}`) ? keyLabel(`battle.${v}`, 1).replace(/Shift\+/g, "⇧") : key);
-function actBtn(v, label, tip, ok, key) {
-  const k = keyHint(v, key);
-  return `<button class="${cui.mode === v ? "active" : ""}" data-action="cb-act" data-v="${v}" ${ok ? "" : "disabled"} data-tip="${esc(tip)}">${label}${k ? ` <span class="key">${esc(k)}</span>` : ""}</button>`;
+
+// ---------- the selected unit's orders (the bottom bar draws them: ui/battlebar.js) ----------
+// Every order button of the selected unit, as data: [{ v, label, tip, ok, key, on, why?, ap?, k?, id? }]. The order
+// builders below (gunButtons, medicButtons, raidButtons, ui/nonlethal.js nlButtons, ui/ground.js groundButtons …) are
+// called with a btn(v, label, tip, ok, key, x) that records the button instead of writing it; x: { why: the reason it
+// is greyed, ap: its cost when it is not the table's (ui/battlebar.js COST), k / id: the data-k / data-id it carries }.
+// A button runs combatAction("cb-act", { v, k, id }), the same code its key runs (combatKey). extra: the context panels
+// that go with the orders (a lock, a car, the reload chooser, the Execute / Surrender question), over the bar's orders.
+const NO_AP = "No actions left this turn.";
+export function unitOrders(state, b, u) {
+  const list = [];
+  const btn = (v, label, tip, ok, key, x = null) => { list.push({ v, label, tip, ok: !!ok, key: keyHint(v, key) || "", on: cui.mode === v, ...(x || {}) }); return ""; };
+  const out = { list, extra: "", head: "" };
+  if (!b || !u || b.over || b.phase !== "player" || u.side !== "player" || u.vol != null) return out;
+  if (u.tied && !u.dead) { // a captive still tied up on a rescue raid (sim/rescueraid.js)
+    out.head = "tied up";
+    rescueButtons(state, b, u, btn);
+    return out;
+  }
+  if (u.down && !u.dead && !u.left) { // sim/medics.js: down, a tourniquet or a trauma kit in reach
+    const why = selfStabRefusal(b, u);
+    out.head = `down, ${u.stab ? "stabilized" : u.ko ? "out cold" : u.surr ? "gave up" : `bleeding out (${u.bleed} turn${u.bleed === 1 ? "" : "s"} left)`}`;
+    btn("selfStab", selfStabLabel(u), selfStabTip(why), !why, "", { why, ap: 0 });
+    return out;
+  }
+  if (!(active(u) || u.aboard)) return out; // aboard the vehicle: Drive, Turn, Get out, Extract
+  const ap = u.ap;
+  const gun = isRanged(u), ammo = canFire(b, u);
+  const foesAdj = b.units.some((t) => t.side === "enemy" && active(t) && meleeReach(b, u, t)); // not across a wall's corner
+  const noAp = ap > 0 ? "" : NO_AP;
+  const fireWhy = gun ? (ammo ? noAp : fireRefusal(b, u) || outOf(u)) : "No usable gun: fists, a blade or a club fight in melee.";
+  btn("move", "Move", `Click a blue tile to move (1 action) or a yellow tile to dash (2 actions), then click the way to face there.${u.sneaking ? " Sneaking: slower, and silent." : ` A dash is heard ${VISION.DASH_NOISE} tiles off (the dead come to look); a plain move only now and then a scuff.`}`, ap > 0, "", { why: noAp });
+  btn("face", "Face", `Free (with an action left): turn where they stand. The cone is what they watch${b.night ? ` and all they see in the dark (${darkSight(b)} tiles ahead at ${nightWord(b)}, more down a flashlight's beam)` : ""}: an overwatch reacts only in it, and loot is searched only facing it.`, ap > 0, "⇧W", { why: ap > 0 ? "" : "Turning needs an action left (it costs none)." });
+  btn("sneak", u.sneaking ? "Stop sneaking" : "Sneak", u.sneaking ? "Free: back to walking pace (a dash is heard, a plain move now and then)." : `Free: keep low. ${Math.round(VISION.SNEAK_MOB * 100)}% of the pace, no sound at all, and the enemy cannot see them behind half or full cover facing them (from further than a tile). Not while an aware enemy has eyes on them; a loud shot ends it (a suppressed one or a bow does not).`, ap > 0 || u.sneaking, "⇧Z", { why: "Sneaking needs an action left (it costs none).", on: !!u.sneaking });
+  if (u.light) btn("light", activeLight(u) ? "Light off" : "Light on", lightTip(b, u), !u.aboard && !u.gunner, "Alt+L", { on: !!activeLight(u), why: "Get out of the vehicle first." }); // sim/combat.js switchAct
+  if (u.nvg) btn("nvg", nvgOn(u) ? "NVG off" : "NVG on", nvgTip(b, u), !u.aboard && !u.gunner, "Alt+N", { on: nvgOn(u), why: "Get out of the vehicle first." });
+  if (b.evacOrder) btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true, "", { on: true });
+  else { const why = evacRefusal(b); btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !why, "", { why }); }
+  btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F", { why: fireWhy });
+  if (gun && SIM.cabTarget(b, u)) { const tg = SIM.cabTarget(b, u), o = SIM.cabOdds(b, u, tg), who = SIM.cabSeat(b, tg.v); btn("cab", "Shoot the cab", `Fire at their ${esc(tg.v.name || tg.v.kind)} (${o.chance}% a round): each hit wears it (heavy and armour-piercing rounds; ${SIM.HULL.PEN + 1}+ penetration) and half get in at the windscreen${tg.v.up && tg.v.up.plating ? " (less with the plate)" : ""}, at ${who ? "whoever is at the wheel" : "nobody: the cab is empty"}${tg.v.up && tg.v.up.glass ? " through bulletproof glass" : ""}. A driver down stops it. Ends this unit's turn.`, ap > 0 && ammo, "", { why: fireWhy }); }
+  if (gun && hasMag(u)) {
+    const why = reloadRefusal(b, u), more = ammoToHand(state, b, u).length > 1, pack = shellsInPack(b, u), need = u.gunner ? TURRET.RELOAD_AP : tracksMags(u) ? reloadPlan(b, u).cost : 1;
+    btn("reload", magEmpty(b, u) && !why ? '<span class="danger">Reload</span>' : "Reload", `${esc(u.weaponName)} (${magLabel(b, u)} now). ${reloadText(b, u)}${why ? ` ${why}` : ""}${u.gunner ? " The turret's belt: both actions." : ""}${more ? ` More than one kind of round for it is to hand: Reload asks which (${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next).` : ""}`, ap >= (u.gunner ? TURRET.RELOAD_AP : 1) && (!why || more) && !pack, "I",
+      { why: pack ? getShellsRefusal(b, u) || "The shells are in the pack: Get shells first." : why && !more ? why : ap < (u.gunner ? TURRET.RELOAD_AP : 1) ? NO_AP : "", ap: need });
+  }
+  const kinds = gun ? ammoToHand(state, b, u) : [];
+  if (kinds.length > 1) btn("ammocycle", "Next round", `Free: the kind of round the next Reload loads (${kinds.map((x) => `${x.short || x.name} ${x.n}`).join(", ")}); then Reload (${keyLabel("battle.reload", 1) || "I"}) loads it.`, true, "⇧I", { ap: 0 });
+  if (gun && isShellGun(u) && (shellsInPack(b, u) || !getShellsRefusal(b, u))) btn("getshells", shellsInPack(b, u) ? '<span class="danger">Get shells</span>' : "Get shells", `1 action: up to ${SHELLS.GRAB} shells out of the pack, loose at hand (pockets), ready to load. ${shellsLine(b, u)}.${getShellsRefusal(b, u) ? ` ${getShellsRefusal(b, u)}` : ""}`, ap >= 1 && !getShellsRefusal(b, u), "", { why: getShellsRefusal(b, u) || noAp });
+  gunButtons(state, b, u, btn);
+  plateButton(state, b, u, btn);
+  btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E", { why: noAp || (foesAdj ? "" : "No enemy right next to them (not across a wall's corner).") });
+  btn("overwatch", "Overwatch", `${OVERWATCH_TIP} Click the way to watch: only what moves in its cone draws a reaction.`, ap > 0 && ammo, "O", { why: fireWhy });
+  btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H", { why: noAp });
+  if (b.vehicle) btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u)), "", { why: ap < DRIVE.AP ? "Driving takes both actions." : "Stand next to the vehicle (or get in) to drive it.", ap: DRIVE.AP });
+  if (b.vehicle && !u.aboard) btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4), "", { why: noAp || (!atVehicle(b, u) ? "Stand next to the vehicle to get in." : "Every seat is taken.") });
+  if (u.aboard) btn("disembark", "Get out", "1 action: out onto a free cell round the vehicle.", ap > 0, "", { why: noAp });
+  if (u.aboard && vehicleTurret(b)) btn("gunner", u.gunner ? "Get down" : "Man the turret", u.gunner ? "1 action: off the turret and back down inside (not a target any more)." : `1 action: up behind the ${vehicleTurret(b) === "m2hb" ? "M2" : "machine gun"} on the roof. Then Shoot (F) fires it: a 3-round burst from its belt (${b.vehicle.belt ?? "full"}, a new belt is both actions) out of the team's ammo (${Math.floor(turretRounds(b))}), a level up, aim +6, through cover, very loud (it wakes the whole map${b.raid ? `, Heat +${TURRET.HEAT} a burst` : ""}), and whoever it lands near shoots −${TURRET.PIN} next turn. Overwatch works from it. After the vehicle drives or turns this turn the turret fires at −${RIDE.TURRET} (−${RIDE.DRIVER} for a gunner who turned it). The gunner is the one rider they can shoot: half cover${b.vehicle.up && b.vehicle.up.plating >= 2 ? " (full: plate ×2)" : " (full behind plate ×2)"}. Downed, they drop back inside.`, ap > 0, "⇧T", { why: noAp, on: !!u.gunner });
+  if (b.vehicle) btn("turn", "Turn", "1 action, from inside or next to it: a quarter turn at the same corner (it needs open ground with nobody on it on the cells it turns onto).", ap > 0 && (u.aboard || atVehicle(b, u)), "", { why: noAp || "Stand next to the vehicle (or get in) to turn it." });
+  if (!b.raid && b.vehicle && trunkVehicle(state, b) && !u.aboard) btn("vehicle", "Vehicle", atVehicle(b, u) ? "Free: open the vehicle (or click it). Put what you carry in it to free your hands, or take the team's things out. Hauling takes the usual time: the first kg a turn are free, then actions." : "Walk next to the vehicle to load or unload it.", atVehicle(b, u), "N", { why: "Walk next to the vehicle to load or unload it." });
+  const medsOk = medsLeft(b) > 0 || players(b).some((o) => o.down && !o.dead && !o.left && !o.stab && adjacent(u, o));
+  btn("meds", "Use meds", `1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive. With no meds left, someone down can still be stabilized by hand (${handsOdds(u)}%: pressure and a belt; it can be tried again).`, ap > 0 && medsOk, "M", { why: noAp || (medsOk ? "" : "No meds left, and nobody down next to them to stabilize by hand.") });
+  medicButtons(state, b, u, btn);
+  floorButtons(b, u, btn);
+  bodyButtons(state, b, u, btn);
+  groundButtons(state, b, u, btn);
+  stealthButtons(state, b, u, btn);
+  nlButtons(state, b, u, btn, cui);
+  siegeButtons(b, u, btn);
+  if (b.evacCols) btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R", { why: noAp || "Only from the green evac strip." });
+  if (b.raid) raidButtons(state, b, u, btn);
+  if (b.rescue) rescueButtons(state, b, u, btn);
+  out.extra = (b.raid ? lockPanel(state, b, u) : "") + carPanel(state, b, u) + ammoChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
+  return out;
 }
 
 // ---------- ending the turn (review U-18) ----------
@@ -945,7 +1016,7 @@ function viewKey(state, b, e, k) {
   if (k === "bview.roofs") { setRoofs(!iso.roofs); return true; }
   if (k === "bview.cones") { setCones(!cui.cones); return true; } // vision.js: everyone's view cones
   if (k === "bview.center") { const u = selUnit(b); if (u) isoCenterOn(b, u.x, u.y); return true; }
-  if (k === "bview.hud") { toggleHud(); return true; } // ui/battlehud.js: fold or open the squad strip and the weapon panel
+  if (k === "bview.hud") { toggleHud(); return true; } // ui/battlehud.js: fold or open the squad strip
   return false;
 }
 // A pan key let go: whatever modifiers are down now, the direction it held stops.
@@ -1026,6 +1097,7 @@ export function combatAction(state, key, d) {
     else if (d.v === "hud") toggleHud(); // ui/battlehud.js: the squad strip's fold button
     return;
   }
+  if (key === "cb-bar") { if (d.v === "more") cui.barMore = !cui.barMore; return; } // the bottom bar's ⋯ More (ui/battlebar.js)
   if (key === "cb-auto") {
     if (b.acted || b.turn > 1) return;
     state.combat = null;
@@ -1325,9 +1397,7 @@ export function renderCombatPanel(state) {
     ${tierHtml(b)}
   </div>`;
 
-  // 🎒 the selected survivor's inventory (ui/inventory.js peekModal): read-only over the battle.
-  const kitOf = u && u.side === "player" && u.sid != null && u.vol == null ? u : null;
-  html += `<h3 class="spread"><span>Your team</span>${kitOf ? `<button class="mini" data-action="cb-inv" data-id="${kitOf.id}" data-tip="${esc(`What ${kitOf.name.split(" ")[0]} carries: worn, held, pockets, rig and pack (look only: nothing moves in a fight but by its orders). (${keyLabel("battle.inventory", 1) || "Shift+B"})`)}">🎒 ${esc(kitOf.name.split(" ")[0])}'s kit</button>` : ""}</h3><div class="cbroster">`;
+  html += `<h3>Your team</h3><div class="cbroster">`; // the 🎒 Inventory of the selected one: the bottom bar (ui/battlebar.js)
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})${selfNote(b, p)}`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
       [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), ...earStatus(p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.jam ? "JAMMED" : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.suppressed > 0 ? "Suppressed" : "", p.spearOut ? "Spear thrown" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", handsBusy(p) ? `Hands full (${armsText(p)})` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
@@ -1364,59 +1434,13 @@ export function renderCombatPanel(state) {
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
   if (b.raid && b.raid.choose) html += chooseHtml(b);
   if (b.night && !b.raid && b.phase !== "deploy") html += nightHtml(b); // sim/vision.js: the dark, by the hour
-  if (retreatAskOpen(b)) html += retreatConfirmHtml(b, askPlan(b)); // right under the team, where it is seen
   // Looking at another floor than the selected unit's (PageUp / PageDown, the Floor control): say so, with the way back.
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
     html += `<div class="small muted cbmsg">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (V also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
   }
 
-  if (u && u.tied && !u.dead && b.phase === "player") { // a captive still tied up on a rescue raid (sim/rescueraid.js)
-    const btn = actBtn;
-    html += `<h3>${esc(u.name)} · tied up · ${u.ap} action${u.ap === 1 ? "" : "s"}</h3><div class="cbactions">${rescueButtons(state, b, u, btn)}</div>`;
-  } else if (u && u.side === "player" && u.down && !u.dead && !u.left && b.phase === "player") { // sim/medics.js: down, a tourniquet or a trauma kit in reach
-    html += selfStabHtml(b, u);
-  } else if (u && (active(u) || u.aboard) && b.phase === "player") { // aboard the vehicle: Drive, Turn, Get out, Extract
-    const ap = u.ap;
-    const gun = isRanged(u), ammo = canFire(b, u);
-    const foesAdj = b.units.some((t) => t.side === "enemy" && active(t) && meleeReach(b, u, t)); // not across a wall's corner
-    const btn = actBtn;
-    html += `<h3>${esc(u.name)} · ${ap} action${ap === 1 ? "" : "s"}</h3><div class="cbactions">
-      ${btn("move", "Move", `Click a blue tile to move (1 action) or a yellow tile to dash (2 actions), then click the way to face there.${u.sneaking ? " Sneaking: slower, and silent." : ` A dash is heard ${VISION.DASH_NOISE} tiles off (the dead come to look); a plain move only now and then a scuff.`}`, ap > 0)}
-      ${btn("face", "Face", `Free (with an action left): turn where they stand. The cone is what they watch${b.night ? ` and all they see in the dark (${darkSight(b)} tiles ahead at ${nightWord(b)}, more down a flashlight's beam)` : ""}: an overwatch reacts only in it, and loot is searched only facing it.`, ap > 0, "⇧W")}
-      ${btn("sneak", u.sneaking ? "Stop sneaking" : "Sneak", u.sneaking ? "Free: back to walking pace (a dash is heard, a plain move now and then)." : `Free: keep low. ${Math.round(VISION.SNEAK_MOB * 100)}% of the pace, no sound at all, and the enemy cannot see them behind half or full cover facing them (from further than a tile). Not while an aware enemy has eyes on them; a loud shot ends it (a suppressed one or a bow does not).`, ap > 0 || u.sneaking, "⇧Z")}
-      ${u.light ? btn("light", activeLight(u) ? "Light off" : "Light on", lightTip(b, u), true, "Alt+L") : ""}
-      ${u.nvg ? btn("nvg", nvgOn(u) ? "NVG off" : "NVG on", nvgTip(b, u), true, "Alt+N") : ""}
-      ${b.evacOrder ? btn("evacStop", "Stop evac", "Call off the Evac: your people stay where they are and take orders again.", true) : btn("evac", "Evac", `Everyone still standing heads for the way out with the actions they have: ${b.raid ? "the extraction zones" : "the evac strip"}${b.vehicle ? ", or a free seat in the vehicle (in it counts as out)" : ""}, whichever is nearer. Arriving, they ${b.raid ? "extract" : "slip away"}${b.vehicle ? " or get in" : ""}. The order stands: each turn starts with the next leg until everyone is out or you call it off. The downed are not carried (Sound the retreat carries them).`, !evacRefusal(b))}
-      ${btn("shoot", "Shoot", gun ? (ammo ? `Fire at a visible enemy. Ends this unit's turn. Hover an enemy to see the hit chance.${hasMag(u) ? ` ${esc(u.weaponName)}: ${magLabel(b, u)} loaded.` : ""}` : fireRefusal(b, u)) : "No usable gun.", ap > 0 && ammo, "F")}
-      ${gun && SIM.cabTarget(b, u) ? (() => { const tg = SIM.cabTarget(b, u), o = SIM.cabOdds(b, u, tg), who = SIM.cabSeat(b, tg.v); return btn("cab", "Shoot the cab", `Fire at their ${esc(tg.v.name || tg.v.kind)} (${o.chance}% a round): each hit wears it (heavy and armour-piercing rounds; ${SIM.HULL.PEN + 1}+ penetration) and half get in at the windscreen${tg.v.up && tg.v.up.plating ? " (less with the plate)" : ""}, at ${who ? "whoever is at the wheel" : "nobody: the cab is empty"}${tg.v.up && tg.v.up.glass ? " through bulletproof glass" : ""}. A driver down stops it. Ends this unit's turn.`, ap > 0 && ammo); })() : ""}
-      ${gun && hasMag(u) ? btn("reload", magEmpty(b, u) && !reloadRefusal(b, u) ? '<span class="danger">Reload</span>' : "Reload", `${esc(u.weaponName)} (${magLabel(b, u)} now). ${reloadText(b, u)}${reloadRefusal(b, u) ? ` ${reloadRefusal(b, u)}` : ""}${u.gunner ? " The turret's belt: both actions." : ""}${ammoToHand(state, b, u).length > 1 ? ` More than one kind of round for it is to hand: Reload asks which (${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next).` : ""}`, ap >= (u.gunner ? TURRET.RELOAD_AP : 1) && (!reloadRefusal(b, u) || ammoToHand(state, b, u).length > 1) && !shellsInPack(b, u), "I") : ""}
-      ${gun && isShellGun(u) && (shellsInPack(b, u) || !getShellsRefusal(b, u)) ? btn("getshells", shellsInPack(b, u) ? '<span class="danger">Get shells</span>' : "Get shells", `1 action: up to ${SHELLS.GRAB} shells out of the pack, loose at hand (pockets), ready to load. ${shellsLine(b, u)}.${getShellsRefusal(b, u) ? ` ${getShellsRefusal(b, u)}` : ""}`, ap >= 1 && !getShellsRefusal(b, u)) : ""}
-      ${gunButtons(state, b, u, btn)}
-      ${plateButton(state, b, u, btn)}
-      ${btn("melee", "Melee", "Strike an adjacent enemy. Silent: it does not alert others or draw zombies. Ends the turn.", ap > 0 && foesAdj, "E")}
-      ${btn("overwatch", "Overwatch", `${OVERWATCH_TIP} Click the way to watch: only what moves in its cone draws a reaction.`, ap > 0 && ammo, "O")}
-      ${btn("hunker", "Hunker down", `Ends the turn. +${COVER_DEF[1]} defense on top of cover until your next turn. Only helps when in cover.`, ap > 0, "H")}
-      ${b.vehicle ? btn("drive", "Drive", `Both actions, from inside or next to the ${b.vehicle.kind === "truck" ? "truck" : "car"}: click where to drive it, up to ${DRIVE.RANGE} cells. It drives through people (anyone in the way is hit for ${RAMMING.HIT[0]}–${RAMMING.HIT[1]}, the dead ${RAMMING.ZOMBIE_HIT[0]}–${RAMMING.ZOMBIE_HIT[1]}, and shoved aside) and light obstacles (fences, crates, sandbags, barricades, tank traps: broken, at a cost to the vehicle's condition); walls, trees, other cars, water, railings and trenches stop it. Loud: the unaware within ${DRIVE.RADIUS} tiles hear the engine${b.raid ? `, Heat +${DRIVE.HEAT}` : ""}. Whoever is aboard rides along, the loot and the siege ram too; extract from a zone it stands at to keep it.`, ap >= DRIVE.AP && (u.aboard || atVehicle(b, u))) : ""}
-      ${b.vehicle && !u.aboard ? btn("board", "Get in", `1 action, from next to it: ride in the ${b.vehicle.kind} (${b.vehicle.seats || 4} seats, ${aboardCount(b)} aboard). Inside you are off the map (not a target, not drawn, no shooting) and can drive, turn, get out, or extract with it from a zone it stands at.`, ap > 0 && atVehicle(b, u) && aboardCount(b) < (b.vehicle.seats || 4)) : ""}
-      ${u.aboard ? btn("disembark", "Get out", "1 action: out onto a free cell round the vehicle.", ap > 0) : ""}
-      ${u.aboard && vehicleTurret(b) ? btn("gunner", u.gunner ? "Get down" : "Man the turret", u.gunner ? "1 action: off the turret and back down inside (not a target any more)." : `1 action: up behind the ${vehicleTurret(b) === "m2hb" ? "M2" : "machine gun"} on the roof. Then Shoot (F) fires it: a 3-round burst from its belt (${b.vehicle.belt ?? "full"}, a new belt is both actions) out of the team's ammo (${Math.floor(turretRounds(b))}), a level up, aim +6, through cover, very loud (it wakes the whole map${b.raid ? `, Heat +${TURRET.HEAT} a burst` : ""}), and whoever it lands near shoots −${TURRET.PIN} next turn. Overwatch works from it. After the vehicle drives or turns this turn the turret fires at −${RIDE.TURRET} (−${RIDE.DRIVER} for a gunner who turned it). The gunner is the one rider they can shoot: half cover${b.vehicle.up && b.vehicle.up.plating >= 2 ? " (full: plate ×2)" : " (full behind plate ×2)"}. Downed, they drop back inside.`, ap > 0, "⇧T") : ""}
-      ${b.vehicle ? btn("turn", "Turn", "1 action, from inside or next to it: a quarter turn at the same corner (it needs open ground with nobody on it on the cells it turns onto).", ap > 0 && (u.aboard || atVehicle(b, u))) : ""}
-      ${!b.raid && b.vehicle && trunkVehicle(state, b) && !u.aboard ? btn("vehicle", "Vehicle", atVehicle(b, u) ? "Free: open the vehicle (or click it). Put what you carry in it to free your hands, or take the team's things out. Hauling takes the usual time: the first kg a turn are free, then actions." : "Walk next to the vehicle to load or unload it.", atVehicle(b, u), "N") : ""}
-      ${btn("meds", "Use meds", `1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive. With no meds left, someone down can still be stabilized by hand (${handsOdds(u)}%: pressure and a belt; it can be tried again).`, ap > 0 && (medsLeft(b) > 0 || players(b).some((o) => o.down && !o.dead && !o.left && !o.stab && adjacent(u, o))), "M")}
-      ${medicButtons(state, b, u, btn)}
-      ${floorButtons(b, u, btn)}
-      ${bodyButtons(state, b, u, btn)}
-      ${groundButtons(state, b, u, btn)}
-      ${stealthButtons(state, b, u, btn)}
-      ${nlButtons(state, b, u, btn, cui)}
-      ${siegeButtons(b, u, btn)}
-      ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
-      ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : ""}
-      ${b.rescue ? rescueButtons(state, b, u, btn) : ""}
-      ${carPanel(state, b, u)}
-    </div>${ammoChooser(state, b, u)}`;
-    html += nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
-  } else if (b.phase === "enemy") html += `<h3>Enemy turn</h3><div class="small muted">Watch the map. Your turn comes next.</div>`;
+  // The selected unit's orders, and what goes with them (a lock, a car, the reload chooser, the Execute / Surrender
+  // question), are on the bottom bar (renderCombatBar, ui/battlebar.js).
 
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
@@ -1435,27 +1459,46 @@ export function renderCombatPanel(state) {
   }
 
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-40).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
-  if (endAskOpen(b)) {
-    const n = unitsWithActions(b);
-    html += `<div class="small warn cbmsg cbconfirm"><b>${n} unit${n === 1 ? " still has" : "s still have"} actions</b> — press Space again or Enter to end the turn (Esc to keep playing).
-      <div style="margin-top:0.3rem"><button data-action="cb-end" data-now="1" data-tip="End the turn now; units with actions left do nothing.">End turn now</button>
-      <button data-action="cb-confirm" data-tip="Stop asking: Space and End turn end the turn at once (turn it back on with the checkbox below the log).">Don't ask again</button></div></div>`;
-  }
-  const wallMap = !!(b.tier && b.tier.map === "wall");
-  const noRetreat = b.evacCols && !b.raid && !wallMap ? retreatRefusal(b) : null;
-  if (fallAskOpen(b)) html += fallBackConfirmHtml(b);
-  html += `<div class="cbfoot">
-    ${wallMap ? `<button class="${fallAskOpen(b) ? "active" : ""}" data-action="cb-fallback" data-v="ask" ${retreatRefusal(b) ? "disabled" : ""} data-tip="${esc(retreatRefusal(b) || "Everyone climbs down off the wall and falls back into the yard and the buildings (the second map). The attackers get the next turn and pour in through the openings. (Shift+R)")}">Fall back to the yard</button>` : ""}
-    ${noRetreat != null ? `<button class="${retreatAskOpen(b) ? "active" : ""}" data-action="cb-retreat" data-v="ask" ${noRetreat ? "disabled" : ""} data-tip="${esc(noRetreat || "Everyone still standing runs for the evac strip at once (shows each one's odds first). Those on the strip get out safely; the others make an escape check; downed teammates next to someone are carried. (Shift+R)")}">Sound the retreat</button>` : ""}
-    ${b.phase === "player" && clearEnough(b) ? `<button class="primary" data-action="cb-clear" data-tip="Only a couple of the enemy are left, far off and unaware (or running): the area is clear enough. End the fight as a win and leave them be; or keep playing to hunt them down. (Shift+C)">Area clear: finish</button>` : ""}
-    <button class="${cui.autoPlay ? "active" : ""}" data-action="cb-autoplay" data-tip="${esc(cui.autoPlay ? "Stop the AI: your side waits for your orders again from your next turn. (Shift+A)" : "Hand your side to the AI for the rest of the battle: it plays each of your turns (moves, shots, searches, the retreat if it judges the fight lost) while you watch. Take back control any time. (Shift+A)")}">${cui.autoPlay ? "✋ Take back control" : "🤖 AI plays my side"}</button>
-    <button class="primary" data-action="cb-end" ${b.phase === "player" && !cui.autoPlay ? "" : "disabled"} data-tip="End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""} (Space or Enter)">End turn</button>
-    ${!b.raid && !b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers. Only before you act on turn 1.">Auto-resolve</button>` : ""}
-    ${restartBtn(state, b)}
-  </div>
-  <div class="small muted" style="margin-top:0.3rem"><button class="${cui.confirmEnd ? "active" : ""}" data-action="cb-confirm" data-tip="When on, Space or End turn asks once while units still have actions (Enter always ends at once). Remembered in this browser.">${cui.confirmEnd ? "✔" : "✗"} Ask before ending a turn with actions left</button></div>`;
+  // The turn controls (End turn, Sound the retreat, AI plays my side …) and their questions: the bottom bar (renderCombatBar).
+  html += `<div class="small muted" style="margin-top:0.3rem"><button class="${cui.confirmEnd ? "active" : ""}" data-action="cb-confirm" data-tip="When on, Space or End turn asks once while units still have actions (Enter always ends at once). Remembered in this browser.">${cui.confirmEnd ? "✔" : "✗"} Ask before ending a turn with actions left</button></div>`;
   return html;
 }
+
+// ---------- the bottom bar (ui/battlebar.js) ----------
+// The selected one's card and everyone's tabs, the orders (unitOrders), the turn controls with their questions (the
+// end turn, the retreat, the fall back to the yard), the weapon and the turn. main.js writes it into #cbbar.
+cui.barMore = false; // ⋯ More open: the key table's other orders, greyed with when they apply
+function endAskHtml(b) {
+  const n = unitsWithActions(b);
+  return `<div class="small warn cbmsg cbconfirm"><b>${n} unit${n === 1 ? " still has" : "s still have"} actions</b> — press ${esc(keyLabel("battle.endTurn", 1) || "Space")} again or ${esc(keyLabel("battle.confirm", 1) || "Enter")} to end the turn (Esc to keep playing).
+    <div style="margin-top:0.3rem"><button data-action="cb-end" data-now="1" data-tip="End the turn now; units with actions left do nothing.">End turn now</button>
+    <button data-action="cb-confirm" data-tip="Stop asking: Space and End turn end the turn at once (turn it back on with the checkbox below the log).">Don't ask again</button></div></div>`;
+}
+export function renderCombatBar(state) {
+  const b = state.combat;
+  if (!b) return "";
+  sync(b);
+  autoSelect(b);
+  if (b.over) return "";
+  const u = selUnit(b);
+  const ord = unitOrders(state, b, u);
+  const k = (id, d = "") => keyLabel(id, 1) || d;
+  const wallMap = !!(b.tier && b.tier.map === "wall");
+  const noRetreat = b.evacCols && !b.raid && !wallMap ? retreatRefusal(b) : null;
+  const deploy = b.phase === "deploy";
+  const controls = [{ act: "cb-end", ic: "⏭️", label: "End turn", primary: true, ok: b.phase === "player" && !cui.autoPlay, key: k("battle.endTurn", "Space"), why: cui.autoPlay ? "The AI is playing your side." : b.phase === "enemy" ? "The enemy is moving." : deploy ? "Start the fight first (the panel)." : "",
+    tip: `End your turn. Units with actions left do nothing.${cui.confirmEnd ? " While any unit still has actions, the first press asks; press again (or Enter) to end." : ""}` }];
+  if (wallMap && !deploy) controls.push({ act: "cb-fallback", v: "ask", ic: "🏃", label: "Fall back to the yard", wide: true, ok: !retreatRefusal(b), why: retreatRefusal(b), on: fallAskOpen(b), key: k("battle.retreatAll"), tip: "Everyone climbs down off the wall and falls back into the yard and the buildings (the second map). The attackers get the next turn and pour in through the openings." });
+  if (noRetreat != null && !deploy) controls.push({ act: "cb-retreat", v: "ask", ic: "🏳️", label: "Sound the retreat", ok: !noRetreat, why: noRetreat, on: retreatAskOpen(b), key: k("battle.retreatAll"), tip: "Everyone still standing runs for the evac strip at once (shows each one's odds first). Those on the strip get out safely; the others make an escape check; downed teammates next to someone are carried." });
+  if (b.phase === "player" && clearEnough(b)) controls.push({ act: "cb-clear", ic: "🏁", label: "Area clear: finish", ok: true, wide: true, key: k("battle.clear"), tip: "Only a couple of the enemy are left, far off and unaware (or running): the area is clear enough. End the fight as a win and leave them be; or keep playing to hunt them down." });
+  if (!b.drill) controls.push({ act: "cb-autoplay", ic: cui.autoPlay ? "✋" : "🤖", label: cui.autoPlay ? "Take back control" : "AI plays my side", ok: true, on: cui.autoPlay, key: k("battle.autoplay"), tip: cui.autoPlay ? "Stop the AI: your side waits for your orders again from your next turn." : "Hand your side to the AI for the rest of the battle: it plays each of your turns (moves, shots, searches, the retreat if it judges the fight lost) while you watch. Take back control any time." });
+  if (!b.raid && !b.acted && b.turn === 1 && !b.drill) controls.push({ act: "cb-auto", ic: "⏩", label: "Auto-resolve", ok: true, tip: "Skip the tactical battle and resolve it instantly by the numbers. Only before you act on turn 1." });
+  if (restartable(state, b)) controls.push({ act: "set-battlereload", ic: "↺", label: "Restart battle", ok: true, tip: "Load the save made as this battle started and play it again from the beginning (asks first). Everything since it began is lost." });
+  const ask = retreatAskOpen(b) ? retreatConfirmHtml(b, askPlan(b)) : fallAskOpen(b) ? fallBackConfirmHtml(b) : endAskOpen(b) ? endAskHtml(b) : "";
+  return barHtml({ state, b, u, team: players(b), orders: ord.list, head: ord.head, extra: ord.extra, controls, ask, more: cui.barMore, cones: cui.cones, autoPlay: cui.autoPlay, salt: cui.salt });
+}
+// The panel and the bar together: what the battle screen shows (the tools read the screen's buttons from it).
+export const renderCombatScreen = (state) => renderCombatPanel(state) + renderCombatBar(state);
 
 // The view bar: turn, zoom, center, roofs; in a building with storeys the floor shown (`Floor 2 of 5 ▲ ▼`).
 export function viewBar(b = cui.battle) {
@@ -1542,7 +1585,8 @@ function raidButtons(state, b, u, btn) {
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
   const veh = b.raid.hasVehicle ?? b.raid.vehicleZone >= 0;
   const vehTip = atVehicle(b, u) ? "Free: open the vehicle. Drag what you carry into it to free your hands, or take things out." : "Walk to the vehicle (its zone, or next to it) to load or unload it.";
-  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "⇧S")}${btn("quick", "Quick search", quickTip, !qWhy, "⇧Q")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", byCar || (zone && zone.vehicle) ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && (!!zone || byCar), "X")}`;
+  const searchWhy = !sb ? "Stand next to an unsearched container (yellow box marker) to search it." : !facesBox(u, sb) ? faceRefusal(sb.label ? `the ${sb.label.toLowerCase()}` : "it") : u.ap > 0 ? "" : NO_AP; // the sim's own (sim/combat.js "search")
+  let html = `${btn("search", "Search", searchTip, !searchWhy, "⇧S", { why: searchWhy, ap: sb && sb.contents && !sb.quick ? 0 : SEARCH.ap })}${btn("quick", "Quick search", quickTip, !qWhy, "⇧Q", { why: qWhy })}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", byCar || (zone && zone.vehicle) ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && (!!zone || byCar), "X")}`;
   // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
   if (b.raid.interior) {
     const first = u.name.split(" ")[0];
@@ -1588,14 +1632,14 @@ function selfTip(b, u) {
   if (k) return ` Down with ${k.key === "tourniquet" ? "a tourniquet" : `the ${k.name.toLowerCase()}`} in reach: they can save themselves, ${selfOdds(u, k.key)}% a try (select them: Stabilize yourself), and try by themselves at the end of the turn.`;
   return u.selfPack ? ` Their ${u.selfPack.toLowerCase()} is in the pack: out of reach lying down.` : "";
 }
-function selfStabHtml(b, u) {
-  const why = selfStabRefusal(b, u);
+// Stabilize yourself (the downed one's order in the bottom bar): its label and tip.
+function selfStabLabel(u) {
   const k = selfKit(u);
-  const label = k ? `${k.key === "tourniquet" ? "Tourniquet" : esc(k.name)}: stabilize yourself (${selfOdds(u, k.key)}%)` : "Stabilize yourself";
+  return k ? `${k.key === "tourniquet" ? "Tourniquet" : esc(k.name)}: stabilize yourself (${selfOdds(u, k.key)}%)` : "Stabilize yourself";
+}
+function selfStabTip(why) {
   const R = MEDIC.SELF;
-  const tip = `The one thing someone down can do, once a turn: stop their own bleeding with a tourniquet (${R.tourniquet.BASE}% + ${R.tourniquet.MED} a point of Medicine, at most ${R.tourniquet.MAX}%) or a field trauma kit (${R.traumakit.BASE}% + ${R.traumakit.MED}, at most ${R.traumakit.MAX}%) in the off hand, a pocket or a rig pouch (not the pack: out of reach lying down). Stopped: stabilized, still down (a medic gets them up), the item's use spent. Failed: nothing spent, try again next turn. Not tried by the end of the turn: they try by themselves.${why ? ` ${why}` : ""}`;
-  const cond = u.stab ? "stabilized" : u.ko ? "out cold" : u.surr ? "gave up" : `bleeding out (${u.bleed} turn${u.bleed === 1 ? "" : "s"} left)`;
-  return `<h3>${esc(u.name)} · down, ${cond}</h3><div class="cbactions"><button data-action="cb-act" data-v="selfStab" ${why ? "disabled" : ""} data-tip="${esc(tip)}">${label}</button></div>${why ? `<div class="small muted">${esc(why)}</div>` : ""}`;
+  return `The one thing someone down can do, once a turn: stop their own bleeding with a tourniquet (${R.tourniquet.BASE}% + ${R.tourniquet.MED} a point of Medicine, at most ${R.tourniquet.MAX}%) or a field trauma kit (${R.traumakit.BASE}% + ${R.traumakit.MED}, at most ${R.traumakit.MAX}%) in the off hand, a pocket or a rig pouch (not the pack: out of reach lying down). Stopped: stabilized, still down (a medic gets them up), the item's use spent. Failed: nothing spent, try again next turn. Not tried by the end of the turn: they try by themselves.${why ? ` ${why}` : ""}`;
 }
 // The roster's medic badge: a small cross, with the kit and its uses left.
 function medicBadge(p) {
@@ -1696,12 +1740,12 @@ function stealthButtons(state, b, u, btn) {
   let html = btn("subdue", "Subdue", subTip, ap > 0 && near.length > 0, "C");
   html += btn("tie", ko.some((t) => t.surr) ? "Tie (take prisoner)" : "Tie up", `1 action: tie up someone knocked out or who has surrendered next to you. Tied, they do not wake up, and after the fight they are your prisoner (in a raid, drag them into an extraction zone and leave from it). ${roomText(state)}`, ap > 0 && ko.length > 0, "T");
   html += btn("drag", "Drag", `1 action: drag a body, someone knocked out or a downed teammate up to ${STEALTH.DRAG} tiles (out of a patrol's sight: a guard who sees a body raises the alarm).`, ap > 0 && bodies.length > 0, "⇧D");
-  if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G");
+  if (!kinds.length) html += btn("throw", "Throw", "Bottles, noise makers and firecrackers pull unaware guards and the dead to where they land. Nobody here carries one (search kitchens and houses, or craft them).", false, "G", { why: "Nothing to throw: bottles, noise makers and firecrackers come from searching and crafting." });
   for (const k of kinds) {
     const T = THROWABLES[k];
     const what = T.fx || T.decoy ? GEAR[k].desc : T.self ? `1 action: blow ${T.label} where ${u.name.split(" ")[0]} stands. Unaware guards and the dead within ${T.radius} tiles come to look. Not used up.`
       : `1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}.`;
-    html += `<button class="${cui.mode === "throw" && cui.throwKey === k ? "active" : ""}" data-action="cb-act" data-v="throw" data-k="${k}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`${what} ${T.keep ? "" : `${have[k]} left.`}`)}">${T.self ? "Blow" : "Throw"} ${esc(GEAR[k].name.toLowerCase())}${T.keep ? "" : ` (${have[k]})`}${k === kinds[0] ? ' <span class="key">G</span>' : ""}</button>`;
+    html += btn("throw", `${T.self ? "Blow" : "Throw"} ${esc(GEAR[k].name.toLowerCase())}${T.keep ? "" : ` (${have[k]})`}`, `${what} ${T.keep ? "" : `${have[k]} left.`}`, ap > 0, k === kinds[0] ? "G" : "", { k, on: cui.mode === "throw" && cui.throwKey === k, why: ap > 0 ? "" : NO_AP });
   }
   return html;
 }
@@ -1723,7 +1767,7 @@ function siegeButtons(b, u, btn) {
   }
   else if ((b.rams || []).some((x) => x.dropped && x.side === u.side && Math.max(Math.abs(x.x - u.x), Math.abs(x.y - u.y)) <= 1)) html += btn("takeRam", "Take up ram", `Take the ram up with whoever of yours stands next to you (it needs ${RAM.MIN}). It moves at ${RAM.MOB} tiles an action.`, ap > 0);
   const dt = dropTargets(b, u);
-  if (dt.length) html += `<button data-action="cb-act" data-v="drop" data-id="${dt[0].id}" ${ap > 0 ? "" : "disabled"} data-tip="${esc(`Drop a rock from the wall on ${dt[0].name} below (${DROP.CHANCE}%: ${DROP.DMG[0]}–${DROP.DMG[1]}; on a ram's crew one more of them is hit). Ends the turn.`)}">Drop rock on ${esc(dt[0].name)}</button>`;
+  if (dt.length) html += btn("drop", `Drop rock on ${esc(dt[0].name)}`, `Drop a rock from the wall on ${dt[0].name} below (${DROP.CHANCE}%: ${DROP.DMG[0]}–${DROP.DMG[1]}; on a ram's crew one more of them is hit). Ends the turn.`, ap > 0, "", { id: dt[0].id });
   return html;
 }
 
@@ -2167,8 +2211,22 @@ function hudFrame(state, b, cw, ch) {
   const list = players(b);
   const sel = cui.sel;
   if (hudEl === undefined || (hudEl && !hudEl.isConnected)) hudEl = typeof document !== "undefined" && document.getElementById ? document.getElementById("cbhud") : null;
+  const bottom = barInset();
   const avoid = hudSync(hudEl, { state, b, list, sel, salt: cui.salt, cw, ch, hoverT, hoverO, mode: cui.mode });
-  hudPaint(ctx, b, { cw, ch, hits: hitLabels(b, v), hoverT, hoverO, mode: cui.mode, list, sel, avoid });
+  hudPaint(ctx, b, { cw, ch, hits: hitLabels(b, v), hoverT, hoverO, mode: cui.mode, list, sel, avoid, bottom });
+}
+// The bottom bar's height over the map (ui/battlebar.js, #cbbar): the compass, the edge arrows, the squad strip and the
+// target card keep clear of it (iso.bottomInset, the CSS variable --cbbar-h on the map's box).
+let barEl, barShown = -1;
+function barInset() {
+  if (barEl === undefined || (barEl && !barEl.isConnected)) barEl = typeof document !== "undefined" && document.getElementById ? document.getElementById("cbbar") : null;
+  const h = barEl && barEl.firstElementChild ? Math.round(barEl.firstElementChild.offsetHeight || 0) : 0;
+  if (h !== barShown) {
+    barShown = h;
+    iso.bottomInset = h;
+    if (barEl && barEl.parentElement && barEl.parentElement.style) barEl.parentElement.style.setProperty("--cbbar-h", `${h}px`);
+  }
+  return h;
 }
 const NO_HITS = new Map();
 const noBubble = () => {};

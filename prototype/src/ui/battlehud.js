@@ -1,7 +1,8 @@
-// The battle HUD over the map (user requests 2026-10-09): the selected unit's weapon panel (bottom middle), the squad
-// strip (top left: a row per person of yours, always there, with who is off screen), big colour-coded hit chances over
-// the enemies (and the breakdown of the one under the mouse), and markers at the edge of the view pointing at your
-// people off screen. ui/combat.js calls hudPaint (canvas, every frame) and hudSync (DOM) from drawCombat.
+// The battle HUD over the map (user requests 2026-10-09): the selected unit's weapon panel (drawn on the bottom bar,
+// ui/battlebar.js), the squad strip (top left: a row per person of yours, always there, with who is off screen), big
+// colour-coded hit chances over the enemies (and the breakdown of the one under the mouse), and markers at the edge of
+// the view pointing at your people off screen. ui/combat.js calls hudPaint (canvas, every frame) and hudSync (DOM)
+// from drawCombat.
 //   - Numbers: every hit chance is the sim's own (sim/combat.js shotOdds / meleeOdds, through ui/combat.js odds): the
 //     breakdown is shotOdds' own steps (opts.parts), so it cannot drift from the roll a shot makes.
 //   - Cost: the DOM is written only when what it shows changed (a key per part, built from a few numbers each frame);
@@ -224,7 +225,7 @@ export function rosterHtml(state, b, list, { sel = null, offMap = null, salt = 0
   if (!list.length) return "";
   const rows = list.map((p, i) => rosterRow(state, b, p, i < 9 ? i + 1 : 0, sel, offMap ? offMap.get(p.id) || "" : "", salt, !open)).join("");
   const nOff = offMap ? [...offMap.values()].filter(Boolean).length : 0;
-  return `<div class="bh-roster${open ? "" : " folded"}"><button class="bh-fold" data-action="cb-view" data-v="hud" data-tip="${esc(`${open ? "Fold" : "Open"} the squad strip and the weapon panel (${keyLabel("bview.hud", 1) || "`"}).`)}">${open ? "Squad ▴" : "▾"}${nOff && open ? ` <span class="bh-offn">${nOff} off screen</span>` : ""}</button>${rows}</div>`;
+  return `<div class="bh-roster${open ? "" : " folded"}"><button class="bh-fold" data-action="cb-view" data-v="hud" data-tip="${esc(`${open ? "Fold" : "Open"} the squad strip (${keyLabel("bview.hud", 1) || "`"}).`)}">${open ? "Squad ▴" : "▾"}${nOff && open ? ` <span class="bh-offn">${nOff} off screen</span>` : ""}</button>${rows}</div>`;
 }
 
 // ---------- off screen ----------
@@ -264,7 +265,7 @@ function badge(ctx, X, Y, text, col, fs, sub = "", strong = false) {
 // Over each enemy the selected unit could hit: its chance (bigger while Shoot or Melee is armed); the one under the
 // mouse a big card with damage and cover. hits: Map id -> odds (ui/combat.js hitLabels); hoverT/hoverO: the enemy
 // under the mouse and its odds. Your people off screen: a blue arrow with their number at the edge of the view.
-export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel, avoid }) {
+export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel, avoid, bottom = 0 }) {
   const S = ISO_ZOOMS[iso.zoom] || 2, ui = uiScale();
   const armed = mode === "shoot" || mode === "melee";
   const head = (t) => { const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1; return project(t.x + 0.5, t.y + 0.5, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down ? 10 : 30 * big)); };
@@ -292,20 +293,21 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
   }
   // Your people off screen: an arrow at the edge with their number, clear of the strip (avoid: its rect).
   if (list && list.length && !b.over) {
-    const m = 18, cx = cw / 2, cy = ch / 2;
+    const chA = Math.max(60, ch - bottom); // above the bottom bar (ui/battlebar.js)
+    const m = 18, cx = cw / 2, cy = chA / 2;
     const fs = Math.round(11 * ui);
     const placed = [];
     list.forEach((p, i) => {
       if (p.dead || p.left || p.fled || p.off || p.down && p.dead || p.x < 0 || !onFloor(b, p)) return;
       const [X, Y] = project(p.x + 0.5, p.y + 0.5, heightAt(b, p.x, p.y) * LV + liftOf(b) + 15);
-      if (X >= m && Y >= m && X <= cw - m && Y <= ch - m) return;
+      if (X >= m && Y >= m && X <= cw - m && Y <= chA - m) return;
       const dx = X - cx, dy = Y - cy;
-      const k = Math.min((cw / 2 - m) / Math.max(1e-6, Math.abs(dx)), (ch / 2 - m) / Math.max(1e-6, Math.abs(dy)));
+      const k = Math.min((cw / 2 - m) / Math.max(1e-6, Math.abs(dx)), (chA / 2 - m) / Math.max(1e-6, Math.abs(dy)));
       let ex = cx + dx * k, ey = cy + dy * k;
       if (avoid && ex < avoid.x1 + m && ey < avoid.y1 + m) { if (ex - avoid.x1 < ey - avoid.y1) ex = avoid.x1 + m; else ey = avoid.y1 + m; } // not under the strip
-      if (ex < 80 && ey > ch - 80) { if (Math.abs(dx) * ch > Math.abs(dy) * cw) ey = ch - 80; else ex = 80; } // nor the compass (isoview.js drawCompass)
+      if (ex < 80 && ey > chA - 80) { if (Math.abs(dx) * chA > Math.abs(dy) * cw) ey = chA - 80; else ex = 80; } // nor the compass (isoview.js drawCompass)
       const side = Math.abs(ex - m) < 2 || Math.abs(ex - (cw - m)) < 2 || ex === avoid?.x1 + m; // on a left or right edge: stack along it
-      for (let g = 0; g < 12 && placed.some(([qx, qy]) => Math.hypot(qx - ex, qy - ey) < 20); g++) { if (side) ey += ey > ch / 2 ? -20 : 20; else ex += ex > cw / 2 ? -20 : 20; }
+      for (let g = 0; g < 12 && placed.some(([qx, qy]) => Math.hypot(qx - ex, qy - ey) < 20); g++) { if (side) ey += ey > chA / 2 ? -20 : 20; else ex += ex > cw / 2 ? -20 : 20; }
       placed.push([ex, ey]);
       const col = p.id === sel ? "#ffd166" : "#8fc1ff";
       ctx.save();
@@ -325,15 +327,15 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
 }
 
 // ---------- the DOM ----------
-// Writes the strip, the weapon panel and the target card into #cbhud, each only when its key changed. args: { state,
+// Writes the strip and the target card into #cbhud, each only when its key changed. args: { state,
 // b, list (your people, in number-key order), sel, salt, cw, ch, hoverT, hoverO, mode }. Returns the strip's rect
 // (CSS px in the map) for the edge arrows, or null.
 const shown = { roster: null, weapon: null, target: null, rect: null };
 export function hudSync(el, { state, b, list, sel, salt, cw, ch, hoverT, hoverO, mode }) {
   if (!el) return null;
   if (!el.firstChild || !el.querySelector || !el.querySelector(".bh-rosterbox")) {
-    el.innerHTML = `<div class="bh-rosterbox"></div><div class="bh-bottom"><div class="bh-targetbox"></div><div class="bh-weaponbox"></div></div>`;
-    shown.roster = shown.weapon = shown.target = null;
+    el.innerHTML = `<div class="bh-rosterbox"></div><div class="bh-bottom"><div class="bh-targetbox"></div></div>`;
+    shown.roster = shown.target = null;
   }
   const hide = !!b.over;
   el.classList.toggle("hidden", hide);
@@ -350,12 +352,7 @@ export function hudSync(el, { state, b, list, sel, salt, cw, ch, hoverT, hoverO,
     box.innerHTML = rosterHtml(state, b, list, { sel, offMap, salt, open: HUD.open });
     shown.rect = box.firstElementChild && box.firstElementChild.getBoundingClientRect && el.getBoundingClientRect ? (() => { const r = box.firstElementChild.getBoundingClientRect(), o = el.getBoundingClientRect(); return { x1: r.right - o.left, y1: r.bottom - o.top }; })() : null;
   }
-  // The weapon panel: the selected unit's weapon.
-  const wk = u ? `${b.rev}:${b.log.length}:${u.id}:${u.weapon}:${u.mag}:${u.load}:${u.mode}:${u.jam ? u.jam.kind || 1 : 0}:${u.hand ? JSON.stringify(u.hand) : ""}:${HUD.open}` : `none:${HUD.open}`;
-  if (wk !== shown.weapon) {
-    shown.weapon = wk;
-    el.querySelector(".bh-weaponbox").innerHTML = HUD.open && u ? weaponPanelHtml(state, b, u) : "";
-  }
+  // The weapon panel (weaponPanelHtml) is on the bottom bar now, by the turn controls (ui/battlebar.js).
   // The target card: the enemy under the mouse.
   const tk = hoverT && u ? `${b.rev}:${u.id}:${hoverT.id}:${mode}:${hoverO ? hoverO.chance : "-"}:${HUD.open}` : "";
   if (tk !== shown.target) {
@@ -364,4 +361,4 @@ export function hudSync(el, { state, b, list, sel, salt, cw, ch, hoverT, hoverO,
   }
   return shown.rect;
 }
-export function hudReset() { shown.roster = shown.weapon = shown.target = shown.rect = null; }
+export function hudReset() { shown.roster = shown.target = shown.rect = null; }
