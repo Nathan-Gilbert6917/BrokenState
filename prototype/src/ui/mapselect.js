@@ -15,7 +15,7 @@
 // - view.pick ("kind:id") tells the map which sprite to ring in gold (ui/render.js pickRing).
 // Only what you could see: the same sight (state.live, by night as far as your people see) and radio coverage the
 // map draws by.
-import { partyTile, plannedTile, partyMembers, teamName, MISSIONS, tileLabel, cargoLoad, partyCapacity } from "../sim/parties.js";
+import { partyTile, plannedTile, partyMembers, teamName, MISSIONS, tileLabel, cargoLoad, partyCapacity, glideAt, onTheMove } from "../sim/parties.js";
 import { contactable } from "../sim/orders.js";
 import { baseIntel, partyIntel, rangeText } from "../sim/intelest.js";
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
@@ -36,10 +36,15 @@ const swatch = (c) => `<span class="swatch" style="background:${esc(c)}"></span>
 const PICK_TIP = "Click the tile again for the next thing on it, then the tile itself. Shift+click picks the tile.";
 
 // ---------- what is on a tile ----------
-// Where one of your teams shows on the map: where it is (in contact, waiting, working, a convoy), else where it
-// should be by its plan (ui/render.js drawPlayerParty).
+// Where one of your teams shows on the map: where it is (your teams are always in reach of orders, convoys tracked;
+// a team on the move counts on the tile its sprite is nearer, glideAt), else where it should be by its plan (ui/render.js
+// drawPlayerParty).
 export function teamTileOf(state, p) {
-  if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") return partyTile(p);
+  if (p.kind === "convoy" || contactable(p)) {
+    if (state.timelapse || !onTheMove(p)) return partyTile(p);
+    const gl = glideAt(state, p, view.hourFrac || 0);
+    return gl && gl.to !== gl.from && gl.t >= 0.5 ? gl.to : gl ? gl.from : partyTile(p);
+  }
   const plan = p.planPath || p.path;
   if (!plan || !plan.length) return partyTile(p);
   if (p.etaOut != null) return plannedTile(state, p);
@@ -125,7 +130,14 @@ function locate(state, sel, live) {
 // and tell the map which sprite to ring.
 export function syncPick(state, ui) {
   const sel = ui.mapSel;
-  if (sel && sel.kind === "team") { if (ui.expedition !== Number(sel.id)) ui.mapSel = null; }
+  if (sel && sel.kind === "team") {
+    if (ui.expedition !== Number(sel.id)) ui.mapSel = null;
+    else if (ui.selected === sel.tile) { // a team on the move: the selection follows it (its panel stays open)
+      const p = state.parties.find((q) => q.id === Number(sel.id));
+      const at = p ? teamTileOf(state, p) : sel.tile;
+      if (at !== sel.tile) { sel.tile = at; ui.selected = at; view.selected = at; }
+    }
+  }
   else if (sel) {
     if (ui.selected !== sel.tile) ui.mapSel = null;
     else {

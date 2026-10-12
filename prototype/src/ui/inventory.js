@@ -383,6 +383,7 @@ export function inventoryModal(state, ui) {
   if (!ui.inv) return null;
   if (ui.inv.loot) return lootModal(state, ui);
   if (ui.inv.raid) return raidModal(state, ui);
+  if (ui.inv.peek) return peekModal(state, ui);
   const s = survivorById(state, ui.inv.sid);
   if (!s) { ui.inv = null; return null; }
   const place = personPlace(s);
@@ -400,6 +401,24 @@ export function inventoryModal(state, ui) {
     ${selBar(state, ui, place)}${stackPanel(state, ui, "inv")}
     <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps.</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Close</button></div>
+  </div>`;
+}
+
+// A survivor's kit seen from the battle (ui/combat.js 🎒, Shift+B): the paper doll as it stands now, read-only (in a
+// fight things move only by orders: Reload, Throw, Search, Ground). The tabs: everyone of yours in the fight.
+// ui.inv = { sid, peek: true }.
+function peekModal(state, ui) {
+  const b = state.combat;
+  const s = survivorById(state, ui.inv.sid);
+  if (!b || b.over || !s) { ui.inv = null; return null; }
+  const people = b.units.filter((u) => u.side === "player" && u.sid != null && u.vol == null).map((u) => survivorById(state, u.sid)).filter(Boolean);
+  const u = b.units.find((x) => x.sid === s.id && x.side === "player");
+  const where = u ? (u.dead ? "dead" : u.left ? "got away" : u.down ? "down" : `${Math.round(u.hp)} hp`) : "";
+  return `<div class="box wide invbox">
+    <div class="spread"><h1>Inventory: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}${where ? ` · ${esc(where)}` : ""}</span></div>
+    <div class="small muted">In the fight: look only. Things move by orders (Reload, Throw, Search, Ground).</div>
+    <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 7), { readonly: true, user: s })}</div></div>
+    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close"${tip("Back to the battle (Esc)")}>Close</button></div>
   </div>`;
 }
 
@@ -468,6 +487,11 @@ function lootModal(state, ui) {
 // The survivor on the left (their slots and what they carry loose), the container and, at the vehicle, its trunk.
 // Opened from the battle (ui/combat.js sets cui.lootReq; takeLootReq turns it into ui.inv).
 export function takeLootReq(state, ui) {
+  if (cui.invReq != null) { // 🎒 a survivor's kit, asked for from the battle panel (ui/combat.js cb-inv): read-only
+    const sid = cui.invReq;
+    cui.invReq = null;
+    if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid)) { ui.inv = { sid, peek: true }; ui.invSel = null; ui.invMsg = ""; }
+  }
   if (!cui.lootReq) return;
   const r = cui.lootReq;
   cui.lootReq = null;

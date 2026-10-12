@@ -122,7 +122,7 @@ section("Move a team out: from that base's people and stores, waiting outside, t
     check(site != null && /sets off/.test(orderMove(st, p, site)), "ordered to a tile 3-5 tiles out");
     tick(st, 200, (c) => c.partyId === p.id && c.isOrders, () => p.phase === "waiting");
     check(partyTile(p) === site, "the team got there and waits for orders");
-    check(st.cards.some((c) => c.isOrders && c.partyId === p.id), "a free tile: the orders card (no Enter card)");
+    check(!st.cards.some((c) => c.partyId === p.id && /Enter/.test(c.title || "")) && p.phase === "waiting", "a free tile: it waits for orders (no Enter card; orders reach it anywhere, so no arrival card is needed)");
     const opt = orderOptions(st, p).find((o) => o.mission === "outpost");
     check(opt && !opt.disabled, `Build outpost is on offer with the scrap they carry (${opt && opt.disabled})`);
     const n0 = st.bases.length;
