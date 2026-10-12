@@ -203,7 +203,7 @@ function drinkDay(st, b) {
   p.supplies.rawwater += 10; addWormWater(st, p, 10, 0.5);
   check(near(p.wormEggs, 0.5), "river water from infected land carries its eggs");
   // A camp fire boils it into purified water.
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fire burns firewood (woodcutting.js campFireHour): none carried, nothing boils
   st.tiles[h.tile].infection = 0.2; // under the camping threshold: only the boiling is under test
   const pure0 = p.supplies.water;
   wormTeamHour(st, p, members);
@@ -311,7 +311,7 @@ function drinkDay(st, b) {
   const raw = withNums(WORM, { RAW: 1 }, () => eatRawCargo(st, p, members, 4));
   check(near(raw, 4) && caught(members) === members.length && near(wormMeatIn(p.cargo), 6), "then raw as the last resort, and catches it (pinned)");
   clearAll(members);
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
   st.tiles[h.tile].infection = 0.2;
   wormTeamHour(st, p, members);
   check(wormMeatIn(p.cargo) === 0, "a camp fire cooks it");
@@ -928,7 +928,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   // Camped with the fire lit that night: washed, SEARCH_WASH of the time.
   withNums(WORM, { SEARCH: 1 }, () => wormSearch(st, p, site, 1));
   p.wormHands.day -= 1;
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
   st.tiles[site].infection = 0.3; // under the camping threshold: only the hands are under test
   withNums(WORM, { SEARCH_WASH: 1 }, () => wormTeamHour(st, p, members));
   check(caught(members) === 0 && !p.wormHands, "camped with the fire lit that night: washed, nobody caught it (SEARCH_WASH pinned to 1)");
@@ -1018,7 +1018,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const raw = withNums(WORM, { FORAGE: 1 }, () => eatRawForageCargo(st, p, members, 2));
   check(near(raw, 2) && caught(members) === members.length && near(wormForageIn(p.cargo), 2), "then the forage raw, and catches it (pinned)");
   clearAll(members);
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
   st.tiles[h.tile].infection = 0.2;
   wormTeamHour(st, p, members);
   check(wormForageIn(p.cargo) === 0, "a camp fire boils it");

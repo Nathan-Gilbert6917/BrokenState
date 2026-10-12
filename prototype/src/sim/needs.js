@@ -352,6 +352,7 @@ function errandHour(state, s) {
 export function needsHour(state) {
   for (const base of state.bases) {
     if (base.owner != null && base.owner !== "player") continue;
+    shelterFire(state, base); // woodcutting.js: a lit camp or shelter fire burns its firewood, or goes out
     const people = residents(state, base.id);
     if (people.length) baseHour(state, base, people);
   }
@@ -456,9 +457,8 @@ export function teamTreats(state, p) {
 // Burns the day's heating (upkeep.js heatUse) from the stock: firewood first (1 firewood = HEAT.wood fuel of heat),
 // then fuel for the rest. Short of both, everyone there is cold: base.cold = the share missing (0..1, false when
 // warm): mood −COLD.mood and health −COLD.hp × that a day, and the cold reaches indoors (health.js baseOnsets: illness
-// risk as outdoors). A shelter's fire on bare ground burns firewood first (woodcutting.js shelterFire).
+// risk as outdoors). A camp's or shelter's fire burns its firewood by the hour (woodcutting.js shelterFire, needsHour).
 export function heatDaily(state, base) {
-  shelterFire(state, base);
   const use = heatUse(state, base);
   const st = base.stock;
   base.heat = { need: r1(use.total), each: use.each, n: use.n, fire: use.fire, burned: 0, wood: 0 };

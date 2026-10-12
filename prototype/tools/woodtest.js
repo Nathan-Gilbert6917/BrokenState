@@ -31,7 +31,7 @@ import { saveToString, loadFromString } from "../src/sim/save.js";
 import { heatUse, HEAT } from "../src/sim/upkeep.js";
 import { boilerUse } from "../src/sim/worm.js";
 import { heatDaily } from "../src/sim/needs.js";
-import { stationaryActivity, heatGain } from "../src/sim/fieldheat.js";
+import { stationaryActivity, heatGain, setFire } from "../src/sim/fieldheat.js";
 import { baseHeat } from "../src/sim/hordes.js";
 import { newItem } from "../src/sim/inventory.js";
 import { SUPPLIES, CATEGORIES } from "../src/sim/data.js";
@@ -310,21 +310,24 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   check(need0 > 0 && heatFuelWant(st, h).need === 0, `the governor's heating fuel plan: ${need0} fuel without wood, none with the winter's wood in store`);
   setAutopilot(st, false);
   // An outpost short of heating gets the hub's spare firewood over its supply line.
-  // A shelter (tier 0): its lit fire burns deadfall where there is wood, firewood on bare ground, else it does not warm.
-  h.tier = 0; h.fire = true; h.stock.wood = 0;
+  // A shelter (tier 0): its lit fire burns firewood by the hour (deadfall about stretches it), else it goes out.
+  h.tier = 0; h.fire = true; h.stock.wood = 150;
   const forestish = Wd.fireLandOk(st, h.tile);
-  heatDaily(st, h);
-  if (forestish) check(heatUse(st, h).fire && h.fireFed == null, "a shelter in wooded land: its fire burns deadfall (no firewood)");
+  for (let i = 0; i < 24; i++) Wd.shelterFire(st, h);
+  if (forestish) check(heatUse(st, h).fire && h.fireFed === true && near(h.stock.wood, 150 - Wd.WOOD.fire.shelter * Wd.WOOD.fire.deadfall, 0.01), `a shelter in wooded land: its fire burns ${Wd.WOOD.fire.shelter * Wd.WOOD.fire.deadfall} firewood a day (deadfall stretches it)`);
   const bare = st.tiles.find((t) => t.terrain === "city" && !Wd.fireLandOk(st, t.id));
   if (bare) {
     const keep = h.tile;
     h.tile = bare.id;
     h.stock.wood = 150;
-    heatDaily(st, h);
-    check(h.fireFed === true && near(h.stock.wood, 150 - Wd.WOOD.fire.shelter) && heatUse(st, h).fire, `a shelter on bare ground: its fire burns ${Wd.WOOD.fire.shelter} firewood a day`);
-    h.stock.wood = 0;
-    heatDaily(st, h);
-    check(h.fireFed === false && !heatUse(st, h).fire && heatUse(st, h).total > 0, "no firewood there: the fire does not warm it");
+    for (let i = 0; i < 24; i++) Wd.shelterFire(st, h);
+    check(h.fireFed === true && near(h.stock.wood, 150 - Wd.WOOD.fire.shelter, 0.01) && heatUse(st, h).fire, `a shelter on bare ground: its fire burns ${Wd.WOOD.fire.shelter} firewood a day`);
+    h.stock.wood = 0.2;
+    Wd.shelterFire(st, h);
+    check(h.fire === false && h.stock.wood === 0 && !heatUse(st, h).fire && heatUse(st, h).total > 0, "no firewood left: the fire goes out and does not warm it");
+    check(!Wd.canLight(st, h) && /cannot be lit/.test(setFire(st, h, true)) && h.fire === false, "with no firewood in store it cannot be lit again");
+    h.stock.wood = 10;
+    check(Wd.canLight(st, h) && !/cannot/.test(setFire(st, h, true)) && h.fire === true, "firewood in: it is lit again");
     h.tile = keep;
   } else note("(no bare city ground on this map: skipped)");
   delete h.tier; delete h.fire; delete h.fireFed;
@@ -340,9 +343,13 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
     check(p.campFire === false, "out of firewood there: the fire goes out");
   }
   const fp = placeTeam(st, cleanTile(st, "forest").id);
+  fp.cargo.supplies.wood = 30;
   startOrder(st, fp, { type: "camp", hours: 30 });
   for (let i = 0; i < 24; i++) { st.hour++; taskHour(st, fp); }
-  check(fp.campFire !== false && carried(fp, "wood") === 0, "a camp in the woods burns deadfall: free");
+  check(fp.campFire !== false && near(30 - carried(fp, "wood"), Wd.WOOD.fire.camp * Wd.WOOD.fire.deadfall, 0.05), `a camp in the woods burns firewood, stretched by deadfall (${r2(30 - carried(fp, "wood"))} a day)`);
+  fp.cargo.supplies.wood = 0;
+  for (let i = 0; i < 2; i++) { st.hour++; taskHour(st, fp); }
+  check(fp.campFire === false, "out of firewood in the woods too: the fire goes out");
 }
 
 // ======================================================================
