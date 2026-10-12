@@ -50,7 +50,7 @@ import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchen
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
-import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
+import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
@@ -113,7 +113,7 @@ import { openCasesIn } from "./gunsafes.js";
 import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
-import { stagingNeeds, establishProblem, STAGING } from "./staging.js"; // no base: Establish base (a camp with its step up)
+import { stagingNeeds, establishProblem, STAGING, besideWaterSource } from "./staging.js"; // no base: Establish base (a camp with its step up)
 import { isHardcore } from "./hardcore.js";
 import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers, wormOf } from "./worm.js";
 import { gunWant, pickGunToBuy, noteGunBought, radioGunDeal } from "./govguns.js"; // the governor buys guns for the unarmed
@@ -1071,7 +1071,7 @@ export const housingAI = {
 // line: the least supply-line strength (economy.js) of an outpost people move to.
 const HOUSING = { scarce: 0.25, partsKeep: 1, scrapAhead: 25, ahead: 3, moveMax: 3, headroom: 2, moveFood: 4, line: 0.5 };
 function nextHousing(state, base) {
-  if (isShelter(base)) return null; // a shelter has no building plots: it is built up into a base first
+  if (isCamp(base)) return null; // a camp has no building plot: it is built up first (a shelter has one, for a bunkhouse)
   const st = base.stock;
   const free = plotsFree(base, "building");
   const queued = (t) => base.construction.filter((c) => c.type === t && (!c.target || BUILDINGS[t].from)).length;
@@ -2598,8 +2598,10 @@ const BUILD_AREA = {
 // of room (farmtest seeds 54 and 60).
 function planBuilds(state, base, areas = ALL_AREAS) {
   const slots = base.type === "hub" ? 2 : 1;
-  if (base.construction.length >= slots + 1) return;
-  const full = base.construction.length >= slots;
+  // A camp's or a shelter's step up waiting for its materials (gatherStalled) holds no builder: it does not fill the queue.
+  const jobs = base.construction.filter((c) => !(BUILDINGS[c.type] && BUILDINGS[c.type].tierUp && gatherStalled(c))).length;
+  if (jobs >= slots + 1) return;
+  const full = jobs >= slots;
   const g = gov(state);
   for (const w of buildWishes(state, base)) {
     if (full && !w.room) continue;
@@ -2670,6 +2672,44 @@ function jailWishes(state, base, best) {
   return [];
 }
 
+// A camp's or a shelter's yard (tier 0, 2026-10-12, user request "fix autopilot to build things at camp"): its step
+// up gathers every scrap that comes in (buildings.js gather), so nothing else was ever built there. What it is to have
+// meanwhile, in order of need, on its plots (a camp 2 utility plots, a shelter 3 and a building plot: buildings.js
+// PLOTS): a rain catcher away from a river or lake, a cook fire (the camp fire is out on mild nights, so the meals
+// would be raw), a drying rack for the fresh food it cannot eat in time, a crafting bench for mending and the
+// crafters; a shelter crowded past its beds a bunkhouse on its building plot. A camp's step up is cheap and quick
+// (camp_up, outpost_up): its yard is built from the scrap the step up does not need. A shelter's (hub_up, 100 scrap)
+// is a long way off: it waits until its yard stands (pending: what is still to go up and has a plot for it).
+// { wishes (those it can pay for now), pending }.
+function campYard(state, base, here, queued) {
+  const wishes = [], pending = [];
+  if (!isShelter(base) || !here.length) return { wishes, pending };
+  const st = base.stock;
+  const job = tierUpJob(base), up = BUILDINGS[tierUpType(base)];
+  // (a camp's building materials are made from scrap: buildings.js CAMP.matScrap each, less what is in store)
+  const left = (k) => (job ? gatherRows(job).filter((r) => r.key === k).reduce((a, r) => a + Math.max(0, r.need - r.have), 0) : up.cost[k] || 0);
+  const upScrap = isCamp(base) ? left("scrap") + Math.max(0, left("buildmat") - (st.buildmat || 0)) * CAMP_TIER.matScrap : 0;
+  const spare = (st.scrap || 0) - upScrap;
+  const add = (type, why) => {
+    if (count(base, type) + queued(type) >= (type === "cots" ? BUILDINGS.cots.max : 1)) return; // the cots twice, the rest once
+    const chk = canBuild(state, base, type);
+    if (chk.where || chk.noPlot || chk.locked || /Limit reached|has room for/.test(chk.reason || "")) return; // no room for it at this stage
+    pending.push(type);
+    const cost = BUILDINGS[type].cost;
+    if ((cost.scrap || 0) <= spare && (cost.parts || 0) <= Math.max(0, (st.parts || 0) - 1)) wishes.push({ type, why });
+  };
+  if (!besideWaterSource(state, base.tile)) add("rain_catcher", "rain water (no river or lake beside it)");
+  add("cookhouse", "the meals cooked through, the camp fire lit or not");
+  if (here.length >= 3) add("smoker", "dry the fresh food it cannot eat in time");
+  if (!benchTier(base, true)) add("craftbench", "a bench for mending and the crafters");
+  // Crowded past its beds: the makeshift cots first (6 scrap, no plot, +2 each), then a bunkhouse on its building plot.
+  // (everyone whose home it is: someone out on a job trip still sleeps here)
+  const living = state.survivors.filter((x) => x.alive && x.location && x.location.kind === "base" && x.location.baseId === base.id).length;
+  const crowded = () => living + returning(state, base) > baseBeds(base) + queuedBeds(base) + (pending.includes("cots") ? BEDS.cots : 0);
+  if (!isCamp(base) && crowded()) add("cots", `${living} people for ${baseBeds(base)} beds`);
+  if (!isCamp(base) && crowded()) add("bunkhouse", `${living} people for ${baseBeds(base)} beds`);
+  return { wishes, pending };
+}
 function buildWishes(state, base) {
   const g = gov(state);
   const out = [];
@@ -2687,9 +2727,12 @@ function buildWishes(state, base) {
   // Water first when it is about to run out (economy.js).
   const wo0 = waterOutlook(state, base);
   if (wo0.net < 0 && wo0.daysLeft < 8 && count(base, "rain_catcher") + base.construction.filter((c) => c.type === "rain_catcher").length < BUILDINGS.rain_catcher.max) add("rain_catcher", "water is about to run out", true);
-  // A shelter (buildings.js, tier 0): build it up into a base as soon as the materials are in (a well, walls, every building).
-  // An outpost camp's step up (outpost_up) is queued when it is pitched; queued again if it was called off.
-  if (isShelter(base) && !queued(tierUpType(base))) add(tierUpType(base), base.type === "outpost" ? "establish the outpost camp (a spring, a fence, room to build)" : "build the shelter up into a base (a well, walls, room for everything)", true);
+  const yard = campYard(state, base, here, queued); // a camp's or a shelter's yard, ahead of its step up
+  for (const w of yard.wishes) out.push(w);
+  // A shelter (buildings.js, tier 0): build it up into a base as soon as the materials are in (a well, walls, every
+  // building), once its yard stands (campYard). An outpost camp's step up (outpost_up) is queued when it is pitched;
+  // queued again if it was called off.
+  if (isShelter(base) && !queued(tierUpType(base)) && (isCamp(base) || !yard.pending.length)) add(tierUpType(base), base.type === "outpost" ? "establish the outpost camp (a spring, a fence, room to build)" : isCamp(base) ? "build the camp up into a shelter (a roof, beds, more plots)" : "build the shelter up into a base (a well, walls, room for everything)", true);
   for (const w of wormWishes(state, base, queued)) out.push(w); // worm.js: a water boiler, a cook fire
   // Beds (nextHousing): a bunkhouse, or a barracks once the building plots run short, or a bunkhouse expanded.
   if (people + (isHub ? 1 : 0) > beds) out.push(...housingWishes(state, base, `${people} people for ${beds} beds`, true));
@@ -5071,7 +5114,11 @@ function planWood(state, base, people, areas) {
 // the only way to stock it, and by the share alone every trip scored under routine scavenging (0.3 against 0.8) and
 // none was ever sent: then the score rises with the share of the shortfall the job will leave (WOOD_TRIP.gapScore
 // at most, as a cache or a trade), and they start as soon as the stocking season does.
-export const WOOD_TRIP = { gapScore: 1.8, gapFloor: 1.0 };
+// crunch (2026-10-12): within WOOD_AP.autumn days of the cold with half or more of the shortfall beyond what the
+// woodcutters here will cut, the trip is worth crunch × that share wherever it goes (no discount for the distance):
+// a hub grown to a dozen on farmland (woodtest seed 42 with 8 crop plots) always had site visits and trades at 1.8–2.8
+// against its wood trips' 1.2, sent none, and met the winter at 30% of the cold's need.
+export const WOOD_TRIP = { gapScore: 1.8, gapFloor: 1.0, crunch: 2.8, crunchGap: 0.5 };
 function woodTripCands(state, h, pool, P) {
   if (gov(state).noWood || !h || h.tier === 0) return [];
   const w = woodNeed(state, h, returning(state, h));
@@ -5104,7 +5151,8 @@ function woodTripCands(state, h, pool, P) {
     const dist = state.grid.distance(h.tile, id);
     out.push({ mission: "move", tile: id, crew: crew.length, fit: (s) => woodcutterMult(s) * bestChop(s).mult + combatPower(s) * 0.05, haul: true, wood: true, food: "woodTrips", onSite: WOOD.defHours,
       steps: [{ kind: "wood", hours: WOOD.defHours }, { kind: "home" }],
-      score: Math.max((1.2 + (w.cold ? 0.6 : 0)) * Math.min(1.5, e.all / shortfall * 2), gap > 0 ? WOOD_TRIP.gapFloor + (WOOD_TRIP.gapScore - WOOD_TRIP.gapFloor) * gap + (w.cold ? 0.6 : 0) : 0) / (1 + dist / 6),
+      score: Math.max(Math.max((1.2 + (w.cold ? 0.6 : 0)) * Math.min(1.5, e.all / shortfall * 2), gap > 0 ? WOOD_TRIP.gapFloor + (WOOD_TRIP.gapScore - WOOD_TRIP.gapFloor) * gap + (w.cold ? 0.6 : 0) : 0) / (1 + dist / 6),
+        w.toCold <= WOOD_AP.autumn && gap >= WOOD_TRIP.crunchGap ? WOOD_TRIP.crunch * gap - dist * 0.01 : 0), // the crunch (the nearest first among equals)
       why: `firewood for the winter (${Math.floor(w.have)} of ${w.need}${gap > 0 ? ", more than the woodcutters here can cut by the cold" : ""}): ~${Math.round(e.all)} to cut` });
   }
   return out.sort((a, b) => b.score - a.score).slice(0, 2);

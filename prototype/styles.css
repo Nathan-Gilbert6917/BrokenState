@@ -1384,6 +1384,14 @@ body.ov-dragging #mapwrap > * { transition: none !important; animation: none !im
    group cards): the line is the whole summary, with a chevron at its end; open, the card's body as before. */
 .pf.pf-card { margin-top: 0.3rem; }
 .pf.pf-card > summary { display: flex; align-items: center; gap: 0.4rem; width: 100%; margin: 0; padding: 0.15rem 0.2rem; color: var(--text); font-size: 1em; }
+/* The Construction tab's lists (BASE-02): a fold each with its own scroll box; what this base never takes folded at the bottom. */
+.cx-sec { margin: 0.35rem 0 0.5rem; }
+.cx-sec > summary { gap: 0.35rem; padding: 0.3rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+.cx-sec > summary .cx-right { margin-left: auto; }
+.cx-sec > .pf-body { max-height: 26rem; padding: 0.4rem 0.3rem 0.1rem 0.45rem; color: var(--text); background: none; }
+.cx-na-fold { margin: 0.2rem 0 0.4rem; }
+.cx-na-fold > .pf-body { max-height: none; overflow: visible; padding: 0.3rem 0 0 0.3rem; background: none; color: var(--text); }
+.gcard.cx-na { opacity: 0.75; }
 .pf.pf-card > summary::before { content: none; }
 .pf.pf-card > summary::after { content: "▸"; flex: none; margin-left: auto; color: var(--muted); font-size: 0.8em; transition: transform 0.12s; }
 .pf.pf-card[open] > summary::after { transform: rotate(90deg); }

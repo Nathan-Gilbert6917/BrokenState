@@ -9,6 +9,7 @@
 // Usage: node tools/wormtest.js [seed]
 import { food, setFood, addDays, clearFood, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips: a day of them before the midnight tally
+import { PACK, topUpPack, packFood } from "../src/sim/eating.js"; // the job trips' packed lunch
 import { createWorld, hub, atBase, residents, day, makeSurvivor } from "../src/sim/world.js";
 import { addBuilding, count } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -965,6 +966,11 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   clearFood(h);
   h.buildings = h.buildings.filter((b) => b.type !== "cookhouse" && b.type !== "kitchen");
   const people = residents(st, h.id);
+  // Everyone's pack holds a day's clean food first (eating.js PACK.trip): a job trip sets out with one, topped up from
+  // the stores (the lunch break, 2026-10-12), and on this bare store that would be the infected potatoes below.
+  addDays(h, people.length * (PACK.trip + 1) + 40, "f_beans"); // (the stores keep PACK.keepDays of everyone's eating back)
+  for (const s of people) topUpPack(st, h, s, { food: PACK.trip + 0.5 });
+  clearFood(h);
   people[0].role = "farm";
   const f = farmOf(st, h);
   const plot = f.plots[0];

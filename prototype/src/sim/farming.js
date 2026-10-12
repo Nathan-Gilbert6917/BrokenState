@@ -1,5 +1,5 @@
 // Farming: crop plots at every base. A crop takes days to ripen and is harvested in one go; it does not
-// produce food every day. Each base has plots by type (hub 6, outpost 2) plus 2 per Farm plot building and
+// produce food every day. Each base has plots by size (buildings.js CROP_PLOTS: camp 1, shelter 2, outpost 4, hub 8) plus 2 per Farm plot building and
 // 2 sheltered plots per Greenhouse. Every crop has its own growing time, yield, seed cost, water need, seasons,
 // tolerances and a harvest window. Growth each day follows the weather (weather.js growthFactor); frost,
 // storms, drought and heat can kill a standing crop and wet weather rots a ripe one (weather.js cropDamage).
@@ -16,7 +16,7 @@
 // (kale, winter roots, winter wheat) for the winter and the hungry gap before the first spring harvest.
 import * as Weather from "./weather.js";
 import { log, atBase, skill, day, residents } from "./world.js";
-import { count } from "./buildings.js";
+import { count, farmSlots } from "./buildings.js";
 import { workFactor } from "./health.js";
 import { jobShare } from "./kitchen.js"; // a part-time cook's share of the farm's day
 import { storeCapacity, storeFactor, stableLoss, edibleFood, spoilFresh } from "./storage.js";
@@ -78,7 +78,7 @@ function registerClimates() {
   } catch { /* weather.js not ready yet: try again next time */ }
 }
 
-export const BASE_PLOTS = { hub: 6, outpost: 2 };
+export const BASE_PLOTS = { hub: 8, outpost: 4 }; // = buildings.js CROP_PLOTS (the table plotLimit reads; a camp's and a shelter's there too)
 // Running totals for tools and balance checks (state.econStats).
 export const econStats = (state) => state.econStats || (state.econStats = { harvested: 0, seed: 0, spoiled: 0, eaten: 0, cropsLost: 0, thirstDays: 0, hungerDays: 0, scavFinds: 0 });
 export const PLOTS_PER_BUILDING = 2;     // per Farm plot building
@@ -120,7 +120,7 @@ export function siteFarm(state, base) {
   return loc === "farm" || t.terrain === "plains" ? 1.3 : t.terrain === "forest" ? 0.9 : t.terrain === "hills" ? 0.85 : 1;
 }
 
-export const plotLimit = (base) => Math.max(0, (BASE_PLOTS[base.type] ?? 2) + count(base, "farm_plot") * PLOTS_PER_BUILDING - count(base, "animal_pen") * PEN.pasture);
+export const plotLimit = (base) => farmSlots(base); // buildings.js: CROP_PLOTS by the base's size (a camp, a shelter, an outpost, the main base) + Farm plots − pasture
 export const greenhouseLimit = (base) => count(base, "greenhouse") * GREENHOUSE_PLOTS;
 
 // Climate passed to weather.js. A greenhouse plot grows in every season and stands 10 °C more cold.
@@ -487,6 +487,33 @@ export function cropWaterNeed(state, base, { dry = false } = {}) {
     need += CROPS[p.crop].water * mult * (!p.gh && soil >= 0.6 ? 0.5 : 1);
   }
   return Math.round(need * 10) / 10;
+}
+
+// The Crops section of a camp's or a base's window (BASE-04, ui/farming.js cropsCard): the crop plots as they stand
+// (farmOf: the same plots the Farming tab and farmingDaily work), read at the hour it is drawn. Growth is counted once
+// a day at midnight (farmingDaily, from economy.js basesDaily), so `nextIn` is the hours until the next count.
+// { plots, growing [{ id, gh, crop, name, grown, days, frac (0..1 of its growing days), ripeIn (days, about), yield
+// (food at harvest, about), thirsty, note }], ripe [{ …, yield (what is left to harvest), keeps (days before it rots in
+// the field) }], dead [{ id, name, note }], empty (plots with nothing sown), farmers, tended (anyone on Farm), auto
+// (farmers replant by themselves), care (today's), day, nextIn }.
+export function cropProgress(state, base) {
+  const f = farmOf(state, base);
+  const care = careToday(state, base);
+  const row = (p) => {
+    const c = CROPS[p.crop];
+    return { id: p.id, gh: !!p.gh, crop: p.crop, name: c.name, grown: Math.round(p.grown * 10) / 10, days: c.days, frac: Math.max(0, Math.min(1, p.grown / c.days)), thirsty: !!p.thirsty, note: p.note || "" };
+  };
+  const has = (p) => !!p.crop && !!CROPS[p.crop];
+  const n = farmers(state, base).length;
+  return {
+    plots: f.plots.length,
+    growing: f.plots.filter((p) => p.stage === "growing" && has(p)).map((p) => ({ ...row(p), ripeIn: daysToRipe(p), yield: expectedYield(state, base, p, care.care) })),
+    ripe: f.plots.filter((p) => p.stage === "ripe" && has(p)).map((p) => ({ ...row(p), frac: 1, yield: p.yieldLeft, keeps: Math.max(0, CROPS[p.crop].spoil - (p.ripeDays || 0)) })),
+    dead: f.plots.filter((p) => p.stage === "dead").map((p) => ({ id: p.id, name: has(p) ? CROPS[p.crop].name : "", note: p.note || "" })),
+    empty: f.plots.filter((p) => p.stage === "empty").length,
+    farmers: n, tended: n > 0 || care.labour > 0, auto: f.auto !== false, care: Math.round(care.care * 100) / 100,
+    day: Math.floor(state.hour / 24) + 1, nextIn: 24 - (((state.hour % 24) + 24) % 24),
+  };
 }
 
 // ---------- the daily tick ----------

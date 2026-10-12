@@ -351,7 +351,11 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   const wells = ha.buildings.filter((b) => b.type === "well").length + ha.construction.filter((c) => c.type === "well").length;
   const cis = ha.buildings.filter((b) => b.type === "cistern").length + ha.construction.filter((c) => c.type === "cistern").length;
   console.log(`  big hub after 40 days (into summer): wells ${wells}, cisterns ${cis}, filters ${f0w} → ${filtersOf()}, water ${Math.round(ha.stock.water)}, days without water ${thirsty}`);
-  check(wells >= 2, `the governor builds the wells before summer (${wells})`);
+  // The wells go up while the summer's water plan is short (waterPlan); a hub that comes out of it ahead without them
+  // (2026-10-12: with 8 crop plots and the base hunters, the merged dev run's summer balance went positive by day 112)
+  // has nothing to build them for, and must not have gone thirsty.
+  const wpEnd = waterPlan(ap, ha);
+  check(wells >= 2 || (!wpEnd.short && thirsty === 0), `the governor builds the wells before summer, or the summer is not short and nobody went thirsty (${wells} wells, short ${wpEnd.short}, ${thirsty} thirsty days)`);
   check(filtersOf() >= 6, `and crafts water filters for the summer (${filtersOf()})`);
   check(thirsty === 0, `nobody goes thirsty in the first weeks of summer (${thirsty} dry days)`);
   // Determinism: the same big hub twice.

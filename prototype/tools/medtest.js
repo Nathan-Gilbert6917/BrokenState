@@ -5,6 +5,7 @@
 // every automatic dose, medic treatment capacity and surgery time; the admit line for beds and an understaffed
 // upgrade running as a lower tier (B-10); the Medical tab's rate against the real change (P-21); 200 days, no NaN.
 // Usage: node tools/medtest.js [days] [seed]
+import { food, addDays } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { unlockAll } from "../src/sim/blueprints.js";
 import { createWorld, tickHour, hub, atBase, alive, residents, makeSurvivor, day } from "../src/sim/world.js";
 import { addBuilding, queueBuild, canBuild, constructionHour, BUILDINGS } from "../src/sim/buildings.js";
@@ -570,9 +571,10 @@ function scene(type = null, medics = 0, others = 4, med = 0) {
       // and a hands-off colony never prepares for them) and food and water topped up so it lasts the 200 days.
       st.hordes.length = 0;
       st.parties = st.parties.filter((p) => !(p.kind === "raid" && p.target && p.target.kind === "player"));
-      h.stock.food = Math.max(h.stock.food, 150); h.stock.water = Math.max(h.stock.water, 60);
+      if (food(h) < 150) addDays(h, 150 - food(h)); h.stock.water = Math.max(h.stock.water, 60); // food by type (tools/foodkit.js): there is no plain "food" stock
       tickHour(st);
       st.cards.length = 0;
+      for (const s of st.survivors) if (s.alive) s.mood = Math.max(s.mood, 50); // nobody walks away in despair: this is about health (a hands-off colony's spirits sank and it emptied by day 23)
       for (const s of st.survivors) {
         if (!Number.isFinite(s.health) || conditionsOf(s).some((c) => !Number.isFinite(c.sev))) bad = bad || `${s.name} health ${s.health}`;
       }
