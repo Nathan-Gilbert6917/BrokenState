@@ -1588,6 +1588,13 @@ export function addGearToCargo(state, p, item) {
 }
 
 // ---------- orders ----------
+// Scavenge / raid: a site (t.loc) can be searched again and again; each search picks it over (t.loot falls to a 0.03
+// floor, scavenge.js) so a stripped site yields little, but it is never closed. Open ground needs something left
+// (loot above 0.05). loot: what you know of the tile (a stale report) instead of the live value.
+/** @param {{ loc?: any, loot?: number } | null | undefined} t @param {number} [loot] */
+export const scavengeable = (t, loot = t ? t.loot : 0) => !!t && (!!t.loc || (loot || 0) > 0.05);
+export const PICKED_OVER = 0.05; // at or below: the site is picked over (searching again finds little)
+
 // What the team can do on the tile where it stands. tile: another tile instead (the right-click menu, ui/teamctx.js,
 // asks for the tile the team would move to first: the labels, and the reasons an option would fail with what it carries).
 /** @param {State} state @param {Party} p @param {number} [tile] */
@@ -1599,7 +1606,10 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   if (enter) out.push(enter);
   add("survey");
   if (t.terrain !== "water") add("sweep");
-  if (t.loot > 0.05) add("scavenge");
+  if (scavengeable(t)) {
+    add("scavenge");
+    if (t.loc && !(t.loot > PICKED_OVER)) out[out.length - 1].desc += " Picked over: searching again finds little.";
+  }
   const fb = state.factions.find((f) => f.alive && f.bases.includes(tile));
   if (fb) add("trade");
   if (p.caravan) add("caravan"); // a trade caravan's stop card (caravans.js)

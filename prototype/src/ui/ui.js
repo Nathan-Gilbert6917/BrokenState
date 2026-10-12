@@ -17,7 +17,7 @@ import * as Medical from "../sim/medical.js";
 import * as Trade from "../sim/trade.js";
 import { worthTier } from "../sim/valuation.js";
 import {
-  MISSIONS, STANCES, estimateTrip, partyMembers, partyCapacity, cargoLoad, tileLabel, partyTile, orderOptions, teamName, carryCapacity, supplyLoad,
+  MISSIONS, STANCES, estimateTrip, partyMembers, partyCapacity, cargoLoad, tileLabel, partyTile, orderOptions, teamName, carryCapacity, supplyLoad, PICKED_OVER,
 } from "../sim/parties.js";
 import { attitude, baseDefense } from "../sim/factions.js";
 import { baseHeat, hordeScore } from "../sim/hordes.js";
@@ -555,7 +555,7 @@ export function siteMissions(state, id) {
   const info = isLive ? { owner: t.owner, loot: t.loot, hordeSize: state.hordes.filter((h) => h.tile === id).reduce((a, h) => a + h.size, 0) } : snap;
   const markers = state.markers.filter((m) => m.tile === id);
   // A site nobody has reported on yet is assumed to hold something (the map draws it untouched, too).
-  if (info ? info.loot > 0.05 : !!mapLoc(state, id)) actions.push(["scavenge", "Scavenge / raid"]);
+  if (mapLoc(state, id) || (info && info.loot > PICKED_OVER)) actions.push(["scavenge", "Scavenge / raid"]); // a site can be raided again (parties.js scavengeable)
   const fb = knownGroupBase(state, id, isLive, snap);
   if (fb) actions.push(["trade", "Trade visit"]);
   if (fb && captivesOf(state, fb.id).length) actions.push(["rescue", "Rescue captives"]);

@@ -3,6 +3,7 @@ import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
 import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText } from "../sim/parties.js";
+import { contactable } from "../sim/orders.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
 import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
@@ -1750,7 +1751,7 @@ function busyTiles(state, live) {
   if (on("teams")) for (const p of state.parties) {
     if (!p.path || !p.path.length) continue;
     const tile = partyTile(p);
-    if (p.owner === "player" ? p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task" : live.has(tile)) out.add(tile);
+    if (p.owner === "player" ? p.kind === "convoy" || contactable(p) : live.has(tile)) out.add(tile);
   }
   return out;
 }
@@ -2104,8 +2105,8 @@ function drawPlayerParty(state, p) {
   const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? PAL.task : "#7fd0ff";
   const look = partyLook(state, p);
   const ring = p.kind === "convoy" ? look.color : p.phase === "task" ? PAL.task : PHASE_COLOR[p.phase] || "#7fd0ff";
-  // Waiting or working on the spot (camp, repairs): you know where they are.
-  if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") {
+  // Your teams are always in reach of your orders (sim/plans.js commandable), so you know where they are.
+  if (p.kind === "convoy" || contactable(p)) {
     let [px, py] = g.toPixel(partyTile(p), HEX);
     // On the move: part of the way to the next tile, by the minutes gone of the hour (sim/parties.js glideAt).
     // A team holding for a card in the tray (ui/pacing.js) stays put: it does not move on when the hour ticks.

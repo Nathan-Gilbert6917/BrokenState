@@ -7,7 +7,7 @@ import { teamFoodHtml } from "./food.js"; // the team's food by kind
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
+import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival, scavengeable } from "../sim/parties.js";
 import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
@@ -159,7 +159,7 @@ export function renderExpedition(state, ui, p) {
 
   // Actions on the spot.
   const opts = orderOptions(state, p).filter((o) => o.mission !== "survey" && o.mission !== "sweep");
-  const loot = state.tiles[tile].loot > 0.05;
+  const loot = scavengeable(state.tiles[tile]); // a site can be searched again (picked over: little left)
   const rep = repairInfo(state, p);
   const camping = p.phase === "task" && p.task && p.task.type === "camp";
   const working = p.phase === "task" && p.task && !camping;
