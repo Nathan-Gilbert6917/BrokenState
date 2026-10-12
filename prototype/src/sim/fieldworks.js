@@ -71,7 +71,7 @@
 //   base.raidRoads = { tile: { n, last } }: the road tiles raids on that base came down (the governor's roadblocks).
 // Older saves have no state.fieldworks: ensureFW makes an empty one.
 import { FOODS, foodIn, packPick, giveFood, bestFoodKey } from "./foods.js"; // food by type: caches, stockpiles and catches hold items
-import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId } from "./world.js";
+import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId, archerCount, ARROWS } from "./world.js";
 import { BUILDINGS, buildRate, isCamp, isShelter, gatherStalled, underAttack, matName, onUpkeep } from "./buildings.js";
 import { ownsTile, wellYield, wellRate, WELL_LEFT, CLAIM, claimOwner, hauledWells } from "./claims.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
@@ -1051,6 +1051,8 @@ export function sendSnareTeam(state, fwId) {
   const scrap = route.boat ? boatScrap(crew.length) : 0;
   if (scrap && Math.floor(base.stock.scrap || 0) < scrap) return { error: `The river is in the way and a boat there and back needs ${scrap} scrap (${base.name} has ${Math.floor(base.stock.scrap || 0)}).` };
   const sup = { food: Math.min(Math.floor(foodIn(base.stock)), crew.length), water: Math.min(Math.floor(base.stock.water || 0), crew.length), ...(scrap ? { scrap } : {}) };
+  const archers = archerCount(crew); // the bows' arrows go along, as on every trip (a dozen each, what the base has: world.js ARROWS)
+  if (archers) sup.arrows = Math.min(Math.max(0, Math.floor(base.stock.arrows || 0)), archers * ARROWS.PACK);
   const dest = route.boat ? route.boat.from : fw.tile;
   // (dest may be the base's own tile: a boat put in from its own bank; the team is "there" at once and goes on.)
   const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest, mission: "move", stance: "stealthy", supplies: sup, fromBaseId: base.id, quiet: true });

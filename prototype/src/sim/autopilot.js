@@ -5205,6 +5205,8 @@ function planWaterRun(state) {
   // Rations: fresh food first, preserved for the rest (storage.js).
   const eat = est.food + 1;
   const sup = { food: eat, water: est.water + 1 }; // food: days of it (packed as what keeps: parties.js)
+  const archers = archerCount(crew); // the bows' arrows go along, as on every other trip (a dozen each, what the hub has)
+  if (archers) sup.arrows = Math.min(Math.max(0, h.stock.arrows || 0), archers * ARROWS.PACK);
   if (edibleFood(h) < eat + home.length * 2 || waterIn(h.stock) < sup.water) return;
   const res = launchExpedition(state, { memberIds: ids, dest: shore, mission: "move", stance: "normal", supplies: sup, plan: { preset: "custom", steps }, tabs: armoryTabs(h).length > 0 }); // tablets for the river water on the way (worm.js)
   if (res.error) return;
