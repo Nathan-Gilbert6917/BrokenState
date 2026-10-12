@@ -5114,7 +5114,11 @@ function planWood(state, base, people, areas) {
 // the only way to stock it, and by the share alone every trip scored under routine scavenging (0.3 against 0.8) and
 // none was ever sent: then the score rises with the share of the shortfall the job will leave (WOOD_TRIP.gapScore
 // at most, as a cache or a trade), and they start as soon as the stocking season does.
-export const WOOD_TRIP = { gapScore: 1.8, gapFloor: 1.0 };
+// crunch (2026-10-12): within WOOD_AP.autumn days of the cold with half or more of the shortfall beyond what the
+// woodcutters here will cut, the trip is worth crunch × that share wherever it goes (no discount for the distance):
+// a hub grown to a dozen on farmland (woodtest seed 42 with 8 crop plots) always had site visits and trades at 1.8–2.8
+// against its wood trips' 1.2, sent none, and met the winter at 30% of the cold's need.
+export const WOOD_TRIP = { gapScore: 1.8, gapFloor: 1.0, crunch: 2.8, crunchGap: 0.5 };
 function woodTripCands(state, h, pool, P) {
   if (gov(state).noWood || !h || h.tier === 0) return [];
   const w = woodNeed(state, h, returning(state, h));
@@ -5147,7 +5151,8 @@ function woodTripCands(state, h, pool, P) {
     const dist = state.grid.distance(h.tile, id);
     out.push({ mission: "move", tile: id, crew: crew.length, fit: (s) => woodcutterMult(s) * bestChop(s).mult + combatPower(s) * 0.05, haul: true, wood: true, food: "woodTrips", onSite: WOOD.defHours,
       steps: [{ kind: "wood", hours: WOOD.defHours }, { kind: "home" }],
-      score: Math.max((1.2 + (w.cold ? 0.6 : 0)) * Math.min(1.5, e.all / shortfall * 2), gap > 0 ? WOOD_TRIP.gapFloor + (WOOD_TRIP.gapScore - WOOD_TRIP.gapFloor) * gap + (w.cold ? 0.6 : 0) : 0) / (1 + dist / 6),
+      score: Math.max(Math.max((1.2 + (w.cold ? 0.6 : 0)) * Math.min(1.5, e.all / shortfall * 2), gap > 0 ? WOOD_TRIP.gapFloor + (WOOD_TRIP.gapScore - WOOD_TRIP.gapFloor) * gap + (w.cold ? 0.6 : 0) : 0) / (1 + dist / 6),
+        w.toCold <= WOOD_AP.autumn && gap >= WOOD_TRIP.crunchGap ? WOOD_TRIP.crunch * gap - dist * 0.01 : 0), // the crunch (the nearest first among equals)
       why: `firewood for the winter (${Math.floor(w.have)} of ${w.need}${gap > 0 ? ", more than the woodcutters here can cut by the cold" : ""}): ~${Math.round(e.all)} to cut` });
   }
   return out.sort((a, b) => b.score - a.score).slice(0, 2);

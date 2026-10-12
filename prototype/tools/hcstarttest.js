@@ -344,6 +344,7 @@ section("Camp danger: the camp's Heat (its fire, vehicles parked, shooting latel
   st.cards.length = 0;
   establishNow(st, p);
   const camp = campOf(st);
+  camp.stock.wood = 300; // a camp fire burns firewood from the store, and is lit again only with some (woodcutting.js canLight)
   const night = st.hour - (st.hour % 24) + 22, noon = st.hour - (st.hour % 24) + 36;
   const heat = (hour = night) => shelterHeat(st, camp, hour);
   check(camp.fire === true && heat().rows.some((r) => r.key === "fire"), `a new camp has its fire lit: ${heat().text}`);

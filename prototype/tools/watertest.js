@@ -213,6 +213,7 @@ section("A team: purified first; filter, tablets, camp fire or nothing for the u
   check(n === 0 && tube.dur === 10, "drunk through the filter: safe, no tablet spent");
   p.cargo.gear = p.cargo.gear.filter((it) => it.key !== "waterfilter");
   p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.supplies.wood = 30; // a camp fire burns carried firewood (woodcutting.js fireBurn: half where deadfall lies about)
   check(teamWaterHow(st, p) === "fire", "camping with the fire lit: \"fire\"");
   n = withNums(WORM, { WATER: 24 }, () => { drinkHour(st, p, members, 5, 5); return caught(members); });
   check(n === 0 && tube.dur === 10, "boiled at the camp fire: safe, no tablet spent while camping");
