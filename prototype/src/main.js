@@ -239,6 +239,7 @@ centerOn(state, playerTile(state));
 let last = performance.now();
 let acc = 0;
 let lastRefresh = 0;
+let shownMinute = -1; // the clock's minute (hours since the start × 60) the panels were last marked dirty for
 const paused = () => ui.started && ui.speed === 0;
 function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
@@ -304,6 +305,11 @@ function step(now) {
   setClockFrac(view.hourFrac); // orders given from now on start this far into the hour (sim/parties.js wayOn)
   const mins = $("tb-min"), mm = String(Math.floor(view.hourFrac * 60)).padStart(2, "0");
   if (mins && mins.textContent !== mm) mins.textContent = mm;
+  // A new minute on the clock redraws the panels: the ETAs, the "left" times and the bars of the orders under way count
+  // the minutes of the hour already gone (sim/parties.js clockFrac), so they move with the clock, not only on the hour
+  // or at the next click. Panels whose HTML comes out the same are not touched (setHTML).
+  const minute = state.hour * 60 + Math.floor(view.hourFrac * 60);
+  if (minute !== shownMinute) { shownMinute = minute; dirty = true; }
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
   if (ui.timelapse) tlFrame(state, ui, now); // recorded frames instead of the live map (ui/timelapse.js)
   else if (state.combat) {
