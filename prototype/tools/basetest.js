@@ -475,6 +475,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (r.gear === "puritabs") check(!/power|armor/.test(text) && /10 un-purified water safe/.test(text) && /lasts 10 tablets/.test(text), `${key}: the tablets say what one treats and how many there are (${text})`); // sim/worm.js
     else if (r.gear === "tourniquet") check(!/power|armor/.test(text) && /stabilize themselves/.test(text) && /one use/.test(text), `${key}: the tourniquet says it lets the downed stabilize themselves, once (${text})`); // sim/medics.js selfStabilize
     else if (d.fish) check(!/power|armor/.test(text) && /food an hour/.test(text) && /days of fishing/.test(text), `${key}: fishing gear says what it catches and how long it lasts (${text})`); // sim/hunting.js
+    else if (r.gear === "cookpot") check(!/power|armor/.test(text) && text.length > 0, `${key}: the camp cook pot is a tool, no power or armor (${text})`); // sim/cooking.js: kept at a base without a Kitchen or a cook fire
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);
