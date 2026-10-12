@@ -27,6 +27,591 @@
         "process.env.PORT=\"5191\"; require(\"C:/Dev/BrokenState/.claude/worktrees/plots/prototype/server.cjs\")"
       ],
       "port": 5191
+    },
+    {
+      "name": "qol-audio",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5201\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-audio/prototype/server.cjs\")"
+      ],
+      "port": 5201
+    },
+    {
+      "name": "qol-onboarding",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5202\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-onboarding/prototype/server.cjs\")"
+      ],
+      "port": 5202
+    },
+    {
+      "name": "qol-pacing",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5203\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-pacing/prototype/server.cjs\")"
+      ],
+      "port": 5203
+    },
+    {
+      "name": "qol-causes",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5204\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-causes/prototype/server.cjs\")"
+      ],
+      "port": 5204
+    },
+    {
+      "name": "qol-stats",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5205\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-stats/prototype/server.cjs\")"
+      ],
+      "port": 5205
+    },
+    {
+      "name": "qol-uishell",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5206\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-uishell/prototype/server.cjs\")"
+      ],
+      "port": 5206
+    },
+    {
+      "name": "qol-navigation",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5207\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-navigation/prototype/server.cjs\")"
+      ],
+      "port": 5207
+    },
+    {
+      "name": "qol-planner-qol",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5208\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-planner-qol/prototype/server.cjs\")"
+      ],
+      "port": 5208
+    },
+    {
+      "name": "qol-roster-qol",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5209\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-roster-qol/prototype/server.cjs\")"
+      ],
+      "port": 5209
+    },
+    {
+      "name": "qol-saves-health",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5210\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-saves-health/prototype/server.cjs\")"
+      ],
+      "port": 5210
+    },
+    {
+      "name": "qol-hives-festival",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5211\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-hives-festival/prototype/server.cjs\")"
+      ],
+      "port": 5211
+    },
+    {
+      "name": "qol-children",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5212\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-children/prototype/server.cjs\")"
+      ],
+      "port": 5212
+    },
+    {
+      "name": "qol-weather",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5213\"; require(\"C:/Dev/BrokenState/.claude/worktrees/qol-weather/prototype/server.cjs\")"
+      ],
+      "port": 5213
+    },
+    {
+      "name": "custombg",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5221\"; require(\"C:/Dev/BrokenState/.claude/worktrees/custombg/prototype/server.cjs\")"
+      ],
+      "port": 5221
+    },
+    {
+      "name": "base-leader",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5231\"; require(\"C:/Dev/BrokenState/.claude/worktrees/leader-plus/prototype/server.cjs\")"
+      ],
+      "port": 5231
+    },
+    {
+      "name": "radiotrade",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5241\"; require(\"C:/Dev/BrokenState/.claude/worktrees/radiotrade/prototype/server.cjs\")"
+      ],
+      "port": 5241
+    },
+    {
+      "name": "normalbg",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5222\"; require(\"C:/Dev/BrokenState/.claude/worktrees/normalbg/prototype/server.cjs\")"
+      ],
+      "port": 5222
+    },
+    {
+      "name": "ux-panels",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5197\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-panels/prototype/server.cjs\")"
+      ],
+      "port": 5197
+    },
+    {
+      "name": "ux-basetile",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5192\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-basetile/prototype/server.cjs\")"
+      ],
+      "port": 5192
+    },
+    {
+      "name": "ux-teaminv",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5191\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-teaminv/prototype/server.cjs\")"
+      ],
+      "port": 5191
+    },
+    {
+      "name": "ux-campbuild",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5251\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-campbuild/prototype/server.cjs\")"
+      ],
+      "port": 5251
+    },
+    {
+      "name": "team-form",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5261\"; require(\"C:/Dev/BrokenState/.claude/worktrees/team-form/prototype/server.cjs\")"
+      ],
+      "port": 5261
+    },
+    {
+      "name": "team-ctx",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5262\"; require(\"C:/Dev/BrokenState/.claude/worktrees/team-ctx/prototype/server.cjs\")"
+      ],
+      "port": 5262
+    },
+    {
+      "name": "map-fx",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5263\"; require(\"C:/Dev/BrokenState/.claude/worktrees/map-fx/prototype/server.cjs\")"
+      ],
+      "port": 5263
+    },
+    {
+      "name": "battle-look",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5264\"; require(\"C:/Dev/BrokenState/.claude/worktrees/battle-look/prototype/server.cjs\")"
+      ],
+      "port": 5264
+    },
+    {
+      "name": "battle-barks",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5265\"; require(\"C:/Dev/BrokenState/.claude/worktrees/battle-barks/prototype/server.cjs\")"
+      ],
+      "port": 5265
+    },
+    {
+      "name": "ux-carry",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5196\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-carry/prototype/server.cjs\")"
+      ],
+      "port": 5196
+    },
+    {
+      "name": "ux-mapselect",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5193\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-mapselect/prototype/server.cjs\")"
+      ],
+      "port": 5193
+    },
+    {
+      "name": "gun-sfx",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5266\"; require(\"C:/Dev/BrokenState/.claude/worktrees/gun-sfx/prototype/server.cjs\")"
+      ],
+      "port": 5266
+    },
+    {
+      "name": "ux-overlays",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5199\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-overlays/prototype/server.cjs\")"
+      ],
+      "port": 5199
+    },
+    {
+      "name": "ux-tactical",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5195\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-tactical/prototype/server.cjs\")"
+      ],
+      "port": 5195
+    },
+    {
+      "name": "zombie-sfx",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5267\"; require(\"C:/Dev/BrokenState/.claude/worktrees/zombie-sfx/prototype/server.cjs\")"
+      ],
+      "port": 5267
+    },
+    {
+      "name": "ux-stackmove",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5252\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ux-stackmove/prototype/server.cjs\")"
+      ],
+      "port": 5252
+    },
+    {
+      "name": "sfx-melee-steps",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5253\"; require(\"C:/Dev/BrokenState/.claude/worktrees/sfx-melee-steps/prototype/server.cjs\")"
+      ],
+      "port": 5253
+    },
+    {
+      "name": "sound-mix",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5268\"; require(\"C:/Dev/BrokenState/.claude/worktrees/sound-mix/prototype/server.cjs\")"
+      ],
+      "port": 5268
+    },
+    {
+      "name": "music",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5269\"; require(\"C:/Dev/BrokenState/.claude/worktrees/music/prototype/server.cjs\")"
+      ],
+      "port": 5269
+    },
+    {
+      "name": "ambience",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5270\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ambience/prototype/server.cjs\")"
+      ],
+      "port": 5270
+    },
+    {
+      "name": "veh-doors",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5271\"; require(\"C:/Dev/BrokenState/.claude/worktrees/veh-doors/prototype/server.cjs\")"
+      ],
+      "port": 5271
+    },
+    {
+      "name": "lightning",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5272\"; require(\"C:/Dev/BrokenState/.claude/worktrees/lightning/prototype/server.cjs\")"
+      ],
+      "port": 5272
+    },
+    {
+      "name": "start-gear",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5281'; require('C:/Dev/BrokenState/.claude/worktrees/start-gear/prototype/server.cjs')"
+      ],
+      "port": 5281
+    },
+    {
+      "name": "traits-more",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5282'; require('C:/Dev/BrokenState/.claude/worktrees/traits-more/prototype/server.cjs')"
+      ],
+      "port": 5282
+    },
+    {
+      "name": "crew-int",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5283\"; require(\"C:/Dev/BrokenState/.claude/worktrees/crew-int/prototype/server.cjs\")"
+      ],
+      "port": 5283
+    },
+    {
+      "name": "hive-crawl",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5291'; require('C:/Dev/BrokenState/.claude/worktrees/hive-crawl/prototype/server.cjs')"
+      ],
+      "port": 5291
+    },
+    {
+      "name": "hive-plus",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5292'; require('C:/Dev/BrokenState/.claude/worktrees/hive-plus/prototype/server.cjs')"
+      ],
+      "port": 5292
+    },
+    {
+      "name": "volunteers",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5293'; require('C:/Dev/BrokenState/.claude/worktrees/volunteers/prototype/server.cjs')"
+      ],
+      "port": 5293
+    },
+    {
+      "name": "hive-ground",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5301'; require('C:/Dev/BrokenState/.claude/worktrees/hive-ground/prototype/server.cjs')"
+      ],
+      "port": 5301
+    },
+    {
+      "name": "select-search",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5296'; require('C:/Dev/BrokenState/.claude/worktrees/select-search/prototype/server.cjs')"
+      ],
+      "port": 5296
+    },
+    {
+      "name": "battle-hud",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5311'; require('C:/Dev/BrokenState/.claude/worktrees/battle-hud/prototype/server.cjs')"
+      ],
+      "port": 5311
+    },
+    {
+      "name": "camp-menu",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5321'; require('C:/Dev/BrokenState/.claude/worktrees/camp-menu/prototype/server.cjs')"
+      ],
+      "port": 5321
+    },
+    {
+      "name": "gun-art2",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5247\"; require(\"C:/Dev/BrokenState/.claude/worktrees/gun-art2/prototype/server.cjs\")"
+      ],
+      "port": 5247
+    },
+    {
+      "name": "gun-mags",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5337'; require('C:/Dev/BrokenState/.claude/worktrees/gun-mags/prototype/server.cjs')"
+      ],
+      "port": 5337
+    },
+    {
+      "name": "base-ui-look",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5332'; require('C:/Dev/BrokenState/.claude/worktrees/base-ui-look/prototype/server.cjs')"
+      ],
+      "port": 5332
+    },
+    {
+      "name": "solo-sprite",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5335'; require('C:/Dev/BrokenState/.claude/worktrees/solo-sprite/prototype/server.cjs')"
+      ],
+      "port": 5335
+    },
+    {
+      "name": "topbar-needs",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5333'; require('C:/Dev/BrokenState/.claude/worktrees/topbar-needs/prototype/server.cjs')"
+      ],
+      "port": 5333
+    },
+    {
+      "name": "armory-view",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5336'; require('C:/Dev/BrokenState/.claude/worktrees/armory-view/prototype/server.cjs')"
+      ],
+      "port": 5336
+    },
+    {
+      "name": "map-move-time",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5334'; require('C:/Dev/BrokenState/.claude/worktrees/map-move-time/prototype/server.cjs')"
+      ],
+      "port": 5334
+    },
+    {
+      "name": "base-activity",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5331'; require('C:/Dev/BrokenState/.claude/worktrees/base-activity/prototype/server.cjs')"
+      ],
+      "port": 5331
+    },
+    {
+      "name": "fieldworks",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5339'; require('C:/Dev/BrokenState/.claude/worktrees/fieldworks/prototype/server.cjs')"
+      ],
+      "port": 5339
+    },
+    {
+      "name": "kitchen",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5340'; require('C:/Dev/BrokenState/.claude/worktrees/kitchen/prototype/server.cjs')"
+      ],
+      "port": 5340
+    },
+    {
+      "name": "ui-int",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5341'; require('C:/Dev/BrokenState/.claude/worktrees/ui-int/prototype/server.cjs')"
+      ],
+      "port": 5341
+    },
+    {
+      "name": "job-trips",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5338'; require('C:/Dev/BrokenState/.claude/worktrees/job-trips/prototype/server.cjs')"
+      ],
+      "port": 5338
+    },
+    {
+      "name": "ui-int2",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT=\"5342\"; require(\"C:/Dev/BrokenState/.claude/worktrees/ui-int2/prototype/server.cjs\")"
+      ],
+      "port": 5342
+    },
+    {
+      "name": "trips-plus",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5344'; require('C:/Dev/BrokenState/.claude/worktrees/trips-plus/prototype/server.cjs')"
+      ],
+      "port": 5344
+    },
+    {
+      "name": "fw-picks",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5348'; require('C:/Dev/BrokenState/.claude/worktrees/fw-picks/prototype/server.cjs')"
+      ],
+      "port": 5348
+    },
+    {
+      "name": "carts",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "process.env.PORT='5351'; require('C:/Dev/BrokenState/.claude/worktrees/carts/prototype/server.cjs')"
+      ],
+      "port": 5351
     }
   ]
 }

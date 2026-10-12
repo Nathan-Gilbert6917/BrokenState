@@ -7,9 +7,11 @@
 //   npm start            run from source: serves ../prototype live (Ctrl+R picks up game changes)
 //   packaged build       serves the copy in resources/prototype
 //   --perf               hidden performance test (perf/driver.js), prints JSON and quits
+// The installed build updates itself (updater.js).
 const { app, BrowserWindow, Menu, protocol, screen, session, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const updates = require("./updater");
 
 const SCHEME = "app";
 const HOST = "brokenstate";
@@ -160,6 +162,9 @@ function buildMenu() {
       label: "&Game",
       submenu: [
         { label: "Reload", accelerator: "CmdOrCtrl+R", click: () => { const w = focused(); if (w) w.webContents.reloadIgnoringCache(); } },
+        { type: "separator" },
+        { label: "Check for Updates…", click: () => updates.checkNow() },
+        { label: `Version ${app.getVersion()}`, enabled: false },
         { type: "separator" },
         { label: "Quit", accelerator: "CmdOrCtrl+Q", role: "quit" },
       ],
@@ -337,4 +342,5 @@ app.whenReady().then(() => {
     runPerf(win);
   }
   else win.loadURL(`${ORIGIN}/index.html`);
+  updates.start({ perf: PERF });
 });
