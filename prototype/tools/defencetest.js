@@ -18,10 +18,11 @@ import { addBuilding, count } from "../src/sim/buildings.js";
 import { DEPLOY, deployProblems, wallHp, gateHp, sideUntf } from "../src/sim/deploy.js";
 import { INTERIOR, buildInterior, structuresOf, layoutSeed, tierAI, interiorSize, wallMapRows, yardDims, yardGeom } from "../src/sim/interior.js";
 import { sizeClass } from "../src/sim/battlesize.js";
-import { fightNow, holdCheck, tierMults, raidTier, tierLimits } from "../src/sim/defences.js";
+import { fightNow, holdCheck, tierMults, raidTier, tierLimits, breakInForce, TIERS } from "../src/sim/defences.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { newItem } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
+import { darkSight, nvgSight, nvgOn, activeLight } from "../src/sim/vision.js"; // night sight by the hour, night vision, lights
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -321,7 +322,9 @@ section("Fog of war");
   const b2 = baseBattle(st2, h2, { kind: "zombies", count: 6, power: 2 }, { through: 50, night: true });
   const unit = (s) => b2.units.find((u) => u.sid === s.id);
   const [n0, n1, n2] = [unit(people[0]), unit(people[1]), unit(people[2])];
-  check(b2.night && n2.sight === 7 && n0.sight === 13 && n1.sight === 13 && n1.optic === 2, `a base battle at night: plain sight ${n2.sight}, night vision ${n0.sight}, a thermal ${n1.sight} (+${n1.optic})`);
+  // Night sight by the hour (vision.js, 2026-10-12): plain eyes see darkSight tiles (7 at dusk, 4 in the dead of
+  // night), night vision as far as a military flashlight's beam (nvgSight: 12), a thermal the same with its +2.
+  check(b2.night && n2.sight === darkSight(b2) && n0.sight === nvgSight(n0) && nvgSight(n0) === 12 && n1.sight === 12 && n1.optic === 2,`a base battle at night: plain sight ${n2.sight}, night vision ${n0.sight}, a thermal ${n1.sight} (+${n1.optic})`);
   check(b2.units.filter((u) => u.side === "enemy").every((u) => u.sight === 5), "the dead see 5 at night");
   const st3 = world();
   const h3 = fortHub(st3, ["walls"], 0);
@@ -335,9 +338,10 @@ section("Fog of war");
   const h4 = fortHub(st4, ["walls", "floodlights"], 0);
   h4.stock.fuel = 10;
   const b4 = baseBattle(st4, h4, { kind: "zombies", count: 6, power: 2 }, { through: 50, night: true, floodlit: true });
-  // The eye: a plain-sighted defender on the ground with some floodlit ground in its line of sight beyond its 7 (the
-  // wrecks on the road through the yard can hide every lit cell from one of them).
-  const eyes = b4.units.filter((u) => u.side === "player" && active(u) && u.sight === 7 && heightAt(b4, u.x, u.y) === 0);
+  // The eye: a plain-sighted defender on the ground with some floodlit ground in its line of sight beyond what it sees
+  // in the dark (darkSight, by the hour: vision.js; the wrecks on the road through the yard can hide every lit cell
+  // from one of them). A lit cell is seen out to the daylight range whatever way they face (combat.js canSeeAt).
+  const eyes = b4.units.filter((u) => u.side === "player" && active(u) && u.sight === darkSight(b4) && !nvgOn(u) && !activeLight(u) && heightAt(b4, u.x, u.y) === 0);
   const litInLos = (eye) => { let n = 0; for (let i = 0; i < b4.w * b4.h; i++) { const x = i % b4.w, y = (i / b4.w) | 0, d = Math.hypot(x - eye.x, y - eye.y); if (b4.lit[i] && d > sightRange(b4, eye) && d <= 13 && los(b4, eye.x, eye.y, x, y)) n++; } return n; };
   const eye = eyes.find((u) => litInLos(u) > 0) || eyes[0];
   let litFar = 0, darkFar = 0;
@@ -367,13 +371,16 @@ section("The tiers by the numbers");
   const small = holdCheck(st, h, 30);
   check(small.holds && small.tier === "wall" && !c.holds && c.through > 0 && c.tier === "overrun" && c.buildingsLimit >= c.yardLimit, `holdCheck: 30 held at the walls; 2000 breaks in (${c.through} inside) past the yard (holds ${c.yardLimit}) and the buildings (${c.buildingsLimit})`);
   // One barricade raises the yard's multiplier; the limit is a horde count, and the horde's strength has flat stretches
-  // (one step can land on one, as the defenders' traits move their power), so it must not fall and two must raise it.
+  // (one step can land on one, as the defenders' traits move their power), so it must not fall and enough to cross a
+  // stretch must raise it. A stretch is about one of the dead wide (breakInForce: n of them at a power rounded to 0.1,
+  // n one more every 7 broken in): 1/n of the strength, 7% at n = 14, more than two barricades' 6% (the start's people
+  // are rolled anew whenever the world's dice change: seed 42's defenders went 30.4 → 31.7 over the merges of
+  // 2026-10-10/11 and landed at the foot of one). So the barricades that add more than 1/n, and one more for the rounding.
   const lim0 = tierLimits(st, h).yard, yard0 = tierMults(st, h, false).yard;
-  addBuilding(h, "barricades");
-  const lim1 = tierLimits(st, h).yard;
-  addBuilding(h, "barricades");
-  const lim2 = tierLimits(st, h).yard;
-  check(tierMults(st, h, false).yard > yard0 && lim1 >= lim0 && lim2 > lim0, `more barricades: the yard holds more (${lim0} → ${lim1} → ${lim2})`);
+  const need = Math.ceil(1 / breakInForce(st, h, lim0).count / TIERS.YARD.barricade) + 1;
+  const lims = [lim0];
+  for (let i = 0; i < need; i++) { addBuilding(h, "barricades"); lims.push(tierLimits(st, h).yard); }
+  check(tierMults(st, h, false).yard > yard0 && lims.every((l, i) => !i || l >= lims[i - 1]) && lims[need] > lim0, `more barricades: the yard holds more (${lims.join(" → ")})`);
   // A raid by the numbers through the tiers.
   const r1 = raidTier(st, h, 100, 70, 1.2, 0.8), r2 = raidTier(st, h, 100, 115, 1.2, 0.8), r3 = raidTier(st, h, 100, 400, 1.2, 0.8);
   check(r1.tier === "wall" && ["yard", "buildings"].includes(r2.tier) && r2.ratio >= 0.8 && r2.ratio < 1.2 && r3.tier === "overrun", `raids: 100 against 70 held at the wall, against 115 pushed back from the ${r2.tier}, against 400 overrun`);
