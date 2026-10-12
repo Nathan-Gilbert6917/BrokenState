@@ -14,7 +14,7 @@
 //     boiler beside a lit fire burns nothing (the wood once, not twice).
 // Usage: node tools/campbasetest.js [seed]
 import { createWorld, hub, atBase, newId, tickHour } from "../src/sim/world.js";
-import { BUILDINGS, CAMP, SHELTER, CROP_PLOTS, addBuilding, canBuild, placeProblem, queueBuild, isCamp, isShelter, plotCap, farmSlots } from "../src/sim/buildings.js";
+import { BUILDINGS, CAMP, SHELTER, CROP_PLOTS, addBuilding, canBuild, placeProblem, queueBuild, isCamp, isShelter, plotCap, farmSlots, baseBeds, queuedBeds, plotsUsed } from "../src/sim/buildings.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { cropProgress, farmOf, CROPS, plotLimit } from "../src/sim/farming.js";
 import { huntLoans, cabinPlan, huntWeaponInfo, CABIN } from "../src/sim/hunting.js";
@@ -115,6 +115,19 @@ section("Plots and crop plots by stage (user numbers 2026-10-12)");
   check(CROP_PLOTS.camp === 1 && CROP_PLOTS.shelter === 2 && CROP_PLOTS.outpost === 4 && CROP_PLOTS.hub === 8 && CAMP.plots === 1 && SHELTER.plots === 2, "one table: CROP_PLOTS (CAMP.plots, SHELTER.plots the same)");
   asShelter(h); rich(h);
   check(["bunkhouse", "cellar", "infirmary", "huntcabin"].every((k) => canBuild(st, h, k).ok), "the shelter's building plot takes a bunkhouse, root cellar, infirmary or hunting cabin");
+  // Makeshift cots (user request 2026-10-12): +2 beds each at a shelter, no plot, up to 2.
+  const beds0 = baseBeds(h), u0 = plotsUsed(h, "utility"), b0 = plotsUsed(h, "building");
+  check(canBuild(st, h, "cots").ok && !BUILDINGS.cots.plot, "a shelter builds makeshift cots (no plot)");
+  queueBuild(st, h, "cots");
+  check(queuedBeds(h) === 2 && plotsUsed(h, "utility") === u0 && plotsUsed(h, "building") === b0, "queued: 2 beds to come, no plot taken");
+  addBuilding(h, "cots"); h.construction = [];
+  check(baseBeds(h) === beds0 + 2, `built: +2 beds (${beds0} → ${baseBeds(h)})`);
+  addBuilding(h, "cots");
+  check(baseBeds(h) === beds0 + 4 && !canBuild(st, h, "cots").ok, "two at most: +4 beds");
+  delete h.tier; delete h.camp;
+  check(placeProblem(h, "cots") !== "" && baseBeds(h) >= 4 + 4, "not at a base (Shelters only), and those built still sleep 2 each there");
+  asCamp(h);
+  check(placeProblem(h, "cots") !== "", "not at a camp either (the shelter's)");
 }
 
 // ======================================================================

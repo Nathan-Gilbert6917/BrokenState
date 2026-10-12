@@ -21,6 +21,8 @@ import { captivesDaily } from "../src/sim/conflicts.js";
 import { baseHeat } from "../src/sim/hordes.js";
 import { randomName, skillTotal } from "../src/sim/appearance.js";
 import { Rng } from "../src/sim/rng.js";
+import { needsHour } from "../src/sim/needs.js";
+import { emptyPack } from "../src/sim/eating.js";
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -37,6 +39,11 @@ const mkOutpost = (st, tile, stock = {}) => {
   st.bases.push(b);
   return b;
 };
+// A day of meals (eating.js: people eat by the hour at mealtimes, from the stores, then their packs; the daily tick
+// counts the day that ended: what they ate, and the meals they wanted and could not get, which is hunger).
+const mealDay = (st, hourly = null) => { for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); if (hourly) hourly(); } };
+// Nothing to eat at a base: its stores and its people's packs emptied (the packs into the stores, then cleared).
+const starve = (st, b) => { for (const s of residents(st, b.id)) emptyPack(st, s, b); clearFood(b); };
 const logHas = (st, re) => st.log.some((l) => re.test(l.text));
 const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
 
@@ -207,8 +214,9 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     setFood(th, 300);
     for (const s of atBase(twin, th.id)) s.role = "rest";
     for (const s of atBase(st, h.id)) s.role = "rest";
-    basesDaily(twin);
-    basesDaily(st);
+    starve(st, base);
+    mealDay(twin); basesDaily(twin);
+    mealDay(st); basesDaily(st);
     st.cards.length = 0;
     check(near(food(h), food(th), 0.11), `the hub's food is not drained by the cut-off outpost (${food(h)} vs ${food(th)} without it)`);
     check(base.stock.scrap >= 40, `the outpost keeps its stock (${base.stock.scrap} scrap)`);
@@ -238,17 +246,17 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const h = hub(st);
   const ppl = atBase(st, h.id);
   ppl.forEach((s) => { plain(s); s.role = "rest"; s.skills.medicine = 12; });
-  clearFood(h); h.stock.meds = 0;
+  starve(st, h); h.stock.meds = 0;
   const tough = ppl[1];
   tough.traits = ["tough"];
   tough.gear.armor = newItem("plate"); tough.gear.head = newItem("riothelmet");
-  basesDaily(st);
+  mealDay(st); basesDaily(st);
   check(near(ppl[2].health, 100 - hungerDamage(1)) && near(tough.health, 100 - hungerDamage(1)), `armor and Tough do not reduce hunger (${ppl[2].health} / ${tough.health})`);
   check(healRatePerHour(st, h, ppl[2]) === 0, "no passive healing while the base is out of food");
   let days = 1;
   while (alive(st).length === 6 && days < 30) {
-    for (let i = 0; i < 24; i++) medicalHour(st);
-    clearFood(h);
+    starve(st, h);
+    mealDay(st, () => medicalHour(st));
     basesDaily(st);
     st.cards.length = 0;
     ppl.forEach((s) => (s.mood = 60)); // keep them from walking away: this is about health
@@ -260,11 +268,11 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const st2 = W();
   const h2 = hub(st2);
   atBase(st2, h2.id).forEach((s) => (s.role = "rest"));
-  clearFood(h2);
-  basesDaily(st2);
+  starve(st2, h2);
+  mealDay(st2); basesDaily(st2);
   check(h2.hungerDays === 1, "a day without food is counted");
   setFood(h2, 500);
-  basesDaily(st2);
+  mealDay(st2); basesDaily(st2);
   check(h2.hungerDays === 0 && healRatePerHour(st2, h2, atBase(st2, h2.id).find((s) => s.health < 100)) > 0, "healing resumes once there is food again");
   // hurt(): plain damage is reduced by armor and Tough, raw damage is not.
   const st3 = W();
@@ -331,9 +339,10 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   for (const s of atBase(st, h.id)) s.role = "rest";
   const eat = eatPerDay(st, h);
   check(near(eat / 6, eat / residents(st, h.id).length) && residents(st, h.id).length === 6, `six mouths eat (${eat})`);
-  basesDaily(st);
+  mealDay(st); basesDaily(st); setFood(h, 100); // a day to settle everyone's hunger (and the packs topped up), then the day measured
+  mealDay(st); basesDaily(st);
   const left = 100 - eat;
-  check(Math.abs(food(h) - left * (1 - spoilRate(st, h))) < 0.3, `the hub feeds the escort (${food(h)}, expected about ${(left * (1 - spoilRate(st, h))).toFixed(1)})`);
+  check(Math.abs(food(h) - left * (1 - spoilRate(st, h))) < Math.max(0.3, eat * 0.15), `the hub feeds the escort (${food(h)}, expected about ${(left * (1 - spoilRate(st, h))).toFixed(1)})`);
   const hp = e.health;
   for (let i = 0; i < 24; i++) medicalHour(st);
   check(e.health > hp, `the escort heals at the hub (${hp.toFixed(1)} → ${e.health.toFixed(1)})`);

@@ -73,6 +73,9 @@ export const BUILDINGS = {
                   desc: "Workshop station: presses, dies and a powder scale. One operator (Mechanics) loads rounds from brass, powder and primers by the standing reloading orders (keep at least N of a calibre and type: hollow points, slugs, AP…), faster with Mechanics; with no order to work it makes common rounds from scrap like an ammo bench. Typed rounds come out as handloads: they jam more than factory rounds, less the better the loader. Quiet: a quarter of a station's Heat. Upgraded from an ammo bench where it stands (Construction): 1 machine part, 3 gun parts, 20 scrap, 24 work-hours, a Mechanics 3+ survivor here." },
   med_station:  { name: "Med station",    plot: "utility", cost: { scrap: 12, meds: 1 },   hours: 24, max: 2, station: "meds", desc: "Workshop station. One operator makes basic meds." },
   machine_shop: { name: "Machine shop",   plot: "building", cost: { scrap: 25, parts: 3 },  hours: 48, max: 2, station: "parts", req: { mechanics: 4 }, desc: "Workshop station. One operator machines spare parts. Needs a Mechanics 4+ survivor here to build." },
+  // Makeshift cots (user request 2026-10-12, "makeshift cots that can be built for shelter to increase beds by 2"):
+  // camp beds of scrap and canvas squeezed in under the shelter's roof: no plot, +2 beds each (BEDS), up to 2.
+  cots:         { name: "Makeshift cots", cost: { scrap: 6 },            hours: 6,  max: 2, shelterOnly: true, desc: "Camp beds of scrap frames and canvas squeezed in under the shelter's roof: +2 beds each, no plot. Shelters only (up to 2); they stay when the shelter becomes a base." },
   bunkhouse:    { name: "Bunkhouse",      plot: "building", cost: { scrap: 20 },            hours: 30, max: 6, desc: "+6 beds. Overcrowding lowers mood every day." },
   // Housing (BEDS, baseBeds): twice a bunkhouse's beds on one building plot, for a base whose plots run short. from: a
   // standing bunkhouse can be expanded into one where it stands (BARRACKS_UP: no new plot; its jobs count against max).
@@ -422,7 +425,7 @@ export const SHELTER = {
   // What a shelter may build (the most of each): yard things on its 3 utility plots (PLOTS.shelter), one roofed
   // building on its building plot (a bunkhouse, a root cellar, a makeshift infirmary or a hunting cabin), a barricade,
   // a farm plot and the step up.
-  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1 },
+  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2 },
 };
 export const isShelter = (base) => !!base && base.tier === 0;
 export const baseTier = (base) => (isShelter(base) ? 0 : 1);
@@ -498,7 +501,7 @@ export const underAttack = (state, base) => !!base.alert ||
   (state.visitors || []).some((v) => v.phase === "siege" && v.goal && v.goal.kind === "base" && v.goal.baseId === base.id);
 // Beds: the hub 4, an outpost 2, a shelter SHELTER.beds, plus BEDS for each working bunkhouse or barracks (a broken one
 // sleeps nobody until it is repaired).
-export const BEDS = { bunkhouse: 6, barracks: 12 };
+export const BEDS = { bunkhouse: 6, barracks: 12, cots: 2 };
 // Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
 export const baseBeds = (base) => (isCamp(base) ? CAMP.beds : isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0);
 // Beds the construction queue adds when it is done: new bunkhouses and barracks, and a bunkhouse expanded into a

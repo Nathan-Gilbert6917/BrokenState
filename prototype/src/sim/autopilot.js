@@ -2691,7 +2691,7 @@ function campYard(state, base, here, queued) {
   const upScrap = isCamp(base) ? left("scrap") + Math.max(0, left("buildmat") - (st.buildmat || 0)) * CAMP_TIER.matScrap : 0;
   const spare = (st.scrap || 0) - upScrap;
   const add = (type, why) => {
-    if (count(base, type) + queued(type) > 0) return;
+    if (count(base, type) + queued(type) >= (type === "cots" ? BUILDINGS.cots.max : 1)) return; // the cots twice, the rest once
     const chk = canBuild(state, base, type);
     if (chk.where || chk.noPlot || chk.locked || /Limit reached|has room for/.test(chk.reason || "")) return; // no room for it at this stage
     pending.push(type);
@@ -2702,7 +2702,12 @@ function campYard(state, base, here, queued) {
   add("cookhouse", "the meals cooked through, the camp fire lit or not");
   if (here.length >= 3) add("smoker", "dry the fresh food it cannot eat in time");
   if (!benchTier(base, true)) add("craftbench", "a bench for mending and the crafters");
-  if (!isCamp(base) && here.length + returning(state, base) > baseBeds(base) + queuedBeds(base)) add("bunkhouse", `${here.length} people for ${baseBeds(base)} beds`);
+  // Crowded past its beds: the makeshift cots first (6 scrap, no plot, +2 each), then a bunkhouse on its building plot.
+  // (everyone whose home it is: someone out on a job trip still sleeps here)
+  const living = state.survivors.filter((x) => x.alive && x.location && x.location.kind === "base" && x.location.baseId === base.id).length;
+  const crowded = () => living + returning(state, base) > baseBeds(base) + queuedBeds(base) + (pending.includes("cots") ? BEDS.cots : 0);
+  if (!isCamp(base) && crowded()) add("cots", `${living} people for ${baseBeds(base)} beds`);
+  if (!isCamp(base) && crowded()) add("bunkhouse", `${living} people for ${baseBeds(base)} beds`);
   return { wishes, pending };
 }
 function buildWishes(state, base) {
