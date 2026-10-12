@@ -1049,6 +1049,16 @@ function sprOf(L, fog, front = false) {
 // (1.5–2.5; a raid 1.5–2), centered there.
 const mapKey = (b) => `${b.w}x${b.h}:${b.tier ? b.tier.map : ""}`;
 function newBattleCamera(b, cw, ch) {
+  // The same raid made again before going in (sim/raidplan.js: another side, a scout's hour, the night): the same map,
+  // the view as it was, moved to the team.
+  const prev = iso.battle;
+  if (prev && prev !== b && prev.setup === b.setup && b.setup && b.setup.plan && prev.w === b.w && prev.h === b.h) {
+    iso.battle = b;
+    iso.mapKey = mapKey(b);
+    const mine = b.units.filter((u) => u.side === "player" && !u.off && u.x >= 0);
+    if (mine.length) isoCenterOn(b, Math.round(mine.reduce((a, u) => a + u.x, 0) / mine.length), Math.round(mine.reduce((a, u) => a + u.y, 0) / mine.length));
+    return;
+  }
   iso.battle = b;
   iso.mapKey = mapKey(b);
   iso.rot = 0;

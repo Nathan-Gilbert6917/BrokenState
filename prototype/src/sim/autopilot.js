@@ -30,6 +30,7 @@ import {
 import { startOrder, resumeQueue, besideWater, FETCH_WATER_HOURS } from "./orders.js";
 import { estimatePlan, commandable } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
+import { engScout, engScoutChoices, SCOUT } from "./raidplan.js"; // a scout before the search
 import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand, gearBuyPrice, balanceWith, tradeVerdict, ensureWares } from "./trade.js";
 import { autoCaravanTrade, launchCaravan, caravanEstimate, caravanEnRoute } from "./caravans.js";
@@ -1557,6 +1558,9 @@ function engagementHour(state) {
   if (e.apSince == null) {
     // The team just got there: pick an approach; the search starts next hour.
     e.apSince = state.hour;
+    // A guarded or badly infested site: a good scout looks it over first, in the arrival hour (raidplan.js).
+    const sc = !e.approach && !e.scout ? engScoutChoices(state, p, e)[0] : null;
+    if (sc && sc.odds >= SCOUT.BOT_ODDS && (e.guarded || state.tiles[e.tile].infection > 0.35)) engScout(state, p, sc.id);
     if (!e.approach) e.approach = chooseApproach(state, p, e);
     return;
   }

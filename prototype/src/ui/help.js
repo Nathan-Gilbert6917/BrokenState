@@ -36,6 +36,7 @@ import { TRAINING_HELP } from "../sim/training.js"; // the hospital trains medic
 import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled blows, surrender
 import { CARAVAN_HELP } from "../sim/caravanraids.js"; // caravans on the road: escorts, robbing them, witnesses
 import { RESCUE_HELP } from "../sim/rescueraid.js"; // getting captives back: the rescue raid, ransoms
+import { raidPlanHelp } from "../sim/raidplan.js"; // choices before a raid: the side, a scout, the night
 import { BLOCS_WARS_HELP } from "../sim/playerwars.js"; // blocs between groups, wars with you
 import { traitsHelp } from "./traitpick.js"; // every trait, its tiers and points
 import { fieldWorksHelp } from "../sim/fieldworks.js"; // roadblocks, towers, stockpiles, blinds, snares, caches, spikes
@@ -168,7 +169,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
     if (out[out.length - 1].id === "inventory") add("Gun attachments", GUNMODS_HELP); // sim/gunmods.js
     if (out[out.length - 1].id === "gun-attachments") { add("Guns and melee weapons", ROSTER_HELP); add("Knives and swords", BLADES_HELP); } // sim/data-guns.js, sim/data-blades.js
-    if (out[out.length - 1].id === "battles") add("Medics and the downed", MEDICS_HELP); // sim/medics.js
+    if (out[out.length - 1].id === "battles") { add("Medics and the downed", MEDICS_HELP); add("Choices before a raid", raidPlanHelp()); } // sim/medics.js, sim/raidplan.js
     if (out[out.length - 1].id === "medical") add("Training medics", TRAINING_HELP); // sim/training.js
     if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); add("Blocs and wars", BLOCS_WARS_HELP); add("Volunteers", VOLUNTEERS_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js; sim/blocs.js, playerwars.js
   }
@@ -192,6 +193,7 @@ export function helpTopics() {
   if (!seen.has("guns-and-melee-weapons")) add("Guns and melee weapons", ROSTER_HELP);
   if (!seen.has("knives-and-swords")) add("Knives and swords", BLADES_HELP);
   if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
+  if (!seen.has("choices-before-a-raid")) add("Choices before a raid", raidPlanHelp());
   if (!seen.has("training-medics")) add("Training medics", TRAINING_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
   if (!seen.has("field-works")) add("Field works", fieldWorksHelp()); // sim/fieldworks.js

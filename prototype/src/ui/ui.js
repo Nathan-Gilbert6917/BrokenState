@@ -39,6 +39,7 @@ import { baseFarming, foodCellHtml, waterCellHtml, foodLine, waterLine, woodLine
 import { HEAT } from "../sim/upkeep.js"; // the boiler's fuel a head in the help (firewood × HEAT.wood)
 import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine, illnessRowHtml, illnessSummary, othersWormHtml } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
+import { engScoutChoices, hoursToNight, SCOUT, NIGHT_FROM } from "../sim/raidplan.js"; // before the search: a scout first, or the night
 import { activeCrawl } from "../sim/citycrawl.js";
 import { crawlModal } from "./citycrawl.js";
 import { activeHiveCrawl, crawlRecText } from "../sim/hivecrawl.js";
@@ -1285,6 +1286,22 @@ function moveOutModal(state, ui) {
   </div>`;
 }
 
+// Before the search's approach (sim/raidplan.js): a scout first (the odds the sim rolls), or wait for the dark.
+function engPlanHtml(state, e, p) {
+  if (!p) return "";
+  const pc = (v) => `${Math.round(v * 100)}%`;
+  const rows = [];
+  if (e.scout) rows.push(`<span class="${e.scout.ok ? "good" : "danger"}">${esc(e.log[e.log.length - 1] || "")}</span>`);
+  else {
+    const list = engScoutChoices(state, p, e);
+    rows.push(`<span${tip(`One of the team looks the site over first: one hour. Odds unseen: ${pc(SCOUT.BASE)} + ${pc(SCOUT.PER_TILE)} a tile their look beats the ${e.guarded ? "guards'" : "dead's"} notice range + ${pc(SCOUT.PER_SKILL)} a point of Scouting (binoculars help by day, night vision at night). Unseen: Heat −${SCOUT.ENG_HEAT} and the finds ×${SCOUT.ENG_LOOT} (they know where to look). Seen: Heat +${SCOUT.ENG_FAIL_HEAT}, and ${pc(SCOUT.WOUND)} of the time the scout is hurt.`)}>Scout first (1 h):</span> ${list.map((c, i) => `<button class="mini" data-action="engscout" data-id="${c.id}"${tip(`${c.name}: they notice at ${c.notice} tiles, ${first(c.s)} looks from ${c.look}${c.optic ? ` (optics +${c.optic})` : ""}`)}>${first(c.s)} <b>${pc(c.odds)}</b>${i === 0 ? " ★" : ""}</button>`).join(" ")}`);
+  }
+  const n = hoursToNight(state);
+  if (e.night) rows.push(`<span class="muted">Waited ${e.night.hours} h for the dark.</span>`);
+  else if (n) rows.push(`<button class="mini" data-action="engnight"${tip(`The team holds out of sight until ${NIGHT_FROM}:00 (${n} hours on the clock; they eat and drink). At night the search's Heat climbs 2 an hour slower and the day's 5 starting Heat goes; the dead are as many.`)}>Wait for night (${n} h)</button>`);
+  return `<div class="text small" style="margin:0.3rem 0">${rows.join("<br>")}</div>`;
+}
+
 function engagementModal(state) {
   const e = state.engagement;
   const p = engagementParty(state);
@@ -1292,6 +1309,7 @@ function engagementModal(state) {
     return `<div class="box"><h1>Scavenging ${esc(tileLabel(state, e.tile))}</h1>
       <div class="text">${esc(e.log[0])}${e.guarded ? " " + esc(e.log[1]) : ""}</div>
       <div class="text small muted">Each search takes an hour on the shared clock. Heat rises as you search: Quiet → Stirring → Swarming → Overrun. Extract before it gets out of hand.</div>
+      ${engPlanHtml(state, e, p)}
       <div class="choices">${Object.entries(APPROACHES).map(([k, a]) => `<button data-action="approach" data-v="${k}"${tip(`${a.loot}× loot, +${a.heat} base Heat per hour`)}>${a.name}<span class="hint">${a.desc}</span></button>`).join("")}</div></div>`;
   }
   const stage = heatStage(e.heat);
