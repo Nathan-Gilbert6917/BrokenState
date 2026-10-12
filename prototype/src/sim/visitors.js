@@ -75,7 +75,7 @@
 //
 // Seen only when you can see them (state.live) or hear them (radio coverage, a faded sprite on the map); the
 // Groups tab lists those you know with their last known position. Decisions use state.visitorInfo.rng.
-import { FOODS, foodIn, typedFood, typeGoods, takeFood, addFoodsTo, DAY_VALUE, foodNeeds } from "./foods.js"; // food by type (foods.js)
+import { FOODS, foodIn, typedFood, typeGoods, takeFood, addFoodsTo, DAY_VALUE, foodNeeds, spareOf, spendSpare } from "./foods.js"; // food by type (foods.js)
 import { Rng } from "./rng.js";
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, supplyFew, supValue, supWeight } from "./data.js";
 import {
@@ -1370,13 +1370,14 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
     for (const k of plenty) {
       if (tradeVerdict(state).ok) break;
       if (!t.ask[k]) balanceWith(state, k);
-      if (spare[k] != null && (t.offer[k] || 0) > spare[k]) setQty(state, "mine", k, spare[k]); // never below what the hub needs
+      const cap = spareOf(spare, k); // a food item: by the days of food to spare (foods.js spareOf)
+      if (cap != null && (t.offer[k] || 0) > cap) setQty(state, "mine", k, cap); // never below what the hub needs
     }
     if (tradeVerdict(state).ok) {
       const paid = { ...t.offer };
       const r = executeTrade(state);
       if (/^Traded/.test(r)) {
-        for (const [k, q] of Object.entries(paid)) if (spare[k] != null) spare[k] = Math.max(0, spare[k] - q); // a second deal pays from what is left
+        spendSpare(spare, paid); // a second deal pays from what is left (food items in days of food)
         out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, ""));
         return true;
       }
@@ -1393,7 +1394,7 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   // govguns.js: a gun for the unarmed at home (its guards and scavengers with only a club too): an arms dealer's best.
   if (home && plenty.length && tradeContext(state)) {
     const price = (it) => gearBuyPrice(state, ctx.f, it, ctx.speech);
-    const budget = plenty.reduce((a, k) => { const q = spare[k] != null ? spare[k] : ctx.have[k] || 0; return a + (q > 0 ? q * sellPrice(state, ctx.f, k, ctx.speech, q) : 0); }, 0);
+    const budget = plenty.reduce((a, k) => { const q = spareOf(spare, k) ?? (ctx.have[k] || 0); return a + (q > 0 ? q * sellPrice(state, ctx.f, k, ctx.speech, q) : 0); }, 0);
     const gun = pickGunToBuy(state, home, ctx.theirGear, price, budget);
     if (gun) { const cost = price(gun); t.askGear = [gun]; if (tryDeal()) noteGunBought(state, gun, cost, ctx.f.spec === "arms" ? "arms dealer" : "merchants"); }
   }

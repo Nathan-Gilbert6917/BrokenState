@@ -23,7 +23,7 @@
 //   (known groups' bases, your outposts). It runs on the normal order queue: a move to the next stop, then the
 //   caravan stop order. At each stop a card offers: trade there (the trade window), unload the goods (your
 //   outposts), stay a day (24h camp), go on to the next destination, or return home, each with its ETA.
-import { takeFood, foodIn, sellPick, foodNeeds, FOODS, addFood } from "./foods.js"; // food by type (foods.js)
+import { takeFood, foodIn, sellPick, foodNeeds, FOODS, addFood, spareOf } from "./foods.js"; // food by type (foods.js)
 import { SUPPLIES, SUPPLY_KEYS, FACTION_TYPES, supValue } from "./data.js";
 import { log, day, hub, baseById, factionById, addCard, atBase, survivorById } from "./world.js";
 import {
@@ -289,15 +289,18 @@ export function autoCaravanTrade(state, needs, style, spare = {}) {
     if (kit && plenty.length) ctx.t.askGear = [kit];
     // govguns.js: a gun for the unarmed (its guards and scavengers with only a club too), paid from what it can spare.
     const gunPrice = (it) => gearBuyPrice(state, f, it, ctx.speech);
-    const budget = plenty.reduce((a, k) => { const q = spare[k] != null ? spare[k] : ctx.have[k] || 0; return a + (q > 0 ? q * sellPrice(state, f, k, ctx.speech, q) : 0); }, 0) - (kit && plenty.length ? gunPrice(kit) : 0);
+    // spareOf (foods.js): a food item is capped by the days of food the hub can spare (tradeSpare's food), not by a key of
+    // its own; the cap holds on every pass that pays (the gun's too).
+    const cap = (k) => { const q = spareOf(spare, k); if (q != null && (ctx.t.offer[k] || 0) > q) setQty(state, "mine", k, q); };
+    const budget = plenty.reduce((a, k) => { const q = spareOf(spare, k) ?? (ctx.have[k] || 0); return a + (q > 0 ? q * sellPrice(state, f, k, ctx.speech, q) : 0); }, 0) - (kit && plenty.length ? gunPrice(kit) : 0);
     const gun = plenty.length ? pickGunToBuy(state, base, ctx.theirGear.filter((g) => g !== kit), gunPrice, budget) : null;
     if (gun) ctx.t.askGear = [...(ctx.t.askGear || []), gun];
     for (const k of plenty) {
       if (tradeVerdict(state).ok) break;
       if (!ctx.t.ask[k]) balanceWith(state, k);
-      if (spare[k] != null && (ctx.t.offer[k] || 0) > spare[k]) setQty(state, "mine", k, spare[k]); // never below what the hub needs (autopilot.js tradeSpare)
+      cap(k); // never below what the hub needs (autopilot.js tradeSpare)
     }
-    if (gun && !tradeVerdict(state).ok) { ctx.t.askGear = ctx.t.askGear.filter((g) => g !== gun); for (const k of plenty) { if (tradeVerdict(state).ok) break; balanceWith(state, k); } } // too dear after all: the rest
+    if (gun && !tradeVerdict(state).ok) { ctx.t.askGear = ctx.t.askGear.filter((g) => g !== gun); for (const k of plenty) { if (tradeVerdict(state).ok) break; balanceWith(state, k); cap(k); } } // too dear after all: the rest
     const gunCost = gun && ctx.t.askGear.includes(gun) ? gunPrice(gun) : 0;
     if ((short.length || kit || gunCost) && tradeVerdict(state).ok) { text = executeTrade(state); if (gunCost && /^Traded/.test(text)) noteGunBought(state, gun, gunCost, "caravan"); }
   }
