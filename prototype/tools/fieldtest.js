@@ -49,7 +49,7 @@ function placeTeam(state, tile, n = 3, task = { type: "camp", hours: null }) {
   const res = launchExpedition(state, { memberIds: crewOf(state, n), dest: tileNear(state, 2, 6), mission: "move", stance: "normal", supplies: { food: 8, water: 8, ammo: 10 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
-  Object.assign(p.supplies, { water: 40 }); setFood(p, 40); // plenty for the case (not carried weight that matters here)
+  Object.assign(p.supplies, { water: 40, wood: 300 }); setFood(p, 40); // plenty for the case (not carried weight that matters here); firewood keeps the camp fire lit (woodcutting.js campFireHour: with none it goes out)
   p.path = [tile]; p.idx = 0; p.dest = tile; p.progress = 0; p.orders = [];
   if (task) startOrder(state, p, task);
   else { p.phase = "waiting"; p.task = null; }
@@ -289,6 +289,7 @@ section("ETA and rations for a whole plan match the trip");
       const est = estimatePlan(state, { memberIds: ids, dest, vehicle: !!v, stance: "normal", fuel: v ? v.fuel : 0, mission, steps, supplies });
       const res = launchExpedition(state, { memberIds: ids, dest, mission, stance: "normal", vehicleId: v ? v.id : null, supplies, plan: { preset: "custom", steps } });
       const p = res.party;
+      p.nightPlan = "push"; // the plan times the march (nightmarch.js: making camp at 22:00 is the player's choice of hours, not a slower road)
       // The team panel's queue estimate agrees with the planner at launch.
       const q = queueEstimate(state, p);
       const qsum = est.hoursOut + q.reduce((s, x) => s + (x.hours ?? 0), 0);
@@ -340,9 +341,11 @@ section("Summer and heat waves: a plan's water at each day's thirst matches what
       check(est && est.water > est.food && est.water === Math.ceil(est.waterExact - 1e-9), `seed ${seed} ${preset} plan in summer: ${est.food} food, ${est.water} water (more water: summer and the heat wave)`);
       const res = launchExpedition(state, { memberIds: ids, dest, mission, stance: "normal", supplies: { food: est.food + 2, water: est.water + 4, ammo: 10 }, plan: { preset, steps } });
       const p = res.party;
+      p.nightPlan = "push"; // as above: the plan's hours, not a night's camp the planner was never asked for
       let drunk = 0, delay = 0, events = 0;
       for (let i = 0; i < 24 * 6 && !home(state, p); i++) {
         p.lastConflict = state.hour + 1; state.hordes.length = 0;
+        const mouths = partyMembers(state, p).length;
         const want = waterPerHour(state, p, partyMembers(state, p), state.hour + 1);
         // needs.js: people drink when their thirst gauge is low, so count the gauges with the water carried.
         const thirst = () => ids.reduce((a, id) => a + (state.survivors.find((x) => x.id === id).thirst ?? 100), 0) / NEEDS.water;
@@ -351,6 +354,7 @@ section("Summer and heat waves: a plan's water at each day's thirst matches what
         const after = home(state, p) ? before - want : p.supplies.water + (p.cargo.supplies.water || 0) + thirst();
         if (Math.abs(before - after - want) > 1e-9) events++;
         if (!home(state, p) && p.phase === "engaged") events++; // held up an hour by people met on the road (wanderers.js)
+        if (mouths !== ids.length || (!home(state, p) && partyMembers(state, p).length !== ids.length)) events++; // someone met on the road joined (or left): more or fewer mouths than planned
         drunk += want;
         for (let k = state.cards.length - 1; k >= 0; k--) {
           const c = state.cards[k];
