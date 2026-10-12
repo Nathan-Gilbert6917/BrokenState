@@ -710,12 +710,13 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   const rifles = huntDay(state, base);
   check(rifles.hrs.traps > 0 && !rifles.hrs.bows && !rifles.hrs.guns && !rifles.shots, "100% bows with only rifles: the snare lines, not a shot");
   hunters[2].gear.weapon = newItem("compbow");
-  // The day's hours: one hunter at 50% guns shoots 1 or 2 of 3 in turn (the fraction carries over).
+  // The day's hours (CABIN.huntHours, 4): one hunter at 30% guns shoots 1.2 a day: 1, 1, 1, 1, then 2 (the fraction
+  // carries over).
   const one = [hunters[0]];
   delete base.huntCarry;
-  const mix = { traps: 50, bows: 0, guns: 50 };
-  const plans = [0, 1, 2, 3].map(() => H.cabinPlan(state, base, one, 100, 100, mix)[0]);
-  check(plans.map((x) => x.guns).join("") === "1212" && plans.every((x) => x.guns + x.traps === 3), `one hunter at 50% guns: gun hours ${plans.map((x) => x.guns).join(", ")} (the half hour carries over)`);
+  const mix = { traps: 70, bows: 0, guns: 30 };
+  const plans = [0, 1, 2, 3, 4].map(() => H.cabinPlan(state, base, one, 100, 100, mix)[0]);
+  check(plans.map((x) => x.guns).join("") === "11112" && plans.every((x) => x.guns + x.traps === H.CABIN.huntHours), `one hunter at 30% guns: gun hours ${plans.map((x) => x.guns).join(", ")} (the fraction carries over)`);
   // Gun hours go to the guns, bow hours to the bow.
   const pl = H.cabinPlan(state, base, hunters, 100, 100, { traps: 30, bows: 30, guns: 40 });
   delete base.huntCarry;

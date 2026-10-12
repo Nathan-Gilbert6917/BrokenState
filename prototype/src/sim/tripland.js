@@ -40,7 +40,7 @@ export const walkMult = (state) => paceOf(state).walk;
 export const TRIP_JOBS = {
   wood:     { windows: [[7, 19]], trips: 2, nominal: 6, ref: 1, unit: "wood", stage: ["Felling trees", "Chopping wood", "Splitting logs"], ing: "Cutting wood", load: "logs" },
   forage:   { windows: [[7, 19]], trips: 2, nominal: 6, ref: 1, unit: "food", stage: ["Searching", "Picking", "Gathering"], ing: "Foraging", load: "basket" },
-  hunt:     { windows: [[6, 10], [16, 20]], trips: 1, nominal: 3, ref: 2, prime: [7, 17], unit: "food", stage: ["Tracking", "Stalking", "Dressing the kill"], ing: "Hunting", load: "game" },
+  hunt:     { windows: [[6, 10], [16, 20]], trips: 1, nominal: 4, ref: 2, prime: [7, 17], unit: "food", stage: ["Tracking", "Stalking", "Dressing the kill"], ing: "Hunting", load: "game" },
   fish:     { windows: [[6, 10], [16, 20]], trips: 1, nominal: 3, ref: 1, prime: [7, 17], unit: "food", water: true, stage: ["Casting", "Fishing", "Fishing"], ing: "Fishing", load: "fish" },
   scavenge: { windows: [[8, 18]], trips: 2, nominal: 1, ref: 0, unit: "finds", stage: ["Searching", "Picking through", "Sorting"], ing: "Scavenging", load: "sack" },
   water:    { windows: [[7, 19]], ref: 1, fixed: { fill: 0.5, rest: 2 }, perTrip: 2, water: true, unit: "rawwater", stage: ["Filling the buckets", "Filling the buckets", "Filling the buckets"], ing: "Fetching water", load: "buckets" },

@@ -69,7 +69,7 @@ section("The hours: the walk costs time on the tile");
   note(`hours on the tile a day: wood ${w.join(" / ")} (0, 1, 2 tiles out), hunting ${h.join(" / ")} (1, 2 out); trips of water a day ${[1, 2].map(waterTripsADay).join(" / ")}`);
   check(w[0] > w[1] && w[1] > w[2] && h[0] > h[1], "the farther the tile, the fewer hours on it");
   check(near(distFactor("wood", 1), 1) && near(distFactor("hunt", 2), 1) && near(distFactor("fish", 1), 1), "each job's day at its reference distance is the old job's (wood 1 tile, hunting 2, fishing 1)");
-  check(near(onTileHours("wood", 1) * tripScale("wood"), 6) && near(onTileHours("hunt", 2) * tripScale("hunt"), 3), "the old daily hours there (wood 6, hunting 3)");
+  check(near(onTileHours("wood", 1) * tripScale("wood"), 6) && near(onTileHours("hunt", 2) * tripScale("hunt"), 4), "the daily hours there (wood 6, hunting 4: CABIN.huntHours since 2026-10-12)");
   check(distFactor("wood", 0) > 1.1 && distFactor("wood", 2) < 0.85 && distFactor("hunt", 1) > 1.4, `a near tile gives more, a far one less (wood ${r1(distFactor("wood", 0) * 100) / 100} / 1 / ${r1(distFactor("wood", 2) * 100) / 100})`);
   check(waterTripsADay(1) > waterTripsADay(2), "water fetched from farther: fewer trips a day");
 }

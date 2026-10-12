@@ -64,16 +64,16 @@ const benches = Object.keys(BENCH);
   const h = hub(st);
   h.buildings = h.buildings.filter((b) => !BUILDINGS[b.type].family || BUILDINGS[b.type].family !== "bench");
   rich(h); person(st, h, "build");
-  h.tier = 0; h.buildings = []; // a shelter: two utility plots, no building plots
+  h.tier = 0; h.buildings = []; // a shelter: three utility plots, one building plot
   check(canBuild(st, h, "craftbench").ok, `a shelter can build a crafting bench (${canBuild(st, h, "craftbench").reason || ""})`);
   queueBuild(st, h, "craftbench");
-  check(plotsUsed(h, "utility") === 1 && plotsFree(h, "utility") === 1, "queued, it holds one of the shelter's 2 utility plots");
+  check(plotsUsed(h, "utility") === 1 && plotsFree(h, "utility") === 2, "queued, it holds one of the shelter's 3 utility plots");
   finishAll(st, h);
   check(count(h, "craftbench") === 1 && plotsUsed(h, "utility") === 1, "built at the shelter on a utility plot");
   check(!canBuild(st, h, "craftbench").ok, "only one");
   check(!canBuild(st, h, "workbench").ok, "a shelter does not build a workbench");
-  addBuilding(h, "crates");
-  check(plotsFree(h, "utility") === 0, "a bench and crates fill the shelter's plots");
+  addBuilding(h, "crates"); addBuilding(h, "rain_catcher");
+  check(plotsFree(h, "utility") === 0, "a bench, crates and a rain catcher fill the shelter's plots");
 
   const o = mkOutpost(st, h.tile);
   rich(o); person(st, o, "build");

@@ -202,7 +202,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
-    // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 6 crop plots, the well,
+    // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 8 crop plots, the well,
     // the cellar, 3 wall strength: buildings.js) is all there is. The scrap and parts are for the first builds, the
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)

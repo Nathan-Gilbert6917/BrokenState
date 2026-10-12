@@ -14,9 +14,12 @@
 //     boiler beside a lit fire burns nothing (the wood once, not twice).
 // Usage: node tools/campbasetest.js [seed]
 import { createWorld, hub, atBase, newId, tickHour } from "../src/sim/world.js";
-import { BUILDINGS, CAMP, SHELTER, addBuilding, canBuild, placeProblem, queueBuild, isCamp, isShelter, plotCap } from "../src/sim/buildings.js";
-import { housingAI } from "../src/sim/autopilot.js";
-import { cropProgress, farmOf, CROPS } from "../src/sim/farming.js";
+import { BUILDINGS, CAMP, SHELTER, CROP_PLOTS, addBuilding, canBuild, placeProblem, queueBuild, isCamp, isShelter, plotCap, farmSlots } from "../src/sim/buildings.js";
+import { setAutopilot } from "../src/sim/autopilot.js";
+import { cropProgress, farmOf, CROPS, plotLimit } from "../src/sim/farming.js";
+import { huntLoans, cabinPlan, huntWeaponInfo, CABIN } from "../src/sim/hunting.js";
+import { newItem } from "../src/sim/inventory.js";
+import { GEAR } from "../src/sim/data.js";
 import { woodNeed, shelterFire, fireLandOk, WOOD } from "../src/sim/woodcutting.js";
 import { heatUse, HEAT } from "../src/sim/upkeep.js";
 import { heatDaily } from "../src/sim/needs.js";
@@ -37,6 +40,7 @@ const ui = (baseView) => ({ started: true, speed: 0, tab: "bases", selected: -1,
 const modal = (st, b, tab) => { st.cards.length = 0; return renderModal(st, ui({ id: b.id, tab })) || ""; };
 const plain = (h) => String(h).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 const mkOutpost = (st, tile) => { const o = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: { water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0 }, radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; st.bases.push(o); return o; };
+const first = (s) => s.name.split(" ")[0];
 const asCamp = (b) => { b.tier = 0; b.camp = true; b.buildings = []; b.construction = []; };
 const asShelter = (b) => { b.tier = 0; delete b.camp; b.buildings = []; b.construction = []; };
 // A card in the Construction tab: the HTML of the gcard whose title is the building's name.
@@ -64,15 +68,15 @@ section("BASE-03: what each kind of base may build");
   // A camp: the crafting bench, water boiler, cook fire and drying rack on its one utility plot.
   const st2 = W(), c = hub(st2);
   asCamp(c); rich(c);
-  check(isCamp(c) && plotCap(c, "utility") === 1, "a camp: one utility plot");
+  check(isCamp(c) && plotCap(c, "utility") === 2, "a camp: two utility plots");
   for (const k of ["craftbench", "boiler", "cookhouse", "smoker"]) {
     check(CAMP.build[k] >= 1 && placeProblem(c, k) === "" && canBuild(st2, c, k).ok, `a camp builds a ${BUILDINGS[k].name.toLowerCase()}`);
   }
   check(placeProblem(c, "hospital") !== "" && canBuild(st2, c, "hospital").where, "no hospital at a camp (not here)");
-  check(placeProblem(c, "infirmary") !== "" && /Available once it is a base/.test(canBuild(st2, c, "infirmary").reason), `an infirmary at a camp says when it opens (${canBuild(st2, c, "infirmary").reason})`);
-  queueBuild(st2, c, "boiler");
-  const second = canBuild(st2, c, "cookhouse");
-  check(!second.ok && second.noPlot && !second.where, "the plot taken by the boiler: the cook fire is buildable here but waits for a plot");
+  check(placeProblem(c, "infirmary") !== "" && /Available once the shelter stands/.test(canBuild(st2, c, "infirmary").reason), `an infirmary at a camp says when it opens (${canBuild(st2, c, "infirmary").reason})`);
+  queueBuild(st2, c, "boiler"); queueBuild(st2, c, "smoker");
+  const third = canBuild(st2, c, "cookhouse");
+  check(!third.ok && third.noPlot && !third.where, "both plots taken (a boiler and a drying rack): the cook fire is buildable here but waits for a plot");
 
   // One rule: whatever placeProblem refuses, canBuild refuses (for every kind of base and every building).
   const st3 = W(), b3 = hub(st3);
@@ -92,11 +96,77 @@ section("BASE-03: what each kind of base may build");
   asShelter(b3);
   check(Object.keys(SHELTER.build).filter((k) => k !== "outpost_up").every((k) => placeProblem(b3, k) === ""), "everything on the shelter's list stands at a shelter (the hub's: an outpost's step up aside)");
 
-  // The governor keeps the camp's one plot for what it built there before (the step up, rain catcher, crates…).
-  const st4 = W(), c4 = hub(st4);
-  asCamp(c4); rich(c4);
-  const wishes = housingAI.wishes(st4, c4).map((w) => w.type);
-  check(wishes.every((k) => ["camp_up", "outpost_up", "rain_catcher", "crates", "water_barrel", "barricades"].includes(k)), `the governor's wishes at a camp: ${wishes.join(", ") || "none"}`);
+}
+
+// ======================================================================
+section("Plots and crop plots by stage (user numbers 2026-10-12)");
+{
+  const st = W(), h = hub(st);
+  const o = mkOutpost(st, h.tile);
+  const row = (b) => [plotCap(b, "building"), plotCap(b, "utility"), farmSlots(b), plotLimit(b), farmOf(st, b).plots.length];
+  const want = { "main base": [16, 14, 8], outpost: [6, 6, 4], shelter: [1, 3, 2], camp: [0, 2, 1] };
+  const got = { "main base": row(h), outpost: row(o) };
+  asShelter(h); got.shelter = row(h);
+  asCamp(h); got.camp = row(h);
+  for (const [k, [b, u, c]] of Object.entries(want)) {
+    const g = got[k];
+    check(g[0] === b && g[1] === u && g[2] === c && g[3] === c && g[4] === c, `${k}: ${b} building, ${u} utility, ${c} crop plots (the Construction tab, farmSlots and the farm agree: ${g.join(" / ")})`);
+  }
+  check(CROP_PLOTS.camp === 1 && CROP_PLOTS.shelter === 2 && CROP_PLOTS.outpost === 4 && CROP_PLOTS.hub === 8 && CAMP.plots === 1 && SHELTER.plots === 2, "one table: CROP_PLOTS (CAMP.plots, SHELTER.plots the same)");
+  asShelter(h); rich(h);
+  check(["bunkhouse", "cellar", "infirmary", "huntcabin"].every((k) => canBuild(st, h, k).ok), "the shelter's building plot takes a bunkhouse, root cellar, infirmary or hunting cabin");
+}
+
+// ======================================================================
+section("The governor builds at a camp and a shelter");
+{
+  const run = (st, b, days) => { for (let i = 0; i < days * 24; i++) { st.hordes.length = 0; tickHour(st); st.cards.length = 0; } };
+  const st = W(), c = hub(st);
+  st.noWanderers = true;
+  asCamp(c); c.farm = null;
+  Object.assign(c.stock, { scrap: 80, parts: 4 });
+  setAutopilot(st, true, "balanced");
+  run(st, c, 1);
+  const yard = c.buildings.map((x) => x.type);
+  check(yard.length >= 2 && yard.every((k) => CAMP.build[k]), `a camp's yard goes up on its two plots (${yard.join(", ")})`);
+  check(c.construction.some((j) => BUILDINGS[j.type].tierUp) || !isCamp(c), "and the step up is under way");
+  const st2 = W(), s = hub(st2);
+  st2.noWanderers = true;
+  asShelter(s); s.farm = null;
+  Object.assign(s.stock, { scrap: 60, parts: 4 });
+  setAutopilot(st2, true, "balanced");
+  run(st2, s, 3);
+  const sy = s.buildings.map((x) => x.type);
+  check(sy.length >= 3 && sy.some((k) => ["cookhouse", "smoker", "craftbench"].includes(k)), `a shelter builds its yard before the 100-scrap step up drains its scrap (${sy.join(", ")})`);
+  check(s.construction.some((j) => j.type === "hub_up") || sy.length >= 4, "then the step up into a base");
+}
+
+// ======================================================================
+section("Hunting at a base");
+{
+  const st = W(), h = hub(st);
+  const ppl = atBase(st, h.id);
+  const rifleOwner = ppl.find((x) => x.gear.weapon && x.gear.weapon.key === "huntrifle");
+  const pistol = ppl.find((x) => x.gear.weapon && /pistol/.test(x.gear.weapon.name));
+  if (rifleOwner && pistol) {
+    const sk = (x, v) => Object.assign(x.skills, { shooting: v, scouting: v, stealth: v });
+    sk(rifleOwner, 5); sk(pistol, 5);
+    check(WORK_TYPES.hunt.rank(rifleOwner) > WORK_TYPES.hunt.rank(pistol), "the Hunt job ranks a hunting rifle above a pistol (same skills)");
+    const shooter = ppl.find((x) => x !== rifleOwner && x !== pistol && !(x.gear.weapon && huntWeaponInfo(x.gear.weapon)));
+    rifleOwner.role = "build"; shooter.role = "hunt";
+    const lent = huntLoans(st, h);
+    check(lent.get(shooter.id) === rifleOwner.gear.weapon, `a hunter with no hunting weapon takes ${first(rifleOwner)}'s rifle for the day (not hunting, not on guard)`);
+    rifleOwner.role = "guard";
+    check(!huntLoans(st, h).has(shooter.id) || huntLoans(st, h).get(shooter.id) !== rifleOwner.gear.weapon, "not from someone on guard");
+    rifleOwner.role = "build";
+    const plan = cabinPlan(st, h, [shooter], h.stock, 0);
+    check(plan[0].hours === CABIN.huntHours && plan[0].guns === CABIN.huntHours && plan[0].any && plan[0].any.item === rifleOwner.gear.weapon, `its day: ${CABIN.huntHours} hours with the lent rifle`);
+    const bow = newItem(Object.keys(GEAR).find((k) => GEAR[k].cat === "bow"));
+    h.armory.push(bow);
+    pistol.role = "hunt";
+    const two = huntLoans(st, h);
+    check([...two.values()].includes(bow) || [...two.values()].includes(rifleOwner.gear.weapon), "the armory's bow is lent too");
+  } else console.log("  (no rifle and pistol at this hub: the loan checks skipped)");
 }
 
 // ======================================================================

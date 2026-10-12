@@ -46,7 +46,7 @@ import { hiveCrawlModal } from "./hivecrawl.js";
 import { tradeContext, tradeTotals, sellPrice, buyPrice, canRadio } from "../sim/trade.js";
 import {
   BUILDINGS, RECIPES, stations, stationStatus, canBuild, buildRate, buildingSummary, farmSlots, baseBeds, count, isShelter, isCamp, CAMP, SHELTER, tierName, tierUpType, tierUpJob, gatherRows, gatherCap, gatherStalled, gatherShort, matName,
-  PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, canUpgradeKitchen, BENCH, benchType, placeProblem,
+  PLOTS, PLOT_NAMES, plotCap, plotsUsed, WATER_BARREL, barrels, barrelTier, barrelCap, barrelHolds, barrelName, canUpgradeBarrel, canDemolish, demolishRefund, jobName as buildJobName, canExpandBunkhouse, BARRACKS_UP, canUpgradeKitchen, BENCH, benchType, placeProblem, CROP_PLOTS,
 } from "../sim/buildings.js";
 import { isPowered, POWER_USERS, freezerLine, generatorRunning, generatorLine, GEN_TIERS, genTier, genName } from "../sim/power.js"; // freezer-parts: the machines' chips; gen-tiers: the generator's tier
 import { isMachine, machineText, machineState } from "../sim/breakdowns.js"; // freezer-parts: machine parts on the cards
@@ -1521,7 +1521,7 @@ function campTab(state, b) {
   const atShelter = Object.keys(SHELTER.build).filter((k) => !BUILDINGS[k].tierUp && !CAMP.build[k]);
   const ladder = out
     ? `<div>Next</div><div class="small">An outpost: a dug spring (3 water a day), a fence (wall 1), 6 building plots and 6 utility plots, room for every building an outpost takes.</div>`
-    : `<div>At the shelter</div><div class="small">A roof and beds for ${SHELTER.beds}, two utility plots and a garden patch: ${esc(nameList(atShelter))}, and its own step up (${esc(BUILDINGS.hub_up.name)}: ${esc(needText(BUILDINGS.hub_up.cost))}).</div>
+    : `<div>At the shelter</div><div class="small">A roof and beds for ${SHELTER.beds}, ${PLOTS.shelter.building} building plot, ${PLOTS.shelter.utility} utility plots and ${CROP_PLOTS.shelter} crop plots: ${esc(nameList(atShelter))}, and its own step up (${esc(BUILDINGS.hub_up.name)}: ${esc(needText(BUILDINGS.hub_up.cost))}).</div>
       <div>At the base</div><div class="small muted">A main house, a dug well, walls, 16 building and 14 utility plots: every building (workshops, the hospital, bunkhouses, the radio station…). Construction lists them with what each needs.</div>`;
   const away = v.away >= 1 && !people.length ? `<div${tip(`Nobody at the camp. After ${STAGING.ABANDON} days alone it may be looted (part of its stores and its step up); empty and bare for ${STAGING.GONE} days it is gone.`)}>Alone</div><div class="${v.away >= STAGING.ABANDON ? "danger" : "warn"}">${Math.floor(v.away)} day${Math.floor(v.away) === 1 ? "" : "s"}</div>` : "";
   return `<div class="grid2">
@@ -1691,7 +1691,7 @@ function tierUpRows(state, b) {
     : `${n1(job.hours - job.progress)} work-hours left, about ${Math.ceil((Math.min(job.hours, job.hours * cap) - job.progress) / rate)}h${cap < 1 ? ` with what is in (still ${esc(short)} to come)` : ""}`;
   const rows = job.paid ? chipList(gatherRows(job).map((r) => chip({ icon: supIcon(r.key), name: supName(r.key), have: r.have, need: r.need, ok: r.ok, t: `${supName(r.key)}: ${n0(r.have)} of ${r.need} taken from the stores${r.ok ? "" : ` (${n0(b.stock[r.key] || 0)} more in the stores; it is taken as it comes in)`}${r.key === "buildmat" ? ". Building materials are scavenged: hardware stores and quarries most, then warehouses, factories, barns, farms and towns" : ""}` }))) : badge("Paid", "good");
   const why = out
-    ? "A new outpost starts as a camp (the barest base: tarps, bedrolls and a fire, no well, one utility plot). Establish it for a dug spring, a fence and room to build: the materials are taken from its stores as they come in, and its builders do the work, never more of it than the materials delivered allow."
+    ? "A new outpost starts as a camp (the barest base: tarps, bedrolls and a fire, no well, two utility plots). Establish it for a dug spring, a fence and room to build: the materials are taken from its stores as they come in, and its builders do the work, never more of it than the materials delivered allow."
     : "Your home grows in stages: a camp (the barest base), a shelter (tier 0), then a base. Building it up takes the materials from the stores as they come in, and its builders do the work, never more of it than the materials delivered allow.";
   return `<div${tip(why)}>Stage</div><div>${stage}</div>
     <div>${out ? "Establishing" : "Building up"}</div><div>${pbar(Math.round(Math.min(1, f) * 100), "accent", `${Math.round(f * 100)}% built`, "", Math.round(cap * 100), "The bar: the work done; its lighter part, as far as the materials delivered allow")}</div>
@@ -1726,7 +1726,7 @@ function upgradeCard(state, b) {
   if (isShelter(b)) {
     const out = b.type === "outpost";
     const next = out ? "A real outpost: a dug spring (3 water a day), a fence (wall 1), 6 building plots and 6 utility plots, room for every building an outpost takes."
-      : isCamp(b) ? `A shelter: a roof and beds for ${SHELTER.beds}, two utility plots and a garden patch; later the step up into a base.`
+      : isCamp(b) ? `A shelter: a roof and beds for ${SHELTER.beds}, ${PLOTS.shelter.building} building plot, ${PLOTS.shelter.utility} utility plots and ${CROP_PLOTS.shelter} crop plots; later the step up into a base.`
       : "A real base: a main house, a dug well, a cellar, walls, beds for four, 16 building and 14 utility plots: every building (workshops, the hospital, bunkhouses, the radio station…).";
     return `${sectionHead(`⬆ Build up${out ? "" : ` ${stageSteps(isCamp(b) ? 0 : 1)}`}`, toCx, null, "The step up to this base's next stage: materials taken from the stores as they come in, then the builders' work")}
       <div class="card attn small upgradecard"><div class="kv small">

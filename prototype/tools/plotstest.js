@@ -39,7 +39,7 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   const o = mkOutpost(st, h.tile);
   check(plotCap(o, "building") === PLOTS.outpost.building && plotCap(o, "utility") === PLOTS.outpost.utility, "an outpost has the outpost's plots");
   h.tier = 0;
-  check(plotCap(h, "building") === 0 && plotCap(h, "utility") === 2, "a shelter (the camp stage) has 0 building plots and 2 utility plots");
+  check(plotCap(h, "building") === 1 && plotCap(h, "utility") === 3, "a shelter has 1 building plot and 3 utility plots");
   check(PLOTS.hub.building > PLOTS.outpost.building && PLOTS.outpost.building > PLOTS.shelter.building && PLOTS.hub.utility > PLOTS.outpost.utility && PLOTS.outpost.utility > PLOTS.shelter.utility, "plots grow with the base");
   for (const [k, d] of Object.entries(BUILDINGS)) {
     if (["walls", "barricades", "spike_pits", "trench", "gate", "floodlights", "farm_plot", "hub_up", "outpost_up", "camp_up", "camo"].includes(k)) check(!d.plot, `${k} needs no plot`);
@@ -109,13 +109,14 @@ const skilled = (st, b) => { const s = makeSurvivor(st, 1); s.location = { kind:
   const h = hub(st);
   bare(h); rich(h); skilled(st, h);
   h.tier = 0;
-  check(!canBuild(st, h, "bunkhouse").ok, "no bunkhouse at a shelter");
+  check(canBuild(st, h, "bunkhouse").ok && plotCap(h, "building") === 1, "a bunkhouse on the shelter's one building plot");
   check(!canBuild(st, h, "storehouse").ok, "no storehouse at a shelter");
   for (const k of ["boiler", "water_barrel", "crates", "watchtower", "cookhouse", "rain_catcher"]) check(SHELTER.build[k] >= 1 && canBuild(st, h, k).ok, `a shelter can build a ${k}`);
   queueBuild(st, h, "water_barrel");
   queueBuild(st, h, "boiler");
-  const third = canBuild(st, h, "crates");
-  check(!third.ok && third.noPlot, `a third utility waits (${third.reason})`);
+  queueBuild(st, h, "cookhouse");
+  const fourth = canBuild(st, h, "crates");
+  check(!fourth.ok && fourth.noPlot, `a fourth utility waits (${fourth.reason})`);
   check(canBuild(st, h, "barricades").ok && canBuild(st, h, "farm_plot").ok, "a barricade and a garden patch need no plot");
 }
 

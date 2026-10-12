@@ -61,7 +61,7 @@ check(!st.parties.includes(p) && people.every((id) => atBase(st, camp.id).some((
 check(car && car.loc.kind === "base" && car.loc.baseId === camp.id, "its vehicle is parked at the camp");
 check(camp.armory.some((it) => it.key === "crowbar") && camp.stock.scrap >= 9 && food(camp) >= 30, "what it carried is in the camp's stores and armory");
 check(!tierUpJob(camp), "a plain camp: nothing building until you queue the step up");
-check(baseBeds(camp) === CAMP.beds && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 1, "barebones: bedrolls, no crop plots, no building plot, one utility plot");
+check(baseBeds(camp) === CAMP.beds && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, "barebones: bedrolls, one crop plot, no building plot, two utility plot");
 let html = modal(st, { id: camp.id, tab: "camp" });
 check(/class="tabs"/.test(html) && /data-tab="camp"/.test(html) && /data-tab="construction"/.test(html) && !/data-tab="farming"/.test(html) && !/data-tab="defence"/.test(html), "the base window: a Camp tab and only the tabs a camp uses");
 check(/Strike camp/.test(html) && /Form a team/.test(html) && /People here/.test(html) && /Stores/.test(html) && /Vehicles \(1\)/.test(html), "the Camp tab: people, form a team, stores, vehicles, Strike camp");
@@ -130,14 +130,14 @@ check(canBuild(st, camp, "camp_up").ok && !canBuild(st, camp, "hub_up").ok && !c
 camp.stock.scrap = (camp.stock.scrap || 0) + 30;
 check(canBuild(st, camp, "barricades").ok && /queued/.test(queueBuild(st, camp, "barricades")), "a barricade can be built at a camp");
 // BASE-03 (2026-10-12): the crafting bench, water boiler, cook fire and drying rack are camp buildings too; they share
-// the camp's one utility plot with the rain catcher, crates and barrel.
-check(["rain_catcher", "smoker", "craftbench", "boiler", "cookhouse"].every((k) => canBuild(st, camp, k).ok), "one utility plot: a rain catcher, drying rack, crafting bench, water boiler or cook fire fits");
+// the camp's two utility plots with the rain catcher, crates and barrel.
+check(["rain_catcher", "smoker", "craftbench", "boiler", "cookhouse"].every((k) => canBuild(st, camp, k).ok), "two utility plots: a rain catcher, drying rack, crafting bench, water boiler or cook fire fits");
 {
   const scrap0 = camp.stock.scrap;
-  queueBuild(st, camp, "smoker");
-  const full = canBuild(st, camp, "boiler");
-  check(!full.ok && full.noPlot && !canBuild(st, camp, "rain_catcher").ok, `the plot taken by a drying rack: the boiler waits for a free plot (${full.reason})`);
-  camp.construction.pop(); camp.stock.scrap = scrap0;
+  queueBuild(st, camp, "smoker"); queueBuild(st, camp, "boiler");
+  const full = canBuild(st, camp, "cookhouse");
+  check(!full.ok && full.noPlot && !canBuild(st, camp, "rain_catcher").ok, `both plots taken (a drying rack and a boiler): the cook fire waits for a free plot (${full.reason})`);
+  camp.construction.pop(); camp.construction.pop(); camp.stock.scrap = scrap0;
 }
 check(/queued/.test(queueBuild(st, camp, "camp_up")) && tierUpJob(camp) && tierUpJob(camp).type === "camp_up", "the step up queued from Construction");
 

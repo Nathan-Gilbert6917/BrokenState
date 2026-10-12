@@ -1,5 +1,5 @@
 // Farming: crop plots at every base. A crop takes days to ripen and is harvested in one go; it does not
-// produce food every day. Each base has plots by type (hub 6, outpost 2) plus 2 per Farm plot building and
+// produce food every day. Each base has plots by size (buildings.js CROP_PLOTS: camp 1, shelter 2, outpost 4, hub 8) plus 2 per Farm plot building and
 // 2 sheltered plots per Greenhouse. Every crop has its own growing time, yield, seed cost, water need, seasons,
 // tolerances and a harvest window. Growth each day follows the weather (weather.js growthFactor); frost,
 // storms, drought and heat can kill a standing crop and wet weather rots a ripe one (weather.js cropDamage).
@@ -16,7 +16,7 @@
 // (kale, winter roots, winter wheat) for the winter and the hungry gap before the first spring harvest.
 import * as Weather from "./weather.js";
 import { log, atBase, skill, day, residents } from "./world.js";
-import { count } from "./buildings.js";
+import { count, farmSlots } from "./buildings.js";
 import { workFactor } from "./health.js";
 import { jobShare } from "./kitchen.js"; // a part-time cook's share of the farm's day
 import { storeCapacity, storeFactor, stableLoss, edibleFood, spoilFresh } from "./storage.js";
@@ -78,7 +78,7 @@ function registerClimates() {
   } catch { /* weather.js not ready yet: try again next time */ }
 }
 
-export const BASE_PLOTS = { hub: 6, outpost: 2 };
+export const BASE_PLOTS = { hub: 8, outpost: 4 }; // = buildings.js CROP_PLOTS (the table plotLimit reads; a camp's and a shelter's there too)
 // Running totals for tools and balance checks (state.econStats).
 export const econStats = (state) => state.econStats || (state.econStats = { harvested: 0, seed: 0, spoiled: 0, eaten: 0, cropsLost: 0, thirstDays: 0, hungerDays: 0, scavFinds: 0 });
 export const PLOTS_PER_BUILDING = 2;     // per Farm plot building
@@ -120,7 +120,7 @@ export function siteFarm(state, base) {
   return loc === "farm" || t.terrain === "plains" ? 1.3 : t.terrain === "forest" ? 0.9 : t.terrain === "hills" ? 0.85 : 1;
 }
 
-export const plotLimit = (base) => Math.max(0, (BASE_PLOTS[base.type] ?? 2) + count(base, "farm_plot") * PLOTS_PER_BUILDING - count(base, "animal_pen") * PEN.pasture);
+export const plotLimit = (base) => farmSlots(base); // buildings.js: CROP_PLOTS by the base's size (a camp, a shelter, an outpost, the main base) + Farm plots − pasture
 export const greenhouseLimit = (base) => count(base, "greenhouse") * GREENHOUSE_PLOTS;
 
 // Climate passed to weather.js. A greenhouse plot grows in every season and stands 10 °C more cold.
