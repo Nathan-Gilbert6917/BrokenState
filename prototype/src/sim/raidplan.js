@@ -35,7 +35,7 @@
 //   SCOUT.BOT_STEALTH on average, or night vision on everyone), and keeps the side. The battle AI anywhere else (combat.js
 //   autoPlayerTurn: headless tools, a fight the autopilot finishes) goes in as things are. The autopilot (engagements) scouts
 //   a guarded or badly infested site with a scout of SCOUT.BOT_ODDS (autopilot.js engagementHour).
-import { isNight, hourOfDay, skill, tickHour, hurt } from "./world.js";
+import { isNight, hourOfDay, skill, tickHour, hurt, localId } from "./world.js";
 import { woundMult } from "./traits.js";
 import { hash01 } from "./skills.js";
 import { battleOptic } from "./optics.js";
@@ -184,10 +184,12 @@ export function sendScout(state, sid = null) {
   const list = scoutChoices(state, b);
   const c = sid == null ? list[0] : list.find((x) => x.id === Number(sid));
   if (!c) return "Nobody on the team can go.";
-  const roll = hash01(state.seed, "raidscout", b.tileId, state.hour, c.id);
+  // localId: survivor ids are process-wide (world.js newId), so the raw id gave a second world of the same seed other
+  // rolls (tools/discoverytest.js determinism); the id counted from the world's start is the same in both.
+  const roll = hash01(state.seed, "raidscout", b.tileId, state.hour, localId(state, c.id));
   const ok = roll < c.odds;
   const sc = { sid: c.id, name: c.name, odds: c.odds, look: c.look, notice: c.notice, reach: c.reach, roll, ok, clean: ok && roll < c.odds / 2, wound: 0, hour: state.hour, night: !!b.night };
-  if (!ok && hash01(state.seed, "raidscout-wound", b.tileId, state.hour, c.id) < SCOUT.WOUND) {
+  if (!ok && hash01(state.seed, "raidscout-wound", b.tileId, state.hour, localId(state, c.id)) < SCOUT.WOUND) {
     const s = c.s;
     const amt = woundOf(state, s, "raidscout-hurt");
     if (amt > 0) { hurt(state, s, amt, b.tileId, `spotted scouting ${b.place}`); sc.wound = amt; }
@@ -203,7 +205,7 @@ export function sendScout(state, sid = null) {
 }
 // The scout's wound when seen: SCOUT.HURT by its own dice, never to death (Frail people's 1.25 counted: world.js hurt).
 function woundOf(state, s, key) {
-  const amt = SCOUT.HURT[0] + Math.floor(hash01(state.seed, key, s.id, state.hour) * (SCOUT.HURT[1] - SCOUT.HURT[0] + 1));
+  const amt = SCOUT.HURT[0] + Math.floor(hash01(state.seed, key, localId(state, s.id), state.hour) * (SCOUT.HURT[1] - SCOUT.HURT[0] + 1));
   return Math.max(0, Math.min(amt, Math.floor((s.health - 10) / Math.max(1, woundMult(s)))));
 }
 export function scoutText(sc) {
@@ -313,7 +315,7 @@ export function engScout(state, p, sid = null) {
   const list = engScoutChoices(state, p, e);
   const c = sid == null ? list[0] : list.find((x) => x.id === Number(sid));
   if (!c) return "Nobody to send.";
-  const roll = hash01(state.seed, "engscout", e.tile, state.hour, c.id);
+  const roll = hash01(state.seed, "engscout", e.tile, state.hour, localId(state, c.id));
   const ok = roll < c.odds;
   e.scout = { sid: c.id, name: c.name, odds: c.odds, ok, wound: 0 };
   if (ok) {
@@ -321,7 +323,7 @@ export function engScout(state, p, sid = null) {
     e.log.push(`${first(c)} scouted the site first (${Math.round(c.odds * 100)}%): the team knows where to look and where the dead are (Heat −${SCOUT.ENG_HEAT}, finds ×${SCOUT.ENG_LOOT}).`);
   } else {
     e.heat = Math.min(100, e.heat + SCOUT.ENG_FAIL_HEAT);
-    if (hash01(state.seed, "engscout-wound", e.tile, state.hour, c.id) < SCOUT.WOUND) {
+    if (hash01(state.seed, "engscout-wound", e.tile, state.hour, localId(state, c.id)) < SCOUT.WOUND) {
       const amt = woundOf(state, c.s, "engscout-hurt");
       if (amt > 0) { hurt(state, c.s, amt, e.tile, `spotted scouting ${tileLabel(state, e.tile)}`); e.scout.wound = amt; }
     }
