@@ -141,8 +141,10 @@ export const HEAT = { fuel: 0.1, bitter: 1.5, freezeAt: 0, bitterAt: -8, wood: 0
 // Fuel one person needs heating a day (today unless dayIdx): 0 at or above 0°C, HEAT.fuel below, ×HEAT.bitter below −8°C.
 export function heatRate(state, dayIdx) {
   const t = Weather.dayMeanTemp ? (dayIdx == null ? Weather.dayMeanTemp(state) : Weather.dayMeanTemp(state, dayIdx)) : 10;
-  return t < HEAT.bitterAt ? HEAT.fuel * HEAT.bitter : t < HEAT.freezeAt ? HEAT.fuel : 0;
+  return heatRateAt(t);
 }
+// The same for a day's mean temperature (°C): the threat forecast (sim/forecast.js) asks it of the forecast's days.
+export const heatRateAt = (t) => (t < HEAT.bitterAt ? HEAT.fuel * HEAT.bitter : t < HEAT.freezeAt ? HEAT.fuel : 0);
 // Firewood for `fuel` worth of heat.
 export const woodFor = (fuel) => Math.round((fuel / HEAT.wood) * 1e9) / 1e9; // rounded off: HEAT.wood is a 30th
 // A shelter (tier 0) with its camp fire lit (fieldheat.js fireLit: lit unless put out) is warmed by the fire. The fire

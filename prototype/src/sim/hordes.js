@@ -181,7 +181,7 @@ export function hordesHour(state) {
     if (h.target == null || h.target === h.tile) { h.move = Math.min(HOURS_PER_TILE, h.move || 0); continue; }
     let speed = 1;
     try { speed = hordeSpeedAt(state, h.tile); } catch { speed = 1; } // the cold and a blizzard where it is (weather.js)
-    h.move = (h.move || 0) + speed * (h.mix && h.mix.runner >= 0.1 ? ZTYPES.runner.speed : 1); // runners set the pace
+    h.move = (h.move || 0) + speed * hordePace(h); // runners set the pace
     if (h.move < HOURS_PER_TILE) continue;
     h.move -= HOURS_PER_TILE;
     const next = nextStep(state, h);
@@ -278,30 +278,44 @@ export function hordesDaily(state) {
     }
     // Wanderers: a build site that needs the dead draws them in (hives.js).
     if (drawnToSite(state, h)) continue;
-    // Drift toward the loudest, closest people.
-    let best = null;
-    for (const b of state.bases) {
-      const dist = g.distance(h.tile, b.tile);
-      if (dist > 8 || (h.shun && h.shun.tile === b.tile && state.hour < h.shun.until)) continue; // beaten off there lately (defences.js retreat)
-      const score = baseHeat(state, b) / (1 + dist * 0.35);
-      if (!best || score > best.score) best = { tile: b.tile, score };
-    }
-    for (const f of state.factions) {
-      if (!f.alive) continue;
-      for (const fb of f.bases) {
-        const dist = g.distance(h.tile, fb);
-        if (dist > 8) continue;
-        const score = (f.pop * 0.5) / (1 + dist * 0.35);
-        if (!best || score > best.score) best = { tile: fb, score };
-      }
-    }
-    // The pull of people grows over the year: 15% of days at the start, 45% from about day 180.
-    if (best && rng.chance(Math.min(0.45, 0.15 + rampDay(state) / 600))) h.target = best.tile; // eras.js rampDay: hardcore counts from the normal start
+    // Drift toward the loudest, closest people (driftTarget), on a share of days (driftPull).
+    const best = driftTarget(state, h);
+    if (best && rng.chance(driftPull(state))) h.target = best.tile;
     else h.target = wanderTarget(state, h);
     // Very big wandering hordes break apart now and then.
     if (h.size > 300 && rng.chance(0.1)) splitHorde(state, h, Math.floor(h.size / 2));
   }
 }
+
+// The people a wandering horde drifts toward on the days it is pulled (hordesDaily): of the bases (yours and the
+// groups') within 8 tiles, the loudest for its distance (baseHeat for yours, half the group's people for theirs); a
+// base it was beaten off lately is left alone. { tile, score } or null. No dice: the threat forecast reads it too
+// (sim/forecast.js).
+export function driftTarget(state, h) {
+  const g = state.grid;
+  let best = null;
+  for (const b of state.bases) {
+    const dist = g.distance(h.tile, b.tile);
+    if (dist > 8 || (h.shun && h.shun.tile === b.tile && state.hour < h.shun.until)) continue; // beaten off there lately (defences.js retreat)
+    const score = baseHeat(state, b) / (1 + dist * 0.35);
+    if (!best || score > best.score) best = { tile: b.tile, score };
+  }
+  for (const f of state.factions) {
+    if (!f.alive) continue;
+    for (const fb of f.bases) {
+      const dist = g.distance(h.tile, fb);
+      if (dist > 8) continue;
+      const score = (f.pop * 0.5) / (1 + dist * 0.35);
+      if (!best || score > best.score) best = { tile: fb, score };
+    }
+  }
+  return best;
+}
+// The share of days a wandering horde turns toward driftTarget: the pull of people grows over the year, 15% of days at
+// the start, 45% from about day 180 (eras.js rampDay: hardcore counts from the normal start).
+export const driftPull = (state) => Math.min(0.45, 0.15 + rampDay(state) / 600);
+// A horde's pace against the plain dead's (hordesHour): many runners move it a quarter faster.
+export const hordePace = (h) => (h.mix && h.mix.runner >= 0.1 ? ZTYPES.runner.speed : 1);
 
 // For the dev tools and the timelapse: the dead on the map by job.
 export function hordeCounts(state) {

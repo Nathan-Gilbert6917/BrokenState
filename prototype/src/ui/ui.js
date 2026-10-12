@@ -144,6 +144,7 @@ import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LA
 import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
 import { packFood, packWater } from "../sim/eating.js"; // the planner's per-person ration line
 import { needsBar } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
+import { threatBar } from "./threatbar.js"; // the top bar's 7-day threat forecast meter and its list of causes
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
 import { NEEDS, STARVE } from "../sim/needs.js";
@@ -192,6 +193,7 @@ const etaOut = (state, est) => Parties.clockText(Math.max(0, (est.exactOut ?? es
 export function topbarParts(state, ui) {
   const h = hub(state);
   const nb = needsBar(state, h);
+  const tf = threatBar(state);
   const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.25, "0.25×", "Slowest: an hour takes 80 seconds, a day 32 minutes (0)"], [0.5, "0.5×", "Slow: an hour takes 40 seconds, a day 16 minutes (1)"], [1, "1×", "Normal: an hour takes 20 seconds, a day 8 minutes (2)"], [2, "2×", "Fast: an hour takes 10 seconds, a day 4 minutes (3)"], [3, "3×", "Very fast: an hour takes about 7 seconds, a day 2 minutes 40 seconds (4)"], [5, "5×", "Fastest, for quiet stretches: an hour takes 4 seconds, a day about 1 minute 36 seconds (5). At 3× and 5× the clock drops back to 1× when a card or a red alert arrives (Options)"]];
   const parts = {
     // The minutes are a slot of their own (main.js fills it every frame as the hour goes by).
@@ -201,6 +203,8 @@ export function topbarParts(state, ui) {
     // The stores as one Needs button with a drop-down list (ui/needsbar.js): main.js writes its button, head and list
     // as slots of their own (needs), the whole of it is the stock slot (tools and tests).
     stock: nb.html,
+    // The 7-day threat forecast (ui/threatbar.js, sim/forecast.js): the same three slots (threat), the whole as threat.
+    threat: tf.html,
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     // UI size and the zombie look are in Menu → Options → Display; the Dev button only with Show dev tools on (ui/display.js).
     tools: `${devButton(ui)}
@@ -213,6 +217,7 @@ export function topbarParts(state, ui) {
       <button data-action="set-open"${tip("Menu: save, load, save and exit, new campaign, options (Esc)")}>⚙ Menu</button>`,
   };
   Object.defineProperty(parts, "needs", { value: nb }); // { btn, head, list }: not one of the slot strings
+  Object.defineProperty(parts, "forecast", { value: tf }); // the same for the threat forecast
   return parts;
 }
 // The planner's weather note: hours the weather adds to the trip compared with fair weather.
@@ -233,7 +238,7 @@ function weatherChip(state) {
 // The whole bar as one string (tools and tests).
 export function renderTopbar(state, ui) {
   const p = topbarParts(state, ui);
-  return `<span class="title">BROKEN STATE</span><span class="clock">${p.clock}</span><span class="speed row">${p.speed}</span><span class="stock">${p.stock}</span>${p.people}<span class="row small" style="margin-left:auto">${p.tools}</span>`;
+  return `<span class="title">BROKEN STATE</span><span class="clock">${p.clock}</span><span class="speed row">${p.speed}</span><span class="stock">${p.stock}</span><span class="threat">${p.threat}</span>${p.people}<span class="row small" style="margin-left:auto">${p.tools}</span>`;
 }
 
 // ---------- left panel ----------
@@ -967,7 +972,8 @@ export function helpText() {
     <b>Saving:</b> ${k("⚙ Menu")} in the top bar (or ${k("Esc")} with nothing open; ${k("⚙ Menu")} in a battle's panel) opens the menu: <i>Save</i>, <i>Load</i>, <i>Save and exit</i> (back to the new-run screen, where <i>Continue</i> picks the latest save up again), <i>New campaign</i>, save files (<i>Export</i>, <i>Save to file</i>, <i>Load from file</i>) and the options (autosave every day or few days at dawn, confirmations, pause when the window loses focus, UI size, the battle's end-turn question, the keys; Display: UI size, zombie look, colour-blind colours, larger map text, reduce motion, the minimap and the dev tools; Confirmations: the questions you stopped). Saves are kept in this browser, compressed: up to 12 named saves plus the last 3 autosaves of each campaign, which also save when a hive assault starts and when the run ends (more under Autosaves and crashes). A save holds everything, a battle under way included; a card waiting for an answer cannot be saved, so answer it first (the autosave waits for that too). Loading pauses the game.<br>
     <b>Dev tools</b> (for testing; switch on <i>Show dev tools</i> in ⚙ Menu → Options → Display, then the ${k("`")} key or the Dev button in the top bar): reveal the map, infection overlay, autopilot (${k("Shift+P")}: an AI governor plays for you), fast forward 60× / 300× / 1200×, show FPS, and the timelapse so far.<br>
     <b>Keys on the map:</b> ${k("Space")} pause / run · ${k("1–5")} speed · ${k("W A S D")} / arrows pan · ${k("H")} hub · ${k("I")} infection overlay · ${k("B")} / ${k("P")} / ${k("G")} / ${k("T")} the Bases / People / Groups / Teams tab · ${k("Tab")} or ${k("N")} next team waiting for orders (Shift+Tab back) · ${k("F1–F9")} jump to your bases · ${k("Ctrl+1–9")} (or ${k("Alt+1–9")}) save a camera spot, ${k("Shift+1–9")} go back to it · ${k("J")} diary · ${k("R")} roster · ${k("M")} minimap · ${k("E")} Ledger (production and use, the run summary) · ${k("Shift+P")} autopilot (dev tools) · ${k("Esc")} closes the top window, then move mode, then the team panel, and with nothing open shows the menu.<br>
-    <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.`;
+    <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.<br><br>
+    <b>Threat forecast:</b> the seven small bars joined to the Needs button in the top bar are the coming week, today first: each as tall and as hot as the worst thing coming that day (calm, watch, danger, severe), with the week's word over them. Hover it (or click it, or tab to it) for the causes day by day: a horde marching on a base (the day it gets there, and whether the walls hold it), a wandering horde that may drift onto the loudest base near it, a war party the lookouts saw or you heard on a group's channel, raiders from outside, storms, blizzards and heat waves in the forecast and the fronts on the map, frost that may kill crops, the day the food, the water, the firewood or the generator fuel runs out, the worm reaching someone's brain, illness spreading, the sick with no meds, a team in the field that runs dry before it can be home, a night march, a hive due near a base, a war with you. Each says how sure it is, whom it hits and where it was learned; click one to see it (the base, the team, the horde on the map). It holds only what your people know: a horde never seen, a raid nobody saw or heard, is not on it. The sky is read 3 days ahead (4 with a watchtower, 5 with a radio station); the days past that have a dashed edge.`;
 }
 
 function cardModal(state, card) {

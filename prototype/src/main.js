@@ -34,6 +34,7 @@ import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPla
 import { fwAt as fieldWorkAt, FIELD, placeProblem, planFieldWork } from "./sim/fieldworks.js"; // field works: the base tab, the tile picker
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's Needs button and its list of every supply
+import { threatSkeleton, initThreatBar, THREAT_ACTIONS } from "./ui/threatbar.js"; // the top bar's 7-day threat forecast
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
@@ -204,7 +205,7 @@ const canvas = $("map");
 // The top bar's slots (index.html). Built here when the page does not have them.
 if (!$("tb-clock")) {
   $("topbar").innerHTML = `<span class="title">BROKEN STATE</span><span class="clock" id="tb-clock"></span><span class="speed row" id="tb-speed"></span>
-    <span class="stock" id="tb-stock"></span><span id="tb-people"></span><span class="row small" id="tb-tools"></span>`;
+    <span class="stock" id="tb-stock"></span><span class="threat" id="tb-threat"></span><span id="tb-people"></span><span class="row small" id="tb-tools"></span>`;
 }
 // The alerts stack on the map (index.html has it; built here when the page does not).
 if (!$("alerts")) {
@@ -361,6 +362,17 @@ function writeNeeds(nb, user) {
   const list = $("nb-list"), top = list.scrollTop;
   if (setHTML("nb-list", nb.list, user) && top) list.scrollTop = top;
 }
+// The threat forecast meter (ui/threatbar.js) the same way: its frame once, then the meter, the head and the list.
+function writeThreat(tf, user) {
+  const root = $("tb-threat");
+  if (!root) return;
+  if (!$("tf-list")) { root.innerHTML = threatSkeleton(); shown.delete("tf-btn"); shown.delete("tf-head"); shown.delete("tf-list"); }
+  initThreatBar(root);
+  setHTML("tf-btn", tf.btn, user);
+  setHTML("tf-head", tf.head, user);
+  const list = $("tf-list"), top = list.scrollTop;
+  if (setHTML("tf-list", tf.list, user) && top) list.scrollTop = top;
+}
 // Writes a panel's HTML if it changed. Returns true when the DOM was touched.
 function setHTML(id, html, user) {
   const el = $(id);
@@ -495,6 +507,7 @@ function refresh(user = true) {
   setHTML("tb-clock", tb.clock, user);
   setHTML("tb-speed", tb.speed, user);
   writeNeeds(tb.needs, user);
+  writeThreat(tb.forecast, user);
   setHTML("tb-people", tb.people, user);
   setHTML("tb-tools", tb.tools, user);
   // A folded panel is not drawn (it is drawn again when it opens).
@@ -1199,7 +1212,7 @@ for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => {
 for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
 // use the handlers above (center, openbase, xp-open).
-for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS, ...WHY_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js); WHY: Why? on deaths and lost bases (ui/causes.js)
+for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS, ...WHY_ACTIONS, ...THREAT_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js); WHY: Why? on deaths and lost bases (ui/causes.js)
 for (const [k, fn] of Object.entries(LEDGER_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Ledger and the run summary (ui/ledger.js)
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS, ...CAR_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
