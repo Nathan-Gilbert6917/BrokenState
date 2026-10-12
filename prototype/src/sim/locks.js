@@ -26,6 +26,7 @@ import { lootItem, allItems } from "./inventory.js";
 import { lockSource } from "./itemcond.js";
 const siteTypeAt = (state, tileId) => { const t = state.tiles && state.tiles[tileId]; return t && t.loc ? t.loc.type : null; }; // lockSource: a gun store's cages
 import { rollBlueprint, bpOfItem } from "./blueprints.js";
+import { BMAP } from "./buildingmaps.js"; // a locked door's strength (call-time only: safe in the import cycle)
 import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a container may cover several cells (a car)
 import { addFindVia } from "./ammo.js"; // rounds by calibre
 import { say as sayB, fx as fxB, setFloor } from "./combat.js"; // gun safes: a charge that goes off at the start of a turn (safeTurn)
@@ -227,7 +228,8 @@ function sealRoom(b, a) {
   const doors = (a.doors || []).filter(([x, y]) => b.cells[idx(x, y)] && ["open", "idoor", "odoor"].includes(b.cells[idx(x, y)].k)); // its doors (combat.js genRaidMap: closed ones)
   if (!doors.length || doors.some(([x, y]) => b.units.some((u) => !u.dead && u.x === x && u.y === y))) return false;
   const old = doors.map(([x, y]) => b.cells[idx(x, y)].k);
-  for (const [x, y] of doors) b.cells[idx(x, y)].k = "door";
+  const hp0 = doors.map(([x, y]) => [b.cells[idx(x, y)].hp, b.cells[idx(x, y)].mhp]);
+  for (const [x, y] of doors) { const c = b.cells[idx(x, y)]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR.locked; } // locked: as strong as any locked door (BMAP.DOOR)
   // Flood from the entry zone over walkable cells (doors and walls are not).
   const z = b.raid.zones[0];
   const seen = new Uint8Array(W * H);
@@ -244,7 +246,7 @@ function sealRoom(b, a) {
   const inside = b.raid.containers.filter((c) => c.area === a.id);
   const cut = inside.every((c) => ![[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dy]) => seen[idx(c.x + dx, c.y + dy)] && walk(c.x + dx, c.y + dy)));
   if (cut) { a.doors = doors; b.losCache.fill(0); return true; }
-  doors.forEach(([x, y], i) => { b.cells[idx(x, y)].k = old[i]; });
+  doors.forEach(([x, y], i) => { const c = b.cells[idx(x, y)]; c.k = old[i]; c.hp = hp0[i][0]; c.mhp = hp0[i][1]; if (c.hp == null) delete c.hp; if (c.mhp == null) delete c.mhp; });
   return false;
 }
 // Cell kinds a unit can stand on (combat.js CELL walk: true; read when called, the modules load in a circle).

@@ -10,6 +10,7 @@
 // Usage: node tools/fielddoortest.js [seed]
 import { reachable, registerCombatHandler, combatAct, runEnemyPhase, CELL, unitAt } from "../src/sim/combat.js";
 import { addKey } from "../src/sim/locks.js";
+import { BMAP } from "../src/sim/buildingmaps.js";
 import { survivorById } from "../src/sim/world.js";
 import { newItem } from "../src/sim/inventory.js";
 import { battles } from "./isobattles.js";
@@ -58,7 +59,7 @@ for (let s = 0; s < 12; s++) for (const got of battles(seed0 * 100 + s, fieldTyp
 // ---------- 1. the houses' doors ----------
 console.log("A field map's houses have doors");
 {
-  let nHouses = 0, gaps = 0, doors = 0, locked = 0, open = 0, cut = 0, noDoor = 0, badLock = 0, hpLess = 0;
+  let nHouses = 0, gaps = 0, doors = 0, locked = 0, open = 0, cut = 0, noDoor = 0, badLock = 0, hpLess = 0, weakLock = 0;
   for (const { b } of maps) {
     for (const h of houses(b)) {
       nHouses++;
@@ -75,6 +76,7 @@ console.log("A field map's houses have doors");
       if (ins.length && !ins.some((j) => b.reach[j]) && dd.some((j) => b.cells[j].k === "door")) cut++;
     }
     for (const d of b.doors || []) if (b.cells[d.y * b.w + d.x].k !== "door" || d.lock.kind !== "door") badLock++;
+    weakLock += b.cells.filter((c) => c.k === "door" && !(c.mhp === BMAP.DOOR.locked && c.hp === c.mhp)).length;
     badLock += b.cells.filter((c) => c.k === "door").length - (b.doors || []).length;
   }
   check(nHouses >= 20, `${maps.length} field maps, ${nHouses} houses`);
@@ -83,6 +85,7 @@ console.log("A field map's houses have doors");
   check(locked > 0 && locked < doors / 2, `some locked (${locked} of ${doors}), some left open (${open})`);
   check(badLock === 0, "every locked door cell is one of b.doors (sim/locks.js opens it), and only those");
   check(hpLess === 0, "every door has strength (the dead batter it: BMAP.DOOR)");
+  check(weakLock === 0 && BMAP.DOOR.locked >= BMAP.DOOR.outer * 3, `a locked door is the strong one: ${BMAP.DOOR.locked} hp against ${BMAP.DOOR.outer} for a closed one (about ten blows of the dead)`);
   check(cut === 0, `every house can be walked into from the map (${cut} cut off)`);
 }
 
@@ -251,7 +254,7 @@ for (const [kind, lockAll] of [["zombie", false], ["human", false], ["human", tr
   const { st, b, h } = best;
   st.combat = b;
   if (lockAll) for (const j of h.rim) if (b.cells[j].k === "window") b.cells[j].k = "wall"; // nothing to shoot in through: they must break in
-  if (lockAll) for (const j of h.rim) if (b.cells[j].k === "idoor") { const c = b.cells[j]; c.k = "door"; c.hp = c.mhp = 55; (b.doors = b.doors || []).push({ id: 900 + j, x: j % b.w, y: (j / b.w) | 0, lock: { kind: "door", open: false, tries: 0 } }); }
+  if (lockAll) for (const j of h.rim) if (b.cells[j].k === "idoor") { const c = b.cells[j]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR.locked; (b.doors = b.doors || []).push({ id: 900 + j, x: j % b.w, y: (j / b.w) | 0, lock: { kind: "door", open: false, tries: 0 } }); }
   const mine = b.units.filter((u) => u.side === "player" && !u.dead);
   const spots = h.inner.filter((j) => CELL[b.cells[j].k].walk && !b.units.some((o) => o.x === j % b.w && o.y === ((j / b.w) | 0)));
   mine.forEach((u, i) => { if (i < Math.min(2, spots.length)) { u.x = spots[i] % b.w; u.y = (spots[i] / b.w) | 0; } else { u.dead = true; } });

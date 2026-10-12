@@ -61,7 +61,7 @@ export const BMAP = {
   // Doors' hit points (the dead batter a closed door: a claw blow does about 10–16; people open it unless it is braced
   // or locked, then they kick or shoot it in): an inner door, an outer one, a roller door, a cell door, a locked
   // door, a steel security door.
-  DOOR: { inner: 30, outer: 45, roller: 70, cell: 60, locked: 55, vault: 90 },
+  DOOR: { inner: 30, outer: 45, roller: 70, cell: 60, locked: 160, vault: 240 }, // a locked door holds the dead a good while (claws 12-20 a blow: about ten)
   BRACE: 0.5,          // a door braced from the other side takes this share of each blow (Brace: the rest of the turn)
   DOOR_NOISE: { radius: 7, noise: 0.5 }, // each blow on a door: earshot (the dead and guards come to look) and noise (Heat)
   // Peeking through a door (free, once a turn a unit): see from the far side of it, this far; an unaware guard who
