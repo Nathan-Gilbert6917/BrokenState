@@ -24,7 +24,7 @@ import { hasPerk, gainXp, USE } from "./skills.js";
 import { noteTreated } from "./relations.js";
 import { FIELD_CARE } from "./medfinds.js";
 import { healMult } from "./traits.js"; // Quick Healer
-import { wormHealMult, wormSeen } from "./worm.js"; // the worm: half the healing while it is in them (full in a hospital bed with meds); meds slow it
+import { wormHealMult } from "./worm.js"; // the worm: half the healing while it is in them, nothing from a bed
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
@@ -157,16 +157,17 @@ export function bedReason(state, base, s) {
   return "";
 }
 
-// Who gets a hospital bed: the people who need one (bedReason), worst off first, capped by beds.
+// Who gets a hospital bed: the people who need one (bedReason), worst off first, capped by beds; worm carriers last
+// (the bed does nothing for them: worm.js).
 // Patients do not work their role while in bed (s.inBed, set hourly in medicalHour).
 export function patients(state, base, h = activeHospital(state, base)) {
   if (!h.beds) return [];
   // Residents: the people here plus (hub) trade-route escorts waiting between trips.
-  return residents(state, base.id).filter((s) => bedReason(state, base, s)).sort((a, b) => careNeed(b) - careNeed(a)).slice(0, h.beds);
+  return residents(state, base.id).filter((s) => bedReason(state, base, s)).sort((a, b) => (+!!a.worm - +!!b.worm) || careNeed(b) - careNeed(a)).slice(0, h.beds);
 }
 
 // Meds used on them in the last day (a wound treated, an illness dosed, the worm purged or operated on: s.medsHour).
-// The worm (worm.js wormHealMult): a hospital bed heals them at the full rate on such a day, else at half.
+// The worm (worm.js medicatedDay): such a day slows it and softens its damage.
 export const medsToday = (state, s) => !!s && Number.isFinite(s.medsHour) && state.hour - s.medsHour >= 0 && state.hour - s.medsHour <= 24;
 // Passive heal per hour for one survivor at a base.
 export function healRatePerHour(state, base, s, hosp = activeHospital(state, base), inBed = null) {
@@ -174,13 +175,14 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   const bed = inBed != null ? inBed : patients(state, base).includes(s);
   let perDay = BASE_HEAL_PER_DAY + hosp.baseSkill * 0.4;
   if (isCamp(base)) perDay += BASE_HEAL_PER_DAY; // resting in camp: twice a base without a hospital (as orders.js campHealPerHour)
-  if (bed && hosp.tier > 0) perDay += hosp.heal + hosp.staffSkill * 0.5 + ((hosp.staff || []).some((m) => hasPerk(m, "chiefmedic")) ? 6 : 0); // Chief of Medicine (skills.js)
+  const bedHeals = bed && hosp.tier > 0 && !s.worm; // the worm (worm.js): a hospital bed does nothing for a carrier
+  if (bedHeals) perDay += hosp.heal + hosp.staffSkill * 0.5 + ((hosp.staff || []).some((m) => hasPerk(m, "chiefmedic")) ? 6 : 0); // Chief of Medicine (skills.js)
   // Severe wounds heal slowly without a bed; the hospital tier sets the speed in a bed.
-  if (isSevere(s)) perDay *= bed && hosp.tier > 0 ? hosp.severe : SEVERE_NO_BED;
+  if (isSevere(s)) perDay *= bedHeals ? hosp.severe : SEVERE_NO_BED;
   if (s.woundInfected) perDay = perDay * 0.5 - 2;
   // Nobody recovers on an empty stomach: no healing while the base is out of food (wounds can still worsen).
   if ((base.hungerDays > 0 || base.thirstDays > 0) && perDay > 0) perDay = 0; // nor without water (economy.js)
-  if (perDay > 0) perDay *= wormHealMult(s, { bed: bed && hosp.tier > 0, meds: medsToday(state, s) }) * healMult(s); // worm.js: half while it is in them, full in a hospital bed with meds today; Quick Healer (traits.js)
+  if (perDay > 0) perDay *= wormHealMult(s) * healMult(s); // worm.js: half while it is in them; Quick Healer (traits.js)
   return perDay / 24;
 }
 
@@ -366,7 +368,7 @@ function woundInfo(state, base, s, ctx) {
   const value = shown ? shown.value : 0;
   // Perks of the one treating (skills.js): Steady Hands +25%, Miracle Worker's surgery 2× instead of 1.5×.
   const who = t ? t.s : shown ? shown.s : null;
-  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? (hasPerk(who, "miracle") ? 2 : SURGERY_MULT) : 1) * (hasPerk(who, "steadyhands") ? 1.25 : 1) * wormHealMult(s, { bed: !!(s && s.inBed) && hosp.tier > 0, meds: true })); // worm.js: half while infected, full in a hospital bed (the treatment is the meds)
+  const heal = Math.round((hosp.treat + value * 0.5) * hosp.eff * (surgery ? (hasPerk(who, "miracle") ? 2 : SURGERY_MULT) : 1) * (hasPerk(who, "steadyhands") ? 1.25 : 1) * wormHealMult(s)); // worm.js: half while infected, in a bed or not
   const cureChance = !s || !s.alive || !s.woundInfected ? 0 : hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + value * 0.03);
   const treatedToday = !!s && s.woundTreatedDay === ctx.day;
   let reason = "";
@@ -391,7 +393,7 @@ function applyWound(state, base, s, info) {
   base.stock.meds = Math.max(0, (base.stock.meds || 0) - info.cost);
   spendMedicTime(state, base, info.treater, info.load);
   s.woundTreatedDay = day(state);
-  s.medsHour = state.hour; // medsToday (the worm: a hospital bed heals at the full rate today)
+  s.medsHour = state.hour; // medsToday (the worm: a day healed with meds slows it, worm.js medicatedDay)
   useMedKit(state, info.medic);
   gainXp(state, info.medic, "medicine", info.surgery ? USE.surgery : USE.wound); // skills.js
   const before = s.health;
@@ -430,8 +432,7 @@ export function autoCare(state, base, { plan = false } = {}) {
   for (const s of people) {
     const jobs = [];
     const hp = hpAtNight(s);
-    // The worm spotted in them: treated whenever hurt, since a day healed with meds slows it (worm.js medicatedDay).
-    const woundDue = isHurt(s) && (hp < 100 || s.woundInfected) && (hp < AUTO_BELOW || s.woundInfected || wormSeen(s));
+    const woundDue = isHurt(s) && (hp < 100 || s.woundInfected) && (hp < AUTO_BELOW || s.woundInfected);
     const woundFirst = s.woundInfected || isSevere(s);
     const conds = conditionsOf(s).filter((c) => autoWantsCondition(c)).sort((a, b) => conditionDanger(b) - conditionDanger(a));
     if (woundDue && woundFirst) jobs.push({ kind: "wound" });
@@ -515,7 +516,7 @@ export function dailyHealthChange(state, base, s, { hosp = activeHospital(state,
 // ---------- treating in the field ----------
 export const partyMeds = (p) => Math.max(0, (p.supplies.meds || 0)) + Math.max(0, (p.cargo && p.cargo.supplies.meds) || 0);
 
-function takeMeds(p, qty) {
+export function takeMeds(p, qty) {
   const fromCargo = Math.min(qty, Math.max(0, (p.cargo && p.cargo.supplies.meds) || 0));
   if (fromCargo) p.cargo.supplies.meds -= fromCargo;
   p.supplies.meds = (p.supplies.meds || 0) - (qty - fromCargo);

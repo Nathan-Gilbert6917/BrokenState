@@ -293,7 +293,7 @@ export function applyCondition(state, base, s, key, info) {
   const c = conditionsOf(s).find((x) => x.key === key);
   base.stock.meds = Math.max(0, (base.stock.meds || 0) - info.cost);
   noteMeds(state, base, info.cost);
-  if (info.cost > 0) s.medsHour = state.hour; // medical.js medsToday: the worm heals at the full rate in a hospital bed today
+  if (info.cost > 0) s.medsHour = state.hour; // medical.js medsToday: a day healed with meds slows the worm (worm.js medicatedDay)
   spendMedicTime(state, base, info.treater, info.load);
   gainXp(state, info.medic, "medicine", USE.illness); // skills.js
   const gone = giveDose(state, s, c, info.amount);
