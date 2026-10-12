@@ -17,7 +17,6 @@
 // (cut out of the darkness); by day the floors of the dark rooms (a barn, a storeroom) are shaded (drawShade, under the
 // units and walls), and only there does a light switched on by day shine (its beam cut out of the shade).
 import { LIGHTS } from "../sim/lights.js";
-import { activeLight } from "../sim/vision.js";
 import { FLARE } from "../sim/throwables.js";
 import { activeLight } from "../sim/vision.js"; // the light a unit has switched on
 import { roomCells, darkAt } from "../sim/indoorlight.js";
