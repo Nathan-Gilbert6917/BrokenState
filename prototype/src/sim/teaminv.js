@@ -71,7 +71,7 @@ export const teamsAtBase = (state, base) => state.parties.filter((p) => isPlayer
 // ---------- what a team has ----------
 // Every place an item is on a person, with how to take it off and put it back: worn and held, pockets, the rig's
 // pouches, a worn carrier's plates, the pack's slots. { item, where, loc, take(), put(item) }.
-function spotsOf(s) {
+export function spotsOf(s) {
   ensureInv(s);
   const pre = `s:${s.id}`;
   const out = [];
@@ -350,7 +350,7 @@ function result(moved, refused, where) {
   return { moved, refused, text };
 }
 // Picks to the items themselves (location strings name a place now; the items are what move).
-function resolveTeamItems(state, p, list) {
+export function resolveTeamItems(state, p, list) {
   const out = [];
   for (const x of list) {
     let it = null;
@@ -374,7 +374,7 @@ function resolveArmoryItems(base, list) {
   return out;
 }
 // Where an item is on the team now: { take(), put(item) } or null.
-function findOnTeam(state, p, it) {
+export function findOnTeam(state, p, it) {
   const ci = p.cargo.gear.indexOf(it);
   if (ci >= 0) return { take: () => { const j = p.cargo.gear.indexOf(it); if (j >= 0) p.cargo.gear.splice(j, 1); }, put: (x) => p.cargo.gear.splice(Math.min(ci, p.cargo.gear.length), 0, x) };
   for (const s of partyMembers(state, p)) {

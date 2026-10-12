@@ -18,6 +18,7 @@
 // Pure UI: reads the state, never changes it, no dice.
 import { LIGHTS, lightOf } from "../sim/lights.js";
 import { partyTile, partyMembers, glideAt } from "../sim/parties.js";
+import { contactable } from "../sim/orders.js";
 import { count } from "../sim/buildings.js";
 import { poweredType } from "../sim/power.js";
 import { festivalNow } from "../sim/festival.js";
@@ -86,7 +87,7 @@ export function mapLights(state, G, boost, frac = 0, hex = 26) {
       if (p.phase === "siege" && state.live && state.live.has(partyTile(p))) { const [x, y] = at(partyTile(p)); out.push([x - 18 * boost, y + 14 * boost, 26 * boost, 0.75, FIRE]); }
       continue;
     }
-    if (!(p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task")) continue;
+    if (!(p.kind === "convoy" || contactable(p))) continue; // your teams: where they are (sim/orders.js)
     let [x, y] = at(partyTile(p));
     if (!state.timelapse && p.path && p.idx < p.path.length - 1) {
       const gl = glideAt(state, p, frac);
