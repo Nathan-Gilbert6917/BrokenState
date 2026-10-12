@@ -15,6 +15,8 @@
 //   their night's sleep, stays as it is). After a 22–06 watch that is about 06–14; a day watch (06–14, 14–22) has none.
 //   Away from a base (a team, a crew, a captive): no more tired, and TIRED.AWAY (2) an hour off in the default night,
 //   or any hour while they still owe the sleep of a watch (s.sleepIn: sent out right after it, they doze on the way).
+//   A team pushing on through the night (nightmarch.js marchingNow): nobody sleeps, NIGHT_MARCH.TIRED (4) owed an
+//   hour on the move, so a whole night's march leaves them Tired; resting in camp (the rest task) sleeps it off by day too.
 //   Out at a field work on a shift (location "post", sim/fieldworks.js: a tower's lookouts, a roadblock's guards): awake,
 //   as on the watch; home from a shift that ran into their sleep hours (s.postNight), they sleep in as off a watch.
 // Tired (TIRED.TIRED, 24 owed: a whole day up): aim −5 in battle (combat.js playerUnit), mood −0.1 an hour.
@@ -24,6 +26,7 @@
 import { hourOfDay, baseById } from "./world.js";
 import { roleOf, isManaged, schedAt, healthRest } from "./work.js";
 import { onWatchNow, watchShift } from "./watch.js";
+import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // a team pushing on through the night
 
 export const TIRED = {
   AWAKE: 1, SLEEP: 3, AWAY: 2, NIGHT: [22, 6], MAX: 72,
@@ -66,7 +69,15 @@ export function tiredHour(state) {
     }
     if (s.postNight) { if (t >= TIRED.SLEEP_IN) s.sleepIn = true; delete s.postNight; } // home off a night shift: sleep it off
     if (s.location.kind !== "base") {
-      if (t > 0 && (defaultNight(h) || s.sleepIn)) s.tired = Math.max(0, t - TIRED.AWAY);
+      const p = s.location.kind === "party" ? state.parties.find((x) => x.id === s.location.partyId) : null;
+      if (p && marchingNow(state, p)) { // pushing on through the night (nightmarch.js): the night's sleep missed
+        s.tired = Math.min(TIRED.MAX, t + NIGHT_MARCH.TIRED);
+        const lv = tiredLevel(s);
+        if (lv) s.mood = Math.max(0, (s.mood || 0) - TIRED.MOOD[lv]);
+        continue;
+      }
+      const resting = !!p && p.phase === "task" && !!p.task && p.task.type === "camp"; // resting in camp sleeps it off by day too
+      if (t > 0 && (defaultNight(h) || s.sleepIn || resting)) s.tired = Math.max(0, t - TIRED.AWAY);
       if (s.sleepIn && !(s.tired > 0)) delete s.sleepIn;
       continue;
     }
