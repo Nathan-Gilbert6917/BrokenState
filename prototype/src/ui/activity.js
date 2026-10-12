@@ -9,6 +9,8 @@ import { planIdle, planText } from "../sim/idlework.js"; // "Assign all idle": e
 import { fold } from "./panelfold.js"; // the Bases tab's per-base Idle drop-downs (open state kept)
 import { TRIP_JOBS } from "../sim/tripland.js"; // the outdoor jobs: their loads come in as they get home (sim/jobtrips.js)
 import { kitWarnings, gearOutdoorWorkers } from "../sim/tripgear.js"; // the outdoor workers' kit: the chips, Gear outdoor workers (trips-plus #2)
+import { lunchHour } from "../sim/meals.js"; // the lunch hour (the Work tab)
+const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -124,7 +126,7 @@ export function assignIdlePreview(state, base) {
 export function workNowPanel(state, base) {
   const rows = baseWork(state, base);
   if (!rows.length) return "";
-  return `<div class="worknow"><h3${tip("Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). The outdoor jobs (wood, foraging, hunting, fishing, scavenging, fetching water) go out in trips to the base's land and bring each load into the store as they get home (on the map: the Base workers layer); the workshops, teaching and reading bring theirs in at midnight. Breakfast (06:00, hunters and fishers 10:00) and dinner (20:00): building and crafting stop for them; someone out on a trip eats when back.")}>Work now</h3>${gearOutButton(state, base)}${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
+  return `<div class="worknow"><h3${tip(`Every job here: who is on it and what each of them is doing this hour, how far the day's work has got, and what it brought in on its last days (hover the sparkline for 7 days). The outdoor jobs (wood, foraging, hunting, fishing, scavenging, fetching water) go out in trips to the base's land and bring each load into the store as they get home (on the map: the Base workers layer); the workshops, teaching and reading bring theirs in at midnight. Breakfast (06:00, hunters and fishers 10:00) and dinner (20:00): building and crafting stop for them; someone out on a trip eats when back. Lunch (${hh(lunchHour(state))}, set in the Work tab): all work stops; someone out on a trip eats from their pack where they are.`)}>Work now</h3>${gearOutButton(state, base)}${idleList(state, base)}${rows.map((r) => wnRow(state, base, r)).join("")}</div>`;
 }
 
 // ---------- the Bases card and the alerts ----------

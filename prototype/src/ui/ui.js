@@ -83,7 +83,7 @@ import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower, carriedSpo
 import { inventoryModal, takeLootReq } from "./inventory.js";
 import { armoryView, armoryScope } from "./armoryview.js"; // the Armory tab's stored gear: grouped, cards or compact rows
 import { itemShortTip, tipAttrs } from "./itemlabels.js"; // the armory cards' short hover tip (Shift: the whole one)
-import { teamInvModal, teamsHereCard, transferButtons } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
+import { teamInvModal, teamsHereCard, transferButtons, unpackUp, unpackModal } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
 import { fleetPicker } from "./fleetpick.js"; // the vehicle picker the planners share (up to four)
 import { plannedFleet, pickProblem } from "../sim/teamform.js";
 import { teamFormModal, formTeamButton, editTeamButton, formTeamRow } from "./teamform.js"; // Form a team… at a base; Edit team… for a team waiting on one
@@ -96,7 +96,7 @@ import { recruitModal, crowdingRow, moodRiskChip } from "./people.js";
 import { backgroundInfo } from "../sim/hardcore-start.js"; // who they were before Calder fell (a hardcore start; a preset or a custom one)
 import { backgroundEditor } from "./backgrounds.js"; // the new-run screen's custom backgrounds window
 import { startGearEditor } from "./startgear.js"; // the new-run screen's starting gear window (Customize)
-import { skillsBlock, skillTree, studyBlock } from "./skills.js";
+import { skillsBlock, skillTreeModal, studyBlock } from "./skills.js";
 import { trainingInfo, TRAINING, PROFESSOR, lessonGap } from "../sim/training.js"; // the hospital trains medics: ward rounds, the doctor, trainees
 import { skillProgress } from "../sim/skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
@@ -509,7 +509,7 @@ function renderTeams(state, ui) {
         <button data-action="gohome" data-id="${p.id}"${tip("Head back home now. This drops the team's queue.")}>Return home</button>
         ${enterButton(state, p)}${editTeamButton(state, p, "")}
       </div>` : ""}
-      ${p.kind !== "convoy" ? `<div class="row" style="margin-top:0.35rem">${ost && ost.left ? `<span class="muted" style="flex:1">${esc(ost.label)} · ${armed ? "starts when unpaused" : `${ost.left}h left`}${(p.orders || []).length ? ` · +${p.orders.length} queued` : ""}</span>` : `<span style="flex:1"></span>`}<button class="mini" data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and the order queue; camp, scavenge, repair and treat")}>Team panel</button></div>` : ""}
+      ${p.kind !== "convoy" ? `<div class="row" style="margin-top:0.35rem">${ost && ost.left ? `<span class="muted" style="flex:1">${esc(ost.label)} · ${armed ? "starts when unpaused" : `${Parties.clockText(Math.max(0, ost.left - Parties.clockFrac(state)))} left`}${(p.orders || []).length ? ` · +${p.orders.length} queued` : ""}</span>` : `<span style="flex:1"></span>`}<button class="mini" data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and the order queue; camp, scavenge, repair and treat")}>Team panel</button></div>` : ""}
       ${sjob ? `<div class="row" style="margin-top:0.35rem">
         ${p.phase === "holding" ? `<button class="mini" data-action="sr-release" data-id="${sjob.id}" data-how="return"${tip("Load the pick-up goods and head back to the home base")}>Come home</button><button class="mini" data-action="sr-release" data-id="${sjob.id}" data-how="disband"${tip("The crew join the base they are parked at; the vehicle parks there. The job is kept as a template.")}>Disband here</button>` : ""}
         ${baseById(state, sjob.originId) ? `<button class="mini" data-action="openbase" data-id="${sjob.originId}" data-tab="convoys"${tip("Open the Supply runs tab of the home base")}>Supply runs…</button>` : `<span class="muted"${tip("The base this run started from was lost. The convoy finishes its trip.")}>home base lost</span>`}
@@ -800,6 +800,7 @@ function pickModal(state, ui) {
   // A card that stops the clock by the pause rules, or one opened from the tray (ui/pacing.js puts it first).
   if (nameModalUp(state, ui)) return ["namebase", () => nameBaseModal(state, ui)]; // ui/basename.js: a base just founded, or ✎ Rename (before its founding card)
   if (cardUp(state, ui)) return ["card", () => trayCardFrame(state, ui, cardModal(state, state.cards[0]))];
+  if (unpackUp(state, ui)) return ["unpack", () => unpackModal(state, ui)]; // ui/teaminv.js: a team home, what its people carry put away
   if (!state.autopilot && activeCrawl(state)) return ["crawl", () => crawlModal(state, ui)]; // a city crawl's block card (ui/citycrawl.js)
   if (!state.autopilot && activeHiveCrawl(state)) return ["hivecrawl", () => hiveCrawlModal(state, ui)]; // a hive crawl's chamber (ui/hivecrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
@@ -815,6 +816,7 @@ function pickModal(state, ui) {
   if (ui.inv && ui.inv.form) return ["teamform", () => teamFormModal(state, ui)]; // ui/teamform.js: Form a team at a base, or edit one waiting there
   if (ui.inv && ui.inv.team != null) return ["teaminv", () => teamInvModal(state, ui)]; // ui/teaminv.js: a whole team; Drop off and Load at a base
   if (ui.inv) return [`inv:${ui.inv.sid}`, () => inventoryModal(state, ui)]; // closes back to the survivor / base screen under it
+  if (ui.skillTree != null) return ["skilltree", () => skillTreeModal(state, ui)]; // ui/skills.js: perk points, over the survivor screen
   if (ui.survivor) return [`survivor:${ui.survivor}`, () => survivorModal(state, ui)];
   if (ui.memorial) return ["memorial", () => memorialModal(state, ui)]; // ui/relations.js; a name opens the survivor screen over it
   if (ui.baseView) return ["base", () => baseModal(state, ui)];
@@ -1441,7 +1443,7 @@ function survivorModal(state, ui) {
         ${base ? "" : `<div class="small muted">Away from a base, gear moves only between teammates and the team's cargo (Inventory).</div>`}
       </div>
     </div>
-    ${s.alive ? `${studyBlock(state, s)}${skillTree(state, s, ui)}` : ""}
+    ${s.alive ? studyBlock(state, s) : ""}
     ${familyBlock(state, s)}
     ${inContact(state, s) || !s.alive ? relationsSection(state, s, ui) : ""}
     <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="closesurv">Close</button></div></div>`;

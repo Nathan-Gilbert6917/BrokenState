@@ -303,7 +303,7 @@ export function woodHandsWanted(state, base, { w = woodNeed(state, base), days =
 export function woodTrip(state, base, s, tile, hours, hour) {
   const people = atBase(state, base.id).filter((x) => x.role === "wood" && !x.inBed && workFactor(x) >= 0.35);
   if (!people.includes(s)) people.push(s);
-  const crew = chopCrew(people, (base.armory || []).filter(isChopTool));
+  const crew = chopCrew(people); // their own tools: the armory's go out with them (jobtrips.js checkOutTool), the rest cut by hand
   const k = Math.max(0, crew.findIndex((c) => c.s === s)), c = crew[k] || chopCrew([s])[0];
   const m = c.mult * Math.min(1, workFactor(s)) * woodCrowd(k);
   const amount = Math.round(woodRate(state, tile, hour, m) * hours * (0.7 + 0.6 * state.rng.next()) * 100) / 100;

@@ -697,8 +697,8 @@ export function fishSpot(state, tile) {
 }
 const isRod = (it) => it && (it.key === "fishrod" || (GEAR[it.key] && GEAR[it.key].fish === "rod"));
 const isNet = (it) => it && (it.key === "fishnet" || (GEAR[it.key] && GEAR[it.key].fish === "net"));
-const isSpear = (it) => !!(it && GEAR[it.key] && GEAR[it.key].fish === "spear");
-const isFishTool = (it) => isRod(it) || isNet(it) || isSpear(it);
+export const isSpear = (it) => !!(it && GEAR[it.key] && GEAR[it.key].fish === "spear");
+export const isFishTool = (it) => isRod(it) || isNet(it) || isSpear(it);
 // A tool's catch by its condition: a well-made (or well-kept) rod catches more (crafting.js: quality from the crafter).
 const qualityYield = (it) => 0.6 + 0.4 * Math.max(0, Math.min(1, it.quality ?? 1));
 export const fishToolPower = (it) => (GEAR[it.key].fishPower ?? FISH.rod) * qualityYield(it);
@@ -782,7 +782,12 @@ export function fishSummary(state, p, t) {
   const left = got.left >= 1 ? ` No room for ${Math.floor(got.left)} more.` : "";
   const word = gameWord(fishLevel(state, partyTile(p)));
   p.lastHaul = { kind: "fish", rations: got.rations, hour: state.hour };
-  if (got.rations > 0) log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice}: ${Math.floor(got.rations)} days of food in raw fish.`, "good");
+  // The trip's catch so far (parties.js returnHome: what was caught against what reached the stores).
+  const c = p.caught || (p.caught = { fish: 0, fished: 0 });
+  c.fish = Math.round((c.fish + Math.max(0, got.rations || 0)) * 100) / 100;
+  c.fished++;
+  if (got.rations > 0) log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice}: ${r1(got.rations)} days of food in raw fish.`, "good");
+  else log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice} for ${t.done}h and caught nothing.`, "info");
   return got.rations > 0
     ? `Fished ${t.done}h${ice}: ${Math.floor(got.rations)} days of food in raw fish (it spoils in a day or two).${wormNote(state, partyTile(p))}${left} Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`
     : `Fished ${t.done}h${ice} and caught nothing worth keeping. Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`;
@@ -1166,9 +1171,13 @@ export function huntTrip(state, base, s, tile, hours, hour) {
 // The base's fishing tools are shared out over its fishers (fishTools; each one past the first catches a little less:
 // fishCrowdShare), so their trips together catch what the old day's fishing did. Returns { rations, fish, worm, infested }.
 export function fishTrip(state, base, s, shore, hours, hour) {
-  const fishers = atBase(state, base.id).filter((x) => x.role === "fish" && !x.inBed && workFactor(x) >= 0.35);
+  // Only the tools they took out (jobtrips.js checkOutTool: from the armory into their hands or pack): one who has
+  // none catches nothing, and the armory's rods left at home fish for nobody.
+  const frozen = frozenAt(state, hour);
+  if (!carriedItems(s).some((it) => isFishTool(it) && (!frozen || !isSpear(it)))) return { rations: 0, fish: 0, noTool: true };
+  const fishers = atBase(state, base.id).filter((x) => x.role === "fish" && !x.inBed && workFactor(x) >= 0.35 && x.trip && x.trip.job === "fish");
   if (!fishers.includes(s)) fishers.push(s);
-  const k0 = fishTools(state, base, fishers, { frozen: frozenAt(state, hour) });
+  const k0 = fishKit(fishers, [], { frozen });
   const share = fishCrowdShare(k0.used) / fishers.length;
   const kit = { ...k0, power: k0.power * share, spear: (k0.spear || 0) * share };
   const want = fishRate(state, kit, shore, hour) * hours;
