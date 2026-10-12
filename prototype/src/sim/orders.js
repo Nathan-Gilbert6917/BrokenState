@@ -18,6 +18,7 @@ import { startSearchArea } from "./crashes.js";
 import { finishFixCar } from "./foundcars.js"; // a found vehicle repaired on the spot
 import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel } from "./survey.js";
 import { fireLit, FIRE } from "./fieldheat.js";
+import { arrowsWanted } from "./hunting.js"; // a bow and no arrows: they are made before the hunt
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 import { forageProblem, forageHour, forageSummary, campForageHour, campForageNote } from "./foraging.js";
 import { healMult } from "./traits.js"; // Quick Healer
@@ -383,6 +384,17 @@ export function startOrder(state, p, o) {
       return `The team fills every container it has with water (${FETCH_WATER_HOURS}h).`;
     }
     case "hunt": {
+      // A bow or crossbow carried and no arrows (hunting.js arrowsWanted): a dozen made first from the firewood and scrap
+      // carried (a field craft), then the hunt.
+      if (arrowsWanted(partyMembers(state, p), carried(p, "arrows"))) {
+        const opt = fieldCraftOptions(state, p).find((x) => x.key === "arrows");
+        if (opt && opt.ok) {
+          p.orders = p.orders || [];
+          p.orders.unshift(o);
+          startTask(state, p, { type: "craft", recipe: "arrows", hours: opt.hours });
+          return `No arrows for the bows: the team makes a dozen first (${opt.hours}h), then hunts.`;
+        }
+      }
       const why = huntProblem(state, p);
       if (why) return fail(`Hunt: ${why}`);
       startTask(state, p, { type: "hunt", hours: huntHours(o), qty: o.qty });
