@@ -21,7 +21,7 @@ import { commandable, NO_RADIO } from "../sim/plans.js";
 import { partyVehicle } from "../sim/vehicles.js";
 import { HUNT, SNARE, gameAbundance, fishSpot, huntProblem, fishProblem, snareLine, snareProblem } from "../sim/hunting.js";
 import { forageAbundance, forageProblem } from "../sim/foraging.js";
-import { woodAbundance, woodProblem, fireLandOk } from "../sim/woodcutting.js";
+import { woodAbundance, woodProblem, canLight } from "../sim/woodcutting.js";
 import { CLAIM, canClaim, wellProblem, claimOwner } from "../sim/claims.js";
 import { teamFieldItems } from "./fieldworks.js"; // field works: load, unload, wreck, take
 import { LISTEN } from "../sim/radiolisten.js";
@@ -31,7 +31,7 @@ import { setFire, fireLit } from "../sim/fieldheat.js";
 import { sweepOpts } from "../sim/survey.js";
 import { campProblem } from "../sim/staging.js"; // Set up camp: where a camp may stand
 import { crawlTile } from "../sim/citycrawl.js";
-import { transferProblem, loadFromBase } from "../sim/teaminv.js";
+import { transferProblem, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
 import { siteMissions } from "./ui.js";
 import { ask } from "./confirm.js";
 
@@ -208,8 +208,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   if (!water && !base && !theirs) {
     const camping = p.phase === "task" && p.task && p.task.type === "camp" && partyTile(p) === tile;
     const lit = fireLit(p);
-    const burn = fireLandOk(state, tile) || carried(p, "wood") >= 1;
-    const noFire = burn ? "" : "Nothing to burn on this bare ground and no firewood carried.";
+    const burn = canLight(state, p);
+    const noFire = burn ? "" : "No firewood carried: a fire burns firewood (deadfall about only stretches it). Cut wood or bring some.";
     // Set up camp (sim/staging.js): a camp is the barest base; its base window opens when it stands (Strike camp there).
     if (p.owner === "player" && p.kind === "expedition" && !p.caravan && p.crewRole == null) add("Camp", "setcamp", "Set up camp here", [{ type: "mission", mission: "camp" }], { why: cap(campProblem(state, tile) || ""), hint: "Make camp (1 hour, no materials): the team's people live there while it stands, what it carries goes into the camp's stores, its vehicles park there. Manage it in its base window; Strike camp packs everyone up again." });
     if (camping) add("Camp", lit ? "fireout" : "fire", lit ? "Put the camp fire out" : "Light a camp fire", [], { special: lit ? "fireout" : "fire", why: lit ? "" : noFire, hint: lit ? "Darker and quieter, but cold food, unboiled water and cold nights." : "Warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." });
@@ -217,6 +217,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   }
 
   // The team's own gear and land you hold
+  // (on the team's own tile: its inventory, ui/teaminv.js, as its panel's 🎒 Team inventory)
+  if (partyTile(p) === tile && isPlayerTeam(p)) add("Team", "inventory", "🎒 Team inventory…", [], { special: "inventory", hint: "Every member's kit (worn, held, pockets, rig, pack) and the team's cargo side by side: move things between them." });
   if (!water) {
     const vrep = v && !v.destroyed && v.condition < 100 && here;
     if (vrep) { const r = repairInfo(state, p); add("Team", "repair", `Field repair: ${v.name} (${r.hours}h)`, [{ type: "repair" }], { why: r.ok ? "" : r.reason, hint: `${r.hours} hours, 1 part: about +${r.gain}% condition (best Mechanics ${r.mech}).` }); }
@@ -351,8 +353,8 @@ export function runTeamAction(state, ui, d, acts = {}) {
   const it = m.items.find((x) => x.key === d.key);
   if (!it) return "That is not possible there any more.";
   if (it.disabled) return `${it.label}: ${it.disabled}`;
-  if (it.special === "drop" || it.special === "load") {
-    if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special });
+  if (it.special === "drop" || it.special === "load" || it.special === "inventory") {
+    if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special === "inventory" ? "team" : it.special });
     return "";
   }
   if (it.special === "meet") {

@@ -37,6 +37,7 @@ import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
+import { setNightPlan } from "./sim/nightmarch.js"; // the team panel's night plan
 import { strikeCamp, STRIKE_LABEL } from "./sim/staging.js"; // camps: Strike camp (the base window, the tile panel)
 import { setFire } from "./sim/fieldheat.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
@@ -427,7 +428,8 @@ function tidyUi() {
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
   if (ui.fwPlace && !baseById(state, ui.fwPlace.baseId)) { ui.fwPlace = null; ui.fwMsg = ""; }
   view.fwPlace = ui.fwPlace ? fwPlaceTiles(state, ui) : null; // ui/fieldworks.js: the tile picker's highlight
-  if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid) { ui.inv = null; ui.invSel = null; } // only the loot screen and a raid's search window go over a battle
+  if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid && !(ui.inv.peek && !state.combat.over)) { ui.inv = null; ui.invSel = null; } // only the loot screen, a raid's search window and a survivor's kit (look only, ui/inventory.js peekModal) go over a battle
+  if (!state.combat && ui.inv && ui.inv.peek) { ui.inv = null; ui.invSel = null; } // the battle's kit view goes with the battle
   if (state.combat && ui.gunb) ui.gunb = null; // the gun builder: never during a battle
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
   if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
@@ -726,7 +728,7 @@ const actions = {
   // Autopilot: an AI governor runs the holdout (sim/autopilot.js). A battle or loot screen left open is finished for you.
   "dev-autopilot": () => {
     if (!ui.started || state.gameOver) return;
-    if (!state.autopilot) { ui.cardResult = null; if (ui.inv && (ui.inv.loot || ui.inv.raid)) { ui.inv = null; ui.invSel = null; } }
+    if (!state.autopilot) { ui.cardResult = null; if (ui.inv && (ui.inv.loot || ui.inv.raid || ui.inv.peek)) { ui.inv = null; ui.invSel = null; } }
     setAutopilot(state, !state.autopilot);
   },
   "dev-persona": (d) => { setPersonality(state, d.v); },
@@ -891,6 +893,7 @@ const actions = {
   "xp-open": (d) => { if (ui.expedition !== Number(d.id)) ui.qSel = null; ui.expedition = Number(d.id); ui.xpMsg = ""; const p = partyById(d.id); if (p && contactable(p)) { ui.selected = partyTile(p); view.selected = ui.selected; } },
   "xp-close": () => { ui.expedition = null; ui.xpMsg = ""; ui.qSel = null; },
   "xp-queuemode": () => { ui.xpQueue = !ui.xpQueue; },
+  "xp-night": (d) => { const p = partyById(d.id); if (p && (contactable(p) || commandable(state, p))) ui.xpMsg = setNightPlan(state, p, d.plan); }, // sim/nightmarch.js
   "xp-orderstoggle": () => { ui.ordersCollapsed = !ui.ordersCollapsed; },
   "xp-order": (d) => {
     const p = partyById(d.id);
@@ -1150,7 +1153,7 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv"]) actions[k] = (d) => combatAction(state, k, d);
 // Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
 for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.

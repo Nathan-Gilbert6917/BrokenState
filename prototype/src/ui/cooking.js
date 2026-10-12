@@ -9,7 +9,7 @@ import { GEAR } from "../sim/data.js";
 import {
   COOK, POISON, COOK_RECIPES, RECIPE_KEYS, CLASSES, NEEDS_NAME, STATIONS, stationName, stationsAt, stationState, stationWhy,
   ensureStations, addBill, removeBill, moveBill, setBill, setStationClean, billTarget, billHave, billDone, modeText,
-  recipeSkillOk, booksFor, recipeText, machineAt, skillPz, poisonChance, kitchenCrew, fireCrew, cookingHelp,
+  recipeSkillOk, madeAt, booksFor, recipeText, machineAt, skillPz, poisonChance, kitchenCrew, fireCrew, cookingHelp,
 } from "../sim/cooking.js";
 import { isKnown } from "../sim/blueprints.js";
 import { pbar, badge, sectionHead, infoTip } from "./uikit.js";
@@ -91,7 +91,7 @@ function crewLine(state, b, key) {
 }
 // The add-a-bill select: every recipe made at this station (locked ones say why).
 function addSelect(state, b, key) {
-  const opts = RECIPE_KEYS.filter((k) => !COOK_RECIPES[k].team && COOK_RECIPES[k].at.includes(key)).map((k) => {
+  const opts = RECIPE_KEYS.filter((k) => !COOK_RECIPES[k].team && madeAt(state, b, key, k)).map((k) => {
     const R = COOK_RECIPES[k];
     const sk = recipeSkillOk(state, b, key, k);
     const lack = [R.needs && !machineAt(state, b, R.needs) ? `needs ${NEEDS_NAME[R.needs]}` : "", sk.ok ? "" : `Cooking ${sk.min}`].filter(Boolean).join(", ");
@@ -113,7 +113,7 @@ export function stationCard(state, b, key) {
 }
 // The Farming tab's Cooking section (every station at the base), or "" with none.
 export function cookingCard(state, b) {
-  const keys = stationsAt(b);
+  const keys = stationsAt(b, state); // a camp cook pot at a base with no Kitchen or cook fire is a Camp fire (cooking.js)
   if (!keys.length) return "";
   ensureStations(state, b);
   return `${sectionHead(`Cooking${infoTip("Bills, as in RimWorld: each station cooks its list from the top. Meals are more filling than their makings, take purified water, and spoil in days. Help: Cooking and meals.")}`)}${keys.map((k) => stationCard(state, b, k)).join("")}`;

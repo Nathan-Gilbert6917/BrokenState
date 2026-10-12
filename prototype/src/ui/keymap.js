@@ -59,6 +59,7 @@ export const KEYMAP = [
   { id: "win.palette", label: "Search (command palette)", group: "Windows", ctx: "map", keys: ["Ctrl+KeyK", "Slash"] },
   { id: "team.next", label: "Next team waiting for orders", group: "Teams", ctx: "map", keys: ["Tab", "KeyN"] },
   { id: "team.prev", label: "Previous team waiting for orders", group: "Teams", ctx: "map", keys: ["Shift+Tab", "Shift+KeyN"] },
+  { id: "team.inventory", label: "The selected team's inventory", group: "Teams", ctx: "map", keys: ["Shift+KeyB"] },
   ...range(9).map((n) => ({ id: `base.${n}`, label: n === 1 ? "Jump to the hub (base 1)" : `Jump to base ${n}`, group: "Bases", ctx: "map", keys: [`F${n}`] })),
   ...range(9).map((n) => ({ id: `cam.save${n}`, label: `Save camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Ctrl+Digit${n}`, `Alt+Digit${n}`, `Ctrl+Numpad${n}`, `Alt+Numpad${n}`] })),
   ...range(9).map((n) => ({ id: `cam.go${n}`, label: `Go to camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Shift+Digit${n}`, `Shift+Numpad${n}`] })),
@@ -83,7 +84,7 @@ export const KEYMAP = [
   { id: "bview.zoomOut", label: "Zoom out", group: "Battle view", ctx: "battle", keys: ["Minus", "NumpadSubtract"] },
   { id: "bview.center", label: "Center on the selected unit", group: "Battle view", ctx: "battle", keys: ["Home"] }, // V before (V is Melee now)
   { id: "bview.roofs", label: "Roofs on / off", group: "Battle view", ctx: "battle", keys: ["KeyB"] },
-  { id: "bview.cones", label: "View cones on / off (your people and the enemies you see)", group: "Battle view", ctx: "battle", keys: ["Shift+KeyB"] },
+  { id: "bview.cones", label: "View cones on / off (your people and the enemies you see)", group: "Battle view", ctx: "battle", keys: ["Alt+KeyC"] }, // Shift+B is the inventory
   { id: "bview.floorUp", label: "Show the floor above", group: "Battle view", ctx: "battle", keys: ["PageUp"] },
   { id: "bview.floorDown", label: "Show the floor below", group: "Battle view", ctx: "battle", keys: ["PageDown"] },
   { id: "battle.cancel", label: "Cancel the current action, close a question", group: "Battle", ctx: "battle", keys: ["Escape"], fixed: true },
@@ -94,6 +95,7 @@ export const KEYMAP = [
   ...range(9).map((n) => ({ id: `battle.unit${n}`, label: `Select unit ${n}`, group: "Battle units", ctx: "battle", keys: [`Digit${n}`] })),
   { id: "battle.autoplay", label: "The AI plays your side (again: take back control)", group: "Battle", ctx: "battle", keys: ["Shift+KeyA"] },
   { id: "battle.retreatAll", label: "Sound the retreat (on a wall map: fall back to the yard)", group: "Battle", ctx: "battle", keys: ["Shift+KeyR"] },
+  { id: "battle.inventory", label: "The selected survivor's inventory (look only)", group: "Battle", ctx: "battle", keys: ["Shift+KeyB"] },
   { id: "battle.clear", label: "The area is clear enough: end the fight", group: "Battle", ctx: "battle", keys: ["Shift+KeyC"] },
   { id: "bview.hud", label: "Fold or open the squad strip and the weapon panel", group: "Battle view", ctx: "battle", keys: ["Backquote"] }, // ui/battlehud.js
   { id: "battle.search", label: "Search the container or body next to the unit", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyS"], v: "search" },

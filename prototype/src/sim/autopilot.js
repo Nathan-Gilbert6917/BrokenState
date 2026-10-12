@@ -106,7 +106,7 @@ import {
   hasBow, autoHuntMix, setHuntMix, huntMixOf, huntArrowsFor, huntMixText, huntYield,
 } from "./hunting.js";
 import { landFoodOptions, forageWorkWhy, forageWorkCap, foragerMult, baseForageDay } from "./foraging.js";
-import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, WOOD } from "./woodcutting.js";
+import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcutterMult, bestChop, baseWoodDay, woodAbundance, woodLevel, expectWood, chopCrew, chopPower, isChopTool, woodTime, canLight, WOOD } from "./woodcutting.js";
 import { siteKnown } from "./discovery.js";
 import { packTripKit, HIVE_KIT } from "./kit.js";
 import { openCasesIn } from "./gunsafes.js";
@@ -336,8 +336,9 @@ export function autopilotHour(state) {
 // and put out at night unless it is cold or someone there is badly hurt (the light carries).
 function autoFires(state) {
   const hurt = (people) => people.some((s) => s.health < ROAD.heal);
-  for (const b of state.bases) if (isShelter(b)) b.fire = fireWanted(state, { hurt: hurt(atBase(state, b.id)) });
-  for (const p of state.parties) if (p.owner === "player" && p.phase === "task" && p.task && p.task.type === "camp") p.campFire = fireWanted(state, { hurt: hurt(partyMembers(state, p)) });
+  // A fire burns firewood (woodcutting.js shelterFire / campFireHour): with none to burn it is not lit.
+  for (const b of state.bases) if (isShelter(b)) b.fire = fireWanted(state, { hurt: hurt(atBase(state, b.id)) }) && canLight(state, b);
+  for (const p of state.parties) if (p.owner === "player" && p.phase === "task" && p.task && p.task.type === "camp") p.campFire = fireWanted(state, { hurt: hurt(partyMembers(state, p)) }) && canLight(state, p);
 }
 
 // ---------- one base (the autopilot's hourly loop and base stewards, steward.js) ----------
@@ -2908,6 +2909,9 @@ function wormWishes(state, base, queued) {
   // Wave 2 cooking (cooking.js POISON.raw): raw meat and fish eaten uncooked give food poisoning, so a base whose
   // hunters or fishers bring it in gets a cook fire (6 scrap) too.
   else if (!baseCooks(base) && !queued("cookhouse") && (working || foodUnits(base, (k, f) => !!f.raw) >= 1)) out.push({ type: "cookhouse", why: "raw meat and fish eaten uncooked give food poisoning", save: false });
+  // Camp fires (2026-10-12): days without hot food sour the mood (eating.js THOUGHTS.cold), so a base with nothing to
+  // cook on (no Kitchen, no cook fire) wants a cook fire anyway.
+  else if (!baseCooks(base) && !queued("cookhouse") && !hasKitchen(base) && atBase(state, base.id).length) out.push({ type: "cookhouse", why: "hot meals: days of cold food sour the mood", save: false });
   return out;
 }
 // A queued job that keeps the worm out (planRoles 1c): the water boiler while the base drinks un-purified water, a
@@ -5201,6 +5205,8 @@ function planWaterRun(state) {
   // Rations: fresh food first, preserved for the rest (storage.js).
   const eat = est.food + 1;
   const sup = { food: eat, water: est.water + 1 }; // food: days of it (packed as what keeps: parties.js)
+  const archers = archerCount(crew); // the bows' arrows go along, as on every other trip (a dozen each, what the hub has)
+  if (archers) sup.arrows = Math.min(Math.max(0, h.stock.arrows || 0), archers * ARROWS.PACK);
   if (edibleFood(h) < eat + home.length * 2 || waterIn(h.stock) < sup.water) return;
   const res = launchExpedition(state, { memberIds: ids, dest: shore, mission: "move", stance: "normal", supplies: sup, plan: { preset: "custom", steps }, tabs: armoryTabs(h).length > 0 }); // tablets for the river water on the way (worm.js)
   if (res.error) return;
