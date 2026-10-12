@@ -1,7 +1,7 @@
 {
   "name": "broken-state-desktop",
   "productName": "Broken State",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Desktop window for the Broken State prototype",
   "private": true,
   "main": "main.js",
