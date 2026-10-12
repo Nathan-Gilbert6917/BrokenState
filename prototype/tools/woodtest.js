@@ -467,10 +467,12 @@ section("Save / load: old saves start with none; mid-order, and determinism");
   const run = (save) => {
     setNextId(1_000_000);
     const s2 = mk(SEED + 7);
-    const forest = cleanTile(s2, "forest", (t) => planPath(s2, hub(s2).tile, t.id, false));
-    // Off so as to reach the forest by about 8 in the morning: the cutting is by daylight.
+    // A forest within a morning's walk (night on the road, nightmarch.js: a team still moving at 22:00 is asked to make
+    // camp, so a long walk through the night no longer arrives on time): off after dawn so as to reach it by about 10.
+    const walkOf = (t) => { const pp = planPath(s2, hub(s2).tile, t.id, false); return pp ? travelHours(s2, pp.path, { weather: false }).hours : Infinity; };
+    const forest = cleanTile(s2, "forest", (t) => walkOf(t) <= 4) || s2.tiles.filter((t) => t.terrain === "forest" && !t.loc && (t.infection || 0) < 0.3 && !s2.bases.some((x) => s2.grid.distance(x.tile, t.id) <= 1) && walkOf(t) <= 4).sort((x, y) => walkOf(x) - walkOf(y) || x.id - y.id)[0];
     const walk = planPath(s2, hub(s2).tile, forest.id, false).path;
-    s2.hour = dayIn(s2, "autumn", 8) * 24 + 8 - travelHours(s2, walk, { weather: false }).hours;
+    s2.hour = dayIn(s2, "autumn", 8) * 24 + 10 - travelHours(s2, walk, { weather: false }).hours;
     const crew = atBase(s2, hub(s2).id).slice(0, 2);
     launchExpedition(s2, { memberIds: crew.map((s) => s.id), dest: forest.id, mission: "move", stance: "normal", supplies: { food: 10, water: 10 }, plan: { preset: "custom", steps: [{ kind: "wood", hours: 8 }, { kind: "home" }], conditions: {} } });
     let text = null, world = s2;
