@@ -70,6 +70,16 @@ export function raidVehicle(state, b) {
   const p = raidParty(state, b);
   return p && b.raid && (b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) ? partyVehicle(state, p) : null;
 }
+// The vehicle whose trunk can be opened in this battle: a raid's (raidVehicle), or in a field battle the team's car
+// or bikes standing on the map (combat.js b.vehicle). What its people carry loose comes home in it either way
+// (ground.js groundEnd: into the team's cargo), so the same trunk rules hold.
+// A burnt-out wreck (launchers.js blown up: its cargo goes up with it) is not opened, as it is not boarded or driven.
+export function trunkVehicle(state, b) {
+  if (!b || (b.vehicle && b.vehicle.blownUp)) return null;
+  if (b.raid) return raidVehicle(state, b);
+  const p = b.vehicle ? raidParty(state, b) : null;
+  return p && p.vehicle ? partyVehicle(state, p) : null;
+}
 
 // When the raid starts: everyone's share of what the team brought, and an empty load of finds.
 export function raidCarrySetup(state, b) {
@@ -125,19 +135,19 @@ export function personalLoad(state, u) {
 
 // Kg more the trunk takes (negative: past it). null without a vehicle.
 export function trunkSpace(state, b) {
-  const v = raidVehicle(state, b);
+  const v = trunkVehicle(state, b);
   const p = raidParty(state, b);
   if (!v || !p) return null;
   if (isBike(v)) {
     const rack = (v.count || 1) * VEHICLE_TYPES.bike.rack;
-    return rack - (poolLoad(p) - (b.raid.shared || 0));
+    return rack - (poolLoad(p) - ((b.raid && b.raid.shared) || 0));
   }
   const loose = b.units.filter((u) => u.side === "player" && !u.dead).reduce((a, u) => a + haulLoad(u), 0);
   // cargoRoom is never below 0; the car's own limit is what counts here.
   return cargoRoom(state, p) - loose;
 }
 export function trunkInfo(state, b) {
-  const v = raidVehicle(state, b);
+  const v = trunkVehicle(state, b);
   const p = raidParty(state, b);
   if (!v || !p) return null;
   const space = trunkSpace(state, b);
@@ -229,7 +239,7 @@ function reach(state, b, u, loc) {
     if (box.kind === "ground" || (box.kind === "body" && L.field)) return (box.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - box.x), Math.abs(u.y - box.y)) <= 1 ? "" : `${u.name.split(" ")[0]} has to be on it or next to it.`; // ground.js: a pile, a body searched where it fell
     return Math.max(Math.abs(u.x - box.x), Math.abs(u.y - box.y)) <= 1 ? "" : `${u.name.split(" ")[0]} has to be next to it.`;
   }
-  if (loc.o === "trunk") return atVehicle(b, u) ? "" : `${u.name.split(" ")[0]} has to be at the vehicle.`;
+  if (loc.o === "trunk") return !trunkVehicle(state, b) ? "There is no vehicle here." : atVehicle(b, u) ? "" : `${u.name.split(" ")[0]} has to be at the vehicle.`;
   return "Not here.";
 }
 
@@ -247,7 +257,7 @@ function broke(before, after) {
   return "";
 }
 function tooHeavy(state, b, which, what) {
-  if (which === "trunk") return `The ${raidVehicle(state, b)?.name?.toLowerCase() || "vehicle"} is full: no room for the ${what}.`;
+  if (which === "trunk") return `The ${trunkVehicle(state, b)?.name?.toLowerCase() || "vehicle"} is full: no room for the ${what}.`;
   const x = b.units.find((q) => String(q.id) === String(which));
   const l = x ? personalLoad(state, x) : { load: 0, max: 0 };
   return `Too heavy: ${x ? x.name.split(" ")[0] : "they"} cannot carry the ${what} as well (${r1(l.load)} of ${r1(l.max)} kg).`;
@@ -452,7 +462,7 @@ function where(state, b, loc) {
     const o = b.units.find((x) => x.id === loc.id);
     return o && o.id !== lootLayer(b).lootBy ? `${o.name.split(" ")[0]} (carried)` : "carried";
   }
-  if (loc.o === "trunk") return isBike(raidVehicle(state, b)) ? "the bike racks" : "the vehicle";
+  if (loc.o === "trunk") return isBike(trunkVehicle(state, b)) ? "the bike racks" : "the vehicle";
   const o = ownerOf(b, loc);
   return `${SLOT_NAMES[loc.slot] || "worn"}${o && o.id !== lootLayer(b).lootBy ? ` (${o.name.split(" ")[0]})` : ""}`;
 }

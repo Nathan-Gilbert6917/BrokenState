@@ -29,7 +29,7 @@ import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags,
 import { roomText, totalRoom } from "../sim/prisoners.js"; // jailhouse: prisoner room at your bases
 import { bodyEmpty } from "../sim/inventory.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js"; // the rounds a reload can take (the ammo chooser)
-import { atVehicle, personalLoad, trunkInfo } from "../sim/raidloot.js";
+import { atVehicle, personalLoad, trunkInfo, trunkVehicle } from "../sim/raidloot.js";
 import { SEARCH, quickable, quickRefusal, quickRadius, quickHurtPct } from "../sim/search.js";
 export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not searched in full (both views)
 import { unitCanvas, canvasURL, spriteImg } from "./sprites.js";
@@ -105,6 +105,8 @@ const alive = (u) => !u.dead && !u.down && !u.left && !u.fled && (!u.off || u.ab
 // A cell's rules, with a stand-in for `void` (outside the footprint on an upper floor) until the sim knows it.
 const VOIDDEF = { walk: false, cover: 0, los: false, name: "Open air" };
 const CDEF = (c) => CELL[c.k] || VOIDDEF;
+// One of the cells the team's own drivable vehicle covers (sim/combat.js b.vehicle).
+const inTeamVehicle = (b, x, y) => { const v = b.vehicle; return !!v && x >= v.x && y >= v.y && x < v.x + v.w && y < v.y + v.h; };
 
 // ---------- helpers ----------
 const players = (b) => b.units.filter((u) => u.side === "player" && u.vol == null); // yours to order (volunteers are not: sim/combat.js volunteerTurn)
@@ -128,17 +130,21 @@ function sync(b) {
   cui.lastStep = performance.now();
   cui.autoPlay = !!(b.setup && b.setup.watch); // a new battle starts in your hands (a fight you only watch plays itself: sim/volunteers.js)
   for (const f of b.fx) cui.anim.set(f.seq, performance.now());
-  autoSelect(b);
+  autoSelect(b, false); // the battle's opening camera stays as the view sets it
 }
 
-function autoSelect(b) {
+function autoSelect(b, center = true) {
   const cur = cui.sel != null ? unitById(b, cui.sel) : null;
   if (cur && cur.side === "player" && alive(cur) && cur.ap > 0) return;
   if (cur && cur.side === "player" && cur.down && !cur.dead && b.phase === "player" && (cui.pickedDown === cur.id || !selfStabRefusal(b, cur))) return; // sim/medics.js: one of the downed picked in the roster (their panel: stabilize yourself)
   const next = players(b).find((u) => alive(u) && u.ap > 0);
   cui.sel = next ? next.id : cur && alive(cur) ? cur.id : null;
   cui.mode = "move";
-  if (cui.sel != null && (!cur || cui.sel !== cur.id)) followFloor(b); // a new pick: the view goes to its floor
+  if (cui.sel != null && (!cur || cui.sel !== cur.id)) { // a new pick: the view goes to its floor, and the camera to them
+    followFloor(b);
+    const nu = selUnit(b);
+    if (center && b.phase === "player" && nu && !nu.off) isoCenterOn(b, nu.x, nu.y);
+  }
 }
 
 // Cached per battle revision: what the player sees, and where the selected unit can go.
@@ -404,6 +410,14 @@ export function combatClick(state, px, py) {
       cui.msg = "Walk to the vehicle to load or unload it.";
       return;
     }
+  }
+  // A field battle the team's vehicle came along to (sim/raidloot.js trunkVehicle): a click on it opens its trunk, the
+  // same window as a raid's (no action; hauling in and out costs the usual time).
+  if (!b.raid && b.vehicle && u && active(u) && inTeamVehicle(b, c.x, c.y) && (trunkVehicle(state, b) || b.vehicle.blownUp)) {
+    if (b.vehicle.blownUp) { cui.msg = "The vehicle is a burnt-out wreck."; return; }
+    if (atVehicle(b, u)) { cui.lootReq = { uid: u.id, box: null }; return; }
+    cui.msg = "Walk next to the vehicle to load or unload it.";
+    return;
   }
   if (!u || !active(u) || u.ap < 1) { cui.msg = "Pick a unit that still has actions."; return; }
   if (who && who.side === "enemy" && active(who) && v.seen.has(who.id)) return void attack(state, u, who);
@@ -1032,6 +1046,12 @@ export function combatAction(state, key, d) {
     cui.mode = "drive"; cui.msg = `Click where to drive the ${b.vehicle.kind === "truck" ? "truck" : "car"} (open ground, up to ${DRIVE.RANGE} cells).`;
     return;
   }
+  if (v === "vehicle" && !b.raid && b.vehicle) { // a field battle (sim/raidloot.js trunkVehicle)
+    if (!trunkVehicle(state, b)) { cui.msg = b.vehicle.blownUp ? "The vehicle is a burnt-out wreck." : "There is no vehicle here to open."; return; }
+    if (!atVehicle(b, u)) { cui.msg = "Walk next to the vehicle to load or unload it."; return; }
+    cui.lootReq = { uid: u.id, box: null };
+    return;
+  }
   if (v === "vehicle" && b.raid) {
     if (!(b.raid.hasVehicle ?? b.raid.vehicleZone >= 0)) { cui.msg = "You came on foot: there is no vehicle here."; return; }
     if (!atVehicle(b, u)) { cui.msg = "Walk to the vehicle (its zone, or next to it) to load or unload it."; return; }
@@ -1184,7 +1204,7 @@ export function combatTick(state, now) {
     SIM.autoPlayerTurn(state);
     ingestMarks(b, now);
     cui.sel = null;
-    if (state.combat === b && b.phase === "player") autoSelect(b);
+    if (state.combat === b && b.phase === "player") autoSelect(b, false); // playing itself: the camera is left alone
     return true;
   }
   if (b.over || b.phase !== "enemy") return false;
@@ -1295,6 +1315,7 @@ export function renderCombatPanel(state) {
       ${u.aboard ? btn("disembark", "Get out", "1 action: out onto a free cell round the vehicle.", ap > 0) : ""}
       ${u.aboard && vehicleTurret(b) ? btn("gunner", u.gunner ? "Get down" : "Man the turret", u.gunner ? "1 action: off the turret and back down inside (not a target any more)." : `1 action: up behind the ${vehicleTurret(b) === "m2hb" ? "M2" : "machine gun"} on the roof. Then Shoot (F) fires it: a 3-round burst from its belt (${b.vehicle.belt ?? "full"}, a new belt is both actions) out of the team's ammo (${Math.floor(turretRounds(b))}), a level up, aim +6, through cover, very loud (it wakes the whole map${b.raid ? `, Heat +${TURRET.HEAT} a burst` : ""}), and whoever it lands near shoots −${TURRET.PIN} next turn. Overwatch works from it. After the vehicle drives or turns this turn the turret fires at −${RIDE.TURRET} (−${RIDE.DRIVER} for a gunner who turned it). The gunner is the one rider they can shoot: half cover${b.vehicle.up && b.vehicle.up.plating >= 2 ? " (full: plate ×2)" : " (full behind plate ×2)"}. Downed, they drop back inside.`, ap > 0, "⇧T") : ""}
       ${b.vehicle ? btn("turn", "Turn", "1 action, from inside or next to it: a quarter turn at the same corner (it needs open ground with nobody on it on the cells it turns onto).", ap > 0 && (u.aboard || atVehicle(b, u))) : ""}
+      ${!b.raid && b.vehicle && trunkVehicle(state, b) && !u.aboard ? btn("vehicle", "Vehicle", atVehicle(b, u) ? "Free: open the vehicle (or click it). Put what you carry in it to free your hands, or take the team's things out. Hauling takes the usual time: the first kg a turn are free, then actions." : "Walk next to the vehicle to load or unload it.", atVehicle(b, u), "N") : ""}
       ${btn("meds", "Use meds", `1 action and 1 meds: heal yourself or an adjacent teammate, or stabilize someone who is down so they survive. With no meds left, someone down can still be stabilized by hand (${handsOdds(u)}%: pressure and a belt; it can be tried again).`, ap > 0 && (medsLeft(b) > 0 || players(b).some((o) => o.down && !o.dead && !o.left && !o.stab && adjacent(u, o))), "M")}
       ${medicButtons(state, b, u, btn)}
       ${floorButtons(b, u, btn)}
