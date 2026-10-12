@@ -407,7 +407,7 @@ export const TRADE_ACTIONS = {
   },
   gift: (state, ui) => { ui.tradeMsg = giftAll(state); },
   pact: (state, ui, d) => { const f = state.trade && factionById(state, state.trade.factionId); if (f) ui.tradeMsg = proposePact(state, f, d.k); },
-  tradeleave: (state, ui) => { if (state.trade && state.trade.radio) ui.radioWith = state.trade.factionId; endTrade(state); ui.tradeMsg = ""; ui.attackConfirm = null; },
+  tradeleave: (state, ui) => { if (state.trade && state.trade.radio) ui.radioWith = state.trade.factionId; endTrade(state, { back: true }); ui.tradeMsg = ""; ui.attackConfirm = null; },
   // Attack the caravan: asks first (ui/confirm.js), then a battle at your base against its guards.
   "tw-attack": (state, ui, d) => {
     const c = caravanById(state, d.id), f = c ? factionById(state, c.owner) : null;
