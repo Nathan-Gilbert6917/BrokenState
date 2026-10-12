@@ -609,6 +609,7 @@ export function autopilotDaily(state) {
   wormCureRuns(state); // the worm where nothing can cure it: the sick walk to a base that can, or meds come to them
   planSupplyRuns(state);
   planTrip(state);
+  hubFoodRun(state); // a hunting or fishing trip when the food is short, outside the style's trip cadence
   campaignReport(state); // one line a morning: what the campaign waits for
   supplyReport(state); // one line a morning when water or food is short: hauled, traded, made against drunk / eaten
   governorPlans(state); // defenceplan.js: a plan by role for a base whose battle map changed
@@ -933,8 +934,9 @@ function pickChoice(state, card, opts, p) {
     const wo = waterOutlook(state, h);
     const wet = (k) => wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k);
     // Crops take weeks and winter brings none: a newcomer needs real reserves (a month's going into the cold).
-    const minDays = Math.max(P.strangerDays * 2.5, seasonKey(state) === "autumn" || seasonKey(state) === "winter" ? 30 : 10);
-    const ok = (k) => days(k) >= minDays && wet(k) && roomFor(state, k);
+    // A small hub (GROW) asks GROW.foodDays a head and a half: the newcomer is a pair of hands it needs.
+    const minDays = (k) => (smallColony(state, h, k) ? GROW.foodDays * 1.5 : Math.max(P.strangerDays * 2.5, seasonKey(state) === "autumn" || seasonKey(state) === "winter" ? 30 : 10));
+    const ok = (k) => days(k) >= minDays(k) && wet(k) && roomFor(state, k);
     if (/^Refugees/.test(t)) return (ok(2) ? find(/^Take them in/) : null) || (ok(1) ? find(/^Take one/) : null) || find(/^Turn them away/);
     return (ok(1) ? find(/^Let them in/) : null) || find(/^Turn them away/);
   }
@@ -993,10 +995,22 @@ const roomFor = (state, k) => roomAt(state, hub(state), k);
 // The same at any base: an outpost counts only the beds it has and has queued, with no slack, and its own water; its
 // food is the hub's (it keeps only about a week's and the hub tops it up over the supply line, economy.js), so the
 // food and winter rules are the hub's with k more mouths.
+// A small hub (GROW, ap-food 2026-10-12, user request "make them want to farm and get food more"): at most GROW.heads
+// living there with the newcomers, a newcomer is hands before a mouth (they farm in season, hunt and fish in the
+// winter), so the food rule asks GROW.foodDays a head (not the planner's target, which a hub of three can never reach
+// for the winter) and neither winter rule turns them away. The beds still count, only those built or queued (not the
+// next bunkhouse it could still save for: seed 6006's hub of four took in three more on the bunkhouse it never built,
+// and crowding costs every sleeper's mood a day, morale.js: a third rested and five walked away within a month). The
+// census at 27096bf lost four colonies of 1-7 people in their first hungry gap (both Turtles, seeds 6005 and 6011) that
+// had turned away every stranger, refugee and recruit for months (6011: 85 days on the beds, 45 on the food target, the
+// rest on the winter rules) and starved with their few hands on the plots.
+export const GROW = { heads: 8, foodDays: 10 };
+const smallColony = (state, h, k) => h.type === "hub" && residents(state, h.id).length + returning(state, h) + k <= GROW.heads;
 function roomAt(state, h, k) {
   if (!h) return false; // no base left (conquest.js exiles): no room for anyone
   const isHub = h.type === "hub";
-  const next = isHub ? nextHousing(state, h) : null;
+  const small = smallColony(state, h, k);
+  const next = isHub && !small ? nextHousing(state, h) : null; // GROW: a small hub counts the beds it has and has queued
   const beds = baseBeds(h) + queuedBeds(h) + (next ? next.beds : 0);
   if (residents(state, h.id).length + returning(state, h) + k > beds + (isHub ? persona(state).crowdSlack : 0)) return false;
   // Food and water for them too (economy rework): every newcomer, whatever card brings them.
@@ -1005,16 +1019,21 @@ function roomAt(state, h, k) {
   const n = atBase(state, h.id).length, nf = atBase(state, fh.id).length;
   const foodDays = (edibleFood(fh) - 5 * k) / Math.max(1, nf + k);
   const wo = waterOutlook(state, h);
-  if (!(foodDays >= Math.max(10, foodTarget(state, fh)) && wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k))) return false;
+  const foodMin = small ? GROW.foodDays : Math.max(10, foodTarget(state, fh));
+  if (!(foodDays >= foodMin && wo.dryNet - k * wo.need.rate >= -1.5 && waterIn(h.stock) / Math.max(1, n + k) >= 3 && droughtWater(state, h, n + k))) return false;
   // A hub with no river or lake within a water run's reach grows only as far as its wells and rain carry it through a
   // summer (GROWTH_WATER): filters clog and cost scrap, so they do not count towards newcomers.
   if (isHub && !GROWTH_WATER.ok(state, h, k)) return false;
+  if (small) return true; // GROW: hands before mouths
   // No newcomers while the winter stores would not feed them too (farming.js winterOutlook with k more mouths).
   if (winterActive(state, fh) && winterOutlook(state, fh, { extra: k + homeMouths(state, fh), also: winterPool(state, fh) }).short > 0) return false;
   // Cautious and Turtle (strictWinter; user pick 2026-10-11, ap-food): none either while the winter-stores check itself
-  // comes up short (winterPlan, the people there now, as the weekly Winter stores line reads it), in any season: the
-  // census at ac1c1c6 lost four cautious and turtle colonies to whole-colony starvation in their second winter.
-  if (persona(state).strictWinter && winterPlan(state, fh).short > 0) { noteWinterRefusal(state); return false; }
+  // comes up short (winterPlan, the people there now, as the weekly Winter stores line reads it): the census at ac1c1c6
+  // lost four cautious and turtle colonies to whole-colony starvation in their second winter. Only while the winter
+  // plan runs (winterActive: mid-summer to the first spring harvest; ap-food 2026-10-12): in spring and early summer a
+  // newcomer still has the season to sow and tend the food they will eat (the outlook only counts the plots' crops, at
+  // today's crew), and in any season it held, the colonies that refused everyone never grew and died small.
+  if (persona(state).strictWinter && winterActive(state, fh) && winterPlan(state, fh).short > 0) { noteWinterRefusal(state); return false; }
   return true;
 }
 // The joins the strict winter rule turned away (gov stats.winterRefused: the hours it said no; the census reads it).
@@ -1032,6 +1051,9 @@ export const safetyAI = {
   waterWaitsScrap: (state, base) => waterWaitsScrap(state, base), salvage: (state, base) => waterSalvage(state, base), upkeepCrew: (state, base, n) => upkeepCrew(state, base, n),
   roomAt: (state, base, k) => roomAt(state, base, k), planRoles: (state, base) => planRoles(state, base),
   buildWishes: (state, base) => buildWishes(state, base), // tools/kitchentest.js: the Kitchen's slot
+  // tools/turtlefoodtest.js: the winter plan, the hub's food run and the game glut (FOOD_RUN)
+  winterPlan: (state, base) => winterPlan(state, base), winterActive: (state, base) => winterActive(state, base), rawGlut: (state, base) => rawGlut(state, base),
+  foodTripCands: (state, base) => foodTripCands(state, base, atBase(state, base.id), needs(state, base), persona(state)), hubFoodRun: (state) => hubFoodRun(state),
 };
 
 // ---------- growth and the wells ----------
@@ -2969,6 +2991,7 @@ function foodStoreWishes(state, base, people, queued) {
     else if (outside && !count(base, "crates") && !queued("crates")) add("crates", "a quick stopgap for the food spoiling outside");
   }
   if (can("smoker") && !count(base, "smoker") && people >= 4 && (outside || ((s.key === "summer" || s.key === "autumn") && fresh >= people * 20))) add("smoker", "dry the surplus for the winter");
+  else if (can("smoker") && !count(base, "smoker") && rawGlut(state, base)) add("smoker", "dry the game before it rots"); // FOOD_RUN
   // The walk-in freezer (freezer-parts; buildings.js freezer): once a generator stands and there is fuel to keep it
   // running (a still, or 30 fuel), at 10+ people with a big fresh stock (15 days of eating, or food outside), and its
   // parts (5) with FREEZER_SPARE more for its spares and repairs, and its 2 electronics. One at the hub: the second
@@ -3288,7 +3311,7 @@ function planTrip(state) {
   const h = hub(state);
   if (!h) return;
   const today = day(state);
-  const out = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && p.teamMission !== "sweep"); // a survey team goes on top (below)
+  const out = state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && p.teamMission !== "sweep" && !p.apFoodRun); // a survey team goes on top (below); the hub's food run too (hubFoodRun)
   // Cautious: something below its reserve (reserveStatus) means trips come sooner, may go farther for it (trade
   // visits twice as far) and may take people 10 health below the style's minimum.
   const short = reserveShort(state, h);
@@ -4649,12 +4672,53 @@ function launchTrip(state, c, pool, spareHands) {
   if (c.haul || c.emergency) res.party.apHaulWatch = true; // trackHauls: what it brings home, for the Water / Food line
   if (c.mission === "hive") { g.stats.hiveTrips = (g.stats.hiveTrips || 0) + 1; if (g.campaign && g.campaign.tile === c.tile) g.campaign.trips++; if (c.crawlTrip) g.stats.crawlTrips = (g.stats.crawlTrips || 0) + 1; else g.stats.stormTrips = (g.stats.stormTrips || 0) + 1; }
   if (c.mission === "assault") g.stats.assaultTrips = (g.stats.assaultTrips || 0) + 1;
-  if (c.food) g.stats[c.food] = (g.stats[c.food] || 0) + 1; // huntTrips, fishTrips
+  if (c.food) { g.stats[c.food] = (g.stats[c.food] || 0) + 1; res.party.apFood = c.food; } // huntTrips, fishTrips, woodTrips (hubFoodRun reads it)
   g.stats.launched++;
   if (c.mission === "outpost") g.stats.outposts++;
   if (c.mission === "occupy") g.stats.occupyTrips = (g.stats.occupyTrips || 0) + 1;
   say(state, `Sent ${names(crew)} (${c.food === "huntTrips" ? "hunt" : c.food === "fishTrips" ? "fish" : c.food === "woodTrips" ? "cut wood" : c.mission === "scavenge" ? "scavenge" : c.mission}) to ${tileLabel(state, c.tile)}${isBike(v) ? " on bikes" : v ? ` in the ${v.name}` : " on foot"}: ${c.why}. Back in about ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}.${stashed.length ? ` Heavy armor left home for the walk: ${stashed.map(([x, a]) => `${first(x)}'s ${a.name}`).join(", ")}.` : ""}`);
   return res.party;
+}
+
+// The hub's food run (ap-food 2026-10-12, user request "make them want to farm and get food more"): every morning,
+// when the food is short by foodTripCands' own reckoning (the winter stores short, the food under its target, or
+// autumn's stocking up) and no hunting or fishing team from the hub is out, the best hunting or fishing trip goes,
+// outside the style's trip cadence and team limit (planTrip: a Turtle sends one team every five days, and its few
+// trips went scavenging: seed 6005 hunted for the first time on day 82, eleven days into the winter its stores fell
+// short for, when a day's hunt by two brought in 26-27 days of food). FOOD_RUN.keepFrac of the hub stays home at most (the style's share if
+// smaller; at least two, one at hardcore's small first hub); not in severe weather, with raiders or a horde on the
+// way, nor for a careful style while a horde in sight would break in.
+// rawDays / rack (foodTripCands, buildWishes): raw game and fish keep days (foods.js shelf; eating.js eats them last
+// where nothing cooks), so no hunting or fishing trip goes while the store holds more of them than everyone fed here
+// eats in rawDays, plus `rack` days of food for each drying rack (storage.js: it dries 4 a day of the fresh surplus);
+// and the rack is wished for once that much lies in store (seed 6006, hardcore Cautious: 856 days of food spoiled
+// against 608 eaten in 200 days, most of it raw game and fish from hunts on top of hunts).
+export const FOOD_RUN = { keepFrac: 0.5, rawDays: 3, rack: 8 };
+const rawFoodIn = (st) => Object.keys(st || {}).reduce((a, k) => a + (FOODS[k] && FOODS[k].raw && st[k] > 0 ? unitsOf(k, st[k]) : 0), 0);
+const rawGlut = (state, base) => rawFoodIn(base.stock) > Math.max(1, mouthsAt(state, base).heads) * FOOD_RUN.rawDays + count(base, "smoker") * FOOD_RUN.rack;
+function hubFoodRun(state) {
+  const h = hub(state);
+  if (!h || gov(state).noHunting) return null;
+  if (state.parties.some((p) => p.owner === "player" && (p.apFood === "huntTrips" || p.apFood === "fishTrips") && (p.homeBaseId ?? h.id) === h.id)) return null;
+  if (wxNow(state).severe || threatAt(state, h).urgent) return null;
+  const P = persona(state);
+  const hz = P.reserves ? hordeThreat(state, h) : null;
+  if (hz && hz.size && !holdCheck(state, h, hz.size, hz.bosses, hz.mix).holds) return null;
+  const home = atBase(state, h.id);
+  const small = smallHub(state, home);
+  const keep = Math.max(small ? 1 : 2, Math.ceil(home.length * (small ? 0.25 : Math.min(P.homeFrac, FOOD_RUN.keepFrac))));
+  const pool = home.filter((s) => s.health >= P.minHealth - 10 && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && (!s.leader || small) && tripFit(state, s));
+  const spare = Math.min(pool.length, home.length - keep);
+  if (spare < 1) return null;
+  const cands = foodTripCands(state, h, pool, needs(state, h), P).sort((a, b) => b.score - a.score);
+  for (const c of cands.slice(0, 4)) {
+    const party = launchTrip(state, c, pool, spare);
+    if (!party) continue;
+    party.apFoodRun = true;
+    gov(state).stats.foodRuns = (gov(state).stats.foodRuns || 0) + 1;
+    return party;
+  }
+  return null;
 }
 
 // ---------- food from the land (hunting.js) ----------
@@ -4672,7 +4736,7 @@ const fishFit = (s) => fisherMult(s) + combatPower(s) * 0.05;
 // team can walk to in about the straight-line distance.
 const walkable = (state, from, x) => { const p = planPath(state, from, x.tile, false); return !!p && p.path.length - 1 <= x.dist * 2 + 2; };
 function foodTripCands(state, h, pool, need, P) {
-  if (gov(state).noHunting) return [];
+  if (gov(state).noHunting || rawGlut(state, h)) return []; // FOOD_RUN.rawDays: the game in store would rot first
   const n = Math.max(1, atBase(state, h.id).length);
   const foodDays = edibleFood(h) / n;
   const season = wxSeason(state).key;
@@ -4987,8 +5051,9 @@ function claimAct(state, p) {
 
 // ---------- wild food and the land when food runs low (foraging.js, hunting.js) ----------
 // A base with food down to FORAGE_AP.critical days a head puts a forager or two to work before the builders and
-// stations (one, two at 6+ people), and under FORAGE_AP.low days the hands left over forage instead of picking through
-// the ruins (as many as the food gap wants: foraging.js forageWorkCap), while a forager would bring in at least FORAGE_AP.minDay a day (not in winter).
+// stations (one, two at 6+ people), and under FORAGE_AP.low days (or the food planner's target, if higher) the hands
+// left over forage instead of picking through the ruins (as many as the food gap wants: foraging.js forageWorkCap),
+// while a forager would bring in at least FORAGE_AP.minDay a day (not in winter).
 // gov.noForaging: the test switch (foragetest.js) that leaves foraging out of the governor's plans.
 const FORAGE_AP = { low: 12, critical: 4, minDay: 0.5 };
 // The land's hunters and fishers ahead of the farm (planRoles 2b): at most this share of the people (at least one).
@@ -4999,11 +5064,15 @@ const LAND_AP = { share: 0.2, bareHead: 8, smallFrom: 4, spareYield: 0.25 };
 function planForage(state, base, people, foodDays, areas) {
   // Days of food for everyone fed here (upkeep.js: prisoners, guests, a holding convoy's crew too).
   foodDays = Math.min(foodDays, edibleFood(base) / Math.max(1, foodUse(state, base).total));
-  if (!areas.food || gov(state).noForaging || foodDays >= FORAGE_AP.low || forageWorkWhy(state, base)) return null;
+  // The goal: FORAGE_AP.low days, or the food planner's target when it is higher (ap-food 2026-10-12: the hands left over
+  // after the farm, the hunters and the stations picked through the ruins with the food under its target and the
+  // winter short; they forage now while the land gives a forager FORAGE_AP.minDay a day).
+  const goal = Math.max(FORAGE_AP.low, foodTarget(state, base));
+  if (!areas.food || gov(state).noForaging || foodDays >= goal || forageWorkWhy(state, base)) return null;
   if (baseForageDay(state, base) < FORAGE_AP.minDay) return null;
   const small = people.length <= 4; // a tiny hub (hardcore's first): the leader picks berries too
   return {
-    cap: forageWorkCap(state, base, FORAGE_AP.low), // tune-jobcaps: sized to the need (the food gap to FORAGE_AP.low days), no fixed cap (it was 3, 4 at 12+)
+    cap: forageWorkCap(state, base, goal), // tune-jobcaps: sized to the need (the food gap to the goal), no fixed cap (it was 3, 4 at 12+)
     critical: foodDays < FORAGE_AP.critical ? (people.length >= 6 ? 2 : 1) : 0,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 40 && !x.woundInfected,
   };
@@ -5050,7 +5119,11 @@ export function woodCritical(state, base, w, n) {
   return Math.min(full, Math.max(1, handsForDay(left / Math.max(1, w.toCold - WOOD_AP.autumn), each, woodCrowd)));
 }
 function planWood(state, base, people, areas) {
-  if (!areas.production || gov(state).noWood || base.tier === 0 || woodWorkWhy(state, base)) return null;
+  // A shelter (tier 0) too (ap-food 2026-10-12): its fire is its only cooking (worm.js baseCooks) and burns firewood
+  // from its store (woodcutting.js shelterFire, woodNeed's fire days); with none cut it was out most days, the raw game
+  // and fish were eaten last (eating.js) and rotted (seed 6011, hardcore Turtle: 133 days of food thrown out against 337
+  // eaten before it starved on day 139, most of it snared fowl and venison, while the shelter was on short rations).
+  if (!areas.production || gov(state).noWood || woodWorkWhy(state, base)) return null;
   const w = woodNeed(state, base, base.type === "hub" ? returning(state, base) : 0);
   if (!w.short || !w.soon || w.need <= 0) return null;
   const cap = kitchenOnly(w) ? woodCritical(state, base, w, people.length) : woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks (only the kitchen's days out of season)
