@@ -31,6 +31,7 @@ import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/bl
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
 import { HCRAWL, HIVEMIND } from "../sim/hivecrawl.js"; // the hive crawl and the Hivemind
 import { FRONT_KINDS, FRONT, ICE, WEATHER, visibleFronts, iceRow } from "../sim/weather.js"; // weather fronts and river ice
+import { threatForecast, THREAT } from "../sim/forecast.js"; // the top bar's 7-day threat forecast
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
 import { keyLabel } from "./keymap.js";
 import { ztypeBattleCanvas, bossBattleCanvas, growthCanvas, siteSpriteCanvas } from "./hivesprites.js";
@@ -421,12 +422,20 @@ function weatherEntries() {
     text: "A river frozen hard enough to walk on. Your teams can cross it, and so can other groups and the dead: a river that kept a base safe is open until the thaw.",
     how: "Watch the river by your bases in winter (an alert says when it freezes): man the walls on that side. When it thaws, anyone on it scrambles ashore.", sprite: null,
   });
+  // The top bar's threat forecast (sim/forecast.js, ui/threatbar.js): opened the first time it shows more than calm.
+  out.push({
+    key: "w:threat", cat: "weather", name: "📊 Threat forecast", sub: "The top bar",
+    stats: [["Days", `${THREAT.DAYS}, today first`], ["Levels", THREAT.NAMES.join(", ")], ["The sky", "read 3 days ahead; 4 with a watchtower, 5 with a radio station"], ["Sources", "weather and fronts, hordes and their drift, raids seen or heard on the radio, food, water, firewood and generator fuel, crops and the frost, the worm and illness, teams in the field, a hive due near a base"]],
+    text: "The seven bars beside the Needs button: each as tall and as hot as the worst thing coming that day. Hover (or click) for the causes: what, on which day, how sure, whom it hits and where it was learned. It holds only what your people know: a horde never seen, a raid nobody saw or heard, is not on it.",
+    how: "Read it each morning: a red bar days out is time to man the walls, bring food in, cut wood or call a team home. Click a cause to see it (the base, the team, the horde on the map). A watchtower, a radio station and Listen in on a group's channel see further.", sprite: null,
+  });
   return out;
 }
 function weatherSeen(state, keys) {
   try {
     for (const f of visibleFronts(state, 0)) keys.add(`w:${f.k}`);
     if (state.weather && iceRow(state) >= 0) keys.add("w:ice");
+    if (Array.isArray(state.bases) && threatForecast(state).level >= 1) keys.add("w:threat");
   } catch { /* no weather yet */ }
 }
 

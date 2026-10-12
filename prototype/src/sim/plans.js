@@ -439,12 +439,12 @@ function checkIn(state, p) {
 
 // Days of food left at the rate the team eats on the move (more under a load, load.js), as the plan's "food falls
 // below N days" rule counts it; in the cold, ×today's appetite (weather.js foodNeedFactor: no camp fire on the move).
-const foodDays = (state, p) => {
+export const foodDays = (state, p) => {
   const m = partyMembers(state, p);
   const perDay = Math.max(1, partyPace(state, p).eatMove, m.length) * foodNeedFactor(state);
   return carried(p, "food") / perDay; // days of food (foods.js)
 };
-function hoursHome(state, p) {
+export function hoursHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) return null; // no base left (conquest.js exiles)
   const res = planPath(state, partyTile(p), home.tile, p.vehicle) || planPath(state, partyTile(p), home.tile, false);

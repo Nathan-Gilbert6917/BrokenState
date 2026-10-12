@@ -142,22 +142,24 @@ export const needsSkeleton = (btn = "", head = "", list = "") =>
 // ---------- opening and closing (the page only) ----------
 // Hover opens it (and leaving closes it, after a moment, so the mouse can cross the gap to the panel); a click pins it
 // open (a tap on a touch screen too) and a second click closes it; the keyboard opens it on focus; Esc and a click
-// elsewhere close it. The open state is a class on the slot (#tb-stock), which main.js never rewrites.
-export function initNeedsBar(root, doc = document, win = window) {
+// elsewhere close it. The open state is a class on the slot (#tb-stock), which main.js never rewrites. cls: the class
+// names, so the threat forecast's meter (ui/threatbar.js) opens and closes the same way.
+export const NB_CLS = { btn: "nb-btn", panel: "nb-panel", open: "nb-open" };
+export function initNeedsBar(root, doc = document, win = window, cls = NB_CLS) {
   if (!root || root.dataset.nbInit) return;
   root.dataset.nbInit = "1";
   let pinned = false, hover = false, timer = 0, quiet = false;
-  const btn = () => root.querySelector(".nb-btn");
-  const isOpen = () => root.classList.contains("nb-open");
+  const btn = () => root.querySelector(`.${cls.btn}`);
+  const isOpen = () => root.classList.contains(cls.open);
   const set = (open) => {
-    root.classList.toggle("nb-open", open);
+    root.classList.toggle(cls.open, open);
     const b = btn();
     if (b) b.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) fit();
   };
   // Kept on screen: on a narrow window (the bar wraps) the panel slides left instead of running off the edge.
   const fit = () => {
-    const p = root.querySelector(".nb-panel");
+    const p = root.querySelector(`.${cls.panel}`);
     if (!p || !p.getBoundingClientRect) return;
     p.style.left = "0px";
     const r = p.getBoundingClientRect(), vw = (doc.documentElement && doc.documentElement.clientWidth) || win.innerWidth || 0;
@@ -174,7 +176,7 @@ export function initNeedsBar(root, doc = document, win = window) {
   });
   root.addEventListener("click", (e) => {
     const t = e.target;
-    if (t.closest && t.closest(".nb-btn")) {
+    if (t.closest && t.closest(`.${cls.btn}`)) {
       if (pinned) close();
       else { pinned = true; set(true); }
       if (e.detail > 0) btn().blur(); // a mouse click leaves the keys to the game (Space pauses)
