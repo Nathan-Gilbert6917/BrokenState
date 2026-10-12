@@ -101,7 +101,9 @@ export function orderStatus(state, p) {
     left = hoursLeft(state, p, byMinute()); // to the minute it gets there (parties.js arrivalsDue; whole hours headless)
     elapsed = Math.max(0, state.hour - (p.orderStart ?? p.departed ?? state.hour));
   } else if (p.phase === "waiting") left = 0;
-  const pct = left == null ? null : elapsed + left > 0 ? elapsed / (elapsed + left) : 1;
+  // left counts from the top of this hour: the minutes of it already gone on the clock (clockFrac, 0 headless) are done.
+  const now = left == null ? 0 : Math.min(left, clockFrac(state));
+  const pct = left == null ? null : elapsed + left > 0 ? (elapsed + now) / (elapsed + left) : 1;
   return { label, left, elapsed, pct };
 }
 

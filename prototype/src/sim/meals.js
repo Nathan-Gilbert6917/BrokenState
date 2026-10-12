@@ -1,19 +1,52 @@
-// Mealtimes at a base: breakfast and dinner, an hour each (the clock runs by the hour). No imports: the hourly jobs
-// (buildings.js construction, crafting.js, repair.js gear repairs) read it without a cycle; activity.js shows it.
+// Mealtimes at a base: breakfast, lunch and dinner, an hour each (the clock runs by the hour). No imports: the hourly
+// jobs (buildings.js construction, crafting.js, repair.js gear repairs) read it without a cycle; activity.js shows it.
 //
-// - Everyone at a base eats breakfast at 06:00 and dinner at 20:00; hunters and fishers, out on their dawn trip
-//   (tripland.js TRIP_JOBS: 06:00–10:00), eat breakfast at 10:00 when they are back. The People tab and the Work now panel show "Eating" then (activity.js).
+// - Everyone at a base eats breakfast at 06:00, lunch at the lunch hour (12:00 unless the Work tab moves it: LUNCH_HOURS,
+//   state.lunchHour) and dinner at 20:00; hunters and fishers, out on their dawn trip (tripland.js TRIP_JOBS:
+//   06:00–10:00), eat breakfast at 10:00 when they are back. The People tab and the Work now panel show "Eating" then
+//   (activity.js).
+// - Lunch (user request 2026-10-12, TIME-03): an hour; everyone eats to their own target (80–100% full, eating.js) and
+//   gets a small lift (eating.js EAT.lunchMood: an hour of free time's mood). All work stops for it: the jobs that work
+//   every hour (construction, hand crafting, gear and building repairs) lose the hour as they do the other meals, and
+//   the people out on a job trip (jobtrips.js) stop where they are and eat from their pack (at least PACK.trip, a
+//   day of food, taken out with them): the hour does not count as work on the trip. The guards stay on the walls.
 // - The food and water still come out of the store once a day (economy.js baseDaily): meals change nothing eaten.
-// - The jobs that work every hour of the day lose the two meal hours: construction, hand crafting and the gear repairs
-//   at the bench stop at 06:00 and 20:00 (22 working hours of 24: MEAL_WORK_SHARE). The jobs with set hours (wood
-//   08–18, foraging 09–19, hunting and fishing at dawn and dusk, building repairs 08–20) and the daily jobs (farms,
-//   stations, scavenging, teaching, reading) have no meal in their hours: unchanged.
-// - The AI groups (groupworks.js) build by crew-days: their crews do MEAL_WORK_SHARE of a day's work as well.
-export const MEALS = { breakfast: 6, lateBreakfast: 10, dinner: 20 };
-// The meal hours of the jobs that work every hour.
-export const MEAL_HOURS = [MEALS.breakfast, MEALS.dinner];
-export const isMealHour = (h) => MEAL_HOURS.includes(((h % 24) + 24) % 24);
+// - The jobs that work every hour of the day lose the three meal hours: construction, hand crafting and the repairs
+//   stop at 06:00, lunch and 20:00 (21 working hours of 24: MEAL_WORK_SHARE). The daily jobs (farms, stations,
+//   teaching, reading) are counted at midnight as a day's work: the meals are inside it.
+// - The AI groups (groupworks.js) build by crew-days: their crews do MEAL_WORK_SHARE of a day's work as well (their
+//   lunch hour too).
+export const MEALS = { breakfast: 6, lateBreakfast: 10, lunch: 12, dinner: 20 };
+// The hours the Work tab can put lunch at (between the hunters' late breakfast and their dusk trip).
+export const LUNCH_HOURS = [11, 12, 13, 14, 15];
+const hod = (h) => ((h % 24) + 24) % 24;
+/** The lunch hour of this game (state.lunchHour; missing or not one of LUNCH_HOURS: 12:00). @param {any} [state] */
+export const lunchHour = (state) => (state && LUNCH_HOURS.includes(state.lunchHour) ? state.lunchHour : MEALS.lunch);
+/** @param {any} state @param {number} h */
+export function setLunchHour(state, h) {
+  const n = Number(h);
+  if (!state || !LUNCH_HOURS.includes(n)) return false;
+  state.lunchHour = n;
+  return true;
+}
+// The meal hours of the jobs that work every hour (MEAL_HOURS: the default lunch; mealHours: this game's).
+export const MEAL_HOURS = [MEALS.breakfast, MEALS.lunch, MEALS.dinner];
+/** @param {any} [state] */
+export const mealHours = (state) => [MEALS.breakfast, lunchHour(state), MEALS.dinner];
+/** @param {number} h @param {any} [state] */
+export const isMealHour = (h, state) => mealHours(state).includes(hod(h));
 export const MEAL_WORK_SHARE = (24 - MEAL_HOURS.length) / 24;
+/** Is hour h (absolute or of the day) the lunch hour? @param {number} h @param {any} [state] */
+export const isLunchHour = (h, state) => hod(h) === lunchHour(state);
+// Hours of [a, b) (absolute) inside the lunch hour of each day: the part of a trip's work eaten by lunch (jobtrips.js).
+/** @param {number} a @param {number} b @param {any} [state] */
+export function lunchOverlap(a, b, state) {
+  if (!(b > a)) return 0;
+  const L = lunchHour(state);
+  let o = 0;
+  for (let d = Math.floor(a / 24); d * 24 <= b; d++) o += Math.max(0, Math.min(b, d * 24 + L + 1) - Math.max(a, d * 24 + L));
+  return o;
+}
 
 // ---------- ration levels per base (wave 2 eating, user pick 4) ----------
 // base.rationLevel (the player's, the governor's or a steward's choice; missing = normal) and base.feastDay (a feast on
@@ -43,9 +76,10 @@ export function rationKey(state, base) {
 }
 // A base's day of food × this (upkeep.js foodUse): lean 0.8, a feast day 1.5 (short rations are economy.RATION's).
 export const rationUse = (state, base) => { const k = rationKey(state, base); return k === "short" ? 1 : RATION_LEVELS[k].use; };
-// The mealtime for someone on `job` at hour h (activity.js mealAt says the same): "breakfast", "dinner" or null.
-export function mealOf(job, h) {
-  const hh = ((h % 24) + 24) % 24;
+// The mealtime for someone on `job` at hour h (activity.js mealAt says the same): "breakfast", "lunch", "dinner" or null.
+/** @param {string} job @param {number} h @param {any} [state] */
+export function mealOf(job, h, state) {
+  const hh = hod(h);
   const b = job === "hunt" || job === "fish" ? MEALS.lateBreakfast : MEALS.breakfast;
-  return hh === b ? "breakfast" : hh === MEALS.dinner ? "dinner" : null;
+  return hh === b ? "breakfast" : hh === lunchHour(state) ? "lunch" : hh === MEALS.dinner ? "dinner" : null;
 }

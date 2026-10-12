@@ -57,12 +57,16 @@ export function groupFoodLand(state, f) {
   }
   return sum / f.bases.length;
 }
-// × on the firewood they cut a day (0.5–1.5; nothing from a besieged base).
+// The share of their outdoor day left after the lunch hour (meals.js: all work stops for lunch, yours and theirs; your
+// woodcutters lose it on their trips, jobtrips.js). Their food is not cut: it is mostly their fields, and your farms
+// and dawn and dusk hunts lose nothing to lunch either.
+export const GROUP_LUNCH_SHARE = 1 - 1 / (GROUP_TRIPS.hours[1] - GROUP_TRIPS.hours[0]);
+// × on the firewood they cut a day (0.5–1.5, × the lunch hour off; nothing from a besieged base).
 export function groupWoodLand(state, f) {
-  if (!f.bases.length) return 1;
+  if (!f.bases.length) return GROUP_LUNCH_SHARE;
   let sum = 0;
   for (const tile of f.bases) sum += besieged(state, f, tile) ? 0 : Math.max(0.5, Math.min(1.5, groupWoodScore(state, f, tile) / GROUP_TRIPS.woodRef));
-  return sum / f.bases.length;
+  return (sum / f.bases.length) * GROUP_LUNCH_SHARE;
 }
 // People's drinking their water carriers bring in (groupworks.js provisioned): fetchServes for each base holding water.
 export const groupFetchedWater = (state, f) => f.bases.filter((tile) => ownsWater(state, f, tile) && !besieged(state, f, tile)).length * GROUP_TRIPS.fetchServes;
