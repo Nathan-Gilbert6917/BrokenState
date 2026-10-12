@@ -93,7 +93,7 @@ Supply runs: founds test outposts, runs repeat / one-off / hold / disband / recr
 node tools/nightmarchtest.js
 ```
 
-Night on the road (`src/sim/nightmarch.js`; or `node tools/nightmarchtest.js [seed]`, a few seconds): a team still on its way at 22:00 gets one "Night falls" card a night and holds while it waits; Make camp until dawn rests it on the spot until 06:00 with its trip (and the mission at the end of it) back on its queue, and it moves on by itself at first light; Push through the night keeps it moving with road events ×1.8 and run-ins ×1.6 (cap 0.45) and 4 hours of sleep owed an hour on the move (Tired by dawn); resting in camp sleeps it off by day; the "every night this trip" answers skip the card; never asked under the governor, a team about to arrive (1.5 h) or near dawn; the tray's default is to make camp.
+Night on the road (`src/sim/nightmarch.js`; or `node tools/nightmarchtest.js [seed]`, a few seconds): a team still on its way at 22:00 gets one "Night falls" card a night and holds while it waits; Make camp until dawn rests it on the spot until 06:00 with its trip (and the mission at the end of it) back on its queue, and it moves on by itself at first light; Push through the night keeps it moving with road events ×1.8 and run-ins ×1.6 (cap 0.45) and 4 hours of sleep owed an hour on the move (Tired by dawn); resting in camp sleeps it off by day; the "every night this trip" answers skip the card; never asked under the governor, a team about to arrive (1.5 h) or near dawn; the tray's default is to make camp; the team panel's At night toggle (Ask each night / Make camp / Push through, `setNightPlan`) answers it for the trip, and set at night it camps or marches at once.
 
 ```bash
 node tools/wrecktest.js
