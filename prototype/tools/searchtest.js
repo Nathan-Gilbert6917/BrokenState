@@ -7,6 +7,7 @@
 // once a turn even cut every time; a locked container is 1 action a pick attempt at odds by Stealth, then 1 action to search; a raid
 // saved mid-search keeps what is hidden; the raid bot rummages when pressed and searches in full when not.
 // Usage: node tools/searchtest.js [seed] [v]
+import { faceToward } from "../src/sim/vision.js";
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { SUPPLIES } from "../src/sim/data.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -59,6 +60,7 @@ function standNext(b, u, x, y) {
     const nx = x + dx, ny = y + dy;
     if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || !CELL[b.cells[ny * b.w + nx].k].walk || unitAt(b, nx, ny)) continue;
     u.x = nx; u.y = ny;
+    faceToward(u, x, y); // vision.js: looting needs them facing it
     return true;
   }
   return false;

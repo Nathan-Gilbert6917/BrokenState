@@ -21,6 +21,8 @@
 // The raid bot (combat.js autoRaidTurn) searches in full, and rummages when pressed: Heat at SEARCH.bot.heat or more,
 // an aware enemy within SEARCH.bot.near tiles, or on its way out. The hour-by-hour search (scavenge.js) is not this.
 import { noiseAt } from "./stealth.js";
+import { darkAt } from "./indoorlight.js"; // a raid's dark rooms
+import { activeLight, nvgOn } from "./vision.js"; // the light switched on, night vision on
 import { survivorById, skill } from "./world.js";
 import { addCondition } from "./health.js";
 
@@ -82,8 +84,10 @@ export function quickRefusal(b, u, box) {
 // The containers next to the unit a quick search can go through (never opened, not locked).
 export const quickable = (near) => near.filter((c) => !c.contents);
 
-// Fumbling in the dark: night, and no light (lights.js: a headlamp anywhere on them, or a light in the off hand) or night vision.
-const inDark = (b, u) => !!b.night && !u.light && !u.nvg;
+// Fumbling in the dark: night (or an unlit room of a raid's building: a barn by day; a room lit at night is not dark:
+// indoorlight.js darkAt), and no light switched on (lights.js: a headlamp anywhere on them, or a light in the off hand)
+// or night vision.
+const inDark = (b, u) => (b.indoor ? darkAt(b, u.x, u.y, u.f) : !!b.night) && !activeLight(u) && !nvgOn(u);
 // How far the rummage is heard (tiles), before walls.
 export const quickRadius = (b, u) => SEARCH.quick.radius + (inDark(b, u) ? SEARCH.quick.dark : 0);
 

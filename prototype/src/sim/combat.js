@@ -49,9 +49,10 @@ import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, 
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
-import { refitSenses } from "./stealth.js";
+import { refitSenses, senses } from "./stealth.js";
+import { LIGHTS } from "./lights.js"; // a light's name (switchAct)
 import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS, situationalAim, roundReach } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
-import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke, botFlash } from "./stealth.js";
+import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke, botFlash, noiseAt } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
 import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./interior.js";
@@ -107,7 +108,10 @@ import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, f
 import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies or a bag carried in the arms: no weapon until set down (Drop carried: free)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
-import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js"; // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
+import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
+import { aiLights, aiFlashlight, aiRoomLights, wakeLights } from "./ailights.js"; // the AI's flashlights and room lights (the user's request 2026-10-12)
+import { indoorSetup, lightAt, indoorSees, lightsAct } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
+import { VISION, hasFront, inArc, coned, nightSees, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox, activeLight, nvgOn, nvgSight } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -2167,11 +2171,15 @@ export function los(b, x0, y0, x1, y1) {
 // a level up, + optics (binoculars, a thermal at night: u.optic, stealth.js).
 export const sightRange = (b, a, x = a.x, y = a.y) => a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0) + (a.vsight || 0); // vsight: a ballistic visor down (helmets.js)
 // Can a unit see a cell? Light shows your people what stands in it out to the full daylight range, however dark: a
-// flare (throwables.js) and, at night, a floodlit cell (deploy.js).
+// flare (throwables.js) and, at night, a floodlit cell (deploy.js). Inside a raid's building the room's own light
+// (indoorlight.js): a lit room is seen as by day (at night too, by either side), a dark one (a barn, a storeroom, any
+// room at night with its lights off) only as at night: down the cone, a light's beam, night vision.
 export function canSeeAt(b, a, x, y) {
   bindDims(b);
   const d = dist(a.x, a.y, x, y);
-  if (d > sightRange(b, a)) {
+  const lt = b.indoor ? lightAt(b, x, y) : 0;
+  // At night a person on foot sees down cones (vision.js): the dark ahead, a light's beam, the cells around them.
+  if (lt ? !indoorSees(b, a, x, y, d, lt, sightRange(b, a), (a.daySight ?? SIGHT) + HEIGHT.SIGHT * hAt(b, a.x, a.y) + (a.optic || 0) + (a.vsight || 0)) : coned(b, a) ? !nightSees(b, a, x, y, d, sightRange(b, a) - a.sight) : d > sightRange(b, a)) {
     if (a.side !== "player") return false;
     const lit = (b.flares && b.flares.length && flareLit(b, x, y)) || (b.night && b.floodAim && b.lit && b.lit[idx(x, y)]);
     if (!lit || d > SIGHT + HEIGHT.SIGHT * hAt(b, a.x, a.y) + (a.optic || 0)) return false;
@@ -2179,7 +2187,21 @@ export function canSeeAt(b, a, x, y) {
   return los(b, a.x, a.y, x, y) && !(b.smoke && b.smoke.length && smokeBlocks(b, a.x, a.y, x, y)); // a fire's thick smoke (throwables.js)
 }
 // A crawler low in the grass is hidden from your people until it is close, lit or has struck (zombietypes.js).
-export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && canSeeAt(b, a, t.x, t.y);
+// Someone of yours sneaking (vision.js) is not seen by the other side behind half or full cover facing them (from
+// further than a tile), unless they have a light switched on at night: it shows over the cover. A light switched on at
+// night (vision.js activeLight) is seen from the daylight range by anyone facing it; night vision shows nothing.
+export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && !sneakHidden(b, a, t) && (canSeeAt(b, a, t.x, t.y) || litFrom(b, a, t));
+export function sneakHidden(b, a, t) {
+  if (!t.sneaking || t.side !== "player" || a.side === "player") return false;
+  if (b.night && activeLight(t)) return false; // the light gives them away
+  if (dist(a.x, a.y, t.x, t.y) < 1.5) return false;
+  return coverAgainst(b, t.x, t.y, a.x, a.y).level >= 1;
+}
+function litFrom(b, a, t) {
+  if (!b.night || !activeLight(t) || t.side === a.side || t.down || t.dead) return false;
+  if (dist(a.x, a.y, t.x, t.y) > SIGHT + HEIGHT.SIGHT * hAt(b, a.x, a.y) || !inArc(a, t.x, t.y, VISION.HALF)) return false;
+  return los(b, a.x, a.y, t.x, t.y) && !(b.smoke && b.smoke.length && smokeBlocks(b, a.x, a.y, t.x, t.y));
+}
 
 // Cover a unit at (x, y) has against an attacker at (ax, ay). Cover sits on the 4 sides; it only
 // counts when the attacker is roughly in front of it. Some cover nearby but none facing = flanked.
@@ -2721,7 +2743,7 @@ export function spearThrowRefusal(b, u, x, y) {
 // The throw (allowed: spearThrowRefusal; the action is the caller's). s: the survivor (your people), else null.
 export function throwSpear(b, u, x, y, s = null) {
   const key = u.weapon, w = WEAPONS[key], rng = b.rng;
-  u.face = [Math.sign(x - u.x), Math.sign(y - u.y)];
+  faceToward(u, x, y);
   u.hunker = false;
   let [lx, ly, off] = throwLanding(b, u, { scatter: MELEE.SPEAR_SCATTER }, x, y, false);
   let glance = false;
@@ -3373,6 +3395,7 @@ function alertAll(b, why) {
   const sleepers = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u));
   if (!sleepers.length) return;
   for (const u of sleepers) { u.aware = true; if (b.phase === "player") u.surprised = true; }
+  wakeLights(b, sleepers); // ailights.js: their flashlights on in the dark
   say(b, b.phase === "player" ? "Your shots catch them by surprise. They scramble but cannot react this turn." : why, "good");
 }
 
@@ -3380,6 +3403,7 @@ export function alertPod(b, pod, why) {
   const sleepers = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u) && u.pod === pod);
   if (!sleepers.length) return;
   for (const u of sleepers) u.aware = true;
+  wakeLights(b, sleepers); // ailights.js: their flashlights on in the dark
   say(b, why, "danger");
   if (b.phase === "player") for (const u of sleepers) scramble(b, u);
 }
@@ -3391,7 +3415,7 @@ function scramble(b, u) {
   if (mv) moveAlong(b, u, mv.path);
 }
 
-// An unaware enemy notices a player unit that comes close enough in its sight.
+// An unaware enemy notices a player unit that comes close enough in its sight, or (a person) sees its light.
 function detect(b, mover) {
   for (const e of b.units) {
     if (e.side !== "enemy" || e.aware || !active(e)) continue;
@@ -3399,8 +3423,16 @@ function detect(b, mover) {
     const r = detectRange(b, e, mover);
     if (dist(e.x, e.y, mover.x, mover.y) <= r && los(b, e.x, e.y, mover.x, mover.y)) {
       alertPod(b, e.pod, `${e.name} spotted ${mover.name}!`);
-    }
+    } else if (lightSpotted(b, e, mover)) alertPod(b, e.pod, `${e.name} sees ${mover.name}'s light!`);
   }
+}
+// A raider, a soldier, any enemy person (not the dead: they keep their own senses, decoys.js) who sees a light one of
+// yours has switched on at night knows you are there (the user's request): canSee counts the light from the daylight
+// range in its view cone (litFrom), past its noticing range. Night vision gives off no light: nothing to see.
+export function lightSpotted(b, e, p) {
+  if (!b.night || p.side !== "player" || !activeLight(p) || !active(p) || e.side !== "enemy" || e.kind !== "human" || e.ztype || !hasFront(e) || !active(e)) return false;
+  if (b.floors && (e.f || 0) !== (p.f || 0)) return false;
+  return canSee(b, e, p);
 }
 
 export function moveAlong(b, u, path) {
@@ -3419,7 +3451,7 @@ export function moveAlong(b, u, path) {
     // first of them left a man between two soldiers holding a corridor spending his actions where he stood, and the
     // raid never ended (tools/wanderertest.js seed 904, once the enemy guns' condition came by kit).
     if (there && (active(there) || last) && !(u.side === "player" && there.side === "third" && !last)) break;
-    u.face = [Math.sign(x - u.x), Math.sign(y - u.y)]; // which way it faces (stealth.js: takedowns from behind)
+    faceToward(u, x, y); // which way it faces (stealth.js: takedowns from behind)
     u.x = x; u.y = y;
     walked.push([x, y]);
     // A building's closed door swings open (buildingmaps.js); anyone but your people stops in the doorway to open it.
@@ -3446,6 +3478,7 @@ export function moveAlong(b, u, path) {
       if (o.suppressed) { o.ow = false; continue; }
       if (reacted && reacted.has(o.id)) continue;
       if (!canSee(b, o, u) || !canFire(b, o) || dist(o.x, o.y, u.x, u.y) > owRange(o)) continue;
+      if (!inArc(o, u.x, u.y, VISION.HALF)) continue; // vision.js: an overwatch covers only the watcher's view cone
       (reacted || (reacted = new Set())).add(o.id);
       say(b, `${o.name} reacts on overwatch.`, "info");
       fire(b, o, u, { reaction: true });
@@ -3460,6 +3493,61 @@ export function moveAlong(b, u, path) {
   if (walked.length && u.ram != null) afterMove(b, u); // siege.js: the ram's crew keeps up with its lead
   if (walked.length) u.movedT = b.turn; // moved this turn: a heavy or big gun's brace (data-guns.js heavy / brace)
   if (walked.length && u.spearOut && active(u)) stepOnSpear(b, u); // walked onto the spear it threw: picked up
+}
+
+// Sneaking on or off (vision.js; free). Not on while an aware enemy has eyes on them (counting the cover it would give).
+function sneakAct(b, u, act) {
+  const on = act.on != null ? !!act.on : !u.sneaking;
+  if (on === !!u.sneaking) return "";
+  if (on && u.ap < 1) return "No actions left: sneak from the next turn.";
+  if (on && (u.aboard || u.gunner)) return "Get out of the vehicle first.";
+  if (on) {
+    const eyes = b.units.find((e) => e.side !== "player" && e.aware && active(e) && !e.ko && canSee(b, e, { ...u, sneaking: true }));
+    if (eyes) return `${eyes.name} has eyes on ${u.name}: get out of sight first.`;
+  }
+  u.sneaking = on;
+  say(b, on ? `${u.name} keeps low and moves quietly.` : `${u.name} stops sneaking.`, "info");
+  bump(b);
+  return "";
+}
+// A light or night vision switched on or off (vision.js activeLight / nvgOn; free, even with no actions left). act.on:
+// true or false, or left out to flip it. What they see follows at once (stealth.js senses); a light switched on at
+// night can be seen at once by an enemy facing it (detect: lightSpotted).
+function switchAct(state, b, u, act) {
+  const nv = act.type === "nvg", key = nv ? "nvgOff" : "lightOff";
+  if (nv ? !u.nvg : !u.light) return nv ? `${u.name} has no night vision (goggles, or a thermal).` : `${u.name} has no light.`;
+  if (u.aboard || u.gunner) return "Get out of the vehicle first.";
+  const on = act.on != null ? !!act.on : !!u[key];
+  if (on === !u[key]) return "";
+  u[key] = !on;
+  senses(b, u, u.sid != null ? survivorById(state, u.sid) : undefined);
+  const first = u.name.split(" ")[0], lamp = (LIGHTS[u.light] && LIGHTS[u.light].name) || "light";
+  if (nv) say(b, on ? `${u.name} switches on the night vision${b.night ? `: ${nvgSight(u)} tiles down the cone, and no light to give them away` : ""}.` : `${u.name} flips the night vision up${b.night ? (activeLight(u) ? `: the ${lamp} is what ${first} sees by now` : `: ${first} sees only what the dark lets them`) : ""}.`, "info");
+  else say(b, on ? `${u.name} switches on the ${lamp}${b.night ? `. It gives ${first} away: anyone facing it sees it from far off${u.sneaking ? ", sneaking or not" : ""}` : ""}.` : `${u.name} switches off the ${lamp}.`, on && b.night ? "danger" : "info");
+  if (on && !nv && b.night) detect(b, u);
+  bump(b);
+  return "";
+}
+// The way a unit ends up facing after an order (vision.js): act.face (radians), or act.faceX / act.faceY (a cell to
+// look at). Returns true when it was given one.
+function faceAfterMove(u, act) {
+  if (act && Number.isFinite(Number(act.face)) && act.face !== null && act.face !== "") { setFacing(u, Number(act.face)); return true; }
+  if (act && act.faceX != null && act.faceY != null && Number.isFinite(Number(act.faceX)) && Number.isFinite(Number(act.faceY))) {
+    const x = Number(act.faceX), y = Number(act.faceY);
+    if (x === u.x && y === u.y) return false;
+    faceToward(u, x, y);
+    return true;
+  }
+  return false;
+}
+// Feet heard (vision.js stepNoise): a dash far off, a scuff close by. The unaware within earshot (and the dead that
+// hear) come to look where the noise was (stealth.js noiseAt).
+function footsteps(b, u, kind) {
+  if (!kind) return;
+  const r = kind === "dash" ? VISION.DASH_NOISE : VISION.STEP_NOISE.r;
+  fx(b, { type: "noise", x: u.x, y: u.y, r, side: u.side, kind });
+  const n = noiseAt(b, u.x, u.y, r, "footsteps");
+  if (n) say(b, kind === "dash" ? `${u.name}'s running feet are heard: ${n} of them turn toward the noise.` : `${u.name} scuffs a foot: ${n} of them turn toward the noise.`, "danger");
 }
 
 // What a shot's hit carries into damage() / hitMult (ammo.js; section 1): the weapon, its calibre and the type loaded
@@ -3499,7 +3587,7 @@ export function fire(b, a, t, opts = {}) {
       say(b, `${a.name}'s ${a.item.name} was damaged (it is above their skill).`, "danger");
     }
   }
-  a.face = [Math.sign(t.x - a.x), Math.sign(t.y - a.y)];
+  faceToward(a, t.x, t.y);
   if (trig.misfire) { // a dud: no shot, no bang, the action lost
     say(b, `${a.name}'s ${gunWord(a)} misfires: click.`, a.side === "player" ? "danger" : "info");
     fx(b, { type: "shot", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side, misfire: true });
@@ -3508,6 +3596,7 @@ export function fire(b, a, t, opts = {}) {
   const noise = shotNoise(b, a, w); // stealth.js: a suppressor halves it (and wears a shot)
   b.noise += noise;
   if (noise) b.gunshots = (b.gunshots || 0) + noise / w.noise; // camp danger (fieldheat.js noteGunfire): a muffled shot counts half
+  if (a.sneaking && noise && noise >= w.noise) { a.sneaking = false; say(b, `${a.name}'s shot gives them away: no longer sneaking.`, "info"); } // vision.js: a suppressed shot or a bow keeps it
   deafen(b, a.x, a.y, bangOf(b, a, w, noise, mode), a); // hearing.js: the bang (one an action; a stream louder)
   if (a.xpT) a.xpT.shots++;
   const rolls = moded ? trig.fired : trig.jam ? 0 : 1; // a gun without modes (or a bow: no rounds at all) makes one roll unless it jammed
@@ -3583,7 +3672,7 @@ export function suppress(b, a, x, y) {
   const trig = w.rel ? rollTrigger(b, a, rounds) : { fired: rounds, spent: rounds, jam: null, misfire: false };
   spendRounds(b, a, { ...w, ammo: trig.spent });
   foul(a, trig.spent);
-  a.face = [Math.sign(x - a.x), Math.sign(y - a.y)];
+  faceToward(a, x, y);
   a.hunker = false;
   const noise = shotNoise(b, a, w);
   b.noise += noise;
@@ -3617,7 +3706,7 @@ function strike(b, a, t) {
   const o = meleeOdds(b, a, t);
   const rng = b.rng;
   const sure = !!a.assassin && t.side === "enemy" && !t.aware; // Assassin (skills.js): sure, critical hit on the unaware
-  a.face = [Math.sign(t.x - a.x), Math.sign(t.y - a.y)];
+  faceToward(a, t.x, t.y);
   const amb = a.low ? strikeBonus(b, a) : 1; // a crawler out of hiding (zombietypes.js)
   const w = WEAPONS[a.weapon];
   const gap = t.ztype ? stabsGap(a, t) || (!!w.stab && stabsGap({ x: a.x, y: a.y, weapon: "knife" }, t)) : false; // a blade from behind or on the unaware finds a dead soldier's gap (deadsoldiers.js; w.stab: a combat knife)
@@ -3710,6 +3799,8 @@ export function combatAct(state, act) {
   const boundAct = u && isTied(u) && !u.dead && !u.down && act.type === "rescue";
   if (u && isTied(u) && !u.down && !boundAct && u.side === "player") return rescueRefusal(b, u);
   if (u && u.side === "player" && act.type === "selfStab") { const why = MED.selfStabilize(b, u); if (why) return why; b.acted = true; bump(b); return ""; } // medics.js: a downed survivor's tourniquet or trauma kit
+  if (u && u.side === "player" && act.type === "sneak" && active(u)) return sneakAct(b, u, act); // vision.js: free, even with no actions left to stop
+  if (u && u.side === "player" && (act.type === "light" || act.type === "nvg") && active(u)) return switchAct(state, b, u, act); // vision.js: a light, night vision on or off (free, even with no actions left)
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
   if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
@@ -3724,12 +3815,21 @@ export function combatAct(state, act) {
       const r = reachable(b, u, dashRange(u), { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
       const c = r.dist[idx(act.x, act.y)];
       if (!isFinite(c) || c === 0) return "Cannot move there.";
-      u.ap -= c <= u.mob ? 1 : 2;
+      const mob = moveMob(u);
+      u.ap -= c <= mob ? 1 : 2;
       u.hunker = false;
       moveAlong(b, u, pathTo(r, act.x, act.y));
+      // vision.js: where they end up facing (the player's pick), and the noise of their feet.
+      if (active(u)) faceAfterMove(u, act);
+      if (active(u)) footsteps(b, u, stepNoise(b, u, c, mob));
       // skills.js: Stealth XP for moving while enemies still have not noticed anyone.
       if (u.xpT && active(u) && b.units.some((e) => e.side === "enemy" && !e.aware && active(e))) u.xpT.sneak++;
       break;
+    }
+    case "face": { // vision.js: turn where they stand (free: it needs an action left, it does not use one)
+      if (!faceAfterMove(u, act)) return "Face which way?";
+      bump(b);
+      return "";
     }
     case "cab": { // fire at the other side's vehicle: its hull, whoever is at the wheel (fireCab)
       if (!isRanged(u)) return "No gun.";
@@ -3836,6 +3936,7 @@ export function combatAct(state, act) {
       if (u.stun) return "Still seeing spots from the flash: no overwatch until it wears off.";
       if (blinded(u)) return "Blinded by pepper spray: no overwatch until it wears off.";
       if (!canFire(b, u)) return isRanged(u) && magEmpty(b, u) && !reloadRefusal(b, u) ? "Overwatch needs a loaded gun: reload first." : WEAPONS[u.weapon].arrows ? "Needs arrows for the bow." : "Needs a gun with ammo.";
+      faceAfterMove(u, act); // vision.js: the way it covers (act.face / faceX, faceY), else as they face now
       u.ow = true; u.ap = 0;
       say(b, `${u.name} is on overwatch.`, "info");
       break;
@@ -3916,6 +4017,7 @@ export function combatAct(state, act) {
       if (!b.raid) return "Nothing to search.";
       const box = act.box != null ? b.raid.containers.find((c) => c.id === act.box) : searchableNear(b, u)[0];
       if (!box || !nearBox(u, box) || (box.searched && !(act.open && box.contents))) return "Move next to something to search first.";
+      if (!facesBox(u, box)) return faceRefusal(box.label ? `the ${box.label.toLowerCase()}` : "it"); // vision.js: next to it and facing it
       if (box.lock && !box.lock.open) return lockedMsg(box); // locks.js
       // quick: a rummage (search.js): no action, a share of what is inside, noise. Else a full search: 1 action
       // (by day or in the dark), everything shows, a rummaged container's hidden rest too.
@@ -4003,6 +4105,16 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "lights": { // indoorlight.js: the light switch next to the unit (1 action, quiet): the room lit or dark
+      const r = lightsAct(b, u, act);
+      if (r.err) return r.err;
+      u.ap -= 1;
+      u.hunker = false;
+      say(b, `${u.name} switches the lights ${r.room.on ? "on" : "off"} in the ${r.room.name.toLowerCase()}.`, "info");
+      // A guard in a room whose lights come on sees it as by day: whoever of yours stands in it may be noticed now.
+      for (const p of b.units) if (p.side === "player" && active(p)) detect(b, p);
+      break;
+    }
     case "climb": { // buildingmaps.js: through a window next to the unit (not diagonally); the glass breaks
       if (!b.raid) return "Nothing to climb.";
       const opts = windowsNear(b, u);
@@ -4015,7 +4127,7 @@ export function combatAct(state, act) {
       u.ap -= BMAP.CLIMB.ap;
       u.hunker = false;
       const from = [u.x, u.y];
-      u.face = [Math.sign(w.to[0] - u.x), Math.sign(w.to[1] - u.y)];
+      faceToward(u, w.to[0], w.to[1]);
       u.x = w.to[0]; u.y = w.to[1];
       fx(b, { type: "move", unit: u.id, from, path: [[w.x, w.y], [u.x, u.y]] });
       b.raid.heat = Math.min(100, b.raid.heat + BMAP.CLIMB.heat);
@@ -4368,6 +4480,7 @@ function aiUnit(b, u) {
     if (plan === "flee") return flee(b, u);
   }
   const rng = b.rng;
+  if (u.kind === "human") aiFlashlight(b, u, true); // ailights.js: a flashlight on once they know the fight is on, in the dark
   if (!u.aware && stealthAI(b, u)) return; // stealth.js: finding bodies, going to look where a bottle landed
   if (!u.aware && b.raid) {
     patrol(b, u);
@@ -4375,7 +4488,9 @@ function aiUnit(b, u) {
   }
   if (u.kind === "zombie" && u.side === "enemy" && lureTurn(b, u)) return; // decoys.js: a decoy or a fire it senses
   if (!u.aware) {
-    // Sleeping zombies shuffle about (not a Shepherd's pack: it keeps together); sleeping humans hold position.
+    // Sleeping zombies shuffle about (not a Shepherd's pack: it keeps together); sleeping humans hold position (and
+    // look about now and then: vision.js glance).
+    glance(b, u);
     if (u.kind === "zombie" && !herded(b, u) && rng.chance(0.4)) {
       const r = reachable(b, u, 1.5);
       const opts = [];
@@ -4385,6 +4500,8 @@ function aiUnit(b, u) {
     u.ap = 0;
     return;
   }
+  aiLook(b, u); // vision.js: an aware person turns to the nearest foe it can make out
+  if (u.kind === "human" && aiRoomLights(b, u, true) && (u.ap < 1 || !active(u))) return; // ailights.js: a dark room's switch flipped on (walked to first when it is near and quiet)
   const flees = u.side === "enemy" && u.kind === "human" && !u.fearless && shouldFlee(b);
   // medics.js: a downed ally to drag out of the line of fire, stabilize or revive; a medic healing the badly hurt;
   // raiders finishing (or taking) your downed. The rest of the turn goes on as usual.
@@ -4418,17 +4535,32 @@ function aiUnit(b, u) {
     const here = scoreCell(b, u, u.x, u.y, foes, 0, field);
     if (shot && (u.ap === 1 || (shot.o.chance >= 55 && here > -6))) { fire(b, u, shot.t); u.ap = 0; return; }
     const mv = bestMove(b, u, foes, field);
-    if (mv && mv.sc > here + 1) { u.ap -= 1; moveAlong(b, u, mv.path); continue; }
+    if (mv && mv.sc > here + 1) { u.ap -= 1; moveAlong(b, u, mv.path); if (u.kind === "human" && active(u) && u.ap > 0) aiRoomLights(b, u, true); continue; } // ailights.js: a dark room walked into: its switch, when it is right there
     // An attacker outside a fort's wall with no fair shot: on toward the nearest opening, or batter the gate (fortApproach).
     if (!shot || shot.o.chance < 45) { const fa = fortApproach(b, u, field); if (fa === "bash") return; if (fa === "moved") continue; }
     if (shot) { fire(b, u, shot.t); u.ap = 0; return; }
     // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
     const wall = siegeTarget(b, u);
     if (wall) { bash(b, u, wall[0], wall[1]); u.ap = 0; return; }
-    if (!u.stun && (u.side === "player" || isSniper(u) || rng.chance(0.6) || MED.coveringRescue(b, u))) u.ow = true; // a sniper always watches; stun: no overwatch through a flashbang's glare; medics.js: covering a rescue
+    if (!u.stun && (u.side === "player" || isSniper(u) || rng.chance(0.6) || MED.coveringRescue(b, u))) { u.ow = true; aiLook(b, u); } // a sniper always watches; stun: no overwatch through a flashbang's glare; medics.js: covering a rescue; vision.js: watching the nearest foe's way
     else if (coverSides(b, u.x, u.y).some((c) => c)) u.hunker = true;
     u.ap = 0;
   }
+}
+
+// An aware person (vision.js) turns toward the nearest foe it can make out: in its daylight range, a clear line, not
+// hidden sneaking behind cover. With a front only (the dead see all round).
+function aiLook(b, u) {
+  if (!u.aware || !hasFront(u)) return;
+  let best = null, bd = Infinity;
+  const far = (u.daySight ?? u.sight) + HEIGHT.SIGHT * hAt(b, u.x, u.y);
+  for (const f of foesOf(b, u)) {
+    const d = dist(u.x, u.y, f.x, f.y);
+    if (d >= bd || d > far || (b.floors && (f.f || 0) !== (u.f || 0))) continue;
+    if (sneakHidden(b, u, f) || !los(b, u.x, u.y, f.x, f.y)) continue;
+    best = f; bd = d;
+  }
+  if (best) faceToward(u, best.x, best.y);
 }
 
 // Pinned by suppressing fire (gunfire.js): out of the open if it can (bestMove weighs cover), a shot only when it is a
@@ -4644,7 +4776,7 @@ export function bash(b, u, x, y) {
   const was = c.hp;
   if (b.raid && (c.k === "idoor" || c.k === "door")) doorNoise(b, x, y); // the battering carries: Heat, the dead nearby come too
   c.hp = Math.max(0, c.hp - dmg);
-  u.face = [Math.sign(x - u.x), Math.sign(y - u.y)];
+  faceToward(u, x, y);
   const name = structureName(c).toLowerCase();
   fx(b, { type: "melee", from: [u.x, u.y], to: [x, y], hit: true, crit: false, dmg, side: u.side, text: c.hp > 0 ? `-${dmg}` : "BROKEN" });
   if (c.hp <= 0) breakCell(b, x, y, u);
@@ -4757,7 +4889,9 @@ export const RETREAT = {
 export const loadPenalty = (kg) => RETREAT.KG * Math.max(0, (Number.isFinite(kg) ? kg : 0) - RETREAT.FREE_KG);
 // How far a unit can go with the actions it has: mob a tile an action, a Medium load's dash (both actions) a tile less
 // (carrykit.js weighPlayer / weighEnemy: u.dash).
-export const dashRange = (u) => u.mob * u.ap + (u.ap >= 2 ? u.dash || 0 : 0);
+export const dashRange = (u) => moveMob(u) * u.ap + (u.ap >= 2 && !u.sneaking ? u.dash || 0 : 0);
+// The tiles one action's move covers: sneaking (vision.js) is slower.
+export const moveMob = (u) => (u.sneaking ? sneakMob(u) : u.mob);
 
 // ---------- Evac (the Evac button: combatAct "evac") ----------
 // Everyone still standing heads for the way out with the actions they have: the extraction zones of a raid or the
@@ -5140,6 +5274,7 @@ export function volunteerTurn(state, b) {
       if (b.floors && (u.f || 0) !== view) setFloor(b, u.f || 0);
       bindDims(b);
       const hot = b.units.some((e) => e.side === "enemy" && active(e) && e.aware && (u.f || 0) === (e.f || 0) && (!b.raid || dist(u.x, u.y, e.x, e.y) <= VOL_RAID));
+      aiFlashlight(b, u, true); // ailights.js: their light on once the team is found, in the dark
       const order = u.volOrder || "free";
       const lead = order === "follow" ? unitById(b, u.volLead) : null;
       if (order === "hold") volHold(b, u, hot);
@@ -5841,6 +5976,7 @@ export function createRaid(state, setup) {
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
+  indoorSetup(b); // indoorlight.js: which rooms are dark (a barn, a storeroom; every room at night), their light switches
   nlSetup(state, b); // nonlethal.js: tasers and spray on both sides
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room
@@ -5880,7 +6016,7 @@ export function chooseBuilding(state, id) {
 function patrol(b, u) {
   const rng = b.rng;
   // floorfolk.js: the nest's dead keep still around their knot; a raider watcher stands his post by the stairwell (both still notice you).
-  if (u.nesting || u.watcher) { notice(b, u); if (!u.aware && u.kind === "human") spotBodies(b, u); u.ap = 0; return; }
+  if (u.nesting || u.watcher) { glance(b, u); notice(b, u); if (!u.aware && u.kind === "human") spotBodies(b, u); u.ap = 0; return; }
   if (u.kind === "zombie" && !rng.chance(0.5)) { u.ap = 0; return; }
   const home = u.home || [u.x, u.y];
   if (!u.wp || (u.x === u.wp[0] && u.y === u.wp[1]) || rng.chance(0.15)) {
@@ -5896,6 +6032,7 @@ function patrol(b, u) {
     if (!best || d < best.d) best = { i, d };
   }
   if (best && best.d < dist(u.x, u.y, u.wp[0], u.wp[1])) moveAlong(b, u, pathTo(r, best.i % W, (best.i / W) | 0));
+  else glance(b, u); // vision.js: standing about, they look another way now and then
   notice(b, u);
   if (!u.aware) spotBodies(b, u); // stealth.js: a guard who walks past a body raises the alarm
   u.ap = 0;
@@ -5911,6 +6048,7 @@ export function notice(b, e) {
       alertPod(b, e.pod, `${e.name} spotted ${p.name}!`);
       return;
     }
+    if (lightSpotted(b, e, p)) { alertPod(b, e.pod, `${e.name} sees ${p.name}'s light!`); return; } // a light at night, from far off
   }
 }
 
@@ -5920,7 +6058,7 @@ export function alertNear(b, x, y, radius, why) {
   const near = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u) && dist(u.x, u.y, x, y) <= radius);
   if (!near.length && !b.floors) return;
   const pods = new Set(near.map((u) => u.pod));
-  for (const u of b.units) if (u.side === "enemy" && !u.aware && active(u) && pods.has(u.pod)) { u.aware = true; if (b.phase === "player") u.surprised = true; }
+  for (const u of b.units) if (u.side === "enemy" && !u.aware && active(u) && pods.has(u.pod)) { u.aware = true; if (b.phase === "player") u.surprised = true; wakeLights(b, [u]); } // ailights.js: flashlights on
   // Through the floors (buildingmaps.js storeys): the dead on other storeys hear it too, FLOOR_DAMP tiles further off a
   // storey; they wake (no surprise: they are not in the fight) and drift to the stairs (floorDrift).
   let other = 0;
@@ -6334,6 +6472,7 @@ function autoRaidTurn(state) {
       if (grew) R.botOut = { turn: b.turn, why: "cut off" };
       u.exitHist = [...h.slice(-(n - 1)), detour];
     }
+    if (active(u)) aiLights(b, u, true); // ailights.js: the bot's lights on once the team is found, a dark room's switch
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
       // raidloot.js: each survivor carries their own finds; with a vehicle, a full one walks back to load it.
       const mine = party ? personalRoom(state, u) : 0, space = party ? trunkSpace(state, b) : null;
@@ -6389,6 +6528,7 @@ function autoRaidTurn(state) {
       const pressed = botPressed(b, u, leave);
       if (pressed && !full && !unload && u.quickTurn !== b.turn) {
         const q = quickable(searchableNear(b, u).filter(todo))[0];
+        if (q) turnToBox(u, q); // vision.js: facing it (a free Face)
         if (q && !combatAct(state, { type: "search", unit: u.id, box: q.id, quick: true })) continue;
       }
       // Pressed: leave the rummaged ones for a calmer moment (a full search there costs the action it saved), unless
@@ -6396,6 +6536,7 @@ function autoRaidTurn(state) {
       const skipQuick = pressed && R.containers.some((c) => todo(c) && here(c) && !c.quick);
       const nearBoxes = searchableNear(b, u).filter(todo).filter((c) => !skipQuick || !c.quick);
       if (!leave && !unload && nearBoxes.length && (nearBoxes[0].contents || u.ap >= searchCost(b, u))) {
+        turnToBox(u, nearBoxes[0]); // vision.js: facing it (a free Face)
         if (combatAct(state, { type: "search", unit: u.id, box: nearBoxes[0].id })) u.ap = 0;
         continue;
       }

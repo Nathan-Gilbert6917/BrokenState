@@ -1,11 +1,20 @@
-// Lights: what your people carry to see in the dark. A ladder of five, each heavier and brighter than the last:
-//   headlamp   0.2 kg  strapped on, hands free (counts wherever it is carried); sees 8 tiles at night
-//   flashlight 0.3 kg  in the off hand; 9 tiles
-//   torch      0.7 kg  in the off hand; 9 tiles, an open flame seen from further off; made from firewood, no batteries
-//   lantern    1.2 kg  in the off hand; 10 tiles all around
-//   spotlight  3.5 kg  in the off hand; 12 tiles down a long beam, seen from far away
-// At night (raids, base battles: stealth.js) a light sets how far its carrier sees (7 without one, 13 by day or with
-// night vision) and how much further off the guards notice them (`seen`, added to the night detection range); a
+// Lights: what your people carry to see in the dark. Seven:
+//   headlamp   0.2 kg  strapped on, hands free (counts wherever it is carried); a wide beam 8 tiles ahead
+//   windlight  0.4 kg  a wind-up flashlight in the off hand: no batteries, a dim beam 7 tiles ahead
+//   flashlight 0.3 kg  in the off hand; a beam 9 tiles ahead
+//   tacflash   0.35 kg a military flashlight in the off hand: the longest, narrowest beam, 12 tiles
+//   torch      0.7 kg  in the off hand; a pool of light 4 tiles all round, an open flame seen from further off; made
+//                      from firewood, no batteries
+//   lantern    1.2 kg  in the off hand; a pool 5 tiles all round
+//   spotlight  3.5 kg  in the off hand; 11 tiles down a broad beam, seen from far away
+// In battle (vision.js) a beam shines the way its carrier faces and is what they see by at night (sight: its length,
+// beam: its half-angle in degrees); a pool lights all round them (pool: its radius); the dark around stays the
+// night's own (vision.js DARK, by the hour). sight is also the light's single number for everything else (u.sight
+// at night, the survey, the brighter of two).
+// At night (raids, base battles: stealth.js) a light switched on sets how far its carrier sees (7 without one, 13 by
+// day, 12 down the cone with night vision on) and how much further off the guards notice them (`seen`, added to the
+// night detection range; an enemy person who sees it knows they are there: combat.js lightSpotted); a light switched
+// off counts as none (vision.js activeLight; the battle's Light on / off, free); a
 // rummage in the dark without one is heard further and cuts hands more often (search.js). A survey's night hours keep
 // `survey` of the daylight odds with the team's best light (survey.js; 0.35 without). Teams take lights from the
 // armory when they set out: the planner's Lights line (parties.js launchExpedition opts.lights) and the autopilot's and
@@ -16,11 +25,13 @@ import { EQUIP_SLOTS, packOf, stow } from "./inventory.js";
 import { helmetLight } from "./helmets.js";
 
 export const LIGHTS = {
-  headlamp:   { sight: 8,  seen: 1, survey: 0.42, free: true,  cone: 3.5, name: "headlamp" },
-  flashlight: { sight: 9,  seen: 3, survey: 0.5,  free: false, cone: 4.5, name: "flashlight" },
-  torch:      { sight: 9,  seen: 4, survey: 0.45, free: false, round: true, cone: 3.5, name: "torch" },
-  lantern:    { sight: 10, seen: 4, survey: 0.55, free: false, round: true, cone: 4.5, name: "lantern" },
-  spotlight:  { sight: 12, seen: 6, survey: 0.7,  free: false, cone: 7.5, name: "spotlight" },
+  headlamp:   { sight: 8,  seen: 1, survey: 0.42, free: true,  cone: 3.5, beam: 30, name: "headlamp" },
+  windlight:  { sight: 7,  seen: 2, survey: 0.4,  free: false, cone: 3.5, beam: 24, name: "wind-up flashlight" },
+  flashlight: { sight: 9,  seen: 3, survey: 0.5,  free: false, cone: 4.5, beam: 20, name: "flashlight" },
+  tacflash:   { sight: 12, seen: 3, survey: 0.6,  free: false, cone: 4.5, beam: 15, name: "military flashlight" },
+  torch:      { sight: 9,  seen: 4, survey: 0.45, free: false, round: true, cone: 3.5, pool: 4, name: "torch" },
+  lantern:    { sight: 10, seen: 4, survey: 0.55, free: false, round: true, cone: 4.5, pool: 5, name: "lantern" },
+  spotlight:  { sight: 11, seen: 6, survey: 0.7,  free: false, cone: 7.5, beam: 18, name: "spotlight" },
 };
 // The order a team packs them in (lightest first) and the order "best" is judged in (brightest first).
 export const LIGHT_KEYS = Object.keys(LIGHTS).sort((a, b) => (GEAR[a]?.weight || 0) - (GEAR[b]?.weight || 0));

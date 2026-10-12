@@ -12,6 +12,7 @@
 //     card's count is the building's; a building left on an upper floor and gone back into is as it was left;
 //   - save and load mid-raid on floor 2, then play to the end; the bot plays multi-storey buildings to the end.
 // Usage: node tools/storeytest.js [seeds=6]
+import { turnToBox } from "../src/sim/vision.js";
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import {
@@ -236,6 +237,7 @@ console.log("A raid in a building with storeys: floors, the stairs, what is off 
       setFloor(b, 1);
       place(b, u, 1, side[0], side[1]);
       u.ap = 2;
+      turnToBox(u, box); // vision.js: facing it
       err = combatAct(st, { type: "search", unit: u.id, box: box.id });
       // Hauling takes time (raidloot.js HAUL: 8 kg a turn free, then 12 kg an action): a heavy find (firewood is 3 kg
       // each, loot.js AREA_WOOD) may not all come out in the one action left, so come back next turn for the rest.
