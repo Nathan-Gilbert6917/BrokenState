@@ -248,7 +248,7 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
   check(!!v, "a raider band crosses the border");
   if (v) {
     const g = st.grid;
-    const spot = st.tiles.find((t) => t.loc && !t.hive && t.owner == null && st.bases.every((b) => g.distance(b.tile, t.id) >= 8) && st.factions.every((f) => !f.alive || f.bases.every((x) => g.distance(x, t.id) >= 10)));
+    const spot = st.tiles.find((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && t.terrain !== "water" && !t.hive && t.owner == null && st.bases.every((b) => g.distance(b.tile, t.id) >= 8) && st.factions.every((f) => !f.alive || f.bases.every((x) => g.distance(x, t.id) >= 10)));
     v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
     for (const k of Object.keys(v.stock)) v.stock[k] = 0;
     setFood(v, 30); v.stock.ammo = 120; // too poor to settle (value below SETTLE.goods)
