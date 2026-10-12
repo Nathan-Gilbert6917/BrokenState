@@ -24,7 +24,7 @@ import { hasPerk, gainXp, USE } from "./skills.js";
 import { noteTreated } from "./relations.js";
 import { FIELD_CARE } from "./medfinds.js";
 import { healMult } from "./traits.js"; // Quick Healer
-import { wormHealMult } from "./worm.js"; // the worm: half the healing while it is in them (full in a hospital bed with meds)
+import { wormHealMult, wormSeen } from "./worm.js"; // the worm: half the healing while it is in them (full in a hospital bed with meds); meds slow it
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 export const SEVERE_BELOW = 30;          // severe wounds: health below this
@@ -430,7 +430,8 @@ export function autoCare(state, base, { plan = false } = {}) {
   for (const s of people) {
     const jobs = [];
     const hp = hpAtNight(s);
-    const woundDue = isHurt(s) && (hp < 100 || s.woundInfected) && (hp < AUTO_BELOW || s.woundInfected);
+    // The worm spotted in them: treated whenever hurt, since a day healed with meds slows it (worm.js medicatedDay).
+    const woundDue = isHurt(s) && (hp < 100 || s.woundInfected) && (hp < AUTO_BELOW || s.woundInfected || wormSeen(s));
     const woundFirst = s.woundInfected || isSevere(s);
     const conds = conditionsOf(s).filter((c) => autoWantsCondition(c)).sort((a, b) => conditionDanger(b) - conditionDanger(a));
     if (woundDue && woundFirst) jobs.push({ kind: "wound" });
@@ -551,6 +552,7 @@ export function fieldTreat(state, party, survivorId) {
   useMedKit(state, info.medic);
   gainXp(state, info.medic, "medicine", USE.field); // skills.js
   s.woundTreatedDay = day(state);
+  s.medsHour = state.hour; // medsToday (the worm: a day healed with meds slows it, worm.js medicatedDay)
   const before = s.health;
   s.health = Math.min(100, s.health + info.heal);
   let cure = "";

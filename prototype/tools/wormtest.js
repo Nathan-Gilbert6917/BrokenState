@@ -1115,7 +1115,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
     for (let d = 1; d <= 30; d++) {
       wormDaily(w.st);
       if (!s.alive) return d;
-      if (meds) { w.h.autoTreat = true; autoCare(w.st, w.h); w.h.autoTreat = false; } // the night's care for the wound with meds (below the auto line of 70), not for the worm (wormCare stays off)
+      if (meds) { w.h.autoTreat = true; autoCare(w.st, w.h); w.h.autoTreat = false; } // the night's care for the wound with meds (a spotted carrier whenever hurt: meds slow it), not for the worm (wormCare stays off)
       for (let i = 0; i < 24; i++) { medicalHour(w.st); w.st.hour++; }
     }
     return 99;
@@ -1127,6 +1127,42 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const dayText = (d) => (d >= 99 ? "never within 30 days" : `day ${d}`);
   console.log(`  (the night's care with meds, no cure for the worm: in a Clinic's bed, Medicine 6, the default admit line, ${dayText(medsDef)}; Medicine 10, admitted at once, ${dayText(medsBest)}; no hospital, ${dayText(cotMeds)})`);
   check(medsDef > clinic && medsBest >= medsDef && cotMeds < medsDef, `bed healing is full with meds: the worm uncured but the wound treated with meds each night in a Clinic's bed, they die ${dayText(medsDef)} (${dayText(medsBest)} at best), against day ${clinic} without meds; with no hospital ${dayText(cotMeds)} (half healing)`);
+}
+
+// ---------- 6e2. meds slow it, never clear it ----------
+{
+  console.log("Healing with meds slows the worm");
+  // Two carriers from day 0 at a base with no hospital; one is treated with meds every night (the night's care treats a
+  // spotted carrier whenever hurt), the other is not. After six days: the treated one is fewer days in and less hurt.
+  const w = wormWorld(0.05, seed + 24);
+  w.h.stock.meds = 99; w.h.medsReserve = 0;
+  const ppl = atBase(w.st, w.h.id);
+  for (const p of ppl) { p.role = "rest"; p.health = 100; p.skills.medicine = 0; p.worm = null; }
+  ppl[0].role = "medic"; ppl[0].skills.medicine = 5;
+  const [a, b] = ppl.slice(-2);
+  a.worm = course(0, { seen: 0 }); b.worm = course(0, { seen: 0 });
+  const lost = { a: 0, b: 0 };
+  for (let d = 1; d <= 6; d++) {
+    w.h.autoTreat = false;
+    const ha = a.health, hb = b.health;
+    wormDaily(w.st);
+    lost.a += ha - a.health; lost.b += hb - b.health;
+    w.h.autoTreat = true;
+    const care = autoCare(w.st, w.h);
+    if (d === 1) check(care.list.some((e) => e.s === a && e.kind === "wound"), `the night's care treats a spotted carrier at ${Math.round(a.health)} health (above the auto line): meds slow the worm`);
+    b.medsHour = undefined; b.woundTreatedDay = -1; // the control: never treated
+    for (let i = 0; i < 24; i++) { medicalHour(w.st); w.st.hour++; }
+  }
+  check(a.worm && a.worm.day < b.worm.day && a.worm.day >= 3, `treated with meds every night the course moves half as fast: day ${a.worm && a.worm.day} against day ${b.worm.day} untreated`);
+  check(lost.a < lost.b * WORM.MEDS_HP + 1, `and does ${Math.round(WORM.MEDS_HP * 100)}% of the damage: ${Math.round(lost.a)} health lost to it against ${Math.round(lost.b)}`);
+  check(!!a.worm && a.alive, "the meds never clear it: still infected (a dewormer, a purge or surgery does)");
+  // A treatment counts once: two midnights after it, the course moves a full day again.
+  const d0 = a.worm.day, lag0 = a.worm.lag || 0, h0 = a.health;
+  w.h.autoTreat = false;
+  w.st.hour += 30;
+  a.medsHour = w.st.hour - 30; // used up last night (more than a day ago)
+  wormDaily(w.st);
+  check(a.worm.day === d0 + 1 && (a.worm.lag || 0) === lag0 && near(h0 - a.health, dayHp(a.worm.day)), `a day with no meds: the full day (day ${d0} → ${a.worm.day}, −${Math.round(h0 - a.health)} health)`);
 }
 
 // ---------- 6f. prisoners and guests: spotted, treated, thanked ----------
