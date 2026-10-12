@@ -77,7 +77,7 @@ export const CRAFT_BOOKS = {
   diybook: { unlocks: {}, covers: ["backpack", "slingbag", "crowbar", "ladder", "tripwire", "padding", "shinguards", "tirevest"] },
   forgebook: { unlocks: { crafts: ["springmachete", "rivethelmet"] }, covers: ["sawmachete", "spikedbat", "pipespear", "nailbat", "scrapvest"] },
   bushcraftbook: { unlocks: { crafts: ["woodghillie"] }, covers: ["ghillie", "ragboots", "scentmask", "torch", "arrows", "waterfilter"] },
-  enginebook: { unlocks: {}, covers: ["bicycle", "lantern", "headlamp", "flashlight", "spotlight"] }, // Small Engine Repair (teaches Mechanics)
+  enginebook: { unlocks: {}, covers: ["bicycle", "lantern", "headlamp", "flashlight", "spotlight", "windlight"] }, // Small Engine Repair (teaches Mechanics)
   // Cookbooks (wave 2 cooking, the user's pick 13: "cookbooks found while scavenging unlock meals even when not at the
   // correct level"). No craft recipes: cook maps a cooking recipe (cooking.js COOK_RECIPES) to the Cooking a cook needs
   // for it once the book is read (below the recipe's own level, at a poisoning cost a level short: cooking.js

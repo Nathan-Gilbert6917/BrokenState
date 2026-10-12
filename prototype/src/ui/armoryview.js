@@ -121,7 +121,7 @@ const ICON = { bandagekit: "🩹", surgkit: "✚", traumakit: "✚", tourniquet:
   milradio: "📻", handradio: "📻", commset: "🎧", eardef: "🎧", earmuffs: "🎧", nvg: "🥽", thermal: "🥽", crowbar: "🔧", waterfilter: "💧",
   bicycle: "🚲", guitar: "🎸", harmonica: "🎵", cards: "🃏", photos: "🖼", pipebomb: "💣", frag: "💣", molotov: "🔥", flare: "🎆",
   smokegren: "💨", flashbang: "💥", cuffs: "⛓", gamecall: "📯", camonet: "⛺", ghillie: "🌿", woodghillie: "🌿", stove: "🔥", scentmask: "🫙",
-  ragboots: "🥾", flashlight: "🔦", headlamp: "🔦", torch: "🔥", lantern: "🏮", spotlight: "🔦", binoculars: "🔭", monocular: "🔭",
+  ragboots: "🥾", flashlight: "🔦", windlight: "🔦", tacflash: "🔦", headlamp: "🔦", torch: "🔥", lantern: "🏮", spotlight: "🔦", binoculars: "🔭", monocular: "🔭",
   spotscope: "🔭", telescope: "🔭", ladder: "🪜", fishrod: "🎣", fishnet: "🎣", makeshiftrod: "🎣", powerdrill: "🛠", anglegrinder: "🛠",
   riflecase: "🧳", pistolcase: "🧳", ammocan: "🧰", brass: "⁍", powder: "🧂", primers: "⁍", bottle: "🍾", noisemaker: "🔔", alarmclock: "⏰" };
 const CAT_ICON = { jewelry: "💍", smokes: "🚬", liquor: "🍾", treats: "🍫", gadgets: "📱", collectibles: "🪙", household: "🧻", toiletries: "🧼",

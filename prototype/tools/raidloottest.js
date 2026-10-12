@@ -3,6 +3,7 @@
 // supplies move as far as they fit, gear goes in slots, what the ones who get out carry joins the team's cargo and
 // what the lost carry is gone, a weapon picked up mid-raid is fought with at once, and a raid saved mid-search loads.
 // Usage: node tools/raidloottest.js [seed]
+import { faceToward, darkSight } from "../src/sim/vision.js";
 import { FOODS } from "../src/sim/foods.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
@@ -54,6 +55,7 @@ function standNext(b, u, x, y) {
     const nx = x + dx, ny = y + dy;
     if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || !CELL[b.cells[ny * b.w + nx].k].walk || unitAt(b, nx, ny)) continue;
     u.x = nx; u.y = ny;
+    faceToward(u, x, y); // vision.js: looting needs them facing it
     return true;
   }
   return false;
@@ -366,7 +368,7 @@ console.log("A tool picked up mid-raid works at once");
   const med0 = u.medicine;
   const iK = box.contents.gear.findIndex((g) => g.key === "bandagekit");
   RL.raidMove(st, u.id, `rbox:${box.id}:gear:${iK}`, `s:${s.id}:tool`);
-  check(u.medKit && u.medKit.key === "bandagekit" && u.medicine > med0 && !u.nvg && u.sight === Math.min(9, STEALTH.NIGHT_SIGHT), `a bandage kit: better treatment (${med0} → ${u.medicine}), and the dark again (sight ${u.sight})`);
+  check(u.medKit && u.medKit.key === "bandagekit" && u.medicine > med0 && !u.nvg && u.sight === Math.min(9, darkSight(b)), `a bandage kit: better treatment (${med0} → ${u.medicine}), and the dark again (sight ${u.sight})`);
 }
 
 console.log("Headless raids: bots carry, unload at the vehicle, extract");
