@@ -31,7 +31,7 @@ import { setFire, fireLit } from "../sim/fieldheat.js";
 import { sweepOpts } from "../sim/survey.js";
 import { campProblem } from "../sim/staging.js"; // Set up camp: where a camp may stand
 import { crawlTile } from "../sim/citycrawl.js";
-import { transferProblem, loadFromBase } from "../sim/teaminv.js";
+import { transferProblem, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
 import { siteMissions } from "./ui.js";
 import { ask } from "./confirm.js";
 
@@ -217,6 +217,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   }
 
   // The team's own gear and land you hold
+  // (on the team's own tile: its inventory, ui/teaminv.js, as its panel's 🎒 Team inventory)
+  if (partyTile(p) === tile && isPlayerTeam(p)) add("Team", "inventory", "🎒 Team inventory…", [], { special: "inventory", hint: "Every member's kit (worn, held, pockets, rig, pack) and the team's cargo side by side: move things between them." });
   if (!water) {
     const vrep = v && !v.destroyed && v.condition < 100 && here;
     if (vrep) { const r = repairInfo(state, p); add("Team", "repair", `Field repair: ${v.name} (${r.hours}h)`, [{ type: "repair" }], { why: r.ok ? "" : r.reason, hint: `${r.hours} hours, 1 part: about +${r.gain}% condition (best Mechanics ${r.mech}).` }); }
@@ -351,8 +353,8 @@ export function runTeamAction(state, ui, d, acts = {}) {
   const it = m.items.find((x) => x.key === d.key);
   if (!it) return "That is not possible there any more.";
   if (it.disabled) return `${it.label}: ${it.disabled}`;
-  if (it.special === "drop" || it.special === "load") {
-    if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special });
+  if (it.special === "drop" || it.special === "load" || it.special === "inventory") {
+    if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special === "inventory" ? "team" : it.special });
     return "";
   }
   if (it.special === "meet") {
