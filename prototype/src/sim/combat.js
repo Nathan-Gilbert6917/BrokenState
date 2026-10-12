@@ -49,7 +49,8 @@ import { siegeSetup, siegeAct, siegeAI, botSiege, afterMove, checkRams, isCrew, 
 import { lureTurn, herded, shepherdTurn, botDecoy, lureEdge } from "./decoys.js"; // decoys, fire and the senses of the dead; the Shepherd
 import { battlePerks, battleXp, rollBook, fightXp, hash01 } from "./skills.js";
 import { battleRecord, friendAim, teamSpirit } from "./relations.js";
-import { refitSenses } from "./stealth.js";
+import { refitSenses, senses } from "./stealth.js";
+import { LIGHTS } from "./lights.js"; // a light's name (switchAct)
 import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_MODS, situationalAim, roundReach } from "./gunmods.js"; // gun attachments; a fitted magazine changes a gun's capacity (magCap)
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke, botFlash, noiseAt } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
@@ -108,7 +109,7 @@ import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, 
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
-import { VISION, hasFront, inArc, coned, nightSees, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
+import { VISION, hasFront, inArc, coned, nightSees, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox, activeLight, nvgOn, nvgSight } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -2182,15 +2183,17 @@ export function canSeeAt(b, a, x, y) {
 }
 // A crawler low in the grass is hidden from your people until it is close, lit or has struck (zombietypes.js).
 // Someone of yours sneaking (vision.js) is not seen by the other side behind half or full cover facing them (from
-// further than a tile). A light carried at night is seen from the daylight range by anyone facing it.
+// further than a tile), unless they have a light switched on at night: it shows over the cover. A light switched on at
+// night (vision.js activeLight) is seen from the daylight range by anyone facing it; night vision shows nothing.
 export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && !sneakHidden(b, a, t) && (canSeeAt(b, a, t.x, t.y) || litFrom(b, a, t));
 export function sneakHidden(b, a, t) {
   if (!t.sneaking || t.side !== "player" || a.side === "player") return false;
+  if (b.night && activeLight(t)) return false; // the light gives them away
   if (dist(a.x, a.y, t.x, t.y) < 1.5) return false;
   return coverAgainst(b, t.x, t.y, a.x, a.y).level >= 1;
 }
 function litFrom(b, a, t) {
-  if (!b.night || !t.light || t.side === a.side || t.down || t.dead) return false;
+  if (!b.night || !activeLight(t) || t.side === a.side || t.down || t.dead) return false;
   if (dist(a.x, a.y, t.x, t.y) > SIGHT + HEIGHT.SIGHT * hAt(b, a.x, a.y) || !inArc(a, t.x, t.y, VISION.HALF)) return false;
   return los(b, a.x, a.y, t.x, t.y) && !(b.smoke && b.smoke.length && smokeBlocks(b, a.x, a.y, t.x, t.y));
 }
@@ -3405,7 +3408,7 @@ function scramble(b, u) {
   if (mv) moveAlong(b, u, mv.path);
 }
 
-// An unaware enemy notices a player unit that comes close enough in its sight.
+// An unaware enemy notices a player unit that comes close enough in its sight, or (a person) sees its light.
 function detect(b, mover) {
   for (const e of b.units) {
     if (e.side !== "enemy" || e.aware || !active(e)) continue;
@@ -3413,8 +3416,16 @@ function detect(b, mover) {
     const r = detectRange(b, e, mover);
     if (dist(e.x, e.y, mover.x, mover.y) <= r && los(b, e.x, e.y, mover.x, mover.y)) {
       alertPod(b, e.pod, `${e.name} spotted ${mover.name}!`);
-    }
+    } else if (lightSpotted(b, e, mover)) alertPod(b, e.pod, `${e.name} sees ${mover.name}'s light!`);
   }
+}
+// A raider, a soldier, any enemy person (not the dead: they keep their own senses, decoys.js) who sees a light one of
+// yours has switched on at night knows you are there (the user's request): canSee counts the light from the daylight
+// range in its view cone (litFrom), past its noticing range. Night vision gives off no light: nothing to see.
+export function lightSpotted(b, e, p) {
+  if (!b.night || p.side !== "player" || !activeLight(p) || !active(p) || e.side !== "enemy" || e.kind !== "human" || e.ztype || !hasFront(e) || !active(e)) return false;
+  if (b.floors && (e.f || 0) !== (p.f || 0)) return false;
+  return canSee(b, e, p);
 }
 
 export function moveAlong(b, u, path) {
@@ -3489,6 +3500,24 @@ function sneakAct(b, u, act) {
   }
   u.sneaking = on;
   say(b, on ? `${u.name} keeps low and moves quietly.` : `${u.name} stops sneaking.`, "info");
+  bump(b);
+  return "";
+}
+// A light or night vision switched on or off (vision.js activeLight / nvgOn; free, even with no actions left). act.on:
+// true or false, or left out to flip it. What they see follows at once (stealth.js senses); a light switched on at
+// night can be seen at once by an enemy facing it (detect: lightSpotted).
+function switchAct(state, b, u, act) {
+  const nv = act.type === "nvg", key = nv ? "nvgOff" : "lightOff";
+  if (nv ? !u.nvg : !u.light) return nv ? `${u.name} has no night vision (goggles, or a thermal).` : `${u.name} has no light.`;
+  if (u.aboard || u.gunner) return "Get out of the vehicle first.";
+  const on = act.on != null ? !!act.on : !!u[key];
+  if (on === !u[key]) return "";
+  u[key] = !on;
+  senses(b, u, u.sid != null ? survivorById(state, u.sid) : undefined);
+  const first = u.name.split(" ")[0], lamp = (LIGHTS[u.light] && LIGHTS[u.light].name) || "light";
+  if (nv) say(b, on ? `${u.name} switches on the night vision${b.night ? `: ${nvgSight(u)} tiles down the cone, and no light to give them away` : ""}.` : `${u.name} flips the night vision up${b.night ? (activeLight(u) ? `: the ${lamp} is what ${first} sees by now` : `: ${first} sees only what the dark lets them`) : ""}.`, "info");
+  else say(b, on ? `${u.name} switches on the ${lamp}${b.night ? `. It gives ${first} away: anyone facing it sees it from far off${u.sneaking ? ", sneaking or not" : ""}` : ""}.` : `${u.name} switches off the ${lamp}.`, on && b.night ? "danger" : "info");
+  if (on && !nv && b.night) detect(b, u);
   bump(b);
   return "";
 }
@@ -3764,6 +3793,7 @@ export function combatAct(state, act) {
   if (u && isTied(u) && !u.down && !boundAct && u.side === "player") return rescueRefusal(b, u);
   if (u && u.side === "player" && act.type === "selfStab") { const why = MED.selfStabilize(b, u); if (why) return why; b.acted = true; bump(b); return ""; } // medics.js: a downed survivor's tourniquet or trauma kit
   if (u && u.side === "player" && act.type === "sneak" && active(u)) return sneakAct(b, u, act); // vision.js: free, even with no actions left to stop
+  if (u && u.side === "player" && (act.type === "light" || act.type === "nvg") && active(u)) return switchAct(state, b, u, act); // vision.js: a light, night vision on or off (free, even with no actions left)
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
   if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
@@ -5997,6 +6027,7 @@ export function notice(b, e) {
       alertPod(b, e.pod, `${e.name} spotted ${p.name}!`);
       return;
     }
+    if (lightSpotted(b, e, p)) { alertPod(b, e.pod, `${e.name} sees ${p.name}'s light!`); return; } // a light at night, from far off
   }
 }
 

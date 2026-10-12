@@ -62,6 +62,7 @@ import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAP
 import { KIT_ATTACH } from "./data-kit.js"; // magazines as items (section 15): the extended mag and the drum are magazine items now
 // The gun builder's sim calls on inventory locations (they live with the inventory's location handling).
 export { fitAt, stripAt } from "./inventory.js";
+import { activeLight, nvgOn } from "./vision.js"; // the switches: a light, night vision on or off (call time only)
 import { stow } from "./inventory.js"; // (call time only: relocateMisfits puts a part taken off into the carrier's kit)
 export { SLOTS, SLOT_NAMES, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS };
 
@@ -610,13 +611,13 @@ export const hasScope = (item) => fitted(item).some((m) => isScope(m.key) && mod
 // The aim attachments give by the moment (combat.js shotOdds): a bipod when the gun rests on half cover next to the
 // shooter in the line of the shot (rested: combat.js restCell, user request 2026-10-08; standing still alone no longer
 // counts), a sling when the shooter moved this turn (u.movedT, combat.js moveAlong); at night a tritium sight, a weapon
-// light within 6 tiles and an IR laser for a shooter wearing night vision (u.nvg, stealth.js). d: the distance to the
-// target.
+// light within 6 tiles (not with the lights switched off: vision.js activeLight) and an IR laser for a shooter with
+// night vision on (vision.js nvgOn; u.nvg, stealth.js). d: the distance to the target.
 export function situationalAim(b, u, d, gm = unitMods(u), rested = false) {
   if (!gm || gm === NO_MODS) return 0;
   const moved = !!b && u.movedT != null && u.movedT === b.turn;
   let aim = (moved ? gm.moving || 0 : 0) + (rested ? gm.brace || 0 : 0);
-  if (b && (b.night || b.dark)) aim += (gm.night || 0) + (d <= 6 ? gm.nightNear || 0 : 0) + (u.nvg ? gm.peq || 0 : 0);
+  if (b && (b.night || b.dark)) aim += (gm.night || 0) + (d <= 6 && !(u.light && !activeLight(u)) ? gm.nightNear || 0 : 0) + (nvgOn(u) ? gm.peq || 0 : 0);
   return aim;
 }
 

@@ -13,9 +13,17 @@
 //   - in the dark, DARK[hour the battle started] tiles ahead within NIGHT_HALF either side (7 at dusk, 4 in the dead
 //     of night), and NEAR all round (the cells next to them);
 //   - a light (lights.js) is a beam the way they face: its sight, within its `beam` half-angle (a headlamp wide, a
-//     military flashlight long and narrow); a torch or a lantern a pool all round (`pool`); night vision the day's
-//     sight down the night cone;
-//   - a light is seen: whoever carries one is seen from the daylight range by anyone facing it (canSee);
+//     military flashlight long and narrow); a torch or a lantern a pool all round (`pool`); night vision (goggles, a
+//     thermal) NVG_SIGHT down the night cone: as far as a military flashlight's beam (12), wider, and no light at all;
+//   - a light is seen: whoever carries one switched on is seen from the daylight range by anyone facing it (canSee),
+//     noticed from further off (stealth.js lightSeen), and an enemy person (not the dead) who sees it knows you are
+//     there: its group is alerted (combat.js lightSpotted). Night vision gives nothing away;
+//   - the switches (act "light" / "nvg", free, even with no actions left; u.lightOff, u.nvgOff): a light or night
+//     vision switched off is as good as not carried, for sight, being seen and the beams drawn (activeLight, nvgOn
+//     below: everything reads them). At the start of a battle a unit with both has the goggles on and the light off
+//     (defaultSwitches: night vision sees as far as all but the military flashlight's beam without giving them away;
+//     the light is one click away for a pool of light or a longer beam); with night vision off and no light they see
+//     only what the dark (or a building's lights) lets them;
 //   - enemies have the same eyes (a soldier's military flashlight, a raider's flashlight one time in three), and the
 //     aware ones look toward the nearest of yours they can make out at the start of their turn (aiLook).
 // Sneaking (act "sneak", free, toggles; u.sneaking): moves at SNEAK_MOB of the pace, makes no sound (nothing heard
@@ -46,6 +54,18 @@ export const VISION = {
 // vision goes through these.
 export const activeLight = (u) => (u && u.light && !u.lightOff ? u.light : null);
 export const nvgOn = (u) => !!(u && u.nvg && !u.nvgOff);
+// The switches at the start of a battle, or when a light or night vision comes to hand mid-fight (stealth.js
+// refitSenses). had: { light, nvg } the unit had before (nothing at the start). Night vision newly to hand is on; a
+// light newly to hand is on unless night vision is: with both, the goggles on and the light off (no light to give
+// them away; the light is a free click away). Switches already set on what they had are kept.
+export function defaultSwitches(u, had = {}) {
+  if (!u) return;
+  const gotNvg = !!u.nvg && !had.nvg, gotLight = !!u.light && !had.light;
+  if (gotNvg) u.nvgOff = false;
+  if (gotLight || (gotNvg && u.light)) u.lightOff = nvgOn(u);
+  if (!u.nvg) delete u.nvgOff;
+  if (!u.light) delete u.lightOff;
+}
 
 // ---------- facing ----------
 export const faceAng = (u) => { const f = u && u.face; return f && (f[0] || f[1]) ? Math.atan2(f[1], f[0]) : null; };
@@ -74,12 +94,15 @@ export function nightWord(b) {
   const h = b && Number.isFinite(b.hour) ? b.hour : 0;
   return h === 20 ? "dusk" : h === 5 ? "first light" : h === 21 || h === 4 ? "dark" : "dead of night";
 }
-const beamOf = (u) => (u && u.light && LIGHTS[u.light] && !LIGHTS[u.light].round ? LIGHTS[u.light] : null);
-const poolOf = (u) => (u && u.light && LIGHTS[u.light] && LIGHTS[u.light].round ? LIGHTS[u.light].pool || 0 : 0);
+const beamOf = (u) => { const k = activeLight(u); return k && LIGHTS[k] && !LIGHTS[k].round ? LIGHTS[k] : null; };
+const poolOf = (u) => { const k = activeLight(u); return k && LIGHTS[k] && LIGHTS[k].round ? LIGHTS[k].pool || 0 : 0; };
+// How far night vision sees down the night cone: as far as a military flashlight's beam (the user's request: "up to the
+// military flashlight"), never further than the unit sees by day.
+export const nvgSight = (u) => Math.min(u.daySight ?? 13, LIGHTS.tacflash.sight);
 // The eyes of someone with a front at night: cones { r, half } ahead and the radius all round (near). extra: tiles
 // added to every cone (height, optics: combat.js sightRange less the unit's own sight).
 export function nightEyes(b, u, extra = 0) {
-  const cones = [{ r: (u.nvg ? u.daySight ?? 13 : darkSight(b)) + extra, half: VISION.NIGHT_HALF }];
+  const cones = [{ r: (nvgOn(u) ? nvgSight(u) : darkSight(b)) + extra, half: VISION.NIGHT_HALF }];
   const L = beamOf(u);
   if (L) cones.push({ r: L.sight + extra, half: (L.beam || 20) * D });
   return { cones, near: Math.max(VISION.NEAR, poolOf(u)) };
@@ -87,7 +110,7 @@ export function nightEyes(b, u, extra = 0) {
 // How far someone sees at night at most (u.sight at night: anything that reads a unit's sight as one number).
 export function nightReach(b, u) {
   const L = beamOf(u);
-  return Math.max(u.nvg ? u.daySight ?? 13 : darkSight(b), L ? L.sight : 0, poolOf(u));
+  return Math.max(nvgOn(u) ? nvgSight(u) : darkSight(b), L ? L.sight : 0, poolOf(u));
 }
 // Does a unit with a front see (x, y), d tiles off, at night (range and direction only: combat.js canSeeAt does the
 // line of sight)?

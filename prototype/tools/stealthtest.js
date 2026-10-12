@@ -32,6 +32,7 @@ import { fightNow } from "../src/sim/defences.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { CRAFTS } from "../src/sim/crafting.js";
+import { LIGHTS } from "../src/sim/lights.js";
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -431,7 +432,9 @@ function prisonWorld(s, n = 2, cells = 1) {
   const zn = nite.units.find((u) => u.side === "enemy" && u.kind === "zombie");
   check(!day0.night && nite.night && gd.sight === 13 && gn.sight === STEALTH.NIGHT_SIGHT && zn.sight === STEALTH.NIGHT_ZOMBIE_SIGHT, `enemy sight by day ${gd.sight}, at night ${gn.sight} (the dead ${zn.sight})`);
   const me = (b) => b.units.find((u) => u.side === "player");
-  check(me(nite).sight === darkSight(nite) && me(lit).sight === STEALTH.LIGHT_SIGHT && me(nvg).sight === 13, `your sight at night: ${me(nite).sight}, with a flashlight ${me(lit).sight}, with night vision ${me(nvg).sight}`);
+  // Night vision sees as far as a military flashlight's beam (12, vision.js nvgSight; the user's request of 2026-10-12:
+  // "up to the military flashlight"), no longer the full day's 13.
+  check(me(nite).sight === darkSight(nite) && me(lit).sight === STEALTH.LIGHT_SIGHT && me(nvg).sight === LIGHTS.tacflash.sight, `your sight at night: ${me(nite).sight}, with a flashlight ${me(lit).sight}, with night vision ${me(nvg).sight}`);
   const front = { ...gn, face: [1, 0], x: 10, y: 5 };
   const mover = (b) => ({ ...me(b), x: 12, y: 5, sneak: 0, ghost: false });
   const rd = detectRange(day0, { ...front }, mover(day0)), rn = detectRange(nite, front, mover(nite)), rl = detectRange(lit, front, mover(lit));

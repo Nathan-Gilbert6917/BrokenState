@@ -11,8 +11,10 @@
 // beam: its half-angle in degrees); a pool lights all round them (pool: its radius); the dark around stays the
 // night's own (vision.js DARK, by the hour). sight is also the light's single number for everything else (u.sight
 // at night, the survey, the brighter of two).
-// At night (raids, base battles: stealth.js) a light sets how far its carrier sees (7 without one, 13 by day or with
-// night vision) and how much further off the guards notice them (`seen`, added to the night detection range); a
+// At night (raids, base battles: stealth.js) a light switched on sets how far its carrier sees (7 without one, 13 by
+// day, 12 down the cone with night vision on) and how much further off the guards notice them (`seen`, added to the
+// night detection range; an enemy person who sees it knows they are there: combat.js lightSpotted); a light switched
+// off counts as none (vision.js activeLight; the battle's Light on / off, free); a
 // rummage in the dark without one is heard further and cuts hands more often (search.js). A survey's night hours keep
 // `survey` of the daylight odds with the team's best light (survey.js; 0.35 without). Teams take lights from the
 // armory when they set out: the planner's Lights line (parties.js launchExpedition opts.lights) and the autopilot's and
