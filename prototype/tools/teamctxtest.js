@@ -198,11 +198,13 @@ section("Your own base: enter, drop off, load, resupply; away from it they wait 
   check(!item(m, "drop").disabled && !item(m, "resupply").disabled, `at the base: drop off and resupply enabled (${item(m, "drop").disabled} / ${item(m, "resupply").disabled})`);
   const acts = { opened: null, "ti-open": (d) => { acts.opened = d; } };
   check(runTeamAction(state, {}, { id: p.id, tile: h.tile, key: "load", mode: "replace" }, acts) === "" && acts.opened && acts.opened.tab === "load", "Load from… opens the team inventory on its load tab");
+  check(has(m, "inventory") && runTeamAction(state, {}, { id: p.id, tile: h.tile, key: "inventory", mode: "replace" }, acts) === "" && acts.opened.tab === "team", "the team's own tile: 🎒 Team inventory opens its team tab");
   const msg = runTeamAction(state, {}, { id: p.id, tile: h.tile, key: "resupply", mode: "replace" });
   check(food(p) >= 6 && p.supplies.water >= 6, `resupply: 3 days of food and water for 2 (${food(p)} food, ${p.supplies.water} water; ${msg})`);
   m = teamTileMenu(state, {}, p, h.tile);
   check(/already carries/.test(item(m, "resupply").disabled || ""), "resupplied: nothing more to take");
   const away = team(state, 1, { tile: find(state, h.tile, () => true, 3, 6) });
+  check(!has(teamTileMenu(state, {}, away, h.tile), "inventory"), "another tile: no Team inventory (only on its own tile)");
   const ma = teamTileMenu(state, {}, away, h.tile);
   check(/move it here first/.test(item(ma, "drop").disabled || ""), `away: drop off waits for the team to be at the base (${item(ma, "drop").disabled})`);
   check(!item(ma, "mission:enter").disabled && item(ma, "mission:enter").move, "away: enter the base = move there, then enter");

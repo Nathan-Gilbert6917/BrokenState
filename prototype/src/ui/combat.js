@@ -930,6 +930,7 @@ export function combatKey(state, e) {
   if (space || confirm) { requestEndTurn(state, space ? "space" : "enter"); return true; }
   if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; return true; }
   if (k === "battle.autoplay") { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
+  if (k === "battle.inventory") { combatAction(state, "cb-inv", {}); return true; } // the selected survivor's kit (read-only)
   if (b.phase === "deploy") return false;
   if (k === "battle.retreatAll") { combatAction(state, b.tier && b.tier.map === "wall" ? "cb-fallback" : "cb-retreat", { v: "ask" }); return true; }
   if (k === "battle.clear") { combatAction(state, "cb-clear", {}); return true; } // the area is clear enough (sim/battlesize.js)
@@ -946,6 +947,8 @@ export function combatAction(state, key, d) {
   sync(b);
   const u = selUnit(b);
   if (key === "cb-close") return void closeCombat(state, { take: d.take !== "0" });
+  // The inventory of the selected survivor (or d.id's): ui/inventory.js takeLootReq opens it, read-only.
+  if (key === "cb-inv") { const t = d.id != null ? unitById(b, Number(d.id)) : u; if (t && t.side === "player" && t.sid != null && t.vol == null) cui.invReq = t.sid; else cui.msg = "Select one of your people to see what they carry."; return; }
   if (key === "cb-volorder") { const err = combatAct(state, { type: "volOrder", unit: Number(d.id), order: d.v, target: u ? u.id : null }); cui.msg = err || ""; return; } // sim/combat.js volOrder: Free, Hold here, Follow the selected one
   // The view bar (ui/isoview.js).
   if (key === "cb-view") {
@@ -1246,7 +1249,9 @@ export function renderCombatPanel(state) {
     ${tierHtml(b)}
   </div>`;
 
-  html += `<h3>Your team</h3><div class="cbroster">`;
+  // 🎒 the selected survivor's inventory (ui/inventory.js peekModal): read-only over the battle.
+  const kitOf = u && u.side === "player" && u.sid != null && u.vol == null ? u : null;
+  html += `<h3 class="spread"><span>Your team</span>${kitOf ? `<button class="mini" data-action="cb-inv" data-id="${kitOf.id}" data-tip="${esc(`What ${kitOf.name.split(" ")[0]} carries: worn, held, pockets, rig and pack (look only: nothing moves in a fight but by its orders). (${keyLabel("battle.inventory", 1) || "Shift+B"})`)}">🎒 ${esc(kitOf.name.split(" ")[0])}'s kit</button>` : ""}</h3><div class="cbroster">`;
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})${selfNote(b, p)}`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
       [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), ...earStatus(p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.jam ? "JAMMED" : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.suppressed > 0 ? "Suppressed" : "", p.spearOut ? "Spear thrown" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", handsBusy(p) ? `Hands full (${armsText(p)})` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
