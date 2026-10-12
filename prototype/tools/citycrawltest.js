@@ -99,6 +99,9 @@ console.log("Moved onto a city: the City crawl card");
   // A team standing on the tile that is given a Move order there arrives as a move does (parties.js arrive).
   const moveOnto = (tile, n = 1) => { const p = team(state, h, tile, n); p.phase = "waiting"; state.cards.length = 0; giveOrder(state, p, "move"); return p; };
   const cardOf = (p) => state.cards.find((c) => c.partyId === p.id);
+  // Where there is no crawl to offer, a plain Move that got there pops up no card at all (parties.js quietArrival:
+  // a log line, as orders reach a team anywhere since TEAM-01): no crawl card, no orders card, the team waits.
+  const quietly = (p) => !cardOf(p) && p.phase === "waiting" && /reached .* and waits for orders/.test((state.log[0] || {}).text || "");
   const pick = (card, label) => { state.cards.splice(state.cards.indexOf(card), 1); return card.choices.find((c) => c.label === label).resolve(state); };
   globalThis.window = {};
   try {
@@ -119,21 +122,21 @@ console.log("Moved onto a city: the City crawl card");
     check(!q.crawl && q.phase === "waiting", "Not now leaves the team waiting on the tile");
     // Not a city, a queued order, the autopilot: no City crawl card.
     const r = moveOnto(town, 1);
-    check(cardOf(r) && !cardOf(r).title.startsWith("City crawl"), "a town gets the orders card, no crawl card");
+    check(quietly(r), "a town: no crawl card (the plain move's quiet arrival)");
     const s1 = team(state, h, city, 1); s1.phase = "waiting"; state.cards.length = 0;
     s1.orders = [{ type: "camp", hours: 8 }];
     giveOrder(state, s1, "move");
     check(!cardOf(s1) && s1.phase === "task", "queued orders carry on at the city: no card");
     state.autoCombat = true;
     const u = moveOnto(city, 1);
-    check(cardOf(u) && !cardOf(u).title.startsWith("City crawl"), "with battles resolved by the numbers (the autopilot) the orders card as before");
+    check(quietly(u), "with battles resolved by the numbers (the autopilot) no crawl card: the plain move's quiet arrival as before");
     state.autoCombat = false;
   } finally { delete globalThis.window; }
   const w2 = world(4);
   const v = team(w2.state, w2.h, w2.city, 1); v.phase = "waiting"; w2.state.cards.length = 0;
   giveOrder(w2.state, v, "move");
   const vc = w2.state.cards.find((c) => c.partyId === v.id);
-  check(vc && !vc.title.startsWith("City crawl"), "headless (tools) the orders card as before");
+  check(!vc && v.phase === "waiting" && /reached .* and waits for orders/.test((w2.state.log[0] || {}).text || ""), `headless (tools) no crawl card: the plain move's quiet arrival as before (${vc ? vc.title : "no card"})`);
 }
 
 // ---------- 2. block cards ----------
