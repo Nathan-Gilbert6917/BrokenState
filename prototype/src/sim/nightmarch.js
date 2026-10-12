@@ -101,3 +101,18 @@ export function nightCard(state, p) {
     ],
   };
 }
+
+// The team panel's night plan (ui/expedition.js nightRow): "ask" (the card each night), "camp" or "push" (every night
+// of this trip, no card). Set at night to "camp" on a team still on its way: it makes camp now; to "push": it marches on.
+export const NIGHT_PLANS = { ask: "Ask each night", camp: "Make camp", push: "Push through" };
+export function setNightPlan(state, p, plan) {
+  if (!p || !state.parties.includes(p) || !NIGHT_PLANS[plan]) return "";
+  if (plan === "ask") delete p.nightPlan;
+  else p.nightPlan = plan;
+  for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].nightCard && state.cards[i].partyId === p.id && plan !== "ask") state.cards.splice(i, 1); // its open card is answered by the plan
+  const night = inNight(hourOfDay(state)) && onTheMove(p) && p.phase !== "task";
+  if (night && plan === "camp" && hoursToDawn(state) >= 1 && resumeOrders(state, p)) return `At night: make camp. ${makeCamp(state, p)}`;
+  if (night && plan === "push") { pushOn(state, p); return "At night: push through. The team marches on through the dark."; }
+  if (night && plan === "ask" && p.nightMarch === nightKey(state)) return "At night: ask each night. It keeps marching tonight; you will be asked from tomorrow night.";
+  return plan === "ask" ? "At night: the team asks what to do when night falls on the road." : plan === "camp" ? "At night: the team makes camp on the road at 22:00 and moves on at first light." : "At night: the team pushes on through the dark (more trouble, and nobody sleeps).";
+}

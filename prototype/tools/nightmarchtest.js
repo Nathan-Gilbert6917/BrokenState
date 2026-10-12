@@ -7,7 +7,7 @@
 import { createWorld, tickHour, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, partyTile, planPath, onTheMove, hoursLeft } from "../src/sim/parties.js";
 import { conflictChance } from "../src/sim/conflicts.js";
-import { NIGHT_MARCH, marchingNow, nightKey, hoursToDawn } from "../src/sim/nightmarch.js";
+import { NIGHT_MARCH, marchingNow, nightKey, hoursToDawn, setNightPlan } from "../src/sim/nightmarch.js";
 import { tiredLevel, TIRED } from "../src/sim/sleep.js";
 import { defaultChoice, cardKind } from "../src/sim/cardrules.js";
 
@@ -154,6 +154,38 @@ console.log("Resting in camp sleeps off a night's march");
   startOrder(st, p, { type: "camp", hours: 6 });
   tickHour(st); clearOthers(st);
   check(crew[0].tired < t0, `resting by day sleeps it off (${t0} → ${crew[0].tired})`);
+}
+
+console.log("The team panel's night plan");
+{
+  const st = world();
+  atHour(st, 12);
+  const { p } = team(st, 12);
+  setNightPlan(st, p, "camp");
+  check(p.nightPlan === "camp" && onTheMove(p), "Make camp by day: set for tonight, the team moves on for now");
+  setNightPlan(st, p, "ask");
+  check(p.nightPlan == null, "Ask each night: the card again");
+  setNightPlan(st, p, "bogus");
+  check(p.nightPlan == null, "an unknown plan does nothing");
+  atHour(st, 22);
+  tickHour(st); clearOthers(st);
+  check(nightCards(st, p).length === 1, "asked at night");
+  const text = setNightPlan(st, p, "camp");
+  check(!nightCards(st, p).length && p.phase === "task" && p.task.type === "camp", `Make camp at night: its card goes and it camps now (${text})`);
+  const st2 = world();
+  atHour(st2, 22);
+  const t2 = team(st2, 12);
+  tickHour(st2); clearOthers(st2);
+  setNightPlan(st2, t2.p, "push");
+  check(!nightCards(st2, t2.p).length && marchingNow(st2, t2.p), "Push through at night: its card goes and it marches");
+  // The panel row (ui/expedition.js): three buttons, the current one marked.
+  t2.p.radioLive = true;
+  try {
+    const { renderExpedition } = await import("../src/ui/expedition.js");
+    const html = renderExpedition(st2, { xpQueue: false }, t2.p);
+    const btns = html.match(/data-action="xp-night"/g) || [];
+    check(btns.length === 3 && /class="mini active" data-action="xp-night"[^>]*data-plan="push"/.test(html), `the team panel shows the three night plans, Push through marked (${btns.length})`);
+  } catch (e) { check(false, `the team panel renders: ${e.message}`); }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

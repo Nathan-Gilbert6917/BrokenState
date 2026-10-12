@@ -37,6 +37,7 @@ import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
+import { setNightPlan } from "./sim/nightmarch.js"; // the team panel's night plan
 import { strikeCamp, STRIKE_LABEL } from "./sim/staging.js"; // camps: Strike camp (the base window, the tile panel)
 import { setFire } from "./sim/fieldheat.js";
 import { commandable, NO_RADIO } from "./sim/plans.js";
@@ -892,6 +893,7 @@ const actions = {
   "xp-open": (d) => { if (ui.expedition !== Number(d.id)) ui.qSel = null; ui.expedition = Number(d.id); ui.xpMsg = ""; const p = partyById(d.id); if (p && contactable(p)) { ui.selected = partyTile(p); view.selected = ui.selected; } },
   "xp-close": () => { ui.expedition = null; ui.xpMsg = ""; ui.qSel = null; },
   "xp-queuemode": () => { ui.xpQueue = !ui.xpQueue; },
+  "xp-night": (d) => { const p = partyById(d.id); if (p && (contactable(p) || commandable(state, p))) ui.xpMsg = setNightPlan(state, p, d.plan); }, // sim/nightmarch.js
   "xp-orderstoggle": () => { ui.ordersCollapsed = !ui.ordersCollapsed; },
   "xp-order": (d) => {
     const p = partyById(d.id);

@@ -24,6 +24,7 @@ import { weather as wxNow, travelEffects, foodNeedFactor } from "../sim/weather.
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
 import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
+import { NIGHT_PLANS, NIGHT_MARCH } from "../sim/nightmarch.js"; // the night plan toggle
 import { fireButton, campStatusCard } from "./hardcore.js"; // Establish base while you have no base
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
@@ -149,6 +150,7 @@ export function renderExpedition(state, ui, p) {
       ${queueBlock(state, p, cmd, ui)}
       ${planBlock(state, p)}
       ${live ? heatBlock(state, p) : ""}
+      ${cmd && p.kind === "expedition" ? nightRow(p) : ""}
     </div>`;
 
   const camp = campStatusCard(state, p); // no base yet: where to set up camp (Establish base) and what its step up needs
@@ -424,6 +426,17 @@ export function heatBlock(state, p) {
   // Resting in the field (sim/fieldheat.js campSite: the internal rest task "camp"): what the Heat is made of, and the fire.
   const camp = h.camp ? `<div class="row small muted" style="margin-top:0.2rem"${tip(h.text)}><span>Camp danger: ${esc(rowsText(h.rows || []))}</span>${fireButton(h.camp.fire, h.camp.kind === "staging" ? `data-camp="1"` : `data-team="${p.id}"`)}</div>` : "";
   return `<div class="row" style="margin-top:0.3rem"${tip(h.text)}><span class="muted" style="width:3.5rem">Heat</span><div style="flex:1">${bar(h.heat, color)}</div><span style="width:5.5rem;text-align:right" class="${h.heat >= 50 ? "warn" : ""}">${Math.round(h.heat)} · ${h.activity ? `${(h.chance * 100).toFixed(1)}%/h` : "falling"}</span></div>${camp}`;
+}
+
+// What the team does when night falls on the road (sim/nightmarch.js): ask with a card, make camp, or push through.
+function nightRow(p) {
+  const cur = p.nightPlan || "ask";
+  const tips = {
+    ask: "A \"Night falls\" card each night the team is still on its way at 22:00.",
+    camp: `Make camp at 22:00 wherever it is and move on at ${NIGHT_MARCH.TO}:00 (a night's sleep, the hurt heal a little). No card.`,
+    push: `Keep moving through the night: road events ×${NIGHT_MARCH.EVENTS}, run-ins with the dead or raiders ×${NIGHT_MARCH.CONFLICT}, it sees only its own tile, and nobody sleeps (Tired by dawn). No card.`,
+  };
+  return `<div class="row small" style="margin-top:0.3rem;flex-wrap:wrap"${tip("What the team does when night falls while it is still on the road (for this trip)")}><span class="muted" style="width:3.5rem">At night</span>${Object.entries(NIGHT_PLANS).map(([k, label]) => `<button class="mini ${cur === k ? "active" : ""}" data-action="xp-night" data-id="${p.id}" data-plan="${k}"${tip(tips[k])}>${label}</button>`).join("")}</div>`;
 }
 
 // The plan the team left with (sim/plans.js): name, steps left and its "come home" rule.
