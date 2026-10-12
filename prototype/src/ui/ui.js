@@ -83,7 +83,7 @@ import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower, carriedSpo
 import { inventoryModal, takeLootReq } from "./inventory.js";
 import { armoryView, armoryScope } from "./armoryview.js"; // the Armory tab's stored gear: grouped, cards or compact rows
 import { itemShortTip, tipAttrs } from "./itemlabels.js"; // the armory cards' short hover tip (Shift: the whole one)
-import { teamInvModal, teamsHereCard, transferButtons } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
+import { teamInvModal, teamsHereCard, transferButtons, unpackUp, unpackModal } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
 import { fleetPicker } from "./fleetpick.js"; // the vehicle picker the planners share (up to four)
 import { plannedFleet, pickProblem } from "../sim/teamform.js";
 import { teamFormModal, formTeamButton, editTeamButton, formTeamRow } from "./teamform.js"; // Form a team… at a base; Edit team… for a team waiting on one
@@ -800,6 +800,7 @@ function pickModal(state, ui) {
   // A card that stops the clock by the pause rules, or one opened from the tray (ui/pacing.js puts it first).
   if (nameModalUp(state, ui)) return ["namebase", () => nameBaseModal(state, ui)]; // ui/basename.js: a base just founded, or ✎ Rename (before its founding card)
   if (cardUp(state, ui)) return ["card", () => trayCardFrame(state, ui, cardModal(state, state.cards[0]))];
+  if (unpackUp(state, ui)) return ["unpack", () => unpackModal(state, ui)]; // ui/teaminv.js: a team home, what its people carry put away
   if (!state.autopilot && activeCrawl(state)) return ["crawl", () => crawlModal(state, ui)]; // a city crawl's block card (ui/citycrawl.js)
   if (!state.autopilot && activeHiveCrawl(state)) return ["hivecrawl", () => hiveCrawlModal(state, ui)]; // a hive crawl's chamber (ui/hivecrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
