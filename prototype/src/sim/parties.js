@@ -52,6 +52,7 @@ import { gatheringCull } from "./hivebirth.js"; // hive birth you can see: break
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore } from "./hordes.js";
 import { supplyArrive, supplyReturned } from "./supply.js";
+import { nightFalls } from "./nightmarch.js"; // night on the road: make camp or push through
 import { taskHour, startTask, startOrder, continueQueue, resumeQueue, orderLabel, queueText, tasksDue } from "./orders.js";
 import { applyPlan, fieldHour } from "./plans.js";
 import { packSiegeKit } from "./kit.js";
@@ -1380,6 +1381,11 @@ function playerPartyHour(state, p) {
   // Moved this hour already: it got where it was going part-way through the hour (arrivalsDue).
   if (p.movedHour === state.hour) {
     updateRadio(state, p);
+    return;
+  }
+  // Night falls on the road (nightmarch.js): make camp until dawn or push through the night (asked once a night).
+  if (nightFalls(state, p)) {
+    if (state.parties.includes(p)) updateRadio(state, p);
     return;
   }
   moveHour(state, p, state.hour);
