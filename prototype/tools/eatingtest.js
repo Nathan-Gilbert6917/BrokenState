@@ -26,7 +26,7 @@ import { econStats } from "../src/sim/farming.js";
 import { launchExpedition, partyMembers, spawnAiParty, removeParty } from "../src/sim/parties.js";
 import { needsHour, teamNeedsHour, NEEDS } from "../src/sim/needs.js";
 import { EAT, PACK, THOUGHTS, MEAL_MOOD, RATION_PLAN, GROUP_EAT, eatTarget, targetAt, packFood, packWater, packKg, rationOf, thought, thoughtsOf, planRations, setRationLevel, groupRation, groupDietPressure, breakMin, eatPack, topUpPack, noteEat } from "../src/sim/eating.js";
-import { RATION_LEVELS, rationKey, rationUse, MEAL_WORK_SHARE, mealOf } from "../src/sim/meals.js";
+import { RATION_LEVELS, rationKey, rationUse, MEAL_WORK_SHARE, mealOf, lunchHour, setLunchHour, isMealHour, lunchOverlap, LUNCH_HOURS } from "../src/sim/meals.js";
 import { FOODS, addFood, unitsOf, qtyOf, foodIn } from "../src/sim/foods.js";
 import { describeActivity } from "../src/sim/activity.js";
 import { wornLoad } from "../src/sim/load.js";
@@ -77,7 +77,7 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
     st.hour++; needsHour(st);
     for (const s of ppl) if (s.meal && s.meal.h === st.hour) { mealsAt.add(st.hour % 24); mins.push(s.meal.min); }
   }
-  check([...mealsAt].sort((a, b) => a - b).join(",") === "6,20", `they eat at breakfast and dinner (${[...mealsAt].join(", ")})`);
+  check([...mealsAt].sort((a, b) => a - b).join(",") === "6,12,20", `they eat at breakfast, lunch and dinner (${[...mealsAt].join(", ")})`);
   check(mins.every((m) => m >= EAT.min.meal && m <= EAT.min.max), `meal breaks of ${Math.min(...mins)}–${Math.max(...mins)} minutes`);
   check(ppl.every((s, i) => s.hunger <= tg[i] + 1e-6 && s.hunger > 55), `the gauges stay under their targets and well fed (${ppl.map((s) => r1(s.hunger)).join(", ")})`);
   // Right after a meal everyone is at their target.
@@ -188,9 +188,48 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
 // ---------- 3. work time ----------
 {
   console.log("Work time");
-  check(near(MEAL_WORK_SHARE, 22 / 24), "the round-the-clock jobs lose the two meal hours (meals.js MEAL_WORK_SHARE), as before: one cost for the breaks");
+  check(near(MEAL_WORK_SHARE, 21 / 24), "the round-the-clock jobs lose the three meal hours (meals.js MEAL_WORK_SHARE): one cost for the breaks");
   check(breakMin(0.5, true) === Math.round(EAT.min.base + EAT.min.per * 0.5) && breakMin(0.05, true) === EAT.min.meal && breakMin(3, true) === EAT.min.max && breakMin(0.1, false) < EAT.min.meal, `minutes by the food eaten: ${breakMin(0.1, false)} (a snack) · ${breakMin(0.5, true)} (half a day's food) · ${breakMin(3, true)} (most)`);
-  check(mealOf("hunt", 10) === "breakfast" && mealOf("farm", 6) === "breakfast" && mealOf("farm", 20) === "dinner" && !mealOf("farm", 12), "the mealtimes (the hunters' late breakfast)");
+  check(mealOf("hunt", 10) === "breakfast" && mealOf("farm", 6) === "breakfast" && mealOf("farm", 12) === "lunch" && mealOf("farm", 20) === "dinner" && !mealOf("farm", 13), "the mealtimes (the hunters' late breakfast, lunch at 12:00)");
+}
+
+// ---------- 3b. lunch (TIME-03: an hour, to 80–100% full, a small lift, set in the Work tab) ----------
+{
+  console.log("Lunch");
+  const st = W();
+  const h = quietHub(st);
+  st.hour = mildHour(st, 0);
+  const ppl = residents(st, h.id);
+  check(lunchHour(st) === 12 && isMealHour(12, st) && !isMealHour(14, st), "lunch at 12:00 unless set");
+  check(!setLunchHour(st, 9) && !setLunchHour(st, 20) && lunchHour(st) === 12, `only ${LUNCH_HOURS.join(", ")} can be lunch (not 09:00, not dinner's 20:00)`);
+  check(setLunchHour(st, 14) && lunchHour(st) === 14 && isMealHour(14, st) && !isMealHour(12, st) && mealOf("farm", 14, st) === "lunch" && !mealOf("farm", 12, st), "moved to 14:00 (the Work tab)");
+  days(st, 2);
+  const mealsAt = new Set();
+  for (let i = 0; i < 24; i++) {
+    st.hour++; needsHour(st);
+    for (const s of ppl) if (s.meal && s.meal.h === st.hour) mealsAt.add(st.hour % 24);
+  }
+  check([...mealsAt].sort((a, b) => a - b).join(",") === "6,14,20", `they eat at 06:00, 14:00 and 20:00 (${[...mealsAt].join(", ")})`);
+  // To their own target (80–100), and a small lift for it.
+  at(st, 13);
+  const p = plain(ppl[0]); p.hunger = eatTarget(p) - 20; p.mood = 50;
+  at(st, 14);
+  check(p.meal && p.meal.h === st.hour && p.meal.meal === "lunch" && p.hunger >= Math.min(EAT.band[0], eatTarget(p)) - 1 && p.hunger <= eatTarget(p) + 1e-6, `lunch fills them to their target (${r1(p.hunger)} of ${eatTarget(p)})`);
+  check(p.mood >= 50 + EAT.lunchMood - 1e-9 && p.mood < 50 + 3, `a small lift to mood (+${r1(p.mood - 50)})`);
+  check(/^Eating lunch/.test(describeActivity(st, p).text), `the activity: "${describeActivity(st, p).text}"`);
+  // Out on a job trip at lunch: from the pack where they are.
+  at(st, 13);
+  const q = plain(ppl[1]); q.hunger = eatTarget(q) - 20;
+  topUpPack(st, h, q);
+  const pk0 = packFood(q);
+  q.trip = { job: "wood", base: h.id, tile: h.tile, at: h.tile, d: 1, leave: st.hour, arrive: st.hour + 0.5, workEnd: st.hour + 3, home: st.hour + 4 };
+  at(st, 14);
+  check(q.meal && q.meal.h === st.hour && q.meal.from === "pack" && packFood(q) < pk0 - 0.05, `out on a trip, lunch from the pack (${r1(pk0)} → ${r1(packFood(q))} days)`);
+  delete q.trip;
+  check(PACK.trip >= 1 && PACK.food >= PACK.trip, `a job trip sets out with at least ${PACK.trip} day of food (the pack holds ${PACK.food})`);
+  // The hour of lunch inside a stretch of time (a trip's work).
+  check(lunchOverlap(8, 11, st) === 0 && near(lunchOverlap(13.5, 15.25, st), 1) && near(lunchOverlap(14.5, 18, st), 0.5) && near(lunchOverlap(24 + 14.25, 24 + 14.75, st), 0.5) && near(lunchOverlap(0, 48, st), 2), "lunchOverlap: the lunch hour's share of a span, day by day");
+  setLunchHour(st, 12);
 }
 
 // ---------- 4. the pack ----------

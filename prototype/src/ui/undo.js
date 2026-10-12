@@ -30,11 +30,11 @@ const LABELS = {
   "tpl-use": "template", queuebuild: "queued build", cancelbuild: "cancelled build", "barrel-up": "barrel upgrade", "bq-move": "queue order",
   wc: "priority", wrc: "role priority", wfc: "field priority", wsched: "schedule", wreset: "reset to role", weveryone: "everyone on priorities",
   "wrole-new": "new role", "wrole-new-crew": "new crew", "wrole-dup": "duplicated role", "wrole-del": "deleted role", "wcrew-pause": "crew pause",
-  "wcrew-all": "handle everything", "wcrew-cargo": "cargo rule", wnew: "newcomers", wsick: "sick people rest", "wrole-name": "role name", wmin: "minimum",
+  "wcrew-all": "handle everything", "wcrew-cargo": "cargo rule", wnew: "newcomers", wsick: "sick people rest", wlunch: "lunch hour", "wrole-name": "role name", wmin: "minimum",
   "wsched-preset": "schedule preset", "wcrew-set": "crew setting", role: "role", key: "priority",
 };
 const BUILD_KEYS = new Set(["queuebuild", "cancelbuild", "barrel-up", "bq-move"]);
-const WORK_KEYS = new Set(["wc", "wrc", "wfc", "wsched", "wreset", "weveryone", "wrole-new", "wrole-new-crew", "wrole-dup", "wrole-del", "wcrew-pause", "wcrew-all", "wcrew-cargo", "wnew", "wsick", "wrole-name", "wmin", "wsched-preset", "wcrew-set"]);
+const WORK_KEYS = new Set(["wc", "wrc", "wfc", "wsched", "wreset", "weveryone", "wrole-new", "wrole-new-crew", "wrole-dup", "wrole-del", "wcrew-pause", "wcrew-all", "wcrew-cargo", "wnew", "wsick", "wlunch", "wrole-name", "wmin", "wsched-preset", "wcrew-set"]);
 const PLAN_SKIP = new Set(["pl-launch", "pl-cancel"]); // sending the team is final; cancelling closes the planner
 
 // ---------- the stacks ----------
@@ -85,6 +85,7 @@ function snapWork(state) {
   return {
     has: !!w, next: w ? w.next : 1, newcomers: w ? w.newcomers ?? null : null, roles: w ? w.roles.map(roleSettings) : [],
     sickRest: state.sickRest ?? null, // the Work tab's "Sick people rest" (sim/sickrest.js)
+    lunchHour: state.lunchHour ?? null, // the Work tab's lunch hour (sim/meals.js)
     people: state.survivors.filter((s) => s.alive).map((s) => [s.id, s.work ? clone(s.work) : null, s.role, s.cookPlus || null]), // cookPlus: a Cook + second job (sim/kitchen.js)
   };
 }
@@ -133,6 +134,7 @@ function undoWork(state, snap) {
   const busy = [...cur.values()].find((r) => r.crew && r.crew.out && !snap.roles.some((x) => x.id === r.id));
   if (busy) return { msg: `${busy.name} has a team out: that is past undoing.` };
   if (snap.sickRest != null) state.sickRest = snap.sickRest;
+  if (snap.lunchHour != null) state.lunchHour = snap.lunchHour; else delete state.lunchHour;
   if (!snap.has) state.work = null;
   else {
     const ww = w || (state.work = { roles: [], next: snap.next, newcomers: null });

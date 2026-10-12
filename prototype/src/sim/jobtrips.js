@@ -17,6 +17,10 @@
 // may no longer be out: hurt, the role changed, on the watch, the base under attack (buildings.js underAttack: on
 // alert or under siege: "On hold"), and dropped when they leave the base (a team, an errand).
 // While out (world.js outOnTrip, from leaving the gate to coming back in) they are not at hand for a fight at the base.
+// Lunch (meals.js, the lunch hour): out at work they stop where they are and eat from their pack (eating.js: they set out
+// with at least PACK.trip, a day of food, topped up from the stores as they leave); the hour inside the work does not
+// count toward the load, nor does the lunch hour of a walk out or home (tripHours: lunchOverlap), and nobody sets out
+// in it (activity.js: they are eating).
 //
 // The day's totals: base.tripTally = { day, [job]: { …sums, who: [ids] } } (the daily systems read it at midnight for
 // the noise, the log and the summaries); base.tripPops: the last deposits (the map's "+12 food" pops, ui/render.js).
@@ -34,6 +38,8 @@ import { noteOutput } from "./output.js";
 import { tileLabel } from "./parties.js";
 import { RAW } from "./water.js";
 import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText } from "./tripevents.js"; // trouble on the way (trips-plus #2)
+import { lunchOverlap, isLunchHour } from "./meals.js"; // the lunch break out at work
+import { PACK, packFood, topUpPack } from "./eating.js"; // the food they take out for lunch
 
 const r2 = (v) => Math.round((v || 0) * 100) / 100;
 const POPS = 12; // deposits kept for the map
@@ -142,9 +148,11 @@ export function planTrip(state, base, s, job, start, from = null) {
   return { job, base: base.id, tile: tg.tile, at: tg.at, d: tg.d, leave: start, arrive: start + out, workEnd: home - back, home, ...(next != null ? { next } : {}), ...(drop != null ? { drop, wh: walk } : {}), ...(from != null && from !== base.tile && !c.fixed ? { from } : {}), ...(tg.well ? { well: true } : {}) };
 }
 
-// The old job's hours a trip's work counts as (Fetch water: its share of a full fill).
-const tripHours = (t) => {
-  const w = Math.max(0, t.workEnd - t.arrive);
+// The old job's hours a trip's work counts as (Fetch water: its share of a full fill). The lunch hour inside the trip,
+// at the work or on the walk, is an hour's stop: it comes off the work (a walk home over lunch gets home an hour later
+// in the old reckoning, so the work before it ends an hour sooner).
+const tripHours = (state, t) => {
+  const w = Math.max(0, t.workEnd - t.arrive - lunchOverlap(t.leave, t.home, state));
   return TRIP_JOBS[t.job].fixed ? Math.min(1, w / TRIP_JOBS[t.job].fixed.fill) : w * tripScale(t.job);
 };
 // The hour the job's odds are read at: dawn or dusk for hunting and fishing, else the middle of the work.
@@ -157,7 +165,7 @@ function sampleHour(t) {
 
 // The load, rolled when the work ends: { job-specific fields } (the dice of the old daily jobs, for these hours).
 function rollLoad(state, base, s, t) {
-  const hrs = tripHours(t);
+  const hrs = tripHours(state, t);
   if (!(hrs > 1e-6)) return { empty: true };
   const h = sampleHour(t);
   switch (t.job) {
@@ -303,6 +311,12 @@ export function cutShort(t, now, why) {
   t.cut = why;
 }
 
+// Setting out from the base: at least a day of food in the pack for lunch out there (eating.js PACK.trip; from the
+// stores, if they can spare it). A trip on from a stockpile (t.from) never came through the gate: nothing to top up from.
+function packForTrip(state, base, s) {
+  if (s.trip && s.trip.from == null && packFood(s) < PACK.trip) topUpPack(state, base, s);
+}
+
 // One person's trips up to the end of the hour starting at `now`.
 function stepPerson(state, base, s, now) {
   const end = now + 1;
@@ -331,7 +345,7 @@ function stepPerson(state, base, s, now) {
       if (from < end && dayOf(from) === dayOf(t.leave)) {
         const job = mayGo(state, base, s, Math.floor(from));
         const nt = job === t.job ? planTrip(state, base, s, job, from, at) : null;
-        if (nt && checkOutTool(state, base, s, job)) { nt.n = n; s.trip = nt; continue; }
+        if (nt && checkOutTool(state, base, s, job)) { nt.n = n; s.trip = nt; packForTrip(state, base, s); continue; }
       } else if (t.next != null || dayOf(from) === dayOf(t.leave)) s.tripNext = { t: r2(from), n, day: dayOf(t.leave), ...(at != null ? { from: at } : {}) };
       return;
     }
@@ -345,6 +359,7 @@ function stepPerson(state, base, s, now) {
     nt.n = nx ? nx.n : 0;
     delete s.tripNext;
     s.trip = nt;
+    packForTrip(state, base, s);
   }
 }
 
@@ -386,6 +401,9 @@ export function tripState(state, s, t = state.hour) {
   const wtext = tr.job === "fish" || tr.job === "water" ? (state.tiles[tr.tile] && state.tiles[tr.tile].river ? "the river" : "the water") : where;
   const span = Math.max(1e-6, tr.workEnd - tr.arrive);
   const progress = Math.max(0, Math.min(1, (t - tr.arrive) / span));
+  // The lunch hour at the work: stopped there, eating from the pack (on a walk out or home it is eaten on the way: the
+  // walk's line stays).
+  if (t >= tr.arrive && t < tr.workEnd && isLunchHour(Math.floor(t), state)) return { phase: "work", f: progress, progress, text: `Lunch break at ${wtext} (from their pack)`, stage: "Lunch", job: tr.job, lunch: true };
   if (t < tr.arrive) return { phase: "out", f: (t - tr.leave) / Math.max(1e-6, tr.arrive - tr.leave), progress: 0, text: `Heading to ${wtext}`, stage: "", job: tr.job };
   if (t < tr.workEnd) {
     const stage = c.stage[Math.min(c.stage.length - 1, Math.floor(progress * c.stage.length))];
