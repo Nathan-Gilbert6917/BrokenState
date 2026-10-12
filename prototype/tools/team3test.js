@@ -4,8 +4,10 @@
 //   radio range), fitting the tile (a site: scavenge; your base: drop off / load; water: no move).
 // - TEAM-04 a team on the move (out of radio range too) is picked on the map, its panel shows where it is and takes
 //   orders, and the selection follows it as it travels.
+// - TEAM-05 any number of your teams on one tile: hand goods over, move people across or split them off, merge; every
+//   step conserves people, items and supplies, keeps capacity, drivers and seats, and leaves no stray ids.
 // Usage: node tools/team3test.js [seed]
-import { createWorld, hub, atBase } from "../src/sim/world.js";
+import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile, glideAt, orderOptions, scavengeable, PICKED_OVER } from "../src/sim/parties.js";
 import { afterRaid } from "../src/sim/scavenge.js";
 import { tileActions } from "../src/ui/ui.js";
@@ -14,10 +16,18 @@ import { selectedTeam } from "../src/ui/teamsel.js";
 import { renderExpedition } from "../src/ui/expedition.js";
 import { tickHour } from "../src/sim/world.js";
 import { teamTileMenu, runTeamAction } from "../src/ui/teamctx.js";
+import { giveGoods, moveMembers, mergeTeams, teamsTogether, teamsOnTile, meetProblem, teamCheck } from "../src/sim/teammeet.js";
+import { partyMembers, partyCapacity, poolLoad } from "../src/sim/parties.js";
+import { setPartyVehicles, createVehicle, partyVehicles } from "../src/sim/vehicles.js";
+import { newItem, stripAll } from "../src/sim/inventory.js";
+import { foodIn } from "../src/sim/foods.js";
+import { SUPPLIES } from "../src/sim/data.js";
+import { teamMeetModal, meetButton, meetLine, TEAMMEET_ACTIONS } from "../src/ui/teammeet.js";
 
 const SEED = Number(process.argv[2] || 42);
 let passed = 0, failed = 0;
-const check = (ok, msg) => { if (ok) passed++; else { failed++; console.log(`  FAIL: ${msg}`); } return !!ok; };
+const VERBOSE = !!process.env.VERBOSE;
+const check = (ok, msg) => { if (ok) { passed++; if (VERBOSE) console.log(`  ok: ${msg}`); } else { failed++; console.log(`  FAIL: ${msg}`); } return !!ok; };
 const section = (name) => console.log(name);
 
 function mk(seed = SEED) {
@@ -124,6 +134,188 @@ section("TEAM-04: select a team while it moves");
       check(hm.items.some((x) => x.key === "drop") && !hm.items.some((x) => x.key === "mission:scavenge"), "TEAM-03: on your base, the base actions instead");
     }
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("TEAM-05: teams together on a tile");
+{
+  const state = mk();
+  const h = hub(state);
+  const tile = find(state, h.tile, (t) => !t.loc, 3, 6);
+  const A = team(state, 2, tile), B = team(state, 2, tile), C = team(state, 1, tile);
+  for (const p of [A, B, C]) for (const s of partyMembers(state, p)) stripAll(s);
+  A.supplies.water = 10; A.supplies.scrap = 6; A.cargo.supplies.parts = 3;
+  const knife = newItem("knife", 1); A.cargo.gear.push(knife);
+  // Totals over the three: what must never change.
+  const all = () => [A, B, C].filter((p) => state.parties.includes(p));
+  const total = (k) => all().reduce((a, p) => a + (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0), 0);
+  const food = () => all().reduce((a, p) => a + foodIn(p.supplies) + foodIn(p.cargo.supplies), 0);
+  const people = () => all().flatMap((p) => p.members).sort((x, y) => x - y).join(",");
+  const items = () => all().reduce((a, p) => a + p.cargo.gear.length + partyMembers(state, p).reduce((b, m) => b + Object.values(m.gear).filter(Boolean).length + (m.pockets || []).filter(Boolean).length, 0), 0);
+  const keys = Object.keys(SUPPLIES).filter((k) => k !== "food");
+  const snap = () => ({ people: people(), items: items(), food: Math.round(food() * 100), sup: keys.map((k) => Math.round(total(k) * 1000)).join(",") });
+  const same = (a, b) => a.people === b.people && a.items === b.items && a.food === b.food && a.sup === b.sup;
+  const ok = (what) => { const f = teamCheck(state); check(!f.length, `${what}: no stray ids (${f.join("; ")})`); };
+  check(teamsTogether(state, A).length === 2 && teamsOnTile(state, tile).length === 3, "three teams on one tile: each sees the other two");
+  const s0 = snap();
+
+  // Goods: supplies by key, found cargo staying found, an item into the cargo and onto a member.
+  const bw = B.supplies.water || 0, bp = B.cargo.supplies.parts || 0, ap = A.cargo.supplies.parts;
+  let r = giveGoods(state, A, B, { supplies: { water: 4, parts: 2 } });
+  check(B.supplies.water === bw + 4 && B.cargo.supplies.parts === bp + 2 && A.supplies.water === 6 && A.cargo.supplies.parts === ap - 2, `supplies move: packed to packed, found to found (${r.text})`);
+  r = giveGoods(state, A, B, { items: [`cargo:${A.id}:list:${A.cargo.gear.indexOf(knife)}`] });
+  check(B.cargo.gear.includes(knife) && !A.cargo.gear.includes(knife), `an item into the other team's cargo (${r.text})`);
+  const bm = partyMembers(state, B)[0];
+  r = giveGoods(state, B, C, { items: [knife] }, partyMembers(state, C)[0].id);
+  const cm = partyMembers(state, C)[0];
+  check(Object.values(cm.gear).includes(knife) || (cm.pockets || []).includes(knife), `onto a member of the third team (${r.text})`);
+  check(same(snap(), s0), "goods moved: nothing made or lost");
+  ok("after goods");
+  // More than the other team can carry: refused or capped, nothing lost.
+  A.supplies.scrap = 400;
+  const before = snap();
+  r = giveGoods(state, A, C, { supplies: { scrap: 400 } });
+  check(poolLoad(C) <= partyCapacity(state, C) + 1e-6 && r.refused.length, `over the other team's capacity: only what fits (${r.text})`);
+  check(same(snap(), before), "…and the rest stays (conserved)");
+  A.supplies.scrap = 6; // (setup: A within its carry limit again)
+  // Not on the same tile, or on the move: refused, nothing changes.
+  const D = team(state, 1, find(state, h.tile, (t) => !t.loc && t.id !== tile, 2, 6));
+  check(/same tile/.test(meetProblem(state, A, D)), "a team elsewhere cannot meet");
+  B.phase = "out"; B.path = [tile, D.path[0]]; B.idx = 0;
+  const bs = snap();
+  check(/on the move/.test(giveGoods(state, A, B, { supplies: { water: 1 } }).text) && same(snap(), bs), "a team on the move: refused, nothing moved");
+  B.phase = "waiting"; B.path = [tile]; B.idx = 0;
+
+  // People across: one of A's to B.
+  const s1 = snap();
+  const am = partyMembers(state, A)[0];
+  r = moveMembers(state, A, B, [am.id]);
+  check(!r.error && B.members.includes(am.id) && !A.members.includes(am.id) && am.location.partyId === B.id, `a member goes over to the other team (${r.text})`);
+  check(same(snap(), s1), "people moved: everyone still on exactly one team, goods unchanged");
+  ok("after moving a member");
+  check(moveMembers(state, A, B, [am.id]).error, "someone not on that team cannot be moved (no duplicates)");
+
+  // Split: B splits one off as a new team on the tile, with a share of the packed water.
+  const nb = partyMembers(state, B).length;
+  const s2 = snap();
+  const before2 = state.parties.length;
+  const pick = partyMembers(state, B)[0];
+  r = moveMembers(state, B, null, [pick.id]);
+  const N = r.party;
+  check(!r.error && N && N !== B && state.parties.length === before2 + 1 && N.members.length === 1 && partyMembers(state, B).length === nb - 1 && partyTile(N) === tile, `split off as a new team on the tile (${r.text})`);
+  check(N && N.phase === "waiting" && N.id !== B.id && !state.parties.some((q) => q !== N && q.id === N.id), "the new team has its own id and waits for orders");
+  const withN = () => [A, B, C, N].filter((p) => state.parties.includes(p));
+  const totalN = (k) => withN().reduce((a, p) => a + (p.supplies[k] || 0) + (p.cargo.supplies[k] || 0), 0);
+  check(Math.abs(totalN("water") - total("water") - (N.supplies.water || 0)) < 1e-6 && Math.round((totalN("water")) * 1000) === Number(s2.sup.split(",")[keys.indexOf("water")]), "the split's water came out of the team's own (conserved)");
+  check(moveMembers(state, B, null, partyMembers(state, B).map((s) => s.id)).error, "splitting everyone off is refused (that is not a split)");
+  ok("after a split");
+
+  // Merge: N back into B (any number of teams: then C into A).
+  const s3 = withN().flatMap((p) => p.members).sort((x, y) => x - y).join(",");
+  r = mergeTeams(state, B, N);
+  check(!r.error && !state.parties.includes(N) && B.members.includes(pick.id) && pick.location.partyId === B.id, `merge: the team is gone, its people on the other (${r.text})`);
+  check([A, B, C].filter((p) => state.parties.includes(p)).flatMap((p) => p.members).sort((x, y) => x - y).join(",") === s3, "merge: nobody lost or doubled");
+  check(same(snap(), s2), `split then merged back: people, items, food and every supply as before (food ${snap().food} / ${s2.food})`);
+  ok("after a merge");
+  const cGear = C.cargo.gear.length + B.cargo.gear.length;
+  const cWater = total("water");
+  r = moveMembers(state, C, A, partyMembers(state, C).map((s) => s.id)); // everyone across: a merge
+  check(!r.error && !state.parties.includes(C) && r.party === A, `moving everyone across merges the teams (${r.text})`);
+  check(Math.abs(total("water") - cWater) < 1e-6 && A.cargo.gear.length + B.cargo.gear.length === cGear, "the merged team's goods came along");
+  ok("after the second merge");
+
+  // Vehicles: a team keeps a driver for each; a merge with more than seats allows is refused.
+  const car = createVehicle(state, "sedan", { kind: "base", baseId: h.id });
+  setPartyVehicles(state, B, [car]);
+  const bn = partyMembers(state, B);
+  if (bn.length >= 1) {
+    const r2 = moveMembers(state, B, A, bn.map((s) => s.id).slice(0, bn.length)); // everyone: a merge, the car comes along
+    check(!r2.error && partyVehicles(state, A).includes(car) && car.loc.partyId === A.id, `merging brings the vehicle along (${r2.text})`);
+  }
+  ok("after a merge with a vehicle");
+  // A team with two cars and two people: splitting one off would leave a car without a driver.
+  const car2 = createVehicle(state, "sedan", { kind: "base", baseId: h.id });
+  const an = partyMembers(state, A);
+  setPartyVehicles(state, A, [...partyVehicles(state, A), car2]);
+  const keep = an.length - 2; // split off all but two: two drivers left for two cars (allowed); all but one: refused
+  if (an.length >= 3) {
+    const sv = snap();
+    const r3 = moveMembers(state, A, null, an.slice(0, an.length - 1).map((s) => s.id));
+    check(/driver|person/i.test(r3.error || "") && same(snap(), sv), `a split leaving a car without a driver is refused, nothing moved (${r3.text})`);
+    void keep;
+  }
+  // Two vehicles (a sedan and a bike: 5 seats) for more than 5 people: the merge is refused.
+  for (let i = 0; i < 4; i++) { const ns = makeSurvivor(state, 1); ns.location = { kind: "base", baseId: h.id }; state.survivors.push(ns); }
+  const D2 = team(state, 3, tile);
+  const bike = createVehicle(state, "bike", { kind: "base", baseId: h.id }, { count: 1 });
+  setPartyVehicles(state, A, [car]);
+  car2.loc = { kind: "base", baseId: h.id }; // (setup: the second car parked again)
+  setPartyVehicles(state, D2, [bike]);
+  const sm = snap();
+  const big = mergeTeams(state, A, D2);
+  const n = partyMembers(state, A).length + partyMembers(state, D2).length;
+  check(n > 5 ? /seat/i.test(big.error) && same(snap(), sm) : !big.error, `two vehicles need a seat for everyone (${n} people, 5 seats: ${big.text || "merged"})`);
+  ok("at the end");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("TEAM-05: the Teams together window, its ways in and its buttons");
+{
+  const state = mk();
+  const h = hub(state);
+  const tile = find(state, h.tile, (t) => !t.loc, 3, 6);
+  const A = team(state, 2, tile), B = team(state, 2, tile), C = team(state, 1, tile);
+  const ok = (what) => { const f = teamCheck(state); check(!f.length, `${what}: no stray ids (${f.join("; ")})`); };
+  const ui = { selected: tile, expedition: A.id, selParty: A.id };
+  const act = (k, d) => TEAMMEET_ACTIONS[k](state, ui, d);
+  check(/Teams together \(3\)/.test(meetButton(state, tile)), "the tile panel offers Teams together (3)");
+  check(/tm-open/.test(meetLine(state, A)) && /Here too/.test(meetLine(state, A)), "the team panel names the teams here and opens the window");
+  const m = teamTileMenu(state, ui, A, tile);
+  const it = m.items.find((x) => x.key === "meet");
+  check(it && !it.disabled, "the right-click menu on its own tile: Teams together…");
+  let opened = null;
+  runTeamAction(state, ui, { id: A.id, tile, key: "meet", mode: "replace" }, { "tm-open": (d) => { opened = d; act("tm-open", d); } });
+  check(opened && ui.meet && ui.meet.a === A.id && ui.meet.b !== A.id, "…which opens the window with this team on the left");
+  let html = teamMeetModal(state, ui);
+  check(typeof html === "string" && /Teams together/.test(html) && /Move picked/.test(html) && /Right into left/.test(html), "the window renders: people, move, split, merge");
+  // Any number: the right side can be any of the others.
+  act("tm-side", { side: "b", id: C.id });
+  check(ui.meet.b === C.id, "the right side switches to the third team");
+  act("tm-side", { side: "b", id: B.id });
+  // Move a person across with the buttons.
+  const a0 = partyMembers(state, A)[0];
+  act("tm-person", { id: a0.id });
+  act("tm-move", { from: A.id, to: B.id });
+  check(B.members.includes(a0.id) && !A.members.includes(a0.id), `Move picked → (${ui.meet.msg})`);
+  ok("after Move picked");
+  // Split one off from B: the new team takes the right side.
+  const b0 = partyMembers(state, B)[0];
+  act("tm-swap");
+  act("tm-person", { id: b0.id });
+  act("tm-split", { from: B.id });
+  const N = state.parties.find((q) => q.members.includes(b0.id));
+  check(N && N !== B && N !== A && N !== C && (ui.meet.a === N.id || ui.meet.b === N.id), `Split picked off: a new team, shown in the window (${ui.meet.msg})`);
+  ok("after Split");
+  // Goods: hand water from A to B.
+  ui.meet.a = A.id; ui.meet.b = B.id;
+  act("tm-tab", { tab: "goods" });
+  html = teamMeetModal(state, ui);
+  check(/Give picked/.test(html), "the goods tab renders");
+  const aw = A.supplies.water, bw = B.supplies.water;
+  act("tm-sup", { key: "water" });
+  ui.meet.sup.water = 2;
+  act("tm-give");
+  check(A.supplies.water === aw - 2 && B.supplies.water === bw + 2, `Give picked → (${ui.meet.msg})`);
+  ok("after Give");
+  // Merge everything into A, one by one: the window closes itself when only one team is left.
+  act("tm-tab", { tab: "people" });
+  act("tm-merge", { into: A.id, from: B.id });
+  act("tm-merge", { into: A.id, from: C.id });
+  ui.meet.a = A.id; ui.meet.b = N.id;
+  act("tm-merge", { into: A.id, from: N.id });
+  check(state.parties.filter((q) => q.owner === "player" && partyTile(q) === tile).length === 1 && partyMembers(state, A).length === 5, `merged into one team of 5 (${ui.meet.msg})`);
+  check(teamMeetModal(state, ui) === null && ui.meet === null, "one team left: the window closes");
+  ok("after the merges");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

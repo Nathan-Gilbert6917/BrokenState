@@ -83,6 +83,7 @@ import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower, carriedSpo
 import { inventoryModal, takeLootReq } from "./inventory.js";
 import { armoryView, armoryScope } from "./armoryview.js"; // the Armory tab's stored gear: grouped, cards or compact rows
 import { itemShortTip, tipAttrs } from "./itemlabels.js"; // the armory cards' short hover tip (Shift: the whole one)
+import { teamMeetModal, meetButton } from "./teammeet.js"; // teams together on a tile: people, goods, merge
 import { teamInvModal, teamsHereCard, transferButtons } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
 import { fleetPicker } from "./fleetpick.js"; // the vehicle picker the planners share (up to four)
 import { plannedFleet, pickProblem } from "../sim/teamform.js";
@@ -678,7 +679,7 @@ export function renderRight(state, ui) {
     ${base ? ownBaseCard(state, base) : groupBaseCard(state, id, knownGroupBase(state, id, isLive, snap))}
     ${markers.length ? `<h3>Markers</h3>${markers.map((m) => `<div class="card small"${tip(MARKER_TYPES[m.type].desc)}><b>${MARKER_TYPES[m.type].glyph} ${esc(m.label)}</b><br>
       <span class="muted">Spotted ${ageText(state, m)}${m.info?.emptied ? " · emptied" : ""}${m.info?.fuel != null ? ` · fuel ${n0(m.info.fuel)}, condition ${Math.round(m.info.condition || 0)}%` : ""}${m.info?.items != null && m.type === "death" ? ` · ${m.info.items} item(s) left then` : ""}</span></div>`).join("")}` : ""}
-    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>${enterButton(state, p)}${transferButtons(state, p)}${editTeamButton(state, p, "")}`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}` : ""}
+    ${teamsHere.length ? `<h3>Your teams here</h3>${teamsHere.map((p) => `<div class="card small"><b>${esc(teamName(state, p))}</b><div class="row" style="margin-top:0.3rem">${!commandable(state, p) ? `<span class="small muted"${tip(NO_RADIO)}>No radio contact</span>` : `${p.phase === "waiting" ? `<button class="primary" data-action="orders" data-id="${p.id}">Orders</button>` : ""}<button data-action="movemode" data-id="${p.id}">Move…</button>${enterButton(state, p)}${transferButtons(state, p)}${editTeamButton(state, p, "")}`}<button data-action="xp-open" data-id="${p.id}"${tip("People, gear, supplies, vehicle and orders")}>Team panel</button></div></div>`).join("")}${meetButton(state, id) ? `<div class="row" style="margin-top:0.3rem">${meetButton(state, id)}</div>` : ""}` : ""}
     ${actions.length ? `<h3>Send a team from the hub</h3><div class="row pk-acts">${actions.map(([m, l, pre, tp]) => `<button data-action="plan" data-tile="${id}" data-mission="${m}"${pre ? ` data-preset="${pre}"` : ""}${tip(tp || MISSIONS[m].desc)}>${l}</button>`).join("")}</div>` : ""}`;
 }
 
@@ -814,6 +815,7 @@ function pickModal(state, ui) {
   if (ui.gunb) return ["gunb", () => gunBuilderModal(state, ui)]; // ui/gunbuilder.js: over the inventory (never in a battle: above)
   if (ui.inv && ui.inv.form) return ["teamform", () => teamFormModal(state, ui)]; // ui/teamform.js: Form a team at a base, or edit one waiting there
   if (ui.inv && ui.inv.team != null) return ["teaminv", () => teamInvModal(state, ui)]; // ui/teaminv.js: a whole team; Drop off and Load at a base
+  if (ui.meet) return ["teammeet", () => teamMeetModal(state, ui)]; // ui/teammeet.js: your teams together on a tile
   if (ui.inv) return [`inv:${ui.inv.sid}`, () => inventoryModal(state, ui)]; // closes back to the survivor / base screen under it
   if (ui.survivor) return [`survivor:${ui.survivor}`, () => survivorModal(state, ui)];
   if (ui.memorial) return ["memorial", () => memorialModal(state, ui)]; // ui/relations.js; a name opens the survivor screen over it
