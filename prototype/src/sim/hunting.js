@@ -96,7 +96,7 @@ import { GEAR, SUPPLIES } from "./data.js";
 import { log, skill, gearEffect, atBase, newId, baseById, hub, hurt } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
 import { packOf, allCarried } from "./inventory.js";
-import { wearHeld } from "./crafting.js"; // fishing tools wear by the day's fishing
+import { wearHeld, CRAFTS, CRAFT_SKILL, craftSkill, canAttempt } from "./crafting.js"; // fishing tools wear by the day's fishing; arrows made before a bow hunt
 import { hasPerk, gainXp } from "./skills.js";
 import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
@@ -280,6 +280,27 @@ export function bestHuntWeapon(s, ammo = Infinity, arrows = Infinity, only = nul
 }
 // Does anyone here carry a bow or crossbow they can use (arrows aside)?
 export const hasBow = (people) => people.some((s) => !!bestHuntWeapon(s, 0, Infinity, "bow"));
+// Arrows before the bow (2026-10-12, user request "If a bow is in the inventory craft arrows before using"): someone
+// about to hunt with a bow or crossbow carried anywhere on them (hands, pockets, pack) and no arrows to hand makes a
+// dozen first from the firewood and scrap there (crafting.js CRAFTS.arrows: 30 firewood + 1 scrap, its hours). A team:
+// orders.js runs a field craft before the hunt (its hours pass first). A base's Hunt job: the day's plan
+// (hunterDayPlan) has the best crafter among the bow hunters make them from the base's stores at home before the dawn
+// trip (the materials, not the hunting hours: a hunter's day on the ground is CABIN.hours).
+export const bowmen = (people) => people.filter((s) => !!bestHuntWeapon(s, 0, Infinity, "bow"));
+export const arrowsWanted = (people, arrows) => bowmen(people).length > 0 && Math.floor(arrows || 0) < 1;
+function baseArrowsFirst(state, base, hunters) {
+  if (!arrowsWanted(hunters, base.stock.arrows)) return null;
+  const R = CRAFTS.arrows;
+  if (Object.entries(R.in).some(([k, v]) => (base.stock[k] || 0) < v)) return null;
+  const able = bowmen(hunters).filter((s) => canAttempt(s, R));
+  if (!able.length) return null;
+  const maker = able.reduce((a, s) => (craftSkill(s) > craftSkill(a) ? s : a), able[0]);
+  for (const [k, v] of Object.entries(R.in)) base.stock[k] -= v;
+  for (const [k, v] of Object.entries(R.supplies)) base.stock[k] = (base.stock[k] || 0) + v;
+  gainXp(state, maker, CRAFT_SKILL, 0.3);
+  log(state, `${maker.name.split(" ")[0]} makes ${R.supplies.arrows} arrows at ${base.name} before the hunt (none in store for the bows): ${Object.entries(R.in).map(([k, v]) => `${v} ${k === "wood" ? "firewood" : k}`).join(" and ")}, made at home before the dawn trip.`, "info");
+  return maker;
+}
 
 // ---------- the hunting mix (base.huntMix) ----------
 const tens = (v) => Math.max(0, Math.min(100, Math.round((Number(v) || 0) / 10) * 10));
@@ -1086,7 +1107,10 @@ export function hunterDayPlan(state, base, s) {
   if (!P || P.day !== dayIdx) {
     const hunters = atBase(state, base.id).filter((x) => x.role === "hunt" && !x.inBed && workFactor(x) >= 0.35);
     P = base.huntPlan = { day: dayIdx, rows: {} };
-    for (const r of cabinPlan(state, base, hunters, spare, quiver)) P.rows[r.s.id] = { guns: r.guns, bows: r.bows, traps: r.traps, hours: r.hours };
+    const maker = baseArrowsFirst(state, base, hunters); // a bow and no arrows: a dozen made first
+    const quiver1 = Math.max(0, base.stock.arrows || 0);
+    for (const r of cabinPlan(state, base, hunters, spare, quiver1)) P.rows[r.s.id] = { guns: r.guns, bows: r.bows, traps: r.traps, hours: r.hours };
+    void maker;
   }
   if (!P.rows[s.id]) {
     const keep = base.huntCarry;
