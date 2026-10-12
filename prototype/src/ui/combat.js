@@ -867,7 +867,7 @@ export function retreatConfirmHtml(b, plan) {
 }
 
 // The view's keys (by the key table, ui/keymap.js "battle"; these are the defaults): PageUp / PageDown change the
-// floor in a building with storeys; Q and E (or , and .) turn the view, + and − zoom, Home centers on the selected unit, B shows or
+// floor in a building with storeys; Q and E (or , and .) turn the view an eighth (ui/isoview.js isoRotate), + and − zoom, Home centers on the selected unit, B shows or
 // hides the roofs, W A S D or the arrow keys pan (held: iso.keys holds the direction, ui/isoview.js).
 const PAN_DIR = { "bview.panUp": "ArrowUp", "bview.panDown": "ArrowDown", "bview.panLeft": "ArrowLeft", "bview.panRight": "ArrowRight" };
 function viewKey(state, b, e, k) {
@@ -1376,7 +1376,8 @@ export function viewBar(b = cui.battle) {
   const btn = (v, label, tip, active = false) => `<button class="mini${active ? " active" : ""}" data-action="cb-view" data-v="${v}" data-tip="${esc(tip)}">${label}</button>`;
   let html = `<div class="cbview">`;
   const kl = (id, def) => keyLabel(id) || def; // as bound now (Menu → Controls)
-  html += btn("rotl", "⟲", `Turn the view a quarter to the left (${kl("bview.rotLeft", "Q")})`) + btn("rotr", "⟳", `Turn the view a quarter to the right (${kl("bview.rotRight", "E")})`);
+  const turn = "Eight views: the four diagonal ones and, between them, four looking straight down the rows and columns (corridors and the tiles behind walls)";
+  html += btn("rotl", "⟲", `Turn the view an eighth to the left (${kl("bview.rotLeft", "Q")}). ${turn}.`) + btn("rotr", "⟳", `Turn the view an eighth to the right (${kl("bview.rotRight", "E")}). ${turn}.`);
   html += btn("zout", "−", `Zoom out (${kl("bview.zoomOut", "−")} or the mouse wheel)`) + btn("zin", "+", `Zoom in (${kl("bview.zoomIn", "+")} or the mouse wheel)`);
   html += btn("center", "◎", `Center on the selected unit (${kl("bview.center", "Home")}). Drag the map, hold W A S D or the arrow keys, or push the mouse to the edge to pan.`);
   html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", `Roofs on the buildings (${kl("bview.roofs", "B")}). A building with one of your people, an enemy you see or the mouse inside is always shown cut away; off shows every one that way.`, iso.roofs);

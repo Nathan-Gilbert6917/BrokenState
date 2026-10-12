@@ -1,5 +1,5 @@
 // The battle view's keys and hidden tiles (ui/keymap.js, ui/combat.js, ui/isoview.js), on stub canvases:
-// - Keys: Q / E turn the view (, and . still do), Melee on V, Close a door on Shift+E, Center on Home; no two actions
+// - Keys: Q / E turn the view an eighth (, and . still do), Melee on V, Close a door on Shift+E, Center on Home; no two actions
 //   of the battle share a key; a player's saved binding on one of the new default keys keeps it (the default steps
 //   aside, the action keeps its other keys); the keys work through combatKey; the panel's buttons show them.
 // - Ground picking: a tile hidden behind a tree is picked under the tree's crown (the ground under the point), in all
@@ -90,15 +90,16 @@ console.log("The keys in a battle");
   draw(st);
   if (b.phase === "deploy") C.combatAct(st, { type: "start" });
   draw(st);
-  const r0 = ISO.iso.rot;
+  // An eighth a press (ui/isoview.js viewStep: 0..7, the straight views odd).
+  const r0 = ISO.viewStep(), rot0 = ISO.iso.rot;
   UI.combatKey(st, ev("KeyQ"));
-  const r1 = ISO.iso.rot;
+  const r1 = ISO.viewStep();
   UI.combatKey(st, ev("KeyE"));
-  const r2 = ISO.iso.rot;
+  const r2 = ISO.viewStep();
   UI.combatKey(st, ev("Period"));
-  const r3 = ISO.iso.rot;
+  const r3 = ISO.viewStep();
   UI.combatKey(st, ev("Comma"));
-  check(r1 === (r0 + 3) % 4 && r2 === r0 && r3 === (r0 + 1) % 4 && ISO.iso.rot === r0, `Q turns the view left, E right, . and , too (${r0} → ${r1} → ${r2} → ${r3} → ${ISO.iso.rot})`);
+  check(r1 === (r0 + 7) % 8 && r2 === r0 && r3 === (r0 + 1) % 8 && ISO.viewStep() === r0 && ISO.iso.rot === rot0, `Q turns the view left, E right, . and , too, an eighth each (${r0} → ${r1} → ${r2} → ${r3} → ${ISO.viewStep()})`);
   const me = b.units.find((u) => u.side === "player" && C.active(u) && u.ap > 0);
   cui.sel = me.id; cui.mode = "move"; cui.msg = "";
   UI.combatKey(st, ev("KeyV"));
@@ -232,7 +233,7 @@ console.log("Every layout");
 {
   const errs = [];
   for (const { name, st, b } of battles(63)) {
-    for (let r = 0; r < 4; r++) {
+    for (let r = 0; r < 8; r++) { // the eight views (ui/isoview.js isoRotate)
       ISO.isoRotate(b, 1);
       const me = b.units.find((u) => u.side === "player" && C.active(u));
       if (me) UI.combatMouse(st, ...ISO.project(me.x + 0.5, me.y - 1.5, 0));
@@ -240,7 +241,7 @@ console.log("Every layout");
       if (e) errs.push(`${name}: ${e}`);
     }
   }
-  check(!errs.length && !nan, `every layout drawn in all four turns with a hover, no error or NaN${errs.length ? ` (${errs[0]})` : ""}`);
+  check(!errs.length && !nan, `every layout drawn in all eight turns with a hover, no error or NaN${errs.length ? ` (${errs[0]})` : ""}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
