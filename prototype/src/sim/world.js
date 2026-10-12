@@ -20,7 +20,7 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
-import { movePartiesHour, clockFrac, setClockFrac } from "./parties.js";
+import { movePartiesHour, clockFrac, setClockFrac, reportsLive } from "./parties.js";
 import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
@@ -48,7 +48,7 @@ import { cookShiftHour, cooksHour } from "./kitchen.js"; // part-time cooks: the
 import { workHour, workDayRoles } from "./work.js";
 import { stallDaily } from "./activity.js";
 import { leaderIdleHour } from "./idlework.js";
-import { isMealHour } from "./meals.js"; // the leader and the governor move people off stalled jobs once a day // the day each job at a base was first found unable to work (the stalled-job alert)
+import { isMealHour, isLunchHour } from "./meals.js"; // the leader and the governor move people off stalled jobs once a day // the day each job at a base was first found unable to work (the stalled-job alert)
 import { packOnDeath } from "./eating.js"; // a death: their pack of food and water
 import { watchHour, watchDayRoles } from "./watch.js";
 import { sickRestHour } from "./sickrest.js"; // sick people rest: Manual and pinned people's jobs kept and given back
@@ -865,7 +865,7 @@ export function liveTiles(state) {
   for (const id of fieldSight(state)) set.add(id); // fieldworks.js: your manned watch towers
   // Radio: parties in range report what they see right now.
   for (const p of state.parties) {
-    if (p.owner === "player" && p.radioLive) for (const id of p.sightNow || []) set.add(id);
+    if (p.owner === "player" && reportsLive(p)) for (const id of p.sightNow || []) set.add(id); // parties.js: live intel
   }
   return set;
 }
@@ -929,12 +929,12 @@ function hourOfWorld(state) {
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   fieldworksHour(state); // fieldworks.js: the lookouts posted at field works (gone, moved, enemies there)
-  const meal = isMealHour(state.hour); // meals.js: breakfast and dinner, the builders, crafters and the bench stop for them
+  const meal = isMealHour(state.hour, state); // meals.js: breakfast, lunch and dinner, the builders, crafters and the bench stop for them
   if (!meal) constructionHour(state);
   if (!meal) repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   rezeroHour(state); // repair.js: budget sights re-zeroed at a workbench every morning (gunmods.js driftOf)
   if (!meal) craftingHour(state);
-  garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
+  if (!isLunchHour(state.hour, state)) garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating); the fitters stop for lunch
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)

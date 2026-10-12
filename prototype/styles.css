@@ -915,6 +915,7 @@ button.wsch.s-w { background: #2e4a2a; }
 button.wsch.s-g { background: #5a2a26; border-color: var(--danger); }
 button.wsch.s-f { background: #2a3f5a; }
 button.wsch.s-s { background: #2c2a44; color: var(--muted); }
+button.wsch.lunch { text-decoration: underline; text-underline-offset: 3px; box-shadow: inset 0 -3px 0 var(--accent); } /* the lunch hour (ui/work.js) */
 .worktab .wcrew { margin-top: 0.4rem; }
 .worktab .wfield, .worktab .wcrewset { gap: 0.5rem 0.9rem; flex-wrap: wrap; align-items: center; margin-top: 0.3rem; }
 .worktab label.wcf { display: inline-flex; align-items: center; gap: 0.3rem; }

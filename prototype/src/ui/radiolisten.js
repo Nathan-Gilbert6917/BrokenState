@@ -47,14 +47,14 @@ export function listenBlock(state, p, queueing = false) {
 // Out of contact (the team panel) and the Teams tab: what the team's receiver hears.
 export function teamRadioLine(state, p, full = false) {
   if (!p || p.owner !== "player" || p.kind === "convoy") return "";
-  if (commandable(state, p) && !full) return "";
+  if (p.radioLive && !full) return ""; // in your coverage: it reports live
   if (!p.radioHear && !(full && p.heard && p.heard.length)) return "";
   const nets = networksAt(state, partyTile(p));
   const what = teamListens(state, p) ? HAND_RADIO : "Listening: hears a radio network, cannot call in";
   const inRange = nets.length ? ` · in range of ${nets.map((n) => `${swatch(n.color)}${esc(n.name)}`).join(", ")}` : "";
   const tuned = p.tuned != null ? ` · ${tunedText(state, p, partyTile(p))}` : "";
   if (!full) return `<div class="small muted"${tip(HAND_RADIO_TIP)}>📻 ${what}${tuned}${p.heard && p.heard.length ? ` · heard: ${esc(p.heard[0].text)}` : ""}</div>`;
-  return `<div class="card small muted"${tip(HAND_RADIO_TIP)}>📻 ${what}.${inRange}${tuned}${p.heard && p.heard.length ? heardLines(p, 4) : p.tuned == null ? " Not tuned to a channel: Listen in once the team is in contact (its next orders card)." : " Nothing heard yet."}</div>`;
+  return `<div class="card small muted"${tip(HAND_RADIO_TIP)}>📻 ${what}.${inRange}${tuned}${p.heard && p.heard.length ? heardLines(p, 4) : p.tuned == null ? " Not tuned to a channel: Listen in from the team panel." : " Nothing heard yet."}</div>`;
 }
 
 // The Groups tab's radio header: every base with a receiver, its channel and a Listen in per network in range.

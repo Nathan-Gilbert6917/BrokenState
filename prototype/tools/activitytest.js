@@ -110,9 +110,10 @@ check(last[0] && last[0].when === "yesterday" && /\+\d+ firewood \([\d.]+ kg\)/.
 check(workDay(24) === 1 && workDay(25) === 2 && workDay(23) === 1, "the midnight tick counts for the day before it");
 tickTo(state, 6);
 check(/^Eating breakfast \(\d+ min\)$/.test(describeActivity(state, cutter).text), `06:00: breakfast (${describeActivity(state, cutter).text})`);
-check(mealAt("hunt", 6) === null && mealAt("hunt", 10) === "breakfast" && mealAt("wood", 6) === "breakfast" && mealAt("farm", 20) === "dinner", "hunters and fishers eat after the dawn trip (10:00); everyone dines at 20:00");
-// Meals are outside the jobs' hours: the daily jobs' sampled hours (wood 08–18, forage 09–19, hunt/fish 06, 07, 17).
-check([8, 10, 12, 14, 16, 18].every((h) => !mealAt("wood", h)) && [9, 11, 13, 15, 17, 19].every((h) => !mealAt("forage", h)) && [6, 7, 17].every((h) => !mealAt("hunt", h)), "no meal falls on a daily job's working hours");
+check(mealAt("hunt", 6) === null && mealAt("hunt", 10) === "breakfast" && mealAt("wood", 6) === "breakfast" && mealAt("wood", 12) === "lunch" && mealAt("farm", 20) === "dinner", "hunters and fishers eat after the dawn trip (10:00); everyone lunches at 12:00 and dines at 20:00");
+// Breakfast and dinner are outside the jobs' hours (wood 08–18, forage 09–19, hunt/fish 06, 07, 17); lunch is the one
+// meal inside the day jobs' hours (all work stops for it: jobtrips.js takes it off the trip's work).
+check([8, 10, 14, 16, 18].every((h) => !mealAt("wood", h)) && [9, 11, 13, 15, 17, 19].every((h) => !mealAt("forage", h)) && [6, 7, 17].every((h) => !mealAt("hunt", h)), "no meal but lunch falls on a daily job's working hours");
 row = baseWork(state, base).find((r) => r.job === "wood");
 check(row && row.last[0] && !row.last[0].zero, "the panel's last line shows it");
 
@@ -367,7 +368,7 @@ for (const mode of ["governor", "leader"]) {
 }
 
 // ======================================================================
-section("Meals cost the all-day jobs an hour each");
+section("Meals cost the all-day jobs an hour each (breakfast, lunch, dinner)");
 {
   const st = woodWorld();
   const b = hub(st);
@@ -379,8 +380,8 @@ section("Meals cost the all-day jobs an hour each");
   let expect = 0;
   for (let i = 0; i < 24; i++) { tickHour(st); }
   const got = b.construction[0].progress;
-  check(isMealHour(6) && isMealHour(20) && !isMealHour(12) && Math.abs(MEAL_WORK_SHARE - 22 / 24) < 1e-9, "the meal hours: 06:00 and 20:00");
-  check(Math.abs(got - rate * 22) < rate * 0.6, `a day of building: ${Math.round(got * 10) / 10} work-hours, 22 hours at ${Math.round(rate * 100) / 100} (${Math.round(rate * 24 * 10) / 10} without the meals)`);
+  check(isMealHour(6) && isMealHour(12) && isMealHour(20) && !isMealHour(13) && Math.abs(MEAL_WORK_SHARE - 21 / 24) < 1e-9, "the meal hours: 06:00, lunch (12:00) and 20:00");
+  check(Math.abs(got - rate * 21) < rate * 0.6, `a day of building: ${Math.round(got * 10) / 10} work-hours, 21 hours at ${Math.round(rate * 100) / 100} (${Math.round(rate * 24 * 10) / 10} without the meals)`);
   void expect;
 }
 
