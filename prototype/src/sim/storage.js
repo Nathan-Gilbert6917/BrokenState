@@ -43,6 +43,7 @@ import { baseGameDaily, CABIN } from "./hunting.js";
 import { baseCooks, cookEggs } from "./worm.js";
 import { cookBills, poisonRoll, COOK_RECIPES } from "./cooking.js"; // wave 2 cooking: bills at the stations, food poisoning from the day's meals
 import { FOODS, DAY_KCAL, foodIn, foodSplit, syncLots, lotsOf, takeFood, addFood, ageLots, unitsOf, qtyOf, foodText, eggFood } from "./foods.js";
+import { foodAte } from "./foodlog.js"; // the base's food ledger (the Food tab): what was eaten, by the item
 
 export const STORE = { hubCellar: 200, pantry: 40, rootCellar: 200, storehouse: 150, coldStore: 150, crates: 30, freezer: 300 };
 // Shelf used a day by where the food sits (× the day's weather, storeFactor).
@@ -265,6 +266,7 @@ function noteAte(state, base, items) {
     if (!f.stable || f.group === "meal") base.ate.fresh += u;
     if (f.group === "meal") { base.ate.meals += u; base.ate.lift += u * (f.moodLift || 0); }
   }
+  foodAte(state, base, items, baseCooks(base));
 }
 // The mood the day's meals give (relations.js): the eaten meals' moodLift, by their share of the day's food.
 export const mealLift = (base, d) => (base.ate && base.ate.day === d && base.ate.units > 0 ? base.ate.lift / base.ate.units : 0);

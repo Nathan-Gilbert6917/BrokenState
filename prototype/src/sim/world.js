@@ -41,6 +41,7 @@ import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a c
 import { settleAll, starterLoad, pocketBox, gunsArmed, drawShots } from "./ammo.js"; // rounds by calibre
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
+import { foodMarkAll } from "./foodlog.js"; // the bases' food ledger (the Food tab): marks between the hour's steps
 import { autopilotHour, autopilotResolve } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
@@ -919,9 +920,12 @@ function hourOfWorld(state) {
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
   riversHour(state); // rivers.js: rivers freezing over or thawing (before anyone moves this hour)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
+  foodMarkAll(state, "player"); // foodlog.js: what was traded, packed or unloaded between the hours
   movePartiesHour(state);
+  foodMarkAll(state, "team"); // teams home and setting out
   campsHour(state); // staging.js: camps (neglect, the hub among them) and the shelters' fires
   needsHour(state); // needs.js: hunger and thirst at bases and on errands (teams eat in movePartiesHour), teams' treats
+  foodMarkAll(state, "pack"); // the eating is booked as it happens; packs topped up and emptied
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state
@@ -942,6 +946,7 @@ function hourOfWorld(state) {
   groupJailsHour(state); // groupjails.js: your people just taken: jailed, or sold, ransomed, let go or killed when there is no room
   ransomHour(state); // ransom.js: captives brought home, envoys back with their price, handovers nobody came to
   volunteersHour(state); // volunteers.js: volunteers joining and leaving your teams, your people lent out, the groups' asks
+  foodMarkAll(state); // foodlog.js: building, crafting, the stations, visitors
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
     watchDayRoles(state); // watch.js: Manual people on watch likewise
@@ -979,6 +984,7 @@ function hourOfWorld(state) {
     causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or firewood ran out
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
+    foodMarkAll(state, "player"); // foodlog.js: supply runs and trade routes
   }
   settleAll(state); // ammo.js: generic ammo that came in or went out this hour sorted into (or out of) rounds by calibre
   // Safety net: no stock below zero, whatever subtracted from it.
@@ -999,10 +1005,13 @@ function hourOfWorld(state) {
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   sickRestHour(state); // sickrest.js: the ill at a base rest (Manual and pinned: their job back when well); a log line each way
   cooksHour(state); // kitchen.js: whoever is on Cook in a cooking hour counts as one of the day's cooks (s.cookHour)
+  foodMarkAll(state, "player"); // the governor, the stewards and the crews: trades, teams packed
   jobTripsHour(state); // jobtrips.js: the outdoor jobs' trips (out to the base's land, the work, home with the load)
+  foodMarkAll(state, "job"); // the hunters', fishers' and foragers' loads home
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
   historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
+  foodMarkAll(state); // foodlog.js: the rest of the hour
   if (state.autopilot) autopilotResolve(state); // cards the hour raised after the governor's turn (a job trip's perk milestone): answered now, as the browser does every frame
 }

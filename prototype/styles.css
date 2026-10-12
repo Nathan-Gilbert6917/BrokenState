@@ -352,6 +352,37 @@ a.link { color: var(--info); cursor: pointer; text-decoration: underline; }
 .sk-info { color: var(--info); cursor: help; font-size: 0.85em; font-weight: normal; text-transform: none; }
 .sk-hint { font-size: 0.8rem; color: var(--muted); margin: 0.15rem 0 0.4rem; }
 .sk-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.2rem, 1fr)); gap: 0.35rem; }
+/* The base window's Food tab (ui/foodchain.js): the food chain as five columns, left to right, then the verdict. */
+.fc-chain { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0 1.1rem; font-size: 0.85rem; margin-top: 0.3rem; }
+.fc-col { position: relative; min-width: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.55rem; margin-bottom: 0.5rem; }
+.fc-col:not(:last-child)::after { content: "▶"; position: absolute; right: -0.95rem; top: 1.1rem; color: var(--accent); font-size: 0.8rem; opacity: 0.8; }
+.fc-head { display: flex; align-items: center; gap: 0.4rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.85rem; }
+.fc-step { display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; border-radius: 99px; background: #3a3020; font-size: 0.72rem; }
+.fc-big { font-size: 1.35rem; font-weight: 700; margin: 0.1rem 0 0.05rem; font-variant-numeric: tabular-nums; }
+.fc-unit { font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+.fc-sub { margin: 0.45rem 0 0.1rem; color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--line); }
+.fc-col .sk-row { gap: 0.4rem; }
+.fc-col .sk-l { overflow-wrap: break-word; min-width: 0; }
+.fc-col .sk-v { white-space: nowrap; }
+table.t.fc-rooms { width: 100%; margin: 0.3rem 0; table-layout: fixed; font-size: 0.78rem; }
+table.t.fc-rooms th:first-child { width: 46%; }
+table.t.fc-rooms th:nth-child(2) { width: 32%; }
+table.t.fc-rooms td:first-child { overflow-wrap: break-word; }
+table.t.fc-rooms td:not(:first-child) { white-space: nowrap; }
+table.t.fc-rooms td, table.t.fc-rooms th { padding: 0.1rem 0.15rem; }
+.fc-station { border-top: 1px dashed var(--line); padding: 0.25rem 0; }
+.fc-station:first-child { border-top: none; }
+.fc-bill { overflow-wrap: anywhere; }
+.fc-mix { display: flex; height: 0.7rem; border-radius: 4px; overflow: hidden; margin: 0.3rem 0 0.2rem; background: #22262d; }
+.fc-mix > i { display: block; height: 100%; }
+.fc-legend { display: flex; flex-wrap: wrap; gap: 0.1rem 0.6rem; color: var(--muted); }
+.fc-legend i { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 2px; margin-right: 0.25rem; }
+.fc-verdict { font-size: 0.95rem; border-left: 4px solid var(--good); }
+.fc-verdict.fc-warn { border-left-color: #ffd166; }
+.fc-verdict.fc-danger { border-left-color: var(--danger); }
+.fc-tips { margin: 0.3rem 0 0; padding-left: 1.2rem; }
+.fc-tips li { margin: 0.1rem 0; }
+@media (max-width: 1000px) { .fc-col::after { display: none; } }
 .sk-tile { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 0.45rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.3rem 0.45rem; min-width: 0; }
 .sk-tile > i { font-style: normal; grid-row: span 2; font-size: 1.25rem; width: 1.6rem; text-align: center; }
 .sk-tile > b { font-size: 1rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
