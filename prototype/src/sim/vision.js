@@ -40,6 +40,13 @@ export const VISION = {
   GLANCE: 0.3, // an unaware guard standing about looks another way this share of turns
 };
 
+// ---------- what is switched on ----------
+// The light a unit carries and has on (u.light: the key it carries, lights.js; u.lightOff: switched off), and night
+// vision worn and on (u.nvg: goggles or a thermal; u.nvgOff: flipped up). Everything that reads a light or night
+// vision goes through these.
+export const activeLight = (u) => (u && u.light && !u.lightOff ? u.light : null);
+export const nvgOn = (u) => !!(u && u.nvg && !u.nvgOff);
+
 // ---------- facing ----------
 export const faceAng = (u) => { const f = u && u.face; return f && (f[0] || f[1]) ? Math.atan2(f[1], f[0]) : null; };
 export function setFacing(u, ang) {
