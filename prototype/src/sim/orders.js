@@ -86,8 +86,9 @@ export function orderLabel(state, p) {
 
 export const queueText = (state, p) => (p.orders || []).map((o) => describeOrder(state, o)).join(" → ");
 
-// Teams you can give orders to: waiting or working on the spot (you know where they are), or in radio range.
-export const contactable = (p) => p.owner === "player" && p.kind !== "convoy" && (p.phase === "waiting" || p.phase === "task" || p.radioLive);
+// Teams you can give orders to: any of your teams, wherever it is (no radio-range limit on orders; radio range only
+// decides whether its sightings reach your map live, parties.js updateRadio). Convoys run their own route.
+export const contactable = (p) => p.owner === "player" && p.kind !== "convoy";
 
 // Status of the current order for the panels: label, hours left (null = open-ended) and share done.
 export function orderStatus(state, p) {

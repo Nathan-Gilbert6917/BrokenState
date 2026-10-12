@@ -123,7 +123,7 @@ export const PERK_TREE = {
          P("assassin", "Assassin", "Melee attacks on enemies who have not noticed anyone yet always hit and are always critical (2× damage).", [1, 2, 3], "combat.js strike")],
   },
   scavenging: {
-    5: [P("scrounger", "Scrounger", "+30% chance a day of a find when scavenging around a base.", [2, 2, 1], "economy.js scavChance"),
+    5: [P("scrounger", "Scrounger", "+30% supplies a day when scavenging around a base.", [2, 2, 1], "economy.js scavYield"),
         P("tinkerseye", "Tinker's Eye", "Hour-by-hour searches with them on the team find 50% more parts and fuel.", [2, 2, 2], "scavenge.js searchHour")],
     10: [P("packrat", "Packrat", "+8 kg max load: they carry more of their team's load before it slows them down.", [2, 2, 3], "load.js maxLoad"),
          P("treasure", "Treasure Hunter", "Hour-by-hour searches with them on the team find 20% more supplies, gear twice as often and books twice as often; containers they search in a raid on the map count Scavenging +5.", [2, 3, 2], "scavenge.js searchHour; combat.js searchBox")],

@@ -67,8 +67,8 @@ section("Which team is selected");
   const q = team(state, 1);
   check(selectedTeam(state, { selParty: q.id, expedition: p.id }) === q, "the map pick comes before the open panel");
   q.radioLive = false; q.path = [find(state, hub(state).tile, () => true, 4, 8)];
-  check(selectedTeam(state, { selParty: q.id, expedition: p.id }) === p, "a map pick out of radio contact falls back to the open panel");
-  check(selectedTeam(state, { selParty: q.id }) === null, "…and to nothing when no panel is open");
+  check(selectedTeam(state, { selParty: q.id, expedition: p.id }) === q, "a map pick out of radio range is still selected (orders reach it anywhere)");
+  check(selectedTeam(state, { selParty: q.id }) === q, "…also with no panel open");
   check(selectedTeam(state, { moveParty: p.id }) === p, "move mode selects its team");
   check(selectedTeam(state, { expedition: 99999 }) === null, "a team that is gone is not selected");
   const convoy = { ...p, id: 88888, kind: "convoy" };
@@ -210,7 +210,7 @@ section("Your own base: enter, drop off, load, resupply; away from it they wait 
   check(!item(ma, "mission:enter").disabled && item(ma, "mission:enter").move, "away: enter the base = move there, then enter");
 }
 
-section("Radio rule: out of contact, everything disabled with the reason");
+section("Out of radio range on the road: the menu works as in range (TEAM-01)");
 {
   const state = mk();
   const h = hub(state);
@@ -218,10 +218,10 @@ section("Radio rule: out of contact, everything disabled with the reason");
   p.radioLive = false; p.phase = "out"; p.path = [partyTile(p), partyTile(p)]; p.idx = 0;
   const forest = find(state, h.tile, (t) => t.terrain === "forest", 2, 12);
   const m = teamTileMenu(state, {}, p, forest);
-  check(m.items.length && m.items.every((it) => it.disabled === NO_RADIO), "every item says: no radio contact");
-  check(/out of radio contact/.test(m.head.situation), "the head says so too");
-  const before = p.orders.length;
-  check(/radio/i.test(runTeamAction(state, {}, { id: p.id, tile: forest, key: "forage", mode: "replace" })) && p.orders.length === before, "doing one anyway is refused");
+  check(m.items.length && !m.items.some((it) => it.disabled === NO_RADIO), "no item is disabled for radio contact");
+  check(!/out of radio contact/.test(m.head.situation), "the head does not say out of contact");
+  const msg = runTeamAction(state, {}, { id: p.id, tile: forest, key: "forage", mode: "replace" });
+  check(!/radio/i.test(msg || "") && (p.phase === "out" || p.orders.length > 0), `giving one takes (${msg})`);
 }
 
 section("Doing it: replace, Shift appends, a job here starts now, asks before dropping orders");

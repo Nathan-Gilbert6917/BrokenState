@@ -6,10 +6,9 @@
 // rations for the whole plan (estimatePlan, the same hour-by-hour stepping as the real trip, winter's appetite
 // included: ×1.1 / ×1.2 below 0 / −8°C, except by a lit camp fire).
 //
-// Radio rule: a team in radio coverage (stations and linked relays, radio.js) takes new orders at any time. Out of
-// contact it keeps following its plan, and you can only give it orders through the cards it raises (arrival,
-// "Done", interruptions, finds): answering one of its cards opens contact for that hour (commandable).
-// A waiting team out of contact checks in again every 12 hours, and an open-ended camp every 24.
+// Orders: every team of yours takes new orders at any time, wherever it is (commandable: no radio-range limit). Radio
+// coverage (stations and linked relays, radio.js) still decides whether its sightings reach your map live. A team
+// with an active plan follows it until you give it other orders.
 //
 // To keep the player involved while a team is out of contact, the plan watches for things worth a decision and
 // raises a card (once each per trip): a horde in sight, a rich site in sight that is not on the plan, supplies
@@ -406,18 +405,16 @@ export function startNearby(state, p, o) {
 }
 
 // ---------- the radio rule ----------
+// Orders reach every team of yours wherever it is: no radio-range limit (each order still checks the team's state,
+// its path and what the spot allows). Convoys follow their route.
 export function commandable(state, p) {
-  if (!p || p.owner !== "player" || p.kind === "convoy") return false;
-  if (p.radioLive) return true;
-  if (p.contactHour === state.hour) return true; // you just answered one of its cards
-  if (state.cards.some((c) => c.partyId === p.id && (c.isOrders || c.planCard))) return true; // it is waiting for your answer
-  return state.bases.some((b) => b.tile === partyTile(p));
+  return !!p && p.owner === "player" && p.kind !== "convoy";
 }
 export const NO_RADIO = "No radio contact: the team follows its plan. New orders only through the cards it raises, or once it is in radio range (a station or a linked relay).";
 // A team carrying a receiver out of two-way reach, inside some radio network (parties.js updateRadio p.radioHear):
 // it listens, that is all (radiolisten.js: Listen in tunes it to one channel).
 export const HAND_RADIO = "Hand-crank radio: hears the networks around it, cannot call in";
-export const HAND_RADIO_TIP = "The team carries a receiver (a hand-crank radio, or a military radio): inside a radio network's coverage (yours, or a group's own around its bases) it hears that network, and nothing beyond every network. It cannot answer, so it is not in contact: no orders, nothing reported, until it is in radio range or raises a card. Listen in (1h, from the team panel while in contact) tunes it to one channel; then it picks up that channel's traffic each day while in range.";
+export const HAND_RADIO_TIP = "The team carries a receiver (a hand-crank radio, or a military radio): inside a radio network's coverage (yours, or a group's own around its bases) it hears that network, and nothing beyond every network. It cannot transmit, so what the team sees does not reach your map until it is in radio range or reports. Listen in (1h, from the team panel) tunes it to one channel; then it picks up that channel's traffic each day while in range.";
 
 // ---------- hourly (parties.js playerPartyHour) ----------
 export function fieldHour(state, p) {
@@ -428,10 +425,10 @@ export function fieldHour(state, p) {
   if (p.plan && p.plan.active) planWatch(state, p);
 }
 
-// Out of contact a team cannot hear you: one that is waiting with no card (held) checks in again every 12 hours,
-// an open-ended camp once a day.
+// A team you cannot order would check in again every 12 hours (an open-ended camp once a day); orders now reach every
+// team (commandable), so this stays as the fallback for a team outside it.
 function checkIn(state, p) {
-  if (p.radioLive || state.cards.some((c) => c.partyId === p.id)) { delete p.checkInAt; return; }
+  if (commandable(state, p) || p.radioLive || state.cards.some((c) => c.partyId === p.id)) { delete p.checkInAt; return; }
   const camp = p.phase === "task" && p.task && p.task.type === "camp" && p.task.hours == null;
   if (p.phase !== "waiting" && !camp) { delete p.checkInAt; return; }
   if (p.checkInAt == null) { p.checkInAt = state.hour + (camp ? CAMP_CHECKIN : CHECKIN_HOURS); return; }

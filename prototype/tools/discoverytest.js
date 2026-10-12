@@ -11,6 +11,7 @@
 // - determinism: the same seed plays the same with the same discoveries
 // - autopilot campaigns ([days] in each style, [runs] seeds): no team is ever sent to scavenge a site the player has
 //   not found; how fast the hidden sites near the hub are found
+import { TEAM_INTEL_EVERYWHERE } from "../src/sim/parties.js";
 import { createWorld, tickHour, hub, day, atBase, snapshot, updateVision, mergeKnowledge } from "../src/sim/world.js";
 import { recomputeOwnership } from "../src/sim/factions.js";
 import { LOCATIONS } from "../src/sim/data.js";
@@ -180,7 +181,7 @@ route("a team's sight, radioed in", () => {
   for (let i = 0; i < 24 * 6 && !siteKnown(st, id); i++) { tickHour(st); st.cards.length = 0; }
   return { st, id, m, word: /team \(.*\) (found|brought word of)/ };
 });
-route("a team's sight, brought home", () => {
+route(TEAM_INTEL_EVERYWHERE ? "a team's sight, out of radio range (live intel)" : "a team's sight, brought home", () => {
   const st = W();
   const h = hub(st);
   const id = nearestHidden(st, h.tile, 14);
@@ -188,6 +189,11 @@ route("a team's sight, brought home", () => {
   const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), dest: id, mission: "move", stance: "normal", supplies: { food: 12, water: 12 } });
   if (res.error) return null;
   const p = res.party;
+  if (TEAM_INTEL_EVERYWHERE) { // parties.js: every team reports live, out of radio range too: it goes on the map as they see it
+    const m = new Set(st.log);
+    for (let i = 0; i < 24 * 8 && !siteKnown(st, id); i++) { tickHour(st); st.cards.length = 0; }
+    return { st, id, m, word: /team \(.*\) (found|brought word of)/ };
+  }
   for (let i = 0; i < 24 * 8 && !(p.seen.has(id)); i++) { tickHour(st); st.cards.length = 0; }
   if (!check(p.seen.has(id) && !siteKnown(st, id), "out of radio range the team has seen it but the hub's map does not show it yet")) return null;
   const m = new Set(st.log);

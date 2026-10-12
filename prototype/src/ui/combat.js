@@ -6,7 +6,7 @@ import {
   canSee, canSeeAt, coverSides, isRanged, adjacent, meleeReach, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
   hasMag, magLabel, magEmpty, magShown, reloadRefusal, fireRefusal, hasShots,
   vehicleTurret, TURRET, RIDE, turretRounds, los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
-  playerVision, enemyGhosts, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
+  playerVision, enemyGhosts, vehicleExit, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js";
 import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsRefusal, shellsLine, SHELLS } from "../sim/mags.js"; // magazines as items (section 15): spares, what a Reload does
@@ -1455,11 +1455,12 @@ function raidButtons(state, b, u, btn) {
   const Q = SEARCH.quick;
   const qWhy = quickRefusal(b, u, qb || near[0]);
   const quickTip = `Rummage in a hurry: no action (needs one left; once a turn), so it fits between two moves. Only ${Math.round(Q.reveal[0] * 100)}–${Math.round(Q.reveal[1] * 100)}% of what is inside turns up; a full search there later finds the rest. Loud: Heat +${Q.heat}, and the unaware dead and guards within ${quickRadius(b, u)} tiles come to look${b.raid.interior ? " (walls and closed doors muffle it)" : ""}${quickRadius(b, u) > Q.radius ? "; fumbling in the dark without a light carries further" : ""}. Hands going fast: ${quickHurtPct(state, b, u)} chance of cutting yourself (broken glass, a rusty can, a needle): a few health and a cut that needs dressing. Less with Scavenging or Stealth, more in the dark without a light.${qWhy ? ` ${qWhy}` : ""}`;
-  const exTip = zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : (b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
+  const byCar = vehicleExit(b, u);
+  const exTip = byCar ? "Leave the raid in your vehicle from right beside it (any cell around it). Everyone who extracts at the vehicle keeps it." : zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : (b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
   const veh = b.raid.hasVehicle ?? b.raid.vehicleZone >= 0;
   const vehTip = atVehicle(b, u) ? "Free: open the vehicle. Drag what you carry into it to free your hands, or take things out." : "Walk to the vehicle (its zone, or next to it) to load or unload it.";
-  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "⇧S")}${btn("quick", "Quick search", quickTip, !qWhy, "⇧Q")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", zone && zone.vehicle ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && !!zone, "X")}`;
+  let html = `${btn("search", "Search", searchTip, u.ap > 0 && near.length > 0, "⇧S")}${btn("quick", "Quick search", quickTip, !qWhy, "⇧Q")}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", byCar || (zone && zone.vehicle) ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && (!!zone || byCar), "X")}`;
   // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
   if (b.raid.interior) {
     const first = u.name.split(" ")[0];

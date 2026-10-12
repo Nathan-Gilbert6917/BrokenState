@@ -1294,15 +1294,23 @@ export function hourCourse(state, p, held = false) {
 /** @param {Party} p @param {number} hour */
 const hourUsed = (p, hour) => (p.hourUsed && p.hourUsed.hour === hour ? p.hourUsed.f : 0);
 
+// Live intel from your teams. TEAM_INTEL_EVERYWHERE (for now): every team of yours reports what it sees as it sees it,
+// wherever it is, as orders reach it anywhere (plans.js commandable). Off: only teams in radio coverage (p.radioLive)
+// report live, the rest when they get home or come into range. Everything that asks "does this team's sight reach the
+// map now?" goes through reportsLive; p.radioLive itself stays "in your radio coverage" (the 📻 badge, listening in).
+export const TEAM_INTEL_EVERYWHERE = true;
+/** @param {Party | null | undefined} p */
+export const reportsLive = (p) => !!p && (!!p.radioLive || (TEAM_INTEL_EVERYWHERE && p.owner === "player" && p.kind !== "convoy"));
+
 /** @param {State} state @param {Party} p */
 function updateRadio(state, p) {
   // Hardcore before the first hub (hardcore-start.js): you are with this team, so it is always in contact.
   p.radioLive = withYou(state, p) || radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
-  p.sightNow = p.radioLive ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
-  if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
+  p.sightNow = reportsLive(p) ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
+  if (reportsLive(p)) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
   // Listening (radio.js networks): a team carrying a receiver (a hand-crank or military radio) out of two-way reach
   // hears a radio network only while it stands inside that network's coverage (a group's, or yours: nothing beyond
-  // it). It is not in contact (no orders, nothing reported). What it picks up on the channel it tuned to (Listen
+  // it). It does not report live (its sightings wait until it reports); orders reach it anyway (plans.js commandable). What it picks up on the channel it tuned to (Listen
   // in, radiolisten.js) goes to p.heard each day.
   if (p.owner !== "player" || p.kind === "convoy") return;
   p.radioHear = !p.radioLive && teamReceives(state, p) && networksAt(state, partyTile(p)).length > 0;
@@ -1589,6 +1597,13 @@ export function addGearToCargo(state, p, item) {
 }
 
 // ---------- orders ----------
+// Scavenge / raid: a site (t.loc) can be searched again and again; each search picks it over (t.loot falls to a 0.03
+// floor, scavenge.js) so a stripped site yields little, but it is never closed. Open ground needs something left
+// (loot above 0.05). loot: what you know of the tile (a stale report) instead of the live value.
+/** @param {{ loc?: any, loot?: number } | null | undefined} t @param {number} [loot] */
+export const scavengeable = (t, loot = t ? t.loot : 0) => !!t && (!!t.loc || (loot || 0) > 0.05);
+export const PICKED_OVER = 0.05; // at or below: the site is picked over (searching again finds little)
+
 // What the team can do on the tile where it stands. tile: another tile instead (the right-click menu, ui/teamctx.js,
 // asks for the tile the team would move to first: the labels, and the reasons an option would fail with what it carries).
 /** @param {State} state @param {Party} p @param {number} [tile] */
@@ -1600,7 +1615,10 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   if (enter) out.push(enter);
   add("survey");
   if (t.terrain !== "water") add("sweep");
-  if (t.loot > 0.05) add("scavenge");
+  if (scavengeable(t)) {
+    add("scavenge");
+    if (t.loc && !(t.loot > PICKED_OVER)) out[out.length - 1].desc += " Picked over: searching again finds little.";
+  }
   const fb = state.factions.find((f) => f.alive && f.bases.includes(tile));
   if (fb) add("trade");
   if (p.caravan) add("caravan"); // a trade caravan's stop card (caravans.js)
@@ -1695,7 +1713,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
 /** @param {State} state @param {Party} p @returns {"log" | "tray" | null} */
 function quietArrival(state, p) {
   if (p.owner !== "player" || state.autopilot || p.crewRole != null || p.kind === "convoy") return null;
-  return p.radioLive || state.bases.some((b) => b.tile === partyTile(p)) ? "log" : "tray";
+  return "log"; // orders reach a team anywhere (plans.js commandable): no radio-range limit
 }
 
 // The team stops and reports in. opts.failed: the order could not be done (the card is not titled "Done: …");
@@ -2241,7 +2259,7 @@ function cullCard(state, p, horde) {
 /** @param {State} state @param {Party} p */
 export function startReturn(state, p) {
   if (wipeIfEmpty(state, p)) return "That team is gone.";
-  const known = p.radioLive || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
+  const known = reportsLive(p) || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { // no base left at all (conquest.js): the team stays on the road until it founds or takes one
     if (p.phase !== "waiting") awaitOrders(state, p, "There is no base to go home to. Found a new one (Establish base: a camp you build up into your hub) or take one back (Assault their base).", { failed: true, hold: true });

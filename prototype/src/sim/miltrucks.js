@@ -31,7 +31,7 @@ import { Rng } from "./rng.js";
 import { lootItem } from "./inventory.js";
 import { rosterTruckGear } from "./factoryfit.js";
 import { log, addCard, hub, atBase, factionById, snapshot } from "./world.js";
-import { tileLabel, planPath, spawnAiParty, partyMembers, partyTile, teamName, launchExpedition, carryCapacity, supplyLoad } from "./parties.js";
+import { tileLabel, planPath, spawnAiParty, partyMembers, partyTile, teamName, launchExpedition, carryCapacity, supplyLoad, reportsLive } from "./parties.js";
 import { triggerConflict } from "./conflicts.js";
 import { searchCrew } from "./crashes.js";
 import { stockHas, keyWord } from "./water.js";
@@ -234,7 +234,7 @@ export function truckEngineNoise(state, p, tileId) {
     h.target = tileId; h.lureUntil = state.hour + ENGINE.hours;
     n++;
   }
-  if (n && p.radioLive) log(state, `The Army truck's engine carries: ${n === 1 ? "a horde turns" : `${n} hordes turn`} toward ${tileLabel(state, tileId)}.`, "danger");
+  if (n && reportsLive(p)) log(state, `The Army truck's engine carries: ${n === 1 ? "a horde turns" : `${n} hordes turn`} toward ${tileLabel(state, tileId)}.`, "danger");
   return n;
 }
 

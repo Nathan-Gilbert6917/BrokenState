@@ -12,9 +12,10 @@
 // teamTileMenu(state, ui, p, tile, { append }) → { p, tile, append, forced, head, items }: the model (tools/teamctxtest.js)
 // teamCtxHtml(state, ui, menu)                 → the menu's team section
 // runTeamAction(state, ui, d)                  → does it (d: { id, tile, key, mode, ok }); returns the message, null when it asked first
+import { teamsTogether, meetProblem } from "../sim/teammeet.js"; // your other teams on the same tile
 import { foodIn } from "../sim/foods.js"; // days of food (every kind)
 import { baseById, hub } from "../sim/world.js";
-import { MISSIONS, partyTile, partyMembers, tileLabel, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText, onTheMove, glideAt } from "../sim/parties.js";
+import { MISSIONS, partyTile, partyMembers, tileLabel, teamName, orderOptions, planPath, orderMove, carried, cargoRoom, moveEstimate, clockFrac, clockText, onTheMove, glideAt } from "../sim/parties.js";
 import { queueOrder, startOrder, queueEstimate, queueEndTile, orderStatus, orderLabel, queueText, cancelMove, besideWater, repairInfo, FETCH_WATER_HOURS, SURVEY_HOURS } from "../sim/orders.js";
 import { commandable, NO_RADIO } from "../sim/plans.js";
 import { partyVehicle } from "../sim/vehicles.js";
@@ -234,6 +235,11 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
       if (mine) add("Team", "well", `Dig a well (${CLAIM.WELL_HOURS}h)`, [{ type: "well" }], { why: wellProblem(state, p, tile), hint: `Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): the people at your base next to it haul its water.` });
     }
   }
+  // Your other teams on the team's own tile (sim/teammeet.js): people, goods and merging, in their own window.
+  if (partyTile(p) === tile && !append) {
+    const others = teamsTogether(state, p);
+    if (others.length) add("Team", "meet", `Teams together (${others.length + 1})…`, [], { special: "meet", why: others.every((q) => meetProblem(state, p, q)) ? meetProblem(state, p, others[0]) : "", hint: `With ${others.map((q) => teamName(state, q)).join(", ")}: move people between the teams, split some off, merge them, or hand goods over.` });
+  }
   // Field works on this tile (sim/fieldworks.js): your stockpile (load, unload), a group's structure (wreck, take, loot).
   if (!water) for (const it of teamFieldItems(state, p, tile)) add("Field work", it.key, it.label, [it.order], { why: it.why, hint: it.hint });
   const home = baseById(state, p.homeBaseId) || hub(state);
@@ -349,6 +355,10 @@ export function runTeamAction(state, ui, d, acts = {}) {
   if (it.disabled) return `${it.label}: ${it.disabled}`;
   if (it.special === "drop" || it.special === "load" || it.special === "inventory") {
     if (acts["ti-open"]) acts["ti-open"]({ id: p.id, tab: it.special === "inventory" ? "team" : it.special });
+    return "";
+  }
+  if (it.special === "meet") {
+    if (acts["tm-open"]) acts["tm-open"]({ tile, a: p.id });
     return "";
   }
   if (it.special === "resupply") {

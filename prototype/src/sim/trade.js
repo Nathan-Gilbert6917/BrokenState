@@ -31,7 +31,7 @@ import { FOODS, foodIn, unitsOf, groupFoodWant, foodNeeds, DAY_VALUE } from "./f
 import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew, supValue, supWeight } from "./data.js";
 import { log, day, newId, survivorById, factionById, baseById, atBase, skill, snapshot, mergeKnowledge } from "./world.js";
 import { PAYOUT } from "./upkeep.js"; // the pay-out reserve: days of food and water a head kept back
-import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad, cargoRoom } from "./parties.js";
+import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad, cargoRoom, reportsLive } from "./parties.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { ransomOnTradeCard } from "./conflicts.js";
 import { itemLoad, lootItem } from "./inventory.js";
@@ -857,7 +857,7 @@ export function executeTrade(state) {
   if (tiles.length) {
     if (ctx.p) {
       for (const id of tiles) ctx.p.seen.set(id, snapshot(state, id));
-      if (ctx.p.radioLive) mergeKnowledge(state, ctx.p.seen);
+      if (reportsLive(ctx.p)) mergeKnowledge(state, ctx.p.seen);
     } else for (const id of tiles) state.knowledge[id] = snapshot(state, id);
     got.push(`a report on ${tiles.length} tile${tiles.length === 1 ? "" : "s"}`);
   }
