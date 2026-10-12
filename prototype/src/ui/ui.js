@@ -1771,8 +1771,8 @@ function baseWorkshops(state, b) {
     <div class="grid2">
       <div>${sectionHead("Farming", `<a class="link small" data-action="basetab" data-tab="farming"${tip("Crops ripen in batches: the Farming tab")}>Farming tab →</a>`, farmers.length)}
       <div class="card small">${statRows([["🌱 Farmers", farmers.length ? farmers.map((x) => first(x) + bedTag(x)).join(", ") : `<span class="muted">none</span>`], ["Plots", `${farmSlots(b)}`]])}</div></div>
-      <div>${sectionHead(`Scavenging${infoTip(`${ROLES.scavenge.desc} Picking around the base rarely turns anything up. Send teams to real sites for supplies.`)}`, "", scav.length)}
-      <div class="card small">${scav.length ? statRows([["🔎 Scavengers", scav.map((x) => first(x) + bedTag(x)).join(", ")], ["A day, on average", `<span${tip("Usually nothing: this is the long-run average")}>${scavOut || "next to nothing"}</span>`], ["Surroundings unpicked", pbar(Math.round((b.scavLeft ?? 1) * 100), "info", `${Math.round((b.scavLeft ?? 1) * 100)}%`)]]) : "<span class='muted'>Nobody scavenging</span>"}</div></div>
+      <div>${sectionHead(`Scavenging${infoTip(`${ROLES.scavenge.desc}`)}`, "", scav.length)}
+      <div class="card small">${scav.length ? statRows([["🔎 Scavengers", scav.map((x) => first(x) + bedTag(x)).join(", ")], ["A day, on average", `<span${tip("The long-run average: finds come a few at a time, some days none")}>${scavOut || "next to nothing"}</span>`], ["Surroundings unpicked", pbar(Math.round((b.scavLeft ?? 1) * 100), "info", `${Math.round((b.scavLeft ?? 1) * 100)}%`)]]) : "<span class='muted'>Nobody scavenging</span>"}</div></div>
     </div>
     <h3>Workshop stations</h3>
     ${sts.length ? `<table class="t"><tr><th>Station</th><th>Operator</th><th>Status</th><th>Per day</th><th${tip("Standing order (production.js): Forever, Until stock reaches N, Keep at least N of an input, or Off, and what the operator does while it holds the station")}>Order</th></tr>${sts.map((st) => {
