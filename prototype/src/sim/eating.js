@@ -8,9 +8,12 @@
 //   - Everyone has a fullness target of their own in EAT.band (80–100: eatTarget, fixed by their name; a Glutton 100):
 //     lean 75, a feast 100, the automatic short rations (economy.js base.rationing under a week of food) 48.
 //   - They eat at their mealtime (meals.js: 06:00 breakfast, 10:00 for hunters and fishers back from the dawn trip,
-//     20:00 dinner) when they are EAT.meal (5) under their target, and between meals when they drop below EAT.snack (55;
-//     at night, 22–05, below EAT.night 30; on short rations below 40): up to the target. That is two meals a day, a
-//     ration a day in all (the same daily totals as the old once-a-day eating: tools/eatingtest.js measures it).
+//     lunch at the lunch hour, 12:00 unless the Work tab moves it, 20:00 dinner) when they are EAT.meal (5) under their
+//     target, and between meals when they drop below EAT.snack (55;
+//     at night, 22–05, below EAT.night 30; on short rations below 40): up to the target. That is three meals a day,
+//     a ration a day in all (hunger falls as before, so the daily totals are the old once-a-day eating's:
+//     tools/eatingtest.js measures it). Lunch gives everyone who eats it EAT.lunchMood (an hour of free time's mood,
+//     work.js OFF_MOOD); out on a job trip they eat it from the pack where they are (jobtrips.js).
 //   - A meal is a break: EAT.min.base + EAT.min.per × the days of food eaten minutes (a 23-point dinner about 28 min, a
 //     mealtime meal at least EAT.min.meal), shown "Eating breakfast (25 min)" (activity.js) and kept on s.meal. Its
 //     work time is the meal hour the round-the-clock jobs stop for (meals.js MEAL_WORK_SHARE: construction, crafting
@@ -92,8 +95,10 @@ export const EAT = {
   min: { base: 12, per: 28, meal: 20, max: 45 },
   variety: 2, urgent: 2, sameDays: 4, log: 5, sameShare: 0.6,
   rawMin: 0.1, dietMin: 0.1, // days of food that count for a thought (a bite of jerky is not "ate meat")
+  lunchMood: 0.25, // the lunch break's lift (work.js OFF_MOOD: an hour of free time)
 };
-export const PACK = { food: 1.5, water: 1.5, hour: 5, keepDays: 3, keepShelf: 7, half: 0.5 };
+// trip: the food someone sets out on a job trip with, at least (jobtrips.js: their lunch out there), topped up as they leave.
+export const PACK = { food: 1.5, water: 1.5, hour: 5, keepDays: 3, keepShelf: 7, half: 0.5, trip: 1 };
 // Timed thoughts: v (mood when it starts), hours it lasts. Meal tiers: the catalog's moodLift × MEAL_MOOD.
 export const MEAL_MOOD = 3;
 export const THOUGHTS = {
@@ -132,8 +137,8 @@ export function targetAt(s, key) {
   return lv && lv.target != null ? lv.target : eatTarget(s);
 }
 // Do they eat now (hour of day h, on `job`)? Returns the hunger they eat below (0: they do not).
-function eatBelow(s, h, key, tgt, job) {
-  if (mealOf(job, h)) return tgt - EAT.meal;
+function eatBelow(state, s, h, key, tgt, job) {
+  if (mealOf(job, h, state)) return tgt - EAT.meal;
   if (key === "short") return EAT.short[0];
   const night = h >= EAT.nightFrom || h < EAT.nightTo;
   return Math.min(night ? EAT.night : EAT.snack, tgt - EAT.meal);
@@ -294,10 +299,10 @@ export function baseEatHour(state, base, people) {
     s.hunger = clamp(s.hunger - hr * cold * appetite(s) * use * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1));
     if (h === PACK.hour && s.location.kind === "base" && !awayFromStores(state, s) && (packFood(s) < PACK.food - 0.25 || packWater(s) < PACK.water - 0.2)) topUpPack(state, base, s, undefined, memo);
     const tgt = targetAt(s, key);
-    const below = eatBelow(s, h, key, tgt, s.role);
+    const below = eatBelow(state, s, h, key, tgt, s.role);
     if (s.hunger >= below) continue;
     const wantPts = Math.max(0, tgt - s.hunger);
-    const meal = mealOf(s.role, h);
+    const meal = mealOf(s.role, h, state);
     let got = { units: 0, items: {}, lots: [], raw: 0, from: "" };
     if (!awayFromStores(state, s)) {
       ctx = ctx || baseCtx(state, base, key);
@@ -327,6 +332,7 @@ export function baseEatHour(state, base, people) {
       acc(base).meals++;
       acc(base).min += min;
       noteEat(state, s, got, { meal, min, key, base, cooked: !!(ctx && ctx.cooks) && got.from !== "pack" });
+      if (meal === "lunch") s.mood = Math.min(100, (s.mood || 0) + EAT.lunchMood); // the lunch break's lift
     }
   }
 }
@@ -514,7 +520,7 @@ export function groupDietPressure(state, f) {
 export const aiPartyHeads = (f, strength, arms = 1) => Math.max(1, Math.min(Math.max(1, f.pop || 1), Math.round((strength || 1) / Math.max(0.5, arms))));
 
 // ---------- text ----------
-export const EATING_HELP = `Everyone eats by themselves now: at breakfast (06:00; 10:00 for hunters and fishers, after the dawn trip) and dinner (20:00) when they are a little under their own target, and between meals when they get hungry (below ${EAT.snack}; at night below ${EAT.night}), until they are ${EAT.band[0]}–${EAT.band[1]}% full (each person has their own target; a Glutton eats to 100). A meal is a break of ${EAT.min.meal}–${EAT.min.max} minutes ("Eating breakfast (25 min)" in the activity): the jobs that run round the clock stop for the meal hours. They eat the best cooked meals first (lavish, fine, stew, simple), then whatever would spoil soonest; raw meat last where nothing cooks; a Vegetarian plant food first; and anyone tired of the same food two days running picks something else while it keeps. A day of food is ${"2000"} kcal; the hunger gauge shows the target band.<br><br><b>Carried rations.</b> Everyone carries a pack of about ${PACK.food} days of food that keeps and ${PACK.water} purified water (it weighs 2–3 kg). At a base they eat from the stores and the pack is topped up every morning (and when they eat with it under half), as long as the base is not rationing and keeps ${PACK.keepDays} days of food and water beyond it. Away from the stores (a job trip, a field work, a lookout's shift, an errand) they eat and drink from it; a team's packs count toward its supplies (the base packs that much less) and are eaten after the team's shared food. Out of food away from the stores, hunger bites as before.<br><br><b>Ration levels</b> (a base's Overview, Needs): <i>Normal</i>; <i>Lean</i>: everyone eats to about 75% and the body gets by on 80% of a ration: food lasts a quarter longer, mood −1 a day, nobody hungry enough to work worse; <i>Feast</i>: today only, everyone eats their fill and half as much again (×1.5 the day's food), "A feast" mood +6. Under a week of food a base goes on short rations by itself (60%: eats to 48, mood −3 a day). The governor and a steward (Farming & food) go lean under ${RATION_PLAN.lean} days of food when the plots will not cover it, back over ${RATION_PLAN.normal}; the harvest festival is a feast. The groups do the same.<br><br><b>Food and mood</b> (each a thought that lasts, not a daily factor; the same one cannot come again until it has run out): Ate raw food ${THOUGHTS.raw.v} (2 days; raw meat or fish where nothing cooks it, or food with the worm's eggs) · a stew +${MEAL_MOOD}, a fine meal +${2 * MEAL_MOOD}, a lavish meal +${4 * MEAL_MOOD} (3 days) · Same food again ${THOUGHTS.same.v} (2 days) when the same food was most of what they ate ${EAT.sameDays} days running · A feast +${THOUGHTS.feast.v}. Picky Eaters mind simple meals and raw food more and like fine and lavish meals more; Vegetarians lose ${"6"} mood for meat, fish, eggs, milk, honey or a mixed meal; a Cannibal would enjoy human meat, but the game has none: the dead carry the worm.`;
+export const EATING_HELP = `Everyone eats by themselves now: at breakfast (06:00; 10:00 for hunters and fishers, after the dawn trip), lunch (12:00, or the hour set in the Work tab) and dinner (20:00) when they are a little under their own target, and between meals when they get hungry (below ${EAT.snack}; at night below ${EAT.night}), until they are ${EAT.band[0]}–${EAT.band[1]}% full (each person has their own target; a Glutton eats to 100). A meal is a break of ${EAT.min.meal}–${EAT.min.max} minutes ("Eating breakfast (25 min)" in the activity): the jobs that run round the clock stop for the meal hours. Lunch is an hour's break from all work (the guards stay on the walls), with a small lift to mood. They eat the best cooked meals first (lavish, fine, stew, simple), then whatever would spoil soonest; raw meat last where nothing cooks; a Vegetarian plant food first; and anyone tired of the same food two days running picks something else while it keeps. A day of food is ${"2000"} kcal; the hunger gauge shows the target band.<br><br><b>Carried rations.</b> Everyone carries a pack of about ${PACK.food} days of food that keeps and ${PACK.water} purified water (it weighs 2–3 kg). At a base they eat from the stores and the pack is topped up every morning (and when they eat with it under half), as long as the base is not rationing and keeps ${PACK.keepDays} days of food and water beyond it. Away from the stores (a job trip, a field work, a lookout's shift, an errand) they eat and drink from it (a job trip sets out with at least ${PACK.trip} day of food in it: lunch is eaten out there); a team's packs count toward its supplies (the base packs that much less) and are eaten after the team's shared food. Out of food away from the stores, hunger bites as before.<br><br><b>Ration levels</b> (a base's Overview, Needs): <i>Normal</i>; <i>Lean</i>: everyone eats to about 75% and the body gets by on 80% of a ration: food lasts a quarter longer, mood −1 a day, nobody hungry enough to work worse; <i>Feast</i>: today only, everyone eats their fill and half as much again (×1.5 the day's food), "A feast" mood +6. Under a week of food a base goes on short rations by itself (60%: eats to 48, mood −3 a day). The governor and a steward (Farming & food) go lean under ${RATION_PLAN.lean} days of food when the plots will not cover it, back over ${RATION_PLAN.normal}; the harvest festival is a feast. The groups do the same.<br><br><b>Food and mood</b> (each a thought that lasts, not a daily factor; the same one cannot come again until it has run out): Ate raw food ${THOUGHTS.raw.v} (2 days; raw meat or fish where nothing cooks it, or food with the worm's eggs) · a stew +${MEAL_MOOD}, a fine meal +${2 * MEAL_MOOD}, a lavish meal +${4 * MEAL_MOOD} (3 days) · Same food again ${THOUGHTS.same.v} (2 days) when the same food was most of what they ate ${EAT.sameDays} days running · A feast +${THOUGHTS.feast.v}. Picky Eaters mind simple meals and raw food more and like fine and lavish meals more; Vegetarians lose ${"6"} mood for meat, fish, eggs, milk, honey or a mixed meal; a Cannibal would enjoy human meat, but the game has none: the dead carry the worm.`;
 export function packText(s) {
   const f = packFood(s), w = packWater(s);
   return `${r1(f)} day${r1(f) === 1 ? "" : "s"} of food and ${r1(w)} water (${r1(packKg(s))} kg)`;
