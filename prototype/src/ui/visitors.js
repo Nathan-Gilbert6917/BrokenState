@@ -33,7 +33,7 @@ function card(state, w) {
   const btns = [];
   if (w.tile != null) btns.push(`<button data-action="center" data-tile="${w.tile}"${tip(w.live || w.heard ? "Center the map on them" : "Center the map where they were last seen")}>Locate</button>`);
   if (w.tradeHere) btns.push(`<button data-action="vis-trade" data-id="${v.id}" data-base="${w.tradeHere.id}"${tip(`Open the trade window at ${w.tradeHere.name}`)}>Trade</button>`);
-  if (w.gate) btns.push(`<button data-action="vis-gate" data-id="${v.id}"${tip("Talk to them at the gate again")}>At the gate…</button>`);
+  if (w.gate) btns.push(`<button data-action="vis-gate" data-id="${v.id}"${tip(v.phase === "travel" ? "Call them back to the gate and talk again" : "Talk to them at the gate again")}>${v.phase === "travel" ? "Call them back" : "At the gate…"}</button>`);
   if (w.canInvite) btns.push(`<button data-action="vis-invite" data-id="${v.id}"${tip("Over the radio: ask them to come to your hub (or the nearest base they can reach) next")}>Invite to trade</button>`);
   if (w.canNews) btns.push(`<button data-action="vis-news" data-id="${v.id}"${tip("Over the radio: news of other states, and the roads they took marked on your map")}>Ask for news</button>`);
   if (w.canPay) btns.push(`<button data-action="vis-pay" data-id="${v.id}" ${w.payPlan ? "" : "disabled"}${tip(w.payPlan ? `Over the radio: they leave the state for ${planText(w.payPlan)} from ${hub(state) ? hub(state).name : "the hub"} (Speech at the hub makes it cheaper)` : "The hub does not have enough to offer them")}>Pay them to leave${w.payPlan ? ` (${esc(planText(w.payPlan))})` : ""}</button>`);

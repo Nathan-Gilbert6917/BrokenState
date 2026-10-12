@@ -214,6 +214,7 @@ section("Durability on real gear");
   check(itemDurMax(best) > itemDurMax(worst) && best.durMax === itemDurMax(best), "a well-made machete lasts longer, and keeps its own full uses");
   // Worn gear is worth less.
   const fresh = newItem("huntrifle"), worn = newItem("huntrifle", 1, 0);
+  delete fresh.mods; delete worn.mods; // factoryfit.js: its factory scope sells unworn with it; the gun's own wear is the check
   check(itemValue(worn) < itemValue(fresh) * 0.7, `a worn rifle is worth less (${r2(itemValue(worn))} vs ${r2(itemValue(fresh))})`);
   // Camp kit wears a day in the field.
   const h = hub(state);

@@ -84,7 +84,7 @@ import { inventoryModal, takeLootReq } from "./inventory.js";
 import { armoryView, armoryScope } from "./armoryview.js"; // the Armory tab's stored gear: grouped, cards or compact rows
 import { itemShortTip, tipAttrs } from "./itemlabels.js"; // the armory cards' short hover tip (Shift: the whole one)
 import { teamMeetModal, meetButton } from "./teammeet.js"; // teams together on a tile: people, goods, merge
-import { teamInvModal, teamsHereCard, transferButtons } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
+import { teamInvModal, teamsHereCard, transferButtons, unpackUp, unpackModal } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
 import { fleetPicker } from "./fleetpick.js"; // the vehicle picker the planners share (up to four)
 import { plannedFleet, pickProblem } from "../sim/teamform.js";
 import { teamFormModal, formTeamButton, editTeamButton, formTeamRow } from "./teamform.js"; // Form a team… at a base; Edit team… for a team waiting on one
@@ -97,7 +97,7 @@ import { recruitModal, crowdingRow, moodRiskChip } from "./people.js";
 import { backgroundInfo } from "../sim/hardcore-start.js"; // who they were before Calder fell (a hardcore start; a preset or a custom one)
 import { backgroundEditor } from "./backgrounds.js"; // the new-run screen's custom backgrounds window
 import { startGearEditor } from "./startgear.js"; // the new-run screen's starting gear window (Customize)
-import { skillsBlock, skillTree, studyBlock } from "./skills.js";
+import { skillsBlock, skillTreeModal, studyBlock } from "./skills.js";
 import { trainingInfo, TRAINING, PROFESSOR, lessonGap } from "../sim/training.js"; // the hospital trains medics: ward rounds, the doctor, trainees
 import { skillProgress } from "../sim/skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
@@ -801,6 +801,7 @@ function pickModal(state, ui) {
   // A card that stops the clock by the pause rules, or one opened from the tray (ui/pacing.js puts it first).
   if (nameModalUp(state, ui)) return ["namebase", () => nameBaseModal(state, ui)]; // ui/basename.js: a base just founded, or ✎ Rename (before its founding card)
   if (cardUp(state, ui)) return ["card", () => trayCardFrame(state, ui, cardModal(state, state.cards[0]))];
+  if (unpackUp(state, ui)) return ["unpack", () => unpackModal(state, ui)]; // ui/teaminv.js: a team home, what its people carry put away
   if (!state.autopilot && activeCrawl(state)) return ["crawl", () => crawlModal(state, ui)]; // a city crawl's block card (ui/citycrawl.js)
   if (!state.autopilot && activeHiveCrawl(state)) return ["hivecrawl", () => hiveCrawlModal(state, ui)]; // a hive crawl's chamber (ui/hivecrawl.js)
   if (state.engagement && !state.autopilot) return ["search", () => engagementModal(state)]; // on autopilot the governor searches (sim/autopilot.js)
@@ -817,6 +818,7 @@ function pickModal(state, ui) {
   if (ui.inv && ui.inv.team != null) return ["teaminv", () => teamInvModal(state, ui)]; // ui/teaminv.js: a whole team; Drop off and Load at a base
   if (ui.meet) return ["teammeet", () => teamMeetModal(state, ui)]; // ui/teammeet.js: your teams together on a tile
   if (ui.inv) return [`inv:${ui.inv.sid}`, () => inventoryModal(state, ui)]; // closes back to the survivor / base screen under it
+  if (ui.skillTree != null) return ["skilltree", () => skillTreeModal(state, ui)]; // ui/skills.js: perk points, over the survivor screen
   if (ui.survivor) return [`survivor:${ui.survivor}`, () => survivorModal(state, ui)];
   if (ui.memorial) return ["memorial", () => memorialModal(state, ui)]; // ui/relations.js; a name opens the survivor screen over it
   if (ui.baseView) return ["base", () => baseModal(state, ui)];
@@ -1443,7 +1445,7 @@ function survivorModal(state, ui) {
         ${base ? "" : `<div class="small muted">Away from a base, gear moves only between teammates and the team's cargo (Inventory).</div>`}
       </div>
     </div>
-    ${s.alive ? `${studyBlock(state, s)}${skillTree(state, s, ui)}` : ""}
+    ${s.alive ? studyBlock(state, s) : ""}
     ${familyBlock(state, s)}
     ${inContact(state, s) || !s.alive ? relationsSection(state, s, ui) : ""}
     <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="closesurv">Close</button></div></div>`;

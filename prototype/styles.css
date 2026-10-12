@@ -749,6 +749,7 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 .skillrow .xpbar { height: 0.26rem; }
 .skillrow .sk-lv { text-align: right; font-weight: 600; }
 .skillrow .sk-perk { color: var(--accent); font-size: 0.85rem; letter-spacing: -0.05em; }
+#modal .box.treebox { width: min(52rem, 96vw); }
 .skilltree { display: flex; flex-direction: column; gap: 0.3rem; margin: 0.3rem 0 0.4rem; }
 .tree-row { display: grid; grid-template-columns: 8rem repeat(3, 1fr); gap: 0.4rem; align-items: stretch; }
 .tree-head { font-size: 0.85rem; color: var(--muted); text-align: center; }

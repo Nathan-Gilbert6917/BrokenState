@@ -19,7 +19,7 @@ import { partyTile, plannedTile, partyMembers, teamName, MISSIONS, tileLabel, ca
 import { contactable } from "../sim/orders.js";
 import { baseIntel, partyIntel, rangeText } from "../sim/intelest.js";
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
-import { visitorTipLines, visitorById } from "../sim/visitors.js";
+import { visitorTipLines, visitorById, gateTalkBase, gateTrayCard } from "../sim/visitors.js";
 import { roadCaravans, guardText, cargoText } from "../sim/caravanraids.js";
 import { inCoverage } from "../sim/radio.js";
 import { canRadio } from "../sim/trade.js";
@@ -177,7 +177,7 @@ export function pickCard(state, ui) {
   if (sel.kind === "group") return bar + groupPartyCard(state, at.ref, live, back);
   if (sel.kind === "convoy") return bar + convoyCard(state, at.ref, back);
   if (sel.kind === "band") return bar + linesCard(state, at.ref.strike ? "Military strike force" : "A band on the road", bandTipLines(state, at.tile, live).map((o) => o.text), at.tile, back, at.ref.color);
-  if (sel.kind === "visitor") return bar + linesCard(state, "Outsiders", visitorTipLines(state, at.tile, live).map((o) => o.text), at.tile, back, null, !live.has(at.tile));
+  if (sel.kind === "visitor") return bar + linesCard(state, "Outsiders", visitorTipLines(state, at.tile, live).map((o) => o.text), at.tile, talkButton(state, at.ref) + back, null, !live.has(at.tile));
   return null;
 }
 
@@ -221,6 +221,16 @@ function convoyCard(state, p, back) {
       <div>Load</div><div>${Math.round(cargoLoad(p.cargo))}/${Math.round(partyCapacity(state, p))} kg${goods ? ` · ${esc(goods)}` : ""}</div>
     </div>
     <div class="row" style="margin-top:0.4rem;flex-wrap:wrap"><button class="mini" data-action="center" data-tile="${partyTile(p)}">Locate</button>${p.supplyJobId != null && baseById(state, p.homeBaseId) ? `<button class="mini" data-action="openbase" data-id="${p.homeBaseId}" data-tab="convoys">Supply runs…</button>` : ""}${back}</div></div>`;
+}
+
+// Travellers at your gate whose card was put off, left in the tray or closed by a trade: talk to them again
+// (sim/visitors.js reopenGate; a card still in the tray opens from there).
+function talkButton(state, v) {
+  const c = gateTrayCard(state, v);
+  if (c) return `<button class="mini" data-action="tray-open" data-id="${c.tray.id}"${tip("Their card is waiting in the tray: open it")}>Talk to them</button>`;
+  const b = gateTalkBase(state, v);
+  if (!b) return "";
+  return `<button class="mini" data-action="vis-gate" data-id="${v.id}"${tip(v.phase === "travel" ? `Call them back to the gate of ${b.name}` : `Talk to them at the gate of ${b.name} again`)}>${v.phase === "travel" ? "Call them back" : "Talk to them"}</button>`;
 }
 
 function linesCard(state, title, lines, tile, back, color = null, heard = false) {

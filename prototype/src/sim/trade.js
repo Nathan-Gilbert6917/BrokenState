@@ -43,7 +43,7 @@ import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
 import { tradeSpeech, bookWares, gainXp, USE, hash01 } from "./skills.js";
 import { armsSold } from "./diplomacy.js";
-import { visitorTradeContext, resumeVisitorTrade } from "./visitors.js";
+import { visitorTradeContext, resumeVisitorTrade, tradeBack } from "./visitors.js";
 import { RAW, keyWord } from "./water.js";
 import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo, baseKey } from "./rounds.js"; // rounds by calibre
 import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, holderCals } from "./ammo.js";
@@ -933,10 +933,17 @@ export function proposePact(state, f, kind) {
 }
 
 // Closing the window. A team waits for orders (a trade caravan of yours gets its caravan card back); their
-// caravan stays at your base until its day is up (reopen it from the Bases tab).
-export function endTrade(state) {
+// caravan stays at your base until its day is up (reopen it from the Bases tab). back: the player closed it (the
+// trade window's Leave): a trade opened from an outsiders' card (visitors.js openVisitorTrade where.back) goes back
+// to that card, with the group as it is now, instead of ending the meeting. The autopilot's closes never do.
+export function endTrade(state, { back = false } = {}) {
   const ctx = tradeContext(state);
+  const t = state.trade;
   state.trade = null;
+  if (back && t && t.visitorId != null && t.back && tradeBack(state, t)) {
+    advanceTradeQueue(state);
+    return;
+  }
   if (ctx && ctx.p) {
     if (ctx.p.caravan) caravanCard(state, ctx.p, `Left ${ctx.f.name}.`);
     else awaitOrders(state, ctx.p, `Left ${ctx.f.name}.`);

@@ -4368,10 +4368,13 @@ function abandonDoomed(state) {
 // GOV_CREW_MAX when the dead or squatters inside ask for more) comes first: it costs no scrap and what stands there
 // is weeks of building. Not where moving in would anger a coalition member or a pact partner. More standing, nearer:
 // better.
-const OCC_FIT = (s) => (s.health >= 60 && !s.woundInfected ? combatPower(s) : -99);
+// Fit for the crew: healthy, by combat power counted as the fight will (a gun with no rounds of its calibre in the
+// base's stores fights at armedFactor's short share: two shotguns and no shells are not a squad).
+const occFit = (h) => (s) => (s.health >= 60 && !s.woundInfected ? combatPower(s) * armedFactor([s], h.stock, h.stock.arrows || 0) : -99);
 export function occupyCandidate(state, h, pool, spareHands) {
   const g = state.grid;
-  const squad = [...pool].filter((s) => OCC_FIT(s) > -99).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id);
+  const OCC_FIT = occFit(h);
+  const squad = [...pool].filter((s) => OCC_FIT(s) > -99).sort((a, b) => OCC_FIT(b) - OCC_FIT(a) || a.id - b.id);
   const most = Math.min(spareHands, OCCUPY.GOV_CREW_MAX, squad.length);
   let best = null;
   for (const rec of state.abandoned || []) {
@@ -4384,7 +4387,7 @@ export function occupyCandidate(state, h, pool, spareHands) {
     if (stand < OCCUPY.GOV_MIN_STANDING) continue; // a bare group base: no better than new ground
     const threat = abandonedThreat(state, rec.tile);
     let n = Math.min(OCCUPY.GOV_CREW, most), odds = 0;
-    for (; n <= most; n++) { odds = occupyOdds(squad.slice(0, n), threat); if (odds >= OCCUPY.AI_ODDS) break; }
+    for (; n <= most; n++) { odds = occupyOdds(squad.slice(0, n), threat, h.stock, h.stock.arrows || 0); if (odds >= OCCUPY.AI_ODDS) break; } // the rounds at home for their guns
     if (n > most || n < 2 || odds < OCCUPY.AI_ODDS) continue;
     const score = 3.6 + Math.min(1.5, stand * 0.2) - d * 0.05;
     if (!best || score > best.score) best = { rec, n, odds, stand, score, threat };

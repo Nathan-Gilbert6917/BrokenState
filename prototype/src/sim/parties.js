@@ -45,6 +45,7 @@ import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into 
 import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
 import { BUILDINGS, CAMP } from "./buildings.js"; // a new outpost is a camp first, its step up queued (outpost_up)
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
+import { noteUnpack } from "./teaminv.js"; // home from a trip: what the people carry, put away or kept
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
 import { gatheringCull } from "./hivebirth.js"; // hive birth you can see: breaking up a gathering at a build site
@@ -2342,16 +2343,49 @@ export function settleInto(state, p, base) {
   removeParty(state, p);
 }
 
+// What a stock gained between two snapshots: { key: q } (supplies and food by type; at least 0.05 of each).
+/** @param {Stock} before @param {Stock} after */
+export function stockGain(before, after) {
+  /** @type {Stock} */
+  const out = {};
+  for (const [k, v] of Object.entries(after || {})) {
+    const d = (Number.isFinite(v) ? v : 0) - (Number.isFinite(before[k]) ? before[k] : 0);
+    if (d >= 0.05 && (SUPPLIES[k] || FOODS[k])) out[k] = d;
+  }
+  return out;
+}
+// "6 days of food (30 cans of beans), 7 water, a machete": a gain in words ("" when nothing).
+/** @param {Stock} gain @param {Item[]} [gear] */
+export function storedText(gain, gear = []) {
+  const food = Object.fromEntries(Object.entries(gain).filter(([k]) => FOODS[k]));
+  const days = foodIn(food);
+  const parts = days >= 0.05 ? [`${r1(days)} days of food (${foodText(food, 3)})`] : [];
+  for (const [k, q] of Object.entries(gain)) if (!FOODS[k] && q >= 0.5) parts.push(`${Math.round(q)} ${keyWord(k)}`);
+  if (gear.length) parts.push(gear.length <= 3 ? gear.map((g) => g.name).join(", ") : `${gear.length} items`);
+  return parts.join(", ");
+}
+const r1 = (x) => Math.round(x * 10) / 10;
+
 /** @param {State} state @param {Party} p */
 function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
   const members = partyMembers(state, p);
   const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${keyWord(k)}`); // "un-purified water", not the key (before the food goes into the stores)
+  const stockBefore = { ...home.stock }, armoryBefore = new Set(home.armory);
   unloadAt(state, p, home, members); // the stores, armory, vehicle, bikes, bodies and prisoners
+  // What reached the stores and the armory (the stock's real change: packed leftovers and finds alike), for the log.
+  const gain = stockGain(stockBefore, home.stock);
+  const stored = storedText(gain, home.armory.filter((it) => !armoryBefore.has(it)));
+  const caught = p.caught && p.caught.fished ? p.caught : null; // hunting.js fishSummary: the trip's fishing
+  /** @type {Stock} */
+  const fishGain = {};
+  for (const [k, q] of Object.entries(gain)) if (FOODS[k] && FOODS[k].group === "rawfish") fishGain[k] = q;
+  const fishHome = caught ? foodIn(fishGain) : 0;
   const routeActive = p.kind === "convoy" && state.routes.some((r) => r.id === p.routeId && r.active);
   for (const m of members) m.location = routeActive ? { kind: "route", routeId: p.routeId } : { kind: "base", baseId: home.id };
   if (p.owner === "player") tripDone(state, p, members, home); // relations.js: the service record, rough trips
+  if (p.owner === "player" && p.kind !== "convoy") noteUnpack(state, home, members, teamName(state, p), stored); // teaminv.js: what they carry on them, put away or kept (the Home from a trip window)
   if (p.tripSpec) noteTripHome(state, p); // trips.js: a trip sent from the planner goes to the recent trips (Repeat trip)
   const before = state.knowledge.filter(Boolean).length;
   const markersBefore = state.markers.length;
@@ -2366,7 +2400,10 @@ function returnHome(state, p) {
     log(state, `Convoy back from ${route ? factionById(state, route.factionId)?.name : "the route"}${loot.length ? `: ${loot.join(", ")}` : ""}.`, "good");
   } else {
     // p.movingIn: a team that moved into another of your bases (moveout.js joinBase): it lives there now.
-    log(state, `${teamName(state, p)} ${p.movingIn ? `moved into ${home.name}` : "is home"}${loot.length ? ` with ${loot.join(", ")}` : ""}.${revealed > 0 ? ` ${revealed} new tiles mapped.` : " Map intel updated."}${newMarkers > 0 ? ` ${newMarkers} new marker${newMarkers === 1 ? "" : "s"} on the map.` : ""}`, "good");
+    const searched = p.mission === "scavenge" || p.teamMission === "scavenge" || !!p.searched;
+    const what = loot.length ? ` with ${loot.join(", ")}` : searched ? ": found nothing" : "";
+    const fish = caught ? (caught.fish > 0.05 ? ` Caught ${r1(caught.fish)} days of food in fish, ${r1(fishHome)} brought into the stores.` : " Caught no fish.") : "";
+    log(state, `${teamName(state, p)} ${p.movingIn ? `moved into ${home.name}` : "is home"}${what}.${stored ? ` Into ${home.name}'s stores: ${stored}.` : ""}${fish}${revealed > 0 ? ` ${revealed} new tiles mapped.` : " Map intel updated."}${newMarkers > 0 ? ` ${newMarkers} new marker${newMarkers === 1 ? "" : "s"} on the map.` : ""}`, "good");
   }
   removeParty(state, p);
 }

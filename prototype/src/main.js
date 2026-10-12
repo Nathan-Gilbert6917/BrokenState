@@ -57,7 +57,7 @@ import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { ARMV_ACTIONS, ARMV_INPUT } from "./ui/armoryview.js"; // the armory list: grouped, cards or compact rows
-import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
+import { TEAMINV_ACTIONS, TEAMINV_CHANGE, UNPACK_ACTIONS, unpackUp } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { TEAMMEET_ACTIONS, TEAMMEET_CHANGE } from "./ui/teammeet.js"; // teams together on a tile: people, goods, merge
 import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
@@ -246,7 +246,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state) || !!activeHiveCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js); a hive crawl's window (sim/hivecrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.meet || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui);
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.meet || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui) || unpackUp(state, ui);
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -1101,7 +1101,7 @@ const actions = {
   dotrade: () => { ui.tradeMsg = executeTrade(state); },
   gift: () => { ui.tradeMsg = giftAll(state); },
   pact: (d) => { const f = factionById(state, state.trade.factionId); ui.tradeMsg = proposePact(state, f, d.k); },
-  tradeleave: () => { endTrade(state); ui.tradeMsg = ""; },
+  tradeleave: () => { endTrade(state, { back: true }); ui.tradeMsg = ""; },
   reroll: () => newWorld(randomSeed()),
   // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
   "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
@@ -1160,6 +1160,7 @@ for (const [k, fn] of Object.entries(BN_ACTIONS)) actions[k] = (d) => fn(state, 
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
 for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
 for (const [k, fn] of Object.entries(TEAMMEET_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/teammeet.js
+for (const [k, fn] of Object.entries(UNPACK_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/teaminv.js: Home from a trip
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
 for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
 for (const [k, fn] of Object.entries(ARMV_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/armoryview.js: the armory list's groups, view, find box and type chips
@@ -2138,6 +2139,7 @@ function closeTopLayer() {
   if (ui.diplo) { ui.diplo = null; ui.diploMsg = ""; return true; } // ui/diplomacy.js (it opens over the radio panel)
   if (ui.radioWith != null) { ui.radioWith = null; ui.radioMsg = ""; return true; }
   if (ui.caravanPlan) { ui.caravanPlan = null; ui.cvMsg = ""; return true; }
+  if (ui.skillTree != null) { ui.skillTree = null; ui.skillMsg = ""; return true; } // ui/skills.js: back to the survivor screen
   if (ui.survivor != null) {
     if (ui.lookEdit != null) ui.lookEdit = null;
     else ui.survivor = null;
