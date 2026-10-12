@@ -10,7 +10,7 @@
 // Usage: node tools/evactest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, spawnAiParty } from "../src/sim/parties.js";
-import { createBattle, registerCombatHandler, combatAct, runEnemyPhase, CELL, aboardCount } from "../src/sim/combat.js";
+import { createBattle, registerCombatHandler, combatAct, runEnemyPhase, CELL, aboardCount, zoneAt, vehicleExit } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { createVehicle } from "../src/sim/vehicles.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -83,6 +83,49 @@ console.log("In the vehicle counts as out");
     for (const u of mine) combatAct(state, { type: "board", unit: u.id });
     check(b.over && b.result.outcome === "retreat" && !b.result.survivorsDead.length && mine.every((u) => u.left), `everyone in it with the enemy still there: a retreat, all of them out (${b.result && b.result.outcome})`);
   }
+  state.combat = null;
+}
+
+console.log("Extracting by the vehicle: every cell around it (TEAM-06)");
+{
+  const state = createWorld({ seed: seed0 + 5, factionCount: 6 });
+  const b = raidOn(state, landTile(state).id, state.vehicles[0].id, 3);
+  const v = b.vehicle, mine = b.units.filter((u) => u.side === "player");
+  const free = (x, y) => x >= 0 && y >= 0 && x < b.w && y < b.h && CELL[b.cells[idx(b, x, y)].k].walk && !b.units.some((o) => !o.left && o.x === x && o.y === y);
+  const inCar = (x, y) => x >= v.x && y >= v.y && x < v.x + v.w && y < v.y + v.h;
+  // The ring: the 8 cells around each of its cells (Chebyshev 1, as boarding and the trunk: raidloot.js atVehicle).
+  const ring = [];
+  for (let y = v.y - 1; y <= v.y + v.h; y++) for (let x = v.x - 1; x <= v.x + v.w; x++) if (!inCar(x, y) && free(x, y)) ring.push([x, y]);
+  const corner = ring.find(([x, y]) => (x === v.x - 1 || x === v.x + v.w) && (y === v.y - 1 || y === v.y + v.h));
+  const u = mine[0];
+  const probe = (x, y) => { u.x = x; u.y = y; return vehicleExit(b, u); };
+  check(ring.length > 0 && ring.every(([x, y]) => probe(x, y)), `every free cell around the vehicle is a way out in it (${ring.length} cells)`);
+  check(!corner || probe(corner[0], corner[1]), "a diagonal corner cell counts too");
+  // Two cells off: not.
+  const far = [];
+  for (let y = v.y - 2; y <= v.y + v.h + 1; y++) for (let x = v.x - 2; x <= v.x + v.w + 1; x++) if (!inCar(x, y) && free(x, y) && (x < v.x - 1 || x > v.x + v.w || y < v.y - 1 || y > v.y + v.h)) far.push([x, y]);
+  check(far.length > 0 && far.every(([x, y]) => !probe(x, y)), "two cells away is not");
+  // Extract from a ring cell outside every extraction zone: out, at the vehicle.
+  const out = ring.find(([x, y]) => zoneAt(b, x, y) < 0);
+  check(!!out, "a cell beside the vehicle outside every extraction zone");
+  if (out) {
+    u.x = out[0]; u.y = out[1]; u.ap = 2;
+    const why = combatAct(state, { type: "extract", unit: u.id });
+    check(!why && u.left && u.exitVehicle, `extracting there leaves in the vehicle (${why || "ok"})`);
+  }
+  // A cell off the ring and outside every zone: refused with the reason.
+  const off = far.find(([x, y]) => zoneAt(b, x, y) < 0);
+  if (off) {
+    const w = mine[1]; w.x = off[0]; w.y = off[1]; w.ap = 2;
+    check(/next to the vehicle/.test(combatAct(state, { type: "extract", unit: w.id }) || "") && !w.left, "two cells off and outside a zone: refused (move next to the vehicle)");
+  }
+  // The rest extract beside the vehicle too: the raid ends with the vehicle kept.
+  for (const w of mine.filter((o) => !o.left)) {
+    const c = ring.find(([x, y]) => free(x, y));
+    w.x = c[0]; w.y = c[1]; w.ap = 2;
+    combatAct(state, { type: "extract", unit: w.id });
+  }
+  check(b.over && b.result && b.result.raid.vehicleKept && b.result.raid.extractedIds.length === mine.length, `everyone out beside the vehicle: the raid ends, the vehicle kept (${b.result ? b.result.raid.extractedIds.length : 0} of ${mine.length})`);
   state.combat = null;
 }
 

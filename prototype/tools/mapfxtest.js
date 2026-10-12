@@ -100,7 +100,7 @@ console.log("Lights");
     const [px, py] = st.grid.toPixel(partyTile(p), 26);
     check(mapLights(st, null, 1).some((L) => Math.hypot(L[0] - px, L[1] - py) < 2 && L[3] > 0.5), "a team carrying a lantern glows where the map shows it");
     p.radioLive = false;
-    check(!mapLights(st, null, 1).some((L) => Math.hypot(L[0] - px, L[1] - py) < 2), "out of contact (the map shows only its plan): no light");
+    check(mapLights(st, null, 1).some((L) => Math.hypot(L[0] - px, L[1] - py) < 2), "out of radio range it still shows where it is (orders reach it): its light too");
   }
 }
 

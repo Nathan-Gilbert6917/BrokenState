@@ -2,12 +2,13 @@
 // The panel shows a team's people, gear, supplies, vehicle and order queue, with actions on the spot
 // (camp, scavenge, look around, repair, treat, move, go home). Timed actions go through the order queue
 // (sim/orders.js); buttons use data-action handlers in main.js.
+import { meetLine } from "./teammeet.js"; // other teams of yours on its tile: Teams together…
 import { foodIn } from "../sim/foods.js"; // days of food
 import { teamFoodHtml } from "./food.js"; // the team's food by kind
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
-import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
+import { MISSIONS, STANCES, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival, scavengeable } from "../sim/parties.js";
 import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
@@ -137,7 +138,7 @@ export function renderExpedition(state, ui, p) {
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
 
   const head = `<div class="spread"><h2 style="margin:0">Team: ${members.map(first).join(", ")}</h2><span class="row">${watchlistPin(state, "team", p.id, `team (${members.map((m) => m.name.split(" ")[0]).join(", ")})`)}<button class="mini" data-action="xp-close"${tip("Back to the tile view (Esc)")}>✕</button></span></div>
-    <div class="small muted">${esc(MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team")} · ${v ? esc(vehicleLabel(partyFleet(state, p))) : "on foot"}${p.walkers > 0 && p.vehicle ? ` <span class="warn"${tip("Not enough seats after a vehicle was lost: they walk, and the team goes at walking pace (the cargo stays in the vehicles) until a seat turns up")}>(${p.walkers} walking: foot pace)</span>` : ""} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}${live ? editTeamButton(state, p) : ""}`;
+    <div class="small muted">${esc(MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team")} · ${v ? esc(vehicleLabel(partyFleet(state, p))) : "on foot"}${p.walkers > 0 && p.vehicle ? ` <span class="warn"${tip("Not enough seats after a vehicle was lost: they walk, and the team goes at walking pace (the cargo stays in the vehicles) until a seat turns up")}>(${p.walkers} walking: foot pace)</span>` : ""} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}${live ? meetLine(state, p) : ""}${live ? editTeamButton(state, p) : ""}`;
 
   const status = `<div class="card small" style="margin-top:0.5rem">
       <div class="spread"><b>Now</b>${live ? `<button class="mini" data-action="center" data-tile="${tile}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
@@ -159,7 +160,7 @@ export function renderExpedition(state, ui, p) {
 
   // Actions on the spot.
   const opts = orderOptions(state, p).filter((o) => o.mission !== "survey" && o.mission !== "sweep");
-  const loot = state.tiles[tile].loot > 0.05;
+  const loot = scavengeable(state.tiles[tile]); // a site can be searched again (picked over: little left)
   const rep = repairInfo(state, p);
   const camping = p.phase === "task" && p.task && p.task.type === "camp";
   const working = p.phase === "task" && p.task && !camping;
@@ -173,7 +174,7 @@ export function renderExpedition(state, ui, p) {
       ${p.phase === "engaged" ? `<div class="muted">Busy on site. New orders wait in the queue.</div>` : ""}
       <div class="row" style="margin-top:0.35rem;flex-wrap:wrap">
         ${btn(`data-action="xp-move" data-id="${p.id}"`, queueing ? "Queue move…" : "Move…", queueing ? "Click a tile on the map. The move is added to the end of the team's queue." : "Click a tile on the map. The team sets off for it (when the clock runs).")}
-        ${moving && p.radioLive ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now (radio contact).") : ""}
+        ${moving ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now.") : ""}
         ${!hub(state) ? "" : ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
         ${camping ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop resting", "Pack up now. The next queued order starts.") : ""}
         ${working ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop work", "Give up on the current job (nothing is used up).") : ""}
@@ -429,7 +430,7 @@ export function heatBlock(state, p) {
 function planBlock(state, p) {
   if (!p.plan) return "";
   const c = conditionText(p.plan.conditions);
-  return `<div class="muted" style="margin-top:0.3rem"${tip("The plan set in the planner. Out of radio contact the team follows it and reports in with cards on finds (a horde, a rich site, low supplies) and when it ends; in contact you can change it any time.")}>Plan: ${esc(planStatus(state, p))}${c ? ` · comes home if ${esc(c)}` : ""}</div>`;
+  return `<div class="muted" style="margin-top:0.3rem"${tip("The plan set in the planner. The team follows it and reports in with cards on finds (a horde, a rich site, low supplies) and when it ends; you can change it any time, wherever it is.")}>Plan: ${esc(planStatus(state, p))}${c ? ` · comes home if ${esc(c)}` : ""}</div>`;
 }
 
 // The team's water (sim/water.js): purified and un-purified, and how it drinks the un-purified water now (sim/worm.js
