@@ -57,7 +57,7 @@ import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { ARMV_ACTIONS, ARMV_INPUT } from "./ui/armoryview.js"; // the armory list: grouped, cards or compact rows
-import { TEAMINV_ACTIONS, TEAMINV_CHANGE } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
+import { TEAMINV_ACTIONS, TEAMINV_CHANGE, UNPACK_ACTIONS, unpackUp } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
 import { CARRY_ACTIONS, CARRY_CHANGE, carryHtml, askQty, carryKey } from "./ui/carry.js"; // supplies in pockets, packs and arms; the ground; how much to collect
@@ -245,7 +245,7 @@ function blocked() {
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state) || !!activeHiveCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js); a hive crawl's window (sim/hivecrawl.js)
   return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
-    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui);
+    !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.bgEditor || !!ui.inv || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui) || unpackUp(state, ui);
 }
 
 // An exception in a frame (a sim tick, the autopilot, drawing) stops the clock and opens the error screen (ui/crash.js),
@@ -1158,6 +1158,7 @@ for (const [k, fn] of Object.entries(BG_ACTIONS)) actions[k] = (d) => fn(state, 
 for (const [k, fn] of Object.entries(BN_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/basename.js
 for (const [k, fn] of Object.entries(INV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ev: Shift+click on a supply stack (raid search window)
 for (const [k, fn] of Object.entries(TEAMINV_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev); // ui/teaminv.js
+for (const [k, fn] of Object.entries(UNPACK_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/teaminv.js: Home from a trip
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
 for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
 for (const [k, fn] of Object.entries(ARMV_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/armoryview.js: the armory list's groups, view, find box and type chips
