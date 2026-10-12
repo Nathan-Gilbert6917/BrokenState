@@ -338,7 +338,17 @@ section("Your teams meet them");
       mc.choices.find((x) => /^Trade with them/.test(x.label)).resolve(st);
       const ctx = tradeContext(st);
       check(ctx && ctx.kind === "visit" && ctx.visitor === m && ctx.p === p, "the trade window opens for the team");
-      endTrade(st);
+      // Leave (the player): back to the traders' card, the team still stopped with its resume order kept.
+      endTrade(st, { back: true });
+      const mc2 = st.cards.find((x) => x.partyId === p.id && /^Traders on the road/.test(x.title));
+      check(!st.trade && !!mc2 && p.phase === "engaged" && p.conflictResume === "waiting" && st.cards.filter((x) => x.visitorId === m.id).length === 1, "closing the trade window brings back the traders' card (one, the team's resume order kept)");
+      if (mc2) {
+        st.cards.splice(st.cards.indexOf(mc2), 1);
+        mc2.choices.find((x) => /^Trade with them/.test(x.label)).resolve(st);
+        check(!!tradeContext(st), "and trading again from it opens the window again");
+        endTrade(st); // the autopilot's close: the team waits for orders, no card
+        check(!st.cards.some((x) => x.visitorId === m.id) && p.phase !== "engaged", "a close without back ends the meeting as before");
+      }
     }
     // Explorers on the road.
     clearCards(st);
@@ -558,6 +568,60 @@ section("Explorers: intel, maps, recruits, shelter, thieves");
   const l0 = site.loot;
   tick(st, 10);
   check(site.loot < l0 && site.loot > l0 * 0.88, `ruins explored: loot ${l0.toFixed(2)} → ${site.loot.toFixed(2)}`);
+}
+
+// ======================================================================================
+section("Travellers at the gate: put off, sent off, after a trade (DIALOG-01, DIALOG-02)");
+{
+  const st = world();
+  tick(st, 24);
+  clearCards(st);
+  const h = hub(st);
+  const e = V.spawnVisitor(st, "explorers", { sub: "wanderers", hostile: false, wantsYou: false });
+  place(st, e, h.tile);
+  e.goal = { kind: "base", baseId: h.id, tile: h.tile };
+  e.phase = "travel";
+  e.joiners = 0;
+  e.stock.meds = 3;
+  tick(st);
+  const gc = () => st.cards.find((c) => c.visitorId === e.id && /^Travellers at/.test(c.title));
+  check(e.phase === "gate" && !!gc(), "at the gate: a card");
+  const decide = gc() && gc().choices.find((c) => /^Decide later/.test(c.label));
+  check(!!decide && decide.default === true, "Decide later is the card's default (a tray card left alone keeps them at the gate)");
+  answer(st, /^Decide later/);
+  check(!gc() && e.phase === "gate" && V.gateTalkBase(st, e) === h, "put off: they wait at the gate, and can be talked to again");
+  check(V.visitorView(st, e).gate === h, "the Groups tab offers the gate again");
+  tick(st, 2);
+  check(e.phase === "gate", "still waiting a few hours on");
+  V.reopenGate(st, e);
+  check(!!gc() && st.cards.filter((c) => c.visitorId === e.id).length === 1, "selecting them brings the card back (one)");
+  V.reopenGate(st, e);
+  check(st.cards.filter((c) => c.visitorId === e.id).length === 1, "never two cards");
+  // A trade from the gate: closing the window comes back to the gate card, nothing restarted.
+  answer(st, /^Trade with them/);
+  check(!!tradeContext(st) && e.phase === "stop", "the trade window opens");
+  endTrade(st, { back: true });
+  check(!st.trade && e.phase === "gate" && !!gc() && gc().choices.some((c) => /^Trade with them again/.test(c.label)) && st.cards.filter((c) => c.visitorId === e.id).length === 1, "closing it brings back the gate card (Trade with them again)");
+  check(gc() && gc().choices.some((c) => /^Hear their news/.test(c.label)), "the rest of their offers are still there");
+  answer(st, /^Hear their news/);
+  check(!!gc() && !gc().choices.some((c) => /^Hear their news/.test(c.label)), "what was done stays done");
+  // Sent on their way: called back while still on the base's tile.
+  answer(st, /^Send them on their way/);
+  check(e.phase === "travel" && V.gateTalkBase(st, e) === h, "sent off but still at the gate: they can be called back");
+  V.reopenGate(st, e);
+  check(e.phase === "gate" && !!gc() && /call them back/.test(gc().text), "called back: the gate card again");
+  answer(st, /^Send them on their way/);
+  place(st, e, st.grid.within(h.tile, 1).find((t) => t !== h.tile));
+  check(V.gateTalkBase(st, e) === null, "once they leave the tile, no calling back");
+  // The map's selection card (ui/mapselect.js) and its handler.
+  place(st, e, h.tile);
+  e.phase = "gate";
+  e.known = true;
+  const sel = readFileSync(new URL("../src/ui/mapselect.js", import.meta.url), "utf8");
+  check(/talkButton\(state, at\.ref\)/.test(sel) && /data-action="vis-gate"/.test(sel) && typeof VISITOR_ACTIONS["vis-gate"] === "function", "a selected traveller's card has Talk to them (vis-gate)");
+  VISITOR_ACTIONS["vis-gate"](st, {}, { id: e.id });
+  check(!!gc(), "vis-gate opens the card");
+  clearCards(st);
 }
 
 // ======================================================================================

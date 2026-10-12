@@ -122,7 +122,7 @@ import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there
 import { expandAmmo, baseCals } from "./ammo.js"; // rounds by calibre
 import { merchantReload } from "./reloading.js"; // an arms dealer's powder and primers
 import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
-import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
+import { escortEnemy, lootCaravan, witnessesOf, consequences, roadCaravans, caravanCard as roadCaravanCard } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a merchant carries
 import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
 
@@ -1301,11 +1301,15 @@ export function inviteMerchants(state, v, base = null) {
 // ---------- trading with them (trade.js tradeContext / advanceTradeQueue call these) ----------
 // where: { baseId } (they stop at your base) or { partyId } (your team meets them). Returns true when the window
 // opened, false when it waits its turn behind another trade.
+// where.back: the card the trade was opened from ("gate", "road", "raid"), which closing the window brings back
+// (tradeBack); a team's resume order rides on the trade meanwhile, so the card's Move on still picks up its trip.
 export function openVisitorTrade(state, v, where) {
   const t = { visitorId: v.id, baseId: where.baseId ?? null, partyId: where.partyId ?? null, factionId: null, offer: {}, ask: {}, offerGear: [], askGear: [], intel: { area: "", sightings: false, sell: false } };
+  if (where.back) t.back = where.back;
   if (t.partyId != null) {
     const p = state.parties.find((x) => x.id === t.partyId);
     if (!p) return false;
+    if (where.back && p.conflictResume) t.resume = p.conflictResume;
     p.phase = "engaged";
   }
   if (state.trade && state.trade.visitorId === v.id) return true;
@@ -1528,11 +1532,18 @@ function gateCard(state, v, base, lead) {
       },
     });
   }
-  if (!v.done.trade && (SUPPLY_KEYS.some((k) => available(v, k) > 0) || v.wares.length)) {
+  if (SUPPLY_KEYS.some((k) => available(v, k) > 0) || v.wares.length) {
     choices.push({
-      label: "Trade with them", hint: "Opens the trade window (they carry little). Their other offers wait in the Groups tab",
+      label: v.done.trade ? "Trade with them again" : "Trade with them", hint: "Opens the trade window (they carry little). Closing it brings you back here",
       ai: () => -50,
-      resolve: (st) => { if (!here(st)) return gone; v.done.trade = true; openVisitorTrade(st, v, { baseId: base.id }); v.phase = "stop"; v.stayUntil = st.hour + 6; return ""; },
+      resolve: (st) => {
+        if (!here(st) || v.phase !== "gate") return gone;
+        v.done.trade = true;
+        v.phase = "stop"; // visitorTradeContext: the window is open while they stand at the base
+        v.stayUntil = Math.max(v.stayUntil, st.hour + 6);
+        openVisitorTrade(st, v, { baseId: base.id, back: "gate" });
+        return "";
+      },
     });
   }
   if (v.joiners > 0 && !v.hostile) {
@@ -1571,10 +1582,17 @@ function gateCard(state, v, base, lead) {
       },
     });
   }
+  // The card closed unanswered (left in the tray, or put off): they wait at the gate until their time is up, and
+  // selecting them (the map, the Groups tab) brings the card back (reopenGate).
   choices.push({
-    label: "Send them on their way", hint: "No cost",
+    label: "Decide later", hint: "They wait at the gate a while. Select them on the map (or Outsiders in the Groups tab) to talk again",
+    default: true, ai: () => -20,
+    resolve: (st) => { if (!here(st)) return gone; v.stayUntil = Math.max(v.stayUntil, st.hour + 6); return `${cap1(v.name)} wait at the gate of ${base.name}.`; },
+  });
+  choices.push({
+    label: "Send them on their way", hint: "No cost. Until they leave the tile you can still call them back (select them on the map)",
     ai: () => 5,
-    resolve: (st) => { if (!here(st)) return gone; if (v.phase === "gate") nextGoal(st, v); return `${cap1(v.name)} walk on.`; },
+    resolve: (st) => { if (!here(st)) return gone; if (v.phase === "gate") { v.sentOff = { baseId: base.id, hour: st.hour }; nextGoal(st, v); } return `${cap1(v.name)} walk on.`; },
   });
   const kind = v.sub === "scouts" ? `${n} scouts from ${v.home}, mapping the roads` : v.sub === "refugees" ? `${n} refugees from ${v.home}, tired and hungry` : `${n === 1 ? "a wanderer" : "two wanderers"} from ${v.home}`;
   addCard(state, {
@@ -1790,7 +1808,7 @@ function merchantRoadCard(state, v, p) {
     title: `Traders on the road: ${cap1(v.name)}`, partyId: p.id, visitorId: v.id, where: tileLabel(state, partyTile(p)),
     text: `A caravan from ${v.home}: wagons, ${v.guards} guards and ${O.merchants.traders} traders (${escortWords(v.escort) || "guards on foot"}), ${v.act}. They carry ${goodsText(v)}.${hostile ? " They have heard what you did to other traders and keep their rifles on you." : ""}`,
     choices: [
-      { label: "Trade with them", hint: hostile ? "They will not trade with you" : "The trade window, from what the team carries", disabled: hostile, ai: () => 60, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id }); delete p.conflictResume; return ""; } },
+      { label: "Trade with them", hint: hostile ? "They will not trade with you" : "The trade window, from what the team carries", disabled: hostile, ai: () => 60, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id, back: "road" }); delete p.conflictResume; return ""; } },
       {
         label: "Ask for news of the road", hint: "Free: the way they came, on your team's map, and news of other states", disabled: () => !!v.done.roadNews || hostile, ai: () => 70,
         resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); v.done.roadNews = true; const n = giveIntel(st, v, 1, p); return done(st, `"${rumor(st, v)}" They mark the way they came (${n} tiles).`); },
@@ -1812,7 +1830,7 @@ function explorerRoadCard(state, v, p) {
       resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); v.done.roadNews = true; const k = giveIntel(st, v, v.sub === "scouts" ? 2 : 1, p); return done(st, `"${rumor(st, v)}" They show you the way they came (${k} tiles).`); },
     },
   ];
-  if (SUPPLY_KEYS.some((k) => available(v, k) > 0) || v.wares.length) choices.push({ label: "Trade with them", hint: "The trade window (they carry little)", ai: () => -20, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id }); delete p.conflictResume; return ""; } });
+  if (SUPPLY_KEYS.some((k) => available(v, k) > 0) || v.wares.length) choices.push({ label: "Trade with them", hint: "The trade window (they carry little)", ai: () => -20, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id, back: "road" }); delete p.conflictResume; return ""; } });
   if (v.joiners > 0) {
     choices.push({
       label: `Hear who wants to join (${v.joiners})`, hint: "A recruit card: take them along, send them to a base, or part ways", ai: () => 45,
@@ -2019,7 +2037,7 @@ export function visitorView(state, v) {
     payPlan: v.kind === "raiders" && hub(state) ? stockPlan(hub(state).stock, radioPayValue(state, v), baseCals(state, hub(state))) : null,
     canInvite: v.kind === "merchants" && (live || heard) && hasNetwork(state) && inCoverage(state, v.tile) && attitude(v) !== "Hostile" && !(v.goal && v.goal.kind === "base"),
     tradeHere: v.kind !== "raiders" && v.phase === "stop" && v.goal && v.goal.kind === "base" ? baseById(state, v.goal.baseId) : null,
-    gate: v.kind === "explorers" && v.phase === "gate" && !state.cards.some((c) => c.visitorId === v.id) ? baseById(state, v.gateBase) : null,
+    gate: gateTalkBase(state, v),
     canNews: v.kind === "explorers" && !v.hostile && !v.done.radioNews && (live || heard) && hasNetwork(state) && inCoverage(state, v.tile),
   };
 }
@@ -2053,12 +2071,55 @@ export function radioNewsFrom(state, v) {
   log(state, text, "info");
   return text;
 }
-export function reopenGate(state, v) {
+// Travellers whose gate card is gone (put off, left in the tray, closed by a trade window, or sent on their way and
+// still on the base's tile): the base you can talk to them at, else null. Their card waiting in the tray is not
+// "gone" (gateTrayCard).
+export function gateTalkBase(state, v) {
+  if (!v || v.kind !== "explorers" || v.hostile || !state.visitors.includes(v) || state.cards.some((c) => c.visitorId === v.id)) return null;
+  if (state.trade && state.trade.visitorId === v.id) return null;
   const base = baseById(state, v.gateBase);
-  if (!base || v.phase !== "gate" || state.cards.some((c) => c.visitorId === v.id)) return "";
-  v.stayUntil = Math.max(v.stayUntil, state.hour + 6);
-  gateCard(state, v, base, "");
+  if (!base || v.tile !== base.tile) return null;
+  if (v.phase === "gate" || v.phase === "stop") return base;
+  const s = v.sentOff;
+  if (v.phase === "travel" && s && s.baseId === base.id && state.hour - s.hour <= 12) return base;
+  return null;
+}
+// Their card still in the tray (ui/pacing.js): selecting them opens it.
+export const gateTrayCard = (state, v) => (v ? state.cards.find((c) => c.visitorId === v.id && c.tray) || null : null);
+export function reopenGate(state, v) {
+  const base = gateTalkBase(state, v);
+  if (!base) return "";
+  const back = v.phase === "travel";
+  v.phase = "gate";
+  delete v.sentOff;
+  v.act = `at the gate of ${base.name}`;
+  v.stayUntil = Math.max(v.stayUntil || 0, state.hour + 6);
+  gateCard(state, v, base, back ? "You call them back." : "");
   return "";
+}
+
+// The trade window closed (trade.js endTrade, by the player): back to the card it was opened from. Returns true when
+// a card came back; false leaves the close as it was (a team waits for orders).
+export function tradeBack(state, t) {
+  const v = visitorById(state, t.visitorId);
+  if (!v || !state.visitors.includes(v) || attitude(v) === "Hostile") return false;
+  if (t.back === "gate") {
+    const base = baseById(state, t.baseId);
+    if (!base || v.gateBase !== base.id || v.phase !== "stop" || v.tile !== base.tile) return false;
+    v.phase = "gate";
+    v.act = `at the gate of ${base.name}`;
+    gateCard(state, v, base, "");
+    return true;
+  }
+  const p = state.parties.find((q) => q.id === t.partyId);
+  if (!p || p.phase !== "engaged" || !partyMembers(state, p).length || state.grid.distance(partyTile(p), v.tile) > 1) return false;
+  let card = null;
+  if (t.back === "road") card = v.kind === "merchants" ? merchantRoadCard(state, v, p) : v.kind === "explorers" ? explorerRoadCard(state, v, p) : null;
+  else if (t.back === "raid") { const c = roadCaravans(state).find((x) => x.ref === v); card = c ? roadCaravanCard(state, p, c) : null; }
+  if (!card) return false;
+  if (t.resume) p.conflictResume = t.resume;
+  addCard(state, card);
+  return true;
 }
 
 export function visitorAlertsData(state) {

@@ -1100,7 +1100,7 @@ const actions = {
   dotrade: () => { ui.tradeMsg = executeTrade(state); },
   gift: () => { ui.tradeMsg = giftAll(state); },
   pact: (d) => { const f = factionById(state, state.trade.factionId); ui.tradeMsg = proposePact(state, f, d.k); },
-  tradeleave: () => { endTrade(state); ui.tradeMsg = ""; },
+  tradeleave: () => { endTrade(state, { back: true }); ui.tradeMsg = ""; },
   reroll: () => newWorld(randomSeed()),
   // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
   "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
