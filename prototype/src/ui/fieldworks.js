@@ -33,7 +33,7 @@ export function fieldWorksTab(state, b, ui) {
   const rate = buildRate(state, b);
   const head = `<div class="card small">
     <div class="spread"><b>Field works</b><span class="muted">${FW.countedWorks(state, b).length} of ${max} · snare lines ${mine.filter((x) => x.kind === "snares").length} of ${FW.maxSnares(b)} · land within ${FW.FIELD.RANGE} tiles that ${esc(b.name)} holds</span></div>
-    <div class="muted">Roadblocks, wells, watch towers, stockpiles, hunting blinds, snare lines, fuel caches, spike traps and relay masts out on the base's land. <button class="mini" data-action="help-open" data-sec="field-works"${tip("Help: Field works")}>?</button> The materials leave the stores when you place one; the builders here walk out and put it up (their hours include the walk), sharing their time with the base's own queue (every other hour while it has work). Out there they can be battered by the dead, raided and taken by other groups: repair them here.${rate > 0 ? "" : ` <span class="warn">Nobody here is on the Build job: nothing will go up but a snare line (field craft: anyone sets it).</span>`}</div>
+    <div class="muted">Roadblocks, wells, watch towers, stockpiles, hunting blinds, snare lines, fuel caches, spike traps and relay masts out on the base's land. <button class="mini" data-action="help-open" data-sec="field-works"${tip("Help: Field works")}>?</button> The materials leave the stores when you place one; the builders here walk out and put it up (their hours include the walk), sharing their time with the base's own queue (every other hour while it has work). Out there they can be battered by the dead, raided and taken by other groups: repair them here.${rate > 0 ? "" : ` <span class="warn">Nobody here is on the Build job: nothing will go up but a snare line (a team you send sets it).</span>`}</div>
   </div>`;
   const plan = FW.FIELD.ORDER.map((k) => {
     const d = K[k];
@@ -44,7 +44,7 @@ export function fieldWorksTab(state, b, ui) {
     const reqs = d.req ? Object.entries(d.req).map(([sk, lv]) => `${sk[0].toUpperCase() + sk.slice(1)} ${lv}+`).join(", ") : "";
     return `<div class="card small"${tip(d.desc)}>
       <div class="spread"><b>${d.icon} ${esc(d.name)}</b><button class="mini" data-action="fw-place" data-base="${b.id}" data-kind="${k}" ${!why && ok ? "" : "disabled"}${tip(!why && ok ? `Pick a highlighted tile on the map (${ok} possible). Esc cancels.` : why)}>${ui.fwPlace && ui.fwPlace.kind === k ? "Click a tile…" : "Place on map…"}</button></div>
-      <div>${costChips(b, d.cost)}<span class="muted small"> · ${d.hours} work-hours + the walk · ${d.hp} condition${reqs ? ` · ${reqs}` : ""}</span></div>
+      <div>${costChips(b, d.cost)}<span class="muted small"> · ${d.craft ? `a team walks out and sets it (${d.hours} h there)` : `${d.hours} work-hours + the walk`} · ${d.hp} condition${reqs ? ` · ${reqs}` : ""}</span></div>
       ${why && ok ? `<div class="small warn">${esc(why)}</div>` : !ok ? `<div class="small muted">${esc(tiles[0] ? tiles[0].why : "No land of this base's to build on.")}</div>` : ""}
     </div>`;
   }).join("");
@@ -75,6 +75,7 @@ export function fieldWorksTab(state, b, ui) {
         <select data-action="fw-haul-kg" data-id="${fw.id}">${FW.FIELD.HAUL.atKg.map((v) => opt(v, H.atKg, (x) => (x ? `or at ${x} kg` : "(no weight)"))).join("")}</select>
         ${FW.haulText(state, fw) ? `<span class="muted">${esc(FW.haulText(state, fw))}</span>` : ""}</div>`;
     }
+    if (fw.kind === "snares") extra = snareBlock(state, b, fw);
     if (fw.kind === "cache" && fw.built) {
       const plan = FW.cachePlan(state, fw);
       const rwhy = FW.restockProblem(state, fw);
@@ -95,6 +96,23 @@ export function fieldWorksTab(state, b, ui) {
     <h3>Plan</h3>${plan}
     ${jobs.length ? `<h3>Builders' field jobs</h3>${jobRows}` : ""}
     <h3>Standing</h3>${allBtn}${list || `<div class="muted small">None yet.</div>`}`;
+}
+
+// A snare line of yours (WORLD-02): set and checked only by a team sent out to it. Send one now, or a standing check
+// every few days; what it holds is known from the last check alone.
+function snareBlock(state, b, fw) {
+  const team = FW.snareTeam(state, fw);
+  const route = FW.snareRoute(state, b, fw.tile);
+  const how = !route ? "No way out to it now (water in the way)." : route.boat ? `Across the river: the team builds a boat there and one back (${FW.boatScrap()} scrap from ${b.name}).` : "";
+  const busy = team ? "A team is on its way there." : "";
+  if (!fw.built) {
+    return `<div class="row small" style="margin-top:0.25rem;gap:0.3rem"><span style="flex:1" class="muted">${esc(team ? `${busy} It sets the line when it gets there.` : `Waiting for a team to set it (tried again each morning).${how ? ` ${how}` : ""}`)}</span><button class="mini" data-action="fw-snare-team" data-id="${fw.id}" ${team ? "disabled" : ""}${tip(team ? busy : `Send ${FW.FIELD.SNARES.crew === 1 ? "one person" : `${FW.FIELD.SNARES.crew} people`} (a hunter first) out to set it, then home`)}>Send a team</button></div>`;
+  }
+  const C = fw.check || {};
+  const opt = (v) => `<option value="${v}" ${v === (C.every || 0) ? "selected" : ""}>${v ? `every ${v} day${v === 1 ? "" : "s"}` : "only when sent"}</option>`;
+  const known = FW.snareKnownText(state, fw);
+  return `<div class="row small" style="margin-top:0.25rem;gap:0.3rem"><span style="flex:1" class="muted">${esc(`${known ? `${known[0].toUpperCase()}${known.slice(1)}.` : "Not checked yet."} What it holds now is unknown until a team checks it.${how ? ` ${how}` : ""}`)}</span><button class="mini" data-action="fw-snare-team" data-id="${fw.id}" ${team || !route ? "disabled" : ""}${tip(team ? busy : !route ? how : "Send someone (a hunter first) to check it: they take the catch, put down anything caught in the wires and come home")}>Send a team to check</button></div>
+    <div class="row small" style="margin-top:0.25rem;gap:0.3rem;flex-wrap:wrap"${tip(`A standing order: on its day at ${String(FW.CHECK_HOUR).padStart(2, "0")}:00 someone walks out, checks the line and brings the catch home. Skipped (tried again the next day) with nobody fit, the base under attack, enemies at the line or no scrap for the boats. The catch keeps 2–6 days by the heat.`)}>Check it <select data-action="fw-snare-every" data-id="${fw.id}">${FW.FIELD.SNARES.every.map(opt).join("")}</select>${FW.snareCheckText(state, fw) ? ` <span class="muted">${esc(FW.snareCheckText(state, fw))}</span>` : ""}</div>`;
 }
 
 // The shifts at a tower or a roadblock: the preset, each shift with its people (✕ takes them off) and a picker, the
@@ -169,6 +187,7 @@ export function fieldworksActions(getState, ui, { centerOn, select = null }) {
     "fw-recall": (d) => { ui.baseMsg = FW.recallPerson(getState(), Number(d.sid)) || ""; },
     "fw-haul": (d) => msg(FW.sendHaul(getState(), Number(d.id))),
     "fw-restock": (d) => msg(FW.queueRestock(getState(), Number(d.id))),
+    "fw-snare-team": (d) => msg(FW.sendSnareTeam(getState(), Number(d.id))),
     "fw-show": (d) => { ui.baseView = null; centerOn(Number(d.tile)); if (select) select(Number(d.tile)); else ui.selected = Number(d.tile); }, // selected: a tower shows its sight ring
   };
 }
@@ -177,6 +196,7 @@ export function fieldworksChange(getState, ui) {
     "fw-post": (el) => { if (!el.value) return; const r = FW.postPerson(getState(), Number(el.dataset.id), Number(el.value), el.dataset.i != null ? Number(el.dataset.i) : null); ui.baseMsg = r.error || r.text; },
     "fw-preset": (el) => { const st = getState(); ui.baseMsg = FW.setRosterPreset(st, FW.fwById(st, Number(el.dataset.id)), el.value); },
     "fw-haul-every": (el) => { const st = getState(), fw = FW.fwById(st, Number(el.dataset.id)); if (fw) ui.baseMsg = FW.setHaul(st, fw, Number(el.value), fw.haul ? fw.haul.atKg : 0); },
+    "fw-snare-every": (el) => { const st = getState(), fw = FW.fwById(st, Number(el.dataset.id)); if (fw) ui.baseMsg = FW.setSnareCheck(st, fw, Number(el.value)); },
     "fw-haul-kg": (el) => { const st = getState(), fw = FW.fwById(st, Number(el.dataset.id)); if (fw) ui.baseMsg = FW.setHaul(st, fw, fw.haul ? fw.haul.every : 0, Number(el.value)); },
   };
 }
@@ -296,7 +316,8 @@ function badge(state, ctx, fw, x, y, s, color) {
   ctx.font = `${Math.round(9 * s)}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillStyle = "#fff";
-  ctx.fillText(FW.FIELD.KINDS[fw.kind].icon, x, y + 0.5 * s);
+  if (fw.kind === "snares") snareSprite(ctx, x - 0.5 * s, y + 0.8 * s, s * 0.62, color); // the 🪤 emoji (a mousetrap) read as anything but a snare
+  else ctx.fillText(FW.FIELD.KINDS[fw.kind].icon, x, y + 0.5 * s);
   const duty = fw.kind === "tower" ? FW.lookouts(state, fw) : fw.kind === "roadblock" ? FW.guards(state, fw) : 0;
   if (duty) {
     ctx.beginPath(); ctx.arc(x + r * 0.8, y - r * 0.8, 3.6 * s, 0, Math.PI * 2); ctx.fillStyle = "#ffd166"; ctx.fill();
@@ -330,6 +351,26 @@ function hex(ctx, x, y, r) {
   for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i + Math.PI / 6; const X = x + r * Math.cos(a), Y = y + r * Math.sin(a); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }
   ctx.closePath();
 }
+// The snare line's sprite (WORLD-02: the old three grey stakes were lost on the map): a tuft of grass, a stake with
+// the owner's tag, a sapling bent over it and a big bright wire noose hanging from its tip, each stroke edged dark so
+// it reads on any ground. game: a catch in the noose.
+function snareSprite(ctx, x, y, u, color, game = false) {
+  const stroke = (w, c, draw) => { ctx.lineWidth = w * u; ctx.strokeStyle = c; ctx.beginPath(); draw(); ctx.stroke(); };
+  ctx.save();
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.fillStyle = "#4f7a34";
+  ctx.beginPath(); ctx.ellipse(x + 1 * u, y + 5.5 * u, 7 * u, 2 * u, 0, 0, Math.PI * 2); ctx.fill();
+  const stake = () => { ctx.moveTo(x - 5 * u, y + 6 * u); ctx.lineTo(x - 5 * u, y - 6 * u); };
+  const pole = () => { ctx.moveTo(x - 5 * u, y - 6 * u); ctx.quadraticCurveTo(x + 1 * u, y - 13 * u, x + 6 * u, y - 5.5 * u); };
+  const noose = () => { ctx.moveTo(x + 6 * u, y - 5.5 * u); ctx.lineTo(x + 6 * u, y - 1.2 * u); ctx.moveTo(x + 9.4 * u, y + 1.8 * u); ctx.ellipse(x + 6 * u, y + 1.8 * u, 3.4 * u, 3 * u, 0, 0, Math.PI * 2); };
+  stroke(3.2, "#1d1812", stake); stroke(1.9, "#8a6a45", stake);
+  stroke(2.8, "#1d1812", pole); stroke(1.5, "#a8834f", pole);
+  if (game) { ctx.fillStyle = "#c9a36b"; ctx.beginPath(); ctx.ellipse(x + 6 * u, y + 2.2 * u, 2.4 * u, 1.7 * u, 0, 0, Math.PI * 2); ctx.fill(); }
+  stroke(2.6, "#1d1812", noose); stroke(1.3, "#eef3f6", noose);
+  ctx.fillStyle = color; ctx.strokeStyle = "#1d1812"; ctx.lineWidth = 0.8 * u;
+  ctx.fillRect(x - 7 * u, y - 9 * u, 4 * u, 3 * u); ctx.strokeRect(x - 7 * u, y - 9 * u, 4 * u, 3 * u);
+  ctx.restore();
+}
 // The sprites, drawn in code: a lattice tower, a striped barrier, a well with its roof, a mast with its waves, crates.
 function paint(ctx, fw, x, y, s, color) {
   const u = s;
@@ -359,14 +400,9 @@ function paint(ctx, fw, x, y, s, color) {
     ctx.beginPath(); ctx.moveTo(x - 7 * u, y + 5 * u); ctx.lineTo(x - 1 * u, y - 7 * u); ctx.lineTo(x + 7 * u, y + 5 * u); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.fillStyle = "#2a3518"; ctx.fillRect(x - 3 * u, y - 1 * u, 5 * u, 2 * u); // the slit
     ctx.fillStyle = color; ctx.fillRect(x - 1.5 * u, y - 9 * u, 3 * u, 2.5 * u);
-  } else if (fw.kind === "snares") { // stakes with wire loops
-    ctx.strokeStyle = "#5a4632"; ctx.lineWidth = 1.6 * u;
-    for (const dx of [-5, 0, 5]) { ctx.beginPath(); ctx.moveTo(x + dx * u, y + 5 * u); ctx.lineTo(x + dx * u, y - 3 * u); ctx.stroke(); }
-    ctx.strokeStyle = "#c9c9c9"; ctx.lineWidth = 1 * u;
-    for (const dx of [-5, 0, 5]) { ctx.beginPath(); ctx.arc(x + dx * u + 1.5 * u, y - 1 * u, 1.8 * u, 0, Math.PI * 2); ctx.stroke(); }
-    const n = FW.snareHeld(fw);
-    if (n) { ctx.fillStyle = "#c9a36b"; ctx.beginPath(); ctx.ellipse(x + 3 * u, y + 4 * u, 2.5 * u, 1.5 * u, 0, 0, Math.PI * 2); ctx.fill(); }
-    ctx.fillStyle = color; ctx.fillRect(x - 6 * u, y - 5 * u, 2 * u, 2 * u);
+  } else if (fw.kind === "snares") { // a spring snare: a stake, a bent sapling, a wire noose hanging from its tip
+    // (a group's line shows game in the noose where you see it; yours shows none: unknown until a team checks it)
+    snareSprite(ctx, x, y, u, color, fw.owner !== "player" && FW.snareHeld(fw) > 0);
   } else if (fw.kind === "cache") { // a drum half in the ground
     ctx.fillStyle = "#6b5a3a"; ctx.beginPath(); ctx.ellipse(x, y + 4 * u, 7 * u, 2.5 * u, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#b03a2e"; ctx.fillRect(x - 3.5 * u, y - 5 * u, 7 * u, 9 * u); ctx.strokeRect(x - 3.5 * u, y - 5 * u, 7 * u, 9 * u);

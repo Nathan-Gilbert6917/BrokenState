@@ -61,6 +61,7 @@ import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numbers on the road (meetOdds, stop, talkDc, bribes, pacts, ransoms, captives)
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your caravan's route lies in wait
 import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a gun off their dead
+import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more run-ins
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -395,10 +396,12 @@ export function conflictChance(state, p, tileId) {
   if (z > 0) sources.push({ zombies: true, w: z * 0.6 });
   const traffic = TERRAIN[t.terrain].traffic + (t.road ? 0.15 : 0);
   let chance = 0.1 * humans + 0.06 * z + traffic * 0.08;
-  if (isNight(state)) chance *= 1.25;
+  const marching = marchingNow(state, p); // pushing on through the night (nightmarch.js): more trouble finds it
+  if (marching) chance *= NIGHT_MARCH.CONFLICT;
+  else if (isNight(state)) chance *= 1.25;
   chance *= { stealthy: 0.75, normal: 1, rushed: 1.2 }[p.stance] || 1;
   chance *= encounterMult(partyMembers(state, p)); // Strategic (traits.js): the team's best tier picks its routes and hours
-  return { chance: Math.min(0.35, chance), sources };
+  return { chance: Math.min(marching ? NIGHT_MARCH.CONFLICT_CAP : 0.35, chance), sources };
 }
 
 // Chance that the team spots the other side first.

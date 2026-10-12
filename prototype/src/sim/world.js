@@ -20,7 +20,7 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
-import { movePartiesHour, clockFrac, setClockFrac } from "./parties.js";
+import { movePartiesHour, clockFrac, setClockFrac, reportsLive } from "./parties.js";
 import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
@@ -41,7 +41,7 @@ import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a c
 import { settleAll, starterLoad, pocketBox, gunsArmed, drawShots } from "./ammo.js"; // rounds by calibre
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
-import { autopilotHour } from "./autopilot.js";
+import { autopilotHour, autopilotResolve } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { cookShiftHour, cooksHour } from "./kitchen.js"; // part-time cooks: the cooking hours (kitchen-plus)
@@ -865,7 +865,7 @@ export function liveTiles(state) {
   for (const id of fieldSight(state)) set.add(id); // fieldworks.js: your manned watch towers
   // Radio: parties in range report what they see right now.
   for (const p of state.parties) {
-    if (p.owner === "player" && p.radioLive) for (const id of p.sightNow || []) set.add(id);
+    if (p.owner === "player" && reportsLive(p)) for (const id of p.sightNow || []) set.add(id); // parties.js: live intel
   }
   return set;
 }
@@ -1004,4 +1004,5 @@ function hourOfWorld(state) {
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
   historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
+  if (state.autopilot) autopilotResolve(state); // cards the hour raised after the governor's turn (a job trip's perk milestone): answered now, as the browser does every frame
 }

@@ -275,7 +275,7 @@ function conditionEntries() {
   out.push({
     key: "c:worm", cat: "conditions", name: "🪱 The worm", sub: "Illness",
     stats: [["Course", `about ${WORM.COURSE} days; in the brain from day ${WORM.BRAIN_FROM}`], ["Health", `−${WORM.DAY_HP[0]} on day 1, rising to −${WORM.LATE_HP} a day`], ["Work", `${pct(WORM.GUT_WORK)} in the gut, ${pct(WORM.BRAIN_WORK)} in the brain`],
-      ["Healing", `${pct(WORM.HEAL)} of the usual while it is in them`], ["Cures", `a dewormer (sure) or a purge (${WORM.PURGE_MEDS} meds) in the gut; then only surgery (${WORM.SURGERY_MEDS} meds, a Clinic or better)`]],
+      ["Healing", `${pct(WORM.HEAL)} of the usual while it is in them; a hospital bed does nothing for them`], ["Meds", `${WORM.DOSE_MEDS} a day from the base or the team once it is spotted: ${pct(WORM.MEDS_HP)} of the damage, the course half as fast (it never clears it)`], ["Cures", `a dewormer (sure) or a purge (${WORM.PURGE_MEDS} meds) in the gut; then only surgery (${WORM.SURGERY_MEDS} meds, a Clinic or better)`]],
     text: "The parasite the dead carry. Caught by swallowing its eggs: un-purified water, food grown or gathered on infected ground, game that was not cooked, hands that handled the dead. Whoever dies with it gets up as one of the dead.",
     how: "Purify the water, cook the meat, wash after searching. Watch for it (a medic spots it sooner) and cure it in the gut stage: a dewormer is a sure cure.",
     sprite: null,

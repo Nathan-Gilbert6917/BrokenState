@@ -263,5 +263,28 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     delete e.jam;
   }
 }
+// ---------- 5. the selected survivor's kit (ui/combat.js cb-inv, Shift+B; ui/inventory.js peekModal) ----------
+console.log("The selected survivor's kit, look only");
+{
+  const INV = await import("../src/ui/inventory.js");
+  const { st, b } = battles(23, ["field-town"])[0];
+  draw(st);
+  const u = b.units.find((x) => x.side === "player" && x.sid != null && C.active(x));
+  cui.sel = u.id;
+  check(new RegExp(`data-action="cb-inv" data-id="${u.id}"`).test(UI.renderCombatPanel(st)), "the panel has the selected survivor's 🎒 kit button");
+  const ui = { started: true, inv: null };
+  UI.combatKey(st, { code: "KeyB", shiftKey: true, preventDefault() {} });
+  INV.takeLootReq(st, ui);
+  check(ui.inv && ui.inv.peek && ui.inv.sid === u.sid, "Shift+B opens it for the selected one");
+  const html = INV.inventoryModal(st, ui) || "";
+  check(/Inventory: /.test(html) && !/data-action="inv-click"/.test(html) && !/data-drop=/.test(html), "the window shows their kit and nothing in it can be moved");
+  const mate = b.units.find((x) => x.side === "player" && x.sid != null && x.sid !== u.sid);
+  check(!mate || new RegExp(`data-action="inv-who" data-id="${mate.sid}"`).test(html), "tabs for the others in the fight");
+  ui.inv = null;
+  const foe = b.units.find((x) => x.side === "enemy");
+  UI.combatAction(st, "cb-inv", { id: foe.id });
+  INV.takeLootReq(st, ui);
+  check(!ui.inv, "never an enemy's");
+}
 console.log(`\n${passed} passed, ${failed} failed. (${Math.round(performance.now() - t0)} ms)`);
 process.exit(failed ? 1 : 0);

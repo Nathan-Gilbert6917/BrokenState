@@ -44,6 +44,7 @@ import { carriedAll } from "./comforts.js";
 import { log } from "./world.js";
 import { partyVehicles, isCar } from "./vehicles.js";
 import * as Weather from "./weather.js";
+import { canLight } from "./woodcutting.js"; // a fire burns firewood: none, and it cannot be lit
 
 export const HEAT_MAX = 100;
 export const KIT = { floor: 0.35, tripwire: 0.8, maskHours: 24 };
@@ -233,6 +234,7 @@ export function shelterHeat(state, base, hour = state.hour) {
 // x: a camp or shelter (a base with tier 0) or a team (its camp). Returns the message.
 export function setFire(state, x, lit) {
   if (!x) return "";
+  if (lit && !canLight(state, x)) return x.members ? "No firewood carried: the fire cannot be lit. Cut wood or bring some." : "No firewood in store: the fire cannot be lit. Cut wood or bring some in.";
   if (x.members) x.campFire = !!lit; else x.fire = !!lit;
   return lit ? "The fire is lit: warmth, hot food and boiled water, better spirits; its light and smoke carry, most at night." : "The fire is out: darker and quieter, but cold food, unboiled water and cold nights.";
 }

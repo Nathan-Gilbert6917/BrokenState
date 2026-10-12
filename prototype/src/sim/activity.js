@@ -468,7 +468,7 @@ function jobProgress(state, base, job, list, h) {
   } else if (job === "scavenge" && scavLeft(base) > SCAV_FLOOR + 0.02) {
     const exp = Object.values(scavengeOutput(state, base)).reduce((a, v) => a + v, 0);
     const finds = inSoFar("finds", (T) => T.finds || 0);
-    out.progress = { frac: dayShare(inWin("scavenge"), h), text: `${finds ? `${finds} find${finds === 1 ? "" : "s"} today · ` : ""}≈ ${r1(exp)} supplies a day on average (most days nothing) · area ${Math.round(scavLeft(base) * 100)}% left` };
+    out.progress = { frac: dayShare(inWin("scavenge"), h), text: `${finds ? `${finds} find${finds === 1 ? "" : "s"} today · ` : ""}≈ ${r1(exp)} supplies a day on average · area ${Math.round(scavLeft(base) * 100)}% left` };
   }
   return out;
 }

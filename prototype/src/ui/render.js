@@ -2,7 +2,8 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
-import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText } from "../sim/parties.js";
+import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText, reportsLive } from "../sim/parties.js";
+import { contactable } from "../sim/orders.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
 import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
@@ -1750,7 +1751,7 @@ function busyTiles(state, live) {
   if (on("teams")) for (const p of state.parties) {
     if (!p.path || !p.path.length) continue;
     const tile = partyTile(p);
-    if (p.owner === "player" ? p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task" : live.has(tile)) out.add(tile);
+    if (p.owner === "player" ? p.kind === "convoy" || contactable(p) : live.has(tile)) out.add(tile);
   }
   return out;
 }
@@ -2037,8 +2038,8 @@ function drawSurveys(state, minX, maxX, minY, maxY, labels) {
     ctx.setLineDash([8, 5]);
     ctx.stroke();
     ctx.setLineDash([]);
-    // The way it has come (and, in contact, the next spots): a line through the tiles of its route.
-    if (p.radioLive) {
+    // The way it has come (and, reporting live, the next spots): a line through the tiles of its route.
+    if (reportsLive(p)) {
       const upto = Math.min(t.route.length - 1, t.done);
       const path = (from, to, style, width) => {
         ctx.beginPath();
@@ -2104,8 +2105,8 @@ function drawPlayerParty(state, p) {
   const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? PAL.task : "#7fd0ff";
   const look = partyLook(state, p);
   const ring = p.kind === "convoy" ? look.color : p.phase === "task" ? PAL.task : PHASE_COLOR[p.phase] || "#7fd0ff";
-  // Waiting or working on the spot (camp, repairs): you know where they are.
-  if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") {
+  // Your teams are always in reach of your orders (sim/plans.js commandable), so you know where they are.
+  if (p.kind === "convoy" || contactable(p)) {
     let [px, py] = g.toPixel(partyTile(p), HEX);
     // On the move: part of the way to the next tile, by the minutes gone of the hour (sim/parties.js glideAt).
     // A team holding for a card in the tray (ui/pacing.js) stays put: it does not move on when the hour ticks.
@@ -2300,7 +2301,7 @@ export function tileTooltip(state, id) {
   for (const p of state.parties.filter((p) => p.owner === "player" && p.phase === "waiting" && partyTile(p) === id)) lines.push(`<span style="color:#ffd166">Team waiting for orders</span>`);
   for (const pin of jobPins(state)) if (pin.tile === id) lines.push(`<span style="color:#e0b84f">${pin.icon} Job: ${pin.label.replace(/[&<>"]/g, "")}</span>`); // ui/diplomacy.js
   // Heat of your teams standing here (sim/fieldheat.js): what the bar under the sprite means.
-  for (const p of state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && (p.heat || 0) >= 5 && (p.phase === "waiting" || p.phase === "task" || p.radioLive) && partyTile(p) === id)) lines.push(`<span class="${p.heat >= 50 ? "warn" : "muted"}">${esc(heatInfo(state, p).text)}</span>`);
+  for (const p of state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && (p.heat || 0) >= 5 && (p.phase === "waiting" || p.phase === "task" || reportsLive(p)) && partyTile(p) === id)) lines.push(`<span class="${p.heat >= 50 ? "warn" : "muted"}">${esc(heatInfo(state, p).text)}</span>`);
   const held = state.survivors.filter((s) => s.alive && s.location && s.location.kind === "captive" && s.location.tile === id);
   if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => esc(s.name.split(" ")[0])).join(", ")}</span>`);
   for (const line of crashTip(state, id)) lines.push(`<span style="color:#ffb07a">${esc(line)}</span>`); // sim/crashes.js

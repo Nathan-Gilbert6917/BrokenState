@@ -4019,9 +4019,10 @@ export function combatAct(state, act) {
       }
       if (u.f) return "Go down to the ground floor to extract.";
       const z = zoneAt(b, u.x, u.y);
-      if (z < 0) return "Move into an extraction zone first.";
-      u.left = true; u.exitZone = z; u.ap = 0; u.ow = u.hunker = false;
-      u.exitVehicle = !!((b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) && b.raid.vehicleZone === z); // the vehicle stands at this zone (it may have been driven: syncVehicleZone)
+      const byCar = vehicleExit(b, u); // any cell next to the vehicle is a way out in it, wherever it stands
+      if (z < 0 && !byCar) return "Move into an extraction zone, or next to the vehicle, first.";
+      u.left = true; u.exitZone = z >= 0 ? z : b.raid.vehicleZone; u.ap = 0; u.ow = u.hunker = false;
+      u.exitVehicle = byCar || !!((b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) && b.raid.vehicleZone === z); // the vehicle stands at this zone (it may have been driven: syncVehicleZone)
       say(b, `${u.name} extracts${u.exitVehicle ? " at the vehicle" : ""}.`, "good");
       break;
     }
@@ -4833,13 +4834,19 @@ export function evacRefusal(b) {
   if (!b.units.some((u) => u.side === "player" && activeAny(u))) return "Nobody left on foot to get out.";
   return "";
 }
+// Evacuating by the vehicle in a raid: a unit on the ground floor standing on any cell around the team's vehicle (the
+// 8 cells round each of its cells: atVehicle, the same reach as boarding, loading the trunk and driving) can extract
+// in it, wherever the vehicle has been driven; an extraction zone the vehicle touches works as before.
+export function vehicleExit(b, u) {
+  return !!(b && b.raid && u && !u.aboard && !(u.f || 0) && carOf(b, u) && atVehicle(b, u));
+}
 function evacTargets(b, u) {
   const out = [];
   if ((u.f || 0) > 0) return (b.raid && b.raid.stairs ? b.raid.stairs : []).filter(([x, y]) => cellAt(b, x, y).walk);
   if (b.raid) for (const z of b.raid.zones) for (let y = z.y0; y < z.y0 + z.h; y++) for (let x = z.x0; x < z.x0 + z.w; x++) { if (inside(x, y) && cellAt(b, x, y).walk) out.push([x, y]); }
   else out.push(...evacCells(b));
   const v = b.vehicle;
-  if (v && aboardCount(b) < (v.seats || 4)) {
+  if (v && (b.raid ? !!carOf(b, u) : aboardCount(b) < (v.seats || 4))) { // a raid: extract from beside it (vehicleExit); a battle: a free seat
     for (let y = v.y - 1; y <= v.y + v.h; y++) for (let x = v.x - 1; x <= v.x + v.w; x++) {
       if (!inside(x, y) || (x >= v.x && y >= v.y && x < v.x + v.w && y < v.y + v.h)) continue;
       if (cellAt(b, x, y).walk && b.cells[idx(x, y)].k !== "vehicle") out.push([x, y]);
@@ -4865,7 +4872,7 @@ function evacTurnNow(state, b) {
       bindDims(b);
       if ((u.f || 0) > 0) {
         if (b.cells[idx(u.x, u.y)].k === "stairs") { if (combatAct(state, { type: "godown", unit: u.id })) break; moved++; continue; }
-      } else if (b.raid && zoneAt(b, u.x, u.y) >= 0) { if (!combatAct(state, { type: "extract", unit: u.id })) moved++; break; }
+      } else if (b.raid && (zoneAt(b, u.x, u.y) >= 0 || vehicleExit(b, u))) { if (!combatAct(state, { type: "extract", unit: u.id })) moved++; break; }
       else if (!b.raid && evacAt(b, u.x, u.y)) { if (!combatAct(state, { type: "retreat", unit: u.id })) moved++; break; }
       else if (b.vehicle && seatsLeft() > 0 && atVehicle(b, u)) { if (!combatAct(state, { type: "board", unit: u.id })) moved++; break; }
       const targets = evacTargets(b, u);
