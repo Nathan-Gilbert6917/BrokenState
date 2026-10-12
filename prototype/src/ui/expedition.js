@@ -173,7 +173,7 @@ export function renderExpedition(state, ui, p) {
       ${p.phase === "engaged" ? `<div class="muted">Busy on site. New orders wait in the queue.</div>` : ""}
       <div class="row" style="margin-top:0.35rem;flex-wrap:wrap">
         ${btn(`data-action="xp-move" data-id="${p.id}"`, queueing ? "Queue move…" : "Move…", queueing ? "Click a tile on the map. The move is added to the end of the team's queue." : "Click a tile on the map. The team sets off for it (when the clock runs).")}
-        ${moving && p.radioLive ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now (radio contact).") : ""}
+        ${moving ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now.") : ""}
         ${!hub(state) ? "" : ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
         ${camping ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop resting", "Pack up now. The next queued order starts.") : ""}
         ${working ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop work", "Give up on the current job (nothing is used up).") : ""}
@@ -429,7 +429,7 @@ export function heatBlock(state, p) {
 function planBlock(state, p) {
   if (!p.plan) return "";
   const c = conditionText(p.plan.conditions);
-  return `<div class="muted" style="margin-top:0.3rem"${tip("The plan set in the planner. Out of radio contact the team follows it and reports in with cards on finds (a horde, a rich site, low supplies) and when it ends; in contact you can change it any time.")}>Plan: ${esc(planStatus(state, p))}${c ? ` · comes home if ${esc(c)}` : ""}</div>`;
+  return `<div class="muted" style="margin-top:0.3rem"${tip("The plan set in the planner. The team follows it and reports in with cards on finds (a horde, a rich site, low supplies) and when it ends; you can change it any time, wherever it is.")}>Plan: ${esc(planStatus(state, p))}${c ? ` · comes home if ${esc(c)}` : ""}</div>`;
 }
 
 // The team's water (sim/water.js): purified and un-purified, and how it drinks the un-purified water now (sim/worm.js

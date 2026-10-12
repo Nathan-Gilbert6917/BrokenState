@@ -1301,7 +1301,7 @@ function updateRadio(state, p) {
   if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
   // Listening (radio.js networks): a team carrying a receiver (a hand-crank or military radio) out of two-way reach
   // hears a radio network only while it stands inside that network's coverage (a group's, or yours: nothing beyond
-  // it). It is not in contact (no orders, nothing reported). What it picks up on the channel it tuned to (Listen
+  // it). It does not report live (its sightings wait until it reports); orders reach it anyway (plans.js commandable). What it picks up on the channel it tuned to (Listen
   // in, radiolisten.js) goes to p.heard each day.
   if (p.owner !== "player" || p.kind === "convoy") return;
   p.radioHear = !p.radioLive && teamReceives(state, p) && networksAt(state, partyTile(p)).length > 0;
@@ -1694,7 +1694,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
 /** @param {State} state @param {Party} p @returns {"log" | "tray" | null} */
 function quietArrival(state, p) {
   if (p.owner !== "player" || state.autopilot || p.crewRole != null || p.kind === "convoy") return null;
-  return p.radioLive || state.bases.some((b) => b.tile === partyTile(p)) ? "log" : "tray";
+  return "log"; // orders reach a team anywhere (plans.js commandable): no radio-range limit
 }
 
 // The team stops and reports in. opts.failed: the order could not be done (the card is not titled "Done: …");

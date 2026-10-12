@@ -2043,8 +2043,8 @@ actions.ctxmove = (d) => {
   endMoveMode(); // the menu's move replaces a pick that was still open
   hideCtx();
 };
-// Radio rule (sim/plans.js commandable): out of radio contact a team follows its plan; orders only through the
-// cards it raises (answering one opens contact for that hour) or once it is back in coverage.
+// Order gate (sim/plans.js commandable): every team of yours takes orders wherever it is (no radio-range limit);
+// convoys and anything not yours are refused here, and each order checks the team's state and path itself.
 for (const k of ["orders", "movemode", "gohome", "xp-order", "xp-cross", "xp-move", "xp-stop", "xp-resume", "xp-unqueue", "xp-clearq", "xp-cancelmove", "xp-qmove", "xp-qdrop", "ctxmove", "ctxcross", "ctxhunt", "ctxsweep", "ctxclaim", "ctxfwork", "tc-do"]) {
   const fn = actions[k];
   actions[k] = (d) => {

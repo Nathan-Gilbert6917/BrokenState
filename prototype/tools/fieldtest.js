@@ -7,13 +7,13 @@ import { createWorld, tickHour, hub, atBase, addCard, survivorById, makeSurvivor
 import {
   launchExpedition, planPath, partyTile, partyMembers, partyCapacity, cargoLoad, awaitOrders, orderMove, tileLabel, waterPerHour,
 } from "../src/sim/parties.js";
-import { queueEstimate, startOrder, queueText, besideWater, FETCH_WATER_HOURS } from "../src/sim/orders.js";
+import { queueEstimate, startOrder, contactable, queueText, besideWater, FETCH_WATER_HOURS } from "../src/sim/orders.js";
 import { createBattle, registerCombatHandler } from "../src/sim/combat.js";
 import { searchHour, extract } from "../src/sim/scavenge.js";
 import {
   heatGain, heatInfo, fieldHeatHour, troubleChance, tileDanger, heatPreview, HEAT_DECAY, stationaryActivity, CAMP_HEAT,
 } from "../src/sim/fieldheat.js";
-import { PRESETS, estimatePlan, commandable, stepsToOrders, nearbySites, CHECKIN_HOURS, CAMP_CHECKIN } from "../src/sim/plans.js";
+import { PRESETS, estimatePlan, commandable, stepsToOrders, nearbySites, CHECKIN_HOURS } from "../src/sim/plans.js";
 import { hiveDistance } from "../src/sim/hives.js";
 import { seasonOfDay, thirstFactor, THIRST } from "../src/sim/weather.js";
 import { NEEDS } from "../src/sim/needs.js";
@@ -461,7 +461,7 @@ section("Plan conditions: if … then come home");
 }
 
 // ======================================================================
-section("Radio rule: out of contact orders only through the team's cards; in contact any time");
+section("Orders reach a team anywhere (TEAM-01: no radio-range limit); radio range still decides live intel");
 {
   const state = mk();
   const far = tileNear(state, 12, 20, (t) => !t.loc);
@@ -470,19 +470,15 @@ section("Radio rule: out of contact orders only through the team's cards; in con
   let out = false;
   for (let i = 0; i < 48 && !out; i++) { p.lastConflict = state.hour + 1; tickHour(state); state.cards.length = 0; out = !p.radioLive && p.phase === "out" && state.grid.distance(partyTile(p), hub(state).tile) >= 2; }
   if (check(out, "the team left radio range on its way")) {
-    check(!commandable(state, p), "out of contact on the road: no orders");
-    addCard(state, { title: "Something", partyId: p.id, isOrders: true, choices: [] });
-    check(commandable(state, p), "while its orders card is open: orders allowed (answering it)");
-    state.cards.length = 0;
-    p.contactHour = state.hour;
-    check(commandable(state, p), "in the hour you answered one of its cards: orders allowed");
-    p.lastConflict = state.hour + 1; tickHour(state); state.cards.length = 0;
-    check(!commandable(state, p), "an hour later: no contact again");
-    p.radioLive = true;
-    check(commandable(state, p), "in radio range: orders any time");
-    p.radioLive = false;
+    check(commandable(state, p), "out of radio range on the road: orders allowed");
+    check(contactable(p), "…and it counts as in reach for every order screen");
+    check(p.sightNow.length === 0, "out of radio range: its sightings do not reach the map live");
+    const back = tileNear(state, 2, 4, (t) => !t.loc);
+    const msg = startOrder(state, p, { type: "move", tile: back });
+    check(p.phase === "out" && p.path[p.path.length - 1] === back, `a redirect out of radio range takes (${msg})`);
+    check(!commandable(state, { ...p, kind: "convoy" }), "a convoy still takes no team orders");
   }
-  // A team holding out of contact checks in again; an open-ended camp once a day.
+  // A team holding out of radio range raises no repeated check-in cards: it can be ordered at any time.
   const s2 = mk();
   const t = tileNear(s2, 12, 20, (x) => !x.loc);
   const w = placeTeam(s2, t, 2, null);
@@ -490,12 +486,7 @@ section("Radio rule: out of contact orders only through the team's cards; in con
   s2.cards.length = 0; // "Hold here": no card
   let got = null;
   for (let i = 0; i < CHECKIN_HOURS + 2 && !got; i++) { w.lastConflict = s2.hour + 1; tickHour(s2); got = s2.cards.find((c) => c.partyId === w.id && c.isOrders); for (const c of s2.cards.filter((c) => !c.isOrders)) s2.cards.splice(s2.cards.indexOf(c), 1); }
-  check(!w.radioLive && got && /checks in again/.test(got.text), `a held team out of contact checks in again within ${CHECKIN_HOURS}h`);
-  s2.cards.length = 0;
-  startOrder(s2, w, { type: "camp", hours: null });
-  got = null;
-  for (let i = 0; i < CAMP_CHECKIN + 2 && !got; i++) { w.lastConflict = s2.hour + 1; tickHour(s2); got = s2.cards.find((c) => c.partyId === w.id && c.isOrders); for (const c of s2.cards.filter((c) => !c.isOrders)) s2.cards.splice(s2.cards.indexOf(c), 1); }
-  check(got && got.title === "Resting: checking in" && w.phase === "task", `an open-ended camp out of contact checks in once a day (${got ? got.title : "none"})`);
+  check(!w.radioLive && !got && commandable(s2, w), `a held team out of radio range waits quietly, orderable (${got ? got.title : "no card"})`);
 }
 
 // ======================================================================
