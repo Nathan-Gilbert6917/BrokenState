@@ -175,11 +175,11 @@ section("A team carrying one out of coverage: listening inside a group's network
   for (const t of [A, B, C, D]) t.p.lastConflict = st.hour;
   tickHour(st);
   for (const c of [...st.cards]) if (!c.isOrders) st.cards.splice(st.cards.indexOf(c), 1);
-  check(A.p.radioHear === true && A.p.radioLive === false && !commandable(st, A.p), "A (radio, in a group's network): listening, not live, not commandable");
+  check(A.p.radioHear === true && A.p.radioLive === false && commandable(st, A.p), "A (radio, in a group's network): listening, not live (orders reach it anyway)");
   check(!(A.p.heard && A.p.heard.some((x) => /Test alarm/.test(x.text))), "A does not pick up your station's news out past your coverage (no band)");
-  check(B.p.radioHear === false && !B.p.radioLive && !commandable(st, B.p) && !B.p.heard, "B (radio, outside every network): hears nothing, not in contact");
+  check(B.p.radioHear === false && !B.p.radioLive && commandable(st, B.p) && !B.p.heard, "B (radio, outside every network): hears nothing, not live");
   check(C.p.radioLive === true && C.p.radioHear === false && commandable(st, C.p), "C (radio, in coverage): live as any team there, two-way (the radio changes nothing)");
-  check(D.p.radioHear === false && !D.p.radioLive && !commandable(st, D.p), "D (no radio, in the network): out of contact, no listening state");
+  check(D.p.radioHear === false && !D.p.radioLive && commandable(st, D.p), "D (no radio, in the network): not live, no listening state");
   check(!inCoverage(st, band.id) && !inCoverage(st, beyond.id), "the teams' radios gave nobody coverage");
   // The team card says so.
   const ui = { tab: "teams", moveParty: null, expedition: null, selected: null, hover: null };

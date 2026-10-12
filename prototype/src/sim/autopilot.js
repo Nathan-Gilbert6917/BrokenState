@@ -28,7 +28,7 @@ import {
   STANCES, paceOpts, modeSpeed, partyPace, poolLoad, missionProblem, carried, takeSupply, weighTeam,
 } from "./parties.js";
 import { startOrder, resumeQueue, besideWater, FETCH_WATER_HOURS } from "./orders.js";
-import { estimatePlan } from "./plans.js";
+import { estimatePlan, commandable } from "./plans.js";
 import { searchHour, extract, engagementParty, foundLoad } from "./scavenge.js";
 import { crawlAutoStep } from "./citycrawl.js";
 import { tradeContext, sellPrice, buyPrice, executeTrade, endTrade, proposePact, available, maxBuyable, minSellable, giftAll, goodsWorth, demand, gearBuyPrice, balanceWith, tradeVerdict, ensureWares } from "./trade.js";
@@ -1513,10 +1513,9 @@ function guardArrivals(state) {
     if (p.mission !== "scavenge" && !queued) continue;
     if (hoursLeft(state, p) > 1) continue;
     if (!busy) { busy = true; continue; }
-    // In radio contact the governor redirects the team, as you could: it holds at the site as a plain move.
-    // Out of contact it cannot give orders (the UI cannot either): the team arrives, finds the search slot
-    // taken and waits there (parties.js). The note is the governor's own, so it sends the team in afterwards.
-    if (p.radioLive) {
+    // The governor redirects the team, as you could (orders reach a team anywhere, plans.js commandable): it holds at
+    // the site as a plain move. The note is the governor's own, so it sends the team in afterwards.
+    if (commandable(state, p)) {
       if (queued) p.orders.shift();
       else p.mission = "move";
     }
