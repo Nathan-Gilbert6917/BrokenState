@@ -2134,6 +2134,7 @@ function closeTopLayer() {
   if (ui.diplo) { ui.diplo = null; ui.diploMsg = ""; return true; } // ui/diplomacy.js (it opens over the radio panel)
   if (ui.radioWith != null) { ui.radioWith = null; ui.radioMsg = ""; return true; }
   if (ui.caravanPlan) { ui.caravanPlan = null; ui.cvMsg = ""; return true; }
+  if (ui.skillTree != null) { ui.skillTree = null; ui.skillMsg = ""; return true; } // ui/skills.js: back to the survivor screen
   if (ui.survivor != null) {
     if (ui.lookEdit != null) ui.lookEdit = null;
     else ui.survivor = null;

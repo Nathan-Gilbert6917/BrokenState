@@ -96,7 +96,7 @@ import { recruitModal, crowdingRow, moodRiskChip } from "./people.js";
 import { backgroundInfo } from "../sim/hardcore-start.js"; // who they were before Calder fell (a hardcore start; a preset or a custom one)
 import { backgroundEditor } from "./backgrounds.js"; // the new-run screen's custom backgrounds window
 import { startGearEditor } from "./startgear.js"; // the new-run screen's starting gear window (Customize)
-import { skillsBlock, skillTree, studyBlock } from "./skills.js";
+import { skillsBlock, skillTreeModal, studyBlock } from "./skills.js";
 import { trainingInfo, TRAINING, PROFESSOR, lessonGap } from "../sim/training.js"; // the hospital trains medics: ward rounds, the doctor, trainees
 import { skillProgress } from "../sim/skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
@@ -815,6 +815,7 @@ function pickModal(state, ui) {
   if (ui.inv && ui.inv.form) return ["teamform", () => teamFormModal(state, ui)]; // ui/teamform.js: Form a team at a base, or edit one waiting there
   if (ui.inv && ui.inv.team != null) return ["teaminv", () => teamInvModal(state, ui)]; // ui/teaminv.js: a whole team; Drop off and Load at a base
   if (ui.inv) return [`inv:${ui.inv.sid}`, () => inventoryModal(state, ui)]; // closes back to the survivor / base screen under it
+  if (ui.skillTree != null) return ["skilltree", () => skillTreeModal(state, ui)]; // ui/skills.js: perk points, over the survivor screen
   if (ui.survivor) return [`survivor:${ui.survivor}`, () => survivorModal(state, ui)];
   if (ui.memorial) return ["memorial", () => memorialModal(state, ui)]; // ui/relations.js; a name opens the survivor screen over it
   if (ui.baseView) return ["base", () => baseModal(state, ui)];
@@ -1441,7 +1442,7 @@ function survivorModal(state, ui) {
         ${base ? "" : `<div class="small muted">Away from a base, gear moves only between teammates and the team's cargo (Inventory).</div>`}
       </div>
     </div>
-    ${s.alive ? `${studyBlock(state, s)}${skillTree(state, s, ui)}` : ""}
+    ${s.alive ? studyBlock(state, s) : ""}
     ${familyBlock(state, s)}
     ${inContact(state, s) || !s.alive ? relationsSection(state, s, ui) : ""}
     <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="primary" data-action="closesurv">Close</button></div></div>`;
