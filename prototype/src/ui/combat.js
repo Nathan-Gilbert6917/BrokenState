@@ -169,22 +169,35 @@ function view(b) {
   return cui.cache;
 }
 // What your people have ever seen on each floor of this battle (the fog of war indoors, ui/isoview.js): the cells,
-// and each container's state when last seen (its marker under the fog shows that, not what it is now). Kept here, off
-// the sim (a save reloaded mid-battle starts it again from what they see).
-const MEMO = new WeakMap();
+// and each container's state when last seen (its marker under the fog shows that, not what it is now). Kept on the
+// battle as plain data so a save keeps it (b.seenMemo[floor] = { cells: "0101…" one character a cell, boxes: { id:
+// state } }); the drawing reads a byte array made from it (kept here, rebuilt after a load).
+const MEMO = new WeakMap(); // b → { [floor]: { cells: Uint8Array, boxes: Map } }: the working copy
 function rememberSeen(b, vis) {
+  const saved = b.seenMemo || (b.seenMemo = {});
   let m = MEMO.get(b);
   if (!m) MEMO.set(b, (m = {}));
   const f = floorNo(b);
   let k = m[f];
-  if (!k || k.cells.length !== vis.length) k = m[f] = { cells: new Uint8Array(vis.length), boxes: new Map() };
-  for (let i = 0; i < vis.length; i++) if (vis[i]) k.cells[i] = 1;
+  if (!k || k.cells.length !== vis.length) {
+    k = m[f] = { cells: new Uint8Array(vis.length), boxes: new Map() };
+    const sv = saved[f];
+    if (sv && typeof sv.cells === "string" && sv.cells.length === vis.length) for (let i = 0; i < vis.length; i++) k.cells[i] = sv.cells.charCodeAt(i) === 49 ? 1 : 0;
+    if (sv && sv.boxes) for (const [id, snap] of Object.entries(sv.boxes)) k.boxes.set(Number(id), snap);
+  }
+  let fresh = !saved[f];
+  for (let i = 0; i < vis.length; i++) if (vis[i] && !k.cells[i]) { k.cells[i] = 1; fresh = true; }
+  let boxes = false;
   if (b.raid) for (const c of b.raid.containers) {
     if ((c.f || 0) !== f) continue;
     let now = false;
     for (let y = c.y; y < c.y + (c.h || 1) && !now; y++) for (let x = c.x; x < c.x + (c.w || 1); x++) if (vis[y * b.w + x]) { now = true; break; }
-    if (now) k.boxes.set(c.id, { searched: c.searched, quick: c.quick, partial: c.partial, lock: c.lock ? { ...c.lock } : c.lock });
+    if (!now) continue;
+    const snap = { searched: !!c.searched, quick: !!c.quick, partial: !!c.partial, lock: c.lock ? { ...c.lock } : null };
+    const old = k.boxes.get(c.id);
+    if (!old || JSON.stringify(old) !== JSON.stringify(snap)) { k.boxes.set(c.id, snap); boxes = true; }
   }
+  if (fresh || boxes) saved[f] = { cells: Array.from(k.cells, (v) => (v ? "1" : "0")).join(""), boxes: Object.fromEntries(k.boxes) };
   return k;
 }
 // Your own base (its yard, its buildings, a fall back to them): known inside out, no fog indoors.
