@@ -100,6 +100,7 @@ export function searchBusy(state, p) {
 export function startScavenge(state, p) {
   const t = state.tiles[p.dest];
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
+  p.searched = true; // parties.js returnHome: a team that searched says so when it comes home with nothing
   // A crew's team (crews.js) searches hour by hour on its own, never in the shared slot or on a battle map: a job
   // on the spot that crews.js works and ends.
   if (p.crewRole != null) {

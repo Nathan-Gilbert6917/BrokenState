@@ -34,7 +34,7 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const section = (t) => console.log(t);
 const t0 = Date.now();
 const ui = (extra = {}) => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView: null, expedition: null, diary: null, roster: null, help: false, ...extra });
-const modal = (st, baseView) => { st.cards.length = 0; st.nameAsk = []; return renderModal(st, ui({ baseView })) || ""; };
+const modal = (st, baseView) => { st.cards.length = 0; st.nameAsk = []; delete st.unpack; return renderModal(st, ui({ baseView })) || ""; };
 const run = (st, h, stop = () => false) => { for (let i = 0; i < h && !stop(); i++) { st.hordes.length = 0; tickHour(st); st.cards.length = 0; if (st.engagement) st.engagement = null; } };
 const item = (key) => ({ key, name: GEAR[key].name, quality: 1 });
 

@@ -9,13 +9,14 @@ import { SUPPLIES, supWeight } from "../sim/data.js";
 import { survivorById } from "../sim/world.js";
 import { partyMembers, partyTile, tileLabel } from "../sim/parties.js";
 import { SLOT_NAMES, parseLoc, itemLoad } from "../sim/inventory.js";
-import { teamBase, transferProblem, teamsAtBase, teamHoldings, baseHoldings, dropOff, dropAllCargo, dropAllSupplies, loadFromBase, isPlayerTeam, dropHeldOff } from "../sim/teaminv.js";
+import { teamBase, transferProblem, teamsAtBase, teamHoldings, baseHoldings, dropOff, dropAllCargo, dropAllSupplies, loadFromBase, isPlayerTeam, dropHeldOff, pendingUnpack, unpackSpots, unpackHome } from "../sim/teaminv.js";
 import { recText, HANDS_KG } from "../sim/carry.js"; // the supplies each member holds (pockets, pack, arms)
 import { holdSection } from "./carry.js"; // under each paper doll: the supplies they carry, moved about as in their own inventory
 import { doll, storageBox, selBar, tile, SUPPLY_ICON, INV_ACTIONS } from "./inventory.js";
 import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
-import { supplyName } from "../sim/itemnames.js"; // rounds in the stores: "… FMJ — loose", the count on the right
+import { supplyName } from "../sim/itemnames.js";
+import { isRoundKey } from "../sim/rounds.js"; // rounds in the stores: "… FMJ — loose", the count on the right
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -223,4 +224,55 @@ export const TEAMINV_CHANGE = {
     if (!ui.tiPick || ui.tiPick.sup[el.dataset.key] == null) return;
     ui.tiPick.sup[el.dataset.key] = Math.max(0, Number(el.value) || 0);
   },
+};
+
+// ---------- home from a trip (INV-01: sim/teaminv.js pendingUnpack / unpackHome) ----------
+// The window over the map when a team is home and its people carry things on them: each person's pack, bag in the
+// arms and pockets, ticked or not (the pack, the bag, rounds and a job's tool ticked to start with); Put away moves the
+// ticked ones into the armory (rounds and ammo cans on into the stores), Keep everything leaves them on the people.
+// ui.unpackPick = { baseId, hour, items: { loc: true|false } } (the ticks; made fresh for each pending unpack).
+export const unpackUp = (state, ui) => !state.autopilot && ui.started && !state.combat && !!pendingUnpack(state);
+function unpackTicks(state, ui, u) {
+  if (!ui.unpackPick || ui.unpackPick.baseId !== u.baseId || ui.unpackPick.hour !== u.hour) ui.unpackPick = { baseId: u.baseId, hour: u.hour, items: {} };
+  const P = ui.unpackPick.items;
+  const people = u.sids.map((id) => survivorById(state, id)).filter(Boolean);
+  for (const s of people) for (const x of unpackSpots(s)) if (P[x.loc] == null) P[x.loc] = x.def;
+  return people;
+}
+export function unpackModal(state, ui) {
+  const u = pendingUnpack(state);
+  if (!u) { ui.unpackPick = null; return null; }
+  const base = state.bases.find((b) => b.id === u.baseId);
+  const people = unpackTicks(state, ui, u);
+  const P = ui.unpackPick.items;
+  let n = 0;
+  const rows = people.map((s) => {
+    const spots = unpackSpots(s);
+    const cells = spots.map((x) => {
+      const on = !!P[x.loc];
+      if (on) n++;
+      return `<label class="row small" style="gap:0.35rem;margin:0.1rem 0"${tip(`${SLOT_NAMES[x.where] || x.where}: ${x.item.name}, ${kg(x.kg)} kg. Ticked: into ${base.name}'s armory${isRoundKey(x.item.key) ? " (the rounds into its stores)" : ""}.`)}><input type="checkbox" data-action="up-tick" data-loc="${x.loc}"${on ? " checked" : ""}><span class="muted" style="width:5.5rem">${esc(SLOT_NAMES[x.where] || x.where)}</span><span>${esc(x.item.name)}</span><span class="muted">${kg(x.kg)} kg</span></label>`;
+    }).join("");
+    return `<div class="card small" style="margin:0.3rem 0"><div class="spread"><b>${esc(s.name)}</b><span class="row" style="gap:0.25rem"><button class="mini" data-action="up-person" data-sid="${s.id}" data-v="1">All</button><button class="mini" data-action="up-person" data-sid="${s.id}" data-v="0">None</button></span></div>${cells}</div>`;
+  }).join("");
+  return `<div class="box" style="max-width:36rem">
+    <h1>Home from a trip: ${esc(base ? base.name : "")}</h1>
+    <div class="small">${esc(u.team || "The team")} is home.${u.stored ? ` Already in the stores: <b>${esc(u.stored)}</b>.` : " Nothing new went into the stores."}</div>
+    <div class="small muted" style="margin:0.3rem 0">What they still carry on them: tick what goes into ${esc(base ? base.name : "the base")}'s armory (boxes of rounds go into its stores and count in its ammo). The rest stays on them.</div>
+    <div style="max-height:55vh;overflow:auto">${rows}</div>
+    <div class="row" style="margin-top:0.8rem;justify-content:flex-end;gap:0.4rem"><button data-action="up-keep"${tip("Everyone keeps what they carry")}>Keep everything</button><button class="primary" data-action="up-store"${tip("Put the ticked things in the armory")}>Put away ${n} thing${n === 1 ? "" : "s"}</button></div>
+  </div>`;
+}
+export const UNPACK_ACTIONS = {
+  "up-tick": (state, ui, d) => { if (ui.unpackPick) ui.unpackPick.items[d.loc] = !ui.unpackPick.items[d.loc]; },
+  "up-person": (state, ui, d) => { const s = survivorById(state, Number(d.sid)); if (!ui.unpackPick || !s) return; for (const x of unpackSpots(s)) ui.unpackPick.items[x.loc] = d.v === "1"; },
+  "up-store": (state, ui) => {
+    const u = pendingUnpack(state);
+    if (!u) return;
+    unpackTicks(state, ui, u);
+    const locs = Object.entries(ui.unpackPick.items).filter(([, on]) => on).map(([loc]) => loc);
+    unpackHome(state, u.baseId, locs);
+    ui.unpackPick = null;
+  },
+  "up-keep": (state, ui) => { const u = pendingUnpack(state); if (u) unpackHome(state, u.baseId, []); ui.unpackPick = null; },
 };
