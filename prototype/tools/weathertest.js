@@ -212,6 +212,9 @@ for (const mode of ["winter", "flip"]) {
     const res = launchExpedition(state, { memberIds: crew, dest, mission: "move", stance, vehicleId: byTruck ? truck.id : null, supplies: byTruck ? { food: 20, water: 20, fuel: 40 } : { food: 12, water: 12 } });
     if (!check(!res.error, `launch: ${res.error}`)) continue;
     const p = res.party;
+    // Night on the road (nightmarch.js): the estimates time the march itself, so the team pushes on through every
+    // night of the trip (making camp is the player's choice to spend the night's hours, not a slower road).
+    p.nightPlan = "push";
     if (mode === "flip") state.weather.days.forEach((d, i) => { d.tf = i % 2 ? [2.2, 2.7, 2.4, 3] : [1, 1, 1, 1]; });
     const st1 = { cards: 0, delay: 0 };
     const h1 = state.hour, way1 = [...p.path];
