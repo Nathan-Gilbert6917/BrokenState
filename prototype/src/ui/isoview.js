@@ -31,7 +31,7 @@ import { endangered, imminent } from "../sim/carriers.js"; // a body in danger f
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
 import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
-import { paintLights, drawGlow, drawDarkness, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness
+import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness; by day a dark room's shade
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso } from "./ground.js";
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
@@ -1543,8 +1543,10 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   for (const m of OV.rams) if (m.x >= 0 && vis[m.y * b.w + m.x]) { const [uu, vv] = toView(m.x, m.y, r, b.w, b.h); const d = uu + vv + 1; const a = siegeOver.get(d); if (a) a.push(() => drawRamIso(ctx, b, m, S)); else siegeOver.set(d, [() => drawRamIso(ctx, b, m, S)]); }
   for (const f of OV.fires) if (vis[f.y * b.w + f.x]) atD(f.x, f.y, () => drawFlamesIso(ctx, b, f, S, ph));
 
-  // Night: the lights (ui/battlelights.js), a glow on the ground under the units.
-  if ((b.night || b.dark) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now))) drawGlow(ctx, cw, ch);
+  // Night: the lights (ui/battlelights.js), a glow on the ground under the units. By day in a raid's building: the
+  // dark rooms' floors shaded (a barn, a storeroom: sim/indoorlight.js), a light switched on there cut out of it.
+  if ((b.night || b.dark || b.indoor) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now))) drawGlow(ctx, cw, ch);
+  if (b.indoor && !b.night && !b.dark) drawShade(ctx, b, cw, ch);
 
   // ---------- the painter's pass: every cell from the back to the front ----------
   const items = [];
@@ -1806,6 +1808,22 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.font = `700 ${Math.round(s * 1.5)}px Segoe UI, sans-serif`;
       ctx.fillText(c.searched ? "✓" : c.lock && !c.lock.open ? "🔒" : c.quick ? "…" : "?", X, Y - s * 0.45);
       ctx.globalAlpha = 1;
+    }
+    // Light switches (sim/indoorlight.js): a small plate on the wall beside the door, warm when the lights are on;
+    // drawn once the room's floor in front of it has been seen (a roofed building's not at all).
+    if (b.indoor) for (const a of b.raid.areas) {
+      if (!a.sw || !onFloor(b, a)) continue;
+      const si = a.sw[1] * b.w + a.sw[0], fi = a.swIn ? a.swIn[1] * b.w + a.swIn[0] : si, bid = scene.comp[si];
+      if (bid >= 0 && known && !cut.has(bid)) continue;
+      if (known && !(known.cells[fi] || v.vis[fi] || v.vis[si])) continue;
+      const L = looks[si], z = Math.max(6, Math.min(L ? L.top : WALL1, WALL1) * 0.55) + liftAt(b, si);
+      const [X, Y] = project(a.sw[0] + 0.5 + (a.swIn ? (a.swIn[0] - a.sw[0]) * 0.45 : 0), a.sw[1] + 0.5 + (a.swIn ? (a.swIn[1] - a.sw[1]) * 0.45 : 0), z);
+      const s = Math.max(3, 1.6 * S);
+      ctx.fillStyle = a.on ? "#ffd86b" : "#6b7078"; ctx.strokeStyle = "#16181b"; ctx.lineWidth = 1;
+      rr(ctx, X - s, Y - s * 1.4, s * 2, s * 2.8, 1.5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = a.on ? "#7a5a10" : "#e8e8e8";
+      ctx.fillRect(X - s * 0.3, Y - (a.on ? s * 1 : s * 0.1), s * 0.6, s * 1.1); // the toggle: up for on
+      if (a.on && b.night) { ctx.fillStyle = "rgba(255,216,107,0.25)"; ctx.beginPath(); ctx.arc(X, Y, s * 3, 0, Math.PI * 2); ctx.fill(); }
     }
     if (!floorNo(b)) for (const z of b.raid.zones) { // ground floor only (see the zone highlights above)
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);

@@ -108,6 +108,7 @@ import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, 
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
+import { indoorSetup, lightAt, indoorSees, lightsAct } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
 import { VISION, hasFront, inArc, coned, nightSees, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
 
@@ -2168,12 +2169,15 @@ export function los(b, x0, y0, x1, y1) {
 // a level up, + optics (binoculars, a thermal at night: u.optic, stealth.js).
 export const sightRange = (b, a, x = a.x, y = a.y) => a.sight + HEIGHT.SIGHT * hAt(b, x, y) + (a.optic || 0) + (a.vsight || 0); // vsight: a ballistic visor down (helmets.js)
 // Can a unit see a cell? Light shows your people what stands in it out to the full daylight range, however dark: a
-// flare (throwables.js) and, at night, a floodlit cell (deploy.js).
+// flare (throwables.js) and, at night, a floodlit cell (deploy.js). Inside a raid's building the room's own light
+// (indoorlight.js): a lit room is seen as by day (at night too, by either side), a dark one (a barn, a storeroom, any
+// room at night with its lights off) only as at night: down the cone, a light's beam, night vision.
 export function canSeeAt(b, a, x, y) {
   bindDims(b);
   const d = dist(a.x, a.y, x, y);
+  const lt = b.indoor ? lightAt(b, x, y) : 0;
   // At night a person on foot sees down cones (vision.js): the dark ahead, a light's beam, the cells around them.
-  if (coned(b, a) ? !nightSees(b, a, x, y, d, sightRange(b, a) - a.sight) : d > sightRange(b, a)) {
+  if (lt ? !indoorSees(b, a, x, y, d, lt, sightRange(b, a), (a.daySight ?? SIGHT) + HEIGHT.SIGHT * hAt(b, a.x, a.y) + (a.optic || 0) + (a.vsight || 0)) : coned(b, a) ? !nightSees(b, a, x, y, d, sightRange(b, a) - a.sight) : d > sightRange(b, a)) {
     if (a.side !== "player") return false;
     const lit = (b.flares && b.flares.length && flareLit(b, x, y)) || (b.night && b.floodAim && b.lit && b.lit[idx(x, y)]);
     if (!lit || d > SIGHT + HEIGHT.SIGHT * hAt(b, a.x, a.y) + (a.optic || 0)) return false;
@@ -4068,6 +4072,16 @@ export function combatAct(state, act) {
       if (err) return err;
       break;
     }
+    case "lights": { // indoorlight.js: the light switch next to the unit (1 action, quiet): the room lit or dark
+      const r = lightsAct(b, u, act);
+      if (r.err) return r.err;
+      u.ap -= 1;
+      u.hunker = false;
+      say(b, `${u.name} switches the lights ${r.room.on ? "on" : "off"} in the ${r.room.name.toLowerCase()}.`, "info");
+      // A guard in a room whose lights come on sees it as by day: whoever of yours stands in it may be noticed now.
+      for (const p of b.units) if (p.side === "player" && active(p)) detect(b, p);
+      break;
+    }
     case "climb": { // buildingmaps.js: through a window next to the unit (not diagonally); the glass breaks
       if (!b.raid) return "Nothing to climb.";
       const opts = windowsNear(b, u);
@@ -5926,6 +5940,7 @@ export function createRaid(state, setup) {
   placeBodies(b, state.seed); // sleepers.js: bodies lie about, Sleepers among them
   placeWalking(state, b); // carriers.js: the walking dead that drifted near this tile, among the ordinary dead
   stealthSetup(state, b); // stealth.js: night, flashlights, suppressors, which way the guards face
+  indoorSetup(b); // indoorlight.js: which rooms are dark (a barn, a storeroom; every room at night), their light switches
   nlSetup(state, b); // nonlethal.js: tasers and spray on both sides
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room

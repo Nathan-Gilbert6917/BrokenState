@@ -29,6 +29,7 @@ import { gunMods, unitMods, fittedSuppressor, removeMod, modLabel } from "./gunm
 import { isNight, survivorById, baseById, hourOfDay } from "./world.js";
 import { VISION, darkSight, nightReach, faceToward, hasFront, inArc, enemyLight, faceAng, setFacing } from "./vision.js"; // facing, view cones, sneaking
 import { hash01 } from "./skills.js";
+import { darkAt } from "./indoorlight.js"; // a raid's dark rooms (a barn by day, any unlit room at night) and lit ones
 import { carriedSpots } from "./inventory.js"; // everything carried, the rig's pouches too
 import { helmetNvg } from "./helmets.js"; // night vision goggles on a helmet
 import { hearMult, hearSetup } from "./hearing.js"; // the ears: what a guard hears behind them
@@ -200,8 +201,11 @@ export function noticeRange(b, e, mover, perks = true) {
   const range = Math.max(3, 8 - Math.floor(mover.stealth / 4));
   let r = e.kind === "zombie" ? Math.min(range, 5) : range;
   if (perks && mover.sneak) r = Math.max(1, r - mover.sneak);
-  if (b.night) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + lightSeen(mover)); // a light is seen from further off
-  if (b.night && mover.sparks === b.turn) r += 2; // locks.js: an angle grinder's sparks this turn (SAFE.grind.sparks)
+  // In the dark: at night, or in an unlit room of a raid's building by day (a barn, a storeroom); a room lit at night is
+  // as by day (indoorlight.js darkAt: the light where the mover stands).
+  const dark = b.indoor ? darkAt(b, mover.x, mover.y, mover.f) : b.night;
+  if (dark) r = Math.max(2, Math.round(r * STEALTH.NIGHT_DETECT) + lightSeen(mover)); // a light is seen from further off
+  if (dark && mover.sparks === b.turn) r += 2; // locks.js: an angle grinder's sparks this turn (SAFE.grind.sparks)
   // A light the guard carries (vision.js: a soldier's military flashlight): down its beam they see further.
   if (b.night && e.light && LIGHTS[e.light] && !LIGHTS[e.light].round && inArc(e, mover.x, mover.y, (LIGHTS[e.light].beam || 20) * Math.PI / 180)) r = Math.max(r, Math.min(range, LIGHTS[e.light].sight));
   if (perks && mover.ghost) r = Math.min(r, 2);
