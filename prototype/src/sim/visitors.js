@@ -1597,7 +1597,7 @@ function gateCard(state, v, base, lead) {
   const kind = v.sub === "scouts" ? `${n} scouts from ${v.home}, mapping the roads` : v.sub === "refugees" ? `${n} refugees from ${v.home}, tired and hungry` : `${n === 1 ? "a wanderer" : "two wanderers"} from ${v.home}`;
   addCard(state, {
     title: `Travellers at ${base.name}`, visitorId: v.id,
-    text: `${lead ? `${lead} ` : ""}${cap1(kind)} at the gate${people.length ? "" : " (nobody is there to talk to them)"}. They came in from the ${v.from} ${Math.max(1, Math.round((state.hour - v.entered) / 24))} days ago.`,
+    text: `${lead ? `${lead} ` : ""}${cap1(kind)} at the gate${people.length ? "" : " (nobody is there to talk to them)"}. They came in from the ${v.from} ${((n) => (n === 1 ? "a day" : `${n} days`))(Math.max(1, Math.round((state.hour - v.entered) / 24)))} ago.`,
     choices,
   });
 }

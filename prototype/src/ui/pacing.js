@@ -89,6 +89,15 @@ function arrange(state, ui) {
   if (i > 0) state.cards.unshift(state.cards.splice(i, 1)[0]);
   return state.cards[0];
 }
+// A card the player just asked for (Talk to them, Call them back, a trade closed back to its card): open it at once,
+// also when its kind waits in the tray. fn adds it; returns fn's result.
+export function openAsked(state, ui, fn) {
+  const before = new Set(state.cards || []);
+  const out = fn();
+  const c = (state.cards || []).find((x) => !before.has(x));
+  if (c && !state.autopilot) { stamp(state); if (c.tray && !cardPauses(c)) ui.trayOpen = c.tray.id; }
+  return out;
+}
 // Is a card on screen (ui.js pickModal, main.js blocked and Esc)? On autopilot: any card, as before.
 export const cardUp = (state, ui) => !!arrange(state, ui);
 // The tray's card opened over the map: Esc puts it back.
@@ -134,9 +143,9 @@ export function pacingFrame(state, ui) {
 // answers greyed out), it stops the clock instead.
 // A plain move's arrival card (parties.js quietArrival) opens instead: "Hold here" would leave a team out of contact
 // with no way to reach it.
-function expire(state, c) {
+function expire(state, c, byPlayer = false) {
   if (!defaultChoice(state, c) || c.quietArrival) c.tray.kind = "always";
-  else autoAnswer(state, c);
+  else autoAnswer(state, c, byPlayer);
 }
 
 // Will this team hold when the coming hour runs (beforeHour: a card of its waits in the tray and is not past its time)?
@@ -276,7 +285,7 @@ export function pacingOptionsHTML() {
 export const PACE_ACTIONS = {
   "tray-open": (state, ui, d) => { const c = state.cards.find((x) => x.tray && x.tray.id === Number(d.id)); if (c) { ui.trayOpen = c.tray.id; arrange(state, ui); } },
   "tray-close": (state, ui) => { ui.trayOpen = null; },
-  "tray-defaults": (state, ui) => { ui.trayOpen = null; for (const c of trayCards(state)) expire(state, c); },
+  "tray-defaults": (state, ui) => { ui.trayOpen = null; for (const c of trayCards(state)) expire(state, c, true); },
   "pace-opt": (state, ui, d) => {
     const o = opts();
     if (d.k === "drop") o.drop = !o.drop;

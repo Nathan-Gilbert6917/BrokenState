@@ -1,6 +1,7 @@
 // Trade window (two columns like RimWorld / Fallout), the radio panel for one group, the trade caravan planner,
 // and the bits of the Groups and Bases tabs that lead to them. Handlers: TRADE_ACTIONS / TRADE_CHANGE_ACTIONS,
 // registered by main.js. The rules live in sim/trade.js, sim/radio.js and sim/caravans.js.
+import { openAsked } from "./pacing.js"; // a trade closed back to its card opens it
 import { FOOD_PACK_KG } from "../sim/parties.js"; // days of food packed: about this a day
 import { FOODS, foodIn, bestFoodKey } from "../sim/foods.js"; // food by type in the trade window
 import { foodTip } from "./food.js";
@@ -407,7 +408,7 @@ export const TRADE_ACTIONS = {
   },
   gift: (state, ui) => { ui.tradeMsg = giftAll(state); },
   pact: (state, ui, d) => { const f = state.trade && factionById(state, state.trade.factionId); if (f) ui.tradeMsg = proposePact(state, f, d.k); },
-  tradeleave: (state, ui) => { if (state.trade && state.trade.radio) ui.radioWith = state.trade.factionId; endTrade(state, { back: true }); ui.tradeMsg = ""; ui.attackConfirm = null; },
+  tradeleave: (state, ui) => { if (state.trade && state.trade.radio) ui.radioWith = state.trade.factionId; const toCard = !!(state.trade && state.trade.visitorId != null && state.trade.back); if (toCard) openAsked(state, ui, () => endTrade(state, { back: true })); else endTrade(state, { back: true }); ui.tradeMsg = ""; ui.attackConfirm = null; }, // back to the outsiders' card, open (ui/pacing.js)
   // Attack the caravan: asks first (ui/confirm.js), then a battle at your base against its guards.
   "tw-attack": (state, ui, d) => {
     const c = caravanById(state, d.id), f = c ? factionById(state, c.owner) : null;

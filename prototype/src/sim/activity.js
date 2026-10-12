@@ -57,7 +57,7 @@ import { orderStatus } from "./orders.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
 import { outputDays } from "./output.js";
 import { TRIP_JOBS, tripWindow, inTripHours } from "./tripland.js"; // the outdoor jobs' hours (jobtrips.js trips)
-import { tripState, tripTarget } from "./jobtrips.js"; // where someone out on a trip is: "Heading to forest (3,7)", "Bringing 18 kg meat back"
+import { tripState, tripTarget, hasJobTool } from "./jobtrips.js"; // where someone out on a trip is: "Heading to forest (3,7)", "Bringing 18 kg meat back"
 import { fetchWaterWhy, fetchWaterDay } from "./economy.js"; // Fetch water
 
 import { MEALS, MEAL_WORK_SHARE, mealOf, lunchHour } from "./meals.js";
@@ -159,6 +159,7 @@ function tripJobActivity(state, base, s, job, h, opts) {
   if (!inTripHours(job, h)) return offActivity(job);
   if (opts.trips === false || !nowH) return act("work", TRIP_JOBS[job].ing, "", job);
   if (s.tripNext && s.tripNext.day === Math.floor(state.hour / 24) && s.tripNext.t > state.hour) return act("work", job === "water" ? "Pouring the water into the barrels" : `${TRIP_JOBS[job].ing}: back at the base for a bit`, `Out again at ${hhmm(s.tripNext.t)}.`, job);
+  if (!hasJobTool(state, base, s, job)) return act("idle", "No rod, net or spear free to fish with", `Every fishing tool at ${base.name} is out with someone else: no tool, no trip. Put another rod, net or spear in the armory, or give them another job.`, job, "🎣");
   const tg = tripTarget(state, base, job);
   return act("work", tg ? `Setting out for ${tileLabel(state, tg.tile)}` : TRIP_JOBS[job].ing, "", job);
 }

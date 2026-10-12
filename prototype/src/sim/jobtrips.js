@@ -58,6 +58,12 @@ const JOB_TOOLS = {
   fish: { is: (state, it) => isFishTool(it) && !(frozenAt(state) && isSpear(it)), rank: (it) => fishToolPower(it), need: true, offHand: (it) => !isSpear(it) },
   wood: { is: (state, it) => isChopTool(it), rank: (it) => chopMult(it), need: false, offHand: () => false },
 };
+// Could s go out on `job` for want of a tool? (checkOutTool without taking anything: the activity line.)
+export function hasJobTool(state, base, s, job) {
+  const J = JOB_TOOLS[job];
+  if (!J || !J.need) return true;
+  return allCarried(s).some((it) => J.is(state, it)) || (base.armory || []).some((it) => it && J.is(state, it));
+}
 // Does s carry a tool for `job` now? Else one is checked out of the base's armory. Returns false only when the job
 // needs a tool and there is none to take.
 export function checkOutTool(state, base, s, job) {

@@ -1,5 +1,6 @@
 // Outsiders in the UI (sim/visitors.js): the Groups tab's "Outsiders" section, their alerts, the trade window's
 // buttons for merchants, and the handlers (VISITOR_ACTIONS, registered by main.js).
+import { openAsked } from "./pacing.js"; // the card asked for opens at once
 import { hub, baseById, log } from "../sim/world.js";
 import { SUPPLIES } from "../sim/data.js";
 import {
@@ -79,7 +80,7 @@ export function visitorTradeButtons(state, ui, ctx) {
 // ---------- handlers ----------
 export const VISITOR_ACTIONS = {
   "vis-trade": (state, ui, d) => { const v = visitorById(state, d.id); if (v && baseById(state, Number(d.base))) openVisitorTrade(state, v, { baseId: Number(d.base) }); },
-  "vis-gate": (state, ui, d) => { const v = visitorById(state, d.id); if (v) reopenGate(state, v); },
+  "vis-gate": (state, ui, d) => { const v = visitorById(state, d.id); if (v) openAsked(state, ui, () => reopenGate(state, v)); }, // the card opens, also a tray kind (ui/pacing.js)
   // Radio calls: the answer goes to the log (radioNewsFrom and a payment log their own line).
   "vis-invite": (state, ui, d) => { const v = visitorById(state, d.id); if (v) log(state, `Radio: ${inviteMerchants(state, v)}`, "info"); },
   "vis-news": (state, ui, d) => { const v = visitorById(state, d.id); if (v) { const t = radioNewsFrom(state, v); if (!/^.+ on the radio:/.test(t)) log(state, `Radio: ${t}`, "info"); } },
