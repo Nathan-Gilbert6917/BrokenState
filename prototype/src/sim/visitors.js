@@ -2076,7 +2076,7 @@ export function radioNewsFrom(state, v) {
 // "gone" (gateTrayCard).
 export function gateTalkBase(state, v) {
   if (!v || v.kind !== "explorers" || v.hostile || !state.visitors.includes(v) || state.cards.some((c) => c.visitorId === v.id)) return null;
-  if (state.trade && state.trade.visitorId === v.id) return null;
+  if ((state.trade && state.trade.visitorId === v.id) || (state.tradeQueue || []).some((t) => t.visitorId === v.id)) return null; // their window is open or waits its turn
   const base = baseById(state, v.gateBase);
   if (!base || v.tile !== base.tile) return null;
   if (v.phase === "gate" || v.phase === "stop") return base;

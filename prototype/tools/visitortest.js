@@ -402,7 +402,7 @@ section("The governor and a toll that would strand the team");
     }
     return { why: "no toll card in 12 tries" };
   };
-  const dry = tollAi({ water: 9, food: 6 });
+  const dry = tollAi({ water: 20, food: 6 }); // enough water to pay the toll (food travels as typed items, water partly in canteens), not enough left for the way home
   check(dry.ai === 5, `a toll paid in the water the team needs to get home: score ${dry.ai} (${dry.label || dry.why})`);
   const rich = tollAi({ water: 20, food: 12, scrap: 30 });
   check(rich.ai >= 55, `a toll paid from spare scrap: the usual score ${rich.ai} (${rich.label || rich.why})`);
