@@ -216,6 +216,9 @@ const t0 = Date.now();
 {
   console.log("Off-map hordes");
   const st = world(8);
+  // A cook fire: the hub starts bare (barestart), and days of "No hot food" (eating.js EAT.cold) drove seed 8's whole
+  // holdout to walk out by day 17, which ended the run (and the border hordes with it); this test is about the hordes.
+  addBuilding(hub(st), "cookhouse");
   for (const h of [...st.hives]) destroyHive(st, h);
   st.gameOver = false; st.victory = false; st.victoryKept = true;
   const seen = [];
@@ -263,6 +266,9 @@ const t0 = Date.now();
 {
   console.log("Territory, infection, victory");
   const st = world(10);
+  // A cook fire, as above: without hot food (eating.js EAT.cold) the holdout walks out before the 65 days are up, the
+  // run ends and the infection stops fading with it; this test is about the infection.
+  addBuilding(hub(st), "cookhouse");
   const hv = st.hives[0];
   const ring = st.grid.neighbors(hv.tile)[0];
   const far = st.tiles.find((t) => st.hives.every((h) => st.grid.distance(h.tile, t.id) > 6)).id;
