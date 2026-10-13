@@ -30,6 +30,7 @@ import { GEAR, LOCATIONS, CATEGORIES, TRADE_PREFS } from "../src/sim/data.js";
 import { hiddenSites, siteKnown, siteKnownTo, isPublicSite } from "../src/sim/discovery.js";
 import { launchExpedition, partyTile, sightRadius, removeParty, planPath, cargoLoad, STANCES, carried, onTheMove, partyMembers } from "../src/sim/parties.js";
 import { queueEstimate } from "../src/sim/orders.js";
+import { setNightPlan } from "../src/sim/nightmarch.js";
 import { estimatePlan } from "../src/sim/plans.js";
 import { spotFirstChance } from "../src/sim/conflicts.js";
 import { stealthSetup } from "../src/sim/stealth.js";
@@ -45,6 +46,8 @@ import { AREAS } from "../src/sim/combat.js";
 import { WARES } from "../src/sim/trade.js";
 import { RARE_GEAR } from "../src/sim/visitors.js";
 import { opticsFor, baseOpticsSight, OPTICS } from "../src/sim/optics.js";
+import { LIGHTS } from "../src/sim/lights.js";
+import { darkSight } from "../src/sim/vision.js";
 import {
   SURVEY, RUMOUR, siteOdds, lookContext, sweepRoute, sweepEstimate, sweepPreview, sendSurvey, sweepStatus, addRumour,
   rumoursOf, rumourFromNews, surveyDaily, surveyTarget, surveyCandidate, orderSweepAt, sweeping,
@@ -302,6 +305,9 @@ console.log("Estimates: hours, rations and fuel");
     if (!check(!res.error && est, `case ${c}: launched (${res.error || "ok"})`)) continue;
     cases++;
     const p = res.party;
+    // The team panel's "At night: Push through" (sim/nightmarch.js): the plan's ETA and rations are for a team that
+    // keeps moving at night; a "Night falls" card stops it for the hour it asks and making camp is the player's own stop.
+    setNightPlan(st, p, "push");
     const fuel0 = mode === "car" ? partyFuel(st, p) : 0;
     const food0 = carried(p, "food"), water0 = carried(p, "water");
     // Rations the gauges count (needs.js, as loadtest.js): what the team took from its supplies plus the hunger
@@ -405,6 +411,7 @@ console.log("Estimates in winter: the cold and the camp fire");
     if (!check(!res.error && est, `winter case ${c}: launched (${res.error || "ok"})`)) continue;
     cases++;
     const p = res.party;
+    setNightPlan(st, p, "push"); // as above: the estimates are for a team that keeps moving at night
     const food0 = carried(p, "food"), water0 = carried(p, "water");
     const gauge = (key) => crew.reduce((a, s) => a + s[key], 0);
     const hunger0 = gauge("hunger"), thirst0 = gauge("thirst");
@@ -549,7 +556,9 @@ console.log("Optics");
   const b = { raid: true, setup: {}, units: [{ side: "player", sid: crew[1].id, sight: 13, x: 1, y: 1 }], lures: [] };
   crew[1].gear.tool = newItem("thermal", 1);
   stealthSetup(st, b);
-  check(b.night && b.units[0].nvg && b.units[0].sight === 13, "in a night battle a thermal in the off hand sees like night vision (sight 13, not 7)");
+  // Night vision sees as far as a military flashlight's beam (12, vision.js nvgSight; the user's request of 2026-10-12,
+  // as stealthtest.js and defencetest.js), no longer the full day's 13; the plain dark by the hour (vision.js darkSight).
+  check(b.night && b.units[0].nvg && b.units[0].sight === LIGHTS.tacflash.sight && darkSight(b) < LIGHTS.tacflash.sight, `in a night battle a thermal in the off hand sees like night vision (sight ${b.units[0].sight}, not the dark's ${darkSight(b)})`);
   const v0 = baseVision(h);
   h.armory.push(newItem("telescope", 1));
   check(baseVision(h) === v0 + (h.watchtower ? 2 : 1) && baseOpticsSight(h) >= 1, `a telescope in the hub's armory: view ${v0} → ${baseVision(h)} tiles`);
