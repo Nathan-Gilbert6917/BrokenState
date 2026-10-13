@@ -21,6 +21,7 @@ grid takes 1–4 minutes.
 | trips per scenario | `--trips N`, `--rest D` | between trips the squad heals, restocks and rests D days (chambers refill by `REFILL_DAYS`) |
 | city depth, start block, day | `--depth`, `--block`, `--day` | `--depth` is the autopilot's `CRAWL.AUTO.depth`; `--block` starts the crawl on that block |
 | survivors and gear | `--squad name,…` or `--n --weapon --armor --shoot --health --lights --fire --stun --ammo --meds` | named loadouts in `LOADOUTS`: naked, scrappy, early, hunters, solid, rifles, elite |
+| retreat policy | `--style balanced` | the break-off policy of that autopilot style, set on the team (`none`: fight to the end, a player's default) |
 | tuning numbers | `--set HCRAWL.X.y=…,CRAWL.X.y=…` | overrides a constant for this run only (roots: `HCRAWL`, `HIVEMIND`, `CRAWL`, `EVENTS`) |
 
 Seeds are deterministic (`--seed`, `--trials`), so the same scenario before and after a change differs only by the
@@ -73,46 +74,63 @@ for shotgun squads (19% against a 40% target) and tier 3 for rifles (19% against
 medical side (`AUTO.treat`, `TREAT_HOURS`, meds carried) and not the brood's numbers.
 
 City crawl: the autopilot only crawls 2 blocks (`CRAWL.AUTO.depth`) and leaves if hurt, so `--depth` barely moves the
-table; rows below are 2–4 blocks.
+table; the rows are judged at depth 2 and 4 only.
 
-| squad (40 trials, depth 2) | out before → after | squad lost before → after | squads wiped before → after |
+**A correction.** The first city baseline had teams fighting *to the end*: a team only gets the autopilot's break-off
+policy (`breakoff.js STYLE_POLICY`: balanced and cautious break off a fight that is being lost) when the autopilot is
+on, and the harness had it off. That made every lost street fight a massacre (a defeat killed 75% of the team, 8–30%
+of teams were wiped) and is what a player's team still gets by default (`Never`). The harness now sets the policy of
+`--style` on the team (default balanced; `--style none` for a player's fight-to-the-end team). Turning the autopilot on
+instead is wrong: the governor then steps the crawl itself every hour, and the team is driven twice.
+
+With the policy, nobody is wiped in a 2–4 block crawl, and the losses (40 trials, depth 2) are:
+
+| squad | lost, the old numbers | lost, the new numbers | fights a crawl |
 |---|---|---|---|
-| naked (4, bats) | 70% → 85% | 48% → 27% | 30% → 15% |
-| scrappy (5, pistols) | 95% → 95% | 24% → 17% | 5% → 5% |
-| early (5, shotgun, vest) | 90% → 95% | 22% → 13% | 10% → 5% |
-| solid (6, shotgun, vest) | 95% → 95% | 8–21% → 15% | 5–10% → 5% |
-| rifles (6, AR, plate) | 95% → 95% | 8–16% → 15% | 5–8% → 5% |
+| naked (4, bats) | 14% | 11% | 0.7 → 0.5 |
+| scrappy (5, pistols) | 12% | 11% | 0.8 → 0.7 |
+| early (5, shotgun, vest) | 14% | 10% | 1.1 → 0.8 |
+| solid (6, shotgun, vest) | 7% | 6% | 1.0 → 0.9 |
+| rifles (6, AR, plate) | 7% | 6% | 1.0 → 0.9 |
 
-The good squads were not worse off to begin with (their rows move within the noise); the change is for the early game.
-All 10 judged city rows are inside their targets after the change (4 of 10 before).
-
-A lost fight by the numbers is lethal (a defeat killed 75% of the team on average, 40–60% of lost fights wiped it),
-and 2 blocks in a team meets 0.6–1.3 fights. Tweaks (all in `citycrawl.js`):
+The tweaks (all in `citycrawl.js`) were picked against the fight-to-the-end baseline, where they mattered a lot (a
+naked team's losses 48% → 27%); against the corrected one they are a modest early-game relief and are kept:
 
 - `AUTO.sureOdds` 0.85 → 0.92 and `AUTO.fightOdds` 0.65 → 0.80: the governor fights only what it is nearly sure of
-  and otherwise hides, lures or runs. Costs a little loot; saves lives of early teams.
+  and otherwise hides, lures or runs.
 - `ENC.base` 0.08 → 0.06 (trouble on the way to the next block) and `QUICK.fight` 0.30 → 0.22 (a search by the
-  numbers brings a fight less often). This is the early-game relief: the first week's scavenge team is no longer
-  wiped one trip in four.
+  numbers brings a fight less often). These apply to a player's crawl too.
 
-## Bugs and gaps found on the way (not fixed unless noted)
+All 10 judged city rows are inside their targets.
 
-1. **Shells at hand are invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving up to
-   30 shells per shotgunner out of `p.supplies` into pockets and rig pouches. `combat.js autoResolveCombat` draws
-   its rounds from the team's *supplies and cargo only*, so a shotgun team whose ammo all went into pockets fights
-   by the numbers with 0 rounds ("ammo was short: fights at 60%") while the odds shown (`encounterOptions`, no
-   `shots`) assume it has them. In my first runs a `solid` team with 120 shells showed 97% and won 36%. With 400
-   in the pack the calibration is fine (≥95% shown → 95% won). Fix: count rounds in the shooters' pockets/rig
-   (or have `encounterOptions` pass the same `shots`). Real trips pack plenty of ammo so it bites rarely, but a
-   short-supplied shotgun team is the one that needs the odds to be honest.
-2. **A lost fight by the numbers kills 75% of the team.** Defeat is fought "to the end" (policy `never` for the
-   crawl's `canRetreat` fights is not the team's break-off policy). That is the design ("a lost fight against the
-   dead can cost everyone") but it makes a displayed 90% a 10% chance to lose a whole team. Consider letting a lost
-   crawl fight break off by the team's retreat policy as a map fight does (`breakoff.js`).
-3. **The autopilot's city crawl never goes deep and the harness cannot rate depth.** Starting on block 4+ makes it
-   leave at once. Rating deep blocks needs a search policy (below).
-4. `tools/wintest.js --force keep` fails on the code before this change too (the forced storm does not finish in 75
-   days); it is not touched here.
+## Bugs found on the way, and what was done
+
+1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving
+   up to 30 shells per shotgunner out of the team's supplies into pockets and rig pouches. `combat.js
+   autoResolveCombat` drew its rounds from supplies and cargo only, so a shotgun team whose shells were all at hand
+   fought with none ("ammo was short: fights at 60%") while the odds shown assumed them: shown 85–95%, won 36%. Now
+   `takeHandRounds` takes the shortfall from the rounds the shooters carry (and uses them up). Same test after the
+   fix: shown 85–95%, won 88%; shown 95%+, won 96%.
+2. **Fixed: a crash leaving a city.** `citycrawl.js stepLeave` went on to `finishCrawl` after the hour on the way
+   out had already ended the crawl (the team wiped), and `finishCrawl` read `p.crawl.tile` of nothing. Guarded in
+   both.
+3. **Fixed: the hive campaign said "waiting for the squad to rest" when it was waiting for the style's first hive
+   day** (`hiveFrom`: balanced day 90, cautious 150). It now has its own reason (`early`, also in the census's
+   `hiveRejects`), so "rest" in the census means rest.
+4. **Fixed: `tools/wintest.js --force hive` and `--force keep` failed** (on the code before these changes too). The
+   forced squad reached the core, turned back hurt, and could not go again before day 90 while the test stopped at
+   75; and with the eras off (`state.erasOff`, the forced runs only) the border outbreak still started a new hive,
+   so the state was never clear. The forced runs now go to day 150, and `erasOff` turns off the border floor
+   (`eras.js hiveFloor`) as it does the other eras' rules. All five forced scenarios pass.
+5. **Open: a player's team fights to the end by default.** A lost street fight with the default policy (`Never`)
+   kills most of the team; the odds shown are honest, but "a 90% fight" reads safer than "a 10% chance to lose most
+   of the team". A default of `losing` for player teams, or a line on the encounter card, would be the fix; it is a
+   design call, left alone.
+6. **Open: the harness cannot rate deep city blocks.** Starting on block 4+ makes the autopilot leave at once; it
+   needs a search policy (below).
+
+The hive crawl does not use the break-off policy (its chambers have their own fight model), so its tables above
+stand. Medical levers tried on top (`--meds 12`, `AUTO.treat` 85, `AUTO.hurt` 35) moved nothing beyond the noise either.
 
 ## The coalition win (also 2026-10-13)
 

@@ -180,6 +180,7 @@ export const hiveStarve = (state) => (burnedOut(state) ? ERAS.OUTBREAK.STARVE : 
 // The fewest hives (standing or being built) the outbreak beyond the border keeps in the state this year.
 export function hiveFloor(state) {
   if (burnedOut(state) || beforeFall(state)) return 0; // hardcore: the border floor starts with the normal start
+  if (state.erasOff) return 0; // the tools' forced runs (wintest --force): no eras' rules, so no border floor either
   const y = yearOf(state);
   return ERAS.OUTBREAK.FLOOR.reduce((n, [from, k]) => (y >= from ? k : n), 0);
 }

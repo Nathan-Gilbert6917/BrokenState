@@ -284,8 +284,8 @@ export function autopilotSummary(state) {
 // far = known hives all beyond CAMPAIGN.far, odds = not even the campaign's fires would bring a storm in reach,
 // ammo = short of the campaign's stockpile, squad = fewer than six fit fighters, rest = before hiveFrom or resting
 // between hive missions, home = too few would stay home.
-const REJECT_KEYS = ["unknown", "far", "odds", "ammo", "squad", "rest", "home"];
-const hiveRejects = (state) => { const s = gov(state).stats; if (!s.hiveRejects) s.hiveRejects = Object.fromEntries(REJECT_KEYS.map((k) => [k, 0])); return s.hiveRejects; };
+const REJECT_KEYS = ["unknown", "far", "odds", "ammo", "squad", "early", "rest", "home"];
+const hiveRejects = (state) => { const s = gov(state).stats; if (!s.hiveRejects) s.hiveRejects = {}; for (const k of REJECT_KEYS) s.hiveRejects[k] ??= 0; return s.hiveRejects; }; // an older save's count gains the new keys
 export const autopilotStats = (state) => ({ ...gov(state).stats, hiveRejects: { ...hiveRejects(state) } });
 
 // ---------- entry points ----------
@@ -3681,7 +3681,8 @@ function hiveCandidate(state, home, pool) {
   if (!c) return (state.hives || []).some((hv) => knownHive(state, hv.tile)) ? waits("far") : waits("unknown");
   const hive = hiveById(state, c.hiveId);
   if (!hive) return waits("unknown");
-  if (today < P.hiveFrom || today - (g.lastHive ?? -99) < P.hiveRest) return waits("rest");
+  if (today < P.hiveFrom) return waits("early"); // this style starts on the hives from its hiveFrom day
+  if (today - (g.lastHive ?? -99) < P.hiveRest) return waits("rest");
   const size = hiveSquadSize(home.length);
   if (home.length - size < Math.max(HIVE_KEEP, Math.ceil(home.length * P.homeFrac * 0.6))) return waits("home");
   const squad = hiveSquad(pool, size);
@@ -3810,7 +3811,7 @@ export function campaignLine(state) {
   const allies = hiveAllies(state, hive).names.map((n) => n.replace(/ \(\d+\)$/, ""));
   const near = state.factions.filter((f) => f.alive && f.known && !isMember(state, f) && f.bases.some((b) => state.grid.distance(b, hive.tile) <= ALLIANCE.HIVE_RANGE)).map((f) => f.name);
   const WAIT = {
-    rest: "the squad to rest between hive missions", home: "enough people to keep the hub safe while the squad is out", squad: "six fit fighters", ammo: `the ammo stockpile (${baseAmmo(state, h)} of ${target})`,
+    early: `day ${persona(state).hiveFrom}, when this style starts on the hives`, rest: "the squad to rest between hive missions", home: "enough people to keep the hub safe while the squad is out", squad: "six fit fighters", ammo: `the ammo stockpile (${baseAmmo(state, h)} of ${target})`,
     odds: "better odds: a stronger squad, lights, Molotovs and flashbangs for the core, or allies near the mound", fires: "better odds", crawl: "the next crawl trip into the hive", storm: "nothing: the storm goes out", far: "a hive within reach", unknown: "a known hive",
   };
   // A storm or crawl trip picked this morning that could not get away (launchTrip: rations, a car, a way there) is not out.

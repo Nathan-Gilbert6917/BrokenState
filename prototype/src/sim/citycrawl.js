@@ -818,10 +818,12 @@ export function continueLeaving(state, p) {
 }
 function stepLeave(state, p) {
   const c = p.crawl;
+  if (!c) return ""; // the crawl already ended (a team wiped on the way out)
   while (c.leaving && c.leaving.at >= 2) {
     const i = c.leaving.at;
     const risk = exitRisk(state, p).steps[0].p;
     if (!passHours(state, p, i % 2 === 0 ? 1 : 0)) return crawlGoneText(state, p); // half an hour a block
+    if (!p.crawl) return ""; // the hour wiped the team and ended the crawl
     if (c.enc) return ""; // one of you turned (crawlTurned)
     if (state.rng.chance(risk)) {
       c.enc = makeEncounter(state, c, i, { exit: true });
@@ -831,10 +833,11 @@ function stepLeave(state, p) {
     c.leaving.at -= 1;
     c.block = c.leaving.at;
   }
-  return finishCrawl(state, p);
+  return p.crawl ? finishCrawl(state, p) : "";
 }
 function finishCrawl(state, p) {
   const c = p.crawl;
+  if (!c) return "";
   const t = state.tiles[c.tile];
   const mem = memOf(t);
   mem.alert = c.alert;

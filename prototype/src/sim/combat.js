@@ -100,6 +100,8 @@ import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloa
 import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, PACK_REFUSAL } from "./mags.js"; // magazines as items (section 15): spares, reload sources, top-up, internal magazines
 import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
 import { allCarried, carriedSpots } from "./inventory.js";
+import { typesOf, withHand } from "./rounds.js"; // shells and rounds at hand (takeHandRounds)
+import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
@@ -465,6 +467,32 @@ export function winOdds(ratio, enemy = null) {
 }
 
 // Quick statistical resolution, used headless and as a fallback.
+// Rounds a shooter has on them (pockets and rig pouches: the shells a trip packs, carrykit.js packShells) fire when the
+// team's packed supplies fall short of the 6 a head a fight by the numbers draws (2026-10-13: a shotgun team whose
+// shells all sat in pockets fought with none, at 60%, while the odds shown assumed them: tools/crawlbalance.js).
+// Adds what was taken to `drawn` ({ n, used }) and removes it from the stacks.
+function takeHandRounds(drawn, gunners, total) {
+  let short = total - drawn.n;
+  for (const s of gunners) {
+    if (short <= 0) break;
+    const w = s && s.gear && s.gear.weapon;
+    const cal = w ? calOf(w.key) : null;
+    if (!cal) continue;
+    const keys = typesOf(cal).flatMap((t) => withHand(ammoKey(cal, t)));
+    let want = Math.min(short, Math.ceil(total / Math.max(1, gunners.length)));
+    for (const x of carriedSpots(s)) {
+      if (want <= 0) break;
+      if ((x.where !== "pocket" && x.where !== "rig") || !x.item || !keys.includes(x.item.key)) continue;
+      const have = Math.max(0, Math.floor(Number(x.item.dur) || 0));
+      const q = Math.min(want, have);
+      if (q <= 0) continue;
+      x.item.dur = have - q;
+      if (x.item.dur < 1) x.take();
+      drawn.n += q; drawn.used[x.item.key] = (drawn.used[x.item.key] || 0) + q;
+      want -= q; short -= q;
+    }
+  }
+}
 export function autoResolveCombat(state, setup) {
   const people = combatants(state, setup);
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
@@ -491,6 +519,7 @@ export function autoResolveCombat(state, setup) {
     return used;
   };
   const drawn = drawTeamShots(pools, people.filter((s) => !usesArrows(s)), (people.length - archers) * 6);
+  takeHandRounds(drawn, people.filter((s) => !usesArrows(s)), (people.length - archers) * 6);
   const ammoUsed = drawn.n;
   const arrowsUsed = archers ? draw("arrows", archers * 6) : 0;
   const shots = { ammo: drawn.used, arrows: arrowsUsed }; // by key: each calibre's guns judged by their own rounds (world.js armedFactor)

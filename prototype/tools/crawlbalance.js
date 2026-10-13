@@ -19,6 +19,8 @@
 //   --n 6 --weapon ar --armor plate --shoot 8 --health 100 --lights 1 --fire 0 --stun 0 --meds 6 --ammo 300
 //   --trace           print each crawl's log (use with --trials 1 --seed N to follow one run)
 //   --why             hive: also print why each trip ended (won, core too much, too many hurt, alert, turned back, wiped)
+//   --style balanced  the autopilot style whose retreat policy the team fights by (cautious, balanced, aggressive;
+//                     none: fight to the end, a player's team's default)
 //   --json file       write the rows as JSON                  --quiet       only the table
 //   --targets         judge the rows against TARGETS and exit 1 when some are off (for a CI-style check)
 //   --set HCRAWL.NUMBERS.k=120,CRAWL.QUICK.fight=0.25   override tuning numbers for this run (a dotted path under
@@ -31,6 +33,7 @@ import { hiveTier } from "../src/sim/hivetech.js";
 import { settleParty } from "../src/sim/ammo.js";
 import { packShells } from "../src/sim/carrykit.js";
 import { partyMembers } from "../src/sim/parties.js";
+import { STYLE_POLICY } from "../src/sim/breakoff.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { atBase } from "../src/sim/world.js";
 import * as HC from "../src/sim/hivecrawl.js";
@@ -64,8 +67,8 @@ export const TARGETS = {
     // a good squad) is judged: it leaves a deeper street at once, so depth 6 and 8 rows say nothing until the
     // harness has a search policy (docs/crawl-balance.md, next steps). A lost fight by the numbers is lethal (it
     // killed 75% of a team), so even a good squad loses a few percent of its people over two blocks.
-    2: { naked: [0.6, 0.95, 0.35], scrappy: [0.8, 1, 0.22], early: [0.88, 1, 0.18], solid: [0.9, 1, 0.18], rifles: [0.9, 1, 0.18] },
-    4: { naked: [0.5, 0.92, 0.4], scrappy: [0.8, 1, 0.25], early: [0.85, 1, 0.2], solid: [0.88, 1, 0.22], rifles: [0.88, 1, 0.22] },
+    2: { naked: [0.6, 1, 0.35], scrappy: [0.8, 1, 0.22], early: [0.88, 1, 0.18], solid: [0.9, 1, 0.18], rifles: [0.9, 1, 0.18] },
+    4: { naked: [0.5, 1, 0.4], scrappy: [0.8, 1, 0.25], early: [0.85, 1, 0.2], solid: [0.88, 1, 0.22], rifles: [0.88, 1, 0.22] },
   },
 };
 // The day each hive tier opens (hivetech.js hiveTier follows the game's years); a scenario's default day.
@@ -114,6 +117,10 @@ function addSquad(st, L, partyId, dest, mission, supplies) {
   const p = { id: partyId, owner: "player", kind: "expedition", mission, members: people.map((s) => s.id), supplies: { ...supplies }, cargo: { supplies: {}, gear: [] },
     path: [dest], idx: 0, dest, phase: "engaged", seen: new Map(), spotted: new Map(), homeBaseId: hub(st).id, orders: [], stance: "normal" };
   for (const s of people) s.location = { kind: "party", partyId: p.id };
+  // The retreat policy the autopilot's style fights by (breakoff.js STYLE_POLICY; --style none: fight to the end, a
+  // player's team's default). Set on the team, not by turning the autopilot on: the governor would step the crawl too.
+  const style = String(opt("style", "balanced"));
+  if (style !== "none") p.retreatPolicy = STYLE_POLICY[style] || "losing";
   st.parties.push(p);
   settleParty(st, p);
   packShells(p.supplies, people);
