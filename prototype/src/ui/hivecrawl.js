@@ -8,7 +8,7 @@ import { partyMembers, carried } from "../sim/parties.js";
 import { hourOfDay, day, isNight } from "../sim/world.js";
 import { BOSS_NAMES } from "../sim/hiveconst.js";
 import {
-  HCRAWL, ROOM_KINDS, activeHiveCrawl, chamberThreat, roomHeat, crawlHive, denOf, roomById, warmthOf, warmthText, alertName, roomName, broodLeft, exitsOf, draftWord,
+  HCRAWL, ROOM_KINDS, activeHiveCrawl, chamberThreat, roomHeat, crawlHive, denOf, roomById, warmthOf, warmthText, soundOf, soundText, alertName, roomName, broodLeft, exitsOf, draftWord,
   encounterOptions, roomActions, roomAct, resolveHiveEnc, moveTo, leaveHive, stepOut, canMoveOn,
   draftMissHere, teamLights, lightsOn, setLights, flaresOf, listenAt, listenOdds, throwFlare, heardText,
 } from "../sim/hivecrawl.js";
@@ -66,6 +66,7 @@ function chamberLine(state, c, room) {
 }
 
 function hud(state, p, c, den, room, w) {
+  const snd = soundOf(den, room);
   const members = partyMembers(state, p);
   const clockTxt = `Day ${day(state)} ${String(hourOfDay(state)).padStart(2, "0")}:00${isNight(state) ? " · night" : ""}`;
   const found = [...Object.entries(c.tally.supplies).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${keyWord(k)}`), ...c.tally.gear];
@@ -73,6 +74,8 @@ function hud(state, p, c, den, room, w) {
     <div>
       <div class="spread small"><span${tip(`How warm the air is here: the core is the hottest place in the hive. ${den.depth} chambers from the mouth to the core by the shortest way; the deepest you have been: ${c.deepest}.`)}>Warmth <b style="color:${warmColor(w)}">${w}</b>: ${esc(warmthText(w))}</span><span>${clockTxt}</span></div>
       <div class="heat" style="margin:0.25rem 0 0.35rem;background:linear-gradient(90deg, ${warmColor(0)}, ${warmColor(50)}, ${warmColor(100)})"><i style="left:${Math.min(99, w)}%"></i></div>
+      <div class="small"${tip("The Hivemind's beat: louder the nearer the core, through the walls. Beside the core's wall it is loud even where no door opens on your side; the warmth only rises along a way that leads in.")}>Sound <b style="color:${warmColor(snd)}">${snd}</b>: ${esc(soundText(snd))}</div>
+      <div class="heat" style="margin:0.25rem 0 0.35rem;background:linear-gradient(90deg, #2a3040, #8a7aa0, #e0d0ff)"><i style="left:${Math.min(99, snd)}%"></i></div>
       <div class="small"${tip(`The hive's Alert: the noise you have made (fights, fire, a failed sneak), fading ${HCRAWL.ALERT.decay} an hour; lying still lets it fall faster. From ${HCRAWL.ALERT.converge} the brood converges on you and fills the chambers behind you again; from ${HCRAWL.ALERT.block} it packs the mouth.`)}>Alert: <b>${alertName(c.alert)}</b> (${Math.round(c.alert)})</div>
       <div class="heat" style="margin:0.25rem 0 0.2rem"><i style="left:${Math.min(99, c.alert)}%"></i></div>
       ${chamberLine(state, c, room)}
@@ -90,10 +93,13 @@ function hud(state, p, c, den, room, w) {
 // The chambers the team knows: where it has been (coloured by warmth, its kind's initial) and the passages it has seen
 // out of them (fogged "?"). A passage out of the team's chamber is a button.
 function mapSvg(state, p, c, den) {
-  const cols = den.depth + 1, rows = Math.max(2, den.width);
-  const dx = Math.max(34, Math.min(64, 520 / cols)), dy = 34;
+  // The round grid (sim/hivecrawl.js genDen): each chamber where it lies, the mouth just outside the rim. A den from
+  // before the grid: the mouth on the left, its layers to the right.
+  const g = !!den.grid;
+  const cols = g ? den.size + 2 : den.depth + 1, rows = g ? den.size + 2 : Math.max(2, den.width);
+  const dx = g ? Math.max(30, Math.min(46, 520 / cols)) : Math.max(34, Math.min(64, 520 / cols)), dy = g ? dx : 34;
   const Wd = 30 + (cols - 1) * dx + 30, Hd = 24 + (rows - 1) * dy + 24;
-  const pos = (r) => [30 + r.layer * dx, 24 + r.slot * dy + (r.layer % 2 ? 6 : 0)];
+  const pos = (r) => (g ? [30 + (r.x + 1) * dx, 24 + (r.y + 1) * dy] : [30 + r.layer * dx, 24 + r.slot * dy + (r.layer % 2 ? 6 : 0)]);
   const show = (id) => c.visited[id] || c.seen[id];
   const here = roomById(den, c.at);
   const exits = new Set(here.links);
@@ -120,8 +126,9 @@ function mapSvg(state, p, c, den) {
     const circle = `${glow}<circle cx="${x}" cy="${y}" r="${cur ? 13 : 11}" fill="${v ? warmColor(w, 0.95) : h ? "#3a3036" : "#23262c"}" stroke="${cur ? "#fff" : v ? "#2a1a14" : h ? (h.by === "flare" ? "#ff6a3a" : "#c9a24a") : "#6a707a"}" stroke-width="${cur ? 3 : 1.5}" ${v ? "" : 'stroke-dasharray="3 2"'}/><text x="${x}" y="${y + 4}" text-anchor="middle" font-size="11" fill="${v ? "#1a0e0a" : h ? "#f0d8b0" : "#aab"}" style="pointer-events:none;font-weight:bold">${label}</text>`;
     nodes += ex ? `<g data-action="hc-move" data-id="${p.id}" data-room="${r.id}" style="cursor:pointer"><title>${esc(title)} — go there</title>${circle}</g>` : `<g><title>${esc(title)}</title>${circle}</g>`;
   }
-  return `<svg class="hc-map" viewBox="0 0 ${Wd} ${Hd}" style="width:100%;max-height:16rem;background:rgba(0,0,0,0.25);border-radius:6px">${lines}${nodes}</svg>
-    <div class="small muted" style="margin-top:0.2rem">The mouth on the left; the core lies somewhere to the right. Letters: the kind of chamber (M the mouth, T tunnel, G gallery, N nursery, E eggs, B bones, W worm pool, R root, C collapse); ? not explored; a letter with ? heard through the wall, ringed red lit by a flare.</div>`;
+  const rim = g ? `<circle cx="${30 + (den.size / 2 + 0.5) * dx}" cy="${24 + (den.size / 2 + 0.5) * dy}" r="${(den.size / 2) * dx}" fill="none" stroke="#3a3036" stroke-width="1.5" stroke-dasharray="5 4"/>` : ""; // the den's rim
+  return `<svg class="hc-map" viewBox="0 0 ${Wd} ${Hd}" style="width:100%;max-height:${g ? 24 : 16}rem;background:rgba(0,0,0,0.25);border-radius:6px">${rim}${lines}${nodes}</svg>
+    <div class="small muted" style="margin-top:0.2rem">${g ? "The mouth on the rim; the core lies deep in the middle, its walls open on only one or two sides: follow the beat to find it, the drafts to find the way in." : "The mouth on the left; the core lies somewhere to the right."} Letters: the kind of chamber (M the mouth, T tunnel, G gallery, N nursery, E eggs, B bones, W worm pool, R root, C collapse); ? not explored; a letter with ? heard through the wall, ringed red lit by a flare.</div>`;
 }
 
 function roomCard(state, p, c, den, room, w) {
@@ -133,7 +140,7 @@ function roomCard(state, p, c, den, room, w) {
   const miss = draftMissHere(state, p, c);
   const flares = flaresOf(state, p).length;
   const acts = roomActions(state, p);
-  return `<div class="card" style="margin:0;border-color:${warmColor(w, 0.6)}"><b>${esc(roomName(room))}</b><div class="small" style="margin:0.2rem 0">${esc(K.text || "")} The air is ${esc(warmthText(w))}.${n && c.slipped[room.id] ? ` The ${n} of the brood you crept past are still here.` : ""}</div>
+  return `<div class="card" style="margin:0;border-color:${warmColor(w, 0.6)}"><b>${esc(roomName(room))}</b><div class="small" style="margin:0.2rem 0">${esc(K.text || "")} The air is ${esc(warmthText(w))}; ${esc(soundText(soundOf(den, room)))}.${n && c.slipped[room.id] ? ` The ${n} of the brood you crept past are still here.` : ""}</div>
     <div class="row" style="gap:0.35rem;flex-wrap:wrap">${acts.map((a) => `<button data-action="hc-act" data-id="${p.id}" data-act="${a.id}" ${a.disabled ? "disabled" : ""}${tip(a.tip)}>${esc(a.label)}</button>`).join("")}</div></div>
     <h3 style="margin-top:0.5rem">Passages</h3>
     <div class="small muted" style="margin-bottom:0.25rem"${tip(`Your best scout reads the drafts. A team without a good scout misreads one now and then${lightsOn(state, p, c) ? "; your lights help" : teamLights(state, p) ? "; your lights are off" : "; a light would help"}. A passage lit by a flare reads true.`)}>Drafts read right about ${Math.round((1 - miss) * 100)}% of the time${lightsOn(state, p, c) ? " (in your lights)" : ""}.</div>
@@ -149,7 +156,7 @@ function roomCard(state, p, c, den, room, w) {
       const canListen = !x.visited && !(h && (h.by === "listen" || h.q === "exact"));
       const listen = !x.visited ? `<button class="mini" data-action="hc-listen" data-id="${p.id}" data-room="${x.id}" ${canListen ? "" : "disabled"}${tip(canListen ? `Listen at the passage (${HCRAWL.LISTEN.hours} h): your best listener's (Scouting + Stealth) / 2 = ${lo.skill} + d10 against ${lo.dc}. About ${Math.round(lo.rough * 100)}% to make out what lies beyond and roughly how many (${Math.round(lo.exact * 100)}% exactly); else a guess${lo.fumble > 0 ? `, and ${Math.round(lo.fumble * 100)}% a noise that warns them (Alert +${HCRAWL.LISTEN.alert})` : ""}.` : "You have listened there.")}>Listen</button>` : "";
       const flare = !x.visited && !(h && h.by === "flare") ? `<button class="mini" data-action="hc-flare" data-id="${p.id}" data-room="${x.id}" ${flares ? "" : "disabled"}${tip(flares ? `Throw a road flare down it (${flares} left): the chamber beyond lit, its kind and its brood as they are, and the true draft. The brood sees the glare: Alert +${HCRAWL.FLARE.alert}.` : "No road flares.")}>Flare</button>` : "";
-      return `<div class="row small" style="gap:0.4rem;margin:0.15rem 0;align-items:flex-start"><button data-action="hc-move" data-id="${p.id}" data-room="${x.id}" ${dis ? "disabled" : ""}${tip(dis ? "The brood is still in this chamber: fight it, creep past, or go back the way you came." : `About ${HCRAWL.MOVE_HOURS} h through the tunnels. Alert +${HCRAWL.ALERT.move}${lightsOn(state, p, c) ? ` (+${HCRAWL.LIGHT.move} with your lights on)` : ""}.`)}>Go ▸</button><span style="flex:1">${esc(name)}${back}${heard}</span><span style="color:${dcol}">${esc(draftWord(x.draft))}</span>${listen}${flare}</div>`;
+      return `<div class="row small" style="gap:0.4rem;margin:0.15rem 0;align-items:flex-start"><button data-action="hc-move" data-id="${p.id}" data-room="${x.id}" ${dis ? "disabled" : ""}${tip(dis ? "The brood is still in this chamber: fight it, creep past, or go back the way you came." : `About ${HCRAWL.MOVE_HOURS} h through the tunnels. Alert +${HCRAWL.ALERT.move}${lightsOn(state, p, c) ? ` (+${HCRAWL.LIGHT.move} with your lights on)` : ""}.`)}>Go ▸</button><span style="flex:1">${x.dir ? `<span class="muted">${esc(x.dir[0].toUpperCase() + x.dir.slice(1))}:</span> ` : ""}${esc(name)}${back}${heard}</span><span style="color:${dcol}"${tip("The draft: does the air that way come warmer (nearer the core along the passages) or colder?")}>${esc(draftWord(x.draft))}</span><span class="muted"${tip("The Hivemind's beat that way: louder, fainter or the same. It carries through the walls, so it says how near the core is, not that a passage leads in.")}>${x.sound === "louder" ? "🔊 louder" : x.sound === "fainter" ? "🔈 fainter" : "🔉 same"}</span>${listen}${flare}</div>`;
     }).join("")}
     <div class="row" style="margin-top:0.6rem;justify-content:flex-end"><button class="primary" data-action="hc-leave" data-id="${p.id}"${tip(`Back out the way you came, a chamber an hour (${c.trail.length - 1} to the mouth). A chamber that filled again, or one you crept past, is in the way.`)}>Leave the hive${c.trail.length > 1 ? ` (${c.trail.length - 1} chamber${c.trail.length === 2 ? "" : "s"})` : ""}</button></div>`;
 }
