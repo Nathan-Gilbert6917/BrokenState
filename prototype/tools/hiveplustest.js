@@ -286,8 +286,8 @@ console.log("The crawl's record");
   const { p } = squad(st, hv, { scouting: 9, stealth: 8 });
   st.autoCombat = true;
   HC.startHiveCrawl(st, p, hv);
+  const c = p.hiveCrawl || {}; // its log, even if the crawl ends inside the 12 steps (a short way in on the round grid)
   for (let i = 0; i < 12 && p.hiveCrawl && !p.hiveCrawl.leaving; i++) HC.hiveCrawlAutoStep(st, p);
-  const c = p.hiveCrawl || {};
   const r = HC.crawlRecord(st, hv);
   check(r && r.visits === 1 && r.deepest >= 1 && r.mapped >= 2 && r.depth === HC.denOf(st, hv).depth, `after a few chambers: ${HC.crawlRecText(st, hv)}`);
   check(new RegExp(`${hv.name}: ${r.deepest}/${r.depth}`).test(HC.crawlProgressLine(st)), `the Goals card's line: "${HC.crawlProgressLine(st)}"`);

@@ -1917,7 +1917,10 @@ export function hiveCrawlAutoStep(state, p) {
     const num = get("numbers"), sneak = get("sneak");
     // Too many hurt to fight again (a swarm on the heels of a fight in a hot chamber: HCRAWL.THREAT): fall back and out.
     const spent = hurtBad >= 2 || fit < Math.max(2, Math.ceil(members.length / 2));
-    const pick = spent ? (get("back") ? "back" : "out") : num && num.odds >= A.sureOdds ? "numbers" : sneak && sneak.odds >= A.sneakOdds && !c.enc.spotted && !c.leaving ? "sneak" : num && num.odds >= A.fightOdds ? "numbers" : get("back") ? "back" : "out";
+    // On the way out, falling back means deeper again and the same brood in the way next hour (a loop that killed a
+    // hurt team one by one, the round grid's young-hive runs, seed 165): it fights its way out when the odds are fair.
+    const outFight = c.leaving && num && num.odds >= A.fightOdds;
+    const pick = spent && !outFight ? (get("back") ? "back" : "out") : spent ? "numbers" : num && num.odds >= A.sureOdds ? "numbers" : sneak && sneak.odds >= A.sneakOdds && !c.enc.spotted && !c.leaving ? "sneak" : num && num.odds >= A.fightOdds ? "numbers" : get("back") ? "back" : "out";
     resolveHiveEnc(state, p, pick, { map: false });
     if (pick !== "numbers" && pick !== "sneak") { const cc = p.hiveCrawl; if (cc && !cc.enc) cc.leaving = true; }
     return;

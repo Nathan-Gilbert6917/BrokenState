@@ -350,31 +350,39 @@ guard came back, and the team stood in it with the brood there but nothing to an
 refused. The brood coming back now puts them in front of the team (`broodBack`).
 
 Shortest way in (40 seeds; before: exactly the depth): 2.7, 3.8, 4.9, 7.6, 8.6 moves at tiers 0–4 (depths 2, 3, 5, 7,
-9), longer where the door is on the far side. Verified against the round city grid branch without this change
-(`node tools/crawlbalance.js hive --trials 40 --trips 3 --seed 5000`):
+9), longer where the door is on the far side. Verified against dev without this change (the round city grid and PR #3's
+chamber heat merged; `node tools/crawlbalance.js hive --trials 40 --trips 3 --seed 5000`):
 
 | tier | squad | win before → after | lost/squad before → after |
 |---|---|---|---|
-| 1 | early | 0% → 0% | 19% → 19% |
-| 1 | solid | 88% → 85% | 12% → 14% |
-| 1 | rifles | 100% → 98% | 0% → 3% |
-| 2 | early | 0% → 0% | 55% → 50% |
-| 2 | solid | 15% → 10% | 37% → 32% |
-| 2 | rifles | 75% → 88% | 18% → 13% |
-| 3 | solid | 0% → 0% | 57% → 51% |
-| 3 | rifles | 13% → 20% | 36% → 30% |
-| 3 | elite | 45% → 63% | 30% → 29% |
-| 4 | solid | 0% → 0% | 48% → 54% |
-| 4 | rifles | 8% → 13% | 30% → 30% |
-| 4 | elite | 45% → 50% | 42% → 37% |
+| 1 | early | 0% → 0% | 17% → 18% |
+| 1 | solid | 95% → 90% | 10% → 13% |
+| 1 | rifles | 100% → 98% | 1% → 3% |
+| 2 | early | 0% → 0% | 48% → 42% |
+| 2 | solid | 15% → 5% | 37% → 25% |
+| 2 | rifles | 95% → 85% | 7% → 15% |
+| 3 | solid | 0% → 0% | 40% → 51% |
+| 3 | rifles | 10% → 20% | 38% → 32% |
+| 3 | elite | 57% → 75% | 15% → 15% |
+| 4 | solid | 0% → 0% | 47% → 49% |
+| 4 | rifles | 8% → 15% | 35% → 38% |
+| 4 | elite | 48% → 57% | 16% → 26% |
 
-6 of 12 judged rows inside their targets after, 5 before (tier 3 elite now on target). A young hive in one trip by a
-strong squad (`tools/hivecrawltest.js`'s check, 240 seeds): 88% destroyed after against 92% before, 35 dead in all
-against 18. A first cut with the core walled on every tier and passages open at 0.6 made the way in two to three
-times the depth (a young hive 6 moves) and the young hive 69%; a young hive's core now opens toward its mouth.
+7 of 12 judged rows inside their targets after, 5 before (tier 3 elite and tier 4 rifles now on target). Tiers 1–2 are
+a little harder (the way in is longer than the depth there), tiers 3–4 a little easier (shorter). A young hive in one
+trip by a strong squad (`tools/hivecrawltest.js`'s check, 240 seeds): 87% destroyed after against 94% before, 31 dead
+in all against 12 (most of them one person lost in the core fight); `hivecrawltest` seeds 11, 12 and 13 fail that
+check, as they did on dev before. A first cut with the core walled on every tier and passages open at 0.6 made the way
+in two to three times the depth (a young hive 6 moves) and the young hive 69%; a young hive's core now opens toward its
+mouth.
+
+**A second bug the runs found, fixed:** on the way out, an autopilot team too hurt to fight fell back from the brood
+in the mouth, which is deeper, then walked out into the same brood the next hour, over and over, until all six were
+dead (seed 165). On the way out it now fights when the odds are fair.
+
 `tools/hivecrawltest.js` checks the grid, the core's doors, every chamber reachable, the beat through the wall and the
-warmth round it; `hiveplustest`'s flare check now looks over four hives (a den may give no fork); `wintest --force
-hive` still wins on day 31.
+warmth round it; `hiveplustest`'s flare check now looks over four hives (a den may give no fork), and its listening
+check reads the log of a crawl that ended inside its 12 steps; `wintest --force hive` still wins on day 31.
 
 ## Bugs found on the way, and what was done
 

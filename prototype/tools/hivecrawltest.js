@@ -291,7 +291,7 @@ console.log("Brood activity and heat");
   const mouth = HC.roomById(den, den.mouth);
   c.alert = 20; c.heat = { [mouth.id]: 10 };
   check(Math.abs(HC.roomHeat(st, c, mouth, 1.35) - 30 * 1.35) < 1e-9, "a chamber's heat: (Alert + its own heat) × its activity");
-  const room = den.rooms.find((r) => r.layer === 2);
+  const room = den.rooms.find((r) => r.layer >= 2 && r.kind !== "core");
   const dcAt = (mult) => Math.ceil(HC.HCRAWL.SNEAK.dc + HC.HCRAWL.SNEAK.perLayer * room.layer + HC.roomHeat(st, c, room, mult) * HC.HCRAWL.SNEAK.perAlert);
   c.alert = 60;
   check(dcAt(1.8) > dcAt(0.6), `creeping past is harder in a seething chamber than a torpid one at the same Alert (DC ${dcAt(0.6)} → ${dcAt(1.8)}); the window's odds use it (DC ${HC.sneakOdds(st, p, c, room).dc} here)`);
