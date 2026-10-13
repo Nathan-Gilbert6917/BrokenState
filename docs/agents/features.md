@@ -66,7 +66,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Travel event cards** [events].
 - **Discovery and hidden sites**, the Survey mission, rumours, and map markers with last-seen times [discovery, survey, markers].
 - **Abstract scavenging** (hour-by-hour search with rising Heat) [scavenge]. Shared finite loot that AI groups also scavenge [aiscav].
-- **City crawl**: block-by-block roguelike extraction into a city on a grid (left, right or straight; out the way you came or on to another way out), multi-storey buildings with who lives on each floor [citycrawl, floorfolk].
+- **City crawl**: block-by-block roguelike extraction into a city on a round grid of blocks (pick any rim block to start; north, east, south or west from every block; walk yourself back to the rim to get out, a breakout at high Alert), multi-storey buildings with who lives on each floor [citycrawl, floorfolk].
 - **Crash sites and supply drops**, contested [crashes].
 - **Wanderers**: neutral survivors and others met on the road [wanderers].
 - **Optics**: binoculars, thermal imager and others [optics]. **Lights** carried for the dark [lights].
@@ -101,7 +101,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 ## 8. The dead, hives and hordes
 - **Hives** build hordes and must be destroyed to win [hives]. **Hive birth** is visible and can be disrupted [hivebirth].
 - **Hive tech tree**: growths around a hive unlock new dead [hivetech, hiveconst].
-- **Hive crawl**: chamber by chamber down to the Hivemind, through a round grid of chambers (the core deep in it, open on 1–2 sides; the beat through the walls, the warmth along the passages) [hivecrawl, citygrid].
+- **Hive crawl**: chamber by chamber down to the Hivemind, through a round grid of chambers, each open on 3 sides with 1 wall (a hallway with a room off the side), four mouths, one on each side, to pick from and walk back out by (the core deep in it, open on 1–2 sides; the beat through the walls, the warmth along the passages) [hivecrawl, citygrid].
 - **Hordes** with roles (guard, build, attack, roam) that merge on the State Map [hordes].
 - **Special dead**: runners, brutes, spitters (acid pools), screamers, crawlers, elites, a Broodmother [zombietypes, acid]. Mid-game dead such as the Boneback [middead]. Carriers and worm swarms [carriers]. Armoured soldier and riot dead [deadsoldiers]. Sleepers among the bodies [sleepers].
 - **Shepherd's aura** [decoys].
