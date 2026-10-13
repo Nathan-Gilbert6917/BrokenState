@@ -366,7 +366,10 @@ What the runs say (40 trials, seeds 6000+, day 60, autopilot depth 4, balanced r
   crawl work. Switching parts off: no autopilot crawls 41 (horde 121); the autopilot crawling cities but not towns 39
   (horde 96). Towns lie near the hubs and are scavenged often, and crawling them kept teams away long enough to leave
   the bases thin. **Fixed**: the autopilot searches towns hour by hour as before (`scavenge.js`); you can still crawl
-  them. Hive-crawl deaths were unchanged (149 → 150).
+  them. Confirmed by the same census after the fix: end population 39, horde deaths 96. Hive-crawl deaths there were
+  183 (149 before the crawl work, 150 with the town crawls, 190 with no autopilot crawls at all): they follow how many
+  people the hubs keep (more people, more hive trips), and the hive harness rows are unchanged; 12 games cannot say
+  more. Worth watching in the next full census.
 
 ## Bugs found on the way, and what was done
 
