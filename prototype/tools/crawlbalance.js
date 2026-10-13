@@ -252,16 +252,17 @@ export function run() {
     const trips = Number(opt("trips", 1));
     if (!quiet) console.log(`\nHIVE CRAWL (${trials} trials a row, ${trips} trip${trips === 1 ? "" : "s"}; win = the Hivemind dead)`);
     const days = list("day", [null]); // null: the tier's opening day
-    console.log("tier guard squad      n weapon     armor  shoot | win   wiped  lost/sq  hours ammo  depth |");
+    const showDay = days.length > 1;
+    console.log((showDay ? "  day " : "") + "tier guard squad      n weapon     armor  shoot | win   wiped  lost/sq  hours ammo  depth |");
     for (const tier of tiers) for (const guard of guards) for (const day of days) for (const sq of squads) {
       const L = loadoutFrom(sq);
       const rs = [];
       for (let i = 0; i < trials; i++) rs.push(hiveTrial(seed0 + i, { tier, guard, loadout: sq, L, trips, day }));
       const win = avg(rs, (r) => (r.won ? 1 : 0)), share = avg(rs, (r) => r.share), wiped = avg(rs, (r) => (r.wiped ? 1 : 0));
       const j = judge("hive", tier, sq, win, share);
-      const row = { kind: "hive", tier, guard, squad: sq, n: L.n, weapon: L.weapon, armor: L.armor, shoot: L.shoot, trips, win, wiped, lostShare: share, hours: avg(rs, (r) => r.hours), ammo: avg(rs, (r) => r.ammo), depth: avg(rs, (r) => r.depth), ends: tally(rs.flatMap((r) => r.reasons)), mark: j.mark, note: j.note };
+      const row = { kind: "hive", tier, guard, day, squad: sq, n: L.n, weapon: L.weapon, armor: L.armor, shoot: L.shoot, trips, win, wiped, lostShare: share, hours: avg(rs, (r) => r.hours), ammo: avg(rs, (r) => r.ammo), depth: avg(rs, (r) => r.depth), ends: tally(rs.flatMap((r) => r.reasons)), mark: j.mark, note: j.note };
       rows.push(row);
-      console.log(`${String(tier).padStart(3)} ${String(guard).padStart(5)} ${sq.padEnd(10)}${String(L.n).padStart(2)} ${String(L.weapon).padEnd(10)}${String(L.armor || "-").padEnd(6)}${String(L.shoot).padStart(4)}  | ${pct(win)} ${pct(wiped)}   ${pct(share)}  ${row.hours.toFixed(0).padStart(5)} ${row.ammo.toFixed(0).padStart(4)}  ${row.depth.toFixed(0).padStart(3)}   | ${j.mark} ${j.note}`);
+      console.log(`${showDay ? String(day ?? TIER_DAY[tier]).padStart(5) + " " : ""}${String(tier).padStart(3)} ${String(guard).padStart(5)} ${sq.padEnd(10)}${String(L.n).padStart(2)} ${String(L.weapon).padEnd(10)}${String(L.armor || "-").padEnd(6)}${String(L.shoot).padStart(4)}  | ${pct(win)} ${pct(wiped)}   ${pct(share)}  ${row.hours.toFixed(0).padStart(5)} ${row.ammo.toFixed(0).padStart(4)}  ${row.depth.toFixed(0).padStart(3)}   | ${j.mark} ${j.note}`);
       if (flag("why")) console.log(`       trips ended: ${Object.entries(row.ends).map(([k, v]) => `${k} ${v}`).join(", ")}`);
     }
   }

@@ -19,7 +19,8 @@ grid takes 1–4 minutes.
 |---|---|---|
 | hive tier, guard | `--tier 1,2,3,4`, `--guard 80` | the game day defaults to the tier's opening day (400 / 900 / 1600 / 2100); `--day` overrides |
 | trips per scenario | `--trips N`, `--rest D` | between trips the squad heals, restocks and rests D days (chambers refill by `REFILL_DAYS`) |
-| city depth, start block, day | `--depth`, `--block`, `--day` | `--depth` is the autopilot's `CRAWL.AUTO.depth`; `--block` starts the crawl on that block |
+| city depth, start block, day | `--depth`, `--block`, `--day` | `--depth` is the autopilot's `CRAWL.AUTO.depth`; `--block` starts the crawl on a block of that level (the nearest to the entry) |
+| city way out | `--way safer,back,line` | `safer` (the autopilot's: the way with the lowest risk), `back` (the path in) or `line` (the safest straight line to the rim); `CRAWL.AUTO.way` |
 | survivors and gear | `--squad name,…` or `--n --weapon --armor --shoot --health --lights --fire --stun --ammo --meds` | named loadouts in `LOADOUTS`: naked, scrappy, early, hunters, solid, rifles, elite |
 | retreat policy | `--style balanced` | the break-off policy of that autopilot style, set on the team (`none`: fight to the end, a player's default) |
 | tuning numbers | `--set HCRAWL.X.y=…,CRAWL.X.y=…` | overrides a constant for this run only (roots: `HCRAWL`, `HIVEMIND`, `CRAWL`, `EVENTS`) |
@@ -32,7 +33,9 @@ change (and by the dice shifting after any changed decision: read rows in aggreg
 Hive: **win** (the Hivemind dead within `--trips`), **wiped** (nobody left), **lost/sq** (share of the squad lost),
 hours, ammo, den depth, and with `--why` the reason each trip ended (`won`, `core too much`, `too many hurt`, `alert`,
 `turned back`, `wiped`). City: **out** (the team comes back alive), wiped, lost share, hours, loot (supplies + 4 per
-piece of gear), ammo, fights and fights lost.
+piece of gear), ammo, fights and fights lost, and on the round grid **walk** (blocks the team set foot on, the way out's included),
+**line** (the share that left straight out to the rim) and **out lost** (the share of the squad lost after it set off
+for the way out); with `--why` how each crawl ended (`edge`: out from the rim where it stood, `back`, `line`, `wiped`, `stuck`).
 
 The crawls are driven by the autopilot's own steps (`hiveCrawlAutoStep`, `crawlAutoStep`), so the table is "what the
 governor's teams get", which is also what a careful player gets by the numbers. It is **not** a map-play bot: the
@@ -312,14 +315,41 @@ fades as fast as the Alert and a team's size does not add to it. `tools/hivecraw
 heat and its cooling; `tools/wintest.js --force hive` still wins on day 91. (`hivecrawltest` seeds 8, 11, 12 and 13
 fail on dev without this change too: the young-hive and deep-hive autopilot checks are seed-sensitive.)
 
-### The harness, merged from claude/gracious-maxwell-dlp07v
+## Testing the round grid with the harness (2026-10-13)
 
-That branch (the other session) gave the harness `--way` (how the team leaves), lists for `--day` and `--block` (before
-they were read as one number: a list crashed or started at block 1), and columns for how crawls ended (`--why`) and
-the share of the squad lost on the way out. On the round grid `--way` is `safer` (the lowest risk, the autopilot's),
-`back` (the path in) or `line` (the safest straight line to the rim; `CRAWL.AUTO.way`), and `walk` counts the blocks
-the team set foot on. Its findings were on the rectangular grid: the way out moved losses 1–3 points, and a
-fight-to-the-end team (`--style none`) was wiped on 3–20% of deep crawls.
+The harness rates the round grid (`tools/crawlbalance.js`): `--way safer,back,line` forces how the team leaves
+(`CRAWL.AUTO.way`, default `safer`, the autopilot's choice as before), the table gains **walk**, **line** and **out
+lost**, and `--why` says how each city crawl ended. Harness bugs fixed on the way:
+
+- `--day 400,1600` (or `--block 3,4`) crashed or did nothing: the city mode read them with `Number`, so a list was
+  NaN (`--day`: `weather.js iceIndex` of NaN, a TypeError; `--block`: silently block 1). Both are lists now, as the
+  usage says, and so is the hive's `--day`.
+- Two tests still set `c.block` and called `genBlock(state, c, n)` the pre-grid way, which on the round grid makes a
+  block keyed by the number while the team stands on its entry cell: `floorfolktest` (2 checks failed) and
+  `storeytest` (crashed). Both now `jumpToLevel`; a city with no block that deep is a test-setup failure, not a
+  silent fallback (seed 48 has no level 6, so that check is at 5, the same storey bonus).
+
+With defaults the table is exactly the round-grid branch's (same seeds, same numbers; 11 of 11 judged rows inside).
+What the runs say (40 trials, seeds 6000+, day 60, autopilot depth 4, balanced retreat policy unless said):
+
+| squad | safer: lost / out lost / line | back: lost / out lost | line: lost / out lost / walk |
+|---|---|---|---|
+| scrappy (5) | 9% / 0% / 25% | 9% / 0% | 9% / 0% / 3.4 |
+| solid (6) | 13% / 3% / 20% | 13% / 3% | 15% / 5% / 8.2 |
+| rifles (6) | 18% / 3% / 18% | 18% / 3% | 24% / 9% / 13.0 |
+| elite (8) | 29% / 11% / 3% | 29% / 11% | 34% / 16% / 16.7 |
+
+- **The autopilot's pick is right.** Straight out to the rim from 3–4 deep is a long walk (13–17 blocks for rifles and
+  elite against 7–8 back) through unknown streets, and forcing it costs 2–6 points of the squad; the autopilot takes
+  it only where it is short (a quarter of crawls for weak teams near the rim, 3% for elite). Back the way you came is
+  as safe as `safer`.
+- **A player's team (`--style none`, fight to the end) is wiped on 8–15% of crawls** at every size, 23–42% of the
+  squad lost, every row over its line. This is finding 5 below: a design call (the player's default retreat policy),
+  left alone.
+- **Later days** (`--day 400,1600`): all 12 rows inside; the loot by weight falls as the city is picked over, its
+  value holds (dearer finds).
+- **Starting deep** (`--block 3,4`): from level 4 the team leaves straight out to the rim 65–80% of the time (it is
+  nearer than the way in from the entry); elite brings home 472–508 for 18–22% lost against 425 for 29% from the rim.
 
 ## Scenario runs after the merges (2026-10-13)
 
@@ -361,8 +391,8 @@ fight-to-the-end team (`--style none`) was wiped on 3–20% of deep crawls.
    kills most of the team; the odds shown are honest, but "a 90% fight" reads safer than "a 10% chance to lose most
    of the team". A default of `losing` for player teams, or a line on the encounter card, would be the fix; it is a
    design call, left alone.
-6. **Open: the harness cannot rate deep city blocks.** Starting on block 4+ makes the autopilot leave at once; it
-   needs a search policy (below).
+6. **Fixed by the autopilot's plan (`autoDepth`): the harness can rate deep city blocks.** `--block 4` crawls and
+   searches there (see "Testing the round grid" above).
 
 The hive crawl does not use the break-off policy (its chambers have their own fight model), so its tables above
 stand. Medical levers tried on top (`--meds 12`, `AUTO.treat` 85, `AUTO.hurt` 35) moved nothing beyond the noise either.
