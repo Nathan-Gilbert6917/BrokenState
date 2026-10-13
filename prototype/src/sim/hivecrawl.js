@@ -5,12 +5,14 @@
 // late game nine (DEPTH by hivetech.js hiveTier; a screamer spire grows it one deeper).
 //
 // The den (hive.den, made on first look from the world's seed and the hive: the same chambers every visit; regrown when
-// the hive's tier deepens it) is a layered graph: the mouth, 2–4 chambers a layer, the core. Two routes that share no
-// chamber run from the mouth to the core, with side branches, dead ends, pockets and lateral passages that make loops,
-// so there is a real choice of which way to go round. Every chamber has a kind (tunnels, galleries, nurseries, egg
-// chambers, bone pits, worm pools, the roots of the hive's growths, collapses) and a warmth from its distance to the
-// core: the core is the hottest place in the hive, and each passage carries a draft that says whether it leads warmer
-// or colder (a team with poor Scouting misreads one now and then: the visit's own dice, hash01, never the world's).
+// the hive's tier deepens it) is a round grid, as the city crawl's (2026-10-13): rings of chambers in from the rim
+// where the mouth opens, passages to the chambers beside them, some shut. One chamber of the innermost rings is the
+// core, and it opens on only 1 or 2 of its sides. Every chamber has a kind (tunnels, galleries, nurseries, egg chambers, bone pits,
+// worm pools, the roots of the hive's growths, collapses), a warmth from its distance to the core along the passages
+// and a sound, the Hivemind's beat, from its distance through the walls: the beat says how near the core is, the
+// warmth which way leads into it. Each passage carries a draft that says whether it leads warmer or colder (a team
+// with poor Scouting misreads one now and then: the visit's own dice, hash01, never the world's) and the beat louder
+// or fainter.
 // The brood in a chamber grows with its depth (more of them, tougher, the special dead and the elite deeper; the
 // chambers next to the core are the worst) and with the hive's guard horde (hives.js hiveGuard): the guard is the brood
 // spread through the den, so each one killed inside takes its share of the guard (cutGuard), and a guard thinned by a
@@ -73,14 +75,17 @@ import { spreadMult } from "./data-ammo.js";
 import { SHELLS, usesInternal } from "./mags.js";
 import { gunMods } from "./gunmods.js";
 import { calOf } from "./ammo.js";
+import { cellsOf, ringOf, entryOf, DIRS, DIR_NAMES } from "./citygrid.js"; // the den's round grid, as the city's
 import { typeFor, keyFor, withHand } from "./rounds.js";
 
 // ---------- tuning ----------
 export const HCRAWL = {
-  DEPTH: [2, 3, 5, 7, 9],       // chambers from the mouth to the core room on the shortest way (moves), by hive tier 0–4
+  DEPTH: [2, 3, 5, 7, 9],       // rings from the den's rim to its heart, where the core lies (genDen), by hive tier 0–4
   SPIRE_DEPTH: 1,               // a screamer spire grown at the hive makes it one deeper
-  WIDTH: [[2, 2], [2, 3], [2, 3], [2, 4], [3, 4]], // chambers in each layer between the mouth and the core, by tier
-  FORWARD: 0.5, LATERAL: 0.3, CROSS: 0.2, POCKET: 0.4, CORE_EXTRA: 0.35, // the den's extra passages and side pockets
+  // The round grid (genDen, 2026-10-13): rings × the depth rings from rim to heart, at least 2 (a young hive 3 chambers
+  // across, the oldest 11: the shortest way in about as long as `depth`, with the core's walls to go round); a passage between two chambers side by side is open at `open` (the hive's dice; a cut-off chamber gets
+  // one opened); the core opens on 2 of its sides at `doors` (by tier: a young hive's always on 2), else on 1.
+  GRID: { rings: 0.65, open: 0.85, doors: [1, 0.75, 0.5, 0.5, 0.5] },
   MOVE_HOURS: 1, TREAT_HOURS: 1, FIGHT_HOURS: 1, SNEAK_HOURS: 1, SEARCH_HOURS: 1, BURN_HOURS: 1, LIE_HOURS: 2, BACK_HOURS: 1,
   // The brood in a chamber: (base + perLayer × its layer) × its kind's share × the guard's scale (√(guard / guardRef),
   // within scale), between min and max; × nearCore next to the core. Their power: the hive's brood (hives.js
@@ -254,85 +259,101 @@ export function denDepth(state, hive) {
   const t = clamp(hiveTier(state, hive), 0, HCRAWL.DEPTH.length - 1);
   return HCRAWL.DEPTH[t] + (hiveMods(state, hive).spire ? HCRAWL.SPIRE_DEPTH : 0);
 }
+const DEN_V = 2; // 2: the grid (2026-10-13); 1: the layered web before it (an old save's den is made again as a grid)
 // The hive's den, made on first use (and again, keeping what it remembers, when the hive has grown deeper).
 export function denOf(state, hive) {
   const depth = denDepth(state, hive);
-  if (hive.den && hive.den.v === 1 && hive.den.depth === depth) return hive.den;
+  if (hive.den && hive.den.v === DEN_V && hive.den.depth === depth) return hive.den;
   // Not while a team is inside: its chamber, trail and the chambers it has seen are this den's (the progression census
   // of 2026-10-09, seed 6002: a hive reached tier 1 with a team in a side pocket that the deeper den does not have,
   // and the crawl crashed on the missing chamber). It deepens once the team is out.
-  if (hive.den && hive.den.v === 1 && state.parties.some((p) => p.hiveCrawl && p.hiveCrawl.hiveId === hive.id)) return hive.den;
-  const grew = !!hive.den;
+  // A den from before the grid (v 1) is the same: it becomes a grid once the team is out.
+  if (hive.den && state.parties.some((p) => p.hiveCrawl && p.hiveCrawl.hiveId === hive.id)) return hive.den;
+  const old = hive.den, grew = !!old && old.depth !== depth;
   hive.den = genDen(state, hive, depth, clamp(hiveTier(state, hive), 0, 4));
-  if (grew) {
-    hive.den.grew = state.hour;
-    if (hive.crawlRec) { hive.crawlRec.mapped = {}; hive.crawlRec.core = false; hive.crawlRec.coreHeard = false; hive.crawlRec.grew = day(state); } // its chambers are new: the map starts again
+  if (old) {
+    if (grew) hive.den.grew = state.hour;
+    if (hive.crawlRec) { hive.crawlRec.mapped = {}; hive.crawlRec.core = false; hive.crawlRec.coreHeard = false; if (grew) hive.crawlRec.grew = day(state); } // its chambers are new: the map starts again
   }
   return hive.den;
 }
 export const roomById = (den, id) => den.rooms.find((r) => r.id === id) || null;
 // The den's chambers and passages, by the world's seed and the hive (no state dice): the same den every visit.
+// A round grid (2026-10-13, as the city crawl's, citygrid.js): a square with its corners cut away in a curve, GRID.rings
+// × depth rings from its rim to its heart. A chamber's layer is its ring scaled to the depth (1 on the rim, `depth` at
+// the heart): what the brood reads. The mouth
+// opens onto one chamber of the rim, on a side of the hive's dice. A passage runs to each of the four chambers beside,
+// above or below, open at GRID.open (the hive's dice), never so few that a chamber cannot be reached. One chamber of
+// the innermost rings is the core, and only 1 or 2 of its sides open (GRID.doors); the rest is wall. Its sound carries
+// through the walls (soundOf: the grid distance), its warmth only along the passages (warmthOf: the walking distance),
+// so a team beside the wrong wall hears the Hivemind beat right there and has to find the way round to a door.
 export function genDen(state, hive, depth, tier) {
+  const G = HCRAWL.GRID;
   const rng = new Rng(seedOf(state.seed, "hiveden", hive.id, hive.tile, depth));
-  const rooms = [];
-  const add = (id, layer, slot, kind = null, pocket = false) => { const r = { id, layer, slot, kind, links: [], dist: 0, pocket }; rooms.push(r); return r; };
+  const rings = Math.max(2, Math.round(depth * G.rings)), size = 2 * rings - 1;
+  const g = { size, r: size / 2 };
+  const rooms = [], at = new Map();
+  const key = (x, y) => `${x}_${y}`;
+  const add = (id, layer, x, y, kind = null) => { const r = { id, layer, slot: x, x, y, kind, links: [], dist: 0, gd: 0, pocket: false }; rooms.push(r); at.set(key(x, y), r); return r; };
   const link = (a, b) => { if (!a || !b || a === b || a.links.includes(b.id)) return; a.links.push(b.id); b.links.push(a.id); };
-  const mouth = add("m", 0, 0, "mouth");
-  const layers = [[mouth]];
-  const [wlo, whi] = HCRAWL.WIDTH[tier];
-  for (let L = 1; L < depth; L++) {
-    const w = rng.int(wlo, whi), row = [];
-    for (let s = 0; s < w; s++) row.push(add(`r${L}-${s}`, L, s));
-    layers.push(row);
+  const cell = (x, y) => at.get(key(x, y)) || null;
+  // The core: in the innermost rings (the heart alone in a small den).
+  const cells = cellsOf(g);
+  const inner = Math.max(...cells.map(([x, y]) => ringOf(g, x, y)));
+  const deep = cells.filter(([x, y]) => ringOf(g, x, y) >= Math.max(Math.min(2, inner), inner - 1));
+  const [cx, cy] = deep[rng.int(0, deep.length - 1)];
+  // The mouth: outside the rim, onto a rim chamber on a side of the hive's dice.
+  const entry = entryOf(g, rng.next() * Math.PI * 2, 0.5);
+  const [ox, oy] = DIRS[entry.heading];
+  const mouth = add("m", 0, entry.x - ox, entry.y - oy, "mouth");
+  // A chamber's layer (the brood's depth): its ring, scaled so the heart is `depth` deep.
+  const layerOf = (x, y) => clamp(Math.round((ringOf(g, x, y) * depth) / inner), 1, depth);
+  for (const [x, y] of cells) add(x === cx && y === cy ? "core" : `h${x}_${y}`, layerOf(x, y), x, y, x === cx && y === cy ? "core" : null);
+  const core = cell(cx, cy);
+  link(mouth, cell(entry.x, entry.y));
+  // The passages between chambers (not the core's: its doors come after).
+  for (const [x, y] of cells) {
+    const r = cell(x, y);
+    if (r === core) continue;
+    for (const o of [cell(x + 1, y), cell(x, y + 1)]) if (o && o !== core && o !== mouth && rng.chance(G.open)) link(r, o);
   }
-  const core = add("core", depth, 0, "core");
-  layers.push([core]);
-  // Two routes from the mouth to the core that share no chamber.
-  let a = mouth, b2 = mouth;
-  const spine = new Set();
-  for (let L = 1; L < depth; L++) {
-    const row = layers[L];
-    const ia = rng.int(0, row.length - 1), ib = (ia + 1 + rng.int(0, row.length - 2)) % row.length;
-    link(a, row[ia]); link(b2, row[ib]);
-    a = row[ia]; b2 = row[ib];
-    spine.add(a.id); spine.add(b2.id);
-  }
-  link(a, core); link(b2, core);
-  // The rest: each chamber reached from the layer before, a way on now and then (else a dead end).
-  for (let L = 1; L < depth; L++) {
-    for (const r of layers[L]) {
-      if (spine.has(r.id)) continue;
-      link(r, rng.pick(layers[L - 1]));
-      if (rng.chance(HCRAWL.FORWARD)) link(r, L + 1 < depth ? rng.pick(layers[L + 1]) : rng.chance(HCRAWL.CORE_EXTRA) ? core : null);
-    }
-  }
-  // Passages within a layer (loops) and across the routes.
-  for (let L = 1; L < depth; L++) {
-    const row = layers[L];
-    for (let s = 0; s + 1 < row.length; s++) if (rng.chance(HCRAWL.LATERAL)) link(row[s], row[s + 1]);
-    if (L + 1 < depth && rng.chance(HCRAWL.CROSS)) link(rng.pick(row), rng.pick(layers[L + 1]));
-  }
-  // Side pockets: a dead-end chamber off one of the layer's.
-  for (let L = 1; L < depth; L++) if (rng.chance(HCRAWL.POCKET)) link(add(`p${L}`, L, layers[L].length, null, true), rng.pick(layers[L]));
-  // Distances to the core (the warmth), the way on (dead ends), and the kinds.
+  // Every chamber reachable from the mouth (not through the core): a shut passage opens where one is cut off.
   const byId = new Map(rooms.map((r) => [r.id, r]));
-  for (const r of rooms) r.dist = Infinity;
+  const nb = (r) => DIRS.map(([dx, dy]) => cell(r.x + dx, r.y + dy)).filter((o) => o && o !== core && o !== mouth);
+  for (;;) {
+    const seen = new Set([mouth.id]), q = [mouth];
+    while (q.length) { const r = q.shift(); for (const id of r.links) { if (id === core.id || seen.has(id)) continue; seen.add(id); q.push(byId.get(id)); } }
+    const cut = rooms.filter((r) => r !== core && !seen.has(r.id));
+    if (!cut.length) break;
+    const edge = cut.flatMap((r) => nb(r).filter((o) => seen.has(o.id)).map((o) => [r, o]));
+    const [a, b] = edge[rng.int(0, edge.length - 1)];
+    link(a, b);
+  }
+  // The core's doors: 1 or 2 of its sides.
+  const sides = DIRS.map(([dx, dy]) => cell(cx + dx, cy + dy)).filter((o) => o && o !== mouth);
+  const doors = Math.min(sides.length, rng.chance(G.doors[clamp(tier, 0, G.doors.length - 1)]) ? 2 : 1);
+  // A young hive (tier 0) is still being dug: its core opens toward the mouth (the side nearest the way in).
+  const toward = tier === 0 ? sides.reduce((a, o) => (Math.abs(o.x - entry.x) + Math.abs(o.y - entry.y) < Math.abs(a.x - entry.x) + Math.abs(a.y - entry.y) ? o : a), sides[0]) : null;
+  for (let i = 0; i < doors; i++) link(core, sides.splice(i === 0 && toward ? sides.indexOf(toward) : rng.int(0, sides.length - 1), 1)[0]);
+  // Distances to the core: along the passages (the warmth) and through the walls (the sound).
+  for (const r of rooms) { r.dist = Infinity; r.gd = Math.abs(r.x - cx) + Math.abs(r.y - cy); }
   core.dist = 0;
   const q = [core];
   while (q.length) { const r = q.shift(); for (const id of r.links) { const n = byId.get(id); if (n.dist > r.dist + 1) { n.dist = r.dist + 1; q.push(n); } } }
+  // The kinds: a chamber with one passage is a dead end (bone pits, eggs, collapses).
   const growths = growthsOf(state, hive);
   let gi = 0;
   for (const r of rooms) {
     if (r.kind) continue;
-    const on = r.links.some((id) => byId.get(id).layer > r.layer);
-    r.dead = !on;
-    const w = on
+    r.dead = r.links.length <= 1;
+    const w = !r.dead
       ? { tunnel: 3, gallery: 2.5, nursery: r.layer >= 2 ? 1.5 : 0.4, pool: r.layer >= 2 ? 1 : 0.3, eggs: 1, growth: growths.length ? 1.2 : 0, bones: 0.6 }
       : { bones: 2, eggs: 1.5, collapse: 1.5, pool: 1, nursery: 0.5, growth: growths.length ? 0.8 : 0 };
     r.kind = rng.weighted(Object.keys(w), (k) => w[k]);
-    if (r.kind === "growth") { const g = growths[gi++ % growths.length]; r.gid = g.id; r.gkind = g.kind; }
+    if (r.kind === "growth") { const gr = growths[gi++ % growths.length]; r.gid = gr.id; r.gkind = gr.kind; }
   }
-  return { v: 1, depth, tier, mouth: mouth.id, core: core.id, width: Math.max(...layers.map((l) => l.length)) + 1, rooms };
+  const far = Math.max(...rooms.map((r) => r.dist)), farGd = Math.max(...rooms.map((r) => r.gd));
+  return { v: 2, grid: true, depth, tier, size, rings: inner, coreRing: ringOf(g, cx, cy), far, farGd, coreAt: { x: cx, y: cy }, doors, mouth: mouth.id, core: core.id, width: size, rows: size, rooms };
 }
 // The chamber next to the core (its brood is the worst).
 const nearCore = (den, room) => room.links.includes(den.core);
@@ -348,8 +369,21 @@ export function shortestPath(den, fromId = den.mouth) {
   }
   return out;
 }
-// Warmth 0–100: the core 100, falling with the distance to it (the mouth 100 / (depth + 1)).
-export const warmthOf = (den, room) => (room ? clamp(Math.round(100 * (1 - room.dist / (den.depth + 1))), 0, 100) : 0);
+// Warmth 0–100: the core 100, falling with the distance to it along the passages.
+// On the grid the scale is the farthest chamber's distance (den.far), so every step toward the core is warmer.
+export const warmthOf = (den, room) => (room ? clamp(Math.round(100 * (1 - room.dist / ((den.far ?? den.depth) + 1))), 0, 100) : 0);
+// Sound 0–100: the Hivemind's beat through the flesh, by the grid distance to the core (through the walls: a chamber
+// beside the core's wall hears it loud whether or not a door is on its side). A den from before the grid: the warmth.
+export const soundOf = (den, room) => (room ? clamp(Math.round(100 * (1 - (room.gd ?? room.dist) / ((den.farGd ?? den.far ?? den.depth) + 1))), 0, 100) : 0);
+export function soundText(v) {
+  return v >= 90 ? "the beat is all around you, so close the walls shake with it" : v >= 70 ? "a heavy beat, loud through the wall" : v >= 50 ? "a slow beat you feel in your teeth" : v >= 30 ? "a dull beat somewhere ahead" : "a faint, slow beat, far off";
+}
+// Which way a passage goes on the grid: "north", "east", "south" or "west" (citygrid.js DIR_NAMES); "" off the grid.
+export function passageDir(den, from, to) {
+  if (!den.grid || !from || !to) return "";
+  const i = DIRS.findIndex(([dx, dy]) => to.x - from.x === dx && to.y - from.y === dy);
+  return i >= 0 ? DIR_NAMES[i] : "";
+}
 export function warmthText(w) {
   return w >= 90 ? "the walls sweat and the air is hot and thick; something vast beats close by" : w >= 70 ? "hot: the walls pulse under your hand" : w >= 50 ? "warm as breath" : w >= 30 ? "close and clammy" : "cool and damp";
 }
@@ -455,6 +489,7 @@ export function hiveCrawlOf(state, p) {
   if (!state.parties.includes(p) || !partyMembers(state, p).length || partyTile(p) !== c.tile) { delete p.hiveCrawl; return null; }
   if (!hiveById(state, c.hiveId)) { crawlGone(state, p); return null; }
   if (p.phase !== "engaged") p.phase = "engaged";
+  broodBack(state, c);
   return c;
 }
 // The hive is gone with the team inside (its Hivemind killed by an AI group's war party, or taken off the map some
@@ -528,7 +563,9 @@ function enterRoom(state, p, c, room, from) {
   }
   const n = broodLeft(state, hive, room);
   const K = ROOM_KINDS[room.kind];
-  const look = `${roomName(room)}: ${fresh ? K.text + " " : ""}The air is ${warmthText(warmthOf(den, room))}.`;
+  // The core's wall beside you with no door on this side (the grid): the beat through the flesh, and no way through.
+  const wall = den.grid && room.gd === 1 && !room.links.includes(den.core) ? " The beat comes through the wall right beside you, but there is no way through on this side." : "";
+  const look = `${roomName(room)}: ${fresh ? K.text + " " : ""}The air is ${warmthText(warmthOf(den, room))}; ${soundText(soundOf(den, room))}.${wall}`;
   if (n > 0 && !c.slipped[room.id]) {
     const heat = roomHeat(state, c, room); // HCRAWL.THREAT: the chamber's activity × its heat
     const spotted = (c.warned && c.warned[room.id]) || (heat >= 50 && hash01(state.seed, "hcspot", c.hiveId, room.id, c.visit, state.hour) < (heat - 40) / 100); // warned: a listener they heard
@@ -551,6 +588,19 @@ function passHours(state, p, hours) {
     converge(state, p, c);
   }
   return true;
+}
+// The guard back at the hive (it was away when the team came in, the chamber empty): its brood fills the chamber the
+// team stands in again, and they are in front of it (checked whenever the crawl is looked at,
+// hiveCrawlOf); else the team stood stuck in a chamber with brood and no answer to them.
+function broodBack(state, c) {
+  if (c.enc || state.combat || c.leaving) return;
+  const hive = crawlHive(state, c);
+  const room = hive && roomById(denOf(state, hive), c.at);
+  if (!room || room.kind === "core" || c.slipped[room.id]) return;
+  const n = broodLeft(state, hive, room);
+  if (n <= 0) return;
+  c.enc = { kind: "brood", room: room.id, back: c.from, spotted: false };
+  say2(c, `The brood comes back into ${roomThe(room)} around you: ${n} of them.`, "danger", state.hour);
 }
 // Noise: the hive's Alert, and the chamber it was made in (at) keeps its own heat (HCRAWL.HEAT).
 const addAlert = (c, v, at = c.at) => {
@@ -596,8 +646,8 @@ function converge(state, p, c) {
   }
 }
 
-// The passages out of the team's chamber: { id, room (null: not been there), draft (as the team reads it), visited,
-// dist (the real one, for the tools) }.
+// The passages out of the team's chamber: { id, room (null: not been there), draft (as the team reads it), sound (the
+// beat louder, fainter or the same that way), dir (deeper, back, left, right on the grid), visited, back, core, heard }.
 export function exitsOf(state, p) {
   const c = hiveCrawlOf(state, p);
   if (!c) return [];
@@ -606,7 +656,8 @@ export function exitsOf(state, p) {
   const here = roomById(den, c.at);
   return here.links.map((id) => {
     const r = roomById(den, id);
-    return { id, room: c.visited[id] ? r : null, kind: c.visited[id] ? r.kind : null, draft: draftOf(state, p, c, den, here, r), visited: !!c.visited[id], back: id === c.from, core: id === den.core && !!c.visited[id], heard: (c.heard && c.heard[id]) || null };
+    const ds = soundOf(den, r) - soundOf(den, here); // the beat that way: louder, fainter or the same (heard true)
+    return { id, room: c.visited[id] ? r : null, kind: c.visited[id] ? r.kind : null, draft: draftOf(state, p, c, den, here, r), sound: ds > 0 ? "louder" : ds < 0 ? "fainter" : "same", dir: passageDir(den, here, r), visited: !!c.visited[id], back: id === c.from, core: id === den.core && !!c.visited[id], heard: (c.heard && c.heard[id]) || null };
   });
 }
 // The draft from a passage as the team reads it: warmer, colder or level; misread now and then by a team without a
@@ -1866,7 +1917,10 @@ export function hiveCrawlAutoStep(state, p) {
     const num = get("numbers"), sneak = get("sneak");
     // Too many hurt to fight again (a swarm on the heels of a fight in a hot chamber: HCRAWL.THREAT): fall back and out.
     const spent = hurtBad >= 2 || fit < Math.max(2, Math.ceil(members.length / 2));
-    const pick = spent ? (get("back") ? "back" : "out") : num && num.odds >= A.sureOdds ? "numbers" : sneak && sneak.odds >= A.sneakOdds && !c.enc.spotted && !c.leaving ? "sneak" : num && num.odds >= A.fightOdds ? "numbers" : get("back") ? "back" : "out";
+    // On the way out, falling back means deeper again and the same brood in the way next hour (a loop that killed a
+    // hurt team one by one, the round grid's young-hive runs, seed 165): it fights its way out when the odds are fair.
+    const outFight = c.leaving && num && num.odds >= A.fightOdds;
+    const pick = spent && !outFight ? (get("back") ? "back" : "out") : spent ? "numbers" : num && num.odds >= A.sureOdds ? "numbers" : sneak && sneak.odds >= A.sneakOdds && !c.enc.spotted && !c.leaving ? "sneak" : num && num.odds >= A.fightOdds ? "numbers" : get("back") ? "back" : "out";
     resolveHiveEnc(state, p, pick, { map: false });
     if (pick !== "numbers" && pick !== "sneak") { const cc = p.hiveCrawl; if (cc && !cc.enc) cc.leaving = true; }
     return;
@@ -1884,9 +1938,9 @@ export function hiveCrawlAutoStep(state, p) {
   const den = denOf(state, hive);
   if (search && crawlRoom(state, c).kind === "bones") { roomAct(state, p, "search"); return; }
   if (!canMoveOn(state, c)) { leaveHive(state, p); return; }
-  // Two or more ways on that do not read colder and that it knows nothing of: a good listener listens at the first
-  // (an hour), else a flare goes down it while the hive is quiet (the window's Listen and Flare).
-  const unknown = exitsOf(state, p).filter((x) => !x.visited && !x.heard && x.draft !== "colder").sort((a, b) => a.id.localeCompare(b.id));
+  // Two or more ways on that do not read colder (or where the beat is louder) and that it knows nothing of: a good
+  // listener listens at the first (an hour), else a flare goes down it while the hive is quiet (Listen and Flare).
+  const unknown = exitsOf(state, p).filter((x) => !x.visited && !x.heard && (x.draft !== "colder" || x.sound === "louder")).sort((a, b) => a.id.localeCompare(b.id));
   if (unknown.length >= 2 && heat < A.lie - 10) {
     if (listener(state, p).v >= HCRAWL.LISTEN.auto) { listenAt(state, p, unknown[0].id); return; }
     if (heat < 40 && flaresOf(state, p).length) { throwFlare(state, p, unknown[0].id); return; }
@@ -1895,17 +1949,18 @@ export function hiveCrawlAutoStep(state, p) {
   if (!next) { leaveHive(state, p); return; }
   moveTo(state, p, next);
 }
-// The next chamber on the autopilot's way: a passage with a warmer draft it has not taken, else any it has not taken
-// (not back), else the first step toward the nearest chamber it knows of and has not been in.
+// The next chamber on the autopilot's way: a passage it has not taken with a warmer draft or a louder beat (both
+// first), else a level one, else the first step toward the nearest chamber it knows of and has not been in.
 function autoNext(state, p, c, den) {
   const ex = exitsOf(state, p).filter((x) => !(x.visited && x.room && (x.room.kind === "collapse" || x.room.dead && !ROOM_KINDS[x.room.kind].burn && !ROOM_KINDS[x.room.kind].search)));
   const fresh = ex.filter((x) => !x.visited && !(x.heard && x.heard.q !== "vague" && x.heard.kind === "collapse")); // heard or lit: a dead end
   // What it knows of a way on (listening, a flare): the core first, then the fewest of the brood; unknown ones as 6.
   const est = (x) => (!x.heard ? 6 : x.heard.kind === "core" && x.heard.q !== "vague" ? -1 : x.heard.q === "exact" ? x.heard.n : (x.heard.lo + x.heard.hi) / 2);
-  const warm = fresh.filter((x) => x.draft === "warmer");
-  if (warm.length) return warm.sort((a, b) => est(a) - est(b) || a.id.localeCompare(b.id))[0].id;
-  const level = fresh.filter((x) => x.draft === "level");
-  if (level.length) return level[0].id;
+  // A way on that reads warmer, level, or where the beat is louder (heard true, through the walls: a draft that reads
+  // colder may be misread): warmer and louder first, then warmer, then louder against the draft, then level.
+  const score = (x) => (x.draft === "warmer" ? 0 : x.draft === "level" ? 0.6 : 1) + (x.sound === "louder" ? 0 : x.sound === "same" ? 0.5 : 1);
+  const on = fresh.filter((x) => x.draft !== "colder" || x.sound === "louder").sort((a, b) => (est(a) < 0 ? -1 : score(a)) - (est(b) < 0 ? -1 : score(b)) || est(a) - est(b) || a.id.localeCompare(b.id));
+  if (on.length) return on[0].id;
   // Known chambers: a breadth-first walk over the chambers the team has been in to the nearest unexplored passage.
   const start = c.at, prev = new Map([[start, null]]), q = [start];
   let goal = null;
@@ -2023,7 +2078,7 @@ function groupPrep(state, fid) {
 
 // ---------- help ----------
 export const HIVE_CRAWL_HELP = `A hive is destroyed from the inside. Send a team with the <b>Destroy hive</b> mission and choose <b>Enter the hive</b> on its card: the team crawls through the hive chamber by chamber, from the mouth to the <b>core room</b>, where the <b>${BOSS_NAMES.hivemind}</b> sits, the organ that thinks for the hive. Kill it and the hive dies, its brood with it. A young hive is shallow (${HCRAWL.DEPTH[0]} chambers from the mouth to the core); every tier it grows makes it deeper (${HCRAWL.DEPTH.join(", ")} by tier, one more with a screamer spire): the crawl is the mid and late game's work.<br>
-<b>Finding the way.</b> The chambers form a web: at least two routes run to the core, with side branches, dead ends and loops. You see the passages out of every chamber you have been in; what lies beyond is dark until you go. The core is the hottest place in the hive: every chamber has a <b>warmth</b> (the gauge, and the air: <i>cool and damp</i>, <i>close and clammy</i>, <i>warm as breath</i>, <i>hot</i>, <i>the walls sweat</i>), and every passage a draft, <i>warmer</i> or <i>colder</i>. A team without a good scout misreads a draft now and then (${Math.round(HCRAWL.DRAFT.miss * 100)}% less ${Math.round(HCRAWL.DRAFT.perScout * 1000) / 10} a point of the best Scouting). The deeper, the louder and faster the hive's pulse and the warmer its drone (the mixer's <i>Hive crawl pulse</i>), and the redder the window.<br>
+<b>Finding the way.</b> The den is a round grid of chambers, as a city is of blocks: the mouth opens on its rim, and from each chamber passages run north, east, south and west to the chambers beside it, some of them shut. The core lies deep in the middle, and its walls open on only one or two sides. You see the passages out of every chamber you have been in; what lies beyond is dark until you go. Two things lead you to it. The <b>sound</b>: the Hivemind's beat, louder the nearer the core, carried through the walls (the gauge, the window's pulse, and each passage <i>louder</i> or <i>fainter</i>), so it tells you where the core is, but not where its door is: beside the wrong wall it beats loud, and there is no way through. The <b>warmth</b>: the air from the core runs only along the passages (the gauge, and the air: <i>cool and damp</i>, <i>close and clammy</i>, <i>warm as breath</i>, <i>hot</i>, <i>the walls sweat</i>), and every passage has a draft, <i>warmer</i> or <i>colder</i>, that leads round to a door. A team without a good scout misreads a draft now and then (${Math.round(HCRAWL.DRAFT.miss * 100)}% less ${Math.round(HCRAWL.DRAFT.perScout * 1000) / 10} a point of the best Scouting); the beat never lies. The warmer, the warmer the drone and the redder the window; the nearer, the louder and faster the beat (the mixer's <i>Hive crawl pulse</i>).<br>
 <b>The brood.</b> Every chamber holds some of the hive's brood: more and tougher the deeper you go, the special dead the hive breeds among them, the elite deeper still, and the chambers next to the core the worst. A hive's guard horde is its brood: every one killed inside thins the guard, and a war party's crawl means emptier chambers. Nothing from outside the hive hurts it: no fires, no bombs; the crawl is the only way to kill a hive. Fight them (on a cave map or by the numbers), creep past (Stealth; they stay there and you meet them again on the way back), or fall back. Cleared chambers stay clear for about ${HCRAWL.REFILL_DAYS} days, then the brood flows back: you can crawl part of the way, come home to heal and come back. Kinds of chamber: tunnels, galleries, <i>nurseries</i> (many and weak), <i>egg chambers</i> (burn them with ${HCRAWL.BURN.fuel} fuel or a Molotov: the hive loses stores and some of its guard, and fills its chambers more slowly), <i>bone pits</i> (the remains of teams that came before: their worn guns, armour, packs, ammunition and meds), <i>worm pools</i> (the worm's eggs: wading through is a risk, feeling through the water more), the <i>roots</i> of the hive's growths (burn one to hurt the growth above), and collapses that lead nowhere.<br>
 <b>The hive's Alert.</b> Moving, fighting, fire and a failed sneak make noise; lying still lets it fade. From ${HCRAWL.ALERT.converge} the brood converges on you: it pours into your chamber and fills the chambers behind you again; from ${HCRAWL.ALERT.block} it packs the mouth. Leaving means going back the way you came.<br>
 <b>Brood activity and heat.</b> Every chamber has its own brood activity, the hive's own (the same every visit; you learn it when you stand in it): ${HCRAWL.THREAT.names.slice(1).map((n, i) => `${n} ×${HCRAWL.THREAT.mult[i + 1]}`).join(", ")}. The noise you make in a chamber also stays there as its heat (less travelling stealthily), fading ${HCRAWL.HEAT.decay} an hour. The hive's Alert and the chamber's heat, × its activity, decide whether its brood has seen you, how hard it is to creep past, whether the brood pours in and how many, and whether a patrol finds you lying still: a little noise in a seething chamber is worse than a lot in a torpid one.<br>

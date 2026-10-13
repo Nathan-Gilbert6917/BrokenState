@@ -371,6 +371,69 @@ What the runs say (40 trials, seeds 6000+, day 60, autopilot depth 4, balanced r
   people the hubs keep (more people, more hive trips), and the hive harness rows are unchanged; 12 games cannot say
   more. Worth watching in the next full census.
 
+## The hive is a round grid too, its core walled in (2026-10-13)
+
+The den of a hive (`hivecrawl.js genDen`) is now a round grid of chambers built with the city's geometry
+(`citygrid.js`): a square with its corners cut away, `GRID.rings` × the den's depth rings from the rim to the heart (at
+least 2: a young hive is 3 chambers across, the oldest 11). The mouth opens onto a rim chamber on a side of the hive's
+dice. A passage runs to each chamber beside, above or below, open at `GRID.open` 0.85 (a cut-off chamber gets one
+opened). One chamber of the innermost rings is **the core, open on only 1 or 2 of its sides** (`GRID.doors`: 2 at 50%,
+75% at tier 1; a young hive's always on 2, one toward its mouth); the rest is wall. A chamber's layer, what the brood
+reads, is its ring scaled to the depth (1 on the rim, the depth at the heart), so the brood grows inward as it grew
+deeper before. Old saves: a den from before (v 1) is made again as a grid once no team is inside.
+
+**Finding the core.** Two cues, both rising as you close in:
+
+- **The sound** (`soundOf`): the Hivemind's beat, by the grid distance to the core, through the walls. The window has a
+  Sound gauge, each passage reads *louder* or *fainter* (never misread), and the crawl's pulse (`ui/hivecrawlsfx.js`)
+  beats louder and faster with it. Beside a wall of the core with no door, the beat is as loud as at a door, and the
+  log says there is no way through on this side.
+- **The warmth** (`warmthOf`): as before, by the distance along the passages, so the drafts (*warmer*, *colder*,
+  misread now and then) lead round to a door. The drone and the window's tint follow it.
+
+The map draws the den's rim and each chamber where it lies; passages are named north, east, south, west. The autopilot
+takes a passage that reads warmer and louder first, then warmer, then louder against a colder draft (a draft may be
+misread), then level; it listens or throws a flare at a fork of two such unknown ways.
+
+**A bug the grid found, fixed:** a chamber entered while the hive's guard was away (no brood in it) filled when the
+guard came back, and the team stood in it with the brood there but nothing to answer: no encounter, every passage
+refused. The brood coming back now puts them in front of the team (`broodBack`).
+
+Shortest way in (40 seeds; before: exactly the depth): 2.7, 3.8, 4.9, 7.6, 8.6 moves at tiers 0–4 (depths 2, 3, 5, 7,
+9), longer where the door is on the far side. Verified against dev without this change (the round city grid and PR #3's
+chamber heat merged; `node tools/crawlbalance.js hive --trials 40 --trips 3 --seed 5000`):
+
+| tier | squad | win before → after | lost/squad before → after |
+|---|---|---|---|
+| 1 | early | 0% → 0% | 17% → 18% |
+| 1 | solid | 95% → 90% | 10% → 13% |
+| 1 | rifles | 100% → 98% | 1% → 3% |
+| 2 | early | 0% → 0% | 48% → 42% |
+| 2 | solid | 15% → 5% | 37% → 25% |
+| 2 | rifles | 95% → 85% | 7% → 15% |
+| 3 | solid | 0% → 0% | 40% → 51% |
+| 3 | rifles | 10% → 20% | 38% → 32% |
+| 3 | elite | 57% → 75% | 15% → 15% |
+| 4 | solid | 0% → 0% | 47% → 49% |
+| 4 | rifles | 8% → 15% | 35% → 38% |
+| 4 | elite | 48% → 57% | 16% → 26% |
+
+7 of 12 judged rows inside their targets after, 5 before (tier 3 elite and tier 4 rifles now on target). Tiers 1–2 are
+a little harder (the way in is longer than the depth there), tiers 3–4 a little easier (shorter). A young hive in one
+trip by a strong squad (`tools/hivecrawltest.js`'s check, 240 seeds): 87% destroyed after against 94% before, 31 dead
+in all against 12 (most of them one person lost in the core fight); `hivecrawltest` seeds 11, 12 and 13 fail that
+check, as they did on dev before. A first cut with the core walled on every tier and passages open at 0.6 made the way
+in two to three times the depth (a young hive 6 moves) and the young hive 69%; a young hive's core now opens toward its
+mouth.
+
+**A second bug the runs found, fixed:** on the way out, an autopilot team too hurt to fight fell back from the brood
+in the mouth, which is deeper, then walked out into the same brood the next hour, over and over, until all six were
+dead (seed 165). On the way out it now fights when the odds are fair.
+
+`tools/hivecrawltest.js` checks the grid, the core's doors, every chamber reachable, the beat through the wall and the
+warmth round it; `hiveplustest`'s flare check now looks over four hives (a den may give no fork), and its listening
+check reads the log of a crawl that ended inside its 12 steps; `wintest --force hive` still wins on day 31.
+
 ## Bugs found on the way, and what was done
 
 1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving

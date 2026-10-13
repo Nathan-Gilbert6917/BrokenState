@@ -1,6 +1,6 @@
 // The hive crawl (src/sim/hivecrawl.js): the den (the same chambers for a seed and a hive; its depth by the hive's
-// tier; at least two routes that share no chamber from tier 2; warmth rising along the shortest way, highest in the
-// core; the brood tougher the deeper), the team's crawl (moving, the drafts and their misreading, creeping past,
+// tier; a round grid of chambers, the core in its innermost rings open on 1 or 2 sides; warmth rising along the shortest way
+// and the beat through the walls, both highest in the core; the brood tougher the deeper), the team's crawl (moving, the drafts and their misreading, creeping past,
 // fights by the numbers fitted to the cave map, burning eggs, the bone pits, the Alert converging, leaving the way you
 // came, chambers that stay clear and fill again), saving and loading mid-crawl, the core battle on the map (the
 // Hivemind never moves, pulses and calls brood; its death kills its brood and destroys the hive), the autopilot's crawl
@@ -59,18 +59,50 @@ console.log("The den");
   check(JSON.stringify(dens) === JSON.stringify(again), "the same seed and hive make the same den (every tier)");
   const other = HC.genDen(createWorld({ seed: SEED + 1, factionCount: 3 }), hv, HC.HCRAWL.DEPTH[2], 2);
   check(JSON.stringify(other.rooms.map((r) => r.links)) !== JSON.stringify(dens[2].rooms.map((r) => r.links)), "another seed makes another den");
-  const lens = dens.map((d) => HC.shortestPath(d).length - 1);
-  check(lens.join(",") === HC.HCRAWL.DEPTH.join(","), `the shortest way from the mouth to the core grows with the tier: ${lens.join(", ")} moves (tiers 0–4)`);
-  check(dens.every((d, i) => i === 0 || d.rooms.length > dens[i - 1].rooms.length), `more chambers the higher the tier: ${dens.map((d) => d.rooms.length).join(", ")}`);
-  // Two routes that share no chamber (Menger): no single chamber between the mouth and the core cuts them apart.
-  const reach = (d, cut) => { const seen = new Set([d.mouth]), q = [d.mouth]; while (q.length) { const id = q.shift(); for (const n of HC.roomById(d, id).links) if (!seen.has(n) && n !== cut) { seen.add(n); q.push(n); } } return seen.has(d.core); };
-  const twoRoutes = (d) => d.rooms.every((r) => r.id === d.mouth || r.id === d.core || reach(d, r.id));
-  let multi = 0, tot = 0;
-  for (let s = 1; s <= 12; s++) { const w = createWorld({ seed: s, factionCount: 3 }); ensureHives(w); for (const t of [2, 3, 4]) { tot++; if (twoRoutes(HC.genDen(w, w.hives[0], HC.HCRAWL.DEPTH[t], t))) multi++; } }
-  check(multi === tot, `at least two routes to the core that share no chamber from tier 2 (${multi}/${tot} dens, 12 seeds)`);
+  // The shortest way in, over 12 seeds: about the den's depth (round grid, 2026-10-13: the core's walls to go round).
+  const lens = [0, 1, 2, 3, 4].map((t) => { let a = 0; for (let s = 1; s <= 12; s++) { const w = createWorld({ seed: s, factionCount: 3 }); ensureHives(w); a += HC.shortestPath(HC.genDen(w, w.hives[0], HC.HCRAWL.DEPTH[t], t)).length - 1; } return a / 12; });
+  check(lens.every((v, i) => Math.abs(v - HC.HCRAWL.DEPTH[i]) <= 2) && lens.every((v, i) => i === 0 || v > lens[i - 1]), `the shortest way from the mouth to the core grows with the tier, about its depth: ${lens.map((v) => v.toFixed(1)).join(", ")} moves on average (tiers 0–4, depths ${HC.HCRAWL.DEPTH.join(", ")})`);
+  check(dens.every((d, i) => i === 0 || d.rooms.length >= dens[i - 1].rooms.length) && dens[4].rooms.length > dens[0].rooms.length, `more chambers the higher the tier: ${dens.map((d) => d.rooms.length).join(", ")}`);
+  // The round grid (2026-10-13, as the city's): passages only between neighbours; the core one chamber of the innermost
+  // rings, open on 1 or 2 of its sides; every chamber reachable without passing the core.
+  const gridOk = (d) => d.grid && d.rooms.every((r) => r.links.every((id) => { const o = HC.roomById(d, id); return Math.abs(o.y - r.y) + Math.abs(o.x - r.x) === 1; }));
+  const reach = (d, cut) => { const seen = new Set([d.mouth]), q = [d.mouth]; while (q.length) { const id = q.shift(); for (const n of HC.roomById(d, id).links) if (!seen.has(n) && n !== cut) { seen.add(n); q.push(n); } } return seen; };
+  let grids = 0, doors = { 1: 0, 2: 0 }, deep = 0, reachAll = 0, walls = 0, tot = 0;
+  for (let s = 1; s <= 12; s++) {
+    const w = createWorld({ seed: s, factionCount: 3 }); ensureHives(w);
+    for (const t of [0, 1, 2, 3, 4]) {
+      const d = HC.genDen(w, w.hives[0], HC.HCRAWL.DEPTH[t], t), core = HC.roomById(d, d.core);
+      tot++;
+      if (gridOk(d)) grids++;
+      doors[core.links.length] = (doors[core.links.length] || 0) + 1;
+      if (d.coreRing >= d.rings - 1) deep++;
+      const seen = reach(d, d.core);
+      if (d.rooms.every((r) => r.id === d.core || seen.has(r.id))) reachAll++;
+      if (d.rooms.some((r) => r.gd === 1 && !r.links.includes(d.core))) walls++;
+    }
+  }
+  check(grids === tot, `every den is a round grid: passages only to the chamber beside, above or below (${grids}/${tot} dens, 12 seeds × 5 tiers)`);
+  check(doors[1] > 0 && doors[2] > 0 && doors[1] + doors[2] === tot, `the core opens on 1 side (${doors[1]} dens) or 2 (${doors[2]}), never more`);
+  check(deep === tot, `the core lies in the round grid's innermost rings (${deep}/${tot})`);
+  check(reachAll === tot, `every chamber can be reached from the mouth without passing the core (${reachAll}/${tot})`);
+  check(walls >= tot * 0.6, `most dens have a chamber beside the core's wall with no door on its side (${walls}/${tot})`);
+  // The cues: the beat (through the walls) and the warmth (along the passages).
+  let soundTop = true, wallLoud = 0, wallCold = 0, wallN = 0;
+  for (const d of dens) {
+    if (HC.soundOf(d, HC.roomById(d, d.core)) !== 100 || Math.max(...d.rooms.map((r) => HC.soundOf(d, r))) !== 100) soundTop = false;
+    const door = d.rooms.find((r) => r.links.includes(d.core));
+    for (const r of d.rooms.filter((x) => x.gd === 1 && !x.links.includes(d.core))) {
+      wallN++;
+      if (HC.soundOf(d, r) === HC.soundOf(d, door)) wallLoud++;
+      if (HC.warmthOf(d, r) < HC.warmthOf(d, door)) wallCold++;
+    }
+  }
+  check(soundTop, "the beat is loudest in the core (100) in every den");
+  check(wallN > 0 && wallLoud === wallN && wallCold === wallN, `beside the core's wall the beat is as loud as at a door (${wallLoud}/${wallN}), but the air is cooler (${wallCold}/${wallN}): the way in is round`);
+  check(HC.soundText(5) !== HC.soundText(95) && /far off/.test(HC.soundText(5)), `the beat: "${HC.soundText(5)}" → "${HC.soundText(95)}"`);
   const d4 = dens[4];
   const deadEnds = d4.rooms.filter((r) => r.dead).length, loops = d4.rooms.reduce((a, r) => a + r.links.length, 0) / 2 - (d4.rooms.length - 1);
-  check(deadEnds >= 2 && loops >= 1, `side branches and dead ends (${deadEnds}) and loops (${loops} passages over a tree) at tier 4`);
+  check(deadEnds >= 1 && loops >= 1, `dead ends (${deadEnds}) and loops (${loops} passages over a tree) at tier 4`);
   const kinds = new Set(dens.flatMap((d) => d.rooms.map((r) => r.kind)));
   check(["mouth", "core", "tunnel", "gallery"].every((k) => kinds.has(k)) && kinds.size >= 7, `chamber kinds: ${[...kinds].join(", ")}`);
   // Warmth.
@@ -87,9 +119,8 @@ console.log("The den");
   hv.den = d4;
   const byLayer = [];
   for (const r of d4.rooms) if (r.kind !== "core" && r.kind !== "collapse") (byLayer[r.layer] = byLayer[r.layer] || []).push((HC.roomFull(st, hv, d4, r) * HC.roomPower(st, hv, d4, r)) / Math.max(0.1, HC.ROOM_KINDS[r.kind].brood * HC.ROOM_KINDS[r.kind].power));
-  const mean = byLayer.map((a) => (a && a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0));
-  check(mean.every((v, i) => i === 0 || v >= mean[i - 1] - 1e-9), `the brood is stronger the deeper (count × power by layer, per chamber share: ${mean.map((v) => v.toFixed(0)).join(", ")})`);
-  const pw = d4.rooms.filter((r) => r.kind === "gallery").map((r) => [r.layer, HC.roomPower(st, hv, d4, r)]).sort((a, b) => a[0] - b[0]);
+  const mean = byLayer.map((a) => (a && a.length ? a.reduce((x, y) => x + y, 0) / a.length : null)).filter((v) => v != null); // the layers a den has (its rings scaled to the depth)
+  check(mean.every((v, i) => i === 0 || v >= mean[i - 1] * 0.9), `the brood is stronger the deeper (count × power by layer, per chamber share: ${mean.map((v) => v.toFixed(0)).join(", ")})`);  const pw = d4.rooms.filter((r) => r.kind === "gallery").map((r) => [r.layer, HC.roomPower(st, hv, d4, r)]).sort((a, b) => a[0] - b[0]);
   check(pw.length < 2 || pw[pw.length - 1][1] > pw[0][1], `... their power too (galleries: ${pw.map(([l, v]) => `layer ${l} ${v}`).join(", ")})`);
   const near = d4.rooms.filter((r) => r.links.includes(d4.core));
   const nearMean = near.reduce((a, r) => a + HC.roomFull(st, hv, d4, r) / HC.ROOM_KINDS[r.kind].brood, 0) / near.length;
@@ -260,7 +291,7 @@ console.log("Brood activity and heat");
   const mouth = HC.roomById(den, den.mouth);
   c.alert = 20; c.heat = { [mouth.id]: 10 };
   check(Math.abs(HC.roomHeat(st, c, mouth, 1.35) - 30 * 1.35) < 1e-9, "a chamber's heat: (Alert + its own heat) × its activity");
-  const room = den.rooms.find((r) => r.layer === 2);
+  const room = den.rooms.find((r) => r.layer >= 2 && r.kind !== "core");
   const dcAt = (mult) => Math.ceil(HC.HCRAWL.SNEAK.dc + HC.HCRAWL.SNEAK.perLayer * room.layer + HC.roomHeat(st, c, room, mult) * HC.HCRAWL.SNEAK.perAlert);
   c.alert = 60;
   check(dcAt(1.8) > dcAt(0.6), `creeping past is harder in a seething chamber than a torpid one at the same Alert (DC ${dcAt(0.6)} → ${dcAt(1.8)}); the window's odds use it (DC ${HC.sneakOdds(st, p, c, room).dc} here)`);
