@@ -29,6 +29,7 @@ function makeOutpost(state, tile, name, staff) {
   state.bases.push(base);
   for (const s of staff) { s.location = { kind: "base", baseId: base.id }; s.role = "guard"; }
   for (let i = 0; i < 3; i++) addBuilding(base, "walls");
+  addBuilding(base, "cookhouse"); // hot food, so "No hot food" (eating.js) does not drive the crew away
   recomputeOwnership(state);
   return base;
 }
@@ -82,6 +83,9 @@ for (const seed of seeds) {
   Object.assign(h.stock, { water: 200, fuel: 120, ammo: 400, meds: 20, parts: 6, scrap: 60 }); setFood(h, 700);
   for (let i = 0; i < 6; i++) state.survivors.push({ ...state.survivors[i], id: newId(), name: `Extra${i} Hand`, leader: false, gear: { weapon: null, armor: null, tool: null }, skills: { ...state.survivors[i].skills }, traits: [], location: { kind: "base", baseId: h.id } });
   addBuilding(h, "bunkhouse"); // beds for the 6 extra hands, so crowding (morale.js) does not drive the crews away
+  // A cook fire: a hub starts bare (barestart), and weeks of "No hot food" (eating.js EAT.cold, -6 a day) drove seed
+  // 42's truck crew to walk out by day 45, which stopped the repeating run; this test is about the supply runs.
+  addBuilding(h, "cookhouse");
   const people = atBase(state, h.id);
   const tA = freeTile(state, h.tile, 3, 6);
   const tB = tA && freeTile(state, tA.id, 3, 6, [h.tile]);
