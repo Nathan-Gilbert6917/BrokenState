@@ -66,7 +66,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Travel event cards** [events].
 - **Discovery and hidden sites**, the Survey mission, rumours, and map markers with last-seen times [discovery, survey, markers].
 - **Abstract scavenging** (hour-by-hour search with rising Heat) [scavenge]. Shared finite loot that AI groups also scavenge [aiscav].
-- **City crawl**: block-by-block roguelike extraction into a city, multi-storey buildings with who lives on each floor [citycrawl, floorfolk].
+- **City crawl**: block-by-block roguelike extraction into a city on a grid (left, right or straight; out the way you came or on to another way out), multi-storey buildings with who lives on each floor [citycrawl, floorfolk].
 - **Crash sites and supply drops**, contested [crashes].
 - **Wanderers**: neutral survivors and others met on the road [wanderers].
 - **Optics**: binoculars, thermal imager and others [optics]. **Lights** carried for the dark [lights].

@@ -252,6 +252,54 @@ fades as fast as the Alert and a team's size does not add to it. `tools/hivecraw
 heat and its cooling; `tools/wintest.js --force hive` still wins on day 91. (`hivecrawltest` seeds 8, 11, 12 and 13
 fail on dev without this change too: the young-hive and deep-hive autopilot checks are seed-sensitive.)
 
+## The city is a grid: left, right or straight (2026-10-13)
+
+A crawl no longer runs down one line of blocks. The city is a grid (`citycrawl.js`, "the grid"): rows are the
+depth (block 1 is the edge), columns the cross streets, 5–7 across by the city's dice (`CRAWL.GRID.half` 2–3 to
+either side). From a block the team goes **straight on** (a block deeper) or **left** or **right** along a cross
+street (the same depth, other places). A cross street is shut at 25% (`GRID.side` 0.75 open, the city's dice, the
+same every visit); the way deeper is always open unless a street event blocks it this visit. Every block of the grid
+has its own places, events and zombie activity by the city's dice; the middle column keeps exactly the blocks, ids and
+building maps it had before, so old saves load onto it. The window draws the grid (walked blocks by their activity,
+the route in outlined, where you stand in white, shut cross streets as gaps) and offers three buttons for the three ways.
+
+**The route in** (`c.path`) is the blocks the team walked from the edge to where it stands; walking somewhere and back
+cuts the loop. Its length is what both ways out are measured by:
+
+- **Back the way you came**: along the route in, reversed, to the first edge block it reaches, half an hour a block.
+  Each block carries the heat the team left on it (its trail: shots, fights, searches, walking in; more for a big
+  team, less for a stealthy one), × its activity. Sideways blocks count like any other.
+- **Find another way out**: on through blocks not walked this crawl, the team picking left, right or straight at each
+  (no time to search; a walked block is refused). A way out turns up after 1 to as many blocks as the route in (the
+  visit's dice, found out on the way). No trail on new blocks, their activity unknown till you get there; each is
+  as risky as the way out at its depth. Running from trouble on the way gets you through onto the block you were
+  heading for. You can turn back the way you came at any point (the route in then includes the new blocks).
+
+The autopilot works its block, goes deeper while it may (as before), and at its depth limit works one block to the
+side (`AUTO.autoSide` 1 a depth) before leaving. Looking for another way out it prefers cross streets to going deeper.
+
+**A bug the runs found, fixed before merging:** on another way out, running from trouble first fell back to the block
+you were on, and the autopilot walked into the same horde again, hour after hour, until the team was dead (2–5%
+of deep crawls wiped). Trouble on the way out is now run *through*, as it always was on the way back.
+
+City crawl after (40 trials, seeds 4000+, day 60; value is trade value):
+
+| squad | block 2: value / lost (before) | block 5 plan: depth, value / lost (before) |
+|---|---|---|
+| naked (4) | 54 / 3% (54 / 3%) | 1.3, 54 / 3% (1.3, 54 / 3%) |
+| scrappy (5) | 121 / 6% (119 / 5%) | 1.4, 119 / 5% (1.4, 119 / 5%) |
+| early (5) | 165 / 7% (154 / 7%) | 1.6, 134 / 9% (1.6, 131 / 9%) |
+| solid (6) | 224 / 9% (207 / 8%) | 2.8, 260 / 15% (2.6, 259 / 15%) |
+| rifles (6) | 233 / 8% (212 / 9%) | 4.0, 301 / 18% (3.8, 290 / 16%) |
+| elite (8) | 296 / 13% (245 / 11%) | 5.0, 411 / 30% (4.9, 363 / 28%) |
+
+Nobody is wiped. The block-2 rows bring home more because at that limit the team now works a block across before
+leaving (8–20% more value, 0–2 points more lost). The elite row is on its line (30% against a 30% cap): one block worked across at depth 5
+brings 13% more home for 2 points more lost. On another 80 seeds (6000+) it is over the line before this change too
+(31%, the old code), 32% with `autoSide` 0 and 36% with 1; `--set CRAWL.AUTO.autoSide=0` turns the sideways block
+off. 10 of 11 judged rows inside their targets. `tools/citycrawltest.js` checks the grid, the three ways, the route
+in and its loops, both ways out along it, the refusal of walked blocks and old saves.
+
 ## Bugs found on the way, and what was done
 
 1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving
