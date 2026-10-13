@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HD sprite designs</title>
+<style>
+  :root { --bg: #0d0f12; --panel: #15181d; --text: #e6e2d8; --muted: #9a968c; --line: #2a2e35; --accent: #e2b85c; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header, main { max-width: 1900px; margin: 0 auto; padding: 16px 20px; }
+  h1 { font-size: 24px; margin: 8px 0 4px; }
+  h2 { font-size: 18px; margin: 0 0 6px; color: var(--accent); }
+  h3 { font-size: 14px; margin: 10px 0 4px; color: var(--muted); font-weight: 600; }
+  p { margin: 0 0 10px; color: var(--muted); max-width: 1100px; }
+  .row { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 0 0 16px; }
+  .cells { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  figure { margin: 0; text-align: center; }
+  canvas { display: block; image-rendering: pixelated; margin: 0 auto; background: #23272e; border-radius: 3px; }
+  figcaption { color: var(--muted); font-size: 12px; padding-top: 3px; white-space: nowrap; }
+  .pair { display: inline-flex; gap: 4px; padding: 6px; border: 1px dashed var(--line); border-radius: 6px; }
+  .err { color: #e07a6a; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>HD sprites: current vs redesigned, at in-game scale</h1>
+  <p>Design preview only: the game is unchanged. The battle map draws a standing unit 30 art pixels tall at the chosen zoom (0.75–5 CSS px per art px; most play at 2–3). The current sprites are 22 × 26 grid pixels; the HD ones are 44 × 52 (same on-screen size, four times the pixels). Items: the inventory's rows show icons at about 24–32 CSS px. Everything is drawn with image smoothing off, like the game.</p>
+</header>
+<main id="panels"></main>
+<script type="module" src="./index.js"></script>
+</body>
+</html>
