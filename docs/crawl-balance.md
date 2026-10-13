@@ -113,7 +113,8 @@ searched only places that *looked* "Quiet" or "A few of the dead about", which n
   (`autopilot.js idleTeams`, as before for an open crawl).
 - `CRAWL.AUTO.depth` 2 → **5**. At the edge the team plans its block (`citycrawl.js autoDepth`): the deepest, up to 5,
   where most of the edge block's places, as deep as that, would still be searched at `planOdds` 0.9 or better
-  (`planShare` 0.67: deeper blocks hold worse places than the edge's). It walks the blocks on the way and searches
+  (`planShare` 0.67: deeper blocks hold worse places than the edge's), and where it would still fight the horde
+  that block's street can throw at it (`streetOdds` at `sureOdds` 0.92). It walks the blocks on the way and searches
   at its block; with room left and a block it could work it goes one deeper, never past 5.
 - What it searches: `searchOdds` (new) is the odds of winning the fight a quick search could bring (half the dead
   inside, the raiders all); it searches places at `AUTO.searchOdds` 0.85 or better, and, come all that way with none
@@ -138,7 +139,8 @@ City crawl after (40 trials, day 60, balanced retreat policy; value is trade val
 | rifles (6, AR, plate) | 3.8 | 201 | 13% | ✓ |
 | elite (8, AR, plate) | 4.8 | 232 | 24% | ✓ |
 
-Weak teams stay near the edge, strong ones go down to 4–5. **What is still wrong:** a strong team gets no more value
+Weak teams stay near the edge, strong ones go down to 4–5. A team of three (the size the governor mostly sends)
+stays at blocks 1–2 whatever its kit: 1–8% lost. **What is still wrong:** a strong team gets no more value
 from block 5 than from block 2 (rifles: 201 against 203) and loses more people doing it. The take is bound by the
 team's carry, so depth can only pay in what a kilo of it is worth: deeper blocks need rarer, lighter, dearer finds
 (guns, ammo, meds, parts, the `PLACE_POOL` rare finds) rather than more of the same tins. That is a loot-table change;

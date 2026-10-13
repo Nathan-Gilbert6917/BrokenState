@@ -716,9 +716,18 @@ export function autoDepth(state, p, c) {
   for (let n = 2; n <= Math.min(A.depth, CRAWL.MAX_BLOCK); n++) {
     const ok = places.filter((x) => searchOdds(state, p, c, x, n) >= A.planOdds).length;
     if (ok < places.length * A.planShare) break; // deeper blocks hold worse places than the edge's: a margin
+    if (streetOdds(state, p, c, n) < A.sureOdds) break; // the way down: a horde on that block's street it would not fight
     best = n;
   }
   return best;
+}
+// The odds against the horde a block's street can throw at the team (makeEncounter's, at the Alert it would have
+// walked down with: + ALERT.move a block), for the autopilot's plan.
+export function streetOdds(state, p, c, n) {
+  const H = CRAWL.HORDE, inf = state.tiles[c.tile].infection || 0;
+  const alert = c.alert + CRAWL.ALERT.move * (n - c.block);
+  const enemy = { kind: "zombies", count: Math.min(H.max, Math.max(2, Math.round(H.base + H.perBlock * n + alert / H.alertDiv))), power: 2 + inf * 3 + CRAWL.DEAD.powerPerBlock * (n - 1), name: "a horde" };
+  return byNumbersOdds(state, { tile: c.tile, partyId: p.id, enemy, ambush: null, canRetreat: true }).win;
 }
 function mergeGroups(groups) {
   const count = groups.reduce((a, g) => a + g.count, 0);
