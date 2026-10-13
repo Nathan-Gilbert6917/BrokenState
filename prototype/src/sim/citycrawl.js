@@ -77,7 +77,9 @@ export const CRAWL = {
   INFECT_PER_BLOCK: 0.05,       // the raid's infection (Heat per turn, the power of the dead that come in) a block deeper
   // Alert 0–100: start (+ the city's infection × infection), + a building's Heat gained × fromHeat when you come out,
   // + fight / mapFight for a fight on the street, + move for walking a block, − decay an hour (not below the start).
-  ALERT: { start: 5, infection: 15, fromHeat: 0.3, fight: 8, mapFight: 5, move: 3, alarm: 12, decay: 2, lieLow: 10, turned: 6, names: ["Calm", "Uneasy", "Stirred", "Roused", "Swarming"] },
+  // creep (2026-10-13): the Alert no longer fades by itself while you are in the city; it rises creep an hour (the
+  // dead drift toward where the living are), so the longer a crawl the more trouble on the street. Lie low to bring it down.
+  ALERT: { start: 5, infection: 15, fromHeat: 0.3, fight: 8, mapFight: 5, move: 3, alarm: 12, decay: 2, creep: 1.5, lieLow: 12, turned: 6, names: ["Calm", "Uneasy", "Stirred", "Roused", "Swarming"] },
   // The Heat you start each building with: day / night + perBlock a block deeper + the Alert above the city's own
   // (its start) × fromAlert, at most max.
   HEAT0: { day: 5, night: 0, perBlock: 2, fromAlert: 0.35, max: 50 },
@@ -87,6 +89,20 @@ export const CRAWL = {
   // (block − 1) + Alert × perAlert + overload × load, × night. At Alert fightAlert or more from block fightFrom or deeper
   // the streets are crawling: the first block on the way out is a fight (or a hard sneak).
   EXIT: { base: 0.03, perBlock: 0.07, perAlert: 0.004, load: 0.25, night: 1.2, max: 0.9, fightAlert: 70, fightFrom: 3 },
+  // The trail (2026-10-13): the noise made on a block (whatever raises the Alert there: fights and shots, searches,
+  // alarms, walking in) stays on that block's streets as its own heat, × (1 + perPerson for each of the team over 3),
+  // × stealthy for a team travelling stealthily; it fades decay an hour. Going back the way you came, each block's
+  // risk is + its trail × perTrail.
+  TRAIL: { perPerson: 0.15, stealthy: 0.6, decay: 0.5, perTrail: 0.006 },
+  // Another way out (2026-10-13): new streets, no trail, but as deep as where you turned off all the way (the risk of
+  // the way out at that block, each street), hours a street; how far is the city's to say: 1 up to the deepest block
+  // you reached, found out on the way (the visit's own dice).
+  NEWWAY: { hours: 1 },
+  // Zombie activity (2026-10-13): each block of a city has its own level, 1-5, by the city's dice (the same every
+  // visit; known once you stand on it): how many of the dead move on its streets. Its mult scales the block's own
+  // danger and multiplies the heat there (the city's Alert and the block's trail): a little noise on a crawling block
+  // is worse than a lot on a quiet one. Levels by weight; the new streets of another way out roll their own.
+  THREAT: { names: ["", "Quiet", "Stirring", "Busy", "Infested", "Crawling"], mult: [0, 0.6, 0.8, 1, 1.35, 1.8], weights: [0, 0.2, 0.25, 0.25, 0.18, 0.12] },
   // Street fights: a horde of base + perBlock × block + Alert / alertDiv dead (power 2 + infection × 3 + DEAD.powerPerBlock
   // a block deeper); a patrol of raiders 2 + block / 2 (power 4 + 0.3 a block). A breakout is a horde × breakout.
   HORDE: { base: 3, perBlock: 1.5, alertDiv: 12, max: 20, breakout: 1.5 },
@@ -267,6 +283,7 @@ export function startCrawl(state, p) {
     block: 1, deepest: 1, alert, floor,
     blocks: {}, buildings: {}, enc: null, leaving: null, inside: null,
     tally: { supplies: {}, gear: [] }, kills: 0, lost: [], log: [], hadVehicle: !!p.vehicle,
+    trail: {}, trailMult: trailMultOf(state, p), ways: 0,
   };
   const c = p.crawl;
   genBlock(state, c, 1);
@@ -275,6 +292,20 @@ export function startCrawl(state, p) {
   return true;
 }
 
+// How much heat the team leaves on a block's streets for each point of Alert it raises there (CRAWL.TRAIL).
+export function trailMultOf(state, p) {
+  const T = CRAWL.TRAIL;
+  return (1 + T.perPerson * Math.max(0, partyMembers(state, p).length - 3)) * (p.stance === "stealthy" ? T.stealthy : 1);
+}
+// A block's zombie activity: { level 1-5, name, mult } by the city's dice (CRAWL.THREAT); salt: another way out's streets.
+export function threatOf(state, c, n, ...salt) {
+  const T = CRAWL.THREAT;
+  let r = hash01(state.seed, "crawl-threat", c.tile, n, ...salt), level = 1;
+  for (let i = 1; i < T.weights.length; i++) { if (r < T.weights[i]) { level = i; break; } r -= T.weights[i]; level = i; }
+  return { level, name: T.names[level], mult: T.mult[level] };
+}
+// The heat on a block's streets: the city's Alert and the block's own trail, × its activity.
+export const blockHeat = (state, c, n, mult = threatOf(state, c, n).mult) => (c.alert + ((c.trail || {})[n] || 0)) * mult;
 // ---------- blocks ----------
 // A block's places and events. The places are the city's own (seeded by the world, the tile and the block: the same
 // buildings every visit); which one is shut this time and the street events change with the visit.
@@ -321,7 +352,7 @@ export function genBlock(state, c, n) {
     const key = vr.weighted(keys, (e) => Math.max(0.05, EVENTS[e].w + EVENTS[e].deep * (n - 1) + (e === "horde" ? c.alert / 60 : 0)));
     events.push({ id: `e${n}-${i}`, key, done: false, result: "" });
   }
-  c.blocks[n] = { n, street: streetA, places, events };
+  c.blocks[n] = { n, street: streetA, places, events, threat: threatOf(state, c, n).level };
   return c.blocks[n];
 }
 export const blockOf = (c) => c.blocks[c.block];
@@ -497,11 +528,17 @@ function passHours(state, p, hours) {
   for (let i = 0; i < hours; i++) {
     tickHour(state);
     if (!state.parties.includes(p) || !partyMembers(state, p).length) return false;
-    if (c) c.alert = Math.max(c.floor, c.alert - CRAWL.ALERT.decay);
+    if (c) {
+      c.alert = clamp(c.alert + CRAWL.ALERT.creep, c.floor, 100); // the longer you stay, the more of the dead drift in
+      for (const k of Object.keys(c.trail || {})) c.trail[k] = Math.max(0, c.trail[k] - CRAWL.TRAIL.decay);
+    }
   }
   return true;
 }
-const addAlert = (c, v) => { c.alert = clamp(c.alert + v, 0, 100); };
+const addAlert = (c, v) => {
+  c.alert = clamp(c.alert + v, 0, 100);
+  if (v > 0) { const tr = c.trail || (c.trail = {}); tr[c.block] = clamp((tr[c.block] || 0) + v * (c.trailMult ?? 1), 0, 100); } // the block's own heat (CRAWL.TRAIL)
+};
 
 // ---------- going into a place ----------
 // A building's map: the raid on its interior (combat.js createRaid with setup.raid.place), tuned for the depth, with
@@ -702,7 +739,7 @@ export function quickSearch(state, p, place) {
   const Q = CRAWL.QUICK;
   const members = partyMembers(state, p);
   // Maybe a fight first: the dead inside (some of them), the raiders holed up all of them.
-  const fight = clamp((Q.fight + Q.perBlock * (n - 1) + c.alert / 300 - bestSkill(state, p, "stealth") * 0.02) * (place.raiders ? 1.6 : 1) * (1 - 0.5 * (place.looted || 0)), 0.05, 0.9);
+  const fight = clamp((Q.fight + Q.perBlock * (n - 1) + blockHeat(state, c, n) / 300 - bestSkill(state, p, "stealth") * 0.02) * (place.raiders ? 1.6 : 1) * (1 - 0.5 * (place.looted || 0)), 0.05, 0.9);
   let lines = [];
   if (rng.chance(fight)) {
     const groups = placeGroups(state, c, place).map((g) => (g.kind === "zombies" ? { ...g, count: Math.max(1, Math.round(g.count * 0.5)) } : g));
@@ -786,20 +823,38 @@ function mergeGroups(groups) {
 
 // ---------- moving ----------
 // The chance of trouble walking to block n (from the block before it).
-export function moveRisk(state, c, n = c.block + 1) {
+// The block's activity scales its danger and multiplies its heat (the Alert and its trail): CRAWL.THREAT. mult: as
+// known (a block not yet reached is reckoned at 1 in what the window shows; the roll uses the block's own).
+export function moveRisk(state, c, n = c.block + 1, mult = threatOf(state, c, n).mult) {
   const E = CRAWL.ENC;
-  return Math.min(E.max, (E.base + E.perBlock * (n - 1) + c.alert * E.perAlert) * (isNight(state) ? E.night : 1));
+  return Math.min(E.max, ((E.base + E.perBlock * (n - 1)) * mult + blockHeat(state, c, n, mult) * E.perAlert) * (isNight(state) ? E.night : 1));
 }
 // The chance of trouble on each block of the way out from where the team is: [{ block, p }], and the whole risk.
-export function exitRisk(state, p, c = p.crawl) {
-  const X = CRAWL.EXIT;
+// way "back": the blocks you came in by, from where you are to block 2 (block 1 is the edge), each by its depth, the
+// Alert, the load and its trail; way "new": another way out, 1 to the deepest block you reached of new streets, each
+// as risky as the block you turn off on (no trail). { steps, any, breakout, hours, way, per?, lo?, hi? }.
+export function exitRisk(state, p, c = p.crawl, way = (c.leaving && c.leaving.way) || "back") {
+  const X = CRAWL.EXIT, T = CRAWL.TRAIL;
   const over = crawlLoad(state, p).over;
-  const steps = [];
+  const night = isNight(state) ? X.night : 1;
   const from = c.leaving ? c.leaving.at : c.block;
-  for (let i = from; i >= 2; i--) steps.push({ block: i, p: Math.min(X.max, (X.base + X.perBlock * (i - 1) + c.alert * X.perAlert + over * X.load) * (isNight(state) ? X.night : 1)) });
+  const at = (i, trail, m = threatOf(state, c, i).mult) => Math.min(X.max, ((X.base + X.perBlock * (i - 1)) * m + (c.alert * X.perAlert + trail * T.perTrail) * m + over * X.load) * night); // CRAWL.THREAT: the block's activity × its heat
+  const breakout = c.alert >= X.fightAlert && from >= X.fightFrom && !(c.leaving && c.leaving.started);
+  if (way === "new") {
+    const q = at(from, 0, 1); // new streets: their activity unknown till you are on them (reckoned at 1)
+    const left = c.leaving && c.leaving.way === "new" ? c.leaving.left : null;
+    const lo = 1, hi = Math.max(1, c.deepest);
+    const n = left != null ? left : null;
+    const anyOf = (k) => 1 - (1 - q) ** k;
+    const steps = n != null ? Array.from({ length: n }, () => ({ block: from, p: q })) : [{ block: from, p: q }];
+    // Unknown length: the average over 1..hi.
+    const avg = n != null ? anyOf(n) : Array.from({ length: hi }, (_, i) => anyOf(i + 1)).reduce((a, v) => a + v, 0) / hi;
+    return { way, steps, per: q, lo, hi, any: breakout ? 1 : avg, anyLo: anyOf(lo), anyHi: anyOf(hi), breakout, hours: (n ?? hi) * CRAWL.NEWWAY.hours, hoursLo: lo * CRAWL.NEWWAY.hours };
+  }
+  const steps = [];
+  for (let i = from; i >= 2; i--) { const th = threatOf(state, c, i); steps.push({ block: i, p: at(i, (c.trail || {})[i] || 0, th.mult), trail: Math.round((c.trail || {})[i] || 0), threat: th.level }); }
   const any = 1 - steps.reduce((a, s) => a * (1 - s.p), 1);
-  const breakout = c.alert >= X.fightAlert && from >= X.fightFrom;
-  return { steps, any: breakout ? 1 : any, breakout, hours: Math.ceil(Math.max(0, from - 1) * CRAWL.EXIT_HOURS) };
+  return { way: "back", steps, any: breakout ? 1 : any, breakout, hours: Math.ceil(Math.max(0, from - 1) * CRAWL.EXIT_HOURS) };
 }
 // Go deeper: an hour's walk, maybe trouble on the way (an encounter), then the next block's card.
 export function nextBlock(state, p) {
@@ -851,7 +906,7 @@ export function lieLow(state, p) {
 
 // Look around: an hour watching the block's places from a doorway (Scouting). What the team can make out of each
 // place's upper floors (floorfolk.js: lights, voices and a watcher, something nesting) goes on the block card (place.known);
-// one look a block each visit. The Alert is unchanged (nobody moves).
+// one look a block each visit. No noise, but the hour passes (the Alert creeps up, CRAWL.ALERT.creep).
 export function lookAround(state, p) {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
@@ -878,18 +933,28 @@ export const lookChance = (state, p) => Math.min(FOLK.LOOK.max, FOLK.LOOK.base +
 // ---------- leaving ----------
 // Back out to the edge, a block at a time: each can hold trouble (exitRisk); at a high Alert from deep in, the first
 // block on the way is a breakout.
-export function leaveCity(state, p) {
+export function leaveCity(state, p, way = "back") {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
   if (c.enc) return "Deal with what is in front of you first.";
-  c.leaving = { at: c.block };
   const X = CRAWL.EXIT;
-  say2(c, `You head for the edge of the city from block ${c.block}.`, "info", state.hour);
+  if (way === "new" && c.block > 1) {
+    // How far the new way runs: the visit's own dice (the same answer for the same turn-off), 1 to the deepest block.
+    c.ways = (c.ways || 0) + 1;
+    const left = 1 + Math.floor(hash01(state.seed, "cityway", c.tile, c.started, c.block, c.ways) * Math.max(1, c.deepest));
+    c.leaving = { at: c.block, way: "new", left, total: left };
+    say2(c, `You turn off down streets you have not walked, looking for another way out of the city from block ${c.block}.`, "info", state.hour);
+  } else {
+    c.leaving = { at: c.block, way: "back" };
+    say2(c, c.block > 1 ? `You head back the way you came, from block ${c.block}.` : "You walk out at the edge.", "info", state.hour);
+  }
   if (c.alert >= X.fightAlert && c.block >= X.fightFrom) {
+    c.leaving.started = true;
     c.enc = makeEncounter(state, c, c.block, { exit: true, breakout: true });
     say2(c, c.enc.text, "danger", state.hour);
     return "";
   }
+  c.leaving.started = true;
   return stepLeave(state, p);
 }
 // On the way out with nothing in front of you (a save made between two blocks): keep going.
@@ -901,6 +966,24 @@ export function continueLeaving(state, p) {
 function stepLeave(state, p) {
   const c = p.crawl;
   if (!c) return ""; // the crawl already ended (a team wiped on the way out)
+  if (c.leaving && c.leaving.way === "new") {
+    while (c.leaving && c.leaving.left > 0) {
+      const street = c.leaving.total - c.leaving.left + 1;
+      const th = threatOf(state, c, c.block, "way", c.started, c.ways, street); // this street's own activity
+      const risk = Math.min(CRAWL.EXIT.max, exitRisk(state, p).per * th.mult);
+      if (!passHours(state, p, CRAWL.NEWWAY.hours)) return crawlGoneText(state, p);
+      if (!p.crawl) return "";
+      if (c.enc) return ""; // one of you turned (crawlTurned)
+      if (state.rng.chance(risk)) {
+        c.enc = makeEncounter(state, c, c.block, { exit: true, mult: th.mult });
+        say2(c, `On a street you do not know (${th.name.toLowerCase()}): ${c.enc.text}`, "danger", state.hour);
+        return "";
+      }
+      c.leaving.left -= 1;
+      if (c.leaving.left > 0) say2(c, "Another street, and still no way out of the city.", "info", state.hour);
+    }
+    return p.crawl ? finishCrawl(state, p) : "";
+  }
   while (c.leaving && c.leaving.at >= 2) {
     const i = c.leaving.at;
     const risk = exitRisk(state, p).steps[0].p;
@@ -909,7 +992,7 @@ function stepLeave(state, p) {
     if (c.enc) return ""; // one of you turned (crawlTurned)
     if (state.rng.chance(risk)) {
       c.enc = makeEncounter(state, c, i, { exit: true });
-      say2(c, `On the way out, block ${i}: ${c.enc.text}`, "danger", state.hour);
+      say2(c, `On the way back, block ${i}${(c.trail || {})[i] >= 10 ? " (the dead your noise drew here are still about)" : ""}: ${c.enc.text}`, "danger", state.hour);
       return "";
     }
     c.leaving.at -= 1;
@@ -983,7 +1066,8 @@ function makeEncounter(state, c, n, ctx) {
     enemy = { kind: "raiders", count: Math.min(P.max, P.base + Math.ceil(n / 2) + (ctx.small ? -1 : 0)), power: P.power + P.powerPerBlock * (n - 1), name: "a raider patrol" };
   } else {
     const Hh = CRAWL.HORDE;
-    let count = Hh.base + Hh.perBlock * n + c.alert / Hh.alertDiv;
+    const mult = ctx.mult ?? threatOf(state, c, n).mult; // CRAWL.THREAT: the block's activity × its heat
+    let count = (Hh.base + Hh.perBlock * n) * Math.sqrt(mult) + blockHeat(state, c, n, mult) / Hh.alertDiv;
     if (kind === "breakout") count *= Hh.breakout;
     if (ctx.small) count *= 0.5;
     enemy = { kind: "zombies", count: Math.min(Hh.max, Math.max(2, Math.round(count))), power: 2 + inf * 3 + CRAWL.DEAD.powerPerBlock * (n - 1), name: kind === "breakout" ? "the dead filling the streets" : "a horde" };
@@ -1119,8 +1203,8 @@ function continueAfter(state, p, e, ok) {
   }
   if (e.move) { arriveBlock(state, p, e.move); return ""; }
   if (e.exit && c.leaving) {
-    c.leaving.at = Math.max(1, e.block - 1);
-    c.block = c.leaving.at;
+    if (c.leaving.way === "new") c.leaving.left = Math.max(0, c.leaving.left - 1); // past that street
+    else { c.leaving.at = Math.max(1, e.block - 1); c.block = c.leaving.at; }
     return stepLeave(state, p);
   }
   return "";
@@ -1358,5 +1442,5 @@ export function crawlAutoStep(state, p) {
     if (!hurtNow && !full && c.block < A.depth && fit.length) { c.autoDepth = c.block + 1; nextBlock(state, p); return; }
   }
   if (c.leaving) stepLeave(state, p);
-  else leaveCity(state, p);
+  else leaveCity(state, p, c.block > 1 && exitRisk(state, p, c, "new").any < exitRisk(state, p, c, "back").any ? "new" : "back"); // the safer way out, as far as it can tell
 }

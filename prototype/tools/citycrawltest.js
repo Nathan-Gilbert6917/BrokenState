@@ -424,6 +424,73 @@ console.log("The autopilot's crawl (a crawl left open when the autopilot comes o
   check(out / runs >= 0.6, `the autopilot (blocks 1–${CC.CRAWL.AUTO.depth}) usually gets out (${out}/${runs}), ${(loot / Math.max(1, out)).toFixed(0)} supplies a run`);
 }
 
+// ---------- 8b. leaving: back the way you came, or another way out; the Alert creeps with time ----------
+console.log("Leaving (2026-10-13): two ways out, the trail, the creep");
+{
+  // The trail: noise on a block stays on its streets and makes the way back through it riskier.
+  const { state, p, c } = crawlIn(4100);
+  c.block = 4; c.deepest = 4;
+  const clean = CC.exitRisk(state, p, c, "back");
+  c.trail = { 4: 60, 3: 30 };
+  const hot = CC.exitRisk(state, p, c, "back");
+  check(hot.any > clean.any && hot.steps[0].p > clean.steps[0].p, `the trail makes the way back riskier (${(clean.any * 100).toFixed(0)}% → ${(hot.any * 100).toFixed(0)}%)`);
+  check(hot.steps.length === 3 && hot.steps.map((x) => x.block).join(",") === "4,3,2", "back the way you came: blocks 4, 3, 2 to the edge");
+  // Another way: no trail, as deep as where you turned off, 1 up to the deepest block reached.
+  const nw = CC.exitRisk(state, p, c, "new");
+  check(nw.lo === 1 && nw.hi === 4 && nw.per === CC.exitRisk(state, p, { ...c, trail: {} }, "new").per, "another way out: 1 to 4 streets, no trail on them");
+  check(nw.anyHi > nw.anyLo, "a longer way is riskier");
+  // A bigger team leaves more heat; a stealthy one less.
+  const before = c.trail[4];
+  c.trailMult = 1; c.alert = 10;
+  CC.lieLow(state, p); // no noise: nothing added
+  check((c.trail[4] || 0) <= before, "lying low adds no heat to the block");
+  p.stance = "stealthy";
+  const m3 = CC.trailMultOf(state, p);
+  p.stance = "normal";
+  check(m3 < CC.trailMultOf(state, p), "a stealthy team leaves less heat");
+}
+{
+  // The Alert creeps up with time instead of fading.
+  const { state, p, c } = crawlIn(4101);
+  c.alert = 20;
+  const a0 = c.alert;
+  CC.lookAround(state, p);
+  check(c.alert > a0, `an hour in the city raises the Alert (${a0} → ${c.alert})`);
+}
+{
+  // Another way out: its length is the visit's own dice (1..deepest), the same for the same turn-off; it ends the crawl.
+  let lens = new Set(), ended = 0, n = 0;
+  for (let sd = 0; sd < 24; sd++) {
+    const { state, p, c } = crawlIn(4200 + sd);
+    c.block = 4; c.deepest = 4; c.alert = 10;
+    CC.genBlock(state, c, 4);
+    CC.leaveCity(state, p, "new");
+    n++;
+    if (c.leaving && c.leaving.total) lens.add(c.leaving.total);
+    let g = 0;
+    while (p.crawl && g++ < 30) { if (p.crawl.enc) CC.resolveEncounter(state, p, "run"); else if (p.crawl.leaving) CC.continueLeaving(state, p); else CC.leaveCity(state, p, "new"); }
+    if (!p.crawl) ended++;
+  }
+  check([...lens].every((k) => k >= 1 && k <= 4) && lens.size >= 2, `another way runs 1 to 4 streets (${[...lens].sort().join(", ")})`);
+  check(ended === n, `every team that takes another way gets out or ends (${ended}/${n})`);
+}
+
+{
+  // Zombie activity: each block's own level (the city's dice), scaling its danger and multiplying its heat.
+  const { state, p, c } = crawlIn(4300);
+  const lv = new Map();
+  for (let n = 1; n <= 8; n++) { const a = CC.threatOf(state, c, n), b = CC.threatOf(state, c, n); check(a.level === b.level && a.level >= 1 && a.level <= 5, `block ${n}: ${a.name} (×${a.mult}), the same every time`); lv.set(n, a); }
+  const counts = [0, 0, 0, 0, 0, 0];
+  for (let t = 0; t < 400; t++) counts[CC.threatOf(state, { tile: t }, 3).level]++;
+  check(counts.slice(1).every((k) => k > 0), `every level occurs across cities (${counts.slice(1).join(" / ")})`);
+  // The same heat costs more on a busier block.
+  const quiet = { ...c, alert: 10, trail: {} }, hot = { ...c, alert: 60, trail: {} };
+  const r = (cc, m) => CC.moveRisk(state, cc, 4, m);
+  check(r(hot, 1.8) - r(quiet, 1.8) > r(hot, 0.6) - r(quiet, 0.6), "the same heat raises the risk more on a crawling block than on a quiet one");
+  check(CC.blockHeat(state, { ...c, alert: 20, trail: { 4: 10 } }, 4, 1.35) === 30 * 1.35, "a block's heat: (Alert + its trail) × its activity");
+  check(CC.genBlock(state, c, 2).threat === CC.threatOf(state, c, 2).level, "the block card carries its level");
+}
+
 // ---------- 9. stats: map raids with the bot ----------
 if (STATS) {
   console.log("Stats: the raid bot in one building per block (it plays carelessly; people do better)");

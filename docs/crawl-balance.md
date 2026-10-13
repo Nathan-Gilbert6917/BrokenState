@@ -181,6 +181,39 @@ Going deep is now a real trade: a rifle squad brings home 40% more and an elite 
 the losses. All 11 judged rows are inside their targets. `tools/deeploottest.js` checks the shift, the caches, the
 base's wants and the swap.
 
+## Leaving a city, heat over time, and each block's zombie activity (2026-10-13)
+
+There is no stepping out of a crawl. You leave one of two ways (`citycrawl.js leaveCity(state, p, way)`; the window has
+a button for each):
+
+- **Back the way you came** (`"back"`): the blocks you came in by, block by block to the edge (half an hour each),
+  safer nearer the edge; but the noise you made on each is still on its streets (`CRAWL.TRAIL`). Whatever raised the
+  Alert on a block (fights and shots, searches, alarms, walking in) also builds that block's own heat: × (1 + 0.15
+  for each of the team over three), × 0.6 for a team travelling stealthily, fading 0.5 an hour. Each block's risk on
+  the way back is + its heat × 0.006 (× its activity, below).
+- **Find another way out** (`"new"`): streets you have not walked, none of your noise on them, but as deep as where
+  you turned off all the way, an hour each. How many is the city's to say: 1 up to the deepest block you reached
+  (`hash01` of the visit and the turn-off: the same answer for the same choice), found out on the way.
+
+A roused city (Alert 70+ from block 3) still makes the first block of either way a fight. The autopilot takes the way
+with the lower expected risk.
+
+**Time.** The Alert no longer fades by itself in the city: it rises `ALERT.creep` 1.5 an hour you stay (the dead
+drift toward the living), so a long crawl meets more on the street. Lying low takes it down (12, less the hour's
+creep); looking around makes no noise but the hour still passes.
+
+**Zombie activity** (`CRAWL.THREAT`, `threatOf`): each block of a city has its own level, by the city's dice (the
+same every visit; you learn it when you stand on it): Quiet ×0.6, Stirring ×0.8, Busy ×1, Infested ×1.35,
+Crawling ×1.8 (weights 20 / 25 / 25 / 18 / 12%). It scales the block's own danger and multiplies its heat:
+`blockHeat` = (the city's Alert + the block's trail) × its level. That heat drives the chance of trouble on its
+street (`moveRisk`, lying low), on the way back through it (`exitRisk`), the size of a horde there, and the chance a
+quick search brings a fight; so the same noise on a crawling block costs three times what it does on a quiet one.
+The new streets of another way out each roll their own level as you walk them. The window shows the block's
+activity and its heat; the next block's activity is unknown until you get there.
+
+The harness rows hardly move (crawls are short: 3–11 hours), and all 11 judged rows stay inside their targets.
+`tools/citycrawltest.js` checks the two ways, the trail, the creep and the activity levels.
+
 ## Bugs found on the way, and what was done
 
 1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving

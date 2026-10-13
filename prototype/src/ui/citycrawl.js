@@ -6,7 +6,7 @@ import { hourOfDay, day, isNight } from "../sim/world.js";
 import { buildingHint } from "../sim/buildingmaps.js";
 import {
   CRAWL, EVENTS, activeCrawl, blockOf, placeLooks, placeRichness, moveRisk, exitRisk, crawlLoad, encounterOptions, alertName,
-  enterPlace, quickSearch, nextBlock, leaveCity, lieLow, resolveEncounter, resolveEvent, eventChoices, continueLeaving, specialChance, placeStoreys, STOREY_BONUS,
+  threatOf, enterPlace, quickSearch, nextBlock, leaveCity, lieLow, resolveEncounter, resolveEvent, eventChoices, continueLeaving, specialChance, placeStoreys, STOREY_BONUS,
   lookAround, lookChance,
 } from "../sim/citycrawl.js";
 import { folkHint, FOLK } from "../sim/floorfolk.js";
@@ -41,7 +41,7 @@ function hud(state, p, c) {
   return `<div class="grid2" style="gap:0.6rem;margin-bottom:0.5rem">
     <div>
       <div class="spread small"><span${tip(`Block ${c.block} of at most ${CRAWL.MAX_BLOCK}; deepest this run: ${c.deepest}. Deeper: more and tougher dead, raiders holed up, the special dead from block ${CRAWL.SPECIAL.from}; richer, rarer places.`)}>Depth ${depth}</span><span${tip("The shared clock keeps running: moving, searching and waiting take hours. At night the dead see less, and so do you.")}>${clockTxt}</span></div>
-      <div class="small" style="margin-top:0.3rem"${tip(`The city's Alert: the noise you have made (a building's Heat when you come out, fights, alarms), fading ${CRAWL.ALERT.decay} an hour. It raises the Heat you start each building with and the odds of trouble on the street. ${CRAWL.EXIT.fightAlert}+ from block ${CRAWL.EXIT.fightFrom} or deeper: the way out is a fight.`)}>Alert: <b>${alertName(c.alert)}</b> (${Math.round(c.alert)})</div>
+      <div class="small" style="margin-top:0.3rem"${tip(`The city's Alert: the noise you have made (a building's Heat when you come out, fights, alarms), rising ${CRAWL.ALERT.creep} an hour while you stay (the dead drift toward the living; lie low to bring it down). It raises the Heat you start each building with and the odds of trouble on the street. ${CRAWL.EXIT.fightAlert}+ from block ${CRAWL.EXIT.fightFrom} or deeper: the way out is a fight.`)}>Alert: <b>${alertName(c.alert)}</b> (${Math.round(c.alert)})</div>
       <div class="heat" style="margin:0.25rem 0 0.2rem"><i style="left:${Math.min(99, c.alert)}%"></i></div>
       <div class="small muted">${c.kills} killed this run${c.lost.length ? ` · <span class="danger">lost ${esc(c.lost.join(", "))}</span>` : ""}</div>
     </div>
@@ -55,20 +55,27 @@ function hud(state, p, c) {
 
 function blockCard(state, p, c) {
   const blk = blockOf(c);
-  const nextRisk = c.block < CRAWL.MAX_BLOCK ? moveRisk(state, c) : 0;
-  const out = exitRisk(state, p);
+  const nextRisk = c.block < CRAWL.MAX_BLOCK ? moveRisk(state, c, c.block + 1, 1) : 0; // its activity unknown till you are there
+  const th = threatOf(state, c, c.block);
+  const heatHere = Math.round((c.trail || {})[c.block] || 0);
+  const out = exitRisk(state, p, c, "back");
+  const newWay = exitRisk(state, p, c, "new");
   const wall = blk.events.find((e) => !e.done && EVENTS[e.key].blocking);
   const sp = specialChance(state, c.block + 1);
   const places = blk.places.map((pl) => placeCard(state, p, c, pl)).join("");
   const events = blk.events.map((ev) => eventCard(state, p, c, ev)).join("");
+  const thColor = ["", "#6f9f6a", "#9fae5a", "#c9a24a", "#c9773f", "#c0443a"][th.level];
   return `<div class="small muted" style="margin-bottom:0.4rem">${esc(blk.street)}. ${c.block === 1 ? "You can still see the way you came in." : ""}</div>
+    <div class="small" style="margin-bottom:0.4rem"><span style="color:${thColor}"${tip(`How many of the dead move on this block's streets (the city's own: the same every visit). It scales the block's danger and multiplies the heat here (the city's Alert and the noise you have made on this block): ×${th.mult}. A little noise on a crawling block is worse than a lot on a quiet one.`)}>Zombie activity: <b>${esc(th.name)}</b> (×${th.mult})</span> · <span${tip("The noise you have made on this block (fights, shots, searches, walking in), still on its streets: it fades slowly, and it is what you walk back through if you leave the way you came. A bigger team leaves more, a stealthy one less.")}>Heat on this block: <b>${heatHere}</b></span></div>
     <h3>Places</h3><div class="crawl-places" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:0.5rem">${places}</div>
     ${events ? `<h3 style="margin-top:0.6rem">On the street</h3>${events}` : `<div class="small muted" style="margin-top:0.4rem">The street is quiet.</div>`}
     <div class="row" style="margin-top:0.8rem;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end">
-      <button data-action="cc-look" data-id="${p.id}" ${blk.looked ? "disabled" : ""}${tip(blk.looked ? "You have looked this block over already." : `${FOLK.LOOK.hours} h watching the block's places from a doorway: what stirs on the upper floors of each (lights, voices and a watcher on the stairs, something nesting), about ${pct(lookChance(state, p))} a place by your best Scouting. The Alert does not change.`)}>Look around (${FOLK.LOOK.hours} h)</button>
-      <button data-action="cc-low" data-id="${p.id}"${tip(`An hour off the street: the Alert fades by ${CRAWL.ALERT.lieLow + CRAWL.ALERT.decay * CRAWL.LIE_LOW_HOURS} (not below the city's own). Something may still find you (about ${pct(moveRisk(state, c, c.block) * 0.4)}).`)}>Lie low (1 h)</button>
-      <button data-action="cc-next" data-id="${p.id}" ${c.block >= CRAWL.MAX_BLOCK || wall ? "disabled" : ""}${tip(c.block >= CRAWL.MAX_BLOCK ? "This is the heart of the city." : wall ? `${EVENTS[wall.key].title}: deal with it first.` : `Deeper: ${CRAWL.MOVE_HOURS} h on foot; about ${pct(nextRisk)} chance of trouble on the way. Block ${c.block + 1}: more and tougher dead, richer places${sp > 0 ? `, the special dead (${pct(sp)} of them)` : ""}.`)}>Go to the next block ▸</button>
-      <button class="primary" data-action="cc-leave" data-id="${p.id}"${tip(c.block === 1 ? "You are at the edge: out straight away." : `${out.breakout ? "The city is roused: the first block on the way out is a fight (or a hard sneak). " : ""}About ${out.hours} h back to the edge through ${c.block - 1} block${c.block === 2 ? "" : "s"}: about ${pct(out.any)} chance of trouble on the way (${out.steps.map((s) => `block ${s.block}: ${pct(s.p)}`).join(", ")}). Die on the way and what you carry stays where you fall.`)}>Leave the city${c.block > 1 ? ` (${pct(out.any)} risk)` : ""}</button>
+      <button data-action="cc-look" data-id="${p.id}" ${blk.looked ? "disabled" : ""}${tip(blk.looked ? "You have looked this block over already." : `${FOLK.LOOK.hours} h watching the block's places from a doorway: what stirs on the upper floors of each (lights, voices and a watcher on the stairs, something nesting), about ${pct(lookChance(state, p))} a place by your best Scouting. Nobody makes a noise, but the hour passes (the Alert creeps up).`)}>Look around (${FOLK.LOOK.hours} h)</button>
+      <button data-action="cc-low" data-id="${p.id}"${tip(`An hour off the street: the Alert falls by ${Math.round(CRAWL.ALERT.lieLow - CRAWL.ALERT.creep * CRAWL.LIE_LOW_HOURS)} (not below the city's own). Something may still find you (about ${pct(moveRisk(state, c, c.block) * 0.4)}).`)}>Lie low (1 h)</button>
+      <button data-action="cc-next" data-id="${p.id}" ${c.block >= CRAWL.MAX_BLOCK || wall ? "disabled" : ""}${tip(c.block >= CRAWL.MAX_BLOCK ? "This is the heart of the city." : wall ? `${EVENTS[wall.key].title}: deal with it first.` : `Deeper: ${CRAWL.MOVE_HOURS} h on foot; about ${pct(nextRisk)} chance of trouble on the way (its zombie activity unknown till you are there). Block ${c.block + 1}: more and tougher dead, richer places${sp > 0 ? `, the special dead (${pct(sp)} of them)` : ""}.`)}>Go to the next block ▸</button>
+      ${c.block === 1 ? `<button class="primary" data-action="cc-leave" data-id="${p.id}"${tip("You are at the edge: out straight away.")}>Leave the city</button>` : `
+      <button data-action="cc-leave" data-id="${p.id}"${tip(`${out.breakout ? "The city is roused: the first block on the way out is a fight (or a hard sneak). " : ""}Back the way you came: about ${out.hours} h through ${c.block - 1} block${c.block === 2 ? "" : "s"} you know, safer nearer the edge, but the noise you made on each is still on its streets (a bigger team leaves more, a stealthy one less; it fades slowly). About ${pct(out.any)} chance of trouble on the way (${out.steps.map((st) => `block ${st.block} (${CRAWL.THREAT.names[st.threat].toLowerCase()}${st.trail ? `, heat ${st.trail}` : ""}): ${pct(st.p)}`).join("; ")}). Die on the way and what you carry stays where you fall.`)}>Back the way you came (${pct(out.any)})</button>
+      <button class="primary" data-action="cc-leavenew" data-id="${p.id}"${tip(`${newWay.breakout ? "The city is roused: the first block on the way out is a fight (or a hard sneak). " : ""}Another way out: streets you have not walked, none of your noise on them and their zombie activity unknown (each street its own), as deep as block ${c.block} all the way; ${newWay.lo}–${newWay.hi} of them (you find out on the way), ${CRAWL.NEWWAY.hours} h each. About ${pct(newWay.per)} chance of trouble a street: ${pct(newWay.anyLo)} if the way out is one street, ${pct(newWay.anyHi)} if it is ${newWay.hi}.`)}>Find another way out (${pct(newWay.anyLo)}–${pct(newWay.anyHi)})</button>`}
     </div>`;
 }
 
@@ -118,7 +125,8 @@ function encounterCard(state, p, c) {
 }
 
 function leavingCard(state, p, c) {
-  return `<div class="card"><b>On the way out</b><div class="small">Block ${c.leaving.at} of the way back.</div>
+  const L = c.leaving;
+  return `<div class="card"><b>On the way out</b><div class="small">${L.way === "new" ? `Another way out, from block ${c.block}: ${L.total - L.left} street${L.total - L.left === 1 ? "" : "s"} behind you; how many more, the city has not told you.` : `Back the way you came: block ${L.at}.`}</div>
     <div class="row" style="margin-top:0.4rem"><button class="primary" data-action="cc-go" data-id="${p.id}">Keep going</button></div></div>`;
 }
 
@@ -138,7 +146,8 @@ export const CRAWL_ACTIONS = {
   "cc-event": run((state, p, d) => resolveEvent(state, p, d.ev, d.ch, { map: true })),
   "cc-enc": run((state, p, d) => resolveEncounter(state, p, d.ch, { map: true })),
   "cc-next": run((state, p) => nextBlock(state, p)),
-  "cc-leave": run((state, p) => leaveCity(state, p)),
+  "cc-leave": run((state, p) => leaveCity(state, p, "back")),
+  "cc-leavenew": run((state, p) => leaveCity(state, p, "new")),
   "cc-low": run((state, p) => lieLow(state, p)),
   "cc-look": run((state, p) => lookAround(state, p)),
   "cc-go": run((state, p) => continueLeaving(state, p)),
