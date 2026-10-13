@@ -19,8 +19,8 @@ grid takes 1–4 minutes.
 |---|---|---|
 | hive tier, guard | `--tier 1,2,3,4`, `--guard 80` | the game day defaults to the tier's opening day (400 / 900 / 1600 / 2100); `--day` overrides |
 | trips per scenario | `--trips N`, `--rest D` | between trips the squad heals, restocks and rests D days (chambers refill by `REFILL_DAYS`) |
-| city depth, start block, day | `--depth`, `--block`, `--day` | `--depth` is the autopilot's `CRAWL.AUTO.depth`; `--block` starts the crawl on that block (the middle column straight down) |
-| city way out | `--way safer,back,line` | `safer` (the autopilot's: the way with the lowest risk), `back` (the way it came) or `line` (straight on in one direction to the rim); `CRAWL.AUTO.way` |
+| city depth, start block, day | `--depth`, `--block`, `--day` | `--depth` is the autopilot's `CRAWL.AUTO.depth`; `--block` starts the crawl on a block of that level (the nearest to the entry) |
+| city way out | `--way safer,back,line` | `safer` (the autopilot's: the way with the lowest risk), `back` (the path in) or `line` (the safest straight line to the rim); `CRAWL.AUTO.way` |
 | survivors and gear | `--squad name,…` or `--n --weapon --armor --shoot --health --lights --fire --stun --ammo --meds` | named loadouts in `LOADOUTS`: naked, scrappy, early, hunters, solid, rifles, elite |
 | retreat policy | `--style balanced` | the break-off policy of that autopilot style, set on the team (`none`: fight to the end, a player's default) |
 | tuning numbers | `--set HCRAWL.X.y=…,CRAWL.X.y=…` | overrides a constant for this run only (roots: `HCRAWL`, `HIVEMIND`, `CRAWL`, `EVENTS`) |
@@ -33,9 +33,9 @@ change (and by the dice shifting after any changed decision: read rows in aggreg
 Hive: **win** (the Hivemind dead within `--trips`), **wiped** (nobody left), **lost/sq** (share of the squad lost),
 hours, ammo, den depth, and with `--why` the reason each trip ended (`won`, `core too much`, `too many hurt`, `alert`,
 `turned back`, `wiped`). City: **out** (the team comes back alive), wiped, lost share, hours, loot (supplies + 4 per
-piece of gear), ammo, fights and fights lost, and on the round grid **blks** (blocks walked, the way out's included),
+piece of gear), ammo, fights and fights lost, and on the round grid **walk** (blocks the team set foot on, the way out's included),
 **line** (the share that left straight out to the rim) and **out lost** (the share of the squad lost after it set off
-for the way out); with `--why` how each crawl ended (`rim`: out where it stood, `back`, `line`, `wiped`, `stuck`).
+for the way out); with `--why` how each crawl ended (`edge`: out from the rim where it stood, `back`, `line`, `wiped`, `stuck`).
 
 The crawls are driven by the autopilot's own steps (`hiveCrawlAutoStep`, `crawlAutoStep`), so the table is "what the
 governor's teams get", which is also what a careful player gets by the numbers. It is **not** a map-play bot: the
@@ -318,7 +318,7 @@ fail on dev without this change too: the young-hive and deep-hive autopilot chec
 ## Testing the round grid with the harness (2026-10-13)
 
 The harness rates the round grid (`tools/crawlbalance.js`): `--way safer,back,line` forces how the team leaves
-(`CRAWL.AUTO.way`, default `safer`, the autopilot's choice as before), the table gains **blks**, **line** and **out
+(`CRAWL.AUTO.way`, default `safer`, the autopilot's choice as before), the table gains **walk**, **line** and **out
 lost**, and `--why` says how each city crawl ended. Harness bugs fixed on the way:
 
 - `--day 400,1600` (or `--block 3,4`) crashed or did nothing: the city mode read them with `Number`, so a list was
@@ -332,7 +332,7 @@ lost**, and `--why` says how each city crawl ended. Harness bugs fixed on the wa
 With defaults the table is exactly the round-grid branch's (same seeds, same numbers; 11 of 11 judged rows inside).
 What the runs say (40 trials, seeds 6000+, day 60, autopilot depth 4, balanced retreat policy unless said):
 
-| squad | safer: lost / out lost / line | back: lost / out lost | line: lost / out lost / blks |
+| squad | safer: lost / out lost / line | back: lost / out lost | line: lost / out lost / walk |
 |---|---|---|---|
 | scrappy (5) | 9% / 0% / 25% | 9% / 0% | 9% / 0% / 3.4 |
 | solid (6) | 13% / 3% / 20% | 13% / 3% | 15% / 5% / 8.2 |

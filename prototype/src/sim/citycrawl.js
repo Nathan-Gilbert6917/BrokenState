@@ -127,8 +127,9 @@ export const CRAWL = {
   // The autopilot's crawl: how deep (depth), when it leaves (hurt, full), when it fights (sureOdds, fightOdds), what it
   // searches (searchOdds: the odds of the fight a search could bring, searchOdds below; 2026-10-13: was a place's
   // look, at most "A few of the dead about", which no place deeper than block 3 is, so it walked deep and searched
-  // nothing). It goes on down to depth while the block it stands on had something it could search. way: how it leaves
-  // ("safer": the way with the lowest risk; "back" or "line": always that one, for tools/crawlbalance.js --way).
+  // nothing). It goes on down to depth while the block it stands on had something it could search.
+  // way: how it leaves ("safer": the lowest risk of the ways out; "back": the path in; "line": the safest straight line
+  // to the rim; for tools/crawlbalance.js --way). From a block on the rim it always walks out.
   AUTO: { depth: 4, hurt: 50, full: 0.85, sureOdds: 0.92, fightOdds: 0.8, searchOdds: 0.85, planOdds: 0.9, planShare: 0.67, blocks: 6, slipThreat: 5, slipHeat: 60, way: "safer" },
 };
 
@@ -1617,10 +1618,10 @@ export function crawlAutoStep(state, p) {
       if (next) { nextBlock(state, p, next.way); return; }
     }
   }
-  // Out: from the rim straight out; else the lowest risk of the way back and the four straight lines (AUTO.way "back" or
-  // "line": only that way).
+  // Out: from the rim straight out; else the lowest risk of the way back and the four straight lines.
   if (onEdge(c)) { leaveCity(state, p, "here"); return; }
-  const opts = [{ way: "back", dir: null, r: exitRisk(state, p, c, "back").any }, ...[0, 1, 2, 3].map((d) => ({ way: "line", dir: d, r: exitRisk(state, p, c, "line", d).any }))];
-  const best = opts.filter((o) => A.way === "safer" || o.way === A.way).sort((a, b) => a.r - b.r)[0];
+  const opts = [{ way: "back", dir: null, r: exitRisk(state, p, c, "back").any }, ...[0, 1, 2, 3].map((d) => ({ way: "line", dir: d, r: exitRisk(state, p, c, "line", d).any }))]
+    .filter((o) => A.way === "safer" || o.way === A.way || (o.way === "back" && c.path.length <= 1)); // AUTO.way: the harness forcing one way
+  const best = opts.sort((a, b) => a.r - b.r)[0];
   leaveCity(state, p, best.way, best.dir);
 }
