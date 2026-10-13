@@ -377,7 +377,7 @@ The den of a hive (`hivecrawl.js genDen`) is now a round grid of chambers built 
 (`citygrid.js`): a square with its corners cut away, `GRID.rings` × the den's depth rings from the rim to the heart (at
 least 2: a young hive is 3 chambers across, the oldest 11). The mouth opens onto a rim chamber on a side of the hive's
 dice. A passage runs to each chamber beside, above or below, open at `GRID.open` 0.85 (a cut-off chamber gets one
-opened). One chamber of the innermost rings is **the core, open on only 1 or 2 of its sides** (`GRID.doors`: 2 at 50%,
+opened; replaced the same day by 3 open, 1 wall and four mouths, below). One chamber of the innermost rings is **the core, open on only 1 or 2 of its sides** (`GRID.doors`: 2 at 50%,
 75% at tier 1; a young hive's always on 2, one toward its mouth); the rest is wall. A chamber's layer, what the brood
 reads, is its ring scaled to the depth (1 on the rim, the depth at the heart), so the brood grows inward as it grew
 deeper before. Old saves: a den from before (v 1) is made again as a grid once no team is inside.
@@ -433,6 +433,80 @@ dead (seed 165). On the way out it now fights when the odds are fair.
 `tools/hivecrawltest.js` checks the grid, the core's doors, every chamber reachable, the beat through the wall and the
 warmth round it; `hiveplustest`'s flare check now looks over four hives (a den may give no fork), and its listening
 check reads the log of a crawl that ended inside its 12 steps; `wintest --force hive` still wins on day 31.
+
+## The hive's den: 3 open, 1 wall, four mouths, and leaving is a walk (2026-10-13)
+
+The den (`hivecrawl.js genDen`, den v 3) stays a round grid, but its passages are no longer open at random
+(`GRID.open` is gone). **Every chamber is a T**: a hallway through it and a room off the side, open on 3 of its 4
+sides. A wall between two chambers is the one wall of both, so the inner walls pair the chambers off: a maximum
+matching on the grid's checkerboard, dealt by the hive's dice (the same den every visit), dealt again (`GRID.tries`)
+while a chamber is cut off from the mouths, never through the core. A rim chamber's outside is its wall; the core
+keeps its 1–2 doors (`GRID.doors`) and a shut side of it is the wall of the chamber beside it. The core is no longer
+put beside a bend of the rim (a bend plus a shut core wall made a dead end on the 5×5 den).
+
+**Four entrances**, one on each side (north, east, south, west), each a rim chamber facing out that way at a spot of the
+hive's dice, each with its own mouth outside the rim (`den.mouths`, the mouth's own brood). An entrance's outside is
+open, so one of its inner sides is its wall; the dice pick among the spots on a side that keep the chambers to be
+paired even on the checkerboard. The exceptions left, a den on average (6 seeds × depths 2–10):
+
+| den | chambers | bends (2 open) | rim beside a shut core wall (2 open) | left over by the pairs (4 open) |
+|---|---|---|---|---|
+| 3×3 | 8 | 2.3 | 1.0 | 1.2 |
+| 5×5 | 20 | 4.2 | 0.3 | 1.0 |
+| 7×7 | 36 | 8.0 | 0 | 3.7 |
+| 9×9 | 68 | 11.1 | 0 | 0.3 |
+| 11×11 | 96 | 16.0 | 0 | 1.8 |
+| 13×13 | 136 | 14.7 | 0 | 0 |
+
+The left-over chambers are the colour imbalance of the chambers to be paired (a matching cannot do better); the four
+entrances' spots cut it from 4.4 to 0.3 on the 9×9 and 5.9 to 1.8 on the 11×11. With no dead ends any more, the
+dead-end kinds (bone pits, eggs, collapses) come up on the bends and the far ends of a way (no passage out leads
+colder); a collapse is now a chamber to crawl through, not a stop.
+
+**Picking the way in.** The hive card has one *Enter the hive from the north* (east, south, west), each with what your
+crawls know of that mouth (`mouthNote`: times in and out by it, its brood, the way to the core you mapped from it).
+`crawlEstimate` costs the shortest way in from each mouth and picks the one with the least brood (the autopilot's
+choice, `autopilot.js hiveChoice`); `shortestPath`'s default is the mouth nearest the core. An AI group's war party goes
+in by a mouth of the hive's dice for that group (the same one every time: a war party with its own dice each time
+wore a hive down far slower), and a party driven off walks out the shortest way to the nearest mouth, meeting the
+brood on it again (`met`). The four mouths count as one in `denBroodTotal` (their mean), so a brood killed thins the
+guard as it did with one mouth (four whole mouths made a fortress's war in `grouphivetest` fail to burn its hive in
+400 days; now day 334, as on dev).
+
+**Leaving is a walk.** `leaveHive`, `stepOut` and `c.leaving` are gone. The team walks chamber by chamber to any of the
+four entrances, into its mouth (its brood in the way), then *Leave by this mouth* (`roomAct "out"`). *Fall back* is one
+chamber back the way it came; *Get out of the hive* is offered only in a mouth. Walking back into a chamber it has been
+in rolls the refill `stepOut` rolled (`HEAT.refillPerHeat`), meets the brood it crept past again, and is quiet (no
+Alert: the walk out was always quiet; a noisy walk back roused the deep hives and wiped 2 rifle squads in 8 at tier 4).
+The autopilot (`c.headOut`) and the harness walk out a chamber a call along `wayOut`, the cheapest way to a mouth over
+the chambers the team knows (a chamber not been in +3, one with brood in it +6 and its heat / 20). An old save's
+crawl on a v 2 den walks out by its one mouth (`mouthsOf`), and the den is made again once the team is out.
+
+`node tools/crawlbalance.js hive --tier 1,2,3,4 --squad early,solid,rifles,elite --trials 8` (seed 4000, one trip),
+before → after:
+
+| tier | squad | win | wiped | lost/squad | hours |
+|---|---|---|---|---|---|
+| 1 | early | 0% → 0% | 0% → 0% | 3% → 3% | 8 → 7 |
+| 1 | solid | 13% → 50% | 0% → 0% | 4% → 23% | 13 → 6 |
+| 1 | rifles | 75% → 75% | 0% → 0% | 0% → 2% | 9 → 5 |
+| 1 | elite | 88% → 88% | 0% → 0% | 0% → 0% | 8 → 4 |
+| 2 | early | 0% → 0% | 0% → 13% | 22% → 22% | 8 → 8 |
+| 2 | solid | 0% → 0% | 0% → 0% | 6% → 10% | 12 → 12 |
+| 2 | rifles | 25% → 63% | 0% → 0% | 0% → 6% | 13 → 10 |
+| 2 | elite | 38% → 75% | 13% → 0% | 13% → 0% | 18 → 10 |
+| 3 | early | 0% → 0% | 13% → 0% | 33% → 25% | 7 → 8 |
+| 3 | solid | 0% → 0% | 13% → 0% | 19% → 25% | 9 → 15 |
+| 3 | rifles | 0% → 0% | 0% → 0% | 4% → 10% | 15 → 19 |
+| 3 | elite | 13% → 13% | 0% → 0% | 6% → 8% | 20 → 21 |
+| 4 | early | 0% → 0% | 13% → 0% | 33% → 25% | 7 → 8 |
+| 4 | solid | 0% → 0% | 13% → 0% | 27% → 25% | 9 → 15 |
+| 4 | rifles | 0% → 0% | 0% → 0% | 4% → 10% | 15 → 19 |
+| 4 | elite | 0% → 0% | 0% → 0% | 9% → 2% | 22 → 20 |
+
+2 of 13 judged rows on target before and after. The young and mid hives are easier (the autopilot goes in by the
+mouth with the least brood, and the open den gives shorter ways: the shortest way in averages 2.3, 2.3, 3.9, 6.3, 7.2
+moves at tiers 0–4); the deep ones are about where they were, a little more blood lost walking out. Not retuned.
 
 ## Bugs found on the way, and what was done
 

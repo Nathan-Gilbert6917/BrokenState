@@ -287,7 +287,7 @@ console.log("The crawl's record");
   st.autoCombat = true;
   HC.startHiveCrawl(st, p, hv);
   const c = p.hiveCrawl || {}; // its log, even if the crawl ends inside the 12 steps (a short way in on the round grid)
-  for (let i = 0; i < 12 && p.hiveCrawl && !p.hiveCrawl.leaving; i++) HC.hiveCrawlAutoStep(st, p);
+  for (let i = 0; i < 12 && p.hiveCrawl && !p.hiveCrawl.headOut; i++) HC.hiveCrawlAutoStep(st, p);
   const r = HC.crawlRecord(st, hv);
   check(r && r.visits === 1 && r.deepest >= 1 && r.mapped >= 2 && r.depth === HC.denOf(st, hv).depth, `after a few chambers: ${HC.crawlRecText(st, hv)}`);
   check(new RegExp(`${hv.name}: ${r.deepest}/${r.depth}`).test(HC.crawlProgressLine(st)), `the Goals card's line: "${HC.crawlProgressLine(st)}"`);
@@ -517,7 +517,7 @@ console.log("The crawl window's map");
   HC.startHiveCrawl(st, p, hv);
   const UI = await import("../src/ui/hivecrawl.js");
   const html = UI.hiveCrawlModal(st, { started: true });
-  const mouth = /<title>The mouth[^<]*<\/title><circle[^>]*\/><text[^>]*>([^<]*)<\/text>/.exec(html);
+  const mouth = /<title>The (?:north |east |south |west )?mouth[^<]*<\/title><circle[^>]*\/><text[^>]*>([^<]*)<\/text>/.exec(html);
   check(mouth && mouth[1] === "M", `the mouth's node reads ${mouth ? `"${mouth[1]}"` : "?"} (M, not T for "The mouth")`);
 }
 
