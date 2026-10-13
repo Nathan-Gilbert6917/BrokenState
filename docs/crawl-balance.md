@@ -214,6 +214,44 @@ activity and its heat; the next block's activity is unknown until you get there.
 The harness rows hardly move (crawls are short: 3–11 hours), and all 11 judged rows stay inside their targets.
 `tools/citycrawltest.js` checks the two ways, the trail, the creep and the activity levels.
 
+## Each chamber's brood activity and heat in the hive crawl (2026-10-13)
+
+The hive crawl now works the way the city crawl's blocks do (`hivecrawl.js HCRAWL.THREAT`, `HCRAWL.HEAT`):
+
+- **Brood activity** (`chamberThreat`): every chamber of a den has its own level by the hive's dice (the same every
+  visit; you learn it when you stand in it): Torpid ×0.6, Stirring ×0.8, Active ×1, Teeming ×1.35, Seething ×1.8
+  (weights 20 / 25 / 25 / 18 / 12%, as the city's).
+- **A chamber's own heat**: whatever raises the hive's Alert in a chamber (walking in, fights and shots, fire,
+  searching, a failed sneak) also stays in that chamber, × 0.6 for a stealthy team, fading 3 an hour; lying still
+  cools it as it does the Alert.
+- **`roomHeat`** = (the hive's Alert + the chamber's heat) × its activity. It replaces the bare Alert where the danger
+  is the chamber's: whether its brood has seen you on the way in (and on the way out), the DC to creep past, a swarm
+  pouring into your chamber (its chance and size, capped as at Alert 100) and a patrol finding you lying still. The
+  brood flowing back behind you and the mouth packing up still go by the hive's Alert. The autopilot lies still, burns
+  and listens by the chamber's heat, and now falls back from an encounter when too many of the team are hurt (before,
+  a second swarm on the heels of a fight was fought at the shown odds with the team at a quarter health, and wiped it).
+- The window shows the chamber's activity and its heat under the Alert; Help has a paragraph on it.
+
+Verified with the autopilot's own crawl steps (`node tools/crawlbalance.js hive --trials 40 --trips 3 --seed 5000`):
+
+| tier | squad | win before → after | lost/squad before → after |
+|---|---|---|---|
+| 1 | early | 0% → 0% | 20% → 17% |
+| 1 | solid | 93% → 95% | 13% → 10% |
+| 1 | rifles | 100% → 100% | 0% → 1% |
+| 2 | early | 0% → 0% | 47% → 48% |
+| 2 | solid | 10% → 15% | 40% → 40% |
+| 2 | rifles | 88% → 95% | 5% → 7% |
+| 3 | early | 0% → 0% | 70% → 71% |
+| 3 | solid | 0% → 0% | 40% → 38% |
+| 3 | rifles | 18% → 10% | 32% → 37% |
+
+4 of 9 judged rows inside their targets before and after (the 5 off were off already). A first cut with the heat
+fading 1 an hour and 0.15 more a person over three made every row harder (tier 3 rifles: 0% won, 48% lost), so it
+fades as fast as the Alert and a team's size does not add to it. `tools/hivecrawltest.js` checks the levels, the
+heat and its cooling; `tools/wintest.js --force hive` still wins on day 91. (`hivecrawltest` seeds 8, 11, 12 and 13
+fail on dev without this change too: the young-hive and deep-hive autopilot checks are seed-sensitive.)
+
 ## Bugs found on the way, and what was done
 
 1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving
