@@ -1,6 +1,7 @@
 // The HD sprite designs next to the game's sprites at in-game scale (design/hd/index.html). Loads each set that
 // exists (people.js, dead.js, items.js) and skips the ones it cannot import.
 import { survivorCanvas, enemyCanvas, zombieCanvas, armoredCanvas } from "../../src/ui/sprites.js";
+import { partySpriteCanvas, soloSpriteCanvas, cyclistSpriteCanvas, groupPartyCanvas, hordeSpriteCanvas, herdSpriteCanvas, hiveSpriteCanvas, skullCanvas, markerSpriteCanvas, iconCanvas } from "../../src/ui/mapsprites.js";
 import { randomAppearance } from "../../src/sim/appearance.js";
 import { Rng } from "../../src/sim/rng.js";
 import { toCanvas } from "./hdcore.js";
@@ -108,6 +109,45 @@ const items = await load("items");
         let p = null; try { p = items.paintItemHD(k); } catch (e) { console.warn(e); }
         if (!p) continue;
         r.appendChild(cell(toCanvas(p, 2), px, px * (p.h / p.w), k));
+      }
+    }
+  }
+}
+
+const map = await load("map");
+{
+  const sec = section("State map: parties, hordes, hives and markers", "A party is 22–30 world px wide (× the camera zoom, 1–3); a team of one draws 1.3 world px per sprite px. Each pair: the game's sprite, then the HD one at the same footprint, at zoom 1×, 2× and 3×.");
+  if (!map) fail(sec, "map", "not loaded");
+  else {
+    const tryHD = (fn, ...a) => { try { return map[fn] ? map[fn](...a) : null; } catch (e) { console.warn(fn, e); return null; } };
+    const list = [
+      ["truck", partySpriteCanvas("convoy", "#4f8fd6"), tryHD("paintTruckHD", "#4f8fd6"), 30],
+      ["walkers", partySpriteCanvas("walkers", "#4f8fd6", 3), tryHD("paintWalkersHD", "#4f8fd6", 3, false), 22],
+      ["raid", partySpriteCanvas("raid", "#4f8fd6", 4), tryHD("paintWalkersHD", "#4f8fd6", 4, true), 22],
+      ["boat", partySpriteCanvas("boat", "#4f8fd6"), tryHD("paintBoatHD", "#4f8fd6", false), 30],
+      ["solo", soloSpriteCanvas("walkers", "#4f8fd6", 1), tryHD("paintSoloHD", { color: "#4f8fd6" }, 1, "", ""), 16 * 1.3],
+      ["cyclist", cyclistSpriteCanvas("#4f8fd6", 1), tryHD("paintCyclistHD", "#4f8fd6", 1), 16 * 1.3],
+      ["raider truck", groupPartyCanvas("raider", "truck", "#a63a32", 3), tryHD("paintRaiderTruckHD", "#a63a32"), 28],
+      ["humvee", groupPartyCanvas("military", "truck", "#3f7a3a", 3), tryHD("paintHumveeHD", "#3f7a3a"), 28],
+      ["horde 6", hordeSpriteCanvas(6), tryHD("paintHordeHD", 6, {}), 28],
+      ["horde 10", hordeSpriteCanvas(10), tryHD("paintHordeHD", 10, {}), 32],
+      ["herd", herdSpriteCanvas("deer", 3), tryHD("paintHerdHD", "deer", 3), 28],
+      ["hive 2", hiveSpriteCanvas(2), tryHD("paintHiveHD", 2), 28],
+      ["skull", skullCanvas(), tryHD("paintSkullHD"), 12],
+      ["cache", markerSpriteCanvas("cache"), tryHD("paintCacheMarkerHD", false), 20],
+      ["grave", markerSpriteCanvas("grave"), tryHD("paintGraveMarkerHD", 0), 20],
+      ["wreck", markerSpriteCanvas("wreck"), tryHD("paintWreckMarkerHD", false), 24],
+    ];
+    for (const Z of [1, 2, 3]) {
+      const r = rowOf(sec, `zoom ${Z}×`);
+      for (const [label, cur, hd, w0] of list) {
+        const w = w0 * Z;
+        const box = document.createElement("div"); box.className = "pair";
+        const ch = cur ? w * (cur.height / cur.width) : w;
+        box.appendChild(cell(cur, w, ch, "current"));
+        const hcv = hd ? toCanvas(hd, 2) : null;
+        box.appendChild(cell(hcv, w, hcv ? w * (hcv.height / hcv.width) : w, `HD ${label}`));
+        r.appendChild(box);
       }
     }
   }
