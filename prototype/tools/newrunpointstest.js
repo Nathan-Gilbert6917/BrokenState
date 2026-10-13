@@ -9,7 +9,8 @@
 //     card's "Give leftover to the car pool", the back paid from the pool first, only what it needs taken (shared by
 //     what each gives), a giver who spends more giving less (never over), the payer over when the back costs more
 //     than the pool and they can pay (Start refused, the back named), kept through every rebuild and both modes and
-//     taken off at Start, Random back / Build / Randomize all / the dice working with it;
+//     taken off at Start, Random back / Build / Randomize all / the dice working with it; Randomize everything (every
+//     build and the back in one click, nobody over, the back in its room, Normal and Hardcore, a car pool);
 //   - a follow-up the same day ("For choosing guns ... provide how much capacity and what ammo caliber it takes as well
 //     as allow for gun customization ... All guns chosen start with a loaded magazine"): every gun in the pickers shows
 //     its calibre and rounds, the gun in the hands takes parts that fit it (each adding its worth to the gun's points; a
@@ -28,7 +29,7 @@ import { CUSTOM_POINTS, itemPoints, suppliesPoints, skillCost, pricePerson, over
 import { carryList, clearStartGear, trunkKg, START_TRUNK, START_GEAR, gunInfo, gunWith, gunCap, sanitizeStartGear, sanitizeGunMods, sanitizeStartVehicle, noteDiceKit } from "../src/sim/startgear.js";
 import { allCarried } from "../src/sim/inventory.js";
 import { trunkBudget } from "../src/sim/randomkit.js";
-import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew, crewWithBackground } from "../src/ui/newgame.js";
+import { newRunScreen, crewSnapshot, blankCrew, randomizeAllCrew, randomizeEverything, crewWithBackground } from "../src/ui/newgame.js";
 import { startGearEditor, SG_ACTIONS, SG_CHANGE, startVehicleInfo, poolRow, loadDice } from "../src/ui/startgear.js";
 import { setCustomLibrary, customLibrary, presetToCustom, backgroundEditor, BG_ACTIONS, BG_CHANGE, BG_INPUT } from "../src/ui/backgrounds.js";
 import { blankBackground } from "../src/sim/custombg.js";
@@ -272,6 +273,42 @@ section("The car pool in Hardcore, and the dice");
   SG_ACTIONS["sg-dice"](st, u, { i: st.survivors.indexOf(st.survivors.find((s) => s !== lead)) });
   const g = st.survivors.find((s) => s !== lead);
   check(pricePerson(st, g).offer === Math.max(0, 80 - ownPoints(st, g)), "Start from the dice on a giver: they give what is left of their max");
+}
+
+section("Randomize everything: every build and the vehicle's back");
+for (const mode of ["normal", "hardcore"]) {
+  let st = blankWorld(42, { mode });
+  const u = { ...UI(), crewRoll: ROLL };
+  if (mode === "normal") st.survivors.filter((s) => !s.leader).slice(0, 2).forEach((s) => pool(st, s)); // a car pool too
+  const flags = st.survivors.map((s) => !!s.carPool).join();
+  let over = 0, filled = 0, skilled = 0, kitted = 0, roomy = true, owners = true;
+  const names = new Set();
+  const N = 8;
+  for (let k = 0; k < N; k++) {
+    st = randomizeEverything(st, u, (crew, crewRoll) => { const w = world(42, { mode, crew, crewRoll }); return w; });
+    if (overBudget(st).length) over++;
+    const V = st.survivors.filter((s) => s.startVehicle);
+    if (V.length !== 1) owners = false;
+    const back = V[0] && V[0].startVehicle;
+    if (back && (back.items.length || Object.keys(back.supplies).length)) filled++;
+    const info = startVehicleInfo(st);
+    if (back && info && trunkKg(back) > info.room + 1) roomy = false;
+    if (st.survivors.every((s) => SKILLS.some((x) => s.skills[x] > 0))) skilled++;
+    if (st.survivors.every((s) => s.startGear && Object.values(s.startGear.slots).some(Boolean))) kitted++;
+    names.add(st.survivors.map((s) => s.name).join());
+  }
+  check(!over, `${mode}: nobody over the points (${N} draws)`);
+  check(owners, `${mode}: one payer has the back each time`);
+  check(filled >= N - 2, `${mode}: the back filled (${filled} of ${N})`);
+  check(roomy, `${mode}: the back within its room once the world is built again`);
+  check(skilled === N && kitted === N, `${mode}: every colonist has skills and something worn or held each time (${skilled}, ${kitted})`);
+  check(names.size >= N - 1, `${mode}: new names each draw (${names.size} of ${N})`);
+  check(st.survivors.map((s) => !!s.carPool).join() === flags, `${mode}: the car pool ticks kept`);
+}
+{
+  const st = blankWorld(42);
+  check(randomizeEverything(st, { ...UI(), freeEdit: false }, () => { throw new Error("rebuilt"); }) === st, "Randomize everything: nothing outside Customize");
+  check(/data-action="nr-everything"/.test(newRunScreen(st, UI())) && !/data-action="nr-everything"/.test(newRunScreen(st, { ...UI(), freeEdit: false })), "the button: under Customize only");
 }
 
 section("Guns: calibre and capacity, parts, a loaded magazine");

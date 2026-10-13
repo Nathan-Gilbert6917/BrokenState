@@ -9,11 +9,12 @@ import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; 
 import { customLibrary } from "./backgrounds.js";
 import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/custombg.js), kept in this browser
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
-import { sanitizeStartGear, hasPicks } from "../sim/startgear.js"; // starting gear picked under Customize
-import { gearRow, pointsBar } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card
+import { sanitizeStartGear, hasPicks, vehicleOwner, trunkKg } from "../sim/startgear.js"; // starting gear picked under Customize
+import { gearRow, pointsBar, startVehicleInfo } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card
 import { traitPickerHtml, traitBlock, traitChips } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
-import { randomBuild } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points
-import { CUSTOM_POINTS, pricePerson, pointsMax, nextLevelCost, skillCost } from "../sim/custompoints.js"; // Customize: everything costs points
+import { randomBuild, randomEverything, kitKeys } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the back
+import { CUSTOM_POINTS, pricePerson, pointsMax, nextLevelCost, skillCost, backPayer } from "../sim/custompoints.js";
+import { wornLoad } from "../sim/load.js"; // Customize: everything costs points
 import { traitLabel, traitTier, setTier, tidyTiers, tierCount, cleanTier } from "../sim/traits.js";
 import {
   LOOK_OPTIONS, LOOK_COLORS, ensureAppearance, randomAppearance, freshRng, randomName, randomSkills, fitSkills, skillTotal, SKILL_MAX,
@@ -239,6 +240,7 @@ export function newRunScreen(state, ui) {
       ${hiveSelect(state, ui)}
       <button data-action="reroll"${tip("Generate a new map and new colonists")}>New map and colonists</button>
       <button data-action="nr-allcrew"${tip(freeEdit(ui) ? "Every colonist: a new name, look and random build (traits, skills and what they wear, hold and carry, within their points; the vehicle's back stays). Build on a crew card does one colonist" : `Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
+      ${freeEdit(ui) ? `<button data-action="nr-everything"${tip("Everything at once: every colonist a new name, look and random build (traits, skills and what they wear, hold and carry), and the vehicle's back emptied and filled again (its payer keeps a share of their points for it), all within the points. Each click is a new draw")}>🎲 Randomize everything</button>` : ""}
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
     </div>
     ${customSizeRow(state, ui)}
@@ -348,6 +350,25 @@ export function randomizeAllCrew(state, ui, rebuild) {
   const next = rebuild(crew, 1 + Math.floor(rng.next() * 2147483646));
   next.survivors.forEach((s, i) => { if (budgets[i] != null) s.skills = fitSkills(rng, s.skills, budgets[i]); });
   return next;
+}
+
+// Randomize everything (Customize only): Randomize all's names, looks and builds, and the vehicle's back drawn again
+// with them (sim/randomkit.js randomEverything; its payer as ui/startgear.js editTrunk picks them). In Hardcore the
+// riders' kit rides in the car, so its room is reckoned with the new kits in place of the old. The world is built
+// again with them. Returns the state to keep (as is outside Customize).
+/** @param {any} state @param {any} ui @param {(crew: any[], crewRoll: any, pickRoll: any) => any} rebuild */
+export function randomizeEverything(state, ui, rebuild) {
+  if (ui.started || !freeEdit(ui)) return state;
+  const rng = freshRng();
+  const payer = vehicleOwner(state) || backPayer(state);
+  if (!payer) return state;
+  const info = startVehicleInfo(state);
+  const worn = state.survivors.reduce((a, s) => a + wornLoad(s), 0);
+  const room = info ? () => Math.max(0, info.room + (info.hard ? worn - state.survivors.reduce((a, s) => a + trunkKg({ items: kitKeys(s.startGear) }), 0) : 0)) : null;
+  state.survivors.forEach((s) => reroll(state, ui, s, ["name", "look"]));
+  randomEverything(state, payer, room, rng);
+  state.survivors.forEach((s) => { s.startPoints = true; s.startCustom = true; });
+  return rebuild(crewSnapshot(state), ui.crewRoll ?? null, ui.pickRoll);
 }
 
 // ---------- zombie look settings ----------
