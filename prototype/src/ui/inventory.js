@@ -928,7 +928,7 @@ export const INV_ACTIONS = {
   "rl-stash": (state, ui) => {
     if (!ui.inv || !ui.inv.raid) return;
     const r = stashAll(state, ui.inv.uid);
-    ui.invMsg = `${r.put.length ? `Put ${r.put.join(", ")} in the vehicle.` : "Nothing put in."}${r.left ? ` ${r.left} thing${r.left === 1 ? "" : "s"} did not fit.` : ""}`;
+    ui.invMsg = `${r.put.length ? `Put ${r.put.join(", ")} in the vehicle.` : "Nothing put in."}${r.left ? (r.outOfTime ? " No time to haul the rest this turn: end the turn and come back for it." : ` ${r.left} thing${r.left === 1 ? "" : "s"} did not fit.`) : ""}`;
     ui.invSel = null;
   },
 };

@@ -538,7 +538,7 @@ function stowTarget(state, b, u, it) {
   return `haul:${u.id}:list`;
 }
 
-// Everything the survivor carries loose goes in the vehicle (what fits). Returns { put: [names], left: n }.
+// Everything the survivor carries loose goes in the vehicle (what fits). Returns { put: [names], left: n, outOfTime }.
 export function stashAll(state, uid) {
   const b = state.combat;
   const u = b && b.units.find((x) => x.id === uid);
@@ -558,7 +558,7 @@ export function stashAll(state, uid) {
     if (!u.haul.gear.includes(it)) put.push(it.name);
   }
   const left = u.haul.gear.length + Object.values(u.haul.sup).filter((v) => v >= 1).length;
-  return { put, left };
+  return { put, left, outOfTime: left > 0 && haulBudget(b, u) < 0.5 }; // what is left stays for want of time, not room
 }
 
 // The headless search (bots, autopilot, tests): what fits goes on the survivor (stowed or carried).

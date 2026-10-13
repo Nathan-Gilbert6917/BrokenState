@@ -287,6 +287,7 @@ function advanceCourse(state, s, w) {
   }
   w.day = Math.max(1, w.day + step);
   w.stage = stageFor(w.day);
+  if (meds) w.medsDay = w.day; else delete w.medsDay; // wormLabel: today's damage was halved by the meds
   return { meds, held: step === 0, hp: dayHp(w.day) * (meds ? WORM.MEDS_HP : 1) };
 }
 // Known to you: spotted at a base or by the team.
@@ -1624,7 +1625,8 @@ export function wormLabel(s) {
   const w = wormOf(s);
   if (!w) return "";
   const d = Math.max(1, w.day);
-  return `Infected (day ${w.day} of about ${WORM.COURSE}): −${dayHp(d)} health today, −${dayMood(d)} mood`;
+  const meds = w.medsDay === w.day;
+  return `Infected (day ${w.day} of about ${WORM.COURSE}): −${Math.round(dayHp(d) * (meds ? WORM.MEDS_HP : 1))} health today${meds ? " (halved by the meds)" : ""}, −${dayMood(d)} mood`;
 }
 // The cure open at this stage, in words.
 export function wormCureText(s) {

@@ -188,14 +188,14 @@ section("The tray in a browser-like loop");
     maxTray = Math.max(maxTray, trayCards(st).length);
     // Teams with a card in the tray that are on the move should not move this hour.
     const watch = [];
-    for (const c of trayCards(st)) { const p = st.parties.find((x) => x.id === c.partyId); if (p && onTheMove(p) && !watch.some((w) => w.p === p)) watch.push({ p, tile: partyTile(p), idx: p.idx }); }
+    for (const c of trayCards(st)) { const p = st.parties.find((x) => x.id === c.partyId); if (p && onTheMove(p) && !watch.some((w) => w.p === p)) watch.push({ p, tile: partyTile(p), idx: p.idx, cards: trayCards(st).filter((x) => x.partyId === p.id) }); }
     try {
       beforeHour(st, ui);
       tickHour(st);
       afterHour(st, ui);
     } catch (e) { crashes++; console.log("    tick:", e.message); }
     for (const w of watch) {
-      if (!st.parties.includes(w.p) || !trayCards(st).some((c) => c.partyId === w.p.id)) continue; // answered or gone
+      if (!st.parties.includes(w.p) || !w.cards.some((c) => trayCards(st).includes(c))) continue; // answered or gone (a new card that came this hour is not the one it held for)
       held++;
       if (w.p.idx > w.idx) heldMoved++;
     }
