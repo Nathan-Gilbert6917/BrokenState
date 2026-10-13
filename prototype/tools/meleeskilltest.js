@@ -63,7 +63,10 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
 // ---------- the skill everywhere ----------
 console.log("The skill everywhere");
 {
-  check(SKILLS.includes("melee") && SKILLS[SKILLS.length - 1] === "melee" && SKILL_NAMES.melee === "Melee", "Melee is a skill (last in SKILLS: older dice loops draw as they did), named Melee");
+  // Cooking (d56be77) came after Melee and went on the end in its turn: Melee stays after every older skill, so a dice
+  // loop over the older ones draws as it did, and only newer skills follow it.
+  const mi = SKILLS.indexOf("melee"), NEWER = ["cooking"];
+  check(mi >= 0 && SKILLS.slice(0, mi).every((k) => !NEWER.includes(k)) && SKILLS.slice(mi + 1).every((k) => NEWER.includes(k)) && SKILL_NAMES.melee === "Melee", "Melee is a skill (after every older skill in SKILLS, only newer ones after it: older dice loops draw as they did), named Melee");
   check(!ROLLED_SKILLS.includes("melee") && ROLLED_SKILLS.length === 9, "not rolled with the world's dice (the nine older skills are)");
   check(PERK_TREE.melee && [5, 10, 15].every((ms) => PERK_TREE.melee[ms] && PERK_TREE.melee[ms].length === 2), "two perks at Melee 5, 10 and 15");
   check(["heavyhands", "parry", "butcher", "knockout", "bonebreaker", "pitfighter"].every((id) => PERKS[id] && PERKS[id].skill === "melee"), "the six melee perks are indexed under Melee");

@@ -22,6 +22,7 @@ import { BOOK_SITES, WARE_BOOKS } from "../src/sim/skills.js";
 import { RARE_GEAR, TRAVEL_GEAR, MERCHANT_VALUABLES } from "../src/sim/visitors.js";
 import { RECRUIT_WEAPONS, RECRUIT_ARMOR, RECRUIT_KIT, RECRUIT_PERSONAL } from "../src/sim/recruits.js";
 import { CRAFTS } from "../src/sim/crafting.js";
+import { BUILDINGS, CANNER } from "../src/sim/buildings.js"; // machines-2: the pressure canner is fitted, not found
 import { HUMVEE_GEAR, HIKER_STUFF } from "../src/sim/events.js";
 import { THROWABLES } from "../src/sim/stealth.js";
 import { worthTier } from "../src/sim/valuation.js";
@@ -93,6 +94,11 @@ addAll(Object.keys(AMMO_GEAR), "rounds");
 addAll(Object.keys(BULK_GEAR), "bulk finds"); // ammo.js bulkFind: raid containers and Army trucks now and then (2026-10-10) // a box is the item form of a supply of rounds found by key everywhere (ammo.js: starting colonists' pockets, opened into the stock)
 addAll(Object.keys(RECRUIT_WEAPONS), "recruits"); addAll(RECRUIT_ARMOR, "recruits"); addAll(RECRUIT_KIT, "recruits"); addAll(RECRUIT_PERSONAL, "recruits");
 for (const [k, r] of Object.entries(CRAFTS)) if (r.gear) addAll([r.gear], `craft:${k}`);
+// The pressure canner item (data.js GEAR.canner) is no longer made or found (machines-2, 84c5145): the canner is an
+// upgrade built into a preserving room (buildings.js BUILDINGS.canner) and the item is kept only for old saves, whose
+// canners are fitted when loaded (migrateCanners) or pay for a fitting later. Its source is an old save, so long as the
+// fitting it stands for can be built.
+if (BUILDINGS.canner && BUILDINGS.canner.from === "kitchen" && CANNER.item) add(CANNER.item, "old saves (fitted to a preserving room)");
 addAll(HUMVEE_GEAR, "event:humvee"); addAll(HIKER_STUFF, "event:hiker"); addAll(["hikingpack", "rucksack"], "event:hiker");
 for (const k of Object.keys(GEAR)) if (GEAR[k].blueprint) add(k, "blueprints");
 for (const [a, f] of Object.entries(GUN_FINDS)) addAll(Object.keys(f), `raid:${a}`); // gunsafes.js: tools and gun cases in raid containers

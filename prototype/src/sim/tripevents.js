@@ -32,7 +32,7 @@ import { hash01, gainXp } from "./skills.js";
 import { GEAR } from "./data.js";
 import { log, hurt, skill, combatPower, addCard, localId } from "./world.js";
 import { woundMult, accidentMult } from "./traits.js";
-import { armorMult, carriedSpots, newItem } from "./inventory.js";
+import { armorMult, carriedSpots, lootItem } from "./inventory.js";
 import { addCondition, CONDITIONS } from "./health.js";
 import { drawShots } from "./ammo.js";
 import { gunMods } from "./gunmods.js";
@@ -590,7 +590,7 @@ export function settle(state, base, s, t, choice, now, how = "") {
       if (pick === "trade" && sumStock(base.stock, o.want)) {
         for (const [k2, q] of Object.entries(o.want)) { if (k2 === "food") payFood(base, q, state); else base.stock[k2] -= q; } // foods.js: days of food, the soonest to spoil first
         if (o.give) gainGoods(state, base, o.give, "keeps"); // foods.js: tins of food as cans
-        if (o.item) base.armory.push(newItem(o.item, 1, rng));
+        if (o.item) base.armory.push(lootItem(o.item, "traveller", rng)); // itemcond.js: out of a traveller's pack, its condition rolled on the rng's position (no draw)
         delay(t, when, 0.5, phase);
         gainXp(state, s, "speech", 2);
         text = `${s.name} met a traveller near ${where} and traded ${Object.entries(o.want).map(([k2, q]) => `${q} ${k2}`).join(", ")} for ${o.text}.`;
@@ -603,7 +603,8 @@ export function settle(state, base, s, t, choice, now, how = "") {
       const F = TRIP_FINDS[ev.find] || TRIP_FINDS[0];
       t.bonus = t.bonus || {};
       let what = "";
-      if (F.item) { (t.bonus.items = t.bonus.items || []).push(newItem(F.item, 1, rng)); what = `a ${GEAR[F.item].name.toLowerCase()}`; }
+      // itemcond.js: an item lying out by the road has the outdoors' condition, rolled on the rng's position (no draw)
+      if (F.item) { (t.bonus.items = t.bonus.items || []).push(lootItem(F.item, "site", rng)); what = `a ${GEAR[F.item].name.toLowerCase()}`; }
       else for (const [k2, [a, b]] of Object.entries(F.give)) { const q = rng.int(a, b) + (t.job === "scavenge" && rng.next() < skill(s, "scavenging") / 20 ? 1 : 0); t.bonus[k2] = (t.bonus[k2] || 0) + q; what = F.text(q); }
       st.found++;
       text = `${s.name} found ${what} near ${where}.`;
