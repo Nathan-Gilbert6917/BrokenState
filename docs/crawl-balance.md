@@ -103,6 +103,48 @@ naked team's losses 48% → 27%); against the corrected one they are a modest ea
 
 All 10 judged city rows are inside their targets.
 
+## The autopilot crawls the city, down to block 5 (2026-10-13, later the same day)
+
+Before, the autopilot never crawled a city: on autopilot a city was searched hour by hour (`scavenge.js
+startScavenge`), and `crawlAutoStep` only finished a crawl the player had left open; that one went 2 blocks deep and
+searched only places that *looked* "Quiet" or "A few of the dead about", which no place below block 3 does. Now:
+
+- `scavenge.js`: an autopilot team that scavenges a city starts a crawl; the governor steps it every hour
+  (`autopilot.js idleTeams`, as before for an open crawl).
+- `CRAWL.AUTO.depth` 2 → **5**. At the edge the team plans its block (`citycrawl.js autoDepth`): the deepest, up to 5,
+  where most of the edge block's places, as deep as that, would still be searched at `planOdds` 0.9 or better
+  (`planShare` 0.67: deeper blocks hold worse places than the edge's). It walks the blocks on the way and searches
+  at its block; with room left and a block it could work it goes one deeper, never past 5.
+- What it searches: `searchOdds` (new) is the odds of winning the fight a quick search could bring (half the dead
+  inside, the raiders all); it searches places at `AUTO.searchOdds` 0.85 or better, and, come all that way with none
+  left, one at `fightOdds` 0.8.
+
+Depth did not pay at first: a team's take is capped by what it can carry, so a deeper, richer block only filled the
+packs sooner, while the walk down costs street fights that kill even when won (rifles at block 5: 23% of the squad
+lost for the value block 2 gave at 7%). To make the walk cheaper and the search better:
+
+- `ENC.perBlock` 0.07 → 0.05 (trouble on the way down grows more slowly with the block),
+- `QUICK.rollsPerBlock` 0.75 (new: a search by the numbers finds 0.75 more rolls a block deeper; 6 at block 5),
+- `RICH.perBlock` 0.15 → 0.25 (what a container holds, a block deeper).
+
+City crawl after (40 trials, day 60, balanced retreat policy; value is trade value):
+
+| squad | depth reached | value home | squad lost | judged |
+|---|---|---|---|---|
+| naked (4, bats) | 1.3 | 58 | 4% | ✓ |
+| scrappy (5, pistols) | 1.7 | 116 | 8% | ✓ |
+| early (5, shotgun, vest) | 2.0 | 141 | 5% | ✓ |
+| solid (6, shotgun, vest) | 2.5 | 215 | 12% | ✓ |
+| rifles (6, AR, plate) | 3.8 | 201 | 13% | ✓ |
+| elite (8, AR, plate) | 4.8 | 232 | 24% | ✓ |
+
+Weak teams stay near the edge, strong ones go down to 4–5. **What is still wrong:** a strong team gets no more value
+from block 5 than from block 2 (rifles: 201 against 203) and loses more people doing it. The take is bound by the
+team's carry, so depth can only pay in what a kilo of it is worth: deeper blocks need rarer, lighter, dearer finds
+(guns, ammo, meds, parts, the `PLACE_POOL` rare finds) rather than more of the same tins. That is a loot-table change;
+it is not made here. Until then the autopilot going deep trades lives for nothing, and `AUTO.depth` 3 would be the
+prudent setting.
+
 ## Bugs found on the way, and what was done
 
 1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving

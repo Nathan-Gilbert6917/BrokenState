@@ -655,34 +655,35 @@ section("Alliance victory");
   seasoned();
   const g0 = A.goalsProgress(st);
   console.log(`  start: land ${(g0.alliance.land.pct * 100).toFixed(1)}%, ${g0.alliance.members} of ${g0.alliance.groups} groups in, ${g0.hives.left} hives`);
-  check(!A.allianceVictory(st), "not with hives standing, land under half and a group outside");
+  check(!A.allianceVictory(st), "not with hives standing, land short and a group outside");
   st.hives.length = 0; st.hiveSites.length = 0;
-  check(!A.allianceVictory(st), "not with no hives but land under half and a group outside");
+  check(!A.allianceVictory(st), "not with no hives but land short and a group outside");
   // More land: members spread out (test only).
   const ms = A.allianceMembers(st);
   let k = 0;
   for (const t of st.tiles) {
-    if (A.controlledLand(st).pct > 0.55) break;
+    if (A.controlledLand(st).pct > A.ALLIANCE.LAND_NEEDED + 0.05) break;
     if (t.terrain === "water" || (t.x + t.y * 3) % 11) continue;
     if (st.grid.distance(t.id, hub(st).tile) > 4 && free(st, t.id)) ms[k++ % ms.length].bases.push(t.id);
   }
-  check(A.controlledLand(st).pct > 0.5 && A.allianceVictory(st), `land ${(A.controlledLand(st).pct * 100).toFixed(1)}% held with ${last.name} outside: the victory stands (groups outside no longer block it; members are enough)`);
+  // 2026-10-13: the coalition wins only with 60% of the land, no hive and no group outside it.
+  check(A.controlledLand(st).pct > A.ALLIANCE.LAND_NEEDED && !A.allianceVictory(st), `land ${(A.controlledLand(st).pct * 100).toFixed(1)}% held with ${last.name} outside: no victory while a group stays outside`);
   last.bases.unshift(nearTile(st, hub(st).tile, 2, 7));
   A.inviteToAlliance(st, last);
   seasoned();
-  check(A.isMember(st, last) && A.allianceVictory(st), "land over half, every group in, no hive: victory");
+  check(A.isMember(st, last) && A.allianceVictory(st), "land over 60%, every group in, no hive: victory");
   st.hives.push({ id: 999, tile: 0, res: 0 });
-  check(A.allianceVictory(st), "a hive still standing does not stop it (the coalition is its own victory)");
+  check(!A.allianceVictory(st), "a hive still standing stops it");
   st.hives.length = 0;
   st.hiveSites.push({ id: 1, tile: 5, started: 1, biomass: 10 });
-  check(A.allianceVictory(st), "nor a hive being built");
+  check(!A.allianceVictory(st), "so does a hive being built");
   st.hiveSites.length = 0;
-  // A collapsed group does not count against you.
+  // A group outside blocks it; a collapsed one does not count.
   const outsider = st.factions.find((f) => f.alive && A.isMember(st, f));
   st.alliance.members = st.alliance.members.filter((id) => id !== outsider.id);
-  check(A.allianceVictory(st) && A.allianceMembers(st).length > 0, "a living group outside the coalition no longer blocks the victory (members and land are what count)");
+  check(!A.allianceVictory(st) && A.allianceMembers(st).length > 0, "a living group outside the coalition blocks the victory");
   outsider.alive = false; outsider.bases = [];
-  check(A.allianceVictory(st) === (A.controlledLand(st).pct > 0.5), "a collapsed group does not count");
+  check(A.allianceVictory(st) === (A.controlledLand(st).pct > A.ALLIANCE.LAND_NEEDED), "a collapsed group does not count");
   st.alliance.members.push(outsider.id);
   seasoned();
   outsider.alive = true;

@@ -69,7 +69,7 @@ export const CRAWL = {
   SPECIAL: { from: 3, chance: 0.06, perBlock: 0.05, late: 0.1, max: 0.45, types: ["runner", "runner", "spitter", "brute", "screamer"] },
   // A building's richness (combat.js searchBox: chance, amount and gear of what a container holds): base + a share of the
   // site's own loot, × (1 + perBlock × (block − 1)) × the place's factor × (1 − looted × picked over), clamped.
-  RICH: { base: 0.55, site: 0.45, perBlock: 0.15, max: 1.8, min: 0.3, looted: 0.85 },
+  RICH: { base: 0.55, site: 0.45, perBlock: 0.25, max: 1.8, min: 0.3, looted: 0.85 },
   SPAWN_PER_BLOCK: 2,           // more of the dead the Heat can bring in, a block deeper (combat.js spawnCap 12)
   INFECT_PER_BLOCK: 0.05,       // the raid's infection (Heat per turn, the power of the dead that come in) a block deeper
   // Alert 0–100: start (+ the city's infection × infection), + a building's Heat gained × fromHeat when you come out,
@@ -79,7 +79,7 @@ export const CRAWL = {
   // (its start) × fromAlert, at most max.
   HEAT0: { day: 5, night: 0, perBlock: 2, fromAlert: 0.35, max: 50 },
   // Trouble on the way to the next block: base + perBlock × (block reached − 1) + Alert × perAlert, × night, at most max.
-  ENC: { base: 0.06, perBlock: 0.07, perAlert: 0.004, night: 1.25, max: 0.85, raiders: 0.15, raidersPerBlock: 0.05 },
+  ENC: { base: 0.06, perBlock: 0.05, perAlert: 0.004, night: 1.25, max: 0.85, raiders: 0.15, raidersPerBlock: 0.05 },
   // The way out: one roll a block from where you are back to block 2 (block 1 is the city's edge): base + perBlock ×
   // (block − 1) + Alert × perAlert + overload × load, × night. At Alert fightAlert or more from block fightFrom or deeper
   // the streets are crawling: the first block on the way out is a fight (or a hard sneak).
@@ -97,8 +97,12 @@ export const CRAWL = {
   RUN: { hurt: 0.2, perBlock: 0.06, load: 0.3, patrol: 0.1, max: 0.9, dmg: [10, 25], dmgPerBlock: 3 },
   // Searching a place by the numbers (no map; the autopilot's crawl too): hours, the chance of a fight, rolls of loot.
   // (Fewer finds than playing the building's map, which is where the rewards are.)
-  QUICK: { hours: 2, fight: 0.22, perBlock: 0.07, rolls: 3, looted: 0.5, alert: 4 },
-  AUTO: { depth: 2, hurt: 50, full: 0.85, sureOdds: 0.92, fightOdds: 0.8, looks: 2 }, // the autopilot's crawl: how deep, when it leaves, when it fights
+  QUICK: { hours: 2, fight: 0.22, perBlock: 0.07, rolls: 3, rollsPerBlock: 0.75, looted: 0.5, alert: 4 }, // rollsPerBlock: more rolls a block deeper
+  // The autopilot's crawl: how deep (depth), when it leaves (hurt, full), when it fights (sureOdds, fightOdds), what it
+  // searches (searchOdds: the odds of the fight a search could bring, searchOdds below; 2026-10-13: was a place's
+  // look, at most "A few of the dead about", which no place deeper than block 3 is, so it walked deep and searched
+  // nothing). It goes on down to depth while the block it stands on had something it could search.
+  AUTO: { depth: 5, hurt: 50, full: 0.85, sureOdds: 0.92, fightOdds: 0.8, searchOdds: 0.85, planOdds: 0.9, planShare: 0.67 },
 };
 
 // Places a block can hold (buildingmaps.js BUILDINGS keys): weight at the edge + deep a block deeper (from block `from`),
@@ -679,7 +683,7 @@ export function quickSearch(state, p, place) {
   const rich = placeRichness(state, c, place);
   const holds = buildingHint(place.key).holds.filter((x) => AREAS[x]);
   const sup = {}, gear = [];
-  const rolls = Math.max(1, Math.round(Q.rolls * (1 - 0.6 * (place.looted || 0))));
+  const rolls = Math.max(1, Math.round((Q.rolls + (Q.rollsPerBlock || 0) * (n - 1)) * (1 - 0.6 * (place.looted || 0))));
   for (let i = 0; i < rolls && holds.length; i++) { const r = rollArea(rng, rng.pick(holds), rich, scav, place.key); addSup(sup, r.sup); gear.push(...r.gear); }
   const text = give(state, p, c, sup, gear);
   place.quick = true;
@@ -694,6 +698,27 @@ export function quickSearch(state, p, place) {
   wormSearch(state, p, c.tile, Q.hours); // worm.js
   passHours(state, p, Q.hours);
   return lines.join(" ");
+}
+// The odds of winning the fight a quick search of this place could bring (quickSearch: half the dead inside, all the
+// raiders), for the autopilot's choice of what to search.
+export function searchOdds(state, p, c, place, n = c.block) {
+  const groups = placeGroups(state, c, place, n).map((g) => (g.kind === "zombies" ? { ...g, count: Math.max(1, Math.round(g.count * 0.5)) } : g));
+  return byNumbersOdds(state, { tile: c.tile, partyId: p.id, enemy: mergeGroups(groups), ambush: null, canRetreat: true }).win;
+}
+// The block the autopilot's crawl means to work (set on the city's edge): the deepest up to AUTO.depth where the places
+// of the edge block, as deep as that, would be searched with a margin (planShare of them at planOdds or better).
+// Deeper places are richer (RICH.perBlock) and hold the rarer finds; the blocks on the way are walked, not searched.
+export function autoDepth(state, p, c) {
+  const A = CRAWL.AUTO;
+  const places = blockOf(c).places.filter((x) => !x.blocked);
+  if (!places.length) return 1;
+  let best = 1;
+  for (let n = 2; n <= Math.min(A.depth, CRAWL.MAX_BLOCK); n++) {
+    const ok = places.filter((x) => searchOdds(state, p, c, x, n) >= A.planOdds).length;
+    if (ok < places.length * A.planShare) break; // deeper blocks hold worse places than the edge's: a margin
+    best = n;
+  }
+  return best;
 }
 function mergeGroups(groups) {
   const count = groups.reduce((a, g) => a + g.count, 0);
@@ -1239,7 +1264,7 @@ function eventGrab(state, p, c, ev, mil, done, fightNow) {
 
 // ---------- the autopilot ----------
 // A crawl left open when the autopilot came on (autopilot.js idleTeams, once an hour): search the places of blocks 1–2
-// by the numbers, go no deeper than AUTO.depth, leave when hurt or loaded; fight encounters it should win, else hide,
+// by the numbers (the places it can win at AUTO.searchOdds), go no deeper than AUTO.depth (nor past a block it could not work), leave when hurt or loaded; fight encounters it should win, else hide,
 // lure or run.
 export function crawlAutoStep(state, p) {
   const c = crawlOf(state, p);
@@ -1262,9 +1287,18 @@ export function crawlAutoStep(state, p) {
   const blk = blockOf(c);
   if (!c.leaving) {
     for (const ev of blk.events) if (!ev.done && EVENTS[ev.key].blocking) { resolveEvent(state, p, ev.id, "detour"); return; }
-    const todo = blk.places.filter((x) => !x.blocked && !x.quick && !c.buildings[x.id]).sort((a, b) => placeDanger(state, c, a).score - placeDanger(state, c, b).score);
-    if (!hurtNow && !full && todo.length && placeLooks(state, p, c, todo[0]).level <= A.looks) { quickSearch(state, p, todo[0]); return; }
-    if (!hurtNow && !full && c.block < A.depth) { nextBlock(state, p); return; }
+    if (c.autoDepth == null) c.autoDepth = autoDepth(state, p, c); // the block it means to work, judged at the edge
+    // On the way down it walks; at its block (or a block it reaches hurt or full) it searches what it can take on.
+    if (!hurtNow && !full && c.block < c.autoDepth) { nextBlock(state, p); return; }
+    const fit = blk.places.filter((x) => !x.blocked && searchOdds(state, p, c, x) >= A.searchOdds);
+    const todo = fit.filter((x) => !x.quick && !c.buildings[x.id]).sort((a, b) => placeDanger(state, c, a).score - placeDanger(state, c, b).score);
+    if (!hurtNow && !full && todo.length) { quickSearch(state, p, todo[0]); return; }
+    // Come all this way and nothing it is sure of left here: a place it should still win (fightOdds) rather than none.
+    const worked = blk.places.some((x) => x.quick);
+    const fair = !worked && blk.places.filter((x) => !x.blocked && !x.quick && !c.buildings[x.id] && searchOdds(state, p, c, x) >= A.fightOdds);
+    if (!hurtNow && !full && fair && fair.length) { quickSearch(state, p, fair[0]); return; }
+    // Its block worked out and room to spare: one deeper, if this block was one it could work and the depth allows.
+    if (!hurtNow && !full && c.block < A.depth && fit.length) { c.autoDepth = c.block + 1; nextBlock(state, p); return; }
   }
   if (c.leaving) stepLeave(state, p);
   else leaveCity(state, p);

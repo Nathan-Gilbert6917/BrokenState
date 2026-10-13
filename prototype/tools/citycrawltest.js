@@ -80,7 +80,15 @@ console.log("Entering a city");
     state.autoCombat = true;
     state.engagement = null;
     startScavenge(state, r);
-    check(!r.crawl && !!state.engagement, "on autopilot a city is searched hour by hour as before");
+    check(!r.crawl && !!state.engagement, "with battles by the numbers (autoCombat) a city is searched hour by hour as before");
+    // The autopilot itself crawls (2026-10-13): block by block, stepped every hour by its governor.
+    {
+      const w2 = world(31);
+      const r2 = team(w2.state, w2.h, w2.city, 1);
+      w2.state.autopilot = true;
+      startScavenge(w2.state, r2);
+      check(!!r2.crawl && r2.crawl.block === 1, "on autopilot a team that scavenges a city crawls it");
+    }
     state.autoCombat = false;
     state.engagement = null;
   } finally { delete globalThis.window; }

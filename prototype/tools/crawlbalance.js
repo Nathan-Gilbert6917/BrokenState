@@ -26,7 +26,9 @@
 //   --set HCRAWL.NUMBERS.k=120,CRAWL.QUICK.fight=0.25   override tuning numbers for this run (a dotted path under
 //                     HCRAWL, HIVEMIND, CRAWL, EVENTS): A/B a tweak without editing the source.
 import { createWorld, makeSurvivor, hub, tickHour } from "../src/sim/world.js";
-import { GEAR } from "../src/sim/data.js";
+import { GEAR, supValue } from "../src/sim/data.js";
+import { itemValue } from "../src/sim/valuation.js";
+import { FOODS } from "../src/sim/foods.js";
 import { ensureHives } from "../src/sim/hives.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { hiveTier } from "../src/sim/hivetech.js";
@@ -68,7 +70,9 @@ export const TARGETS = {
     // harness has a search policy (docs/crawl-balance.md, next steps). A lost fight by the numbers is lethal (it
     // killed 75% of a team), so even a good squad loses a few percent of its people over two blocks.
     2: { naked: [0.6, 1, 0.35], scrappy: [0.8, 1, 0.22], early: [0.88, 1, 0.18], solid: [0.9, 1, 0.18], rifles: [0.9, 1, 0.18] },
-    4: { naked: [0.5, 1, 0.4], scrappy: [0.8, 1, 0.25], early: [0.85, 1, 0.2], solid: [0.88, 1, 0.22], rifles: [0.88, 1, 0.22] },
+    // The autopilot's own depth (AUTO.depth 5, 2026-10-13): it plans the block by the team's strength, so a weak team
+    // stays near the edge and a strong one goes down to 4-5 and pays for it in street fights.
+    5: { naked: [0.85, 1, 0.2], scrappy: [0.85, 1, 0.2], early: [0.85, 1, 0.2], solid: [0.85, 1, 0.2], rifles: [0.85, 1, 0.22], elite: [0.85, 1, 0.3] },
   },
 };
 // The day each hive tier opens (hivetech.js hiveTier follows the game's years); a scenario's default day.
@@ -203,9 +207,11 @@ export function cityTrial(seed, { depth, startBlock = 1, loadout, L, day = 60 })
     const alive = people.filter((s) => s.alive !== false && st.survivors.includes(s)).length;
     const out = !p.crawl && st.parties.includes(p) && alive > 0;
     const loot = out ? Object.values(p.cargo.supplies).reduce((a, v) => a + v, 0) + (p.cargo.gear || []).length * 4 : 0;
+    // What it is worth (trade value: supplies by data.js supValue, food by its kcal at a day's ration's worth, gear by valuation.js itemValue).
+    const value = out ? Object.entries(p.cargo.supplies).reduce((a, [k, v]) => a + v * (supValue(k) || (FOODS[k] ? (FOODS[k].kcal || 0) / 2000 * supValue("food") : 0)), 0) + (p.cargo.gear || []).reduce((a, it) => a + (it ? itemValue(it) || 0 : 0), 0) : 0;
     const fl = c.log.filter((l) => /^Fight with/.test(l.text));
     const fights = fl.length, fightsLost = fl.filter((l) => /: lost\./.test(l.text)).length;
-    return { out, fights, fightsLost, wiped: alive === 0, lost: L.n - alive, share: (L.n - alive) / L.n, hours: st.hour - h0, loot, ammo: Math.max(0, supplies.ammo - ammoOf(p)), blocks: c.deepest ?? c.block };
+    return { out, value, fights, fightsLost, wiped: alive === 0, lost: L.n - alive, share: (L.n - alive) / L.n, hours: st.hour - h0, loot, ammo: Math.max(0, supplies.ammo - ammoOf(p)), blocks: c.deepest ?? c.block };
   } finally { CC.CRAWL.AUTO.depth = saved; }
 }
 
@@ -250,20 +256,20 @@ export function run() {
     }
   }
   if (MODE === "city" || MODE === "both") {
-    const depths = list("depth", [2, 4, 6]);
+    const depths = list("depth", [2, 5]);
     const startBlock = Number(opt("block", 1));
     const day = Number(opt("day", 60));
     if (!quiet) console.log(`\nCITY CRAWL (${trials} trials a row, day ${day}; out = the team comes back alive)`);
-    console.log("depth squad      n weapon     armor  shoot | out   wiped  lost/sq  hours loot  ammo fights lost |");
+    console.log("depth squad      n weapon     armor  shoot | out   wiped  lost/sq  hours loot value ammo fights lost deep |");
     for (const depth of depths) for (const sq of squads) {
       const L = loadoutFrom(sq);
       const rs = [];
       for (let i = 0; i < trials; i++) rs.push(cityTrial(seed0 + i, { depth, startBlock, loadout: sq, L, day }));
       const out = avg(rs, (r) => (r.out ? 1 : 0)), share = avg(rs, (r) => r.share), wiped = avg(rs, (r) => (r.wiped ? 1 : 0));
       const j = judge("city", depth, sq, out, share);
-      const row = { kind: "city", depth, squad: sq, n: L.n, weapon: L.weapon, armor: L.armor, shoot: L.shoot, out, wiped, lostShare: share, hours: avg(rs, (r) => r.hours), loot: avg(rs, (r) => r.loot), ammo: avg(rs, (r) => r.ammo), fights: avg(rs, (r) => r.fights), fightsLost: avg(rs, (r) => r.fightsLost), mark: j.mark, note: j.note };
+      const row = { kind: "city", depth, squad: sq, n: L.n, weapon: L.weapon, armor: L.armor, shoot: L.shoot, out, wiped, lostShare: share, hours: avg(rs, (r) => r.hours), loot: avg(rs, (r) => r.loot), value: avg(rs, (r) => r.value), ammo: avg(rs, (r) => r.ammo), deep: avg(rs, (r) => r.blocks || 0), fights: avg(rs, (r) => r.fights), fightsLost: avg(rs, (r) => r.fightsLost), mark: j.mark, note: j.note };
       rows.push(row);
-      console.log(`${String(depth).padStart(4)} ${sq.padEnd(10)}${String(L.n).padStart(2)} ${String(L.weapon).padEnd(10)}${String(L.armor || "-").padEnd(6)}${String(L.shoot).padStart(4)}  | ${pct(out)} ${pct(wiped)}   ${pct(share)}  ${row.hours.toFixed(0).padStart(5)} ${row.loot.toFixed(0).padStart(4)} ${row.ammo.toFixed(0).padStart(5)} ${row.fights.toFixed(1).padStart(5)} ${row.fightsLost.toFixed(2).padStart(5)} | ${j.mark} ${j.note}`);
+      console.log(`${String(depth).padStart(4)} ${sq.padEnd(10)}${String(L.n).padStart(2)} ${String(L.weapon).padEnd(10)}${String(L.armor || "-").padEnd(6)}${String(L.shoot).padStart(4)}  | ${pct(out)} ${pct(wiped)}   ${pct(share)}  ${row.hours.toFixed(0).padStart(5)} ${row.loot.toFixed(0).padStart(4)} ${row.value.toFixed(0).padStart(5)} ${row.ammo.toFixed(0).padStart(5)} ${row.fights.toFixed(1).padStart(5)} ${row.fightsLost.toFixed(2).padStart(5)} ${row.deep.toFixed(1).padStart(4)} | ${j.mark} ${j.note}`);
     }
   }
   const out = opt("json", null);
