@@ -1220,7 +1220,13 @@ export function waterPlan(state, base) {
   const urgent = (near && (sw.net < 0 || sw.reserve > sw.cap)) || dryGap > 0;
   // The water boiler (worm.js) burns firewood, not scrap: its wood is planned with the heating (woodcutting.js woodNeed).
   const hold = { scrap: brokenWater * 3 + (crafter && urgent ? Math.min(2, Math.max(0, filters - have)) * CRAFTS.waterfilter.in.scrap : 0), parts: brokenWater };
-  const out = { sw, near, filters, reserve, hold, brokenWater, short: sw.net < 0 || sw.reserve > sw.cap, lead, store, roomShort, low };
+  // The wells the summer wants with the filters left out (summerWater's fix: wells first, steady; the filters are the
+  // stopgap that clogs in about 20 days and costs scrap): sw.fix counts the filters made, and the filters crafted in
+  // the weeks before summer (no build slot needed) closed the gap ahead of the wells still waiting behind the beds in
+  // the queue, so the well wishes went and the summer ran on filters alone (farmtest's big hub: 2 wells at 80faa5e,
+  // 1 at 3e7a7e5, none since).
+  const steady = summerWater(state, base, { extra: returning(state, base) + (base.type === "hub" ? SUMMER_HEADROOM : 0), filterShare: 0 }).fix.find((f) => f.type === "well");
+  const out = { sw, near, filters, reserve, hold, brokenWater, short: sw.net < 0 || sw.reserve > sw.cap, lead, store, roomShort, low, wells: steady ? steady.count : 0 };
   waterMemo.map.set(base.id, out);
   return out;
 }
@@ -2736,7 +2742,8 @@ function buildWishes(state, base) {
   // weeks of spring and in summer.
   const wp = waterPlan(state, base);
   const sk = wxSeason(state).key;
-  for (const f of sk === "spring" || sk === "summer" ? wp.sw.fix : []) {
+  const fixes = wp.wells && !wp.sw.fix.some((f) => f.type === "well") ? [{ type: "well", count: wp.wells }, ...wp.sw.fix] : wp.sw.fix; // the wells ahead of the filters (waterPlan wells)
+  for (const f of sk === "spring" || sk === "summer" ? fixes : []) {
     if (f.type === "waterfilter" || !BUILDINGS[f.type] || out.some((w) => w.type === f.type)) continue;
     if (BUILDINGS[f.type].max <= countAll(base, f.type) + queued(f.type)) continue;
     add(f.type, `water for the summer (${wp.sw.short > 0 ? `${wp.sw.short} a day short` : `${wp.sw.reserve} to store for the heat waves`})`, wp.near && (f.type !== "well" || (st.parts || 0) >= 1));
