@@ -1166,11 +1166,11 @@ section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, si
   R.view.layers = new Set([...R.view.layers, "coalition"]);
   const lgOn = renderLegend(R.view, { legendCollapsed: false }, w);
   const pctWant = Math.round(controlledLand(w).pct * 100);
-  check(new RegExp(`Coalition land <span class="muted"[^>]*>${pctWant}%/${Math.round(ALLIANCE.LAND_NEEDED * 100)}%</span>`).test(lgOn), `the Coalition land line shows the share held and the goal (${pctWant}%/50%)`);
+  check(new RegExp(`Coalition land <span class="muted"[^>]*>${pctWant}%/${Math.round(ALLIANCE.LAND_NEEDED * 100)}%</span>`).test(lgOn), `the Coalition land line shows the share held and the goal (${pctWant}%/60%)`);
   htmlOk(lgOn, "Layers box with Coalition land on");
   const topics = helpTopics();
   const layersTxt = strip(topics.find((t) => t.id === "map-layers").html), legendTxt = strip(topics.find((t) => t.id === "map-legend").html);
-  check(/Known area/.test(layersTxt) && /hatching/.test(layersTxt) && /Coalition land/.test(layersTxt) && /50%/.test(layersTxt) && /Ruins of/.test(layersTxt), "Help → Map layers explains Known area, Coalition land and the ruins");
+  check(/Known area/.test(layersTxt) && /hatching/.test(layersTxt) && /Coalition land/.test(layersTxt) && /60%/.test(layersTxt) && /Ruins of/.test(layersTxt), "Help → Map layers explains Known area, Coalition land and the ruins");
   check(["Ruins", "Known area", "Coalition land"].every((s) => legendTxt.includes(s)), "Help → Map legend has Ruins, Known area and Coalition land");
 
   // Searched tiles: a team's looks wait for its report, then go on the map; saved and loaded.

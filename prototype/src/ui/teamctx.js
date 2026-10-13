@@ -231,7 +231,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
       const cw = canClaim(state, tile);
       const mine = claimOwner(state, tile) === "player";
       const hopeless = /base there|hive stands|base already|held by/.test(cw);
-      if (!mine && !hopeless) add("Team", "claim", `Claim this tile (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap)`, [{ type: "claim" }], { why: cw || (carried(p, "scrap") < CLAIM.SCRAP ? `Needs ${CLAIM.SCRAP} scrap carried for the marker post (have ${Math.floor(carried(p, "scrap"))}).` : ""), hint: "Raise a marker post: the tile counts as land the coalition holds, toward the 50% the alliance victory needs." });
+      if (!mine && !hopeless) add("Team", "claim", `Claim this tile (${CLAIM.HOURS}h, ${CLAIM.SCRAP} scrap)`, [{ type: "claim" }], { why: cw || (carried(p, "scrap") < CLAIM.SCRAP ? `Needs ${CLAIM.SCRAP} scrap carried for the marker post (have ${Math.floor(carried(p, "scrap"))}).` : ""), hint: "Raise a marker post: the tile counts as land the coalition holds, toward the 60% the alliance victory needs." });
       if (mine) add("Team", "well", `Dig a well (${CLAIM.WELL_HOURS}h)`, [{ type: "well" }], { why: wellProblem(state, p, tile), hint: `Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): the people at your base next to it haul its water.` });
     }
   }

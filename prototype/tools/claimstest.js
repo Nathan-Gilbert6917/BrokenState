@@ -440,12 +440,12 @@ section("Radio relays at any base: an outpost and the hub, none beside a station
 }
 
 // ---------------------------------------------------------------------------------------------------------
-section("allianceVictory: a member and over half the land; groups outside do not block it");
+section("allianceVictory: a member, 60% of the land, no hive and no group outside (2026-10-13)");
 {
   const state = mk();
   const h = hub(state);
   const gp0 = goalsProgress(state).alliance;
-  check(!gp0.membersOk && gp0.blocks.length === 2 && /no member/.test(gp0.blocks[0]) && /land \d+% of the 50%\+/.test(gp0.blocks[1]), `blocks at the start: ${gp0.blocks.join(" | ")}`);
+  check(!gp0.membersOk && /no member/.test(gp0.blocks[0]) && /land \d+% of the 60%\+/.test(gp0.blocks[1]) && gp0.blocks.some((b) => /hive/.test(b)) && gp0.blocks.some((b) => /outside the coalition/.test(b)), `blocks at the start: ${gp0.blocks.join(" | ")}`);
   const A = ensureAlliance(state);
   const groups = state.factions.filter((f) => f.alive);
   const hostile = groups[groups.length - 1];
@@ -469,9 +469,14 @@ section("allianceVictory: a member and over half the land; groups outside do not
   const land = controlledLand(state);
   check(land.pct > ALLIANCE.LAND_NEEDED, `over half the land with ${added} outposts (${(land.pct * 100).toFixed(1)}%)`);
   check(hostile.alive && !A.members.includes(hostile.id), "a hostile group is alive and outside");
-  check(allianceVictory(state) && accordHolds(state), "victory: a member, over half the land, the hostile group outside does not block it");
+  check(!allianceVictory(state), "land over the line, but a hostile group outside and hives standing: no victory (2026-10-13)");
+  const hv = state.hives.slice(), hs = (state.hiveSites || []).slice();
+  state.hives.length = 0; if (state.hiveSites) state.hiveSites.length = 0;
+  check(!allianceVictory(state), "no hive, but the hostile group is still outside: no victory");
+  hostile.alive = false; hostile.bases = [];
+  check(allianceVictory(state) && accordHolds(state), "victory: a member, 60% of the land, no hive, no group outside");
   const gp = goalsProgress(state).alliance;
-  check(gp.ok && gp.membersOk && gp.landOk && !gp.allIn && gp.blocks.length === 0 && gp.outsiders.some((o) => o.id === hostile.id && o.advice === "defeat"), "goalsProgress: ok without every group in; the outsider is still listed");
+  check(gp.ok && gp.membersOk && gp.landOk && gp.allIn && gp.hivesOk && gp.blocks.length === 0, "goalsProgress: ok once every hive is gone and every group is in or broken");
   // No member: no victory, even with the land.
   const members = A.members.slice();
   A.members.length = 0;

@@ -1,6 +1,6 @@
 // Win conditions under the autopilot: plays long campaigns (default 3 years) on many seeds per style and counts how
 // each one ends: hive victory (every hive destroyed, none being built: hives.js hivesSecured), coalition victory
-// (alliance.js allianceVictory: at least one member and over half the land, hives or not; groups outside do not
+// (alliance.js allianceVictory: at least one member, 60% of the land, no hive and no group outside, 2026-10-13; groups outside do not
 // block it any more; also after "Keep playing" on a hive victory: --keep), loss (everyone dead
 // or gone) or still going. Per style it also counts the conquest (bases taken, groups broken) and the bases the
 // groups took from you (and hubs lost, retreats). For every victory it
@@ -193,7 +193,13 @@ async function forceScenario(kind) {
         for (const f of state.factions.filter((x) => x.alive).slice(2)) { for (const t of [...f.bases]) if (f.alive) captureBase(state, f, t, null, {}); broken++; }
         notes.push(`${broken} groups broken by taking their bases (${state.bases.filter((b) => b.captured).length} captured bases)`);
       }
-      notes.push(`${forcedCoalition(state)} outposts placed, every group left in the coalition; ${(state.hives || []).length} hives still stand`);
+      // 2026-10-13: the coalition wins only with no hive standing and no group outside it: the coalition is set up
+      // first, then the hives go in the same breath (a hive victory would otherwise come first, on the next hour).
+      const placed = forcedCoalition(state);
+      const hivesDown = (state.hives || []).length;
+      for (const hv of [...state.hives]) destroyHive(state, hv, "(forced by the test)");
+      state.hiveSites.length = 0;
+      notes.push(`${placed} outposts placed, every group left in the coalition; then ${hivesDown} hives destroyed`);
       for (let i = 0; i < 48 && !state.gameOver; i++) tickHour(state);
     } else {
       const last = forcedStorm(state);

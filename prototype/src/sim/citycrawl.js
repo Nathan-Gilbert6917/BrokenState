@@ -79,7 +79,7 @@ export const CRAWL = {
   // (its start) × fromAlert, at most max.
   HEAT0: { day: 5, night: 0, perBlock: 2, fromAlert: 0.35, max: 50 },
   // Trouble on the way to the next block: base + perBlock × (block reached − 1) + Alert × perAlert, × night, at most max.
-  ENC: { base: 0.08, perBlock: 0.07, perAlert: 0.004, night: 1.25, max: 0.85, raiders: 0.15, raidersPerBlock: 0.05 },
+  ENC: { base: 0.06, perBlock: 0.07, perAlert: 0.004, night: 1.25, max: 0.85, raiders: 0.15, raidersPerBlock: 0.05 },
   // The way out: one roll a block from where you are back to block 2 (block 1 is the city's edge): base + perBlock ×
   // (block − 1) + Alert × perAlert + overload × load, × night. At Alert fightAlert or more from block fightFrom or deeper
   // the streets are crawling: the first block on the way out is a fight (or a hard sneak).
@@ -97,8 +97,8 @@ export const CRAWL = {
   RUN: { hurt: 0.2, perBlock: 0.06, load: 0.3, patrol: 0.1, max: 0.9, dmg: [10, 25], dmgPerBlock: 3 },
   // Searching a place by the numbers (no map; the autopilot's crawl too): hours, the chance of a fight, rolls of loot.
   // (Fewer finds than playing the building's map, which is where the rewards are.)
-  QUICK: { hours: 2, fight: 0.3, perBlock: 0.07, rolls: 3, looted: 0.5, alert: 4 },
-  AUTO: { depth: 2, hurt: 50, full: 0.85, sureOdds: 0.85, fightOdds: 0.65, looks: 2 }, // the autopilot's crawl: how deep, when it leaves, when it fights
+  QUICK: { hours: 2, fight: 0.22, perBlock: 0.07, rolls: 3, looted: 0.5, alert: 4 },
+  AUTO: { depth: 2, hurt: 50, full: 0.85, sureOdds: 0.92, fightOdds: 0.8, looks: 2 }, // the autopilot's crawl: how deep, when it leaves, when it fights
 };
 
 // Places a block can hold (buildingmaps.js BUILDINGS keys): weight at the edge + deep a block deeper (from block `from`),

@@ -36,7 +36,7 @@
 //   in the long war. Until then the outbreak still burns beyond the borders and nobody would sign anything. The Goals
 //   panel says so.
 // - Coalition victory = the Calder Accord: the coalition (you and at least one member) holds more than half the land
-//   (alliance.js accordHolds; groups outside do not block it), and it has to KEEP that for ACCORD.DAYS days (a year:
+//   (alliance.js accordHolds: 60% of the land, no hive, no group outside), and it has to KEEP that for ACCORD.DAYS days (a year:
 //   four seasons) in the late game: the Accord's clock only runs once the victories are open (year WIN_FROM_YEAR;
 //   before 2026-10-09 it ran from the first day the land was held, so a coalition that held it by year 3 won on the
 //   day the victories opened). Each day the condition holds counts one; a day it does not takes ACCORD.DECAY back (a

@@ -125,7 +125,7 @@ section("1. A member's land counts after a year in the coalition and while it is
     if (pNow <= ALLIANCE.LAND_NEEDED) check(!allianceVictory(st) && pSoon > ALLIANCE.LAND_NEEDED, `${n} outposts: ${(pSoon * 100).toFixed(1)}% with the new member's land, ${(pNow * 100).toFixed(1)}% counted: no victory yet`);
     else passed++; // the outposts alone crossed the line on this seed
     at(st, day(st) + ALLIANCE.LAND_AFTER);
-    check(allianceVictory(st) && controlledLand(st).pct > ALLIANCE.LAND_NEEDED, "a year later its land counts: the coalition's condition holds");
+    check(goalsProgress(st).alliance.landOk && controlledLand(st).pct > ALLIANCE.LAND_NEEDED, "a year later its land counts: the coalition's land condition holds (the victory also wants no hive and no group outside, 2026-10-13)");
     // Old saves: a member without a join day joins the count on the load day; a kept join day loads unchanged.
     const m2 = st.factions.find((f) => f.alive && f !== m && f !== o && f.bases.length);
     m2.known = true; m2.pact = "trade"; m2.goodwill = 80;
