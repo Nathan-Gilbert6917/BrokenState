@@ -93,6 +93,12 @@ console.log("Entering a city");
       w2.state.autopilot = true;
       startScavenge(w2.state, r2);
       check(!!r2.crawl && r2.crawl.block === 1, "on autopilot a team that scavenges a city crawls it");
+      const town2 = w2.state.tiles.find((t) => t.loc && t.loc.type === "town");
+      const r3 = team(w2.state, w2.h, town2, 1);
+      w2.state.autoCombat = true; // as autopilot.js sets it
+      w2.state.engagement = null;
+      startScavenge(w2.state, r3);
+      check(!r3.crawl, "on autopilot a town is searched hour by hour (crawling towns thinned the bases)");
     }
     state.autoCombat = false;
     state.engagement = null;

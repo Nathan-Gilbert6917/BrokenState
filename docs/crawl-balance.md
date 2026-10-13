@@ -321,6 +321,23 @@ the share of the squad lost on the way out. On the round grid `--way` is `safer`
 the team set foot on. Its findings were on the rectangular grid: the way out moved losses 1–3 points, and a
 fight-to-the-end team (`--style none`) was wiped on 3–20% of deep crawls.
 
+## Scenario runs after the merges (2026-10-13)
+
+- **City, the three ways out × day 60 / 400 / 900** (40 trials): "back the way you came" is the safer way deep in (the
+  autopilot takes it 95% of the time); a forced straight line costs strong squads more (17 blocks walked against 8.5,
+  18% lost on the way out against 12%). Later days add 1–3 points of losses. 27 of 36 rows inside their targets; the
+  rest are rifles at 22–25% (target 22%) and elite squads forced onto straight lines (34–35%, target 30%).
+- **City, fight to the end** (`--style none`, a player team's default): 3–10% of deep crawls wiped (none with the
+  autopilot's break-off policy). The design question stays open (point 5 below).
+- **Hive** (40 trials, 4 trips): the same as before the merge, 6 of 13 rows inside their targets.
+- **Live autopilot games** (6 × 300 days): 18 crawls, 3 of 39 people lost, 1 team wiped, none stuck.
+- **Census, 12 games to day 600** (normal size, 6–10 groups, seed 7000): no crashes, 1 fell (as before). It found a
+  real cost: the end population fell from 41 to 33 and horde deaths rose from 90 to 131 against the code before the
+  crawl work. Switching parts off: no autopilot crawls 41 (horde 121); the autopilot crawling cities but not towns 39
+  (horde 96). Towns lie near the hubs and are scavenged often, and crawling them kept teams away long enough to leave
+  the bases thin. **Fixed**: the autopilot searches towns hour by hour as before (`scavenge.js`); you can still crawl
+  them. Hive-crawl deaths were unchanged (149 → 150).
+
 ## Bugs found on the way, and what was done
 
 1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving

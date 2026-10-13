@@ -115,7 +115,9 @@ export function startScavenge(state, p) {
   }
   // The autopilot crawls a city too (2026-10-13): block by block, by the numbers (citycrawl.js crawlAutoStep, stepped
   // every hour by autopilot.js idleTeams), down to the block its team is strong enough for (CRAWL.AUTO.depth at most).
-  if (state.autopilot && crawlTile(t) && p.owner === "player") return startCrawl(state, p);
+  // Not a town: towns lie near the hubs and are scavenged often, and crawling them kept teams away long enough to leave
+  // the bases thin against hordes (a 12-game census: end population 41 → 33, horde deaths 90 → 131; cities only: 39).
+  if (state.autopilot && crawlTile(t) && p.owner === "player" && !(t.loc && t.loc.type === "town")) return startCrawl(state, p);
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
     // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot).
