@@ -25,7 +25,7 @@ export function foodTip(k) {
   const f = FOODS[k];
   if (!f) return "";
   const keeps = f.shelf >= 365 ? `${Math.round(f.shelf / 365)} years` : `${f.shelf} days`;
-  return `${f.name}: ${f.desc} Food value ${fv2(f.fv)} (a meal is ${fv2(MEAL_FV)}, ${MEALS_A_DAY} meals a day${f.fv > MEAL_FV ? `: cut into portions at a meal` : `: eaten whole, as many as a meal takes`}). ${f.kcal} kcal (${n1(f.kcal / DAY_KCAL)} of a day's food), ${f.kg} kg. Keeps about ${keeps} at room temperature${f.stable ? " (needs no cold room)" : "; a root cellar about triples that, a cold store in winter or a freezer much more"}. ${FOOD_GROUPS[f.group] ? FOOD_GROUPS[f.group].name : ""}${f.raw ? ": raw, wants cooking (a Kitchen's or a cook fire's bills make meals of it; eaten raw it can give food poisoning)" : ""}.`;
+  return `${f.name}: ${f.desc} Food value (FV) ${fv2(f.fv)} (a meal is ${fv2(MEAL_FV)}, ${MEALS_A_DAY} meals a day${f.fv > MEAL_FV ? `: cut into portions at a meal` : `: eaten whole, as many as a meal takes`}). ${f.kcal} kcal (${n1(f.kcal / DAY_KCAL)} of a day's food), ${f.kg} kg. Keeps about ${keeps} at room temperature${f.stable ? " (needs no cold room)" : "; a root cellar about triples that, a cold store in winter or a freezer much more"}. ${FOOD_GROUPS[f.group] ? FOOD_GROUPS[f.group].name : ""}${f.raw ? ": raw, wants cooking (a Kitchen's or a cook fire's bills make meals of it; eaten raw it can give food poisoning)" : ""}.`;
 }
 
 // The food rooms at a base, one row each: name, kind, held/room, today's shelf factor; outside; what keeps.
