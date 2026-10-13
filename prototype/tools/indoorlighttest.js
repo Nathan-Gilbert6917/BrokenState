@@ -226,29 +226,29 @@ console.log("The battle screen: the Lights button, the key, the hover, the drawi
   for (const o of b.units) if (o !== u) { o.left = true; o.x = -30; o.y = -30; }
   place(u, room.swIn[0], room.swIn[1], 0);
   UI.cui.sel = u.id; UI.cui.mode = "move";
-  const html0 = UI.renderCombatPanel(st);
+  const html0 = UI.renderCombatScreen(st);
   check(/data-v="lights"[^>]*>Lights on/.test(html0), "next to the switch the panel offers Lights on");
   UI.cui.hover = { x: room.sw[0], y: room.sw[1], px: 400, py: 300 };
-  const hov = UI.renderCombatPanel(st);
+  const hov = UI.renderCombatScreen(st);
   check(/Light switch: off/.test(hov) && /to flip it \(1 action/.test(hov), "hovering the switch: Light switch: off, how to flip it");
   clearRoom(b, room);
   b.raid.containers = b.raid.containers.filter((c) => !inRoom(room, c.x, c.y));
   const hx = room.swIn[0] === room.x0 + 1 ? room.x0 + 2 : room.x0 + 1, hy = room.swIn[1];
   UI.cui.hover = { x: hx, y: hy, px: 400, py: 300 };
-  const hov2 = UI.renderCombatPanel(st);
+  const hov2 = UI.renderCombatScreen(st);
   check(/Dark inside/.test(hov2), "hovering the dark room: Dark inside");
   UI.cui.hover = null;
   check(draw(st) === "" && nan === 0, "the dark farmhouse at night draws (switch markers), no error or NaN");
   UI.combatKey(st, { code: "KeyK", altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, preventDefault() {} });
   check(room.on && u.ap === 1, "Alt+K flips the switch in reach (1 action)");
-  check(/Lights off/.test(UI.renderCombatPanel(st)) && draw(st) === "" && nan === 0, "lit: the button says Lights off; the lit room draws");
+  check(/Lights off/.test(UI.renderCombatScreen(st)) && draw(st) === "" && nan === 0, "lit: the button says Lights off; the lit room draws");
   const rb = raidAt("barn", 12);
   const fl = rb.b.raid.areas.find((a) => a.role === "barnfloor");
   const cb = cast(rb.b);
   for (const o of rb.b.units) if (o !== cb.u) { o.left = true; o.x = -30; o.y = -30; }
   place(cb.u, fl.x0 + 2, fl.y0 + 2, 0); cb.u.light = "flashlight";
   UI.cui.sel = cb.u.id;
-  check(draw(rb.st) === "" && nan === 0 && !/data-v="lights"/.test(UI.renderCombatPanel(rb.st)), "the dark barn by day draws (shaded, a flashlight's beam), no Lights button (no switch)");
+  check(draw(rb.st) === "" && nan === 0 && /data-v="lights" disabled data-tip="[^"]*No light switch within reach/.test(UI.renderCombatScreen(rb.st)), "the dark barn by day draws (shaded, a flashlight's beam), its Lights button greyed (no switch in reach)");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

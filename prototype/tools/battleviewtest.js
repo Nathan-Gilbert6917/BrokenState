@@ -115,14 +115,14 @@ console.log("The keys in a battle");
   const cx0 = ISO.iso.cx;
   UI.combatKey(st, ev("Home"));
   check(ISO.iso.target || ISO.iso.cx !== cx0, "Home centers on the selected unit");
-  const bar = UI.viewBar(b), panel = UI.renderCombatPanel(st);
+  const bar = UI.viewBar(b), panel = UI.renderCombatScreen(st);
   check(/to the left \(Q or ,\)/.test(bar) && /to the right \(E or \.\)/.test(bar) && /selected unit \(Home\)/.test(bar), "the view bar's tooltips name Q, E and Home");
   check(/data-v="melee"[^>]*>Melee <span class="key">V<\/span>/.test(panel), "the Melee button shows V");
   check(!/data-v="drive"[^>]*>Drive <span class="key">V/.test(panel), "Drive does not claim V");
   const raidPanel = /data-v="close"[^>]*>Close door <span class="key">⇧E<\/span>/.test(panel) || !/data-v="close"/.test(panel);
   check(raidPanel, "the Close door button (inside a building) shows ⇧E");
   K.initKeymap({ keys: { "battle.melee": ["KeyX"], "battle.extract": ["Shift+KeyZ"] } });
-  check(/data-v="melee"[^>]*>Melee <span class="key">X<\/span>/.test(UI.renderCombatPanel(st)), "a rebound Melee shows its own key on the button");
+  check(/data-v="melee"[^>]*>Melee <span class="key">X<\/span>/.test(UI.renderCombatScreen(st)), "a rebound Melee shows its own key on the button");
   K.initKeymap({});
 }
 

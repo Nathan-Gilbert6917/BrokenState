@@ -30,13 +30,14 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
 import { heatDaily, starvingDaily } from "./needs.js";
-import { woodDaily } from "./woodcutting.js";
+import { woodDaily, fireBurn, WOOD } from "./woodcutting.js"; // fireBurn, WOOD: a camp's fire's pile kept (shipFromOutposts)
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { fieldWellWater, drawFieldWells } from "./fieldworks.js"; // field wells on the base's land (waterProduction field)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
 import { wormDaily, boilerUse, purifyDaily } from "./worm.js";
 import { waterIn, drawWater, RAW, keyWord } from "./water.js"; // purified and un-purified water
 import { flowMark, markAll } from "./history.js"; // the Ledger's in and out (marks between the day's steps)
+import { foodMark, foodMarkAll, foodSpoiled } from "./foodlog.js"; // the base's food ledger (the Food tab): marks between the day's steps
 import { addFind, chooseRounds, baseCals, roundsText } from "./ammo.js"; // rounds by calibre
 import { ROUND_SUPPLIES } from "./data-ammo.js"; // round keys (a scavenging find named by calibre in the log)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
@@ -527,8 +528,10 @@ export function basesDaily(state) {
   fieldInfectionDaily(state);
   snaresDaily(state); // hunting.js: snare lines nobody came back for
   markAll(state); // history.js: the outposts' surplus run is stock moved, not made or used
+  foodMarkAll(state); // foodlog.js: likewise
   shipFromOutposts(state);
   markAll(state, "move");
+  foodMarkAll(state, "ship");
   maybeStranger(state);
   recruitsDaily(state); // recruits.js: people walking to a base arrive, deserters may come back
   hubEventsDaily(state); // hubevents.js: a decision for the days at home, and the lasting effects of past ones
@@ -546,6 +549,7 @@ function baseDaily(state, base) {
   const st = base.stock;
   for (const s of people) if (s.role === "work") s.role = "scavenge";
   farmOf(state, base); // plots follow the buildings
+  foodMark(state, base); // foodlog.js: the hours before midnight; then each step of the day below
 
   // Water in: the well, streams, wells and rain catchers fill the base up to its capacity (both kinds count), as
   // un-purified water (water.js).
@@ -559,13 +563,16 @@ function baseDaily(state, base) {
   if (over > 0 && Weather.season && Weather.season(state).key === "summer") drawWater(st, Math.round(over * WATER.evaporate * 10) / 10, { rawFirst: true });
 
   baseScavenging(state, base, people);
+  foodMark(state, base, "scav");
   huntingDaily(state, base); // hunting.js: the Hunt and Fish jobs
+  foodMark(state, base, "hunt");
   tripEventsDaily(state, base); // tripevents.js: the day's gunshots out on the land (base.tripNoise, hordes drawn)
   kitchenFireDaily(state, base); // kitchen.js: the stove's day of firewood (after the boiler's and the heating's), or cold meals
   woodDaily(state, base); // woodcutting.js: the Cut wood job
   for (const s of people) if (s.role === "rest" || s.inBed) s.mood = Math.min(100, s.mood + (s.role === "rest" ? 6 : 3));
   assignStations(state, base);
   runStations(state, base);
+  foodMark(state, base, "station");
   flowMark(state, base); // history.js: the day's production so far is in (before anyone drinks or eats)
 
   // Purifying (worm.js purifyDaily): the boiler (it burns its firewood now), the water filters and a shelter's fire
@@ -587,6 +594,7 @@ function baseDaily(state, base) {
   base.drank = { day: day(state), pure: drank.pure, raw: drank.raw }; // worm.js baseWormDaily: the share drunk un-purified
   const give = drawWater(st, need.crops, { rawFirst: true }).got;
   farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
+  foodMark(state, base, "farm");
   flowMark(state, base); // history.js: drinking out, the harvest in (before the eating)
 
   // Eating: the people living here eat by the hour, each to their own target at the mealtimes (eating.js baseEatHour:
@@ -600,6 +608,7 @@ function baseDaily(state, base) {
   const use = foodUse(state, base);
   const day0 = takeEatAcc(base);
   cookDaily(state, base, use.total); // the cook fire: a day's meals of raw meat, fish, greens and roots
+  foodMark(state, base, "cook");
   const edible = edibleFood(base);
   const rationing = mouths.length > 0 && edible > 0 && edible < use.total * RATION_DAYS;
   if (rationing && !base.rationing) log(state, `${base.name} is on short rations: under ${RATION_DAYS} days of food left.`, "danger");
@@ -623,7 +632,10 @@ function baseDaily(state, base) {
   }
   // Drying racks and the smokehouse, then every lot of food ages by where it sits (storage.js); spoiled food is gone.
   {
+    foodMark(state, base);
     const out = storageDaily(state, base);
+    foodSpoiled(state, base, out.items); // foodlog.js: the lots thrown out; the racks and the smokehouse below
+    foodMark(state, base, "storage");
     const es = econStats(state);
     es.spoiled += out.spoiled;
     es.dried = (es.dried || 0) + out.dried;
@@ -708,7 +720,11 @@ function shipFromOutposts(state) {
         const spare = edibleFood(h) - foodUse(state, h).total * lineDays;
         if (want > 0 && spare > 0) moveFoodUnits(h, base, Math.min(spare, want / line.strength), { scale: line.strength, state }); // foods.js: the soonest to spoil first, with its lots
       }
-      const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: boil.active ? Math.ceil(boil.wood * 3) : 0 };
+      // A camp's fire (tier 0, woodcutting.js shelterFire, 8f76998) burns from its own pile and nothing sends it back:
+      // its WOOD.fire.keepDays stay (woodNeed's fire). Shipped every midnight, the pile its woodcutter had cut was gone,
+      // the governor kept the cutter on it for good (planWood) and a two-person outpost camp had nobody to establish it.
+      const fireKeep = base.tier === 0 ? Math.ceil(fireBurn(state, base.tile, WOOD.fire.shelter) * WOOD.fire.keepDays) : 0;
+      const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: (boil.active ? Math.ceil(boil.wood * 3) : 0) + fireKeep };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
       for (const [k, v] of Object.entries(chooseRounds(base.stock, keep.ammo, baseCals(state, base)))) keep[k] = (keep[k] || 0) + v; // ammo.js: the rounds kept are the ones its guns shoot

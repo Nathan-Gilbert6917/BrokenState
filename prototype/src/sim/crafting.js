@@ -207,6 +207,8 @@ export function craftOutputText(key) {
     if (LIGHTS[r.gear]) fx.push(`a light: at night sees ${LIGHTS[r.gear].sight} tiles (7 without) and searches without fumbling, but is seen ${LIGHTS[r.gear].seen} tile${LIGHTS[r.gear].seen === 1 ? "" : "s"} further${LIGHTS[r.gear].free ? "; hands free" : "; in the off hand"}`); // lights.js
     if (d.heat) fx.push(`${Object.entries(d.heat).filter(([k]) => k !== "hours").map(([k, v]) => `Heat ×${v} ${k === "stay" ? "staying put" : k === "camp" ? "camping" : "searching"}`).join(", ")}${d.heat.hours ? `, for ${d.heat.hours} hours, used up` : ""}`);
     if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
+    // Wave 2 cooking (cooking.js): the camp cook pot was a bare "tool" here; it says what it cooks and where.
+    if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 firewood an hour), and a camping team's fresh food into simple meals at a lit fire");
     bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" || (d.selfStab && !d.medKit) ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
   if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);

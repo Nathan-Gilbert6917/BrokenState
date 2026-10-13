@@ -39,7 +39,7 @@ export function nlButtons(state, b, u, btn, cui) {
   const k = (b.setup.enemy || {}).kind;
   const kind = NL_STYLE[k] && NL_STYLE[k].alive >= 0.5;
   if (b.units.some((e) => e.side === "enemy" && e.kind === "human")) html += btn("surrender", "Surrender", why || `${first(u)} throws down their weapon and raises their hands: out of the fight, not a target. If the enemy holds the field, ${kind ? "they take them captive (a rescue, a ransom or goodwill brings them back)" : "they may take them prisoner, or may not bother keeping them alive"}. Asks first.`, ap > 0 && !why);
-  html += `<button class="${b.takeAlive ? "active" : ""}" data-action="cb-act" data-v="takeAlive" data-tip="${esc(b.takeAlive ? "On: when the AI plays your side it goes for tasers, pepper spray and pulled blows, clubs down the weak and ties up whoever drops. Click to turn it off." : "When the AI plays your side (Auto), it takes people alive: tasers, pepper spray and pulled blows, clubbing down the weak and tying up whoever drops. For prisoners to question, ransom or recruit.")}">Take them alive${b.takeAlive ? ": on" : ""}</button>`;
+  html += btn("takeAlive", `Take them alive${b.takeAlive ? ": on" : ""}`, b.takeAlive ? "On: when the AI plays your side it goes for tasers, pepper spray and pulled blows, clubs down the weak and ties up whoever drops. Click to turn it off." : "When the AI plays your side (Auto), it takes people alive: tasers, pepper spray and pulled blows, clubbing down the weak and tying up whoever drops. For prisoners to question, ransom or recruit.", true, "", { on: !!b.takeAlive });
   return html;
 }
 

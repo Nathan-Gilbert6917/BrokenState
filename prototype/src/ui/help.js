@@ -13,6 +13,7 @@ import { VOLUNTEERS_HELP } from "../sim/volunteers.js"; // volunteers lent betwe
 import { FESTIVAL_HELP } from "../sim/festival.js";
 import { EATING_HELP } from "../sim/eating.js"; // meal breaks, carried rations, ration levels, food and mood
 import { cookingHelp } from "../sim/cooking.js"; // wave 2 cooking
+import { foodChainHelp } from "./foodchain.js"; // the base window's Food tab, spoilage, fires, lunch and hot food
 import { machinesHelp } from "../sim/breakdowns.js"; // machines, parts, the freezer
 import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
 import { keyLabel } from "./keymap.js";
@@ -36,6 +37,7 @@ import { TRAINING_HELP } from "../sim/training.js"; // the hospital trains medic
 import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled blows, surrender
 import { CARAVAN_HELP } from "../sim/caravanraids.js"; // caravans on the road: escorts, robbing them, witnesses
 import { RESCUE_HELP } from "../sim/rescueraid.js"; // getting captives back: the rescue raid, ransoms
+import { raidPlanHelp } from "../sim/raidplan.js"; // choices before a raid: the side, a scout, the night
 import { BLOCS_WARS_HELP } from "../sim/playerwars.js"; // blocs between groups, wars with you
 import { traitsHelp } from "./traitpick.js"; // every trait, its tiers and points
 import { fieldWorksHelp } from "../sim/fieldworks.js"; // roadblocks, towers, stockpiles, blinds, snares, caches, spikes
@@ -128,7 +130,7 @@ const see = (...ids) => ` <span class="muted">More:</span> ${ids.map(([id, t]) =
 function startHereTopic() {
   return `Broken State in a few lines. The <b>First-week guide</b> under the alerts on the right walks you through the first days (⚙ Menu → Game shows it again).<br><br>
     <b>Your people.</b> A handful of survivors in the State of Calder, years after the dead rose (in Hardcore, on the day it falls, with no home yet). Keep them fed, watered, healthy and in good spirits: everything else follows from that.${see(["goal", "Goal"], ["hardcore-mode", "Hardcore mode"])}<br><br>
-    <b>Bases.</b> Your hub is home. The people there farm, build, guard, craft and treat the sick, by the job you give them or by work priorities. <i>Manage</i> on the Bases tab opens its screen: stock, Work, Farming, Construction and the rest. Food and water days are always in the top bar. Outposts come later.${see(["bases-manage", "Bases (Manage)"], ["food-and-the-winter", "Food and the winter"], ["water-and-the-summer", "Water and the summer"])}<br><br>
+    <b>Bases.</b> Your hub is home. The people there farm, build, guard, craft and treat the sick, by the job you give them or by work priorities. <i>Manage</i> on the Bases tab opens its screen: stock, Work, Farming, Construction and the rest. Food and water days are always in the top bar, and the threat forecast beside them shows the week coming. Outposts come later.${see(["bases-manage", "Bases (Manage)"], ["food-and-the-winter", "Food and the winter"], ["water-and-the-summer", "Water and the summer"], ["threat-forecast", "Threat forecast"])}<br><br>
     <b>Teams.</b> Everything beyond the walls is done by teams. Click a site on the map, pick a mission (scavenge, recon, trade…), choose who goes and what they carry, and launch. They walk there, search, fight if they must and bring home what they found. Out of radio range they report when they get back.${see(["sending-a-team", "Sending a team"], ["team-panel", "Team panel"], ["raids-scavenging-a-site", "Raids"])}<br><br>
     <b>The State Map.</b> Bright land is what your people see now, dim land your last report of it, dark land unknown. Hordes of the dead roam it, hives breed them, and other groups hold towns of their own: trade with them, ally or fight.${see(["map", "Map"], ["map-legend", "Map legend"], ["groups", "Groups"])}<br><br>
     <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card asks what to do. The big ones (a fight, a raid, a death, a team waiting for orders) stop the clock; the rest wait in the card tray at the top of the map while the clock runs, and take their safest answer if left for 8 hours (⚙ Menu → Options → Pause for… sets which stop it). The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["pause-rules-and-the-card-tray", "Pause rules and the card tray"], ["alerts", "Alerts"])}<br><br>
@@ -160,7 +162,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
     if (out[out.length - 1].id === "hives-and-hordes") { add("The hive crawl", HIVE_CRAWL_HELP); add("Hives being born", HIVE_BIRTH_HELP); } // sim/hivecrawl.js, sim/hivebirth.js
-    if (out[out.length - 1].id === "food-and-the-winter") { add("Meals and rations", EATING_HELP); add("The harvest festival", FESTIVAL_HELP); } // sim/eating.js, sim/festival.js
+    if (out[out.length - 1].id === "food-and-the-winter") { add("Meals and rations", EATING_HELP); add("The food chain", foodChainHelp()); add("The harvest festival", FESTIVAL_HELP); } // sim/eating.js, ui/foodchain.js, sim/festival.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
     if (out[out.length - 1].id === "moving-people-between-bases") add("Traits", traitsHelp()); // ui/traitpick.js
     if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
@@ -168,7 +170,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
     if (out[out.length - 1].id === "inventory") add("Gun attachments", GUNMODS_HELP); // sim/gunmods.js
     if (out[out.length - 1].id === "gun-attachments") { add("Guns and melee weapons", ROSTER_HELP); add("Knives and swords", BLADES_HELP); } // sim/data-guns.js, sim/data-blades.js
-    if (out[out.length - 1].id === "battles") add("Medics and the downed", MEDICS_HELP); // sim/medics.js
+    if (out[out.length - 1].id === "battles") { add("Medics and the downed", MEDICS_HELP); add("Choices before a raid", raidPlanHelp()); } // sim/medics.js, sim/raidplan.js
     if (out[out.length - 1].id === "medical") add("Training medics", TRAINING_HELP); // sim/training.js
     if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); add("Blocs and wars", BLOCS_WARS_HELP); add("Volunteers", VOLUNTEERS_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js; sim/blocs.js, playerwars.js
   }
@@ -187,11 +189,13 @@ export function helpTopics() {
   if (!seen.has("volunteers")) add("Volunteers", VOLUNTEERS_HELP); // sim/volunteers.js
   if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
   if (!seen.has("meals-and-rations")) add("Meals and rations", EATING_HELP); // sim/eating.js
+  if (!seen.has("the-food-chain")) add("The food chain", foodChainHelp()); // ui/foodchain.js
   if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   if (!seen.has("gun-attachments")) add("Gun attachments", GUNMODS_HELP);
   if (!seen.has("guns-and-melee-weapons")) add("Guns and melee weapons", ROSTER_HELP);
   if (!seen.has("knives-and-swords")) add("Knives and swords", BLADES_HELP);
   if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
+  if (!seen.has("choices-before-a-raid")) add("Choices before a raid", raidPlanHelp());
   if (!seen.has("training-medics")) add("Training medics", TRAINING_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
   if (!seen.has("field-works")) add("Field works", fieldWorksHelp()); // sim/fieldworks.js

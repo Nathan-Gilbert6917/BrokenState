@@ -113,6 +113,7 @@ import { aiLights, aiFlashlight, aiRoomLights, wakeLights } from "./ailights.js"
 import { indoorSetup, lightAt, indoorSees, lightsAct } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
 import { VISION, hasFront, inArc, coned, nightSees, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox, activeLight, nvgOn, nvgSight } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
+import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -3162,6 +3163,7 @@ const initials = (name) => name.split(" ").map((w) => w[0]).join("").slice(0, 2)
 export function createBattle(state, setup) {
   setup.relAim = friendAim(state, combatants(state, setup), setup); // relations.js: aim per survivor id
   if (setup.mode === "raid") return createRaid(state, setup);
+  const rs = state.rng.state; // raidplan.js: the dice the map is made from (the same map again)
   [W, H] = battleSize(state, setup);
   const rng = state.rng;
   const tileId = tileIdOf(setup);
@@ -3344,6 +3346,7 @@ export function createBattle(state, setup) {
   if (setup.watch) { for (const u of b.units) if (u.side === "player") { u.vol = setup.watch.fid; u.volGroup = setup.watch.group; u.watched = true; } say(b, `You watch your people fight beside ${setup.watch.group}: their orders, not yours.`, "info"); }
   if (b.evacCols) say(b, `The green strip on the ${b.evacSide || "left"} edge is your way out. Units standing there can retreat, or sound the retreat to pull everyone out at once.`, "info");
   stageAtStart(state, b); // carry.js: a fight the team starts: the loads into the vehicle, the rest set down where they start
+  planStart(state, b, rs); // raidplan.js: a base stormed or a rescue: a scout first, or the night
   checkEnd(state, b);
   return b;
 }
@@ -3813,6 +3816,7 @@ export function combatAct(state, act) {
   noteJamWeather(state, b); // gunfire.js: rain, mud or a storm make guns jam more (once a battle)
   if (act.type === "end") {
     if (b.raid && b.raid.choose) b.raid.choose = null; // the street it is (buildingmaps.js)
+    closePlan(b); // raidplan.js: in as they are
     if (b.phase === "player") endPlayerTurn(state);
     return "";
   }
@@ -4254,6 +4258,7 @@ export function combatAct(state, act) {
   }
   b.acted = true;
   if (b.raid && b.raid.choose) b.raid.choose = null; // acting on the street map: the street it is (buildingmaps.js)
+  closePlan(b); // raidplan.js: anyone acted: the team went in as it was
   bump(b);
   if (b.raid && b.raid.folk) folkTick(state, b); // floorfolk.js: the barricaded survivors' door reached, the nest stirring
   checkEnd(state, b);
@@ -5266,6 +5271,9 @@ function autoPlayerTurnNow(state, opts) {
   if (b) noteJamWeather(state, b);
   if (b && !b.over && b.phase === "deploy") { endDeploy(b); return void afterDeploy(state, b); } // deploy.js: default positions, then fight
   if (!b || b.over || b.phase !== "player") return;
+  // Before going in (raidplan.js): the battle AI goes in as things are (the battle screen's AI playing your side plans
+  // first: ui/combat.js combatTick → raidplan.js botPlan).
+  closePlan(b);
   // A site with several buildings (buildingmaps.js): the AI picks one by its own dice (or the street), then plays it.
   if (b.raid && b.raid.choose) {
     const list = b.raid.choose;
@@ -5913,8 +5921,35 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
   return { cells, reach, areas, containers: kept, zones, vehicle };
 }
 
+// Another way in picked before the raid (raidplan.js setEntry): the map as it was made, its zone on that side made the
+// entry (zones[0]: the team starts there) and the team's vehicle moved to it (the building's exits' zones renumbered).
+// Returns true when it moved.
+export function entryFrom(map, side, withVehicle) {
+  const i = side ? map.zones.findIndex((z) => z.side === side) : -1;
+  if (i <= 0) return false;
+  const cells = map.cells, w = map.w || W, h = map.h || H;
+  const old = map.zones[0];
+  if (map.vehicle) {
+    const v = map.vehicle;
+    removeCar(cells, w, { x0: v.x, y0: v.y, w: v.w, h: v.h });
+  } else for (let y = old.y0; y < old.y0 + old.h; y++) for (let x = old.x0; x < old.x0 + old.w; x++) if (cells[y * w + x] && cells[y * w + x].k === "vehicle") cells[y * w + x].k = "open";
+  map.zones.unshift(map.zones.splice(i, 1)[0]);
+  for (const ex of [...(map.exits || []), ...((map.plan && map.plan.exits) || [])]) if (ex.zone >= 0) ex.zone = ex.zone === i ? 0 : ex.zone < i ? ex.zone + 1 : ex.zone;
+  for (const z of map.zones) z.vehicle = false;
+  map.vehicle = null;
+  if (withVehicle) {
+    const z = map.zones[0];
+    z.vehicle = true;
+    map.vehicle = placeVehicle(cells, w, h, z, withVehicle, (x, y) => x >= 0 && y >= 0 && x < w && y < h && cells[y * w + x].k === "open");
+    if (!map.vehicle) { const c = cells[(z.y0 + 1) * w + z.x0 + 1]; c.k = "vehicle"; c.f = "road"; }
+  }
+  return true;
+}
+
 export function createRaid(state, setup) {
   const rng = state.rng;
+  const rs = rng.state; // raidplan.js: the dice the map is made from (the same map again from another side)
+  const entrySide = setup.plan && typeof setup.plan === "object" ? setup.plan.side : null; // raidplan.js: the side the team comes in from
   const tileId = tileIdOf(setup);
   const tile = state.tiles[tileId];
   const party = state.parties.find((x) => x.id === setup.partyId);
@@ -5927,6 +5962,7 @@ export function createRaid(state, setup) {
   let map;
   if (pick) {
     map = buildingMap(state, tileId, pick, withVehicle);
+    entryFrom(map, entrySide, withVehicle);
     W = map.w; H = map.h;
     const z = map.zones[0];
     map.reach = flood(map.cells, z.x0 + 1, z.y0 + (withVehicle ? 0 : 1));
@@ -5939,6 +5975,7 @@ export function createRaid(state, setup) {
     const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
     if (trucks.length && !types.includes("miltrucks")) types.unshift("miltrucks"); // first: they want the room
     map = genRaidMap(rng, tile, types, withVehicle, { trucks });
+    if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
   }
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
@@ -6052,6 +6089,7 @@ export function createRaid(state, setup) {
   say(b, "Search next to a container (S). Heat rises every turn and with gunfire; more of the dead arrive as it climbs. Reach a green zone and Extract (X).", "info");
   if (withVehicle) say(b, "Your vehicle waits in the entry zone. Extract there to keep it; leave from another zone and it stays behind.", "info");
   stageAtStart(state, b); // carry.js: the loads into the vehicle, the rest set down in the entry zone
+  planStart(state, b, rs); // raidplan.js: before going in, the side, a scout, the night
   return b;
 }
 
@@ -6070,6 +6108,7 @@ export function chooseBuilding(state, id) {
   if (!opt) return "No such building here.";
   const setup = b.setup;
   setup.raid = { ...(setup.raid || {}), building: id, choose: false };
+  armsDropsEnd(state, b, "victory"); // carry.js: the loads set down on the street map back to the team first
   state.combat = createRaid(state, setup);
   return "";
 }

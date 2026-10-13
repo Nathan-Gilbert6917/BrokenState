@@ -1456,7 +1456,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check(key("ArrowLeft") && ISO.iso.keys.has("ArrowLeft") && (UI.combatKeyUp(ft.st, { code: "ArrowLeft" }), !ISO.iso.keys.has("ArrowLeft")), "the arrow keys pan while held");
     check([["KeyW", "ArrowUp"], ["KeyA", "ArrowLeft"], ["KeyS", "ArrowDown"], ["KeyD", "ArrowRight"]].every(([k, a]) => key(k) && ISO.iso.keys.has(a) && (UI.combatKeyUp(ft.st, { code: k }), !ISO.iso.keys.has(a))), "W A S D pan while held");
     const bar = UI.viewBar();
-    { const p = scan(UI.renderCombatPanel(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
+    { const p = scan(UI.renderCombatScreen(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
     { // Bows use arrows (sim/combat.js arrowsLeft): the panel shows the arrows beside the ammo, and a bow out of arrows
       // says so on Shoot. The planner's Auto-fill packs a dozen a bow (main.js autofill, sim/world.js ARROWS.PACK).
       const b = ft.b, u = b.units.find((x) => x.side === "player" && C.active(x));
@@ -1464,9 +1464,9 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
         const keep = { weapon: u.weapon, weaponName: u.weaponName, ap: u.ap, phase: b.phase, sel: UI.cui.sel, arrows: b.pools[0].arrows };
         u.weapon = "compbow"; u.weaponName = "Compound bow"; u.ap = 2; b.phase = "player"; UI.cui.sel = u.id;
         b.pools[0].arrows = 7;
-        const withArrows = UI.renderCombatPanel(ft.st);
+        const withArrows = UI.renderCombatScreen(ft.st);
         b.pools[0].arrows = 0;
-        const without = UI.renderCombatPanel(ft.st);
+        const without = UI.renderCombatScreen(ft.st);
         check(/Arrows <b>7<\/b>/.test(withArrows) && /Arrows <b>0<\/b>/.test(without) && /Out of arrows/.test(without) && !C.canFire(b, u), "the battle panel shows the arrows carried, and a bow with none is out of arrows");
         const p = scan(without, "battle panel, bow out of arrows");
         check(!p.length, `the panel with a bow out of arrows: clean HTML (${p.slice(0, 2).join(" | ")})`);
@@ -1482,7 +1482,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       if (s) {
         const keep = { hunger: s.hunger, health: s.health };
         s.hunger = 3; s.health = 20;
-        const html = UI.renderCombatPanel(ft.st);
+        const html = UI.renderCombatScreen(ft.st);
         check(html.includes('data-st="hunger"') && !html.includes('data-st="health"'), "the battle roster shows a starving unit's icon, and no low-health one");
         Object.assign(s, keep);
       } else console.log("  (no survivor unit in this battle: battle icons skipped)");
@@ -1640,24 +1640,24 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       // The panel: the Floor control, each unit's floor in the team list, Go up on a stairwell, the hint off floor.
       const bar = UI.viewBar(b);
       check(new RegExp(`Floor 1 of ${n}`).test(bar) && /data-v="fup"/.test(bar) && /data-v="fdown"/.test(bar), `the view bar: Floor 1 of ${n} ▲ ▼`);
-      let html = UI.renderCombatPanel(st);
+      let html = UI.renderCombatScreen(st);
       { const p = scan(html, "battle panel with floors"); check(!p.length, `the battle panel with floors: clean HTML (${p.slice(0, 2).join(" | ")})`); }
       check((html.match(/class="cbfl off"/g) || []).length === 1 && (html.match(/class="cbfl"/g) || []).length === b.units.filter((u) => u.side === "player").length - 1, `the team list shows everyone's floor (F1, and F${n} dimmed for the one upstairs)`);
       // Hover tips: the empty stairwell, and open air (outside the footprint, off the extraction zones) upstairs.
       UI.cui.hover = { x: stairs % b.w, y: (stairs / b.w) | 0, px: 0, py: 0 };
-      const stairTip = /Stairwell/.test(UI.renderCombatPanel(st));
+      const stairTip = /Stairwell/.test(UI.renderCombatScreen(st));
       UI.setViewFloor(b, top);
       const vi = b.cells.findIndex((c, i) => c.k === "void" && C.zoneAt(b, i % b.w, (i / b.w) | 0) < 0);
       UI.cui.hover = { x: vi % b.w, y: (vi / b.w) | 0, px: 0, py: 0 };
-      check(stairTip && vi >= 0 && /Open air/.test(UI.renderCombatPanel(st)), "hover tips: the stairwell, and open air outside the footprint upstairs");
+      check(stairTip && vi >= 0 && /Open air/.test(UI.renderCombatScreen(st)), "hover tips: the stairwell, and open air outside the footprint upstairs");
       UI.cui.hover = null;
       UI.setViewFloor(b, 0);
       const onStairs = mine[1];
       onStairs.x = stairs % b.w; onStairs.y = (stairs / b.w) | 0; onStairs.ap = 2;
-      html = UI.renderCombatPanel(st);
+      html = UI.renderCombatScreen(st);
       check(/data-v="goup"/.test(html) && !/data-v="godown"/.test(html), "standing on the stairwell on the ground floor: a Go up button, no Go down");
       UI.setViewFloor(b, 1);
-      html = UI.renderCombatPanel(st);
+      html = UI.renderCombatScreen(st);
       check(new RegExp(`Showing floor 2 of ${n}`).test(html) && /data-v="fgo"/.test(html) && !/data-v="goup"/.test(html), "looking at another floor: the panel says so with a way back, no actions for the unit");
       UI.combatAction(st, "cb-view", { v: "fgo" });
       check(b.floor === 0, "Go to <name> returns to their floor");

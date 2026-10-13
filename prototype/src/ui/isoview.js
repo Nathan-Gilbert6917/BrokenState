@@ -58,6 +58,7 @@ export const iso = {
   rects: [], frameMs: 0, frames: 0, cw: 0, ch: 0,
   lastHover: null, // the hovered cell in the last frame: { x, y, hidden (behind a tree or other cover), cover, dash } (tools)
   builds: { scene: 0, ground: 0, fog: 0, looks: 0, sprites: 0 }, // how often each cache was (re)built (tools, the dev fps view)
+  bottomInset: 0, // the battle's bottom bar over the map (px; ui/combat.js barInset): the compass sits above it
 };
 try { iso.roofs = typeof localStorage === "undefined" || localStorage.getItem(ROOFS_KEY) !== "0"; } catch { iso.roofs = true; }
 export function setRoofs(on) {
@@ -1101,6 +1102,16 @@ function sprOf(L, fog, front = false) {
 // (1.5–2.5; a raid 1.5–2), centered there.
 const mapKey = (b) => `${b.w}x${b.h}:${b.tier ? b.tier.map : ""}`;
 function newBattleCamera(b, cw, ch) {
+  // The same raid made again before going in (sim/raidplan.js: another side, a scout's hour, the night): the same map,
+  // the view as it was, moved to the team.
+  const prev = iso.battle;
+  if (prev && prev !== b && prev.setup === b.setup && b.setup && b.setup.plan && prev.w === b.w && prev.h === b.h) {
+    iso.battle = b;
+    iso.mapKey = mapKey(b);
+    const mine = b.units.filter((u) => u.side === "player" && !u.off && u.x >= 0);
+    if (mine.length) isoCenterOn(b, Math.round(mine.reduce((a, u) => a + u.x, 0) / mine.length), Math.round(mine.reduce((a, u) => a + u.y, 0) / mine.length));
+    return;
+  }
   iso.battle = b;
   iso.mapKey = mapKey(b);
   iso.rot = 0; iso.straight = false;
@@ -2114,7 +2125,7 @@ function arrow(ctx, x0, y0, x1, y1, col, w) {
 // North: which way the map's top edge lies in this view.
 function drawCompass(ctx, cw, ch) {
   const [X0, Y0] = project(FR.W / 2, FR.H / 2, 0), [X1, Y1] = project(FR.W / 2, FR.H / 2 - 1, 0);
-  const a = Math.atan2(Y1 - Y0, X1 - X0), cx = 40, cy = ch - 40;
+  const a = Math.atan2(Y1 - Y0, X1 - X0), cx = 40, cy = ch - 40 - (iso.bottomInset || 0); // above the bottom bar (ui/battlebar.js)
   ctx.save();
   ctx.fillStyle = "rgba(15,17,20,0.78)"; ctx.beginPath(); ctx.arc(cx, cy, 28, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = "rgba(230,226,216,0.25)"; ctx.lineWidth = 1; ctx.stroke();

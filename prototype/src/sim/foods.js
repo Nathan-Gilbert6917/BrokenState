@@ -752,6 +752,19 @@ export function foodNeeds(needs, theirHave = null, have = null) {
   if (sell && !(sell in out)) out[sell] = n;
   return out;
 }
+// The governor's spare table (autopilot.js tradeSpare: { food: days of food, water, ammo }) read for one trade key: a
+// food item gets as many of it as the days of food left to spare allow (fix 2026-10-12, turtle-food: the trades are
+// made by item, so `spare[f_grain]` was undefined and the food cap never held: seed 6005's Turtle hub sold 113 days of
+// grain to merchants on day 78, twice the 55 its rule allowed, and went into the winter short). undefined: no cap.
+export const spareOf = (spare, k) => (!spare ? undefined : FOODS[k] && spare.food != null ? Math.max(0, Math.floor(qtyOf(k, spare.food) + 1e-9)) : spare[k]);
+// ...and what a deal paid comes off it (food items in days of food), so a second deal pays from what is left.
+export function spendSpare(spare, paid) {
+  if (!spare) return;
+  for (const [k, q] of Object.entries(paid || {})) {
+    if (FOODS[k] && spare.food != null) spare.food = Math.max(0, spare.food - unitsOf(k, q));
+    else if (spare[k] != null) spare[k] = Math.max(0, spare[k] - q);
+  }
+}
 // `units` days of food a holder can sell or give (a caravan's goods, a deal's food): the items it holds the most days
 // of first (whole items), never food with the worm's eggs. Returns { key: q } (not moved yet).
 export function sellPick(h, units) {

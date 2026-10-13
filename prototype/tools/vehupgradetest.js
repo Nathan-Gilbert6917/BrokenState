@@ -708,7 +708,7 @@ section("Drawing (stub canvases: ui/mapsprites.js, ui/isoview.js, ui/combat.js, 
   const b = st.combat;
   check(b.cells.some((c) => c.k === "vehicle" && c.car && c.car.up && c.car.up.t === "m2hb" && c.car.up.p === 1) && b.cells.some((c) => c.k === "truck" && c.car && c.car.up && c.car.up.t === "m2hb"), "the team's Humvee and the motor pool's carry their turret and plate on their cells");
   { const g = b.units.find((u) => u.side === "player"); b.phase = "player"; g.aboard = true; g.off = true; g.ap = 2; combatAct(st, { type: "gunner", unit: g.id }); UI.cui.sel = g.id; }
-  const panel = UI.renderCombatPanel(st);
+  const panel = UI.renderCombatScreen(st);
   check(/Get down/.test(panel) && /on the turret/.test(panel) && /M2 turret/.test(panel), "the panel: Get down (⇧T), the gunner on the turret with the belt");
   let err = "";
   for (const view of ["iso"]) { void view; try { UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); } }

@@ -1,6 +1,7 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
 import { baseFoodHtml } from "./food.js"; // food by type: the base window's Food section (the top bar's Food row: ui/needsbar.js)
+import { foodChainTab } from "./foodchain.js"; // the base window's Food tab: the food chain (sources, stores, kitchen, eating, losses)
 import { FOODS, packPick, foodText, foodIn } from "../sim/foods.js"; // food by type (foods.js)
 import { foodRows } from "../sim/storage.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts you have not found
@@ -39,6 +40,7 @@ import { baseFarming, cropsCard, foodCellHtml, waterCellHtml, foodLine, waterLin
 import { HEAT } from "../sim/upkeep.js"; // the boiler's fuel a head in the help (firewood × HEAT.wood)
 import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine, illnessRowHtml, illnessSummary, othersWormHtml } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
+import { engScoutChoices, hoursToNight, SCOUT, NIGHT_FROM } from "../sim/raidplan.js"; // before the search: a scout first, or the night
 import { activeCrawl } from "../sim/citycrawl.js";
 import { crawlModal } from "./citycrawl.js";
 import { activeHiveCrawl, crawlRecText } from "../sim/hivecrawl.js";
@@ -144,6 +146,7 @@ import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LA
 import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
 import { packFood, packWater } from "../sim/eating.js"; // the planner's per-person ration line
 import { needsBar } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
+import { threatBar } from "./threatbar.js"; // the top bar's 7-day threat forecast meter and its list of causes
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
 import { NEEDS, STARVE } from "../sim/needs.js";
@@ -192,6 +195,7 @@ const etaOut = (state, est) => Parties.clockText(Math.max(0, (est.exactOut ?? es
 export function topbarParts(state, ui) {
   const h = hub(state);
   const nb = needsBar(state, h);
+  const tf = threatBar(state);
   const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.25, "0.25×", "Slowest: an hour takes 80 seconds, a day 32 minutes (0)"], [0.5, "0.5×", "Slow: an hour takes 40 seconds, a day 16 minutes (1)"], [1, "1×", "Normal: an hour takes 20 seconds, a day 8 minutes (2)"], [2, "2×", "Fast: an hour takes 10 seconds, a day 4 minutes (3)"], [3, "3×", "Very fast: an hour takes about 7 seconds, a day 2 minutes 40 seconds (4)"], [5, "5×", "Fastest, for quiet stretches: an hour takes 4 seconds, a day about 1 minute 36 seconds (5). At 3× and 5× the clock drops back to 1× when a card or a red alert arrives (Options)"]];
   const parts = {
     // The minutes are a slot of their own (main.js fills it every frame as the hour goes by).
@@ -201,6 +205,8 @@ export function topbarParts(state, ui) {
     // The stores as one Needs button with a drop-down list (ui/needsbar.js): main.js writes its button, head and list
     // as slots of their own (needs), the whole of it is the stock slot (tools and tests).
     stock: nb.html,
+    // The 7-day threat forecast (ui/threatbar.js, sim/forecast.js): the same three slots (threat), the whole as threat.
+    threat: tf.html,
     people: `<span${tip("Survivors alive across all bases and teams")}>👥 ${alive(state).length}</span>`,
     // UI size and the zombie look are in Menu → Options → Display; the Dev button only with Show dev tools on (ui/display.js).
     tools: `${devButton(ui)}
@@ -213,6 +219,7 @@ export function topbarParts(state, ui) {
       <button data-action="set-open"${tip("Menu: save, load, save and exit, new campaign, options (Esc)")}>⚙ Menu</button>`,
   };
   Object.defineProperty(parts, "needs", { value: nb }); // { btn, head, list }: not one of the slot strings
+  Object.defineProperty(parts, "forecast", { value: tf }); // the same for the threat forecast
   return parts;
 }
 // The planner's weather note: hours the weather adds to the trip compared with fair weather.
@@ -233,7 +240,7 @@ function weatherChip(state) {
 // The whole bar as one string (tools and tests).
 export function renderTopbar(state, ui) {
   const p = topbarParts(state, ui);
-  return `<span class="title">BROKEN STATE</span><span class="clock">${p.clock}</span><span class="speed row">${p.speed}</span><span class="stock">${p.stock}</span>${p.people}<span class="row small" style="margin-left:auto">${p.tools}</span>`;
+  return `<span class="title">BROKEN STATE</span><span class="clock">${p.clock}</span><span class="speed row">${p.speed}</span><span class="stock">${p.stock}</span><span class="threat">${p.threat}</span>${p.people}<span class="row small" style="margin-left:auto">${p.tools}</span>`;
 }
 
 // ---------- left panel ----------
@@ -917,6 +924,7 @@ export function helpText() {
     <b>Survey and rumours:</b> the <b>Survey</b> mission (planner, right-click any tile, or a team's panel) sweeps the land around a tile (2–4 tiles, 6–48 hours) for places the old maps never showed: farms, cabins, hunting lodges, campgrounds, ranger stations and wrecks off the roads, and caches, wrecked cars and camps. The team moves from spot to spot inside the circle and ends back at its centre; the map shows the circle and its path, the team panel the hours and what it found. Each hour its odds of spotting a hidden place come from the best Scouting (and a little from each extra person), the ground (open farmland easy, forest and hills hard), how far the place is from where the team stands, daylight and the weather (night and fog are bad: a light, night vision or a thermal help; the brighter the light the better), how it travels (a car covers ground but sees little off the road, bikes in between) and its stance (stealthy is careful but covers less). The planner shows the odds as a word (good / fair / poor) with the reasons. It eats at the moving rate, builds Heat at half the rate of standing still, meets what the roads meet on every tile it walks into, and wears the vehicle; on hive land the tougher dead notice it. <b>Optics</b> carried by anyone on a team help: binoculars (the team sees a tile further, ×1.25 odds and a tile more reach), a pocket monocular (×1.1), a spotting scope (×1.6 and two tiles, only while it stays put: surveys, looking around, camps), a thermal monocular (no night or fog penalty; in the off hand it sees in the dark in battle), and a telescope kept in a base's armory (+1 tile of view, +2 with a watchtower). <b>Rumours:</b> radio chatter, travellers, merchants and other groups' news sometimes speak of a place nobody has found ("a hunting lodge somewhere north of Dunmore"): a dashed circle on the map that holds it for 20 days. A survey whose centre is inside it has three times the odds of finding that place.<br>
     <b>Raids (scavenging a site):</b> opens a tactical map of the place. Move next to containers and search them (${k("Shift+S")}): a window shows what is inside next to the survivor, with weights; drag what to take. Each survivor carries their own finds up to their max load; the first 8 kg a turn are free to haul, then 12 kg an action. Teammates next to each other hand things over for free. Someone who bleeds out drops what they carried. With a vehicle, walk to it and open it (${k("N")}) to put what you carry in it or take things out. Guards and the dead are unaware until they see or hear you; Heat rises every turn and with noise, and each stage brings more dead. Leave from a green extraction zone (${k("X")}); a vehicle waits in its own zone. Anyone left behind is lost.<br>
     <b>Battles:</b> each unit has two actions a turn. Click a tile to move, an enemy to shoot; ${k("F")} shoot, ${k("I")} reload, ${kb("battle.melee", "V")} melee, ${k("O")} overwatch, ${k("H")} hunker, ${k("M")} meds (anyone can stabilize someone who is down, by hand with no meds), Shift+H heal and Shift+V revive (a medic: anyone with a med kit), Shift+D drag a downed teammate out of the line of fire (again: put them down), Shift+K finish a downed enemy (see Medics and the downed), ${k("U")} crush the skull of a body next to the unit (a Carrier raises the human dead near it at once; a crushed skull keeps the loot), ${k("J")} double tap a body in sight (1 round, noise), ${k("P")} pick up or put down a body (half the move distance and no shooting while carrying; a carried body cannot get up), ${k("Z")} lay a carried body in the team's car (a raid's vehicle zone, a field battle's evac strip; the body weighs 70 kg plus its things in the team's load, so the car needs the room: it comes home to be buried or burned on the Armory tab), ${k("R")} retreat (one unit, from the green evac strip), ${k("Shift+T")} man a vehicle's turret from inside it (the M2 on a military Humvee: Shoot fires 3-round bursts from its belt, a level up and through cover, very loud, pinning whoever it lands near; the gunner is the one rider who can be shot; again to get down), ${k("Tab")} or ${k("1–9")} select, ${k("Space")} or Enter ends the turn, Esc or right-click cancels. After a win, loot the bodies: take things one by one or everything that fits. <b>Guns use ammo, bows use arrows:</b> every gunshot costs a round (an assault rifle two), every shot from a bow or crossbow an arrow (or bolt), from what the team packed and found or, defending a base, from its stock; the battle panel shows both. With none left, the gun or the bow is only a club (melee). After a win about half the arrows shot are picked up again, after a loss or a retreat none. By the numbers (fights resolved without the map, raids on your bases, the dead at the walls) the same holds: up to 6 shots a head, the bows' in arrows; under 3 a head the guns or the bows fight at 60%. Teams with a bow pack a dozen arrows each (the planner's Auto-fill, the governor, crews).<br><br>
+    <b>The battle bar:</b> the bar along the bottom of a battle, as in XCOM. Left: the selected survivor's card (health, the actions left as diamonds, and what they are doing: sneaking, which way they face, the light and night vision, wounds, mood) and a tab for each of yours (click it or press ${k("1–9")}; greyed once they are done for the turn). Middle: a button for each order the selected one can give, with its key in one corner (as bound in Menu → Controls) and its cost in the other (free, 1, 2, or <i>end</i>: it ends their turn). Greyed, it cannot be given now: its tip says why (no ammo, the magazine is full, not facing the body, no light carried, no actions left). ⋯ More shows the battle's other orders and when each applies (on a narrow screen the greyed ones wait there too). A button does exactly what its key does. Right: the turn, the selected one's weapon and magazine, End turn, Sound the retreat, AI plays my side, Auto-resolve and Restart battle (on a narrow screen only their icons: hover for the name); their questions open over them. A lock, a car or the reload chooser next to the selected one opens over the orders.<br><br>
     <b>Magazines and reloading:</b> every gun holds so many rounds (9mm pistol 15, pump shotgun 6, hunting rifle 5, assault rifle 30, that is 15 two-round bursts, pipe shotgun 1, .357 revolver 6, lever-action rifle 8, police carbine 30) and starts a battle loaded. Each shot takes its rounds from the magazine (and from the team's ammo); an empty gun cannot shoot or go on overwatch until it is reloaded: ${k("I")} or <i>Reload</i>, 1 action, fills it from the team's ammo, so reload with one action and shoot with the other. The panel shows each gun's rounds ("9mm pistol 7/15", never more than the team's ammo left) and flags an empty one. Bows and crossbows draw a fresh arrow or bolt with each shot (it costs an arrow) and never need reloading. The enemy's guns run dry too: they reload instead of shooting (their spare ammo never runs out), and a gun picked up in the middle of a raid comes empty.<br>
     ${BATTLE_GUNS_HELP()}<br>
     ${LAUNCH_HELP}<br>
@@ -967,7 +975,8 @@ export function helpText() {
     <b>Saving:</b> ${k("⚙ Menu")} in the top bar (or ${k("Esc")} with nothing open; ${k("⚙ Menu")} in a battle's panel) opens the menu: <i>Save</i>, <i>Load</i>, <i>Save and exit</i> (back to the new-run screen, where <i>Continue</i> picks the latest save up again), <i>New campaign</i>, save files (<i>Export</i>, <i>Save to file</i>, <i>Load from file</i>) and the options (autosave every day or few days at dawn, confirmations, pause when the window loses focus, UI size, the battle's end-turn question, the keys; Display: UI size, zombie look, colour-blind colours, larger map text, reduce motion, the minimap and the dev tools; Confirmations: the questions you stopped). Saves are kept in this browser, compressed: up to 12 named saves plus the last 3 autosaves of each campaign, which also save when a hive assault starts and when the run ends (more under Autosaves and crashes). A save holds everything, a battle under way included; a card waiting for an answer cannot be saved, so answer it first (the autosave waits for that too). Loading pauses the game.<br>
     <b>Dev tools</b> (for testing; switch on <i>Show dev tools</i> in ⚙ Menu → Options → Display, then the ${k("`")} key or the Dev button in the top bar): reveal the map, infection overlay, autopilot (${k("Shift+P")}: an AI governor plays for you), fast forward 60× / 300× / 1200×, show FPS, and the timelapse so far.<br>
     <b>Keys on the map:</b> ${k("Space")} pause / run · ${k("1–5")} speed · ${k("W A S D")} / arrows pan · ${k("H")} hub · ${k("I")} infection overlay · ${k("B")} / ${k("P")} / ${k("G")} / ${k("T")} the Bases / People / Groups / Teams tab · ${k("Tab")} or ${k("N")} next team waiting for orders (Shift+Tab back) · ${k("F1–F9")} jump to your bases · ${k("Ctrl+1–9")} (or ${k("Alt+1–9")}) save a camera spot, ${k("Shift+1–9")} go back to it · ${k("J")} diary · ${k("R")} roster · ${k("M")} minimap · ${k("E")} Ledger (production and use, the run summary) · ${k("Shift+P")} autopilot (dev tools) · ${k("Esc")} closes the top window, then move mode, then the team panel, and with nothing open shows the menu.<br>
-    <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.`;
+    <b>Alerts</b> on the right of the map list what needs you now (a team waiting, food or water running low, an idle station, a horde near a base, a likely break-in, someone sick and untreated or about to leave, a building or plan finished, a caravan in). Click one to go there; 💤 hides it for a day, ✕ until it clears. The log under the map has filters (kinds of line, 🤖 autopilot notes, one base) and its names and places are links; the <b>Diary</b> keeps every line of the run, day by day.<br><br>
+    <b>Threat forecast:</b> the seven small bars joined to the Needs button in the top bar are the coming week, today first: each as tall and as hot as the worst thing coming that day (calm, watch, danger, severe), with the week's word over them. Hover it (or click it, or tab to it) for the causes day by day: a horde marching on a base (the day it gets there, and whether the walls hold it), a wandering horde that may drift onto the loudest base near it, a war party the lookouts saw or you heard on a group's channel, raiders from outside, storms, blizzards and heat waves in the forecast and the fronts on the map, frost that may kill crops, the day the food, the water, the firewood or the generator fuel runs out, the worm reaching someone's brain, illness spreading, the sick with no meds, a team in the field that runs dry before it can be home, a night march, a hive due near a base, a war with you. Each says how sure it is, whom it hits and where it was learned; click one to see it (the base, the team, the horde on the map). It holds only what your people know: a horde never seen, a raid nobody saw or heard, is not on it. The sky is read 3 days ahead (4 with a watchtower, 5 with a radio station); the days past that have a dashed edge.`;
 }
 
 function cardModal(state, card) {
@@ -1285,6 +1294,22 @@ function moveOutModal(state, ui) {
   </div>`;
 }
 
+// Before the search's approach (sim/raidplan.js): a scout first (the odds the sim rolls), or wait for the dark.
+function engPlanHtml(state, e, p) {
+  if (!p) return "";
+  const pc = (v) => `${Math.round(v * 100)}%`;
+  const rows = [];
+  if (e.scout) rows.push(`<span class="${e.scout.ok ? "good" : "danger"}">${esc(e.log[e.log.length - 1] || "")}</span>`);
+  else {
+    const list = engScoutChoices(state, p, e);
+    rows.push(`<span${tip(`One of the team looks the site over first: one hour. Odds unseen: ${pc(SCOUT.BASE)} + ${pc(SCOUT.PER_TILE)} a tile their look beats the ${e.guarded ? "guards'" : "dead's"} notice range + ${pc(SCOUT.PER_SKILL)} a point of Scouting (binoculars help by day, night vision at night). Unseen: Heat −${SCOUT.ENG_HEAT} and the finds ×${SCOUT.ENG_LOOT} (they know where to look). Seen: Heat +${SCOUT.ENG_FAIL_HEAT}, and ${pc(SCOUT.WOUND)} of the time the scout is hurt.`)}>Scout first (1 h):</span> ${list.map((c, i) => `<button class="mini" data-action="engscout" data-id="${c.id}"${tip(`${c.name}: they notice at ${c.notice} tiles, ${first(c.s)} looks from ${c.look}${c.optic ? ` (optics +${c.optic})` : ""}`)}>${first(c.s)} <b>${pc(c.odds)}</b>${i === 0 ? " ★" : ""}</button>`).join(" ")}`);
+  }
+  const n = hoursToNight(state);
+  if (e.night) rows.push(`<span class="muted">Waited ${e.night.hours} h for the dark.</span>`);
+  else if (n) rows.push(`<button class="mini" data-action="engnight"${tip(`The team holds out of sight until ${NIGHT_FROM}:00 (${n} hours on the clock; they eat and drink). At night the search's Heat climbs 2 an hour slower and the day's 5 starting Heat goes; the dead are as many.`)}>Wait for night (${n} h)</button>`);
+  return `<div class="text small" style="margin:0.3rem 0">${rows.join("<br>")}</div>`;
+}
+
 function engagementModal(state) {
   const e = state.engagement;
   const p = engagementParty(state);
@@ -1292,6 +1317,7 @@ function engagementModal(state) {
     return `<div class="box"><h1>Scavenging ${esc(tileLabel(state, e.tile))}</h1>
       <div class="text">${esc(e.log[0])}${e.guarded ? " " + esc(e.log[1]) : ""}</div>
       <div class="text small muted">Each search takes an hour on the shared clock. Heat rises as you search: Quiet → Stirring → Swarming → Overrun. Extract before it gets out of hand.</div>
+      ${engPlanHtml(state, e, p)}
       <div class="choices">${Object.entries(APPROACHES).map(([k, a]) => `<button data-action="approach" data-v="${k}"${tip(`${a.loot}× loot, +${a.heat} base Heat per hour`)}>${a.name}<span class="hint">${a.desc}</span></button>`).join("")}</div></div>`;
   }
   const stage = heatStage(e.heat);
@@ -1473,6 +1499,7 @@ function gearControls(state, base, s, slot) {
 const BASE_TABS = [
   ["camp", "Camp", "The camp at a glance: its stage and what it can become, who is there, the teams at the camp, its stores and vehicles; set up teams, build it up, or strike it"],
   ["overview", "Overview", "Stock, people and roles"],
+  ["food", "Food", "The food chain: where the food comes from, what is in store and how fast it spoils, the kitchen's bills and the fire's firewood, the eating and the losses, and how long it lasts"],
   ["work", "Work", "Work priorities (like RimWorld's work tab): roles with a 1–5 priority per kind of work, a schedule, and crews that run trips by themselves"],
   ["defence", "Defence", "The watch roster (who stands guard at which hours) and the defence plan (where everyone stands when the base is attacked)"],
   ["farming", "Farming", "Crop plots: what grows, when it ripens, expected harvests, weather risks; the food and water outlook"],
@@ -1495,7 +1522,7 @@ function baseModal(state, ui) {
   // A camp (sim/staging.js, the barest base): its own Camp tab first, and only the tabs a camp has use for.
   const tabs = isCamp(b) ? BASE_TABS.filter(([k]) => CAMP_TABS.includes(k)) : BASE_TABS.filter(([k]) => k !== "camp");
   const tab = tabs.some(([k]) => k === ui.baseView.tab) ? ui.baseView.tab : tabs[0][0];
-  const body = { camp: campTab, overview: baseOverview, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  const body = { camp: campTab, overview: baseOverview, food: foodChainTab, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
@@ -1506,7 +1533,7 @@ function baseModal(state, ui) {
 }
 
 // The tabs a camp shows (BASE_TABS keys).
-const CAMP_TABS = ["camp", "overview", "construction", "armory", "vehicles", "crafting", "work", "medical"];
+const CAMP_TABS = ["camp", "overview", "food", "construction", "armory", "vehicles", "crafting", "work", "medical"];
 
 // ---------- the camp (sim/staging.js) ----------
 // The Camp tab: the stage ladder and the step up (tierUpRows), what each stage opens up, the people at the camp, the

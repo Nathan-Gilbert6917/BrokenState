@@ -865,13 +865,13 @@ section("On screen: the captive's line on the People tab, the rescue buttons in 
   const cu = capUnits(b)[0];
   for (const u of b.units) if (u.side === "player") u.ap = u === cu ? 2 : 0;
   UC.combatAction(st, "cb-sel", { id: cu.id });
-  let ph = UC.renderCombatPanel(st);
+  let ph = UC.renderCombatScreen(st);
   check(/Work the ropes/.test(ph) && /data-v="rescue:ropes"/.test(ph) && /Tied up \(captive\)/.test(ph) && !bad.test(text(ph)), "a tied captive's panel: Work the ropes");
   UC.combatAction(st, "cb-act", { v: "rescue:ropes" });
   check(cu.ap === 1 || !cu.tied, "the button works the ropes (1 action)");
   cu.tied = false; cu.ap = 2;
   UC.combatAction(st, "cb-sel", { id: cu.id });
-  ph = UC.renderCombatPanel(st);
+  ph = UC.renderCombatScreen(st);
   check(/Search the cell/.test(ph) && /Cut free/.test(ph) && !bad.test(text(ph)), `free in the cell: Search the cell, Cut free${bad.test(text(ph)) ? ` (bad text: ${text(ph).match(bad)})` : ""}`);
   st.combat = null;
   browser(false);

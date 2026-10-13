@@ -13,7 +13,8 @@ import { stockHas } from "./sim/water.js"; // purified and un-purified water
 import { moveTeamOut, MOVE_OUT } from "./sim/moveout.js"; // a team moved out of a crowded base (the move-out planner)
 import { thirstAhead } from "./sim/weather.js";
 import { armoryTabs, TABS_TRIP_DAYS } from "./sim/worm.js"; // purification tablets for the road
-import { searchHour, extract } from "./sim/scavenge.js";
+import { searchHour, extract, engagementParty } from "./sim/scavenge.js";
+import { engScout, engWaitNight } from "./sim/raidplan.js"; // before the search: a scout first, or the night
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
@@ -34,6 +35,7 @@ import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPla
 import { fwAt as fieldWorkAt, FIELD, placeProblem, planFieldWork } from "./sim/fieldworks.js"; // field works: the base tab, the tile picker
 import { topbarParts, renderLeft, renderRight, renderLog, renderModal, modalKind, renderLegend, tileActions, plannerLoad, plannerVehicle, routeCheck } from "./ui/ui.js";
 import { needsSkeleton, initNeedsBar } from "./ui/needsbar.js"; // the top bar's Needs button and its list of every supply
+import { threatSkeleton, initThreatBar, THREAT_ACTIONS } from "./ui/threatbar.js"; // the top bar's 7-day threat forecast
 import { isCar, travelMode } from "./sim/vehicles.js";
 import { startCombat, combatAct, runEnemyPhase } from "./sim/combat.js";
 import { queueOrder, startOrder, stopTask, resumeQueue, removeQueued, reorderQueued, cancelMove, contactable, queueEndTile } from "./sim/orders.js";
@@ -49,7 +51,7 @@ import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
-import { initCombatUI, drawCombat, renderCombatPanel, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
+import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
@@ -204,7 +206,7 @@ const canvas = $("map");
 // The top bar's slots (index.html). Built here when the page does not have them.
 if (!$("tb-clock")) {
   $("topbar").innerHTML = `<span class="title">BROKEN STATE</span><span class="clock" id="tb-clock"></span><span class="speed row" id="tb-speed"></span>
-    <span class="stock" id="tb-stock"></span><span id="tb-people"></span><span class="row small" id="tb-tools"></span>`;
+    <span class="stock" id="tb-stock"></span><span class="threat" id="tb-threat"></span><span id="tb-people"></span><span class="row small" id="tb-tools"></span>`;
 }
 // The alerts stack on the map (index.html has it; built here when the page does not).
 if (!$("alerts")) {
@@ -330,7 +332,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "banner", "alerts", "watchlist", "ask"];
+const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "cbbar", "banner", "alerts", "watchlist", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -360,6 +362,17 @@ function writeNeeds(nb, user) {
   setHTML("nb-head", nb.head, user);
   const list = $("nb-list"), top = list.scrollTop;
   if (setHTML("nb-list", nb.list, user) && top) list.scrollTop = top;
+}
+// The threat forecast meter (ui/threatbar.js) the same way: its frame once, then the meter, the head and the list.
+function writeThreat(tf, user) {
+  const root = $("tb-threat");
+  if (!root) return;
+  if (!$("tf-list")) { root.innerHTML = threatSkeleton(); shown.delete("tf-btn"); shown.delete("tf-head"); shown.delete("tf-list"); }
+  initThreatBar(root);
+  setHTML("tf-btn", tf.btn, user);
+  setHTML("tf-head", tf.head, user);
+  const list = $("tf-list"), top = list.scrollTop;
+  if (setHTML("tf-list", tf.list, user) && top) list.scrollTop = top;
 }
 // Writes a panel's HTML if it changed. Returns true when the DOM was touched.
 function setHTML(id, html, user) {
@@ -495,6 +508,7 @@ function refresh(user = true) {
   setHTML("tb-clock", tb.clock, user);
   setHTML("tb-speed", tb.speed, user);
   writeNeeds(tb.needs, user);
+  writeThreat(tb.forecast, user);
   setHTML("tb-people", tb.people, user);
   setHTML("tb-tools", tb.tools, user);
   // A folded panel is not drawn (it is drawn again when it opens).
@@ -573,6 +587,7 @@ function renderCombat(user) {
     const clog = $("cblog");
     if (clog) clog.scrollTop = clog.scrollHeight;
   }
+  setHTML("cbbar", renderCombatBar(state), user); // the bottom bar: the selected one's card, the orders, the turn controls (ui/battlebar.js)
 }
 
 // Banners at the top of the map: paused (with the orders waiting for the unpause) and move mode.
@@ -1102,6 +1117,8 @@ const actions = {
   // The card's "Retreat if it goes badly" buttons (breakoff.js): kept on the team for fights resolved by the numbers.
   "retreat-policy": (d) => { const card = state.cards[0]; const p = card && card.partyId != null ? partyById(card.partyId) : null; if (p) setTeamPolicy(state, p, d.v); },
   approach: (d) => { state.engagement.approach = d.v; },
+  engscout: (d) => { const p = engagementParty(state); if (p && !engScout(state, p, Number(d.id))) tickHour(state); }, // sim/raidplan.js: the scout's hour
+  engnight: () => { engWaitNight(state); }, // sim/raidplan.js: the clock runs to nightfall
   search: () => { searchHour(state); tickHour(state); },
   extract: () => { extract(state); },
   engclose: () => { state.engagement = null; },
@@ -1153,7 +1170,7 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-plan", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv", "cb-bar"]) actions[k] = (d) => combatAction(state, k, d);
 // Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
 for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.
@@ -1199,7 +1216,7 @@ for (const [k, fn] of Object.entries(TL_ACTIONS)) actions[k] = (d) => {
 for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Diary, log filters and links, alerts and the roster (ui/diary.js, ui/alerts.js, ui/roster.js); links and alerts
 // use the handlers above (center, openbase, xp-open).
-for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS, ...WHY_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js); WHY: Why? on deaths and lost bases (ui/causes.js)
+for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS, ...WHY_ACTIONS, ...THREAT_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js); WHY: Why? on deaths and lost bases (ui/causes.js)
 for (const [k, fn] of Object.entries(LEDGER_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Ledger and the run summary (ui/ledger.js)
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS, ...CAR_ACTIONS })) actions[k] = (d) => fn(state, ui, d);

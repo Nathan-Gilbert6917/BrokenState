@@ -446,9 +446,13 @@ const groupOf = (state, type) => {
       r3.path = [h3.tile]; r3.idx = 0; r3.phase = "siege"; r3.siegeLeft = 8; r3.warned = true;
       raidWarning(s3, r3);
       pick(s3.cards.pop(), /^Pay tribute/).resolve(s3);
+      const seen = new Set(s3.log);
       for (let k = 0; k < 12; k++) { s3.cards.length = 0; tickHour(s3); }
       const hit = s3.log.some((l) => l.text.startsWith(`${f3.name} overran`) || l.text.startsWith(`${f3.name} broke into`) || l.text.includes(`drove off the ${f3.name} raid`));
-      check(!s3.parties.includes(r3) && !hit && h3.stock.scrap === 100, `tribute paid at the walls ends the raid: no break-in afterwards (scrap ${h3.stock.scrap})`);
+      // The hub's own scavengers still bring scrap home meanwhile (economy.js scavCredit: "Kenji turned up 4 scrap
+      // around ..."): counted out, the store is untouched (a break-in would have carried some off).
+      const found = s3.log.filter((l) => !seen.has(l) && l.text.includes(`around ${h3.name}.`)).reduce((a, l) => a + Number((/turned up (?:[^.]*?, )?(\d+) scrap/.exec(l.text) || [0, 0])[1]), 0);
+      check(!s3.parties.includes(r3) && !hit && h3.stock.scrap - found === 100, `tribute paid at the walls ends the raid: no break-in afterwards (scrap ${h3.stock.scrap}, ${found} of it found by the hub's scavengers)`);
     }
   }
   // A war raid beaten off in person counts for your side of the war, like one held by the numbers.

@@ -12,6 +12,11 @@
 // "???" with its category. state.codex = { seen: { key: day }, fresh: [keys not looked at yet] } is saved with the
 // campaign (sim/save.js writes the whole state); an older save without it opens what its world already shows.
 import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
+import { STORE, FACTOR } from "../sim/storage.js"; // the food chain entries: food rooms and spoilage
+import { WOOD } from "../sim/woodcutting.js"; // a camp's fire a day
+import { COOK } from "../sim/cooking.js"; // a cook fire's firewood
+import { EAT } from "../sim/eating.js"; // "No hot food"
+import { KITCHEN } from "../sim/kitchen.js"; // the stove's firewood
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES } from "../sim/data.js";
@@ -31,6 +36,7 @@ import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/bl
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
 import { HCRAWL, HIVEMIND } from "../sim/hivecrawl.js"; // the hive crawl and the Hivemind
 import { FRONT_KINDS, FRONT, ICE, WEATHER, visibleFronts, iceRow } from "../sim/weather.js"; // weather fronts and river ice
+import { threatForecast, THREAT } from "../sim/forecast.js"; // the top bar's 7-day threat forecast
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
 import { keyLabel } from "./keymap.js";
 import { ztypeBattleCanvas, bossBattleCanvas, growthCanvas, siteSpriteCanvas } from "./hivesprites.js";
@@ -154,7 +160,7 @@ const ITEM_HOW = {
   electronics: "In the Off hand, or kept in a base's armory: see its description.",
   packs: "Worn on the Backpack slot: more pack slots and a higher load.",
   tools: "In the Off hand or the pack: see its description for where it helps.",
-  optics: "Carried by anyone on a team: the team sees further (see its description).",
+  optics: "Carried by anyone on a team: the team sees further (see its description). A scout sent before a raid looks from further off with it (binoculars or a spotting scope +3 tiles by day, a monocular or a thermal +2; at night only a thermal): better odds of going unseen (Help: Choices before a raid).",
   camp: "Carried by a team: it helps where the team camps.",
   books: "Read at a base: it teaches its skill up to the level it names (or lifts the mood).",
   manuals: "Studied at a base: it opens buildings or recipes that need it.",
@@ -163,6 +169,7 @@ const ITEM_HOW = {
 };
 // Items with a line of their own (over their kind's).
 const ITEM_HOW_KEY = {
+  nvg: "In the Off hand (or on a helmet's mount): at night it sees 12 tiles down the cone with no light to give you away; switch it off and on for free (Alt+N). A scout sent before a night raid looks from 12 tiles with it, not the dark's 4–7 (Help: Choices before a raid).",
   flashbang: "Throw (G) it into a room before you go in, or at two or more of them bunched in cover: the stunned lose actions and aim and cannot overwatch the doorway. Keep your own people out of its 2 tiles (or facing away). Useless against the dead, except as a loud lure.",
 };
 const TRADE_HOW = "A trade good: groups pay for it by their kind (raiders love liquor and drugs; zealots will not touch them). Use it at a base for mood, or sell it.";
@@ -340,9 +347,29 @@ function fieldEntries() {
     return { key: `fw:${k}`, cat: "buildings", name: `${d.icon} ${d.name}`, sub: "Field work", stats, text: d.desc, how: "Plan it from a base's Field works tab and click a green tile: the builders walk out and put it up. Help: Field works.", sprite: null };
   });
 }
+// How food works (the base window's Food tab, ui/foodchain.js): the chain, spoilage, fires. Open from the start.
+const FOOD_CHAIN_KEYS = ["k:foodchain", "k:spoilage", "k:fires"];
+function foodChainEntries() {
+  return [{
+    key: "k:foodchain", cat: "supplies", name: "🍽️ The food chain", sub: "How food works",
+    stats: [["Where", "a base's window, Food tab"], ["Record", "the last 7 days, saved with the game"], ["A day of food", "2000 kcal (one person's day)"]],
+    text: "Food runs left to right: Sources (farms and harvests, hunting and snares, fishing, foraging, scavenging and teams home, trade and gifts, your other bases; and the crops ripening), Stores (days of food on hand for everyone fed there, each food room and the days until its next lot spoils), Kitchen (the cooking stations, their bills, purified water and the fire's firewood), Eating (heads, eaten a day, the ration level, what kind of food, hot food) and Losses (spoiled, eaten raw, sent out with teams, into packs). It ends with how long the food lasts at this rate and the biggest drain.",
+    how: "Open the Food tab when the food chip turns yellow: the verdict names the biggest drain and one or two things to do (a root cellar, cooking the meat before it turns, more people on Farm, Hunt, Fish or Forage, Lean rations).", sprite: null,
+  }, {
+    key: "k:spoilage", cat: "supplies", name: "🗑️ Spoilage", sub: "How food works",
+    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`]],
+    text: "Every food keeps its own time at room temperature (bread days, raw meat two or three, potatoes a month, cans years). Fresh food fills the base's food rooms, the food that spoils fastest in the coldest room first; what does not fit sits outside and spoils fastest. Canned, dry and preserved food needs no room. A lot whose time runs out is thrown out (a line in the log). The soonest to spoil is eaten first.",
+    how: "Build a root cellar (or a storehouse, a cold store, a freezer) before the harvest, dry the surplus on drying racks, cook raw meat into meals, and do not hunt more than the base eats in a few days.", sprite: null,
+  }, {
+    key: "k:fires", cat: "supplies", name: "🔥 Fires and firewood", sub: "How food works",
+    stats: [["Camp or shelter fire", `${WOOD.fire.shelter} firewood a day (half where deadfall lies about)`], ["Cook fire", `${COOK.fireWood} firewood an hour it cooks (${COOK.fireHours} hours a day)`], ["Kitchen stove", `${KITCHEN.wood.stove} a day + ${KITCHEN.wood.meal} a meal served`], ["No hot food", `${EAT.coldV[0]} mood after ${EAT.cold[0]} days, ${EAT.coldV[1]} after ${EAT.cold[1]}`]],
+    text: "A camp's or shelter's fire burns its firewood by the hour and goes out when the woodpile runs dry: no warmth, boiled water or cooking on it until it is lit again. A cook fire burns firewood while it cooks; the Kitchen's stove every day. No fire, nothing cooks: raw meat is eaten raw (food poisoning, Ate raw food −7) and after a few days without a cooked meal everyone minds it (No hot food).",
+    how: "Keep a few days of firewood in store (the Food tab shows the hours left), put someone on Cut wood, and light the fire again once wood comes in.", sprite: null,
+  }];
+}
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...buildingEntries(), ...fieldEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -369,7 +396,7 @@ export function codexUnlock(state, key, quiet = false) {
 
 // Everything the player can see now, as codex keys.
 function seenNow(state) {
-  const keys = new Set(["z:walker"]); // everyone knows the ordinary dead
+  const keys = new Set(["z:walker", ...FOOD_CHAIN_KEYS]); // everyone knows the ordinary dead, and how food works
   const live = state.live || new Set();
   const known = (tile) => live.has(tile) || !!(state.knowledge && state.knowledge[tile]);
   const item = (it) => { if (it && it.key && GEAR[it.key]) keys.add(`i:${it.key}`); if (it && Array.isArray(it.contents)) it.contents.forEach(item); };
@@ -421,12 +448,20 @@ function weatherEntries() {
     text: "A river frozen hard enough to walk on. Your teams can cross it, and so can other groups and the dead: a river that kept a base safe is open until the thaw.",
     how: "Watch the river by your bases in winter (an alert says when it freezes): man the walls on that side. When it thaws, anyone on it scrambles ashore.", sprite: null,
   });
+  // The top bar's threat forecast (sim/forecast.js, ui/threatbar.js): opened the first time it shows more than calm.
+  out.push({
+    key: "w:threat", cat: "weather", name: "📊 Threat forecast", sub: "The top bar",
+    stats: [["Days", `${THREAT.DAYS}, today first`], ["Levels", THREAT.NAMES.join(", ")], ["The sky", "read 3 days ahead; 4 with a watchtower, 5 with a radio station"], ["Sources", "weather and fronts, hordes and their drift, raids seen or heard on the radio, food, water, firewood and generator fuel, crops and the frost, the worm and illness, teams in the field, a hive due near a base"]],
+    text: "The seven bars beside the Needs button: each as tall and as hot as the worst thing coming that day. Hover (or click) for the causes: what, on which day, how sure, whom it hits and where it was learned. It holds only what your people know: a horde never seen, a raid nobody saw or heard, is not on it.",
+    how: "Read it each morning: a red bar days out is time to man the walls, bring food in, cut wood or call a team home. Click a cause to see it (the base, the team, the horde on the map). A watchtower, a radio station and Listen in on a group's channel see further.", sprite: null,
+  });
   return out;
 }
 function weatherSeen(state, keys) {
   try {
     for (const f of visibleFronts(state, 0)) keys.add(`w:${f.k}`);
     if (state.weather && iceRow(state) >= 0) keys.add("w:ice");
+    if (Array.isArray(state.bases) && threatForecast(state).level >= 1) keys.add("w:threat");
   } catch { /* no weather yet */ }
 }
 
