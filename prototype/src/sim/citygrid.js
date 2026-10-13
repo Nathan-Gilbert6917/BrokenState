@@ -1,8 +1,9 @@
 // @ts-check
 // The city crawl's ground (2026-10-13, docs/crawl-balance.md): a city or a town is a round grid of blocks, a size × size
 // square with its corners cut away in a curve (a block is in when its centre lies within the circle). A city is 15–30
-// blocks across, a town 9–12, by the world's dice (the same every visit). You come in at a block on its rim, on the side
-// facing the way you came; from any block you go left, right or straight on; any block on the rim is a way out.
+// blocks across, a town 9–12, by the world's dice (the same every visit). You come in at a block on its rim (the
+// player picks which; the autopilot by the visit's dice); from any block you go north, east, south or west, the way you
+// came included; any block on the rim is a way out, walked to block by block (2026-10-13).
 // How deep a block is: its ring counted in from the rim (1 on the rim); its level (1–8, what the danger and the loot
 // tables read: citycrawl.js CRAWL, the old "block" number) climbs a level every LEVEL_RINGS rings, so the heart of the
 // biggest city is level 8 and a town's never goes past 3. Pure geometry: no state but what is passed in.
@@ -68,14 +69,44 @@ export function headingToward(g, x, y) {
   const dx = g.r - (x + 0.5), dy = g.r - (y + 0.5);
   return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 1 : 3) : (dy >= 0 ? 2 : 0);
 }
-// A turn from a heading: "left", "straight", "right" → the new heading.
-export const turn = (heading, way) => (way === "left" ? (heading + 3) % 4 : way === "right" ? (heading + 1) % 4 : heading);
-// The blocks from (x, y) going `dir` until off the grid: the cells crossed (not the one you stand on).
+// A turn from a heading: "left", "straight", "right", "back" → the new heading.
+export const turn = (heading, way) => (heading + ({ straight: 0, right: 1, back: 2, left: 3 }[way] ?? 0)) % 4;
+// Every block on the rim: [[x, y], ...] (where a crawl can start and where it walks out).
 /** @param {{ size: number, r: number }} g */
-export function lineOut(g, x, y, dir) {
-  const [dx, dy] = DIRS[dir];
-  const out = [];
-  let cx = x + dx, cy = y + dy;
-  while (inGrid(g, cx, cy)) { out.push(keyOf(cx, cy)); cx += dx; cy += dy; }
-  return out;
+export const rimOf = (g) => cellsOf(g).filter(([x, y]) => isEdge(g, x, y));
+// The cheapest walk from (x, y) to any rim block: Dijkstra over the 4 ways, `cost(key)` the price of stepping onto a
+// block (Infinity: never; `skip(from, dir)` true: that way out of a block is shut). { path: [keys, not the one you
+// stand on], cost }, or null when no rim block can be reached. On the rim already: an empty path.
+/** @param {{ size: number, r: number }} g @param {(key: string) => number} cost @param {(from: string, dir: number) => boolean} [skip] */
+export function pathToRim(g, x, y, cost, skip = () => false) {
+  const start = keyOf(x, y);
+  const dist = new Map([[start, 0]]), prev = new Map(), done = new Set();
+  const open = [start];
+  while (open.length) {
+    let bi = 0;
+    for (let i = 1; i < open.length; i++) if (dist.get(open[i]) < dist.get(open[bi])) bi = i;
+    const k = open.splice(bi, 1)[0];
+    if (done.has(k)) continue;
+    done.add(k);
+    const [cx, cy] = xyOf(k);
+    if (isEdge(g, cx, cy)) {
+      const path = [];
+      for (let at = k; at !== start; at = prev.get(at)) path.unshift(at);
+      return { path, cost: dist.get(k) };
+    }
+    for (let d = 0; d < 4; d++) {
+      const nx = cx + DIRS[d][0], ny = cy + DIRS[d][1];
+      if (!inGrid(g, nx, ny) || skip(k, d)) continue;
+      const nk = keyOf(nx, ny), w = cost(nk);
+      if (!(w < Infinity) || done.has(nk)) continue;
+      const nd = dist.get(k) + w;
+      if (!(nd >= dist.get(nk))) { dist.set(nk, nd); prev.set(nk, k); open.push(nk); }
+    }
+  }
+  return null;
+}
+// The way (heading 0-3) from one block to the one beside it, or -1.
+export function dirTo(a, b) {
+  const [x0, y0] = xyOf(a), [x1, y1] = xyOf(b);
+  return DIRS.findIndex(([dx, dy]) => x0 + dx === x1 && y0 + dy === y1);
 }
