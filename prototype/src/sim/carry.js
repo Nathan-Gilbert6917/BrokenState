@@ -577,7 +577,13 @@ export function capTask(p, task, state = null) {
   task.qty = Math.max(0, Math.floor(Number(task.qty) || 0));
   task.capKg = task.qty * collectKg(state, task.type); // forage: the season's mix (foraging.js forageKg)
   task.pool0 = poolLoad(p);
+  // Water and firewood are counted by themselves (keyKg): the team's meals while it works lighten the load, and that
+  // must not count as room for more (eating.js teamMeal: breakfast, lunch and dinner on the road).
+  if (KEY_KINDS[task.type]) task.kind0 = keyKg(p, KEY_KINDS[task.type]);
 }
+// The tasks whose haul is one supply key, and its kg on the team (packed and found).
+export const KEY_KINDS = { water: "rawwater", wood: "wood" };
+export const keyKg = (p, k) => (((p.supplies && p.supplies[k]) || 0) + ((p.cargo && p.cargo.supplies && p.cargo.supplies[k]) || 0)) * ((SUPPLIES[k] && SUPPLIES[k].weight) || 1);
 
 // ---------- fights ----------
 // The acts that need free hands (combat.js combatAct). Carrying a body or dragging someone blocks the same.

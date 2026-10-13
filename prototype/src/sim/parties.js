@@ -94,6 +94,7 @@ import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, ta
 import { partySaw } from "./groupworld.js"; // a group learns your bases its parties pass
 import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
+import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood task counts its own haul (call-time only: safe in the import cycle)
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -240,7 +241,8 @@ export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 export function cargoRoom(state, p) {
   let cap = partyCapacity(state, p);
   if (p.haulCap != null && !p.vehicle) cap = Math.min(cap, p.haulCap);
-  if (p.task && p.task.capKg != null && p.task.pool0 != null) cap = Math.min(cap, p.task.pool0 + p.task.capKg); // carry.js capTask: collect only as much as asked
+  if (p.task && p.task.capKg != null && p.task.kind0 != null && KEY_KINDS[p.task.type]) cap = Math.min(cap, poolLoad(p) + Math.max(0, p.task.capKg - (keyKg(p, KEY_KINDS[p.task.type]) - p.task.kind0))); // carry.js capTask: water and firewood counted by themselves
+  else if (p.task && p.task.capKg != null && p.task.pool0 != null) cap = Math.min(cap, p.task.pool0 + p.task.capKg); // carry.js capTask: collect only as much as asked
   return Math.max(0, cap - poolLoad(p));
 }
 
