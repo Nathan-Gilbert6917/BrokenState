@@ -16,6 +16,7 @@ import {
 } from "../src/sim/medical.js";
 import { addCondition, healthDaily, treatCondition, treatConditionInfo, conditionsOf, workFactor } from "../src/sim/health.js";
 import { buildRate } from "../src/sim/buildings.js";
+import { food, addDays, setFood } from "./foodkit.js"; // food by type (foods.js) in days, as the old generic food
 
 const days = Number(process.argv[2] || 30);
 const seed = Number(process.argv[3] || 42);
@@ -308,7 +309,7 @@ function scene(type = null, medics = 0, others = 4, med = 0) {
   const m = [], p = [];
   for (let i = 0; i < medics; i++) { const s = addPerson(st, h, "medic"); s.skills.medicine = med; m.push(s); }
   for (let i = 0; i < others; i++) { const s = addPerson(st, h, "farm"); s.skills.medicine = 0; p.push(s); }
-  h.stock.meds = 100; h.stock.food = 500; h.stock.water = 200;
+  h.stock.meds = 100; setFood(h, 500); h.stock.water = 200; // foods.js: days of food by type (tools/foodkit.js)
   h.medsReserve = 0;
   return { st, h, m, p };
 }
@@ -559,6 +560,9 @@ function scene(type = null, medics = 0, others = 4, med = 0) {
   st.started = true;
   const h = hub(st);
   setHospital(h, "clinic");
+  // A cook fire: a hands-off hub builds none (the governor would: autopilot.js "hot meals"), and days of cold food
+  // sour the mood (eating.js EAT.cold: −6 a day from the sixth) until the crowded hub's people walk away one by one.
+  addBuilding(h, "cookhouse");
   atBase(st, h.id).slice(3, 5).forEach((s) => (s.role = "medic"));
   h.admitBelow = 50; h.medsReserve = 4;
   atBase(st, h.id)[0].health = 25;
@@ -570,7 +574,8 @@ function scene(type = null, medics = 0, others = 4, med = 0) {
       // and a hands-off colony never prepares for them) and food and water topped up so it lasts the 200 days.
       st.hordes.length = 0;
       st.parties = st.parties.filter((p) => !(p.kind === "raid" && p.target && p.target.kind === "player"));
-      h.stock.food = Math.max(h.stock.food, 150); h.stock.water = Math.max(h.stock.water, 60);
+      // Food by type (foods.js): days of it as items, not the old generic stock.food (unset now: Math.max gave NaN).
+      if (food(h) < 150) addDays(h, 150 - food(h)); h.stock.water = Math.max(h.stock.water, 60);
       tickHour(st);
       st.cards.length = 0;
       for (const s of st.survivors) {
