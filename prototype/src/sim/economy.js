@@ -30,7 +30,7 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
 import { heatDaily, starvingDaily } from "./needs.js";
-import { woodDaily } from "./woodcutting.js";
+import { woodDaily, fireBurn, WOOD } from "./woodcutting.js"; // fireBurn, WOOD: a camp's fire's pile kept (shipFromOutposts)
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
 import { fieldWellWater, drawFieldWells } from "./fieldworks.js"; // field wells on the base's land (waterProduction field)
 import { hauledWells, drawWells } from "./claims.js"; // wells dug on claims next to the base (waterProduction hauled)
@@ -720,7 +720,11 @@ function shipFromOutposts(state) {
         const spare = edibleFood(h) - foodUse(state, h).total * lineDays;
         if (want > 0 && spare > 0) moveFoodUnits(h, base, Math.min(spare, want / line.strength), { scale: line.strength, state }); // foods.js: the soonest to spoil first, with its lots
       }
-      const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: boil.active ? Math.ceil(boil.wood * 3) : 0 };
+      // A camp's fire (tier 0, woodcutting.js shelterFire, 8f76998) burns from its own pile and nothing sends it back:
+      // its WOOD.fire.keepDays stay (woodNeed's fire). Shipped every midnight, the pile its woodcutter had cut was gone,
+      // the governor kept the cutter on it for good (planWood) and a two-person outpost camp had nobody to establish it.
+      const fireKeep = base.tier === 0 ? Math.ceil(fireBurn(state, base.tile, WOOD.fire.shelter) * WOOD.fire.keepDays) : 0;
+      const keep = { food: Math.ceil(foodUse(state, base).total * lineDays) + 6, water: fed * 7 + 5, ammo: staff.length * 6, scrap: 30, parts: base.construction.length ? 3 : 0, fuel: 10, meds: 2, wood: (boil.active ? Math.ceil(boil.wood * 3) : 0) + fireKeep };
       // Supply runs: keep what a run from here will send, and what a run to here will pick up.
       for (const [k, v] of Object.entries(supplyReserve(state, base))) keep[k] = (keep[k] || 0) + v;
       for (const [k, v] of Object.entries(chooseRounds(base.stock, keep.ammo, baseCals(state, base)))) keep[k] = (keep[k] || 0) + v; // ammo.js: the rounds kept are the ones its guns shoot
