@@ -16,6 +16,7 @@ import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from ".
 import { createWorld, tickHour, hub, atBase, survivorById, alive, day } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, startReturn, STANCES } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate } from "../src/sim/orders.js";
+import { setNightPlan } from "../src/sim/nightmarch.js";
 import { vehiclesAtBase } from "../src/sim/vehicles.js";
 import { searchHour, extract } from "../src/sim/scavenge.js";
 import { executeTrade, endTrade } from "../src/sim/trade.js";
@@ -212,6 +213,9 @@ for (const mode of ["winter", "flip"]) {
     const res = launchExpedition(state, { memberIds: crew, dest, mission: "move", stance, vehicleId: byTruck ? truck.id : null, supplies: byTruck ? { food: 20, water: 20, fuel: 40 } : { food: 12, water: 12 } });
     if (!check(!res.error, `launch: ${res.error}`)) continue;
     const p = res.party;
+    // The team panel's "At night: Push through" (sim/nightmarch.js): the estimates are for a team that keeps moving at
+    // night; a "Night falls" card stops it for the hour it asks and making camp is the player's own stop.
+    setNightPlan(state, p, "push");
     if (mode === "flip") state.weather.days.forEach((d, i) => { d.tf = i % 2 ? [2.2, 2.7, 2.4, 3] : [1, 1, 1, 1]; });
     const st1 = { cards: 0, delay: 0 };
     const h1 = state.hour, way1 = [...p.path];

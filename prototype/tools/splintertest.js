@@ -56,7 +56,9 @@ section("Strife: pressure, deserters, the dead of a fight, a fallen leader, a lo
   for (let i = 0; i < 20; i++) { tickGroup(f); strifeDay(st, f); }
   const hungry = strifeOf(f);
   check(hungry > 0.5, `20 hungry days build strife (${hungry.toFixed(2)})`);
-  setFood(f, f.pop * 20); f.lossRecent = 0; f.wounded = 0;
+  // Fed in the eating model's sense (eating.js groupDietPressure): a few kinds of food and cooked meals in store, so
+  // neither the same few foods nor cold food keep pushing them.
+  setFood(f, f.pop * 18); addDays(f, f.pop, "f_beans"); addDays(f, f.pop, "f_simplemeal"); f.lossRecent = 0; f.wounded = 0;
   for (let i = 0; i < 60; i++) { tickGroup(f); strifeDay(st, f); }
   check(strifeOf(f) < hungry * 0.5, `60 fed, quiet days and it fades (${strifeOf(f).toFixed(2)})`);
   const s0 = strifeOf(f);

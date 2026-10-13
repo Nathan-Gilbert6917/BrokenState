@@ -18,6 +18,8 @@ import { PRESETS, estimatePlan, commandable, stepsToOrders, nearbySites, CHECKIN
 import { hiveDistance } from "../src/sim/hives.js";
 import { seasonOfDay, thirstFactor, THIRST } from "../src/sim/weather.js";
 import { NEEDS } from "../src/sim/needs.js";
+import { setNightPlan } from "../src/sim/nightmarch.js";
+import { WOOD } from "../src/sim/woodcutting.js";
 import { waterIn, RAW } from "../src/sim/water.js";
 import { endTurnDecision, requestEndTurn, setConfirmEnd, unitsWithActions, cui } from "../src/ui/combat.js";
 
@@ -97,6 +99,7 @@ section("Heat: builds while a team stands still, faster with a camp, in a city, 
   const cityT = state.tiles.find((t) => t.terrain === "city")?.id;
   const hiveT = state.tiles.find((t) => t.terrain !== "water" && hiveDistance(state, t.id) === 1)?.id;
   const p = placeTeam(state, quietT, 3, { type: "camp", hours: null });
+  p.supplies.wood = WOOD.fire.camp; // a day's firewood: a lit camp fire burns it (sim/woodcutting.js), with none it goes out
   check(stationaryActivity(p) === "camp", "a camping team counts as standing still");
   const day = (h) => { state.hour = Math.floor(state.hour / 24) * 24 + h; };
   day(12);
@@ -289,6 +292,9 @@ section("ETA and rations for a whole plan match the trip");
       const est = estimatePlan(state, { memberIds: ids, dest, vehicle: !!v, stance: "normal", fuel: v ? v.fuel : 0, mission, steps, supplies });
       const res = launchExpedition(state, { memberIds: ids, dest, mission, stance: "normal", vehicleId: v ? v.id : null, supplies, plan: { preset: "custom", steps } });
       const p = res.party;
+      // The team panel's "At night: Push through" (sim/nightmarch.js): the plan's ETA and rations are for a team that
+      // keeps moving at night; a "Night falls" card stops it for the hour it asks and making camp is the player's own stop.
+      setNightPlan(state, p, "push");
       // The team panel's queue estimate agrees with the planner at launch.
       const q = queueEstimate(state, p);
       const qsum = est.hoursOut + q.reduce((s, x) => s + (x.hours ?? 0), 0);
@@ -340,6 +346,7 @@ section("Summer and heat waves: a plan's water at each day's thirst matches what
       check(est && est.water > est.food && est.water === Math.ceil(est.waterExact - 1e-9), `seed ${seed} ${preset} plan in summer: ${est.food} food, ${est.water} water (more water: summer and the heat wave)`);
       const res = launchExpedition(state, { memberIds: ids, dest, mission, stance: "normal", supplies: { food: est.food + 2, water: est.water + 4, ammo: 10 }, plan: { preset, steps } });
       const p = res.party;
+      setNightPlan(state, p, "push"); // as above: the plan's water is for a team that keeps moving at night
       let drunk = 0, delay = 0, events = 0;
       for (let i = 0; i < 24 * 6 && !home(state, p); i++) {
         p.lastConflict = state.hour + 1; state.hordes.length = 0;
@@ -362,6 +369,7 @@ section("Summer and heat waves: a plan's water at each day's thirst matches what
           if (p.progress < b) delay += b - p.progress;
         }
         if (state.combat) { state.combat = null; events++; }
+        if (!home(state, p) && partyMembers(state, p).length !== ids.length) events++; // someone met on the road joined (or left): not the plan's team
       }
       if (delay || events) { note(`seed ${seed} ${preset}: road events (${Math.round(delay)}h delay, ${events} odd hours): not compared`); continue; }
       compared++;

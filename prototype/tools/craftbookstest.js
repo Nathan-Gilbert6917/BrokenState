@@ -47,7 +47,7 @@ const BOOKS = ["diybook", "forgebook", "bushcraftbook"];
 // ======================================================================================
 console.log("Data");
 {
-  check(SKILLS.includes("crafting") && !ROLLED_SKILLS.includes("crafting") && ROLLED_SKILLS.length === SKILLS.filter((k) => k !== "crafting" && k !== "melee").length, "Crafting is a skill, rolled apart from the world's dice (as Melee is, data.js ROLLED_SKILLS)");
+  check(SKILLS.includes("crafting") && !ROLLED_SKILLS.includes("crafting") && ROLLED_SKILLS.length === SKILLS.filter((k) => k !== "crafting" && k !== "melee" && k !== "cooking").length, "Crafting is a skill, rolled apart from the world's dice (as Melee and Cooking are, data.js ROLLED_SKILLS)");
   check(!!PERK_TREE.crafting && [5, 10, 15].every((ms) => PERK_TREE.crafting[ms].length === 2), "Crafting has a perk tree (two perks at 5, 10 and 15)");
   for (const k of SPECIAL) {
     const d = GEAR[k], r = CRAFTS[k];
