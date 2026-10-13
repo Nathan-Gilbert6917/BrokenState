@@ -140,12 +140,46 @@ City crawl after (40 trials, day 60, balanced retreat policy; value is trade val
 | elite (8, AR, plate) | 4.8 | 232 | 24% | ✓ |
 
 Weak teams stay near the edge, strong ones go down to 4–5. A team of three (the size the governor mostly sends)
-stays at blocks 1–2 whatever its kit: 1–8% lost. **What is still wrong:** a strong team gets no more value
-from block 5 than from block 2 (rifles: 201 against 203) and loses more people doing it. The take is bound by the
-team's carry, so depth can only pay in what a kilo of it is worth: deeper blocks need rarer, lighter, dearer finds
-(guns, ammo, meds, parts, the `PLACE_POOL` rare finds) rather than more of the same tins. That is a loot-table change;
-it is not made here. Until then the autopilot going deep trades lives for nothing, and `AUTO.depth` 3 would be the
-prudent setting.
+stays at blocks 1–2 whatever its kit: 1–8% lost.
+
+### Deep loot: depth pays (`src/sim/deeploot.js`)
+
+A team's take is capped by what it can carry, so a deeper block that only held *more* filled the packs sooner and
+paid nothing (rifles: 201 at block 5 against 203 at block 2, for twice the losses). Now deeper places hold what is
+dear by the kilo:
+
+- **The shift** (`deepShift`, from block `DEEP.from` 3, k = 1 at block 3): supplies worth under 3 a kilo (tins,
+  water, scrap) × (1 − 0.2k), at least × 0.35; those worth 10 a kilo or more (rounds, meds, gun parts,
+  electronics) × (1 + 0.25k); the middle (parts, fuel) as before. The outer streets were stripped of the everyday
+  bulk first; the heart of the city emptied in a day and still holds what is small and dear. Applied to a quick
+  search and to a building played on the map (`combat.js searchBox`, `b.raid.deep`).
+- **Caches** (`cacheChance`: 12% a block from block 3, at most 50%): a quick search turns up a locker or a stash as
+  well, rolled as a pharmacy, gun shop, armoury, lockers or clinic at richness 1.5; only its gear and its dear
+  supplies are taken.
+
+### A full team swaps (`citycrawl.js give`, exported as `takeFinds`)
+
+Finds are taken most wanted a kilo first, and when the packs are full a find worth more a kilo takes the place of the
+least wanted cargo (at least 25% better: `DEEP.swapMargin`). Worth is value a kilo × what the home base wants
+(`wantOf`): food 3× when the base has under a week (1.8× under 20 days, 0.5× over 60), water likewise by days, meds
+2× under one a head, rounds 1.6× under 20 a head; what the base has plenty of counts half. What is put down stays in
+the city, and the line says so ("put down to make room: 31 scrap"). This applies to your teams' crawls as well as the
+autopilot's.
+
+City crawl now (40 trials, value = trade value home):
+
+| squad | block 2: value / lost | block 5 (its plan): depth, value / lost |
+|---|---|---|
+| naked (4) | 54 / 3% | 1.3, 54 / 3% |
+| scrappy (5) | 125 / 5% | 1.6, 125 / 5% |
+| early (5) | 157 / 7% | 1.6, 137 / 8% |
+| solid (6) | 202 / 7% | 2.6, 270 / 15% |
+| rifles (6) | 207 / 7% | 3.9, 288 / 20% |
+| elite (8) | 249 / 9% | 4.9, 395 / 27% |
+
+Going deep is now a real trade: a rifle squad brings home 40% more and an elite one 60% more, for two to three times
+the losses. All 11 judged rows are inside their targets. `tools/deeploottest.js` checks the shift, the caches, the
+base's wants and the swap.
 
 ## Bugs found on the way, and what was done
 

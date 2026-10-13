@@ -24,7 +24,7 @@
 //   --json file       write the rows as JSON                  --quiet       only the table
 //   --targets         judge the rows against TARGETS and exit 1 when some are off (for a CI-style check)
 //   --set HCRAWL.NUMBERS.k=120,CRAWL.QUICK.fight=0.25   override tuning numbers for this run (a dotted path under
-//                     HCRAWL, HIVEMIND, CRAWL, EVENTS): A/B a tweak without editing the source.
+//                     HCRAWL, HIVEMIND, CRAWL, EVENTS, DEEP): A/B a tweak without editing the source.
 import { createWorld, makeSurvivor, hub, tickHour } from "../src/sim/world.js";
 import { GEAR, supValue } from "../src/sim/data.js";
 import { itemValue } from "../src/sim/valuation.js";
@@ -40,6 +40,7 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { atBase } from "../src/sim/world.js";
 import * as HC from "../src/sim/hivecrawl.js";
 import * as CC from "../src/sim/citycrawl.js";
+import { DEEP } from "../src/sim/deeploot.js";
 import { writeFileSync } from "node:fs";
 
 // ---------- loadouts: what the people going in carry ----------
@@ -86,7 +87,7 @@ const list = (name, def) => { const v = opt(name, null); return v == null || v =
 const flag = (name) => argv.includes("--" + name);
 
 // --set path=value,path=value: tuning overrides. Returns the undo.
-const ROOTS = { HCRAWL: HC.HCRAWL, HIVEMIND: HC.HIVEMIND, CRAWL: CC.CRAWL, EVENTS: CC.EVENTS };
+const ROOTS = { HCRAWL: HC.HCRAWL, HIVEMIND: HC.HIVEMIND, CRAWL: CC.CRAWL, EVENTS: CC.EVENTS, DEEP };
 export function applySets(spec) {
   for (const kv of String(spec || "").split(",").filter(Boolean)) {
     const [path, raw] = kv.split("=");

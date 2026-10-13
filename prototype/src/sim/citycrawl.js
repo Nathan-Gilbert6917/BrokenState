@@ -48,7 +48,10 @@ import { factionById } from "./world.js";
 import { changeGoodwill } from "./factions.js";
 import { sortFind } from "./ammo.js"; // rounds by calibre
 import { swapGun, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a room or a sentry yields
-import { crawlGuns } from "./gunfinds.js"; // a gun counter's or an armoury's extra gun (its own dice)
+import { crawlGuns } from "./gunfinds.js";
+import { deepShift, cacheChance, isFine, valuePerKg, wantOf, DEEP } from "./deeploot.js"; // deeper blocks hold what is dear by the kilo; a full team swaps
+import { itemValue } from "./valuation.js";
+import { atBase } from "./world.js"; // a gun counter's or an armoury's extra gun (its own dice)
 
 // ---------- tuning ----------
 export const CRAWL = {
@@ -412,14 +415,50 @@ function lureOf(state, p) {
   }
   return null;
 }
-// Things found go into the team's cargo while there is room; the rest is left. Returns the line.
+// Things found go into the team's cargo while there is room; the rest is left. A full team swaps (deeploot.js): a find
+// worth more a kilo, for what its home base needs (wantOf), takes the place of the least wanted cargo it carries, at
+// least DEEP.swapMargin better; what it puts down stays here. Returns the line.
 function give(state, p, c, sup = {}, gear = []) {
   p.cargo = p.cargo || { supplies: {}, gear: [] };
   typeFind(state, sup, "house", c.tile); // foods.js: "food" as a city's food (cans, rice, snacks), as much as its shelves still hold
+  const base = state.bases.find((b) => b.id === p.homeBaseId) || state.bases[0] || null;
+  const people = base ? atBase(state, base.id).length + partyMembers(state, p).length : 1;
+  const supWorth = (k) => valuePerKg(k) * wantOf(base, people, k); // a kilo of it, as the base wants it
+  const gearWorth = (g) => (itemValue(g) || 0) / Math.max(0.1, itemLoad(g));
   let room = cargoRoom(state, p);
-  const got = [], left = [];
-  for (const [k, q] of Object.entries(sup)) {
-    if (!(q > 0) || !SUPPLIES[k]) continue;
+  const got = [], left = [], dropped = [], downSup = {};
+  // Finds, the most wanted a kilo first.
+  const finds = [
+    ...Object.entries(sup).filter(([k, q]) => q > 0 && SUPPLIES[k]).map(([k, q]) => ({ k, q, w: supWorth(k) })),
+    ...gear.filter(Boolean).map((g) => ({ g, w: gearWorth(g) })),
+  ].sort((a, b) => b.w - a.w);
+  // Room by putting down the least wanted cargo worth less a kilo than `w` (by the margin): up to `kg`.
+  const makeRoom = (kg, w) => {
+    const cargo = [
+      ...Object.entries(p.cargo.supplies).filter(([k, q]) => q > 0 && SUPPLIES[k] && supWeight(k) > 0).map(([k, q]) => ({ k, q, w: supWorth(k) })),
+      ...p.cargo.gear.filter(Boolean).map((g) => ({ g, w: gearWorth(g) })),
+    ].filter((x) => x.w * (1 + DEEP.swapMargin) < w).sort((a, b) => a.w - b.w);
+    let freed = 0;
+    for (const x of cargo) {
+      if (freed >= kg) break;
+      if (x.g) { p.cargo.gear.splice(p.cargo.gear.indexOf(x.g), 1); freed += itemLoad(x.g); dropped.push(x.g.name); continue; }
+      const each = supWeight(x.k), n = Math.min(x.q, Math.ceil((kg - freed) / each));
+      p.cargo.supplies[x.k] -= n; if (!(p.cargo.supplies[x.k] > 0)) delete p.cargo.supplies[x.k];
+      if (c.tally.supplies[x.k]) { c.tally.supplies[x.k] = Math.max(0, c.tally.supplies[x.k] - n); if (!c.tally.supplies[x.k]) delete c.tally.supplies[x.k]; }
+      freed += n * each; downSup[x.k] = (downSup[x.k] || 0) + n;
+    }
+    return freed;
+  };
+  for (const f of finds) {
+    if (f.g) {
+      const kg = itemLoad(f.g);
+      if (room < kg) room += makeRoom(kg - room, f.w);
+      if (room >= kg) { p.cargo.gear.push(f.g); c.tally.gear.push(f.g.name); room -= kg; got.push(f.g.name); }
+      else left.push(f.g.name);
+      continue;
+    }
+    const { k, q } = f;
+    if (unitsThatFit(room, k) < q) room += makeRoom(q * supWeight(k) - room, f.w);
     const take = Math.min(q, unitsThatFit(room, k));
     if (take > 0) {
       p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + take;
@@ -429,13 +468,10 @@ function give(state, p, c, sup = {}, gear = []) {
     }
     if (q - take > 0) left.push(`${q - take} ${keyWord(k)}`);
   }
-  for (const g of gear) {
-    if (!g) continue;
-    if (room >= itemLoad(g)) { p.cargo.gear.push(g); c.tally.gear.push(g.name); room -= itemLoad(g); got.push(g.name); }
-    else left.push(g.name);
-  }
-  return `${got.length ? got.join(", ") : "nothing useful"}${left.length ? ` (no room for ${left.join(", ")})` : ""}`;
+  dropped.unshift(...Object.entries(downSup).map(([k, n]) => `${n} ${keyWord(k)}`));
+  return `${got.length ? got.join(", ") : "nothing useful"}${left.length ? ` (no room for ${left.join(", ")})` : ""}${dropped.length ? `; put down to make room: ${dropped.join(", ")}` : ""}`;
 }
+export { give as takeFinds }; // tools/deeploottest.js
 // One container's worth from an area's loot table (as combat.js searchBox rolls it, without locks and books).
 // site: the building or place it is in (a police station's armoury holds police guns, an Army checkpoint's the Army's:
 // gundist.js areaSourceName).
@@ -500,6 +536,7 @@ export function enterPlace(state, p, placeId, opts = {}) {
   try { b = createBattle(state, setup); } finally { p.vehicle = veh; }
   const R = b.raid;
   R.richness = placeRichness(state, c, place);
+  R.deep = n; // combat.js searchBox: deeploot.js deepShift (the block's finds dearer by the kilo)
   R.spawnCap += CRAWL.SPAWN_PER_BLOCK * (n - 1);
   b.infection = Math.min(1, (t.infection || 0) + CRAWL.INFECT_PER_BLOCK * (n - 1));
   if (snap) restoreBuilding(state, b, snap);
@@ -685,6 +722,17 @@ export function quickSearch(state, p, place) {
   const sup = {}, gear = [];
   const rolls = Math.max(1, Math.round((Q.rolls + (Q.rollsPerBlock || 0) * (n - 1)) * (1 - 0.6 * (place.looted || 0))));
   for (let i = 0; i < rolls && holds.length; i++) { const r = rollArea(rng, rng.pick(holds), rich, scav, place.key); addSup(sup, r.sup); gear.push(...r.gear); }
+  deepShift(sup, n); // deeploot.js: fewer tins, more rounds and meds the deeper the block
+  // A cache (deeploot.js): a locker, a stash behind a panel, a medic's bag; only what is small and dear is taken.
+  if (rng.chance(cacheChance(n))) {
+    const area = rng.pick(DEEP.cacheAreas.filter((a) => AREAS[a]));
+    if (area) {
+      const r = rollArea(rng, area, DEEP.cacheRich, scav, place.key);
+      for (const [k, v] of Object.entries(r.sup)) if (isFine(k) || k === "ammo") sup[k] = (sup[k] || 0) + v;
+      gear.push(...r.gear);
+      lines.push("A cache tucked away inside.");
+    }
+  }
   const text = give(state, p, c, sup, gear);
   place.quick = true;
   place.looted = 1 - (1 - (place.looted || 0)) * (1 - Q.looted);
