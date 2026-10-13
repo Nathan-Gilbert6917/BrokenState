@@ -334,9 +334,10 @@ console.log("The city crawl: taller deeper in, the card's count, a building left
   for (let i = 0; i < 30; i++) maxSeen = Math.max(maxSeen, CC.placeStoreys(state, c, { ...office, slot: 20 + i }, 8));
   check(maxSeen <= MAX_STOREYS, `never more than ${MAX_STOREYS} (deepest block, 30 towers: at most ${maxSeen})`);
   check(buildingSpec(state, c.tile, CC.placeOption(c, office, 7)).storeys === s7, "the card's count is the building's own dice");
-  // Enter an apartment block at block 7: the raid's storeys match the card.
-  c.block = 7; c.deepest = 7;
-  const blk = CC.genBlock(state, c, 7);
+  // Enter an apartment block deep in (block 7, or the deepest this city's round grid has): the raid's storeys match the card.
+  const deep = [7, 6, 5, 4].find((n) => CC.jumpToLevel(state, c, n));
+  check(deep >= 4, `test setup: a block 4+ deep (${deep})`);
+  const blk = CC.blockOf(c);
   const flats = { ...office, id: "t-a", slot: 8, key: "apartments", name: "Apartment block on Test Street", kind: "Apartment block" };
   blk.places = [flats];
   const want = CC.placeStoreys(state, c, flats);

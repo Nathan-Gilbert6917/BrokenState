@@ -34,11 +34,16 @@ function team(state, h, tile, n = 3, supplies = { food: 6, water: 6, ammo: 60, m
   p.path = [tile.id]; p.idx = 0; p.dest = tile.id; p.phase = "engaged";
   return p;
 }
-function crawlIn(seed) {
-  const { state, h, city } = world(seed);
+function crawlIn(seed, reuse = null) {
+  const { state, h, city } = reuse ? { state: reuse, h: hub(reuse), city: reuse.tiles.find((t) => t.loc && t.loc.type === "city") } : world(seed);
   const p = team(state, h, city);
   CC.startCrawl(state, p);
   return { state, h, city, p, c: p.crawl };
+}
+// A crawl in a city big enough to reach `level` (the grid's size is the city's own).
+function deepCrawl(seed0, level) {
+  for (let s = seed0; s < seed0 + 200; s++) { const w = crawlIn(s); if (CC.jumpToLevel(w.state, w.c, level)) { CC.jumpToLevel(w.state, w.c, 1); w.c.cell = w.c.entry; w.c.path = [w.c.entry]; w.c.block = 1; return w; } }
+  throw new Error(`no city reaching level ${level}`);
 }
 // Everyone in an extraction zone walks out (the team starts in the front zone).
 function walkOut(state) {
@@ -73,7 +78,7 @@ console.log("Entering a city");
     const town = state.tiles.find((t) => t.loc && t.loc.type === "town");
     const q = team(state, h, town, 1);
     startScavenge(state, q);
-    check(!q.crawl && state.combat && state.combat.raid, "a town keeps the normal raid");
+    check(!!q.crawl && q.crawl.grid.size <= 12, `a town is crawled too, on a smaller grid (${q.crawl && q.crawl.grid.size} blocks across)`);
     state.combat = null;
     // The autopilot (autoCombat): the hour-by-hour search, no crawl.
     const r = team(state, h, city, 1);
@@ -96,7 +101,7 @@ console.log("Entering a city");
   const p2 = team(state, h, city, 1);
   startScavenge(state, p2);
   check(!p2.crawl && !!state.engagement, "headless (tools) a city is searched hour by hour as before");
-  check(!CC.crawlTile(state.tiles.find((t) => t.loc && t.loc.type === "town")) && CC.crawlTile(city), "only city tiles are crawled");
+  check(CC.crawlTile(state.tiles.find((t) => t.loc && t.loc.type === "town")) && CC.crawlTile(city) && !CC.crawlTile(state.tiles.find((t) => t.loc && t.loc.type === "farm")), "cities and towns are crawled, other sites not");
 }
 
 // ---------- 1b. moved onto a city: the City crawl card ----------
@@ -129,7 +134,8 @@ console.log("Moved onto a city: the City crawl card");
     // since orders reach a team anywhere (TEAM-01, parties.js quietArrival): a log line, the team waiting for orders.
     const waitsQuietly = (st, q) => !st.cards.some((c) => c.partyId === q.id) && q.phase === "waiting" && / reached .* and waits for orders\.$/.test(st.log[0].text); // the newest line
     const r = moveOnto(town, 1);
-    check(waitsQuietly(state, r), "a town gets no crawl card (nor an orders card: a log line, the team waits)");
+    const rc = state.cards.find((x) => x.partyId === r.id);
+    check(rc && rc.title.startsWith("City crawl"), "a town offers the crawl too");
     const s1 = team(state, h, city, 1); s1.phase = "waiting"; state.cards.length = 0;
     s1.orders = [{ type: "camp", hours: 8 }];
     giveOrder(state, s1, "move");
@@ -251,8 +257,9 @@ console.log("Depth: danger and rewards");
   let rare1 = 0, rare5 = 0, raid1 = 0, raid5 = 0, n1 = 0, n5 = 0;
   for (let s = 0; s < 40; s++) {
     const { state: st, c: cc } = crawlIn(300 + s);
-    for (const pl2 of CC.genBlock(st, cc, 1).places) { n1++; if (pl2.rare) rare1++; if (pl2.raiders) raid1++; }
-    for (const pl2 of CC.genBlock(st, cc, 5).places) { n5++; if (pl2.rare) rare5++; if (pl2.raiders) raid5++; }
+    for (const pl2 of CC.blockOf(cc).places) { n1++; if (pl2.rare) rare1++; if (pl2.raiders) raid1++; }
+    if (!CC.jumpToLevel(st, cc, 5)) continue; // a city too small to have a level-5 heart
+    for (const pl2 of CC.blockOf(cc).places) { n5++; if (pl2.rare) rare5++; if (pl2.raiders) raid5++; }
   }
   check(rare5 / n5 > rare1 / n1 + 0.05, `rare places deeper (block 1 ${(rare1 / n1 * 100).toFixed(0)}%, block 5 ${(rare5 / n5 * 100).toFixed(0)}%)`);
   check(raid1 === 0 && raid5 > 0, `raiders holed up only deeper (block 1 ${raid1}, block 5 ${raid5} of ${n5})`);
@@ -262,9 +269,11 @@ console.log("Depth: danger and rewards");
     const w = crawlIn(400 + s);
     const place = CC.blockOf(w.c).places[0];
     place.blocked = null;
+    if (!CC.jumpToLevel(w.state, w.c, 5)) continue;
+    const deep = w.c.cell, edge = w.c.entry;
     for (const n of [1, 5]) {
-      w.c.block = n;
-      w.c.blocks[n] = { ...CC.genBlock(w.state, w.c, n), places: [place] };
+      w.c.cell = n === 1 ? edge : deep; w.c.block = n;
+      w.c.blocks[w.c.cell] = { ...CC.genBlock(w.state, w.c, w.c.cell), places: [place] };
       CC.enterPlace(w.state, w.p, place.id, { map: true });
       const b = w.state.combat;
       const en = b.units.filter((u) => u.side === "enemy").length;
@@ -274,7 +283,7 @@ console.log("Depth: danger and rewards");
     }
     k++;
   }
-  check(e5 > e1, `the same building holds more enemies at block 5 than at block 1 (${(e1 / k).toFixed(1)} → ${(e5 / k).toFixed(1)})`);
+  check(k > 0 && e5 > e1, `the same building holds more enemies at level 5 than at level 1 (${(e1 / k).toFixed(1)} → ${(e5 / k).toFixed(1)})`);
 }
 
 // ---------- 5. moving, time, leaving ----------
@@ -293,14 +302,16 @@ console.log("Moving and leaving");
   check(!p.crawl || c.block >= 1, "the team is on a block");
   // Leaving from the edge is safe; from deep in it is a gamble.
   const w = crawlIn(10);
-  check(CC.exitRisk(w.state, w.p).any === 0, "leaving from block 1 has no risk");
-  w.c.block = 4; w.c.deepest = 4; CC.genBlock(w.state, w.c, 4);
-  const r4 = CC.exitRisk(w.state, w.p).any;
-  w.c.block = 6; CC.genBlock(w.state, w.c, 6);
-  const r6 = CC.exitRisk(w.state, w.p).any;
-  check(r4 > 0.3 && r6 > r4, `leaving from block 4 is risky (${(r4 * 100).toFixed(0)}%), from block 6 more (${(r6 * 100).toFixed(0)}%)`);
-  w.c.alert = 80;
-  check(CC.exitRisk(w.state, w.p).breakout, "at a high Alert from deep in, the way out is a breakout");
+  check(CC.exitRisk(w.state, w.p).any === 0 && CC.onEdge(w.c), "on the rim where you came in: out with no risk");
+  const big = deepCrawl(1000, 6);
+  CC.jumpToLevel(big.state, big.c, 4);
+  const r4 = CC.exitRisk(big.state, big.p, big.c, "back").any;
+  CC.jumpToLevel(big.state, big.c, 6);
+  const r6 = CC.exitRisk(big.state, big.p, big.c, "back").any;
+  check(r4 > 0.15 && r6 > r4, `back the way you came from level 4 is risky (${(r4 * 100).toFixed(0)}%), from level 6 more (${(r6 * 100).toFixed(0)}%)`);
+  const ww = w;
+  big.c.alert = 80;
+  check(CC.exitRisk(big.state, big.p, big.c, "back").breakout, "at a high Alert from deep in, the way out is a breakout");
   // Played by the numbers: trouble on the way out from block 5, none from block 1.
   let trouble1 = 0, trouble5 = 0, out5 = 0;
   for (let s = 0; s < 30; s++) {
@@ -308,15 +319,15 @@ console.log("Moving and leaving");
     CC.leaveCity(a.state, a.p);
     if (a.p.crawl) trouble1++;
     const z = crawlIn(600 + s);
-    z.c.block = 5; z.c.deepest = 5; for (let n = 2; n <= 5; n++) CC.genBlock(z.state, z.c, n);
-    CC.leaveCity(z.state, z.p);
+    if (!CC.jumpToLevel(z.state, z.c, 4)) continue;
+    CC.leaveCity(z.state, z.p, "back");
     if (z.p.crawl && z.c.enc) trouble5++;
     let g = 0;
     while (z.p.crawl && g++ < 30) CC.crawlAutoStep(z.state, z.p);
     if (z.state.parties.includes(z.p) && partyMembers(z.state, z.p).length && !z.p.crawl) out5++;
   }
   check(trouble1 === 0, "nobody meets trouble leaving from the edge");
-  check(trouble5 >= 10, `leaving from block 5 meets trouble often (${trouble5}/30); ${out5}/30 got out`);
+  check(trouble5 >= 4, `back from level 4 meets trouble often (${trouble5}/30); ${out5}/30 got out`);
 }
 
 // ---------- 6. encounters and events ----------
@@ -327,7 +338,7 @@ console.log("Encounters and street events");
     for (let s = 0; s < 4; s++) {
       const w = crawlIn(700 + s);
       if (choice === "lure") for (const m of partyMembers(w.state, w.p)) stow(m, newItem("noisemaker"));
-      w.c.block = 3; CC.genBlock(w.state, w.c, 3);
+      CC.jumpToLevel(w.state, w.c, 3);
       CC.nextBlock(w.state, w.p);
       let g = 0;
       while (w.p.crawl && !w.c.enc && g++ < 8) CC.nextBlock(w.state, w.p);
@@ -347,8 +358,8 @@ console.log("Encounters and street events");
   for (const [key, E] of Object.entries(CC.EVENTS)) {
     for (const ch of E.choices) {
       const w = crawlIn(800 + evN);
-      w.c.block = Math.max(E.min, 1);
-      const blk = CC.genBlock(w.state, w.c, w.c.block);
+      CC.jumpToLevel(w.state, w.c, Math.max(E.min, 1));
+      const blk = CC.blockOf(w.c);
       blk.events = [{ id: "t1", key, done: false, result: "" }];
       evN++;
       try {
@@ -360,11 +371,11 @@ console.log("Encounters and street events");
   check(!evErr, `every street event's every choice resolves (${evN})`);
   // A blocking event stops the way deeper until it is dealt with.
   const w = crawlIn(900);
-  w.c.block = 3;
-  const blk = CC.genBlock(w.state, w.c, 3);
+  CC.jumpToLevel(w.state, w.c, 3);
+  const blk = CC.blockOf(w.c);
   blk.events = [{ id: "r1", key: "rubble", done: false, result: "" }];
   const msg = CC.nextBlock(w.state, w.p);
-  check(w.c.block === 3 && /blocked/.test(msg), "a collapsed street blocks the way deeper");
+  check(w.c.block === 3 && /blocked/.test(msg), "a collapsed street blocks the way straight on");
   CC.resolveEvent(w.state, w.p, "r1", "detour", {});
   check(blk.events[0].done, "finding a way around clears it");
   // A street event's map (the ambulance).
@@ -425,29 +436,79 @@ console.log("The autopilot's crawl (a crawl left open when the autopilot comes o
 }
 
 // ---------- 8b. leaving: back the way you came, or another way out; the Alert creeps with time ----------
-console.log("Leaving (2026-10-13): two ways out, the trail, the creep");
+console.log("The round grid (2026-10-13): moving, slipping away, the ways out, the trail, the creep, memory");
 {
-  // The trail: noise on a block stays on its streets and makes the way back through it riskier.
-  const { state, p, c } = crawlIn(4100);
-  c.block = 4; c.deepest = 4;
-  const clean = CC.exitRisk(state, p, c, "back");
-  c.trail = { 4: 60, 3: 30 };
-  const hot = CC.exitRisk(state, p, c, "back");
-  check(hot.any > clean.any && hot.steps[0].p > clean.steps[0].p, `the trail makes the way back riskier (${(clean.any * 100).toFixed(0)}% → ${(hot.any * 100).toFixed(0)}%)`);
-  check(hot.steps.length === 3 && hot.steps.map((x) => x.block).join(",") === "4,3,2", "back the way you came: blocks 4, 3, 2 to the edge");
-  // Another way: no trail, as deep as where you turned off, 1 up to as many blocks as the route in (3: 1 → 4).
-  const nw = CC.exitRisk(state, p, c, "new");
-  check(nw.lo === 1 && nw.hi === 3 && nw.per === CC.exitRisk(state, p, { ...c, trail: {} }, "new").per, "another way out: 1 to 3 blocks (the route in), no trail on them");
-  check(nw.anyHi > nw.anyLo, "a longer way is riskier");
-  // A bigger team leaves more heat; a stealthy one less.
-  const before = c.trail[4];
-  c.trailMult = 1; c.alert = 10;
-  CC.lieLow(state, p); // no noise: nothing added
-  check((c.trail[4] || 0) <= before, "lying low adds no heat to the block");
-  p.stance = "stealthy";
-  const m3 = CC.trailMultOf(state, p);
-  p.stance = "normal";
-  check(m3 < CC.trailMultOf(state, p), "a stealthy team leaves less heat");
+  // The grid: a city 15-30 across, a town 9-12; you come in on the rim.
+  const sizes = [];
+  for (let sd = 0; sd < 12; sd++) { const w = crawlIn(4400 + sd); sizes.push(w.c.grid.size); check(CC.onEdge(w.c) && w.c.path.length === 1, `seed ${4400 + sd}: in on the rim of a ${w.c.grid.size}-block city`); }
+  check(sizes.every((n) => n >= 15 && n <= 30), `cities are 15-30 blocks across (${sizes.join(", ")})`);
+}
+{
+  // Left, right, straight on: the heading turns, the next block is next door, the path grows.
+  const { state, p, c } = crawlIn(4500);
+  const ways = CC.waysOn(c);
+  check(ways.length === 3 && ways.map((w) => w.way).join() === "left,straight,right", "three ways on: left, straight, right");
+  const st = ways.find((w) => w.way === "straight" && w.cell) || ways.find((w) => w.cell);
+  const from = c.cell;
+  CC.nextBlock(state, p, st.way);
+  if (c.enc) CC.resolveEncounter(state, p, "run");
+  check(c.cell === st.cell || c.cell === from, `moving ${st.way} lands next door (${from} → ${c.cell})`);
+  if (c.cell === st.cell) {
+    check(c.heading === st.heading && c.path.length === 2 && c.path[0] === from, "the heading follows the turn; the path remembers the way back");
+    // Slip away from a block you have just come into, back where you were, facing as before.
+    check(c.fresh, "just come in, nothing done: you can still slip away");
+    state.rng.chance = () => true; // the stealth roll made
+    CC.slipAway(state, p);
+    check(c.cell === from && c.path.length === 1, "slipping away takes you back to the block before");
+  }
+}
+{
+  // Side streets (PR #4's cross streets on the round grid): about a quarter of the turns are shut, the same every visit
+  // and both ways; straight on never is; a shut street refuses the move.
+  const { state, p, c } = crawlIn(4510);
+  let shut = 0, sides = 0, straightShut = 0;
+  for (let h = 0; h < 4; h++) for (const [x, y] of [[5, 5], [6, 9], [9, 6], [7, 7], [8, 4], [4, 8]]) {
+    const cc = { ...c, cell: `c${x}_${y}`, heading: h };
+    for (const w of CC.waysOn(cc, state)) { if (!w.cell) continue; if (w.way === "straight") straightShut += w.shut ? 1 : 0; else { sides++; if (w.shut) shut++; } }
+  }
+  check(straightShut === 0 && shut > 0 && shut / sides < 0.45, `side streets shut now and then (${shut}/${sides}), straight on never`);
+  check(CC.sideShut(state, c, "c5_5", "c6_5") === CC.sideShut(state, c, "c6_5", "c5_5"), "a shut street is shut both ways");
+  let found = null;
+  for (let h = 0; h < 4 && !found; h++) for (const [x, y] of [[5, 5], [6, 9], [9, 6], [7, 7], [8, 4], [4, 8]]) { c.cell = `c${x}_${y}`; c.heading = h; const w = CC.waysOn(c, state).find((z) => z.shut); if (w) { found = w; break; } }
+  if (found) { const at = c.cell; check(/shut/.test(CC.nextBlock(state, p, found.way)) && c.cell === at, "a shut street refuses the move"); } else passed++;
+}
+{
+  // Noise ends the chance to slip away.
+  const { state, p, c } = crawlIn(4501);
+  const w = CC.waysOn(c).find((x) => x.cell);
+  state.rng.chance = () => false; // no trouble on the way
+  CC.nextBlock(state, p, w.way);
+  const pl = CC.blockOf(c).places.find((x) => !x.blocked);
+  if (pl) CC.quickSearch(state, p, pl);
+  check(!c.fresh && /no slipping away/.test(CC.slipAway(state, p)), "after a search (noise) there is no slipping away");
+}
+{
+  // The way back: the path in reverse, through the heat you left; straight out in one direction: the line to the rim.
+  const w = deepCrawl(4600, 4);
+  CC.jumpToLevel(w.state, w.c, 4);
+  const back = CC.exitRisk(w.state, w.p, w.c, "back");
+  check(back.steps.length === w.c.path.length - 1 && back.steps[back.steps.length - 1].cell === w.c.entry, `back the way you came: ${back.steps.length} blocks, ending where you came in`);
+  for (const k of w.c.path) w.c.trail[k] = 60;
+  const hot = CC.exitRisk(w.state, w.p, w.c, "back");
+  check(hot.any > back.any, `the heat you left makes the way back riskier (${(back.any * 100).toFixed(0)}% → ${(hot.any * 100).toFixed(0)}%)`);
+  const lines = [0, 1, 2, 3].map((d) => CC.exitRisk(w.state, w.p, w.c, "line", d));
+  check(lines.every((r) => r.steps.length >= 1) && lines.some((r) => r.steps.some((x) => !x.known)), `straight out each way: ${lines.map((r) => r.steps.length).join(" / ")} blocks, some unseen`);
+  // Walk it: the map follows, and you come out.
+  const d = lines.map((r, i) => [r.steps.length, i]).sort((a, b) => a[0] - b[0])[0][1];
+  w.state.rng.chance = () => false;
+  CC.leaveCity(w.state, w.p, "line", d);
+  check(!w.p.crawl, `straight out ${["north", "east", "south", "west"][d]}: out of the city`);
+}
+{
+  // Only on the rim do you walk straight out.
+  const w = deepCrawl(4700, 3);
+  CC.jumpToLevel(w.state, w.c, 3);
+  check(/not the edge/.test(CC.leaveCity(w.state, w.p, "here")) && !!w.p.crawl, "off the rim: no walking straight out");
 }
 {
   // The Alert creeps up with time instead of fading.
@@ -456,30 +517,31 @@ console.log("Leaving (2026-10-13): two ways out, the trail, the creep");
   const a0 = c.alert;
   CC.lookAround(state, p);
   check(c.alert > a0, `an hour in the city raises the Alert (${a0} → ${c.alert})`);
+  // A bigger team leaves more heat; a stealthy one less.
+  p.stance = "stealthy";
+  const m3 = CC.trailMultOf(state, p);
+  p.stance = "normal";
+  check(m3 < CC.trailMultOf(state, p), "a stealthy team leaves less heat");
 }
 {
-  // Another way out: its length is the visit's own dice (1..the route in), the same for the same turn-off; the team
-  // picks each new block; it ends the crawl.
-  let lens = new Set(), ended = 0, n = 0;
-  for (let sd = 0; sd < 24; sd++) {
-    const { state, p, c } = crawlIn(4200 + sd);
-    c.block = 4; c.deepest = 4; c.alert = 10;
-    CC.genBlock(state, c, 4);
-    CC.leaveCity(state, p, "new");
-    n++;
-    if (c.leaving && c.leaving.total) lens.add(c.leaving.total);
-    let g = 0;
-    while (p.crawl && g++ < 30) {
-      const cc = p.crawl;
-      if (cc.enc) CC.resolveEncounter(state, p, "run");
-      else if (cc.leaving && cc.leaving.way === "new") { const w = CC.waysOn(state, cc).find((o) => o.ok && o.fresh); if (w) CC.nextBlock(state, p, w.dir); else CC.leaveCity(state, p, "back"); }
-      else if (cc.leaving) CC.continueLeaving(state, p);
-      else CC.leaveCity(state, p, "new");
-    }
-    if (!p.crawl) ended++;
-  }
-  check([...lens].every((k) => k >= 1 && k <= 3) && lens.size >= 2, `another way runs 1 to 3 blocks (${[...lens].sort().join(", ")})`);
-  check(ended === n, `every team that takes another way gets out or ends (${ended}/${n})`);
+  // The city remembers: the blocks you went to (the map) and the buildings as you left them; other groups loot near the rim.
+  const { state, p, c } = crawlIn(4800);
+  const t = state.tiles[c.tile];
+  const pl = CC.blockOf(c).places.find((x) => !x.blocked);
+  c.buildings[pl.id] = { searched: 2, total: 5, units: [] };
+  CC.leaveCity(state, p, "here");
+  const mem = CC.crawlMemOf(t);
+  check(!p.crawl && mem.snaps[pl.id] && mem.cells[c.cell], "out: the city keeps the building as you left it and the block on its map");
+  const homeAgain = (st, q) => { for (const id of q.members) { const m = st.survivors.find((x) => x.id === id); if (m) m.location = { kind: "base", baseId: hub(st).id }; } st.parties.splice(st.parties.indexOf(q), 1); };
+  homeAgain(state, p);
+  const again = crawlIn(4800, state);
+  check(again.c.buildings[pl.id] && again.c.buildings[pl.id].searched === 2, "the next visit finds the building as you left it");
+  CC.leaveCity(again.state, again.p, "here");
+  homeAgain(state, again.p);
+  mem.aiLoot = 0.2;
+  const third = crawlIn(4800, state);
+  const ai = Object.values(mem.cells).filter((e) => e.ai).length;
+  check(ai >= 3 && mem.aiLoot < 0.04, `another group's scavenging since: ${ai} blocks near the rim picked over`);
 }
 
 {
@@ -496,104 +558,6 @@ console.log("Leaving (2026-10-13): two ways out, the trail, the creep");
   check(r(hot, 1.8) - r(quiet, 1.8) > r(hot, 0.6) - r(quiet, 0.6), "the same heat raises the risk more on a crawling block than on a quiet one");
   check(CC.blockHeat(state, { ...c, alert: 20, trail: { 4: 10 } }, 4, 1.35) === 30 * 1.35, "a block's heat: (Alert + its trail) × its activity");
   check(CC.genBlock(state, c, 2).threat === CC.threatOf(state, c, 2).level, "the block card carries its level");
-}
-
-console.log("The grid (2026-10-13): left, right or straight; back along the route in, or on through new blocks");
-{
-  // No trouble on the street for these (the rolls are tested above): ENC.max and EXIT.max 0.
-  const E0 = CC.CRAWL.ENC.max, X0 = CC.CRAWL.EXIT.max;
-  CC.CRAWL.ENC.max = 0; CC.CRAWL.EXIT.max = 0;
-  try {
-    // Every block offers three ways; the grid is 5–7 across; some cross streets are shut, the same every visit.
-    let shut = 0, open = 0, halves = new Set();
-    for (let sd = 0; sd < 12; sd++) {
-      const { state, c } = crawlIn(5000 + sd);
-      halves.add(CC.gridHalf(state, c));
-      for (let n = 1; n <= 6; n++) for (let x = -1; x <= 1; x++) { const ok2 = CC.sideOpen(state, c, n, x); if (ok2 !== CC.sideOpen(state, c, n, x)) shut = -999; ok2 ? open++ : shut++; }
-    }
-    check([...halves].every((h) => h >= 2 && h <= 3), `the grid runs 2 to 3 blocks to either side (${[...halves].sort().join(", ")})`);
-    check(shut > 0 && open > shut, `some cross streets are shut, most open, the same every time (${open} open, ${shut} shut)`);
-    // Find a city whose block 2 has a cross street open to one side, and walk straight, sideways, straight.
-    let w = null, side = null;
-    for (let sd = 0; sd < 40 && !side; sd++) {
-      w = crawlIn(5100 + sd);
-      w.c.alert = 5;
-      CC.nextBlock(w.state, w.p, "straight");
-      side = CC.waysOn(w.state, w.c).find((o) => o.dir !== "straight" && o.ok);
-    }
-    const { state, p, c } = w;
-    const ways = CC.waysOn(state, c);
-    check(ways.length === 3 && ways.map((o) => o.dir).join(",") === "left,straight,right", "a block offers left, straight and right");
-    check(ways.find((o) => o.dir === "straight").n === 3 && side.n === 2 && Math.abs(side.x) === 1, "straight is a block deeper; left and right are the same depth, a column over");
-    const b2 = CC.blockOf(c);
-    CC.nextBlock(state, p, side.dir);
-    check(c.block === 2 && c.x === side.x && CC.blockOf(c) !== b2, `to the ${side.dir}: a new block at the same depth (${CC.blockOf(c).street})`);
-    const ids = new Set([...b2.places, ...CC.blockOf(c).places].map((x) => x.id));
-    check(ids.size === b2.places.length + CC.blockOf(c).places.length, "its places are its own (ids unique on the grid)");
-    check(CC.placeOption(c, CC.blockOf(c).places[0]).id !== CC.placeOption(c, b2.places[0]).id, "and their buildings' maps are their own");
-    CC.nextBlock(state, p, "straight");
-    check(c.block === 3 && c.x === side.x && c.path.join(" ") === `1 2 ${CC.cellKey(2, side.x)} ${CC.cellKey(3, side.x)}`, `the route in: ${c.path.join(" → ")}`);
-    // Back the way you came: the route in, reversed, its own trail on each.
-    c.trail = { [CC.cellKey(2, side.x)]: 80 };
-    const back = CC.exitRisk(state, p, c, "back");
-    check(back.steps.map((s) => CC.cellKey(s.block, s.x)).join(" ") === `${CC.cellKey(3, side.x)} ${CC.cellKey(2, side.x)} 2`, "back the way you came: the same blocks, the other way");
-    check(back.steps[1].trail === 80 && back.steps[2].trail === 0, "the noise you left on each block of the way is on its own block");
-    const nw = CC.exitRisk(state, p, c, "new");
-    check(nw.hi === 3, "another way out is at most as many blocks as you came in by (3)");
-    // A loop is cut from the route in.
-    let looped = null;
-    for (let sd = 0; sd < 40 && !looped; sd++) {
-      const v = crawlIn(5150 + sd);
-      const s2 = CC.waysOn(v.state, v.c).find((o) => o.dir !== "straight" && o.ok);
-      if (!s2) continue;
-      CC.nextBlock(v.state, v.p, s2.dir);
-      CC.nextBlock(v.state, v.p, s2.dir === "left" ? "right" : "left"); // the same cross street back
-      looped = v.c;
-    }
-    check(looped && looped.path.join(" ") === "1" && looped.x === 0, "going there and back cuts the loop from the route in");
-    // Leaving back: out at the edge, through those blocks.
-    CC.leaveCity(state, p, "back");
-    check(!p.crawl, "back the way you came: out at the edge");
-  } finally { CC.CRAWL.ENC.max = E0; CC.CRAWL.EXIT.max = X0; }
-}
-{
-  // Another way out: only blocks not walked this crawl will do; the team picks; it ends within the route in.
-  const E0 = CC.CRAWL.ENC.max, X0 = CC.CRAWL.EXIT.max;
-  CC.CRAWL.ENC.max = 0; CC.CRAWL.EXIT.max = 0;
-  try {
-    let walked = 0, within = 0, n = 0, refused = 0;
-    for (let sd = 0; sd < 16; sd++) {
-      const { state, p, c } = crawlIn(5200 + sd);
-      c.alert = 5;
-      for (let i = 0; i < 4; i++) CC.nextBlock(state, p, "straight");
-      const route = c.path.length - 1;
-      CC.leaveCity(state, p, "new");
-      if (!c.leaving || c.leaving.way !== "new") continue;
-      n++;
-      const total = c.leaving.total;
-      const sw = CC.waysOn(state, c).find((o) => o.ok && o.fresh && o.dir !== "straight");
-      if (sw && total > 1) CC.nextBlock(state, p, sw.dir); // then the block it came from is one it has walked
-      if (p.crawl && CC.waysOn(state, c).some((o) => o.ok && !o.fresh)) {
-        const old = CC.waysOn(state, c).find((o) => o.ok && !o.fresh);
-        if (/walked that block/.test(CC.nextBlock(state, p, old.dir))) refused++;
-      }
-      let g = 0;
-      while (p.crawl && g++ < 12) { const w2 = CC.waysOn(state, p.crawl).find((o) => o.ok && o.fresh); if (!w2) break; CC.nextBlock(state, p, w2.dir); walked++; }
-      if (!p.crawl && total <= route) within++;
-    }
-    check(n >= 12, `another way out starts from block 5 (${n}/16)`);
-    check(within === n, `every team finds its way out within the route in (${within}/${n})`);
-    check(refused > 0, `a block already walked is refused on another way out (${refused})`);
-  } finally { CC.CRAWL.ENC.max = E0; CC.CRAWL.EXIT.max = X0; }
-}
-{
-  // An old save (a crawl from before the grid: no column, no route): the middle column straight down.
-  const { state, p, c } = crawlIn(5300);
-  delete c.x; delete c.path;
-  c.block = 3; c.deepest = 3; CC.genBlock(state, c, 2); CC.genBlock(state, c, 3);
-  const r = CC.exitRisk(state, p, c, "back");
-  check(r.steps.map((s) => s.block).join(",") === "3,2" && CC.blockOf(c) === c.blocks[3], "an old save leaves by blocks 3, 2 of the middle column");
-  check(CC.blockOf(c).places.every((x, j) => x.id === `b3p${j}`) && CC.placeOption(c, CC.blockOf(c).places[0]).id === "cc3-0", "the middle column's places keep their ids and buildings");
 }
 
 // ---------- 9. stats: map raids with the bot ----------

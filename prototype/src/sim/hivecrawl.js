@@ -106,7 +106,9 @@ export const HCRAWL = {
   // over 3), × stealthy for a team travelling stealthily, at most 100; it fades decay an hour (as fast as the Alert),
   // and lying still in it cools it as it does the Alert. perPerson 0 and decay 3: the crawl harness's hive rows
   // (tools/crawlbalance.js) stay where they were (docs/crawl-balance.md); 0.15 and 1 made every row harder.
-  HEAT: { perPerson: 0, stealthy: 0.6, decay: 3 },
+  // refillPerHeat (2026-10-13, the round-grid branch): on the way out, a cleared chamber you made noise in may have
+  // filled again: its heat × its activity × refillPerHeat, at most refillMax.
+  HEAT: { perPerson: 0, stealthy: 0.6, decay: 3, refillPerHeat: 0.003, refillMax: 0.3 },
   // Creeping past a chamber's brood: best Stealth + d10 against dc + perLayer × layer + its heat × perAlert (+ big a
   // person over three, + spotted when they have seen you).
   SNEAK: { dc: 7, perLayer: 0.7, perAlert: 0.05, big: 1, spotted: 4 },
@@ -1283,6 +1285,11 @@ export function stepOut(state, p) {
     c.trail.pop();
     c.from = here.id; // fall back = deeper again
     c.at = to.id;
+    // The noise you made here on the way in drew the brood back (HCRAWL.HEAT): a cleared chamber may have filled again.
+    if (broodLeft(state, hive, to) === 0 && roomFull(state, hive, den, to) > 0 && ((c.heat || {})[to.id] || 0) > 0) {
+      const H = HCRAWL.HEAT;
+      if (state.rng.chance(Math.min(H.refillMax, c.heat[to.id] * chamberThreat(state, c.hiveId, to.id).mult * H.refillPerHeat))) setLeft(state, hive, to, Math.ceil(roomFull(state, hive, den, to) / 2));
+    }
     if (broodLeft(state, hive, to) > 0) {
       c.enc = { kind: "brood", room: to.id, back: here.id, spotted: roomHeat(state, c, to) >= 50 };
       say2(c, `On the way out: ${roomThe(to)} is full of the brood again (${broodLeft(state, hive, to)}).`, "danger", state.hour);

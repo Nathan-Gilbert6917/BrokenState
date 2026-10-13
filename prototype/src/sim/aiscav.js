@@ -271,6 +271,7 @@ export function scavSearchHour(state, p) {
       if (fg) p.scav.bp = groupFindBlueprint(state, fg, t.id, localId(state, p.id)) || undefined; // machines-2: a manual on the shelves, by your odds (groupworks.js)
       t.loot -= take;
       p.scav.taken += take;
+      if (t.loc && (t.loc.type === "city" || t.loc.type === "town")) { const m = (t.crawlMem = t.crawlMem || { visits: 0, looted: {}, alert: 0, hour: 0 }); m.aiLoot = (m.aiLoot || 0) + take; } // citycrawl.js aiLootCells: the blocks near the rim they went through
       aiScav(state).stats.taken += take;
     }
   }

@@ -45,8 +45,7 @@ function crawlIn(seed, n, skills = {}) {
   p.path = [city.id]; p.idx = 0; p.dest = city.id; p.phase = "engaged";
   CC.startCrawl(state, p);
   const c = p.crawl;
-  c.block = n; c.deepest = n;
-  CC.genBlock(state, c, n);
+  if (!CC.jumpToLevel(state, c, n)) throw new Error(`test setup: no block at depth ${n} in this city`); // a block at depth n on the round grid
   return { state, p, c, city };
 }
 // A place of this type on the team's block with these folk forced, tall enough (minStoreys) by its slot's dice.
@@ -275,7 +274,7 @@ console.log("Ask them to join: they come down and wait on the street (the recrui
     const rc = w.state.cards.find((x) => x.recruit);
     check(!!rc && rc.recruit.candidates.length === n && rc.recruit.candidates.every((s) => S.names.includes(s.name) && s.pending), `out on the street: the recruit card for ${n} (${rc ? rc.title : "none"})`);
     check(S.state === "offered" && w.c.log.some((l) => /wait for you on the street/.test(l.text)), "the crawl's log says so, and they are not offered twice");
-    check(w.c.blocks[5].places[0].known && w.c.blocks[5].places[0].folk.survivors === false, "the block card knows the building and that nobody is barricaded in now");
+    check(CC.blockOf(w.c).places[0].known && CC.blockOf(w.c).places[0].folk.survivors === false, "the block card knows the building and that nobody is barricaded in now");
     w.state.cards.length = 0;
   }
   const w2 = crawlIn(44, 5, { speech: 0, leadership: 0 });
@@ -366,7 +365,7 @@ console.log("The block card: hints only after a Look around (or having been insi
 // ======================================================================================
 console.log("A building left and gone back into keeps its folk; save and load mid-raid with a nest and a barricaded group");
 {
-  const w = crawlIn(48, 6, {});
+  const w = crawlIn(48, 5, {});
   const pl = placeOf(w.state, w.c, "offices", { survivors: true, raidersUp: true, nest: true }, 4, true);
   const b = enter(w.state, w.p, w.c, pl);
   const F = b.raid.folk;
@@ -377,7 +376,7 @@ console.log("A building left and gone back into keeps its folk; save and load mi
   extractAll(w.state);
   const snap = w.c.buildings[pl.id];
   check(!!snap && snap.folk && JSON.stringify(snap.folk) === JSON.stringify(F), "the snapshot keeps the folk record");
-  check(w.c.blocks[6].places[0].known && folkHint(w.c.blocks[6].places[0]) === "something nests above; voices and a watcher on the stairs; lights were seen upstairs", `having been inside, the card knows: "${folkHint(w.c.blocks[6].places[0])}"`);
+  check(CC.blockOf(w.c).places[0].known && folkHint(CC.blockOf(w.c).places[0]) === "something nests above; voices and a watcher on the stairs; lights were seen upstairs", `having been inside, the card knows: "${folkHint(CC.blockOf(w.c).places[0])}"`);
   CC.enterPlace(w.state, w.p, pl.id, { map: true });
   const b2 = w.state.combat;
   check(b2 && b2.raid.folk && JSON.stringify(b2.raid.folk) === JSON.stringify(F), "going back in restores it");
