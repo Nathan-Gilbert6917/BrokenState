@@ -36,6 +36,7 @@ import { SITE_KIT, AREA_KIT, WARE_KIT } from "../src/sim/carrykit.js"; // carry 
 import { BLADE_FINDS, AREA_BLADES, WARE_BLADES } from "../src/sim/blades.js"; // knives and swords (their own dice)
 import { ARSENAL_FINDS } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js: their own dice)
 import { gunsFrom } from "../src/sim/gundist.js";
+import { CANNER } from "../src/sim/buildings.js"; // the old crafted canner (an old save's)
 
 const quiet = process.argv.includes("--quiet");
 let pass = 0, fail = 0;
@@ -93,6 +94,9 @@ addAll(Object.keys(AMMO_GEAR), "rounds");
 addAll(Object.keys(BULK_GEAR), "bulk finds"); // ammo.js bulkFind: raid containers and Army trucks now and then (2026-10-10) // a box is the item form of a supply of rounds found by key everywhere (ammo.js: starting colonists' pockets, opened into the stock)
 addAll(Object.keys(RECRUIT_WEAPONS), "recruits"); addAll(RECRUIT_ARMOR, "recruits"); addAll(RECRUIT_KIT, "recruits"); addAll(RECRUIT_PERSONAL, "recruits");
 for (const [k, r] of Object.entries(CRAFTS)) if (r.gear) addAll([r.gear], `craft:${k}`);
+// The pressure canner is no longer made or found (machines-2, 84c5145: fitted to a preserving room where it stands);
+// the item stays only for one kept from an old save, fitted on load or paying for a fitting (buildings.js CANNER.item).
+if (!CRAFTS.canner) addAll([CANNER.item], "old saves");
 addAll(HUMVEE_GEAR, "event:humvee"); addAll(HIKER_STUFF, "event:hiker"); addAll(["hikingpack", "rucksack"], "event:hiker");
 for (const k of Object.keys(GEAR)) if (GEAR[k].blueprint) add(k, "blueprints");
 for (const [a, f] of Object.entries(GUN_FINDS)) addAll(Object.keys(f), `raid:${a}`); // gunsafes.js: tools and gun cases in raid containers

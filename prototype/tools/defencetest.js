@@ -18,7 +18,7 @@ import { addBuilding, count } from "../src/sim/buildings.js";
 import { DEPLOY, deployProblems, wallHp, gateHp, sideUntf } from "../src/sim/deploy.js";
 import { INTERIOR, buildInterior, structuresOf, layoutSeed, tierAI, interiorSize, wallMapRows, yardDims, yardGeom } from "../src/sim/interior.js";
 import { sizeClass } from "../src/sim/battlesize.js";
-import { fightNow, holdCheck, tierMults, raidTier, tierLimits } from "../src/sim/defences.js";
+import { fightNow, holdCheck, tierMults, raidTier, tierLimits, breakInStrength } from "../src/sim/defences.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { newItem } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -311,7 +311,9 @@ section("Fog of war");
   check(los(b, 2, 6, 16, 6) && playerSees(b, e) && sightRange(b, p) === p.sight + 4, `a manned watchtower sees over it (sight ${sightRange(b, p)})`);
   setH(b, 2, 6, "open"); delete cellAt(b, 2, 6).h;
   for (let y = 0; y < b.h; y++) setH(b, 10, y, "open");
-  // Night: 7 tiles; night vision 13; a thermal at night too; binoculars only by day.
+  // Night (vision.js, night sight by the hour): a night forced on a daytime world starts at 0:00, the dead of night, so
+  // 4 tiles ahead in the dark; night vision 12 down the cone (as far as a military flashlight's beam); a thermal at
+  // night too; binoculars only by day.
   const st2 = world();
   const h2 = fortHub(st2, ["walls"], 0);
   const people = atBase(st2, h2.id);
@@ -321,7 +323,7 @@ section("Fog of war");
   const b2 = baseBattle(st2, h2, { kind: "zombies", count: 6, power: 2 }, { through: 50, night: true });
   const unit = (s) => b2.units.find((u) => u.sid === s.id);
   const [n0, n1, n2] = [unit(people[0]), unit(people[1]), unit(people[2])];
-  check(b2.night && n2.sight === 7 && n0.sight === 13 && n1.sight === 13 && n1.optic === 2, `a base battle at night: plain sight ${n2.sight}, night vision ${n0.sight}, a thermal ${n1.sight} (+${n1.optic})`);
+  check(b2.night && b2.hour === 0 && n2.sight === 4 && n0.sight === 12 && n1.sight === 12 && n1.optic === 2, `a base battle at night: plain sight ${n2.sight}, night vision ${n0.sight}, a thermal ${n1.sight} (+${n1.optic})`);
   check(b2.units.filter((u) => u.side === "enemy").every((u) => u.sight === 5), "the dead see 5 at night");
   const st3 = world();
   const h3 = fortHub(st3, ["walls"], 0);
@@ -335,9 +337,9 @@ section("Fog of war");
   const h4 = fortHub(st4, ["walls", "floodlights"], 0);
   h4.stock.fuel = 10;
   const b4 = baseBattle(st4, h4, { kind: "zombies", count: 6, power: 2 }, { through: 50, night: true, floodlit: true });
-  // The eye: a plain-sighted defender on the ground with some floodlit ground in its line of sight beyond its 7 (the
+  // The eye: a plain-sighted defender on the ground with some floodlit ground in its line of sight beyond its 4 (the
   // wrecks on the road through the yard can hide every lit cell from one of them).
-  const eyes = b4.units.filter((u) => u.side === "player" && active(u) && u.sight === 7 && heightAt(b4, u.x, u.y) === 0);
+  const eyes = b4.units.filter((u) => u.side === "player" && active(u) && u.sight === 4 && heightAt(b4, u.x, u.y) === 0);
   const litInLos = (eye) => { let n = 0; for (let i = 0; i < b4.w * b4.h; i++) { const x = i % b4.w, y = (i / b4.w) | 0, d = Math.hypot(x - eye.x, y - eye.y); if (b4.lit[i] && d > sightRange(b4, eye) && d <= 13 && los(b4, eye.x, eye.y, x, y)) n++; } return n; };
   const eye = eyes.find((u) => litInLos(u) > 0) || eyes[0];
   let litFar = 0, darkFar = 0;
@@ -366,14 +368,17 @@ section("The tiers by the numbers");
   const c = holdCheck(st, h, 2000);
   const small = holdCheck(st, h, 30);
   check(small.holds && small.tier === "wall" && !c.holds && c.through > 0 && c.tier === "overrun" && c.buildingsLimit >= c.yardLimit, `holdCheck: 30 held at the walls; 2000 breaks in (${c.through} inside) past the yard (holds ${c.yardLimit}) and the buildings (${c.buildingsLimit})`);
-  // One barricade raises the yard's multiplier; the limit is a horde count, and the horde's strength has flat stretches
-  // (one step can land on one, as the defenders' traits move their power), so it must not fall and two must raise it.
+  // One barricade raises the yard's multiplier; the limit is a horde count, and the horde's strength is a staircase
+  // (defences.js breakInForce: the count is through / 7 and the power rounds to 0.1, so it is flat across each 7 and
+  // steps up by about 1 / count: 7% at 14 of them, more than two barricades' +5.6%, so "two must raise it" held only
+  // for some defenders). So the limit must never fall, and once the barricades' multiplier outgrows the next step up
+  // (the strength at lim0 + 1 over the defenders' with the tiers) it must rise.
   const lim0 = tierLimits(st, h).yard, yard0 = tierMults(st, h, false).yard;
-  addBuilding(h, "barricades");
-  const lim1 = tierLimits(st, h).yard;
-  addBuilding(h, "barricades");
-  const lim2 = tierLimits(st, h).yard;
-  check(tierMults(st, h, false).yard > yard0 && lim1 >= lim0 && lim2 > lim0, `more barricades: the yard holds more (${lim0} → ${lim1} → ${lim2})`);
+  const need = breakInStrength(st, h, lim0 + 1) / (tierLimits(st, h).mine * tierMults(st, h, false).wall * yard0);
+  const lims = [lim0];
+  while (tierMults(st, h, false).yard / yard0 < need && lims.length < 8) { addBuilding(h, "barricades"); lims.push(tierLimits(st, h).yard); }
+  const up = lims.every((l, i) => !i || l >= lims[i - 1]);
+  check(tierMults(st, h, false).yard > yard0 && lims.length > 1 && lims.length < 8 && up && lims[lims.length - 1] > lim0, `more barricades: the yard holds more, ${lims.length - 1} past the next step (${lims.join(" → ")})`);
   // A raid by the numbers through the tiers.
   const r1 = raidTier(st, h, 100, 70, 1.2, 0.8), r2 = raidTier(st, h, 100, 115, 1.2, 0.8), r3 = raidTier(st, h, 100, 400, 1.2, 0.8);
   check(r1.tier === "wall" && ["yard", "buildings"].includes(r2.tier) && r2.ratio >= 0.8 && r2.ratio < 1.2 && r3.tier === "overrun", `raids: 100 against 70 held at the wall, against 115 pushed back from the ${r2.tier}, against 400 overrun`);

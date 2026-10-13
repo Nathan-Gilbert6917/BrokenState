@@ -364,32 +364,43 @@ const GROUND_PROPS = { grass: ["tree", "tree", "rock", "fence", "hay"], field: [
 const YARD_PROPS = { dirt: ["crate", "barrel", "crate", "hay"], field: ["hay"], grass: ["rock", "tree"] };
 
 // Clutter (not buildings) on the way from the back gate to every door, ladder and the wall is cleared.
+const DX4 = [1, -1, 0, 0], DY4 = [0, 0, 1, -1];
 function connect(cells, W, H, out) {
   const start = [0, Math.floor(H / 2)];
   const targets = [...out.doors.map(([x, y]) => outsideOf(cells, W, H, x, y)), ...out.buildings.filter((b) => b.ladder).map((b) => b.ladder), [W - 3, Math.floor(H / 2)], [W - 1, 0], [W - 1, H - 1]].filter(Boolean);
-  const hard = (c) => ["wall", "window", "bdoor", "roof", "palisade", "tower", "loft", "stairs"].includes(c.k);
+  const HARD = new Set(["wall", "window", "bdoor", "roof", "palisade", "tower", "loft", "stairs"]);
+  const hard = (c) => HARD.has(c.k);
+  // The search from the back gate depends on the cells alone (not the target: a ladder is not hard, so a target
+  // ladder needs no way in of its own): it is run again only after a path
+  // cleared something (the yard's turn into the interior map spent most of the enemy's turn here: sizetest).
+  // step: what entering each cell costs (Infinity: hard), kept up to date as the clutter is cleared.
+  const step = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) step[i] = hard(cells[i]) ? Infinity : CELL[cells[i].k].walk ? 1 : 6;
+  let d = null, prev = null;
   for (const [tx, ty] of targets) {
-    const d = new Float32Array(W * H).fill(Infinity), prev = new Int32Array(W * H).fill(-1);
-    const s = start[1] * W + start[0];
-    d[s] = 0;
-    const open = [s];
-    while (open.length) {
-      let bi = 0;
-      for (let i = 1; i < open.length; i++) if (d[open[i]] < d[open[bi]]) bi = i;
-      const cur = open[bi]; open[bi] = open[open.length - 1]; open.pop();
-      const x = cur % W, y = (cur / W) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const c = cells[ny * W + nx];
-        if (hard(c) && !(nx === tx && ny === ty && c.k === "ladder")) continue;
-        const nd = d[cur] + (CELL[c.k].walk ? 1 : 6);
-        if (nd < d[ny * W + nx]) { if (d[ny * W + nx] === Infinity) open.push(ny * W + nx); d[ny * W + nx] = nd; prev[ny * W + nx] = cur; }
+    if (!d) {
+      d = new Float32Array(W * H).fill(Infinity); prev = new Int32Array(W * H).fill(-1);
+      const s = start[1] * W + start[0];
+      d[s] = 0;
+      const open = [s];
+      while (open.length) {
+        let bi = 0;
+        for (let i = 1; i < open.length; i++) if (d[open[i]] < d[open[bi]]) bi = i;
+        const cur = open[bi]; open[bi] = open[open.length - 1]; open.pop();
+        const x = cur % W, y = (cur / W) | 0;
+        for (let k = 0; k < 4; k++) {
+          const nx = x + DX4[k], ny = y + DY4[k];
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const j = ny * W + nx, nd = d[cur] + step[j];
+          if (nd < d[j]) { if (d[j] === Infinity) open.push(j); d[j] = nd; prev[j] = cur; }
+        }
       }
     }
     let i = ty * W + tx;
     if (!isFinite(d[i])) continue;
-    while (i >= 0) { const c = cells[i]; if (!CELL[c.k].walk && !hard(c)) c.k = "open"; i = prev[i]; }
+    let changed = false;
+    while (i >= 0) { const c = cells[i]; if (!CELL[c.k].walk && !hard(c)) { c.k = "open"; step[i] = 1; changed = true; } i = prev[i]; }
+    if (changed) d = null;
   }
 }
 // The cell outside a door (the side away from the building's inside).

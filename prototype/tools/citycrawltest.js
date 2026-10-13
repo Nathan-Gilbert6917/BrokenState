@@ -117,23 +117,25 @@ console.log("Moved onto a city: the City crawl card");
     const oc = cardOf(q);
     check(oc && oc.isOrders && !oc.title.startsWith("City crawl") && state.cards[0] === oc, `Not now brings back the orders card, first in line ("${oc && oc.title}")`);
     check(!q.crawl && q.phase === "waiting", "Not now leaves the team waiting on the tile");
-    // Not a city, a queued order, the autopilot: no City crawl card.
+    // Not a city, a queued order, the autopilot: no City crawl card. A plain move that got there pops no card at all
+    // since orders reach a team anywhere (TEAM-01, parties.js quietArrival): a log line, the team waiting for orders.
+    const waitsQuietly = (st, q) => !st.cards.some((c) => c.partyId === q.id) && q.phase === "waiting" && / reached .* and waits for orders\.$/.test(st.log[0].text); // the newest line
     const r = moveOnto(town, 1);
-    check(cardOf(r) && !cardOf(r).title.startsWith("City crawl"), "a town gets the orders card, no crawl card");
+    check(waitsQuietly(state, r), "a town gets no crawl card (nor an orders card: a log line, the team waits)");
     const s1 = team(state, h, city, 1); s1.phase = "waiting"; state.cards.length = 0;
     s1.orders = [{ type: "camp", hours: 8 }];
     giveOrder(state, s1, "move");
     check(!cardOf(s1) && s1.phase === "task", "queued orders carry on at the city: no card");
     state.autoCombat = true;
     const u = moveOnto(city, 1);
-    check(cardOf(u) && !cardOf(u).title.startsWith("City crawl"), "with battles resolved by the numbers (the autopilot) the orders card as before");
+    check(waitsQuietly(state, u), "with battles resolved by the numbers (the autopilot) no crawl card: waits as after any move");
     state.autoCombat = false;
   } finally { delete globalThis.window; }
   const w2 = world(4);
   const v = team(w2.state, w2.h, w2.city, 1); v.phase = "waiting"; w2.state.cards.length = 0;
   giveOrder(w2.state, v, "move");
   const vc = w2.state.cards.find((c) => c.partyId === v.id);
-  check(vc && !vc.title.startsWith("City crawl"), "headless (tools) the orders card as before");
+  check(!vc && v.phase === "waiting" && / reached .* and waits for orders\.$/.test(w2.state.log[0].text), "headless (tools) no crawl card: waits as after any move");
 }
 
 // ---------- 2. block cards ----------

@@ -196,14 +196,19 @@ export function densify(cells, W, H, rng, opts = {}) {
   };
   let open = 0, covered = 0;
   for (let i = 0; i < W * H; i++) if (groundK(cells[i])) { open++; if (d[i] <= R) covered++; }
-  let placed = 0;
+  let placed = 0, far = 0, cand = [];
   for (let guard = 0; guard < cap * 4 && placed < cap && open && covered / open < target; guard++) {
-    // The open cells furthest from cover; one of them, or a cell next to it, takes a prop.
-    let far = 0;
-    for (let i = 0; i < W * H; i++) if (groundK(cells[i]) && d[i] > far) far = d[i];
-    if (far <= R) break;
-    const cand = [];
-    for (let i = 0; i < W * H; i++) if (groundK(cells[i]) && d[i] === far) cand.push(i);
+    // The open cells furthest from cover; one of them, or a cell next to it, takes a prop. A cell's distance only
+    // falls and open ground only goes, so while some of the last ones are still that far they are all there is (in
+    // the same order): the whole map is looked over again only when the furthest step down (interior.js
+    // groundsBeyond's woodlot spent most of the yard map's making scanning it every prop: sizetest).
+    cand = cand.filter((i) => groundK(cells[i]) && d[i] === far);
+    if (!cand.length) {
+      far = 0;
+      for (let i = 0; i < W * H; i++) if (groundK(cells[i]) && d[i] > far) far = d[i];
+      if (far <= R) break;
+      for (let i = 0; i < W * H; i++) if (groundK(cells[i]) && d[i] === far) cand.push(i);
+    }
     const i0 = cand[rng.int(0, cand.length - 1)], x0 = i0 % W, y0 = (i0 / W) | 0;
     let spot = null;
     for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) if (ok(x0 + dx, y0 + dy)) { spot = [x0 + dx, y0 + dy]; break; }
