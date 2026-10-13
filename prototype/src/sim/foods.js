@@ -131,6 +131,30 @@ export const FOOD_KEYS = Object.keys(FOODS);
 export const isFood = (k) => !!(k && FOODS[k]);
 for (const k of FOOD_KEYS) { const f = FOODS[k]; f.key = k; f.stable = f.shelf >= STABLE_DAYS; }
 
+// ---------- food value (user request 2026-10-13: "Balance food so people eat 1 food value each meal Breakfast, Lunch,
+// Dinner. Each food item has x.xx food value. Each survivor eat enough items to meet at least 1 food value each meal.
+// Calculate food based on this for the base") ----------
+// FOODS[k].fv: one item's food value, to two places: MEAL_KCAL (a third of DAY_KCAL) is 1.00, a meal. A can of beans
+// 0.60, a can of meat 0.90, an MRE 1.88, a kilo of rice 5.40. Three meals a day: MEALS_A_DAY food value is a day of food
+// (a ration), so fvIn(stock) is foodIn(stock) × 3 at the items' rounded values.
+// Everyone eats at least MEAL_FV at each meal, at a base and on a team (eating.js sharedMeal): one pot for everyone
+// eating together, whole items worth a meal or less opened by the closest fit and shared out, an item worth more than a
+// meal (a kilo of rice, a loaf, a jar of peanut butter, an MRE) cut to the portion still needed.
+export const MEALS_A_DAY = 3;
+export const MEAL_KCAL = DAY_KCAL / MEALS_A_DAY;
+export const MEAL_FV = 1;
+for (const k of FOOD_KEYS) FOODS[k].fv = Math.max(0.01, Math.round((FOODS[k].kcal / MEAL_KCAL) * 100) / 100);
+export const fvOf = (k) => (FOODS[k] ? FOODS[k].fv : 0);
+// Food value in a stock (every food item, positive amounts).
+export function fvIn(stock) {
+  if (!stock) return 0;
+  let v = 0;
+  for (const k in stock) { const f = FOODS[k]; if (f) { const q = stock[k]; if (q > 0) v += q * f.fv; } }
+  return v;
+}
+// "1.20" (two places, as the items show them).
+export const fv2 = (v) => (Math.round((Number.isFinite(v) ? v : 0) * 100) / 100).toFixed(2);
+
 // ---------- value ----------
 // SUPPLIES[k].value = kcal / 1000 × VALUE.perKcal × the tier's TIER_VALUE × keeps (0.7 + 0.25 × log10(1 + shelf)):
 // a can of beans 0.47 (1.17 a day's food), an MRE 2.4 (1.9 a day), a kilo of venison 0.74 (0.49 a day), jarred food

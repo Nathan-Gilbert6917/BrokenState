@@ -7,6 +7,7 @@
 //     skills, backgrounds and groups, and the world's dice end where they did (normal and hardcore starts);
 //   - a save keeps them; a short autopilot run with them on everyone has no errors.
 // Usage: node tools/traitstest.js
+import { mealOf } from "../src/sim/meals.js"; // breakfast, lunch and dinner on the road
 import { createWorld, tickHour, day, hub, atBase, skill, hurt, makeSurvivor, rollTraits, newId } from "../src/sim/world.js";
 import { TRAITS, SKILLS, SKILL_NAMES, BIRTH_TRAITS, NEW_TRAITS, TRAIT_CLASH, traitsClash, clashIn, traitKind } from "../src/sim/data.js";
 import { TRAIT_FX, TRAIT_ROLL, TRAIT_TIERS, TIER_ROLL, woundMult, stomachShrugs, tierCount, tierFx, traitTier, setTier, tidyTiers, rollTiers, traitLabel, traitDesc, traitAim, breakMult, accidentMult, stomachMult } from "../src/sim/traits.js";
@@ -274,6 +275,7 @@ section("Glutton: a quarter ration more");
   const hc = world(5, "hardcore");
   const p = hc.parties.find((x) => x.owner === "player");
   const m = partyMembers(hc, p)[0];
+  while (mealOf(null, hc.hour, hc)) hc.hour++; // not a mealtime (eating.js teamMeal: the team eats its meal then)
   m.traits = []; m.hunger = 100; teamNeedsHour(hc, p, [m]); const d0 = 100 - m.hunger;
   m.traits = ["glutton"]; m.hunger = 100; teamNeedsHour(hc, p, [m]); const d1 = 100 - m.hunger;
   check(d0 > 0 && near(d1, d0 * 1.25), `on the road: hunger −${r3(d0)} → −${r3(d1)} an hour`);

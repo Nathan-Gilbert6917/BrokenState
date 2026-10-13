@@ -60,9 +60,9 @@ export function lunchOverlap(a, b, state) {
 //           THOUGHTS). The harvest festival is one (festival.js).
 // AI groups (factions.js): the same levels coarsely (lean when short, a feast on the festival day).
 export const RATION_LEVELS = {
-  normal: { name: "Normal", use: 1, target: null, mood: 0, desc: "Everyone eats at the mealtimes and when hungry, until they are 80–100% full (each their own): about a ration a day." },
-  lean: { name: "Lean", use: 0.8, target: 75, mood: -1, desc: "Smaller portions: everyone eats to about 75% full and the body gets by on 80% of a ration. Food lasts a quarter longer; mood −1 a day. Nobody goes hungry enough to work worse." },
-  feast: { name: "Feast", use: 1.5, target: 100, mood: 0, desc: "A feast today: everyone eats their fill and half as much again (×1.5 the day's food) and gets \"A feast\" (mood +6 for 3 days). Back to the usual level tomorrow." },
+  normal: { name: "Normal", use: 1, target: null, mood: 0, desc: "Everyone eats at least 1.00 food value at breakfast, lunch and dinner (whole cans and bars until it adds up, bigger food in portions), and between meals when hungry: about a ration a day." },
+  lean: { name: "Lean", use: 0.8, target: 75, mood: -1, desc: "Smaller portions: a meal is 0.80 food value and the body gets by on 80% of a ration. Food lasts a quarter longer (less where whole cans make every meal run over); mood −1 a day. Nobody goes hungry enough to work worse." },
+  feast: { name: "Feast", use: 1.5, target: 100, mood: 0, desc: "A feast today: a meal is 1.50 food value (×1.5 the day's food) and everyone gets \"A feast\" (mood +6 for 3 days). Back to the usual level tomorrow." },
 };
 // The day of an hour (world.js day is 1-based from hour 0; here only "the same day" matters).
 const dayOfHour = (h) => Math.floor(h / 24);
