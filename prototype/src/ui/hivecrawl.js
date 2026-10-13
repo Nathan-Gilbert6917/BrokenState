@@ -11,6 +11,7 @@ import {
   HCRAWL, ROOM_KINDS, activeHiveCrawl, crawlHive, denOf, roomById, warmthOf, warmthText, alertName, roomName, broodLeft, exitsOf, draftWord,
   encounterOptions, roomActions, roomAct, resolveHiveEnc, moveTo, leaveHive, stepOut, canMoveOn,
   draftMissHere, teamLights, lightsOn, setLights, flaresOf, listenAt, listenOdds, throwFlare, heardText,
+  chamberThreat, chamberHeat,
 } from "../sim/hivecrawl.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -125,6 +126,7 @@ function roomCard(state, p, c, den, room, w) {
   const flares = flaresOf(state, p).length;
   const acts = roomActions(state, p);
   return `<div class="card" style="margin:0;border-color:${warmColor(w, 0.6)}"><b>${esc(roomName(room))}</b><div class="small" style="margin:0.2rem 0">${esc(K.text || "")} The air is ${esc(warmthText(w))}.${n && c.slipped[room.id] ? ` The ${n} of the brood you crept past are still here.` : ""}</div>
+    <div class="small" style="margin-bottom:0.3rem"><span${tip(`How much of the brood stirs in this chamber (the hive's own: the same every visit; the core is always Busy). It sets how many of them are here and multiplies the heat: the hive's Alert and the noise you have made in this chamber. A loud fight in a seething chamber brings them down on you; on the way out, a cleared chamber you made noise in may have filled again.`)}>Activity: <b>${esc(chamberThreat(state, hive, room).name)}</b> (×${chamberThreat(state, hive, room).mult})</span> · <span${tip("The noise you have made in this chamber (fights, fire, searching), fading slowly: with its activity, it is what calls the brood here and what you walk back through on the way out. A bigger team makes more, a stealthy one less.")}>Heat here: <b>${Math.round((c.heat || {})[room.id] || 0)}</b> (felt as ${Math.round(chamberHeat(state, c, hive, room))})</span></div>
     <div class="row" style="gap:0.35rem;flex-wrap:wrap">${acts.map((a) => `<button data-action="hc-act" data-id="${p.id}" data-act="${a.id}" ${a.disabled ? "disabled" : ""}${tip(a.tip)}>${esc(a.label)}</button>`).join("")}</div></div>
     <h3 style="margin-top:0.5rem">Passages</h3>
     <div class="small muted" style="margin-bottom:0.25rem"${tip(`Your best scout reads the drafts. A team without a good scout misreads one now and then${lightsOn(state, p, c) ? "; your lights help" : teamLights(state, p) ? "; your lights are off" : "; a light would help"}. A passage lit by a flare reads true.`)}>Drafts read right about ${Math.round((1 - miss) * 100)}% of the time${lightsOn(state, p, c) ? " (in your lights)" : ""}.</div>

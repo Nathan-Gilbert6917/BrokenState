@@ -214,6 +214,67 @@ activity and its heat; the next block's activity is unknown until you get there.
 The harness rows hardly move (crawls are short: 3–11 hours), and all 11 judged rows stay inside their targets.
 `tools/citycrawltest.js` checks the two ways, the trail, the creep and the activity levels.
 
+## The round grid (2026-10-13, latest)
+
+The city crawl is no longer a line of blocks. A city (or now a **town** too) is a round grid of blocks
+(`src/sim/citygrid.js`): a size × size square with the corners cut away in a curve. A city is 15–30 blocks across and a
+town 9–12, by the world's dice (the same every visit).
+
+- **Coming in**: on a block of the rim, on the side facing where the team came from (its home base), heading in.
+- **Moving**: from any block, left, straight on or right of the way you face (an hour). Deeper in toward the centre
+  is more dangerous and richer: a block's *level* (1–8, what the danger and loot tables read, the old "block number")
+  climbs a level every two rings in from the rim. The heart of a 30-block city is level 8, a 15-block city's level 4,
+  a town's level 2–3.
+- **Slipping away**: on a block you have just come into, before you do anything noisy there, "Slip away unseen" takes
+  you back onto the block before, facing as you were (Stealth + d10 against 4 + its activity level × 1.2 + its heat
+  / 15, harder with a bigger team; an hour). Fail and they have seen you: an encounter there.
+- **Leaving**: from any block on the rim you walk out. Otherwise:
+  - *back the way you came*: the path you walked, in reverse (loops cut out), through the heat you left on each block
+    (half an hour a block you know);
+  - *out north / east / south / west*: keep going one way until the rim, through the blocks in between (blocks you
+    have not seen: their activity unknown till you are on them, an hour each).
+  A roused city still makes the first block of the way out a fight.
+- **The map**: the crawl window draws the grid: blocks you have been to (this visit and earlier ones) in their
+  activity's colour, a dot where another group went through since, your path in gold, where you stand and which way
+  you face in white, the rim lighter.
+- **Memory**: the city keeps, between visits, the blocks you have been to (the map), how picked over every place is,
+  and the buildings as you left them (`crawlMem.snaps`: searched containers, opened doors, the dead you killed).
+  **Other groups** scavenging there (`aiscav.js`, `crawlMem.aiLoot`) go through blocks near the rim (within three
+  rings): every 0.04 of the site's loot they take is a block whose places are picked over (×0.3 of what was left) and
+  whose buildings are no longer as you left them.
+- **Balance**: a walk in or out crosses about twice the blocks the old line did, so the chance of trouble walking into
+  a block and on each block of the way out is × 0.4 (`CRAWL.GRIDSTEP`); the autopilot works up to level 4
+  (`AUTO.depth`), walks in toward the centre (the quieter way when it knows one), slips away from a Crawling block (or
+  Infested with heat 60+), works up to 6 blocks, and leaves the safest way (from the rim straight out; else the path
+  back or one of the four straight lines, the lowest risk).
+
+City crawl on the grid (40 trials): all 11 judged rows inside their targets.
+
+| squad | level 2 cap: value / lost | autopilot (level 4): levels, value / lost |
+|---|---|---|
+| naked (4) | 99 / 7% | 1.0, 99 / 7% |
+| scrappy (5) | 151 / 7% | 1.0, 151 / 7% |
+| early (5) | 158 / 9% | 1.5, 165 / 5% |
+| solid (6) | 218 / 11% | 2.3, 282 / 15% |
+| rifles (6) | 232 / 12% | 3.3, 274 / 21% |
+| elite (8) | 298 / 11% | 3.9, 441 / 29% |
+
+### Heat and activity in the hive crawl
+
+The hive crawl has the same two layers now (`HCRAWL.THREAT`, `HCRAWL.HEAT`): each chamber has its own brood
+activity (Still ×0.6, Stirring ×0.8, Busy ×1, Teeming ×1.35, Seething ×1.8; the hive's dice, the same every visit;
+the core always Busy), and the noise you make in a chamber stays there as its heat (× 1.15 a person over three,
+× 0.6 stealthy, fading 0.5 an hour). A chamber's activity sets how many of the brood it holds (by its square root)
+and weighs its heat: (the hive's Alert + its heat × 0.25) × (1 + (activity − 1) × 0.35). That heat, not the Alert
+alone, now calls the brood converging on you there (and how many), picks which chamber behind you fills again (the
+noisiest, busiest first), makes creeping past harder, and on the way out a cleared chamber you made noise in may have
+filled again (heat × activity × 0.003, at most 60%). The autopilot lies still by the heat where it stands. The room
+card shows the chamber's activity and heat.
+
+The hive got a little harder for loud crawls deep in (32 trials, 4 trips; before → after): elite squads at tier 3
+59% → 47% wins (19% → 28% wiped), at tier 4 44% → 34% (28% → 28%); rifles at tier 3 25% → 22%; the shallow tiers
+unchanged. A first try with the heat weighed twice as hard wiped half the deep squads and was walked back.
+
 ## Bugs found on the way, and what was done
 
 1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving

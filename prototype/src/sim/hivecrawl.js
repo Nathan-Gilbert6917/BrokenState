@@ -109,6 +109,14 @@ export const HCRAWL = {
   // lost: at least lost): the blows spread over the team as on the map (small fights rarely kill; the generic model
   // costs a life in a third of even the smallest fights).
   NUMBERS: { k: 135, exp: 1.9, cap: 340, lost: 260, ambush: 1.3, blow: [8, 30], shots: 3 },
+  // Chamber activity and heat (2026-10-13, as the city crawl's CRAWL.THREAT and CRAWL.TRAIL): each chamber has its own
+  // level of brood activity (the hive's dice, the same every visit; the core always Busy): mult × the brood it holds
+  // (by its square root) and × the heat there, (the hive's Alert + the chamber's own heat × heatShare). The heat is the
+  // noise you made in that chamber (× perPerson a person over three, × stealthy), fading decay an hour. The heat drives
+  // the brood converging on you there (a swarm, its size), which chamber behind you fills again, creeping past, and on
+  // the way out a cleared chamber you made noise in filling again (refillPerHeat a point of heat × its activity).
+  THREAT: { names: ["", "Still", "Stirring", "Busy", "Teeming", "Seething"], mult: [0, 0.6, 0.8, 1, 1.35, 1.8], weights: [0, 0.2, 0.25, 0.25, 0.18, 0.12] },
+  HEAT: { perPerson: 0.15, stealthy: 0.6, decay: 0.5, heatShare: 0.25, multWeight: 0.35, refillPerHeat: 0.003, refillMax: 0.6, sneakPerHeat: 0.05 },
   AUTO: { coreOdds: 0.75, hurt: 45, treat: 70, fit: 60, sureOdds: 0.8, fightOdds: 0.6, sneakOdds: 0.7, coreFit: 4, wear: 0.04, lie: 70 },
   // The AI groups' crawl (groupHiveCrawl), in the guard's units: the Hivemind and the Broodmother cost boss + bossTier ×
   // tier of a war party's strength on top of the brood on the way and in the core.
@@ -344,7 +352,7 @@ export function roomFull(state, hive, den, room, G = guardSize(state, hive)) {
   const s = guardScale(G);
   if (!s) return 0;
   const B = HCRAWL.BROOD;
-  let n = (B.base + B.perLayer * room.layer) * K.brood * s;
+  let n = (B.base + B.perLayer * room.layer) * K.brood * s * Math.sqrt(chamberThreat(state, hive, room).mult); // HCRAWL.THREAT
   if (nearCore(den, room)) n *= B.nearCore;
   return clamp(Math.round(n), B.min, B.max);
 }
@@ -462,6 +470,7 @@ export function startHiveCrawl(state, p, hive) {
     alert: clamp(Math.round(Math.max(HCRAWL.ALERT.start, left)), 0, 100), enc: null, leaving: false, deepest: 0,
     kills: 0, lost: [], log: [], tally: { supplies: {}, gear: [] }, hadVehicle: !!p.vehicle,
     lit: true, heard: {}, warned: {},
+    heat: {}, heatMult: (1 + HCRAWL.HEAT.perPerson * Math.max(0, partyMembers(state, p).length - 3)) * (p.stance === "stealthy" ? HCRAWL.HEAT.stealthy : 1), // HCRAWL.HEAT
   };
   const c = p.hiveCrawl;
   const rec = crawlRecOf(state, hive);
@@ -518,25 +527,45 @@ function passHours(state, p, hours) {
     if (!p.hiveCrawl) return true;
     if (!crawlHive(state, c)) { crawlGone(state, p); return true; } // the hive died meanwhile (an AI group's war party): the callers see no crawl
     c.alert = Math.max(0, c.alert - HCRAWL.ALERT.decay);
+    for (const k of Object.keys(c.heat || {})) c.heat[k] = Math.max(0, c.heat[k] - HCRAWL.HEAT.decay);
     converge(state, p, c);
   }
   return true;
 }
-const addAlert = (c, v) => { c.alert = clamp(c.alert + v, 0, 100); };
+const addAlert = (c, v) => {
+  c.alert = clamp(c.alert + v, 0, 100);
+  if (v > 0 && c.at) { const h = c.heat || (c.heat = {}); h[c.at] = clamp((h[c.at] || 0) + v * (c.heatMult ?? 1), 0, 100); } // the chamber's own heat (HCRAWL.HEAT)
+};
+// A chamber's brood activity (HCRAWL.THREAT): { level, name, mult }; the core is always Busy.
+export function chamberThreat(state, hive, room) {
+  const T = HCRAWL.THREAT;
+  if (!room || room.kind === "core") return { level: 3, name: T.names[3], mult: T.mult[3] };
+  let r = hash01(state.seed, "hive-threat", hive ? hive.id : 0, room.id), level = 1;
+  for (let i = 1; i < T.weights.length; i++) { if (r < T.weights[i]) { level = i; break; } r -= T.weights[i]; level = i; }
+  return { level, name: T.names[level], mult: T.mult[level] };
+}
+// The heat in a chamber: (the hive's Alert + its own heat × heatShare) × its activity (weighed by multWeight).
+export function chamberHeat(state, c, hive, room) {
+  const th = chamberThreat(state, hive, room), H = HCRAWL.HEAT;
+  return (c.alert + ((c.heat || {})[room ? room.id : ""] || 0) * H.heatShare) * (1 + (th.mult - 1) * H.multWeight);
+}
 // From ALERT.converge the brood comes for the team (an hour's roll): a swarm into its chamber, cleared chambers on the
 // way back filling again; from ALERT.block the mouth packs up.
 function converge(state, p, c) {
   const A = HCRAWL.ALERT;
-  if (c.alert < A.converge || c.enc || state.combat) return;
+  if (c.enc || state.combat) return;
   const hive = crawlHive(state, c);
   if (!hive) return;
   const den = denOf(state, hive);
+  const here = roomById(den, c.at);
+  const heat = Math.min(100, chamberHeat(state, c, hive, here)); // HCRAWL.THREAT × HEAT: this chamber's activity and the noise in it
+  if (heat < A.converge) return;
   const rng = state.rng;
-  const over = (c.alert - A.converge) / (100 - A.converge);
+  const over = (heat - A.converge) / (100 - A.converge);
   if (rng.chance(A.refill * (0.5 + over))) {
     const back = c.trail.slice(0, -1).map((id) => roomById(den, id)).filter((r) => r && broodLeft(state, hive, r) === 0 && roomFull(state, hive, den, r) > 0);
     if (back.length) {
-      const r = rng.pick(back);
+      const r = rng.weighted(back, (x) => 1 + chamberHeat(state, c, hive, x)); // the busiest, noisiest chamber behind you first
       setLeft(state, hive, r, Math.ceil(roomFull(state, hive, den, r) / 2));
       say2(c, `Behind you the brood is flowing back into ${roomThe(r)}.`, "danger", state.hour);
     }
@@ -547,7 +576,7 @@ function converge(state, p, c) {
   }
   if (rng.chance(A.swarm * over)) {
     const room = roomById(den, c.at);
-    const n = clamp(Math.round(2 + room.layer * 0.5 + (c.alert - A.converge) / 10), 2, 12);
+    const n = clamp(Math.round(2 + room.layer * 0.5 + (heat - A.converge) / 10), 2, 12);
     c.enc = { kind: "swarm", room: room.id, back: c.from, spotted: true, enemy: { kind: "zombies", count: n, power: roomPower(state, hive, den, room), types: broodTypes(state, hive, n, room.layer + 1), elite: false, name: "the brood converging on you" } };
     say2(c, `The hive is roused: ${n} of the brood pour into ${roomThe(room)} from the dark.`, "danger", state.hour);
   }
@@ -910,7 +939,8 @@ const backHurt = (room) => Math.min(0.9, HCRAWL.BACK.hurt + HCRAWL.BACK.perLayer
 export function sneakOdds(state, p, c, room, e = c.enc) {
   const S = HCRAWL.SNEAK;
   const n = partyMembers(state, p).length;
-  const dc = Math.ceil(S.dc + S.perLayer * room.layer + c.alert * S.perAlert + Math.max(0, n - 3) * S.big + (e && e.spotted ? S.spotted : 0) + (lightsOn(state, p, c) ? HCRAWL.LIGHT.sneak : 0));
+  const hive = crawlHive(state, c);
+  const dc = Math.ceil(S.dc + S.perLayer * room.layer + c.alert * S.perAlert + ((c.heat || {})[room.id] || 0) * chamberThreat(state, hive, room).mult * HCRAWL.HEAT.sneakPerHeat + Math.max(0, n - 3) * S.big + (e && e.spotted ? S.spotted : 0) + (lightsOn(state, p, c) ? HCRAWL.LIGHT.sneak : 0));
   return { dc, p: clamp((bestSkill(state, p, "stealth") + 10 - dc + 1) / 10, 0, 1) };
 }
 // The answer. opts.map: a fight on the battle map (the browser), else by the numbers.
@@ -1239,6 +1269,11 @@ export function stepOut(state, p) {
     c.trail.pop();
     c.from = here.id; // fall back = deeper again
     c.at = to.id;
+    // The noise you made here on the way in drew the brood back (HCRAWL.HEAT): a cleared chamber may have filled again.
+    if (broodLeft(state, hive, to) === 0 && roomFull(state, hive, den, to) > 0) {
+      const H = HCRAWL.HEAT, ch = chamberThreat(state, hive, to);
+      if (state.rng.chance(Math.min(H.refillMax, ((c.heat || {})[to.id] || 0) * ch.mult * H.refillPerHeat))) setLeft(state, hive, to, Math.ceil(roomFull(state, hive, den, to) / 2));
+    }
     if (broodLeft(state, hive, to) > 0) {
       c.enc = { kind: "brood", room: to.id, back: here.id, spotted: c.alert >= 50 };
       say2(c, `On the way out: ${roomThe(to)} is full of the brood again (${broodLeft(state, hive, to)}).`, "danger", state.hour);
@@ -1822,7 +1857,7 @@ export function hiveCrawlAutoStep(state, p) {
   const acts = roomActions(state, p);
   if (members.some((s) => s.health < A.treat) && acts.some((a) => a.id === "treat" && !a.disabled)) { roomAct(state, p, "treat"); return; }
   if (hurtBad >= 2 || fit < Math.max(2, Math.ceil(members.length / 2))) { say2(c, "Too many hurt: the team turns back.", "danger", state.hour); leaveHive(state, p); return; }
-  if (c.alert >= A.lie) { roomAct(state, p, "lie"); return; }
+  if (Math.max(c.alert, chamberHeat(state, c, crawlHive(state, c), roomById(denOf(state, crawlHive(state, c)), c.at))) >= A.lie) { roomAct(state, p, "lie"); return; } // the heat here (HCRAWL.HEAT)
   const burn = acts.find((a) => a.id === "burn" && !a.disabled);
   if (burn && c.alert < 50) { roomAct(state, p, "burn"); return; }
   const search = acts.find((a) => a.id === "search" && !a.disabled);

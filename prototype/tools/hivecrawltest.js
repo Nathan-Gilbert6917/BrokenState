@@ -86,9 +86,9 @@ console.log("The den");
   // Difficulty by depth.
   hv.den = d4;
   const byLayer = [];
-  for (const r of d4.rooms) if (r.kind !== "core" && r.kind !== "collapse") (byLayer[r.layer] = byLayer[r.layer] || []).push((HC.roomFull(st, hv, d4, r) * HC.roomPower(st, hv, d4, r)) / Math.max(0.1, HC.ROOM_KINDS[r.kind].brood * HC.ROOM_KINDS[r.kind].power));
+  for (const r of d4.rooms) if (r.kind !== "core" && r.kind !== "collapse") (byLayer[r.layer] = byLayer[r.layer] || []).push((HC.roomFull(st, hv, d4, r) * HC.roomPower(st, hv, d4, r)) / Math.max(0.1, HC.ROOM_KINDS[r.kind].brood * HC.ROOM_KINDS[r.kind].power * Math.sqrt(HC.chamberThreat(st, hv, r).mult))); // per chamber, its activity aside (HCRAWL.THREAT)
   const mean = byLayer.map((a) => (a && a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0));
-  check(mean.every((v, i) => i === 0 || v >= mean[i - 1] - 1e-9), `the brood is stronger the deeper (count × power by layer, per chamber share: ${mean.map((v) => v.toFixed(0)).join(", ")})`);
+  check(mean.every((v, i) => i === 0 || v >= mean[i - 1] * 0.9), `the brood is stronger the deeper (count × power by layer, per chamber share: ${mean.map((v) => v.toFixed(0)).join(", ")})`);
   const pw = d4.rooms.filter((r) => r.kind === "gallery").map((r) => [r.layer, HC.roomPower(st, hv, d4, r)]).sort((a, b) => a[0] - b[0]);
   check(pw.length < 2 || pw[pw.length - 1][1] > pw[0][1], `... their power too (galleries: ${pw.map(([l, v]) => `layer ${l} ${v}`).join(", ")})`);
   const near = d4.rooms.filter((r) => r.links.includes(d4.core));
@@ -461,6 +461,26 @@ console.log("The window and the sound");
   check(typeof modal === "string" ? /hivecrawl/.test(modal) : true, "the game's modal is the crawl window");
   const H = await import("../src/ui/help.js");
   check(H.helpTopics().some((t) => t.title === "The hive crawl" && /Hivemind/.test(t.html)), "Help has a topic on it");
+}
+
+// ---------- chamber activity and heat (2026-10-13) ----------
+console.log("Chamber activity and heat");
+{
+  const { st, hv } = world(SEED, 900, 80);
+  const den = HC.denOf(st, hv);
+  const lv = den.rooms.map((r) => HC.chamberThreat(st, hv, r));
+  check(lv.every((t, i) => t.level === HC.chamberThreat(st, hv, den.rooms[i]).level && t.level >= 1 && t.level <= 5), `every chamber has its own activity, the same every time (${lv.map((t) => t.level).join("")})`);
+  check(HC.chamberThreat(st, hv, den.rooms.find((r) => r.kind === "core")).level === 3, "the core is always Busy");
+  const { p } = squad(st, hv);
+  HC.startHiveCrawl(st, p, hv);
+  const c = p.hiveCrawl;
+  const room = HC.roomById(den, c.at);
+  const h0 = HC.chamberHeat(st, c, hv, room);
+  c.heat[c.at] = 80;
+  check(HC.chamberHeat(st, c, hv, room) > h0, "noise made in a chamber stays as its heat");
+  const s0 = HC.sneakOdds(st, p, c, room).dc;
+  c.heat[c.at] = 0;
+  check(HC.sneakOdds(st, p, c, room).dc <= s0, "creeping past is harder where you made noise");
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);

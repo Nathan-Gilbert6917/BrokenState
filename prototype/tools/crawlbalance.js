@@ -71,9 +71,9 @@ export const TARGETS = {
     // harness has a search policy (docs/crawl-balance.md, next steps). A lost fight by the numbers is lethal (it
     // killed 75% of a team), so even a good squad loses a few percent of its people over two blocks.
     2: { naked: [0.6, 1, 0.35], scrappy: [0.8, 1, 0.22], early: [0.88, 1, 0.18], solid: [0.9, 1, 0.18], rifles: [0.9, 1, 0.18] },
-    // The autopilot's own depth (AUTO.depth 5, 2026-10-13): it plans the block by the team's strength, so a weak team
-    // stays near the edge and a strong one goes down to 4-5 and pays for it in street fights.
-    5: { naked: [0.85, 1, 0.2], scrappy: [0.85, 1, 0.2], early: [0.85, 1, 0.2], solid: [0.85, 1, 0.2], rifles: [0.85, 1, 0.22], elite: [0.85, 1, 0.3] },
+    // The autopilot's own depth (AUTO.depth 4 levels on the round grid, 2026-10-13): it plans the level by the team's
+    // strength, so a weak team stays near the rim and a strong one goes in toward the centre and pays in street fights.
+    4: { naked: [0.85, 1, 0.2], scrappy: [0.85, 1, 0.2], early: [0.85, 1, 0.2], solid: [0.85, 1, 0.2], rifles: [0.85, 1, 0.22], elite: [0.85, 1, 0.3] },
   },
 };
 // The day each hive tier opens (hivetech.js hiveTier follows the game's years); a scenario's default day.
@@ -89,7 +89,7 @@ const flag = (name) => argv.includes("--" + name);
 // --set path=value,path=value: tuning overrides. Returns the undo.
 const ROOTS = { HCRAWL: HC.HCRAWL, HIVEMIND: HC.HIVEMIND, CRAWL: CC.CRAWL, EVENTS: CC.EVENTS, DEEP };
 export function applySets(spec) {
-  for (const kv of String(spec || "").split(",").filter(Boolean)) {
+  for (const kv of String(spec || "").split(/,(?![^\[]*\])/).filter(Boolean)) { // commas inside [..] belong to an array value
     const [path, raw] = kv.split("=");
     const keys = path.split(".");
     let o = ROOTS[keys[0]];
@@ -200,7 +200,7 @@ export function cityTrial(seed, { depth, startBlock = 1, loadout, L, day = 60 })
   try {
     CC.startCrawl(st, p);
     const c = p.crawl;
-    if (startBlock > 1) { c.block = startBlock; CC.genBlock(st, c, startBlock); }
+    if (startBlock > 1) CC.jumpToLevel(st, c, startBlock);
     const h0 = st.hour;
     let g = 0;
     while (p.crawl && st.parties.includes(p) && g++ < 200) CC.crawlAutoStep(st, p);
@@ -257,7 +257,7 @@ export function run() {
     }
   }
   if (MODE === "city" || MODE === "both") {
-    const depths = list("depth", [2, 5]);
+    const depths = list("depth", [2, 4]);
     const startBlock = Number(opt("block", 1));
     const day = Number(opt("day", 60));
     if (!quiet) console.log(`\nCITY CRAWL (${trials} trials a row, day ${day}; out = the team comes back alive)`);
