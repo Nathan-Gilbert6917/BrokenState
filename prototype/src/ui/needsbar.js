@@ -6,6 +6,10 @@
 // critical ones first. The list scrolls; it stays open while the mouse is over it and closes on leaving, Esc or a
 // click elsewhere. main.js writes the button, the head and the list as slots of their own (setHTML compares the
 // strings), so the panel updates live without being rebuilt around the mouse, the focus or the scroll position.
+// Every base (2026-10-13, user request: "have a way to see the needs for each base not just the hub"): with more than
+// one base the panel has a chip for each (its own dot: how its stores stand) and shows the one picked (ui.needsBase,
+// the hub by default); the button speaks for the base picked. Food is counted in food value (sim/foods.js: a meal is
+// 1.00, three a day; ui/food.js mealLine).
 import { SUPPLIES, STOCK_KEYS, supWeight } from "../sim/data.js";
 import { foodOutlook, waterOutlook } from "../sim/economy.js";
 import { atBase } from "../sim/world.js";
@@ -17,7 +21,8 @@ import { illnessSummary } from "./health.js";
 import { stockChipTrend } from "./ledger.js";
 import { roadNeeds } from "./hardcore.js";
 import { foodIn } from "../sim/foods.js"; // days of food, every kind
-import { foodTipText } from "./food.js"; // the Food row's tooltip
+import { foodTipText, mealLine } from "./food.js"; // the Food row's tooltip; food value and the meals
+import { fvIn } from "../sim/foods.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -41,7 +46,7 @@ export function baseNeeds(state, h) {
   for (const k of ["food", ...STOCK_KEYS]) {
     if (k === "jars" || k === RAW || k === "arrows") continue;
     const tr = stockChipTrend(state, h, k);
-    const r = { k, name: k === "food" ? "Food (rations)" : k === "water" ? "Water" : SUPPLIES[k].name, amt: k === "food" ? n0(foodIn(h.stock)) : n0(h.stock[k]), extra: "", note: "", level: null, tip: "", tr };
+    const r = { k, name: k === "food" ? "Food (FV)" : k === "water" ? "Water" : SUPPLIES[k].name, amt: k === "food" ? n0(fvIn(h.stock)) : n0(h.stock[k]), extra: "", note: "", level: null, tip: "", tr };
     let base = k === "food" ? "" : `${SUPPLIES[k].name} at ${h.name}. Weight ${supWeight(k)} each; what it fetches depends on who you trade with.`;
     if (k === "food") {
       const o = foodOutlook(state, h), ln = foodLine(state, h);
@@ -50,7 +55,9 @@ export function baseNeeds(state, h) {
       // rations (one person's food for a day), so 12 rations for 2 people read 6d. Food that does not last a whole day
       // still feeds today: 1d, not "<1d" (INV-04); empty stores 0d.
       r.note = !(o.stock > 0.05) ? (isFinite(o.daysLeft) ? "0d" : dd(o.daysLeft)) : o.daysLeft < 1 ? "1d" : dd(o.daysLeft);
-      base = `Food: ${n1(o.stock)} rations (one ration is a person's food for a day) for ${o.heads} ${o.heads === 1 ? "person" : "people"} eating ${n1(o.eat)} a day${o.spoil > 0.05 ? `, ${n1(o.spoil)} a day spoiling` : ""}${o.used > 0.05 ? `, ${n1(o.used)} a day into the stations` : ""}: ${isFinite(o.daysLeft) ? `about ${n1(o.daysLeft)} days` : "it keeps up"}. ${foodTipText(state, h, ln)} Empty jars: ${n0(h.stock.jars)}.`;
+      const ml = mealLine(state, h);
+      r.extra = `${n1(ml.day)}/d`;
+      base = `${ml.tip} Food: ${n1(o.stock)} rations (one ration is a person's food for a day) for ${o.heads} ${o.heads === 1 ? "person" : "people"} eating ${n1(o.eat)} a day${o.spoil > 0.05 ? `, ${n1(o.spoil)} a day spoiling` : ""}${o.used > 0.05 ? `, ${n1(o.used)} a day into the stations` : ""}: ${isFinite(o.daysLeft) ? `about ${n1(o.daysLeft)} days` : "it keeps up"}. ${foodTipText(state, h, ln)} Empty jars: ${n0(h.stock.jars)}.`;
     } else if (k === "water") {
       const o = waterOutlook(state, h), ln = waterLine(state, h), safe = baseWater(state, h).safe;
       const raw = Math.floor(Math.max(0, h.stock[RAW] || 0));
@@ -102,13 +109,35 @@ const rowHTML = (r) => {
   return `<div class="nb-row ${LEVEL_CLS[r.level] || "nb-plain"}" data-k="${r.k}"${tip(r.tip)}${tr.attr || ""}><span class="nb-ic" aria-hidden="true">${NEEDS_ICON[r.k] || "•"}</span><span class="nb-name">${esc(r.name)}</span><span class="nb-amt">${r.amt}${r.extra ? `<small> ${esc(r.extra)}</small>` : ""}</span><span class="nb-tr">${tr.arrow || ""}</span><span class="nb-note">${esc(r.note)}</span></div>`;
 };
 
+// The base the panel shows: ui.needsBase when it is still one of your bases, else the hub.
+export function needsBase(state, ui, hub) {
+  const id = ui && ui.needsBase;
+  const b = id != null ? (state.bases || []).find((x) => String(x.id) === String(id)) : null;
+  return b || hub || null;
+}
+// One chip a base (only with more than one): its name, its dot.
+function baseChips(state, picked) {
+  const list = state.bases || [];
+  if (list.length < 2) return "";
+  const chips = list.map((b) => {
+    const sum = needsSummary(baseNeeds(state, b));
+    const n = sum.crit + sum.low;
+    const t = `${b.name}${b.type === "hub" ? " (the hub)" : ""}: ${sum.crit ? `${sum.crit} critical` : ""}${sum.crit && sum.low ? ", " : ""}${sum.low ? `${sum.low} low` : ""}${n ? "" : "nothing low"}${sum.worst ? ` (worst: ${sum.worst.name}${sum.worst.note ? ` ${sum.worst.note}` : ""})` : ""}. Click to see its stores.`;
+    return `<button type="button" class="nb-chip${b === picked ? " active" : ""}" data-action="nb-base" data-id="${b.id}" aria-pressed="${b === picked}"${tip(t)}><span class="nb-dot ${LEVEL_CLS[sum.level]}" aria-hidden="true"></span>${b.type === "hub" ? "🏠 " : ""}${esc(b.name)}${n ? ` <small>${n}</small>` : ""}</button>`;
+  });
+  return `<div class="nb-bases" role="group" aria-label="Bases">${chips.join("")}</div>`;
+}
+export const NB_ACTIONS = { "nb-base": (state, ui, d) => { ui.needsBase = d && d.id != null ? d.id : null; } };
+
 // The three slots (main.js writes each on its own) and the whole thing as one string (renderTopbar, tests).
+// hub: the base to show (needsBase picks it: the hub unless another is picked).
 export function needsBar(state, hub) {
-  let rows = [], title = "", status = null, foot = "", empty = "";
+  let rows = [], title = "", status = null, foot = "", empty = "", chips = "";
   if (hub) {
     rows = baseNeeds(state, hub);
     title = `${esc(hub.name)} stores`;
-    foot = `<button class="mini" data-action="openbase" data-id="${hub.id}" data-tab="farming"${tip("Open the hub's Farming tab: food, water, firewood and the upkeep")}>Open base</button><button class="mini" data-action="ld-open"${tip("Ledger: production and use of every resource day by day")}>📈 Ledger</button>`;
+    chips = baseChips(state, hub);
+    foot = `<button class="mini" data-action="openbase" data-id="${hub.id}" data-tab="farming"${tip(`Open ${hub.name}'s Farming tab: food, water, firewood and the upkeep`)}>Open base</button><button class="mini" data-action="ld-open"${tip("Ledger: production and use of every resource day by day")}>📈 Ledger</button>`;
   } else {
     const road = roadNeeds(state);
     if (road) {
@@ -126,18 +155,19 @@ export function needsBar(state, hub) {
   const lvl = status && !rows.length ? 2 : sum.level;
   const w = sum.worst;
   const label = status ? `<span class="nb-status ${status.cls}"${tip(status.tip)}>${esc(status.text)}</span>` : "";
-  const btn = `<span class="nb-dot ${LEVEL_CLS[lvl]}" aria-hidden="true"></span>${label}<span class="nb-label">Needs</span>` +
+  const where = hub && (state.bases || []).length > 1 ? `<span class="nb-where">${esc(hub.name)}</span>` : "";
+  const btn = `<span class="nb-dot ${LEVEL_CLS[lvl]}" aria-hidden="true"></span>${label}<span class="nb-label">Needs</span>${where}` +
     (sum.crit + sum.low ? `<span class="nb-badge ${LEVEL_CLS[sum.level]}" aria-label="${sum.crit + sum.low} low">${sum.crit + sum.low}</span>` : "") +
     (w ? `<span class="nb-worst ${LEVEL_CLS[w.level]}">${NEEDS_ICON[w.k] || ""} ${esc(w.name)}${w.note ? ` ${esc(w.note)}` : ""}</span>` : rows.length ? `<span class="nb-worst nb-ok">All good</span>` : "") +
     `<span class="nb-caret" aria-hidden="true">▾</span>`;
   const counts = sum.crit || sum.low ? `${sum.crit ? `<span class="nb-crit">${sum.crit} critical</span>` : ""}${sum.crit && sum.low ? " · " : ""}${sum.low ? `<span class="nb-low">${sum.low} low</span>` : ""}` : rows.length ? `<span class="nb-ok">Nothing low</span>` : "";
-  const head = `<span class="nb-title">${title}</span><span class="nb-counts small">${counts}</span>`;
+  const head = `<span class="nb-title">${title}</span><span class="nb-counts small">${counts}</span>${chips}`;
   const list = (empty || sortNeeds(rows).map(rowHTML).join("")) + (foot ? `<div class="nb-foot">${foot}</div>` : "");
   return { btn, head, list, level: lvl, html: needsSkeleton(btn, head, list) };
 }
 export const needsSkeleton = (btn = "", head = "", list = "") =>
   `<button type="button" class="nb-btn" id="nb-btn" aria-haspopup="true" aria-expanded="false" aria-controls="nb-panel">${btn}</button>` +
-  `<div class="nb-panel" id="nb-panel" role="region" aria-label="Needs: every supply at the hub"><div class="nb-head" id="nb-head">${head}</div><div class="nb-list" id="nb-list" tabindex="0">${list}</div></div>`;
+  `<div class="nb-panel" id="nb-panel" role="region" aria-label="Needs: every supply at a base"><div class="nb-head" id="nb-head">${head}</div><div class="nb-list" id="nb-list" tabindex="0">${list}</div></div>`;
 
 // ---------- opening and closing (the page only) ----------
 // Hover opens it (and leaving closes it, after a moment, so the mouse can cross the gap to the panel); a click pins it
@@ -180,6 +210,7 @@ export function initNeedsBar(root, doc = document, win = window) {
       if (e.detail > 0) btn().blur(); // a mouse click leaves the keys to the game (Space pauses)
       return;
     }
+    if (t.closest && t.closest("[data-action=\"nb-base\"]")) { pinned = true; return; } // picking a base keeps it open
     if (t.closest && t.closest("[data-action]")) close(); // Open base / Ledger: a window opens over it
   });
   root.addEventListener("focusin", () => { if (!quiet) set(true); });

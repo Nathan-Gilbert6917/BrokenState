@@ -7,6 +7,7 @@
 // the Needs food row (ui/needsbar.js: rations and days, 1d under a day); the Sleep bar (ui/needs.js).
 // Usage: node tools/homeinvtest.js [seed]
 import { food, setFood, addDays } from "./foodkit.js";
+import { fvIn } from "../src/sim/foods.js"; // the Needs food row counts food value (a meal 1.00)
 import { createWorld, hub, atBase, tickHour, hourOfDay } from "../src/sim/world.js";
 import { launchExpedition, planPath, startReturn, stockGain, storedText } from "../src/sim/parties.js";
 import { stripAll, newItem, stow, ensurePack, allCarried } from "../src/sim/inventory.js";
@@ -67,7 +68,7 @@ section("INV-01 / INV-07: supplies home exactly once, the log says what reached 
   check(h.stock.scrap - s0 === 7, `scrap: +${h.stock.scrap - s0} (5 found, 2 packed)`);
   startReturn(state, p);
   check(near(food(h) - f0, teamFood, 1e-6) && h.stock.scrap - s0 === 7, "a second call on the gone team adds nothing (no double count)");
-  check(baseNeeds(state, h).find((r) => r.k === "food").amt === Math.floor(food(h) + 1e-9) && baseNeeds(state, h).find((r) => r.k === "food").amt > row0, "the Needs food row counts it");
+  check(baseNeeds(state, h).find((r) => r.k === "food").amt === Math.floor(fvIn(h.stock) + 1e-9) && baseNeeds(state, h).find((r) => r.k === "food").amt > row0, "the Needs food row counts it");
   const line = state.log[0].text;
   check(/is home with 30 cans of beans, 3 water, 5 scrap/.test(line) && /stores: 6 days of food \(30 cans of beans\), \d+ water, 7 scrap/.test(line), `the log names the finds and what reached the stores ("${line}")`);
 }
@@ -193,7 +194,7 @@ section("INV-04: the Needs food row");
   const h = hub(state);
   const heads = foodOutlook(state, h).heads;
   const row = () => baseNeeds(state, h).find((r) => r.k === "food");
-  check(row().name === "Food (rations)", `the amount is rations, not days (${row().name})`);
+  check(row().name === "Food (FV)" && row().amt === Math.floor(fvIn(h.stock) + 1e-9), `the amount is food value (a meal 1.00), not days (${row().name} ${row().amt})`);
   setFood(h, 2 * heads);
   const o = foodOutlook(state, h);
   check(row().note === `${Math.floor(o.daysLeft + 1e-9)}d` && o.eat === heads, `${2 * heads} rations for ${heads} eating 1 a day: ${row().note} (${Math.round(o.daysLeft * 100) / 100} days)`);

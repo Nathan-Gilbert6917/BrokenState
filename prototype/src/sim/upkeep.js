@@ -70,7 +70,10 @@ export function foodUse(state, base, dayIdx) {
   const m = mouthsAt(state, base);
   const cold = coldFactor(state, dayIdx);
   // × the base's ration level (meals.js RATION_LEVELS: eating.js eats to it person by person, so the forecasts agree).
-  const rate = UPKEEP.food * cold * (m.residents ? eatMult(state, base) * kitchenEatMult(state, base) * rationUse(state, base) : 1);
+  // × what a meal takes here (eating.js base.mealOver: everyone eats at least a meal's food value at breakfast, lunch and
+  // dinner, whole items, so a base of cans eats a little over: two cans of beans are 1.20 of a meal's 1.00).
+  const over = base.mealOver > 1 ? Math.min(2, base.mealOver) : 1;
+  const rate = UPKEEP.food * cold * (m.residents ? eatMult(state, base) * kitchenEatMult(state, base) * rationUse(state, base) * over : 1);
   // A Glutton eats a quarter ration more (traits.js): the residents' each is their average.
   const gluttons = m.residents ? residents(state, base.id).reduce((a, s) => a + appetite(s) - 1, 0) : 0;
   const groups = [];

@@ -33,6 +33,16 @@
 //     before: economy.js hungerDays, starve; needs.js STARVE). The automatic short rations, the Kitchen's day, the
 //     "nothing fresh" streak and the stats read the same numbers.
 //
+// Food value (user request 2026-10-13, foods.js FOODS[k].fv: a meal is MEAL_FV, 1.00; an item's value is its kcal ÷ a
+// third of a day's): at breakfast, lunch and dinner everyone at a base eats at least a meal's food value from the stores
+// (mealFV: 1.00 × the ration level, lean 0.80, a feast 1.50, short rations 0.60, × the base's stretch: the
+// Quartermaster's and the Kitchen's 0.90 each), or up to their target if that is more (a Glutton, a cold day). mealPlan
+// picks the items down the menu: an item worth a meal or less is eaten whole, one after another, until they add up
+// (two cans of beans 1.20, a can of meat and a candy bar 1.28); one worth more is cut to the portion still needed (a
+// kilo of rice 5.40 feeds five and a bit). What they eat over the meal (whole items) is counted (base.mealOver: eaten ÷
+// needed, a running mean over the days) and the base's forecasts eat it too (upkeep.js foodUse). Snacks between meals
+// and the pack keep the old rule (to the target).
+//
 // Carried rations (the pack: s.ration = { supplies: { food items, water }, foodLots }, a holder like a team's: foods.js):
 //   - Everyone carries PACK.food (1.5) days of food that keeps (foods.js packPick: light, long-keeping) and PACK.water
 //     (1.5) purified water; load.js wornLoad counts its kg.
@@ -73,7 +83,7 @@
 // 40 vs 35 (hive assaults and fights, none from food), mean mood 85.6 vs 84.5, buildings 199 vs 155, harvest 6534 vs
 // 6518, alive at the end 100 vs 95; hardcore seeds 11–12: both alive (12 and 6, no hunger days) where dev's seed 11
 // starved out on day 106.
-import { FOODS, foodIn, takeItem, takeFood, lotsOf, syncLots, packPick, moveFood, unitsOf, ageLots, foodKg } from "./foods.js";
+import { FOODS, foodIn, takeItem, takeFood, lotsOf, syncLots, packPick, moveFood, unitsOf, ageLots, foodKg, MEAL_FV, MEALS_A_DAY, fv2, foodWord } from "./foods.js";
 import { NEEDS, ensureNeeds } from "./needs.js";
 import { hourOfDay, outOnTrip, residents, log } from "./world.js";
 import { foodForecast } from "./economy.js";
@@ -143,7 +153,7 @@ export function targetAt(s, key) {
 }
 // Do they eat now (hour of day h, on `job`)? Returns the hunger they eat below (0: they do not).
 function eatBelow(state, s, h, key, tgt, job) {
-  if (mealOf(job, h, state)) return tgt - EAT.meal;
+  if (mealOf(job, h, state)) return Infinity; // a mealtime: everyone eats their meal (at least MEAL_FV: baseEatHour)
   if (key === "short") return EAT.short[0];
   const night = h >= EAT.nightFrom || h < EAT.nightTo;
   return Math.min(night ? EAT.night : EAT.snack, tgt - EAT.meal);
@@ -251,19 +261,41 @@ function personal(menu, s) {
   const rank = (e) => (veg && isMeat(e.f) ? 2 : 0) + (tired === e.k && e.left > EAT.urgent ? 1 : 0);
   return menu.map((e, i) => ({ e, i, r: rank(e) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.e);
 }
-// Eats up to `units` days of food from holder h down a menu (its q kept current). Returns { units, items, lots }.
-function eatMenu(state, h, menu, units) {
+// A meal's items: whole items worth a meal or less, one after another, until `fv` adds up; an item worth more than a
+// meal cut to the portion still needed. menu: [{ k, f, q }] (not changed). Returns [{ k, q }] and the food value.
+export function mealPlan(menu, fv) {
+  const out = [];
+  let need = fv, got = 0;
+  for (const e of menu) {
+    if (need <= EPS) break;
+    const q = mealQty(e, need);
+    if (!(q > EPS)) continue;
+    out.push({ k: e.k, q });
+    need -= q * e.f.fv;
+    got += q * e.f.fv;
+  }
+  return { items: out, fv: got };
+}
+// How much of menu entry e a meal still needing `need` food value takes (whole items when one is a meal or less).
+function mealQty(e, need) {
+  if (!(e.q > EPS)) return 0;
+  if (e.f.fv > MEAL_FV) return Math.min(e.q, need / e.f.fv);
+  return Math.min(e.q, Math.ceil(need / e.f.fv - 1e-9));
+}
+// Eats up to `units` days of food from holder h down a menu (its q kept current). whole: a meal by mealPlan's rule (at
+// least `units`, whole items). Returns { units, items, lots }.
+function eatMenu(state, h, menu, units, whole = false) {
   const res = { units: 0, items: {}, lots: [] };
   let need = units;
   for (const e of menu) {
     if (need <= EPS) break;
     if (!(e.q > EPS)) continue;
-    const q = Math.min(e.q, (need * 2000) / e.f.kcal);
+    const q = whole ? mealQty(e, need * MEALS_A_DAY) : Math.min(e.q, (need * 2000) / e.f.kcal);
     const t = takeItem(h, e.k, q, { state, eggs: false });
     if (!(t.q > EPS)) { e.q = 0; continue; }
     e.q -= t.q;
     const u = unitsOf(e.k, t.q);
-    need -= u;
+    need -= whole ? (t.q * e.f.fv) / MEALS_A_DAY : u;
     res.units += u;
     res.items[e.k] = (res.items[e.k] || 0) + t.q;
     for (const l of t.lots) res.lots.push({ k: e.k, ...l });
@@ -281,10 +313,33 @@ function baseCtx(state, base, key) {
 }
 const acc = (base) => base.eatAcc || (base.eatAcc = { units: 0, missed: 0, meals: 0, min: 0 });
 // The base's day so far, taken (economy.js baseDaily at midnight): { units eaten from the stores, missed, meals, min }.
+// The mealtime meals eaten in full (mealNeed, mealAte: days of food) move base.mealOver, the share eaten over the meal.
 export function takeEatAcc(base) {
   const a = base.eatAcc || { units: 0, missed: 0, meals: 0, min: 0 };
   base.eatAcc = { units: 0, missed: 0, meals: 0, min: 0 };
+  if (a.mealNeed > EPS) {
+    const r = Math.max(1, Math.min(MEAL_OVER.max, a.mealAte / a.mealNeed));
+    base.mealOver = Math.round((base.mealOver > 0 ? base.mealOver + (r - base.mealOver) * MEAL_OVER.mix : r) * 1000) / 1000;
+  }
   return a;
+}
+// base.mealOver: a running mean (mix of each day) of the food value eaten at a meal ÷ the meal's (whole items go over).
+export const MEAL_OVER = { mix: 0.3, max: 2 };
+export const mealOver = (base) => (base && base.mealOver > 1 ? Math.min(MEAL_OVER.max, base.mealOver) : 1);
+// A meal's food value at a base now (1.00 × the ration level, × the stretch: the Quartermaster, the Kitchen).
+export function mealFV(state, base, ctx = null) {
+  const key = rationKey(state, base);
+  const lv = key === "short" ? NEEDS.ration : RATION_LEVELS[key].use;
+  const stretch = ctx ? ctx.stretch : eatMult(state, base) * kitchenEatMult(state, base);
+  return MEAL_FV * lv * stretch;
+}
+// The next meal at a base from its menu as it stands (nothing eaten): { need, fv, items: [{ k, q }], text }.
+export function nextMeal(state, base) {
+  const key = rationKey(state, base);
+  const ctx = baseCtx(state, base, key);
+  const need = mealFV(state, base, ctx);
+  const p = mealPlan(ctx.menu, need);
+  return { need, fv: p.fv, items: p.items, text: p.items.length ? p.items.map((x) => `${foodWord(x.k, x.q)} (${fv2(x.q * FOODS[x.k].fv)})`).join(" + ") : "nothing to eat" };
 }
 // Hourly (needs.js baseHour) for a base of yours: hunger falls, people eat (see the header). Thirst is needs.js's.
 export function baseEatHour(state, base, people) {
@@ -311,7 +366,11 @@ export function baseEatHour(state, base, people) {
     let got = { units: 0, items: {}, lots: [], raw: 0, from: "" };
     if (!awayFromStores(state, s)) {
       ctx = ctx || baseCtx(state, base, key);
-      const r = eatAtBase(state, base, s, (wantPts / NEEDS.food) * ctx.stretch, ctx);
+      // A mealtime: at least the meal's food value (whole items), or to the target when that is more.
+      const toTgt = (wantPts / NEEDS.food) * ctx.stretch;
+      const mealU = meal ? mealFV(state, base, ctx) / MEALS_A_DAY : 0;
+      const r = eatAtBase(state, base, s, Math.max(toTgt, mealU), ctx, meal && mealU >= toTgt);
+      if (meal && mealU >= toTgt && r.units >= mealU - EPS) { const a = acc(base); a.mealNeed = (a.mealNeed || 0) + mealU; a.mealAte = (a.mealAte || 0) + r.units; }
       const pts = (r.units / ctx.stretch) * NEEDS.food;
       s.hunger = clamp(s.hunger + pts);
       got = { ...r, from: r.units > EPS ? (ctx.kitchen ? "kitchen" : "store") : "" };
@@ -343,8 +402,8 @@ export function baseEatHour(state, base, people) {
 }
 // At the stores: the menu, then (nothing clean left) the crops and forage with the worm's eggs, then the meat with
 // eggs (eaten uncooked: base.rawCropEaten / rawForageEaten / rawEaten for worm.js, as storage.js eatFromStore).
-function eatAtBase(state, base, s, units, ctx) {
-  const r = eatMenu(state, base, personal(ctx.menu, s), units);
+function eatAtBase(state, base, s, units, ctx, whole = false) {
+  const r = eatMenu(state, base, personal(ctx.menu, s), units, whole);
   r.raw = ctx.cooks ? 0 : Object.entries(r.items).reduce((a, [k, q]) => a + (FOODS[k].raw ? unitsOf(k, q) : 0), 0);
   let need = units - r.units;
   if (need > EPS) {
@@ -533,7 +592,7 @@ export function groupDietPressure(state, f) {
 export const aiPartyHeads = (f, strength, arms = 1) => Math.max(1, Math.min(Math.max(1, f.pop || 1), Math.round((strength || 1) / Math.max(0.5, arms))));
 
 // ---------- text ----------
-export const EATING_HELP = `Everyone eats by themselves now: at breakfast (06:00; 10:00 for hunters and fishers, after the dawn trip), lunch (12:00, or the hour set in the Work tab) and dinner (20:00) when they are a little under their own target, and between meals when they get hungry (below ${EAT.snack}; at night below ${EAT.night}), until they are ${EAT.band[0]}–${EAT.band[1]}% full (each person has their own target; a Glutton eats to 100). A meal is a break of ${EAT.min.meal}–${EAT.min.max} minutes ("Eating breakfast (25 min)" in the activity): the jobs that run round the clock stop for the meal hours. Lunch is an hour's break from all work (the guards stay on the walls), with a small lift to mood. They eat the best cooked meals first (lavish, fine, stew, simple), then whatever would spoil soonest; raw meat last where nothing cooks; a Vegetarian plant food first; and anyone tired of the same food two days running picks something else while it keeps. A day of food is ${"2000"} kcal; the hunger gauge shows the target band.<br><br><b>Carried rations.</b> Everyone carries a pack of about ${PACK.food} days of food that keeps and ${PACK.water} purified water (it weighs 2–3 kg). At a base they eat from the stores and the pack is topped up every morning (and when they eat with it under half), as long as the base is not rationing and keeps ${PACK.keepDays} days of food and water beyond it. Away from the stores (a job trip, a field work, a lookout's shift, an errand) they eat and drink from it (a job trip sets out with at least ${PACK.trip} day of food in it: lunch is eaten out there); a team's packs count toward its supplies (the base packs that much less) and are eaten after the team's shared food. Out of food away from the stores, hunger bites as before.<br><br><b>Ration levels</b> (a base's Overview, Needs): <i>Normal</i>; <i>Lean</i>: everyone eats to about 75% and the body gets by on 80% of a ration: food lasts a quarter longer, mood −1 a day, nobody hungry enough to work worse; <i>Feast</i>: today only, everyone eats their fill and half as much again (×1.5 the day's food), "A feast" mood +6. Under a week of food a base goes on short rations by itself (60%: eats to 48, mood −3 a day). The governor and a steward (Farming & food) go lean under ${RATION_PLAN.lean} days of food when the plots will not cover it, back over ${RATION_PLAN.normal}; the harvest festival is a feast. The groups do the same.<br><br><b>Food and mood</b> (each a thought that lasts, not a daily factor; the same one cannot come again until it has run out): Ate raw food ${THOUGHTS.raw.v} (2 days; raw meat or fish where nothing cooks it, or food with the worm's eggs) · a stew +${MEAL_MOOD}, a fine meal +${2 * MEAL_MOOD}, a lavish meal +${4 * MEAL_MOOD} (3 days) · Same food again ${THOUGHTS.same.v} (2 days) when the same food was most of what they ate ${EAT.sameDays} days running · No hot food in days ${EAT.coldV[0]} a day after ${EAT.cold[0]} days without a cooked meal (the Kitchen's hot service, or anything eaten where a cook fire, a lit stove or a lit camp fire warms it, counts), ${EAT.coldV[1]} a day after ${EAT.cold[1]}: a camp fire with firewood and a camp cook pot, a cook fire or a Kitchen fixes it · A feast +${THOUGHTS.feast.v}. Picky Eaters mind simple meals and raw food more and like fine and lavish meals more; Vegetarians lose ${"6"} mood for meat, fish, eggs, milk, honey or a mixed meal; a Cannibal would enjoy human meat, but the game has none: the dead carry the worm.`;
+export const EATING_HELP = `<b>Food value.</b> Every food has a food value (FV) of its own, to two places: a meal is ${MEAL_FV.toFixed(2)} and a day is ${MEALS_A_DAY} meals (a can of beans 0.60, a can of meat 0.90, a candy bar 0.38, an MRE 1.88, a kilo of rice 5.40). At each meal everyone eats at least ${MEAL_FV.toFixed(2)}: food worth a meal or less is eaten whole, one after another, until it adds up (two cans of beans: 1.20), bigger food is cut into portions (a kilo of rice feeds five). Lean rations make a meal 0.80, a feast 1.50, short rations 0.60; the Quartermaster and the Kitchen stretch it (×0.9 each). Whole items run over, so a base living on cans eats more than one on rice or cooked meals: each base keeps count and its forecasts (the days of food left, the Needs panel, the governor) use it.<br><br>Everyone eats by themselves: at breakfast (06:00; 10:00 for hunters and fishers, after the dawn trip), lunch (12:00, or the hour set in the Work tab) and dinner (20:00), at least a meal (or up to their own target, if that is more), and between meals when they get hungry (below ${EAT.snack}; at night below ${EAT.night}), until they are ${EAT.band[0]}–${EAT.band[1]}% full (each person has their own target; a Glutton eats to 100). A meal is a break of ${EAT.min.meal}–${EAT.min.max} minutes ("Eating breakfast (25 min)" in the activity): the jobs that run round the clock stop for the meal hours. Lunch is an hour's break from all work (the guards stay on the walls), with a small lift to mood. They eat the best cooked meals first (lavish, fine, stew, simple), then whatever would spoil soonest; raw meat last where nothing cooks; a Vegetarian plant food first; and anyone tired of the same food two days running picks something else while it keeps. A day of food is ${"2000"} kcal; the hunger gauge shows the target band.<br><br><b>Carried rations.</b> Everyone carries a pack of about ${PACK.food} days of food that keeps and ${PACK.water} purified water (it weighs 2–3 kg). At a base they eat from the stores and the pack is topped up every morning (and when they eat with it under half), as long as the base is not rationing and keeps ${PACK.keepDays} days of food and water beyond it. Away from the stores (a job trip, a field work, a lookout's shift, an errand) they eat and drink from it (a job trip sets out with at least ${PACK.trip} day of food in it: lunch is eaten out there); a team's packs count toward its supplies (the base packs that much less) and are eaten after the team's shared food. Out of food away from the stores, hunger bites as before.<br><br><b>Ration levels</b> (a base's Overview, Needs): <i>Normal</i>; <i>Lean</i>: a meal is 0.80 food value and the body gets by on 80% of a ration: food lasts a quarter longer, mood −1 a day, nobody hungry enough to work worse; <i>Feast</i>: today only, a meal is 1.50 (×1.5 the day's food), "A feast" mood +6. Under a week of food a base goes on short rations by itself (a meal 0.60, mood −3 a day). The governor and a steward (Farming & food) go lean under ${RATION_PLAN.lean} days of food when the plots will not cover it, back over ${RATION_PLAN.normal}; the harvest festival is a feast. The groups do the same.<br><br><b>Food and mood</b> (each a thought that lasts, not a daily factor; the same one cannot come again until it has run out): Ate raw food ${THOUGHTS.raw.v} (2 days; raw meat or fish where nothing cooks it, or food with the worm's eggs) · a stew +${MEAL_MOOD}, a fine meal +${2 * MEAL_MOOD}, a lavish meal +${4 * MEAL_MOOD} (3 days) · Same food again ${THOUGHTS.same.v} (2 days) when the same food was most of what they ate ${EAT.sameDays} days running · No hot food in days ${EAT.coldV[0]} a day after ${EAT.cold[0]} days without a cooked meal (the Kitchen's hot service, or anything eaten where a cook fire, a lit stove or a lit camp fire warms it, counts), ${EAT.coldV[1]} a day after ${EAT.cold[1]}: a camp fire with firewood and a camp cook pot, a cook fire or a Kitchen fixes it · A feast +${THOUGHTS.feast.v}. Picky Eaters mind simple meals and raw food more and like fine and lavish meals more; Vegetarians lose ${"6"} mood for meat, fish, eggs, milk, honey or a mixed meal; a Cannibal would enjoy human meat, but the game has none: the dead carry the worm.`;
 export function packText(s) {
   const f = packFood(s), w = packWater(s);
   return `${r1(f)} day${r1(f) === 1 ? "" : "s"} of food and ${r1(w)} water (${r1(packKg(s))} kg)`;

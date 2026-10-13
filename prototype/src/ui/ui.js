@@ -143,7 +143,7 @@ import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } fr
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
 import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
 import { packFood, packWater } from "../sim/eating.js"; // the planner's per-person ration line
-import { needsBar } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
+import { needsBar, needsBase } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick (sim/status.js)
 import { STATUS, STATUS_ICONS } from "../sim/status.js";
 import { NEEDS, STARVE } from "../sim/needs.js";
@@ -191,7 +191,7 @@ const etaOut = (state, est) => Parties.clockText(Math.max(0, (est.exactOut ?? es
 // when you press them, so each piece is redrawn only when its own text changes (main.js).
 export function topbarParts(state, ui) {
   const h = hub(state);
-  const nb = needsBar(state, h);
+  const nb = needsBar(state, needsBase(state, ui, h)); // the hub, or the base picked in the panel
   const speeds = [[0, "⏸", "Pause (Space). Orders you give while paused start when you unpause."], [0.25, "0.25×", "Slowest: an hour takes 80 seconds, a day 32 minutes (0)"], [0.5, "0.5×", "Slow: an hour takes 40 seconds, a day 16 minutes (1)"], [1, "1×", "Normal: an hour takes 20 seconds, a day 8 minutes (2)"], [2, "2×", "Fast: an hour takes 10 seconds, a day 4 minutes (3)"], [3, "3×", "Very fast: an hour takes about 7 seconds, a day 2 minutes 40 seconds (4)"], [5, "5×", "Fastest, for quiet stretches: an hour takes 4 seconds, a day about 1 minute 36 seconds (5). At 3× and 5× the clock drops back to 1× when a card or a red alert arrives (Options)"]];
   const parts = {
     // The minutes are a slot of their own (main.js fills it every frame as the hour goes by).
