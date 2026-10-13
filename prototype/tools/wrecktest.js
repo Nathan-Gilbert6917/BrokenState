@@ -5,7 +5,7 @@
 // and the marker stayed. It also packed 2 machine parts the hub did not have, though a car is mended with car parts.
 // Usage: node tools/wrecktest.js [seed]
 import { createWorld, tickHour, hub, atBase } from "../src/sim/world.js";
-import { launchExpedition, planPath, carried } from "../src/sim/parties.js";
+import { launchExpedition, planPath, carried, reportsLive } from "../src/sim/parties.js";
 import { mergeSpots } from "../src/sim/markers.js";
 import { wreckCost, wreckSupplies, WRECK, CARPART_SUB } from "../src/sim/vehicles.js";
 import { setAutopilot, autopilotDaily } from "../src/sim/autopilot.js";
@@ -107,7 +107,10 @@ section("A find already taken: the marker is put right");
   const p = sendTo(state, tile, {});
   arrive(state, p);
   const e = p.spotted && p.spotted.get(key);
-  check(e && e.info && e.info.emptied, "the team does not report the cleaned-out wreck as emptied");
+  // A team reporting live (parties.js reportsLive: TEAM_INTEL_EVERYWHERE, or in radio range) puts the marker right as it
+  // sees the tile (markers.js updateLiveMarkers), before it gets there: nothing left for its report to correct.
+  const live = reportsLive(p) && state.markers.some((x) => x.key === key && x.info && x.info.emptied);
+  check(live || (e && e.info && e.info.emptied), "the team does not report the cleaned-out wreck as emptied");
   mergeSpots(state, p.spotted);
   const m = state.markers.find((x) => x.key === key);
   check(m && m.info && m.info.emptied, "the marker still shows a wreck to visit");
