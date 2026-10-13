@@ -16,7 +16,7 @@ let lastState = null; // the hover text has no state of its own (ui/combat.js pr
 // Under the unit's action buttons: one row per locked thing next to it.
 export function lockPanel(state, b, u) {
   lastState = state;
-  if (!b.raid || !u) return "";
+  if (!u) return ""; // a raid's locks, or a field map's houses' locked doors (sim/combat.js b.doors)
   const near = lockedNear(b, u);
   if (!near.length) return casePanel(state, b, u);
   const can = b.phase === "player" && !b.over && u.ap > 0;
@@ -34,11 +34,11 @@ export function lockPanel(state, b, u) {
     const s = survivorById(state, u.sid);
     const st = s ? skill(s, "stealth") : 0, quiet = !!(u.quiet || (s && hasPerk(s, "quiethands")));
     const why = `${pct(PICK.base)} + ${pct(PICK.perStealth)} a Stealth point (Stealth ${st}: +${pct(PICK.perStealth * st)})${def.diff > 1 ? ` − ${pct(PICK.perDiff)} a difficulty step above 1 (−${pct(PICK.perDiff * (def.diff - 1))})` : ""}${quiet ? ` + ${pct(PICK.quiet)} Quiet Hands` : ""}, 5–95%`;
-    return `<div class="small" style="margin-top:0.3rem">🔒 <b>${esc(t.name)}</b> <span class="muted">difficulty ${def.diff}${t.lock.tries ? ` · ${t.lock.tries} tr${t.lock.tries === 1 ? "y" : "ies"}` : ""}${t.door ? " · a locked room behind it" : ""}</span>
+    return `<div class="small" style="margin-top:0.3rem">🔒 <b>${esc(t.name)}</b> <span class="muted">difficulty ${def.diff}${t.lock.tries ? ` · ${t.lock.tries} tr${t.lock.tries === 1 ? "y" : "ies"}` : ""}${t.door && t.door.area != null ? " · a locked room behind it" : ""}</span>
       <div class="row" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.15rem">
         ${button("key", hasKey(state, b.tileId) ? "Key ✓" : "Key ✗", `Unlock it with the ${keyName(state, b.tileId)} (1 action, silent).`)}
-        ${button("pick", `Pick ${pct(o.pick.chance)} a try (1 action)`, `Pick the lock: 1 action a try, ${pct(o.pick.chance)} each try (${why}). Heat +1 a try, the lockpicks lose a use, Stealth XP. Once it is open, searching it takes 1 action.`)}
-        ${button("force", force, o.force.glass ? `No crowbar: shatter a window and reach in (both actions, Heat +10, breaking glass wakes everything within 11 tiles). ${pct(o.force.chance)}.` : o.force.label === "Smash" ? `No crowbar: kick it in or smash it (both actions, Heat +10, wakes everything within 11 tiles). ${pct(o.force.chance)}.` : `Crowbar it open (1 action, Heat +6, wakes everything within 8 tiles). ${pct(o.force.chance)}.`)}
+        ${button("pick", `Pick ${pct(o.pick.chance)} a try (1 action)`, `Pick the lock: 1 action a try, ${pct(o.pick.chance)} each try (${why}). ${b.raid ? "Heat +1 a try, t" : "T"}he lockpicks lose a use, Stealth XP.${t.box ? " Once it is open, searching it takes 1 action." : ""}`)}
+        ${button("force", force, o.force.glass ? `No crowbar: shatter a window and reach in (both actions, ${b.raid ? "Heat +10, " : ""}breaking glass wakes everything within 11 tiles). ${pct(o.force.chance)}.` : o.force.label === "Smash" ? `No crowbar: kick it in or smash it (both actions, ${b.raid ? "Heat +10, " : ""}wakes everything within 11 tiles). ${pct(o.force.chance)}.` : `Crowbar it open (1 action, ${b.raid ? "Heat +6, " : ""}wakes everything within 8 tiles). ${pct(o.force.chance)}.`)}
       </div></div>`;
   }).join("") + casePanel(state, b, u);
 }
@@ -64,7 +64,9 @@ export function lockPreview(b, u, x, y) {
     const o = openOdds(lastState, b, u, t.lock);
     odds = `<br>${o.key.ok ? "Key: sure · " : ""}Pick ${o.pick.ok ? pct(o.pick.chance) : "(no lockpicks)"} · ${o.force.ok || o.force.chance ? `${o.force.label} ${pct(o.force.chance)}` : "cannot be forced"}`;
   }
-  return `<b>🔒 ${esc(t.name)}</b> · difficulty ${def.diff}${t.door ? " · a locked room" : ""}${t.box && t.box.searched ? " · searched" : ""}<br><span class="muted">Locked things hold more: supplies, gear, keys and blueprints.</span>${odds}<br>${near ? "Open it from the panel: key, pick or force." : "Move next to it to open it."}`;
+  // A door: what it does in the way and how to get through (a click from next to it tries the surest way: ui/combat.js).
+  if (t.door) return `<b>🔒 ${esc(t.name)}</b> · difficulty ${def.diff}${t.door.area != null ? " · a locked room" : ""}<br><span class="muted">Blocks the way and sight. Open it from right next to it: click it (key, else lockpicks, else force) or pick the way in the panel. The dead and the enemy batter it down.</span>${odds}<br>${near ? "Click it to open it." : "Move next to it to open it."}`;
+  return `<b>🔒 ${esc(t.name)}</b> · difficulty ${def.diff}${t.box && t.box.searched ? " · searched" : ""}<br><span class="muted">Locked things hold more: supplies, gear, keys and blueprints.</span>${odds}<br>${near ? "Open it from the panel: key, pick or force." : "Move next to it to open it."}`;
 }
 
 function padlock(ctx, x, y, r, color) {

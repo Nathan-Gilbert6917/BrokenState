@@ -77,7 +77,8 @@ export const KEYMAP = [
   { id: "bview.panDown", label: "Pan down (held)", group: "Battle view", ctx: "battle", keys: ["KeyS", "ArrowDown"] },
   { id: "bview.panLeft", label: "Pan left (held)", group: "Battle view", ctx: "battle", keys: ["KeyA", "ArrowLeft"] },
   { id: "bview.panRight", label: "Pan right (held)", group: "Battle view", ctx: "battle", keys: ["KeyD", "ArrowRight"] },
-  // Q / E turn the view (as in most games that turn a camera); , and . (the keys before) still do too.
+  // Q / E turn the view an eighth (as in most games that turn a camera; ui/isoview.js isoRotate: diagonal, straight,
+  // diagonal...); , and . (the keys before) still do too.
   { id: "bview.rotLeft", label: "Turn the view left", group: "Battle view", ctx: "battle", keys: ["KeyQ", "Comma"] },
   { id: "bview.rotRight", label: "Turn the view right", group: "Battle view", ctx: "battle", keys: ["KeyE", "Period"] },
   { id: "bview.zoomIn", label: "Zoom in", group: "Battle view", ctx: "battle", keys: ["Equal", "NumpadAdd"] },

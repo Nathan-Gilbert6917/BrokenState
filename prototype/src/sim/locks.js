@@ -26,6 +26,7 @@ import { lootItem, allItems } from "./inventory.js";
 import { lockSource } from "./itemcond.js";
 const siteTypeAt = (state, tileId) => { const t = state.tiles && state.tiles[tileId]; return t && t.loc ? t.loc.type : null; }; // lockSource: a gun store's cages
 import { rollBlueprint, bpOfItem } from "./blueprints.js";
+import { BMAP } from "./buildingmaps.js"; // a locked door's strength (call-time only: safe in the import cycle)
 import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a container may cover several cells (a car)
 import { addFindVia } from "./ammo.js"; // rounds by calibre
 import { say as sayB, fx as fxB, setFloor } from "./combat.js"; // gun safes: a charge that goes off at the start of a turn (safeTurn)
@@ -224,10 +225,11 @@ export function lockRaid(state, b) {
 function sealRoom(b, a) {
   const W = b.w, H = b.h;
   const idx = (x, y) => y * W + x;
-  const doors = (a.doors || []).filter(([x, y]) => b.cells[idx(x, y)] && b.cells[idx(x, y)].k === "open");
+  const doors = (a.doors || []).filter(([x, y]) => b.cells[idx(x, y)] && ["open", "idoor", "odoor"].includes(b.cells[idx(x, y)].k)); // its doors (combat.js genRaidMap: closed ones)
   if (!doors.length || doors.some(([x, y]) => b.units.some((u) => !u.dead && u.x === x && u.y === y))) return false;
   const old = doors.map(([x, y]) => b.cells[idx(x, y)].k);
-  for (const [x, y] of doors) b.cells[idx(x, y)].k = "door";
+  const hp0 = doors.map(([x, y]) => [b.cells[idx(x, y)].hp, b.cells[idx(x, y)].mhp]);
+  for (const [x, y] of doors) { const c = b.cells[idx(x, y)]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR.locked; } // locked: as strong as any locked door (BMAP.DOOR)
   // Flood from the entry zone over walkable cells (doors and walls are not).
   const z = b.raid.zones[0];
   const seen = new Uint8Array(W * H);
@@ -244,7 +246,7 @@ function sealRoom(b, a) {
   const inside = b.raid.containers.filter((c) => c.area === a.id);
   const cut = inside.every((c) => ![[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dy]) => seen[idx(c.x + dx, c.y + dy)] && walk(c.x + dx, c.y + dy)));
   if (cut) { a.doors = doors; b.losCache.fill(0); return true; }
-  doors.forEach(([x, y], i) => { b.cells[idx(x, y)].k = old[i]; });
+  doors.forEach(([x, y], i) => { const c = b.cells[idx(x, y)]; c.k = old[i]; c.hp = hp0[i][0]; c.mhp = hp0[i][1]; if (c.hp == null) delete c.hp; if (c.mhp == null) delete c.mhp; });
   return false;
 }
 // Cell kinds a unit can stand on (combat.js CELL walk: true; read when called, the modules load in a circle).
@@ -254,26 +256,27 @@ const WALK = { has: (k) => !!(CELL[k] && CELL[k].walk) };
 // Targets: { ref: "c<id>" | "d<id>", x, y, lock, name, box?, door? }.
 // Containers and doors carry f (their storey, buildingmaps.js): only the active floor's are next to anyone on it.
 const onFloor = (b, o) => (o.f || 0) === (b.floor || 0);
+// The locked doors: a raid's (R.doors), or a field map's houses' (combat.js genMap FIELD_DOOR: b.doors, no containers).
+export const doorsOf = (b) => (b.raid ? b.raid.doors : b.doors) || [];
+const boxesOf = (b) => (b.raid ? b.raid.containers : []);
 export function lockedNear(b, u) {
-  if (!b.raid) return [];
   const near = (o) => (o.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - o.x), Math.abs(u.y - o.y)) <= 1;
   const out = [];
-  for (const c of b.raid.containers) if (c.lock && !c.lock.open && !c.searched && nearBox(u, c)) out.push({ ref: `c${c.id}`, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c });
-  for (const d of b.raid.doors || []) if (!d.lock.open && near(d)) out.push({ ref: `d${d.id}`, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d });
+  for (const c of boxesOf(b)) if (c.lock && !c.lock.open && !c.searched && nearBox(u, c)) out.push({ ref: `c${c.id}`, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c });
+  for (const d of doorsOf(b)) if (!d.lock.open && near(d)) out.push({ ref: `d${d.id}`, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d });
   return out;
 }
 export function lockAt(b, x, y) {
-  if (!b.raid) return null;
-  const d = (b.raid.doors || []).find((q) => q.x === x && q.y === y && onFloor(b, q));
+  const d = doorsOf(b).find((q) => q.x === x && q.y === y && onFloor(b, q));
   if (d) return { ref: `d${d.id}`, x, y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d };
-  const c = b.raid.containers.find((q) => inBox(q, x, y) && q.lock && onFloor(b, q));
+  const c = boxesOf(b).find((q) => inBox(q, x, y) && q.lock && onFloor(b, q));
   return c ? { ref: `c${c.id}`, x, y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c } : null;
 }
 const targetOf = (b, ref) => {
-  if (!b.raid || typeof ref !== "string") return null;
+  if (typeof ref !== "string") return null;
   const id = Number(ref.slice(1));
-  if (ref[0] === "c") { const c = b.raid.containers.find((q) => q.id === id); return c && c.lock ? { ref, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c } : null; }
-  const d = (b.raid.doors || []).find((q) => q.id === id);
+  if (ref[0] === "c") { const c = boxesOf(b).find((q) => q.id === id); return c && c.lock ? { ref, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c } : null; }
+  const d = doorsOf(b).find((q) => q.id === id);
   return d ? { ref, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d } : null;
 };
 export const lockedMsg = (box) => `The ${LOCKS[box.lock.kind].name.toLowerCase()} is locked: open it first (key, lockpicks or force).`;
@@ -291,7 +294,8 @@ export function openLock(state, b, u, act, H) {
   if (!o) return "Unknown way to open it.";
   if (!o.ok) return o.why;
   if (SAFE_METHODS.includes(act.method)) return openSafe(state, b, u, t, o, act, H); // gun safes (below)
-  const R = b.raid;
+  const R = b.raid; // null on a field map (b.doors): no Heat there, the noise still carries
+  const heat = (n) => { if (R) R.heat = Math.min(100, R.heat + n); };
   const s = survivorById(state, u.sid);
   const def = LOCKS[t.lock.kind];
   const lower = def.name.toLowerCase();
@@ -300,7 +304,7 @@ export function openLock(state, b, u, act, H) {
   const ok = roll < o.chance;
   u.ap = Math.max(0, u.ap - o.ap);
   if (act.method === "pick") {
-    R.heat = Math.min(100, R.heat + PICK.heat);
+    heat(PICK.heat);
     const picks = picksOf(s);
     if (s) gainXp(state, s, "stealth", ok ? PICK.xpWin : PICK.xpMiss);
     if (picks && s && wearPicks(s, picks)) H.say(b, `${u.name}'s lockpicks snap: the crowbar and picks are worn out.`, "danger");
@@ -308,7 +312,7 @@ export function openLock(state, b, u, act, H) {
   } else if (act.method === "force") {
     const smash = !o.crowbar;
     const P = smash ? SMASH : FORCE;
-    R.heat = Math.min(100, R.heat + P.heat);
+    heat(P.heat);
     b.noise = (b.noise || 0) + P.noise;
     if (o.glass) H.say(b, ok ? `${u.name} shatters the car's window with a crash and reaches in (${Math.round(o.chance * 100)}%).` : `${u.name} hits the car's window; it cracks and holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
     else H.say(b, ok ? `${u.name} ${smash ? "smashes" : "forces"} the ${lower} open with a crash (${Math.round(o.chance * 100)}%).` : `${u.name} ${smash ? "kicks at" : "heaves on"} the ${lower}, but it holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
@@ -320,17 +324,17 @@ export function openLock(state, b, u, act, H) {
     t.lock.open = true;
     t.lock.how = act.method === "force" && !o.crowbar ? "smash" : act.method;
     if (t.door) {
-      // An opened door: open floor on the street map; an open door in a building (buildingmaps.js, no longer two
-      // storeys of sight-blocking).
-      const openCell = (dc) => { dc.k = R.interior ? "odoor" : "open"; dc.f = "floor"; delete dc.t; };
+      // An opened door swings open (odoor; no longer two storeys of sight-blocking, buildingmaps.js): in a building, on
+      // the street map (its houses' doors: combat.js genRaidMap) and in a field map's houses.
+      const openCell = (dc) => { dc.k = "odoor"; dc.f = "floor"; delete dc.t; };
       const cellsOf = (d) => (b.floors && b.floors[d.f || 0] ? b.floors[d.f || 0].cells : b.cells); // the door's own storey (buildingmaps.js)
       openCell(cellsOf(t.door)[t.y * b.w + t.x]);
       b.losCache.fill(0);
-      const area = t.door.area != null ? R.areas[t.door.area] : null;
+      const area = R && t.door.area != null ? R.areas[t.door.area] : null;
       // Every door of the room opens with the same key; a forced door is just broken.
-      if (act.method === "key") for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; openCell(cellsOf(d)[d.y * b.w + d.x]); }
+      if (act.method === "key" && R) for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; openCell(cellsOf(d)[d.y * b.w + d.x]); }
       if (area) H.say(b, `The ${area.name.toLowerCase()} is open.`, "info");
-      else H.say(b, "The way out is open.", "info");
+      else H.say(b, R ? "The way out is open." : "The door is open.", "info");
     }
     H.fx(b, { type: "loot", to: [t.x, t.y], text: "unlocked", how: fxHow(act.method, o) });
   } else H.fx(b, { type: "loot", to: [t.x, t.y], text: "locked", how: fxHow(act.method, o) });

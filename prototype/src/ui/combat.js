@@ -37,6 +37,7 @@ import { SEARCH, quickable, quickRefusal, quickRadius, quickHurtPct } from "../s
 export const QUICK_MARK = "#7fb8e6"; // a container rummaged through but not searched in full (both views)
 import { unitCanvas, canvasURL, spriteImg } from "./sprites.js";
 import { lockPanel, raidKeyLine, lockPreview } from "./locks.js";
+import { lockAt, openOdds } from "../sim/locks.js"; // a click on a locked door (lockedDoorClick)
 import { carPanel, carPreview } from "./carpanel.js"; // cars on the map: get in, keys, hotwire, inspect, claim (sim/foundcars.js)
 import { ZTYPES } from "../sim/hiveconst.js";
 import { ACID, acidAt } from "../sim/acid.js";
@@ -486,6 +487,10 @@ export function combatClick(state, px, py) {
   // Raids: click a container next to the selected unit to search it.
   // A door picked for Peek, Close door or Brace (sim/buildingmaps.js).
   if (u && active(u) && ["peek", "close", "brace"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
+  // A locked door (sim/locks.js: a raid's, a field map's houses'): a click tries it. A closed door is walked through
+  // like any cell (it swings open: sim/combat.js openDoor).
+  const lk = lockAt(b, c.x, c.y);
+  if (lk && lk.door && !lk.lock.open) return void lockedDoorClick(state, b, u, lk);
   if (b.raid) {
     // A light switch next to the selected unit (sim/indoorlight.js): flip it.
     const sw = switchAt(b, c.x, c.y);
@@ -507,6 +512,16 @@ export function combatClick(state, px, py) {
     cui.mode = "facemove";
     cui.msg = `Now click the way ${u.name.split(" ")[0]} will face there: the cone shows what they will watch${b.night ? " and see in the dark" : ""}. The tile itself: the way they walk. Right-click or Esc: pick another tile.`;
   } else cui.msg = "Out of reach.";
+}
+
+// A click on a locked door: from right next to it the surest way in it offers (the key, then lockpicks, then force: the
+// combatAct "open" the panel's buttons send); from further off, or with no way in, what it takes.
+function lockedDoorClick(state, b, u, t) {
+  if (Math.max(Math.abs(u.x - t.x), Math.abs(u.y - t.y)) > 1) { cui.msg = `${t.name}: move right next to it to open it (key, lockpicks or force).`; return; }
+  const o = openOdds(state, b, u, t.lock);
+  const m = ["key", "pick", "force"].find((k) => o[k] && o[k].ok && u.ap >= o[k].ap);
+  if (!m) { cui.msg = `${t.name}: ${u.name.split(" ")[0]} has no way in right now. ${o.pick.why} ${o.force.why || (u.ap < o.force.ap ? "Forcing it takes more actions than are left." : "")}`.trim(); return; }
+  act(state, { type: "open", unit: u.id, target: t.ref, method: m });
 }
 
 // Search: the first look costs the action and rolls what is inside (sim/combat.js searchBox); then the search window
@@ -929,7 +944,7 @@ export function retreatConfirmHtml(b, plan) {
 }
 
 // The view's keys (by the key table, ui/keymap.js "battle"; these are the defaults): PageUp / PageDown change the
-// floor in a building with storeys; Q and E (or , and .) turn the view, + and − zoom, Home centers on the selected unit, B shows or
+// floor in a building with storeys; Q and E (or , and .) turn the view an eighth (ui/isoview.js isoRotate), + and − zoom, Home centers on the selected unit, B shows or
 // hides the roofs, W A S D or the arrow keys pan (held: iso.keys holds the direction, ui/isoview.js).
 const PAN_DIR = { "bview.panUp": "ArrowUp", "bview.panDown": "ArrowDown", "bview.panLeft": "ArrowLeft", "bview.panRight": "ArrowRight" };
 function viewKey(state, b, e, k) {
@@ -1411,7 +1426,7 @@ export function renderCombatPanel(state) {
       ${nlButtons(state, b, u, btn, cui)}
       ${siegeButtons(b, u, btn)}
       ${b.evacCols ? btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R") : ""}
-      ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : ""}
+      ${b.raid ? raidButtons(state, b, u, btn) + lockPanel(state, b, u) : doorButtons(b, u, btn, true) + lockPanel(state, b, u)}
       ${b.rescue ? rescueButtons(state, b, u, btn) : ""}
       ${carPanel(state, b, u)}
     </div>${ammoChooser(state, b, u)}`;
@@ -1462,7 +1477,8 @@ export function viewBar(b = cui.battle) {
   const btn = (v, label, tip, active = false) => `<button class="mini${active ? " active" : ""}" data-action="cb-view" data-v="${v}" data-tip="${esc(tip)}">${label}</button>`;
   let html = `<div class="cbview">`;
   const kl = (id, def) => keyLabel(id) || def; // as bound now (Menu → Controls)
-  html += btn("rotl", "⟲", `Turn the view a quarter to the left (${kl("bview.rotLeft", "Q")})`) + btn("rotr", "⟳", `Turn the view a quarter to the right (${kl("bview.rotRight", "E")})`);
+  const turn = "Eight views: the four diagonal ones and, between them, four looking straight down the rows and columns (corridors and the tiles behind walls)";
+  html += btn("rotl", "⟲", `Turn the view an eighth to the left (${kl("bview.rotLeft", "Q")}). ${turn}.`) + btn("rotr", "⟳", `Turn the view an eighth to the right (${kl("bview.rotRight", "E")}). ${turn}.`);
   html += btn("zout", "−", `Zoom out (${kl("bview.zoomOut", "−")} or the mouse wheel)`) + btn("zin", "+", `Zoom in (${kl("bview.zoomIn", "+")} or the mouse wheel)`);
   html += btn("center", "◎", `Center on the selected unit (${kl("bview.center", "Home")}). Drag the map, hold W A S D or the arrow keys, or push the mouse to the edge to pan.`);
   html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", `Roofs on the buildings (${kl("bview.roofs", "B")}). A building is shown cut away only with the selected survivor inside it (inside, you see only the rooms your people see; the rest is fogged, what was seen before greyed with what was there then); off shows every one cut away, still fogged.`, iso.roofs);
@@ -1546,14 +1562,10 @@ function raidButtons(state, b, u, btn) {
   // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
   if (b.raid.interior) {
     const first = u.name.split(" ")[0];
-    const peeks = peekOptions(b, u), closes = closeOptions(b, u), braces = braceOptions(b, u);
-    const P = BMAP.PEEK;
-    html += btn("peek", "Peek", peeks.length ? (u.peekTurn === b.turn ? `${first} has already peeked this turn.` : `Free, once a turn: ${first} looks through the door or doorway next to them and sees the room beyond (out to ${P.range} tiles, until the end of the turn) without stepping in. An unaware guard facing the door may catch it (${Math.round(P.notice * 100)}% − ${Math.round(P.perStealth * 100)}% a Stealth point), the dead right behind it ${Math.round(P.deadNotice * 100)}%.`) : "Stand right next to a door or doorway (not diagonally) to peek through it.", peeks.length > 0 && u.peekTurn !== b.turn, "K");
-    html += btn("close", "Close door", closes.length ? `1 action: shut the open door next to ${first} (quiet; a roller door is loud: Heat +${BMAP.ROLLER.heat}). A shut door blocks sight; the dead must batter it down (${BMAP.DOOR.inner} hit points an inner door, a turn or more each blow), people stop to open it.` : "Stand next to an open door (not diagonally) with nobody in the doorway to shut it.", u.ap > 0 && closes.length > 0, "Q");
-    html += btn("brace", "Brace door", braces.length ? `The rest of the turn: ${first} puts a shoulder to the closed door next to them. People cannot open it (they must break it) and it takes half of each blow, until ${first} moves.` : "Stand next to a closed door (not diagonally) to brace it.", u.ap > 0 && braces.length > 0, "Y");
+    html += doorButtons(b, u, btn);
     const wins = windowsNear(b, u);
     html += btn("climb", "Climb window", wins.length ? `${BMAP.CLIMB.ap} action: smash the window next to ${first} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays open after.` : "Stand right next to a window (not diagonally) with room on the far side to climb through it (loud).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
-  }
+  } else html += doorButtons(b, u, btn, true); // the street map's houses (sim/combat.js genRaidMap): with a door next to them
   // A light switch in reach (sim/indoorlight.js): the room's lights on or off.
   const sws = switchOptions(b, u);
   if (sws.length) {
@@ -1561,6 +1573,17 @@ function raidButtons(state, b, u, btn) {
     html += btn("lights", a.on ? "Lights off" : "Lights on", `${INDOOR.AP} action, quiet: switch the lights ${a.on ? "off" : "on"} in the ${a.name.toLowerCase()}. ${a.on ? `Dark again${!b.night && !a.dark ? " (by day the windows still light it)" : ""}: it is seen only as at night, down the cone or a light's beam.` : `Lit, it is seen as by day by everyone, yours and theirs: whoever stands in it can be noticed, and a guard in it sees all round.`}`, u.ap >= INDOOR.AP, "⌥K");
   }
   return html;
+}
+// Peek, Close door, Brace door (sim/buildingmaps.js doorAct): always on a building's map; elsewhere (the street map, a
+// field map's houses: sim/combat.js genMap) only while a door or doorway is next to the unit.
+function doorButtons(b, u, btn, onlyNear = false) {
+  const first = u.name.split(" ")[0];
+  const peeks = peekOptions(b, u), closes = closeOptions(b, u), braces = braceOptions(b, u);
+  if (onlyNear && !peeks.length && !closes.length && !braces.length) return "";
+  const P = BMAP.PEEK;
+  return btn("peek", "Peek", peeks.length ? (u.peekTurn === b.turn ? `${first} has already peeked this turn.` : `Free, once a turn: ${first} looks through the door or doorway next to them and sees the room beyond (out to ${P.range} tiles, until the end of the turn) without stepping in. An unaware guard facing the door may catch it (${Math.round(P.notice * 100)}% − ${Math.round(P.perStealth * 100)}% a Stealth point), the dead right behind it ${Math.round(P.deadNotice * 100)}%.`) : "Stand right next to a door or doorway (not diagonally) to peek through it.", peeks.length > 0 && u.peekTurn !== b.turn, "K")
+    + btn("close", "Close door", closes.length ? `1 action: shut the open door next to ${first} (quiet${b.raid ? `; a roller door is loud: Heat +${BMAP.ROLLER.heat}` : ""}). A shut door blocks sight; the dead must batter it down (${BMAP.DOOR.inner} hit points an inner door, a turn or more each blow), people stop to open it.` : "Stand next to an open door (not diagonally) with nobody in the doorway to shut it.", u.ap > 0 && closes.length > 0, "Q")
+    + btn("brace", "Brace door", braces.length ? `The rest of the turn: ${first} puts a shoulder to the closed door next to them. People cannot open it (they must break it) and it takes half of each blow, until ${first} moves.` : "Stand next to a closed door (not diagonally) to brace it.", u.ap > 0 && braces.length > 0, "Y");
 }
 
 // A site with several buildings (sim/buildingmaps.js): pick the one to explore before anyone acts, or the street.
@@ -2098,12 +2121,15 @@ function previewHtml(b, state = null) {
     return `<b>Light switch: ${sw.on ? "on" : "off"}</b> · ${esc(sw.name)}<br><span class="muted">${reach ? `Click or press ${esc(keyLabel("battle.lights", 1) || "Alt+K")} to flip it (${INDOOR.AP} action, quiet).` : "From next to it, inside the room or in its doorway: click it or Lights to flip it (1 action, quiet)."} ${sw.on ? "Lit, the room is seen as by day by both sides." : `Off, the room is dark${!b.night && !sw.dark ? " but for the daylight through its windows" : ""}: seen only as at night, down the cone or a light's beam.`}</span>`;
   }
   if (b.raid && b.raid.interior && cobj.k === "window") return `<b>Window</b>: half cover; you see through it. Cannot stand here.<br><span class="muted">From right next to it (not diagonally): Climb window (L) smashes it and climbs through. Loud: Heat +${BMAP.CLIMB.heat}, wakes what is within ${BMAP.CLIMB.radius} tiles.</span>`;
-  if (b.raid && b.raid.interior && (cobj.k === "idoor" || cobj.k === "odoor")) {
+  // A closed or open door: any building's (a raid's street map, a field map's houses: sim/combat.js genMap), not only
+  // a building's own map. A locked one has its own text (ui/locks.js lockPreview, above).
+  if (!b.raid) { const lockText = lockPreview(b, u, h.x, h.y); if (lockText) return lockText; }
+  if (cobj.k === "idoor" || cobj.k === "odoor") {
     const shut = cobj.k === "idoor";
     const held = shut && doorHeld(b, cobj) ? unitById(b, cobj.held) : null;
     const hp = cobj.mhp ? ` · <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "muted"}">${Math.round(cobj.hp)}/${cobj.mhp}</span>` : "";
     return shut
-      ? `<b>${cobj.roll ? "Roller door (closed)" : "Closed door"}</b>${hp}${held ? ` · <span class="good">braced by ${esc(held.name)}</span>` : ""}<br><span class="muted">Blocks sight. Your people open it by walking through${cobj.roll ? " (loud: Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}; other people stop to open it; the dead must batter it down. Peek (K) through it from next to it.</span>`
+      ? `<b>${cobj.roll ? "Roller door (closed)" : "Closed door"}</b>${hp}${held ? ` · <span class="good">braced by ${esc(held.name)}</span>` : ""}<br><span class="muted">Blocks sight. Click it to walk through: your people open it as they go${cobj.roll ? " (loud: Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}; other people stop to open it; the dead must batter it down. Peek (K) through it from next to it.</span>`
       : `<b>${cobj.roll ? "Roller door (open)" : "Open door"}</b>${hp}<br><span class="muted">Close door (${esc(keyLabel("battle.close", 1) || "Shift+E")}) from next to it: 1 action, quiet${cobj.roll ? " (a roller door: loud)" : ""}. A shut door stops sight and slows the dead.</span>`;
   }
   // Something the attackers batter (sim/combat.js bash): a wall section, the gate, a barred door, a window.

@@ -27,7 +27,7 @@ const DOORISH = new Set(["idoor", "odoor", "door", "bdoor", "doorway", "gate", "
 const STEEL = new Set(["warehouse", "factory", "hangar", "motorpool", "autoshop", "garage", "workshop", "machineshed", "police", "hospital", "clinic", "infirmary",
   "lab", "barracks", "armorybldg", "cellblock", "control", "radio", "terminal", "firestation", "offices", "school", "supermarket", "deptstore", "messhall", "truckstop", "gasstation"]);
 const cellAt = (b, x, y) => (b && b.cells && x >= 0 && y >= 0 && x < b.w && y < b.h ? b.cells[y * b.w + x] : null);
-const raidDoorAt = (b, x, y) => (b && b.raid && b.raid.doors ? b.raid.doors.find((d) => d.x === x && d.y === y && (d.f || 0) === (b.floor || 0)) : null);
+const raidDoorAt = (b, x, y) => ((b && (b.raid ? b.raid.doors : b.doors)) || []).find((d) => d.x === x && d.y === y && (d.f || 0) === (b.floor || 0)) || null; // a raid's locked doors, a field map's houses' (sim/combat.js b.doors)
 // A door in the building's outer wall (sim/buildingmaps.js plan.building), else one with the outdoors on a side.
 export function exteriorDoor(b, x, y) {
   const r = b && b.raid && b.raid.plan && b.raid.plan.building;

@@ -61,7 +61,7 @@ export const BMAP = {
   // Doors' hit points (the dead batter a closed door: a claw blow does about 10–16; people open it unless it is braced
   // or locked, then they kick or shoot it in): an inner door, an outer one, a roller door, a cell door, a locked
   // door, a steel security door.
-  DOOR: { inner: 30, outer: 45, roller: 70, cell: 60, locked: 55, vault: 90 },
+  DOOR: { inner: 30, outer: 45, roller: 70, cell: 60, locked: 160, vault: 240 }, // a locked door holds the dead a good while (claws 12-20 a blow: about ten)
   BRACE: 0.5,          // a door braced from the other side takes this share of each blow (Brace: the rest of the turn)
   DOOR_NOISE: { radius: 7, noise: 0.5 }, // each blow on a door: earshot (the dead and guards come to look) and noise (Heat)
   // Peeking through a door (free, once a turn a unit): see from the far side of it, this far; an unaware guard who
@@ -1669,7 +1669,7 @@ export function doorAct(state, b, u, act, H) {
     u.ap -= 1;
     u.face = [Math.sign(o.x - u.x), Math.sign(o.y - u.y)];
     if (c.roll) {
-      b.raid.heat = Math.min(100, b.raid.heat + BMAP.ROLLER.heat);
+      if (b.raid) b.raid.heat = Math.min(100, b.raid.heat + BMAP.ROLLER.heat);
       b.noise = (b.noise || 0) + 1;
       H.say(b, `${u.name} hauls the roller door down. It clangs shut (Heat +${BMAP.ROLLER.heat}).`, "info");
       H.alertNear(b, o.x, o.y, BMAP.ROLLER.radius, "The clang of the roller door carries.");
@@ -1724,7 +1724,7 @@ export function doorBroken(b, x, y) {
   const c = cellOf(b, x, y);
   c.k = "doorway";
   delete c.held; delete c.t; delete c.tOpen;
-  const d = b.raid && (b.raid.doors || []).find((q) => q.x === x && q.y === y && (q.f || 0) === (b.floor || 0));
+  const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y && (q.f || 0) === (b.floor || 0)); // a field map's houses too (combat.js b.doors)
   if (d && !d.lock.open) { d.lock.open = true; d.lock.how = "broken"; }
 }
 // Where a thrown thing lands inside a building: through open doorways, not through walls, closed doors, tall

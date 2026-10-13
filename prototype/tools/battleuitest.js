@@ -121,9 +121,9 @@ console.log("Ground, fog and Restart battle");
     const n0 = nan, g0 = ISO.iso.builds.ground;
     let err = draw(st);
     const built = ISO.iso.builds.ground - g0;
-    for (let r = 0; r < 4 && !err; r++) { ISO.isoRotate(b, 1); err = draw(st); }
+    for (let r = 0; r < 8 && !err; r++) { ISO.isoRotate(b, 1); err = draw(st); } // the eight views (ui/isoview.js isoRotate)
     const rebuilt = ISO.iso.builds.ground - g0 - built;
-    check(!err && nan === n0 && built <= 1 && (b.floors && b.floors.length > 1 ? true : rebuilt === 0), `${name}: drawn in all four turns of the view with no NaN, the ground painted ${built}× and not again on turning${err ? ` (${err})` : ""}`);
+    check(!err && nan === n0 && built <= 1 && (b.floors && b.floors.length > 1 ? true : rebuilt === 0), `${name}: drawn in all eight turns of the view with no NaN, the ground painted ${built}× and not again on turning${err ? ` (${err})` : ""}`);
   }
   const { st, b } = battles(42, ["field-forest"])[0];
   draw(st);
