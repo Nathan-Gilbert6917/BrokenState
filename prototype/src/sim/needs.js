@@ -55,7 +55,7 @@ import { partyMembers, partyTile, teamName, onTheMove } from "./parties.js";
 import { sweeping } from "./survey.js";
 import { personRation } from "./load.js";
 import * as Weather from "./weather.js";
-import { foodIn, takeFood as takeFoodFrom, packPick, moveFood, eggFood } from "./foods.js"; // food by type: days of food, the soonest to spoil first
+import { foodIn, takeFood as takeFoodFrom, packPick, moveFood, eggFood, MEAL_FV, MEALS_A_DAY } from "./foods.js"; // food by type: days of food, the soonest to spoil first
 import { GEAR } from "./data.js";
 import { COMFORT, applyUse } from "./comforts.js";
 import { addMood } from "./relations.js"; // the starving days show in the mood breakdown
@@ -68,7 +68,8 @@ import { conditionsOf } from "./health.js";
 import { eatRawCargo, eatRawForageCargo, drinkHour } from "./worm.js";
 import { teamPoisonHour } from "./cooking.js"; // wave 2 cooking: food poisoning from what the team ate this hour
 import { teamWaterIn, takeTeamWater, drawWater, waterIn, RAW } from "./water.js"; // purified and un-purified water
-import { baseEatHour, eatingDaily, eatTarget, noteEat, eatPack, drinkPack, packFood, packWater, rationOf, emptyPack, PACK } from "./eating.js"; // meal breaks and the carried rations (wave 2)
+import { baseEatHour, eatingDaily, eatTarget, noteEat, eatPack, drinkPack, packFood, packWater, rationOf, emptyPack, PACK, teamMeal } from "./eating.js";
+import { mealOf } from "./meals.js"; // a team eats at breakfast, lunch and dinner too (eating.js teamMeal: a shared pot) // meal breaks and the carried rations (wave 2)
 
 export const NEEDS = {
   max: 100, food: 40, water: 60, lean: 50, leanRate: 0.6, ration: 0.6,
@@ -239,6 +240,21 @@ export function teamNeedsHour(state, p, members) {
     note(s2, t, fire ? 0 : t.raw);
     return t.units;
   };
+  // Breakfast, lunch and dinner: one pot for the team, at least a meal's food value each (eating.js teamMeal: the
+  // closest fit, cans shared); what the shared food did not cover comes out of each one's own pack. Between meals,
+  // the rule below as before (they eat when hungry).
+  if (rule && mealOf(null, state.hour, state)) {
+    const toOf = typeof rule[1] === "function" ? rule[1] : () => rule[1];
+    const first = share === "even" ? null : (xs) => order(xs, "hunger", share); // short of food: the hurt first
+    for (const [s2, g] of teamMeal(state, p, members, { fire, short: p.ration === "short", toOf, first })) {
+      note(s2, { ...g, from: "team" }, g.raw);
+      if (g.short > 1e-6 && packFood(s2) > 1e-6) {
+        const t = eatPack(state, s2, g.short, true);
+        s2.hunger = clamp(s2.hunger + t.units * NEEDS.food);
+        note(s2, { ...t, from: "pack" }, t.raw);
+      }
+    }
+  }
   let shortFood = feed(members, "hunger", rule, NEEDS.food, teamFood(p) - raw - rawVeg, takeShared, share);
   if (shortFood && rawVeg > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, rawVeg, (q, s2) => { const u = eatRawForageCargo(state, p, members, q); note(s2, { units: u, items: {} }, fire ? 0 : u); return u; }, share);
   if (shortFood && raw > 0) shortFood = feed(members, "hunger", rule, NEEDS.food, raw, (q, s2) => { const u = eatRawCargo(state, p, members, q); note(s2, { units: u, items: {} }, fire ? 0 : u); return u; }, share);
@@ -332,6 +348,12 @@ function errandHour(state, s) {
   s.hunger = clamp(s.hunger - (NEEDS.food / 24) * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s));
   s.thirst = clamp(s.thirst - (NEEDS.water / 24) * tf);
   const at = NEEDS.eat.full[0], to = eatTarget(s);
+  // Breakfast, lunch and dinner from the pack: at least a meal's food value, the closest fit (eating.js).
+  if (mealOf(null, state.hour, state) && packFood(s) > 1e-6) {
+    const t = eatPack(state, s, Math.max(MEAL_FV / MEALS_A_DAY, Math.max(0, to - s.hunger) / NEEDS.food), true);
+    s.hunger = clamp(s.hunger + t.units * NEEDS.food);
+    if (t.units > 1e-6) noteEat(state, s, { ...t, from: "pack" }, {});
+  }
   if (s.hunger < at) {
     const got = { units: 0, items: {}, lots: [], raw: 0, from: "pack" };
     const add = (t) => { got.units += t.units; got.raw += t.raw || 0; for (const [k, q] of Object.entries(t.items || {})) got.items[k] = (got.items[k] || 0) + q; };

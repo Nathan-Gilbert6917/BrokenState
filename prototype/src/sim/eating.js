@@ -36,12 +36,15 @@
 // Food value (user request 2026-10-13, foods.js FOODS[k].fv: a meal is MEAL_FV, 1.00; an item's value is its kcal ÷ a
 // third of a day's): at breakfast, lunch and dinner everyone at a base eats at least a meal's food value from the stores
 // (mealFV: 1.00 × the ration level, lean 0.80, a feast 1.50, short rations 0.60, × the base's stretch: the
-// Quartermaster's and the Kitchen's 0.90 each), or up to their target if that is more (a Glutton, a cold day). mealPlan
-// picks the items down the menu: an item worth a meal or less is eaten whole, one after another, until they add up
-// (two cans of beans 1.20, a can of meat and a candy bar 1.28); one worth more is cut to the portion still needed (a
-// kilo of rice 5.40 feeds five and a bit). What they eat over the meal (whole items) is counted (base.mealOver: eaten ÷
-// needed, a running mean over the days) and the base's forecasts eat it too (upkeep.js foodUse). Snacks between meals
-// and the pack keep the old rule (to the target).
+// Quartermaster's and the Kitchen's 0.90 each), or up to their target if that is more (a Glutton, a cold day).
+// Everyone eating the meal together shares one pot (sharedMeal; user pick 2026-10-13: "pick the closest fit" and
+// "share cans"): potPlan takes whole items down the menu while they fit, a bigger item (over 1.00) in portions, and
+// fills the rest with the closest fit (the combination of whole items that runs over least: a can of beans and a can
+// of fruit 1.05, not two cans of beans 1.20); the pot is shared out, so an opened can goes round and the meal runs over
+// only by what is left of the last item. Eaters with their own order (a Vegetarian, someone tired of the beans) share
+// a pot of their own. The same at a team's meals on the road (teamMeal, needs.js), and alone from the pack on a job
+// trip or an errand (the closest fit for one). What a base eats over its meals is still counted (base.mealOver, a
+// running mean) and the forecasts eat it (upkeep.js foodUse). Snacks between meals keep the old rule (to the target).
 //
 // Carried rations (the pack: s.ration = { supplies: { food items, water }, foodLots }, a holder like a team's: foods.js):
 //   - Everyone carries PACK.food (1.5) days of food that keeps (foods.js packPick: light, long-keeping) and PACK.water
@@ -243,8 +246,12 @@ function menuOf(state, h, order, rawLast) {
       for (const l of L[k]) if (!l.egg && l.q > EPS) { q += l.q; left = Math.min(left, l.left); }
       q = Math.min(q, st[k]);
     }
-    if (q > EPS) out.push({ k, f, q, left });
+    if (q > EPS) out.push({ k, f, q, left, h });
   }
+  return sortMenu(out, order, rawLast);
+}
+// The menu's order (menuOf; a team's two holders merged: teamMeal).
+function sortMenu(out, order, rawLast) {
   const meal = (e) => (order === "best" && isMeal(e.f) ? 1 : 0);
   const raw = (e) => (rawLast && e.f.raw ? 1 : 0);
   out.sort((a, b) => raw(a) - raw(b) || meal(b) - meal(a) || (meal(a) ? (b.f.moodLift || 0) - (a.f.moodLift || 0) : 0) || a.left - b.left || (a.k < b.k ? -1 : 1));
@@ -252,50 +259,165 @@ function menuOf(state, h, order, rawLast) {
 }
 // The menu for one person: a Vegetarian's plant food first; food they ate most of on each of the last EAT.variety days
 // after the rest unless it is about to spoil.
-function personal(menu, s) {
+// What sets someone's order (sharedMeal: one pot each): a Vegetarian, the food they are tired of.
+function tastes(s) {
   const veg = hasTrait(s, "vegetarian");
   const lg = s.food && Array.isArray(s.food.log) ? s.food.log : [];
   const tail = lg.slice(-EAT.variety);
   const tired = tail.length >= EAT.variety && tail.every((k) => k && k === tail[0]) ? tail[0] : null;
+  return { veg, tired, key: `${veg ? "v" : ""}|${tired || ""}` };
+}
+function personal(menu, s) {
+  const { veg, tired } = tastes(s);
   if (!veg && !tired) return menu;
   const rank = (e) => (veg && isMeat(e.f) ? 2 : 0) + (tired === e.k && e.left > EAT.urgent ? 1 : 0);
   return menu.map((e, i) => ({ e, i, r: rank(e) })).sort((a, b) => a.r - b.r || a.i - b.i).map((x) => x.e);
 }
-// A meal's items: whole items worth a meal or less, one after another, until `fv` adds up; an item worth more than a
-// meal cut to the portion still needed. menu: [{ k, f, q }] (not changed). Returns [{ k, q }] and the food value.
-export function mealPlan(menu, fv) {
-  const out = [];
-  let need = fv, got = 0;
+// ---------- a meal: the closest fit, shared ----------
+// The pot for a meal needing `fv` food value (one eater, or everyone eating together: the sum of their meals), from a
+// menu [{ k, f, q, h? }] in its order (soonest to spoil first; not changed). Items worth a meal or less are whole: down
+// the menu, as many whole ones as fit under what is still needed; an item worth more than a meal is cut to the portion
+// still needed. What is left under the next whole item is filled by the closest fit: a portion of a bigger item if the
+// menu has one (nothing over), else the one whole item that covers it with the least over, else the biggest and on
+// (two cans of beans 1.20 become a can of beans and a can of fruit 1.05, or beans and a portion of rice 1.00).
+// Returns { items: [{ e, k, q }], fv (in the pot) }.
+export function potPlan(menu, fv) {
+  const take = new Map();
+  const left = (e) => e.q - (take.get(e) || 0);
+  let r = fv;
+  const add = (e, q) => { take.set(e, (take.get(e) || 0) + q); r -= q * e.f.fv; };
+  // Down the menu while the whole items fit (a bigger item: the portion still needed).
+  let last = null; // the last kind taken whole (the closest fit may put some of it back)
   for (const e of menu) {
-    if (need <= EPS) break;
-    const q = mealQty(e, need);
-    if (!(q > EPS)) continue;
-    out.push({ k: e.k, q });
-    need -= q * e.f.fv;
-    got += q * e.f.fv;
+    if (r <= EPS) break;
+    const a = left(e);
+    if (!(a > EPS)) continue;
+    const q = e.f.fv > MEAL_FV ? Math.min(a, r / e.f.fv) : Math.min(a, Math.floor(r / e.f.fv + 1e-9));
+    if (q > EPS) { add(e, q); if (e.f.fv <= MEAL_FV && Math.abs(q - Math.round(q)) < 1e-9) last = e; }
+    if (r > EPS && a - q > EPS) break; // this one no longer fits whole: the rest is the closest fit's
   }
-  return { items: out, fv: got };
+  // The rest (under a whole item): a portion of a bigger item, else the combination that runs over least.
+  if (r > EPS) {
+    const c = menu.filter((e) => left(e) > EPS);
+    const big = c.find((e) => e.f.fv > MEAL_FV);
+    if (big) add(big, Math.min(left(big), r / big.f.fv));
+    else if (c.length || last) {
+      // Put back 0–POT.putBack of the last whole kind and fit the rest again: the least over wins (fewer put back on a tie).
+      let best = null;
+      const had = last ? take.get(last) : 0;
+      for (let b = 0; b <= (last ? Math.min(POT.putBack, Math.floor(had + 1e-9)) : 0); b++) {
+        if (last) take.set(last, had - b);
+        const rr = r + b * (last ? last.f.fv : 0);
+        const cc = menu.filter((e) => left(e) > EPS).slice(0, POT.fitKinds);
+        const pick = closestFit(cc, rr, left);
+        const over = pick.reduce((a2, [e, q]) => a2 + q * e.f.fv, 0) - rr;
+        if (!best || (best.over < -EPS && over > best.over + EPS) || (over >= -EPS && (best.over < -EPS || over < best.over - EPS))) best = { b, pick, over };
+      }
+      if (last) take.set(last, had - best.b);
+      r += best.b * (last ? last.f.fv : 0);
+      for (const [e, q] of best.pick) add(e, q);
+    }
+  }
+  const items = [...take].filter(([, q]) => q > EPS).map(([e, q]) => ({ e, k: e.k, q }));
+  return { items, fv: items.reduce((a, x) => a + x.q * x.e.f.fv, 0) };
 }
-// How much of menu entry e a meal still needing `need` food value takes (whole items when one is a meal or less).
-function mealQty(e, need) {
-  if (!(e.q > EPS)) return 0;
-  if (e.f.fv > MEAL_FV) return Math.min(e.q, need / e.f.fv);
-  return Math.min(e.q, Math.ceil(need / e.f.fv - 1e-9));
+// POT.fitKinds: the kinds (first down the menu) the closest fit tries; putBack: whole items of the last kind it may put back.
+export const POT = { fitKinds: 6, putBack: 2 };
+// Whole items (each at most what is left of it) adding up to at least r with the least over (then fewest items, then
+// the first down the menu); with not enough for r, everything there is. Returns [[e, q]].
+function closestFit(c, r, left) {
+  const unit = c.map((e) => Math.min(1, left(e)) * e.f.fv); // one item (or what is left of one)
+  const max = c.map((e, i) => Math.min(Math.ceil(left(e) - 1e-9), Math.ceil(r / unit[i] - 1e-9)));
+  const n = new Array(c.length).fill(0);
+  let best = null;
+  const go = (i, sum, cnt, rank) => {
+    if (sum >= r - EPS) {
+      const over = sum - r;
+      if (!best || over < best.over - EPS || (Math.abs(over - best.over) <= EPS && (cnt < best.cnt || (cnt === best.cnt && rank < best.rank)))) best = { over, cnt, rank, n: [...n] };
+      return;
+    }
+    if (i >= c.length || (best && best.over <= EPS)) return;
+    for (let k = 0; k <= max[i]; k++) { // more of this kind once it covers the rest only runs over more
+      n[i] = k;
+      go(i + 1, sum + k * unit[i], cnt + k, rank + k * i);
+      if (sum + k * unit[i] >= r - EPS) break;
+    }
+    n[i] = 0;
+  };
+  go(0, 0, 0, 0);
+  const counts = best ? best.n : max; // not enough for r: all of it
+  const out = [];
+  c.forEach((e, i) => { if (counts[i] > 0) out.push([e, Math.min(left(e), counts[i] * Math.min(1, left(e)))]); });
+  return out;
 }
-// Eats up to `units` days of food from holder h down a menu (its q kept current). whole: a meal by mealPlan's rule (at
-// least `units`, whole items). Returns { units, items, lots }.
-function eatMenu(state, h, menu, units, whole = false) {
+// One eater's meal (potPlan for one): [{ k, q }] and its food value.
+export function mealPlan(menu, fv) {
+  const p = potPlan(menu, fv);
+  return { items: p.items.map(({ k, q }) => ({ k, q })), fv: p.fv };
+}
+// A meal eaten together (everyone at a base at the mealtime, a team): eaters [{ s, units (days of food they need) }].
+// The pot is planned for them all (potPlan: whole cans and bars, the closest fit) and shared out: a can opened is
+// shared, so the meal runs over only by what is left of the last item, and that goes round everyone. Each takes their
+// share down their own order of the pot (personal: a Vegetarian's plant food first, variety). Takes from each item's
+// holder (e.h, else h). Returns Map s → { units, items, lots } and the pot's { need, fv } (days of food).
+// Eaters with the same order (tastes: the Vegetarians, someone tired of the beans) share a pot of their own, planned
+// down their order.
+// first: when the food is short, who eats first (a team's share rule: [{ s }] sorted), each their whole meal; else
+// everyone gets the same part of their meal.
+export function sharedMeal(state, h, menu, eaters, first = null) {
+  const groups = new Map();
+  for (const x of eaters) { const k = tastes(x.s).key; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
+  const res = { got: new Map(), need: 0, ate: 0 };
+  for (const g of groups.values()) {
+    const r = onePot(state, h, personal(menu, g[0].s), g, first);
+    for (const [s2, v] of r.got) res.got.set(s2, v);
+    res.need += r.need; res.ate += r.ate;
+  }
+  return res;
+}
+function onePot(state, h, menu, eaters, first) {
+  const out = new Map(eaters.map((x) => [x.s, { units: 0, items: {}, lots: [] }]));
+  const need = eaters.reduce((a, x) => a + x.units, 0);
+  if (!(need > EPS)) return { got: out, need: 0, ate: 0 };
+  const plan = potPlan(menu, need * MEALS_A_DAY);
+  const pot = plan.items.map(({ e, q }) => ({ k: e.k, f: e.f, q, left: e.left, h: e.h, src: e }));
+  const scale = plan.fv / (need * MEALS_A_DAY); // ≥1: the pot's last item goes round; <1: not enough for everyone
+  let ate = 0;
+  const eat = (x, fv) => {
+    const g = out.get(x.s);
+    for (const pe of personal(pot, x.s)) {
+      if (fv <= EPS) break;
+      if (!(pe.q > EPS)) continue;
+      const t = takeItem(pe.h || h, pe.k, Math.min(pe.q, fv / pe.f.fv), { state, eggs: false });
+      if (!(t.q > EPS)) { pe.q = 0; continue; }
+      pe.q -= t.q; pe.src.q -= t.q;
+      fv -= t.q * pe.f.fv;
+      const u = unitsOf(pe.k, t.q);
+      g.units += u; ate += u;
+      g.items[pe.k] = (g.items[pe.k] || 0) + t.q;
+      for (const l of t.lots) g.lots.push({ k: pe.k, ...l });
+    }
+  };
+  if (scale < 1 - EPS && first) for (const x of first(eaters)) eat(x, x.units * MEALS_A_DAY);
+  else for (const x of eaters) eat(x, x.units * MEALS_A_DAY * scale);
+  // Crumbs (the eaters' own orders left a bit of an item): shared out evenly.
+  const rest = pot.reduce((a, pe) => a + Math.max(0, pe.q) * pe.f.fv, 0);
+  if (rest > 1e-4) for (const x of eaters) eat(x, rest / eaters.length + EPS);
+  return { got: out, need, ate };
+}
+// Eats up to `units` days of food from holder h down a menu (its q kept current). Returns { units, items, lots }.
+function eatMenu(state, h, menu, units) {
   const res = { units: 0, items: {}, lots: [] };
   let need = units;
   for (const e of menu) {
     if (need <= EPS) break;
     if (!(e.q > EPS)) continue;
-    const q = whole ? mealQty(e, need * MEALS_A_DAY) : Math.min(e.q, (need * 2000) / e.f.kcal);
+    const q = Math.min(e.q, (need * 2000) / e.f.kcal);
     const t = takeItem(h, e.k, q, { state, eggs: false });
     if (!(t.q > EPS)) { e.q = 0; continue; }
     e.q -= t.q;
     const u = unitsOf(e.k, t.q);
-    need -= whole ? (t.q * e.f.fv) / MEALS_A_DAY : u;
+    need -= u;
     res.units += u;
     res.items[e.k] = (res.items[e.k] || 0) + t.q;
     for (const l of t.lots) res.lots.push({ k: e.k, ...l });
@@ -323,7 +445,7 @@ export function takeEatAcc(base) {
   }
   return a;
 }
-// base.mealOver: a running mean (mix of each day) of the food value eaten at a meal ÷ the meal's (whole items go over).
+// base.mealOver: a running mean (mix of each day) of the food value eaten at a meal ÷ the meal's (the pot's last item goes over).
 export const MEAL_OVER = { mix: 0.3, max: 2 };
 export const mealOver = (base) => (base && base.mealOver > 1 ? Math.min(MEAL_OVER.max, base.mealOver) : 1);
 // A meal's food value at a base now (1.00 × the ration level, × the stretch: the Quartermaster, the Kitchen).
@@ -339,7 +461,7 @@ export function nextMeal(state, base) {
   const ctx = baseCtx(state, base, key);
   const need = mealFV(state, base, ctx);
   const p = mealPlan(ctx.menu, need);
-  return { need, fv: p.fv, items: p.items, text: p.items.length ? p.items.map((x) => `${foodWord(x.k, x.q)} (${fv2(x.q * FOODS[x.k].fv)})`).join(" + ") : "nothing to eat" };
+  return { need, fv: p.fv, items: p.items, text: p.items.length ? p.items.map((x) => `${x.q < 1 - EPS && FOODS[x.k].fv <= MEAL_FV ? "part of " : ""}${foodWord(x.k, x.q)} (${fv2(x.q * FOODS[x.k].fv)})`).join(" + ") : "nothing to eat" };
 }
 // Hourly (needs.js baseHour) for a base of yours: hunger falls, people eat (see the header). Thirst is needs.js's.
 export function baseEatHour(state, base, people) {
@@ -354,6 +476,8 @@ export function baseEatHour(state, base, people) {
     const now = planRations(state, base, foodForecast(state, base));
     if (now) log(state, `${base.name} ${now === "lean" ? "goes on lean rations: smaller portions while food is short (it lasts a quarter longer; mood −1 a day)" : "eats normally again: the stores are good"}.`, now === "lean" ? "warn" : "info");
   }
+  // Pass 1: hunger falls; who eats now, and how much. The mealtime's eaters at the stores eat together (pass 2).
+  const eaters = [];
   for (const s of people) {
     ensureNeeds(s);
     s.hunger = clamp(s.hunger - hr * cold * appetite(s) * use * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1));
@@ -361,16 +485,32 @@ export function baseEatHour(state, base, people) {
     const tgt = targetAt(s, key);
     const below = eatBelow(state, s, h, key, tgt, s.role);
     if (s.hunger >= below) continue;
-    const wantPts = Math.max(0, tgt - s.hunger);
     const meal = mealOf(s.role, h, state);
+    const away = awayFromStores(state, s);
+    if (!away) ctx = ctx || baseCtx(state, base, key);
+    // A mealtime: at least the meal's food value, or to the target when that is more (in days of food, stretched).
+    const toTgt = (Math.max(0, tgt - s.hunger) / NEEDS.food) * (ctx && !away ? ctx.stretch : 1);
+    const mealU = meal ? mealFV(state, base, !away ? ctx : null) / MEALS_A_DAY : 0;
+    eaters.push({ s, tgt, meal, away, units: Math.max(toTgt, mealU), mealU, toTgt });
+  }
+  if (!eaters.length) return;
+  // Pass 2: the meal at the stores, one pot for everyone eating it (sharedMeal: the closest fit, cans shared).
+  const table = eaters.filter((x) => x.meal && !x.away);
+  const fromPot = new Map();
+  if (table.length) {
+    const sm = sharedMeal(state, base, ctx.menu, table);
+    for (const [s2, g] of sm.got) fromPot.set(s2, g);
+    if (sm.ate >= sm.need - 1e-6) { const a = acc(base); a.mealNeed = (a.mealNeed || 0) + sm.need; a.mealAte = (a.mealAte || 0) + sm.ate; }
+  }
+  for (const x of eaters) {
+    const s = x.s, meal = x.meal, tgt = x.tgt;
     let got = { units: 0, items: {}, lots: [], raw: 0, from: "" };
-    if (!awayFromStores(state, s)) {
-      ctx = ctx || baseCtx(state, base, key);
-      // A mealtime: at least the meal's food value (whole items), or to the target when that is more.
-      const toTgt = (wantPts / NEEDS.food) * ctx.stretch;
-      const mealU = meal ? mealFV(state, base, ctx) / MEALS_A_DAY : 0;
-      const r = eatAtBase(state, base, s, Math.max(toTgt, mealU), ctx, meal && mealU >= toTgt);
-      if (meal && mealU >= toTgt && r.units >= mealU - EPS) { const a = acc(base); a.mealNeed = (a.mealNeed || 0) + mealU; a.mealAte = (a.mealAte || 0) + r.units; }
+    if (!x.away) {
+      // The pot's share, then (a snack, or the pot ran short) the menu as before, the food with eggs last.
+      const g = fromPot.get(s) || { units: 0, items: {}, lots: [] };
+      const r = eatAtBase(state, base, s, Math.max(0, x.units - g.units), ctx);
+      add(r, g);
+      r.raw = ctx.cooks ? r.raw : r.raw + Object.entries(g.items).reduce((a, [k, q]) => a + (FOODS[k].raw ? unitsOf(k, q) : 0), 0);
       const pts = (r.units / ctx.stretch) * NEEDS.food;
       s.hunger = clamp(s.hunger + pts);
       got = { ...r, from: r.units > EPS ? (ctx.kitchen ? "kitchen" : "store") : "" };
@@ -378,10 +518,11 @@ export function baseEatHour(state, base, people) {
       if (r.units > EPS) ateFromStore(state, base, r.items);
       if (packFood(s) < PACK.food * PACK.half && r.units > EPS) topUpPack(state, base, s, undefined, memo);
     }
-    // Away from the stores (or the stores empty): the pack.
+    // Away from the stores (or the stores empty): the pack (a meal by the closest fit, eaten alone).
     const left = Math.max(0, tgt - s.hunger);
-    if (left > 0.5 && packFood(s) > EPS) {
-      const r = eatPack(state, s, left / NEEDS.food);
+    const packU = x.away && meal ? Math.max(x.mealU, left / NEEDS.food) : left / NEEDS.food;
+    if ((left > 0.5 || (x.away && meal)) && packFood(s) > EPS && packU > EPS) {
+      const r = eatPack(state, s, packU, x.away && !!meal);
       s.hunger = clamp(s.hunger + r.units * NEEDS.food);
       for (const [k, q] of Object.entries(r.items)) got.items[k] = (got.items[k] || 0) + q;
       got.lots.push(...r.lots);
@@ -390,7 +531,7 @@ export function baseEatHour(state, base, people) {
       got.from = got.from || "pack";
     }
     const miss = Math.max(0, tgt - s.hunger);
-    if (miss > 0.5 && !awayFromStores(state, s)) acc(base).missed += (miss / NEEDS.food) * (ctx ? ctx.stretch : 1);
+    if (miss > 0.5 && !x.away) acc(base).missed += (miss / NEEDS.food) * (ctx ? ctx.stretch : 1);
     if (got.units > EPS) {
       const min = breakMin(got.units, !!meal);
       acc(base).meals++;
@@ -402,8 +543,9 @@ export function baseEatHour(state, base, people) {
 }
 // At the stores: the menu, then (nothing clean left) the crops and forage with the worm's eggs, then the meat with
 // eggs (eaten uncooked: base.rawCropEaten / rawForageEaten / rawEaten for worm.js, as storage.js eatFromStore).
-function eatAtBase(state, base, s, units, ctx, whole = false) {
-  const r = eatMenu(state, base, personal(ctx.menu, s), units, whole);
+function eatAtBase(state, base, s, units, ctx) {
+  if (!(units > EPS)) return { units: 0, items: {}, lots: [], raw: 0 };
+  const r = eatMenu(state, base, personal(ctx.menu, s), units);
   r.raw = ctx.cooks ? 0 : Object.entries(r.items).reduce((a, [k, q]) => a + (FOODS[k].raw ? unitsOf(k, q) : 0), 0);
   let need = units - r.units;
   if (need > EPS) {
@@ -422,11 +564,34 @@ function eatAtBase(state, base, s, units, ctx, whole = false) {
 }
 const add = (r, t) => { r.units += t.units; for (const [k, q] of Object.entries(t.items)) r.items[k] = (r.items[k] || 0) + q; for (const l of t.lots || []) r.lots.push(l); };
 // From the pack (soonest to spoil first; packs hold no food with eggs). Returns { units, items, lots, raw }.
-export function eatPack(state, s, units) {
+// meal: a mealtime's meal, by the closest fit (sharedMeal for one: whole cans and bars, bigger food in portions).
+export function eatPack(state, s, units, meal = false) {
   if (!s.ration || !(units > EPS)) return { units: 0, items: {}, lots: [], raw: 0 };
-  const r = eatMenu(state, s.ration, personal(menuOf(state, s.ration, "spoil", false), s), units);
+  const menu = personal(menuOf(state, s.ration, "spoil", false), s);
+  const r = meal ? sharedMeal(state, s.ration, menu, [{ s, units }]).got.get(s) : eatMenu(state, s.ration, menu, units);
   r.raw = Object.entries(r.items).reduce((a, [k, q]) => a + (FOODS[k].raw ? unitsOf(k, q) : 0), 0);
   return r;
+}
+// A team's meal on the road (needs.js teamNeedsHour at breakfast, lunch and dinner): one pot from the team's shared
+// food (its supplies and its cargo, clean; raw meat and fish last unless a fire cooks it), at least a meal's food value
+// each (MEAL_FV; short rations NEEDS.ration) or up to their target if that is more, by the closest fit and shared
+// (sharedMeal). Hunger is filled here. toOf(s): their target. Returns Map s → { units, items, lots, raw, short (days
+// of food the pot did not cover) }.
+export function teamMeal(state, p, members, { fire = false, short = false, toOf = eatTarget, first = null } = {}) {
+  const cargo = p.cargo || (p.cargo = { supplies: {}, gear: [] });
+  const menu = sortMenu([...menuOf(state, p, "best", !fire), ...menuOf(state, cargo, "best", !fire)], "best", !fire);
+  const fv = MEAL_FV * (short ? NEEDS.ration : 1);
+  const eaters = members.filter((s) => s.alive).map((s) => ({ s, units: Math.max(fv / MEALS_A_DAY, Math.max(0, toOf(s) - s.hunger) / NEEDS.food) }));
+  const out = new Map();
+  if (!eaters.length) return out;
+  const sm = sharedMeal(state, p, menu, eaters, first);
+  for (const x of eaters) {
+    const g = sm.got.get(x.s);
+    x.s.hunger = clamp(x.s.hunger + g.units * NEEDS.food);
+    const raw = fire ? 0 : Object.entries(g.items).reduce((a, [k, q]) => a + (FOODS[k].raw ? unitsOf(k, q) : 0), 0);
+    out.set(x.s, { ...g, raw, short: Math.max(0, x.units - g.units) });
+  }
+  return out;
 }
 // Drinks up to `units` water from the pack (purified first). Returns the water drunk.
 export function drinkPack(s, units) {
@@ -592,7 +757,7 @@ export function groupDietPressure(state, f) {
 export const aiPartyHeads = (f, strength, arms = 1) => Math.max(1, Math.min(Math.max(1, f.pop || 1), Math.round((strength || 1) / Math.max(0.5, arms))));
 
 // ---------- text ----------
-export const EATING_HELP = `<b>Food value.</b> Every food has a food value (FV) of its own, to two places: a meal is ${MEAL_FV.toFixed(2)} and a day is ${MEALS_A_DAY} meals (a can of beans 0.60, a can of meat 0.90, a candy bar 0.38, an MRE 1.88, a kilo of rice 5.40). At each meal everyone eats at least ${MEAL_FV.toFixed(2)}: food worth a meal or less is eaten whole, one after another, until it adds up (two cans of beans: 1.20), bigger food is cut into portions (a kilo of rice feeds five). Lean rations make a meal 0.80, a feast 1.50, short rations 0.60; the Quartermaster and the Kitchen stretch it (×0.9 each). Whole items run over, so a base living on cans eats more than one on rice or cooked meals: each base keeps count and its forecasts (the days of food left, the Needs panel, the governor) use it.<br><br>Everyone eats by themselves: at breakfast (06:00; 10:00 for hunters and fishers, after the dawn trip), lunch (12:00, or the hour set in the Work tab) and dinner (20:00), at least a meal (or up to their own target, if that is more), and between meals when they get hungry (below ${EAT.snack}; at night below ${EAT.night}), until they are ${EAT.band[0]}–${EAT.band[1]}% full (each person has their own target; a Glutton eats to 100). A meal is a break of ${EAT.min.meal}–${EAT.min.max} minutes ("Eating breakfast (25 min)" in the activity): the jobs that run round the clock stop for the meal hours. Lunch is an hour's break from all work (the guards stay on the walls), with a small lift to mood. They eat the best cooked meals first (lavish, fine, stew, simple), then whatever would spoil soonest; raw meat last where nothing cooks; a Vegetarian plant food first; and anyone tired of the same food two days running picks something else while it keeps. A day of food is ${"2000"} kcal; the hunger gauge shows the target band.<br><br><b>Carried rations.</b> Everyone carries a pack of about ${PACK.food} days of food that keeps and ${PACK.water} purified water (it weighs 2–3 kg). At a base they eat from the stores and the pack is topped up every morning (and when they eat with it under half), as long as the base is not rationing and keeps ${PACK.keepDays} days of food and water beyond it. Away from the stores (a job trip, a field work, a lookout's shift, an errand) they eat and drink from it (a job trip sets out with at least ${PACK.trip} day of food in it: lunch is eaten out there); a team's packs count toward its supplies (the base packs that much less) and are eaten after the team's shared food. Out of food away from the stores, hunger bites as before.<br><br><b>Ration levels</b> (a base's Overview, Needs): <i>Normal</i>; <i>Lean</i>: a meal is 0.80 food value and the body gets by on 80% of a ration: food lasts a quarter longer, mood −1 a day, nobody hungry enough to work worse; <i>Feast</i>: today only, a meal is 1.50 (×1.5 the day's food), "A feast" mood +6. Under a week of food a base goes on short rations by itself (a meal 0.60, mood −3 a day). The governor and a steward (Farming & food) go lean under ${RATION_PLAN.lean} days of food when the plots will not cover it, back over ${RATION_PLAN.normal}; the harvest festival is a feast. The groups do the same.<br><br><b>Food and mood</b> (each a thought that lasts, not a daily factor; the same one cannot come again until it has run out): Ate raw food ${THOUGHTS.raw.v} (2 days; raw meat or fish where nothing cooks it, or food with the worm's eggs) · a stew +${MEAL_MOOD}, a fine meal +${2 * MEAL_MOOD}, a lavish meal +${4 * MEAL_MOOD} (3 days) · Same food again ${THOUGHTS.same.v} (2 days) when the same food was most of what they ate ${EAT.sameDays} days running · No hot food in days ${EAT.coldV[0]} a day after ${EAT.cold[0]} days without a cooked meal (the Kitchen's hot service, or anything eaten where a cook fire, a lit stove or a lit camp fire warms it, counts), ${EAT.coldV[1]} a day after ${EAT.cold[1]}: a camp fire with firewood and a camp cook pot, a cook fire or a Kitchen fixes it · A feast +${THOUGHTS.feast.v}. Picky Eaters mind simple meals and raw food more and like fine and lavish meals more; Vegetarians lose ${"6"} mood for meat, fish, eggs, milk, honey or a mixed meal; a Cannibal would enjoy human meat, but the game has none: the dead carry the worm.`;
+export const EATING_HELP = `<b>Food value.</b> Every food has a food value (FV) of its own, to two places: a meal is ${MEAL_FV.toFixed(2)} and a day is ${MEALS_A_DAY} meals (a can of beans 0.60, a can of meat 0.90, a candy bar 0.38, an MRE 1.88, a kilo of rice 5.40). At each meal everyone eats at least ${MEAL_FV.toFixed(2)}, at a base and on a team alike. Everyone eating together shares one pot: whole cans and bars are opened until the pot adds up, by the closest fit (a can of beans and a can of fruit 1.05 rather than two cans of beans 1.20), bigger food is cut into portions (a kilo of rice feeds five), and an opened can is shared, so three people eat five cans of beans, not six. Eating alone (a job trip, an errand) it is the closest fit from the pack. Lean rations make a meal 0.80, a feast 1.50, short rations 0.60; the Quartermaster and the Kitchen stretch it (×0.9 each). Each base keeps count of what its meals really take and its forecasts (the days of food left, the Needs panel, the governor) use it.<br><br>Everyone eats by themselves: at breakfast (06:00; 10:00 for hunters and fishers, after the dawn trip), lunch (12:00, or the hour set in the Work tab) and dinner (20:00), at least a meal (or up to their own target, if that is more), and between meals when they get hungry (below ${EAT.snack}; at night below ${EAT.night}), until they are ${EAT.band[0]}–${EAT.band[1]}% full (each person has their own target; a Glutton eats to 100). A meal is a break of ${EAT.min.meal}–${EAT.min.max} minutes ("Eating breakfast (25 min)" in the activity): the jobs that run round the clock stop for the meal hours. Lunch is an hour's break from all work (the guards stay on the walls), with a small lift to mood. They eat the best cooked meals first (lavish, fine, stew, simple), then whatever would spoil soonest; raw meat last where nothing cooks; a Vegetarian plant food first; and anyone tired of the same food two days running picks something else while it keeps. A day of food is ${"2000"} kcal; the hunger gauge shows the target band.<br><br><b>Carried rations.</b> Everyone carries a pack of about ${PACK.food} days of food that keeps and ${PACK.water} purified water (it weighs 2–3 kg). At a base they eat from the stores and the pack is topped up every morning (and when they eat with it under half), as long as the base is not rationing and keeps ${PACK.keepDays} days of food and water beyond it. Away from the stores (a job trip, a field work, a lookout's shift, an errand) they eat and drink from it (a job trip sets out with at least ${PACK.trip} day of food in it: lunch is eaten out there); a team's packs count toward its supplies (the base packs that much less) and are eaten after the team's shared food. Out of food away from the stores, hunger bites as before.<br><br><b>Ration levels</b> (a base's Overview, Needs): <i>Normal</i>; <i>Lean</i>: a meal is 0.80 food value and the body gets by on 80% of a ration: food lasts a quarter longer, mood −1 a day, nobody hungry enough to work worse; <i>Feast</i>: today only, a meal is 1.50 (×1.5 the day's food), "A feast" mood +6. Under a week of food a base goes on short rations by itself (a meal 0.60, mood −3 a day). The governor and a steward (Farming & food) go lean under ${RATION_PLAN.lean} days of food when the plots will not cover it, back over ${RATION_PLAN.normal}; the harvest festival is a feast. The groups do the same.<br><br><b>Food and mood</b> (each a thought that lasts, not a daily factor; the same one cannot come again until it has run out): Ate raw food ${THOUGHTS.raw.v} (2 days; raw meat or fish where nothing cooks it, or food with the worm's eggs) · a stew +${MEAL_MOOD}, a fine meal +${2 * MEAL_MOOD}, a lavish meal +${4 * MEAL_MOOD} (3 days) · Same food again ${THOUGHTS.same.v} (2 days) when the same food was most of what they ate ${EAT.sameDays} days running · No hot food in days ${EAT.coldV[0]} a day after ${EAT.cold[0]} days without a cooked meal (the Kitchen's hot service, or anything eaten where a cook fire, a lit stove or a lit camp fire warms it, counts), ${EAT.coldV[1]} a day after ${EAT.cold[1]}: a camp fire with firewood and a camp cook pot, a cook fire or a Kitchen fixes it · A feast +${THOUGHTS.feast.v}. Picky Eaters mind simple meals and raw food more and like fine and lavish meals more; Vegetarians lose ${"6"} mood for meat, fish, eggs, milk, honey or a mixed meal; a Cannibal would enjoy human meat, but the game has none: the dead carry the worm.`;
 export function packText(s) {
   const f = packFood(s), w = packWater(s);
   return `${r1(f)} day${r1(f) === 1 ? "" : "s"} of food and ${r1(w)} water (${r1(packKg(s))} kg)`;

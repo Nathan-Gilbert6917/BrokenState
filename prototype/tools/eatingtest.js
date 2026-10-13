@@ -25,7 +25,7 @@ import { foodUse } from "../src/sim/upkeep.js";
 import { econStats } from "../src/sim/farming.js";
 import { launchExpedition, partyMembers, spawnAiParty, removeParty } from "../src/sim/parties.js";
 import { needsHour, teamNeedsHour, NEEDS } from "../src/sim/needs.js";
-import { EAT, PACK, THOUGHTS, MEAL_MOOD, RATION_PLAN, GROUP_EAT, eatTarget, targetAt, packFood, packWater, packKg, rationOf, thought, thoughtsOf, planRations, setRationLevel, groupRation, groupDietPressure, breakMin, eatPack, topUpPack, noteEat, mealPlan, mealOver, mealFV, nextMeal } from "../src/sim/eating.js";
+import { EAT, PACK, THOUGHTS, MEAL_MOOD, RATION_PLAN, GROUP_EAT, eatTarget, targetAt, packFood, packWater, packKg, rationOf, thought, thoughtsOf, planRations, setRationLevel, groupRation, groupDietPressure, breakMin, eatPack, topUpPack, noteEat, mealPlan, mealOver, mealFV, nextMeal, sharedMeal } from "../src/sim/eating.js";
 import { RATION_LEVELS, rationKey, rationUse, MEAL_WORK_SHARE, mealOf, lunchHour, setLunchHour, isMealHour, lunchOverlap, LUNCH_HOURS } from "../src/sim/meals.js";
 import { FOODS, addFood, unitsOf, qtyOf, foodIn, MEAL_FV } from "../src/sim/foods.js";
 import { describeActivity } from "../src/sim/activity.js";
@@ -154,7 +154,7 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
   const h4 = quietHub(st4, 0);
   st4.hour = mildHour(st4, 5);
   addFood(h4, "f_cannedmeat", 20, { left: 5, state: st4 });
-  addFood(h4, "f_beans", 20, { state: st4 });
+  addFood(h4, "f_beans", 80, { state: st4 });
   const v = residents(st4, h4.id)[0];
   v.traits = ["vegetarian"]; v.hunger = 50;
   const o = residents(st4, h4.id)[1];
@@ -520,13 +520,26 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
   check(FOODS.f_beans.fv === 0.6 && FOODS.f_cannedmeat.fv === 0.9 && FOODS.f_mre.fv === 1.88 && FOODS.f_rice.fv === 5.4 && Object.values(FOODS).every((f) => f.fv > 0 && Math.abs(Math.round(f.fv * 100) - f.fv * 100) < 1e-6), "every item has a food value to two places (beans 0.60, canned meat 0.90, an MRE 1.88, rice 5.40)");
   const m = (k, q) => ({ k, f: FOODS[k], q });
   let p = mealPlan([m("f_beans", 10)], MEAL_FV);
-  check(p.items.length === 1 && p.items[0].q === 2 && near(p.fv, 1.2), `cans of beans: two whole cans make the meal (${p.fv.toFixed(2)})`);
+  check(p.items.length === 1 && p.items[0].q === 2 && near(p.fv, 1.2), `cans of beans alone: two whole cans make one person's meal (${p.fv.toFixed(2)})`);
+  p = mealPlan([m("f_beans", 10), m("f_cannedfruit", 5), m("f_candybar", 5)], MEAL_FV);
+  check(p.items.length === 2 && p.items[0].k === "f_beans" && p.items[0].q === 1 && p.items[1].k === "f_cannedfruit" && p.items[1].q === 1 && near(p.fv, 1.05), `the closest fit: a can of beans and a can of fruit 1.05, not two cans of beans 1.20 (${p.items.map((x) => `${x.q} ${x.k}`).join(", ")})`);
+  p = mealPlan([m("f_beans", 10), m("f_rice", 1)], MEAL_FV);
+  check(near(p.fv, 1) && p.items[1].k === "f_rice", `or a can of beans and a portion of rice: 1.00 (${p.fv.toFixed(2)})`);
   p = mealPlan([m("f_beans", 1), m("f_candybar", 5)], MEAL_FV);
   check(p.items[0].q === 1 && p.items[1].q === 2 && p.fv >= MEAL_FV && near(p.fv, 1.36), `one can left, then candy bars until it adds up (${p.fv.toFixed(2)})`);
   p = mealPlan([m("f_rice", 3)], MEAL_FV);
   check(near(p.items[0].q * FOODS.f_rice.fv, 1) && near(p.fv, 1), `a kilo of rice is cut to a meal's portion (${p.items[0].q.toFixed(3)} kg)`);
   p = mealPlan([m("f_soup", 1)], MEAL_FV);
   check(p.fv < MEAL_FV, "not enough in store: what there is");
+  // Shared: three people and cans of beans: 5 cans for 3 meals of 1.00 (not 6), each eats 1.00.
+  {
+    const st0 = W(), h0 = quietHub(st0, 0);
+    addFood(h0, "f_beans", 10, { state: st0 });
+    const ppl0 = residents(st0, h0.id).slice(0, 3);
+    for (const x of ppl0) { delete x.food; x.traits = []; }
+    const sm = sharedMeal(st0, h0, [{ ...m("f_beans", 10), h: h0 }], ppl0.map((s) => ({ s, units: MEAL_FV / 3 })));
+    check(near(10 - h0.stock.f_beans, 5) && ppl0.every((s) => near(sm.got.get(s).units * 3, 1, 1e-6)), `a shared pot: 5 cans of beans feed 3 (each 1.00; ${r1(10 - h0.stock.f_beans)} cans)`);
+  }
   // A base of cans eats whole cans: at least a meal each, three a day, and the forecast eats what they ate.
   const st = W();
   const h = quietHub(st, 0);
@@ -537,8 +550,8 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
   const b0 = h.stock.f_beans;
   days(st, 3);
   const perHead = (b0 - h.stock.f_beans) / 3 / ppl.length;
-  check(perHead >= 5.9 && perHead <= 6.3, `beans only: about 2 cans a meal, 6 a day a head (${perHead.toFixed(2)}, packs topped up too)`);
-  check(mealOver(h) > 1.15 && mealOver(h) <= 1.21, `the base learns its meals run over (×${mealOver(h).toFixed(3)}: 1.20 a meal)`);
+  check(perHead >= 4.95 && perHead <= 5.15, `beans only: the cans shared out, 5 a day a head (3 meals × 1.00 ÷ 0.60: ${perHead.toFixed(2)})`);
+  check(mealOver(h) >= 1 && mealOver(h) < 1.03, `shared cans: the meals hardly run over (×${mealOver(h).toFixed(3)})`);
   check(near(foodUse(st, h).rate, mealOver(h) * foodUse(st, { ...h, mealOver: 1 }).rate, 1e-6), "and the forecast eats it (foodUse ×mealOver)");
   check(near(mealFV(st, h), MEAL_FV) && nextMeal(st, h).items[0].q === 2, `the next meal here: ${nextMeal(st, h).text}`);
   h.rationLevel = "lean";

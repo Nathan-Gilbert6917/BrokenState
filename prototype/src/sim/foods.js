@@ -137,9 +137,9 @@ for (const k of FOOD_KEYS) { const f = FOODS[k]; f.key = k; f.stable = f.shelf >
 // FOODS[k].fv: one item's food value, to two places: MEAL_KCAL (a third of DAY_KCAL) is 1.00, a meal. A can of beans
 // 0.60, a can of meat 0.90, an MRE 1.88, a kilo of rice 5.40. Three meals a day: MEALS_A_DAY food value is a day of food
 // (a ration), so fvIn(stock) is foodIn(stock) × 3 at the items' rounded values.
-// At a base everyone eats at least MEAL_FV at each meal (eating.js mealPlan): an item worth a meal or less is eaten
-// whole, one after the other, until the meal adds up to MEAL_FV (two cans of beans: 1.20); an item worth more than a
-// meal (a kilo of rice, a loaf, a jar of peanut butter, an MRE) is cut to the portion still needed.
+// Everyone eats at least MEAL_FV at each meal, at a base and on a team (eating.js sharedMeal): one pot for everyone
+// eating together, whole items worth a meal or less opened by the closest fit and shared out, an item worth more than a
+// meal (a kilo of rice, a loaf, a jar of peanut butter, an MRE) cut to the portion still needed.
 export const MEALS_A_DAY = 3;
 export const MEAL_KCAL = DAY_KCAL / MEALS_A_DAY;
 export const MEAL_FV = 1;

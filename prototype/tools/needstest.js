@@ -8,6 +8,7 @@
 // when they eat, a base out of food counts from its first day in place of the old flat penalty, reaches rock bottom on
 // the road before hunger kills) and the starving status icon.
 // Usage: node tools/needstest.js [seed]
+import { FOODS, addFood, foodIn } from "../src/sim/foods.js"; // food value (a meal 1.00)
 import { food, setFood, addDays, clearFood, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, residents, makeSurvivor, tickHour } from "../src/sim/world.js";
 import { basesDaily } from "../src/sim/economy.js";
@@ -62,7 +63,7 @@ function team(st, n, supplies) {
   console.log("A team eats and drinks from what it carries");
   const st = W();
   quietHub(st);
-  st.hour = mildDay(st) * 24 + 12;
+  st.hour = mildDay(st) * 24 + 13;
   const { p, crew } = team(st, 2, { food: 10, water: 10 });
   const f0 = food(p), w0 = p.supplies.water;
   for (let i = 0; i < 6; i++) teamNeedsHour(st, p, crew);
@@ -156,14 +157,14 @@ function team(st, n, supplies) {
   console.log("Rations and sharing");
   const st = W();
   quietHub(st);
-  st.hour = mildDay(st) * 24 + 12;
+  st.hour = mildDay(st) * 24 + 13;
   const full = team(st, 2, { food: 30, water: 30 });
   const days = 6;
   for (let i = 0; i < 24 * days; i++) teamNeedsHour(st, full.p, full.crew);
   const usedFull = 30 - food(full.p);
   const st2 = W();
   quietHub(st2);
-  st2.hour = mildDay(st2) * 24 + 12;
+  st2.hour = mildDay(st2) * 24 + 13;
   const sh = team(st2, 2, { food: 30, water: 30 });
   sh.p.ration = "short";
   for (let i = 0; i < 24 * days; i++) teamNeedsHour(st2, sh.p, sh.crew);
@@ -176,14 +177,14 @@ function team(st, n, supplies) {
   // Scarce food: the hurt eat first (default); evenly when set.
   const st3 = W();
   quietHub(st3);
-  st3.hour = mildDay(st3) * 24 + 12;
+  st3.hour = mildDay(st3) * 24 + 13;
   const sc = team(st3, 2, { food: 0.5, water: 10 });
   sc.crew[0].hunger = 30; sc.crew[1].hunger = 30; sc.crew[1].health = 40;
   teamNeedsHour(st3, sc.p, sc.crew);
   check(sc.crew[1].hunger > sc.crew[0].hunger + 15, `short of food, the hurt eat first (${r1(sc.crew[1].hunger)} vs ${r1(sc.crew[0].hunger)})`);
   const st4 = W();
   quietHub(st4);
-  st4.hour = mildDay(st4) * 24 + 12;
+  st4.hour = mildDay(st4) * 24 + 13;
   const ev = team(st4, 2, { food: 0.5, water: 10 });
   ev.p.share = "even";
   ev.crew[0].hunger = 30; ev.crew[1].hunger = 30; ev.crew[1].health = 40;
@@ -191,12 +192,56 @@ function team(st, n, supplies) {
   check(near(ev.crew[0].hunger, ev.crew[1].hunger, 1e-6), "evenly: the same share each");
 }
 
+// ---------- 4b. a team's meals: breakfast, lunch and dinner from one pot ----------
+{
+  console.log("A team's meals (food value)");
+  const st = W();
+  quietHub(st);
+  st.hour = mildDay(st) * 24 + 1;
+  const { p, crew } = team(st, 3, { food: 0, water: 30 });
+  clearFood(p.supplies);
+  addFood(p, "f_beans", 60, { state: st });
+  for (const s of crew) { s.hunger = 90; delete s.food; s.traits = []; if (s.ration) s.ration.supplies = {}; }
+  const meals = new Set();
+  const b0 = p.supplies.f_beans;
+  for (let i = 0; i < 72; i++) {
+    st.hour++;
+    const before = p.supplies.f_beans;
+    teamNeedsHour(st, p, crew);
+    if (p.supplies.f_beans < before - 1e-9) meals.add(st.hour % 24);
+  }
+  check([...meals].sort((a, b) => a - b).join(",") === "6,12,20", `they eat at breakfast, lunch and dinner on the road (${[...meals].sort((a, b) => a - b).join(", ")})`);
+  const perHead = (b0 - p.supplies.f_beans) / 3 / 3;
+  check(perHead >= 4.95 && perHead <= 5.2, `the pot shares the cans: 5 cans of beans a day a head (3 × 1.00 ÷ 0.60: ${perHead.toFixed(2)})`);
+  check(crew.every((s) => s.hunger > 75), `and they stay fed (${crew.map((s) => r1(s.hunger)).join(", ")})`);
+  // A lone traveller: the closest fit from what the team carries.
+  const st2 = W();
+  quietHub(st2);
+  st2.hour = mildDay(st2) * 24 + 5;
+  const t2 = team(st2, 1, { food: 0, water: 10 });
+  clearFood(t2.p.supplies);
+  addFood(t2.p, "f_beans", 10, { state: st2 }); addFood(t2.p, "f_cannedfruit", 10, { state: st2 });
+  const s1 = t2.crew[0]; s1.hunger = 95; delete s1.food; s1.traits = []; if (s1.ration) s1.ration.supplies = {};
+  st2.hour++;
+  teamNeedsHour(st2, t2.p, t2.crew);
+  const ate = (10 - t2.p.supplies.f_beans) * FOODS.f_beans.fv + (10 - t2.p.supplies.f_cannedfruit) * FOODS.f_cannedfruit.fv;
+  check(ate >= 1 - 1e-9 && ate <= 1.06, `alone at breakfast: the closest fit, at least 1.00 (${ate.toFixed(2)}: not two cans of beans)`);
+  // Short rations: a meal is 0.60.
+  t2.p.ration = "short";
+  s1.hunger = 45;
+  const f0 = foodIn(t2.p.supplies);
+  st2.hour += 6; // lunch
+  teamNeedsHour(st2, t2.p, t2.crew);
+  const fvAte = (f0 - foodIn(t2.p.supplies)) * 3;
+  check(fvAte >= 0.6 - 1e-6 && fvAte < 0.75, `short rations: a meal of at least 0.60 (${fvAte.toFixed(2)})`);
+}
+
 // ---------- 5. treats ----------
 {
   console.log("Treats");
   const st = W();
   quietHub(st);
-  st.hour = mildDay(st) * 24 + 12;
+  st.hour = mildDay(st) * 24 + 13;
   const { p, crew } = team(st, 2, { food: 10, water: 10 });
   const [a, b] = crew;
   a.mood = 20; b.mood = 80;
