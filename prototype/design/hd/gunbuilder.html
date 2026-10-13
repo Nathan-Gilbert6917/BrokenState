@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gun builder: HD design preview</title>
+<style>
+  /* The game's tokens (styles.css :root) so the mock sits in the real chrome. */
+  :root { --bg: #121417; --panel: #1b1e23; --panel-2: #23272e; --line: #343a44; --text: #e6e2d8; --muted: #9aa0a8; --accent: #e0a84f; --good: #6cc48a; --danger: #e2685f; --info: #8fb4e0; font-size: 16px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; }
+  header, main { max-width: 1120px; margin: 0 auto; padding: 14px 20px; }
+  header h1 { font-size: 22px; margin: 6px 0 4px; }
+  header p { margin: 0 0 6px; color: var(--muted); max-width: 980px; line-height: 1.45; }
+  h2 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
+  button { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.35rem 0.7rem; cursor: pointer; }
+  button.primary { background: #4a3816; border-color: var(--accent); }
+  button.mini { padding: 0.15rem 0.45rem; font-size: 0.82rem; }
+  select { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 0.4rem; }
+  .muted { color: var(--muted); } .small { font-size: 0.85rem; } .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; } .spread { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+  /* #modal .box.wide, as in the game, but the builder's drawing area kept at exactly 720 CSS px so the 4× art is crisp. */
+  .modalbg { background: rgba(0,0,0,0.6); padding: 18px; border-radius: 14px; display: flex; justify-content: center; }
+  .box { background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 1.1rem 1.3rem; width: calc(720px + 2.6rem + 2px); box-shadow: 0 16px 48px rgba(0,0,0,0.6); }
+  .box h1 { font-size: 1.35rem; margin: 0 0 0.3rem; }
+  .result { background: var(--panel-2); border-left: 3px solid var(--accent); padding: 0.6rem 0.8rem; margin: 0.6rem 0 0.9rem; line-height: 1.5; }
+  /* ---- the current builder's rules (ui/gunbuilder.js GB_CSS), for the "today" panel ---- */
+  .gbwrap { position: relative; width: 720px; height: 340px; margin: 0.3rem 0 0.5rem; background: radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.06), transparent 70%); border-radius: 8px; }
+  .gbwrap img.gbimg, .gbwrap canvas.gbimg { position: absolute; image-rendering: pixelated; pointer-events: none; }
+  .gbwrap svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .gbwrap line { stroke: var(--accent); stroke-width: 1.5; opacity: 0.85; } .gbwrap line.nest { stroke-dasharray: 5 4; opacity: 0.7; } .gbwrap circle { fill: var(--accent); }
+  .gbslot { position: absolute; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 2px 6px; font-size: 0.72rem; line-height: 1.15; text-align: left; overflow: hidden; background: rgba(27,30,35,0.92); }
+  .gbslot .gbsn { color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.64rem; } .gbslot .gbpn { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .gbslot.empty .gbpn { font-weight: 400; font-style: italic; color: var(--muted); } .gbslot .gbdl { color: var(--good); font-size: 0.66rem; white-space: nowrap; }
+  .gbslot.on { border-color: var(--accent); background: #3a2e17; }
+  .gbcols { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(0,1fr); gap: 0.9rem; }
+  .gbrow { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 0.25rem; }
+  .gbrow.hov { border-color: var(--accent); } .gbrow .gbd { color: var(--muted); font-size: 0.75rem; }
+  .gbstats { width: 100%; border-collapse: collapse; font-size: 0.85rem; } .gbstats td { padding: 0.12rem 0.3rem; border-bottom: 1px solid var(--line); } .gbstats td.n { text-align: right; white-space: nowrap; }
+  .gbstats .up { color: var(--good); } .gbstats .down { color: var(--danger); }
+  /* ---- the proposal: lanes, icon boxes, finish swatches, stat meters ---- */
+  .hd .gbwrap { background: radial-gradient(ellipse at 50% 52%, rgba(255,255,255,0.07), transparent 68%); }
+  .lane { position: absolute; left: 0; right: 0; border-radius: 8px; background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.05); }
+  .lane span { position: absolute; left: 8px; top: -7px; font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--panel); padding: 0 4px; opacity: 0.9; }
+  .hd .gbslot { align-items: center; justify-content: flex-start; gap: 0; padding: 2px 3px 2px; border-radius: 7px; border: 1px solid var(--line); }
+  .hd .gbslot .cap { display: flex; justify-content: space-between; gap: 3px; width: 100%; font-size: 0.54rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); line-height: 1.25; white-space: nowrap; }
+  .hd .gbslot .cap span { overflow: hidden; text-overflow: ellipsis; min-width: 0; } .hd .gbslot .cap b { flex: none; }
+  .hd .gbslot .cap b { color: var(--good); font-weight: 600; letter-spacing: 0; text-transform: none; } .hd .gbslot .cap b.down { color: var(--danger); }
+  .hd .gbslot canvas { image-rendering: pixelated; display: block; height: 28px; width: 42px; margin: 1px 0 0; }
+  .hd .gbslot .gbpn { font-size: 0.66rem; font-weight: 600; max-width: 100%; text-align: center; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .hd .gbslot.empty { border-style: dashed; background: rgba(27,30,35,0.7); } .hd .gbslot.empty .gbpn { font-style: italic; font-weight: 400; color: var(--muted); }
+  .hd .gbslot.empty .ph { width: 42px; height: 28px; display: flex; align-items: center; justify-content: center; color: var(--line); font-size: 20px; line-height: 1; }
+  .hd .gbslot.reach { border-color: var(--info); border-style: dashed; } .hd .gbslot.reach .ph { color: var(--info); opacity: 0.8; }
+  .hd .gbslot .cap b.badge { font-size: 0.54rem; background: var(--info); color: #101418; border-radius: 8px; padding: 0 5px; font-weight: 700; line-height: 1.3; }
+  .hd .gbslot.on { border-color: var(--accent); background: #3a2e17; box-shadow: 0 0 0 1px rgba(224,168,79,0.35); }
+  .hd .gbwrap line.on { stroke-width: 2.5; opacity: 1; }
+  .fin { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--muted); margin: 0 0 0.6rem; }
+  .fin .sw { width: 1.05rem; height: 1.05rem; border-radius: 50%; border: 2px solid var(--line); display: inline-block; vertical-align: middle; box-shadow: inset -3px -3px 0 rgba(0,0,0,0.35), inset 2px 2px 0 rgba(255,255,255,0.15); }
+  .fin .sw.cur { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(224,168,79,0.25), inset -3px -3px 0 rgba(0,0,0,0.35), inset 2px 2px 0 rgba(255,255,255,0.15); }
+  .fin .fname { color: var(--text); }
+  .gbrow canvas { image-rendering: pixelated; width: 48px; height: 32px; flex: none; border-radius: 4px; background: rgba(255,255,255,0.03); }
+  .gbrow .lead { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .meter { width: 7.2rem; height: 0.42rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; position: relative; overflow: hidden; display: inline-block; vertical-align: middle; }
+  .meter b { position: absolute; left: 0; top: 0; bottom: 0; background: #6b7f99; border-radius: 2px 0 0 2px; } .meter i { position: absolute; top: 0; bottom: 0; } .meter i.up { background: var(--good); } .meter i.down { background: var(--danger); }
+  .gbstats td.m { width: 7.6rem; padding-right: 0; }
+  .thumbs { display: flex; gap: 1.2rem; align-items: center; margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+  .thumbs img { image-rendering: pixelated; vertical-align: middle; height: 1.1rem; margin: 0 2px; } .thumbs .tile { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 0.85rem; }
+  .err { color: var(--danger); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gun builder: HD art and a panel proposal</h1>
+  <p>Design preview only: the game is unchanged. Above, the builder as proposed: the AR carbine at 128 × 48 shown 4× (the same 512 × 192 image area as today), the slot boxes in two labelled lanes with the part's own HD icon, one empty socket (bipod), one with parts in reach (rail), the Under-the-barrel socket open with its candidates, a finish swatch row, and stat deltas with meters. Below, the same gun in today's builder (its 64 × 24 art at 8×, text-only boxes), drawn by the game's own code on this page.</p>
+  <div class="thumbs" id="thumbs"></div>
+</header>
+<main>
+  <h2>Proposed</h2>
+  <div class="modalbg hd" id="hd"></div>
+  <h2>Today</h2>
+  <div class="modalbg cur" id="cur"></div>
+</main>
+<script type="module" src="./gunbuilder-preview.js"></script>
+</body>
+</html>
