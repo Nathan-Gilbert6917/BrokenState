@@ -1,694 +1,829 @@
 // HD people (design preview only: src/ is unchanged): survivors and the hostile human kits (raiders, soldiers,
-// zealots) painted on the 44 × 52 grid, twice ui/sprites.js's 22 × 26 (the same on-screen size, four times the
-// pixels). Same silhouette language as the game's sprites, facing right, with the extra pixels spent on the face, the
-// hair, the clothes' folds and seams, hands, boots and the weapon's detail.
+// zealots) on the 44 × 52 grid, in the item icons' style (items.js, STYLE.md), built from the figure kit (kit.js).
+// Second design (2026-10-13), after the user turned down the block figures: "do it in a better style and make sure
+// arms originate from the sides of the torso and do not look overly stretched".
 //
-// Grid conventions (every HD character set keeps them so they match on one map):
-//   - head: cols 14..27, rows 5..20 (14 wide, 16 tall), neck rows 21..22, torso rows 23..34 (belt rows 33..34),
-//     legs rows 35..45, boots rows 44..49 (sole rows 48..49); row 50-51 and cols 0 / 43 stay free for the outline;
-//   - the torso is cols TL..TR = 2L..2R+1 of the game's BUILD (slim 14..27, average 12..29, heavy 10..31);
-//     the back (left) arm is cols TL-4..TL-1, the front (right) arm cols TR+1..TR+4; the right hand hangs at
-//     rows 34..36 and a melee weapon's grip crosses it at cols TR+2..TR+3; a gun sits at rows 24..26 with its
-//     pistol grip in the right hand (rows 27..30) and the muzzle at most at col 42;
-//   - light from the upper left: every material has 4 tones (tones(): hi / base / lo / deep; highlights warmed,
-//     shadows cooled), the left edge of a form is hi, the right edge lo, and a deep tone (never black) separates
-//     overlapping forms; the black rim is added by hdcore outline().
-import { painter, outline, shade, mix, desat, warm, scaled } from "./hdcore.js";
+//   paintSurvivorHD(app, weaponKey, armorKey, pose)        -> a 44 × 52 painter (p.muzzle = { mx, my } for guns)
+//   paintEnemyHD(kit, factionColor, weaponKey, armorKey, seed) -> the same for raiders / soldiers / zealots
+//   SHEET / SHEET_TITLE / SHEET_COLS                       -> node design/hd/render.js people 4
+//
+// The figure: facing right, about 4 heads tall (head rows 3..14, feet on row 49), a round head on a neck, a rounded
+// torso, capsule limbs. Every form is a 4-tone ramp volume lit from the upper left; where one form lies over another
+// the one behind gets a seam in its own dark tone (put()). The near arm and leg are on the right, in front; the far
+// ones on the left, behind and a shade darker. Arms start at the shoulder joints (the torso's top outer corners) and
+// bend at an elbow; no segment is longer than 8 px (kit.js reach / elbowToward / gunHold).
+import { painter, scaled, desat } from "./hdcore.js";
+import { PAL, ramp, skinRamp, blob, ellipseV, limb, bar, elbowToward, gunHold, headVolume, face, mix, shade } from "./kit.js";
 import { Rng } from "../../src/sim/rng.js";
 import { randomAppearance, LOOK_OPTIONS } from "../../src/sim/appearance.js";
 import { paintSurvivor, paintEnemyHuman, enemyLookOf } from "../../src/ui/sprites.js";
 import { BLADE_LOOK } from "../../src/sim/data-blades.js";
 
-// ---------- tones ----------
-// A dark base (black hair, black leather) gets a stronger lift so its highlight still reads.
-const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) & 255) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11; };
-export const tones = (base) => {
-  const dark = lum(base) < 70, lift = dark ? 0.32 : 0.2;
-  return { base, hi: warm(shade(base, lift), dark ? 0.06 : 0.1), lo: warm(shade(base, -0.22), -0.08), deep: warm(shade(base, -0.45), -0.1) };
+// ---------- ramps and seams ----------
+// Every ramp used is registered so a seam can find "the dark tone of the form behind" from a pixel's colour.
+const DARK_OF = new Map();
+const reg = (m) => { for (const c of m) if (!DARK_OF.has(c)) DARK_OF.set(c, m[0]); return m; };
+Object.values(PAL).forEach(reg);
+const lum = (hex) => { const n = parseInt(hex.slice(1, 7), 16); return ((n >> 16) & 255) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11; };
+const RAMPS = new Map();
+const toHsl = (hex) => { const n = parseInt(hex.slice(1, 7), 16), r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return [0, 0, l]; const s = d / (1 - Math.abs(2 * l - 1)); const h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return [h * 60, s, l]; };
+const fromHsl = (h, s, l) => { s = Math.max(0, Math.min(1, s)); l = Math.max(0, Math.min(1, l)); const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return "#" + [r, g, b].map((v) => Math.round((v + m) * 255).toString(16).padStart(2, "0")).join(""); };
+// A 4-tone ramp from a game colour that keeps its hue: lights step up in lightness (warmer, a touch more saturated),
+// darks step down (cooler). Dark colours (black hair, leather) get bigger steps so their light still reads.
+export function R(hex) {
+  if (RAMPS.has(hex)) return RAMPS.get(hex);
+  const [h, s, l] = toHsl(hex), grey = s < 0.08;
+  const toward = (target, k) => { let d = ((target - h + 540) % 360) - 180; return (h + Math.sign(d) * Math.min(Math.abs(d), k) + 360) % 360; };
+  const warmH = (dh) => (grey ? h : dh > 0 ? toward(35, dh) : toward(225, -dh));
+  const up = l < 0.18 ? [0.13, 0.25] : l < 0.35 ? [0.11, 0.22] : l > 0.72 ? [0.07, 0.14] : [0.1, 0.2];
+  const m = reg([fromHsl(warmH(-8), s * 0.95, l * 0.62), hex, fromHsl(warmH(6), s * (grey ? 1 : 1.08), l + up[0]), fromHsl(warmH(10), s * (grey ? 1 : 1.05), l + up[1])]);
+  RAMPS.set(hex, m); return m;
+}
+const SK = new Map();
+const S = (hex) => { if (!SK.has(hex)) SK.set(hex, reg(skinRamp(hex))); return SK.get(hex); };
+// The far side: a shade darker, still four tones.
+const BACKS = new Map();
+const back = (m) => { const k = m.join(); if (!BACKS.has(k)) BACKS.set(k, reg(m.map((c) => shade(c, -0.2)))); return BACKS.get(k); };
+const lay = () => painter(44, 52);
+// Lay `top` over `p`; the pixels of p it touches (and does not cover) get p's own dark tone: the inner line where one
+// form overlaps another. seam = false: no line (a hand over its own arm, a buckle).
+function put(p, top, seam = true) {
+  if (seam) {
+    const cov = (x, y) => !!top.get(x, y), hits = [];
+    for (const [x, y, c] of p.pixels()) if (!cov(x, y) && (cov(x + 1, y) || cov(x - 1, y) || cov(x, y + 1) || cov(x, y - 1))) hits.push([x, y, c]);
+    for (const [x, y, c] of hits) p.set(x, y, DARK_OF.get(c) || shade(c, -0.35));
+  }
+  p.blit(top, 0, 0);
+}
+// Recolour a layer's pixels through a map of colours (a ramp onto another ramp: camo, stubble, a check).
+const remap = (q, from, to, where = () => true) => { for (const [x, y, c] of q.pixels()) { const i = from.indexOf(c); if (i >= 0 && where(x, y)) q.set(x, y, to[i]); } };
+// Pixels of a capsule a→b (radius r) between t0 and t1 of its length: a sleeve's hem, a cuff, an armband.
+function band(p, a, b, r, t0, t1, col, { only = null } = {}) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1;
+  for (let y = Math.floor(Math.min(a[1], b[1]) - r - 1); y <= Math.ceil(Math.max(a[1], b[1]) + r + 1); y++) for (let x = Math.floor(Math.min(a[0], b[0]) - r - 1); x <= Math.ceil(Math.max(a[0], b[0]) + r + 1); x++) {
+    const t = ((x - a[0]) * dx + (y - a[1]) * dy) / L2; if (t < t0 || t > t1) continue;
+    const qx = a[0] + dx * t, qy = a[1] + dy * t; if ((x - qx) ** 2 + (y - qy) ** 2 > (r + 0.45) ** 2) continue;
+    if (only && !only(x, y)) continue;
+    p.set(x, y, typeof col === "function" ? col(x, y, t) : col);
+  }
+}
+const L = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+const hash = (s) => { let h = 2166136261; for (const ch of String(s)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0; };
+
+// ---------- the frame ----------
+const BODY = {
+  slim:    { sw: 8,    waist: 5.6, hip: 6.4, r: 2.0, leg: 2.3, belly: 0 },
+  average: { sw: 9,    waist: 6.6, hip: 7.0, r: 2.3, leg: 2.6, belly: 0 },
+  heavy:   { sw: 10.2, waist: 8.9, hip: 8.4, r: 2.8, leg: 3.0, belly: 1.6 },
 };
-const WHITE = "#f1ede4", WHITE_LO = "#c9c3b8", PUPIL = "#17181c", IRIS = "#2c3a46";
-const BOOT = tones("#3a302a"), SOLE = "#1c1917", SOLE_HI = "#4a4039";
-const BELT = tones("#2c2420"), BUCKLE = "#c7a44c", BUCKLE_HI = "#efd98a";
-const METAL = tones("#9aa3ab"), BRIGHT = "#dfe5e9", GUNMETAL = tones("#33373d"), WOOD = tones("#7a5230"), DARKWOOD = tones("#4b3220");
-
-const BUILD = { slim: [7, 13], average: [6, 14], heavy: [5, 15] };
-// The body's columns from the game's build: torso TL..TR, its middle, the two arms.
-function frame(build) {
-  const [L, R] = BUILD[build] || BUILD.average;
-  const TL = 2 * L, TR = 2 * R + 1, mid = (TL + TR - 1) >> 1;
-  return { TL, TR, mid, AL: [TL - 4, TL - 1], AR: [TR + 1, TR + 4] };
+// Joints (named as kit.skeleton's so kit.gunHold works on it). C: the torso's middle; head at (22.5, 8.5).
+export function frame(build = "average") {
+  const b = BODY[build] || BODY.average, C = 21.5, cx = 21;
+  const hx = b.hip * 0.45;
+  return {
+    build: b, cx, C, name: build,
+    head: [22.5, 8.5], headR: [5.4, 5.9],
+    top: 16, belt: 29, bot: 30, front: Math.round(C + 2),
+    shoulderN: [C + b.sw - 1.6, 18.6], shoulderF: [C - b.sw + 1.6, 18.6],
+    elbowN: [C + b.sw - 0.9, 25.6], handN: [C + b.sw - 0.4, 32.2],
+    elbowF: [C - b.sw + 0.9, 25.6], handF: [C - b.sw + 0.4, 32.2],
+    hipN: [C + hx, 32], kneeN: [C + hx + 0.3, 39], ankleN: [C + hx + 0.5, 44.5],
+    hipF: [C - hx, 32], kneeF: [C - hx - 0.4, 39], ankleF: [C - hx - 0.8, 44.5],
+  };
 }
-
-// ---------- head ----------
-const HEAD_ROWS = { 5: [17, 24], 6: [15, 26], 7: [14, 27], 8: [14, 27], 9: [14, 27], 10: [14, 27], 11: [14, 27], 12: [14, 27], 13: [14, 27], 14: [14, 27], 15: [14, 27], 16: [14, 27], 17: [15, 26], 18: [16, 25], 19: [17, 24], 20: [18, 23] };
-function drawHead(p, skin, { ears = true } = {}) {
-  const S = tones(skin);
-  for (const [y, [x0, x1]] of Object.entries(HEAD_ROWS)) p.hl(x0, x1, +y, S.base);
-  // the lit side and the shadowed side
-  p.vl(27, 7, 16, S.lo); p.vl(26, 8, 18, S.lo); p.set(26, 7, S.lo); p.set(27, 16, S.deep);
-  p.hl(17, 24, 19, S.lo); p.hl(18, 23, 20, S.lo); p.hl(19, 22, 20, S.deep); p.set(25, 18, S.lo); p.set(24, 18, S.lo); p.set(16, 18, S.lo); p.set(27, 16, S.deep); p.set(26, 17, S.deep);
-  p.hl(15, 18, 7, S.hi); p.hl(15, 17, 8, S.hi); p.vl(15, 9, 11, S.hi); p.set(14, 10, S.hi);
-  // ears (the far one lit, the near one in shadow), the neck in the chin's shadow
-  if (ears) {
-    p.rect(12, 11, 13, 14, S.base); p.set(13, 12, S.lo); p.set(13, 13, S.lo); p.set(12, 14, S.lo);
-    p.rect(28, 11, 29, 14, S.lo); p.set(28, 12, S.deep); p.set(28, 13, S.deep); p.set(29, 14, S.deep);
-  }
-  p.rect(18, 21, 23, 22, S.lo); p.hl(18, 23, 21, S.deep); p.set(18, 22, S.base);
-  return S;
-}
-function drawFace(p, skin, hair, { brows = true } = {}) {
-  const S = tones(skin);
-  // brows
-  if (brows) { const b = mix(S.lo, hair, 0.5); p.hl(16, 18, 11, b); p.hl(22, 24, 11, b); p.set(19, 11, mix(b, S.base, 0.5)); p.set(25, 11, mix(b, S.base, 0.5)); }
-  // eyes (looking right): a white, two pupil pixels, a lid line under
-  for (const x of [16, 22]) {
-    p.set(x, 12, WHITE); p.set(x, 13, WHITE_LO);
-    p.rect(x + 1, 12, x + 2, 13, PUPIL); p.set(x + 1, 12, IRIS);
-    p.hl(x, x + 2, 14, S.lo);
-  }
-  // nose: bridge lit, the near side and the underside in shadow
-  p.vl(20, 12, 14, S.hi); p.vl(21, 13, 15, S.lo); p.hl(20, 21, 16, S.lo); p.set(22, 16, S.deep); p.set(20, 16, S.base);
-  // mouth
-  const lip = mix(S.deep, "#8a3c38", 0.3);
-  p.hl(18, 23, 18, lip); p.set(24, 18, S.lo); p.hl(19, 22, 19, mix(S.lo, lip, 0.3));
-  // a cheek line on the near side
-  p.vl(25, 15, 17, S.lo);
-}
-function drawFacial(p, facial, hair, skin) {
-  const H = tones(hair), S = tones(skin);
-  if (facial === "beard") {
-    p.rect(15, 16, 26, 18, H.base); p.rect(16, 19, 25, 20, H.base); p.rect(17, 21, 24, 22, H.lo); p.hl(18, 23, 23, H.deep);
-    p.vl(14, 14, 16, H.lo); p.vl(27, 14, 16, H.deep); p.hl(15, 17, 15, H.base); p.hl(24, 26, 15, H.lo);
-    p.rect(19, 17, 22, 17, H.deep); // the mouth's gap
-    p.hl(15, 18, 16, H.hi); p.set(16, 17, H.hi); p.vl(26, 16, 18, H.deep); p.hl(23, 25, 20, H.deep);
-  } else if (facial === "stache") {
-    p.hl(18, 24, 17, H.base); p.rect(19, 16, 23, 16, H.base); p.set(18, 17, H.hi); p.set(24, 17, H.lo); p.hl(19, 23, 18, H.lo);
-  } else if (facial === "stubble") {
-    const st = mix(skin, hair, 0.32), st2 = mix(S.lo, hair, 0.32);
-    p.rect(15, 16, 26, 18, st); p.rect(16, 19, 25, 19, st2); p.hl(17, 24, 20, st2); p.vl(26, 16, 18, st2); p.vl(14, 14, 16, st); p.vl(27, 14, 15, st2);
-    const lip = mix(S.deep, "#8a3c38", 0.3); p.hl(18, 23, 18, lip); p.set(24, 18, S.lo); // mouth again, over the stubble
-  }
-}
-
-// ---------- hair ----------
-const SKULL = [[3, 17, 24], [4, 15, 26], [5, 14, 27], [6, 13, 27], [7, 13, 27], [8, 13, 27]];
-function drawHair(p, style, hair, skin, { behind = false } = {}) {
-  const H = tones(hair);
-  const cap = () => { for (const [y, x0, x1] of SKULL) p.hl(x0, x1, y, H.base); p.hl(13, 14, 9, H.base); p.set(13, 10, H.lo); p.vl(27, 9, 10, H.lo); p.set(27, 11, H.deep); };
-  const shadeCap = () => { p.vl(27, 5, 8, H.deep); p.vl(26, 4, 8, H.lo); p.hl(23, 25, 3, H.lo); p.hl(24, 25, 4, H.lo); p.hl(17, 20, 3, H.hi); p.hl(15, 18, 4, H.hi); p.set(14, 5, H.hi); p.hl(16, 17, 5, H.hi); };
-  const fringe = () => { p.hl(21, 26, 9, H.base); p.hl(23, 26, 10, H.base); p.set(26, 10, H.lo); p.set(21, 9, H.lo); p.hl(14, 15, 9, H.base); p.set(14, 10, H.lo); };
-  if (behind) { // the long hair's fall and the ponytail, painted before the body
-    if (style === "long") {
-      p.rect(11, 8, 13, 24, H.lo); p.rect(28, 8, 30, 23, H.deep); p.vl(11, 9, 22, H.base); p.vl(30, 9, 20, H.deep); p.hl(12, 13, 25, H.deep); p.hl(28, 29, 24, H.deep);
-      p.rect(12, 20, 13, 22, H.base); p.set(11, 24, H.deep);
-    } else if (style === "ponytail") {
-      p.rect(9, 6, 12, 10, H.lo); p.rect(8, 9, 11, 17, H.base); p.rect(9, 18, 10, 20, H.lo); p.vl(8, 10, 16, H.hi); p.vl(11, 10, 17, H.lo); p.hl(9, 10, 21, H.deep);
-      p.hl(9, 11, 8, H.deep); // the tie
+// The torso's silhouette: rounded shoulders, a waist, the hips flaring into the belt; a belly forward on heavy builds.
+function torsoInside(F, { top = F.top, bot = F.bot } = {}) {
+  const { C, build: b } = F, turn = F.turn || 0;
+  return (x, y) => {
+    if (y < top || y > bot) return false;
+    let half;
+    if (y === top) half = b.sw - 3.2; else if (y === top + 1) half = b.sw - 1.2;
+    else {
+      const t = (y - top - 2) / (bot - top - 2), k = Math.min(1, Math.max(0, (t - 0.12) / 0.62)), s = k * k * (3 - 2 * k);
+      half = b.sw + (b.waist - b.sw) * s + (t > 0.78 ? (b.hip - b.waist) * (t - 0.78) / 0.22 : 0);
     }
-    return;
+    const belly = b.belly * Math.max(0, Math.sin((Math.PI * (y - 20)) / 11));
+    return x + 0.5 > C - half + turn * Math.max(0, Math.min(1, (bot - 1 - y) / 6)) && x - 0.5 < C + half + belly;
+  };
+}
+
+// ---------- body parts ----------
+// An arm into its own layer: skin capsules through the elbow, the sleeve over them, a cuff or a hem, the hand.
+// len: "long" (to the wrist), "short" (a t-shirt), "none" (a tank top), "bell" (a robe's wide sleeve).
+function armLayer(s, e, h, { skin, sleeve = null, len = "long", r = 2.3, hand = true, cuffM = null }) {
+  const q = lay(), rU = r, rL = r * 0.84;
+  limb(q, s, e, rU + 0.15, rU * 0.92, skin); limb(q, e, h, rL, rL * 0.82, skin);
+  if (sleeve && len !== "none") {
+    if (len === "short") {
+      const m = L(s, e, 0.66);
+      limb(q, s, m, rU + 0.65, rU + 0.6, sleeve, { capB: false });
+      band(q, s, m, rU + 0.6, 0.86, 1.01, sleeve[0]);
+    } else {
+      const w = L(e, h, len === "bell" ? 0.82 : 0.74);
+      limb(q, s, e, rU + 0.55, rU + 0.4, sleeve);
+      limb(q, e, w, rU + 0.4, len === "bell" ? rL + 1.4 : rL + 0.5, sleeve, { capB: false });
+      const c = cuffM || sleeve;
+      band(q, e, w, len === "bell" ? rL + 1.4 : rL + 0.5, 0.72, 0.8, c[0]);
+      band(q, e, w, len === "bell" ? rL + 1.4 : rL + 0.5, 0.8, 1.01, (x, y) => (q.get(x, y) === sleeve[0] ? c[0] : c[1]));
+    }
   }
+  if (hand) fist(q, h, skin, r);
+  return q;
+}
+function fist(p, h, skin, r = 2.3, { grip = false } = {}) {
+  const rx = Math.max(1.5, r * 0.78), ry = Math.max(1.4, r * 0.74);
+  ellipseV(p, h[0] + 0.2, h[1] + 0.3, rx, ry, skin, { specular: false });
+  if (grip) { p.set(Math.round(h[0] - rx * 0.4), Math.round(h[1] - ry * 0.6), skin[2]); p.set(Math.round(h[0] + rx * 0.5), Math.round(h[1] + 0.4), skin[0]); }
+}
+function legLayer(F, near, pants) {
+  const q = lay(), b = F.build, m = near ? pants : back(pants);
+  const hip = near ? F.hipN : F.hipF, knee = near ? F.kneeN : F.kneeF, ank = near ? F.ankleN : F.ankleF;
+  limb(q, hip, knee, b.leg + 0.4, b.leg + 0.05, m); limb(q, knee, ank, b.leg + 0.05, b.leg * 0.86, m);
+  // a crease behind the knee, the hem's shadow over the boot
+  const kx = Math.round(knee[0]), ky = Math.round(knee[1]);
+  q.set(kx - 1, ky - 1, m[0]); q.set(kx, ky, m[0]);
+  return q;
+}
+function bootLayer(ank, m, sole) {
+  const q = lay(), a = Math.round(ank[0]);
+  const inside = (x, y) => (y >= 43 && y <= 48 && x >= a - 2 && x <= a + 2) || (y >= 46 && y <= 48 && x >= a - 2 && x <= a + (y === 46 ? 3 : 4));
+  blob(q, inside, m, { rim: 1 });
+  q.hl(a - 2, a + 4, 49, sole); q.set(a + 4, 49, sole); q.set(a + 3, 46, m[2]); q.set(a + 2, 46, m[2]);
+  q.hl(a - 2, a + 2, 43, m[2]); q.set(a + 2, 43, m[1]); // the shaft's top edge in light
+  return q;
+}
+function pelvisLayer(F, pants) {
+  const q = lay(), { C, build: b } = F;
+  const inside = (x, y) => y >= F.belt && y <= 35 && Math.abs(x + 0.5 - (C + 0.25)) <= b.hip + 0.6 - (y >= 34 ? 1 : 0) && !(y >= 33 && Math.abs(x + 0.5 - C) < 0.9 + (y - 33));
+  blob(q, inside, pants, { rim: 1 });
+  return q;
+}
+function beltLayer(F, torsoIn, { m = PAL.leather, buckle = PAL.brass } = {}) {
+  const q = lay(), y0 = F.belt, fx = F.front;
+  for (let x = 0; x < 44; x++) for (const y of [y0, y0 + 1]) if (torsoIn(x, y) || (y === y0 + 1 && torsoIn(x, y - 1))) q.set(x, y, y === y0 ? m[1] : m[0]);
+  for (let y = y0; y <= y0 + 1; y++) { let x = 0; while (x < 44 && !q.get(x, y)) x++; q.set(x, y, m[2]); }
+  q.set(fx, y0, buckle[3]); q.set(fx + 1, y0, buckle[2]); q.set(fx, y0 + 1, buckle[1]); q.set(fx + 1, y0 + 1, buckle[0]);
+  return q;
+}
+
+// ---------- the top (torso clothes) ----------
+// Returns the torso layer and the sleeve material and length for the arms.
+function topLayer(F, style, top, skin, { check = false } = {}) {
+  const q = lay(), C = F.C, fx = F.front, inside = torsoInside(F);
+  blob(q, inside, top, { rim: 2 });
+  const neckU = (x, y, rx = 2.6, ry = 2.2) => ((x - 22.3) / rx) ** 2 + ((y - F.top + 0.5) / ry) ** 2 <= 1;
+  const onTorso = (x, y) => inside(x, y);
+  const set = (x, y, c) => { if (onTorso(x, y)) q.set(x, y, c); };
+  const fold = (pts, c = top[0]) => { for (const [x, y] of pts) set(x, y, c); };
+  if (style === "tank") {
+    // bare shoulders: the skin above a scooped neckline, two straps
+    const sk = lay(); blob(sk, (x, y) => inside(x, y) && y <= 22, skin, { rim: 1 });
+    const scoop = (x) => 19 + Math.max(0, 2.6 - Math.abs(x + 0.5 - (fx - 0.5)) * 0.6);
+    const strap = (x) => Math.abs(x + 0.5 - (C - F.build.sw + 4.2)) <= 1.1 || Math.abs(x + 0.5 - (C + F.build.sw - 4.4)) <= 1.1;
+    for (const [x, y] of sk.pixels().map(([x, y]) => [x, y])) if (y < scoop(x) && !strap(x)) q.set(x, y, sk.get(x, y));
+    for (let x = 0; x < 44; x++) { const y = Math.ceil(scoop(x)); if (inside(x, y) && !strap(x) && q.get(x, y) !== null) set(x, y, top[2]); }
+    fold([[fx + 1, 25], [fx + 2, 26], [fx + 2, 27]]);
+    return { q, sleeve: null, len: "none" };
+  }
+  // the neck opening, the collar
+  for (let y = F.top; y <= F.top + 2; y++) for (let x = 18; x <= 27; x++) if (neckU(x, y)) q.set(x, y, skin[1]);
+  for (let y = F.top; y <= F.top + 3; y++) for (let x = 18; x <= 27; x++) if (!neckU(x, y) && neckU(x, y - 1) && inside(x, y)) q.set(x, y, x < 22 ? top[2] : top[0]);
+  if (style === "jacket") {
+    // open front over a shirt: the shirt's strip, lapels, the opening's edges, chest pockets, a fold
+    const shirt = R(mix(desat(top[1], 0.6), "#d8d2c4", 0.55));
+    for (let y = F.top + 1; y <= F.belt; y++) for (let x = fx - 1; x <= fx + 1; x++) set(x, y, x === fx + 1 ? shirt[0] : shirt[1]);
+    for (let y = F.top + 1; y <= F.belt; y++) { set(fx - 2, y, top[0]); set(fx + 2, y, top[2]); }
+    fold([[fx - 3, F.top + 1], [fx - 3, F.top + 2], [fx - 2, F.top + 3], [fx + 3, F.top + 1], [fx + 3, F.top + 2], [fx + 2, F.top + 3]], top[2]); // the lapels catch the light
+    fold([[fx - 4, F.top + 3], [fx - 3, F.top + 4], [fx + 4, F.top + 3], [fx + 3, F.top + 4]], top[0]);
+    for (const [x0, x1] of [[C - F.build.sw + 3, fx - 4], [fx + 4, C + F.build.sw - 3]]) { for (let x = Math.ceil(x0); x <= x1; x++) { set(x, 22, top[0]); set(x, 23, top[2]); } }
+    fold([[C - 3, 26], [C - 2, 27]]);
+    // a collar turned up round the back of the neck
+    for (const [x, y] of [[18, F.top - 1], [19, F.top - 1], [18, F.top], [19, F.top], [20, F.top]]) q.set(x, y, y < F.top ? top[2] : top[1]);
+    q.set(17, F.top, top[2]);
+  } else if (style === "hoodie") {
+    // drawstrings, the kangaroo pocket, a ribbed hem (the hood itself: hoodLayer, behind the head)
+    const cord = PAL.white;
+    for (let y = F.top + 2; y <= F.top + 6; y++) { set(fx - 1, y, cord[2]); if (y <= F.top + 5) set(fx + 1, y, cord[1]); }
+    set(fx - 1, F.top + 7, cord[0]); set(fx + 1, F.top + 6, cord[0]);
+    const px0 = Math.round(C - 3), px1 = Math.round(C + 5);
+    for (let x = px0; x <= px1; x++) { set(x, 23, top[0]); set(x, 24, top[2]); }
+    for (let y = 24; y <= 27; y++) { set(px0 - (y - 23 > 2 ? 1 : 0), y, top[0]); set(px1 + (y - 23 > 2 ? 1 : 0), y, top[0]); }
+    for (let x = 0; x < 44; x++) { if (inside(x, F.bot) && q.get(x, F.bot)) q.set(x, F.bot, top[0]); if (inside(x, F.bot - 1) && x % 2 === 0) set(x, F.bot - 1, top[0]); }
+  } else if (style === "flannel") {
+    // a shirt collar's points, the button placket
+    for (const [x, y, c] of [[19, F.top, top[2]], [20, F.top + 1, top[2]], [21, F.top + 2, top[1]], [25, F.top, top[1]], [24, F.top + 1, top[1]], [23, F.top + 2, top[0]]]) q.set(x, y, c);
+    for (let y = F.top + 3; y <= F.belt; y++) set(fx, y, top[0]);
+    for (let y = F.top + 4; y <= F.belt; y += 3) set(fx + 1, y, PAL.paper[2]);
+    fold([[fx + 3, 24], [fx + 4, 25]]);
+  } else { // t-shirt
+    fold([[fx + 2, 21], [fx + 2, 22], [fx + 3, 23]]);
+    fold([[C - 4, 25], [C - 3, 26]]);
+  }
+  if (check) flannelCheck(q, top);
+  return { q, sleeve: top, len: style === "tshirt" ? "short" : "long" };
+}
+// A flannel's check: lines every 4 px both ways in the cloth's dark tone (a half step on the lit rim).
+function flannelCheck(q, m) {
+  const line = mix(m[1], m[0], 0.75), lineLit = mix(m[2], m[0], 0.45);
+  for (const [x, y, c] of q.pixels()) {
+    const vx = (x + 1) % 4 === 0, vy = (y + 2) % 4 === 0;
+    if (!(vx || vy)) continue;
+    if (c === m[1]) q.set(x, y, vx && vy ? m[0] : line); else if (c === m[2]) q.set(x, y, lineLit);
+  }
+}
+// The hood of a hoodie bunched behind the neck (drawn before the head).
+function hoodLayer(F, top) {
+  const q = lay();
+  ellipseV(q, 19.8, F.top - 0.6, 4.6, 2.7, top, { specular: false });
+  ellipseV(q, 18.6, F.top - 2.2, 2.8, 2.6, top, { specular: false });
+  for (let x = 19; x <= 22; x++) q.set(x, F.top - 1, top[0]); // the opening's shadow
+  return q;
+}
+
+// ---------- head, face, hair ----------
+const HC = [22.5, 8.5], HR = [5.4, 5.9];
+function hairRamp(hex) { return R(hex); }
+// The hairline: how far down hair reaches at column x (relative to the head's centre u = x - HC[0]): the forehead on
+// the face side, a sideburn in front of the ear, the nape behind it.
+function hairline(u, { fringe = true } = {}) {
+  if (u >= 1.5) return HC[1] - 3.2 + (fringe && u > 2.5 && u < 4.5 ? 0.9 : 0);
+  if (u >= -1.6) return HC[1] - 2.8;
+  if (u >= -3) return HC[1] + 1.2; // the sideburn
+  return HC[1] + 3.4;               // behind the ear, to the nape
+}
+const inHead = (x, y, grow = 0, c = HC, r = HR) => ((x - c[0]) / (r[0] + 0.5 + grow)) ** 2 + ((y - c[1]) / (r[1] + 0.5 + grow)) ** 2 <= 1;
+// The hair behind the head and body: long hair's fall, a ponytail (drawn before the head, after the torso).
+function hairBackLayer(style, hair) {
+  const q = lay(), H = hairRamp(hair);
+  if (style === "long") {
+    const inside = (x, y) => y >= HC[1] - 2 && y <= 21 - (x < 17 ? 1 : 0) && x >= 15 + (y > 18 ? 1 : 0) && x <= 21 - Math.max(0, y - 17) * 0.5;
+    blob(q, inside, H, { rim: 2 });
+    for (const [x, y] of [[18, 15], [18, 16], [19, 17], [17, 17], [17, 18]]) q.set(x, y, H[0]); // strands
+  } else if (style === "ponytail") {
+    limb(q, [17.4, HC[1] - 1.2], [15.2, HC[1] + 4.5], 2.1, 1.6, H); limb(q, [15.2, HC[1] + 4.5], [15.8, HC[1] + 9.5], 1.6, 0.9, H);
+    q.hl(16, 18, Math.round(HC[1] - 0.2), H[0]); // the tie
+  }
+  return q;
+}
+// The hair on the head (after the face): a shaded volume and one highlight run.
+function hairLayer(style, hair, skin) {
+  const q = lay(), H = hairRamp(hair), [hx, hy] = HC;
+  const hi = (x0, x1, y) => { for (let x = x0; x <= x1; x++) if (q.get(x, y)) q.set(x, y, H[3]); };
   switch (style) {
-    case "bald": { const S = tones(skin); p.hl(16, 19, 6, S.hi); p.hl(15, 18, 7, S.hi); p.set(15, 6, S.hi); p.hl(17, 24, 5, S.base); break; }
-    case "buzz": { // a dark shadow of hair over the skull
-      const b = mix(skin, hair, 0.72), b2 = mix(skin, hair, 0.55);
-      for (const [y, x0, x1] of SKULL) if (y <= 7) p.hl(x0, x1, y, b);
-      p.hl(14, 15, 8, b); p.hl(13, 14, 9, b2); p.vl(13, 10, 11, b2); p.hl(26, 27, 8, b); p.vl(27, 9, 10, b2); p.hl(17, 20, 3, b2); p.hl(16, 17, 4, b2); p.vl(27, 5, 7, mix(b, "#000", 0.2));
-      break;
+    case "bald": return q;
+    case "buzz": {
+      const B = R(mix(skin[1], hair, 0.68));
+      blob(q, (x, y) => inHead(x, y, 0.15) && y <= hairline(x - hx, { fringe: false }) - 0.4 && !(x - hx < -3 && x - hx > -4.6 && y > hy - 0.5), B, { rim: 1 });
+      return q;
     }
-    case "short": cap(); shadeCap(); fringe(); p.set(12, 9, H.lo); p.set(28, 8, H.deep); break;
-    case "long": cap(); shadeCap(); fringe(); p.vl(13, 9, 11, H.base); p.rect(12, 9, 12, 13, H.lo); p.rect(28, 8, 28, 13, H.deep); p.set(28, 7, H.lo); break;
-    case "ponytail": cap(); shadeCap(); p.hl(14, 15, 9, H.base); p.hl(22, 26, 9, H.base); p.set(26, 9, H.lo); p.hl(13, 14, 8, H.lo); break;
+    case "short": case "long": case "ponytail": {
+      const longish = style !== "short";
+      blob(q, (x, y) => inHead(x, y, 0.8, [hx - 0.4, hy - 0.4]) && y <= hairline(x - hx, { fringe: style === "short" }) + (longish && x - hx < -3 ? 1 : 0) && !(x - hx >= -4.8 && x - hx <= -2.8 && y >= hy + 0.2 && y <= hy + 2.4 && !longish), H, { rim: 2 });
+      if (longish) blob(q, (x, y) => x - hx <= -2.8 && x - hx >= -6.6 && y >= hy - 1 && y <= hy + 5.5 && inHead(x, y, 1.4, [hx - 0.6, hy + 0.4]), H, { rim: 1 }); // the hair over the ear
+      q.set(Math.round(hx - 2), Math.round(hy - 4.8), H[3]); q.set(Math.round(hx - 1), Math.round(hy - 4.8), H[2]); q.set(Math.round(hx - 3), Math.round(hy - 4), H[2]);
+      q.set(Math.round(hx + 3), Math.round(hy - 3), H[0]); // a parting tuft's shadow
+      return q;
+    }
     case "mohawk": {
-      const b = mix(skin, hair, 0.5), b2 = mix(skin, hair, 0.62);
-      for (const [y, x0, x1] of SKULL) if (y >= 5) p.hl(x0, x1, y, b); // shaved sides
-      p.hl(13, 14, 9, b); p.vl(27, 9, 10, b2); p.vl(26, 5, 8, b2); p.set(27, 5, b2); p.vl(27, 6, 8, mix(b2, "#000", 0.15));
-      // the crest: a brush six pixels wide standing straight up from the scalp, its tips splayed, lit on its left face
-      p.rect(18, 2, 23, 8, H.base); p.hl(17, 24, 8, H.base); p.hl(17, 24, 7, H.base);
-      p.set(18, 1, H.base); p.set(19, 1, H.base); p.set(22, 1, H.base); p.set(23, 1, H.base); p.set(18, 1, H.hi); p.set(20, 1, H.lo); p.set(23, 1, H.lo); p.set(21, 2, H.lo);
-      p.vl(18, 2, 8, H.hi); p.vl(19, 3, 7, H.hi); p.set(17, 7, H.hi); p.vl(23, 2, 8, H.deep); p.vl(22, 3, 7, H.lo); p.set(24, 7, H.deep); p.set(24, 8, H.deep); p.set(17, 8, H.base);
-      p.hl(16, 25, 9, H.lo); p.set(15, 9, b); p.set(26, 9, mix(b2, "#000", 0.15)); p.hl(17, 24, 9, H.deep);
-      break;
+      const B = R(mix(skin[1], hair, 0.42));
+      blob(q, (x, y) => inHead(x, y, 0.1) && y <= hairline(x - hx, { fringe: false }) - 0.4 && !(x - hx < -3 && x - hx > -4.6 && y > hy - 0.5), B, { rim: 1 });
+      // the crest: a fin hugging the skull from the forehead to the nape, spiky along its top
+      const crest = (x, y) => { const u = x - hx; if (u < -5.6 || u > 3.4 || y > hy - 0.5 + (u < -3 ? 3 : 0)) return false; const g = 1.8 + (x % 2 ? 1.2 : 0) - (u > 2 ? (u - 2) * 0.8 : 0); return inHead(x, y, g, [hx - 0.5, hy]) && !inHead(x, y, -0.6, [hx - 0.5, hy]) && (u < -3.4 || y < hy - 2.5); };
+      blob(q, crest, H, { rim: 1 });
+      q.set(Math.round(hx - 3), Math.round(hy - HR[1] - 1.4), H[3]); q.set(Math.round(hx - 2), Math.round(hy - HR[1] - 1.4), H[2]);
+      return q;
     }
     case "curly": {
-      p.rect(13, 3, 28, 10, H.base); p.rect(14, 2, 27, 2, H.base); p.rect(16, 1, 25, 1, H.base); p.rect(12, 5, 12, 10, H.base); p.rect(29, 5, 29, 10, H.lo);
-      p.rect(11, 7, 11, 9, H.base); p.rect(30, 7, 30, 9, H.lo); p.hl(12, 13, 11, H.base); p.hl(28, 29, 11, H.deep); p.set(12, 12, H.lo); p.set(29, 12, H.deep);
-      p.hl(14, 17, 11, H.base); p.hl(23, 27, 11, H.lo); p.hl(14, 15, 12, H.lo); p.set(27, 12, H.deep); p.hl(13, 14, 4, H.hi);
-      // bumps of light along the top left, the deep side on the right
-      for (const [x, y] of [[16, 2], [17, 1], [19, 2], [20, 1], [14, 4], [15, 3], [13, 6], [12, 8], [18, 4], [22, 2], [15, 6]]) p.set(x, y, H.hi);
-      p.rect(26, 3, 28, 10, H.lo); p.vl(28, 4, 10, H.deep); p.vl(29, 6, 9, H.deep); p.hl(24, 26, 1, H.lo); p.hl(25, 27, 2, H.lo); p.set(29, 11, H.deep);
-      for (const [x, y] of [[23, 5], [25, 8], [21, 9], [17, 9]]) p.set(x, y, H.lo);
-      break;
+      const c = [hx - 0.7, hy - 1.3];
+      const inside = (x, y) => { const dx = x - c[0], dy = y - c[1], a = Math.atan2(dy, dx), rr = 1 + 0.07 * Math.cos(a * 7); return (dx / (HR[0] + 1.9)) ** 2 + (dy / (HR[1] + 1.1)) ** 2 <= rr * rr && y <= hairline(x - hx, { fringe: false }) + (x - hx < -2.8 ? 1.5 : 0.4) && !(x - hx >= -4.5 && x - hx <= -2.8 && y >= hy + 0.2 && y <= hy + 2.4); };
+      blob(q, inside, H, { rim: 2 });
+      for (const [x, y] of [[18, 3], [19, 4], [22, 2], [23, 3], [16, 6], [17, 7], [25, 4], [26, 5], [20, 6], [21, 6]]) if (q.get(x, y) && q.get(x, y) !== H[2]) q.set(x, y, H[0]); // curls' shadows
+      for (const [x, y] of [[17, 2], [18, 2], [21, 1], [15, 5]]) if (q.get(x, y)) q.set(x, y, H[3]);
+      return q;
     }
-    default: break;
+    default: return q;
+  }
+}
+function facialLayer(p, kind, hair, skin, f) {
+  const H = hairRamp(hair), [hx, hy] = HC;
+  if (kind === "stubble") {
+    const st = skin.map((c) => mix(c, hair, 0.32));
+    reg(st);
+    for (let y = f.ey + 2; y <= f.chinY + 1; y++) for (let x = Math.round(hx - 3); x <= 30; x++) { const c = p.get(x, y), i = skin.indexOf(c); if (i >= 0 && !(y === f.mouth[2] && x >= f.mouth[0] && x <= f.mouth[1])) p.set(x, y, st[i]); }
+    p.hl(f.mouth[0], f.mouth[1], f.mouth[2], skin[0]);
+  } else if (kind === "beard") {
+    const q = lay(), { edgeAt } = f;
+    blob(q, (x, y) => { const u = x - hx; if (y < f.ey + 1 || u < -3.6) return false; if (y <= f.chinY) return x <= edgeAt(y) && (y >= f.ey + 2 || u < -2.2); return y <= f.chinY + 2 && u > -2.5 + (y - f.chinY) && x <= edgeAt(f.chinY) - (y - f.chinY); }, H, { rim: 1 });
+    q.hl(f.mouth[0], f.mouth[1], f.mouth[2], mix(skin[0], "#5a2020", 0.35)); q.set(f.mouth[0] + 1, f.mouth[2] + 1, H[0]);
+    q.set(f.nose[0] - 1, f.nose[1] + 1, null);
+    put(p, q, false);
+  } else if (kind === "stache") {
+    const y = f.mouth[2] - 1, x1 = f.edgeAt(y);
+    p.hl(x1 - 4, x1, y, H[1]); p.set(x1 - 4, y, H[2]); p.set(x1 - 3, y, H[2]); p.set(x1 - 4, y + 1, H[0]); p.set(x1 - 3, y + 1, H[0]); p.set(x1 - 2, y + 1, H[1]); p.set(x1, y + 1, H[0]);
+  }
+}
+// The whole head: neck, head volume, face, facial hair, hair. opts.hood: no ears (a zealot's hood covers them).
+function drawHead(p, { skin, hair, hairStyle = "short", facial = "none", ears = true, bald = false }) {
+  const sk = S(skin);
+  const nq = lay(); limb(nq, [22.6, 11], [22.2, 17], 2.1, 2.3, sk); for (let x = 20; x <= 25; x++) if (nq.get(x, 15)) nq.set(x, 15, sk[0]); put(p, nq);
+  const hq = lay();
+  const inside = headVolume(hq, HC, HR, sk, { specular: hairStyle === "bald" || bald });
+  const hairDark = R(hair)[0], brow = lum(hair) < lum(skin) ? mix(hairDark, sk[0], 0.3) : sk[0];
+  const f = face(hq, HC, HR, sk, { brow, inside, ear: ears });
+  facialLayer(hq, facial, hair, sk, f);
+  put(p, hq);
+  put(p, hairLayer(hairStyle, hair, sk), false);
+  return f;
+}
+
+// ---------- head gear ----------
+function headgear(p, kind, col, f) {
+  const A = Array.isArray(col) ? col : R(col), q = lay(), [hx, hy] = HC;
+  if (kind === "cap") {
+    blob(q, (x, y) => inHead(x, y, 0.75, [hx - 0.3, hy - 0.6]) && y <= hy - 2.3, A, { rim: 2 });
+    for (let x = Math.round(hx + 2); x <= Math.round(hx + 8.4); x++) { q.set(x, Math.round(hy - 3), x > hx + 7.5 ? A[1] : A[2]); q.set(x, Math.round(hy - 2), A[0]); }
+    q.set(Math.round(hx - 1), Math.round(hy - HR[1] - 1.1), A[2]); // the button
+    q.set(Math.round(hx + 2), Math.round(hy - 4), A[0]); // the panel seam
+    put(p, q);
+  } else if (kind === "beanie") {
+    blob(q, (x, y) => inHead(x, y, 0.85, [hx - 0.4, hy - 0.4]) && y <= hy - 1.6, A, { rim: 2 });
+    const y0 = Math.round(hy - 3), y1 = Math.round(hy - 2);
+    for (const [x, y, c] of q.pixels()) if (y >= y0 && y <= y1) q.set(x, y, y === y0 ? A[2] : (x % 2 ? A[1] : A[0]));
+    for (const [x, y] of q.pixels()) if (y < y0 - 1 && x % 3 === 0 && q.get(x, y) === A[1]) q.set(x, y, A[0]);
+    put(p, q);
+  } else if (kind === "headband") {
+    for (let x = 14; x <= 30; x++) for (const dy of [0, 1]) { const y = Math.round(hy - 3.4 + (x < hx - 3 ? 1 : 0)) + dy; if (inHead(x, y, 0.75, [hx - 0.4, hy - 0.4])) q.set(x, y, dy ? A[0] : A[2]); }
+    limb(q, [16.6, hy - 1.5], [14.6, hy + 2.5], 1, 0.7, A); limb(q, [16.6, hy - 1.5], [15.8, hy + 3.8], 0.8, 0.6, A);
+    put(p, q);
+  } else if (kind === "bandana") { // over the nose and mouth, a point under the chin, knotted behind
+    blob(q, (x, y) => { const u = x - hx; if (u < -3.2) return false; if (y >= f.ey + 1.2 && y <= f.chinY + 0.5) return x <= f.edgeAt(y) + (y === f.nose[1] || y === f.nose[1] - 1 ? 1 : 0); return y > f.chinY && y <= f.chinY + 4 && Math.abs(x - (hx + 1.6)) <= 4.6 - (y - f.chinY) * 1.1; }, A, { rim: 1 });
+    q.set(Math.round(hx), f.chinY - 1, A[0]); q.set(Math.round(hx + 1), f.chinY, A[0]); q.set(Math.round(hx + 3), f.ey + 3, A[0]); // folds
+    limb(q, [17.2, f.ey + 1.4], [15.4, f.ey + 4.4], 1.1, 0.8, A);
+    put(p, q);
+  } else if (kind === "glasses") {
+    const fr = PAL.black[1], rim = PAL.black[2], gl = PAL.glass, y = f.ey;
+    for (const ex of [f.exF, f.exN]) { p.hl(ex, ex + 1, y - 1, fr); p.set(ex - 1, y, fr); p.set(ex + 2, y, rim); p.set(ex + 1, y, gl[3]); p.hl(ex, ex + 1, y + 1, rim); }
+    p.hl(Math.round(hx - 3.4), f.exF - 2, y, fr); // the arm back to the ear
   }
 }
 
-// ---------- torso, arms, legs ----------
-function drawTorso(p, F, color, style, skin, { belt = true } = {}) {
-  const { TL, TR, mid } = F, C = tones(color), S = tones(skin);
-  const top = 23, bot = belt ? 32 : 34;
-  p.rect(TL, top, TR, bot, C.base);
-  // shoulders slope: round the corners
-  p.clear(TL, top); p.clear(TR, top);
-  p.vl(TL + 1, top, bot, C.hi); p.set(TL, top + 1, C.hi); p.vl(TL, top + 2, bot, C.base);
-  p.vl(TR, top + 1, bot, C.lo); p.vl(TR - 1, top + 1, bot, C.lo); p.set(TR, top + 1, C.deep);
-  p.hl(TL + 2, TR - 2, top, C.hi);
-  const shirt = mix(desat(color, 0.5), "#d8d2c4", 0.35);
-  switch (style) {
-    case "jacket": { // open front over a shirt, lapels, chest pockets, a zip
-      p.rect(mid, top + 1, mid + 1, bot, shirt); p.vl(mid, top + 1, bot, shade(shirt, 0.08)); p.set(mid + 1, top + 1, shade(shirt, -0.15));
-      p.vl(mid - 1, top + 1, bot, C.deep); p.vl(mid + 2, top + 1, bot, C.deep);
-      p.rect(mid - 3, top, mid - 2, top + 2, C.hi); p.rect(mid + 3, top, mid + 4, top + 2, C.lo); p.set(mid - 2, top + 3, C.hi); p.set(mid + 3, top + 3, C.lo); p.hl(mid - 1, mid, top, C.deep); p.hl(mid + 1, mid + 2, top, C.deep);
-      p.hl(TL + 2, mid - 3, top + 6, C.deep); p.hl(mid + 4, TR - 2, top + 6, C.deep); p.hl(TL + 2, mid - 3, top + 7, C.hi); p.hl(mid + 4, TR - 2, top + 7, C.base);
-      p.set(mid - 1, top + 5, warm(C.hi, 0.2)); // the zip pull catches the light
+// ---------- armour (the item icons' vests, made to fit) ----------
+function vestInside(F, torsoIn) {
+  const { C, build: b } = F;
+  return (x, y) => torsoIn(x, y) && y >= F.top + 1 && y <= F.belt + 1 && !(y <= F.top + 3 && Math.abs(x + 0.5 - 22.6) < 3.6 - (y - F.top) * 0.4) &&
+    !(y <= F.top + 4 && (x < C - b.sw + 2.6 || x > C + b.sw - 2.8)) && x > C - b.sw + 1 && x < C + b.sw - 0.6 + b.belly;
+}
+function armorLayer(F, key, torsoIn) {
+  if (!key) return null;
+  const q = lay(), C = F.C, b = F.build, inV = vestInside(F, torsoIn);
+  const x0 = Math.ceil(C - b.sw + 1.5), x1 = Math.floor(C + b.sw - 1.2 + b.belly), y0 = F.top + 1, y1 = F.belt + 1, fx = F.front;
+  const fill = (m) => blob(q, inV, m, { rim: 2 });
+  const boxr = (ax, ay, bx, by, m) => { for (let y = ay; y <= by; y++) for (let x = ax; x <= bx; x++) if (q.get(x, y)) q.set(x, y, y === ay || x === ax ? m[2] : y === by || x === bx ? m[0] : m[1]); };
+  switch (key) {
+    case "vest": { // police kevlar: navy, stitched panels, side straps, a white patch
+      fill(PAL.navy);
+      for (const y of [21, 25]) for (let x = x0 + 1; x <= x1 - 1; x++) if (q.get(x, y) === PAL.navy[1]) q.set(x, y, PAL.navy[2]);
+      boxr(fx - 2, 22, fx + 2, 23, PAL.white); q.hl(fx - 1, fx + 1, 23, PAL.navy[0]);
       break;
     }
-    case "hoodie": { // a hood bunched at the neck, drawstrings, a kangaroo pocket
-      p.rect(TL + 3, 20, TR - 3, 24, C.lo); p.hl(TL + 4, TR - 4, 20, C.base); p.hl(TL + 3, TR - 3, 25, C.deep); p.rect(TL + 4, 21, TL + 5, 24, C.hi); p.set(TR - 3, 24, C.deep);
-      p.rect(mid - 2, 21, mid + 3, 23, C.deep); p.hl(mid - 1, mid + 2, 24, C.deep); // the hood's opening: shadow under the chin
-      p.hl(mid - 3, mid + 4, 25, C.lo); p.hl(mid - 2, mid + 3, 26, C.lo);
-      p.vl(mid - 1, 26, 29, "#e8e2d4"); p.vl(mid + 2, 26, 30, "#e8e2d4"); p.set(mid - 1, 30, "#9c948a"); p.set(mid + 2, 31, "#9c948a");
-      p.rect(TL + 3, 29, TR - 3, bot, C.lo); p.hl(TL + 3, TR - 3, 29, C.deep); p.vl(TL + 3, 29, bot, C.deep); p.vl(TR - 3, 29, bot, C.deep); p.hl(TL + 4, TR - 4, 30, C.base);
-      p.vl(mid - 1, 26, 26, "#e8e2d4");
+    case "plate": { // a plate carrier: olive, the plate pocket, molle rows, a cummerbund
+      fill(PAL.olive);
+      boxr(x0 + 2, 20, x1 - 2, y1 - 2, PAL.olive);
+      for (const y of [22, 25]) for (let x = x0 + 3; x <= x1 - 3; x++) q.set(x, y, (x - x0) % 3 === 0 ? PAL.olive[3] : PAL.olive[0]);
+      for (let y = 22; y <= y1; y++) { if (q.get(x0, y)) q.set(x0, y, PAL.olive[0]); if (q.get(x1 - 1, y)) q.set(x1 - 1, y, PAL.olive[0]); }
       break;
     }
-    case "flannel": { // a plaid: lines every four pixels, the crossings deeper, a shirt collar
-      const ln = C.lo, cross = C.deep;
-      for (let y = top + 1; y <= bot; y++) for (let x = TL; x <= TR; x++) {
-        const vy = (y - top) % 4 === 0, vx = (x - TL - 2) % 4 === 0;
-        if (vy && vx) p.set(x, y, cross); else if (vy || vx) p.set(x, y, ln);
+    case "tacvest": { // black webbing with coyote mag pouches and a radio pouch
+      fill(PAL.black);
+      for (let k = 0; k < 3; k++) { const px = Math.round(C - 4.5 + k * 3.6); for (let y = 25; y <= 29; y++) for (let x = px; x <= px + 2; x++) q.set(x, y, y === 25 ? PAL.coyote[2] : y === 26 ? PAL.coyote[0] : x === px ? PAL.coyote[2] : x === px + 2 ? PAL.coyote[0] : PAL.coyote[1]); }
+      for (let y = 20; y <= 22; y++) for (let x = fx + 1; x <= fx + 3; x++) q.set(x, y, y === 20 ? PAL.coyote[2] : x === fx + 3 ? PAL.coyote[0] : PAL.coyote[1]);
+      q.vl(fx + 2, 17, 19, PAL.black[3]); // the antenna
+      for (let y = 20; y <= 22; y++) for (let x = x0 + 2; x <= x0 + 3; x++) q.set(x, y, y === 20 ? PAL.coyote[2] : PAL.coyote[1]);
+      break;
+    }
+    case "tirevest": { // tyre-rubber strips laced into a vest
+      fill(PAL.black);
+      for (let y = 19; y <= y1; y += 3) for (let x = x0; x <= x1; x++) if (q.get(x, y)) { q.set(x, y, PAL.black[0]); if (q.get(x, y + 1)) q.set(x, y + 1, PAL.black[2]); if ((x + y) % 4 === 0 && q.get(x, y + 2)) q.set(x, y + 2, PAL.black[0]); }
+      for (let y = 20; y <= y1; y += 3) { q.set(fx, y, PAL.coyote[2]); q.set(fx + 1, y, PAL.coyote[1]); }
+      break;
+    }
+    case "sportspads": { // football pads: hard white caps on the shoulders over a grey chest piece with laces
+      blob(q, (x, y) => inV(x, y) && y >= 20, PAL.grey, { rim: 1 });
+      for (let y = 21; y <= 27; y += 2) { q.set(fx - 1, y, PAL.white[2]); q.set(fx + 1, y, PAL.white[2]); q.set(fx, y + 1, PAL.grey[0]); }
+      for (const sx of [C - b.sw + 2.4, C + b.sw - 2.6]) ellipseV(q, sx, 18.6, 3.4, 2.7, PAL.white, { specular: true });
+      for (const sx of [C - b.sw + 2.4, C + b.sw - 2.6]) for (let x = Math.round(sx - 3); x <= Math.round(sx + 3); x++) if (q.get(x, 19) && Math.abs(x - sx) < 3) q.set(x, 19, PAL.white[0]);
+      break;
+    }
+    case "scrapvest": { // steel plates riveted onto a leather vest
+      fill(PAL.leather);
+      for (const [px, py] of [[x0 + 1, 19], [fx, 19], [x0 + 1, 24], [fx, 24]]) {
+        const w = Math.min(4, x1 - px - 1);
+        for (let y = py; y <= py + 3; y++) for (let x = px; x <= px + w; x++) if (q.get(x, y)) q.set(x, y, y === py || x === px ? PAL.steel[2] : y === py + 3 || x === px + w ? PAL.steel[0] : PAL.steel[1]);
+        q.set(px + 1, py + 1, PAL.steel[3]); q.set(px + w - 1, py + 2, PAL.iron[0]);
       }
-      p.vl(TL + 1, top + 1, bot, C.hi); p.vl(TR, top + 2, bot, C.deep);
-      p.rect(mid - 2, top, mid - 1, top + 2, C.hi); p.rect(mid + 2, top, mid + 3, top + 2, C.lo); p.rect(mid, top, mid + 1, top + 1, S.lo);
-      p.vl(mid, top + 2, bot, C.deep); p.vl(mid + 1, top + 3, bot, C.lo); // the button placket
-      for (let y = top + 3; y <= bot; y += 3) p.set(mid + 1, y, "#d9cfa8");
+      q.set(x0 + 3, 21, PAL.rust[1]); q.set(fx + 2, 26, PAL.rust[1]); q.set(fx + 3, 26, PAL.rust[2]);
       break;
     }
-    case "tank": { // bare shoulders, two straps, a scooped neck
-      p.rect(TL, top, TR, top + 2, S.base); p.vl(TL + 1, top + 1, top + 2, S.hi); p.vl(TR - 1, top + 1, top + 2, S.lo); p.set(TL, top + 1, S.hi); p.vl(TR, top + 1, top + 2, S.deep);
-      p.clear(TL, top); p.clear(TR, top); p.hl(TL + 1, TR - 1, top, S.lo);
-      p.rect(TL + 2, top, TL + 3, top + 2, C.hi); p.rect(TR - 3, top, TR - 2, top + 2, C.lo); p.set(TL + 2, top, C.base); p.set(TR - 2, top, C.deep);
-      p.hl(TL + 4, TR - 4, top + 3, S.lo); p.hl(TL + 5, TR - 5, top + 4, S.lo); p.hl(mid - 1, mid + 2, top + 5, S.lo); p.set(mid, top + 6, S.lo);
-      p.hl(TL + 4, TR - 4, top + 3, S.base); p.hl(mid - 3, mid + 4, top + 4, S.base);
-      p.hl(TL + 2, TL + 3, top + 3, C.hi); p.hl(TR - 3, TR - 2, top + 3, C.lo);
-      p.vl(mid, top + 4, bot, C.lo); // a fold down the middle
+    case "padding": { // magazines duct-taped round the chest: glossy paper, colour covers, grey tape bands
+      fill(PAL.paper);
+      boxr(x0 + 2, 19, x0 + 5, 22, PAL.blue); boxr(fx, 19, fx + 3, 21, PAL.red); boxr(x0 + 3, 25, x0 + 6, 27, PAL.yellow);
+      for (const y of [23, 28]) for (let x = x0; x <= x1; x++) if (q.get(x, y)) { q.set(x, y, PAL.grey[1]); if (q.get(x, y - 1)) q.set(x, y - 1, y === 23 ? PAL.grey[2] : PAL.grey[2]); }
       break;
     }
-    default: { // t-shirt: a ribbed round collar, folds
-      p.rect(mid - 2, top, mid + 3, top + 1, S.base); p.hl(mid - 2, mid + 3, top + 1, S.lo); p.set(mid + 3, top, S.lo); p.set(mid - 2, top, S.hi);
-      p.set(mid - 3, top, C.lo); p.set(mid + 4, top, C.deep); p.hl(mid - 2, mid + 3, top + 2, C.lo);
-      p.vl(mid + 2, top + 5, bot - 1, C.lo); p.vl(TL + 3, top + 6, bot - 2, C.hi);
-      break;
+    default: { // any other armour: a grey vest with a plate seam
+      fill(PAL.grey); for (let x = x0 + 1; x <= x1 - 1; x++) if (q.get(x, 23)) q.set(x, 23, PAL.grey[0]);
     }
   }
-  if (belt) {
-    p.rect(TL, 33, TR, 34, BELT.base); p.hl(TL, TR, 33, BELT.hi); p.set(TR, 33, BELT.lo); p.set(TR, 34, BELT.deep); p.set(TL, 34, BELT.lo);
-    p.rect(mid, 33, mid + 1, 34, BUCKLE); p.set(mid, 33, BUCKLE_HI); p.set(mid + 2, 33, BELT.deep); p.set(mid - 1, 34, BELT.deep);
-    p.set(TL + 2, 33, BELT.deep); p.set(TR - 2, 33, BELT.deep); p.set(TL + 2, 34, BELT.deep); p.set(TR - 2, 34, BELT.deep); // loops
-  }
-}
-
-// An arm hanging straight (side: -1 the back arm, +1 the front one). Sleeve length by the top style; the hand at
-// rows 34..36 with a hint of fingers.
-function drawArm(p, F, side, sleeve, skin, style, { cuff = true } = {}) {
-  const [x0, x1] = side < 0 ? F.AL : F.AR;
-  const C = tones(sleeve), S = tones(skin);
-  const short = style === "tshirt", bare = style === "tank";
-  const sleeveBot = bare ? 22 : short ? 28 : 33;
-  const edgeHi = side < 0 ? x0 : x0, edgeLo = x1;
-  if (sleeveBot >= 23) {
-    p.rect(x0, 23, x1, sleeveBot, C.base);
-    p.vl(edgeHi, 24, sleeveBot, C.hi); p.vl(edgeLo, 24, sleeveBot, side > 0 ? C.deep : C.lo); p.vl(edgeLo - 1, 24, sleeveBot, C.lo);
-    p.hl(x0 + 1, x1 - 1, 23, C.hi); p.clear(x1, 23); p.set(x0, 23, C.base); // a rounded shoulder
-    if (side < 0) { p.vl(x1, 24, sleeveBot, C.deep); } // the back arm is in the body's shadow
-    if (short) { p.hl(x0, x1, sleeveBot, C.lo); p.set(x1, sleeveBot, C.deep); }
-    else {
-      p.hl(x0, x1, 28, side > 0 ? C.lo : C.deep); // the elbow's crease
-      if (cuff) { p.hl(x0, x1, 32, C.deep); p.hl(x0, x1, 33, C.lo); p.set(x0, 33, C.hi); }
-    }
-  }
-  const skinTop = sleeveBot + 1;
-  if (skinTop <= 33) {
-    p.rect(x0, skinTop, x1, 33, S.base); p.vl(x0, skinTop, 33, S.hi); p.vl(x1, skinTop, 33, S.lo); p.vl(x1 - 1, skinTop, 33, S.lo);
-    if (bare) { p.set(x0, 23, S.base); p.clear(x1, 23); p.hl(x0 + 1, x1 - 1, 23, S.hi); p.hl(x0, x1, 29, S.lo); p.set(x1 - 1, 29, S.deep); } // the shoulder, the elbow
-  }
-  // the hand
-  p.rect(x0, 34, x1, 36, S.base); p.vl(x0, 34, 36, S.hi); p.vl(x1, 34, 36, S.lo); p.hl(x0 + 1, x1 - 1, 36, S.lo);
-  p.set(x1 - 1, 35, S.deep); p.set(x1 - 1, 36, S.deep); p.set(x0 + 1, 36, S.lo); // the thumb's crease and the fingers
-  p.clear(x0, 36); p.set(x1, 36, S.deep);
-}
-
-// The front arm holding a gun: a short upper arm, the hand on the pistol grip at rows 27..30.
-function drawGunArm(p, F, sleeve, skin, style, hx) {
-  const [x0, x1] = F.AR, C = tones(sleeve), S = tones(skin);
-  const bare = style === "tank", short = style === "tshirt";
-  const sleeveBot = bare ? 22 : short ? 26 : 27;
-  if (sleeveBot >= 23) {
-    p.rect(x0, 23, x1, sleeveBot, C.base); p.vl(x0, 24, sleeveBot, C.hi); p.vl(x1, 24, sleeveBot, C.deep); p.vl(x1 - 1, 24, sleeveBot, C.lo);
-    p.hl(x0 + 1, x1 - 1, 23, C.hi); p.clear(x1, 23); p.set(x0, 23, C.base);
-    if (!short) { p.hl(x0, x1, sleeveBot, C.deep); }
-  } else { p.set(x0, 23, S.base); p.hl(x0 + 1, x1 - 1, 23, S.hi); }
-  if (sleeveBot < 27) { p.rect(x0, sleeveBot + 1, x1, 27, S.base); p.vl(x0, sleeveBot + 1, 27, S.hi); p.vl(x1, sleeveBot + 1, 27, S.lo); }
-  // the hand on the grip
-  p.rect(hx - 1, 27, hx + 2, 30, S.base); p.vl(hx - 1, 27, 30, S.hi); p.vl(hx + 2, 27, 30, S.lo); p.hl(hx, hx + 1, 30, S.lo); p.set(hx + 1, 28, S.lo); p.set(hx + 1, 29, S.deep);
-  p.set(hx - 1, 30, S.lo); p.set(hx + 2, 30, S.deep);
-}
-// The back hand under a long gun's fore-end: the forearm across the chest.
-function drawSupportArm(p, F, sleeve, skin, style, fx, fy) {
-  const C = tones(sleeve), S = tones(skin);
-  const bare = style === "tank" || style === "tshirt";
-  const col = bare ? S : C;
-  const x0 = F.TL + 1, y0 = fy + 5; // from the back shoulder's level, low on the chest, rising to the fore-end
-  for (let x = x0; x < fx; x++) {
-    const t = (x - x0) / Math.max(1, fx - 1 - x0), y = Math.round(y0 - (y0 - fy - 2) * t);
-    p.rect(x, y, x, y + 2, col.base); p.set(x, y, col.hi); p.set(x, y + 2, col.lo); p.set(x, y - 1, col.deep); p.set(x, y + 3, col.deep); // the shadow lines part it from the chest
-  }
-  if (!bare) { p.vl(fx - 1, fy + 2, fy + 4, C.deep); p.vl(fx - 2, fy + 2, fy + 4, C.lo); }
-  p.rect(fx, fy + 2, fx + 3, fy + 4, S.base); p.hl(fx, fx + 3, fy + 2, S.hi); p.vl(fx + 3, fy + 2, fy + 4, S.lo); p.hl(fx + 1, fx + 3, fy + 4, S.lo); p.set(fx + 2, fy + 3, S.deep); p.set(fx + 3, fy + 4, S.deep);
-  p.set(fx, fy + 1, S.base); p.set(fx + 1, fy + 1, S.hi); // the fingers over the fore-end's edge
-}
-
-function drawLegs(p, F, pants, { boots = true } = {}) {
-  const { TL, TR, mid } = F, P = tones(pants);
-  const top = 35, bot = 45;
-  // left leg (lit), right leg (behind, darker), the gap between them
-  p.rect(TL + 1, top, mid, bot, P.base); p.rect(mid + 1, top, TR - 1, bot, P.lo);
-  p.vl(TL + 1, top, bot, P.hi); p.vl(TL + 2, top, bot - 2, P.hi); p.vl(mid, top + 4, bot, P.lo); p.vl(TR - 1, top, bot, P.deep); p.vl(TR - 2, top + 1, bot, P.deep);
-  p.rect(mid, top + 4, mid + 1, bot, P.deep); p.vl(mid, top + 3, top + 3, P.lo); p.vl(mid + 1, top + 3, top + 3, P.deep);
-  p.hl(TL + 1, TR - 1, top, P.lo); // the belt's shadow
-  // pockets, a fly, the knees' creases, the hems
-  p.hl(TL + 2, TL + 4, top + 1, P.deep); p.set(TL + 4, top + 2, P.deep); p.set(TL + 4, top + 3, P.deep);
-  p.set(TR - 3, top + 1, P.deep); p.set(TR - 4, top + 2, P.deep);
-  p.hl(TL + 3, mid - 1, 40, P.deep); p.hl(TL + 3, mid - 1, 41, P.hi); p.hl(mid + 2, TR - 3, 40, P.deep);
-  p.hl(TL + 1, mid, bot, P.lo); p.hl(mid + 1, TR - 1, bot, P.deep);
-  if (boots) {
-    for (const [x0, x1, back] of [[TL + 1, mid, false], [mid + 1, TR - 1, true]]) {
-      const B = back ? { base: BOOT.lo, hi: BOOT.base, lo: BOOT.deep, deep: BOOT.deep } : BOOT;
-      p.rect(x0, 44, x1, 47, B.base); p.rect(x0, 48, x1 + 1, 49, SOLE); p.set(x1 + 1, 47, B.base); p.set(x1 + 1, 46, B.lo);
-      p.vl(x0, 44, 47, B.hi); p.hl(x0, x1, 44, B.hi); p.vl(x1, 45, 47, B.lo); p.hl(x0, x1 + 1, 48, back ? SOLE : SOLE_HI);
-      p.set(x0 + 1, 45, B.deep); p.set(x0 + 2, 46, B.deep); p.set(x0 + 1, 47, B.deep); // laces
-      p.hl(x1 - 1, x1 + 1, 47, B.lo); p.set(x1 + 1, 49, SOLE); p.set(x0, 49, SOLE);
-    }
-    p.rect(mid, 44, mid + 1, 49, BOOT.deep); p.set(mid + 1, 48, SOLE); p.set(mid, 48, SOLE); p.set(mid + 1, 49, SOLE); p.set(mid, 49, SOLE);
-  }
-}
-
-// ---------- accessories ----------
-function drawAccessory(p, acc, col, F, skin) {
-  const A = tones(col), { TL, TR, mid } = F;
-  switch (acc) {
-    case "cap": {
-      p.rect(14, 3, 27, 8, A.base); p.hl(15, 26, 2, A.base); p.hl(17, 24, 1, A.base); p.set(14, 9, A.lo); p.set(27, 9, A.deep); p.hl(13, 14, 8, A.base);
-      p.hl(17, 22, 1, A.hi); p.hl(15, 19, 2, A.hi); p.vl(14, 3, 6, A.hi); p.rect(25, 2, 27, 8, A.lo); p.vl(27, 3, 8, A.deep); p.hl(17, 24, 6, A.lo); // panel seam
-      p.set(21, 1, A.lo); p.vl(21, 2, 5, A.lo); // the crown's seam and button
-      p.rect(22, 9, 33, 10, A.lo); p.hl(22, 32, 9, A.base); p.hl(26, 33, 9, A.lo); p.set(33, 10, A.deep); p.hl(22, 33, 11, A.deep); p.set(34, 10, A.deep); // peak, its underside
-      p.hl(22, 26, 9, A.hi);
-      break;
-    }
-    case "beanie": {
-      p.rect(14, 3, 27, 10, A.base); p.hl(15, 26, 2, A.base); p.hl(16, 25, 1, A.base); p.hl(18, 23, 0, A.lo); p.set(13, 9, A.base); p.set(13, 10, A.lo);
-      p.rect(14, 8, 27, 10, A.lo); p.hl(14, 27, 8, A.deep); p.hl(13, 27, 11, A.deep); for (let x = 15; x <= 26; x += 2) p.set(x, 9, A.base); for (let x = 16; x <= 26; x += 2) p.set(x, 10, A.deep); // the folded band's rib
-      p.hl(16, 20, 1, A.hi); p.hl(15, 18, 2, A.hi); p.vl(14, 3, 6, A.hi); p.vl(27, 2, 7, A.deep); p.vl(26, 3, 7, A.lo); for (let x = 16; x <= 26; x += 3) p.vl(x, 3, 7, x < 20 ? A.hi : A.lo); // the knit
-      break;
-    }
-    case "bandana": { // over the nose and mouth, knotted behind
-      p.rect(14, 15, 27, 20, A.base); p.hl(15, 26, 21, A.base); p.hl(17, 24, 22, A.lo); p.hl(14, 27, 15, A.hi); p.set(27, 15, A.lo);
-      p.vl(27, 16, 20, A.deep); p.vl(26, 17, 21, A.lo); p.hl(18, 23, 22, A.deep); p.vl(14, 16, 19, A.hi);
-      p.hl(19, 22, 18, A.lo); p.hl(17, 24, 20, A.lo); p.set(21, 19, A.lo); // folds
-      p.rect(11, 15, 13, 17, A.lo); p.rect(10, 18, 12, 20, A.lo); p.set(12, 21, A.deep); p.set(10, 21, A.deep); p.set(11, 16, A.base); // the knot's tails
-      break;
-    }
-    case "glasses": {
-      const fr = "#1d1f24", lens = "#8fb9cf", gl = "#cfe6f0";
-      p.rect(15, 12, 19, 14, fr); p.rect(21, 12, 25, 14, fr); p.hl(19, 21, 12, fr); p.set(14, 12, fr); p.set(26, 12, fr); p.hl(27, 29, 11, fr); p.set(13, 11, fr);
-      p.rect(16, 12, 18, 13, lens); p.rect(22, 12, 24, 13, lens); p.set(16, 12, gl); p.set(22, 12, gl); p.set(18, 13, mix(lens, fr, 0.4)); p.set(24, 13, mix(lens, fr, 0.4));
-      break;
-    }
-    case "headband": {
-      p.rect(14, 9, 27, 10, A.base); p.hl(14, 27, 9, A.hi); p.vl(27, 9, 10, A.lo); p.set(13, 9, A.base); p.set(13, 10, A.lo);
-      p.rect(11, 10, 12, 11, A.lo); p.rect(9, 11, 11, 12, A.base); p.rect(8, 13, 10, 13, A.lo); p.set(8, 14, A.deep); p.set(10, 14, A.deep); p.set(7, 14, A.lo); // the tails
-      break;
-    }
-    case "backpack": { // straps over the shoulders, the pack behind the back arm
-      const K = tones("#6b4a2a");
-      p.rect(TL - 7, 22, TL - 3, 37, K.base); p.rect(TL - 6, 21, TL - 3, 21, K.lo); p.vl(TL - 7, 23, 36, K.hi); p.vl(TL - 3, 22, 37, K.lo); p.hl(TL - 7, TL - 3, 37, K.deep);
-      p.hl(TL - 7, TL - 3, 27, K.deep); p.rect(TL - 7, 31, TL - 3, 32, K.deep); p.set(TL - 5, 29, A.base); p.set(TL - 5, 30, A.lo); // flap, pocket, a buckle in the accent color
-      p.rect(TL - 6, 28, TL - 4, 29, K.lo); p.hl(TL - 7, TL - 3, 33, K.base);
-      p.rect(TL + 2, 23, TL + 3, 31, K.lo); p.rect(TR - 3, 23, TR - 2, 31, K.deep); p.set(TL + 2, 24, K.base); p.hl(TL + 2, TL + 3, 27, K.deep); p.hl(TR - 3, TR - 2, 27, K.deep);
-      p.hl(TL + 2, TL + 3, 22, K.lo); p.hl(TR - 3, TR - 2, 22, K.deep);
-      break;
-    }
-    default: break;
-  }
-}
-
-// ---------- armor ----------
-const ARMOR_LOOK = {
-  padding: ["vest", "#8a7f6a"], tirevest: ["vest", "#2e2d2d"], sportspads: ["plate", "#b8b0a0"], scrapvest: ["plate", "#6e5a48"],
-  vest: ["vest", "#4d5440"], plate: ["plate", "#3c4148"], tacvest: ["tac", "#4b5436"],
-};
-function drawArmor(p, key, F) {
-  if (!key) return;
-  const look = ARMOR_LOOK[key] || ["vest", "#5a5a52"];
-  const [kind, base] = look, A = tones(base), { TL, TR, mid } = F;
-  const x0 = TL + 1, x1 = TR - 1;
-  // the vest's body with an arm hole each side, a collar notch
-  p.rect(x0, 24, x1, 32, A.base); p.rect(x0 + 1, 23, x1 - 1, 23, A.base);
-  p.rect(mid - 1, 23, mid + 2, 24, null); for (let x = mid - 1; x <= mid + 2; x++) { p.clear(x, 23); } p.clear(mid, 24); p.clear(mid + 1, 24);
-  p.vl(x0, 24, 32, A.hi); p.vl(x0 + 1, 24, 31, A.hi); p.vl(x1, 24, 32, A.deep); p.vl(x1 - 1, 24, 32, A.lo); p.hl(x0 + 1, x1 - 1, 32, A.deep);
-  p.set(mid - 2, 23, A.hi); p.set(mid + 3, 23, A.lo); p.set(mid - 1, 24, A.lo); p.set(mid + 2, 24, A.deep);
-  if (kind === "vest") { // padding / tyre rubber / a soft vest: quilting lines, a zip
-    for (let y = 26; y <= 30; y += 2) { p.hl(x0 + 2, x1 - 2, y, A.lo); p.set(x1 - 2, y, A.deep); }
-    p.vl(mid + 1, 24, 31, A.deep); p.vl(mid, 25, 31, A.hi);
-    if (key === "tirevest") { for (let y = 25; y <= 31; y += 3) p.hl(x0 + 2, x1 - 2, y, "#1a1a1a"); for (let x = x0 + 3; x <= x1 - 2; x += 3) p.vl(x, 25, 31, "#1a1a1a"); p.vl(mid, 25, 31, A.hi); }
-  } else if (kind === "plate") { // a hard plate on the chest, two pouches at the belt
-    p.rect(x0 + 2, 25, x1 - 2, 29, A.hi); p.rect(x0 + 3, 25, x1 - 3, 25, warm(A.hi, 0.15)); p.vl(x1 - 2, 25, 29, A.base); p.hl(x0 + 2, x1 - 2, 29, A.base); p.vl(x0 + 2, 25, 29, warm(A.hi, 0.15));
-    p.rect(x0 + 1, 30, x0 + 4, 32, A.deep); p.rect(x1 - 4, 30, x1 - 1, 32, A.deep); p.hl(x0 + 1, x0 + 4, 30, A.lo); p.hl(x1 - 4, x1 - 1, 30, A.lo);
-    if (key === "scrapvest") { p.hl(x0 + 2, x1 - 2, 27, A.base); p.set(x0 + 3, 26, METAL.base); p.set(x1 - 3, 28, METAL.base); p.set(mid, 26, METAL.lo); p.set(mid + 1, 28, METAL.base); } // bolts
-    if (key === "sportspads") { p.hl(x0 + 2, x1 - 2, 27, A.lo); p.rect(x0, 23, x0 + 2, 25, A.hi); p.rect(x1 - 2, 23, x1, 25, A.lo); p.set(x0, 23, A.base); } // shoulder cups
-    if (key === "plate") { p.rect(mid - 1, 26, mid + 2, 27, A.lo); p.set(mid, 26, A.base); } // the plate's velcro patch
-  } else { // tac: a webbing vest with mag pouches and straps
-    p.rect(x0 + 1, 28, x0 + 3, 31, A.lo); p.rect(mid - 1, 28, mid + 2, 31, A.lo); p.rect(x1 - 3, 28, x1 - 1, 31, A.lo);
-    for (const x of [x0 + 1, mid - 1, x1 - 3]) { p.hl(x, x + 2, 28, A.deep); p.hl(x, x + 2, 31, A.deep); p.set(x, 29, A.base); }
-    p.hl(x0 + 2, x1 - 2, 26, A.deep); p.vl(x0 + 3, 24, 27, A.deep); p.vl(x1 - 3, 24, 27, A.deep);
-  }
+  return q;
 }
 
 // ---------- weapons ----------
-// hx: the grip's left column (the hand's middle), the hand at rows 34..36 for a melee weapon: its grip crosses rows
-// 33..37, the blade / shaft rises from row 32.
-const SHAFT = (p, x, y0, y1, T, w = 2) => { p.rect(x, y0, x + w - 1, y1, T.base); p.vl(x, y0, y1, T.hi); if (w > 2) p.vl(x + w - 1, y0, y1, T.lo); else p.vl(x + 1, y0, y1, T.lo); };
-const GRIP = (p, x, y0, y1, T) => { p.rect(x, y0, x + 1, y1, T.base); p.vl(x, y0, y1, T.hi); p.vl(x + 1, y0, y1, T.lo); for (let y = y0 + 1; y <= y1; y += 2) p.hl(x, x + 1, y, T.lo); };
-const WRAP = tones("#2a2420"), LEATHER = tones("#5b3a22"), TAPE = tones("#4a4a46");
-
-function drawMelee(p, key, hx) {
-  const top = 32; // the row above the hand
+export const GUN_LOOKS = {
+  pistol: "pistol", compact9: "pistol", pistol45: "pistol", pistol22: "pistol", pistol57: "pistol", usp45: "pistol", fiveseven: "pistol", pipegun: "pistol",
+  revolver: "revolver", snub357: "revolver", snub38: "revolver", service38: "revolver", revolver44: "revolver", magnum: "revolver",
+  shotgun: "shotgun", semishotgun: "shotgun", dbshotgun: "shotgun", sawnoff: "shotgun", ou12: "shotgun", single12: "shotgun", pump20: "shotgun", ou20: "shotgun", tacpump: "shotgun",
+  huntrifle: "huntrifle", bolt: "huntrifle", lever44: "huntrifle", leverrifle: "huntrifle", lever357: "huntrifle", single44: "huntrifle", singlerifle: "huntrifle", rifle22: "huntrifle", sniper: "huntrifle", varmint223: "huntrifle", ranch223: "huntrifle", single556: "huntrifle", single223: "huntrifle", single300: "huntrifle", m1a: "huntrifle", dmr: "ar", amr: "huntrifle",
+  ar: "ar", ar15rifle: "ar", ar223: "ar", ar300: "ar", sbr300: "ar", ardmr: "ar", arpistol: "ar", carbine: "ar", m4: "ar", hk416: "ar", scarl: "ar", scarh: "ar", aug: "ar", famas: "ar", fal: "ak", g3: "ar", smg: "ar", mp5: "ar", ump45: "ar", p90: "ar", vector: "ar", lmg: "ar", m240: "ar",
+  ak: "ak", akm: "ak",
+  compbow: "compbow", pulleybow: "compbow", bow: "compbow", crossbow: "crossbow", xbow: "crossbow",
+};
+const MELEE = new Set(["knife", "huntknife", "combatknife", "machete", "sawmachete", "springmachete", "bat", "nailbat", "spikedbat", "crowbar", "prybar", "fireaxe", "sledge", "spear", "pipespear", "hatchet", "tomahawk", "baton", "stunbaton", "katana", "kukri", "pickaxe", "hammer", "etool", "golfclub", "fists", ...Object.keys(BLADE_LOOK)]);
+export function gunKind(key) {
+  if (!key || MELEE.has(key)) return null;
+  if (GUN_LOOKS[key]) return GUN_LOOKS[key];
+  if (/bow/.test(key)) return "compbow";
+  if (/(pistol|9$|45$|22$)/.test(key)) return "pistol";
+  if (/(revolver|snub|magnum|38|357|44)/.test(key)) return "revolver";
+  if (/(shot|12|20|pump)/.test(key)) return "shotgun";
+  if (/(rifle|lever|single|sniper|varmint)/.test(key)) return "huntrifle";
+  if (/^(m79|m203|m32|rpg|at4)$/.test(key)) return "tube";
+  return /^(ar|m\d|hk|scar|smg|mp|ump|p90|lmg|m2)/.test(key) ? "ar" : null;
+}
+// A melee weapon in the near hand at h, its shaft up and forward along (dx, -1) per row. Drawn over the arm; the
+// fist goes over its handle afterwards.
+function meleeLayer(key, h) {
+  const q = lay(), [hx, hy] = [Math.round(h[0]), Math.round(h[1])];
+  const at = (t, k = 0.5) => [hx + t * k, hy - t]; // t rows up the shaft from the hand, k: columns per row
+  const shaft = (t0, t1, w, m, k = 0.5, w1 = w, edge) => { const a = at(t0, k), b = at(t1, k); bar(q, a[0], a[1], b[0], b[1], w, m, w1, edge); };
+  const blade = (t0, t1, w, m = PAL.steel, k = 0.5) => { shaft(t0, t1, w, m, k, 1, m[3]); const a = at(t0 + 1, k), b = at(t1 - 2, k); q.line(Math.round(a[0]), Math.round(a[1]), Math.round(b[0]), Math.round(b[1]), m[2]); };
+  const L2 = BLADE_LOOK[key];
   switch (key) {
-    case "knife": case "huntknife": case "combatknife": {
-      const blade = key === "combatknife" ? tones("#5a6066") : METAL;
-      p.rect(hx, 25, hx + 1, top, blade.base); p.vl(hx, 25, top, blade.hi); p.vl(hx + 1, 26, top, blade.lo); p.set(hx, 24, BRIGHT); p.set(hx + 1, 25, blade.hi); p.set(hx, 25, BRIGHT);
-      p.hl(hx - 1, hx + 2, 33, GUNMETAL.base); p.set(hx - 1, 33, GUNMETAL.hi); // guard
-      GRIP(p, hx, 34, 38, key === "combatknife" ? WRAP : LEATHER); p.hl(hx, hx + 1, 39, GUNMETAL.lo);
+    case "knife": case "steakknife": shaft(-3, 2, 2, PAL.black); blade(2, 9, 3); break;
+    case "combatknife": case "survivalknife": case "bayonet":
+      shaft(-3, 2, 2, PAL.black); bar(q, hx - 1, hy - 2, hx + 3, hy - 3, 1, PAL.steel); blade(3, 11, 3, PAL.iron); break;
+    case "huntknife": case "bowie": shaft(-3, 2, 2, PAL.wood); bar(q, hx - 1, hy - 2, hx + 3, hy - 3, 1, PAL.brass); blade(3, key === "bowie" ? 12 : 10, 3); break;
+    case "machete": case "sawmachete": case "springmachete": case "kukri": case "cutlass": case "sabre": case "katana": case "broadsword": {
+      const long = key === "katana" || key === "sabre" || key === "broadsword" ? 18 : key === "cutlass" ? 15 : 14;
+      shaft(-3, 2, 2, key === "katana" || key === "sabre" ? PAL.black : PAL.wood);
+      if (key !== "machete" && key !== "sawmachete" && key !== "kukri") bar(q, hx - 2, hy - 2, hx + 3, hy - 3, 1, key === "katana" ? PAL.brass : PAL.brass);
+      shaft(2, long - 2, 3, PAL.steel, 0.5, 3, PAL.steel[3]); shaft(long - 2, long + 1, 3, PAL.steel, 0.5, 1, PAL.steel[3]);
+      const a = at(3), b = at(long - 3); q.line(Math.round(a[0]), Math.round(a[1]), Math.round(b[0]), Math.round(b[1]), PAL.steel[2]);
+      if (key === "sawmachete") for (let t = 4; t < long - 2; t += 2) { const c = at(t); q.set(Math.round(c[0]) - 1, Math.round(c[1]), PAL.steel[0]); }
       break;
     }
-    case "machete": case "sawmachete": case "springmachete": {
-      p.rect(hx, 17, hx + 3, top, METAL.base); p.rect(hx + 1, 15, hx + 3, 16, METAL.base); p.hl(hx + 2, hx + 3, 14, METAL.lo); p.set(hx + 4, 16, METAL.lo); p.vl(hx + 4, 17, 22, METAL.base); // the blade swells toward the tip
-      p.vl(hx, 17, top, METAL.lo); p.vl(hx + 1, 15, top, METAL.base); p.vl(hx + 3, 16, 31, METAL.hi); p.vl(hx + 4, 17, 21, BRIGHT); p.vl(hx + 3, 22, 29, BRIGHT); p.hl(hx + 1, hx + 3, 16, METAL.hi); // the edge
-      p.set(hx + 2, 29, METAL.lo); p.set(hx + 2, 25, METAL.lo); // a nick, a lanyard hole
-      if (key === "sawmachete") for (let y = 18; y <= 30; y += 2) p.set(hx, y, METAL.deep);
-      p.hl(hx - 1, hx + 2, 33, WRAP.deep); GRIP(p, hx, 34, 38, key === "springmachete" ? LEATHER : WRAP); p.set(hx + 1, 39, WRAP.deep); p.set(hx, 39, WRAP.lo);
-      break;
-    }
-    case "bat": case "nailbat": case "spikedbat": {
-      const B = tones("#a07a48");
-      p.rect(hx, 14, hx + 2, 23, B.base); p.rect(hx, 24, hx + 1, top, B.base); p.hl(hx, hx + 2, 13, B.lo); p.set(hx + 1, 12, B.lo);
-      p.vl(hx, 14, top, B.hi); p.vl(hx + 2, 14, 23, B.lo); p.set(hx + 2, 24, B.lo); p.vl(hx + 1, 25, top, B.lo); p.set(hx + 3, 16, B.lo); p.vl(hx + 3, 17, 21, B.lo);
-      p.hl(hx, hx + 1, 20, B.lo); // a grain line
-      p.rect(hx, 33, hx + 1, 38, TAPE.base); for (let y = 34; y <= 38; y += 2) p.hl(hx, hx + 1, y, TAPE.lo); p.hl(hx - 1, hx + 2, 39, TAPE.deep); // taped grip and knob
-      if (key !== "bat") { for (const [x, y] of key === "nailbat" ? [[hx - 1, 15], [hx + 4, 17], [hx - 1, 19], [hx + 4, 21], [hx - 1, 23]] : [[hx - 1, 16], [hx + 4, 19], [hx - 1, 21]]) { p.set(x, y, METAL.base); p.set(x + (x < hx ? -1 : 1), y, BRIGHT); } }
+    case "bat": case "nailbat": case "spikedbat": case "golfclub": {
+      if (key === "golfclub") { shaft(-3, 17, 1, PAL.steel); bar(q, ...at(17), at(17)[0] + 3, at(17)[1], 2, PAL.iron); break; }
+      shaft(-3, 2, 2, PAL.ash); shaft(2, 16, 2, PAL.ash, 0.5, 4); ellipseV(q, ...at(16.5), 1.8, 1.8, PAL.ash, { specular: false });
+      ellipseV(q, ...at(-3.6), 1.2, 1, PAL.ash, { specular: false });
+      if (key !== "bat") for (const t of [9, 12, 15]) { const c = at(t); q.line(Math.round(c[0]) - 2, Math.round(c[1]), Math.round(c[0]) - 4, Math.round(c[1]) - 1, PAL.steel[2]); q.set(Math.round(c[0]) - 4, Math.round(c[1]) - 1, PAL.steel[3]); q.line(Math.round(c[0]) + 3, Math.round(c[1]) + 1, Math.round(c[0]) + 4, Math.round(c[1]) + 2, PAL.steel[1]); }
+      if (key === "spikedbat") for (const t of [10.5, 13.5]) { const c = at(t); q.hl(Math.round(c[0]) - 1, Math.round(c[0]) + 2, Math.round(c[1]), PAL.iron[1]); }
       break;
     }
     case "crowbar": case "prybar": {
-      const I = tones("#6d7378");
-      SHAFT(p, hx, 17, top, I); p.hl(hx, hx + 3, 16, I.base); p.set(hx + 4, 17, I.base); p.set(hx + 3, 15, I.hi); p.set(hx + 4, 18, I.lo); p.hl(hx + 1, hx + 3, 16, I.hi);
-      p.rect(hx, 33, hx + 1, 38, I.base); p.vl(hx, 33, 38, I.hi); p.hl(hx - 1, hx + 1, 39, I.lo); p.set(hx - 2, 39, I.base); p.set(hx - 2, 38, I.hi);
+      const m = key === "crowbar" ? PAL.red : PAL.iron, e = key === "crowbar" ? PAL.steel : PAL.iron;
+      shaft(-4, 13, 2, m); const t = at(13); const tx = Math.round(t[0]), ty = Math.round(t[1]);
+      q.hl(tx, tx + 3, ty - 1, e[1]); q.set(tx, ty - 1, e[2]); q.set(tx + 1, ty - 2, e[2]); q.set(tx + 2, ty - 2, e[3]); q.set(tx + 4, ty, e[1]); q.set(tx + 4, ty + 1, e[0]);
+      const bt = at(-4); q.set(Math.round(bt[0]) - 1, Math.round(bt[1]) + 1, e[1]);
       break;
     }
-    case "fireaxe": {
-      const H = tones("#b08a5a"), R = tones("#c8362e");
-      SHAFT(p, hx, 14, top, H); p.rect(hx + 2, 13, hx + 5, 20, R.base); p.rect(hx + 6, 14, hx + 6, 19, METAL.base); p.vl(hx + 7, 15, 18, BRIGHT); p.vl(hx + 2, 13, 20, R.hi); p.hl(hx + 2, hx + 5, 20, R.lo); p.hl(hx + 3, hx + 5, 13, R.lo);
-      p.rect(hx - 2, 15, hx - 1, 17, R.lo); p.set(hx - 2, 15, R.base); // the pick
-      p.rect(hx, 33, hx + 1, 38, H.lo); p.vl(hx, 33, 38, H.base); p.hl(hx, hx + 1, 39, H.deep);
+    case "fireaxe": case "pickaxe": {
+      shaft(-4, 15, 2, PAL.wood); const t = at(14), tx = Math.round(t[0]), ty = Math.round(t[1]);
+      const H = key === "fireaxe" ? PAL.red : PAL.iron;
+      for (let x = tx + 1; x <= tx + 5; x++) { const hh = 1 + (x - tx) * 0.55; for (let y = Math.round(ty - hh); y <= Math.round(ty + hh); y++) q.set(x, y, y === Math.round(ty - hh) ? H[2] : y === Math.round(ty + hh) ? H[0] : H[1]); }
+      if (key === "fireaxe") { q.vl(tx + 6, ty - 3, ty + 3, PAL.steel[3]); q.vl(tx + 5, ty - 3, ty + 3, PAL.steel[2]); }
+      for (let x = tx - 3; x <= tx - 1; x++) { q.set(x, ty, H[1]); q.set(x, ty - 1, H[2]); } q.set(tx - 4, ty, PAL.steel[2]);
+      q.set(tx, ty - 1, H[0]); q.set(tx, ty, H[0]); q.set(tx, ty + 1, H[0]);
       break;
     }
-    case "sledge": {
-      SHAFT(p, hx, 15, top, WOOD); p.rect(hx - 3, 11, hx + 5, 15, GUNMETAL.base); p.hl(hx - 3, hx + 5, 11, GUNMETAL.hi); p.vl(hx - 3, 11, 15, GUNMETAL.hi); p.hl(hx - 3, hx + 5, 15, GUNMETAL.deep); p.vl(hx + 5, 12, 15, GUNMETAL.deep); p.vl(hx + 4, 12, 14, GUNMETAL.lo);
-      p.rect(hx, 33, hx + 1, 38, WOOD.lo); p.vl(hx, 33, 38, WOOD.base); p.hl(hx, hx + 1, 39, WOOD.deep);
+    case "hatchet": case "tomahawk": case "hammer": {
+      shaft(-3, 8, 2, key === "tomahawk" ? PAL.black : PAL.wood); const t = at(8), tx = Math.round(t[0]), ty = Math.round(t[1]);
+      if (key === "hammer") { for (let y = ty - 1; y <= ty + 1; y++) q.hl(tx - 2, tx + 3, y, y === ty - 1 ? PAL.iron[2] : y === ty + 1 ? PAL.iron[0] : PAL.iron[1]); break; }
+      for (let x = tx + 1; x <= tx + 4; x++) { const top = ty - 1 - Math.floor((x - tx) * 0.4), bot = ty + 1 + Math.floor((x - tx) * 0.6); for (let y = top; y <= bot; y++) q.set(x, y, y === top ? PAL.steel[2] : y === bot ? PAL.steel[0] : PAL.steel[1]); }
+      q.vl(tx + 5, ty - 2, ty + 3, PAL.steel[3]); q.set(tx - 1, ty, PAL.steel[0]); q.set(tx - 1, ty - 1, PAL.steel[1]);
       break;
     }
-    case "spear": case "pipespear": {
-      const T = key === "spear" ? tones("#7a5a3a") : tones("#6d7378");
-      SHAFT(p, hx, 12, top, T); p.rect(hx, 8, hx + 1, 11, METAL.base); p.set(hx, 7, BRIGHT); p.set(hx, 8, BRIGHT); p.set(hx + 1, 11, METAL.lo); p.set(hx + 2, 10, METAL.lo);
-      p.rect(hx, 33, hx + 1, 40, T.base); p.vl(hx, 33, 40, T.hi); p.vl(hx + 1, 33, 40, T.lo); p.hl(hx, hx + 1, 29, TAPE.base); p.hl(hx, hx + 1, 30, TAPE.lo);
-      break;
-    }
-    case "hatchet": case "tomahawk": {
-      SHAFT(p, hx, 21, top, key === "hatchet" ? WOOD : GUNMETAL); p.rect(hx + 2, 19, hx + 4, 24, METAL.base); p.vl(hx + 5, 20, 23, BRIGHT); p.vl(hx + 2, 19, 24, METAL.hi); p.hl(hx + 2, hx + 4, 24, METAL.lo);
-      p.rect(hx, 33, hx + 1, 38, key === "hatchet" ? WOOD.lo : WRAP.base); p.hl(hx, hx + 1, 39, WRAP.deep);
+    case "sledge": case "etool": {
+      shaft(-4, 14, 2, key === "etool" ? PAL.olive : PAL.wood); const t = at(14.5), tx = Math.round(t[0]), ty = Math.round(t[1]);
+      if (key === "etool") { for (let y = ty - 4; y <= ty; y++) q.hl(tx - 1, tx + 2, y, y === ty - 4 ? PAL.olive[2] : PAL.olive[1]); q.vl(tx + 2, ty - 3, ty, PAL.olive[0]); break; }
+      for (let y = ty - 2; y <= ty + 2; y++) for (let x = tx - 3; x <= tx + 4; x++) q.set(x, y, y === ty - 2 ? PAL.steel[2] : y === ty + 2 || x === tx + 4 ? PAL.steel[0] : x === tx - 3 ? PAL.steel[2] : PAL.steel[1]);
+      q.hl(tx - 2, tx + 1, ty - 1, PAL.steel[3]);
       break;
     }
     case "baton": case "stunbaton": {
-      SHAFT(p, hx, 20, top, GUNMETAL); p.hl(hx, hx + 1, 19, GUNMETAL.hi); if (key === "stunbaton") { p.hl(hx, hx + 1, 19, "#ffd23f"); p.hl(hx, hx + 1, 20, "#c9a227"); }
-      p.rect(hx, 33, hx + 1, 38, WRAP.base); p.vl(hx, 33, 38, WRAP.hi); p.hl(hx - 1, hx + 2, 39, WRAP.deep);
+      shaft(-3, 3, 2, PAL.black); shaft(3, 8, 2, PAL.iron); shaft(8, 12, 1, PAL.iron);
+      const t = at(12.5); ellipseV(q, t[0], t[1], 1.1, 1.1, key === "stunbaton" ? PAL.yellow : PAL.steel, { specular: false });
       break;
     }
-    case "katana": {
-      p.rect(hx, 12, hx + 1, top, BRIGHT); p.vl(hx + 1, 13, top, METAL.base); p.set(hx + 1, 12, METAL.base); p.hl(hx, hx + 1, 11, METAL.lo); p.vl(hx, 12, top, "#f3f6f8");
-      p.hl(hx - 1, hx + 2, 33, "#b89a4a"); p.set(hx - 1, 33, "#e0c070"); GRIP(p, hx, 34, 40, WRAP); for (let y = 35; y <= 40; y += 2) p.set(hx + (y % 4 === 3 ? 0 : 1), y, "#d9cfa8");
+    case "spear": case "pipespear": {
+      const k = 0.36, m = key === "spear" ? PAL.ash : PAL.iron;
+      shaft(-9, 20, 2, m, k); const t = at(20, k), tx = Math.round(t[0]), ty = Math.round(t[1]);
+      if (key === "spear") { bar(q, tx - 1, ty + 1, tx + 2, ty + 1, 1, PAL.iron); bar(q, tx, ty, tx + 2.5, ty - 7, 3, PAL.steel, 1, PAL.steel[3]); q.line(tx + 1, ty - 1, tx + 2, ty - 5, PAL.steel[2]); }
+      else { bar(q, tx, ty, tx + 2, ty - 6, 2, PAL.steel, 1, PAL.steel[3]); q.set(tx - 1, ty + 2, PAL.grey[2]); q.set(tx, ty + 2, PAL.grey[2]); q.set(tx, ty + 3, PAL.grey[1]); q.set(tx + 1, ty + 3, PAL.grey[1]); }
       break;
     }
     default: {
-      const L = BLADE_LOOK[key];
-      if (L) { // the knives and swords: 2 rows a game pixel
-        const B = tones(L.blade), topY = top - 2 * L.len;
-        p.rect(hx, topY, hx + 1, top, B.base); p.vl(hx, topY, top, B.hi); p.vl(hx + 1, topY + 1, top, B.lo);
-        if (L.curve) { p.rect(hx + 2, topY + 2, hx + 2, topY + 6, B.base); p.set(hx + 2, topY + 2, B.hi); p.set(hx + 3, topY + 4, B.hi); }
-        if (L.len >= 5) { p.set(hx, topY, "#eef2f4"); p.set(hx, topY + 1, "#eef2f4"); }
-        if (L.guard) { const G = tones(L.guard); p.hl(hx - 2, hx + 3, 33, G.base); p.hl(hx - 2, hx, 33, G.hi); p.set(hx + 3, 33, G.lo); }
-        GRIP(p, hx, L.guard ? 34 : 33, 33 + 2 * (L.hilt || 2), tones(L.handle));
-      } else { // a club
-        const B = tones("#8a6a48"); SHAFT(p, hx, 16, top, B, 3); p.rect(hx, 33, hx + 1, 38, B.lo); p.hl(hx, hx + 1, 39, B.deep);
-      }
+      if (L2) { // the knives and swords of data-blades.js by their look: blade length, colours, a guard
+        const len = 2 * L2.len + 2, B = R(L2.blade), Hd = R(L2.handle);
+        shaft(-1 - (L2.hilt || 2), 2, 2, Hd);
+        if (L2.guard) bar(q, hx - 1, hy - 2, hx + 3, hy - 3, 1, R(L2.guard));
+        shaft(3, len, len > 9 ? 3 : 2, B, 0.5, 1, B[3]);
+      } else { shaft(-3, 2, 2, PAL.wood); shaft(2, 13, 2, PAL.wood, 0.5, 3); } // a club
     }
   }
+  return q;
 }
-
-// A gun held across the body: rows 24..26 (its body), the pistol grip at hx (the right hand there), the muzzle to
-// the right, at most col 42. Returns the muzzle's grid pixel.
-const GUN_LOOKS = {
-  pistol: "pistol", compact9: "pistol", pistol45: "pistol", pistol22: "pistol", pistol57: "pistol",
-  revolver: "revolver", snub357: "revolver", snub38: "revolver", service38: "revolver", revolver44: "revolver",
-  shotgun: "shotgun", semishotgun: "shotgun", dbshotgun: "shotgun", sawnoff: "shotgun",
-  huntrifle: "huntrifle", bolt: "huntrifle", lever44: "huntrifle",
-  ar: "ar", ar15rifle: "ar", arpistol: "ar", carbine: "ar", smg: "ar", mp5: "ar", ak: "ak", akm: "ak",
-  compbow: "compbow", pulleybow: "compbow", bow: "compbow", crossbow: "crossbow", xbow: "crossbow",
-};
-export function drawGun(p, key, F) {
-  const kind = GUN_LOOKS[key] || (/(pistol|9mm|45)/.test(key) ? "pistol" : /(revolver|snub|magnum)/.test(key) ? "revolver" : /(shot)/.test(key) ? "shotgun" : /(bow)/.test(key) ? "compbow" : "ar");
-  const { TR } = F, hx = TR + 2, y = 25, mz = Math.min(42, TR + 13);
-  const G = GUNMETAL, M = METAL, W = WOOD;
-  if (kind === "pistol") {
-    const x0 = hx - 2, x1 = hx + 6;
-    p.rect(x0, y - 1, x1, y + 1, G.base); p.hl(x0 + 1, x1, y - 1, G.hi); p.hl(x0, x1, y + 1, G.lo); p.set(x1, y - 1, G.lo); for (let x = x1 - 3; x <= x1 - 1; x += 2) p.set(x, y - 1, G.lo); // slide, its serrations
-    p.set(x1 + 1, y, G.deep); p.set(x1, y + 2, G.lo); p.set(x1 - 1, y + 2, G.lo); p.hl(hx + 2, hx + 3, y + 2, G.base); p.hl(hx + 2, hx + 4, y + 3, G.deep); p.set(hx + 2, y + 3, M.lo); // frame, trigger guard, trigger
-    p.rect(hx - 1, y + 2, hx + 1, y + 7, G.lo); p.vl(hx - 1, y + 2, y + 7, G.base); p.hl(hx - 2, hx + 1, y + 7, G.deep); p.set(hx - 2, y + 6, G.deep); // grip
-    p.set(x0, y - 2, G.lo); p.set(x1 - 1, y - 2, G.lo); // sights
-    return { mx: x1 + 1, my: y };
-  }
-  if (kind === "revolver") {
-    const S = tones("#8a9298"), x0 = hx - 2, x1 = hx + 8;
-    p.rect(x0, y, x1, y + 1, S.base); p.hl(x0, x1, y, S.hi); p.hl(x0, x1, y + 1, S.lo); p.rect(hx, y - 1, hx + 3, y + 2, S.lo); p.hl(hx, hx + 3, y - 1, S.base); p.vl(hx + 1, y, y + 1, S.deep); p.vl(hx + 3, y, y + 2, S.deep); // frame, cylinder
-    p.rect(hx + 4, y - 1, x1, y - 1, S.hi); p.set(x1, y - 2, S.lo); p.set(x1 + 1, y, S.deep); // barrel rib, front sight, muzzle
-    p.set(hx - 3, y - 1, S.deep); p.set(hx - 3, y, S.lo); p.hl(hx + 2, hx + 4, y + 3, G.deep); p.set(hx + 2, y + 3, M.lo); // hammer, trigger guard
-    p.rect(hx - 1, y + 2, hx + 1, y + 7, W.base); p.vl(hx - 1, y + 2, y + 7, W.hi); p.vl(hx + 1, y + 3, y + 7, W.lo); p.hl(hx - 2, hx + 1, y + 7, W.deep); p.set(hx - 2, y + 6, W.lo);
-    return { mx: x1 + 1, my: y };
-  }
-  if (kind === "compbow") { // a vertical bow in the hand: a riser, two limbs, cams, a string behind
-    const R = tones("#3a3d40"), L = tones("#555a60"), bx = hx + 1;
-    p.vl(bx - 4, 12, 46, "#d8dde0"); p.set(bx - 4, 11, R.deep); p.set(bx - 4, 47, R.deep); // string
-    for (let i = 0; i < 12; i++) { const x = bx - Math.round(((11 - i) / 11) ** 1.6 * 3); p.rect(x, 12 + i, x + 1, 12 + i, L.base); p.set(x, 12 + i, L.hi); } // upper limb curving back
-    for (let i = 0; i < 12; i++) { const x = bx - Math.round(((11 - i) / 11) ** 1.6 * 3); p.rect(x, 46 - i, x + 1, 46 - i, L.base); p.set(x + 1, 46 - i, L.lo); } // lower limb
-    p.rect(bx, 24, bx + 2, 34, R.base); p.vl(bx, 24, 34, R.hi); p.vl(bx + 2, 24, 34, R.deep); p.rect(bx - 1, 27, bx - 1, 31, R.lo); p.set(bx + 3, 28, R.lo); // riser, grip shelf, rest
-    p.rect(bx - 5, 11, bx - 3, 13, M.base); p.rect(bx - 5, 45, bx - 3, 47, M.base); p.set(bx - 5, 11, M.hi); p.set(bx - 5, 45, M.hi); p.set(bx - 3, 13, M.deep); p.set(bx - 3, 47, M.deep); // cams
-    p.set(bx + 1, 26, "#d9b23a"); p.set(bx + 1, 32, "#d9b23a"); // sight pin, stabilizer bushing
-    return null;
-  }
-  if (kind === "crossbow") { // a horizontal stock, the prod across at the front
-    const x0 = hx - 9, x1 = Math.min(mz - 2, hx + 9), S = tones("#5a4530");
-    p.rect(x0, y - 1, x1, y + 1, S.base); p.hl(x0, x1, y - 1, S.hi); p.hl(x0, x1, y + 1, S.lo); p.rect(x0, y + 1, x0 + 1, y + 3, S.lo); p.hl(x0, x0 + 1, y + 3, S.deep); // stock
-    p.rect(hx - 1, y + 2, hx + 1, y + 6, S.lo); p.vl(hx - 1, y + 2, y + 6, S.base); p.hl(hx - 1, hx + 1, y + 6, S.deep); p.hl(hx + 2, hx + 4, y + 3, G.deep); // grip, trigger guard
-    p.hl(x0 + 3, x1 - 1, y - 2, G.base); p.hl(hx, hx + 1, y - 3, G.lo); // rail, a scope block
-    p.rect(x1 - 1, y - 7, x1, y + 7, G.base); p.vl(x1 - 1, y - 7, y + 7, G.hi); p.set(x1 - 1, y - 7, M.base); p.set(x1 - 1, y + 7, M.base); p.vl(x1 - 2, y - 7, y - 5, M.base); p.vl(x1 - 2, y + 5, y + 7, M.base); // prod, its tips
-    p.line(x1 - 2, y - 7, hx + 1, y - 2, "#d8dde0"); p.line(x1 - 2, y + 7, hx + 1, y + 2, "#d8dde0"); // string (cocked)
-    p.set(x1 + 1, y, BRIGHT); p.set(x1 + 2, y, M.base); // the bolt's head
-    return { mx: x1 + 2, my: y };
-  }
-  // the long guns: stock behind, receiver at the grip, fore-end and barrel forward
-  const bx = hx - 11; // the butt
-  const stockC = kind === "shotgun" || kind === "huntrifle" || kind === "ak" ? W : G;
-  if (kind === "ar") { // a telescoping stock with a buffer tube
-    p.rect(bx + 3, y - 1, hx - 3, y, G.lo); p.hl(bx + 3, hx - 3, y - 1, G.base); p.rect(bx, y - 1, bx + 2, y + 2, G.base); p.vl(bx, y - 1, y + 2, G.hi); p.hl(bx, bx + 2, y + 2, G.deep); p.rect(bx + 3, y + 1, bx + 4, y + 1, G.lo);
-  } else { // a wooden stock with a comb and a cheek
-    for (let i = 0; i < 9; i++) { const x = hx - 3 - i, t = i / 8; p.rect(x, y - 1 + Math.round(t), x, y + 1 + Math.round(t * 1.5), stockC.base); p.set(x, y - 1 + Math.round(t), stockC.hi); }
-    p.vl(bx + 1, y, y + 3, stockC.lo); p.vl(bx, y, y + 3, stockC.deep); p.hl(bx + 2, hx - 4, y + 2, stockC.lo); p.hl(bx + 3, hx - 4, y + 3, stockC.deep);
-  }
-  // receiver
-  p.rect(hx - 3, y - 1, hx + 4, y + 1, G.base); p.hl(hx - 3, hx + 4, y - 1, G.hi); p.hl(hx - 3, hx + 4, y + 1, G.lo); p.set(hx + 3, y, G.lo); p.set(hx + 2, y, G.deep); // the ejection port
-  // grip and trigger guard (the hand goes over the grip)
-  p.rect(hx - 1, y + 2, hx + 1, y + 6, G.lo); p.vl(hx - 1, y + 2, y + 6, G.base); p.hl(hx - 1, hx + 1, y + 6, G.deep); p.hl(hx + 2, hx + 4, y + 3, G.deep); p.set(hx + 2, y + 3, M.lo);
+// A long gun along row y (the receiver's middle), grip hand at g, its butt at bx; returns the muzzle.
+function longGunLayer(kind, g, bx, maxX = 42, axisY = g[1] - 4.2) {
+  const q = lay(), gx = Math.round(g[0]), y = Math.round(axisY);
+  const run = (x0, x1, yy, c) => q.hl(Math.round(x0), Math.round(x1), yy, c);
+  const body = (x0, x1, y0, y1, m) => { for (let yy = y0; yy <= y1; yy++) run(x0, x1, yy, yy === y0 ? m[2] : yy === y1 ? m[0] : m[1]); };
+  const hiLine = (x0, x1, yy, c) => run(x0, x1, yy, c);
+  const grip = (m) => { for (let k = 0; k < 5; k++) { q.set(gx - Math.floor(k / 2), y + 2 + k, k === 4 ? m[0] : m[1]); q.set(gx - Math.floor(k / 2) + 1, y + 2 + k, m[0]); } };
+  const guard = () => { q.set(gx + 2, y + 2, PAL.iron[1]); q.set(gx + 3, y + 3, PAL.iron[1]); q.set(gx + 2, y + 3, null); };
+  let mx = maxX;
   if (kind === "ar") {
-    p.rect(hx + 5, y - 1, hx + 8, y + 1, G.base); p.hl(hx + 5, hx + 8, y - 1, G.hi); p.hl(hx + 5, hx + 8, y + 1, G.deep); p.hl(hx + 5, hx + 8, y, G.lo); p.set(hx + 7, y, G.base); // handguard, its ribs
-    p.hl(hx + 9, mz, y, G.base); p.hl(hx + 9, mz - 1, y - 1, G.hi); p.set(mz, y - 1, G.lo); p.set(mz, y, G.deep); // barrel
-    p.vl(hx + 9, y - 3, y - 2, G.base); p.set(hx + 9, y - 3, G.hi); p.hl(hx - 1, hx + 3, y - 2, G.base); p.hl(hx, hx + 2, y - 3, G.lo); p.set(hx + 3, y - 3, G.hi); // front sight post, carry handle
-    p.rect(hx + 5, y + 2, hx + 6, y + 5, G.base); p.rect(hx + 6, y + 6, hx + 7, y + 7, G.base); p.vl(hx + 5, y + 2, y + 5, G.hi); p.set(hx + 7, y + 7, G.deep); p.set(hx + 6, y + 6, G.hi); // magazine, curving forward
+    const W = PAL.black, I = PAL.iron;
+    body(bx, bx + 3, y - 1, y + 2, W); q.set(bx + 3, y + 2, null); run(bx + 4, gx - 3, y, I[1]); run(bx + 4, gx - 3, y - 1, I[2]); // stock on its buffer tube
+    body(gx - 3, gx + 3, y - 1, y + 1, I); hiLine(gx - 2, gx + 3, y - 1, I[3]); run(gx - 2, gx + 2, y - 2, W[1]); q.set(gx + 1, y - 3, W[2]); q.set(gx - 1, y - 3, W[2]); // receiver, rail, sights
+    for (let k = 0; k < 4; k++) run(gx + 1 + (k >> 1), gx + 2 + (k >> 1), y + 2 + k, k === 3 ? I[0] : I[1]); // the magazine
+    body(gx + 4, gx + 9, y - 1, y + 1, W); for (let x = gx + 5; x <= gx + 8; x += 2) q.set(x, y, W[0]); // handguard and its vents
+    run(gx + 10, mx - 1, y, I[1]); run(gx + 10, mx - 1, y - 1, I[2]); q.set(mx, y - 1, I[2]); q.set(mx, y, I[1]); q.set(gx + 9, y - 2, W[1]); q.set(gx + 9, y - 3, W[2]);
+    grip(W); guard();
   } else if (kind === "ak") {
-    p.rect(hx + 5, y - 1, hx + 8, y + 1, W.base); p.hl(hx + 5, hx + 8, y - 1, W.hi); p.hl(hx + 5, hx + 8, y + 1, W.lo); p.hl(hx + 9, mz, y, G.base); p.hl(hx + 9, mz - 1, y - 1, G.lo); p.set(mz, y - 1, G.hi);
-    p.rect(hx + 5, y + 2, hx + 6, y + 5, G.base); p.rect(hx + 6, y + 6, hx + 7, y + 7, G.base); p.vl(hx + 5, y + 2, y + 5, G.hi); p.set(hx + 8, y + 8, G.lo);
+    const W = PAL.wood, I = PAL.iron;
+    for (let x = bx; x <= gx - 3; x++) { const t = (x - bx) / Math.max(1, gx - 3 - bx), top = y - 1 + (t < 0.3 ? 0 : 0), bot = y + 2 - Math.round(t * 1.4); for (let yy = top; yy <= bot; yy++) q.set(x, yy, yy === top ? W[2] : yy === bot ? W[0] : W[1]); }
+    body(gx - 3, gx + 3, y - 1, y + 1, I); hiLine(gx - 3, gx + 3, y - 1, I[3]);
+    for (let k = 0; k < 5; k++) run(gx + 1 + Math.round(k * 0.7), gx + 2 + Math.round(k * 0.7), y + 2 + k, k === 4 ? I[0] : I[1]); // the curved magazine
+    body(gx + 4, gx + 8, y - 1, y + 1, W); run(gx + 4, gx + 9, y - 2, I[1]);
+    run(gx + 9, mx - 1, y, I[1]); run(gx + 9, mx - 1, y - 1, I[2]); q.set(mx, y - 1, I[1]); q.set(mx - 1, y - 2, I[2]); q.set(mx - 1, y - 3, I[2]);
+    grip(W); guard();
   } else if (kind === "shotgun") {
-    p.rect(hx + 5, y, hx + 8, y + 1, W.base); p.hl(hx + 5, hx + 8, y, W.hi); p.hl(hx + 5, hx + 8, y + 1, W.lo); for (let x = hx + 6; x <= hx + 8; x += 2) p.set(x, y + 1, W.deep); // the pump's ribs
-    p.hl(hx + 5, mz, y - 1, G.base); p.hl(hx + 9, mz, y, G.lo); p.hl(hx + 5, mz - 1, y - 2, G.hi); p.set(mz, y - 2, BRIGHT); p.set(mz, y - 1, G.deep); // barrel over the magazine tube, the bead
-    p.hl(hx - 3, hx + 4, y - 2, G.lo); p.hl(hx - 2, hx + 3, y - 2, G.base); // a flat receiver top
-  } else { // the hunting rifle: a long wooden fore-end, a bolt, a scope
-    p.rect(hx + 5, y, hx + 8, y + 1, W.base); p.hl(hx + 5, hx + 8, y, W.hi); p.hl(hx + 5, hx + 8, y + 1, W.lo); p.set(hx + 9, y + 1, W.lo); p.set(hx + 9, y, W.base);
-    p.hl(hx + 5, mz, y - 1, G.base); p.hl(hx + 10, mz, y, G.lo); p.hl(hx + 5, mz - 1, y - 2, G.hi); p.set(mz, y - 2, G.base); p.set(mz, y - 1, G.deep); p.set(mz - 1, y - 2, BRIGHT); // barrel, front sight
-    p.rect(hx - 2, y - 4, hx + 4, y - 3, G.base); p.hl(hx - 2, hx + 4, y - 4, G.hi); p.set(hx + 5, y - 4, "#7fb8e6"); p.set(hx + 5, y - 3, "#4f88b6"); p.set(hx - 3, y - 3, G.lo); p.set(hx, y - 2, G.lo); p.set(hx + 3, y - 2, G.lo); // scope and rings
-    p.set(hx + 3, y + 2, M.base); p.set(hx + 4, y + 3, M.lo); // bolt handle
+    const W = PAL.wood, I = PAL.iron;
+    for (let x = bx; x <= gx - 2; x++) { const t = (x - bx) / Math.max(1, gx - 2 - bx), bot = y + 2 - Math.round(t * 1.4); for (let yy = y - 1; yy <= bot; yy++) q.set(x, yy, yy === y - 1 ? W[2] : yy === bot ? W[0] : W[1]); }
+    body(gx - 2, gx + 3, y - 1, y + 1, I); hiLine(gx - 2, gx + 3, y - 1, I[3]);
+    run(gx + 4, mx - 1, y - 1, I[2]); run(gx + 4, mx - 1, y, I[1]); run(gx + 4, mx - 2, y + 1, I[0]); q.set(mx - 1, y - 2, PAL.brass[2]); // barrel over the magazine tube, a bead sight
+    body(gx + 5, gx + 9, y, y + 2, W); for (let x = gx + 6; x <= gx + 8; x += 2) q.set(x, y + 1, W[0]); // the pump's grooves
+    grip(W); guard();
+  } else if (kind === "huntrifle") {
+    const W = PAL.wood, I = PAL.iron;
+    for (let x = bx; x <= gx - 2; x++) { const t = (x - bx) / Math.max(1, gx - 2 - bx), bot = y + 2 - Math.round(t * 1.6); for (let yy = y - 1; yy <= bot; yy++) q.set(x, yy, yy === y - 1 ? W[2] : yy === bot ? W[0] : W[1]); }
+    body(gx - 2, gx + 2, y - 1, y, I); body(gx - 2, gx + 9, y + 1, y + 1, W); run(gx + 3, gx + 9, y, W[1]); run(gx + 3, gx + 9, y - 1, W[2]); run(gx + 3, gx + 9, y + 1, W[0]); // receiver, the long fore-end
+    run(gx + 10, mx - 1, y - 1, I[2]); run(gx + 10, mx - 1, y, I[0]);
+    q.set(gx - 1, y + 1, PAL.steel[2]); q.set(gx - 2, y + 1, PAL.steel[1]); // the bolt handle
+    for (let x = gx - 3; x <= gx + 5; x++) { q.set(x, y - 3, I[2]); q.set(x, y - 2, I[0]); } q.set(gx - 3, y - 3, I[1]); q.set(gx + 5, y - 3, PAL.glass[2]); q.set(gx + 5, y - 2, PAL.glass[0]); q.set(gx - 1, y - 3, I[3]); // the scope, its lens
+    grip(W); guard();
+  } else if (kind === "crossbow") {
+    const W = PAL.ash, I = PAL.iron, fx = Math.min(mx - 2, gx + 8);
+    body(bx, fx, y - 1, y + 1, W); for (let x = bx; x <= gx - 3; x++) q.set(x, y + 2, W[0]); q.set(bx, y + 2, W[0]);
+    for (let k = -6; k <= 6; k++) { const xx = fx + 1 - Math.round((k * k) / 14); q.set(xx, y + k, Math.abs(k) < 2 ? I[1] : k < 0 ? I[2] : I[0]); q.set(xx + 1, y + k, I[1]); } // the prod, side on
+    q.line(fx - 2, y - 6, gx + 1, y - 1, PAL.white[1]); q.line(fx - 2, y + 6, gx + 1, y + 1, PAL.white[0]); // the string, drawn back to the latch
+    run(gx, fx + 2, y - 2, PAL.steel[1]); q.set(fx + 3, y - 2, PAL.steel[3]); q.set(gx + 1, y - 2, PAL.red[1]); // the bolt and its fletching
+    grip(PAL.ash); mx = fx + 3;
+    return { q, mx, my: y - 2 };
+  } else { // a tube (launchers) or anything else: a plain olive tube
+    body(bx + 2, mx, y - 2, y + 1, PAL.olive); grip(PAL.black); mx += 0;
   }
-  return { mx: mz + 1, my: y };
+  return { q, mx: mx + 1, my: y - 1 };
+}
+function pistolLayer(kind, h) {
+  const q = lay(), hx = Math.round(h[0]), hy = Math.round(h[1]), I = kind === "revolver" ? PAL.steel : PAL.iron;
+  const y = hy - 2;
+  if (kind === "revolver") {
+    for (let x = hx - 2; x <= hx + 6; x++) { q.set(x, y - 1, I[2]); q.set(x, y, x > hx + 1 ? I[0] : I[1]); }
+    for (let yy = y - 1; yy <= y + 1; yy++) for (let x = hx - 1; x <= hx + 1; x++) q.set(x, yy, yy === y - 1 ? I[2] : yy === y + 1 ? I[0] : x === hx + 1 ? I[0] : I[1]); // the cylinder
+    q.set(hx - 1, y - 1, I[3]); q.set(hx - 2, y - 2, I[1]); // the hammer
+    for (let k = 0; k < 3; k++) { q.set(hx - 1 - (k >> 1), y + 1 + k, PAL.wood[1]); q.set(hx - (k >> 1), y + 1 + k, PAL.wood[0]); }
+    q.set(hx + 6, y - 2, I[1]);
+    return { q, mx: hx + 7, my: y - 1 };
+  }
+  for (let x = hx - 2; x <= hx + 4; x++) { q.set(x, y - 1, I[2]); q.set(x, y, I[1]); } q.set(hx - 1, y - 1, I[3]); q.set(hx, y - 1, I[3]); q.set(hx + 4, y, I[0]); // slide
+  for (let k = 0; k < 3; k++) { q.set(hx - 1 - (k >> 1), y + 1 + k, PAL.black[1]); q.set(hx - (k >> 1), y + 1 + k, PAL.black[0]); }
+  q.set(hx + 1, y + 1, PAL.black[1]);
+  return { q, mx: hx + 5, my: y - 1 };
+}
+function bowLayer(h) {
+  const q = lay(), hx = Math.round(h[0]), hy = Math.round(h[1]), K = PAL.black;
+  for (let y = hy - 4; y <= hy + 4; y++) { q.set(hx, y, K[2]); q.set(hx + 1, y, K[1]); q.set(hx + 2, y, K[0]); } // the riser
+  for (let k = 5; k <= 12; k++) for (const s of [-1, 1]) { const x = hx + 1 - Math.round(((k - 5) / 7) ** 1.6 * 3), y = hy + s * k; q.set(x, y, s < 0 ? K[2] : K[1]); q.set(x + 1, y, K[0]); } // the limbs, bending back
+  for (const s of [-1, 1]) ellipseV(q, hx - 2, hy + s * 13, 1.3, 1.3, PAL.steel, { specular: false }); // the cams
+  q.vl(hx - 4, hy - 12, hy + 12, PAL.white[1]); // the string
+  q.hl(hx - 3, hx + 5, hy - 1, PAL.ash[2]); q.set(hx + 6, hy - 1, PAL.steel[2]); q.set(hx - 4, hy - 1, PAL.red[1]); q.set(hx - 4, hy - 2, PAL.red[2]); // an arrow nocked
+  return { q, mx: hx + 6, my: hy - 1 };
 }
 
-const isGunLike = (key) => !!key && (GUN_LOOKS[key] != null || /(pistol|rifle|shotgun|smg|carbine|revolver|snub|magnum|bow|\bar\b|^ar\d)/.test(key)) && !MELEE_KEYS.has(key);
-const MELEE_KEYS = new Set(["knife", "huntknife", "combatknife", "machete", "sawmachete", "springmachete", "bat", "nailbat", "spikedbat", "crowbar", "prybar", "fireaxe", "sledge", "spear", "pipespear", "hatchet", "tomahawk", "baton", "stunbaton", "katana", "kukri", "pickaxe", "hammer", "etool", "golfclub", ...Object.keys(BLADE_LOOK)]);
-const twoHanded = (key) => { const k = GUN_LOOKS[key] || "ar"; return k !== "pistol" && k !== "revolver" && k !== "compbow"; };
+// ---------- the figure ----------
+// Draws a dressed figure; `look` holds every material and option (survivors and hostiles share it).
+function figure(look, weaponKey, armorKey) {
+  const p = painter(44, 52), F = frame(look.build), b = F.build;
+  const skin = S(look.skin), top = look.topM, pants = look.pantsM;
+  const kind = gunKind(weaponKey), melee = !!weaponKey && !kind;
+  const long = !!kind && !["pistol", "revolver", "compbow"].includes(kind);
+  if (long) F.turn = 1.6;
+  const hold = long ? gunHold(F, "long") : kind === "compbow" ? gunHold(F, "bow") : kind ? gunHold(F, "pistol") : null;
+  const torsoIn = torsoInside(F);
+  const t = look.robe ? { q: null, sleeve: top, len: "bell" } : topLayer(F, look.topStyle, top, skin, { check: look.topStyle === "flannel" });
+  const sleeve = look.sleeveM || t.sleeve, slen = look.sleeveLen || t.len;
+  // behind: the pack, the far leg, the far arm
+  if (look.accessory === "backpack") { const q = lay(); blob(q, (x, y) => y >= 17 && y <= 30 && x >= Math.round(F.C - b.sw - 3.6) && x <= Math.round(F.C - b.sw + 4) && !(y === 17 && x < F.C - b.sw - 1) && !(y === 30 && x < F.C - b.sw - 1), look.packM, { rim: 2 }); const x0 = Math.round(F.C - b.sw - 3.6); q.hl(x0 + 1, x0 + 4, 22, look.packM[0]); q.hl(x0 + 1, x0 + 4, 23, look.packM[2]); q.set(x0 + 2, 24, PAL.steel[2]); put(p, q); }
+  if (!look.robe) { put(p, legLayer(F, false, pants)); put(p, bootLayer(F.ankleF, back(look.bootM), PAL.black[0]), false); }
+  const farSleeve = sleeve ? back(sleeve) : null, farSkin = back(skin);
+  if (long) put(p, armLayer(hold.shoulderF, hold.elbowF, hold.handF, { skin: farSkin, sleeve: farSleeve, len: slen, r: b.r * 0.95, hand: false }));
+  else put(p, armLayer(F.shoulderF, F.elbowF, F.handF, { skin: farSkin, sleeve: farSleeve, len: slen, r: b.r }));
+  if (look.armbandF) band(p, F.shoulderF, F.elbowF, b.r + 0.6, 0.45, 0.68, (x, y) => (p.get(x, y) ? look.armbandF[x < F.shoulderF[0] - 0.5 ? 2 : 1] : null), { only: (x, y) => !!p.get(x, y) });
+  // the legs and the body
+  if (look.robe) put(p, robeLayer(F, look, skin));
+  else {
+    put(p, legLayer(F, true, pants)); put(p, bootLayer(F.ankleN, look.bootM, PAL.black[0]), false);
+    put(p, pelvisLayer(F, pants), false);
+    if (look.pantsDetail) look.pantsDetail(p, F);
+    put(p, t.q);
+    if (look.topDetail) look.topDetail(p, F, torsoIn);
+    if (!(look.topStyle === "hoodie")) put(p, beltLayer(F, torsoIn, look.beltM ? { m: look.beltM, buckle: look.buckleM || PAL.brass } : {}), false);
+  }
+  const arm = armorLayer(F, armorKey, torsoIn); if (arm) put(p, arm);
+  if (look.accessory === "backpack") { // the straps over the shoulders
+    const st = PAL.black;
+    for (const sx of [F.C - b.sw + 3.4, F.C + b.sw - 4.6]) for (let y = F.top; y <= 26; y++) { const x = Math.round(sx + (y > 20 ? (sx < F.C ? 0.3 : -0.3) * (y - 20) : 0)); if (torsoIn(x, y)) { p.set(x, y, st[2]); p.set(x + 1, y, st[0]); } }
+    p.set(Math.round(F.C + b.sw - 4.6), 23, PAL.steel[2]);
+  }
+  // the hood behind the head, long hair over the shoulders
+  if (look.topStyle === "hoodie" && !look.robe) put(p, hoodLayer(F, top));
+  if (!look.robe && look.hairStyle) { const hb = hairBackLayer(look.hairStyle, look.hair); if (hb.count()) put(p, hb); }
+  // the head
+  const f = drawHead(p, { skin: look.skin, hair: look.hair, hairStyle: look.hood ? "buzz" : look.hairStyle, facial: look.facial, ears: !look.hood });
+  if (look.hood) put(p, look.hood(F, f));
+  if (look.headgear) look.headgear(p, f);
+  else if (look.accessory && look.accessory !== "none" && look.accessory !== "backpack") headgear(p, look.accessory, look.accentM, f);
+  // the near arm and what it holds
+  const armOpts = { skin, sleeve, len: slen, r: b.r };
+  const band2 = (q, s, e) => { if (look.armbandN) band(q, s, e, b.r + 0.6, 0.45, 0.7, (x, y) => look.armbandN[q.get(x, y) === sleeve?.[2] || x < s[0] - 0.6 ? 2 : q.get(x, y) === sleeve?.[0] ? 0 : 1], { only: (x, y) => !!q.get(x, y) }); if (look.nearArmDetail) look.nearArmDetail(q, s, e); };
+  if (long) {
+    const ff = lay(); fist(ff, hold.handF, back(skin), b.r * 0.9, { grip: true }); put(p, ff);
+    // the upper arm, then the gun with its stock tucked against it, then the forearm in front of the grip
+    const uq = armLayer(hold.shoulderN, hold.elbowN, hold.elbowN, { ...armOpts, hand: false }); band2(uq, hold.shoulderN, hold.elbowN); put(p, uq);
+    const g = longGunLayer(kind === "tube" ? "tube" : kind, hold.grip, Math.round(hold.butt[0]), 42, hold.axisY);
+    put(p, g.q);
+    const aq = armLayer(hold.shoulderN, hold.elbowN, hold.handN, { ...armOpts, hand: false });
+    for (const [x, y] of aq.pixels()) { const t = ((x - hold.elbowN[0]) * (hold.handN[0] - hold.elbowN[0]) + (y - hold.elbowN[1]) * (hold.handN[1] - hold.elbowN[1])); if (t < 0) aq.clear(x, y); } // the forearm only
+    put(p, aq);
+    const gq = lay(); fist(gq, hold.grip, skin, b.r, { grip: true }); put(p, gq, false);
+    p.muzzle = { mx: g.mx, my: g.my };
+  } else if (kind) {
+    const aq = armLayer(hold.shoulderN, hold.elbowN, hold.handN, { ...armOpts, hand: false }); band2(aq, hold.shoulderN, hold.elbowN); put(p, aq);
+    const g = kind === "compbow" ? bowLayer(hold.handN) : pistolLayer(kind, hold.handN);
+    put(p, g.q);
+    const gq = lay(); fist(gq, hold.handN, skin, b.r, { grip: true }); put(p, gq, false);
+    p.muzzle = { mx: g.mx, my: g.my };
+  } else if (melee) {
+    const s = F.shoulderN, [e, h] = elbowToward(s, [s[0] + 3.4, s[1] + 12.6], [s[0] + 0.2, s[1] + 7.2], 8, null);
+    const aq = armLayer(s, e, h, { ...armOpts, hand: false }); band2(aq, s, e); put(p, aq);
+    put(p, meleeLayer(weaponKey, h));
+    const gq = lay(); fist(gq, h, skin, b.r, { grip: true }); put(p, gq, false);
+    p.muzzle = null;
+  } else {
+    const aq = armLayer(F.shoulderN, F.elbowN, F.handN, armOpts); band2(aq, F.shoulderN, F.elbowN); put(p, aq);
+    p.muzzle = null;
+  }
+  return p;
+}
 
 // ---------- survivors ----------
+const BOOTS = [PAL.leather, PAL.black, R("#4a3a2c")];
+export function lookOfApp(app) {
+  const h = hash(`${app.skin}${app.hair}${app.top}${app.pants}`);
+  return {
+    build: app.build, skin: app.skin, hair: app.hair, hairStyle: app.hairStyle, facial: app.facial,
+    topStyle: app.topStyle, topM: R(app.top), pantsM: R(app.pants), bootM: BOOTS[h % BOOTS.length],
+    accessory: app.accessory, accentM: R(app.accent), packM: R(mix(app.accent, "#6b5a3a", 0.55)),
+    pantsDetail: (p, F) => { const x = Math.round(F.C + F.build.hip - 1.5); p.over(x, 31, R(app.pants)[0]); p.over(x + 1, 32, R(app.pants)[0]); }, // a pocket's edge
+  };
+}
 export function paintSurvivorHD(app, weaponKey = null, armorKey = null, pose = "stand") {
-  const p = painter(44, 52);
-  const F = frame(app.build);
-  const gun = isGunLike(weaponKey) && !MELEE_KEYS.has(weaponKey);
-  const sleeve = app.top;
-  // behind the body: long hair's fall, the pack
-  drawHair(p, app.hairStyle, app.hair, app.skin, { behind: true });
-  if (app.accessory === "backpack") drawAccessory(p, "backpack", app.accent, F, app.skin);
-  if (!(gun && twoHanded(weaponKey))) drawArm(p, F, -1, sleeve, app.skin, app.topStyle);
-  drawLegs(p, F, app.pants);
-  drawTorso(p, F, app.top, app.topStyle, app.skin);
-  drawArmor(p, armorKey, F);
-  if (app.accessory === "backpack") { const K = tones("#6b4a2a"); p.rect(F.TL + 2, 23, F.TL + 3, 31, K.lo); p.rect(F.TR - 3, 23, F.TR - 2, 31, K.deep); p.set(F.TL + 2, 24, K.base); } // the straps over the clothes
-  let muzzle = null;
-  if (gun) {
-    muzzle = drawGun(p, weaponKey, F);
-    drawGunArm(p, F, sleeve, app.skin, app.topStyle, F.TR + 2);
-    if (twoHanded(weaponKey)) drawSupportArm(p, F, sleeve, app.skin, app.topStyle, Math.min(F.TR + 8, 39), 25);
-  } else drawArm(p, F, 1, sleeve, app.skin, app.topStyle);
-  drawHead(p, app.skin);
-  drawFace(p, app.skin, app.hair);
-  drawFacial(p, app.facial, app.hair, app.skin);
-  drawHair(p, app.hairStyle, app.hair, app.skin);
-  if (app.accessory !== "backpack") drawAccessory(p, app.accessory, app.accent, F, app.skin);
-  if (weaponKey && !gun) drawMelee(p, weaponKey, F.TR + 2);
-  p.muzzle = muzzle;
-  return p;
+  return figure(lookOfApp(app), weaponKey, armorKey, pose);
 }
 
 // ---------- hostile humans ----------
-export function paintEnemyHD(kit, factionColor, weaponKey, armorKey, seed) {
-  const k = enemyLookOf(kit, seed);
-  const { skin, hair } = k;
-  const p = painter(44, 52);
-  const F = frame("average");
-  const fc = factionColor || "#a63a32", FC = tones(fc);
-  const gun = isGunLike(weaponKey) && !MELEE_KEYS.has(weaponKey);
-  const two = gun && twoHanded(weaponKey);
-  const S = tones(skin);
-  if (kit === "soldiers") {
-    const olive = k.olive, O = tones(olive);
-    if (!two) drawArm(p, F, -1, olive, skin, "jacket");
-    drawLegs(p, F, shade(olive, -0.1));
-    // knee pads and a pouch on the thigh
-    p.rect(F.TL + 2, 39, F.mid - 1, 41, O.deep); p.hl(F.TL + 2, F.mid - 1, 39, O.lo); p.rect(F.mid + 2, 39, F.TR - 3, 41, O.deep);
-    drawTorso(p, F, olive, "jacket", skin);
-    // camo blotches
-    for (const [x, y, w] of [[F.TL + 2, 26, 3], [F.TR - 5, 29, 3], [F.TL + 3, 31, 2]]) p.hl(x, x + w, y, O.deep);
-    drawArmor(p, armorKey || "tacvest", F);
-    if (gun) { drawGun(p, weaponKey, F); drawGunArm(p, F, olive, skin, "jacket", F.TR + 2); if (two) drawSupportArm(p, F, olive, skin, "jacket", Math.min(F.TR + 8, 39), 25); }
-    else drawArm(p, F, 1, olive, skin, "jacket");
-    // the armband in the group's color on the back arm (the front one when it holds a gun with both hands)
-    const [ax0, ax1] = two ? F.AR : F.AL;
-    p.rect(ax0, 26, ax1, 27, FC.base); p.hl(ax0, ax1, 26, FC.hi); p.set(ax1, 27, FC.deep); p.set(ax1, 26, FC.lo);
-    drawHead(p, skin); drawFace(p, skin, hair); drawFacial(p, k.facial, hair, skin);
-    // the helmet: a dome with a rim and a cover, the chin strap
-    const H = tones(shade(olive, -0.08));
-    p.rect(13, 4, 28, 9, H.base); p.hl(14, 27, 3, H.base); p.hl(16, 25, 2, H.base); p.hl(18, 23, 1, H.lo); p.rect(12, 8, 29, 10, H.lo); p.hl(12, 29, 10, H.deep); p.hl(13, 28, 11, H.deep); p.set(12, 11, H.deep); p.set(29, 11, H.deep);
-    p.hl(16, 20, 2, H.hi); p.hl(14, 18, 3, H.hi); p.vl(13, 4, 7, H.hi); p.rect(26, 3, 28, 9, H.lo); p.vl(28, 4, 9, H.deep); p.hl(15, 26, 6, H.lo); p.set(21, 4, H.deep); p.set(22, 5, H.deep); // a cover's seam, a scuff
-    p.vl(14, 12, 17, H.deep); p.hl(15, 17, 18, H.deep); p.set(15, 18, H.lo); // chin strap
-  } else if (kit === "zealots") {
-    const robe = k.robe, Rb = tones(robe);
-    if (!two) drawArm(p, F, -1, robe, skin, "jacket", { cuff: false });
-    // a robe to the ankles instead of trousers: pleats, a hem, the shoes under it
-    p.rect(F.TL, 35, F.TR, 47, Rb.base); p.rect(F.TL - 1, 42, F.TR + 1, 47, Rb.base); p.vl(F.TL, 35, 47, Rb.hi); p.vl(F.TL - 1, 42, 47, Rb.hi); p.vl(F.TR, 35, 47, Rb.lo); p.vl(F.TR + 1, 42, 47, Rb.deep); p.vl(F.TR - 1, 36, 47, Rb.lo);
-    for (const x of [F.mid - 4, F.mid + 1, F.mid + 5]) { p.vl(x, 36, 47, Rb.lo); p.vl(x + 1, 38, 47, Rb.hi); } p.vl(F.mid - 4, 44, 47, Rb.deep); p.vl(F.mid + 1, 40, 47, Rb.deep);
-    p.hl(F.TL - 1, F.TR + 1, 47, Rb.deep); p.hl(F.TL, F.TR, 48, BOOT.deep); p.hl(F.TL + 1, F.TR - 1, 49, SOLE); p.hl(F.TL, F.mid - 1, 48, BOOT.base);
-    drawTorso(p, F, robe, "tshirt", robe, { belt: false }); p.rect(F.mid - 2, 23, F.mid + 3, 24, Rb.lo); p.hl(F.mid - 2, F.mid + 3, 23, Rb.deep); // the collar is closed
-    // the sash from the left shoulder to the right hip, the waist band
-    for (let y = 23; y <= 32; y++) { const x = F.TL + 1 + Math.round((y - 23) * 1.4); p.rect(x, y, x + 2, y, FC.base); p.set(x, y, FC.hi); p.set(x + 2, y, FC.lo); }
-    p.rect(F.TL, 33, F.TR, 35, FC.base); p.hl(F.TL, F.TR, 33, FC.hi); p.hl(F.TL, F.TR, 35, FC.deep); p.set(F.TR, 34, FC.deep); p.rect(F.TR - 3, 36, F.TR - 2, 40, FC.lo); p.set(F.TR - 2, 41, FC.deep); // the knot's tail
-    if (gun) { drawGun(p, weaponKey, F); drawGunArm(p, F, robe, skin, "jacket", F.TR + 2); if (two) drawSupportArm(p, F, robe, skin, "jacket", Math.min(F.TR + 8, 39), 25); }
-    else drawArm(p, F, 1, robe, skin, "jacket", { cuff: false });
-    drawHead(p, skin, { ears: false }); drawFace(p, skin, hair); drawFacial(p, k.facial, hair, skin);
-    // the hood: a cowl around the face, its peak, the face shadowed under the brim
-    p.rect(11, 4, 30, 8, Rb.base); p.hl(12, 29, 3, Rb.base); p.hl(14, 27, 2, Rb.base); p.hl(17, 23, 1, Rb.lo); p.hl(18, 21, 1, Rb.base);
-    p.rect(11, 9, 14, 22, Rb.base); p.rect(27, 9, 30, 22, Rb.lo); p.rect(10, 12, 10, 22, Rb.base); p.rect(31, 12, 31, 22, Rb.deep); p.vl(11, 9, 22, Rb.hi); p.set(10, 12, Rb.hi); p.vl(30, 9, 22, Rb.deep); p.vl(29, 10, 22, Rb.lo);
-    p.hl(15, 26, 9, Rb.lo); p.hl(15, 26, 8, Rb.base); p.hl(16, 25, 10, S.deep); p.hl(15, 26, 9, Rb.deep); // the hood's edge over the brow, its shadow on the face
-    p.hl(14, 18, 2, Rb.hi); p.hl(12, 16, 3, Rb.hi); p.vl(11, 4, 7, Rb.hi); p.rect(27, 3, 30, 8, Rb.lo); p.vl(30, 4, 8, Rb.deep);
-    p.vl(14, 10, 20, Rb.deep); p.vl(27, 10, 20, Rb.deep); p.hl(11, 14, 23, Rb.deep); p.hl(27, 30, 23, Rb.deep); p.hl(12, 14, 22, Rb.lo); // the opening's inner edge, the cowl's fall onto the shoulders
-    p.rect(19, 5, 22, 6, fc); p.set(19, 5, FC.hi); p.set(22, 6, FC.deep); p.vl(20, 4, 7, FC.base); p.set(20, 4, FC.hi); // the mark on the hood
-  } else {
-    // raiders: leather and denim, studs, a bandana / cap / headband in the group's color
-    const J = tones(k.jacket);
-    if (!two) drawArm(p, F, -1, k.jacket, skin, k.armStyle === "tshirt" ? "tshirt" : "jacket");
-    drawHair(p, k.hairStyle, hair, skin, { behind: true });
-    drawLegs(p, F, k.pants);
-    p.hl(F.TL + 3, F.mid - 1, 42, tones(k.pants).deep); p.set(F.TL + 4, 43, tones(k.pants).hi); // a torn knee
-    drawTorso(p, F, k.jacket, k.topStyle, skin);
-    if (k.topStyle === "tank") { p.hl(F.TL + 4, F.TL + 6, 27, mix(skin, "#2a3a5a", 0.5)); p.set(F.TL + 5, 28, mix(skin, "#2a3a5a", 0.5)); } // a tattoo
-    drawArmor(p, armorKey, F);
-    if (gun) { drawGun(p, weaponKey, F); drawGunArm(p, F, k.jacket, skin, k.armStyle === "tshirt" ? "tshirt" : "jacket", F.TR + 2); if (two) drawSupportArm(p, F, k.jacket, skin, k.armStyle === "tshirt" ? "tshirt" : "jacket", Math.min(F.TR + 8, 39), 25); }
-    else drawArm(p, F, 1, k.jacket, skin, k.armStyle === "tshirt" ? "tshirt" : "jacket");
-    if (k.studs) { for (const [x, y] of [[F.TL + 2, 24], [F.TL + 4, 24], [F.TR - 3, 24], [F.TR - 5, 24], [F.TL + 3, 25]]) { p.set(x, y, "#c9c4bb"); p.set(x + 1, y, "#7d7872"); } p.rect(F.TR - 4, 29, F.TR - 2, 30, FC.lo); p.set(F.TR - 4, 29, FC.base); } // studs, a patch
-    drawHead(p, skin); drawFace(p, skin, hair); drawFacial(p, k.facial, hair, skin);
-    drawHair(p, k.hairStyle, hair, skin);
-    drawAccessory(p, k.acc, fc, F, skin);
-    if (k.acc !== "bandana") { p.rect(F.AL[0], 27, F.AL[1], 28, FC.base); p.hl(F.AL[0], F.AL[1], 27, FC.hi); p.set(F.AL[1], 28, FC.deep); } // an armband too, so the colour shows from behind
+// Soldiers' camo: 2-3 large blobs, recolouring the cloth's ramp so the light stays.
+function camo(p, from, seed) {
+  const rng = new Rng(seed * 7919 + 3), A = R(shade(from[1], -0.28)), B = R(mix(from[1], "#6b5a3a", 0.6));
+  const blobs = [];
+  for (let i = 0; i < 6; i++) blobs.push([10 + rng.next() * 24, 16 + rng.next() * 30, 2.2 + rng.next() * 2, 1.6 + rng.next() * 1.4, i % 2 ? B : A]);
+  for (const [x, y, c] of p.pixels()) {
+    const i = from.indexOf(c); if (i < 0) continue;
+    for (const [bx, by, rx, ry, m] of blobs) if (((x - bx) / rx) ** 2 + ((y - by) / ry) ** 2 <= 1) { p.set(x, y, m[i]); break; }
   }
-  if (weaponKey && !gun) drawMelee(p, weaponKey, F.TR + 2);
-  return p;
+}
+function robeLayer(F, look, skin) {
+  const q = lay(), m = look.topM, { C, build: b } = F;
+  const half = (y) => (y < F.top + 2 ? b.sw - (F.top + 2 - y) * 1.3 : y < 27 ? b.sw + (b.waist - b.sw) * Math.min(1, (y - F.top - 2) / 9) : b.waist + (y - 27) * 0.18);
+  const inside = (x, y) => y >= F.top && y <= 47 - (x % 3 === 0 && y === 47 ? 1 : 0) && Math.abs(x + 0.5 - C) <= half(y) + (y > 20 && y < 31 ? b.belly * 0.6 : 0);
+  blob(q, inside, m, { rim: 2 });
+  for (const [fx, y0] of [[C - 3, 31], [C + 1, 33], [C + 5, 30], [C - 6, 35]]) for (let y = y0; y <= 46; y++) { const x = Math.round(fx + (y - y0) * (fx < C ? -0.12 : 0.12)); if (q.get(x, y)) { q.set(x, y, m[0]); if (q.get(x - 1, y) === m[1]) q.set(x - 1, y, m[2]); } }
+  // the sash: from the far shoulder across to the near hip, its knot and a tail
+  const fc = look.groupM;
+  for (let y = F.top + 2; y <= 29; y++) { const x = Math.round(C - b.sw + 3 + (y - F.top - 2) * 1.15); for (let k = 0; k < 3; k++) if (q.get(x + k, y)) q.set(x + k, y, k === 0 ? fc[2] : k === 2 ? fc[0] : fc[1]); }
+  for (let x = Math.round(C - b.waist); x <= Math.round(C + b.waist); x++) { if (q.get(x, 28)) q.set(x, 28, fc[2]); if (q.get(x, 29)) q.set(x, 29, fc[0]); }
+  for (let y = 30; y <= 35; y++) { const x = Math.round(C + b.waist - 2 + (y - 30) * 0.2); q.set(x, y, fc[1]); q.set(x + 1, y, fc[0]); }
+  // sandals under the hem
+  for (const ax of [F.ankleF[0] - 0.5, F.ankleN[0] + 0.5]) { const a = Math.round(ax); q.hl(a - 1, a + 3, 48, ax < C ? back(skin)[1] : skin[1]); q.set(a + 3, 48, skin[0]); q.hl(a - 1, a + 3, 49, PAL.leather[0]); q.set(a, 48, PAL.leather[1]); }
+  return q;
+}
+function hoodOf(m) {
+  return (F, f) => {
+    const q = lay(), [hx, hy] = HC;
+    const face = (x, y) => ((x - (hx + 2.2)) / 4.1) ** 2 + ((y - (hy + 1.2)) / 5.2) ** 2 <= 1 && x >= hx - 1.2;
+    const inside = (x, y) => (((x - (hx - 0.6)) / 7.1) ** 2 + ((y - (hy - 0.2)) / 7.4) ** 2 <= 1 || (y >= hy + 2 && y <= F.top + 2 && x >= hx - 6.5 && x <= hx + 4.6)) && !face(x, y) && y <= F.top + 2;
+    blob(q, inside, m, { rim: 2 });
+    for (const [x, y] of [[hx - 3, hy - 4], [hx - 4, hy - 2], [hx - 4.5, hy], [hx - 4.6, hy + 2]]) q.set(Math.round(x), Math.round(y), m[0]); // a fold down the hood
+    const rim = []; for (const [x, y] of q.pixels()) if (face(x + 1, y) || face(x, y + 1) || face(x - 1, y)) rim.push([x, y]);
+    for (const [x, y] of rim) q.set(x, y, y < hy ? m[2] : m[1]);
+    return q;
+  };
+}
+export function paintEnemyHD(kit, factionColor, weaponKey, armorKey, seed) {
+  const k = enemyLookOf(kit, seed), fc = factionColor || "#a63a32", G = R(fc);
+  if (kit === "soldiers") {
+    const O = R(k.olive), P = R(shade(k.olive, -0.1));
+    const look = {
+      build: "average", skin: k.skin, hair: k.hair, hairStyle: "buzz", facial: k.facial, topStyle: "jacket", topM: O, pantsM: P, bootM: PAL.black,
+      beltM: PAL.olive, buckleM: PAL.steel, armbandN: G, armbandF: G,
+      topDetail: (p, F) => { for (let y = F.top + 2; y <= F.belt; y++) p.over(F.front, y, O[0]); for (let y = F.top + 4; y <= F.belt; y += 3) p.over(F.front + 1, y, O[2]); for (const x of [F.C - 4, F.C + 4]) { p.over(x, 21, O[0]); p.over(x + 1, 21, O[0]); p.over(x + 2, 21, O[0]); } },
+      headgear: (p, f) => { // the helmet: a shaded dome with a rim, a chin strap
+        const H = R(shade(k.olive, -0.05)), q = lay(), [hx, hy] = HC;
+        ellipseV(q, hx - 0.6, hy - 1.6, 6.4, 5.4, H, { specular: true, cut: (x, y) => y <= hy - 0.6 });
+        for (let x = Math.round(hx - 7.2); x <= Math.round(hx + 6.2); x++) { q.set(x, Math.round(hy - 0.2), H[0]); if (x > hx - 7 && x < hx + 6) q.set(x, Math.round(hy - 1), H[1]); }
+        q.set(Math.round(hx - 7.2), Math.round(hy - 1), H[1]);
+        put(p, q);
+      },
+    };
+    const p = figure(look, weaponKey, armorKey || "plate");
+    const m = p.muzzle; camo(p, O, seed); camo(p, P, seed + 1); p.muzzle = m;
+    return p;
+  }
+  if (kit === "zealots") {
+    const Rb = R(k.robe);
+    const look = { build: "average", skin: k.skin, hair: k.hair, hairStyle: "buzz", facial: k.facial, robe: true, topM: Rb, groupM: G, hood: hoodOf(Rb), sleeveM: Rb, sleeveLen: "bell" };
+    return figure(look, weaponKey, armorKey);
+  }
+  // raiders: leather and denim, studs, a bandana / cap / headband in the group's colour
+  const J = R(k.jacket), D = R(k.pants);
+  const look = {
+    build: "average", skin: k.skin, hair: k.hair, hairStyle: k.acc === "cap" && k.hairStyle === "mohawk" ? "buzz" : k.hairStyle, facial: k.facial,
+    topStyle: k.topStyle === "tank" ? "tank" : "jacket", topM: J, pantsM: D, bootM: PAL.black,
+    sleeveM: k.topStyle === "tank" ? null : J, sleeveLen: k.topStyle === "tank" ? "none" : k.armStyle === "tshirt" ? "short" : "long",
+    accessory: k.acc, accentM: G, armbandN: k.acc === "bandana" ? null : G,
+    pantsDetail: (p, F) => { for (const [x, y] of [[F.kneeN[0] + 1, 38], [F.kneeN[0] + 2, 38]]) p.over(Math.round(x), y, D[3]); p.over(Math.round(F.kneeN[0] + 1), 39, D[0]); }, // a torn knee
+    topDetail: (p, F) => {
+      if (k.topStyle === "tank") { const S2 = S(k.skin); p.over(Math.round(F.C - 4), 18, mix(S2[1], "#2a3a5a", 0.5)); }
+      if (k.studs && k.topStyle !== "tank") for (const x of [F.C - F.build.sw + 2.5, F.C - F.build.sw + 4.5, F.C + F.build.sw - 5.5]) p.over(Math.round(x), F.top + 1, PAL.steel[2]); // studs along the shoulders
+      if (k.studs) { const x = Math.round(F.C - 4); for (let y = 24; y <= 26; y++) for (let xx = x; xx <= x + 2; xx++) p.over(xx, y, y === 24 ? G[2] : xx === x + 2 ? G[0] : G[1]); } // a patch
+    },
+  };
+  return figure(look, weaponKey, armorKey);
 }
 
-// The game's painter (ui/sprites.js: no pixels()) as an HD painter, blown up 2× for the comparison cells.
+// The game's painter (ui/sprites.js) as an HD painter, blown up 2× for the comparison cells.
 export function fromGame(gp, k = 2) { const q = painter(gp.w, gp.h); q.px.splice(0, q.px.length, ...gp.px); return scaled(q, k); }
 
 // ---------- the sheet ----------
 const appOf = (seed) => randomAppearance(new Rng(seed));
-const WEAPON_MIX = ["machete", "pistol", "bat", "ar", "knife", "shotgun", "fireaxe", "huntrifle", "crowbar", "revolver", "sledge", "compbow", "crossbow", "nailbat", null];
+const WEAPON_MIX = ["machete", "pistol", "bat", "ar", "knife", "shotgun", "fireaxe", "huntrifle", "crowbar", "revolver", "sledge", "compbow", "crossbow", "nailbat", "ak", null];
 const ARMOR_MIX = [null, "padding", null, "tirevest", "sportspads", null, "scrapvest", null, "vest", null, "plate", "tacvest"];
-const varied = (seed) => { const app = appOf(seed); return paintSurvivorHD(app, WEAPON_MIX[seed % WEAPON_MIX.length], ARMOR_MIX[seed % ARMOR_MIX.length]); };
+const varied = (seed) => paintSurvivorHD(appOf(seed), WEAPON_MIX[seed % WEAPON_MIX.length], ARMOR_MIX[seed % ARMOR_MIX.length]);
 const base = { build: "average", skin: "#d9a37c", hairStyle: "short", hair: "#3b2a1e", facial: "none", topStyle: "tshirt", top: "#3d4a5c", pants: "#2b3442", accessory: "none", accent: "#b8322a" };
 
 export const SHEET_TITLE = "HD people (44 × 52): survivors, raiders, soldiers, zealots";
 export const SHEET_COLS = 8;
 export const SHEET = [];
-// row 1: eight varied survivors
 for (let i = 0; i < 8; i++) { const s = 101 + i * 7; SHEET.push({ label: `survivor ${s}`, paint: () => varied(s) }); }
-// row 2: the top styles, the builds
 for (const [k] of LOOK_OPTIONS.topStyle.values) SHEET.push({ label: k, paint: () => paintSurvivorHD({ ...base, topStyle: k, top: k === "flannel" ? "#7a3b32" : k === "hoodie" ? "#6d6f73" : k === "jacket" ? "#5b4632" : k === "tank" ? "#c9c2b0" : "#2e5e6b" }) });
-for (const b of ["slim", "average", "heavy"]) SHEET.push({ label: `${b} build`, paint: () => paintSurvivorHD({ ...base, build: b, topStyle: "jacket", top: "#33533b" }, b === "heavy" ? "sledge" : null) });
-// row 3: hair styles and accessories
-for (const [k] of LOOK_OPTIONS.hairStyle.values) SHEET.push({ label: `hair ${k}`, paint: () => paintSurvivorHD({ ...base, hairStyle: k, hair: k === "curly" ? "#1d1a17" : k === "long" ? "#c9a25a" : k === "mohawk" ? "#a9442a" : "#6b4526", facial: k === "buzz" ? "beard" : k === "short" ? "stubble" : k === "bald" ? "stache" : "none", skin: k === "curly" ? "#7d5233" : k === "bald" ? "#a06e46" : base.skin }) });
-SHEET.push({ label: "facial beard", paint: () => paintSurvivorHD({ ...base, facial: "beard", hairStyle: "ponytail", hair: "#9a6a3a", topStyle: "flannel", top: "#33533b" }) });
-for (const [k] of LOOK_OPTIONS.accessory.values.slice(1)) SHEET.push({ label: k, paint: () => paintSurvivorHD({ ...base, accessory: k, accent: k === "cap" ? "#2d5fa8" : k === "beanie" ? "#3f7a3a" : k === "bandana" ? "#b8322a" : k === "headband" ? "#d9b23a" : "#d97a2b", hairStyle: k === "beanie" || k === "cap" ? "short" : "buzz", skin: k === "bandana" ? "#5c3a24" : base.skin, hair: k === "headband" ? "#1d1a17" : base.hair, topStyle: k === "backpack" ? "jacket" : "tshirt", top: k === "backpack" ? "#5a6b3a" : "#8a6a3a" }) });
-// row 4: armors
-for (const k of ["padding", "tirevest", "sportspads", "scrapvest", "vest", "plate", "tacvest"]) SHEET.push({ label: `armor ${k}`, paint: () => paintSurvivorHD({ ...base, topStyle: "tshirt", top: "#6d6f73", pants: "#4f4a3a" }, k === "plate" ? "ar" : k === "vest" ? "shotgun" : k === "tacvest" ? "pistol" : null, k) });
-SHEET.push({ label: "no armor", paint: () => paintSurvivorHD({ ...base, topStyle: "tshirt", top: "#6d6f73", pants: "#4f4a3a" }, null, null) });
-// row 5: weapons
-for (const w of ["knife", "machete", "bat", "nailbat", "crowbar", "fireaxe", "sledge", "bowie", "pistol", "revolver", "shotgun", "huntrifle", "ar", "compbow", "crossbow", "sabre"]) SHEET.push({ label: w, paint: () => paintSurvivorHD({ ...base, topStyle: w === "ar" || w === "shotgun" ? "jacket" : w === "compbow" ? "tank" : "tshirt", top: "#5a6b3a", hairStyle: "buzz" }, w, null) });
-// row 6: hostiles in two group colours
+for (const b of ["slim", "average", "heavy"]) SHEET.push({ label: `${b} build`, paint: () => paintSurvivorHD({ ...base, build: b, topStyle: "jacket", top: "#33533b" }) });
+for (const [k] of LOOK_OPTIONS.hairStyle.values) SHEET.push({ label: `hair ${k}`, paint: () => paintSurvivorHD({ ...base, hairStyle: k, hair: k === "curly" ? "#1d1a17" : k === "long" ? "#c9a25a" : k === "mohawk" ? "#a9442a" : k === "ponytail" ? "#6b4526" : "#3b2a1e", skin: k === "curly" ? "#7d5233" : k === "bald" ? "#a06e46" : k === "long" ? "#eac3a2" : base.skin }) });
+SHEET.push({ label: "beard", paint: () => paintSurvivorHD({ ...base, facial: "beard", hair: "#9a6a3a", topStyle: "flannel", top: "#33533b" }) });
+for (const [k] of LOOK_OPTIONS.facial.values.filter(([v]) => v !== "beard")) SHEET.push({ label: `face ${k}`, paint: () => paintSurvivorHD({ ...base, facial: k, hairStyle: "buzz", hair: "#1d1a17", skin: k === "stache" ? "#c08a5f" : k === "stubble" ? "#eac3a2" : "#5c3a24" }) });
+for (const [k] of LOOK_OPTIONS.accessory.values.slice(1)) SHEET.push({ label: k, paint: () => paintSurvivorHD({ ...base, accessory: k, accent: k === "cap" ? "#2d5fa8" : k === "beanie" ? "#3f7a3a" : k === "bandana" ? "#b8322a" : k === "headband" ? "#d9b23a" : "#d97a2b", skin: k === "bandana" ? "#5c3a24" : base.skin, hair: k === "headband" ? "#1d1a17" : base.hair, topStyle: k === "backpack" ? "jacket" : "tshirt", top: k === "backpack" ? "#5a6b3a" : "#8a6a3a" }) });
+SHEET.push({ label: "no armor", paint: () => paintSurvivorHD({ ...base, top: "#6d6f73", pants: "#4f4a3a" }) });
+for (const k of ["padding", "tirevest", "sportspads", "scrapvest", "vest", "plate", "tacvest"]) SHEET.push({ label: `armor ${k}`, paint: () => paintSurvivorHD({ ...base, top: "#6d6f73", pants: "#4f4a3a" }, null, k) });
+SHEET.push({ label: "plate + ar", paint: () => paintSurvivorHD({ ...base, top: "#6d6f73", pants: "#4f4a3a" }, "ar", "plate") });
+for (const w of ["knife", "machete", "bat", "nailbat", "crowbar", "prybar", "fireaxe", "hatchet", "sledge", "baton", "spear", "bowie", "pistol", "revolver", "shotgun", "huntrifle", "ar", "ak", "compbow", "crossbow", "sabre", "kukri", "pipespear", "golfclub"]) SHEET.push({ label: w, paint: () => paintSurvivorHD({ ...base, topStyle: "jacket", top: "#5a6b3a", hairStyle: "short" }, w, null) });
 for (const [fc, name] of [["#a63a32", "red"], ["#2d5fa8", "blue"]]) {
   for (let i = 0; i < 3; i++) SHEET.push({ label: `raider ${name} ${i + 1}`, paint: () => paintEnemyHD("raiders", fc, ["machete", "pistol", "nailbat"][i], i === 2 ? "tirevest" : null, 11 + i) });
   for (let i = 0; i < 3; i++) SHEET.push({ label: `soldier ${name} ${i + 1}`, paint: () => paintEnemyHD("soldiers", fc, ["ar", "shotgun", "pistol"][i], ["vest", "plate", "tacvest"][i], 21 + i) });
   for (let i = 0; i < 2; i++) SHEET.push({ label: `zealot ${name} ${i + 1}`, paint: () => paintEnemyHD("zealots", fc, ["knife", "huntrifle"][i], null, 31 + i) });
 }
-// comparison: the game's sprite at 2× next to the HD one
 export const COMPARE_SEEDS = [3, 17, 42, 58, 77, 93];
 export const comparePairs = () => COMPARE_SEEDS.flatMap((s, i) => {
   const app = appOf(s), w = ["machete", "ar", "bat", "pistol", "shotgun", "fireaxe"][i], a = [null, "padding", null, "scrapvest", "vest", null][i];

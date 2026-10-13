@@ -109,7 +109,9 @@ export function skeleton(build = "average", { cx = 21, lean = 0 } = {}) {
     shoulderN: [cx + b.sw - 1 + lean, sy], shoulderF: [cx - b.sw + 1 + lean, sy],
     hipN: [cx + 3, 32], hipF: [cx - 3, 32],
     kneeN: [cx + 4, 40], kneeF: [cx - 3, 40],
-    footN: [cx + 4, 47], footF: [cx - 3, 47],
+    // boot() paints rows foot.y .. foot.y + h - 1 and the sole under them: foot.y 46 puts the sole on row 49 (fixed
+    // 2026-10-13: it was 47, the sole on row 50, which the outline needs free).
+    footN: [cx + 4, 46], footF: [cx - 3, 46],
     // Hanging arms: the elbow at the waist, the hand at the top of the thigh (upper arm 8, forearm 8).
     elbowN: [cx + b.sw, 26], elbowF: [cx - b.sw, 26],
     handN: [cx + b.sw + 1, 33], handF: [cx - b.sw - 1, 33],
@@ -175,5 +177,113 @@ export function head(p, sk, skin, { jaw = 1 } = {}) {
   // The jaw: a little forward and down on the facing side.
   blob(p, (x, y) => y >= hy + 2 && y <= hy + ry + jaw && x >= hx - rx + 2 + (y - hy - 2) * 0.5 && x <= hx + rx - 0.5, skin, { rim: 1 });
   return { eye: [Math.round(hx + 1.5), Math.round(hy)], eyeFar: [Math.round(hx - 2.5), Math.round(hy)], nose: [Math.round(hx + rx - 0.5), Math.round(hy + 2)], mouth: [Math.round(hx + 2), Math.round(hy + 4)], ear: [Math.round(hx - 2), Math.round(hy + 1)] };
+}
+
+// ---------- additions (2026-10-13, the people redesign): all additive ----------
+
+// The item icons' bar (items.js): a straight bar from (x0, y0) to (x1, y1), w pixels across (horizontal runs for a
+// steep bar, vertical runs for a flat one), tapering to w1; its upper-left edge lit, its lower-right edge `edge` (the
+// dark tone by default; PAL.steel[3] for a blade's ground edge). Weapons, shafts, straps.
+export function bar(p, x0, y0, x1, y1, w, m, w1 = w, edge = m[0]) {
+  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+  const steep = Math.abs(y1 - y0) >= Math.abs(x1 - x0);
+  const pts = []; { let x = x0, y = y0; const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let e = dx + dy;
+    for (;;) { pts.push([x, y]); if (x === x1 && y === y1) break; const e2 = 2 * e; if (e2 >= dy) { e += dy; x += sx; } if (e2 <= dx) { e += dx; y += sy; } } }
+  pts.forEach(([x, y], k) => {
+    const wk = Math.max(1, Math.round(w + (w1 - w) * (k / Math.max(1, pts.length - 1)))), o = Math.floor((wk - 1) / 2);
+    for (let i = 0; i < wk; i++) {
+      const c = wk === 1 ? m[1] : i === 0 ? m[2] : i === wk - 1 ? edge : m[1];
+      if (steep) p.set(x - o + i, y, c); else p.set(x, y - o + i, c);
+    }
+  });
+}
+const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+export { lerp2 as lerpPt };
+// Two-bone IK that picks the elbow on the side of a hint point (elbowFor() always bends "down"; for an arm reaching
+// almost straight down to a gun's grip that puts the elbow across the chest). Returns [elbow, hand]; the hand is
+// pulled in if out of reach. With l2 = null the forearm takes whatever length puts the elbow ON the hint (as long as
+// that is ≤ 8): a forearm pointing at the viewer looks shorter, never longer.
+export function elbowToward(s, h, hint, l1 = 8, l2 = 8) {
+  if (l2 == null) { const e = reach(s, hint, l1); return [e, reach(e, h, 8)]; }
+  h = reach(s, h, l1 + l2 - 0.5);
+  const dx = h[0] - s[0], dy = h[1] - s[1], d = Math.max(0.01, Math.hypot(dx, dy));
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), hgt = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const mx = s[0] + (dx * a) / d, my = s[1] + (dy * a) / d, px = -dy / d, py = dx / d;
+  const e1 = [mx + px * hgt, my + py * hgt], e2 = [mx - px * hgt, my - py * hgt];
+  return [Math.hypot(e1[0] - hint[0], e1[1] - hint[1]) <= Math.hypot(e2[0] - hint[0], e2[1] - hint[1]) ? e1 : e2, h];
+}
+// The gun hold (replaces the kit-test rifle pose, whose near elbow swung across the chest). For a figure with
+// shoulderN / cx / build.sw (skeleton() or people.js's frame):
+//   near arm: the upper arm hangs from the shoulder with the elbow down and a little back beside the torso, the forearm
+//             comes forward to the pistol grip just in front of the belly;
+//   far arm:  long guns: from a shoulder behind the torso (the body turns into the gun; the upper arm is hidden by the
+//             torso, which is drawn after it), the hand under the fore-end a hand's width ahead of the grip, inside
+//             upper arm + forearm. Pistols: hanging (null).
+// kind: "long" (rifles, shotguns, crossbows), "pistol", "bow". Returns joints and the gun's line: axisY is the
+// receiver's middle row, grip / fore the hands' centres, butt the stock's end (tucked under the near arm).
+export function gunHold(sk, kind = "long") {
+  const s = sk.shoulderN, sw = sk.build.sw, cx = sk.cx;
+  const eHint = [s[0] - 0.4, s[1] + 7.6];
+  if (kind === "pistol") {
+    const [e, h] = elbowToward(s, [s[0] + 6, s[1] + 4.2], eHint, 8, null);
+    return { kind, shoulderN: s, elbowN: e, handN: h, grip: h, axisY: h[1] - 2.5, shoulderF: null, elbowF: null, handF: null, fore: null, butt: null };
+  }
+  if (kind === "bow") {
+    const [e, h] = elbowToward(s, [s[0] + 5, s[1] + 9], eHint, 8, null);
+    return { kind, shoulderN: s, elbowN: e, handN: h, grip: h, axisY: h[1], shoulderF: null, elbowF: null, handF: null, fore: null, butt: null };
+  }
+  const [e, g] = elbowToward(s, [s[0] + 4.8, s[1] + 9.6], eHint, 8, null);
+  const axisY = g[1] - 4.2; // the receiver sits above the fist, the forearm passes under it
+  const sF = [cx + 4, s[1] + 1.4]; // behind the torso: the body turned into the gun
+  const fore = reach(sF, [g[0] + 4.6, axisY + 2.4], 15.2);
+  const [eF, hF] = elbowFor(sF, fore, 8, 8, 1);
+  return { kind, shoulderN: s, elbowN: e, handN: g, grip: g, axisY, shoulderF: sF, elbowF: eF, handF: hF, fore: hF, butt: [s[0] - 4.5, axisY], sw };
+}
+
+// A head volume in the face-friendly item light: the mid tone over the face (no big shadow on the facing side), the
+// upper-left rim lit, a 1-px dark rim on the lower right and under the jaw, a chin a little forward on the facing
+// side. Returns inside(x, y) for the features and the hair.
+export function headVolume(p, c, r, skin, { specular = false } = {}) {
+  const [cx, cy] = c, [rx, ry] = r;
+  const inE = (x, y) => { const nx = (x - cx) / (rx + 0.5), ny = (y - cy) / (ry + 0.5); return nx * nx + ny * ny <= 1; };
+  const jaw = (x, y) => y > cy + 1 && y <= cy + ry + 0.4 && x >= cx - 0.5 && x <= cx + rx + 0.2 - Math.max(0, y - (cy + ry - 2)) * 1.2;
+  const inside = (x, y) => inE(x, y) || jaw(x, y);
+  for (let y = Math.floor(cy - ry - 1); y <= Math.ceil(cy + ry + 1); y++) for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
+    if (!inside(x, y)) continue;
+    const o = (dx, dy) => !inside(x + dx, y + dy);
+    let col = skin[1];
+    if (o(0, 1) || (o(1, 0) && y > cy + 1) || (o(1, 1) && y > cy)) col = skin[0];
+    else if ((o(-1, 0) || o(0, -1) || o(-1, -1)) && (x < cx + 1 || y < cy - ry + 2)) col = skin[2];
+    else if (x < cx - rx + 2.2 && y > cy + 0.5) col = skin[0]; // the back of the jaw, turned from the light
+    p.set(x, y, col);
+  }
+  if (specular) { p.hl(Math.round(cx - rx * 0.55), Math.round(cx - rx * 0.15), Math.round(cy - ry * 0.62), skin[3]); p.set(Math.round(cx - rx * 0.62), Math.round(cy - ry * 0.42), skin[3]); }
+  return inside;
+}
+// The face in the item style, facing right: eyes as a dark pixel with a 1-px white on the facing side, a brow shadow,
+// a nose bump on the facing edge, a mouth line in the skin's dark tone, an ear on the far side. Returns the anchors
+// (eye rows and columns, mouth, chin, ear) for facial hair, glasses, masks.
+export function face(p, c, r, skin, { brow = null, inside = null, ear = true, eyes = true, mouth = true } = {}) {
+  const [cx, cy] = c, [rx, ry] = r;
+  const ey = Math.round(cy + 0.6), exN = Math.round(cx + rx * 0.5), exF = exN - 4;
+  const edgeAt = (y) => { let x = Math.round(cx + rx + 2); while (x > cx && !(inside ? inside(x, y) : p.get(x, y))) x--; return x; };
+  const bc = brow || skin[0], pupil = "#1a1412", white = "#f2eee6";
+  if (eyes) {
+    p.set(exN, ey, pupil); p.set(exN + 1, ey, white);
+    p.set(exF, ey, pupil); p.set(exF + 1, ey, white);
+    p.hl(exN - 1, exN, ey - 1, bc); p.set(exF, ey - 1, bc); p.set(exF - 1, ey - 1, bc); // the brow ridge's shadow, over the pupils
+    p.set(exN, ey + 1, skin[2]); // the cheek catching light under the eye
+  }
+  // the nose: one pixel out from the facing edge, its underside in shadow
+  const ny = ey + 1, nx = edgeAt(ny) + 1;
+  p.set(nx, ny, skin[1]); p.set(nx, ny - 1, skin[1]); p.set(nx - 1, ny + 1, skin[0]); p.set(nx, ny + 1, null);
+  const my = ey + 3, mx1 = edgeAt(my) - 1;
+  if (mouth) p.hl(mx1 - 2, mx1, my, skin[0]);
+  if (ear) { // the far ear: a lit rim, a shadowed hollow
+    const ex = Math.round(cx - rx * 0.62), eyy = ey + 0.5;
+    ellipseV(p, ex, eyy, 1.2, 1.6, skin, { specular: false });
+    p.set(ex, Math.round(eyy), skin[0]); p.set(ex + 1, Math.round(eyy) + 1, skin[0]);
+  }
+  return { ey, exN, exF, nose: [nx, ny], mouth: [mx1 - 2, mx1, my], chinY: Math.round(cy + ry), ear: [Math.round(cx - rx * 0.62), Math.round(ey + 0.5)], edgeAt };
 }
 export { painter, mix, shade, warm };
