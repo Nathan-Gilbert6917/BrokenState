@@ -133,8 +133,9 @@ export const CRAWL = {
   // The autopilot's crawl: how deep (depth), when it leaves (hurt, full), when it fights (sureOdds, fightOdds), what it
   // searches (searchOdds: the odds of the fight a search could bring, searchOdds below; 2026-10-13: was a place's
   // look, at most "A few of the dead about", which no place deeper than block 3 is, so it walked deep and searched
-  // nothing). It goes on down to depth while the block it stands on had something it could search.
-  AUTO: { depth: 5, hurt: 50, full: 0.85, sureOdds: 0.92, fightOdds: 0.8, searchOdds: 0.85, planOdds: 0.9, planShare: 0.67, autoSide: 1 },
+  // nothing). It goes on down to depth while the block it stands on had something it could search. way: how it leaves
+  // ("safer": the way with the lower risk; "back" or "new": always that one where it can, for tools/crawlbalance.js).
+  AUTO: { depth: 5, hurt: 50, full: 0.85, sureOdds: 0.92, fightOdds: 0.8, searchOdds: 0.85, planOdds: 0.9, planShare: 0.67, autoSide: 1, way: "safer" },
 };
 
 // Places a block can hold (buildingmaps.js BUILDINGS keys): weight at the edge + deep a block deeper (from block `from`),
@@ -1554,5 +1555,9 @@ export function crawlAutoStep(state, p) {
     }
   }
   if (c.leaving) stepLeave(state, p);
-  else leaveCity(state, p, c.block > 1 && waysOn(state, c).some((o) => o.ok && o.fresh) && exitRisk(state, p, c, "new").any < exitRisk(state, p, c, "back").any ? "new" : "back"); // the safer way out, as far as it can tell
+  else {
+    // The safer way out, as far as it can tell (AUTO.way "back" or "new" always takes that way where it can: tools/crawlbalance.js --way).
+    const canNew = c.block > 1 && waysOn(state, c).some((o) => o.ok && o.fresh);
+    leaveCity(state, p, canNew && (A.way === "new" || (A.way !== "back" && exitRisk(state, p, c, "new").any < exitRisk(state, p, c, "back").any)) ? "new" : "back");
+  }
 }

@@ -14,11 +14,14 @@
 //   --rest 6          days between hive trips (default 6; chambers refill by REFILL_DAYS, the guard does not regrow)
 //   --depth 2,4       blocks the city crawl goes down to (city; default the autopilot's CRAWL.AUTO.depth)
 //   --block N         city: start at this block (the danger of a deep street; implies a depth of at least N)
+//   --way safer       city: how the team leaves (safer: the way with the lower risk, the autopilot's; back: the route
+//                     in; new: on through new blocks to another way out, where it can). A list compares them.
 //   --day 100         the day of the game (eras and growth scale with it; default hive: by tier, city: 60)
 //   --squad rifle,scrappy,...  loadouts (see LOADOUTS; or a custom one: --n 4 --weapon shotgun --armor vest --shoot 5)
 //   --n 6 --weapon ar --armor plate --shoot 8 --health 100 --lights 1 --fire 0 --stun 0 --meds 6 --ammo 300
 //   --trace           print each crawl's log (use with --trials 1 --seed N to follow one run)
-//   --why             hive: also print why each trip ended (won, core too much, too many hurt, alert, turned back, wiped)
+//   --why             hive: also print why each trip ended (won, core too much, too many hurt, alert, turned back, wiped);
+//                     city: how each crawl ended (edge: out from block 1, back, new: another way out, wiped, stuck)
 //   --style balanced  the autopilot style whose retreat policy the team fights by (cautious, balanced, aggressive;
 //                     none: fight to the end, a player's team's default)
 //   --json file       write the rows as JSON                  --quiet       only the table
@@ -191,29 +194,35 @@ function cityWorld(seed, day) {
   const city = st.tiles.find((t) => t.loc && t.loc.type === "city");
   return { st, city };
 }
-export function cityTrial(seed, { depth, startBlock = 1, loadout, L, day = 60 }) {
+export function cityTrial(seed, { depth, startBlock = 1, loadout, L, day = 60, way = "safer" }) {
   const { st, city } = cityWorld(seed, day);
   const supplies = { ammo: opt("ammo", 300), meds: opt("meds", 4), food: 8, water: 8 };
   const { p, people } = addSquad(st, L, 92000 + (seed % 1000), city.id, "scavenge", supplies);
-  const saved = CC.CRAWL.AUTO.depth;
+  const saved = CC.CRAWL.AUTO.depth, savedWay = CC.CRAWL.AUTO.way;
   CC.CRAWL.AUTO.depth = Math.max(depth, startBlock);
+  CC.CRAWL.AUTO.way = way;
   try {
     CC.startCrawl(st, p);
     const c = p.crawl;
-    if (startBlock > 1) { c.block = startBlock; CC.genBlock(st, c, startBlock); }
+    if (startBlock > 1) { c.block = startBlock; c.deepest = startBlock; CC.pathOf(c); CC.genBlock(st, c, startBlock); } // the middle column straight down
     const h0 = st.hour;
     let g = 0;
-    while (p.crawl && st.parties.includes(p) && g++ < 200) CC.crawlAutoStep(st, p);
+    const aliveNow = () => people.filter((s) => s.alive !== false && st.survivors.includes(s)).length;
+    let atLeave = null; // how many were alive when the team set off for the way out (the step that decides it fights nothing first)
+    while (p.crawl && st.parties.includes(p) && g++ < 200) { const n0 = aliveNow(); CC.crawlAutoStep(st, p); if (atLeave == null && c.leaving) atLeave = n0; }
     if (flag("trace")) for (const l of c.log) console.log(`  [h${l.hour}] ${l.text}`);
-    const alive = people.filter((s) => s.alive !== false && st.survivors.includes(s)).length;
+    const alive = aliveNow();
     const out = !p.crawl && st.parties.includes(p) && alive > 0;
     const loot = out ? Object.values(p.cargo.supplies).reduce((a, v) => a + v, 0) + (p.cargo.gear || []).length * 4 : 0;
     // What it is worth (trade value: supplies by data.js supValue, food by its kcal at a day's ration's worth, gear by valuation.js itemValue).
     const value = out ? Object.entries(p.cargo.supplies).reduce((a, [k, v]) => a + v * (supValue(k) || (FOODS[k] ? (FOODS[k].kcal || 0) / 2000 * supValue("food") : 0)), 0) + (p.cargo.gear || []).reduce((a, it) => a + (it ? itemValue(it) || 0 : 0), 0) : 0;
     const fl = c.log.filter((l) => /^Fight with/.test(l.text));
     const fights = fl.length, fightsLost = fl.filter((l) => /: lost\./.test(l.text)).length;
-    return { out, value, fights, fightsLost, wiped: alive === 0, lost: L.n - alive, share: (L.n - alive) / L.n, hours: st.hour - h0, loot, ammo: Math.max(0, supplies.ammo - ammoOf(p)), blocks: c.deepest ?? c.block };
-  } finally { CC.CRAWL.AUTO.depth = saved; }
+    // The grid: blocks walked off the middle column (keys "depth:column"), and how the crawl ended.
+    const side = Object.keys(c.blocks).filter((k) => k.includes(":")).length;
+    const end = alive === 0 ? "wiped" : p.crawl ? "stuck" : c.leaving && c.leaving.way === "new" ? "new" : c.deepest <= 1 ? "edge" : "back";
+    return { side, end, outShare: atLeave == null ? 0 : (atLeave - alive) / L.n, out, value, fights, fightsLost, wiped: alive === 0, lost: L.n - alive, share: (L.n - alive) / L.n, hours: st.hour - h0, loot, ammo: Math.max(0, supplies.ammo - ammoOf(p)), blocks: c.deepest ?? c.block };
+  } finally { CC.CRAWL.AUTO.depth = saved; CC.CRAWL.AUTO.way = savedWay; }
 }
 
 // ---------- the table ----------
@@ -243,34 +252,41 @@ export function run() {
     const guards = list("guard", [80]);
     const trips = Number(opt("trips", 1));
     if (!quiet) console.log(`\nHIVE CRAWL (${trials} trials a row, ${trips} trip${trips === 1 ? "" : "s"}; win = the Hivemind dead)`);
-    console.log("tier guard squad      n weapon     armor  shoot | win   wiped  lost/sq  hours ammo  depth |");
-    for (const tier of tiers) for (const guard of guards) for (const sq of squads) {
+    const days = list("day", [null]); // null: the tier's opening day
+    const showDay = days.length > 1;
+    console.log((showDay ? "  day " : "") + "tier guard squad      n weapon     armor  shoot | win   wiped  lost/sq  hours ammo  depth |");
+    for (const tier of tiers) for (const guard of guards) for (const day of days) for (const sq of squads) {
       const L = loadoutFrom(sq);
       const rs = [];
-      for (let i = 0; i < trials; i++) rs.push(hiveTrial(seed0 + i, { tier, guard, loadout: sq, L, trips, day: opt("day", null) === null || opt("day", null) === true ? null : Number(opt("day", null)) }));
+      for (let i = 0; i < trials; i++) rs.push(hiveTrial(seed0 + i, { tier, guard, loadout: sq, L, trips, day }));
       const win = avg(rs, (r) => (r.won ? 1 : 0)), share = avg(rs, (r) => r.share), wiped = avg(rs, (r) => (r.wiped ? 1 : 0));
       const j = judge("hive", tier, sq, win, share);
-      const row = { kind: "hive", tier, guard, squad: sq, n: L.n, weapon: L.weapon, armor: L.armor, shoot: L.shoot, trips, win, wiped, lostShare: share, hours: avg(rs, (r) => r.hours), ammo: avg(rs, (r) => r.ammo), depth: avg(rs, (r) => r.depth), ends: tally(rs.flatMap((r) => r.reasons)), mark: j.mark, note: j.note };
+      const row = { kind: "hive", tier, guard, day, squad: sq, n: L.n, weapon: L.weapon, armor: L.armor, shoot: L.shoot, trips, win, wiped, lostShare: share, hours: avg(rs, (r) => r.hours), ammo: avg(rs, (r) => r.ammo), depth: avg(rs, (r) => r.depth), ends: tally(rs.flatMap((r) => r.reasons)), mark: j.mark, note: j.note };
       rows.push(row);
-      console.log(`${String(tier).padStart(3)} ${String(guard).padStart(5)} ${sq.padEnd(10)}${String(L.n).padStart(2)} ${String(L.weapon).padEnd(10)}${String(L.armor || "-").padEnd(6)}${String(L.shoot).padStart(4)}  | ${pct(win)} ${pct(wiped)}   ${pct(share)}  ${row.hours.toFixed(0).padStart(5)} ${row.ammo.toFixed(0).padStart(4)}  ${row.depth.toFixed(0).padStart(3)}   | ${j.mark} ${j.note}`);
+      console.log(`${showDay ? String(day ?? TIER_DAY[tier]).padStart(5) + " " : ""}${String(tier).padStart(3)} ${String(guard).padStart(5)} ${sq.padEnd(10)}${String(L.n).padStart(2)} ${String(L.weapon).padEnd(10)}${String(L.armor || "-").padEnd(6)}${String(L.shoot).padStart(4)}  | ${pct(win)} ${pct(wiped)}   ${pct(share)}  ${row.hours.toFixed(0).padStart(5)} ${row.ammo.toFixed(0).padStart(4)}  ${row.depth.toFixed(0).padStart(3)}   | ${j.mark} ${j.note}`);
       if (flag("why")) console.log(`       trips ended: ${Object.entries(row.ends).map(([k, v]) => `${k} ${v}`).join(", ")}`);
     }
   }
   if (MODE === "city" || MODE === "both") {
     const depths = list("depth", [2, 5]);
-    const startBlock = Number(opt("block", 1));
-    const day = Number(opt("day", 60));
-    if (!quiet) console.log(`\nCITY CRAWL (${trials} trials a row, day ${day}; out = the team comes back alive)`);
-    console.log("depth squad      n weapon     armor  shoot | out   wiped  lost/sq  hours loot value ammo fights lost deep |");
-    for (const depth of depths) for (const sq of squads) {
+    const blocks = list("block", [1]), days = list("day", [60]), ways = list("way", ["safer"]);
+    for (const w of ways) if (!["safer", "back", "new"].includes(w)) throw new Error(`--way: ${w} (safer, back, new)`);
+    // A column for each of --block, --day and --way only when it is a grid (or not its default).
+    const show = { block: blocks.length > 1 || blocks[0] !== 1, day: days.length > 1, way: ways.length > 1 || ways[0] !== "safer" };
+    const lead = () => `${show.block ? "blk " : ""}${show.day ? "  day " : ""}${show.way ? "way   " : ""}`;
+    if (!quiet) console.log(`\nCITY CRAWL (${trials} trials a row${show.day ? "" : `, day ${days[0]}`}; out = the team comes back alive; side = blocks walked to the side; new = left by another way out; out lost = share of the squad lost on the way out)`);
+    console.log(`${lead()}depth squad      n weapon     armor  shoot | out   wiped  lost/sq  hours loot value ammo fights lost deep side  new  out lost |`);
+    for (const startBlock of blocks) for (const day of days) for (const way of ways) for (const depth of depths) for (const sq of squads) {
       const L = loadoutFrom(sq);
       const rs = [];
-      for (let i = 0; i < trials; i++) rs.push(cityTrial(seed0 + i, { depth, startBlock, loadout: sq, L, day }));
+      for (let i = 0; i < trials; i++) rs.push(cityTrial(seed0 + i, { depth, startBlock, loadout: sq, L, day, way }));
       const out = avg(rs, (r) => (r.out ? 1 : 0)), share = avg(rs, (r) => r.share), wiped = avg(rs, (r) => (r.wiped ? 1 : 0));
       const j = judge("city", depth, sq, out, share);
-      const row = { kind: "city", depth, squad: sq, n: L.n, weapon: L.weapon, armor: L.armor, shoot: L.shoot, out, wiped, lostShare: share, hours: avg(rs, (r) => r.hours), loot: avg(rs, (r) => r.loot), value: avg(rs, (r) => r.value), ammo: avg(rs, (r) => r.ammo), deep: avg(rs, (r) => r.blocks || 0), fights: avg(rs, (r) => r.fights), fightsLost: avg(rs, (r) => r.fightsLost), mark: j.mark, note: j.note };
+      const row = { kind: "city", depth, block: startBlock, day, way, side: avg(rs, (r) => r.side), viaNew: avg(rs, (r) => (r.end === "new" ? 1 : 0)), ends: tally(rs.map((r) => r.end)), squad: sq, n: L.n, weapon: L.weapon, armor: L.armor, shoot: L.shoot, out, wiped, lostShare: share, lostOut: avg(rs, (r) => r.outShare), hours: avg(rs, (r) => r.hours), loot: avg(rs, (r) => r.loot), value: avg(rs, (r) => r.value), ammo: avg(rs, (r) => r.ammo), deep: avg(rs, (r) => r.blocks || 0), fights: avg(rs, (r) => r.fights), fightsLost: avg(rs, (r) => r.fightsLost), mark: j.mark, note: j.note };
       rows.push(row);
-      console.log(`${String(depth).padStart(4)} ${sq.padEnd(10)}${String(L.n).padStart(2)} ${String(L.weapon).padEnd(10)}${String(L.armor || "-").padEnd(6)}${String(L.shoot).padStart(4)}  | ${pct(out)} ${pct(wiped)}   ${pct(share)}  ${row.hours.toFixed(0).padStart(5)} ${row.loot.toFixed(0).padStart(4)} ${row.value.toFixed(0).padStart(5)} ${row.ammo.toFixed(0).padStart(5)} ${row.fights.toFixed(1).padStart(5)} ${row.fightsLost.toFixed(2).padStart(5)} ${row.deep.toFixed(1).padStart(4)} | ${j.mark} ${j.note}`);
+      const pre = `${show.block ? String(startBlock).padStart(3) + " " : ""}${show.day ? String(day).padStart(5) + " " : ""}${show.way ? way.padEnd(6) : ""}`;
+      console.log(`${pre}${String(depth).padStart(4)} ${sq.padEnd(10)}${String(L.n).padStart(2)} ${String(L.weapon).padEnd(10)}${String(L.armor || "-").padEnd(6)}${String(L.shoot).padStart(4)}  | ${pct(out)} ${pct(wiped)}   ${pct(share)}  ${row.hours.toFixed(0).padStart(5)} ${row.loot.toFixed(0).padStart(4)} ${row.value.toFixed(0).padStart(5)} ${row.ammo.toFixed(0).padStart(5)} ${row.fights.toFixed(1).padStart(5)} ${row.fightsLost.toFixed(2).padStart(5)} ${row.deep.toFixed(1).padStart(4)} ${row.side.toFixed(1).padStart(4)} ${pct(row.viaNew)}     ${pct(row.lostOut)} | ${j.mark} ${j.note}`);
+      if (flag("why")) console.log(`       crawls ended: ${Object.entries(row.ends).map(([k, v]) => `${k} ${v}`).join(", ")}`);
     }
   }
   const out = opt("json", null);
