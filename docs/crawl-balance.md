@@ -20,7 +20,7 @@ grid takes 1–4 minutes.
 | hive tier, guard | `--tier 1,2,3,4`, `--guard 80` | the game day defaults to the tier's opening day (400 / 900 / 1600 / 2100); `--day` overrides |
 | trips per scenario | `--trips N`, `--rest D` | between trips the squad heals, restocks and rests D days (chambers refill by `REFILL_DAYS`) |
 | city depth, start block, day | `--depth`, `--block`, `--day` | `--depth` is the autopilot's `CRAWL.AUTO.depth`; `--block` starts the crawl on a block of that level (the nearest to the entry) |
-| city way out | `--way safer,back,line` | `safer` (the autopilot's: the way with the lowest risk), `back` (the path in) or `line` (the safest straight line to the rim); `CRAWL.AUTO.way` |
+| city way out | `--way safer,nearest` | which rim block the team walks out to, a block at a time (2026-10-13): `safer` (the autopilot's: the cheapest path by each block's trouble as it knows it, its activity and the heat left there, walked blocks preferred) or `nearest` (the fewest blocks); `CRAWL.AUTO.way` |
 | survivors and gear | `--squad name,…` or `--n --weapon --armor --shoot --health --lights --fire --stun --ammo --meds` | named loadouts in `LOADOUTS`: naked, scrappy, early, hunters, solid, rifles, elite |
 | retreat policy | `--style balanced` | the break-off policy of that autopilot style, set on the team (`none`: fight to the end, a player's default) |
 | tuning numbers | `--set HCRAWL.X.y=…,CRAWL.X.y=…` | overrides a constant for this run only (roots: `HCRAWL`, `HIVEMIND`, `CRAWL`, `EVENTS`) |
@@ -34,8 +34,9 @@ Hive: **win** (the Hivemind dead within `--trips`), **wiped** (nobody left), **l
 hours, ammo, den depth, and with `--why` the reason each trip ended (`won`, `core too much`, `too many hurt`, `alert`,
 `turned back`, `wiped`). City: **out** (the team comes back alive), wiped, lost share, hours, loot (supplies + 4 per
 piece of gear), ammo, fights and fights lost, and on the round grid **walk** (blocks the team set foot on, the way out's included),
-**line** (the share that left straight out to the rim) and **out lost** (the share of the squad lost after it set off
-for the way out); with `--why` how each crawl ended (`edge`: out from the rim where it stood, `back`, `line`, `wiped`, `stuck`).
+**owalk** (blocks walked to the rim once it set off out) and **out lost** (the share of the squad lost after it set off
+for the rim); with `--why` how each crawl ended (`entry`: out at the rim block it came in at, `rim`: out at another,
+`breakout`: out through a breakout, `wiped`, `stuck`).
 
 The crawls are driven by the autopilot's own steps (`hiveCrawlAutoStep`, `crawlAutoStep`), so the table is "what the
 governor's teams get", which is also what a careful player gets by the numbers. It is **not** a map-play bot: the
@@ -224,10 +225,11 @@ The city crawl is no longer a line of blocks. A city (or now a **town** too) is 
 town 9–12, by the world's dice (the same every visit).
 
 - **Coming in**: on a block of the rim, on the side facing where the team came from (its home base), heading in.
-- **Moving**: from any block, left, straight on or right of the way you face (an hour). Deeper in toward the centre
-  is more dangerous and richer: a block's *level* (1–8, what the danger and loot tables read, the old "block number")
-  climbs a level every two rings in from the rim. The heart of a 30-block city is level 8, a 15-block city's level 4,
-  a town's level 2–3.
+  (Since "Four ways, pick your start, walk out by hand" below: any rim block, the player's pick.)
+- **Moving**: from any block, left, straight on or right of the way you face (an hour; now all four ways, below).
+  Deeper in toward the centre is more dangerous and richer: a block's *level* (1–8, what the danger and loot tables
+  read, the old "block number") climbs a level every two rings in from the rim. The heart of a 30-block city is level
+  8, a 15-block city's level 4, a town's level 2–3.
 - **Slipping away**: on a block you have just come into, before you do anything noisy there, "Slip away unseen" takes
   you back onto the block before, facing as you were (Stealth + d10 against 4 + its activity level × 1.2 + its heat
   / 15, harder with a bigger team; an hour). Fail and they have seen you: an encounter there.
@@ -236,7 +238,8 @@ town 9–12, by the world's dice (the same every visit).
     (half an hour a block you know);
   - *out north / east / south / west*: keep going one way until the rim, through the blocks in between (blocks you
     have not seen: their activity unknown till you are on them, an hour each).
-  A roused city still makes the first block of the way out a fight.
+  A roused city still makes the first block of the way out a fight. (Both ways out are gone since: you walk to the
+  rim by hand, below.)
 - **The map**: the crawl window draws the grid: blocks you have been to (this visit and earlier ones) in their
   activity's colour, a dot where another group went through since, your path in gold, where you stand and which way
   you face in white, the rim lighter.
@@ -370,6 +373,76 @@ What the runs say (40 trials, seeds 6000+, day 60, autopilot depth 4, balanced r
   183 (149 before the crawl work, 150 with the town crawls, 190 with no autopilot crawls at all): they follow how many
   people the hubs keep (more people, more hive trips), and the hive harness rows are unchanged; 12 games cannot say
   more. Worth watching in the next full census.
+
+## Four ways, pick your start, walk out by hand (2026-10-13)
+
+The design decided after playing the round grid (`citycrawl.js`, `citygrid.js`, `ui/citycrawl.js`):
+
+- **Four ways from every block.** North, east, south or west, the way you came included (the window marks it
+  "back"); all four are open. The shut side streets (`CRAWL.SIDE`, `sideShut`) are gone. A street event that blocks
+  (the collapsed street) shuts one way for this visit: the way in toward the centre (`ev.dir`, `wallOf`). A way off
+  the grid is the city's edge.
+- **Pick your start.** The player's crawl opens on the city's map (`c.choosing`, plain data, save-safe): every rim
+  block is a button, the blocks mapped on earlier visits show what is known, and "Turn back" leaves without going in
+  (`pickStart`, `walkOut`). You go in heading toward the centre (`citygrid.js headingToward`). The autopilot's teams
+  and the tools go in at a rim block of the visit's dice (`rimStart`: the same visit, the same block); a crawl still
+  choosing when the autopilot comes on starts there.
+- **Leaving is by hand.** The one-click ways out (`leaveCity` back / line, `continueLeaving`, `stepLeave`,
+  `c.leaving`, `exitRisk`) are gone. You walk block by block (`nextBlock`) to any rim block and walk out there
+  (`walkOut`, only on the rim). Each block walked rolls the move trouble (`moveRisk`), which now carries what made the
+  old way out risky: (`ENC.base` + `ENC.perBlock` × (level − 1) + Alert × `ENC.perAlert` + the heat you left on that
+  block × `TRAIL.perTrail`) × its activity, + the load over capacity × `ENC.load` 0.25, × night 1.25, × `ENC.step` 0.4
+  (the old `GRIDSTEP`). So going back through your own noise, loaded, at night, is the dangerous walk.
+  `CRAWL.EXIT`, `GRIDSTEP` and `EXIT_HOURS` are gone.
+- **Breakout on the rim.** Walking out at Alert `BREAKOUT.alert` 70+ is a breakout (the horde × `HORDE.breakout`, the
+  dead between you and safety): win it, slip past it or run through it and you are out; lose and you are pinned down
+  on that block. The window's "Walk out here" says so.
+- **The autopilot** heads out (`c.goingOut`) when hurt, loaded or done, a block per call along `autoWayOut`: a
+  Dijkstra over the grid to the cheapest rim block (`citygrid.js pathToRim`), each block costed at its `moveRisk` as
+  known (its activity once seen, this visit or earlier; an unwalked block × `AUTO.unknown` 1.25; one it slipped away
+  or ran from × `AUTO.avoid` 3; + `AUTO.stepCost` 0.01). On the rim it lies low first (`AUTO.rimLow` 4 hours at
+  most) while the Alert would make walking out a breakout, then walks out. Without that it walked out into a
+  breakout on 6 of 10 solid and 9 of 10 rifle crawls (the Alert climbs 4.5 a block walked: the hour's creep and the
+  move); with it, 1 in 40.
+- **Saves**: a crawl saved on the old way out loads with `leaving` dropped and the team standing on the block it had
+  reached; trouble it met on the next block of the old way, got past, puts it on that block.
+- **The harness**: `--way safer,nearest` (was `safer,back,line`); the **line** column is now **owalk** (blocks
+  walked to the rim once it set off out); `--why` ends: `entry` (out where it came in), `rim` (out at another rim
+  block), `breakout`, `wiped`, `stuck`.
+
+`node tools/crawlbalance.js city --depth 2,4 --squad naked,scrappy,early,solid,rifles --trials 10` (seed 4000):
+
+| depth | squad | before: lost / value / walk | after: lost / value / walk / owalk |
+|---|---|---|---|
+| 2 | naked | 8% / 100 / 3.4 | 10% / 81 / 3.2 / 0.5 |
+| 2 | scrappy | 4% / 149 / 2.6 | 6% / 155 / 2.4 / 0.0 |
+| 2 | early | 6% / 169 / 3.1 | 6% / 199 / 2.5 / 1.0 |
+| 2 | solid | 7% / 221 / 4.1 | 12% / 297 / 4.4 / 1.8 |
+| 2 | rifles | 5% / 227 / 4.3 | 10% / 317 / 3.9 / 2.1 |
+| 4 | naked | 8% / 100 / 3.4 | 10% / 81 / 3.2 / 0.5 |
+| 4 | scrappy | 4% / 149 / 2.6 | 6% / 155 / 2.4 / 0.0 |
+| 4 | early | 2% / 168 / 3.0 | 6% / 213 / 2.5 / 1.0 |
+| 4 | solid | 13% / 323 / 5.5 | 15% / 240 / 6.9 / 3.6 |
+| 4 | rifles | 23% / 248 / 8.5 | 35% / 290 / 9.6 / 5.3 |
+
+Every crawl got out before and after; 9 of 10 judged rows inside their targets both times (rifles at depth 4 is
+over its 22% both times). Ten trials are noise (a different start block sends a crawl down other streets): at 40
+trials the rows match. Depth 4, 40 trials, lost / value:
+
+| squad | seed 4000 before → after | seed 6000 before → after |
+|---|---|---|
+| solid (6) | 14% / 278 → 14% / 250 | 13% / 303 → 18% / 249 |
+| rifles (6) | 21% / 290 → 22% / 243 | 18% / 304 → 18% / 300 |
+| elite (8) | 29% / 440 → 27% / 369 | 29% / 425 → 31% / 395 |
+
+Losses hold; strong squads bring home 5–15% less value (more blocks walked, 9–12 against 7–8: the start is a random
+rim block, not the one facing home, and the walk out is to the cheapest rim block rather than back along the path).
+Not retuned.
+
+**The autopilot's start stays random** (a rim block by the visit's dice, not the one facing home): a census of 8
+normal games to day 400 (normal size, 6–10 groups, seed 7000, `tools/campaign50.js 8 400 --size normal --groups
+6-10 --seed 7000 --mode normal`) before → after: no crashes, none fell, average end population 35 → 35, deaths in
+the field (city crawls among them) 65 → 66, horde deaths 71 → 59, hive assault 93 → 82.
 
 ## The hive is a round grid too, its core walled in (2026-10-13)
 

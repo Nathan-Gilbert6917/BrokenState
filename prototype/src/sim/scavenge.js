@@ -120,8 +120,9 @@ export function startScavenge(state, p) {
   if (state.autopilot && crawlTile(t) && p.owner === "player" && !(t.loc && t.loc.type === "town")) return startCrawl(state, p);
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
-    // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot).
-    if (crawlTile(t) && p.owner === "player") return startCrawl(state, p);
+    // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot); the crawl
+    // opens on the city's map for you to pick the block of its rim to go in at.
+    if (crawlTile(t) && p.owner === "player") return startCrawl(state, p, { choose: true });
     const groups = raidEnemies(state, p.dest);
     const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
     const total = foes.reduce((a, g) => a + g.count, 0);
