@@ -8,7 +8,7 @@ import { partyMembers, carried } from "../sim/parties.js";
 import { hourOfDay, day, isNight } from "../sim/world.js";
 import { BOSS_NAMES } from "../sim/hiveconst.js";
 import {
-  HCRAWL, ROOM_KINDS, activeHiveCrawl, crawlHive, denOf, roomById, warmthOf, warmthText, alertName, roomName, broodLeft, exitsOf, draftWord,
+  HCRAWL, ROOM_KINDS, activeHiveCrawl, chamberThreat, roomHeat, crawlHive, denOf, roomById, warmthOf, warmthText, alertName, roomName, broodLeft, exitsOf, draftWord,
   encounterOptions, roomActions, roomAct, resolveHiveEnc, moveTo, leaveHive, stepOut, canMoveOn,
   draftMissHere, teamLights, lightsOn, setLights, flaresOf, listenAt, listenOdds, throwFlare, heardText,
 } from "../sim/hivecrawl.js";
@@ -57,6 +57,14 @@ function lightsRow(state, p, c) {
   return `<div class="row small" style="gap:0.4rem;margin-top:0.25rem;align-items:center"><span${tip(t)}>${n ? `Lights <b style="color:${on ? "#ffd27a" : "#889"}">${on ? "on" : "off"}</b> (${n})` : `<span class="muted">No lights</span>`}</span>${n ? `<button class="mini" data-action="hc-lights" data-id="${p.id}" data-on="${on ? 0 : 1}"${tip(on ? "Douse the lights: the brood sees you less, the drafts are harder to read" : "Lights on: the drafts are easier to read; the brood sees you")}>${on ? "Douse" : "Light up"}</button>` : ""}<span${tip(`Road flares: thrown down a passage, one lights the chamber beyond for a moment: its kind, its brood and the true draft (Alert +${HCRAWL.FLARE.alert}). Found at gas stations, police and fire stations, campgrounds; made at a workbench.`)}>· Flares <b>${fl}</b></span></div>`;
 }
 
+// The chamber's brood activity and its own heat (sim/hivecrawl.js HCRAWL.THREAT, HCRAWL.HEAT).
+function chamberLine(state, c, room) {
+  const th = chamberThreat(state, c.hiveId, room.id);
+  const own = Math.round((c.heat || {})[room.id] || 0), heat = Math.round(roomHeat(state, c, room, th.mult));
+  const color = th.level >= 4 ? "var(--danger)" : th.level === 3 ? "#c9a24a" : "var(--good)";
+  return `<div class="small"><span style="color:${color}"${tip(`How much of the brood stirs in this chamber (the hive's own: the same every visit). It multiplies the heat here (the hive's Alert and the noise you have made in this chamber): ×${th.mult}. A little noise in a seething chamber is worse than a lot in a torpid one.`)}>Brood activity: <b>${esc(th.name)}</b> (×${th.mult})</span> · <span${tip(`The noise you have made in this chamber (walking in, fights, fire, searching), fading ${HCRAWL.HEAT.decay} an hour; lying still cools it. A stealthy team leaves less. The heat here, (Alert ${Math.round(c.alert)} + ${own}) × ${th.mult} = ${heat}, decides whether the brood has seen you, creeping past, a swarm pouring in from ${HCRAWL.ALERT.converge} and a patrol finding you lying still.`)}>Heat here: <b>${heat}</b>${own ? ` <span class="muted">(${own} your own)</span>` : ""}</span></div>`;
+}
+
 function hud(state, p, c, den, room, w) {
   const members = partyMembers(state, p);
   const clockTxt = `Day ${day(state)} ${String(hourOfDay(state)).padStart(2, "0")}:00${isNight(state) ? " · night" : ""}`;
@@ -67,6 +75,7 @@ function hud(state, p, c, den, room, w) {
       <div class="heat" style="margin:0.25rem 0 0.35rem;background:linear-gradient(90deg, ${warmColor(0)}, ${warmColor(50)}, ${warmColor(100)})"><i style="left:${Math.min(99, w)}%"></i></div>
       <div class="small"${tip(`The hive's Alert: the noise you have made (fights, fire, a failed sneak), fading ${HCRAWL.ALERT.decay} an hour; lying still lets it fall faster. From ${HCRAWL.ALERT.converge} the brood converges on you and fills the chambers behind you again; from ${HCRAWL.ALERT.block} it packs the mouth.`)}>Alert: <b>${alertName(c.alert)}</b> (${Math.round(c.alert)})</div>
       <div class="heat" style="margin:0.25rem 0 0.2rem"><i style="left:${Math.min(99, c.alert)}%"></i></div>
+      ${chamberLine(state, c, room)}
       <div class="small muted">${c.kills} of the brood killed this crawl${c.lost.length ? ` · <span class="danger">lost ${esc(c.lost.join(", "))}</span>` : ""}</div>
     </div>
     <div>

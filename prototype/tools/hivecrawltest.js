@@ -241,6 +241,41 @@ console.log("In the chambers");
   } else check(false, "the team got into its second chamber");
 }
 
+// ---------- 3b. brood activity and each chamber's heat ----------
+console.log("Brood activity and heat");
+{
+  const { st, hv } = world(SEED + 4, 1300, 120);
+  const { p } = squad(st, hv);
+  const den = HC.denOf(st, hv);
+  let same = true;
+  for (const r of den.rooms) { const a = HC.chamberThreat(st, hv.id, r.id), b = HC.chamberThreat(st, hv.id, r.id); if (a.level !== b.level || a.level < 1 || a.level > 5 || a.mult !== HC.HCRAWL.THREAT.mult[a.level]) same = false; }
+  check(same, `every chamber has its own level, 1-5, the same every time (${den.rooms.map((r) => HC.chamberThreat(st, hv.id, r.id).level).join("")})`);
+  const counts = [0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < 500; i++) counts[HC.chamberThreat(st, i, "r2-0").level]++;
+  check(counts.slice(1).every((n) => n > 25), `all five levels turn up (${counts.slice(1).join(" / ")} of 500)`);
+  HC.startHiveCrawl(st, p, hv);
+  const c = p.hiveCrawl;
+  check(c.heat && c.heatMult === 1 + HC.HCRAWL.HEAT.perPerson * 3, `the team's crawl keeps each chamber's heat (a team of 6 leaves ×${c.heatMult})`);
+  check(HC.heatMultOf(st, { ...p, stance: "stealthy" }) < c.heatMult, "a stealthy team leaves less");
+  const mouth = HC.roomById(den, den.mouth);
+  c.alert = 20; c.heat = { [mouth.id]: 10 };
+  check(Math.abs(HC.roomHeat(st, c, mouth, 1.35) - 30 * 1.35) < 1e-9, "a chamber's heat: (Alert + its own heat) × its activity");
+  const room = den.rooms.find((r) => r.layer === 2);
+  const dcAt = (mult) => Math.ceil(HC.HCRAWL.SNEAK.dc + HC.HCRAWL.SNEAK.perLayer * room.layer + HC.roomHeat(st, c, room, mult) * HC.HCRAWL.SNEAK.perAlert);
+  c.alert = 60;
+  check(dcAt(1.8) > dcAt(0.6), `creeping past is harder in a seething chamber than a torpid one at the same Alert (DC ${dcAt(0.6)} → ${dcAt(1.8)}); the window's odds use it (DC ${HC.sneakOdds(st, p, c, room).dc} here)`);
+  // Noise stays in the chamber it was made in, and fades.
+  c.alert = 10; c.heat = {};
+  check(!!c.enc, "the brood of the mouth in front of the team");
+  HC.resolveHiveEnc(st, p, "numbers");
+  const h0 = (c.heat || {})[c.at] || 0;
+  check(h0 > 0, `a fight in ${HC.roomThe(HC.roomById(den, c.at))} leaves its heat there (${Math.round(h0)})`);
+  if (p.hiveCrawl && !c.enc) {
+    HC.roomAct(st, p, "lie");
+    check(((c.heat || {})[c.at] || 0) < h0, `lying still cools the chamber (${Math.round(h0)} → ${Math.round((c.heat || {})[c.at] || 0)})`);
+  } else check(true, "(the fight ended the crawl)");
+}
+
 // ---------- 4. the core: the Hivemind ----------
 console.log("The core");
 {
