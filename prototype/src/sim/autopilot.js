@@ -3717,8 +3717,11 @@ function hiveChoice(state, card, opts, p, find) {
   // Guns need ammo (an assault rifle 2 a shot): no storm with less than HIVE_AMMO a fighter.
   const ammo = teamAmmo(state, p); // ammo.js: rounds that fit their guns
   const armed = ammo >= fit.length * HIVE_AMMO;
-  if (armed && fit.length >= HIVE_SQUAD - 1 && coreGate(state, hive, fit, guard).win >= stormNeed(P)) return find(/^Enter the hive/); // hivecrawl.js: the crawl to the core (hiveCrawlAutoStep)
-  if (armed && p.apCrawlTrip && fit.length >= HIVE_SQUAD - 1) return find(/^Enter the hive/); // a crawl trip: as deep as it can, then home
+  // In by the mouth with the least brood on its way in (hivecrawl.js crawlEstimate: one choice for each of the four).
+  const way = crawlEstimate(state, hive, guard).mouth;
+  const enter = opts.find((c) => c.mouth != null && c.mouth === way) || find(/^Enter the hive/);
+  if (armed && fit.length >= HIVE_SQUAD - 1 && coreGate(state, hive, fit, guard).win >= stormNeed(P)) return enter; // hivecrawl.js: the crawl to the core (hiveCrawlAutoStep)
+  if (armed && p.apCrawlTrip && fit.length >= HIVE_SQUAD - 1) return enter; // a crawl trip: as deep as it can, then home
   return find(/^Back off/);
 }
 // An old save's team told to storm again after its fires (p.apHiveAgain, before the fires were taken out): it does,

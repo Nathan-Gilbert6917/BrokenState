@@ -1,23 +1,25 @@
 // City crawl: a team that goes into a city (or a town) to scavenge does not get one raid but works its way in block by
 // block, like a roguelike extraction. The city is a round grid of blocks (citygrid.js: 15-30 across, a town 9-12); you
-// come in on its rim on the side facing where you came from and from each block go left, right or straight on. Each
-// block is a card: what the team sees from the street (two to four places, each a building with its own interior map,
-// buildingmaps.js) and up to two street events, its zombie activity (CRAWL.THREAT) and the heat you have left there
-// (CRAWL.TRAIL). Blocks deeper in toward the centre are more dangerous and richer (their level, 1-8). A block too hot
-// to stay on can be slipped away from before you are seen (slipAway). The city's Alert grows with your noise and with
-// every hour you stay. Getting out is the gamble: back along the path you came in by (through the heat you left), or
-// straight on in one direction to the rim; from any block on the rim you walk out.
+// pick the block on its rim to go in at (the autopilot by the visit's dice) and from each block go north, east, south or
+// west, the way you came included. Each block is a card: what the team sees from the street (two to four places, each
+// a building with its own interior map, buildingmaps.js) and up to two street events, its zombie activity
+// (CRAWL.THREAT) and the heat you have left there (CRAWL.TRAIL). Blocks deeper in toward the centre are more dangerous
+// and richer (their level, 1-8). A block too hot to stay on can be slipped away from before you are seen (slipAway). The
+// city's Alert grows with your noise and with every hour you stay. Getting out is the gamble (2026-10-13): no way out is
+// walked for you; you walk block by block to any block on the rim (each block rolls its trouble: the Alert, the heat
+// you left on it, the load you carry, the night) and walk out from there; at a high Alert the dead fill the streets
+// between you and safety and walking out is a breakout.
 //
 // The state is plain data on the team (p.crawl), so a game can be saved on a block card or inside a building:
-//   { tile, city, visit, grid { size, r }, cell, heading, path, block (the level), deepest, alert, blocks: { cell: {
-//     places, events, threat } }, buildings: { placeId: snapshot }, trail: { cell: heat }, enc, leaving ({ way, cells }),
-//     inside, tally, log }
+//   { tile, city, visit, grid { size, r }, choosing (no block picked yet: cell null), cell, heading, path, block (the
+//     level), deepest, alert, blocks: { cell: { places, events, threat } }, buildings: { placeId: snapshot }, trail: {
+//     cell: heat }, enc, inside, goingOut (the autopilot heads for the rim), tally, log }
 // The site remembers between crawls (tile.crawlMem): visits, how picked over each place is, the buildings as you left
 // them, the blocks you have been to (the map), and what other groups took (aiscav.js: blocks near the rim picked over).
 //
-// Hooks elsewhere (small): scavenge.js startScavenge (a city or town tile: in the browser, or on autopilot →
-// startCrawl), combat.js (finishCombat hands the battle to the handler; setup.raid.areas: a street map's areas; b.raid.deep:
-// deeploot.js), buildingmaps.js raidBuilding (setup.raid.place), conflicts.js engagedWith ("crawl" holds the team),
+// Hooks elsewhere (small): scavenge.js startScavenge (a city or town tile: in the browser, the player picking the start
+// block, or on autopilot → startCrawl), combat.js (finishCombat hands the battle to the handler; setup.raid.areas: a
+// street map's areas; b.raid.deep: deeploot.js), buildingmaps.js raidBuilding (setup.raid.place), conflicts.js engagedWith ("crawl" holds the team),
 // autopilot.js idleTeams (crawlAutoStep every hour), aiscav.js (mem.aiLoot), main.js / ui.js (the crawl window and
 // its map, ui/citycrawl.js).
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
@@ -53,7 +55,7 @@ import { crawlGuns } from "./gunfinds.js";
 import { deepShift, cacheChance, isFine, valuePerKg, wantOf, DEEP } from "./deeploot.js"; // deeper blocks hold what is dear by the kilo; a full team swaps
 import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
-import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, turn, lineOut, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13) // a gun counter's or an armoury's extra gun (its own dice)
+import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
 // ---------- tuning ----------
 export const CRAWL = {
@@ -61,9 +63,8 @@ export const CRAWL = {
   PLACES: [2, 4],               // places on a block (2–3 at the edge; a fourth more likely deeper)
   EVENTS: { none: 0.3, two: 0.25, perBlock: 0.04 }, // a block's street events: none, one or two (two likelier deeper)
   BLOCKED: 0.12,                // a place shut this visit (fire, a collapse, the doors chained), by the visit's dice
-  MOVE_HOURS: 1,                // walking to the next block
+  MOVE_HOURS: 1,                // walking to the next block (on the way out too)
   LIE_LOW_HOURS: 1,             // waiting quietly on a block (Alert fades)
-  EXIT_HOURS: 0.5,              // walking back out, a block
   // The dead in a building: the site's count (scavenge.js raidEnemies) × (base + perBlock × (block − 1)) × the place's own
   // factor; their power + powerPerBlock a block. Indoors buildingmaps.js scales them down again with the map's area.
   DEAD: { base: 0.7, perBlock: 0.25, powerPerBlock: 0.4 },
@@ -85,30 +86,26 @@ export const CRAWL = {
   // The Heat you start each building with: day / night + perBlock a block deeper + the Alert above the city's own
   // (its start) × fromAlert, at most max.
   HEAT0: { day: 5, night: 0, perBlock: 2, fromAlert: 0.35, max: 50 },
-  // Trouble on the way to the next block: base + perBlock × (block reached − 1) + Alert × perAlert, × night, at most max.
-  ENC: { base: 0.06, perBlock: 0.05, perAlert: 0.004, night: 1.25, max: 0.85, raiders: 0.15, raidersPerBlock: 0.05 },
-  // The way out: one roll a block from where you are back to block 2 (block 1 is the city's edge): base + perBlock ×
-  // (block − 1) + Alert × perAlert + overload × load, × night. At Alert fightAlert or more from block fightFrom or deeper
-  // the streets are crawling: the first block on the way out is a fight (or a hard sneak).
-  EXIT: { base: 0.03, perBlock: 0.07, perAlert: 0.004, load: 0.25, night: 1.2, max: 0.9, fightAlert: 70, fightFrom: 3 },
+  // Trouble on the way to the next block (moveRisk; walking out to the rim too, 2026-10-13: the old way out's roll folded
+  // in): (base + perBlock × (level reached − 1) + Alert × perAlert + the heat you left there (TRAIL.perTrail)) × its
+  // activity, + overload × load, × night, × step (on the round grid a walk crosses about twice the blocks the old line
+  // of blocks did), at most max. So walking back through your own noise, loaded, at night, is the dangerous walk.
+  ENC: { base: 0.06, perBlock: 0.05, perAlert: 0.004, load: 0.25, night: 1.25, step: 0.4, max: 0.85, raiders: 0.15, raidersPerBlock: 0.05 },
+  // Walking out from a block on the rim at Alert `alert` or more: the dead fill the streets between you and safety, a
+  // breakout (a horde × HORDE.breakout) to fight, sneak or run through before you are out.
+  BREAKOUT: { alert: 70 },
   // The trail (2026-10-13): the noise made on a block (whatever raises the Alert there: fights and shots, searches,
   // alarms, walking in) stays on that block's streets as its own heat, × (1 + perPerson for each of the team over 3),
-  // × stealthy for a team travelling stealthily; it fades decay an hour. Going back the way you came, each block's
-  // risk is + its trail × perTrail.
+  // × stealthy for a team travelling stealthily; it fades decay an hour. Walking onto a block, its trouble is + its
+  // trail × perTrail (× its activity: moveRisk).
   TRAIL: { perPerson: 0.15, stealthy: 0.6, decay: 0.5, perTrail: 0.006 },
   // Slipping away from a block you have just come into (slipAway): Stealth + d10 against dc + activity level ×
   // perThreat + its heat / perHeat; hours.
   SLIP: { dc: 4, perThreat: 1.2, perHeat: 15, hours: 1 },
-  // On the round grid a level is LEVEL_RINGS rings, so a walk in or out crosses about twice the blocks the old line of
-  // blocks did: the chance of trouble walking into a block (ENC) and on each block of the way out (EXIT) × step.
-  GRIDSTEP: { step: 0.4 },
-  // Side streets (from PR #4's cross streets, 2026-10-13): a turn left or right is open at `open` (the city's dice, the
-  // same every visit and both ways); straight on always is.
-  SIDE: { open: 0.75 },
   // Zombie activity (2026-10-13): each block of a city has its own level, 1-5, by the city's dice (the same every
   // visit; known once you stand on it): how many of the dead move on its streets. Its mult scales the block's own
   // danger and multiplies the heat there (the city's Alert and the block's trail): a little noise on a crawling block
-  // is worse than a lot on a quiet one. Levels by weight; the new streets of another way out roll their own.
+  // is worse than a lot on a quiet one. Levels by weight.
   THREAT: { names: ["", "Quiet", "Stirring", "Busy", "Infested", "Crawling"], mult: [0, 0.6, 0.8, 1, 1.35, 1.8], weights: [0, 0.2, 0.25, 0.25, 0.18, 0.12] },
   // Street fights: a horde of base + perBlock × block + Alert / alertDiv dead (power 2 + infection × 3 + DEAD.powerPerBlock
   // a block deeper); a patrol of raiders 2 + block / 2 (power 4 + 0.3 a block). A breakout is a horde × breakout.
@@ -128,9 +125,12 @@ export const CRAWL = {
   // searches (searchOdds: the odds of the fight a search could bring, searchOdds below; 2026-10-13: was a place's
   // look, at most "A few of the dead about", which no place deeper than block 3 is, so it walked deep and searched
   // nothing). It goes on down to depth while the block it stands on had something it could search.
-  // way: how it leaves ("safer": the lowest risk of the ways out; "back": the path in; "line": the safest straight line
-  // to the rim; for tools/crawlbalance.js --way). From a block on the rim it always walks out.
-  AUTO: { depth: 4, hurt: 50, full: 0.85, sureOdds: 0.92, fightOdds: 0.8, searchOdds: 0.85, planOdds: 0.9, planShare: 0.67, blocks: 6, slipThreat: 5, slipHeat: 60, way: "safer" },
+  // way: how it walks out, a block a call, to which block of the rim (autoWayOut; tools/crawlbalance.js --way): "safer"
+  // the cheapest path by each block's trouble as it knows it (its activity and heat; a block it has not walked this
+  // visit × unknown, one it slipped away or ran from × avoid; + stepCost a block), "nearest" the fewest blocks. On the
+  // rim it walks out, lying low there first (rimLow hours at most) while the Alert would make it a breakout.
+  AUTO: { depth: 4, hurt: 50, full: 0.85, sureOdds: 0.92, fightOdds: 0.8, searchOdds: 0.85, planOdds: 0.9, planShare: 0.67, blocks: 6, slipThreat: 5, slipHeat: 60,
+    way: "safer", unknown: 1.25, avoid: 3, stepCost: 0.01, rimLow: 4 },
 };
 
 // Places a block can hold (buildingmaps.js BUILDINGS keys): weight at the edge + deep a block deeper (from block `from`),
@@ -171,7 +171,8 @@ const BLOCK_TEXT = [
 
 // ---------- street events ----------
 // key: { title, text, min (block), w (weight), deep (weight a block deeper), choices: [{ id, label, tip }] }. Each
-// event's choices are resolved in resolveEvent; anything that turns into a fight becomes an encounter (c.enc).
+// event's choices are resolved in resolveEvent; anything that turns into a fight becomes an encounter (c.enc). blocking:
+// it shuts one way off the block this visit (ev.dir, the way in toward the centre) until it is dealt with (wallOf).
 export const EVENTS = {
   car: { title: "An abandoned car", min: 1, w: 3, deep: 0, text: "A sedan sits with its doors open in the middle of the street. Keys in the ignition, no driver.",
     choices: [{ id: "search", label: "Search it", tip: "A few minutes. Glovebox, trunk, seats. Some cars still have an alarm (15%)." }, { id: "leave", label: "Leave it" }] },
@@ -216,6 +217,10 @@ export function crawlOf(state, p) {
   if (!state.parties.includes(p) || !partyMembers(state, p).length || partyTile(p) !== p.crawl.tile) { delete p.crawl; return null; }
   if (p.phase !== "engaged") p.phase = "engaged"; // something else let the team go meanwhile (a card's answer): it is still in the city
   if (!p.crawl.grid) toGrid(state, p, p.crawl); // a save from before the round grid (2026-10-13)
+  if ("leaving" in p.crawl) { // a save from before the walk out (2026-10-13): no way out is walked for you now; the team
+    delete p.crawl.leaving;   // stands where it was, on that block's card (an encounter on the way, still to answer)
+    if (p.crawl.enc && p.crawl.enc.exit && p.crawl.enc.cell && p.crawl.enc.cell !== p.crawl.cell) p.crawl.enc.move = p.crawl.enc.cell; // trouble on the next block of the old way: getting past it gets you onto it
+  }
   return p.crawl;
 }
 // A crawl saved on the old line of blocks: on the rim of the city's grid (where it would come in), what it found and
@@ -225,7 +230,7 @@ function toGrid(state, p, c) {
   const g = gridOf(state, t);
   const ent = entryOf(g, null, hash01(state.seed, "cityentry", t.id, c.visit || 1));
   const key = keyOf(ent.x, ent.y);
-  Object.assign(c, { v: 2, grid: { size: g.size, r: g.r }, cell: key, heading: ent.heading, path: [key], entry: key, block: levelOf(g, ent.x, ent.y), blocks: {}, trail: {}, enc: null, leaving: null, fresh: false, prev: null });
+  Object.assign(c, { v: 2, grid: { size: g.size, r: g.r }, cell: key, heading: ent.heading, path: [key], entry: key, block: levelOf(g, ent.x, ent.y), blocks: {}, trail: {}, enc: null, fresh: false, prev: null });
   c.trailMult = c.trailMult ?? trailMultOf(state, p);
   genBlock(state, c, key);
   say2(c, "(The city is a grid of blocks now: you are on its edge, with what you found.)", "info", state.hour);
@@ -241,6 +246,8 @@ export function activeCrawl(state) {
   }
   return null;
 }
+// Nothing else to do on a block while the start is still to pick or something is in front of you.
+const notReady = (c) => (c.choosing ? "Pick a block on the edge of the city to go in at first." : c.enc ? "Deal with what is in front of you first." : "");
 function say2(c, text, k = "info", hour = null) {
   c.log.push({ text, k, hour });
   if (c.log.length > 60) c.log.splice(0, c.log.length - 60);
@@ -282,10 +289,10 @@ export function crawlCard(state, p, orders) {
     title: `City crawl: ${city}`,
     isOrders: true, // still the team's orders card (one a team: awaitOrders replaces it; the autopilot answers it as one)
     partyId: p.id,
-    text: `${teamName(state, p)} ${n === 1 ? "stands" : "stand"} at the edge of ${city}. Go in block by block: each block shows the places along its street (each one a building to raid) and what is happening outside, and you choose: go into a place, deal with the street, push deeper (richer, rarer places, and more and tougher dead) or head back out. Noise raises the city's Alert, lying low lets it fade, and every block between you and the edge is a risk on the way out. Alert now: ${alertName(alert)} (${alert}).${visits ? ` You have been in ${visits} time${visits === 1 ? "" : "s"}: the places searched before stay picked over.` : ""}${p.vehicle ? " The vehicle waits at the edge; inside you carry everything on foot." : ""}`,
+    text: `${teamName(state, p)} ${n === 1 ? "stands" : "stand"} at the edge of ${city}. Pick a block on its edge to go in at, then go block by block, north, east, south or west: each block shows the places along its street (each one a building to raid) and what is happening outside, and you choose: go into a place, deal with the street, push deeper (richer, rarer places, and more and tougher dead) or walk back to any block on the edge and out. Noise raises the city's Alert, lying low lets it fade, and every block you walk is a risk, the more where you made noise. Alert now: ${alertName(alert)} (${alert}).${visits ? ` You have been in ${visits} time${visits === 1 ? "" : "s"}: the places searched before stay picked over.` : ""}${p.vehicle ? " The vehicle waits at the edge; inside you carry everything on foot." : ""}`,
     choices: [
       {
-        label: "Go in block by block", hint: "Start a city crawl here: the first block's card opens.", order: true,
+        label: "Go in block by block", hint: "Start a city crawl here: the city's map opens to pick the block of its edge to go in at.", order: true,
         resolve: (st) => { const res = giveOrder(st, p, "scavenge"); return p.crawl || st.combat ? "" : res; },
       },
       {
@@ -296,35 +303,52 @@ export function crawlCard(state, p, orders) {
   };
 }
 
-// A team arrives at a city tile to scavenge (scavenge.js startScavenge): the crawl opens on a block on the rim of the
-// city's round grid (citygrid.js), on the side facing where the team came from, heading in.
-export function startCrawl(state, p) {
+// A team arrives at a city tile to scavenge (scavenge.js startScavenge). opts.choose (the player's team in the browser):
+// the crawl opens on the city's map, choosing (c.choosing, no block yet) until the player picks a block of the rim to go
+// in at (pickStart). Else (the autopilot, the tools) it goes in at a rim block of the visit's dice (rimStart).
+export function startCrawl(state, p, opts = {}) {
   const t = state.tiles[p.dest];
   const mem = memOf(t);
   mem.visits += 1;
   const { floor, alert } = startAlert(state, t);
   const g = gridOf(state, t);
-  const home = state.bases.find((b) => b.id === p.homeBaseId) || state.bases[0];
-  let angle = null;
-  if (home && state.grid && home.tile !== t.id) { const a = state.tiles[home.tile], b = t; angle = Math.atan2((a.y ?? 0) - (b.y ?? 0), (a.x ?? 0) - (b.x ?? 0)); }
-  const ent = entryOf(g, angle, hash01(state.seed, "cityentry", t.id, mem.visits));
-  const key = keyOf(ent.x, ent.y);
   p.phase = "engaged";
   p.crawl = {
     v: 2, tile: p.dest, city: tileLabel(state, p.dest), visit: mem.visits, started: state.hour,
-    grid: { size: g.size, r: g.r }, cell: key, heading: ent.heading, path: [key], entry: key,
-    block: levelOf(g, ent.x, ent.y), deepest: 1, alert, floor,
-    blocks: {}, buildings: { ...mem.snaps }, enc: null, leaving: null, inside: null,
+    grid: { size: g.size, r: g.r }, choosing: true, cell: null, heading: 0, path: [], entry: null,
+    block: 1, deepest: 1, alert, floor,
+    blocks: {}, buildings: { ...mem.snaps }, enc: null, inside: null,
     tally: { supplies: {}, gear: [] }, kills: 0, lost: [], log: [], hadVehicle: !!p.vehicle,
     trail: {}, trailMult: trailMultOf(state, p), fresh: false,
   };
   const c = p.crawl;
   aiLootCells(state, t, c); // other groups' scavenging since: the blocks near the rim they went through
+  log(state, `${teamName(state, p)} goes into ${c.city} block by block.`, "info");
+  if (opts.choose) { say2(c, `${teamName(state, p)} ${partyMembers(state, p).length === 1 ? "reaches" : "reach"} ${c.city} (${g.size} blocks across). Pick a block on its edge to go in at.`, "info", state.hour); return true; }
+  pickStart(state, p, rimStart(state, c));
+  return true;
+}
+// The rim block a team that does not choose goes in at (the autopilot's, the tools'): any block of the rim, by the
+// visit's dice (the same visit, the same block).
+export function rimStart(state, c) {
+  const rim = rimOf(c.grid);
+  const [x, y] = rim[Math.floor(hash01(state.seed, "cityentry", c.tile, c.visit) * rim.length)] || [0, Math.floor(c.grid.r)];
+  return keyOf(x, y);
+}
+// Go in at a block of the rim (the crawl's choosing ends): heading in toward the centre, the block's card opens.
+export function pickStart(state, p, key) {
+  const c = crawlOf(state, p);
+  if (!c) return "The team is not in a city.";
+  if (!c.choosing) return "The team is already in the city.";
+  const [x, y] = xyOf(key);
+  if (!key || !isEdge(c.grid, x, y)) return "Pick a block on the edge of the city.";
+  const heading = headingToward(c.grid, x, y);
+  Object.assign(c, { choosing: false, cell: key, heading, path: [key], entry: key, block: levelOf(c.grid, x, y) });
+  c.deepest = Math.max(c.deepest, c.block);
   genBlock(state, c, key);
   noteCell(state, c, key);
-  say2(c, `${teamName(state, p)} reaches the edge of ${c.city} (${g.size} blocks across) from the ${DIR_NAMES[(ent.heading + 2) % 4]}.${p.vehicle ? " The vehicle waits here at the edge; everything you find you carry on foot until you come back out." : ""}`, "info", state.hour);
-  log(state, `${teamName(state, p)} goes into ${c.city} block by block.`, "info");
-  return true;
+  say2(c, `${teamName(state, p)} ${partyMembers(state, p).length === 1 ? "goes" : "go"} in from the ${DIR_NAMES[(heading + 2) % 4]} edge of ${c.city} (${c.grid.size} blocks across), on ${blockOf(c).street}.${p.vehicle ? " The vehicle waits here at the edge; everything you find you carry on foot until you come back out." : ""}`, "info", state.hour);
+  return "";
 }
 // Other groups' scavenging here (aiscav.js adds what they took to mem.aiLoot): every AI_LOOT of it is a block they
 // went through, near the rim (they do not go deep), picked over, and the buildings there not as you left them.
@@ -383,7 +407,7 @@ export function trailMultOf(state, p) {
   const T = CRAWL.TRAIL;
   return (1 + T.perPerson * Math.max(0, partyMembers(state, p).length - 3)) * (p.stance === "stealthy" ? T.stealthy : 1);
 }
-// A block's zombie activity: { level 1-5, name, mult } by the city's dice (CRAWL.THREAT); salt: another way out's streets.
+// A block's zombie activity: { level 1-5, name, mult } by the city's dice (CRAWL.THREAT); salt: other dice.
 export function threatOf(state, c, key = c.cell, ...salt) {
   const T = CRAWL.THREAT;
   let r = hash01(state.seed, "crawl-threat", c.tile, key, ...salt), level = 1;
@@ -439,7 +463,9 @@ export function genBlock(state, c, cell = c.cell) {
     const keys = Object.keys(EVENTS).filter((e) => n >= EVENTS[e].min && !events.some((x) => x.key === e) && !(EVENTS[e].blocking && n >= CRAWL.MAX_BLOCK));
     if (!keys.length) break;
     const evk = vr.weighted(keys, (e) => Math.max(0.05, EVENTS[e].w + EVENTS[e].deep * (n - 1) + (e === "horde" ? c.alert / 60 : 0)));
-    events.push({ id: `${cell}e${i}`, key: evk, done: false, result: "" });
+    const ev = { id: `${cell}e${i}`, key: evk, done: false, result: "" };
+    if (EVENTS[evk].blocking) { const [x, y] = xyOf(cell); ev.dir = headingToward(c.grid, x, y); } // what it blocks: the way deeper in, toward the centre
+    events.push(ev);
   }
   c.blocks[cell] = { n, key: cell, street: streetA, places, events, threat: threatOf(state, c, cell).level };
   return c.blocks[cell];
@@ -636,7 +662,7 @@ const addAlert = (c, v) => {
 export function enterPlace(state, p, placeId, opts = {}) {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
-  if (c.enc) return "Deal with what is in front of you first.";
+  const busy = notReady(c); if (busy) return busy;
   if (state.combat) return "A fight is already going on.";
   const blk = blockOf(c);
   const place = blk.places.find((x) => x.id === placeId);
@@ -911,77 +937,58 @@ function mergeGroups(groups) {
 }
 
 // ---------- moving ----------
-// The chance of trouble walking to block n (from the block before it).
-// The chance of trouble walking into a block (key; its level from the grid): its activity scales its danger and multiplies
-// its heat (the Alert and its trail): CRAWL.THREAT. mult: as known (a block not yet seen is reckoned at 1 in what the
-// window shows; the roll uses the block's own).
-export function moveRisk(state, c, key = c.cell, mult = threatOf(state, c, key).mult) {
+// The chance of trouble walking into a block (key; its level from the grid), on the way in or on the way out alike
+// (CRAWL.ENC): its level, the city's Alert and the heat you left there (its trail), × its activity (CRAWL.THREAT), + the
+// load over what the team can carry (over: CRAWL.ENC.load), × night. mult: as known (a block not yet seen is reckoned at
+// 1 in what the window shows; the roll uses the block's own).
+export function moveRisk(state, c, key = c.cell, mult = threatOf(state, c, key).mult, over = overOf(state, c)) {
   const E = CRAWL.ENC;
-  const n = levelAt(c, key);
-  return Math.min(E.max, ((E.base + E.perBlock * (n - 1)) * mult + blockHeat(state, c, key, mult) * E.perAlert) * (isNight(state) ? E.night : 1) * CRAWL.GRIDSTEP.step);
+  const n = levelAt(c, key), trail = (c.trail || {})[key] || 0;
+  return Math.min(E.max, ((E.base + E.perBlock * (n - 1) + c.alert * E.perAlert + trail * CRAWL.TRAIL.perTrail) * mult + over * E.load) * (isNight(state) ? E.night : 1) * E.step);
 }
-// The way out, block by block: way "back" the blocks of the path you came in by, in reverse, each at its level, the
-// Alert, the load and the heat you left there (its trail), × its activity; way "line": straight on in one direction
-// (dir 0-3, north, east, south, west) to the rim, through the blocks in between (blocks you have seen at their own
-// activity and heat; the rest reckoned at 1 till you are on them). From a block on the rim you walk out: no risk.
-// { way, dir, steps: [{ cell, block (level), p, trail, threat, known }], any, breakout, hours }.
-export function exitRisk(state, p, c = p.crawl, way = (c.leaving && c.leaving.way) || "back", dir = c.leaving && c.leaving.dir) {
-  const X = CRAWL.EXIT, T = CRAWL.TRAIL;
-  const over = crawlLoad(state, p).over;
-  const night = isNight(state) ? X.night : 1;
-  const mem = memOf(state.tiles[c.tile]);
-  const at = (key, known) => {
-    const n = levelAt(c, key), trail = (c.trail || {})[key] || 0, th = known ? threatOf(state, c, key) : { level: 0, mult: 1 };
-    return { cell: key, block: n, trail: Math.round(trail), threat: th.level, known,
-      p: Math.min(X.max, ((X.base + X.perBlock * (n - 1)) * th.mult + (c.alert * X.perAlert + trail * T.perTrail) * th.mult + over * X.load) * night * CRAWL.GRIDSTEP.step) };
-  };
-  const breakout = c.alert >= X.fightAlert && c.block >= X.fightFrom && !(c.leaving && c.leaving.started);
-  let cells;
-  if (c.leaving && c.leaving.cells) cells = c.leaving.cells;
-  else if (way === "line") { const [x, y] = xyOf(c.cell); cells = lineOut(c.grid, x, y, dir ?? c.heading); }
-  else cells = c.path.slice(0, -1).reverse(); // the path back, not the block you stand on
-  const steps = cells.map((k) => at(k, !!c.blocks[k] || !!mem.cells[k]));
-  const any = 1 - steps.reduce((a, s) => a * (1 - s.p), 1);
-  const hours = steps.reduce((a, s) => a + (s.known ? CRAWL.EXIT_HOURS : CRAWL.MOVE_HOURS), 0);
-  return { way, dir: way === "line" ? (dir ?? c.heading) : null, steps, any: breakout ? 1 : any, breakout, hours, edge: onEdge(c) };
+// The load over capacity of the team a crawl belongs to (the window and the tools pass the crawl alone).
+const overOf = (state, c) => { const p = state.parties.find((x) => x.crawl === c); return p ? crawlLoad(state, p).over : 0; };
+export const onEdge = (c) => { if (!c.cell) return false; const [x, y] = xyOf(c.cell); return isEdge(c.grid, x, y); };
+// A street event blocking a way off this block this visit (EVENTS[...].blocking): { ev, dir } or null. An event from
+// before the four ways (no dir) blocks the way the team faces, as "straight on" did.
+export function wallOf(c) {
+  const blk = c.cell && c.blocks[c.cell];
+  const ev = blk && blk.events.find((e) => !e.done && EVENTS[e.key] && EVENTS[e.key].blocking);
+  return ev ? { ev, dir: ev.dir ?? c.heading } : null;
 }
-export const onEdge = (c) => { const [x, y] = xyOf(c.cell); return isEdge(c.grid, x, y); };
-// Where a turn from here leads: { way, heading, cell (null: off the grid, out of the city), level }.
-export function waysOn(c, state = null) {
+// The four ways from here, north, east, south and west (2026-10-13: all four, the way you came included): { way (its
+// name), dir (0-3), heading, cell (null: off the grid, the city's edge: walk out instead), level, ring, back (the way
+// you came: toward the block before on your path), wall (a street event blocking it this visit) }.
+export function waysOn(c) {
   const [x, y] = xyOf(c.cell);
-  return ["left", "straight", "right"].map((way) => {
-    const h = turn(c.heading, way), [dx, dy] = DIRS[h], nx = x + dx, ny = y + dy;
-    const cell = inGrid(c.grid, nx, ny) ? keyOf(nx, ny) : null;
-    const shut = !!(state && cell && way !== "straight" && sideShut(state, c, c.cell, cell)); // CRAWL.SIDE (from PR #4's cross streets)
-    return { way, heading: h, dir: DIR_NAMES[h], cell, level: cell ? levelOf(c.grid, nx, ny) : 0, ring: cell ? ringOf(c.grid, nx, ny) : 0, shut };
+  const wall = wallOf(c);
+  const back = c.path && c.path.length > 1 ? dirTo(c.cell, c.path[c.path.length - 2]) : -1;
+  return DIRS.map(([dx, dy], h) => {
+    const nx = x + dx, ny = y + dy, cell = inGrid(c.grid, nx, ny) ? keyOf(nx, ny) : null;
+    return { way: DIR_NAMES[h], dir: h, heading: h, cell, level: cell ? levelOf(c.grid, nx, ny) : 0, ring: cell ? ringOf(c.grid, nx, ny) : 0, back: h === back, wall: wall && wall.dir === h ? wall.ev : null };
   });
 }
-// Is the side street between two blocks shut (rubble, a barricade, a burned-out bus: the city's dice, the same every
-// visit and both ways)? Straight on is always open (a street event can still block it this visit).
-export function sideShut(state, c, a, b) {
-  const [k1, k2] = a < b ? [a, b] : [b, a];
-  return hash01(state.seed, "cityside", c.tile, k1, k2) >= CRAWL.SIDE.open;
-}
-// On to the next block: left, right or straight on from the way you are heading (an hour's walk; maybe trouble on the
-// way, an encounter), then that block's card. The blocks deeper in toward the centre are more dangerous and richer.
+// On to the next block: way north, east, south or west (or 0-3; "straight", "left", "right", "back" from the way you
+// face), an hour's walk with maybe trouble on the way (an encounter), then that block's card. The blocks deeper in
+// toward the centre are more dangerous and richer; the blocks back toward the rim are the way out.
 export function nextBlock(state, p, way = "straight") {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
-  if (c.enc) return "Deal with what is in front of you first.";
-  const opt = waysOn(c, state).find((w) => w.way === way);
-  if (!opt || !opt.cell) return "That way leads out of the city: leave from here.";
-  if (opt.shut) return `The street ${opt.dir} is shut: rubble and wrecks from wall to wall. Another way.`;
-  const blk = blockOf(c);
-  const wall = blk.events.find((e) => !e.done && EVENTS[e.key].blocking);
-  if (wall && way === "straight") return `${EVENTS[wall.key].title}: the way straight on is blocked until you clear it or find a way around.`;
-  const risk = moveRisk(state, c, opt.cell);
+  const busy = notReady(c); if (busy) return busy;
+  const h = typeof way === "number" ? way : DIR_NAMES.includes(way) ? DIR_NAMES.indexOf(way) : turn(c.heading, way);
+  const opt = waysOn(c)[h];
+  if (!opt) return "No such way.";
+  if (!opt.cell) return `${opt.way[0].toUpperCase() + opt.way.slice(1)} is the edge of the city: walk out from here.`;
+  if (opt.wall) return `${EVENTS[opt.wall.key].title}: the way ${opt.way} is blocked until you clear it or find a way around.`;
+  const risk = moveRisk(state, c, opt.cell, undefined, crawlLoad(state, p).over);
   addAlert(c, CRAWL.ALERT.move);
   if (!passHours(state, p, CRAWL.MOVE_HOURS)) return crawlGoneText(state, p);
   if (c.enc) return ""; // one of you turned on the way (crawlTurned): that first
   const from = { cell: c.cell, heading: c.heading };
   if (state.rng.chance(risk)) {
+    const th = threatOf(state, c, opt.cell);
     c.enc = makeEncounter(state, c, opt.level, { move: opt.cell, heading: opt.heading, cell: opt.cell });
-    say2(c, `On the way ${opt.dir}: ${c.enc.text}`, "danger", state.hour);
+    say2(c, `On the way ${opt.way}${(c.trail || {})[opt.cell] >= 10 ? ` (${th.name.toLowerCase()} streets; the dead your noise drew here are still about)` : ""}: ${c.enc.text}`, "danger", state.hour);
     return ""; // the encounter card says it
   }
   arriveBlock(state, p, opt.cell, opt.heading, from);
@@ -990,6 +997,7 @@ export function nextBlock(state, p, way = "straight") {
 function arriveBlock(state, p, key, heading = null, from = null) {
   const c = p.crawl;
   c.prev = from || { cell: c.cell, heading: c.heading };
+  if (heading == null && dirTo(c.cell, key) >= 0) heading = dirTo(c.cell, key);
   c.cell = key;
   if (heading != null) c.heading = heading;
   c.block = levelAt(c, key);
@@ -1001,7 +1009,7 @@ function arriveBlock(state, p, key, heading = null, from = null) {
   noteCell(state, c, key);
   c.fresh = true; // nothing done here yet: you can still slip away unseen (slipAway)
   const th = threatOf(state, c, key);
-  say2(c, `${blk.street}: ${DEPTHS[Math.min(c.block, DEPTHS.length - 1)]}. Zombie activity: ${th.name.toLowerCase()}.${onEdge(c) ? " The edge of the city: you can leave from here." : ""}`, th.level >= 4 ? "danger" : "info", state.hour);
+  say2(c, `${blk.street}: ${DEPTHS[Math.min(c.block, DEPTHS.length - 1)]}. Zombie activity: ${th.name.toLowerCase()}.${onEdge(c) ? " The edge of the city: you can walk out from here." : ""}`, th.level >= 4 ? "danger" : "info", state.hour);
 }
 // Slip away from a block you have just come into (too many of the dead): back the way you came onto the block before,
 // quietly, before anything here notices you. Stealth + d10 against SLIP.dc + its activity level × perThreat + the
@@ -1014,7 +1022,7 @@ export function slipChance(state, p, c = p.crawl) {
 export function slipAway(state, p) {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
-  if (c.enc) return "Deal with what is in front of you first.";
+  const busy = notReady(c); if (busy) return busy;
   if (!c.fresh || !c.prev) return "You have made yourselves known here: there is no slipping away now.";
   const ok = state.rng.chance(slipChance(state, p, c));
   if (!passHours(state, p, CRAWL.SLIP.hours)) return crawlGoneText(state, p);
@@ -1037,7 +1045,7 @@ export function slipAway(state, p) {
 export function lieLow(state, p) {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
-  if (c.enc) return "Deal with what is in front of you first.";
+  const busy = notReady(c); if (busy) return busy;
   const risk = moveRisk(state, c, c.cell) * 0.4;
   addAlert(c, -CRAWL.ALERT.lieLow);
   c.alert = Math.max(c.floor, c.alert);
@@ -1058,7 +1066,7 @@ export function lieLow(state, p) {
 export function lookAround(state, p) {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
-  if (c.enc) return "Deal with what is in front of you first.";
+  const busy = notReady(c); if (busy) return busy;
   const blk = blockOf(c);
   if (blk.looked) return "You have looked this block over already.";
   const L = FOLK.LOOK;
@@ -1079,76 +1087,38 @@ export function lookAround(state, p) {
 export const lookChance = (state, p) => Math.min(FOLK.LOOK.max, FOLK.LOOK.base + FOLK.LOOK.perScout * bestSkill(state, p, "scouting"));
 
 // ---------- leaving ----------
-// Back out to the edge, a block at a time: each can hold trouble (exitRisk); at a high Alert from deep in, the first
-// block on the way is a breakout.
-// way: "here" (you stand on the rim: you walk out), "back" (the path you came in by, through the heat you left), "line"
-// (dir 0-3: straight on in one direction to the rim, through blocks you may not know).
-export function leaveCity(state, p, way = "back", dir = null) {
+// Out of the city (2026-10-13): no way out is walked for you. Walk block by block (nextBlock: each block's trouble is
+// moveRisk, with the heat you left there and the load you carry) to any block on the rim, and walk out from there. At
+// Alert BREAKOUT.alert or more the dead fill the streets between you and safety: walking out is a breakout (fight it,
+// sneak or run through it and you are out; lose and you are pinned down on the block). Still choosing where to go in:
+// you turn back without going in.
+export function walkOut(state, p) {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
-  if (c.enc) return "Deal with what is in front of you first.";
-  const X = CRAWL.EXIT;
-  if (way === "here" || (way === "back" && c.path.length <= 1)) {
-    if (!onEdge(c)) return "This is not the edge of the city: go back the way you came, or keep going one way to the edge.";
-    say2(c, "You walk out of the city here.", "info", state.hour);
-    return finishCrawl(state, p);
-  }
-  const d = dir ?? c.heading;
-  const ex = exitRisk(state, p, c, way === "line" ? "line" : "back", d);
-  c.leaving = { way: ex.way, dir: ex.dir, cells: ex.steps.map((x) => x.cell), at: c.block };
-  say2(c, ex.way === "line" ? `You head ${DIR_NAMES[d]}, keeping to one direction until you reach the edge of the city.` : "You head back the way you came.", "info", state.hour);
-  if (c.alert >= X.fightAlert && c.block >= X.fightFrom) {
-    c.leaving.started = true;
+  if (c.choosing) { say2(c, "You turn back without going in.", "info", state.hour); return finishCrawl(state, p); }
+  const busy = notReady(c); if (busy) return busy;
+  if (!onEdge(c)) return "This is not the edge of the city: walk block by block to a block on its rim, then out.";
+  if (c.alert >= CRAWL.BREAKOUT.alert) {
     c.enc = makeEncounter(state, c, c.block, { exit: true, breakout: true, cell: c.cell });
     say2(c, c.enc.text, "danger", state.hour);
     return "";
   }
-  c.leaving.started = true;
-  return stepLeave(state, p);
+  say2(c, "You walk out of the city here.", "info", state.hour);
+  return finishCrawl(state, p);
 }
-// On the way out with nothing in front of you (a save made between two blocks): keep going.
-export function continueLeaving(state, p) {
-  const c = crawlOf(state, p);
-  if (!c || !c.leaving || c.enc) return "";
-  return stepLeave(state, p);
-}
-// A block at a time: walk onto the next block of the way out (the map follows you), roll its trouble; past the last one
-// you are out (the last block is on the rim).
-function stepLeave(state, p) {
-  const c = p.crawl;
-  if (!c) return ""; // the crawl already ended (a team wiped on the way out)
-  while (c.leaving && c.leaving.cells && c.leaving.cells.length) {
-    const key = c.leaving.cells[0];
-    const known = !!c.blocks[key] || !!memOf(state.tiles[c.tile]).cells[key];
-    const risk = exitRiskOf(state, p, c, key);
-    if (!passHours(state, p, known ? CRAWL.EXIT_HOURS : CRAWL.MOVE_HOURS)) return crawlGoneText(state, p);
-    if (!p.crawl) return ""; // the hour wiped the team and ended the crawl
-    if (c.enc) return ""; // one of you turned (crawlTurned)
-    if (state.rng.chance(risk)) {
-      const th = threatOf(state, c, key);
-      c.enc = makeEncounter(state, c, levelAt(c, key), { exit: true, cell: key });
-      say2(c, `On the way out (${th.name.toLowerCase()} streets${(c.trail || {})[key] >= 10 ? "; the dead your noise drew here are still about" : ""}): ${c.enc.text}`, "danger", state.hour);
-      return "";
-    }
-    passThrough(state, c, key);
-  }
-  return p.crawl ? finishCrawl(state, p) : "";
-}
-// The trouble on one block of the way out (as exitRisk's steps, with the block's own activity once it is rolled).
-function exitRiskOf(state, p, c, key) {
-  const X = CRAWL.EXIT, T = CRAWL.TRAIL;
-  const n = levelAt(c, key), trail = (c.trail || {})[key] || 0, m = threatOf(state, c, key).mult;
-  return Math.min(X.max, ((X.base + X.perBlock * (n - 1)) * m + (c.alert * X.perAlert + trail * T.perTrail) * m + crawlLoad(state, p).over * X.load) * (isNight(state) ? X.night : 1) * CRAWL.GRIDSTEP.step);
-}
-// Onto a block of the way out: it is where you are now (the map, the level), and it leaves the list.
-function passThrough(state, c, key) {
-  c.leaving.cells.shift();
-  const [x0, y0] = xyOf(c.cell), [x1, y1] = xyOf(key);
-  const h = DIRS.findIndex(([dx, dy]) => dx === Math.sign(x1 - x0) && dy === Math.sign(y1 - y0));
-  c.cell = key; if (h >= 0) c.heading = h; c.block = levelAt(c, key); c.leaving.at = c.block;
-  if (c.leaving.way === "back") { const i = c.path.indexOf(key); if (i >= 0) c.path.length = i + 1; } else c.path.push(key);
-  genBlock(state, c, key);
-  noteCell(state, c, key);
+// The autopilot's way out (AUTO.way, a block a call: crawlAutoStep): the path to a block of the rim, { path: [cells, not
+// the one it stands on], risk (the chance of some trouble on the way as it reckons it) }, or null. "safer": the cheapest
+// by each block's trouble as known (moveRisk at its activity once seen, this visit or an earlier one; else × 1), a block
+// not walked this visit × AUTO.unknown, one it slipped away or ran from × AUTO.avoid, + AUTO.stepCost a block; "nearest":
+// the fewest blocks. A street event's wall on this block is gone round.
+export function autoWayOut(state, p, c = p.crawl, way = CRAWL.AUTO.way) {
+  const A = CRAWL.AUTO, mem = memOf(state.tiles[c.tile]), avoid = c.avoid || {}, over = crawlLoad(state, p).over;
+  const riskOf = (k) => moveRisk(state, c, k, c.blocks[k] || mem.cells[k] ? threatOf(state, c, k).mult : 1, over);
+  const cost = way === "nearest" ? () => 1 : (k) => (riskOf(k) * (c.blocks[k] ? 1 : A.unknown) + A.stepCost) * (avoid[k] ? A.avoid : 1);
+  const wall = wallOf(c);
+  const [x, y] = xyOf(c.cell);
+  const res = pathToRim(c.grid, x, y, cost, (from, d) => from === c.cell && !!wall && wall.dir === d);
+  return res ? { path: res.path, risk: 1 - res.path.reduce((a, k) => a * (1 - riskOf(k)), 1) } : null;
 }
 function finishCrawl(state, p) {
   const c = p.crawl;
@@ -1184,14 +1154,14 @@ function crawlGoneText(state, p) {
 }
 
 // ---------- encounters ----------
-// What the team runs into on the street: a horde (the dead; the special dead deeper), a patrol of raiders, or at a high
-// Alert on the way out a breakout (a big horde between you and the edge).
+// What the team runs into on the street: a horde (the dead; the special dead deeper), a patrol of raiders, or walking
+// out from the rim at a high Alert a breakout (a big horde between you and safety: CRAWL.BREAKOUT).
 // One of the team died with the worm in them on a block card (worm.js wormRise, from the midnight tick while the crawl passes its
 // hours): the encounter "One of you turned", fought like the street encounters (the window's choices, the autopilot's
 // crawlAutoStep); the Alert rises. With an encounter already in front of them, the risen joins it. Returns true.
 export function crawlTurned(state, p, s) {
   const c = crawlOf(state, p);
-  if (!c) return false;
+  if (!c || c.choosing) return false; // not in yet: the road's card (worm.js)
   const name = `${s.name.split(" ")[0]} (turned)`;
   if (c.enc) {
     c.enc.enemy = { ...c.enc.enemy, count: (c.enc.enemy.count || 0) + 1 };
@@ -1239,7 +1209,7 @@ function makeEncounter(state, c, n, ctx) {
     }
   }
   const text = kind === "patrol" ? `${enemy.count} raiders come down the street, guns up.` :
-    kind === "breakout" ? `The city is roused: ${enemy.count} of the dead fill the streets between you and the edge. You will have to fight your way out, or find a gap.` :
+    kind === "breakout" ? `The city is roused: ${enemy.count} of the dead fill the streets between you and safety. You will have to fight your way out, or find a gap.` :
     `${enemy.count} of the dead${enemy.types ? ` (${Object.entries(enemy.types).map(([k, v]) => `${v} ${ZTYPES[k] ? ZTYPES[k].name.toLowerCase() : "special"}${v > 1 ? "s" : ""}`).join(", ")})` : ""} shamble into the street ahead.`;
   return { kind, block: n, cell: ctx.cell || ctx.move || c.cell, heading: ctx.heading ?? null, enemy, text, move: ctx.move || null, exit: !!ctx.exit, event: ctx.event || null, spotted: !!ctx.spotted };
 }
@@ -1272,7 +1242,7 @@ export function encounterOptions(state, p) {
   ];
   if (e.kind !== "patrol" || !e.spotted) out.push({ id: "hide", label: e.spotted ? "Break contact and hide" : "Hide", tip: `Stealth ${st} + d10 against ${Math.ceil(dc)}: about ${Math.round(hide * 100)}%. An hour. Fail and they find you first.`, odds: hide });
   if (e.kind !== "patrol") out.push({ id: "lure", label: lure ? `Throw ${lure.key === "noisemaker" ? "a noise maker" : lure.key === "firecracker" ? "firecrackers" : "a bottle"}` : "Throw something (none carried)", tip: lure ? `Pull them away down a side street: about ${Math.round(CRAWL.LURE[lure.key] * 100)}%.` : "Carry a noise maker, firecrackers or bottles to lure the dead away.", odds: lure ? CRAWL.LURE[lure.key] : 0, disabled: !lure });
-  out.push({ id: "run", label: e.exit ? "Run for it" : e.move ? "Fall back" : "Run", tip: `${e.exit ? "Sprint for the edge" : e.move ? "Back to the block you came from" : "Get away"}: each of you about ${Math.round(hurtP * 100)}% to be hurt on the way.${over > 0 ? " Overloaded: slower." : ""}`, odds: 1 });
+  out.push({ id: "run", label: e.exit ? "Run for it" : e.move ? "Fall back" : "Run", tip: `${e.exit ? "Sprint through them and out of the city" : e.move ? "Back to the block you came from" : "Get away"}: each of you about ${Math.round(hurtP * 100)}% to be hurt on the way.${over > 0 ? " Overloaded: slower." : ""}`, odds: 1 });
   return out;
 }
 // The answer to an encounter. opts.map: a fight on the street map (the browser), else by the numbers.
@@ -1331,36 +1301,27 @@ export function resolveEncounter(state, p, choice, opts = {}) {
     say2(c, `You run.${hit.length ? ` Hurt on the way: ${hit.join(", ")}.` : " Everyone gets clear."}`, hit.length ? "danger" : "info", state.hour);
     if (!partyMembers(state, p).length) { crawlWiped(state, p, ""); return "Nobody got away."; }
     if (!passHours(state, p, 1)) return crawlGoneText(state, p);
-    // Running: on the way out you get through; going deeper you fall back where you were; elsewhere you get away.
+    // Running: walking out (a breakout) you get through and out; on the way to a block you fall back where you were;
+    // elsewhere you get away.
     if (e.move) { c.enc = null; say2(c, `You fall back onto ${blockOf(c).street}.`, "info", state.hour); return "You fell back."; }
     return continueAfter(state, p, e, true);
   }
   return "Unknown choice.";
 }
-// After an encounter: on the way deeper you arrive; on the way out you go on; an event's fight is just over.
+// After an encounter: on the way to a block you arrive; walking out (a breakout) you are out; an event's fight is
+// just over. Lost: driven back where you were, or pinned down on the rim (lie low, or try to walk out again).
 function continueAfter(state, p, e, ok) {
   const c = p.crawl;
   if (!c) return "";
   c.enc = null;
   if (!ok) {
     if (e.move) { say2(c, `Driven back, you stay on ${blockOf(c).street}.`, "danger", state.hour); return "Driven back."; }
-    if (e.exit) {
-      // Pinned down: back on that block's card; leave again (new rolls), lie low first, or search.
-      // Pinned down where it happened: that block's card; leave again (new rolls), lie low first, or search.
-      if (c.leaving && e.cell && e.cell !== c.cell) passThrough(state, c, e.cell);
-      c.leaving = null;
-      genBlock(state, c, c.cell);
-      say2(c, `Pinned down on ${blockOf(c).street}. You will have to try again.`, "danger", state.hour);
-      return "Pinned down.";
-    }
+    if (e.exit) { say2(c, `Pinned down on ${blockOf(c).street}. Lie low, or try to walk out again.`, "danger", state.hour); return "Pinned down."; }
     return "";
   }
   if (e.move) { arriveBlock(state, p, e.move, e.heading ?? null); return ""; }
-  if (e.exit && c.leaving) {
-    if (c.leaving.cells && c.leaving.cells[0] === e.cell) passThrough(state, c, e.cell); // through it
-    return stepLeave(state, p);
-  }
-  return "";
+  if (e.exit && onEdge(c)) { say2(c, "Through the dead and out of the city.", "good", state.hour); return finishCrawl(state, p); }
+  return ""; // a breakout from deep in (a save from before the walk out): clear of it, where you stood
 }
 // A street fight is over (combat.js finishCombat): on a map or by the numbers.
 registerCombatHandler("crawlfight", afterFight);
@@ -1391,7 +1352,7 @@ export function eventChoices(state, p, ev) {
 export function resolveEvent(state, p, eventId, choice, opts = {}) {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
-  if (c.enc) return "Deal with what is in front of you first.";
+  const busy = notReady(c); if (busy) return busy;
   const blk = blockOf(c);
   const ev = blk.events.find((x) => x.id === eventId);
   if (!ev || ev.done) return "That is over.";
@@ -1561,13 +1522,15 @@ function eventGrab(state, p, c, ev, mil, done, fightNow) {
 // in toward it, turning away from blocks it knows are crawling; on a block it has just come into that is too hot
 // (activity AUTO.slipThreat+, or Infested with heat) it slips away and goes another way; at its level it searches the
 // places it can win (AUTO.searchOdds), then moves on along the level (or a level deeper, AUTO.depth at most) to another
-// block it has not worked, AUTO.blocks at most, until hurt or loaded; then it leaves the safest way (from the rim:
-// straight out; else back the way it came or straight on in one of the four directions, the lowest risk). Encounters:
-// fight what it should win, else hide, lure or run.
+// block it has not worked, AUTO.blocks at most, until hurt or loaded; then it heads out (c.goingOut), a block a call
+// along the way autoWayOut reckons best to the rim (the safer path by what it knows of each block, AUTO.way), and walks
+// out there. Its start: a rim block by the visit's dice (rimStart). Encounters: fight what it should win, else hide, lure
+// or run (a block it ran from it goes round after).
 export function crawlAutoStep(state, p) {
   const c = crawlOf(state, p);
   if (!c) return;
   if (c.inside) { if (!state.combat) c.inside = null; else return; }
+  if (c.choosing) { pickStart(state, p, rimStart(state, c)); return; } // a crawl the player had not started when the autopilot came on
   const A = CRAWL.AUTO;
   if (c.enc) {
     const opts = encounterOptions(state, p);
@@ -1576,10 +1539,10 @@ export function crawlAutoStep(state, p) {
     const hide = opts.find((o) => o.id === "hide");
     // A lost fight by the numbers can cost everyone: it fights only good odds and otherwise slips away or runs.
     const pick = fight && fight.odds >= A.sureOdds ? "numbers" : lure && lure.odds >= 0.7 ? "lure" : hide && hide.odds >= 0.6 && !c.enc.spotted ? "hide" : fight && fight.odds >= A.fightOdds ? "numbers" : "run";
+    if (pick === "run" && c.enc.move) (c.avoid = c.avoid || {})[c.enc.move] = true; // fell back from it: round it next time
     resolveEncounter(state, p, pick, { map: false });
     return;
   }
-  if (c.leaving) { stepLeave(state, p); return; }
   const members = partyMembers(state, p);
   const hurtNow = members.some((s) => s.health < A.hurt);
   const full = crawlLoad(state, p).ratio > A.full || cargoRoom(state, p) < 2;
@@ -1593,11 +1556,11 @@ export function crawlAutoStep(state, p) {
     slipAway(state, p);
     return;
   }
-  if (!hurtNow && !full) {
+  if (!c.goingOut && !hurtNow && !full) {
     for (const ev of blk.events) if (!ev.done && EVENTS[ev.key].blocking) { resolveEvent(state, p, ev.id, "detour"); return; }
     if (c.autoDepth == null) c.autoDepth = autoDepth(state, p, c); // the level it means to work, judged at the rim
     const known = (k) => (c.blocks[k] ? c.blocks[k].threat : mem.cells[k] && mem.cells[k].threat) || 0;
-    const ways = waysOn(c, state).filter((w) => w.cell && !w.shut && !c.avoid[w.cell] && known(w.cell) < A.slipThreat);
+    const ways = waysOn(c).filter((w) => w.cell && !w.wall && !c.avoid[w.cell] && known(w.cell) < A.slipThreat);
     // On the way in it walks, deeper where it can, the quieter way when it knows.
     if (c.block < c.autoDepth) {
       const [x, y] = xyOf(c.cell), ring = ringOf(c.grid, x, y);
@@ -1618,10 +1581,15 @@ export function crawlAutoStep(state, p) {
       if (next) { nextBlock(state, p, next.way); return; }
     }
   }
-  // Out: from the rim straight out; else the lowest risk of the way back and the four straight lines.
-  if (onEdge(c)) { leaveCity(state, p, "here"); return; }
-  const opts = [{ way: "back", dir: null, r: exitRisk(state, p, c, "back").any }, ...[0, 1, 2, 3].map((d) => ({ way: "line", dir: d, r: exitRisk(state, p, c, "line", d).any }))]
-    .filter((o) => A.way === "safer" || o.way === A.way || (o.way === "back" && c.path.length <= 1)); // AUTO.way: the harness forcing one way
-  const best = opts.sort((a, b) => a.r - b.r)[0];
-  leaveCity(state, p, best.way, best.dir);
+  // Out: a block at a time along the way it reckons best to the rim (it does not turn back in), then out.
+  c.goingOut = true;
+  if (onEdge(c)) {
+    // Roused: on the rim it lies low first, rimLow hours at most, while the Alert can come down below a breakout.
+    if (c.alert >= CRAWL.BREAKOUT.alert && (c.rimLow || 0) < A.rimLow) { c.rimLow = (c.rimLow || 0) + 1; lieLow(state, p); return; }
+    walkOut(state, p);
+    return;
+  }
+  const out = autoWayOut(state, p, c);
+  if (out && out.path.length) nextBlock(state, p, dirTo(c.cell, out.path[0]));
+  else lieLow(state, p); // no way to the rim it can take (cannot happen on the grid: all four ways are open, a wall goes round)
 }
