@@ -312,6 +312,15 @@ fades as fast as the Alert and a team's size does not add to it. `tools/hivecraw
 heat and its cooling; `tools/wintest.js --force hive` still wins on day 91. (`hivecrawltest` seeds 8, 11, 12 and 13
 fail on dev without this change too: the young-hive and deep-hive autopilot checks are seed-sensitive.)
 
+### The harness, merged from claude/gracious-maxwell-dlp07v
+
+That branch (the other session) gave the harness `--way` (how the team leaves), lists for `--day` and `--block` (before
+they were read as one number: a list crashed or started at block 1), and columns for how crawls ended (`--why`) and
+the share of the squad lost on the way out. On the round grid `--way` is `safer` (the lowest risk, the autopilot's),
+`back` (the path in) or `line` (the safest straight line to the rim; `CRAWL.AUTO.way`), and `walk` counts the blocks
+the team set foot on. Its findings were on the rectangular grid: the way out moved losses 1–3 points, and a
+fight-to-the-end team (`--style none`) was wiped on 3–20% of deep crawls.
+
 ## Bugs found on the way, and what was done
 
 1. **Fixed: shells at hand were invisible to a fight by the numbers.** `launchExpedition` calls `packShells`, moving
