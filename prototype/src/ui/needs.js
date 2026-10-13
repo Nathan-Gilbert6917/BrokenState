@@ -2,10 +2,12 @@
 // the survivor screen; the team's ration and share settings; treats at hand with a Use button; the needs alerts.
 // Actions are merged into main.js's dispatcher (NEEDS_ACTIONS).
 import { survivorById, log } from "../sim/world.js";
-import { NEEDS, RATIONS, SHARES, hungerOf, thirstOf, hungerWord, thirstWord, needsWork, needsAim, treatsFor, useTreat, teamFood, teamWater, needAlerts } from "../sim/needs.js";
+import { NEEDS, RATIONS, SHARES, hungerOf, thirstOf, hungerWord, thirstWord, needsWork, needsAim, treatsFor, useTreat, teamFood, teamWater, needAlerts, teamCold } from "../sim/needs.js";
 import { useText } from "../sim/comforts.js";
 import { GEAR } from "../sim/data.js";
-import { partyMembers } from "../sim/parties.js";
+import { partyMembers, partyPace, onTheMove } from "../sim/parties.js";
+import { thirstAt } from "../sim/weather.js";
+import { teamMeds, teamWants, conditionsOf, CONDITIONS } from "../sim/health.js";
 import { tiredLevel, tiredText, TIRED, TIRED_WORDS } from "../sim/sleep.js";
 import { eatTarget, EAT, PACK, packFood, packWater, packKg, thoughtsOf, setRationLevel } from "../sim/eating.js"; // meal breaks, carried rations, food thoughts
 import { RATION_LEVELS, rationKey } from "../sim/meals.js"; // the ration levels per base
@@ -79,6 +81,40 @@ export function treatsRow(state, s) {
   const btns = list.filter((x) => !seen.has(x.key) && seen.add(x.key)).map((x) =>
     `<button class="mini" data-action="nd-treat" data-sid="${s.id}" data-loc="${esc(x.loc)}"${tip(`${s.name.split(" ")[0]} ${GEAR[x.key].useVerb || "uses"} the ${GEAR[x.key].name.toLowerCase()} (${x.whose === "own" ? "their own" : x.whose === "cargo" ? "from the cargo" : x.whose === "armory" ? "from the armory" : `${x.whose}'s`}): ${useText(x.key)}. Used up.${GEAR[x.key].valuable ? " Valuable in trade." : ""}`)}>${esc(GEAR[x.key].name)}</button>`).join("");
   return `<div class="row small" style="flex-wrap:wrap;margin-top:0.2rem"><span class="muted"${tip(`Treats lift a low mood. The team uses one by itself in the evening for anyone below 35 mood (the gentlest first; drink only at rest; valuables only below ${NEEDS.valuableMood}).`)}>Treats:</span>${btns}</div>`;
+}
+
+// What a team has of food, water and meds (its shared supplies and what it found, plus everyone's own pack), what it
+// uses a day as it is now (sim/needs.js teamNeedsHour: each person's ration, more on the move under a load, food × the
+// cold, water × today's thirst, the Rations setting; sim/health.js teamCare: a dose a day for each illness the team
+// treats by itself) and the days that lasts. Food is in days of food (2000 kcal: one person's day).
+const RATION_EAT = { full: 1, short: 0.6, none: 0 };
+export function teamUpkeep(state, p) {
+  const members = partyMembers(state, p).filter((s) => s.alive);
+  const pace = partyPace(state, p);
+  const moving = onTheMove(p);
+  const eat = RATION_EAT[p.ration] ?? 1;
+  const food = { have: teamFood(p) + members.reduce((a, s) => a + packFood(s), 0), perDay: (moving ? pace.foodMove : pace.foodRest) * teamCold(state, p) * eat };
+  const water = { have: teamWater(p) + members.reduce((a, s) => a + packWater(s), 0), perDay: (moving ? pace.eatMove : members.length) * thirstAt(state) };
+  let doses = 0;
+  for (const s of members) for (const c of conditionsOf(s)) if (teamWants(c)) doses += CONDITIONS[c.key] ? CONDITIONS[c.key].meds : 1;
+  const meds = { have: teamMeds(p), perDay: doses };
+  for (const r of [food, water, meds]) r.days = r.perDay > 1e-9 ? r.have / r.perDay : Infinity;
+  return { food, water, meds, people: members.length, moving };
+}
+// The team panel's card: food, water and meds, what it has, uses a day and how long that lasts.
+export function teamUpkeepCard(state, p) {
+  const u = teamUpkeep(state, p);
+  if (!u.people) return "";
+  const r1 = (v) => (Math.round(v * 10) / 10).toString();
+  const lasts = (r, crit, low) => (r.days === Infinity ? `<span class="muted">${r.have > 0 ? "not used now" : "–"}</span>` : `<span class="${r.days < crit ? "danger" : r.days < low ? "warn" : "good"}">${r1(r.days)}d</span>`);
+  const row = (name, r, unit, why, crit, low) => `<tr${tip(why)}><td>${name}</td><td>${r1(r.have)}${unit}</td><td>${r.perDay > 1e-9 ? `−${r1(r.perDay)}${unit}` : '<span class="muted">0</span>'}</td><td>${lasts(r, crit, low)}</td></tr>`;
+  const how = u.moving ? "on the move (more under a load)" : "resting";
+  return `<div class="card small"><b${tip("What the team carries (its supplies, what it found and everyone's own pack), what it uses a day as it is now, and how long that lasts.")}>Daily use</b>
+    <table class="t" style="margin-top:0.25rem"><tr><th></th><th>Has</th><th>Per day</th><th>Lasts</th></tr>
+      ${row("🥫 Food", u.food, "", `Days of food (2000 kcal: one person's day). ${u.people} ${u.people === 1 ? "person eats" : "people eat"} about ${r1(u.food.perDay)} a day ${how}${p.ration && p.ration !== "full" ? `, on ${RATIONS[p.ration] ? RATIONS[p.ration].name.toLowerCase() : p.ration} rations` : ""}${teamCold(state, p) > 1 ? ", more in the cold without a camp fire" : ""}.`, 1, 3)}
+      ${row("💧 Water", u.water, "", `Water, purified and un-purified. ${u.people} ${u.people === 1 ? "person drinks" : "people drink"} about ${r1(u.water.perDay)} a day ${how} at today's thirst.`, 1, 2)}
+      ${row("💊 Meds", u.meds, "", u.meds.perDay ? `A dose a day for each illness the team treats by itself (${u.meds.perDay} now).` : "Nobody on the team is being treated: no meds used a day.", 2, 4)}
+    </table></div>`;
 }
 
 // The team's rations and who eats first, and who is short (team panel).
