@@ -59,7 +59,7 @@ export function randomKit(budget, rng, opts = {}) {
     if (P.slots[slot]) return;
     if (slot === "rig" && P.slots.armor && GEAR[P.slots.armor].pouches) return; // not over a vest with pouches
     const cap = Math.min(left, Math.max(left * share, 1));
-    const ok = slotChoices(slot).filter((k) => noLauncher(k) && slotPoints(slot, k) <= cap);
+    const ok = slotChoices(slot).filter((k) => noLauncher(k) && slotPoints(slot, k) <= cap && !(slot === "armor" && P.slots.rig && GEAR[k].pouches)); // nor a vest with pouches over a rig
     const dear = ok.filter((k) => slotPoints(slot, k) >= left * lo);
     const list = dear.length ? dear : ok;
     if (!list.length) return;
