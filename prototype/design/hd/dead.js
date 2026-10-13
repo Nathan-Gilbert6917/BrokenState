@@ -1,962 +1,605 @@
 // HD designs for the dead (design preview only; the game's sprites are src/ui/sprites.js and src/ui/hivesprites.js).
-// A 44 × 52 grid (twice the game's 22 × 26), facing right, feet on the bottom rows, a free column each side and a
-// free row at the bottom for the outline that outline() adds.
+// The second take, in the item icons' style (STYLE.md; the first take's box figures were rejected): every figure is
+// built from round shaded volumes (kit.js: limb capsules, ellipses, blobs; deadkit.js: rotated ovals, layers with a
+// contact line, slumped trunks, drooping hands, gore), on the 44 × 52 grid, facing right, feet on row 49.
 //
-// How a figure is built: every body part is painted flat into its own small painter (a "part"), shaded by its own
-// silhouette (light from the upper left: a highlight along the top and left edges, a cool shadow along the right
-// and bottom, a deep shadow in the lower-right corner), then stamped onto the figure back to front. Where a part
-// lands on something already painted its rim darkens what is under it: the selective inner outline. Details
-// (wounds, blood, tears, bone) go on last, over the shaded body.
-import { painter, shade, mix, desat, warm, scaled } from "./hdcore.js";
+// The look comes from the game: zombieLookOf(variant, seed, look) picks the skin (ZPAL: rotten, ashen, pale,
+// burnt), the clothes, the build and the style from the seed, and its rng goes on drawing the details here, so a
+// seed is always the same body. The look settings are honoured: palette, gore 0/1/2, eyes glow/red/dead,
+// clothes torn/rags/intact.
+//
+// Anatomy: about 4 heads tall like the living, but slumped: the head forward and tilted, the shoulders uneven, the
+// knees bent. Arms start at the shoulder joints (the trunk's top outer corners) and bend at the elbow; upper arm and
+// forearm about 8 px each. Walkers reach with both arms (the far one behind, darker, lower), runners swing one
+// forward one back, the bloated hang short swollen arms off a huge belly, brutes hang thick arms to the knees.
+// Only the climber has long limbs.
+import { painter, scaled } from "./hdcore.js";
+import { PAL, ramp, blob, limb, ellipseV, mix, shade, warm } from "./kit.js";
+import { paintZombie, zombieLookOf } from "../../src/ui/sprites.js";
 import { Rng } from "../../src/sim/rng.js";
-import { paintZombie, paintArmoredDead, zombieLookOf, zombieLook } from "../../src/ui/sprites.js";
+import {
+  deadSkin, GORE, MOUTH, SOCKET, BONE, PUS, ACID, WORM, EGG, FLESH, AMBER,
+  oval, ball, layer, behind, trunkShape, shoulders, hand, zarm, zleg, shoe, airFoot, wound, bleed, ribs, bite, rag, zhead, worm, shriek,
+} from "./deadkit.js";
 
 export const W = 44, H = 52;
 const DEFAULT_LOOK = { palette: "mixed", gore: "1", variants: "stats", eyes: "glow", clothes: "torn" };
+const dim = (m, f = 0.16) => m.map((c) => warm(shade(c, -f), -0.05)); // the far side: a little darker, cooler
+const SHOE = ramp("#3a322b", { spec: 0.3 });
+const eyeOf = (Z, look, variant) => ({ col: Z.eye, kind: look.eyes === "dead" ? "dead" : look.eyes === "red" || variant === "runner" ? "red" : "glow" });
+const pol = (a, len) => [Math.cos(a) * len, Math.sin(a) * len];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
 
-// ---------- colours ----------
-const COOL = "#3a5466";      // the sickly tint shadows lean to
-const DEEP = "#243040";
-export const BLOOD = { rim: "#5c1210", core: "#330a0b", dry: "#6e1a16", fresh: "#8a1f1a", wet: "#a8302a" };
-export const BONE = { base: "#d8d0bc", sh: "#a89e86", dk: "#6f6858", hi: "#efe9da" };
-const TEETH = "#e9e4d4", GUM = "#4a1416", MOUTH = "#1c0709";
-const SHOE = "#2a2622";
-const PUS = { base: "#c9c26a", hi: "#f0eaa6", dk: "#8c8438" };
-
-// Four tones of a material: highlight, base, shadow (cooler), deep shadow (cooler still).
-export function tones(base, { cool = 0.22, lift = 0.16 } = {}) {
-  return { hi: shade(base, lift), base, sh: mix(shade(base, -0.24), COOL, cool), dk: mix(shade(base, -0.46), DEEP, cool + 0.08) };
-}
-const bruise = (T) => mix(T.dk, "#3c2240", 0.45); // an eye socket, a hollow
-const eyeColors = (eye) => eye;
-
-// ---------- the part shader ----------
-// Every pixel of the part by where it sits in the part's silhouette. map: flat colour -> tones; a colour not in the
-// map is kept as it is (details painted into the part already shaded).
-function shadePart(q, map, { wide = false, soft = false } = {}) {
-  const src = q.px.slice();
-  const on = (x, y) => x >= 0 && y >= 0 && x < q.w && y < q.h && !!src[y * q.w + x];
-  for (let y = 0; y < q.h; y++) for (let x = 0; x < q.w; x++) {
-    const c = src[y * q.w + x];
-    if (!c) continue;
-    const T = map[c];
-    if (!T) continue;
-    const r1 = !on(x + 1, y), r2 = !on(x + 2, y), b1 = !on(x, y + 1), b2 = !on(x, y + 2);
-    const l1 = !on(x - 1, y), t1 = !on(x, y - 1), l2 = !on(x - 2, y), t2 = !on(x, y - 2);
-    let out = T.base;
-    if ((r1 && (b1 || b2)) || (r2 && b1)) out = T.dk;
-    else if (r1 || b1) out = T.sh;
-    else if (wide && (r2 || b2)) out = T.sh;
-    else if ((t1 && !r2 && !l1) || (l1 && !b2 && !t1)) out = T.hi;
-    else if (soft && ((t2 && !r2 && !l2) || (l2 && !b2 && !t2))) out = T.hi;
-    q.px[y * q.w + x] = out;
-  }
-  return q;
-}
-// A part stamped onto p at (ox, oy); its rim darkens what it lands on (the inner outline), then its pixels go down.
-function stamp(p, q, ox, oy, rim = 0.38) {
-  if (rim > 0) for (let y = -1; y <= q.h; y++) for (let x = -1; x <= q.w; x++) {
-    if (q.get(x, y)) continue;
-    if (!(q.get(x - 1, y) || q.get(x + 1, y) || q.get(x, y - 1) || q.get(x, y + 1))) continue;
-    const under = p.get(ox + x, oy + y);
-    if (under) p.set(ox + x, oy + y, mix(shade(under, -rim), DEEP, 0.18));
-  }
-  p.blit(q, ox, oy);
-}
-// A thick limb between two points: t pixels across, square-ended.
-function limb(q, x0, y0, x1, y1, t, c) {
-  const horiz = Math.abs(x1 - x0) >= Math.abs(y1 - y0);
-  let dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx + dy;
-  for (;;) {
-    if (horiz) q.vl(x0, y0, y0 + t - 1, c); else q.hl(x0, x0 + t - 1, y0, c);
-    if (x0 === x1 && y0 === y1) break;
-    const e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; }
-  }
-}
-const part = (w = W, h = H) => painter(w, h);
-
-// ---------- details ----------
-// A wound: a dark rim round a darker core, a dried streak running down from it (gravity), fainter on cloth.
-function wound(p, x, y, size, rng, { streak = true, fresh = false } = {}) {
-  const core = fresh ? BLOOD.fresh : BLOOD.core;
-  if (size >= 2) { p.over(x - 1, y, BLOOD.rim); p.over(x + 1, y, BLOOD.rim); p.over(x, y - 1, BLOOD.rim); p.over(x, y + 1, BLOOD.rim); p.over(x, y, core); if (size >= 3) { p.over(x + 1, y + 1, BLOOD.rim); p.over(x + 1, y, core); p.over(x + 2, y, BLOOD.rim); p.over(x + 1, y - 1, BLOOD.rim); } }
-  else { p.over(x, y, BLOOD.rim); p.over(x + 1, y, core); }
-  if (streak && rng.chance(0.4)) { const len = rng.int(1, 3), sx = x + (size >= 3 ? 1 : 0); for (let i = 1; i <= len; i++) { const yy = y + (size >= 2 ? 1 : 0) + i, u = p.get(sx, yy); if (u) p.set(sx, yy, mix(u, BLOOD.dry, 0.7)); } }
-}
-// Exposed ribs: a patch of darker flesh with the bone bars across it.
-function ribs(p, x0, y0, w, rows, T) {
-  p.rect(x0, y0, x0 + w - 1, y0 + rows * 2, mix(T.dk, "#4a1a1c", 0.5));
-  for (let i = 0; i < rows; i++) { p.hl(x0, x0 + w - 1, y0 + i * 2 + (i ? 0 : 1), BONE.base); p.set(x0 + w - 1, y0 + i * 2 + (i ? 0 : 1), BONE.sh); }
-}
-// The hollow eye: a sunken socket (darkest under the brow), the eye a 2-px core with a 1-px halo of its glow.
-function eye(p, x, y, col, kind, T) {
-  const sock = bruise(T);
-  p.rect(x, y, x + 3, y + 2, sock);
-  p.hl(x, x + 3, y, mix(sock, "#000", 0.35)); // the brow's shadow
-  if (kind === "dead") { p.set(x + 1, y + 1, col); p.set(x + 2, y + 1, mix(col, sock, 0.3)); return; }
-  const halo = mix(col, sock, 0.5), dim = mix(col, sock, 0.78);
-  p.set(x, y + 1, halo); p.set(x + 3, y + 1, halo); p.set(x + 1, y + 2, halo); p.set(x + 2, y + 2, halo);
-  p.set(x + 1, y, dim); p.set(x + 2, y, dim);
-  p.set(x + 1, y + 1, col); p.set(x + 2, y + 1, col);
-}
-// An open jaw: the cavity, the upper teeth, the lower teeth, dark gums.
-function jaw(p, x, y, w, h, { teeth = true, blood = false } = {}) {
-  p.rect(x, y, x + w - 1, y + h - 1, MOUTH);
-  p.hl(x, x + w - 1, y, GUM);
-  if (teeth) { for (let i = 0; i < w; i += 2) p.set(x + i, y + 1, TEETH); for (let i = 1; i < w; i += 2) p.set(x + i, y + h - 1, TEETH); }
-  if (blood) { p.set(x + 1, y + h - 1, BLOOD.fresh); p.over(x + 1, y + h, BLOOD.dry); p.over(x + 1, y + h + 1, BLOOD.dry); }
-}
-// Torn hems: a ragged edge of the garment where it ends, strips hanging below.
-function fray(p, x0, x1, y, col, dk, rng, { deep = 1 } = {}) {
-  for (let x = x0; x <= x1; x++) {
-    const r = rng.next();
-    if (r < 0.28) { for (let k = 1; k <= deep; k++) p.clear(x, y - k + 1); }
-    else if (r < 0.5) p.over(x, y + 1, dk);
-    if (r > 0.86) { p.over(x, y + 1, dk); p.over(x, y + 2, dk); }
-  }
-}
-
-// ---------- the pieces of a figure ----------
-const BUILD_W = { slim: 14, average: 18, heavy: 22, bloated: 26, brute: 28 };
-const CX = 20.5;
-const LR = (w) => [Math.round(CX - w / 2 + 0.5), Math.round(CX + w / 2 - 0.5)];
-
-// The head: a skull 14 wide and 12 tall with a rounded crown, the jaw dropped open below it, sunken eyes looking
-// the way it faces (right), an ear on the far side. Returns the part and where its features are.
-function headPart(T, eyeCol, eyeKind, o = {}) {
-  const { jawDrop = 2, cheek = false, scalp = false, hair = null, hairLong = true, teethBlood = false, size = 14 } = o;
-  const q = part(20, 22);
-  const h = size, x0 = 2, y0 = 2, sk = Math.round(h * 12 / 14);
-  const SK = "#010101";
-  // the skull: crown rounded by two steps, the cheeks tapering to the upper jaw
-  q.rect(x0 + 2, y0, x0 + h - 3, y0, SK);
-  q.rect(x0 + 1, y0 + 1, x0 + h - 2, y0 + 1, SK);
-  q.rect(x0, y0 + 2, x0 + h - 1, y0 + sk - 2, SK);
-  q.rect(x0 + 1, y0 + sk - 1, x0 + h - 2, y0 + sk - 1, SK);
-  // the lower jaw, dropped
-  const jy = y0 + sk + jawDrop - 1;
-  q.rect(x0 + 3, jy, x0 + h - 3, jy + 1, SK);
-  q.rect(x0 + 4, jy + 2, x0 + h - 4, jy + 2, SK);
-  q.rect(x0 - 1, y0 + 5, x0 - 1, y0 + 7, SK); // ear
-  shadePart(q, { [SK]: T }, { wide: true });
-  // the hollow of the temple, under the cheekbone, the jaw's dark underside
-  q.rect(x0 + h - 2, y0 + 5, x0 + h - 2, y0 + sk - 3, T.sh);
-  q.hl(x0 + 4, x0 + h - 4, jy + 2, T.dk);
-  // the mouth between the jaws: the cavity, teeth above and below
-  const mouthY = y0 + sk - 2, mouthH = jy - mouthY + 1;
-  jaw(q, x0 + 4, mouthY, h - 7, mouthH, { blood: teethBlood });
-  q.rect(x0 + 2, mouthY, x0 + 3, mouthY + 1, T.sh); q.set(x0 + 3, jy, T.dk); // the cheek beside the mouth
-  // the nose: a shadow where it was
-  q.set(x0 + h - 4, y0 + 7, T.sh); q.set(x0 + h - 4, y0 + 8, T.dk); q.set(x0 + h - 3, y0 + 8, T.sh);
-  // eyes, set toward the facing side
-  eye(q, x0 + 2, y0 + 4, eyeCol, eyeKind, T);
-  eye(q, x0 + h - 6, y0 + 4, eyeCol, eyeKind, T);
-  if (cheek) { // the cheekbone through the skin
-    q.rect(x0 + h - 5, y0 + 8, x0 + h - 2, y0 + 9, BONE.base); q.set(x0 + h - 2, y0 + 9, BONE.sh); q.set(x0 + h - 5, y0 + 9, BONE.sh); q.set(x0 + h - 3, y0 + 8, BONE.hi);
-    q.hl(x0 + h - 6, x0 + h - 2, y0 + 10, BLOOD.rim); q.set(x0 + h - 6, y0 + 8, BLOOD.rim); q.set(x0 + h - 6, y0 + 9, BLOOD.core);
-  }
-  if (scalp) { q.rect(x0 + 3, y0, x0 + 7, y0, T.dk); q.rect(x0 + 2, y0 + 1, x0 + 6, y0 + 1, mix(T.dk, BLOOD.rim, 0.5)); q.set(x0 + 4, y0 + 1, BONE.sh); q.set(x0 + 5, y0 + 1, BONE.base); }
-  if (hair) matted(q, x0, y0, h, hair, hairLong);
-  return { q, x0, y0, h, jy, bottom: jy + 2 };
-}
-// Matted hair: a cap with a ragged edge, strands down the far side, a few light streaks.
-function matted(q, x0, y0, h, hair, long = true) {
-  const Hh = tones(hair, { cool: 0.1, lift: 0.22 });
-  if (!long) { // a short crop, matted flat, patchy
-    q.rect(x0 + 2, y0 - 1, x0 + h - 4, y0 - 1, Hh.base); q.rect(x0 + 1, y0, x0 + h - 3, y0, Hh.base); q.rect(x0, y0 + 1, x0 + h - 2, y0 + 1, Hh.sh);
-    for (let x = x0; x < x0 + h - 1; x += 3) q.set(x, y0 + 2, Hh.dk); q.set(x0 + 5, y0, Hh.dk); q.hl(x0 + 3, x0 + 4, y0 - 1, Hh.hi); q.set(x0 + h - 1, y0 + 2, Hh.sh);
-    return;
-  }
-  q.rect(x0 + 3, y0 - 2, x0 + h - 5, y0 - 2, Hh.base);
-  q.rect(x0 + 1, y0 - 1, x0 + h - 3, y0 - 1, Hh.base);
-  q.rect(x0, y0, x0 + h - 2, y0, Hh.base);
-  q.rect(x0, y0 + 1, x0 + h - 1, y0 + 1, Hh.base);
-  q.rect(x0, y0 + 2, x0 + 2, y0 + 2, Hh.base); q.rect(x0 + h - 4, y0 + 2, x0 + h - 1, y0 + 2, Hh.base); q.set(x0 + 5, y0 + 2, Hh.sh); q.set(x0 + 8, y0 + 2, Hh.sh); // the fringe, broken
-  q.set(x0 + 1, y0 + 3, Hh.sh); q.set(x0 + h - 2, y0 + 3, Hh.sh);
-  q.rect(x0 + h - 1, y0 + 3, x0 + h - 1, y0 + 4, Hh.sh); // the temple
-  // strands down the far (left) side
-  q.rect(x0 - 1, y0 + 2, x0 - 1, y0 + 10, Hh.sh); q.rect(x0 - 2, y0 + 4, x0 - 2, y0 + 12, Hh.dk); q.set(x0 - 1, y0 + 12, Hh.dk); q.set(x0 - 2, y0 + 14, Hh.dk);
-  q.hl(x0 + 3, x0 + 5, y0 - 1, Hh.hi); q.set(x0 + 7, y0 - 2, Hh.hi); q.set(x0 + 1, y0 + 1, Hh.dk); q.rect(x0 + h - 3, y0 - 1, x0 + h - 3, y0, Hh.sh); q.rect(x0 + h - 2, y0 + 1, x0 + h - 1, y0 + 2, Hh.sh);
-}
-// Legs standing: two legs with a gap, the trouser hem over the shoes, shoes with a sole; or bare feet.
-function legsPart(L, R, PT, SKT, rng, o = {}) {
-  const { shoes = [true, true], top = 34, bottom = 50, grime = true, knee = true, apart = 0 } = o;
-  const q = part();
-  const mid = Math.floor((L + R) / 2);
-  const P = "#020202", S = "#030303", K = "#040404";
-  const fL = [L + 2 - apart, mid - 1 - apart], nL = [mid + 1 + apart, R - 2 + apart];
-  q.rect(L + 2, top, R - 2, top + 3, P); // hips
-  q.rect(fL[0], top, fL[1], bottom - 3, P);
-  q.rect(nL[0], top, nL[1], bottom - 3, P);
-  const feet = (x0, x1, y, kind, near) => {
-    if (kind) { q.rect(x0 - (near ? 0 : 1), y, x1 + (near ? 2 : 0), bottom, S); }
-    else { q.rect(x0, y, x1 + (near ? 1 : 0), bottom, K); }
+// ---------- clothes on a trunk ----------
+// The trunk in skin, the trousers' waist, then the top over it, cut by the look's tears: notches in the hem (skin
+// showing), holes, hanging strips; a flannel's check, a jacket's open front, a hoodie's pouch.
+function dress(p, T, { skin, cloth, pants, style, clothes, rng, belt = true, topCut = null }) {
+  const inT = trunkShape(T);
+  blob(p, inT, skin, { specular: false });
+  blob(p, (x, y) => inT(x, y) && y >= T.bot - 4, pants, { rim: 1 });
+  if (belt) for (let x = 0; x < p.w; x++) if (inT(x, T.bot - 3) && inT(x, T.bot - 4)) p.set(x, T.bot - 3, PAL.leather[0]);
+  if (!cloth) return inT;
+  const hem = T.bot - 3;
+  const nN = clothes === "intact" ? 0 : clothes === "rags" ? 4 : 2;
+  const notches = [];
+  for (let i = 0; i < nN; i++) notches.push([rng.range(T.botX - T.hh, T.botX + T.hh), rng.range(2, clothes === "rags" ? 6 : 4), rng.range(1.5, 2.8)]);
+  const holes = [];
+  const nH = clothes === "intact" ? 0 : clothes === "rags" ? 3 : 1;
+  for (let i = 0; i < nH; i++) holes.push([rng.range(T.topX - T.hs + 2, T.topX + T.hs - 2), rng.range(T.top + 5, hem - 3), rng.range(1, 1.9)]);
+  const nx = T.topX + 1.5, vee = style === "flannel" || style === "jacket";
+  const inNeck = (x, y) => (vee ? Math.abs(x - nx) < 2.6 - (y - T.top) * 0.5 : ((x - nx) / 2.8) ** 2 + ((y - T.top + 0.5) / 2.4) ** 2 < 1);
+  const inC = (x, y) => {
+    if (!inT(x, y) || y > hem || (topCut && !topCut(x, y))) return false;
+    if (style !== "hoodie" && inNeck(x, y)) return false;
+    for (const [nx, d, w] of notches) if (Math.abs(x - nx) < w && y > hem - d * (1 - Math.abs(x - nx) / w)) return false;
+    for (const [hx, hy, r] of holes) if ((x - hx) ** 2 + (y - hy) ** 2 * 1.3 <= r * r + 0.3) return false;
+    return true;
   };
-  feet(fL[0], fL[1], bottom - 2, shoes[0], false);
-  feet(nL[0], nL[1], bottom - 2, shoes[1], true);
-  shadePart(q, { [P]: PT, [S]: tones(SHOE, { cool: 0.15, lift: 0.22 }), [K]: SKT }, { wide: true });
-  // the crease at the knee, the hem's shadow, the sole
-  if (knee) { q.hl(fL[0] + 1, fL[1] - 1, top + 6, PT.sh); q.hl(nL[0] + 1, nL[1] - 1, top + 6, PT.sh); }
-  for (const [x0, x1, kind, near] of [[fL[0], fL[1], shoes[0], false], [nL[0], nL[1], shoes[1], true]]) {
-    if (kind) { q.hl(x0 - (near ? 0 : 1), x1 + (near ? 2 : 0), bottom, shade(SHOE, -0.4)); q.set(x0 + 1, bottom - 2, shade(SHOE, 0.35)); if (near) q.set(x1 + 1, bottom - 1, shade(SHOE, -0.25)); }
-    else { for (let x = x0; x <= x1 + (near ? 1 : 0); x += 2) q.set(x, bottom, SKT.dk); } // toes
+  blob(p, inC, cloth, { specular: false });
+  // a torn hole's upper edge throws a shadow on the skin in it
+  for (const [hx, hy, r] of holes) for (let x = Math.round(hx - r); x <= Math.round(hx + r); x++) { const y = Math.round(hy - r * 0.7); if (!inC(x, y) && inT(x, y)) p.set(x, y, cloth[0]); }
+  if (style === "flannel") for (let y = T.top; y <= hem; y++) for (let x = 0; x < p.w; x++) if (inC(x, y) && p.get(x, y) === cloth[1] && ((x + 1) % 4 === 0 || y % 4 === 0)) p.set(x, y, mix(cloth[1], cloth[0], 0.55));
+  if (style === "jacket") { const fx = Math.round(T.topX + 2); for (let y = T.top + 3; y <= hem; y++) { const x = Math.round(fx + (T.botX - T.topX) * (y - T.top) / (T.bot - T.top)); if (inC(x, y)) { p.set(x, y, cloth[0]); if (inC(x - 1, y)) p.set(x - 1, y, cloth[2]); } } }
+  if (style === "hoodie") { const y = hem - 4; for (let x = Math.round(T.botX - 2); x <= Math.round(T.botX + 3); x++) if (inC(x, y)) p.set(x, y, cloth[0]); }
+  // folds: a crease from under the near arm, two at the waist (a dark line with its lit edge above)
+  const fold = (x0, y0, x1, y1) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)); for (let i = 0; i <= n; i++) { const x = Math.round(x0 + (x1 - x0) * i / n), y = Math.round(y0 + (y1 - y0) * i / n); if (inC(x, y) && inC(x, y - 1) && p.get(x, y) !== cloth[0]) { p.set(x, y, cloth[0]); if (p.get(x, y - 1) === cloth[1]) p.set(x, y - 1, cloth[2]); } } };
+  if (!T.noFolds) {
+    const sx = T.topX + T.hs - 3;
+    fold(sx, T.top + 6, sx - 3, T.top + 9);
+    fold(T.botX + 1, hem - 3, T.botX + 4, hem - 2);
+    fold(T.botX - 4, hem - 2, T.botX - 2, hem - 1);
   }
-  q.hl(fL[0], fL[1], bottom - 3, PT.dk); q.hl(nL[0], nL[1], bottom - 3, PT.dk); // hem shadows
-  fray(q, fL[0], fL[1], bottom - 3, PT.base, PT.dk, rng); fray(q, nL[0], nL[1], bottom - 3, PT.base, PT.dk, rng);
-  if (grime) { // mud up the shins and on the feet
-    const M = mix(PT.dk, "#3a3020", 0.6);
-    for (let i = 0; i < 3; i++) { const x = rng.int(fL[0], nL[1]), y = rng.int(bottom - 7, bottom - 3); q.over(x, y, M); q.over(x + 1, y, M); q.over(x, y + 1, M); }
-    q.hl(fL[0] - 1, nL[1] + 2, bottom, mix(shade(SHOE, -0.2), "#3a3020", 0.4));
-  }
-  return q;
-}
-// Running legs: the back leg trailing, its foot lifted behind, the front leg striding to the ground.
-function runLegsPart(L, R, PT, SKT, rng, shoes) {
-  const q = part();
-  const mid = Math.floor((L + R) / 2), top = 34;
-  const P = "#020202", S = "#030303", K = "#040404";
-  q.rect(L + 2, top, R - 2, top + 3, P);
-  limb(q, L + 3, top + 1, L - 2, top + 8, 5, P); limb(q, L - 3, top + 8, L - 6, top + 12, 5, P); // back thigh, shin back and up
-  limb(q, mid, top + 1, R + 2, top + 6, 6, P); limb(q, R + 2, top + 6, R + 3, top + 13, 5, P); // front thigh forward, shin down
-  if (shoes[0]) q.rect(L - 8, top + 12, L - 3, top + 14, S); else q.rect(L - 7, top + 13, L - 3, top + 14, K);
-  if (shoes[1]) q.rect(R + 2, 48, R + 8, 50, S); else q.rect(R + 3, 48, R + 7, 50, K);
-  shadePart(q, { [P]: PT, [S]: tones(SHOE, { cool: 0.15, lift: 0.22 }), [K]: SKT }, { wide: true });
-  if (shoes[1]) { q.hl(R + 2, R + 8, 50, shade(SHOE, -0.4)); q.set(R + 3, 48, shade(SHOE, 0.35)); }
-  if (shoes[0]) { q.hl(L - 8, L - 3, top + 14, shade(SHOE, -0.4)); q.set(L - 7, top + 12, shade(SHOE, 0.35)); }
-  q.hl(mid + 3, R + 1, top + 6, PT.sh); q.hl(L - 2, L + 1, top + 8, PT.sh); // the knees
-  fray(q, L - 5, L - 1, top + 11, PT.base, PT.dk, rng); fray(q, R + 2, R + 6, 47, PT.base, PT.dk, rng);
-  return q;
-}
-// The torso: a shirt (t-shirt, jacket, flannel, hoodie, tank) over the skin, a belt, a collar showing the neck.
-function torsoPart(L, R, CT, SKT, style, rng, o = {}) {
-  const { top = 20, bottom = 33, lean = 0 } = o;
-  const q = part();
-  const C = "#050505", K = "#060606";
-  const mid = Math.floor((L + R) / 2);
-  for (let y = top; y <= bottom; y++) { const dx = Math.round(lean * (bottom - y) / (bottom - top)); q.hl(L + dx, R + dx, y, C); }
-  // shoulders rounded
-  q.clear(L, top); q.clear(R, top); q.clear(L + 1, top); q.clear(R - 1, top); q.clear(L, top + 1); q.clear(R, top + 1);
-  if (style === "tank") { q.rect(L + 3, top, R - 3, top + 1, K); q.rect(L + 1, top + 2, L + 2, top + 5, K); q.rect(R - 2, top + 2, R - 1, top + 5, K); }
-  else q.rect(mid - 2, top, mid + 2, top, K); // the collar
-  shadePart(q, { [C]: CT, [K]: SKT }, { wide: true });
-  const sh = CT.sh, dk = CT.dk, hi = CT.hi;
-  if (style === "jacket") {
-    q.vl(mid + 1, top, bottom, dk); q.vl(mid + 2, top + 1, bottom, sh); // open front
-    q.rect(mid - 1, top + 1, mid, top + 2, hi); q.rect(mid + 3, top + 1, mid + 4, top + 2, hi); // lapels
-    q.rect(mid - 1, top + 3, mid + 1, top + 5, SKT.sh); q.rect(mid, top + 6, mid + 1, top + 9, SKT.base); // chest in the gap
-    q.set(L + 3, top + 10, dk); q.set(L + 4, top + 10, dk); q.rect(L + 2, top + 9, L + 5, top + 9, sh); // a pocket
-  } else if (style === "hoodie") {
-    q.rect(L + 2, top - 1, R - 2, top + 1, dk); q.rect(L + 3, top - 1, R - 3, top - 1, sh); // the hood's bunch
-    q.rect(mid + 1, top + 4, mid + 1, top + 6, mix(CT.base, "#e6e2d8", 0.5)); q.rect(mid - 2, top + 4, mid - 2, top + 6, mix(CT.base, "#e6e2d8", 0.5)); // the cords
-    q.rect(mid - 2, top + 9, mid + 3, top + 12, sh); q.hl(mid - 2, mid + 3, top + 9, dk); // the pouch
-  } else if (style === "flannel") {
-    for (let y = top; y <= bottom; y++) for (let x = L; x <= R; x++) if (q.get(x, y) && (((y - top) % 5 === 1) || ((x - L) % 5 === 2))) q.set(x, y, mix(q.get(x, y), dk, 0.75));
-    q.vl(mid + 1, top + 1, bottom, dk); for (let y = top + 3; y <= bottom; y += 4) q.set(mid, y, "#d8d0bc"); // placket and buttons
-  } else {
-    q.rect(mid - 1, top + 1, mid + 1, top + 1, SKT.sh); // the t-shirt's neck
-  }
-  // the belt
-  q.hl(L + 1, R - 1, bottom, "#2a2420"); q.hl(L + 1, R - 1, bottom - 1, "#3a3028"); q.rect(mid - 1, bottom - 1, mid + 1, bottom, "#8a7a48"); q.set(mid, bottom - 1, "#c4b070");
-  return q;
-}
-// Tears in the shirt: bites out of the hem, holes with skin and the odd rib behind, hanging strips.
-function tearShirt(p, L, R, top, bottom, CT, SKT, level, rng, gore) {
-  const holes = level === "intact" ? 1 : level === "rags" ? 7 : 3;
-  for (let i = 0; i < holes; i++) {
-    const x = rng.int(L + 1, R - 3), y = rng.int(top + 2, bottom - 4), w = rng.int(1, level === "rags" ? 4 : 2), h = rng.int(1, 2);
-    for (let yy = y; yy <= y + h; yy++) for (let xx = x; xx <= x + w; xx++) if (p.get(xx, yy)) p.set(xx, yy, yy === y ? SKT.sh : SKT.base);
-    p.over(x + w + 1, y, CT.dk); p.over(x, y + h + 1, CT.dk); // the hole's rim
-  }
-  // the hem
-  if (level !== "intact") {
-    for (let x = L; x <= R; x++) {
-      const r = rng.next();
-      if (r < 0.25) { p.over(x, bottom - 2, SKT.base); p.over(x, bottom - 3, SKT.sh); if (level === "rags") p.over(x, bottom - 4, SKT.base); }
-      else if (r < 0.4) { p.over(x, bottom - 2, CT.dk); }
-    }
-    if (level === "rags") { // hanging strips below the belt
-      for (const x of [L + 2, L + 6, R - 4]) { p.over(x, bottom + 1, CT.sh); p.over(x, bottom + 2, CT.dk); p.over(x + 1, bottom + 1, CT.base); }
-    }
-  }
-  if (gore >= 2 || level === "rags") ribs(p, L + 2, top + 4, 4, 3, SKT);
+  // rags: strips hanging from the hem
+  if (clothes === "rags") for (let i = 0; i < 3; i++) { const x = Math.round(rng.range(T.botX - T.hh + 1, T.botX + T.hh - 1)); if (inC(x, hem)) rag(p, x, hem + 1, rng.int(3, 6), cloth, { lean: rng.range(-1, 1) }); }
+  return inC;
 }
 
-// Arms. Reaching: both arms toward the facing side, the far one above the near one, a sleeve to the elbow and the
-// forearm bare, hands with spread fingers. Hanging: at the sides.
-function armsPart(L, R, CT, SKT, style, pose, rng, o = {}) {
-  const q = part();
-  const { lost = false, top = 21, droop = 1, sleeve = style !== "tshirt" && style !== "tank" } = o;
-  const S = "#070707", K = "#080808";
-  const hand = (x, y, dir, up) => { // a hand with three fingers, reaching
-    if (dir > 0) { q.rect(x, y, x + 2, y + 3, K); q.hl(x + 3, x + 4, y, K); q.hl(x + 3, x + 4, y + 2, K); q.set(x + 3, y + 3, K); q.set(x + 2, y - 1, K); }
-    else { q.rect(x, y, x + 3, y + 3, K); q.set(x, y + 4, K); q.set(x + 2, y + 4, K); q.set(x + 3, y + 4, K); }
-  };
-  if (pose === "reach") {
-    const arm = (y, len, near, lostOne) => {
-      const sx = R - 4, ex = R + len, ey = y + droop + (near ? 1 : 0);
-      limb(q, sx, y, R + 2, y, 4, sleeve || style === "tank" ? (style === "tank" ? K : S) : S); // upper arm (sleeve or short sleeve)
-      if (!sleeve) { limb(q, sx, y, R + 1, y, 4, S); }
-      if (lostOne) { limb(q, R + 2, y, R + 5, ey, 4, K); return [R + 5, ey]; }
-      limb(q, R + 2, y, ex - 3, ey, 4, K); // forearm
-      hand(ex - 3, ey, 1, near);
-      return null;
-    };
-    const stump = arm(top, 13, false, lost);
-    arm(top + 5, 11, true, false);
-    // the far arm's shoulder
-    q.rect(L - 1, top, L + 2, top + 4, S);
-    shadePart(q, { [S]: CT, [K]: SKT });
-    // the sleeve's torn end over the forearm
-    for (const y of [top, top + 5]) { q.set(R + 2, y + 3, CT.dk); q.set(R + 3, y + 1, CT.dk); q.set(R + 2, y, CT.sh); }
-    if (stump) { q.rect(stump[0] - 1, stump[1], stump[0], stump[1] + 3, BLOOD.rim); q.vl(stump[0], stump[1] + 1, stump[1] + 2, BLOOD.core); q.set(stump[0] - 1, stump[1] + 1, BONE.base); }
-    return q;
+// Wounds at the body's anchor points (only on painted pixels): gore 1 a few, gore 2 many, with ribs and bites.
+function goreOn(p, gore, rng, spots, { ribsAt = null, bites = [] } = {}) {
+  if (!gore) return;
+  const n = gore === 1 ? rng.int(2, 3) : rng.int(4, 6);
+  const pool = spots.slice();
+  for (let i = 0; i < n && pool.length; i++) {
+    const [x, y] = pool.splice(rng.int(0, pool.length - 1), 1)[0].map(Math.round);
+    if (!p.get(x, y)) continue;
+    wound(p, x, y, gore === 2 && rng.chance(0.6) ? 2 : 1, { streak: gore === 1 ? rng.int(0, 2) : rng.int(2, 5) });
   }
-  if (pose === "swing") { // running: the far arm driven back, the near arm pumping forward
-    limb(q, L + 1, top, L - 3, top + 8, 4, S); limb(q, L - 3, top + 8, L - 8, top + 10, 4, K); q.rect(L - 11, top + 9, L - 8, top + 12, K); q.set(L - 12, top + 10, K); q.set(L - 12, top + 12, K); q.set(L - 9, top + 13, K);
-    limb(q, R - 3, top, R + 1, top + 6, 4, S); limb(q, R + 1, top + 6, R + 7, top + 1, 4, K); hand(R + 7, top, 1, true);
-    shadePart(q, { [S]: CT, [K]: SKT });
-    q.set(L - 3, top + 8, CT.dk); q.set(R + 1, top + 6, CT.dk); // the sleeves' ends
-    return q;
-  }
-  // hanging
-  for (const [x0, far] of [[L - 4, true], [R + 1, false]]) {
-    const len = far ? 12 : 13;
-    q.rect(x0, top, x0 + 3, top + (sleeve ? 7 : 2), S);
-    q.rect(x0, top + (sleeve ? 8 : 3), x0 + 3, top + len, K);
-    hand(x0, top + len + 1, -1, !far);
-  }
-  shadePart(q, { [S]: CT, [K]: SKT });
-  return q;
+  if (gore > 1) { if (ribsAt) ribs(p, ribsAt[0], ribsAt[1]); for (const [x, y] of bites) bite(p, Math.round(x), Math.round(y)); }
 }
 
-// ---------- the four kinds ----------
+// ---------- the walker (and the base of the runner and the armoured dead) ----------
+const TRUNK = {
+  slim: { hs: 5.6, hw: 4.4, hh: 5.0, r: 2.1, leg: 2.3 },
+  average: { hs: 6.4, hw: 5.0, hh: 5.8, r: 2.3, leg: 2.5 },
+  heavy: { hs: 7.2, hw: 6.4, hh: 6.6, r: 2.6, leg: 2.8, belly: 1.6 },
+};
+const SLEEVE = { tshirt: "short", jacket: "long", flannel: "long", hoodie: "long", tank: null };
+
 export function paintZombieHD(variant, seed, look = DEFAULT_LOOK) {
   const Z = zombieLookOf(variant, seed, look);
-  const { rng, skin, cloth, pants, gore, eye: eyeCol, build, style } = Z;
-  const eyeKind = look.eyes === "dead" ? "dead" : look.eyes === "red" || variant === "runner" ? "red" : "glow";
-  const p = part();
-  const SKT = tones(skin), CT = tones(cloth, { cool: 0.14 }), PT = tones(pants, { cool: 0.14 });
-  const [L, R] = LR(BUILD_W[build]);
-  const hair = variant === "walker" && rng.chance(0.5) ? shade(rng.pick(["#3b2a1e", "#6b6b6b", "#8a6a3a"]), -0.3) : null;
-  const hairLong = hair && rng.chance(0.6);
-  const shoes = [rng.chance(0.85), rng.chance(0.85)];
-  if (variant === "bloated") return bloated(p, Z, SKT, CT, PT, L, R, look, eyeKind, shoes);
-  if (variant === "brute") return brute(p, Z, SKT, CT, PT, L, R, look, eyeKind, shoes);
-  const run = variant === "runner";
-  const pose = run ? (rng.chance(0.5) ? "reach" : "swing") : "reach";
-  const lost = pose === "reach" && rng.chance(0.25);
-  const tilt = variant === "walker" ? rng.pick([-1, 0, 0, 1]) * 2 : 2;
-  const lean = run ? 4 : 0;
-  // back to front: far arm, legs, torso, near arm, head
-  const arms = armsPart(L, R, CT, SKT, style, pose, rng, { lost, top: 21 - (run ? 1 : 0) });
-  stamp(p, run ? runLegsPart(L, R, PT, SKT, rng, shoes) : legsPart(L, R, PT, SKT, rng, { shoes }), 0, 0, 0);
-  const torso = torsoPart(L, R, CT, SKT, style, rng, { lean });
-  stamp(p, torso, 0, 0);
-  tearShirt(p, L + (run ? 2 : 0), R + (run ? 2 : 0), 20, 33, CT, SKT, look.clothes, rng, gore);
-  stamp(p, arms, run ? 3 : 0, 0);
-  // neck
-  const nx = 18 + tilt + lean; p.rect(nx, 15, nx + 5, 20, SKT.sh); p.vl(nx + 5, 15, 20, SKT.dk);
-  const headO = { jawDrop: run ? 3 : rng.pick([1, 2, 2, 3]), cheek: gore > 0 && rng.chance(0.35), scalp: rng.chance(0.4), hair, hairLong, teethBlood: gore > 0 && rng.chance(0.6) };
-  const hd = headPart(SKT, eyeCol, eyeKind, headO);
-  stamp(p, hd.q, 12 + tilt + lean, (run ? 5 : 3) - hd.y0);
-  // grime: dark blotches on the clothes
-  for (let i = 0; i < 3; i++) { const x = rng.int(L + 1, R - 2), y = rng.int(22, 46); const u = p.get(x, y); if (!u || u === SKT.base) continue; const g = mix(shade(u, -0.3), "#2a2418", 0.5); p.set(x, y, g); p.over(x + 1, y, g); if (rng.chance(0.5)) p.over(x, y + 1, g); }
-  // wounds and blood
-  const wounds = gore === 0 ? 0 : gore === 1 ? rng.int(2, 3) : rng.int(5, 8);
-  for (let i = 0; i < wounds; i++) {
-    const x = rng.int(L - 2, R + 6), y = rng.int(6, 44);
-    if (!p.get(x, y)) continue;
-    wound(p, x, y, rng.pick([1, 2, 2, 3]), rng);
-  }
-  if (gore > 1) { wound(p, L + 3, 40, 3, rng, { fresh: true }); for (let x = L + 1; x <= L + 5; x++) p.over(x, 50, BLOOD.rim); p.over(R + 9, 29, BLOOD.fresh); p.over(R + 10, 29, BLOOD.fresh); }
+  if (variant === "bloated") return bloated(Z, look);
+  if (variant === "brute") return brute(Z, look);
+  if (variant === "runner") return runner(Z, look);
+  return walker(Z, look);
+}
+
+function walker(Z, look, kit = null) {
+  const { rng, gore } = Z;
+  const build = kit?.build || Z.build;
+  const B = TRUNK[build] || TRUNK.average;
+  const skin = deadSkin(Z.skin), cloth = kit?.cloth || ramp(Z.cloth), pants = kit?.pants || ramp(Z.pants);
+  const style = kit?.style || Z.style, clothes = look.clothes;
+  const hairCol = !kit && rng.chance(0.5) ? shade(rng.pick(["#3b2a1e", "#6b6b6b", "#8a6a3a"]), -0.25) : null;
+  const hair = hairCol ? ramp(hairCol, { spec: 0.25 }) : null, hairLong = hair && rng.chance(0.6);
+  const p = painter(W, H);
+  const lean = rng.pick([2, 2, 3]), cx = Math.min(16, Math.floor(23.5 - lean - B.hs)); // room for the reaching fingers
+  const dropN = rng.int(0, 2), dropF = dropN ? 0 : rng.int(1, 2);
+  const T = { top: 17, bot: 33, topX: cx + lean, botX: cx, hs: B.hs, hw: B.hw, hh: B.hh, dropN, dropF, belly: B.belly || 0, hump: 1.6 };
+  const S = shoulders(T);
+  // the stance: knees bent, the near foot a little ahead or behind
+  const step = rng.pick([-1, 1, 2]);
+  const hipN = [cx + 2.5, 31.5], kneeN = [cx + 6 + step * 0.5, 39.5], ankleN = [cx + 3 + step, 46];
+  const hipF = [cx - 2.5, 31], kneeF = [cx + 0.5 - step * 0.5, 39], ankleF = [cx - 3 - step, 46];
+  // the arms: raised forward from the shoulders, the forearms sagging, the hands drooping
+  const lost = !kit && rng.chance(0.22);
+  const aN = rng.range(-0.38, 0.06), aF = aN + rng.range(0.22, 0.42); // the near arm up to ~20° above level, the far one lower
+  const eN = add(S.N, pol(aN, 8)), hN = add(eN, pol(aN + rng.range(0.18, 0.36), 7.6));
+  const eF = add(S.F, pol(aF, 8)), hF = add(eF, pol(aF + rng.range(0.12, 0.3), 7.6));
+  let sleeve = kit?.sleeve !== undefined ? kit.sleeve : SLEEVE[style] || "long";
+  if (!kit && clothes === "rags" && rng.chance(0.6)) sleeve = "torn";
+  const sleeveF = sleeve;
+  const shoes = kit?.shoes || [rng.chance(0.85), rng.chance(0.85)];
+  const tornLeg = !kit && clothes === "rags" && rng.chance(0.5);
+  const tilt = rng.pick([-0.22, 0, 0.12, 0.28]), jaw = rng.pick([1, 2, 2, 3]);
+  const head = { x: T.topX + 4.5 + Math.max(0, tilt) * 3, y: 10.5 + (tilt > 0.2 ? 1 : 0), tilt, jaw };
+  const fSkin = dim(skin), fCloth = dim(cloth), fPants = dim(pants);
+
+  // back to front: the far arm, the far leg, the near leg, the trunk, the neck and head, the near arm
+  zarm(p, S.F, eF, hF, fSkin, { sleeve: sleeveF ? (kit?.sleeveF || fCloth) : null, len: sleeveF, r: B.r * 0.95, hand: { droop: 1.25 } });
+  zleg(p, hipF, kneeF, ankleF, fPants, fSkin, { r: B.leg });
+  shoe(p, ankleF, shoes[1] ? dim(kit?.boot || SHOE) : fSkin, { bare: !shoes[1] });
+  layer(p, (q) => { zleg(q, hipN, kneeN, ankleN, pants, skin, { r: B.leg, torn: tornLeg }); shoe(q, ankleN, shoes[0] ? kit?.boot || SHOE : skin, { bare: !shoes[0] }); });
+  limb(p, [T.topX + 1, T.top + 2], [head.x - 1, head.y + 4], 2.2, 2.0, skin);
+  if (style === "hoodie") oval(p, T.topX - 2, T.top + 0.5, 4, 2.6, cloth, { specular: false });
+  layer(p, (q) => { dress(q, T, { skin, cloth, pants, style, clothes, rng }); kit?.onTrunk?.(q, T, S); });
+  let face;
+  layer(p, (q) => { face = zhead(q, { ...head, skin, eye: eyeOf(Z, look, "walker"), hair, hairLong, scalp: rng.chance(0.4), gore, rot: rng.chance(0.5) }); kit?.onHead?.(q, head, face); });
+  layer(p, (q) => { zarm(q, S.N, eN, hN, skin, { sleeve: sleeve ? cloth : null, len: sleeve, r: B.r, lost, gore }); kit?.onArm?.(q, S.N, eN, hN); }, { cast: 2 });
+  // grime on the trousers: a darker patch at the knee
+  p.over(Math.round(kneeN[0]), Math.round(kneeN[1]), pants[0]);
+  goreOn(p, gore, rng, [[T.topX - 2, 22], [T.topX + 2, 26], [T.botX - 2, 29], [eN[0] + 2, eN[1]], [kneeN[0] - 1, kneeN[1] - 3], [hipF[0] - 1, 36]],
+    { ribsAt: [T.topX - 2, 24], bites: [[eN[0] - 3, eN[1] - 1]] });
   return p;
 }
 
-// A sheen on a rounded form: a crescent of highlight toward the upper left, a sharp specular in it.
-function sheen(q, cx, cy, rx, ry, hi, spec) {
-  for (let y = Math.floor(cy - ry); y <= cy; y++) for (let x = Math.floor(cx - rx); x <= cx; x++) {
-    const nx = (x - cx) / rx, ny = (y - cy) / ry, d = Math.hypot(nx, ny);
-    if (d > 0.62 && d < 0.84 && nx < -0.15 && ny < -0.1 && q.get(x, y)) q.set(x, y, hi);
-  }
-  const sx = Math.round(cx - rx * 0.5), sy = Math.round(cy - ry * 0.55);
-  q.over(sx, sy, spec); q.over(sx + 1, sy, mix(spec, hi, 0.5)); q.over(sx, sy + 1, mix(spec, hi, 0.5));
-}
-
-// Bloated: a swollen oval body, the shirt burst open in two flaps over a shiny belly, pustules, a split down the
-// middle, swollen arms, short legs under the weight, a small head sunk on it.
-function bloated(p, Z, SKT, CT, PT, L, R, look, eyeKind, shoes) {
-  const { rng, gore, eye: eyeCol } = Z;
-  stamp(p, legsPart(L + 3, R - 3, PT, SKT, rng, { shoes, top: 38, knee: false }), 0, 0, 0);
-  const body = part();
-  const K = "#060606", C = "#050505";
-  const cx = 20.5, cy = 29, rx = 13.5, ry = 10.5;
-  body.ellipse(cx, cy, rx, ry, K);
-  body.rect(L + 4, 20, R - 4, 22, K); body.rect(L + 2, 21, R - 2, 24, K); // the shoulders
-  // the shirt: two flaps following the body's curve, pulled apart over the belly
-  for (let y = 20; y <= 37; y++) {
-    const gap = y < 24 ? 5 : y < 27 ? 8 : y < 33 ? 11 : 9; // half the opening
-    for (let x = 0; x < W; x++) if (body.get(x, y) && Math.abs(x - cx) > gap) body.set(x, y, C);
-  }
-  shadePart(body, { [K]: SKT, [C]: CT }, { wide: true, soft: true });
-  sheen(body, cx, cy + 1, rx - 2, ry - 1, SKT.hi, "#ffffff");
-  for (let x = 12; x <= 29; x++) { const d = Math.abs(x - cx) / rx; if (body.get(x, 38) && d < 0.8) body.set(x, 38, SKT.dk); if (body.get(x, 37) && d < 0.6) body.set(x, 37, SKT.sh); } // the belly's underside
-  // the flaps' torn edges, a popped button's thread
-  for (let y = 21; y <= 37; y++) for (const side of [-1, 1]) { const x = Math.round(cx + side * ((y < 24 ? 5 : y < 27 ? 8 : y < 33 ? 11 : 9) + 0.5)); if (body.get(x, y) && (y % 3 === 0)) body.set(x, y, CT.dk); else if (body.get(x, y) && (y % 3 === 1)) body.set(x, y, CT.sh); }
-  body.over(13, 29, "#d8d0bc"); body.over(29, 31, "#d8d0bc");
-  // the split: a seam down the belly with a red rim, something glistening inside
-  const sx = 22;
-  body.vl(sx, 26, 36, BLOOD.rim); body.vl(sx + 1, 27, 35, BLOOD.core); body.vl(sx + 2, 28, 35, BLOOD.rim); body.set(sx + 1, 30, "#b04a5a"); body.set(sx + 1, 33, "#7a2e3a"); body.set(sx + 1, 36, BLOOD.rim);
-  // pustules: a yellow dome with a glint, a sore ring round it
-  for (const [x, y] of [[15, 31], [18, 35], [26, 25], [29, 33], [17, 27], [25, 38]]) { if (!body.get(x, y)) continue; body.rect(x, y, x + 1, y + 1, PUS.base); body.set(x, y, PUS.hi); body.set(x + 1, y + 1, PUS.dk); for (const [dx, dy] of [[2, 0], [2, 1], [-1, 0], [-1, 1], [0, 2], [1, 2], [0, -1], [1, -1]]) body.over(x + dx, y + dy, mix(body.get(x + dx, y + dy) || SKT.base, "#8a4a3a", 0.35)); }
-  stamp(p, body, 0, 0);
-  // arms: swollen, hanging, the hands puffy
-  const arms = part();
-  const S = "#070707";
-  arms.rect(L - 4, 22, L, 28, S); arms.rect(L - 4, 29, L, 38, K); arms.rect(L - 4, 39, L, 42, K); arms.set(L - 4, 43, K); arms.set(L - 2, 43, K); arms.set(L, 43, K);
-  arms.rect(R + 1, 23, R + 5, 29, S); arms.rect(R + 1, 30, R + 5, 39, K); arms.rect(R + 1, 40, R + 5, 43, K); arms.set(R + 2, 44, K); arms.set(R + 4, 44, K); arms.set(R + 5, 44, K);
-  shadePart(arms, { [S]: CT, [K]: SKT });
-  arms.hl(L - 3, L - 1, 39, SKT.sh); arms.hl(R + 2, R + 4, 40, SKT.sh); // the wrists' crease
-  stamp(p, arms, 0, 0);
-  // neck and head: small, sunk between the shoulders
-  p.rect(18, 17, 23, 21, SKT.sh);
-  const hd = headPart(SKT, eyeCol, eyeKind, { jawDrop: 2, size: 12, teethBlood: gore > 0, scalp: rng.chance(0.5) });
-  stamp(p, hd.q, 13, 6);
-  const wounds = gore === 0 ? 0 : gore === 1 ? 2 : 5;
-  for (let i = 0; i < wounds; i++) { const x = rng.int(L - 2, R + 4), y = rng.int(8, 46); if (p.get(x, y)) wound(p, x, y, rng.pick([1, 2]), rng); }
-  if (gore > 1) { for (let y = 37; y <= 40; y++) p.over(sx + 1, y, BLOOD.dry); p.over(sx + 1, 41, BLOOD.rim); p.over(sx, 42, BLOOD.rim); }
+// ---------- the runner: hunched, mid-stride, one arm forward, one back ----------
+function runner(Z, look) {
+  const { rng, gore } = Z;
+  const B = TRUNK.slim;
+  const skin = deadSkin(Z.skin), cloth = ramp(Z.cloth), pants = ramp(Z.pants), style = Z.style, clothes = look.clothes;
+  const p = painter(W, H);
+  const cx = 14;
+  const T = { top: 19, bot: 33, topX: cx + 6, botX: cx, hs: B.hs, hw: B.hw, hh: B.hh, dropN: 1, dropF: 0, hump: 2 };
+  const S = shoulders(T);
+  const reachUp = rng.chance(0.5);
+  // the stride: the near leg forward (knee up), the far leg pushing off behind, its foot in the air
+  const hipN = [cx + 2, 31.5], kneeN = [cx + 8, 37], ankleN = [cx + 8, 45];
+  const hipF = [cx - 2, 31], kneeF = [cx - 4, 39], ankleF = [cx - 10, 42];
+  // the arms: the near one clawing forward, the far one swung back
+  const eN = add(S.N, pol(reachUp ? -0.05 : 0.45, 7.8)), hN = add(eN, pol(reachUp ? 0.6 : 0.05, 7.0));
+  const eF = add(S.F, pol(2.1, 7.8)), hF = add(eF, pol(reachUp ? 2.55 : 2.35, 7.2));
+  const sleeve = clothes === "rags" ? "torn" : SLEEVE[style] || "long";
+  const head = { x: T.topX + 6, y: 15.5, tilt: 0.18, jaw: 3 };
+  const fSkin = dim(skin), fCloth = dim(cloth), fPants = dim(pants);
+  zleg(p, hipF, kneeF, ankleF, fPants, fSkin, { r: B.leg });
+  airFoot(p, ankleF, [-0.35, 0.94], dim(SHOE), { len: 4.5 });
+  zarm(p, S.F, eF, hF, fSkin, { sleeve: fCloth, len: sleeve, r: B.r * 0.95, hand: { droop: -0.9, n: 2 } });
+  layer(p, (q) => { zleg(q, hipN, kneeN, ankleN, pants, skin, { r: B.leg }); shoe(q, ankleN, SHOE); });
+  limb(p, [T.topX + 2, T.top + 2], [head.x - 2, head.y + 3], 2.1, 2.0, skin);
+  layer(p, (q) => dress(q, T, { skin, cloth, pants, style, clothes, rng }));
+  layer(p, (q) => zhead(q, { ...head, skin, eye: eyeOf(Z, look, "runner"), gore, scalp: rng.chance(0.5), rot: true }));
+  layer(p, (q) => zarm(q, S.N, eN, hN, skin, { sleeve: cloth, len: sleeve, r: B.r, gore, hand: { droop: 0.9, len: 3, nail: SOCKET } }), { cast: 2 });
+  goreOn(p, gore, rng, [[T.topX - 1, 24], [T.topX + 2, 27], [kneeN[0] - 2, kneeN[1] - 2], [eN[0], eN[1]], [hipN[0], 34]], { ribsAt: [T.topX - 1, 25], bites: [[kneeF[0], kneeF[1] - 2]] });
   return p;
 }
 
-// Brute: a massive hunched body of muscle slabs, the head sunk between the shoulders, arms like legs with fists at
-// the knees, bound in chains or rebar, rags round the waist.
-function brute(p, Z, SKT, CT, PT, L, R, look, eyeKind, shoes) {
-  const { rng, gore, eye: eyeCol } = Z;
-  const chainKind = rng.pick(["chain", "rebar", "rags"]);
-  stamp(p, legsPart(L + 2, R - 2, PT, SKT, rng, { shoes: [shoes[0], shoes[0]], top: 37, knee: true, apart: 1 }), 0, 0, 0);
-  // the torso: shoulders sloping up to the traps, the chest a wall
-  const body = part();
-  const K = "#060606";
-  body.rect(L + 6, 16, R - 6, 16, K);
-  body.rect(L + 3, 17, R - 3, 17, K);
-  body.rect(L + 1, 18, R - 1, 19, K);
-  body.rect(L, 20, R, 37, K);
-  body.rect(L + 1, 38, R - 1, 39, K);
-  shadePart(body, { [K]: SKT }, { wide: true, soft: true });
-  // slabs of muscle: each a block lit on its top and left, dark on its bottom and right, rounded at the bottom corners
-  body.rect(L + 2, 21, R - 2, 37, SKT.sh); // the channels between the slabs lie in shadow
-  const sl = (x0, y0, x1, y1) => {
-    body.rect(x0, y0, x1, y1, SKT.base); body.hl(x0 + 1, x1 - 1, y0, SKT.hi); body.vl(x0, y0 + 1, y1 - 1, SKT.hi);
-    body.hl(x0 + 1, x1, y1, SKT.dk); body.vl(x1, y0 + 1, y1 - 1, SKT.sh); body.set(x0, y1, SKT.sh); body.set(x1, y0, SKT.sh);
-    body.hl(x0 + 1, x1, y1 + 1, SKT.dk); // the crease below
-  };
-  sl(L + 3, 22, 19, 29); sl(22, 22, R - 3, 29);              // the pecs
-  sl(L + 6, 31, 19, 33); sl(22, 31, R - 6, 33); sl(L + 7, 35, 19, 37); sl(22, 35, R - 7, 37); // the abs
-  body.vl(20, 21, 37, SKT.dk); body.vl(21, 21, 37, SKT.dk); // the sternum's crease
-  body.rect(L + 2, 20, L + 3, 23, SKT.hi); body.rect(R - 3, 19, R - 2, 23, SKT.sh); // the deltoids
-  stamp(p, body, 0, 0);
-  // arms: thick, hanging, the fists at the knees
-  const arms = part();
-  for (const x0 of [L - 6, R + 1]) { arms.rect(x0, 20, x0 + 5, 37, K); arms.rect(x0 - 1, 37, x0 + 6, 43, K); }
-  shadePart(arms, { [K]: SKT }, { wide: true });
-  for (const x0 of [L - 6, R + 1]) { arms.hl(x0, x0 + 4, 30, SKT.sh); arms.hl(x0 - 1, x0 + 5, 39, SKT.dk); arms.set(x0, 40, SKT.hi); arms.set(x0 + 2, 40, SKT.hi); arms.set(x0 + 4, 40, SKT.hi); arms.hl(x0, x0 + 5, 21, SKT.hi); } // the elbow, the knuckles, the shoulder's light
-  stamp(p, arms, 0, 0);
-  // the head, sunk between the shoulders: its jaw over the chest
-  const hd = headPart(SKT, eyeCol, eyeKind, { jawDrop: 1, size: 13, scalp: rng.chance(0.7), teethBlood: gore > 0 });
-  stamp(p, hd.q, 13, 4);
-  // bindings
-  const IRON = tones("#6d7378", { cool: 0.2, lift: 0.3 }), RUST = "#7a4a30";
-  if (chainKind === "chain") {
-    for (let i = 0; i < 14; i++) { const x = L + 1 + i * 2, y = 21 + Math.round(i * 1.15); p.over(x, y, i % 2 ? IRON.hi : IRON.sh); p.over(x + 1, y, i % 2 ? IRON.base : IRON.dk); p.over(x, y + 1, i % 2 ? IRON.dk : IRON.base); }
-    p.over(R - 1, 37, IRON.base); p.over(R, 38, IRON.sh); p.over(R - 1, 39, IRON.base); p.over(R + 1, 40, IRON.dk);
-  } else if (chainKind === "rebar") {
-    for (let i = 0; i < 22; i++) { const x = R - 2 - i, y = 14 + Math.round(i * 0.85); p.over(x, y, RUST); p.over(x, y + 1, shade(RUST, -0.35)); if (i % 3 === 0) p.over(x, y - 1, shade(RUST, 0.2)); }
-    p.set(R - 1, 13, RUST); p.set(R, 12, shade(RUST, 0.2)); p.set(R - 1, 14, shade(RUST, -0.35)); p.set(R + 1, 11, RUST);
-    wound(p, R - 4, 17, 2, rng); wound(p, L + 1, 33, 2, rng, { streak: true });
-  } else {
-    for (let x = L + 1; x <= R - 1; x++) { const y = 30 + ((x * 3) % 2); p.over(x, y, CT.base); p.over(x, y + 1, CT.sh); if (x % 5 === 0) p.over(x, y + 2, CT.dk); }
-  }
-  // rags round the waist
-  p.rect(L + 1, 38, R - 1, 39, PT.base); p.hl(L + 1, R - 1, 39, PT.dk); for (let x = L + 1; x <= R - 1; x += 3) p.over(x, 40, PT.sh);
-  const wounds = gore === 0 ? 0 : gore === 1 ? 3 : 7;
-  for (let i = 0; i < wounds; i++) { const x = rng.int(L - 5, R + 5), y = rng.int(8, 46); if (p.get(x, y)) wound(p, x, y, rng.pick([1, 2, 3]), rng); }
-  if (gore > 1) { ribs(p, R - 8, 24, 5, 3, SKT); for (let y = 39; y <= 42; y++) p.over(R + 3, y, BLOOD.dry); }
+// ---------- the bloated: a huge round belly, short swollen arms hanging off it ----------
+function bloated(Z, look) {
+  const { rng, gore } = Z;
+  const skin = deadSkin(mix(Z.skin, "#a8a86a", 0.25)), cloth = ramp(Z.cloth), pants = ramp(Z.pants), clothes = look.clothes;
+  const p = painter(W, H);
+  const cx = 21;
+  const belly = { x: cx + 1, y: 30, rx: 12, ry: 10.5 };
+  const T = { top: 16, bot: 27, topX: cx + 1, botX: cx, hs: 9, hw: 10, hh: 10.5 };
+  const S = shoulders(T);
+  const fSkin = dim(skin), fPants = dim(pants);
+  // short thick legs, planted wide under the weight
+  const hipN = [cx + 4, 37], kneeN = [cx + 6, 42], ankleN = [cx + 6, 46];
+  const hipF = [cx - 4, 37], kneeF = [cx - 6, 42], ankleF = [cx - 7, 46];
+  // short swollen arms hanging off the belly's sides
+  S.F = [cx - 9, 19]; S.N = [cx + 10, 19];
+  const eF = add(S.F, [-3.5, 6]), hF = add(eF, [0.5, 5]);
+  const eN = add(S.N, [3.5, 6]), hN = add(eN, [-0.5, 5]);
+  zarm(p, S.F, eF, hF, fSkin, { r: 3.1, hand: { r: 2.3, droop: 1.6, n: 3, len: 2 } });
+  zleg(p, hipF, kneeF, ankleF, fPants, fSkin, { r: 3.3 });
+  shoe(p, ankleF, dim(SHOE), { len: 7 });
+  layer(p, (q) => { zleg(q, hipN, kneeN, ankleN, pants, skin, { r: 3.3 }); shoe(q, ankleN, SHOE, { len: 7 }); });
+  // the shirt over the chest, rolled up on the belly
+  layer(p, (q) => dress(q, T, { skin, cloth, pants: cloth, style: Z.style, clothes, rng, belt: false }));
+  // the belly
+  layer(p, (q) => {
+    oval(q, belly.x, belly.y, belly.rx, belly.ry, skin, { specular: false });
+    // a sheen: a crescent of the light tone and a specular streak, wet and stretched
+    for (const [x, y] of [[belly.x - 6, belly.y - 6], [belly.x - 5, belly.y - 7], [belly.x - 7, belly.y - 5]]) q.set(x, y, skin[3]);
+    // the navel, sunk; a dark crease under the belly where it hangs over the hips
+    q.set(belly.x + 2, belly.y + 2, skin[0]); q.set(belly.x + 2, belly.y + 3, mix(skin[0], SOCKET, 0.4));
+    // veins: thin dark lines across the stretched skin
+    for (const [x0, y0, x1, y1] of [[belly.x - 8, belly.y + 2, belly.x - 4, belly.y + 5], [belly.x + 5, belly.y - 4, belly.x + 8, belly.y - 1]]) q.line(x0, y0, x1, y1, mix(skin[1], "#4a3a5a", 0.4));
+    // the split: a slanting tear with the dark inside and a rim of red
+    const sx = belly.x + rng.int(-3, 2), sy = belly.y + rng.int(-2, 2);
+    for (let i = 0; i < 6; i++) { const x = sx + i, y = sy + Math.round(i * 0.7); q.set(x, y, GORE.core); q.set(x, y - 1, GORE.rim); q.set(x, y + 1, i % 2 ? PUS[1] : GORE.rim); }
+    if (gore) bleed(q, sx + 4, sy + 5, 3 + gore * 2);
+    // pustules: tiny shaded balls
+    const pus = [[belly.x - 6, belly.y + 4], [belly.x + 7, belly.y + 3], [belly.x - 2, belly.y - 6], [belly.x + 4, belly.y + 7], [belly.x - 9, belly.y - 1]];
+    for (const [x, y] of pus.slice(0, 3 + (gore > 1 ? 2 : 0))) ball(q, x, y, rng.chance(0.5) ? 1.5 : 1, PUS);
+  });
+  // a fat neck, the small head sunk on it
+  const head = { x: cx + 4, y: 11, rx: 4.8, ry: 5.3, tilt: 0.1, jaw: 1 };
+  layer(p, (q) => { oval(q, cx + 2, 16.5, 5.5, 2.6, skin, { specular: false }); zhead(q, { ...head, skin, eye: eyeOf(Z, look, "bloated"), gore, rot: true }); });
+  layer(p, (q) => zarm(q, S.N, eN, hN, skin, { r: 3.2, hand: { r: 2.4, droop: 1.6, n: 3, len: 2 } }));
+  goreOn(p, gore, rng, [[S.N[0] - 3, 21], [hN[0], hN[1] - 3], [kneeN[0], kneeN[1]], [cx - 5, 20]]);
+  return p;
+}
+
+// ---------- the brute: massive shoulders, thick arms to the knees, big fists, a small head sunk forward ----------
+function brute(Z, look) {
+  const { rng, gore } = Z;
+  const skin = deadSkin(Z.skin), pants = ramp(Z.pants), cloth = ramp(Z.cloth), clothes = look.clothes;
+  const p = painter(W, H);
+  const cx = 21;
+  const T = { top: 16, bot: 34, topX: cx + 1, botX: cx, hs: 12, hw: 7.5, hh: 8, dropN: 0, dropF: 1, corner: 5 };
+  const S = shoulders(T);
+  S.N = [S.N[0] - 0.5, S.N[1] + 1]; S.F = [S.F[0] + 0.5, S.F[1] + 1];
+  const fSkin = dim(skin), fPants = dim(pants);
+  const hipN = [cx + 4, 33], kneeN = [cx + 6, 40], ankleN = [cx + 6, 46];
+  const hipF = [cx - 4, 33], kneeF = [cx - 6, 40], ankleF = [cx - 6, 46];
+  // the arms hang a little out from the body, the elbows bent, the fists at the knees
+  const eF = add(S.F, [-2.2, 8.2]), hF = add(eF, [0.6, 8]);
+  const eN = add(S.N, [2.2, 8.2]), hN = add(eN, [0.4, 8]);
+  zarm(p, S.F, eF, hF, fSkin, { r: 3.7, hand: { fist: true, r: 3.0 } });
+  zleg(p, hipF, kneeF, ankleF, fPants, fSkin, { r: 3.4 });
+  shoe(p, ankleF, dim(SHOE), { len: 7 });
+  layer(p, (q) => { zleg(q, hipN, kneeN, ankleN, pants, skin, { r: 3.4 }); shoe(q, ankleN, SHOE, { len: 7 }); });
+  layer(p, (q) => {
+    const tank = clothes !== "rags";
+    const inT = dress(q, T, { skin, cloth: null, pants, style: "tank", clothes, rng });
+    // the chest: two pecs as shaded volumes, a line down the belly
+    oval(q, T.topX - 3.6, 21.6, 4.6, 2.9, skin, { specular: false, cut: inT });
+    oval(q, T.topX + 4.4, 21.8, 4.4, 2.9, skin, { specular: true, cut: inT });
+    for (let y = 26; y <= 29; y++) q.over(Math.round(T.topX + 0.5), y, mix(skin[1], skin[0], 0.55));
+    q.over(Math.round(T.topX - 2), 28, mix(skin[1], skin[0], 0.4)); q.over(Math.round(T.topX + 3), 28, mix(skin[1], skin[0], 0.4));
+    if (clothes === "intact") {
+      const half = (y) => { const t = (y - T.top) / (T.bot - T.top); return t < 0.55 ? T.hs + (T.hw - T.hs) * (t / 0.55) : T.hw + (T.hh - T.hw) * ((t - 0.55) / 0.45); };
+      const cAt = (y) => T.topX + (T.botX - T.topX) * (y - T.top) / (T.bot - T.top);
+      blob(q, (x, y) => inT(x, y) && y >= 20 && y <= T.bot - 4 && Math.abs(x - cAt(y) - 0.5) < half(y) - 3.5 && !(((x - T.topX - 0.5) / 4.5) ** 2 + ((y - 19) / 4) ** 2 < 1), cloth, { rim: 1 });
+    } else { // what is left of a shirt: one strap across the chest, frayed ends
+      limb(q, [T.topX + 7, T.top + 3], [T.topX - 6, T.bot - 6], 1.6, 1.6, cloth);
+      if (clothes === "rags") { rag(q, Math.round(T.topX - 6), T.bot - 5, 4, cloth); rag(q, Math.round(T.topX + 3), T.bot - 3, 3, cloth); }
+    }
+    // the trapezius: a ridge of muscle from shoulder to shoulder, the head sunk in it
+    oval(q, T.topX + 1, T.top + 1.5, 8, 3.2, skin, { specular: false });
+  });
+  const head = { x: cx + 5, y: 12.5, rx: 4.6, ry: 5.0, tilt: 0.12, jaw: 2 };
+  layer(p, (q) => zhead(q, { ...head, skin, eye: eyeOf(Z, look, "brute"), gore, rot: true }));
+  layer(p, (q) => zarm(q, S.N, eN, hN, skin, { r: 3.8, hand: { fist: true, r: 3.1 } }), { cast: 1 });
+  // a chain or rope wound round the near forearm (seeded)
+  if (rng.chance(0.5)) for (let i = 0; i < 3; i++) { const y = Math.round(eN[1] + 2 + i * 2); p.over(Math.round(eN[0] - 2), y, PAL.iron[2]); p.over(Math.round(eN[0] - 1), y, PAL.iron[1]); p.over(Math.round(eN[0]), y + 1, PAL.iron[0]); }
+  goreOn(p, gore, rng, [[T.topX - 6, 21], [T.topX + 4, 28], [eN[0] + 1, eN[1] + 3], [S.F[0] + 2, 22], [kneeN[0] - 1, kneeN[1] - 3]], { ribsAt: [T.topX - 6, 26] });
   return p;
 }
 
 // ---------- the armoured dead (sim/deadsoldiers.js) ----------
+// A dead soldier: olive fatigues with big camo patches, a plate carrier with its pouches, a helmet with the strap
+// hanging, a sleeve torn off the reaching arm. A dead riot cop: navy, a hard black shell, shoulder pads, forearm and
+// shin guards, the helmet's visor pushed up with a glint on the glass.
 export const CAMO = ["#55603b", "#3e4630", "#6b6a4a", "#4a3f2c"];
-// Camouflage: blobs of the four camo tones on a coarse grid, each shaded with the form it is on.
-function camoFill(q, x0, y0, x1, y1, seed) {
-  const h = (a, b) => { let n = (a * 374761393 + b * 668265263 + seed * 97) | 0; n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) % 7; };
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const v = h(Math.floor(x / 3), Math.floor(y / 2)); q.set(x, y, CAMO[v < 3 ? 0 : v < 5 ? 1 : v < 6 ? 2 : 3]); }
-}
-const camoMap = () => Object.fromEntries(CAMO.map((c) => [c, tones(c, { cool: 0.16 })]));
-
 export function paintArmoredDeadHD(kind, seed, look = DEFAULT_LOOK) {
   const Z = zombieLookOf("walker", seed, look);
-  const { rng, skin, gore, eye: eyeCol } = Z;
-  const eyeKind = look.eyes === "dead" ? "dead" : look.eyes === "red" ? "red" : "glow";
-  const SKT = tones(skin);
-  const p = part();
+  const rng = new Rng(seed * 31 + 7);
   if (kind === "riot") {
-    const [L, R] = LR(BUILD_W.heavy);
-    const UNI = tones("#23262d", { cool: 0.3, lift: 0.25 }), SHELL = tones("#3f434b", { cool: 0.25, lift: 0.3 }), GUARD = tones("#2e3137", { cool: 0.25, lift: 0.3 });
-    const legs = legsPart(L, R, UNI, SKT, rng, { shoes: [true, true], grime: true });
-    // shin guards: hard plates over the shins
-    const mid = Math.floor((L + R) / 2);
-    for (const [x0, x1] of [[L + 2, mid - 1], [mid + 1, R - 2]]) { legs.rect(x0, 40, x1, 46, GUARD.base); legs.hl(x0, x1, 40, GUARD.hi); legs.vl(x0, 40, 46, GUARD.hi); legs.vl(x1, 41, 46, GUARD.dk); legs.hl(x0, x1, 46, GUARD.dk); legs.hl(x0 + 1, x1 - 1, 43, GUARD.sh); }
-    stamp(p, legs, 0, 0, 0);
-    const torso = torsoPart(L, R, UNI, SKT, "jacket", rng);
-    // the chest shell: three hard segments, each lit along its top
-    torso.rect(L + 2, 21, R - 2, 32, SHELL.base);
-    for (const [y0, y1] of [[21, 24], [25, 28], [29, 32]]) { torso.hl(L + 2, R - 2, y0, SHELL.hi); torso.hl(L + 3, R - 2, y1, SHELL.dk); torso.vl(R - 2, y0, y1, SHELL.dk); torso.vl(R - 3, y0 + 1, y1 - 1, SHELL.sh); torso.vl(L + 2, y0 + 1, y1 - 1, SHELL.hi); }
-    torso.rect(L + 4, 26, L + 5, 27, SHELL.dk); torso.rect(R - 6, 30, R - 5, 31, SHELL.dk); // buckles
-    torso.hl(L + 1, R - 1, 33, "#1a1c20");
-    stamp(p, torso, 0, 0);
-    const arms = armsPart(L, R, UNI, UNI, "jacket", "reach", rng, { sleeve: true });
-    // the forearm guards and gloves on the reaching arms: hard plates over black sleeves
-    for (const y of [21, 26]) { arms.rect(R + 3, y, R + 7, y + 3, GUARD.base); arms.hl(R + 3, R + 7, y, GUARD.hi); arms.hl(R + 3, R + 7, y + 3, GUARD.dk); arms.vl(R + 7, y, y + 3, GUARD.dk); }
-    for (let y = 20; y <= 33; y++) for (let x = R + 8; x < W; x++) if (arms.get(x, y)) arms.set(x, y, mix(arms.get(x, y), "#1a1c20", 0.3)); // gloves
-    stamp(p, arms, 0, 0);
-    // shoulder pads
-    const pads = part();
-    pads.rect(L - 3, 19, L + 3, 22, "#010101"); pads.rect(L - 2, 23, L + 2, 23, "#010101");
-    pads.rect(R - 3, 19, R + 3, 22, "#010101"); pads.rect(R - 2, 23, R + 2, 23, "#010101");
-    shadePart(pads, { "#010101": SHELL });
-    stamp(p, pads, 0, 0);
-    // the head, the helmet, the visor pushed up and cracked
-    p.rect(18, 15, 23, 20, SKT.sh);
-    const hd = headPart(SKT, eyeCol, eyeKind, { jawDrop: 2, teethBlood: gore > 0 });
-    stamp(p, hd.q, 12, 3 - hd.y0);
-    const hel = part();
-    const HB = "#010101";
-    hel.rect(16, 0, 25, 0, HB); hel.rect(14, 1, 27, 1, HB); hel.rect(13, 2, 29, 7, HB); hel.rect(13, 8, 13, 10, HB); hel.rect(28, 8, 29, 9, HB); // the shell
-    shadePart(hel, { [HB]: tones("#1c1e22", { cool: 0.35, lift: 0.4 }) }, { wide: true });
-    hel.hl(14, 29, 7, "#0f1013"); // the rim
-    // the visor, pushed up onto the helmet's front: a pale plate with a glint and a crack
-    const V = "#9fb4c4";
-    hel.rect(16, 3, 31, 6, V); hel.hl(16, 31, 3, "#d6e4ee"); hel.rect(17, 4, 19, 4, "#eaf3f8"); hel.hl(17, 31, 6, "#5f7484"); hel.vl(31, 3, 6, "#5f7484");
-    hel.set(25, 4, "#3a4a56"); hel.set(26, 5, "#3a4a56"); hel.set(24, 5, "#3a4a56"); hel.set(27, 6, "#3a4a56"); hel.set(26, 4, "#c8d8e2"); // the crack
-    hel.rect(13, 11, 13, 13, "#1c1e22"); hel.set(14, 14, "#1c1e22"); hel.set(14, 15, "#2a2d33"); // the strap
-    stamp(p, hel, 0, 0);
-    const wounds = gore === 0 ? 0 : gore === 1 ? 2 : 5;
-    for (let i = 0; i < wounds; i++) { const x = rng.int(L - 2, R + 10), y = rng.int(8, 46); if (p.get(x, y)) wound(p, x, y, rng.pick([1, 2]), rng); }
-    return p;
+    const NAVY = ramp("#2f3a58", { spec: 0.4 }), SHELL = ramp("#383d46", { spec: 0.7, lite: 0.3 });
+    return walker(Z, look, {
+      build: "heavy", cloth: NAVY, pants: NAVY, style: "jacket", sleeve: "long", boot: PAL.black, shoes: [true, true],
+      onTrunk(q, T) {
+        const inT = trunkShape(T);
+        blob(q, (x, y) => inT(x, y) && y >= T.top + 2 && y <= T.bot - 6 && x > T.topX - T.hs + 1.5 && x < T.topX + T.hs - 0.5, SHELL, { specular: true });
+        for (const y of [T.top + 7, T.top + 11]) for (let x = 0; x < q.w; x++) if (q.get(x, y) === SHELL[1] || q.get(x, y) === SHELL[3]) { q.set(x, y, SHELL[0]); if (q.get(x, y + 1) === SHELL[1]) q.set(x, y + 1, SHELL[2]); }
+      },
+      onHead(q, h) {
+        oval(q, h.x - 0.6, h.y - 1.4, 6.3, 5.8, SHELL, { ang: h.tilt, cut: (x, y) => y <= h.y + 1.5 + (x - h.x) * Math.sin(h.tilt) - (x > h.x + 1 ? 3.5 : 0) });
+        oval(q, h.x + 2.6, h.y - 5.6, 4.3, 1.5, PAL.glass, { ang: h.tilt - 0.3 });
+        q.set(Math.round(h.x + 4), Math.round(h.y - 5 + h.tilt * 2), PAL.glass[0]); q.set(Math.round(h.x + 5), Math.round(h.y - 6 + h.tilt * 2), PAL.glass[0]); // a crack
+      },
+      onArm(q, s, e, h) {
+        oval(q, s[0], s[1] - 0.5, 3.4, 3, SHELL, {}); // the shoulder pad
+        const a = [e[0] + (h[0] - e[0]) * 0.2, e[1] + (h[1] - e[1]) * 0.2], b = [e[0] + (h[0] - e[0]) * 0.75, e[1] + (h[1] - e[1]) * 0.75];
+        limb(q, a, b, 2.6, 2.4, SHELL, { specular: true }); // the forearm guard
+        oval(q, h[0] + 0.6, h[1] + 0.6, 1.9, 2, SHELL, { specular: false }); // the glove
+      },
+    });
   }
-  // the soldier
-  const [L, R] = LR(BUILD_W.average);
-  const CM = camoMap(), CT0 = tones(CAMO[0], { cool: 0.16 });
-  const CARRIER = tones(rng.pick(["#6b6a4a", "#5b5a40", "#7a6a48"]), { cool: 0.12 });
-  const legs = legsPart(L, R, CT0, SKT, rng, { shoes: [true, true], grime: true });
-  const mid = Math.floor((L + R) / 2);
-  const lm = part(); camoFill(lm, 0, 0, W - 1, H - 1, seed); // camo laid over the trousers
-  for (let y = 34; y <= 44; y++) for (let x = L; x <= R; x++) { const u = legs.get(x, y); if (u) legs.set(x, y, mix(lm.get(x, y), u, 0.45)); }
-  // boots: tall, laced
-  const BT = tones("#2a2620", { cool: 0.2, lift: 0.3 });
-  for (const [x0, x1, near] of [[L + 2, mid - 1, false], [mid + 1, R - 2, true]]) { legs.rect(x0, 44, x1 + (near ? 2 : 0), 50, BT.base); legs.vl(x0, 44, 49, BT.hi); legs.hl(x0, x1 + (near ? 2 : 0), 50, BT.dk); legs.vl(x1 + (near ? 2 : 0), 44, 50, BT.dk); for (let y = 45; y <= 48; y += 1) legs.set(x0 + 2 + (y % 2), y, BT.hi); legs.hl(x0 + 1, x1 - 1, 44, BT.sh); }
-  stamp(p, legs, 0, 0, 0);
-  const torso = part();
-  const C = "#050505";
-  for (let y = 20; y <= 33; y++) torso.hl(L, R, y, C); torso.clear(L, 20); torso.clear(R, 20); torso.clear(L + 1, 20); torso.clear(R - 1, 20); torso.clear(L, 21); torso.clear(R, 21);
-  const tm = part(); camoFill(tm, 0, 0, W - 1, H - 1, seed + 3);
-  for (let y = 20; y <= 33; y++) for (let x = L; x <= R; x++) if (torso.get(x, y)) torso.set(x, y, tm.get(x, y));
-  shadePart(torso, CM, { wide: true });
-  // the plate carrier: the plate, the cummerbund, three pouches with flaps, molle rows, the shoulder straps
-  torso.rect(L + 2, 21, R - 2, 31, CARRIER.base); torso.vl(L + 2, 21, 31, CARRIER.hi); torso.hl(L + 2, R - 2, 21, CARRIER.hi); torso.vl(R - 2, 21, 31, CARRIER.dk); torso.vl(R - 3, 22, 31, CARRIER.sh); torso.hl(L + 2, R - 2, 31, CARRIER.dk);
-  for (const y of [23, 25]) { for (let x = L + 4; x <= R - 5; x += 2) torso.set(x, y, CARRIER.sh); }
-  for (const x of [L + 3, mid - 2, R - 7]) { torso.rect(x, 27, x + 3, 30, CARRIER.sh); torso.hl(x, x + 3, 27, CARRIER.base); torso.hl(x, x + 3, 28, CARRIER.dk); torso.vl(x + 3, 28, 30, CARRIER.dk); torso.set(x + 1, 29, CARRIER.hi); }
-  torso.rect(L + 3, 19, L + 4, 21, CARRIER.sh); torso.rect(R - 4, 19, R - 3, 21, CARRIER.sh); // the straps
-  torso.rect(L + 3, 22, L + 4, 22, "#8a7a58"); // a patch
-  torso.hl(L + 1, R - 1, 33, "#2a2420"); torso.hl(L + 1, R - 1, 32, "#3a3028"); torso.rect(mid - 1, 32, mid + 1, 33, "#6e6a60");
-  stamp(p, torso, 0, 0);
-  // the arms: camo sleeves, the near sleeve torn off at the shoulder, that arm bare, rotten and bitten
-  const arms = armsPart(L, R, CT0, SKT, "jacket", "reach", rng, { sleeve: true });
-  const am = part(); camoFill(am, 0, 0, W - 1, H - 1, seed + 7);
-  for (let y = 20; y <= 25; y++) for (let x = L - 1; x <= R + 3; x++) { const u = arms.get(x, y); if (u) arms.set(x, y, mix(am.get(x, y), u, 0.45)); }
-  for (let y = 26; y <= 31; y++) for (let x = R - 4; x <= R + 3; x++) { const u = arms.get(x, y); if (u) arms.set(x, y, y === 26 ? SKT.hi : x >= R + 2 ? SKT.base : SKT.base); }
-  arms.set(R - 2, 26, CT0.dk); arms.set(R - 3, 27, CT0.sh); arms.set(R - 1, 27, CT0.dk); // the sleeve's torn end
-  wound(arms, R + 6, 28, 3, rng, { streak: false }); arms.over(R + 5, 29, BLOOD.rim); arms.over(R + 8, 27, BONE.base);
-  stamp(p, arms, 0, 0);
-  // head and helmet
-  p.rect(18, 15, 23, 20, SKT.sh);
-  const hd = headPart(SKT, eyeCol, eyeKind, { jawDrop: rng.pick([1, 2, 3]), teethBlood: gore > 0, cheek: gore > 0 && rng.chance(0.5) });
-  stamp(p, hd.q, 12, 3 - hd.y0);
-  const HEL = tones(rng.pick(["#4f5a36", "#55603b", "#5b5a40"]), { cool: 0.16, lift: 0.22 });
-  const hel = part(); const HB = "#010101";
-  hel.rect(16, 0, 25, 0, HB); hel.rect(14, 1, 27, 1, HB); hel.rect(13, 2, 28, 6, HB); hel.rect(12, 7, 29, 7, HB); hel.rect(13, 8, 13, 9, HB); hel.rect(28, 8, 28, 8, HB);
-  shadePart(hel, { [HB]: HEL }, { wide: true });
-  const hm = part(); camoFill(hm, 0, 0, W - 1, H - 1, seed + 11);
-  for (let y = 0; y <= 6; y++) for (let x = 13; x <= 28; x++) { const u = hel.get(x, y); if (u) hel.set(x, y, mix(hm.get(x, y), u, 0.6)); }
-  hel.hl(12, 29, 7, HEL.dk); hel.hl(13, 28, 6, HEL.sh); hel.set(20, 1, HEL.hi); hel.set(21, 1, HEL.hi); hel.rect(15, 3, 16, 3, "#2a2a22"); // the rim, the cover's band, a scrape
-  hel.rect(13, 10, 13, 15, "#2a2620"); hel.rect(14, 16, 15, 17, "#6e6a60"); hel.set(14, 15, "#2a2620"); // the chin strap hanging, its buckle
-  stamp(p, hel, 0, 0);
-  const wounds = gore === 0 ? 0 : gore === 1 ? 2 : 5;
-  for (let i = 0; i < wounds; i++) { const x = rng.int(L - 2, R + 10), y = rng.int(8, 46); if (p.get(x, y)) wound(p, x, y, rng.pick([1, 2]), rng); }
-  return p;
+  const olive = ramp(rng.pick(["#55603b", "#5b5a40", "#4f5a36"])), carrier = rng.pick([PAL.olive, PAL.coyote]);
+  return walker(Z, look, {
+    build: "average", cloth: olive, pants: olive, style: "jacket", sleeve: "long", boot: PAL.leather, shoes: [true, true],
+    onTrunk(q, T) {
+      const inT = trunkShape(T);
+      // camo: two big patches of a darker green and one of brown on the fatigues (shapes, not noise)
+      for (const [x, y, rx, ry, c] of [[T.topX - 3, T.top + 4, 2.5, 1.6, CAMO[1]], [T.topX + 3, T.bot - 6, 2.2, 1.4, CAMO[3]]]) for (let Y = Math.floor(y - ry); Y <= y + ry; Y++) for (let X = Math.floor(x - rx); X <= x + rx; X++) if (inT(X, Y) && q.get(X, Y) === olive[1] && ((X - x) / rx) ** 2 + ((Y - y) / ry) ** 2 <= 1) q.set(X, Y, c);
+      // the plate carrier: a rounded plate on the chest, a row of pouches along its bottom, the straps
+      const inP = (x, y) => inT(x, y) && y >= T.top + 2 && y <= T.bot - 6 && x > T.topX - T.hs + 1.5 && x < T.topX + T.hs - 0.5;
+      blob(q, inP, carrier, {});
+      const y0 = T.bot - 9;
+      for (let i = 0; i < 3; i++) { const x0 = Math.round(T.topX - T.hs + 3 + i * 3.6); blob(q, (x, y) => inP(x, y) && x >= x0 && x <= x0 + 2 && y >= y0 && y <= y0 + 3, carrier, { rim: 1 }); q.set(x0, y0, carrier[2]); q.set(x0 + 1, y0, carrier[2]); q.hl(x0, x0 + 2, y0 + 1, carrier[0]); }
+      for (let x = Math.round(T.topX - 2); x <= Math.round(T.topX + 2); x++) { q.set(x, T.top + 5, carrier[0]); q.set(x, T.top + 4, carrier[2]); } // the velcro panel's edge
+    },
+    onHead(q, h) {
+      oval(q, h.x - 0.4, h.y - 2, 6.4, 5.2, olive, { ang: h.tilt, cut: (x, y) => y <= h.y - 0.5 + (x - h.x) * Math.sin(h.tilt) });
+      // the brim: a dark lip round the dome; the chin strap hanging loose by the ear
+      for (let x = Math.round(h.x - 6.5); x <= Math.round(h.x + 6.5); x++) { const y = Math.round(h.y + (x - h.x) * Math.sin(h.tilt)); if (q.get(x, y - 1) === olive[1] || q.get(x, y - 1) === olive[2] || q.get(x, y - 1) === olive[0]) q.set(x, y, olive[0]); }
+      for (let i = 1; i <= 4; i++) q.set(Math.round(h.x - 4.5 + i * 0.2), Math.round(h.y + i), i === 4 ? PAL.leather[0] : PAL.leather[1]);
+    },
+    onArm(q, s, e, h) { // the sleeve torn off at the elbow: the forearm bare and bitten
+      const sk = deadSkin(Z.skin);
+      limb(q, e, h, 2.0, 1.7, sk);
+      hand(q, h, [(h[0] - e[0]) / 8, (h[1] - e[1]) / 8], sk, {});
+      q.set(Math.round(e[0] + 3), Math.round(e[1]), GORE.rim);
+    },
+  });
 }
 
 // ---------- the special dead (sim/zombietypes.js, hivesprites.js) ----------
-const ACID = { base: "#9ad63a", hi: "#e2f8a0", sh: "#5f9a22", dk: "#3a6a14" };
-const WORM = { base: "#f0e4c0", hi: "#fff8e0", sh: "#c4b48a", dk: "#8f8260", mouth: "#5c1e1a" };
-const EGG = { base: "#e8dca0", hi: "#fff6c8", sh: "#b4a860", dk: "#857a40" };
-const GRASS = ["#3f5f28", "#5f8a3a", "#4a6a30"];
-// A worm: a short wriggle of 2-px segments from (x, y) heading dir (+1 right, -1 left), a dark mouth at the tip.
-function worm(p, x, y, len, dir, up = 0) {
-  for (let i = 0; i < len; i++) { const yy = y + (i % 3 === 1 ? -1 : 0) * 1 - Math.round(i * up); p.set(x + i * dir, yy, i % 2 ? WORM.base : WORM.hi); p.set(x + i * dir, yy + 1, WORM.sh); }
-  p.set(x + len * dir, y - Math.round(len * up), WORM.mouth);
-}
-// Rings of a shriek round a point: dashed arcs at three radii.
-function shriek(p, cx, cy, col, radii = [9, 13, 17], arc = [-150, -30]) {
-  for (const r of radii) for (let a = arc[0]; a <= arc[1]; a += 6) {
-    const t = a * Math.PI / 180, x = Math.round(cx + Math.cos(t) * r), y = Math.round(cy + Math.sin(t) * r * 0.8);
-    if (Math.round(a / 6) % 3 !== 2 && x >= 1 && x < W - 1 && y >= 1) p.set(x, y, col);
-  }
-}
-const grassTufts = (p, xs, y0, front = true) => { for (const x of xs) { const g = GRASS[x % 3]; p.vl(x, y0 - 3 - (x % 2), y0, g); p.vl(x + 1, y0 - 2, y0, GRASS[(x + 1) % 3]); p.set(x - 1, y0 - 1 - (x % 2), g); p.set(x + 2, y0 - 2, GRASS[(x + 2) % 3]); } };
+// Each one built from the same volumes as the walkers, each with one thing that says what it does at a glance.
+const ROT = deadSkin("#8ea36b"), ASH = deadSkin("#a7a69b"), PALE = deadSkin("#9fb0b5"), BURNT = deadSkin("#6b5446");
+const RAGS = ramp("#5a5a52"), RAGS2 = ramp("#4a4f44"), DENIM = ramp("#3f4a58"), EYE_Y = { col: "#e8e07a", kind: "glow" }, EYE_R = { col: "#e2412f", kind: "red" };
+const SHRIEK = ["#4a3a5a", "#9a86b4", "#e4d8f2", "#ffffff"], SHRIEK_R = ["#5a1418", "#b4343a", "#f07a6a", "#ffd0c0"];
+const trunk = (p, T, m, o = {}) => blob(p, trunkShape(T), m, o);
 
+// The spitter: squat and hunched, an acid bladder swelling on its back and throat, the jaw wide, acid running out
+// of the mouth into a puddle.
 function spitter() {
-  const p = part();
-  const rng = new Rng(11);
-  const SKT = tones("#8ea36b"), CT = tones(desat("#4a4f44", 0.3), { cool: 0.14 });
-  stamp(p, legsPart(14, 29, CT, SKT, rng, { shoes: [true, false], top: 38, knee: false }), 0, 0, 0);
-  // the body, squat and swollen, leaning forward; the acid sac on its back
-  const body = part(); const K = "#060606", C = "#050505";
-  body.ellipse(21, 30, 11, 8.5, K); body.rect(15, 22, 30, 26, K);
-  for (let y = 22; y <= 38; y++) for (let x = 0; x < W; x++) if (body.get(x, y) && (x > 27 || y < 25)) body.set(x, y, C); // the shirt's remnant over the shoulders and back
-  shadePart(body, { [K]: SKT, [C]: CT }, { wide: true, soft: true });
-  sheen(body, 20, 31, 9, 7, SKT.hi, mix(SKT.hi, "#ffffff", 0.6));
-  stamp(p, body, 0, 0);
-  const sac = part(); const A = "#070707";
-  sac.ellipse(32, 19, 6.5, 8, A); sac.ellipse(28, 24, 4, 4, A);
-  shadePart(sac, { [A]: ACID }, { wide: true, soft: true });
-  sheen(sac, 32, 19, 5.5, 7, ACID.hi, "#f6ffd0");
-  for (const [x0, y0, x1, y1] of [[29, 14, 33, 18], [34, 16, 36, 22], [30, 22, 33, 26]]) sac.line(x0, y0, x1, y1, ACID.dk); // veins
-  sac.set(35, 13, ACID.sh); sac.set(36, 12, ACID.base); // the sac's nipple
-  stamp(p, sac, 0, 0);
-  // the near arm reaching down, the far arm on the ground
-  const arms = part();
-  limb(arms, 27, 26, 36, 32, 4, K); limb(arms, 36, 32, 37, 40, 4, K); arms.rect(36, 40, 40, 43, K); arms.set(41, 41, K); arms.set(41, 43, K);
-  limb(arms, 11, 26, 6, 34, 4, K); arms.rect(4, 34, 8, 37, K); arms.set(3, 37, K);
-  shadePart(arms, { [K]: SKT });
-  stamp(p, arms, 0, 0);
-  // the head thrust forward and down, the jaw wide, the throat swollen, acid running out
-  const hd = headPart(SKT, "#e2e07a", "glow", { jawDrop: 4, size: 13, scalp: true });
-  hd.q.flip();
-  p.rect(14, 18, 20, 24, SKT.sh); p.rect(16, 20, 21, 25, SKT.base); // the neck craning forward
-  stamp(p, hd.q, 1, 9);
-  // acid in the mouth and dripping to the ground, a puddle
-  p.rect(10, 22, 15, 23, ACID.base); p.hl(11, 14, 22, ACID.hi); p.set(16, 23, ACID.sh);
-  for (const [x, y0, y1] of [[11, 24, 27], [13, 24, 31], [12, 29, 33]]) { for (let y = y0; y <= y1; y++) p.set(x, y, y === y1 ? ACID.hi : ACID.base); }
-  p.set(13, 35, ACID.base); p.set(13, 36, ACID.hi); p.set(12, 40, ACID.sh); p.set(12, 41, ACID.base);
-  p.ellipse(11, 50, 5, 1, ACID.sh); p.hl(8, 13, 50, ACID.base); p.set(9, 49, ACID.hi); p.set(12, 49, ACID.base);
-  for (const [x, y] of [[20, 33], [25, 36], [30, 30]]) { p.over(x, y, ACID.dk); p.over(x + 1, y + 1, ACID.sh); } // acid burns on its own skin
-  wound(p, 23, 28, 2, rng);
-  p.flip(); // built with the head to the left; the dead face right
+  const p = painter(W, H), sk = ROT, cx = 16;
+  const T = { top: 21, bot: 34, topX: cx + 5, botX: cx, hs: 6.2, hw: 5.6, hh: 5.8, hump: 2.5, dropN: 1 };
+  const S = shoulders(T);
+  const head = { x: T.topX + 8.5, y: 17, rx: 5, ry: 5.4, tilt: 0.25, jaw: 3 };
+  oval(p, cx + 6, 48.4, 9, 0.6, ACID, { specular: false }); // the puddle
+  zarm(p, S.F, add(S.F, [1, 8]), add(S.F, [5, 14]), dim(sk), { r: 2.2, hand: { droop: 0.6 } });
+  zleg(p, [cx - 3, 33], [cx + 1, 40], [cx - 3, 46], dim(DENIM), dim(sk), { r: 2.6 });
+  shoe(p, [cx - 3, 46], dim(SHOE));
+  layer(p, (q) => { zleg(q, [cx + 2, 33], [cx + 7, 39], [cx + 4, 46], DENIM, sk, { r: 2.6, torn: true }); shoe(q, [cx + 4, 46], sk, { bare: true }); });
+  layer(p, (q) => dress(q, T, { skin: sk, cloth: RAGS, pants: DENIM, style: "tshirt", clothes: "rags", rng: new Rng(5) }));
+  // the bladder on its back: a big glowing sac, veined, its specular wet
+  layer(p, (q) => { oval(q, cx - 1, 22, 5.5, 6, ACID, {}); q.line(cx - 4, 20, cx - 2, 25, ACID[0]); q.line(cx + 1, 18, cx + 2, 22, ACID[0]); });
+  layer(p, (q) => {
+    limb(q, [T.topX + 1, T.top + 2], [head.x - 2, head.y + 3], 2.4, 2.6, sk);
+    oval(q, head.x + 1, head.y + 6.5, 3.4, 2.6, ACID, {}); // the swollen throat
+    zhead(q, { ...head, skin: sk, eye: EYE_Y, rot: true });
+  });
+  // acid in the mouth, drooling to the ground
+  const mx = Math.round(head.x + 4), my = Math.round(head.y + 5);
+  p.set(mx, my, ACID[2]); p.set(mx - 1, my, ACID[1]);
+  for (let y = my + 1; y <= 47; y++) { p.set(mx + (y > my + 8 ? 1 : 0), y, y % 5 === 0 ? ACID[3] : ACID[2]); }
+  layer(p, (q) => zarm(q, S.N, add(S.N, [3, 7]), add(S.N, [8, 12]), sk, { r: 2.3, hand: { droop: 0.5 } }), { cast: 1 });
   return p;
 }
+
+// The screamer: gaunt, ribs under the skin, the head thrown back and the mouth a hole to the sky, the arms flung
+// out, the hands splayed; rings of its shriek round its mouth.
 function screamer() {
-  const p = part();
-  const rng = new Rng(12);
-  const SKT = tones("#a7a69b"), CT = tones("#3d3d42", { cool: 0.2, lift: 0.3 });
-  stamp(p, legsPart(16, 25, CT, SKT, rng, { shoes: [true, true], top: 34 }), 0, 0, 0);
-  // a gaunt torso, the ribs under the skin, the shirt in rags round the waist
-  const torso = part(); const K = "#060606", C = "#050505";
-  torso.rect(16, 20, 26, 33, K); torso.rect(15, 21, 27, 24, K); torso.rect(16, 30, 26, 33, C); torso.clear(16, 20); torso.clear(26, 20);
-  shadePart(torso, { [K]: SKT, [C]: CT }, { wide: true });
-  for (const y of [23, 25, 27]) { torso.hl(17, 24, y, SKT.sh); torso.hl(17, 23, y + 1, SKT.hi); } // ribs
-  torso.vl(21, 22, 29, SKT.dk);
-  for (let x = 16; x <= 26; x++) if (x % 3 === 0) torso.set(x, 29, CT.dk); else if (x % 3 === 1) torso.set(x, 30, SKT.sh);
-  stamp(p, torso, 0, 0);
-  // arms flung back and out, hands splayed
-  const arms = part();
-  limb(arms, 16, 21, 8, 16, 4, K); limb(arms, 8, 16, 4, 8, 4, K); arms.rect(3, 4, 6, 7, K); arms.set(2, 3, K); arms.set(4, 3, K); arms.set(7, 4, K);
-  limb(arms, 26, 21, 33, 16, 4, K); limb(arms, 33, 16, 37, 8, 4, K); arms.rect(36, 4, 39, 7, K); arms.set(35, 3, K); arms.set(38, 3, K); arms.set(40, 4, K);
-  shadePart(arms, { [K]: SKT });
-  stamp(p, arms, 0, 0);
-  // the head thrown back: the face turned up, the mouth a gaping hole at the top
-  const hd = part(); const S = "#010101";
-  hd.rect(16, 7, 27, 18, S); hd.rect(17, 6, 26, 6, S); hd.rect(18, 5, 25, 5, S); hd.rect(17, 19, 24, 20, S); hd.rect(18, 21, 22, 21, S);
-  shadePart(hd, { [S]: SKT }, { wide: true });
-  hd.ellipse(23, 9.5, 3, 4, MOUTH); hd.set(20, 8, GUM); hd.vl(20, 8, 12, GUM);
-  for (const [x, y] of [[21, 6], [23, 5], [25, 6], [26, 8], [26, 11], [24, 13], [22, 13]]) hd.set(x, y, TEETH); // teeth round the hole
-  hd.set(23, 11, "#5c1210"); hd.set(22, 10, "#3a0c0c");
-  eye(hd, 17, 12, "#e2412f", "red", SKT); hd.rect(17, 15, 20, 17, bruise(SKT)); hd.set(18, 16, "#e2412f"); hd.set(19, 16, "#e2412f"); // the other eye, lower
-  hd.set(16, 9, SKT.dk); hd.rect(17, 20, 24, 20, SKT.dk);
-  stamp(p, hd, 0, 0);
-  p.rect(18, 19, 24, 20, SKT.sh); // the stretched throat
-  shriek(p, 22, 9, "#c99ae0", [10, 14, 18], [-170, -10]);
+  const p = painter(W, H), sk = PALE, cx = 19;
+  const T = { top: 19, bot: 33, topX: cx - 1, botX: cx, hs: 5.4, hw: 4, hh: 4.8, dropN: 0, dropF: 1 };
+  const S = shoulders(T);
+  const head = { x: cx + 1, y: 12.5, rx: 5, ry: 5.4, tilt: -0.75, jaw: 4 };
+  zarm(p, S.F, add(S.F, [-5, 5]), add(S.F, [-9, 2]), dim(sk), { r: 1.9, hand: { droop: -0.9, n: 3, len: 3 } });
+  zleg(p, [cx - 2, 31], [cx - 2, 40], [cx - 3, 46], dim(RAGS2), dim(sk), { r: 2.2 });
+  shoe(p, [cx - 3, 46], dim(sk), { bare: true });
+  layer(p, (q) => { zleg(q, [cx + 2, 31], [cx + 3, 40], [cx + 3, 46], RAGS2, sk, { r: 2.2 }); shoe(q, [cx + 3, 46], sk, { bare: true }); });
+  layer(p, (q) => {
+    const inT = trunkShape(T);
+    trunk(q, T, sk);
+    for (let i = 0; i < 4; i++) for (let k = 0; k < 6; k++) { const x = Math.round(T.topX - 3 + k), y = 23 + i * 2 + (k > 3 ? 1 : 0); if (inT(x, y)) q.set(x, y, k === 0 ? sk[2] : sk[0]); } // ribs under the skin
+    blob(q, (x, y) => inT(x, y) && y >= T.bot - 4, RAGS2, { rim: 1 }); // the trousers' waist
+    rag(q, Math.round(cx - 3), T.bot - 4, 4, RAGS); rag(q, Math.round(cx + 2), T.bot - 4, 5, RAGS);
+  });
+  layer(p, (q) => {
+    limb(q, [T.topX + 1, T.top + 1], [head.x, head.y + 3], 2.1, 2.1, sk);
+    limb(q, [head.x + 1, head.y + 2], [head.x + 6, head.y + 2.5], 2.2, 1.8, sk); // the jaw dropped open
+    oval(q, head.x - 0.5, head.y - 1, head.rx, head.ry, sk, { ang: -0.6 }); // the skull, tipped back
+    oval(q, head.x + 3.4, head.y - 1.2, 1.9, 2.8, [MOUTH, MOUTH, MOUTH, MOUTH], { ang: -0.5, specular: false }); // the mouth, wide open upward
+    for (const [x, y] of [[2, -3], [4, -2], [5, 0]]) q.set(Math.round(head.x + x), Math.round(head.y + y), BONE[2]); // teeth along its rim
+    q.set(Math.round(head.x + 4), Math.round(head.y + 2), BONE[1]);
+    for (const [x, y] of [[0, -5], [2, -6]]) { q.set(Math.round(head.x + x), Math.round(head.y + y), SOCKET); q.set(Math.round(head.x + x + 1), Math.round(head.y + y), "#e8e07a"); } // the eyes, turned up
+    q.set(Math.round(head.x - 3), Math.round(head.y), sk[0]); // the ear
+  });
+  layer(p, (q) => zarm(q, S.N, add(S.N, [4, 6]), add(S.N, [10, 3]), sk, { r: 2, hand: { droop: -0.9, n: 3, len: 3 } }));
+  shriek(p, head.x + 4, head.y - 1, SHRIEK, [5, 8, 10], -1.75, -0.45);
   return p;
 }
+
+// The crawler: no legs, the body dragged flat along the ground, one hand planted ahead pulling, the head raised;
+// a smear of blood behind it, grass in front where it hides.
 function crawler() {
-  const p = part();
-  const rng = new Rng(13);
-  const SKT = tones("#9fb0b5"), CT = tones("#55603f", { cool: 0.14 });
-  // a smear of blood where it dragged itself
-  p.hl(26, 42, 49, mix(BLOOD.dry, "#3a3020", 0.4)); p.hl(30, 42, 50, BLOOD.dry); p.hl(34, 41, 48, mix(BLOOD.dry, "#3a3020", 0.6));
-  // the body flat to the ground, the hips and what is left of the legs behind
-  const body = part(); const K = "#060606", C = "#050505";
-  body.rect(12, 38, 30, 46, C); body.rect(14, 36, 26, 38, C); body.rect(30, 40, 36, 46, C); body.rect(36, 42, 39, 46, K); body.rect(35, 41, 37, 42, C);
-  shadePart(body, { [K]: SKT, [C]: CT }, { wide: true });
-  body.hl(14, 28, 40, CT.hi); body.hl(31, 35, 42, CT.dk);
-  body.rect(37, 42, 39, 46, SKT.sh); body.vl(40, 43, 45, BONE.base); body.set(41, 44, BONE.sh); body.rect(38, 42, 39, 43, BLOOD.rim); body.set(39, 44, BLOOD.core); body.rect(37, 45, 39, 46, BLOOD.rim); // the stump: bone out, torn
-  for (const x of [15, 19, 23, 27]) { body.over(x, 46, CT.dk); body.over(x + 1, 45, SKT.base); } // the shirt in tatters underneath
-  stamp(p, body, 0, 0, 0);
-  // arms: the near one planted ahead, pulling; the far one reaching
-  const arms = part();
-  limb(arms, 14, 40, 4, 36, 4, K); arms.rect(1, 36, 5, 39, K); arms.set(0, 37, K); arms.set(0, 39, K); // far arm forward on the ground
-  stamp(p, arms, 0, 0, 0);
-  // the head low, raised to look ahead
-  const hd = headPart(SKT, "#e2412f", "red", { jawDrop: 3, size: 13, scalp: true, teethBlood: true });
-  hd.q.flip();
-  stamp(p, hd.q, -2, 25);
-  p.rect(12, 36, 17, 40, SKT.sh); // the neck
-  const near = part();
-  limb(near, 20, 42, 12, 46, 5, K); near.rect(6, 45, 12, 49, K); near.rect(4, 47, 6, 49, K); near.set(3, 49, K); near.set(8, 50, K); near.set(11, 50, K);
-  shadePart(near, { [K]: SKT });
-  near.hl(7, 11, 47, SKT.sh);
-  stamp(p, near, 0, 0);
-  wound(p, 25, 42, 2, rng, { streak: false }); wound(p, 18, 44, 1, rng, { streak: false });
-  // grass it hides in: tufts in front of it
-  grassTufts(p, [9, 17, 24, 31, 38], 50);
-  p.hl(2, 41, 50, GRASS[2]); for (let x = 2; x <= 41; x += 5) p.set(x, 49, GRASS[0]);
-  p.flip(); // built with the head to the left; the dead face right
+  const p = painter(W, H), sk = ASH, shirt = ramp("#55603f");
+  for (let x = 1; x <= 12; x++) { p.set(x, 49, x < 4 ? GORE.core : GORE.rim); if (x > 3 && x < 10) p.set(x, 48, GORE.rim); } // the smear
+  // the far arm reaching ahead, behind the body
+  zarm(p, [25, 39], [31, 37], [37, 40], dim(sk), { r: 2, hand: { droop: 1.1, len: 3, nail: SOCKET } });
+  // the body: a capsule from the torn hips to the shoulders, the shirt on it, the stumps of the legs behind
+  layer(p, (q) => {
+    limb(q, [10, 45], [14, 44], 3.3, 3.6, ramp("#3f4a58")); // what is left of the trousers
+    oval(q, 8, 45.5, 2, 2.6, [GORE.core, GORE.rim, PAL.red[1], PAL.red[2]], { specular: false }); // the torn end
+    q.set(7, 45, BONE[2]); q.set(7, 46, BONE[1]);
+    limb(q, [14, 44], [26, 41], 4, 4.6, shirt);
+    for (const x of [17, 21]) { q.set(x, 46, sk[1]); q.set(x + 1, 46, sk[1]); } // torn shirt, skin under it
+    ribs(q, 20, 43, { w: 3, n: 2 });
+  });
+  layer(p, (q) => { limb(q, [26, 40], [30, 37], 2.2, 2.2, sk); zhead(q, { x: 32, y: 34, rx: 4.8, ry: 5.2, tilt: 0.1, jaw: 2, skin: sk, eye: EYE_Y, gore: 1, scalp: true }); });
+  // the near arm planted ahead, pulling: elbow up, the hand flat on the ground
+  layer(p, (q) => zarm(q, [27, 42], [32, 44], [37, 46], sk, { sleeve: shirt, len: "torn", r: 2.2, hand: { droop: -0.3, len: 3, n: 3 } }), { cast: 1 });
+  for (const x of [34, 39, 41]) { p.set(x, 49, PAL.green[1]); p.set(x, 48, PAL.green[2]); p.set(x + 1, 47, PAL.green[2]); p.set(x + 1, 48, PAL.green[1]); p.set(x + 1, 49, PAL.green[0]); } // grass
   return p;
 }
+
+// The shepherd: a tall shroud from the hood to the ground, its hem in tatters, a long pale face in the hood, the
+// near hand on a crook of bone; pale motes drift in to it (its pull on the pack).
 function shepherd() {
-  const p = part();
-  const rng = new Rng(14);
-  const SKT = tones("#b9b4c8", { cool: 0.3 }), SH = tones("#5d5a66", { cool: 0.3, lift: 0.22 }), EYE = "#e8e2ff";
-  // the shroud: a long robe from the hood to the ground, its hem ragged, the folds in shadow
-  const robe = part(); const C = "#050505";
-  robe.rect(15, 17, 27, 49, C); robe.rect(14, 20, 28, 49, C); robe.rect(13, 30, 29, 49, C); robe.rect(12, 42, 30, 49, C);
-  shadePart(robe, { [C]: SH }, { wide: true, soft: true });
-  for (const x of [17, 21, 25]) robe.vl(x, 24, 48, SH.dk); robe.vl(16, 30, 48, SH.hi); robe.vl(22, 26, 47, SH.sh); // folds
-  for (let x = 12; x <= 30; x++) if (x % 3 === 1) robe.clear(x, 49); else if (x % 3 === 2) robe.set(x, 49, SH.dk); // the hem
-  stamp(p, robe, 0, 0);
-  // the near arm out to the crook, the far hand raised
-  const arms = part(); const K = "#060606";
-  limb(arms, 26, 23, 33, 26, 4, C); arms.rect(33, 26, 36, 30, K); arms.set(37, 27, K); arms.set(37, 29, K);
-  limb(arms, 15, 23, 10, 17, 4, C); arms.rect(8, 12, 11, 16, K); arms.set(8, 11, K); arms.set(10, 11, K); arms.set(7, 13, K);
-  shadePart(arms, { [C]: SH, [K]: SKT });
-  stamp(p, arms, 0, 0);
-  // the hood and the long pale face inside it
-  const hd = headPart(SKT, EYE, "glow", { jawDrop: 1, size: 12 });
-  stamp(p, hd.q, 14, 5);
-  p.rect(16, 7, 17, 14, bruise(SKT)); p.rect(16, 7, 25, 7, bruise(SKT)); // the face deep in the hood
-  for (const [x, y] of [[20, 11], [21, 11], [25, 11], [26, 11]]) p.set(x, y, EYE);
-  for (const [x, y] of [[19, 11], [22, 11], [24, 11], [27, 11], [20, 12], [21, 12], [25, 12], [26, 12]]) p.set(x, y, mix(EYE, "#9a94ff", 0.6));
-  const hood = part();
-  hood.rect(14, 3, 27, 4, C); hood.rect(13, 5, 28, 8, C); hood.rect(12, 9, 15, 19, C); hood.rect(27, 9, 29, 16, C); hood.rect(16, 3, 25, 2, C); hood.rect(13, 17, 16, 19, C); hood.rect(26, 17, 28, 19, C);
-  shadePart(hood, { [C]: SH }, { wide: true });
-  hood.vl(15, 9, 18, SH.dk); hood.vl(27, 9, 15, SH.dk);
-  stamp(p, hood, 0, 0);
-  // the crook: a long bone staff with a curl at the top
-  p.vl(36, 6, 50, BONE.base); p.vl(37, 7, 50, BONE.sh); p.rect(36, 5, 39, 5, BONE.base); p.rect(37, 4, 40, 4, BONE.base); p.set(41, 5, BONE.base); p.set(41, 6, BONE.sh); p.set(40, 7, BONE.sh); p.set(39, 3, BONE.hi);
-  for (const y of [14, 24, 36]) p.set(36, y, BONE.dk);
-  // its pull on the pack: pale motes drifting in
-  for (const [x, y] of [[3, 6], [1, 14], [5, 22], [2, 31], [42, 20], [41, 33], [40, 12]]) p.set(x, y, mix(EYE, "#1b1e24", 0.3));
+  const p = painter(W, H), robe = ramp("#4a4356", { spec: 0.3 }), face = deadSkin("#c8c6d2"), cx = 19;
+  // the crook: a long bone staff, curled at the top
+  limb(p, [34, 48.4], [35, 11], 1, 1, BONE);
+  for (const [a, b] of [[[35, 11], [35, 7]], [[35, 7], [33, 4]], [[33, 4], [30, 4]], [[30, 4], [29, 6]], [[29, 6], [30, 8]]]) limb(p, a, b, 1, 1, BONE);
+  // the far arm under the shroud, raised a little behind
+  zarm(p, [cx - 6, 19], [cx - 10, 25], [cx - 12, 21], dim(face), { sleeve: dim(robe), len: "long", r: 2.2, hand: { droop: -0.6, n: 3, len: 3 } });
+  layer(p, (q) => {
+    const inR = (x, y) => { if (y < 15 || y > 49) return false; const t = (y - 15) / 34, half = 7 + t * 5, c = cx + 1 - t * 1.5; return x >= c - half && x <= c + half + 1; };
+    const notch = (x) => [3, 0, 2, 4, 1, 0, 3, 1, 2, 0, 4, 2, 0, 1, 3, 2, 0, 4][((x % 18) + 18) % 18];
+    blob(q, (x, y) => inR(x, y) && y <= 49 - notch(x), robe, {});
+    for (const x of [cx - 4, cx + 1, cx + 6]) for (let y = 30; y <= 46; y++) if (q.get(x, y) === robe[1]) q.set(x, y, robe[0]); // the folds
+    for (const x of [cx - 3, cx + 2, cx + 7]) for (let y = 31; y <= 45; y++) if (q.get(x, y) === robe[1]) q.set(x, y, robe[2]);
+  });
+  layer(p, (q) => {
+    oval(q, cx + 1, 10, 7, 8, robe, { specular: false }); // the hood
+    oval(q, cx + 4, 11.5, 3.6, 5.6, ["#141218", "#141218", "#141218", "#141218"], { specular: false }); // its dark opening
+    oval(q, cx + 4.6, 12.5, 2.6, 4.6, face, { specular: false }); // the long pale face
+    for (const x of [cx + 3, cx + 6]) { q.set(x, 11, SOCKET); q.set(x, 12, "#b8f0ff"); }
+    q.set(cx + 5, 16, MOUTH); q.set(cx + 4, 16, MOUTH);
+  });
+  layer(p, (q) => zarm(q, [cx + 6, 19], [cx + 11, 24], [34, 22], face, { sleeve: robe, len: "long", r: 2.3, hand: { fist: true, r: 1.8 } }));
+  limb(p, [34, 20], [34.6, 25], 1, 1, BONE); // the staff over the fist
+  for (const [x, y] of [[6, 14], [3, 22], [8, 30], [4, 38]]) { p.set(x, y, "#b8f0ff"); p.set(x + 1, y, "#6a8a9a"); }
   return p;
 }
+
+// The carrier: a swollen, stooping body split open where worms push out, short arms, worms spilling from its mouth;
+// it takes them to the bodies.
 function carrier() {
-  const p = part();
-  const rng = new Rng(15);
-  const SKT = tones("#b8b494", { cool: 0.3 }), CT = tones("#5a5648", { cool: 0.15 });
-  stamp(p, legsPart(14, 29, CT, SKT, rng, { shoes: [true, true], top: 40, knee: false }), 0, 0, 0);
-  const body = part(); const K = "#060606";
-  body.ellipse(21, 29, 14, 11.5, K); body.rect(14, 19, 28, 22, K);
-  shadePart(body, { [K]: SKT }, { wide: true, soft: true });
-  sheen(body, 21, 30, 12, 10, SKT.hi, "#f4f0dc");
-  for (let x = 10; x <= 32; x++) { const d = Math.abs(x - 21) / 14; if (body.get(x, 40) && d < 0.7) body.set(x, 40, SKT.dk); if (body.get(x, 39) && d < 0.5) body.set(x, 39, SKT.sh); }
-  const VEIN = mix(SKT.sh, "#4a5a3a", 0.5);
-  for (const [x0, y0, x1, y1] of [[12, 25, 17, 30], [17, 30, 16, 36], [26, 22, 30, 28], [29, 31, 33, 35], [20, 36, 24, 39]]) body.line(x0, y0, x1, y1, VEIN); // veins under the skin
-  // splits where the worms push out: slanted, the flesh inside
-  const split = (x, y, w, slant) => { for (let i = 0; i <= w; i++) { const yy = y + Math.round(i * slant); body.set(x + i, yy - 1, BLOOD.rim); body.set(x + i, yy, i === 0 || i === w ? BLOOD.rim : BLOOD.core); body.set(x + i, yy + 1, BLOOD.rim); } body.set(x + 1, y + Math.round(slant), "#8a3a4a"); body.set(x + w - 1, y + Math.round((w - 1) * slant), "#7a2e3a"); };
-  split(9, 31, 6, -0.3); split(23, 35, 7, 0.2); split(26, 23, 5, -0.4);
-  for (let y = 24; y <= 32; y++) { const x = 20 + (y > 28 ? 1 : 0); body.set(x, y, BLOOD.core); body.set(x - 1, y, BLOOD.rim); body.set(x + 1, y, BLOOD.rim); } body.set(20, 27, "#9a3a4a"); body.set(21, 30, "#9a3a4a"); // the belly split open down the middle
-  stamp(p, body, 0, 0);
-  worm(p, 11, 30, 5, -1, 0.35); worm(p, 27, 36, 5, 1, -0.25); worm(p, 29, 23, 5, 1, 0.3); worm(p, 20, 29, 4, -1, 0.4); worm(p, 22, 26, 3, 1, -0.5);
-  // stubby arms
-  const arms = part();
-  arms.rect(6, 24, 10, 36, K); arms.rect(5, 36, 10, 40, K); arms.set(4, 38, K);
-  arms.rect(33, 25, 37, 36, K); arms.rect(33, 36, 38, 40, K); arms.set(39, 38, K);
-  shadePart(arms, { [K]: SKT }, { wide: true });
-  stamp(p, arms, 0, 0);
-  // a small head sunk on the body, worms from the mouth
-  p.rect(18, 15, 24, 20, SKT.sh);
-  const hd = headPart(SKT, "#e8e07a", "glow", { jawDrop: 3, size: 11, scalp: true });
-  stamp(p, hd.q, 15, 4);
-  worm(p, 21, 17, 4, 1, -0.6); worm(p, 20, 18, 3, -1, -0.5);
+  const p = painter(W, H), sk = deadSkin("#b4a9a0"), cx = 20, rng = new Rng(77);
+  zleg(p, [cx - 4, 36], [cx - 3, 42], [cx - 5, 46], dim(DENIM), dim(sk), { r: 3 }); shoe(p, [cx - 5, 46], dim(SHOE), { len: 7 });
+  zarm(p, [cx - 7, 21], [cx - 10, 27], [cx - 9, 32], dim(sk), { r: 2.8, hand: { droop: 1.4 } });
+  layer(p, (q) => { zleg(q, [cx + 4, 36], [cx + 6, 42], [cx + 5, 46], DENIM, sk, { r: 3 }); shoe(q, [cx + 5, 46], SHOE, { len: 7 }); });
+  layer(p, (q) => {
+    oval(q, cx, 28, 11, 11.5, sk, { ang: 0.2 });
+    // splits: slanted tears with the dark inside, a worm pushing out of each
+    for (const [x, y, d] of [[cx - 5, 23, 1], [cx + 3, 26, 1], [cx - 3, 32, -1], [cx + 6, 33, 1]]) {
+      for (let i = 0; i < 4; i++) { q.set(x + i, y + Math.round(i * 0.5), GORE.core); q.set(x + i, y + Math.round(i * 0.5) - 1, GORE.rim); q.set(x + i, y + Math.round(i * 0.5) + 1, sk[0]); }
+      worm(q, [[x + 2, y + 1], [x + 2 + d * 2, y - 2], [x + 2 + d * 4, y - 3]]);
+    }
+    for (const [x, y] of [[cx - 7, 30], [cx + 2, 20]]) ball(q, x, y, 1.4, PUS);
+  });
+  const head = { x: cx + 6, y: 14, rx: 4.6, ry: 5, tilt: 0.3, jaw: 2 };
+  layer(p, (q) => { zhead(q, { ...head, skin: sk, eye: EYE_Y, rot: true }); });
+  worm(p, [[head.x + 3, head.y + 5], [head.x + 5, head.y + 8], [head.x + 4, head.y + 11]]);
+  worm(p, [[head.x + 2, head.y + 5], [head.x + 2, head.y + 9]]);
+  layer(p, (q) => zarm(q, [cx + 8, 21], [cx + 12, 26], [cx + 14, 31], sk, { r: 2.9, hand: { droop: 1.4 } }));
   return p;
 }
+
+// The swarm: a low writhing mass of worms on a bed of slime, heads rearing up.
 function swarm() {
-  const p = part();
-  // a low writhing mass: slime underneath, a bed of worms, raised heads
-  p.ellipse(21, 47, 16, 3.2, "#5a4e36"); p.ellipse(21, 47.5, 13, 2, "#7a6a48"); p.hl(8, 34, 50, "#4a4030");
-  const bed = part(); const K = "#060606";
-  bed.ellipse(21, 44, 13, 4.5, K); bed.ellipse(16, 42, 6, 3, K); bed.ellipse(27, 41, 7, 3.5, K);
-  shadePart(bed, { [K]: WORM }, { wide: true, soft: true });
-  stamp(p, bed, 0, 0, 0.3);
-  const rng = new Rng(16);
-  for (let i = 0; i < 16; i++) { const x = 8 + ((i * 7) % 27), y = 40 + ((i * 5) % 7); if (p.get(x, y)) worm(p, x, y, 2 + (i % 3), i % 2 ? 1 : -1, (i % 4) * 0.15); }
-  // raised heads: worms rearing up, each with its dark mouth
-  for (const [x, h, lean] of [[11, 7, 1], [17, 10, -1], [23, 8, 1], [30, 11, -1], [35, 6, 1], [27, 5, 1]]) {
-    for (let i = 0; i < h; i++) { const xx = x + Math.round(Math.sin(i * 0.9) * lean), yy = 41 - i; p.set(xx, yy, i % 2 ? WORM.base : WORM.hi); p.set(xx + 1, yy, WORM.sh); }
-    const tx = x + Math.round(Math.sin(h * 0.9) * lean); p.set(tx, 41 - h, WORM.mouth); p.set(tx + 1, 41 - h, WORM.mouth); p.set(tx, 40 - h, WORM.sh);
+  const p = painter(W, H), rng = new Rng(9), SLIME = ["#4a4030", "#7a6c4a", "#a8986a", "#d8cca0"];
+  oval(p, 21, 46, 18, 3.1, SLIME, {});
+  for (let i = 0; i < 18; i++) {
+    const x = rng.range(6, 36), y = rng.range(40, 46), d = rng.chance(0.5) ? 1 : -1, l = rng.range(3, 6);
+    worm(p, [[x, y], [x + d * l * 0.5, y - rng.range(0, 2)], [x + d * l, y + rng.range(-1, 1)]], { mouth: false });
   }
-  for (const [x, y] of [[6, 48], [37, 47], [20, 50], [31, 50]]) { p.set(x, y, WORM.base); p.set(x + 1, y, WORM.sh); } // strays at the edge
+  for (const [x, h, d] of [[10, 9, 1], [17, 13, -1], [24, 11, 1], [31, 8, -1], [21, 6, 1]]) { // raised heads
+    worm(p, [[x, 44], [x + d, 44 - h * 0.5], [x, 44 - h], [x + d * 2, 44 - h - 1]], { r: 1.3 });
+  }
   return p;
 }
+
+// The boneback: a heavy hunched body under a hump of fused bone plates, a plated forearm, the head low in front
+// behind a bone mask, the eyes peering out.
 function boneback() {
-  const p = part();
-  const rng = new Rng(17);
-  const SKT = tones("#8f8a78"), CT = tones("#3e3d36", { cool: 0.2, lift: 0.3 }), PL = { hi: "#efe9da", base: "#d3cab4", sh: "#a39a82", dk: "#6a6252" };
-  stamp(p, legsPart(12, 31, CT, SKT, rng, { shoes: [true, true], top: 38, apart: 1 }), 0, 0, 0);
-  // the body: hunched forward, the back a grey hump with the spine's knobs, the head carried low in front
-  const body = part(); const K = "#060606";
-  body.ellipse(16, 27, 12, 11, K); body.rect(12, 28, 33, 38, K); body.rect(20, 21, 33, 30, K);
-  shadePart(body, { [K]: SKT }, { wide: true, soft: true });
-  for (let i = 0; i < 6; i++) { const x = 9 + i * 2, y = 25 - Math.round(Math.sin(i / 5 * 2.2) * 5); body.set(x, y, SKT.hi); body.set(x + 1, y, SKT.base); body.set(x, y + 1, SKT.dk); } // the spine
-  stamp(p, body, 0, 0);
-  // a plate: fused bone, lit on top, a dark seam under it, a crack
-  const plate = (x0, y0, x1, y1, crack = true) => {
-    const q = part(); q.rect(x0, y0, x1, y1, "#010101"); q.clear(x0, y0); q.clear(x1, y0); q.clear(x0, y1); q.clear(x1, y1);
-    shadePart(q, { "#010101": PL }); q.hl(x0 + 1, x1 - 1, y1, PL.dk); q.hl(x0 + 2, x1 - 1, y1 - 1, PL.sh); q.vl(x1, y0 + 1, y1 - 1, PL.dk); q.vl(x1 - 1, y0 + 2, y1 - 2, PL.sh);
-    if (crack) { const cx = x0 + 2 + ((x0 * 3) % Math.max(1, x1 - x0 - 3)); q.set(cx, y0 + 1, PL.dk); q.set(cx + 1, y0 + 2, PL.dk); q.set(cx + 1, y0 + 3, PL.sh); }
-    return q;
-  };
-  // rows of plates down its front, overlapping like scales
-  for (const [x0, y0, x1, y1] of [[22, 34, 29, 38], [30, 33, 35, 38], [21, 29, 28, 33], [29, 28, 36, 33], [23, 23, 30, 28], [31, 22, 37, 27]]) stamp(p, plate(x0, y0, x1, y1), 0, 0, 0.55);
-  // arms: the far one hanging behind, the near one forward with its forearm plated
-  const arms = part();
-  arms.rect(6, 26, 11, 40, K); arms.rect(5, 40, 11, 45, K);
-  limb(arms, 32, 27, 37, 34, 5, K); arms.rect(36, 34, 40, 44, K); arms.rect(35, 44, 41, 48, K);
-  shadePart(arms, { [K]: SKT }, { wide: true });
-  stamp(p, arms, 0, 0);
-  stamp(p, plate(35, 35, 41, 43, false), 0, 0, 0.5);
-  // the head, low and forward, behind its mask: plates over the brow and the jaw, the eyes peering out between them
-  const hd = headPart(SKT, "#e2412f", "red", { jawDrop: 2, size: 13 });
-  stamp(p, hd.q, 22, 8);
-  const brow = plate(22, 7, 37, 13, true), chin = plate(23, 18, 36, 23, false);
-  stamp(p, brow, 0, 0, 0.5); stamp(p, chin, 0, 0, 0.5);
-  p.rect(24, 14, 36, 17, bruise(SKT)); p.hl(24, 36, 14, mix(bruise(SKT), "#000", 0.4));
-  for (const x of [26, 27, 32, 33]) { p.set(x, 15, "#e2412f"); p.set(x, 16, mix("#e2412f", bruise(SKT), 0.5)); }
-  p.set(25, 15, mix("#e2412f", bruise(SKT), 0.5)); p.set(28, 15, mix("#e2412f", bruise(SKT), 0.5)); p.set(31, 15, mix("#e2412f", bruise(SKT), 0.5)); p.set(34, 15, mix("#e2412f", bruise(SKT), 0.5));
-  p.rect(26, 18, 34, 19, MOUTH); for (const x of [27, 30, 33]) p.set(x, 18, TEETH); p.hl(26, 34, 17, GUM); // the mouth between mask and jaw plate
-  for (const [x, y] of [[29, 10], [33, 21]]) { p.set(x, y, PL.dk); p.set(x + 1, y + 1, PL.dk); }
-  wound(p, 15, 23, 2, rng); wound(p, 9, 32, 2, rng); wound(p, 17, 36, 1, rng);
+  const p = painter(W, H), sk = deadSkin("#8c7a68"), cx = 17;
+  const T = { top: 20, bot: 35, topX: cx + 4, botX: cx, hs: 8, hw: 6.5, hh: 7, hump: 3 };
+  const S = shoulders(T);
+  zarm(p, S.F, add(S.F, [-1, 8]), add(S.F, [2, 15]), dim(sk), { r: 2.8, hand: { fist: true, r: 2.3 } });
+  zleg(p, [cx - 3, 34], [cx, 41], [cx - 3, 46], dim(DENIM), dim(sk), { r: 3 }); shoe(p, [cx - 3, 46], dim(SHOE), { len: 7 });
+  layer(p, (q) => { zleg(q, [cx + 3, 34], [cx + 7, 41], [cx + 5, 46], DENIM, sk, { r: 3 }); shoe(q, [cx + 5, 46], SHOE, { len: 7 }); });
+  layer(p, (q) => dress(q, T, { skin: sk, cloth: null, pants: DENIM, style: "tank", clothes: "torn", rng: new Rng(3) }));
+  // the hump: a ridge of bone plates along the spine, each a shaded oval with a spine raking back (each its own
+  // layer, so a seam where it overlaps the one below)
+  const PLATE = ramp("#c4b89c", { spec: 0.5 });
+  for (const [x, y, a] of [[cx - 6, 29.5, 1.0], [cx - 6, 23.5, 0.5], [cx - 2.5, 18.5, 0.0], [cx + 3, 16.5, -0.4]]) {
+    layer(p, (q) => { limb(q, [x - 1, y - 0.5], [x - 4, y - 3.5], 1.3, 0.5, PLATE); oval(q, x, y, 3, 2.3, PLATE, { ang: a }); });
+  }
+  const head = { x: T.topX + 10, y: 18.5, rx: 4.6, ry: 4.8, tilt: 0.3, jaw: 2 };
+  layer(p, (q) => {
+    limb(q, [T.topX + 3, T.top + 3], [head.x - 2, head.y + 2], 2.6, 2.4, sk);
+    zhead(q, { ...head, skin: sk, eye: EYE_R });
+    oval(q, head.x - 0.4, head.y - 3.4, 4, 1.6, PLATE, { ang: 0.25 }); // the brow plate
+    limb(q, [head.x - 2, head.y - 4], [head.x - 5, head.y - 6.5], 1.1, 0.5, PLATE);
+  });
+  layer(p, (q) => {
+    zarm(q, S.N, add(S.N, [0.5, 8]), add(S.N, [3.5, 15]), sk, { r: 2.9, hand: { droop: 1.0, n: 3, len: 3, nail: BONE[2] } });
+    limb(q, add(S.N, [1, 9.5]), add(S.N, [2.6, 13]), 2.6, 2.4, PLATE, { specular: true }); // a bone plate on the forearm
+  }, { cast: 1 });
   return p;
 }
+
+// The climber: thin and crouched, the long arms (the one special with long limbs) raised to grip, hooked bone
+// fingers, bare feet with long toes, the head looking up between the arms.
 function climber() {
-  const p = part();
-  const rng = new Rng(18);
-  const SKT = tones("#a59a8c"), CT = tones("#4d4438", { cool: 0.14 });
-  // crouched: bent legs, bare feet with long toes
-  const legs = part(); const P = "#020202", K = "#040404";
-  limb(legs, 15, 36, 8, 42, 5, P); limb(legs, 8, 42, 13, 48, 5, P); legs.rect(10, 48, 19, 50, K); legs.set(20, 50, K); legs.set(22, 50, K);
-  limb(legs, 24, 36, 32, 41, 5, P); limb(legs, 32, 41, 28, 48, 5, P); legs.rect(26, 48, 35, 50, K); legs.set(36, 50, K); legs.set(38, 50, K);
-  shadePart(legs, { [P]: CT, [K]: SKT });
-  fray(legs, 9, 13, 47, CT.base, CT.dk, rng); fray(legs, 27, 32, 47, CT.base, CT.dk, rng);
-  stamp(p, legs, 0, 0, 0);
-  // a thin torso, low
-  const torso = part(); const C = "#050505";
-  torso.rect(15, 24, 25, 37, C); torso.rect(14, 25, 26, 28, C);
-  shadePart(torso, { [C]: CT }, { wide: true });
-  for (const y of [28, 31]) torso.hl(16, 23, y, mix(CT.base, SKT.base, 0.5)); // ribs through the shirt
-  torso.hl(15, 25, 36, CT.dk);
-  stamp(p, torso, 0, 0);
-  // the arms, long and raised, the fingers hooked bone
-  const arms = part();
-  limb(arms, 15, 25, 7, 14, 4, C); limb(arms, 7, 14, 5, 3, 4, K); arms.rect(4, 1, 8, 3, K);
-  limb(arms, 25, 25, 34, 14, 4, C); limb(arms, 34, 14, 37, 3, 4, K); arms.rect(36, 1, 40, 3, K);
-  shadePart(arms, { [C]: CT, [K]: SKT });
-  for (const x of [3, 5, 7, 9]) { arms.set(x, 0, BONE.base); arms.set(x, 1, BONE.sh); } arms.set(2, 1, BONE.base);
-  for (const x of [35, 37, 39, 41]) { arms.set(x, 0, BONE.base); arms.set(x, 1, BONE.sh); } arms.set(42, 1, BONE.base);
-  arms.set(5, 11, CT.dk); arms.set(36, 11, CT.dk); // the sleeves' ends
-  stamp(p, arms, 0, 0);
-  // the head, looking up between the arms
-  const hd = headPart(SKT, "#e2e07a", "glow", { jawDrop: 2, size: 12, cheek: true });
-  stamp(p, hd.q, 13, 9);
-  p.rect(18, 22, 23, 25, SKT.sh);
+  const p = painter(W, H), sk = ASH, cx = 20;
+  const T = { top: 23, bot: 35, topX: cx + 2, botX: cx, hs: 5, hw: 3.8, hh: 4.4, hump: 1 };
+  const S = shoulders(T);
+  zarm(p, S.F, add(S.F, [-5, -9]), add(S.F, [-3, -20]), dim(sk), { r: 1.7, hand: { droop: 2.4, n: 3, len: 3.4, nail: BONE[2] } });
+  zleg(p, [cx - 2, 34], [cx - 9, 37], [cx - 7, 46], dim(RAGS2), dim(sk), { r: 2 }); shoe(p, [cx - 7, 46], dim(sk), { bare: true, len: 6 });
+  layer(p, (q) => { zleg(q, [cx + 2, 34], [cx + 10, 37], [cx + 8, 46], RAGS2, sk, { r: 2 }); shoe(q, [cx + 8, 46], sk, { bare: true, len: 6 }); });
+  layer(p, (q) => { trunk(q, T, sk); const inT = trunkShape(T); for (let i = 0; i < 3; i++) for (let k = 0; k < 4; k++) if (inT(T.topX - 2 + k, 27 + i * 2)) q.set(T.topX - 2 + k, 27 + i * 2, k ? sk[0] : sk[2]); blob(q, (x, y) => inT(x, y) && y >= T.bot - 3, RAGS2, { rim: 1 }); });
+  layer(p, (q) => { limb(q, [T.topX + 1, T.top + 1], [cx + 4, 19], 1.8, 1.8, sk); zhead(q, { x: cx + 4, y: 15, rx: 4.6, ry: 5, tilt: -0.35, jaw: 2, skin: sk, eye: EYE_Y }); });
+  layer(p, (q) => zarm(q, S.N, add(S.N, [6, -9]), add(S.N, [5, -21]), sk, { r: 1.8, hand: { droop: -2.4, n: 3, len: 3.4, nail: BONE[2] } }));
   return p;
 }
+
+// The flinger: the throwing arm cocked back over its head, a writhing ball of worms in the fist; the other arm
+// hanging; leaning back into the throw.
 function flinger() {
-  const p = part();
-  const rng = new Rng(19);
-  const SKT = tones("#8f9a86"), CT = tones("#3f4a3a", { cool: 0.14 });
-  stamp(p, legsPart(13, 30, CT, SKT, rng, { shoes: [true, false], top: 36 }), 0, 0, 0);
-  const torso = torsoPart(13, 30, CT, SKT, "tshirt", rng, { top: 22, bottom: 35 });
-  stamp(p, torso, 0, 0);
-  tearShirt(p, 13, 30, 22, 35, CT, SKT, "torn", rng, 1);
-  // the long arms: the throwing arm cocked back over the head, the other hanging almost to the ground
-  const arms = part(); const K = "#060606", S = "#070707";
-  limb(arms, 27, 23, 36, 34, 4, S); limb(arms, 36, 34, 37, 46, 4, K); arms.rect(36, 46, 40, 49, K); arms.set(41, 47, K); arms.set(41, 49, K);
-  limb(arms, 15, 23, 7, 14, 4, S); limb(arms, 7, 14, 10, 4, 4, K); arms.rect(9, 2, 13, 5, K);
-  shadePart(arms, { [S]: CT, [K]: SKT });
-  stamp(p, arms, 0, 0);
-  // the mass of worms in its fist, dripping
-  const mass = part(); const M = "#070707";
-  mass.ellipse(14, 4, 6, 4, M); mass.ellipse(11, 7, 4, 3, M);
-  shadePart(mass, { [M]: WORM }, { soft: true });
-  stamp(p, mass, 0, 0);
-  worm(p, 16, 2, 3, 1, 0.3); worm(p, 10, 3, 3, -1, 0.2); worm(p, 18, 6, 3, 1, -0.3); worm(p, 8, 8, 2, -1, -0.4);
-  for (const [x, y0, y1] of [[13, 10, 13], [17, 9, 11], [15, 12, 16]]) { for (let y = y0; y <= y1; y++) p.set(x, y, y === y1 ? WORM.hi : WORM.sh); }
-  p.set(15, 19, WORM.base); p.set(13, 21, WORM.sh);
-  // the head
-  const hd = headPart(SKT, "#e2e07a", "glow", { jawDrop: 2, size: 13, scalp: true });
-  p.rect(18, 16, 23, 22, SKT.sh);
-  stamp(p, hd.q, 13, 4);
+  const p = painter(W, H), sk = ROT, cx = 19, cloth = ramp("#4a5566");
+  const T = { top: 19, bot: 33, topX: cx - 1, botX: cx, hs: 6.4, hw: 5, hh: 5.8, dropN: 1, dropF: 0 };
+  const S = shoulders(T);
+  // the throwing arm (the far one) cocked back behind the head, the ball of worms in its fist
+  const hb = [S.F[0] - 5, S.F[1] - 13.5];
+  oval(p, hb[0], hb[1], 4.2, 3.8, FLESH, { specular: false });
+  for (const pts of [[[hb[0] - 3, hb[1] - 1], [hb[0] - 1, hb[1] - 3], [hb[0] + 2, hb[1] - 3]], [[hb[0] - 2, hb[1] + 2], [hb[0] + 1, hb[1] + 1], [hb[0] + 3, hb[1] + 2]], [[hb[0] - 3, hb[1] + 1], [hb[0] - 5, hb[1] - 1], [hb[0] - 5, hb[1] - 4]], [[hb[0] + 1, hb[1] - 3], [hb[0] + 1, hb[1] - 5], [hb[0] + 3, hb[1] - 6]]]) worm(p, pts);
+  for (let y = hb[1] + 4; y <= hb[1] + 6; y++) p.set(hb[0] + 2, y, FLESH[0]); // dripping
+  zarm(p, S.F, add(S.F, [-6, -5]), [hb[0] + 2, hb[1] + 3], dim(sk), { sleeve: dim(cloth), len: "short", r: 2.2, hand: { fist: true, r: 2 } });
+  zleg(p, [cx - 3, 31], [cx - 4, 40], [cx - 6, 46], dim(DENIM), dim(sk), { r: 2.5 }); shoe(p, [cx - 6, 46], dim(SHOE));
+  layer(p, (q) => { zleg(q, [cx + 2, 31], [cx + 6, 39], [cx + 5, 46], DENIM, sk, { r: 2.5 }); shoe(q, [cx + 5, 46], SHOE); });
+  layer(p, (q) => dress(q, T, { skin: sk, cloth, pants: DENIM, style: "tshirt", clothes: "torn", rng: new Rng(4) }));
+  layer(p, (q) => { limb(q, [T.topX + 1, T.top + 1], [cx + 2, 15], 2.1, 2.1, sk); zhead(q, { x: cx + 2, y: 11, rx: 5, ry: 5.6, tilt: -0.1, jaw: 2, skin: sk, eye: EYE_Y, gore: 1 }); });
+  layer(p, (q) => zarm(q, S.N, add(S.N, [1.5, 8]), add(S.N, [2.5, 15.5]), sk, { sleeve: cloth, len: "short", r: 2.3, hand: { droop: 1.3 } }), { cast: 1 });
   return p;
 }
+
+// The sower: a shambling walker hung with egg sacs, pale and translucent with the eggs showing; eggs dribble to
+// the ground behind it.
 function sower() {
-  const p = part();
-  const rng = new Rng(20);
-  const SKT = tones("#a8a07a", { cool: 0.2 }), CT = tones("#5a5440", { cool: 0.14 });
-  stamp(p, legsPart(14, 29, CT, SKT, rng, { shoes: [false, true], top: 40, knee: false }), 0, 0, 0);
-  const body = part(); const K = "#060606";
-  body.ellipse(21, 30, 12, 10.5, K); body.rect(15, 20, 27, 24, K);
-  shadePart(body, { [K]: SKT }, { wide: true, soft: true });
-  sheen(body, 21, 31, 10, 9, SKT.hi, mix(SKT.hi, "#ffffff", 0.5));
-  body.hl(14, 28, 40, SKT.dk);
-  stamp(p, body, 0, 0);
-  // the near arm hanging
-  const arms = part();
-  arms.rect(6, 23, 10, 36, K); arms.rect(5, 36, 10, 40, K); arms.set(4, 38, K);
-  shadePart(arms, { [K]: SKT }, { wide: true });
-  stamp(p, arms, 0, 0);
-  // egg sacs hung from its back and sides: pale translucent sacs with the eggs showing inside
-  const sac = (x, y, r) => { const q = part(); q.ellipse(x, y, r, r + 0.5, "#010101"); shadePart(q, { "#010101": EGG }, { soft: true }); q.set(x - 1, y - 1, EGG.hi); q.set(x, y + 1, EGG.sh); q.set(x + 1, y, EGG.sh); q.set(x - 1, y + 1, EGG.dk); if (r > 2) { q.set(x + 1, y - 1, EGG.sh); q.set(x - 2, y, EGG.sh); } stamp(p, q, 0, 0, 0.3); p.set(x, y - r - 1, SKT.dk); };
-  sac(33, 20, 3.5); sac(36, 27, 3); sac(34, 34, 3.5); sac(31, 41, 2.5); sac(9, 30, 2.5); sac(12, 38, 2.5); sac(27, 44, 2);
-  // the head
-  const hd = headPart(SKT, "#e8e07a", "glow", { jawDrop: 2, size: 12, scalp: true });
-  p.rect(18, 15, 24, 21, SKT.sh);
-  stamp(p, hd.q, 14, 4);
-  // eggs dribbling to the ground, left behind it
-  for (const [x, y] of [[29, 48], [34, 49], [38, 47], [41, 49], [25, 50], [36, 50], [12, 49]]) { p.set(x, y, EGG.base); p.set(x + 1, y, EGG.sh); p.set(x, y - 1, EGG.hi); }
-  p.set(32, 45, EGG.base); p.set(32, 46, EGG.sh);
+  const p = painter(W, H), sk = PALE, cx = 18, cloth = ramp("#6a4a3a");
+  const T = { top: 19, bot: 33, topX: cx + 2, botX: cx, hs: 6.4, hw: 5.4, hh: 5.8, hump: 1.5, dropN: 1 };
+  const S = shoulders(T);
+  const sac = (q, x, y, rx, ry) => { oval(q, x, y, rx, ry, EGG, {}); for (const [dx, dy] of [[-1, 0], [1, 1], [0, -2], [-1, 2]]) if (Math.abs(dx) < rx - 1 && Math.abs(dy) < ry - 1) q.set(Math.round(x + dx), Math.round(y + dy), EGG[0]); };
+  layer(p, (q) => { sac(q, cx - 7, 24, 4, 5); sac(q, cx - 5, 31, 3.4, 4); });
+  zarm(p, S.F, add(S.F, [1, 8]), add(S.F, [2, 15]), dim(sk), { sleeve: dim(cloth), len: "elbow", r: 2.2, hand: { droop: 1.4 } });
+  zleg(p, [cx - 2.5, 31], [cx - 1, 39], [cx - 4, 46], dim(DENIM), dim(sk), { r: 2.5 }); shoe(p, [cx - 4, 46], dim(SHOE));
+  layer(p, (q) => { zleg(q, [cx + 2.5, 31], [cx + 6, 39], [cx + 4, 46], DENIM, sk, { r: 2.5 }); shoe(q, [cx + 4, 46], SHOE); });
+  layer(p, (q) => dress(q, T, { skin: sk, cloth, pants: DENIM, style: "jacket", clothes: "torn", rng: new Rng(8) }));
+  layer(p, (q) => { sac(q, cx + 1, 30, 3, 3.6); });
+  layer(p, (q) => { limb(q, [T.topX + 1, T.top + 1], [cx + 6, 16], 2.1, 2.1, sk); zhead(q, { x: cx + 7, y: 12, rx: 5, ry: 5.6, tilt: 0.2, jaw: 2, skin: sk, eye: EYE_Y, rot: true }); });
+  layer(p, (q) => zarm(q, S.N, add(S.N, [2, 8]), add(S.N, [6, 14]), sk, { sleeve: cloth, len: "elbow", r: 2.3, hand: { droop: 1.2 } }), { cast: 1 });
+  for (const [x, y] of [[3, 46], [7, 47], [10, 46]]) ball(p, x, y, 1.4, EGG);
   return p;
 }
+
+// The nightmare: tall, gaunt and black, red eyes burning, the jaw unhinged down to its chest, long thin fingers;
+// its scream (red rings) panics your people.
 function nightmare() {
-  const p = part();
-  const rng = new Rng(21);
-  const SKT = tones("#6e6a78", { cool: 0.35 }), CT = tones("#1e1c24", { cool: 0.3, lift: 0.3 });
-  stamp(p, legsPart(16, 27, CT, SKT, rng, { shoes: [false, false], top: 34 }), 0, 0, 0);
-  const torso = part(); const C = "#050505";
-  torso.rect(16, 20, 26, 33, C); torso.rect(15, 21, 27, 24, C); torso.clear(16, 20); torso.clear(26, 20);
-  shadePart(torso, { [C]: CT }, { wide: true });
-  for (let x = 16; x <= 26; x += 3) torso.set(x, 33, CT.dk); torso.hl(16, 26, 32, CT.sh);
-  stamp(p, torso, 0, 0);
-  // long arms hanging, the fingers long
-  const arms = part(); const K = "#060606";
-  limb(arms, 15, 21, 10, 30, 4, C); limb(arms, 10, 30, 9, 40, 3, K); arms.rect(8, 40, 11, 44, K); arms.set(8, 45, K); arms.set(10, 46, K); arms.set(11, 45, K);
-  limb(arms, 27, 21, 32, 30, 4, C); limb(arms, 32, 30, 33, 40, 3, K); arms.rect(32, 40, 35, 44, K); arms.set(32, 46, K); arms.set(34, 45, K); arms.set(35, 46, K);
-  shadePart(arms, { [C]: CT, [K]: SKT });
-  stamp(p, arms, 0, 0);
-  // the head: tall and gaunt, the jaw unhinged, hanging to the chest
-  const hd = headPart(SKT, "#ff3a2a", "red", { jawDrop: 7, size: 12 });
-  stamp(p, hd.q, 15, 1);
-  p.rect(20, 11, 25, 20, MOUTH); p.vl(19, 12, 19, GUM); p.vl(26, 12, 19, GUM); for (const y of [13, 16]) { p.set(19, y, TEETH); p.set(26, y, TEETH); } p.set(22, 19, "#5c1210"); p.set(23, 17, "#3a0c0c"); // the throat, a gullet
-  p.hl(20, 25, 11, GUM); for (const x of [20, 22, 24]) p.set(x, 12, TEETH);
-  shriek(p, 22, 8, "#d0446a", [11, 15, 19], [-175, -5]);
+  const p = painter(W, H), sk = ["#141218", "#2a2532", "#433b4e", "#6a5f78"], cx = 20;
+  const T = { top: 15, bot: 31, topX: cx + 1, botX: cx, hs: 5.6, hw: 3.6, hh: 4.4, hump: 1.2 };
+  const S = shoulders(T);
+  zarm(p, S.F, add(S.F, [-2, 8]), add(S.F, [-1, 16]), dim(sk, 0.1), { r: 1.6, hand: { droop: 1.6, n: 3, len: 4 } });
+  zleg(p, [cx - 2, 30], [cx - 1, 39], [cx - 3, 46], dim(sk, 0.1), sk, { r: 2 }); shoe(p, [cx - 3, 46], dim(sk, 0.1), { bare: true, len: 6 });
+  layer(p, (q) => { zleg(q, [cx + 2, 30], [cx + 4, 39], [cx + 3, 46], sk, sk, { r: 2 }); shoe(q, [cx + 3, 46], sk, { bare: true, len: 6 }); });
+  layer(p, (q) => { trunk(q, T, sk); const inT = trunkShape(T); for (let i = 0; i < 3; i++) for (let k = 0; k < 5; k++) if (inT(T.topX - 2 + k, 20 + i * 2)) q.set(T.topX - 2 + k, 20 + i * 2, k ? sk[0] : sk[3]); });
+  // the head: tall and narrow, the jaw hanging to the chest, a mouthful of teeth
+  layer(p, (q) => {
+    limb(q, [cx + 1, 15], [cx + 3, 10], 1.8, 1.8, sk);
+    limb(q, [cx + 2, 10], [cx + 6, 21], 2.2, 2, sk); // the unhinged jaw
+    oval(q, cx + 3, 6.5, 4.4, 5, sk, {});
+    for (let y = 10; y <= 19; y++) { q.set(cx + 5 + (y > 14 ? 1 : 0), y, MOUTH); q.set(cx + 6 + (y > 14 ? 1 : 0), y, y % 3 === 0 ? BONE[2] : MOUTH); }
+    q.set(cx + 7, 10, BONE[2]); q.set(cx + 8, 11, BONE[2]);
+    for (const x of [cx + 3, cx + 6]) { q.set(x, 5, "#ff4a3a"); q.set(x + 1, 5, "#ffb0a0"); q.set(x, 6, "#7a1410"); }
+  });
+  layer(p, (q) => zarm(q, S.N, add(S.N, [2, 8]), add(S.N, [3, 16]), sk, { r: 1.7, hand: { droop: 1.4, n: 3, len: 4 } }));
+  shriek(p, cx + 7, 9, SHRIEK_R, [6, 9], -0.75, 0.6);
   return p;
 }
 const SPECIAL = { spitter, screamer, crawler, shepherd, carrier, swarm, boneback, climber, flinger, sower, nightmare };
@@ -964,144 +607,137 @@ export const SPECIAL_KINDS = Object.keys(SPECIAL);
 export const paintSpecialHD = (kind) => (SPECIAL[kind] || spitter)();
 
 // ---------- the bosses (hivesprites.js), on an 88 × 104 grid ----------
-const BW = 88, BH = 104;
-// The Wallbreaker: a hulking grey brute twice a shambler's bulk, legs planted wide, the head sunk low, one arm
-// hanging knuckles down, the other raised with a slab of concrete bound to the fist with rebar.
-function wallbreaker() {
-  const p = part(BW, BH);
-  const rng = new Rng(31);
-  const SKT = tones("#8f9a86"), PT = tones("#3a3a36", { cool: 0.2, lift: 0.3 }), SLAB = tones("#9a968c", { cool: 0.2, lift: 0.3 }), RUST = tones("#7a4a30", { cool: 0.05, lift: 0.3 });
-  const K = "#060606", P = "#020202", S = "#030303";
-  // legs planted wide, boots split at the toes
-  const legs = part(BW, BH);
-  legs.rect(14, 70, 34, 96, P); legs.rect(52, 70, 72, 96, P); legs.rect(14, 70, 72, 76, P);
-  legs.rect(10, 94, 36, 101, S); legs.rect(50, 94, 78, 101, S);
-  shadePart(legs, { [P]: PT, [S]: tones(SHOE, { cool: 0.15, lift: 0.25 }) }, { wide: true });
-  legs.hl(16, 32, 82, PT.sh); legs.hl(54, 70, 82, PT.sh); legs.hl(10, 36, 101, shade(SHOE, -0.4)); legs.hl(50, 78, 101, shade(SHOE, -0.4));
-  for (const x0 of [14, 52]) fray(legs, x0 + 1, x0 + 19, 93, PT.base, PT.dk, rng, { deep: 2 });
-  legs.hl(10, 78, 101, mix(shade(SHOE, -0.2), "#3a3020", 0.4));
-  stamp(p, legs, 0, 0, 0);
-  // the torso: a wall of muscle, the shoulders sloping up to where the head sits
-  const body = part(BW, BH);
-  body.rect(20, 24, 66, 26, K); body.rect(14, 27, 72, 30, K); body.rect(9, 31, 77, 74, K); body.rect(11, 75, 75, 78, K);
-  shadePart(body, { [K]: SKT }, { wide: true, soft: true });
-  body.rect(13, 32, 73, 72, SKT.sh);
-  const sl = (x0, y0, x1, y1) => { body.rect(x0, y0, x1, y1, SKT.base); body.hl(x0 + 1, x1 - 1, y0, SKT.hi); body.vl(x0, y0 + 1, y1 - 1, SKT.hi); body.hl(x0 + 1, x1, y1, SKT.dk); body.hl(x0 + 1, x1, y1 + 1, SKT.dk); body.vl(x1, y0 + 1, y1 - 1, SKT.sh); body.set(x0, y1, SKT.sh); body.set(x1, y0, SKT.sh); };
-  sl(14, 34, 41, 50); sl(46, 34, 72, 50); sl(18, 54, 41, 60); sl(46, 54, 69, 60); sl(20, 64, 41, 70); sl(46, 64, 67, 70);
-  body.vl(42, 33, 72, SKT.dk); body.vl(43, 33, 72, SKT.dk); body.vl(44, 34, 72, SKT.sh);
-  // ribs through the skin on its flank, old wounds
-  body.rect(10, 38, 17, 51, mix(SKT.dk, "#4a1a1c", 0.45)); for (const y of [40, 44, 48]) { body.hl(10, 16, y, BONE.base); body.set(16, y, BONE.sh); body.hl(10, 15, y + 1, BONE.sh); }
-  stamp(p, body, 0, 0);
-  // the hanging arm (far side): knuckles down
-  const far = part(BW, BH);
-  far.rect(0, 30, 10, 76, K); far.rect(0, 76, 12, 90, K); far.rect(1, 90, 11, 92, K);
-  shadePart(far, { [K]: SKT }, { wide: true });
-  far.hl(0, 9, 52, SKT.sh); for (const x of [1, 4, 7, 10]) far.set(x, 84, SKT.hi); far.hl(0, 11, 86, SKT.dk);
-  stamp(p, far, 0, 0);
-  // the head, sunk between the shoulders
-  const hd = headPart(SKT, "#e2412f", "red", { jawDrop: 2, size: 16, scalp: true, teethBlood: true });
-  stamp(p, hd.q, 33, 7);
-  // the raised arm and the slab bound to its fist
-  const arm = part(BW, BH);
-  limb(arm, 70, 36, 78, 22, 10, K); arm.rect(74, 6, 86, 24, K);
-  shadePart(arm, { [K]: SKT }, { wide: true });
-  arm.hl(71, 79, 30, SKT.sh);
-  stamp(p, arm, 0, 0);
-  const slab = part(BW, BH);
-  const SL = "#070707";
-  slab.rect(56, 0, 87, 20, SL); slab.rect(58, 21, 85, 23, SL); slab.clear(56, 0); slab.clear(87, 0); slab.clear(57, 0);
-  shadePart(slab, { [SL]: SLAB }, { wide: true });
-  slab.hl(57, 86, 1, SLAB.hi); slab.rect(60, 4, 64, 6, SLAB.sh); slab.rect(72, 9, 79, 11, SLAB.sh); slab.set(68, 15, SLAB.dk); slab.set(69, 16, SLAB.dk); slab.set(70, 17, SLAB.dk); slab.set(66, 14, SLAB.dk); // chips and a crack
-  slab.line(59, 18, 63, 12, SLAB.dk); slab.set(84, 3, SLAB.dk);
-  // rebar: rods bent out of the broken concrete, one wrapped round the fist to bind it
-  const rod = (pts, col = RUST.base, dk = RUST.dk) => { for (let i = 0; i < pts.length - 1; i++) { slab.line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], col); slab.line(pts[i][0] + 1, pts[i][1], pts[i + 1][0] + 1, pts[i + 1][1], dk); } };
-  rod([[63, 4], [63, 14], [66, 20]]); rod([[80, 2], [78, 12], [82, 18]]); rod([[58, 12], [66, 11], [72, 13]]);
-  rod([[59, 0], [57, -3]]); rod([[84, 0], [86, -4]]);
-  slab.set(63, 3, RUST.hi); slab.set(80, 1, RUST.hi); slab.set(64, 7, mix(RUST.base, SLAB.base, 0.4)); slab.set(79, 9, mix(RUST.base, SLAB.base, 0.4));
-  for (let i = 0; i < 4; i++) { slab.hl(70 + i, 86 - i, 24 + i * 2, RUST.base); slab.hl(70 + i, 86 - i, 25 + i * 2, RUST.dk); } // wound round the fist
-  stamp(p, slab, 0, 0);
-  p.rect(75, 24, 85, 27, SKT.sh); p.rect(76, 26, 84, 27, SKT.base); // the fist under the slab
-  for (let i = 0; i < 4; i++) { p.hl(72 + i, 86 - i, 24 + i * 2, RUST.base); p.hl(72 + i, 86 - i, 25 + i * 2, RUST.dk); }
-  for (const [x, y, n] of [[24, 46, 3], [54, 66, 2], [62, 44, 3], [34, 70, 2], [6, 60, 2], [20, 84, 2]]) wound(p, x, y, n, rng);
-  p.hl(24, 36, 102, BLOOD.rim); p.hl(28, 33, 103, BLOOD.dry);
-  return p;
-}
-// The Broodmother: the bloated queen inside a hive, mottled grey-pink, egg sacs on her back, a crown of bone, three
-// amber eyes, clawed arms, grown from a mound of flesh.
-function broodmother() {
-  const p = part(BW, BH);
-  const rng = new Rng(32);
-  const SKT = tones("#9a7a86", { cool: 0.25 }), LIT = tones("#c4a2ae", { cool: 0.2 }), SAC = { hi: "#fff0c0", base: "#e8b46a", sh: "#b07a3a", dk: "#7a5024" }, EYE = "#ffd166", VEIN = "#8a1c22";
-  const K = "#060606";
-  // the mound she grows from
-  const mound = part(BW, BH); const M = "#050505";
-  mound.ellipse(44, 97, 40, 6, M); mound.ellipse(44, 94, 28, 5, M);
-  shadePart(mound, { [M]: tones("#5a2a2e", { cool: 0.2 }) }, { wide: true, soft: true });
-  for (const x of [12, 30, 56, 74]) { mound.vl(x, 86 + (x % 5), 93, BONE.base); mound.set(x + 1, 86 + (x % 5), BONE.sh); }
-  stamp(p, mound, 0, 0, 0);
-  // the egg sacs on her back (behind the body)
-  const sac = (x, y, r) => { const q = part(BW, BH); q.ellipse(x, y, r, r + 1, "#010101"); shadePart(q, { "#010101": SAC }, { soft: true }); q.ellipse(x - r * 0.3, y - r * 0.35, r * 0.3, r * 0.3, SAC.hi); q.ellipse(x + r * 0.2, y + r * 0.2, r * 0.35, r * 0.3, SAC.sh); q.ellipse(x + r * 0.2, y + r * 0.2, r * 0.15, r * 0.12, SAC.dk); return q; };
-  for (const [x, y, r] of [[14, 50, 8], [22, 34, 9], [38, 24, 7], [66, 28, 9], [78, 44, 8]]) stamp(p, sac(x, y, r), 0, 0, 0.3);
-  // the swollen body
-  const body = part(BW, BH);
-  body.ellipse(44, 66, 38, 29, K); body.ellipse(42, 70, 30, 20, "#070707");
-  shadePart(body, { [K]: SKT, "#070707": LIT }, { wide: true, soft: true });
-  sheen(body, 42, 70, 28, 18, LIT.hi, "#f0dde4");
-  for (const [x, y, rx, ry] of [[22, 58, 6, 4], [62, 56, 7, 5], [48, 80, 8, 4], [14, 74, 4, 5], [70, 76, 5, 4], [34, 90, 6, 2]]) { const q = part(BW, BH); q.ellipse(x, y, rx, ry, "#010101"); for (const [px, py] of q.pixels()) if (body.get(px, py)) body.set(px, py, mix(body.get(px, py), SKT.sh, 0.6)); } // mottling
-  const vein = (pts) => { for (let i = 0; i < pts.length - 1; i++) { body.line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], mix(VEIN, SKT.base, 0.25)); } };
-  vein([[18, 64], [24, 70], [26, 78], [32, 84]]); vein([[24, 70], [20, 76]]); vein([[58, 60], [64, 66], [66, 74], [62, 82]]); vein([[64, 66], [70, 68]]); vein([[40, 86], [46, 90], [52, 88]]); vein([[36, 60], [40, 66], [38, 72]]);
-  for (const [x, y] of [[26, 66], [60, 64], [44, 88], [16, 76]]) { body.set(x, y, BLOOD.core); body.set(x + 1, y, BLOOD.rim); body.set(x - 1, y, BLOOD.rim); body.set(x, y - 1, BLOOD.rim); body.set(x, y + 1, BLOOD.rim); }
-  stamp(p, body, 0, 0);
-  // clawed arms out at her sides
-  const arms = part(BW, BH);
-  limb(arms, 12, 60, 4, 76, 7, K); arms.rect(1, 76, 9, 84, K); for (const x of [0, 3, 6, 9]) { arms.set(x, 85, BONE.base); arms.set(x, 86, BONE.sh); }
-  limb(arms, 76, 58, 82, 74, 7, K); arms.rect(79, 74, 87, 82, K); for (const x of [78, 81, 84, 87]) { arms.set(x, 83, BONE.base); arms.set(x, 84, BONE.sh); }
-  shadePart(arms, { [K]: SKT }, { wide: true });
-  stamp(p, arms, 0, 0);
-  // the head: broad, the jaw hanging, three eyes, the crown of bone
-  const hd = part(BW, BH);
-  hd.rect(32, 16, 57, 38, K); hd.rect(33, 14, 56, 15, K); hd.rect(35, 12, 54, 13, K); hd.rect(35, 39, 54, 42, K); hd.rect(37, 43, 52, 44, K);
-  shadePart(hd, { [K]: SKT }, { wide: true });
-  hd.hl(34, 55, 19, SKT.dk); hd.hl(34, 55, 20, SKT.sh); // the brow
-  eye(hd, 35, 22, EYE, "glow", SKT); eye(hd, 42, 20, EYE, "glow", SKT); eye(hd, 50, 22, EYE, "glow", SKT);
-  jaw(hd, 37, 32, 16, 8, { blood: true });
-  hd.rect(36, 32, 36, 34, SKT.sh); hd.set(46, 29, SKT.dk); hd.set(45, 28, SKT.sh);
-  for (const [x, h] of [[33, 8], [39, 12], [45, 15], [51, 12], [57, 8]]) { hd.rect(x - 1, 14 - h, x, 13, BONE.base); hd.vl(x + 1, 15 - h, 13, BONE.sh); hd.set(x - 1, 13 - h, BONE.hi); } // the crown
-  stamp(p, hd, 0, 0);
-  p.rect(36, 44, 53, 48, SKT.sh); p.hl(37, 52, 48, SKT.dk);
-  return p;
-}
-// The Hivemind: the organ at the heart of a hive, a folded mass of grey-pink flesh like a brain the size of a car,
-// veined and glowing from inside, amber pods and tendrils coiled at its foot. torn: its second phase, split down the
-// middle with light pouring out, the pods burst.
-function hivemind(torn = false) {
-  const p = part(BW, BH);
-  const FL = tones(torn ? "#b8566a" : "#b07a86", { cool: 0.2 }), LIT = tones(torn ? "#e07a8a" : "#d8a8b2", { cool: 0.15 });
-  const FOLD = torn ? "#7a2a3a" : "#8a4a5a", VEIN = torn ? "#ff3a2a" : "#8a1c22", GLOW = torn ? "#ffd36b" : "#ffb43b", CORE = "#fff4c8";
-  const POD = { hi: "#fff0c0", base: "#e8b46a", sh: "#b07a3a", dk: "#7a5024" };
-  const K = "#060606";
-  p.ellipse(44, 97, 42, 6, torn ? "#3a0c14" : "#2a1018"); p.ellipse(44, 95, 30, 4, torn ? "#4a1420" : "#3a1820"); // the pool it grows from
-  const mass = part(BW, BH);
-  mass.ellipse(44, 56, 40, 38, K); mass.ellipse(40, 46, 28, 24, "#070707");
-  shadePart(mass, { [K]: FL, "#070707": LIT }, { wide: true, soft: true });
-  sheen(mass, 40, 46, 26, 22, LIT.hi, mix(LIT.hi, "#ffffff", 0.5));
-  // the folds: winding grooves across the mass
-  const fold = (x0, x1, y0, amp, freq, phase) => { let py = null; for (let x = x0; x <= x1; x++) { const y = Math.round(y0 + Math.sin(x * freq + phase) * amp); if (py !== null && Math.abs(y - py) > 1) mass.over(x, (y + py) >> 1, FOLD); mass.over(x, y, FOLD); mass.over(x, y + 1, mix(FOLD, FL.base, 0.45)); mass.over(x, y - 1, mix(LIT.hi, mass.get(x, y - 1) || FL.base, 0.6)); py = y; } };
-  // short gyri at every angle, no two alike
-  fold(8, 26, 42, 3, 0.55, 0); fold(30, 52, 36, 2, 0.7, 1.5); fold(56, 80, 40, 3, 0.45, 2.2); fold(14, 36, 56, 2.5, 0.6, 2); fold(42, 60, 60, 3, 0.5, 0.5); fold(64, 82, 54, 2, 0.75, 1);
-  fold(10, 30, 70, 2, 0.65, 1); fold(34, 58, 74, 3, 0.4, 2.8); fold(62, 76, 68, 2, 0.8, 0.3); fold(24, 46, 86, 2, 0.6, 0.2); fold(50, 66, 84, 2, 0.7, 1.7); fold(20, 40, 24, 2, 0.6, 2.5); fold(46, 68, 20, 2.5, 0.5, 1); fold(30, 50, 12, 2, 0.7, 0.4);
-  for (const [x0, y0, x1, y1] of [[12, 30, 16, 40], [72, 26, 78, 36], [60, 44, 62, 56], [28, 60, 26, 70]]) { mass.line(x0, y0, x1, y1, FOLD); mass.line(x0 + 1, y0, x1 + 1, y1, mix(FOLD, FL.base, 0.45)); } // the furrows between the lobes
-  for (const [x0, y0, x1, y1] of [[18, 50, 24, 60], [60, 40, 68, 46], [36, 64, 42, 72], [70, 64, 76, 70], [26, 30, 30, 36], [50, 86, 56, 90]]) { mass.line(x0, y0, x1, y1, VEIN); mass.line(x0 + 1, y0, x1 + 1, y1, mix(VEIN, FL.base, 0.5)); } // veins
-  for (const [x, y] of [[32, 50], [56, 58], [28, 70], [64, 76], [46, 40]]) { mass.ellipse(x, y, 2.5, 2, GLOW); mass.set(x, y, CORE); mass.set(x + 1, y, CORE); mass.ellipse(x, y, 4, 3.4, null); for (const [dx, dy] of [[-4, 0], [4, 0], [0, -3], [0, 3], [-3, -2], [3, 2], [-3, 2], [3, -2]]) mass.over(x + dx, y + dy, mix(mass.get(x + dx, y + dy) || FL.base, GLOW, 0.4)); } // light from inside
-  if (torn) { // the wound down the middle, pouring light
-    for (let y = 20; y <= 90; y++) { const w = y < 30 || y > 80 ? 1 : y < 42 || y > 66 ? 3 : 6; for (let dx = -w; dx <= w; dx++) { const x = 44 + dx + ((y * 3) % 2); mass.over(x, y, Math.abs(dx) >= w - 1 && w > 1 ? GLOW : CORE); } mass.over(44 - w - 1 + ((y * 3) % 2), y, BLOOD.rim); mass.over(44 + w + 1 + ((y * 3) % 2), y, BLOOD.rim); }
+// Twice the figures' grid, the same volumes at twice the size: feet on row 101, cols 0 and 87 and rows 0, 102, 103
+// free for the outline.
+const BW = 88, BH = 104, FLOOR = 101;
+// A boss's head at twice a figure's: a shaded skull, a heavy brow, eyes in deep sockets (eyes: their centres), a
+// nose, a hanging jaw with a row of teeth.
+function bossHead(p, { x, y, rx, ry, skin, eyes, eyeCol, jaw = 5, glow = true }) {
+  limb(p, [x - 2, y + ry * 0.4], [x + rx * 0.45, y + ry * 0.7 + jaw], 4.4, 3.6, skin); // the jaw
+  oval(p, x, y, rx, ry, skin, {});
+  // the mouth between the face and the jaw, teeth along the top and a few on the jaw
+  for (let i = 0; i <= 8; i++) { const t = i / 8, mx = Math.round(x - rx * 0.1 + rx * 0.75 * t), my = Math.round(y + ry * 0.45 + jaw * 0.5 * t); for (let k = 0; k <= jaw - 1; k++) p.set(mx, my + k, MOUTH); if (i % 2 === 0) { p.set(mx, my, BONE[2]); p.set(mx, my + 1, BONE[1]); } else p.set(mx, my + jaw - 1, BONE[1]); }
+  for (const [ex, ey] of eyes) {
+    oval(p, ex, ey, 2.2, 1.7, [SOCKET, SOCKET, SOCKET, SOCKET], { specular: false });
+    p.set(ex, ey, eyeCol); p.set(ex + 1, ey, eyeCol); p.set(ex, ey - 1, mix(eyeCol, "#ffffff", 0.5));
+    if (glow) { p.set(ex + 2, ey - 1, mix(eyeCol, skin[1], 0.5)); p.set(ex - 1, ey + 1, mix(eyeCol, SOCKET, 0.5)); }
+    p.hl(ex - 2, ex + 2, ey - 2, skin[0]); // the brow's shadow over the socket
   }
-  stamp(p, mass, 0, 0);
-  // pods at its foot, tendrils coiled
-  const pod = (x, y, r) => { const q = part(BW, BH); q.ellipse(x, y, r, r * 0.9, "#010101"); shadePart(q, { "#010101": torn ? tones("#5a1a2a", { cool: 0.2 }) : POD }, { soft: true }); if (!torn) { q.set(x - 1, y - 1, POD.hi); q.set(x, y, POD.sh); } else { q.set(x, y - 1, VEIN); q.set(x + 1, y, VEIN); } return q; };
-  for (const [x, y, r] of [[8, 84, 5], [78, 80, 5], [18, 92, 4], [70, 92, 4], [44, 94, 3.5]]) stamp(p, pod(x, y, r), 0, 0, 0.3);
-  const TD = torn ? "#5a1a2a" : "#6a3a4a";
-  for (const pts of [[[2, 90], [6, 82], [2, 74], [8, 70]], [[86, 86], [80, 78], [86, 70], [82, 64]], [[12, 100], [20, 96], [28, 100]], [[60, 100], [68, 97], [76, 100]]]) for (let i = 0; i < pts.length - 1; i++) { p.line(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], TD); p.line(pts[i][0] + 1, pts[i][1], pts[i + 1][0] + 1, pts[i + 1][1], shade(TD, 0.2)); }
+  p.set(Math.round(x + rx), Math.round(y + 1), skin[1]); p.set(Math.round(x + rx), Math.round(y + 2), skin[0]); p.set(Math.round(x + rx - 1), Math.round(y + 2), skin[0]); // the nose
+}
+
+// The Wallbreaker: a hulking grey brute twice a shambler's bulk, legs planted wide, the head sunk low between the
+// shoulders, one arm hanging knuckles down, the other raised with a slab of concrete bound to the fist with rebar.
+function wallbreaker() {
+  const p = painter(BW, BH), sk = deadSkin("#8f9a86"), pants = ramp("#3a3a36"), boot = ramp("#2e2a26", { spec: 0.3 }), cx = 38;
+  const T = { top: 34, bot: 70, topX: cx + 2, botX: cx, hs: 23, hw: 15, hh: 15.5, dropN: 0, dropF: 2, corner: 9, hump: 1 };
+  const S = shoulders(T);
+  S.N = [S.N[0] - 2, S.N[1] + 2]; S.F = [S.F[0] + 2, S.F[1] + 2];
+  const CONC = ramp("#9a968c", { spec: 0.4 });
+  // the far arm hanging, knuckles down
+  zarm(p, S.F, add(S.F, [-8, 14]), add(S.F, [-7, 30]), dim(sk), { r: 7.4, hand: { fist: true, r: 6.2 } });
+  for (let i = 0; i < 3; i++) p.set(Math.round(S.F[0] - 10 + i * 3), Math.round(S.F[1] + 38), dim(sk)[0]); // knuckles
+  // legs planted wide, the boots split at the toes
+  const legs = [[[cx - 8, 68], [cx - 14, 83], [cx - 14, 94]], [[cx + 8, 68], [cx + 13, 83], [cx + 12, 94]]];
+  zleg(p, ...legs[0], dim(pants), dim(sk), { r: 7 }); shoe(p, legs[0][2], dim(boot), { len: 16, h: 8, floor: FLOOR, back: 5 });
+  layer(p, (q) => { zleg(q, ...legs[1], pants, sk, { r: 7 }); shoe(q, legs[1][2], boot, { len: 16, h: 8, floor: FLOOR, back: 5 }); for (const [x, y] of [[legs[1][2][0] + 9, 96], [legs[1][2][0] + 10, 96]]) { q.set(x, y, sk[1]); q.set(x, y + 1, sk[0]); } });
+  layer(p, (q) => {
+    const inT = dress(q, T, { skin: sk, cloth: null, pants, style: "tank", clothes: "torn", rng: new Rng(1), belt: true });
+    oval(q, T.topX - 8, 45, 10, 6.4, sk, { cut: inT, specular: false }); oval(q, T.topX + 9, 45.5, 10, 6.4, sk, { cut: inT }); // the pecs
+    for (let y = 53; y <= 64; y++) q.over(Math.round(T.topX + 1), y, mix(sk[1], sk[0], 0.55)); // the line down the belly
+    for (let i = 0; i < 4; i++) for (let k = 0; k < 7; k++) q.over(Math.round(T.topX - 18 + k), 52 + i * 3 + (k > 4 ? 1 : 0), k === 0 ? sk[2] : sk[0]); // ribs through the skin on its flank
+    oval(q, T.topX + 2, T.top + 3, 15, 5.6, sk, { specular: false }); // the trapezius, the head sunk in it
+    for (const [x, y, n] of [[T.topX - 10, 48, 4], [T.topX + 12, 56, 6], [T.topX - 4, 62, 3]]) wound(q, x, y, 2, { streak: n });
+  });
+  layer(p, (q) => bossHead(q, { x: cx + 10, y: 30, rx: 8.6, ry: 9, skin: sk, eyes: [[cx + 11, 28], [cx + 16, 28]], eyeCol: "#e2412f", jaw: 4 }));
+  // the raised arm, and the slab bound to its fist
+  const eN = add(S.N, [14, -5]), hN = add(eN, [-1, -16]);
+  layer(p, (q) => {
+    const sx0 = hN[0] - 15, sx1 = Math.min(85, hN[0] + 13), sy0 = 1, sy1 = hN[1] + 4;
+    const chip = (x, y) => (x - sx0 < 4 - (y - sy0) && y - sy0 < 4) || (sx1 - x < 3 - (sy1 - y) && sy1 - y < 3) || (x - sx0 < 2 - (sy1 - y) && sy1 - y < 2);
+    blob(q, (x, y) => x >= sx0 && x <= sx1 && y >= sy0 && y <= sy1 && !chip(x, y), CONC, { specular: true });
+    for (const [x, y] of [[sx0 + 5, sy0 + 5], [sx0 + 13, sy0 + 3], [sx0 + 8, sy0 + 11], [sx0 + 17, sy0 + 9]]) { q.set(x, y, CONC[0]); q.set(x + 1, y, CONC[0]); q.set(x, y - 1, CONC[2]); } // pits
+    q.line(sx0 + 2, sy0 + 9, sx0 + 7, sy0 + 13, CONC[0]); // a crack
+    // rebar: rods bent out of the broken concrete
+    for (const pts of [[[sx0 + 3, sy0 + 4], [sx0 - 2, sy0 + 1]], [[sx1 - 5, sy0 + 4], [sx1 - 1, sy0 + 1], [sx1, sy0 + 5]], [[sx0 + 4, sy1 - 2], [sx0 - 2, sy1 + 4]]]) for (let i = 0; i + 1 < pts.length; i++) limb(q, pts[i], pts[i + 1], 1, 1, PAL.rust);
+  });
+  layer(p, (q) => {
+    zarm(q, S.N, eN, hN, sk, { r: 7.4, hand: { fist: true, r: 6 } });
+    for (let i = 0; i < 3; i++) limb(q, [hN[0] - 7, hN[1] + 4 + i * 3], [hN[0] + 7, hN[1] + 2 + i * 3], 1, 1, PAL.rust); // rebar wound round the fist
+  }, { cast: 2 });
+  return p;
+}
+
+// The Broodmother: the bloated queen of a hive grown from a mound of flesh, mottled grey-pink, egg sacs swelling on
+// her back, a broad head with three amber eyes and a crown of bone, clawed arms out at her sides.
+function broodmother() {
+  const p = painter(BW, BH), sk = deadSkin("#a07e8a"), mound = FLESH, cx = 44;
+  oval(p, cx, 94, 40, 7, mound, {}); // the mound she grows from
+  for (const [x, y, r] of [[20, 38, 9], [34, 28, 8], [56, 28, 8], [69, 38, 9], [12, 54, 7], [77, 54, 7]]) layer(p, (q) => { oval(q, x, y, r, r * 0.9, AMBER, {}); for (const [dx, dy] of [[-2, 1], [2, -1], [1, 3], [-3, -2]]) ball(q, x + dx, y + dy, 1.4, ["#7a4210", "#a06018", "#c47a22", "#e0a050"]); }); // the egg sacs
+  // the clawed arms, out at her sides
+  const claw = (q, h, d) => { for (let i = 0; i < 3; i++) limb(q, [h[0] + d * (i - 1) * 2, h[1] + 3], [h[0] + d * (i - 1) * 3.4 + d * 1, h[1] + 11 - Math.abs(i - 1) * 2], 1.6, 0.6, BONE); };
+  zarm(p, [22, 52], [10, 64], [8, 79], dim(sk), { r: 5, hand: { fist: true, r: 4.2 } }); claw(p, [8, 79], -1);
+  layer(p, (q) => {
+    oval(q, cx, 62, 28, 25, sk, {});
+    for (const [x, y, rx, ry] of [[cx - 12, 54, 5, 3.4], [cx + 9, 70, 6.4, 4], [cx - 4, 78, 4, 2.6], [cx + 14, 52, 3.6, 2.4]]) oval(q, x, y, rx, ry, [sk[0], mix(sk[1], sk[0], 0.45), sk[1], sk[2]], { specular: false }); // mottling
+    for (const [x0, y0, x1, y1] of [[cx - 20, 64, cx - 10, 72], [cx + 4, 58, cx + 16, 62], [cx - 6, 84, cx + 4, 80]]) { q.line(x0, y0, x1, y1, GORE.rim); q.line(x0, y0 + 1, x1, y1 + 1, mix(sk[1], GORE.rim, 0.4)); } // veins
+    for (const [x, y] of [[cx - 16, 76], [cx + 18, 66], [cx + 2, 46]]) ball(q, x, y, 1.4, PUS);
+  });
+  layer(p, (q) => {
+    bossHead(q, { x: cx + 1, y: 31, rx: 12, ry: 10, skin: sk, eyes: [[cx - 5, 29], [cx + 1, 27], [cx + 7, 29]], eyeCol: "#ffd166", jaw: 7 });
+    for (const [x, a, l] of [[cx - 8, -2.1, 8], [cx - 3, -1.8, 10], [cx + 2, -1.57, 12], [cx + 7, -1.35, 10], [cx + 11, -1.05, 8]]) limb(q, [x, 24], [x + Math.cos(a) * l, 24 + Math.sin(a) * l], 2.4, 0.6, BONE); // the crown of bone
+  });
+  layer(p, (q) => { zarm(q, [66, 52], [78, 64], [80, 79], sk, { r: 5.2, hand: { fist: true, r: 4.4 } }); claw(q, [80, 79], 1); }, { cast: 1 });
+  return p;
+}
+
+// The Hivemind: the organ at the heart of a hive, a folded mass of grey-pink flesh like a brain the size of a car,
+// its lobes round shaded volumes, veined and glowing from inside, amber pods and coiled tendrils at its foot.
+// torn: its second phase, redder, split down the middle with light pouring out, the pods burst.
+function hivemind(torn = false) {
+  const p = painter(BW, BH), rng = new Rng(torn ? 12 : 11), cx = 44, cy = 54, RX = 38, RY = 34;
+  const M = torn ? ["#5a1424", "#a8404e", "#d46a74", "#ffb4b0"] : FLESH;
+  const inMass = (x, y) => ((x - cx) / (RX + 0.5)) ** 2 + ((y - cy) / (RY + 0.5)) ** 2 <= 1 && y <= 92;
+  oval(p, cx, 95, 40, 5, torn ? ["#2a0810", "#4a1420", "#6a2030", "#8a3040"] : ["#2a1018", "#4a2030", "#6a3446", "#8a4a5a"], { specular: false }); // the pool it grows from
+  // tendrils coiled at its foot
+  const coil = (q, x, y, d) => { const pts = [[x, y], [x + d * 6, y - 1], [x + d * 10, y + 2], [x + d * 10, y + 6], [x + d * 7, y + 7], [x + d * 6, y + 4]]; for (let i = 0; i + 1 < pts.length; i++) limb(q, pts[i], pts[i + 1], 2.2 - i * 0.25, 2 - i * 0.25, M); };
+  coil(p, cx - 30, 86, -1); coil(p, cx + 30, 86, 1);
+  // the mass: the dark tone first (the grooves), then the lobes, back to front, each its own volume
+  blob(p, inMass, [M[0], M[0], M[0], M[0]], { flat: true });
+  // the folds: winding tubes of flesh packed into the mass, row under row, each its own volume (a seam where it
+  // lies on the ones behind), split down the top by the fissure between the two halves
+  const lobes = [];
+  for (let row = 0; row < 9; row++) for (let k = 0; k < 4; k++) {
+    let x = cx - RX + 2 + k * 21 + rng.range(-4, 4) + (row % 2) * 9, y = cy - RY + 5 + row * 8 + rng.range(-1.5, 1.5), a = rng.range(-0.7, 0.7);
+    const pts = [[x, y]];
+    for (let i = 0; i < 5; i++) { a = Math.max(-1.3, Math.min(1.3, a + rng.range(-1.1, 1.1))); x += Math.cos(a) * 5; y += Math.sin(a) * 3.4; pts.push([x, y]); }
+    lobes.push([pts[2][0], pts[2][1], 4, 3]);
+    layer(p, (q) => { for (let i = 0; i + 1 < pts.length; i++) limb(q, pts[i], pts[i + 1], 4.2, 4.2, M); for (const [X, Y] of q.pixels()) if (!inMass(X, Y) || (Math.abs(X - cx) < 1 && Y < cy - 12)) q.clear(X, Y); });
+  }
+  for (let y = cy - RY; y < cy - 12; y++) if (inMass(cx, y)) { p.set(cx, y, M[0]); p.set(cx + 1, y, M[0]); } // the fissure
+  // the whole mass as one volume: lit toward the upper left, in shadow toward the lower right
+  for (const [x, y, c] of p.pixels()) {
+    if (!inMass(x, y)) continue;
+    const nx = (x - cx) / RX, ny = (y - cy) / RY, r = nx * nx + ny * ny, d = -0.62 * nx - 0.78 * ny;
+    if (r > 0.45 && d < -0.25) p.set(x, y, mix(c, M[0], d < -0.6 ? 0.6 : 0.35));
+    else if (r > 0.3 && d > 0.55) p.set(x, y, mix(c, M[3], 0.18));
+  }
+  // the light from inside, in the grooves
+  const glow = torn ? ["#c45a12", "#ff9a3a", "#ffd36b", "#fff4c8"] : AMBER;
+  for (let i = 0; i < 9; i++) { const [x, y, rx, ry] = rng.pick(lobes), gx = Math.round(x + rx * 0.9), gy = Math.round(y + ry * 0.6); if (inMass(gx, gy)) { p.set(gx, gy, glow[2]); p.set(gx + 1, gy, glow[1]); p.set(gx, gy + 1, glow[1]); } }
+  // veins: dark red runs across the lobes
+  for (let i = 0; i < 7; i++) { let x = rng.range(cx - 28, cx + 28), y = rng.range(cy - 22, cy + 24); const dx = rng.range(-1, 1), col = torn ? "#ff5a2a" : GORE.rim; for (let k = 0; k < 9; k++) { x += dx + rng.range(-0.6, 0.6); y += 0.8; if (inMass(Math.round(x), Math.round(y))) p.set(Math.round(x), Math.round(y), col); } }
+  if (torn) { // split down the middle, light pouring out
+    for (let y = cy - RY + 4; y <= 90; y++) {
+      const t = (y - (cy - RY + 4)) / (90 - (cy - RY + 4)), w = Math.round(1 + 4 * Math.sin(Math.PI * t)), xc = Math.round(cx + Math.sin(y * 0.5) * 1.5);
+      for (let dx = -w - 1; dx <= w + 1; dx++) p.set(xc + dx, y, Math.abs(dx) === w + 1 ? GORE.rim : Math.abs(dx) === w ? glow[1] : Math.abs(dx) >= w - 1 ? glow[2] : glow[3]);
+    }
+  }
+  // pods at its foot (burst in the second phase)
+  for (const [x, y, r] of [[12, 86, 5], [22, 93, 4.4], [66, 93, 4.6], [77, 86, 5.2]]) {
+    if (torn) { oval(p, x, y, r, r * 0.8, [GORE.core, GORE.core, GORE.rim, GORE.rim], { specular: false }); for (const [dx, dy] of [[-r, -1], [r, 0], [0, -r]]) { p.set(Math.round(x + dx), Math.round(y + dy * 0.8), AMBER[1]); p.set(Math.round(x + dx * 0.8), Math.round(y + dy * 0.8 - 1), AMBER[2]); } }
+    else oval(p, x, y, r, r * 0.85, AMBER, {});
+  }
   return p;
 }
 const BOSS = { wallbreaker, broodmother, hivemind: () => hivemind(false), hivemind2: () => hivemind(true) };
@@ -1124,5 +760,5 @@ for (let s = 1; s <= 2; s++) SHEET.push({ label: `brute ${s}`, paint: () => pain
 for (const pal of ["rotten", "ashen", "pale", "burnt"]) for (const gore of ["0", "1", "2"]) SHEET.push({ label: `${pal} gore ${gore}`, paint: () => paintZombieHD("walker", 5, { ...DEFAULT_LOOK, palette: pal, gore }) });
 for (const k of ["soldier", "riot"]) for (const seed of [3, 8]) SHEET.push({ label: `${k} ${seed}`, paint: () => paintArmoredDeadHD(k, seed) });
 for (const k of SPECIAL_KINDS) SHEET.push({ label: k, paint: () => paintSpecialHD(k) });
-SHEET.push({ label: "", paint: () => part() });
+SHEET.push({ label: "", paint: () => painter(W, H) });
 SHEET.push(...comparePairs());
