@@ -13,3 +13,7 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 ### Domain docs
 
 Single-context: one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Feature map
+
+Every major game feature, grouped by area, with the modules behind it: `docs/agents/features.md`. Read it first to find where a system lives.
