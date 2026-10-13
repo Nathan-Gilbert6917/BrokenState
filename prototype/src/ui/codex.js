@@ -236,7 +236,7 @@ function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => (FOODS[k] ? {
     // Food by type (sim/foods.js): its calories, weight and shelf life, its kind and quality.
     key: `s:${k}`, cat: "supplies", name: `${FOODS[k].icon} ${v.name}`, sub: "Food",
-    stats: [["Kind", FOOD_GROUPS[FOODS[k].group].name], ["Calories", `${FOODS[k].kcal} kcal (${Math.round((FOODS[k].kcal / 2000) * 100) / 100} of a day)`], ["Weight", `${v.weight} kg`], ["Keeps", FOODS[k].shelf >= 365 ? `about ${Math.round(FOODS[k].shelf / 365)} years` : `about ${FOODS[k].shelf} days at room temperature`], ["Quality", FOODS[k].tier]],
+    stats: [["Kind", FOOD_GROUPS[FOODS[k].group].name], ["Food value", `${FOODS[k].fv.toFixed(2)} (a meal is 1.00, three a day)`], ["Calories", `${FOODS[k].kcal} kcal (${Math.round((FOODS[k].kcal / 2000) * 100) / 100} of a day)`], ["Weight", `${v.weight} kg`], ["Keeps", FOODS[k].shelf >= 365 ? `about ${Math.round(FOODS[k].shelf / 365)} years` : `about ${FOODS[k].shelf} days at room temperature`], ["Quality", FOODS[k].tier]],
     text: FOODS[k].desc, how: FOODS[k].stable ? "Needs no cold room. Eaten after the food that spoils sooner." : "Fresh: it fills the base's food rooms, coldest first (a root cellar triples its life, a cold store in winter or a freezer much more); outside it spoils faster. The soonest to spoil is eaten first; spoiled food is thrown out.", sprite: null,
   } : {
     key: `s:${k}`, cat: "supplies", name: v.name, sub: "Supply",

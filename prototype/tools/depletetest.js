@@ -61,12 +61,16 @@ if (CURVE) {
   const total0 = siteLootTotal(st);
   const out = { left: {}, died: [], fell: null, trips: 0 };
   const died = new Set();
+  let was = day(st);
   while (day(st) <= days) {
     if (st.gameOver) { if (out.fell == null) out.fell = day(st); st.gameOver = false; }
     tickHour(st);
-    if (st.hour % 24 === 0) {
+    // On the day's turn, not on hour % 24: a tick can pass several hours (the autopilot's hive crawl, hivecrawl.js
+    // passHours, runs the world's hours inside it), so midnight can fall inside one tick (seed 2 missed day 120).
+    if (day(st) !== was) {
       for (const f of st.factions) if (!f.alive && !died.has(f.id)) { died.add(f.id); out.died.push(day(st)); }
-      if ([120, 240, 365].includes(day(st) - 1)) out.left[day(st) - 1] = siteLootTotal(st) / total0;
+      for (const d of [120, 240, 365]) if (d >= was && d < day(st)) out.left[d] = siteLootTotal(st) / total0;
+      was = day(st);
     }
   }
   out.trips = st.aiScav ? st.aiScav.stats.trips : 0;
