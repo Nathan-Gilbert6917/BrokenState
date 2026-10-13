@@ -5,7 +5,8 @@
 // (sim/custompoints.js), whatever else they have:
 //   randomKit: what they wear, hold and carry, for the points left after their skills, traits and the vehicle's back;
 //   randomTrunk: the vehicle's back, for what its payer has left and the car pool, in the room there is;
-//   randomBuild: a whole colonist from a blank slate: traits (none to two), skills and kit, the rest into skills.
+//   randomBuild: a whole colonist from a blank slate: traits (none to two), skills and kit, the rest into skills;
+//   randomEverything: every colonist's build and the vehicle's back in one draw.
 // The new-run screen's buttons (ui/startgear.js, ui/newgame.js) put the result on and build the world again. Player
 // only: the AI groups are rolled as ever.
 import { GEAR, SKILLS, SUPPLIES, TRAITS, clashIn, traitKind } from "./data.js";
@@ -14,6 +15,7 @@ import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehicleP
 import { tierCount, traitPoints, tidyTiers } from "./traits.js";
 import { standardMag } from "./mags.js";
 import { baseKey } from "./rounds.js";
+import { gunCals } from "./ammo.js";
 import { randomSkills, fitSkills, skillTotal, SKILL_MAX } from "./appearance.js";
 
 // Worn and held slots after the weapon: [slot, chance it is filled]. Shuffled each draw.
@@ -57,7 +59,7 @@ export function randomKit(budget, rng, opts = {}) {
     if (P.slots[slot]) return;
     if (slot === "rig" && P.slots.armor && GEAR[P.slots.armor].pouches) return; // not over a vest with pouches
     const cap = Math.min(left, Math.max(left * share, 1));
-    const ok = slotChoices(slot).filter((k) => noLauncher(k) && slotPoints(slot, k) <= cap);
+    const ok = slotChoices(slot).filter((k) => noLauncher(k) && slotPoints(slot, k) <= cap && !(slot === "armor" && P.slots.rig && GEAR[k].pouches)); // nor a vest with pouches over a rig
     const dear = ok.filter((k) => slotPoints(slot, k) >= left * lo);
     const list = dear.length ? dear : ok;
     if (!list.length) return;
@@ -126,14 +128,16 @@ export function randomTrunk(budget, room, rng, cals = {}) {
 // A whole colonist on points: traits (up to five, good to bad 3:2, tier I mostly), skills, a kit (a quarter to nearly half the points),
 // and what is left into skills, then more kit: the total comes to the max (never over).
 // Writes s.skills, s.traits / s.traitTier and s.startGear (the caller marks them and builds the world again).
-/** @param {any} state @param {any} s @param {import("./rng.js").Rng} rng */
-export function randomBuild(state, s, rng) {
+// opts.keep: points kept aside (left unspent: what randomEverything draws the vehicle's back on).
+/** @param {any} state @param {any} s @param {import("./rng.js").Rng} rng @param {{ keep?: number }} [opts] */
+export function randomBuild(state, s, rng, opts = {}) {
   const max = pointsMax(state);
   s.skills = Object.fromEntries(SKILLS.map((k) => [k, 0]));
   s.traits = [];
   delete s.traitTier;
   s.startGear = { slots: blankSlots(), carry: blankCarry() };
-  const avail = () => pricePerson(state, s, max).left;
+  const keep = Math.max(0, Math.floor(opts.keep || 0));
+  const avail = () => pricePerson(state, s, max).left - keep;
   // Traits (user pick 2026-10-09): up to MAX_TRAITS (five), good to bad 3:2 (five: three good and two bad; three: two
   // and one). The bad ones first (they give points back, at most a third of the max), then the good ones, each only
   // when it costs at most a quarter of what there is.
@@ -172,6 +176,23 @@ export function randomBuild(state, s, rng) {
   intoSkills();
   if (avail() > 0) { s.startGear = randomKit(avail(), rng, { onto: s.startGear, fill: true }); intoSkills(); }
   return s;
+}
+
+// Randomize everything (Customize): every colonist a random build and the vehicle's back a new random load, in one
+// draw. The back is emptied first; everyone but its payer is built (what they would give the car pool goes on their own
+// build), then the payer with a tenth to a quarter of the max kept aside, and the back is drawn on what that leaves
+// (rounds for the crew's new guns), so nobody ends over. room(): the back's kg, asked once the kits are drawn (Hardcore:
+// the riders' kit rides in the car); null: no vehicle, the back stays empty. Writes as randomBuild does, and
+// payer.startVehicle (the caller marks them and builds the world again).
+/** @param {any} state @param {any} payer @param {(() => number) | null} room @param {import("./rng.js").Rng} rng */
+export function randomEverything(state, payer, room, rng) {
+  for (const s of state.survivors) delete s.startVehicle;
+  for (const s of state.survivors) if (s !== payer) randomBuild(state, s, rng);
+  randomBuild(state, payer, rng, { keep: room ? Math.floor(pointsMax(state) * rng.range(0.1, 0.25)) : 0 });
+  if (!room) return state;
+  const guns = state.survivors.map((s) => s.startGear.slots.weapon).filter(Boolean).map((key) => ({ key }));
+  payer.startVehicle = randomTrunk(trunkBudget(state, payer), room(), rng, gunCals([], guns));
+  return state;
 }
 
 // The places a kit's things are in, for the tools: [key].
