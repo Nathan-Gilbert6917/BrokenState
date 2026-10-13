@@ -259,21 +259,58 @@ City crawl on the grid (40 trials): all 11 judged rows inside their targets.
 | rifles (6) | 232 / 12% | 3.3, 274 / 21% |
 | elite (8) | 298 / 11% | 3.9, 441 / 29% |
 
-### Heat and activity in the hive crawl
+### Merged with PR #3 and PR #4 (2026-10-13)
 
-The hive crawl has the same two layers now (`HCRAWL.THREAT`, `HCRAWL.HEAT`): each chamber has its own brood
-activity (Still ×0.6, Stirring ×0.8, Busy ×1, Teeming ×1.35, Seething ×1.8; the hive's dice, the same every visit;
-the core always Busy), and the noise you make in a chamber stays there as its heat (× 1.15 a person over three,
-× 0.6 stealthy, fading 0.5 an hour). A chamber's activity sets how many of the brood it holds (by its square root)
-and weighs its heat: (the hive's Alert + its heat × 0.25) × (1 + (activity − 1) × 0.35). That heat, not the Alert
-alone, now calls the brood converging on you there (and how many), picks which chamber behind you fills again (the
-noisiest, busiest first), makes creeping past harder, and on the way out a cleared chamber you made noise in may have
-filled again (heat × activity × 0.003, at most 60%). The autopilot lies still by the heat where it stands. The room
-card shows the chamber's activity and heat.
+Another session built the same two features at the same time (PR #3: chamber heat in the hive; PR #4: a grid city
+crawl). They are merged:
 
-The hive got a little harder for loud crawls deep in (32 trials, 4 trips; before → after): elite squads at tier 3
-59% → 47% wins (19% → 28% wiped), at tier 4 44% → 34% (28% → 28%); rifles at tier 3 25% → 22%; the shallow tiers
-unchanged. A first try with the heat weighed twice as hard wiped half the deep squads and was walked back.
+- **The city**: the round grid above is the city crawl. PR #4's grid was rectangular (rows the depth, 5–7 cross
+  streets); its shut cross streets live on here (`CRAWL.SIDE`: a turn left or right is shut at 25%, the city's dice,
+  the same every visit and both ways; straight on never; the window shows a shut way, the autopilot goes round). Its
+  "another way out through new blocks, no further than you came" is the round grid's *straight out to the rim*. The
+  bug PR #4 found (running from trouble on the way out fell back onto the same block and the horde again) cannot
+  happen here: trouble on the way out is run *through*, onto the next block of the way.
+- **The hive**: PR #3's chamber heat is the one in the code (below); it was tuned so the hive rows held. From this
+  branch it gains one rule: on the way out, a cleared chamber you made noise in may have filled again (its heat ×
+  its activity × 0.003, at most 30%: `HCRAWL.HEAT.refillPerHeat`, `refillMax`).
+
+### Each chamber's brood activity and heat in the hive crawl (2026-10-13)
+
+The hive crawl now works the way the city crawl's blocks do (`hivecrawl.js HCRAWL.THREAT`, `HCRAWL.HEAT`):
+
+- **Brood activity** (`chamberThreat`): every chamber of a den has its own level by the hive's dice (the same every
+  visit; you learn it when you stand in it): Torpid ×0.6, Stirring ×0.8, Active ×1, Teeming ×1.35, Seething ×1.8
+  (weights 20 / 25 / 25 / 18 / 12%, as the city's).
+- **A chamber's own heat**: whatever raises the hive's Alert in a chamber (walking in, fights and shots, fire,
+  searching, a failed sneak) also stays in that chamber, × 0.6 for a stealthy team, fading 3 an hour; lying still
+  cools it as it does the Alert.
+- **`roomHeat`** = (the hive's Alert + the chamber's heat) × its activity. It replaces the bare Alert where the danger
+  is the chamber's: whether its brood has seen you on the way in (and on the way out), the DC to creep past, a swarm
+  pouring into your chamber (its chance and size, capped as at Alert 100) and a patrol finding you lying still. The
+  brood flowing back behind you and the mouth packing up still go by the hive's Alert. The autopilot lies still, burns
+  and listens by the chamber's heat, and now falls back from an encounter when too many of the team are hurt (before,
+  a second swarm on the heels of a fight was fought at the shown odds with the team at a quarter health, and wiped it).
+- The window shows the chamber's activity and its heat under the Alert; Help has a paragraph on it.
+
+Verified with the autopilot's own crawl steps (`node tools/crawlbalance.js hive --trials 40 --trips 3 --seed 5000`):
+
+| tier | squad | win before → after | lost/squad before → after |
+|---|---|---|---|
+| 1 | early | 0% → 0% | 20% → 17% |
+| 1 | solid | 93% → 95% | 13% → 10% |
+| 1 | rifles | 100% → 100% | 0% → 1% |
+| 2 | early | 0% → 0% | 47% → 48% |
+| 2 | solid | 10% → 15% | 40% → 40% |
+| 2 | rifles | 88% → 95% | 5% → 7% |
+| 3 | early | 0% → 0% | 70% → 71% |
+| 3 | solid | 0% → 0% | 40% → 38% |
+| 3 | rifles | 18% → 10% | 32% → 37% |
+
+4 of 9 judged rows inside their targets before and after (the 5 off were off already). A first cut with the heat
+fading 1 an hour and 0.15 more a person over three made every row harder (tier 3 rifles: 0% won, 48% lost), so it
+fades as fast as the Alert and a team's size does not add to it. `tools/hivecrawltest.js` checks the levels, the
+heat and its cooling; `tools/wintest.js --force hive` still wins on day 91. (`hivecrawltest` seeds 8, 11, 12 and 13
+fail on dev without this change too: the young-hive and deep-hive autopilot checks are seed-sensitive.)
 
 ## Bugs found on the way, and what was done
 

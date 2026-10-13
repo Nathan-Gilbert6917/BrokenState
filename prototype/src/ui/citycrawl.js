@@ -70,7 +70,8 @@ function blockCard(state, p, c) {
   const mem = crawlMemOf(state.tiles[c.tile]);
   const thColor = ["", "#6f9f6a", "#9fae5a", "#c9a24a", "#c9773f", "#c0443a"][th.level];
   const arrow = { left: "◀", straight: "▲", right: "▶" };
-  const moves = waysOn(c).map((w) => {
+  const moves = waysOn(c, state).map((w) => {
+    if (w.shut) return `<button disabled${tip(`${w.dir[0].toUpperCase() + w.dir.slice(1)}: the street is shut (rubble and wrecks from wall to wall, the same every visit). Another way.`)}>${arrow[w.way]} ${w.way[0].toUpperCase() + w.way.slice(1)} (${w.dir}): shut</button>`;
     if (!w.cell) return `<button disabled${tip(`${w.dir}: the edge of the city that way. Leave from here instead.`)}>${arrow[w.way]} ${w.way === "straight" ? "Straight on" : w.way[0].toUpperCase() + w.way.slice(1)} (${w.dir}): the edge</button>`;
     const seen = c.blocks[w.cell] || mem.cells[w.cell];
     const known = seen ? threatOf(state, c, w.cell) : null;

@@ -463,6 +463,21 @@ console.log("The round grid (2026-10-13): moving, slipping away, the ways out, t
   }
 }
 {
+  // Side streets (PR #4's cross streets on the round grid): about a quarter of the turns are shut, the same every visit
+  // and both ways; straight on never is; a shut street refuses the move.
+  const { state, p, c } = crawlIn(4510);
+  let shut = 0, sides = 0, straightShut = 0;
+  for (let h = 0; h < 4; h++) for (const [x, y] of [[5, 5], [6, 9], [9, 6], [7, 7], [8, 4], [4, 8]]) {
+    const cc = { ...c, cell: `c${x}_${y}`, heading: h };
+    for (const w of CC.waysOn(cc, state)) { if (!w.cell) continue; if (w.way === "straight") straightShut += w.shut ? 1 : 0; else { sides++; if (w.shut) shut++; } }
+  }
+  check(straightShut === 0 && shut > 0 && shut / sides < 0.45, `side streets shut now and then (${shut}/${sides}), straight on never`);
+  check(CC.sideShut(state, c, "c5_5", "c6_5") === CC.sideShut(state, c, "c6_5", "c5_5"), "a shut street is shut both ways");
+  let found = null;
+  for (let h = 0; h < 4 && !found; h++) for (const [x, y] of [[5, 5], [6, 9], [9, 6], [7, 7], [8, 4], [4, 8]]) { c.cell = `c${x}_${y}`; c.heading = h; const w = CC.waysOn(c, state).find((z) => z.shut); if (w) { found = w; break; } }
+  if (found) { const at = c.cell; check(/shut/.test(CC.nextBlock(state, p, found.way)) && c.cell === at, "a shut street refuses the move"); } else passed++;
+}
+{
   // Noise ends the chance to slip away.
   const { state, p, c } = crawlIn(4501);
   const w = CC.waysOn(c).find((x) => x.cell);

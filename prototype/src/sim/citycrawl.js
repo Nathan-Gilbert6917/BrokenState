@@ -102,6 +102,9 @@ export const CRAWL = {
   // On the round grid a level is LEVEL_RINGS rings, so a walk in or out crosses about twice the blocks the old line of
   // blocks did: the chance of trouble walking into a block (ENC) and on each block of the way out (EXIT) × step.
   GRIDSTEP: { step: 0.4 },
+  // Side streets (from PR #4's cross streets, 2026-10-13): a turn left or right is open at `open` (the city's dice, the
+  // same every visit and both ways); straight on always is.
+  SIDE: { open: 0.75 },
   // Zombie activity (2026-10-13): each block of a city has its own level, 1-5, by the city's dice (the same every
   // visit; known once you stand on it): how many of the dead move on its streets. Its mult scales the block's own
   // danger and multiplies the heat there (the city's Alert and the block's trail): a little noise on a crawling block
@@ -942,13 +945,20 @@ export function exitRisk(state, p, c = p.crawl, way = (c.leaving && c.leaving.wa
 }
 export const onEdge = (c) => { const [x, y] = xyOf(c.cell); return isEdge(c.grid, x, y); };
 // Where a turn from here leads: { way, heading, cell (null: off the grid, out of the city), level }.
-export function waysOn(c) {
+export function waysOn(c, state = null) {
   const [x, y] = xyOf(c.cell);
   return ["left", "straight", "right"].map((way) => {
     const h = turn(c.heading, way), [dx, dy] = DIRS[h], nx = x + dx, ny = y + dy;
     const cell = inGrid(c.grid, nx, ny) ? keyOf(nx, ny) : null;
-    return { way, heading: h, dir: DIR_NAMES[h], cell, level: cell ? levelOf(c.grid, nx, ny) : 0, ring: cell ? ringOf(c.grid, nx, ny) : 0 };
+    const shut = !!(state && cell && way !== "straight" && sideShut(state, c, c.cell, cell)); // CRAWL.SIDE (from PR #4's cross streets)
+    return { way, heading: h, dir: DIR_NAMES[h], cell, level: cell ? levelOf(c.grid, nx, ny) : 0, ring: cell ? ringOf(c.grid, nx, ny) : 0, shut };
   });
+}
+// Is the side street between two blocks shut (rubble, a barricade, a burned-out bus: the city's dice, the same every
+// visit and both ways)? Straight on is always open (a street event can still block it this visit).
+export function sideShut(state, c, a, b) {
+  const [k1, k2] = a < b ? [a, b] : [b, a];
+  return hash01(state.seed, "cityside", c.tile, k1, k2) >= CRAWL.SIDE.open;
 }
 // On to the next block: left, right or straight on from the way you are heading (an hour's walk; maybe trouble on the
 // way, an encounter), then that block's card. The blocks deeper in toward the centre are more dangerous and richer.
@@ -956,8 +966,9 @@ export function nextBlock(state, p, way = "straight") {
   const c = crawlOf(state, p);
   if (!c) return "The team is not in a city.";
   if (c.enc) return "Deal with what is in front of you first.";
-  const opt = waysOn(c).find((w) => w.way === way);
+  const opt = waysOn(c, state).find((w) => w.way === way);
   if (!opt || !opt.cell) return "That way leads out of the city: leave from here.";
+  if (opt.shut) return `The street ${opt.dir} is shut: rubble and wrecks from wall to wall. Another way.`;
   const blk = blockOf(c);
   const wall = blk.events.find((e) => !e.done && EVENTS[e.key].blocking);
   if (wall && way === "straight") return `${EVENTS[wall.key].title}: the way straight on is blocked until you clear it or find a way around.`;
@@ -1584,7 +1595,7 @@ export function crawlAutoStep(state, p) {
     for (const ev of blk.events) if (!ev.done && EVENTS[ev.key].blocking) { resolveEvent(state, p, ev.id, "detour"); return; }
     if (c.autoDepth == null) c.autoDepth = autoDepth(state, p, c); // the level it means to work, judged at the rim
     const known = (k) => (c.blocks[k] ? c.blocks[k].threat : mem.cells[k] && mem.cells[k].threat) || 0;
-    const ways = waysOn(c).filter((w) => w.cell && !c.avoid[w.cell] && known(w.cell) < A.slipThreat);
+    const ways = waysOn(c, state).filter((w) => w.cell && !w.shut && !c.avoid[w.cell] && known(w.cell) < A.slipThreat);
     // On the way in it walks, deeper where it can, the quieter way when it knows.
     if (c.block < c.autoDepth) {
       const [x, y] = xyOf(c.cell), ring = ringOf(c.grid, x, y);
