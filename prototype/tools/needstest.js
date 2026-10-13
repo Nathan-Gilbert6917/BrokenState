@@ -221,11 +221,18 @@ function team(st, n, supplies) {
   const t2 = team(st2, 1, { food: 0, water: 10 });
   clearFood(t2.p.supplies);
   addFood(t2.p, "f_beans", 10, { state: st2 }); addFood(t2.p, "f_cannedfruit", 10, { state: st2 });
-  const s1 = t2.crew[0]; s1.hunger = 95; delete s1.food; s1.traits = []; if (s1.ration) s1.ration.supplies = {};
+  const s1 = t2.crew[0]; s1.hunger = 80; delete s1.food; s1.traits = []; if (s1.ration) s1.ration.supplies = {};
   st2.hour++;
   teamNeedsHour(st2, t2.p, t2.crew);
   const ate = (10 - t2.p.supplies.f_beans) * FOODS.f_beans.fv + (10 - t2.p.supplies.f_cannedfruit) * FOODS.f_cannedfruit.fv;
   check(ate >= 1 - 1e-9 && ate <= 1.06, `alone at breakfast: the closest fit, at least 1.00 (${ate.toFixed(2)}: not two cans of beans)`);
+  // Nearly full: the meal fills them to 100, no more (no food thrown away).
+  s1.hunger = 96; s1.food = null;
+  const fv0 = foodIn(t2.p.supplies) * 3;
+  st2.hour += 6; // lunch
+  teamNeedsHour(st2, t2.p, t2.crew);
+  check(s1.hunger <= 100 && (fv0 - foodIn(t2.p.supplies) * 3) < 0.65, `nearly full at lunch: a smaller meal (${((fv0 - foodIn(t2.p.supplies) * 3)).toFixed(2)}), not a full stomach topped over`);
+  st2.hour -= 6;
   // Short rations: a meal is 0.60.
   t2.p.ration = "short";
   s1.hunger = 45;

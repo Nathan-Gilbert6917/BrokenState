@@ -68,7 +68,7 @@ import { conditionsOf } from "./health.js";
 import { eatRawCargo, eatRawForageCargo, drinkHour } from "./worm.js";
 import { teamPoisonHour } from "./cooking.js"; // wave 2 cooking: food poisoning from what the team ate this hour
 import { teamWaterIn, takeTeamWater, drawWater, waterIn, RAW } from "./water.js"; // purified and un-purified water
-import { baseEatHour, eatingDaily, eatTarget, noteEat, eatPack, drinkPack, packFood, packWater, rationOf, emptyPack, PACK, teamMeal } from "./eating.js";
+import { baseEatHour, eatingDaily, eatTarget, noteEat, eatPack, drinkPack, packFood, packWater, rationOf, emptyPack, PACK, teamMeal, roomU } from "./eating.js";
 import { mealOf } from "./meals.js"; // a team eats at breakfast, lunch and dinner too (eating.js teamMeal: a shared pot) // meal breaks and the carried rations (wave 2)
 
 export const NEEDS = {
@@ -350,7 +350,7 @@ function errandHour(state, s) {
   const at = NEEDS.eat.full[0], to = eatTarget(s);
   // Breakfast, lunch and dinner from the pack: at least a meal's food value, the closest fit (eating.js).
   if (mealOf(null, state.hour, state) && packFood(s) > 1e-6) {
-    const t = eatPack(state, s, Math.max(MEAL_FV / MEALS_A_DAY, Math.max(0, to - s.hunger) / NEEDS.food), true);
+    const t = eatPack(state, s, Math.min(Math.max(MEAL_FV / MEALS_A_DAY, Math.max(0, to - s.hunger) / NEEDS.food), roomU(s)), true);
     s.hunger = clamp(s.hunger + t.units * NEEDS.food);
     if (t.units > 1e-6) noteEat(state, s, { ...t, from: "pack" }, {});
   }
