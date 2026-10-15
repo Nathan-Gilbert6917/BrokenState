@@ -37,7 +37,8 @@
 // Abstract looting (lootPoiAbstract): the one way a raid without a map (the player's headless crews and searches,
 // and, from Session 4b, AI groups, visitor raiders, hardcore bands and nomads) takes from a POI: the pool falls, the
 // containers follow, items you left in opened containers can go too (each opened container is hit at the share of
-// the pool the raid took), and the tile's heat rises (pois.js addTileHeat).
+// the pool the raid went through, all of them when it wanted more than was left), and the tile's heat rises (pois.js
+// addTileHeat).
 //
 // The raid (combat.js createRaid → poiRaidStart; scavenge.js afterRaid → poiRaidEnd, on every way a raid ends:
 // extracted, retreated, walked out, wiped): at the start the ledger is put on the map; at the end every container
@@ -183,6 +184,7 @@ export function poiRaidEnd(state, b) {
   let opened = 0;
   for (const box of R.containers.filter(ledgerBox)) {
     if (!box.contents) continue; // never opened: untouched
+    if (box.ransacked && !box.mine && !itemsIn(box)) continue; // spawned ransacked and still empty: nothing of yours there
     if (fresh.has(box.id)) opened++;
     c.mine[contKey(mapId, box.id)] = {
       contents: clone(box.contents), hidden: clone(box.hidden) || null, quick: !!box.quick, lock: box.lock ? clone(box.lock) : null, searched: !!box.searched, partial: !!box.partial,
@@ -203,8 +205,9 @@ export function poiRaidEnd(state, b) {
 /**
  * A raid without a map takes from POI i: `need` of its pool (pool units, 0–1; less when less is left, never below
  * opts.floor), the containers follow (syncLedger on every map known, marked looted by `who`), each container your
- * side opened that still holds things is emptied at the share of the pool taken (hash dice: the seed, the tile, the
- * POI, the container, the hour, who), and the tile's heat rises (opts.heat, TILE_HEAT.AI for others, none for the
+ * side opened that still holds things is emptied at the share of the pool they went through (need / pool, all of it
+ * when they wanted more than is left; hash dice: the seed, the tile, the POI, the container, the hour, who), and the
+ * tile's heat rises (opts.heat, TILE_HEAT.AI for others, none for the
  * player's own crews: their search adds its own). Items your side left count like any other loot: at risk.
  * who: a group's id (number or string), "player" (your own crews' searches), or an object with an id.
  * opts: { floor = 0, heat, left = true (false: leave opened containers alone), hours (for heat: × max(1, hours / 4)) }.
@@ -219,7 +222,7 @@ export function lootPoiAbstract(state, who, tile, i, need, opts = {}) {
   const by = who != null && typeof who === "object" ? who.id : who == null ? "gone" : who;
   const before = poiPool(t, i);
   const took = poiTake(t, i, Math.max(0, Math.min(need || 0, before - (opts.floor || 0))));
-  const share = before > 0 ? Math.min(1, took / before) : 0;
+  const share = need > 0 ? Math.min(1, need / Math.max(need, before)) : 0; // what they go through: a stripped place's leftovers all of it
   // The ledger: made for another group's raid (who took it last); your own crews' searches only use one already there.
   const c = poi.cont || (by !== "player" && took > 0 ? poiLedger(t, i) : { n: 0, looted: {}, mine: {} });
   const left = { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {any[]} */ ([]) };
@@ -239,7 +242,7 @@ export function lootPoiAbstract(state, who, tile, i, need, opts = {}) {
       boxes++;
     }
   }
-  if (by !== "player" && took > 0) c.last = { by, day: day(state) };
+  if (by !== "player" && (took > 0 || boxes)) c.last = { by, day: day(state) };
   let marked = 0;
   for (const mapId of Object.keys(c.maps || {})) marked += syncLedger(state, t, i, mapId, by);
   const heat = opts.heat != null ? opts.heat : by === "player" ? 0 : TILE_HEAT.AI;

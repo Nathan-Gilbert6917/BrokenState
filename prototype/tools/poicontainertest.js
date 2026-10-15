@@ -255,6 +255,7 @@ section("Looted containers, the pool and the band");
   check(rans.length >= f0 - freshNow() && rans.every((c) => c.contents && !things(c.contents) || L.mine[contKey(mapId, c.id)]) && rans.every((c) => c.searched || L.mine[contKey(mapId, c.id)]) && rans.every((c) => /\(ransacked\)$/.test(c.label)), `${rans.length} ransacked containers spawn empty, searched and say so`);
   check(rans.filter((c) => c.lock).every((c) => c.lock.open), "a ransacked locked container stands open");
   end(st, b2, "out");
+  check(rans.filter((c) => !c.mine).every((c) => !L.mine[contKey(mapId, c.id)]), "a ransacked container left empty does not join yours");
   // The rest of the pool: what you left is at risk.
   const left0 = ledgerSummary(st, t, i).left;
   const got2 = lootPoiAbstract(st, 7, t, i, 1);

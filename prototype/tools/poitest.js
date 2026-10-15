@@ -163,7 +163,8 @@ section("The top POI and the pools");
     check(poiName(s, 0) === s.loc.name && poiName(s, 1) === def.name, "the site POI carries the site's name, an extra its kind's");
     const led = poiLedger(s, 1);
     check(led && led.n === 0 && led === s.pois[1].cont && poiLedger(s, 1) === led, "the container ledger is made once, empty");
-    check(poiThreat(st, s, 1) === (def.danger || 0) + s.infection && tileHeat(st, s) === 0 && addTileHeat(st, s, 10) === 0, "threat = danger + infection + heat (heat 0 for now)");
+    const th0 = poiThreat(st, s, 1);
+    check(th0 === (def.danger || 0) + s.infection && tileHeat(st, s) === 0 && addTileHeat(st, s, 10) === 10 && Math.abs(poiThreat(st, s, 1) - th0 - 0.15) < 1e-9, "threat = danger + infection + heat (a cold tile 0; heat 10 → +0.15: tools/poiheattest.js)");
   }
   check(poiAt(st.tiles[0], 99) === null && poiPool(st.tiles[0], 99) === 0 && poiTake(st.tiles[0], 99, 1) === 0, "a missing index is harmless");
 }
