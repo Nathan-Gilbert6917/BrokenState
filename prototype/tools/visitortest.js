@@ -32,6 +32,8 @@ import * as V from "../src/sim/visitors.js";
 import { outsidersSection, visitorAlerts, visitorTradeButtons, visitorTradeHead, VISITOR_ACTIONS } from "../src/ui/visitors.js";
 import { tradeWindow } from "../src/ui/tradewindow.js";
 import { digest } from "./digest.js";
+import { poisOf, poiPool } from "../src/sim/pois.js"; // points of interest (Session 4b: the bands raid them)
+import { groupWouldSurvey, bestGroupPoi } from "../src/sim/grouppois.js";
 
 const days = Number(process.argv[2] || 365);
 const seed = Number(process.argv[3] || 42);
@@ -261,8 +263,23 @@ section("Raiders and everyone else: groups, their caravans, merchants, sites; le
   place(st, r4, site.id);
   r4.goal = { kind: "site", tile: site.id };
   const loot0 = site.loot;
-  tick(st, 10);
+  tick(st, 1);
+  // A tile of points of interest (pois.js; the site is its POI 0): a survey stop first (grouppois.js), then the raid.
+  check(!poisOf(site).length || r4.surveyLeft > 0 || !groupWouldSurvey(st, r4, site), `on a tile of points of interest they survey first (${r4.act})`);
+  tick(st, 19);
   check(site.loot < loot0 && site.loot >= 0.03 && site.loot > loot0 * 0.7, `a site is looted (${loot0.toFixed(2)} → ${site.loot.toFixed(2)})`);
+  check(!poisOf(site).length || (poisOf(site)[0].cont && poisOf(site)[0].cont.last && poisOf(site)[0].cont.last.by === r4.id), "through the site's container ledger (poicont.js)");
+  // Points of interest that are not a site: a band raids the best one it knows on a tile.
+  const pt = st.tiles.find((t) => !t.loc && t.terrain === "suburb" && poisOf(t).length && t.owner == null && !t.hive && !V.nearGroups(st, t.id) && !st.bases.some((x) => x.tile === t.id));
+  if (pt) {
+    const r5 = V.spawnVisitor(st, "raiders", { size: 5, power: 3 });
+    place(st, r5, pt.id);
+    r5.goal = { kind: "site", tile: pt.id, poi: bestGroupPoi(st, r5, pt) };
+    const sum = () => poisOf(pt).reduce((a, _, i) => a + poiPool(pt, i), 0);
+    const s0 = sum();
+    tick(st, 20);
+    check(sum() < s0, `a POI on a bare tile raided (${s0.toFixed(2)} → ${sum().toFixed(2)} on the tile)`);
+  }
   let sitesSeen = 0, onGrounds = 0;
   for (const t of st.tiles.filter((x) => x.terrain !== "water").filter((_, i) => i % 97 === 0)) {
     place(st, r4, t.id);

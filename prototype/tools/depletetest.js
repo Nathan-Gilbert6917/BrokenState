@@ -11,6 +11,11 @@
 // - Loot left at day 120 / 240 / 365 on five seeds and the group collapse rate, with and without scavenging groups
 //   (each year in a process of its own; the world goes on after the holdout falls, the groups do not stop).
 // - Determinism and a save / load round trip with parties out.
+// - Points of interest (pois.js, grouppois.js): a party now goes for one POI (a tile's site is its POI 0), so the sites'
+//   tile.loot measured here falls slower than before the POIs (the parties share their trips with the houses, sheds
+//   and shops round them: day 365 about 47% left on seeds 1, 2 against 27% / 35% before); the groups' POI raids take
+//   only through poicont.js lootPoiAbstract and only pois.js and hardcore-loot.js write a POI's pool. tools/poiaitest.js
+//   and tools/poipacingtest.js test the POIs themselves.
 // Usage: node tools/depletetest.js [seed] [days] [curve seeds, default 1,2,...,12]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync, readdirSync } from "node:fs";
@@ -275,6 +280,14 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   {
     const src = readFileSync(join(dir, "poicont.js"), "utf8");
     check(!/\.(loot|pool)\s*[-+*\/]?=(?!=)/.test(src) && /poiTake\(/.test(src), "the container ledger (poicont.js) lowers pools only through poiTake");
+  }
+  // grouppois.js (the other groups' raids on POIs, Session 4b) takes only through poicont.js lootPoiAbstract; a POI's own
+  // pool is written only by pois.js (poiTake) and hardcore-loot.js (the hardcore start's surplus, which only fades).
+  {
+    const src = readFileSync(join(dir, "grouppois.js"), "utf8");
+    check(!/\.(loot|pool)\s*[-+*\/]?=(?!=)/.test(src) && /lootPoiAbstract\(/.test(src), "the groups' POI raids (grouppois.js) take only through lootPoiAbstract");
+    const poolSetters = readdirSync(dir).filter((n) => n.endsWith(".js") && /\bp(oi)?\.pool\s*[-+*\/]?=(?!=)/.test(readFileSync(join(dir, n), "utf8")));
+    check(poolSetters.every((n) => ["pois.js", "hardcore-loot.js"].includes(n)), `only pois.js and hardcore-loot.js write a POI's pool (found: ${poolSetters.join(", ")})`);
   }
   // A whole run, hour by hour.
   const st = world(7);
