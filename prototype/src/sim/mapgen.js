@@ -19,6 +19,7 @@ import { HexGrid, findPath } from "./hex.js";
 import { LOCATIONS, TOWN_NAMES } from "./data.js";
 import { HIVE } from "./hiveconst.js";
 import { sizeDef, areaScale, BASE_W, BASE_H } from "./worldsize.js";
+import { hash01 } from "./skills.js"; // the town rings' radius: hash dice, so the map's own dice are untouched
 
 // The Normal map (worldsize.js has every size; a world's own size is state.grid.width × height).
 export const MAP_W = BASE_W;
@@ -99,8 +100,9 @@ function makeNoise(rng, w, h, cell) {
 // size: a worldsize.js key (Normal when left out) or a size definition (worldsize.js customDef). Counts of towns,
 // sites and landmarks scale with the map's area; on a Normal map every count and every random draw is the original
 // one, so old seeds build the same map. hives (optional, the new-run screen): how many hives the map starts with in
-// place of what its size makes (0–10), see below.
-export function generateMap(rng, size = "normal", { hives = null } = {}) {
+// place of what its size makes (0–10), see below. seed: the world's seed, for the town rings' hash dice (null: the
+// town's own id and name).
+export function generateMap(rng, size = "normal", { hives = null, seed = null } = {}) {
   const def = sizeDef(size);
   const MAP_W = def.w, MAP_H = def.h;
   const A = areaScale(def); // land relative to Normal
@@ -498,6 +500,25 @@ export function generateMap(rng, size = "normal", { hives = null } = {}) {
   for (const [i, s] of seeds.entries()) {
     const spots = rng.shuffle(grid.within(s.id, i ? 4 : 6).map((id) => tiles[id]).filter((t) => t.terrain !== "water" && !t.loc && !t.hive));
     for (const t of spots.slice(0, want[i])) t.hive = true;
+  }
+
+  // ---------- town suburb rings (pois.js: a town footprint is a known zone) ----------
+  // Every town gets a ring of suburbs round its centre, radius 1 or 2 by a hash of the town (not the map's dice: every
+  // draw above is the same as before the rings existed, so old seeds build the same map under them). Land only: no
+  // water, rivers or mountains, and a countryside site (a farm satellite) keeps its own ground; the town's shops and
+  // the centre's neighbours become suburb blocks. The ring is laid last: the shops, roads, loot, finds, infection and
+  // hives above were placed on the old ground. A converted tile takes the suburbs' infection (+0.06) and, bare, at
+  // least the suburbs' minor scavenging value.
+  for (const town of towns) {
+    const r = 1 + (hash01(seed == null ? `${town.id}:${town.loc.name}` : seed, "townring", town.id) < 0.5 ? 0 : 1);
+    for (const id of grid.within(town.id, r)) {
+      const t = tiles[id];
+      if (id === town.id || t.river || t.terrain === "water" || t.terrain === "mountain" || urbanTile(t)) continue;
+      if (t.loc && t.loc.zone === "rural") continue;
+      t.terrain = "suburb";
+      t.infection = Math.min(1, t.infection + 0.06);
+      if (!t.loc) t.loot = Math.max(t.loot, 0.3);
+    }
   }
 
   return {

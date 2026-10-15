@@ -32,6 +32,12 @@
 // - Other groups: a siege of 12 hours, then factions.js resolveRaidOnFaction (the same odds and losses as a raid
 //   between groups); they keep 60% of what the group lost. Caravans and convoys are robbed when the band is 10%
 //   stronger than their escort, else the band loses people. Sites lose 10–18% of their loot.
+// - Points of interest (pois.js; grouppois.js keeps what a band knows of them: the known zone's places within 3 tiles
+//   of where it stands and along its trail, and what its own surveys found): a tile whose known places (the site
+//   aside) hold as much as a rich site is a target too. On a tile of points of interest raiders first survey it (8
+//   hours, grouppois.js groupSurveyTile) unless they did not long ago, then take 10–18% of one place's pool, the one
+//   they came for or the best they know there, through its container ledger (grouppois.js raidPoiAsGroup: what your
+//   people left in a container goes too). A site is its tile's POI 0; explorers pick through a site's.
 // - Radio (Groups tab, their tile in your coverage): pay them to leave the state, 1.25 × the tribute, 2% less a point
 //   of Speech (at most 30%).
 //
@@ -114,6 +120,8 @@ import { rumourFromNews } from "./survey.js";
 import { raiderSizeBonus, raiderPowerBonus, isLate, ERAS, raidPaceOpen, noteRaid, outsiderPrep } from "./eras.js";
 import { coalitionMask, controlledLand, ALLIANCE } from "./alliance.js";
 import { hcNoRaiders } from "./hardcore-groups.js";
+import { poisOf, poiPool, isSitePoi, permanentSite } from "./pois.js"; // points of interest: a band raids one at a time
+import { groupKnownPois, bestGroupPoi, groupWouldSurvey, groupSurveyTile, groupSees, raidPoiAsGroup, poiPlace, GPOI } from "./grouppois.js"; // what a band knows of them, its survey, the raid
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
@@ -548,6 +556,10 @@ function visitorHour(state, v) {
     return;
   }
   if (v.phase === "search") {
+    if (v.surveyLeft > 0) { // a survey stop (grouppois.js): the hours, then the roll
+      if (--v.surveyLeft === 0) { groupSurveyTile(state, v, v.tile, { n: v.size }); v.act = `looting ${tileLabel(state, v.tile)}`; }
+      return;
+    }
     v.searchLeft -= 1;
     if (v.searchLeft <= 0) { searchSite(state, v); if (state.visitors.includes(v)) nextGoal(state, v); }
     return;
@@ -679,6 +691,12 @@ function arrive(state, v) {
       v.phase = "search";
       v.searchLeft = vrng(state).int(4, 8);
       v.act = `${v.kind === "raiders" ? "looting" : "exploring"} ${tileLabel(state, goal.tile)}`;
+      // Raiders on a tile of points of interest they may not know all of: a survey stop first (grouppois.js).
+      const t = state.tiles[goal.tile];
+      if (v.kind === "raiders" && poisOf(t).length && !(t.loc && !permanentSite(t)) && groupWouldSurvey(state, v, t)) {
+        v.surveyLeft = GPOI.HOURS;
+        v.act = `surveying ${tileLabel(state, goal.tile)}`;
+      }
       return;
     }
     default: return nextGoal(state, v);
@@ -746,9 +764,16 @@ export function raidTargets(state, v) {
   }
   for (const id of g.within(v.tile, 14)) {
     const t = state.tiles[id];
-    if (!t.loc || t.loot < R.siteMin || t.owner != null || t.hive || state.bases.some((b) => b.tile === id)) continue;
+    if (t.owner != null || t.hive || t.terrain === "water" || state.bases.some((b) => b.tile === id)) continue;
     if (nearGroups(state, id)) continue; // the groups' own scavenging grounds (aiscav.js): outsiders keep away
-    out.push({ w: t.loot * 1.2 / (1 + g.distance(v.tile, id) / 8), goal: { kind: "site", tile: id }, act: `heading for ${tileLabel(state, id)}` });
+    const far = 1 + g.distance(v.tile, id) / 8;
+    if (t.loc && t.loot >= R.siteMin) out.push({ w: t.loot * 1.2 / far, goal: { kind: "site", tile: id, poi: isSitePoi(t, 0) ? 0 : null }, act: `heading for ${tileLabel(state, id)}` });
+    // The other points of interest the band knows there (grouppois.js: what it sees along its way, what it surveyed):
+    // a tile whose known places hold as much as a rich site.
+    if (!poisOf(t).length || (t.loc && !permanentSite(t)) || !groupSees(state, v, id)) continue;
+    const known = groupKnownPois(state, v, t).filter((i) => !isSitePoi(t, i));
+    const sum = known.reduce((a, i) => a + poiPool(t, i), 0);
+    if (sum >= R.siteMin) out.push({ w: sum / far, goal: { kind: "site", tile: id, poi: bestGroupPoi(state, v, t, null, poisOf(t).map((_, i) => i).filter((i) => isSitePoi(t, i))) }, act: `heading for ${tileLabel(state, id)}` });
   }
   return out;
 }
@@ -1105,21 +1130,45 @@ function hitConvoy(state, v, p) {
   nextGoal(state, v);
 }
 
+// The place they search on the tile: a point of interest when the tile has them (pois.js; the site is its POI 0):
+// the one they came for while it holds something, else the best one they know (explorers the site first); a tile
+// without POIs (a city or town centre), its site's tile.loot as before.
+function searchPoi(state, v, t) {
+  if (!poisOf(t).length || (t.loc && !permanentSite(t))) return null;
+  const want = v.goal.poi;
+  if (typeof want === "number" && poiPool(t, want) > 0.03 + 1e-9 && groupKnownPois(state, v, t).includes(want)) return want;
+  if (v.kind !== "raiders" && isSitePoi(t, 0) && poiPool(t, 0) > 0.03) return 0;
+  const i = bestGroupPoi(state, v, t);
+  return i >= 0 ? i : null;
+}
 function searchSite(state, v) {
   const t = state.tiles[v.goal.tile];
-  if (!t || !t.loc) return;
+  if (!t) return;
   const rng = vrng(state);
   const range = v.kind === "raiders" ? O.raiders.siteTake : O.explorers.searchTake;
-  const take = t.loot * rng.range(range[0], range[1]);
   // aiscav.js keeps a floor under every site; outsiders never take it below that either.
   const floor = 0.03;
-  const got = Math.max(0, Math.min(take, t.loot - floor));
-  if (got <= 0) return;
-  t.loot -= got;
+  const poi = searchPoi(state, v, t);
+  let got = 0;
+  if (poi != null) {
+    // Through the POI's container ledger (grouppois.js raidPoiAsGroup): what your people left there goes too.
+    const r = raidPoiAsGroup(state, v, t, poi, poiPool(t, poi) * rng.range(range[0], range[1]), { floor, haul: false, news: v.kind === "raiders" ? true : "left", name: v.kind === "raiders" ? cap1(v.name) : undefined });
+    got = r ? r.took : 0;
+    if (r && r.gear.length) v.wares.push(...r.gear); // things your people left there
+    if (r) for (const [k, q] of Object.entries(r.left)) if (SUPPLIES[k] && q > 0) v.stock[k] = (v.stock[k] || 0) + q;
+    if (got <= 0) return;
+  } else {
+    if (!t.loc) return;
+    const take = t.loot * rng.range(range[0], range[1]);
+    got = Math.max(0, Math.min(take, t.loot - floor));
+    if (got <= 0) return;
+    t.loot -= got;
+  }
   visitorInfo(state).stats.sites++;
   const value = got * (v.kind === "raiders" ? 300 : 120);
   addToStock(v, { food: Math.round(value * 0.35 / 2), ammo: Math.round(value * 0.25 / 0.5), scrap: Math.round(value * 0.2), meds: Math.round(value * 0.1 / 6), fuel: Math.round(value * 0.1 / 3) });
-  if (state.live.has(t.id)) log(state, `${cap1(v.name)} ${v.kind === "raiders" ? "loot" : "pick through"} ${t.loc.name}.`, v.kind === "raiders" ? "danger" : "info");
+  const name = poi != null ? poiPlace(state, t, poi) : t.loc.name;
+  if (state.live.has(t.id)) log(state, `${cap1(v.name)} ${v.kind === "raiders" ? "loot" : "pick through"} ${name}.`, v.kind === "raiders" ? "danger" : "info");
 }
 
 // ---------- merchants ----------

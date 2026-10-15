@@ -5,15 +5,26 @@
 // days 56–112) and on toward nothing after. Searching a place takes from it as always (scavenge.js, aiscav.js), so a
 // site you strip early is stripped. The raid map's richness cap is higher in hardcore to match (combat.js createRaid).
 // tile.lootNormal: what the tile held at the start of a normal game (the surplus is what is above it).
+// Points of interest (pois.js) the same: every POI's own pool (poi.pool: every one but a site's, whose pool is its
+// tile.loot above) × START, poi.poolNormal what it held at a normal start, the surplus wearing off by the same share a
+// day; once it is gone the pool goes back to exactly what it was made with (unless a raid took it lower), so a save
+// keeps only the POIs that changed (pois.js packPois).
 import { isHardcore } from "./hardcore.js";
 import { hcEraOffset } from "./hardcore-groups.js";
+import { poisOf, isSitePoi } from "./pois.js";
 
 export const HC_LOOT = { START: 2, LEFT_AT_ERA: 0.1 };
 
-// createWorld (hardcore.js hardcoreAfterHives): double every tile's loot, remembering the normal start's level.
+// createWorld (hardcore.js hardcoreAfterHives): double every tile's loot and every POI's pool, remembering the normal
+// start's level.
 export function setupHardcoreLoot(state) {
   if (!isHardcore(state)) return;
   for (const t of state.tiles) {
+    poisOf(t).forEach((p, i) => {
+      if (isSitePoi(t, i) || !(p.pool > 0)) return;
+      p.poolNormal = p.pool;
+      p.pool = p.pool * HC_LOOT.START;
+    });
     if (!(t.loot > 0)) continue;
     t.lootNormal = t.loot;
     t.loot = t.loot * HC_LOOT.START;
@@ -26,6 +37,12 @@ export function hardcoreLootDaily(state) {
   if (!isHardcore(state)) return;
   const keep = Math.pow(HC_LOOT.LEFT_AT_ERA, 1 / Math.max(20, hcEraOffset(state)));
   for (const t of state.tiles) {
+    for (const p of poisOf(t)) {
+      if (p.poolNormal == null) continue;
+      const extra = p.pool - p.poolNormal;
+      if (extra <= 0.002) { if (extra > 0) p.pool = p.poolNormal; delete p.poolNormal; continue; } // back to a normal start's (exactly), or raided below it
+      p.pool = p.poolNormal + extra * keep;
+    }
     if (t.lootNormal == null) continue;
     const extra = t.loot - t.lootNormal;
     if (extra <= 0.002) { delete t.lootNormal; continue; } // looted down to (or below) a normal start: done

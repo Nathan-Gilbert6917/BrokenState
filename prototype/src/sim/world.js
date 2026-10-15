@@ -72,8 +72,10 @@ import { prisonersHour, prisonersDaily, jailGuardHour } from "./prisoners.js";
 import { groupJailsDaily, groupJailsHour } from "./groupjails.js"; // jailhouse: the groups' jails, prisoner labour and trades
 import { ransomHour } from "./ransom.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
+import { nomadsHour, nomadsDaily } from "./nomads.js"; // baseless bands that camp, raid the places round them and move on
 import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
+import { ensurePois, poiSnapshot, learnPois, mergePoiFinds, tileHeatDaily } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
 import { festivalHour } from "./festival.js"; // the yearly harvest festival at the hub
 import { baseOpticsSight } from "./optics.js";
@@ -139,7 +141,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
-  const map = generateMap(rng, sdef, { hives: clampHives(hives) });
+  const map = generateMap(rng, sdef, { hives: clampHives(hives), seed });
   /** @type {State} */
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
@@ -171,6 +173,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
   noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
+  ensurePois(state); // pois.js: every tile's points of interest (hash dice from the seed: the map's dice are untouched)
   if (state.mode === "hardcore") {
     hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
@@ -845,6 +848,7 @@ export function snapshot(state, tileId) {
     site: site ? { biomass: site.biomass, started: site.started != null } : null,
     deathSite: state.deathSites.find((d) => d.tile === tileId) ? state.deathSites.find((d) => d.tile === tileId).items.length : 0,
     abandoned: abandonedSnap(state, tileId), // groupworld.js: a base standing empty here (occupy.js: the Occupy order)
+    ...(poiSnapshot(state, tileId) || {}), // pois.js: the points of interest the player knows here, and when it was surveyed or looked at
   };
 }
 // What a look at an abandoned base tells you: whose it was, since when, and how much stands there.
@@ -894,6 +898,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
     // Radio news of a stripped site (aiscav.js) newer than the team's look keeps its loot.
     if (!cur || cur.hour <= snap.hour) state.knowledge[id] = cur && cur.lootHour > snap.hour ? { ...snap, loot: cur.loot, lootHour: cur.lootHour, lootSrc: cur.lootSrc } : snap;
     if (snap.gb) keepLook(state, id, snap.gb); // intelnotes.js: what the team saw of a group's base
+    if (snap.pois) learnPois(state, id, snap); // pois.js: the points of interest the report knows there
     if (snap.factionBase) {
       const f = factionById(state, snap.factionBase);
       if (f) f.known = true;
@@ -901,6 +906,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
   }
   noteFinds(state, seen.keys(), who ? { party: who } : null);
   if (who) mergeLooked(state, who); // discovery.js: where the team looked hard (the map's Known area layer)
+  if (who) mergePoiFinds(state, who); // pois.js: the hidden points of interest its surveys found
 }
 
 // ---------- tick ----------
@@ -929,6 +935,7 @@ function hourOfWorld(state) {
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state
+  nomadsHour(state); // nomads.js: nomad bands on the move, their camps seen, meeting your teams
   caravanRaidsHour(state); // caravanraids.js: caravans met on the road, chased, robbed (by you or by the groups)
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
@@ -971,11 +978,13 @@ function hourOfWorld(state) {
     conquestDaily(state); // conquest.js: infamy fades, bases taken from you are patched up by their holders
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
+    nomadsDaily(state); // nomads.js: nomad bands camp, survey, raid, forage, eat, recruit, move on; a slow respawn
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
     trainingDaily(state); // training.js: medics' ward rounds, the doctor's lessons to Medic trainees
     familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
+    tileHeatDaily(state); // pois.js: the heat raids left on the tiles falls 10% a day
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead

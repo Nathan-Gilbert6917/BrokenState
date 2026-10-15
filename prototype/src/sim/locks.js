@@ -170,8 +170,9 @@ export function lockRaid(state, b) {
   R.doors = R.doors || [];
   R.foundKeys = R.foundKeys || [];
   const t = state.tiles[b.tileId];
-  const type = t && t.loc ? t.loc.type : null;
-  const roll = (...k) => hash01(state.seed, "lock", b.tileId, state.hour, ...k);
+  // A point of interest (poicont.js R.poiDice): its kind, and dice keyed by it instead of the hour (the same locks every visit).
+  const type = (R.poiDice && b.setup && b.setup.raid && b.setup.raid.kind) || (t && t.loc ? t.loc.type : null);
+  const roll = (...k) => hash01(state.seed, "lock", b.tileId, R.poiDice ?? state.hour, ...k);
   placeGunSafes(state, b, type, roll); // gun safes (below): before the other locks, so a safe is not also a cage
   // Crash-site containers are named for what they are.
   for (const c of R.containers) {
@@ -365,7 +366,7 @@ export function lockedLoot(state, b, u, box, sup, gear) {
   const R = b.raid;
   if (!R) return;
   R.foundKeys = R.foundKeys || [];
-  const roll = (...k) => hash01(state.seed, "lloot", b.tileId, state.hour, box.id, ...k);
+  const roll = (...k) => hash01(state.seed, "lloot", b.tileId, R.poiDice ?? state.hour, box.id, ...k); // a point of interest's: the same every visit (poicont.js)
   comboNotes(b, u, box); // gun safes: a note with a safe's combination in this container or on this body (below)
   const giveKey = (p, why) => {
     if (roll("key", why) >= p) return;
@@ -834,7 +835,7 @@ function comboNotes(b, u, box) {
   }
 }
 function gunSafeLoot(state, b, u, box, sup, gear, lk, giveKey) {
-  const roll = (...k) => hash01(state.seed, "gsafe", b.tileId, state.hour, box.id, ...k);
+  const roll = (...k) => hash01(state.seed, "gsafe", b.tileId, b.raid.poiDice ?? state.hour, box.id, ...k);
   const st = rollGunStash(roll, TIER_STASH[lk.tier], siteOf(state, b.tileId), { box });
   gear.push(...st.gear);
   for (const [k, v] of Object.entries(st.sup)) sup[k] = (sup[k] || 0) + v;
@@ -847,7 +848,7 @@ function areaGunFinds(state, b, box, lk) {
   const area = b.raid.areas[box.area];
   if (!area) return [];
   const site = siteOf(state, b.tileId);
-  const roll = (...k) => hash01(state.seed, "gfind", b.tileId, state.hour, box.id, ...k);
+  const roll = (...k) => hash01(state.seed, "gfind", b.tileId, b.raid.poiDice ?? state.hour, box.id, ...k);
   const out = rollAreaGunFinds(roll, area.type, site);
   if (lk && lk.loot === "car" && roll("carcase") < CAR_CASE) out.push(rollGunCase((...k) => roll("cc", ...k), roll("cck") < 0.6 ? "pistolcase" : "riflecase", site));
   return out;

@@ -81,7 +81,9 @@ import { teamNeedsHour } from "./needs.js";
 import { wormTeamHour, packWater, wormHome, packTablets } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { lookoutsSpot, surpriseAt, watchSawText } from "./watch.js"; // the lookouts' warning; an unwatched night
-import { startSweep, sweepOpts, sweeping } from "./survey.js";
+import { startSweep, sweepOpts, sweeping, LOOK, quickLook } from "./survey.js";
+import { poisOf } from "./pois.js"; // the tile's points of interest: a raid goes into one of them
+import { scavengeProblem, pickedOverAt, poiPickWanted, poiPickCard } from "./poiraid.js"; // which POI to raid: the dialogue card, or the pick made for you
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
@@ -95,6 +97,7 @@ import { partySaw } from "./groupworld.js"; // a group learns your bases its par
 import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
 import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood task counts its own haul (call-time only: safe in the import cycle)
+import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -114,14 +117,16 @@ export const MISSIONS = {
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
   hive:        { name: "Destroy hive",     desc: "Storm an infestation hive: a hard tactical battle against its brood and the Broodmother inside. Win and the hive is destroyed. Bring five or six well-armed fighters." },
   growth:      { name: "Burn the growth",  desc: "Attack a structure a hive has grown beside it (a pit, a brood chamber, a warren...): fight its guard in a small battle, or burn it with 4 fuel or 2 Molotovs (it may take two fires). Gone, the hive loses what it gave: income, a bigger guard, a kind of special dead, its Wallbreakers. Bring three or four fighters." },
+  nomads:      { name: "Attack the nomad camp", desc: "Go to a nomad camp your people spotted (nomads.js) and attack it: a battle against the band with its tier's kit (looters: clubs and pistols; survivalists: hunting rifles and bows; preppers: rifles and plate armour). Win and what they carry is yours. They move on every few days: the camp may be gone when you get there." },
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running. A vehicle found on a map that needs work is repaired on the spot (foundcars.js)." },
   drivehome:   { name: "Drive it home",    desc: "One of the team drives a found vehicle home on their own (foundcars.js).", hidden: true },
   rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak in or storm the base (on its map, or by the numbers), negotiate or pay a ransom." },
   handover:    { name: "Ransom handover",  desc: "Take the ransom to the meeting point a group named and bring your people back (ransom.js).", hidden: true },
-  sweep:       { name: "Survey",           desc: "Sweep the land around the target for hidden places (farms, cabins, lodges, camps off the roads) and finds: the team moves from spot to spot within the radius for the hours set, then ends back at the centre. Scouting, open ground, daylight and binoculars help; a car covers ground but sees little." },
+  sweep:       { name: "Sweep area",       desc: "Sweep the land around the target for hidden places (farms, cabins, lodges, camps off the roads) and finds: the team moves from spot to spot within the radius for the hours set, then ends back at the centre. Scouting, open ground, daylight and binoculars help; a car covers ground but sees little." },
+  fullsurvey:  { name: "Survey",           desc: "Eight hours looking the tile over for the places it hides (pois.js): one roll at the end finds them all, or each on its own with worse odds; optics that reach (binoculars, a scope) take in the ring of tiles round the team at lower odds. It also finds a hidden site here, stamps the tile surveyed and sizes up the threat of every place known here (a word with skulls that goes stale with the days). Not in a fight or on the move. Scouting, open ground, daylight, people and optics help." },
   assault:     { name: "Assault their base", desc: "Attack a group's base (or one of yours they took): a tactical battle against its defenders behind their walls. Win and it is your outpost, with its land and part of its stores; a group that loses its last base is finished. Bring five or six fighters. Attacking a group that is not hostile costs dearly with it, its friends and every peaceful group." },
-  survey:      { name: "Look around",      desc: "Spend 2 hours surveying nearby tiles. Better odds of spotting hidden finds.", hidden: true },
+  survey:      { name: "Quick look",       desc: "Two hours looking the tile over: a chance at each place it hides (about half a Survey's odds, the kind only, no threat; optics help the odds, never the range) and better odds of spotting hidden finds nearby.", hidden: true },
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
   retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
@@ -1622,10 +1627,12 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   const enter = enterOption(state, p, tile); // on one of your bases: move in, the team disbanded (moveout.js)
   if (enter) out.push(enter);
   add("survey");
+  if (t.terrain !== "water" || t.bridge) add("fullsurvey", state.combat ? "Not in a fight." : null); // the POI survey (survey.js fullSurveyDone)
   if (t.terrain !== "water") add("sweep");
-  if (scavengeable(t)) {
-    add("scavenge");
-    if (t.loc && !(t.loot > PICKED_OVER)) out[out.length - 1].desc += " Picked over: searching again finds little.";
+  // A tile with points of interest (pois.js): the raid goes into one of them, so one has to be known (poiraid.js).
+  if (scavengeable(t) || poisOf(t).length) {
+    add("scavenge", scavengeProblem(state, p, tile));
+    if (!out[out.length - 1].disabled && pickedOverAt(state, p, tile)) out[out.length - 1].desc += " Picked over: searching again finds little.";
   }
   const fb = state.factions.find((f) => f.alive && f.bases.includes(tile));
   if (fb) add("trade");
@@ -1652,6 +1659,7 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   if (site && site.items.length) add("recover");
   if (state.hordes.some((h) => state.grid.distance(h.tile, tile) <= 1)) add("cull");
   if (hiveAt(state, tile)) add("hive");
+  if (nomadCampAt(state, tile)) add("nomads"); // nomads.js: a camp you know of
   const gr = growthAt(state, tile);
   if (gr && gr.withered == null) add("growth"); // hivetech.js
   if (t.hidden && !t.hidden.taken && (t.hidden.known || p.spotted?.has(`${t.hidden.type}:${tile}`))) add("investigate");
@@ -1689,7 +1697,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
       // caravanraids.js: a caravan in sight, attack it (within a tile) or go after it.
       ...caravanOrderChoices(state, p),
       ...opts.map((o) => ({
-        label: o.mission === "sweep" ? `Survey ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep",
+        label: o.mission === "sweep" ? `Sweep ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.mission === "fullsurvey" ? `Survey this tile (${LOOK.hours}h)` : o.mission === "survey" ? `Quick look (${LOOK.quickHours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep" || o.mission === "fullsurvey",
         resolve: (st) => {
           // Checked again now: the card may have been open while things changed.
           const now = orderOptions(st, p).find((x) => x.mission === o.mission);
@@ -1805,8 +1813,9 @@ export function orderMove(state, p, tile) {
 }
 
 // debit: take the two hours from the next move (recon); a timed Look around order already spent them.
-/** @param {State} state @param {Party} p @param {number} bonus @param {boolean} [debit] */
-export function survey(state, p, bonus, debit = true) {
+// pois: the Quick look at the tile's points of interest too (survey.js quickLook; the Survey makes its own rolls).
+/** @param {State} state @param {Party} p @param {number} bonus @param {boolean} [debit] @param {{ pois?: boolean }} [opts] */
+export function survey(state, p, bonus, debit = true, { pois = true } = {}) {
   const tile = partyTile(p);
   const members = partyMembers(state, p);
   const opt = opticsFor(members, p.cargo, { still: true, night: state.hour % 24 < 6 || state.hour % 24 >= 20 }); // optics.js
@@ -1815,11 +1824,12 @@ export function survey(state, p, bonus, debit = true) {
   for (const id of around) p.seen.set(id, state.grid.distance(tile, id) <= 1 + opt.reach ? withLook(state, snapshot(state, id), id, "survey", surveyErr(state, opt)) : withLook(state, snapshot(state, id), id));
   const found = perceive(state, p, members, around, bonus + (opt.look - 1) * 0.3);
   noteLooked(state, p, around); // discovery.js: looked hard at (the map's Known area layer)
+  const places = pois ? quickLook(state, p) : ""; // survey.js: the places the tile hides, each on its own
   gainXpAll(state, members, "scouting", USE.survey); // skills.js
   if (debit) p.progress -= 2 * partySpeed(p); // two hours spent looking around before moving on (at any pace)
   updateRadio(state, p);
   const crash = crashSurvey(state, p); // crashes.js: a downed aircraft found, or its search circle narrowed
-  return `${found.length ? `Spotted: ${found.map((f) => `${MARKER_TYPES[f.type].name} at ${tileLabel(state, f.tile)}`).join("; ")}.` : "Nothing new spotted nearby."}${crash ? ` ${crash}` : ""}`;
+  return `${found.length ? `Spotted: ${found.map((f) => `${MARKER_TYPES[f.type].name} at ${tileLabel(state, f.tile)}`).join("; ")}.` : "Nothing new spotted nearby."}${places ? ` ${places}` : ""}${crash ? ` ${crash}` : ""}`;
 }
 
 // The pitching is done (orders.js task "pitch"): the camp stands, checked again (the tile may have been taken meanwhile).
@@ -1866,13 +1876,25 @@ function arrive(state, p) {
     case "survey":
       startTask(state, p, { type: "survey", hours: 2 });
       return "The team spends two hours looking around.";
+    case "fullsurvey": // the POI survey (survey.js fullSurveyDone when the hours are up): a task on the spot
+      if (state.combat || (t.terrain === "water" && !t.bridge)) {
+        awaitOrders(state, p, state.combat ? "No surveying in a fight." : "A survey cannot start on open water.", { failed: true });
+        return "";
+      }
+      startTask(state, p, { type: "fullsurvey", hours: LOOK.hours });
+      return `The team starts surveying ${tileLabel(state, p.dest)} (${LOOK.hours}h).`;
     case "sweep":
       return startSweep(state, p, p.sweepPlan || {}); // survey.js
-    case "scavenge":
+    case "scavenge": {
       if (t.terrain === "water" && !t.bridge) { // a bridge is searched: the cars left on it (combat.js AREAS.roadcars)
         awaitOrders(state, p, "There is nothing to search on the water.", { failed: true });
         return "";
       }
+      // A tile with points of interest (poiraid.js): one of them has to be known, and you pick which (the dialogue
+      // card) unless something picks for you (the autopilot, a crew, a headless tool: the best known one).
+      const why = scavengeProblem(state, p, p.dest);
+      if (why) { awaitOrders(state, p, why, { failed: true }); return ""; }
+      if (poiPickWanted(state, p, p.dest)) { awaitOrders(state, p, "", { card: (st, q) => poiPickCard(st, q), hold: true }); return ""; }
       p.phase = "engaged";
       // Headless searches share one slot (state.engagement): a second team waits its turn instead of replacing it.
       if (startScavenge(state, p) === false) {
@@ -1880,6 +1902,7 @@ function arrive(state, p) {
         return "";
       }
       return "The team starts searching.";
+    }
     case "trade": {
       const f = state.factions.find((f) => f.alive && f.bases.includes(p.dest));
       if (!f) {
@@ -1981,6 +2004,8 @@ function arrive(state, p) {
       addCard(state, gatheringCull(state, p, horde, cullCard(state, p, horde))); // hivebirth.js: at a hive build site, Break up the gathering
       return "";
     }
+    case "nomads":
+      return nomadCampArrive(state, p); // nomads.js: the camp, if it is still there
     case "investigate":
       return investigate(state, p);
     case "getvehicle": {

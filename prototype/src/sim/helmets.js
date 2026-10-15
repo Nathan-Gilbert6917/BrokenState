@@ -314,6 +314,8 @@ export const HEAD_KIT = {
   guards: { helm: [["riothelmet", 0.3]], ears: [["eardef", 0.1]] },
   raiders: { helm: [["bikehelmet", 0.15], ["hardhat", 0.1]], ears: [["earmuffs", 0.1]] },
   militia: { helm: [["hardhat", 0.1]], ears: [] },
+  preppers: { helm: [["milhelmet", 0.6], ["highcut", 0.1]], ears: [["earmuffs", 0.2]] }, // nomads.js T3
+  looters: { helm: [["bikehelmet", 0.1]], ears: [] },
 };
 // Rolls a kit's headgear on dice of its own: { helm, ears } (keys or null).
 export function rollHeadKit(kind, ...seed) {

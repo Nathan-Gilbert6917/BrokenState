@@ -41,6 +41,10 @@ export const SITE_TAGS = {
   crash_mil: ["military", "crash"], crash_cargo: ["crash", "camp", "medical"], crash_med: ["medical", "crash"],
   crash_news: ["tech", "crash"], airdrop: ["military", "camp", "medical"],
   convoy: ["military", "travel", "camp"], // miltrucks.js: an abandoned Army convoy
+  // Points of interest (pois.js): the small places a tile holds besides its site.
+  house: ["home", "kitchen"], neighbourhood: ["home", "kitchen", "garage"], garage: ["garage", "tools"], corner: ["shop", "kitchen"],
+  pizza: ["kitchen", "shop"], farmstand: ["farm", "shop", "kitchen"], shed: ["tools", "farm", "garage"], blind: ["hunt", "outdoor"],
+  campsite: ["camp", "outdoor"], hikercamp: ["camp", "outdoor"], mineshack: ["industry", "tools", "outdoor"],
 };
 export const AREA_TAGS = {
   house: ["home", "kitchen"], farmhouse: ["home", "farm", "hunt"], store: ["shop"], kitchen: ["kitchen"], pharmacy: ["medical", "shop"],

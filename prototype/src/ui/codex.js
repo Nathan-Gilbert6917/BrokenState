@@ -19,7 +19,11 @@ import { EAT } from "../sim/eating.js"; // "No hot food"
 import { KITCHEN } from "../sim/kitchen.js"; // the stove's firewood
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
-import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES } from "../sim/data.js";
+import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
+import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known; tile heat
+import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
+import { STREET } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses
+import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
@@ -50,7 +54,7 @@ const list = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} a
 
 export const CODEX_CATS = [
   ["dead", "The dead"], ["hives", "Hives"], ["items", "Items"], ["supplies", "Supplies"], ["buildings", "Buildings"],
-  ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
+  ["places", "Places"], ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
 ];
 const CAT_NAME = Object.fromEntries(CODEX_CATS);
 
@@ -332,10 +336,73 @@ function groupEntries() {
     how: "Hear their news (free), buy the scouts' maps, trade, shelter them for a few days or take them in. Keep an eye out: a few rob the base that shelters them.",
     sprite: () => enemyCanvas("raiders", "#9a9a9a", null, null, 2),
   });
+  // Nomad bands (sim/nomads.js): one entry a tier, opened when one is seen.
+  const NOMAD_TEXT = {
+    1: ["hostile", "melee weapons and a pistol or two, no armour", "They rob a team they can take and scatter before one that is stronger. Pay them, talk them down, fight or run; a team stronger than they are can run them down for what they drop.", "From the start."],
+    2: ["neutral, willing to trade", "hunting rifles, bows and shotguns, light armour", "The best foragers and hunters on the road, with a medic or two. Trade with them, swap news, share food; they remember a kindness.", "From year 2."],
+    3: ["neutral and defensive", "rifles and carbines, plate carriers and steel (armour class 3 and up), a pickup or a Humvee", "Well armed and careful: they keep you at rifle range but will trade. Attacking them is a hard fight.", "From year 4."],
+  };
+  for (const tier of [1, 2, 3]) {
+    const T = NOMADS.TIERS[tier], [att, arms, how, from] = NOMAD_TEXT[tier];
+    out.push({
+      key: `n:${tier}`, cat: "groups", name: `Nomads: ${T.name}`, sub: "Nomads",
+      stats: [["Size", `${T.size[0]}–${T.size[1]} people (they start small and stay small)`], ["Attitude", att], ["Arms", arms], ["Appears", from]],
+      text: `Baseless bands that camp a few days, survey and pick over the places round their camp, then move on 4–8 tiles. They forage and hunt, eat and drink every day, and can starve, fall to the dead or to you; new bands come in from the edge of the map so there are always about half as many as there are groups. They take in neutral wanderers and refugees when they have food to spare. They are not one of the state's groups: no land, no base, no pacts, never in the Calder Coalition. Their camps show on the map once your people have seen one.`,
+      how: `${how} Send a team to attack a camp you have spotted (the tile's Attack the nomad camp). They take what you left in a container you opened near their camp.`,
+      sprite: () => enemyCanvas(T.kit === "preppers" ? "soldiers" : "raiders", NOMADS.COLORS[tier], null, null, tier + 1),
+    });
+  }
   return out;
 }
 
 let ENTRIES = null, BY_KEY = null;
+// Points of interest (sim/pois.js): how places work, and one entry a kind (data.js LOCATIONS) with its map sprite,
+// opened once the player knows one on a tile seen or reported.
+const likely = (def) => Object.entries(def.loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => (k === "food" ? "food" : k === "preserved" ? "food that keeps" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k)).join(", ");
+function placeEntries() {
+  const out = [{
+    key: "k:pois", cat: "places", name: "📍 Points of interest", sub: "How places work",
+    stats: [["Per tile", `up to ${POI.MAX} by the land (mountains 0–1, hills and forest 0–2, farmland 0–3, suburbs 1–4); none on water, in a city or town centre or on a hive's tile`], ["Known", "on and by roads and in the towns' and cities' footprints all but a few are known from the start; elsewhere none until a team surveys the tile"], ["Loot", "a pool of its own in each place, from what its kind holds; nothing grows back, and other groups strip them too"]],
+    text: "The houses, sheds, shops and camps a tile holds besides its site: a tile's best place is drawn on the map once you know it (a site tile keeps its site), the tile panel's Places rows list the ones you know with how picked over each is, and a pip at the sprite's corner counts them. What is hidden is never counted: the panel says \"possibly more unknown\".",
+    how: "Click a tile to read its Places. Send a Survey (8 hours on the tile) to find the hidden ones, a Quick look (2 hours) for a faster, rougher look. Scavenge or raid a tile to pick one of its places to search.", sprite: null,
+  }, {
+    key: "k:containers", cat: "places", name: "📦 Containers that stay", sub: "What a place keeps between visits",
+    stats: [["Unopened", "stays unopened with what it always held, until someone loots it"], ["Opened", "kept as you left it when the raid ends: what you did not take, what you put in or swapped, what a rummage left hidden, the lock picked or forced"], ["Lost", "things dropped on the floor and loot left on bodies"], ["Ransacked", "emptied by someone else (or by your own crews' searches): it stands open and empty"]],
+    text: "Each place is the same building with the same drawers, cupboards and cars on every visit, and each container holds the same things whenever it is first opened. How picked over a place is (rich, some, little, picked clean) is how many of its containers are still untouched: other groups' raids ransack them, and they can take what you left behind too. What you leave in a container never makes the place richer.",
+    how: "Leave things in a container you opened on a raid to come back for them. The dialogue that picks a place shows the containers you opened, what you left there, and \"looted by others since your visit\".", sprite: null,
+  }, {
+    key: "k:tileheat", cat: "places", name: "🔥 Tile heat", sub: "How stirred up a tile is",
+    stats: [["Rises", `going into a place (+${TILE_HEAT.ENTER}), coming out (sneaking ${7}, normal ${13}, loud ${22}, plus the shots fired), other groups' raids (+${TILE_HEAT.AI})`], ["Falls", "about 10% a day"], ["Effect", `the threat of every place on the tile (up to +${TILE_HEAT.THREAT}), more of the dead in a raid there, and when very hot a horde or a wandering band drawn by the noise`], ["Words", "cold, warm, hot, very hot"]],
+    text: "A tile's heat stays after the raid: every visit to its places stirs it up a little more, and noise and gunfire most. It is not the Heat of one raid (which starts afresh each time) nor a team's Field Heat. You see it as your people last saw it: the tile panel's Tile heat row and the place dialogue say how hot it was and how long ago, stale after two weeks.",
+    how: "Spread your raids over several tiles, sneak in and out, and let a hot tile cool down for a week or two before going back.", sprite: null,
+  }, {
+    key: "k:aipois", cat: "places", name: "🎒 Other scavengers", sub: "Who else picks the places over",
+    stats: [["Who", "the other groups' scavenging parties, raiders and travellers from outside, and in hardcore the bands on the road"], ["What they know", "the places by the roads and in the towns near where they live, and what their own surveys find (8 hours on a tile, as yours)"], ["Where first", "the places on the roads near their bases go first; off-road and unknown ground stays richer for longer"], ["Same tile", "in different places nobody minds; in the same place you meet them (a group at war with you comes for you either way)"]],
+    text: "The places run down without you: the groups send parties to the places they know near their bases, one place at a time, and survey tiles to find the hidden ones. They ransack containers as they go, they take what you left in a container you opened, and their raids stir a tile up. A party in a place shows on the map beside your team, and the place dialogue says when one is in it right now. The log says when a place you can see (or hear of on your radio) is picked clean, or when strangers emptied what you left.",
+    how: "Do not leave things in a container near a group's base for long. Survey off the roads for the places nobody has picked over yet.", sprite: null,
+  }];
+  // A kind with more to say than the rest: the neighbourhood is a whole street of houses on one raid map (sim/buildingmaps.js streetMap).
+  const NOTES = {
+    neighbourhood: {
+      stat: ["Map", `a street of ${STREET.HOUSES[0]}–${STREET.HOUSES[1]} houses, two storeys each, cars along the kerb, back gardens`],
+      text: "Neighbourhood: a street of houses in a suburb or a small town, raided as one place. The raid opens on the street itself: a row of houses each side of the road, every house with its own rooms, doors, stairs and containers, side yards and fenced back gardens between them, cars parked along the kerb. The ways out are both ends of the street and the back gardens. More of the dead wander a street than a lone house.",
+      how: "Pick it in the list of places like any other. Go through the houses one at a time: each house keeps its own containers between visits (one you never went into stays untouched, what you leave in one stays there), and the place's one picked-over band falls as the houses are searched. Searching hour by hour (crews, the autopilot) a team goes through it a house at a time, so it lasts several times as long as a lone house.",
+    },
+  };
+  for (const k of allPoiKinds()) {
+    const d = LOCATIONS[k];
+    if (!d) continue;
+    const zone = SITE_ZONES[d.cat], note = NOTES[k];
+    out.push({
+      key: `p:${k}`, cat: "places", name: d.name, sub: `${zone ? zone.name : "Place"} · point of interest`,
+      stats: [["Danger", DANGER_NAMES[siteDanger({ type: k, zone: d.cat })]], ["Likely", likely(d)], ["Gear", d.gear.length ? list(d.gear.slice(0, 4).map((g) => (GEAR[g] ? GEAR[g].name.toLowerCase() : g))) + (d.gear.length > 4 ? "…" : "") : "none"], ["Worth", d.richness >= 0.5 ? "a good haul when untouched" : d.richness >= 0.3 ? "a modest haul when untouched" : "slim pickings even untouched"], ...(note && note.stat ? [note.stat] : [])],
+      text: note ? note.text : `${d.name}: a place a tile holds${d.cat === "rural" ? " out in the countryside" : d.cat === "town" ? " in a suburb or a small town" : " on a city block"}, with loot of its own.`,
+      how: note ? note.how : "Scavenge or raid the tile and pick it in the list of places; the search goes through its rooms and containers. A survey shows whether it stands on a tile before you go.",
+      sprite: () => poiSpriteCanvas(k),
+    });
+  }
+  return out;
+}
 // Field works (sim/fieldworks.js FIELD.KINDS): opened once one stands on the map where you see it (yours, or a group's).
 function fieldEntries() {
   return FIELD.ORDER.map((k) => {
@@ -369,7 +436,7 @@ function foodChainEntries() {
 }
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...placeEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -425,6 +492,10 @@ function seenNow(state) {
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
+  for (const b of (state.nomads && state.nomads.bands) || []) if (b && b.known && live.has(b.tile)) keys.add(`n:${b.tier}`); // sim/nomads.js
+  // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
+  for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); if (poisOf(t)[i].cont && poisOf(t)[i].cont.last) keys.add("k:aipois"); }
+  if (Object.values(state.poiKnow || {}).some((k) => k && k.heat)) keys.add("k:tileheat"); // a team has seen a tile's heat (sim/pois.js noteTileHeat)
   weatherSeen(state, keys);
   return keys;
 }

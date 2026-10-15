@@ -542,6 +542,9 @@ export const SITE_MIX = {
   town: "house", apartments: "house", motel: "house", school: "house", church: "house", city: "house", suburb: "house",
   farm: "farm", barn: "farm", ranch: "farm", feedstore: "farm",
   cabin: "wild", lodge: "wild", ranger: "wild", campground: "wild",
+  // points of interest (pois.js)
+  house: "house", neighbourhood: "house", garage: "house", corner: "shop", pizza: "diner", farmstand: "farm", shed: "farm",
+  blind: "wild", campsite: "wild", hikercamp: "wild", mineshack: "wild",
   convoy: "military", crash_cargo: "military", airdrop: "military", base: "military", armory: "military", military: "military",
   prison: "prison", warehouse: "warehouse",
 };
@@ -551,14 +554,16 @@ export const findable = (k, state) => FOODS[k] && (FOODS[k].until == null || out
 // `units` days of food as items of a mix (or a { key: weight } table): a few kinds (more for more food), the calories
 // split by the mix's weights among them, each count rounded by the dice so the average holds (an MRE where the share
 // was 0.6 of one: 60% of the time). Early-only shop items are left out once they are gone (their share goes to the
-// rest). opts.whole: false keeps fractions (no dice). Returns { key: q }.
+// rest). opts.whole: false keeps fractions (no dice). opts.stable (a point of interest's container, poicont.js: the
+// same things on any visit): the kinds are drawn from the whole mix and the early-only ones gone by now are simply
+// left out (the bread rotted), so the rest come out the same whatever the day. Returns { key: q }.
 /** @returns {{ [key: string]: number }} */
-export function typedFood(state, mix, units, { whole: whole0 = true, kinds = null, rng = null } = {}) {
+export function typedFood(state, mix, units, { whole: whole0 = true, kinds = null, rng = null, stable = false } = {}) {
   let whole = whole0;
   const table = typeof mix === "string" ? MIXES[mix] || MIXES.stores : mix || MIXES.stores;
   const out = {};
   if (!(units > EPS)) return out;
-  const keys = Object.keys(table).filter((k) => table[k] > 0 && FOODS[k] && (!state || findable(k, state)));
+  const keys = Object.keys(table).filter((k) => table[k] > 0 && FOODS[k] && (stable || !state || findable(k, state)));
   if (!keys.length) return out;
   // rng false: no dice at all (the kinds with the most weight, fractions kept): a stock filled where no game state is
   // at hand.
@@ -577,7 +582,7 @@ export function typedFood(state, mix, units, { whole: whole0 = true, kinds = nul
   for (const k of picked) {
     const x = qtyOf(k, (units * table[k]) / w);
     const q = !whole ? x : Math.floor(x) + (R.next() < x - Math.floor(x) ? 1 : 0);
-    if (q > 0) out[k] = (out[k] || 0) + q;
+    if (q > 0 && !(stable && state && !findable(k, state))) out[k] = (out[k] || 0) + q;
   }
   return out;
 }
@@ -595,7 +600,8 @@ export function addFoodUnits(state, h, mix, units, opts = {}) {
 // SHOP_FOOD days of food empties a full one), and every site's food falls with time since the outbreak as well
 // (other survivors, rats, burst packets: half every SHOP.halfLife days after a normal game's start, never below
 // SHOP.floor). Food found there × shopFood(state, t). Later scavenging must go further out.
-export const SHOP_FOOD = { supermarket: 300, grocery: 150, mall: 220, diner: 60, gas: 40, truckstop: 60, pharmacy: 20, warehouse: 200, feedstore: 80, town: 160, apartments: 120, motel: 50, school: 60, church: 40, city: 100 };
+export const SHOP_FOOD = { supermarket: 300, grocery: 150, mall: 220, diner: 60, gas: 40, truckstop: 60, pharmacy: 20, warehouse: 200, feedstore: 80, town: 160, apartments: 120, motel: 50, school: 60, church: 40, city: 100,
+  house: 15, neighbourhood: 60, corner: 60, pizza: 40, farmstand: 30 }; // points of interest (pois.js)
 export const SHOP = { halfLife: 300, floor: 0.2, hardcoreStart: 0.75 };
 export const isShop = (type) => !!SHOP_FOOD[type];
 export function shopTime(state) {
@@ -809,7 +815,7 @@ export function sellPick(h, units) {
 export const AREA_MIX = { house: "house", farmhouse: "farm", store: "shop", kitchen: "diner", pharmacy: "pharmacy", warehouse: "warehouse", barracks: "army", barn: "farm", cabin: "wild", cellblock: "prison", campsite: "wild", wreck: "travel", roadcars: "travel", chapel: "house", fuselage: "military", cargodrop: "military" };
 // A find's "food" / "preserved" (days of food, a loot table's roll) turned into items in place: by `mix`, as much as
 // the site's shelves still hold (shopFood, when the tile is given) and lowering them. Returns the find.
-export function typeFind(state, sup, mix = "house", tile = null) {
+export function typeFind(state, sup, mix = "house", tile = null, rng = null) { // rng: the find's own dice (a point of interest's container, poicont.js), else the food dice
   if (!sup || !((sup.food || 0) > 0 || (sup.preserved || 0) > 0)) { if (sup) { delete sup.food; delete sup.preserved; } return sup; }
   const t = tile != null && state && state.tiles ? state.tiles[tile] : null;
   const k = t ? shopFood(state, t) : 1;
@@ -818,7 +824,7 @@ export function typeFind(state, sup, mix = "house", tile = null) {
     const u = (sup[key] || 0) * k;
     delete sup[key];
     if (!(u > 0)) continue;
-    for (const [kk, q] of Object.entries(typedFood(state, key === "preserved" ? (mix === "military" || mix === "army" ? mix : "keeps") : mix, u))) { sup[kk] = (sup[kk] || 0) + q; drawn += unitsOf(kk, q); }
+    for (const [kk, q] of Object.entries(typedFood(state, key === "preserved" ? (mix === "military" || mix === "army" ? mix : "keeps") : mix, u, rng ? { rng, stable: true } : undefined))) { sup[kk] = (sup[kk] || 0) + q; drawn += unitsOf(kk, q); }
   }
   if (t) drawShop(state, t, drawn);
   return sup;
