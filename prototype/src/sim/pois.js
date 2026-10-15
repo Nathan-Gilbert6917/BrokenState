@@ -27,6 +27,14 @@
 //   cont is the container ledger (poiLedger makes it: which containers were looted and what the player left),
 //   threatStamp the perceived threat recorded by a survey or a visit, visits / lastDay the player's visit history;
 //   site marks the site POI. tileHeat / addTileHeat are the hooks for the persistent tile heat to come.
+// - Threat: the true threat of a POI (poiThreat) is its kind's danger + the tile's infection + the tile's heat + a
+//   hive-land bonus (THREAT.HIVE × hives.js zombieToughness); the raid roster reads the true value (scavenge.js
+//   raidEnemies). What the player sees is an estimate (poiThreatEstimate, the intelest.js pattern): a stamp made by
+//   a full survey (notePoiThreat "survey", error 20%, less with optics) or a visit (10%) whose error grows by
+//   THREAT.STALE a day; a word with skulls (quiet / some risk / dangerous / very dangerous) placed by the seed's dice
+//   inside the error, "stale" past THREAT.STALE_DAYS, and "threat unknown" with no stamp at all.
+// - Picked over: poiBand (0 rich … 3 picked clean, aiscav.js lootBand's cuts) against what the POI held untouched
+//   (poiFull). bestKnownPoi picks the POI a headless search goes for: value × what is left / the perceived threat.
 // Everything here rolls hash dice from the world seed and the tile (skills.js hash01), never state.rng, so a
 // world made before POIs existed gets the same lists on load (save.js deserializeState → ensurePois), with its
 // tile.loot as the site POI's pool. A save keeps only what changed: the lists are left off the tiles and the POIs
@@ -35,9 +43,11 @@
 // plain data (objects, lists, numbers, strings; Maps and Sets are compared too) for the difference to be seen.
 /** @import { State, Tile, Party } from "./types" */
 import { LOCATIONS } from "./data.js";
+import { ZONE_RICHNESS } from "./mapgen.js"; // what a site held untouched (poiFull)
 import { hash01 } from "./skills.js";
 import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
+import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -257,7 +267,36 @@ export function poiLedger(t, i) {
   return p.cont;
 }
 
+// ---------- pools as bands ----------
+/** The band names (aiscav.js LOOT_BANDS: rich, some, little, picked clean). */
+export const POI_BANDS = ["Rich", "Some", "Little", "Picked clean"];
+/** What POI i held untouched (its kind's richness × its zone), the pool's ceiling. @param {Tile} t @param {number} i */
+export function poiFull(t, i) {
+  const p = poiAt(t, i);
+  if (!p) return 0;
+  const def = LOCATIONS[p.kind];
+  if (!def) return 1;
+  if (isSitePoi(t, i)) return def.richness * (t.loc.type === "town" ? 1 : ZONE_RICHNESS[t.loc.zone] || 1);
+  return def.richness * (t.terrain === "city" ? POI.URBAN_RICH : 1);
+}
+/** The picked-over band of POI i: 0 rich (60%+ left), 1 some (30%+), 2 little (10%+), 3 picked clean. @param {Tile} t @param {number} i */
+export function poiBand(t, i) {
+  const p = poiAt(t, i);
+  if (!p) return 3;
+  const pool = poiPool(t, i), r = pool / Math.max(0.05, poiFull(t, i));
+  return p.stripped || pool <= POI.STRIPPED + 0.02 || r < 0.1 ? 3 : r < 0.3 ? 2 : r < 0.6 ? 1 : 0;
+}
+/** @param {Tile} t @param {number} i */
+export const poiBandName = (t, i) => POI_BANDS[poiBand(t, i)];
+
 // ---------- threat and heat ----------
+export const THREAT = {
+  HIVE: 0.5,                               // + this × zombieToughness (1 on hive land, 3 on the red-skull ring)
+  ERR: { survey: 0.2, visit: 0.1 },        // a stamp's error by its source (intelnotes.js LOOK_ERR survey / visit)
+  STALE: 0.03, MAX_ERR: 1.0,               // the error grows this much a day (intelest.js INTEL.STALE), up to this
+  STALE_DAYS: 14,                          // older than this the estimate says "stale"
+  BANDS: [[0.6, "quiet"], [1.5, "some risk"], [2.6, "dangerous"], [Infinity, "very dangerous"]], // threat < cut → word; skulls = the band's index
+};
 /** Persistent tile heat: 0 until the heat system exists (it will read the tile's record). @param {State} state @param {Tile | number} tile @returns {number} */
 export function tileHeat(state, tile) {
   return 0;
@@ -266,11 +305,97 @@ export function tileHeat(state, tile) {
 export function addTileHeat(state, tile, amount) {
   return tileHeat(state, tile);
 }
-/** The true threat at POI i: its kind's danger (0–3) + the tile's infection + the tile's heat. @param {State} state @param {Tile | number} tile @param {number} i */
+/** The true threat at POI i: its kind's danger (0–3) + the tile's infection + the tile's heat + the hive-land bonus. @param {State} state @param {Tile | number} tile @param {number} i */
 export function poiThreat(state, tile, i) {
   const t = tileOf(state, tile), p = poiAt(t, i);
   if (!p) return 0;
-  return (LOCATIONS[p.kind].danger || 0) + (t.infection || 0) + tileHeat(state, t);
+  return (LOCATIONS[p.kind].danger || 0) + (t.infection || 0) + tileHeat(state, t) + THREAT.HIVE * zombieToughness(state, t.id);
+}
+/** The band of a threat value: { band: 0–3, word, skulls }. @param {number} v */
+export function threatBand(v) {
+  const band = Math.max(0, THREAT.BANDS.findIndex(([cut]) => v < Number(cut)));
+  return { band, word: String(THREAT.BANDS[band][1]), skulls: "☠".repeat(band) };
+}
+/**
+ * Records what the player makes of POI i's threat now (a full survey or a visit): the true value with the source's
+ * error (err given: the survey's, less with optics). Returns the stamp.
+ * @param {State} state @param {Tile | number} tile @param {number} i @param {"survey" | "visit"} [src] @param {number | null} [err]
+ */
+export function notePoiThreat(state, tile, i, src = "visit", err = null) {
+  const t = tileOf(state, tile), p = poiAt(t, i);
+  if (!p) return null;
+  const e = err != null ? err : THREAT.ERR[src] || THREAT.ERR.visit;
+  // A fresh look replaces an older stamp; a rougher look never replaces a sharper one made the same hour.
+  if (p.threatStamp && p.threatStamp.hour === state.hour && p.threatStamp.err <= e) return p.threatStamp;
+  p.threatStamp = { hour: state.hour, v: poiThreat(state, t, i), err: e, src };
+  return p.threatStamp;
+}
+/**
+ * The perceived threat of POI i, or null without a stamp: { v, lo, hi, err, band, word, skulls, day, age (days),
+ * stale, src, text }. The word is placed by the seed's dice inside the error (never the true value itself), and the
+ * error grows with the stamp's age, so an old look says less and less.
+ * @param {State} state @param {Tile | number} tile @param {number} i
+ */
+export function poiThreatEstimate(state, tile, i) {
+  const t = tileOf(state, tile), p = poiAt(t, i);
+  const st = p && p.threatStamp;
+  if (!st) return null;
+  const age = Math.max(0, state.hour - st.hour) / 24;
+  const err = Math.min(THREAT.MAX_ERR, st.err + THREAT.STALE * age);
+  const j = (hash01(state.seed, "poithreat", t.id, i, st.hour) - 0.5) * err;
+  const v = Math.max(0, st.v * (1 + j));
+  const lo = Math.max(0, st.v * (1 - err)), hi = st.v * (1 + err);
+  const b = threatBand(v);
+  const stale = age >= THREAT.STALE_DAYS;
+  const d = Math.floor(st.hour / 24) + 1;
+  const when = `${st.src === "survey" ? "surveyed" : "seen"} ${age < 1 ? "today" : `${Math.floor(age)}d ago`}`;
+  return { v, lo, hi, err, band: b.band, word: b.word, skulls: b.skulls, day: d, age, stale, src: st.src, text: `${b.word}${b.skulls ? ` ${b.skulls}` : ""} (${when}${stale ? ", stale" : ""})` };
+}
+/** "threat unknown", or the estimate's text. @param {State} state @param {Tile | number} tile @param {number} i */
+export function poiThreatText(state, tile, i) {
+  const e = poiThreatEstimate(state, tile, i);
+  return e ? e.text : "threat unknown";
+}
+
+// ---------- visits and the headless pick ----------
+/** The player's team goes into POI i: its visit history and a fresh look at its threat. @param {State} state @param {Tile | number} tile @param {number} i */
+export function visitPoi(state, tile, i) {
+  const t = tileOf(state, tile), p = poiAt(t, i);
+  if (!p) return null;
+  p.visits = (p.visits || 0) + 1;
+  p.lastDay = Math.floor(state.hour / 24) + 1;
+  notePoiThreat(state, t, i, "visit");
+  return p;
+}
+/** "never visited" / "been here 3d ago, 2 visits". @param {State} state @param {Tile | number} tile @param {number} i */
+export function poiVisitText(state, tile, i) {
+  const t = tileOf(state, tile), p = poiAt(t, i);
+  if (!p || !p.visits) return "never visited";
+  const ago = Math.floor(state.hour / 24) + 1 - (p.lastDay || 0);
+  return `been here ${ago <= 0 ? "today" : `${ago}d ago`}, ${p.visits} visit${p.visits === 1 ? "" : "s"}`;
+}
+/** Is another group's party raiding POI i right now (a party on the tile at it: q.poi, set by the AI raids to come)? @param {State} state @param {Tile | number} tile @param {number} i */
+export function raidingNow(state, tile, i) {
+  const t = tileOf(state, tile);
+  return (state.parties || []).some((q) => q.owner !== "player" && q.poi === i && q.path && q.path[q.idx] === t.id);
+}
+/** What a headless search sees in POI i: its value × what is left / (1 + the perceived threat; the true one unseen). @param {State} state @param {Tile | number} tile @param {number} i */
+export function poiScore(state, tile, i) {
+  const t = tileOf(state, tile), p = poiAt(t, i);
+  if (!p) return 0;
+  const est = poiThreatEstimate(state, t, i);
+  return ((LOCATIONS[p.kind].richness || 0.1) * poiPool(t, i)) / (1 + (est ? est.v : 0.5));
+}
+/** The POI a headless search goes for: the best known one with loot left (-1 with none). @param {State} state @param {Tile | number} tile @param {Party | null} [p] @param {number[]} [exclude] */
+export function bestKnownPoi(state, tile, p = null, exclude = []) {
+  const t = tileOf(state, tile);
+  let best = -1, bs = 0;
+  for (const i of knownPois(state, t, p)) {
+    if (exclude.includes(i) || poiPool(t, i) <= POI.STRIPPED + 0.02) continue;
+    const sc = poiScore(state, t, i);
+    if (best < 0 || sc > bs) { best = i; bs = sc; }
+  }
+  return best;
 }
 
 // ---------- what the player knows ----------

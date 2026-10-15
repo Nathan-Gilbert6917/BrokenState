@@ -111,7 +111,7 @@ import { woodNeed, woodWorkWhy, woodHandsWanted, woodCrowd, handsForDay, woodcut
 import { siteKnown } from "./discovery.js";
 import { packTripKit, HIVE_KIT } from "./kit.js";
 import { openCasesIn } from "./gunsafes.js";
-import { surveyCandidate, surveySent, SURVEY } from "./survey.js";
+import { surveyCandidate, surveySent, SURVEY, poiSurveyCandidate, poiSurveySent } from "./survey.js";
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, establishProblem, STAGING, besideWaterSource } from "./staging.js"; // no base: Establish base (a camp with its step up)
@@ -3552,7 +3552,7 @@ function planTrip(state) {
   const pool2 = pool.filter((s) => home2.includes(s));
   const keep2 = Math.max(SURVEY.auto.keep, Math.ceil(home2.length * Math.max(P.homeFrac, SURVEY.auto.keepFrac)));
   const spare2 = Math.min(pool2.length, home2.length - keep2);
-  const sv = surveyCandidate(state, spare2);
+  const sv = surveyCandidate(state, spare2) || poiSurveyCandidate(state, spare2); // a sweep, else a POI survey of a tile (survey.js)
   if (sv) launchTrip(state, sv, pool2, spare2);
 }
 
@@ -4566,7 +4566,7 @@ function launchTrip(state, c, pool, spareHands) {
   if (size < (c.mission === "rescue" || c.mission === "growth" ? 3 : c.mission === "outpost" ? 2 : c.mission === "hive" ? HIVE_SQUAD : c.mission === "assault" ? c.squadMin || ASSAULT_MIN : c.squadMin || 1)) return null;
   const fit = c.fit ? c.fit : c.mission === "assault" ? (s) => (s.health >= (c.minHealth || ASSAULT_HEALTH) && !s.woundInfected ? combatPower(s) : -99) : c.mission === "hive" ? (s) => (s.health >= HIVE_HEALTH && !s.woundInfected ? stormValue(s) * 5 + skill(s, "stealth") * 0.05 : -99) : (s) => combatPower(s) + skill(s, "scavenging") * 0.25 + skill(s, "stealth") * 0.15 + skill(s, "scouting") * 0.15 +
     (c.mission === "trade" ? skill(s, "speech") * 0.5 : 0) + (c.mission === "rescue" ? skill(s, "stealth") * 0.3 + skill(s, "speech") * 0.2 : 0) +
-    (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) + (c.mission === "sweep" ? skill(s, "scouting") * 0.6 - (s.role === "build" || (s.task && (s.task.t === "build" || s.task.t === "craft")) ? 4 : 0) : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
+    (c.mission === "outpost" ? skill(s, "farming") * 0.4 : 0) + (c.mission === "sweep" || c.mission === "fullsurvey" ? skill(s, "scouting") * 0.6 - (s.role === "build" || (s.task && (s.task.t === "build" || s.task.t === "craft")) ? 4 : 0) : 0) - (s.role === "medic" ? 3 : 0) - (s.role === "build" ? 1.5 : 0);
   const crew = friendlyCrew(state, [...pool].sort((a, b) => fit(b) - fit(a)), size, fit); // near-equal picks: friends together, rivals apart (relations.js)
   const ids = crew.map((s) => s.id);
   const dist = state.grid.distance(h.tile, c.tile);
@@ -4717,6 +4717,7 @@ function launchTrip(state, c, pool, spareHands) {
   res.party.ap = { mission: c.mission, tile: c.tile, day: day(state) };
   if (c.food === "huntTrips" && c.est > 0) res.party.ap.huntEst = c.est; // huntTripYield: what it brings back against this
   if (c.survey) surveySent(state);
+  if (c.poiSurvey) poiSurveySent(state); // survey.js: the next POI survey waits its days
   if (haulBand != null) res.party.haulCap = Math.max(poolAtBand(crew, haulBand), supplyLoad(sup) + 6 * n);
   if (isCar(v)) res.party.apFuelHome = Math.ceil((est.fuel / 2) * 1.2); // hiveChoice: fires never burn the fuel for the drive home
   if (c.crawlTrip) res.party.apCrawlTrip = true; // the campaign's crawl trip (hiveChoice: in, as deep as it can)

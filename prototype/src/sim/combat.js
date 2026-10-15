@@ -105,6 +105,7 @@ import { typesOf, withHand } from "./rounds.js"; // shells and rounds at hand (t
 import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
+import { poiPool } from "./pois.js"; // a raid on a point of interest: what is left in that place (setup.raid.poi)
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
@@ -5714,8 +5715,10 @@ export const AREA_SETS = {
   hikercamp: ["campsite", "campsite", "campsite"], mineshack: ["workshop", "cabin", "campsite"],
 };
 
-export function raidAreasFor(tile) {
+// kind: the point of interest raided (pois.js; a campsite, a hunting blind: no building of its own, its areas on the street map).
+export function raidAreasFor(tile, kind = null) {
   const t = tile || { terrain: "plains" };
+  if (kind && AREA_SETS[kind]) return AREA_SETS[kind];
   if (t.loc && AREA_SETS[t.loc.type]) return AREA_SETS[t.loc.type];
   if (t.road && !t.loc) return t.bridge ? AREA_SETS.bridge : AREA_SETS.road; // a bare road or a bridge: the cars on it
   return AREA_SETS[t.terrain] || AREA_SETS.plains;
@@ -6006,7 +6009,7 @@ export function createRaid(state, setup) {
   } else {
     [W, H] = raidDims(tile); // the street map: by the site (battlesize.js: a city center Large, a campground Medium)
     // setup.raid.areas: a street map with these areas (citycrawl.js street events: a crashed ambulance, a checkpoint).
-    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : raidAreaTypes(rng, raidAreasFor(tile), W, H); // more rooms and areas on a bigger map
+    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : raidAreaTypes(rng, raidAreasFor(tile, setup.raid && setup.raid.kind), W, H); // more rooms and areas on a bigger map (setup.raid.kind: a point of interest's, pois.js)
     if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
     const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
     if (trucks.length && !types.includes("miltrucks")) types.unshift("miltrucks"); // first: they want the room
@@ -6025,7 +6028,8 @@ export function createRaid(state, setup) {
       areas: map.areas, containers: map.containers, zones: map.zones,
       hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H)), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
-      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? tile.loot : 0.5) * 1.3)),
+      // A point of interest's own pool (pois.js poiPool: setup.raid.poi), else the site's loot.
+      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? (setup.raid && setup.raid.poi != null ? poiPool(tile, setup.raid.poi) : tile.loot) : 0.5) * 1.3)),
       reward: rewardMult(tile), // buildingmaps.js: risk pays (city blocks most, the countryside least)
       // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
