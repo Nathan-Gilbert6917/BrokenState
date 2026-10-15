@@ -647,6 +647,12 @@ export const SITES = {
   military: ["barracks", "armorybldg", "motorpool", "warehouse"], prison: ["cellblock", "messhall", ["armorybldg", "Guard armory"], "infirmary"],
   univ: ["lab", "offices", ["messhall", "Cafeteria"]], airport: ["hangar", "terminal", "warehouse"], factory: ["factory", "offices"],
   warehouse: ["warehouse", ["warehouse", "Second warehouse"], "offices"], dam: ["control", "workshop", "warehouse"],
+  // Points of interest (pois.js): one building each (the raid map a chosen POI opens). The pizza place is the diner
+  // archetype under its own name, the farm stand a corner shop's, the shed a machine shed's, the mine shack a
+  // cabin's; the neighbourhood is one house until its own street of houses exists. A campsite, a hiker camp and a
+  // hunting blind have no building: the street map only (combat.js AREA_SETS).
+  house: ["house"], neighbourhood: ["house"], garage: ["garage"], corner: ["corner"], pizza: [["diner", "Pizza place"]],
+  farmstand: [["corner", "Farm stand"]], shed: [["machineshed", "Shed"]], mineshack: [["cabin", "Mine shack"]],
   // Open land (no site).
   suburb: ["house", ["house", "House across the street"], "garage"], plains: ["farmhouse", "barn"],
   forest: { multi: true, list: ["cabin"] }, hills: { multi: true, list: ["cabin"] }, mountain: { multi: true, list: ["cabin"] },

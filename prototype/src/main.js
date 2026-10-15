@@ -30,6 +30,7 @@ import { treatAtBase } from "./sim/medical.js";
 import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
+import { setPoiReveal } from "./sim/pois.js"; // the dev tools' Reveal map shows every point of interest
 import { workerAt } from "./ui/workermap.js"; // the base workers on the map: their tooltip, a click opens the person
 import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel, teamFieldItems } from "./ui/fieldworks.js";
 import { fwAt as fieldWorkAt, FIELD, placeProblem, planFieldWork } from "./sim/fieldworks.js"; // field works: the base tab, the tile picker
@@ -737,7 +738,7 @@ const actions = {
   speed: (d) => { ui.speed = Number(d.speed) || 0; if (ui.speed > 0 && ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; },
   tab: (d) => { ui.tab = d.tab; },
   "dev-toggle": () => { ui.dev = !ui.dev; },
-  "dev-reveal": () => { view.devReveal = !view.devReveal; },
+  "dev-reveal": () => { view.devReveal = !view.devReveal; setPoiReveal(view.devReveal); }, // pois.js: every point of interest shows too
   "dev-infection": () => { view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection"); },
   "dev-fps": () => { ui.showFps = !ui.showFps; fpsLog.length = 0; fpsShownAt = 0; const el = $("fps"); if (el) el.textContent = "… FPS"; },
   // Autopilot: an AI governor runs the holdout (sim/autopilot.js). A battle or loot screen left open is finished for you.

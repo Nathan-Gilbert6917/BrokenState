@@ -40,6 +40,7 @@ import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
 import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
 import { migrateCanners } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
+import { ensurePois, withPoisPacked } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -100,11 +101,13 @@ export function serializeState(state, { dropCards = false } = {}) {
   // A battle's line-of-sight cache is only a cache (combat.js makeLosCache: up to tens of MB on a big yard or a fort map):
   // left out of the save and made fresh on load, the floors' too (the cells and reach they alias stay shared).
   const lean = root.combat && root.combat.losCache ? { ...root, combat: { ...root.combat, losCache: null, floors: Array.isArray(root.combat.floors) ? root.combat.floors.map((F) => ({ ...F, losCache: null })) : root.combat.floors } } : root;
-  return {
+  // The tiles' points of interest (pois.js) are left off the tiles and saved as the changes from the lists the seed
+  // makes (state.poiMods, a few hundred bytes instead of a list on every land tile); ensurePois puts them back on load.
+  return withPoisPacked(lean, (poiMods) => ({
     format: SAVE_FORMAT, v: SAVE_VERSION, game: GAME_VERSION,
     nextId: peekNextId(), meta: saveMeta(state),
-    state: encodeGraph(lean),
-  };
+    state: encodeGraph({ ...lean, poiMods }),
+  }));
 }
 
 // Is this a save this version can load? { ok, why }.
@@ -262,6 +265,10 @@ export function deserializeState(save) {
   if (!(state.machinesV >= 1)) { migrateGenerators(state); migrateCanners(state); state.machinesV = 1; }
   // gen-tiers (2026-10-10): generator tiers (power.js GEN_TIERS); every generator standing (yours and the groups') is tier 1. Once.
   if (!(state.genTiersV >= 1)) { migrateGenTiers(state); state.genTiersV = 1; }
+  // pois.js (2026-10-15): points of interest on the tiles. A save from before gets every tile's list from its seed (hash
+  // dice, the same lists a new world on that seed makes), its tile.loot standing as the site POI's pool; a tile that
+  // has its list keeps it.
+  ensurePois(state);
   if (state.governor) state.governor.busy = false; // never saved mid-call, but a damaged flag would stop the autopilot for good
   // A raid in a building with storeys (combat.js setFloor): b.cells / b.reach / b.losCache alias the active floor's
   // arrays. The graph writes a shared object once, so the aliases come back pointing at the same arrays; this re-points

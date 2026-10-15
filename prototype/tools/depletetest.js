@@ -266,7 +266,8 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   // fades. citycrawl.js: a crawl's searches lower the city tile's loot (Math.max(floor, loot - ...)), like a raid.
   // miltrucks.js: the abandoned Army convoy is an event site like a crash: it appears with its loot, a group that
   // reaches it strips it (× CONVOY.stripKeep) and when it burns out the tile is back to its old loot (c.prevLoot).
-  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js", "miltrucks.js"];
+  // pois.js: a site's point of interest keeps using tile.loot as its pool (poiTake lowers it like a search does).
+  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js", "miltrucks.js", "pois.js"];
   check([...setters].every((n) => allowed.includes(n)), `only ${allowed.join(", ")} set tile.loot outright (found: ${[...setters].join(", ")})`);
   check(takers.has("aiscav.js"), `the groups' scavenging only takes from it (-= in ${[...takers].join(", ")})`);
   check(adds === 0, "nothing adds to it or scales it (+=, *=, /=)");

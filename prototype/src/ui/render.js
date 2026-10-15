@@ -2,6 +2,7 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
+import { setPoiReveal } from "../sim/pois.js"; // the dev tools' Reveal map shows every point of interest (resetView puts the fog back)
 import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText, reportsLive } from "../sim/parties.js";
 import { contactable } from "../sim/orders.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
@@ -67,6 +68,7 @@ export function resetView() {
   view.hover = -1;
   view.preview = null;
   view.devReveal = false;
+  setPoiReveal(false); // pois.js: the points of interest back under the fog too
   view.layers = new Set(DEFAULT_LAYERS);
   camera.zoom = 1;
 }

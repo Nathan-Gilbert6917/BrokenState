@@ -65,6 +65,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Field Heat**: a team that stays put draws attention [fieldheat].
 - **Travel event cards** [events].
 - **Discovery and hidden sites**, the Survey mission, rumours, and map markers with last-seen times [discovery, survey, markers].
+- **Points of interest (POIs)**: 0–4 small places per land tile (house, shed, hunting blind, gas station…) with their own loot pools, a town suburb ring, known/hidden by zone, finds carried in team reports to the hub, and saves that hold only the changes [pois, mapgen; the kinds in data LOCATIONS]. Sprites, the tile panel, surveys, the per-POI raid flow, tile heat, persistent containers, AI use and nomads follow the sessions in `docs/prompts/poi-and-nomads.md`.
 - **Abstract scavenging** (hour-by-hour search with rising Heat) [scavenge]. Shared finite loot that AI groups also scavenge [aiscav].
 - **City crawl**: block-by-block roguelike extraction into a city on a round grid of blocks (pick any rim block to start; north, east, south or west from every block; walk yourself back to the rim to get out, a breakout at high Alert), multi-storey buildings with who lives on each floor [citycrawl, floorfolk].
 - **Crash sites and supply drops**, contested [crashes].

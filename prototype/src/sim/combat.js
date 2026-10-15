@@ -5706,6 +5706,12 @@ export const AREA_SETS = {
   // The abandoned Army convoy (miltrucks.js): its trucks (the "miltrucks" area, added by createRaid), the cars that
   // were stuck behind it and the crews' last camp.
   convoy: ["roadcars", "campsite", "wreck"],
+  // Points of interest (pois.js): the small places a tile holds besides its site. A campsite, a hiker camp and a
+  // hunting blind have no building of their own (buildingmaps.js SITES): the open map with these areas.
+  house: ["house", "house", "garage", "wreck"], neighbourhood: ["house", "house", "house", "garage", "wreck"], garage: ["garage", "garage", "workshop", "wreck"],
+  corner: ["store", "store", "kitchen", "office"], pizza: ["kitchen", "kitchen", "store", "wreck"], farmstand: ["store", "barn", "campsite"],
+  shed: ["barn", "workshop", "campsite"], blind: ["cabin", "campsite", "campsite"], campsite: ["campsite", "campsite", "wreck"],
+  hikercamp: ["campsite", "campsite", "campsite"], mineshack: ["workshop", "cabin", "campsite"],
 };
 
 export function raidAreasFor(tile) {

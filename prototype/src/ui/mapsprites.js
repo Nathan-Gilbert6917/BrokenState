@@ -1553,6 +1553,20 @@ const POI_PAINT = {
   convoy: paintConvoySite, // sim/miltrucks.js: the abandoned Army convoy
 };
 
+// A kind with no painter of its own yet (a point of interest, pois.js): a plain small building on a plate, so the
+// map draws something readable until its sprite is painted.
+function paintGenericPoi() {
+  const p = painter(18, 15);
+  const wall = "#9a8f80", roof = "#5c5650";
+  for (let r = 0; r < 3; r++) p.rect(4 + 2 - r, 4 + r, 13 - 2 + r, 4 + r, r === 0 ? shade(roof, 0.25) : shade(roof, -0.1 * r));
+  p.rect(3, 7, 14, 7, shade(roof, -0.3));
+  p.rect(4, 8, 13, 14, wall);
+  p.rect(4, 8, 4, 14, shade(wall, 0.15)); p.rect(13, 8, 13, 14, shade(wall, -0.2));
+  p.rect(8, 11, 9, 14, shade(wall, -0.55));
+  p.rect(5, 9, 6, 10, DARK_WIN); p.rect(11, 9, 12, 10, DARK_WIN);
+  return p;
+}
+
 // Grays a painter's colors (keeping see-through pixels see-through): picked-over sites.
 function fade(p, f = 0.7, dark = 0.18) {
   for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
@@ -2493,7 +2507,7 @@ const FADES = [null, [0.3, 0.06], [0.7, 0.18], [0.95, 0.42]];
 export function poiSpriteCanvas(type, variant = "", faded = 0) {
   const lvl = faded === true ? 2 : Math.max(0, Math.min(3, +faded || 0));
   return cached(`poi:${type}:${variant}:${lvl}`, () => {
-    const paint = POI_PAINT[type] || paintTownCenter;
+    const paint = POI_PAINT[type] || paintGenericPoi; // a kind without a painter yet (pois.js kinds): the plain building
     const p = paint(variant === "depot");
     return lvl ? fade(p, ...FADES[lvl]) : p;
   });
