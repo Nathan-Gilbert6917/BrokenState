@@ -326,7 +326,7 @@ section("Determinism of a round trip");
     const b = raid(st, p, t, i);
     for (const c of boxesOf(b).slice(0, 3)) open(st, b, c);
     end(st, b, "out");
-    lootPoiAbstract(st, 3, t, i, 0.1);
+    lootPoiAbstract(st, "g3", t, i, 0.1); // a holder id that is the same in both worlds (a group's number id is rolled by its world-local id, poicont.js)
     const b2 = raid(st, p, t, i);
     for (const c of boxesOf(b2)) if (!c.contents) { open(st, b2, c); break; }
     end(st, b2, "out");
