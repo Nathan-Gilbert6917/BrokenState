@@ -52,7 +52,7 @@ import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
 import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
-import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
+import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
@@ -1129,10 +1129,31 @@ const actions = {
   pact: (d) => { const f = factionById(state, state.trade.factionId); ui.tradeMsg = proposePact(state, f, d.k); },
   tradeleave: () => TRADE_ACTIONS.tradeleave(state, ui), // ui/tradewindow.js (the trade window's own handler)
   reroll: () => newWorld(randomSeed()),
+  // New map (the new-run screen): a new seed with the survivors as they are (names, looks, skills, traits, the leader,
+  // a Customize build); who they were is kept too, the dice's ones carried as rolled (ui/newgame.js crewWithBackgrounds).
+  "nr-newmap": () => {
+    if (ui.started) return;
+    const crew = crewSnapshot(state).map((c, i) => (c.background || !state.survivors[i].background ? c : { ...c, background: state.survivors[i].background, rolled: true }));
+    newWorld(randomSeed(), true, { crew, crewRoll: ui.crewRoll, pickRoll: ui.pickRoll });
+  },
   // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
   "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
   // Randomize everything (Customize, ui/newgame.js): every colonist's build and the vehicle's back, the world built again.
   "nr-everything": () => { state = randomizeEverything(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
+  // A crew card's Background: a random preset, as picking it in Background does (ui/newgame.js randomBackground).
+  "nr-rand-bg": (d) => {
+    const s = survivorById(state, Number(d.id));
+    if (!s || ui.ironman || ui.started) return;
+    const key = randomBackground(state, s);
+    const crew = key && crewWithBackground(state, s.id, key);
+    if (!crew) return;
+    const i = state.survivors.indexOf(s);
+    newWorld(state.seed, true, pickRebuild(crew));
+    pointsLoad([i]);
+  },
+  // A crew card's Gear and All (ui/newgame.js): the world again on the same seed where they need it.
+  "nr-rand-gear": (d) => { state = randomizeGear(state, ui, survivorById(state, Number(d.id)), cardRebuild); },
+  "nr-all": (d) => { state = randomizeOne(state, ui, survivorById(state, Number(d.id)), cardRebuild); },
   "bg-close": () => closeBackgrounds(), // Done in the custom backgrounds window: the world is built again if a colonist's background changed
   pickleader: (d) => { state.survivors.forEach((s) => (s.leader = s.id === Number(d.id))); ui.crewEdited = true; },
   // A new game starts paused: look around and give the first orders, then press Space.
@@ -1534,6 +1555,13 @@ function newWorld(seed, keepCrew = false, fresh = null) {
 const fixedCrewRoll = (seed) => 1 + ((seed * 48271) % 2147483646);
 // A rebuild for a background picked: the crew roll kept, else one of the seed's own (pickRoll: Ironman goes back to none).
 const pickRebuild = (crew) => (ui.crewRoll != null ? { crew, crewRoll: ui.crewRoll, pickRoll: ui.pickRoll } : { crew, crewRoll: fixedCrewRoll(state.seed), pickRoll: true });
+// The crew cards' dice (ui/newgame.js randomizeGear, randomizeOne): crew null builds the world again with the edited
+// crew; else with this crew (pick: a background was picked, the crew roll as pickRebuild keeps it). Returns the new state.
+function cardRebuild(crew, pick = false) {
+  if (!crew) { ui.crewEdited = true; newWorld(state.seed, true); }
+  else newWorld(state.seed, true, pick ? pickRebuild(crew) : { crew, crewRoll: ui.crewRoll, pickRoll: ui.pickRoll });
+  return state;
+}
 // Closing the custom backgrounds window (ui/backgrounds.js): a colonist whose background was changed or deleted in it
 // is built again from it (the dice if it is gone), the world on the same seed.
 function closeBackgrounds() {
