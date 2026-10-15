@@ -29,7 +29,7 @@ function previewUrl(b) {
   const memo = b.seenMemo && b.seenMemo[0];
   const known = (x, y) => !!(memo && typeof memo.cells === "string" && memo.cells.charCodeAt(y * b.w + x) === 49);
   // Under the roofs: what nobody has seen inside is one flat roof (the fog of war indoors).
-  const roofs = R ? [...(R.plan && R.plan.building ? [R.plan.building] : []), ...R.areas.filter((a) => !a.outdoor && !(a.f > 0))] : [];
+  const roofs = R ? [...(R.plan ? R.plan.buildings || (R.plan.building ? [R.plan.building] : []) : []), ...R.areas.filter((a) => !a.outdoor && !(a.f > 0))] : []; // a street of houses: every house (sim/buildingmaps.js streetMap)
   const roofed = (x, y) => roofs.some((a) => x >= a.x0 && y >= a.y0 && x < a.x0 + a.w && y < a.y0 + a.h) && !known(x, y);
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
     const c = cells[y * b.w + x];
