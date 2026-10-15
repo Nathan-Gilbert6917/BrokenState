@@ -311,11 +311,12 @@ const BASE = {
   // groupWares.keys and visitors: re-baselined for gen-tiers' Industrial Power Manual (blueprints.js indpower, now in
   // the military's wares and the traders' manuals); with it taken out they come back to 8b17671c3192515c,
   // 3bdc366902700698 / 706e068b336b9d26 / 12580090440502 exactly.
-  // siteFinds: re-baselined for the wind-up and military flashlights (vision.js lights, 27096bf: loot.js LIGHT_FINDS
-  // and ITEM_TAGS windlight / tacflash); groupWares.keys for the cookbooks in the traders' and the commune's books
-  // (cooking, a447855: skills.js WARE_BOOKS cookbook / chefbook / gamebook / prepbook). With those taken out they come
-  // back to edc8e9c7fdaab752 and 2474e79ab28f41c7 exactly (the world's dice unchanged).
-  siteFinds: "449949deb71a9b49", groupWares: { keys: "6d226e0b96b09acc", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
+  // siteFinds and groupWares.keys: the wind-up and military flashlights (vision.js lights, 27096bf: loot.js LIGHT_FINDS
+  // windlight / tacflash) and the cookbooks in the traders' and the commune's books (cooking, a447855: skills.js
+  // WARE_BOOKS) are taken off above (NIGHT_LIGHTS, cookBook), so the old hashes hold (the world's dice unchanged). With
+  // them left in they come to 449949deb71a9b49 and 6d226e0b96b09acc; the dazzling-bardeen merge (08ab2d0) carried both
+  // that re-baseline and the take-off (8b2f1d3), which is why the two drift checks failed there.
+  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "2474e79ab28f41c7", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
 };
 // The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
 // own and only add: off for these samples, like the commune's extras below, so the old baselines hold.
