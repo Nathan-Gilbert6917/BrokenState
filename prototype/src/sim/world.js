@@ -126,7 +126,7 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // [{ name?, skills?, traits?, budget?, appearance?, gear?, leader? }]. Headless tools leave it out.
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
 // "custom" with customW × customH hexes (experimental: worldsize.js customDef).
-// hives (optional): how many hives the map starts with, 0–10 (null: what the size makes; mapgen.js).
+// hives (optional): how many hives the map starts with, 0–20 (null: what the size makes; mapgen.js).
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
 // crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
 // new-run screen's Randomize all); left out, the world's seed decides them.

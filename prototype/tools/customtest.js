@@ -1,5 +1,5 @@
 // Custom world setup from the new-run screen (sim/worldsize.js): a custom width × height (experimental), 0–50 AI
-// groups and 0–10 starting hives, in Normal and Hardcore. Every corner builds, runs 20 days with the autopilot,
+// groups and 0–20 starting hives, in Normal and Hardcore. Every corner builds, runs 20 days with the autopilot,
 // saves and loads as the same size; the custom formula gives the presets' own counts at the presets' sizes, a
 // custom Normal-sized map with no hive count is the Normal map, and the hive count is exact. Also times how long the
 // biggest map takes to build and to play a day.
@@ -29,7 +29,7 @@ for (const k of SIZE_KEYS) {
 }
 check(customDef(1, 1).w === CUSTOM.MIN_W && customDef(1e6, 1e6).h === CUSTOM.MAX_H, "custom sizes clamped to their range");
 check(clampGroups("normal", 99) === GROUPS_MAX && clampGroups("small", -3) === 0 && clampGroups("huge", "") === WORLD_SIZES.huge.defGroups, "groups clamped to 0–50");
-check(clampHives("default") === null && clampHives(42) === HIVES_MAX && clampHives(-1) === 0 && clampHives(3) === 3, "hives clamped to 0–10, default kept");
+check(clampHives("default") === null && clampHives(42) === HIVES_MAX && clampHives(-1) === 0 && clampHives(3) === 3, "hives clamped to 0–20, default kept");
 console.log("  ok");
 
 section("A custom 64 × 42 map is the Normal map; a set hive count is exact");

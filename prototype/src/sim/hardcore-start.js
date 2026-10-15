@@ -652,6 +652,29 @@ function grabLine(state, s, got) {
   return `${who}${worn} ran with only the clothes on their back${things.length ? ` and ${things.join(", ")} in their pockets` : " and empty pockets"}${weapon ? `, and ${weapon}` : ""}.`;
 }
 
+// A grab on dice of its own (the new-run screen's Gear on a crew card: crew[i].grabRoll; not a custom background, which
+// draws no dice): the crew's draw is made and put back first, so everyone after them grabs what they would have, then
+// theirs is drawn again on its own dice. Kept on them (s.grabRoll) for the screen's rebuilds; Start takes it off
+// (startgear.js clearStartGear). Returns what roll() returns.
+function ownGrab(state, s, A, grabRoll, roll) {
+  if (!Number.isFinite(grabRoll) || (A && A.custom)) return roll();
+  const was = { gear: { ...s.gear }, pockets: [...s.pockets], traits: [...s.traits], traitTier: s.traitTier ? { ...s.traitTier } : null };
+  roll();
+  s.gear = was.gear;
+  s.pockets = was.pockets;
+  s.traits = was.traits;
+  if (was.traitTier) s.traitTier = was.traitTier; else delete s.traitTier;
+  const crewRng = state.rng;
+  state.rng = new Rng(grabRoll);
+  try {
+    s.grabRoll = grabRoll;
+    s.startCustom = true; // past the dice: not for Ironman
+    return roll();
+  } finally {
+    state.rng = crewRng;
+  }
+}
+
 // ---------- setup (hardcore.js hardcoreCreate) ----------
 // crewRoll: the three (who they were, what they grabbed, the car) drawn from a seed of their own instead of the world's
 // (the new-run screen's Randomize all). The world's rng is put back after the car, so the rest of the run still
@@ -689,7 +712,8 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   for (let i = 0; i < people.length; i++) {
     const s = people[i];
     const A = archetypeOf(state, s.background);
-    const got = s.background === "prepper" ? rollPrepper(state, s) : A && A.custom ? rollCustom(state, s, A) : rollGrab(state, s, A);
+    const roll = () => (s.background === "prepper" ? rollPrepper(state, s) : A && A.custom ? rollCustom(state, s, A) : rollGrab(state, s, A));
+    const got = ownGrab(state, s, A, crew && crew[i] && crew[i].grabRoll, roll);
     const picked = grabStartGear(state, s, got); // startgear.js: what was picked on the new-run screen, in place of the grab
     if (picked) pickedSup.push(picked);
     if (got.prepper) { prepper = s; prepGot = got; continue; }
