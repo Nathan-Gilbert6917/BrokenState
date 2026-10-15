@@ -195,7 +195,7 @@ function groupInput(state, ui) {
   const t = `How many other survivor groups share the state, 0–${GROUPS_MAX} (${d.groups.join("–")} suits a ${d.label} map; many groups on a small map may not all find room, and many groups slow the game)${hard ? ". Hardcore always has the National Guard" : ""}`;
   return `<label${tip(t)}>AI groups <input type="number" min="0" max="${GROUPS_MAX}" step="1" style="width:4rem" data-action="factioncount" value="${ui.factionCount}"></label>`;
 }
-// Starting hives: what the map makes (Default), or 0–10.
+// Starting hives: what the map makes (Default), or 0–20 (worldsize.js HIVES_MAX).
 function hiveSelect(state, ui) {
   const made = isHardcore(state) ? state.hardcore?.outbreak?.normalHives ?? (state.hives || []).length : (state.hives || []).length;
   const cur = ui.hiveCount == null ? "default" : String(ui.hiveCount);
