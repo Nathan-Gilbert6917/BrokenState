@@ -44,6 +44,7 @@ import { caravanCard } from "./caravans.js";
 import { tradeSpeech, bookWares, gainXp, USE, hash01 } from "./skills.js";
 import { armsSold } from "./diplomacy.js";
 import { visitorTradeContext, resumeVisitorTrade, tradeBack } from "./visitors.js";
+import { nomadTradeContext, resumeNomadTrade } from "./nomads.js"; // nomad bands, met on the road or at their camp
 import { RAW, keyWord } from "./water.js";
 import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo, baseKey } from "./rounds.js"; // rounds by calibre
 import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, holderCals } from "./ammo.js";
@@ -595,6 +596,7 @@ export function advanceTradeQueue(state) {
   while (!state.trade && q && q.length) {
     const v = q.shift();
     if (v.visitorId != null) { resumeVisitorTrade(state, v); continue; } // outsiders (visitors.js)
+    if (v.nomadId != null) { resumeNomadTrade(state, v); continue; } // nomads (nomads.js)
     const f = factionById(state, v.factionId);
     if (v.caravanId != null) {
       const c = state.parties.find((x) => x.id === v.caravanId);
@@ -616,6 +618,7 @@ export function tradeContext(state) {
   const t = state.trade;
   if (!t) return null;
   if (t.visitorId != null) return visitorTradeContext(state, t); // merchants and travellers from outside (visitors.js)
+  if (t.nomadId != null) return nomadTradeContext(state, t); // nomad bands (nomads.js): a visit, from what the team carries
   if (t.radio) return radioTradeContext(state, t); // over the radio (radiotrade.js)
   const f = factionById(state, t.factionId);
   if (!f || !f.alive) return null;
@@ -911,6 +914,7 @@ export function giftAll(state) {
 }
 
 export function proposePact(state, f, kind) {
+  if (f && f.outsider) return `${f.name} sign nothing: they are not one of the state's groups.`; // outsiders and nomads (visitors.js, nomads.js)
   const att = attitude(f);
   if (att === "Hostile") return `${f.name} will not sign anything with you.`;
   if (kind === "nonaggression") {

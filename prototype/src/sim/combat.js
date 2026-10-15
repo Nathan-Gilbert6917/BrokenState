@@ -789,6 +789,14 @@ export const KITS = {
               finds: ["smokes", "instcoffee", "cards", "watch", "lighters", "chocolate", "batteries"] },
   contractors: { label: "Contractor", aim: -2, hp: -5, weapons: ["ar", "ar", "carbine", "carbine", "huntrifle"], strong: ["ar"], armor: ["vest", "plate", "plate"], loot: ["ar", "carbine", "plate", "vest", "riothelmet", "milhelmet", "nvg", "milradio", "smokegren", "frag", "binoculars", "reddot", "holo"], pack: ["assaultpack", 0.35],
               finds: ["cigarettes", "chocolate", "instcoffee", "smokegren", "frag", "batteries", "watch", "goldchain", "photos"] },
+  // Nomad bands (nomads.js), by tier: looters (melee and a few pistols, no armour), survivalists (hunting rifles,
+  // bows and shotguns, light armour), preppers (rifles and carbines, plate carriers and scrap-steel vests: AC 3 and up).
+  looters: { label: "Looter", aim: -2, hp: 0, weapons: ["machete", "bat", "nailbat", "knife", "prybar", "pistol", "pipespear", "revolver"], strong: ["pistol", "revolver", "shotgun"], armor: [null], loot: ["machete", "knife", "bat", "nailbat", "prybar", "pistol", "slingbag", "flashlight", "molotov"], pack: ["slingbag", 0.3],
+              finds: ["cigarettes", "lighters", "watch", "goldring", "goldchain", "candy", "photos", "batteries"] },
+  survivalists: { label: "Survivalist", aim: 3, hp: 3, weapons: ["huntrifle", "huntrifle", "leverrifle", "shotgun", "compbow", "xbow", "machete"], strong: ["huntrifle", "leverrifle"], armor: [null, "tirevest", "vest"], loot: ["huntrifle", "leverrifle", "compbow", "machete", "knife", "snarewire", "binoculars", "hikingpack", "bandagekit", "waterfilter"], pack: ["hikingpack", 0.4],
+              finds: ["lighters", "candles", "honey", "tea", "photos", "harmonica", "flare", "cigarettes"] },
+  preppers: { label: "Prepper",  aim: 4, hp: 5, weapons: ["ar", "carbine", "carbine", "huntrifle", "shotgun"], strong: ["ar", "carbine"], armor: ["plate", "plate", "scrapvest"], loot: ["ar", "carbine", "plate", "milhelmet", "binoculars", "handradio", "rucksack", "bandagekit", "nvg", "smokegren"], pack: ["rucksack", 0.4],
+              finds: ["chocolate", "instcoffee", "batteries", "heatpack", "lighters", "watch", "flare", "toothpaste"] },
   // Loose survivors on their own (wanderers.js): the aggressive ones who rob like raiders, and neutrals on the map.
   survivors: { label: "Survivor", aim: -4, hp: -5, weapons: ["knife", "bat", "prybar", "pistol", "pistol", "revolver", "huntrifle", "shotgun"], strong: ["shotgun", "huntrifle"], armor: [null, null, null, "vest"], loot: ["knife", "bat", "prybar", "pistol", "revolver", "slingbag", "flashlight", "bikehelmet", "tirevest"], pack: ["backpack", 0.25],
               finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries", "deodorant", "lipbalm", "wetwipes"] },

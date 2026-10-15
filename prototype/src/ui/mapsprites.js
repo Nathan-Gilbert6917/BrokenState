@@ -2794,6 +2794,7 @@ export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
     if (type === "car") return paintWreckMarker(!!opt.emptied);
     if (type === "miltruck") return paintMilTruckMarker(); // an Army truck seen on the road (sim/miltrucks.js)
     if (type === "camp") return paintCampMarker(!!opt.emptied);
+    if (type === "nomadcamp") return paintCampMarker(false); // a nomad camp seen (sim/nomads.js): the camp's look, never emptied
     if (type === "hive") return paintHive(0);
     return paintParked(opt.vehicle || "truck", color, !!opt.needsFuel, !!opt.damaged, opt.ups || ""); // ups: its upgrades (upsCode)
   });

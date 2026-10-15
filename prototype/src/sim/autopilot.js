@@ -1723,6 +1723,7 @@ function handleTrade(state) {
       text = `traded ${list(offer)} for ${[list(ask), ...askGear.map((x) => x.name)].filter(Boolean).join(", ")}`;
     } else text = `no deal (${res})`; // e.g. more than the team can carry
   }
+  if (ctx.nomad) { say(state, `Trade with nomads (${f.name}): ${text || "nothing worth swapping"}.`); endTrade(state); return; } // nomads.js: no pacts, no envoy's gifts, no coalition
   if (!f.pact) {
     const r = proposePact(state, f, f.goodwill >= 20 ? "trade" : "nonaggression");
     if (/signed/.test(r)) text += `${text ? "; " : ""}${r.toLowerCase().replace(/\.$/, "")}`;

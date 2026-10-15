@@ -121,6 +121,7 @@ export function councilVote(state, f) {
 // Why this group cannot join now ("" = it can). Each condition, in the order the player meets them.
 export function inviteProblem(state, f) {
   if (!f || !f.alive) return "They are gone.";
+  if (f.outsider || f.nomad) return `${f.name} are not one of the state's groups: they join nothing.`; // outsiders and nomads (visitors.js, nomads.js) never join the coalition
   if (isMember(state, f)) return `${f.name} is already in the coalition.`;
   if (!f.known) return "You have not met them.";
   if (!reachable(state, f)) return outOfReach(state, f);

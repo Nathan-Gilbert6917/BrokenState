@@ -135,7 +135,9 @@ export const ARSENAL = {
   },
 };
 // The kit of each group type (the same as conflicts.js KIND_OF).
-export const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
+export const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia",
+  // Nomad bands by tier (nomads.js; not group types: a band carries no arsenal, its spare gun comes from starterKit).
+  nomad1: "looters", nomad2: "survivalists", nomad3: "preppers" };
 export const kitOf = (f) => KIT_OF[f && f.type] || "survivors";
 
 // Off switch for tests (tools/arsenaltest.js: the world made without arsenals draws the same dice).

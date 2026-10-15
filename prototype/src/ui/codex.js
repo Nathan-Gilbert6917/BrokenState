@@ -23,6 +23,7 @@ import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES,
 import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known; tile heat
 import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
 import { STREET } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses
+import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
@@ -335,6 +336,22 @@ function groupEntries() {
     how: "Hear their news (free), buy the scouts' maps, trade, shelter them for a few days or take them in. Keep an eye out: a few rob the base that shelters them.",
     sprite: () => enemyCanvas("raiders", "#9a9a9a", null, null, 2),
   });
+  // Nomad bands (sim/nomads.js): one entry a tier, opened when one is seen.
+  const NOMAD_TEXT = {
+    1: ["hostile", "melee weapons and a pistol or two, no armour", "They rob a team they can take and scatter before one that is stronger. Pay them, talk them down, fight or run; a team stronger than they are can run them down for what they drop.", "From the start."],
+    2: ["neutral, willing to trade", "hunting rifles, bows and shotguns, light armour", "The best foragers and hunters on the road, with a medic or two. Trade with them, swap news, share food; they remember a kindness.", "From year 2."],
+    3: ["neutral and defensive", "rifles and carbines, plate carriers and steel (armour class 3 and up), a pickup or a Humvee", "Well armed and careful: they keep you at rifle range but will trade. Attacking them is a hard fight.", "From year 4."],
+  };
+  for (const tier of [1, 2, 3]) {
+    const T = NOMADS.TIERS[tier], [att, arms, how, from] = NOMAD_TEXT[tier];
+    out.push({
+      key: `n:${tier}`, cat: "groups", name: `Nomads: ${T.name}`, sub: "Nomads",
+      stats: [["Size", `${T.size[0]}–${T.size[1]} people (they start small and stay small)`], ["Attitude", att], ["Arms", arms], ["Appears", from]],
+      text: `Baseless bands that camp a few days, survey and pick over the places round their camp, then move on 4–8 tiles. They forage and hunt, eat and drink every day, and can starve, fall to the dead or to you; new bands come in from the edge of the map so there are always about half as many as there are groups. They take in neutral wanderers and refugees when they have food to spare. They are not one of the state's groups: no land, no base, no pacts, never in the Calder Coalition. Their camps show on the map once your people have seen one.`,
+      how: `${how} Send a team to attack a camp you have spotted (the tile's Attack the nomad camp). They take what you left in a container you opened near their camp.`,
+      sprite: () => enemyCanvas(T.kit === "preppers" ? "soldiers" : "raiders", NOMADS.COLORS[tier], null, null, tier + 1),
+    });
+  }
   return out;
 }
 
@@ -475,6 +492,7 @@ function seenNow(state) {
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
+  for (const b of (state.nomads && state.nomads.bands) || []) if (b && b.known && live.has(b.tile)) keys.add(`n:${b.tier}`); // sim/nomads.js
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
   for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); if (poisOf(t)[i].cont && poisOf(t)[i].cont.last) keys.add("k:aipois"); }
   if (Object.values(state.poiKnow || {}).some((k) => k && k.heat)) keys.add("k:tileheat"); // a team has seen a tile's heat (sim/pois.js noteTileHeat)

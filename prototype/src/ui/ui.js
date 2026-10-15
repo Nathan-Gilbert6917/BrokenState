@@ -584,6 +584,7 @@ export function siteMissions(state, id) {
   if (markers.some((m) => m.type === "vehicle")) actions.push(["getvehicle", "Recover vehicle"]);
   if (markers.some((m) => (m.type === "cache" || m.type === "car" || m.type === "camp") && !m.info?.emptied)) actions.push(["investigate", "Investigate find"]);
   if (info && info.hordeSize) actions.push(["cull", "Cull horde"]);
+  if (markers.some((m) => m.type === "nomadcamp")) actions.push(["nomads", "Attack the nomad camp"]); // sim/nomads.js: a camp seen there
   if (info && info.hive) actions.push(["hive", "Destroy hive"]);
   // A hive's growth you can see or were told of (sim/hivetech.js).
   const growth = isLive ? growthInfo(state, growthAt(state, id)) : snap && snap.growth;

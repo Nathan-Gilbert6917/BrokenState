@@ -97,6 +97,7 @@ import { partySaw } from "./groupworld.js"; // a group learns your bases its par
 import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
 import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood task counts its own haul (call-time only: safe in the import cycle)
+import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -116,6 +117,7 @@ export const MISSIONS = {
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
   hive:        { name: "Destroy hive",     desc: "Storm an infestation hive: a hard tactical battle against its brood and the Broodmother inside. Win and the hive is destroyed. Bring five or six well-armed fighters." },
   growth:      { name: "Burn the growth",  desc: "Attack a structure a hive has grown beside it (a pit, a brood chamber, a warren...): fight its guard in a small battle, or burn it with 4 fuel or 2 Molotovs (it may take two fires). Gone, the hive loses what it gave: income, a bigger guard, a kind of special dead, its Wallbreakers. Bring three or four fighters." },
+  nomads:      { name: "Attack the nomad camp", desc: "Go to a nomad camp your people spotted (nomads.js) and attack it: a battle against the band with its tier's kit (looters: clubs and pistols; survivalists: hunting rifles and bows; preppers: rifles and plate armour). Win and what they carry is yours. They move on every few days: the camp may be gone when you get there." },
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running. A vehicle found on a map that needs work is repaired on the spot (foundcars.js)." },
   drivehome:   { name: "Drive it home",    desc: "One of the team drives a found vehicle home on their own (foundcars.js).", hidden: true },
@@ -1657,6 +1659,7 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   if (site && site.items.length) add("recover");
   if (state.hordes.some((h) => state.grid.distance(h.tile, tile) <= 1)) add("cull");
   if (hiveAt(state, tile)) add("hive");
+  if (nomadCampAt(state, tile)) add("nomads"); // nomads.js: a camp you know of
   const gr = growthAt(state, tile);
   if (gr && gr.withered == null) add("growth"); // hivetech.js
   if (t.hidden && !t.hidden.taken && (t.hidden.known || p.spotted?.has(`${t.hidden.type}:${tile}`))) add("investigate");
@@ -2001,6 +2004,8 @@ function arrive(state, p) {
       addCard(state, gatheringCull(state, p, horde, cullCard(state, p, horde))); // hivebirth.js: at a hive build site, Break up the gathering
       return "";
     }
+    case "nomads":
+      return nomadCampArrive(state, p); // nomads.js: the camp, if it is still there
     case "investigate":
       return investigate(state, p);
     case "getvehicle": {

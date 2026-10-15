@@ -31,6 +31,7 @@ import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
 import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
+import { nomadMapBands, nomadTipLines } from "../sim/nomads.js";
 import { stagingTip } from "../sim/staging.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
@@ -1054,6 +1055,7 @@ function moverHash(state) {
   for (const x of state.herds || []) h = (h * 31 + x.tile * 5 + x.size) % 2147483647; // infested herds (sim/worm.js)
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
   for (const b of hcMapBands(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands and the strike force (sim/hardcore-groups.js)
+  for (const b of nomadMapBands(state)) h = (h * 31 + b.tile * 13 + b.pop + (b.camp ? 7 : 0)) % 2147483647; // nomad bands (sim/nomads.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile + (b.tier === 0 ? campStage(b) * 7 + (b.fire === false ? 3 : 0) : 0)) % 2147483647; // a camp's or shelter's look (its step up, its fire)
   if (state.staging) h = (h * 31 + state.staging.tile * 3 + Math.round(oldCampPct(state.staging) * 50)) % 2147483647; // a timelapse frame's camp (sim/chronicle.js)
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
@@ -1613,7 +1615,7 @@ export function render(state) {
   }
   // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
   // you can see them; the military's strike force on its way to the city hive as its convoy of trucks.
-  if (on("teams")) for (const b of hcMapBands(state)) {
+  if (on("teams")) for (const b of [...hcMapBands(state), ...nomadMapBands(state)]) { // and the nomads (sim/nomads.js): a camp has its fire
     if (!live.has(b.tile)) continue;
     const [px, py] = g.toPixel(b.tile, HEX);
     const cv = groupPartyCanvas(b.type, b.convoy ? "convoy" : "walk", b.color, b.pop >= 15 ? 4 : b.pop >= 7 ? 3 : 2), s = zoomBoost();
@@ -1622,8 +1624,9 @@ export function render(state) {
     const facing = next != null && next !== b.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(b.tile, px, py);
     groundRing(x, y, b.color, false, false);
-    if (view.pick === `band:${b.id}`) pickRing(x, y);
+    if (view.pick === `${b.nomad ? "nomad" : "band"}:${b.id}`) pickRing(x, y);
     const onWay = next != null && next !== b.tile;
+    if (b.camp) smokeWisps(b.tile * 7 + 3, x - 9 * s * k2, y - 2 * s, s, { n: 2, rise: 10 }); // a nomad camp's fire
     if (onWay && b.convoy) dustTrail(b.tile * 13 + 7, x, y + 4 * s, s, facing, w * k2);
     sprite(cv, x, y - 3 + (!onWay ? 0 : b.convoy ? rumble(b.tile * 13, 0.35 * s) : stepBob(b.tile * 13 + 1, 1.1 * s, 380)), w * k2, { facing });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
@@ -1719,7 +1722,7 @@ const lastFacing = new WeakMap();   // UI only: keeps a team facing the way it l
 const PLACE_W = { hub: 46, outpost: 34, shelter: 38, faction: 40 }; // base sprite widths in world pixels (before zoomBoost)
 const placeW = (b) => (isCamp(b) ? STAGING_W : b.tier === 0 ? PLACE_W.shelter : b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost);
 const STAGING_W = 34; // a camp's sprite width (sim/staging.js), an outpost's
-const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, vehicle: 20 };
+const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, nomadcamp: 16, vehicle: 20 };
 const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a" }; // marker rings and far-out dots
 const ICON_W = 11;                 // status icons (alert, work, radio, siege, "?")
 // Site sprites: world pixels per sprite pixel, and a size factor by zone so a shop drawn for a city block comes out
@@ -1748,6 +1751,7 @@ function countCrowd(state, live) {
       else if (p.phase !== "siege" && live.has(partyTile(p))) add(partyTile(p));
     }
     for (const b of hcMapBands(state)) if (live.has(b.tile)) add(b.tile);
+    for (const b of nomadMapBands(state)) if (live.has(b.tile)) add(b.tile);
     for (const v of state.visitors || []) if (live.has(v.tile) || (!state.timelapse && inCoverage(state, v.tile))) add(v.tile);
   }
   return out;
@@ -2387,6 +2391,7 @@ export function tileTooltip(state, id) {
   for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
   for (const line of caravanTipLines(state, id, liveSet(state))) lines.push(`<span style="color:#e0c070">${esc(line)}</span>`); // sim/caravanraids.js: the groups' caravans and convoys
   for (const o of bandTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/hardcore-groups.js
+  for (const o of nomadTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/nomads.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   // An empty base you know of (sim/occupy.js): what stands and, in view, who is inside (out of view: as last seen).
   const em = ownHere ? null : emptyKnown(state, id);

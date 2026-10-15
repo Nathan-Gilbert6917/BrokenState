@@ -120,7 +120,7 @@ export const LOCK_SOURCE = {
   crash: "military", miltruck: "military", car: "home",
 };
 // A body by its kit (combat.js KITS).
-export const KIT_SOURCE = { soldiers: "soldier", contractors: "soldier", guards: "guard", escorts: "guard", fighters: "fighter", militia: "militia", raiders: "raider", zealots: "raider", survivors: "survivor" };
+export const KIT_SOURCE = { soldiers: "soldier", contractors: "soldier", guards: "guard", escorts: "guard", fighters: "fighter", militia: "militia", raiders: "raider", zealots: "raider", survivors: "survivor", looters: "raider", survivalists: "militia", preppers: "fighter" };
 // A group's trader by its type (data.js FACTION_TYPES).
 export const TRADER_SOURCE = { military: "traderMil", raider: "traderRaider", zealot: "traderRaider" };
 

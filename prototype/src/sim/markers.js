@@ -13,6 +13,7 @@ export const MARKER_TYPES = {
   cache:   { name: "Supply cache",      glyph: "📦", desc: "A hidden stash someone left behind. Investigate to collect it." },
   car:     { name: "Wrecked car",       glyph: "🚗", desc: "Could be restored with parts and fuel, or stripped." },
   camp:    { name: "Abandoned camp",    glyph: "⛺", desc: "Someone lived here. Supplies, and maybe notes about the area." },
+  nomadcamp: { name: "Nomad camp",     glyph: "🔥", desc: "Where a band of nomads (nomads.js) was camped when your people last saw it. They move on every few days. A team can be sent to attack a camp you know of." },
   miltruck: { name: "Army truck",       glyph: "🪖", desc: "A military truck left on the road (miltrucks.js): rifles, ammunition and armour in the back, and its crew still about it. Scavenge the tile to search it." },
 };
 
@@ -32,7 +33,7 @@ export const LAYERS = {
   coalition: { name: "Coalition land",   desc: "Land you and the coalition's members hold (goal: 50%)" },
   towersight: { name: "Tower sight",     desc: "Rings round your manned watch towers: what they see" }, // sim/fieldworks.js
 };
-export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds", miltruck: "finds" };
+export const LAYER_OF = { vehicle: "vehicles", death: "deaths", cache: "finds", car: "finds", camp: "finds", miltruck: "finds", nomadcamp: "finds" };
 
 export function spot(p, entry) {
   if (!p.spotted) p.spotted = new Map();
