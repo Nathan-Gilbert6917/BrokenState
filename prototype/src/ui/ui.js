@@ -57,6 +57,7 @@ import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
 import { ageText, liveSet, mapLoc, ruinInfo, coalitionLand } from "./render.js";
+import { poiHeading, poiTopLoc, poiPanelRows } from "./poiview.js"; // the tile panel's points of interest (sim/pois.js): the heading of a bare tile, the Places rows
 import { searchedDay } from "../sim/discovery.js";
 import { lootBand, LOOT_BANDS } from "../sim/aiscav.js";
 import { conflictView, captivesOf, isCaptive, fightOdds } from "../sim/conflicts.js";
@@ -633,11 +634,15 @@ export function renderRight(state, ui) {
   const teamsHere = state.parties.filter((p) => p.owner === "player" && contactable(p) && partyTile(p) === id);
   const loc = mapLoc(state, id); // a hidden site nobody has found is bare ground (sim/discovery.js)
   const land = landRows(state, id, teamsHere);
+  // Points of interest (sim/pois.js, ui/poiview.js): a bare tile is headed by its top POI once that is known; the
+  // Places rows list what is known here (never how many are hidden).
+  const top = loc ? null : poiHeading(state, id), sloc = loc || (top ? poiTopLoc(state, id) : null); // sloc: the site, or the top POI as a site of its kind
+  const places = poiPanelRows(state, id, isLive, snap);
   // The tile in four groups (styles.css .pk): what you know of it, its dangers, what the land gives, the way there.
   return `
-    <h2>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</h2>
+    <h2>${esc(loc ? loc.name : top || TERRAIN[t.terrain].name)}</h2>
     <div class="small muted">${loc ? LOCATIONS[loc.type].name + " · " : ""}${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}${t.bridge ? " · bridge" : ""}</div>
-    ${loc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[loc.zone || LOCATIONS[loc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(loc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[loc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => (k === "food" ? "food" : k === "preserved" ? "food that keeps" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k)).join(", ")}${LOCATIONS[loc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
+    ${sloc ? `<div class="small muted"${tip("Danger: how many of the dead the site holds on top of its infection (city blocks and big sites are worse, the countryside is quiet). Likely: what searching here tends to turn up.")}>${SITE_ZONES[sloc.zone || LOCATIONS[sloc.type].cat]?.name || "Site"} · danger ${DANGER_NAMES[siteDanger(sloc)].toLowerCase()} · likely ${Object.entries(LOCATIONS[sloc.type].loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => (k === "food" ? "food" : k === "preserved" ? "food that keeps" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k)).join(", ")}${LOCATIONS[sloc.type].gear.length ? ", maybe gear" : ""}</div>` : ""}
     ${pickBar(state, ui)}
     ${ui.moveParty ? `<div class="card attn small" style="margin-top:0.5rem">Move mode: left-click this or another tile to send the team. Esc cancels.</div>` : ""}
     ${stagingTileCard(state, id)}
@@ -668,6 +673,10 @@ export function renderRight(state, ui) {
       <div class="kv">
         ${info ? `<div${tip("How much is left to scavenge here, against what it held untouched: rich, some, little, picked clean. Nothing grows back, and other groups strip sites too: what you have not seen lately may be gone.")}>Loot</div><div>${lootCell(info.loot)}</div>` : ""}
         ${land}
+      </div>` : ""}
+      ${places ? `${pkSec("Places", "Points of interest on the tile: the houses, sheds, shops and camps that stand here besides its site, each with its own loot. The known ones are listed with how picked over they are; a survey (8 hours) finds the hidden ones, a quick look (2 hours) some of them. Hidden ones are never counted.")}
+      <div class="kv">
+        ${places}
       </div>` : ""}
       ${pkSec("Travel")}
       <div class="kv">

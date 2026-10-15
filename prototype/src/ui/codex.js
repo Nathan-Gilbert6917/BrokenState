@@ -19,7 +19,9 @@ import { EAT } from "../sim/eating.js"; // "No hot food"
 import { KITCHEN } from "../sim/kitchen.js"; // the stove's firewood
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
-import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES } from "../sim/data.js";
+import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
+import { POI, allPoiKinds, poisOf, knownPois } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known
+import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
@@ -50,7 +52,7 @@ const list = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} a
 
 export const CODEX_CATS = [
   ["dead", "The dead"], ["hives", "Hives"], ["items", "Items"], ["supplies", "Supplies"], ["buildings", "Buildings"],
-  ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
+  ["places", "Places"], ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
 ];
 const CAT_NAME = Object.fromEntries(CODEX_CATS);
 
@@ -336,6 +338,30 @@ function groupEntries() {
 }
 
 let ENTRIES = null, BY_KEY = null;
+// Points of interest (sim/pois.js): how places work, and one entry a kind (data.js LOCATIONS) with its map sprite,
+// opened once the player knows one on a tile seen or reported.
+const likely = (def) => Object.entries(def.loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => (k === "food" ? "food" : k === "preserved" ? "food that keeps" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k)).join(", ");
+function placeEntries() {
+  const out = [{
+    key: "k:pois", cat: "places", name: "📍 Points of interest", sub: "How places work",
+    stats: [["Per tile", `up to ${POI.MAX} by the land (mountains 0–1, hills and forest 0–2, farmland 0–3, suburbs 1–4); none on water, in a city or town centre or on a hive's tile`], ["Known", "on and by roads and in the towns' and cities' footprints all but a few are known from the start; elsewhere none until a team surveys the tile"], ["Loot", "a pool of its own in each place, from what its kind holds; nothing grows back, and other groups strip them too"]],
+    text: "The houses, sheds, shops and camps a tile holds besides its site: a tile's best place is drawn on the map once you know it (a site tile keeps its site), the tile panel's Places rows list the ones you know with how picked over each is, and a pip at the sprite's corner counts them. What is hidden is never counted: the panel says \"possibly more unknown\".",
+    how: "Click a tile to read its Places. Send a Survey (8 hours on the tile) to find the hidden ones, a Quick look (2 hours) for a faster, rougher look. Scavenge or raid a tile to pick one of its places to search.", sprite: null,
+  }];
+  for (const k of allPoiKinds()) {
+    const d = LOCATIONS[k];
+    if (!d) continue;
+    const zone = SITE_ZONES[d.cat];
+    out.push({
+      key: `p:${k}`, cat: "places", name: d.name, sub: `${zone ? zone.name : "Place"} · point of interest`,
+      stats: [["Danger", DANGER_NAMES[siteDanger({ type: k, zone: d.cat })]], ["Likely", likely(d)], ["Gear", d.gear.length ? list(d.gear.slice(0, 4).map((g) => (GEAR[g] ? GEAR[g].name.toLowerCase() : g))) + (d.gear.length > 4 ? "…" : "") : "none"], ["Worth", d.richness >= 0.5 ? "a good haul when untouched" : d.richness >= 0.3 ? "a modest haul when untouched" : "slim pickings even untouched"]],
+      text: `${d.name}: a place a tile holds${d.cat === "rural" ? " out in the countryside" : d.cat === "town" ? " in a suburb or a small town" : " on a city block"}, with loot of its own.`,
+      how: "Scavenge or raid the tile and pick it in the list of places; the search goes through its rooms and containers. A survey shows whether it stands on a tile before you go.",
+      sprite: () => poiSpriteCanvas(k),
+    });
+  }
+  return out;
+}
 // Field works (sim/fieldworks.js FIELD.KINDS): opened once one stands on the map where you see it (yours, or a group's).
 function fieldEntries() {
   return FIELD.ORDER.map((k) => {
@@ -369,7 +395,7 @@ function foodChainEntries() {
 }
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...placeEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -425,6 +451,8 @@ function seenNow(state) {
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
+  // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
+  for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); }
   weatherSeen(state, keys);
   return keys;
 }

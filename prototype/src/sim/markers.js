@@ -17,7 +17,7 @@ export const MARKER_TYPES = {
 };
 
 export const LAYERS = {
-  pois:      { name: "Locations",        desc: "Towns, sites and their names" },
+  pois:      { name: "Locations",        desc: "Towns, sites and the places on the tiles, with their names" },
   territory: { name: "Territory",        desc: "Land held by you and known groups" },
   teams:     { name: "Teams and convoys", desc: "Your teams, plus raiders and convoys you can see" },
   workers:   { name: "Base workers",     desc: "Your bases' people out on their jobs (wood, hunting, fishing, foraging, scavenging, water): walking out, at work, bringing the load home; the groups' people by their bases you can see" },
