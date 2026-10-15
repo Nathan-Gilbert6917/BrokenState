@@ -81,7 +81,7 @@ export interface TileSnapshot {
   lootSrc?: any;
   gb?: any; // intelnotes.js: what a team saw of a group's base here (it goes to state.intelLedger with the report)
   via?: string; // a report, not your own eyes (alliance.js "ally", hivetech.js "rumour"…)
-  pois?: { i: number; kind: string }[]; // pois.js: the points of interest known here (index and kind)
+  pois?: { i: number; kind: string; pool?: number }[]; // pois.js: the points of interest known here (index, kind, the pool as seen then)
   surveyed?: number; // the day the tile was last surveyed in full (pois.js revealPois stamp)
   looked?: number; // the day of the last quick look
 }

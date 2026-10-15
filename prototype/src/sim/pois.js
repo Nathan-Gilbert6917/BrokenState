@@ -38,6 +38,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
+import { ZONE_RICHNESS } from "./mapgen.js"; // the site POI's loot band is its site's (aiscav.js lootBand)
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -249,6 +250,19 @@ export function poiTake(t, i, amount) {
   if (now <= POI.STRIPPED) p.stripped = true;
   return was - now;
 }
+/**
+ * How picked over POI i is (the bands of aiscav.js lootBand, LOOT_BANDS: 0 rich, 1 some, 2 little, 3 picked clean),
+ * from its pool now, or from a pool as it was last seen (a snapshot's). The site POI is measured as its site is.
+ * @param {Tile} t @param {number} i @param {number} [pool]
+ */
+export function poiLootBand(t, i, pool = poiPool(t, i)) {
+  const p = poiAt(t, i);
+  if (!p || pool == null) return 0;
+  const full = isSitePoi(t, i) ? LOCATIONS[t.loc.type].richness * (t.loc.type === "town" ? 1 : ZONE_RICHNESS[t.loc.zone] || 1)
+    : LOCATIONS[p.kind].richness * (t.terrain === "city" ? POI.URBAN_RICH : 1);
+  const r = pool / Math.max(0.05, full);
+  return pool <= POI.STRIPPED + 0.02 || r < 0.1 ? 3 : r < 0.3 ? 2 : r < 0.6 ? 1 : 0;
+}
 /** The container ledger of POI i, made on first use: { n, looted: { containerId: byGroupId }, mine: { containerId: { contents, hidden, quick, lock } } }. @param {Tile} t @param {number} i */
 export function poiLedger(t, i) {
   const p = poiAt(t, i);
@@ -378,13 +392,13 @@ export function mergePoiFinds(state, p) {
   for (const [id, f] of p.poiFinds) learnPois(state, id, f);
   p.poiFinds.clear();
 }
-/** What a snapshot of the tile carries (world.js snapshot): the POIs the player knows there and the stamps. @param {State} state @param {number} id */
+/** What a snapshot of the tile carries (world.js snapshot): the POIs the player knows there (with their pools as seen then: the map's and the panel's loot bands) and the stamps. @param {State} state @param {number} id */
 export function poiSnapshot(state, id) {
   const t = state.tiles[id];
   const list = poisOf(t);
   if (!list.length) return null;
   const k = poiKnowledge(state, id);
   const pois = [];
-  for (let i = 0; i < list.length; i++) if (poiKnown(state, t, i)) pois.push({ i, kind: list[i].kind });
+  for (let i = 0; i < list.length; i++) if (poiKnown(state, t, i)) pois.push({ i, kind: list[i].kind, pool: poiPool(t, i) });
   return { pois, surveyed: k && k.surveyed != null ? k.surveyed : undefined, looked: k && k.looked != null ? k.looked : undefined };
 }
