@@ -6055,9 +6055,10 @@ export function createRaid(state, setup) {
     },
   };
   // Storeys (buildingmaps.js): every floor its own grid of the same size, the ground floor active; the upper floors'
-  // reach floods from the first stairwell. b.cells / b.reach / b.losCache alias the active floor's (setFloor).
+  // reach floods from the first stairwell (a street of houses: from every one). b.cells / b.reach / b.losCache alias
+  // the active floor's (setFloor).
   if (pick && map.floors && map.floors.length > 1) {
-    // An upper floor's reach floods from every stairwell on it (a street of houses: each house's upper floor is its own, void between them).
+    // Each house's upper floor on a street is its own, void between them.
     const upReach = (F) => { const r = new Uint8Array(W * H); for (const [sx, sy] of map.stairs) if (CELL[F.cells[sy * W + sx].k].walk && !r[sy * W + sx]) { const f = flood(F.cells, sx, sy); for (let j = 0; j < r.length; j++) r[j] |= f[j]; } return r; };
     b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
