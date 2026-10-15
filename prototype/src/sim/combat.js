@@ -6006,7 +6006,14 @@ export function createRaid(state, setup) {
     entryFrom(map, entrySide, withVehicle);
     W = map.w; H = map.h;
     const z = map.zones[0];
-    map.reach = flood(map.cells, z.x0 + 1, z.y0 + (withVehicle ? 0 : 1));
+    // Flooded from beside the vehicle (a zone at the west end of a street of houses has it across x0 + 1: the first open cell of the zone then).
+    let from = [z.x0 + 1, z.y0 + (withVehicle ? 0 : 1)];
+    if (!CELL[map.cells[from[1] * W + from[0]].k].walk) {
+      const open = [];
+      for (let y = z.y0; y < z.y0 + z.h; y++) for (let x = z.x0; x < z.x0 + z.w; x++) if (map.cells[y * W + x].k === "open") open.push([x, y]);
+      if (open.length) from = open[0];
+    }
+    map.reach = flood(map.cells, from[0], from[1]);
     map.areas = map.rooms;
   } else {
     [W, H] = raidDims(tile); // the street map: by the site (battlesize.js: a city center Large, a campground Medium)
@@ -6048,10 +6055,12 @@ export function createRaid(state, setup) {
     },
   };
   // Storeys (buildingmaps.js): every floor its own grid of the same size, the ground floor active; the upper floors'
-  // reach floods from the first stairwell. b.cells / b.reach / b.losCache alias the active floor's (setFloor).
+  // reach floods from the first stairwell (a street of houses: from every one). b.cells / b.reach / b.losCache alias
+  // the active floor's (setFloor).
   if (pick && map.floors && map.floors.length > 1) {
-    const [sx, sy] = map.stairs[0];
-    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : flood(F.cells, sx, sy), losCache: i === 0 ? b.losCache : null, name: F.name }));
+    // Each house's upper floor on a street is its own, void between them.
+    const upReach = (F) => { const r = new Uint8Array(W * H); for (const [sx, sy] of map.stairs) if (CELL[F.cells[sy * W + sx].k].walk && !r[sy * W + sx]) { const f = flood(F.cells, sx, sy); for (let j = 0; j < r.length; j++) r[j] |= f[j]; } return r; };
+    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
     b.raid.storeys = map.floors.length;
     b.raid.stairs = map.stairs.map((s) => s.slice());
@@ -6132,7 +6141,8 @@ export function createRaid(state, setup) {
   if (pick) {
     const rooms = map.areas.filter((a) => !a.outdoor).length;
     const st = b.raid.storeys > 1 ? ` on ${b.raid.storeys} storeys (the stairs are marked; Go up / Go down takes an action)` : "";
-    say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
+    if (map.street) say(b, `You reach the street at ${b.place}: ${map.plan.houses.length} houses. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
+    else say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
     say(b, interiorIntro(b), "info");
   } else say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");
   if (b.raid.choose) say(b, `Several buildings stand here: pick one to explore from the panel (${b.raid.choose.filter((o) => o.id !== "street").map((o) => o.name).join(", ")}), or search the street.`, "good");

@@ -77,7 +77,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 ## 6. Tactical combat (XCOM-style)
 - **Turn-based tactical battles** with an isometric view [combat, ui/isoview].
 - **Battle map sizes** by context, from 24×18 up to 48×34, with anti-slog endings [battlesize].
-- **Raids into building interiors**: procedurally generated buildings, containers and searches, raid loot carried by hand [buildingmaps, search, raidloot]. Also raid planning (entry side, scout, wait for night) [raidplan], and locks, keys and safes [locks, gunsafes].
+- **Raids into building interiors**: procedurally generated buildings, containers and searches, raid loot carried by hand [buildingmaps, search, raidloot]. A neighbourhood POI is a street of 3–5 two-storey houses on one map (rows facing a road, yards, fences, parked cars to search; ways out at both ends and the back gardens), each house's containers kept apart in the POI's ledger and the one pool falling across them; headless it is one POI searched a house at a time [buildingmaps `streetMap`, `streetHouses`, `STREET`, `streetIntro`; combat `createRaid` (upper floors' reach from every stairwell); poicont `poiHouses`; scavenge `searchHour` / `afterRaid`]. Also raid planning (entry side, scout, wait for night) [raidplan], and locks, keys and safes [locks, gunsafes].
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Hearing and deafening** [hearing].
 - **Non-lethal weapons and taking people alive** (taser, stun baton, pepper spray) [nonlethal].

@@ -14,6 +14,9 @@
 // drawn by the noise, by hash dice) and the fights of the hour-by-hour search. The containers persist (poicont.js):
 // the raid on a map keeps what your side opened (afterRaid → poiRaidEnd), the hour-by-hour search takes through the
 // ledger (lootPoiAbstract: the pool, the containers, and what you left there, which the team carries off).
+// A neighbourhood (a street of 3-5 houses on one map: buildingmaps.js streetMap) is one POI with a larger pool: the
+// hour-by-hour search goes through it a house at a time, so its pool falls poiHouses times slower (as on its map, where
+// each container opened takes its share of the one pool across the whole street).
 import { addFoodFind, foodText, typeFind, siteMix } from "./foods.js"; // a food find: the items a place like this holds
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger, supValue, supWeight } from "./data.js";
@@ -23,7 +26,7 @@ import {
   wipeIfEmpty, leaveVehicle, addGearToCargo, PICKED_OVER,
 } from "./parties.js";
 import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, tileHeat, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's heat
-import { poiRaidEnd, lootPoiAbstract, CONT } from "./poicont.js"; // the containers a place keeps between visits
+import { poiRaidEnd, lootPoiAbstract, poiHouses, CONT } from "./poicont.js"; // the containers a place keeps between visits; a street of houses
 import { poiTileRaid, poiPickFor, poiRaidSetup } from "./poiraid.js"; // which place, and the raid map it opens
 import { attitude, changeGoodwill } from "./factions.js";
 import { noteLooked } from "./discovery.js";
@@ -226,7 +229,7 @@ export function afterRaid(state, result, setup, battle = null) {
   const r = result.raid || { hours: 1, searched: 0, total: 0 };
   const poi = setup.raid && setup.raid.poi != null ? setup.raid.poi : null; // the point of interest raided (poiraid.js): its own pool
   if (poi != null && battle && battle.raid && battle.raid.poiMap) poiRaidEnd(state, battle);
-  else if (poi != null) lootPoiAbstract(state, "player", t, poi, 0.07 * r.searched, { floor: CONT.FLOOR, left: false });
+  else if (poi != null) lootPoiAbstract(state, "player", t, poi, (0.07 * r.searched) / poiHouses(state, t, poi), { floor: CONT.FLOOR, left: false }); // a street of houses: a house's share a container
   else takePoi(t, poi, 0.07 * r.searched);
   if (poi != null) {
     addTileHeat(state, t, exitHeat(APPROACHES[raidApproach(r.heat)].heat, shotsHere(state, setup.tile)));
@@ -355,7 +358,7 @@ export function searchHour(state) {
   const locked = lockedSearchHour(state, e, p, members) + truckSearchHour(state, e, p, members) + gunSearchHour(state, e, p, members); // miltrucks.js: an Army truck's cargo (its own dice)
   // Salvager: picked over 40% slower. A point of interest's pool goes through its ledger (poicont.js): the containers
   // follow, and what you left in the ones you opened comes away with the team.
-  const take = 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1);
+  const take = (0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)) / (e.poi != null ? poiHouses(state, t, e.poi) : 1); // a street of houses: one house at a time (poicont.js poiHouses)
   let leftLine = "";
   if (e.poi != null) {
     const got = lootPoiAbstract(state, "player", t, e.poi, take, { floor: CONT.FLOOR });

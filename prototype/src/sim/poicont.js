@@ -23,6 +23,9 @@
 //            and how many per map (below); last: the latest raid by someone else (the dialogue's "looted by others
 //            since your visit").
 // Anything not in the ledger is fresh: unopened, with its original things.
+// A neighbourhood's street of houses (buildingmaps.js streetMap) is one map: every house's containers have ids of
+// their own on it (c.house says whose), so the ledger keeps each house apart (a house nobody opened stays fresh) and
+// the one pool falls by each container's share across the whole street (poiHouses: how many houses).
 //
 // The pool and the ledger (pois.js poiPool / poiFull): the pool is the share of the POI's original things still
 // untouched. Opening a fresh container in a raid takes its share of the pool (full / its map's containers / the
@@ -45,7 +48,7 @@
 // your side opened is saved as it is, unopened ones are left alone; things on the floor and on bodies are lost.
 /** @import { State, Tile } from "./types" */
 import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, addTileHeat, TILE_HEAT } from "./pois.js";
-import { siteBuildings } from "./buildingmaps.js";
+import { siteBuildings, SITES, BUILDINGS, streetHouses } from "./buildingmaps.js";
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
 
@@ -68,6 +71,20 @@ const day = (state) => Math.floor(state.hour / 24) + 1;
 export const boxRng = (state, tileId, dice, id) => new Rng(Math.floor(hash01(state.seed, "poibox", tileId, dice, id) * 4294967296));
 /** The dice a POI's street map is built from (combat.js createRaid): the same map every visit. @param {State} state @param {number} tileId @param {number} i */
 export const poiMapRng = (state, tileId, i) => new Rng(Math.floor(hash01(state.seed, "poimap", tileId, i) * 4294967296));
+
+/**
+ * How many buildings POI i's one map holds: a neighbourhood's street of houses (buildingmaps.js streetMap, its place
+ * id as poiraid.js poiPlace makes it: "poi<i>:<key>"), else 1. The headless search goes through one at a time
+ * (scavenge.js: its pool falls this many times slower).
+ * @param {State} state @param {Tile | number} tile @param {number} i
+ */
+export function poiHouses(state, tile, i) {
+  const t = tileOf(state, tile), poi = poiAt(t, i);
+  if (!poi || isSitePoi(t, i)) return 1;
+  const entry = SITES[poi.kind], first = entry ? (Array.isArray(entry) ? entry : entry.list)[0] : null;
+  const key = Array.isArray(first) ? first[0] : first;
+  return key && BUILDINGS[key] && BUILDINGS[key].street ? streetHouses(state, t.id, { id: `poi${i}:${key}` }) : 1;
+}
 
 /** How many maps POI i opens: a site with several buildings has each and its street; any other one. @param {Tile} t @param {number} i */
 export function poiMapCount(t, i) {
