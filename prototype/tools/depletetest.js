@@ -349,7 +349,8 @@ section("What you know: stale until seen, radio news, no fog leak");
   check(lootBand(t, t.loot) >= 2 && st.knowledge[id].loot > t.loot && st.knowledge[id].hour === seenHour, `stripped (${LOOT_BANDS[lootBand(t, t.loot)]}), but you still know it as ${LOOT_BANDS[lootBand(t, st.knowledge[id].loot)].toLowerCase()}`);
   const panel = strip(renderRight(st, { ...ui0(), selected: id }));
   check(/last seen \d+[dh] ago: rich/.test(panel) && /May be stripped since/.test(panel), `tile panel: "${(panel.match(/Loot [^·]*?: \w+/) || [""])[0]}" and the warning`);
-  check(!/picked clean|little/i.test(panel.replace(/May be stripped since[^.]*/, "")), "the panel does not leak the real loot");
+  // (The Cut wood line says "little" of a suburb's wood: the town ring, mapgen.js; not the loot.)
+  check(!/picked clean|little/i.test(panel.replace(/May be stripped since[^.]*/, "").replace(/\bWood (plenty|some|little|scraps|none)\b/, "Wood")), "the panel does not leak the real loot");
   const tip = strip(tileTooltip(st, id));
   check(/Loot: rich \(then\)/.test(tip), `tooltip: "${(tip.match(/Loot: [^)]*\)/) || [""])[0]}"`);
   check(tileActions(st, id).some(([m]) => m === "scavenge"), "the actions still offer a search (you think it is rich)");
