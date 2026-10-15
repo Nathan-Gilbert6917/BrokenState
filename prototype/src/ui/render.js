@@ -1246,7 +1246,8 @@ export function render(state) {
     const hd = hasHives && !fb ? G.dist[id] : Infinity; // inside a known hive's land: at least 3 skulls, red on the ring
     const skulls = !fb && camera.zoom > SKULL_ZOOM ? Math.max(siteDanger(loc), hd <= HIVE.TERRITORY ? 3 : 0) : 0;
     if (named || skulls) {
-      labels.push({ text: named ? (loc.poi ? loc.name : tier === 2 ? siteLabel(state, t) : loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
+      // A bare tile's POI name gives way to a site's (pri 2.5 after the sites' 2) when the two would overlap.
+      labels.push({ text: named ? (loc.poi ? loc.name : tier === 2 ? siteLabel(state, t) : loc.name) : "", x: px, y: labelY, pri: named ? (loc.poi ? 2.5 : tier) : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
     }
   }
   // Ruins (drawn in the cached chunks): their names, "Ruins of Oak Hill Outpost", the same size as a town's.
