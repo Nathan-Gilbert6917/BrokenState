@@ -20,6 +20,7 @@
 // - The long run (skipped with --quick): YEARS (6) game years (eras.js YEAR_DAYS, 112 days) on all four sizes, each in
 //   a process of its own, simtest.js's crude auto-player on; no exceptions, nomads alive over time printed, the count
 //   near the target, no cap passed, nobody grows into a base-holding group.
+// - Hardcore: the first fill-up goes to NOMADS.HC_START × the target, faster; after it the respawn holds the target.
 // - Turnover: a band leaves after its NOMADS.LIFE days; by year 5 on a Normal world every unlocked tier has come.
 // Usage: node tools/nomadtest.js [seed] [--quick] [--years N] [--sizes normal,huge]
 import { execFile } from "node:child_process";
@@ -155,6 +156,24 @@ for (const size of Object.keys(WORLD_SIZES)) {
   let most = 0;
   for (let i = 0; i < 60; i++) { days(st, 1); most = Math.max(most, N.nomadsOf(st).length); }
   check(most === target, `${size}: filled up to the target and never past it (${N.nomadsOf(st).length} now, at most ${most}, target ${target})`);
+}
+
+section("Hardcore: more bands at the start, the respawn holds the normal target");
+for (const size of ["normal", "huge"]) {
+  const hc = W({ size, factionCount: WORLD_SIZES[size].defGroups, mode: "hardcore" });
+  const target = N.nomadTarget(hc), start = N.nomadStartTarget(hc);
+  check(start === Math.round(target * N.NOMADS.HC_START) && start > target, `${size} hardcore: the start fills to ${N.NOMADS.HC_START} × the target (${start}, target ${target})`);
+  let most = 0, fullDay = null;
+  for (let i = 1; i <= 60; i++) { days(hc, 1); const n = N.nomadsOf(hc).length; most = Math.max(most, n); if (fullDay == null && n >= start) fullDay = i; }
+  check(most === start && N.nomads(hc).filled, `${size} hardcore: filled up to the start count and never past it (at most ${most}, by day ${fullDay})`);
+  const nm = W({ size, factionCount: WORLD_SIZES[size].defGroups });
+  check(N.nomadStartTarget(nm) === N.nomadTarget(nm), `${size} normal: the start count is the target (${N.nomadTarget(nm)})`);
+  // Once filled, the extra bands are not replaced: thinned to the target, the respawn never takes it past it again.
+  const S = N.nomads(hc);
+  while (N.nomadsOf(hc).length > target) S.bands.pop();
+  let over = 0;
+  for (let i = 0; i < 60; i++) { S.next = Math.min(S.next, Math.floor(hc.hour / 24) + 1); days(hc, 1); over = Math.max(over, N.nomadsOf(hc).length); }
+  check(over <= target, `${size} hardcore: after the start the respawn holds the target (at most ${over} of ${target} over 60 days)`);
 }
 
 section("Tiers: era unlock, sizes and caps, kits");

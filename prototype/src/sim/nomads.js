@@ -72,6 +72,7 @@ import { chronicleNote } from "./chronicle.js";
 export const NOMADS = {
   SHARE: 0.5,                 // × the world size's default AI group count
   FIRST: [2, 6], FILL: [2, 5], GAP: [8, 16], // the first band's day, the gaps while filling up, the respawn's gap
+  HC_START: 2, HC_FILL: [1, 3], // hardcore: the first fill-up goes to this × the target, the bands this many days apart
   FAR_YOU: 12, FAR_GROUP: 6, BORDER: 0.5, // a new band: this far from your bases and the groups'; a share at the map's edge
   CAMP: [2, 5], MOVE: [4, 8], NEAR: 3, POI_W: 1.6, // camp days, the next camp's distance, raiding reach, POIs ahead of sites
   KEEP_YOU: 2, KEEP_GROUP: 2, HORDE_CLEAR: 2, // a camp at least this far from your bases, the groups' bases, any horde
@@ -135,6 +136,9 @@ export const nomadsOf = (state) => (state.nomads && Array.isArray(state.nomads.b
 export const nomadById = (state, id) => nomadsOf(state).find((b) => String(b.id) === String(id)) || null;
 // The count the respawn holds: half the size's default AI group count.
 export const nomadTarget = (state) => Math.max(1, Math.round(stateSizeDef(state).defGroups * N.SHARE));
+// The count the first fill-up aims for: the target, or HC_START × it on a hardcore run (more bands on the road at the
+// start; once filled the respawn holds only the target, so the extra bands thin out as they starve, break up or leave).
+export const nomadStartTarget = (state) => (state.mode === "hardcore" ? Math.round(nomadTarget(state) * N.HC_START) : nomadTarget(state));
 // The tiers open in this year of the run (hardcore: counted from the normal start, eras.js rampDay).
 export const nomadTiers = (state) => NOMAD_TIERS.filter((t) => yearOf(state) >= N.TIERS[t].unlock);
 export const tierOf = (b) => N.TIERS[b.tier] || N.TIERS[1];
@@ -215,11 +219,11 @@ export function spawnNomads(state, opts = {}) {
 function spawnDaily(state) {
   const S = nomads(state), d = day(state);
   if (d < S.next) return;
-  const target = nomadTarget(state);
+  const target = S.filled ? nomadTarget(state) : nomadStartTarget(state);
   if (nomadsOf(state).length < target) spawnNomads(state);
   const full = nomadsOf(state).length >= target;
   if (full) S.filled = true;
-  const gap = !S.filled ? N.FILL : N.GAP;
+  const gap = S.filled ? N.GAP : state.mode === "hardcore" ? N.HC_FILL : N.FILL;
   S.next = d + S.rng.int(gap[0], gap[1]);
 }
 
