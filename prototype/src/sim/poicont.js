@@ -51,6 +51,7 @@ import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, addTil
 import { siteBuildings, SITES, BUILDINGS, streetHouses } from "./buildingmaps.js";
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
+import { localId } from "./world.js"; // dice keyed by a group's world-local id (two worlds in one process roll the same)
 
 export const CONT = {
   FLOOR: 0.03, // the floor a raid leaves under a pool (scavenge.js takePoi's)
@@ -247,7 +248,7 @@ export function lootPoiAbstract(state, who, tile, i, need, opts = {}) {
   if (opts.left !== false && share > 0) {
     for (const k of Object.keys(c.mine)) {
       const m = c.mine[k];
-      if (!itemsIn(m) || hash01(state.seed, "poileft", t.id, i, k, state.hour, by) >= share) continue;
+      if (!itemsIn(m) || hash01(state.seed, "poileft", t.id, i, k, state.hour, localId(state, by)) >= share) continue;
       for (const part of [m.contents, m.hidden]) {
         if (!part) continue;
         for (const [s, q] of Object.entries(part.sup || {})) if (q > 0) left.sup[s] = (left.sup[s] || 0) + q;

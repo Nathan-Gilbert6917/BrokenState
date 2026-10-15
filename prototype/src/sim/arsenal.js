@@ -734,23 +734,24 @@ export function partyLost(state, f, people) {
 export function scavFinds(state, f, p) {
   if (!ensureArsenal(state, f) || !p.scav) return [];
   const t = state.tiles[p.scav.site];
-  const table = t && t.loc && LOCATIONS[t.loc.type] ? (LOCATIONS[t.loc.type].gear || []).filter((k) => arsenalWorthy({ key: k })) : [];
+  const type = p.scav.kind || (t && t.loc ? t.loc.type : null); // the POI they searched (aiscav.js setPoi), else the site
+  const table = type && LOCATIONS[type] ? (LOCATIONS[type].gear || []).filter((k) => arsenalWorthy({ key: k })) : [];
   if (!table.length) return [];
   const A = f.arsenal;
   const tag = [state.seed, "arsscav", f.name, A.next, state.hour];
   const n = Math.floor((p.scav.taken || 0) * ARSENAL.SCAV_ITEMS + hash01(...tag, "n"));
   const got = [];
   for (let i = 0; i < n; i++) {
-    const key = swapGun(`site:${t.loc.type}`, table[Math.floor(hash01(...tag, "k", i) * table.length) % table.length], [...tag, "g", i]); // gundist.js: the same draws as your searches there (AI parity)
-    const it = lootItem(key, siteSource(t.loc.type), [...tag, i]);
+    const key = swapGun(`site:${type}`, table[Math.floor(hash01(...tag, "k", i) * table.length) % table.length], [...tag, "g", i]); // gundist.js: the same draws as your searches there (AI parity)
+    const it = lootItem(key, siteSource(type), [...tag, i]);
     if (addToArsenal(state, f, it, "scavenged")) got.push(it);
   }
   // Knives and swords (blades.js): the same site table your searches roll, on their dice (AI parity).
-  const bk = (p.scav.taken || 0) > 0 ? scavBlade(t.loc.type, [...tag, "bl"]) : null;
-  if (bk && GEAR[bk]) { const it = lootItem(bk, siteSource(t.loc.type), [...tag, "bl"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
+  const bk = (p.scav.taken || 0) > 0 ? scavBlade(type, [...tag, "bl"]) : null;
+  if (bk && GEAR[bk]) { const it = lootItem(bk, siteSource(type), [...tag, "bl"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
   // The newer guns (gunfinds.js GUN_FINDS.site, scav): the same site table your searches roll, on their dice.
-  const gk = scavGun(t.loc.type, p.scav.taken || 0, [...tag, "ars"]);
-  if (gk && GEAR[gk]) { const it = lootItem(gk, siteSource(t.loc.type), [...tag, "ars"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
+  const gk = scavGun(type, p.scav.taken || 0, [...tag, "ars"]);
+  if (gk && GEAR[gk]) { const it = lootItem(gk, siteSource(type), [...tag, "ars"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
   return got;
 }
 // Gear you sold or gave them (trade.js): fighting gear goes into the arsenal while they want it (WANT weapons a head).

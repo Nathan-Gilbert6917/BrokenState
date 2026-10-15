@@ -10,8 +10,10 @@
 //   type likes, and walks (SPEED a turn of the clock, from DAY_FROM to DAY_TO) to the site it means to settle: one of
 //   its type's preferred sites (factions.js PREFERRED_SITES), not in a city, away from you, other groups and the hives.
 //   With time to spare it scavenges a site on the way (SCAV_DAYS days). At its site it camps and strips the place until
-//   its founding day (FOUND_DAYS after the fall, by the seed), then founds its hub: it becomes one of the map's groups
-//   (state.factions, the same id, name, colour, people, stores and goodwill) and lives like any group from then on.
+//   its founding day (FOUND_DAYS after the fall, by the seed; on a tile of points of interest one POI a day, the best
+//   it knows there by need, after a survey of the tile on the first day: grouppois.js, the groups' picker and the
+//   container ledger), then founds its hub: it becomes one of the map's groups (state.factions, the same id, name,
+//   colour, people, stores and goodwill) and lives like any group from then on.
 //   A band whose site is taken (by you, another group, the hives) picks another; one still on the road FORCE_AFTER days
 //   after its founding day settles the nearest free site where it stands.
 // - On the road: it eats EAT a head a day and forages FORAGE; out of food it loses people (STARVE a day). A horde on
@@ -70,7 +72,9 @@ import { PREFERRED_SITES, attitude, strength, isAggressiveType, recomputeOwnersh
 import { planPath, moveCost, partyMembers, partyTile, tileLabel, removeParty, carried, takeSupply } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
 import { hash01 } from "./skills.js";
-import { haulFor, AISCAV } from "./aiscav.js";
+import { haulFor, AISCAV, groupNeeds } from "./aiscav.js";
+import { poisOf, poiPool, permanentSite } from "./pois.js"; // points of interest: the camp's, one a day
+import { bestGroupPoi, groupWouldSurvey, groupSurveyTile, raidPoiAsGroup } from "./grouppois.js"; // the groups' picker, survey and raid
 import { reduceHorde, makeHorde } from "./hordes.js";
 import { mergeMix } from "./zombietypes.js";
 import { worldScale } from "./worldsize.js";
@@ -575,9 +579,17 @@ function bandDay(state, b) {
   if (rng.chance(B.ROAD_DEATH)) { loseBandPeople(state, b, 1, "on the road"); if (!bandsOf(state).includes(b)) return; }
   // A horde camped on top of them.
   if (b.phase === "camp" && hordeBite(state, b) && !bandsOf(state).includes(b)) return;
-  // Scavenging where they camp.
+  // Scavenging where they camp: a tile of points of interest one POI a day, the best they know there by need (after
+  // a survey of it the first day: grouppois.js, the groups' picker and the container ledger); a site without POIs as
+  // before.
   const t = state.tiles[b.tile];
-  if (b.phase === "camp" && t.loc && (t.loot || 0) > AISCAV.floor && !t.hive) {
+  const pois = b.phase === "camp" && !t.hive && poisOf(t).length > 0 && !(t.loc && !permanentSite(t));
+  if (pois && groupWouldSurvey(state, b, t)) groupSurveyTile(state, b, t, { n: b.pop, start: state.hour - 24 + 6 });
+  const i = pois ? bestGroupPoi(state, b, t, groupNeeds(b)) : -1;
+  if (i >= 0 && poiPool(t, i) > AISCAV.floor) {
+    const r = raidPoiAsGroup(state, b, t, i, B.SCAV_TAKE, { eff: B.SCAV_EFF, name: b.known ? b.name : undefined });
+    if (r) for (const [k, q] of Object.entries(r.goods)) if (k in b.stock || STOCK_KEYS.includes(k) || FOODS[k]) b.stock[k] = (b.stock[k] || 0) + q;
+  } else if (!pois && b.phase === "camp" && t.loc && (t.loot || 0) > AISCAV.floor && !t.hive) {
     const take = Math.min(B.SCAV_TAKE, t.loot - AISCAV.floor);
     const got = haulFor(t, take, t.loot, B.SCAV_EFF, state);
     t.loot -= take;

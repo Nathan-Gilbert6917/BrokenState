@@ -358,6 +358,11 @@ function placeEntries() {
     stats: [["Rises", `going into a place (+${TILE_HEAT.ENTER}), coming out (sneaking ${7}, normal ${13}, loud ${22}, plus the shots fired), other groups' raids (+${TILE_HEAT.AI})`], ["Falls", "about 10% a day"], ["Effect", `the threat of every place on the tile (up to +${TILE_HEAT.THREAT}), more of the dead in a raid there, and when very hot a horde or a wandering band drawn by the noise`], ["Words", "cold, warm, hot, very hot"]],
     text: "A tile's heat stays after the raid: every visit to its places stirs it up a little more, and noise and gunfire most. It is not the Heat of one raid (which starts afresh each time) nor a team's Field Heat. You see it as your people last saw it: the tile panel's Tile heat row and the place dialogue say how hot it was and how long ago, stale after two weeks.",
     how: "Spread your raids over several tiles, sneak in and out, and let a hot tile cool down for a week or two before going back.", sprite: null,
+  }, {
+    key: "k:aipois", cat: "places", name: "🎒 Other scavengers", sub: "Who else picks the places over",
+    stats: [["Who", "the other groups' scavenging parties, raiders and travellers from outside, and in hardcore the bands on the road"], ["What they know", "the places by the roads and in the towns near where they live, and what their own surveys find (8 hours on a tile, as yours)"], ["Where first", "the places on the roads near their bases go first; off-road and unknown ground stays richer for longer"], ["Same tile", "in different places nobody minds; in the same place you meet them (a group at war with you comes for you either way)"]],
+    text: "The places run down without you: the groups send parties to the places they know near their bases, one place at a time, and survey tiles to find the hidden ones. They ransack containers as they go, they take what you left in a container you opened, and their raids stir a tile up. A party in a place shows on the map beside your team, and the place dialogue says when one is in it right now. The log says when a place you can see (or hear of on your radio) is picked clean, or when strangers emptied what you left.",
+    how: "Do not leave things in a container near a group's base for long. Survey off the roads for the places nobody has picked over yet.", sprite: null,
   }];
   // A kind with more to say than the rest: the neighbourhood is a whole street of houses on one raid map (sim/buildingmaps.js streetMap).
   const NOTES = {
@@ -471,7 +476,7 @@ function seenNow(state) {
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
-  for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); }
+  for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); if (poisOf(t)[i].cont && poisOf(t)[i].cont.last) keys.add("k:aipois"); }
   if (Object.values(state.poiKnow || {}).some((k) => k && k.heat)) keys.add("k:tileheat"); // a team has seen a tile's heat (sim/pois.js noteTileHeat)
   weatherSeen(state, keys);
   return keys;
