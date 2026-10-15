@@ -20,7 +20,8 @@
 // - The long run (skipped with --quick): YEARS (6) game years (eras.js YEAR_DAYS, 112 days) on all four sizes, each in
 //   a process of its own, simtest.js's crude auto-player on; no exceptions, nomads alive over time printed, the count
 //   near the target, no cap passed, nobody grows into a base-holding group.
-// Usage: node tools/nomadtest.js [seed] [--quick] [--years N]
+// - Turnover: a band leaves after its NOMADS.LIFE days; by year 5 on a Normal world every unlocked tier has come.
+// Usage: node tools/nomadtest.js [seed] [--quick] [--years N] [--sizes normal,huge]
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -28,7 +29,8 @@ const CHILD = process.argv[2] === "--child";
 const QUICK = process.argv.includes("--quick");
 const yi = process.argv.indexOf("--years");
 const YEARS = yi > 0 ? Number(process.argv[yi + 1]) : 6;
-const args = process.argv.slice(CHILD ? 3 : 2).filter((a, i, l) => !a.startsWith("--") && l[i - 1] !== "--years");
+const si = process.argv.indexOf("--sizes");
+const args = process.argv.slice(CHILD ? 3 : 2).filter((a, i, l) => !a.startsWith("--") && l[i - 1] !== "--years" && l[i - 1] !== "--sizes");
 const seed = Number(args[0] || 42);
 
 const { createWorld, tickHour, day, alive, hub, atBase } = await import("../src/sim/world.js");
@@ -152,7 +154,7 @@ for (const size of Object.keys(WORLD_SIZES)) {
   check(target === Math.max(1, Math.round(WORLD_SIZES[size].defGroups * N.NOMADS.SHARE)), `${size}: the target is half the size's default group count (${target})`);
   let most = 0;
   for (let i = 0; i < 60; i++) { days(st, 1); most = Math.max(most, N.nomadsOf(st).length); }
-  check(most <= target && N.nomadsOf(st).length >= Math.min(target, 1), `${size}: filled up to the target and never past it (${N.nomadsOf(st).length} now, at most ${most}, target ${target})`);
+  check(most === target, `${size}: filled up to the target and never past it (${N.nomadsOf(st).length} now, at most ${most}, target ${target})`);
 }
 
 section("Tiers: era unlock, sizes and caps, kits");
@@ -199,6 +201,26 @@ section("Survival: hunger, the dead, respawn");
   let most = gone;
   for (let i = 0; i < 80; i++) { days(st, 1); most = Math.max(most, N.nomadsOf(st).length); }
   check(gone < target && most === target && N.nomads(st).stats.spawned >= sp0 + target - gone, `the respawn brings the count back (${gone} → ${most}, target ${target}; ${N.nomads(st).stats.spawned - sp0} new bands in 80 days)`);
+}
+
+section("Turnover: lifespans, every unlocked tier comes");
+{
+  const st = W();
+  days(st, 10);
+  const b = N.nomadsOf(st)[0];
+  check(b && b.until - b.born >= N.NOMADS.LIFE[0] && b.until - b.born <= N.NOMADS.LIFE[1], `a band's stay is one to two game years (${b ? b.until - b.born : "?"} days)`);
+  const left0 = N.nomads(st).stats.left;
+  st.hour = (b.until - 1) * 24 + 1;
+  N.bandDay(st, b);
+  check(!N.nomadById(st, b.id) && N.nomads(st).stats.left === left0 + 1, "when its time is up it moves on (gone from the map, counted as left)");
+  // By year 5 on a Normal world (the nomads' days alone): every unlocked tier has spawned.
+  const st2 = W();
+  const end = yearStartDay(5) + 20;
+  while (day(st2) < end) days(st2, 1);
+  const S = N.nomads(st2).stats;
+  check(N.nomadTiers(st2).length === 3 && [1, 2, 3].every((t) => S.tiers[t] >= 1), `by year 5 every unlocked tier has spawned (T1 ${S.tiers[1]}, T2 ${S.tiers[2]}, T3 ${S.tiers[3]}; ${S.left} bands left after their stay)`);
+  const now = N.nomadCounts(st2);
+  check(now.n <= N.nomadTarget(st2) && now[3] >= 1, `year 5: the count within the target (${now.n} of ${N.nomadTarget(st2)}) with preppers among them (${now[1]}/${now[2]}/${now[3]})`);
 }
 
 section("Recruiting: neutral wanderers and refugees only, with food, up to the cap");
@@ -364,24 +386,25 @@ section("Save and load");
 
 // ---------- the long run ----------
 if (!QUICK) {
-  section(`The long run: ${YEARS} game years (${YEARS * YEAR_DAYS} days) on every size, simtest.js's auto-player`);
+  section(`The long run: ${YEARS} game years (${YEARS * YEAR_DAYS} days), simtest.js's auto-player`);
   const me = fileURLToPath(import.meta.url);
   const run = (size) => new Promise((res, rej) => execFile(process.execPath, [me, "--child", String(seed), size, "--years", String(YEARS)], { maxBuffer: 1 << 26 }, (e, o) => (e ? rej(e) : res(JSON.parse(o)))));
-  const results = await Promise.all(Object.keys(WORLD_SIZES).map(run));
+  const sizes = si > 0 ? process.argv[si + 1].split(",") : Object.keys(WORLD_SIZES);
+  const results = await Promise.all(sizes.map(run));
   for (const r of results) {
     const counts = r.samples.map((s) => s.n);
     const mean = counts.reduce((a, v) => a + v, 0) / Math.max(1, counts.length);
     console.log(`  ${r.size}: target ${r.target}, ${Math.round(r.ms / 1000)} s, holdout ${r.fell ? `fell on day ${r.fell}` : "stood"}; bands every 28 days: ${r.samples.map((s) => `${s.n}${s.n ? `(${s[1]}/${s[2]}/${s[3]})` : ""}`).join(" ")}`);
     console.log(`    people every 112 days: ${r.samples.filter((s) => s.day % 112 === 0).map((s) => `d${s.day} ${s.people}`).join(", ")}; largest by tier ${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]}`);
     const S = r.stats;
-    console.log(`    spawned ${S.spawned} (T1 ${S.tiers[1]}, T2 ${S.tiers[2]}, T3 ${S.tiers[3]}); gone: starved ${S.starved}, beaten ${S.beaten || 0}, road ${S.road || 0}, mishap ${S.mishap || 0}, horde ${S.horde || 0}; recruits ${S.recruited} (${JSON.stringify(S.recruits)}); surveys ${S.surveys} (found ${S.found}), raids ${S.raids} (took ${S.took.toFixed(1)}), your left items taken ${S.leftTaken}; met ${S.met}, fights ${S.fights}, trades ${S.trades}`);
+    console.log(`    spawned ${S.spawned} (T1 ${S.tiers[1]}, T2 ${S.tiers[2]}, T3 ${S.tiers[3]}); gone: left after their stay ${S.left || 0}, starved ${S.starved}, beaten ${S.beaten || 0}, road ${S.road || 0}, mishap ${S.mishap || 0}, horde ${S.horde || 0}; recruits ${S.recruited} (${JSON.stringify(S.recruits)}); surveys ${S.surveys} (found ${S.found}), raids ${S.raids} (took ${S.took.toFixed(1)}), your left items taken ${S.leftTaken}; met ${S.met}, fights ${S.fights}, trades ${S.trades}`);
     check(!r.err, `${r.size}: no exceptions${r.err ? ` (${r.err})` : ""}`);
     const late = r.samples.filter((s) => s.day >= 56).map((s) => s.n);
     const lateMean = late.reduce((a, v) => a + v, 0) / Math.max(1, late.length);
     check(lateMean >= r.target * 0.6 && Math.max(...counts) <= r.target, `${r.size}: the count stays near the target (mean ${lateMean.toFixed(1)} after day 56, at most ${Math.max(...counts)}, target ${r.target}; overall ${mean.toFixed(1)})`);
     check([1, 2, 3].every((t) => r.maxPop[t] <= T[t].size[1]), `${r.size}: no tier cap passed (${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]} of ${T[1].size[1]}/${T[2].size[1]}/${T[3].size[1]})`);
     check(r.inFactions === 0 && r.owners === 0, `${r.size}: nobody grew into a base-holding group`);
-    check(r.samples.some((s) => s.tiers === 3) ? S.tiers[3] > 0 || S.tiers[2] > 0 : true, `${r.size}: the later tiers came once unlocked`);
+    check(r.samples.some((s) => s.tiers === 3) ? S.tiers[2] > 0 && S.tiers[3] > 0 : true, `${r.size}: the later tiers came once unlocked (T2 ${S.tiers[2]}, T3 ${S.tiers[3]})`);
   }
 }
 

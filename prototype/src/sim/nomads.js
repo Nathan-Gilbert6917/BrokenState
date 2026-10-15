@@ -17,7 +17,8 @@
 // Lifecycle (one daily step, one hourly step; world.js)
 // - How many: about half the AI group count of the world size (worldsize.js defGroups / 2, NOMADS.SHARE): the first
 //   ones on days FIRST, then one more every FILL days until the count is met; after that a slow respawn (GAP days)
-//   holds it there. A new band comes in at the map's edge (hives.js borderTiles) or far from your bases (FAR_YOU) and
+//   holds it there. A band stays LIFE (one to two game years) and then moves off the map or disbands (a log line when
+//   seen), so the bands turn over; a new band's tier is the open tier furthest below an even share (nextTier). A new band comes in at the map's edge (hives.js borderTiles) or far from your bases (FAR_YOU) and
 //   the groups' (FAR_GROUP), never on a hive's ground or among the dead.
 // - Camp: CAMP days (2–5) on a tile. Each camp day it does one thing within NEAR (3) tiles of the camp, by the
 //   groups' picker (grouppois.js groupTargets: need × what is left, POIs ahead of sites, POI_W): survey a tile it may
@@ -83,6 +84,7 @@ export const NOMADS = {
   MISHAP: 0.012, // a raid's chance to lose someone, a point of true threat, / the tier's toughness
   HORDE_BITE: 30, HORDE_KILL: 1.2, FLEE_RATIO: 0.7, FLEE_NEAR: 2, // the dead
   RECRUIT_FOOD: 5, RECRUIT_NEAR: 2, JOIN_WANDERER: 0.25, JOIN_REFUGEE: 0.2, ROADSIDE: 0.05, // recruiting (days of food a head)
+  LIFE: [112, 224], // days a band stays in these parts (one to two game years), then it moves off the map or disbands
   MEET_COOLDOWN: 48, TOLL: 0.3, TOLL_CAP: 3, FLEE_TEAM: 0.9, // meetings: looters scatter before a team this strong (× theirs)
   WARES_MAX: 12, ERA_POWER: 0.1, ERA_POWER_MAX: 0.6, // their power: + this a year from year 3
   TIERS: {
@@ -126,7 +128,7 @@ export function nomads(state) {
   return state.nomads;
 }
 function newStats() {
-  return { spawned: 0, tiers: { 1: 0, 2: 0, 3: 0 }, starved: 0, broke: 0, killed: 0, beaten: 0, horde: 0, mishap: 0, road: 0, recruited: 0, recruits: { wanderers: 0, refugees: 0, roadside: 0 }, surveys: 0, found: 0, raids: 0, took: 0, camps: 0, moves: 0, fled: 0, met: 0, fights: 0, trades: 0, leftTaken: 0, peak: 0 };
+  return { spawned: 0, tiers: { 1: 0, 2: 0, 3: 0 }, left: 0, starved: 0, broke: 0, killed: 0, beaten: 0, horde: 0, mishap: 0, road: 0, recruited: 0, recruits: { wanderers: 0, refugees: 0, roadside: 0 }, surveys: 0, found: 0, raids: 0, took: 0, camps: 0, moves: 0, fled: 0, met: 0, fights: 0, trades: 0, leftTaken: 0, peak: 0 };
 }
 const nrng = (state) => nomads(state).rng;
 export const nomadsOf = (state) => (state.nomads && Array.isArray(state.nomads.bands) ? state.nomads.bands : []);
@@ -145,6 +147,17 @@ export const tierName = (b) => `${tierOf(b).name}`;
 // ---------- spawning ----------
 const pickW = (rng, list) => { const tot = list.reduce((a, [, w]) => a + w, 0); let r = rng.next() * tot; for (const [k, w] of list) { r -= w; if (r < 0) return k; } return list[list.length - 1][0]; };
 const TIER_W = { 1: 0.5, 2: 0.35, 3: 0.15 };
+// The tier of a new band: the open tier furthest below an even share of the bands on the map (so a tier just unlocked
+// shows up with the next bands); ties by the era weights on the nomads' dice.
+export function nextTier(state, rng = nrng(state)) {
+  const tiers = nomadTiers(state), have = { 1: 0, 2: 0, 3: 0 };
+  for (const b of nomadsOf(state)) have[b.tier]++;
+  const even = (nomadsOf(state).length + 1) / tiers.length;
+  const gap = (t) => even - have[t];
+  const most = Math.max(...tiers.map(gap));
+  const short = tiers.filter((t) => gap(t) >= most - 1e-9);
+  return pickW(rng, short.map((t) => [t, TIER_W[t]]));
+}
 function spawnTile(state, rng) {
   const g = state.grid;
   const far = (t) => t.terrain !== "water" && !t.hive && !t.ruin && !(t.loc && (t.loc.type === "city" || t.loc.type === "town")) &&
@@ -165,8 +178,7 @@ function spawnTile(state, rng) {
 // A new band (opts: { tier, tile, pop } for tools). Returns it, or null when nowhere fits.
 export function spawnNomads(state, opts = {}) {
   const S = nomads(state), rng = S.rng;
-  const tiers = nomadTiers(state);
-  const tier = opts.tier && N.TIERS[opts.tier] ? opts.tier : pickW(rng, tiers.map((t) => [t, TIER_W[t]]));
+  const tier = opts.tier && N.TIERS[opts.tier] ? opts.tier : nextTier(state, rng);
   const T = N.TIERS[tier];
   const tile = opts.tile != null ? opts.tile : spawnTile(state, rng);
   if (tile == null) return null;
@@ -182,7 +194,7 @@ export function spawnNomads(state, opts = {}) {
     type: T.type, pop, goodwill: rng.int(T.goodwill[0], T.goodwill[1]), alive: true, outsider: true, pact: null, bases: [], color: N.COLORS[tier],
     stock: {}, wares: [], capacity: 25 * pop + (vehicle ? 150 : 0), vehicle, scouting: T.scouting, seeRange: N.NEAR,
     tile, camp: null, phase: "travel", path: [tile], idx: 0, progress: 0, campUntil: 0, act: "on the road",
-    born: day(state), known: false, met: {}, spared: [], lastSeen: null, hungry: 0, raided: 0, lastRaid: null,
+    born: day(state), until: day(state) + rng.int(N.LIFE[0], N.LIFE[1]), known: false, met: {}, spared: [], lastSeen: null, hungry: 0, raided: 0, lastRaid: null,
   };
   for (const k of STOCK_KEYS) b.stock[k] = 0;
   giveFood(state, b.stock, pop * rng.range(N.FOOD_START[0], N.FOOD_START[1]), T.food, { rng });
@@ -225,6 +237,7 @@ function breakUp(state, b, why) {
   if (b.known) {
     const text = why === "starved" ? `${cap1(b.name)}, the ${tierName(b).toLowerCase()} on the road, are no more: hunger broke them up.`
       : why === "beaten" ? `${cap1(b.name)} are finished: the last of them scattered.`
+      : why === "left" ? `${cap1(b.name)}, the ${tierName(b).toLowerCase()}, have packed up and moved on out of these parts.`
       : `${cap1(b.name)}, the ${tierName(b).toLowerCase()} on the road, are no more.`;
     if ((state.live && state.live.has(b.tile)) || why === "beaten") log(state, text, why === "beaten" ? "good" : "info");
   }
@@ -277,6 +290,8 @@ export function bandDay(state, b) {
     if (rng.chance(N.STARVE * Math.min(2, b.hungry / 2 + 0.5)) && losePeople(state, b, 1, "starved", "to hunger")) return;
   } else b.hungry = 0;
   if (rng.chance(N.ROAD_DEATH) && losePeople(state, b, 1, "road", "on the road")) return;
+  // Their time here is up (NOMADS.LIFE): they move off the map or go their separate ways; the respawn brings others.
+  if (day(state) >= (b.until ?? b.born + N.LIFE[1]) && b.phase !== "battle") { breakUp(state, b, "left"); return; }
   // The dead near them: a horde they cannot face sends them the other way.
   const flee = hordeThreat(state, b);
   if (flee) { b.fled = flee.tile; nomads(state).stats.fled++; breakCamp(state, b, flee.tile); return; }
