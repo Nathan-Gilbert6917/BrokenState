@@ -28,7 +28,8 @@ import { LISTEN } from "../sim/radiolisten.js";
 import { networksAt, teamReceives } from "../sim/radio.js";
 import { crossingsFrom, boatPlan, boatOrder } from "../sim/crossing.js";
 import { setFire, fireLit } from "../sim/fieldheat.js";
-import { sweepOpts } from "../sim/survey.js";
+import { sweepOpts, LOOK } from "../sim/survey.js";
+import { poiRaidSummary } from "../sim/poiraid.js"; // "3 places known, possibly more unknown"
 import { campProblem } from "../sim/staging.js"; // Set up camp: where a camp may stand
 import { crawlTile } from "../sim/citycrawl.js";
 import { transferProblem, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
@@ -130,8 +131,9 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   // Go
   if (!water) {
     add("Go", "move", base ? `Move here (${base.name})` : "Move here", [], { why: here ? (append ? "The team will already be there." : "The team is already here.") : "", hint: base ? `Travel to ${base.name}. Arriving at a base of yours, the team is asked whether to enter it.` : "Travel there and wait for orders." });
-    add("Go", "survey", here ? `Look around (${SURVEY_HOURS}h)` : `Move and look around (${SURVEY_HOURS}h)`, [{ type: "mission", mission: "survey" }], { hint: MISSIONS.survey.desc });
-    add("Go", "sweep", `Survey ${SWEEP.radius} tiles around (${SWEEP.hours}h)`, [{ type: "sweep", ...sweepOpts(SWEEP) }], { hint: MISSIONS.sweep.desc });
+    add("Go", "survey", here ? `Quick look (${SURVEY_HOURS}h)` : `Move and take a quick look (${SURVEY_HOURS}h)`, [{ type: "mission", mission: "survey" }], { hint: MISSIONS.survey.desc });
+    add("Go", "fullsurvey", here ? `Survey this tile (${LOOK.hours}h)` : `Move and survey the tile (${LOOK.hours}h)`, [{ type: "mission", mission: "fullsurvey" }], { hint: `${MISSIONS.fullsurvey.desc} ${poiRaidSummary(state, tile, p) ? `Here: ${poiRaidSummary(state, tile, p)}.` : ""}`.trim() }); // the POI survey (sim/survey.js)
+    add("Go", "sweep", `Sweep ${SWEEP.radius} tiles around (${SWEEP.hours}h)`, [{ type: "sweep", ...sweepOpts(SWEEP) }], { hint: MISSIONS.sweep.desc });
   }
   // A boat across the water from where the team stands (the land across, or the water tile itself).
   if (p.kind !== "convoy") {
@@ -171,7 +173,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
       if (m === "outpost" || listed.has(m)) continue;
       const own = optOf(m);
       let label = label0;
-      if (m === "scavenge") label = crawlTile(t) ? "City crawl: go in block by block" : t.loc ? "Scavenge / raid the site" : label0;
+      if (m === "scavenge") label = crawlTile(t) && !poiRaidSummary(state, tile, p) ? "City crawl: go in block by block" : poiRaidSummary(state, tile, p) ? `Scavenge / raid a place here (${poiRaidSummary(state, tile, p)})` : t.loc ? "Scavenge / raid the site" : label0;
       if (m === "trade") { label = "Trade visit / talk"; theirs = true; }
       if (live && own && m === "getvehicle") label = own.label; // a found car to repair, or cargo to take
       listed.add(m);
@@ -179,7 +181,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
     }
     for (const o of opts) {
       if (listed.has(o.mission)) continue;
-      if (!OWN_OPTIONS.includes(o.mission) && !(live && !["survey", "sweep", "caravan", "enter"].includes(o.mission))) continue;
+      if (!OWN_OPTIONS.includes(o.mission) && !(live && !["survey", "fullsurvey", "sweep", "caravan", "enter"].includes(o.mission))) continue;
       listed.add(o.mission);
       add("Site", `mission:${o.mission}`, o.label, [{ type: "mission", mission: o.mission }], { why: o.disabled || "", hint: o.desc });
     }

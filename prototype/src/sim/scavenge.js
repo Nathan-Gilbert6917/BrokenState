@@ -1,12 +1,22 @@
 // Abstract extraction raid: search hour by hour while Heat rises, then extract.
+//
+// A tile's points of interest (pois.js, poiraid.js): a raid or a search goes into one POI at a time (the player's
+// pick from the dialogue card, p.poi, or the best known one for the autopilot, a crew and the tools), so its finds
+// come from that place's kind, what is left there is its own pool (the site POI's is still tile.loot), a visit is
+// recorded on it, and a headless search that picks it clean moves on to the next place known on the tile. The raid
+// map is the POI's building (buildingmaps.js SITES by kind; the site POI keeps the site's buildings and their choice)
+// or the street map with the kind's areas. Raiding a place on another group's base tile is hostile: their guards
+// join the roster (raidEnemies) and their goodwill drops.
 import { addFoodFind, foodText, typeFind, siteMix } from "./foods.js"; // a food find: the items a place like this holds
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger, supValue, supWeight } from "./data.js";
 import { log, hurt, isNight, combatPower, gearEffect, factionById, spendShots, armedFactor, arrowsBack } from "./world.js";
 import {
   partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, cargoRoom, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
-  wipeIfEmpty, leaveVehicle, addGearToCargo,
+  wipeIfEmpty, leaveVehicle, addGearToCargo, PICKED_OVER,
 } from "./parties.js";
+import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi } from "./pois.js"; // the place searched: its kind, its pool, its visits
+import { poiTileRaid, poiPickFor, poiRaidSetup } from "./poiraid.js"; // which place, and the raid map it opens
 import { attitude, changeGoodwill } from "./factions.js";
 import { noteLooked } from "./discovery.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -97,40 +107,72 @@ export function searchBusy(state, p) {
   return !!(e && !e.done && e.partyId !== p.id && state.parties.some((q) => q.id === e.partyId && partyMembers(state, q).length));
 }
 
+// The kind of place a search is in (its loot table, food, ammo, gear): the POI's kind, else the site's type, else "".
+const engKind = (state, e) => { const t = state.tiles[e.tile]; const poi = e.poi != null ? poiAt(t, e.poi) : null; return poi ? poi.kind : t.loc ? t.loc.type : ""; };
+// What is left in the place a search is in (0–1): the POI's pool, else the site's loot (pois.js: the site POI's pool is tile.loot).
+const engLoot = (state, e) => { const t = state.tiles[e.tile]; return e.poi != null ? poiPool(t, e.poi) : t.loot; };
+// A search or a raid picks a place over: its pool falls, never below the 0.03 floor every site has (pois.js poiTake).
+function takePoi(t, i, amount) {
+  if (i == null) { t.loot = Math.max(0.03, t.loot - amount); return; }
+  poiTake(t, i, Math.max(0, Math.min(amount, poiPool(t, i) - 0.03)));
+}
+
 // Returns false when the search could not start because another team's search is still running.
 export function startScavenge(state, p) {
   const t = state.tiles[p.dest];
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   p.searched = true; // parties.js returnHome: a team that searched says so when it comes home with nothing
+  // The autopilot crawls a city too (2026-10-13): block by block, by the numbers (citycrawl.js crawlAutoStep, stepped
+  // every hour by autopilot.js idleTeams), down to the block its team is strong enough for (CRAWL.AUTO.depth at most).
+  // Not a town: towns lie near the hubs and are scavenged often, and crawling them kept teams away long enough to leave
+  // the bases thin against hordes (a 12-game census: end population 41 → 33, horde deaths 90 → 131; cities only: 39).
+  // A bare city block holds points of interest of its own (pois.js) too: the autopilot still crawls it (the crawl goes deeper).
+  if (state.autopilot && crawlTile(t) && p.owner === "player" && !(t.loc && t.loc.type === "town")) { delete p.poi; return startCrawl(state, p); }
+  // The point of interest the raid goes into (poiraid.js): the player's pick (p.poi, the dialogue card) or the best
+  // known one (a crew, a headless tool); "crawl" on a bare city block: its crawl instead (so is none known there).
+  const pick = p.poi;
+  delete p.poi;
+  const poiTile = poiTileRaid(t) && pick !== "crawl";
+  let poi = null;
+  if (poiTile) {
+    poi = typeof pick === "number" && knownPois(state, t, p).includes(pick) ? pick : poiPickFor(state, p, p.dest);
+    if (poi < 0) {
+      if (!crawlTile(t)) { awaitOrders(state, p, "Nothing known to search here: survey first.", { failed: true }); return true; }
+      poi = null; // a bare city block with no place known: its crawl (or the street, headless)
+    }
+  }
+  const baseOwner = poi != null ? state.factions.find((f) => f.alive && f.bases.includes(p.dest)) : null;
+  if (poi != null) {
+    visitPoi(state, t, poi); // pois.js: the visit history and a fresh look at its threat
+    // Another group's base tile: raiding a place on it is a hostile act (their guards join the roster, raidEnemies).
+    if (baseOwner) changeGoodwill(state, baseOwner, -5, "you raided their base");
+  }
+  const guardedBy = baseOwner ? baseOwner.id : owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null;
   // A crew's team (crews.js) searches hour by hour on its own, never in the shared slot or on a battle map: a job
   // on the spot that crews.js works and ends.
   if (p.crewRole != null) {
     p.phase = "task";
     p.task = { type: "crewsearch", hours: null, done: 0 };
     p.crewSearch = {
-      partyId: p.id, tile: p.dest, heat: (isNight(state) ? 0 : 5) + convoyHeat0(state, p.dest), hours: 0, approach: null, log: [], found: { supplies: {}, gear: [] }, done: false,
-      guarded: owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null,
+      partyId: p.id, tile: p.dest, poi, heat: (isNight(state) ? 0 : 5) + convoyHeat0(state, p.dest), hours: 0, approach: null, log: [], found: { supplies: {}, gear: [] }, done: false,
+      guarded: guardedBy,
     };
     return true;
   }
-  // The autopilot crawls a city too (2026-10-13): block by block, by the numbers (citycrawl.js crawlAutoStep, stepped
-  // every hour by autopilot.js idleTeams), down to the block its team is strong enough for (CRAWL.AUTO.depth at most).
-  // Not a town: towns lie near the hubs and are scavenged often, and crawling them kept teams away long enough to leave
-  // the bases thin against hordes (a 12-game census: end population 41 → 33, horde deaths 90 → 131; cities only: 39).
-  if (state.autopilot && crawlTile(t) && p.owner === "player" && !(t.loc && t.loc.type === "town")) return startCrawl(state, p);
   // In the browser, scavenging is an interactive raid on a generated map.
   if (!state.autoCombat && typeof window !== "undefined") {
     // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot); the crawl
     // opens on the city's map for you to pick the block of its rim to go in at.
-    if (crawlTile(t) && p.owner === "player") return startCrawl(state, p, { choose: true });
+    if (crawlTile(t) && p.owner === "player" && poi == null) return startCrawl(state, p, { choose: true });
     const groups = raidEnemies(state, p.dest);
     const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
     const total = foes.reduce((a, g) => a + g.count, 0);
     const names = foes.map((g) => g.name).join(" and ");
+    const rs = poi != null ? poiRaidSetup(state, t, poi) : { choose: true }; // poiraid.js: the POI's building (the site POI: the site's buildings, chosen as before)
     startCombat(state, {
       mode: "raid", tile: p.dest, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge",
       enemy: { kind: foes.length > 1 ? "mixed" : foes[0]?.kind || "zombies", count: total, power: 3, name: names || "nobody", groups },
-      raid: { heat0: isNight(state) ? 0 : 5, choose: true }, // choose: a site with several buildings offers them first (buildingmaps.js)
+      raid: { heat0: isNight(state) ? 0 : 5, choose: rs.choose, poi: rs.poi ?? null, kind: rs.kind || null, place: rs.place || null }, // choose: a site with several buildings offers them first (buildingmaps.js)
       plan: true, // raidplan.js: before going in, the side to come in from, a scout first, or wait for night
       context: { factionIds: foes.filter((g) => g.factionId).map((g) => g.factionId) },
     });
@@ -138,13 +180,14 @@ export function startScavenge(state, p) {
   }
   // The one search slot is never overwritten while another team is using it (the caller makes this team wait).
   if (searchBusy(state, p)) return false;
+  const place = poi != null ? poiName(t, poi) : t.loc ? LOCATIONS[t.loc.type].name : "";
   state.engagement = {
-    partyId: p.id, tile: p.dest, heat: (isNight(state) ? 0 : 5) + convoyHeat0(state, p.dest), hours: 0, approach: null, // miltrucks.js: a guarded convoy starts hotter
-    log: [`The team reaches ${tileLabel(state, p.dest)}. ${t.loc ? LOCATIONS[t.loc.type].name + "." : ""} Infection here: ${Math.round(t.infection * 100)}%.`],
+    partyId: p.id, tile: p.dest, poi, heat: (isNight(state) ? 0 : 5) + convoyHeat0(state, p.dest), hours: 0, approach: null, // miltrucks.js: a guarded convoy starts hotter
+    log: [`The team reaches ${tileLabel(state, p.dest)}. ${place ? place + "." : ""} Infection here: ${Math.round(t.infection * 100)}%.`],
     found: { supplies: {}, gear: [] }, done: false,
-    guarded: owner && attitude(owner) === "Hostile" && owner.bases.includes(p.dest) ? owner.id : null,
+    guarded: guardedBy,
   };
-  if (state.engagement.guarded) state.engagement.log.push(`${owner.name} hold this place. Expect armed guards.`);
+  if (state.engagement.guarded) state.engagement.log.push(`${(factionById(state, state.engagement.guarded) || owner).name} hold this place. Expect armed guards.`);
   siteEncounter(state, p, p.dest); // wanderers.js: survivors hiding here, squatters, a squad clearing it (its own dice)
   return true;
 }
@@ -154,14 +197,15 @@ export function afterRaid(state, result, setup) {
   const p = state.parties.find((x) => x.id === setup.partyId);
   const t = state.tiles[setup.tile];
   const r = result.raid || { hours: 1, searched: 0, total: 0 };
-  t.loot = Math.max(0.03, t.loot - 0.07 * r.searched);
+  const poi = setup.raid && setup.raid.poi != null ? setup.raid.poi : null; // the point of interest raided (poiraid.js): its own pool
+  takePoi(t, poi, 0.07 * r.searched);
   // Guards who saw you, or died, hold it against you.
   if (r.alerted) for (const id of setup.context.factionIds || []) {
     const f = factionById(state, id);
     if (f) changeGoodwill(state, f, -10, "you raided their land");
   }
   const loot = [...Object.entries(result.loot.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...result.loot.gear.map((g) => g.name)];
-  log(state, `Raid at ${tileLabel(state, setup.tile)}: ${result.outcome === "extracted" ? `got out with ${loot.join(", ") || "nothing"}` : "nobody made it out"} (${r.searched}/${r.total} searched, ${r.hours}h).`, result.outcome === "extracted" ? "good" : "death");
+  log(state, `Raid at ${tileLabel(state, setup.tile)}${poi != null ? ` (${poiName(t, poi).toLowerCase()})` : ""}: ${result.outcome === "extracted" ? `got out with ${loot.join(", ") || "nothing"}` : "nobody made it out"} (${r.searched}/${r.total} searched, ${r.hours}h).`, result.outcome === "extracted" ? "good" : "death");
   if (!p || !state.parties.includes(p)) return;
   if (!partyMembers(state, p).length) {
     wipeParty(state, p);
@@ -206,31 +250,33 @@ export function searchHour(state) {
   const scav = bestSkill(state, p, "scavenging");
   const perk = (id) => anyPerk(members, id); // skills.js: perks of anyone on the team
   const lootPerk = (k) => (perk("treasure") ? 1.2 : 1) * ((k === "parts" || k === "fuel") && perk("tinkerseye") ? 1.5 : 1); // Treasure Hunter, Tinker's Eye
-  const table = t.loc ? LOCATIONS[t.loc.type].loot : { scrap: 2, food: 1 };
+  // The place searched: a point of interest's kind and pool (poiraid.js), else the site's type and loot.
+  const kind = engKind(state, e), left = engLoot(state, e);
+  const table = kind ? LOCATIONS[kind].loot : { scrap: 2, food: 1 };
   const finds = [];
   const rolls = 1 + (ap.loot > 1 ? 1 : 0);
   for (let i = 0; i < rolls; i++) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
-    let qty = Math.round(rng.range(4, 9) * t.loot * ap.loot * engLootMult(e) * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
+    let qty = Math.round(rng.range(4, 9) * left * ap.loot * engLootMult(e) * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
     if (qty > 0 && key === "ammo") {
-      finds.push(roundsText(addFind(e.found.supplies, t.loc ? t.loc.type : "", qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named
+      finds.push(roundsText(addFind(e.found.supplies, kind, qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named
     } else if (qty > 0 && (key === "food" || key === "preserved")) {
       // foods.js: the food a place like this holds (cans, rice and MREs; bread only in the first days), as much as its
       // shelves still have (a shop runs down as it is looted and with the months: shopFood).
-      const got = addFoodFind(state, e.found.supplies, t.loc ? t.loc.type : "", qty, { tile: e.tile, preserved: key === "preserved" });
+      const got = addFoodFind(state, e.found.supplies, kind, qty, { tile: e.tile, preserved: key === "preserved" });
       if (Object.keys(got).length) finds.push(foodText(got));
     } else if (qty > 0) {
       // Parts by kind (loot.js sortParts: an auto shop's are mostly car parts; their own dice).
-      const got = key === "parts" && t.loc ? sortParts(state, t.loc.type, qty, `h${e.hours}:${i}`) : { [key]: qty };
+      const got = key === "parts" && kind ? sortParts(state, kind, qty, `h${e.hours}:${i}`) : { [key]: qty };
       for (const [k, q] of Object.entries(got)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; finds.push(`${q} ${keyWord(k)}`); }
     }
   }
-  const gearList = t.loc ? LOCATIONS[t.loc.type].gear : [];
-  if (gearList.length && rng.chance(0.07 * t.loot * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
-    const g = swapGun(`site:${t.loc.type}`, rng.pick(gearList), rng); // gundist.js: which gun, by the site's draws (a hash of the draw: no extra one)
-    const found = foundFill(lootItem(g, siteSource(t.loc.type), rng), e.tile, e.hours, "scav"); // itemcond.js: a gun shop's stock used, a crash site's scorched; gunrounds.js: a few rounds in it now and then (its own dice)
-    e.found.gear.push(found, ...gunMags(found, siteSource(t.loc.type), e.tile, e.hours)); // carrykit.js: a gun's spare magazines (own dice)
+  const gearList = kind ? LOCATIONS[kind].gear : [];
+  if (gearList.length && rng.chance(0.07 * left * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
+    const g = swapGun(`site:${kind}`, rng.pick(gearList), rng); // gundist.js: which gun, by the site's draws (a hash of the draw: no extra one)
+    const found = foundFill(lootItem(g, siteSource(kind), rng), e.tile, e.hours, "scav"); // itemcond.js: a gun shop's stock used, a crash site's scorched; gunrounds.js: a few rounds in it now and then (its own dice)
+    e.found.gear.push(found, ...gunMags(found, siteSource(kind), e.tile, e.hours)); // carrykit.js: a gun's spare magazines (own dice)
     finds.push(GEAR[g].name);
   }
   // A book on the shelves (skills.js; its own dice, so the rest of the search is unchanged). Treasure Hunter: twice as often.
@@ -261,7 +307,20 @@ export function searchHour(state) {
   if (arrows > 0) { e.found.supplies.arrows = (e.found.supplies.arrows || 0) + arrows; finds.push(`${arrows} arrows`); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.
   const locked = lockedSearchHour(state, e, p, members) + truckSearchHour(state, e, p, members) + gunSearchHour(state, e, p, members); // miltrucks.js: an Army truck's cargo (its own dice)
-  t.loot = Math.max(0.03, t.loot - 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower
+  takePoi(t, e.poi, 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower
+  // The place picked clean: on to the next place known here with something left (poiraid.js), or the search is
+  // done with this tile (the caller's rules extract).
+  let next = "";
+  if (e.poi != null && poiPool(t, e.poi) <= PICKED_OVER) {
+    const was = poiName(t, e.poi).toLowerCase();
+    const to = poiPickFor(state, p, e.tile, [...(e.poisDone || []), e.poi]);
+    if (to >= 0) {
+      e.poisDone = [...(e.poisDone || []), e.poi];
+      e.poi = to;
+      visitPoi(state, t, to);
+      next = ` The ${was} is picked clean: the team moves on to the ${poiName(t, to).toLowerCase()}.`;
+    } else next = ` The ${was} is picked clean, and nothing else known here has anything left.`;
+  }
 
   // Heat.
   let heat = ap.heat * (0.6 + 0.6 * t.infection);
@@ -273,7 +332,7 @@ export function searchHour(state) {
   const stage = heatStage(e.heat);
 
   // Encounters.
-  let line = (finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.") + locked;
+  let line = (finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.") + locked + next;
   if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0)) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
     // The armoured dead (deadsoldiers.js) make a military site's fights harder, and their bodies pay for it.
     const mil = siteDeadMix(state, e.tile);
@@ -337,8 +396,7 @@ export function foundLoad(e) {
 // caches add "food" in days).
 function typeFound(state, e) {
   if (!e || !e.found || !e.found.supplies) return;
-  const t = state.tiles[e.tile];
-  typeFind(state, e.found.supplies, siteMix(t && t.loc ? t.loc.type : ""), e.tile);
+  typeFind(state, e.found.supplies, siteMix(state.tiles[e.tile] ? engKind(state, e) : ""), e.tile);
 }
 export function extract(state) {
   const e = state.engagement;
