@@ -37,7 +37,7 @@ import { hash01 } from "./skills.js";
 import {
   poisOf, poiAt, isSitePoi, poiPool, poiName, permanentSite, poiEligible, inKnownZone, POI_KINDS, COUNTS, POI, poiBand, TILE_HEAT,
 } from "./pois.js";
-import { lootPoiAbstract } from "./poicont.js";
+import { lootPoiAbstract, poiHouses } from "./poicont.js"; // poiHouses: a street of houses (a neighbourhood) is gone through a house at a time
 import { lookOdds, LOOK } from "./survey.js";
 import { haulFor, AISCAV } from "./aiscav.js";
 
@@ -250,8 +250,9 @@ export function groupTargets(state, who, centres, { range = GPOI.RANGE, need = n
 /** @param {State} state */
 const stats = (state) => { const st = /** @type {any} */ (state); return st.groupPoiStats || (st.groupPoiStats = { surveys: 0, found: 0, raids: 0, took: 0, stripped: 0, leftTaken: 0 }); };
 /**
- * A holder raids POI i of a tile without a map: `need` of its pool (pool units; less when less is left, never below
- * opts.floor, AISCAV.floor by default) through poicont.js lootPoiAbstract (the pool, the ledger, what the player left
+ * A holder raids POI i of a tile without a map: `need` of its pool (pool units; a street of houses, a neighbourhood,
+ * need / poicont.js poiHouses: they go through it a house at a time, as your crews do; less when less is left, never
+ * below opts.floor, AISCAV.floor by default) through poicont.js lootPoiAbstract (the pool, the ledger, what the player left
  * in opened containers, the tile's heat: opts.heat, TILE_HEAT.AI by default, × max(1, opts.hours / 4)), and the haul
  * as goods by the POI's kind (aiscav.js haulFor at opts.eff, AISCAV.eff by default; the site POI as its site, the
  * shop's food and all). Logs a POI stripped now and things of yours taken (seen, or on the radio near your bases;
@@ -266,7 +267,7 @@ export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
   const t = tileOf(state, tile), p = poiAt(t, i);
   if (!p) return null;
   const before = poiPool(t, i), was = !!p.stripped, band0 = poiBand(t, i);
-  const r = lootPoiAbstract(state, who, t, i, need, { floor: opts.floor != null ? opts.floor : AISCAV.floor, heat: opts.heat != null ? opts.heat : TILE_HEAT.AI, hours: opts.hours });
+  const r = lootPoiAbstract(state, who, t, i, need / poiHouses(state, t, i), { floor: opts.floor != null ? opts.floor : AISCAV.floor, heat: opts.heat != null ? opts.heat : TILE_HEAT.AI, hours: opts.hours });
   if (!r) return null;
   const goods = r.took > 0 && opts.haul !== false ? haulFor(t, r.took, before, opts.eff != null ? opts.eff : AISCAV.eff, state, isSitePoi(t, i) ? null : p.kind) : {};
   for (const [k, q] of Object.entries(r.left.sup)) goods[k] = (goods[k] || 0) + q;

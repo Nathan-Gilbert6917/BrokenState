@@ -22,6 +22,7 @@ import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known; tile heat
 import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
+import { STREET } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
@@ -363,15 +364,23 @@ function placeEntries() {
     text: "The places run down without you: the groups send parties to the places they know near their bases, one place at a time, and survey tiles to find the hidden ones. They ransack containers as they go, they take what you left in a container you opened, and their raids stir a tile up. A party in a place shows on the map beside your team, and the place dialogue says when one is in it right now. The log says when a place you can see (or hear of on your radio) is picked clean, or when strangers emptied what you left.",
     how: "Do not leave things in a container near a group's base for long. Survey off the roads for the places nobody has picked over yet.", sprite: null,
   }];
+  // A kind with more to say than the rest: the neighbourhood is a whole street of houses on one raid map (sim/buildingmaps.js streetMap).
+  const NOTES = {
+    neighbourhood: {
+      stat: ["Map", `a street of ${STREET.HOUSES[0]}–${STREET.HOUSES[1]} houses, two storeys each, cars along the kerb, back gardens`],
+      text: "Neighbourhood: a street of houses in a suburb or a small town, raided as one place. The raid opens on the street itself: a row of houses each side of the road, every house with its own rooms, doors, stairs and containers, side yards and fenced back gardens between them, cars parked along the kerb. The ways out are both ends of the street and the back gardens. More of the dead wander a street than a lone house.",
+      how: "Pick it in the list of places like any other. Go through the houses one at a time: each house keeps its own containers between visits (one you never went into stays untouched, what you leave in one stays there), and the place's one picked-over band falls as the houses are searched. Searching hour by hour (crews, the autopilot) a team goes through it a house at a time, so it lasts several times as long as a lone house.",
+    },
+  };
   for (const k of allPoiKinds()) {
     const d = LOCATIONS[k];
     if (!d) continue;
-    const zone = SITE_ZONES[d.cat];
+    const zone = SITE_ZONES[d.cat], note = NOTES[k];
     out.push({
       key: `p:${k}`, cat: "places", name: d.name, sub: `${zone ? zone.name : "Place"} · point of interest`,
-      stats: [["Danger", DANGER_NAMES[siteDanger({ type: k, zone: d.cat })]], ["Likely", likely(d)], ["Gear", d.gear.length ? list(d.gear.slice(0, 4).map((g) => (GEAR[g] ? GEAR[g].name.toLowerCase() : g))) + (d.gear.length > 4 ? "…" : "") : "none"], ["Worth", d.richness >= 0.5 ? "a good haul when untouched" : d.richness >= 0.3 ? "a modest haul when untouched" : "slim pickings even untouched"]],
-      text: `${d.name}: a place a tile holds${d.cat === "rural" ? " out in the countryside" : d.cat === "town" ? " in a suburb or a small town" : " on a city block"}, with loot of its own.`,
-      how: "Scavenge or raid the tile and pick it in the list of places; the search goes through its rooms and containers. A survey shows whether it stands on a tile before you go.",
+      stats: [["Danger", DANGER_NAMES[siteDanger({ type: k, zone: d.cat })]], ["Likely", likely(d)], ["Gear", d.gear.length ? list(d.gear.slice(0, 4).map((g) => (GEAR[g] ? GEAR[g].name.toLowerCase() : g))) + (d.gear.length > 4 ? "…" : "") : "none"], ["Worth", d.richness >= 0.5 ? "a good haul when untouched" : d.richness >= 0.3 ? "a modest haul when untouched" : "slim pickings even untouched"], ...(note && note.stat ? [note.stat] : [])],
+      text: note ? note.text : `${d.name}: a place a tile holds${d.cat === "rural" ? " out in the countryside" : d.cat === "town" ? " in a suburb or a small town" : " on a city block"}, with loot of its own.`,
+      how: note ? note.how : "Scavenge or raid the tile and pick it in the list of places; the search goes through its rooms and containers. A survey shows whether it stands on a tile before you go.",
       sprite: () => poiSpriteCanvas(k),
     });
   }

@@ -1569,11 +1569,12 @@ function raidHead(state, b, phase) {
   const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${keyWord(k)}`), ...R.foundGear.map((g) => g.name)];
   // A building's own map (sim/buildingmaps.js): its name, its ways out, people inside who are not placed yet.
   const I = R.interior;
-  const exits = I && R.plan ? (R.plan.exits || []).filter((e) => e.zone >= 0).map((e) => e.name.toLowerCase()) : [];
+  const street = !!(I && R.plan && R.plan.street); // a street of houses (sim/buildingmaps.js streetMap): its ways out are the map's zones
+  const exits = I && R.plan ? (street ? R.zones.map((z) => (z.name || z.side).toLowerCase()) : ["the front", ...(R.plan.exits || []).filter((e) => e.zone >= 0).map((e) => e.name.toLowerCase())]) : [];
   const waiting = I && R.occupants ? R.occupants.waiting.reduce((a, w) => a + w.count, 0) : 0;
   return `<div class="cbhead">
     <div class="cbtitle">Scavenging ${I ? `the ${esc(I.name.toLowerCase())} · ` : ""}${esc(b.place)}</div>
-    ${I ? `<div class="small muted" data-tip="Every way out has a green extraction zone outside it. Locked doors (padlocks) open like any lock, from either side.">Ways out: the front${exits.length ? `, ${esc(exits.join(", "))}` : ""}${waiting ? ` · <span class="warn">${waiting} other people inside</span>` : ""}</div>` : ""}
+    ${I ? `<div class="small muted" data-tip="${street ? "Both ends of the street and the back gardens are green extraction zones. Each house has its own doors and stairs; locked doors (padlocks) open like any lock, from either side." : "Every way out has a green extraction zone outside it. Locked doors (padlocks) open like any lock, from either side."}">Ways out: ${esc(exits.join(", "))}${waiting ? ` · <span class="warn">${waiting} other people inside</span>` : ""}</div>` : ""}
     <div class="small muted">Turn ${b.turn} · about ${Math.floor((b.turn - 1) / 6)}h ${((b.turn - 1) % 6) * 10}m in · ${phase}</div>
     <div class="small" style="margin-top:0.35rem" data-tip="Heat rises every turn and faster with gunfire and car alarms. Each new stage (Stirring 25, Swarming 50, Overrun 75) brings a wave of the dead from the map edges.">Heat: <b>${HEAT_NAMES[stage]}</b> (${Math.round(R.heat)})</div>
     <div class="heat" style="margin:0.25rem 0 0.4rem"><i style="left:${Math.min(100, R.heat)}%"></i></div>

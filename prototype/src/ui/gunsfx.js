@@ -409,7 +409,7 @@ export const ROOMS = {
 const TERRAIN_ROOM = { city: "town", suburb: "town", forest: "forest", swamp: "forest", jungle: "forest", plains: "field", hills: "field", mountain: "field", water: "field", desert: "field", tundra: "field" };
 export function roomOf(state, b) {
   if (!b) return "field";
-  if (b.raid && b.raid.plan && b.raid.plan.building) return "inside";
+  if (b.raid && b.raid.plan && b.raid.plan.building && !b.raid.plan.street) return "inside"; // a street of houses (sim/buildingmaps.js streetMap): the town's
   const t = state && state.tiles && b.setup && b.setup.tile != null ? state.tiles[b.setup.tile] : null;
   if (b.setup && (b.setup.layout === "baseDefence" || b.setup.layout === "baseAssault")) return "town";
   return (t && TERRAIN_ROOM[t.terrain]) || (t && t.loc ? "town" : "field");
