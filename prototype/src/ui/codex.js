@@ -20,7 +20,7 @@ import { KITCHEN } from "../sim/kitchen.js"; // the stove's firewood
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
-import { POI, allPoiKinds, poisOf, knownPois } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known
+import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known; tile heat
 import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
@@ -347,6 +347,16 @@ function placeEntries() {
     stats: [["Per tile", `up to ${POI.MAX} by the land (mountains 0–1, hills and forest 0–2, farmland 0–3, suburbs 1–4); none on water, in a city or town centre or on a hive's tile`], ["Known", "on and by roads and in the towns' and cities' footprints all but a few are known from the start; elsewhere none until a team surveys the tile"], ["Loot", "a pool of its own in each place, from what its kind holds; nothing grows back, and other groups strip them too"]],
     text: "The houses, sheds, shops and camps a tile holds besides its site: a tile's best place is drawn on the map once you know it (a site tile keeps its site), the tile panel's Places rows list the ones you know with how picked over each is, and a pip at the sprite's corner counts them. What is hidden is never counted: the panel says \"possibly more unknown\".",
     how: "Click a tile to read its Places. Send a Survey (8 hours on the tile) to find the hidden ones, a Quick look (2 hours) for a faster, rougher look. Scavenge or raid a tile to pick one of its places to search.", sprite: null,
+  }, {
+    key: "k:containers", cat: "places", name: "📦 Containers that stay", sub: "What a place keeps between visits",
+    stats: [["Unopened", "stays unopened with what it always held, until someone loots it"], ["Opened", "kept as you left it when the raid ends: what you did not take, what you put in or swapped, what a rummage left hidden, the lock picked or forced"], ["Lost", "things dropped on the floor and loot left on bodies"], ["Ransacked", "emptied by someone else (or by your own crews' searches): it stands open and empty"]],
+    text: "Each place is the same building with the same drawers, cupboards and cars on every visit, and each container holds the same things whenever it is first opened. How picked over a place is (rich, some, little, picked clean) is how many of its containers are still untouched: other groups' raids ransack them, and they can take what you left behind too. What you leave in a container never makes the place richer.",
+    how: "Leave things in a container you opened on a raid to come back for them. The dialogue that picks a place shows the containers you opened, what you left there, and \"looted by others since your visit\".", sprite: null,
+  }, {
+    key: "k:tileheat", cat: "places", name: "🔥 Tile heat", sub: "How stirred up a tile is",
+    stats: [["Rises", `going into a place (+${TILE_HEAT.ENTER}), coming out (sneaking ${7}, normal ${13}, loud ${22}, plus the shots fired), other groups' raids (+${TILE_HEAT.AI})`], ["Falls", "about 10% a day"], ["Effect", `the threat of every place on the tile (up to +${TILE_HEAT.THREAT}), more of the dead in a raid there, and when very hot a horde or a wandering band drawn by the noise`], ["Words", "cold, warm, hot, very hot"]],
+    text: "A tile's heat stays after the raid: every visit to its places stirs it up a little more, and noise and gunfire most. It is not the Heat of one raid (which starts afresh each time) nor a team's Field Heat. You see it as your people last saw it: the tile panel's Tile heat row and the place dialogue say how hot it was and how long ago, stale after two weeks.",
+    how: "Spread your raids over several tiles, sneak in and out, and let a hot tile cool down for a week or two before going back.", sprite: null,
   }];
   for (const k of allPoiKinds()) {
     const d = LOCATIONS[k];
@@ -452,7 +462,8 @@ function seenNow(state) {
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
-  for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); }
+  for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); }
+  if (Object.values(state.poiKnow || {}).some((k) => k && k.heat)) keys.add("k:tileheat"); // a team has seen a tile's heat (sim/pois.js noteTileHeat)
   weatherSeen(state, keys);
   return keys;
 }

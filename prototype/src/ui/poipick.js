@@ -6,7 +6,7 @@
 // buttons are the card's own choices (data-action="choice"), so main.js handles them as any card's.
 import { partyMembers, tileLabel } from "../sim/parties.js";
 import { poiRows } from "../sim/poiraid.js";
-import { morePoisHidden } from "../sim/pois.js";
+import { morePoisHidden, tileHeatEstimate } from "../sim/pois.js";
 import { LOCATIONS } from "../sim/data.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -18,7 +18,14 @@ const THREAT_COLOR = ["var(--good)", "var(--text)", "var(--warn)", "var(--danger
 export function threatHtml(est) {
   if (!est) return `<span class="muted"${tip("Nobody has sized this place up: a Survey of the tile (8h) or a visit records a threat estimate.")}>threat unknown</span>`;
   const when = `${est.src === "survey" ? "surveyed" : "seen"} ${est.age < 1 ? "today" : `${Math.floor(est.age)}d ago`}`;
-  return `<span style="color:${THREAT_COLOR[est.band]}"${tip(`What your people made of it when they looked (${when}): the kind of place, the infection here, hive land. An estimate: the error grows with the days since (${Math.round(est.err * 100)}% now), so an old look says less. True threat decides the fight.`)}>${esc(est.word)}${est.skulls ? ` ${est.skulls}` : ""}</span> <span class="muted small">(${when}${est.stale ? ", stale" : ""})</span>`;
+  return `<span style="color:${THREAT_COLOR[est.band]}"${tip(`What your people made of it when they looked (${when}): the kind of place, the infection here, how stirred up the tile is (its heat), hive land. An estimate: the error grows with the days since (${Math.round(est.err * 100)}% now), so an old look says less. True threat decides the fight.`)}>${esc(est.word)}${est.skulls ? ` ${est.skulls}` : ""}</span> <span class="muted small">(${when}${est.stale ? ", stale" : ""})</span>`;
+}
+
+// The tile's heat as last seen (sim/pois.js tileHeatEstimate): a line over the rows, or "" without a look.
+export function heatLine(state, tile) {
+  const h = tileHeatEstimate(state, tile);
+  if (!h) return "";
+  return `<div class="text small"><span${tip("Tile heat: how stirred up this tile is by raids on its places (going in, coming out, the noise and shots; others' raids too). It fades about 10% a day. A hot tile draws more of the dead, and when very hot a horde or a wandering band may turn up. As last seen: new heat since is not known.")}>Tile heat: <span style="color:${THREAT_COLOR[h.band]}">${esc(h.word)}</span></span> <span class="muted">(seen ${h.age < 1 ? "today" : `${Math.floor(h.age)}d ago`}${h.stale ? ", stale" : ""})</span></div>`;
 }
 
 // The card's screen: a row per known place, each a button of the card's choices (the crawl and "Not now" after them).
@@ -41,6 +48,7 @@ export function poiPickModal(state, card) {
   return `<div class="box">
     <h1>${esc(card.title)}</h1>
     <div class="where">${esc(tileLabel(state, tile))}${who ? ` · ${esc(who)}` : ""}</div>
+    ${heatLine(state, tile)}
     <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time.</div>
     <div class="choices">${rows.map(rowHtml).join("")}
       ${rest.map(({ c, i }) => `<button data-action="choice" data-i="${i}"${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`).join("")}</div>

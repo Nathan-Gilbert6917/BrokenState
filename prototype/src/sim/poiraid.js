@@ -19,6 +19,7 @@ import { LOCATIONS } from "./data.js";
 import { partyTile, tileLabel, awaitOrders, giveOrder, PICKED_OVER } from "./parties.js";
 import { crawlTile } from "./citycrawl.js";
 import { SITES, BUILDINGS } from "./buildingmaps.js"; // the building a POI's kind opens
+import { ledgerSummary } from "./poicont.js"; // what the containers there hold for you (the dialogue's note)
 import {
   poisOf, poiAt, knownPois, poiName, poiPool, poiBand, poiBandName, poiVisitText, poiThreatEstimate, poiThreatText, raidingNow,
   bestKnownPoi, poiScore, permanentSite, morePoisHidden, isSitePoi,
@@ -53,19 +54,15 @@ export function poiPickWanted(state, p, tile = partyTile(p)) {
 // The pick made for a team that gets none (the headless paths): the best known POI, or -1.
 export const poiPickFor = (state, p, tile = partyTile(p), exclude = []) => bestKnownPoi(state, state.tiles[tile], p, exclude);
 
-// The container note of POI i from its ledger (pois.js poiLedger; filled by the persistent containers to come): "".
+// The container note of POI i from its ledger (poicont.js ledgerSummary): "you opened 3 containers, left 5 items
+// there, looted by others since your visit" ("" when the ledger has nothing to say).
 export function poiContainerNote(state, t, i) {
-  const poi = poiAt(t, i);
-  const c = poi && poi.cont;
-  if (!c) return "";
-  const mine = Object.keys(c.mine || {});
-  const left = mine.reduce((a, k) => a + ((c.mine[k] && c.mine[k].contents) || []).length, 0);
-  const others = Object.entries(c.looted || {}).filter(([k, by]) => by !== "player" && mine.includes(k)).length;
+  const L = ledgerSummary(state, t, i);
   const parts = [];
-  if (mine.length) parts.push(`you opened ${mine.length} container${mine.length === 1 ? "" : "s"}`);
-  if (left) parts.push(`left ${left} item${left === 1 ? "" : "s"} there`);
-  if (others) parts.push(`looted by others since your visit`);
-  else if (Object.keys(c.looted || {}).some((k) => c.looted[k] !== "player")) parts.push("others have looted here");
+  if (L.opened) parts.push(`you opened ${L.opened} container${L.opened === 1 ? "" : "s"}`);
+  if (L.left) parts.push(`left ${L.left} item${L.left === 1 ? "" : "s"} there`);
+  if (L.others) parts.push("looted by others since your visit");
+  else if (L.othersEver) parts.push("others have looted here");
   return parts.join(", ");
 }
 // What the dialogue shows of the known POIs on a tile, one row each (p: the team, whose own finds count).

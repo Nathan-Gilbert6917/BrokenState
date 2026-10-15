@@ -105,7 +105,8 @@ import { typesOf, withHand } from "./rounds.js"; // shells and rounds at hand (t
 import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
-import { poiPool } from "./pois.js"; // a raid on a point of interest: what is left in that place (setup.raid.poi)
+import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
+import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its containers as the ledger keeps them, their own dice
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
@@ -5998,6 +5999,7 @@ export function createRaid(state, setup) {
   // A building's own map (buildingmaps.js): a single-building site, or the building picked at a site with several;
   // else the street map as before (at a site with several, the panel offers the buildings first: R.choose).
   const pick = raidBuilding(state, tile, setup);
+  const poiI = setup.raid && setup.raid.poi != null ? setup.raid.poi : null; // a raid on a point of interest (pois.js, poiraid.js)
   let map;
   if (pick) {
     map = buildingMap(state, tileId, pick, withVehicle);
@@ -6009,11 +6011,14 @@ export function createRaid(state, setup) {
   } else {
     [W, H] = raidDims(tile); // the street map: by the site (battlesize.js: a city center Large, a campground Medium)
     // setup.raid.areas: a street map with these areas (citycrawl.js street events: a crashed ambulance, a checkpoint).
-    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : raidAreaTypes(rng, raidAreasFor(tile, setup.raid && setup.raid.kind), W, H); // more rooms and areas on a bigger map (setup.raid.kind: a point of interest's, pois.js)
+    // A point of interest's street map (pois.js) is built from dice of its own (poicont.js poiMapRng), so it is the
+    // same map with the same containers every visit; Army trucks that come and go are laid last there.
+    const mrng = poiI != null ? poiMapRng(state, tileId, poiI) : rng;
+    const types = setup.raid && setup.raid.areas ? setup.raid.areas.slice() : raidAreaTypes(mrng, raidAreasFor(tile, setup.raid && setup.raid.kind), W, H); // more rooms and areas on a bigger map (setup.raid.kind: a point of interest's, pois.js)
     if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
     const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
-    if (trucks.length && !types.includes("miltrucks")) types.unshift("miltrucks"); // first: they want the room
-    map = genRaidMap(rng, tile, types, withVehicle, { trucks });
+    if (trucks.length && !types.includes("miltrucks")) { if (poiI != null) types.push("miltrucks"); else types.unshift("miltrucks"); } // first: they want the room (a POI's map: last)
+    map = genRaidMap(mrng, tile, types, withVehicle, { trucks });
     if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
   }
   const b = {
@@ -6028,8 +6033,12 @@ export function createRaid(state, setup) {
       areas: map.areas, containers: map.containers, zones: map.zones,
       hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H)), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
-      // A point of interest's own pool (pois.js poiPool: setup.raid.poi), else the site's loot.
-      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? (setup.raid && setup.raid.poi != null ? poiPool(tile, setup.raid.poi) : tile.loot) : 0.5) * 1.3)),
+      // A point of interest's containers hold what they held untouched (pois.js poiFull: how picked over it is shows
+      // as containers already ransacked, poicont.js), else the site's loot.
+      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? (poiI != null ? poiFull(tile, poiI) : tile.loot) : 0.5) * 1.3)),
+      // A point of interest's dice key (poicont.js): its containers' contents (boxRng), its locks (locks.js) are the
+      // same on every visit. Unset for any other raid (their dice as before).
+      poiDice: poiI != null ? `poi${poiI}:${pick ? pick.id : "street"}` : undefined,
       reward: rewardMult(tile), // buildingmaps.js: risk pays (city blocks most, the countryside least)
       // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
@@ -6119,6 +6128,7 @@ export function createRaid(state, setup) {
   nlSetup(state, b); // nonlethal.js: tasers and spray on both sides
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room
+  poiRaidStart(state, b); // poicont.js: a point of interest's containers as its ledger keeps them (ransacked, as you left them, fresh)
   if (pick) {
     const rooms = map.areas.filter((a) => !a.outdoor).length;
     const st = b.raid.storeys > 1 ? ` on ${b.raid.storeys} storeys (the stairs are marked; Go up / Go down takes an action)` : "";
@@ -6307,9 +6317,16 @@ function truckCrewRises(state, b, u, box) {
 
 // open: the player looks inside (the search window does the taking); else what fits is taken at once (bots, tests).
 // quick: a rummage (search.js): part of what is inside shows, the rest stays hidden, and it is heard.
-function searchBox(state, b, u, box, open = false, quick = false) {
+// A point of interest's container (R.poiDice, poicont.js) rolls its contents from dice of its own (boxRng: the seed,
+// the tile, the POI, the map, the container), with its salts and its locks' dice keyed by it too, so it holds the
+// same things on any visit; the place's kind is the POI's. Every other container rolls as before.
+export function searchBox(state, b, u, box, open = false, quick = false) {
   const rng = state.rng;
   const R = b.raid;
+  const pd = R.poiDice && box.kind !== "body" && !box.truck ? R.poiDice : null;
+  const drng = pd ? boxRng(state, b.tileId, pd, box.id) : rng; // the contents' dice
+  const bid = pd ? `${pd}#${box.id}` : box.id; // the salt of the finds' own dice
+  const poiKind = pd && b.setup && b.setup.raid ? b.setup.raid.kind || null : null;
   const s = survivorById(state, u.sid);
   const scav = (s ? skill(s, "scavenging") : 0) + (u.scavBonus || 0); // scavBonus: Treasure Hunter (skills.js)
   const party = state.parties.find((x) => x.id === b.setup.partyId);
@@ -6359,52 +6376,52 @@ function searchBox(state, b, u, box, open = false, quick = false) {
       }
     } else {
       const def = AREAS[R.areas[box.area].type];
-      const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
+      const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
       const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
       const gunSite = (b.setup && b.setup.raid && b.setup.raid.gunSite) || site; // gundist.js: the building a city crawl's map is (a police station, an Army checkpoint), else the site
       for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
-        if (!rng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
-        sup[k] = Math.max(1, Math.round(rng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
+        if (!drng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
+        sup[k] = Math.max(1, Math.round(drng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward));
       }
-      splitParts(state, sup, R.areas[box.area].type, `box${box.id}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
+      splitParts(state, sup, R.areas[box.area].type, `box${bid}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
       if (R.deep) deepShift(sup, R.deep); // deeploot.js: a city crawl's deeper blocks hold what is dear by the kilo
-      for (const [key, p] of def.gear) if (rng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(foundFill(lootItem(swapGun(areaSourceName(R.areas[box.area].type, gunSite), key, rng), src, rng), b.tileId, box.id, key)); // gundist.js: which gun, by the room's draws; gunrounds.js: a few rounds in a gun now and then (its own dice)
-      const small = rollAreaFind(rng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
+      for (const [key, p] of def.gear) if (drng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward)) gear.push(foundFill(lootItem(swapGun(areaSourceName(R.areas[box.area].type, gunSite), key, drng), src, drng), b.tileId, bid, key)); // gundist.js: which gun, by the room's draws; gunrounds.js: a few rounds in a gun now and then (its own dice)
+      const small = rollAreaFind(drng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
       if (small) gear.push(small);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
-      const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${box.id}`);
+      const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${bid}`, pd ? { hour: pd, loot: R.richness / 1.3, kind: poiKind } : undefined);
       if (book) gear.push(book);
       // A gun attachment in an armoury, a gun shop, barracks (loot.js AREA_GUNMODS; its own dice too).
-      const part = rollAreaGunmod(state, b.tileId, R.areas[box.area].type, `box${box.id}`);
+      const part = rollAreaGunmod(state, b.tileId, R.areas[box.area].type, `box${bid}`);
       if (part) gear.push(part);
-      const rel = rollAreaReload(state, b.tileId, R.areas[box.area].type, `box${box.id}`); // brass, powder, primers in a gun shop, an armoury (loot.js AREA_RELOAD; its own dice)
+      const rel = rollAreaReload(state, b.tileId, R.areas[box.area].type, `box${bid}`); // brass, powder, primers in a gun shop, an armoury (loot.js AREA_RELOAD; its own dice)
       if (rel) gear.push(rel);
       // A crate of flashbangs or smoke grenades in an armoury, a few in barracks lockers (loot.js AREA_GRENADES; its own dice too).
-      gear.push(...rollAreaGrenades(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
+      gear.push(...rollAreaGrenades(state, b.tileId, R.areas[box.area].type, site, `box${bid}`));
       // A grenade launcher, a rocket tube, a crate of 40 mm in army stock (loot.js AREA_LAUNCHERS; its own dice too).
-      gear.push(...rollAreaLaunchers(state, b.tileId, R.areas[box.area].type, site, `box${box.id}`));
+      gear.push(...rollAreaLaunchers(state, b.tileId, R.areas[box.area].type, site, `box${bid}`));
       // One of the newer guns (gunfinds.js GUN_FINDS.area; its own dice too).
-      gear.push(...rollAreaGuns(state, b.tileId, R.areas[box.area].type, gunSite, `box${box.id}`));
+      gear.push(...rollAreaGuns(state, b.tileId, R.areas[box.area].type, gunSite, `box${bid}`));
       // Firewood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
-      const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
+      const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (wood > 0) sup.wood = (sup.wood || 0) + wood;
       // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
-      const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${box.id}`);
+      const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
-      if (def.alarm && box.kind === "car" && rng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
+      if (def.alarm && box.kind === "car" && drng.chance(def.alarm) && !u.quiet) { // quiet: Quiet Hands never sets one off
         R.heat = Math.min(100, R.heat + 12);
         say(b, "A car alarm goes off! Heat jumps.", "danger");
         alertNear(b, box.x, box.y, 12, "The alarm wakes everything nearby.");
       }
     }
     if (box.kind === "body" && !box.zombie) gear.push(...unitMagItems(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // carrykit.js: their spare magazines
-    else if (box.kind !== "body") withMags(gear, box.truck ? "military" : areaSource(R.areas[box.area] ? R.areas[box.area].type : "house", null), "box", b.tileId, box.id); // carrykit.js: a gun found keeps 0-2 spare magazines (own dice)
+    else if (box.kind !== "body") withMags(gear, box.truck ? "military" : areaSource(R.areas[box.area] ? R.areas[box.area].type : "house", null), "box", b.tileId, bid); // carrykit.js: a gun found keeps 0-2 spare magazines (own dice)
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
-    const site = state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null;
+    const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
     const rTheme = box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house");
-    typeFind(state, sup, box.kind === "body" ? "raider" : box.kind === "zombie" ? "travel" : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" || box.kind === "zombie" ? null : b.tileId); // foods.js: the food as the items a place like this holds (a site's shelves run down)
-    sortFind(sup, rTheme, "box", b.tileId, box.id); // ammo.js: what turns up there, by calibre
-    if (box.kind !== "body") formFinds(sup, gear, rTheme, "box", b.tileId, box.id); // ammo.js: some of it boxed (stacks of boxes), now and then a bulk ammo container; the rest loose
+    typeFind(state, sup, box.kind === "body" ? "raider" : box.kind === "zombie" ? "travel" : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" || box.kind === "zombie" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
+    sortFind(sup, rTheme, "box", b.tileId, bid); // ammo.js: what turns up there, by calibre
+    if (box.kind !== "body") formFinds(sup, gear, rTheme, "box", b.tileId, bid); // ammo.js: some of it boxed (stacks of boxes), now and then a bulk ammo container; the rest loose
     box.contents = { sup, gear };
     blastBox(b, box); // launchers.js: a blast reached it before anyone looked inside
   }

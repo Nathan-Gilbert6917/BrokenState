@@ -74,7 +74,7 @@ import { ransomHour } from "./ransom.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
-import { ensurePois, poiSnapshot, learnPois, mergePoiFinds } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
+import { ensurePois, poiSnapshot, learnPois, mergePoiFinds, tileHeatDaily } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
 import { festivalHour } from "./festival.js"; // the yearly harvest festival at the hub
 import { baseOpticsSight } from "./optics.js";
@@ -981,6 +981,7 @@ function hourOfWorld(state) {
     familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
+    tileHeatDaily(state); // pois.js: the heat raids left on the tiles falls 10% a day
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead

@@ -271,6 +271,11 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   check([...setters].every((n) => allowed.includes(n)), `only ${allowed.join(", ")} set tile.loot outright (found: ${[...setters].join(", ")})`);
   check(takers.has("aiscav.js"), `the groups' scavenging only takes from it (-= in ${[...takers].join(", ")})`);
   check(adds === 0, "nothing adds to it or scales it (+=, *=, /=)");
+  // poicont.js (the POI container ledger) lowers a pool only through pois.js poiTake: it never sets one.
+  {
+    const src = readFileSync(join(dir, "poicont.js"), "utf8");
+    check(!/\.(loot|pool)\s*[-+*\/]?=(?!=)/.test(src) && /poiTake\(/.test(src), "the container ledger (poicont.js) lowers pools only through poiTake");
+  }
   // A whole run, hour by hour.
   const st = world(7);
   setAutopilot(st, true, "balanced");

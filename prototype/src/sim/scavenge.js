@@ -7,6 +7,13 @@
 // map is the POI's building (buildingmaps.js SITES by kind; the site POI keeps the site's buildings and their choice)
 // or the street map with the kind's areas. Raiding a place on another group's base tile is hostile: their guards
 // join the roster (raidEnemies) and their goodwill drops.
+//
+// Tile heat (pois.js TILE_HEAT, persistent per tile): going into a POI adds TILE_HEAT.ENTER, coming out the
+// approach's heat (APPROACHES; a raid on its map by how hot it ran: raidApproach) and the shots fired (fieldheat.js
+// noteGunfire's record). It raises the roster (raidEnemies: more of the dead, and when hot a horde or a wandering band
+// drawn by the noise, by hash dice) and the fights of the hour-by-hour search. The containers persist (poicont.js):
+// the raid on a map keeps what your side opened (afterRaid → poiRaidEnd), the hour-by-hour search takes through the
+// ledger (lootPoiAbstract: the pool, the containers, and what you left there, which the team carries off).
 import { addFoodFind, foodText, typeFind, siteMix } from "./foods.js"; // a food find: the items a place like this holds
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger, supValue, supWeight } from "./data.js";
@@ -15,7 +22,8 @@ import {
   partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, cargoRoom, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
   wipeIfEmpty, leaveVehicle, addGearToCargo, PICKED_OVER,
 } from "./parties.js";
-import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi } from "./pois.js"; // the place searched: its kind, its pool, its visits
+import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, tileHeat, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's heat
+import { poiRaidEnd, lootPoiAbstract, CONT } from "./poicont.js"; // the containers a place keeps between visits
 import { poiTileRaid, poiPickFor, poiRaidSetup } from "./poiraid.js"; // which place, and the raid map it opens
 import { attitude, changeGoodwill } from "./factions.js";
 import { noteLooked } from "./discovery.js";
@@ -25,7 +33,7 @@ import { tickHour } from "./world.js";
 import { engLootMult } from "./raidplan.js"; // a scout sent first: the team knows where to look
 import { searchHazards } from "./health.js";
 import { wormSearch } from "./worm.js"; // the worm: hands that handled the dead
-import { anyPerk, rollBook, gainXpAll, USE } from "./skills.js";
+import { anyPerk, rollBook, gainXpAll, USE, hash01 } from "./skills.js";
 import { noteSearch } from "./relations.js";
 import { itemLoad, lootItem, armouredItem } from "./inventory.js";
 import { gunMags } from "./carrykit.js"; // a found gun's spare magazines
@@ -34,7 +42,7 @@ import { foundFill } from "./gunrounds.js";
 import { rollSiteGuns } from "./gunfinds.js"; // the arsenal of 2026-10-10 (its own dice)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a site's gear list yields
 import { rollFind, rollHuntFind, rollLightFind, rollSiteWood, rollBuildmat, rollSiteArrows, rollGunmodFind, rollAnyModFind, sortParts, rollSiteGrenades, rollSiteLaunchers, rollSiteReload } from "./loot.js";
-import { searchHeatMult } from "./fieldheat.js";
+import { searchHeatMult, noteGunfire } from "./fieldheat.js";
 import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour, convoyHeat0, convoyThreat } from "./miltrucks.js"; // an Army convoy's guard: Heat from the start, a harder fight
 import { gunSearchHour } from "./locks.js"; // gun safes, drills and grinders (their own dice)
@@ -73,7 +81,8 @@ export function raidEnemies(state, tileId) {
   const inf = t.infection || 0;
   // A hive's land (hives.js): more of the dead and tougher (+1 power), and on the red-skull ring around a hive +3.
   const hz = zombieToughness(state, tileId);
-  const z = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1));
+  const heat = tileHeat(state, tileId); // pois.js: a tile stirred up by raids draws more of the dead (no dice of state.rng)
+  const z = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1)) + Math.floor(heat / TILE_HEAT.ROSTER);
   // mix: the armoured dead here (deadsoldiers.js: soldiers at a National Guard base or an army wreck, riot police at a
   // police station), placed among them by share (combat.js createRaid, buildingmaps.js placeInterior).
   // The bred kinds too (hivetech.js siteSpecials): more in towns and cities as the years go by, and on a hive's land.
@@ -92,7 +101,21 @@ export function raidEnemies(state, tileId) {
   // People on the move (wanderers.js, its own dice): armed survivors squatting here (enemies), survivors hiding and a
   // military squad clearing the place (side "neutral" / "military": a third side on the raid map, thirdside.js).
   groups.push(...siteWanderers(state, tileId));
+  const surge = heatSurge(state, tileId);
+  if (surge) groups.push(surge);
   return groups;
+}
+
+// A hot tile (pois.js tileHeat at TILE_HEAT.SURGE or more): now and then the noise has drawn a horde or a wandering
+// band (hash dice of the seed, the tile and the hour, never state.rng): a group for the roster, or null.
+export function heatSurge(state, tileId) {
+  const h = tileHeat(state, tileId);
+  if (h < TILE_HEAT.SURGE) return null;
+  const p = Math.min(TILE_HEAT.SURGE_P, ((h - TILE_HEAT.SURGE) / (TILE_HEAT.MAX - TILE_HEAT.SURGE)) * TILE_HEAT.SURGE_P);
+  if (hash01(state.seed, "heatsurge", tileId, state.hour) >= p) return null;
+  const t = state.tiles[tileId], inf = t.infection || 0;
+  if (hash01(state.seed, "heatsurgekind", tileId, state.hour) < 0.7) return { kind: "zombies", count: 5 + Math.floor(h / TILE_HEAT.ROSTER), power: 2 + inf * 3, name: "a horde drawn by the noise", surge: true };
+  return { kind: "raiders", count: 2 + Math.floor(hash01(state.seed, "heatsurgen", tileId, state.hour) * 3), power: 3.5, name: "a wandering band drawn by the noise", guard: true, surge: true };
 }
 
 // The special dead met searching hour by hour (hivetech.js siteSpecials): their extra weight, as the armoured dead's.
@@ -143,7 +166,8 @@ export function startScavenge(state, p) {
   }
   const baseOwner = poi != null ? state.factions.find((f) => f.alive && f.bases.includes(p.dest)) : null;
   if (poi != null) {
-    visitPoi(state, t, poi); // pois.js: the visit history and a fresh look at its threat
+    addTileHeat(state, t, TILE_HEAT.ENTER); // pois.js: going in stirs the tile up a little
+    visitPoi(state, t, poi); // pois.js: the visit history and a fresh look at its threat (and the tile's heat)
     // Another group's base tile: raiding a place on it is a hostile act (their guards join the roster, raidEnemies).
     if (baseOwner) changeGoodwill(state, baseOwner, -5, "you raided their base");
   }
@@ -193,12 +217,21 @@ export function startScavenge(state, p) {
 }
 
 // After the raid: time passes on the shared clock, the site is picked over, the vehicle may stay behind.
-export function afterRaid(state, result, setup) {
+// The map it was played on (battle) keeps a point of interest's containers (poicont.js poiRaidEnd: whatever way the
+// raid ended, extracted, retreated or wiped, what your side opened is saved as it is); one resolved by the numbers
+// takes through the ledger (lootPoiAbstract). Coming out stirs the tile up (raidApproach, the shots noted).
+export function afterRaid(state, result, setup, battle = null) {
   const p = state.parties.find((x) => x.id === setup.partyId);
   const t = state.tiles[setup.tile];
   const r = result.raid || { hours: 1, searched: 0, total: 0 };
   const poi = setup.raid && setup.raid.poi != null ? setup.raid.poi : null; // the point of interest raided (poiraid.js): its own pool
-  takePoi(t, poi, 0.07 * r.searched);
+  if (poi != null && battle && battle.raid && battle.raid.poiMap) poiRaidEnd(state, battle);
+  else if (poi != null) lootPoiAbstract(state, "player", t, poi, 0.07 * r.searched, { floor: CONT.FLOOR, left: false });
+  else takePoi(t, poi, 0.07 * r.searched);
+  if (poi != null) {
+    addTileHeat(state, t, exitHeat(APPROACHES[raidApproach(r.heat)].heat, shotsHere(state, setup.tile)));
+    noteTileHeat(state, t);
+  }
   // Guards who saw you, or died, hold it against you.
   if (r.alerted) for (const id of setup.context.factionIds || []) {
     const f = factionById(state, id);
@@ -222,6 +255,19 @@ export function afterRaid(state, result, setup) {
   // The raid took time; the world moved on meanwhile.
   for (let i = 0; i < r.hours && state.parties.includes(p); i++) tickHour(state);
   if (state.parties.includes(p)) awaitOrders(state, p, `The team is out of ${tileLabel(state, setup.tile)}${loot.length ? ` with ${loot.join(", ")}` : ""}.`);
+}
+
+// A raid on a map as an approach, for the heat it leaves (its Heat when it ended): under 25 a sneak, under 50 normal, else loud.
+export const raidApproach = (heat) => ((heat || 0) < HEAT_STAGES[1].min ? "sneak" : (heat || 0) < HEAT_STAGES[2].min ? "normal" : "loud");
+// The hour-by-hour search comes out of a POI (extracted, moved on to the next, the team wiped, a crew turned home):
+// the tile's heat rises by the approach's and the shots fired there (once a place: e.heatOut).
+export function searchExitHeat(state, e, shots = true) {
+  if (!e || e.poi == null || e.heatOut === e.poi) return;
+  e.heatOut = e.poi;
+  const ap = APPROACHES[e.approach] || APPROACHES.normal;
+  addTileHeat(state, e.tile, exitHeat(ap.heat, shots ? e.shots || 0 : 0));
+  if (shots) e.shots = 0;
+  noteTileHeat(state, e.tile);
 }
 
 export function engagementParty(state) {
@@ -307,7 +353,19 @@ export function searchHour(state) {
   if (arrows > 0) { e.found.supplies.arrows = (e.found.supplies.arrows || 0) + arrows; finds.push(`${arrows} arrows`); }
   // Locked things, keys and blueprints (locks.js; its own dice): adds finds and Heat.
   const locked = lockedSearchHour(state, e, p, members) + truckSearchHour(state, e, p, members) + gunSearchHour(state, e, p, members); // miltrucks.js: an Army truck's cargo (its own dice)
-  takePoi(t, e.poi, 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)); // Salvager: picked over 40% slower
+  // Salvager: picked over 40% slower. A point of interest's pool goes through its ledger (poicont.js): the containers
+  // follow, and what you left in the ones you opened comes away with the team.
+  const take = 0.05 * ap.loot * (perk("salvager") ? 0.6 : 1);
+  let leftLine = "";
+  if (e.poi != null) {
+    const got = lootPoiAbstract(state, "player", t, e.poi, take, { floor: CONT.FLOOR });
+    if (got && got.boxes) {
+      const names = [];
+      for (const [k, q] of Object.entries(got.left.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; names.push(`${q} ${keyWord(k)}`); }
+      for (const g of got.left.gear) { e.found.gear.push(g); names.push(g.name); }
+      if (names.length) leftLine = ` From what was left in a container here before: ${names.join(", ")}.`;
+    }
+  } else takePoi(t, e.poi, take);
   // The place picked clean: on to the next place known here with something left (poiraid.js), or the search is
   // done with this tile (the caller's rules extract).
   let next = "";
@@ -316,7 +374,9 @@ export function searchHour(state) {
     const to = poiPickFor(state, p, e.tile, [...(e.poisDone || []), e.poi]);
     if (to >= 0) {
       e.poisDone = [...(e.poisDone || []), e.poi];
+      searchExitHeat(state, e, false); // out of one place (pois.js tile heat; the shots count at the end)
       e.poi = to;
+      addTileHeat(state, t, TILE_HEAT.ENTER);
       visitPoi(state, t, to);
       next = ` The ${was} is picked clean: the team moves on to the ${poiName(t, to).toLowerCase()}.`;
     } else next = ` The ${was} is picked clean, and nothing else known here has anything left.`;
@@ -324,6 +384,7 @@ export function searchHour(state) {
 
   // Heat.
   let heat = ap.heat * (0.6 + 0.6 * t.infection);
+  const tileHot = tileHeat(state, e.tile) / TILE_HEAT.MAX; // pois.js: a tile stirred up by raids has more trouble about
   if (e.approach === "sneak") heat -= bestSkill(state, p, "stealth") * 0.3;
   if (isNight(state)) heat -= 2;
   const kit = searchHeatMult(state, p); // fieldheat.js: ghillie wrap, rag-wrapped boots, a scent mask, a hiking pack
@@ -332,13 +393,14 @@ export function searchHour(state) {
   const stage = heatStage(e.heat);
 
   // Encounters.
-  let line = (finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.") + locked + next;
-  if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0)) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
+  let line = (finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.") + leftLine + locked + next;
+  if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0) + tileHot * 0.1) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
     // The armoured dead (deadsoldiers.js) make a military site's fights harder, and their bodies pay for it.
     const mil = siteDeadMix(state, e.tile);
-    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile) + convoyThreat(state, e.tile); // miltrucks.js CONVOY_GUARD: the convoy's guard
+    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile) + convoyThreat(state, e.tile) + tileHot * 6; // miltrucks.js CONVOY_GUARD: the convoy's guard; the tile's heat
     // The shots: a bow's in arrows, everyone else's in ammo (world.js spendShots); short of either, those count 60%.
     const shot = spendShots(p.supplies, members, e.approach === "loud" ? 6 : 2);
+    if (shot.ammo > 0 && e.poi != null) { noteGunfire(state, e.tile, shot.ammo); e.shots = (e.shots || 0) + shot.ammo; } // fieldheat.js: the shots are heard; the tile's heat when the team comes out
     const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, p.supplies, p.supplies.arrows || 0, { need: () => 1 });
     if (power * rng.range(0.6, 1.4) > threat) {
       line += e.guarded ? " A guard patrol was taken down." : " The dead found you, and you put them down.";
@@ -379,6 +441,7 @@ export function searchHour(state) {
   wormSearch(state, p, e.tile, 1); // worm.js: the eggs on what they handled, rolled tonight or at home
   if (!partyMembers(state, p).length) {
     // Everyone died; what they found stays with them.
+    searchExitHeat(state, e);
     for (const [k, v] of Object.entries(e.found.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + v;
     p.cargo.gear.push(...e.found.gear);
     wipeParty(state, p);
@@ -409,6 +472,7 @@ export function extract(state) {
   const rng = state.rng;
   const stage = heatStage(e.heat);
   const members = partyMembers(state, p);
+  searchExitHeat(state, e); // pois.js: coming out of the place stirs the tile up (whoever is left)
   if (!members.length) {
     wipeIfEmpty(state, p);
     state.engagement = null;
