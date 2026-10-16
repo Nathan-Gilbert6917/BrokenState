@@ -29,8 +29,8 @@
 // carried section is meant for larger heavy objects"): a found supply moved onto a slot of a survivor (a pocket, a
 // pack cell, the off hand, a bag in the arms) becomes the item that holds it (supitems.js: rounds a loose handful, the
 // rest s_<key>, up to its stack a slot), and "stow:<unitId>" puts it in their pockets and pack, the stacks of it they
-// have first. Take all does that; only a bulky supply (building materials, car parts) or one with no item form is
-// carried loose. A supply item put back in a container, Carried or the vehicle is a supply stack there again.
+// have first. Take all does that; a bulky supply (building materials, car parts), one with no item form and what the
+// pockets and pack have no room for are carried loose (so a searched container is emptied: the raid bot moves on). A supply item put back in a container, Carried or the vehicle is a supply stack there again.
 // A container only rummaged through (search.js box.quick) keeps the rest hidden (box.hidden, not in this window).
 //
 // Extraction: a survivor who comes home (walked out, or carried out while down) adds what they carry loose to the
@@ -687,7 +687,7 @@ function refit(state, b, u, s) { if (refitHook) refitHook(b, u, s); }
 
 // ---------- whole loads ----------
 // Everything from the container that fits on this survivor: supplies first (into pockets and the pack as items; a bulky
-// one carried), then items by worth per kg (small things to pockets and the pack, the rest carried). Returns
+// one, and what has no room there, carried), then items by worth per kg (small things to pockets and the pack, the rest carried). Returns
 // { got: [names], left: n }.
 export function raidTakeAll(state, uid, boxId) {
   const b = state.combat;
@@ -702,7 +702,7 @@ export function raidTakeAll(state, uid, boxId) {
     // Into pockets and the pack as the item that holds it; only a bulky supply (or one with no item form) is carried.
     const probe = heldForm(state, k, 1);
     if (probe && !isBulky(probe.key)) raidMove(state, uid, `${src}:sup:${k}`, `stow:${u.id}`);
-    else raidMove(state, uid, `${src}:sup:${k}`, `haul:${u.id}:list`);
+    if (box.contents.sup[k] >= 1) raidMove(state, uid, `${src}:sup:${k}`, `haul:${u.id}:list`); // bulky, or more than the pockets and pack hold: carried
     const took = before - Math.floor(box.contents.sup[k] || 0);
     if (took > 0) got.push(`${took} ${keyWord(k)}`);
   }

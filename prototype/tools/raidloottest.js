@@ -137,10 +137,12 @@ console.log("On foot: each survivor carries their own share and finds");
   const r = RL.raidTakeAll(st, u.id, box4.id);
   const held = (key) => [...s.pockets, ...(s.gear.backpack ? s.gear.backpack.contents || [] : [])].reduce((a, it) => a + (it && stockKeyOf(it) === key ? it.dur : 0), 0);
   check(r.got.length >= 2 && box4.contents.gear.length === 0 && held("f_rationbar") >= 2 && !(u.haul.sup.f_rationbar > 0), `Take all takes everything that fits, supplies into pockets and the pack as items, not carried (${r.got.join(", ")})`);
-  check(box4.contents.sup.water === 2 && !(u.haul.sup.water > 0), "with no pack the water stays: it is not small enough for a pocket, and Carried is for big, heavy things");
+  check(!(box4.contents.sup.water > 0) && u.haul.sup.water === 2, "with no pack the water is carried: too big for a pocket, and no room left to hold it");
+  u.haul.sup.water = 0;
+  box4.contents.sup.water = 2;
   s.gear.backpack = newItem("backpack");
   RL.raidTakeAll(st, u.id, box4.id);
-  check(held("water") === 2 && !(box4.contents.sup.water > 0), "with a pack the water goes in it");
+  check(held("water") === 2 && !(box4.contents.sup.water > 0) && !(u.haul.sup.water > 0), "with a pack the water goes in it, not Carried");
   check(box4.searched, "an emptied container is done");
   // An item back into a container is a supply stack there again.
   const pi = s.pockets.findIndex((it) => it && stockKeyOf(it) === "f_rationbar");

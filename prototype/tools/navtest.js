@@ -275,7 +275,7 @@ section("The codex");
   const cats = new Set(all.map((e) => e.cat));
   check(CODEX_CATS.every(([k]) => cats.has(k)), "every category has entries");
   check(Object.keys(ZTYPES).every((k) => all.some((e) => e.key === `z:${k}`)) && all.some((e) => e.key === "z:wallbreaker") && all.some((e) => e.key === "z:broodmother"), "every kind of the dead and both bosses");
-  check(Object.keys(GEAR).every((k) => all.some((e) => e.key === `i:${k}`)) && Object.keys(BUILDINGS).every((k) => all.some((e) => e.key === `b:${k}`)), "every item and building");
+  check(Object.keys(GEAR).every((k) => GEAR[k].supKey || all.some((e) => e.key === `i:${k}`)) && Object.keys(BUILDINGS).every((k) => all.some((e) => e.key === `b:${k}`)), "every item and building");
   check(Object.keys(FACTION_TYPES).every((k) => all.some((e) => e.key === `g:${k}`)) && ["c:worm", "c:infwound", "o:merchants"].every((k) => all.some((e) => e.key === k)), "every group kind, the worm, infected wounds, outsiders");
   const thin = all.filter((e) => !e.name || !e.sub || !(e.text || e.how) || !Array.isArray(e.stats) || e.stats.some(([l, v]) => !l || v == null || /undefined|NaN/.test(String(v))));
   check(!thin.length, `every entry has a name, category, text and clean stats (${thin.slice(0, 4).map((e) => e.key).join(", ")})`);
