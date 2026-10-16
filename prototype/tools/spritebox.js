@@ -119,7 +119,9 @@ export function holdOf(key) {
   if (["knife", "machete", "sawmachete", "springmachete", "prybar", "baton", "stunbaton", "combatknife", "hatchet", "tomahawk", "kukri", "hammer", "etool", "cleaver", "bowie", "cutlass", "sabre"].includes(key)) return "side";
   return "gun";
 }
-const GUN = "#3a3f47", WOOD = "#7a5230", STEEL = "#b8c0c6";
+const GUN = "#4b5159", GUNL = "#6d747d", WOOD = "#8a5e36", STEEL = "#cdd5da", GLINT = "#e9eef1";
+// every weapon: its top edge catches the light, so it reads at a glance (the rim below separates it from the body)
+const glint = (under, col = null) => (face, s, t) => (face === "top" ? (col ? shade(col, 0.45) : GLINT) : under ? under(face, s, t) : null);
 
 // The limbs of one figure. app: the survivor look (sim/appearance.js), plus for the dead app.dead = { eye, marks:
 // [[part, s, t, kind]...], pose: "reach" | "hang", bloated, brute, run }. Figure space: forward +f, left +l, z up;
@@ -177,34 +179,34 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   else if (hold === "gun" || hold === "smg") {
     // low ready: the gun ahead and a little to the right, muzzle down; the right hand on the grip, the left out to the fore-end
     const long = hold === "gun";
-    const butt = [long ? -1.8 : -0.6, -2.8, shoulderZ - 3.2], muzzle = [long ? 11 : 8.2, -2.4, shoulderZ - (long ? 5.4 : 4.2)];
+    const butt = [long ? -2.2 : -0.8, -2.8, shoulderZ - 2.4], muzzle = [long ? 11.6 : 8.6, -2.4, shoulderZ - (long ? 4.2 : 3.2)];
     const grip = lerp(butt, muzzle, 0.3), fore = lerp(butt, muzzle, long ? 0.68 : 0.66);
     arm(-1, [1.0, -(sideL + 1.0), shoulderZ - 5.8], add(grip, [0, -0.9, -0.9]));
     arm(1, [2.6, TW / 2 - 0.4, shoulderZ - 6.4], add(fore, [0, -0.3, -1.0]));
-    F.push(boxL(butt, muzzle, 1.0, 0.6, GUN, { group: 1, u: [0, 0, 1], tex: (face, s, t) => (t < 0.26 ? shade(GUN, -0.2) : t > 0.8 ? shade(GUN, 0.1) : null) }));
-    F.push(boxL(add(grip, [1.6, 0, -0.4]), add(grip, [1.9, 0, -3.2]), 0.6, 0.45, GUN, { group: 1 })); // the magazine
+    F.push(boxL(butt, muzzle, 1.25, 0.75, GUN, { group: 1, u: [0, 0, 1], tex: glint((face, s, t) => (t < 0.26 ? shade(GUN, -0.3) : t > 0.62 ? GUNL : null), GUNL) }));
+    F.push(boxL(add(grip, [1.8, 0, -0.6]), add(grip, [2.3, 0, -3.8]), 0.8, 0.6, shade(GUN, -0.25), { group: 1 })); // the magazine
   } else if (hold === "pistol") {
     const H = [7.4, -(sideL - 0.3), shoulderZ - 3.6];
     arm(-1, [3.6, -(sideL + 0.6), shoulderZ - 3.2], H);
     hang(1);
-    F.push(boxL(add(H, [0.2, 0, 1.0]), add(H, [4.6, 0, 0.7]), 0.6, 0.45, GUN, { group: 1, u: [0, 0, 1] }));
-    F.push(boxL(add(H, [0.4, 0, 1.0]), add(H, [0.2, 0, -0.8]), 0.5, 0.45, shade(GUN, -0.2), { group: 1 })); // the grip through the fist
+    F.push(boxL(add(H, [0.0, 0, 1.2]), add(H, [5.4, 0, 0.9]), 0.85, 0.6, GUNL, { group: 1, u: [0, 0, 1], tex: glint(null, GUNL) }));
+    F.push(boxL(add(H, [0.5, 0, 1.0]), add(H, [0.2, 0, -1.2]), 0.65, 0.55, shade(GUN, -0.3), { group: 1 })); // the grip through the fist
   } else if (hold === "side") {
     hang(1); hang(-1);
     const l = -(sideL + 0.5);
-    F.push(boxL([1.0, l, shoulderZ - 12.6], [1.1, l, shoulderZ - 2.0], 0.75, 0.3, STEEL, { group: 1, u: [1, 0, 0], tex: (face, s, t) => (t < 0.2 ? "#3a2a1c" : null) }));
+    F.push(boxL([1.0, l, shoulderZ - 12.8], [1.4, l, shoulderZ - 0.6], 1.0, 0.32, STEEL, { group: 1, u: [1, 0, 0], tex: glint((face, s, t) => (t < 0.2 ? "#3a2a1c" : t < 0.25 ? "#1a1c20" : null)) }));
   } else if (hold === "shoulder") {
     const l = -(sideL + 0.2), A = [1.8, l, shoulderZ - 8.6], B = [-5.4, l, shoulderZ + 5.4];
     arm(-1, [1.0, l - 1.2, shoulderZ - 5.6], add(A, [-0.2, 0, 0.6]));
     arm(1, [2.6, TW / 2 - 0.6, shoulderZ - 5.6], add(lerp(A, B, 0.24), [0.2, 0.3, 0]));
-    F.push(boxL(A, B, 0.55, 0.55, WOOD, { group: 1, u: [1, 0, 0] }));
-    F.push(boxL(add(B, [0, -1.9, 0]), add(B, [0, 1.9, 0]), 1.2, 1.0, "#55595e", { group: 1, u: [0, 0, 1] })); // the head
+    F.push(boxL(A, B, 0.7, 0.7, WOOD, { group: 1, u: [1, 0, 0], tex: glint(null, WOOD) }));
+    F.push(boxL(add(B, [0, -2.4, 0]), add(B, [0, 2.4, 0]), 1.5, 1.3, "#7d858c", { group: 1, u: [0, 0, 1], tex: glint(null, "#7d858c") })); // the head
   } else if (hold === "bow") {
     const H = [7.2, -(sideL - 0.4), shoulderZ - 4.2];
     arm(-1, [3.6, -(sideL + 0.6), shoulderZ - 3.6], H);
     arm(1, [-0.6, sideL + 0.8, shoulderZ - 3.8], [2.4, -1.2, shoulderZ - 4.2]); // the string hand drawn to the chest
-    F.push(boxL(add(H, [0.6, 0, -7.4]), add(H, [0.6, 0, 7.2]), 0.42, 0.42, WOOD, { group: 1, u: [1, 0, 0] }));
-    F.push(boxL(add(H, [0.1, 0, -7.0]), add(H, [0.1, 0, 6.8]), 0.16, 0.16, "#d6dde2", { group: 1, u: [1, 0, 0] })); // the string
+    F.push(boxL(add(H, [0.8, 0, -8.0]), add(H, [0.8, 0, 7.8]), 0.6, 0.55, WOOD, { group: 1, u: [1, 0, 0], tex: glint(null, WOOD) }));
+    F.push(boxL(add(H, [0.1, 0, -7.6]), add(H, [0.1, 0, 7.4]), 0.22, 0.22, GLINT, { group: 1, u: [1, 0, 0] })); // the string
   } else { hang(1); hang(-1); }
   // the neck and the head: rounder at the crown, the face on the front, hair by style
   F.push(limb([0, 0, shoulderZ + 1.2], [0, 0, shoulderZ - 0.6], 1.3, 1.4, shade(skin, -0.12), { sides: 6 }));

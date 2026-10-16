@@ -22,7 +22,8 @@ figure's own space, turned by a yaw, projected with the map's own formula (`scre
 `screen y = (x + y) / 2 − z`) and rasterised straight onto the pixel grid through a depth buffer, so an arm across
 the chest or a gun through two hands sorts right per pixel at every yaw. Each face is lit by its normal with the
 item art's rule (the top lit, darker the more it turns to the screen's right), which rounds the eight-sided parts;
-a one-pixel dark rim is painted where a weapon meets the body, so a dark gun reads against a dark jacket. It stays
+a one-pixel dark rim is painted where a weapon meets the body and every weapon's top edge catches the light in its own
+colour (a lit gunmetal, a near-white blade), so a weapon reads at a glance, at the map's 1× zoom too. It stays
 procedural (the same `appearance` data: build, skin, hair style, facial hair, top style, pants, accessory, armour),
 cached by look and heading, and crisp at every zoom. Faces that need a picture (eyes, a beard, a jacket's zip,
 flannel, a plate on a carrier, the dead's wounds) are painted by a small texture function on the face.
