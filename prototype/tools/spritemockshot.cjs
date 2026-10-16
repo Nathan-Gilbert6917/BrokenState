@@ -1,12 +1,13 @@
-// The survivor sprite mock sheets (tools/spritemock.html), saved as PNGs for the brief
-// (docs/design-doc/sprites/survivor-sprites.md). Usage: NODE_PATH=$(npm root -g) node tools/spritemockshot.cjs [outdir]
+// The survivor sprite mock sheets (tools/spritemock.html, tools/spritebox.html), saved as PNGs for the brief
+// (docs/design-doc/sprites/survivor-sprites.md). Usage: NODE_PATH=$(npm root -g) node tools/spritemockshot.cjs [page] [outdir]
 // Starts the prototype's server on a free port, opens the page in headless Chromium, saves one PNG a section.
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-const outDir = path.resolve(process.argv[2] || path.join(__dirname, "..", "..", "docs", "design-doc", "sprites", "survivors"));
+const pageName = process.argv[2] || "spritemock.html";
+const outDir = path.resolve(process.argv[3] || path.join(__dirname, "..", "..", "docs", "design-doc", "sprites", pageName === "spritemock.html" ? "survivors" : "survivors-3d"));
 const port = 5300 + Math.floor(Math.random() * 600);
 
 (async () => {
@@ -19,9 +20,10 @@ const port = 5300 + Math.floor(Math.random() * 600);
     const errs = [];
     page.on("pageerror", (e) => errs.push(String(e)));
     page.on("console", (m) => { if (m.type() === "error") errs.push(m.text()); });
-    await page.goto(`http://localhost:${port}/tools/spritemock.html`);
+    await page.goto(`http://localhost:${port}/tools/${pageName}`);
     await page.waitForSelector("body[data-ready]", { timeout: 20000 }).catch(() => errs.push("page never got ready"));
-    for (const id of ["holds", "helmets", "armour"]) {
+    const ids = await page.$$eval("section[id]", (els) => els.map((e) => e.id));
+    for (const id of ids) {
       const out = path.join(outDir, `${id}.png`);
       await page.locator(`#${id}`).screenshot({ path: out });
       console.log(out);
