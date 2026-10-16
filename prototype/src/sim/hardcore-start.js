@@ -534,7 +534,7 @@ export function normalStartBackgrounds(state, crew = null) {
       const total = Object.values(s.skills).reduce((a, v) => a + v, 0);
       applyArchetype(state, s, kinds[i]);
       if (!A.custom) keepSkillTotal(state.rng, s, total, Object.keys(A.skills || {}));
-      if (picks[i] && !crew[i].rolled) s.bgPicked = true;
+      if (picks[i]) { if (crew[i].rolled) s.bgKept = true; else s.bgPicked = true; }
     });
   } finally {
     state.rng = worldRng;
@@ -569,12 +569,12 @@ export function normalStartKit(state, base) {
 // car (the dice's pick is still drawn, so the dice after it are where they were), and with anyone built on points the
 // back is exactly what was picked (the dice's back is drawn and noted on the owner, s.diceTrunk, for "Start from the
 // dice", but not loaded). The seats a small team loaded stay as they are.
-export function rollCar(state, p, people) {
+export function rollCar(state, p, people, keptOwner = null) {
   const rng = state.rng, C = HC_START;
   // A custom background's odds may be 0 (never theirs); all 0: anyone's.
   const odds = (s) => { const a = archetypeOf(state, s.background) || {}; return a.custom ? a.car.odds : a.carOdds || 1; };
   const drawn = people.some((s) => odds(s) > 0) ? rng.weighted(people, odds) : rng.pick(people);
-  const owner = people.find((s) => s.startVehicle) || drawn;
+  const owner = people.find((s) => s.startVehicle) || keptOwner || drawn;
   const picked = people.some((s) => s.startPoints);
   const A = archetypeOf(state, owner.background) || {};
   const type = A.custom && A.car.type ? A.car.type : pickW(rng, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 });
@@ -650,28 +650,34 @@ function grabLine(state, s, got) {
   return `${who}${worn} ran with only the clothes on their back${things.length ? ` and ${things.join(", ")} in their pockets` : " and empty pockets"}${weapon ? `, and ${weapon}` : ""}.`;
 }
 
-// A grab on dice of its own (the new-run screen's Gear on a crew card: crew[i].grabRoll; not a custom background, which
-// draws no dice): the crew's draw is made and put back first, so everyone after them grabs what they would have, then
-// theirs is drawn again on its own dice. Kept on them (s.grabRoll) for the screen's rebuilds; Start takes it off
-// (startgear.js clearStartGear). Returns what roll() returns.
-function ownGrab(state, s, A, grabRoll, roll) {
-  if (!Number.isFinite(grabRoll) || (A && A.custom)) return roll();
+// What one of them grabbed, kept through the new-run screen's rebuilds (another colonist's dice or background, a
+// background picked: the crew's dice may be new then), so one colonist's dice leave the others' grab as it was. The
+// dice are where the crew's were when theirs was drawn (s.grabRoll: the whole position, gundist.js hashes it), so a fresh
+// crew draws as ever. kept: crew[i].grabRoll, theirs from before (or the crew card's Gear and All: a new draw, pick,
+// past the dice: not for Ironman); while the crew's dice are still there, it is the same draw. Otherwise the crew's
+// draw is made and put back first, so the dice after them are where they were, then theirs is drawn on its own dice.
+// Start takes it off (startgear.js clearStartGear). Returns what roll() returns.
+function ownGrab(state, s, kept, pick, roll) {
+  const crewRng = state.rng, here = crewRng.state;
+  s.grabRoll = Number.isFinite(kept) ? kept : here;
+  if (pick) { s.grabPick = true; s.startCustom = true; }
+  if (s.grabRoll === here) return roll();
   const was = { gear: { ...s.gear }, pockets: [...s.pockets], traits: [...s.traits], traitTier: s.traitTier ? { ...s.traitTier } : null };
   roll();
   s.gear = was.gear;
   s.pockets = was.pockets;
   s.traits = was.traits;
   if (was.traitTier) s.traitTier = was.traitTier; else delete s.traitTier;
-  const crewRng = state.rng;
-  state.rng = new Rng(grabRoll);
+  state.rng = rngAt(s.grabRoll);
   try {
-    s.grabRoll = grabRoll;
-    s.startCustom = true; // past the dice: not for Ironman
     return roll();
   } finally {
     state.rng = crewRng;
   }
 }
+
+// Dice that go on from a position of another's (Rng's constructor keeps 32 bits; the position grows past them).
+const rngAt = (pos) => Object.assign(new Rng(0), { state: pos });
 
 // ---------- setup (hardcore.js hardcoreCreate) ----------
 // crewRoll: the three (who they were, what they grabbed, the car) drawn from a seed of their own instead of the world's
@@ -695,7 +701,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // crew[i].rolled: who they were kept through a rebuild (another colonist's pick) but still the dice's, not a pick.
   const picks = people.map((s, i) => { const k = crew && crew[i] && crew[i].background; return k && archetypeOf(state, k) ? k : null; });
   const kinds = pickArchetypes(state, people.length, picks);
-  people.forEach((s, i) => { applyArchetype(state, s, kinds[i]); if (picks[i] && !crew[i].rolled) s.bgPicked = true; });
+  people.forEach((s, i) => { applyArchetype(state, s, kinds[i]); if (picks[i]) { if (crew[i].rolled) s.bgKept = true; else s.bgPicked = true; } });
   const smallSkills = smallTeamSkills(state, people); // one or two: the ones who could look after themselves (HC_START.SMALL)
   if (crew) applyCrew(state, crew);
   if (!people.some((s) => s.leader)) people[0].leader = true; // the crew's leader was one of the six of a normal start (or past the head count)
@@ -711,7 +717,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
     const s = people[i];
     const A = archetypeOf(state, s.background);
     const roll = () => (s.background === "prepper" ? rollPrepper(state, s) : A && A.custom ? rollCustom(state, s, A) : rollGrab(state, s, A));
-    const got = ownGrab(state, s, A, crew && crew[i] && crew[i].grabRoll, roll);
+    const got = ownGrab(state, s, crew && crew[i] && crew[i].grabRoll, !!(crew && crew[i] && crew[i].grabPick), roll);
     const picked = grabStartGear(state, s, got); // startgear.js: what was picked on the new-run screen, in place of the grab
     if (picked) pickedSup.push(picked);
     if (got.prepper) { prepper = s; prepGot = got; continue; }
@@ -753,7 +759,14 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   for (const s of people) { s.location = { kind: "party", partyId: p.id }; s.role = "scavenge"; s.station = null; }
   state.parties.push(p);
   // The car one of them fled in, and what was in the back.
-  const { owner, car, trunk } = rollCar(state, p, people);
+  // The car kept through the new-run screen's rebuilds as the grabs are (crew[i].carRoll: the dice; crew[i].carOwner: whose).
+  const keptCar = crew ? crew.slice(0, people.length).find((c) => c && Number.isFinite(c.carRoll)) : null;
+  const keptOwner = crew ? people.find((s, i) => crew[i] && crew[i].carOwner) : null;
+  const crewRng = state.rng, carRoll = keptCar ? keptCar.carRoll : crewRng.state;
+  if (carRoll !== crewRng.state) state.rng = rngAt(carRoll);
+  const { owner, car, trunk } = rollCar(state, p, people, keptOwner);
+  state.rng = crewRng;
+  for (const s of people) s.carRoll = carRoll;
   settleParty(state, p); // ammo.js: the rounds they grabbed, by the calibres of their guns
   state.rng = worldRng;
   lines.push(carLine(owner, car, trunk, people.length));
