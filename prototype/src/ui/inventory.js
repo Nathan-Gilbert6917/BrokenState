@@ -41,7 +41,8 @@ import { POUCH_NAMES, POUCH_ICON, MAGAZINES } from "../sim/data-kit.js";
 import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band (R17)
 import { roundName, calName } from "../sim/rounds.js";
 import { stackLabel, isRoundItem, isBulk, amountOf, countOf, boxesIn, bulkRecord, roundCap, stackMax } from "../sim/itemstack.js"; // stacks in a slot (2026-10-10)
-import { splitAt, openAt } from "../sim/inventory.js";
+import { splitAt, openAt, boxAt } from "../sim/inventory.js";
+import { itemKeyOf, roomOn, stockToPerson, bodyToPerson } from "../sim/supitems.js"; // supplies out of the stores as items you hold (2026-10-16)
 import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
 import { bagRefusal } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
@@ -69,6 +70,7 @@ const gunTile = (item) => (isGunKey(item.key) ? (() => { const h = gunIconHtml(i
 function icon(key) {
   const d = GEAR[key];
   if (isGunKey(key)) return "🔫";
+  if (d.supKey) return supplyIcon(d.supKey); // a supply out of the stores (sim/supitems.js): its stock tile's icon
   return TOOL_ICON[key] || CAT_ICON[d.cat] || SLOT_ICON[d.slot] || (d.book ? "📖" : "▪");
 }
 
@@ -247,7 +249,8 @@ function stackButtons(item, from) {
   if (from.o === "body") return "";
   const out = [];
   if (amountOf(item) > 1 && (countOf(item) > 1 || (isRoundItem(item) && !isBulk(item)))) out.push(`<button class="mini" data-action="inv-split"${tip(`Split the stack: half of it (${Math.ceil(amountOf(item) / 2)}) into a spot of its own beside it`)}>Split</button>`);
-  if (isRoundItem(item) && !item.loose) out.push(`<button class="mini" data-action="inv-openbox"${tip(`Open the box${boxesIn(item) > 1 ? "es" : ""}: loose rounds (up to ${roundCap({ loose: true })} a slot; the rest stays boxed beside them). Loose rounds are not packed back into boxes`)}>Open box</button>`);
+  if (isRoundItem(item) && !item.loose) out.push(`<button class="mini" data-action="inv-openbox"${tip(`Open the box${boxesIn(item) > 1 ? "es" : ""}: loose rounds (up to ${roundCap({ loose: true })} a slot; the rest stays boxed beside them). Box packs them back. Drop loose rounds on loose ones of the same load to stack them`)}>Open box</button>`);
+  if (isRoundItem(item) && item.loose) out.push(`<button class="mini" data-action="inv-boxrounds"${tip(`Pack the loose rounds into boxes (up to ${roundCap({ key: item.key })} a slot, five boxes; the last may be part full): boxed rounds go in a pocket or a pack like loose ones. Drop them on boxes of the same load to fill those`)}>Box</button>`);
   if (isBulk(item) && Object.keys(bulkRecord(item)).length) out.push(`<button class="mini" data-action="inv-openbox"${tip(`Take a handful out (up to ${roundCap({ loose: true })} loose rounds) into a spot beside it`)}>Take out a handful</button>`);
   return out.join(" ");
 }
@@ -640,8 +643,8 @@ const raidUnit = (state, ui) => {
 // Where a stack can go in the search window: the searcher's arms, each teammate next to them, the vehicle (at it),
 // the open container.
 function raidDests(state, ui, b, u) {
-  const out = [{ id: `haul:${u.id}:list`, label: `${u.name.split(" ")[0]} (carried)` }];
-  for (const m of matesOf(b, u)) out.push({ id: `haul:${m.id}:list`, label: `${m.name.split(" ")[0]}${m.down ? " (down)" : ""}` });
+  const out = [{ id: `stow:${u.id}`, label: `${u.name.split(" ")[0]} (pockets & pack)` }, { id: `haul:${u.id}:list`, label: `${u.name.split(" ")[0]} (carried)` }];
+  for (const m of matesOf(b, u)) out.push({ id: `stow:${m.id}`, label: `${m.name.split(" ")[0]}${m.down ? " (down)" : ""} (pockets & pack)` }, { id: `haul:${m.id}:list`, label: `${m.name.split(" ")[0]}${m.down ? " (down)" : ""}` });
   const p = raidParty(state, b);
   const trunk = p && atVehicle(b, u) ? trunkInfo(state, b) : null;
   if (trunk) out.push({ id: `trunk:${p.id}:list`, label: trunk.bike ? "Bike racks" : trunk.name });
@@ -686,9 +689,16 @@ registerStackScreen("loot", {
     if (!f.have || !body) return null;
     const st = storageFor(state, battlePlace(state.combat));
     const label = !st ? "Nowhere" : st.o === "cargo" ? "Team cargo" : `${(baseById(state, st.id) || { name: "Base" }).name} stores`;
-    return { key: L.i, have: f.have, at: ui.invSel, splits: invSplits(ui), from: body.name, dests: [{ id: "take", label, fit: f.n, err: f.err }], to: "take", verb: "Take" };
+    const dests = [{ id: "take", label, fit: f.n, err: f.err }];
+    const s = ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null;
+    if (s && itemKeyOf(L.i)) for (const [id, hand] of [["kit", false], ["hand", true]]) { const fit = Math.min(f.have, roomOn(s, L.i, { hand })); dests.push({ id, label: `${shortName(s)}: ${hand ? "off hand" : "pockets & pack"}`, fit, err: fit ? "" : hand ? "The off hand is full." : "No room in the pockets or pack." }); }
+    return { key: L.i, have: f.have, at: ui.invSel, splits: invSplits(ui), from: body.name, dests, to: "take", verb: "Take" };
   },
-  move(state, ui, to, qty) { const L = parseLoc(ui.invSel); ui.invMsg = takeSupply(state, L.id, L.i, qty); },
+  move(state, ui, to, qty) {
+    const L = parseLoc(ui.invSel);
+    const s = ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null;
+    ui.invMsg = (to === "kit" || to === "hand") && s ? bodyToPerson(state, L.id, L.i, qty, s, { hand: to === "hand" }) : takeSupply(state, L.id, L.i, qty);
+  },
   cancel(state, ui) { ui.invSel = null; },
   pick: pickStack,
 });
@@ -698,6 +708,23 @@ registerStackScreen("loot", {
 // and nobody holds a stack of their own yet; ux-carry's held supplies (pockets, pack, arms, the vehicle) plug in here.
 export const INV_STACK_DESTS = [];
 const invDests = (state, ui, loc) => INV_STACK_DESTS.flatMap((f) => f(state, ui, loc) || []);
+// Out of the stores onto the person whose inventory is open (sim/supitems.js): as the items that hold it, into their
+// pockets and pack (the stacks of it they have first), or into the off hand.
+INV_STACK_DESTS.push((state, ui, loc) => {
+  const L = parseLoc(loc);
+  const s = ui.inv && ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null;
+  if (!s || L.slot !== "sup" || !itemKeyOf(L.i)) return [];
+  const st = storageFor(state, `${L.o === "armory" ? "base" : "party"}:${L.id}`);
+  if (!st || personPlace(s) !== `${st.o === "armory" ? "base" : "party"}:${st.id}`) return [];
+  const holder = st.o === "cargo" ? st.party.cargo : baseById(state, st.id);
+  const name = shortName(s), what = (SUPPLIES[L.i] || { name: L.i }).name.toLowerCase();
+  const dest = (id, label, hand) => {
+    const fit = roomOn(s, L.i, { hand });
+    return { id, label, fit, err: fit ? "" : hand ? `${name}'s off hand is full.` : `No room in ${name}'s pockets or pack for the ${what}.`,
+      move: (state2, ui2, qty) => { const n = stockToPerson(state2, holder, L.i, qty, s, { hand }); return n ? `${n} ${what} → ${name}'s ${hand ? "off hand" : "pockets and pack"}.` : `No room for the ${what}.`; } };
+  };
+  return [dest("kit", `${name}: pockets & pack`, false), dest("hand", `${name}: off hand`, true)];
+});
 registerStackScreen("inv", {
   spec(state, ui) {
     if (!ui.inv || ui.inv.raid || !ui.invSel) return null;
@@ -739,12 +766,22 @@ function raidClick(state, ui, loc, ev = null) {
   // A thing in a list clicked as a target means that list; another thing in the same list is picked instead.
   const F = parseRaidLoc(sel);
   if (L.o !== "s" && F.o === L.o && F.id === L.id) { if (L.slot !== "list" && has(loc)) pick(loc); else done(); return; }
-  // A stack clicked onto a person's slot: into their arms (supplies are carried loose).
-  const T = F.slot === "sup" && L.o === "s" ? haulOfSurvivor(b, L.id) : null;
+  // A stack clicked onto a person's slot: held there as an item (that slot, else their pockets and pack), else into
+  // their arms (a bulky one, or no room).
+  const T = F.slot === "sup" && L.o === "s" ? heldOfSurvivor(state, ui, b, L.id, sel, loc) : null;
   ui.invMsg = raidMove(state, uid, sel, T || (L.o === "s" ? loc : `${L.o}:${L.id}:list`), qtyOf(sel));
   done();
 }
 const haulOfSurvivor = (b, sid) => { const x = b.units.find((q) => q.side === "player" && q.sid === sid && !q.dead); return x ? `haul:${x.id}:list` : null; };
+// Where a supply stack put on a person goes (sim/raidloot.js): the slot it was dropped on when it can be held there
+// (slot: null to skip), else their pockets and pack ("stow:<uid>") when there is room, else their arms.
+function heldOfSurvivor(state, ui, b, sid, from, slot) {
+  const x = b.units.find((q) => q.side === "player" && q.sid === sid && !q.dead);
+  if (!x) return null;
+  if (slot && !supplyFit(state, ui.inv.uid, from, slot, 1).err) return slot;
+  if (!supplyFit(state, ui.inv.uid, from, `stow:${x.id}`, 1).err) return `stow:${x.id}`;
+  return `haul:${x.id}:list`;
+}
 
 // A supply stack clicked outside a raid: a body's (Loot the bodies) or the stores' (the inventory window).
 function supClick(state, ui, loc, ev) {
@@ -802,11 +839,12 @@ export function invDrop(state, ui, from, to, half = false, one = false, at = nul
     if (!/^(s|rbox|haul|trunk):\d+:/.test(from)) return; // a drag of selected text, not of a thing
     const b = state.combat;
     const T = parseRaidLoc(to), F = parseRaidLoc(from);
-    // A stack dropped on a person's slot goes into their arms (supplies are carried loose).
-    const dest = F.slot === "sup" && T.o === "s" ? haulOfSurvivor(b, T.id) || to : T.o === "s" ? to : `${T.o}:${T.id}:list`;
+    // A stack dropped on a person's slot: held there as an item (that slot, else their pockets and pack), else into
+    // their arms (a bulky one, or no room: sim/raidloot.js).
+    const dest = F.slot === "sup" && T.o === "s" ? heldOfSurvivor(state, ui, b, T.id, from, null) || to : T.o === "s" ? to : `${T.o}:${T.id}:list`;
     if (F.slot === "sup") {
       const n = stackOf(state, ui, b, from);
-      if (one || half || n <= 1) { ui.invMsg = raidMove(state, ui.inv.uid, from, dest, one ? 1 : half ? Math.max(1, Math.floor(n / 2)) : Infinity); ui.invSel = null; closeStack(ui); return; }
+      if (one || half || n <= 1) { ui.invMsg = raidMove(state, ui.inv.uid, from, T.o === "s" ? heldOfSurvivor(state, ui, b, T.id, from, to) || dest : dest, one ? 1 : half ? Math.max(1, Math.floor(n / 2)) : Infinity); ui.invSel = null; closeStack(ui); return; }
       const D = parseRaidLoc(dest);
       if (D.o === F.o && D.id === F.id) return; // dropped back where it was
       ui.invSel = from;
@@ -852,6 +890,7 @@ export const INV_ACTIONS = {
   "inv-helmon": (state, ui) => { if (!ui.invSel || !ui.inv) return; ui.invMsg = fitHelmetAt(state, `s:${ui.inv.sid}:head`, ui.invSel, ui.inv.sid); ui.invSel = null; },
   "inv-split": (state, ui) => { if (ui.invSel) ui.invMsg = splitAt(state, ui.invSel); }, // sim/inventory.js: half a stack into a spot of its own
   "inv-openbox": (state, ui) => { if (ui.invSel) ui.invMsg = openAt(state, ui.invSel); }, // a stack of boxes into loose rounds; a handful out of a bulk container
+  "inv-boxrounds": (state, ui) => { if (ui.invSel) ui.invMsg = boxAt(state, ui.invSel); }, // loose rounds packed back into boxes
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
   // Repairs and salvage (sim/repair.js, sim/inventory.js salvageAt).

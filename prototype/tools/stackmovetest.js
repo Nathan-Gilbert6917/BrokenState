@@ -13,7 +13,7 @@ import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { SUPPLIES } from "../src/sim/data.js";
 import { launchExpedition, cargoRoom, unitsThatFit } from "../src/sim/parties.js";
 import { createBattle, CELL, registerCombatHandler, unitAt } from "../src/sim/combat.js";
-import { ensureInv } from "../src/sim/inventory.js";
+import { ensureInv, newItem } from "../src/sim/inventory.js";
 import * as RL from "../src/sim/raidloot.js";
 import { lootFit } from "../src/sim/stacks.js";
 import { inventoryModal, INV_ACTIONS, INV_CHANGE, invDrop, INV_STACK_DESTS } from "../src/ui/inventory.js";
@@ -151,6 +151,12 @@ console.log("The search window (a raid)");
   const { st, b } = raid(1);
   const [u] = players(b);
   fresh(b, u);
+  // Pockets full and no pack: a found stack has nowhere to be held, so it defaults to Carried (sim/raidloot.js
+  // quickTarget; with room it goes in the pockets and the pack as items: checked below).
+  const sv = st.survivors.find((x) => x.id === u.sid);
+  ensureInv(sv);
+  const keepPockets = sv.pockets.slice(), keepPack = sv.gear.backpack;
+  sv.pockets = sv.pockets.map(() => newItem("phone")); sv.gear.backpack = null;
   const box = boxWith(b, u, { f_rationbar: 10 });
   const ui = { inv: { raid: true, uid: u.id, box: box.id }, invSel: null, invMsg: "" };
   const src = `rbox:${box.id}:sup:f_rationbar`, me = `haul:${u.id}:list`;
@@ -182,14 +188,32 @@ console.log("The search window (a raid)");
   check(u.haul.sup.f_rationbar === 4 && box.contents.sup.f_rationbar === 6, "Ctrl-drop: one");
   INV_ACTIONS["inv-click"](st, ui, { loc: src }, { shiftKey: true });
   check(u.haul.sup.f_rationbar === 10 && !(box.contents.sup.f_rationbar >= 1), "Shift+click: all that fit, straight across");
-  // Dropped on a teammate's paper doll: into their arms.
+  // With room: the default is the pockets and the pack, as items (sim/supitems.js), not Carried.
+  sv.pockets = keepPockets.map(() => null); sv.gear.backpack = keepPack;
+  u.haul.sup.f_rationbar = 0;
+  box.contents.sup.f_rationbar = 6;
+  INV_ACTIONS["inv-click"](st, ui, { loc: src });
+  check(/Move 6 ration bars → [^<]*pockets &amp; pack/.test(render(st, ui)), "with free pockets the mover sends it to the pockets & pack");
+  INV_ACTIONS["sm-go"](st, ui);
+  const pocketed = sv.pockets.reduce((a, it) => a + (it && it.key === "s_f_rationbar" ? it.dur : 0), 0);
+  check(pocketed === 6 && !(box.contents.sup.f_rationbar >= 1) && !(u.haul.sup.f_rationbar > 0), `6 ration bars into a pocket as one item, nothing carried (${ui.invMsg})`);
+  u.haul.sup.f_rationbar = 10;
+  // Dropped on a teammate's paper doll: into their pockets and pack, as items.
   const m = players(b)[1];
   standNext(b, m, u.x, u.y);
+  const ms = st.survivors.find((x) => x.id === m.sid);
+  ensureInv(ms); ms.pockets = ms.pockets.map(() => null);
   invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `s:${m.sid}:pocket:0`, false, false, { x: 5, y: 5 });
-  check(ui.stack && ui.stack.to === `haul:${m.id}:list`, `a stack dropped on a teammate's pocket: the popover sends it to their arms (${ui.stack && ui.stack.to})`);
+  check(ui.stack && ui.stack.to === `stow:${m.id}`, `a stack dropped on a teammate's pocket: the popover sends it to their pockets and pack (${ui.stack && ui.stack.to})`);
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "3" });
   INV_ACTIONS["sm-go"](st, ui);
-  check(m.haul && m.haul.sup.f_rationbar === 3 && u.haul.sup.f_rationbar === 7, `handed 3 over (${ui.invMsg})`);
+  check(ms.pockets.reduce((a, it) => a + (it && it.key === "s_f_rationbar" ? it.dur : 0), 0) === 3 && u.haul.sup.f_rationbar === 7, `handed 3 over (${ui.invMsg})`);
+  // A bulky stack dropped on them: their arms (Carried is for big, heavy things).
+  u.haul.sup.buildmat = 2;
+  invDrop(st, ui, `haul:${u.id}:sup:buildmat`, `s:${m.sid}:pocket:1`, false, false, { x: 5, y: 5 });
+  check(ui.stack && ui.stack.to === `haul:${m.id}:list`, `building materials dropped on a teammate: into their arms (${ui.stack && ui.stack.to})`);
+  INV_ACTIONS["inv-cancel"](st, ui);
+  u.haul.sup.buildmat = 0;
   // Several destinations: the searcher, the teammate, the container.
   INV_ACTIONS["inv-click"](st, ui, { loc: `haul:${u.id}:sup:f_rationbar` });
   h = render(st, ui);
@@ -278,6 +302,7 @@ console.log("The inventory window");
   clearFood(h); h.stock.f_rationbar = 120; // 120 ration bars
   const s = atBase(st, h.id)[0];
   const ui = { inv: { sid: s.id }, invSel: null, invMsg: "" };
+  const builtIn = INV_STACK_DESTS.splice(0); // the stores' own destinations (pockets & pack, off hand): checked after the hook mechanism
   let html = render(st, ui);
   const loc = `armory:${h.id}:sup:f_rationbar`;
   check(/In the stores \(/.test(html) && html.includes('<span class="iname">Ration bar</span><span class="icount">×120</span>') && /islot store stack[^"]*still/.test(html) && !html.includes(`data-loc="${loc}"`), "the base's stores are stack tiles (nowhere to move them on their own: shown, not clickable)");
@@ -298,6 +323,28 @@ console.log("The inventory window");
   invDrop(st, ui, loc, `s:${s.id}:pocket:0`, false, false, { x: 9, y: 9 });
   check(ui.stack && ui.stack.pop && /class="smove pop"/.test(render(st, ui)), "dragged and dropped: the popover");
   INV_STACK_DESTS.length = 0;
+  INV_STACK_DESTS.push(...builtIn);
+  // The stores' own destinations (sim/supitems.js): out of the stock into the pockets and pack as items, or the off hand.
+  ensureInv(s);
+  s.pockets = s.pockets.map(() => null);
+  s.gear.tool = null;
+  ui.invSel = null; ui.invMsg = ""; ui.stack = null;
+  html = render(st, ui);
+  check(html.includes(`data-loc="${loc}"`), "the stores' ration bars are movable: onto the person, as items");
+  INV_ACTIONS["inv-click"](st, ui, { loc });
+  html = render(st, ui);
+  check(/pockets &amp; pack/.test(html) && /off hand/.test(html), "the mover offers the pockets & pack and the off hand");
+  STACK_CHANGE["sm-qtyset"](st, ui, { value: "7" });
+  INV_ACTIONS["sm-go"](st, ui);
+  const inPockets = s.pockets.reduce((a, it) => a + (it && it.key === "s_f_rationbar" ? it.dur : 0), 0);
+  check(inPockets === 7 && h.stock.f_rationbar === 113, `7 ration bars out of the stores into the pockets as items (${ui.invMsg}; ${inPockets} held, ${h.stock.f_rationbar} in the stores)`);
+  check(s.pockets.filter((it) => it && it.key === "s_f_rationbar").length === 2, "a pocket holds 6 ration bars (3 kg): 6 + 1");
+  for (let pi = 0; pi < s.pockets.length; pi++) {
+    if (!s.pockets[pi] || s.pockets[pi].key !== "s_f_rationbar") continue;
+    INV_ACTIONS["inv-click"](st, ui, { loc: `s:${s.id}:pocket:${pi}` });
+    INV_ACTIONS["inv-click"](st, ui, { loc: `armory:${h.id}:list` });
+  }
+  check(!s.pockets.some((it) => it && it.key === "s_f_rationbar") && Math.round(h.stock.f_rationbar) === 120 && !h.armory.some((it) => it && it.key === "s_f_rationbar"), `put back in the armory: stock again, at once (${ui.invMsg}; ${h.stock.f_rationbar} in the stores)`);
   ui.inv = null; ui.invSel = null;
 }
 
@@ -478,6 +525,8 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   RL.HAUL.free = 1e9;
   fresh(b, u);
   u.haul = { sup: {}, gear: [] };
+  const sv = st.survivors.find((x) => x.id === u.sid); // pockets full and no pack: the stack defaults to Carried
+  ensureInv(sv); sv.pockets = sv.pockets.map(() => newItem("phone")); sv.gear.backpack = null;
   const box = boxWith(b, u, { f_rationbar: 24 });
   const ui = { inv: { raid: true, uid: u.id, box: box.id }, invSel: null, invMsg: "" };
   const src = `rbox:${box.id}:sup:f_rationbar`, me = `haul:${u.id}:list`;
@@ -540,6 +589,7 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   const s = atBase(v, hv.id)[0];
   const loc = `armory:${hv.id}:sup:f_rationbar`;
   let packed = 0;
+  const builtIn2 = INV_STACK_DESTS.splice(0);
   INV_STACK_DESTS.push((state, u2, l) => (l === loc ? [{ id: "pack", label: "Pack", fit: 8, err: "", move: (state2, ui2, qty) => { hv.stock.f_rationbar -= qty; packed += qty; return `Packed ${qty}.`; } }] : []));
   const iui = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   INV_ACTIONS["inv-click"](v, iui, { loc });
@@ -554,6 +604,7 @@ console.log("Split on every screen: a move takes the part, nothing lost or doubl
   check(/>Ration bar<\/span><span class="icount">×112</.test(render(v, iui)) && (hv.stock.f_rationbar || 0) + packed === 120, "Join: 112 again, none lost");
   INV_ACTIONS["inv-close"](v, iui);
   INV_STACK_DESTS.length = 0;
+  INV_STACK_DESTS.push(...builtIn2);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

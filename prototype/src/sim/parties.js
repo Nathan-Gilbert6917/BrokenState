@@ -98,6 +98,7 @@ import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
 import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood task counts its own haul (call-time only: safe in the import cycle)
 import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
+import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -2353,6 +2354,7 @@ function unloadAt(state, p, base, members) {
   addStock(base, p.supplies);
   addStock(base, p.cargo.supplies);
   base.armory.push(...p.cargo.gear);
+  for (const m of members) unpackPerson(state, m, base); // supitems.js: the water, meds, food… they carry as items, into the stores
   bodiesHome(state, p, base); // carriers.js
   const vs = partyVehicles(state, p); // every one it has (vehicles.js fleets)
   for (const x of vs) x.loc = { kind: "base", baseId: base.id };

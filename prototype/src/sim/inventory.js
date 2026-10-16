@@ -43,8 +43,9 @@ import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item ma
 import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the rounds left in a gun, kept on it (call-time only: safe in the import cycle)
 import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
 import { AMMO_STACK } from "./data-stacks.js";
-import { stackKg, canStack, mergeInto, isSpent, splitHalf, useOne, openRounds, takeOut, fillBulk, isBulk, isRoundItem, amountOf, stackLabel, countOf } from "./itemstack.js"; // stacks in a slot (consumables, rounds loose or boxed, bulk containers)
-import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a body's spare gun
+import { stackKg, canStack, mergeInto, isSpent, splitHalf, useOne, openRounds, takeOut, fillBulk, isBulk, isRoundItem, amountOf, stackLabel, countOf, boxRounds, mergeForm, boxesIn } from "./itemstack.js"; // stacks in a slot (consumables, rounds loose or boxed, bulk containers)
+import { swapGun, bodyGunSource } from "./gundist.js";
+import { settleItems } from "./supitems.js"; // supplies held as items, back into a stock when stored (call-time only: safe in the import cycle) // the gun distribution: a body's spare gun
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
@@ -377,6 +378,8 @@ export function fitReason(item, slot, h = null, kind = null) {
   if (slot === "insert") return isInsert(item) ? "" : `Only a plate goes in a plate carrier's plate pocket.`;
   if (slot === "bag") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack.` : "";
   if (slot === "carry") return isCarryable(item) ? "" : `Only a bag, a rig or a case is carried in the arms (not the ${item.name}).`;
+  // A supply in the hand (supitems.js: a bottle of water, a can of fuel, meds, a box of rounds), unless it is bulky.
+  if (slot === "tool" && d.slot !== "tool" && (d.supKey || (d.count && SUPPLIES[item.key]))) return d.bulky || d.hand === false ? `The ${item.name} is too big to hold in one hand.` : "";
   if (EQUIP_SLOTS.includes(slot)) {
     if (d.slot !== slot) return `The ${item.name} goes in ${SLOT_NAMES[d.slot] || d.slot}, not ${SLOT_NAMES[slot]}.`;
     const g = h && h.gear;
@@ -808,6 +811,7 @@ export function moveItem(state, fromStr, toStr) {
     A.remove(item);
     if (!isSpent(item)) B.put(item);
     taken(state, from, item);
+    settleStore(state, store);
     return `${item.name} → ${store.name}.`;
   }
   if (B.owner && B.owner === item) return `The ${item.name} does not fit inside itself.`;
@@ -815,6 +819,12 @@ export function moveItem(state, fromStr, toStr) {
   if (why) return why;
   if (to.slot === "pack" && from.o === to.o && from.id === to.id && from.slot === "backpack") return "A pack does not fit inside itself.";
   const cur = B.get();
+  if (cur && !canStack(cur, item) && mergeForm(cur, item)) {
+    // Rounds onto the same rounds in the other form (itemstack.js): a loose handful packed into the boxes, boxes
+    // opened onto the loose ones. What does not fit stays where it was.
+    if (isSpent(item)) { A.remove(item); taken(state, from, item); return `${item.name} onto the stack: ${stackLabel(cur)}.`; }
+    return `Onto the stack (${stackLabel(cur)}); ${stackLabel(item)} left where ${amountOf(item) === 1 ? "it was" : "they were"}.`;
+  }
   if (cur && canStack(cur, item)) {
     // Onto a stack of the same thing (itemstack.js): as much as fits goes on it, the rest stays where it was.
     const err = gained ? roomCheck(store, item, gained, lostFrom) : "";
@@ -845,6 +855,7 @@ export function moveItem(state, fromStr, toStr) {
     B.set(item);
     store.list.push(cur);
     taken(state, from, item);
+    settleStore(state, store);
     return `${item.name} in ${SLOT_NAMES[tk]}; the ${cur.name} went to ${store.name}.`;
   }
   A.remove(item);
@@ -874,6 +885,26 @@ export function quickMove(state, fromStr, sid) {
   const empty = tries.find((t) => !itemAt(state, t));
   if (!tries.length) return `No pack slot for the ${item.name}: ${s.name.split(" ")[0]} needs a pack with room.`;
   return moveItem(state, fromStr, empty || tries[0]);
+}
+
+// Supply items put in storage go back into its stock at once (supitems.js): a base's stores, a team's found cargo.
+function settleStore(state, st) {
+  if (!st) return;
+  settleItems(state, st.list, st.o === "cargo" ? st.party.cargo : baseById(state, st.id));
+}
+// Box (the inventory's button): loose rounds packed back into boxes (itemstack.js boxRounds): all of them in place
+// when they fit a slot's boxes, else a full stack of boxes beside them. Returns the message.
+export function boxAt(state, str) {
+  const it = itemAt(state, str);
+  if (!it) return "Nothing there.";
+  if (!isRoundItem(it) || !it.loose) return `The ${it.name} is not loose rounds.`;
+  const was = amountOf(it);
+  const piece = boxRounds(it);
+  if (!piece) return "Nothing to box.";
+  if (piece === it) return `Boxed: ${stackLabel(it)}${boxesIn(it) > 1 ? "" : ` (${amountOf(it)} rounds)`}.`;
+  const where = putNear(state, str, piece);
+  if (!where) { it.dur = was; return `No free spot for a stack of boxes beside the ${stackLabel(it)}.`; }
+  return `Boxed ${stackLabel(piece)} to ${where} (${stackLabel(it)} left).`;
 }
 
 // Unequip / put away: into the base armory or the team's cargo.
