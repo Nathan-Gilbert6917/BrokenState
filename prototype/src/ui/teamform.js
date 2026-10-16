@@ -33,7 +33,8 @@ import { packMags } from "../sim/carrykit.js";
 import { packLights, hasLight } from "../sim/lights.js";
 import { loadFromBase, dropOff } from "../sim/teaminv.js";
 import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicles, toggleVehicle, setSupply, teamHas, gearSnapshot, gearChanged, restoreGear } from "../sim/teamform.js";
-import { doll, storageBox, selBar, tile, SUPPLY_ICON, INV_ACTIONS, invDrop } from "./inventory.js";
+import { doll, storageBox, selBar, tile, INV_ACTIONS, invDrop } from "./inventory.js";
+import { supplyIcon } from "./stackmove.js"; // a supply's own drawing (ui/itemart.js)
 import { fleetPicker, toggleFleetIds } from "./fleetpick.js"; // the vehicle picker the planners share
 import { loadWarnings, paceLine, carLine } from "./loadview.js";
 import { statusIcons } from "./status.js";
@@ -258,7 +259,7 @@ function suppliesTab(state, ui, F, b, p, crew) {
     const name = k === "ammo" ? "Rounds for their guns" : k === RAW ? "Un-purified water" : k === "food" ? "Food (days)" : SUPPLIES[k].name;
     const kgEach = k === "food" ? FOOD_PACK_KG : supWeight(k);
     const hint = k === "food" ? "Days of food for the road (2000 kcal a day): packed as what keeps longest and weighs least (ration bars, MREs, jerky, peanut butter before cans). Or pick kinds below." : FOODS[k] ? foodTip(k) : k === "ammo" ? "Any calibre: packed as the rounds that fit each person's gun (most for the gun they carry), from the stores. Or pick calibres below." : k === "water" ? (p ? "Purified water" : "Purified water first, then un-purified water (boil it at a camp fire, or tablets)") : k === "fuel" ? "Fuel cans: the tank is topped up from them when it runs dry" : `${supWeight(k)} kg each`;
-    return `<tr${tip(hint)}><td>${k === "food" ? "🥫" : FOODS[k] ? FOODS[k].icon : SUPPLY_ICON[k] || (SUPPLIES[k].round ? "⁍" : "▪")} ${esc(name)}</td>
+    return `<tr${tip(hint)}><td>${k === "food" ? "🥫" : supplyIcon(k)} ${esc(name)}</td>
       <td><button class="mini" data-action="tf-sup" data-k="${k}" data-d="-5"${tip("5 fewer")}>−</button><input type="number" min="0" step="1" style="width:4.5em" data-action="tf-qty" data-k="${k}" value="${n1(take)}"><button class="mini" data-action="tf-sup" data-k="${k}" data-d="5"${tip("5 more")}>+</button></td>
       <td class="muted small">${n0(have(k))} at base</td><td class="muted small">${n1(take * kgEach)} kg</td></tr>`;
   };
