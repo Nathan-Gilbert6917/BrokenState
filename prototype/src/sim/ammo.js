@@ -22,7 +22,8 @@ import { WEAPONS } from "./combat.js";
 import { hash01 } from "./skills.js";
 import { SITE_TAGS, AREA_TAGS } from "./loot.js";
 import { BULK, BULK_FINDS } from "./data-stacks.js"; // bulk ammo containers, a find's boxed share (2026-10-10)
-import { isBulk, loadsOf, sweepLoads, bulkRecord, roundItems, newBulk, fillBulk, boxSize } from "./itemstack.js"; // rounds loose, boxed, in bulk
+import { isBulk, loadsOf, sweepLoads, bulkRecord, roundItems, newBulk, fillBulk, boxSize } from "./itemstack.js";
+import { settleItems } from "./supitems.js"; // supplies held as items, back into the stock (call-time only: safe in the import cycle) // rounds loose, boxed, in bulk
 
 // ---------- keys and stock records (rounds.js) ----------
 export * from "./rounds.js";
@@ -210,6 +211,7 @@ export function payWord(state, base, n) {
 /** @param {any} state @param {any} base */
 export function settleBase(state, base) {
   if (!base || !base.stock) return;
+  settleItems(state, base.armory, base); // water, meds, food… put in the armory as items (supitems.js)
   unbox(base.armory, base.stock);
   if (hasGeneric(base.stock)) { const cals = baseCals(state, base); settleRec(base.stock, mixForCals(cals), cals); }
 }
@@ -218,7 +220,7 @@ export function settleBase(state, base) {
 export function settleParty(state, p) {
   if (!p || !p.supplies) return;
   const goods = p.kind === "convoy" || p.kind === "caravan"; // a trade convoy's cargo is its load: kept as it is
-  if (p.cargo && !goods) unbox(p.cargo.gear, p.cargo.supplies || (p.cargo.supplies = {}));
+  if (p.cargo && !goods) { p.cargo.supplies = p.cargo.supplies || {}; settleItems(state, p.cargo.gear, p.cargo); unbox(p.cargo.gear, p.cargo.supplies); }
   const cals = partyCals(state, p);
   p.ammoCals = cals; // the calibres its guns shoot (parties.js takeSupply spends the others first)
   if (!hasGeneric(p.supplies) && !(p.cargo && !goods && hasGeneric(p.cargo.supplies))) return;

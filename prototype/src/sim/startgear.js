@@ -74,9 +74,9 @@ export const PLACE_NAMES = { pocket: "Pockets", pouch: "Pouches", pack: "Pack" }
 // pack: no packs, no rig, nothing bulky, no bicycle).
 /** @param {string} slot */
 export const slotChoices = (slot) => Object.keys(GEAR).filter((k) => GEAR[k].slot === slot);
-export const carryChoices = () => Object.keys(GEAR).filter((k) => { const d = GEAR[k]; return !["backpack", "cargo", "rig"].includes(d.slot) && !d.bulky && !d.slots; });
+export const carryChoices = () => Object.keys(GEAR).filter((k) => { const d = GEAR[k]; return !["backpack", "cargo", "rig"].includes(d.slot) && !d.bulky && !d.slots && !d.supKey; }); // supplies held as items (supitems.js) are not starting kit
 // The vehicle's back holds anything but another vehicle.
-export const trunkChoices = () => Object.keys(GEAR).filter((k) => k !== "bicycle");
+export const trunkChoices = () => Object.keys(GEAR).filter((k) => k !== "bicycle" && !GEAR[k].supKey);
 
 const limitOf = (where) => (where === "pocket" ? POCKETS : where === "pouch" ? START_GEAR.POUCHES : START_GEAR.PACK); // (read late: inventory.js loads after this file)
 // Anything kept on the colonist or carried in a crew snapshot, made safe: unknown keys and slots dropped, an item only

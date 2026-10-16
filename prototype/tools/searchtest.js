@@ -153,11 +153,13 @@ console.log("The search window: pick how many, then where");
   INV_ACTIONS["inv-click"](st, ui, { loc: `haul:${u.id}:list` });
   check(u.haul.sup.f_rationbar === 3 && box.contents.sup.f_rationbar === 3 && ui.invSel == null, `then click Carried: 3 taken, 3 left (${ui.invMsg})`);
   INV_ACTIONS["inv-click"](st, ui, { loc: src }, { shiftKey: true });
-  check(u.haul.sup.f_rationbar === 6 && !(box.contents.sup.f_rationbar >= 1), "Shift+click: the rest of the stack straight across");
+  const sv = st.survivors.find((x) => x.id === u.sid);
+  const held = () => [...sv.pockets, ...((sv.gear.backpack && sv.gear.backpack.contents) || [])].reduce((a, it) => a + (it && it.key === "s_f_rationbar" ? it.dur : 0), 0);
+  check(u.haul.sup.f_rationbar === 3 && held() === 3 && !(box.contents.sup.f_rationbar >= 1), `Shift+click: the rest of the stack straight across, into the pockets as items (${ui.invMsg})`);
   invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `rbox:${box.id}:list`, false, true);
-  check(u.haul.sup.f_rationbar === 5 && box.contents.sup.f_rationbar === 1, "Ctrl-drop: one");
+  check(u.haul.sup.f_rationbar === 2 && box.contents.sup.f_rationbar === 1, "Ctrl-drop: one");
   invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `rbox:${box.id}:list`, true);
-  check(u.haul.sup.f_rationbar === 3 && box.contents.sup.f_rationbar === 3, "Shift-drop: half");
+  check(u.haul.sup.f_rationbar === 1 && box.contents.sup.f_rationbar === 2, "Shift-drop: half");
   // A rummaged container: the window says more may be hidden and offers the full search.
   fresh(b, u);
   const q = freshBox(b, u, [box]);

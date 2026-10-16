@@ -5,7 +5,11 @@
 //     is used one at a time (useOne) and splits (splitOff);
 //   - rounds (an item of a round key, data-ammo.js AMMO_GEAR: a count stack, item.dur = its rounds): loose (item.loose:
 //     up to AMMO_STACK.LOOSE rounds of one type) or boxed (up to AMMO_STACK.BOXES boxes of one kind: boxesIn). A boxed
-//     stack opens into loose rounds (openRounds); loose rounds are never packed back into boxes;
+//     stack opens into loose rounds (openRounds); loose rounds pack back into boxes (boxRounds, 2026-10-16 user request:
+//     "make loose ammo combinable into a pack");
+//   - supply items (data-supitems.js: s_<key>, GEAR supKey: a store's water, meds, food… out of the stock to carry):
+//     count stacks like rounds (item.dur = the units), up to GEAR stack a slot; a food's item.until is the day it
+//     spoils (the soonest of two merged). supitems.js makes them and puts them back into a stock;
 //   - bulk containers (data-stacks.js BULK: an ammo can, a carton, a bag): item.loads, loose round items inside it
 //     (one key, one calibre or any), up to its cap; a handful (up to LOOSE) comes out at a time (takeOut).
 // Same thing, same form: two stacks of it merge up to the slot's limit (mergeInto: a stow, a move onto it, a find
@@ -30,6 +34,12 @@ export const isStackable = (key) => stackMax(key) > 1;
 export const countOf = (it) => (it && num(it.n) > 1 ? Math.floor(it.n) : it && "n" in it && !(num(it.n) > 0) ? 0 : 1); // n 0: all of it merged away (spent)
 /** @param {any} it an item of a round key (a box, a stack of boxes, loose rounds) */
 export const isRoundItem = (it) => !!(it && ROUND_SUPPLIES[it.key] && GEAR[it.key] && GEAR[it.key].count);
+/** @param {any} it a supply out of the stores (data-supitems.js s_<key>) */
+export const isSupItem = (it) => !!(it && GEAR[it.key] && GEAR[it.key].supKey);
+/** @param {any} it a stack counted in item.dur (rounds, a bench's bag, a supply item) */
+export const isCountStack = (it) => isRoundItem(it) || isSupItem(it);
+/** @param {string} key a supply item's units in one slot */
+export const supItemCap = (key) => Math.max(1, Math.floor(num(GEAR[key] && GEAR[key].stack) || 1));
 /** @param {any} it a bulk ammo container */
 export const isBulk = (it) => !!(it && BULK[it.key]);
 /** @param {string} key a box's rounds (data-ammo.js: typical US retail counts) */
@@ -39,7 +49,7 @@ export const roundsInItem = (it) => (isRoundItem(it) ? Math.max(0, Math.floor(nu
 /** @param {any} it the boxes in a boxed stack (0 for loose rounds) */
 export const boxesIn = (it) => (isRoundItem(it) && !it.loose ? Math.max(1, Math.ceil(Math.max(0, num(it.dur)) / boxSize(it.key))) : 0);
 /** @param {any} it the most rounds this slot's stack can hold in its form */
-export const roundCap = (it) => (it && it.loose ? AMMO_STACK.LOOSE : AMMO_STACK.BOXES * boxSize(it.key));
+export const roundCap = (it) => (isSupItem(it) ? supItemCap(it.key) : it && it.loose ? AMMO_STACK.LOOSE : AMMO_STACK.BOXES * boxSize(it.key));
 
 // ---------- making them ----------
 /** @param {string} key @param {number} n @param {boolean} [loose] */
@@ -74,28 +84,32 @@ export function withCount(it, n) {
 export function canStack(a, b) {
   if (!a || !b || a === b || a.key !== b.key) return false;
   if (isRoundItem(a)) return !!a.loose === !!b.loose && !a.loaded && !b.loaded;
+  if (isSupItem(a)) return !!a.egg === !!b.egg; // a food with the worm's eggs keeps apart from a clean one
   if (!isStackable(a.key)) return false;
   return !a.mods && !b.mods && !a.contents && !b.contents && (a.quality ?? 1) === (b.quality ?? 1);
 }
 // Room left in a stack (rounds or things).
 /** @param {any} it */
-export const roomIn = (it) => (isRoundItem(it) ? Math.max(0, roundCap(it) - Math.max(0, Math.floor(num(it.dur)))) : Math.max(0, stackMax(it.key) - countOf(it)));
+export const roomIn = (it) => (isCountStack(it) ? Math.max(0, roundCap(it) - Math.max(0, Math.floor(num(it.dur)))) : Math.max(0, stackMax(it.key) - countOf(it)));
 /** @param {any} it how much is in it (rounds or things) */
-export const amountOf = (it) => (isRoundItem(it) ? Math.max(0, Math.floor(num(it.dur))) : countOf(it));
+export const amountOf = (it) => (isCountStack(it) ? Math.max(0, Math.floor(num(it.dur))) : countOf(it));
 // Moves as much of src into dst as fits. Returns how much moved (0: they do not stack or dst is full); src keeps the rest.
 /** @param {any} dst @param {any} src */
 export function mergeInto(dst, src) {
   if (!canStack(dst, src)) return 0;
   const q = Math.min(roomIn(dst), amountOf(src));
   if (!(q > 0)) return 0;
-  if (isRoundItem(dst)) { dst.dur = Math.floor(num(dst.dur)) + q; src.dur = Math.floor(num(src.dur)) - q; return q; }
+  if (isCountStack(dst)) {
+    if (src.until != null) dst.until = dst.until != null ? Math.min(dst.until, src.until) : src.until; // a food: the sooner to spoil
+    dst.dur = Math.floor(num(dst.dur)) + q; src.dur = Math.floor(num(src.dur)) - q; return q;
+  }
   withCount(dst, countOf(dst) + q);
   const left = countOf(src) - q;
   if (left > 1) src.n = left; else if (left === 1) delete src.n; else src.n = 0;
   return q;
 }
 /** @param {any} it is anything left in it after a merge */
-export const isSpent = (it) => (isRoundItem(it) ? !(num(it.dur) >= 1) : num(it.n) === 0 && "n" in it);
+export const isSpent = (it) => (isCountStack(it) ? !(num(it.dur) >= 1) : num(it.n) === 0 && "n" in it);
 // Takes k off a stack as a new item of its own (rounds keep their form); null when there is not more than k in it
 // (the whole stack is the thing to move).
 /** @param {any} it @param {number} k */
@@ -103,7 +117,7 @@ export function splitOff(it, k) {
   k = Math.floor(k);
   const have = amountOf(it);
   if (!(k >= 1) || k >= have) return null;
-  if (isRoundItem(it)) { it.dur = have - k; const out = { ...it, dur: k }; delete out.loaded; return out; }
+  if (isCountStack(it)) { it.dur = have - k; const out = { ...it, dur: k }; delete out.loaded; return out; }
   const out = { ...it };
   withCount(out, k);
   withCount(it, have - k);
@@ -142,6 +156,31 @@ export function openRounds(it) {
   if (!(q >= 1)) return null;
   it.dur = have - q;
   return roundItem(it.key, q, true);
+}
+// Loose rounds packed back into boxes (2026-10-16, user request): all of them in place when they fit a slot's boxes
+// (up to BOXES boxes of the load; the last box may be part full), else a full stack of boxes split off and the rest
+// left loose. Returns the boxed stack (`it` itself, or the new one beside it), or null.
+/** @param {any} it a loose stack */
+export function boxRounds(it) {
+  if (!isRoundItem(it) || !it.loose || it.loaded) return null;
+  const have = Math.floor(num(it.dur));
+  if (!(have >= 1)) return null;
+  const cap = AMMO_STACK.BOXES * boxSize(it.key);
+  if (have <= cap) { delete it.loose; return it; }
+  it.dur = have - cap;
+  return roundItem(it.key, cap, false);
+}
+// Two stacks of the same rounds in different forms (a loose handful dropped on boxes, boxes on a loose handful): the
+// moved one takes the form of the one it lands on, as much as fits merges in, and what is left keeps its own form.
+// Returns how many merged (0: not the same rounds, or no room).
+/** @param {any} dst @param {any} src */
+export function mergeForm(dst, src) {
+  if (!isRoundItem(dst) || !isRoundItem(src) || dst === src || dst.key !== src.key || dst.loaded || src.loaded || !!dst.loose === !!src.loose) return 0;
+  const was = !!src.loose;
+  if (dst.loose) src.loose = true; else delete src.loose;
+  const q = mergeInto(dst, src);
+  if (was) src.loose = true; else delete src.loose;
+  return q;
 }
 
 // ---------- bulk containers ----------
@@ -228,6 +267,7 @@ export function stackLabel(it) {
     const rec = bulkRecord(it), keys = Object.keys(rec);
     return keys.length ? `${it.name} · ${keys.length === 1 ? `${SUPPLIES[keys[0]] ? SUPPLIES[keys[0]].name : keys[0]} ${rec[keys[0]]}` : `${bulkRounds(it)} rounds, ${keys.length} kinds`}` : `${it.name} (empty)`;
   }
+  if (isSupItem(it)) return `${it.name} ×${Math.max(0, Math.floor(num(it.dur)))}`;
   if (isRoundItem(it)) {
     const n = Math.max(0, Math.floor(num(it.dur)));
     if (it.loose) return `${it.name} · ${n} loose`;
