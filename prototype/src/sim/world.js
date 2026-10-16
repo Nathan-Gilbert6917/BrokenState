@@ -5,6 +5,7 @@
 import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
+import { pickStart } from "./startpick.js"; // the new-run screen's New start position
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
@@ -132,12 +133,15 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // new-run screen's Randomize all); left out, the world's seed decides them.
 // startPeople (optional, Hardcore): how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out),
 // kept as state.startPeople. A normal start is a full hub of six and ignores it.
+// start (optional): { roll, not } where you start drawn with dice of their own on the same map (the new-run screen's
+// New start position; startpick.js): the hub's town, or the Hardcore roadside tile. Kept as state.startRoll.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
- *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any }} opts
+ *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
+ *   start?: { roll: number, not?: number | null } | null }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -172,10 +176,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // hardcore crew's picks resolve whatever the browser's list holds later. Not in a world without any.
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
+  if (start && start.roll != null) state.startRoll = start.roll; // startpick.js: a start of its own on this map
   noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
   ensurePois(state); // pois.js: every tile's points of interest (hash dice from the seed: the map's dice are untouched)
   if (state.mode === "hardcore") {
-    hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
+    hardcoreCreate(state, { factionCount, crew, crewRoll, start, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
     hardcoreAfterHives(state);
     state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
@@ -200,7 +205,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const clearCandidates = clear ? towns.filter((t) => farFrom(t, clear, 12, 12) && central(t)) : [];
   const hubCandidates = clearCandidates.length ? clearCandidates : towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
   const nearCandidates = towns.filter((t) => farFrom(t, 12, 8, 8));
-  const hubTile = rng.pick(hubCandidates.length ? hubCandidates : nearCandidates.length ? nearCandidates : towns);
+  const hubTile = pickStart(rng, [() => hubCandidates, () => nearCandidates, () => towns], start); // startpick.js
   state.bases.push({
     id: newId(), tile: hubTile.id, type: "hub", name: `${hubTile.loc.name} Holdout`,
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the

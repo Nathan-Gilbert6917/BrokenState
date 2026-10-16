@@ -10,6 +10,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Two victories**: destroy every hive, or win with the Calder Coalition (an alliance holding over half the land). "Keep playing" is available after either one [world, alliance].
 - **Hardcore mode**: start on the day Calder falls with 1–4 survivors on the road, no hub, sites only half looted, and the outbreak year [hardcore*, hardcore-start, hardcore-loot, hardcore-outbreak, hardcore-groups].
 - **Bare start**: every base starts with empty plots [world HUB_START].
+- **New-run shortcuts**: *Random run* rolls every setting (seed, size, groups, hives, mode, starting people, zombie look, the crew and gear, Customize's points) and starts at once; *New start position* moves where you start on the same map and seed, crew kept [ui/newgame rollRandomRun, startpick].
 - **Outbreak beyond the border**: keeps a minimum number of hives alive [outbreak].
 - **Event cards and pacing**: pause rules, a card tray, auto-answers, and speeds from 1× to 5× [cardrules, ui/pacing].
 - **Hub events**: home decisions every few days [hubevents]. Also the harvest festival [festival].

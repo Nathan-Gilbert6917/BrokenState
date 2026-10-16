@@ -55,6 +55,7 @@ const roundsOnly = (rec) => Object.fromEntries(Object.entries(rec || {}).filter(
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
 const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
+import { pickStart } from "./startpick.js"; // where you start, rolled again on the same map
 import { meleeBump, cookingBump } from "./appearance.js"; // a background's Melee bump: its own die
 import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
@@ -259,7 +260,7 @@ export function hubFounded(state, base, when = "") {
 }
 
 // ---------- the spawn ----------
-function spawnTile(state) {
+function spawnTile(state, start = null) {
   const g = state.grid, rng = state.rng, S = HC_START.SPAWN;
   const W = g.width, H = g.height;
   const hives = state.tiles.filter((t) => t.hive).map((t) => t.id);
@@ -282,12 +283,9 @@ function spawnTile(state) {
     if (!waterSource(state, t.id, S.water[i])) return false; // somewhere to drink within a few days' walk
     return sitesOk(t.id, S.poi[i]);
   };
-  for (const strict of [true, false]) {
-    const cands = state.tiles.filter(okFor(strict));
-    if (cands.length) return rng.pick(cands);
-  }
-  const land = state.tiles.filter((t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.hive);
-  return rng.pick(land);
+  // start: a start of its own on the same map (startpick.js; the new-run screen's New start position).
+  const land = () => state.tiles.filter((t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.hive);
+  return pickStart(rng, [() => state.tiles.filter(okFor(true)), () => state.tiles.filter(okFor(false)), land], start);
 }
 
 // ---------- what they grabbed ----------
@@ -679,9 +677,9 @@ function ownGrab(state, s, A, grabRoll, roll) {
 // crewRoll: the three (who they were, what they grabbed, the car) drawn from a seed of their own instead of the world's
 // (the new-run screen's Randomize all). The world's rng is put back after the car, so the rest of the run still
 // follows the world's seed. n: how many flee (hardcore.js START_PEOPLE, the new-run screen's Starting people; 3 by default).
-export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CREW) {
+export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CREW, start = null) {
   state.hardcore = state.hardcore || {};
-  const tile = spawnTile(state);
+  const tile = spawnTile(state, start);
   const worldRng = state.rng;
   if (crewRoll != null) state.rng = new Rng(crewRoll);
   const people = [];
