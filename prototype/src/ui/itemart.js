@@ -11,6 +11,7 @@
 // key. GEAR and SUPPLIES share some keys (a box of .223 and loose .223), so the two are asked for apart.
 // tools/itemarttest.js: every item has its drawing and no two look the same; tools/itemartpreview.html shows them all.
 import { painter, toCanvas } from "./sprites.js";
+import { GEAR } from "../sim/data.js"; // the supply items (supKey) borrow their supply's drawing
 import * as food from "./itemart/food.js";
 import * as ammo from "./itemart/ammo.js";
 import * as parts from "./itemart/parts.js";
@@ -22,6 +23,9 @@ export const ART_SIZE = 16, ICON_SIZE = ART_SIZE + 2, ICON_UP = 3;
 export const FAMILIES = { food, ammo, parts, wear, tools, valuables };
 export const GEAR_ART = {}, SUPPLY_ART = {};
 for (const f of Object.values(FAMILIES)) { Object.assign(GEAR_ART, f.GEAR_ART || {}); Object.assign(SUPPLY_ART, f.SUPPLY_ART || {}); }
+// A supply held as an item (sim/supitems.js: s_<key>, a can of beans or a bottle of water out of the stores) looks
+// like its supply.
+for (const [k, d] of Object.entries(GEAR)) if (d.supKey && !GEAR_ART[k] && SUPPLY_ART[d.supKey]) { const sk = d.supKey; GEAR_ART[k] = (p) => SUPPLY_ART[sk](p, sk); }
 
 const table = (kind) => (kind === "supply" ? SUPPLY_ART : GEAR_ART);
 export const hasItemArt = (key, kind = "gear") => typeof table(kind)[key] === "function";

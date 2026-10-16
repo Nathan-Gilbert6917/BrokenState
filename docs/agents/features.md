@@ -97,7 +97,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Gun mechanics**: fire modes, jams, suppression, over-penetration, and a damage ladder [gunfire, gunstats, ladder].
 - **Attachments and gun builder**, Tarkov-style: sights, muzzles, stocks and more; factory-fitted guns; finishes and paint [gunmods, data-gunmods, partfinds, factoryfit, data-finish, ui/gunbuilder, ui/gunpaint].
 - **Armour classes AC 1–6** with per-hit durability, helmets and face shields, plate carriers and rigs [armour, helmets, data-helmets, data-kit].
-- **Inventory**: RPG equipment slots, pockets, packs and stacks [inventory, itemstack, stacks]. **Supplies held as items**: anything in the stores can be taken out into pockets, a pack or the off hand. It goes back into the stock when put in storage or brought home. Loot goes into pockets and packs the same way, and Carried is only for bulky things [supitems, data-supitems, raidloot].
+- **Inventory**: RPG equipment slots, pockets, packs and stacks [inventory, itemstack, stacks]. **Supplies held as items**: anything in the stores can be taken out into pockets, a pack or the off hand. It goes back into the stock when put in storage or brought home. Loot goes into pockets and packs the same way. Carried is for bulky things and whatever has no room [supitems, data-supitems, raidloot].
 - **Item icons**: every item that is not a gun has its own 16 × 16 pixel drawing on its tile, in the armory and on supply chips (guns: their own gun art) [ui/itemart, ui/itemart/*].
 - **Item condition and repair** that costs max durability, Tarkov-style [itemcond, repair].
 - **Loot distribution** by site theme and gun distribution tables [loot, gundist, gunfinds, blades].
