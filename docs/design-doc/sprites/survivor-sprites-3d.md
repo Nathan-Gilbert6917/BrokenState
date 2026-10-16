@@ -98,3 +98,30 @@ At play size: the map's 1×, 2× and 3× zoom.
 The flat-sprite brief fixes what is wrong with today's sprites and keeps every weapon drawing; the low-poly figure
 changes the game's character look and gets turning, spinning, depth and weapons truly in the hands. They do not
 combine: a figure either is a side-view layer stack or a set of limbs. The pick is the owner's.
+
+## The tiles, brought to the same light
+
+The battle map's blocks (`ui/isoview.js` `prims` / `paint`) were already 3D: boxes, cylinders and blobs in tile
+space with a material a face, painted per pixel. What set them apart from the figures was the light and the shading,
+so that is what changed, in the game's own painter (a small, reversible change; the battle view tests pass):
+
+- **The light rule** is the figures' and the item icons': the top lit (`1.04`, its far edges `1.16`), the south
+  (screen-left) face about the colour itself (`0.92`, up from `0.8`), the east (screen-right) face well into shade
+  (`0.62`). A car's lit side now reads in its paint, not a dimmed version of it.
+- **Facets, not gradients.** Cylinders (trunks, barrels, hay, wells, palisade logs) shade in eight facets and blobs
+  (tree crowns, boulders, rubble, hive flesh) in five bands, like the figures' eight-sided limbs; round things read
+  low-poly instead of airbrushed.
+- **The rim** every free-standing prop had (trees, cars, crates, barrels…) now goes round furniture, racks, lockers,
+  the gun safe, tank traps, spikes, stairs, ladders, towers, bars, gates and palisades too. Walls, fences and rails
+  stay un-rimmed: a rim a cell would seam their runs.
+
+Before (left) and after (right), 1:1 crops of the town, a raid's street and the forest:
+
+![tiles before and after](battle-3d/compare-crops.png)
+
+The full frame of the town, before and after: `battle-3d/before/field-town.png`, `battle-3d/after/field-town.png`
+(`tools/isoshot.html` draws every test battle for real; `tools/spritemockshot.cjs isoshot.html [outdir]` saves them).
+
+Not done here, and the next step if the figures are adopted: the props' shapes themselves. Cars are two boxes, trees
+a trunk and four blobs; rounding a car's cabin or giving a tree a faceted crown needs a prism primitive in `paint()`
+(the figure renderer's limb) and a pass over `prims` kind by kind.

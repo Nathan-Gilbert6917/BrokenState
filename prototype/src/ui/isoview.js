@@ -223,7 +223,12 @@ const standZ = (b, x, y) => hAt(b, x, y) * LV + liftAt(b, y * b.w + x);
 // (an ellipsoid) { blob: [u, v, z], ru, rz, m }. m(face, s, t, X, Y) returns [r, g, b] or null (a hole): face "top",
 // "south" (the +v side, lit), "east" (the +u side, in shade), "side" (a cylinder), "blob"; s, t across and up it.
 // st: painted for a straight view (iso.straight: the top and the south side only, no east side showing).
-const LIGHT = { top: 1, south: 0.8, east: 0.62 };
+// The light, the one the survivor sprites and the item icons use: the top lit, the south (+v, screen-left) face
+// about the colour itself, the east (+u, screen-right) face well into shade. A top's far edges catch it (EDGE).
+const LIGHT = { top: 1.04, south: 0.92, east: 0.62 }, EDGE = 1.16;
+// Round things (cylinders and blobs) shade in facets, like the figures' eight-sided limbs, not in a smooth gradient.
+const FACETS = 8, BANDS = 5;
+const facet = (q, n) => Math.round(q * (n - 1)) / (n - 1);
 const RX = (st) => (st ? SW : HW * Math.SQRT2), RY = (st) => (st ? SH : HH * Math.SQRT2); // a radius of one tile across, on screen
 function primBounds(p, st) {
   if (p.cyl) {
@@ -253,10 +258,10 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
         const dx = (X - cx) / rx;
         if (dx < -1 || dx > 1) continue;
         const e = Math.sqrt(1 - dx * dx), top = cy - p.z1;
-        if (Math.abs(Y - top) <= ry * e) { const c = p.m("top", X - cx, Y - top, X, Y); if (c) put(i, c, 1); continue; }
+        if (Math.abs(Y - top) <= ry * e) { const c = p.m("top", X - cx, Y - top, X, Y); if (c) put(i, c, LIGHT.top); continue; }
         if (Y > top && Y <= cy - p.z0 + ry * e) {
           const c = p.m("side", dx, cy - p.z0 + ry * e - Y, X, Y);
-          if (c) put(i, c, 0.95 - 0.36 * ((dx + 1) / 2));
+          if (c) put(i, c, 0.98 - 0.4 * facet((dx + 1) / 2, FACETS));
         }
         continue;
       }
@@ -264,7 +269,7 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
         const [u, v, z] = p.blob, cx = artX(u, v, st), cy = artY(u, v, st) - z, rx = p.ru * RX(st);
         const nx = (X - cx) / rx, ny = (Y - cy) / p.rz, q = nx * nx + ny * ny;
         if (q > 1) continue;
-        const nz = Math.sqrt(1 - q), l = 0.42 + 0.58 * clamp01(-0.45 * nx - 0.5 * ny + 0.75 * nz);
+        const nz = Math.sqrt(1 - q), l = 0.42 + 0.58 * facet(clamp01(-0.45 * nx - 0.5 * ny + 0.75 * nz), BANDS);
         const c = p.m("blob", nx, ny, X, Y);
         if (c) put(i, c, l);
         continue;
@@ -277,7 +282,7 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
         const s = (u - p.u0) * 16;
         if (v >= p.v0 - eps && v <= p.v1 + eps) {
           const t = (v - p.v0) * 16, sv = (p.v1 - p.v0) * 16, col = p.m("top", s, t, X, Y, su, sv);
-          if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? 1.12 : 1);
+          if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? EDGE : LIGHT.top);
           continue;
         }
         const z = p.v1 * SH - Y;
@@ -292,7 +297,7 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
       if (u >= p.u0 - eps && u <= p.u1 + eps && v >= p.v0 - eps && v <= p.v1 + eps) {
         const s = (u - p.u0) * 16, t = (v - p.v0) * 16, su = (p.u1 - p.u0) * 16, sv = (p.v1 - p.v0) * 16;
         const col = p.m("top", s, t, X, Y, su, sv);
-        if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? 1.12 : 1);
+        if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? EDGE : LIGHT.top);
         continue;
       }
       u = a + p.v1; let z = (u + p.v1) * HH - Y;
@@ -729,7 +734,8 @@ function prims(k, o) {
     default: return [];
   }
 }
-const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall"]);
+const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
+  "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade"]); // props stand out with a rim, as the figures do; runs (walls, fences, rails) would seam
 
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {

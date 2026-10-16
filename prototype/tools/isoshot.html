@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Battle view scenes</title>
+<style>
+  body { margin: 0; padding: 12px; background: #1a1d22; color: #d8dce2; font: 12px/1.3 system-ui, sans-serif; }
+  h2 { font-size: 14px; margin: 14px 0 6px; color: #e6c23a; }
+  section { display: inline-block; padding: 8px; background: #1a1d22; }
+  img { image-rendering: pixelated; display: block; }
+  canvas { position: absolute; left: -9999px; top: 0; }
+</style>
+</head>
+<body>
+<div id="out">Loading…</div>
+<script type="module">
+// The battle view drawn for real (ui/combat.js initCombatUI / drawCombat on a canvas) for every test battle
+// (tools/isobattles.js), one section a scene, for tools/spritemockshot.cjs isoshot.html [outdir] to save.
+import { battles } from "./isobattles.js";
+import * as ISO from "../src/ui/isoview.js";
+import * as UI from "../src/ui/combat.js";
+const q = new URLSearchParams(location.search);
+const zoom = +(q.get("zoom") || 5), W = +(q.get("w") || 1200), H = +(q.get("h") || 700);
+const only = q.get("only") ? q.get("only").split(",") : null;
+const main = document.createElement("canvas");
+main.style.width = `${W}px`; main.style.height = `${H}px`; document.body.appendChild(main);
+UI.initCombatUI(main);
+let clock = 1e6;
+let html = "";
+for (const { name, st, b } of battles(42, only)) {
+  ISO.iso.zoom = zoom; ISO.iso.rot = +(q.get("rot") || 0); ISO.iso.straight = false;
+  st.combat = b;
+  clock += 50; UI.drawCombat(st, clock);
+  // centred on your people, the roofs as the view keeps them; a second frame after centring settles the camera
+  const mine = b.units.filter((t) => t.side === "player" && !t.dead);
+  const cx = mine.length ? Math.round(mine.reduce((a, t) => a + t.x, 0) / mine.length) : Math.floor(b.w / 2), cy = mine.length ? Math.round(mine.reduce((a, t) => a + t.y, 0) / mine.length) : Math.floor(b.h / 2);
+  ISO.isoCenterOn(b, cx, cy, false);
+  clock += 50; UI.drawCombat(st, clock);
+  html += `<section id="${name}"><h2>${name} (${b.w} × ${b.h}, zoom ${ISO.ISO_ZOOMS[zoom]}×)</h2><img src="${main.toDataURL()}" style="width:${W}px;height:${H}px"></section><br>`;
+}
+document.getElementById("out").innerHTML = html;
+document.body.dataset.ready = "1";
+</script>
+</body>
+</html>
