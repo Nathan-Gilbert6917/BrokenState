@@ -2,6 +2,8 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
+import { setPoiReveal, poisOf, poiKnown, knownPois, poiLootBand, POI } from "../sim/pois.js"; // points of interest: a bare tile's top POI drawn once known, the known-count pip; the dev tools' Reveal map shows every one (resetView puts the fog back)
+import { poiHeading, poiTipLines } from "./poiview.js"; // the hover text's lines on a tile's POIs
 import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText, reportsLive } from "../sim/parties.js";
 import { contactable } from "../sim/orders.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
@@ -29,6 +31,7 @@ import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
 import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
+import { nomadMapBands, nomadTipLines } from "../sim/nomads.js";
 import { stagingTip } from "../sim/staging.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
@@ -67,6 +70,7 @@ export function resetView() {
   view.hover = -1;
   view.preview = null;
   view.devReveal = false;
+  setPoiReveal(false); // pois.js: the points of interest back under the fog too
   view.layers = new Set(DEFAULT_LAYERS);
   camera.zoom = 1;
 }
@@ -329,7 +333,9 @@ function geometry(state) {
     G.color[i] = Math.max(0, keys.indexOf(t.terrain)) * 3;
     G.water[i] = t.terrain === "water" ? 1 : 0;
     g.neighbors(t.id).forEach((m, j) => (G.nb[i * 6 + j] = m));
-    if (t.loc && !t.loc.crash && !t.loc.convoy) G.sites.push(i); // crash sites and convoys come and go: drawn on their own (sim/crashes.js, sim/miltrucks.js)
+    // Crash sites and convoys come and go: drawn on their own (sim/crashes.js, sim/miltrucks.js). A bare tile with
+    // points of interest (sim/pois.js) draws its top POI once that is known, so it is a site tile here too.
+    if ((t.loc && !t.loc.crash && !t.loc.convoy) || poisOf(t).length) G.sites.push(i);
     if (t.bridge) {
       const [a, b] = t.roadLinks.length > 1 ? t.roadLinks : [t.id, t.roadLinks[0] ?? t.id];
       const [ax, ay] = g.toPixel(a, HEX), [bx, by] = g.toPixel(b, HEX);
@@ -625,9 +631,10 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
   for (const id of G.sites) {
     const t = tiles[id];
     let code = 0, fb = null;
+    const site = !!t.loc && !t.loc.crash && !t.loc.convoy;
     // A hidden site nobody has found (sim/discovery.js) is not drawn at all; found, its code changes and the chunks
     // around it are drawn again.
-    if (!ownBase.has(id) && !G.ruin[id] && (live.has(id) || siteKnown(state, id))) {
+    if (site && !ownBase.has(id) && !G.ruin[id] && (live.has(id) || siteKnown(state, id))) {
       const isLive = live.has(id), snap = isLive ? null : k[id];
       fb = isLive ? fbAt.get(id) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
       if (fb) code = 1 | ((factionIdx.get(fb) + 1) << 4) | (isLive && besiegedFb.has(id) ? 8 : 0) | (blocNo(state, fb) << 16); // sim/blocs.js: its bloc's ring
@@ -638,7 +645,16 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
         const band = loot == null || t.loc.type === "city" || t.loc.type === "town" ? 0 : lootBand(t, loot);
         code = 3 | (busy.has(id) ? 4 : 0) | (band >= 2 ? 8 : 0) | (band << 4);
       }
+    } else if (!t.loc && F.poisOn && !ownBase.has(id) && !G.ruin[id] && poiKnown(state, t, 0)) {
+      // A bare tile's top point of interest (sim/pois.js), once the player knows it: drawn like a site (bit 64 says
+      // it is a POI, not a tile.loc), faded by its pool's band as seen now or last seen (the snapshot's pool).
+      const isLive = live.has(id), snap = isLive ? null : k[id];
+      const seen = !isLive && snap && snap.pois ? snap.pois.find((x) => x.i === 0) : null;
+      const band = state.timelapse ? 0 : isLive ? poiLootBand(t, 0) : seen && seen.pool != null ? poiLootBand(t, 0, seen.pool) : 0;
+      code = 3 | 64 | (busy.has(id) ? 4 : 0) | (band >= 2 ? 8 : 0) | (band << 4);
     }
+    // The pip with the number of POIs known on the tile (bits 8–11): a change redraws the chunk.
+    if ((code & 3) === 3 && poisOf(t).length > 1) code |= Math.min(POI.MAX, knownPois(state, t).length) << 8;
     if (code !== G.siteCode[id]) {
       if (G.siteCode[id] > 0) markSite(G.x[id], G.y[id]);
       G.siteCode[id] = code;
@@ -667,15 +683,25 @@ const markClear = (i) => markDirty(geo.x[i] - 52, geo.y[i] - 48, geo.x[i] + 52, 
 // 2 a dot (minor sites zoomed out), 3 a site sprite on its zone plate. Also where its name goes.
 function siteDesc(state, id, code, fb) {
   const t = state.tiles[id], px = geo.x[id], py = geo.y[id], kind = code & 3;
-  const zone = SITE_ZONES[t.loc.zone || LOCATIONS[t.loc.type].cat] || SITE_ZONES.special;
-  // Tier 0 = city centers, 1 = towns, landmarks and group bases, 2 = everything else (shops, farms, cabins…).
-  const tier = t.loc.type === "city" ? 0 : fb || t.loc.type === "town" || t.loc.zone === "special" ? 1 : 2;
+  const loc = siteLocOf(t, code);
+  const zone = SITE_ZONES[loc.zone || LOCATIONS[loc.type].cat] || SITE_ZONES.special;
+  // Tier 0 = city centers, 1 = towns, landmarks and group bases, 2 = everything else (shops, farms, cabins, POIs…).
+  const tier = loc.type === "city" ? 0 : fb || loc.type === "town" || loc.zone === "special" ? 1 : 2;
   if (kind === 1) {
     const s = zoomBoost(), w = PLACE_W.faction * s, cy = py - 5 * s, cv = factionBaseCanvas(fb.type, fb.color), h = spriteH(cv, w);
-    return { kind, tier, zone, fb, s, w, h, cy, cv, dyn: !!(code & 8), labelY: cy + h / 2 + 6, side: null, bloc: code >> 16 ? blocColorOf(state, fb) : null };
+    return { kind, tier, zone, loc, fb, s, w, h, cy, cv, dyn: !!(code & 8), labelY: cy + h / 2 + 6, side: null, bloc: code >> 16 ? blocColorOf(state, fb) : null };
   }
-  if (tier === 2 && F.zoom < 0.7) return { kind: 2, tier, zone, dyn: false }; // zoomed out: a dot in the zone's color
-  return { kind, tier, zone, dyn: false, alpha: code & 4 ? 0.55 : 1, ...siteLook(t, px, py, tier, (code >> 4) & 3) };
+  if (tier === 2 && F.zoom < 0.7) return { kind: 2, tier, zone, loc, dyn: false }; // zoomed out: a dot in the zone's color
+  // The pip with the number of points of interest known on the tile (2 and up: one is the sprite itself), zoomed in.
+  const pip = F.zoom >= 0.7 ? (code >> 8) & 15 : 0;
+  return { kind, tier, zone, loc, dyn: false, alpha: code & 4 ? 0.55 : 1, pip: pip >= 2 ? pip : 0, ...siteLook(loc, px, py, tier, (code >> 4) & 3) };
+}
+// What a site tile is drawn as: its site, or (bit 64 of the code) its top point of interest as a site of that
+// kind in the kind's zone (sim/pois.js: a bare tile never gets a tile.loc).
+function siteLocOf(t, code) {
+  if (!(code & 64)) return t.loc;
+  const top = poisOf(t)[0], def = top ? LOCATIONS[top.kind] : null;
+  return def ? { type: top.kind, name: def.name, zone: def.cat, poi: true } : t.loc;
 }
 
 function paintSite(d, px, py) {
@@ -1029,6 +1055,7 @@ function moverHash(state) {
   for (const x of state.herds || []) h = (h * 31 + x.tile * 5 + x.size) % 2147483647; // infested herds (sim/worm.js)
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
   for (const b of hcMapBands(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands and the strike force (sim/hardcore-groups.js)
+  for (const b of nomadMapBands(state)) h = (h * 31 + b.tile * 13 + b.pop + (b.camp ? 7 : 0)) % 2147483647; // nomad bands (sim/nomads.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile + (b.tier === 0 ? campStage(b) * 7 + (b.fire === false ? 3 : 0) : 0)) % 2147483647; // a camp's or shelter's look (its step up, its fire)
   if (state.staging) h = (h * 31 + state.staging.tile * 3 + Math.round(oldCampPct(state.staging) * 50)) % 2147483647; // a timelapse frame's camp (sim/chronicle.js)
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
@@ -1200,6 +1227,7 @@ export function render(state) {
   if (state.staging) baseTiles.set(state.staging.tile, (STAGING_W * zoomBoost()) / 2); // a timelapse frame's camp
   spriteBoxes = [];
   besideCount = new Map();
+  tileCrowd = countCrowd(state, live);
   const labels = []; // drawn last (over parties, hordes and markers), most important first, skipping any that would overlap
   const hasHives = G.nHives > 0;
   for (const id of G.sites) {
@@ -1216,11 +1244,12 @@ export function render(state) {
     // Danger skulls go in a row under the name; where the name is not shown at this zoom, under the sprite.
     // Cities, towns, landmarks and group bases keep their names at every zoom (overlapping ones give way, the
     // most important first); small sites only up close.
-    const tier = d.tier, named = tier < 2 || camera.zoom > 1.3;
+    const tier = d.tier, named = tier < 2 || camera.zoom > 1.3, loc = d.loc || t.loc; // d.loc: a bare tile's top POI drawn as a site (siteLocOf)
     const hd = hasHives && !fb ? G.dist[id] : Infinity; // inside a known hive's land: at least 3 skulls, red on the ring
-    const skulls = !fb && camera.zoom > SKULL_ZOOM ? Math.max(siteDanger(t.loc), hd <= HIVE.TERRITORY ? 3 : 0) : 0;
+    const skulls = !fb && camera.zoom > SKULL_ZOOM ? Math.max(siteDanger(loc), hd <= HIVE.TERRITORY ? 3 : 0) : 0;
     if (named || skulls) {
-      labels.push({ text: named ? (tier === 2 ? siteLabel(state, t) : t.loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
+      // A bare tile's POI name gives way to a site's (pri 2.5 after the sites' 2) when the two would overlap.
+      labels.push({ text: named ? (loc.poi ? loc.name : tier === 2 ? siteLabel(state, t) : loc.name) : "", x: px, y: labelY, pri: named ? (loc.poi ? 2.5 : tier) : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
     }
   }
   // Ruins (drawn in the cached chunks): their names, "Ruins of Oak Hill Outpost", the same size as a town's.
@@ -1586,7 +1615,7 @@ export function render(state) {
   }
   // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
   // you can see them; the military's strike force on its way to the city hive as its convoy of trucks.
-  if (on("teams")) for (const b of hcMapBands(state)) {
+  if (on("teams")) for (const b of [...hcMapBands(state), ...nomadMapBands(state)]) { // and the nomads (sim/nomads.js): a camp has its fire
     if (!live.has(b.tile)) continue;
     const [px, py] = g.toPixel(b.tile, HEX);
     const cv = groupPartyCanvas(b.type, b.convoy ? "convoy" : "walk", b.color, b.pop >= 15 ? 4 : b.pop >= 7 ? 3 : 2), s = zoomBoost();
@@ -1595,8 +1624,9 @@ export function render(state) {
     const facing = next != null && next !== b.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
     const [x, y, k2] = besideBase(b.tile, px, py);
     groundRing(x, y, b.color, false, false);
-    if (view.pick === `band:${b.id}`) pickRing(x, y);
+    if (view.pick === `${b.nomad ? "nomad" : "band"}:${b.id}`) pickRing(x, y);
     const onWay = next != null && next !== b.tile;
+    if (b.camp) smokeWisps(b.tile * 7 + 3, x - 9 * s * k2, y - 2 * s, s, { n: 2, rise: 10 }); // a nomad camp's fire
     if (onWay && b.convoy) dustTrail(b.tile * 13 + 7, x, y + 4 * s, s, facing, w * k2);
     sprite(cv, x, y - 3 + (!onWay ? 0 : b.convoy ? rumble(b.tile * 13, 0.35 * s) : stepBob(b.tile * 13 + 1, 1.1 * s, 380)), w * k2, { facing });
     noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
@@ -1692,7 +1722,7 @@ const lastFacing = new WeakMap();   // UI only: keeps a team facing the way it l
 const PLACE_W = { hub: 46, outpost: 34, shelter: 38, faction: 40 }; // base sprite widths in world pixels (before zoomBoost)
 const placeW = (b) => (isCamp(b) ? STAGING_W : b.tier === 0 ? PLACE_W.shelter : b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost);
 const STAGING_W = 34; // a camp's sprite width (sim/staging.js), an outpost's
-const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, vehicle: 20 };
+const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, nomadcamp: 16, vehicle: 20 };
 const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a" }; // marker rings and far-out dots
 const ICON_W = 11;                 // status icons (alert, work, radio, siege, "?")
 // Site sprites: world pixels per sprite pixel, and a size factor by zone so a shop drawn for a city block comes out
@@ -1707,24 +1737,48 @@ const BESIDE_LABEL_Y = 31; // a base's name drops below whatever stands beside t
 
 // Per frame: tiles drawn as a base, sprites the skull rows keep clear of (bases and parties), and parties already
 // placed beside a base.
-let baseTiles = new Map(), spriteBoxes = [], besideCount = new Map(); // baseTiles: tile -> half the base sprite's width
+let baseTiles = new Map(), spriteBoxes = [], besideCount = new Map(), tileCrowd = new Map(); // baseTiles: tile -> half the base sprite's width; tileCrowd: tile -> parties drawn on it
 const noteSprite = (x, y, w, h) => spriteBoxes.push([x - w / 2, y - h / 2, w, h]);
+// How many parties each tile shows this frame (your teams and convoys, the groups' parties, bands and outsiders you
+// can see): two or more on a tile without a base are drawn on opposite sides of the hex (besideBase), both to be
+// picked (ui/mapselect.js picks by tile).
+function countCrowd(state, live) {
+  const out = new Map();
+  const add = (tile) => out.set(tile, (out.get(tile) || 0) + 1);
+  if (on("teams")) {
+    for (const p of state.parties) {
+      if (p.owner === "player") { if (p.kind === "convoy" || contactable(p)) add(partyTile(p)); }
+      else if (p.phase !== "siege" && live.has(partyTile(p))) add(partyTile(p));
+    }
+    for (const b of hcMapBands(state)) if (live.has(b.tile)) add(b.tile);
+    for (const b of nomadMapBands(state)) if (live.has(b.tile)) add(b.tile);
+    for (const v of state.visitors || []) if (live.has(v.tile) || (!state.timelapse && inCoverage(state, v.tile))) add(v.tile);
+  }
+  return out;
+}
 // Where a party on this tile is drawn: beside the base (lower left, further left for a second one) at 85% size
-// when the tile has a base, otherwise on the tile. Returns [x, y, scale].
+// when the tile has a base; on a tile two or more parties share, the first on the left side of the hex and the
+// second on the right (a third and fourth below them), at 90%; otherwise on the tile. Returns [x, y, scale].
+const CROWD_X = 13, CROWD_Y = 9; // world px between parties sharing a tile, by zoomBoost (capped as beside a base)
 function besideBase(tile, px, py) {
-  if (!baseTiles.has(tile)) return [px, py, 1];
+  const o = Math.min(zoomBoost(), BESIDE_MAX);
+  if (!baseTiles.has(tile)) {
+    if ((tileCrowd.get(tile) || 0) < 2) return [px, py, 1];
+    const n = besideCount.get(tile) || 0;
+    besideCount.set(tile, n + 1);
+    return [px + (n % 2 ? CROWD_X : -CROWD_X) * o, py + Math.floor(n / 2) * CROWD_Y * o, 0.9];
+  }
   const n = besideCount.get(tile) || 0;
   besideCount.set(tile, n + 1);
-  const o = Math.min(zoomBoost(), BESIDE_MAX);
   return [px - Math.min(baseTiles.get(tile) * 0.8 + 8, 28) - 12 * n * o, py + 12 * o, 0.85];
 }
 
 // Where a site's sprite goes on its zone plate, where its label goes (labelY), and the spot beside the plate (side)
 // that the danger skulls fall back to when there is no room under the name. faded: the loot band (0–3, aiscav.js).
-function siteLook(t, px, py, tier, faded) {
-  const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[t.loc.type];
-  const cv = poiSpriteCanvas(t.loc.type, t.loc.type === "military" && / depot$/i.test(t.loc.name) ? "depot" : "", faded);
-  const w = gridW(cv) * POI_PX * s * ((ZONE_K[t.loc.zone] || 1) / (ZONE_K[t.loc.type === "city" ? "urban" : def.cat] || 1));
+function siteLook(loc, px, py, tier, faded) {
+  const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[loc.type];
+  const cv = poiSpriteCanvas(loc.type, loc.type === "military" && / depot$/i.test(loc.name) ? "depot" : "", faded);
+  const w = gridW(cv) * POI_PX * s * ((ZONE_K[loc.zone] || 1) / (ZONE_K[loc.type === "city" ? "urban" : def.cat] || 1));
   const h = spriteH(cv, w), foot = py + 7 * s, rx = Math.max(9 * s, w * 0.46), ry = (tier < 2 ? 4.5 : 3.6) * s;
   return { s, cv, w, h, foot, rx, ry, lw: tier < 2 ? 1.8 : 1.3, labelY: foot + ry + 6, side: [px + rx + 2 * s, foot] };
 }
@@ -1741,6 +1795,26 @@ function drawSite(d, px, py, zone, alpha) {
   ctx.stroke();
   ctx.globalAlpha = 1;
   sprite(d.cv, px, d.foot - d.h / 2 + 0.6 * d.s, d.w, { alpha });
+  if (d.pip) poiPip(px + d.rx - 1.5 * d.s, d.foot - d.h - 1.5 * d.s, d.pip, d.s, alpha);
+}
+// The pip at a site's top right with the number of points of interest known on its tile (sim/pois.js): a small dark
+// disc with the count, in the sites' label colour.
+function poiPip(x, y, n, s, alpha = 1) {
+  const r = 3.6 * s;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(12,14,18,0.9)";
+  ctx.fill();
+  ctx.strokeStyle = "#d9d2c0";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.fillStyle = "#f0e8d4";
+  ctx.font = `bold ${(5.4 * s).toFixed(1)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(n), x, y + 0.3 * s);
+  ctx.globalAlpha = 1;
 }
 
 // Tiles with something drawn over a site (a team or group party, a horde): the site sprite fades there. Markers
@@ -2274,7 +2348,8 @@ export function tileTooltip(state, id) {
   const isLive = liveSet(state).has(id);
   const snap = state.knowledge[id];
   const loc = mapLoc(state, id); // a hidden site nobody has found is bare ground (sim/discovery.js)
-  const lines = [`<b>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</b>`];
+  const top = loc ? null : poiHeading(state, id); // a bare tile's top point of interest once known (ui/poiview.js)
+  const lines = [`<b>${esc(loc ? loc.name : top || TERRAIN[t.terrain].name)}</b>`];
   const ownHere = state.bases.find((b) => b.tile === id);
   if (ownHere) lines.push(`<span style="color:#cfe2f7">${esc(ownHere.name)}</span>`);
   const campTip = stagingTip(state, id); // sim/staging.js
@@ -2284,7 +2359,13 @@ export function tileTooltip(state, id) {
     lines.push(`<span class="muted">${def.name}${zone ? ` · ${zone.name.toLowerCase()}` : ""} · ${TERRAIN[t.terrain].name}${t.road ? " · road" : " · off-road"}</span>`);
     lines.push(`<span class="muted">Danger: ${DANGER_NAMES[siteDanger(loc)].toLowerCase()}</span>`);
   }
+  else if (top) {
+    const def = LOCATIONS[poisOf(t)[0].kind], zone = SITE_ZONES[def.cat];
+    lines.push(`<span class="muted">${def.name}${zone ? ` · ${zone.name.toLowerCase()}` : ""} · ${TERRAIN[t.terrain].name}${t.road ? " · road" : " · off-road"}</span>`);
+    lines.push(`<span class="muted">Danger: ${DANGER_NAMES[siteDanger({ type: poisOf(t)[0].kind, zone: def.cat })].toLowerCase()}</span>`);
+  }
   else lines.push(`<span class="muted">${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}</span>`);
+  for (const line of poiTipLines(state, id, isLive, snap)) lines.push(line); // ui/poiview.js: the places known on the tile, the hidden remainder
   if (isLive) lines.push(`<span class="good">Live view</span>`);
   else if (snap) lines.push(`<span class="muted">Last seen ${ageText(state, snap)}</span>`);
   else lines.push(`<span class="muted">No current intel</span>`);
@@ -2310,6 +2391,7 @@ export function tileTooltip(state, id) {
   for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
   for (const line of caravanTipLines(state, id, liveSet(state))) lines.push(`<span style="color:#e0c070">${esc(line)}</span>`); // sim/caravanraids.js: the groups' caravans and convoys
   for (const o of bandTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/hardcore-groups.js
+  for (const o of nomadTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/nomads.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   // An empty base you know of (sim/occupy.js): what stands and, in view, who is inside (out of view: as last seen).
   const em = ownHere ? null : emptyKnown(state, id);

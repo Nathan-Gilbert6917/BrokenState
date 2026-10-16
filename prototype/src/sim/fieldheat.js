@@ -52,8 +52,9 @@ export const HEAT_DECAY = 8;          // per hour on the move
 export const HEAT_TROUBLE = 0.12;     // hourly chance at Heat 100 and danger 1
 export const HEAT_COOLDOWN = 6;       // hours after trouble before the next roll
 // stage and camp: only where campSite does not apply (it always does for them: the camp danger model, CAMP_HEAT).
-const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, wood: 1.3, waiting: 1, holding: 1, survey: 1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, fixcar: 1.6, stage: 1.6, cross: 1.8, camp: 2 };
-const ACT_NAME = { sweep: "surveying (on the move about the area)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", wood: "cutting wood (the axes carry)", waiting: "waiting", holding: "holding", survey: "looking around", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", fixcar: "getting a found vehicle running (engine noise, tools)", stage: "building the camp", cross: "building a boat", camp: "camp fire and cooking" };
+// survey: the Quick look (2h); fullsurvey: the Survey of the tile (8h, survey.js: standing about the place draws attention).
+const ACTIVITY = { sweep: 0.5, fish: 0.7, snare: 0.8, hunt: 1.2, wood: 1.3, waiting: 1, holding: 1, survey: 1, fullsurvey: 1.1, treat: 1, wait: 1, gather: 1.5, craft: 1.5, repair: 1.5, fixcar: 1.6, stage: 1.6, cross: 1.8, camp: 2 };
+const ACT_NAME = { sweep: "sweeping the area (on the move about it)", fish: "fishing", snare: "snares", hunt: "hunting (gunshots add more)", wood: "cutting wood (the axes carry)", waiting: "waiting", holding: "holding", survey: "a quick look around", fullsurvey: "surveying the tile (poking about its places)", treat: "treating someone", wait: "waiting", gather: "gathering on the shore", craft: "crafting", repair: "repairing the vehicle", fixcar: "getting a found vehicle running (engine noise, tools)", stage: "building the camp", cross: "building a boat", camp: "camp fire and cooking" };
 
 // What the team is doing on the spot (null: moving, in a fight or search, on the water, or not a field team).
 export function stationaryActivity(p) {

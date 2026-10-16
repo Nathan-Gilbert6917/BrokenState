@@ -7,7 +7,7 @@ import { activeCrashes } from "../sim/crashes.js";
 import { heatPreview } from "../sim/fieldheat.js";
 import { searchRiskText } from "../sim/worm.js"; // the worm: searching badly infected ground
 import { jobTargets } from "./diplomacy.js";
-import { sweepPreview, sweepOpts, rumoursOf, SURVEY } from "../sim/survey.js";
+import { sweepPreview, sweepOpts, rumoursOf, SURVEY, LOOK } from "../sim/survey.js";
 import { survivorById, baseById, hub } from "../sim/world.js";
 import { travelMode, isCar } from "../sim/vehicles.js";
 import { plannedFleet } from "../sim/teamform.js"; // the planner's vehicles, up to four
@@ -20,7 +20,7 @@ const MAX_STEPS = 10;
 // The plan a fresh planner starts with: missions that go somewhere and come back get "return home" after them.
 export function defaultPlan(mission) {
   const back = !STAY_MISSIONS.includes(mission) || mission === "recon";
-  const preset = mission === "recon" ? "recon" : mission === "scavenge" ? "scavenge" : mission === "sweep" ? "survey" : "custom";
+  const preset = mission === "recon" ? "recon" : mission === "scavenge" ? "scavenge" : mission === "sweep" ? "survey" : mission === "fullsurvey" ? "poisurvey" : "custom";
   return { preset, steps: back ? [{ kind: "home" }] : [], days: 1, cond: { hurt: null, food: null, cargo: false }, add: { camp: 24, wait: 6, radius: 3, count: 2, move: null, hunt: 8, sradius: 3, shours: 12 } };
 }
 const ensure = (pl) => (pl.plan = pl.plan || defaultPlan(pl.mission));
@@ -85,7 +85,7 @@ export function planSection(state, pl, est) {
   const haulOf = (i) => { const l = est && est.legs.find((x) => x.label === stepLabel(state, plan.steps[i]) && x.haul != null); return l ? ` <span class="good"${tip("Expected haul of fresh game (an average: luck decides). Carried, it weighs 1 kg a ration; it spoils fast in the warm.")}>~${Math.round(l.haul)} food</span>` : ""; };
   // Firewood (sim/woodcutting.js): what the step is expected to bring home, as far as the team can carry it.
   const woodOf = (i) => { const l = est && est.legs.find((x) => x.label === stepLabel(state, plan.steps[i]) && x.wood != null); return l ? ` <span class="good"${tip("Expected firewood (an average: the land, the season, the team's axes), as much as the team can carry (3 kg each).")}>~${Math.round(l.wood)} firewood</span>` : ""; };
-  const steps = plan.steps.map((s, i) => `<li><span>${esc(stepLabel(state, s))}${s.kind === "camp" || s.kind === "wait" ? ` <span class="muted">~${hrs(s.hours)}</span>` : s.kind === "survey" ? ` <span class="muted">~2h</span>` : s.kind === "scavenge" ? ` <span class="muted">~6h</span>` : s.kind === "sweep" ? ` <span class="muted">~${hrs(sweepOpts(s).hours)}</span>` : ""}${s.kind === "hunt" || s.kind === "fish" || s.kind === "snare" || s.kind === "forage" ? haulOf(i) : s.kind === "wood" ? woodOf(i) : ""}</span>
+  const steps = plan.steps.map((s, i) => `<li><span>${esc(stepLabel(state, s))}${s.kind === "camp" || s.kind === "wait" ? ` <span class="muted">~${hrs(s.hours)}</span>` : s.kind === "survey" ? ` <span class="muted">~2h</span>` : s.kind === "fullsurvey" ? ` <span class="muted">~${LOOK.hours}h</span>` : s.kind === "scavenge" ? ` <span class="muted">~6h</span>` : s.kind === "sweep" ? ` <span class="muted">~${hrs(sweepOpts(s).hours)}</span>` : ""}${s.kind === "hunt" || s.kind === "fish" || s.kind === "snare" || s.kind === "forage" ? haulOf(i) : s.kind === "wood" ? woodOf(i) : ""}</span>
       <button class="mini" data-action="pl-step" data-op="up" data-i="${i}" ${i ? "" : "disabled"}${tip("Earlier")}>▲</button><button class="mini" data-action="pl-step" data-op="down" data-i="${i}" ${i < plan.steps.length - 1 ? "" : "disabled"}${tip("Later")}>▼</button><button class="mini" data-action="pl-step" data-op="del" data-i="${i}"${tip("Remove this step")}>✕</button></li>`).join("");
   const add = plan.add;
   const full = plan.steps.length >= MAX_STEPS || plan.steps.some((s) => s.kind === "home");
@@ -102,16 +102,16 @@ export function planSection(state, pl, est) {
   const notes = est ? heatNote(state, pl, est) : [];
   return `<h3${tip("What the team does after reaching the target, in order. The team follows this plan; it reports in with a card on important finds (a horde in sight, a rich site, supplies running short) and when the plan ends. You can change its orders any time, wherever it is.")}>Plan</h3>
     ${surveyBox(state, pl, est)}
-    <div class="row" style="flex-wrap:wrap;gap:0.3rem">${["recon", "scavenge", "survey", "explore", "camp", "hunt", "fish", "custom"].map(presetBtn).join("")}
+    <div class="row" style="flex-wrap:wrap;gap:0.3rem">${["recon", "scavenge", "poisurvey", "survey", "explore", "camp", "hunt", "fish", "custom"].map(presetBtn).join("")}
       <span class="small muted">days <input type="number" class="tiny" style="width:3.2rem" data-action="pl-days" min="1" max="10" value="${plan.days}"></span></div>
     <div class="small muted" style="margin:0.2rem 0">${esc(preset.desc)}</div>
     <ol class="xpqueue small">
-      <li><span>${esc(`Travel to ${tileLabel(state, pl.dest)}: ${pl.mission === "sweep" ? `Survey ${ensureSweep(pl).radius} tiles around for ${ensureSweep(pl).hours}h` : MISSIONS[pl.mission]?.name || pl.mission}`)} <span class="muted">~${first}${pl.mission === "sweep" ? ` + ${hrs(ensureSweep(pl).hours)}` : ""}</span></span></li>
+      <li><span>${esc(`Travel to ${tileLabel(state, pl.dest)}: ${pl.mission === "sweep" ? `Sweep ${ensureSweep(pl).radius} tiles around for ${ensureSweep(pl).hours}h` : pl.mission === "fullsurvey" ? `Survey the tile for ${LOOK.hours}h` : MISSIONS[pl.mission]?.name || pl.mission}`)} <span class="muted">~${first}${pl.mission === "sweep" ? ` + ${hrs(ensureSweep(pl).hours)}` : pl.mission === "fullsurvey" ? ` + ${LOOK.hours}h` : ""}</span></span></li>
       ${steps}
       ${plan.steps.some((s) => s.kind === "home") ? "" : `<li><span class="muted">Then wait there for orders</span></li>`}
     </ol>
     <div class="row small" style="flex-wrap:wrap;gap:0.3rem">Add:
-      ${addBtn("survey", "Look around")}${addBtn("sweep", `Survey ${add.shours ?? 12}h`)} r${num("sradius", add.sradius ?? 3, SURVEY.radius.min, SURVEY.radius.max)} ${num("shours", add.shours ?? 12, SURVEY.hours.min, SURVEY.hours.max)}h${addBtn("scavenge", "Scavenge here")}
+      ${addBtn("survey", "Quick look")}${addBtn("fullsurvey", `Survey the tile ${LOOK.hours}h`)}${addBtn("sweep", `Sweep ${add.shours ?? 12}h`)} r${num("sradius", add.sradius ?? 3, SURVEY.radius.min, SURVEY.radius.max)} ${num("shours", add.shours ?? 12, SURVEY.hours.min, SURVEY.hours.max)}h${addBtn("scavenge", "Scavenge here")}
       ${addBtn("nearby", `Scavenge nearby (${add.count} within ${add.radius})`)} ×${num("count", add.count, 1, 4)} r${num("radius", add.radius, 1, 6)}
       ${addBtn("camp", `Rest ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
       ${addBtn("wait", `Wait ${add.wait}h`)}${num("wait", add.wait, 1, 72)}h

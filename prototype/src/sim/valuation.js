@@ -83,6 +83,7 @@ export function worthTier(item) {
 // ---------- the kind of group ----------
 // The price profile: a group's type, or for outsiders (visitors.js) merchants / explorers / raiders.
 export function profileOf(f) {
+  if (f && f.nomad) return f.type || "raider"; // nomads.js: a band prices like its type (looters a raider gang, survivalists a commune, preppers a fortress)
   if (f && f.outsider) return f.kind === "merchants" ? "merchants" : f.kind === "explorers" ? "explorers" : "raider";
   return (f && f.type) || "traders";
 }

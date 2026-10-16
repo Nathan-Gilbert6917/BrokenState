@@ -19,6 +19,7 @@ import { partyTile, plannedTile, partyMembers, teamName, MISSIONS, tileLabel, ca
 import { contactable } from "../sim/orders.js";
 import { baseIntel, partyIntel, rangeText } from "../sim/intelest.js";
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
+import { nomadMapBands, nomadTipLines } from "../sim/nomads.js";
 import { visitorTipLines, visitorById, gateTalkBase, gateTrayCard } from "../sim/visitors.js";
 import { roadCaravans, guardText, cargoText } from "../sim/caravanraids.js";
 import { inCoverage } from "../sim/radio.js";
@@ -67,6 +68,7 @@ export function picksAt(state, tile, live = liveSet(state)) {
     out.push({ kind: "group", id: p.id, label: `${f && f.known ? f.name.replace(/^The /, "") : "Unknown"} ${shortKind[p.kind] || "party"}` });
   }
   if (live.has(tile)) for (const b of hcMapBands(state)) if (b.tile === tile) out.push({ kind: "band", id: b.id, label: b.strike ? "Military strike force" : b.known ? b.name : "A band on the road" });
+  if (live.has(tile)) for (const b of nomadMapBands(state)) if (b.tile === tile) out.push({ kind: "nomad", id: b.id, label: b.known ? b.name.replace(/^./, (c) => c.toUpperCase()) : "Nomads" });
   for (const v of state.visitors || []) if (v.tile === tile && (live.has(tile) || inCoverage(state, tile))) out.push({ kind: "visitor", id: v.id, label: v.name ? v.name.replace(/^./, (c) => c.toUpperCase()) : "Outsiders" });
   return out;
 }
@@ -118,6 +120,10 @@ function locate(state, sel, live) {
   }
   if (sel.kind === "band") {
     const b = hcMapBands(state).find((x) => String(x.id) === String(sel.id));
+    return b && live.has(b.tile) ? { tile: b.tile, ref: b } : null;
+  }
+  if (sel.kind === "nomad") {
+    const b = nomadMapBands(state).find((x) => String(x.id) === String(sel.id));
     return b && live.has(b.tile) ? { tile: b.tile, ref: b } : null;
   }
   if (sel.kind === "visitor") {
@@ -177,6 +183,7 @@ export function pickCard(state, ui) {
   if (sel.kind === "group") return bar + groupPartyCard(state, at.ref, live, back);
   if (sel.kind === "convoy") return bar + convoyCard(state, at.ref, back);
   if (sel.kind === "band") return bar + linesCard(state, at.ref.strike ? "Military strike force" : "A band on the road", bandTipLines(state, at.tile, live).map((o) => o.text), at.tile, back, at.ref.color);
+  if (sel.kind === "nomad") return bar + linesCard(state, "Nomads", nomadTipLines(state, at.tile, live).map((o) => o.text), at.tile, back, at.ref.color);
   if (sel.kind === "visitor") return bar + linesCard(state, "Outsiders", visitorTipLines(state, at.tile, live).map((o) => o.text), at.tile, talkButton(state, at.ref) + back, null, !live.has(at.tile));
   return null;
 }

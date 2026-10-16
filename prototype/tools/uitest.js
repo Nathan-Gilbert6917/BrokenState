@@ -619,7 +619,7 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
   const { SG_ACTIONS, SG_CHANGE, startGearEditor } = await import("../src/ui/startgear.js"); // the starting gear window (Customize)
   Object.assign(CLICK, SG_ACTIONS);
   Object.assign(CHANGE, SG_CHANGE);
-  const { WORLD_SIZES, SIZE_KEYS, clampGroups } = await import("../src/sim/worldsize.js");
+  const { WORLD_SIZES, SIZE_KEYS, clampGroups, HIVES_MAX } = await import("../src/sim/worldsize.js");
   for (const k of SIZE_KEYS) {
     const d = WORLD_SIZES[k];
     const w = createWorld({ seed: seed + 9, factionCount: d.defGroups, size: k });
@@ -631,7 +631,7 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     const groupIn = /<input[^>]*data-action="factioncount"[^>]*>/.exec(html);
     check(groupIn && /min="0"/.test(groupIn[0]) && /max="50"/.test(groupIn[0]) && new RegExp(`value="${d.defGroups}"`).test(groupIn[0]), `${d.label}: AI groups 0–50, ${d.defGroups} set (got ${groupIn && groupIn[0]})`);
     const hiveSel = /<select data-action="hivecount">([\s\S]*?)<\/select>/.exec(html);
-    check(hiveSel && (hiveSel[1].match(/<option/g) || []).length === 12 && hiveSel[1].includes(`value="default" selected>Default (${w.hives.length})`), `${d.label}: starting hives Default (${w.hives.length}) and 0–10`);
+    check(hiveSel && (hiveSel[1].match(/<option/g) || []).length === HIVES_MAX + 2 && hiveSel[1].includes(`value="default" selected>Default (${w.hives.length})`), `${d.label}: starting hives Default (${w.hives.length}) and 0–${HIVES_MAX}`);
     check(!html.includes("Experimental"), `${d.label}: no custom-size warning on a preset`);
     check(html.includes(`${w.factions.length} other groups`), `${d.label}: the text counts the groups`);
     check(clampGroups(k, 99) === 50 && clampGroups(k, -1) === 0, `${d.label}: group count clamped to 0–50`);

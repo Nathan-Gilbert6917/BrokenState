@@ -142,7 +142,7 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
 
 console.log("Which sites use which buildings");
 {
-  const outdoor = ["campground", "crashsite", "crash_mil", "crash_cargo", "crash_med", "crash_news", "airdrop", "convoy", "water", "road", "bridge"]; // convoy: an Army convoy on a road (miltrucks.js) // road, bridge: a bare road and a bridge keep the street map (combat.js AREA_SETS)
+  const outdoor = ["campground", "crashsite", "crash_mil", "crash_cargo", "crash_med", "crash_news", "airdrop", "convoy", "water", "road", "bridge", "blind", "campsite", "hikercamp"]; // blind, campsite, hikercamp: points of interest with no building (pois.js; buildingmaps.js SITES) // convoy: an Army convoy on a road (miltrucks.js) // road, bridge: a bare road and a bridge keep the street map (combat.js AREA_SETS)
   const missing = Object.keys(AREA_SETS).filter((t) => !SITES[t] && !outdoor.includes(t));
   check(!missing.length, `every location type in AREA_SETS has buildings or keeps the street map (${missing.join(", ") || "all covered"})`);
   const bad = Object.values(SITES).flatMap((e) => (Array.isArray(e) ? e : e.list)).map((e) => (Array.isArray(e) ? e[0] : e)).filter((k) => !BUILDINGS[k]);

@@ -31,8 +31,9 @@
 //
 // Which buildings a site has (SITES): single-building sites (a pharmacy, a gun store, a police station...) open straight
 // into their interior; towns, cities, farms, bases, prisons, malls... offer a choice of building before the raid (or the
-// street map as before); open country, campgrounds and crash sites keep the street map. Headless (scavenge.js) the
-// search stays hour by hour and never needs a map.
+// street map as before); open country, campgrounds and crash sites keep the street map. A neighbourhood (a point of
+// interest, pois.js) opens a street of 3–5 houses on one map (streetMap). Headless (scavenge.js) the search stays
+// hour by hour and never needs a map.
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { interiorOccupants } from "./wanderers.js";
@@ -40,7 +41,7 @@ import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide, lo
 import { siteDanger } from "./data.js";
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { applyZType, siteList } from "./zombietypes.js";
-import { fitMargins, buildingTarget, densifyOutside } from "./battlesize.js";
+import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, SIZE_CLASSES } from "./battlesize.js";
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -620,6 +621,9 @@ export const BUILDINGS = {
   church:      { name: "Church", make: (r) => church(r) },
   motel:       { name: "Motel", make: (r) => motel(r) },
   apartments:  { name: "Apartment block", make: (r, o) => apartments(r, o) },
+  // A street of houses (the neighbourhood point of interest): buildingMap builds it with streetMap; make gives one of
+  // its houses (the hint, the archetype tests).
+  neighbourhood: { name: "Neighbourhood", make: (r) => house(r, "house"), street: true },
 };
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
@@ -629,7 +633,7 @@ export const STOREYS_BY_TYPE = {
   clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 2], armorybldg: [1, 1],
   cellblock: [1, 1], messhall: [2, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2],
   warehouse: [1, 1], factory: [1, 1], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
-  church: [1, 1], motel: [2, 2], apartments: [3, 6],
+  church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2],
 };
 
 // Which buildings stand at a site, by location type (or the terrain, for open land): a list of building keys (or
@@ -647,6 +651,12 @@ export const SITES = {
   military: ["barracks", "armorybldg", "motorpool", "warehouse"], prison: ["cellblock", "messhall", ["armorybldg", "Guard armory"], "infirmary"],
   univ: ["lab", "offices", ["messhall", "Cafeteria"]], airport: ["hangar", "terminal", "warehouse"], factory: ["factory", "offices"],
   warehouse: ["warehouse", ["warehouse", "Second warehouse"], "offices"], dam: ["control", "workshop", "warehouse"],
+  // Points of interest (pois.js): one building each (the raid map a chosen POI opens). The pizza place is the diner
+  // archetype under its own name, the farm stand a corner shop's, the shed a machine shed's, the mine shack a
+  // cabin's; the neighbourhood a street of 3–5 houses on one map (streetMap). A campsite, a hiker camp and a
+  // hunting blind have no building: the street map only (combat.js AREA_SETS).
+  house: ["house"], neighbourhood: ["neighbourhood"], garage: ["garage"], corner: ["corner"], pizza: [["diner", "Pizza place"]],
+  farmstand: [["corner", "Farm stand"]], shed: [["machineshed", "Shed"]], mineshack: [["cabin", "Mine shack"]],
   // Open land (no site).
   suburb: ["house", ["house", "House across the street"], "garage"], plains: ["farmhouse", "barn"],
   forest: { multi: true, list: ["cabin"] }, hills: { multi: true, list: ["cabin"] }, mountain: { multi: true, list: ["cabin"] },
@@ -718,6 +728,7 @@ export function buildingSpec(state, tileId, option) {
   return makeSpec(new Rng(specSeed(state, tileId, option)), option);
 }
 export function buildingMap(state, tileId, option, withVehicle) {
+  if (BUILDINGS[option.key] && BUILDINGS[option.key].street) return streetMap(state, tileId, option, withVehicle); // a street of houses (the neighbourhood)
   const rng = new Rng(specSeed(state, tileId, option));
   const spec = makeSpec(rng, option);
   // battlesize.js: at least the site's size class (more outside around a single-building site's plan), the new ground
@@ -727,6 +738,238 @@ export function buildingMap(state, tileId, option, withVehicle) {
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
   return map;
+}
+
+// ======================================================================================
+// A street of houses (the neighbourhood point of interest, pois.js)
+// ======================================================================================
+// A neighbourhood opens one raid map with a street of 3–5 houses (STREET.HOUSES, hash dice of the seed, the tile and
+// the option id) instead of one building: a road across the middle with a sidewalk each side, a row of houses facing it
+// from the north and a row from the south (each built the usual way, front to the street, then turned: its plan
+// flipped front to back), side yards between them with a fence down the middle of each back yard (a gate in it), cars
+// parked along the kerb (an outdoor area to search: AREAS.wreck), trees, bins and the cover densify adds. Every house
+// is the house archetype's own plan (BUILDINGS.house: two storeys with its stairwell; the street's upper floor is one
+// grid, "void" between the houses), its rooms, doors, windows, locks and containers made by assemble from dice of its
+// own (the street's option id and the house's number) and copied in, so the street is the same every visit. Rooms are
+// named after their house ("Kitchen, No. 14"); containers are numbered on across the houses (the first house's first,
+// then the street's cars), so the POI's container ledger (poicont.js) keeps each house's containers under their own
+// ids: a house nobody went into stays unopened, what you left in one stays there, and the one pool of the POI falls
+// as the houses' containers are opened (poiRaidEnd: its share a container, across the whole street). The map fits
+// the Extra-large class (battlesize.js SIZE_CLASSES), at least Medium; the ways out are the two ends of the street
+// (the west first: the team comes in there with its vehicle, as on a street map) and the back gardens to the north
+// and the south. The dead are the site's roster at STREET.DEAD (one house's map has about 0.6 of it: BMAP.DEAD_SCALE
+// by its area), placed through the houses and the yards (placeInterior). Stealth, the lights and hearing work as in
+// any building: they read the cells and the rooms.
+export const STREET = {
+  HOUSES: [3, 5],   // houses on the street
+  SIDE: 2,          // cells at least from the west and east edges to the first and last house of a row
+  GAP: 3,           // the side yard between two houses, at least (a fence down its middle at the back)
+  BACK: 3,          // the back gardens behind each row (the north and south ways out)
+  FRONT: 1,         // the front yard between a house and the sidewalk (more when the map has room to spare)
+  ROAD: 4,          // the road (a lane each way: a parked car never closes it); a sidewalk of one cell each side
+  BW: [10, 14],     // a house's width (what three in a row leave), and BH its depth at most: two rows fit 34 cells
+  BH: 10,
+  CARS: [1, 3],     // cars parked along the kerb (searchable)
+  TREES: [3, 6], BINS: [1, 3],
+  DEAD: 1.0,        // the dead: the site's roster × this
+};
+// How many houses stand on a neighbourhood's street (option: the POI's place, poiraid.js poiPlace: id "poi<i>:neighbourhood").
+export function streetHouses(state, tileId, option) {
+  const [lo, hi] = STREET.HOUSES;
+  return lo + Math.min(hi - lo, Math.floor(hash01(state.seed, "streethouses", tileId, option.id) * (hi - lo + 1)));
+}
+export function streetMap(state, tileId, option, withVehicle) {
+  const S = STREET, XL = SIZE_CLASSES.XL, MID = SIZE_CLASSES.M;
+  const tile = state.tiles[tileId];
+  const rng = new Rng(specSeed(state, tileId, option)); // the street's own dice: the layout of the yards, the cars, the trees
+  const n = streetHouses(state, tileId, option);
+  const perRow = [Math.ceil(n / 2), n - Math.ceil(n / 2)];
+  const no0 = 2 + 2 * Math.floor(hash01(state.seed, "streetno", tileId, option.id) * 30); // street numbers: even to the north, odd to the south
+  // The houses: each its own plan from its own dice (assemble with a ring of one cell outside: the street's ground replaces it).
+  const houses = [];
+  for (let k = 0; k < n; k++) {
+    const row = k < perRow[0] ? 0 : 1, col = row ? k - perRow[0] : k;
+    const id = `${option.id}#${k + 1}`;
+    const hr = new Rng(specSeed(state, tileId, { id }));
+    const spec = BUILDINGS.house.make(hr);
+    spec.bw = Math.max(S.BW[0], Math.min(spec.bw, S.BW[1], Math.floor((XL.w - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
+    spec.bh = Math.min(spec.bh, S.BH);
+    spec.margins = { front: 1, back: 1, left: 1, right: 1 };
+    spec.ground = "none";
+    const m = assemble(hr, spec, { key: "house", id, name: BUILDINGS.house.name });
+    houses.push({ k, row, col, m, bw: spec.bw, bh: spec.bh, flip: row === 1, name: `No. ${no0 + 2 * col + row}`, x0: 0, y0: 0, rect: null });
+  }
+  // The layout: the north row's fronts in line along the north sidewalk, the south row's along the south one.
+  const inRow = (r) => houses.filter((h) => h.row === r);
+  const rowW = (r) => inRow(r).reduce((a, h) => a + h.bw, 0) + (perRow[r] - 1) * S.GAP + 2 * S.SIDE;
+  const W = Math.max(MID.w, Math.min(XL.w, Math.max(rowW(0), rowW(1))));
+  const depth = [0, 1].map((r) => Math.max(...inRow(r).map((h) => h.bh)));
+  let front = S.FRONT, road = S.ROAD;
+  const tall = () => 2 * S.BACK + depth[0] + depth[1] + 2 + 2 * front + road;
+  if (tall() < MID.h) { const extra = MID.h - tall(), fe = Math.floor(extra / 3); front += fe; road += extra - 2 * fe; }
+  const H = tall();
+  const walkN = S.BACK + depth[0] + front, r0 = walkN + 1, walkS = walkN + road + 1, topS = walkS + front + 1;
+  for (const r of [0, 1]) {
+    const list = inRow(r), extra = Math.max(0, W - rowW(r)), slots = list.length + 1;
+    const share = (j) => Math.floor(extra / slots) + (j < extra % slots ? 1 : 0);
+    let x = S.SIDE + share(0);
+    list.forEach((h, j) => { h.x0 = x; h.y0 = r === 0 ? S.BACK + depth[0] - h.bh : topS; x += h.bw + S.GAP + share(j + 1); });
+  }
+  const I = (x, y) => y * W + x;
+  const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const groundF = (y) => (y === walkN || y === walkS ? "gravel" : y > walkN && y < walkS ? "road" : "grass");
+  const cells = Array.from({ length: W * H }, (_, i) => ({ k: "open", f: groundF((i / W) | 0) }));
+  const storeys = Math.max(...houses.map((h) => h.m.storeys || 1));
+  const floors = [{ cells, name: "Ground floor" }];
+  for (let g = 1; g < storeys; g++) floors.push({ cells: Array.from({ length: W * H }, () => ({ k: "void", f: "air" })), name: g === storeys - 1 ? "Top floor" : `Floor ${g + 1}` });
+  // Each house copied in (a south house flipped front to back): its floors' cells, rooms, containers, locked doors, stairs.
+  const areas = [], containers = [], lockedDoors = [], stairs = [];
+  const keep = new Uint8Array(W * H); // stays clear: the ring round each house, the paths to the front doors
+  let cid = 1;
+  for (const h of houses) {
+    const m = h.m, B = m.building, base = areas.length;
+    const tx = (x) => h.x0 + (x - B.x0);
+    const ty = (y) => (h.flip ? h.y0 + (B.y0 + B.h - 1 - y) : h.y0 + (y - B.y0));
+    const rectOf = (r) => ({ x0: tx(r.x0), y0: h.flip ? ty(r.y0 + r.h - 1) : ty(r.y0), w: r.w, h: r.h });
+    h.rect = { x0: h.x0, y0: h.y0, w: B.w, h: B.h };
+    (m.floors || [{ cells: m.cells }]).forEach((F, g) => {
+      const dst = floors[g].cells, cars = new Map(); // a car in the garage: its cells take the id of their new top-left cell
+      for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) {
+        const c = { ...F.cells[y * m.w + x] }, X = tx(x), Y = ty(y);
+        if (c.car) {
+          c.car = { ...c.car };
+          if (h.flip) { if (c.car.ax === "y") c.car.i = c.car.L - 1 - c.car.i; else c.car.j = 1 - c.car.j; }
+          const e = cars.get(c.car.id) || { x: X, y: Y, list: [] };
+          e.x = Math.min(e.x, X); e.y = Math.min(e.y, Y); e.list.push(c.car);
+          cars.set(c.car.id, e);
+        }
+        dst[I(X, Y)] = c;
+      }
+      for (const e of cars.values()) for (const car of e.list) car.id = I(e.x, e.y) + 1;
+    });
+    for (const a of m.rooms) {
+      if (a.outdoor) continue; // none: a house of the street has no ground of its own
+      areas.push({ ...a, ...rectOf(a), id: base + a.id, name: `${a.name}, ${h.name}`, doors: (a.doors || []).map(([x, y]) => [tx(x), ty(y)]), house: h.k });
+    }
+    for (const c of m.containers) {
+      const area = areas[base + c.area];
+      const what = String(c.label || "").split(": ").slice(1).join(": ") || c.kind;
+      containers.push({ ...c, id: cid++, x: tx(c.x), y: ty(c.y), area: base + c.area, house: h.k, label: `${area ? area.name : h.name}: ${what}` });
+    }
+    for (const d of m.lockedDoors) lockedDoors.push({ ...d, x: tx(d.x), y: ty(d.y), area: d.area == null ? null : base + d.area });
+    for (const [x, y] of m.stairs || []) stairs.push([tx(x), ty(y)]);
+    // The ring round the house stays clear; a path from the front door (and a driveway from a garage's roller door)
+    // runs to the sidewalk.
+    for (let y = h.y0 - 1; y <= h.y0 + B.h; y++) for (let x = h.x0 - 1; x <= h.x0 + B.w; x++) if (inside(x, y) && !(x >= h.x0 && x < h.x0 + B.w && y >= h.y0 && y < h.y0 + B.h)) keep[I(x, y)] = 1;
+    const toward = h.flip ? -1 : 1, walk = h.flip ? walkS : walkN;
+    const pathFrom = (x, y, f) => { for (let yy = y + toward; inside(x, yy) && yy !== walk; yy += toward) { keep[I(x, yy)] = 1; cells[I(x, yy)].f = f; } };
+    for (const [x, y] of (m.front && m.front.cells) || []) pathFrom(tx(x), ty(y), "gravel");
+    for (const ex of m.exits || []) if (ex.roller && ex.side === "front") for (const [x, y] of ex.cells) pathFrom(tx(x), ty(y), "gravel");
+    h.front = m.front ? { x: tx(m.front.x), y: ty(m.front.y) } : null;
+  }
+  // The ways out: both ends of the street, and the back gardens north and south (a side yard between two houses if
+  // the row has one, else an end of the row).
+  const zy = r0 + Math.floor((road - 3) / 2);
+  const zones = [
+    { x0: 0, y0: zy, w: 3, h: 3, side: "west", exit: "west", name: "West end of the street", vehicle: false },
+    { x0: W - 3, y0: zy, w: 3, h: 3, side: "east", exit: "east", name: "East end of the street", vehicle: false },
+  ];
+  for (const r of [0, 1]) {
+    const spans = [];
+    let x = 0;
+    for (const h of inRow(r)) { spans.push([x, h.x0 - 1]); x = h.x0 + h.bw; }
+    spans.push([x, W - 1]);
+    const wide = spans.filter(([a, b]) => b - a + 1 >= 3), between = wide.filter(([a, b]) => a > 0 && b < W - 1);
+    const [a, b] = rng.pick(between.length ? between : wide) || [0, 2];
+    zones.push({ x0: clampN(Math.floor((a + b) / 2) - 1, 0, W - 3), y0: r ? H - 3 : 0, w: 3, h: 3, side: r ? "south" : "north", exit: r ? "south" : "north", name: r ? "Back gardens (south)" : "Back gardens (north)", vehicle: false });
+  }
+  const reserved = new Uint8Array(W * H);
+  for (const z of zones) for (let y = z.y0 - 1; y <= z.y0 + z.h; y++) for (let x = z.x0 - 1; x <= z.x0 + z.w; x++) if (inside(x, y)) reserved[I(x, y)] = 1;
+  // Dressing the street: nothing ever cuts a walkable cell off from the west end (locked doors count as ways through).
+  const passable = (c) => !!(CELL[c.k] && CELL[c.k].walk) || c.k === "door";
+  const start = I(zones[0].x0 + 1, zones[0].y0 + 1);
+  let total = 0;
+  for (const c of cells) if (passable(c)) total++;
+  const seen = new Uint32Array(W * H);
+  let stamp = 0;
+  const connected = () => {
+    stamp++;
+    const q = [start];
+    seen[start] = stamp;
+    let got = 1;
+    while (q.length) {
+      const i = q.pop(), x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (!inside(nx, ny)) continue;
+        const j = I(nx, ny);
+        if (seen[j] === stamp || !passable(cells[j])) continue;
+        seen[j] = stamp; got++; q.push(j);
+      }
+    }
+    return got === total;
+  };
+  const free = (x, y) => inside(x, y) && cells[I(x, y)].k === "open" && !keep[I(x, y)] && !reserved[I(x, y)];
+  const block = (x, y, k) => {
+    if (!free(x, y)) return false;
+    const c = cells[I(x, y)];
+    c.k = k; total--;
+    if (!connected()) { c.k = "open"; total++; return false; }
+    return true;
+  };
+  // Cars parked along the kerb, a lane each side (a car keeps a free ring: the other lane stays open).
+  const wreck = { id: areas.length, type: "wreck", name: AREAS.wreck.name, outdoor: true, f: 0 };
+  const lanes = [r0, r0 + road - 2];
+  const wantCars = rng.int(S.CARS[0], S.CARS[1]);
+  for (let t = 0, placed = 0; t < 60 && placed < wantCars; t++) {
+    const x = rng.int(4, W - 9), y = rng.pick(lanes), L = rng.pick(CAR_LEN.car);
+    const rect = placeCar(cells, W, H, x, y, "x", L, "car", (cx, cy) => free(cx, cy), rng.int(0, 1e6));
+    if (!rect) continue;
+    total -= rect.w * rect.h;
+    if (!connected()) { removeCar(cells, W, rect); total += rect.w * rect.h; continue; }
+    containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f: 0, area: wreck.id, kind: "car", searched: false, label: `${wreck.name}: car` });
+    placed++;
+  }
+  const carsIn = containers.filter((c) => c.area === wreck.id);
+  if (carsIn.length) {
+    const xs = carsIn.map((c) => c.x), ys = carsIn.map((c) => c.y);
+    Object.assign(wreck, { x0: Math.min(...xs) - 1, y0: Math.min(...ys) - 1, w: Math.max(...carsIn.map((c) => c.x + c.w)) - Math.min(...xs) + 2, h: Math.max(...carsIn.map((c) => c.y + c.h)) - Math.min(...ys) + 2 });
+    areas.push(wreck);
+  }
+  // Fences down the back yards between two houses (a gate in each), stopping short of the fronts.
+  for (const r of [0, 1]) {
+    const list = inRow(r);
+    for (let j = 0; j + 1 < list.length; j++) {
+      const a = list[j], b = list[j + 1], gx = Math.floor((a.x0 + a.bw + b.x0 - 1) / 2);
+      const gate = r ? H - 1 - rng.int(0, S.BACK - 1) : rng.int(0, S.BACK - 1);
+      if (r === 0) { for (let y = 0; y <= S.BACK + depth[0] - 3; y++) if (y !== gate) block(gx, y, "fence"); }
+      else for (let y = H - 1; y >= topS + 2; y--) if (y !== gate) block(gx, y, "fence");
+    }
+  }
+  // Trees in the yards, bins out the back.
+  const yard = (x, y) => cells[I(x, y)].f === "grass";
+  const backYard = (x, y) => yard(x, y) && (y < S.BACK || y >= H - S.BACK);
+  const scatter = (k, want, test) => { let placed = 0; for (let t = 0; t < want * 12 && placed < want; t++) { const x = rng.int(0, W - 1), y = rng.int(0, H - 1); if (test(x, y) && block(x, y, k)) placed++; } };
+  scatter("tree", rng.int(S.TREES[0], S.TREES[1]), yard);
+  scatter("barrel", rng.int(S.BINS[0], S.BINS[1]), backYard);
+  // Cover over the open yards (battlesize.js densify; never on the road, the sidewalks, a path or round a house).
+  densify(cells, W, H, rng, { target: coverTarget(tile ? tile.terrain : "suburb"), keep: (x, y) => !!keep[I(x, y)] || !!reserved[I(x, y)] || cells[I(x, y)].f !== "grass", props: () => ["tree", "fence", "fence", "crate", "barrel", "tree"] });
+  // The team's vehicle at the west end (laid last: the street is the same with or without it).
+  let vehicle = null;
+  if (withVehicle) {
+    const z = zones[0]; z.vehicle = true;
+    vehicle = placeVehicle(cells, W, H, z, withVehicle, (x, y) => inside(x, y) && cells[I(x, y)].k === "open");
+    if (!vehicle) { const c = cells[I(z.x0 + 1, z.y0 + 1)]; c.k = "vehicle"; c.f = "road"; }
+  }
+  const zoneExits = () => zones.slice(1).map((z, j) => ({ side: z.side, name: z.name, x: z.x0 + 1, y: z.y0 + 1, cells: [], locked: null, roller: false, zone: j + 1 }));
+  const plan = {
+    key: option.key, id: option.id, name: option.name, w: W, h: H, street: true, building: houses[0].rect, buildings: houses.map((h) => ({ ...h.rect })),
+    houses: houses.map((h) => ({ k: h.k, name: h.name, row: h.row, ...h.rect, front: h.front, rooms: areas.filter((a) => a.house === h.k).map((a) => a.id) })),
+    tall: true, storeys, stairs: stairs.map((s) => s.slice()),
+    rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, house: a.house })),
+    front: houses[0].front, exits: zoneExits(),
+  };
+  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits: zoneExits(), front: houses[0].front, lockedDoors, plan, building: plan.building, buildings: plan.buildings, floors, stairs, storeys, street: true };
 }
 
 // ======================================================================================
@@ -1454,16 +1697,16 @@ export function placeInterior(state, b, map, groups) {
     }
     return out;
   };
-  const B = map.building;
+  const Bs = map.buildings || [map.building]; // a street of houses (streetMap): every house
   const outsideCells = () => {
     const out = [];
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      if (x >= B.x0 && x < B.x0 + B.w && y >= B.y0 && y < B.y0 + B.h) continue;
+      if (Bs.some((B) => x >= B.x0 && x < B.x0 + B.w && y >= B.y0 && y < B.y0 + B.h)) continue;
       if (walk(x, y) && !taken(x, y) && b.reach[I(x, y)] && !inZone(x, y) && d2(x, y) >= 7) out.push([x, y]);
     }
     return out;
   };
-  const scale = Math.max(BMAP.DEAD_SCALE[0], Math.min(BMAP.DEAD_SCALE[1], (W * H) / (RAID_W * RAID_H)));
+  const scale = map.street ? STREET.DEAD : Math.max(BMAP.DEAD_SCALE[0], Math.min(BMAP.DEAD_SCALE[1], (W * H) / (RAID_W * RAID_H))); // a street of houses: the whole roster
   let pod = 0, zn = 0, hn = 0;
   const lockedDead = new Set();
   const put = (u, c, home = null) => { u.x = c[0]; u.y = c[1]; u.home = home || [c[0], c[1]]; b.units.push(u); };
@@ -1799,9 +2042,20 @@ export function botEscape(state, b, u, targets) {
 export function interiorIntro(b) {
   const R = b.raid;
   if (!R || !R.interior) return "";
+  if (R.plan && R.plan.street) return streetIntro(b);
   const ex = (R.plan.exits || []).filter((e) => e.zone >= 0);
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
   const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${R.stairs.length === 1 ? "a stairwell" : `${R.stairs.length} stairwells`} on every floor; the ways out are on the ground floor.` : "";
   return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows can be climbed (loud).`;
+}
+// A street of houses (streetMap): the houses, the ways out, and the houses your side has been into before (the
+// containers the POI's ledger brought back as you left them: poicont.js poiRaidStart marks them mine).
+export function streetIntro(b) {
+  const R = b.raid, P = R.plan;
+  const names = (P.houses || []).map((h) => h.name);
+  const been = (P.houses || []).filter((h) => R.containers.some((c) => c.house === h.k && c.mine)).map((h) => h.name);
+  const robbed = (P.houses || []).filter((h) => { const cs = R.containers.filter((c) => c.house === h.k); return cs.length && cs.every((c) => c.ransacked && !c.mine); }).map((h) => h.name);
+  const ways = R.zones.map((z) => (z.name || z.side).toLowerCase());
+  return `A street of ${names.length} houses (${names.join(", ")}), ${R.storeys > 1 ? `${R.storeys} storeys each: the stairs are inside every house` : "one storey each"}. Ways out: ${ways.join(", ")}.${been.length ? ` Your people have been through ${been.join(", ")} before: what you left there is as you left it.` : ""}${robbed.length ? ` ${robbed.join(", ")} ${robbed.length === 1 ? "looks" : "look"} ransacked.` : ""} Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Shift+E). Windows can be climbed (loud).`;
 }

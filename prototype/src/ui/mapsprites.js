@@ -1539,6 +1539,174 @@ function paintSearchSmoke() {
   return p;
 }
 
+// ---- points of interest (sim/pois.js kinds: the small places a tile holds besides its site) ----
+// Town kinds are drawn at the town shops' size (20 × 17), countryside kinds at the farms' and cabins' (18 × 15), so
+// a house or a shed reads next to a diner or a barn; each keeps one plain silhouette so it is told at low zoom.
+function paintHouse() {
+  const p = painter(20, 17);
+  // Two-storey family house with a gable roof, a brick chimney and a porch; the family car in the drive.
+  const wall = "#d8cfae", roof = "#6b4a3a";
+  p.rect(13, 1, 14, 5, BRICK); p.set(13, 2, shade(BRICK, -0.25));
+  house(p, 4, 6, 11, 9, wall, roof, { rh: 4, door: false, win: false });
+  for (const x of [5, 12]) { p.rect(x, 7, x + 1, 8, DARK_WIN); p.rect(x, 11, x + 1, 12, (x === 5 ? LIT_WIN : DARK_WIN)); }
+  p.rect(8, 11, 10, 14, shade(wall, -0.6)); p.set(10, 13, GOLD);              // front door and its knob
+  p.rect(7, 10, 11, 10, shade(roof, 0.15)); p.set(7, 11, WOOD); p.set(11, 11, WOOD); // porch roof on two posts
+  p.rect(3, 15, 15, 15, "#6f6a60");                                          // the path
+  car(p, 0, 11, "#3a68a8");                                                   // the car in the drive
+  pine(p, 18, 15, 7, "#4a7a3a");
+  return p;
+}
+
+function paintNeighbourhood() {
+  const p = painter(20, 17);
+  // A row of three small houses along a kerb: a block of a suburb.
+  const walls = ["#d8cfae", "#b9c8d2", "#d6b9a2"], roofs = ["#6b4a3a", "#55606a", "#7a3e2c"];
+  for (let i = 0; i < 3; i++) {
+    const x = 1 + i * 7, y = i === 1 ? 6 : 8;
+    house(p, x, y, 5, 14 - y, walls[i], roofs[i], { rh: 3, door: true, win: false });
+    p.set(x + 1, y + 1, i === 1 ? LIT_WIN : DARK_WIN); p.set(x + 3, y + 1, DARK_WIN);
+  }
+  p.rect(0, 14, 19, 14, shade(CONCRETE, 0.1));                                // the pavement
+  p.rect(0, 15, 19, 16, ASPHALT); for (let x = 1; x <= 18; x += 4) p.set(x, 16, "#8a8a80"); // the street, its centre line
+  p.rect(19, 9, 19, 13, METAL); p.rect(18, 8, 19, 8, "#2a2a2e"); p.set(19, 7, LIT_WIN); // a street lamp
+  return p;
+}
+
+function paintGarage() {
+  const p = painter(20, 17);
+  // Flat-roofed repair shop: a roll-up door half open on a car up on jacks, an oil drum and a tyre stack beside it.
+  const wall = "#8c8f94";
+  block(p, 1, 5, 15, 15, wall);
+  p.rect(1, 6, 15, 6, "#2f3236");
+  p.rect(2, 4, 14, 4, shade(wall, 0.3)); p.rect(5, 2, 11, 4, "#2a2a2e"); p.rect(6, 3, 10, 3, GOLD); // the sign over the roof
+  p.rect(3, 8, 12, 15, "#1e2024");                                            // the open bay
+  for (let y = 8; y <= 9; y++) p.rect(3, y, 12, y, y % 2 ? "#7a8086" : "#9aa0a6"); // the door rolled up
+  p.rect(4, 11, 11, 13, RED); p.rect(5, 11, 10, 11, GLASS); p.rect(4, 13, 11, 13, shade(RED, -0.35)); p.set(11, 12, "#ffe28a");
+  p.rect(5, 14, 5, 15, METAL); p.rect(10, 14, 10, 15, METAL);                 // the jacks
+  p.rect(13, 12, 14, 15, shade(wall, -0.55));                                 // the side door
+  tires(p, 16, 15, 3);
+  barrel(p, 0, 15, false);
+  p.rect(1, 16, 18, 16, ASPHALT);
+  return p;
+}
+
+function paintCorner() {
+  const p = painter(20, 17);
+  // Brick corner shop: a striped awning over a tall window, an open sign, a newspaper rack and a crate by the door.
+  block(p, 2, 3, 17, 15, BRICK);
+  p.rect(2, 3, 17, 5, shade(BRICK, 0.12)); p.rect(3, 4, 16, 4, WHITE); for (let x = 5; x <= 14; x += 3) p.set(x, 4, RED); // the name board
+  for (let x = 2; x <= 17; x++) p.rect(x, 6, x, 7, Math.floor((x - 2) / 2) % 2 ? WHITE : RED);
+  for (let x = 2; x <= 17; x += 2) p.set(x, 8, RED);
+  p.rect(3, 9, 10, 13, GLASS); p.rect(3, 9, 10, 9, GLASS_LIT); p.rect(6, 10, 7, 11, NEON_PINK); // the window and the open sign
+  p.rect(12, 9, 15, 15, "#2a2a2e"); p.set(15, 12, GOLD);                       // the door
+  p.rect(0, 12, 1, 15, METAL); p.rect(0, 13, 1, 13, WHITE); p.rect(0, 15, 1, 15, shade(METAL, -0.3)); // the paper rack
+  p.rect(17, 13, 19, 15, WOOD_LIT); p.rect(17, 12, 19, 12, ORANGE); p.set(18, 12, shade(ORANGE, 0.3)); // a crate of oranges
+  p.rect(2, 16, 17, 16, ASPHALT);
+  return p;
+}
+
+function paintPizza() {
+  const p = painter(20, 17);
+  // Pizza place: a shopfront under a red-and-white chequered awning, a round pizza sign on the roof with a slice gone.
+  const wall = "#d9b98a";
+  block(p, 2, 7, 17, 15, wall);
+  for (let y = 8; y <= 9; y++) for (let x = 2; x <= 17; x++) p.set(x, y, (Math.floor(x / 2) + y) % 2 ? WHITE : RED);
+  p.rect(3, 11, 9, 14, GLASS); p.rect(3, 11, 9, 11, GLASS_LIT); p.rect(5, 12, 7, 13, "#f0d890");   // the window, the counter lit
+  p.rect(12, 11, 15, 15, "#2a2a2e"); p.set(15, 13, GOLD);                                           // the door
+  // The sign: a pizza on a pole, cheese and pepperoni, one slice cut out at the top right.
+  p.rect(10, 5, 10, 6, METAL);
+  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+    if (dx * dx + dy * dy > 11) continue;
+    if (dx > 0 && dy < 0 && dx >= -dy) continue;
+    const rim = dx * dx + dy * dy > 6;
+    p.set(10 + dx, 3 + dy, rim ? "#c9873c" : "#f0d070");
+  }
+  for (const [x, y] of [[9, 2], [11, 4], [8, 4], [10, 5]]) p.set(x, y, RED);
+  p.rect(2, 16, 17, 16, ASPHALT);
+  return p;
+}
+
+function paintFarmstand() {
+  const p = painter(18, 15);
+  // Roadside stand: a shingle roof on posts over a counter of baskets, a painted sign leaning by the road.
+  p.rect(1, 3, 14, 3, shade(ROOF_RUST, 0.3)); p.rect(0, 4, 15, 5, ROOF_RUST); p.rect(0, 5, 15, 5, shade(ROOF_RUST, -0.3));
+  for (const x of [1, 14]) p.rect(x, 6, x, 13, WOOD);
+  p.rect(2, 9, 13, 13, WOOD_LIT); p.rect(2, 9, 13, 9, shade(WOOD_LIT, 0.25)); for (let y = 10; y <= 13; y += 2) p.rect(2, y, 13, y, shade(WOOD_LIT, -0.15));
+  for (const [x, c] of [[3, RED], [6, ORANGE], [9, CROP_LIT]]) { p.rect(x, 7, x + 2, 8, c); p.set(x, 7, shade(c, 0.3)); }
+  p.rect(12, 7, 13, 8, "#f0d070");                                            // a jar of honey
+  p.rect(15, 8, 17, 11, WHITE); p.rect(16, 9, 16, 10, RED); p.rect(16, 12, 16, 13, WOOD); // the sign
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.15));
+  return p;
+}
+
+function paintShed() {
+  const p = painter(18, 15);
+  // Small tin-roofed shed with a padlocked door, a wheelbarrow and a jerrycan beside it, a tree behind.
+  pine(p, 15, 13, 10, "#4a7a3a");
+  p.rect(1, 4, 11, 4, shade(METAL, 0.3)); p.rect(0, 5, 12, 5, METAL); p.rect(0, 6, 12, 6, shade(METAL, -0.3));
+  for (let y = 7; y <= 13; y++) p.rect(1, y, 11, y, y % 2 ? BOARDS : shade(BOARDS, 0.12));
+  p.rect(5, 9, 7, 13, shade(BOARDS, -0.5)); p.set(7, 11, GOLD);               // the door and its padlock
+  p.rect(2, 8, 3, 9, DARK_WIN);
+  p.rect(12, 11, 14, 12, "#3f7a4a"); p.set(15, 11, METAL); p.set(14, 13, TIRE); // the wheelbarrow
+  p.rect(0, 12, 1, 13, RED); p.set(0, 11, "#2a2a2e");                           // the jerrycan
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.15));
+  return p;
+}
+
+function paintBlind() {
+  const p = painter(18, 15);
+  // Hunting blind: a camouflaged box stand on stilts with a ladder, among the pines, its shooting slot dark.
+  pine(p, 2, 14, 11); pine(p, 16, 14, 9);
+  for (const x of [7, 12]) p.rect(x, 7, x, 13, WOOD);
+  p.set(8, 10, shade(WOOD, -0.3)); p.set(9, 11, shade(WOOD, -0.3)); p.set(10, 12, shade(WOOD, -0.3)); // a brace
+  p.rect(6, 2, 13, 6, OLIVE_DARK); for (const [x, y] of [[7, 3], [10, 5], [12, 3], [8, 5], [11, 2]]) p.set(x, y, shade(OLIVE_DARK, 0.25));
+  p.rect(5, 1, 14, 1, shade(OLIVE_DARK, -0.3)); p.rect(6, 0, 13, 0, shade(OLIVE_DARK, 0.1));
+  p.rect(8, 4, 11, 4, OUTLINE); p.set(9, 4, "#3a3a30");                      // the slot
+  p.rect(4, 8, 4, 13, WOOD_LIT); for (let y = 8; y <= 13; y += 2) p.set(5, y, WOOD_LIT); // the ladder
+  p.rect(0, 14, 17, 14, shade(GRASS, -0.2));
+  return p;
+}
+
+function paintCampsite() {
+  const p = painter(18, 15);
+  // A campsite: one tent by a cold fire ring, a picnic table and a cooler, a tree behind.
+  pine(p, 15, 12, 9);
+  tent(p, 4, 12, 5, "#3a78b0");
+  for (const dx of [-1, 0, 1, 2, 3]) p.set(10 + dx, 13, STONE);               // the fire ring
+  campfire(p, 10, 12, false);
+  p.rect(8, 7, 13, 7, WOOD_LIT); p.rect(9, 8, 12, 8, WOOD); p.set(9, 9, WOOD); p.set(12, 9, WOOD); p.rect(8, 10, 13, 10, WOOD_LIT); // the table
+  p.rect(15, 13, 17, 14, WHITE); p.rect(15, 13, 17, 13, "#3a78b0");           // the cooler
+  p.rect(0, 14, 14, 14, shade(DIRT, 0.15));
+  return p;
+}
+
+function paintHikercamp() {
+  const p = painter(18, 15);
+  // Hiker camp on a trail: a small dome tent, a pack against it, a line of washing and a trail sign.
+  pine(p, 2, 14, 12); pine(p, 16, 13, 8);
+  for (let r = 0; r <= 4; r++) { const hw = Math.round(Math.sqrt(16 - (4 - r) * (4 - r)) * 0.9); p.rect(8 - hw, 8 + r, 8 + hw, 8 + r, r < 2 ? shade(ORANGE, 0.1) : ORANGE); }
+  p.rect(10, 10, 11, 12, shade(ORANGE, -0.6));                                 // the flap
+  p.rect(4, 10, 5, 12, PACK); p.set(4, 10, shade(PACK, 0.3));                  // the pack
+  p.rect(5, 5, 12, 5, "#c9c9c9"); p.rect(7, 6, 7, 7, RED); p.rect(10, 6, 10, 7, "#3a78b0"); // the washing line
+  p.rect(13, 7, 13, 13, WOOD); p.rect(12, 7, 15, 8, WOOD_LIT); p.set(15, 7, WHITE); // the trail sign
+  p.rect(0, 13, 17, 13, shade(DIRT, 0.15)); p.rect(3, 13, 14, 13, shade(DIRT, 0.35));
+  return p;
+}
+
+function paintMineshack() {
+  const p = painter(18, 15);
+  // Mine shack: a timbered adit into the hillside, a tin shack beside it, an ore cart on its rails.
+  for (let y = 2; y <= 13; y++) p.rect(0, y, Math.min(17, 4 + y), y, y % 3 ? "#6e6a60" : "#7a766c"); // the hillside
+  p.rect(5, 5, 11, 13, OUTLINE); p.rect(5, 5, 11, 5, WOOD_LIT); p.rect(5, 5, 5, 13, WOOD_LIT); p.rect(11, 5, 11, 13, WOOD); // the adit
+  p.rect(6, 6, 10, 12, "#111214"); p.set(7, 9, "#3a3a3a"); p.set(8, 10, "#3a3a3a");
+  p.rect(3, 3, 13, 3, WOOD); p.rect(4, 2, 12, 2, shade(WOOD, 0.25));            // the lintel
+  p.rect(12, 9, 16, 9, shade(METAL, 0.3)); p.rect(12, 10, 17, 13, METAL); p.rect(12, 13, 17, 13, shade(METAL, -0.3)); // the shack
+  p.rect(14, 11, 15, 13, shade(METAL, -0.55)); p.set(12, 11, LIT_WIN);
+  p.rect(1, 12, 4, 13, "#4a4a4e"); p.rect(2, 11, 3, 11, "#7a6a4a"); p.set(1, 14, TIRE); p.set(4, 14, TIRE); // the ore cart
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.1)); for (let x = 0; x <= 17; x += 2) p.set(x, 14, shade(METAL, -0.3));
+  return p;
+}
+
 // Type → painter; the variant (only "depot" for now) and picked-over fading are applied by poiSpriteCanvas.
 const POI_PAINT = {
   city: paintCityCenter, town: paintTownCenter, police: paintPolice, hospital: paintHospital, pharmacy: paintPharmacy,
@@ -1551,7 +1719,24 @@ const POI_PAINT = {
   crash_mil: () => paintHeliWreck(OLIVE, shade(OLIVE, -0.3), "star"), crash_med: () => paintHeliWreck(WHITE, RED, "cross"),
   crash_news: () => paintHeliWreck("#3d6fb0", "#e8c04a", "stripe"), crash_cargo: paintCargoWreck, airdrop: paintAirDrop,
   convoy: paintConvoySite, // sim/miltrucks.js: the abandoned Army convoy
+  // Points of interest (sim/pois.js): the small places a tile holds besides its site.
+  house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
+  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack,
 };
+
+// A kind with no painter of its own (a point of interest added without one, pois.js): a plain small building on a
+// plate, so the map draws something readable until its sprite is painted.
+function paintGenericPoi() {
+  const p = painter(18, 15);
+  const wall = "#9a8f80", roof = "#5c5650";
+  for (let r = 0; r < 3; r++) p.rect(4 + 2 - r, 4 + r, 13 - 2 + r, 4 + r, r === 0 ? shade(roof, 0.25) : shade(roof, -0.1 * r));
+  p.rect(3, 7, 14, 7, shade(roof, -0.3));
+  p.rect(4, 8, 13, 14, wall);
+  p.rect(4, 8, 4, 14, shade(wall, 0.15)); p.rect(13, 8, 13, 14, shade(wall, -0.2));
+  p.rect(8, 11, 9, 14, shade(wall, -0.55));
+  p.rect(5, 9, 6, 10, DARK_WIN); p.rect(11, 9, 12, 10, DARK_WIN);
+  return p;
+}
 
 // Grays a painter's colors (keeping see-through pixels see-through): picked-over sites.
 function fade(p, f = 0.7, dark = 0.18) {
@@ -2493,7 +2678,7 @@ const FADES = [null, [0.3, 0.06], [0.7, 0.18], [0.95, 0.42]];
 export function poiSpriteCanvas(type, variant = "", faded = 0) {
   const lvl = faded === true ? 2 : Math.max(0, Math.min(3, +faded || 0));
   return cached(`poi:${type}:${variant}:${lvl}`, () => {
-    const paint = POI_PAINT[type] || paintTownCenter;
+    const paint = POI_PAINT[type] || paintGenericPoi; // a kind without a painter yet (pois.js kinds): the plain building
     const p = paint(variant === "depot");
     return lvl ? fade(p, ...FADES[lvl]) : p;
   });
@@ -2609,6 +2794,7 @@ export function markerSpriteCanvas(type, color = "#4f8fd6", opt = {}) {
     if (type === "car") return paintWreckMarker(!!opt.emptied);
     if (type === "miltruck") return paintMilTruckMarker(); // an Army truck seen on the road (sim/miltrucks.js)
     if (type === "camp") return paintCampMarker(!!opt.emptied);
+    if (type === "nomadcamp") return paintCampMarker(false); // a nomad camp seen (sim/nomads.js): the camp's look, never emptied
     if (type === "hive") return paintHive(0);
     return paintParked(opt.vehicle || "truck", color, !!opt.needsFuel, !!opt.damaged, opt.ups || ""); // ups: its upgrades (upsCode)
   });
