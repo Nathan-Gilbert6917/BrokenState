@@ -115,10 +115,12 @@ function combat(p) { // a black blade with a bright edge, a tanto point, a ribbe
 }
 function shiv(p) { // a strip of scrap ground to a point, the handle wrapped in tape
   band(p, -12, -3, 14, 17, K.tape);
-  area(p, (a, b) => a >= -12 && a <= -3 && b >= 14 && b <= 17 && ((a + 20) % 4) === 0, "#7d838a");
-  area(p, (a, b) => a >= -2 && a <= 9 && b >= 15 && b <= 17 - Math.max(0, (a - 5) / 2), "#8f8f8a");
-  lit(p, K.tape, "#8f8f8a");
-  at(p, 1, 17, "#8a5a32"); at(p, 4, 16, "#8a5a32"); at(p, -1, 15, "#8a5a32"); // rust
+  lit(p, K.tape);
+  area(p, (a, b) => a >= -11 && a <= -4 && b >= 14 && b <= 17 && ((a + 20) % 3) === 0, "#6d737a");
+  area(p, (a, b) => a >= -2 && a <= 10 && b >= 15 + Math.max(0, a - 8) && b <= 17 - Math.max(0, (a - 4) / 2), "#9a9a92");
+  lit(p, "#9a9a92");
+  at(p, 1, 17, "#8a5a32"); at(p, 4, 16, "#8a5a32"); at(p, -1, 15, "#8a5a32"); at(p, 0, 16, "#7a4a2a"); // rust
+  at(p, 9, 15, K.glint);
 }
 
 // ---------- folders and utility knives ----------
@@ -180,16 +182,16 @@ function machete(p) {
   area(p, (a, b) => a >= -6 && a <= 14 && b >= 14 && b <= (a > 3 ? 18 : 17) && a + (b - 14) <= 17, "#a9b0b6");
   lit(p, "#3a2a1c", "#a9b0b6");
 }
-function sawmachete(p) { // a circular-saw blade ground into a cleaver: a round blade with teeth, the arbor hole
+function sawmachete(p) { // a circular-saw blade ground into a cleaver: a round toothed blade, the arbor hole, a wrapped grip
   handle(p, -15, -4, "#5b5048");
   area(p, (a, b) => a >= -15 && a <= -4 && b >= 15 && b <= 16 && ((a + 20) % 4) < 2, "#7d6a5a");
   disc(p, 10, 6, 5, "#bcc4cb");
   area(p, (a, b) => b < 13, null);
-  for (let x = 0; x < 16; x++) for (let y = 0; y < 16; y++) if (x + y < 13) p.px[y * 16 + x] = null;
+  const s = p.px.slice(), e = (x, y) => x < 0 || y < 0 || x > 15 || y > 15 || !s[y * 16 + x];
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) if (s[y * 16 + x] === "#bcc4cb" && x + y > 14 && (e(x + 1, y) || e(x, y - 1) || e(x + 1, y - 1) && e(x, y + 1)) && (x + y) % 2) p.clear(x, y); // the teeth
   lit(p, "#bcc4cb");
-  for (const [x, y] of [[15, 5], [15, 8], [13, 11], [10, 12], [16, 2], [12, 0], [9, 1]]) p.set(x, y, "#8d959c");
-  p.set(10, 6, null); // the arbor hole
-  H(p, 7, 9, 6, "#c86a3a"); V(p, 11, 8, 10, "#c86a3a"); // a little of its paint
+  p.clear(10, 6); // the arbor hole
+  line(p, 7, 7, 9, 4, "#c86a3a");
 }
 function springmachete(p) { // a forged leaf spring: a dark scaled blade with a bright ground edge, cord-wrapped grip
   handle(p, -15, -7, "#4f5a3e");
@@ -218,12 +220,13 @@ function katana(p) { // long and slightly curved, a round gold tsuba, a black wr
   lit(p, "#b89a4a", "#d6dde2");
   at(p, 14, 14, K.glint);
 }
-function cutlass(p) { // short, heavy and curved, a brass basket around the grip
+function cutlass(p) { // short, heavy and curved, a brass basket round the grip
   handle(p, -14, -8, "#3a2a1c");
-  area(p, (a, b) => a >= -14 && a <= -6 && b >= 17 && b <= 19 && !(a > -8 && b > 18), K.brass); // the basket
-  band(p, -7, -6, 12, 19, K.brass);
+  area(p, (a, b) => a >= -14 && a <= -6 && b >= 17 && b <= 21 - (a < -12 || a > -8 ? 1 : 0), K.brass); // the basket
+  band(p, -7, -6, 12, 18, K.brass);
   area(p, (a, b) => a >= -5 && a <= 11 && b >= 14 + (a > 6 ? 1 : 0) && b <= 18 - Math.max(0, (a - 6) / 1.6), "#c2c9cf");
   lit(p, K.brass, "#c2c9cf");
+  for (const [a, b] of [[-11, 19], [-9, 19], [-10, 20]]) at(p, a, b, "#6e5a2a");
 }
 function sabre(p) { // long, narrow and curved; a gold D-guard to the pommel
   handle(p, -14, -8, K.poly);
@@ -263,11 +266,11 @@ function nailbat(p) { // a wooden bat driven full of nails: heads on the barrel,
   for (const a of [0, 4, 8]) at(p, a, 18, "#9aa3ab");
   for (const a of [2, 6, 10]) at(p, a, 12, "#9aa3ab");
 }
-function spikedbat(p) { // a darker club with long spikes either side
+function spikedbat(p) { // a darker club with long spikes out of both sides, a taped grip
   woodBat(p, "#8a6638");
-  for (const a of [0, 5, 10]) { at(p, a, 12, "#c9ced3"); at(p, a - 1, 11, "#9aa3ab"); }
-  for (const a of [2, 7]) { at(p, a, 18, "#c9ced3"); at(p, a + 1, 19, "#9aa3ab"); }
-  band(p, -11, -9, 14, 17, K.tape);
+  for (const a of [0, 4, 8]) { at(p, a, 12, "#9aa1a8"); at(p, a, 10, "#e0e5e9"); }
+  for (const a of [-1, 3, 7, 11]) { at(p, a, 19, "#9aa1a8"); at(p, a, 21, "#c9ced3"); }
+  band(p, -12, -9, 14, 17, K.tape);
 }
 function baton(p) { // expandable: a black grip, two steel tubes, a ball tip
   area(p, (a, b) => a >= -15 && a <= -5 && b >= 14 && b <= 16, K.poly);
@@ -285,12 +288,14 @@ function stunbaton(p) { // a thick black prod, a yellow band, contacts and a spa
   band(p, 10, 12, 14, 14, "#d8b43a"); band(p, 10, 12, 17, 17, "#d8b43a"); // the contacts
   p.set(14, 2, "#7fe6ff"); p.set(15, 1, "#ffffff"); p.set(13, 0, "#7fe6ff"); p.set(15, 3, "#ffe24a"); // the spark
 }
-function golfclub(p) { // a thin steel shaft, a black grip, a driver's big head
+function golfclub(p) { // a thin steel shaft, a black grip, the driver's big rounded head turned out to the side
   handle(p, -15, -8, K.poly);
-  area(p, (a, b) => a >= -7 && a <= 9 && b >= 15 && b <= 16, "#c9ced3");
+  area(p, (a, b) => a >= -7 && a <= 10 && b >= 15 && b <= 16, "#c9ced3");
   lit(p, K.poly, "#c9ced3");
-  oval(p, 11, 0, 15, 4, "#30343a"); lit(p, "#30343a");
-  H(p, 12, 14, 0, "#5a6170"); p.set(15, 3, "#c9ced3"); p.set(15, 2, "#9aa3ab"); // the crown, the face
+  area(p, (a, b) => a >= 9 && a <= 12 && b >= 14 && b <= 24 && !(a >= 12 && b >= 22) && !(a <= 9 && b >= 23), "#30343a");
+  lit(p, "#30343a");
+  area(p, (a, b) => a === 9 && b >= 17 && b <= 21, "#c9ced3"); // the face
+  at(p, 11, 19, "#6a7484");
 }
 function prybar(p) { // a forged bar: a hooked claw at the top, a bent chisel at the foot
   stamp(p, 0, 0, [
@@ -312,15 +317,15 @@ function prybar(p) { // a forged bar: a hooked claw at the top, a bent chisel at
     "ld..............",
   ], { k: "#5d636b", l: "#9aa1a8", d: "#5d636b" });
 }
-function hammer(p) { // a claw hammer: wooden handle, a steel head across with its split claw
-  handle(p, -14, 5, K.woodL);
-  band(p, -15, -15, 15, 16, shade(K.woodL, -0.3));
-  lit(p, K.woodL);
-  area(p, (a, b) => a >= 5 && a <= 8 && b >= 9 && b <= 21, "#6d7378");
-  area(p, (a, b) => a >= 4 && a <= 9 && b >= 9 && b <= 11, "#6d7378"); // the face
-  area(p, (a, b) => a >= 3 && a <= 5 && b >= 21 && b <= 23, "#6d7378"); // the claw bends back
-  lit(p, "#6d7378");
-  band(p, 6, 7, 19, 23, null); band(p, 4, 4, 22, 23, null); // the split
+function hammer(p) { // a framing hammer: a steel shank with a blue rubber grip, the head across its top, the face one end, the claw the other
+  handle(p, -15, -5, "#2f5d8a");
+  handle(p, -4, 4, "#9aa1a8");
+  lit(p, "#2f5d8a", "#9aa1a8");
+  area(p, (a, b) => b >= 9 && b <= 18 && a >= 4 && a <= 7, "#5d636b");
+  area(p, (a, b) => b >= 7 && b <= 9 && a >= 3 && a <= 8, "#5d636b"); // the face
+  area(p, (a, b) => b >= 18 && b <= 22 && a >= 5 - (b - 18) * 1.2 && a <= 7 - (b - 18) * 0.8, "#5d636b"); // the claw
+  lit(p, "#5d636b");
+  at(p, 4, 20, null); // the claw's split
 }
 function sledge(p) { // a big steel block on a long hickory handle
   handle(p, -15, 6, K.hick);
@@ -332,13 +337,13 @@ function axeHead(p, a0, a1, bladeTo, c) { // the cheek at a0..a1, the blade flar
   area(p, (a, b) => a >= a0 && a <= a1 && b >= 13 && b <= 18, c);
   area(p, (a, b) => b <= 13 && b >= bladeTo && a >= a0 - (13 - b) / 2 && a <= a1 + (13 - b) / 2, c);
 }
-function fireaxe(p) { // a red head with a steel edge and a pick, a pale handle
+function fireaxe(p) { // a red head with a steel edge and a pick behind, a pale handle
   handle(p, -15, 6, K.hick);
   lit(p, K.hick);
-  axeHead(p, 6, 9, 8, K.red);
-  area(p, (a, b) => b >= 18 && b <= 23 && a >= 6 + (b - 18) / 3 && a <= 9 - (b - 18) / 3, K.red); // the pick
+  axeHead(p, 6, 9, 7, K.red);
+  area(p, (a, b) => b >= 18 && b <= 23 && Math.abs(a - 7.5) <= (23 - b) / 2.5 + 0.5, K.red); // the pick
   lit(p, K.red);
-  area(p, (a, b) => b >= 7 && b <= 8 && a >= 2 && a <= 13, "#d6dde2"); // the edge
+  area(p, (a, b) => b >= 7 && b <= 8 && a >= 1 && a <= 14, "#d6dde2"); // the edge
 }
 function hatchet(p) { // a short wooden handle, a small steel head
   handle(p, -11, 5, K.wood);
@@ -347,14 +352,15 @@ function hatchet(p) { // a short wooden handle, a small steel head
   lit(p, "#8d959c");
   area(p, (a, b) => b === 9 && a >= 2 && a <= 11, "#d6dde2");
 }
-function tomahawk(p) { // a black handle, a long-bearded blade, a spike behind
+function tomahawk(p) { // tactical: a black handle, a black narrow head with a bright edge and a long beard, a spike behind
   handle(p, -15, 6, K.poly);
   lit(p, K.poly);
-  area(p, (a, b) => a >= 6 && a <= 8 && b >= 9 && b <= 18, "#5d636b");
-  area(p, (a, b) => b >= 7 && b <= 10 && a >= 2 && a <= 9, "#5d636b"); // the bearded blade
-  area(p, (a, b) => b >= 18 && b <= 24 && Math.abs(a - 7) <= (24 - b) / 3, "#5d636b"); // the spike
-  lit(p, "#5d636b");
-  area(p, (a, b) => b === 7 && a >= 2 && a <= 9, "#c9ced3");
+  area(p, (a, b) => a >= 6 && a <= 8 && b >= 11 && b <= 18, "#3e434b");
+  area(p, (a, b) => b >= 8 && b <= 11 && a >= 2 && a <= 9, "#3e434b"); // the blade, its beard reaching down the handle
+  area(p, (a, b) => b >= 18 && b <= 24 && Math.abs(a - 7) <= (24 - b) / 2.5 + 0.5, "#3e434b"); // the spike
+  lit(p, "#3e434b");
+  area(p, (a, b) => b === 8 && a >= 2 && a <= 9, "#d6dde2");
+  at(p, 7, 23, "#c9ced3"); at(p, 6, 14, "#7d858c");
 }
 function pickaxe(p) { // a wooden handle, a curved double-pointed head
   handle(p, -15, 6, K.wood);
@@ -373,14 +379,16 @@ function etool(p) { // the folding shovel: olive shaft, a hinge nut, a pointed s
 }
 
 // ---------- spears ----------
-function pipespear(p) { // a steel pipe, a knife taped to its end
-  handle(p, -15, 6, "#6d7378");
-  lit(p, "#6d7378");
-  at(p, -15, 15, K.poly); // the pipe's open end
-  area(p, (a, b) => a >= 7 && a <= 15 && b >= 15 && b <= 16 + (a < 12 ? 1 : 0) - (a > 13 ? 1 : 0), K.steel);
+function pipespear(p) { // a steel pipe, a kitchen knife taped to its end
+  handle(p, -15, 5, "#5d636b");
+  lit(p, "#5d636b");
+  at(p, -15, 15, "#1f2226"); // the pipe's open end
+  band(p, 7, 9, 15, 16, K.blk); // the knife's handle
+  area(p, (a, b) => a >= 9 && a <= 15 && b >= 15 && b <= 17 - (a > 12 ? 1 : 0) - (a > 14 ? 1 : 0), K.steel);
   lit(p, K.steel);
-  band(p, 2, 7, 14, 17, "#a8adb3"); // the tape
-  band(p, 4, 4, 14, 17, "#868c93");
+  at(p, 15, 15, K.glint);
+  band(p, 2, 7, 14, 17, "#c9ced3"); // the tape
+  area(p, (a, b) => a >= 2 && a <= 7 && b >= 14 && b <= 17 && (a === 4 || a === 7), "#8a9096");
 }
 function spear(p) { // an ash shaft, lugs, a long leaf-shaped head
   handle(p, -15, 4, K.ash);
@@ -391,25 +399,25 @@ function spear(p) { // an ash shaft, lugs, a long leaf-shaped head
 }
 
 // ---------- bows and crossbows ----------
-function compbow(p) { // a black riser, short limbs, cams top and bottom, a string and its cables
+function compbow(p) { // a black riser with a sight and a stabilizer, short limbs, cams top and bottom, the string and a cable
   stamp(p, 0, 0, [
-    "........cc......",
-    ".......lCc.s....",
-    "......ll..vs....",
-    ".....kk...vs....",
-    "....kNk..v.s....",
-    "....kk.rr..s....",
-    "....kk...v.s....",
-    "...ggk...v.s....",
-    "..gggk...v.s....",
-    "kkkkkk...v.s....",
-    "....kk...v.s....",
-    ".....kk..v.s....",
-    "......ll.v.s....",
-    ".......lCc.s....",
-    "........cc......",
-    "................",
-  ], { k: "#35383e", N: "#4f545c", l: "#4a4f57", c: "#c9ced3", C: "#8d959c", s: "#e8e0c8", v: "#b5ad98", g: "#6b4a2a", r: "#e04848" });
+    ".......ccc......",
+    "......lcXcs.....",
+    ".....lccc.s.....",
+    "....kl...vs.....",
+    "...kN....vs.....",
+    "...kNrrr.vs.....",
+    "...kk..R.vs.....",
+    "..gkk....vs.....",
+    "..gkk....vs.....",
+    "kkkkk....vs.....",
+    "...kk....vs.....",
+    "...kN....vs.....",
+    "....kl...vs.....",
+    ".....lccc.s.....",
+    "......lcXcs.....",
+    ".......ccc......",
+  ], { k: "#35383e", N: "#4f545c", l: "#4a4f57", c: "#c9ced3", X: "#5d636b", s: "#e8e0c8", v: "#a8a08c", g: "#6b4a2a", r: "#5d636b", R: "#e04848" });
 }
 function pulleybow(p) { // a smooth arc of laminated wood, little pulleys at the tips, an arrow on the string
   stamp(p, 0, 0, [
@@ -431,26 +439,26 @@ function pulleybow(p) { // a smooth arc of laminated wood, little pulleys at the
     "................",
   ], { o: "#b8895a", D: "#6e4a2c", c: "#c9ced3", s: "#e8e0c8", g: "#3a2a1c", a: "#c9a46a", h: "#9aa1a8", F: "#d0362a" });
 }
-function crossbowShape(p, stock, prod, str, tips) {
-  handle(p, -15, 7, stock);
+function crossbowShape(p, stock, prod, str) { // from above: the stock up the diagonal, the prod across it, the string drawn back
+  handle(p, -15, 11, stock);
   lit(p, stock);
-  area(p, (a, b) => b >= 6 && b <= 24 && a >= 7 - (Math.abs(b - 15) > 6 ? 1 : 0) && a <= 8 - (Math.abs(b - 15) > 6 ? 1 : 0), prod);
+  area(p, (a, b) => { const k = Math.floor(Math.abs(b - 15) / 4); return b >= 6 && b <= 24 && a >= 2 - k && a <= 4 - k; }, prod);
   lit(p, prod);
-  line(p, 7, 1, 6, 9, str); line(p, 14, 8, 6, 9, str);
-  if (tips) { p.set(6, 0, tips); p.set(7, 0, tips); p.set(15, 7, tips); p.set(15, 8, tips); }
+  line(p, 4, 3, 5, 9, str); line(p, 12, 11, 6, 10, str);
 }
-function crossbow(p) { // scrap: a wooden stock, leaf-spring limbs, a rope string, taped
-  crossbowShape(p, K.wood, "#5d5650", "#c9b48a");
-  band(p, 2, 4, 14, 17, K.tape);
-  at(p, -8, 17, K.poly); // the trigger
+function crossbow(p) { // scrap: a pale wooden stock, a dark leaf-spring prod, a cord string, taped
+  crossbowShape(p, "#9a7448", "#4a4f57", "#e8e4da");
+  band(p, -2, 0, 14, 17, K.tape);
+  at(p, -9, 17, K.poly); at(p, -10, 18, K.poly); // the trigger
 }
 function xbow(p) { // hunting: a black stock, black limbs with cams, a scope, a bolt with red vanes
-  crossbowShape(p, K.poly, "#3a3e45", "#e8e0c8", "#c9ced3");
-  area(p, (a, b) => a >= -8 && a <= -1 && b >= 13 && b <= 14, "#1f2226");
+  crossbowShape(p, K.poly, "#3a3e45", "#e8e0c8");
+  R(p, 3, 1, 4, 2, "#c9ced3"); R(p, 13, 11, 14, 12, "#c9ced3");
+  band(p, -9, -2, 12, 13, "#1f2226");
   lit(p, "#1f2226");
-  at(p, -1, 13, "#7fb8e6"); at(p, -9, 13, "#4a4f57"); at(p, -9, 14, "#4a4f57");
-  area(p, (a, b) => a >= 0 && a <= 12 && b === 16, "#c9ced3"); at(p, 11, 15, "#e8eef2");
-  at(p, -2, 17, "#e04848"); at(p, -3, 16, "#e04848");
+  at(p, -2, 12, "#7fb8e6");
+  band(p, -6, 13, 15, 15, "#d6dde2"); at(p, 13, 15, "#9aa1a8");
+  at(p, -5, 15, "#e04848"); at(p, -7, 15, "#e04848"); at(p, -6, 14, "#e04848");
 }
 
 // ---------- vests and carriers (from the front) ----------
@@ -596,11 +604,11 @@ function rivethelmet(p) { // patched steel plates, rows of rivets, a nape guard 
 }
 function highcut(p) { // coyote tan, cut away over the ear, a rail, the night-vision shroud at the brow
   dome(p, 2, 2, 13, 11, K.coyote);
-  area(p, (a, b, x, y) => y >= 8 && x >= 5 && x <= 10, null);
+  area(p, (a, b, x, y) => (y >= 9 && x >= 6 && x <= 10) || (y === 8 && x >= 7 && x <= 9), null);
   lit(p, K.coyote);
-  H(p, 3, 12, 7, K.poly); dots(p, 3, 12, 7, "#4a4f57", 2);
-  R(p, 12, 3, 14, 5, K.poly); p.set(14, 3, "#4a4f57");
-  R(p, 5, 3, 7, 4, "#86714c");
+  H(p, 3, 5, 8, K.poly); H(p, 11, 12, 8, K.poly); H(p, 4, 11, 7, K.poly); dots(p, 4, 11, 7, "#4a4f57", 2);
+  R(p, 12, 3, 14, 5, K.poly); p.set(14, 3, "#4a4f57"); p.set(13, 4, "#4a4f57");
+  R(p, 6, 3, 8, 4, "#86714c");
 }
 function ballvisor(p) { // a thick smoked face shield on a black mounting band
   area(p, (a, b, x, y) => y >= 3 && y <= 15 && ((x - 7.5) / 7) ** 2 + ((y - 4) / 11.5) ** 2 <= 1, "#4f6a80");
@@ -664,13 +672,13 @@ function backpack(p) { // a blue school bag: a front pocket and its zip, brown r
   for (const x of [2, 13]) R(p, x, 4, x, 12, "#6b4a2a");
   H(p, 3, 12, 6, "#6b4a2a"); p.set(7, 6, "#b8952a"); p.set(8, 6, "#b8952a");
 }
-function slingbag(p) { // a small grey cross-body bag on a long strap
-  line(p, 3, 8, 5, 2, "#2e3238"); line(p, 5, 2, 8, 0, "#2e3238"); line(p, 8, 0, 11, 2, "#2e3238"); line(p, 11, 2, 12, 8, "#2e3238");
-  line(p, 4, 8, 6, 2, "#4a4f57"); line(p, 12, 2, 13, 8, "#1f2226");
-  rows(p, 7, [[3, 12], [2, 13], [2, 13], [2, 13], [2, 13], [2, 13], [3, 12], [4, 11]], "#5a616a");
+function slingbag(p) { // a small cross-body bag: a long strap with a buckle off its corner, a zipped front pocket
+  for (let i = 0; i <= 5; i++) { p.set(i, i, "#2e3238"); p.set(i + 1, i, "#4a4f57"); }
+  R(p, 2, 1, 3, 3, "#c9ced3"); p.set(2, 2, "#8d959c");
+  rows(p, 6, [[6, 13], [5, 14], [5, 14], [4, 14], [4, 14], [4, 14], [4, 14], [5, 13], [6, 12]], "#5a616a");
   lit(p, "#5a616a");
-  R(p, 2, 7, 13, 9, "#4a4f57"); H(p, 2, 13, 7, "#6d7378");
-  R(p, 7, 9, 8, 10, "#c9ced3");
+  R(p, 6, 10, 12, 13, "#4a4f57"); H(p, 6, 12, 10, "#c9ced3"); p.set(12, 11, "#c9ced3");
+  H(p, 6, 13, 7, "#6d7378");
 }
 function assaultpack(p) { // olive drab, a rounded lid, MOLLE rows, compression straps
   rows(p, 1, [[5, 10], [4, 11], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [4, 11]], "#55603b");
@@ -689,12 +697,14 @@ function hikingpack(p) { // tall and bright: a red lid, orange body, a blue mat 
   V(p, 5, 13, 13, "#2a2d33"); V(p, 10, 13, 13, "#2a2d33");
   R(p, 6, 5, 9, 8, "#c86a24");
 }
-function rucksack(p) { // a big olive rucksack on an external frame, side pockets
-  V(p, 1, 0, 14, "#c9ced3"); V(p, 14, 0, 14, "#9aa1a8"); H(p, 1, 14, 0, "#c9ced3");
-  R(p, 2, 2, 13, 14, "#4f5a3e"); lit(p, "#4f5a3e");
-  R(p, 3, 2, 12, 5, "#5c6849"); H(p, 3, 12, 5, "#3c4530");
-  R(p, 2, 9, 4, 13, "#5c6849"); R(p, 11, 9, 13, 13, "#5c6849"); H(p, 2, 4, 9, "#6c7a58"); H(p, 11, 13, 9, "#6c7a58");
-  p.set(7, 5, "#2a2e22"); p.set(8, 5, "#2a2e22");
+function rucksack(p) { // a big olive rucksack on an external frame, a top flap, side pockets
+  for (const x of [2, 13]) V(p, x, 0, 15, "#c9ced3");
+  H(p, 2, 13, 15, "#9aa1a8"); V(p, 13, 1, 15, "#9aa1a8");
+  rows(p, 1, [[5, 10], [4, 11], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12], [3, 12]], "#4f5a3e");
+  lit(p, "#4f5a3e");
+  rows(p, 1, [[5, 10], [4, 11], [3, 12], [3, 12]], "#5c6849"); H(p, 3, 12, 5, "#3c4530"); H(p, 5, 10, 1, "#6c7a58");
+  for (const x of [1, 11]) { R(p, x, 8, x + 3, 13, "#5c6849"); H(p, x, x + 3, 8, "#6c7a58"); H(p, x, x + 3, 13, "#3c4530"); p.set(x + 1, 9, "#2a2e22"); }
+  p.set(7, 5, "#2a2e22"); p.set(8, 5, "#2a2e22"); V(p, 7, 6, 7, "#3c4530");
 }
 function duffle(p) { // a big canvas cylinder on its side, two handles, straps round it
   line(p, 4, 4, 6, 2, "#5b4a32"); H(p, 6, 9, 2, "#5b4a32"); line(p, 9, 2, 11, 4, "#5b4a32");
@@ -745,13 +755,16 @@ function pistolcase(p) { // open: the lid's egg-crate foam, a handgun in its cut
 }
 
 // ---------- the bicycle ----------
-function bicycle(p) { // a red mountain bike: knobby wheels, a diamond frame, bars and a saddle
-  ring(p, 3, 11, 3, "#3a3e45"); ring(p, 12, 11, 3, "#3a3e45");
-  p.set(3, 11, "#c9ced3"); p.set(12, 11, "#c9ced3");
+function bicycle(p) { // a red mountain bike: knobby wheels, a diamond frame, flat bars and a saddle
+  const wheel = [".ttttt.", "tt...tt", "t..s..t", "tsshsst", "t..s..t", "tt...tt", ".ttttt."];
+  const k = { t: "#4a4f57", h: "#c9ced3", s: "#7d858c" };
+  stamp(p, 0, 9, wheel, k); stamp(p, 9, 9, wheel, k);
   const f = "#c8402f";
-  line(p, 3, 11, 7, 11, f); line(p, 3, 11, 6, 6, f); line(p, 7, 11, 6, 6, f); line(p, 6, 6, 11, 6, f); line(p, 7, 11, 11, 6, f); line(p, 11, 6, 12, 11, f);
-  H(p, 4, 7, 5, "#2a2d33"); line(p, 11, 6, 10, 3, "#8d959c"); H(p, 9, 12, 3, "#2a2d33");
-  disc(p, 7, 11, 1, "#8d959c");
+  line(p, 3, 12, 7, 12, f); line(p, 3, 12, 5, 6, f); line(p, 5, 6, 7, 12, f); line(p, 11, 7, 7, 12, f);
+  H(p, 5, 11, 6, "#e2654f"); line(p, 11, 7, 12, 12, "#9aa1a8");
+  H(p, 3, 6, 4, "#2a2d33"); p.set(5, 5, "#9aa1a8");
+  V(p, 11, 4, 5, "#9aa1a8"); H(p, 10, 13, 3, "#2a2d33");
+  R(p, 7, 12, 8, 12, "#c9ced3");
 }
 
 export const GEAR_ART = {
