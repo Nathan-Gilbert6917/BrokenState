@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Survivors and the dead as box figures</title>
+<title>Survivors and the dead as low-poly figures</title>
 <style>
   body { margin: 0; padding: 12px; background: #1a1d22; color: #d8dce2; font: 12px/1.3 system-ui, sans-serif; }
   h2 { font-size: 14px; margin: 14px 0 6px; color: #e6c23a; }
@@ -39,23 +39,21 @@ html += `<section id="facings"><h2>On the tile at the view's eight headings (tod
 for (const [n] of HEADINGS) html += `<th>${n}</th>`;
 html += `</tr>`;
 for (const [name, app] of Object.entries(LOOKS)) {
-  html += `<tr><th class="row">${name}<br>fine</th><td class="before">${img(paintSurvivor(app, "ar", ARMOR[name]), 26 * 4 * SCALE * (30 / 26))}</td>`;
-  for (const [, yaw] of HEADINGS) html += `<td>${img(paintBoxFigure(app, "ar", ARMOR[name], yaw, "fine", true))}</td>`;
+  html += `<tr><th class="row">${name}</th><td class="before">${img(paintSurvivor(app, "ar", ARMOR[name]), 26 * 4 * SCALE * (30 / 26))}</td>`;
+  for (const [, yaw] of HEADINGS) html += `<td>${img(paintBoxFigure(app, "ar", ARMOR[name], yaw, true))}</td>`;
   html += "</tr>";
 }
-html += `<tr><th class="row">average<br>blocky</th><td class="before"></td>`;
-for (const [, yaw] of HEADINGS) html += `<td>${img(paintBoxFigure(LOOKS.average, "ar", "vest", yaw, "blocky", true))}</td>`;
-html += "</tr></table></section><br>";
+html += "</table></section><br>";
 // 2. The inventory's spin: 360° in 24 steps, the look with a pack, a bow and a vest, so what is on them comes round.
 html += `<section id="spin"><h2>The inventory's spin: 360° in 15° steps (vest, backpack, pulley bow)</h2><div class="row">`;
-for (let k = 0; k < 24; k++) html += img(paintBoxFigure({ ...LOOKS.long, accessory: "backpack" }, "pulleybow", "vest", k * 15, "fine", false));
+for (let k = 0; k < 24; k++) html += img(paintBoxFigure({ ...LOOKS.long, accessory: "backpack" }, "pulleybow", "vest", k * 15, false));
 html += "</div></section><br>";
 // 3. Weapons in the fine figure.
-const W = [[null, "unarmed"], ["ar", "AR"], ["pistol", "pistol"], ["machete", "machete"], ["sledge", "sledgehammer"], ["pulleybow", "pulley bow"]];
-html += `<section id="weapons"><h2>Weapons (fine figure)</h2><table><tr><th></th>${W.map(([, n]) => `<th>${n}</th>`).join("")}</tr>`;
+const W = [[null, "unarmed"], ["ar", "AR"], ["smg", "SMG"], ["pistol", "pistol"], ["machete", "machete"], ["sledge", "sledgehammer"], ["pulleybow", "pulley bow"]];
+html += `<section id="weapons"><h2>Weapons: both hands on a long gun, one on a pistol, the string hand drawn on a bow</h2><table><tr><th></th>${W.map(([, n]) => `<th>${n}</th>`).join("")}</tr>`;
 for (const [f, yaw] of [["SE", 0], ["S", 45], ["SW", 90]]) {
   html += `<tr><th class="row">${f}</th>`;
-  for (const [k] of W) html += `<td>${img(paintBoxFigure(LOOKS.average, k, "vest", yaw, "fine", false))}</td>`;
+  for (const [k] of W) html += `<td>${img(paintBoxFigure(LOOKS.average, k, "vest", yaw, false))}</td>`;
   html += "</tr>";
 }
 html += "</table></section><br>";
@@ -65,7 +63,7 @@ for (const v of ZOMBIE_VARIANTS) html += `<th colspan="3">${v}</th>`;
 html += `</tr><tr><th></th>${ZOMBIE_VARIANTS.map(() => "<th>today</th><th>SE</th><th>SW</th>").join("")}</tr>`;
 for (const seed of [3, 11, 27]) {
   html += `<tr><th class="row">seed ${seed}</th>`;
-  for (const v of ZOMBIE_VARIANTS) html += `<td class="before">${img(zombieCanvas(v, seed), 26 * 4 * SCALE * (30 / 26))}</td><td>${img(paintBoxZombie(v, seed, "SE", "fine", true))}</td><td>${img(paintBoxZombie(v, seed, "SW", "fine", true))}</td>`;
+  for (const v of ZOMBIE_VARIANTS) html += `<td class="before">${img(zombieCanvas(v, seed), 26 * 4 * SCALE * (30 / 26))}</td><td>${img(paintBoxZombie(v, seed, "SE", true))}</td><td>${img(paintBoxZombie(v, seed, "SW", true))}</td>`;
   html += "</tr>";
 }
 html += "</table></section><br>";
@@ -73,8 +71,8 @@ html += "</table></section><br>";
 html += `<section id="playsize"><h2>At play size (zoom 1×, 2×, 3×): survivors and the dead</h2><table><tr>`;
 for (const z of [1, 2, 3]) {
   html += `<td><div class="row">`;
-  for (const [name, app] of Object.entries(LOOKS)) html += img(paintBoxFigure(app, "ar", ARMOR[name], 0, "fine", true), 50 * z);
-  for (const v of ZOMBIE_VARIANTS) html += img(paintBoxZombie(v, 5, "SW", "fine", true), 50 * z);
+  for (const [name, app] of Object.entries(LOOKS)) html += img(paintBoxFigure(app, "ar", ARMOR[name], 0, true), 50 * z);
+  for (const v of ZOMBIE_VARIANTS) html += img(paintBoxZombie(v, 5, "SW", true), 50 * z);
   html += `</div></td>`;
 }
 html += "</tr></table></section>";
