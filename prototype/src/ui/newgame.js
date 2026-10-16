@@ -3,7 +3,7 @@
 import { SKILLS, SKILL_NAMES, TRAITS } from "../sim/data.js";
 import { survivorById, skill, rollTraits, HUB_START } from "../sim/world.js";
 import { latestSave, listSaves } from "./saves.js";
-import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX } from "../sim/worldsize.js";
+import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX, clampGroups, clampHives } from "../sim/worldsize.js";
 import { MODES, isHardcore, START_PEOPLE, clampStartPeople } from "../sim/hardcore.js";
 import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
 import { customLibrary } from "./backgrounds.js";
@@ -13,7 +13,7 @@ import { sanitizeStartGear, hasPicks, vehicleOwner, trunkKg } from "../sim/start
 import { gearRow, pointsBar, startVehicleInfo } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card
 import { traitPickerHtml, traitBlock, traitChips } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
 import { randomBuild, randomEverything, kitKeys } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the back
-import { CUSTOM_POINTS, pricePerson, pointsMax, nextLevelCost, skillCost, backPayer } from "../sim/custompoints.js";
+import { CUSTOM_POINTS, pricePerson, pointsMax, nextLevelCost, skillCost, backPayer, clampMax } from "../sim/custompoints.js";
 import { wornLoad } from "../sim/load.js"; // Customize: everything costs points
 import { traitLabel, traitTier, setTier, tidyTiers, tierCount, cleanTier } from "../sim/traits.js";
 import {
@@ -239,6 +239,7 @@ export function newRunScreen(state, ui) {
       ${groupInput(state, ui)}
       ${hiveSelect(state, ui)}
       <button data-action="reroll"${tip("Generate a new map and new colonists")}>New map and colonists</button>
+      <button data-action="nr-start"${tip(`Roll a new starting position on this same map and seed: ${hard ? "another roadside spot to flee from" : "another town for your hub"}, away from the hives and the cities as usual. The map, the hives and your colonists stay as they are (the groups settle around where you are). Look at it with View map; each click is a new spot`)}>📍 New start position</button>
       <button data-action="nr-allcrew"${tip(freeEdit(ui) ? "Every colonist: a new name, look and random build (traits, skills and what they wear, hold and carry, within their points; the vehicle's back stays). Build on a crew card does one colonist" : `Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
       ${freeEdit(ui) ? `<button data-action="nr-everything"${tip("Everything at once: every colonist a new name, look and random build (traits, skills and what they wear, hold and carry), and the vehicle's back emptied and filled again (its payer keeps a share of their points for it), all within the points. Each click is a new draw")}>🎲 Randomize everything</button>` : ""}
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
@@ -247,7 +248,7 @@ export function newRunScreen(state, ui) {
     ${!hard && state.factions.length < ui.factionCount ? `<div class="small muted" style="margin-bottom:0.5rem">Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).</div>` : ""}
     ${ui.nrMsg ? `<div class="small danger" style="margin-bottom:0.5rem">${esc(ui.nrMsg)}</div>` : ""}
     <div class="crew nrcrew">${people.map((s) => crewCard(state, ui, s)).join("")}</div>
-    <div class="row" style="margin-top:1rem;justify-content:flex-end">${loadButtons()}<button class="primary" data-action="begin">Start</button></div>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end">${loadButtons()}<button data-action="nr-random"${tip(`Random run: a new seed and a random world size, AI groups, starting hives, mode (Normal or Hardcore), starting people, zombie look, and a random crew with their gear${freeEdit(ui) ? " built within random Points each" : ""}, then it starts at once. Ironman, Customize, the First-week guide and Children stay as you set them; the settings rolled are in the log`)}>🎲 Random run</button><button class="primary" data-action="begin">Start</button></div>
   </div>`;
 }
 
@@ -369,6 +370,24 @@ export function randomizeEverything(state, ui, rebuild) {
   randomEverything(state, payer, room, rng);
   state.survivors.forEach((s) => { s.startPoints = true; s.startCustom = true; });
   return rebuild(crewSnapshot(state), ui.crewRoll ?? null, ui.pickRoll);
+}
+
+// Random run (2026-10-16, user request): every setting on the new-run screen rolled at once (main.js nr-random builds the
+// world on a new seed, randomizes the crew and starts). Ironman, Customize, the guide and Children are the player's own
+// and stay. The zombie look is rolled too (saved in this browser, like picking it by hand). Returns a line for the log.
+const RANDOM_HIVES = [2, 6]; // starting hives when not the map's own: few enough that a Small map is no death trap
+const RANDOM_POINTS = [60, 150]; // Customize's Points each, in steps of 5
+export function rollRandomRun(ui, rng) {
+  ui.worldSize = rng.pick(SIZE_KEYS);
+  const d = sizeDef(ui.worldSize);
+  ui.factionCount = clampGroups(ui.worldSize, rng.int(d.groups[0], d.groups[1]));
+  ui.hiveCount = rng.chance(0.5) ? null : clampHives(rng.int(RANDOM_HIVES[0], RANDOM_HIVES[1]));
+  ui.mode = rng.chance(0.5) ? "hardcore" : "normal";
+  ui.startPeople = clampStartPeople(rng.int(START_PEOPLE.MIN, START_PEOPLE.MAX));
+  if (freeEdit(ui)) ui.pointsMax = clampMax(5 * rng.int(RANDOM_POINTS[0] / 5, RANDOM_POINTS[1] / 5));
+  for (const [k, o] of Object.entries(ZOMBIE_LOOK_OPTIONS)) setZombieLook(k, rng.pick(o.values)[0]);
+  const hard = ui.mode === "hardcore";
+  return `A random run: ${MODES[ui.mode].label}${hard ? ` with ${ui.startPeople} ${ui.startPeople === 1 ? "survivor" : "survivors"}` : ""}, a ${d.label} map, ${ui.factionCount} other groups, ${ui.hiveCount == null ? "the map's own hives" : `${ui.hiveCount} hives`}${freeEdit(ui) ? `, ${ui.pointsMax} points each` : ""}.`;
 }
 
 // ---------- zombie look settings ----------
