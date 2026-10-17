@@ -27,7 +27,7 @@ import { CELL, active, coverSides, evacAt, barredCell, moveMob } from "../sim/co
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
-import { unitFigure, figureMuzzle, FIG } from "./figures.js"; // survivors, human enemies and the plain dead as low-poly figures, facing their way
+import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
@@ -2174,10 +2174,13 @@ function feet(s) { return project(s.wx, s.wy, s.z); }
 function drawBody(ctx, state, b, s, H, silhouette = false) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
   if (t.dead || t.down) {
-    // Lying on the ground: the fallen's own picture (ui/downsprites.js) laid flat onto the floor's two axes, so it
-    // turns with the view (the body along the world's x).
+    // Lying on the ground: the figure laid along the world's x (the head toward -x, or +x facing the other way), so it
+    // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none.
+    const f = unitFacing(b, t);
+    const fig = unitFigureDown(state, b, t, H.salt, dirYaw(b, t, FR.r, [-f, 0]));
+    if (fig) { drawFigure(ctx, fig, X, Y, S, !silhouette && t.dead ? 0.92 : 1); return; }
     const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
-    drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: unitFacing(b, t), scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
+    drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
   const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r)); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
@@ -2197,7 +2200,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
     ctx.globalAlpha *= SNEAK_LOOK.alpha;
     if ("filter" in ctx) ctx.filter = SNEAK_LOOK.filter;
   }
-  if (fig) ctx.drawImage(cv, -FIG.ox * S, -FIG.oy * S, FIG.w * S, FIG.h * S); // 1 grid px = 1 art px, the feet at (ox, oy)
+  if (fig) { const g = cv.figure || FIG; ctx.drawImage(cv, -g.ox * S, -g.oy * S, g.w * S, g.h * S); } // 1 grid px = 1 art px, the feet at (ox, oy)
   else ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
 }
@@ -2229,9 +2232,21 @@ function unitMoveDir(b, t) {
   return null;
 }
 function unitYaw(b, t, r) {
-  const d = (t.face && (t.face[0] || t.face[1]) && t.kind === "human" ? t.face : null) || unitMoveDir(b, t) || [unitFacing(b, t), 0];
+  return dirYaw(b, t, r, (t.face && (t.face[0] || t.face[1]) && t.kind === "human" ? t.face : null) || unitMoveDir(b, t) || [unitFacing(b, t), 0]);
+}
+// A world direction at a unit's tile as a figure's yaw in view rotation r.
+function dirYaw(b, t, r, d) {
   const [u0, v0] = ptView(t.x + 0.5, t.y + 0.5, r, b.w, b.h), [u1, v1] = ptView(t.x + 0.5 + d[0], t.y + 0.5 + d[1], r, b.w, b.h);
   return (Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI - (iso.straight ? 45 : 0);
+}
+// A figure's canvas with its tile centre (feet, or a lying body's middle) at (X, Y), 1 grid px = 1 art px.
+function drawFigure(ctx, cv, X, Y, S, alpha = 1) {
+  const g = cv.figure || FIG;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(cv, X - g.ox * S, Y - g.oy * S, g.w * S, g.h * S);
+  ctx.restore();
 }
 const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1);
 // Where a unit's gun muzzle is on screen, from its feet, in view rotation r at zoom S: the muzzle pixel of the gun
@@ -2239,7 +2254,7 @@ const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype ==
 // as drawBody draws it (mirrored when it faces left). null: no gun drawn (a zombie, bare hands).
 export function muzzlePoint(state, b, t, salt, r, S = 1) {
   const fig = unitFigure(state, b, t, salt, unitYaw(b, t, r));
-  if (fig) { const m = figureMuzzle(fig); return m ? [(m.mx - FIG.ox) * S, (m.my - FIG.oy) * S] : null; } // the figure's gun, its far end (ui/figures.js)
+  if (fig) { const m = figureMuzzle(fig), g = fig.figure || FIG; return m ? [(m.mx - g.ox) * S, (m.my - g.oy) * S] : null; } // the figure's gun, its far end (ui/figures.js)
   const mz = muzzleOf(unitCanvas(state, b, t, salt));
   if (!mz) return null;
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26), f = sideFacing(b, t, r);
@@ -2248,8 +2263,11 @@ export function muzzlePoint(state, b, t, salt, r, S = 1) {
 // A body on the ground (sim/sleepers.js), laid flat like the fallen.
 function drawCorpseIso(ctx, b, c, fog) {
   const s = { wx: c.x + 0.5, wy: c.y + 0.5, z: standZ(b, c.x, c.y) };
-  const [X, Y] = feet(s), [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
-  drawDowned(ctx, corpseCanvas(c), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: c.seed % 2 ? 1 : -1, scale: 1.05, alpha: fog ? 0.5 : 0.92 });
+  const [X, Y] = feet(s), f = c.seed % 2 ? 1 : -1;
+  const fig = corpseFigure(c, dirYaw(b, c, FR.r, [-f, 0]));
+  if (fig) { drawFigure(ctx, fig, X, Y, FR.S, fog ? 0.5 : 0.92); return; }
+  const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
+  drawDowned(ctx, corpseCanvas(c), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: 1.05, alpha: fog ? 0.5 : 0.92 });
 }
 function isoTag(ctx, X, Y, text, col, S) {
   ctx.font = `800 ${Math.max(9, Math.round(7 * S))}px Segoe UI, sans-serif`;

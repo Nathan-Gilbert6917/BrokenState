@@ -20,7 +20,7 @@
 <div id="out">Loading…</div>
 <script type="module">
 import { toCanvas, paintSurvivor, zombieCanvas, ZOMBIE_VARIANTS } from "../src/ui/sprites.js";
-import { paintBoxFigure, paintBoxZombie, FACINGS, YAW } from "./spritebox.js";
+import { paintBoxFigure, paintBoxZombie, specialApp, bossApp, risenApp, FACINGS, YAW } from "./spritebox.js";
 
 const SCALE = 2;
 const img = (p, h = null) => { const cv = p instanceof HTMLCanvasElement ? p : toCanvas(p); const s = h ? h / cv.height : SCALE; return `<img src="${cv.toDataURL()}" style="width:${cv.width * s}px;height:${cv.height * s}px">`; };
@@ -67,6 +67,20 @@ for (const seed of [3, 11, 27]) {
   html += "</tr>";
 }
 html += "</table></section><br>";
+// 4b. The special dead, the armoured dead, the bosses, the risen, the fallen: every other body the battle map has.
+const SPECIAL = ["spitter", "screamer", "crawler", "shepherd", "carrier", "swarm", "boneback", "climber", "flinger", "sower", "nightmare", "soldier", "riot"];
+html += `<section id="special"><h2>The special dead and the armoured dead (seed 7), SE and SW</h2><table><tr>${SPECIAL.map((k) => `<th>${k}</th>`).join("")}</tr>`;
+for (const f of ["SE", "SW"]) { html += "<tr>"; for (const k of SPECIAL) html += `<td>${img(paintBoxFigure(specialApp(k, 7), null, null, YAW[f], true))}</td>`; html += "</tr>"; }
+html += "</table></section><br>";
+html += `<section id="bosses"><h2>The bosses, the risen and the fallen</h2><table><tr><th>Wallbreaker</th><th>Broodmother</th><th>Hivemind</th><th>Hivemind, torn open</th><th>risen (a survivor)</th><th>dead (survivor, vest)</th><th>down (survivor)</th><th>dead walker</th><th>burnt body</th></tr><tr>`;
+for (const k of ["wallbreaker", "broodmother", "hivemind", "hivemind2"]) html += `<td>${img(paintBoxFigure(bossApp(k), null, null, 0, true))}</td>`;
+html += `<td>${img(paintBoxFigure(risenApp(LOOKS.average, "vest", 3), null, "vest", 0, true))}</td>`;
+html += `<td>${img(paintBoxFigure({ ...LOOKS.average, down: { pose: "dead", pool: true } }, null, "vest", 0))}</td><td>${img(paintBoxFigure({ ...LOOKS.average, down: { pose: "down" } }, null, "vest", 0))}</td>`;
+const walker = paintBoxZombie("walker", 5, "SE"); void walker;
+import("./spritebox.js").then(() => {});
+html += `<td>${img(paintBoxFigure({ ...(await import("./spritebox.js")).zombieApp("walker", 5), down: { pose: "dead", pool: true } }, null, null, 0))}</td>`;
+html += `<td>${img(paintBoxFigure({ ...(await import("./spritebox.js")).zombieApp("walker", 9), skin: "#2b2723", top: "#1e1b19", pants: "#1e1b19", down: { pose: "dead", pool: true, burnt: true } }, null, null, 0))}</td>`;
+html += "</tr></table></section><br>";
 // 5. A crowd at the map's own zoom, to judge the read at play size.
 html += `<section id="playsize"><h2>At play size (zoom 1×, 2×, 3×): survivors and the dead</h2><table><tr>`;
 for (const z of [1, 2, 3]) {

@@ -149,4 +149,42 @@ In the town and at the night wall (3×):
 
 ![figures in the battle view](battle-3d/figures-in-scene.png)
 
-Still flat, for later: the panels' sprites, the downed and the corpses, the special dead and the bosses.
+
+## Every body
+
+Asked for next: all of them. `ui/figures.js` now builds every body the battle map has from the same limbs:
+
+- **The special dead** (`specialApp`), each from its flat painter's palette, build and pose: the Spitter (green, an
+  acid sac on its back, a dripping mouth), the Screamer (gaunt, arms flung up), the Crawler (its own body: torso flat
+  to the ground, head craning up, dragging itself on its arms, bone at the fingertips), the Shepherd (a shroud
+  instead of legs, hooded, a long bone crook held out), the Carrier (bloated, splits in the belly, worms pushing out
+  and from the mouth, a small sunk head, stubby arms), the worm swarm (a low mass of worms with raised heads, no
+  body), the Boneback (plates of fused bone over the chest and the forearms, a bone mask with the eyes peering
+  through), the Climber (thin, long arms up, hooked bone fingers), the Flinger (one long arm cocked back over its
+  head holding a dripping mass of worms), the Sower (swollen, egg sacs hung on its back and sides), the Nightmare
+  (tall, dark, long clawed arms, the jaw hanging open far wider than a jaw should); the armoured dead, a soldier in
+  camo fatigues with a plate carrier and a combat helmet, a riot cop in black with a chest shell, shoulder guards and
+  a riot helmet with its cracked visor pushed up. A sleeper on its feet is a walker.
+- **The bosses** (`bossApp`): the Wallbreaker (half again as big, the head sunk low, ribs through the skin, a slab
+  of concrete with rebar in it raised in one fist), the Broodmother (swollen, on the mound she grows from, three
+  eyes, a crown of bone, egg sacs, clawed arms), the Hivemind (no body: a folded mass of lobes, veined and glowing,
+  pods and tendrils at its foot, in a pool of flesh) and its second phase (redder, torn open down the middle with
+  light pouring out, the pods burst).
+- **The risen** (`risenApp`): the person as they were and in what they wore, gone grey-green, reaching.
+- **The fallen** (`unitFigureDown`, `corpseFigure`): the same figure laid along the world's x through a second
+  transform (the figure's up along +x, its front turned up and pressed flat), the head toward the way the unit
+  faced, in a pool of blood when dead; down and alive with the knees drawn up and the arms over the chest. Bodies on
+  the ground (sleepers' corpses) the same, burnt ones charred, burst ones split. The worm swarm and the Hivemind
+  cannot lie down: dead, they go dark.
+- **The panels**: `survivorURL`, `appearanceURL`, `zombieURL` and `unitCanvas` in `ui/sprites.js` now hand out the
+  figure at a three-quarter heading (25°), so the roster, the family and relations views, the team panels, the
+  customisation screen and the zombie-look preview all show the figures; `spriteImg` takes the figures' shape. The
+  flat painters stay as fallbacks (`unitCanvasFlat`, `downsprites.js`).
+
+![the special dead and the armoured dead](survivors-3d/special.png)
+
+![the bosses, the risen and the fallen](survivors-3d/bosses.png)
+
+In play, a survivor down beside the others and the dead among the trees (3×):
+
+![bodies in the battle view](battle-3d/bodies-in-scene.png)

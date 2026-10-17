@@ -30,6 +30,8 @@ let html = "";
 for (const { name, st, b } of battles(42, only)) {
   ISO.iso.zoom = zoom;
   st.combat = b;
+  for (const t of b.units.filter((t) => t.side !== "player").slice(0, +(q.get("kill") || 0))) { t.dead = true; t.hp = 0; } // ?kill=n: the first n enemies dead, to see bodies lying
+  for (const t of b.units.filter((t) => t.side === "player").slice(0, +(q.get("down") || 0))) { t.down = true; } // ?down=n: your first n down
   clock += 50; UI.drawCombat(st, clock);
   for (let i = 0; i < +(q.get("turn") || 0); i++) ISO.isoRotate(b, 1); // eighth turns, the game's own way (odd: a straight view)
   // centred on your people, the roofs as the view keeps them; a second frame after centring settles the camera
