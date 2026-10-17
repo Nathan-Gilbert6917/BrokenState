@@ -23,7 +23,7 @@
 // included) or the unit sprite under it.
 import { PAL as COL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
-import { CELL, active, coverSides, evacAt, barredCell, moveMob, vaultable } from "../sim/combat.js";
+import { CELL, active, coverSides, evacAt, barredCell, moveMob, vaultable, vaultBreaks } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
@@ -1996,14 +1996,19 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.stroke();
     ctx.setLineDash([]);
     // Half cover vaulted on the way (sim/combat.js VAULT, vaultable): the cell outlined solid in the path's colour with a
-    // VAULT tag over it (the path goes over it, never ends on it).
+    // VAULT tag over it (the path goes over it, never ends on it); a closed window crashed through (vaultBreaks,
+    // sim/windows.js: loud, and it cuts) gets a SMASH tag in the danger colour instead.
     for (const [x, y] of path) {
       const c = b.cells[y * b.w + x];
       if (CELL[c.k].walk || !vaultable(b, c)) continue;
+      const smash = vaultBreaks(c), col = smash ? "#ff6b6b" : ctx.strokeStyle;
       ctx.lineWidth = Math.max(1.5, 0.5 * S);
+      const keep = ctx.strokeStyle;
+      ctx.strokeStyle = col;
       ctx.beginPath(); diamond(ctx, x, y, tileTop(b, x, y), 1); ctx.stroke();
+      ctx.strokeStyle = keep;
       const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y) + 10);
-      tag(ctx, "VAULT", X, Y, ctx.strokeStyle, Math.max(9, 2.8 * S));
+      tag(ctx, smash ? "SMASH" : "VAULT", X, Y, col, Math.max(9, 2.8 * S));
     }
   }
 

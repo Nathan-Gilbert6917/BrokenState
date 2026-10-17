@@ -31,7 +31,7 @@ import { countOf, useOne } from "./itemstack.js"; // makeshift picks: a stack, o
 import { lockSource } from "./itemcond.js";
 const siteTypeAt = (state, tileId) => { const t = state.tiles && state.tiles[tileId]; return t && t.loc ? t.loc.type : null; }; // lockSource: a gun store's cages
 import { rollBlueprint, bpOfItem } from "./blueprints.js";
-import { BMAP } from "./buildingmaps.js"; // a locked door's strength (call-time only: safe in the import cycle)
+import { BMAP, DOOR_KINDS } from "./buildingmaps.js"; // a locked door's strength, a door's kind (lock.dk: its lock's difficulty, whether it can be kicked; call-time only: safe in the import cycle)
 import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a container may cover several cells (a car)
 import { addFindVia } from "./ammo.js"; // rounds by calibre
 import { say as sayB, fx as fxB, setFloor } from "./combat.js"; // gun safes: a charge that goes off at the start of a turn (safeTurn)
@@ -181,6 +181,12 @@ export function wearPicks(s, it, roll = 1) {
 // For a unit (battle unit u with u.sid) and a lock: { key, pick, force } each { ok, chance, why, ap, label }.
 export function openOdds(state, b, u, lock) {
   const def = LOCKS[lock.kind] || LOCKS.door;
+  // A door's kind (buildingmaps.js DOOR_KINDS, lock.dk): its own lock's difficulty (a glass door's is easy, a security
+  // door's hard), whether it can be kicked in, whether it can be forced at all.
+  const K = (lock.dk && DOOR_KINDS[lock.dk]) || null;
+  const diff = K && K.diff != null ? K.diff : def.diff;
+  const forceable = def.force && !(K && K.force === false), kickable = !(K && K.kick === false);
+  const name = K ? K.name.toLowerCase() : def.name.toLowerCase();
   const s = survivorById(state, u.sid);
   const site = b.tileId;
   const out = {};
@@ -189,15 +195,16 @@ export function openOdds(state, b, u, lock) {
     : hasKey(state, site) ? { ok: true, chance: 1, ap: 1, label: "Key", why: "" } : { ok: false, chance: 0, ap: 1, label: "Key", why: `No key for ${b.place} on the key ring.` };
   const picks = picksOf(s);
   const mk = isMakeshiftPicks(picks);
-  const pc = pickChance(s, def, picks, !!u.quiet);
+  const pc = pickChance(s, { ...def, diff }, picks, !!u.quiet); // the door's kind sets the difficulty (DOOR_KINDS)
   // Makeshift picks: the lower roll, one snapping half the time, and some locks beyond a bent wire.
   if (!picks) out.pick = { ok: false, chance: pc, ap: 1, label: "Pick", why: "Needs lockpicks (the Crowbar and lockpicks item, or makeshift picks) on this person." };
-  else if (mk && !makeshiftPickable(LOCKS[lock.kind] ? lock.kind : "door")) out.pick = { ok: false, chance: 0, ap: 1, label: "Pick (makeshift)", makeshift: true, why: `A ${def.name.toLowerCase()} is beyond makeshift picks: it takes the crowbar and lockpicks${def.force ? ", a key or force" : " or a key"}.` };
+  else if (mk && !makeshiftPickable(LOCKS[lock.kind] ? lock.kind : "door")) out.pick = { ok: false, chance: 0, ap: 1, label: "Pick (makeshift)", makeshift: true, why: `A ${name} is beyond makeshift picks: it takes the crowbar and lockpicks${forceable ? ", a key or force" : " or a key"}.` };
   else out.pick = { ok: true, chance: pc, ap: 1, label: mk ? "Pick (makeshift)" : "Pick", ...(mk ? { makeshift: true, snap: MAKESHIFT_PICK.snap, left: countOf(picks) } : {}), why: "" };
-  if (!def.force) out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: `A ${def.name.toLowerCase()} cannot be forced: pick it or use a key.` };
-  else if (barOf(s)) out.force = { ok: true, chance: clamp(FORCE.base + FORCE.perMech * (s ? skill(s, "mechanics") : 0) - FORCE.perDiff * (def.diff - 1), 0.05, 0.95), ap: 1, label: "Force", crowbar: true, why: "" };
+  if (!forceable) out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: `A ${name} cannot be forced: pick it or use a key${K ? ", or batter it down" : ""}.` };
+  else if (barOf(s)) out.force = { ok: true, chance: clamp(FORCE.base + FORCE.perMech * (s ? skill(s, "mechanics") : 0) - FORCE.perDiff * (diff - 1), 0.05, 0.95), ap: 1, label: "Force", crowbar: true, why: "" };
   // Without a crowbar: kick it in, or on a car shatter a window and reach in (glass): both actions and the loudest way.
-  else if (def.diff <= SMASH.maxDiff) out.force = { ok: u.ap >= SMASH.ap, chance: clamp(SMASH.base - SMASH.perDiff * (def.diff - 1) + (def.glass ? SMASH.glassBonus : 0), 0.05, 0.95), ap: SMASH.ap, label: def.glass ? "Break glass" : "Smash", glass: !!def.glass, why: u.ap >= SMASH.ap ? "" : `${def.glass ? "Breaking the glass" : "Smashing it"} takes both actions.` };
+  else if (!kickable) out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: `A ${name} cannot be kicked in: a crowbar, lockpicks or a key.` };
+  else if (diff <= SMASH.maxDiff) out.force = { ok: u.ap >= SMASH.ap, chance: clamp(SMASH.base - SMASH.perDiff * (diff - 1) + (def.glass ? SMASH.glassBonus : 0), 0.05, 0.95), ap: SMASH.ap, label: def.glass ? "Break glass" : "Smash", glass: !!def.glass, why: u.ap >= SMASH.ap ? "" : `${def.glass ? "Breaking the glass" : "Smashing it"} takes both actions.` };
   else out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: "Too solid to smash without a crowbar." };
   if (def.tier) safeOdds(state, b, u, lock, def, s, out); // gun safes: combination, crack, bypass, drill, grind, blow (below)
   return out;
@@ -248,7 +255,7 @@ export function lockRaid(state, b) {
       const a = cands[(start + i) % cands.length];
       if (sealRoom(b, a)) {
         const kind = VAULT_AREAS.includes(a.type) ? "vault" : "door";
-        for (const [x, y] of a.doors) R.doors.push({ id: R.doors.length + 1, x, y, area: a.id, lock: { kind, open: false, tries: 0 } });
+        for (const [x, y] of a.doors) { const dk = b.cells[y * b.w + x].dk; R.doors.push({ id: R.doors.length + 1, x, y, area: a.id, lock: { kind, open: false, tries: 0, ...(dk ? { dk } : {}) } }); } // dk: the door's kind (buildingmaps.js DOOR_KINDS)
         for (const c of R.containers) if (c.area === a.id) c.room = true;
         a.locked = true;
         break;

@@ -106,7 +106,8 @@ import { deepShift } from "./deeploot.js";
 import { typesOf, withHand } from "./rounds.js"; // shells and rounds at hand (takeHandRounds)
 import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
-import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape } from "./buildingmaps.js";
+import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
+import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
 import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its containers as the ledger keeps them, their own dice
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
@@ -684,7 +685,7 @@ export const CELL = {
   void:      { walk: false, cover: 0, los: false, name: "Open air" },
   bdoor:     { walk: true,  cover: 0, los: true,  name: "Barred door", bar: true },
   doorway:   { walk: true,  cover: 0, los: false, name: "Broken door" },
-  smashed:   { walk: true,  cover: 0, los: false, name: "Smashed window" },
+  smashed:   { walk: false, cover: 1, los: false, name: "Broken window" }, // the sill is half cover like a window's; vaulted through (windows.js), nobody stands in it
   rubble:    { walk: true,  cover: 0, los: false, name: "Rubble" },
   well:      { walk: false, cover: 1, los: false, name: "Well" },
   barrel:    { walk: false, cover: 1, los: false, name: "Rain barrels" },
@@ -858,11 +859,12 @@ export function doorHeld(b, c) {
 const doorOpens = (b, u, c) => c.k === "idoor" && !!u && u.kind === "human" && !doorHeld(b, c);
 const climbAt = (b, x, y) => !!CELL[b.cells[idx(x, y)].k].climb;
 export const breakable = (c) => c.hp > 0;
-// Half cover a person vaults (VAULT): waist high and not walkable, never a window (buildingmaps.js: the climb in, and
-// the window rules to come), cell bars, a bridge railing or a well, nothing tall, no trap, not a plated vehicle (full
-// cover, sideCover). Who vaults (canVault): people on their feet with their arms free (carry.js handsBusy), not
-// carrying or dragging a body, not on a ram's crew (siege.js); never the dead.
-const NO_VAULT = new Set(["window", "smashed", "bars", "rail", "well"]);
+// Half cover a person vaults (VAULT): waist high and not walkable, a window too (windows.js: an open or broken one
+// at the vault's cost, a closed one crashed through: vaultBreaks), never cell bars, a bridge railing or a well,
+// nothing tall, no trap, not a plated vehicle (full cover, sideCover). Who vaults (canVault): people on their feet
+// with their arms free (carry.js handsBusy), not carrying or dragging a body, not on a ram's crew (siege.js); never
+// the dead (one of the dead clambers through an open or broken window: clambers, at the same cost).
+const NO_VAULT = new Set(["bars", "rail", "well"]);
 export function vaultable(b, c) {
   const C = c && CELL[c.k];
   if (!C || C.walk || C.cover !== 1 || C.tall || C.trap || NO_VAULT.has(c.k)) return false;
@@ -870,6 +872,14 @@ export function vaultable(b, c) {
   return true;
 }
 export const canVault = (u) => !!u && u.kind === "human" && !u.ztype && !u.dead && !u.down && !u.aboard && !u.gunner && !handsBusy(u) && u.carrying == null && u.dragging == null && u.ram == null;
+// A vault through this cell crashes through a closed window (loud, cuts: windows.js WINDOW.BREAK / HURT).
+export const vaultBreaks = (c) => !!c && c.k === "window" && !windowOpen(c);
+// The tiles a vault over this cell costs beyond the step: VAULT.COST, and a closed window SMASH_COST more (the path
+// takes an open way of the same length first).
+export const vaultCost = (b, c) => VAULT.COST + (vaultBreaks(c) ? WINDOW.SMASH_COST : 0);
+// One of the dead clambers through an open or broken window (never a closed one: on a base's map it batters it);
+// a Climber goes over walls its own way (middead.js), a 2 × 2 boss never fits.
+export const clambers = (u) => !!u && u.kind === "zombie" && u.ztype !== "climber" && unitSize(u) === 1 && !u.dead;
 // A unit's footprint: one cell, or size × size cells from its (x, y) corner (the Broodmother and the Hivemind, 2 × 2:
 // defences.js BOSSES size). Distance, reach and sight go by the nearest of its cells; its figure stands on the centre.
 export const unitSize = (u) => u.size || 1;
@@ -2072,12 +2082,20 @@ function genMap(rng, tile, opts = {}) {
   };
   let built = 0;
   const houses = [], locked = []; // houses: { x0, y0, w, h, doors } (a locked one cut off is unlocked at the end)
+  // The door's kind (buildingmaps.js DOOR_KINDS): the first door a house's front door; the others a screen door, a
+  // patio's glass door or another solid one, a locked one always solid. Its hit points follow the kind.
   const fieldDoor = (x, y, i) => {
-    const c = at(x, y), roll = hash01(rng.state, "fdoor", x, y);
+    const c = at(x, y), roll = hash01(rng.state, "fdoor", x, y), kr = hash01(rng.state, "fdkind", x, y);
     c.f = "floor";
-    if (i && opts.locks !== false && roll < FIELD_DOOR.LOCKED) { c.k = "door"; c.hp = c.mhp = BMAP.DOOR.locked; locked.push([x, y]); }
-    else { c.k = i && roll >= FIELD_DOOR.LOCKED && roll < FIELD_DOOR.LOCKED + FIELD_DOOR.OPEN ? "odoor" : "idoor"; c.hp = c.mhp = BMAP.DOOR.outer; }
+    if (i && opts.locks !== false && roll < FIELD_DOOR.LOCKED) { c.k = "door"; c.dk = "front"; c.hp = c.mhp = BMAP.DOOR.locked; locked.push([x, y]); }
+    else {
+      c.k = i && roll >= FIELD_DOOR.LOCKED && roll < FIELD_DOOR.LOCKED + FIELD_DOOR.OPEN ? "odoor" : "idoor";
+      c.dk = !i ? "front" : kr < 0.5 ? "screen" : kr < 0.75 ? "glass" : "front";
+      c.hp = c.mhp = DOOR_KINDS[c.dk].hp;
+    }
   };
+  // A window's state (windows.js): a house's mix, from the map's own dice.
+  const fieldWindow = (x, y) => { put(x, y, "window"); at(x, y).win = rollWin(rng.state, winMixOf("field"), x, y); };
   const building = (w, h, lo = X(4), hi = W - X(5) - w) => {
     for (let tries = 0; tries < 25; tries++) {
       const x0 = rng.int(lo, Math.max(lo, hi)), y0 = rng.int(0, H - h);
@@ -2092,7 +2110,7 @@ function genMap(rng, tile, opts = {}) {
       rng.shuffle(edge);
       const doors = w * h > 30 ? 3 : 2;
       edge.slice(0, doors).forEach(([x, y], i) => fieldDoor(x, y, i));
-      edge.slice(doors, doors + rng.int(1, 3)).forEach(([x, y]) => put(x, y, "window"));
+      edge.slice(doors, doors + rng.int(1, 3)).forEach(([x, y]) => fieldWindow(x, y));
       houses.push({ x0, y0, w, h, doors: edge.slice(0, doors) });
       built++;
       return true;
@@ -2240,7 +2258,7 @@ export function los(b, x0, y0, x1, y1) {
     const cx = Math.floor(px), cy = Math.floor(py);
     if ((cx === x0 && cy === y0) || (cx === x1 && cy === y1)) continue;
     const cell = b.cells[idx(cx, cy)], C = CELL[cell.k];
-    const top = cell.t || (C.los ? C.tall || 1 : C.walk ? cell.h ?? C.h ?? 0 : 0);
+    const top = cell.t || (C.los && !doorSees(cell) ? C.tall || 1 : C.walk ? cell.h ?? C.h ?? 0 : 0); // doorSees: a closed glass or screen door is seen through (buildingmaps.js DOOR_KINDS)
     const eye = e0 + ((e1 - e0) * i) / n;
     if (!top || eye > top) continue;
     const fx = px - cx, fy = py - cy;
@@ -2251,7 +2269,7 @@ export function los(b, x0, y0, x1, y1) {
     const across = (x, y) => {
       if ((x === cx && y === cy) || !inside(x, y) || (x === x0 && y === y0) || (x === x1 && y === y1)) return false;
       const c2 = b.cells[idx(x, y)], C2 = CELL[c2.k];
-      const t2 = c2.t || (C2.los ? C2.tall || 1 : C2.walk ? c2.h ?? C2.h ?? 0 : 0);
+      const t2 = c2.t || (C2.los && !doorSees(c2) ? C2.tall || 1 : C2.walk ? c2.h ?? C2.h ?? 0 : 0);
       return !!t2 && eye <= t2;
     };
     if ((nx !== cx && ny === cy && across(nx, cy)) || (ny !== cy && nx === cx && across(cx, ny))) clear = false;
@@ -2369,10 +2387,11 @@ export function reachable(b, u, maxCost, opts = {}) {
   // stopping on one of them.
   const climber = u.ztype === "climber";
   const passes = (x, y) => cellAt(b, x, y).walk || (climber && climbOver(u, b.cells[idx(x, y)].k));
-  // A person vaults half cover (VAULT, vaultable): over it at VAULT.COST more, never stopping on it, and never round
-  // a corner of it (the corner rule below reads passes, not vaults).
-  const vaulter = canVault(u);
-  const vaults = (x, y) => vaulter && vaultable(b, b.cells[idx(x, y)]);
+  // A person vaults half cover (VAULT, vaultable): over it at vaultCost more (a closed window crashed through dearer
+  // still), never stopping on it, and never round a corner of it (the corner rule below reads passes, not vaults).
+  // One of the dead clambers through an open or broken window the same way (clambers, windows.js).
+  const vaulter = canVault(u), clamber = !vaulter && !climber && clambers(u);
+  const vaults = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultable(b, c) : clamber && windowOpen(c); };
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
@@ -2397,7 +2416,7 @@ export function reachable(b, u, maxCost, opts = {}) {
       if (avoid && avoid.has(j)) continue;
       const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
-      const step = (diag ? 1.5 : 1) + climb + (vault ? VAULT.COST : 0);
+      const step = (diag ? 1.5 : 1) + climb + (vault ? vaultCost(b, b.cells[j]) : 0);
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
       if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) open.push(j);
@@ -2407,9 +2426,10 @@ export function reachable(b, u, maxCost, opts = {}) {
       }
     }
   }
-  // Downed bodies can be stepped over but not stood on; nor is half cover vaulted (or a Climber's wall) stood on.
+  // Downed bodies can be stepped over but not stood on; nor is half cover vaulted, a window gone through or a
+  // Climber's wall stood on: no cell nobody can walk on ends a move.
   const stop = real.slice();
-  for (let j = 0; j < W * H; j++) if (occ[j] === 2 || (climber && (!CELL[b.cells[j].k].walk || barredCell(b.cells[j]))) || (vaulter && !CELL[b.cells[j].k].walk)) stop[j] = Infinity;
+  for (let j = 0; j < W * H; j++) if (occ[j] === 2 || (j !== start && !CELL[b.cells[j].k].walk) || (climber && barredCell(b.cells[j]))) stop[j] = Infinity;
   return { dist: stop, prev };
 }
 
@@ -2435,8 +2455,9 @@ export function distField(b, sources, walker = null) {
   // The same field asked again with the map unchanged (every one of the dead in a turn heads for the same people):
   // the one worked out before (fieldCache). Callers only read it.
   const climber = !!walker && walker.ztype === "climber"; // middead.js: over walls and fences, up a level anywhere
-  const vaulter = !climber && canVault(walker); // a person: over half cover at VAULT.COST (vaultable)
-  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${vaulter ? "v" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
+  const vaulter = !climber && canVault(walker); // a person: over half cover at vaultCost (vaultable)
+  const clamber = !climber && !vaulter && (!walker || clambers(walker)); // the dead, or nobody in particular: through an open or broken window (windows.js)
+  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${vaulter ? "v" : ""}${clamber ? "t" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
   const cache = fieldCache(b);
   const hit = cache.get(key);
   if (hit) return hit;
@@ -2444,7 +2465,7 @@ export function distField(b, sources, walker = null) {
   if (cache.size >= 8) cache.delete(cache.keys().next().value);
   cache.set(key, d);
   const over = (x, y) => climber && climbOver(walker, b.cells[idx(x, y)].k);
-  const vault = (x, y) => vaulter && vaultable(b, b.cells[idx(x, y)]);
+  const vault = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultable(b, c) : clamber && windowOpen(c); };
   const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c)) || over(x, y) || vault(x, y)) && !(burning && burning.has(idx(x, y))); };
   const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
@@ -2460,7 +2481,7 @@ export function distField(b, sources, walker = null) {
     sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
     climbA[i] = climbAt(b, x, y) ? 1 : 0;
     hA[i] = h(b, x, y);
-    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? VAULT.COST : 0; // a Climber's wall, a person's vault
+    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? vaultCost(b, c) : 0; // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window
     bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
   }
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
@@ -3346,7 +3367,7 @@ export function createBattle(state, setup) {
     losCache: makeLosCache(W, H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
   };
   // The houses' locked doors (genMap FIELD_DOOR): opened like a raid's (locks.js openLock, combatAct "open").
-  if (map.locked.length) b.doors = map.locked.map(([x, y], i) => ({ id: i + 1, x, y, lock: { kind: "door", open: false, tries: 0 } }));
+  if (map.locked.length) b.doors = map.locked.map(([x, y], i) => ({ id: i + 1, x, y, lock: { kind: "door", open: false, tries: 0, ...(map.cells[idx(x, y)].dk ? { dk: map.cells[idx(x, y)].dk } : {}) } })); // dk: the door's kind (locks.js openOdds: its lock's difficulty, whether it can be kicked)
   b.reinfMax = Math.round(b.infection * 5);
   b.zmix = armoredOf(setup.enemy && setup.enemy.mix); // the dead drawn in later: soldiers among them at a military site
   const layout = setup.layout && layouts ? layouts.get(setup.layout) : null;
@@ -3538,6 +3559,7 @@ function foesOf(b, u) {
 const personHit = (t, hit) => t.kind === "human" && !t.ztype && locatedHit(hit);
 export function hitMult(t, by, hit) {
   if (hit && hit.how === "acid") return acidArmor(t);
+  if (hit && hit.how === "glass") return 1; // the cuts of a vault through a closed window (windows.js): no armour against them
   if (t.ztype === "boneback") return bonebackMult(t, by, hit) * t.armor;
   if (t.ztype && (ARMORED.includes(t.ztype) || t.ztype === "swarm")) return armorVs(t, by, hit);
   if (personHit(t, hit) && t.pieces) return armourExpect(t, by, hit);
@@ -3665,7 +3687,20 @@ export function moveAlong(b, u, path) {
     faceToward(u, x, y); // which way it faces (stealth.js: takedowns from behind)
     u.x = x; u.y = y;
     walked.push([x, y]);
-    if (!CELL[b.cells[idx(x, y)].k].walk && vaultable(b, b.cells[idx(x, y)])) vaulted.push(CELL[b.cells[idx(x, y)].k].name.toLowerCase());
+    const over = b.cells[idx(x, y)];
+    if (!CELL[over.k].walk && (vaultable(b, over) || windowOpen(over))) { // over half cover, through a window (windows.js)
+      // A closed window crashed through: the glass goes with a crash (loud: WINDOW.BREAK) and cuts the vaulter.
+      if (vaultBreaks(over)) {
+        smashWindow(b, over);
+        const cut = WINDOW.HURT[0] + Math.floor(hash01(b.rng.state, "glass", b.turn, x, y, u.id) * (WINDOW.HURT[1] - WINDOW.HURT[0] + 1));
+        const eff = Math.round(damage(b, u, cut, null, false, { how: "glass" }));
+        fx(b, { type: "melee", from: [x, y], to: [x, y], hit: true, crit: false, dmg: eff, side: u.side, text: `-${eff}` });
+        say(b, `${u.name} crashes through the window: the glass goes with a crash${b.raid ? ` (Heat +${WINDOW.BREAK.heat})` : ""}, and cuts ${u.name.split(" ")[0]} (${eff}).`, "danger");
+        glassNoise(b, x, y, { say, alertNear });
+        vaulted.push("through the window");
+      } else vaulted.push(over.k === "window" ? "through the open window" : over.k === "smashed" ? "through the broken window" : `the ${CELL[over.k].name.toLowerCase()}`);
+      if (!active(u)) break; // cut down on the sill (the glass, overwatch): it falls back below
+    }
     // A building's closed door swings open (buildingmaps.js); anyone but your people stops in the doorway to open it.
     const stopAtDoor = b.cells[idx(x, y)].k === "idoor" && openDoor(b, x, y, u) && u.side !== "player";
     // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
@@ -3700,11 +3735,12 @@ export function moveAlong(b, u, path) {
     if (b.corpses && b.corpses.length && u.kind !== "zombie" && active(u)) { wakeNear(b, u); spotCheck(b, u); } // sleepers.js: a Sleeper next to them splits open
     if (!active(u) || stopAtDoor) break;
   }
-  // Dropped on the cover it was going over (an overwatch shot, the flames): it falls back off it, to the cell before.
-  if (walked.length && !CELL[b.cells[idx(u.x, u.y)].k].walk && vaultable(b, b.cells[idx(u.x, u.y)])) { walked.pop(); const back = walked.length ? walked[walked.length - 1] : from; u.x = back[0]; u.y = back[1]; }
+  // Dropped on the cover it was going over (an overwatch shot, the flames, the glass): it falls back off it, to the
+  // cell before (nobody stands on a cell nobody can walk on).
+  if (walked.length && !CELL[b.cells[idx(u.x, u.y)].k].walk) { walked.pop(); const back = walked.length ? walked[walked.length - 1] : from; u.x = back[0]; u.y = back[1]; }
   if (vaulted.length) {
     u.vaulted = (u.vaulted || 0) + VAULT.COST * vaulted.length; // winded: moveMob for the rest of the turn
-    if (u.side === "player") { b.noise = (b.noise || 0) + VAULT.NOISE * vaulted.length; say(b, `${u.name} vaults the ${[...new Set(vaulted)].join(" and the ")}.`, "info"); }
+    if (u.side === "player") { b.noise = (b.noise || 0) + VAULT.NOISE * vaulted.length; say(b, `${u.name} vaults ${[...new Set(vaulted)].join(" and ")}.`, "info"); }
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
   if (walked.length && u.dragging != null) MED.dragFollow(b, u, from, walked); // medics.js: the downed ally comes along behind
@@ -4021,6 +4057,7 @@ export function combatAct(state, act) {
   if (u && u.side === "player" && act.type === "sneak" && active(u)) return sneakAct(b, u, act); // vision.js: free, even with no actions left to stop
   if (u && u.side === "player" && (act.type === "light" || act.type === "nvg") && active(u)) return switchAct(state, b, u, act); // vision.js: a light, night vision on or off (free, even with no actions left)
   if (u && u.side === "player" && act.type === "inv" && active(u) && u.ap < INV_AP) return "No action left."; // the inventory window says why (invAct)
+  if (u && u.side === "player" && act.type === "checkwindow" && active(u)) { const err = windowAct(state, b, u, act, { say, alertNear, fx }); if (!err) bump(b); return err; } // windows.js: trying a window is free, even with no actions left
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
   if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
@@ -4339,28 +4376,38 @@ export function combatAct(state, act) {
       for (const p of b.units) if (p.side === "player" && active(p)) detect(b, p);
       break;
     }
-    case "climb": { // buildingmaps.js: through a window next to the unit (not diagonally); the glass breaks
+    case "climb": { // buildingmaps.js: through a window next to the unit (not diagonally); a closed one is smashed (loud), an open or broken one is quiet (windows.js)
       if (!b.raid) return "Nothing to climb.";
       const opts = windowsNear(b, u);
       const w = act.x != null ? opts.find((o) => o.x === act.x && o.y === act.y) : opts[0];
       if (!w) return "Stand right next to a window (not diagonally) with room on the far side.";
       if (u.ap < BMAP.CLIMB.ap) return "Not enough actions.";
       const c = b.cells[idx(w.x, w.y)];
-      c.k = "smashed";
-      b.losCache.fill(0);
+      const quiet = windowOpen(c);
+      if (!quiet) smashWindow(b, c);
       u.ap -= BMAP.CLIMB.ap;
       u.hunker = false;
       const from = [u.x, u.y];
       faceToward(u, w.to[0], w.to[1]);
       u.x = w.to[0]; u.y = w.to[1];
       fx(b, { type: "move", unit: u.id, from, path: [[w.x, w.y], [u.x, u.y]] });
-      b.raid.heat = Math.min(100, b.raid.heat + BMAP.CLIMB.heat);
-      b.noise = (b.noise || 0) + 1;
-      say(b, `${u.name} smashes the window and climbs through (Heat +${BMAP.CLIMB.heat}).`, "info");
-      alertNear(b, w.x, w.y, BMAP.CLIMB.radius, "Breaking glass carries through the building.");
+      if (quiet) say(b, `${u.name} climbs through the ${c.k === "smashed" ? "broken" : "open"} window: quiet.`, "info");
+      else {
+        b.raid.heat = Math.min(100, b.raid.heat + BMAP.CLIMB.heat);
+        b.noise = (b.noise || 0) + 1;
+        say(b, `${u.name} smashes the window and climbs through (Heat +${BMAP.CLIMB.heat}).`, "info");
+        alertNear(b, w.x, w.y, BMAP.CLIMB.radius, "Breaking glass carries through the building.");
+      }
       b.reach = flood(b.cells, u.x, u.y);
       syncFloor(b);
       detect(b, u);
+      break;
+    }
+    case "openwindow": case "closewindow": case "breakwindow": { // windows.js: the window next to the unit: open or close it (1 action, quiet), break it (1 action, loud); checkwindow (free) is handled above the actions guard
+      const err = windowAct(state, b, u, act, { say, alertNear, fx });
+      if (err) return err;
+      b.reach = flood(b.cells, u.x, u.y); // what is in reach on foot changes with an opening
+      syncFloor(b);
       break;
     }
     // stealth.js: Subdue (takedowns, knock-outs), Tie up, Throw (bottles, noise makers, firecrackers), Drag.
@@ -5064,7 +5111,7 @@ export function openDoor(b, x, y, u = null) {
 }
 
 export function structureName(c) {
-  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" || c.k === "idoor" || c.k === "door" ? (c.roll ? "Roller door" : "Door") : c.k === "window" ? "Window" : CELL[c.k].name;
+  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" || c.k === "idoor" || c.k === "door" ? (c.roll ? "Roller door" : c.dk && DOOR_KINDS[c.dk] ? DOOR_KINDS[c.dk].name : "Door") : c.k === "window" ? "Window" : CELL[c.k].name;
 }
 
 // A structure gives way: a wall section becomes a breach (and the walkway behind it comes down), the gate hangs open,
@@ -5084,11 +5131,13 @@ export function breakCell(b, x, y, by = null) {
   } else if (c.k === "gate") c.bar = false;
   else if (c.k === "bdoor") c.k = "doorway";
   else if (c.k === "idoor" || c.k === "door") doorBroken(b, x, y); // a building's door stays broken (buildingmaps.js)
-  else if (c.k === "window") c.k = "smashed";
+  else if (c.k === "window") smashWindow(b, c); // windows.js: broken, half cover still, vaulted through
   else if (c.k === "tanktrap") c.k = "rubble"; // a bridge barricade's trap, broken up: open ground again (a vehicle can pass)
   b.losCache.fill(0);
   if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;
   say(b, by && by.side === "enemy" ? `${by.kind === "zombie" ? "The dead" : by.name} break${by.kind === "zombie" ? "" : "s"} through the ${name}!` : `The ${name} gives way!`, "danger");
+  // Glass going (a window, a glass door): the crash carries (windows.js WINDOW.BREAK: the raid's noise, Heat, the unaware wake).
+  if (c.k === "smashed" || (c.dk === "glass" && c.k === "doorway")) glassNoise(b, x, y, { say, alertNear });
 }
 
 function shouldFlee(b) {
@@ -6051,8 +6100,10 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
       }
       rng.shuffle(edge);
       const doors = edge.slice(0, 2);
-      doors.forEach(([x, y]) => { put(x, y, "idoor", "floor"); at(x, y).hp = at(x, y).mhp = BMAP.DOOR.outer; }); // a closed door, not a gap in the wall (as a building's map: buildingmaps.js)
-      edge.slice(2, 2 + rng.int(1, 2)).forEach(([x, y]) => put(x, y, "window"));
+      // A closed door, not a gap in the wall (as a building's map: buildingmaps.js); its kind (DOOR_KINDS): the first the
+      // front door, the second a screen or a glass door half the time (hit points by the kind).
+      doors.forEach(([x, y], i) => { put(x, y, "idoor", "floor"); const c = at(x, y), kr = hash01(rng.state, "sdkind", x, y); c.dk = !i ? "front" : kr < 0.3 ? "screen" : kr < 0.5 ? "glass" : "front"; c.hp = c.mhp = DOOR_KINDS[c.dk].hp; });
+      edge.slice(2, 2 + rng.int(1, 2)).forEach(([x, y]) => { put(x, y, "window"); at(x, y).win = rollWin(rng.state, winMixOf(type === "house" || type === "farmhouse" || type === "cabin" ? "house" : "shop"), x, y); }); // windows.js: the state mix by the building
       // Inside cells touching a wall, away from doors.
       const spots = [];
       for (let y = y0 + 1; y < y0 + h - 1; y++) for (let x = x0 + 1; x < x0 + w - 1; x++) {
@@ -6205,7 +6256,7 @@ export function createRaid(state, setup) {
       reward: rewardMult(tile), // buildingmaps.js: risk pays (city blocks most, the countryside least)
       // A building's map: which one, its plan (rooms, exits: wanderers.js reads it), its locked doors (locks.js).
       interior: pick ? { id: pick.id, key: pick.key, name: pick.name } : null, plan: pick ? map.plan : null,
-      doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, f: d.f || 0, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0 } })) : undefined,
+      doors: pick ? map.lockedDoors.map((d, i) => ({ id: i + 1, x: d.x, y: d.y, f: d.f || 0, area: d.area, exit: !!d.exit, botSkip: !!d.exit, lock: { kind: d.kind, open: false, tries: 0, ...(d.dk ? { dk: d.dk } : {}) } })) : undefined, // dk: the door's kind (locks.js openOdds)
       // Several buildings here and the raid started from the State Map: the choice is offered until anyone acts.
       choose: !pick && setup.raid && setup.raid.choose && !setup.raid.building ? buildingOptions(tile) : null,
     },

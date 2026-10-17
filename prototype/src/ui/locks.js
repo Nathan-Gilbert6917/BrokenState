@@ -5,6 +5,7 @@ import { combatAct } from "../sim/combat.js";
 import { LOCKS, PICK, MAKESHIFT_PICK, lockedNear, lockAt, openOdds, hasKey, keyName } from "../sim/locks.js";
 import { SAFE, safeLine, caseTargets, caseOdds } from "../sim/locks.js"; // gun safes and gun cases (sim/locks.js, sim/gunsafes.js)
 import { caseText } from "../sim/gunsafes.js";
+import { DOOR_KINDS } from "../sim/buildingmaps.js"; // a locked door's kind (its name, its own lock's difficulty)
 import { survivorById, skill } from "../sim/world.js";
 import { hasPerk } from "../sim/skills.js";
 import { cui } from "./combat.js";
@@ -68,7 +69,8 @@ export function lockPreview(b, u, x, y) {
     odds = `<br>${o.key.ok ? "Key: sure · " : ""}${o.pick.label || "Pick"} ${o.pick.ok ? pct(o.pick.chance) : o.pick.makeshift ? "(beyond a bent wire)" : "(no lockpicks)"} · ${o.force.ok || o.force.chance ? `${o.force.label} ${pct(o.force.chance)}` : "cannot be forced"}`;
   }
   // A door: what it does in the way and how to get through (a click from next to it tries the surest way: ui/combat.js).
-  if (t.door) return `<b>🔒 ${esc(t.name)}</b> · difficulty ${def.diff}${t.door.area != null ? " · a locked room" : ""}<br><span class="muted">Blocks the way and sight. Open it from right next to it: click it (key, else lockpicks, else force) or pick the way in the panel. The dead and the enemy batter it down.</span>${odds}<br>${near ? "Click it to open it." : "Move next to it to open it."}`;
+  const K = t.lock.dk && DOOR_KINDS[t.lock.dk] ? DOOR_KINDS[t.lock.dk] : null; // the door's kind (sim/buildingmaps.js): its own lock's difficulty, its name
+  if (t.door) return `<b>🔒 ${esc(K ? `Locked ${K.name.toLowerCase()}` : t.name)}</b> · difficulty ${K && K.diff != null ? K.diff : def.diff}${t.door.area != null ? " · a locked room" : ""}${K && K.force === false ? " · not forced" : K && K.kick === false ? " · not kicked in" : ""}<br><span class="muted">Blocks the way and sight. Open it from right next to it: click it (key, else lockpicks, else force) or pick the way in the panel. The dead and the enemy batter it down.</span>${odds}<br>${near ? "Click it to open it." : "Move next to it to open it."}`;
   return `<b>🔒 ${esc(t.name)}</b> · difficulty ${def.diff}${t.box && t.box.searched ? " · searched" : ""}<br><span class="muted">Locked things hold more: supplies, gear, keys and blueprints.</span>${odds}<br>${near ? "Open it from the panel: key, pick or force." : "Move next to it to open it."}`;
 }
 

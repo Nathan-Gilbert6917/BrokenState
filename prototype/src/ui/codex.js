@@ -22,13 +22,14 @@ import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known; tile heat
 import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
-import { STREET } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses
+import { STREET, DOOR_KINDS } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses; the kinds of door
+import { WINDOW } from "../sim/windows.js"; // the map's windows: open, locked, fixed or broken
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
 import { bossUnit, DEFENCE } from "../sim/defences.js";
-import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
+import { ZOMBIE_MOVE, playerSees, VAULT } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { FLASH } from "../sim/throwables.js"; // a flashbang's numbers
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
@@ -383,6 +384,18 @@ function placeEntries() {
     text: "The places run down without you: the groups send parties to the places they know near their bases, one place at a time, and survey tiles to find the hidden ones. They ransack containers as they go, they take what you left in a container you opened, and their raids stir a tile up. A party in a place shows on the map beside your team, and the place dialogue says when one is in it right now. The log says when a place you can see (or hear of on your radio) is picked clean, or when strangers emptied what you left.",
     how: "Do not leave things in a container near a group's base for long. Survey off the roads for the places nobody has picked over yet.", sprite: null,
   }];
+  // Windows and doors on the battle maps (sim/windows.js, sim/buildingmaps.js DOOR_KINDS; opened on the first map with one).
+  out.push({
+    key: "k:windows", cat: "places", name: "🪟 Windows", sub: "Open, locked, fixed or broken",
+    stats: [["Check", "free, from right next to it: unlocked, locked or fixed"], ["Open or close", `${WINDOW.OPEN_AP} action, quiet; an unlocked one from either side, a locked one from the inside only; a fixed one never`], ["Break", `${WINDOW.BREAK.ap} action, loud: the raid's noise +${WINDOW.BREAK.noise}, Heat +${WINDOW.BREAK.heat}, the unaware within ${WINDOW.BREAK.radius} tiles wake`], ["Through it", `a move may vault through an open or broken one (+${VAULT.COST} tiles, winded after) or crash through a closed one (as loud as breaking it, ${WINDOW.HURT[0]}–${WINDOW.HURT[1]} cuts); on a building's map Climb window (L) from next to it, quiet when it is open`], ["Cover", "half cover at the sill in every state; shots and sight pass; a throw passes an open or broken one"]],
+    text: "Every window on a battle map is unlocked, locked or fixed; houses mostly open, shop fronts and offices are mostly fixed glass, and a few stand broken already. Nobody knows which until someone tries it. The dead never open a window: they clamber through an open or broken one, and on a base's map they claw a closed one in.",
+    how: "Stand next to a window (not diagonally): click it or Check window to learn it; Open window for a quiet way out (locked ones from indoors only); Break window, or vault straight through with a move, for a loud quick escape. Shut a window behind you to keep a throw out.", sprite: null,
+  }, {
+    key: "k:doors", cat: "places", name: "🚪 Doors", sub: "The kinds of door",
+    stats: Object.values(DOOR_KINDS).filter((K) => K.diff != null || K.lock === false).map((K) => [K.name, `${K.hp} hit points · ${K.desc}${K.see ? " · seen through when shut" : ""}${K.lock === false ? " · no lock" : K.diff != null ? ` · lock difficulty ${K.diff}` : ""}${K.kick === false ? " · not kicked in" : ""}${K.force === false ? " · not forced" : ""}`]),
+    text: "A building's doors come by its kind: houses have a solid front door and a screen or a patio door at the back, shops and offices glass fronts and steel fire exits, police stations, armories, gun stores and cell blocks security doors, garages roller doors, barns plain wood. The kind sets how long the dead take to batter it down, whether it is seen through when shut, how hard its lock is to pick and whether it can be kicked in.",
+    how: "Hover a door to read its kind. A glass or a screen door hides nothing: close it to slow the dead, not to break their sight. Pick a glass door's lock (easy) or just break it (loud). A security door is picked or keyed, never kicked or forced: batter it down if you must.", sprite: null,
+  });
   // A kind with more to say than the rest: the neighbourhood is a whole street of houses on one raid map (sim/buildingmaps.js streetMap).
   const NOTES = {
     neighbourhood: {
@@ -549,6 +562,9 @@ function battleSeen(state, out) {
     try { if ((t.ztype !== "crawler" || zRevealed(b, t)) && (b.over || playerSees(b, t))) out.add(key); } catch { /* a unit the sight check does not know */ }
   }
   for (const c of b.corpses || []) if (c.sleeper && (c.spotted || c.burst)) out.add("z:sleeper");
+  // Windows and doors (sim/windows.js, sim/buildingmaps.js DOOR_KINDS): the entries open on the first map with one.
+  if (!codexSeen(state, "k:windows") && b.cells && b.cells.some((c) => c.k === "window" || c.k === "smashed")) out.add("k:windows");
+  if (!codexSeen(state, "k:doors") && b.cells && b.cells.some((c) => c.k === "idoor" || c.k === "odoor" || c.k === "door" || c.k === "bdoor")) out.add("k:doors");
 }
 
 // main.js refresh: opens what the player sees. The full scan once an in-game hour (or force), the battle each time.

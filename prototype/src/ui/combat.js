@@ -13,7 +13,8 @@ import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsR
 import { plateSwapPlan, PLATE_AP } from "../sim/carrykit.js"; // a broken plate swapped from the pack (2 actions)
 import { loadsFor, roundName } from "../sim/ammo.js"; // the reload chooser: the types of the gun's calibre to hand // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
-import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions } from "../sim/buildingmaps.js";
+import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions, DOOR_KINDS } from "../sim/buildingmaps.js";
+import { WINDOW, windowsBy, windowState, windowWord, openRefusal, isWindow, windowOpen } from "../sim/windows.js"; // the map's windows: check, open, close, break (the user's request 2026-10-17)
 import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
@@ -374,7 +375,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
   }
   autoSelect(b);
@@ -489,8 +490,10 @@ export function combatClick(state, px, py) {
     return;
   }
   // Raids: click a container next to the selected unit to search it.
-  // A door picked for Peek, Close door or Brace (sim/buildingmaps.js).
-  if (u && active(u) && ["peek", "close", "brace"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
+  // A door picked for Peek, Close door or Brace (sim/buildingmaps.js); a window picked for a window order (sim/windows.js).
+  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
+  // A window right next to the selected unit (sim/windows.js): the next thing to do with it (check it, open it, climb through).
+  if (isWindow(b.cells[c.y * W + c.x]) && windowsBy(b, u).some((o) => o.x === c.x && o.y === c.y)) return void windowClick(state, b, u, c);
   // A locked door (sim/locks.js: a raid's, a field map's houses'): a click tries it. A closed door is walked through
   // like any cell (it swings open: sim/combat.js openDoor).
   const lk = lockAt(b, c.x, c.y);
@@ -500,8 +503,6 @@ export function combatClick(state, px, py) {
     const sw = switchAt(b, c.x, c.y);
     if (sw && switchOptions(b, u).includes(sw)) return void act(state, { type: "lights", unit: u.id, area: sw.id });
     if (sw) { cui.msg = "Stand next to the switch, inside the room or in its doorway, to flip it."; return; }
-    // A window right next to the selected unit (sim/buildingmaps.js): climb through it.
-    if (b.raid.interior && b.cells[c.y * W + c.x].k === "window" && windowsNear(b, u).some((o) => o.x === c.x && o.y === c.y)) return void act(state, { type: "climb", unit: u.id, x: c.x, y: c.y });
     const box = boxAt(b, c.x, c.y);
     if (box && !box.searched && (!CDEF(b.cells[c.y * W + c.x]).walk || (u.x === c.x && u.y === c.y))) {
       if (nearBox(u, box)) return void openSearch(state, b, u, box);
@@ -518,6 +519,22 @@ export function combatClick(state, px, py) {
   } else cui.msg = "Out of reach.";
 }
 
+// A click on a window next to the selected unit (sim/windows.js): not checked yet, check it (free); closed and
+// openable from here, open it (1 action); open or broken on a building's map, climb through (sim/buildingmaps.js
+// windowsNear); else what it takes (break it, or vault through it with a move).
+function windowClick(state, b, u, c) {
+  const cell = b.cells[c.y * W + c.x], s = windowState(cell), o = windowsBy(b, u).find((w) => w.x === c.x && w.y === c.y);
+  if (!s || !o) return;
+  if (!s.broken && !s.open && !s.known) return void act(state, { type: "checkwindow", unit: u.id, x: c.x, y: c.y });
+  if (!s.broken && !s.open) {
+    const why = openRefusal(b, u, cell, o.inside);
+    if (!why && u.ap >= WINDOW.OPEN_AP) return void act(state, { type: "openwindow", unit: u.id, x: c.x, y: c.y });
+    cui.msg = why || NO_AP;
+    return;
+  }
+  if (b.raid && b.raid.interior && windowsNear(b, u).some((w) => w.x === c.x && w.y === c.y)) return void act(state, { type: "climb", unit: u.id, x: c.x, y: c.y });
+  cui.msg = `The window is ${s.broken ? "broken" : "open"}: move to a tile beyond it to vault through it${s.broken ? "" : `, or Close window (${WINDOW.OPEN_AP} action)`}.`;
+}
 // A click on a locked door: from right next to it the surest way in it offers (the key, then lockpicks, then force: the
 // combatAct "open" the panel's buttons send); from further off, or with no way in, what it takes.
 function lockedDoorClick(state, b, u, t) {
@@ -924,7 +941,7 @@ export function unitOrders(state, b, u) {
   siegeButtons(b, u, btn);
   if (b.evacCols) btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R", { why: noAp || "Only from the green evac strip." });
   if (b.raid) raidButtons(state, b, u, btn);
-  else doorButtons(b, u, btn, true); // a field map's houses (sim/combat.js genMap): with a door next to them
+  else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   if (b.rescue) rescueButtons(state, b, u, btn);
   out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + ammoChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   return out;
@@ -1307,6 +1324,15 @@ export function combatAction(state, key, d) {
   }
   if (v === "stowbody") return void act(state, { type: "stowbody", unit: u.id });
   if (v === "dropCarried" || v === "dropAllCarried" || v === "pickCarried") return void act(state, { type: v, unit: u.id }); // sim/carry.js
+  // A window next to the unit (sim/windows.js): with one window next to them act at once, else click the window.
+  if (v === "checkwindow" || v === "openwindow" || v === "closewindow" || v === "breakwindow") {
+    const list = windowsBy(b, u);
+    if (list.length === 1) return void act(state, { type: v, unit: u.id, x: list[0].x, y: list[0].y });
+    if (!list.length) { cui.msg = "Stand right next to a window (not diagonally)."; return; }
+    cui.mode = cui.mode === v ? "move" : v;
+    cui.msg = `Click the window to ${v === "checkwindow" ? "check" : v === "openwindow" ? "open" : v === "closewindow" ? "close" : "break"}.`;
+    return;
+  }
   // A building's doors (sim/buildingmaps.js): with one door next to the unit act at once, else click the door.
   if (v === "peek" || v === "close" || v === "brace") {
     const list = v === "peek" ? peekOptions(b, u) : v === "close" ? closeOptions(b, u) : braceOptions(b, u);
@@ -1617,9 +1643,10 @@ function raidButtons(state, b, u, btn) {
   if (b.raid.interior) {
     const first = u.name.split(" ")[0];
     html += doorButtons(b, u, btn);
-    const wins = windowsNear(b, u);
-    html += btn("climb", "Climb window", wins.length ? `${BMAP.CLIMB.ap} action: smash the window next to ${first} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays open after.` : "Stand right next to a window (not diagonally) with room on the far side to climb through it (loud).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
-  } else html += doorButtons(b, u, btn, true); // the street map's houses (sim/combat.js genRaidMap): with a door next to them
+    html += windowButtons(b, u, btn);
+    const wins = windowsNear(b, u), quiet = wins.length && windowOpen(b.cells[wins[0].y * W + wins[0].x]);
+    html += btn("climb", "Climb window", wins.length ? (quiet ? `${BMAP.CLIMB.ap} action, quiet: ${first} climbs through the ${b.cells[wins[0].y * W + wins[0].x].k === "smashed" ? "broken" : "open"} window next to them to the other side.` : `${BMAP.CLIMB.ap} action: smash the window next to ${first} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays broken after. Open it first (Open window, if it is unlocked) for a quiet climb.`) : "Stand right next to a window (not diagonally) with room on the far side to climb through it (quiet through an open or broken one, loud through a closed one).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
+  } else { html += doorButtons(b, u, btn, true); html += windowButtons(b, u, btn); } // the street map's houses (sim/combat.js genRaidMap): with a door or a window next to them
   // A light switch in reach (sim/indoorlight.js): the room's lights on or off.
   const sws = switchOptions(b, u);
   if (sws.length) {
@@ -1638,6 +1665,26 @@ function doorButtons(b, u, btn, onlyNear = false) {
   return btn("peek", "Peek", peeks.length ? (u.peekTurn === b.turn ? `${first} has already peeked this turn.` : `Free, once a turn: ${first} looks through the door or doorway next to them and sees the room beyond (out to ${P.range} tiles, until the end of the turn) without stepping in. An unaware guard facing the door may catch it (${Math.round(P.notice * 100)}% − ${Math.round(P.perStealth * 100)}% a Stealth point), the dead right behind it ${Math.round(P.deadNotice * 100)}%.`) : "Stand right next to a door or doorway (not diagonally) to peek through it.", peeks.length > 0 && u.peekTurn !== b.turn, "K")
     + btn("close", "Close door", closes.length ? `1 action: shut the open door next to ${first} (quiet${b.raid ? `; a roller door is loud: Heat +${BMAP.ROLLER.heat}` : ""}). A shut door blocks sight; the dead must batter it down (${BMAP.DOOR.inner} hit points an inner door, a turn or more each blow), people stop to open it.` : "Stand next to an open door (not diagonally) with nobody in the doorway to shut it.", u.ap > 0 && closes.length > 0, "Q")
     + btn("brace", "Brace door", braces.length ? `The rest of the turn: ${first} puts a shoulder to the closed door next to them. People cannot open it (they must break it) and it takes half of each blow, until ${first} moves.` : "Stand next to a closed door (not diagonally) to brace it.", u.ap > 0 && braces.length > 0, "Y");
+}
+
+// Check, open, close or break the window next to the unit (sim/windows.js windowAct): shown while one is right next to
+// them (not diagonally), in any building (a raid's, the street's houses, a field map's). Trying a window that has not
+// been checked opens it or says why not (locked from the inside, fixed) for free, as a check does.
+function windowButtons(b, u, btn) {
+  const wins = windowsBy(b, u);
+  if (!wins.length) return "";
+  const first = u.name.split(" ")[0];
+  const w = wins[0], s = windowState(w.c), word = windowWord(w.c);
+  const many = wins.length > 1 ? " Several windows next to them: click the one." : "";
+  const checked = s.broken || s.open || s.known;
+  btn("checkwindow", "Check window", checked ? `The window is ${word}.` : `Free: ${first} tries the window next to them: unlocked (it opens from either side), locked (it opens from the inside only) or fixed (it never opens: only breaks).${many}`, !checked, "", { ap: 0, why: checked ? `Checked already: ${word}.` : "" });
+  if (s.open) btn("closewindow", "Close window", `${WINDOW.OPEN_AP} action, quiet: slide the ${s.broken ? "broken " : ""}window shut.${many}`, !s.broken && u.ap >= WINDOW.OPEN_AP, "", { ap: WINDOW.OPEN_AP, why: s.broken ? "The window is broken: it cannot be closed." : NO_AP });
+  else {
+    const why = s.known ? openRefusal(b, u, w.c, w.inside) : "";
+    btn("openwindow", "Open window", why || `${WINDOW.OPEN_AP} action, quiet: slide the window open${s.known ? "" : " if it is unlocked (or locked and " + first + " is inside; a window that will not open says why, for free)"}. Open, it is climbed or vaulted through quietly, and a throw passes it.${many}`, !why && u.ap >= WINDOW.OPEN_AP, "", { ap: WINDOW.OPEN_AP, why: why || NO_AP });
+  }
+  if (!s.broken) btn("breakwindow", "Break window", `${WINDOW.BREAK.ap} action: smash the glass. Loud: ${b.raid ? `Heat +${WINDOW.BREAK.heat}, ` : ""}the unaware within ${WINDOW.BREAK.radius} tiles wake. The sill stays half cover; the window is vaulted or climbed through after. (A move vaulting through a closed window breaks it the same way, and the glass cuts: ${WINDOW.HURT[0]}–${WINDOW.HURT[1]}.)${many}`, u.ap >= WINDOW.BREAK.ap, "", { ap: WINDOW.BREAK.ap, why: NO_AP });
+  return "";
 }
 
 // A site with several buildings (sim/buildingmaps.js): pick the one to explore before anyone acts, or the street.
@@ -2174,7 +2221,20 @@ function previewHtml(b, state = null) {
     const reach = u && active(u) && switchOptions(b, u).includes(sw);
     return `<b>Light switch: ${sw.on ? "on" : "off"}</b> · ${esc(sw.name)}<br><span class="muted">${reach ? `Click or press ${esc(keyLabel("battle.lights", 1) || "Alt+K")} to flip it (${INDOOR.AP} action, quiet).` : "From next to it, inside the room or in its doorway: click it or Lights to flip it (1 action, quiet)."} ${sw.on ? "Lit, the room is seen as by day by both sides." : `Off, the room is dark${!b.night && !sw.dark ? " but for the daylight through its windows" : ""}: seen only as at night, down the cone or a light's beam.`}</span>`;
   }
-  if (b.raid && b.raid.interior && cobj.k === "window") return `<b>Window</b>: half cover; you see through it. Cannot stand here.<br><span class="muted">From right next to it (not diagonally): Climb window (L) smashes it and climbs through. Loud: Heat +${BMAP.CLIMB.heat}, wakes what is within ${BMAP.CLIMB.radius} tiles.</span>`;
+  // A window (sim/windows.js): its state once checked ("?" before), what to do with it from next to it.
+  if (isWindow(cobj)) {
+    const s = windowState(cobj), word = windowWord(cobj);
+    const near = u && active(u) && windowsBy(b, u).some((o) => o.x === h.x && o.y === h.y);
+    const hp = cobj.mhp ? ` · <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "muted"}">${Math.round(cobj.hp)}/${cobj.mhp}</span>` : "";
+    const vaultNote = u && !SIM.canVault(u) ? `Could be vaulted through, not by ${esc(u.name.split(" ")[0])} now (the arms must be free).` : `A move may vault through it (+${SIM.VAULT.COST} tiles, winded after)${s.open ? "" : `: crashing through a closed one is loud and cuts (${WINDOW.HURT[0]}–${WINDOW.HURT[1]}, +${WINDOW.SMASH_COST} tile)`}.`;
+    const how = s.broken ? `The frame is empty: climbed through (quiet) or vaulted through. ${vaultNote}`
+      : s.open ? `Open: climbed through (quiet) or vaulted through, and a throw passes it. Close window: ${WINDOW.OPEN_AP} action, quiet. ${vaultNote}`
+      : !s.known ? `State unknown: click it or Check window from next to it (free) to learn whether it is unlocked, locked (opens from the inside only) or fixed (only breaks). ${vaultNote}`
+      : s.lock === "none" ? `Unlocked: Open window from either side (${WINDOW.OPEN_AP} action, quiet). ${vaultNote}`
+      : s.lock === "locked" ? `Locked: Open window from the inside only (${WINDOW.OPEN_AP} action, quiet); from outside, Break window (loud) or vault through. ${vaultNote}`
+      : `Fixed: it does not open. Break window (${WINDOW.BREAK.ap} action, loud: ${b.raid ? `Heat +${WINDOW.BREAK.heat}, ` : ""}wakes what is within ${WINDOW.BREAK.radius} tiles) or vault through. ${vaultNote}`;
+    return `<b>${s.broken ? "Broken window" : s.open ? "Open window" : "Window"}</b>${s.broken || s.open ? "" : ` · <span class="${s.known ? "muted" : "warn"}">${esc(word)}</span>`}${hp}: half cover at the sill; you see and shoot through it. Cannot stand here.<br><span class="muted">${how}${near ? "" : " Stand right next to it (not diagonally) for the window orders."}</span>`;
+  }
   // A closed or open door: any building's (a raid's street map, a field map's houses: sim/combat.js genMap), not only
   // a building's own map. A locked one has its own text (ui/locks.js lockPreview, above).
   if (!b.raid) { const lockText = lockPreview(b, u, h.x, h.y); if (lockText) return lockText; }
@@ -2182,9 +2242,13 @@ function previewHtml(b, state = null) {
     const shut = cobj.k === "idoor";
     const held = shut && doorHeld(b, cobj) ? unitById(b, cobj.held) : null;
     const hp = cobj.mhp ? ` · <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "muted"}">${Math.round(cobj.hp)}/${cobj.mhp}</span>` : "";
+    // The door's kind (sim/buildingmaps.js DOOR_KINDS): its name, and what it is (seen through, flimsy, a crash).
+    const K = cobj.dk && DOOR_KINDS[cobj.dk] ? DOOR_KINDS[cobj.dk] : null;
+    const kindName = cobj.roll ? "Roller door" : K ? K.name : "Door";
+    const kindNote = K ? ` ${esc(K.name)}: ${esc(K.desc)}${K.see ? "; seen through even shut" : ""}${K.glass ? "; broken, it goes with a crash that wakes the unaware nearby" : ""}.` : "";
     return shut
-      ? `<b>${cobj.roll ? "Roller door (closed)" : "Closed door"}</b>${hp}${held ? ` · <span class="good">braced by ${esc(held.name)}</span>` : ""}<br><span class="muted">Blocks sight. Click it to walk through: your people open it as they go${cobj.roll ? " (loud: Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}; other people stop to open it; the dead must batter it down. Peek (K) through it from next to it.</span>`
-      : `<b>${cobj.roll ? "Roller door (open)" : "Open door"}</b>${hp}<br><span class="muted">Close door (${esc(keyLabel("battle.close", 1) || "Shift+E")}) from next to it: 1 action, quiet${cobj.roll ? " (a roller door: loud)" : ""}. A shut door stops sight and slows the dead.</span>`;
+      ? `<b>${esc(kindName)} (closed)</b>${hp}${held ? ` · <span class="good">braced by ${esc(held.name)}</span>` : ""}<br><span class="muted">${K && K.see ? "Blocks the way, not sight." : "Blocks sight."} Click it to walk through: your people open it as they go${cobj.roll ? " (loud: Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}; other people stop to open it; the dead must batter it down. Peek (K) through it from next to it.${kindNote}</span>`
+      : `<b>${esc(kindName)} (open)</b>${hp}<br><span class="muted">Close door (${esc(keyLabel("battle.close", 1) || "Shift+E")}) from next to it: 1 action, quiet${cobj.roll ? " (a roller door: loud)" : ""}. A shut door ${K && K.see ? "slows the dead (it is seen through)" : "stops sight and slows the dead"}.${kindNote}</span>`;
   }
   // Something the attackers batter (sim/combat.js bash): a wall section, the gate, a barred door, a window.
   const struct = cobj.mhp ? ` <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "warn"}">${Math.round(cobj.hp)}/${cobj.mhp} hit points</span>${barredCell(cobj) ? " · barred to the attackers (your people pass)" : ""}.` : "";

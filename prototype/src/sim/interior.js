@@ -48,6 +48,7 @@ import { isNight } from "./world.js";
 import { dimsAt, baseScale, baseSide, densify } from "./battlesize.js";
 import { siegeWallCut } from "./siege.js";
 import { lateOut } from "./defenceplan.js"; // those not on watch when the attack hit come out
+import { rollWin, winMixOf } from "./windows.js"; // the windows' states
 
 // W × H: the smallest map (no base: a test, a base with nothing built); a base's own is its size class's (yardDims),
 // H_GROW rows taller at a time (up to H_TRIES times) if its buildings do not all fit, and its wall map is as much longer
@@ -234,7 +235,7 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
     const mid = y0 + Math.floor(h / 2);
     const doors = [];
     const door = (x, y, hp) => { const c = put(x, y, "bdoor", "floor"); c.hp = c.mhp = hp; delete c.t; indoor[y * W + x] = 1; doors.push([x, y]); out.doors.push([x, y]); };
-    const win = (x, y) => { const c = at(x, y); if (!c || c.k !== "wall") return; const corner = (x === x0 || x === x0 + w - 1) && (y === y0 || y === y0 + h - 1); if (corner) return; put(x, y, "window", "floor"); c.hp = c.mhp = INTERIOR.WINDOW_HP; delete c.t; out.windows.push([x, y]); };
+    const win = (x, y) => { const c = at(x, y); if (!c || c.k !== "wall") return; const corner = (x === x0 || x === x0 + w - 1) && (y === y0 || y === y0 + h - 1); if (corner) return; put(x, y, "window", "floor"); c.hp = c.mhp = INTERIOR.WINDOW_HP; delete c.t; c.win = rollWin(rng.state, winMixOf("house"), x, y); out.windows.push([x, y]); }; // windows.js: the base's windows open, lock or are fixed like a house's (the map's own dice, read not consumed)
     // The upper floor: the back (west) half, up the stairs at its east end.
     const loftX = two ? x0 + Math.floor((w - 2) / 2) : -1;
     if (two) {
