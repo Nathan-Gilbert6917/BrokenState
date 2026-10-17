@@ -529,8 +529,11 @@ function unitApp(state, b, t, salt) {
   if (t.kind === "zombie") {
     if (t.ztype === "runner" || t.ztype === "brute") return { app: zombieApp(t.ztype, seed), look: null, armor: null };
     if (t.ztype) return { app: specialApp(t.ztype, seed), look: null, armor: null };
+    // The variant (its size too) from the unit and the world's seed, never the UI's salt: the same battle draws the same
+    // frame; the salt still varies the look's details (zombieApp's rolls).
+    const vseed = (t.id * 131 + ((state && state.seed) | 0)) | 0;
     let c = variants.get(t);
-    if (!c || c.seed !== seed) variants.set(t, (c = { seed, variant: zombieVariant(t, seed) }));
+    if (!c || c.seed !== vseed) variants.set(t, (c = { seed: vseed, variant: zombieVariant(t, vseed) }));
     return { app: zombieApp(c.variant, seed), look: null, armor: null };
   }
   const f = b.setup && b.setup.enemy && b.setup.enemy.factionId != null ? (state.factions || []).find((x) => x.id === b.setup.enemy.factionId) : null;

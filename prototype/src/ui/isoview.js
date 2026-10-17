@@ -1529,7 +1529,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const t of b.units) {
       if (!t.dead || t.left || t.fled || t.off || t.x < 0 || t.ztype === "sleeper" || !onFloor(b, t) || looks[t.y * b.w + t.x] || standZ(b, t.x, t.y)) continue;
       if (!knownBody(b, t, vis)) continue;
-      drawBody(ctx, state, b, { t, wx: t.x + 0.5, wy: t.y + 0.5, z: 0 }, H);
+      drawBody(ctx, state, b, { t, wx: t.x + (t.size || 1) / 2, wy: t.y + (t.size || 1) / 2, z: 0 }, H);
       flatDead.add(t);
     }
   }
@@ -1792,7 +1792,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const tf = t.f || 0;
       if (t.left || t.fled || t.off || t.dead || tf === floorNo(b)) continue;
       if (t.side !== "player" && !v.seen.has(t.id)) continue;
-      const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y));
+      const [X, Y] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y));
       const col = t.side === "player" ? "rgba(143,193,255,0.7)" : "rgba(255,143,133,0.7)";
       ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
       ctx.beginPath(); diamond(ctx, t.x, t.y, standZ(b, t.x, t.y), 2); ctx.stroke(); ctx.setLineDash([]);
@@ -2006,7 +2006,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const p of H.plan.units) {
       const t = b.units.find((q) => q.id === p.id);
       if (!t) continue;
-      const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y) + UNIT_H + 14);
+      const [X, Y] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y) + UNIT_H + 14);
       tag(ctx, p.safe ? "SAFE" : `${p.chance}%`, X, Y, p.safe || p.chance >= 75 ? COL.good : p.chance >= 45 ? COL.mid : COL.bad, Math.max(11, 3.6 * S));
     }
   }
@@ -2055,7 +2055,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       if (t && t.side === "enemy" && active(t) && v.seen.has(t.id)) {
         const o = H.odds(b, u, t);
         const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? COL.good : o.chance >= 35 ? COL.mid : COL.bad;
-        const [X0, Y0] = project(u.x + 0.5, u.y + 0.5, standZ(b, u.x, u.y) + UNIT_H * 0.6), [X1, Y1] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y) + UNIT_H * 0.6);
+        const [X0, Y0] = project(u.x + 0.5, u.y + 0.5, standZ(b, u.x, u.y) + UNIT_H * 0.6), [X1, Y1] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y) + UNIT_H * 0.6);
         ctx.strokeStyle = col; ctx.lineWidth = 2;
         if (!o.ok) ctx.setLineDash([4, 5]);
         ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke();
@@ -2314,7 +2314,7 @@ function drawUnitIso(ctx, state, b, s, H, now) {
   if (t.terror && !t.dead && !t.down) isoTag(ctx, X, Y - UNIT_H * 1.05 * S, "PANIC", ZRING.nightmare, S);
   // Its rectangle on screen, for clicking it.
   if (!t.dead && !t.down) {
-    const big = t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S;
+    const big = t.size === 2 ? 2.2 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S; // a 2 × 2 boss: its whole model
     iso.rects.push({ x0: X - hgt * 0.36, x1: X + hgt * 0.36, y0: Y - hgt * 0.94, y1: Y, x: t.x, y: t.y, id: t.id });
   }
 }

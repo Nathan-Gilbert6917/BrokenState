@@ -35,7 +35,14 @@ for (const { name, st, b } of battles(42, only)) {
   clock += 50; UI.drawCombat(st, clock);
   for (let i = 0; i < +(q.get("turn") || 0); i++) ISO.isoRotate(b, 1); // eighth turns, the game's own way (odd: a straight view)
   // centred on your people, the roofs as the view keeps them; a second frame after centring settles the camera
-  const mine = b.units.filter((t) => t.side === "player" && !t.dead);
+  const boss = q.get("focus") === "boss" ? b.units.find((t) => t.boss) : null;
+  if (boss && q.get("beside") === "1") { // one of yours moved next to the boss, so it is in sight
+    const me = b.units.find((t) => t.side === "player" && !t.dead);
+    const free = (x, y) => x >= 0 && y >= 0 && x < b.w && y < b.h && b.cells[y * b.w + x].k === "open" && !b.units.some((t) => t !== me && !t.dead && x >= t.x && y >= t.y && x < t.x + (t.size || 1) && y < t.y + (t.size || 1));
+    // next to its 2 × 2 footprint
+    for (const [dx, dy] of [[-1, 0], [-1, 1], [2, 0], [2, 1], [0, -1], [1, -1], [0, 2], [1, 2], [-1, -1], [2, 2]]) { const x = boss.x + dx, y = boss.y + dy; if (free(x, y)) { me.x = x; me.y = y; if (b.rev != null) b.rev++; break; } } // rev: the view's sight is cached by it
+  }
+  const mine = boss ? [boss] : b.units.filter((t) => t.side === "player" && !t.dead);
   const cx = mine.length ? Math.round(mine.reduce((a, t) => a + t.x, 0) / mine.length) : Math.floor(b.w / 2), cy = mine.length ? Math.round(mine.reduce((a, t) => a + t.y, 0) / mine.length) : Math.floor(b.h / 2);
   ISO.isoCenterOn(b, cx, cy, false);
   clock += 50; UI.drawCombat(st, clock);

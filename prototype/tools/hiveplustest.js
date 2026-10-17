@@ -392,16 +392,19 @@ console.log("The Hivemind's weak spots");
     st.combat = null;
   }
   // The battle AI throws them at it.
-  let threw = 0, burned = 0, stunned = 0;
-  for (let s = 0; s < 4; s++) {
+  // Eight seeded fights: with its 2 × 2 body (combat.js unitCells) it is caught by bangs and hit by guns sooner, so some
+  // fights end before it lives to take a burn turn: a Molotov landed on it counts, `burned` is reported.
+  let threw = 0, fired = 0, burned = 0, stunned = 0;
+  for (let s = 0; s < 8; s++) {
     const { st, b } = core(SEED + 10 + s, { fire: 2, stun: 2 });
     for (let i = 0; i < 60 && !b.over; i++) { if (b.phase === "player") autoPlayerTurn(st); else runEnemyPhase(st); }
     if (b.log.some((l) => /throws a (Molotov|flashbang)/.test(l.text))) threw++;
+    if (b.log.some((l) => /throws a Molotov/.test(l.text))) fired++;
     if (b.hivemind && b.hivemind.burned) burned++;
     if (b.hivemind && b.hivemind.stunned) stunned++;
     st.combat = null;
   }
-  check(threw >= 3 && burned >= 2 && stunned >= 2, `the battle AI steps into reach and throws Molotovs and flashbangs at it (${threw}/4 battles; burned in ${burned}, stunned in ${stunned})`);
+  check(threw >= 6 && fired >= 2 && stunned >= 4, `the battle AI steps into reach and throws Molotovs and flashbangs at it (${threw}/8 battles; a Molotov in ${fired}, burned in ${burned}, stunned in ${stunned})`);
   // Preparation beats headcount: the rifle squad with headlamps at tier 4, with and without 2 Molotovs and 2 flashbangs.
   const rate = (o) => { let w = 0; for (let i = 0; i < TRIALS; i++) w += coreTrial(100 + i, 4, { guard: 120, ...o }).won; return w / TRIALS; };
   const bare = rate({ lights: true }), prep = rate({ lights: true, fire: 2, stun: 2 }), six = bare, five = rate({ lights: true, n: 5, fire: 2, stun: 2 });
@@ -475,8 +478,9 @@ console.log("The autopilot's gate to the core, and its kit");
   const rows = [];
   for (const [sq, cfg, tier, guard, lights, prep] of [["rifle", { weapon: "ar", armor: "plate", shoot: 10 }, 4, 80, true, 0], ["rifle", { weapon: "ar", armor: "plate", shoot: 10 }, 4, 80, false, 0], ["rifle", { weapon: "ar", armor: "plate", shoot: 10 }, 4, 120, true, 2], ["shotgun", { weapon: "shotgun", armor: "vest", shoot: 7 }, 2, 80, true, 0], ["shotgun", { weapon: "shotgun", armor: "vest", shoot: 7 }, 2, 80, false, 2]]) {
     let w = 0, nb = 0;
-    for (let i = 0; i < TRIALS; i++) { const r = coreTrial(500 + i, tier, { ...cfg, lights, fire: prep, stun: prep, guard }); w += r.won; nb += r.numbers; }
-    rows.push({ sq, tier, guard, lights, prep, map: w / TRIALS, num: nb / TRIALS });
+    const N = TRIALS * 2; // lit against dark is a few battles apart: twice the sample (the Hivemind's 2 × 2 body made the fights shorter and closer)
+    for (let i = 0; i < N; i++) { const r = coreTrial(500 + i, tier, { ...cfg, lights, fire: prep, stun: prep, guard }); w += r.won; nb += r.numbers; }
+    rows.push({ sq, tier, guard, lights, prep, map: w / N, num: nb / N });
   }
   const err = rows.reduce((a, r) => a + Math.abs(r.map - r.num), 0) / rows.length;
   for (const r of rows) console.log(`    ${r.sq} tier ${r.tier}, guard ${r.guard}, ${r.lights ? "lit" : "dark"}${r.prep ? ", 2 Molotovs + 2 flashbangs" : ""}: map ${Math.round(r.map * 100)}%, by the numbers ${Math.round(r.num * 100)}%`);

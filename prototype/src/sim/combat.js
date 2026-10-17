@@ -850,7 +850,14 @@ export function doorHeld(b, c) {
 const doorOpens = (b, u, c) => c.k === "idoor" && !!u && u.kind === "human" && !doorHeld(b, c);
 const climbAt = (b, x, y) => !!CELL[b.cells[idx(x, y)].k].climb;
 export const breakable = (c) => c.hp > 0;
-export const unitAt = (b, x, y) => b.units.find((u) => onMap(u) && u.x === x && u.y === y);
+// A unit's footprint: one cell, or size × size cells from its (x, y) corner (the Broodmother and the Hivemind, 2 × 2:
+// defences.js BOSSES size). Distance, reach and sight go by the nearest of its cells; its figure stands on the centre.
+export const unitSize = (u) => u.size || 1;
+export const coversCell = (u, x, y) => x >= u.x && y >= u.y && x < u.x + unitSize(u) && y < u.y + unitSize(u);
+export function unitCells(u, x0 = u.x, y0 = u.y) { const s = unitSize(u), out = []; for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) out.push([x0 + dx, y0 + dy]); return out; }
+export const nearCell = (u, x, y) => { const s = unitSize(u); return [Math.max(u.x, Math.min(u.x + s - 1, x)), Math.max(u.y, Math.min(u.y + s - 1, y))]; };
+export const unitCenter = (u) => [u.x + unitSize(u) / 2, u.y + unitSize(u) / 2];
+export const unitAt = (b, x, y) => b.units.find((u) => onMap(u) && (u.size > 1 ? coversCell(u, x, y) : u.x === x && u.y === y));
 export const unitById = (b, id) => b.units.find((u) => u.id === id);
 // The evac strip: the left evacCols columns, or b.evacMask (a cell mask, deploy.js: base battles turned to face the
 // attack get theirs on the side away from it, b.evacSide) when there is one; then the cell's y is needed.
@@ -2257,7 +2264,7 @@ export function canSeeAt(b, a, x, y) {
 // Someone of yours sneaking (vision.js) is not seen by the other side behind half or full cover facing them (from
 // further than a tile), unless they have a light switched on at night: it shows over the cover. A light switched on at
 // night (vision.js activeLight) is seen from the daylight range by anyone facing it; night vision shows nothing.
-export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && !sneakHidden(b, a, t) && (canSeeAt(b, a, t.x, t.y) || litFrom(b, a, t));
+export const canSee = (b, a, t) => !(t.low && a.side === "player" && !zRevealed(b, t)) && !sneakHidden(b, a, t) && ((t.size > 1 ? unitCells(t).some(([x, y]) => canSeeAt(b, a, x, y)) : canSeeAt(b, a, t.x, t.y)) || litFrom(b, a, t));
 export function sneakHidden(b, a, t) {
   if (!t.sneaking || t.side !== "player" || a.side === "player") return false;
   if (b.night && activeLight(t)) return false; // the light gives them away
@@ -2546,7 +2553,8 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   let last = 0;
   const mark = P ? (label) => { const v = aim - last; if (v) P.push([label, v]); last = aim; } : null; // called only with P
   const w = WEAPONS[a.weapon];
-  const d = dist(ax, ay, t.x, t.y);
+  const [tx, ty] = nearCell(t, ax, ay); // a 2 × 2 boss: its nearest cell
+  const d = dist(ax, ay, tx, ty);
   const gm = unitMods(a); // gunmods.js: the gun's sight, muzzle, magazine and grip (neutral without any)
   const rg = gm === NO_MODS ? w : modRange(w, gm);
   const aty = calOf(a.weapon) ? typeFor(calOf(a.weapon), a.load) : null; // the load ("sp", a shotgun's "buck"; another calibre's "223:sp")
@@ -2576,12 +2584,12 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   P && mark("Up close");
   // A bipod (fitted, or built into the machine gun and the .50) counts only rested on half cover next to the shooter in
   // the shot's line (restCell); the AI's posts (scoreCell) score it the same way, so a bipod gunner seeks sandbags.
-  const rest = (gm.brace || (w.heavy && w.heavy.brace)) && restCell(b, ax, ay, t.x, t.y) ? 1 : 0;
+  const rest = (gm.brace || (w.heavy && w.heavy.brace)) && restCell(b, ax, ay, tx, ty) ? 1 : 0;
   if (rest) notes.push(`bipod rested +${Math.max(gm.brace || 0, (w.heavy && w.heavy.brace) || 0)}`);
   if (gm !== NO_MODS) aim += situationalAim(b, a, d, gm, !!rest); // gunmods.js: a bipod rested, a sling on the move, night sights and lights
   P && mark(rest ? "Bipod rested (attachments now)" : "Attachments now (moved, night)");
   const flat = t.surprised || (!t.aware && t.side === "enemy");
-  const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, t.x, t.y, ax, ay); // a turret's gunner: half cover (full behind plate x2)
+  const cov = t.kind === "zombie" || flat ? { level: 0, any: false, flanked: false } : t.gunner ? gunnerCover(b, t) : coverAgainst(b, tx, ty, ax, ay); // a turret's gunner: half cover (full behind plate x2)
   aim -= COVER_DEF[Math.max(0, cov.level - (w.pierce || 0) - (opts.pierce || 0))]; // pierce: a spitter's acid (zombietypes.js); opts.pierce: an over-penetrating round through light cover (gunfire.js)
   P && mark(cov.level === 2 ? "Target in full cover" : "Target in half cover");
   if (t.hunker && cov.level) aim -= HUNKER_DEF;
@@ -2609,12 +2617,12 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (ride) { aim += ride; notes.push(`vehicle moving ${ride}`); }
   P && mark("Firing from a moving vehicle");
   // A break-in map (deploy.js): the floodlit area, and shooting from a watchtower.
-  if (b.lit && b.floodAim && inside(t.x, t.y) && b.lit[idx(t.x, t.y)]) aim += b.floodAim;
+  if (b.lit && b.floodAim && inside(tx, ty) && b.lit[idx(tx, ty)]) aim += b.floodAim;
   P && mark("Target floodlit");
   // Smoke and flares (throwables.js): a shot into or out of a cloud, your people at a target in a flare's light at night.
-  if (b.smoke && b.smoke.length && (smokeAt(b, t.x, t.y) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
+  if (b.smoke && b.smoke.length && (smokeAt(b, tx, ty) || smokeAt(b, ax, ay))) aim -= SMOKE.aim;
   P && mark("Smoke");
-  if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, t.x, t.y)) aim += FLARE.aim;
+  if (b.flares && b.flares.length && a.side === "player" && (b.night || b.dark) && flareLit(b, tx, ty)) aim += FLARE.aim;
   P && mark("Target lit by a flare");
   if (a.stun) aim -= a.stun.aim; // still seeing spots from a flashbang (throwables.js FLASH)
   P && mark("Stunned");
@@ -2626,11 +2634,11 @@ export function shotOdds(b, a, t, ax = a.x, ay = a.y, opts = {}) {
   if (link) notes.push(`headset callout ${link > 0 ? "+" : ""}${Math.round(link)}`);
   if (dazed) notes.push(`dazed by a bang −${Math.round(dazed)}`);
   // Shooting down from higher ground (a walkway, a roof, a watchtower: verticality).
-  const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, t.x, t.y) : 0;
+  const up = inside(ax, ay) ? hAt(b, ax, ay) - hAt(b, tx, ty) : 0;
   if (up > 0) aim += Math.min(HEIGHT.MAX_AIM, up * HEIGHT.AIM);
   P && mark("Higher ground");
   // Clinging to a siege ladder, or hauling a ram (siege.js): easy to hit.
-  if (inside(t.x, t.y) && b.cells[idx(t.x, t.y)].k === "siegeladder") aim += CLIMB_AIM;
+  if (inside(tx, ty) && b.cells[idx(tx, ty)].k === "siegeladder") aim += CLIMB_AIM;
   else if (t.ram != null && b.rams && isCrew(b, t)) aim += CREW_AIM;
   P && mark("Target on a ladder or a ram");
   const chance = Math.max(5, Math.min(95, Math.round(aim)));
@@ -2681,7 +2689,7 @@ export function meleeOdds(b, a, t, opts = {}) {
 }
 
 export const isRanged = (u) => !WEAPONS[u.weapon].melee;
-export const adjacent = (a, t) => Math.max(Math.abs(a.x - t.x), Math.abs(a.y - t.y)) === 1;
+export const adjacent = (a, t) => { const [tx, ty] = nearCell(t, a.x, a.y), [ax, ay] = nearCell(a, tx, ty); return Math.max(Math.abs(ax - tx), Math.abs(ay - ty)) === 1; };
 // A blow struck diagonally past a corner: blocked when both cells between the two (the orthogonal pair) are walls or
 // closed doors (MELEE_SOLID; a gate or door only while barred or locked). Low cover (crates, sandbags) does not block it.
 export const MELEE_SOLID = new Set(["wall", "palisade", "door", "idoor", "bdoor", "hivewall", "window", "bars", "fence", "rack", "locker", "tree", "boulder", "truck", "void"]);
@@ -2692,7 +2700,7 @@ const solidForMelee = (b, x, y) => {
 };
 export const cornerBlocked = (b, ax, ay, tx, ty) => ax !== tx && ay !== ty && !!b && !!b.cells && solidForMelee(b, tx, ay) && solidForMelee(b, ax, ty);
 // Next to each other for a blow: adjacent, and not across a wall's corner.
-export const meleeReach = (b, a, t) => adjacent(a, t) && !cornerBlocked(b, a.x, a.y, t.x, t.y);
+export const meleeReach = (b, a, t) => { if (!adjacent(a, t)) return false; const [tx, ty] = nearCell(t, a.x, a.y), [ax, ay] = nearCell(a, tx, ty); return !cornerBlocked(b, ax, ay, tx, ty); };
 // ---------- melee: reach, quick strikes, stagger, bleeding, thrown spears (weapons overhaul section 4) ----------
 // WEAPONS fields (data-guns.js): reach 2 = strikes 2 tiles off in a straight line (orthogonal or diagonal) with a clear
 // line and nobody standing between; quick = a strike costs 1 action, one strike a turn (strike and step away);
@@ -2710,22 +2718,23 @@ const STAGGER_IMMUNE = new Set(["brute", "wallbreaker", "broodmother"]);
 // Not across a wall's corner either way (cornerBlocked: dev's rescue branch): a diagonal blow past a corner, or a
 // spear's reach-2 thrust with a corner at either step, is blocked like any blow; walls in its line block it (los).
 export function inMelee(b, u, t) {
-  const dx = t.x - u.x, dy = t.y - u.y, d = Math.max(Math.abs(dx), Math.abs(dy));
-  if (d === 1) return !cornerBlocked(b, u.x, u.y, t.x, t.y);
+  const [tx, ty] = nearCell(t, u.x, u.y), [ux, uy] = nearCell(u, tx, ty); // the nearest cells of each (a 2 × 2 boss)
+  const dx = tx - ux, dy = ty - uy, d = Math.max(Math.abs(dx), Math.abs(dy));
+  if (d === 1) return !cornerBlocked(b, ux, uy, tx, ty);
   const w = WEAPONS[u.weapon];
   if (d !== 2 || !w || !(w.reach >= 2) || dx % 2 || dy % 2) return false;
-  const mx = u.x + dx / 2, my = u.y + dy / 2;
+  const mx = ux + dx / 2, my = uy + dy / 2;
   const mid = unitAt(b, mx, my);
   if (mid && active(mid)) return false;
-  if (cornerBlocked(b, u.x, u.y, mx, my) || cornerBlocked(b, mx, my, t.x, t.y)) return false;
-  return los(b, u.x, u.y, t.x, t.y);
+  if (cornerBlocked(b, ux, uy, mx, my) || cornerBlocked(b, mx, my, tx, ty)) return false;
+  return los(b, ux, uy, tx, ty);
 }
 const strikeMark = (b) => (b.turn || 0) * 2 + (b.phase === "player" ? 0 : 1);
 export const struckThisTurn = (b, u) => u.struck === strikeMark(b);
 // Why u cannot strike t ("" when it can).
 export function meleeRefusal(b, u, t) {
   const w = WEAPONS[u.weapon];
-  if (t && t.side !== "player" && active(t) && adjacent(u, t) && cornerBlocked(b, u.x, u.y, t.x, t.y)) return "A wall's corner is in the way: step round it first.";
+  if (t && t.side !== "player" && active(t) && adjacent(u, t) && !meleeReach(b, u, t)) return "A wall's corner is in the way: step round it first.";
   if (!t || t.side === "player" || !active(t) || !inMelee(b, u, t)) return w && w.reach >= 2 ? "Must be next to the target, or 2 tiles off in a straight line with nobody between." : "Must be next to the target.";
   if (w && w.quick && struckThisTurn(b, u)) return "One strike a turn with a quick weapon: step away, or end the turn.";
   return "";
@@ -4648,7 +4657,7 @@ function aiLook(b, u) {
   for (const f of foesOf(b, u)) {
     const d = dist(u.x, u.y, f.x, f.y);
     if (d >= bd || d > far || (b.floors && (f.f || 0) !== (u.f || 0))) continue;
-    if (sneakHidden(b, u, f) || !los(b, u.x, u.y, f.x, f.y)) continue;
+    if (sneakHidden(b, u, f) || !los(b, u.x, u.y, ...nearCell(f, u.x, u.y))) continue;
     best = f; bd = d;
   }
   if (best) faceToward(u, best.x, best.y);

@@ -268,7 +268,7 @@ function badge(ctx, X, Y, text, col, fs, sub = "", strong = false) {
 export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel, avoid, bottom = 0 }) {
   const S = ISO_ZOOMS[iso.zoom] || 2, ui = uiScale();
   const armed = mode === "shoot" || mode === "melee";
-  const head = (t) => { const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1; return project(t.x + 0.5, t.y + 0.5, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down ? 10 : 30 * big)); };
+  const head = (t) => { const big = t.size === 2 ? 1.3 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, h = (t.size || 1) / 2; return project(t.x + h, t.y + h, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down ? 10 : 30 * big)); }; // a 2 × 2 boss: over its footprint's centre
   const tagRoom = Math.max(10, Math.round(3.4 * S)) + 14; // the health bar and the tags over a head (isoview.js drawLabels)
   if (hits && hits.size) {
     const fs = Math.round(Math.min(26, Math.max(armed ? 17 : 13, (armed ? 4.6 : 3.8) * S)) * ui);

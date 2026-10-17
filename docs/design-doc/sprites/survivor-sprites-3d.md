@@ -191,3 +191,26 @@ Asked for next: all of them. `ui/figures.js` now builds every body the battle ma
 In play, a survivor down beside the others and the dead among the trees (3×):
 
 ![bodies in the battle view](battle-3d/bodies-in-scene.png)
+
+## On 2 × 2 cells
+
+The two big bosses now occupy their footprint in the game, not only on screen (`defences.js` `BOSSES.size`,
+`combat.js` `unitSize` / `unitCells` / `nearCell` / `coversCell`):
+
+- **Placement**: `placeUnitRight` needs all four cells standable; the core fight anchors the Hivemind's footprint
+  on the first corner round its pocket whose four cells stand and moves whoever stood there.
+- **Blocking and picking**: `unitAt` answers the unit on any of its cells, so its body blocks movement on all
+  four and a click on any of them selects it.
+- **Being attacked**: `shotOdds` measures range, cover, light and height to the **nearest** cell; melee
+  (`inMelee`, `adjacent`, `meleeReach`) reaches it from any cell next to its edge; a blast (`throwables.js`
+  `caught`) catches it when any part of it is in the radius.
+- **Vision**: `canSee` sees it when **any** of its cells is in sight.
+- **Its own attacks**: the Hivemind's lash reaches whoever touches its edge; its pulse, the brood's spawn window
+  and the AI's throw targeting (where to stand, what to throw at: the nearest part of its body) keep the old
+  geometry round its **heart**, the centre cell (the old one cell), so the balance of the core fight stays; the
+  flames on it and the Broodmother's daze count from the edge.
+- **On screen**: the figure, its ring, tags, threat lines and the hit-chance head sit on the footprint's centre.
+
+The hive-plus suite's throw check now counts a Molotov landing on it over eight seeds (its 2 × 2 body is caught by
+bangs and hit by guns sooner, so some fights end before it lives to take a burn turn), and the lit-against-dark rows
+run twice the trials (two battles apart at sixteen).
