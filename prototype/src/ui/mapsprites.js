@@ -7,6 +7,8 @@
 // stride) or a rider on a bicycle; the same for another group's party of one, in its group's look.
 // Also the map's places and things: your bases, other groups' bases and parties (by group type), sites (one
 // sprite per location type), hordes and hives, markers (vehicles, wrecks, caches, camps, graves) and status icons.
+// The moving pieces (parties, solos, hordes, herds, workers) are drawn on the map as low-poly figures now
+// (ui/mapfigures.js); their flat painters here stay for the sprite catalogue, the headless tools and as fallbacks.
 import { zombieLook } from "./sprites.js";
 
 const UP = 4;             // pre-upscale factor for the cached canvas

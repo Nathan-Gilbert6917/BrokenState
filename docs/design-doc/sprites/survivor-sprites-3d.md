@@ -214,3 +214,7 @@ The two big bosses now occupy their footprint in the game, not only on screen (`
 The hive-plus suite's throw check now counts a Molotov landing on it over eight seeds (its 2 × 2 body is caught by
 bangs and hit by guns sooner, so some fights end before it lives to take a burn turn), and the lit-against-dark rows
 run twice the trials (two battles apart at sixteen).
+
+## The State Map's pieces
+
+The map's moving pieces (teams, the groups' parties, bands, outsiders, hordes, herds, workers) are built from the same limb at the map's scale, heading the way they travel and animated on their way: `map-figures-3d.md`.
