@@ -567,26 +567,125 @@ export function corpseFigure(c, yaw) {
 
 // The inventory's spin: an <img> of the survivor that turns through 360° (24 frames, one every SPIN_MS), every
 // frame drawn once and kept as a data URL. The panel may be rebuilt any time: the ticker finds every img[data-spin].
-const SPIN_MS = 110, SPIN_N = 24;
-const spins = new Map(); // key -> { args, urls }
+// The player can turn it by hand too (below): a dragged, wheeled or held figure stops where it is left, and the
+// ↻ Spin button (or a double-click) sets it turning again.
+const SPIN_MS = 110, SPIN_N = 24; // SPIN_N * STEP = 360: every frame is a cached heading
+const spins = new Map(); // key -> { args, o, urls }
 let ticker = null;
-function spinURL(key, k) {
+export function spinURL(key, k) {
   const sp = spins.get(key);
   if (!sp) return "";
   if (!sp.urls[k]) { const cv = figureCanvas(...sp.args, k * (360 / SPIN_N), sp.o); sp.urls[k] = cv ? cv.toDataURL() : ""; }
   return sp.urls[k];
 }
-function tick() {
+export const spinArgs = (key) => { const sp = spins.get(key); return sp ? { args: sp.args, o: sp.o } : null; }; // what a spin's frames are drawn from (the tests)
+// The ticker: every img[data-spin] on the page shows its frame now (the clock's, or a manual figure's own yaw).
+export function spinTick(now = Date.now()) {
   if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
-  const k = Math.floor(Date.now() / SPIN_MS) % SPIN_N;
-  for (const img of document.querySelectorAll("img[data-spin]")) { const url = spinURL(img.dataset.spin, k); if (url && img.src !== url) img.src = url; }
+  for (const img of document.querySelectorAll("img[data-spin]")) { const url = spinURL(img.dataset.spin, spinFrame(img.dataset.spin, now)); if (url && img.src !== url) img.src = url; }
 }
+const tick = () => spinTick();
 export function figureSpinImg(state, s, size = 7) {
   const app = ensureAppearance(s, state.seed), g = s.gear || {};
   const look = g.weapon ? weaponLook(g.weapon) : null, armor = spriteArmorKey(s), o = { pack: !!g.backpack };
   const a = g.head ? { ...app, helmet: g.head.key } : app;
-  const key = `${lookKey(a)}|${look || ""}|${armor || ""}|${o.pack ? 1 : 0}`;
-  if (!spins.has(key)) { if (spins.size > 40) spins.clear(); spins.set(key, { args: [a, look, armor], o, urls: [] }); }
+  const key = `${lookKey(a)}|${look || ""}|${armor || ""}|${o.pack ? 1 : 0}`.replace(/"/g, "");
+  if (!spins.has(key)) { if (spins.size > 40) { spins.clear(); hands.clear(); } spins.set(key, { args: [a, look, armor], o, urls: [] }); }
   if (!ticker && typeof document !== "undefined" && typeof document.querySelectorAll === "function" && typeof setInterval === "function") ticker = setInterval(tick, SPIN_MS); // only with a page to tick (the tests have none)
-  return `<img class="sprite" data-spin="${key.replace(/"/g, "")}" src="${spinURL(key, 0)}" alt="" style="width:${(BW / BH) * size}rem;height:${size}rem">`;
+  attachHand();
+  const manual = handOf(key).manual;
+  return `<span class="figspin" data-figspin="${key}" data-tip="${manual ? "Turned by hand. " : ""}Drag the figure (or roll the wheel over it) to turn it and see all that is on them; ↻ Spin or a double-click lets it turn by itself again."><img class="sprite" data-spin="${key}" draggable="false" src="${spinURL(key, spinFrame(key))}" alt="" style="width:${(BW / BH) * size}rem;height:${size}rem"><button class="mini figspinbtn" data-figreset="${key}"${manual ? "" : " hidden"}>↻ Spin</button></span>`;
+}
+
+// ---------- turning the figure by hand ----------
+// Per figure (by its spin key, so a rebuilt panel finds it again): { yaw, manual, lastInput, rem }. An automatic
+// figure shows the clock's frame; a manual one its own yaw, rounded to STEP (a frame). A drag turns a degree a
+// pixel (HAND.PX pixels a STEP, the remainder kept between moves), a wheel notch a STEP, a hold stops it where it
+// is; spinFigure puts it back on the clock. The handlers sit on the document once, attached by the first
+// figureSpinImg on a page (none headless), and find the figure by the img's data-spin, so a panel rebuilt mid-drag
+// keeps the drag.
+export const HAND = { PX: 15, DBL_MS: 400 }; // pixels of drag a STEP (15°: a degree a pixel, a full turn in 360 px); a double-tap's window
+const hands = new Map(); // key -> hand state
+const wrapYaw = (y) => ((y % 360) + 360) % 360;
+export const frameOfYaw = (yaw) => ((Math.round(yaw / STEP) % SPIN_N) + SPIN_N) % SPIN_N; // the spin frame that shows a yaw (rounded to STEP, as figureCanvas does)
+export const clockFrame = (now = Date.now()) => Math.floor(now / SPIN_MS) % SPIN_N; // the automatic spin's frame
+export function handOf(key) {
+  let h = hands.get(key);
+  if (!h) hands.set(key, (h = { yaw: 0, manual: false, lastInput: 0, rem: 0 }));
+  return h;
+}
+// The frame a figure shows now: the clock's for an automatic one, its own yaw's for a manual one.
+export function spinFrame(key, now = Date.now()) {
+  const h = hands.get(key);
+  return h && h.manual ? frameOfYaw(h.yaw) : clockFrame(now);
+}
+// By hand: turns the figure deg degrees (and makes it manual, from where the spin had it).
+export function turnFigure(key, deg, now = Date.now()) {
+  const h = holdFigure(key, now);
+  h.yaw = wrapYaw(h.yaw + deg);
+  h.lastInput = now;
+  syncFigure(key);
+  return h;
+}
+// A drag by dx pixels since the last move: a STEP per HAND.PX, the rest kept for the next move.
+export function dragFigure(key, dx, now = Date.now()) {
+  const h = holdFigure(key, now);
+  const px = h.rem + dx, steps = Math.trunc(px / HAND.PX);
+  h.rem = px - steps * HAND.PX;
+  return steps ? turnFigure(key, steps * STEP, now) : h;
+}
+// A wheel notch: one STEP, down turns one way and up the other.
+export const wheelFigure = (key, deltaY, now = Date.now()) => turnFigure(key, deltaY > 0 ? STEP : deltaY < 0 ? -STEP : 0, now);
+// A hold (the pointer down): the figure stops where the spin has it and stays.
+export function holdFigure(key, now = Date.now()) {
+  const h = handOf(key);
+  if (!h.manual) { h.yaw = clockFrame(now) * STEP; h.manual = true; h.rem = 0; h.lastInput = now; syncFigure(key); }
+  return h;
+}
+// Back on the clock: the automatic spin again.
+export function spinFigure(key) {
+  const h = handOf(key);
+  h.manual = false; h.rem = 0;
+  syncFigure(key);
+  return h;
+}
+// The page's figures of a key follow the state at once (the ticker would catch up within SPIN_MS; a drag feels
+// better without the wait): the frame on every img, the ↻ Spin button shown only for a manual figure.
+function syncFigure(key) {
+  if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return;
+  const h = handOf(key), url = spinURL(key, spinFrame(key));
+  for (const img of document.querySelectorAll("img[data-spin]")) if (img.dataset.spin === key && url && img.src !== url) img.src = url;
+  for (const btn of document.querySelectorAll("button[data-figreset]")) if (btn.dataset.figreset === key) btn.hidden = !h.manual;
+}
+// The pointer and wheel handlers, once per page: a drag (mouse or touch, by pointer events) on an img[data-spin]
+// turns it, a wheel notch over it turns it a STEP, a double-click (or -tap) or the ↻ Spin button sets it spinning
+// again. Nothing here goes through main.js's action dispatcher: the button has no data-action.
+let handed = false, drag = null, lastTap = 0; // drag: { key, id, x }
+function attachHand() {
+  if (handed || typeof document === "undefined" || typeof document.addEventListener !== "function" || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  handed = true;
+  const figOf = (ev) => { const el = ev.target && ev.target.closest ? ev.target.closest("img[data-spin]") : null; return el ? el.dataset.spin : null; };
+  document.addEventListener("pointerdown", (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    const key = figOf(ev);
+    if (!key) return;
+    ev.preventDefault(); // no image drag, no text selection
+    const now = Date.now();
+    if (now - lastTap < HAND.DBL_MS) { lastTap = 0; drag = null; spinFigure(key); return; } // a double-click or -tap
+    lastTap = now;
+    holdFigure(key, now);
+    drag = { key, id: ev.pointerId, x: ev.clientX };
+    const wrap = ev.target.closest(".figspin"); if (wrap) wrap.classList.add("held");
+  }, true);
+  window.addEventListener("pointermove", (ev) => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const dx = ev.clientX - drag.x;
+    drag.x = ev.clientX;
+    if (dx) { dragFigure(drag.key, dx); lastTap = 0; } // a real drag is no tap
+  }, true);
+  const end = () => { if (!drag) return; drag = null; for (const w of document.querySelectorAll(".figspin.held")) w.classList.remove("held"); };
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+  document.addEventListener("wheel", (ev) => { const key = figOf(ev); if (!key) return; ev.preventDefault(); wheelFigure(key, ev.deltaY); }, { passive: false, capture: true });
+  document.addEventListener("click", (ev) => { const el = ev.target && ev.target.closest ? ev.target.closest("button[data-figreset]") : null; if (el) { ev.preventDefault(); spinFigure(el.dataset.figreset); } }, true);
 }

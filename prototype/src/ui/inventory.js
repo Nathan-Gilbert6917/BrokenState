@@ -404,7 +404,7 @@ export function inventoryModal(state, ui) {
       <div class="invcol">${readonly ? "" : storageBox(state, ui, place, s)}</div>
     </div>
     ${selBar(state, ui, place)}${stackPanel(state, ui, "inv")}
-    <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps.</div>
+    <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps. Drag the figure (or roll the wheel over it) to turn it by hand; ↻ Spin lets it turn by itself again.</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Close</button></div>
   </div>`;
 }
@@ -421,7 +421,7 @@ function peekModal(state, ui) {
   const where = u ? (u.dead ? "dead" : u.left ? "got away" : u.down ? "down" : `${Math.round(u.hp)} hp`) : "";
   return `<div class="box wide invbox">
     <div class="spread"><h1>Inventory: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}${where ? ` · ${esc(where)}` : ""}</span></div>
-    <div class="small muted">In the fight: look only. Things move by orders (Reload, Throw, Search, Ground).</div>
+    <div class="small muted">In the fight: look only. Things move by orders (Reload, Throw, Search, Ground). Drag the figure to turn it.</div>
     <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly: true, user: s })}</div></div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close"${tip("Back to the battle (Esc)")}>Close</button></div>
   </div>`;
