@@ -11,7 +11,9 @@
 // direction. A depth buffer sorts everything per pixel, so an arm across the chest or a gun through the hands draws
 // right at every yaw. Painted on a BW × BH grid (1 grid px = 1 art px, the figure 30 tall), upscaled by toCanvas
 // and cached by look and heading (figureCanvas). Special dead, bosses and the risen keep their flat sprites
-// (ui/sprites.js, ui/hivesprites.js): unitFigure returns null for them.
+// (ui/sprites.js, ui/hivesprites.js): unitFigure returns null for them. The State Map's moving pieces (teams, the
+// groups' parties, hordes, herds, workers) are built from the same primitive at the map's scale in ui/mapfigures.js
+// (limb, boxL and paintLimbs are exported for it).
 import { painter, toCanvas, zombieLookOf, zombieVariant, enemyLookOf, zombieLook } from "./sprites.js";
 import { shade } from "./itemart/kit.js";
 import { ensureAppearance } from "../sim/appearance.js";
@@ -37,15 +39,17 @@ const len = (a) => Math.hypot(a[0], a[1], a[2]), norm = (a) => { const l = len(a
 const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const SX = (p) => p[0] - p[1], SY = (p) => (p[0] + p[1]) / 2 - p[2], DEPTH = (p) => p[0] + p[1] + 0.8 * p[2];
 const VIEW = [1, 1, 0.8]; // toward the viewer: a face is seen when its normal leans this way
+// The item art's light on a world normal: the top lit, faces darker the more they turn to the screen's right.
+const LIGHT = (n) => 0.18 * n[2] - 0.3 * Math.max(0, n[0]) + 0.04 * Math.max(0, n[1]);
 
 // limb(A, B, ra, rb, col, o): from A to B; ra, rb the half-sizes of the section along its u and v axes (u: forward
 // for a vertical limb, else across the limb; v the other). o: sides (8), phase (the section's turn), taper (the
 // section's scale at B), tex(face, s, t) → colour (face by the figure-space normal: front, back, left, right, top,
 // bottom; s across the face 0..1, t along the limb 0..1 from A), u (the u axis to use).
-const limb = (A, B, ra, rb, col, o = {}) => ({ A, B, ra, rb, col, sides: o.sides ?? 8, phase: o.phase ?? 0, taper: o.taper ?? 1, tex: o.tex || null, u: o.u || null, group: o.group || 0 });
+export const limb = (A, B, ra, rb, col, o = {}) => ({ A, B, ra, rb, col, sides: o.sides ?? 8, phase: o.phase ?? 0, taper: o.taper ?? 1, tex: o.tex || null, u: o.u || null, group: o.group || 0 });
 const OUTLINE = "#0b0c0e";
 // A box from A to B: half-height ha (along u) and half-width hb.
-const boxL = (A, B, ha, hb, col, o = {}) => limb(A, B, ha * Math.SQRT2, hb * Math.SQRT2, col, { sides: 4, phase: Math.PI / 4, ...o });
+export const boxL = (A, B, ha, hb, col, o = {}) => limb(A, B, ha * Math.SQRT2, hb * Math.SQRT2, col, { sides: 4, phase: Math.PI / 4, ...o });
 
 function faceOf(n) { // a figure-space normal's face
   const ax = Math.abs(n[0]), ay = Math.abs(n[1]), az = Math.abs(n[2]);
@@ -66,7 +70,8 @@ function paintLimb(p, zb, gb, L, W, g) {
     if (dep > zb[i]) { zb[i] = dep; p.px[i] = col; gb[i] = L.group; }
   };
   const N = (nf) => norm(W.n ? W.n(nf) : W(nf)); // a normal through the transform (its own, when the transform is not a rotation)
-  const lit = (nf, col) => { const n = N(nf); return shade(col, 0.18 * n[2] - 0.3 * Math.max(0, n[0]) + 0.04 * Math.max(0, n[1])); };
+  const light = W.light || LIGHT; // the transform may bring its own light rule (ui/mapfigures.js: harder shade on the map's small pieces)
+  const lit = (nf, col) => shade(col, light(N(nf)));
   const seen = (nf) => dot(N(nf), VIEW) > 0.02;
   const n = L.sides, ST = 0.4;
   const radial = (th, sc) => add(mul(u, L.ra * Math.cos(th) * sc), mul(v, L.rb * Math.sin(th) * sc));
@@ -116,7 +121,7 @@ function transformOf(yaw, lie = false, height = 30) {
   return W;
 }
 // Paints limbs through a transform onto the grid g, into the depth and group buffers (shared by a figure's parts).
-function paintLimbs(p, limbs, W, g, buf) {
+export function paintLimbs(p, limbs, W, g, buf) {
   const zb = buf ? buf.zb : new Float32Array(g.w * g.h).fill(-1e9), gb = buf ? buf.gb : new Uint8Array(g.w * g.h);
   for (const L of limbs) paintLimb(p, zb, gb, L, W, g);
   if (limbs.muzzle) { const m = W(limbs.muzzle); p.muzzle = { mx: g.ox + SX(m), my: g.oy + SY(m) }; } // where a shot starts (isoview.js muzzlePoint), grid px

@@ -37,6 +37,7 @@ const stubDocument = { createElement: () => stubCanvas(), getElementById: () => 
 globalThis.document = stubDocument;
 globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
 const MS = await import("../src/ui/mapsprites.js");
+const MF = await import("../src/ui/mapfigures.js");
 
 // ---------------------------------------------------------------------------------------------------------------
 section("Painters without a DOM (poiSpriteCanvas gives null, nothing throws)");
@@ -171,8 +172,9 @@ section("Two parties on one tile are drawn on opposite sides of the hex");
   check(partyTile(a) === dest.id && partyTile(b) === dest.id, "two teams stand on one tile");
   const [cx] = st.grid.toPixel(dest.id, R.HEX);
   R.camera.zoom = 1; // besideBase's offsets are 13 world px a side at zoom 1
-  // The teams' sprite: two walkers in your blue (render.js partyLook, teamCanvas; the cache gives one canvas per look).
-  const teamCv = MS.partySpriteCanvas("walkers", "#4f8fd6", 2, "");
+  // The teams' piece: two walkers in your blue, standing (frame 0) and heading east, the heading of a team that has not
+  // moved (render.js partyLook, teamCanvas, headingOf; ui/mapfigures.js caches one canvas per look, heading and frame).
+  const teamCv = MF.mapPartyCanvas("walkers", "#4f8fd6", 2, "", 315, 0);
   const near = () => images.filter((i) => i.cv === teamCv).map((i) => Math.round(i.x - cx));
   frame(st, dest.id);
   const xs = near();
