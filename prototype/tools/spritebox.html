@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Survivors and the dead as low-poly figures</title>
+<style>
+  body { margin: 0; padding: 12px; background: #1a1d22; color: #d8dce2; font: 12px/1.3 system-ui, sans-serif; }
+  h2 { font-size: 14px; margin: 14px 0 6px; color: #e6c23a; }
+  section { display: inline-block; padding: 8px; background: #1a1d22; }
+  table { border-collapse: collapse; }
+  th { font-weight: normal; color: #8a929c; font-size: 11px; padding: 2px 6px; }
+  th.row { text-align: right; color: #d8dce2; }
+  td { padding: 3px 4px; background: #252a31; border: 1px solid #333944; text-align: center; vertical-align: bottom; }
+  td.before { background: #22262c; }
+  img { image-rendering: pixelated; display: block; margin: 0 auto; }
+  .row img { display: inline-block; margin: 0; }
+</style>
+</head>
+<body>
+<div id="out">Loading…</div>
+<script type="module">
+import { toCanvas, paintSurvivor, zombieCanvas, ZOMBIE_VARIANTS } from "../src/ui/sprites.js";
+import { paintBoxFigure, paintBoxZombie, specialApp, bossApp, risenApp, FACINGS, YAW } from "./spritebox.js";
+
+const SCALE = 2;
+const img = (p, h = null) => { const cv = p instanceof HTMLCanvasElement ? p : toCanvas(p); const s = h ? h / cv.height : SCALE; return `<img src="${cv.toDataURL()}" style="width:${cv.width * s}px;height:${cv.height * s}px">`; };
+const LOOKS = {
+  slim:    { build: "slim",    skin: "#d9a37c", hairStyle: "ponytail", hair: "#1d1a17", facial: "none",    topStyle: "tshirt",  top: "#7a3b32", pants: "#2b3442", accessory: "glasses", accent: "#2d5fa8" },
+  average: { build: "average", skin: "#eac3a2", hairStyle: "short",    hair: "#6b4526", facial: "stubble", topStyle: "jacket",  top: "#3d4a5c", pants: "#3a3a3a", accessory: "cap",     accent: "#b8322a" },
+  heavy:   { build: "heavy",   skin: "#7d5233", hairStyle: "buzz",     hair: "#1d1a17", facial: "beard",   topStyle: "flannel", top: "#5a6b3a", pants: "#4f4a3a", accessory: "none",    accent: "#d9b23a" },
+  long:    { build: "average", skin: "#c08a5f", hairStyle: "long",     hair: "#a9442a", facial: "none",    topStyle: "hoodie",  top: "#2e5e6b", pants: "#36452e", accessory: "bandana", accent: "#d9b23a" },
+  mohawk:  { build: "slim",    skin: "#f6d7c3", hairStyle: "mohawk",   hair: "#3c5a8a", facial: "stache",  topStyle: "tank",    top: "#2f2f33", pants: "#22252b", accessory: "backpack", accent: "#1f1f22" },
+};
+const ARMOR = { slim: null, average: "vest", heavy: "plate", long: null, mohawk: "padding" };
+const HEADINGS = [["SE", 0], ["S", 45], ["SW", 90], ["W", 135], ["NW", 180], ["N", 225], ["NE", 270], ["E", 315]];
+let html = "";
+// 1. Today's sprite beside the box figure at the view's eight headings, on a tile (the map's scale: a unit 30 art px).
+html += `<section id="facings"><h2>On the tile at the view's eight headings (today's flat sprite for scale; AR and the look's armour)</h2><table><tr><th></th><th>today</th>`;
+for (const [n] of HEADINGS) html += `<th>${n}</th>`;
+html += `</tr>`;
+for (const [name, app] of Object.entries(LOOKS)) {
+  html += `<tr><th class="row">${name}</th><td class="before">${img(paintSurvivor(app, "ar", ARMOR[name]), 26 * 4 * SCALE * (30 / 26))}</td>`;
+  for (const [, yaw] of HEADINGS) html += `<td>${img(paintBoxFigure(app, "ar", ARMOR[name], yaw, true))}</td>`;
+  html += "</tr>";
+}
+html += "</table></section><br>";
+// 2. The inventory's spin: 360° in 24 steps, the look with a pack, a bow and a vest, so what is on them comes round.
+html += `<section id="spin"><h2>The inventory's spin: 360° in 15° steps (vest, backpack, pulley bow)</h2><div class="row">`;
+for (let k = 0; k < 24; k++) html += img(paintBoxFigure({ ...LOOKS.long, accessory: "backpack" }, "pulleybow", "vest", k * 15, false));
+html += "</div></section><br>";
+// 3. Weapons in the fine figure.
+const W = [[null, "unarmed"], ["ar", "AR"], ["smg", "SMG"], ["pistol", "pistol"], ["machete", "machete"], ["sledge", "sledgehammer"], ["pulleybow", "pulley bow"]];
+html += `<section id="weapons"><h2>Weapons: both hands on a long gun, one on a pistol, the string hand drawn on a bow</h2><table><tr><th></th>${W.map(([, n]) => `<th>${n}</th>`).join("")}</tr>`;
+for (const [f, yaw] of [["SE", 0], ["S", 45], ["SW", 90]]) {
+  html += `<tr><th class="row">${f}</th>`;
+  for (const [k] of W) html += `<td>${img(paintBoxFigure(LOOKS.average, k, "vest", yaw, false))}</td>`;
+  html += "</tr>";
+}
+html += "</table></section><br>";
+// 4. The dead: the four variants from the game's own rolls, today's sprite beside, two seeds each, SE and SW.
+html += `<section id="zombies"><h2>The dead: walker, runner, bloated, brute (the game's own rolls for each seed; today's sprite first)</h2><table><tr><th></th>`;
+for (const v of ZOMBIE_VARIANTS) html += `<th colspan="3">${v}</th>`;
+html += `</tr><tr><th></th>${ZOMBIE_VARIANTS.map(() => "<th>today</th><th>SE</th><th>SW</th>").join("")}</tr>`;
+for (const seed of [3, 11, 27]) {
+  html += `<tr><th class="row">seed ${seed}</th>`;
+  for (const v of ZOMBIE_VARIANTS) html += `<td class="before">${img(zombieCanvas(v, seed), 26 * 4 * SCALE * (30 / 26))}</td><td>${img(paintBoxZombie(v, seed, "SE", true))}</td><td>${img(paintBoxZombie(v, seed, "SW", true))}</td>`;
+  html += "</tr>";
+}
+html += "</table></section><br>";
+// 4b. The special dead, the armoured dead, the bosses, the risen, the fallen: every other body the battle map has.
+const SPECIAL = ["spitter", "screamer", "crawler", "shepherd", "carrier", "swarm", "boneback", "climber", "flinger", "sower", "nightmare", "soldier", "riot"];
+html += `<section id="special"><h2>The special dead and the armoured dead (seed 7), SE and SW</h2><table><tr>${SPECIAL.map((k) => `<th>${k}</th>`).join("")}</tr>`;
+for (const f of ["SE", "SW"]) { html += "<tr>"; for (const k of SPECIAL) html += `<td>${img(paintBoxFigure(specialApp(k, 7), null, null, YAW[f], true))}</td>`; html += "</tr>"; }
+html += "</table></section><br>";
+html += `<section id="bosses"><h2>The bosses, the risen and the fallen</h2><table><tr><th>Wallbreaker</th><th>Broodmother</th><th>Hivemind</th><th>Hivemind, torn open</th><th>risen (a survivor)</th><th>dead (survivor, vest)</th><th>down (survivor)</th><th>dead walker</th><th>burnt body</th></tr><tr>`;
+for (const k of ["wallbreaker", "broodmother", "hivemind", "hivemind2"]) html += `<td>${img(paintBoxFigure(bossApp(k), null, null, 0, true))}</td>`;
+html += `<td>${img(paintBoxFigure(risenApp(LOOKS.average, "vest", 3), null, "vest", 0, true))}</td>`;
+html += `<td>${img(paintBoxFigure({ ...LOOKS.average, down: { pose: "dead", pool: true } }, null, "vest", 0))}</td><td>${img(paintBoxFigure({ ...LOOKS.average, down: { pose: "down" } }, null, "vest", 0))}</td>`;
+const walker = paintBoxZombie("walker", 5, "SE"); void walker;
+import("./spritebox.js").then(() => {});
+html += `<td>${img(paintBoxFigure({ ...(await import("./spritebox.js")).zombieApp("walker", 5), down: { pose: "dead", pool: true } }, null, null, 0))}</td>`;
+html += `<td>${img(paintBoxFigure({ ...(await import("./spritebox.js")).zombieApp("walker", 9), skin: "#2b2723", top: "#1e1b19", pants: "#1e1b19", down: { pose: "dead", pool: true, burnt: true } }, null, null, 0))}</td>`;
+html += "</tr></table></section><br>";
+// 5. A crowd at the map's own zoom, to judge the read at play size.
+html += `<section id="playsize"><h2>At play size (zoom 1×, 2×, 3×): survivors and the dead</h2><table><tr>`;
+for (const z of [1, 2, 3]) {
+  html += `<td><div class="row">`;
+  for (const [name, app] of Object.entries(LOOKS)) html += img(paintBoxFigure(app, "ar", ARMOR[name], 0, true), 50 * z);
+  for (const v of ZOMBIE_VARIANTS) html += img(paintBoxZombie(v, 5, "SW", true), 50 * z);
+  html += `</div></td>`;
+}
+html += "</tr></table></section>";
+document.getElementById("out").innerHTML = html;
+document.body.dataset.ready = "1";
+</script>
+</body>
+</html>

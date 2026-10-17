@@ -22,6 +22,7 @@ import { repairKind, repairInfo, fieldRepairInfo, repairPreview, queueRepair, fi
 import { ATTACH, MOUNTS, MOUNT_NAMES, takesMods, modsText, attachText, fitsText, modFitReason, modLabel } from "../sim/gunmods.js"; // gun attachments
 import { isJunk, armoryJunk, burnablesWood, breakDownJunk, boilerJunkOn, BURN } from "../sim/woodcutting.js"; // break down for firewood; what the boiler may burn
 import { survivorURL, spriteImg, canvasURL, unitCanvas } from "./sprites.js";
+import { figureSpinImg } from "./figures.js"; // the survivor as a low-poly figure turning through 360°, to see all that is on them
 import { cui } from "./combat.js";
 import { shortName } from "./names.js";
 import { useItemOn, useText } from "../sim/comforts.js";
@@ -393,7 +394,7 @@ export function inventoryModal(state, ui) {
   const place = personPlace(s);
   const people = placePeople(state, place);
   const readonly = !place;
-  const body = doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 7), { readonly, user: s });
+  const body = doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly, user: s });
   return `<div class="box wide invbox">
     <div class="spread"><h1>Inventory: ${esc(s.name)}</h1><span class="muted">${esc(placeName(state, place))}</span></div>
     ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
@@ -421,7 +422,7 @@ function peekModal(state, ui) {
   return `<div class="box wide invbox">
     <div class="spread"><h1>Inventory: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}${where ? ` · ${esc(where)}` : ""}</span></div>
     <div class="small muted">In the fight: look only. Things move by orders (Reload, Throw, Search, Ground).</div>
-    <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 7), { readonly: true, user: s })}</div></div>
+    <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly: true, user: s })}</div></div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close"${tip("Back to the battle (Esc)")}>Close</button></div>
   </div>`;
 }
@@ -429,7 +430,7 @@ function peekModal(state, ui) {
 function bodyPortrait(state, b, body) {
   if (body.sid != null) {
     const s = survivorById(state, body.sid);
-    return s ? spriteImg(survivorURL(s, state.seed), 7) : "";
+    return s ? figureSpinImg(state, s, 7) : "";
   }
   const u = b.units.find((x) => x.id === body.uid);
   return u ? spriteImg(canvasURL(unitCanvas(state, b, u, cui.salt)), 7, "transform:rotate(-8deg)") : "";
@@ -467,7 +468,7 @@ function lootModal(state, ui) {
       <div class="invlabel"${tip("Supplies go straight to the team's found cargo (or the base stock). Click a stack to choose how many (the panel at the bottom), or drag it to the cargo.")}>Supplies</div>
       <div class="istore supgrid">${sups.length ? sups.map(([k, v]) => supTile(ui, `body:${bi}:sup:${k}`, k, v, " It goes to the team's found cargo (or the base's stores).")).join("") : `<span class="small muted">None</span>`}</div>`;
   }
-  const you = s ? doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 7), { user: s }) : `<div class="small muted">Nobody left standing to carry anything.</div>`;
+  const you = s ? doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { user: s }) : `<div class="small muted">Nobody left standing to carry anything.</div>`;
   const r = b.result;
   const got = [...Object.entries(r.loot.supplies).filter(([, n]) => n >= 1).map(([k, n]) => `${Math.floor(n)} ${keyWord(k)}`), ...r.loot.gear.map((g) => g.name)];
   return `<div class="box wide invbox loot">
