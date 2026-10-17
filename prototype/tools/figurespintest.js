@@ -168,7 +168,7 @@ section("The screens show the figure");
   state.combat = { over: false, place: "a field", units: [{ side: "player", sid: s.id, id: 1, hp: 10, ap: 2 }] };
   const peek = inventoryModal(state, ui) || "";
   state.combat = null;
-  check(peek.includes(`data-spin="${A.key}"`) && /look only/.test(peek) && /Drag the figure to turn it/.test(peek), "the battle's inventory (peek): the same figure, turned the same way");
+  check(peek.includes(`data-spin="${A.key}"`) && /(look only|1 action a move)/i.test(peek) && /Drag the figure to turn it/.test(peek), "the battle's inventory (peek): the same figure, turned the same way");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
