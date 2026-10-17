@@ -100,6 +100,8 @@ import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloa
 import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, PACK_REFUSAL } from "./mags.js"; // magazines as items (section 15): spares, reload sources, top-up, internal magazines
 import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
 import { allCarried, carriedSpots } from "./inventory.js";
+import { parseLoc, itemAt, moveItem, slotKind, fitReason, splitAt, openAt, boxAt as boxRoundsAt, rigOf, pouchesOf } from "./inventory.js"; // the survivor's inventory in a fight (combatAct "inv"; boxAt here is a raid's container)
+import { amountOf, canStack, isRoundItem } from "./itemstack.js";
 import { deepShift } from "./deeploot.js";
 import { typesOf, withHand } from "./rounds.js"; // shells and rounds at hand (takeHandRounds)
 import { ammoKey } from "./data-ammo.js";
@@ -3192,6 +3194,88 @@ export function refitUnit(b, u, s) {
 }
 setRefit(refitUnit);
 
+// ---------- the survivor's inventory in a fight (2026-10-17 user request: "move items from your pocket to pack or
+// pack to pocket same with rigs and this uses some action") ----------
+// combatAct "inv" { type: "inv", unit, from, to, op? }: the acting unit's own kit moved about for INV_AP (one action)
+// on its turn: between a pocket, a pack slot, a rig pouch, the hands, the off hand and the arms, any direction (a full
+// target swaps, the stacks of a thing merge, loose rounds and boxes of the same load go onto each other: inventory.js
+// moveItem); op "split", "open" or "box" on `from` (a stack halved, boxes opened into loose rounds, loose rounds
+// boxed) costs the same. Armour, a helmet, the rig and the pack stay as worn (a plate: "plate", carrykit.js PLATE_AP).
+// What changed counts at once (refitKit: the weapon in the hands, the boxes of rounds, where each magazine sits).
+// Sessions D and E build on this (reloads from pockets and rigs; a hand-over to the survivor next to you).
+export const INV_AP = 1;
+const INV_SLOTS = ["pocket", "pack", "pouch", "weapon", "tool", "carry"]; // inventory.js slotKind: a rig pouch is "pouch", the rig itself "rig"
+const INV_WORN = "Armour, a helmet, the rig and the pack stay as they are in a fight: only the pockets, the pack's slots, the rig's pouches and the hands change.";
+// u.fit (what playerUnit gave at the start: refitUnit's baseline) for a unit that has none yet (a field battle).
+export function ensureFit(b, u, s) {
+  if (u.fit || !s) return;
+  const id = b.nextId;
+  const f0 = playerUnit(b, s);
+  b.nextId = id;
+  u.fit = { aim: f0.aim, dmgMult: f0.dmgMult, armor: f0.armor, medicine: f0.medicine };
+}
+// The unit's battle caches after its kit moved about: the weapon-derived fields when the hands changed and the boxes
+// of rounds (refitUnit: ammo.js boxesOf, the rig's at hand by mags.js fitHandBoxes), then, with the same gun, where
+// each magazine and clip sits now (a spare moved from the pack to a pocket reloads in 1 action), each keeping the
+// rounds and the load it had. Another gun in the hands gets its own magazines (refitUnit).
+export function refitKit(b, u, s) {
+  ensureFit(b, u, s);
+  const wasMags = u.mags, wasClips = u.clips, wasW = u.magsW, wasMode = u.magMode, hand = u.hand;
+  refitUnit(b, u, s);
+  if (!tracksMags(u) || u.magsW !== wasW || u.magMode !== wasMode || u.mags !== wasMags) return;
+  const t = { weapon: u.weapon, item: u.item, load: u.load, side: u.side, boxes: Array.isArray(u.boxes) ? u.boxes.slice() : u.boxes, gm: u.gm, gmWeapon: u.gmWeapon, hand: null };
+  fitMags(b, t, carriedSpots(s), magCap(u)); // a scratch unit: the spares as they lie now (nothing of the world's is touched)
+  const old = (wasMags || []).filter((m) => m.where !== "gun");
+  const used = new Set();
+  const same = (m) => { // the old entry of this magazine: the same key in the same place first, else anywhere
+    let i = old.findIndex((o, j) => !used.has(j) && o.key === m.key && o.where === m.where);
+    if (i < 0) i = old.findIndex((o, j) => !used.has(j) && o.key === m.key);
+    if (i < 0) return m;
+    used.add(i);
+    return { ...m, n: old[i].n, load: old[i].load };
+  };
+  const gun = (wasMags || []).find((m) => m.where === "gun") || (t.mags || []).find((m) => m.where === "gun");
+  u.mags = [...(gun ? [gun] : []), ...(t.mags || []).filter((m) => m.where !== "gun").map(same)];
+  if (Array.isArray(t.clips)) u.clips = t.clips.map((c) => ({ ...c, used: (wasClips || []).some((o) => o.key === c.key && o.used) }));
+  if (hand) u.hand = hand; // the shells loose at hand stay as they were
+}
+// combatAct "inv": the move checked and done (the error, or "" when it happened and INV_AP was spent).
+function invAct(state, b, u, act) {
+  const s = u.sid != null ? survivorById(state, u.sid) : null;
+  if (!s) return "Only one of yours sorts their kit.";
+  if (u.ap < INV_AP) return "No action left.";
+  const from = parseLoc(act.from);
+  if (from.o !== "s" || from.id !== s.id) return "Only their own kit moves in a fight.";
+  const fk = slotKind(from);
+  if (!INV_SLOTS.includes(fk)) return INV_WORN;
+  const item = itemAt(state, act.from);
+  if (!item) return "Nothing there.";
+  const op = act.op || "move";
+  let msg;
+  if (op === "split" || op === "open" || op === "box") {
+    msg = op === "split" ? splitAt(state, act.from) : op === "open" ? openAt(state, act.from) : boxRoundsAt(state, act.from);
+    const ok = op === "split" ? /split:/.test(msg) : op === "open" ? /^Opened|out of the/.test(msg) : /^Boxed/.test(msg);
+    if (!ok) return msg;
+  } else {
+    const to = parseLoc(act.to);
+    if (to.o !== "s" || to.id !== s.id) return "Only their own kit moves in a fight.";
+    if (!INV_SLOTS.includes(slotKind(to))) return INV_WORN;
+    if (act.from === act.to) return "";
+    const cur = itemAt(state, act.to);
+    const kindAt = (L) => (slotKind(L) === "pouch" ? (pouchesOf(rigOf(s)) || [])[L.i] : null);
+    const back = cur && !canStack(cur, item) && !(isRoundItem(cur) && isRoundItem(item) && cur.key === item.key) ? fitReason(cur, fk, s, kindAt(from)) : "";
+    if (back) return `No room: the ${cur.name} there has nowhere to go (${back.replace(/\.$/, "")}).`; // (out of a fight it would go to the team's cargo)
+    const before = amountOf(item);
+    msg = moveItem(state, act.from, act.to);
+    if (itemAt(state, act.from) === item && amountOf(item) === before) return msg || "Nothing moved.";
+  }
+  say(b, msg, "info");
+  u.ap -= INV_AP;
+  u.hunker = false;
+  refitKit(b, u, s);
+  return "";
+}
+
 export function enemyUnit(b, rng, kind, power, n) {
   const p = Math.max(1, power);
   if (kind === "zombies") {
@@ -3933,6 +4017,7 @@ export function combatAct(state, act) {
   if (u && u.side === "player" && act.type === "selfStab") { const why = MED.selfStabilize(b, u); if (why) return why; b.acted = true; bump(b); return ""; } // medics.js: a downed survivor's tourniquet or trauma kit
   if (u && u.side === "player" && act.type === "sneak" && active(u)) return sneakAct(b, u, act); // vision.js: free, even with no actions left to stop
   if (u && u.side === "player" && (act.type === "light" || act.type === "nvg") && active(u)) return switchAct(state, b, u, act); // vision.js: a light, night vision on or off (free, even with no actions left)
+  if (u && u.side === "player" && act.type === "inv" && active(u) && u.ap < INV_AP) return "No action left."; // the inventory window says why (invAct)
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
   if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
@@ -4051,6 +4136,11 @@ export function combatAct(state, act) {
       say(b, getShells(b, u, act.ammo || null), "info");
       u.ap -= 1;
       u.hunker = false;
+      break;
+    }
+    case "inv": { // their own kit moved about (invAct: pockets, pack, rig pouches, the hands; split, open, box): INV_AP
+      const err = invAct(state, b, u, act);
+      if (err) return err;
       break;
     }
     case "plate": { // carrykit.js: a broken or missing plate replaced from the pack (2 actions)

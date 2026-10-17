@@ -36,6 +36,8 @@ import { teamBase, transferProblem, loadFromBase, dropOff, isPlayerTeam } from "
 import { reseat } from "./walkers.js";
 import { settleHold } from "./carry.js"; // who holds the team's supplies where (kept by the gear snapshot)
 import { stockHas } from "./water.js"; // water: purified and un-purified; "ammo": any calibre
+import { roundRoom, ROUND_PLACES } from "./supitems.js"; // rounds onto a named member while forming (2026-10-17)
+import { isRoundKey } from "./rounds.js";
 
 const EPS = 1e-6;
 const num = (v) => (Number.isFinite(v) ? v : 0);
@@ -109,7 +111,10 @@ function applyFleet(state, p, base, plan) {
 }
 
 // What the window shows and formTeam checks before anything moves: { members, v, cap, load, cargoKg, problem }.
-// opts: { baseId, memberIds, vehicleIds (or vehicleId), supplies, cargo }.
+// opts: { baseId, memberIds, vehicleIds (or vehicleId), supplies, cargo, rounds }. rounds: picks of rounds onto a named
+// member as items (supitems.js roundsOnto): [{ key, n, sid, where: "pocket" | "pack" | "rig", loose? }], out of the
+// stores on top of the supplies; their weight is worn, not carried in the pool (the person's max load counts here, the
+// team's carry limit when they go on after the launch: teaminv.js loadFromBase).
 /** @param {State} state */
 export function formPreview(state, opts) {
   const base = baseById(state, opts.baseId);
@@ -121,12 +126,13 @@ export function formPreview(state, opts) {
   /** @type {Stock} */
   const supplies = {};
   for (const [k, q] of Object.entries(opts.supplies || {})) if ((SUPPLIES[k] || k === "food") && num(q) > 0) supplies[k] = q; // food: days of it (packed as items by parties.js launchExpedition)
+  const rounds = (opts.rounds || []).filter((r) => r && isRoundKey(r.key) && num(r.n) >= 1 && ROUND_PLACES.includes(r.where) && members.some((s) => s.id === Number(r.sid))).map((r) => ({ key: r.key, n: Math.floor(r.n), sid: Number(r.sid), where: r.where, loose: !!r.loose }));
   const cargo = base ? armoryItems(base, opts.cargo || []) : [];
   const cargoKg = cargo.reduce((a, it) => a + itemLoad(it), 0);
   const load = supplyLoad(supplies) + cargoKg;
-  return { base, members, v, plan, cap, load, cargoKg, cargo, supplies, problem: formProblem(state, base, members, plan, supplies, load, cap) };
+  return { base, members, v, plan, cap, load, cargoKg, cargo, supplies, rounds, problem: formProblem(state, base, members, plan, supplies, load, cap, rounds) };
 }
-function formProblem(state, base, members, plan, supplies, load, cap) {
+function formProblem(state, base, members, plan, supplies, load, cap, rounds = []) {
   const v = plan ? plan.fleet : null;
   if (!base) return "That base is no longer yours.";
   if (state.combat) return "Not during a battle.";
@@ -138,9 +144,17 @@ function formProblem(state, base, members, plan, supplies, load, cap) {
   if (plan && plan.problem) return plan.problem;
   if (plan && fuelProblem(plan.cars, supplies.fuel)) return fuelProblem(plan.cars, supplies.fuel);
   if (load > cap + EPS) return `Too much to carry: the supplies and cargo weigh ${Math.ceil(load)} kg, ${members.length === 1 ? "they" : "the team"}${v ? ` and the ${vehicleLabel(v)}` : ""} can carry ${Math.floor(cap)} kg on top of what they wear. Take less${v ? "" : ", more people, bikes or a vehicle"}.`;
-  for (const [k, q] of Object.entries(supplies)) {
+  /** @type {Record<string, number>} */
+  const want = { ...supplies };
+  for (const r of rounds) want[r.key] = num(want[r.key]) + r.n; // rounds onto a member come out of the same stores
+  for (const [k, q] of Object.entries(want)) {
     const have = num(stockHas(base.stock, k));
     if (have + EPS < q) return `Not enough ${k === "food" ? "food" : SUPPLIES[k].name.toLowerCase()} at ${base.name} (${Math.floor(have)}${k === "food" ? " days" : ""}).`;
+  }
+  for (const r of rounds) {
+    const s = members.find((x) => x.id === r.sid);
+    const room = s ? roundRoom(s, r.key, r.where, r.loose) : { n: 0, why: "That person is not on the team." };
+    if (!room.n) return room.why;
   }
   return "";
 }
@@ -175,6 +189,10 @@ export function formTeam(state, opts) {
   if (pre.cargo.length) {
     const r = loadFromBase(state, p, { items: pre.cargo }, "cargo");
     notes.push(...r.refused);
+  }
+  for (const r of pre.rounds) { // rounds onto a named member (teaminv.js loadFromBase with a person target): what has no room stays in the stores
+    const got = loadFromBase(state, p, { supplies: { [r.key]: r.n } }, { sid: r.sid, where: r.where, loose: r.loose });
+    notes.push(...got.refused);
   }
   weighTeam(state, p);
   const v = partyFleet(state, p);
