@@ -15,6 +15,8 @@ import { GUN_SPRITE } from "../sim/data-guns.js"; // a gun with no art spec: an 
 import { ownKey, isGunKey } from "./gunpaint.js"; // every gun's own small drawing (ui/gunspecs.js)
 import { held, weaponLook, unitGun } from "./gunparts.js"; // ... in its finish, with its fitted parts
 import { bossBattleCanvas, ztypeBattleCanvas } from "./hivesprites.js";
+import { figureCanvas, zombieApp, unitFigure, BW as FW, BH as FH } from "./figures.js"; // the panels show the low-poly figures (a three-quarter heading); the flat painters stay for the fallbacks
+const PANEL_YAW = 25;
 
 const GW = 22, GH = 26;   // pixel grid
 const GRID_W = GW, GRID_H = GH; // the painter's defaults (painter / toCanvas take their own size)
@@ -595,13 +597,13 @@ export function canvasURL(cv) {
   return u;
 }
 export function survivorURL(s, seed = 0, withGear = true) {
-  const app = ensureAppearance(s, seed);
-  return canvasURL(survivorCanvas(app, withGear && s.gear && s.gear.weapon ? weaponLook(s.gear.weapon) : null, withGear ? spriteArmorKey(s) : null));
+  const app = ensureAppearance(s, seed), g = s.gear || {};
+  return canvasURL(figureCanvas(withGear && g.head ? { ...app, helmet: g.head.key } : app, withGear && g.weapon ? weaponLook(g.weapon) : null, withGear ? spriteArmorKey(s) : null, PANEL_YAW, { pack: withGear && !!g.backpack }));
 }
-export const appearanceURL = (app, weaponKey = null, armorKey = null) => canvasURL(survivorCanvas(app, weaponKey, armorKey));
-export const zombieURL = (variant, seed, look = zlook) => canvasURL(zombieCanvas(variant, seed, look));
-// style: extra CSS for the image (merged into the one style attribute).
-export const spriteImg = (url, size = 3, style = "") => (url ? `<img class="sprite" src="${url}" alt="" style="width:${(GW / GH) * size}rem;height:${size}rem${style ? `;${style}` : ""}">` : "");
+export const appearanceURL = (app, weaponKey = null, armorKey = null) => canvasURL(figureCanvas(app, weaponKey, armorKey, PANEL_YAW));
+export const zombieURL = (variant, seed, look = zlook) => canvasURL(figureCanvas(zombieApp(variant, seed, look), null, null, PANEL_YAW));
+// style: extra CSS for the image (merged into the one style attribute). The figures' grid sets the shape.
+export const spriteImg = (url, size = 3, style = "") => (url ? `<img class="sprite" src="${url}" alt="" style="width:${(FW / FH) * size}rem;height:${size}rem${style ? `;${style}` : ""}">` : "");
 
 // ---------- battle map ----------
 const variants = new WeakMap(); // battle unit -> zombie variant (kept off the sim objects)
@@ -647,8 +649,14 @@ function turnedCanvas(state, b, t) {
   return cached(`t:e:${T.kit}:${f ? f.color : ""}:${T.armorKey}:${seed}`, () => rot(paintEnemyHuman(T.kit || "raiders", f ? f.color : null, null, T.armorKey, seed), seed));
 }
 
-// Picks the canvas for a battle unit. salt varies looks between battles.
+// Picks the canvas for a battle unit: its figure on its feet (ui/figures.js, for the panels' dolls), else the flat
+// sprite. salt varies looks between battles.
 export function unitCanvas(state, b, t, salt = 0) {
+  const fig = unitFigure(state, b, t, salt, PANEL_YAW, true);
+  if (fig) return fig;
+  return unitCanvasFlat(state, b, t, salt);
+}
+export function unitCanvasFlat(state, b, t, salt = 0) {
   if (t.side === "player" && t.kind !== "zombie") {
     const s = state.survivors.find((x) => x.id === t.sid);
     const app = s ? ensureAppearance(s, state.seed) : ensureAppearance({ id: t.id }, salt);

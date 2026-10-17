@@ -27,6 +27,7 @@ import { CELL, active, coverSides, evacAt, barredCell, moveMob } from "../sim/co
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
+import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
@@ -223,7 +224,12 @@ const standZ = (b, x, y) => hAt(b, x, y) * LV + liftAt(b, y * b.w + x);
 // (an ellipsoid) { blob: [u, v, z], ru, rz, m }. m(face, s, t, X, Y) returns [r, g, b] or null (a hole): face "top",
 // "south" (the +v side, lit), "east" (the +u side, in shade), "side" (a cylinder), "blob"; s, t across and up it.
 // st: painted for a straight view (iso.straight: the top and the south side only, no east side showing).
-const LIGHT = { top: 1, south: 0.8, east: 0.62 };
+// The light, the one the survivor sprites and the item icons use: the top lit, the south (+v, screen-left) face
+// about the colour itself, the east (+u, screen-right) face well into shade. A top's far edges catch it (EDGE).
+const LIGHT = { top: 1.04, south: 0.92, east: 0.62 }, EDGE = 1.16;
+// Round things (cylinders and blobs) shade in facets, like the figures' eight-sided limbs, not in a smooth gradient.
+const FACETS = 8, BANDS = 5;
+const facet = (q, n) => Math.round(q * (n - 1)) / (n - 1);
 const RX = (st) => (st ? SW : HW * Math.SQRT2), RY = (st) => (st ? SH : HH * Math.SQRT2); // a radius of one tile across, on screen
 function primBounds(p, st) {
   if (p.cyl) {
@@ -253,10 +259,10 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
         const dx = (X - cx) / rx;
         if (dx < -1 || dx > 1) continue;
         const e = Math.sqrt(1 - dx * dx), top = cy - p.z1;
-        if (Math.abs(Y - top) <= ry * e) { const c = p.m("top", X - cx, Y - top, X, Y); if (c) put(i, c, 1); continue; }
+        if (Math.abs(Y - top) <= ry * e) { const c = p.m("top", X - cx, Y - top, X, Y); if (c) put(i, c, LIGHT.top); continue; }
         if (Y > top && Y <= cy - p.z0 + ry * e) {
           const c = p.m("side", dx, cy - p.z0 + ry * e - Y, X, Y);
-          if (c) put(i, c, 0.95 - 0.36 * ((dx + 1) / 2));
+          if (c) put(i, c, 0.98 - 0.4 * facet((dx + 1) / 2, FACETS));
         }
         continue;
       }
@@ -264,7 +270,7 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
         const [u, v, z] = p.blob, cx = artX(u, v, st), cy = artY(u, v, st) - z, rx = p.ru * RX(st);
         const nx = (X - cx) / rx, ny = (Y - cy) / p.rz, q = nx * nx + ny * ny;
         if (q > 1) continue;
-        const nz = Math.sqrt(1 - q), l = 0.42 + 0.58 * clamp01(-0.45 * nx - 0.5 * ny + 0.75 * nz);
+        const nz = Math.sqrt(1 - q), l = 0.42 + 0.58 * facet(clamp01(-0.45 * nx - 0.5 * ny + 0.75 * nz), BANDS);
         const c = p.m("blob", nx, ny, X, Y);
         if (c) put(i, c, l);
         continue;
@@ -277,7 +283,7 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
         const s = (u - p.u0) * 16;
         if (v >= p.v0 - eps && v <= p.v1 + eps) {
           const t = (v - p.v0) * 16, sv = (p.v1 - p.v0) * 16, col = p.m("top", s, t, X, Y, su, sv);
-          if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? 1.12 : 1);
+          if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? EDGE : LIGHT.top);
           continue;
         }
         const z = p.v1 * SH - Y;
@@ -292,7 +298,7 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
       if (u >= p.u0 - eps && u <= p.u1 + eps && v >= p.v0 - eps && v <= p.v1 + eps) {
         const s = (u - p.u0) * 16, t = (v - p.v0) * 16, su = (p.u1 - p.u0) * 16, sv = (p.v1 - p.v0) * 16;
         const col = p.m("top", s, t, X, Y, su, sv);
-        if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? 1.12 : 1);
+        if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? EDGE : LIGHT.top);
         continue;
       }
       u = a + p.v1; let z = (u + p.v1) * HH - Y;
@@ -729,7 +735,8 @@ function prims(k, o) {
     default: return [];
   }
 }
-const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall"]);
+const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
+  "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade"]); // props stand out with a rim, as the figures do; runs (walls, fences, rails) would seam
 
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
@@ -1522,7 +1529,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const t of b.units) {
       if (!t.dead || t.left || t.fled || t.off || t.x < 0 || t.ztype === "sleeper" || !onFloor(b, t) || looks[t.y * b.w + t.x] || standZ(b, t.x, t.y)) continue;
       if (!knownBody(b, t, vis)) continue;
-      drawBody(ctx, state, b, { t, wx: t.x + 0.5, wy: t.y + 0.5, z: 0 }, H);
+      drawBody(ctx, state, b, { t, wx: t.x + (t.size || 1) / 2, wy: t.y + (t.size || 1) / 2, z: 0 }, H);
       flatDead.add(t);
     }
   }
@@ -1785,7 +1792,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const tf = t.f || 0;
       if (t.left || t.fled || t.off || t.dead || tf === floorNo(b)) continue;
       if (t.side !== "player" && !v.seen.has(t.id)) continue;
-      const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y));
+      const [X, Y] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y));
       const col = t.side === "player" ? "rgba(143,193,255,0.7)" : "rgba(255,143,133,0.7)";
       ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
       ctx.beginPath(); diamond(ctx, t.x, t.y, standZ(b, t.x, t.y), 2); ctx.stroke(); ctx.setLineDash([]);
@@ -1999,7 +2006,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const p of H.plan.units) {
       const t = b.units.find((q) => q.id === p.id);
       if (!t) continue;
-      const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y) + UNIT_H + 14);
+      const [X, Y] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y) + UNIT_H + 14);
       tag(ctx, p.safe ? "SAFE" : `${p.chance}%`, X, Y, p.safe || p.chance >= 75 ? COL.good : p.chance >= 45 ? COL.mid : COL.bad, Math.max(11, 3.6 * S));
     }
   }
@@ -2048,7 +2055,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       if (t && t.side === "enemy" && active(t) && v.seen.has(t.id)) {
         const o = H.odds(b, u, t);
         const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? COL.good : o.chance >= 35 ? COL.mid : COL.bad;
-        const [X0, Y0] = project(u.x + 0.5, u.y + 0.5, standZ(b, u.x, u.y) + UNIT_H * 0.6), [X1, Y1] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y) + UNIT_H * 0.6);
+        const [X0, Y0] = project(u.x + 0.5, u.y + 0.5, standZ(b, u.x, u.y) + UNIT_H * 0.6), [X1, Y1] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y) + UNIT_H * 0.6);
         ctx.strokeStyle = col; ctx.lineWidth = 2;
         if (!o.ok) ctx.setLineDash([4, 5]);
         ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke();
@@ -2167,20 +2174,24 @@ function feet(s) { return project(s.wx, s.wy, s.z); }
 function drawBody(ctx, state, b, s, H, silhouette = false) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
   if (t.dead || t.down) {
-    // Lying on the ground: the fallen's own picture (ui/downsprites.js) laid flat onto the floor's two axes, so it
-    // turns with the view (the body along the world's x).
+    // Lying on the ground: the figure laid along the world's x (the head toward -x, or +x facing the other way), so it
+    // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none.
+    const f = unitFacing(b, t);
+    const fig = unitFigureDown(state, b, t, H.salt, dirYaw(b, t, FR.r, [-f, 0]));
+    if (fig) { drawFigure(ctx, fig, X, Y, S, !silhouette && t.dead ? 0.92 : 1); return; }
     const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
-    drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: unitFacing(b, t), scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
+    drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
-  const cv = unitCanvas(state, b, t, H.salt);
+  const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r)); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
+  const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
   const facing = sideFacing(b, t, FR.r);
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.translate(X, Y);
-  if (facing < 0) ctx.scale(-1, 1);
+  if (!fig && facing < 0) ctx.scale(-1, 1);
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
   if (!silhouette && spent) ctx.globalAlpha *= 0.65;
   // Sneaking (sim/vision.js): crouched low and leaning in, in shadow.
@@ -2189,7 +2200,8 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
     ctx.globalAlpha *= SNEAK_LOOK.alpha;
     if ("filter" in ctx) ctx.filter = SNEAK_LOOK.filter;
   }
-  ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
+  if (fig) { const g = cv.figure || FIG; ctx.drawImage(cv, -g.ox * S, -g.oy * S, g.w * S, g.h * S); } // 1 grid px = 1 art px, the feet at (ox, oy)
+  else ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
 }
 // The sprite's facing on screen: the view turned a half (rotation 1 or 2) shows the world mirrored.
@@ -2204,11 +2216,45 @@ function screenSide(b, t, r) {
   return Math.abs(d) < 0.05 ? null : d > 0 ? 1 : -1;
 }
 const sideFacing = (b, t, r) => screenSide(b, t, r) ?? viewFacing(unitFacing(b, t), r);
+// The way a unit's figure faces, as a yaw for ui/figures.js (0: the view's +u, screen right-down; 90: +v, screen
+// left-down): a person's own facing (sim/vision.js u.face), else the last move's or shot's way in the battle's
+// effect list, else the old default (yours toward +x, the others toward -x), turned into the view's frame. In a
+// straight view the figure's own projection sits 45° off the view's axes.
+function unitMoveDir(b, t) {
+  const fx = b.fx || [];
+  for (let i = fx.length - 1; i >= 0; i--) {
+    const f = fx[i];
+    if (f.type === "move" && f.unit === t.id) {
+      const pts = [f.from, ...(f.path || [])];
+      for (let k = pts.length - 1; k > 0; k--) { const dx = pts[k][0] - pts[k - 1][0], dy = pts[k][1] - pts[k - 1][1]; if (dx || dy) return [dx, dy]; }
+    } else if ((f.type === "shot" || f.type === "melee") && f.from && f.from[0] === t.x && f.from[1] === t.y && f.to) { const dx = f.to[0] - f.from[0], dy = f.to[1] - f.from[1]; if (dx || dy) return [dx, dy]; }
+  }
+  return null;
+}
+function unitYaw(b, t, r) {
+  return dirYaw(b, t, r, (t.face && (t.face[0] || t.face[1]) && t.kind === "human" ? t.face : null) || unitMoveDir(b, t) || [unitFacing(b, t), 0]);
+}
+// A world direction at a unit's tile as a figure's yaw in view rotation r.
+function dirYaw(b, t, r, d) {
+  const [u0, v0] = ptView(t.x + 0.5, t.y + 0.5, r, b.w, b.h), [u1, v1] = ptView(t.x + 0.5 + d[0], t.y + 0.5 + d[1], r, b.w, b.h);
+  return (Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI - (iso.straight ? 45 : 0);
+}
+// A figure's canvas with its tile centre (feet, or a lying body's middle) at (X, Y), 1 grid px = 1 art px.
+function drawFigure(ctx, cv, X, Y, S, alpha = 1) {
+  const g = cv.figure || FIG;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(cv, X - g.ox * S, Y - g.oy * S, g.w * S, g.h * S);
+  ctx.restore();
+}
 const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1);
 // Where a unit's gun muzzle is on screen, from its feet, in view rotation r at zoom S: the muzzle pixel of the gun
 // in its sprite's hand (ui/sprites.js muzzleOf; ui/gunpaint.js paintMini: past a fitted suppressor), the sprite drawn
 // as drawBody draws it (mirrored when it faces left). null: no gun drawn (a zombie, bare hands).
 export function muzzlePoint(state, b, t, salt, r, S = 1) {
+  const fig = unitFigure(state, b, t, salt, unitYaw(b, t, r));
+  if (fig) { const m = figureMuzzle(fig), g = fig.figure || FIG; return m ? [(m.mx - g.ox) * S, (m.my - g.oy) * S] : null; } // the figure's gun, its far end (ui/figures.js)
   const mz = muzzleOf(unitCanvas(state, b, t, salt));
   if (!mz) return null;
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26), f = sideFacing(b, t, r);
@@ -2217,8 +2263,11 @@ export function muzzlePoint(state, b, t, salt, r, S = 1) {
 // A body on the ground (sim/sleepers.js), laid flat like the fallen.
 function drawCorpseIso(ctx, b, c, fog) {
   const s = { wx: c.x + 0.5, wy: c.y + 0.5, z: standZ(b, c.x, c.y) };
-  const [X, Y] = feet(s), [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
-  drawDowned(ctx, corpseCanvas(c), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: c.seed % 2 ? 1 : -1, scale: 1.05, alpha: fog ? 0.5 : 0.92 });
+  const [X, Y] = feet(s), f = c.seed % 2 ? 1 : -1;
+  const fig = corpseFigure(c, dirYaw(b, c, FR.r, [-f, 0]));
+  if (fig) { drawFigure(ctx, fig, X, Y, FR.S, fog ? 0.5 : 0.92); return; }
+  const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
+  drawDowned(ctx, corpseCanvas(c), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: 1.05, alpha: fog ? 0.5 : 0.92 });
 }
 function isoTag(ctx, X, Y, text, col, S) {
   ctx.font = `800 ${Math.max(9, Math.round(7 * S))}px Segoe UI, sans-serif`;
@@ -2265,7 +2314,7 @@ function drawUnitIso(ctx, state, b, s, H, now) {
   if (t.terror && !t.dead && !t.down) isoTag(ctx, X, Y - UNIT_H * 1.05 * S, "PANIC", ZRING.nightmare, S);
   // Its rectangle on screen, for clicking it.
   if (!t.dead && !t.down) {
-    const big = t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S;
+    const big = t.size === 2 ? 2.2 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S; // a 2 × 2 boss: its whole model
     iso.rects.push({ x0: X - hgt * 0.36, x1: X + hgt * 0.36, y0: Y - hgt * 0.94, y1: Y, x: t.x, y: t.y, id: t.id });
   }
 }

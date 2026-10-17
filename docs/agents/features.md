@@ -24,7 +24,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Relationships**: grief, service record, memorial wall and daily mood factors [relations].
 - **Family**: couples, pregnancy, births and children growing up [family].
 - **Recruits**: newcomer choice cards for strangers, refugees, loners and returning deserters [recruits].
-- **Appearance and sprites**, plus survivor customization (backgrounds, customization points, starting gear, random builds) [appearance, custombg, custompoints, startgear, randomkit].
+- **Appearance and sprites**, plus survivor customization (backgrounds, customization points, starting gear, random builds) [appearance, custombg, custompoints, startgear, randomkit]. Every body on the battle map is a low-poly figure that faces its way and turns with the view: survivors, human enemies, the dead in every kind (the plain, the special, the armoured, the risen), the bosses, and the fallen lying along the ground; the panels show the same figures and the inventory spins one through 360° [ui/figures; ui/sprites, ui/hivesprites and ui/downsprites keep the flat painters as fallbacks].
 - **Status icons** and a "Why did this happen?" cause chain for deaths and lost bases [status, causes].
 
 ## 3. Bases and economy
@@ -107,6 +107,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 ## 8. The dead, hives and hordes
 - **Hives** build hordes and must be destroyed to win [hives]. **Hive birth** is visible and can be disrupted [hivebirth].
 - **Hive tech tree**: growths around a hive unlock new dead [hivetech, hiveconst].
+- **The Broodmother and the Hivemind stand on 2 × 2 cells** (`defences.js` BOSSES size; `combat.js` unitSize / unitCells / nearCell / coversCell): a unit's footprint blocks all four cells and answers `unitAt` on any of them; distance for shots, melee reach and blasts goes by the nearest cell, sight by any cell, the figure and its ring by the centre; the Hivemind's own throws-at-it targeting and its brood's spawn window go by its heart (the centre cell, the old one cell), the flames on it and the lash by its edge [combat, defences, hivecrawl; ui/isoview, ui/battlehud].
 - **Hive crawl**: chamber by chamber down to the Hivemind, through a round grid of chambers, each open on 3 sides with 1 wall (a hallway with a room off the side), four mouths, one on each side, to pick from and walk back out by (the core deep in it, open on 1–2 sides; the beat through the walls, the warmth along the passages) [hivecrawl, citygrid].
 - **Hordes** with roles (guard, build, attack, roam) that merge on the State Map [hordes].
 - **Special dead**: runners, brutes, spitters (acid pools), screamers, crawlers, elites, a Broodmother [zombietypes, acid]. Mid-game dead such as the Boneback [middead]. Carriers and worm swarms [carriers]. Armoured soldier and riot dead [deadsoldiers]. Sleepers among the bodies [sleepers].

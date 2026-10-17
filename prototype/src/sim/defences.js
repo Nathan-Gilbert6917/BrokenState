@@ -592,8 +592,8 @@ export function fightNow(state, setup) {
 // hive's tier (hivecrawl.js HIVEMIND). shotPri: the battle AI (yours under Shift+A too) aims for it first.
 export const BOSSES = {
   wallbreaker: { who: "horde", short: "WB", hp: 190, armor: 0.7, meleeAim: 78, dmgMult: 1.7, mob: 2 },
-  broodmother: { who: "hive", short: "BM", hp: 300, armor: 0.65, meleeAim: 82, dmgMult: 1.9, mob: 2 },
-  hivemind: { who: "hivemind", short: "HM", hp: 480, armor: 0.55, meleeAim: 85, dmgMult: 2, mob: 0, rooted: true, sight: 14, shotPri: 2.5, weaponName: "Lashing tendrils" },
+  broodmother: { who: "hive", short: "BM", hp: 300, armor: 0.65, meleeAim: 82, dmgMult: 1.9, mob: 2, size: 2 }, // size: 2 × 2 cells (combat.js unitCells)
+  hivemind: { who: "hivemind", short: "HM", hp: 480, armor: 0.55, meleeAim: 85, dmgMult: 2, mob: 0, rooted: true, sight: 14, shotPri: 2.5, weaponName: "Lashing tendrils", size: 2 },
 };
 export function bossUnit(b, kind) {
   const d = BOSSES[kind];
@@ -602,14 +602,17 @@ export function bossUnit(b, kind) {
     aim: 0, meleeAim: d.meleeAim, dmgMult: d.dmgMult, armor: d.armor, hp: d.hp, maxHp: d.hp, mob: d.mob, sight: d.sight || 9, ap: 2, aware: true, x: 0, y: 0,
   };
   if (d.rooted) u.rooted = true;
+  if (d.size) u.size = d.size;
   if (d.shotPri) u.shotPri = d.shotPri;
   return u;
 }
 // Puts a unit on a free cell the player side can reach, as far right as possible (from column minX).
 export function placeUnitRight(b, ctx, u, minX, maxX = ctx.W) {
   let best = null;
+  const sz = u.size || 1; // a 2 × 2 boss needs its whole footprint standable
+  const fits = (x, y) => { for (let dy = 0; dy < sz; dy++) for (let dx = 0; dx < sz; dx++) if (x + dx >= ctx.W || y + dy >= ctx.H || !ctx.standable(x + dx, y + dy)) return false; return true; };
   for (let y = 0; y < ctx.H; y++) for (let x = minX; x < Math.min(ctx.W, maxX); x++) {
-    if (!ctx.standable(x, y)) continue;
+    if (!fits(x, y)) continue;
     const score = x - Math.abs(y - ctx.H / 2) * 0.3;
     if (!best || score > best.score) best = { x, y, score };
   }

@@ -2419,7 +2419,7 @@ function drawIsoView(state, b, now, cw, ch) {
   drawIso(ctx, cw, ch, state, b, now, {
     known: v.known, allKnown: ownGround(b), // the fog of war indoors (ui/isoview.js)
     v, u: v.u, sel: cui.sel, mode: fp ? "move" : cui.mode, hover: fp ? { x: fp.x, y: fp.y } : cui.hover, salt: cui.salt,
-    animPos: (t, n) => { const [x, y] = animTile(b, t, n); return [x + 0.5, y + 0.5]; },
+    animPos: (t, n) => { const [x, y] = animTile(b, t, n), h = (t.size || 1) / 2; return [x + h, y + h]; }, // a 2 × 2 boss stands on its footprint's centre
     fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return Math.max(0, n - cui.anim.get(f.seq)); },
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble: noBubble, // the hover card is ui/battlehud.js's
     hits: NO_HITS, retreatOpen: !!plan, plan, // the hit chances over the enemies are ui/battlehud.js's (hudPaint)
