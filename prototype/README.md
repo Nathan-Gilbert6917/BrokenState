@@ -644,6 +644,12 @@ node tools/skilltest.js 42
 Skills, teaching, books and perks (`src/sim/skills.js`): the XP curve (a 3 becomes a 7 in a season of a full day's use, 15 → 16 takes about a year, a farmer on the Farm role for a season of real days), XP per action (wound, illness and field treatments, looking around, an hour on the move, fights by the numbers and on the map, a search hour, a road talk, a day on each role), the daily caps (15 use, 25 study, per skill, reset each day), decay (none in the first 14 days, never below 10 nor the starting level), teaching (the 4-level gap, invalid learners dropped, the learning rate, the teacher's XP, learners keep their jobs, Mentor, the study cap), books (one reader per copy, 6 hours and 24 XP a day, finished books are not read again, the next reader takes over, the book's max level, comics' mood, finds by site, deterministic rolls, traders' stock), perk milestones and choices (cards at 5, 10 and 15, Decide later, the other perk closed, picking from the tree answers the card, starting points for the two best skills, the autopilot by style), every perk's effect where it is coded (all 54), determinism, and a 200-day autopilot run without NaN.
 
 ```bash
+node tools/makeshiftpicktest.js [seed]
+```
+
+Makeshift picks (battle-inventory 2026-10-17, the user's ask "craft for makeshift picks to pick locks: break easy and low chance of working but is quiet, be stackable"; `src/sim/locks.js` MAKESHIFT_PICK / picksOf / wearPicks, `crafting.js` CRAFTS.makeshiftpick / craftItem, `data-stacks.js`; a few seconds): the recipe (1 scrap, 1 hour, no skill, no book) makes a stack of three at a base that joins a stack already in the armory (a craft order counts the picks) and in the field (onto a member's stack first, else a pocket); picksOf prefers the crowbar and lockpicks and falls back to the stack, barOf never pries with them; the odds are the real picks' roll from 30% (the 5–95% floor and cap hold) and lower than the crowbar's at every Stealth; every attempt is as quiet as a real pick (Heat +1, no noise, nothing woken) and snaps one pick half the time, open or not, the stack gone at 0 and the Pick button with it; a safe, a steel security door and a gun cabinet refuse them with a reason while a key and force still work; the raid bot picks with them; the hour-by-hour search's picker uses them (not on a safe) and they snap there too; the lock panel says "Pick (makeshift)" with the odds and the picks left; a mid-fight save keeps the stack.
+
+```bash
 node tools/exploretest.js 42 200
 ```
 
