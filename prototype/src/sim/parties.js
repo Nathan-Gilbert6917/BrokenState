@@ -1192,9 +1192,13 @@ export function glideAt(state, p, frac, held = false) {
 export function arrivalsDue(state, frac, held = () => false) {
   let any = false;
   for (const p of [...state.parties]) {
-    if (!state.parties.includes(p) || !arrivesOnTime(p) || !onTheMove(p) || p.movedHour === state.hour + 1 || held(p)) continue;
-    const c = hourCourse(state, p);
-    if (!c.arrive || frac + 1e-9 < c.arriveFrac) continue;
+    if (!state.parties.includes(p) || !arrivesOnTime(p) || held(p)) continue;
+    // Already on the last tile of its way (wayDone: a card met there cut the move short) arrives now, moved this hour or not.
+    if (!wayDone(p)) {
+      if (!onTheMove(p) || p.movedHour === state.hour + 1) continue;
+      const c = hourCourse(state, p);
+      if (!c.arrive || frac + 1e-9 < c.arriveFrac) continue;
+    }
     p.movedHour = state.hour + 1;
     moveHour(state, p, state.hour + 1);
     any = true;
@@ -1206,6 +1210,11 @@ export function arrivalsDue(state, frac, held = () => false) {
 // Parties that arrive at the minute (arrivalsDue): all of yours, teams and convoys.
 /** @param {Party} p */
 const arrivesOnTime = (p) => p.owner === "player";
+// On its way out or back with no step left, but not arrived: a card on the last tile (a surge of the dead, a fight) held
+// the move up after it got there, and the team carried on ("Continue") at the end of its way. The panels say "0m left"
+// (hoursLeft 0); moveHour finishes it (arrive, returnHome).
+/** @param {Party} p */
+const wayDone = (p) => (p.phase === "out" || p.phase === "back") && Array.isArray(p.path) && p.idx >= p.path.length - 1;
 
 // The place on a course at progress u (pos: i + the share of the step from path[i] to path[i + 1]) and the waypoint
 // the stretch ends at (k).
@@ -1386,8 +1395,9 @@ function playerPartyHour(state, p) {
     if (state.parties.includes(p)) updateRadio(state, p);
     return;
   }
-  // Moved this hour already: it got where it was going part-way through the hour (arrivalsDue).
-  if (p.movedHour === state.hour) {
+  // Moved this hour already: it got where it was going part-way through the hour (arrivalsDue). Still out at the end of
+  // its way (wayDone: a card there held it up), it arrives now: moveHour has nothing left to travel.
+  if (p.movedHour === state.hour && !wayDone(p)) {
     updateRadio(state, p);
     return;
   }

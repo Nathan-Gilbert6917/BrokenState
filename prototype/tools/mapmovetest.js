@@ -749,5 +749,30 @@ section("Arriving out of radio range: orders reach it anyway (TEAM-01), so a pla
   check(p.phase === "waiting" && !state.cards.some((c) => c.partyId === p.id && c.isOrders), "8 hours on it still waits quietly (no check-in cards)");
 }
 
+section("A card on the last tile (a surge of the dead: hide 4 hours) leaves the team on its destination: it still arrives");
+{
+  // Got there part-way through the hour (arrivalsDue: movedHour), the card met on the tile cut the move short before the
+  // arrival, and once answered the team carries on at the end of its way with a delay owed: "0m left", never arriving.
+  for (const how of ["minute", "tick"]) {
+    const state = mk(SEED + 90);
+    const dest = tileNear(state, hub(state).tile, 2, 3);
+    const p = send(state, 2, dest);
+    calm(state, p);
+    p.idx = p.path.length - 1;
+    p.progress = -4 * 0.9;
+    p.movedHour = state.hour + 1;
+    check(orderStatus(state, p).left === 0 && p.phase === "out", `${how}: on its destination, still out, 0m left (${p.phase})`);
+    if (how === "minute") {
+      setClockFrac(0.4);
+      arrivalsDue(state, 0.4);
+      setClockFrac(0);
+      check(p.phase === "waiting", `at the next minute on the clock it arrives and waits (${p.phase})`);
+    } else {
+      tickHour(state);
+      check(p.phase === "waiting", `headless, the hour's tick arrives it, moved that hour or not (${p.phase})`);
+    }
+  }
+}
+
 console.log(`\n${fails ? `${fails} failed, ` : ""}${passed} passed.`);
 process.exit(fails ? 1 : 0);
