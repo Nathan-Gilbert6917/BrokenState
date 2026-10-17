@@ -276,8 +276,15 @@ console.log("The selected survivor's kit, look only");
   UI.combatKey(st, { code: "KeyB", shiftKey: true, preventDefault() {} });
   INV.takeLootReq(st, ui);
   check(ui.inv && ui.inv.peek && ui.inv.sid === u.sid, "Shift+B opens it for the selected one");
-  const html = INV.inventoryModal(st, ui) || "";
-  check(/Inventory: /.test(html) && !/data-action="inv-click"/.test(html) && !/data-drop=/.test(html), "the window shows their kit and nothing in it can be moved");
+  // (2026-10-17: on their turn with an action left the window is theirs to sort, 1 action a move; with none left, look only)
+  const ap0 = u.ap;
+  u.ap = 2; b.phase = "player";
+  let html = INV.inventoryModal(st, ui) || "";
+  check(/Inventory: /.test(html) && /data-action="inv-click"/.test(html) && /data-drop=/.test(html) && /each move here costs 1/.test(html), "the window shows their kit, movable for 1 action a move on their turn");
+  u.ap = 0;
+  html = INV.inventoryModal(st, ui) || "";
+  check(/Inventory: /.test(html) && !/data-action="inv-click"/.test(html) && !/data-drop=/.test(html) && /No action left/.test(html), "with no action left it is look only, and says so");
+  u.ap = ap0;
   const mate = b.units.find((x) => x.side === "player" && x.sid != null && x.sid !== u.sid);
   check(!mate || new RegExp(`data-action="inv-who" data-id="${mate.sid}"`).test(html), "tabs for the others in the fight");
   ui.inv = null;
