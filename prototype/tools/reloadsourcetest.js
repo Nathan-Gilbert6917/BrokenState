@@ -4,7 +4,8 @@
 //   - a revolver with loose rounds in a pocket reloads for 1 action; with the rounds only in the pack it costs both
 //     actions and is refused with one left; the log and the Reload button name the source;
 //   - a rig admin pouch of loose 9mm feeds a 1-action top-up (the rig's rounds in u.boxes right after the pockets',
-//     u.handBoxes and u.pocketBoxes agree); the pack's top up for 2, a teammate's and the team's bags for 2 as before;
+//     u.handBoxes and u.pocketBoxes agree); the pack's top up for 2, a teammate's and the team's bags for 2 (an internal
+//     magazine's Reload from them too: only what is at hand is quick);
 //   - a pump shotgun with shells only in the pack reloads straight out of it for both actions (no refusal), is refused
 //     with one action left, and after Get shells reloads for 1;
 //   - magazine swaps unchanged (rig 1, pocket 1, pack 2), a speedloader by where it is;
@@ -97,14 +98,14 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
   check(/^Both actions: 2 more rounds in from the pack \(both actions: the rounds are in the pack\)/.test(reloadText(b, v)), `the Reload button: "${reloadText(b, v)}"`);
   v.ap = 2;
   check(combatAct(st, { type: "reload", unit: v.id }) === "" && v.ap === 0 && v.mag === 2 && /reloads the \.357 revolver \(2\/6 out of the pack, both actions\)/.test(lastLog(b)), `with both: 2 rounds in, no action left ("${lastLog(b)}")`);
-  // No rounds anywhere but a teammate's: 1 action, as before (the team's bags the same).
+  // No rounds anywhere but a teammate's: both actions, like the pack (the team's bags the same).
   packOf(c)[0] = null; refitKit(b, v, c);
   again(b, v);
-  check(roundSource(b, v) === "mate" && reloadPlan(b, v).cost === 1 && combatAct(st, { type: "reload", unit: v.id }) === "" && v.ap === 1 && v.mag === 2, "a teammate's rounds only: an internal Reload stays 1 action (as before)");
+  check(roundSource(b, v) === "mate" && reloadPlan(b, v).cost === 2 && combatAct(st, { type: "reload", unit: v.id }) === "" && v.ap === 0 && v.mag === 2, "a teammate's rounds only: an internal Reload takes both actions, like the pack");
   a.pockets[0] = null; refitKit(b, u, a);
   b.pools[0][K357] = 30;
   again(b, v);
-  check(roundSource(b, v) === "pool" && sourceWord(v, "pool") === "the team's ammo" && reloadPlan(b, v).cost === 1, "the team's bags only: 1 action too (as before)");
+  check(roundSource(b, v) === "pool" && sourceWord(v, "pool") === "the team's ammo" && reloadPlan(b, v).cost === 2 && v.ap === 2 && combatAct(st, { type: "reload", unit: v.id }) === "" && v.ap === 0, "the team's bags only: both actions too");
 }
 
 // 2. A rig admin pouch of loose 9mm feeds a 1-action top-up; the pack's, a teammate's and the team's bags cost 2.

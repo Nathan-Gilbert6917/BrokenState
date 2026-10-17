@@ -2975,7 +2975,7 @@ export function magCap(u) {
 }
 const MAG_CAP = (k) => (GEAR[k] && GEAR[k].mag ? GEAR[k].mag.cap : 1);
 // Actions a Reload takes now (mags.js: a magazine or rounds from a pouch or a pocket 1, from the pack 2, a top-up from a
-// teammate's rounds or the team's bags 2; 1 for a unit with no magazines tracked).
+// teammate's rounds or the team's bags 2, an internal magazine's Reload from any of those 2; 1 for a unit with no magazines tracked).
 export const reloadCost = (b, u, type = null) => (tracksMags(u) ? reloadPlan(b, u, type).cost : 1);
 export const magMaxOf = (u) => (u.magW === u.weapon && u.magMax != null ? u.magMax : magCap(u));
 export const magIn = (u) => (u.magW === u.weapon && u.mag != null ? u.mag : magCap(u));

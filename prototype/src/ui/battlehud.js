@@ -125,12 +125,12 @@ export function weaponPanelHtml(state, b, u) {
     if (h.mags || p.mags) spare.push(`<span class="muted" data-tip="${esc("Loaded spare magazines in the pack: a Reload from one is 2 actions. With no loaded spare left, a Reload tops up the one in the gun from the rounds to hand (1 action from a pocket or the rig, both from the pack).")}">${p.mags} in the pack${p.rounds ? ` (${p.rounds})` : ""}</span>`);
     if (h.empty + p.empty) spare.push(`<span class="muted">${h.empty + p.empty} empty</span>`);
   } else if (info.clips) spare.push(`<span data-tip="Clips or speedloaders: a Reload with one fills the gun at once.">${info.clips} ${info.clips === 1 ? "clip" : "clips"}</span>`);
-  // The reserve rounds by where they are (mags.js roundSplit): at hand (a pocket or the rig: 1 action), in the pack (both actions), the team's (a teammate's boxes, the bags).
+  // The reserve rounds by where they are (mags.js roundSplit): at hand (a pocket or the rig: 1 action), in the pack (both actions), the team's (a teammate's boxes, the bags: both actions too).
   if (info.rounds && !info.shells) {
     const r = info.rounds, team = r.mate + r.pool;
     spare.push(`<span class="${r.hand > 0 ? "" : "muted"}" data-tip="${esc("Rounds of this calibre and type loose or boxed in the pockets and the rig, past the ones loaded: a top-up or an internal magazine's Reload from them is 1 action.")}">${r.hand} rds at hand</span>`);
     if (r.pack > 0) spare.push(`<span class="muted" data-tip="${esc("In the pack, past the ones loaded: a Reload from them takes both actions (the Inventory moves a box to a pocket for 1 action).")}">${r.pack} in the pack</span>`);
-    if (team > 0) spare.push(`<span class="muted" data-tip="${esc(`A teammate's boxes and the team's bags, past the ones loaded: a top-up from them takes ${MAGS.TOPUP_AP} actions, an internal magazine's Reload 1.`)}">${team} the team's</span>`);
+    if (team > 0) spare.push(`<span class="muted" data-tip="${esc(`A teammate's boxes and the team's bags, past the ones loaded: a top-up or an internal magazine's Reload from them takes both actions, like the pack.`)}">${team} the team's</span>`);
   }
   if (spare.length) rows.push(`<div class="bh-spare">${spare.join('<span class="bh-dot">·</span>')}</div>`);
   // The state of the gun: jammed, empty, the jam risk.

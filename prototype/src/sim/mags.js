@@ -19,10 +19,10 @@
 //   - no loaded spare: Top up, the magazine in the gun refilled from the rounds to hand. The source decides the cost
 //     (roundSource, 2026-10-17 user request: "reload guns including shotguns from loose ammo/shells from pockets, rigs
 //     in addition to pack, only reload from pack uses double action"): 1 action from loose rounds or a box in a pocket
-//     or a rig pouch (u.handBoxes), 2 from the pack (SOURCE_AP), 2 from a teammate's boxes or the team's bags (as before).
+//     or a rig pouch (u.handBoxes), 2 from the pack (SOURCE_AP), 2 from a teammate's boxes or the team's bags (no nearer than the pack).
 //   - an internal magazine (a pump, a lever-action, a revolver, a bolt-action's box, a double barrel: data-kit.js
-//     INTERNAL): Reload puts that many rounds in, 1 action from the pockets or the rig, 2 from the pack (a teammate's or
-//     the team's bags: 1, as before); a speedloader or a stripper clip carried (CLIPS) fills it at once, once a fight
+//     INTERNAL): Reload puts that many rounds in, 1 action from the pockets or the rig, 2 from the pack, a teammate's or
+//     the team's bags (anything not at hand: both actions); a speedloader or a stripper clip carried (CLIPS) fills it at once, once a fight
 //     (1 action from a pouch or a pocket, 2 from the pack).
 //   - a shotgun (SHELLS.GUNS) is loaded from the shells at hand (pockets, rig, loose): a tube 2–4 shells a Reload (1
 //     action), a double barrel both barrels at once (see shellPlan); with none at hand, straight out of the pack for
@@ -354,7 +354,7 @@ export const shellsInPack = (b, u, type = null) => isShellGun(u) && tracksMags(u
 // pockets and rig pouches: the first u.handBoxes of u.boxes, and a shotgunner's loose handful), pack (its own pack's
 // boxes and ammo cans), mate (its teammates' boxes), pool (the team's bags, or the base's stock) }. What the gun and
 // the loaded spares hold is claimed off the quickest first, as a shot spends them (ammo.js takeBattleRounds). Other
-// sides: an endless reserve, counted as the team's bags (pool), so their costs are as before.
+// sides: an endless reserve, counted as the team's bags (pool); their internal reloads keep the old 1 action.
 export function roundSplit(b, u, type = null) {
   const out = { hand: 0, pack: 0, mate: 0, pool: 0 };
   const cal = calOf(u.weapon);
@@ -422,7 +422,7 @@ export function reloadPlan(b, u, type = null) {
   const sw = want !== cur;
   const max = u.magMax ?? 0, m = u.mag ?? 0;
   if (u.magMode === "internal") {
-    const from = roundSource(b, u, want), cost = sourceAp(from, 1);
+    const from = roundSource(b, u, want), cost = sourceAp(from, u.side === "player" ? MAGS.SOURCE_AP.pack : 1); // a teammate's boxes or the team's bags are no nearer than the pack: both actions (an enemy's endless pool stays 1)
     if (!sw && m >= max) return { mode: "internal", from, cost, load: want, why: `The ${gunWord(u)} is full (${max}/${max}).` };
     const pool = avail(b, u, want);
     if (pool < 1) return { mode: "internal", from, cost, load: want, why: `No ammo left to load (no ${roundName(cal, want)}).` };
@@ -569,7 +569,7 @@ export function reloadText(b, u) {
   if (p.mode === "internal") return `${n}: ${internalOf(u.weapon) + Math.max(0, num(unitMods(u).reload))} more rounds in from ${sourceWord(u, p.from)}${pack} (an internal magazine; a speedloader or a stripper clip carried fills it at once).`;
   if (p.mode === "clip") return `${n}: a ${String(GEAR[u.clips[p.i].key].name).toLowerCase()} fills it at once.`;
   if (p.mode === "swap") return `${n}: a fresh magazine from ${u.mags[p.i].where === "pack" ? "the pack" : u.mags[p.i].where === "pocket" ? "a pocket" : "a rig pouch"} (the empty one is kept).`;
-  return `${n}: no loaded spare magazine, so the one in the gun is topped up from ${sourceWord(u, p.from)}${pack}. Rounds in a pocket or the rig top it up in 1 action, the pack's in both, a teammate's or the team's bags in 2.`;
+  return `${n}: no loaded spare magazine, so the one in the gun is topped up from ${sourceWord(u, p.from)}${pack}. Rounds in a pocket or the rig top it up in 1 action; the pack's, a teammate's or the team's bags take both.`;
 }
 // The spare magazines split by how quick they are to hand (the battle HUD, ui/battlehud.js): at hand (a rig pouch or a
 // pocket: a 1-action Reload) and in the pack (2 actions), each { mags: loaded ones, empty, rounds }.

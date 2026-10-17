@@ -133,7 +133,8 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   check(magShown(b, p) === 3 && magLabel(b, p) === "3/15", "14 loaded but 3 left in the team: it shows 3/15 (never more than the team has)");
   check(/spare/i.test(reloadRefusal(b, p)), "nothing to reload with: refused (every round left is loaded)");
   q.ap = 2; loadMag(q, 1); setAmmo(4);
-  check(combatAct(st, { type: "reload", unit: q.id }) === "" && q.mag === 4 && magShown(b, q) === 4, "with 4 rounds left a rifle reloads to 4/5");
+  check(combatAct(st, { type: "reload", unit: q.id }) === "" && q.mag === 4 && magShown(b, q) === 4 && q.ap === 0, "with 4 rounds left a rifle reloads to 4/5 (out of the team's bags: both actions)");
+  b.phase = "player"; // the reload took the last actions: the turn ended
   setAmmo(0); loadMag(q, 0); q.ap = 2;
   check(/no ammo/i.test(combatAct(st, { type: "reload", unit: q.id })) && q.ap === 2, "no ammo at all: Reload refused, no action spent");
   check(/out of ammo/i.test(fireRefusal(b, q)), "and the gun is out of ammo, not just empty");
@@ -361,7 +362,8 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
     const first = reloadPlan(b2, u);
     reload(b2, u);
     const want = k === "revolver" || k === "huntrifle" ? u.magMax : k === "shotgun" ? Math.max(3, Math.min(4, u.mag)) : Math.min(u.magMax, inc[k]); // the pump: 3–4 shells for a steady hand (mags.js SHELLS)
-    check(u.magMode === "internal" && u.mag === want && u.ap === 1, `${WEAPONS[k].name}: an internal magazine, a Reload puts ${want} in (${first.mode}${first.mode === "clip" ? `: a ${GEAR[u.clips[first.i].key].name.toLowerCase()}` : ""}), 1 action`);
+    const apLeft = first.mode === "internal" && first.from !== "hand" ? 0 : 1; // rounds out of the base's stock (no clip, no shells at hand): both actions
+    check(u.magMode === "internal" && u.mag === want && u.ap === apLeft, `${WEAPONS[k].name}: an internal magazine, a Reload puts ${want} in (${first.mode}${first.mode === "clip" ? `: a ${GEAR[u.clips[first.i].key].name.toLowerCase()}` : ""}), ${apLeft ? "1 action" : "both actions"}`);
     if (k === "revolver" || k === "huntrifle") { loadMag(u, 0); u.ap = 2; reload(b2, u); check(u.mag === inc[k], `${WEAPONS[k].name}: the clip is used once a fight; the next Reload puts ${inc[k]} in`); }
   }
   // An enemy's spares.

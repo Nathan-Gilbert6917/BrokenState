@@ -230,6 +230,9 @@ Root `/home/user/BrokenState`, sim in `prototype/src/sim`, UI in `prototype/src/
 
 **Readings, deviations, open points**: (1) A teammate's boxes and the team's bags keep today's costs, as the brief says: for an internal magazine that is 1 action, so a revolver's rounds in the team's bags are quicker to load than in its owner's own pack (2); if that is to change, it is the `sourceAp` defaults in `reloadPlan`. (2) For shotguns the shells model lumps the own pack, teammates' boxes and the team's bags together as "the pack" (`shellsAt`), so all of them load for both actions (today they all needed Get shells first); `roundSplit` still tells them apart for the HUD. (3) `roundSplit.mate` counts a teammate's whole boxes: their loaded rounds are only a counter, as `ammo.js roundsOf` has it. (4) Old saves: a mid-fight save carries no plans, so nothing to migrate; `u.pocketBoxes` is a plain number like `u.handBoxes` (missing on a unit from before: `sourceWord` says "a pocket or the rig"). Balance: `MAGS.SOURCE_AP { hand: 1, pack: 2 }` only; nothing else tuned. `ui/stackmove.js`, the reloading bench and magazine filling out of a fight untouched.
 
+
+*Coordinator's follow-up (2026-10-17, owner's decision):* a teammate's boxes and the team's bags now cost both actions for an internal magazine's Reload as well (`reloadPlan`'s internal branch: `sourceAp(from, SOURCE_AP.pack)` for a player unit; an enemy's endless pool keeps 1), so only what is at hand is quick; open point (1) is closed. `reloadsourcetest.js`, `magtest.js` (the rifle out of the team's bags takes both actions; the base-stock internal reloads) and `shotgunreloadtest.js` (the moving soak: a plain pump cannot reload out of the bags with one action, so the shells model is faster than that baseline by design) updated.
+
 ---
 
 # Session E: Hand items to the survivor next to you
