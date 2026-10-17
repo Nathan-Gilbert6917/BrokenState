@@ -3279,6 +3279,76 @@ function invAct(state, b, u, act) {
   return "";
 }
 
+// ---------- a hand-over to the survivor next to you (2026-10-17 user request: "trade items with adjacent survivors
+// when facing them with in your cone") ----------
+// combatAct "handover" { type: "handover", unit, to, from, toLoc }: the acting unit and a teammate right next to it
+// (Chebyshev 1, the same floor) in its view cone (vision.js inArc, VISION.HALF) trade: `from` and `toLoc` are
+// locations on the two survivors, one each (either way: a thing given, or taken from the mate), among the slots the
+// inventory act allows (INV_SLOTS: pockets, pack slots, rig pouches, the hands, the off hand, the arms); a full target
+// swaps as moveItem does when the thing there fits back. The acting unit spends HANDOVER_AP (one action) a move, the
+// mate nothing. Both units refit at once (refitKit: a gun handed over is in the other's hands, the boxes of rounds and
+// the magazines placed where they are now). A mate next to them but out of the cone: the free Face act first
+// (handoverUnfaced lists them for the UI's "Face <name>"). The search window's hand-over on a raid (raidloot.js
+// matesOf) stays free: that is part of searching.
+export const HANDOVER_AP = 1;
+const handMate = (b, u, t) => t && t !== u && t.side === "player" && t.sid != null && t.vol == null && !t.dead && !t.left && !t.fled && !t.off && (t.f || 0) === (u.f || 0) && adjacent(u, t);
+// The player units the acting unit can hand things to now (the same floor, right next to it, in its cone, up).
+export function handoverTargets(b, u) {
+  if (!u || u.side !== "player" || u.sid == null || u.aboard) return [];
+  return b.units.filter((t) => handMate(b, u, t) && active(t) && !t.aboard && inArc(u, t.x, t.y));
+}
+// The mates right next to the unit that only the cone keeps from a hand-over (a free Face toward them fixes it).
+export function handoverUnfaced(b, u) {
+  if (!u || u.side !== "player" || u.sid == null || u.aboard) return [];
+  return b.units.filter((t) => handMate(b, u, t) && active(t) && !t.aboard && !inArc(u, t.x, t.y));
+}
+// Why the acting unit cannot hand things to t now ("" when it can).
+export function handoverRefusal(b, u, t) {
+  if (!t || t.side !== "player" || t.sid == null || t.vol != null) return "Only one of your own people takes things in a fight.";
+  if (t === u) return "Their own kit: the Inventory window moves it (1 action a move).";
+  const who = t.name.split(" ")[0];
+  if (t.dead || t.left || t.fled || t.off) return `${who} is out of the fight.`;
+  if (t.down) return `${who} is down: nothing changes hands until they are on their feet.`;
+  if (isTied(t) || t.away) return `${who} cannot take anything now.`;
+  if (u.aboard || t.aboard) return "Not from inside the vehicle: get out first.";
+  if ((t.f || 0) !== (u.f || 0) || !adjacent(u, t)) return `${who} is not right next to them.`;
+  if (!inArc(u, t.x, t.y)) return `Face ${who} first (Face, free): a hand-over needs them in the view cone.`;
+  return "";
+}
+// combatAct "handover": the move checked and done (the error, or "" when it happened and HANDOVER_AP was spent).
+function handoverAct(state, b, u, act) {
+  const s = u.sid != null ? survivorById(state, u.sid) : null;
+  if (!s) return "Only one of yours hands things over.";
+  if (u.ap < HANDOVER_AP) return "No action left.";
+  const t = act.to != null ? unitById(b, act.to) : null;
+  const why = handoverRefusal(b, u, t);
+  if (why) return why;
+  const m = survivorById(state, t.sid);
+  if (!m) return `${t.name} is not here.`;
+  const from = parseLoc(act.from), to = parseLoc(act.toLoc);
+  const theirs = (L) => L.o === "s" && (L.id === s.id || L.id === m.id);
+  if (!theirs(from) || !theirs(to)) return "Only what the two of them carry changes hands.";
+  if (from.id === to.id) return from.id === s.id ? "Their own kit: the Inventory window moves it (1 action a move)." : `${m.name.split(" ")[0]}'s own kit stays as it is: only what changes hands between them moves.`;
+  const fk = slotKind(from);
+  if (!INV_SLOTS.includes(fk) || !INV_SLOTS.includes(slotKind(to))) return INV_WORN;
+  const item = itemAt(state, act.from);
+  if (!item) return "Nothing there.";
+  const giver = from.id === s.id ? s : m;
+  const cur = itemAt(state, act.toLoc);
+  const kindAt = (L, who) => (slotKind(L) === "pouch" ? (pouchesOf(rigOf(who)) || [])[L.i] : null);
+  const back = cur && !canStack(cur, item) && !(isRoundItem(cur) && isRoundItem(item) && cur.key === item.key) ? fitReason(cur, fk, giver, kindAt(from, giver)) : "";
+  if (back) return `No room: the ${cur.name} there has nowhere to go (${back.replace(/\.$/, "")}).`; // (out of a fight it would go to the team's cargo)
+  const before = amountOf(item);
+  const msg = moveItem(state, act.from, act.toLoc, { across: true });
+  if (itemAt(state, act.from) === item && amountOf(item) === before) return msg || "Nothing moved.";
+  say(b, `${u.name} ${from.id === s.id ? `hands ${t.name.split(" ")[0]}` : `takes from ${t.name.split(" ")[0]}`}: ${msg}`, "info");
+  u.ap -= HANDOVER_AP;
+  u.hunker = false;
+  refitKit(b, u, s);
+  refitKit(b, t, m);
+  return "";
+}
+
 export function enemyUnit(b, rng, kind, power, n) {
   const p = Math.max(1, power);
   if (kind === "zombies") {
@@ -4020,7 +4090,7 @@ export function combatAct(state, act) {
   if (u && u.side === "player" && act.type === "selfStab") { const why = MED.selfStabilize(b, u); if (why) return why; b.acted = true; bump(b); return ""; } // medics.js: a downed survivor's tourniquet or trauma kit
   if (u && u.side === "player" && act.type === "sneak" && active(u)) return sneakAct(b, u, act); // vision.js: free, even with no actions left to stop
   if (u && u.side === "player" && (act.type === "light" || act.type === "nvg") && active(u)) return switchAct(state, b, u, act); // vision.js: a light, night vision on or off (free, even with no actions left)
-  if (u && u.side === "player" && act.type === "inv" && active(u) && u.ap < INV_AP) return "No action left."; // the inventory window says why (invAct)
+  if (u && u.side === "player" && (act.type === "inv" || act.type === "handover") && active(u) && u.ap < INV_AP) return "No action left."; // the inventory window says why (invAct, handoverAct)
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
   if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
@@ -4142,6 +4212,11 @@ export function combatAct(state, act) {
     }
     case "inv": { // their own kit moved about (invAct: pockets, pack, rig pouches, the hands; split, open, box): INV_AP
       const err = invAct(state, b, u, act);
+      if (err) return err;
+      break;
+    }
+    case "handover": { // a thing given to, or taken from, the teammate next to them in their cone (handoverAct): HANDOVER_AP
+      const err = handoverAct(state, b, u, act);
       if (err) return err;
       break;
     }

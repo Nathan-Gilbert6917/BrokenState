@@ -41,7 +41,7 @@ export const ICON = {
   peek: "🚪", close: "🚪", brace: "🧱", climb: "🧗", lights: "💡", light: "🔦", nvg: "🥽", visor: "⛑️",
   vehicle: "🧳", board: "🚙", disembark: "🚶", drive: "🏎️", turn: "↪️", gunner: "🪖", pullOut: "🆘",
   surrender: "🙌", takeAlive: "🤝", ladder: "🪜", push: "✋", ram: "🐏", dropRam: "⬇️", loadRam: "🐏", unloadRam: "🐏", takeRam: "🐏", drop: "🪨",
-  inventory: "🎒", cones: "📐", more: "⋯",
+  inventory: "🎒", handover: "🤲", cones: "📐", more: "⋯",
 };
 const iconOf = (v) => ICON[v] || (String(v).startsWith("rescue:") ? "🔓" : "•");
 
@@ -54,7 +54,7 @@ export const COST = {
   reload: 1, getshells: 1, suppress: 1, throwspear: 1, pickspear: 1, throw: 1, tie: 1, drag: 1, meds: 1, heal: 1, revive: 2, finish: 1, crush: 1, doubletap: 1, pickup: 1,
   stowbody: 1, pickCarried: 1, close: 1, climb: BMAP.CLIMB.ap, lights: INDOOR.AP, search: SEARCH.ap, searchBody: SEARCH.ap, extract: 1, retreat: 1, board: 1, disembark: 1,
   turn: 1, gunner: 1, drive: 2, pullOut: MEDIC.PULL.AP, goup: 1, godown: 1, unjam: 1, plate: PLATE_AP, reloadTaser: 1, pepper: 1, execute: 1, glreload: 1, ladder: 1,
-  push: 1, loadRam: 1, unloadRam: 1,
+  push: 1, loadRam: 1, unloadRam: 1, handover: 1, // handover: unitOrders' ap wins (a free Face toward the mate out of the cone)
 };
 const costOf = (o) => (o.ap != null ? o.ap : COST[o.v] != null ? COST[o.v] : String(o.v).startsWith("rescue:") ? 1 : null);
 const costWord = (c) => (c === 0 ? "Free" : c === "end" ? "Ends the unit's turn" : c === "all" ? "Uses everyone's actions" : c == null ? "" : `${c} action${c === 1 ? "" : "s"}`);
@@ -66,7 +66,7 @@ const GROUPS = [
   ["move", "face", "sneak", "goup", "godown", "evac", "evacStop", "retreat", "extract"],
   ["shoot", "cab", "overwatch", "reload", "ammocycle", "getshells", "firemode", "unjam", "suppress", "launch", "glround", "glreload", "melee", "pull", "subdue", "taser", "reloadTaser", "pepper", "throw", "throwspear", "pickspear", "hunker"],
   ["meds", "heal", "revive", "selfStab", "dragAlly", "dropVehicle", "drag", "tie", "finish", "execute", "plate"],
-  ["search", "searchBody", "quick", "ground", "dropCarried", "dropAllCarried", "pickCarried", "crush", "doubletap", "pickup", "stowbody"],
+  ["search", "searchBody", "quick", "ground", "handover", "dropCarried", "dropAllCarried", "pickCarried", "crush", "doubletap", "pickup", "stowbody"],
   ["peek", "close", "brace", "climb", "lights", "light", "nvg", "visor"],
   ["vehicle", "board", "disembark", "drive", "turn", "gunner", "pullOut"],
   [], // the rest: a rescue's ropes and locks, the siege kit, Surrender, Take them alive
@@ -97,6 +97,7 @@ const WHEN = {
   unjam: "The gun is not jammed.", suppress: "Needs an automatic gun (or one made to suppress) with rounds.", throwspear: "Only with a spear in hand.",
   pickspear: "No thrown spear of theirs to pick up.", ammocycle: "Only one kind of round for this gun to hand.", visor: "No helmet with a visor.",
   launch: "No grenade launcher or rocket carried.", meds: "No meds left.", face: "Nobody to turn.", sneak: "Nobody to keep low.", hunker: "Nobody to hunker.",
+  handover: "Nobody of yours right next to them in their view cone to trade with.",
 };
 const whenOf = (v, b, u) => { const w = WHEN[v]; return typeof w === "function" ? w(b, u) : w || "Not possible here now."; };
 // Every battle order of the key table (Battle orders: the ones with a v), the inventory and the view cones: the

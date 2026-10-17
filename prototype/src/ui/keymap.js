@@ -127,7 +127,10 @@ export const KEYMAP = [
     // Shift+N is the map's, free to rebind onto in battle: tools/navtest.js), so they sit on Alt: L for the light, N
     // for night vision.
     ["light", "Light on / off (free)", "Alt+KeyL"], ["nvg", "Night vision on / off (free)", "Alt+KeyN"],
-    ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"]]
+    ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"],
+    // sim/combat.js handoverAct: trade with the teammate next to them in their view cone (1 action a move). H is
+    // Hunker down and Shift+H Heal, so it sits on Alt+H.
+    ["handover", "Hand over: trade with the teammate next to them in their view cone (1 action a move)", "Alt+KeyH"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 
   // ---------- the timelapse (ui/timelapse.js tlKey) ----------

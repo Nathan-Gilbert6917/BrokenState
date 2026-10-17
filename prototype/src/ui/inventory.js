@@ -28,7 +28,7 @@ import { shortName } from "./names.js";
 import { useItemOn, useText } from "../sim/comforts.js";
 import { partyFleet, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad, trunkInfo, atVehicle, raidParty, quickTarget, matesOf, hauled, haulBudget, HAUL, supplyFit } from "../sim/raidloot.js";
-import { combatAct, INV_AP } from "../sim/combat.js"; // INV_AP: a move in the fight's inventory window (combatAct "inv")
+import { combatAct, INV_AP, HANDOVER_AP, handoverRefusal, handoverTargets } from "../sim/combat.js"; // INV_AP: a move in the fight's inventory window (combatAct "inv"); HANDOVER_AP: one to the survivor next to you (combatAct "handover")
 import { lootLayer } from "../sim/raidloot.js";
 import { groundPile, fieldReady, pileCount } from "../sim/ground.js"; // bodies searched where they fell, things on the ground
 import { SEARCH } from "../sim/search.js";
@@ -425,28 +425,82 @@ export function peekCan(state, sid) {
   if (!(u.ap >= INV_AP)) return { u, ok: false, why: `No action left: ${u.name.split(" ")[0]}'s kit stays as it is until next turn.` };
   return { u, ok: true, why: "" };
 }
+// The hand-over window (ui.inv.mate: the teammate's survivor id): { u, t, ok, why }, can the acting unit (sid) trade
+// with the mate now (sim/combat.js handoverRefusal: right next to them, in their view cone, up)?
+export function handCan(state, sid, mateSid) {
+  const c = peekCan(state, sid);
+  if (!c.ok) return { ...c, t: null };
+  const b = state.combat;
+  const t = b.units.find((x) => x.sid === mateSid && x.side === "player") || null;
+  const why = t ? handoverRefusal(b, c.u, t) : "They are not in the fight.";
+  return { u: c.u, t, ok: !why, why };
+}
 // A move (or op: "split" | "open" | "box" on `from`) in the fight's inventory window, through the sim (1 action).
+// In the hand-over window a move between the two survivors goes through combatAct "handover" (HANDOVER_AP, the acting
+// unit's); within the acting unit's own kit through "inv" as before; the mate's own kit does not move.
 function fightMove(state, ui, from, to, op = "move") {
   const c = peekCan(state, ui.inv.sid);
   if (!c.ok) { ui.invMsg = c.why; ui.invSel = null; return; }
   const b = state.combat;
   const n = b.log.length;
-  const err = combatAct(state, { type: "inv", unit: c.u.id, from, to, op });
+  const F = parseLoc(from), T = to ? parseLoc(to) : null;
+  const mine = (L) => L.o === "s" && L.id === ui.inv.sid;
+  let err, cost = INV_AP;
+  if (ui.inv.mate != null && (!mine(F) || (T && !mine(T)))) {
+    const h = handCan(state, ui.inv.sid, ui.inv.mate);
+    if (!h.ok) { ui.invMsg = h.why; ui.invSel = null; return; }
+    const m = survivorById(state, ui.inv.mate);
+    if (!T || (!mine(F) && !mine(T))) { ui.invMsg = `${m ? m.name.split(" ")[0] : "Their"}'s own kit stays as it is: only what changes hands between them moves (${HANDOVER_AP} action).`; ui.invSel = null; return; }
+    cost = HANDOVER_AP;
+    err = combatAct(state, { type: "handover", unit: c.u.id, to: h.t.id, from, toLoc: to });
+  } else err = combatAct(state, { type: "inv", unit: c.u.id, from, to, op });
   const said = !err && b.log.length > n ? b.log[b.log.length - 1].text : "";
-  ui.invMsg = err || `${said || "Done."} (${INV_AP} action; ${c.u.ap} left)`;
+  ui.invMsg = err || `${said || "Done."} (${cost} action; ${c.u.ap} left)`;
   ui.invSel = null;
 }
-// The selected item's line in the fight's window: Split / Open box / Box (1 action each), Cancel.
-function peekBar(state, ui, ok) {
+// The selected item's line in the fight's window: Split / Open box / Box (1 action each), Cancel. mate: the hand-over
+// window's other survivor (the stack buttons only on the acting unit's own things).
+function peekBar(state, ui, ok, mate = null) {
   if (!ui.invSel) return "";
   const item = itemAt(state, ui.invSel);
   if (!item) return "";
   const from = parseLoc(ui.invSel);
-  return `<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>. ${ok ? `Click a pocket, pack cell, rig pouch, the hands or the off hand to move it there (${INV_AP} action)${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}.` : ""}
-    ${ok ? stackButtons(item, from) : ""}
+  const own = from.o === "s" && from.id === ui.inv.sid;
+  const who = mate ? (own ? `${esc(mate.name.split(" ")[0])}'s` : "their own") : "";
+  return `<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>${mate && !own ? ` (${esc(mate.name.split(" ")[0])}'s)` : ""}. ${ok ? `Click ${mate ? `${who} ` : "a "}pocket, pack cell, rig pouch, the hands or the off hand to move it there (${mate ? HANDOVER_AP : INV_AP} action${mate ? `, ${esc(survivorById(state, ui.inv.sid).name.split(" ")[0])}'s` : ""})${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}.` : ""}
+    ${ok && own ? stackButtons(item, from) : ""}
     ${detailsButton(ui, item)}<button class="mini" data-action="inv-cancel">Cancel</button>${detailsBlock(state, ui, item)}</div>`;
 }
+// The hand-over window (ui/combat.js Hand over, Alt+H; sim/combat.js handoverTargets, combatAct "handover"): the acting
+// unit's paper doll and the mate's side by side. A thing clicked (or dragged) from one to the other costs the acting
+// unit HANDOVER_AP a move, either way; the mate spends nothing. Tabs on the right: the other mates in reach.
+// ui.inv = { sid, peek: true, mate }.
+function handModal(state, ui) {
+  const b = state.combat;
+  const s = survivorById(state, ui.inv.sid), m = survivorById(state, ui.inv.mate);
+  if (!b || b.over || !s || !m) { ui.inv = null; return null; }
+  const h = handCan(state, s.id, m.id);
+  const u = h.u;
+  const mates = u ? handoverTargets(b, u).map((t) => survivorById(state, t.sid)).filter(Boolean) : [];
+  const tabs = mates.length > 1 ? `<div class="invwho">${mates.map((p) => `<button class="mini ${p.id === m.id ? "active" : ""}" data-action="inv-mate" data-id="${p.id}"${tip(`Trade with ${p.name} instead (right next to ${esc(s.name.split(" ")[0])}, in their view cone).`)}>${first(p)}</button>`).join("")}</div>` : "";
+  const head = h.ok
+    ? `<div class="small"${tip(`A thing given to ${m.name} or taken from them: click it, then the pocket, pack cell, rig pouch, the hands or the off hand it goes to (or drag it), ${HANDOVER_AP} action a move for ${s.name.split(" ")[0]} either way; ${m.name.split(" ")[0]} spends nothing. A full slot swaps when the thing there fits back. Both count what moved at once: a gun in the hands, rounds, a magazine. Armour, the helmet, the rig and the pack stay as worn on both. ${s.name.split(" ")[0]}'s own kit moves here too (1 action, as in the Inventory window); ${m.name.split(" ")[0]}'s own kit does not.`)}>${esc(s.name.split(" ")[0])}'s turn, <b>${u.ap} action${u.ap === 1 ? "" : "s"}</b> left: each thing handed to ${esc(m.name.split(" ")[0])} or taken from them costs ${esc(s.name.split(" ")[0])} ${HANDOVER_AP} action; ${esc(m.name.split(" ")[0])} spends nothing. Drag a figure to turn it.</div>`
+    : `<div class="small warn">${esc(h.why)} Look only. Drag a figure to turn it.</div>`;
+  const label = (p, what) => `<div class="invlabel"${tip(what)}>${esc(p.name)}</div>`;
+  return `<div class="box wide invbox">
+    <div class="spread"><h1>Hand over: ${esc(s.name)} and ${esc(m.name)}</h1><span class="muted">${esc(b.place)}</span></div>
+    ${head}
+    ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
+    <div class="invcols">
+      <div class="invcol">${label(s, `${s.name}: the one acting (their actions pay for every move here).`)}${doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly: !h.ok, user: s })}</div>
+      <div class="invcol">${tabs}${label(m, `${m.name}: right next to ${s.name.split(" ")[0]}, in their view cone. Things go to and from their pockets, pack, rig pouches and hands; their own kit stays as it is.`)}${doll(state, ui, m, `s:${m.id}`, figureSpinImg(state, m, 7), { readonly: !h.ok, user: m })}</div>
+    </div>
+    ${peekBar(state, ui, h.ok, m)}
+    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="mini" data-action="inv-mate" data-id=""${tip(`${esc(s.name.split(" ")[0])}'s own kit alone (the Inventory window)`)}>Own kit</button><button class="primary" data-action="inv-close"${tip("Back to the battle (Esc)")}>Close</button></div>
+  </div>`;
+}
 function peekModal(state, ui) {
+  if (ui.inv.mate != null) return handModal(state, ui);
   const b = state.combat;
   const s = survivorById(state, ui.inv.sid);
   if (!b || b.over || !s) { ui.inv = null; return null; }
@@ -536,6 +590,11 @@ export function takeLootReq(state, ui) {
     const sid = cui.invReq;
     cui.invReq = null;
     if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid)) { ui.inv = { sid, peek: true }; ui.invSel = null; ui.invMsg = ""; }
+  }
+  if (cui.handReq) { // 🤲 Hand over (ui/combat.js): the acting survivor's kit and the mate's side by side (handModal)
+    const { sid, mate } = cui.handReq;
+    cui.handReq = null;
+    if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid) && survivorById(state, mate)) { ui.inv = { sid, peek: true, mate }; ui.invSel = null; ui.invMsg = ""; }
   }
   if (!cui.lootReq) return;
   const r = cui.lootReq;
@@ -927,6 +986,7 @@ export const INV_ACTIONS = {
   "inv-close": (state, ui) => { ui.inv = null; ui.invSel = null; ui.invMsg = ""; },
   "inv-details": (state, ui) => { ui.invDetails = ui.invDetails === ui.invSel ? null : ui.invSel; }, // ⓘ Details on the selected item (itemlabels.js: the hover tip is short)
   "inv-who": (state, ui, d) => { ui.inv.sid = Number(d.id); ui.invSel = null; },
+  "inv-mate": (state, ui, d) => { if (!ui.inv || !ui.inv.peek) return; if (d.id === "" || d.id == null) delete ui.inv.mate; else ui.inv.mate = Number(d.id); ui.invSel = null; ui.invMsg = ""; }, // the hand-over window: another mate in reach, or the acting one's own kit alone
   "inv-click": (state, ui, d, ev) => clickLoc(state, ui, d.loc, ev),
   "inv-cancel": (state, ui) => { ui.invSel = null; closeStack(ui); },
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = toStorage(state, ui.invSel); ui.invSel = null; },
