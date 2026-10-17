@@ -28,7 +28,7 @@ import { shortName } from "./names.js";
 import { useItemOn, useText } from "../sim/comforts.js";
 import { partyFleet, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad, trunkInfo, atVehicle, raidParty, quickTarget, matesOf, hauled, haulBudget, HAUL, supplyFit } from "../sim/raidloot.js";
-import { combatAct } from "../sim/combat.js";
+import { combatAct, INV_AP, HANDOVER_AP, handoverRefusal, handoverTargets } from "../sim/combat.js"; // INV_AP: a move in the fight's inventory window (combatAct "inv"); HANDOVER_AP: one to the survivor next to you (combatAct "handover")
 import { lootLayer } from "../sim/raidloot.js";
 import { groundPile, fieldReady, pileCount } from "../sim/ground.js"; // bodies searched where they fell, things on the ground
 import { SEARCH } from "../sim/search.js";
@@ -404,25 +404,119 @@ export function inventoryModal(state, ui) {
       <div class="invcol">${readonly ? "" : storageBox(state, ui, place, s)}</div>
     </div>
     ${selBar(state, ui, place)}${stackPanel(state, ui, "inv")}
-    <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps.</div>
+    <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps. Drag the figure (or roll the wheel over it) to turn it by hand; ↻ Spin lets it turn by itself again.</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Close</button></div>
   </div>`;
 }
 
-// A survivor's kit seen from the battle (ui/combat.js 🎒, Shift+B): the paper doll as it stands now, read-only (in a
-// fight things move only by orders: Reload, Throw, Search, Ground). The tabs: everyone of yours in the fight.
-// ui.inv = { sid, peek: true }.
+// A survivor's kit seen from the battle (ui/combat.js 🎒, Shift+B): the paper doll as it stands now. The tabs: everyone
+// of yours in the fight. For the one whose turn it is, with an action left, it is their inventory to sort (2026-10-17
+// user request): a click-then-click or a drag between a pocket, the pack, a rig pouch, the hands and the off hand
+// goes through combatAct "inv" (sim/combat.js invAct) for INV_AP, as do Split, Open box and Box on a stack; the AP pips
+// on the bar follow. Armour, the helmet, the rig and the pack stay as worn. Otherwise (not their turn, no action left,
+// down) it is read-only, greyed with the reason. ui.inv = { sid, peek: true }.
+// { u, ok, why }: can this survivor's unit sort its kit now?
+export function peekCan(state, sid) {
+  const b = state.combat;
+  const u = b && !b.over ? b.units.find((x) => x.sid === sid && x.side === "player") : null;
+  if (!u) return { u: null, ok: false, why: "They are not in the fight." };
+  if (b.phase !== "player") return { u, ok: false, why: "Wait for the enemy turn to finish: nothing moves until then." };
+  if (u.dead || u.down || u.left || u.fled || u.off || u.away) return { u, ok: false, why: `${u.name.split(" ")[0]} cannot sort their kit now.` };
+  if (!(u.ap >= INV_AP)) return { u, ok: false, why: `No action left: ${u.name.split(" ")[0]}'s kit stays as it is until next turn.` };
+  return { u, ok: true, why: "" };
+}
+// The hand-over window (ui.inv.mate: the teammate's survivor id): { u, t, ok, why }, can the acting unit (sid) trade
+// with the mate now (sim/combat.js handoverRefusal: right next to them, in their view cone, up)?
+export function handCan(state, sid, mateSid) {
+  const c = peekCan(state, sid);
+  if (!c.ok) return { ...c, t: null };
+  const b = state.combat;
+  const t = b.units.find((x) => x.sid === mateSid && x.side === "player") || null;
+  const why = t ? handoverRefusal(b, c.u, t) : "They are not in the fight.";
+  return { u: c.u, t, ok: !why, why };
+}
+// A move (or op: "split" | "open" | "box" on `from`) in the fight's inventory window, through the sim (1 action).
+// In the hand-over window a move between the two survivors goes through combatAct "handover" (HANDOVER_AP, the acting
+// unit's); within the acting unit's own kit through "inv" as before; the mate's own kit does not move.
+function fightMove(state, ui, from, to, op = "move") {
+  const c = peekCan(state, ui.inv.sid);
+  if (!c.ok) { ui.invMsg = c.why; ui.invSel = null; return; }
+  const b = state.combat;
+  const n = b.log.length;
+  const F = parseLoc(from), T = to ? parseLoc(to) : null;
+  const mine = (L) => L.o === "s" && L.id === ui.inv.sid;
+  let err, cost = INV_AP;
+  if (ui.inv.mate != null && (!mine(F) || (T && !mine(T)))) {
+    const h = handCan(state, ui.inv.sid, ui.inv.mate);
+    if (!h.ok) { ui.invMsg = h.why; ui.invSel = null; return; }
+    const m = survivorById(state, ui.inv.mate);
+    if (!T || (!mine(F) && !mine(T))) { ui.invMsg = `${m ? m.name.split(" ")[0] : "Their"}'s own kit stays as it is: only what changes hands between them moves (${HANDOVER_AP} action).`; ui.invSel = null; return; }
+    cost = HANDOVER_AP;
+    err = combatAct(state, { type: "handover", unit: c.u.id, to: h.t.id, from, toLoc: to });
+  } else err = combatAct(state, { type: "inv", unit: c.u.id, from, to, op });
+  const said = !err && b.log.length > n ? b.log[b.log.length - 1].text : "";
+  ui.invMsg = err || `${said || "Done."} (${cost} action; ${c.u.ap} left)`;
+  ui.invSel = null;
+}
+// The selected item's line in the fight's window: Split / Open box / Box (1 action each), Cancel. mate: the hand-over
+// window's other survivor (the stack buttons only on the acting unit's own things).
+function peekBar(state, ui, ok, mate = null) {
+  if (!ui.invSel) return "";
+  const item = itemAt(state, ui.invSel);
+  if (!item) return "";
+  const from = parseLoc(ui.invSel);
+  const own = from.o === "s" && from.id === ui.inv.sid;
+  const who = mate ? (own ? `${esc(mate.name.split(" ")[0])}'s` : "their own") : "";
+  return `<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>${mate && !own ? ` (${esc(mate.name.split(" ")[0])}'s)` : ""}. ${ok ? `Click ${mate ? `${who} ` : "a "}pocket, pack cell, rig pouch, the hands or the off hand to move it there (${mate ? HANDOVER_AP : INV_AP} action${mate ? `, ${esc(survivorById(state, ui.inv.sid).name.split(" ")[0])}'s` : ""})${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}.` : ""}
+    ${ok && own ? stackButtons(item, from) : ""}
+    ${detailsButton(ui, item)}<button class="mini" data-action="inv-cancel">Cancel</button>${detailsBlock(state, ui, item)}</div>`;
+}
+// The hand-over window (ui/combat.js Hand over, Alt+H; sim/combat.js handoverTargets, combatAct "handover"): the acting
+// unit's paper doll and the mate's side by side. A thing clicked (or dragged) from one to the other costs the acting
+// unit HANDOVER_AP a move, either way; the mate spends nothing. Tabs on the right: the other mates in reach.
+// ui.inv = { sid, peek: true, mate }.
+function handModal(state, ui) {
+  const b = state.combat;
+  const s = survivorById(state, ui.inv.sid), m = survivorById(state, ui.inv.mate);
+  if (!b || b.over || !s || !m) { ui.inv = null; return null; }
+  const h = handCan(state, s.id, m.id);
+  const u = h.u;
+  const mates = u ? handoverTargets(b, u).map((t) => survivorById(state, t.sid)).filter(Boolean) : [];
+  const tabs = mates.length > 1 ? `<div class="invwho">${mates.map((p) => `<button class="mini ${p.id === m.id ? "active" : ""}" data-action="inv-mate" data-id="${p.id}"${tip(`Trade with ${p.name} instead (right next to ${esc(s.name.split(" ")[0])}, in their view cone).`)}>${first(p)}</button>`).join("")}</div>` : "";
+  const head = h.ok
+    ? `<div class="small"${tip(`A thing given to ${m.name} or taken from them: click it, then the pocket, pack cell, rig pouch, the hands or the off hand it goes to (or drag it), ${HANDOVER_AP} action a move for ${s.name.split(" ")[0]} either way; ${m.name.split(" ")[0]} spends nothing. A full slot swaps when the thing there fits back. Both count what moved at once: a gun in the hands, rounds, a magazine. Armour, the helmet, the rig and the pack stay as worn on both. ${s.name.split(" ")[0]}'s own kit moves here too (1 action, as in the Inventory window); ${m.name.split(" ")[0]}'s own kit does not.`)}>${esc(s.name.split(" ")[0])}'s turn, <b>${u.ap} action${u.ap === 1 ? "" : "s"}</b> left: each thing handed to ${esc(m.name.split(" ")[0])} or taken from them costs ${esc(s.name.split(" ")[0])} ${HANDOVER_AP} action; ${esc(m.name.split(" ")[0])} spends nothing. Drag a figure to turn it.</div>`
+    : `<div class="small warn">${esc(h.why)} Look only. Drag a figure to turn it.</div>`;
+  const label = (p, what) => `<div class="invlabel"${tip(what)}>${esc(p.name)}</div>`;
+  return `<div class="box wide invbox">
+    <div class="spread"><h1>Hand over: ${esc(s.name)} and ${esc(m.name)}</h1><span class="muted">${esc(b.place)}</span></div>
+    ${head}
+    ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
+    <div class="invcols">
+      <div class="invcol">${label(s, `${s.name}: the one acting (their actions pay for every move here).`)}${doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly: !h.ok, user: s })}</div>
+      <div class="invcol">${tabs}${label(m, `${m.name}: right next to ${s.name.split(" ")[0]}, in their view cone. Things go to and from their pockets, pack, rig pouches and hands; their own kit stays as it is.`)}${doll(state, ui, m, `s:${m.id}`, figureSpinImg(state, m, 7), { readonly: !h.ok, user: m })}</div>
+    </div>
+    ${peekBar(state, ui, h.ok, m)}
+    <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="mini" data-action="inv-mate" data-id=""${tip(`${esc(s.name.split(" ")[0])}'s own kit alone (the Inventory window)`)}>Own kit</button><button class="primary" data-action="inv-close"${tip("Back to the battle (Esc)")}>Close</button></div>
+  </div>`;
+}
 function peekModal(state, ui) {
+  if (ui.inv.mate != null) return handModal(state, ui);
   const b = state.combat;
   const s = survivorById(state, ui.inv.sid);
   if (!b || b.over || !s) { ui.inv = null; return null; }
   const people = b.units.filter((u) => u.side === "player" && u.sid != null && u.vol == null).map((u) => survivorById(state, u.sid)).filter(Boolean);
-  const u = b.units.find((x) => x.sid === s.id && x.side === "player");
+  const c = peekCan(state, s.id);
+  const u = c.u;
   const where = u ? (u.dead ? "dead" : u.left ? "got away" : u.down ? "down" : `${Math.round(u.hp)} hp`) : "";
+  const head = c.ok
+    ? `<div class="small"${tip("Pockets, the pack's slots, the rig's pouches, the hands and the off hand: click an item, then where it goes (or drag it), 1 action a move. Split, Open box and Box on a stack of rounds cost the same. Armour, the helmet, the rig and the pack stay as worn (a plate: the Plate order). What moved counts at once: a gun in the hands, a magazine in a pocket (a 1-action reload), boxes of rounds.")}>${esc(s.name.split(" ")[0])}'s turn, <b>${u.ap} action${u.ap === 1 ? "" : "s"}</b> left: each move here costs ${INV_AP}. Drag the figure to turn it.</div>`
+    : `<div class="small warn">${esc(c.why)} Look only. Drag the figure to turn it.</div>`;
   return `<div class="box wide invbox">
     <div class="spread"><h1>Inventory: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}${where ? ` · ${esc(where)}` : ""}</span></div>
-    <div class="small muted">In the fight: look only. Things move by orders (Reload, Throw, Search, Ground).</div>
-    <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly: true, user: s })}</div></div>
+    ${head}
+    ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
+    <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, figureSpinImg(state, s, 7), { readonly: !c.ok, user: s })}</div></div>
+    ${peekBar(state, ui, c.ok)}
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close"${tip("Back to the battle (Esc)")}>Close</button></div>
   </div>`;
 }
@@ -496,6 +590,11 @@ export function takeLootReq(state, ui) {
     const sid = cui.invReq;
     cui.invReq = null;
     if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid)) { ui.inv = { sid, peek: true }; ui.invSel = null; ui.invMsg = ""; }
+  }
+  if (cui.handReq) { // 🤲 Hand over (ui/combat.js): the acting survivor's kit and the mate's side by side (handModal)
+    const { sid, mate } = cui.handReq;
+    cui.handReq = null;
+    if (state.combat && !state.combat.over && !(ui.inv && (ui.inv.loot || ui.inv.raid)) && survivorById(state, sid) && survivorById(state, mate)) { ui.inv = { sid, peek: true, mate }; ui.invSel = null; ui.invMsg = ""; }
   }
   if (!cui.lootReq) return;
   const r = cui.lootReq;
@@ -796,8 +895,16 @@ function supClick(state, ui, loc, ev) {
 }
 
 // ---------- actions (wired in main.js) ----------
+// The fight's inventory window (peekModal): pick, unpick, or move the picked item there through combatAct "inv".
+function peekClick(state, ui, loc) {
+  const sel = ui.invSel;
+  if (!sel) { if (itemAt(state, loc)) ui.invSel = loc; return; }
+  if (sel === loc) { ui.invSel = null; return; }
+  fightMove(state, ui, sel, loc);
+}
 function clickLoc(state, ui, loc, ev = null) {
   if (ui.inv && ui.inv.raid) return raidClick(state, ui, loc, ev);
+  if (ui.inv && ui.inv.peek) return peekClick(state, ui, loc);
   const sel = ui.invSel;
   const to = parseLoc(loc);
   if (to.slot === "sup") return supClick(state, ui, loc, ev); // a supply stack: the stack mover
@@ -857,6 +964,7 @@ export function invDrop(state, ui, from, to, half = false, one = false, at = nul
     closeStack(ui);
     return;
   }
+  if (ui.inv.peek) { if (/^s:\d+:/.test(from)) fightMove(state, ui, from, to); return; } // the fight's window: through the sim, 1 action
   const F = parseLoc(from);
   if (F.slot === "sup") {
     if (F.o !== "body") { if (invDests(state, ui, from).length) { ui.invSel = from; openStack(ui, "inv", { pop }); } return; }
@@ -878,6 +986,7 @@ export const INV_ACTIONS = {
   "inv-close": (state, ui) => { ui.inv = null; ui.invSel = null; ui.invMsg = ""; },
   "inv-details": (state, ui) => { ui.invDetails = ui.invDetails === ui.invSel ? null : ui.invSel; }, // ⓘ Details on the selected item (itemlabels.js: the hover tip is short)
   "inv-who": (state, ui, d) => { ui.inv.sid = Number(d.id); ui.invSel = null; },
+  "inv-mate": (state, ui, d) => { if (!ui.inv || !ui.inv.peek) return; if (d.id === "" || d.id == null) delete ui.inv.mate; else ui.inv.mate = Number(d.id); ui.invSel = null; ui.invMsg = ""; }, // the hand-over window: another mate in reach, or the acting one's own kit alone
   "inv-click": (state, ui, d, ev) => clickLoc(state, ui, d.loc, ev),
   "inv-cancel": (state, ui) => { ui.invSel = null; closeStack(ui); },
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = toStorage(state, ui.invSel); ui.invSel = null; },
@@ -889,9 +998,10 @@ export const INV_ACTIONS = {
   "inv-helmfit": (state, ui, d) => { if (!ui.invSel) return; const h = itemAt(state, ui.invSel); ui.invMsg = fitHelmetAt(state, ui.invSel, d.part, ui.inv && ui.inv.sid); reselect(state, ui, h); },
   "inv-helmstrip": (state, ui, d) => { if (ui.invSel) ui.invMsg = stripHelmetAt(state, ui.invSel, d.mount, ui.inv && ui.inv.sid); },
   "inv-helmon": (state, ui) => { if (!ui.invSel || !ui.inv) return; ui.invMsg = fitHelmetAt(state, `s:${ui.inv.sid}:head`, ui.invSel, ui.inv.sid); ui.invSel = null; },
-  "inv-split": (state, ui) => { if (ui.invSel) ui.invMsg = splitAt(state, ui.invSel); }, // sim/inventory.js: half a stack into a spot of its own
-  "inv-openbox": (state, ui) => { if (ui.invSel) ui.invMsg = openAt(state, ui.invSel); }, // a stack of boxes into loose rounds; a handful out of a bulk container
-  "inv-boxrounds": (state, ui) => { if (ui.invSel) ui.invMsg = boxAt(state, ui.invSel); }, // loose rounds packed back into boxes
+  // (in the fight's window, peekModal, each goes through combatAct "inv" for INV_AP: fightMove)
+  "inv-split": (state, ui) => { if (!ui.invSel) return; if (ui.inv && ui.inv.peek) fightMove(state, ui, ui.invSel, null, "split"); else ui.invMsg = splitAt(state, ui.invSel); }, // sim/inventory.js: half a stack into a spot of its own
+  "inv-openbox": (state, ui) => { if (!ui.invSel) return; if (ui.inv && ui.inv.peek) fightMove(state, ui, ui.invSel, null, "open"); else ui.invMsg = openAt(state, ui.invSel); }, // a stack of boxes into loose rounds; a handful out of a bulk container
+  "inv-boxrounds": (state, ui) => { if (!ui.invSel) return; if (ui.inv && ui.inv.peek) fightMove(state, ui, ui.invSel, null, "box"); else ui.invMsg = boxAt(state, ui.invSel); }, // loose rounds packed back into boxes
   "inv-use": (state, ui) => { if (ui.invSel && ui.inv) ui.invMsg = useItemOn(state, ui.inv.sid, ui.invSel); ui.invSel = null; }, // sim/comforts.js
   // Firewood (sim/inventory.js breakDownAt; sim/woodcutting.js breakDownJunk): anything above junk asks first (ui/confirm.js).
   // Repairs and salvage (sim/repair.js, sim/inventory.js salvageAt).

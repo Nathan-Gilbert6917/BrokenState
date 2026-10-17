@@ -24,7 +24,7 @@
 // Dice: hash01 (skills.js), never the world's or the battle's random numbers.
 import { log, survivorById, skill, newId, hub, baseById } from "./world.js";
 import { hash01, gainXp, USE } from "./skills.js";
-import { openOdds, picksOf, PICK, FORCE, SMASH } from "./locks.js";
+import { openOdds, picksOf, isMakeshiftPicks, wearPicks, PICK, FORCE, SMASH } from "./locks.js";
 import { createVehicle, vehicleById, isCar, tank, VEHICLE_TYPES, partyVehicle, fitMilitary, carPartsCost, carPartsText, fleetJoinProblem, addPartyVehicle, partyVehicles, driversFor } from "./vehicles.js";
 import { markTaken } from "./miltrucks.js"; // (names below are literal: the modules load in a circle)
 import { markAbandonedVehicle } from "./markers.js";
@@ -161,7 +161,7 @@ export function carOptions(state, b, u, rec) {
   const mech = s ? skill(s, "mechanics") : 0;
   if (!open) {
     const odds = openOdds(state, b, u, { kind: "car" });
-    o.pick = { ok: odds.pick.ok, chance: odds.pick.chance, ap: 1, why: odds.pick.why };
+    o.pick = { ok: odds.pick.ok, chance: odds.pick.chance, ap: 1, why: odds.pick.why, makeshift: !!odds.pick.makeshift, left: odds.pick.left }; // makeshift: bent wire (locks.js MAKESHIFT_PICK), one snapping half the time
     o.force = { ok: odds.force.ok, chance: odds.force.chance, ap: odds.force.ap, why: odds.force.why, glass: !!odds.force.glass, crowbar: !!odds.force.crowbar };
   } else if (!rec.open) o.enter = { ok: true, ap: 1, why: "" };
   const inside = open && rec.open;
@@ -217,7 +217,10 @@ export function carAct(state, b, u, act, H) {
       if (act.op === "pick") {
         heat(PICK.heat);
         if (s) gainXp(state, s, "stealth", ok ? PICK.xpWin : PICK.xpMiss);
-        H.say(b, ok ? `${u.name} picks the lock of the ${name} (${Math.round(o.chance * 100)}%).` : `${u.name} works the door lock of the ${name}, but it holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "info");
+        H.say(b, ok ? `${u.name} picks the lock of the ${name}${o.makeshift ? " with a bent wire" : ""} (${Math.round(o.chance * 100)}%).` : `${u.name} works the door lock of the ${name}${o.makeshift ? " with a bent wire" : ""}, but it holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "info");
+        // Makeshift picks snap one of the stack half the time an attempt (locks.js wearPicks; the crowbar's wear on cars is unchanged: none).
+        const picks = s ? picksOf(s) : null;
+        if (picks && isMakeshiftPicks(picks)) { const w = wearPicks(s, picks, r("snap", rec.tries, u.id)); if (w.snapped) H.say(b, `${u.name}'s makeshift pick snaps in the door lock${w.gone ? ": that was the last one." : ` (${w.left} left).`}`, "danger"); }
       } else {
         const P = o.crowbar ? FORCE : SMASH;
         heat(P.heat);

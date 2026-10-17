@@ -785,13 +785,15 @@ export function unlistFromSites(state, item) {
 
 // Moves an item from one location to another. A full target swaps: the item already there goes back where
 // the moved one came from if it fits there, else into storage. Returns a message ("" when nothing happened).
-export function moveItem(state, fromStr, toStr) {
+// across: a hand-over in a fight (combat.js handoverAct): the two people stand side by side in the same battle,
+// whatever their location records say, so the same-place check is lifted (the giver's place keeps the storage).
+export function moveItem(state, fromStr, toStr, { across = false } = {}) {
   if (fromStr === toStr) return "";
   const from = parseLoc(fromStr), to = parseLoc(toStr);
   const A = ref(state, from), B = ref(state, to);
   if (!A || !B) return "That slot is not there any more.";
-  const place = placeOf(state, from);
-  if (!place || place !== placeOf(state, to)) return "Items only move between people at the same base or on the same team.";
+  const place = placeOf(state, from) || (across ? placeOf(state, to) : null);
+  if (!place || (!across && place !== placeOf(state, to))) return "Items only move between people at the same base or on the same team.";
   if (to.o === "body") return "Bodies are only for taking from.";
   const item = A.get();
   if (!item) return "Nothing there.";

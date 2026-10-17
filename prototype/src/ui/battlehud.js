@@ -9,7 +9,7 @@
 //     the canvas marks are a handful of rectangles and texts.
 //   - The strip folds to a narrow column (its header, or ` : bview.hud); folded or not is kept in this browser.
 import { WEAPONS, active, isRanged, hasMag, magShown, magMaxOf, magEmpty, arrowsLeft, shotOdds, meleeOdds, heightAt, sidearmOf, CRIT_MULT } from "../sim/combat.js";
-import { tracksMags, isShellGun, shellsAt, shellKind, spareSplit, SHELLS } from "../sim/mags.js";
+import { tracksMags, isShellGun, shellsAt, shellKind, spareSplit, roundSplit, SHELLS, MAGS } from "../sim/mags.js"; // roundSplit: the reserve rounds at hand, in the pack, the team's (a Reload from the pack takes both actions)
 import { roundsOf, unitRound, loadOf } from "../sim/ammo.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
 import { gunQ, gunCond, jamChance, modesOf, modeOf, modeRolls, modeAim, FIRE_MODES } from "../sim/gunfire.js";
@@ -45,14 +45,14 @@ export function toggleHud(on = !HUD.open) {
 export const AMMO_SHORT = { fmj: "FMJ", hp: "HP", ap: "AP", buck: "Buck", slug: "Slug", sp: "SP", plusp: "+P", subsonic: "Subsonic", match: "Match", tracer: "Tracer", ball: "Ball", birdshot: "Birdshot", rubber: "Rubber", beanbag: "Beanbag" };
 const typeShort = (t) => AMMO_SHORT[t] || (AMMO_TYPES[t] ? AMMO_TYPES[t].name : t || "");
 // What the weapon panel shows of a unit's weapon (pure data; tools/battlehudtest.js reads it):
-// { name, key, ranged, bow, mag: { in, cap } | null, empty, cal, load, loadShort, reserve, spares: spareSplit | null,
-//   shells: { at, pack, kind } | null, clips, modes, mode, rolls, jam, jamPct, cond, q, melee: { chance, dmg } | null,
-//   arrows, sidearm, launcher }
+// { name, key, ranged, bow, mag: { in, cap } | null, empty, cal, load, loadShort, reserve, rounds: roundSplit | null
+//   (the reserve by where: hand, pack, mate, pool), spares: spareSplit | null, shells: { at, pack, kind } | null, clips,
+//   modes, mode, rolls, jam, jamPct, cond, q, melee: { chance, dmg } | null, arrows, sidearm, launcher }
 export function weaponInfo(state, b, u) {
   const w = WEAPONS[u.weapon] || {};
   const ranged = isRanged(u);
   const gun = ranged && !w.arrows && !w.acid;
-  const info = { name: u.weaponName || w.name || u.weapon, key: u.weapon, ranged, gun, bow: !!w.arrows, mag: null, empty: false, cal: "", load: null, loadShort: "", reserve: null, spares: null, shells: null, clips: 0, modes: [], mode: null, rolls: 1, jam: null, jamPct: 0, cond: null, q: null, melee: null, arrows: null, sidearm: "", launcher: "" };
+  const info = { name: u.weaponName || w.name || u.weapon, key: u.weapon, ranged, gun, bow: !!w.arrows, mag: null, empty: false, cal: "", load: null, loadShort: "", reserve: null, rounds: null, spares: null, shells: null, clips: 0, modes: [], mode: null, rolls: 1, jam: null, jamPct: 0, cond: null, q: null, melee: null, arrows: null, sidearm: "", launcher: "" };
   if (gun) {
     const r = unitRound(u); // the round loaded: its own calibre (a 5.56 gun with .223 in it shows ".223 Rem")
     const c = CALIBERS[r ? r.cal : w.cal];
@@ -62,7 +62,7 @@ export function weaponInfo(state, b, u) {
     info.load = r ? r.type : c ? c.base : null;
     info.loadShort = typeShort(info.load);
     if (hasMag(u)) { info.mag = { in: magShown(b, u), cap: magMaxOf(u) }; info.empty = magEmpty(b, u); }
-    if (u.side === "player" && info.load) info.reserve = Math.max(0, Math.floor(roundsOf(b, u, loadOf(u))) - (info.mag ? info.mag.in : 0)); // every round of the type to hand, past the ones loaded
+    if (u.side === "player" && info.load) { info.reserve = Math.max(0, Math.floor(roundsOf(b, u, loadOf(u))) - (info.mag ? info.mag.in : 0)); info.rounds = roundSplit(b, u); } // every round of the type to hand, past the ones loaded; by where (mags.js: a pocket or the rig 1 action, the pack both)
     if (isShellGun(u)) { const s = shellsAt(b, u); info.shells = { at: s.at, pack: s.pack, kind: shellKind(u) }; }
     else if (tracksMags(u) && u.magMode !== "internal") info.spares = spareSplit(b, u);
     else if (tracksMags(u)) info.clips = (u.clips || []).filter((x) => !x.used).length;
@@ -117,15 +117,21 @@ export function weaponPanelHtml(state, b, u) {
   if (info.shells) {
     const s = info.shells, perLoad = s.kind === "break" ? SHELLS.BREAK : s.kind === "single" ? 1 : `${SHELLS.MIN}–${SHELLS.MAX}`;
     spare.push(`<span class="${s.at < 1 ? "danger" : ""}" data-tip="${esc(`Shells at hand (pockets, rig, loose): a Reload (1 action) loads ${perLoad} from these.`)}">${s.at} at hand</span>`);
-    spare.push(`<span class="${s.at < 1 && s.pack > 0 ? "warn" : "muted"}" data-tip="${esc(`Shells in the pack: Get shells (1 action) takes up to ${SHELLS.GRAB} out, loose at hand.`)}">${Number.isFinite(s.pack) ? s.pack : "∞"} in the pack</span>`);
+    spare.push(`<span class="${s.at < 1 && s.pack > 0 ? "warn" : "muted"}" data-tip="${esc(`Shells in the pack: a Reload straight from them takes both actions; Get shells (1 action) takes up to ${SHELLS.GRAB} out, loose at hand, for 1-action Reloads.`)}">${Number.isFinite(s.pack) ? s.pack : "∞"} in the pack</span>`);
   } else if (info.spares) {
     const h = info.spares.hand, p = info.spares.pack;
-    if (!h.mags && !p.mags) spare.push(`<span class="warn" data-tip="${esc("No loaded spare magazine: a Reload tops up the one in the gun from the rounds to hand (2 actions).")}">no spare mags</span>`);
+    if (!h.mags && !p.mags) spare.push(`<span class="warn" data-tip="${esc(`No loaded spare magazine: a Reload tops up the one in the gun from the rounds to hand (${MAGS.SOURCE_AP.hand} action from a pocket or the rig, both from the pack, ${MAGS.TOPUP_AP} from a teammate's or the team's bags).`)}">no spare mags</span>`);
     else spare.push(`<span data-tip="${esc("Loaded spare magazines in rig pouches and pockets: a Reload from one is 1 action.")}">${h.mags} mag${h.mags === 1 ? "" : "s"} at hand${h.rounds ? ` <span class="muted">(${h.rounds})</span>` : ""}</span>`);
-    if (h.mags || p.mags) spare.push(`<span class="muted" data-tip="${esc("Loaded spare magazines in the pack: a Reload from one is 2 actions. With no loaded spare left, a Reload tops up the one in the gun (2 actions).")}">${p.mags} in the pack${p.rounds ? ` (${p.rounds})` : ""}</span>`);
+    if (h.mags || p.mags) spare.push(`<span class="muted" data-tip="${esc("Loaded spare magazines in the pack: a Reload from one is 2 actions. With no loaded spare left, a Reload tops up the one in the gun from the rounds to hand (1 action from a pocket or the rig, both from the pack).")}">${p.mags} in the pack${p.rounds ? ` (${p.rounds})` : ""}</span>`);
     if (h.empty + p.empty) spare.push(`<span class="muted">${h.empty + p.empty} empty</span>`);
   } else if (info.clips) spare.push(`<span data-tip="Clips or speedloaders: a Reload with one fills the gun at once.">${info.clips} ${info.clips === 1 ? "clip" : "clips"}</span>`);
-  if (info.reserve != null && !info.shells) spare.push(`<span class="muted" data-tip="${esc("Every round of this calibre and type your side has to hand, past the ones in the gun.")}">${info.reserve} rds</span>`);
+  // The reserve rounds by where they are (mags.js roundSplit): at hand (a pocket or the rig: 1 action), in the pack (both actions), the team's (a teammate's boxes, the bags).
+  if (info.rounds && !info.shells) {
+    const r = info.rounds, team = r.mate + r.pool;
+    spare.push(`<span class="${r.hand > 0 ? "" : "muted"}" data-tip="${esc("Rounds of this calibre and type loose or boxed in the pockets and the rig, past the ones loaded: a top-up or an internal magazine's Reload from them is 1 action.")}">${r.hand} rds at hand</span>`);
+    if (r.pack > 0) spare.push(`<span class="muted" data-tip="${esc("In the pack, past the ones loaded: a Reload from them takes both actions (the Inventory moves a box to a pocket for 1 action).")}">${r.pack} in the pack</span>`);
+    if (team > 0) spare.push(`<span class="muted" data-tip="${esc(`A teammate's boxes and the team's bags, past the ones loaded: a top-up from them takes ${MAGS.TOPUP_AP} actions, an internal magazine's Reload 1.`)}">${team} the team's</span>`);
+  }
   if (spare.length) rows.push(`<div class="bh-spare">${spare.join('<span class="bh-dot">·</span>')}</div>`);
   // The state of the gun: jammed, empty, the jam risk.
   const st = [];
@@ -184,6 +190,7 @@ export function unitChips(state, b, p) {
   if (p.suppressed > 0) c.push(["SUPP", "warn", "Suppressed: −20 aim, no overwatch until their turn ends."]);
   if (p.ow) c.push(["OW", "info", "On overwatch: shoots at the first enemy that moves in range."]);
   if (p.hunker) c.push(["HUNK", "info", "Hunkered down: harder to hit in cover."]);
+  if (p.vaulted > 0 && !p.down) c.push(["WINDED", "info", `Winded from a vault: ${p.vaulted} tile${p.vaulted === 1 ? "" : "s"} less of movement for the rest of this turn.`]); // sim/combat.js VAULT
   if (p.shaken && !p.down) c.push(["SHAKEN", "warn", "Shaken from being revived: worse aim for the rest of the battle."]);
   if (p.stun && !p.down) c.push([p.stun.dazed ? "DAZED" : "STUN", "warn", "Dazed or stunned by a flash or a taser."]);
   for (const e of earStatus(p)) c.push([e.split(" ")[0].toUpperCase(), "warn", e]);

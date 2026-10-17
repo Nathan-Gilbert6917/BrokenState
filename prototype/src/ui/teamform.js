@@ -31,7 +31,9 @@ import { stockHas, RAW } from "../sim/water.js";
 import { parseLoc, itemAt, placeOfLoc, allCarried, quickMove, itemLoad } from "../sim/inventory.js";
 import { packMags } from "../sim/carrykit.js";
 import { packLights, hasLight } from "../sim/lights.js";
-import { loadFromBase, dropOff } from "../sim/teaminv.js";
+import { loadFromBase, dropOff, dropRounds } from "../sim/teaminv.js";
+import { roundRoom, roundsHeld, ROUND_PLACES, PLACE_WORDS } from "../sim/supitems.js"; // rounds onto a named member: pockets, pack or rig, boxed or loose (2026-10-17)
+import { isRoundKey } from "../sim/rounds.js";
 import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicles, toggleVehicle, setSupply, teamHas, gearSnapshot, gearChanged, restoreGear } from "../sim/teamform.js";
 import { doll, storageBox, selBar, tile, INV_ACTIONS, invDrop } from "./inventory.js";
 import { supplyIcon } from "./stackmove.js"; // a supply's own drawing (ui/itemart.js)
@@ -184,7 +186,42 @@ function summary(state, F, b, p, crew) {
   </div>`;
   return { html, problem: problem || (p ? "" : crew.length ? "" : "Pick at least one person") };
 }
-const previewOpts = (F) => ({ baseId: F.baseId, memberIds: [...F.crew], vehicleIds: F.vehicleIds, supplies: F.supplies, cargo: F.cargo });
+const previewOpts = (F) => ({ baseId: F.baseId, memberIds: [...F.crew], vehicleIds: F.vehicleIds, supplies: F.supplies, cargo: F.cargo, rounds: (F.rounds || []).filter((r) => F.crew.has(r.sid)) }); // rounds onto a named member (sim/teamform.js formPreview)
+// The rounds row's target while forming or editing (F.roundTo = { sid, where, loose }; sid null: the team's supplies):
+// { who, where, loose } with who the member picked (on the crew) or null.
+function roundTarget(state, F, crew) {
+  const rt = F.roundTo || {};
+  const who = rt.sid != null ? crew.find((s) => s.id === rt.sid) || null : null;
+  return { who, where: who && ROUND_PLACES.includes(rt.where) ? rt.where : null, loose: !!rt.loose };
+}
+// The picks of rounds onto members while forming (F.rounds: [{ key, n, sid, where, loose }]): the one for this key and target.
+const roundPick = (F, k, T) => (F.rounds || []).find((r) => r.key === k && r.sid === T.who.id && r.where === T.where && !!r.loose === T.loose) || null;
+function setRoundPick(F, k, T, n) {
+  F.rounds = F.rounds || [];
+  const r = roundPick(F, k, T);
+  n = Math.max(0, Math.floor(n));
+  if (r) { if (n) r.n = n; else F.rounds.splice(F.rounds.indexOf(r), 1); }
+  else if (n) F.rounds.push({ key: k, n, sid: T.who.id, where: T.where, loose: T.loose });
+}
+// Sets how many rounds of a key go onto the member picked (T), in that place and form. Forming: the pick, capped by the
+// stores and the room on them. Editing a team at the base: the difference is loaded onto them (sim/teaminv.js
+// loadFromBase with a person target) or dropped back into the stores (dropRounds). Returns the line to show.
+function setRounds(state, F, p, k, T, want) {
+  const b = baseOf(state, F);
+  want = Math.max(0, Math.floor(want));
+  if (p) {
+    const have = roundsHeld(T.who, k, T.where, T.loose);
+    if (want === have) return "";
+    const r = want > have ? loadFromBase(state, p, { supplies: { [k]: want - have } }, { sid: T.who.id, where: T.where, loose: T.loose }) : dropRounds(state, p, { sid: T.who.id, key: k, n: have - want, where: T.where, loose: T.loose });
+    return r.text;
+  }
+  const others = (F.supplies[k] || 0) + (F.rounds || []).filter((r) => r.key === k && !(r.sid === T.who.id && r.where === T.where && !!r.loose === T.loose)).reduce((a, r) => a + r.n, 0);
+  const stock = b ? Math.max(0, Math.floor(stockHas(b.stock, k)) - others) : 0;
+  const room = roundRoom(T.who, k, T.where, T.loose);
+  const n = Math.min(want, stock, room.n);
+  setRoundPick(F, k, T, n);
+  return n < want ? (room.n < want && room.n <= stock ? room.why || `Only ${room.n} fit in ${shortName(T.who)}'s ${PLACE_WORDS[T.where]}.` : `Only ${stock} ${SUPPLIES[k].name.toLowerCase()} left at the base for that.`) : "";
+}
 
 // ---------- tab 1: people and the vehicle ----------
 function peopleTab(state, ui, F, b, p, crew) {
@@ -254,17 +291,29 @@ function supplyKeys(state, F, b, p) {
 function suppliesTab(state, ui, F, b, p, crew) {
   const { keys, rounds, other, foods } = supplyKeys(state, F, b, p);
   const have = (k) => (p ? stockAt(b, k) : stockHas(b.stock, k));
+  // Rounds by calibre go into the team's supplies, or (F.roundTo: a member, a place, boxed or loose) onto that member as
+  // items: the row then counts what goes to them there (forming: the pick; editing: what they hold) and says the room.
+  const T = roundTarget(state, F, crew);
+  const onto = (k) => !!(T.who && T.where && isRoundKey(k));
   const row = (k) => {
-    const take = p ? teamHas(p, k) : F.supplies[k] || 0;
+    const pick = onto(k) ? (p ? null : roundPick(F, k, T)) : null;
+    const take = onto(k) ? (p ? roundsHeld(T.who, k, T.where, T.loose) : pick ? pick.n : 0) : p ? teamHas(p, k) : F.supplies[k] || 0;
     const name = k === "ammo" ? "Rounds for their guns" : k === RAW ? "Un-purified water" : k === "food" ? "Food (days)" : SUPPLIES[k].name;
     const kgEach = k === "food" ? FOOD_PACK_KG : supWeight(k);
-    const hint = k === "food" ? "Days of food for the road (2000 kcal a day): packed as what keeps longest and weighs least (ration bars, MREs, jerky, peanut butter before cans). Or pick kinds below." : FOODS[k] ? foodTip(k) : k === "ammo" ? "Any calibre: packed as the rounds that fit each person's gun (most for the gun they carry), from the stores. Or pick calibres below." : k === "water" ? (p ? "Purified water" : "Purified water first, then un-purified water (boil it at a camp fire, or tablets)") : k === "fuel" ? "Fuel cans: the tank is topped up from them when it runs dry" : `${supWeight(k)} kg each`;
-    return `<tr${tip(hint)}><td>${k === "food" ? "🥫" : supplyIcon(k)} ${esc(name)}</td>
+    const hint = k === "food" ? "Days of food for the road (2000 kcal a day): packed as what keeps longest and weighs least (ration bars, MREs, jerky, peanut butter before cans). Or pick kinds below." : FOODS[k] ? foodTip(k) : k === "ammo" ? "Any calibre: packed as the rounds that fit each person's gun (most for the gun they carry), from the stores. Or pick calibres below." : k === "water" ? (p ? "Purified water" : "Purified water first, then un-purified water (boil it at a camp fire, or tablets)") : k === "fuel" ? "Fuel cans: the tank is topped up from them when it runs dry" : onto(k) ? `${supWeight(k)} kg each, onto ${shortName(T.who)}'s ${PLACE_WORDS[T.where]} (${T.loose ? "loose" : "boxed"}): their own rounds` : `${supWeight(k)} kg each`;
+    const room = onto(k) ? roundRoom(T.who, k, T.where, T.loose) : null;
+    const roomCell = room ? `<td class="small ${room.n ? "muted" : "danger"}"${tip(room.why || `${room.n} more fit in ${shortName(T.who)}'s ${PLACE_WORDS[T.where]} now, within their max load`)}>${room.n ? `room ${room.n}` : "no room"} · ${n1(take * kgEach)} kg</td>` : `<td class="muted small">${n1(take * kgEach)} kg</td>`;
+    return `<tr${tip(hint)}><td>${k === "food" ? "🥫" : supplyIcon(k)} ${esc(name)}${onto(k) ? ` <span class="muted">→ ${esc(shortName(T.who))}</span>` : ""}</td>
       <td><button class="mini" data-action="tf-sup" data-k="${k}" data-d="-5"${tip("5 fewer")}>−</button><input type="number" min="0" step="1" style="width:4.5em" data-action="tf-qty" data-k="${k}" value="${n1(take)}"><button class="mini" data-action="tf-sup" data-k="${k}" data-d="5"${tip("5 more")}>+</button></td>
-      <td class="muted small">${n0(have(k))} at base</td><td class="muted small">${n1(take * kgEach)} kg</td></tr>`;
+      <td class="muted small">${n0(have(k))} at base</td>${roomCell}</tr>`;
   };
+  const chip = (act, attrs, label, on, hint) => `<button class="mini ${on ? "active" : ""}" data-action="${act}" ${attrs}${tip(hint)}>${on ? "✓ " : ""}${label}</button>`;
+  const roundsTo = !rounds.length ? "" : `<tr><td colspan="4"><div class="row small" style="gap:0.25rem;flex-wrap:wrap;align-items:center"><span class="muted"${tip("Where the rounds by calibre below go: the team's supplies (shared out, eaten first on the road), or onto one person as their own rounds in their pockets, pack or rig's admin pouch, boxed or loose. Their gun draws on their own rounds first in a fight; they go back into the stores with Drop off or when the team comes home.")}>Rounds go to:</span>
+    ${chip("tf-roundto", `data-sid=""`, "Team supplies", !T.who, "The team's packed supplies, as before")}
+    ${crew.map((s) => ROUND_PLACES.map((w) => chip("tf-roundto", `data-sid="${s.id}" data-where="${w}"`, `${esc(shortName(s))}: ${PLACE_WORDS[w]}`, !!(T.who && T.who.id === s.id && T.where === w), `Onto ${s.name.split(" ")[0]} as items in their ${PLACE_WORDS[w]} (wears ${n1(wornLoad(s))} of ${maxLoad(s)} kg)`)).join("")).join("")}
+    ${T.who ? `${chip("tf-roundloose", `data-v="0"`, "boxed", !T.loose, "As boxes (up to five boxes a slot)")}${chip("tf-roundloose", `data-v="1"`, "loose", T.loose, "Loose (up to 80 rounds a slot; a handful in an admin pouch)")}<span class="muted"${tip("What they wear and carry on them against their max load")}>${esc(shortName(T.who))} wears ${n1(wornLoad(T.who))}/${maxLoad(T.who)} kg</span>` : ""}</div></td></tr>`;
   const table = `<table class="t small"><tr><th>Supply</th><th>${p ? "Carried" : "Take"}</th><th></th><th>Weight</th></tr>${keys.map(row).join("")}
-    ${rounds.length ? `<tr><th colspan="4">Rounds by calibre</th></tr>${rounds.map(row).join("")}` : ""}
+    ${rounds.length ? `<tr><th colspan="4">Rounds by calibre</th></tr>${roundsTo}${rounds.map(row).join("")}` : ""}
     ${foods.length ? `<tr><th colspan="4"${tip("Food by kind (sim/foods.js): take a kind on its own")}>Food by kind</th></tr>${foods.map(row).join("")}` : ""}
     ${other.length ? `<tr><th colspan="4">Other stores</th></tr>${other.map(row).join("")}` : ""}</table>`;
   const auto = p ? "" : `<div class="row small" style="margin-top:0.4rem;gap:0.3rem"><button class="mini" data-action="tf-auto"${tip(`Food and water for ${F.days} days for everyone picked (with the season's thirst), 2 meds, rounds for their guns, fuel cans for a car; trimmed to what they can carry`)}>Auto-fill for</button><input type="number" min="1" max="30" style="width:3.5em" data-action="tf-days" value="${F.days}"> days <button class="mini" data-action="tf-clearsup"${tip("Take no supplies")}>Clear</button>
@@ -341,7 +390,7 @@ function kitFor(state, ui, people, what) {
 }
 
 // ---------- actions (wired in main.js) ----------
-const fresh = (baseId, partyId = null) => ({ baseId, partyId, crew: new Set(), vehicleIds: [], supplies: {}, cargo: [], tab: "people", filter: "all", sort: "name", cursor: 0, stance: "normal", lights: true, days: 3 });
+const fresh = (baseId, partyId = null) => ({ baseId, partyId, crew: new Set(), vehicleIds: [], supplies: {}, cargo: [], rounds: [], roundTo: { sid: null, where: "pocket", loose: false }, tab: "people", filter: "all", sort: "name", cursor: 0, stance: "normal", lights: true, days: 3 }); // rounds / roundTo: rounds onto a named member (sim/teamform.js formPreview opts.rounds)
 function open(state, ui, F, sid = null) {
   const b = baseById(state, F.baseId);
   const p = F.partyId != null ? state.parties.find((x) => x.id === F.partyId) || null : null;
@@ -419,12 +468,17 @@ export const TEAMFORM_ACTIONS = {
     if (!F) return;
     const k = d.k, delta = Number(d.d) || 0;
     const p = partyOf(state, F);
+    const T = roundTarget(state, F, crewOf(state, F));
+    if (T.who && T.where && isRoundKey(k)) { ui.invMsg = setRounds(state, F, p, k, T, (p ? roundsHeld(T.who, k, T.where, T.loose) : (roundPick(F, k, T) || { n: 0 }).n) + delta); return; }
     if (p) { ui.invMsg = setSupply(state, p, k, Math.max(0, teamHas(p, k) + delta)); return; }
     const b = baseOf(state, F);
     F.supplies[k] = Math.max(0, Math.min(Math.floor(stockHas(b.stock, k)), (F.supplies[k] || 0) + delta));
   },
+  // Rounds by calibre onto a member (sim/supitems.js): the member and the place, boxed or loose.
+  "tf-roundto": (state, ui, d) => { const F = formOf(ui); if (!F) return; F.roundTo = { ...(F.roundTo || { loose: false }), sid: d.sid ? Number(d.sid) : null, where: ROUND_PLACES.includes(d.where) ? d.where : "pocket" }; },
+  "tf-roundloose": (state, ui, d) => { const F = formOf(ui); if (F) F.roundTo = { ...(F.roundTo || { sid: null, where: "pocket" }), loose: d.v === "1" }; },
   "tf-auto": (state, ui) => { const F = formOf(ui); if (F && !editing(F)) autoFill(state, F); },
-  "tf-clearsup": (state, ui) => { const F = formOf(ui); if (F && !editing(F)) F.supplies = {}; },
+  "tf-clearsup": (state, ui) => { const F = formOf(ui); if (F && !editing(F)) { F.supplies = {}; F.rounds = []; } },
   "tf-lights": (state, ui) => { const F = formOf(ui); if (F) F.lights = !F.lights; },
   "tf-cargo": (state, ui, d) => {
     const F = formOf(ui);
@@ -464,6 +518,8 @@ export const TEAMFORM_CHANGE = {
     if (!F) return;
     const k = el.dataset.k, q = Math.max(0, Number(el.value) || 0);
     const p = partyOf(state, F);
+    const T = roundTarget(state, F, crewOf(state, F));
+    if (T.who && T.where && isRoundKey(k)) { ui.invMsg = setRounds(state, F, p, k, T, q); return; } // onto the member picked
     if (p) { ui.invMsg = setSupply(state, p, k, q); return; }
     const b = baseOf(state, F);
     F.supplies[k] = Math.max(0, Math.min(Math.floor(stockHas(b.stock, k)), Math.floor(q)));

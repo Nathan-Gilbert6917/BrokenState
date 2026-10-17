@@ -26,6 +26,7 @@
 import { log, atBase, skill, newId } from "./world.js";
 import { BUILDINGS, RECIPES, stations, recipeOutput } from "./buildings.js";
 import { CRAFTS, craftQueue, canCraft, queueCraft, craftQuality, craftName, benchQuality, canAttempt, craftSkill } from "./crafting.js";
+import { countOf } from "./itemstack.js"; // a craft order counts a stack by what is in it
 import { POWER_USERS, POWER_BOOST, STILL, isPowered, refreshPower } from "./power.js";
 import { isManaged } from "./work.js";
 import { stockHas, keyWord } from "./water.js"; // a Keep-at-least order on water counts both kinds
@@ -251,7 +252,7 @@ export function removeCraftOrder(state, base, id) {
 export function craftOrderHave(base, o) {
   const r = CRAFTS[o.recipe];
   if (r.supplies) { const k = Object.keys(r.supplies)[0]; return Math.floor(supplyAmt(base.stock, k) + 1e-9); }
-  return base.armory.filter((it) => it && it.key === r.gear && (it.quality ?? 1) + 1e-9 >= (o.minQ || 0)).length;
+  return base.armory.filter((it) => it && it.key === r.gear && (it.quality ?? 1) + 1e-9 >= (o.minQ || 0)).reduce((a, it) => a + countOf(it), 0); // a stack (makeshift picks) counts what is in it
 }
 // The best expected quality anyone at the base (not in a hospital bed) would make it at.
 export function bestQuality(state, base, recipe) {

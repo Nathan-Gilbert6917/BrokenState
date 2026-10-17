@@ -42,6 +42,7 @@ import { siteDanger } from "./data.js";
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, SIZE_CLASSES } from "./battlesize.js";
+import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -62,7 +63,7 @@ export const BMAP = {
   // Doors' hit points (the dead batter a closed door: a claw blow does about 10–16; people open it unless it is braced
   // or locked, then they kick or shoot it in): an inner door, an outer one, a roller door, a cell door, a locked
   // door, a steel security door.
-  DOOR: { inner: 30, outer: 45, roller: 70, cell: 60, locked: 160, vault: 240 }, // a locked door holds the dead a good while (claws 12-20 a blow: about ten)
+  DOOR: { inner: 30, outer: 45, roller: 70, cell: 60, locked: 160, vault: 240 }, // a locked door holds the dead a good while (claws 12-20 a blow: about ten); the fallback for a door cell with no kind (c.dk: DOOR_KINDS)
   BRACE: 0.5,          // a door braced from the other side takes this share of each blow (Brace: the rest of the turn)
   DOOR_NOISE: { radius: 7, noise: 0.5 }, // each blow on a door: earshot (the dead and guards come to look) and noise (Heat)
   // Peeking through a door (free, once a turn a unit): see from the far side of it, this far; an unaware guard who
@@ -72,6 +73,48 @@ export const BMAP = {
   WALL_DAMP: 3,        // inside, each wall or closed door between a noise and a listener counts as this many tiles more
   DIVERT_NEAR: 3,      // the dead after you turn to a thrown noise unless one of your people is this close and in sight
 };
+// ---------- the kinds of door (the user's request 2026-10-17) ----------
+// A door cell carries its kind (c.dk) and everything follows from it: its hit points (hp: the dead batter it, combat.js
+// bash), whether it is seen through when closed (see: combat.js los doorSees; a glass door, a screen door, a cell's
+// bars), its lock's difficulty when locked (diff: locks.js openOdds; lock false: never locked), whether it can be
+// kicked in without a crowbar (kick; force false: not forced at all, pick it or find the key), whether it goes with a
+// crash (glass: breakCell), and the sound it makes (sfx: ui/sfx-doors.js doorKind). A door cell with no kind (an old
+// save, a map made before) behaves as before: BMAP.DOOR by its place, wood or front by the sound's own rules.
+export const DOOR_KINDS = {
+  screen:   { name: "Screen door", hp: 10, see: true, lock: false, kick: true, sfx: "screen", desc: "flimsy mesh on a spring: seen through, slams, no lock" },
+  wood:     { name: "Door", hp: 30, see: false, diff: 2, kick: true, sfx: "wood", desc: "an inner door" },
+  front:    { name: "Front door", hp: 45, see: false, diff: 2, kick: true, sfx: "front", desc: "a solid outer door" },
+  glass:    { name: "Glass door", hp: 20, see: true, diff: 1, kick: true, glass: true, sfx: "glass", desc: "a shop's or a patio's: seen through, an easy lock, breaks with a crash" },
+  steel:    { name: "Steel door", hp: 60, see: false, diff: 2, kick: true, sfx: "metal", desc: "a fire door with a push bar" },
+  security: { name: "Security door", hp: 90, see: false, diff: 3, kick: false, force: false, sfx: "metal", desc: "steel in a steel frame: not kicked or forced, a hard lock" },
+  roller:   { name: "Roller door", hp: 70, see: false, diff: 2, kick: true, loud: true, sfx: "roller", desc: "a garage's: loud to haul up or down" },
+  cell:     { name: "Cell door", hp: 60, see: true, diff: 2, kick: false, sfx: "cell", desc: "barred steel: seen through" },
+  barred:   { name: "Barred door", hp: 45, see: false, kick: true, sfx: "barred", desc: "a base building's, barred from inside" },
+  gate:     { name: "Gate", hp: 100, see: false, kick: false, sfx: "gate", desc: "a base's gate" },
+  vault:    { name: "Steel security door", hp: 240, see: false, diff: 3, kick: false, sfx: "vault", desc: "an armory's or a gun cage's" },
+};
+// A closed door seen through (combat.js los): a glass door, a screen door, a cell's bars.
+export const doorSees = (c) => !!c && (c.k === "idoor" || c.k === "door") && !!c.dk && !!DOOR_KINDS[c.dk] && !!DOOR_KINDS[c.dk].see;
+// The kinds by archetype: the front door, the back door (a list: by the dice), a side door. A roller door is always a
+// roller, an inner door wood (a cell block's cells a cell door), a locked room's door wood.
+const DOOR_STYLE = {
+  house:  { front: "front", back: ["screen", "glass", "screen"], side: "front" }, // a screen or a patio door at the back
+  shop:   { front: "glass", back: "steel", side: "steel" },
+  office: { front: "glass", back: "steel", side: "steel" },
+  secure: { front: "security", back: "security", side: "security" }, // police, the military, a gun store, a control room
+  works:  { front: "steel", back: "steel", side: "steel" },
+  barn:   { front: "wood", back: "wood", side: "wood" },
+  church: { front: "front", back: "front", side: "front" },
+};
+const STYLE_OF = {
+  house: "house", farmhouse: "house", cabin: "house", lodge: "house", ranger: "house", motel: "house", neighbourhood: "house",
+  grocery: "shop", corner: "shop", pharmacy: "shop", hardware: "shop", feedstore: "shop", diner: "shop", gasstation: "shop", truckstop: "shop", supermarket: "shop", deptstore: "shop",
+  clinic: "office", infirmary: "office", hospital: "office", school: "office", offices: "office", lab: "office", terminal: "office", apartments: "office",
+  gunstore: "secure", police: "secure", barracks: "secure", armorybldg: "secure", cellblock: "secure", control: "secure",
+  firestation: "works", messhall: "works", radio: "works", warehouse: "works", factory: "works", hangar: "works", motorpool: "works", autoshop: "works", garage: "works", workshop: "works", machineshed: "works",
+  barn: "barn", church: "church",
+};
+export const doorStyleOf = (key) => DOOR_STYLE[STYLE_OF[key] || "house"];
 // Risk pays (raids on the map: what containers hold × this): by the site's danger (data.js siteDanger: the
 // countryside 0, small towns 1, city blocks 2, hospitals, prisons and bases 3); open land with no site WILDS.
 export const REWARD = { byDanger: [0.6, 0.9, 1.3, 1.5], wilds: 0.55 };
@@ -1250,6 +1293,10 @@ export function assemble(rng, spec, opts = {}) {
   if (tall) for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) { const c = cells[I(x, y)]; if (c.k === "wall" || c.k === "idoor" || c.k === "door") c.t = 2; }
 
   // ---------- windows ----------
+  // Each gets its state (windows.js: unlocked, locked or fixed) from hash dice of the map's seed as it stands (rng.state
+  // read, not consumed: the map's other rolls are as before), by the building's mix (houses mostly open, shop fronts
+  // and offices mostly fixed).
+  const winMix = winMixOf(opts.key), winSeed = rng.state;
   for (const side of ["front", "back", "left", "right"]) {
     let n = rng.int(0, BMAP.WINDOW_GAP - 1);
     for (const s of sideCells(side)) {
@@ -1261,6 +1308,7 @@ export function assemble(rng, spec, opts = {}) {
       if (along.some(([x, y]) => DOORISH.has(cells[I(x, y)].k) || cells[I(x, y)].k === "window")) { n++; continue; }
       if (n++ % BMAP.WINDOW_GAP !== 0 || !rng.chance(0.8)) continue;
       c.k = !upper && !room.up && !room.locked && rng.chance(BMAP.SMASHED) ? "smashed" : "window"; // upstairs nobody climbs in or out
+      if (c.k === "window") c.win = rollWin(winSeed, winMix, f, s.x, s.y);
       delete c.t;
     }
   }
@@ -1464,15 +1512,28 @@ export function assemble(rng, spec, opts = {}) {
     default: scatter("car", rng.int(1, 3), inStreet); scatter("tree", rng.int(2, 4), (x, y) => !inStreet(x, y)); scatter("fence", rng.int(2, 4), behind); scatter("crate", rng.int(1, 2), behind);
   }
 
-  // ---------- doors' strength (the dead batter closed doors: BMAP.DOOR) ----------
-  const D = BMAP.DOOR;
+  // ---------- doors' kinds and strength (DOOR_KINDS; the dead batter closed doors) ----------
+  // The kind by the archetype (doorStyleOf: the front door, the back and side exits), a roller door always a roller, a
+  // locked room's door wood (a gun cage's or an armory's the steel security door), a cell block's cells a cell door,
+  // any other inner door wood. Hit points by the kind; a locked solid door holds as a locked door always did
+  // (BMAP.DOOR.locked), glass and mesh hold no better for a lock. Dice: hash of the map's seed (rng.state read, not
+  // consumed: the upper floors roll the same as before).
+  const D = BMAP.DOOR, style = doorStyleOf(opts.key), dkSeed = rng.state;
+  const pickKind = (list, x, y) => (Array.isArray(list) ? list[Math.floor(hash01(dkSeed, "dk", f, x, y) * list.length) % list.length] : list);
   for (let i = 0; i < cells.length; i++) {
     const c = cells[i];
     if (c.k !== "idoor" && c.k !== "odoor" && c.k !== "door") continue;
     const x = i % W, y = (i / W) | 0;
     const lockedOne = c.k === "door" ? lockedDoors.find((d) => d.x === x && d.y === y) : null;
-    const hp = lockedOne ? (lockedOne.kind === "vault" ? D.vault : D.locked) : c.roll ? D.roller : rid[i] >= 0 ? D.cell : (x === bx0 || x === bx1 || y === by0 || y === by1) ? D.outer : D.inner;
-    c.hp = c.mhp = hp;
+    const d = doors.find((q) => q.x === x && q.y === y);
+    const cellsRoom = d && !d.ext && (rooms[d.a].role === "cells" || rooms[d.b].role === "cells");
+    const dk = c.roll ? "roller" : lockedOne && lockedOne.kind === "vault" ? "vault" : d && d.ext ? pickKind(d.side === "front" ? style.front : d.side === "back" ? style.back : style.side, x, y) : cellsRoom ? "cell" : "wood";
+    const K = DOOR_KINDS[dk];
+    c.dk = dk;
+    const frail = dk === "glass" || dk === "screen";
+    c.hp = c.mhp = lockedOne ? (lockedOne.kind === "vault" ? D.vault : frail ? K.hp : Math.max(K.hp, D.locked)) : K.hp;
+    if (K.see) delete c.t; // seen through from the ground, however tall the building
+    if (lockedOne) lockedOne.dk = dk; // locks.js openOdds: the lock's difficulty, whether it can be kicked
   }
 
   // ---------- the result ----------
@@ -1833,8 +1894,8 @@ export function placeOccupantGroups(state, b, groupsIn, pod = null) {
 }
 
 // ======================================================================================
-// Climbing through a window (combat.js "climb"): next to one (not diagonally) with a free cell at the same height on
-// the far side. Returns [{ x, y, to: [x, y] }].
+// Climbing through a window (combat.js "climb"): next to one (not diagonally; closed, open or broken: windows.js) with
+// a free cell at the same height on the far side. Returns [{ x, y, to: [x, y] }].
 // ======================================================================================
 export function windowsNear(b, u) {
   if (!b.raid) return [];
@@ -1843,7 +1904,7 @@ export function windowsNear(b, u) {
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const x = u.x + dx, y = u.y + dy, tx = x + dx, ty = y + dy;
     if (x < 0 || y < 0 || x >= W || y >= H || tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
-    if (b.cells[y * W + x].k !== "window") continue;
+    if (b.cells[y * W + x].k !== "window" && b.cells[y * W + x].k !== "smashed") continue;
     const to = b.cells[ty * W + tx];
     if (!CELL[to.k].walk || ["stairs", "ladder"].includes(to.k)) continue;
     const h0 = b.cells[u.y * W + u.x].h ?? CELL[b.cells[u.y * W + u.x].k].h ?? 0, h1 = to.h ?? CELL[to.k].h ?? 0;
@@ -1970,9 +2031,10 @@ export function doorBroken(b, x, y) {
   const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y && (q.f || 0) === (b.floor || 0)); // a field map's houses too (combat.js b.doors)
   if (d && !d.lock.open) { d.lock.open = true; d.lock.how = "broken"; }
 }
-// Where a thrown thing lands inside a building: through open doorways, not through walls, closed doors, tall
-// shelving or glass (it drops in the last free cell before). Null when there is no room at all.
-const throwBlocks = (c) => (CELL[c.k].los && !CELL[c.k].walk) || c.k === "window" || c.k === "idoor" || c.k === "door";
+// Where a thrown thing lands inside a building: through open doorways and open or broken windows (windows.js), not
+// through walls, closed doors, tall shelving or glass (it drops in the last free cell before). Null when there is no
+// room at all.
+export const throwBlocks = (c) => (CELL[c.k].los && !CELL[c.k].walk) || (c.k === "window" && !windowOpen(c)) || c.k === "idoor" || c.k === "door";
 export function throwLanding(b, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0, n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 4);
   let last = null;
@@ -2047,7 +2109,7 @@ export function interiorIntro(b) {
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
   const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${R.stairs.length === 1 ? "a stairwell" : `${R.stairs.length} stairwells`} on every floor; the ways out are on the ground floor.` : "";
-  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows can be climbed (loud).`;
+  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
 }
 // A street of houses (streetMap): the houses, the ways out, and the houses your side has been into before (the
 // containers the POI's ledger brought back as you left them: poicont.js poiRaidStart marks them mine).
@@ -2057,5 +2119,5 @@ export function streetIntro(b) {
   const been = (P.houses || []).filter((h) => R.containers.some((c) => c.house === h.k && c.mine)).map((h) => h.name);
   const robbed = (P.houses || []).filter((h) => { const cs = R.containers.filter((c) => c.house === h.k); return cs.length && cs.every((c) => c.ransacked && !c.mine); }).map((h) => h.name);
   const ways = R.zones.map((z) => (z.name || z.side).toLowerCase());
-  return `A street of ${names.length} houses (${names.join(", ")}), ${R.storeys > 1 ? `${R.storeys} storeys each: the stairs are inside every house` : "one storey each"}. Ways out: ${ways.join(", ")}.${been.length ? ` Your people have been through ${been.join(", ")} before: what you left there is as you left it.` : ""}${robbed.length ? ` ${robbed.join(", ")} ${robbed.length === 1 ? "looks" : "look"} ransacked.` : ""} Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Shift+E). Windows can be climbed (loud).`;
+  return `A street of ${names.length} houses (${names.join(", ")}), ${R.storeys > 1 ? `${R.storeys} storeys each: the stairs are inside every house` : "one storey each"}. Ways out: ${ways.join(", ")}.${been.length ? ` Your people have been through ${been.join(", ")} before: what you left there is as you left it.` : ""}${robbed.length ? ` ${robbed.join(", ")} ${robbed.length === 1 ? "looks" : "look"} ransacked.` : ""} Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Shift+E). Windows: check one from next to it (free), open it if it is unlocked (1 action, quiet) and climb or vault through; a fixed one only breaks (loud).`;
 }
