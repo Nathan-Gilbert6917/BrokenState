@@ -208,6 +208,28 @@ Root `/home/user/BrokenState`, sim in `prototype/src/sim`, UI in `prototype/src/
 
 **Acceptance:** `makeshiftpicktest.js`, `crafttest.js`, `craftbookstest.js`, `prodtest.js`, `stacktest.js`, `invtest.js`, `exploretest.js`, `searchtest.js`, `gunsafetest.js`, `ailockstest.js`, `typechecktest.js`, `dettest.js`, `savetest.js` pass.
 
+## Handoff (Session F, 2026-10-17)
+
+**Data.** `data.js GEAR.makeshiftpick` ("Makeshift picks", `slot: "pack"`, `small`, `makeshift`, no `dur`, value 1, 0.02 kg, `cat: "tools"`, desc with the numbers); `data-stacks.js STACK_MAX.makeshiftpick = 10`. Item art: `ui/itemart/tools.js GEAR_ART.makeshiftpick` (three bent wires out of a tape strip, a tension bar); the painters are keyed by GEAR key, so it is a real drawing, not the fallback (`itemarttest.js` passes: unique and big enough).
+
+**Recipe.** `crafting.js CRAFTS.makeshiftpick { name: "Makeshift picks (3)", gear, n: 3, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true }`, no book (`craftLock` is ""). New `craftItem(r, quality)` makes a stack of `r.n` at quality 1 (stacks merge only at one quality, `itemstack.js canStack`; the roll still sets the XP), else one at the rolled quality. `craftingHour` merges the stack into one already in the armory (`mergeInto`/`isSpent`) and pushes the rest; `fieldCraft` lets `stow` merge onto a member's stack (new `stackRoomOn` so a full-pocketed team can still craft onto a stack) and words the result in the plural. `craftOutputText` adds "3 a craft, a stack of up to 10 in one slot" and what the picks do. `production.js craftOrderHave` counts a stack's `n` (`countOf`), so an order "keep 9" is nine picks.
+
+**Locks.** `locks.js`: `MAKESHIFT_PICK = { base: 0.3, snap: 0.5, no: ["safe", "vault"] }`; `crowbarOf(s)` (the old `picksOf`), `makeshiftPicksOf(s)`, `isMakeshiftPicks(it)`, `picksOf(s) = crowbarOf || makeshiftPicksOf`, `barOf` uses `crowbarOf` (makeshift picks never pry), `makeshiftPickable(kind)` (false for `safe`, `vault` and every `tier` gun safe), `pickChance(s, def, picks, quiet)` (one formula for both tools: PICK's Stealth, difficulty and Quiet Hands terms from the tool's base, 5–95%), `wearPicks(s, it, roll)` now exported and returns `{ snapped, left, gone }` (the crowbar's picks: a use a try as before; makeshift: one off the stack when `roll < snap`, the stack taken off the person at 0 from any slot, pocket, pack or rig pouch). `openOdds` marks `out.pick` with `label: "Pick (makeshift)"`, `makeshift`, `snap`, `left`, and refuses the kinds beyond a bent wire with a reason (a key and the real picks still work on them; `safeOdds` keeps its own `nopick` lines). `openLock`'s pick branch rolls the snap on `hash01(seed, "snap", tile, turn, ref, tries, unit)`, says "with a bent wire" and "…pick snaps in the lock (N left)"; Heat +1 only, no `b.noise`, no `alertNear` (checked). `autoLock` needs no change (it goes by `openOdds`: a lockbox at Stealth 0 is exactly its 30% floor, a safe is given up). `lockedSearchHour`: the picker is the best Stealth with the crowbar's picks, else with makeshift picks when the lock kind allows; makeshift picks snap by the try there too ("(1 makeshift pick snapped)" in the line, "held against the makeshift picks").
+
+**Knock-ons of the `picksOf` fallback.** `foundcars.js` (a locked car on the road goes through `openOdds`): `carOptions` passes `makeshift`/`left` through, the pick action snaps a makeshift pick with the car's dice (the crowbar's wear on cars stays as it was: none). `rescueraid.js pickOdds` (a cell door's lock): a makeshift stack counts as a tool from `MAKESHIFT_PICK.base`, reported as `tool: "makeshift"`, its button tip says so; no snapping there (that path never wore the real picks either). Both are one-line readings of "the same tool rule", not new features.
+
+**UI.** `ui/locks.js lockPanel`: the button reads "Pick (makeshift) N% a try (1 action)" with the makeshift base in the odds breakdown and "every try snaps one pick in 2 (N left), open or not"; `raidKeyLine`'s tip and `lockPreview`'s odds line name makeshift picks ("(beyond a bent wire)" on a safe). `ui/carpanel.js`: "Pick (makeshift)" with the snap note. `ui/combat.js lockedDoorClick` needed nothing (key, then pick, then force; `o.pick.ok` already false on a safe).
+
+**Codex/help.** Deviation: there is no locks entry in `ui/codex.js` and no lock text in `ui/help.js` (the brief assumed one). The player-facing text is the item's own codex entry (its `desc`) plus a new `ITEM_HOW_KEY.makeshiftpick` line in `ui/codex.js` (how to make them, where the button is, what they will not open); the lock panel tooltips carry the rest.
+
+**Docs.** `docs/agents/features.md`: the Crafting bullet (stack recipes) and the raids bullet (makeshift picks with the module and function names). `prototype/README.md`: `node tools/makeshiftpicktest.js [seed]` before `exploretest`.
+
+**Balance.** Numbers as given: base 30%, snap 50%, three a scrap in an hour, stack 10, 0.02 kg, value 1. Nothing tuned.
+
+**AI groups.** Nothing needed: `ailockstest.js` passes as is (the groups craft from the same `CRAFTS`; a makeshift pick stack in a group's arsenal is `makeable`).
+
+**Tests run (all pass):** `makeshiftpicktest.js` 136/0, `crafttest.js` 270/0, `craftbookstest.js` 159/0, `prodtest.js` 85/0, `stacktest.js` 32/0, `invtest.js` 81/0, `exploretest.js` 195/0, `searchtest.js` 80/0, `gunsafetest.js` 120/0, `ailockstest.js` 63/0, `dettest.js` 11/0, `savetest.js` 68/0, `savecorpustest.js` 144/0, `itemarttest.js` 15/0, `vehdoortest.js` 80/0, `fielddoortest.js` 41/0, `rescuetest.js` 102/0, `typechecktest.js` 83/0 (run last). No existing expectation changed.
+
 ---
 
 # Session G: Turn the survivor's figure by hand

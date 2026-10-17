@@ -304,6 +304,13 @@ export const GEAR_ART = {
   },
 
   // ---- tools
+  // Makeshift picks: three bent wires fanned out of a strip of tape, the hooked tips up, a bent tension bar below.
+  makeshiftpick: (p) => {
+    line(p, 7, 14, 3, 2, C.silver); line(p, 8, 14, 8, 1, C.silverD); line(p, 9, 14, 13, 2, C.silver);
+    stamp(p, 1, 0, ["ss.", ".s.", "..."], { s: C.silverD }); p.set(8, 0, C.silver); p.set(9, 1, C.silverD); stamp(p, 12, 0, [".ss", ".s."], { s: C.silverD });
+    box(p, 5, 12, 11, 15, C.khaki, C.khakiD, C.khakiD); H(p, 6, 10, 13, C.khakiD);
+    line(p, 0, 10, 4, 10, C.silverD); p.set(0, 9, C.silverD); p.set(4, 11, C.silver); p.set(5, 11, C.silver);
+  },
   crowbar: (p) => {
     thick(p, 2, 14, 11, 5, C.red, C.redD);
     stamp(p, 10, 1, ["..rr.", ".r..r", "rr..r", "r....", "....."], { r: C.red });
