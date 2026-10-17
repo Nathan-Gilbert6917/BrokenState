@@ -65,7 +65,7 @@ const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screame
 let W = MAP_W, H = MAP_H;
 const ENEMY_STEP_MS = 420;
 
-export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false };
+export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null }; // handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq)
 // The view cones of everyone (yours and the enemies you see), on or off (Alt+C, the view bar), kept per machine.
 const CONES_KEY = "bs.battle.cones";
 try { cui.cones = typeof localStorage !== "undefined" && localStorage.getItem(CONES_KEY) === "1"; } catch { cui.cones = false; }
@@ -377,6 +377,7 @@ function act(state, a) {
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
     if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
+    if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
   }
   autoSelect(b);
   return !err;
@@ -455,6 +456,7 @@ export function combatClick(state, px, py) {
   if (u && active(u) && u.ap > 0 && cui.mode === "finish" && who && who.side === "enemy" && who.down && !who.dead) return void act(state, { type: "finish", unit: u.id, target: who.id });
   if (who && who.side === "player") {
     if (cui.mode === "meds" && u && (who === u || adjacent(u, who))) return void act(state, { type: "meds", unit: u.id, target: who.id });
+    if (cui.mode === "handover" && u && who !== u) return void openHandover(state, b, u, who); // sim/combat.js handoverTargets: the mate clicked
     if (who.vol != null) { cui.msg = volRefusal(who); return; } // sim/volunteers.js: their own group's orders
     cui.sel = who.id;
     cui.mode = "move";
@@ -707,6 +709,58 @@ function ammoChooser(state, b, u) {
   const pick = cui.ammoPick[u.id] || loadOf(u);
   return `<div class="small cbmsg cbammo" data-tip="${esc(`Reload with which round? ${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next, I (or Reload) loads the picked one.`)}">Reload with: ${list.map((x) => `<button class="mini${x.type === pick ? " active" : ""}" data-action="cb-act" data-v="reload" data-k="${x.type}" data-tip="${esc(`${x.name}: ${x.n} to hand${x.type === loadOf(u) ? " (loaded now)" : ""}. ${tracksMags(u) ? (reloadPlan(b, u, x.type).cost === 1 ? "1 action" : `${reloadPlan(b, u, x.type).cost} actions`) : "1 action"}.`)}">${esc(x.short || (AMMO_TYPES[x.type] ? AMMO_TYPES[x.type].name : x.type))} <span class="muted">${x.n}</span></button>`).join(" ")} <button class="mini" data-action="cb-act" data-v="ammoclose" data-tip="Close">✕</button></div>`;
 }
+
+// ---------- Hand over (sim/combat.js handoverTargets, combatAct "handover"; 2026-10-17 user request) ----------
+// The teammate right next to the selected unit, in its view cone, trades with it: both their kits open side by side
+// (ui/inventory.js, the two-doll window; cui.handReq → takeLootReq), 1 action a move for the acting unit (either way),
+// nothing for the mate. One mate: the window opens at once; several: a chooser over the orders (or click the mate on
+// the map); a mate next to them but out of the cone: the button turns to "Face <name>" (the free Face act toward them).
+const handKey = () => keyLabel("battle.handover", 1) || "Alt+H";
+function handoverButton(state, b, u, btn) {
+  const ap = u.ap;
+  const targets = SIM.handoverTargets(b, u), unfaced = SIM.handoverUnfaced(b, u);
+  if (!targets.length && unfaced.length) {
+    const m = unfaced[0];
+    btn("handover", `Face ${esc(m.name.split(" ")[0])}`, `Free (with an action left): ${m.name} is right next to ${u.name.split(" ")[0]} but out of their view cone. Turn to face them; then Hand over (${handKey()}) opens both their kits side by side (${SIM.HANDOVER_AP} action a move).`, ap > 0, handKey(), { why: ap > 0 ? "" : "Turning needs an action left (it costs none).", ap: 0 });
+    return;
+  }
+  const names = targets.map((t) => t.name.split(" ")[0]).join(", ");
+  btn("handover", "Hand over", `${SIM.HANDOVER_AP} action a move: ${u.name.split(" ")[0]}'s kit and a teammate's side by side, the one right next to them in their view cone${names ? ` (${names})` : ""}. A thing given to them or taken from them (a pocket, a pack slot, a rig pouch, the hands, the off hand) costs ${u.name.split(" ")[0]} ${SIM.HANDOVER_AP} action; the teammate spends nothing. A gun handed over counts at once in the other's hands, as do rounds and magazines. In a raid's search window things still pass between neighbours for free.`,
+    ap >= SIM.HANDOVER_AP && targets.length > 0, handKey(), { why: !targets.length ? "Nobody of yours right next to them in their view cone to trade with." : ap < SIM.HANDOVER_AP ? NO_AP : "", on: cui.handAsk === u.id || cui.mode === "handover", ap: SIM.HANDOVER_AP });
+}
+// The chooser over the orders when more than one mate is in reach: a button each (the mate clicked on the map works too).
+function handChooser(state, b, u) {
+  if (!u || cui.handAsk !== u.id || !active(u)) return "";
+  const targets = SIM.handoverTargets(b, u);
+  if (!targets.length) return "";
+  return `<div class="small cbmsg cbammo" data-tip="${esc(`Hand over to whom? Each is right next to ${u.name.split(" ")[0]} in their view cone; or click them on the map.`)}">Hand over with: ${targets.map((t) => `<button class="mini" data-action="cb-act" data-v="handover" data-k="${t.id}" data-tip="${esc(`${t.name}: both kits side by side, ${SIM.HANDOVER_AP} action a move for ${u.name.split(" ")[0]}.`)}">${esc(t.name.split(" ")[0])}</button>`).join(" ")} <button class="mini" data-action="cb-act" data-v="handclose" data-tip="Close">✕</button></div>`;
+}
+// The two-doll window for u and the mate t (sim/combat.js handoverRefusal says why not).
+function openHandover(state, b, u, t) {
+  const why = SIM.handoverRefusal(b, u, t);
+  if (why) { cui.msg = why; return; }
+  cui.handReq = { sid: u.sid, mate: t.sid };
+  cui.handAsk = null;
+  cui.mode = "move";
+  cui.msg = "";
+}
+// The Hand over order (combatAction "cb-act" v "handover", d.k: the mate's unit id from the chooser).
+function handoverCbAct(state, b, u, d) {
+  const targets = SIM.handoverTargets(b, u);
+  if (!targets.length) {
+    const un = SIM.handoverUnfaced(b, u);
+    if (un.length) { if (act(state, { type: "face", unit: u.id, faceX: un[0].x, faceY: un[0].y })) cui.msg = `${u.name.split(" ")[0]} turns to face ${un[0].name}. Hand over (${handKey()}) again opens their kits side by side.`; return; }
+    cui.msg = "Nobody of yours right next to them in their view cone to trade with."; cui.handAsk = null; cui.mode = "move";
+    return;
+  }
+  if (u.ap < SIM.HANDOVER_AP) { cui.msg = NO_AP; return; }
+  const pick = d.k != null && d.k !== "" ? targets.find((t) => t.id === Number(d.k)) : targets.length === 1 ? targets[0] : null;
+  if (pick) return void openHandover(state, b, u, pick);
+  const open = cui.handAsk !== u.id;
+  cui.handAsk = open ? u.id : null;
+  cui.mode = open ? "handover" : "move";
+  cui.msg = open ? `Hand over to whom? Click ${targets.map((t) => t.name.split(" ")[0]).join(" or ")} on the map, or pick them above the orders.` : "";
+}
 // The panel orders of this section (combatAction "cb-act"); true when handled.
 function gunOrder(state, b, u, v, d) {
   if (v === "firemode") {
@@ -936,6 +990,7 @@ export function unitOrders(state, b, u) {
   floorButtons(b, u, btn);
   bodyButtons(state, b, u, btn);
   groundButtons(state, b, u, btn);
+  handoverButton(state, b, u, btn); // sim/combat.js handoverTargets: trade with the teammate next to them in their cone
   stealthButtons(state, b, u, btn);
   nlButtons(state, b, u, btn, cui);
   siegeButtons(b, u, btn);
@@ -943,7 +998,7 @@ export function unitOrders(state, b, u) {
   if (b.raid) raidButtons(state, b, u, btn);
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   if (b.rescue) rescueButtons(state, b, u, btn);
-  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + ammoChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
+  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + ammoChooser(state, b, u) + handChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   return out;
 }
 
@@ -1099,7 +1154,7 @@ export function combatKey(state, e) {
   if (retreatAskOpen(b) && space) { cui.msg = `Press ${keyLabel("battle.confirm", 1) || "Enter"} or Sound the retreat to give the order, Esc to keep fighting.`; return true; }
   if (fallAskOpen(b) && confirm) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
   if (space || confirm) { requestEndTurn(state, space ? "space" : "enter"); return true; }
-  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; return true; }
+  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; return true; }
   if (k === "battle.autoplay") { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
   if (k === "battle.inventory") { combatAction(state, "cb-inv", {}); return true; } // the selected survivor's kit (read-only)
   if (b.phase === "deploy") return false;
@@ -1242,6 +1297,8 @@ export function combatAction(state, key, d) {
   // vision.js: Face (pick the way, free), Sneak (on / off, free), Overwatch (pick the way to watch; again: as they face).
   if (v === "face") { cui.mode = cui.mode === "face" ? "move" : "face"; cui.msg = cui.mode === "face" ? `Click the way ${u.name.split(" ")[0]} should face (free; it needs an action left). The cone is what they watch${b.night ? " and see in the dark" : ""}: a guard is noticed and an overwatch reacts only in it, and loot is searched only facing it.` : ""; return; }
   if (v === "sneak") return void act(state, { type: "sneak", unit: u.id });
+  if (v === "handover") return void handoverCbAct(state, b, u, d); // sim/combat.js handoverTargets: the two-doll window, the chooser, or the free Face toward the mate
+  if (v === "handclose") { cui.handAsk = null; if (cui.mode === "handover") cui.mode = "move"; cui.msg = ""; return; }
   if (v === "lights") return void act(state, { type: "lights", unit: u.id }); // sim/indoorlight.js: the switch in reach (the sim says why not)
   if (v === "light" || v === "nvg") { if (v === "light" ? u.light : u.nvg) return void act(state, { type: v, unit: u.id }); cui.msg = v === "light" ? `${u.name.split(" ")[0]} has no light.` : `${u.name.split(" ")[0]} has no night vision.`; return; } // sim/combat.js switchAct: free, even with no actions left
   if (v === "overwatch") {
