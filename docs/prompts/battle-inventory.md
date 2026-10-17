@@ -17,15 +17,15 @@ Line numbers come from the 2026-10-17 survey and are approximate. Search by name
 
 # The requests (the owner's words)
 
-- [ ] Be able to Vault over half cover reducing movement after moving over
-- [ ] Be able to check if a window is unlocked/openable. If it is openable and unlocked you can open the window from either side. If the window is locked and openable it can only be opened from the inside. If the window is not openable it can only be broken making a loud sound. You can shoot through the window or vault through when open or breaking it while vaulting making a loud sound and taking some damage for a quick escape option. Bottom half of where the windows are, they are half cover.
-- [ ] Update to have more types of doors
-- [ ] Be able to move loose ammo to survivor pockets and backpack when setting up teams or transferring any inventories
-- [ ] Be able to trade items with adjacent survivors when facing them with in your cone
-- [ ] Be able to reload guns including shotguns from loose ammo/shells from pockets, rigs in addition to pack only reload from pack uses double action
-- [ ] Going into the survivors inventory you can move items from your pocket to pack or pack to pocket same with rigs and this uses some action
-- [ ] Add craft for makeshift picks to pick locks break easy and low chance of working but is quiet be stackable
-- [ ] When viewing the survivor in inventory of battle view you can manually rotate the survivor sprite not just constantly be rotating
+- [x] Be able to Vault over half cover reducing movement after moving over
+- [x] Be able to check if a window is unlocked/openable. If it is openable and unlocked you can open the window from either side. If the window is locked and openable it can only be opened from the inside. If the window is not openable it can only be broken making a loud sound. You can shoot through the window or vault through when open or breaking it while vaulting making a loud sound and taking some damage for a quick escape option. Bottom half of where the windows are, they are half cover.
+- [x] Update to have more types of doors
+- [x] Be able to move loose ammo to survivor pockets and backpack when setting up teams or transferring any inventories
+- [x] Be able to trade items with adjacent survivors when facing them with in your cone
+- [x] Be able to reload guns including shotguns from loose ammo/shells from pockets, rigs in addition to pack only reload from pack uses double action
+- [x] Going into the survivors inventory you can move items from your pocket to pack or pack to pocket same with rigs and this uses some action
+- [x] Add craft for makeshift picks to pick locks break easy and low chance of working but is quiet be stackable
+- [x] When viewing the survivor in inventory of battle view you can manually rotate the survivor sprite not just constantly be rotating
 
 Session map: vault → **A**; windows and doors → **B**; loose ammo at team setup and transfers, and pocket/pack/rig moves in a fight for an action → **C**; reload from pockets and rigs → **D**; trade with the adjacent survivor in your cone → **E**; makeshift picks → **F**; rotate the figure by hand → **G**.
 
