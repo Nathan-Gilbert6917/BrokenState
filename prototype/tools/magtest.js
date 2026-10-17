@@ -285,9 +285,9 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   p.ap = 2;
   check(/no ammo/i.test(reloadRefusal(b, p)), "with no shells to hand it cannot be loaded (ammo.js: a gun takes its own calibre)");
   b.pools[0].a_12ga_buck = 20;
-  // mags.js SHELLS (tools/shotgunreloadtest.js): the shells came after the gun, so none are at hand: Get shells first
-  // (that act ends this fight, its foes all off the map: the Reload after it is the sim's reload).
-  check(/in the pack/.test(combatAct(st, { type: "reload", unit: p.id })) && combatAct(st, { type: "getshells", unit: p.id }) === "" && (reload(b, p), p.mag >= 3) && p.mag <= 4 && p.ap === 0, `with shells in the team's bags: Get shells (1 action), then a Reload puts 3–4 in the pump's tube (${p.mag}/6: an internal magazine, a shell at a time)`);
+  // mags.js SHELLS (tools/shotgunreloadtest.js): the shells came after the gun, so none are at hand: a Reload digs them
+  // straight out of the pack for both actions (Get shells, 1 action, would bring a handful to hand instead).
+  check(reloadCost(b, p) === 2 && combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag >= 3 && p.mag <= 4 && p.ap === 0, `with shells only in the team's bags: a Reload straight from the pack (both actions) puts 3–4 in the pump's tube (${p.mag}/6: an internal magazine, a shell at a time)`);
   a.gear.weapon = null;
   refitUnit(b, p, a);
   check(p.weapon === "fists" && !hasMag(p) && magLabel(b, p) === "", "put down: fists, no magazine");
