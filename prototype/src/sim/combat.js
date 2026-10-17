@@ -602,6 +602,12 @@ let W = MAP_W, H = MAP_H;
 // first, so a battle made in between (another world, a raid, a turned deploy map) never leaves the wrong ones.
 const bindDims = (b) => { if (b && b.w && b.h) { W = b.w; H = b.h; } };
 export const MOVE = 5, ZOMBIE_MOVE = 3, ZOMBIE_FAST = 4; // tiles per action point (zombies: the middle ground between the old 4/5 and the halved 2/3, review C-10)
+// Vaulting half cover (the user's request 2026-10-17): a person goes over a waist-high cell (a fence, crates, a car,
+// sandbags, a table: CELL cover 1 and walk false; vaultable) instead of round it, at COST tiles more than a plain step
+// (reachable, distField), never stopping on it, and lands winded: COST tiles less of movement for the rest of the turn
+// (u.vaulted, read by moveMob; the next turn clears it). A scuff is heard nearby and the raid's noise (b.noise) rises
+// by NOISE a vault, no alert. The dead never vault (the Climber has climbOver), nor anyone with their arms full.
+export const VAULT = { COST: 2, NOISE: 1 };
 const SIGHT = 13, ZOMBIE_SIGHT = 9;
 export const COVER_DEF = [0, 20, 40];     // aim penalty for no / half / full cover
 export const HUNKER_DEF = 20;
@@ -850,6 +856,18 @@ export function doorHeld(b, c) {
 const doorOpens = (b, u, c) => c.k === "idoor" && !!u && u.kind === "human" && !doorHeld(b, c);
 const climbAt = (b, x, y) => !!CELL[b.cells[idx(x, y)].k].climb;
 export const breakable = (c) => c.hp > 0;
+// Half cover a person vaults (VAULT): waist high and not walkable, never a window (buildingmaps.js: the climb in, and
+// the window rules to come), cell bars, a bridge railing or a well, nothing tall, no trap, not a plated vehicle (full
+// cover, sideCover). Who vaults (canVault): people on their feet with their arms free (carry.js handsBusy), not
+// carrying or dragging a body, not on a ram's crew (siege.js); never the dead.
+const NO_VAULT = new Set(["window", "smashed", "bars", "rail", "well"]);
+export function vaultable(b, c) {
+  const C = c && CELL[c.k];
+  if (!C || C.walk || C.cover !== 1 || C.tall || C.trap || NO_VAULT.has(c.k)) return false;
+  if (c.car && c.car.up && (c.car.up.p || c.car.up.s)) return false;
+  return true;
+}
+export const canVault = (u) => !!u && u.kind === "human" && !u.ztype && !u.dead && !u.down && !u.aboard && !u.gunner && !handsBusy(u) && u.carrying == null && u.dragging == null && u.ram == null;
 // A unit's footprint: one cell, or size × size cells from its (x, y) corner (the Broodmother and the Hivemind, 2 × 2:
 // defences.js BOSSES size). Distance, reach and sight go by the nearest of its cells; its figure stands on the centre.
 export const unitSize = (u) => u.size || 1;
@@ -2349,6 +2367,10 @@ export function reachable(b, u, maxCost, opts = {}) {
   // stopping on one of them.
   const climber = u.ztype === "climber";
   const passes = (x, y) => cellAt(b, x, y).walk || (climber && climbOver(u, b.cells[idx(x, y)].k));
+  // A person vaults half cover (VAULT, vaultable): over it at VAULT.COST more, never stopping on it, and never round
+  // a corner of it (the corner rule below reads passes, not vaults).
+  const vaulter = canVault(u);
+  const vaults = (x, y) => vaulter && vaultable(b, b.cells[idx(x, y)]);
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
@@ -2362,7 +2384,9 @@ export function reachable(b, u, maxCost, opts = {}) {
     const x = cur % W, y = (cur / W) | 0;
     for (const [dx, dy] of DIRS8) {
       const nx = x + dx, ny = y + dy;
-      if (!inside(nx, ny) || !passes(nx, ny)) continue;
+      if (!inside(nx, ny)) continue;
+      const vault = !passes(nx, ny) && vaults(nx, ny);
+      if (!passes(nx, ny) && !vault) continue;
       const diag = dx && dy;
       if (diag && (!passes(x + dx, y) || !passes(x, y + dy))) continue;
       const j = idx(nx, ny);
@@ -2371,7 +2395,7 @@ export function reachable(b, u, maxCost, opts = {}) {
       if (avoid && avoid.has(j)) continue;
       const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
-      const step = (diag ? 1.5 : 1) + climb;
+      const step = (diag ? 1.5 : 1) + climb + (vault ? VAULT.COST : 0);
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
       if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) open.push(j);
@@ -2381,9 +2405,9 @@ export function reachable(b, u, maxCost, opts = {}) {
       }
     }
   }
-  // Downed bodies can be stepped over but not stood on.
+  // Downed bodies can be stepped over but not stood on; nor is half cover vaulted (or a Climber's wall) stood on.
   const stop = real.slice();
-  for (let j = 0; j < W * H; j++) if (occ[j] === 2 || (climber && (!CELL[b.cells[j].k].walk || barredCell(b.cells[j])))) stop[j] = Infinity;
+  for (let j = 0; j < W * H; j++) if (occ[j] === 2 || (climber && (!CELL[b.cells[j].k].walk || barredCell(b.cells[j]))) || (vaulter && !CELL[b.cells[j].k].walk)) stop[j] = Infinity;
   return { dist: stop, prev };
 }
 
@@ -2409,7 +2433,8 @@ export function distField(b, sources, walker = null) {
   // The same field asked again with the map unchanged (every one of the dead in a turn heads for the same people):
   // the one worked out before (fieldCache). Callers only read it.
   const climber = !!walker && walker.ztype === "climber"; // middead.js: over walls and fences, up a level anywhere
-  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
+  const vaulter = !climber && canVault(walker); // a person: over half cover at VAULT.COST (vaultable)
+  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${vaulter ? "v" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
   const cache = fieldCache(b);
   const hit = cache.get(key);
   if (hit) return hit;
@@ -2417,7 +2442,8 @@ export function distField(b, sources, walker = null) {
   if (cache.size >= 8) cache.delete(cache.keys().next().value);
   cache.set(key, d);
   const over = (x, y) => climber && climbOver(walker, b.cells[idx(x, y)].k);
-  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c)) || over(x, y)) && !(burning && burning.has(idx(x, y))); };
+  const vault = (x, y) => vaulter && vaultable(b, b.cells[idx(x, y)]);
+  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c)) || over(x, y) || vault(x, y)) && !(burning && burning.has(idx(x, y))); };
   const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
   const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
@@ -2427,13 +2453,13 @@ export function distField(b, sources, walker = null) {
   const N = W * H, h = climber ? hAt : siege ? hSiege : hAt;
   const okA = new Uint8Array(N), sideA = new Uint8Array(N), climbA = new Uint8Array(N), hA = new Float64Array(N), overA = new Float64Array(N), bashA = new Float64Array(N);
   for (let y = 0, i = 0; y < H; y++) for (let x = 0; x < W; x++, i++) {
-    const c = b.cells[i], ov = over(x, y);
+    const c = b.cells[i], ov = over(x, y), vl = !CELL[c.k].walk && vault(x, y);
     okA[i] = pass(x, y) ? 1 : 0;
-    sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0;
+    sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
     climbA[i] = climbAt(b, x, y) ? 1 : 0;
     hA[i] = h(b, x, y);
-    overA[i] = ov ? MIDDEAD.CLIMBER.COST : 0;
-    bashA[i] = !ov && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
+    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? VAULT.COST : 0; // a Climber's wall, a person's vault
+    bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
   }
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
   // in a fraction of the time on the bigger maps (battlesize.js).
@@ -2454,7 +2480,7 @@ export function distField(b, sources, walker = null) {
       const dh = Math.abs(hA[j] - hA[cur]);
       const climb = climber ? dh + overA[j] : !dh ? 0 : diag || !(climbA[cur] || climbA[j]) ? Infinity : dh * per;
       if (climb === Infinity) continue;
-      const nd = d[cur] + (diag ? 1.5 : 1) + climb + bashA[j] + (aw ? aw[j] : 0); // aw: acid.js
+      const nd = d[cur] + (diag ? 1.5 : 1) + climb + (climber ? 0 : overA[j]) + bashA[j] + (aw ? aw[j] : 0); // aw: acid.js; overA here: a vault
       if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); }
     }
   }
@@ -3541,6 +3567,7 @@ export function moveAlong(b, u, path) {
   const walked = [];
   let burned = false;
   let reacted = null; // overwatchers that have fired at this mover already (once each per move)
+  const vaulted = []; // the half cover gone over on the way (VAULT): winded after it, a scuff, the raid's noise
   for (const [x, y] of path) {
     const there = unitAt(b, x, y);
     const last = x === path[path.length - 1][0] && y === path[path.length - 1][1];
@@ -3551,6 +3578,7 @@ export function moveAlong(b, u, path) {
     faceToward(u, x, y); // which way it faces (stealth.js: takedowns from behind)
     u.x = x; u.y = y;
     walked.push([x, y]);
+    if (!CELL[b.cells[idx(x, y)].k].walk && vaultable(b, b.cells[idx(x, y)])) vaulted.push(CELL[b.cells[idx(x, y)].k].name.toLowerCase());
     // A building's closed door swings open (buildingmaps.js); anyone but your people stops in the doorway to open it.
     const stopAtDoor = b.cells[idx(x, y)].k === "idoor" && openDoor(b, x, y, u) && u.side !== "player";
     // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
@@ -3584,6 +3612,12 @@ export function moveAlong(b, u, path) {
     if (u.side === "player" && active(u)) detect(b, u);
     if (b.corpses && b.corpses.length && u.kind !== "zombie" && active(u)) { wakeNear(b, u); spotCheck(b, u); } // sleepers.js: a Sleeper next to them splits open
     if (!active(u) || stopAtDoor) break;
+  }
+  // Dropped on the cover it was going over (an overwatch shot, the flames): it falls back off it, to the cell before.
+  if (walked.length && !CELL[b.cells[idx(u.x, u.y)].k].walk && vaultable(b, b.cells[idx(u.x, u.y)])) { walked.pop(); const back = walked.length ? walked[walked.length - 1] : from; u.x = back[0]; u.y = back[1]; }
+  if (vaulted.length) {
+    u.vaulted = (u.vaulted || 0) + VAULT.COST * vaulted.length; // winded: moveMob for the rest of the turn
+    if (u.side === "player") { b.noise = (b.noise || 0) + VAULT.NOISE * vaulted.length; say(b, `${u.name} vaults the ${[...new Set(vaulted)].join(" and the ")}.`, "info"); }
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
   if (walked.length && u.dragging != null) MED.dragFollow(b, u, from, walked); // medics.js: the downed ally comes along behind
@@ -3916,10 +3950,11 @@ export function combatAct(state, act) {
       const mob = moveMob(u);
       u.ap -= c <= mob ? 1 : 2;
       u.hunker = false;
+      const v0 = u.vaulted || 0;
       moveAlong(b, u, pathTo(r, act.x, act.y));
-      // vision.js: where they end up facing (the player's pick), and the noise of their feet.
+      // vision.js: where they end up facing (the player's pick), and the noise of their feet (a vault: a scuff at least).
       if (active(u)) faceAfterMove(u, act);
-      if (active(u)) footsteps(b, u, stepNoise(b, u, c, mob));
+      if (active(u)) footsteps(b, u, stepNoise(b, u, c, mob) || ((u.vaulted || 0) > v0 && !u.sneaking ? "scuff" : ""));
       // skills.js: Stealth XP for moving while enemies still have not noticed anyone.
       if (u.xpT && active(u) && b.units.some((e) => e.side === "enemy" && !e.aware && active(e))) u.xpT.sneak++;
       break;
@@ -4326,7 +4361,7 @@ export function endPlayerTurn(state) {
   for (const u of b.units) if (u.side === "player") { u.ap = 0; u.suppressed = 0; } // pinned (suppressing fire) until their own turn ends
   stunTurnEnd(b, ["player"]); // throwables.js: a flashbang's stun served this turn wears off
   b.phase = "enemy";
-  for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; } // thirdside.js: the third side moves in the enemy phase too
+  for (const u of b.units) if ((u.side === "enemy" || u.side === "third") && activeAny(u)) { u.ap = u.surprised ? 0 : 2; u.ow = false; u.hunker = false; u.surprised = false; if (u.vaulted) u.vaulted = 0; } // thirdside.js: the third side moves in the enemy phase too
   stunTurnStart(b, ["enemy", "third"]); // throwables.js: the ones a flashbang caught lose their actions
   tickEars(b, ["enemy", "third"]); // hearing.js: their deafness and daze wear off a turn
   nlEnemyPhase(b); // nonlethal.js: the stunned lose actions, the blinded stay blind, the beaten may surrender
@@ -4399,6 +4434,7 @@ function startPlayerTurn(state, b) {
   for (const u of b.units) {
     if (u.side !== "player") continue;
     u.ow = false; u.hunker = false;
+    if (u.vaulted) u.vaulted = 0; // a fresh turn: no longer winded from a vault (VAULT)
     u.ap = activeAny(u) || (u.aboard && !u.dead && !u.down && !u.left) ? 2 : 0; // aboard (off the map): still theirs to drive, turn, get out (it was 0: stuck inside after the turn they got in)
     if (u.down && !u.stab && !u.dead && !u.left && !nlSpared(u)) { // nonlethal.js: knocked out or surrendered, not bleeding
       u.bleed--;
@@ -4553,7 +4589,7 @@ function outsideBase(b, u, i) {
 }
 
 function bestMove(b, u, foes, field = null) {
-  const r = reachable(b, u, u.mob);
+  const r = reachable(b, u, moveMob(u)); // moveMob: a tile short while winded from a vault (VAULT)
   field = field || distField(b, foes.map((f) => [f.x, f.y]), u);
   let best = null;
   for (let i = 0; i < W * H; i++) {
@@ -4778,7 +4814,7 @@ function breakIn(b, u, field) {
   if (b.raid || b.tier || u.side === (b.holders || "player") || u.side === "third" || u.ap < 1) return null;
   const foes = foesOf(b, u);
   if (!foes.length || isFinite(distField(b, foes.map((f) => [f.x, f.y]))[idx(u.x, u.y)])) return null; // a way round on foot (closed doors open)
-  const r = reachable(b, u, u.mob);
+  const r = reachable(b, u, moveMob(u));
   let best = -1, bestV = field[idx(u.x, u.y)];
   for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && field[i] < bestV && !unitAt(b, i % W, (i / W) | 0)) { bestV = field[i]; best = i; }
   if (best < 0) return null;
@@ -5007,7 +5043,7 @@ export const loadPenalty = (kg) => RETREAT.KG * Math.max(0, (Number.isFinite(kg)
 // (carrykit.js weighPlayer / weighEnemy: u.dash).
 export const dashRange = (u) => moveMob(u) * u.ap + (u.ap >= 2 && !u.sneaking ? u.dash || 0 : 0);
 // The tiles one action's move covers: sneaking (vision.js) is slower.
-export const moveMob = (u) => (u.sneaking ? sneakMob(u) : u.mob);
+export const moveMob = (u) => Math.max(1, (u.sneaking ? sneakMob(u) : u.mob) - (u.vaulted || 0)); // vaulted: winded from a vault this turn (VAULT)
 
 // ---------- Evac (the Evac button: combatAct "evac") ----------
 // Everyone still standing heads for the way out with the actions they have: the extraction zones of a raid or the

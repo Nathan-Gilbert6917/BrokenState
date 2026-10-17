@@ -102,6 +102,23 @@ Root `/home/user/BrokenState`, sim in `prototype/src/sim`, UI in `prototype/src/
 
 **Non-goals:** windows (B), doors (B), climbing into a building (the existing `climb` action stays).
 
+## Handoff (Session A)
+
+**Sim** (`prototype/src/sim/combat.js`, all exported unless said):
+- `VAULT = { COST: 2, NOISE: 1 }` next to `MOVE` (the brief's starting numbers, untuned).
+- `vaultable(b, c)`: `CELL[c.k]` with `cover 1`, `walk false`, no `tall`, no `trap`, not in the module's `NO_VAULT` set (`window`, `smashed`, `bars`, `rail`, `well`) and not a plated vehicle (`c.car.up.p` / `.s`, which `sideCover` counts as full cover). **Session B** takes `window` and `smashed` out of `NO_VAULT` and adds its own `c.win` rules there. The brief's "car with a unit on it" needs nothing of its own: a `car` cell is `walk:false`, so no unit stands on it, and `reachable` already blocks occupied cells.
+- `canVault(u)`: `kind === "human"`, no `ztype`, not dead, down, aboard, a gunner, arms free (`carry.js handsBusy`: no `u.hands`, no `u.bag`), not carrying or dragging a body, not on a ram's crew (`u.ram`).
+- `reachable`: a vault cell passes for a vaulter at `(diag ? 1.5 : 1) + climb + VAULT.COST`; the no-corner-cutting rule still reads `passes` (a vault cell is never a corner to cut); the `stop` array is `Infinity` on every non-walkable cell of a vaulter, so it is never a move's end. `distField`: the same for a human walker (`canVault(walker)`, cache key gets `v`; `overA[i]` carries `VAULT.COST`, `bashA` is 0 on a vaulted cell; the per-cell arrays keep the enemy turn linear, measured at 13 ms for a map of fences every other column).
+- `moveAlong`: counts the vaulted cells on the way, `u.vaulted += VAULT.COST` each; on the player's side `b.noise += VAULT.NOISE` each and a log line ("X vaults the fence."); a unit dropped mid-vault (an overwatch shot, the flames) falls back to the cell before, never left standing on the cover. The `move` act's `footsteps` is at least a `"scuff"` when the move vaulted (silent sneaking; the enemy's vaults make no `b.noise`: that accumulator is the player's raid noise).
+- **Winded rule chosen:** the second option, "charges `VAULT.COST` tiles of mob": `moveMob(u) = max(1, (sneaking ? sneakMob : mob) - (u.vaulted || 0))` for the rest of the turn; `dashRange` and the reach bands follow from it. Cleared in `startPlayerTurn` (your people) and in `endPlayerTurn`'s enemy refill. `u.vaulted` is plain data on the unit: saved and loaded as is (tested).
+- AI parity: `bestMove` and `breakIn` now use `moveMob(u)` for the one-action reach (so a winded enemy is a tile short too); `aiMelee` already used `dashRange`. Other AI reach calls that pass `u.mob` directly (siege.js, medics.js, stealth.js and the like) ignore the winding: they still vault, they are just not shorter after it.
+
+**UI**: `ui/isoview.js` outlines each vaulted cell of the hovered path solid in the path's colour with a "VAULT" tag (imports `vaultable`); `ui/combat.js` the cell tooltip ("Vault and move: 1 action, a scuff heard nearby (over half cover: +2 tiles, and 2 less of movement for the rest of the turn)"), the tooltip of a non-walkable cell ("Can be vaulted: …" / "Could be vaulted, not by X now"), the Move button's tooltip; `ui/battlehud.js unitChips` a WINDED chip; `ui/ui.js` the Battles help paragraph (imports `VAULT`). `view()` already passed `{ manual: true }` like the sim's move act; its range stays `moveMob(u) * u.ap`. No codex entry: the codex has no movement or cover category, so the help carries the text.
+
+**Tests**: `tools/vaulttest.js` (37 checks: the vaultable set, who vaults, the fence line for a survivor and a human enemy at 1 + COST, never the end cell, no corner cutting, the bag and the supplies in the arms, a walker stopped and the Climber over, `distField` for a person and a walker, the move act, AP, winded mob and reach, `b.noise`, the scuff, sneaking, save and load mid-fight, the next turn, the enemy turn on a map full of fences). README entry and `docs/agents/features.md` bullet added. Run (all pass; no existing test's expectation changed): `vaulttest.js` 37/0, `combattest.js` 3000 battles 0 crashes, `raidtest.js` 298 raids 0 crashes 0 timeouts, `enemyaitest.js` 40/0, `defencetest.js` 71/0, `visiontest.js` 71/0, `battleviewtest.js` 33/0, `battlebartest.js` 46/0, `battleuitest.js` 72/0, `battlehudtest.js` 46/0, `dettest.js` 11/0, `savetest.js` 68/0, `typechecktest.js` last (pass).
+
+**Open issues**: none blocking. A unit downed by overwatch while vaulting falls back to the cell before the cover (no body on a fence); a unit that starts a turn winded shows WINDED only in the squad strip's chips and the Move tooltip, the reach bands shrink on their own.
+
 ---
 
 # Session B: Windows and door types

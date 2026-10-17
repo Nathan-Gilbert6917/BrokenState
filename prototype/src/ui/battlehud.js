@@ -184,6 +184,7 @@ export function unitChips(state, b, p) {
   if (p.suppressed > 0) c.push(["SUPP", "warn", "Suppressed: −20 aim, no overwatch until their turn ends."]);
   if (p.ow) c.push(["OW", "info", "On overwatch: shoots at the first enemy that moves in range."]);
   if (p.hunker) c.push(["HUNK", "info", "Hunkered down: harder to hit in cover."]);
+  if (p.vaulted > 0 && !p.down) c.push(["WINDED", "info", `Winded from a vault: ${p.vaulted} tile${p.vaulted === 1 ? "" : "s"} less of movement for the rest of this turn.`]); // sim/combat.js VAULT
   if (p.shaken && !p.down) c.push(["SHAKEN", "warn", "Shaken from being revived: worse aim for the rest of the battle."]);
   if (p.stun && !p.down) c.push([p.stun.dazed ? "DAZED" : "STUN", "warn", "Dazed or stunned by a flash or a taser."]);
   for (const e of earStatus(p)) c.push([e.split(" ")[0].toUpperCase(), "warn", e]);
