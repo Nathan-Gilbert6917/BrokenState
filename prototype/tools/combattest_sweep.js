@@ -8,6 +8,9 @@ const N = Number(process.argv[2] || 200);
 const state = createWorld({ seed: Number(process.argv[3] || 3), factionCount: 6 });
 const base = hub(state);
 let last = null;
+// Each battle from the same armory: after a fight the bodies' gear goes into it (inventory.js takeAllBodies), and over
+// thousands of battles it would hand the bot the dead raiders' grenades and pipe bombs (and slow every throwablesOf).
+const armory0 = structuredClone(base.armory);
 registerCombatHandler("sweep", (st, r) => { last = r; });
 let cp = 0, cpn = 0;
 for (const kind of ["raiders", "soldiers", "zombies"]) {
@@ -26,7 +29,7 @@ for (const kind of ["raiders", "soldiers", "zombies"]) {
         people.push(s);
         cp += combatPower(s); cpn++;
       }
-      base.stock.ammo = 200; base.stock.meds = 3;
+      base.stock.ammo = 200; base.stock.meds = 3; base.armory.splice(0, Infinity, ...structuredClone(armory0));
       const count = kind === "zombies" ? 3 * Math.round(6 / power + 1) : 3;
       state.combat = createBattle(state, { tile: state.rng.int(0, state.tiles.length - 1), baseId: base.id, fighterIds: people.map((s) => s.id), enemy: { kind, count, power }, ambush: null, canRetreat: false, handler: "sweep" });
       for (let g = 0; g < 60 && !state.combat.over; g++) { autoPlayerTurn(state); runEnemyPhase(state); }

@@ -20,6 +20,7 @@
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync, readdirSync } from "node:fs";
 import { execFile } from "node:child_process";
+import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createWorld, tickHour, hub, day, atBase, snapshot, mergeKnowledge, updateVision } from "../src/sim/world.js";
@@ -507,7 +508,12 @@ section(`Loot left and group collapse over a year (seeds ${curveSeeds.join(", ")
 {
   const me = fileURLToPath(import.meta.url);
   const one = (s, mode) => new Promise((res, rej) => execFile(process.execPath, [me, "--curve", String(s), mode, String(days)], { maxBuffer: 1 << 26 }, (e, out) => (e ? rej(e) : res(JSON.parse(out)))));
-  const runs = await Promise.all(curveSeeds.flatMap((s) => [one(s, "on"), one(s, "off")]));
+  // At most one year a core at a time (as diplotest's collapse years): 24 years at once on a 4-core machine thrash
+  // it (each child holds a whole world) and finish no sooner.
+  const jobs = curveSeeds.flatMap((s) => [[s, "on"], [s, "off"]]), runs = new Array(jobs.length);
+  let next = 0;
+  const lane = async () => { while (next < jobs.length) { const i = next++; runs[i] = await one(...jobs[i]); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, availableParallelism())) }, lane));
   const on = runs.filter((_, i) => i % 2 === 0), off = runs.filter((_, i) => i % 2 === 1);
   const avg = (list, d) => list.reduce((a, r) => a + r.left[d], 0) / list.length;
   curveSeeds.forEach((s, i) => {

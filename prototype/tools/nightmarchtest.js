@@ -20,7 +20,10 @@ const atHour = (st, h) => { st.hour = Math.floor(st.hour / 24) * 24 + 24 + h; };
 function team(st, dist = 9, mission = "move") {
   const h = hub(st);
   const crew = atBase(st, h.id).slice(0, 2);
-  const dest = st.tiles.find((t) => t.terrain === "plains" && !t.loc && st.grid.distance(t.id, h.tile) === dist && planPath(st, h.tile, t.id, false)).id;
+  // Plains if there are any that far out; the tiles next to the hub are its town's suburb ring (mapgen.js), so a bare
+  // suburb block does there.
+  const ok = (t) => !t.loc && st.grid.distance(t.id, h.tile) === dist && planPath(st, h.tile, t.id, false);
+  const dest = (st.tiles.find((t) => t.terrain === "plains" && ok(t)) || st.tiles.find((t) => t.terrain === "suburb" && ok(t))).id;
   const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest, mission, stance: "normal", supplies: { food: 12, water: 12 }, vehicleId: null });
   if (res.error) throw new Error(res.error);
   for (const s of crew) s.tired = 0;

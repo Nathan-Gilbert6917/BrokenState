@@ -217,7 +217,10 @@ section("The weather, the days, the levels");
 section("Cost and the cache");
 {
   const st = mk(), h = hub(st);
-  for (let i = 0; i < 24 * 20; i++) { st.cards.length = 0; tickHour(st); }
+  // Twenty unattended days in a crowded hub (6 people, 4 beds) break everyone's mood and the run ends: the clock
+  // stops and the last check never sees a new hour. Keep them in good spirits; this is about the forecast's cost.
+  for (let i = 0; i < 24 * 20; i++) { st.cards.length = 0; for (const s of st.survivors) s.mood = Math.max(s.mood, 60); tickHour(st); }
+  check(!st.gameOver, `the run still going on day ${day(st)}`);
   for (let i = 0; i < 6; i++) makeHorde(st, { tile: tileAt(st, h, 2 + i) || h.tile, size: 40 + i * 20, role: i % 2 ? "roam" : "attack", goal: i % 2 ? null : { baseId: h.id, tile: h.tile }, target: i % 2 ? null : h.tile });
   for (const x of st.hordes) st.live.add(x.tile);
   fresh(st);

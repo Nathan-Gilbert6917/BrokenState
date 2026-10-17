@@ -398,9 +398,16 @@ section("Fleets: every vehicle on the battle map; one blown up is left, the othe
   check(b.vehicle && b.convoy && b.convoy.length === 2, `the lead to drive and two more parked (${b.convoy ? b.convoy.length : "none"})`);
   const cells = b.cells.filter((c) => c.k === "vehicle").length;
   check(cells >= 3 * 6, `their cells are the team's own vehicles (${cells})`);
+  // The rocket goes at a cell of a parked one out of the blast's reach of the others: the convoy parks nearest rows
+  // first (combat.js placeConvoy), and on a cramped map (seed 42's road tile is in a town's suburb ring since the POI
+  // foundation, mapgen.js) one stands right beside another, where a rocket at its corner wrecks both.
+  const cellsOf = (v) => { const out = []; for (let cy = v.y; cy < v.y + v.h; cy++) for (let cx = v.x; cx < v.x + v.w; cx++) out.push([cx, cy]); return out; };
+  const reaches = (v, [x, y]) => cellsOf(v).some(([cx, cy]) => Math.hypot(cx - x, cy - y) <= ROCKET.r + 0.5 + 1e-6);
+  const aimAt = (c) => cellsOf(c).find((at) => ![b.vehicle, ...b.convoy].some((v) => v !== c && reaches(v, at)));
   if (b.convoy && b.convoy[0]) {
-    const c = b.convoy[0];
-    for (let k = 0; k < 6 && !c.blownUp; k++) vehicleBlast(b, c.x, c.y, ROCKET.r, ROCKET.dmg, "rocket");
+    const c = b.convoy.find(aimAt) || b.convoy[0];
+    const [ax, ay] = aimAt(c) || [c.x, c.y];
+    for (let k = 0; k < 6 && !c.blownUp; k++) vehicleBlast(b, ax, ay, ROCKET.r, ROCKET.dmg, "rocket");
     check(c.blownUp, "a rocket blows one of them up");
     settleVehicle(state, b, "victory");
     const gone = state.vehicles.find((v) => v.id === c.vid);

@@ -197,7 +197,9 @@ console.log("On the battle screen");
   cui.hover = { x: d.x, y: d.y };
   let html = UI.renderCombatPanel(st);
   check(/Locked door/.test(html) && /click it/i.test(html) && /lockpicks/.test(html), "the hover text names the locked door and says how to open it");
-  check(/data-action="lk-open"/.test(html), "the panel has the Open buttons next to it (key, pick, force)");
+  // The Open buttons are with the unit's orders in the battle bottom bar (ui/combat.js renderCombatBar), so read the whole screen.
+  const screen = UI.renderCombatScreen(st);
+  check(["key", "pick", "force"].every((m) => new RegExp(`data-action="lk-open"[^>]*data-m="${m}"`).test(screen)), "the panel has the Open buttons next to it (key, pick, force)");
   const id = b.cells.findIndex((c) => c.k === "idoor");
   cui.hover = { x: id % b.w, y: (id / b.w) | 0 };
   html = UI.renderCombatPanel(st);

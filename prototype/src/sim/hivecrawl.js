@@ -2215,7 +2215,7 @@ export function mouthNote(state, hive, id) {
 // guard's units (its fighters' power × GROUP_HIVE.FIGHT, as before); the whole way in costs the guard × (depth + 1) /
 // GROUP.depthDiv, spread over the brood on the shortest way and in the core (each chamber costs its brood left), and
 // the core the Hivemind and the Broodmother on top (GROUP.boss + bossTier × tier). The guard it kills: the brood it
-// killed × the guard each stands for (as your teams', cutGuard). It clears
+// killed × the guard each stands for (the guard over the brood on its way in, so the whole way in is the guard). It clears
 // what it pays for (the hive remembers: the chambers stay clear for a while, for your teams too), stops where the
 // budget runs out (driven off partway; a later party starts from what is still clear), and kills the Hivemind (the hive dies) when it
 // reaches and pays for the core. Four mouths (2026-10-13): it goes in by one of the hive's dice (its group's), and a party driven
@@ -2238,7 +2238,11 @@ export function groupHiveCrawl(state, hive, budget, fid = null) {
   // the guard × (depth + 1) / depthDiv of its strength: a young hive about its guard, a deep one three times it.
   const full = path.reduce((a, id) => { const r = roomById(den, id); return a + (r.kind === "core" ? core.count : roomFull(state, hive, den, r, G)); }, 0);
   const unit = full > 0 ? (G * (den.depth + 1)) / (HCRAWL.GROUP.depthDiv * full) : 0;
-  const share = G / Math.max(1, denBroodTotal(state, hive, G)); // the guard each brood stands for (cutGuard)
+  // The guard each brood it kills stands for: the guard spread over the brood on its way in (the den's brood comes to
+  // the party along its way). Over the whole den's brood, as your teams' cutGuard, the round grid's side chambers
+  // (2026-10-13: 13 chambers, under half the brood on the shortest way, where the old den's way held most of it)
+  // made each kill worth a third of the guard it was: tools/grouphivetest.js, a fortress's 133 days became 334.
+  const share = G / Math.max(1, full);
   let left = budget, met = 0, reached = 0, burned = false, killed = 0, stop = mouth;
   for (const id of path) {
     const r = roomById(den, id);
