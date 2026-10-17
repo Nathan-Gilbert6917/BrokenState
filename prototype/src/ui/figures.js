@@ -156,6 +156,7 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   const D = app.dead || null;
   if (D && D.body === "swarm") return swarmLimbs(D);
   if (D && D.body === "hivemind") return hivemindLimbs(D);
+  if (D && D.body === "broodmother") return broodmotherLimbs(D);
   const F = [];
   const skin = app.skin, hair = app.hair, top = app.top, pants = app.pants;
   const big = (D && (D.scale || (D.brute ? 1.3 : 1))) || 1;
@@ -355,20 +356,54 @@ function swarmLimbs(D) {
   F.height = 8;
   return F;
 }
-// The Hivemind (sim/hivecrawl.js): a swollen, folded mass of grey-pink flesh like a brain the size of a car, veined and
-// glowing from inside, amber pods and tendrils coiled at its foot; its second phase swollen redder and torn open down
-// the middle with light pouring out, the pods burst.
+// The Broodmother (sim/hives.js; the flat sprite in ui/hivesprites.js), two tiles by two: the bloated queen on the
+// mound she grows from, a swollen abdomen hung with egg sacs, a thorax rising to a small head with three eyes and a
+// crown of bone, two long clawed arms reaching down the front to the ground. A tile is 16 units a side.
+function broodmotherLimbs(D) {
+  const F = [];
+  const SKIN = "#9a7a86", DARK = "#5e3a48", LIT = "#c4a2ae", SAC = "#e8b46a", SAC_D = "#b07a3a", EYE = "#ffd166", VEIN = "#8a1c22";
+  const veins = (face, s, t) => { const q = (Math.round(s * 10) * 7 + Math.round(t * 6) * 5) % 11; return q === 0 ? VEIN : q === 4 && t < 0.4 ? LIT : face === "top" ? LIT : null; };
+  F.push(limb([0, 0, 5], [0, 0, 0], 15, 13, DARK, { taper: 1.12, tex: (face, s, t) => (face === "top" ? shade(DARK, 0.12) : (Math.round(s * 12) + Math.round(t * 3)) % 5 === 0 ? shade(DARK, -0.3) : null) })); // the mound
+  F.push(limb([1, 0, 18], [1, 0, 4], 11.5, 10.5, SKIN, { taper: 1.1, tex: veins })); // the abdomen
+  F.push(limb([3, 0, 27], [3, 0, 16], 6.5, 7.5, SKIN, { taper: 1.25, tex: veins })); // the thorax, leaning forward
+  F.push(limb([4.5, 0, 29.5], [4.5, 0, 26], 2.4, 2.8, DARK, { sides: 6 })); // the neck
+  F.push(limb([5, 0, 36.5], [5, 0, 29], 3.6, 3.8, SKIN, { taper: 1.05, tex: (face, s, t) => (face === "front" && t > 0.3 && t < 0.45 && (Math.abs(s - 0.25) < 0.08 || Math.abs(s - 0.5) < 0.08 || Math.abs(s - 0.75) < 0.08) ? EYE : face === "front" && t > 0.65 && t < 0.9 && Math.abs(s - 0.5) < 0.3 ? (Math.round(s * 9) % 2 ? BONE : "#3a1412") : face === "top" ? DARK : null) })); // the head: three eyes, a mouth ringed with bone
+  for (const l of [-2.4, -1.2, 0, 1.2, 2.4]) F.push(limb([5, l, 36.2], [5.4, l, 36.2 + 3.4 - Math.abs(l) * 0.5], 0.55, 0.55, BONE, { sides: 4, taper: 0.35 })); // the crown of bone
+  for (const [f, l, z, r] of [[-7, -8, 11, 3.2], [-8, 6, 9, 3.0], [-3, -11, 8, 2.8], [-2, 11, 10, 2.9], [-10, -1, 13, 3.4], [5, -10, 7, 2.5], [6, 10, 8, 2.6]]) F.push(limb([f, l, z + r * 0.9], [f, l, z - r * 0.9], r, r, SAC, { sides: 6, tex: (face, s, t) => (face === "top" || t < 0.3 ? "#fff0c0" : t > 0.78 ? SAC_D : null) })); // egg sacs round the abdomen
+  for (const side of [-1, 1]) { // the arms: long, down the front, clawed
+    const S = [5, side * 7.5, 25], E = [11, side * 10, 14], H = [14.5, side * 9, 3];
+    F.push(limb(S, E, 2.2, 2.2, DARK, { sides: 6, taper: 0.85 })); F.push(limb(E, H, 1.9, 1.9, DARK, { sides: 6, taper: 0.8 }));
+    for (const dl of [-1.4, 0, 1.4]) F.push(limb(H, add(H, [2.6, dl, -2.4]), 0.55, 0.55, BONE, { sides: 4, taper: 0.3 }));
+  }
+  for (const [f, l] of [[-12, -9], [-11, 10], [13, -11], [12, 12]]) F.push(limb([f, l, 2.2], [f, l, 0.3], 1.6, 1.5, "#e8b46a", { sides: 6, tex: (face) => (face === "top" ? "#fff0c0" : null) })); // pods at the mound's edge
+  F.height = 40;
+  return F;
+}
+// The Hivemind (sim/hivecrawl.js), two tiles by two: the organ at the heart of a hive, a swollen, folded mass of
+// grey-pink flesh like a brain the size of a car, lobes on lobes, veined and glowing from inside, amber pods and
+// tendrils coiled at its foot in a pool of flesh; its second phase swollen redder and torn open down the middle with
+// light pouring out of the wound, the pods burst, the veins standing out, the tendrils thrashing.
 function hivemindLimbs(D) {
   const F = [], p2 = D.phase === 2;
   const FLESH = p2 ? "#b8566a" : "#b07a86", DARK = p2 ? "#5a1a2a" : "#6a3a4a", LIT = p2 ? "#e07a8a" : "#d8a8b2", FOLD = p2 ? "#7a2a3a" : "#8a4a5a", VEIN = p2 ? "#ff3a2a" : "#8a1c22", GLOW = p2 ? "#ffd36b" : "#ffb43b", POD = "#e8b46a", CORE = "#fff4c8";
-  const k = D.scale || 1.8;
-  F.push(limb([0, 0, 0.8], [0, 0, 0], 11 * k * 0.6, 9 * k * 0.6, p2 ? "#3a0c14" : "#2a1018", { taper: 1.05 })); // the pool of flesh it grows from
-  const fold = (face, s, t) => { const q = (Math.round(s * 9) * 5 + Math.round(t * 6) * 3) % 7; if (p2 && face === "front" && Math.abs(s - 0.5) < 0.14 && t > 0.15 && t < 0.9) return Math.abs(s - 0.5) < 0.07 ? CORE : GLOW; if (q === 0) return FOLD; if (q === 3 && (p2 || t < 0.6)) return VEIN; if (q === 5 && t < 0.5) return GLOW; return face === "top" ? LIT : null; };
-  F.push(limb([0, 0, 10 * k], [0, 0, 0.6], 5.2 * k, 5.0 * k, FLESH, { taper: 0.82, tex: fold })); // the mass
-  for (const [f, l, z, r] of [[-2.2, -2.4, 7.5, 3.4], [1.8, 2.6, 8.2, 3.2], [2.4, -2.0, 6.0, 3.0], [-2.0, 2.2, 5.6, 2.8]]) F.push(limb([f * k, l * k, (z + r * 0.8) * k], [f * k, l * k, (z - r * 0.8) * k], r * k, r * k * 0.95, FLESH, { sides: 8, taper: 1.1, tex: fold })); // its lobes
-  for (const [f, l] of [[-5.2, -1.8], [5.4, 1.4], [-3.6, 4.6], [4.2, -4.4]]) F.push(limb([f * k, l * k, 2.2 * k], [f * k, l * k, 0.4], 1.4 * k, 1.3 * k, p2 ? DARK : POD, { sides: 6, tex: (face) => (face === "top" ? (p2 ? VEIN : "#fff0c0") : null) })); // the pods at its foot
-  for (const [f, l, df, dl] of [[-4.5, -3.5, -3.5, -1.5], [4.5, 3.5, 3.0, 2.5], [-2.5, 5.0, -2.0, 3.0], [5.0, -3.0, 3.0, -3.5]]) F.push(limb([f * k, l * k, 1.6], [(f + df) * k, (l + dl) * k, 0.6], 0.8, 0.8, DARK, { sides: 5, taper: 0.5 })); // tendrils
-  F.height = 10 * k + 4;
+  const fold = (wound) => (face, s, t) => {
+    if (wound && face === "front" && Math.abs(s - 0.5) < 0.13 && t > 0.1 && t < 0.92) return Math.abs(s - 0.5) < 0.06 ? CORE : GLOW; // the wound, pouring light
+    const q = (Math.round(s * 12) * 5 + Math.round(t * 8) * 3) % 9;
+    if (q === 0) return FOLD;
+    if (q === 4 && (p2 || t < 0.6)) return VEIN;
+    if (q === 7 && t < 0.5) return face === "top" ? "#fff0c0" : GLOW;
+    return face === "top" ? LIT : null;
+  };
+  F.push(limb([0, 0, 1.2], [0, 0, 0], 16, 14, p2 ? "#3a0c14" : "#2a1018", { taper: 1.05 })); // the pool of flesh it grows from
+  F.push(limb([0, 0, 22], [0, 0, 1], 12.5, 11.5, FLESH, { taper: 0.78, tex: fold(p2) })); // the mass
+  for (const [f, l, z, r] of [[-6, -7, 15, 6.5], [5, 7.5, 16, 6.2], [7, -6, 13, 5.8], [-6, 6, 12, 5.6], [-9, 0, 17, 5.0], [8, 1, 18, 5.4]]) F.push(limb([f, l, z + r * 0.85], [f, l, z - r * 0.85], r, r * 0.95, FLESH, { sides: 8, taper: 1.12, tex: fold(false) })); // the lobes
+  F.push(limb([1, 0, 28], [1, 0, 19], 6.5, 6.0, FLESH, { taper: 1.3, tex: fold(p2) })); // the crown lobe
+  for (const [f, l] of [[-13, -6], [13, 5], [-9, 12], [10, -11], [-3, -15], [2, 14]]) F.push(limb([f, l, 3.2], [f, l, 0.4], 1.9, 1.8, p2 ? DARK : POD, { sides: 6, tex: (face) => (face === "top" ? (p2 ? VEIN : "#fff0c0") : null) })); // the pods at its foot, burst in the second phase
+  for (const [f, l, df, dl] of [[-10, -10, -6, -4], [11, 9, 5, 6], [-6, 13, -4, 6], [12, -8, 6, -6], [-13, 3, -7, 2], [4, -14, 3, -6]]) { // tendrils, coiled; thrashing in the second phase
+    const A = [f, l, 2.2], M = [f + df * 0.6, l + dl * 0.6, p2 ? 5.5 : 2.0], B = [f + df, l + dl, p2 ? 7.5 : 0.8];
+    F.push(limb(A, M, 1.1, 1.1, DARK, { sides: 5, taper: 0.8 })); F.push(limb(M, B, 0.9, 0.9, DARK, { sides: 5, taper: 0.5 }));
+  }
+  F.height = 36;
   return F;
 }
 // One of the dead as a figure: the game's own roll for the variant and seed (ui/sprites.js zombieLookOf: palette,
@@ -417,8 +452,8 @@ export function specialApp(ztype, seed) {
 // The bosses (ui/hivesprites.js): the Wallbreaker, the Broodmother, the Hivemind and its second phase.
 export function bossApp(kind) {
   const key = `boss:${kind}`;
-  if (kind === "broodmother") return { key, build: "heavy", skin: "#9a7a86", hairStyle: "bald", hair: "#5e3a48", facial: "none", topStyle: "tank", top: "#9a7a86", pants: "#5e3a48", accessory: "none", accent: "#1f1f22", dead: { eye: "#ffd166", eyes: 3, marks: [["torso", 0.3, 0.5, "wound"], ["torso", 0.7, 0.7, "wound"]], pose: "claws", wide: 1.5, bloated: true, scale: 1.45, room: 1.2, mound: "#5e3a48", eggs: "#e8b46a", crown: true, longArms: true } };
-  if (kind === "hivemind" || kind === "hivemind2") return { key, build: "average", skin: "#b07a86", hairStyle: "bald", hair: "#6a3a4a", facial: "none", topStyle: "tshirt", top: "#b07a86", pants: "#6a3a4a", accessory: "none", accent: "#1f1f22", dead: { eye: "#ffb43b", marks: [], body: "hivemind", phase: kind === "hivemind2" ? 2 : 1, scale: 1.8 } };
+  if (kind === "broodmother") return { key, build: "heavy", skin: "#9a7a86", hairStyle: "bald", hair: "#5e3a48", facial: "none", topStyle: "tank", top: "#9a7a86", pants: "#5e3a48", accessory: "none", accent: "#1f1f22", dead: { eye: "#ffd166", marks: [], body: "broodmother", scale: 2.3 } }; // two tiles by two (the grid; the body is in units)
+  if (kind === "hivemind" || kind === "hivemind2") return { key, build: "average", skin: "#b07a86", hairStyle: "bald", hair: "#6a3a4a", facial: "none", topStyle: "tshirt", top: "#b07a86", pants: "#6a3a4a", accessory: "none", accent: "#1f1f22", dead: { eye: "#ffb43b", marks: [], body: "hivemind", phase: kind === "hivemind2" ? 2 : 1, scale: 2.3 } }; // two tiles by two
   return { key, build: "heavy", skin: "#8f9a86", hairStyle: "bald", hair: "#5e6858", facial: "none", topStyle: "tank", top: "#8f9a86", pants: "#3a3a36", accessory: "none", accent: "#1f1f22", dead: { eye: "#e2412f", marks: [["torso", 0.35, 0.4, "wound"], ["torso", 0.6, 0.55, "wound"], ["arm1", 0.5, 0.4, "wound"]], pose: "slab", wide: 1.35, scale: 1.5, headDrop: 2.2, head: 0.9, ribs: true } }; // the Wallbreaker
 }
 // One of the risen (sim/carriers.js): the person as they were and in what they wore, gone grey-green, reaching.
@@ -511,7 +546,7 @@ export function unitFigure(state, b, t, salt, yaw, standing = false) {
 export function unitFigureDown(state, b, t, salt, yaw) {
   const u = unitApp(state, b, t, salt);
   const D = u.app.dead;
-  if (D && (D.body === "swarm" || D.body === "hivemind")) return figureCanvas(t.dead ? { ...u.app, skin: shade(u.app.skin, -0.4), top: shade(u.app.top, -0.4) } : u.app, null, null, yaw); // no way to lay a mass down: darker
+  if (D && (D.body === "swarm" || D.body === "hivemind" || D.body === "broodmother")) return figureCanvas(t.dead ? { ...u.app, skin: shade(u.app.skin, -0.4), top: shade(u.app.top, -0.4) } : u.app, null, null, yaw); // no way to lay a mass down: darker
   return figureCanvas({ ...u.app, down: { pose: t.dead ? "dead" : "down", pool: !!t.dead } }, null, u.armor, yaw, u.o || {});
 }
 // A body on the ground (sim/sleepers.js: c.seed, c.burnt, c.burst) as a lying figure.

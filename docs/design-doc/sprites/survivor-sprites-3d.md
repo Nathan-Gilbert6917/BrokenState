@@ -166,10 +166,13 @@ Asked for next: all of them. `ui/figures.js` now builds every body the battle ma
   camo fatigues with a plate carrier and a combat helmet, a riot cop in black with a chest shell, shoulder guards and
   a riot helmet with its cracked visor pushed up. A sleeper on its feet is a walker.
 - **The bosses** (`bossApp`): the Wallbreaker (half again as big, the head sunk low, ribs through the skin, a slab
-  of concrete with rebar in it raised in one fist), the Broodmother (swollen, on the mound she grows from, three
-  eyes, a crown of bone, egg sacs, clawed arms), the Hivemind (no body: a folded mass of lobes, veined and glowing,
-  pods and tendrils at its foot, in a pool of flesh) and its second phase (redder, torn open down the middle with
-  light pouring out, the pods burst).
+  of concrete with rebar in it raised in one fist); the Broodmother and the Hivemind are their own models, two tiles
+  by two (32 × 32 units on their tile; the game still places them on one cell, as the flat sprites were): the
+  Broodmother on the mound she grows from, a swollen abdomen hung with egg sacs, a thorax rising to a small head
+  with three eyes, a bone-ringed mouth and a crown of bone, two long clawed arms down the front to the ground, pods
+  at the mound's edge; the Hivemind a main lobe with five lobes around it and one on top, folds, veins and glow in
+  the flesh, amber pods and coiled two-segment tendrils at its foot in a pool of flesh, and its second phase redder,
+  torn open down the front with light pouring out, the pods burst, the tendrils raised.
 - **The risen** (`risenApp`): the person as they were and in what they wore, gone grey-green, reaching.
 - **The fallen** (`unitFigureDown`, `corpseFigure`): the same figure laid along the world's x through a second
   transform (the figure's up along +x, its front turned up and pressed flat), the head toward the way the unit
