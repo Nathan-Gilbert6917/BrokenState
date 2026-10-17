@@ -125,3 +125,28 @@ The full frame of the town, before and after: `battle-3d/before/field-town.png`,
 Not done here, and the next step if the figures are adopted: the props' shapes themselves. Cars are two boxes, trees
 a trunk and four blobs; rounding a car's cabin or giving a tree a faceted crown needs a prism primitive in `paint()`
 (the figure renderer's limb) and a pass over `prims` kind by kind.
+
+## Wired in
+
+The figures are the battle view's now (`ui/figures.js`, the renderer moved from the prototype into the game;
+`tools/spritebox.js` re-exports it for the sheets):
+
+- **Who is a figure.** Survivors, human enemies (raiders, soldiers with helmet and armband, zealots with hood and
+  sash, from `enemyLookOf`'s rolls) and the plain dead (walkers, runners, bloated, brutes from `zombieLookOf`'s).
+  The special dead, bosses, the armoured dead, the risen and the fallen keep their flat sprites: `unitFigure`
+  returns null and `drawBody` falls back to `unitCanvas`.
+- **The heading.** A person faces the way the game says they face (`u.face`, any angle); the dead the way of their
+  last move; the old default otherwise. `unitYaw` turns it into the view's frame at every rotation, minus 45° in a
+  straight view, and `figureCanvas` caches a canvas every 15° by look, weapon, armour and heading.
+- **Placement.** One grid pixel is one art pixel: the canvas is drawn so the figure's feet land on the unit's feet,
+  no mirroring; the sneaking squash and the spent-unit fade apply as before. `muzzlePoint` takes the gun's far end
+  from the figure for tracers and flashes.
+- **The inventory spin.** `figureSpinImg` replaces the flat doll in the inventory: 24 frames at 15°, one every
+  110 ms, drawn once each and kept as data URLs; a ticker finds every `img[data-spin]` so the panel may be rebuilt
+  at will. The roster and the other panels still show the flat side-view sprite.
+
+In the town and at the night wall (3×):
+
+![figures in the battle view](battle-3d/figures-in-scene.png)
+
+Still flat, for later: the panels' sprites, the downed and the corpses, the special dead and the bosses.

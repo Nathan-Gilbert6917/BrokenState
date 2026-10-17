@@ -27,6 +27,7 @@ import { CELL, active, coverSides, evacAt, barredCell, moveMob } from "../sim/co
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
+import { unitFigure, figureMuzzle, FIG } from "./figures.js"; // survivors, human enemies and the plain dead as low-poly figures, facing their way
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
@@ -2179,14 +2180,15 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
     drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: unitFacing(b, t), scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
-  const cv = unitCanvas(state, b, t, H.salt);
+  const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r)); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
+  const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
   const facing = sideFacing(b, t, FR.r);
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.translate(X, Y);
-  if (facing < 0) ctx.scale(-1, 1);
+  if (!fig && facing < 0) ctx.scale(-1, 1);
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
   if (!silhouette && spent) ctx.globalAlpha *= 0.65;
   // Sneaking (sim/vision.js): crouched low and leaning in, in shadow.
@@ -2195,7 +2197,8 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
     ctx.globalAlpha *= SNEAK_LOOK.alpha;
     if ("filter" in ctx) ctx.filter = SNEAK_LOOK.filter;
   }
-  ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
+  if (fig) ctx.drawImage(cv, -FIG.ox * S, -FIG.oy * S, FIG.w * S, FIG.h * S); // 1 grid px = 1 art px, the feet at (ox, oy)
+  else ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
 }
 // The sprite's facing on screen: the view turned a half (rotation 1 or 2) shows the world mirrored.
@@ -2210,11 +2213,33 @@ function screenSide(b, t, r) {
   return Math.abs(d) < 0.05 ? null : d > 0 ? 1 : -1;
 }
 const sideFacing = (b, t, r) => screenSide(b, t, r) ?? viewFacing(unitFacing(b, t), r);
+// The way a unit's figure faces, as a yaw for ui/figures.js (0: the view's +u, screen right-down; 90: +v, screen
+// left-down): a person's own facing (sim/vision.js u.face), else the last move's or shot's way in the battle's
+// effect list, else the old default (yours toward +x, the others toward -x), turned into the view's frame. In a
+// straight view the figure's own projection sits 45° off the view's axes.
+function unitMoveDir(b, t) {
+  const fx = b.fx || [];
+  for (let i = fx.length - 1; i >= 0; i--) {
+    const f = fx[i];
+    if (f.type === "move" && f.unit === t.id) {
+      const pts = [f.from, ...(f.path || [])];
+      for (let k = pts.length - 1; k > 0; k--) { const dx = pts[k][0] - pts[k - 1][0], dy = pts[k][1] - pts[k - 1][1]; if (dx || dy) return [dx, dy]; }
+    } else if ((f.type === "shot" || f.type === "melee") && f.from && f.from[0] === t.x && f.from[1] === t.y && f.to) { const dx = f.to[0] - f.from[0], dy = f.to[1] - f.from[1]; if (dx || dy) return [dx, dy]; }
+  }
+  return null;
+}
+function unitYaw(b, t, r) {
+  const d = (t.face && (t.face[0] || t.face[1]) && t.kind === "human" ? t.face : null) || unitMoveDir(b, t) || [unitFacing(b, t), 0];
+  const [u0, v0] = ptView(t.x + 0.5, t.y + 0.5, r, b.w, b.h), [u1, v1] = ptView(t.x + 0.5 + d[0], t.y + 0.5 + d[1], r, b.w, b.h);
+  return (Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI - (iso.straight ? 45 : 0);
+}
 const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1);
 // Where a unit's gun muzzle is on screen, from its feet, in view rotation r at zoom S: the muzzle pixel of the gun
 // in its sprite's hand (ui/sprites.js muzzleOf; ui/gunpaint.js paintMini: past a fitted suppressor), the sprite drawn
 // as drawBody draws it (mirrored when it faces left). null: no gun drawn (a zombie, bare hands).
 export function muzzlePoint(state, b, t, salt, r, S = 1) {
+  const fig = unitFigure(state, b, t, salt, unitYaw(b, t, r));
+  if (fig) { const m = figureMuzzle(fig); return m ? [(m.mx - FIG.ox) * S, (m.my - FIG.oy) * S] : null; } // the figure's gun, its far end (ui/figures.js)
   const mz = muzzleOf(unitCanvas(state, b, t, salt));
   if (!mz) return null;
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26), f = sideFacing(b, t, r);

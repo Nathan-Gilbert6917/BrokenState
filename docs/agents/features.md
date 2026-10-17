@@ -24,7 +24,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Relationships**: grief, service record, memorial wall and daily mood factors [relations].
 - **Family**: couples, pregnancy, births and children growing up [family].
 - **Recruits**: newcomer choice cards for strangers, refugees, loners and returning deserters [recruits].
-- **Appearance and sprites**, plus survivor customization (backgrounds, customization points, starting gear, random builds) [appearance, custombg, custompoints, startgear, randomkit].
+- **Appearance and sprites**, plus survivor customization (backgrounds, customization points, starting gear, random builds) [appearance, custombg, custompoints, startgear, randomkit]. On the battle map survivors, human enemies and the plain dead are low-poly figures that face their way and turn with the view (the special dead, bosses and the risen keep their flat sprites); the inventory spins the figure through 360° [ui/figures; ui/sprites for the flat sprites and the panels].
 - **Status icons** and a "Why did this happen?" cause chain for deaths and lost bases [status, causes].
 
 ## 3. Bases and economy

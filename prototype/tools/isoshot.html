@@ -28,9 +28,10 @@ UI.initCombatUI(main);
 let clock = 1e6;
 let html = "";
 for (const { name, st, b } of battles(42, only)) {
-  ISO.iso.zoom = zoom; ISO.iso.rot = +(q.get("rot") || 0); ISO.iso.straight = false;
+  ISO.iso.zoom = zoom;
   st.combat = b;
   clock += 50; UI.drawCombat(st, clock);
+  for (let i = 0; i < +(q.get("turn") || 0); i++) ISO.isoRotate(b, 1); // eighth turns, the game's own way (odd: a straight view)
   // centred on your people, the roofs as the view keeps them; a second frame after centring settles the camera
   const mine = b.units.filter((t) => t.side === "player" && !t.dead);
   const cx = mine.length ? Math.round(mine.reduce((a, t) => a + t.x, 0) / mine.length) : Math.floor(b.w / 2), cy = mine.length ? Math.round(mine.reduce((a, t) => a + t.y, 0) / mine.length) : Math.floor(b.h / 2);
