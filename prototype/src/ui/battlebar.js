@@ -6,9 +6,15 @@
 //     now and why not (the sim's own refusals: fireRefusal, reloadRefusal, facesBox …). A button runs
 //     combatAction("cb-act", { v }), the code its key runs (combatKey), so a click and a key press cannot differ.
 //   - Keys: read from the key table (ui/keymap.js keyLabel), so a key changed in Menu → Controls shows here at once.
-//   - Every battle order in the key table has a button: the core ones always (greyed, with the reason, when they cannot
-//     be given), the rest when they apply; ⋯ More lists the others greyed with when they apply (tools/battlebartest.js
-//     checks the table against it).
+//   - Ready only (the user's request 2026-10-18: "clean it up for easier reading and usability … combine some into a
+//     group that shows when you press a button or add a default button to only display options that you can take"):
+//     by default the bar shows only the orders that can be given now. Its last button (All / Ready, remembered in the
+//     browser) shows the rest too: the core ones greyed with the reason, and every other battle order of the key table
+//     greyed with when it applies (tools/battlebartest.js checks the table against it).
+//   - Inventory and Cones only look: they sit small in the corner of the selected one's card, not among the orders.
+//   - Trays: the most used orders of each group stand on the bar (PRIMARY); the others of a group sit behind one button
+//     (Moving, Fight, Wounded, Loot, Doors & lights, Vehicle, Other) that opens them in a tray over the bar. A group
+//     with only one other order shows it on the bar instead, and so does a short list (TRAY_FROM): no tray for a few.
 //   - Fits from 1280×720 up to a TV: the bar is a size container; narrow, the buttons fold to their icons (the label
 //     is in the tip), very wide it grows (styles.css #cbbar).
 import { KEYMAP, KEY_BY_ID, keyLabel } from "./keymap.js";
@@ -61,7 +67,7 @@ const costWord = (c) => (c === 0 ? "Free" : c === "end" ? "Ends the unit's turn"
 const costBadge = (c) => (c === 0 ? "free" : c === "end" ? "end" : c === "all" ? "all" : c == null ? "" : String(c));
 
 // The bar's groups, left to right (a thin line between them): moving, fighting, the wounded, loot, doors and lights,
-// the vehicle, the rest, then the look-only buttons.
+// the vehicle, the rest, then the look-only buttons (in the card's corner).
 const GROUPS = [
   ["move", "face", "sneak", "goup", "godown", "evac", "evacStop", "retreat", "extract"],
   ["shoot", "cab", "overwatch", "reload", "ammocycle", "getshells", "firemode", "unjam", "suppress", "launch", "glround", "glreload", "melee", "pull", "subdue", "taser", "reloadTaser", "pepper", "throw", "throwspear", "pickspear", "hunker"],
@@ -72,7 +78,14 @@ const GROUPS = [
   [], // the rest: a rescue's ropes and locks, the siege kit, Surrender, Take them alive
   ["inventory", "cones"],
 ];
-const MISC = 6;
+const MISC = 6, VIEW = 7;
+// Each group's tray button (the view one has none: Inventory and Cones sit in the card's corner).
+const TRAY = [["Moving", "🗺️"], ["Fight", "⚔️"], ["Wounded", "🩺"], ["Loot", "🗃️"], ["Doors & lights", "🏠"], ["Vehicle", "🚗"], ["Other", "🧰"]];
+// The orders that stand on the bar, not in their group's tray: the everyday ones, and those that only show up when
+// they matter (a jam, the way out, the shells in the pack, someone down, getting in or out of the car).
+export const PRIMARY = new Set(["move", "sneak", "evacStop", "retreat", "extract", "shoot", "overwatch", "reload", "unjam", "getshells", "melee", "throw", "launch", "hunker",
+  "meds", "heal", "revive", "selfStab", "search", "searchBody", "board", "disembark", "drive"]);
+const TRAY_FROM = 9; // fewer orders than this (Inventory and Cones aside): all on the bar, no trays
 const GROUP_OF = new Map(GROUPS.flatMap((g, i) => g.map((v, j) => [v, [i, j]])));
 const rankOf = (v) => GROUP_OF.get(v) || [MISC, 99];
 
@@ -120,7 +133,6 @@ export function barOrders(b, u, list, { cones = false, canInv = false, acting = 
   for (const o of out) {
     const id = keyOfV(o.v);
     o.keyNow = o.k != null && !o.key ? "" : KEY_BY_ID.has(id) ? shortKey(keyLabel(id, 1)) : o.key || ""; // a second kind to throw: its key throws the first
-    o.minor = !o.ok && !CORE.includes(o.v) && o.v !== "lights"; // greyed and not a core one: a narrow bar keeps it under ⋯ More (styles.css)
   }
   out.sort((a, c) => { const [ga, ia] = rankOf(a.v), [gc, ic] = rankOf(c.v); return ga - gc || ia - ic; }); // stable: the misc keep their order
   const shown = new Set(out.map((o) => o.v));
@@ -130,27 +142,48 @@ export function barOrders(b, u, list, { cones = false, canInv = false, acting = 
 
 // One order button. The label comes first (the tools read "Melee <span class="key">V</span>"); the icon, the key and the
 // cost are placed by styles.css (#cbbar .bb-btn).
-function orderBtn(o, u) {
+function orderBtn(o, u, inTray = false) {
   const act = o.act || "cb-act";
   const c = costOf(o);
   const why = o.ok ? "" : o.why || (u && u.ap < 1 && c !== 0 ? "No actions left this turn." : "Not possible here now.");
   const title = `${plain(o.label)}${o.keyNow ? ` (${o.keyNow})` : ""}${costWord(c) ? ` · ${costWord(c)}` : ""}`;
   const tip = `${title}${why ? `\nNot now: ${why}` : ""}${o.tip && plain(o.tip) !== why ? `\n${plain(o.tip)}` : ""}`;
   const data = act === "cb-act" ? ` data-v="${esc(o.v)}"` : act === "cb-view" ? ` data-v="${esc(o.dv)}"` : "";
-  const extra = `${o.k != null ? ` data-k="${esc(o.k)}"` : ""}${o.id != null ? ` data-id="${esc(o.id)}"` : ""}`;
-  const cls = ["bb-btn", o.on ? "active" : "", o.ok ? "" : "off", o.stub ? "stub" : "", o.minor ? "minor" : ""].filter(Boolean).join(" ");
+  const extra = `${o.k != null ? ` data-k="${esc(o.k)}"` : ""}${o.id != null ? ` data-id="${esc(o.id)}"` : ""}${inTray ? ` data-tray="1"` : ""}`; // given from a tray: it closes
+  const cls = ["bb-btn", o.on ? "active" : "", o.ok ? "" : "off", o.stub ? "stub" : ""].filter(Boolean).join(" ");
   return `<button class="${cls}" data-action="${act}"${data}${extra} ${o.ok ? "" : "disabled"} data-tip="${esc(tip)}" data-tip-pre data-bv="${esc(o.v)}">${o.label}${o.keyNow ? ` <span class="key">${esc(o.keyNow)}</span>` : ""}<i class="bb-ic">${iconOf(o.v)}</i>${costBadge(c) ? `<i class="bb-ap${c === "end" ? " end" : c === 0 ? " free" : ""}">${costBadge(c)}</i>` : ""}</button>`;
 }
-// The orders, a thin line between the groups (a group of greyed minor orders only: its line goes with them).
-function ordersHtml(list, u) {
-  let html = "", g = null;
-  list.forEach((o, i) => {
-    const gi = rankOf(o.v)[0];
-    if (g != null && gi !== g) html += `<i class="bb-sep${list.slice(i).filter((x) => rankOf(x.v)[0] === gi).every((x) => x.minor) ? " minor" : ""}"></i>`;
-    g = gi;
-    html += orderBtn(o, u);
+// What stands on the bar: shown (sorted by group) cut into the groups, each its PRIMARY orders (greyed: the core ones
+// only) and either the rest too (one other, or a short list) or a tray button for them. flat: everything on the bar, no trays.
+export function barLayout(shown, { flat = false } = {}) {
+  const groups = [];
+  for (const o of shown) { const gi = rankOf(o.v)[0]; if (!groups.length || groups[groups.length - 1].gi !== gi) groups.push({ gi, list: [] }); groups[groups.length - 1].list.push(o); }
+  const trays = !flat && shown.filter((o) => rankOf(o.v)[0] !== VIEW).length >= TRAY_FROM;
+  const onBar = (o) => PRIMARY.has(o.v) && (o.ok || o.on || CORE.includes(o.v)); // a greyed one that only matters now and then (Unjam, Revive …): its tray
+  return groups.map(({ gi, list }) => {
+    const rest = list.filter((o) => !onBar(o));
+    if (!trays || gi === VIEW || rest.length < 2) return { gi, bar: list, tray: [] };
+    return { gi, bar: list.filter(onBar), tray: rest };
   });
-  return html;
+}
+// A group's tray button: its name, how many of its orders can be given now; open, its tray stands over the bar.
+function trayBtn(gi, tray, open) {
+  const [name, ic] = TRAY[gi];
+  const ready = tray.filter((o) => o.ok).length;
+  const busy = tray.some((o) => o.on);
+  const tip = open ? "" : `${name}: ${tray.map((o) => plain(o.label)).join(", ")}.\nOpens them in a tray over the bar (Esc closes it); each keeps its key.`; // open: no tip over the tray
+  return `<button class="bb-btn bb-traybtn${open ? " active" : ""}${busy ? " busy" : ""}${ready ? "" : " off"}" data-action="cb-bar" data-v="tray" data-g="${gi}" data-tip="${esc(tip)}" data-tip-pre>${name}<i class="bb-ic">${ic}</i><i class="bb-caret">${open ? "▾" : "▴"}</i><i class="bb-ap">${ready}</i></button>`;
+}
+// The orders, a thin line between the groups.
+function ordersHtml(layout, u, open) {
+  return layout.map(({ gi, bar, tray }) => bar.map((o) => orderBtn(o, u)).join("") + (tray.length ? trayBtn(gi, tray, open === gi) : "")).filter(Boolean).join(`<i class="bb-sep"></i>`);
+}
+// The open tray: its orders with their names, over the bar.
+function trayHtml(layout, u, open) {
+  const g = layout.find((x) => x.gi === open && x.tray.length);
+  if (!g) return "";
+  const [name, ic] = TRAY[g.gi];
+  return `<div class="bb-tray"><div class="bb-trayhead"><b>${ic} ${esc(name)}</b><button class="bb-trayx" data-action="cb-bar" data-v="tray" data-g="${g.gi}" data-tip="Close (Esc)">✕</button></div><div class="bb-trayrow">${g.tray.map((o) => orderBtn(o, u, true)).join("")}</div></div>`;
 }
 
 // ---------- the card ----------
@@ -178,8 +211,9 @@ export function cardChips(state, b, u) {
   if (u.nvg) c.push([nvgOn(u) ? "NVG ON" : "NVG OFF", nvgOn(u) ? "good" : "", `Night vision ${nvgOn(u) ? "on" : "off (flipped up)"}.`]);
   return c;
 }
-function cardHtml(state, b, u, n, salt, head) {
-  if (!u) return `<div class="bb-card empty"><span class="muted">Select one of your people (1–9 or Tab).</span></div>`;
+// look: the look-only buttons (Inventory, Cones), small in the card's corner.
+function cardHtml(state, b, u, n, salt, head, look = "") {
+  if (!u) return `<div class="bb-card empty"><span class="muted">Select one of your people (1–9 or Tab).</span>${look ? `<div class="bb-look">${look}</div>` : ""}</div>`;
   const f = Math.max(0, Math.min(1, u.hp / u.maxHp));
   const max = Math.max(2, u.ap || 0);
   const acting = b.phase === "player" && !u.dead && !u.left;
@@ -193,7 +227,7 @@ function cardHtml(state, b, u, n, salt, head) {
     <div class="bb-who"><div class="bb-name"><b>${esc(u.name)}</b>${n ? `<span class="bb-n">${n}</span>` : ""}</div>
       <div class="bb-hpline"><span class="bb-hp${u.bleeding > 0 || (u.down && !u.stab) ? " bleed" : ""}"><i style="width:${(f * 100).toFixed(0)}%;background:${hpCol(f)}"></i></span><span class="bb-hpn">${Math.round(u.hp)}<span class="muted">/${u.maxHp}</span></span></div>
       <div class="bb-apline">${apLine}</div>
-      ${chips.length || icons ? `<div class="bh-chips bb-chips">${chips.map(([t, c, tip]) => `<span class="bh-chip ${c}" data-tip="${esc(tip)}">${esc(t)}</span>`).join("")}${icons}</div>` : ""}</div></div>`;
+      ${chips.length || icons ? `<div class="bh-chips bb-chips">${chips.map(([t, c, tip]) => `<span class="bh-chip ${c}" data-tip="${esc(tip)}">${esc(t)}</span>`).join("")}${icons}</div>` : ""}</div>${look ? `<div class="bb-look">${look}</div>` : ""}</div>`;
 }
 // A tab a person of yours: their face, number, actions left, health; click (or the number key) selects them.
 function tabHtml(state, b, p, i, sel, salt) {
@@ -208,27 +242,39 @@ function tabHtml(state, b, p, i, sel, salt) {
 
 // ---------- the bar ----------
 // d: { state, b, u, team, orders (unitOrders' list), head, extra (its context panels), controls [{ act, v?, ic, label, ok, why?, on?, primary?, key, tip }],
-//   ask (the question over the controls), more (⋯ More open), cones, autoPlay, salt }
+//   ask (the question over the controls), all (show the orders that cannot be given too), tray (the open tray's group),
+//   flat (the tools' screen: every order of the unit on the bar, no trays), cones, autoPlay, salt }
 export function barHtml(d) {
   const { state, b, u, team, controls, ask, salt } = d;
   if (!b || b.over) return "";
   const sel = u && u.side === "player" && u.vol == null ? u : null;
   const n = sel ? team.indexOf(sel) + 1 : 0;
-  // Left: the selected one's card, everyone's tabs.
-  const left = `<div class="bb-left">${cardHtml(state, b, sel, n > 0 && n <= 9 ? n : 0, salt, d.head)}<div class="bb-team">${team.map((p, i) => tabHtml(state, b, p, i, sel ? sel.id : null, salt)).join("")}</div></div>`;
   // Middle: the orders (or what is going on instead).
   const acting = b.phase === "player" && !d.autoPlay && sel && !sel.dead && !sel.left && !sel.fled;
   const canAct = acting && !d.head && (!sel.down || sel.aboard);
   const { list, more } = barOrders(b, sel, acting ? d.orders : [], { cones: d.cones, canInv: !!(sel && sel.sid != null), acting: canAct });
+  // Ready only (the default): the orders that can be given now (and those switched on). All: the greyed ones too, and
+  // the key table's other orders. flat (the tools' screen): the bar as it was, every order of the unit on it.
+  const all = d.flat || d.all;
+  const canGive = (o) => o.ok || (o.on && o.v !== "move"); // switched on (sneaking, the light, a throw being aimed); Move is the default mode
+  let shown = all ? list : list.filter(canGive);
+  if (d.all && !d.flat && canAct) shown = [...list, ...more].sort((a, c) => { const [ga, ia] = rankOf(a.v), [gc, ic] = rankOf(c.v); return ga - gc || ia - ic; });
+  const hidden = list.length + more.length - list.filter(canGive).length;
   let note = "";
   if (b.phase === "enemy") note = "Enemy turn: watch the map. Your turn comes next.";
   else if (b.phase === "deploy") note = b.drill ? "A drill: place your people (the panel), then Save as plan." : `Deploy: click one of your people, then a green cell. Start the fight in the panel (${keyLabel("battle.confirm", 1) || "Enter"}).`;
   else if (d.autoPlay) note = `The AI is playing your side (${keyLabel("battle.autoplay", 1) || "Shift+A"} or Take back control to play again).`;
   else if (!sel) note = "Select one of your people: click them, their tab, or press 1–9 or Tab.";
   else if (sel.dead || sel.left || sel.fled) note = `${first(sel)} is out of the fight: select someone else (Tab).`;
-  const minor = list.filter((o) => o.minor).length;
-  const moreBtn = canAct && (more.length || minor) ? `<button class="bb-btn bb-morebtn${d.more ? " active" : ""}" data-action="cb-bar" data-v="more" data-tip="${esc(`${d.more ? "Hide" : "Show"} the other battle orders (${more.length + minor}): each greyed one says when it applies.`)}"><i class="bb-ic">${ICON.more}</i></button>` : "";
-  const mid = `<div class="bb-mid${d.more ? " more-open" : ""}">${note ? `<div class="bb-note">${esc(note)}</div>` : ""}${acting && d.extra ? `<div class="bb-extra">${d.extra}</div>` : ""}<div class="bb-orders">${ordersHtml(list, sel)}${moreBtn}</div>${d.more && canAct && more.length ? `<div class="bb-orders bb-more">${more.map((o) => orderBtn(o, sel)).join("")}</div>` : ""}</div>`;
+  else if (canAct && !shown.some((o) => rankOf(o.v)[0] !== VIEW)) note = `${first(sel)} has nothing to do now${sel.ap < 1 ? " (no actions left)" : ""}: select someone else (Tab) or end the turn.`;
+  const layout = barLayout(shown.filter((o) => rankOf(o.v)[0] !== VIEW), { flat: d.flat });
+  // Left: the selected one's card (Inventory and Cones in its corner: they look, they do nothing), everyone's tabs.
+  const look = shown.filter((o) => rankOf(o.v)[0] === VIEW).map((o) => orderBtn(o, sel)).join("");
+  const left = `<div class="bb-left">${cardHtml(state, b, sel, n > 0 && n <= 9 ? n : 0, salt, d.head, look)}<div class="bb-team">${team.map((p, i) => tabHtml(state, b, p, i, sel ? sel.id : null, salt)).join("")}</div></div>`;
+  const open = d.flat ? null : d.tray;
+  const allBtn = canAct && !d.flat && (hidden || d.all) ? `<i class="bb-sep"></i><button class="bb-btn bb-allbtn${d.all ? " active" : ""}" data-action="cb-bar" data-v="all" data-tip="${esc(d.all ? "Ready only: show just the orders that can be given now (all of them are shown now)." : `All orders: the ${hidden} that cannot be given now too, greyed, each saying why or when it applies.`)}" data-tip-pre><span class="bb-lbl">${d.all ? "Ready only" : "All"}</span><i class="bb-ic">${ICON.more}</i>${d.all ? "" : `<i class="bb-ap">+${hidden}</i>`}</button>` : "";
+  const float = `${acting && d.extra ? `<div class="bb-extra">${d.extra}</div>` : ""}${trayHtml(layout, sel, open)}`;
+  const mid = `<div class="bb-mid">${note ? `<div class="bb-note">${esc(note)}</div>` : ""}${float ? `<div class="bb-float">${float}</div>` : ""}<div class="bb-orders">${ordersHtml(layout, sel, open)}${allBtn}</div></div>`;
   // Right: the turn, the weapon, the turn controls (and their question above them).
   const phase = b.phase === "player" ? `<b class="good">Your turn</b>` : b.phase === "enemy" ? `<b class="danger">Enemy turn</b>` : `<b class="warn">Deploy</b>`;
   const ready = b.phase === "player" ? team.filter((p) => !p.dead && !p.left && !p.fled && !p.down && p.ap > 0).length : 0;
