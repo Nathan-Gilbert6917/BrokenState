@@ -8,13 +8,20 @@
 //   - the person's rounds go back: Drop off and the stores (settleBase), dropRounds; settleParty and unpackPerson never
 //     strip them off a person;
 //   - in a fight the acting unit's own kit moves for 1 action (pocket, pack, rig pouch, hands): the caches refit
-//     (u.boxes, u.handBoxes, each magazine's place keeping its rounds, a gun swapped into the hands); refused at 0 AP,
-//     on the enemy's turn, for armour and the pack, for someone else's kit; split / open / box cost the same; a save
-//     and load in the middle keeps it all;
-//   - loose rounds dropped onto a spare magazine of the gun load it (sim/mags.js loadMagPlan / loadMagFrom, magEntryAt;
-//     2026-10-18 user request): 1 action with the rounds in a pocket or a rig pouch, both from the pack; refused with
-//     one action left from the pack, for a box (open it first), for another gun's magazine, for a full one, for one
-//     holding another type; the badge on the magazine (gunrounds.js) shows the count; a swap keeps each entry in its place.
+//     (u.boxes, u.handBoxes, each magazine's place with the rounds on the item, a gun swapped into the hands); refused
+//     at 0 AP, on the enemy's turn, for armour and the pack, for someone else's kit; split / open / box cost the same; a
+//     save and load in the middle keeps it all;
+//   - the rounds are PHYSICAL in a fight (2026-10-18 user rules, sim/mags.js header, roundstack.js): the fight's start
+//     fills the gun and the spares out of the person's own rounds (a pocket handful of 80: 15 into the gun, 15 into each
+//     spare, 35 left), each spare magazine item carries its stack (item.stack: the entries are rebuilt after every move
+//     or load, so an entry captured before is stale: re-find it with magEntryAt); a gun taken up out of the pack is
+//     loaded out of what they carry; one put down keeps its rounds on it (gunload.js);
+//   - rounds dropped onto a spare magazine of the gun load it (sim/mags.js loadMagPlan / loadMagFrom, magEntryAt): up
+//     to 6 a time, boxed or loose, 1 action with the rounds in a pocket or a rig pouch, both from the pack, the rounds
+//     leaving the stack as they go in (an emptied stack is thrown away); another type goes on top of what is there (an
+//     assortment, the top is the magazine's load); refused with one action left from the pack, for another gun's
+//     magazine, for a full one; the badge on the magazine (gunrounds.js) reads its stack; a Reload's swap is physical
+//     (the fresh magazine is the gun's fitted one, the one out of the gun lies where the fresh one came from).
 // Usage: node tools/invfighttest.js [seed]
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyMembers } from "../src/sim/parties.js";
@@ -30,11 +37,12 @@ import { giveGoods } from "../src/sim/teammeet.js";
 import { formTeam, formPreview } from "../src/sim/teamform.js";
 import { settleBase, settleParty, setRounds, giveRounds } from "../src/sim/ammo.js";
 import { createBattle, combatAct, registerCombatHandler, INV_AP, refitKit, loadMag } from "../src/sim/combat.js";
-import { MAGS, LOAD_AP, magEntryAt, loadedIn, loadMagPlan } from "../src/sim/mags.js";
+import { MAGS, LOAD_AP, magEntryAt, loadedIn, loadMagPlan, fittedMag } from "../src/sim/mags.js";
 import { gunRounds } from "../src/sim/gunrounds.js";
 import { carriedSpots } from "../src/sim/inventory.js";
 import { starterMags } from "../src/sim/carrykit.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
+import { stackN, stackText } from "../src/sim/roundstack.js";
 
 const SEED = Number(process.argv[2] || 42);
 let passed = 0, failed = 0;
@@ -239,21 +247,25 @@ section("In a fight: a move between pockets, pack and rig costs 1 action and ref
   a.gear.backpack = newItem("backpack");
   a.gear.rig = newItem("chestrig");
   a.gear.armor = newItem("plate");
-  a.pockets[2] = roundItem(K, 40, true); // a loose handful: a box at hand (mags.js shellsAt / fitHandBoxes count it)
+  a.pockets[2] = roundItem(K, 80, true); // a loose handful: a box at hand (mags.js fitHandBoxes counts it); the fight's start fills the gun and the spares out of it
   packOf(a)[5] = roundItem(K, 100, false);
   const b = openBattle(st, [a, mate]);
   const u = unitOf(b, a), m = unitOf(b, mate);
   u.ap = 2; m.ap = 2;
   const mags0 = u.mags.length;
   check(INV_AP === 1 && u.boxes.includes(a.pockets[2]) && u.handBoxes === 1 && mags0 === 3, `the unit takes the field with the pocket's rounds at hand (handBoxes ${u.handBoxes}) and ${mags0} magazines (the gun's and two spares)`);
+  check(u.mag === 15 && stackN(u.stack) === 15 && u.mags.filter((x) => x.where !== "gun").every((x) => x.n === 15 && stackN(x.item.stack) === 15) && amountOf(a.pockets[2]) === 35 && amountOf(packOf(a)[5]) === 100, `the fight's start filled the gun (15) and both spares (15 each) out of the pocket's 80, physically: 35 left in the pocket, the pack's box untouched (${amountOf(a.pockets[2])}, ${amountOf(packOf(a)[5])})`);
   let err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pocket", 2), to: L(a, "pack", 0) });
-  check(err === "" && u.ap === 1 && isRoundItem(packOf(a)[0]) && !a.pockets[2], `pocket → pack: done for 1 action (${err || "ok"}; ${u.ap} left)`);
+  check(err === "" && u.ap === 1 && isRoundItem(packOf(a)[0]) && amountOf(packOf(a)[0]) === 35 && !a.pockets[2], `pocket → pack: the 35 done for 1 action (${err || "ok"}; ${u.ap} left)`);
   check(u.handBoxes === 0 && u.boxes.includes(packOf(a)[0]), "the boxes refit: the handful is in the pack now, not at hand");
-  for (const x of u.mags) if (x.where !== "gun") x.n = 7; // part-used spares keep their rounds when one moves (the entries of one key are matched by place: physical magazines, virtual rounds)
+  for (const x of u.mags) if (x.where !== "gun") x.item.stack = [{ k: K, n: 7 }]; // part-used spares: the rounds are on the item (physical), so a move keeps them wherever the magazine goes
+  refitKit(b, u, a); // (set by hand here: the entries read the items)
+  check(u.mags.filter((x) => x.where !== "gun").every((x) => x.n === 7), "the entries read the items' stacks (7 each)");
   const magLoc = L(a, "pocket", a.pockets.findIndex((it) => it && GEAR[it.key] && GEAR[it.key].mag));
+  const moved = a.pockets.find((it) => it && GEAR[it.key] && GEAR[it.key].mag);
   err = combatAct(st, { type: "inv", unit: u.id, from: magLoc, to: L(a, "rig", 0) });
-  check(err === "" && u.ap === 0 && rigPouches(a)[0] && GEAR[rigPouches(a)[0].key].mag, `a magazine pocket → rig pouch: done (${err || "ok"})`);
-  check(u.mags.length === mags0 && u.mags.some((x) => x.where === "rig" && x.n === 7) && u.mags.filter((x) => x.where === "pocket").length === 1 && u.mags.filter((x) => x.where !== "gun").reduce((s, x) => s + x.n, 0) === 14, `the magazine is placed in the rig now, with its 7 rounds (${u.mags.map((x) => `${x.where}:${x.n}`).join(" ")}); a reload from there costs ${MAGS.AP.rig}`);
+  check(err === "" && u.ap === 0 && rigPouches(a)[0] === moved && GEAR[rigPouches(a)[0].key].mag, `a magazine pocket → rig pouch: done (${err || "ok"})`);
+  check(u.mags.length === mags0 && u.mags.some((x) => x.where === "rig" && x.item === moved && x.n === 7 && stackN(moved.stack) === 7) && u.mags.filter((x) => x.where === "pocket").length === 1 && u.mags.filter((x) => x.where !== "gun").reduce((s, x) => s + x.n, 0) === 14, `the magazine is placed in the rig now, with its 7 rounds on it (${u.mags.map((x) => `${x.where}:${x.n}`).join(" ")}); a reload from there costs ${MAGS.AP.rig}`);
   err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), to: L(a, "pocket", 2) });
   check(/No action left/.test(err) && isRoundItem(packOf(a)[0]), `at 0 AP: refused, nothing moves (${err})`);
   u.ap = 2;
@@ -272,14 +284,14 @@ section("In a fight: a move between pockets, pack and rig costs 1 action and ref
   // Split, open, box: 1 action each.
   err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 5), op: "open" });
   const loose = packOf(a).filter((it) => it && isRoundItem(it) && it.loose);
-  check(err === "" && u.ap === 1 && loose.length === 2 && amountOf(packOf(a)[5]) === 100 - AMMO_STACK.LOOSE, `Open box: a loose handful of ${AMMO_STACK.LOOSE} beside the boxes for 1 action (${err || "ok"})`);
-  err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), op: "box" });
-  check(err === "" && u.ap === 0 && !packOf(a)[0].loose, `Box on the handful: boxed for 1 action (${err || "ok"})`);
-  err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), op: "split" });
+  check(err === "" && u.ap === 1 && loose.length === 2 && amountOf(packOf(a)[5]) === 100 - AMMO_STACK.LOOSE && packOf(a)[1] && packOf(a)[1].loose && amountOf(packOf(a)[1]) === AMMO_STACK.LOOSE, `Open box: a loose handful of ${AMMO_STACK.LOOSE} beside the boxes for 1 action, ${100 - AMMO_STACK.LOOSE} left boxed (${err || "ok"})`);
+  err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 1), op: "box" });
+  check(err === "" && u.ap === 0 && !packOf(a)[1].loose && amountOf(packOf(a)[1]) === AMMO_STACK.LOOSE, `Box on the handful of ${AMMO_STACK.LOOSE}: boxed for 1 action (${err || "ok"})`);
+  err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 1), op: "split" });
   check(/No action left/.test(err), "Split at 0 AP: refused");
   u.ap = 2;
-  err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), op: "split" });
-  check(err === "" && u.ap === 1 && packOf(a).filter((it) => it && isRoundItem(it)).length === 4, `Split: half the stack beside it for 1 action (${err || "ok"})`);
+  err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 1), op: "split" });
+  check(err === "" && u.ap === 1 && packOf(a).filter((it) => it && isRoundItem(it)).length === 4 && amountOf(packOf(a)[1]) === AMMO_STACK.LOOSE / 2, `Split: half the stack beside it for 1 action (${err || "ok"}: ${packOf(a).filter((it) => it && isRoundItem(it)).map((it) => amountOf(it)).join(", ")})`);
   err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pocket", 3), to: L(a, "pack", 2) });
   check(/Nothing there/.test(err) && u.ap === 1, "an empty slot: nothing moves, nothing spent");
 }

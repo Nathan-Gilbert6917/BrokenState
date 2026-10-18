@@ -24,6 +24,7 @@ import { SITE_TAGS, AREA_TAGS } from "./loot.js";
 import { BULK, BULK_FINDS } from "./data-stacks.js"; // bulk ammo containers, a find's boxed share (2026-10-10)
 import { isBulk, loadsOf, sweepLoads, bulkRecord, roundItems, newBulk, fillBulk, boxSize } from "./itemstack.js";
 import { settleItems } from "./supitems.js"; // supplies held as items, back into the stock (call-time only: safe in the import cycle) // rounds loose, boxed, in bulk
+import { stackN, stackOf, takeTop, topKey, syncGun } from "./roundstack.js"; // physical rounds in a gun and its magazines (mags.js, 2026-10-18)
 
 // ---------- keys and stock records (rounds.js) ----------
 export * from "./rounds.js";
@@ -521,18 +522,30 @@ export const loadOf = (u) => { const c = calOf(u && u.weapon); return c ? typeFo
 /** @param {any} b @param {any} u @param {string} key */
 function battleKeyRounds(b, u, key) {
   let n = 0;
+  if (stacked(u)) { // physical rounds (mags.js): in the gun, in its spare magazines, and the round items on them; nothing of a teammate's or the team's bags
+    for (const k of withHand(key)) {
+      n += stackOf(u.stack, k);
+      for (const m of u.mags || []) if (m.where !== "gun" && m.item && Array.isArray(m.item.stack)) n += stackOf(m.item.stack, k);
+      for (const it of u.boxes || []) if (it && it.key === k) n += Math.max(0, Math.floor(num(it.dur)));
+    }
+    return n;
+  }
   for (const k of withHand(key)) { // the bench's handloads of it too (reloading.js)
     for (const o of b.units || []) if (o.side === u.side && o.boxes) for (const it of o.boxes) if (it && it.key === k) n += Math.max(0, Math.floor(num(it.dur)));
     for (const p of b.pools || []) n += Math.max(0, Math.floor(num(p[k])));
   }
   return n;
 }
+// One of yours with physical rounds in the gun (mags.js isStacked, without the import cycle at load time).
+/** @param {any} u */
+export const stacked = (u) => !!(u && u.side === "player" && Array.isArray(u.stack) && Array.isArray(u.mags) && u.magsW === u.weapon);
 // The handload key the unit's next round comes from (takeBattleRounds' order: its own boxes, its teammates', the
 // pools; in each the factory round first), or null for a factory round (or none). gunfire.js reads its make.
 /** @param {any} b @param {any} u */
 export function nextHand(b, u) {
   const cal = calOf(u && u.weapon);
   if (!cal) return null;
+  if (stacked(u)) { const k = topKey(u.stack); return k && HAND_SUPPLIES[k] ? k : null; } // the chamber's round
   const keys = withHand(keyFor(cal, u.load));
   if (keys.length < 2) return null;
   const [fk, hk] = keys;
@@ -570,6 +583,11 @@ export function loadsFor(b, u) {
 export function takeBattleRounds(b, u, n) {
   const cal = calOf(u.weapon);
   if (!cal || !(n > 0)) return 0;
+  if (stacked(u)) { // physical rounds: off the top of the gun's stack (the chamber's round decided the shot); the next is in the chamber now
+    const got = takeTop(u.stack, n).reduce((a, r) => a + r.n, 0);
+    syncGun(u, cal);
+    return got;
+  }
   const keys = withHand(keyFor(cal, u.load)); // in each holder its factory rounds first, then the bench's handloads
   let got = 0;
   const fromBox = (it, key) => { if (got >= n || !it || it.key !== key) return; const q = Math.min(n - got, Math.max(0, Math.floor(num(it.dur)))); it.dur -= q; got += q; };
@@ -591,6 +609,7 @@ export function sideRounds(b) {
   let n = 0;
   for (const p of b.pools || []) n += totalRounds(p);
   for (const o of b.units || []) if (o.side === "player" && o.boxes) for (const it of o.boxes) n += Math.max(0, Math.floor(num(it && it.dur)));
+  for (const o of b.units || []) if (stacked(o)) { n += stackN(o.stack); for (const m of o.mags) if (m.where !== "gun" && m.item) n += stackN(m.item.stack); } // the rounds in the guns and the magazines (mags.js: physical)
   return n;
 }
 // The load a fighter of yours takes the field with: the gun's own (item.load), else its common round; one the side has

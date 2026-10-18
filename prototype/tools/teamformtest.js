@@ -12,7 +12,7 @@ import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { partyTile, partyMembers, poolLoad, partyCapacity, teamName, orderOptions, MISSIONS, planPath, travelHours, paceOpts, carryCapacity, leaveVehicle, wipeParty, launchExpedition, movePartiesHour, orderMove, hoursLeft, partySpeed, supplyLoad } from "../src/sim/parties.js";
 import { reseat } from "../src/sim/walkers.js";
 import { vehiclesAtBase, vehicleById, partyVehicle, isBike, createVehicle, parkBikes, seatsOf, MAX_VEHICLES, fleetOf, partyVehicles, payloadOf, typeSpeed, typeFuel, roadPace, partyFuel, useFuel, breakdownRoll, fleetJoinProblem, addPartyVehicle, driversFor } from "../src/sim/vehicles.js";
-import { createBattle, registerCombatHandler, vehicleBlast, settleVehicle, magShown, magCap } from "../src/sim/combat.js";
+import { createBattle, registerCombatHandler, vehicleBlast, settleVehicle, magShown, magCap , ammoLeft } from "../src/sim/combat.js";
 import { roundsOf } from "../src/sim/ammo.js";
 import { ROCKET } from "../src/sim/launchers.js";
 import { newItem, stripAll, allCarried, itemLoad, packOf, quickMove, carriedSpots } from "../src/sim/inventory.js";
@@ -170,12 +170,19 @@ section("Forming: the guns and magazines leave as loaded as the window showed, a
   // The fight: every magazine as full as the window said (b's and d's pistols share the 25: 15 and 10 of 30).
   const tile = state.tiles.find((t) => t.id !== h.tile && !t.loc && t.terrain !== "water" && state.grid.distance(t.id, h.tile) > 1);
   p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
+  const snapSup = { ...p.supplies }, snapBoxes = crew.flatMap((s) => carriedSpots(s)).filter((x) => x.item && /^a_/.test(x.item.key) && x.item.dur != null).map((x) => [x.item, x.item.dur]);
   state.combat = createBattle(state, { tile: tile.id, partyId: p.id, enemy: { kind: "raiders", count: 2, power: 3 }, ambush: null, canRetreat: true, handler: "teamformtest", context: {} });
   const bt = state.combat;
   const unit = (s) => bt.units.find((u) => u.side === "player" && u.sid === s.id);
   const full = (s) => magShown(bt, unit(s)) === magCap(unit(s));
   check(full(a) && full(b) && full(c), `in the fight the rifle and the pistols start full (${[a, b, c].map((s) => `${magShown(bt, unit(s))}/${magCap(unit(s))}`).join(" ")})`);
-  check(roundsOf(bt, unit(a)) === 60 && roundsOf(bt, unit(b)) + 0 === 25 + 50, `the side's rounds: 60 of 5.56; 25 and c's box of 9mm (${roundsOf(bt, unit(a))}, ${roundsOf(bt, unit(b))})`);
+  check(ammoLeft(bt) === 60 + 25 + 50, `the side's rounds: 60 of 5.56; 25 and c's box of 9mm, in the guns, the magazines, the pockets and the bags (${ammoLeft(bt)})`);
+  check(roundsOf(bt, unit(a)) === 60 && roundsOf(bt, unit(b)) === 15 && roundsOf(bt, unit(c)) === 50, `each gun counts its own (mags.js, physical rounds: the gun, its spares, the rounds on the person): ${roundsOf(bt, unit(a))} / ${roundsOf(bt, unit(b))} / ${roundsOf(bt, unit(c))}`);
+  // (The fight is torn down here, not ended: the stores and the boxes are put back as they were before it, so the
+  // checks below see them as a fight that never happened would; mags.js physical rounds took them into the guns.)
+  Object.assign(p.supplies, snapSup);
+  for (const [it, dur] of snapBoxes) it.dur = dur;
+  for (const x of bt.units) if (x.side === "player") { x.stack = []; for (const mg of x.mags || []) if (mg.item) delete mg.item.stack; }
   state.combat = null; p.phase = "waiting"; p.path = [h.tile]; p.idx = 0; p.dest = h.tile;
   // Editing at the base: one more armed person brings their magazines' rounds; one going back in takes theirs with them.
   h.stock.a_9mm_fmj = 40;

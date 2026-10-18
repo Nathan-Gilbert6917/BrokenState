@@ -17,7 +17,7 @@ import { GEAR, SUPPLIES, SUPPLY_KEYS, STOCK_KEYS } from "../src/sim/data.js";
 import { CALIBERS, AMMO_TYPES, KIT_AMMO, ammoKey, HAND_SUPPLIES } from "../src/sim/data-ammo.js";
 import {
   WEAPONS, createBattle, combatAct, registerCombatHandler, canFire, fireRefusal, magShown, reloadRefusal, shotOdds, shotHit, damage,
-  autoResolveCombat, enemyUnit, autoPlayerTurn, closeCombat, endBattleNow, byNumbersOdds,
+  autoResolveCombat, enemyUnit, autoPlayerTurn, closeCombat, endBattleNow, byNumbersOdds, refitKit, loadMag,
 } from "../src/sim/combat.js";
 import {
   ROUND_KEYS, isRoundKey, calOf, totalRounds, roundsIn, roundsOf, settleRec, spendAmmo, addAmmo, giveRounds, setRounds, newBox, boxesOf,
@@ -25,6 +25,7 @@ import {
   kindShare, softMult, typeFor, loadOf, pickLoad, huntLoad, foldRounds, migrateAmmo,
 } from "../src/sim/ammo.js";
 import { newItem, enemyBody, itemKg } from "../src/sim/inventory.js";
+import { roundItem, amountOf } from "../src/sim/itemstack.js";
 import { itemValue } from "../src/sim/valuation.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
 import { swarmArmor } from "../src/sim/carriers.js";
@@ -111,44 +112,48 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   check(h.cal === "9mm" && h.ammo === "fmj" && h.how === "shot" && h.weapon === "pistol", "a shot's hit carries its calibre and type (hit.cal, hit.ammo)");
 }
 
-// 3. A gun fires only its own calibre and loaded type; boxes first; sweep; reload with another type.
+// 3. A gun fires only its own calibre and loaded type; the rounds are physical (mags.js, 2026-10-18): the gun fills
+// from the person's own box then the team's bags, a shot comes out of the gun, a Reload only out of what they carry.
 {
   console.log("In the fight");
   const st = createWorld({ seed: seed + 1, factionCount: 4 });
   const a = fighter(st, "pistol");
   a.pockets[0] = newBox("a_9mm_fmj", 3);
-  a.pockets[1] = Object.assign(newItem("mag_glock_15"), { load: "hp" }); // a spare magazine of hollow points (magazines as items: a type switch is a magazine of that type)
+  a.pockets[1] = Object.assign(newItem("mag_glock_15"), { load: "hp" }); // a spare magazine for hollow points (nothing to fill it with: empty)
   const b = openBattle(st, [a], { a_556_fmj: 60 });
   const u = by(b, a);
-  check(u.boxes.length === 1 && roundsOf(b, u) === 3, "the box in their pocket counts (3 rounds of 9mm FMJ)");
+  check(u.boxes.length === 1 && u.mag === 3 && a.pockets[0].dur === 0 && roundsOf(b, u) === 3, "the box in their pocket counts: its 3 rounds of 9mm FMJ are in the gun (the box empty)");
   const t = foes(b)[0];
   place(u, 2, 2); place(t, 6, 2); t.hp = t.maxHp = 100000;
   for (let i = 0; i < 3; i++) act(st, b, u, { type: "shoot", target: t.id });
-  check(a.pockets[0].dur === 0 && roundsOf(b, u) === 0, "three shots empty the box");
-  check(!canFire(b, u) && /Out of ammo \(no 9mm/.test(fireRefusal(b, u)), `with only 5.56 left a 9mm pistol cannot fire ("${fireRefusal(b, u)}")`);
+  check(u.mag === 0 && roundsOf(b, u) === 0, "three shots empty the gun");
+  check(!canFire(b, u) && /Out of ammo/.test(fireRefusal(b, u)) && /no rounds for the 9mm pistol on them/.test(fireRefusal(b, u)), `with only 5.56 left a 9mm pistol cannot fire ("${fireRefusal(b, u)}")`);
   check(b.pools[0].a_556_fmj === 60, "and no 5.56 was spent");
   b.pools[0].a_9mm_fmj = 10; b.pools[0].a_9mm_hp = 8;
-  check(roundsOf(b, u) === 10 && roundsOf(b, u, "hp") === 8 && roundsOf(b, u, "*") === 18, "roundsOf follows the pools by type");
-  u.mag = 5;
+  check(roundsOf(b, u) === 0 && /The base's 10 are in its stock/.test(reloadRefusal(b, u)), `rounds in the team's bags are not the shooter's (roundsOf 0; "${reloadRefusal(b, u)}")`);
+  a.pockets[2] = roundItem("a_9mm_fmj", 10, true); a.pockets[3] = roundItem("a_9mm_hp", 8, true);
+  refitKit(b, u, a);
+  check(roundsOf(b, u) === 10 && roundsOf(b, u, "hp") === 8 && roundsOf(b, u, "*") === 18, "roundsOf follows what they carry, by type");
   b.phase = "player"; u.ap = 2;
   const ap0 = u.ap;
   const why = combatAct(st, { type: "reload", unit: u.id, ammo: "hp" });
-  check(!why && u.load === "hp" && u.ap === ap0 - 1 && magShown(b, u) === Math.min(8, u.magMax), `Reload with hollow points: 1 action, the load switched (${u.load}, ${magShown(b, u)}/${u.magMax})`);
+  check(!why && u.load === "hp" && u.ap === ap0 - 1 && magShown(b, u) === 6 && amountOf(a.pockets[3]) === 2, `Reload with hollow points: 1 action, 6 by hand from the pocket, the load switched (${u.load}, ${magShown(b, u)}/${u.magMax}; ${amountOf(a.pockets[3])} left)`);
   check(!!reloadRefusal(b, u, "slug"), "no slugs in a pistol");
   act(st, b, u, { type: "shoot", target: t.id });
-  check(b.pools[0].a_9mm_hp === 7 && b.pools[0].a_9mm_fmj === 10, "a shot with hollow points takes a hollow point");
-  // Teammates' boxes before the pools.
+  check(u.mag === 5 && u.load === "hp" && amountOf(a.pockets[3]) === 2 && b.pools[0].a_9mm_hp === 8, "a shot with hollow points takes a hollow point out of the gun (the pocket and the bags untouched)");
+  // Each gun fills from its own box, then the bags; a shot never touches a teammate's box.
   const st2 = createWorld({ seed: seed + 2, factionCount: 4 });
   const p1 = fighter(st2, "pistol"), p2 = fighter(st2, "pistol");
   p2.pockets[1] = newBox("a_9mm_fmj", 2);
   const b2 = openBattle(st2, [p1, p2], { a_9mm_fmj: 20 });
-  const u1 = by(b2, p1), t2 = foes(b2)[0];
-  place(u1, 2, 2); place(by(b2, p2), 2, 5); place(t2, 7, 2); t2.hp = t2.maxHp = 100000;
+  const u1 = by(b2, p1), u2 = by(b2, p2), t2 = foes(b2)[0];
+  check(u1.mag === 15 && u2.mag === 7 && p2.pockets[1].dur === 0 && b2.pools[0].a_9mm_fmj === 0, `the first pistol fills 15 out of the bags, the second its own 2 then the bags' last 5 (${u1.mag}, ${u2.mag})`);
+  place(u1, 2, 2); place(u2, 2, 5); place(t2, 7, 2); t2.hp = t2.maxHp = 100000;
   act(st2, b2, u1, { type: "shoot", target: t2.id });
-  check(p2.pockets[1].dur === 1 && b2.pools[0].a_9mm_fmj === 20, "a teammate's box is drawn on before the team's stock");
+  check(u1.mag === 14 && u2.mag === 7 && p2.pockets[1].dur === 0, "a shot comes out of the shooter's gun, nothing else");
   endBattleNow(st2, "victory");
   closeCombat(st2, { take: false });
-  check(p2.pockets[1] && p2.pockets[1].dur === 1, "a box with rounds left is kept");
+  check(p2.pockets.some((x) => x && x.key === "a_9mm_fmj" && x.loose && x.dur === 7) && !p2.pockets.some((x) => x && x.key === "a_9mm_fmj" && !x.loose), "after the fight the 7 in the gun are loose in a pocket again; the emptied box is thrown away");
   const st3 = createWorld({ seed: seed + 3, factionCount: 4 });
   const q = fighter(st3, "pistol");
   q.pockets[2] = newBox("a_9mm_fmj", 1);
@@ -165,13 +170,15 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   const b4 = openBattle(st4, [r], { a_9mm_hp: 30 });
   const ur = by(b4, r);
   check(ur.load === "hp", `no FMJ at all: the pistol takes the field on what there is (${ur.load})`);
-  b4.pools[0].a_9mm_hp = 0; b4.pools[0].a_9mm_fmj = 20;
-  ur.mag = 0;
+  loadMag(ur, 0);
+  r.pockets[0] = roundItem("a_9mm_fmj", 20, true);
+  refitKit(b4, ur, r);
   const t4 = foes(b4)[0];
   place(ur, 2, 2); place(t4, 6, 2); t4.hp = t4.maxHp = 100000;
   b4.phase = "player"; ur.ap = 2;
+  st4.autoRetreat = false;
   autoPlayerTurn(st4, { retreat: false }); // (a target that soaks every shot would make it run)
-  check(ur.load === "fmj", `your side's AI reloads with the type it has (${ur.load}; ${b4.log.slice(-3).map((l) => l.text).join(" / ")})`);
+  check(ur.load === "fmj" && ur.mag >= 5 && amountOf(r.pockets[0]) === 14, `your side's AI reloads with the type it has on them (${ur.load}; ${b4.log.slice(-3).map((l) => l.text).join(" / ")})`);
 }
 
 // 4. Typed effects.

@@ -20,10 +20,12 @@
 // death site) keeps its rounds on it.
 import { SUPPLIES } from "./data.js";
 import { WEAPONS, magIn, magCap } from "./combat.js";
-import { calOf, roundsOf, takeBattleRounds, gunTakes } from "./ammo.js";
+import { calOf, roundsOf, takeBattleRounds, gunTakes, stacked } from "./ammo.js";
 import { keyFor, roundOf, loadId } from "./rounds.js";
-import { allCarried } from "./inventory.js";
-import { baseById } from "./world.js";
+import { allCarried, carriedSpots, stow } from "./inventory.js";
+import { baseById, survivorById } from "./world.js";
+import { roundItems, roomIn, isRoundItem } from "./itemstack.js";
+import { stackN, copyStack, topKey } from "./roundstack.js"; // physical rounds (mags.js, 2026-10-18): a gun put down keeps its stack on it.loaded.stack
 
 const isGun = (it) => !!(it && WEAPONS[it.key] && calOf(it.key));
 // The load a round key is in a gun of calibre `cal` (rounds.js loads: another calibre it takes "223:fmj"; null: none).
@@ -46,6 +48,13 @@ export function enemyGunLoaded(u, item) {
 // goes with it, out of the team's rounds. Returns the record.
 export function gunOut(b, u, item) {
   if (!b || !u || !isGun(item) || item.key !== u.weapon) return null;
+  if (stacked(u)) { // physical rounds: the gun's stack goes with it (nothing is taken from anywhere)
+    const r = record(u, stackN(u.stack));
+    if (r) { r.key = topKey(u.stack) || r.key; r.stack = copyStack(u.stack); item.loaded = r; }
+    u.stack = [];
+    forget(b, item);
+    return r;
+  }
   const want = u.side === "player" ? Math.min(magIn(u), Math.max(0, roundsOf(b, u))) : magIn(u);
   const n = u.side === "player" ? takeBattleRounds(b, u, want) : want;
   const r = record(u, n);
@@ -73,6 +82,12 @@ function forget(b, item) { for (const o of b.units) if (Array.isArray(o.startGun
 export function gunIn(b, u, item) {
   if (!b || !u || !isGun(item)) return 0;
   const cal = calOf(item.key);
+  if (u.side === "player" && Array.isArray(u.stack) && item.loaded) { // physical rounds (mags.js fillUnit reads the record off the item as the stack)
+    const { n, key } = item.loaded;
+    const t = typeOfKey(key, cal, item.key);
+    if (t) u.load = t;
+    return Math.max(0, Math.floor(n));
+  }
   if (item.loaded) {
     const { n, key } = item.loaded;
     delete item.loaded;
@@ -95,12 +110,53 @@ export function unloadInto(st, items, stock) {
   let n = 0;
   if (!stock) return 0; // nowhere to put the rounds: they stay in the gun
   for (const it of items || []) {
-    if (!it || !it.loaded) continue;
-    const { n: q, key } = it.loaded;
+    if (!it) continue;
+    if (Array.isArray(it.stack)) { // a magazine (or a gun) with physical rounds (mags.js) left on it
+      for (const r of it.stack) if (r && r.n > 0 && SUPPLIES[r.k]) { stock[r.k] = (stock[r.k] || 0) + Math.floor(r.n); n += Math.floor(r.n); }
+      delete it.stack;
+    }
+    if (!it.loaded) continue;
+    const { n: q, key, stack } = it.loaded;
     delete it.loaded;
+    if (Array.isArray(stack)) { for (const r of stack) if (r && r.n > 0 && SUPPLIES[r.k]) { stock[r.k] = (stock[r.k] || 0) + Math.floor(r.n); n += Math.floor(r.n); } continue; }
     if (q > 0 && SUPPLIES[key] && stock) { stock[key] = (stock[key] || 0) + q; n += q; }
   }
   return n;
+}
+// The fight is over (ground.js groundEnd, raidloot.js): what is left in the guns and the magazines of these people
+// (physical rounds, mags.js) goes back onto them as loose rounds (onto a stack of the same kind first, else a free
+// pocket, rig pouch or pack slot), and what finds no room into `stock` (the team's bags or the base's). Out of a fight
+// the rounds are then counted where they always were (the badge fills the guns from them: gunrounds.js). Returns how
+// many went back.
+export function returnStacks(b, people, stock) {
+  let n = 0;
+  for (const s of people || []) {
+    if (!s || !s.alive) continue;
+    const u = b && b.units ? b.units.find((x) => x.side === "player" && x.sid === s.id) : null;
+    const runs = [];
+    if (u && Array.isArray(u.stack)) { runs.push(...copyStack(u.stack)); u.stack = []; u.mag = 0; }
+    for (const it of carriedWithBag(s)) if (it && Array.isArray(it.stack)) { runs.push(...copyStack(it.stack)); delete it.stack; }
+    for (const r of runs) n += giveBack(s, r.k, r.n, stock);
+  }
+  return n;
+}
+// n loose rounds of a key onto a person (stacks of it first), the rest into the stock. Returns how many landed.
+function giveBack(s, key, n, stock) {
+  let left = Math.max(0, Math.floor(n)), put = 0;
+  for (const x of carriedSpots(s)) {
+    if (left <= 0) break;
+    const it = x.item;
+    if (!it || it.key !== key || !isRoundItem(it) || !it.loose) continue;
+    const q = Math.min(left, roomIn(it));
+    if (q > 0) { it.dur = Math.floor(Number(it.dur) || 0) + q; left -= q; put += q; }
+  }
+  for (const it of roundItems(key, left, true)) {
+    if (left <= 0) break;
+    const q = Math.floor(Number(it.dur) || 0);
+    if (stow(s, it)) { left -= q; put += q; } else break;
+  }
+  if (left > 0 && stock && SUPPLIES[key]) { stock[key] = (stock[key] || 0) + left; put += left; }
+  return put;
 }
 // Everything inside a container, at any depth (a bag's slots, a case, a pouch): the guns among them.
 const inside = (it, out = [], seen = new Set()) => { if (it && Array.isArray(it.contents) && !seen.has(it)) { seen.add(it); for (const c of it.contents) if (c) { out.push(c); inside(c, out, seen); } } return out; };
@@ -110,7 +166,7 @@ export const bagGuns = (bag) => inside(bag).filter(isGun);
 export const carriedWithBag = (s) => (s && s.gear ? [...allCarried(s), ...inside(s.gear.carry)] : []);
 // The guns of these people and of a storage list, with what they hold (a pack's contents: allCarried; a bag carried in
 // the arms or lying in the list: its contents too).
-export const teamGuns = (people, list = []) => [...people.flatMap((s) => carriedWithBag(s)), ...list, ...list.flatMap((it) => inside(it))].filter((it) => it && it.loaded);
+export const teamGuns = (people, list = []) => [...people.flatMap((s) => carriedWithBag(s)), ...list, ...list.flatMap((it) => inside(it))].filter((it) => it && (it.loaded || Array.isArray(it.stack)));
 // The supply record a storage place's rounds go to (inventory.js storageFor: a team's cargo, a base's stock).
 export function stockFor(state, st) {
   if (!st) return null;

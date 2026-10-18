@@ -235,7 +235,7 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
       cui.msg = ""; cui.ammoAsk = null;
       UI.combatAction(st, "cb-act", { v: "reload" });
       html = UI.renderCombatScreen(st);
-      check(cui.ammoAsk === u.id && (html.match(/data-v="reload" data-k="/g) || []).length === 2, "Reload opens the chooser: a button a kind");
+      check(cui.ammoAsk === u.id && new Set((html.match(/data-v="rladd" data-i="\d+"/g) || [])).size === 2, "Reload opens the picker: the two stacks of rounds to pick from (sim/mags.js reloadOptions)");
       const pick0 = cui.ammoPick[u.id];
       UI.combatKey(st, key("KeyI"));
       check(cui.ammoPick[u.id] !== pick0 && types.includes(cui.ammoPick[u.id]), `Shift+I picks the next kind (${pick0} → ${cui.ammoPick[u.id]})`);

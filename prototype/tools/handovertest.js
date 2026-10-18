@@ -66,7 +66,7 @@ function setup(seed) {
   const a = fighter(st, "pistol"), m = fighter(st, "pistol"), c = fighter(st, "pistol");
   a.gear.backpack = newItem("backpack");
   m.gear.backpack = newItem("backpack");
-  a.pockets[2] = roundItem(K, 40, true); // a loose handful at hand
+  a.pockets[2] = roundItem(K, 80, true); // a loose handful at hand (the fight's start loads the pistol and its two spares out of it: 45, 35 left; mags.js physical rounds)
   const b = openBattle(st, [a, m, c]);
   const u = unitOf(b, a), t = unitOf(b, m), w = unitOf(b, c);
   faceToward(u, t.x, t.y);
@@ -120,7 +120,7 @@ section("A pocket → the mate's pocket costs the giver 1 action and the mate no
   u.ap = 2;
   m.pockets[3] = roundItem(K, 10, true);
   err = combatAct(st, { type: "handover", unit: u.id, to: t.id, from: L(a, "pack", 0), toLoc: L(m, "pocket", 3) });
-  check(err === "" && u.ap === 1 && amountOf(m.pockets[3]) === 50 && !packOf(a)[0], `onto the mate's loose rounds: merged (${amountOf(m.pockets[3])})`);
+  check(err === "" && u.ap === 1 && amountOf(m.pockets[3]) === 45 && !packOf(a)[0], `onto the mate's loose rounds: merged (${amountOf(m.pockets[3])}: the 35 left after the fight's start loaded 45 out of the 80)`);
   // A full target swaps when the thing there fits back where the moved one came from.
   const magI = a.pockets.findIndex((it) => it && GEAR[it.key] && GEAR[it.key].mag);
   const mag = a.pockets[magI], theirs = m.pockets[3];

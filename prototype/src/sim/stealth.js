@@ -35,6 +35,9 @@ import { VISION, darkSight, nightReach, faceToward, hasFront, inArc, enemyLight,
 import { hash01 } from "./skills.js";
 import { darkAt } from "./indoorlight.js"; // a raid's dark rooms (a barn by day, any unlit room at night) and lit ones
 import { carriedSpots } from "./inventory.js"; // everything carried, the rig's pouches too
+import { isMag } from "./mags.js"; // an empty spare magazine thrown as a lure (call-time only: the import cycle)
+import { stackN } from "./roundstack.js";
+import { refitKit } from "./combat.js"; // (call-time only)
 import { helmetNvg } from "./helmets.js"; // night vision goggles on a helmet
 import { hearMult, hearSetup } from "./hearing.js"; // the ears: what a guard hears behind them
 import {
@@ -84,6 +87,10 @@ export const THROWABLES = {
   // the enemy turn after it (decoy, turns 2: stealthTurn counts one off before the enemy moves).
   flashbang:   { radius: 12, turns: 2, heat: 8, range: 7, label: "a flashbang", fx: "flash", sense: ["noise"], decoy: true, people: "spot" },
   gamecall:    { radius: 7, turns: 1, heat: 0, range: 0, label: "the deer call", self: true, keep: true, sense: ["noise"], people: "spot" },
+  // An empty magazine (2026-10-18 user request: "empty magazines held by survivors can be thrown to make a distracting
+  // sound"): a spare carried with nothing in it (mags.js: its stack empty, or one Unloaded) clatters where it lands, a
+  // bottle's lure with a shorter reach. The magazine lies there: after a won fight it comes back (combat.js thrownBack).
+  emptymag:    { radius: 5,  turns: 1, heat: 0, range: 7, label: "an empty magazine", sense: ["noise"], people: "spot", item: "mag" },
 };
 // The decoys (decoys.js, the AI and the State Map's horde warning): what pulls the dead off a fight.
 export const DECOY_KEYS = Object.keys(THROWABLES).filter((k) => THROWABLES[k].decoy && !THROWABLES[k].fx);
@@ -111,17 +118,28 @@ function storeOf(state, b) {
 }
 
 // Throwables a unit can use: its own, then the team's cargo (or the base armory). { key: count }.
+// A spare magazine carried with nothing in it (mags.js: physical rounds): the one thrown as a lure (emptymag).
+export const isEmptyMag = (it) => !!(it && isMag(it) && (Array.isArray(it.stack) ? stackN(it.stack) === 0 : !!it.unloaded));
 export function throwablesOf(state, b, u) {
   const out = {};
   const s = u && u.sid != null ? survivorById(state, u.sid) : null;
   // One pass over the person and one over the store (a base armory can hold thousands of items; the bot asks this
   // several times a unit a turn).
-  if (s && s.gear) for (const c of carriedSpots(s)) if (Object.hasOwn(THROWABLES, c.item.key)) out[c.item.key] = (out[c.item.key] || 0) + 1;
+  if (s && s.gear) for (const c of carriedSpots(s)) { if (Object.hasOwn(THROWABLES, c.item.key)) out[c.item.key] = (out[c.item.key] || 0) + 1; else if (["pocket", "rig", "pack"].includes(c.where) && isEmptyMag(c.item)) out.emptymag = (out.emptymag || 0) + 1; }
   for (const it of storeOf(state, b) || []) if (it && Object.hasOwn(THROWABLES, it.key)) out[it.key] = (out[it.key] || 0) + 1;
   return out;
 }
 function takeThrowable(state, b, u, key) {
   const s = survivorById(state, u.sid);
+  if (key === "emptymag") { // the first empty spare carried: thrown away (it lies where it lands; combat.js thrownBack after a win), the unit's magazines refit
+    const x = s && s.gear ? carriedSpots(s).find((c) => ["pocket", "rig", "pack"].includes(c.where) && isEmptyMag(c.item)) : null;
+    if (!x) return false;
+    x.take();
+    if (!b.thrown) b.thrown = [];
+    b.thrown.push({ sid: s.id, item: x.item });
+    refitKit(b, u, s);
+    return true;
+  }
   const own = findCarried(s, key);
   if (own) { own.take(); return true; }
   const store = storeOf(state, b);

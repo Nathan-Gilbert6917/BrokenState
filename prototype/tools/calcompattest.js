@@ -138,10 +138,11 @@ const unitOf = (b, s) => b.units.find((u) => u.sid === s.id);
   const was = u.load; u.load = "fmj"; const o556 = C.shotOdds(b, u, foe); u.load = was;
   check(o223.chance >= Math.min(95, o556.chance + 3) && mid(o223.dmg) < mid(o556.dmg), `.223 shoots straighter and lighter than 5.56 from it (${o556.chance}% ${o556.dmg.join("–")} → ${o223.chance}% ${o223.dmg.join("–")})`);
   check(C.shotHit(u).cal === "223" && C.shotHit(u).ammo === "fmj", "its hits are .223 (armour reads them as .223)");
-  const before = b.pools.reduce((a, p) => a + (p.a_223_fmj || 0), 0);
+  const inGun = () => (u.stack || []).filter((r) => r.k === "a_223_fmj").reduce((a, r) => a + r.n, 0); // physical rounds (mags.js): the shot comes out of the gun's stack
+  const before = inGun();
   C.fire(b, u, foe);
-  const after = b.pools.reduce((a, p) => a + (p.a_223_fmj || 0), 0);
-  check(after < before, `a shot spends .223 (${before} → ${after})`);
+  const after = inGun();
+  check(after < before && before > 0, `a shot spends .223 out of the gun (${before} → ${after})`);
   const why = C.reloadRefusal(b, u, "300blk:fmj");
   check(/blow/.test(why), `a Reload asking for .300 BLK is refused: "${why}"`);
   check(!A.loadsFor(b, u).some((x) => x.cal === "300blk") && A.loadsFor(b, u).some((x) => x.type === "223:sp"), "the reload chooser lists .223, never .300 BLK");

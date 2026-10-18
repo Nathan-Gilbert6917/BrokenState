@@ -14,7 +14,8 @@ import {
   playerVision, enemyGhosts, vehicleExit, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js";
-import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsRefusal, shellsLine, SHELLS, tracksMags, reloadPlan } from "../sim/mags.js"; // magazines as items (section 15): spares, what a Reload does
+import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsRefusal, shellsLine, SHELLS, tracksMags, reloadPlan, reloadOptions, gunStackText, isStacked, MAGS } from "../sim/mags.js";
+import { kitWarnings, kitWarnDue } from "../sim/kitcheck.js"; // the kit check before the first move: empty guns, no healing, the hurt // magazines as items (section 15): spares, what a Reload does
 import { plateSwapPlan, PLATE_AP } from "../sim/carrykit.js"; // a broken plate swapped from the pack (2 actions)
 import { loadsFor, roundName } from "../sim/ammo.js"; // the reload chooser: the types of the gun's calibre to hand // setFloor and stairOptions (docs/multi-storey-crawl.md), looked up when present
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
@@ -287,7 +288,7 @@ function plateButton(state, b, u, btn) {
 // The spare magazines a fighter of yours carries (sim/mags.js): "+3 mags", "2 clips".
 function magsTag(b, u) {
   const t = magsLine(b, u);
-  return t ? ` <span class="muted" data-tip="${esc(`Spare magazines: a Reload takes the next loaded one (1 action from a rig pouch or a pocket, 2 from the pack); with none left it tops up the one in the gun (2 actions). ${spareRounds(b, u)} rounds in them.`)}">${esc(t)}</span>` : "";
+  return t ? ` <span class="muted" data-tip="${esc(`Spare magazines: a Reload takes the next loaded one (1 action from a rig pouch or a pocket, 2 from the pack); with none left it loads rounds by hand, up to ${MAGS.LOOSE} a Reload, from what they carry. ${spareRounds(b, u)} rounds in them.`)}">${esc(t)}</span>` : "";
 }
 function gunFlag(b, u) {
   return u.side === "player" && isRanged(u) && !u.dead && magShown(b, u) < (WEAPONS[u.weapon].ammo || 1)
@@ -744,7 +745,54 @@ function launchButtons(b, u, btn, key) {
   }
   return html;
 }
-// The Reload chooser: one button per kind of round to hand (the picked one marked); I reloads the picked one.
+// The Reload picker (2026-10-18 user request: "when you click reload show a box for all ammo/mags relative to the gun
+// the survivor holds and you can choose which ones to use"): every spare magazine (with what is in it) and every round
+// stack the survivor carries that the gun takes (sim/mags.js reloadOptions), each with its place and cost. A magazine
+// loads with one click (a swap). Rounds are picked into a plan (cui.rlPlan[uid]: [{ i, n }], up to MAGS.LOOSE a
+// Reload) in the order they should fire (the first picked is the chamber; ▲ ▼ reorder, ✕ drops one); Load fires it.
+// A unit from a save made before physical rounds gets the old chooser (one button a kind of round).
+cui.rlPlan = {}; // uid -> the rounds picked for the next Reload, in firing order
+const whereWord = (w) => (w === "pack" ? "pack" : w === "rig" ? "rig" : w === "pocket" ? "pocket" : w);
+function planRuns(b, u) {
+  const o = reloadOptions(b, u);
+  const plan = (cui.rlPlan[u.id] || []).filter((e) => o.rounds.some((r) => r.i === e.i) && e.n > 0);
+  cui.rlPlan[u.id] = plan;
+  return { o, plan, total: plan.reduce((a, e) => a + e.n, 0) };
+}
+function reloadPicker(state, b, u) {
+  if (!u || cui.ammoAsk !== u.id || !active(u)) return "";
+  if (!isStacked(u)) return ammoChooser(state, b, u);
+  const { o, plan, total } = planRuns(b, u);
+  const cal = CALIBERS[WEAPONS[u.weapon] && WEAPONS[u.weapon].cal];
+  const name = (r) => r.name;
+  const B = (v, label, tip, extra = "", cls = "mini") => `<button class="${cls}" data-action="cb-act" data-v="${v}" ${extra} data-tip="${esc(tip)}">${label}</button>`;
+  let html = `<div class="small cbmsg cbammo cbreload" data-tip="${esc(`Reload ${u.weaponName}: pick a spare magazine (a swap: the one in the gun goes where it lay, with what is in it) or rounds by hand (up to ${o.per} a Reload, in the order they should fire: the first picked is in the chamber). Only what ${u.name.split(" ")[0]} carries: a pocket or the rig 1 action, the pack both. ${keyLabel("battle.reload", 1) || "I"} loads the rounds picked (or the next loaded magazine, else the chamber's round from the nearest place).`)}">`;
+  html += `<div><b>Reload ${esc(u.weaponName)}</b> <span class="muted">${magLabel(b, u)}${o.curText ? `: ${esc(o.curText)}` : ""} · room for ${o.room}</span> ${B("ammoclose", "✕", "Close")}</div>`;
+  if (o.box) {
+    html += `<div class="rlrow"><span class="muted">Magazines:</span> ${o.mags.length ? o.mags.map((m) => `${B("reload", `${esc(m.name)} <span class="muted">${m.n}/${m.cap}${m.text ? `: ${esc(m.text)}` : ""} · ${whereWord(m.where)} · ${m.cost} action${m.cost === 1 ? "" : "s"}</span>`, m.why || `Swap it in (${m.cost} action${m.cost === 1 ? "" : "s"}): ${m.text || "empty"}. The magazine in the gun goes into the ${whereWord(m.where)} with what is in it.`, `data-mag="${m.j}"${m.why || u.ap < m.cost ? " disabled" : ""}`)}`).join(" ") : '<span class="muted">none that fit</span>'}</div>`;
+  }
+  if (o.clips.length) html += `<div class="rlrow"><span class="muted">Clips:</span> ${o.clips.map((c) => B("reload", `${esc(c.name)} <span class="muted">${whereWord(c.where)} · ${c.cost} action${c.cost === 1 ? "" : "s"}</span>`, c.why || `Fill the gun at once with the chamber's round out of what they carry (${c.cost} action${c.cost === 1 ? "" : "s"}); used once a fight.`, `data-clip="${c.i}"${c.why || u.ap < c.cost ? " disabled" : ""}`)).join(" ")}</div>`;
+  const left = Math.max(0, Math.min(o.per, o.room) - total);
+  html += `<div class="rlrow"><span class="muted">Rounds${o.box ? " (by hand, into the magazine in the gun)" : ""}, up to ${o.per} a Reload:</span> `;
+  if (!o.rounds.length) html += `<span class="muted">none for it on ${esc(u.name.split(" ")[0])} (pockets, rig, pack)</span>`;
+  for (const r of o.rounds) {
+    const used = plan.filter((e) => e.i === r.i).reduce((a, e) => a + e.n, 0);
+    const free = Math.max(0, Math.min(r.n - used, left));
+    html += `<span class="rlsrc"><span${r.where === "pack" ? ' class="muted"' : ""}>${esc(name(r))} ×${r.n - used}${r.loose ? "" : " (boxed)"} · ${whereWord(r.where)} · ${r.cost} action${r.cost === 1 ? "" : "s"}</span> ${[1, 3, o.per].filter((k, j, a) => k <= free && a.indexOf(k) === j).map((k) => B("rladd", `+${k}`, `Pick ${k} of these into the Reload (the order picked is the firing order).`, `data-i="${r.i}" data-n="${k}"`)).join("")}${free > 0 && free !== 1 && free !== 3 && free !== o.per ? B("rladd", `+${free}`, `Pick ${free} (what is left of the ${o.per}).`, `data-i="${r.i}" data-n="${free}"`) : ""}</span> `;
+  }
+  html += `</div>`;
+  if (plan.length) {
+    const cost = plan.some((e) => o.rounds.find((r) => r.i === e.i).where === "pack") ? MAGS.SOURCE_AP.pack : MAGS.SOURCE_AP.hand;
+    html += `<div class="rlrow"><span class="muted">Picked (chamber first):</span> ${plan.map((e, j) => { const r = o.rounds.find((x) => x.i === e.i); return `<span class="rlpick">${esc(r.short || r.name)} ×${e.n} ${j > 0 ? B("rlup", "▲", "Fire sooner", `data-j="${j}"`) : ""}${j < plan.length - 1 ? B("rldown", "▼", "Fire later", `data-j="${j}"`) : ""}${B("rldel", "✕", "Drop it from the pick", `data-j="${j}"`)}</span>`; }).join(" ")} `;
+    html += B("reload", `Load ${total} (${cost} action${cost === 1 ? "" : "s"})`, `Reload with these ${total} rounds in this order: ${plan.map((e) => `${o.rounds.find((x) => x.i === e.i).short} ×${e.n}`).join(", ")}.${cost > 1 ? " Both actions: some are in the pack." : ""}`, `data-plan="1"${u.ap < cost ? " disabled" : ""}`, "mini primary");
+    html += ` ${B("rlclear", "Clear", "Drop the pick.")}</div>`;
+  } else {
+    const p = reloadPlan(b, u);
+    html += `<div class="rlrow muted">${esc(p.why ? p.why : `${keyLabel("battle.reload", 1) || "I"} with nothing picked: ${reloadText(b, u).split(" Reload opens")[0]}`)}</div>`;
+  }
+  return html + `</div>`;
+}
+// The old chooser (a unit from a save made before physical rounds): one button per kind of round to hand.
 function ammoChooser(state, b, u) {
   if (!u || cui.ammoAsk !== u.id || !active(u)) return "";
   const list = ammoToHand(state, b, u);
@@ -846,8 +894,43 @@ function gunOrder(state, b, u, v, d) {
     return true;
   }
   if (v === "ammoclose") { cui.ammoAsk = null; return true; }
-  if (v === "getshells") { act(state, { type: "getshells", unit: u.id }); return true; } // sim/mags.js SHELLS: a shotgun's shells out of the pack
+  if (v === "kitok") { b.kitWarnSeen = true; return true; } // sim/kitcheck.js: the kit check before the first move, put aside
+  if (v === "getshells") { act(state, { type: "getshells", unit: u.id }); return true; } // sim/mags.js SHELLS: a shotgun's shells out of the pack (other sides' rule; yours load straight in)
+  if (v === "rladd" || v === "rlup" || v === "rldown" || v === "rldel" || v === "rlclear") { // the picker's pick of rounds (sim/mags.js reloadOptions)
+    const { o, plan, total } = planRuns(b, u);
+    if (v === "rlclear") cui.rlPlan[u.id] = [];
+    else if (v === "rladd") {
+      const i = Number(d.i), n = Math.max(1, Math.floor(Number(d.n) || 1));
+      const r = o.rounds.find((x) => x.i === i);
+      if (!r) { cui.msg = "Those rounds are not on them any more."; return true; }
+      const used = plan.filter((e) => e.i === i).reduce((a, e) => a + e.n, 0);
+      const q = Math.min(n, r.n - used, Math.max(0, Math.min(o.per, o.room) - total));
+      if (q < 1) { cui.msg = total >= Math.min(o.per, o.room) ? `${Math.min(o.per, o.room)} is the most one Reload puts in by hand.` : "None left to pick."; return true; }
+      const last = plan[plan.length - 1];
+      if (last && last.i === i) last.n += q; else plan.push({ i, n: q });
+    } else {
+      const j = Number(d.j);
+      if (!(j >= 0 && j < plan.length)) return true;
+      if (v === "rldel") plan.splice(j, 1);
+      else if (v === "rlup" && j > 0) [plan[j - 1], plan[j]] = [plan[j], plan[j - 1]];
+      else if (v === "rldown" && j < plan.length - 1) [plan[j + 1], plan[j]] = [plan[j], plan[j + 1]];
+    }
+    cui.ammoAsk = u.id;
+    return true;
+  }
   if (v === "reload") {
+    if (isStacked(u)) { // sim/mags.js: a magazine, a clip, the rounds picked, or (I again) the plain reload
+      if (d.mag != null && d.mag !== "") { if (act(state, { type: "reload", unit: u.id, mag: Number(d.mag) })) { cui.ammoAsk = null; cui.rlPlan[u.id] = []; } return true; }
+      if (d.clip != null && d.clip !== "") { if (act(state, { type: "reload", unit: u.id, clip: Number(d.clip) })) { cui.ammoAsk = null; cui.rlPlan[u.id] = []; } return true; }
+      const { o, plan } = planRuns(b, u);
+      if (d.plan || (cui.ammoAsk === u.id && plan.length)) { if (act(state, { type: "reload", unit: u.id, rounds: plan.map((e) => ({ i: e.i, n: e.n })) })) { cui.ammoAsk = null; cui.rlPlan[u.id] = []; } return true; }
+      if (d.k) { if (act(state, { type: "reload", unit: u.id, ammo: d.k })) cui.ammoAsk = null; return true; }
+      if (cui.ammoAsk === u.id) { const t = cui.ammoPick[u.id] && cui.ammoPick[u.id] !== loadOf(u) ? cui.ammoPick[u.id] : null; if (act(state, { type: "reload", unit: u.id, ammo: t })) { cui.ammoAsk = null; cui.ammoPick[u.id] = null; } return true; } // I again: the plain reload (or the round Next round picked)
+      if (!o.mags.length && !o.clips.length && !o.rounds.length) return false; // nothing to pick from: the plain reload says why
+      cui.ammoAsk = u.id;
+      cui.msg = `Reload: pick a magazine or rounds below, or press ${keyLabel("battle.reload", 1) || "I"} again for the next loaded magazine (else the chamber's round from the nearest place).`;
+      return true;
+    }
     if (d.k) { act(state, { type: "reload", unit: u.id, ammo: d.k }); return true; }
     const list = ammoToHand(state, b, u);
     if (list.length < 2) return false; // one kind (or none): a plain reload
@@ -1009,9 +1092,10 @@ export function unitOrders(state, b, u) {
   if (gun && SIM.cabTarget(b, u)) { const tg = SIM.cabTarget(b, u), o = SIM.cabOdds(b, u, tg), who = SIM.cabSeat(b, tg.v); btn("cab", "Shoot the cab", `Fire at their ${esc(tg.v.name || tg.v.kind)} (${o.chance}% a round): each hit wears it (heavy and armour-piercing rounds; ${SIM.HULL.PEN + 1}+ penetration) and half get in at the windscreen${tg.v.up && tg.v.up.plating ? " (less with the plate)" : ""}, at ${who ? "whoever is at the wheel" : "nobody: the cab is empty"}${tg.v.up && tg.v.up.glass ? " through bulletproof glass" : ""}. A driver down stops it. Ends this unit's turn.`, ap > 0 && ammo, "", { why: fireWhy }); }
   if (gun && hasMag(u)) {
     // mags.js reloadPlan: the source decides the cost (a magazine or rounds from a pocket or the rig 1 action, from the pack both; the tip names it: reloadText).
-    const why = reloadRefusal(b, u), more = ammoToHand(state, b, u).length > 1, need = u.gunner ? TURRET.RELOAD_AP : tracksMags(u) ? reloadPlan(b, u).cost : 1;
-    btn("reload", magEmpty(b, u) && !why ? '<span class="danger">Reload</span>' : "Reload", `${esc(u.weaponName)} (${magLabel(b, u)} now). ${reloadText(b, u)}${why ? ` ${why}` : ""}${u.gunner ? " The turret's belt: both actions." : ""}${more ? ` More than one kind of round for it is to hand: Reload asks which (${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next).` : ""}`, ap >= need && (!why || more), "I",
-      { why: why && !more ? why : ap < need ? NO_AP : "", ap: need }); // (one action left and the rounds in the pack: reloadRefusal's "both actions" reason)
+    const why = reloadRefusal(b, u), opts = isStacked(u) && !u.gunner ? reloadOptions(b, u) : null, more = opts ? opts.mags.length + opts.clips.length + opts.rounds.length > 0 : ammoToHand(state, b, u).length > 1, need = u.gunner ? TURRET.RELOAD_AP : tracksMags(u) ? reloadPlan(b, u).cost : 1;
+    const stack = gunStackText(b, u);
+    btn("reload", magEmpty(b, u) && !why ? '<span class="danger">Reload</span>' : "Reload", `${esc(u.weaponName)} (${magLabel(b, u)} now${stack ? `: ${esc(stack)}` : ""}). ${reloadText(b, u)}${why ? ` ${why}` : ""}${u.gunner ? " The turret's belt: both actions." : ""}${more && !opts ? ` More than one kind of round for it is to hand: Reload asks which (${keyLabel("battle.ammocycle", 1) || "Shift+I"} picks the next).` : ""}`, (opts ? more && ap > 0 : ap >= need && (!why || more)), "I",
+      { why: opts ? (more ? (ap > 0 ? "" : NO_AP) : why) : why && !more ? why : ap < need ? NO_AP : "", ap: need, on: cui.ammoAsk === u.id }); // (one action left and the rounds in the pack: reloadRefusal's "both actions" reason)
   }
   const kinds = gun ? ammoToHand(state, b, u) : [];
   if (kinds.length > 1) btn("ammocycle", "Next round", `Free: the kind of round the next Reload loads (${kinds.map((x) => `${x.short || x.name} ${x.n}`).join(", ")}); then Reload (${keyLabel("battle.reload", 1) || "I"}) loads it.`, true, "⇧I", { ap: 0 });
@@ -1041,7 +1125,7 @@ export function unitOrders(state, b, u) {
   if (b.raid) raidButtons(state, b, u, btn);
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   if (b.rescue) rescueButtons(state, b, u, btn);
-  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + ammoChooser(state, b, u) + handChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
+  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + reloadPicker(state, b, u) + handChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   return out;
 }
 
@@ -1588,6 +1672,7 @@ export function renderCombatPanel(state) {
   if (b.over) return html + resultHtml(state, b);
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
   if (b.raid && b.raid.choose) html += chooseHtml(b);
+  if (kitWarnDue(state, b)) html += kitWarnHtml(state, b); // sim/kitcheck.js: empty guns, no healing, the hurt, before the first move
   if (b.night && !b.raid && b.phase !== "deploy") html += nightHtml(b); // sim/vision.js: the dark, by the hour
   // Looking at another floor than the selected unit's (PageUp / PageDown, the Floor control): say so, with the way back.
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
@@ -1732,6 +1817,7 @@ export function renderRaidCards(state) {
   if (b.over) return `<div class="cbcard">${raidResultCard(state, b)}</div>`;
   if (planOpen(b) && planUI.map) html += `<div class="cbcard">${planAsideHtml(state, b)}</div>`; // ui/raidplan.js: the window put aside to look at the site (the window itself: ui.js pickModal)
   if (b.raid.choose) html += `<div class="cbcard">${chooseHtml(b)}</div>`;
+  if (kitWarnDue(state, b)) html += `<div class="cbcard">${kitWarnHtml(state, b)}</div>`; // sim/kitcheck.js: empty guns, no healing, the hurt, before anyone goes in
   if (cui.msg) html += `<div class="cbcard ct-toast small warn">${esc(cui.msg)}</div>`;
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
     html += `<div class="cbcard small muted">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (Home also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
@@ -1890,6 +1976,19 @@ function windowButtons(b, u, btn) {
 }
 
 // A site with several buildings (sim/buildingmaps.js): pick the one to explore before anyone acts, or the street.
+// The kit check before the first move (sim/kitcheck.js, 2026-10-18 user requests): who goes in with an empty gun (a
+// button opens their Inventory to reload it first: cb-inv), no healing on the team, who is hurt. Proceed puts it aside
+// for this fight (b.kitWarnSeen); it goes by itself once nothing is left to say.
+function kitWarnHtml(state, b) {
+  const w = kitWarnings(state, b);
+  if (!w.any) return "";
+  const li = [];
+  for (const e of w.empty) li.push(`<li>${esc(e.text)} <button class="mini" data-action="cb-inv" data-id="${e.uid}" data-tip="${esc(`Open ${e.name}'s Inventory: right-click the gun for Reload, or drop rounds onto a spare magazine. Each move or reload costs their actions this turn.`)}">Open ${esc(e.name.split(" ")[0])}'s inventory</button></li>`);
+  if (w.heal) li.push(`<li>${esc(w.heal)}</li>`);
+  for (const h of w.hurt) li.push(`<li>${esc(h.text)}</li>`);
+  return `<div class="small cbmsg cbconfirm cbkitwarn"><b class="warn">Before you go in</b><ul>${li.join("")}</ul>
+    <div style="margin-top:0.35rem"><button class="primary" data-action="cb-act" data-v="kitok" data-tip="Go in as you are: this card is put aside for the fight.">Proceed</button></div></div>`;
+}
 function chooseHtml(b) {
   const list = b.raid.choose || [];
   return `<div class="small cbmsg cbconfirm"><b class="good">Where do you go in?</b> Several buildings stand at ${esc(b.place)}. Each has its own map: rooms, doors, windows and its own ways out. Or search the street (this map). The choice is gone once anyone acts.
@@ -2027,7 +2126,9 @@ function stealthButtons(state, b, u, btn) {
     const T = THROWABLES[k];
     const what = T.fx || T.decoy ? GEAR[k].desc : T.self ? `1 action: blow ${T.label} where ${u.name.split(" ")[0]} stands. Unaware guards and the dead within ${T.radius} tiles come to look. Not used up.`
       : `1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}.`;
-    html += btn("throw", `${T.self ? "Blow" : "Throw"} ${esc(GEAR[k].name.toLowerCase())}${T.keep ? "" : ` (${have[k]})`}`, `${what} ${T.keep ? "" : `${have[k]} left.`}`, ap > 0, k === kinds[0] ? "G" : "", { k, on: cui.mode === "throw" && cui.throwKey === k, why: ap > 0 ? "" : NO_AP });
+    const label = k === "emptymag" ? "empty magazine" : GEAR[k].name.toLowerCase();
+    const text = k === "emptymag" ? `1 action: throw an empty spare magazine up to ${T.range} tiles: it clatters where it lands, and unaware guards and the dead within ${T.radius} tiles go to look. The magazine lies there; after a won fight it is picked up again.` : what;
+    html += btn("throw", `${T.self ? "Blow" : "Throw"} ${esc(label)}${T.keep ? "" : ` (${have[k]})`}`, `${text} ${T.keep ? "" : `${have[k]} left.`}`, ap > 0, k === kinds[0] ? "G" : "", { k, on: cui.mode === "throw" && cui.throwKey === k, why: ap > 0 ? "" : NO_AP });
   }
   return html;
 }
