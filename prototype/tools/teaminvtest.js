@@ -282,9 +282,27 @@ section("Screens");
   let html = teamInvModal(state, ui) || "";
   check(/Team inventory/.test(html) && html.includes(`s:${a.id}:pocket:0`) && html.includes(`s:${b.id}:weapon`) && html.includes(`cargo:${p.id}:list`), "the team tab shows every member's doll and the cargo");
   check(!/data-action="inv-click"/.test(html) && /data-action="ti-click"/.test(html), "its clicks go through the team window");
+  // Each doll's weight line is what is on that person (the user's request 2026-10-18: a thing moved into the vehicle
+  // before a raid left the number as it was): it moves with every move, and with a car the team's things are the car's.
+  const dollKg = (html, sid) => { const m = html.slice(html.indexOf(`s:${sid}:weapon`)).match(/>([\d.]+)\/(\d+) kg <span class="chip/); return m ? Number(m[1]) : null; };
+  const shareKg = (html, sid) => { const m = html.slice(html.indexOf(`s:${sid}:weapon`)).match(/\+([\d.]+) kg of the team's/); return m ? Number(m[1]) : 0; };
+  const knifeKg = itemLoad(a.pockets[0]);
+  const a0 = dollKg(html, a.id), b0 = dollKg(html, b.id);
+  check(a0 != null && b0 != null && near(a0, Math.round(wornLoad(a) * 10) / 10) && near(b0, Math.round(wornLoad(b) * 10) / 10), `each doll shows what is on that person: ${a0} and ${b0} kg`);
+  check(!/kg of the team's/.test(html) && /the rest in the/.test(html), "with a car no share of the team's things is on anyone: the car carries them");
   TEAMINV_ACTIONS["ti-click"](state, ui, { loc: `s:${a.id}:pocket:0` });
   TEAMINV_ACTIONS["ti-click"](state, ui, { loc: `s:${b.id}:pocket:2` });
   check(b.pockets[2] && b.pockets[2].key === "knife" && !a.pockets[0], "a click and a click move a knife from one member to another");
+  html = teamInvModal(state, ui) || "";
+  check(near(dollKg(html, a.id), a0 - knifeKg, 0.051) && near(dollKg(html, b.id), b0 + knifeKg, 0.051), `the knife moved: ${a.name.split(" ")[0]} ${a0} → ${dollKg(html, a.id)} kg, ${b.name.split(" ")[0]} ${b0} → ${dollKg(html, b.id)} kg`);
+  a.pockets[1] = newItem("crowbar");
+  html = teamInvModal(state, ui) || "";
+  const a1 = dollKg(html, a.id);
+  TEAMINV_ACTIONS["ti-click"](state, ui, { loc: `s:${a.id}:pocket:1` });
+  TEAMINV_ACTIONS["ti-click"](state, ui, { loc: `cargo:${p.id}:list` });
+  html = teamInvModal(state, ui) || "";
+  check(!a.pockets[1] && p.cargo.gear.some((g) => g.key === "crowbar") && near(dollKg(html, a.id), a1 - 2, 0.051), `a crowbar into the car's cargo takes its 2 kg off ${a.name.split(" ")[0]}'s line: ${a1} → ${dollKg(html, a.id)} kg (${ui.invMsg})`);
+  p.cargo.gear.splice(p.cargo.gear.findIndex((g) => g.key === "crowbar"), 1);
   TEAMINV_ACTIONS["ti-tab"](state, ui, { tab: "drop" });
   html = teamInvModal(state, ui) || "";
   check(/Drop off picked/.test(html) && /data-action="ti-pick"/.test(html) && /Drop off all cargo/.test(html), "the drop off view: pickable team items and the quick buttons");
@@ -309,6 +327,16 @@ section("Screens");
   TEAMINV_ACTIONS["ti-open"](state, ui, { id: String(away.id), tab: "drop" });
   html = teamInvModal(state, ui) || "";
   check(ui.inv.tab === "team" && /Team inventory/.test(html), "asking for Drop off away from a base shows the inventory");
+  // On foot the team's things are shared out: a thing into the cargo leaves the person's own line and joins the share.
+  const [c] = partyMembers(state, away);
+  c.pockets[0] = newItem("crowbar");
+  html = teamInvModal(state, ui) || "";
+  const c0 = dollKg(html, c.id), s0 = shareKg(html, c.id);
+  check(c0 != null && s0 > 0 && !/the rest in the/.test(html), `on foot: ${c0} kg on them, +${s0} kg of the team's`);
+  TEAMINV_ACTIONS["ti-click"](state, ui, { loc: `s:${c.id}:pocket:0` });
+  TEAMINV_ACTIONS["ti-click"](state, ui, { loc: `cargo:${away.id}:list` });
+  html = teamInvModal(state, ui) || "";
+  check(!c.pockets[0] && near(dollKg(html, c.id), c0 - 2, 0.051) && near(shareKg(html, c.id), s0 + 2, 0.051), `the crowbar into the cargo on foot: ${c0} → ${dollKg(html, c.id)} kg on them, the share ${s0} → ${shareKg(html, c.id)} kg (${ui.invMsg})`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

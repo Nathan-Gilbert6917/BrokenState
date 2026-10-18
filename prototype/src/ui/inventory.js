@@ -151,15 +151,26 @@ export function doll(state, ui, holder, prefix, portrait, { readonly = false, us
   const box = (slot) => slotBox(state, ui, `${prefix}:${slot}`, SLOT_NAMES[slot], user, readonly);
   const pk = packOf(holder);
   const arm = armorPower(holder);
-  // What they wear and carry (sim/load.js); with a team, their share of its supplies and cargo too.
+  // What they wear and carry on them (sim/load.js wornLoad): the headline, so it moves with every thing moved on or off
+  // them, in every window (the user's request 2026-10-18: a thing put in the vehicle in the plan's Team inventory
+  // before a raid left the number as it was). With a team, what they carry of its supplies and cargo is a second
+  // figure: on foot their share of the pool (the same team carries it, so a thing in the cargo is still shared out),
+  // on bikes what is past the racks; a car (a fleet with one) carries all of it, nothing on its riders. The band is
+  // from the whole of it.
   let weight = weightLine || "";
   if (holder.traits && !weightLine) {
     const worn = wornLoad(holder), max = maxLoad(holder);
     const place = personPlace(holder);
     const team = place && place.startsWith("party:") ? state.parties.find((x) => x.id === Number(place.split(":")[1])) : null;
-    const mine = team ? partyLoad(state, team).foot.people.find((x) => x.sid === holder.id) : null;
+    const t = team ? partyLoad(state, team) : null;
+    const car = !!(t && t.mode === true);
+    const mine = t && !car ? t.people.find((x) => x.sid === holder.id) : null;
     const pl = mine || personLoad(holder, worn);
-    weight = `<div class="small"${tip(`${team ? `Wears ${Math.round(worn * 10) / 10} kg and carries ${Math.round((pl.load - worn) * 10) / 10} kg of the team's supplies and cargo (shared so everyone is equally burdened)` : `Wears and carries ${Math.round(worn * 10) / 10} kg`}, of a ${max} kg max load (40, 28 with a Bad Back, 48 with a Strong Back, + the pack and Packrat). On foot: pace ${Math.round(pl.speed * 100)}%, food and water ${Math.round(pl.eat * 100)}% on the move. ${BANDS_HELP}`)}>${Math.round(pl.load)}/${max} kg ${bandChip(pl.band)}</div>`;
+    const share = mine ? Math.max(0, pl.load - worn) : 0;
+    const vname = car ? vehicleLabel(partyFleet(state, team)).toLowerCase() : "";
+    const teamTxt = !team ? "" : car ? `; the team's supplies and cargo ride in the ${vname}, none of it on them` : `, and ${kg(share)} kg of the team's supplies and cargo (${t.mode === "bike" ? "what is past the bikes' racks, " : ""}shared out so everyone is equally burdened: a thing moved into the cargo is still the team's to carry)`;
+    const shareTxt = share > 0.05 ? ` <span class="muted"${tip("Their share of the team's supplies and cargo, on top of what is on them")}>+${kg(share)} kg of the team's</span>` : car ? ` <span class="muted"${tip(`The team's supplies and cargo ride in the ${vname}: none of it on them`)}>(the rest in the ${esc(vname)})</span>` : "";
+    weight = `<div class="small"${tip(`Wears and carries ${kg(worn)} kg on them${teamTxt}, of a ${max} kg max load (40, 28 with a Bad Back, 48 with a Strong Back, + the pack and Packrat). On foot: pace ${Math.round(pl.speed * 100)}%, food and water ${Math.round(pl.eat * 100)}% on the move. ${BANDS_HELP}`)}>${kg(worn)}/${max} kg ${bandChip(pl.band)}${shareTxt}</div>`;
   }
   return `<div class="doll">
       <div class="dollside">${box("weapon")}${box("tool")}${box("rig")}${box("backpack")}${box("carry")}</div>

@@ -300,6 +300,14 @@ const noTime = (u, what) => `No time: ${u.name.split(" ")[0]} has no actions lef
 // Moves the item (or the supply stack, as much of it as fits; qty: at most that many) at `from` to `to`, for the
 // survivor in unit `uid`. Returns a message ("" when nothing happened).
 export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
+  const r = raidMoveAt(state, uid, fromStr, toStr, qty);
+  // The vehicle loaded or unloaded: the pool the team shares out (on foot, or past the bikes' racks) changed, so each
+  // one's share of it with it (raidShares; a car's riders carry none): the window's weights are right at once.
+  const b = state.combat;
+  if (b && b.raid && lootLayer(b) && (parseRaidLoc(fromStr).o === "trunk" || parseRaidLoc(toStr).o === "trunk")) raidShares(state, b);
+  return r;
+}
+function raidMoveAt(state, uid, fromStr, toStr, qty = Infinity) {
   const b = state.combat;
   if (!b || !lootLayer(b) || b.over) return "";
   const u = b.units.find((x) => x.id === uid && x.side === "player");
