@@ -15,6 +15,7 @@
 //   small atlas (1 or 2 device px per sprite px), and the water texture once per shade, as ImageBitmaps; render.js
 //   draws them into its cached map chunks, so a frame costs nothing extra. Zoomed out the map keeps its flat
 //   colors: the detail fades in between the zooms in DECO_FADE.
+import { onForgetPictures } from "./pictures.js";
 
 // Options (ui/settings.js "Map detail"): detail false draws the flat map at every zoom.
 export const deco = { detail: true };
@@ -530,3 +531,4 @@ export function drawDecor(ctx, D, list, n, key, clr, at, snow, alpha, look = SEA
   ctx.globalAlpha = a0;
   return drawn;
 }
+onForgetPictures(() => { atlases.clear(); waters.clear(); }); // ui/pictures.js: drawn again after a lost GPU context

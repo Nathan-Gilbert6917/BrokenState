@@ -12,6 +12,7 @@
 import { limb, boxL, paintLimbs } from "./figures.js";
 import { painter, zombieLook } from "./sprites.js";
 import { shade } from "./itemart/kit.js";
+import { onForgetPictures } from "./pictures.js";
 
 const UP = 4;             // pre-upscale factor for the cached canvas (mapsprites.js gridW reads it)
 const OUTLINE = "#0b0c0e";
@@ -752,3 +753,4 @@ export const gridW = (cv) => (cv ? cv.width / UP : 0);
 // For the sheets and tests: the painter of a piece without the canvas cache.
 export const paintPiece = (limbs, grid, yaw) => paintScene(limbs, grid, yaw);
 export const _test = { person, beast, pickup, place, GRIDS };
+onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context

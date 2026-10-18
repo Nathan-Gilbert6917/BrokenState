@@ -114,6 +114,7 @@ import { MAX_SPEED, SPEEDS, SLOWEST_SPEED, initPacing, cardUp, trayEsc, pacingFr
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
 document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
+import { checkPictures } from "./ui/pictures.js"; // once a second: a kept picture found blank (a lost GPU context) is drawn again, with every other
 import { initCrash, reportCrash, crashUp } from "./ui/crash.js"; // the error screen: an uncaught exception stops the clock, writes the crash save
 import { newCampaignId } from "./sim/savesummary.js"; // each run's id: the save list groups its saves, its autosaves rotate
 import { loadOptions, saveOptions } from "./ui/saves.js";
@@ -272,6 +273,7 @@ function frame(now) {
 
 function step(now) {
   const t0 = ui.showFps ? performance.now() : 0;
+  checkPictures(now); // ui/pictures.js: the sentinel, once a second
   const gap = now - last;
   const dt = Math.min(0.25, gap / 1000);
   last = now;

@@ -9,6 +9,7 @@ import { openSettings } from "./settings.js";
 import { GAME_VERSION } from "../sim/save.js";
 import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 import { ambLightning } from "./ambience.js"; // the storm scene's lightning: its thunder follows (ui/ambweather.js)
+import { onForgetPictures } from "./pictures.js";
 
 const SCENES = ["skyline", "camp", "walls"];
 const HOLD_S = 45;  // how long each background stays before the next fades in
@@ -1536,3 +1537,4 @@ function wallsScene() {
   }
   return { resize, frame };
 }
+onForgetPictures(() => puffs.clear()); // ui/pictures.js: drawn again after a lost GPU context

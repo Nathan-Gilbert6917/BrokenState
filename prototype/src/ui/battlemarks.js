@@ -16,6 +16,7 @@
 import { CELL, WEAPONS } from "../sim/combat.js";
 import { FRAG, BLAST, FIRE } from "../sim/throwables.js";
 import { ROCKET, GL_HE } from "../sim/launchers.js";
+import { onForgetPictures } from "./pictures.js";
 
 export const MARK_CAP = 600, MARK_CAP_LOW = 200;
 export const MARK_TEX = 16;          // map px a tile (the ground's texels)
@@ -328,3 +329,4 @@ export function paintMark(c, m, g) {
     default:
   }
 }
+onForgetPictures(() => { if (S) { S.cv = null; S.dirty = true; } }); // ui/pictures.js: the baked marks are drawn again from the list after a lost GPU context

@@ -38,6 +38,7 @@ import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from 
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso } from "./ground.js";
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
+import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -2461,3 +2462,4 @@ function drawFxIso(ctx, b, now, H, state = null, shown = []) {
     ctx.strokeText(text, tx, y); ctx.fillText(text, tx, y);
   }
 }
+onForgetPictures(() => clearIsoCache()); // ui/pictures.js: after a lost GPU context the kept ground, fog and sprites are blank; drawn again

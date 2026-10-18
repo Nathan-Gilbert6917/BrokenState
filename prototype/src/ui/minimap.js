@@ -16,6 +16,7 @@ import { contactable } from "../sim/orders.js";
 import { camera, view, HEX, liveSet, coalitionLand } from "./render.js";
 import { PAL } from "./palette.js";
 import { iceRow } from "../sim/weather.js"; // frozen rivers show as ice
+import { onForgetPictures } from "./pictures.js";
 
 const SQ3 = Math.sqrt(3);
 const SHADES = [1, 0.72, 0.42]; // live, reported, unknown (render.js SHADES)
@@ -230,3 +231,4 @@ function draw(state) {
 
 // For the headless test: what the minimap would show (the land's fog per tile and the dots), without a DOM.
 export function minimapDots(state) { return gatherDots(state); }
+onForgetPictures(() => { land = null; sig = ""; dirty = true; }); // ui/pictures.js: the land is drawn again after a lost GPU context
