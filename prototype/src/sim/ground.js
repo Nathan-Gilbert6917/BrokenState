@@ -49,7 +49,7 @@ import { launcherBody } from "./launchers.js";
 import { SEARCH } from "./search.js";
 import { ARMORED } from "./deadsoldiers.js";
 import { KITS, WEAPONS, say, fx, unitById, loadMag, active, playerUnit } from "./combat.js";
-import { gunOut, gunLeavesTeam, gunIn, unloadInto, stockFor, teamGuns } from "./gunload.js"; // the rounds in a gun, kept on it
+import { gunOut, gunLeavesTeam, gunIn, unloadInto, stockFor, teamGuns, returnStacks } from "./gunload.js"; // the rounds in a gun, kept on it; what is left in guns and magazines back onto the person after the fight (mags.js: physical rounds)
 import { fireStuff, cookFrom } from "./launchers.js"; // fire on what lies on the ground; the explosives in it go off
 import { fireAt } from "./throwables.js";
 import { bagRefusal } from "./carry.js"; // Carry in arms: the one check for a bag going into the arms
@@ -311,6 +311,7 @@ export function groundEnd(state, b, outcome) {
   }
   // gunload.js: the guns that came home with rounds in them (picked up, handed over) are unloaded into the stores.
   const living = b.units.filter((u) => u.side === "player" && !u.dead && !u.lostBehind && !u.nlTaken).map((u) => survivorById(state, u.sid)).filter((s) => s && s.alive);
+  returnStacks(b, living, st ? stockFor(state, st) : null); // mags.js: what is left in the guns and the magazines goes back onto the person as loose rounds (the stores for what finds no room)
   if (st) unloadInto(st, teamGuns(living, st.list), stockFor(state, st));
   if (!L) return;
   for (const c of L.containers.slice()) {

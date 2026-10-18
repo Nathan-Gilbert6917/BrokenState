@@ -53,9 +53,11 @@ import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
 import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
-import { gunLeavesTeam, unloadInto, teamGuns } from "./gunload.js";
+import { gunLeavesTeam, unloadInto, teamGuns, returnStacks } from "./gunload.js";
 import { pileToArms } from "./carry.js"; // the team's loads off the ground: into the arms (call-time only: safe in the import cycle) // the rounds in a gun go with it (call-time only: safe in the import cycle)
-import { canStack, mergeInto, isSpent, stackLabel, isSupItem, roomIn, roundCap, amountOf, roundItems } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
+import { canStack, mergeInto, isSpent, stackLabel, isSupItem, roomIn, roundCap, amountOf, roundItems, isRoundItem } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
+import { isMag } from "./mags.js"; // rounds onto a spare magazine in the search window load it (call-time only: the import cycle)
+import { combatAct } from "./combat.js"; // (call-time only)
 import { isCart, boxFree, boxRefusal } from "./carts.js"; // a cart on the map: a container up to its kg (call-time only)
 import { itemKeyOf, stockKeyOf, foundItems, putBack } from "./supitems.js"; // found supplies as items for pockets and the pack (2026-10-16)
 import { ROUND_SUPPLIES } from "./data-ammo.js";
@@ -307,6 +309,14 @@ export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
   const e = reach(state, b, u, from) || reach(state, b, u, to);
   if (e) return e;
   lootLayer(b).lootBy = u.id; // the one whose window it is (messages name the others)
+  // Rounds dropped onto one of the searcher's own spare magazines load it (2026-10-18 user request: "you can load and
+  // reload magazines during raids"): the fight's own rule (combat.js invAct "load", mags.js loadMagPlan: up to 6 a
+  // time, 1 action from a pocket or the rig, both from the pack), not a swap of the two things.
+  if (from.o === "s" && to.o === "s" && from.id === to.id && from.id === u.sid && from.slot !== "sup" && to.slot !== "sup") {
+    const A = place(state, b, from), B = place(state, b, to);
+    const item = A ? getAt(A, from) : null, cur = B ? getAt(B, to) : null;
+    if (item && cur && isRoundItem(item) && isMag(cur)) return combatAct(state, { type: "inv", unit: u.id, from: fromStr, to: toStr, op: "load" });
+  }
   if (from.slot === "sup") return to.o === "stow" ? stowSupply(state, b, u, from, to, qty) : isList(to) ? moveSupply(state, b, u, from, to, qty) : slotSupply(state, b, u, from, to, qty);
   if (to.o === "stow") return "Drop it on a pocket or a pack cell.";
   return moveGear(state, b, u, from, to);
@@ -818,7 +828,9 @@ export function raidHome(state, b, homeUids) {
   }
   // gunload.js: the guns that came home with rounds in them are unloaded into the team's cargo.
   if (p) p.cargo = p.cargo || { supplies: {}, gear: [] };
-  if (p) unloadInto(null, teamGuns(b.units.filter((u) => u.side === "player" && homeUids.has(u.id)).map((u) => survivorById(state, u.sid)), p.cargo.gear || []), p.cargo.supplies || (p.cargo.supplies = {})); // a bag in the arms and one in the cargo too
+  const homePeople = b.units.filter((u) => u.side === "player" && homeUids.has(u.id)).map((u) => survivorById(state, u.sid)).filter(Boolean);
+  returnStacks(b, homePeople, p ? p.cargo.supplies || (p.cargo.supplies = {}) : null); // mags.js: what is left in the guns and the magazines goes back onto the person as loose rounds
+  if (p) unloadInto(null, teamGuns(homePeople, p.cargo.gear || []), p.cargo.supplies || (p.cargo.supplies = {})); // a bag in the arms and one in the cargo too
   // The piles nobody picked up stay behind: they were found, but nobody brought them home.
   for (const c of R.containers) {
     if (!c.drop || !c.contents) continue;

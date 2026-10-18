@@ -33,7 +33,9 @@ import { treatWorm, wormOf } from "../sim/worm.js";
 import { treatAnywhere, isHurt } from "../sim/medical.js";
 import { FOODS } from "../sim/foods.js";
 import { calOf } from "../sim/ammo.js";
-import { isMag } from "../sim/mags.js";
+import { isMag, isStacked, magEntryAt, unloadMagPlan, reloadOptions } from "../sim/mags.js";
+import { carriedSpots } from "../sim/inventory.js";
+import { stackText } from "../sim/roundstack.js";
 import { reloadCost, reloadRefusal, medsLeft, active, WEAPONS } from "../sim/combat.js";
 import { raidMove, raidItemAt, parseRaidLoc, quickTarget, lootLayer } from "../sim/raidloot.js";
 import {
@@ -288,7 +290,11 @@ function fightRows(state, ui, m, item, d, s, u, out) {
   if (inHand && ranged && calOf(item.key)) {
     const cost = reloadCost(b, u);
     const why = reloadRefusal(b, u);
-    out.push(row("reload", "Reload", order(state, { type: "reload", unit: u.id }), { ap: cost, why: turnWhy(state, u, cost) || why || "" }));
+    out.push(row("reload", "Reload", order(state, { type: "reload", unit: u.id }), { ap: cost, why: turnWhy(state, u, cost) || why || "", tip: isStacked(u) ? "The next loaded spare magazine, else the chamber's round by hand from the nearest place (up to 6)" : "" }));
+    if (isStacked(u)) { // the picker (ui/combat.js reloadPicker): a magazine or rounds by hand, in the order they should fire
+      const o = reloadOptions(b, u);
+      if (o.mags.length + o.clips.length + o.rounds.length) out.push(row("reloadpick", "Reload: pick what to load…", () => { cui.ammoAsk = u.id; cui.msg = ""; }, { ap: 0, why: turnWhy(state, u, 1), tip: `${o.mags.length} magazine${o.mags.length === 1 ? "" : "s"} and ${o.rounds.length} stack${o.rounds.length === 1 ? "" : "s"} of rounds on ${first(s)}: the picker over the orders lists them (rounds up to ${o.per} a Reload, in the order picked)` }));
+    }
     const kinds = ammoToHand(state, b, u);
     if (kinds.length > 1) out.push(row("reloadwith", "Reload with", null, { sub: kinds.map((x) => { const c = reloadCost(b, u, x.type); return row(`rl:${x.type}`, `${x.type === u.load ? "✓ " : ""}${x.short || x.name}`, order(state, { type: "reload", unit: u.id, ammo: x.type }), { ap: c, note: `${x.n}`, why: turnWhy(state, u, c) || reloadRefusal(b, u, x.type) || "", tip: `${x.name}: ${x.n} to hand` }); }) }));
     if (u.jam) { const ap = u.jam.ap || 1; out.push(row("unjam", "Clear the jam", order(state, { type: "unjam", unit: u.id }), { ap, why: turnWhy(state, u, ap) })); }
@@ -297,7 +303,13 @@ function fightRows(state, ui, m, item, d, s, u, out) {
   }
   if (isGunKey(item.key) && L.o === "s") out.push(row("modify", "Modify", (st2, ui2) => { GB_ACTIONS["gb-open"](state, ui2, { loc, sid: u.sid }); }, { ap: MOD_AP, apNote: "a part", why: turnWhy(state, u, MOD_AP), tip: `The gun builder: only the parts ${first(s)} carries, ${MOD_AP} action a part fitted or taken off` }));
   if (repairKind(item)) out.push(row("repair", "Repair", null, { why: "Not in the middle of a fight.", tip: "A field repair kit or the bench, after the fight" }));
-  if (isMag(item)) out.push(row("magunload", item.unloaded ? "Load" : "Unload", null, { why: "Not in the middle of a fight: the spares are counted by the gun's Reload.", tip: `A spare magazine reloads in ${ITEM_AP[L.slot === "pack" ? "pack" : "pocket"]} action${L.slot === "pack" ? "s" : ""} from here` }));
+  if (isMag(item) && L.o === "s" && isStacked(u)) { // a spare's rounds out by hand (sim/mags.js unloadMagFrom; combatAct "inv" op "unload")
+    const m = magEntryAt(u, carriedSpots(s), loc);
+    const p = m ? unloadMagPlan(b, u, m) : { why: `Not one of the ${u.weaponName}'s magazines.` };
+    const txt = Array.isArray(item.stack) && item.stack.length ? stackText(MAGAZINES[item.key].cal, item.stack) : "empty";
+    out.push(row("magunload", "Unload", order(state, { type: "inv", unit: u.id, from: loc, op: "unload" }), { ap: INV_AP, why: turnWhy(state, u, INV_AP) || p.why || "", tip: `Every round in it (${txt}) out as loose rounds onto ${first(s)}, each kind its own stack. Loose rounds dropped onto it load it (up to 6 a time, any mix the gun takes).` }));
+    if (m && m.where !== "gun") out.push(row("magswap", "Reload with it", order(state, { type: "reload", unit: u.id, mag: u.mags.indexOf(m) }), { ap: reloadCost(b, u, { mag: u.mags.indexOf(m) }), why: turnWhy(state, u, reloadCost(b, u, { mag: u.mags.indexOf(m) })) || reloadRefusal(b, u, { mag: u.mags.indexOf(m) }) || "", tip: `Swap it into the ${u.weaponName} (${txt}); the magazine in the gun goes here with what is in it` }));
+  } else if (isMag(item)) out.push(row("magunload", item.unloaded ? "Load" : "Unload", null, { why: "Not in the middle of a fight: the spares are counted by the gun's Reload.", tip: `A spare magazine reloads in ${ITEM_AP[L.slot === "pack" ? "pack" : "pocket"]} action${L.slot === "pack" ? "s" : ""} from here` }));
   if (d.use) { const p = battleUsePlan(state, b, u, { what: "treat", loc }); out.push(row("use", `${verb(d)} it`, order(state, { type: "useItem", unit: u.id, what: "treat", loc }), { ap: p.ap, why: turnWhy(state, u, p.ap) || p.why, tip: `${useText(item.key)}. Used up.${p.ap > 1 ? " From the pack: 2 actions (1 from a pocket or the rig)." : ""}` })); }
   if (d.medKit || d.selfStab || d.cat === "medical" || d.supKey === "meds") out.push(battleMedRow(state, u));
 }

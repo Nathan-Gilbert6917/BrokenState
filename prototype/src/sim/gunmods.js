@@ -56,6 +56,7 @@
 // the pipe shotgun a sling. Fall never drops below FALL_MIN a tile. A shot's noise × noise: a suppressed rifle shot
 // (noise 3) is 1.2, heard 15 × 0.4 = 6 tiles off in a raid (9 + 2 × noise, × the share) instead of 15.
 import { GEAR } from "./data.js";
+import { standardMag } from "./mags.js"; // (call-time only: the import cycle)
 import { GUN_WEAPONS } from "./data-guns.js";
 import { CALIBERS, CAL_ACCEPTS } from "./data-ammo.js";
 import { SLOTS, SLOT_NAMES, SHARED, PLATFORMS, CATEGORIES, WEAPON_PLATFORM, WEAPON_SLOTS, PLATFORM_GUESS, BASE_CAL, MOD_ATTACH, PLATFORM_LIKE, PLATFORM_LIKE_SKIP, PART_INFO, OLD_PART_CLASS, BUDGET_MAGS } from "./data-gunmods.js";
@@ -664,7 +665,7 @@ export function wearMakeshiftMods(item, n = 1) {
 // "9mm pistol (red dot, suppressor)": the weapon's name with what is fitted to it (mounts and rails left out).
 export function modLabel(item) {
   if (!item) return "";
-  const list = fitted(item).filter((m) => !["mount", "rail", "sling", "pgrip", "receiver"].includes(ATTACH[m.key].slot));
+  const list = fitted(item).filter((m) => !["mount", "rail", "sling", "pgrip", "receiver"].includes(ATTACH[m.key].slot) && !(ATTACH[m.key].slot === "mag" && m.key === standardMag(item.key))); // the gun's own standard magazine (made a thing of by a swap, mags.js) is not a part worth naming
   return list.length ? `${item.name} (${list.map((m) => ATTACH[m.key].short).join(", ")})` : item.name;
 }
 const sgn = (v, unit = "") => `${v > 0 ? "+" : "−"}${Math.round(Math.abs(v) * 100) / 100}${unit}`;

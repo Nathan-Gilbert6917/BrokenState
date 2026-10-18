@@ -227,15 +227,16 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     // The battle's rounds (sim/ammo.js: the side's boxes on its fighters and the pools): only these two boxes, on u.
     const pools0 = b.pools, boxes0 = b.units.map((x) => x.boxes);
     b.pools = [{}];
-    for (const x of b.units) if (x.side === "player") x.boxes = [];
+    for (const x of b.units) if (x.side === "player") { x.boxes = []; if (Array.isArray(x.stack)) x.stack = []; for (const m of x.mags || []) if (m.item && Array.isArray(m.item.stack)) m.item.stack = []; } // (physical rounds, mags.js: the gun's and the spares' stacks emptied too)
     u.boxes = [{ key: keys[0], name: boxes[keys[0]].name, quality: 1, dur: 20 }, { key: keys[1], name: boxes[keys[1]].name, quality: 1, dur: 7 }];
+    u.mag = 0;
     try {
       const list = UI.ammoToHand(st, b, u);
       check(list.length === 2 && list[0].n === 20 && list[1].n === 7, `the rounds to hand by kind (${list.map((x) => `${x.name} ${x.n}`).join(", ")})`);
       cui.msg = ""; cui.ammoAsk = null;
       UI.combatAction(st, "cb-act", { v: "reload" });
       html = UI.renderCombatScreen(st);
-      check(cui.ammoAsk === u.id && (html.match(/data-v="reload" data-k="/g) || []).length === 2, "Reload opens the chooser: a button a kind");
+      check(cui.ammoAsk === u.id && new Set((html.match(/data-v="rladd" data-i="\d+"/g) || [])).size === 2, "Reload opens the picker: the two stacks of rounds to pick from (sim/mags.js reloadOptions)");
       const pick0 = cui.ammoPick[u.id];
       UI.combatKey(st, key("KeyI"));
       check(cui.ammoPick[u.id] !== pick0 && types.includes(cui.ammoPick[u.id]), `Shift+I picks the next kind (${pick0} → ${cui.ammoPick[u.id]})`);

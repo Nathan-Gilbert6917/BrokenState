@@ -32,6 +32,7 @@ import { peekNextId, setNextId, day, hub, alive, fillCrafting, fillMelee, fillCo
 import { WORLD_SIZES, worldSizeOf } from "./worldsize.js";
 import { WOOD_UNITS, GEAR } from "./data.js"; // firewood was a 3 kg bundle: older saves are scaled to 0.1 kg units
 import { makeLosCache, SparseLos } from "./combat.js";
+import { migrateUnitStacks } from "./mags.js"; // physical rounds on a battle saved before them
 import { CRAFT_BOOKS, tech } from "./blueprints.js"; // craft books read before they unlocked anything // the line-of-sight cache of a loaded battle (sparse on a big yard)
 import { saveSummary, campaignKey } from "./savesummary.js"; // the save list's one-line summary and campaign groups
 import { noteLootAge } from "./itemcond.js"; // the years since the fall, for loot rolled after a load
@@ -282,6 +283,9 @@ export function deserializeState(save) {
   // A big yard's sparse line-of-sight cache (combat.js SparseLos) comes back as a plain Map: a fresh one (it is only a cache).
   if (b && (!b.losCache || (b.losCache instanceof Map && !(b.losCache instanceof SparseLos)))) b.losCache = makeLosCache(b.w, b.h);
   for (const F of (b && b.floors) || []) if (F.losCache instanceof Map && !(F.losCache instanceof SparseLos)) F.losCache = null;
+  // Physical rounds (mags.js, 2026-10-18): a unit of yours from a save made before (u.mags counters, no u.stack) gets
+  // the rounds it showed loaded out of what it carries and the team's bags.
+  if (b && !b.over) for (const u of b.units || []) if (u.side === "player" && u.sid != null && !Array.isArray(u.stack) && Array.isArray(u.mags) && u.magsW === u.weapon) migrateUnitStacks(b, u, (state.survivors || []).find((x) => x && x.id === u.sid) || null);
   if (b && Array.isArray(b.floors) && b.floors.length) {
     const F = b.floors[b.floor || 0] || b.floors[0];
     b.floor = b.floors.indexOf(F);

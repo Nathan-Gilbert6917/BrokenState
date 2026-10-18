@@ -1862,3 +1862,12 @@ button.ppl-idle.on { background: #45380f; color: #ffd166; }
 .idle-bases .idle-row { flex-wrap: wrap; }
 .idle-bases .idle-who { flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 0.4rem; }
 .idle-bases .idle-row > select { margin-left: auto; max-width: 100%; }
+
+/* The Reload picker over the battle orders (ui/combat.js reloadPicker, 2026-10-18): magazines, rounds by hand, the pick in firing order */
+.cbreload .rlrow { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.25rem 0.45rem; align-items: center; }
+.cbreload .rlsrc { display: inline-flex; gap: 0.15rem; align-items: center; padding: 0.1rem 0.35rem; border: 1px solid var(--border, #444); border-radius: 4px; }
+.cbreload .rlpick { display: inline-flex; gap: 0.1rem; align-items: center; padding: 0.1rem 0.35rem; background: rgba(255,255,255,0.06); border-radius: 4px; }
+.cbreload button.mini.primary { font-weight: 600; }
+/* The kit warning before a raid (ui/combat.js kitWarnHtml): empty guns, no healing, the hurt */
+.cbkitwarn ul { margin: 0.25rem 0 0 1rem; padding: 0; }
+.cbkitwarn li { margin: 0.1rem 0; }
