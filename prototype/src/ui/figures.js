@@ -496,7 +496,13 @@ export const paintBoxSurvivor = (app, weaponKey = null, armorKey = null, facing 
 export const paintBoxZombie = (variant, seed, facing = "SE", tile = false, look = undefined) => paintBoxFigure(zombieApp(variant, seed, look), null, null, YAW[facing] ?? 0, tile);
 
 // ---------- the cache, the units, the inventory's spin ----------
-const cache = new Map();
+// The figures' canvases by look, weapon, armour, pack and heading: the key holds all the picture depends on, so one
+// never goes stale. Least recently used first (a hit moves its key to the end of the Map), the oldest dropped past
+// FIG_BUDGET bytes of canvas (w × h × 4: some 600 figures, a big battle's every unit at every heading of three views),
+// so the figures on screen stay (it used to clear all of them past 1,200 and paint each one on screen again at once).
+const cache = new Map(), FIG_BUDGET = 96 << 20; // key -> { cv, bytes }
+let cacheBytes = 0;
+export const figureStats = { painted: 0, ms: 0, dropped: 0 }; // figures painted (a miss), their time, dropped (the tools)
 const MUZZLE = new WeakMap();
 export const figureMuzzle = (cv) => (cv && MUZZLE.get(cv)) || null;
 const lookKey = (a) => (a.key || [a.build, a.skin, a.hairStyle, a.hair, a.facial, a.topStyle, a.top, a.pants, a.accessory, a.accent, a.helmet, a.hood, a.sash, a.armband].join("|")) + (a.down ? `|down:${a.down.pose}:${a.down.pool ? 1 : 0}:${a.down.burnt ? 1 : 0}` : "");
@@ -505,14 +511,18 @@ const STEP = 15; // degrees a cached heading
 export function figureCanvas(app, look = null, armorKey = null, yaw = 0, o = {}) {
   const y = (((Math.round(yaw / STEP) * STEP) % 360) + 360) % 360;
   const key = `${lookKey(app)}|${look || ""}|${armorKey || ""}|${o.pack ? 1 : 0}|${y}`;
-  let cv = cache.get(key);
-  if (cv === undefined) {
-    if (cache.size > 1200) cache.clear();
-    const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory }, look ? String(look).split("|")[0] : null, armorKey, y, false);
-    cv = toCanvas(p);
-    if (cv) { cv.figure = p.fig; if (p.muzzle) MUZZLE.set(cv, p.muzzle); }
-    cache.set(key, cv);
-  }
+  const e = cache.get(key);
+  if (e !== undefined) { cache.delete(key); cache.set(key, e); return e.cv; }
+  const t0 = typeof performance !== "undefined" ? performance.now() : 0;
+  const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory }, look ? String(look).split("|")[0] : null, armorKey, y, false);
+  const cv = toCanvas(p);
+  if (cv) { cv.figure = p.fig; if (p.muzzle) MUZZLE.set(cv, p.muzzle); }
+  const bytes = p.w * p.h * 64; // the canvas, 4 × 4 px a grid px of 4 bytes (headless too, where there is none)
+  cache.set(key, { cv, bytes });
+  cacheBytes += bytes;
+  while (cacheBytes > FIG_BUDGET && cache.size > 1) { const [k, old] = cache.entries().next().value; cache.delete(k); cacheBytes -= old.bytes; figureStats.dropped++; }
+  figureStats.painted++;
+  if (t0) figureStats.ms += performance.now() - t0;
   return cv;
 }
 // A human enemy's look as a figure (ui/sprites.js enemyLookOf: the same rolls as its flat sprite).
@@ -698,4 +708,4 @@ function attachHand() {
   document.addEventListener("wheel", (ev) => { const key = figOf(ev); if (!key) return; ev.preventDefault(); wheelFigure(key, ev.deltaY); }, { passive: false, capture: true });
   document.addEventListener("click", (ev) => { const el = ev.target && ev.target.closest ? ev.target.closest("button[data-figreset]") : null; if (el) { ev.preventDefault(); spinFigure(el.dataset.figreset); } }, true);
 }
-onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context
+onForgetPictures(() => { cache.clear(); cacheBytes = 0; }); // ui/pictures.js: drawn again after a lost GPU context

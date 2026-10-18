@@ -1579,6 +1579,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       const n0 = nan;
       const tour = [0, 1, top, 1, 0];
       let errs = 0, imgs = [], builds = [], prev = 0;
+      const painted = new Set(); // the upper floors whose ground has been painted (ui/isoview.js groundFor keeps a few)
       for (const f of tour) {
         try {
           UI.setViewFloor(b, f);
@@ -1586,14 +1587,16 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
           log = []; UI.drawCombat(st, NOW);
           imgs.push(log.filter((l) => l.startsWith("drawImage")).length);
           UI.drawCombat(st, NOW); // the same floor again: nothing rebuilt
-          builds.push([ISO.iso.builds.scene - s0, ISO.iso.builds.ground - g0, f !== prev ? 1 : 0]);
+          builds.push([ISO.iso.builds.scene - s0, ISO.iso.builds.ground - g0, f !== prev ? 1 : 0, f !== 0 && !painted.has(f) ? 1 : 0]);
+          if (f !== 0) painted.add(f);
           prev = f;
         } catch (e) { if (errs++ < 2) console.log(`  error drawing floor ${f}: ${e.stack}`); }
       }
       check(!errs && nan === n0 && imgs.every((k) => k >= 2), `a ${n}-floor building draws on each floor (${tour.join(", ")}) without errors (${errs}) or NaN, the ground and the blocks drawn (${imgs.join(", ")} images)`);
       // The ground floor's ground is painted once per battle in map space (isoview.js flatGroundFor) and kept: coming
-      // back down to it repaints nothing. An upper floor's (groundFor) is painted when the floor changes.
-      check(builds.every(([s, g, want], i) => s === want && g === (tour[i] === 0 && i > 0 ? 0 : want)), `the scene cache is rebuilt once when the floor changes (the key carries the floor) and not again; the ground once for an upper floor, the ground floor's kept (${builds.map((x) => x.slice(0, 2).join("/")).join(", ")})`);
+      // back down to it repaints nothing. An upper floor's (groundFor) is painted the first time the view goes up to it
+      // and kept for coming back (a few floors and views).
+      check(builds.every(([s, g, want, wantG]) => s === want && g === wantG), `the scene cache is rebuilt once when the floor changes (the key carries the floor) and not again; the ground once for each upper floor and kept on coming back, the ground floor's kept (${builds.map((x) => x.slice(0, 2).join("/")).join(", ")})`);
       check(b.floor === 0 && b.cells === b.floors[0].cells, "back on the ground floor the aliases point at its arrays");
       // The upper floor is raised: a cell's top at its lifted height picks itself (or a nearer cell in front).
       UI.setViewFloor(b, top); UI.drawCombat(st, NOW);
