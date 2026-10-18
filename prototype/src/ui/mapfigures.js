@@ -180,6 +180,7 @@ function cached(key, grid, yaw, build) {
   if (cv === undefined) {
     if (cache.size > 2400) cache.clear();
     curNear = nearOf(yaw);
+    groupSeq = 1; // the piece's figures numbered from 1 (place), so the key alone sets the picture
     cv = toCanvas(paintScene(build(), grid, yaw));
     if (cv) cv.grid = grid;
     cache.set(key, cv);
@@ -195,6 +196,10 @@ const clampFrame = (f) => (f > 0 ? (((f | 0) - 1) % FRAMES) + 1 : 0); // 0 stand
 // ground at z = 0) and placed: place(F, O, turn, build) builds through `build(push)` and moves every limb to O, turned
 // by `turn` degrees about its own origin, in a group of its own (so the rim separates one figure from the next); a
 // limb's own `group` (G.*) marks a part within it (the head, the legs, the wheels, a weapon) that gets a rim too.
+// The groups are bytes (paintLimbs' Uint8Array: a figure's number mod 16 in the high half), and at one depth the rim
+// goes to the higher group, so a counter run on from piece to piece let a piece built after a wrap give the rim to the
+// other figure: the same key painted two ways by what was built before it (9% of the multi-figure pieces at some
+// headings). cached() starts every piece at 1, where its figures never wrap.
 let groupSeq = 1;
 const G = { body: 0, legs: 1, arms: 2, head: 3, hat: 4, pack: 5, carry: 6, weapon: 7, wheels: 8, cab: 9, bonnet: 10, rails: 11, load: 12, deck: 13 };
 function place(F, O, turn, build) {
