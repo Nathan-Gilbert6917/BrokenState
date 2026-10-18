@@ -3,7 +3,8 @@
 //
 // - HELMETS: each helmet's face cover (built in: a motorcycle helmet's visor, a football helmet's cage, a riot helmet's
 //   riot visor), its mounts and how much it muffles your hearing (hearing.js hearRange). Full-shell helmets (motorcycle,
-//   riot, football) have no ear mount: with one on, only earplugs (a pocket item) protect the ears.
+//   riot, football) have no ear mount: with one on, only earplugs (a pocket item: foam, or the makeshift rag plugs a
+//   crafter makes from a scrap, data.js ragplugs) protect the ears.
 // - Attachments live in item.mods on the helmet (the field gun parts use: itemLoad, itemValue and saves carry them):
 //   face (a ballistic or riot visor), nvg (night vision goggles, on a combat or high-cut helmet's shroud, or a hard
 //   hat's hobbyist mount), light (a helmet light: a hands-free flashlight, lights.js lightOf), ears (ear muffs,
