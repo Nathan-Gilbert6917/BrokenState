@@ -103,7 +103,6 @@ export function findCarried(s, key) {
   const x = carriedSpots(s).find((c) => c.item.key === key); // inventory.js: worn, pockets, rig pouches, the pack
   return x ? { item: x.item, take: x.take } : null;
 }
-const countCarried = (s, key) => (s && s.gear ? carriedSpots(s).filter((c) => c.item.key === key).length : 0);
 // The shared store a battle can draw on: the team's cargo, or the base's armory.
 function storeOf(state, b) {
   if (b.setup.partyId != null) { const p = state.parties.find((x) => x.id === b.setup.partyId); return p && p.cargo ? p.cargo.gear : null; }
@@ -115,11 +114,10 @@ function storeOf(state, b) {
 export function throwablesOf(state, b, u) {
   const out = {};
   const s = u && u.sid != null ? survivorById(state, u.sid) : null;
-  const store = storeOf(state, b) || [];
-  for (const k of THROW_KEYS) {
-    const n = countCarried(s, k) + store.filter((it) => it && it.key === k).length;
-    if (n) out[k] = n;
-  }
+  // One pass over the person and one over the store (a base armory can hold thousands of items; the bot asks this
+  // several times a unit a turn).
+  if (s && s.gear) for (const c of carriedSpots(s)) if (Object.hasOwn(THROWABLES, c.item.key)) out[c.item.key] = (out[c.item.key] || 0) + 1;
+  for (const it of storeOf(state, b) || []) if (it && Object.hasOwn(THROWABLES, it.key)) out[it.key] = (out[it.key] || 0) + 1;
   return out;
 }
 function takeThrowable(state, b, u, key) {

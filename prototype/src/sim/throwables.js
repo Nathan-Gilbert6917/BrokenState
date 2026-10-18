@@ -38,7 +38,7 @@
 // (two at a breach, the gate or a doorway for a Molotov) and none of yours near, a smoke grenade when the retreat is
 // about to be sounded (the enemy's and the third side's the turn they start to fall back: siege.js coverSmoke), a flashbang on two or more people bunched within its reach (flashSpot; the enemy's soldiers and
 // guards carry them: kitFlashbangs, siege.js enemyThrow).
-import { say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast, los, coverAgainst, bossOnLand } from "./combat.js";
+import { nearCell, say, fx, damage, active, alertNear, alertPod, CELL, canSeeAt, breakCell, structureName, vehicleBlast, los, coverAgainst, bossOnLand } from "./combat.js";
 import { ZTYPES } from "./hiveconst.js";
 import { armorVs } from "./deadsoldiers.js";
 import { GEAR } from "./data.js";
@@ -109,7 +109,7 @@ export function smokeBlocks(b, x0, y0, x1, y1) {
 }
 
 // Everyone standing (or down) within r of (x, y) who can still be hurt.
-const caught = (b, x, y, r) => b.units.filter((t) => active(t) && dist(t.x, t.y, x, y) <= r + 1e-6);
+const caught = (b, x, y, r) => b.units.filter((t) => active(t) && dist(...nearCell(t, x, y), x, y) <= r + 1e-6); // a 2 × 2 boss: its nearest cell
 
 function hurtAll(b, by, list, [lo, hi], what) {
   const parts = [];

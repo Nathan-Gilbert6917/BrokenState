@@ -45,7 +45,21 @@ export interface Tile {
   hive: boolean;
   // A base burned or overrun here (an outpost on it needs less scrap): its name, the day, who did it, whose it was.
   ruin?: { name: string; day: number; by: string; from: string; yours?: boolean; dead?: number } | null;
+  pois?: Poi[]; // the tile's points of interest, the top one first (pois.js ensurePois; [] on a hive, a centre, water)
   [key: string]: any;
+}
+
+// A point of interest on a tile (pois.js): a place with a loot pool of its own.
+export interface Poi {
+  kind: string; // a LOCATIONS type (house, shed, gas, farm…)
+  hidden: boolean; // off the pre-war map: found by a survey (poiKnown reads the hub's record, state.poiKnow)
+  pool: number | null; // 0–1 what is left of its loot; null for the site POI (it keeps using tile.loot)
+  visits: number; // the player's visits
+  lastDay: number | null; // the day of the last one
+  cont: { n: number; looted: { [containerId: string]: any }; mine: { [containerId: string]: any } } | null; // the container ledger (poiLedger)
+  threatStamp: any; // the perceived threat recorded by a survey or a visit
+  stripped: boolean; // picked clean
+  site?: boolean; // the tile's site (tile.loc), always index 0
 }
 
 // What the player last saw of a tile (world.js snapshot): state.knowledge[tileId].
@@ -67,6 +81,9 @@ export interface TileSnapshot {
   lootSrc?: any;
   gb?: any; // intelnotes.js: what a team saw of a group's base here (it goes to state.intelLedger with the report)
   via?: string; // a report, not your own eyes (alliance.js "ally", hivetech.js "rumour"…)
+  pois?: { i: number; kind: string; pool?: number }[]; // pois.js: the points of interest known here (index, kind, the pool as seen then)
+  surveyed?: number; // the day the tile was last surveyed in full (pois.js revealPois stamp)
+  looked?: number; // the day of the last quick look
 }
 
 // ---------- people ----------

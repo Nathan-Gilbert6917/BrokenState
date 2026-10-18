@@ -14,6 +14,7 @@ import { newItem, itemLoad } from "../src/sim/inventory.js";
 import { createVehicle } from "../src/sim/vehicles.js";
 import { maxLoad, wornLoad } from "../src/sim/load.js";
 import * as RL from "../src/sim/raidloot.js";
+import { stockKeyOf } from "../src/sim/supitems.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { STEALTH } from "../src/sim/stealth.js";
 
@@ -134,8 +135,27 @@ console.log("On foot: each survivor carries their own share and finds");
   u.haul.gear.length = 0;
   const box4 = boxWith(b, u, { f_rationbar: 2, water: 2 }, [newItem("pistol")]);
   const r = RL.raidTakeAll(st, u.id, box4.id);
-  check(r.got.length >= 2 && box4.contents.gear.length === 0 && (u.haul.sup.f_rationbar || 0) >= 2, `Take all takes everything that fits (${r.got.join(", ")})`);
+  const held = (key) => [...s.pockets, ...(s.gear.backpack ? s.gear.backpack.contents || [] : [])].reduce((a, it) => a + (it && stockKeyOf(it) === key ? it.dur : 0), 0);
+  check(r.got.length >= 2 && box4.contents.gear.length === 0 && held("f_rationbar") >= 2 && !(u.haul.sup.f_rationbar > 0), `Take all takes everything that fits, supplies into pockets and the pack as items, not carried (${r.got.join(", ")})`);
+  check(!(box4.contents.sup.water > 0) && u.haul.sup.water === 2, "with no pack the water is carried: too big for a pocket, and no room left to hold it");
+  u.haul.sup.water = 0;
+  box4.contents.sup.water = 2;
+  s.gear.backpack = newItem("backpack");
+  RL.raidTakeAll(st, u.id, box4.id);
+  check(held("water") === 2 && !(box4.contents.sup.water > 0) && !(u.haul.sup.water > 0), "with a pack the water goes in it, not Carried");
   check(box4.searched, "an emptied container is done");
+  // An item back into a container is a supply stack there again.
+  const pi = s.pockets.findIndex((it) => it && stockKeyOf(it) === "f_rationbar");
+  const n0 = held("f_rationbar");
+  RL.raidMove(st, u.id, `s:${s.id}:pocket:${pi}`, `rbox:${box4.id}:list`);
+  check(box4.contents.sup.f_rationbar === n0 && held("f_rationbar") === 0, `a ration bar item put back is a stack in the container (${box4.contents.sup.f_rationbar})`);
+  const back = RL.raidMove(st, u.id, `rbox:${box4.id}:sup:f_rationbar`, `stow:${u.id}`);
+  check(held("f_rationbar") === n0 && !(box4.contents.sup.f_rationbar > 0), `stowed again into pockets and the pack (${back})`);
+  // Carried is for big, heavy things: building materials are not held in a slot.
+  const boxB = boxWith(b, u, { buildmat: 1 });
+  RL.raidTakeAll(st, u.id, boxB.id);
+  check(u.haul.sup.buildmat === 1, "a bulky supply (building materials) is carried");
+  check(/too big/.test(RL.raidMove(st, u.id, `haul:${u.id}:sup:buildmat`, `s:${s.id}:pocket:3`)), "and does not go in a pocket");
 
   // Found ammo can be used at once (the haul is one of the battle's pools).
   const ammoBefore = b.pools.reduce((a, o) => a + Math.floor(o.ammo || 0), 0);
@@ -180,16 +200,16 @@ console.log("A car: the team's things ride in it, the trunk is opened at the veh
   const space0 = RL.trunkSpace(st, b);
   check(Math.abs(space0 - (partyCapacity(st, p) - poolLoad(p))) < 0.01, `trunk space = what the team can carry with it less its load (${space0.toFixed(1)} kg)`);
   // Pick up far away, walk back, unload.
-  const box = boxWith(b, u, { scrap: 5 }, [newItem("ar")]);
+  const box = boxWith(b, u, { buildmat: 5 }, [newItem("ar")]);
   RL.raidTakeAll(st, u.id, box.id);
   const carried = RL.haulLoad(u);
   check(carried > 0 && Math.abs(RL.trunkSpace(st, b) - (space0 - carried)) < 0.01, `what people carry counts against the car too (it takes it home): ${RL.trunkSpace(st, b).toFixed(1)} kg free`);
   u.x = b.w - 2; u.y = 1;
-  check(/at the vehicle/.test(RL.raidMove(st, u.id, `haul:${u.id}:sup:scrap`, `trunk:${p.id}:list`)), "away from the vehicle the trunk cannot be reached");
+  check(/at the vehicle/.test(RL.raidMove(st, u.id, `haul:${u.id}:sup:buildmat`, `trunk:${p.id}:list`)), "away from the vehicle the trunk cannot be reached");
   u.x = z.x0 + 1; u.y = z.y0 + 1;
-  const scrap0 = p.cargo.supplies.scrap || 0;
+  const scrap0 = p.cargo.supplies.buildmat || 0;
   const r = RL.stashAll(st, u.id);
-  check(r.put.length >= 1 && RL.haulLoad(u) < EPS && (p.cargo.supplies.scrap || 0) - scrap0 === 5 && p.cargo.gear.some((g) => g.key === "ar"), `unloading puts what they carry in the car (${r.put.join(", ")})`);
+  check(r.put.length >= 1 && RL.haulLoad(u) < EPS && (p.cargo.supplies.buildmat || 0) - scrap0 === 5 && p.cargo.gear.some((g) => g.key === "ar"), `unloading puts what they carry in the car (${r.put.join(", ")})`);
   check(Math.abs(RL.trunkSpace(st, b) - (space0 - carried)) < 0.01, "moving things from a person into the car does not change how much more the car takes");
   check(RL.personalRoom(st, u) > carried - EPS, "and frees the survivor");
   // Take something out of the car.
@@ -280,9 +300,9 @@ console.log("Hauling takes time: the first kg a turn are free, then kg an action
   check(!/No time/.test(big) && u.ap === 0 && u.haul.gear.some((g) => g.key === "ar"), `one heavy thing can always be lifted with what is left of the turn (${big})`);
   // Take all stops when time runs out, and says so.
   fresh(b, u); u.ap = 0;
-  const box4 = boxWith(b, u, { scrap: 20 });
+  const box4 = boxWith(b, u, { buildmat: 20 });
   const r = RL.raidTakeAll(st, u.id, box4.id);
-  check(r.outOfTime && box4.contents.sup.scrap === 20 - Math.floor(RL.HAUL.free / w), `Take all with no actions left takes the free kg and stops (${r.got.join(", ")})`);
+  check((r.outOfTime || RL.haulBudget(b, u) < SUPPLIES.buildmat.weight) && box4.contents.sup.buildmat === 20 - Math.floor(RL.HAUL.free / SUPPLIES.buildmat.weight), `Take all with no actions left takes the free kg and stops (${r.got.join(", ")})`);
 }
 
 // ======================================================================================
@@ -324,6 +344,7 @@ console.log("Someone who bleeds out drops what they carried");
   const [u, lost] = players(b);
   fresh(b, lost);
   const box = boxWith(b, lost, { f_rationbar: 3 }, [newItem("pistol")]);
+  RL.raidMove(st, lost.id, `rbox:${box.id}:sup:f_rationbar`, `haul:${lost.id}:list`); // carried loose (Take all would pocket them)
   RL.raidTakeAll(st, lost.id, box.id);
   const found0 = JSON.stringify(b.raid.found);
   lost.down = true; lost.bleed = 1; lost.stab = false;

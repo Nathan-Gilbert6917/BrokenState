@@ -10,7 +10,7 @@
 import { GEAR, SUPPLIES } from "./data.js";
 import { ROUND_SUPPLIES } from "./data-ammo.js";
 import { MAGAZINES, CLIPS } from "./data-kit.js";
-import { isRoundItem, isBulk, boxesIn, amountOf, countOf, bulkRecord, bulkRounds } from "./itemstack.js";
+import { isRoundItem, isSupItem, isBulk, boxesIn, amountOf, countOf, bulkRecord, bulkRounds } from "./itemstack.js";
 
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
@@ -63,7 +63,7 @@ export function rowName(it) {
 /** @param {any} it */
 export function rowCount(it) {
   if (!it) return "";
-  if (isRoundItem(it)) return `×${amountOf(it)}`;
+  if (isRoundItem(it) || isSupItem(it)) return `×${amountOf(it)}`; // rounds; a supply out of the stores (supitems.js)
   if (isBulk(it)) { const n = bulkRounds(it); return n > 0 ? `×${n}` : ""; }
   return countOf(it) > 1 ? `×${countOf(it)}` : "";
 }

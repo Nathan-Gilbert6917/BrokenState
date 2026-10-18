@@ -7,9 +7,11 @@
 //     hand to pick), Unload (the rounds kept on it), Modify (the gun builder; in a fight the parts the fighter carries,
 //     an action a part), Repair; in a fight also Clear jam and the fire mode;
 //   - a magazine: Unload (kept empty), Load and Load with (the round), Fit to a gun; a gun part: Fit to a gun;
-//   - things used up: treats (Eat, Drink, Smoke), food and water stacks and the pack of food and water (Eat, Drink),
+//   - things used up: treats (Eat, Drink, Smoke), food and water (stacks in the stores, carried as items, the pack of
+//     food and water: Eat, Drink),
 //     meds and med kits (Treat wounds; in a fight Use meds), the dewormer (Take it, at a base).
-// In a fight each row says what it costs in actions (sim/itemacts.js ITEM_AP, MOD_AP; combat.js reloadCost) and is
+// In a fight (the kit view 🎒 and the search window) also Draw / To the off hand and Split, as the kit view's own moves
+// (combatAct "inv", INV_AP). In a fight each row says what it costs in actions (sim/itemacts.js ITEM_AP, MOD_AP; combat.js reloadCost) and is
 // greyed out with the reason when it cannot be done (not your turn, not enough actions, hands full...).
 // ui.imenu = { loc, x, y, sid (who uses it, when the view says: the base's Armory tab), open (a submenu row's id),
 // info (Inspect shown) }. loc: an inventory location ("s:3:pocket:1", "armory:2:list:4", "cargo:5:sup:f_beans"), a
@@ -36,8 +38,9 @@ import { reloadCost, reloadRefusal, medsLeft, active, WEAPONS } from "../sim/com
 import { raidMove, raidItemAt, parseRaidLoc, quickTarget, lootLayer } from "../sim/raidloot.js";
 import {
   ITEM_AP, MOD_AP, magLoadChoices, gunLoadChoices, roundsToHand, unloadMagRefusal, unloadMagAt, loadMagRefusal, loadMagAt, setGunLoad,
-  unloadGunRefusal, unloadGunAt, isFoodKey, isDrinkKey, stackUseRefusal, useStack, packUseRefusal, usePack, battleUsePlan,
+  unloadGunRefusal, unloadGunAt, isFoodKey, isDrinkKey, stackUseRefusal, useStack, packUseRefusal, usePack, battleUsePlan, heldKeyOf,
 } from "../sim/itemacts.js";
+import { INV_AP } from "../sim/combat.js"; // a move in a fighter's own kit (combatAct "inv")
 import { packFood, packWater } from "../sim/eating.js";
 import { cui, battleOrder, ammoToHand, unitModes, curMode, MODE_NAME } from "./combat.js";
 import { isGunKey } from "./gunart.js";
@@ -205,7 +208,10 @@ function calmRows(state, ui, m, item, d, s, out) {
     const h = s.gear && s.gear.head;
     if (h && isHelmet(h.key) && h !== item) out.push(row("helmfit", `Fit to the ${h.name}`, () => fitHelmetAt(state, `s:${s.id}:head`, loc, s.id), { why: helmetFitReason(h, item) || "" }));
   }
-  // Used up: a treat, the dewormer, meds.
+  // Used up: food or water carried (supitems.js), a treat, the dewormer, meds.
+  const hk = heldKeyOf(item);
+  if (hk && hk !== "meds" && s && !body) out.push(row("eat", `${isDrinkKey(hk) ? "Drink" : "Eat"}${L.o === "s" && L.id === s.id ? "" : ` (${first(s)})`}`, () => useStack(state, s.id, loc), { why: stackUseRefusal(state, s, loc), tip: isDrinkKey(hk) ? `Up to their fill (thirst ${Math.round(s.thirst ?? 100)})` : `Up to their fill (hunger ${Math.round(s.hunger ?? 100)}): whole ones` }));
+  if (d.supKey === "meds" && s && !body) out.push(medRow(state, s, "with the meds to hand"));
   if (d.use && s && !body && !looting) out.push(row("use", `${verb(d)} it`, () => useItemOn(state, s.id, loc), { why: here ? "" : `${first(s)} cannot reach it.`, tip: `${first(s)}: ${useText(item.key)}. Used up.` }));
   if (item.key === "dewormer" && s && !body) {
     const base = s.location && s.location.kind === "base" ? baseById(state, s.location.baseId) : null;
@@ -268,6 +274,15 @@ function fightRows(state, ui, m, item, d, s, u, out) {
     }
   }
   if (!mine) return;
+  // The kit view (🎒): a move in their own kit, as a click there would (combatAct "inv", INV_AP; pockets, pack, rig
+  // pouches, the hands and the off hand).
+  if (!raid && L.o === "s") {
+    const to = d.slot === "weapon" || d.slot === "tool" ? d.slot : null;
+    if (to && L.slot !== to && ["pocket", "pack", "rig", "weapon", "tool"].includes(L.slot)) out.push(row("equip", to === "weapon" ? "Draw (to the hands)" : "To the off hand", order(state, { type: "inv", unit: u.id, from: loc, to: `s:${u.sid}:${to}` }), { ap: INV_AP, why: turnWhy(state, u, INV_AP), tip: "What is there now goes where this was" }));
+    if (amountOf(item) > 1 && (countOf(item) > 1 || (isRoundItem(item) && !isBulk(item))) && ["pocket", "pack", "rig"].includes(L.slot)) out.push(row("split", "Split the stack", order(state, { type: "inv", unit: u.id, from: loc, op: "split" }), { ap: INV_AP, why: turnWhy(state, u, INV_AP) }));
+  }
+  const hk = heldKeyOf(item);
+  if (hk && hk !== "meds" && L.o === "s") { const p = battleUsePlan(state, b, u, { what: "stack", loc }); out.push(row("eat", isDrinkKey(hk) ? "Drink" : "Eat", order(state, { type: "useItem", unit: u.id, what: "stack", loc }), { ap: p.ap, why: turnWhy(state, u, p.ap) || p.why, tip: isDrinkKey(hk) ? "A drink" : "A bite: about a meal at most" })); }
   const inHand = L.o === "s" && L.slot === "weapon" && u.item === item;
   const ranged = WEAPONS[item.key] && !WEAPONS[item.key].melee;
   if (inHand && ranged && calOf(item.key)) {
@@ -284,7 +299,7 @@ function fightRows(state, ui, m, item, d, s, u, out) {
   if (repairKind(item)) out.push(row("repair", "Repair", null, { why: "Not in the middle of a fight.", tip: "A field repair kit or the bench, after the fight" }));
   if (isMag(item)) out.push(row("magunload", item.unloaded ? "Load" : "Unload", null, { why: "Not in the middle of a fight: the spares are counted by the gun's Reload.", tip: `A spare magazine reloads in ${ITEM_AP[L.slot === "pack" ? "pack" : "pocket"]} action${L.slot === "pack" ? "s" : ""} from here` }));
   if (d.use) { const p = battleUsePlan(state, b, u, { what: "treat", loc }); out.push(row("use", `${verb(d)} it`, order(state, { type: "useItem", unit: u.id, what: "treat", loc }), { ap: p.ap, why: turnWhy(state, u, p.ap) || p.why, tip: `${useText(item.key)}. Used up.${p.ap > 1 ? " From the pack: 2 actions (1 from a pocket or the rig)." : ""}` })); }
-  if (d.medKit || d.selfStab || d.cat === "medical") out.push(battleMedRow(state, u));
+  if (d.medKit || d.selfStab || d.cat === "medical" || d.supKey === "meds") out.push(battleMedRow(state, u));
 }
 function battleMedRow(state, u) {
   const b = state.combat;

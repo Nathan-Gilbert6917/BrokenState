@@ -10,7 +10,7 @@
 // - Firewood: a save from before firewood by weight (woodcutting mark 1) has every base's and team's firewood × 30
 //   (data.js WOOD_UNITS), once: saved and loaded again, it stays the same. A save from before woodcutting starts at 0.
 // - The autopilot plays [days] in-game days from there without an exception; the world is still sane, and it saves
-//   and loads again.
+//   and loads again (the tile heat and the POI container ledgers too).
 // Adding a save from a new build: node tools/makesave.js (see there; one command).
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
@@ -124,6 +124,12 @@ for (const file of files) {
   let after = null;
   try { after = roundTrip(st); } catch (e) { check(false, `saves and loads after playing on (${e.message})`); }
   if (after) check(day(after) === day(st) && after.survivors.length === st.survivors.length, "saves and loads after playing on");
+  // Points of interest (pois.js, poicont.js): the tile heat and every container ledger come back as they were (a save
+  // from before them has neither; the autopilot's searches made some).
+  if (after) {
+    const ledgers = (w) => JSON.stringify(w.tiles.flatMap((t) => (t.pois || []).map((x, i) => (x.cont ? [t.id, i, x.cont] : null)).filter(Boolean)));
+    check(JSON.stringify(after.tileHeat || {}) === JSON.stringify(st.tileHeat || {}) && ledgers(after) === ledgers(st), `the tile heat (${Object.keys(st.tileHeat || {}).length} tiles) and the container ledgers come back after a save`);
+  }
   const h = hub(st);
   console.log(`    day ${d0} → ${day(st)}${st.gameOver ? " (fallen)" : ""}, ${st.survivors.filter((s) => s.alive).length} alive, ${st.bases.length} base(s)${h ? `, hub firewood ${Math.round(h.stock.wood || 0)}` : ""} (${((performance.now() - t1) / 1000).toFixed(1)} s)`);
 }

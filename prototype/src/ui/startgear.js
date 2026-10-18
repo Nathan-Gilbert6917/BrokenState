@@ -24,7 +24,7 @@ import { standardMag } from "../sim/mags.js";
 import { ROUND_SUPPLIES, HAND_SUPPLIES, CALIBERS } from "../sim/data-ammo.js"; // the back's rounds, by calibre and type
 import { gunCals } from "../sim/ammo.js";
 import { randomKit, randomTrunk, randomBuild, kitBudget, trunkBudget } from "../sim/randomkit.js"; // the dice under Customize: a new draw each time, within the points
-import { freshRng, randomName, randomAppearance } from "../sim/appearance.js";
+import { freshRng } from "../sim/appearance.js";
 import { gunIconHtml } from "./gunart.js"; // the picked gun as it comes (its picture by its line)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -475,15 +475,11 @@ export const SG_ACTIONS = {
     if (ui.gearEdit) { ui.gearEdit.sel = null; ui.gearEdit.msg = ""; }
     return true;
   },
-  // The crew card's Build (and All: a new name and look too): a whole random colonist within their points.
+  // The crew card's Build: a whole random colonist within their points (its All: ui/newgame.js randomizeOne).
   "sg-build": (state, ui, d) => {
     const s = state.survivors[Number(d.i)];
     if (!s || ui.started || !freeEdit(ui)) return false;
     const rng = freshRng();
-    if (d.all) {
-      s.name = randomName(rng, state.survivors.filter((o) => o !== s).map((o) => o.name));
-      s.appearance = randomAppearance(rng);
-    }
     randomBuild(state, s, rng);
     s.startPoints = true;
     s.startCustom = true;

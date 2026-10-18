@@ -121,7 +121,7 @@ for (const [t, p] of Object.entries(PART_FINDS.wares)) if (p > 0) addAll(Object.
 console.log("Sources");
 check(!unknown.length, `every listed item exists in GEAR${unknown.length ? ` (unknown: ${unknown.join(", ")})` : ""}`);
 // (The M203, an attachment, is in army stock since the launcher wave: loot.js SITE_MODS / AREA_MODS.)
-const orphans = Object.keys(GEAR).filter((k) => !src.has(k));
+const orphans = Object.keys(GEAR).filter((k) => !src.has(k) && !GEAR[k].supKey); // a supply held as an item (sim/supitems.js) comes from its supply
 check(!orphans.length, `every item has at least one source${orphans.length ? ` (none for: ${orphans.join(", ")})` : ""}`);
 const VAL5 = ["goldring", "cigarettes", "whiskey", "coffee", "batteries"];
 check(VAL5.every((k) => [...(src.get(k) || [])].some((l) => /^(find|raid|body):/.test(l))), "the five old valuables can now be found (searches, raids or bodies)");
@@ -165,7 +165,7 @@ check(KITS.raiders.finds.includes("cigarettes") && KITS.raiders.finds.includes("
 // ---------- every item ----------
 console.log("Items");
 const bad = (pred) => Object.entries(GEAR).filter(([k, d]) => pred(k, d)).map(([k]) => k);
-check(!bad((k, d) => !CATEGORIES[d.cat]).length, `every item has a trade category (${bad((k, d) => !CATEGORIES[d.cat]).join(", ") || "all"})`);
+check(!bad((k, d) => !CATEGORIES[d.cat] && !d.supKey).length, `every item has a trade category (${bad((k, d) => !CATEGORIES[d.cat] && !d.supKey).join(", ") || "all"}; a supply held as an item is priced as its supply)`);
 check(!bad((k, d) => !(Number.isFinite(d.weight) && d.weight > 0)).length, `every item weighs something (${bad((k, d) => !(Number.isFinite(d.weight) && d.weight > 0)).join(", ") || "all"})`);
 check(!bad((k, d) => !(d.value > 0)).length, `every item has a hidden value (${bad((k, d) => !(d.value > 0)).join(", ") || "all"})`);
 check(!bad((k, d) => !d.desc).length, `every item has a description (${bad((k, d) => !d.desc).join(", ") || "all"})`);

@@ -4,10 +4,11 @@
 //   - a tube's Reload puts 2–4 shells in (the dice, steady hands, shaken), capped by the room in the tube and the shells
 //     at hand; the same seed gives the same shells;
 //   - at hand: boxes in pockets and rig pouches, and the loose handful out of the team's bags (START_HAND at the start);
-//     the pack (a box in a backpack, a teammate's, the team's bags) is not loaded from: Reload refused ("Shells are in
-//     the pack"), Get shells (1 action) takes some out, then Reload works;
+//     the pack (a box in a backpack, a teammate's, the team's bags) loads straight in for both actions (2026-10-17:
+//     "only reload from pack uses double action"; refused with one action left), or Get shells (1 action) takes some
+//     out to hand, then Reload is 1 action;
 //   - a double barrel takes both barrels (2), the sawn-off too, the pipe gun its one; the semi-auto is a tube;
-//   - the AI's shotguns: the same rule, the extra action spent when only the pack has shells (AI-played fights);
+//   - the AI's shotguns: the same rule, a handful out of the pack first when only the pack has shells (AI-played fights);
 //   - no shells at all: refused; the Reload button and the log say how many, at hand and in the pack.
 //   - a team packed for a trip carries SHELLS.CARRY shells a shotgunner at hand (a pocket or a rig pouch: carrykit.js
 //     packShells, parties.js launchExpedition), out of what it packed; a side-saddle holds SADDLE more at hand;
@@ -15,9 +16,9 @@
 // Usage: node tools/shotgunreloadtest.js [seed]
 import { setRounds, giveRounds, newBox } from "../src/sim/ammo.js";
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
-import { createBattle, combatAct, registerCombatHandler, runEnemyPhase, autoPlayerTurn, canFire, loadMag, reload, reloadRefusal } from "../src/sim/combat.js";
+import { createBattle, combatAct, registerCombatHandler, runEnemyPhase, autoPlayerTurn, canFire, loadMag, reload, reloadRefusal, endPlayerTurn, enemyStep } from "../src/sim/combat.js";
 import { newItem, packOf, rigPouches } from "../src/sim/inventory.js";
-import { SHELLS, shellsAt, shellRange, reloadText, reloadPlan, enemyMags, PACK_REFUSAL } from "../src/sim/mags.js";
+import { SHELLS, shellsAt, shellRange, reloadText, reloadPlan, enemyMags } from "../src/sim/mags.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
 import { fitMod } from "../src/sim/gunmods.js";
 import { totalRounds } from "../src/sim/ammo.js";
@@ -109,17 +110,21 @@ const range = (xs) => `${Math.min(...xs)}–${Math.max(...xs)}`;
   g.suppressed = 0;
 }
 
-// 2. The pack needs an extra action: Reload refused, Get shells, then Reload.
+// 2. The pack takes both actions (refused with one), or Get shells (1 action), then Reload (1 action).
 {
-  console.log("The pack: Get shells first");
+  console.log("The pack: both actions, or Get shells first");
   const st = createWorld({ seed: seed + 1, factionCount: 4 });
   const a = fighter(st, "shotgun", 9);
   const b = openBattle(st, [a]);
   const u = by(b, a);
   u.hand = { buck: 0 }; loadMag(u, 0); u.ap = 2;
-  check(reloadPlan(b, u).mode === "fetch" && reloadRefusal(b, u) === "", "nothing at hand, shells in the bags: the plan is to dig them out (the AI's reload() does)");
-  check(combatAct(st, { type: "reload", unit: u.id }) === PACK_REFUSAL && u.ap === 2 && u.mag === 0, `your Reload is refused: "${PACK_REFUSAL}"`);
-  check(/Shells are in the pack: take some out first/.test(reloadText(b, u)) && /0 shells at hand, \d+ in the pack/.test(reloadText(b, u)), "the Reload button says so, with what is at hand and in the pack");
+  const pl = reloadPlan(b, u);
+  check(pl.mode === "tube" && pl.from === "pack" && pl.cost === 2 && reloadRefusal(b, u) === "", `nothing at hand, shells in the bags: the plan is a Reload straight out of the pack, both actions (${pl.mode} from ${pl.from}, ${pl.cost})`);
+  u.ap = 1;
+  const r1 = reloadRefusal(b, u);
+  check(/both actions to reload from the pack/.test(r1) && combatAct(st, { type: "reload", unit: u.id }) === r1 && u.ap === 1 && u.mag === 0, `with one action left it is refused: "${r1}"`);
+  check(/^Both actions: 3–4 shells thumbed into the tube .*dug out of the pack/.test(reloadText(b, u)) && /0 shells at hand, \d+ in the pack/.test(reloadText(b, u)), `the Reload button says so, with what is at hand and in the pack ("${reloadText(b, u)}")`);
+  u.ap = 2;
   check(combatAct(st, { type: "getshells", unit: u.id }) === "" && u.ap === 1 && shellsAt(b, u).hand === SHELLS.GRAB, `Get shells: 1 action, ${SHELLS.GRAB} out of the pack loose at hand`);
   check(logHas(b, new RegExp(`${a.name} takes ${SHELLS.GRAB} shells of 12 gauge .*buckshot out of the pack \\(${SHELLS.GRAB} at hand\\)`)), "the log: \"… takes 8 shells of 12 gauge buckshot out of the pack (8 at hand).\"");
   check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.mag >= 3 && u.ap === 0, `then Reload: ${u.mag} in, the turn's two actions spent`);
@@ -136,8 +141,9 @@ const range = (xs) => `${Math.min(...xs)}–${Math.max(...xs)}`;
   const sv = shellsAt(b2, v);
   check(sv.at === 0 && sv.pack === 19, `a box in the backpack only: none at hand, 19 in the pack (6 loaded) (${sv.at} / ${sv.pack})`);
   loadMag(v, 0); v.ap = 2;
-  check(combatAct(st2, { type: "reload", unit: v.id }) === PACK_REFUSAL, "Reload refused: the shells are in the pack");
-  check(combatAct(st2, { type: "getshells", unit: v.id }) === "" && combatAct(st2, { type: "reload", unit: v.id }) === "" && v.mag >= 3, `Get shells, Reload: ${v.mag} in`);
+  check(combatAct(st2, { type: "reload", unit: v.id }) === "" && v.ap === 0 && v.mag >= 3 && logHas(b2, /racks in [34] shells out of the pack \([34]\/6, 0 left at hand(, shaky hands)?, both actions\)/), `a Reload straight from the pack: both actions, ${v.mag} in ("… racks in 3 shells out of the pack (3/6, 0 left at hand, both actions).")`);
+  b2.phase = "player"; loadMag(v, 0); v.ap = 2;
+  check(combatAct(st2, { type: "getshells", unit: v.id }) === "" && combatAct(st2, { type: "reload", unit: v.id }) === "" && v.mag >= 3 && v.ap === 0, `or Get shells, then Reload (1 action each): ${v.mag} in`);
 }
 
 // 3. At hand: a box in a pocket, a box in a rig pouch (no Get shells needed); shots spend them first.
@@ -177,7 +183,7 @@ const range = (xs) => `${Math.min(...xs)}–${Math.max(...xs)}`;
   loadMag(ud, 0);
   check(/both barrels/.test(reloadText(b, ud)), `the Reload button says both barrels ("${reloadText(b, ud)}")`);
   ud.hand = { buck: 0 }; loadMag(ud, 0); ud.ap = 2;
-  check(combatAct(st, { type: "reload", unit: ud.id }) === PACK_REFUSAL, "the double barrel with none at hand: the pack first too");
+  check(reloadPlan(b, ud).mode === "break" && reloadPlan(b, ud).from === "pack" && combatAct(st, { type: "reload", unit: ud.id }) === "" && ud.mag === 2 && ud.ap === 0 && logHas(b, /drops in 2 shells out of the pack \(2\/2, 0 left at hand, both actions\)/), "the double barrel with none at hand: both barrels straight out of the pack, both actions");
   const ce = counts(b, ue, 20);
   check(ue.magMode === "internal" && ce.every((n) => n >= 3 && n <= 4), `the semi-auto shotgun: a tube, 3–4 (${range(ce)})`);
   check(counts(b, upg, 5).every((n) => n === 1), "the pipe gun: its one shell");
@@ -199,9 +205,14 @@ const range = (xs) => `${Math.min(...xs)}–${Math.max(...xs)}`;
   check(ce.every((n) => n >= (steady ? 3 : 2) && n <= (steady ? 4 : 3)), `an enemy (aim ${Math.round(e.aim)}): ${steady ? "3–4" : "2–3"} shells a Reload (${range(ce)})`);
   e.hand = { buck: 0 }; loadMag(e, 0); e.ap = 2;
   reload(b, e);
-  check(e.mag === 0 && e.ap === 1 && e.hand.buck === SHELLS.GRAB && logHas(b, /digs 8 shells out of a bag \(8 at hand\)/), "none at hand: the enemy's Reload digs shells out of a bag first (1 action)");
-  reload(b, e);
-  check(e.mag >= 2 && e.ap === 0, `then loads them (${e.mag})`);
+  check(e.mag >= 2 && e.ap === 0 && logHas(b, /racks in \d shells out of a bag \(\d\/6, both actions\)/), `none at hand: the enemy's own Reload digs shells straight out of a bag, both actions (${e.mag})`);
+  // The enemy AI prefers a handful out of the bag (1 action) and a Reload from it (1 action): more at hand for the next.
+  e.hand = { buck: 0 }; loadMag(e, 0);
+  endPlayerTurn(st);
+  let n = 0;
+  while (b.phase === "enemy" && n++ < 20) enemyStep(st);
+  check(logHas(b, /digs 8 shells out of a bag \(8 at hand\)/) && e.mag >= 2, `the enemy AI with none at hand: digs a handful out of a bag (1 action), then loads from it (${e.mag}/6)`);
+  b.phase = "player";
   // Fights played by the AI: your side's shotguns with only the team's bags behind the handful, theirs too.
   const st2 = createWorld({ seed: seed + 6, factionCount: 4 });
   const crew = [fighter(st2, "shotgun", 5), fighter(st2, "shotgun", 7), fighter(st2, "dbshotgun", 4)];
@@ -256,7 +267,10 @@ const range = (xs) => `${Math.min(...xs)}–${Math.max(...xs)}`;
   for (const apTurn of [2, 1]) for (const [label, sh, pk] of [["Shooting 3, team's bags", 3, false], ["Shooting 9, team's bags", 9, false], ["Shooting 3, boxes in pockets", 3, true], ["Shooting 9, boxes in pockets", 9, true]]) {
     const before = avg(sh, pk, false, apTurn), after = avg(sh, pk, true, apTurn);
     console.log(`    ${apTurn === 2 ? "stand" : "move "} ${label.padEnd(30)} before ${before.s10.toFixed(1)} / ${before.s30.toFixed(1)}   after ${after.s10.toFixed(1)} / ${after.s30.toFixed(1)}  (${Math.round((after.s30 / before.s30 - 1) * 100)}% over 30 turns)`);
-    check(after.s30 <= before.s30 + 1e-9 && after.s30 >= before.s30 * 0.5, `${apTurn === 2 ? "standing" : "moving"}, ${label}: no faster than before, not crippled`);
+    // Standing, the shells model is about as fast as a plain internal magazine (a seed's worth of noise); moving (one action
+    // a turn) a plain pump can never reload out of the team's bags (both actions), so Get shells and 1-action Reloads are
+    // the way a moving shotgunner keeps firing: faster than that baseline by design, never crippled.
+    check(after.s30 >= before.s30 * 0.5 && (apTurn === 1 || after.s30 <= before.s30 * 1.1 + 1e-9), `${apTurn === 2 ? "standing" : "moving"}, ${label}: ${apTurn === 2 ? "about as fast as before" : "no slower than before"}, not crippled`);
   }
 }
 

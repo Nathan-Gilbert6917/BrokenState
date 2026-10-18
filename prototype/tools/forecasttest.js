@@ -217,7 +217,10 @@ section("The weather, the days, the levels");
 section("Cost and the cache");
 {
   const st = mk(), h = hub(st);
-  for (let i = 0; i < 24 * 20; i++) { st.cards.length = 0; tickHour(st); }
+  // Twenty unattended days in a crowded hub (6 people, 4 beds) break everyone's mood and the run ends: the clock
+  // stops and the last check never sees a new hour. Keep them in good spirits; this is about the forecast's cost.
+  for (let i = 0; i < 24 * 20; i++) { st.cards.length = 0; for (const s of st.survivors) s.mood = Math.max(s.mood, 60); tickHour(st); }
+  check(!st.gameOver, `the run still going on day ${day(st)}`);
   for (let i = 0; i < 6; i++) makeHorde(st, { tile: tileAt(st, h, 2 + i) || h.tile, size: 40 + i * 20, role: i % 2 ? "roam" : "attack", goal: i % 2 ? null : { baseId: h.id, tile: h.tile }, target: i % 2 ? null : h.tile });
   for (const x of st.hordes) st.live.add(x.tile);
   fresh(st);
@@ -251,15 +254,15 @@ section("The meter and its list (ui/threatbar.js)");
   check(new RegExp(`tf-word tf-l${fc.level}">${["Calm", "Watch", "Danger", "Severe"][fc.level]}<`).test(tb.btn), `the week's word: ${fc.label}`);
   check(fc.days.every((d, i) => new RegExp(`<i class="tf-cell tf-l${d.level}( tf-far)?"></i>`).test(tb.btn.split("<i ")[i + 1] ? `<i ${tb.btn.split("<i ")[i + 1]}` : "")), "each bar at its day's level");
   check(/aria-haspopup="true"/.test(tb.html) && /tf-sr/.test(tb.btn) && /Threat forecast, the next 7 days/.test(tb.btn), "a button with a spoken summary");
-  check(tb.list.includes(`data-key="horde:${hd.id}"`) && /data-action="tf-go"/.test(tb.list) && /Seen on the map · sure/.test(tb.list), "the horde in the list: where from, how sure, whom");
+  check(tb.list.includes(`data-key="horde:${hd.id}"`) && /data-action="tfc-go"/.test(tb.list) && /Seen on the map · sure/.test(tb.list), "the horde in the list: where from, how sure, whom");
   check(/Today · day \d+/.test(tb.list) && /nothing seen coming/.test(tb.list), "days named, the quiet ones folded");
   // Click-through: the horde on the map, the base's window.
   const did = [];
   const act = { center: (d) => did.push(["center", d.tile]), openbase: (d) => did.push(["openbase", d.id, d.tab]), "xp-open": (d) => did.push(["team", d.id]) };
   const ui = {};
-  THREAT_ACTIONS["tf-go"](st, ui, { key: `horde:${hd.id}` }, act);
+  THREAT_ACTIONS["tfc-go"](st, ui, { key: `horde:${hd.id}` }, act);
   const foodIt = fc.items.find((x) => x.kind === "food");
-  if (foodIt) THREAT_ACTIONS["tf-go"](st, ui, { key: foodIt.key }, act);
+  if (foodIt) THREAT_ACTIONS["tfc-go"](st, ui, { key: foodIt.key }, act);
   check(did[0] && did[0][0] === "center" && did[0][1] === t, "a click on the horde shows it on the map");
   check(!foodIt || (did[1] && did[1][0] === "openbase" && did[1][1] === h.id), "a click on the food opens the base");
   const parts = topbarParts(st, { speed: 1 });

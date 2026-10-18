@@ -6,6 +6,7 @@ import { GUN_GEAR, GEAR_PATCH, LATER_GEAR } from "./data-guns.js";
 import { AMMO_GEAR, RELOAD_GEAR, ROUND_SUPPLIES, RELOAD_SUPPLIES } from "./data-ammo.js";
 import { FOOD_SUPPLIES, DAY_VALUE, DAY_KG } from "./foods.js"; // food by type (no generic "food" supply)
 import { BULK_GEAR } from "./data-stacks.js"; // bulk ammo containers: an ammo can, a carton, a bag (sim/itemstack.js)
+import { supItemGear } from "./data-supitems.js"; // every supply's item form, for pockets, packs and the off hand (sim/supitems.js)
 import { MOD_GEAR } from "./data-gunmods.js";
 import { KIT_GEAR } from "./data-kit.js";
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
@@ -141,6 +142,16 @@ export const GEAR = {
   scrapvest:  { name: "Scrap plate vest",         slot: "armor",  skill: null,       power: 1.8, req: 0, value: 25, noise: 0, makeshift: true, dur: 60, desc: "Steel plates riveted onto a work jacket. Heavy but solid.", weight: 7, cat: "armor" },
   bandagekit: { name: "Bandage and splint kit",   slot: "tool",   skill: "medicine", power: 1,   req: 0, value: 8,  noise: 0, makeshift: true, dur: 5,  medKit: 2, small: true, desc: "Boiled rags, tape and splints: +2 Medicine when treating (at a base, in the field or in battle). Each treatment uses it up a little.", weight: 0.5, cat: "medical" },
   crowbar:    { name: "Crowbar and lockpicks",    slot: "tool",   skill: "scavenging", power: 1, req: 0, value: 6,  noise: 0, makeshift: true, dur: 30, bonus: { scavenging: 2 }, desc: "Opens locked doors and cabinets: +2 Scavenging for base scavenging.", weight: 2, cat: "tools" },
+  // Makeshift picks (locks.js MAKESHIFT_PICK): bent wire for picking locks without the crowbar and lockpicks, a stack
+  // of up to 10 in a pocket (data-stacks.js STACK_MAX), three a craft from a scrap (crafting.js). No dur: a pick snaps
+  // whole (one off the stack half the time an attempt), it does not wear.
+  // Makeshift ear protection (hearing.js; crafting.js CRAFTS.ragplugs): twists of rag dipped in wax, carried like foam
+  // earplugs (data-helmets.js earplugs: a pocket item that works from there, under any helmet). ears: cut 2 (foam 3), the
+  // same −3 tiles of hearing; dur counts fights, a pair a fight (hearing.js settleEars). A scrap a craft, in the field too.
+  ragplugs:   { name: "Rag earplugs",             slot: "pack",   skill: null,       power: 0,   req: 0, value: 1,  noise: 0, small: true, makeshift: true, dur: 4, cat: "medical", weight: 0.02,
+                ears: { cut: 2, hear: -3 },
+                desc: "Twists of rag dipped in candle wax, a few pairs in a tin: makeshift earplugs. Carried in a pocket or the pack, a pair goes in at the start of a fight (4 fights). Gunfire deafens less often than with bare ears, though less than foam plugs do (2 off a bang's loudness, foam 3), and you hear less (−3 tiles). Work under any helmet. A scrap a craft, anywhere; a team makes them in the field." },
+  makeshiftpick: { name: "Makeshift picks",       slot: "pack",   skill: null,       power: 0,   req: 0, value: 1,  noise: 0, small: true, makeshift: true, desc: "Hairpins and bent wire, filed to a hook and a tension bar. Picks a locked door, cabinet or car in a raid without the crowbar and lockpicks (those are used first when carried): 30% + 4% a Stealth point − 15% a difficulty step above 1 (+10% Quiet Hands), as quiet as real picks (Heat +1), but every attempt snaps one pick in two, open or not. A safe, a steel security door or a gun safe is beyond them. Three a craft from a scrap, anywhere; they stack to 10 in a pocket.", weight: 0.02, cat: "tools" },
   waterfilter:{ name: "Charcoal water filter",    slot: "tool",   skill: null,       power: 1,   req: 0, value: 10, noise: 0, makeshift: true, dur: 20, water: 3, desc: "Sand, charcoal and a bucket: +3 purified water a day at the base it is kept at (equipped or in the armory), and it purifies 10 un-purified water a day there (the worm's eggs strained out). At a base it clogs only on the days it is in use (one always is; more while the tanks have room or the worm's eggs need straining): spares stand dry and keep. A team carrying one drinks its un-purified water through it, safe.", weight: 3, cat: "tools" },
   // The worm (worm.js): a sure cure in the gut stage, at a base or on the road. Loot: pharmacies, clinics, hospitals,
   // and the livestock wormer on farms and ranches; made at a med station.
@@ -506,6 +517,21 @@ export const LOCATIONS = {
   // The abandoned military convoy (miltrucks.js): Army trucks stopped on a road tile, their turned crews about them;
   // stripped by other groups and burned out after 6–9 days. Its trucks hold most of what it is worth (truckLoot).
   convoy:      { name: "Abandoned Army convoy", glyph: "🪖", cat: "special", danger: 2, temp: true, loot: { ammo: 5, fuel: 2, food: 2, meds: 1, parts: 1.5 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "assaultpack", "rucksack", "smokegren", "flare", "combatknife", "etool"], richness: 0.9, known: "secret" },
+  // Points of interest (pois.js): the small places a tile holds besides its site (0–4 a tile, by terrain). Never
+  // placed as tile.loc by the map; they are drawn from these entries like any site (richness = a POI's starting
+  // pool, danger its base threat, loot and gear what a search there turns up). A lone house or shed ranks below a
+  // school, a gas station or a farm. The pizza place is a diner with its own name, food and sprite.
+  house:       { name: "House",              glyph: "Ho", cat: "town",  danger: 1, loot: { food: 3, water: 2, meds: 0.4, scrap: 1, ammo: 0.5, jars: 0.5 }, gear: ["knife", "pistol", "revolver", "bat", "slingbag", "backpack", "bikehelmet", "flashlight", "bicycle", "lantern", "bandagekit", "binoculars"], richness: 0.3, known: "public" },
+  neighbourhood: { name: "Neighbourhood",    glyph: "Nb", cat: "town",  danger: 1, loot: { food: 4, water: 2, meds: 0.5, scrap: 2, ammo: 1, jars: 0.5, parts: 0.3 }, gear: ["knife", "pistol", "revolver", "shotgun", "bat", "slingbag", "backpack", "bikehelmet", "flashlight", "bicycle", "lantern", "bandagekit", "prybar", "crowbar", "binoculars"], richness: 0.55, known: "public" },
+  garage:      { name: "Garage",             glyph: "Ga", cat: "town",  danger: 1, loot: { parts: 3, scrap: 3, fuel: 0.5 }, gear: ["crowbar", "prybar", "sledge", "kneeguards", "spikedbat", "flashlight", "headlamp", "bicycle", "repairkit", "flare"], richness: 0.3, known: "public" },
+  corner:      { name: "Corner shop",        glyph: "Cn", cat: "town",  danger: 1, loot: { food: 4, water: 2, meds: 0.3, scrap: 1, preserved: 0.5, jars: 0.5 }, gear: ["knife", "slingbag", "flashlight", "lantern", "windlight", "hikingpack", "duffle"], richness: 0.45, known: "public" },
+  pizza:       { name: "Pizza place",        glyph: "Pz", cat: "town",  danger: 1, loot: { food: 5, water: 3, scrap: 1, jars: 0.5 }, gear: ["knife", "flashlight", "slingbag", "bottle"], richness: 0.4, known: "public" },
+  farmstand:   { name: "Farm stand",         glyph: "St", cat: "rural", danger: 0, loot: { food: 4, water: 1, jars: 1, scrap: 0.5, preserved: 0.5 }, gear: ["knife", "machete", "lantern", "barbedwire", "beartrap", "dewormer", "sledge"], richness: 0.3, known: "road" },
+  shed:        { name: "Shed",               glyph: "Sh", cat: "rural", danger: 0, loot: { scrap: 3, parts: 1, fuel: 0.4, food: 0.3 }, gear: ["machete", "sledge", "prybar", "crowbar", "barbedwire", "beartrap", "flashlight", "lantern", "headlamp", "repairkit"], richness: 0.2, known: "road" },
+  blind:       { name: "Hunting blind",      glyph: "Hb", cat: "rural", danger: 0, loot: { ammo: 3, food: 1, water: 0.5 }, gear: ["huntrifle", "leverrifle", "compbow", "xbow", "spear", "ghillie", "camonet", "monocular", "binoculars", "gamecall", "beartrap", "handwarmer"], richness: 0.15, known: "road" },
+  campsite:    { name: "Campsite",           glyph: "Ca", cat: "rural", danger: 0, loot: { food: 2, water: 2, scrap: 0.5, fuel: 0.2 }, gear: ["knife", "backpack", "hikingpack", "waterfilter", "stove", "headlamp", "torch", "lantern", "spear", "handradio", "puritabs", "flare"], richness: 0.25, known: "road" },
+  hikercamp:   { name: "Hiker camp",         glyph: "Hk", cat: "rural", danger: 0, loot: { food: 2, water: 2, meds: 0.4 }, gear: ["hikingpack", "backpack", "waterfilter", "stove", "headlamp", "torch", "knife", "spear", "puritabs", "handwarmer", "monocular"], richness: 0.2, known: "road" },
+  mineshack:   { name: "Mine shack",         glyph: "Mn", cat: "rural", danger: 0, loot: { scrap: 3, parts: 1.5, fuel: 0.4 }, gear: ["sledge", "prybar", "crowbar", "headlamp", "flashlight", "lantern", "repairkit", "flare", "windlight"], richness: 0.3, known: "road" },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.
 export const SITE_ZONES = {
@@ -686,6 +712,7 @@ for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
 Object.assign(GEAR, BLADE_GEAR); // knives and swords (data-blades.js)
+Object.assign(GEAR, supItemGear(SUPPLIES, GEAR)); // supplies as items: s_<key> (data-supitems.js; rounds keep their boxes)
 // The Melee skill (world.js MELEE_SKILL): every melee weapon goes by Melee, not Shooting (its req, the skill-gap rule).
 for (const d of Object.values(GEAR)) if (d.slot === "weapon" && d.cat === "melee" && d.skill === "shooting") d.skill = "melee";
 

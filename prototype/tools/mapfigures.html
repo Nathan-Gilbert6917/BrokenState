@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The State Map's pieces as low-poly figures</title>
+<style>
+  body { margin: 0; padding: 12px; background: #1a1d22; color: #d8dce2; font: 12px/1.3 system-ui, sans-serif; }
+  h2 { font-size: 14px; margin: 14px 0 6px; color: #e6c23a; }
+  section { display: inline-block; padding: 8px; background: #1a1d22; }
+  table { border-collapse: collapse; }
+  th { font-weight: normal; color: #8a929c; font-size: 11px; padding: 2px 6px; }
+  th.row { text-align: right; color: #d8dce2; white-space: nowrap; }
+  td { padding: 3px 4px; background: #3f5a33; border: 1px solid #333944; text-align: center; vertical-align: bottom; }
+  td.before { background: #22262c; }
+  img { image-rendering: pixelated; display: block; margin: 0 auto; }
+  .row img { display: inline-block; margin: 0 2px; vertical-align: bottom; }
+  .row { background: #3f5a33; padding: 4px; }
+</style>
+</head>
+<body>
+<div id="out">Loading…</div>
+<script type="module">
+import * as M from "../src/ui/mapfigures.js";
+import * as F from "../src/ui/mapsprites.js";
+
+const url = new URL(location.href), SCALE = Number(url.searchParams.get("scale") || 3), ONLY = url.searchParams.get("only"); // ?scale=6&only=teams: one section, bigger
+const img = (cv, sc = SCALE) => (cv ? `<img src="${cv.toDataURL()}" style="width:${(cv.width / 4) * sc}px;height:${(cv.height / 4) * sc}px">` : "");
+// The six ways a hex road leaves a tile, as yaws (mapfigures.js yawOf): E, SE, SW, W, NW, NE.
+const H6 = [["E", M.yawOf(1, 0)], ["SE", M.yawOf(0.5, 0.866)], ["SW", M.yawOf(-0.5, 0.866)], ["W", M.yawOf(-1, 0)], ["NW", M.yawOf(-0.5, -0.866)], ["NE", M.yawOf(0.5, -0.866)]];
+const BLUE = "#4f8fd6", ROUTE = "#e0a84f";
+let html = "";
+const table = (id, title, rows, cols, cell, before = null) => {
+  if (ONLY && ONLY !== id) return;
+  html += `<section id="${id}"><h2>${title}</h2><table><tr><th></th>${before ? "<th>today</th>" : ""}${cols.map((c) => `<th>${c[0]}</th>`).join("")}</tr>`;
+  for (const r of rows) html += `<tr><th class="row">${r[0]}</th>${before ? `<td class="before">${img(before(r), SCALE)}</td>` : ""}${cols.map((c) => `<td>${img(cell(r, c))}</td>`).join("")}</tr>`;
+  html += "</table></section><br>";
+};
+// 1. Your teams at the six headings, mid-stride (today's flat sprite first).
+const TEAMS = [["walkers ×3", "walkers", 3], ["raid ×2", "raid", 2], ["scouts ×2", "scouts", 2], ["relief ×3", "relief", 3], ["truck", "truck", 3], ["truck, plated + M2", "truck", 3, "p2s0g1m0tm2hb"], ["sedan", "sedan", 3], ["Army truck", "miltruck", 3], ["boat", "boat", 3], ["raft", "raft", 3], ["convoy", "convoy", 3, "", ROUTE], ["supply run", "supply", 3, "", "#5cc8b4"], ["handcart", "cart", 3, "", ROUTE]];
+table("teams", "Your teams at the six ways a road leaves a hex, mid-stride (frame 3)", TEAMS, H6, (r, c) => M.mapPartyCanvas(r[1], r[4] || BLUE, r[2], r[3] || "", c[1], 3), (r) => F.partySpriteCanvas(r[1], r[4] || BLUE, r[2], r[3] || ""));
+// 2. The walk: a lone walker's cycle, frame 0 (standing) then the eight frames, heading E and SE; a limp, a heavy load, a torch; a cyclist.
+const FR = [["still", 0], ...Array.from({ length: M.FRAMES }, (_, i) => [`${i + 1}`, i + 1])];
+const SOLOS = [["walker E", "walkers", 315, "", ""], ["walker SE", "walkers", M.yawOf(0.5, 0.866), "", ""], ["walker SW", "walkers", M.yawOf(-0.5, 0.866), "", ""], ["walker N", "walkers", M.yawOf(0, -1), "", ""], ["raid, torch", "raid", 315, "torch", ""], ["scout, lamp", "scouts", 315, "lamp", ""], ["relief", "relief", 315, "", ""], ["limping", "walkers", 315, "", "limp"], ["heavy load", "walkers", 315, "", "heavy"]];
+table("walk", "A team of one: the walk cycle (0 standing, then eight frames), by heading and gait", SOLOS, FR, (r, c) => M.mapSoloCanvas(r[1], BLUE, r[2], c[1], r[3], r[4]), (r) => F.soloSpriteCanvas(r[1], BLUE, 1, r[3], r[4]));
+table("cyclist", "A rider on a bike: stopped, then the cranks going round", [["E", 315], ["SE", M.yawOf(0.5, 0.866)], ["W", 135]], FR, (r, c) => M.mapCyclistCanvas(BLUE, r[1], c[1]), () => F.cyclistSpriteCanvas(BLUE, 1));
+// 3. The groups' parties by type and kind, heading E; their party of one.
+const TYPES = [["raider", "#b03a2a"], ["military", "#4a6a3a"], ["zealot", "#8a4a9a"], ["expansionist", "#3a5a9a"], ["traders", "#c09a3a"], ["commune", "#3a8a6a"], ["fortress", "#7a7a7a"]];
+const GK = [["convoy", "convoy"], ["raid ×3", "raid"], ["scav ×3", "scav"], ["walk ×3", "walk"], ["walk, SW", "walk"], ["one", "solo"]];
+table("groups", "The groups' parties by type: their vehicle, a raid, scavengers, a convoy on foot (E and SW), a party of one", TYPES, GK, (r, c) => (c[1] === "solo" ? M.mapGroupSoloCanvas(r[0], "walk", r[1], 315, 2) : M.mapGroupPartyCanvas(r[0], c[1], r[1], 3, c[0] === "walk, SW" ? M.yawOf(-0.5, 0.866) : 315, 3)), (r) => F.groupPartyCanvas(r[0], "walk", r[1], 3));
+// 4. Outsiders, hordes and herds.
+const OUT = [["raiders ×3", () => M.mapOutsiderPartyCanvas("raiders", "", 3, null, 315, 3), () => F.outsiderPartyCanvas("raiders", "", 3)], ["merchants, light escort", () => M.mapOutsiderPartyCanvas("merchants", "", 3, { tier: "light" }, 315, 3), () => F.outsiderPartyCanvas("merchants", "", 3, { tier: "light" })], ["merchants, armed", () => M.mapOutsiderPartyCanvas("merchants", "", 3, { tier: "armed", vehicle: "" }, 315, 3), () => F.outsiderPartyCanvas("merchants", "", 3, { tier: "armed", vehicle: "" })], ["merchants, MRAP", () => M.mapOutsiderPartyCanvas("merchants", "", 3, { tier: "armoured", vehicle: "mrap" }, 315, 3), () => F.outsiderPartyCanvas("merchants", "", 3, { tier: "armoured", vehicle: "mrap" })], ["merchants, Humvee, SW", () => M.mapOutsiderPartyCanvas("merchants", "", 3, { tier: "armoured", vehicle: "hummer" }, M.yawOf(-0.5, 0.866), 3), () => F.outsiderPartyCanvas("merchants", "", 3, { tier: "armoured", vehicle: "hummer" })], ["scouts ×2", () => M.mapOutsiderPartyCanvas("explorers", "scouts", 2, null, 315, 3), () => F.outsiderPartyCanvas("explorers", "scouts", 2)], ["refugees ×3", () => M.mapOutsiderPartyCanvas("explorers", "refugees", 3, null, 315, 3), () => F.outsiderPartyCanvas("explorers", "refugees", 3)], ["wanderers ×2", () => M.mapOutsiderPartyCanvas("explorers", "wanderers", 2, null, 315, 3), () => F.outsiderPartyCanvas("explorers", "wanderers", 2)], ["a lone raider", () => M.mapOutsiderSoloCanvas("raiders", "", 0, 315, 3), () => F.outsiderSoloCanvas("raiders", "", 0, 1)], ["a lone wanderer", () => M.mapOutsiderSoloCanvas("explorers", "wanderers", 0, 315, 3), () => F.outsiderSoloCanvas("explorers", "wanderers", 0, 1)]];
+table("outsiders", "Outsiders: raiders behind their banner, merchants by escort, travellers", OUT, [["figures", 0]], (r) => r[1](), (r) => r[2]());
+const HH = [["horde of 2", () => M.mapHordeCanvas(2, 315, 3), () => F.hordeSpriteCanvas(2)], ["horde of 4", () => M.mapHordeCanvas(4, 315, 3), () => F.hordeSpriteCanvas(4)], ["horde of 7", () => M.mapHordeCanvas(7, 315, 3), () => F.hordeSpriteCanvas(7)], ["horde of 7, SW", () => M.mapHordeCanvas(7, M.yawOf(-0.5, 0.866), 5), () => F.hordeSpriteCanvas(7)], ["deer ×3", () => M.mapHerdCanvas("deer", 3, 315, 2), () => F.herdSpriteCanvas("deer", 3)], ["hogs ×2", () => M.mapHerdCanvas("hog", 2, 315, 2), () => F.herdSpriteCanvas("hog", 2)]];
+table("dead", "Hordes shuffling and infested herds", HH, [["figures", 0]], (r) => r[1](), (r) => r[2]());
+// 5. Workers by job, out and home with the load.
+const JOBS = [["wood", "logs"], ["hunt", "game"], ["hunt", "small"], ["fish", "fish"], ["forage", "basket"], ["scavenge", "sack"], ["water", "buckets"]];
+table("workers", "Workers out on job trips: on the way out, at work, and home with the load (E)", JOBS, [["out", ""], ["home", "load"]], (r, c) => M.mapWorkerCanvas(r[0], BLUE, 315, 3, c[1] ? r[1] : ""), (r) => F.workerSpriteCanvas(r[0], BLUE, 1, r[1]));
+// 6. A truck turning through the twelve cached headings of a quarter, at play size (1×, 2×, 3×).
+if (!ONLY || ONLY === "turning") {
+html += `<section id="turning"><h2>A pickup and a walker turning through the headings, 15° apart (3×, then at the map's 1× and 2×)</h2>`;
+for (const sc of [3, 1, 2]) { html += `<div class="row">`; for (let y = 0; y < 360; y += 15) html += img(M.mapPartyCanvas("truck", BLUE, 3, "", y, 3), sc); html += `</div><div class="row">`; for (let y = 0; y < 360; y += 15) html += img(M.mapSoloCanvas("walkers", BLUE, y, 3), sc); html += `</div>`; }
+html += "</section>";
+}
+document.getElementById("out").innerHTML = html;
+document.body.dataset.ready = "1";
+</script>
+</body>
+</html>

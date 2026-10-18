@@ -476,6 +476,8 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (r.gear === "tourniquet") check(!/power|armor/.test(text) && /stabilize themselves/.test(text) && /one use/.test(text), `${key}: the tourniquet says it lets the downed stabilize themselves, once (${text})`); // sim/medics.js selfStabilize
     else if (d.fish) check(!/power|armor/.test(text) && /food an hour/.test(text) && /days of fishing/.test(text), `${key}: fishing gear says what it catches and how long it lasts (${text})`); // sim/hunting.js
     else if (r.gear === "cookpot") check(!/power|armor/.test(text) && text.length > 0, `${key}: the camp cook pot is a tool, no power or armor (${text})`); // sim/cooking.js: kept at a base without a Kitchen or a cook fire
+    else if (d.ears) check(!/power|armor/.test(text) && /off a bang's loudness/.test(text) && /a pair a fight/.test(text) && /fights/.test(text), `${key}: earplugs say what they take off a bang and how they wear (${text})`); // sim/hearing.js: the rag earplugs
+    else if (r.gear === "makeshiftpick") check(!/power|armor/.test(text) && /picks locks/.test(text) && /3 a craft/.test(text), `${key}: makeshift picks say what they pick and how many a craft (${text})`); // sim/locks.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);

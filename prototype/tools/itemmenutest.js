@@ -126,6 +126,19 @@ const run = (state, ui, id) => ITEMMENU_ACTIONS["im-run"](state, ui, { id });
   check(rowOf(r, /^Eat from the pack/) && rowOf(r, /^Drink/), `the "Food on them" line's menu: ${r.map((x) => x.label).join(", ")}`);
   const st = menu(state, ui, `armory:${h.id}:sup:f_beans`);
   check(rowOf(st, /^Eat/), `a food stack's menu: ${st.map((x) => x.label).join(", ")}`);
+  // Food and water carried as items (supitems.js s_<key>): eaten out of the pocket, the can gone when used up.
+  s.hunger = 40; s.thirst = 40;
+  s.pockets[1] = { ...newItem("s_f_beans"), dur: 3 };
+  const can = menu(state, ui, `s:${s.id}:pocket:1`);
+  check(rowOf(can, /^Eat$/) && !rowOf(can, /^Eat$/).off, `beans carried in a pocket: ${can.map((x) => x.label).join(", ")}`);
+  check(/eats/.test(IA.useStack(state, s.id, `s:${s.id}:pocket:1`)) && s.hunger > 40 && (!s.pockets[1] || s.pockets[1].dur < 3), "…eaten from the pocket (whole cans)");
+  s.pockets[2] = { ...newItem("s_f_beans"), dur: 1, egg: true };
+  check(/eggs/.test(IA.stackUseRefusal(state, s, `s:${s.id}:pocket:2`)), "…a can with the worm's eggs is refused");
+  s.pockets[2] = { ...newItem("s_water"), dur: 2 };
+  check(/drinks/.test(IA.useStack(state, s.id, `s:${s.id}:pocket:2`)) && s.thirst > 40, "water carried: drunk");
+  const t2 = person(state, null);
+  s.pockets[3] = { ...newItem("s_f_beans"), dur: 2 };
+  check(/Only the one carrying it/.test(IA.stackUseRefusal(state, t2, `s:${s.id}:pocket:3`)), "…someone else's can is not eaten by another");
   s.pockets[0] = newItem("chocolate");
   const ch = menu(state, ui, `s:${s.id}:pocket:0`);
   check(rowOf(ch, /^Eat it/), `a treat's menu: ${ch.map((x) => x.label).join(", ")}`);
@@ -156,6 +169,24 @@ const run = (state, ui, id) => ITEMMENU_ACTIONS["im-run"](state, ui, { id });
   const mood0 = s.mood;
   const err = combatAct(state, { type: "useItem", unit: u.id, what: "treat", loc: `s:${s.id}:pocket:0` });
   check(!err && u.ap === 1 && !s.pockets[0] && s.mood !== mood0, `eaten in the fight: 1 action, gone, mood ${Math.round(mood0)} → ${Math.round(s.mood)}`);
+  // Kit moves from the menu (combatAct "inv", 1 action): a pistol in a pocket drawn into empty hands (a rifle in the
+  // hands would have nowhere to go: refused, as the kit view refuses it); a can carried, eaten.
+  const { refitUnit } = await import("../src/sim/combat.js");
+  const rifle = s.gear.weapon;
+  s.pockets[2] = newItem("pistol");
+  u.ap = 2;
+  menu(state, ui, `s:${s.id}:pocket:2`);
+  ITEMMENU_ACTIONS["im-run"](state, ui, { id: "equip" });
+  check(s.gear.weapon === rifle && /No room/.test(ui.invMsg) && u.ap === 2, `with the rifle in the hands: refused, no action spent (${ui.invMsg})`);
+  s.gear.weapon = null; refitUnit(b, u, s);
+  const dr = rowOf(menu(state, ui, `s:${s.id}:pocket:2`), /^Draw/);
+  check(dr && dr.cost === "1 AP" && !dr.off, "a pistol in a pocket, the hands empty: Draw (to the hands), 1 AP");
+  ITEMMENU_ACTIONS["im-run"](state, ui, { id: "equip" });
+  check(s.gear.weapon && s.gear.weapon.key === "pistol" && !s.pockets[2] && u.ap === 1 && u.weapon === "pistol", "…drawn: in the hands and in use at once, 1 action");
+  s.gear.weapon = rifle; refitUnit(b, u, s); // the rifle back (by hand, for the checks below)
+  s.pockets[2] = { ...newItem("s_f_beans"), dur: 2 };
+  u.ap = 2;
+  check(!combatAct(state, { type: "useItem", unit: u.id, what: "stack", loc: `s:${s.id}:pocket:2` }) && u.ap === 1, "a can of beans carried, eaten in the fight: 1 action");
   // A bite from the pack: 2 actions; the aim hunger cost comes back.
   addFood(rationOf(s), "f_beans", 3, { state });
   u.ap = 2;

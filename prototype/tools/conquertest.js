@@ -240,7 +240,13 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
 {
   const V = await import("../src/sim/visitors.js");
   const st = world();
+  // A cook fire: the hub starts bare and is left to itself here. Seed 42's hub lies in a town's suburb ring (mapgen.js,
+  // POI foundation: +0.06 infection, its tile 0.39 -> 0.45, past the 40% where greens carry the worm's eggs), and with
+  // no hot food (eating.js EAT.cold) and the greens eaten raw the holdout walked out and its last one died of the worm
+  // by day 30: a game over, so visitorsDaily did nothing and no band settled.
+  addBuilding(hub(st), "cookhouse");
   tick(st, 24 * 30);
+  check(!st.gameOver, "the holdout still stands after 30 days");
   st.cards.length = 0;
   // A band with people and loot in the middle of the map.
   const n0 = st.factions.length;

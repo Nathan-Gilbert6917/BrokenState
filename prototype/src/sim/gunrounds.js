@@ -11,17 +11,23 @@
 //     rounds of its load to hand there, in turn (the gun in the hands first, then the other guns, then the spares, so
 //     two pistols and 20 rounds show 15/15 and 5/15, not 15/15 twice), plus any rounds kept on the gun itself
 //     (gunload.js it.loaded: a picked start gun, one taken off a body);
-//   - a gun in a fight (the search window): the rounds in it now (the unit's magazine);
+//   - a gun in a fight (the search window): the rounds in it now (the unit's magazine); a spare magazine of the gun
+//     in the hands, carried by one of yours in a fight: what the unit's entry holds now (mags.js magEntryAt: a swap
+//     emptied it, loose rounds dropped onto it loaded it);
 //   - anything else (on a body, on the ground, in a container, a trader's): what is in it (it.loaded), else empty.
 // A gun found in a building or a raid container (foundFill) comes with a believable few rounds in it, on dice of its
 // own (no draw from the world's random numbers): the found rounds are real (they join the team's like a body's gun's).
+// The badge is kept honest when people leave the stores behind (2026-10-18, user: the team window showed every gun and
+// magazine full, "but when I load into a raid some guns and magazines have 0/x"): a team forming at a base, or a person
+// joining one there, takes the rounds its guns and magazines show out of the base's stock as the team's own
+// (loadoutRounds; teamform.js formTeam / addMember), so the magazines in the fight hold what the badge said at home.
 import { GEAR } from "./data.js";
 import { CALIBERS } from "./data-ammo.js";
 import { MAGAZINES } from "./data-kit.js";
 import { WEAPONS, magCap, magShown } from "./combat.js";
 import { calOf, gunLoads } from "./ammo.js";
 import { keyFor, typeFor, withHand, roundOf, loadId, baseType, roundName, typesOf } from "./rounds.js";
-import { isMag, magLoad, magCalsOf, standardMag, fittedMag, usesInternal, magFitsGun } from "./mags.js";
+import { isMag, magLoad, magCalsOf, standardMag, fittedMag, usesInternal, magFitsGun, magEntryAt, loadedIn } from "./mags.js";
 import { magCapOf } from "./gunmods.js";
 import { parseLoc, carriedSpots, personPlace, battleBodies } from "./inventory.js";
 import { survivorById, baseById } from "./world.js";
@@ -128,15 +134,15 @@ function fillOne(item, at, claimed, magDflt = null) {
   if (!at.mine) {
     const r = gun && item.loaded ? roundOf(item.loaded.key) : null;
     const load = r ? loadId(cal, r.cal, r.type) : gun ? typeFor(cal, item.load && item.load !== "auto" ? item.load : null) : magLoad(item, cal, null);
-    return { n: Math.min(cap, rec), cap, cal, load, src: rec > 0 ? "in it" : "empty" };
+    return { n: Math.min(cap, rec), cap, cal, load, src: rec > 0 ? "in it" : "empty", key: keyFor(cal, load), got: 0 };
   }
   if (!gun && item.unloaded) return { n: 0, cap, cal, load: magLoad(item, cal, magDflt), src: "unloaded" }; // itemacts.js: kept empty until loaded again
   const load = gun ? gunLoadAt(item, at, claimed) : magLoadAt(item, at, claimed, magDflt);
   const key = keyFor(cal, load);
   const want = Math.max(0, cap - rec);
-  const got = Math.min(want, countKey(at, key, claimed));
+  const got = Math.min(want, countKey(at, key, claimed)); // got: claimed from the rounds to hand (the stores and the person's own boxes)
   claimed.set(key, (claimed.get(key) || 0) + got);
-  return { n: Math.min(cap, rec + got), cap, cal, load, src: "ready" };
+  return { n: Math.min(cap, rec + got), cap, cal, load, src: "ready", key, got };
 }
 // Fills every gun and magazine at a location in turn: Map(item → { n, cap, cal, load, src }).
 /** @param {any[]} items @param {ReturnType<typeof roundsAt>} at */
@@ -179,6 +185,42 @@ function sharers(at) {
   return at.list || [];
 }
 
+// ---------- the loadout a team takes ----------
+// The rounds these people's guns and magazines would be loaded with out of these pools (a base's stock), by supply key:
+// what the badge shows them holding at the base (fillAll, in turn: each person's held gun first, then their other guns,
+// then the spares), less what their own boxes cover (a gun draws on the boxes in its holder's pockets, rig and pack
+// first), person by person out of the same stores (a short stock loads the first picked first, as the fight would).
+// `less`: rounds of the stores already spoken for (the supplies and the round picks the team takes besides). A team
+// forming at a base or a person joining one takes these out of the stock as the team's own rounds (teamform.js), so the
+// fight's magazines hold what the window showed. Returns { key: n } (handloads under their own keys), nothing touched.
+/** @param {any[]} people @param {Record<string, number>[]} pools @param {Record<string, number>} [less] @returns {Record<string, number>} */
+export function loadoutRounds(people, pools, less = {}) {
+  /** @type {Record<string, number>} */
+  const work = {};
+  for (const p of pools || []) for (const [k, q] of Object.entries(p || {})) if (roundOf(k) && num(q) > 0) work[k] = num(work[k]) + Math.floor(num(q));
+  for (const [k, q] of Object.entries(less || {})) if (work[k] && num(q) > 0) work[k] = Math.max(0, work[k] - Math.floor(num(q)));
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const s of people || []) {
+    if (!s || !s.alive || !s.gear) continue;
+    const at = { pools: [work], boxes: boxesCarried(s), mine: true, s, list: null, place: null };
+    const all = fillAll(sharers(at), at);
+    /** @type {Map<string, number>} */
+    const need = new Map(); // claimed by base key, less the person's own boxes of it
+    for (const r of all.values()) if (r && r.got > 0) need.set(r.key, (need.get(r.key) || 0) + r.got);
+    for (const [key, q] of need) {
+      let left = q;
+      for (const k of withHand(key)) for (const it of at.boxes) if (it.key === k) left -= Math.max(0, Math.floor(num(it.dur)));
+      for (const k of withHand(key)) {
+        if (left <= 0) break;
+        const take = Math.min(left, Math.max(0, Math.floor(num(work[k]))));
+        if (take > 0) { work[k] -= take; out[k] = num(out[k]) + take; left -= take; }
+      }
+    }
+  }
+  return out;
+}
+
 // ---------- the answer ----------
 // The rounds in a gun or a magazine item, or null for anything else:
 //   { n, cap, cal, load (a rounds.js load id), src: "ready" (your people's: loaded from the stores to hand) | "in it"
@@ -192,6 +234,13 @@ export function gunRounds(state, item, loc = null) {
   if (b && !b.over && isRoundGun(item)) { // in a fight: the unit holding it has the count
     const u = (b.units || []).find((x) => x.side === "player" && !x.dead && x.item === item && x.magW === x.weapon);
     if (u) { const cal = calOf(u.weapon); return { n: Math.max(0, Math.floor(magShown(b, u))), cap: u.magMax || gunCapacity(item), cal, load: typeFor(cal, u.load), src: "fight", roundName: roundName(cal, u.load) }; }
+  }
+  if (b && !b.over && isMag(item) && loc) { // in a fight: one of the gun's spares as the unit counts it now
+    const L = parseLoc(loc);
+    const s = L.o === "s" ? survivorById(state, L.id) : null;
+    const u = s ? (b.units || []).find((x) => x.side === "player" && !x.dead && x.sid === s.id) : null;
+    const m = u ? magEntryAt(u, carriedSpots(s), loc) : null;
+    if (m) { const cal = calOf(u.weapon); return { n: Math.max(0, Math.floor(loadedIn(b, u, m))), cap: m.cap, cal, load: m.load, src: "fight", roundName: roundName(cal, m.load) }; }
   }
   const at = roundsAt(state, loc);
   let r;

@@ -7,7 +7,9 @@
 //   - a gun's Reload with a type out of a fight: the round it takes the field with (item.load, as the gun builder's Ammo
 //     list); Unload: the rounds kept on the gun itself (gunload.js it.loaded) into the stores where it is.
 //   - eating and drinking now: from a food or water stack (a base's stores, a team's found supplies, what a fighter carries
-//     loose) or from the pack of food and water everyone carries (eating.js s.ration). Up to their fullness target out of a
+//     loose), food or water held as an item on the one who eats it (supitems.js: a can in a pocket, a bottle in the pack;
+//     spoiled food and food with the worm's eggs refused) or from the pack of food and water everyone carries (eating.js
+//     s.ration). Up to their fullness target out of a
 //     fight; in a fight a snack (BATTLE_EAT) or a few gulps (BATTLE_DRINK).
 //   - in a fight (combat.js combatAct "useItem" and "modPart"; the fighter's own things only, in your turn):
 //       a treat (GEAR use: chocolate, coffee, a smoke, a drink), eating or drinking: ITEM_AP by where it is (to hand
@@ -29,6 +31,7 @@ import { isMag, magCalsOf } from "./mags.js";
 import { roundsAt } from "./gunrounds.js";
 import { unloadInto, stockFor } from "./gunload.js";
 import { stripMod, fitsSlot } from "./gunmods.js";
+import { stockKeyOf, spoiled } from "./supitems.js"; // food and water held as items (s_<key>, item.dur the units)
 
 // Actions a thing costs to use in a fight, by where it is (an inventory slot, a rig pouch, a pocket, the pack, the
 // fighter's arms). The pack of food and water: "ration" (eating from it), "water" (a drink from the canteen).
@@ -166,6 +169,16 @@ function stackAt(state, loc) {
   if (o === "haul") { const b = state.combat; const u = b && b.units.find((x) => x.id === id); return u && u.haul ? { holder: u.haul.sup, rec: u.haul.sup, place: null, uid: id, key } : null; }
   return null;
 }
+// A food or water held as an item: its stock key, or null.
+export const heldKeyOf = (it) => { const k = stockKeyOf(it); return k && (FOODS[k] || k === "water" || k === "rawwater") ? k : null; };
+// A held food or water at an inventory location on a person, as a source: { held, item, key, rec ({ [key]: units }), sid }.
+function heldAt(state, loc) {
+  const L = parseLoc(loc);
+  if (L.o !== "s" || L.slot === "sup") return null;
+  const it = itemAt(state, loc);
+  const key = heldKeyOf(it);
+  return key ? { held: true, item: it, key, rec: { [key]: Math.max(0, Number(it.dur) || 0) }, sid: L.id } : null;
+}
 export const isFoodKey = (k) => !!FOODS[k];
 export const isDrinkKey = (k) => k === "water" || k === "rawwater";
 // Hunger and thirst room in days of food / water.
@@ -173,10 +186,14 @@ const foodRoom = (s, cap = Infinity) => Math.min(cap, Math.max(0, eatTarget(s) -
 const waterRoom = (s, cap = Infinity) => Math.min(cap, Math.max(0, NEEDS.max - (s.thirst ?? NEEDS.max)) / NEEDS.water);
 // Why s cannot eat or drink from the stack at loc ("" when they can). fight: a fighter's own (haul) stack.
 export function stackUseRefusal(state, s, loc) {
-  const at = stackAt(state, loc);
+  const at = stackAt(state, loc) || heldAt(state, loc);
   if (!s || !s.alive) return "Nobody to eat it.";
   if (!at || !((at.rec[at.key] || 0) > EPS)) return "Nothing there.";
-  if (at.uid != null) { const u = state.combat.units.find((x) => x.id === at.uid); if (!u || u.sid !== s.id) return `Only the one carrying it can ${isDrinkKey(at.key) ? "drink" : "eat"} it in a fight.`; }
+  if (at.held) {
+    if (at.sid !== s.id) return `Only the one carrying it can ${isDrinkKey(at.key) ? "drink" : "eat"} it: hand it to ${first(s)} first.`;
+    if (at.item.egg) return "It carries the worm's eggs: cook it first.";
+    if (spoiled(state, at.item)) return "It has gone off.";
+  } else if (at.uid != null) { const u = state.combat.units.find((x) => x.id === at.uid); if (!u || u.sid !== s.id) return `Only the one carrying it can ${isDrinkKey(at.key) ? "drink" : "eat"} it in a fight.`; }
   else if (inFight(state)) return "Not in the middle of a fight.";
   else if (personPlace(s) !== at.place) return `${first(s)} is not where it is.`;
   if (at.key === "rawwater") return "Un-purified water carries the worm's eggs: boil, filter or treat it first.";
@@ -192,7 +209,8 @@ export function useStack(state, sid, loc, cap = Infinity) {
   const s = survivorById(state, sid);
   const why = stackUseRefusal(state, s, loc);
   if (why) return why;
-  const at = stackAt(state, loc);
+  const at = stackAt(state, loc) || heldAt(state, loc);
+  if (at.held) return useHeld(state, s, loc, at, cap);
   if (isDrinkKey(at.key)) {
     const q = Math.min(at.rec.water || 0, Math.max(0.1, waterRoom(s, cap)));
     at.rec.water = Math.max(0, (at.rec.water || 0) - q);
@@ -210,6 +228,27 @@ export function useStack(state, sid, loc, cap = Infinity) {
   noteEat(state, s, { units, items: { [at.key]: got.q }, lots: got.lots, from: at.uid != null ? "pack" : "store" }, {});
   return `${first(s)} eats ${got.q === 1 ? "a" : r1(got.q)} ${FOODS[at.key].name.toLowerCase()}: hunger ${Math.round(before)} → ${Math.round(s.hunger)}.`;
 }
+// A held food or water item: whole units (cans, bars, a bottle's litres), as many as fit (one at least); the item goes
+// when it is used up.
+function useHeld(state, s, loc, at, cap) {
+  const it = at.item, have = at.rec[at.key];
+  const drink = isDrinkKey(at.key);
+  const per = drink ? 1 : unitsOf(at.key, 1); // water by the litre; food by its days of food a unit (a can, a bar)
+  const room = drink ? waterRoom(s, cap) : foodRoom(s, cap);
+  const n = Math.max(1, Math.min(Math.floor(have + EPS), Math.round(room / Math.max(per, EPS))));
+  it.dur = Math.max(0, have - n);
+  if (!(it.dur > EPS)) removeAt(state, loc);
+  if (drink) {
+    const before = s.thirst ?? NEEDS.max;
+    s.thirst = Math.min(NEEDS.max, before + n * NEEDS.water);
+    return `${first(s)} drinks ${n} water they carried: thirst ${Math.round(before)} → ${Math.round(s.thirst)}.`;
+  }
+  const before = s.hunger ?? NEEDS.max;
+  s.hunger = Math.min(NEEDS.max, before + unitsOf(at.key, n) * NEEDS.food);
+  noteEat(state, s, { units: unitsOf(at.key, n), items: { [at.key]: n }, lots: [], from: "pack" }, {});
+  return `${first(s)} eats ${n === 1 ? "a" : n} ${FOODS[at.key].name.toLowerCase()} they carried: hunger ${Math.round(before)} → ${Math.round(s.hunger)}.`;
+}
+
 // The pack of food and water everyone carries (eating.js s.ration).
 export function packUseRefusal(state, s, what) {
   if (!s || !s.alive) return "Nobody to eat it.";
@@ -243,8 +282,8 @@ export function battleUsePlan(state, b, u, act) {
   if (act.what === "eat" || act.what === "drink") return { ap: ITEM_AP[act.what === "eat" ? "ration" : "water"], why: packUseRefusal(state, s, act.what) };
   if (act.what === "stack") {
     const L = parseLoc(act.loc);
-    if (L.o !== "haul" || L.id !== u.id) return { ap: 1, why: "Only what they carry themselves." };
-    return { ap: ITEM_AP.haul, why: stackUseRefusal(state, s, act.loc) };
+    if (!((L.o === "haul" && L.id === u.id) || (L.o === "s" && L.id === s.id && heldAt(state, act.loc)))) return { ap: 1, why: "Only what they carry themselves." };
+    return { ap: L.o === "haul" ? ITEM_AP.haul : apAt(act.loc), why: stackUseRefusal(state, s, act.loc) };
   }
   if (act.what === "treat") {
     const L = parseLoc(act.loc || "");
@@ -264,7 +303,7 @@ export function battleUse(state, b, u, act, say) {
   let line;
   if (act.what === "eat") line = usePack(state, s.id, "eat", BATTLE_EAT);
   else if (act.what === "drink") line = usePack(state, s.id, "drink", BATTLE_DRINK);
-  else if (act.what === "stack") line = useStack(state, s.id, act.loc, isDrinkKey(stackAt(state, act.loc).key) ? BATTLE_DRINK : BATTLE_EAT);
+  else if (act.what === "stack") line = useStack(state, s.id, act.loc, isDrinkKey((stackAt(state, act.loc) || heldAt(state, act.loc)).key) ? BATTLE_DRINK : BATTLE_EAT);
   else {
     const it = itemAt(state, act.loc);
     useOneAt(state, act.loc); // one of a stack (itemstack.js), else the item

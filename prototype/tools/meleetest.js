@@ -250,7 +250,8 @@ console.log("Zealots");
     if (z.weapon === "spear") fetched++;
     // Killed with its spear on the ground: the spear is on its body after the win.
     if (z.weapon === "fists" || threw === 1) {
-      if (z.weapon === "spear") { b.phase = "player"; place(up, 5, 5); place(z, 9, 5); up.ap = 0; endPlayerTurn(st); b.queue = [z.id]; enemyStep(st); }
+      // Fetched: set up the throw again until it throws (the AI throws 60% of turns, on the battle's dice).
+      for (let t = 0; t < 8 && z.weapon === "spear" && !z.spearOut; t++) { b.phase = "player"; place(up, 5, 5); place(z, 9, 5); up.ap = 0; endPlayerTurn(st); b.queue = [z.id]; enemyStep(st); }
       if (z.spearOut) {
         z.dead = true; z.hp = 0;
         endBattleNow(st, "victory");

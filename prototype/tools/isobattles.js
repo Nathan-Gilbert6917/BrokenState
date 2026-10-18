@@ -26,7 +26,7 @@ export function world(seed, extra = 4) {
 const inBrowser = (fn) => {
   const had = "window" in globalThis, w = globalThis.window;
   if (!had) globalThis.window = {};
-  try { return fn(); } finally { if (!had) delete globalThis.window; else globalThis.window = w; }
+  try { return fn(); } finally { if (!had) delete globalThis.window; } // in a browser the window is its own (a getter): left as it is
 };
 const fakeTile = (st, terrain, loc, road = false) => {
   const h = hub(st), t = st.tiles.find((x) => x.id !== h.tile && x.terrain !== "water");

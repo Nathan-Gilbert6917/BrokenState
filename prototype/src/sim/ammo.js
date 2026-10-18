@@ -22,7 +22,8 @@ import { WEAPONS } from "./combat.js";
 import { hash01 } from "./skills.js";
 import { SITE_TAGS, AREA_TAGS } from "./loot.js";
 import { BULK, BULK_FINDS } from "./data-stacks.js"; // bulk ammo containers, a find's boxed share (2026-10-10)
-import { isBulk, loadsOf, sweepLoads, bulkRecord, roundItems, newBulk, fillBulk, boxSize } from "./itemstack.js"; // rounds loose, boxed, in bulk
+import { isBulk, loadsOf, sweepLoads, bulkRecord, roundItems, newBulk, fillBulk, boxSize } from "./itemstack.js";
+import { settleItems } from "./supitems.js"; // supplies held as items, back into the stock (call-time only: safe in the import cycle) // rounds loose, boxed, in bulk
 
 // ---------- keys and stock records (rounds.js) ----------
 export * from "./rounds.js";
@@ -210,6 +211,7 @@ export function payWord(state, base, n) {
 /** @param {any} state @param {any} base */
 export function settleBase(state, base) {
   if (!base || !base.stock) return;
+  settleItems(state, base.armory, base); // water, meds, food… put in the armory as items (supitems.js)
   unbox(base.armory, base.stock);
   if (hasGeneric(base.stock)) { const cals = baseCals(state, base); settleRec(base.stock, mixForCals(cals), cals); }
 }
@@ -218,7 +220,7 @@ export function settleBase(state, base) {
 export function settleParty(state, p) {
   if (!p || !p.supplies) return;
   const goods = p.kind === "convoy" || p.kind === "caravan"; // a trade convoy's cargo is its load: kept as it is
-  if (p.cargo && !goods) unbox(p.cargo.gear, p.cargo.supplies || (p.cargo.supplies = {}));
+  if (p.cargo && !goods) { p.cargo.supplies = p.cargo.supplies || {}; settleItems(state, p.cargo.gear, p.cargo); unbox(p.cargo.gear, p.cargo.supplies); }
   const cals = partyCals(state, p);
   p.ammoCals = cals; // the calibres its guns shoot (parties.js takeSupply spends the others first)
   if (!hasGeneric(p.supplies) && !(p.cargo && !goods && hasGeneric(p.cargo.supplies))) return;
@@ -476,13 +478,20 @@ export function newBox(key, n) {
   if (!d) return null;
   return { key, name: d.name, quality: 1, dur: Math.max(1, Math.floor(n)) };
 }
-// The box items a survivor carries (pockets, then the pack).
+// The boxes of rounds (and loose rounds) a survivor carries, the ones at hand first: the pockets, then the rig's pouches
+// (a chest rig, or a vest with pouches of its own: inventory.js rigOf), then the pack (its boxes, then an ammo can's
+// rounds). A fight draws on them in that order (takeBattleRounds); mags.js fitHandBoxes counts the ones at hand
+// (u.handBoxes: the pockets' and the rig's; u.pocketBoxes: the pockets').
 /** @param {any} s */
 export function boxesOf(s) {
   const out = [];
   if (!s) return out;
   for (const it of s.pockets || []) if (it && ROUND_SUPPLIES[it.key]) out.push(it);
-  const pack = s.gear && s.gear.backpack;
+  const g = s.gear || {};
+  const pouched = (it) => !!(it && GEAR[it.key] && GEAR[it.key].pouches);
+  const rig = pouched(g.rig) ? g.rig : pouched(g.armor) ? g.armor : null;
+  for (const it of (rig && rig.contents) || []) if (it && ROUND_SUPPLIES[it.key]) out.push(it);
+  const pack = g.backpack;
   for (const it of (pack && pack.contents) || []) if (it && ROUND_SUPPLIES[it.key]) out.push(it);
   for (const it of (pack && pack.contents) || []) if (isBulk(it)) out.push(...loadsOf(it)); // an ammo can in the pack: its rounds are the pack's (a fight draws on them after the boxes)
   return out;
@@ -549,7 +558,8 @@ export function loadsFor(b, u) {
   return gunLoads(u.weapon).map((id) => { const p = loadParts(cal, id); return { type: id, name: p.cal === cal ? AMMO_TYPES[p.type].name : roundName(cal, id), full: roundName(cal, id), cal: p.cal, n: battleKeyRounds(b, u, ammoKey(p.cal, p.type)) }; })
     .filter((x) => x.n > 0 || x.type === cur).sort((a, c) => (a.type === cur ? -1 : c.type === cur ? 1 : 0));
 }
-// n rounds of this unit's loaded type out of its own boxes, then its teammates', then the pools. Returns what was taken.
+// n rounds of this unit's loaded type out of its own boxes at hand (pockets, rig: the first u.handBoxes), then its own
+// pack's, then its teammates', then the pools (mags.js roundSource names the same order). Returns what was taken.
 /** @param {any} b @param {any} u @param {number} n */
 export function takeBattleRounds(b, u, n) {
   const cal = calOf(u.weapon);
@@ -558,7 +568,9 @@ export function takeBattleRounds(b, u, n) {
   let got = 0;
   const fromBox = (it, key) => { if (got >= n || !it || it.key !== key) return; const q = Math.min(n - got, Math.max(0, Math.floor(num(it.dur)))); it.dur -= q; got += q; };
   const fromBoxes = (list) => { for (const key of keys) for (const it of list || []) fromBox(it, key); };
-  fromBoxes(u.boxes);
+  const own = u.boxes || [], hb = Math.max(0, Math.floor(num(u.handBoxes)));
+  fromBoxes(own.slice(0, hb));
+  fromBoxes(own.slice(hb));
   for (const o of b.units || []) if (o !== u && o.side === u.side && o.boxes) fromBoxes(o.boxes);
   for (const p of b.pools || []) for (const key of keys) {
     if (got >= n) break;

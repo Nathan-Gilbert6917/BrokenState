@@ -64,13 +64,15 @@
 import { FOODS } from "../sim/foods.js"; // a food item's word
 import { SUPPLIES } from "../sim/data.js";
 import { isRoundKey } from "../sim/rounds.js";
+import { itemArtIcon } from "./itemart.js"; // every supply's own drawing
 import { supplyName } from "../sim/itemnames.js"; // the stack's title: rounds say "— loose"
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const kg = (x) => `${Math.round(x * 10) / 10}`;
 export const SUPPLY_ICON = { food: "🥫", preserved: "🫙", water: "💧", rawwater: "🪣", wood: "🪵", fuel: "⛽", meds: "✚", ammo: "⁍", arrows: "➶", parts: "⚙", scrap: "🔩", carparts: "🛞", gunparts: "🔧", electronics: "🔌", jars: "🫙" };
-export const supplyIcon = (k) => SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || (isRoundKey(k) ? "⁍" : "▪"); // a food item: its own icon (sim/foods.js)
+export const supplyEmoji = (k) => SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || (isRoundKey(k) ? "⁍" : "▪"); // a food item: its own icon (sim/foods.js); for plain text
+export const supplyIcon = (k) => itemArtIcon(k, "supply") || supplyEmoji(k); // HTML: the supply's own drawing (ui/itemart.js)
 
 const PROVIDERS = {};
 export function registerStackScreen(ns, provider) { PROVIDERS[ns] = provider; }

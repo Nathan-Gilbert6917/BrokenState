@@ -10,6 +10,7 @@
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile, glideAt, orderOptions, scavengeable, PICKED_OVER } from "../src/sim/parties.js";
 import { afterRaid } from "../src/sim/scavenge.js";
+import { poisOf } from "../src/sim/pois.js";
 import { tileActions } from "../src/ui/ui.js";
 import { picksAt, clickPick, syncPick, teamTileOf } from "../src/ui/mapselect.js";
 import { selectedTeam } from "../src/ui/teamsel.js";
@@ -62,7 +63,10 @@ section("TEAM-02: a site can be scavenged / raided again");
 {
   const state = mk();
   const h = hub(state);
-  const site = find(state, h.tile, (t) => !!t.loc && t.loot > 0.2, 1, 14);
+  // A site that is its only place: since the POI foundation (mapgen.js) the hub's suburb ring holds sites with other
+  // points of interest beside them, and a raid with no POI pick strips only the site's own pool (scavenge.js
+  // afterRaid), so the tile is "picked over" only once every place known there is (poiraid.js pickedOverAt).
+  const site = find(state, h.tile, (t) => !!t.loc && t.loot > 0.2 && poisOf(t).length <= 1, 1, 14);
   if (check(site != null, "a site near the hub")) {
     const t = state.tiles[site];
     const p = team(state, 2, site);

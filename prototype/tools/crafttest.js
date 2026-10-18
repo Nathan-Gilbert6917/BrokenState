@@ -33,6 +33,7 @@ const setSkill = (people, k, v) => people.forEach((s) => (s.skills[k] = v, s.tra
   for (const k of Object.keys(GEAR)) if (GEAR[k].slot === "weapon") check(!!WEAPONS[k], `${k} has battle stats`);
   check(GEAR.sawmachete.power < GEAR.machete.power && GEAR.pipegun.power < GEAR.shotgun.power, "makeshift weapons weaker than manufactured");
   check(GEAR.scrapvest.power < GEAR.vest.power && GEAR.tirevest.power < GEAR.vest.power, "makeshift armor weaker than a Kevlar vest");
+  check(GEAR.ragplugs.ears.cut < GEAR.earplugs.ears.cut && GEAR.ragplugs.dur < GEAR.earplugs.dur && CRAFTS.ragplugs.field, "makeshift rag earplugs weaker and shorter-lived than foam earplugs, made in the field");
   check(WEAPONS.spikedbat.dmg[1] < WEAPONS.machete.dmg[1] && WEAPONS.pipegun.dmg[1] < WEAPONS.shotgun.dmg[1], "makeshift battle damage lower");
 }
 

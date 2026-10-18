@@ -37,14 +37,15 @@ import { condition, kitSource, spend } from "./itemcond.js"; // the condition lo
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
 import { MEDS } from "./medfinds.js"; // how rare meds are
-import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
+import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT, SUPPLY_POUCHES } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
 import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
 import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the rounds left in a gun, kept on it (call-time only: safe in the import cycle)
 import { dropHeadgear, earsOnBody } from "./helmets.js"; // an enemy's helmet and ear protection on its body
 import { AMMO_STACK } from "./data-stacks.js";
-import { stackKg, canStack, mergeInto, isSpent, splitHalf, useOne, openRounds, takeOut, fillBulk, isBulk, isRoundItem, amountOf, stackLabel, countOf } from "./itemstack.js"; // stacks in a slot (consumables, rounds loose or boxed, bulk containers)
-import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a body's spare gun
+import { stackKg, canStack, mergeInto, isSpent, splitHalf, useOne, openRounds, takeOut, fillBulk, isBulk, isRoundItem, amountOf, stackLabel, countOf, boxRounds, mergeForm, boxesIn } from "./itemstack.js"; // stacks in a slot (consumables, rounds loose or boxed, bulk containers)
+import { swapGun, bodyGunSource } from "./gundist.js";
+import { settleItems } from "./supitems.js"; // supplies held as items, back into a stock when stored (call-time only: safe in the import cycle) // the gun distribution: a body's spare gun
 
 export const POCKETS = 4;
 export const ARMOR_CAP = 5.5;   // armor power from all worn pieces counts up to this (plate carrier alone is 4)
@@ -138,7 +139,8 @@ export const packOf = (s) => (s && s.gear && s.gear.backpack ? ensurePack(s.gear
 // ---------- rigs and plate carriers (docs/weapons-overhaul-plan.md section 16) ----------
 // A rig's pouches are its item.contents, one slot a pouch, of the kinds in GEAR[key].pouches (data-kit.js): rifle and
 // pistol magazines (and clips), a grenade (anything thrown, 40 mm rounds), a radio, admin (small things up to ADMIN_KG:
-// meds, a flashlight, tablets, a small box of rounds). The rig is the chest rig (slot "rig") or a worn armour piece
+// meds, a flashlight, tablets, a small box of rounds), and pocket (anything a pocket takes, no weight cap of its own;
+// 2026-10-18 user request: the bigger rigs have two). The rig is the chest rig (slot "rig") or a worn armour piece
 // with pouches of its own (a tactical vest, a plate carrier): rigOf. A chest rig does not go over a pouched vest.
 export const pouchesOf = (item) => (item && GEAR[item.key] && GEAR[item.key].pouches) || null;
 export function ensureRig(item) {
@@ -170,6 +172,7 @@ export function pouchReason(item, kind) {
   const d = item && GEAR[item.key];
   if (!d) return "Unknown item.";
   const k = pouchKindOf(item);
+  if (kind === "pocket") return d.small ? "" : `A rig's pocket takes what a pocket takes: the ${item.name} is too big for it.`; // a pouch like a pocket (data-kit.js)
   if (kind === "admin") return d.small && !d.mag && !d.throw && itemLoad(item) <= ADMIN_KG + 1e-9 ? "" : `An admin pouch takes small things up to ${ADMIN_KG} kg (meds, a flashlight, tablets, a small box of rounds).`;
   if (k === kind || (kind === "rifle" && k === "pistol")) return ""; // a pistol magazine fits a rifle pouch too
   if (kind === "pistol" && k === "rifle") return `The ${item.name} is too long for a pistol pouch.`;
@@ -330,6 +333,8 @@ export function stow(s, item, prefix = `s:${s.id}`) {
   if (isSmall(item.key)) {
     const i = s.pockets.indexOf(null);
     if (i >= 0) { s.pockets[i] = item; return `${prefix}:pocket:${i}`; }
+    const j = sparePouchFor(s, item); // the pockets full: a rig's pocket pouch, then an admin pouch that takes it
+    if (j >= 0) { rigPouches(s)[j] = item; return `${prefix}:rig:${j}`; }
   }
   const pk = packOf(s);
   if (pk && !packSize(item) && !isBulky(item.key)) {
@@ -365,6 +370,19 @@ function pouchFor(s, item) {
   if (!want) return -1;
   return kinds.findIndex((k, i) => !pr[i] && k === want && !pouchReason(item, want));
 }
+// The free rig pouch a small thing with no pouch of its kind goes in once the pockets are full: a pocket pouch, else an
+// admin pouch that takes it (SUPPLY_POUCHES, in that order), or -1. The rig's extra pockets (data-kit.js).
+function sparePouchFor(s, item) {
+  const r = KIT_LOOT.on ? rigOf(s) : null;
+  if (!r || pouchKindOf(item)) return -1;
+  const pr = r.contents || [];
+  const kinds = pouchesOf(r);
+  for (const want of SUPPLY_POUCHES) {
+    const i = kinds.findIndex((k, j) => !pr[j] && k === want && !pouchReason(item, want));
+    if (i >= 0) return i;
+  }
+  return -1;
+}
 // Why an item cannot go in a slot ("" when it can). slot: an equip slot, "pocket", "pack", "pouch" (a rig pouch of
 // `kind`), "insert" (a carrier's plate pocket). h: the person (or body) it goes on: a chest rig does not go over a vest
 // or a carrier with pouches of its own, and such a piece not under a chest rig.
@@ -377,6 +395,8 @@ export function fitReason(item, slot, h = null, kind = null) {
   if (slot === "insert") return isInsert(item) ? "" : `Only a plate goes in a plate carrier's plate pocket.`;
   if (slot === "bag") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack.` : "";
   if (slot === "carry") return isCarryable(item) ? "" : `Only a bag, a rig or a case is carried in the arms (not the ${item.name}).`;
+  // A supply in the hand (supitems.js: a bottle of water, a can of fuel, meds, a box of rounds), unless it is bulky.
+  if (slot === "tool" && d.slot !== "tool" && (d.supKey || (d.count && SUPPLIES[item.key]))) return d.bulky || d.hand === false ? `The ${item.name} is too big to hold in one hand.` : "";
   if (EQUIP_SLOTS.includes(slot)) {
     if (d.slot !== slot) return `The ${item.name} goes in ${SLOT_NAMES[d.slot] || d.slot}, not ${SLOT_NAMES[slot]}.`;
     const g = h && h.gear;
@@ -782,13 +802,15 @@ export function unlistFromSites(state, item) {
 
 // Moves an item from one location to another. A full target swaps: the item already there goes back where
 // the moved one came from if it fits there, else into storage. Returns a message ("" when nothing happened).
-export function moveItem(state, fromStr, toStr) {
+// across: a hand-over in a fight (combat.js handoverAct): the two people stand side by side in the same battle,
+// whatever their location records say, so the same-place check is lifted (the giver's place keeps the storage).
+export function moveItem(state, fromStr, toStr, { across = false } = {}) {
   if (fromStr === toStr) return "";
   const from = parseLoc(fromStr), to = parseLoc(toStr);
   const A = ref(state, from), B = ref(state, to);
   if (!A || !B) return "That slot is not there any more.";
-  const place = placeOf(state, from);
-  if (!place || place !== placeOf(state, to)) return "Items only move between people at the same base or on the same team.";
+  const place = placeOf(state, from) || (across ? placeOf(state, to) : null);
+  if (!place || (!across && place !== placeOf(state, to))) return "Items only move between people at the same base or on the same team.";
   if (to.o === "body") return "Bodies are only for taking from.";
   const item = A.get();
   if (!item) return "Nothing there.";
@@ -808,6 +830,7 @@ export function moveItem(state, fromStr, toStr) {
     A.remove(item);
     if (!isSpent(item)) B.put(item);
     taken(state, from, item);
+    settleStore(state, store);
     return `${item.name} → ${store.name}.`;
   }
   if (B.owner && B.owner === item) return `The ${item.name} does not fit inside itself.`;
@@ -815,6 +838,12 @@ export function moveItem(state, fromStr, toStr) {
   if (why) return why;
   if (to.slot === "pack" && from.o === to.o && from.id === to.id && from.slot === "backpack") return "A pack does not fit inside itself.";
   const cur = B.get();
+  if (cur && !canStack(cur, item) && mergeForm(cur, item)) {
+    // Rounds onto the same rounds in the other form (itemstack.js): a loose handful packed into the boxes, boxes
+    // opened onto the loose ones. What does not fit stays where it was.
+    if (isSpent(item)) { A.remove(item); taken(state, from, item); return `${item.name} onto the stack: ${stackLabel(cur)}.`; }
+    return `Onto the stack (${stackLabel(cur)}); ${stackLabel(item)} left where ${amountOf(item) === 1 ? "it was" : "they were"}.`;
+  }
   if (cur && canStack(cur, item)) {
     // Onto a stack of the same thing (itemstack.js): as much as fits goes on it, the rest stays where it was.
     const err = gained ? roomCheck(store, item, gained, lostFrom) : "";
@@ -845,6 +874,7 @@ export function moveItem(state, fromStr, toStr) {
     B.set(item);
     store.list.push(cur);
     taken(state, from, item);
+    settleStore(state, store);
     return `${item.name} in ${SLOT_NAMES[tk]}; the ${cur.name} went to ${store.name}.`;
   }
   A.remove(item);
@@ -867,6 +897,7 @@ export function quickMove(state, fromStr, sid) {
   const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) : [];
   if (rp) rp.forEach((x, i) => { if (!x && (pouchKindOf(item) ? kinds[i] === pouchKindOf(item) : false) && !pouchReason(item, kinds[i])) tries.push(`s:${sid}:rig:${i}`); }); // a magazine, a grenade, a radio: its pouch
   if (isSmall(item.key)) s.pockets.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pocket:${i}`); });
+  if (rp && isSmall(item.key) && !pouchKindOf(item)) for (const want of SUPPLY_POUCHES) rp.forEach((x, i) => { if (!x && kinds[i] === want && !pouchReason(item, want)) tries.push(`s:${sid}:rig:${i}`); }); // the rig's pockets, then an admin pouch that takes it
   const pk = packOf(s);
   if (pk && !packSize(item) && !isBulky(item.key)) pk.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pack:${i}`); });
   if (isBulky(item.key) && !tries.length) return from.o === "body" || from.o === "s" ? toStorage(state, fromStr) : `The ${item.name} only goes in storage.`;
@@ -874,6 +905,26 @@ export function quickMove(state, fromStr, sid) {
   const empty = tries.find((t) => !itemAt(state, t));
   if (!tries.length) return `No pack slot for the ${item.name}: ${s.name.split(" ")[0]} needs a pack with room.`;
   return moveItem(state, fromStr, empty || tries[0]);
+}
+
+// Supply items put in storage go back into its stock at once (supitems.js): a base's stores, a team's found cargo.
+function settleStore(state, st) {
+  if (!st) return;
+  settleItems(state, st.list, st.o === "cargo" ? st.party.cargo : baseById(state, st.id));
+}
+// Box (the inventory's button): loose rounds packed back into boxes (itemstack.js boxRounds): all of them in place
+// when they fit a slot's boxes, else a full stack of boxes beside them. Returns the message.
+export function boxAt(state, str) {
+  const it = itemAt(state, str);
+  if (!it) return "Nothing there.";
+  if (!isRoundItem(it) || !it.loose) return `The ${it.name} is not loose rounds.`;
+  const was = amountOf(it);
+  const piece = boxRounds(it);
+  if (!piece) return "Nothing to box.";
+  if (piece === it) return `Boxed: ${stackLabel(it)}${boxesIn(it) > 1 ? "" : ` (${amountOf(it)} rounds)`}.`;
+  const where = putNear(state, str, piece);
+  if (!where) { it.dur = was; return `No free spot for a stack of boxes beside the ${stackLabel(it)}.`; }
+  return `Boxed ${stackLabel(piece)} to ${where} (${stackLabel(it)} left).`;
 }
 
 // Unequip / put away: into the base armory or the team's cargo.

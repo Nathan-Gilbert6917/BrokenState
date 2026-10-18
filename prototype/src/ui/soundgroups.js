@@ -40,7 +40,7 @@ export const GROUPS = [
   { id: "people.steps", label: "Footsteps", max: 1.5, tip: "Everyone's footsteps in battle: yours, the enemy's, the dead's shuffle. By ground, gait and load" },
   { id: "people.gear", label: "Gear and small sounds", max: 1.5, tip: "Searching, locks and keys, fuel, bandages" },
   { id: "people.vehicles", label: "Vehicles", max: 1.5, tip: "Engines starting, idling, driven and switched off, breakdowns, car doors and tailgates, hotwiring; a convoy's hum on the map (ui/sfx-vehicles.js)" },
-  { id: "people.doors", label: "Doors and gates", max: 1.5, tip: "Building doors opened, shut, tried, picked, forced and broken, the threshold of an open door; a base's gate on the map (ui/sfx-doors.js)" },
+  { id: "people.doors", label: "Doors and gates", max: 1.5, tip: "Building doors opened, shut, tried, picked, forced and broken, the threshold of an open door, windows slid open or shut and smashed; a base's gate on the map (ui/sfx-doors.js)" },
   { id: "people.downed", label: "Deaths and downed cues", max: 1.5, tip: "The fall and falling tone when one of your people goes down, the low chord when one dies" },
   { id: "world", label: "World", max: 1.5, tip: "The weather, wildlife and warnings around you. Under the Ambience volume" },
   { id: "world.weather", label: "Weather", max: 1.5, tip: "Wind, rain on roofs and leaves, storms and rolling thunder, snow, rivers and the creak of ice, the low drone at night" },

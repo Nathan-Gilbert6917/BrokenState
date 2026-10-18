@@ -560,10 +560,12 @@ export const GUN_SOURCES = {
   "kit:fighters": { draws: "fighters", band: 0.6 }, "kit:guards": { draws: "guards", band: 0.6 }, "kit:militia": { draws: "militia", band: 0.6 },
   "kit:escorts": { draws: "escorts", band: 0.6 }, "kit:contractors": { draws: "contractors", band: 0.6, era: { modern: 1, coldwar: 0.5, old: 0.2 } },
   "kit:survivors": { draws: "survivors", band: 0.6 },
+  "kit:looters": { draws: "raiders", band: 0.6 }, "kit:survivalists": { draws: "militia", band: 0.6 }, "kit:preppers": { draws: "fighters", band: 0.6 }, // nomads.js tiers
   // ---- the spare gear on their bodies (KITS loot): any gun they would keep ----
   "body:raiders": { draws: "raiders" }, "body:soldiers": { draws: "soldiers" }, "body:zealots": { draws: "zealots" },
   "body:fighters": { draws: "fighters" }, "body:guards": { draws: "guards" }, "body:militia": { draws: "militia" },
   "body:escorts": { draws: "escorts" }, "body:contractors": { draws: "contractors", era: { modern: 1, coldwar: 0.5, old: 0.2 } }, "body:survivors": { draws: "survivors" },
+  "body:looters": { draws: "raiders" }, "body:survivalists": { draws: "militia" }, "body:preppers": { draws: "fighters" },
   "body:deadsoldier": { draws: { military: 1 }, band: 0.6 }, // deadsoldiers.js: the armoured dead's rifle (an Army rifle like it)
   // ---- shelves: a group's wares by its type (trade.js WARES, gunfinds.js gunWares), a visiting arms dealer, a job's pay ----
   "trader:traders": { draws: { civilian: 1, hunting: 1, police: 0.3, surplus: 0.3 } }, "trader:military": { draws: { military: 1, special: 0.2, police: 0.2 } },
