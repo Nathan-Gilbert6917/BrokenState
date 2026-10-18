@@ -32,6 +32,7 @@ import { magCapOf } from "./gunmods.js";
 import { parseLoc, carriedSpots, personPlace, battleBodies } from "./inventory.js";
 import { survivorById, baseById } from "./world.js";
 import { hash01 } from "./skills.js";
+import { stackN, topKey, loadOfKey } from "./roundstack.js"; // physical rounds in a fight (mags.js, 2026-10-18)
 
 const num = (v) => (Number.isFinite(v) ? v : 0);
 
@@ -130,13 +131,14 @@ function fillOne(item, at, claimed, magDflt = null) {
   const gun = isRoundGun(item);
   const cap = gun ? gunCapacity(item) : magCapacity(item);
   const cal = gun ? calOf(item.key) : MAGAZINES[item.key].cal;
-  const rec = gun && item.loaded && num(item.loaded.n) > 0 ? Math.floor(item.loaded.n) : 0;
+  const rec = item.loaded && num(item.loaded.n) > 0 ? Math.floor(item.loaded.n) : Array.isArray(item.stack) ? stackN(item.stack) : 0; // rounds kept on it (a gun put down; a magazine with its stack)
   if (!at.mine) {
     const r = gun && item.loaded ? roundOf(item.loaded.key) : null;
     const load = r ? loadId(cal, r.cal, r.type) : gun ? typeFor(cal, item.load && item.load !== "auto" ? item.load : null) : magLoad(item, cal, null);
     return { n: Math.min(cap, rec), cap, cal, load, src: rec > 0 ? "in it" : "empty", key: keyFor(cal, load), got: 0 };
   }
-  if (!gun && item.unloaded) return { n: 0, cap, cal, load: magLoad(item, cal, magDflt), src: "unloaded" }; // itemacts.js: kept empty until loaded again
+  if (!gun && item.unloaded && !(rec > 0)) return { n: 0, cap, cal, load: magLoad(item, cal, magDflt), src: "unloaded" }; // itemacts.js: kept empty until loaded again
+  if (!gun && rec > 0) return { n: Math.min(cap, rec), cap, cal, load: loadOfKey(cal, topKey(item.stack)) || magLoad(item, cal, magDflt), src: "in it", key: keyFor(cal, magLoad(item, cal, magDflt)), got: 0 }; // a magazine with rounds of its own (a stack kept from a fight)
   const load = gun ? gunLoadAt(item, at, claimed) : magLoadAt(item, at, claimed, magDflt);
   const key = keyFor(cal, load);
   const want = Math.max(0, cap - rec);
@@ -235,7 +237,12 @@ export function gunRounds(state, item, loc = null) {
     const u = (b.units || []).find((x) => x.side === "player" && !x.dead && x.item === item && x.magW === x.weapon);
     if (u) { const cal = calOf(u.weapon); return { n: Math.max(0, Math.floor(magShown(b, u))), cap: u.magMax || gunCapacity(item), cal, load: typeFor(cal, u.load), src: "fight", roundName: roundName(cal, u.load) }; }
   }
-  if (b && !b.over && isMag(item) && loc) { // in a fight: one of the gun's spares as the unit counts it now
+  if (b && !b.over && isMag(item) && Array.isArray(item.stack)) { // in a fight: the rounds in it (mags.js: physical)
+    const cal = MAGAZINES[item.key].cal;
+    const load = loadOfKey(cal, topKey(item.stack)) || magLoad(item, cal, null);
+    return { n: stackN(item.stack), cap: magCapacity(item), cal, load, src: "fight", roundName: roundName(cal, load) };
+  }
+  if (b && !b.over && isMag(item) && loc) { // in a fight: one of the gun's spares as the unit counts it now (a save from before)
     const L = parseLoc(loc);
     const s = L.o === "s" ? survivorById(state, L.id) : null;
     const u = s ? (b.units || []).find((x) => x.side === "player" && !x.dead && x.sid === s.id) : null;

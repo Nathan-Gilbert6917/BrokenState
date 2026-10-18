@@ -9,7 +9,7 @@
 //     the canvas marks are a handful of rectangles and texts.
 //   - The strip folds to a narrow column (its header, or ` : bview.hud); folded or not is kept in this browser.
 import { WEAPONS, active, isRanged, hasMag, magShown, magMaxOf, magEmpty, arrowsLeft, shotOdds, meleeOdds, heightAt, sidearmOf, CRIT_MULT } from "../sim/combat.js";
-import { tracksMags, isShellGun, shellsAt, shellKind, spareSplit, roundSplit, SHELLS, MAGS } from "../sim/mags.js"; // roundSplit: the reserve rounds at hand, in the pack, the team's (a Reload from the pack takes both actions)
+import { tracksMags, isShellGun, shellsAt, shellKind, spareSplit, roundSplit, SHELLS, MAGS , isStacked, gunStackText } from "../sim/mags.js"; // roundSplit: the reserve rounds at hand, in the pack, the team's (a Reload from the pack takes both actions)
 import { roundsOf, unitRound, loadOf } from "../sim/ammo.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
 import { gunQ, gunCond, jamChance, modesOf, modeOf, modeRolls, modeAim, FIRE_MODES } from "../sim/gunfire.js";
@@ -61,7 +61,7 @@ export function weaponInfo(state, b, u) {
     info.otherCal = !!(r && r.cal !== w.cal); // another calibre than the gun's own (.223 in a 5.56 gun, .38 in a .357)
     info.load = r ? r.type : c ? c.base : null;
     info.loadShort = typeShort(info.load);
-    if (hasMag(u)) { info.mag = { in: magShown(b, u), cap: magMaxOf(u) }; info.empty = magEmpty(b, u); }
+    if (hasMag(u)) { info.mag = { in: magShown(b, u), cap: magMaxOf(u) }; info.empty = magEmpty(b, u); info.stack = gunStackText(b, u); } // stack: the rounds in the gun, the chamber first (mags.js: physical rounds)
     if (u.side === "player" && info.load) { info.reserve = Math.max(0, Math.floor(roundsOf(b, u, loadOf(u))) - (info.mag ? info.mag.in : 0)); info.rounds = roundSplit(b, u); } // every round of the type to hand, past the ones loaded; by where (mags.js: a pocket or the rig 1 action, the pack both)
     if (isShellGun(u)) { const s = shellsAt(b, u); info.shells = { at: s.at, pack: s.pack, kind: shellKind(u) }; }
     else if (tracksMags(u) && u.magMode !== "internal") info.spares = spareSplit(b, u);
@@ -109,18 +109,18 @@ export function weaponPanelHtml(state, b, u) {
   const mode = info.mode ? `<span class="bh-mode" data-tip="${esc(`Fire mode (${k("battle.firemode", "Shift+F")}, free): ${info.modes.map((m) => (FIRE_MODES[m] || {}).name || m).join(" → ")}.${info.rolls > 1 ? ` ${info.rolls} rounds a trigger pull, each its own roll.` : ""}`)}">${esc((FIRE_MODES[info.mode] || {}).name || info.mode)}${info.rolls > 1 ? ` ×${info.rolls}` : ""}</span>` : "";
   rows.push(`<div class="bh-wtop">${weaponIcon(u, info)}<b class="bh-wname">${esc(info.name)}</b>${mode}${cond}</div>`);
   if (info.mag) {
-    const tip = `${info.mag.in} rounds in the ${info.shells ? "tube" : "magazine"}, ${info.mag.cap} it holds${info.cal ? `. ${info.cal}, loaded with ${AMMO_TYPES[info.load] ? AMMO_TYPES[info.load].name : info.load}${info.otherCal ? ` (not its own ${CALIBERS[WEAPONS[u.weapon].cal] ? CALIBERS[WEAPONS[u.weapon].cal].name : ""}: a round it also takes)` : ""}` : ""}.${info.reserve != null ? ` ${info.reserve} more of these rounds to hand, past the ones loaded.` : ""}`;
+    const tip = `${info.mag.in} rounds in the ${info.shells ? "tube" : "magazine"}, ${info.mag.cap} it holds${info.cal ? `. ${info.cal}, ${info.stack ? `the chamber ${AMMO_TYPES[info.load] ? AMMO_TYPES[info.load].name : info.load} (in the gun, the chamber first: ${info.stack})` : `loaded with ${AMMO_TYPES[info.load] ? AMMO_TYPES[info.load].name : info.load}`}${info.otherCal ? ` (not its own ${CALIBERS[WEAPONS[u.weapon].cal] ? CALIBERS[WEAPONS[u.weapon].cal].name : ""}: a round it also takes)` : ""}` : ""}.${info.reserve != null ? ` ${info.reserve} more of these rounds on them, past the ones loaded.` : ""}`;
     rows.push(`<div class="bh-magline" data-tip="${esc(tip)}">${magBar(info.mag, info.empty)}<b class="bh-count ${info.empty ? "danger" : ""}">${info.mag.in}<span class="muted"> / ${info.mag.cap}</span></b>${info.cal ? `<span class="bh-cal${info.otherCal ? " warn" : ""}">${esc(info.cal)}</span>` : ""}${info.loadShort ? `<span class="bh-load">${esc(info.loadShort)}</span>` : ""}</div>`);
   } else if (info.arrows != null) rows.push(`<div class="bh-magline"><b class="bh-count ${info.arrows < 1 ? "danger" : ""}">${info.arrows}</b><span class="muted"> arrows and bolts carried</span></div>`);
   // Spares: a shotgun's shells at hand and in the pack, a rifle's magazines, clips and speedloaders.
   const spare = [];
   if (info.shells) {
-    const s = info.shells, perLoad = s.kind === "break" ? SHELLS.BREAK : s.kind === "single" ? 1 : `${SHELLS.MIN}–${SHELLS.MAX}`;
-    spare.push(`<span class="${s.at < 1 ? "danger" : ""}" data-tip="${esc(`Shells at hand (pockets, rig, loose): a Reload (1 action) loads ${perLoad} from these.`)}">${s.at} at hand</span>`);
-    spare.push(`<span class="${s.at < 1 && s.pack > 0 ? "warn" : "muted"}" data-tip="${esc(`Shells in the pack: a Reload straight from them takes both actions; Get shells (1 action) takes up to ${SHELLS.GRAB} out, loose at hand, for 1-action Reloads.`)}">${Number.isFinite(s.pack) ? s.pack : "∞"} in the pack</span>`);
+    const s = info.shells, perLoad = isStacked(u) ? `up to ${MAGS.LOOSE}` : s.kind === "break" ? SHELLS.BREAK : s.kind === "single" ? 1 : `${SHELLS.MIN}–${SHELLS.MAX}`;
+    spare.push(`<span class="${s.at < 1 ? "danger" : ""}" data-tip="${esc(`Shells at hand (pockets, rig): a Reload (1 action) loads ${perLoad} from these${isStacked(u) ? ", in the order picked (the first is in the chamber)" : ""}.`)}">${s.at} at hand</span>`);
+    spare.push(`<span class="${s.at < 1 && s.pack > 0 ? "warn" : "muted"}" data-tip="${esc(isStacked(u) ? "Shells in the pack: a Reload from them takes both actions (the Inventory window moves a box to a pocket for 1 action). Only what they carry loads the gun: never a teammate's or the team's bags." : `Shells in the pack: a Reload straight from them takes both actions; Get shells (1 action) takes up to ${SHELLS.GRAB} out, loose at hand, for 1-action Reloads.`)}">${Number.isFinite(s.pack) ? s.pack : "∞"} in the pack</span>`);
   } else if (info.spares) {
     const h = info.spares.hand, p = info.spares.pack;
-    if (!h.mags && !p.mags) spare.push(`<span class="warn" data-tip="${esc(`No loaded spare magazine: a Reload tops up the one in the gun from the rounds to hand (${MAGS.SOURCE_AP.hand} action from a pocket or the rig, both from the pack, ${MAGS.TOPUP_AP} from a teammate's or the team's bags).`)}">no spare mags</span>`);
+    if (!h.mags && !p.mags) spare.push(`<span class="warn" data-tip="${esc(isStacked(u) ? `No loaded spare magazine: a Reload puts up to ${MAGS.LOOSE} rounds by hand into the one in the gun, out of what they carry (${MAGS.SOURCE_AP.hand} action from a pocket or the rig, both from the pack).` : `No loaded spare magazine: a Reload tops up the one in the gun from the rounds to hand (${MAGS.SOURCE_AP.hand} action from a pocket or the rig, both from the pack, ${MAGS.TOPUP_AP} from a teammate's or the team's bags).`)}">no spare mags</span>`);
     else spare.push(`<span data-tip="${esc("Loaded spare magazines in rig pouches and pockets: a Reload from one is 1 action.")}">${h.mags} mag${h.mags === 1 ? "" : "s"} at hand${h.rounds ? ` <span class="muted">(${h.rounds})</span>` : ""}</span>`);
     if (h.mags || p.mags) spare.push(`<span class="muted" data-tip="${esc("Loaded spare magazines in the pack: a Reload from one is 2 actions. With no loaded spare left, a Reload tops up the one in the gun from the rounds to hand (1 action from a pocket or the rig, both from the pack).")}">${p.mags} in the pack${p.rounds ? ` (${p.rounds})` : ""}</span>`);
     if (h.empty + p.empty) spare.push(`<span class="muted">${h.empty + p.empty} empty</span>`);
@@ -128,7 +128,7 @@ export function weaponPanelHtml(state, b, u) {
   // The reserve rounds by where they are (mags.js roundSplit): at hand (a pocket or the rig: 1 action), in the pack (both actions), the team's (a teammate's boxes, the bags: both actions too).
   if (info.rounds && !info.shells) {
     const r = info.rounds, team = r.mate + r.pool;
-    spare.push(`<span class="${r.hand > 0 ? "" : "muted"}" data-tip="${esc("Rounds of this calibre and type loose or boxed in the pockets and the rig, past the ones loaded: a top-up or an internal magazine's Reload from them is 1 action.")}">${r.hand} rds at hand</span>`);
+    spare.push(`<span class="${r.hand > 0 ? "" : "muted"}" data-tip="${esc(isStacked(u) ? `Rounds of this calibre and type loose or boxed in the pockets and the rig: a Reload by hand from them (up to ${MAGS.LOOSE}) is 1 action. Only what they carry: never a teammate's or the team's bags.` : "Rounds of this calibre and type loose or boxed in the pockets and the rig, past the ones loaded: a top-up or an internal magazine's Reload from them is 1 action.")}">${r.hand} rds at hand</span>`);
     if (r.pack > 0) spare.push(`<span class="muted" data-tip="${esc("In the pack, past the ones loaded: a Reload from them takes both actions (the Inventory moves a box to a pocket for 1 action).")}">${r.pack} in the pack</span>`);
     if (team > 0) spare.push(`<span class="muted" data-tip="${esc(`A teammate's boxes and the team's bags, past the ones loaded: a top-up or an internal magazine's Reload from them takes both actions, like the pack.`)}">${team} the team's</span>`);
   }

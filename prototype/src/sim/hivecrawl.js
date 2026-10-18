@@ -81,7 +81,7 @@ import { WEAPONS } from "./combat.js"; // the core's fire by the numbers (coreFi
 import { combatPower, skill } from "./world.js";
 import { INTERNAL } from "./data-kit.js";
 import { spreadMult } from "./data-ammo.js";
-import { SHELLS, usesInternal } from "./mags.js";
+import { SHELLS, usesInternal, MAGS } from "./mags.js";
 import { gunMods } from "./gunmods.js";
 import { calOf } from "./ammo.js";
 import { cellsOf, ringOf, inGrid, headingToward, DIRS, DIR_NAMES } from "./citygrid.js"; // the den's round grid, as the city's
@@ -1602,18 +1602,11 @@ export function fireOf(s, packed = false) {
   const shoot = skill(s, "shooting"), aim = 40 + 2.5 * shoot + (W.aim || 0);
   const shots = HIVEMIND.REACH.shots, need = shots * (W.ammo || 1), cap = Math.max(1, W.cap || 1);
   let per = cap, fetch = 0;
+  // Your people load by hand up to MAGS.LOOSE a Reload, whatever the gun (mags.js, 2026-10-18: physical rounds; a break
+  // action or a single shot is bounded by its room), out of what they carry; nothing is dug out first.
   const shell = SHELLS.on && SHELLS.GUNS[it.key] && usesInternal(it.key, it) ? SHELLS.GUNS[it.key] : null;
-  if (shell) {
-    const saddle = shell === "tube" ? Math.max(0, gunMods(it).reload || 0) : 0;
-    const steady = 40 + 2.5 * shoot >= SHELLS.STEADY_AIM ? 1 : 0;
-    per = shell === "break" ? SHELLS.BREAK : shell === "single" ? 1 : Math.max(SHELLS.MIN, Math.min(SHELLS.MAX + saddle, (SHELLS.BASE[0] + SHELLS.BASE[1]) / 2 + steady + saddle));
-    const keys = cal ? withHand(keyFor(cal, type)) : [];
-    let box = 0;
-    for (const x of carriedSpots(s)) if ((x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)) box += Math.max(0, Math.floor(x.item.dur || 0));
-    const boxN = Math.max(packed ? SHELLS.CARRY : 0, box); // the gun loads out of the box first (mags.js shellsAt), the loose handful tops up to START_HAND
-    const at = Math.max(0, boxN - cap) + Math.max(0, SHELLS.START_HAND - Math.max(0, boxN - cap)) + (saddle > 0 ? SHELLS.SADDLE : 0);
-    fetch = Math.max(0, need - cap - at) / SHELLS.GRAB;
-  } else if (INTERNAL[it.key] && usesInternal(it.key, it)) per = INTERNAL[it.key];
+  if (shell) per = Math.min(cap, MAGS.LOOSE);
+  else if (INTERNAL[it.key] && usesInternal(it.key, it)) per = Math.min(cap, MAGS.LOOSE);
   const reloads = Math.max(0, need - cap) / per;
   return { p, melee: false, aim, opt: W.opt || 0, fall: W.fall || 0, type, sustain: shots / (shots + reloads + fetch) };
 }

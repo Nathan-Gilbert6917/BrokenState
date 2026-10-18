@@ -99,9 +99,10 @@ import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get 
 import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
 // Grenade launchers and rockets (section 13) and what explosions do to gear (section 24): a unit's second weapon (u.gl).
 import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit, blastBox, blastPiles } from "./launchers.js";
-import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, isShellGun, isMag, magEntryAt, loadMagPlan, loadMagFrom } from "./mags.js"; // magazines as items (section 15): spares, reload sources (a pocket or the rig 1 action, the pack both), top-up, internal magazines
+import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, isShellGun, isMag, magEntryAt, loadMagPlan, loadMagFrom, fillUnit, isStacked, syncMags, unloadMagPlan, unloadMagFrom } from "./mags.js";
+import { stackN, takeTop } from "./roundstack.js"; // physical rounds in a gun (loadMag) // magazines as items (section 15): spares, reload sources (a pocket or the rig 1 action, the pack both), top-up, internal magazines
 import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate, packShells as handOutShells } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines; a base's shotgunners' shells out of its stock (handOutShells: packShells is the AI's Get shells check below)
-import { allCarried, carriedSpots } from "./inventory.js";
+import { allCarried, carriedSpots, stow } from "./inventory.js";
 import { parseLoc, itemAt, moveItem, slotKind, fitReason, splitAt, openAt, boxAt as boxRoundsAt, rigOf, pouchesOf } from "./inventory.js"; // the survivor's inventory in a fight (combatAct "inv"; boxAt here is a raid's container)
 import { amountOf, canStack, isRoundItem } from "./itemstack.js";
 import { deepShift } from "./deeploot.js";
@@ -947,7 +948,7 @@ export const ammoLeft = (b) => sideRounds(b);
 export const arrowsLeft = (b) => pool(b, "arrows");
 // Has the player's side what this weapon shoots (rounds of its calibre and loaded type for a gun, with u the shooter;
 // arrows for a bow or crossbow)? Without u, any rounds.
-export const hasShot = (b, w, u = null) => (!w.ammo || (u ? roundsOf(b, u) : ammoLeft(b)) >= (w.mounted ? 1 : w.ammo)) && (!w.arrows || arrowsLeft(b) >= w.arrows); // a turret: a short last burst (magEmpty)
+export const hasShot = (b, w, u = null) => (!w.ammo || (u && isStacked(u) ? magIn(u) : u ? roundsOf(b, u) : ammoLeft(b)) >= (w.mounted ? 1 : w.ammo)) && (!w.arrows || arrowsLeft(b) >= w.arrows); // a turret: a short last burst (magEmpty); physical rounds (mags.js): what is in the gun
 // A shot by one of your people: its rounds (its calibre and loaded type: its own boxes, the team's, the pools) or its
 // arrow from the pools (b.arrowsUsed: picked up again after a win).
 function spendShot(b, w, u) {
@@ -962,6 +963,16 @@ function pickUpArrows(b, won) {
   return n;
 }
 export const medsLeft = (b) => pool(b, "meds");
+// The empty magazines thrown as lures (stealth.js THROWABLES.emptymag, b.thrown): picked up again when the field is
+// yours, back onto whoever threw them (else the team's cargo list is not reachable here: lost). Returns the summary lines.
+function thrownBack(state, b, won) {
+  const list = b.thrown || [];
+  b.thrown = [];
+  if (!list.length) return [];
+  let back = 0;
+  if (won) for (const t of list) { const s = survivorById(state, t.sid); if (s && s.alive && stow(s, t.item)) back++; }
+  return [back ? `Picked up ${back} of the ${list.length} magazine${list.length === 1 ? "" : "s"} thrown.` : `The ${list.length} magazine${list.length === 1 ? "" : "s"} thrown ${list.length === 1 ? "is" : "are"} lost.`];
+}
 
 /// ---------- battle map ----------
 // Roads, bridges and the cars on them (the battle maps). A road tile's map has the road across it, ROAD.WIDTH (8) cells
@@ -3007,9 +3018,15 @@ export function loadMag(u, n = null) {
   u.magW = u.weapon;
   u.magMax = magCap(u);
   u.mag = n == null ? u.magMax : Math.max(0, Math.min(u.magMax, n));
+  if (isStacked(u)) { // physical rounds (mags.js): the counter is the stack; fewer asked for come off the top (spent), more cannot be conjured
+    const have = stackN(u.stack);
+    if (u.mag < have) takeTop(u.stack, have - u.mag);
+    u.mag = Math.min(u.magMax, stackN(u.stack));
+    syncMags(u);
+  }
 }
 // The rounds loaded as the player sees them: never more than the team's rounds of that calibre and type.
-export const magShown = (b, u) => (u.side === "player" ? Math.min(magIn(u), roundsOf(b, u)) : magIn(u));
+export const magShown = (b, u) => (u.side === "player" && !isStacked(u) ? Math.min(magIn(u), roundsOf(b, u)) : magIn(u)); // physical rounds (mags.js): the gun's own
 // A gun whose magazine has too few rounds for a shot (whatever the team's ammo). A turret's belt (100 or 200, 3 a
 // burst) fires its last burst with whatever is left: empty only at none (fire: the burst is the rounds there are).
 const shotRounds = (w) => (w.mounted ? 1 : w.ammo);
@@ -3025,13 +3042,23 @@ export function reloadRefusal(b, u, type = null) {
   if (handsBusy(u)) return handsWord(u); // carry.js
   if (u.carrying != null) return "Hands full: put the body down first.";
   const cal = calOf(u.weapon);
-  if (type && (!cal || typeFor(cal, type) !== type)) return `The ${gunWord(u)} takes no such rounds.`;
-  if (type && loadRefusal(u.weapon, type)) return loadRefusal(u.weapon, type); // ammo.js: a calibre its chamber refuses (.300 BLK in a 5.56 gun)
-  const sw = !!(type && typeFor(cal, type) !== typeFor(cal, u.load));
+  const ammo = typeof type === "string" ? type : null; // (a pick object: mags.js reloadPlan checks it)
+  if (ammo && (!cal || typeFor(cal, ammo) !== ammo)) return `The ${gunWord(u)} takes no such rounds.`;
+  if (ammo && loadRefusal(u.weapon, ammo)) return loadRefusal(u.weapon, ammo); // ammo.js: a calibre its chamber refuses (.300 BLK in a 5.56 gun)
+  const sw = !!(ammo && typeFor(cal, ammo) !== typeFor(cal, u.load));
   const m = magIn(u), max = magMaxOf(u);
+  if (isStacked(u)) { // physical rounds (mags.js): the plan says what can go in and from where
+    const p = reloadPlan(b, u, type);
+    if (p.why) return p.why;
+    if (u.ap > 0 && u.ap < p.cost) {
+      if (p.mode === "swap" || p.mode === "clip") return `The ${p.mode === "clip" ? "clip" : "spare magazine"} is in the pack: ${p.cost} actions.`;
+      return isShellGun(u) ? "The shells are in the pack: both actions to reload from the pack (the Inventory window moves a box to a pocket for 1)." : "The rounds are in the pack: both actions to reload from the pack (the Inventory window moves a box to a pocket for 1)."; // mags.js SOURCE_AP
+    }
+    return "";
+  }
   if (!sw && m >= max) return `The ${gunWord(u)} is full (${max}/${max}).`;
   if (tracksMags(u)) { // mags.js: a spare, a top-up, an internal magazine
-    const p = reloadPlan(b, u, type);
+    const p = reloadPlan(b, u, ammo);
     if (p.why) return p.why;
     if (u.ap > 0 && u.ap < p.cost) {
       if (p.from === "pack" && p.mode !== "swap" && p.mode !== "clip") return isShellGun(u) ? "The shells are in the pack: both actions to reload from the pack (or Get shells, 1 action, brings a handful to hand)." : "The rounds are in the pack: both actions to reload from the pack."; // mags.js SOURCE_AP
@@ -3058,8 +3085,9 @@ export function reloadType(b, u, foes = []) {
 // type of the calibre (act.ammo): u.load becomes it and the magazine is filled with it (rounds are counted only when
 // fired, so nothing goes back). Check reloadRefusal(b, u, type) first.
 export function reload(b, u, type = null) {
-  if (tracksMags(u)) { // mags.js: the next loaded magazine (1 action from a pouch or a pocket, 2 from the pack), else a top-up (2)
+  if (tracksMags(u)) { // mags.js: the next loaded magazine (1 action from a pouch or a pocket, 2 from the pack), else rounds by hand (type: a round, a { mag }, a { clip } or { rounds } pick)
     const p = reloadPlan(b, u, type);
+    if (p.why && isStacked(u)) { say(b, p.why, "info"); return; } // (combatAct checks reloadRefusal first; a direct caller spends nothing on a refused plan)
     const line = doReload(b, u, p);
     u.ap = Math.max(0, u.ap - p.cost);
     u.hunker = false;
@@ -3067,6 +3095,7 @@ export function reload(b, u, type = null) {
     return;
   }
   const cal = calOf(u.weapon);
+  if (typeof type !== "string") type = null;
   const sw = !!(type && cal && typeFor(cal, type) !== typeFor(cal, u.load));
   if (sw) u.load = typeFor(cal, type);
   const max = magMaxOf(u);
@@ -3077,7 +3106,7 @@ export function reload(b, u, type = null) {
 }
 // Rounds out of the gun for a shot (fire, a double tap): the magazine, and your side's rounds of its calibre and type.
 function spendRounds(b, u, w) {
-  if (hasMag(u)) loadMag(u, magIn(u) - w.ammo);
+  if (hasMag(u) && !isStacked(u)) loadMag(u, magIn(u) - w.ammo); // (physical rounds: spendShot takes them off the gun's stack and counts them, ammo.js takeBattleRounds)
   if (u.side === "player") spendShot(b, w, u); // rounds of its calibre and loaded type (a turret's belt: .50 BMG or 5.56, turretRounds), or a bow's arrow
 }
 // Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the rounds of its calibre and
@@ -3098,6 +3127,7 @@ export function fireRefusal(b, u) {
     const cal = calOf(u.weapon);
     if (WEAPONS[u.weapon].arrows) return "Out of arrows.";
     if (!cal) return "Out of ammo.";
+    if (isStacked(u)) { const why = reloadRefusal(b, u); return why ? `Out of ammo: the ${gunWord(u)} is empty and ${why[0].toLowerCase()}${why.slice(1)}` : `The ${gunWord(u)} is empty: reload first (I).`; } // physical rounds (mags.js): nothing in the gun
     return roundsOf(b, u, "*") > 0 ? `Out of ${roundName(cal, u.load)}: reload with another type (1 action).` : `Out of ammo (no ${calName(cal)} rounds).`;
   }
   if (magEmpty(b, u)) return `The ${gunWord(u)} is empty: reload first (1 action).`;
@@ -3208,7 +3238,7 @@ export function playerUnit(b, s) {
   if (u.tact) b.tact = true;
   u.load = chooseLoad(b, u, item && key !== "fists" ? item.load : null); // ammo.js: the gun's own load (item.load), else its common round
   MED.fitMedic(u, s); // medics.js: a med kit in a pocket or the pack counts too
-  fitMags(b, u, carriedSpots(s), magCap(u)); // mags.js: the gun's magazine and the spares they carry (pouches, pockets, pack)
+  fitMags(b, u, carriedSpots(s), magCap(u), s); // mags.js: the gun's magazine and the spares they carry (pouches, pockets, pack); fillUnit loads them as the fight starts (createBattle)
   weighPlayer(u, s); // carrykit.js: kg worn and carried → mob by load band (R17), u.armLoad (kg)
   loadMag(u); // the gun starts the battle loaded
   fitArmour(u, s); // armour.js: the worn pieces (per-hit armour) and the Tough trait
@@ -3237,15 +3267,22 @@ export function refitUnit(b, u, s) {
   const swapped = (heldItem || null) !== (f.item || null); // another gun in the hands (gunload.js): what was in the old one goes with it
   if (swapped && heldItem) gunOut(b, u, heldItem);
   const keepMags = u.weapon === f.weapon && tracksMags(u) && !swapped;
+  const wasStack = Array.isArray(u.stack) ? u.stack : null; // physical rounds (mags.js): the same gun keeps them; another gun's come with it (gunIn) or are loaded now (fillUnit)
   for (const k of ["weapon", "weaponName", "item", "gearRisk", "fielded", "armLoad", "gm", "gmWeapon", "load", "boxes", "handBoxes", "pocketBoxes", "loadBand", "dash"]) u[k] = f[k]; // handBoxes, pocketBoxes: the boxes of rounds at hand, in the pockets and the rig (mags.js shellsAt, roundSource)
   if (!keepMags) for (const k of ["mags", "magsW", "clips", "magMode", "hand"]) u[k] = f[k]; // another gun: its own magazines (mags.js)
+  if (keepMags) u.stack = wasStack; else u.stack = tracksMags(u) ? [] : null;
   u.bag = (s.gear && s.gear.carry) || null; // carry.js: a bag taken into the arms (or put down) in the search window
   if (u.mob0 == null && u.dragMob == null) u.mob = f.mob; // the load band's mob (not while carrying or dragging someone)
   if (u.weapon === held && heldLoad && !swapped) u.load = heldLoad; // the same gun keeps the rounds it has loaded
   // The magazine: the same gun keeps what was loaded (up to its capacity now, a magazine attachment may have changed);
   // another gun has what is in it (gunload.js gunIn: what it held when it was put down, loaded if it was carried into
   // the fight, else empty: Reload), so swapping guns never hands out a free full one.
-  loadMag(u, swapped ? gunIn(b, u, u.item) : u.weapon === held ? rounds : 0);
+  const came = swapped ? gunIn(b, u, u.item) : null; // gunload.js: what was in it (a record), null for a gun carried into the fight (loaded), 0 for one found empty
+  loadMag(u, swapped ? came : u.weapon === held ? rounds : 0);
+  if (swapped && isStacked(u)) { // physical rounds: the record's rounds into the gun (fillUnit reads item.loaded), a carried gun filled now, an empty one empty
+    if (came === null || u.item.loaded) { fillUnit(b, u, { gun: came === null, pools: false }); sweepBoxes(s); u.boxes = boxesOf(s); fitMags(b, u, carriedSpots(s), magCap(u), s); syncMags(u); } else { u.stack = []; syncMags(u); } // a carried gun: filled now out of what they carry (it was loaded from the start); one with a record: exactly that; never the team's bags in the middle of a fight
+    loadMag(u, u.mag);
+  }
   if (u.spearOut && u.weapon === u.spearOut.key) { delete u.spearOut; unarm(b, u, s); } // its spear still lies where it was thrown
   if (u.weapon !== held) u.jam = null; // another gun: the jammed one is put away
   fitArmour(u, s); // armour.js: the pieces worn now
@@ -3288,8 +3325,16 @@ export function refitKit(b, u, s) {
   const wasMags = u.mags, wasClips = u.clips, wasW = u.magsW, wasMode = u.magMode, hand = u.hand;
   refitUnit(b, u, s);
   if (!tracksMags(u) || u.magsW !== wasW || u.magMode !== wasMode || u.mags !== wasMags) return;
-  const t = { weapon: u.weapon, item: u.item, load: u.load, side: u.side, boxes: Array.isArray(u.boxes) ? u.boxes.slice() : u.boxes, gm: u.gm, gmWeapon: u.gmWeapon, hand: null };
-  fitMags(b, t, carriedSpots(s), magCap(u)); // a scratch unit: the spares as they lie now (nothing of the world's is touched)
+  const t = { weapon: u.weapon, item: u.item, load: u.load, side: u.side, boxes: Array.isArray(u.boxes) ? u.boxes.slice() : u.boxes, gm: u.gm, gmWeapon: u.gmWeapon, hand: null, stack: [] };
+  fitMags(b, t, carriedSpots(s), magCap(u), s); // a scratch unit: the spares as they lie now (nothing of the world's is touched)
+  if (isStacked(u)) { // physical rounds: each magazine's are on the item (mags.js), so the entries are simply rebuilt where they lie now
+    const gun = (wasMags || []).find((m) => m.where === "gun") || (t.mags || []).find((m) => m.where === "gun");
+    u.mags = [...(gun ? [gun] : []), ...(t.mags || []).filter((m) => m.where !== "gun")];
+    if (Array.isArray(t.clips)) u.clips = t.clips.map((c) => ({ ...c, used: (wasClips || []).some((o) => o.key === c.key && o.used) }));
+    for (const m of u.mags) if (m.where !== "gun" && m.item && !Array.isArray(m.item.stack)) m.item.stack = []; // a magazine that came to them in the fight (a hand-over, a find): empty until loaded
+    syncMags(u);
+    return;
+  }
   const old = (wasMags || []).filter((m) => m.where !== "gun");
   const used = new Set();
   const same = (m) => { // the old entry of this magazine: the same key in the same place first, else anywhere
@@ -3304,6 +3349,23 @@ export function refitKit(b, u, s) {
   if (Array.isArray(t.clips)) u.clips = t.clips.map((c) => ({ ...c, used: (wasClips || []).some((o) => o.key === c.key && o.used) }));
   if (hand) u.hand = hand; // the shells loose at hand stay as they were
 }
+// The fight's start (createBattle, createRaid): the gun and the spares loaded physically (mags.js fillUnit), the stacks
+// it emptied thrown away (ammo.js sweepBoxes) and the unit's round caches rebuilt (the entries read the items' stacks).
+function fillBattleUnit(b, u, s) {
+  fillUnit(b, u);
+  sweepBoxes(s);
+  u.boxes = boxesOf(s);
+  fitMags(b, u, carriedSpots(s), magCap(u), s);
+  syncMags(u);
+  loadMag(u, u.mag);
+}
+// After rounds left a survivor's items physically (a Reload, a magazine loaded by hand: mags.js): the emptied stacks
+// are thrown away (ammo.js sweepBoxes) and the unit's caches refit (u.boxes, the magazine entries).
+export function tidyRounds(b, u, s) {
+  if (!s || !u || u.side !== "player") return;
+  sweepBoxes(s);
+  refitKit(b, u, s);
+}
 // combatAct "inv": the move checked and done (the error, or "" when it happened and INV_AP was spent).
 function invAct(state, b, u, act) {
   const s = u.sid != null ? survivorById(state, u.sid) : null;
@@ -3317,6 +3379,20 @@ function invAct(state, b, u, act) {
   if (!item) return "Nothing there.";
   const op = act.op || "move";
   let msg;
+  if (op === "unload") { // a spare magazine emptied by hand (mags.js unloadMagFrom): its rounds loose onto them, each kind its own stack
+    if (!isMag(item)) return "Only a magazine is unloaded.";
+    const m = magEntryAt(u, carriedSpots(s), act.from);
+    if (!m) return tracksMags(u) && u.magMode === "box" ? `The ${item.name} is not one of the ${gunWord(u)}'s: only its magazines are unloaded in a fight.` : `The ${gunWord(u)} takes no magazines.`;
+    const p = unloadMagPlan(b, u, m);
+    if (p.why) return p.why;
+    const line = unloadMagFrom(b, u, m, s);
+    if (!line) return "No room for the rounds: a free pocket or pack slot is needed (or loose rounds of the same kind with room).";
+    say(b, line, "info");
+    u.ap -= INV_AP;
+    u.hunker = false;
+    refitKit(b, u, s);
+    return "";
+  }
   if (op === "split" || op === "open" || op === "box") {
     msg = op === "split" ? splitAt(state, act.from) : op === "open" ? openAt(state, act.from) : boxRoundsAt(state, act.from);
     const ok = op === "split" ? /split:/.test(msg) : op === "open" ? /^Opened|out of the/.test(msg) : /^Boxed/.test(msg);
@@ -3338,6 +3414,7 @@ function invAct(state, b, u, act) {
       say(b, loadMagFrom(b, u, m, item, src, p), "info");
       u.ap -= p.cost;
       u.hunker = false;
+      tidyRounds(b, u, s); // the rounds left the stack physically (mags.js): an emptied one is thrown away, the caches refit
       return "";
     }
     const kindAt = (L) => (slotKind(L) === "pouch" ? (pouchesOf(rigOf(s)) || [])[L.i] : null);
@@ -3553,6 +3630,7 @@ export function createBattle(state, setup) {
     const c = pcells[i] || pickCells(1, () => true, (x) => -x)[0];
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
+    if (!setup.drill) fillBattleUnit(b, u, s); // mags.js: the gun and the spares loaded physically (the gun's own rounds, then what they carry, then the team's bags); not for a drill's throw-away battle (defenceplan.js)
   });
   battlePerks(state, b); // skills.js: perks on the player's units (aim, crits, stealth, Rally, Commander...)
   fitHands(state, b); // carry.js: who starts with their hands full of the team's supplies
@@ -4292,14 +4370,17 @@ export function combatAct(state, act) {
       break;
     }
     case "reload": { // the magazines section: the plan's cost (mags.js reloadPlan: a magazine or rounds from a pocket or the rig 1 action, from the pack both), the magazine full (as far as the team's ammo goes); act.ammo: a type to load instead (ammo.js)
+      // The pick (mags.js reloadPlan): act.ammo (a round), act.mag (a spare's index in u.mags), act.clip, act.rounds ([{ i, n }] in firing order: the picker, ui/combat.js)
+      const pick = Array.isArray(act.rounds) ? { rounds: act.rounds } : act.mag != null ? { mag: act.mag } : act.clip != null ? { clip: act.clip, load: act.ammo || null } : act.ammo || null;
       if (u.gunner && u.ap < TURRET.RELOAD_AP) return "A new belt takes both actions."; // (before a double feed is cleared by it)
-      if (u.ap < reloadCost(b, u, act.ammo || null) && !u.jam) return reloadRefusal(b, u, act.ammo || null) || "Not enough actions left to reload."; // mags.js: from the pack, or a top-up from the team's bags: 2 actions
+      if (u.ap < reloadCost(b, u, pick) && !u.jam) return reloadRefusal(b, u, pick) || "Not enough actions left to reload."; // mags.js: from the pack: 2 actions
       jamReload(b, u); // gunfire.js: a double feed is cleared by dropping the magazine (then this reload fills a fresh one)
-      const why = reloadRefusal(b, u, act.ammo || null);
+      const why = reloadRefusal(b, u, pick);
       if (why) return why;
-      if (u.ap < reloadCost(b, u, act.ammo || null)) return "Not enough actions left to reload.";
-      reload(b, u, act.ammo || null);
+      if (u.ap < reloadCost(b, u, pick)) return "Not enough actions left to reload.";
+      reload(b, u, pick);
       if (u.gunner) { u.ap = 0; afterTurretReload(b, u); }
+      if (isStacked(u) && u.sid != null) { const s = survivorById(state, u.sid); if (s) tidyRounds(b, u, s); } // the rounds left their stacks (mags.js): emptied ones thrown away, the caches refit
       break;
     }
     case "getshells": { // mags.js SHELLS: a shotgun's shells out of the pack, loose at hand (1 action)
@@ -5951,6 +6032,7 @@ function endBattle(state, b, outcome) {
   }
   // The arrows loosed: about half picked up again when the field is yours (world.js ARROWS.BACK), none otherwise.
   const arrowsBackN = pickUpArrows(b, outcome === "victory");
+  lines.push(...thrownBack(state, b, outcome === "victory")); // stealth.js: the empty magazines thrown as lures, picked up when the field is yours
   lines.push(...pickUpBrass(state, b, outcome === "victory")); // reloading.js: the brass fired, picked up when the field is yours
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   if (setup.watch) b.bodies = []; // volunteers.js: a fight you watched: the field is the group's (your people get their share)
@@ -6473,6 +6555,7 @@ export function createRaid(state, setup) {
     const c = entryCells.find(([x, y]) => ok(x, y)) || [entry.x0, entry.y0];
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
+    if (!setup.drill) fillBattleUnit(b, u, s); // mags.js: the gun and the spares loaded physically
   }
   for (const u of b.units) if (u.side === "player") u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit
   battlePerks(state, b); // skills.js: perks on the player's units
@@ -6918,6 +7001,7 @@ function endRaid(state, b) {
   const cleared = !enemies.some((u) => activeAny(u) && u.aware);
   settleSpears(state, b, outcome === "extracted" && cleared, lines); // thrown spears: picked up on the way out of a cleared site, else lost
   const arrowsBackN = pickUpArrows(b, outcome === "extracted" && cleared);
+  lines.push(...thrownBack(state, b, outcome === "extracted" && cleared)); // stealth.js: the empty magazines thrown as lures
   lines.push(...pickUpBrass(state, b, outcome === "extracted" && cleared)); // reloading.js: brass, as the arrows
   if (b.arrowsUsed) lines.push(arrowsBackN ? `Picked up ${arrowsBackN} of the ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot.` : `The ${b.arrowsUsed} arrow${b.arrowsUsed === 1 ? "" : "s"} shot ${b.arrowsUsed === 1 ? "is" : "are"} lost.`);
   b.result = {

@@ -1,20 +1,28 @@
 // Reload sources (2026-10-17 user request: "reload guns including shotguns from loose ammo/shells from pockets, rigs in
-// addition to pack, only reload from pack uses double action"; src/sim/mags.js roundSplit / roundSource / sourceWord /
-// reloadPlan, src/sim/ammo.js boxesOf / takeBattleRounds, src/sim/combat.js reloadRefusal / aiReload). Checks:
-//   - a revolver with loose rounds in a pocket reloads for 1 action; with the rounds only in the pack it costs both
-//     actions and is refused with one left; the log and the Reload button name the source;
-//   - a rig admin pouch of loose 9mm feeds a 1-action top-up (the rig's rounds in u.boxes right after the pockets',
-//     u.handBoxes and u.pocketBoxes agree); the pack's top up for 2, a teammate's and the team's bags for 2 (an internal
-//     magazine's Reload from them too: only what is at hand is quick);
-//   - a pump shotgun with shells only in the pack reloads straight out of it for both actions (no refusal), is refused
-//     with one action left, and after Get shells reloads for 1;
-//   - magazine swaps unchanged (rig 1, pocket 1, pack 2), a speedloader by where it is;
-//   - the AI and the raid bot: a revolver from the pocket, a shotgun takes a handful out of the pack before loading;
-//   - the order of depletion: at hand, then the pack, then a teammate's, then the pools;
-//   - the Reload order's cost and tip and the weapon panel's split (at hand / in the pack / the team's);
+// addition to pack, only reload from pack uses double action"; 2026-10-18 user rules, docs/reload-rules.md: PHYSICAL
+// rounds for your side, src/sim/mags.js roundSources / roundSplit / roundSource / sourceWord / reloadPlan / doReload,
+// src/sim/ammo.js boxesOf / takeBattleRounds, src/sim/combat.js reloadRefusal / aiReload / autoRaidTurn). Checks:
+//   - a revolver with loose rounds in a pocket reloads 6 for 1 action; with the rounds only in the pack it costs both
+//     actions and is refused with one left; the rounds leave the item; the log and the Reload button name the source;
+//     a teammate's rounds and the team's bags are never a source (the refusal names where they are, nothing is spent);
+//   - a rig admin pouch of loose 9mm feeds a 1-action top-up by hand (the rig's rounds in u.boxes right after the
+//     pockets', u.handBoxes and u.pocketBoxes agree); the pack's top-up takes both; a teammate's box and the team's bags
+//     are refused;
+//   - a pump shotgun with shells only in the pack loads 6 straight out of it for both actions (no refusal), is refused
+//     with one action left; Get shells is refused for your people (shells load straight in); the Inventory window moves
+//     the box to a pocket for 1 action, then a Reload is 1;
+//   - magazine swaps unchanged (rig 1, pocket 1, pack 2) but physical (the other magazine goes where the fresh one lay,
+//     empty); with no loaded spare and nothing on them the base's stock is no source; a speedloader only by { clip: i }
+//     (the auto plan loads rounds by hand), 1 from a pocket, 2 from the pack, filled out of their own rounds, used once;
+//   - the AI and the raid bot: a revolver from the pocket (6 for 1 action), a shotgun with shells only in the pack
+//     straight out of it for both actions (no Get shells), with one action left it waits; the raid bot's shotgunner
+//     loads from the pocket packed for the trip, the team's bags untouched;
+//   - the order of depletion: a Reload takes from the pocket first, then (only when nothing is at hand) the pack, and
+//     never the teammate's or the pools; shots come out of the gun's stack and touch no box;
+//   - the Reload order's cost and tip and the weapon panel's split ("N rds at hand" / "N in the pack", never "the team's");
 //   - a save and load in the middle keeps the costs.
 // Usage: node tools/reloadsourcetest.js [seed]
-import { setRounds, giveRounds, newBox, boxesOf, takeBattleRounds, roundsOf } from "../src/sim/ammo.js";
+import { setRounds, giveRounds, newBox, boxesOf, takeBattleRounds, sideRounds } from "../src/sim/ammo.js";
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import { createBattle, combatAct, registerCombatHandler, autoPlayerTurn, loadMag, reloadRefusal, reloadCost, magIn, refitKit } from "../src/sim/combat.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -24,7 +32,8 @@ import { roundItem } from "../src/sim/itemstack.js";
 import { itemLoad } from "../src/sim/inventory.js";
 import { ADMIN_KG } from "../src/sim/data-kit.js";
 import { placeSlots } from "../src/sim/supitems.js";
-import { MAGS, SHELLS, reloadPlan, reloadText, roundSplit, roundSource, sourceWord, shellsAt, shellsInPack, tracksMags } from "../src/sim/mags.js";
+import { MAGS, SHELLS, reloadPlan, reloadText, roundSplit, roundSource, sourceWord, shellsAt, shellsInPack, tracksMags, isStacked } from "../src/sim/mags.js";
+import { stackN } from "../src/sim/roundstack.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 
 const seed = Number(process.argv[2] || 7);
@@ -67,9 +76,12 @@ const foes = (b) => b.units.filter((u) => u.side === "enemy");
 const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; };
 const logHas = (b, re) => b.log.some((l) => re.test(l.text));
 const lastLog = (b) => (b.log.length ? b.log[b.log.length - 1].text : "");
-const again = (b, u, n = 0) => { b.phase = "player"; loadMag(u, n); u.ap = 2; };
+const again = (b, u, n = 0) => { b.phase = "player"; loadMag(u, n); u.ap = 2; }; // (loadMag trims the stack: the rounds vanish, a test's way to empty a gun)
 const withPack = (s) => { s.gear.backpack = newItem("backpack"); return packOf(s); };
+const L = (s, slot, i = null) => `s:${s.id}:${slot}${i == null ? "" : `:${i}`}`; // an inventory location (combatAct inv)
+const loose = (s, key) => carriedSpots(s).filter((x) => x.item.key === key).reduce((a, x) => a + Math.floor(x.item.dur), 0); // rounds of a kind on them (an emptied stack is thrown away: sweepBoxes)
 const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true))); // loose 9mm an admin pouch takes
+const NO_SOURCE = /^No ammo to load: no .* on them \(none in their pockets, rig or pack\)\./;
 
 // 1. A revolver: loose rounds in a pocket (1 action) against the same rounds only in the pack (both actions).
 {
@@ -80,35 +92,41 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
   withPack(c)[0] = roundItem(K357, 12, true);
   const b = openBattle(st, [a, c]);
   const u = by(b, a), v = by(b, c);
-  check(u.magMode === "internal" && u.mag === 6 && v.mag === 6, "both revolvers take the field loaded (6/6) out of their own 12 rounds");
+  check(isStacked(u) && isStacked(v) && u.magMode === "internal" && u.mag === 6 && v.mag === 6 && stackN(u.stack) === 6, "both revolvers take the field loaded (6/6) out of their own 12 rounds, physically (u.stack)");
+  check(a.pockets[0].dur === 6 && packOf(c)[0].dur === 6, "the 6 loaded left the items: 6 left in the pocket, 6 in the pack");
   check(u.handBoxes === 1 && u.pocketBoxes === 1 && u.boxes[0] === a.pockets[0] && v.handBoxes === 0 && v.pocketBoxes === 0 && v.boxes[0] === packOf(c)[0], "the pocket's rounds are at hand (handBoxes 1, pocketBoxes 1), the pack's are not (0)");
   const ra = roundSplit(b, u), rc = roundSplit(b, v);
-  check(ra.hand === 6 && ra.pack === 0 && ra.mate === 12 && ra.pool === 0 && rc.hand === 0 && rc.pack === 6 && rc.mate === 12, `past the 6 loaded: 6 at hand for one, 6 in the pack for the other, the other's 12 as a teammate's (their loaded rounds are a counter, as ammo.js roundsOf has it) (${JSON.stringify(ra)} / ${JSON.stringify(rc)})`);
+  check(ra.hand === 6 && ra.pack === 0 && ra.mate === 0 && ra.pool === 0 && rc.hand === 0 && rc.pack === 6 && rc.mate === 0 && rc.pool === 0, `the 6 left: at hand for one, in the pack for the other; the other's are never a teammate's source (mate 0) (${JSON.stringify(ra)} / ${JSON.stringify(rc)})`);
   check(roundSource(b, u) === "hand" && roundSource(b, v) === "pack", "roundSource: hand / pack");
   again(b, u); again(b, v);
   const pa = reloadPlan(b, u), pc = reloadPlan(b, v);
-  check(pa.mode === "internal" && pa.from === "hand" && pa.cost === 1 && reloadCost(b, u) === 1, `the pocket: an internal Reload for 1 action (${pa.mode} from ${pa.from}, ${pa.cost})`);
-  check(pc.mode === "internal" && pc.from === "pack" && pc.cost === 2 && reloadCost(b, v) === 2, `the pack: the same for both actions (${pc.mode} from ${pc.from}, ${pc.cost})`);
+  check(pa.mode === "rounds" && pa.kind === "internal" && pa.from === "hand" && pa.cost === 1 && pa.n === 6 && pa.runs.length === 1 && pa.runs[0].where === "pocket" && reloadCost(b, u) === 1, `the pocket: 6 rounds by hand into the cylinder for 1 action (${pa.mode}/${pa.kind} ${pa.n} from ${pa.from}, ${pa.cost})`);
+  check(pc.mode === "rounds" && pc.kind === "internal" && pc.from === "pack" && pc.cost === 2 && pc.n === 6 && reloadCost(b, v) === 2, `the pack: the same 6 for both actions (${pc.mode}/${pc.kind} ${pc.n} from ${pc.from}, ${pc.cost})`);
   check(sourceWord(u, "hand") === "a pocket" && sourceWord(v, "pack") === "the pack", `in words: "${sourceWord(u, "hand")}" / "${sourceWord(v, "pack")}"`);
-  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 1 && u.mag === 2 && /reloads the \.357 revolver \(2\/6 from a pocket\)/.test(lastLog(b)), `Reload from the pocket: 1 action, 2 rounds in (a cylinder, two a Reload) ("${lastLog(b)}")`);
-  check(/^1 action: 2 more rounds in from a pocket/.test(reloadText(b, u)), `the Reload button: "${reloadText(b, u)}"`);
+  check(/^1 action: 6 rounds in \(\.357 Magnum FMJ\) from a pocket\. Up to 6 go in by hand a Reload, from a pocket or the rig in 1 action, the pack both; only what they carry \(never a teammate's or the team's bags\)\. Reload opens the picker/.test(reloadText(b, u)), `the Reload button: "${reloadText(b, u)}"`);
+  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 1 && u.mag === 6 && /reloads the \.357 revolver: 6 \.357 Magnum FMJ from a pocket \(6\/6\)\./.test(lastLog(b)), `Reload from the pocket: 1 action, all 6 in ("${lastLog(b)}")`);
+  check(loose(a, K357) === 0 && a.pockets[0] === null, "the 6 left the pocket: the emptied stack is thrown away");
+  check(/^The \.357 revolver is full \(6\/6\)\./.test(reloadText(b, u)) && /full/.test(reloadRefusal(b, u)), `full now: "${reloadRefusal(b, u)}"`);
   v.ap = 1;
   const r1 = reloadRefusal(b, v);
-  check(/^The rounds are in the pack: both actions to reload from the pack\./.test(r1) && combatAct(st, { type: "reload", unit: v.id }) === r1 && v.ap === 1 && v.mag === 0, `with one action left the pack is refused: "${r1}"`);
-  check(/^Both actions: 2 more rounds in from the pack \(both actions: the rounds are in the pack\)/.test(reloadText(b, v)), `the Reload button: "${reloadText(b, v)}"`);
+  check(/^The rounds are in the pack: both actions to reload from the pack \(the Inventory window moves a box to a pocket for 1\)\./.test(r1) && combatAct(st, { type: "reload", unit: v.id }) === r1 && v.ap === 1 && v.mag === 0 && packOf(c)[0].dur === 6, `with one action left the pack is refused, nothing spent: "${r1}"`);
+  check(/^Both actions: 6 rounds in \(\.357 Magnum FMJ\) from the pack \(both actions: the rounds are in the pack\)\./.test(reloadText(b, v)), `the Reload button: "${reloadText(b, v)}"`);
   v.ap = 2;
-  check(combatAct(st, { type: "reload", unit: v.id }) === "" && v.ap === 0 && v.mag === 2 && /reloads the \.357 revolver \(2\/6 out of the pack, both actions\)/.test(lastLog(b)), `with both: 2 rounds in, no action left ("${lastLog(b)}")`);
-  // No rounds anywhere but a teammate's: both actions, like the pack (the team's bags the same).
-  packOf(c)[0] = null; refitKit(b, v, c);
+  check(combatAct(st, { type: "reload", unit: v.id }) === "" && v.ap === 0 && v.mag === 6 && /reloads the \.357 revolver: 6 \.357 Magnum FMJ from the pack \(6\/6, both actions\)\./.test(lastLog(b)) && loose(c, K357) === 0, `with both: 6 in, no action left, the pack's stack emptied ("${lastLog(b)}")`);
+  // Nothing on them but a teammate's rounds: never a source; the refusal says where they are, and they are not touched.
+  a.pockets[0] = roundItem(K357, 20, true); refitKit(b, u, a); refitKit(b, v, c);
   again(b, v);
-  check(roundSource(b, v) === "mate" && reloadPlan(b, v).cost === 2 && combatAct(st, { type: "reload", unit: v.id }) === "" && v.ap === 0 && v.mag === 2, "a teammate's rounds only: an internal Reload takes both actions, like the pack");
-  a.pockets[0] = null; refitKit(b, u, a);
+  const rm = roundSplit(b, v);
+  check(rm.mate === 0 && rm.hand === 0 && rm.pack === 0 && roundSource(b, v) === null, `a teammate's 20 only: roundSplit counts none of them (${JSON.stringify(rm)}), no source`);
+  const r2 = reloadRefusal(b, v);
+  check(NO_SOURCE.test(r2) && / 20 are on teammates, not to hand in a fight: a gun loads only what its shooter carries \(pockets, rig, pack\)\.$/.test(r2) && combatAct(st, { type: "reload", unit: v.id }) === r2 && v.ap === 2 && v.mag === 0 && a.pockets[0].dur === 20, `refused, the teammate's box untouched: "${r2}"`);
   b.pools[0][K357] = 30;
   again(b, v);
-  check(roundSource(b, v) === "pool" && sourceWord(v, "pool") === "the team's ammo" && reloadPlan(b, v).cost === 2 && v.ap === 2 && combatAct(st, { type: "reload", unit: v.id }) === "" && v.ap === 0, "the team's bags only: both actions too");
+  const r3 = reloadRefusal(b, v);
+  check(roundSource(b, v) === null && roundSplit(b, v).pool === 0 && NO_SOURCE.test(r3) && /The base's 30 are in its stock and 20 are on teammates, not to hand in a fight/.test(r3) && combatAct(st, { type: "reload", unit: v.id }) === r3 && v.ap === 2 && b.pools[0][K357] === 30, `the team's bags (the base's stock) are no source either: "${r3}"`);
 }
 
-// 2. A rig admin pouch of loose 9mm feeds a 1-action top-up; the pack's, a teammate's and the team's bags cost 2.
+// 2. A rig admin pouch of loose 9mm feeds a 1-action top-up by hand; the pack's costs 2; a teammate's and the team's bags are refused.
 {
   console.log("A top-up: the rig against the pack and the team's");
   const st = createWorld({ seed: seed + 1, factionCount: 4 });
@@ -123,75 +141,85 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
   const spots = carriedSpots(a);
   check(boxesOf(a).length === 3 && boxesOf(a)[0] === a.pockets[1] && boxesOf(a)[1] === admin.list[admin.i] && boxesOf(a)[2] === packOf(a)[0], "ammo.js boxesOf: the pocket's box, then the rig pouch's loose rounds, then the pack's box");
   check(u.handBoxes === 2 && u.pocketBoxes === 1 && u.boxes.length === 3 && u.boxes[1] === admin.list[admin.i] && spots.some((x) => x.where === "rig" && x.item === admin.list[admin.i]), `u.boxes agrees with u.handBoxes (${u.handBoxes}: the pocket's and the rig's) and u.pocketBoxes (${u.pocketBoxes})`);
-  check(u.magMode === "box" && u.mags.length === 1 && u.mag === 15, "a pistol with no spare magazine: the one in the gun, 15/15");
+  check(u.magMode === "box" && u.mags.length === 1 && u.mag === 15 && isStacked(u), "a pistol with no spare magazine: the one in the gun, 15/15, physical");
+  check(a.pockets[1].dur === 35 && admin.list[admin.i].dur === loosePouch && packOf(a)[0].dur === 50, `the 15 came out of the pocket's box first (${a.pockets[1].dur} left of 50), the rig's ${loosePouch} and the pack's 50 untouched`);
   const r0 = roundSplit(b, u);
-  check(r0.hand === 50 + loosePouch - 15 && r0.pack === 50 && r0.mate === 0 && r0.pool === 0, `past the 15 loaded (claimed off the hand first): ${r0.hand} at hand, ${r0.pack} in the pack`);
+  check(r0.hand === 35 + loosePouch && r0.pack === 50 && r0.mate === 0 && r0.pool === 0, `the rest: ${r0.hand} at hand, ${r0.pack} in the pack`);
   again(b, u, 3);
   const p0 = reloadPlan(b, u);
-  check(p0.mode === "topup" && p0.from === "hand" && p0.cost === 1, `a top-up from the rounds at hand: 1 action (${p0.mode} from ${p0.from}, ${p0.cost})`);
+  check(p0.mode === "rounds" && p0.kind === "topup" && p0.from === "hand" && p0.cost === 1 && p0.n === MAGS.LOOSE && p0.runs[0].where === "pocket", `a top-up by hand from the rounds at hand: up to ${MAGS.LOOSE}, 1 action, the pocket's box first (${p0.mode}/${p0.kind} ${p0.n} from ${p0.from}, ${p0.cost})`);
   a.pockets[1] = null; refitKit(b, u, a); // the rig's alone at hand now
-  check(u.handBoxes === 1 && u.pocketBoxes === 0 && sourceWord(u, "hand") === "the rig", `the pocket's box gone: the rig's loose rounds are at hand (handBoxes ${u.handBoxes}, "${sourceWord(u, "hand")}")`);
-  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 1 && u.mag === 15 && /no spare magazine left, a top-up from the rig \(1 action\)/.test(lastLog(b)), `Reload: topped up from the rig for 1 action ("${lastLog(b)}")`);
-  check(/^1 action: no loaded spare magazine, so the one in the gun is topped up from the rig\./.test(reloadText(b, u)), `the Reload button: "${reloadText(b, u)}"`);
+  check(u.handBoxes === 1 && u.pocketBoxes === 0 && sourceWord(u, "hand") === "the rig" && reloadPlan(b, u).runs[0].where === "rig", `the pocket's box gone: the rig's loose rounds are at hand (handBoxes ${u.handBoxes}, "${sourceWord(u, "hand")}")`);
+  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 1 && u.mag === 9 && /tops up the 9mm pistol's magazine by hand: 6 9mm FMJ from the rig \(9\/15\)\./.test(lastLog(b)), `Reload: 6 topped up by hand from the rig for 1 action (3 → 9) ("${lastLog(b)}")`);
+  check(admin.list[admin.i].dur === loosePouch - 6, `the 6 left the pouch (${admin.list[admin.i].dur} of ${loosePouch})`);
+  check(/^1 action: 6 rounds by hand into the magazine in the gun \(9mm FMJ\) from the rig\./.test(reloadText(b, u)), `the Reload button: "${reloadText(b, u)}"`);
   admin.list[admin.i] = null; refitKit(b, u, a); // the pack's box alone
   again(b, u, 3);
   const p1 = reloadPlan(b, u);
-  check(p1.from === "pack" && p1.cost === 2 && reloadCost(b, u) === 2, "the pack's box alone: a top-up takes both actions");
+  check(p1.kind === "topup" && p1.from === "pack" && p1.cost === 2 && p1.n === 6 && reloadCost(b, u) === 2, "the pack's box alone: a top-up of 6 takes both actions");
   u.ap = 1;
-  check(/both actions to reload from the pack/.test(reloadRefusal(b, u)) && combatAct(st, { type: "reload", unit: u.id }) !== "" && u.mag === 3, "refused with one action left");
+  check(/^The rounds are in the pack: both actions to reload from the pack/.test(reloadRefusal(b, u)) && combatAct(st, { type: "reload", unit: u.id }) !== "" && u.mag === 3 && packOf(a)[0].dur === 50, "refused with one action left, the box untouched");
   u.ap = 2;
-  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 0 && u.mag === 15 && /a top-up from the pack \(2 actions\)/.test(lastLog(b)), `with both: topped up ("${lastLog(b)}")`);
-  // A teammate's box: 2 actions (as before); the team's bags: 2 (as before).
+  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 0 && u.mag === 9 && /tops up the 9mm pistol's magazine by hand: 6 9mm FMJ from the pack \(9\/15, both actions\)\./.test(lastLog(b)) && packOf(a)[0].dur === 44, `with both: 6 topped up, 44 left in the pack ("${lastLog(b)}")`);
+  // A teammate's box: never a source (the refusal says where the rounds are); the team's bags: the same.
   packOf(a)[0] = null; refitKit(b, u, a);
   c.pockets[0] = newBox(K9, 50); refitKit(b, v, c);
   again(b, u, 3);
-  check(roundSource(b, u) === "mate" && reloadPlan(b, u).cost === MAGS.TOPUP_AP && reloadPlan(b, u).cost === 2, "a teammate's box only: a top-up takes 2 actions (as before)");
+  const r1 = reloadRefusal(b, u);
+  check(roundSource(b, u) === null && roundSplit(b, u).mate === 0 && reloadPlan(b, u).why === r1, "a teammate's box only: no source, the plan refuses");
+  check(/^No ammo to load: no loaded spare magazine, and no rounds for the 9mm pistol on them \(none in their pockets, rig or pack\)\. 50 are on teammates, not to hand in a fight/.test(r1) && combatAct(st, { type: "reload", unit: u.id }) === r1 && u.ap === 2 && u.mag === 3 && c.pockets[0].dur === 50, `refused, nothing spent, the teammate's 50 untouched: "${r1}"`);
   u.ap = 1;
-  check(/top-up takes 2 actions \(from a teammate's rounds\)/.test(reloadRefusal(b, u)), `with one: "${reloadRefusal(b, u)}"`);
+  check(reloadRefusal(b, u) === r1, "with one action: the same refusal (not the cost's)");
   c.pockets[0] = null; refitKit(b, v, c);
   b.pools[0][K9] = 100;
   again(b, u, 3);
-  check(roundSource(b, u) === "pool" && reloadPlan(b, u).cost === 2 && combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 0 && /a top-up from the team's ammo \(2 actions\)/.test(lastLog(b)), `the team's bags only: 2 actions (as before) ("${lastLog(b)}")`);
+  const r2 = reloadRefusal(b, u);
+  check(roundSource(b, u) === null && roundSplit(b, u).pool === 0 && /^No ammo to load: no loaded spare magazine, and no rounds for the 9mm pistol on them \(none in their pockets, rig or pack\)\. The base's 100 are in its stock, not to hand in a fight/.test(r2) && combatAct(st, { type: "reload", unit: u.id }) === r2 && u.ap === 2 && u.mag === 3 && b.pools[0][K9] === 100, `the team's bags only: refused, the stock untouched ("${r2}")`);
+  check(reloadText(b, u).startsWith(r2), "the Reload button says the same");
 }
 
-// 3. A pump shotgun with shells only in the pack: both actions straight out of it; one action: refused; Get shells, then 1.
+// 3. A pump shotgun with shells only in the pack: 6 straight out of it for both actions; one action: refused; no Get shells; the box to a pocket, then 1.
 {
-  console.log("A pump: the pack for both actions, or Get shells then 1");
+  console.log("A pump: the pack for both actions, or the box to a pocket then 1");
   const st = createWorld({ seed: seed + 2, factionCount: 4 });
   const a = fighter(st, "shotgun");
   withPack(a)[0] = newBox(K12, 25);
   const b = openBattle(st, [a]);
   const u = by(b, a);
   const s0 = shellsAt(b, u);
-  check(u.mag === 6 && s0.at === 0 && s0.pack === 19 && shellsInPack(b, u), `6 in the tube out of the pack's 25, none at hand, 19 in the pack: a Reload would dig in the pack (${s0.at} / ${s0.pack})`);
+  check(isStacked(u) && u.mag === 6 && packOf(a)[0].dur === 19 && s0.at === 0 && s0.box === 0 && s0.hand === 0 && s0.pack === 19 && !shellsInPack(b, u), `6 in the tube out of the pack's 25 (19 left in the box), none at hand: shellsAt ${JSON.stringify(s0)}; shellsInPack is false for your people`);
   again(b, u);
   const p = reloadPlan(b, u);
-  check(p.mode === "tube" && p.from === "pack" && p.cost === 2 && reloadRefusal(b, u) === "", `the plan: a tube loaded straight out of the pack, both actions (${p.mode} from ${p.from}, ${p.cost})`);
-  check(/^Both actions: [34](–4)? shells thumbed into the tube \(steady hands \+1\), dug out of the pack \(none at hand\)\. 0 shells at hand, 25 in the pack\. Get shells \(1 action\) brings 8 to hand instead/.test(reloadText(b, u)), `the Reload button: "${reloadText(b, u)}"`);
-  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 0 && u.mag >= 3 && u.mag <= 4 && /racks in [34] shells out of the pack \([34]\/6, 0 left at hand, both actions\)/.test(lastLog(b)), `Reload: ${u.mag} shells in for both actions, no refusal ("${lastLog(b)}")`);
-  check(packOf(a)[0].dur === 25 && roundsOf(b, u) === 25, "the box is the same: the shells leave it only when fired (virtual rounds)");
+  check(p.mode === "rounds" && p.kind === "tube" && p.from === "pack" && p.cost === 2 && p.n === 6 && reloadRefusal(b, u) === "", `the plan: 6 shells into the tube straight out of the pack, both actions (${p.mode}/${p.kind} ${p.n} from ${p.from}, ${p.cost})`);
+  check(/^Both actions: 6 shells thumbed into the tube \(12 gauge 00 buckshot\) from the pack \(both actions: the rounds are in the pack\)\. Up to 6 go in by hand a Reload/.test(reloadText(b, u)), `the Reload button: "${reloadText(b, u)}"`);
+  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 0 && u.mag === 6 && /racks in 6 12 gauge 00 buckshot from the pack \(6\/6, both actions\)\./.test(lastLog(b)), `Reload: 6 shells in for both actions, no refusal ("${lastLog(b)}")`);
+  check(packOf(a)[0].dur === 13, `the shells left the box as they went in (${packOf(a)[0].dur} left of 25: 6 at the start, 6 now)`);
   again(b, u);
   u.ap = 1;
   const r1 = reloadRefusal(b, u);
-  check(/^The shells are in the pack: both actions to reload from the pack \(or Get shells, 1 action/.test(r1) && combatAct(st, { type: "reload", unit: u.id }) === r1 && u.mag === 0 && u.ap === 1, `with one action left: refused, "${r1}"`);
-  check(combatAct(st, { type: "getshells", unit: u.id }) === "" && u.ap === 0 && shellsAt(b, u).hand === SHELLS.GRAB && !shellsInPack(b, u), `Get shells (1 action): ${SHELLS.GRAB} loose at hand`);
-  b.phase = "player"; u.ap = 2;
+  check(/^The shells are in the pack: both actions to reload from the pack \(the Inventory window moves a box to a pocket for 1\)\./.test(r1) && combatAct(st, { type: "reload", unit: u.id }) === r1 && u.mag === 0 && u.ap === 1 && packOf(a)[0].dur === 13, `with one action left: refused, "${r1}"`);
+  const g = combatAct(st, { type: "getshells", unit: u.id });
+  check(/^Shells load straight from what they carry \(a pocket or the rig 1 action, the pack both\): nothing to get out first\./.test(g) && u.ap === 1 && shellsAt(b, u).hand === 0 && shellsAt(b, u).at === 0, `Get shells is refused for your people, no action spent: "${g}"`);
+  // The Inventory window: the box to a pocket (1 action), then the Reload is 1.
+  check(combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), to: L(a, "pocket", 0) }) === "" && u.ap === 0 && a.pockets[0] && a.pockets[0].dur === 13 && u.handBoxes === 1 && u.pocketBoxes === 1, `the box moved to a pocket for 1 action (${a.pockets[0] && a.pockets[0].dur} shells at hand now)`);
   const p2 = reloadPlan(b, u);
-  check(p2.mode === "internal" && p2.from === "hand" && p2.cost === 1 && combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 1 && u.mag >= 3 && /racks in [34] shells \([34]\/6, [45] left at hand\)/.test(lastLog(b)), `then a Reload from the shells at hand: 1 action, ${u.mag} in ("${lastLog(b)}")`);
-  check(/^1 action: \d(–\d)? shells thumbed into the tube/.test(reloadText(b, u)) && /from the shells at hand/.test(reloadText(b, u)) && /the pack's take both actions/.test(reloadText(b, u)), `the Reload button (the tube's room caps it): "${reloadText(b, u)}"`);
-  // A box in a pocket: at hand, 1 action, as before.
+  check(p2.kind === "tube" && p2.from === "hand" && p2.cost === 1 && p2.n === 6 && shellsAt(b, u).at === 13 && shellsAt(b, u).pack === 0, `then the plan: 6 from the pocket for 1 action (${p2.n} from ${p2.from}, ${p2.cost})`);
+  b.phase = "player"; u.ap = 2;
+  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 1 && u.mag === 6 && /racks in 6 12 gauge 00 buckshot from a pocket \(6\/6\)\./.test(lastLog(b)) && a.pockets[0].dur === 7, `a Reload from the pocket: 1 action, 6 in, 7 left ("${lastLog(b)}")`);
+  check(/^The pump shotgun is full \(6\/6\)\./.test(reloadText(b, u)), `the Reload button (the tube full): "${reloadText(b, u)}"`);
+  // A box in a pocket from the start: at hand, 1 action.
   const st2 = createWorld({ seed: seed + 3, factionCount: 4 });
   const c = fighter(st2, "shotgun");
   c.pockets[0] = newBox(K12, 25);
   const b2 = openBattle(st2, [c]);
   const v = by(b2, c);
   again(b2, v);
-  check(reloadPlan(b2, v).cost === 1 && reloadPlan(b2, v).from === "hand" && combatAct(st2, { type: "reload", unit: v.id }) === "" && v.ap === 1 && v.mag >= 3, `a box in a pocket: 1 action, ${v.mag} in (as before)`);
+  check(reloadPlan(b2, v).cost === 1 && reloadPlan(b2, v).from === "hand" && combatAct(st2, { type: "reload", unit: v.id }) === "" && v.ap === 1 && v.mag === 6 && c.pockets[0].dur === 13, `a box in a pocket: 1 action, 6 in, 13 left of 25 (6 at the start)`);
 }
 
-// 4. Magazine swaps unchanged: rig 1, pocket 1, pack 2; a speedloader by where it is.
+// 4. Magazine swaps unchanged in cost (rig 1, pocket 1, pack 2) but physical; a speedloader only by { clip: i }, by where it is.
 {
-  console.log("Magazines and clips: unchanged");
+  console.log("Magazines and clips");
   const st = createWorld({ seed: seed + 4, factionCount: 4 });
   const a = fighter(st, "ar");
   a.gear.rig = newItem("chestrig");
@@ -200,22 +228,45 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
   withPack(a)[0] = newItem("mag_stanag_30");
   const b = openBattle(st, [a], 400);
   const u = by(b, a);
+  const K556 = "a_556_fmj";
+  check(u.mag === 30 && u.mags.filter((m) => m.where !== "gun").every((m) => m.item && stackN(m.item.stack) === m.cap) && b.pools[0][K556] === 400 - 110, `the gun and the three spares filled out of the base's stock at the start (${400 - b.pools[0][K556]} of 400)`);
   const costs = [];
-  for (let i = 0; i < 3; i++) { again(b, u); const p = reloadPlan(b, u); costs.push(`${p.mode}@${p.from}:${p.cost}`); check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 2 - p.cost, `swap ${i + 1}: ${p.mode} from ${p.from}, ${p.cost} action${p.cost === 1 ? "" : "s"}`); }
+  for (let i = 0; i < 3; i++) {
+    again(b, u);
+    const p = reloadPlan(b, u), where = p.from;
+    costs.push(`${p.mode}@${p.from}:${p.cost}`);
+    check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 2 - p.cost && u.mag === p.n && new RegExp(`reloads the assault rifle( \\(\\d+-round mag\\))? \\(${p.n}/${p.n}\\): a fresh magazine from ${where === "pack" ? "the pack" : where === "rig" ? "the rig" : "a pocket"}; the other goes there empty\\.`).test(lastLog(b)), `swap ${i + 1}: ${p.mode} from ${p.from}, ${p.cost} action${p.cost === 1 ? "" : "s"}, the emptied one goes there ("${lastLog(b)}")`);
+    const slot = u.mags.find((m) => m.where === where);
+    check(slot && slot.n === 0 && slot.item && stackN(slot.item.stack) === 0 && a.gear.weapon.mods.mag && a.gear.weapon.mods.mag !== slot.item, `the ${where}'s entry is the empty magazine now, the fresh one is the gun's fitted magazine`);
+  }
   check(costs.join(" ") === "swap@rig:1 swap@pocket:1 swap@pack:2", `the rig's first, then the pocket's, then the pack's (${costs.join(" ")})`);
   again(b, u, 3);
-  check(reloadPlan(b, u).mode === "topup" && reloadPlan(b, u).from === "pool" && reloadPlan(b, u).cost === 2, "no loaded spare left, the rounds in the team's bags: a top-up for 2 (as before)");
+  const p3 = reloadPlan(b, u);
+  check(p3.mode === "rounds" && p3.kind === "topup" && p3.n === 0 && /^No ammo to load: no loaded spare magazine, and no rounds for the assault rifle on them \(none in their pockets, rig or pack\)\. The base's 290 are in its stock, not to hand in a fight/.test(p3.why) && reloadRefusal(b, u) === p3.why && b.pools[0][K556] === 290, `no loaded spare left and nothing on them: the stock's 290 are no source ("${p3.why}")`);
+  // A speedloader: never the auto plan's; { clip: 0 } fills the cylinder out of their own rounds, 1 from a pocket, 2 from the pack, once a fight.
   const st2 = createWorld({ seed: seed + 5, factionCount: 4 });
   const c = fighter(st2, "revolver"), d = fighter(st2, "revolver");
   c.pockets[0] = newItem("speedloader");
+  c.pockets[1] = roundItem(K357, 20, true);
   withPack(d)[0] = newItem("speedloader");
+  packOf(d)[1] = roundItem(K357, 20, true);
   const b2 = openBattle(st2, [c, d], 100);
   const v = by(b2, c), w = by(b2, d);
+  check(v.clips.length === 1 && v.clips[0].where === "pocket" && !v.clips[0].used && w.clips.length === 1 && w.clips[0].where === "pack" && loose(c, K357) === 14 && loose(d, K357) === 14, "each has a speedloader (u.clips: a pocket / the pack) and 14 of their own 20 past the 6 loaded");
   again(b2, v); again(b2, w);
-  check(reloadPlan(b2, v).mode === "clip" && reloadPlan(b2, v).cost === 1 && reloadPlan(b2, w).mode === "clip" && reloadPlan(b2, w).cost === 2, "a speedloader in a pocket 1, in the pack 2 (as before)");
+  check(reloadPlan(b2, v).mode === "rounds" && reloadPlan(b2, v).cost === 1 && reloadPlan(b2, w).mode === "rounds" && reloadPlan(b2, w).cost === 2, "the auto plan never takes the speedloader: rounds by hand (1 from the pocket, 2 from the pack)");
+  const cv = reloadPlan(b2, v, { clip: 0 }), cw = reloadPlan(b2, w, { clip: 0 });
+  check(cv.mode === "clip" && cv.from === "pocket" && cv.cost === 1 && cv.n === 6 && cv.runs[0].where === "pocket" && cw.mode === "clip" && cw.from === "pack" && cw.cost === 2 && cw.n === 6 && cw.runs[0].where === "pack", `{ clip: 0 }: a speedloader in a pocket 1 action, in the pack 2, filled with 6 of their own rounds (${cv.cost} / ${cw.cost})`);
+  check(combatAct(st2, { type: "reload", unit: v.id, clip: 0 }) === "" && v.ap === 1 && v.mag === 6 && /reloads the \.357 revolver with a revolver speedloader: 6 \.357 Magnum FMJ \(6\/6\)\./.test(lastLog(b2)) && loose(c, K357) === 8 && v.clips[0].used, `the pocket's speedloader: 1 action, 6 in, 6 fewer in the pocket, used ("${lastLog(b2)}")`);
+  again(b2, v);
+  check(/was used already/.test(reloadPlan(b2, v, { clip: 0 }).why) && combatAct(st2, { type: "reload", unit: v.id, clip: 0 }) !== "" && v.mag === 0, `once a fight: "${reloadPlan(b2, v, { clip: 0 }).why}"`);
+  w.ap = 1;
+  check(/^The clip is in the pack: 2 actions\./.test(reloadRefusal(b2, w, { clip: 0 })) && combatAct(st2, { type: "reload", unit: w.id, clip: 0 }) !== "" && w.mag === 0 && loose(d, K357) === 14, "the pack's speedloader with one action left: refused, nothing spent");
+  w.ap = 2;
+  check(combatAct(st2, { type: "reload", unit: w.id, clip: 0 }) === "" && w.ap === 0 && w.mag === 6 && loose(d, K357) === 8, "with both: 6 in out of the pack's rounds");
 }
 
-// 5. The AI and the raid bot.
+// 5. The AI and the raid bot: a revolver from the pocket; a shotgun with shells only in the pack straight out of it (no Get shells).
 {
   console.log("The AI and the raid bot");
   const st = createWorld({ seed: seed + 6, factionCount: 4 });
@@ -226,10 +277,11 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
   const u = by(b, a), v = by(b, c), e = foes(b)[0];
   place(u, 5, 5); place(v, 5, 7); place(e, 12, 6); e.aware = true;
   loadMag(u, 0); loadMag(v, 0); u.ap = 2; v.ap = 2;
+  st.autoRetreat = false; // (the AI would sound the retreat against an unkillable foe: retreattest.js)
   autoPlayerTurn(st, { retreat: false });
-  check(logHas(b, new RegExp(`${a.name} reloads the \\.357 revolver \\(\\d/6 from a pocket\\)`)) && magIn(u) >= 1, `your side's AI: the revolver reloads from the pocket (1 action; ${magIn(u)}/6)`);
-  check(logHas(b, new RegExp(`${c.name} takes ${SHELLS.GRAB} shells of 12 gauge .* out of the pack`)) && logHas(b, new RegExp(`${c.name} racks in [34] shells \\(`)) && !logHas(b, /out of the pack \(.*both actions\)/), `the pump: a handful out of the pack (1 action), then a Reload from it (1), not both actions on the pack (${magIn(v)}/6)`);
-  // With one action left the pump still gets its handful out (the Reload waits for the next turn).
+  check(logHas(b, new RegExp(`${a.name} reloads the \\.357 revolver: 6 \\.357 Magnum FMJ from a pocket \\(6/6\\)\\.`)) && magIn(u) >= 5 && loose(a, K357) === 8, `your side's AI: the revolver reloads 6 from its own pocket (1 action; ${magIn(u)}/6 after its shot, ${loose(a, K357)} left of 20)`);
+  check(logHas(b, new RegExp(`${c.name} racks in 6 12 gauge 00 buckshot from the pack \\(6/6, both actions\\)\\.`)) && !logHas(b, /takes \d+ shells of .* out of the pack/) && magIn(v) === 6 && packOf(c)[0].dur === 13, `the pump with shells only in the pack: 6 straight out of it for both actions, no Get shells (${magIn(v)}/6, ${packOf(c)[0].dur} left in the box)`);
+  // With one action left and the shells in the pack the AI cannot reload (both actions): it waits, nothing spent.
   const st2 = createWorld({ seed: seed + 7, factionCount: 4 });
   const d = fighter(st2, "shotgun");
   withPack(d)[0] = newBox(K12, 25);
@@ -237,9 +289,10 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
   const w = by(b2, d), e2 = foes(b2)[0];
   place(w, 5, 5); place(e2, 12, 5); e2.aware = true;
   loadMag(w, 0); w.ap = 1;
+  st2.autoRetreat = false;
   autoPlayerTurn(st2, { retreat: false });
-  check(logHas(b2, new RegExp(`${d.name} takes ${SHELLS.GRAB} shells of .* out of the pack`)) && !logHas(b2, /out of the pack \(.*both actions\)/), `with one action: Get shells first (${shellsAt(b2, w).hand} at hand, ${magIn(w)}/6), never both actions on the pack`);
-  // The raid bot: a shotgunner whose shells are all in the team's bags takes a handful out first.
+  check(!logHas(b2, /racks in|takes \d+ shells/) && magIn(w) === 0 && packOf(d)[0].dur === 19 && !b2.over, `with one action: no Reload from the pack (both actions), no Get shells; the tube stays empty (${magIn(w)}/6), the box ${packOf(d)[0].dur}`);
+  // The raid bot: a shotgunner loads from the pocket packed for the trip (carrykit.js packShells), never from the team's bags.
   const st3 = createWorld({ seed: seed + 8, factionCount: 4 });
   const h3 = hub(st3);
   const g = fighter(st3, "shotgun");
@@ -249,40 +302,50 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
   if (res.error) check(false, `raid team launched (${res.error})`);
   else {
     const pt = res.party;
-    for (const it of g.pockets) if (it && /^a_12ga_/.test(it.key)) it.dur = 0; // (carrykit.js packShells: the trip's shells at hand, spent for this check)
+    check(loose(g, K12) === SHELLS.CARRY && pt.supplies[K12] === 40 - SHELLS.CARRY, `the trip's shells: ${SHELLS.CARRY} in a pocket, the other ${pt.supplies[K12]} in the team's bags`);
     pt.path = [tile.id]; pt.idx = 0; pt.phase = "engaged";
     const rb = inBrowser(() => (st3.combat = createBattle(st3, { mode: "raid", tile: tile.id, partyId: pt.id, canRetreat: true, ambush: null, handler: "reloadsourcetest", enemy: { kind: "mixed", count: 1, power: 3, groups: raidEnemies(st3, tile.id) }, raid: { heat0: 5 }, context: {} })));
     if (rb.raid && rb.raid.choose) rb.raid.choose = null;
     const ru = rb.units.find((x) => x.side === "player");
-    ru.hand = { buck: 0 }; loadMag(ru, 0);
+    const bags0 = rb.pools.reduce((n, p) => n + (p[K12] || 0), 0);
+    check(isStacked(ru) && ru.mag === 6 && loose(g, K12) === SHELLS.CARRY - 6 && bags0 === 40 - SHELLS.CARRY, `the tube filled out of the pocket at the start (${loose(g, K12)} left there), the bags' ${bags0} untouched`);
+    loadMag(ru, 0);
     for (const x of rb.units) if (x.side !== "player") x.aware = false;
-    const inPack = shellsInPack(rb, ru);
+    st3.autoRetreat = false;
     autoPlayerTurn(st3);
     const rb2 = st3.combat && st3.combat.units ? st3.combat : rb;
-    check(inPack && (logHas(rb2, new RegExp(`${g.name} takes \\d+ shells of .* out of the pack`)) || logHas(rb2, new RegExp(`${g.name} racks in`))) && !logHas(rb2, /out of the pack \(.*both actions\)/), "the raid bot with shells only in the bags: a handful out first, never both actions on the pack");
+    check(logHas(rb2, new RegExp(`${g.name} racks in 6 12 gauge 00 buckshot from a pocket \\(6/6\\)\\.`)) && !logHas(rb2, /takes \d+ shells of .* out of the pack|out of the pack \(.*both actions\)/) && magIn(ru) === 6 && loose(g, K12) === SHELLS.CARRY - 12 && rb2.pools.reduce((n, p) => n + (p[K12] || 0), 0) === bags0, `the raid bot: 6 from the pocket for 1 action (${loose(g, K12)} left there), no Get shells, the bags still ${bags0}`);
   }
 }
 
-// 6. The order of depletion: at hand, the pack, a teammate's, the pools.
+// 6. The order of depletion: a Reload takes from the pocket first, then (only when nothing is at hand) the pack, never a teammate's or the pools; shots touch no box.
 {
-  console.log("Depletion: hand, pack, mates, pools");
+  console.log("Depletion: the pocket, then the pack; never a teammate's or the pools");
   const st = createWorld({ seed: seed + 9, factionCount: 4 });
   const a = fighter(st, "pistol"), c = fighter(st, "pistol");
-  a.pockets[0] = newBox(K9, 5);
+  a.pockets[0] = newBox(K9, 20);
   withPack(a)[0] = newBox(K9, 5);
-  c.pockets[0] = newBox(K9, 5);
+  c.pockets[0] = newBox(K9, 20);
   const b = openBattle(st, [a, c]);
   b.pools[0][K9] = 100;
   const u = by(b, a);
+  check(u.mag === 15 && a.pockets[0].dur === 5 && packOf(a)[0].dur === 5 && c.pockets[0].dur === 5, "the start: each pistol's 15 out of its own pocket's box (5 left), the pack's 5 untouched");
+  const total0 = sideRounds(b);
   loadMag(u, 0);
   const r = roundSplit(b, u);
-  check(r.hand === 5 && r.pack === 5 && r.mate === 5 && r.pool === 100 && roundSource(b, u) === "hand", `roundSplit with the gun empty: ${JSON.stringify(r)}, the source the hand`);
-  check(takeBattleRounds(b, u, 3) === 3 && a.pockets[0].dur === 2 && packOf(a)[0].dur === 5, "3 rounds: out of the pocket's box first");
-  check(takeBattleRounds(b, u, 4) === 4 && a.pockets[0].dur === 0 && packOf(a)[0].dur === 3 && roundSource(b, u) === "pack", "4 more: the pocket's last 2, then 2 out of the pack; the source is the pack now");
-  check(takeBattleRounds(b, u, 5) === 5 && packOf(a)[0].dur === 0 && c.pockets[0].dur === 3 && roundSource(b, u) === "mate", "5 more: the pack's 3, then 2 of the teammate's; the source a teammate's");
-  check(takeBattleRounds(b, u, 5) === 5 && c.pockets[0].dur === 0 && b.pools[0][K9] === 98 && roundSource(b, u) === "pool", "5 more: the teammate's 3, then the team's bags; the source the pools");
-  b.pools[0][K9] = 0;
-  check(roundSource(b, u) === null && /no ammo/i.test(reloadRefusal(b, u)), "nothing left: no source, Reload refused");
+  check(r.hand === 5 && r.pack === 5 && r.mate === 0 && r.pool === 0 && roundSource(b, u) === "hand", `roundSplit with the gun empty: ${JSON.stringify(r)} (the teammate's 5 and the pools' 100 are not counted), the source the hand`);
+  u.ap = 2;
+  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 1 && u.mag === 5 && /tops up the 9mm pistol's magazine by hand: 5 9mm FMJ from a pocket \(5\/15\)\./.test(lastLog(b)) && loose(a, K9) === 5 && a.pockets[0] === null && packOf(a)[0].dur === 5, "a Reload: the pocket's last 5 (1 action), the pack's 5 untouched, the emptied box thrown away");
+  check(roundSource(b, u) === "pack" && reloadPlan(b, u).cost === 2 && reloadPlan(b, u).n === 5, "the source is the pack now (both actions): the pack only when nothing is at hand");
+  b.phase = "player"; u.ap = 2;
+  check(combatAct(st, { type: "reload", unit: u.id }) === "" && u.ap === 0 && u.mag === 10 && /tops up the 9mm pistol's magazine by hand: 5 9mm FMJ from the pack \(10\/15, both actions\)\./.test(lastLog(b)) && loose(a, K9) === 0, "then the pack's 5 for both actions (10/15), nothing left on them");
+  b.phase = "player"; u.ap = 2;
+  const r1 = reloadRefusal(b, u);
+  check(roundSource(b, u) === null && /^No ammo to load: no loaded spare magazine, and no rounds for the 9mm pistol on them \(none in their pockets, rig or pack\)\. The base's 100 are in its stock and 5 are on teammates, not to hand in a fight/.test(r1) && combatAct(st, { type: "reload", unit: u.id }) === r1 && u.mag === 10 && c.pockets[0].dur === 5 && b.pools[0][K9] === 100, `nothing on them: no source, Reload refused; the teammate's 5 and the stock's 100 never drawn on ("${r1}")`);
+  // Shots: off the top of the gun's stack; no box, no teammate's, no pool is touched.
+  check(takeBattleRounds(b, u, 3) === 3 && u.mag === 7 && stackN(u.stack) === 7 && c.pockets[0].dur === 5 && b.pools[0][K9] === 100, "3 rounds shot: out of the gun's stack (7/15), the teammate's box and the stock untouched");
+  check(takeBattleRounds(b, u, 20) === 7 && u.mag === 0 && takeBattleRounds(b, u, 1) === 0 && c.pockets[0].dur === 5 && b.pools[0][K9] === 100, "20 more asked for: only the 7 in the gun come out, then none (the shots never dig in a box)");
+  check(sideRounds(b) === total0 - 15 - 10, `the side's rounds: ${total0} at the start, 15 thrown away by the test, 10 shot: ${sideRounds(b)} (counted once throughout)`);
 }
 
 // 7. The Reload order and the weapon panel (UI).
@@ -295,30 +358,31 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
     const a = fighter(st, "revolver"), c = fighter(st, "revolver");
     a.pockets[0] = roundItem(K357, 12, true);
     withPack(c)[0] = roundItem(K357, 12, true);
-    c.pockets[1] = roundItem(K357, 4, true);
+    c.pockets[1] = roundItem(K357, 10, true);
     const b = openBattle(st, [a, c]);
     b.pools[0][K357] = 10;
     const u = by(b, a), v = by(b, c);
-    again(b, u); again(b, v);
     const res = [];
+    res.push([a.pockets[0].dur === 6 && c.pockets[1].dur === 4 && packOf(c)[0].dur === 12, "the start: 6 left in one's pocket; the other's cylinder came out of the pocket (4 left), the pack's 12 untouched"]);
+    again(b, u); again(b, v);
     const order = (x) => UI.unitOrders(st, b, x).list.find((o) => o.v === "reload");
     const oa = order(u), oc = order(v);
-    res.push([oa && oa.ok && oa.ap === 1 && /from a pocket/.test(oa.tip), `the pocket's Reload order: 1 action, the tip says from a pocket (${oa && oa.ap}, "${oa && oa.tip.slice(0, 70)}")`]);
-    res.push([oc && oc.ok && oc.ap === 1, "the other has 4 loose in a pocket too: 1 action from them first"]);
+    res.push([oa && oa.ok && oa.ap === 1 && /^\.357 revolver \(0\/6 now\)\. 1 action: 6 rounds in \(\.357 Magnum FMJ\) from a pocket\./.test(oa.tip), `the pocket's Reload order: 1 action, the tip says 6 from a pocket (${oa && oa.ap}, "${oa && oa.tip.slice(0, 70)}")`]);
+    res.push([oc && oc.ok && oc.ap === 1 && /1 action: 4 rounds in \(\.357 Magnum FMJ\) from a pocket\./.test(oc.tip), `the other has 4 loose in a pocket too: 1 action, those 4 first (${oc && oc.ap}, "${oc && oc.tip.slice(0, 70)}")`]);
     c.pockets[1] = null; refitKit(b, v, c);
     const oc2 = order(v);
-    res.push([oc2 && oc2.ok && oc2.ap === 2 && /from the pack/.test(oc2.tip) && /both actions/.test(oc2.tip), `the pack's Reload order: 2 actions, the tip says the pack and both actions (${oc2 && oc2.ap})`]);
+    res.push([oc2 && oc2.ok && oc2.ap === 2 && /Both actions: 6 rounds in \(\.357 Magnum FMJ\) from the pack \(both actions: the rounds are in the pack\)/.test(oc2.tip), `the pack's Reload order: 2 actions, the tip says the pack and both actions (${oc2 && oc2.ap})`]);
     v.ap = 1;
     const oc3 = order(v);
-    res.push([oc3 && !oc3.ok && /both actions to reload from the pack/.test(oc3.why || ""), `with one action: greyed, "${oc3 && oc3.why}"`]);
+    res.push([oc3 && oc3.ok && oc3.ap === 2 && oc3.why === "" && /both actions to reload from the pack \(the Inventory window moves a box to a pocket for 1\)\.$/.test(oc3.tip), `with one action: the order still opens the picker (the pack's load greyed there), its tip ends with the refusal (ok ${oc3 && oc3.ok}, "${oc3 && oc3.tip.slice(-90)}")`]);
     v.ap = 2; loadMag(v, 0);
     const info = HUD.weaponInfo(st, b, v);
-    res.push([info.rounds && info.rounds.hand === 0 && info.rounds.pack === 12 && info.rounds.mate === 12 && info.rounds.pool === 10, `weaponInfo.rounds: ${JSON.stringify(info.rounds)}`]);
+    res.push([info.rounds && info.rounds.hand === 0 && info.rounds.pack === 12 && info.rounds.mate === 0 && info.rounds.pool === 0, `weaponInfo.rounds: ${JSON.stringify(info.rounds)} (the teammate's 6 and the pools' 10 not counted)`]);
     const strip = (h) => String(h).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
     const txt = strip(HUD.weaponPanelHtml(st, b, v));
-    res.push([/0 rds at hand/.test(txt) && /12 in the pack/.test(txt) && /22 the team's/.test(txt), `the panel: at hand, in the pack, the team's ("${(txt.match(/\d+ rds at hand.*?team's/) || [""])[0]}")`]);
+    res.push([/0 rds at hand/.test(txt) && /12 in the pack/.test(txt) && !/the team's/.test(txt), `the panel: at hand, in the pack, never the team's ("${(txt.match(/\d+ rds at hand.*?in the pack/) || [""])[0]}")`]);
     const ta = strip(HUD.weaponPanelHtml(st, b, u));
-    res.push([/12 rds at hand/.test(ta) && !/in the pack/.test(ta) && /22 the team's/.test(ta), `the pocket's: "${(ta.match(/\d+ rds at hand.*?team's/) || [""])[0]}"`]);
+    res.push([/6 rds at hand/.test(ta) && !/in the pack/.test(ta) && !/the team's/.test(ta), `the pocket's: "${(ta.match(/\d+ rds at hand/) || [""])[0]}", no pack, no team's`]);
     return res;
   }).catch((err) => [[false, `UI checks ran (${err.stack || err.message})`]]);
   for (const [o, m] of out) check(o, m);
@@ -337,12 +401,13 @@ const loosePouch = Math.floor((ADMIN_KG + 1e-9) / itemLoad(roundItem(K9, 1, true
   const st2 = loadFromString(saveToString(st));
   const b2 = st2.combat;
   const u2 = b2.units.find((x) => x.sid === a.id), v2 = b2.units.find((x) => x.sid === c.id), w2 = b2.units.find((x) => x.sid === d.id);
-  check(u2.handBoxes === 1 && u2.pocketBoxes === 1 && v2.handBoxes === 0 && tracksMags(u2), "the loaded battle keeps handBoxes and pocketBoxes");
+  const a2 = st2.survivors.find((x) => x.id === a.id), c2 = st2.survivors.find((x) => x.id === c.id), d2 = st2.survivors.find((x) => x.id === d.id);
+  check(u2.handBoxes === 1 && u2.pocketBoxes === 1 && v2.handBoxes === 0 && tracksMags(u2) && isStacked(u2) && isStacked(v2) && isStacked(w2) && u2.mag === 0, "the loaded battle keeps handBoxes and pocketBoxes, the units stacked (physical), the guns empty");
   check(reloadCost(b2, u2) === 1 && reloadCost(b2, v2) === 2 && reloadPlan(b2, w2).from === "pack" && reloadPlan(b2, w2).cost === 2, "and the costs: the pocket 1, the pack 2, the pump's shells in the pack 2");
   b2.phase = "player";
-  check(combatAct(st2, { type: "reload", unit: u2.id }) === "" && u2.ap === 1 && u2.mag === 2, "a Reload from the pocket on the loaded battle: 1 action");
-  check(combatAct(st2, { type: "reload", unit: v2.id }) === "" && v2.ap === 0 && v2.mag === 2, "and from the pack: both");
-  check(combatAct(st2, { type: "reload", unit: w2.id }) === "" && w2.ap === 0 && w2.mag >= 3, "the pump straight out of the pack: both");
+  check(combatAct(st2, { type: "reload", unit: u2.id }) === "" && u2.ap === 1 && u2.mag === 6 && loose(a2, K357) === 0 && /from a pocket \(6\/6\)\./.test(lastLog(b2)), "a Reload from the pocket on the loaded battle: 1 action, 6 in, the pocket's 6 gone");
+  check(combatAct(st2, { type: "reload", unit: v2.id }) === "" && v2.ap === 0 && v2.mag === 6 && loose(c2, K357) === 0 && /from the pack \(6\/6, both actions\)\./.test(lastLog(b2)), "and from the pack: both, 6 in");
+  check(combatAct(st2, { type: "reload", unit: w2.id }) === "" && w2.ap === 0 && w2.mag === 6 && packOf(d2)[0].dur === 13 && /racks in 6 .* from the pack \(6\/6, both actions\)\./.test(lastLog(b2)), "the pump straight out of the pack: both, 6 in, 13 left in the box");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

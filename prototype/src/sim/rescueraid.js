@@ -50,6 +50,7 @@
 // alone (they make for a teammate), then make for the way out; the team goes for the cell, opens it (keys, picks,
 // force), cuts the ropes, then everyone evacuates.
 import { CELL, WEAPONS, KITS, active, isTied, cornerBlocked, meleeReach, unitAt, moveAlong, say, fx, playerUnit, refitUnit, reachable, pathTo, distField, canSee, adjacent, unitById, evacAt, combatAct, registerBattleLayout, registerBattleSize, registerCombatHandler, startCombat, enemyUnit, isRanged, loadMag } from "./combat.js";
+import { fillUnit } from "./mags.js";
 import { survivorById, skill, factionById, log, isNight, hub, addCard, localId } from "./world.js";
 import { FACTION_TYPES, GEAR } from "./data.js";
 import { captivesOf, freeCaptive, settleRescue, isCaptive } from "./conflicts.js";
@@ -287,6 +288,7 @@ function addCaptives(state, b, ids, cells) {
     const s = survivorById(state, id);
     if (!s || !isCaptive(s)) continue;
     const u = playerUnit(b, s);
+    fillUnit(b, u); // mags.js: a captive's gun (if any) loaded physically
     u.captive = true; u.tied = true;
     u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit: weapons picked up count at once
     const spot = free.shift() || fallbackSpot(b, u);
