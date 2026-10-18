@@ -603,15 +603,6 @@
         "process.env.PORT='5348'; require('C:/Dev/BrokenState/.claude/worktrees/fw-picks/prototype/server.cjs')"
       ],
       "port": 5348
-    },
-    {
-      "name": "carts",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "-e",
-        "process.env.PORT='5351'; require('C:/Dev/BrokenState/.claude/worktrees/carts/prototype/server.cjs')"
-      ],
-      "port": 5351
     }
   ]
 }
