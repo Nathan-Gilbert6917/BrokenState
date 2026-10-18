@@ -5,7 +5,7 @@
 // magazine never shows more than the team has, enemies reload, your side's AI and the raid bot reload, a save in the
 // middle of a battle keeps the magazines, a weapon swapped mid-raid (refitUnit), the UI's Reload button and I key.
 // Usage: node tools/magtest.js [seed]
-import { setRounds, giveRounds } from "../src/sim/ammo.js"; // rounds by calibre
+import { setRounds, giveRounds, newBox } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import {
   WEAPONS, createBattle, combatAct, registerCombatHandler, runEnemyPhase, enemyStep, endPlayerTurn, autoPlayerTurn, canFire,
@@ -20,7 +20,7 @@ import { gunMods, NO_MODS } from "../src/sim/gunmods.js";
 import { starterMags, magRoundsKg } from "../src/sim/carrykit.js";
 import { reloadPlan } from "../src/sim/mags.js";
 import { GEAR } from "../src/sim/data.js";
-import { rigPouches as ensureRigOf, itemLoad } from "../src/sim/inventory.js";
+import { rigPouches as ensureRigOf, itemLoad, packOf } from "../src/sim/inventory.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -284,11 +284,15 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   refitUnit(b, p, a);
   check(p.weapon === "shotgun" && p.mag === 0 && p.magMax === 6 && magEmpty(b, p), "a shotgun picked up: it comes empty (0/6), Reload to load it");
   p.ap = 2;
-  check(/no ammo/i.test(reloadRefusal(b, p)), "with no shells to hand it cannot be loaded (ammo.js: a gun takes its own calibre)");
+  check(/on them/.test(reloadRefusal(b, p)), "with no shells on them it cannot be loaded (mags.js SHELLS: a shotgun loads only what its shooter carries)");
   b.pools[0].a_12ga_buck = 20;
-  // mags.js SHELLS (tools/shotgunreloadtest.js): the shells came after the gun, so none are at hand: a Reload digs them
+  check(/on them/.test(reloadRefusal(b, p)) && /base's 20 are in its stock/.test(reloadRefusal(b, p)), `the base's 20 in its stock do not load it; the refusal says where they are ("${reloadRefusal(b, p)}")`);
+  // mags.js SHELLS (tools/shotgunreloadtest.js): a box of shells in their own backpack, none at hand: a Reload digs them
   // straight out of the pack for both actions (Get shells, 1 action, would bring a handful to hand instead).
-  check(reloadCost(b, p) === 2 && combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag >= 3 && p.mag <= 4 && p.ap === 0, `with shells only in the team's bags: a Reload straight from the pack (both actions) puts 3–4 in the pump's tube (${p.mag}/6: an internal magazine, a shell at a time)`);
+  a.gear.backpack = newItem("backpack"); packOf(a)[0] = newBox("a_12ga_buck", 20);
+  refitUnit(b, p, a);
+  p.ap = 2;
+  check(reloadCost(b, p) === 2 && combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag >= 3 && p.mag <= 4 && p.ap === 0, `with a box of shells in their backpack: a Reload straight from the pack (both actions) puts 3–4 in the pump's tube (${p.mag}/6: an internal magazine, a shell at a time)`);
   a.gear.weapon = null;
   refitUnit(b, p, a);
   check(p.weapon === "fists" && !hasMag(p) && magLabel(b, p) === "", "put down: fists, no magazine");

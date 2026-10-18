@@ -231,11 +231,12 @@ export function packMags(list, crew) {
   }
   return out;
 }
-// Shells at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's): a
-// shotgun loaded from loose shells (mags.js SHELLS) reloads only from what is at hand, so each shotgunner takes up to
-// SHELLS.CARRY of the shells of its load out of the team's packed rounds (supplies: the factory round, then the
-// bench's) into a pocket or a rig pouch: onto a stack of them there first, else a free pocket, else a free admin pouch.
-// What does not fit stays in the pack. Returns the lines for the log ("24 shells at hand (Ann)").
+// Shells at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's) and
+// for a base's defenders as a fight at its walls starts (combat.js createBattle, out of the base's stock): a shotgun
+// (mags.js SHELLS) loads only from the shells on the person, so each shotgunner takes up to SHELLS.CARRY of the shells
+// of its load out of the team's packed rounds (supplies: the factory round, then the bench's) into a pocket or a rig
+// pouch: onto a stack of them there first, else a free pocket, else a free admin pouch. What does not fit stays where
+// it was (the pack, the stock). Returns the lines for the log ("24 shells at hand (Ann)").
 /** @param {Record<string, number>} supplies @param {any[]} crew */
 export function packShells(supplies, crew) {
   const out = [];
