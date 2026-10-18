@@ -2425,6 +2425,18 @@ function drawUnitIso(ctx, state, b, s, H, now) {
 function drawGhost(ctx, state, b, q, H) {
   const s = { t: q.unit, wx: q.x + 0.5, wy: q.y + 0.5, z: standZ(b, q.x, q.y) };
   const [X, Y] = feet(s), S = FR.S;
+  if (q.noise) { // a shot or a blast heard, not seen (sim/crossfire.js): sound arcs, the sound's tag and a "?", fading with age
+    const a = q.age ? Math.max(0.35, 1 - 0.3 * q.age) : 1;
+    const col = q.noise === "flash" ? `rgba(255,245,200,${0.9 * a})` : q.noise === "blast" ? `rgba(255,150,90,${0.9 * a})` : `rgba(255,120,100,${0.9 * a})`;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+    for (const k of [6, 10, 14]) { ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, -Math.PI * 0.35, Math.PI * 0.35); ctx.stroke(); ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, Math.PI * 0.65, Math.PI * 1.35); ctx.stroke(); }
+    ctx.font = `800 ${Math.max(12, Math.round(5 * S))}px Segoe UI, sans-serif`;
+    ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = `rgba(0,0,0,${0.8 * a})`; ctx.fillStyle = col;
+    ctx.strokeText("?", X, Y - 5 * S); ctx.fillText("?", X, Y - 5 * S);
+    ctx.font = `700 ${Math.max(9, Math.round(3.2 * S))}px Segoe UI, sans-serif`;
+    ctx.strokeText(q.tag || "NOISE?", X, Y - 16 * S); ctx.fillText(q.tag || "NOISE?", X, Y - 16 * S);
+    return;
+  }
   if (q.heard) { // heard, not seen (sim/hearing.js): a "?" with sound arcs, no silhouette
     ctx.strokeStyle = "rgba(255,209,102,0.7)"; ctx.lineWidth = 1.5;
     for (const k of [5, 8, 11]) { ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, -Math.PI * 0.3, Math.PI * 0.3); ctx.stroke(); ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, Math.PI * 0.7, Math.PI * 1.3); ctx.stroke(); }

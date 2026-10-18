@@ -33,6 +33,7 @@ import { noticeRange, earshot } from "../sim/stealth.js";
 import { switchOptions, switchAt, roomAt, roomLit, INDOOR } from "../sim/indoorlight.js"; // a raid's dark rooms and light switches
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
 import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chips, the Visor toggle (sim/helmets.js)
+import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out of sight: markers in the fog with a guess of the sound
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { roomText, totalRoom } from "../sim/prisoners.js"; // jailhouse: prisoner room at your bases
@@ -190,7 +191,7 @@ function view(b) {
   const reach = u && active(u) && u.ap > 0 && b.phase === "player" && !held(b, u) ? reachable(b, u, SIM.moveMob(u) * u.ap, { manual: true }) : null; // an order by hand may walk into fire
   const seen = new Set((hold ? b.units.filter((e) => e.side !== "player" && active(e) && eyes.some((eye) => canSeeAt(b, eye, e.x, e.y)))
     : b.units.filter((e) => e.side !== "player" && active(e) && (b.over || playerSees(b, e)))).map((e) => e.id)); // the enemy and the third side (sim/thirdside.js)
-  const ghosts = b.over ? [] : hold ? planGhosts(b) : enemyGhosts(b);
+  const ghosts = b.over ? [] : hold ? planGhosts(b) : enemyGhosts(b).concat(noiseGhosts(b)); // sim/crossfire.js: shots and blasts heard, not seen, with a guess
   const known = rememberSeen(b, vis);
   cui.cache = { key, vis, reach, seen, u, ghosts, known };
   return cui.cache;
@@ -2026,7 +2027,7 @@ function stealthButtons(state, b, u, btn) {
   for (const k of kinds) {
     const T = THROWABLES[k];
     const what = T.fx || T.decoy ? GEAR[k].desc : T.self ? `1 action: blow ${T.label} where ${u.name.split(" ")[0]} stands. Unaware guards and the dead within ${T.radius} tiles come to look. Not used up.`
-      : `1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}.`;
+      : `1 action: throw ${T.label} up to ${T.range} tiles. Unaware guards and the dead within ${T.radius} tiles go to look (3 turns)${T.turns > 1 ? `; it keeps ringing for ${T.turns} turns` : ""}${T.heat ? `; Heat +${T.heat} in a raid` : ""}.${b.raid ? " The dead that find raiders where it landed fall on them: land one next to their group while nobody of theirs has seen you, and let them fight it out." : ""}`;
     html += btn("throw", `${T.self ? "Blow" : "Throw"} ${esc(GEAR[k].name.toLowerCase())}${T.keep ? "" : ` (${have[k]})`}`, `${what} ${T.keep ? "" : `${have[k]} left.`}`, ap > 0, k === kinds[0] ? "G" : "", { k, on: cui.mode === "throw" && cui.throwKey === k, why: ap > 0 ? "" : NO_AP });
   }
   return html;
@@ -2372,6 +2373,7 @@ function previewHtml(b, state = null) {
   }
   // A last-seen ghost (sim/combat.js enemyGhosts): where an enemy was when your people last saw it.
   const ghost = (v.ghosts || []).find((g) => g.x === h.x && g.y === h.y && !v.vis[h.y * W + h.x]);
+  if (ghost && ghost.noise) return `<b>${esc(ghost.label)} heard</b> <span class="muted">${ghost.age ? `${ghost.age} turn${ghost.age === 1 ? "" : "s"} ago` : "this turn"}${ghost.n > 1 ? `, ${ghost.n} times` : ""}, somewhere about here, out of sight: ${esc(ghost.guess)}. The dead hear it too${b.raid ? " (Heat), and while nobody of theirs has seen you they go to look there, not for you" : ""}.</span>`;
   if (ghost && ghost.heard) return `<b>Heard something</b> <span class="muted">here on turn ${ghost.turn}: moving or firing, out of sight. Your people hear what they cannot see within a few tiles (ear protection and helmets change how far; nothing while deafened).</span>`;
   if (ghost) return `<b>${esc(ghost.name)}</b> <span class="muted">last seen here on turn ${ghost.turn}. Nobody sees this tile now: it may have moved.</span>`;
   if (b.phase === "deploy") {

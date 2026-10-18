@@ -79,6 +79,7 @@ import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fle
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { volFought } from "./volunteers.js"; // volunteers: an allied group's people with your team, moved by their AI (volunteerTurn below)
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
+import { crossFoes, crossTurn, crossDraw, crossHit, noteShot, crossRound } from "./crossfire.js"; // a raid's raiders and dead fight on contact; their noise draws the dead to them while you are unseen; shots heard, not seen
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
@@ -2915,7 +2916,7 @@ export function throwSpear(b, u, x, y, s = null) {
     line.text = `${u.name} throws the ${w.name.toLowerCase()}${off ? " (it flies wide)" : ""}: ${crit ? "critical hit on" : "it hits"} ${t.name} for ${eff}.${meleeAfter(b, u, t, w, crit)}`;
     line.k = u.side === "player" ? (t.side === "player" ? "danger" : "good") : "danger";
     fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: u.side });
-    if (t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+    if (t.side === "enemy" && !t.dead && !t.aware && !crossHit(b, u, t)) alertPod(b, t.pod, `${t.name} cries out!`); // crossfire.js
   } else line.text = `${u.name} throws the ${w.name.toLowerCase()}${off || glance ? " and it flies wide" : ""}: a miss.`;
   (b.spears || (b.spears = [])).push({ id: b.nextId++, x: lx, y: ly, f: u.f || 0, key, owner: u.id, side: u.side, name: w.name });
   unarm(b, u, s);
@@ -3142,7 +3143,7 @@ function trackGhosts(b) {
     if (playerSees(b, e)) g[e.id] = [e.x, e.y, b.turn, e.f || 0]; // [x, y, turn, floor]
   }
 }
-const playerSeesCell = (b, x, y) => b.units.some((u) => u.side === "player" && active(u) && canSeeAt(b, u, x, y));
+export const playerSeesCell = (b, x, y) => b.units.some((u) => u.side === "player" && active(u) && canSeeAt(b, u, x, y));
 // The ghosts to draw: enemies not seen now with a last-seen spot.
 export function enemyGhosts(b) {
   if (!b.ghosts) return [];
@@ -3657,12 +3658,13 @@ export function createBattle(state, setup) {
 // Who a unit fights. Zombies drawn in by noise attack anyone alive, and raiders shoot back.
 // thirdside.js: the third side fights its own foes; enemy people go after it by enemyTargetsThird; the dead go for
 // anyone; your people never go after it on their own (only an order to shoot one does: damage turns it hostile).
+// crossfire.js: in a raid the dead add the raiders they are in contact with, and the raiders the dead coming at them.
 function foesOf(b, u) {
   if (u.side === "third") return thirdFoes(b, u);
   if (u.wild) return b.units.filter((o) => active(o) && o.kind !== "zombie");
-  if (u.side === "enemy" && u.kind === "human") return b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u))));
+  if (u.side === "enemy" && u.kind === "human") return crossFoes(b, u, b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u)))));
   // A Sleeper lying where it is (sleepers.js) is shot only by order: the AI keeps clear of it.
-  return b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && (o.side === "third" || o.dormant)));
+  return crossFoes(b, u, b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && (o.side === "third" || o.dormant))));
 }
 
 // ---------- actions ----------
@@ -4007,15 +4009,16 @@ export function fire(b, a, t, opts = {}) {
   line.k = a.side === "player" ? (hits ? "good" : "info") : hits ? "danger" : "info";
   if (trig.jam) { jamGun(b, a, trig.jam); say(b, `${a.name}'s ${gunWord(a)} jams: ${jamLabel(a).toLowerCase()}!`, a.side === "player" ? "danger" : "good"); }
   gunfireAlert(b, a, w, noise, "The muffled shots still carry.", "The gunshots alert everything nearby.", "The gunshots alert everyone nearby.");
+  noteShot(b, a, w, noise, moded && mode !== "single"); // crossfire.js: a shot of theirs your people hear but do not see: a marker in the fog with a guess of the gun
   // Any hit that leaves a sleeper alive wakes its group, however quiet the weapon (a crossbow bolt, a shot from
-  // beyond earshot in a raid).
-  if (hits && t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+  // beyond earshot in a raid). crossfire.js: one of the dead hit by a raider goes for the shooter instead.
+  if (hits && t.side === "enemy" && !t.dead && !t.aware && !crossHit(b, a, t)) alertPod(b, t.pod, `${t.name} cries out!`);
   if (w.mounted) afterTurretBurst(b, a, t, rolls > 0); // the turret: its belt, Heat, the pin (none when it jammed before firing)
 }
 // Who hears a shot (fire, suppressing fire): in a raid those near it, a muffled one near it, else everyone.
 function gunfireAlert(b, a, w, noise, muffled, raid, all) {
-  if (noise && b.raid) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? muffled : raid);
-  else if (noise && noise < w.noise) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), muffled);
+  if (noise && b.raid) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? muffled : raid, a);
+  else if (noise && noise < w.noise) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), muffled, a);
   else if (noise) alertAll(b, all);
 }
 // Over-penetration (section 20, R6): a hit that got through the armour (or killed) carries on, by the round's chance
@@ -4070,12 +4073,13 @@ export function suppress(b, a, x, y) {
   fx(b, { type: "shot", from: [a.x, a.y], to: [x, y], hit: false, side: a.side, suppress: true, rounds: trig.fired });
   if (trig.jam) { jamGun(b, a, trig.jam); say(b, `${a.name}'s ${gunWord(a)} jams: ${jamLabel(a).toLowerCase()}!`, a.side === "player" ? "danger" : "good"); }
   if (trig.fired) gunfireAlert(b, a, w, noise, "The muffled shots still carry.", "The gunfire alerts everything nearby.", "The gunfire alerts everyone nearby.");
+  if (trig.fired) noteShot(b, a, w, noise, true); // crossfire.js: heard, not seen
 }
 
 // Where a blow landed and what took it, for its sound (ui/sfx-melee.js): loc, the armour's material (armour.js mat:
 // soft, padding, hard, steel, ceramic) and whether the blow went through it.
 const blowFx = (h) => (h.piece ? { loc: h.loc, mat: (armourSpec(h.piece.key) || {}).mat || "hard", through: !!h.through } : h.loc ? { loc: h.loc } : {});
-function strike(b, a, t) {
+export function strike(b, a, t) {
   if (nlStrike(b, a, t)) return; // nonlethal.js: pulling the blows on a living person
   const o = meleeOdds(b, a, t);
   const rng = b.rng;
@@ -4101,7 +4105,7 @@ function strike(b, a, t) {
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side });
   }
   // A struck sleeper that survives wakes its group.
-  if (t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+  if (t.side === "enemy" && !t.dead && !t.aware && !crossHit(b, a, t)) alertPod(b, t.pod, `${t.name} cries out!`); // crossfire.js: one of theirs struck by the other half of their side: no wake to you
 }
 
 function heal(b, u, t) {
@@ -4696,6 +4700,7 @@ export function runEnemyPhase(state) {
 
 function startPlayerTurn(state, b) {
   heardGhosts(b); // hearing.js: the enemies your people heard move or fire unseen ("?" markers), before the ears tick
+  crossRound(b); // crossfire.js: the heard-noise markers fade
   tickEars(b, ["player"]); // hearing.js: deafness and a daze wear off a turn
   stunTurnEnd(b, ["enemy", "third"]); // throwables.js: their stun wears off with the enemy turn
   b.turn++;
@@ -4799,7 +4804,7 @@ export function shotPriority(b, t) {
   if (t.shotPri) v *= t.shotPri; // a unit marked as the one to kill (hivecrawl.js: the Hivemind, its brood dies with it)
   return v;
 }
-function bestShot(b, u, foes, opts = {}) {
+export function bestShot(b, u, foes, opts = {}) {
   if (!canFire(b, u)) return null;
   let best = null;
   for (const t of foes) {
@@ -4898,6 +4903,7 @@ function aiUnit(b, u) {
   }
   const rng = b.rng;
   if (u.kind === "human") aiFlashlight(b, u, true); // ailights.js: a flashlight on once they know the fight is on, in the dark
+  if (crossTurn(b, u)) return; // crossfire.js: an unaware raider with the dead on them, or one of the dead with raiders in reach: they fight each other
   if (!u.aware && stealthAI(b, u)) return; // stealth.js: finding bodies, going to look where a bottle landed
   if (!u.aware && b.raid) {
     patrol(b, u);
@@ -6576,8 +6582,10 @@ export function notice(b, e) {
 }
 
 // Noise wakes everything within earshot (raids, and suppressed shots in ordinary battles; else everyone wakes).
-export function alertNear(b, x, y, radius, why) {
+// src: who made it (crossfire.js: one of theirs while you are still unseen draws the unaware to the spot, nobody wakes).
+export function alertNear(b, x, y, radius, why, src = null) {
   bindDims(b);
+  if (src && crossDraw(b, x, y, radius, src, why)) return;
   const near = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u) && dist(u.x, u.y, x, y) <= radius);
   if (!near.length && !b.floors) return;
   const pods = new Set(near.map((u) => u.pod));
