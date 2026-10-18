@@ -34,7 +34,7 @@ function box() { return { innerHTML: "", firstElementChild: null }; }
 const hudEl = {
   isConnected: true, _html: "", boxes: null, classes: new Set(),
   get innerHTML() { return this._html; },
-  set innerHTML(v) { this._html = v; this.boxes = { ".bh-rosterbox": box(), ".bh-targetbox": box(), ".bh-weaponbox": box() }; },
+  set innerHTML(v) { this._html = v; this.boxes = { ".bh-rosterbox": box(), ".bh-targetbox": box() }; },
   get firstChild() { return this.boxes ? {} : null; },
   querySelector(sel) { return this.boxes ? this.boxes[sel] || null : null; },
   classList: { toggle(c, on) { if (on) hudEl.classes.add(c); else hudEl.classes.delete(c); } },
@@ -51,7 +51,7 @@ UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, get
 const cui = UI.cui;
 const draw = (st) => { texts = []; try { UI.drawCombat(st, 1e9); return ""; } catch (e) { return e.stack.split("\n").slice(0, 3).join(" "); } };
 const roster = () => hudEl.boxes[".bh-rosterbox"].innerHTML;
-const weapon = () => hudEl.boxes[".bh-weaponbox"].innerHTML;
+const weapon = (st) => (/<div class="bb-weapon">([\s\S]*?)<div class="bb-ctls">/.exec(UI.renderCombatBar(st)) || [])[1] || ""; // the weapon panel: on the bottom bar (ui/battlebar.js)
 const target = () => hudEl.boxes[".bh-targetbox"].innerHTML;
 const strip = (h) => h.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 if (!HUD.HUD.open) HUD.toggleHud(true);
@@ -131,11 +131,11 @@ function openBattle(state, crew, ammo = 200) {
   info = HUD.weaponInfo(st, b, mac);
   const mo = C.meleeOdds(b, mac, { x: mac.x, y: mac.y, hunker: false });
   check(info.melee && info.melee.chance === mo.chance && info.melee.dmg[0] === mo.dmg[0] && /Melee/.test(HUD.weaponPanelHtml(st, b, mac)) && !info.mag, `machete: Melee ${info.melee && info.melee.chance}% ${mo.dmg.join("–")} dmg, no magazine`);
-  // The DOM: the selected unit's panel lands in #cbhud.
+  // The DOM: the selected unit's panel lands on the bottom bar (#cbbar).
   draw(st); // the first frame of a battle picks its own unit (ui/combat.js sync)
   cui.sel = sg.id;
   const e = draw(st);
-  check(!e && strip(weapon()).includes(`${C.magShown(b, sg)} / ${C.magMaxOf(sg)}`), `drawn: the selected shotgunner's panel in #cbhud${e ? ` (${e})` : ""}`);
+  check(!e && strip(weapon(st)).includes(`${C.magShown(b, sg)} / ${C.magMaxOf(sg)}`), `drawn: the selected shotgunner's panel on the bottom bar${e ? ` (${e})` : ""}`);
 }
 
 // ---------- 2. the hit chance ----------
@@ -168,7 +168,7 @@ console.log("The hit chance");
         if (Math.abs(sum - r.aim) > 1e-6 || Math.max(5, Math.min(95, Math.round(r.aim))) !== o.chance || r.chance !== o.chance) sumWrong++;
         // the panel's odds line
         cui.hover = { x: t.x, y: t.y, px: 800, py: 450 };
-        const p = UI.renderCombatPanel(st);
+        const p = UI.renderCombatScreen(st);
         if (p.includes(`<b class="cbbig">${o.chance}%</b>`) && /bh-bd/.test(p)) panelLine++;
       }
       // all four view turns: the same number over the hovered enemy, nothing NaN
@@ -265,14 +265,14 @@ console.log("The squad strip");
   for (let i = 0; i < 60; i++) { ISO.iso.lastT = 1e9 - 50; draw(st); } // 50 ms a frame (isoview.js stepCamera)
   const p = mine.find((x) => x.id === cui.sel);
   check(!new RegExp(`class="bh-row[^"]* off" data-action="cb-sel" data-id="${p.id}"`).test(roster()), `centred on ${p.name}: their row is on screen again`);
-  // The fold key (Backquote): a narrow strip, no weapon panel; again: open.
+  // The fold key (Backquote): a narrow strip (the weapon panel stays on the bottom bar); again: open.
   const before = HUD.HUD.open;
   UI.combatKey(st, { code: "Backquote", shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {} });
   draw(st);
-  check(HUD.HUD.open === !before && /bh-roster folded/.test(roster()) && weapon() === "", "` folds the strip (a narrow column) and hides the weapon panel");
+  check(HUD.HUD.open === !before && /bh-roster folded/.test(roster()) && weapon(st) !== "", "` folds the strip (a narrow column); the weapon panel stays on the bottom bar");
   UI.combatAction(st, "cb-view", { v: "hud" });
   draw(st);
-  check(HUD.HUD.open && !/folded/.test(roster()) && weapon() !== "", "the strip's button opens it again");
+  check(HUD.HUD.open && !/folded/.test(roster()), "the strip's button opens it again");
   // Downed and dead: their state on the row.
   const d = mine[1];
   if (d) {

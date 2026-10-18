@@ -59,6 +59,7 @@ export const KEYMAP = [
   { id: "win.palette", label: "Search (command palette)", group: "Windows", ctx: "map", keys: ["Ctrl+KeyK", "Slash"] },
   { id: "team.next", label: "Next team waiting for orders", group: "Teams", ctx: "map", keys: ["Tab", "KeyN"] },
   { id: "team.prev", label: "Previous team waiting for orders", group: "Teams", ctx: "map", keys: ["Shift+Tab", "Shift+KeyN"] },
+  { id: "team.inventory", label: "The selected team's inventory", group: "Teams", ctx: "map", keys: ["Shift+KeyB"] },
   ...range(9).map((n) => ({ id: `base.${n}`, label: n === 1 ? "Jump to the hub (base 1)" : `Jump to base ${n}`, group: "Bases", ctx: "map", keys: [`F${n}`] })),
   ...range(9).map((n) => ({ id: `cam.save${n}`, label: `Save camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Ctrl+Digit${n}`, `Alt+Digit${n}`, `Ctrl+Numpad${n}`, `Alt+Numpad${n}`] })),
   ...range(9).map((n) => ({ id: `cam.go${n}`, label: `Go to camera spot ${n}`, group: "Camera spots", ctx: "map", keys: [`Shift+Digit${n}`, `Shift+Numpad${n}`] })),
@@ -76,13 +77,15 @@ export const KEYMAP = [
   { id: "bview.panDown", label: "Pan down (held)", group: "Battle view", ctx: "battle", keys: ["KeyS", "ArrowDown"] },
   { id: "bview.panLeft", label: "Pan left (held)", group: "Battle view", ctx: "battle", keys: ["KeyA", "ArrowLeft"] },
   { id: "bview.panRight", label: "Pan right (held)", group: "Battle view", ctx: "battle", keys: ["KeyD", "ArrowRight"] },
-  // Q / E turn the view (as in most games that turn a camera); , and . (the keys before) still do too.
+  // Q / E turn the view an eighth (as in most games that turn a camera; ui/isoview.js isoRotate: diagonal, straight,
+  // diagonal...); , and . (the keys before) still do too.
   { id: "bview.rotLeft", label: "Turn the view left", group: "Battle view", ctx: "battle", keys: ["KeyQ", "Comma"] },
   { id: "bview.rotRight", label: "Turn the view right", group: "Battle view", ctx: "battle", keys: ["KeyE", "Period"] },
   { id: "bview.zoomIn", label: "Zoom in", group: "Battle view", ctx: "battle", keys: ["Equal", "NumpadAdd"] },
   { id: "bview.zoomOut", label: "Zoom out", group: "Battle view", ctx: "battle", keys: ["Minus", "NumpadSubtract"] },
   { id: "bview.center", label: "Center on the selected unit", group: "Battle view", ctx: "battle", keys: ["Home"] }, // V before (V is Melee now)
   { id: "bview.roofs", label: "Roofs on / off", group: "Battle view", ctx: "battle", keys: ["KeyB"] },
+  { id: "bview.cones", label: "View cones on / off (your people and the enemies you see)", group: "Battle view", ctx: "battle", keys: ["Alt+KeyC"] }, // Shift+B is the inventory
   { id: "bview.floorUp", label: "Show the floor above", group: "Battle view", ctx: "battle", keys: ["PageUp"] },
   { id: "bview.floorDown", label: "Show the floor below", group: "Battle view", ctx: "battle", keys: ["PageDown"] },
   { id: "battle.cancel", label: "Cancel the current action, close a question", group: "Battle", ctx: "battle", keys: ["Escape"], fixed: true },
@@ -93,8 +96,10 @@ export const KEYMAP = [
   ...range(9).map((n) => ({ id: `battle.unit${n}`, label: `Select unit ${n}`, group: "Battle units", ctx: "battle", keys: [`Digit${n}`] })),
   { id: "battle.autoplay", label: "The AI plays your side (again: take back control)", group: "Battle", ctx: "battle", keys: ["Shift+KeyA"] },
   { id: "battle.retreatAll", label: "Sound the retreat (on a wall map: fall back to the yard)", group: "Battle", ctx: "battle", keys: ["Shift+KeyR"] },
+  { id: "battle.inventory", label: "The selected survivor's inventory (look only)", group: "Battle", ctx: "battle", keys: ["Shift+KeyB"] },
   { id: "battle.clear", label: "The area is clear enough: end the fight", group: "Battle", ctx: "battle", keys: ["Shift+KeyC"] },
-  { id: "bview.hud", label: "Fold or open the squad strip and the weapon panel", group: "Battle view", ctx: "battle", keys: ["Backquote"] }, // ui/battlehud.js
+  { id: "bview.hud", label: "Fold or open the squad strip", group: "Battle view", ctx: "battle", keys: ["Backquote"] }, // ui/battlehud.js
+  { id: "bview.log", label: "Show or hide the log window (a raid)", group: "Battle view", ctx: "battle", keys: ["Shift+KeyM"] }, // ui/logwindow.js
   { id: "battle.search", label: "Search the container or body next to the unit", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyS"], v: "search" },
   { id: "battle.ground", label: "Ground: put things down, pick them up", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyX"], v: "ground" },
   { id: "battle.quick", label: "Quick search (raid)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyQ"], v: "quick" },
@@ -117,7 +122,20 @@ export const KEYMAP = [
   ...[["firemode", "Fire mode: single, burst, auto (free)", "Shift+KeyF"], ["unjam", "Clear a jam (Unjam)", "Shift+KeyJ"], ["suppress", "Suppressing fire (pick where)", "Shift+KeyO"],
     ["throwspear", "Throw the spear", "Shift+KeyG"], ["pickspear", "Pick up your thrown spear", "Shift+KeyP"], ["ammocycle", "Reload: pick the next kind of round", "Shift+KeyI"],
     ["visor", "Raise or lower the visor (free)", "Shift+KeyY"],
-    ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"]]
+    ["face", "Face: pick the way to face (free)", "Shift+KeyW"], ["sneak", "Sneak on / off (free)", "Shift+KeyZ"],
+    ["lights", "Lights: the room's light switch on / off (raids; 1 action)", "Alt+KeyK"], // sim/indoorlight.js; every Shift letter is taken in a battle (Alt+L is the flashlight)
+    // sim/combat.js switchAct: a light, night vision on or off (free). Every Shift letter but M and N is taken (and
+    // Shift+N is the map's, free to rebind onto in battle: tools/navtest.js), so they sit on Alt: L for the light, N
+    // for night vision.
+    ["light", "Light on / off (free)", "Alt+KeyL"], ["nvg", "Night vision on / off (free)", "Alt+KeyN"],
+    ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"],
+    // sim/combat.js handoverAct: trade with the teammate next to them in their view cone (1 action a move). H is
+    // Hunker down and Shift+H Heal, so it sits on Alt+H.
+    ["handover", "Hand over: trade with the teammate next to them in their view cone (1 action a move)", "Alt+KeyH"],
+    // sim/barricade.js: furniture shoved a tile, boards nailed across a door or window, the boards torn down (Alt: every
+    // Shift letter is taken; not Alt+D, E or F, which a browser takes for its own menus).
+    ["shove", "Shove: a piece of furniture next to them one tile (2 actions)", "Alt+KeyS"], ["boardup", "Board up: boards and nails across the door or window next to them (2 actions)", "Alt+KeyB"],
+    ["teardown", "Tear down: the boards next to them (2 actions)", "Alt+KeyJ"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 
   // ---------- the timelapse (ui/timelapse.js tlKey) ----------

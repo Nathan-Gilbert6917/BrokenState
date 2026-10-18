@@ -115,7 +115,7 @@
 import { foodIn, takeFood } from "./foods.js"; // days of food (every kind)
 import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
 import { day } from "./world.js";
-import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast and dinner too (22 of 24 hours)
+import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast, lunch and dinner too (21 of 24 hours)
 import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
 import { weightOf, medOf, workingPeople } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
 import { jailWork, jailBuilt, GROUP_JAIL } from "./groupjails.js"; // jailhouse: the groups' jails (abstract tiers)

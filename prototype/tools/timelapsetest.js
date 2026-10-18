@@ -154,7 +154,10 @@ for (const e of c.events) byKind[e.kind] = (byKind[e.kind] || 0) + 1;
 const withTile = c.events.filter((e) => e.tile >= 0).length;
 console.log(`  ${c.events.length} captions (${Object.entries(byKind).map(([k, v]) => `${k} ${v}`).join(", ")}), ${c.events.filter((e) => e.major).length} major, ${withTile} with a map position`);
 check(c.events.every((e, i) => i === 0 || e.h >= c.events[i - 1].h), "captions in time order");
-check(c.events.some((e) => /has fallen/.test(e.text)), "game-over caption");
+// The game-over caption: "<base> has fallen" while a base stands, or where the last base stood when the
+// crew died on the road after losing it (chronicle.js lastBaseText; the retreat case below checks its words).
+const over = c.events.find((e) => e.h === c.overAt && e.kind === "death" && e.major && /^Every survivor is dead/.test(e.text));
+check(over && (/has fallen on day \d+/.test(over.text) || (!hub(state) && /The map marks where/.test(over.text))), `game-over caption ("${over ? over.text : ""}")`);
 check(c.events.some((e) => / died /.test(e.text)), "survivor deaths captioned");
 const show = (e) => `    d${Math.floor(e.h / 24) + 1} ${String(e.h % 24).padStart(2, "0")}h [${e.kind}${e.major ? "*" : ""}${e.tile >= 0 ? " @" + e.tile : ""}] ${e.text}`;
 console.log("  first:");

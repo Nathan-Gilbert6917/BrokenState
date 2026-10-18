@@ -157,6 +157,10 @@ const now = () => (typeof performance !== "undefined" ? performance.now() : 0);
 
 function record(state, c) {
   const t0 = now();
+  // Captions said more than twice the repeat window ago can never hold one back again (caption: a repeat within
+  // DEDUPE_HOURS; a caption's hour lags the clock by a frame's gap at most, a day): forgotten, so the save does not
+  // carry every caption the run ever made.
+  for (const [k, h] of c.said) if (state.hour - h >= 2 * DEDUPE_HOURS) c.said.delete(k);
   const n = c.tiles, tiles = state.tiles;
   const first = !c.frames.length;
   const key = c.frames.length % KEY_EVERY === 0;
@@ -303,7 +307,13 @@ function captionTile(state, c, text) {
   for (const b of c.bases || []) if (text.includes(b.name)) return b.tile; // a base lost since the last frame
   // A place named in the line ("Fight near Sorensen Farm: defeat."): the longest site name it contains, or the
   // "(x,y)" of open ground as tile labels write it.
-  if (!c.siteNames) c.siteNames = state.tiles.filter((t) => t.loc && t.loc.name).map((t) => [t.loc.name, t.id]).sort((a, b) => b[0].length - a[0].length);
+  // Made from the map's names at most once an in-game hour (sites come and go: a crash site, a group's base), and not
+  // saved: it depends only on the world at that hour, so a loaded game finds the same tiles as the one played on.
+  if (!c.siteNames || c.siteNamesHour !== state.hour) {
+    const hide = (k, value) => Object.defineProperty(c, k, { value, writable: true, configurable: true, enumerable: false });
+    hide("siteNames", state.tiles.filter((t) => t.loc && t.loc.name).map((t) => [t.loc.name, t.id]).sort((a, b) => b[0].length - a[0].length));
+    hide("siteNamesHour", state.hour);
+  }
   for (const [name, id] of c.siteNames) if (text.includes(name)) return id;
   const at = /\((\d+),(\d+)\)/.exec(text);
   if (at) {

@@ -122,7 +122,7 @@ section("Move a team out: from that base's people and stores, waiting outside, t
     check(site != null && /sets off/.test(orderMove(st, p, site)), "ordered to a tile 3-5 tiles out");
     tick(st, 200, (c) => c.partyId === p.id && c.isOrders, () => p.phase === "waiting");
     check(partyTile(p) === site, "the team got there and waits for orders");
-    check(st.cards.some((c) => c.isOrders && c.partyId === p.id), "a free tile: the orders card (no Enter card)");
+    check(!st.cards.some((c) => c.partyId === p.id && /Enter/.test(c.title || "")) && p.phase === "waiting", "a free tile: it waits for orders (no Enter card; orders reach it anywhere, so no arrival card is needed)");
     const opt = orderOptions(st, p).find((o) => o.mission === "outpost");
     check(opt && !opt.disabled, `Build outpost is on offer with the scrap they carry (${opt && opt.disabled})`);
     const n0 = st.bases.length;
@@ -173,10 +173,11 @@ section("Enter card: a team that ends a move on another of your bases");
     const no = card.choices.find((c) => /^No/.test(c.label));
     check(yes.ai(st) > no.ai(st), "the autopilot's score: yes for a team sent there to move in");
     st.cards.length = 0;
+    const atDoor = food(o), carried = food(p) + food(p.cargo); // the outpost eats its meals while the team walks (packs topped up too)
     yes.resolve(st);
     check(!st.parties.includes(p), "yes: the team ends");
     check(crew.every((s) => s.location.kind === "base" && s.location.baseId === o.id), "its people live at the outpost now");
-    check(food(o) >= food0 + 8 && o.stock.scrap >= 7, "what they carried went into the outpost's stores");
+    check(carried > 7 && food(o) >= atDoor + carried - 1e-6 && o.stock.scrap >= 7, `what they carried went into the outpost's stores (${Math.round(carried * 10) / 10} days of food; ${Math.round(food0 * 10) / 10} before they set off)`);
     check(st.log.some((l) => /moved into/.test(l.text)), "the log says they moved in");
     check(overBeds(st, o) === 1, `the outpost is one over its beds now (${residents(st, o.id).length} in ${baseBeds(o)})`);
     crowdCardsHour(st);

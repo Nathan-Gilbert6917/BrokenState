@@ -7,7 +7,7 @@
 // Usage: node tools/basetiletest.js [seed]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, residents, makeSurvivor, newId, alive } from "../src/sim/world.js";
-import { partyTile, partyMembers, orderMove, giveOrder, orderOptions, outpostName, launchExpedition, ordersCard, planPath, MISSIONS } from "../src/sim/parties.js";
+import { partyTile, partyMembers, orderMove, giveOrder, orderOptions, outpostName, launchExpedition, ordersCard, planPath, MISSIONS, teamName } from "../src/sim/parties.js";
 import { startOrder, queueOrder } from "../src/sim/orders.js";
 import { moveTeamOut, enterOption, enterCard } from "../src/sim/moveout.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -164,8 +164,8 @@ section("Enter base: a team at its own base that waited outside (moved out with 
 
 section("Enter card: a team that ends a Move on its own home tile is asked; No leaves it waiting with Enter base");
 {
-  // Ticks keeping only the team's own cards, until its Enter card or orders card is up.
-  const until = (st, p) => { for (let i = 0; i < 200 && !st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)); i++) { st.hordes.length = 0; tickHour(st); if (st.combat) st.combat = null; if (st.engagement) st.engagement = null; for (let j = st.cards.length - 1; j >= 0; j--) if (st.cards[j].partyId !== p.id) st.cards.splice(j, 1); } return st.cards.find((c) => c.partyId === p.id); };
+  // Ticks keeping only the team's own cards, until its Enter card or orders card is up (or done says stop).
+  const until = (st, p, done = () => false) => { for (let i = 0; i < 200 && !done() && !st.cards.some((c) => c.partyId === p.id && (c.enterBase != null || c.isOrders)); i++) { st.hordes.length = 0; tickHour(st); if (st.combat) st.combat = null; if (st.engagement) st.engagement = null; for (let j = st.cards.length - 1; j >= 0; j--) if (st.cards[j].partyId !== p.id) st.cards.splice(j, 1); } return st.cards.find((c) => c.partyId === p.id); };
   for (const answer of ["No", "Yes"]) {
     const st = mk();
     const h = hub(st);
@@ -173,8 +173,10 @@ section("Enter card: a team that ends a Move on its own home tile is asked; No l
     const out = tileNear(st, h.tile, 2, 3);
     const res = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: out, mission: "move", stance: "normal", supplies: { food: 6, water: 6 } });
     const p = res.party;
-    const c0 = until(st, p);
-    check(c0 && c0.isOrders && partyTile(p) === out, `${answer}: a Move to an empty tile ends with the orders card, not the Enter card`);
+    // A plain Move that got there raises no card at all since orders reach a team anywhere (TEAM-01, parties.js
+    // quietArrival): a log line, and the team waits for orders.
+    const c0 = until(st, p, () => p.phase === "waiting" && partyTile(p) === out);
+    check(!c0 && partyTile(p) === out && p.phase === "waiting" && st.log.some((l) => /reached .* and waits for orders/.test(l.text) && l.text.startsWith(teamName(st, p))), `${answer}: a Move to an empty tile ends with a log line, not the Enter card or an orders card (${c0 ? c0.title : "no card"})`);
     st.cards.length = 0;
     orderMove(st, p, h.tile);
     const card = until(st, p);

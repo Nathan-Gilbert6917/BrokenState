@@ -5,7 +5,7 @@
 // the work is) instead of a base.
 import { SUPPLIES } from "../sim/data.js";
 import { partyMembers, partyTile, carried, planPath, partySpeed, tileLabel, teamName } from "../sim/parties.js";
-import { thirstAt } from "../sim/weather.js";
+import { teamUpkeep } from "./needs.js"; // what the team has, uses a day and how long it lasts
 import { roadTeam, hubSites } from "../sim/hardcore-start.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, STAGES, waterText, establishProblem, strikeProblem } from "../sim/staging.js";
 import { BUILDINGS, isCamp, tierUpJob, tierUpType, gatherCap } from "../sim/buildings.js";
@@ -55,10 +55,10 @@ function view(state) {
   const p = roadTeam(state) || v.teams[0] || null;
   return { ...v, p, people: p ? partyMembers(state, p).length : 0, tile: p ? partyTile(p) : null, title: v.first ? "Your first hub" : "A new hub" };
 }
-// Days of food and water the team carries at today's thirst.
+// Days of food and water the team carries, at what it uses a day now (ui/needs.js teamUpkeep).
 function teamDays(state, p) {
-  const n = Math.max(1, partyMembers(state, p).length);
-  return { food: carried(p, "food") / n, water: (carried(p, "water") + carried(p, "rawwater")) / (n * thirstAt(state)) }; // both kinds (sim/water.js)
+  const u = teamUpkeep(state, p);
+  return { food: Math.min(99, u.food.days), water: Math.min(99, u.water.days), u };
 }
 // The top bar's Needs list while there is no base (ui/needsbar.js): what the road team carries, its days of food
 // and water, and the camp still to set up. null when there is no team on the road.
@@ -69,15 +69,15 @@ export function roadNeeds(state) {
   const bd = teamAmmoBreakdown(state, v.p);
   const heads = Math.max(1, v.people);
   const lvl = (days, crit, low) => (days < crit ? 2 : days < low ? 1 : 0);
-  const name = (k) => (k === "food" ? "Food (days)" : SUPPLIES[k].name); // food: days of it, every kind (sim/foods.js)
+  const name = (k) => (k === "food" ? "Food" : k === "water" ? "Water" : SUPPLIES[k].name); // food: days of it (one person's day), every kind (sim/foods.js)
   const row = (k, extra = "", more = {}) => ({ k, name: name(k), amt: n0(carried(v.p, k)), tip: `${name(k)} the team carries (packed and found). ${extra}`.trim(), level: null, note: "", ...more });
   const head = v.first ? `Hardcore: no hub yet. Your ${v.people} survivors are a team on the road; you are with them, so they always take orders.` : "You have no base left: your people are on the road.";
   return {
     status: { cls: v.first ? "warn" : "danger", text: "On the road", tip: `${head} ${ESTABLISH_LABEL} sets up a camp you build up into your hub.` },
     camp: { text: "No camp yet", tip: `Give a team the order ${ESTABLISH_LABEL} where your home should stand: a camp (the barest base) with its step up into a shelter queued (${needText(v.needs)} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders).` },
     rows: [
-      row("food", `About ${r1(d.food)} days for the team.`, { level: lvl(d.food, 1, 3), note: `${r1(d.food)}d` }),
-      row("water", `About ${r1(d.water)} days for the team at today's thirst.`, { level: lvl(d.water, 1, 2), note: `${r1(d.water)}d` }),
+      row("food", `${n0(d.u.food.have)} days of food (one person's day each, packs included); the ${heads} of them eat about ${r1(d.u.food.perDay)} a day: it lasts about ${r1(d.food)} days.`, { amt: n0(d.u.food.have), level: lvl(d.food, 1, 3), note: `${r1(d.food)}d` }),
+      row("water", `${n0(d.u.water.have)} water, purified and un-purified (packs included); the ${heads} of them drink about ${r1(d.u.water.perDay)} a day at today's thirst: it lasts about ${r1(d.water)} days.`, { amt: n0(d.u.water.have), level: lvl(d.water, 1, 2), note: `${r1(d.water)}d` }),
       row("scrap"), row("parts"),
       { k: "ammo", name: "Ammo", amt: n0(bd.total), tip: `Ammo the team has: every round and every arrow and bolt, packed, in the cargo and in their pockets and packs (a gun fires only its own calibre). By calibre, most first: ${breakdownText(bd, "; ")}.`, level: null, note: bd.total ? `${Math.floor(bd.total / heads)}/head` : "" },
       row("meds"),

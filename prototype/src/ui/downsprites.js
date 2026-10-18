@@ -20,6 +20,7 @@ import { BLADE_LOOK } from "../sim/data-blades.js"; // knives and swords: their 
 import { zombieLookOf, enemyLookOf, armoredLookOf, zombieVariant, zombieLook, CAMO } from "./sprites.js";
 import { isGunKey } from "./gunpaint.js"; // every gun's own small drawing (ui/gunspecs.js)
 import { held, weaponLook, unitGun } from "./gunparts.js"; // ... in its finish, with its parts (a weapon look: gunparts.js weaponLook)
+import { onForgetPictures } from "./pictures.js";
 
 export const DW = 26, DH = 14; // the grid
 const UP = 4;
@@ -519,3 +520,4 @@ export function drawDowned(ctx, cv, X, Y, ax, ay, { facing = 1, scale = 1.05, al
   ctx.drawImage(cv, -cv.width / 2, -cv.height / 2, cv.width, cv.height);
   ctx.restore();
 }
+onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context

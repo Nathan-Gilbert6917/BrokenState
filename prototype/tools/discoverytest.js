@@ -11,12 +11,14 @@
 // - determinism: the same seed plays the same with the same discoveries
 // - autopilot campaigns ([days] in each style, [runs] seeds): no team is ever sent to scavenge a site the player has
 //   not found; how fast the hidden sites near the hub are found
+import { TEAM_INTEL_EVERYWHERE } from "../src/sim/parties.js";
 import { createWorld, tickHour, hub, day, atBase, snapshot, updateVision, mergeKnowledge } from "../src/sim/world.js";
 import { recomputeOwnership } from "../src/sim/factions.js";
 import { LOCATIONS } from "../src/sim/data.js";
 import { isPublicSite, hiddenSites, siteKnown, siteKnownTo, nearRoad, knownLoc, discoveryHour } from "../src/sim/discovery.js";
 import { tileLabel, launchExpedition, partyTile, removeParty, planPath } from "../src/sim/parties.js";
 import { nearbySites } from "../src/sim/plans.js";
+import { knownPois } from "../src/sim/pois.js"; // the tile's known places (a raid goes into one of them)
 import { setAutopilot, crewAI } from "../src/sim/autopilot.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { radioNews, canRadioGroup } from "../src/sim/radio.js";
@@ -84,7 +86,9 @@ const namesDrawn = (st, id) => { drawn.length = 0; R.centerOn(st, id); R.redrawM
   let panel = "";
   try { panel = UI.renderRight(st, { selected: id }); } catch (e) { panel = `error ${e.message}`; }
   check(!panel.includes(name) && !panel.startsWith("error"), "the tile panel shows bare ground");
-  check(!UI.tileActions(st, id).some(([m]) => m === "scavenge"), "no Scavenge / raid among the right-click actions");
+  // Scavenge / raid goes into the tile's known places (pois.js): offered only when another place on the tile is known, never for the hidden site itself.
+  const offered = UI.tileActions(st, id).some(([m]) => m === "scavenge");
+  check(!offered || (knownPois(st, id).length > 0 && !knownPois(st, id).includes(0)), `no Scavenge / raid among the right-click actions for the hidden site${offered ? " (offered for another known place on the tile)" : ""}`);
   check(R.mapLoc(st, id) === null, "the map's site lookup gives nothing");
   check(!nearbySites(st, { center: id, radius: 3 }).some((s) => s.tile === id), "not among the planner's nearby sites");
   const need = crewAI.needs(st, "balanced");
@@ -180,7 +184,7 @@ route("a team's sight, radioed in", () => {
   for (let i = 0; i < 24 * 6 && !siteKnown(st, id); i++) { tickHour(st); st.cards.length = 0; }
   return { st, id, m, word: /team \(.*\) (found|brought word of)/ };
 });
-route("a team's sight, brought home", () => {
+route(TEAM_INTEL_EVERYWHERE ? "a team's sight, out of radio range (live intel)" : "a team's sight, brought home", () => {
   const st = W();
   const h = hub(st);
   const id = nearestHidden(st, h.tile, 14);
@@ -188,6 +192,11 @@ route("a team's sight, brought home", () => {
   const res = launchExpedition(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), dest: id, mission: "move", stance: "normal", supplies: { food: 12, water: 12 } });
   if (res.error) return null;
   const p = res.party;
+  if (TEAM_INTEL_EVERYWHERE) { // parties.js: every team reports live, out of radio range too: it goes on the map as they see it
+    const m = new Set(st.log);
+    for (let i = 0; i < 24 * 8 && !siteKnown(st, id); i++) { tickHour(st); st.cards.length = 0; }
+    return { st, id, m, word: /team \(.*\) (found|brought word of)/ };
+  }
   for (let i = 0; i < 24 * 8 && !(p.seen.has(id)); i++) { tickHour(st); st.cards.length = 0; }
   if (!check(p.seen.has(id) && !siteKnown(st, id), "out of radio range the team has seen it but the hub's map does not show it yet")) return null;
   const m = new Set(st.log);

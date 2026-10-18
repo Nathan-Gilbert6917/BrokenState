@@ -19,7 +19,7 @@
 //   - water on the road (drinkHour): RAW_BASE + WATER × the eggs of the un-purified water the team drinks (p.wormEggs:
 //     from where it was filled), × the share of the hour's drinking it was. A team drinks purified water first; the
 //     un-purified water is made safe by, in this order: a water filter carried; boiling at a camp fire that is lit and
-//     fed (firewood carried, or deadfall on the land: woodcutting.js campFireHour), which also boils BOIL un-purified
+//     fed (firewood carried, stretched by deadfall on the land: woodcutting.js campFireHour), which also boils BOIL un-purified
 //     water an hour into purified water (× STOVE with a smokeless stove); purification tablets (data.js puritabs: one
 //     per TABS_WATER water) on the move (travelling, exploring, searching) and at a camp whose fire is out or has
 //     nothing left to burn; otherwise it is drunk as it is.
@@ -61,12 +61,18 @@
 // locked, paid }): no silent days. From the day it is caught (day 0) each day costs DAY_HP[day − 1] health (3, 6, 10,
 // 15, 20, 24, 30: about 108 in seven days, then LATE_HP a day) and DAY_MOOD[day − 1] mood (2 … 8, through
 // relations.js addMood: the mood floor, the breaks and the notes follow). While it is in them every healing heals
-// HEAL (half) of the usual (wormHealMult: medical.js rest, hospital beds without meds, treatments and field
-// treatment, orders.js camp rest, a holding convoy, a prisoner's rations, a battle's patch-up), but the full rate in a
-// hospital bed on a day their care used meds (a wound treated, an illness dosed, a purge): the ramp outpaces it.
-// Untreated at full health they die on day 7 with no rest (on the move), day 8 resting at a base, day 9 in a Clinic's
-// bed with a medic and no meds (default admit line, Medicine 6), later in a hospital bed treated with meds every day
-// (wormtest prints the day); hurt, sooner.
+// HEAL (half) of the usual (wormHealMult: medical.js rest, treatments and field treatment, orders.js camp rest, a
+// holding convoy, a prisoner's rations, a battle's patch-up), and a hospital bed adds nothing (medical.js
+// healRatePerHour: they heal there as on a cot): the ramp outpaces it.
+// Untreated at full health they die on day 7 with no rest (on the move), day 8 resting at a base or in a Clinic's bed
+// alike, later treated with meds every night (medicatedDay; wormtest prints the day); hurt, sooner.
+// The daily dose (wormDose): each day the course moves, someone whose worm is known takes DOSE_MEDS meds from where
+// they are (the base's stores, or the team's packs and cargo; a prisoner with the base's "Treat prisoners and guests
+// too" on) while there are any: a medicated day.
+// Meds slow it (medicatedDay): on a day their care used meds (a wound treated, an illness dosed, a purge that failed,
+// field treatment on the road: s.medsHour since the last day of the course), the day's damage is MEDS_HP of the usual
+// and the course moves on only MEDS_SLOW of a day (every second such day it holds where it is). It never clears it:
+// only a dewormer (or a purge, or surgery once it is in the brain) takes the worm out.
 //   gut    days 1 to BRAIN_FROM − 1: they eat GUT_EAT more a day and work at GUT_WORK. A dewormer cures it surely,
 //          a purge by the odds.
 //   brain  from day BRAIN_FROM: fits and staggering (it gives itself away: BRAIN_SPOT), work at BRAIN_WORK; only
@@ -124,7 +130,7 @@ import { stomachShrugs, stomachMult } from "./traits.js"; // Iron Stomach, Weak 
 import { Rng } from "./rng.js";
 import { count, isShelter } from "./buildings.js";
 import { partyMembers, partyTile, bestSkill, carried, takeSupply, wipeIfEmpty, cardStale, tileLabel, teamName } from "./parties.js";
-import { activeHospital, careCtx, pickTreater, spendMedicTime, autoCareOn, noTimeReason, nextDayText } from "./medical.js";
+import { activeHospital, careCtx, pickTreater, spendMedicTime, autoCareOn, noTimeReason, nextDayText, medsToday, partyMeds, takeMeds } from "./medical.js";
 import { waterProduction, waterNeed } from "./economy.js";
 import { RAW, teamRawIn, waterIn } from "./water.js"; // purified and un-purified water
 import { eatFromStore } from "./storage.js";
@@ -147,7 +153,7 @@ import { prisonersAt, inCell, taskOf, dropPrisoner } from "./prisoners.js";
 import { leaveMap } from "./visitors.js";
 import { teamCookHour } from "./cooking.js"; // wave 2 cooking: a team's camp fire cooks its raw meat into meals
 import { kitchenService, kitchenCold } from "./kitchen.js"; // the Kitchen boils the meals' water (purifyCap) and cooks like a cook fire (baseCooks)
-import { fireLandOk, WOOD, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
+import { canLight, boilerBurnables, burnOf, burnablesWood, itemsText } from "./woodcutting.js"; // what keeps a camp fire burning; what the boiler may burn
 
 export const WORM = {
   // Catching it
@@ -171,6 +177,10 @@ export const WORM = {
   // Treating it
   // Healing while it is in them: HEAL of the usual rate from every source (wormHealMult)
   HEAL: 0.5,
+  // Actively healed with meds that day (medicatedDay): MEDS_HP of the day's damage, the course moves MEDS_SLOW of a day
+  MEDS_HP: 0.5, MEDS_SLOW: 0.5,
+  // The daily dose (wormDose): meds a day for each known carrier, from the base or the team, while there are any
+  DOSE_MEDS: 1,
   DEWORM_HP: 10, PURGE_MEDS: 2, PURGE: 0.5, PURGE_MED: 0.04, PURGE_TIER: 0.08, PURGE_MAX: 0.95, PURGE_HP: 25, PURGE_FAIL_HP: 10,
   SURGERY_MEDS: 4, SURGERY_LOAD: 3, SURGERY: 0.35, SURGERY_MED: 0.04, SURGERY_MAX: 0.9, SURGERY_HP: 40,
   ROAD_PURGE_HP: 50, ROAD_FAIL_HP: 15, HOPE: 0.25, HOPE_BRAIN: 0.08,
@@ -243,9 +253,43 @@ export function clearWorm(s) {
 }
 // Healing while the worm is in them (rest at a base and in its hospital, a treatment's heal, camp rest, field
 // treatment, a holding convoy's rest, a prisoner's rations, a battle's patch-up): HEAL of the usual, except in a
-// hospital bed (a base with a hospital tier, medical.js) on a day their care used meds (care: { bed, meds }; medical.js
-// healRatePerHour and a treatment's heal): the full rate there. The ramp outpaces it: untreated it still kills.
-export const wormHealMult = (s, care = null) => (s && s.worm ? (care && care.bed && care.meds ? 1 : WORM.HEAL) : 1);
+// hospital bed's own healing does nothing for them (medical.js healRatePerHour). The ramp outpaces it: untreated it
+// still kills.
+export const wormHealMult = (s) => (s && s.worm ? WORM.HEAL : 1);
+// Meds used on them (s.medsHour: a wound treated, an illness dosed, a failed purge, field
+// treatment) in the last day, each treatment counted once (w.medsHour: the one counted). Returns true on such a day.
+function medicatedDay(state, s, w) {
+  if (!medsToday(state, s) || s.medsHour === w.medsHour) return false;
+  w.medsHour = s.medsHour;
+  return true;
+}
+// The daily dose: a known carrier takes DOSE_MEDS meds from the base's stores (base) or the team's packs (party) when
+// there are enough; marks the meds used (s.medsHour) so today is a medicated day. Returns true when dosed.
+function wormDose(state, s, w, { base = null, party = null } = {}) {
+  if (w.seen == null) return false; // nobody knows yet
+  if (base) {
+    if (!((base.stock.meds || 0) >= WORM.DOSE_MEDS)) return false;
+    base.stock.meds -= WORM.DOSE_MEDS;
+  } else if (party) {
+    if (!(partyMeds(party) >= WORM.DOSE_MEDS)) return false;
+    takeMeds(party, WORM.DOSE_MEDS);
+  } else return false;
+  s.medsHour = state.hour;
+  return true;
+}
+// A day of the course: the day it moves to (held there every second medicated day) and the day's damage before w.paid.
+function advanceCourse(state, s, w) {
+  const meds = medicatedDay(state, s, w);
+  let step = 1;
+  if (meds) {
+    w.lag = (w.lag || 0) + (1 - WORM.MEDS_SLOW);
+    if (w.lag >= 1) { w.lag -= 1; step = 0; }
+  }
+  w.day = Math.max(1, w.day + step);
+  w.stage = stageFor(w.day);
+  if (meds) w.medsDay = w.day; else delete w.medsDay; // wormLabel: today's damage was halved by the meds
+  return { meds, held: step === 0, hp: dayHp(w.day) * (meds ? WORM.MEDS_HP : 1) };
+}
 // Known to you: spotted at a base or by the team.
 export const wormSeen = (s) => { const w = wormOf(s); return !!w && w.seen != null; };
 // How much they can work (health.js workFactor): 1 unless the worm has hatched.
@@ -375,10 +419,13 @@ export function boilerUse(state, base) {
   const wood = r2(heads * WORM.BOILER_WOOD_HEAD);
   const fuel = r2(wood * HEAT.wood);
   const cap = purifyCap(state, base);
-  const active = hasBoiler(base) && heads > 0 && cap.filters < cap.drink;
+  // A camp's or a shelter's own lit, fed fire boils the day's drinking already (cap.fire): the boiler stands ready
+  // beside it and burns nothing (BASE-05: it burned its firewood on top of the fire's, the wood twice for one pot).
+  const covered = cap.filters + cap.fire;
+  const active = hasBoiler(base) && heads > 0 && covered < cap.drink;
   // share: the days it burns, about (the share of the drinking the filters leave un-purified): each day it burns
   // purifies a whole day's drinking, so with filters covering part of it the purified water carries over.
-  const share = active && cap.drink > 0 ? r2(Math.max(0, Math.min(1, 1 - cap.filters / cap.drink))) : 0;
+  const share = active && cap.drink > 0 ? r2(Math.max(0, Math.min(1, 1 - covered / cap.drink))) : 0;
   const text = heads ? `${perHeadText(heads, heads === 1 ? "person" : "people", WORM.BOILER_WOOD_HEAD)} firewood a day (or burnable junk, or ${fuel.toFixed(1)} fuel)` : "nobody here";
   return { active, heads, wood, fuel, share, lit: base.boiling !== false, text };
 }
@@ -587,14 +634,14 @@ export function packWater(state, p, base) {
   delete p.wormWater; // the old single-water model (save.js)
   p.wormEggs = teamRawIn(p) > 0 ? r2(rawWaterEggs(state, base).eggs) : 0;
 }
-// A camp fire that boils the water: lit, and with something to keep it going this hour (deadfall on the land, or
-// firewood carried: woodcutting.js campFireHour; a camp's or shelter's fire burns what lies about it). A camp whose fire
+// A camp fire that boils the water: lit, and with firewood to keep it going this hour (carried: woodcutting.js
+// campFireHour; a camp's or shelter's fire burns its store, shelterFire, and is out once it runs dry). A camp whose fire
 // is out or has nothing left to burn does not boil: the team uses its tablets.
 export function campFireFed(state, p) {
   if (teamFire(state, p) !== true) return false;
   const camp = p.owner === "player" ? state.bases.find((b) => b.tier === 0 && b.tile === partyTile(p)) : null;
-  if (camp) return true; // a camp's or shelter's fire burns what lies about it
-  return fireLandOk(state, partyTile(p)) || carried(p, "wood") >= WOOD.fire.camp / 24 - 1e-9;
+  if (camp) return true; // a camp's or shelter's fire: lit only while its store feeds it (shelterFire puts it out)
+  return canLight(state, p);
 }
 // How a team drinks its un-purified water now: "filter" (a water filter carried), "fire" (a lit, fed camp fire boils
 // it), "tabs" (purification tablets carried: on the move, or at a camp whose fire is out or unfed), "unsafe" (drunk as
@@ -669,7 +716,7 @@ export function wormTeamHour(state, p, members) {
     const m = cookEggs(p.cargo, WORM.COOK, isMeat) + cookEggs(p, WORM.COOK, isMeat); // the camp fire cooks the meat with eggs through
     cookEggs(p.cargo, WORM.COOK, (k, f) => !isMeat(k, f)); cookEggs(p, WORM.COOK, (k, f) => !isMeat(k, f)); // and boils the greens
     void m;
-    if (fire === true && campFireFed(state, p)) teamCookHour(state, p, members); // cooking.js: the camp fire's pot (raw meat into simple meals)
+    if (fire === true && campFireFed(state, p)) teamCookHour(state, p, members); // cooking.js: the camp fire's pot (raw meat into simple meals; anything fresh with a cook pot)
   }
   const inf = (state.tiles[partyTile(p)] || {}).infection || 0;
   if (inf < WORM.CAMP_AT) return;
@@ -852,7 +899,7 @@ export function applyWormTreat(state, base, s, info) {
   const w = s.worm;
   w.treatedDay = day(state);
   const ok = payTreat(state, base, info);
-  if (info.kind !== "dewormer" && info.cost > 0) s.medsHour = state.hour; // medical.js medsToday: a hospital bed heals at the full rate today
+  if (info.kind !== "dewormer" && info.cost > 0) s.medsHour = state.hour; // medical.js medsToday: a day healed with meds slows it (medicatedDay)
   if (info.kind === "dewormer") {
     cureWorm(state, s);
     hurt(state, s, WORM.DEWORM_HP, base.tile, "of the worm", { raw: true });
@@ -1123,9 +1170,9 @@ function stageDaily(state, s) {
   if (w.day === 0 && w.since === day(state)) return; // caught today: it shows tomorrow
   const at = where(state, s);
   const was = w.stage;
-  w.day += 1;
-  w.stage = stageFor(w.day);
-  const dmg = Math.max(0, dayHp(w.day) - (w.paid || 0));
+  wormDose(state, s, w, { base: at.base, party: at.base ? null : at.party }); // the day's meds, where they are
+  const c = advanceCourse(state, s, w); // meds slow it and soften the day (medicatedDay)
+  const dmg = Math.max(0, c.hp - (w.paid || 0));
   w.paid = 0;
   // Eats like two in the gut stage: the extra food comes out of the base's stores or the team's packs.
   if (w.stage === "gut") {
@@ -1197,9 +1244,9 @@ function prisonersWormDaily(state, base) {
     if (!s || !s.worm) continue;
     const w = migrateWorm(s.worm);
     if (w.day === 0 && w.since === day(state)) continue;
-    w.day += 1;
-    w.stage = stageFor(w.day);
-    s.health = Math.max(0, (s.health ?? 60) - dayHp(w.day));
+    if (othersCareOn(base)) wormDose(state, s, w, { base }); // the day's meds, with the base's care for prisoners on
+    const c = advanceCourse(state, s, w); // meds slow it
+    s.health = Math.max(0, (s.health ?? 60) - c.hp);
     s.mood = Math.max(0, (s.mood ?? 30) - dayMood(w.day));
     if (s.health > 0) { spotOther(state, base, w, `${p.name}, a prisoner`); continue; }
     const locked = inCell(state, p) && taskOf(p) === "idle";
@@ -1578,7 +1625,8 @@ export function wormLabel(s) {
   const w = wormOf(s);
   if (!w) return "";
   const d = Math.max(1, w.day);
-  return `Infected (day ${w.day} of about ${WORM.COURSE}): −${dayHp(d)} health today, −${dayMood(d)} mood`;
+  const meds = w.medsDay === w.day;
+  return `Infected (day ${w.day} of about ${WORM.COURSE}): −${Math.round(dayHp(d) * (meds ? WORM.MEDS_HP : 1))} health today${meds ? " (halved by the meds)" : ""}, −${dayMood(d)} mood`;
 }
 // The cure open at this stage, in words.
 export function wormCureText(s) {
@@ -1592,7 +1640,7 @@ export function wormTip(state, s) {
   const w = wormOf(s);
   if (!w) return "";
   const next = w.day + 1;
-  const bits = [`The worm: caught ${w.why || "somewhere on infected land"}${w.seen != null ? `; found on day ${w.seen}` : ""}. Day ${w.day} of about ${WORM.COURSE}: tomorrow −${dayHp(next)} health and −${dayMood(next)} mood, and they heal at half the rate while it is in them (the full rate in a hospital bed on a day their care uses meds). Left alone it kills them in about a week (sooner if hurt), and they get up again.`];
+  const bits = [`The worm: caught ${w.why || "somewhere on infected land"}${w.seen != null ? `; found on day ${w.seen}` : ""}. Day ${w.day} of about ${WORM.COURSE}: tomorrow −${dayHp(next)} health and −${dayMood(next)} mood, and they heal at half the rate while it is in them, and a hospital bed does nothing for them. Each day a known carrier takes ${WORM.DOSE_MEDS} meds from the base or the team while there are any; a day with meds it does ${Math.round(WORM.MEDS_HP * 100)}% of the damage and moves on half as fast, but only a dewormer${w.stage === "brain" ? " (in the gut) or surgery" : " or a purge"} clears it. Left alone it kills them in about a week (sooner if hurt), and they get up again.`];
   if (w.stage === "gut") bits.push(`In the gut: eats ${WORM.GUT_EAT} more food a day, works at ${Math.round(WORM.GUT_WORK * 100)}%.`);
   else bits.push(`In the brain: fits and staggering, works at ${Math.round(WORM.BRAIN_WORK * 100)}%.${w.locked ? " Locked away: nobody will be hurt when they turn." : ""}`);
   bits.push(wormCureText(s));

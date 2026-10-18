@@ -12,8 +12,9 @@ import { wornLoad, teamLoad } from "../src/sim/load.js";
 import { launchExpedition, partyTile, cargoRoom, partyMembers, partyLoad, weighTeam } from "../src/sim/parties.js";
 import * as C from "../src/sim/carry.js";
 import * as K from "../src/sim/carts.js";
-import { createBattle, combatAct, closeCombat, registerCombatHandler, canFire, fireRefusal, endBattleNow, finishCombat, CELL, reachable, shotOdds, endPlayerTurn, bash, driveTo } from "../src/sim/combat.js";
+import { createBattle, combatAct, closeCombat, registerCombatHandler, canFire, fireRefusal, endBattleNow, finishCombat, runEnemyPhase, vaultable, CELL, reachable, shotOdds, endPlayerTurn, bash, driveTo } from "../src/sim/combat.js";
 import { searchHeatMult } from "../src/sim/fieldheat.js";
+import { crawlable, shoveable } from "../src/sim/barricade.js";
 import { repairKind, repairItem } from "../src/sim/repair.js";
 import { itemDur } from "../src/sim/crafting.js";
 import { buildRate } from "../src/sim/buildings.js";
@@ -335,7 +336,8 @@ console.log("A cart let go: a barricade (no walking through, low cover), parked 
   check(!err && box && box.x === px && box.y === py && c.k === "cart" && c.hp === GEAR.handcart.cart.hp, `Park cart: on the cell asked (${px},${py}), its cell a barricade (${c.k}, ${c.hp} hp)`);
   const z = bt.units.find((x) => x.side === "enemy");
   const r = reachable(bt, z, 200);
-  check(!isFinite(r.dist[py * bt.w + px]), "the dead cannot walk onto it (pathing goes round)");
+  check(!isFinite(r.dist[py * bt.w + px]), "nobody stops on it (pathing goes round or over)");
+  check(vaultable(bt, c) && crawlable(bt, c) && !shoveable(c), "half cover like crates (barricade.js): people vault it, the dead crawl over it; never shoved like furniture");
   const under = box.under.k;
   const wear0 = itemDur(cart);
   for (let i = 0; i < 20 && c.k === "cart"; i++) bash(bt, z, px, py);
@@ -656,13 +658,15 @@ console.log("Moving and parking: a held cart moves with its pusher; parking take
   let moved = "x";
   for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) { moved = combatAct(st, { type: "move", unit: u.id, x: u.x + dx, y: u.y + dy }); if (!moved) break; }
   check(!moved && u.bag === cart && (u.x !== x0 || u.y !== y0), "it moves with its pusher (only their tiles a move are fewer)");
+  if (bt.phase !== "player") runEnemyPhase(st); // a lone unit that spent its actions ended the turn
   u.ap = 2;
   const cells = K.parkCells(bt, u);
   check(cells.length > 0 && cells.every(([x, y]) => Math.abs(x - u.x) + Math.abs(y - u.y) === 1), `Park cart: only the cells left, right, in front and behind (${cells.length} free)`);
   const diag = [u.x + 1, u.y + 1];
-  check(/beside them/.test(combatAct(st, { type: "parkCart", unit: u.id, x: diag[0], y: diag[1] })), "not on a corner");
+  const dg = combatAct(st, { type: "parkCart", unit: u.id, x: diag[0], y: diag[1] });
+  check(/beside them/.test(dg), `not on a corner (${dg})`);
   const err = combatAct(st, { type: "parkCart", unit: u.id, x: cells[0][0], y: cells[0][1] });
-  check(!err && !u.bag && u.ap === 1 && K.cartBoxes(bt)[0].blocking, `parked: 1 action (${u.ap} left), its cell a barricade`);
+  check(!err && !u.bag && u.ap === 1 && K.cartBoxes(bt)[0].blocking, `parked: 1 action (${u.ap} left), its cell a barricade${err ? ` (${err})` : ""}`);
   // The free emergency Let go: the nearest free side cell, or under their feet when every side is taken.
   u.ap = 2; // (a lone unit out of actions would end the turn)
   combatAct(st, { type: "takeCart", unit: u.id });
@@ -691,8 +695,9 @@ console.log("Raiders park their carts as cover, facing you");
   endPlayerTurn(st);
   const mine = bt.units.filter((x) => x.side === "player");
   const nearest = (x, y) => Math.min(...mine.map((m) => Math.hypot(m.x - x, m.y - y)));
-  const ok = at.every(({ u, x, y }) => { const box = K.cartBoxes(bt).find((c) => c.aiParty === q.id && Math.abs(c.x - x) + Math.abs(c.y - y) === 1); return box && box.blocking && nearest(box.x, box.y) <= nearest(x, y); });
-  check(pushers.length === 2 && ok, "each parks on the side cell facing your people (a barricade between)");
+  const faced = ({ x, y }) => { const box = K.cartBoxes(bt).find((c) => c.aiParty === q.id && Math.abs(c.x - x) + Math.abs(c.y - y) === 1); return box && box.blocking && nearest(box.x, box.y) <= nearest(x, y); };
+  const under = ({ x, y }) => K.cartBoxes(bt).some((c) => c.aiParty === q.id && c.x === x && c.y === y && !c.blocking); // no free side cell: under their feet
+  check(pushers.length === 2 && at.some(faced) && at.every((a) => faced(a) || under(a)), "they park on the side cell facing your people (a barricade between; under their feet when no side is free)");
   void p;
 }
 

@@ -1,7 +1,25 @@
-// The Survey mission ("sweep" in the code: MISSIONS.survey is the old two-hour Look around) and rumours of hidden
-// places (discovery.js).
+// The Sweep area mission ("sweep" in the code; labelled "Survey" until the POI surveys came), the two POI surveys
+// (Survey: 8 hours on the team's own tile; Quick look: 2 hours, MISSIONS.survey, the old Look around) and rumours of
+// hidden places (discovery.js).
 //
-// Survey: a team sweeps the land around a centre tile (radius 2–4, default 3) for N hours (6–48, default 24). It walks
+// The POI surveys (pois.js: every land tile holds 0–4 points of interest, some of them hidden), at the end of this file:
+// - Survey (MISSIONS.fullsurvey, LOOK.hours = 8, a task on the spot): one roll at the end for the team's own tile with
+//   the sweep's multipliers below (Scouting, team, the tile's terrain, light and weather over the hours, vehicle,
+//   stance, optics; no distance, no rumour) compounded over the 8 hours (lookOdds). Success finds every hidden POI
+//   there; failure rolls each one on its own at LOOK.fail of the odds, and the log says the team is not sure it found
+//   everything. Optics with a reach of a tile or more (binoculars, a scope, a thermal) add the ring of six tiles round
+//   the team at LOOK.ring of the odds, never further (a car is a small bonus, not a bigger ring). It also rolls the own
+//   tile's hidden site and the look-around finds (tile.hidden, parties.js survey), stamps "surveyed" on the tile and a
+//   perceived threat on every POI known there (pois.js notePoiThreat, the error smaller with optics). Hash dice (the
+//   seed, the tile, the hour, the team): never the world's random numbers.
+// - Quick look (MISSIONS.survey, 2 hours, parties.js survey → quickLook): the own tile only whatever the optics (they
+//   help the odds, never the range); each hidden POI rolls on its own at LOOK.quick of the Survey's odds; the kind
+//   only, no threat, stamped "looked". A recon's look on arrival is a quick look too.
+// Neither runs in a fight or on the move (they are tasks on the spot). Both build Field Heat (fieldheat.js ACTIVITY).
+// The autopilot sends POI surveys as it sends sweeps (poiSurveyCandidate): known-zone tiles that may still hide a POI
+// and unknown-zone tiles near the places it scavenges, by what the hub knows only.
+//
+// Sweep area: a team sweeps the land around a centre tile (radius 2–4, default 3) for N hours (6–48, default 24). It walks
 // (rides, drives) from spot to spot inside the circle, looks hard at each, and ends back at the centre when the hours
 // are up, so a plan can go on from there (home, a search, another survey). The route is worked out when the survey
 // starts (sweepRoute: no random numbers, so the planner's estimate and the real survey are the same hours, rations and
@@ -41,8 +59,9 @@ import { TERRAIN, LOCATIONS } from "./data.js";
 import { log, snapshot, hub, day, skill, atBase } from "./world.js";
 import {
   partyMembers, partyTile, tileLabel, teamName, planPath, moveCost, leaveVehicle, fuelMultOf, sightRadius,
-  awaitOrders, launchExpedition, orderMove,
+  awaitOrders, launchExpedition, orderMove, reportsLive, survey as lookAround,
 } from "./parties.js";
+import { poisOf, revealPois, morePoisHidden, knownPois, notePoiThreat, poiName, poiKnowledge, inKnownZone, poiEligible, COUNTS } from "./pois.js"; // the POI surveys
 import { partyVehicle, partyVehicles, wear, useFuel, tileFuel } from "./vehicles.js";
 import { perceive, MARKER_TYPES } from "./markers.js";
 import { hiddenSites, siteKnown, siteKnownTo, noteLooked } from "./discovery.js";
@@ -262,7 +281,7 @@ export function sweepHour(state, p) {
   for (const id of candidates(state, t.center, t.radius + 2 + OPTICS.maxReach)) {
     if (t.found.includes(id) || (t.known0 || []).includes(id) || !siteKnownTo(state, id, p)) continue;
     t.found.push(id);
-    if (!p.radioLive) log(state, `${teamName(state, p)} spotted ${placeText(state, id)} while surveying (out of radio range: it goes on the map once they report).`, "info");
+    if (!reportsLive(p)) log(state, `${teamName(state, p)} spotted ${placeText(state, id)} while surveying (out of radio range: it goes on the map once they report).`, "info");
   }
   // Caches, wrecks and camps (tile.hidden): the look-around roll, a little better with optics, near the team.
   const opt = opticsFor(members, p.cargo, { still: true, night: isNightAt(state.hour) });
@@ -335,7 +354,7 @@ export function sweepDone(state, p) {
   stats.done++; stats.hours += t.done; stats.found += t.found.length; stats.finds += t.finds.length;
   const crash = crashSurvey(state, p);
   const what = names.length || finds.length ? `found ${[...(names.length ? [`${names.length === 1 ? "a place off the map" : `${names.length} places off the map`}: ${names.join(", ")}`] : []), ...(finds.length ? [finds.join(", ")] : [])].join("; and ")}` : "found nothing new";
-  return `Surveyed ${t.radius} tiles around ${tileLabel(state, t.center)} for ${t.done}h (${t.tiles || 1} spots): ${what}.${!p.radioLive && names.length ? " They go on the hub's map once the team reports." : ""}${crash ? ` ${crash}` : ""}`;
+  return `Surveyed ${t.radius} tiles around ${tileLabel(state, t.center)} for ${t.done}h (${t.tiles || 1} spots): ${what}.${!reportsLive(p) && names.length ? " They go on the hub's map once the team reports." : ""}${crash ? ` ${crash}` : ""}`;
 }
 // For the panels: "Surveying: 14 of 24 hours, 1 place found".
 export function sweepStatus(state, p) {
@@ -572,4 +591,165 @@ export function surveyTip(state, tile) {
   }
   return out;
 }
+// ---------- the POI surveys: Survey (8h, the own tile) and Quick look (2h) ----------
+export const LOOK = {
+  hours: 8,          // Survey: the task's hours
+  quickHours: 2,     // Quick look (orders.js SURVEY_HOURS)
+  ring: 0.6,         // the ring of six round the team, with optics of a tile's reach or more: this × the odds
+  fail: 0.4,         // a failed Survey: each hidden POI on its own at this × the odds
+  quick: 0.5,        // a Quick look: each hidden POI on its own at this × the Survey's odds
+  finds: 0.4,        // the look-around bonus for tile.hidden finds at the end of a Survey (a Quick look's is 0.25)
+  xp: 2,             // × USE.survey Scouting XP for a Survey
+  auto: { every: 5, range: 10, again: 60, near: 2, spare: 2 }, // the autopilot's POI surveys (poiSurveyCandidate): at most every 5 days, within range (growing as the sweeps' does), a tile again after 60 days, the unknown zone within 2 of a place it searched
+};
+export const surveying = (p) => !!(p && p.phase === "task" && p.task && p.task.type === "fullsurvey");
+
+// The chance that a Survey of `hours` from `startHour` finds what hides on `tile` from `from` (the own tile, or a
+// ring tile with the optics' reach): the sweep's hourly odds (no distance, no rumour) compounded over the hours.
+export function lookOdds(state, ctx, tile, from, startHour = state.hour, hours = LOOK.hours) {
+  const f = teamFactors(ctx);
+  const terr = SURVEY.terrain[state.tiles[tile].terrain] ?? 1;
+  let miss = 1;
+  for (let h = 0; h < hours; h++) {
+    const hour = startHour + h;
+    const opt = opticsFor(ctx.members, ctx.cargo, { still: true, night: isNightAt(hour), fog: weather(state, hour, from).key === "fog" });
+    const { light, wx } = seeing(state, ctx, hour, opt, from);
+    const c = Math.min(SURVEY.cap, SURVEY.base * SURVEY.dist[0] * f.skill * f.team * f.vehicle * f.stance * terr * light * wx * opt.look);
+    miss *= 1 - c;
+  }
+  return 1 - miss;
+}
+// The Survey's look ahead for the panels: its odds on the own tile as a word, whether the ring is covered, and what
+// the hub knows of the tile (hidden POIs possible, or none). { chance, word, ring, more, known, text }.
+export function lookPreview(state, p, tile = partyTile(p)) {
+  const members = partyMembers(state, p);
+  if (!members.length) return null;
+  const ctx = lookContext(state, members, { mode: p.vehicle || false, stance: p.stance, cargo: p.cargo });
+  const chance = lookOdds(state, ctx, tile, tile);
+  const ring = opticsFor(members, p.cargo, { still: true }).reach >= 1;
+  const word = chance >= 0.75 ? "good" : chance >= 0.45 ? "fair" : "poor";
+  const more = morePoisHidden(state, tile, p);
+  const known = knownPois(state, tile, p).length;
+  return { chance, word, ring, more, known, text: `${word} odds (${Math.round(chance * 100)}%)${ring ? ", the ring of tiles round the team too" : ""}; ${more ? "possibly more unknown here" : known ? "nothing seems hidden here" : "no place known here"}` };
+}
+
+// The team's own roll for a tile (hash dice: the seed, the tile, the hour, the team), the same for a save played on.
+const lookRoll = (state, p, tile, salt) => hash01(state.seed, "fullsurvey", tile, state.hour, localIdOf(state, p), salt);
+const localIdOf = (state, p) => p.id - (state.idBase || 0);
+// One tile's roll at the end of a Survey: success finds every hidden POI, failure each on its own at LOOK.fail.
+// Returns { found: indices, sure: boolean, hidden: were there any to find }.
+function lookAt(state, p, tile, chance, stamp) {
+  const hidden = morePoisHidden(state, tile, p);
+  const ok = lookRoll(state, p, tile, "all") < chance;
+  const found = revealPois(state, p, tile, ok ? { all: true, stamp } : { chance: chance * LOOK.fail, stamp });
+  return { found, sure: ok, hidden };
+}
+// The hidden site on a tile (discovery.js) that the team does not know: found at the Survey's odds for that tile.
+function lookSite(state, p, tile, chance) {
+  if (siteKnownTo(state, tile, p) || !hiddenSites(state).includes(tile)) return false;
+  if (lookRoll(state, p, tile, "site") >= chance) return false;
+  p.seen.set(tile, snapshot(state, tile));
+  if (!reportsLive(p)) log(state, `${teamName(state, p)} found ${placeText(state, tile)} surveying (out of radio range: it goes on the map once they report).`, "info");
+  return true;
+}
+
+// The Survey is over (orders.js finishTask, task "fullsurvey"): the rolls, the stamps, the report text.
+export function fullSurveyDone(state, p) {
+  const tile = partyTile(p);
+  const members = partyMembers(state, p);
+  if (!members.length) return "";
+  const ctx = lookContext(state, members, { mode: p.vehicle || false, stance: p.stance, cargo: p.cargo });
+  const start = state.hour - (p.task && p.task.done ? p.task.done : LOOK.hours);
+  const opt = opticsFor(members, p.cargo, { still: true, night: isNightAt(state.hour) });
+  const chance = lookOdds(state, ctx, tile, tile, start, LOOK.hours);
+  // The own tile: every hidden POI at once, or each on its own; the hidden site; the caches, wrecks and camps.
+  const own = lookAt(state, p, tile, chance, "surveyed");
+  const site = lookSite(state, p, tile, chance);
+  const names = own.found.map((i) => poiName(state.tiles[tile], i).toLowerCase());
+  // The ring of six with optics that reach: at LOOK.ring of the odds, "looked" (never a full survey of them).
+  const ringFound = [];
+  let ringSites = 0;
+  if (opt.reach >= 1) {
+    for (const id of state.grid.neighbors(tile)) {
+      if (!land(state, id) || (!poisOf(state.tiles[id]).length && !hiddenSites(state).includes(id))) continue;
+      const c = lookOdds(state, ctx, id, tile, start, LOOK.hours) * LOOK.ring;
+      const r = lookAt(state, p, id, c, "looked");
+      for (const i of r.found) ringFound.push(`${poiName(state.tiles[id], i).toLowerCase()} at ${tileLabel(state, id)}`);
+      if (lookSite(state, p, id, c)) ringSites++;
+    }
+  }
+  // What the team makes of each place it knows here: a threat stamp (sharper with optics, rougher at night).
+  for (const i of knownPois(state, tile, p)) notePoiThreat(state, tile, i, "survey", surveyErr(state, opt));
+  const look = lookAround(state, p, LOOK.finds, false, { pois: false }); // parties.js: the look-around finds, the Known area layer, a base close by
+  gainXpAll(state, members, "scouting", USE.survey * (LOOK.xp - 1)); // on top of the look-around's
+  p.seen.set(tile, snapshot(state, tile));
+  const stats = state.surveyStats || (state.surveyStats = { done: 0, hours: 0, found: 0, finds: 0 });
+  stats.found += own.found.length + ringFound.length + (site ? 1 : 0) + ringSites;
+  const what = [];
+  if (names.length) what.push(`found ${names.length === 1 ? "a place the map never showed" : `${names.length} places the map never showed`}: ${names.join(", ")}`);
+  if (site) what.push(`found ${placeText(state, tile)} here`);
+  if (ringFound.length) what.push(`spotted ${ringFound.join(", ")}`);
+  if (ringSites) what.push(`${ringSites === 1 ? "a place" : `${ringSites} places`} off the map on the tiles round`);
+  const sure = own.sure || !morePoisHidden(state, tile, p) ? "" : " Not sure you found everything.";
+  return `Surveyed ${tileLabel(state, tile)} for ${LOOK.hours}h: ${what.length ? what.join("; ") : "nothing new"}.${sure} ${look}`.trim();
+}
+// A Quick look (parties.js survey: the timed Look around and a recon's look on arrival): the own tile only, each hidden
+// POI on its own at LOOK.quick of the Survey's odds, the kind only, stamped "looked". Returns a sentence or "".
+export function quickLook(state, p) {
+  const tile = partyTile(p);
+  if (!poisOf(state.tiles[tile]).length) return "";
+  const members = partyMembers(state, p);
+  if (!members.length) return "";
+  const ctx = lookContext(state, members, { mode: p.vehicle || false, stance: p.stance, cargo: p.cargo });
+  const chance = lookOdds(state, ctx, tile, tile) * LOOK.quick;
+  const found = revealPois(state, p, tile, { chance, stamp: "looked" });
+  if (!found.length) return "";
+  const names = found.map((i) => poiName(state.tiles[tile], i).toLowerCase());
+  return `Noticed ${names.join(", ")} here that the map never showed.`;
+}
+// For the panels: "Surveying Tile 12,4: 3 of 8 hours".
+export function lookStatus(state, p) {
+  const t = p && p.task;
+  if (!t || t.type !== "fullsurvey") return "";
+  return `Surveying ${tileLabel(state, partyTile(p))}: ${t.done} of ${t.hours} hours`;
+}
+
+// The autopilot's POI survey (autopilot.js planTrip, after the sweep's turn): a tile within range that may still hide a
+// POI by what the hub knows (never the hidden lists): a known-zone tile with "possibly more unknown", or an
+// unknown-zone tile near a place the governor scavenges (within LOOK.auto.near of one it visited), not surveyed in
+// the last LOOK.auto.again days, not hive land. Returns a planTrip candidate or null.
+export function poiSurveyCandidate(state, spareHands) {
+  if (state.surveyOff) return null; // test switch (tools/surveytest.js: the autopilot without surveys)
+  const h = hub(state);
+  if (!h || spareHands < LOOK.auto.spare || atBase(state, h.id).length < SURVEY.auto.home) return null;
+  const info = state.surveyInfo || (state.surveyInfo = { lastAuto: -99 });
+  if (info.lastPoi != null && day(state) - info.lastPoi < LOOK.auto.every) return null;
+  if (state.parties.some((p) => p.owner === "player" && (p.teamMission || p.mission) === "fullsurvey")) return null; // one at a time
+  const t = poiSurveyTarget(state, h, { range: Math.min(SURVEY.auto.rangeMax, LOOK.auto.range + Math.floor(day(state) / SURVEY.auto.rangeEvery) * SURVEY.auto.rangeStep) });
+  if (!t) return null;
+  return { mission: "fullsurvey", tile: t.tile, score: 1.3 + Math.min(1, t.score / 6), crew: 2, why: `survey: ${t.why}`, onSite: LOOK.hours, poiSurvey: true };
+}
+// The best tile to survey for POIs within `range` of a base, by what the hub knows: { tile, score, why } or null.
+export function poiSurveyTarget(state, base, { range = LOOK.auto.range } = {}) {
+  const g = state.grid;
+  const visited = Object.keys((state.governor && state.governor.visited) || {}).map(Number); // autopilot.js gov(state).visited: the tiles it searched
+  const hiveLand = (id) => { const k = state.live.has(id) ? { infection: state.tiles[id].infection, hive: state.tiles[id].hive } : state.knowledge[id]; return !!k && (k.hive || k.infection > 0.55); };
+  let best = null;
+  for (const id of g.within(base.tile, range)) {
+    const t = state.tiles[id];
+    if (!poiEligible(state, t) || !morePoisHidden(state, id) || hiveLand(id) || state.bases.some((b) => b.tile === id)) continue;
+    const k = poiKnowledge(state, id);
+    if (k && k.surveyed != null && day(state) - k.surveyed < LOOK.auto.again) continue;
+    const known = inKnownZone(state, id);
+    const near = visited.some((v) => g.distance(v, id) <= LOOK.auto.near);
+    if (!known && !near) continue; // the unknown zone only near where the governor goes anyway
+    const d = g.distance(base.tile, id);
+    const score = (COUNTS[t.terrain] ? COUNTS[t.terrain][1] : 1) * (known ? 1 : 0.8) + (near ? 1.5 : 0) - d * 0.15;
+    if (!best || score > best.score || (score === best.score && id < best.tile)) best = { tile: id, score, why: known ? "a place by the road that may hide more" : "unknown ground near where the teams go" };
+  }
+  if (!best || !planPath(state, base.tile, best.tile, false)) return null;
+  return best;
+}
+export const poiSurveySent = (state) => { (state.surveyInfo || (state.surveyInfo = { lastAuto: -99 })).lastPoi = day(state); };
+
 export const _internal = { isNightAt, teamFactors, candidates };

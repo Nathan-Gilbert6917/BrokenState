@@ -77,6 +77,7 @@ export function repairKind(item) {
   const d = item && GEAR[item.key];
   if (!d || !d.dur || d.tabs || d.groom || d.count) return null;
   if (d.medKit || d.water || d.throw || d.use || d.cat === "gunmod" || item.key === "repairkit" || item.key === "kevlarkit") return null;
+  if (d.ears && d.slot === "pack") return null; // earplugs (hearing.js settleEars): a strip of pairs, used up a pair a fight
   const k = (kind) => ({ kind, def: REPAIR_KINDS[kind] });
   if (d.noRepair) return { refuse: d.noRepair }; // a cracked ballistic visor (data-helmets.js)
   if (d.recharge) return k("recharge"); // new batteries (data-helmets.js)

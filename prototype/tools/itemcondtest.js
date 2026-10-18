@@ -29,7 +29,7 @@ import { setAutopilot } from "../src/sim/autopilot.js";
 import { KITS, AREAS } from "../src/sim/combat.js";
 import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY } from "../src/sim/inventory.js";
 import { HEAD_FINDS, AREA_HEAD, WARE_HEAD } from "../src/sim/helmets.js"; // helmets and ear protection (their own dice)
-import { SITE_FINDS, rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
+import { SITE_FINDS, rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, LIGHT_FINDS, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
 import { truckLoot, TRUCK_LOOT, TRUCK_LOOT_HOOKS, TRUCK_FLASH } from "../src/sim/miltrucks.js";
 import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the roster's military guns in Army trucks (factoryfit.js rosterTruckGear, plan section 22)
 import { ensureWares, WARES, WARE_EXTRAS, gearSellPrice, gearBuyPrice } from "../src/sim/trade.js";
@@ -286,6 +286,15 @@ for (const f of ["site", "area", "wares"]) { nlStash.push([ARSENAL_FINDS, f, ARS
 //   source yields its own list on the same dice).
 for (const f of ["site", "area", "wares"]) { nlStash.push([PART_FINDS, f, PART_FINDS[f]]); PART_FINDS[f] = {}; }
 GUN_DIST.off = true;
+// - the wind-up and the military flashlight (lights.js windlight / tacflash, night sight by the hour, ab69f1b): rows
+//   appended to LIGHT_FINDS, so a light find picks from a longer table (one draw all the same: the keys move, not the
+//   dice; with them off the site finds hash back to edc8e9c7fdaab752);
+// - the cooking books (Cooking, c63df1a: the cookbook, the chef's handbook, game cookery, the prepper's pantry) at the
+//   end of the traders' and the commune's WARE_BOOKS lists (with them off the group wares hash back to 2474e79ab28f41c7).
+const NIGHT_LIGHTS = new Set(["windlight", "tacflash"]);
+for (const v of Object.values(LIGHT_FINDS)) for (const k of Object.keys(v.items)) if (NIGHT_LIGHTS.has(k)) { nlStash.push([v.items, k, v.items[k]]); delete v.items[k]; }
+const cookBook = (k) => !!(GEAR[k] && GEAR[k].book && GEAR[k].book.skill === "cooking");
+for (const B of Object.values(WARE_BOOKS)) if (B.books.some(cookBook)) { nlStash.push([B, "books", B.books]); B.books = B.books.filter((k) => !cookBook(k)); }
 // - and its guns in the kits (data-guns.js ARSENAL_KITS, then CALIBRE_KITS and AR_KITS, each appended to KIT_PATCH's
 //   lists in that order: the tail of each list once the non-lethal kit and the blades are off, taken off last first) and
 //   in Army trucks (TRUCK_GEAR rows of its guns, hashed dice).
@@ -302,6 +311,11 @@ const BASE = {
   // groupWares.keys and visitors: re-baselined for gen-tiers' Industrial Power Manual (blueprints.js indpower, now in
   // the military's wares and the traders' manuals); with it taken out they come back to 8b17671c3192515c,
   // 3bdc366902700698 / 706e068b336b9d26 / 12580090440502 exactly.
+  // siteFinds and groupWares.keys: the wind-up and military flashlights (vision.js lights, 27096bf: loot.js LIGHT_FINDS
+  // windlight / tacflash) and the cookbooks in the traders' and the commune's books (cooking, a447855: skills.js
+  // WARE_BOOKS) are taken off above (NIGHT_LIGHTS, cookBook), so the old hashes hold (the world's dice unchanged). With
+  // them left in they come to 449949deb71a9b49 and 6d226e0b96b09acc; the dazzling-bardeen merge (08ab2d0) carried both
+  // that re-baseline and the take-off (8b2f1d3), which is why the two drift checks failed there.
   siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "2474e79ab28f41c7", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
 };
 // The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
@@ -316,7 +330,7 @@ const truckHooks = takeHooks(/truckflash|formFinds/); // and the boxed and bulk 
 {
   const rng = new Rng(9001);
   const ks = [];
-  const NEW_KITS = ["escorts", "contractors"]; // added after the baseline (escorts.js: merchant caravans' guards)
+  const NEW_KITS = ["escorts", "contractors", "looters", "survivalists", "preppers"]; // added after the baseline (escorts.js: merchant caravans' guards; nomads.js: the nomad tiers)
   // A carrier's empty pouches (contents []) are no items: stowing a thing first looks for a stack to merge onto in the
   // rig's pouches (inventory.js mergeOnto -> rigPouches makes the list), which the baseline's carriers never had.
   const bodyKeys = (items) => keysOf(items.map((it) => (it && it.contents && GEAR[it.key] && GEAR[it.key].pouches && !it.contents.some(Boolean) ? { key: it.key } : it)));

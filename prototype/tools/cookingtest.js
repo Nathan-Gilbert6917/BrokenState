@@ -10,8 +10,11 @@ import { cookDaily, eatFromStore, MEAL } from "../src/sim/storage.js";
 import {
   COOK, POISON, COOK_AI, COOK_RECIPES, RECIPE_KEYS, CLASSES, stationsAt, stationState, ensureStations, addBill, removeBill, moveBill, setBill,
   setStationClean, billTarget, poisonChance, skillPz, poisonRoll, recipeMin, booksFor, cookbookIds, teamCookHour, groupCookDaily, groupCookSkill,
-  govCookBills, cookStats, speedOf, kitchenCrew, fireCrew, cookingHelp, newBill,
+  govCookBills, cookStats, speedOf, kitchenCrew, fireCrew, cookingHelp, newBill, hasPot, potOnly, madeAt, stationName, stationWhy,
 } from "../src/sim/cooking.js";
+import { CRAFTS } from "../src/sim/crafting.js";
+import { newItem } from "../src/sim/inventory.js";
+import { noteEat, eatingDaily, EAT, groupDietPressure, GROUP_EAT } from "../src/sim/eating.js";
 import { CRAFT_BOOKS, isKnown, tech, learnBook, cookBookRows, craftBookRows } from "../src/sim/blueprints.js";
 import { GEAR } from "../src/sim/data.js";
 import { BOOK_SITES, WARE_BOOKS } from "../src/sim/skills.js";
@@ -32,6 +35,7 @@ let fails = 0, passed = 0;
 const check = (ok, msg) => { if (ok) passed++; else { fails++; console.log(`  FAIL: ${msg}`); } return !!ok; };
 const section = (name) => console.log(name);
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
+const r2 = (v) => Math.round(v * 100) / 100;
 const BAD = /\b(undefined|NaN)\b|\[object [A-Za-z]+\]/;
 const plain = (s) => { s.traits = []; s.conditions = []; s.health = 100; s.mood = 60; s.inBed = false; return s; };
 
@@ -364,18 +368,27 @@ section("The camp fire: a cook fire, a shelter's fire, a team's");
   stationState(h, "cookhouse").bills[0].mode = "forever";
   cookDaily(st, h, 0);
   check(made(h, "f_simplemeal") === m0 && /firewood/.test(stationState(h, "cookhouse").bills[0].why), "no firewood: the cook fire waits");
-  // a shelter's own fire: free
+  // a shelter's own fire: it burns its firewood by the hour (woodcutting.js shelterFire); the pot costs nothing more
   const sh = mk(3);
   sh.h.tier = 0;
   sh.h.fire = true;
-  sh.h.stock.wood = 0;
+  sh.h.stock.wood = 10;
   addDays(sh.h, 3, "f_fish");
   addBill(sh.st, sh.h, "cookhouse", "roast") ;
   addBill(sh.st, sh.h, "cookhouse", "simple");
   cookDaily(sh.st, sh.h, 0);
-  check(stationsAt(sh.h).includes("cookhouse") && made(sh.h, "f_simplemeal") > 0, "a shelter's lit fire cooks its bills, no firewood");
+  check(stationsAt(sh.h).includes("cookhouse") && made(sh.h, "f_simplemeal") > 0 && sh.h.stock.wood === 10, "a shelter's lit, fed fire cooks its bills (its own firewood is the fire's)");
   sh.h.fire = false;
-  check(/fire is out/.test((() => { cookDaily(sh.st, sh.h, 0); return stationState(sh.h, "cookhouse").bills[0].why; })()), "its fire out: nothing");
+  sh.h.fireAt = sh.st.hour - 6; // put out for the night after burning through the evening
+  addDays(sh.h, 3, "f_fish");
+  for (const b of stationState(sh.h, "cookhouse").bills) b.mode = "forever";
+  const m1 = made(sh.h, "f_simplemeal");
+  cookDaily(sh.st, sh.h, 0);
+  check(made(sh.h, "f_simplemeal") > m1, "put out for the night after a day's burning: the day's bills still cook on it");
+  delete sh.h.fireAt;
+  check(/fire is out/.test((() => { cookDaily(sh.st, sh.h, 0); return stationState(sh.h, "cookhouse").bills[0].why; })()), "its fire out all day: nothing");
+  sh.h.fire = true; sh.h.stock.wood = 0;
+  check(/fire is out/.test((() => { cookDaily(sh.st, sh.h, 0); return stationState(sh.h, "cookhouse").bills[0].why; })()), "lit with no firewood to burn: nothing");
   // a team at a lit, fed camp fire
   const tm = mk(3);
   const p = { id: newId(), owner: "player", kind: "expedition", members: tm.ppl.map((s) => s.id), supplies: { water: 10 }, cargo: { supplies: {}, gear: [] }, path: [tm.h.tile], idx: 0 };
@@ -387,6 +400,68 @@ section("The camp fire: a cook fire, a shelter's fire, a team's");
   check(tl.pz > 0 && tl.by === tm.ppl[1].id && near(tl.pz, poisonChance(10, POISON.camp)), "its lot: the camp pot's pz and the best cook");
   p.supplies.water = 0;
   check(teamCookHour(tm.st, p, tm.ppl) === 0, "no purified water: it waits");
+}
+
+// ======================================================================
+section("The camp cook pot: a craft for small meals at any base, and on a team's fire");
+{
+  check(CRAFTS.cookpot && CRAFTS.cookpot.gear === "cookpot" && CRAFTS.cookpot.field && CRAFTS.cookpot.min === 0 && GEAR.cookpot && GEAR.cookpot.cat === "camp", "a craft anyone can make anywhere (a team too): the camp cook pot");
+  check(COOK_RECIPES.simple.small && COOK_RECIPES.stew.small && !COOK_RECIPES.pemmican.small && !COOK_RECIPES.fine.small, "the small meals: simple meal and stew");
+  const { st, h, ppl } = mk(4);
+  check(!stationsAt(h, st).length && /cook pot/.test(stationWhy(st, h, "cookhouse")), "no Kitchen, no cook fire: nothing cooks (the reason names the pot)");
+  h.armory = [...(h.armory || []), newItem("cookpot")];
+  check(hasPot(st, h) && potOnly(st, h) && stationsAt(h, st).includes("cookhouse") && stationName(h, "cookhouse") === "Camp fire", "a cook pot in the armory: a Camp fire station");
+  check(/bill added/.test(addBill(st, h, "cookhouse", "simple")) && /bill added/.test(addBill(st, h, "cookhouse", "stew")) && /not made here/.test(addBill(st, h, "cookhouse", "pemmican")), "small meals only on the pot (simple, stew; no pemmican)");
+  check(madeAt(st, h, "cookhouse", "simple") && !madeAt(st, h, "cookhouse", "flour"), "madeAt: the small meals");
+  addDays(h, 6, "f_potatoes");
+  ppl[1].skills.cooking = 4;
+  const wood0 = h.stock.wood;
+  cookDaily(st, h, 0);
+  check(made(h, "f_simplemeal") > 0 && wood0 - h.stock.wood > 0 && wood0 - h.stock.wood <= COOK.fireHours * COOK.fireWood + 2, `simple meals over the pot, ${r2(wood0 - h.stock.wood)} firewood burned`);
+  const card = cookingCard(st, h);
+  check(/Camp fire/.test(card) && /Simple meal/.test(card) && !/Pemmican/.test(card) && !BAD.test(card), "the Cooking card: a Camp fire offering the small meals");
+  h.armory = h.armory.filter((it) => it.key !== "cookpot");
+  check(!stationsAt(h, st).length, "the pot gone: no station");
+  ppl[2].pockets[0] = newItem("cookpot");
+  check(stationsAt(h, st).includes("cookhouse"), "carried by someone at the base: the station is back");
+  ppl[2].pockets[0] = null;
+  addBuilding(h, "cookhouse");
+  check(!potOnly(st, h) && /bill added/.test(addBill(st, h, "cookhouse", "pemmican")), "a real cook fire: every cook-fire recipe again");
+  // A team: the bare fire roasts only raw meat; with a pot, forage and vegetables become simple meals too.
+  const tm = mk(3);
+  const p = { id: newId(), owner: "player", kind: "expedition", members: tm.ppl.map((s) => s.id), supplies: { water: 10 }, cargo: { supplies: {}, gear: [] }, path: [tm.h.tile], idx: 0 };
+  addFood(p, "f_berries", 12, { state: tm.st });
+  check(teamCookHour(tm.st, p, tm.ppl) === 0 && !(p.supplies.f_simplemeal > 0), "no pot: berries are not cooked (only raw meat is roasted)");
+  p.cargo.gear.push(newItem("cookpot"));
+  const u = teamCookHour(tm.st, p, tm.ppl);
+  check(u > 0 && (p.supplies.f_simplemeal || 0) > 0, `with a cook pot: ${u.toFixed(2)} days of berries cooked into simple meals an hour`);
+}
+
+// ======================================================================
+section("No hot food in days: a mood thought");
+{
+  const { st, h, ppl } = mk(2);
+  const s = ppl[0];
+  const eat = (k, ctx = {}) => noteEat(st, s, { items: { [k]: 1 }, units: unitsOf(k, 1), lots: [], raw: 0, from: ctx.from || "store" }, { base: h, ...ctx });
+  const cold = () => (s.thoughts || []).filter((t) => t.id === "cold" && t.until > st.hour);
+  const day = (k, ctx) => { st.hour = Math.floor(st.hour / 24) * 24 + 12; eat(k, ctx); st.hour = Math.floor(st.hour / 24) * 24 + 24; eatingDaily(st); };
+  day("f_beans"); day("f_beans"); day("f_beans"); // the first day starts the count (no record yet)
+  check(!cold().length, "two days of cold food after the first: nothing yet");
+  const m0 = s.mood;
+  day("f_beans");
+  check(cold().length === 1 && cold()[0].v === EAT.coldV[0] && s.mood < m0, `three days without hot food: "${cold()[0] && cold()[0].label}" ${EAT.coldV[0]}`);
+  day("f_beans"); day("f_beans"); day("f_beans");
+  check(cold().length === 1 && cold()[0].v === EAT.coldV[1], `six days: worse (${cold()[0] && cold()[0].v})`);
+  day("f_simplemeal");
+  check(!cold().length, "a simple meal: the thought stops");
+  day("f_beans", { cooked: true }); day("f_beans"); day("f_beans");
+  check(!cold().length, "food eaten where a fire cooks counts as hot food");
+  day("f_beans", { from: "kitchen" }); day("f_beans"); day("f_beans");
+  check(!cold().length, "the Kitchen's hot service counts as hot food");
+  const f = { alive: true, pop: 10, stock: { f_beans: 40 } };
+  const p0 = groupDietPressure(st, f);
+  f.stock.f_simplemeal = 10;
+  check(near(p0 - groupDietPressure(st, f), GROUP_EAT.cold), "AI groups: no cooked meals in store is desertion pressure");
 }
 
 // ======================================================================

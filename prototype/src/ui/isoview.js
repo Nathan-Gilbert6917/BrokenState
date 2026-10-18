@@ -16,26 +16,31 @@
 // Buildings have roofs. A building with one of your people inside (or an enemy you see, or the mouse) has its roof
 // cut away and its near walls lowered to stubs (X-COM's cutaway); with Roofs off (B) every building is shown that way.
 // Blocks between one of your people and the camera are drawn faded.
-// Camera: pan (drag, the arrow keys, the screen edge), zoom (wheel, + / −: 9 steps), turn in 90° steps (, and .),
-// center on the selected unit (V). Mouse picking runs the screen point back along its view ray to the frontmost
-// tile it hits (raised floors, walls and roofs included) or the unit sprite under it.
+// Camera: pan (drag, the arrow keys, the screen edge), zoom (wheel, + / −: 9 steps), turn in eighths (Q / E, , and .:
+// the four diagonal views and, between them, four straight ones looking down the map's rows and columns, where a
+// tile is a rectangle and a corridor runs straight up the screen), center on the selected unit (Home). Mouse picking
+// runs the screen point back along its view ray to the frontmost tile it hits (raised floors, walls and roofs
+// included) or the unit sprite under it.
 import { PAL as COL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { battleOverlays } from "../sim/siege.js"; // fire, smoke, decoys, ladders, rams, auras as data (sim/siege.js)
-import { CELL, active, coverSides, evacAt, barredCell } from "../sim/combat.js";
+import { CELL, active, coverSides, evacAt, barredCell, moveMob, vaultable, vaultBreaks } from "../sim/combat.js";
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
+import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { endangered, imminent } from "../sim/carriers.js"; // a body in danger from the worm
 import { isMedic } from "../sim/medics.js"; // a med kit makes a medic: the cross tag
 import { nlTags } from "./nonlethal.js"; // status tags of the non-lethal kit (sim/nonlethal.js)
 import { battleWeather, fogColour, fogCss, skirtFor, drawVignette, setEdgeCanvas } from "./battleedge.js"; // the map's edge: ground fading into fog
-import { paintLights, drawGlow, drawDarkness, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness
+import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from "./battlelights.js"; // night: flashlight beams, lantern pools, the darkness; by day a dark room's shade
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso, drawCartIso, drawCartBoxIso } from "./ground.js";
 import { isCart, parkCells } from "../sim/carts.js"; // a cart pushed (u.bag); Park cart's cells
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
+import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan is open the team is not on the map yet (not drawn)
+import { onForgetPictures } from "./pictures.js"; // the pictures kept here are dropped when the GPU context comes back (they would be blank)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -52,11 +57,12 @@ export const ISO_ZOOMS = [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5]; // CSS px per ar
 // ---------- state ----------
 const ROOFS_KEY = "brokenstate.battleRoofs";
 export const iso = {
-  rot: 0, zoom: 4, cx: 0, cy: 0, battle: null, roofs: true,
+  rot: 0, straight: false, zoom: 4, cx: 0, cy: 0, battle: null, roofs: true,
   edge: null, edgeSince: 0, keys: new Set(), target: null, lastT: 0,
   rects: [], frameMs: 0, frames: 0, cw: 0, ch: 0,
   lastHover: null, // the hovered cell in the last frame: { x, y, hidden (behind a tree or other cover), cover, dash } (tools)
   builds: { scene: 0, ground: 0, fog: 0, looks: 0, sprites: 0 }, // how often each cache was (re)built (tools, the dev fps view)
+  bottomInset: 0, // the battle's bottom bar over the map (px; ui/combat.js barInset): the compass sits above it
 };
 try { iso.roofs = typeof localStorage === "undefined" || localStorage.getItem(ROOFS_KEY) !== "0"; } catch { iso.roofs = true; }
 export function setRoofs(on) {
@@ -68,8 +74,9 @@ export function setRoofs(on) {
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); }
 const spriteCache = new Map();
-let groundCache = null, fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
-export function clearIsoCache() { spriteCache.clear(); groundCache = fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
+const groundCaches = new Map(), GROUNDS = 6; // groundFor: key -> picture, of one battle (dropped with a new one), least recently used first
+let fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
+export function clearIsoCache() { spriteCache.clear(); groundCaches.clear(); fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
 export const isoCacheSize = () => spriteCache.size;
 
 // ---------- small helpers ----------
@@ -87,6 +94,20 @@ const css = (c, a = 1) => `rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.r
 
 // ---------- view transforms ----------
 // The view turns the map a quarter at a time: world (x, y) → view (u, v); the view grid is W × H, or H × W.
+// iso.straight: the eighth before rotation iso.rot (between iso.rot − 1 and iso.rot), the camera looking straight
+// along −v: the same view grid, a tile drawn as an SW × SH rectangle (the diamond's 32 × 16 turned an eighth:
+// 16√2 × 8√2), screen x along u, the far side up the screen, only a block's top and its +v ("south") face showing.
+const SW = 22, SH = 11;
+// Art px (before the height) of a view point, a diamond's or a rectangle's; back; one art px up the screen as a step
+// along the view ray toward the camera (picking, coverOf); the depth the painter sorts by (back to front).
+const artX = (u, v, st) => (st ? u * SW : (u - v) * HW);
+const artY = (u, v, st) => (st ? v * SH : (u + v) * HH);
+const artUV = (ax, ay, st) => (st ? [ax / SW, ay / SH] : [(ay / HH + ax / HW) / 2, (ay / HH - ax / HW) / 2]);
+const rayK = (st) => (st ? [0, 1 / SH] : [1 / (2 * HH), 1 / (2 * HH)]);
+const depth = (u, v, st) => (st ? v : u + v);
+// The view's eighth, 0..7 (even: the diagonal views, iso.rot × 2; odd: the straight ones), and a cache key for it.
+export const viewStep = () => (2 * iso.rot - (iso.straight ? 1 : 0) + 8) & 7;
+const viewKey = () => `${iso.rot}${iso.straight ? "s" : ""}`;
 export const viewDims = (b, r = iso.rot) => (r & 1 ? [b.h, b.w] : [b.w, b.h]);
 export function toView(x, y, r, W, H) {
   switch (r & 3) { case 0: return [x, y]; case 1: return [H - 1 - y, x]; case 2: return [W - 1 - x, H - 1 - y]; default: return [y, W - 1 - x]; }
@@ -111,20 +132,20 @@ function viewDir(dx, dy, r) {
 const VD = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // Screen (CSS px) of a world point at height z (art px), for the current camera.
-let FR = { S: 2, X0: 0, Y0: 0, r: 0, W: 1, H: 1 };
+let FR = { S: 2, X0: 0, Y0: 0, r: 0, st: false, W: 1, H: 1 };
 export function project(wx, wy, z = 0) {
   const [u, v] = ptView(wx, wy, FR.r, FR.W, FR.H);
-  return [(u - v) * HW * FR.S + FR.X0, ((u + v) * HH - z) * FR.S + FR.Y0];
+  return [artX(u, v, FR.st) * FR.S + FR.X0, (artY(u, v, FR.st) - z) * FR.S + FR.Y0];
 }
 // The frame's transform (also used by the tests to project and pick without drawing).
 function setFrame(b, cw, ch) {
   const S = ISO_ZOOMS[iso.zoom];
-  FR = { S, X0: cw / 2 - iso.cx * S, Y0: ch / 2 - iso.cy * S, r: iso.rot, W: b.w, H: b.h, cw, ch };
+  FR = { S, X0: cw / 2 - iso.cx * S, Y0: ch / 2 - iso.cy * S, r: iso.rot, st: iso.straight, W: b.w, H: b.h, cw, ch };
   return FR;
 }
 
 // ---------- the scene: buildings, heights, what each cell looks like ----------
-const WALLISH = new Set(["wall", "window", "door", "bdoor", "doorway", "smashed", "idoor", "odoor"]);
+const WALLISH = new Set(["wall", "window", "door", "bdoor", "doorway", "smashed", "idoor", "odoor", "boarded"]); // boarded: a door or window under boards (sim/barricade.js)
 const FLOORED = new Set(["open", "counter", "cabinet", "shelf", "locker", "crate", "loft", "stairs", "rack", "table", "bed", "bars", "ladder"]);
 // Furniture that stands on a building's upper floor (sim/buildingmaps.js: a cell with a height that is not walked on)
 // is drawn on a slab of the upper floor, raised with it.
@@ -163,8 +184,19 @@ function sceneFor(b) {
     for (const j of cells) { const c = b.cells[j]; if (c.t === 2 || c.k === "loft") two = true; if (!WALLISH.has(c.k)) inner++; }
     blds.push({ id, cells, top: two ? WALL2 : WALL1, two, inner, mat: Math.floor(hash3(i, b.w, 7) * 4) });
   }
+  // The shell: a building's cells on its outside edge (next to a cell of no building or the map's edge). Seen from the
+  // street, so drawn even where nobody has looked inside (the interior's fog of war: drawIso).
+  const ext = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (comp[i] < 0) continue;
+    const x = i % b.w, y = (i / b.w) | 0;
+    for (let dy = -1; dy <= 1 && !ext[i]; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || comp[ny * b.w + nx] !== comp[i]) { ext[i] = 1; break; }
+    }
+  }
   // Single wall cells (no floor: a raid's locked doors in the open) stand alone.
-  sceneCache = { b, key, comp, blds, sig, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
+  sceneCache = { b, key, comp, blds, ext, sig, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
   iso.builds.scene++;
   return sceneCache;
 }
@@ -195,58 +227,82 @@ const standZ = (b, x, y) => hAt(b, x, y) * LV + liftAt(b, y * b.w + x);
 // order given (back to front): box { u0, u1, v0, v1, z0, z1, m }, cylinder { cyl: [u, v, r], z0, z1, m }, blob
 // (an ellipsoid) { blob: [u, v, z], ru, rz, m }. m(face, s, t, X, Y) returns [r, g, b] or null (a hole): face "top",
 // "south" (the +v side, lit), "east" (the +u side, in shade), "side" (a cylinder), "blob"; s, t across and up it.
-const LIGHT = { top: 1, south: 0.8, east: 0.62 };
-function primBounds(p) {
+// st: painted for a straight view (iso.straight: the top and the south side only, no east side showing).
+// The light, the one the survivor sprites and the item icons use: the top lit, the south (+v, screen-left) face
+// about the colour itself, the east (+u, screen-right) face well into shade. A top's far edges catch it (EDGE).
+const LIGHT = { top: 1.04, south: 0.92, east: 0.62 }, EDGE = 1.16;
+// Round things (cylinders and blobs) shade in facets, like the figures' eight-sided limbs, not in a smooth gradient.
+const FACETS = 8, BANDS = 5;
+const facet = (q, n) => Math.round(q * (n - 1)) / (n - 1);
+const RX = (st) => (st ? SW : HW * Math.SQRT2), RY = (st) => (st ? SH : HH * Math.SQRT2); // a radius of one tile across, on screen
+function primBounds(p, st) {
   if (p.cyl) {
-    const [u, v, r] = p.cyl, cx = (u - v) * HW, cy = (u + v) * HH, rx = r * HW * Math.SQRT2, ry = r * HH * Math.SQRT2;
+    const [u, v, r] = p.cyl, cx = artX(u, v, st), cy = artY(u, v, st), rx = r * RX(st), ry = r * RY(st);
     return [cx - rx, cx + rx, cy - p.z1 - ry, cy - p.z0 + ry];
   }
   if (p.blob) {
-    const [u, v, z] = p.blob, cx = (u - v) * HW, cy = (u + v) * HH - z, rx = p.ru * HW * Math.SQRT2;
+    const [u, v, z] = p.blob, cx = artX(u, v, st), cy = artY(u, v, st) - z, rx = p.ru * RX(st);
     return [cx - rx, cx + rx, cy - p.rz, cy + p.rz];
   }
+  if (st) return [p.u0 * SW, p.u1 * SW, p.v0 * SH - p.z1, p.v1 * SH - p.z0];
   return [(p.u0 - p.v1) * HW, (p.u1 - p.v0) * HW, (p.u0 + p.v0) * HH - p.z1, (p.u1 + p.v1) * HH - p.z0];
 }
-function paint(prims, { fog = false, outline = false } = {}) {
-  let x0 = -HW, x1 = HW, y0 = 0, y1 = 2 * HH;
-  for (const p of prims) { const [a, b, c, d] = primBounds(p); x0 = Math.min(x0, a); x1 = Math.max(x1, b); y0 = Math.min(y0, c); y1 = Math.max(y1, d); }
+function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) {
+  let x0 = st ? 0 : -HW, x1 = st ? SW : HW, y0 = 0, y1 = st ? SH : 2 * HH;
+  for (const p of prims) { const [a, b, c, d] = primBounds(p, st); x0 = Math.min(x0, a); x1 = Math.max(x1, b); y0 = Math.min(y0, c); y1 = Math.max(y1, d); }
   x0 = Math.floor(x0) - 1; y0 = Math.floor(y0) - 1; x1 = Math.ceil(x1) + 1; y1 = Math.ceil(y1) + 1;
   const w = x1 - x0, h = y1 - y0, buf = new Uint8ClampedArray(w * h * 4);
   const put = (i, c, f) => { buf[i] = c[0] * f; buf[i + 1] = c[1] * f; buf[i + 2] = c[2] * f; buf[i + 3] = 255; };
   for (const p of prims) {
-    const [ba, bb, bc, bd] = primBounds(p);
+    const [ba, bb, bc, bd] = primBounds(p, st);
     const px0 = Math.max(0, Math.floor(ba - x0)), px1 = Math.min(w, Math.ceil(bb - x0) + 1), py0 = Math.max(0, Math.floor(bc - y0)), py1 = Math.min(h, Math.ceil(bd - y0) + 1);
     for (let py = py0; py < py1; py++) for (let px = px0; px < px1; px++) {
       const X = px + x0 + 0.5, Y = py + y0 + 0.5, i = (py * w + px) * 4;
       if (p.cyl) {
-        const [u, v, r] = p.cyl, cx = (u - v) * HW, cy = (u + v) * HH, rx = r * HW * Math.SQRT2, ry = r * HH * Math.SQRT2;
+        const [u, v, r] = p.cyl, cx = artX(u, v, st), cy = artY(u, v, st), rx = r * RX(st), ry = r * RY(st);
         const dx = (X - cx) / rx;
         if (dx < -1 || dx > 1) continue;
         const e = Math.sqrt(1 - dx * dx), top = cy - p.z1;
-        if (Math.abs(Y - top) <= ry * e) { const c = p.m("top", X - cx, Y - top, X, Y); if (c) put(i, c, 1); continue; }
+        if (Math.abs(Y - top) <= ry * e) { const c = p.m("top", X - cx, Y - top, X, Y); if (c) put(i, c, LIGHT.top); continue; }
         if (Y > top && Y <= cy - p.z0 + ry * e) {
           const c = p.m("side", dx, cy - p.z0 + ry * e - Y, X, Y);
-          if (c) put(i, c, 0.95 - 0.36 * ((dx + 1) / 2));
+          if (c) put(i, c, 0.98 - 0.4 * facet((dx + 1) / 2, FACETS));
         }
         continue;
       }
       if (p.blob) {
-        const [u, v, z] = p.blob, cx = (u - v) * HW, cy = (u + v) * HH - z, rx = p.ru * HW * Math.SQRT2;
+        const [u, v, z] = p.blob, cx = artX(u, v, st), cy = artY(u, v, st) - z, rx = p.ru * RX(st);
         const nx = (X - cx) / rx, ny = (Y - cy) / p.rz, q = nx * nx + ny * ny;
         if (q > 1) continue;
-        const nz = Math.sqrt(1 - q), l = 0.42 + 0.58 * clamp01(-0.45 * nx - 0.5 * ny + 0.75 * nz);
+        const nz = Math.sqrt(1 - q), l = 0.42 + 0.58 * facet(clamp01(-0.45 * nx - 0.5 * ny + 0.75 * nz), BANDS);
         const c = p.m("blob", nx, ny, X, Y);
         if (c) put(i, c, l);
         continue;
       }
-      // A box: its top, then the lit south (+v) side, then the east (+u) side in shade.
+      // A box: its top, then the lit south (+v) side, then the east (+u) side in shade (none in a straight view: edge on).
+      const eps = 1e-6;
+      if (st) {
+        const u = X / SW, v = (Y + p.z1) / SH, su = (p.u1 - p.u0) * 16;
+        if (u < p.u0 - eps || u > p.u1 + eps) continue;
+        const s = (u - p.u0) * 16;
+        if (v >= p.v0 - eps && v <= p.v1 + eps) {
+          const t = (v - p.v0) * 16, sv = (p.v1 - p.v0) * 16, col = p.m("top", s, t, X, Y, su, sv);
+          if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? EDGE : LIGHT.top);
+          continue;
+        }
+        const z = p.v1 * SH - Y;
+        if (z >= p.z0 - eps && z <= p.z1 + eps) {
+          const t = z - p.z0, col = p.m("south", s, t, X, Y, su, p.z1 - p.z0);
+          if (col) put(i, col, LIGHT.south * (t < 1.2 && !p.flat ? 0.82 : 1));
+        }
+        continue;
+      }
       const a = X / HW;
       let c = (Y + p.z1) / HH, u = (c + a) / 2, v = (c - a) / 2;
-      const eps = 1e-6;
       if (u >= p.u0 - eps && u <= p.u1 + eps && v >= p.v0 - eps && v <= p.v1 + eps) {
         const s = (u - p.u0) * 16, t = (v - p.v0) * 16, su = (p.u1 - p.u0) * 16, sv = (p.v1 - p.v0) * 16;
         const col = p.m("top", s, t, X, Y, su, sv);
-        if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? 1.12 : 1);
+        if (col) put(i, col, (s > su - 1 || t > sv - 1) && !p.flat ? EDGE : LIGHT.top);
         continue;
       }
       u = a + p.v1; let z = (u + p.v1) * HH - Y;
@@ -316,6 +372,11 @@ function wallFace(mat, dmg) {
   };
 }
 const capFace = (f, s, t, X, Y) => mul(PAL.cap, 0.92 + n2(X, Y, 4) * 0.14);
+// Doors (sim/combat.js CELL door, idoor, odoor): a painted leaf, a light frame, brass; a locked one oxblood.
+const DOORC = { leaf: hex("#b0602c"), locked: hex("#7a2622"), trim: hex("#e6d6ac"), brass: hex("#f0c440") };
+// A door's top seen from above, in its colour with a light rim (roofs off, cut away or seen past): a locked one with
+// its brass lock in the middle.
+const doorCap = (k, o) => (f, s, t, X, Y) => (s < 1.5 || t < 1.5 || s >= 14.5 || t >= 14.5 ? DOORC.trim : k === "door" && !o.vault && s >= 6 && s < 10 && t >= 6 && t < 10 ? DOORC.brass : mul(o.vault ? PAL.metal : k === "door" ? DOORC.locked : DOORC.leaf, 1.02 + n2(X, Y, 4) * 0.1));
 
 // ---------- what each kind of cell is made of ----------
 // o: { v: a variant 0..3 from the cell's place, j: joins (bits 1 +u, 2 −u, 4 +v, 8 −v: same-kind neighbours), n:
@@ -410,7 +471,7 @@ function prims(k, o) {
   const v = o.v || 0;
   if (o.car && (k === "car" || k === "truck" || k === "vehicle")) return carPieces(o.car, iso.rot);
   switch (k) {
-    case "wall": case "window": case "door": case "idoor": {
+    case "wall": case "window": case "door": case "idoor": case "boarded": {
       const top = o.stub ? STUB : o.top;
       const face = wallFace(o.mat ?? 0, o.dmg);
       const winFace = (axisFace) => (f, s, t, X, Y, sw) => {
@@ -419,18 +480,30 @@ function prims(k, o) {
           if (k === "window" && s >= w0 && s < w1 && t >= 11 && t < 25) return s < w0 + 1 || s >= w1 - 1 || t < 12 || t >= 24 ? PAL.frame : mul(PAL.glass, 0.85 + (s - t) % 5 * 0.04 + (o.dmg ? -0.3 : 0));
           // A roller door (a garage bay, a loading dock): metal slats across the whole cell.
           if (o.roll && t < 25) return t >= 24 ? PAL.frame : mul(PAL.metal, Math.floor(t) % 3 < 1 ? 0.7 : 0.92 + n2(s, t, 2) * 0.08);
-          // A locked door (sim/locks.js): dark wood or a steel vault door, a brass lock plate; a closed door: lighter.
-          if ((k === "door" || k === "idoor") && s >= 4 && s < 12 && t < 25) {
-            if (s < 5 || s >= 11 || t >= 24) return PAL.frame;
-            if (k === "door" && s >= 8 && s < 10 && t >= 11 && t < 15) return hex("#d9b23a");
-            if (k === "idoor" && s === 9 && t === 12) return hex("#a8a49a");
-            return mul(o.vault ? PAL.metal : k === "door" ? PAL.woodDk : PAL.wood, 0.95 + n2(s, t, 1) * 0.1);
+          // A door, big and bright enough to find across the map: a painted leaf with panels in a light frame and a
+          // brass knob (a closed door); a locked one (sim/locks.js) oxblood with a steel bar across and a brass lock
+          // plate, a vault door steel.
+          // Boards nailed across a door or a window (sim/barricade.js): planks of raw wood, a nail head at each end.
+          if (k === "boarded" && s >= 1 && s < 15 && t < 28) {
+            const row = Math.floor(t / 5), lean = (row % 2 ? 1 : -1) * Math.floor(s / 7);
+            const tt = t + lean;
+            if (Math.floor(tt) % 5 === 4) return mul(PAL.woodDk, 0.7);
+            if ((s < 3 || s >= 13) && Math.floor(tt) % 5 === 2) return PAL.metalDk;
+            return mul(PAL.wood, 0.78 + n2(Math.floor(s / 4), row, 6) * 0.22);
+          }
+          if ((k === "door" || k === "idoor") && s >= 3 && s < 13 && t < 27) {
+            if (s < 4 || s >= 12 || t >= 26) return DOORC.trim;
+            if (k === "door" && t >= 13 && t < 15) return PAL.metalDk;
+            if (k === "door" && s >= 7 && s < 10 && t >= 9 && t < 13) return DOORC.brass;
+            if (k === "idoor" && s >= 9 && s < 11 && t >= 12 && t < 14) return DOORC.brass;
+            return mul(o.vault ? PAL.metal : k === "door" ? DOORC.locked : DOORC.leaf, (Math.floor(t) % 9 < 1 || Math.floor(s) === 7 ? 0.8 : 0.95) + n2(s, t, 1) * 0.1);
           }
         }
         return face(f, s, t, X, Y);
       };
       const wf = o.n === "u" ? "east" : o.n === "v" ? "south" : null;
-      const m = (f, s, t, X, Y, sw, sh) => (f === "top" ? capFace(f, s, t, X, Y) : wf ? winFace(wf)(f, s, t, X, Y, sw, sh) : winFace("south")(f, s, t, X, Y, sw, sh) || winFace("east")(f, s, t, X, Y, sw, sh));
+      const cap = k === "door" || k === "idoor" ? doorCap(k, o) : capFace; // a door's top in its colour: found from above at any turn of the view
+      const m = (f, s, t, X, Y, sw, sh) => (f === "top" ? cap(f, s, t, X, Y) : wf ?winFace(wf)(f, s, t, X, Y, sw, sh) : winFace("south")(f, s, t, X, Y, sw, sh) || winFace("east")(f, s, t, X, Y, sw, sh));
       return [{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: top, m }];
     }
     case "bdoor": case "doorway": case "smashed": case "odoor": {
@@ -440,10 +513,13 @@ function prims(k, o) {
       const top = o.stub ? STUB : o.top, face = wallFace(o.mat ?? 0, 0), lin = top - 7;
       const back = [run(ax, 0, 1, 0, top, face, 0, 0.2)];
       const front = [run(ax, 0, 1, 0, top, face, 0.8, 1)];
-      if (!o.stub) front.unshift(run(ax, 0, 1, lin, top, face, 0.2, 0.8));
+      // An open door's lintel and posts are topped in the door's colour (found from above, as a shut one: doorCap).
+      const lintel = k === "odoor" ? (f, s, t, X, Y) => (f === "top" ? mul(DOORC.leaf, 1.05 + n2(X, Y, 4) * 0.1) : face(f, s, t, X, Y)) : face;
+      if (k === "odoor") { back[0] = run(ax, 0, 1, 0, top, lintel, 0, 0.2); front[0] = run(ax, 0, 1, 0, top, lintel, 0.8, 1); }
+      if (!o.stub) front.unshift(run(ax, 0, 1, lin, top, lintel, 0.2, 0.8));
       if (k === "bdoor") back.push(run(ax, 0.42, 0.58, 0, o.stub ? STUB : lin, (f, s, t) => (t > 9 && t < 12 ? PAL.metal : mul(PAL.wood, 0.85 + ((s | 0) % 3 === 0 ? -0.15 : 0.08))), 0.2, 0.8));
       if (k === "doorway" || (k === "odoor" && !o.roll)) {
-        const wood = k === "odoor" ? tex(PAL.wood, 0.12) : tex(PAL.woodDk, 0.15);
+        const wood = k === "odoor" ? tex(DOORC.leaf, 0.12) : tex(PAL.woodDk, 0.15);
         back.push(ax === "u" ? { u0: 0.2, u1: 0.28, v0: 0.1, v1: 0.62, z0: 0, z1: Math.min(lin, k === "odoor" ? 24 : 22), m: wood } : { u0: 0.1, u1: 0.62, v0: 0.2, v1: 0.28, z0: 0, z1: Math.min(lin, k === "odoor" ? 24 : 22), m: wood });
       }
       if (k === "odoor" && o.roll && !o.stub) front.unshift(run(ax, 0.3, 0.7, lin - 4, lin, tex(PAL.metal, 0.12), 0.2, 0.8));
@@ -671,25 +747,44 @@ function prims(k, o) {
     default: return [];
   }
 }
-const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall"]);
+const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
+  "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade"]); // props stand out with a rim, as the figures do; runs (walls, fences, rails) would seam
 
+// The cells' block sprites by look (sprite, roofSprite, massSprite; null: nothing to draw): a key holds all the picture
+// depends on, so one never goes stale. Each entry keeps the frame it was last drawn in (iso.frames); past SPRITES
+// entries, those not drawn in this frame or the last are dropped, so the scene on screen stays (rotating the view or a
+// long battle used to pass 3,000, clear them all and paint the whole scene again in one frame).
+const SPRITES = 6000;
+let spriteSweep = SPRITES;
+function spriteGet(key) {
+  const e = spriteCache.get(key);
+  if (e === undefined) return undefined;
+  e.used = iso.frames;
+  return e.s;
+}
+function spritePut(key, s) {
+  if (spriteCache.size >= spriteSweep) {
+    for (const [k, e] of spriteCache) if (e.used < iso.frames - 1) spriteCache.delete(k);
+    spriteSweep = Math.max(SPRITES, spriteCache.size + SPRITES / 4); // a scene bigger than the bound: swept again a quarter later, not every sprite
+  }
+  spriteCache.set(key, { s, used: iso.frames });
+}
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
-  let s = spriteCache.get(key);
+  const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
+  let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
     s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) }) : null;
     iso.builds.sprites++;
-    if (spriteCache.size > 3000) spriteCache.clear();
-    spriteCache.set(key, s);
+    spritePut(key, s);
   }
   return s;
 }
 // A roof piece over one cell of a building: a flat slab at the walls' height with a lip on the outside edges.
 function roofSprite(mat, top, edges, fog) {
-  const key = `roof|${mat}|${top}|${edges}|${fog ? 1 : 0}`;
-  let s = spriteCache.get(key);
+  const key = `${iso.straight ? "s|" : ""}roof|${mat}|${top}|${edges}|${fog ? 1 : 0}`;
+  let s = spriteGet(key);
   if (s === undefined) {
     const base = [PAL.tar, PAL.rust, PAL.shingle, PAL.conc][mat & 3];
     const m = (f, sx, t, X, Y) => {
@@ -706,7 +801,7 @@ function roofSprite(mat, top, edges, fog) {
     if (edges & 4) p.push({ u0: 0, u1: 1, v0: 0.92, v1: 1, z0: top + 3, z1: top + 5, m: lm });
     s = paint(p, { fog });
     iso.builds.sprites++;
-    spriteCache.set(key, s);
+    spritePut(key, s);
   }
   return s;
 }
@@ -716,8 +811,8 @@ function roofSprite(mat, top, edges, fog) {
 // neighbour in that direction is outside the footprint (the faces inside are hidden by the raised floor in front).
 // A darker course marks each storey.
 function massSprite(mat, lift, faces, fog) {
-  const key = `mass|${mat}|${lift}|${faces}|${fog ? 1 : 0}`;
-  let s = spriteCache.get(key);
+  const key = `${iso.straight ? "s|" : ""}mass|${mat}|${lift}|${faces}|${fog ? 1 : 0}`;
+  let s = spriteGet(key);
   if (s === undefined) {
     const face = wallFace(mat & 3, 0);
     const m = (f, sx, t, X, Y) => {
@@ -727,7 +822,7 @@ function massSprite(mat, lift, faces, fog) {
     };
     s = faces ? paint([{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: lift, m }], { fog }) : null;
     iso.builds.sprites++;
-    spriteCache.set(key, s);
+    spritePut(key, s);
   }
   return s;
 }
@@ -777,15 +872,20 @@ function floorColor(c, k, x, y, lx, ly, mud) {
   if (mud) { const m = clamp01(mud - hash3(x * 16 + tx, y * 16 + ty, 9) * 0.6); if (m > 0) col = mix(col, q > 0.7 ? hex("#5a1a1c") : hex("#3e2a22"), m * 0.85); }
   return col;
 }
-// The whole map's ground at art resolution (one canvas; the view origin's top vertex at (Hv × 16, 0)).
+// The whole map's ground at art resolution (one canvas; the view origin's top vertex at (Hv × 16, 0); in a straight
+// view the origin at (0, 0): ox, the art x of its left edge).
+// Kept for a few floors and views (groundCaches: the key as the one-slot cache had, the view and the floor's ground
+// key, of this battle only), so going up and down the storeys does not paint each floor again (76-250 ms a switch).
 function groundFor(b, scene) {
-  const r = iso.rot, key = `${r}:${scene.groundKey}`;
-  if (groundCache && groundCache.b === b && groundCache.key === key) return groundCache;
+  const r = iso.rot, st = iso.straight, key = `${viewKey()}:${scene.groundKey}`;
+  const hit = groundCaches.get(key);
+  if (hit && hit.b === b) { groundCaches.delete(key); groundCaches.set(key, hit); return hit; }
+  for (const [k, g] of groundCaches) if (g.b !== b) groundCaches.delete(k);
   const [Wv, Hv] = viewDims(b, r);
   // An upper floor (floorsOf): the canvas grows by the lift at the top (oy rows) and is painted twice: the ground
   // floor's surface at level 0, dimmed (looking down from the windows), then the footprint's cells raised.
   const lift = liftOf(b);
-  const gw = (Wv + Hv) * HW, gh = (Wv + Hv) * HH + lift;
+  const gw = st ? Wv * SW : (Wv + Hv) * HW, gh = (st ? Hv * SH : (Wv + Hv) * HH) + lift, ox = st ? 0 : -Hv * HW;
   const buf = new Uint8ClampedArray(gw * gh * 4);
   // Mud and blood around the hive's flesh.
   const mud = new Float32Array(b.w * b.h);
@@ -795,8 +895,7 @@ function groundFor(b, scene) {
   }
   const passes = lift ? [[b.floors[0].cells, 0, 0.55, false], [b.cells, lift, 1, true]] : [[b.cells, 0, 1, false]];
   for (const [cells, up, dim, footOnly] of passes) for (let py = 0; py < gh; py++) for (let px = 0; px < gw; px++) {
-    const ax = px + 0.5 - Hv * HW, ay = py + 0.5 - lift + up;
-    const u = (ay / HH + ax / HW) / 2, v = (ay / HH - ax / HW) / 2;
+    const [u, v] = artUV(px + 0.5 + ox, py + 0.5 - lift + up, st);
     if (u < 0 || v < 0 || u >= Wv || v >= Hv) continue;
     const iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv;
     const [x, y] = fromView(iu, iv, r, b.w, b.h);
@@ -812,9 +911,12 @@ function groundFor(b, scene) {
   const cv = mkCanvas(gw, gh), c = cv.getContext("2d"), img = c.createImageData(gw, gh);
   img.data.set(buf);
   c.putImageData(img, 0, 0);
-  groundCache = toBitmap({ b, key, cv, gw, gh, Hv, oy: lift });
+  const g = toBitmap({ b, key, cv, gw, gh, Hv, ox, oy: lift });
+  groundCaches.delete(key);
+  groundCaches.set(key, g);
+  while (groundCaches.size > GROUNDS) groundCaches.delete(groundCaches.keys().next().value);
   iso.builds.ground++;
-  return groundCache;
+  return g;
 }
 // The ground on one storey (no floor raised), painted once per battle in map space: 16 × 16 texels a tile, the
 // texels floorColor works in, so the colours are the same; drawIso stretches it onto the diamonds with one affine
@@ -846,11 +948,13 @@ function flatGroundFor(b, scene) {
   return flatGroundCache;
 }
 // The affine map from a map-space picture (`per` pixels a tile) to the screen: map (x, y) → view (u, v) for the
-// rotation (toView, continuous) → the diamond's art px (ax = (u − v)·HW + Hv·HW, ay = (u + v)·HH) → × S from (gx, gy).
-function groundXform(b, r, per, S, gx, gy, Hv) {
+// rotation (toView, continuous) → the diamond's art px (ax = (u − v)·HW + Hv·HW, ay = (u + v)·HH; a straight view's
+// rectangles: ax = u·SW + Hv·HW, ay = v·SH) → × S from (gx, gy).
+function groundXform(b, r, per, S, gx, gy, Hv, st = iso.straight) {
   const W = b.w, H = b.h;
   const [au, bu, cu, av, bv, cv] = [[1, 0, 0, 0, 1, 0], [0, -1, H, 1, 0, 0], [-1, 0, W, 0, -1, H], [0, 1, 0, -1, 0, W]][r & 3];
-  return [S * HW * (au - av) / per, S * HH * (au + av) / per, S * HW * (bu - bv) / per, S * HH * (bu + bv) / per, gx + S * HW * Hv + S * HW * (cu - cv), gy + S * HH * (cu + cv)];
+  const X = (u, v) => artX(u, v, st), Y = (u, v) => artY(u, v, st); // linear in (u, v)
+  return [S * X(au, av) / per, S * Y(au, av) / per, S * X(bu, bv) / per, S * Y(bu, bv) / per, gx + S * HW * Hv + S * X(cu, cv), gy + S * Y(cu, cv)];
 }
 
 // A finished picture as an ImageBitmap (the browser keeps it on the GPU; a canvas may be uploaded again and again),
@@ -865,10 +969,11 @@ function toBitmap(o) {
 function fogFor(b, vis) {
   let sig = 0;
   for (let i = 0; i < vis.length; i++) sig = (Math.imul(sig, 31) + vis[i] + i * 3) | 0;
-  const r = iso.rot, lift = liftOf(b), key = `${b.w}x${b.h}:${r}:${floorNo(b)}:${sig}:${b.night ? 1 : 0}`;
+  const r = iso.rot, st = iso.straight, lift = liftOf(b), key = `${b.w}x${b.h}:${viewKey()}:${floorNo(b)}:${sig}:${b.night ? 1 : 0}`;
   if (fogCache && fogCache.b === b && fogCache.key === key) return fogCache;
   const [Wv, Hv] = viewDims(b, r);
-  const gw = (Wv + Hv) * HW, gh = (Wv + Hv) * HH + lift; // an upper floor: the footprint's diamonds raised (oy rows on top)
+  const gw = st ? Wv * SW : (Wv + Hv) * HW, gh = (st ? Hv * SH : (Wv + Hv) * HH) + lift, ox = st ? 0 : -Hv * HW; // an upper floor: the footprint's diamonds raised (oy rows on top); ox as groundFor's
+
   const cv = fogCache && fogCache.canvas.width === gw && fogCache.canvas.height === gh ? fogCache.canvas : mkCanvas(gw, gh);
   const c = cv.getContext("2d");
   c.clearRect(0, 0, gw, gh);
@@ -877,11 +982,12 @@ function fogFor(b, vis) {
   for (let i = 0; i < vis.length; i++) {
     if (vis[i]) continue;
     const [u, v] = toView(i % b.w, (i / b.w) | 0, r, b.w, b.h);
-    const x = (u - v) * HW + Hv * HW, y = (u + v) * HH + lift - liftAt(b, i);
-    c.moveTo(x, y); c.lineTo(x + HW, y + HH); c.lineTo(x, y + 2 * HH); c.lineTo(x - HW, y + HH); c.closePath();
+    const x = artX(u, v, st) - ox, y = artY(u, v, st) + lift - liftAt(b, i);
+    if (st) c.rect(x, y, SW, SH);
+    else { c.moveTo(x, y); c.lineTo(x + HW, y + HH); c.lineTo(x, y + 2 * HH); c.lineTo(x - HW, y + HH); } // filled: no closePath (diamond)
   }
   c.fill();
-  fogCache = toBitmap({ b, key, cv, canvas: cv, oy: lift });
+  fogCache = toBitmap({ b, key, cv, canvas: cv, ox, oy: lift });
   iso.builds.fog++;
   return fogCache;
 }
@@ -912,7 +1018,7 @@ function fogMaskFor(b, vis) {
 
 // ---------- per-cell looks ----------
 const JOINS = {
-  wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH,
+  wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH, boarded: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
@@ -946,10 +1052,11 @@ function lookOf(b, scene, x, y, cut, focus = null) {
       }
       if (k === "shelf" || k === "locker" || k === "cabinet" || k === "counter") o.n = o.n === "u" ? "v" : o.n === "v" ? "u" : null; // furniture runs along the wall it stands by
     }
-    // The cutaway: a cut building's near walls (the ones with its inside behind them) drop to stubs.
+    // The cutaway: a cut building's near walls (the ones with its inside behind them) drop to stubs (behind: up the
+    // screen, toward −u and −v; in a straight view toward −v).
     if (cut && cut.has(bid) && (WALLISH.has(k) || k === "bars") && (!focus || focus.some(([fx, fy]) => Math.max(Math.abs(fx - x), Math.abs(fy - y)) <= CUT_R))) {
       const [u, v] = toView(x, y, r, b.w, b.h), [Wv, Hv] = viewDims(b, r);
-      for (const [du, dv] of [[-1, 0], [0, -1], [-1, -1]]) {
+      for (const [du, dv] of iso.straight ? [[0, -1], [-1, -1], [1, -1]] : [[-1, 0], [0, -1], [-1, -1]]) {
         const nu = u + du, nv = v + dv;
         if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) continue;
         const [wx, wy] = fromView(nu, nv, r, b.w, b.h), j = wy * b.w + wx;
@@ -960,7 +1067,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
   if (c.mhp) o.dmg = Math.round(clamp01(1 - c.hp / c.mhp) * 3) / 3;
   if (k === "gate") o.barred = barredCell(c);
   if (k === "palisade" && c.t === 1) o.top = PALISADE;
-  if (k === "door" && b.raid) { const d = (b.raid.doors || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); }
+  if (k === "door") { const d = ((b.raid ? b.raid.doors : b.doors) || []).find((q) => q.x === x && q.y === y); o.vault = !!(d && d.lock && d.lock.kind === "vault"); } // a raid's, a field map's houses' (sim/combat.js b.doors)
   if (c.roll) o.roll = true; // a roller door (sim/buildingmaps.js)
   if (c.h > 0 && FURNITURE.has(k)) o.raise = c.h * LV; // furniture on an upper floor
   if (k === "ladder" || k === "stairs") {
@@ -990,7 +1097,7 @@ function blockTop(k, o) {
 }
 function blockTop0(k, o) {
   switch (k) {
-    case "wall": case "window": case "door": case "bdoor": case "doorway": case "smashed": case "idoor": case "odoor": return o.stub ? STUB : o.top;
+    case "wall": case "window": case "door": case "bdoor": case "doorway": case "smashed": case "idoor": case "odoor": case "boarded": return o.stub ? STUB : o.top;
     case "rack": return 31; case "table": return 11; case "bed": return 8; case "bars": return o.stub ? STUB : 28;
     case "palisade": case "gate": return PALISADE;
     case "tower": return 2 * LV + 7;
@@ -1015,7 +1122,7 @@ function blockTop0(k, o) {
 const looksCache = {}; // by use: "draw" (this frame's cutaway), "pick" (none)
 function looksFor(b, scene, cut, slot = "draw", focus = null) {
   const ck = [...cut].sort((a, c) => a - c).join(",");
-  const key = `${scene.key}:${iso.rot}:${ck}:${focus ? focus.map((p) => p.join(".")).join(",") : ""}`, lc = looksCache[slot];
+  const key = `${scene.key}:${viewKey()}:${ck}:${focus ? focus.map((p) => p.join(".")).join(",") : ""}`, lc = looksCache[slot];
   if (lc && lc.b === b && lc.key === key) return lc.list;
   const list = new Array(b.w * b.h);
   for (let i = 0; i < list.length; i++) {
@@ -1039,9 +1146,19 @@ function sprOf(L, fog, front = false) {
 // (1.5–2.5; a raid 1.5–2), centered there.
 const mapKey = (b) => `${b.w}x${b.h}:${b.tier ? b.tier.map : ""}`;
 function newBattleCamera(b, cw, ch) {
+  // The same raid made again before going in (sim/raidplan.js: another side, a scout's hour, the night): the same map,
+  // the view as it was, moved to the team.
+  const prev = iso.battle;
+  if (prev && prev !== b && prev.setup === b.setup && b.setup && b.setup.plan && prev.w === b.w && prev.h === b.h) {
+    iso.battle = b;
+    iso.mapKey = mapKey(b);
+    const mine = b.units.filter((u) => u.side === "player" && !u.off && u.x >= 0);
+    if (mine.length) isoCenterOn(b, Math.round(mine.reduce((a, u) => a + u.x, 0) / mine.length), Math.round(mine.reduce((a, u) => a + u.y, 0) / mine.length));
+    return;
+  }
   iso.battle = b;
   iso.mapKey = mapKey(b);
-  iso.rot = 0;
+  iso.rot = 0; iso.straight = false;
   const [Wv, Hv] = viewDims(b, 0);
   const fit = Math.min(cw / ((Wv + Hv) * HW + 40), ch / ((Wv + Hv) * HH + 90));
   const zoomFor = (f) => { let z = 0; for (let i = 0; i < ISO_ZOOMS.length; i++) if (ISO_ZOOMS[i] <= f) z = i; return z; };
@@ -1101,19 +1218,19 @@ function drawEdgeMarkers(ctx, b, cw, ch, v) {
 }
 function centerAt(b, wx, wy, z) {
   const [u, v] = ptView(wx, wy, iso.rot, b.w, b.h);
-  iso.cx = (u - v) * HW;
-  iso.cy = (u + v) * HH - z;
+  iso.cx = artX(u, v, iso.straight);
+  iso.cy = artY(u, v, iso.straight) - z;
 }
 function clampCam(b) {
-  const [Wv, Hv] = viewDims(b);
-  iso.cx = Math.max(-Hv * HW, Math.min(Wv * HW, iso.cx));
-  iso.cy = Math.max(-2 * LV - liftOf(b), Math.min((Wv + Hv) * HH, iso.cy));
+  const [Wv, Hv] = viewDims(b), st = iso.straight;
+  iso.cx = Math.max(st ? 0 : -Hv * HW, Math.min(st ? Wv * SW : Wv * HW, iso.cx));
+  iso.cy = Math.max(-2 * LV - liftOf(b), Math.min(st ? Hv * SH : (Wv + Hv) * HH, iso.cy));
 }
 // Smoothly to a unit (V, or picking one that is off screen).
 export function isoCenterOn(b, x, y, smooth = true) {
   if (!b) return;
   const [u, v] = ptView(x + 0.5, y + 0.5, iso.rot, b.w, b.h);
-  const t = { cx: (u - v) * HW, cy: (u + v) * HH - standZ(b, x, y) - UNIT_H / 2 };
+  const t = { cx: artX(u, v, iso.straight), cy: artY(u, v, iso.straight) - standZ(b, x, y) - UNIT_H / 2 };
   if (smooth) iso.target = t;
   else { iso.cx = t.cx; iso.cy = t.cy; iso.target = null; }
 }
@@ -1123,12 +1240,15 @@ export function isoOnScreen(b, x, y, margin = 60) {
   const [X, Y] = project(x + 0.5, y + 0.5, standZ(b, x, y));
   return X > margin && Y > margin && X < FR.cw - margin && Y < FR.ch - margin;
 }
+// Turn the view d eighths (1 right, −1 left: E and Q): from a diagonal view to the straight one beside it and on to
+// the next diagonal one (viewStep: the straight eighth before rotation r uses r's view grid).
 export function isoRotate(b, d) {
   if (!b) return;
   // Keep the point at the middle of the screen where it is.
-  const [u, v] = [(iso.cy / HH + iso.cx / HW) / 2, (iso.cy / HH - iso.cx / HW) / 2];
+  const [u, v] = artUV(iso.cx, iso.cy, iso.straight);
   const [wx, wy] = ptWorld(u, v, iso.rot, b.w, b.h);
-  iso.rot = (iso.rot + d + 4) & 3;
+  const k = (viewStep() + d + 8) & 7;
+  iso.rot = ((k + 1) >> 1) & 3; iso.straight = (k & 1) === 1;
   centerAt(b, wx, wy, 0);
   iso.target = null;
   clampCam(b);
@@ -1197,8 +1317,7 @@ export function isoPick(b, px, py, opts = {}) {
     const q = iso.rects[i];
     if (px >= q.x0 && px <= q.x1 && py >= q.y0 && py <= q.y1) return { x: q.x, y: q.y, unit: q.id };
   }
-  const ax = (px - FR.X0) / FR.S, ay = (py - FR.Y0) / FR.S;
-  const u0 = (ay / HH + ax / HW) / 2, v0 = (ay / HH - ax / HW) / 2;
+  const [u0, v0] = artUV((px - FR.X0) / FR.S, (py - FR.Y0) / FR.S, FR.st), [ku, kv] = rayK(FR.st);
   const [Wv, Hv] = viewDims(b);
   // Roofs and the walls of buildings do not stop the ray (they are cut away for whatever the mouse points at inside:
   // picking never depends on the cutaway, so it cannot flicker); raised floors and every other block do.
@@ -1216,7 +1335,7 @@ export function isoPick(b, px, py, opts = {}) {
   const zMax = WALL2 + 8 + liftOf(b);
   let best = null;
   for (let z = zMax; z >= 0; z -= 1) {
-    const u = u0 + z / (2 * HH), v = v0 + z / (2 * HH);
+    const u = u0 + z * ku, v = v0 + z * kv;
     if (u < 0 || v < 0 || u >= Wv || v >= Hv) continue;
     const [x, y] = fromView(Math.floor(u), Math.floor(v), iso.rot, b.w, b.h);
     if (z <= topOf(x, y)) { best = { x, y }; break; }
@@ -1242,14 +1361,14 @@ export const HIDDEN_DASH = [4, 3]; // CSS px at zoom 2 (scaled with the zoom)
 function coverOf(b, x, y, looks, scene, cut, roofs) {
   const out = [];
   if (x < 0 || y < 0 || x >= b.w || y >= b.h) return out;
-  const z0 = standZ(b, x, y), k = 1 / (2 * HH);
+  const z0 = standZ(b, x, y), [ku, kv] = rayK(iso.straight);
   const [uc, vc] = ptView(x + 0.5, y + 0.5, iso.rot, b.w, b.h);
   const [Wv, Hv] = viewDims(b);
   const zMax = WALL2 + 8 + liftOf(b);
   let last = y * b.w + x;
   // From the floor toward the camera z rises, so a cell is reached at its lowest point: one test on the way in.
   for (let z = z0 + 1; z <= zMax; z++) {
-    const u = uc + (z - z0) * k, v = vc + (z - z0) * k;
+    const u = uc + (z - z0) * ku, v = vc + (z - z0) * kv;
     if (u >= Wv || v >= Hv) break;
     const [cx, cy] = fromView(Math.floor(u), Math.floor(v), iso.rot, b.w, b.h), i = cy * b.w + cx;
     if (i === last) continue;
@@ -1264,7 +1383,7 @@ function coverOf(b, x, y, looks, scene, cut, roofs) {
 // cutaway before one. [] when nothing does.
 let lastCover = null; // { b, looks, scene, cut, roofs } of the last frame
 export function isoCoverOf(b, x, y) {
-  if (lastCover && lastCover.b === b && lastCover.rot === iso.rot) return coverOf(b, x, y, lastCover.looks, lastCover.scene, lastCover.cut, lastCover.roofs);
+  if (lastCover && lastCover.b === b && lastCover.rot === viewKey()) return coverOf(b, x, y, lastCover.looks, lastCover.scene, lastCover.cut, lastCover.roofs);
   const scene = sceneFor(b);
   return coverOf(b, x, y, looksFor(b, scene, NOCUT, "pick"), scene, NOCUT, !floorsOf(b));
 }
@@ -1280,11 +1399,16 @@ function dashedCell(ctx, b, x, y, z, col, width, inset = 0.5) {
 
 // ---------- drawing ----------
 const tileTop = (b, x, y) => standZ(b, x, y);
-function diamond(ctx, x, y, z, inset = 0) {
+// A cell's floor outline: a diamond, or a straight view's rectangle. close: end the subpath with closePath, which a
+// stroke needs for its last edge and join; a fill closes every subpath itself, so a path of many diamonds to fill
+// leaves it out (Chromium's closePath costs more the more subpaths the path has: fillCells went quadratic).
+function diamond(ctx, x, y, z, inset = 0, close = true) {
   const [u, v] = ptView(x + 0.5, y + 0.5, FR.r, FR.W, FR.H);
-  const cx = (u - v) * HW * FR.S + FR.X0, cy = ((u + v) * HH - z) * FR.S + FR.Y0;
+  const cx = artX(u, v, FR.st) * FR.S + FR.X0, cy = (artY(u, v, FR.st) - z) * FR.S + FR.Y0;
+  if (FR.st) { const w = (SW / 2 - inset) * FR.S, h = (SH / 2 - inset / 2) * FR.S; ctx.rect(cx - w, cy - h, 2 * w, 2 * h); return; }
   const w = (HW - inset * 2) * FR.S, h = (HH - inset) * FR.S;
-  ctx.moveTo(cx, cy - h); ctx.lineTo(cx + w, cy); ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy); ctx.closePath();
+  ctx.moveTo(cx, cy - h); ctx.lineTo(cx + w, cy); ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy);
+  if (close) ctx.closePath();
 }
 // Fill the cells of a mask on the ground (and on raised floors at their height when `raised`).
 function fillCells(ctx, b, test, fill, raised = true) {
@@ -1295,10 +1419,22 @@ function fillCells(ctx, b, test, fill, raised = true) {
     if (!test(i)) continue;
     const x = i % b.w, y = (i / b.w) | 0, z = tileTop(b, x, y);
     if (z && !raised) continue;
-    diamond(ctx, x, y, z);
+    diamond(ctx, x, y, z, 0, false); // filled, so no closePath (diamond)
     any = true;
   }
   if (any) ctx.fill();
+}
+// The deploy step's green cells (sim/deploy.js canPlace at every cell), worked out once per battle revision instead of
+// every frame (4,356 calls a frame on the 66 × 66 yard): every deploy act bumps b.rev, and a new reach, zone or floor
+// is a new array (each part of the key), so the mask is the one canPlace would give now.
+let deployCache = null;
+function deployMask(b) {
+  const c = deployCache, D = b.deploy;
+  if (c && c.b === b && c.rev === b.rev && c.reach === b.reach && c.zone === D.zone && c.cells === b.cells) return c.ok;
+  const N = b.w * b.h, ok = new Uint8Array(N);
+  for (let i = 0; i < N; i++) ok[i] = canPlace(b, i % b.w, (i / b.w) | 0) ? 1 : 0;
+  deployCache = { b, rev: b.rev, reach: b.reach, zone: D.zone, cells: b.cells, ok };
+  return ok;
 }
 // The border of a mask's cells (ground level).
 function outlineCells(ctx, b, test, color, width = 2) {
@@ -1318,6 +1454,36 @@ function outlineCells(ctx, b, test, color, width = 2) {
   }
   ctx.stroke();
 }
+// The doors, so they are found at any zoom and turn of the view: a padlock badge over every locked door (sim/locks.js:
+// a raid's, a field map's houses': sim/combat.js b.doors), and over a building whose roof is on a door badge on each
+// way in (a closed door filled, an open one hollow), at the roof's height (the roof hides the door's own colours). Dim
+// where nobody sees it now.
+function drawDoorMarks(ctx, b, scene, cut, looks, vis, S, topFloor) {
+  const locked = new Set(((b.raid ? b.raid.doors : b.doors) || []).filter((d) => !d.lock.open && onFloor(b, d)).map((d) => d.y * b.w + d.x));
+  const s = Math.max(4, 2.2 * S);
+  for (let i = 0; i < b.w * b.h; i++) {
+    const c = b.cells[i], k = c.k;
+    if (k !== "door" && k !== "idoor" && k !== "odoor") continue;
+    const x = i % b.w, y = (i / b.w) | 0, bid = scene.comp[i], roofed = topFloor && bid >= 0 && !cut.has(bid);
+    const out = VD.some(([dx, dy]) => { const nx = x + dx, ny = y + dy; return nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || b.cells[ny * b.w + nx].f !== "floor"; });
+    const lock = locked.has(i);
+    if (!lock && !(roofed && out)) continue;
+    const L = looks[i], top = (roofed ? scene.blds[bid].top + 4 : L ? L.top : WALL1) + liftAt(b, i);
+    const [X, Y] = project(x + 0.5, y + 0.5, top + 3);
+    ctx.globalAlpha = vis[i] ? 1 : 0.6;
+    ctx.lineWidth = Math.max(1, S * 0.45); ctx.strokeStyle = "#141414";
+    if (lock) { // a padlock: the shackle, the brass body
+      ctx.beginPath(); ctx.arc(X, Y - s * 1.3, s * 0.55, Math.PI, 0); ctx.stroke();
+      ctx.fillStyle = "#7a2622"; rr(ctx, X - s * 0.95, Y - s * 1.35, s * 1.9, s * 1.45, 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#f0c440"; ctx.fillRect(X - s * 0.18, Y - s * 0.95, s * 0.36, s * 0.6);
+    } else { // a door leaf in its frame, hollow when it stands open
+      ctx.fillStyle = "#e6d6ac"; rr(ctx, X - s * 0.75, Y - s * 2, s * 1.5, s * 2, 2); ctx.fill(); ctx.stroke();
+      if (k !== "odoor") { ctx.fillStyle = "#b0602c"; ctx.fillRect(X - s * 0.5, Y - s * 1.75, s, s * 1.75); ctx.fillStyle = "#f0c440"; ctx.fillRect(X + s * 0.18, Y - s * 0.95, s * 0.2, s * 0.2); }
+      else { ctx.fillStyle = "#2a2018"; ctx.fillRect(X - s * 0.5, Y - s * 1.75, s, s * 1.75); ctx.fillStyle = "#b0602c"; ctx.fillRect(X - s * 0.5, Y - s * 1.75, s * 0.3, s * 1.75); }
+    }
+    ctx.globalAlpha = 1;
+  }
+}
 function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
@@ -1334,6 +1500,10 @@ function tag(ctx, text, x, y, col, size) {
   ctx.fillText(text, x, y - h * 0.28);
 }
 
+// Someone sneaking (sim/vision.js u.sneaking): drawn crouched (squashed and leaning), darker and a little see-through,
+// on a broken violet ring.
+export const SNEAK_LOOK = { squash: 0.8, alpha: 0.82, filter: "brightness(0.62) saturate(0.55)", ring: "#a98ce0" };
+
 // Draw the battle. H: what ui/combat.js knows (the cached view, the selected unit, the mode, the hover, helpers).
 export function drawIso(ctx, cw, ch, state, b, now, H) {
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
@@ -1341,7 +1511,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   iso.cw = cw; iso.ch = ch;
   stepCamera(b, now);
   setFrame(b, cw, ch);
-  const S = FR.S, r = iso.rot, v = H.v, u = H.u, players = b.units.filter((p) => p.side === "player");
+  frameFigs.length = 0;
+  // Before going in (sim/raidplan.js: the plan open; the user's request 2026-10-18): nobody of yours is on the map yet.
+  // The sim has the team at its zone; the drawing leaves them out until the side to go in from is picked.
+  // A captive of yours on a rescue raid (sim/rescueraid.js u.captive) is there already, tied up in their base: drawn.
+  const hold = planOpen(b) && !b.over;
+  const held = (p) => hold && p.side === "player" && !p.captive;
+  const S = FR.S, r = iso.rot, st = FR.st, v = H.v, u = H.u, players = b.units.filter((p) => p.side === "player" && !held(p));
   const scene = sceneFor(b);
   const [Wv, Hv] = viewDims(b);
   ctx.imageSmoothingEnabled = false;
@@ -1349,12 +1525,18 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   ctx.fillStyle = fogCss(fog);
   ctx.fillRect(0, 0, cw, ch);
 
-  // Buildings cut away: one of your people inside, an enemy you see inside, the mouse inside, or roofs off.
+  // Buildings cut away (the user's request 2026-10-12): only the one the selected survivor is in; from outside a
+  // building nothing in it shows, the roof stays on (a click on it still picks the cell under it: moving in works as
+  // before). Roofs off cuts every one away. Placing defenders (the deploy step), your own base and a battle that is
+  // over keep the old rule: one of your people inside, an enemy you see inside, the mouse inside.
   const cut = new Set();
   const cutAt = (x, y) => { const bid = scene.comp[y * b.w + x]; if (bid >= 0) cut.add(bid); };
   if (!iso.roofs) scene.blds.forEach((B) => cut.add(B.id));
-  for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && (p.side === "player" || v.seen.has(p.id))) cutAt(p.x, p.y);
-  if (H.hover) cutAt(H.hover.x, H.hover.y);
+  const open = !!H.allKnown || b.over || b.phase === "deploy";
+  if (open) {
+    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && ((p.side === "player" && !held(p)) || v.seen.has(p.id))) cutAt(p.x, p.y);
+    if (H.hover) cutAt(H.hover.x, H.hover.y);
+  } else if (u && u.side === "player" && !held(u) && !u.dead && !u.left && !u.off && onFloor(b, u) && u.x >= 0) cutAt(u.x, u.y);
   const peeks = (b.peeks || []).filter((p) => p.turn === b.turn); // a peek through a door (sim/buildingmaps.js) lifts the roof too
   for (const p of peeks) cutAt(p.x, p.y);
   // A building's own map (sim/buildingmaps.js): the walls are lowered around your people, the enemies you see and the
@@ -1362,13 +1544,19 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   let focus = null;
   if (b.raid && b.raid.interior && iso.roofs) {
     focus = [];
-    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && (p.side === "player" || v.seen.has(p.id))) focus.push([p.x, p.y]);
+    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && ((p.side === "player" && !held(p)) || v.seen.has(p.id))) focus.push([p.x, p.y]);
     if (H.hover) focus.push([H.hover.x, H.hover.y]);
     for (const p of peeks) focus.push([p.x, p.y]);
   }
   const looks = looksFor(b, scene, cut, "draw", focus);
   const seenB = new Set(); // buildings any of whose cells your people see: their roof is not fogged
   for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { seenB.add(B.id); break; }
+  // Inside a building (the fog of war indoors, the user's request 2026-10-12): you see the rooms your people see; a
+  // cell nobody has seen yet (H.known: ui/combat.js, what your people have ever seen on this floor) is dark and empty
+  // (its furniture, containers and room name not drawn; the building's shell is seen from outside); a cell seen
+  // before but not now is greyed under the fog, with what was there when it was last seen.
+  const known = !open && H.known ? H.known : null;
+  const unknownCell = (i) => !!known && scene.comp[i] >= 0 && !v.vis[i] && !known.cells[i] && !scene.ext[i];
 
   // The ground and the fog.
   const lift = liftOf(b), F = floorsOf(b); // an upper floor of a building with storeys: the footprint raised `lift`
@@ -1386,7 +1574,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.restore();
   } else {
     g = groundFor(b, scene);
-    ctx.drawImage(g.cv, gx, gy - (g.oy || 0) * S, g.gw * S, g.gh * S);
+    ctx.drawImage(g.cv, gx + (g.ox + Hv * HW) * S, gy - (g.oy || 0) * S, g.gw * S, g.gh * S);
   }
   const vis = v.vis;
   // Marks left on the ground (ui/battlemarks.js: blood, brass, scorch, glass), and the bodies lying on open ground
@@ -1399,7 +1587,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const t of b.units) {
       if (!t.dead || t.left || t.fled || t.off || t.x < 0 || t.ztype === "sleeper" || !onFloor(b, t) || looks[t.y * b.w + t.x] || standZ(b, t.x, t.y)) continue;
       if (!knownBody(b, t, vis)) continue;
-      drawBody(ctx, state, b, { t, wx: t.x + 0.5, wy: t.y + 0.5, z: 0 }, H);
+      drawBody(ctx, state, b, { t, wx: t.x + (t.size || 1) / 2, wy: t.y + (t.size || 1) / 2, z: 0 }, H);
       flatDead.add(t);
     }
   }
@@ -1407,14 +1595,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const m = fogMaskFor(b, vis);
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.transform(S * HW, S * HH, -S * HW, S * HH, gx + S * Hv * HW, gy);
+    ctx.transform(S * artX(1, 0, st), S * artY(1, 0, st), S * artX(0, 1, st), S * artY(0, 1, st), gx + S * Hv * HW, gy);
     ctx.drawImage(m.cv, 0, 0);
     ctx.restore();
   } else {
     const fg = fogFor(b, vis);
-    ctx.drawImage(fg.cv, gx, gy - (fg.oy || 0) * S, g.gw * S, g.gh * S);
+    ctx.drawImage(fg.cv, gx + (fg.ox + Hv * HW) * S, gy - (fg.oy || 0) * S, g.gw * S, g.gh * S);
   }
 
+  if (known) fillCells(ctx, b, unknownCell, "rgba(4,5,9,0.78)"); // never seen inside: dark (drawn on the floor; nothing stands there)
   // Highlights on the ground: the floodlit area, the evac strip, a raid's zones, the deploy cells, the move range.
   const N = b.w * b.h;
   // Seen only through a peek this turn (sim/buildingmaps.js): a warm tint and a dashed edge.
@@ -1441,16 +1630,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.setLineDash([]);
   }
   const deploying = b.deploy && b.phase === "deploy";
+  const ok = deploying ? deployMask(b) : null;
   if (deploying) {
-    const ok = new Uint8Array(N);
-    for (let i = 0; i < N; i++) ok[i] = canPlace(b, i % b.w, (i / b.w) | 0) ? 1 : 0;
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
   let bands = null;
   if (v.reach && H.mode === "move" && u) {
     bands = new Uint8Array(N);
-    for (let i = 0; i < N; i++) { const d = v.reach.dist[i]; bands[i] = isFinite(d) ? (d <= u.mob ? 1 : 2) : 0; }
+    for (let i = 0; i < N; i++) { const d = v.reach.dist[i]; bands[i] = isFinite(d) ? (d <= moveMob(u) ? 1 : 2) : 0; }
     bands[u.y * b.w + u.x] = 1;
     fillCells(ctx, b, (i) => bands[i] === 1, "rgba(80,150,255,0.24)", false);
     fillCells(ctx, b, (i) => bands[i] === 2, "rgba(255,200,60,0.16)", false);
@@ -1462,7 +1650,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const groundDisc = (c, fill) => {
     const [X, Y] = project(c.x + 0.5, c.y + 0.5, 0);
     ctx.fillStyle = fill;
-    ctx.beginPath(); ctx.ellipse(X, Y, (c.r + 0.5) * HW * Math.SQRT2 * S, (c.r + 0.5) * HH * Math.SQRT2 * S, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(X, Y, (c.r + 0.5) * RX(st) * S, (c.r + 0.5) * RY(st) * S, 0, 0, Math.PI * 2); ctx.fill();
   };
   const OV = battleOverlays(b);
   for (const c of OV.flares) groundDisc(c, "rgba(255,90,70,0.12)");
@@ -1491,7 +1679,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     if (!vis[a.y * b.w + a.x]) continue;
     const [X, Y] = project(a.x + 0.5, a.y + 0.5, 0);
     ctx.fillStyle = "rgba(200,190,255,0.08)";
-    ctx.beginPath(); ctx.ellipse(X, Y, a.r * HW * Math.SQRT2 * S, a.r * HH * Math.SQRT2 * S, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(X, Y, a.r * RX(st) * S, a.r * RY(st) * S, 0, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "rgba(232,226,255,0.75)"; ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -ph * 22;
     ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
   }
@@ -1501,23 +1689,25 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const [X, Y] = project(l.x + 0.5, l.y + 0.5, 0);
     const col = SENSE_COL[l.sense.includes("heat") && !l.sense.includes("light") ? "heat" : l.sense.includes("light") ? "light" : "noise"];
     ctx.strokeStyle = col.replace("A", "0.32"); ctx.lineWidth = 1; ctx.setLineDash([3, 6]);
-    ctx.beginPath(); ctx.ellipse(X, Y, l.radius * HW * Math.SQRT2 * S, l.radius * HH * Math.SQRT2 * S, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.ellipse(X, Y, l.radius * RX(st) * S, l.radius * RY(st) * S, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   }
   // Ladders and rams in the painter's pass, by the diagonal they stand on (drawSiegeIso).
   const siegeAt = new Map();
-  const atD = (x, y, f) => { const [uu, vv] = toView(x, y, r, b.w, b.h); const d = uu + vv; const a = siegeAt.get(d); if (a) a.push(f); else siegeAt.set(d, [f]); };
+  const atD = (x, y, f) => { const [uu, vv] = toView(x, y, r, b.w, b.h); const d = depth(uu, vv, st); const a = siegeAt.get(d); if (a) a.push(f); else siegeAt.set(d, [f]); };
   for (const l of OV.ladders) if (vis[l.fy * b.w + l.fx] || vis[l.wy * b.w + l.wx]) {
     const [fu, fv] = toView(l.fx, l.fy, r, b.w, b.h), [wu, wv] = toView(l.wx, l.wy, r, b.w, b.h);
-    const [x, y] = fu + fv >= wu + wv ? [l.fx, l.fy] : [l.wx, l.wy];
+    const [x, y] = depth(fu, fv, st) >= depth(wu, wv, st) ? [l.fx, l.fy] : [l.wx, l.wy];
     atD(x, y, () => drawLadderIso(ctx, b, l, S));
   }
   // The ram is held at waist height in front of its crew: drawn after the units of its diagonal.
   const siegeOver = new Map();
-  for (const m of OV.rams) if (m.x >= 0 && vis[m.y * b.w + m.x]) { const [uu, vv] = toView(m.x, m.y, r, b.w, b.h); const d = uu + vv + 1; const a = siegeOver.get(d); if (a) a.push(() => drawRamIso(ctx, b, m, S)); else siegeOver.set(d, [() => drawRamIso(ctx, b, m, S)]); }
+  for (const m of OV.rams) if (m.x >= 0 && vis[m.y * b.w + m.x]) { const [uu, vv] = toView(m.x, m.y, r, b.w, b.h); const d = depth(uu, vv, st) + 1; const a = siegeOver.get(d); if (a) a.push(() => drawRamIso(ctx, b, m, S)); else siegeOver.set(d, [() => drawRamIso(ctx, b, m, S)]); }
   for (const f of OV.fires) if (vis[f.y * b.w + f.x]) atD(f.x, f.y, () => drawFlamesIso(ctx, b, f, S, ph));
 
-  // Night: the lights (ui/battlelights.js), a glow on the ground under the units.
-  if ((b.night || b.dark) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now))) drawGlow(ctx, cw, ch);
+  // Night: the lights (ui/battlelights.js), a glow on the ground under the units. By day in a raid's building: the
+  // dark rooms' floors shaded (a barn, a storeroom: sim/indoorlight.js), a light switched on there cut out of it.
+  if ((b.night || b.dark || b.indoor) && paintLights(b, v, groundXform(b, iso.rot, 1, S, gx, gy, Hv), cw, ch, now, (t) => H.animPos(t, now))) drawGlow(ctx, cw, ch);
+  if (b.indoor && !b.night && !b.dark) drawShade(ctx, b, cw, ch);
 
   // ---------- the painter's pass: every cell from the back to the front ----------
   const items = [];
@@ -1525,45 +1715,50 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const shown = [];
   for (const t of b.units) {
     if (t.left || t.fled || t.off || !onFloor(b, t)) continue; // on another floor: a marker only (below)
+    if (held(t)) continue; // not on the map until the team goes in (sim/raidplan.js)
     if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : knownBody(b, t, vis))) continue; // the enemy and the third side (sim/thirdside.js) under the fog; a body once seen stays
     const [wx, wy] = H.animPos(t, now);
     const [uu, vv] = ptView(wx, wy, r, b.w, b.h);
     const tx = Math.max(0, Math.min(b.w - 1, Math.floor(wx))), ty = Math.max(0, Math.min(b.h - 1, Math.floor(wy)));
-    shown.push({ t, wx, wy, z: standZ(b, tx, ty), d: Math.floor(uu) + Math.floor(vv) });
+    shown.push({ t, wx, wy, z: standZ(b, tx, ty), d: depth(Math.floor(uu), Math.floor(vv), st) });
   }
   const ghosts = (v.ghosts || []).filter((q) => !vis[q.y * b.w + q.x] && onFloor(b, q));
-  // Cells close in front of one of your people are drawn faded, so nobody is lost behind a wall.
+  // Cells close in front of one of your people are drawn faded, so nobody is lost behind a wall (in front: down the
+  // screen, the cells whose blocks reach up over them; in a straight view the rows below).
   const fade = new Set();
+  const FRONT = st ? [[0, 1], [-1, 1], [1, 1], [0, 2], [-1, 2], [1, 2], [0, 3], [0, 4]] : [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2], [2, 2], [3, 2], [2, 3], [3, 3]];
   for (const p of players) {
     if (!active(p) || !onFloor(b, p)) continue;
     const [pu, pv] = toView(p.x, p.y, r, b.w, b.h);
     const pz = standZ(b, p.x, p.y);
-    for (const [du, dv] of [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2], [2, 2], [3, 2], [2, 3], [3, 3]]) {
+    for (const [du, dv] of FRONT) {
       const nu = pu + du, nv = pv + dv;
-      if (nu >= Wv || nv >= Hv) continue;
+      if (nu < 0 || nu >= Wv || nv >= Hv) continue;
       const [x, y] = fromView(nu, nv, r, b.w, b.h);
       const L = looks[y * b.w + x];
       const bid = scene.comp[y * b.w + x];
       const top = Math.max(L ? L.top : 0, bid >= 0 && !cut.has(bid) ? scene.blds[bid].top : 0) + liftAt(b, y * b.w + x);
-      if (top - pz > (du + dv) * HH - 6) fade.add(y * b.w + x);
+      if (top - pz > artY(du, dv, st) - 6) fade.add(y * b.w + x);
     }
   }
   // The hovered cell behind a tree (or anything else standing in front of it): its cursor is dashed, on top (below),
-  // and the trees in the way are faded like those in front of your people.
+  // and the trees in the way are faded like those in front of your people; a tile the selected unit can move to,
+  // everything in the way (a wall, a car, a roof), so the tile it would walk to shows.
   const roofsOn = !F;
-  lastCover = { b, looks, scene, cut, roofs: roofsOn, rot: r };
+  lastCover = { b, looks, scene, cut, roofs: roofsOn, rot: viewKey() };
   const hv = H.hover && H.hover.x >= 0 && H.hover.y >= 0 && H.hover.x < b.w && H.hover.y < b.h ? H.hover : null;
   const hoverCover = hv ? coverOf(b, hv.x, hv.y, looks, scene, cut, roofsOn) : [];
-  for (const i of hoverCover) if (looks[i] && PICK_THROUGH.has(looks[i].k)) fade.add(i);
+  const hoverMove = !!(hv && bands && bands[hv.y * b.w + hv.x]);
+  for (const i of hoverCover) if (hoverMove || (looks[i] && PICK_THROUGH.has(looks[i].k))) fade.add(i);
   const margin = 80 * S;
   const sh = new Map(); for (const s of shown) { const a = sh.get(s.d); if (a) a.push(s); else sh.set(s.d, [s]); }
-  const gh = new Map(); for (const q of ghosts) { const [gu, gv] = toView(q.x, q.y, r, b.w, b.h); const d = gu + gv; const a = gh.get(d); if (a) a.push(q); else gh.set(d, [q]); }
+  const gh = new Map(); for (const q of ghosts) { const [gu, gv] = toView(q.x, q.y, r, b.w, b.h); const d = depth(gu, gv, st); const a = gh.get(d); if (a) a.push(q); else gh.set(d, [q]); }
   // Bodies on the ground (sim/sleepers.js), by the same depth as the units.
   const bodies = new Map();
-  for (const c of b.corpses || []) { if (!onFloor(b, c)) continue; const [cu, cv] = toView(c.x, c.y, r, b.w, b.h); const d = cu + cv; const a = bodies.get(d); if (a) a.push(c); else bodies.set(d, [c]); }
+  for (const c of b.corpses || []) { if (!onFloor(b, c)) continue; const [cu, cv] = toView(c.x, c.y, r, b.w, b.h); const d = depth(cu, cv, st); const a = bodies.get(d); if (a) a.push(c); else bodies.set(d, [c]); }
   // Things on the ground (sim/ground.js piles), by the same depth.
   const piles = new Map();
-  for (const p of groundPiles(b)) { if ((!pileCount(p) && !p.cart) || !onFloor(b, p)) continue; const [cu, cv] = toView(p.x, p.y, r, b.w, b.h); const d = cu + cv; const a = piles.get(d); if (a) a.push(p); else piles.set(d, [p]); } // a cart (sim/carts.js) is drawn even empty
+  for (const p of groundPiles(b)) { if ((!pileCount(p) && !p.cart) || !onFloor(b, p)) continue; const [cu, cv] = toView(p.x, p.y, r, b.w, b.h); const d = depth(cu, cv, st); const a = piles.get(d); if (a) a.push(p); else piles.set(d, [p]); } // a cart (sim/carts.js) is drawn even empty
   // An upper floor: which sides of a footprint cell face the outside (the wall mass below is drawn there).
   const massFaces = (uu, vv) => {
     let faces = 0;
@@ -1579,12 +1774,13 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // on its top floor you want to see the floor, not the roof (the fog still hides what nobody has seen).
   const topFloor = !F;
   iso.rects = [];
-  for (let d = 0; d <= Wv + Hv - 2; d++) {
-    const uLo = Math.max(0, d - (Hv - 1)), uHi = Math.min(Wv - 1, d);
+  // By diagonal (u + v) from the back; in a straight view by row (v).
+  for (let d = 0; d <= (st ? Hv - 1 : Wv + Hv - 2); d++) {
+    const uLo = st ? 0 : Math.max(0, d - (Hv - 1)), uHi = st ? Wv - 1 : Math.min(Wv - 1, d);
     const fronts = [];
     for (let uu = uLo; uu <= uHi; uu++) {
-      const vv = d - uu;
-      const sx = (uu - vv) * HW * S + FR.X0, sy0 = (uu + vv) * HH * S + FR.Y0;
+      const vv = st ? d : d - uu;
+      const sx = artX(uu, vv, st) * S + FR.X0, sy0 = artY(uu, vv, st) * S + FR.Y0;
       if (sx < -margin || sx > cw + margin || sy0 < -margin || sy0 > ch + margin * 2) continue;
       const [x, y] = fromView(uu, vv, r, b.w, b.h), i = y * b.w + x;
       const L = looks[i];
@@ -1595,7 +1791,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         const mass = faces ? massSprite(scene.comp[i] >= 0 ? scene.blds[scene.comp[i]].mat : 0, lift, faces, fog) : null;
         if (mass) ctx.drawImage(mass.cv, Math.round(sx + mass.ox * S), Math.round(sy0 + mass.oy * S), Math.ceil(mass.w * S), Math.ceil(mass.h * S));
       }
-      if (L) {
+      if (L && !unknownCell(i)) {
         const spr = sprOf(L, fog);
         const up = L.o.raise || 0; // furniture on an upper floor: the floor's slab under it, the piece raised
         if (up) {
@@ -1613,11 +1809,11 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const zt = tileTop(b, x, y);
       if (zt) {
         if (bands && bands[i]) { ctx.fillStyle = bands[i] === 1 ? "rgba(80,150,255,0.32)" : "rgba(255,200,60,0.22)"; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
-        if (deploying && canPlace(b, x, y)) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
+        if (deploying && ok[i]) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
-    for (const p of piles.get(d) || []) if (p.cart) drawCartBoxIso(ctx, p, project, (x, y) => standZ(b, x, y), S); else drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); // ui/ground.js (a cart: its own sprite)
+    for (const p of piles.get(d) || []) if (!unknownCell(p.y * b.w + p.x)) { if (p.cart) drawCartBoxIso(ctx, p, project, (x, y) => standZ(b, x, y), S); else drawPileIso(ctx, p, project, (x, y) => standZ(b, x, y), S); } // ui/ground.js (a cart: its own sprite)
     for (const q of gh.get(d) || []) drawGhost(ctx, state, b, q, H);
     for (const f of siegeAt.get(d) || []) f();
     for (const s of (sh.get(d) || []).filter((q) => !flatDead.has(q.t)).sort((a, c) => a.z - c.z || (active(a.t) ? 1 : 0) - (active(c.t) ? 1 : 0))) {
@@ -1634,10 +1830,10 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
     // Roofs over the buildings that are not cut away (none below the top floor of a building with storeys).
     if (topFloor) for (let uu = uLo; uu <= uHi; uu++) {
-      const vv = d - uu;
+      const vv = st ? d : d - uu;
       const [x, y] = fromView(uu, vv, r, b.w, b.h), i = y * b.w + x, bid = scene.comp[i];
       if (bid < 0 || cut.has(bid)) continue;
-      const sx = (uu - vv) * HW * S + FR.X0, sy = (uu + vv) * HH * S + FR.Y0 - liftAt(b, i) * S;
+      const sx = artX(uu, vv, st) * S + FR.X0, sy = artY(uu, vv, st) * S + FR.Y0 - liftAt(b, i) * S;
       if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
       let edges = 0;
       VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (scene.comp[ny * b.w + nx] !== bid) edges |= 1 << k; });
@@ -1656,8 +1852,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const t of b.units) {
       const tf = t.f || 0;
       if (t.left || t.fled || t.off || t.dead || tf === floorNo(b)) continue;
-      if (t.side !== "player" && !v.seen.has(t.id)) continue;
-      const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y));
+      if (t.side !== "player" ? !v.seen.has(t.id) : held(t)) continue; // (held: the team is not on the map yet)
+      const [X, Y] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y));
       const col = t.side === "player" ? "rgba(143,193,255,0.7)" : "rgba(255,143,133,0.7)";
       ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
       ctx.beginPath(); diamond(ctx, t.x, t.y, standZ(b, t.x, t.y), 2); ctx.stroke(); ctx.setLineDash([]);
@@ -1725,7 +1921,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const [X, Y] = project(l.x + 0.5, l.y + 0.5, 0), q = ((now || 0) % 1200) / 1200;
     const kind = l.sense.includes("heat") && !l.sense.includes("light") ? "heat" : l.sense.includes("light") ? "light" : "noise";
     ctx.strokeStyle = SENSE_COL[kind].replace("A", String(0.65 * (1 - q))); ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(X, Y, (0.4 + q * 1.4) * HW * Math.SQRT2 * S, (0.4 + q * 1.4) * HH * Math.SQRT2 * S, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(X, Y, (0.4 + q * 1.4) * RX(st) * S, (0.4 + q * 1.4) * RY(st) * S, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = kind === "heat" ? "#ff7a4a" : kind === "light" ? "#fff2c0" : "#e0b048"; ctx.beginPath(); ctx.arc(X, Y - 2 * S, 2.2 * S, 0, Math.PI * 2); ctx.fill();
     if (l.decoy) tag(ctx, kind === "heat" ? "HEAT" : kind === "light" ? "LIGHT" : "NOISE", X, Y - 9 * S, kind === "heat" ? "#ff9a6a" : kind === "light" ? "#fff2c0" : "#ffd166", Math.max(9, 2.8 * S));
   }
@@ -1742,8 +1938,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // A raid: names on the areas, a marker on every container.
   if (b.raid) {
     ctx.textAlign = "center";
+    const roomKnown = (a) => {
+      const bid = scene.comp[(a.y0 + 1) * b.w + a.x0 + 1];
+      if (bid >= 0 && !cut.has(bid)) return false;
+      for (let yy = a.y0 + 1; yy < a.y0 + a.h - 1; yy++) for (let xx = a.x0 + 1; xx < a.x0 + a.w - 1; xx++) { const j = yy * b.w + xx; if (j >= 0 && j < b.w * b.h && (known.cells[j] || v.vis[j]) && !WALLISH.has(b.cells[j].k)) return true; } // its floor, not the walls it shares
+      return false;
+    };
     for (const a of b.raid.areas) {
       if (a.noLabel || !onFloor(b, a)) continue; // halls and corridors (sim/buildingmaps.js); rooms of other floors
+      if (!a.outdoor && known && !roomKnown(a)) continue; // a room nobody has seen into (or a roofed building's): not named
       // A room of a building whose roof is off: its name low over its floor; else over the roof (no roof below the
       // top floor of a building with storeys: low).
       const ai = (a.y0 + 1) * b.w + a.x0 + 1, bid = a.outdoor ? -1 : scene.comp[ai];
@@ -1751,8 +1954,19 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const [X, Y] = project(a.x0 + a.w / 2, a.y0 + a.h / 2, (a.outdoor ? 6 : low ? (a.up ? LV : 0) + 14 : (scene.blds[bid] ? scene.blds[bid].top : WALL1) + 12) + (a.outdoor ? 0 : liftAt(b, ai)));
       tag(ctx, a.locked && !(b.raid.doors || []).some((d) => d.area === a.id && d.lock.open) ? `🔒 ${a.name}` : a.name, X, Y, low ? "#c9bfa6" : "#e6d8b8", Math.max(10, (low ? 3.4 : 4.2) * S));
     }
-    for (const c of b.raid.containers) {
-      if (!onFloor(b, c) || c.kind === "ground") continue; // b.raid.containers holds every floor's; piles on the ground: ui/ground.js
+    for (const c0 of b.raid.containers) {
+      if (!onFloor(b, c0) || c0.kind === "ground") continue; // b.raid.containers holds every floor's; piles on the ground: ui/ground.js
+      // Indoors under the fog: a roofed building's or one nobody has seen are not drawn; one seen before but out of
+      // sight now shows as it was then (faded).
+      const ci = c0.y * b.w + c0.x, bid = scene.comp[ci];
+      let c = c0, stale = false;
+      if (known && bid >= 0) {
+        if (!cut.has(bid)) continue;
+        let now = false;
+        for (let yy = c0.y; yy < c0.y + (c0.h || 1) && !now; yy++) for (let xx = c0.x; xx < c0.x + (c0.w || 1); xx++) if (v.vis[yy * b.w + xx]) { now = true; break; }
+        if (!now) { const snap = known.boxes && known.boxes.get(c0.id); if (!snap) continue; c = { ...c0, ...snap }; stale = true; }
+      }
+      if (stale) ctx.globalAlpha = 0.5;
       const L = looks[c.y * b.w + c.x], top = (L ? L.top : 4) + liftAt(b, c.y * b.w + c.x);
       const [X, Y] = project(c.x + (c.w || 1) / 2, c.y + (c.h || 1) / 2, top + 4); // over the middle of a car's cells
       const s = Math.max(7, 3.2 * S);
@@ -1763,12 +1977,30 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       ctx.fillStyle = c.searched ? "#9aa0a8" : "#1a1a1a";
       ctx.font = `700 ${Math.round(s * 1.5)}px Segoe UI, sans-serif`;
       ctx.fillText(c.searched ? "✓" : c.lock && !c.lock.open ? "🔒" : c.quick ? "…" : "?", X, Y - s * 0.45);
+      ctx.globalAlpha = 1;
+    }
+    // Light switches (sim/indoorlight.js): a small plate on the wall beside the door, warm when the lights are on;
+    // drawn once the room's floor in front of it has been seen (a roofed building's not at all).
+    if (b.indoor) for (const a of b.raid.areas) {
+      if (!a.sw || !onFloor(b, a)) continue;
+      const si = a.sw[1] * b.w + a.sw[0], fi = a.swIn ? a.swIn[1] * b.w + a.swIn[0] : si, bid = scene.comp[si];
+      if (bid >= 0 && known && !cut.has(bid)) continue;
+      if (known && !(known.cells[fi] || v.vis[fi] || v.vis[si])) continue;
+      const L = looks[si], z = Math.max(6, Math.min(L ? L.top : WALL1, WALL1) * 0.55) + liftAt(b, si);
+      const [X, Y] = project(a.sw[0] + 0.5 + (a.swIn ? (a.swIn[0] - a.sw[0]) * 0.45 : 0), a.sw[1] + 0.5 + (a.swIn ? (a.swIn[1] - a.sw[1]) * 0.45 : 0), z);
+      const s = Math.max(3, 1.6 * S);
+      ctx.fillStyle = a.on ? "#ffd86b" : "#6b7078"; ctx.strokeStyle = "#16181b"; ctx.lineWidth = 1;
+      rr(ctx, X - s, Y - s * 1.4, s * 2, s * 2.8, 1.5); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = a.on ? "#7a5a10" : "#e8e8e8";
+      ctx.fillRect(X - s * 0.3, Y - (a.on ? s * 1 : s * 0.1), s * 0.6, s * 1.1); // the toggle: up for on
+      if (a.on && b.night) { ctx.fillStyle = "rgba(255,216,107,0.25)"; ctx.beginPath(); ctx.arc(X, Y, s * 3, 0, Math.PI * 2); ctx.fill(); }
     }
     if (!floorNo(b)) for (const z of b.raid.zones) { // ground floor only (see the zone highlights above)
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);
-      tag(ctx, z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle ? "#a9cbff" : COL.good, Math.max(10, 4 * S));
+      tag(ctx, z.vehicle && !hold ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle && !hold ? "#a9cbff" : COL.good, Math.max(10, 4 * S)); // hold (sim/raidplan.js): the team and its vehicle are not there yet
     }
   }
+  drawDoorMarks(ctx, b, scene, cut, looks, vis, S, topFloor);
   // The base's buildings by name; hit points of a battered wall, gate, door or window.
   if (b.tier && b.tier.buildings) for (const s of b.tier.buildings) {
     if (!s.cells.length) continue;
@@ -1817,7 +2049,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   if (h && v.reach && u && H.mode === "move" && !H.unitAt(h.x, h.y) && isFinite(v.reach.dist[h.y * b.w + h.x])) {
     const path = H.pathTo(v.reach, h.x, h.y);
-    ctx.strokeStyle = path.some(([x, y]) => acidAt(b, x, y)) ? "#9ad63a" : v.reach.dist[h.y * b.w + h.x] <= u.mob ? "#8fc1ff" : "#ffd166"; // green: through a spitter's acid (sim/acid.js)
+    ctx.strokeStyle = path.some(([x, y]) => acidAt(b, x, y)) ? "#9ad63a" : v.reach.dist[h.y * b.w + h.x] <= moveMob(u) ? "#8fc1ff" : "#ffd166"; // green: through a spitter's acid (sim/acid.js)
     ctx.lineWidth = Math.max(2, 0.8 * S);
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
@@ -1825,6 +2057,21 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const [x, y] of path) ctx.lineTo(...project(x + 0.5, y + 0.5, standZ(b, x, y) + 1));
     ctx.stroke();
     ctx.setLineDash([]);
+    // Half cover vaulted on the way (sim/combat.js VAULT, vaultable): the cell outlined solid in the path's colour with a
+    // VAULT tag over it (the path goes over it, never ends on it); a closed window crashed through (vaultBreaks,
+    // sim/windows.js: loud, and it cuts) gets a SMASH tag in the danger colour instead.
+    for (const [x, y] of path) {
+      const c = b.cells[y * b.w + x];
+      if (CELL[c.k].walk || !vaultable(b, c)) continue;
+      const smash = vaultBreaks(c), col = smash ? "#ff6b6b" : ctx.strokeStyle;
+      ctx.lineWidth = Math.max(1.5, 0.5 * S);
+      const keep = ctx.strokeStyle;
+      ctx.strokeStyle = col;
+      ctx.beginPath(); diamond(ctx, x, y, tileTop(b, x, y), 1); ctx.stroke();
+      ctx.strokeStyle = keep;
+      const [X, Y] = project(x + 0.5, y + 0.5, tileTop(b, x, y) + 10);
+      tag(ctx, smash ? "SMASH" : "VAULT", X, Y, col, Math.max(9, 2.8 * S));
+    }
   }
 
   // Effects: shots, blows, numbers, throws.
@@ -1836,7 +2083,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const p of H.plan.units) {
       const t = b.units.find((q) => q.id === p.id);
       if (!t) continue;
-      const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y) + UNIT_H + 14);
+      const [X, Y] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y) + UNIT_H + 14);
       tag(ctx, p.safe ? "SAFE" : `${p.chance}%`, X, Y, p.safe || p.chance >= 75 ? COL.good : p.chance >= 45 ? COL.mid : COL.bad, Math.max(11, 3.6 * S));
     }
   }
@@ -1885,7 +2132,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       if (t && t.side === "enemy" && active(t) && v.seen.has(t.id)) {
         const o = H.odds(b, u, t);
         const col = !o.ok ? "#9aa0a8" : o.chance >= 65 ? COL.good : o.chance >= 35 ? COL.mid : COL.bad;
-        const [X0, Y0] = project(u.x + 0.5, u.y + 0.5, standZ(b, u.x, u.y) + UNIT_H * 0.6), [X1, Y1] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y) + UNIT_H * 0.6);
+        const [X0, Y0] = project(u.x + 0.5, u.y + 0.5, standZ(b, u.x, u.y) + UNIT_H * 0.6), [X1, Y1] = project(t.x + (t.size || 1) / 2, t.y + (t.size || 1) / 2, standZ(b, t.x, t.y) + UNIT_H * 0.6);
         ctx.strokeStyle = col; ctx.lineWidth = 2;
         if (!o.ok) ctx.setLineDash([4, 5]);
         ctx.beginPath(); ctx.moveTo(X0, Y0); ctx.lineTo(X1, Y1); ctx.stroke();
@@ -1896,6 +2143,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   drawEdgeMarkers(ctx, b, cw, ch, v);
   drawCompass(ctx, cw, ch);
+  warmTurns(state, b, H);
   iso.frames++;
   if (t0) iso.frameMs = performance.now() - t0;
 }
@@ -1962,7 +2210,7 @@ function arrow(ctx, x0, y0, x1, y1, col, w) {
 // North: which way the map's top edge lies in this view.
 function drawCompass(ctx, cw, ch) {
   const [X0, Y0] = project(FR.W / 2, FR.H / 2, 0), [X1, Y1] = project(FR.W / 2, FR.H / 2 - 1, 0);
-  const a = Math.atan2(Y1 - Y0, X1 - X0), cx = 40, cy = ch - 40;
+  const a = Math.atan2(Y1 - Y0, X1 - X0), cx = 40, cy = ch - 40 - (iso.bottomInset || 0); // above the bottom bar (ui/battlebar.js)
   ctx.save();
   ctx.fillStyle = "rgba(15,17,20,0.78)"; ctx.beginPath(); ctx.arc(cx, cy, 28, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = "rgba(230,226,216,0.25)"; ctx.lineWidth = 1; ctx.stroke();
@@ -2004,42 +2252,139 @@ function feet(s) { return project(s.wx, s.wy, s.z); }
 function drawBody(ctx, state, b, s, H, silhouette = false) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
   if (t.dead || t.down) {
-    // Lying on the ground: the fallen's own picture (ui/downsprites.js) laid flat onto the floor's two axes, so it
-    // turns with the view (the body along the world's x).
+    // Lying on the ground: the figure laid along the world's x (the head toward -x, or +x facing the other way), so it
+    // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none.
+    const f = unitFacing(b, t);
+    const fig = unitFigureDown(state, b, t, H.salt, dirYaw(b, t, FR.r, [-f, 0]));
+    frameFigs.push(["down", t]);
+    if (fig) { drawFigure(ctx, fig, X, Y, S, !silhouette && t.dead ? 0.92 : 1); return; }
     const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
-    drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: unitFacing(b, t), scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
+    drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
-  const cv = unitCanvas(state, b, t, H.salt);
+  const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r)); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
+  frameFigs.push(["up", t]);
+  const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
-  const facing = viewFacing(unitFacing(b, t), FR.r);
+  const facing = sideFacing(b, t, FR.r);
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.translate(X, Y);
-  if (facing < 0) ctx.scale(-1, 1);
+  if (!fig && facing < 0) ctx.scale(-1, 1);
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
   if (!silhouette && spent) ctx.globalAlpha *= 0.65;
-  ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
+  // Sneaking (sim/vision.js): crouched low and leaning in, in shadow.
+  if (t.sneaking && !silhouette) {
+    ctx.transform(1, 0, -0.12, SNEAK_LOOK.squash, 0, 0);
+    ctx.globalAlpha *= SNEAK_LOOK.alpha;
+    if ("filter" in ctx) ctx.filter = SNEAK_LOOK.filter;
+  }
+  if (fig) { const g = cv.figure || FIG; ctx.drawImage(cv, -g.ox * S, -g.oy * S, g.w * S, g.h * S); } // 1 grid px = 1 art px, the feet at (ox, oy)
+  else ctx.drawImage(cv, -w / 2, -hgt * 0.94, w, hgt);
   ctx.restore();
 }
 // The sprite's facing on screen: the view turned a half (rotation 1 or 2) shows the world mirrored.
 const viewFacing = (facing, r) => (r === 1 || r === 2 ? -facing : facing);
+// A person's facing (sim/vision.js u.face: the way picked with a move, Face or a shot) as left or right on screen in
+// view rotation r; null when it points straight up or down the screen (the last move's way is kept then).
+function screenSide(b, t, r) {
+  const f = t.face;
+  if (!f || (!f[0] && !f[1]) || t.kind !== "human") return null;
+  const [u0, v0] = ptView(t.x + 0.5, t.y + 0.5, r, b.w, b.h), [u1, v1] = ptView(t.x + 0.5 + f[0], t.y + 0.5 + f[1], r, b.w, b.h);
+  const d = (u1 - v1) - (u0 - v0);
+  return Math.abs(d) < 0.05 ? null : d > 0 ? 1 : -1;
+}
+const sideFacing = (b, t, r) => screenSide(b, t, r) ?? viewFacing(unitFacing(b, t), r);
+// The way a unit's figure faces, as a yaw for ui/figures.js (0: the view's +u, screen right-down; 90: +v, screen
+// left-down): a person's own facing (sim/vision.js u.face), else the last move's or shot's way in the battle's
+// effect list, else the old default (yours toward +x, the others toward -x), turned into the view's frame. In a
+// straight view the figure's own projection sits 45° off the view's axes.
+function unitMoveDir(b, t) {
+  const fx = b.fx || [];
+  for (let i = fx.length - 1; i >= 0; i--) {
+    const f = fx[i];
+    if (f.type === "move" && f.unit === t.id) {
+      const pts = [f.from, ...(f.path || [])];
+      for (let k = pts.length - 1; k > 0; k--) { const dx = pts[k][0] - pts[k - 1][0], dy = pts[k][1] - pts[k - 1][1]; if (dx || dy) return [dx, dy]; }
+    } else if ((f.type === "shot" || f.type === "melee") && f.from && f.from[0] === t.x && f.from[1] === t.y && f.to) { const dx = f.to[0] - f.from[0], dy = f.to[1] - f.from[1]; if (dx || dy) return [dx, dy]; }
+  }
+  return null;
+}
+function unitYaw(b, t, r, st = iso.straight) {
+  return dirYaw(b, t, r, (t.face && (t.face[0] || t.face[1]) && t.kind === "human" ? t.face : null) || unitMoveDir(b, t) || [unitFacing(b, t), 0], st);
+}
+// A world direction at a unit's tile as a figure's yaw in view rotation r (st: a straight view).
+function dirYaw(b, t, r, d, st = iso.straight) {
+  const [u0, v0] = ptView(t.x + 0.5, t.y + 0.5, r, b.w, b.h), [u1, v1] = ptView(t.x + 0.5 + d[0], t.y + 0.5 + d[1], r, b.w, b.h);
+  return (Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI - (st ? 45 : 0);
+}
+// The figures for the views a turn away (E / Q): every body drawn this frame (frameFigs), at the heading it would show
+// one eighth either way, painted ahead in idle time, a few ms a slice (ui/figures.js keeps them by look and heading; a
+// frame that needs one not painted yet paints it itself, as before), so the first frame after a turn of the view does
+// not paint the whole scene's figures at once (75-166 ms). Queued again when the battle, its revision, the view, the
+// floor or the bodies drawn change; the newest WARM_Q kept. Only with requestIdleCallback (a browser; the tools warm
+// nothing).
+const frameFigs = []; // [kind ("up", "down", "corpse"), the unit or body] drawn this frame
+const WARM_Q = 240, WARM_MS = 4;
+let warmKey = "", warmB = null, warmQ = [], warmOn = false;
+function warmTurns(state, b, H) {
+  if (typeof requestIdleCallback !== "function") return;
+  const step = viewStep(), key = `${b.rev}|${step}|${floorNo(b)}|${H.salt}|${frameFigs.length}`;
+  if (warmB === b && warmKey === key) return;
+  warmB = b; warmKey = key; warmQ = [];
+  const once = { up: new Set(), down: new Set(), corpse: new Set() }, figs = frameFigs.filter(([kind, t]) => !once[kind].has(t) && once[kind].add(t)); // the see-through pass draws yours twice
+  for (const d of [1, -1]) {
+    const k = (step + d + 8) & 7, r = ((k + 1) >> 1) & 3, st = (k & 1) === 1;
+    for (const [kind, t] of figs) {
+      if (kind === "up") warmQ.push(() => unitFigure(state, b, t, H.salt, unitYaw(b, t, r, st)));
+      else if (kind === "down") warmQ.push(() => unitFigureDown(state, b, t, H.salt, dirYaw(b, t, r, [-unitFacing(b, t), 0], st)));
+      else warmQ.push(() => corpseFigure(t, dirYaw(b, t, r, [-(t.seed % 2 ? 1 : -1), 0], st)));
+    }
+  }
+  if (warmQ.length > WARM_Q) warmQ = warmQ.slice(-WARM_Q);
+  if (!warmOn && warmQ.length) { warmOn = true; requestIdleCallback(warmSlice, { timeout: 1000 }); }
+}
+function warmSlice(deadline) {
+  const t0 = performance.now();
+  while (warmQ.length) {
+    const fn = warmQ.shift();
+    try { fn(); } catch { /* best effort: the frame paints it when it needs it */ }
+    if (performance.now() - t0 > WARM_MS || (deadline && !deadline.didTimeout && deadline.timeRemaining() < 1)) break;
+  }
+  if (warmQ.length) requestIdleCallback(warmSlice, { timeout: 1000 });
+  else warmOn = false;
+}
+// A figure's canvas with its tile centre (feet, or a lying body's middle) at (X, Y), 1 grid px = 1 art px.
+function drawFigure(ctx, cv, X, Y, S, alpha = 1) {
+  const g = cv.figure || FIG;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(cv, X - g.ox * S, Y - g.oy * S, g.w * S, g.h * S);
+  ctx.restore();
+}
 const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1);
 // Where a unit's gun muzzle is on screen, from its feet, in view rotation r at zoom S: the muzzle pixel of the gun
 // in its sprite's hand (ui/sprites.js muzzleOf; ui/gunpaint.js paintMini: past a fitted suppressor), the sprite drawn
 // as drawBody draws it (mirrored when it faces left). null: no gun drawn (a zombie, bare hands).
 export function muzzlePoint(state, b, t, salt, r, S = 1) {
+  const fig = unitFigure(state, b, t, salt, unitYaw(b, t, r));
+  if (fig) { const m = figureMuzzle(fig), g = fig.figure || FIG; return m ? [(m.mx - g.ox) * S, (m.my - g.oy) * S] : null; } // the figure's gun, its far end (ui/figures.js)
   const mz = muzzleOf(unitCanvas(state, b, t, salt));
   if (!mz) return null;
-  const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26), f = viewFacing(unitFacing(b, t), r);
+  const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26), f = sideFacing(b, t, r);
   return [f * ((mz.mx + 0.5) / 22 - 0.5) * w, -hgt * 0.94 + ((mz.my + 0.5) / 26) * hgt];
 }
 // A body on the ground (sim/sleepers.js), laid flat like the fallen.
 function drawCorpseIso(ctx, b, c, fog) {
   const s = { wx: c.x + 0.5, wy: c.y + 0.5, z: standZ(b, c.x, c.y) };
-  const [X, Y] = feet(s), [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
-  drawDowned(ctx, corpseCanvas(c), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: c.seed % 2 ? 1 : -1, scale: 1.05, alpha: fog ? 0.5 : 0.92 });
+  const [X, Y] = feet(s), f = c.seed % 2 ? 1 : -1;
+  const fig = corpseFigure(c, dirYaw(b, c, FR.r, [-f, 0]));
+  frameFigs.push(["corpse", c]);
+  if (fig) { drawFigure(ctx, fig, X, Y, FR.S, fog ? 0.5 : 0.92); return; }
+  const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
+  drawDowned(ctx, corpseCanvas(c), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: 1.05, alpha: fog ? 0.5 : 0.92 });
 }
 function isoTag(ctx, X, Y, text, col, S) {
   ctx.font = `800 ${Math.max(9, Math.round(7 * S))}px Segoe UI, sans-serif`;
@@ -2068,9 +2413,11 @@ function drawUnitIso(ctx, state, b, s, H, now) {
     ctx.fillStyle = "rgba(0,0,0,0.38)";
     ctx.beginPath(); ctx.ellipse(X + 1.5 * S, Y + 0.5 * S, 10 * S, 4.6 * S, 0, 0, Math.PI * 2); ctx.fill();
     const sel = t.id === H.sel;
-    ctx.strokeStyle = sel ? "#e0a84f" : ring;
+    ctx.strokeStyle = sel ? "#e0a84f" : t.sneaking ? SNEAK_LOOK.ring : ring;
     ctx.lineWidth = sel ? 3 : 2;
+    if (t.sneaking) ctx.setLineDash([4, 3]); // sneaking (sim/vision.js): a broken ring
     ctx.beginPath(); ctx.ellipse(X, Y, 11 * S, 5.2 * S, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
     if (sel) { ctx.strokeStyle = "rgba(224,168,79,0.45)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X, Y, 14 * S, 6.8 * S, 0, 0, Math.PI * 2); ctx.stroke(); }
   }
   drawBody(ctx, state, b, s, H);
@@ -2084,13 +2431,25 @@ function drawUnitIso(ctx, state, b, s, H, now) {
   if (t.terror && !t.dead && !t.down) isoTag(ctx, X, Y - UNIT_H * 1.05 * S, "PANIC", ZRING.nightmare, S);
   // Its rectangle on screen, for clicking it.
   if (!t.dead && !t.down) {
-    const big = t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S;
+    const big = t.size === 2 ? 2.2 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, hgt = UNIT_H * big * S; // a 2 × 2 boss: its whole model
     iso.rects.push({ x0: X - hgt * 0.36, x1: X + hgt * 0.36, y0: Y - hgt * 0.94, y1: Y, x: t.x, y: t.y, id: t.id });
   }
 }
 function drawGhost(ctx, state, b, q, H) {
   const s = { t: q.unit, wx: q.x + 0.5, wy: q.y + 0.5, z: standZ(b, q.x, q.y) };
   const [X, Y] = feet(s), S = FR.S;
+  if (q.noise) { // a shot or a blast heard, not seen (sim/crossfire.js): sound arcs, the sound's tag and a "?", fading with age
+    const a = q.age ? Math.max(0.35, 1 - 0.3 * q.age) : 1;
+    const col = q.noise === "flash" ? `rgba(255,245,200,${0.9 * a})` : q.noise === "blast" ? `rgba(255,150,90,${0.9 * a})` : `rgba(255,120,100,${0.9 * a})`;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+    for (const k of [6, 10, 14]) { ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, -Math.PI * 0.35, Math.PI * 0.35); ctx.stroke(); ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, Math.PI * 0.65, Math.PI * 1.35); ctx.stroke(); }
+    ctx.font = `800 ${Math.max(12, Math.round(5 * S))}px Segoe UI, sans-serif`;
+    ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = `rgba(0,0,0,${0.8 * a})`; ctx.fillStyle = col;
+    ctx.strokeText("?", X, Y - 5 * S); ctx.fillText("?", X, Y - 5 * S);
+    ctx.font = `700 ${Math.max(9, Math.round(3.2 * S))}px Segoe UI, sans-serif`;
+    ctx.strokeText(q.tag || "NOISE?", X, Y - 16 * S); ctx.fillText(q.tag || "NOISE?", X, Y - 16 * S);
+    return;
+  }
   if (q.heard) { // heard, not seen (sim/hearing.js): a "?" with sound arcs, no silhouette
     ctx.strokeStyle = "rgba(255,209,102,0.7)"; ctx.lineWidth = 1.5;
     for (const k of [5, 8, 11]) { ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, -Math.PI * 0.3, Math.PI * 0.3); ctx.stroke(); ctx.beginPath(); ctx.arc(X, Y - 8 * S, k * S, Math.PI * 0.7, Math.PI * 1.3); ctx.stroke(); }
@@ -2216,3 +2575,4 @@ function drawFxIso(ctx, b, now, H, state = null, shown = []) {
     ctx.strokeText(text, tx, y); ctx.fillText(text, tx, y);
   }
 }
+onForgetPictures(() => clearIsoCache()); // ui/pictures.js: after a lost GPU context the kept ground, fog and sprites are blank; drawn again

@@ -34,7 +34,7 @@
 // Alliance victory (its own way to win, next to destroying every hive): the coalition (you and its members) has at
 // least one member and controls more than half of the state's land (LAND_NEEDED), and keeps that up for a year (the
 // Calder Accord, eras.js: a year of the late game, from year 10, and the coalition must have stood 12 seasons). Groups outside the
-// coalition do not block it any more: conquest counts (break them, take their land, or leave them be).
+// coalition now BLOCK it again (2026-10-13): join them, break them or take their land until they collapse.
 // Land: land tiles within reach of a base: your hub and every base you took from another group STRONGHOLD_RANGE (9),
 // an outpost CONTROL_RANGE (7, 8 with walls standing), a member's base CONTROL_RANGE; on other world sizes these scale
 // with the square root of the area (Small 7 / 5, Large 11 / 9, Huge 14 / 11), so it takes about as many bases on any
@@ -74,7 +74,7 @@ import { atWarWithYou } from "./playerwars.js";
 export const ALLIANCE = {
   NAME: "The Calder Coalition", GOODWILL: 50, LEAVE_GOODWILL: 20, VOTE_REL: 10, ASK_CHANCE: 0.03,
   SHARE_HORDES: 12, SHARE_HIVES: 15, SHARE_LAND: 3, RAID_RANGE: 20, RAID_SHARE: 0.15, HORDE_CUT: 0.15,
-  HIVE_RANGE: 15, MEMBER_RELAY: 12, NEIGHBOUR: 8, CONTROL_RANGE: 7, STRONGHOLD_RANGE: 9, WALLED_RANGE: 1, LAND_NEEDED: 0.5, COUNCIL_EVERY: 28, COUNCIL_FIRST: 15,
+  HIVE_RANGE: 15, MEMBER_RELAY: 12, NEIGHBOUR: 8, CONTROL_RANGE: 7, STRONGHOLD_RANGE: 9, WALLED_RANGE: 1, LAND_NEEDED: 0.6, COUNCIL_EVERY: 28, COUNCIL_FIRST: 15,
   LAND_AFTER: 112, // a member's land counts after a game year in the coalition (memberLand)
 };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -121,6 +121,7 @@ export function councilVote(state, f) {
 // Why this group cannot join now ("" = it can). Each condition, in the order the player meets them.
 export function inviteProblem(state, f) {
   if (!f || !f.alive) return "They are gone.";
+  if (f.outsider || f.nomad) return `${f.name} are not one of the state's groups: they join nothing.`; // outsiders and nomads (visitors.js, nomads.js) never join the coalition
   if (isMember(state, f)) return `${f.name} is already in the coalition.`;
   if (!f.known) return "You have not met them.";
   if (!reachable(state, f)) return outOfReach(state, f);
@@ -509,6 +510,8 @@ export function goalsProgress(state) {
   const blocks = [];
   if (!membersOk) blocks.push("no member yet (invite a group)");
   if (!landOk) blocks.push(`land ${Math.round(land.pct * 100)}% of the ${Math.round(ALLIANCE.LAND_NEEDED * 100)}%+ needed (bases, members a year in and at peace, claims)`);
+  if (!hivesOk) blocks.push(`${hivesLeft + building} hive${hivesLeft + building === 1 ? "" : "s"} standing or being built (all must be destroyed)`);
+  if (groups.some((f) => !isMember(state, f))) blocks.push(`${groups.filter((f) => !isMember(state, f)).length} group(s) outside the coalition (invite, break or conquer them)`);
   const outsiders = groups.filter((f) => !isMember(state, f)).map((f) => {
     const why = inviteProblem(state, f);
     const hostile = attitude(f) === "Hostile";
@@ -520,11 +523,11 @@ export function goalsProgress(state) {
     era: eraProgress(state), // eras.js: the year, the era, the Accord's and the containment's clocks
     hives: { destroyed: st.destroyed || 0, left: hivesLeft, building, sites, ok: hivesOk },
     alliance: { land, landSoon, memberLand: memberRows, landOk, members: ms.length, membersOk, groups: groups.length, outside: outsiders.map((o) => o.id), outsiders, allIn, hivesLeft, hivesOk, blocks,
-      infamy: Math.round(infamy(state)), lost: lostBases(state).map((o) => ({ tile: o.tile, name: o.name, factionId: o.factionId, day: o.day })), ok: landOk && membersOk },
+      infamy: Math.round(infamy(state)), lost: lostBases(state).map((o) => ({ tile: o.tile, name: o.name, factionId: o.factionId, day: o.day })), ok: landOk && membersOk && hivesOk && allIn },
   };
 }
 // The Calder Accord's daily test (eras.js, world.js): the same as allianceVictory (at least one member, over half
-// the land); the groups outside do not count against it any more. newcomer: kept for the tools (a gang from beyond
+// the land, no hive, no group outside). newcomer: kept for the tools (a gang from beyond
 // the border less than ERAS.ACCORD.GRACE days in the state).
 export const newcomer = (state, f) => f.arrived != null && day(state) - f.arrived < ERAS.ACCORD.GRACE;
 export function accordHolds(state) {
@@ -537,6 +540,9 @@ export function allianceVictory(state) {
   if (!alive(state).length || !state.bases.some((b) => !isCamp(b))) return false; // a camp is not a base for the victory
   // Nobody left to sign: when every group is gone (broken, conquered, collapsed), the state is yours alone.
   if (!allianceMembers(state).length && state.factions.some((f) => f.alive)) return false; // cheap check first
+  // 2026-10-13: a total victory. No hive stands (or is being built) and no group is left outside the coalition: the
+  // rest are members, or broken, conquered or collapsed. Members are allies, so they do not count against it.
+  if (!hivesSecured(state) || state.factions.some((f) => f.alive && !isMember(state, f))) return false;
   return controlledLand(state).pct > ALLIANCE.LAND_NEEDED;
 }
 

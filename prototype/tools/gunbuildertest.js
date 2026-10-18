@@ -5,7 +5,8 @@
 // - the window has one box and one leader line per slot, nested slots appear and go with their parent (dotted lines);
 // - fitting a part from the armory and taking it off again round-trips it; the stats shown are gunStats';
 // - hover before → after, the Ammo list (item.load), the condition bar, the entry points (Modify, the ⚙ on the gun in
-//   hand and in the armory), never during a battle, the tooltip's compact version.
+//   hand and in the armory), not during a battle (but for a fighter's own gun from the item menu: itemmenutest.js), the
+//   tooltip's compact version.
 // Usage: node tools/gunbuildertest.js
 const silent = () => new Proxy({ measureText: (t) => ({ width: String(t).length * 6 }) }, { get: (o, k) => (k in o ? o[k] : () => {}) });
 globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => silent(), toDataURL: () => "data:image/png;base64,AAAA" }), getElementById: () => null };
@@ -212,7 +213,7 @@ console.log("Fit, remove and the stats");
   check(GB.gunBuilderModal(st, ui) === null && ui.gunb === null, "a battle closes it");
   const ui2 = {};
   GB.GB_ACTIONS["gb-open"](st, ui2, { loc: gunLoc() });
-  check(!ui2.gunb && /Not during a battle/.test(ui2.invMsg || ""), "and it does not open during one");
+  check(!ui2.gunb && /Not during a battle|In a fight only a gun your fighter carries/.test(ui2.invMsg || ""), "and it does not open during one (but on a gun a fighter of yours carries: tools/itemmenutest.js)");
   st.combat = null;
   // A body's gun is out of reach.
   const ui3 = { gunb: { loc: "body:0:weapon", slot: null } };
@@ -243,7 +244,7 @@ console.log("Entry points");
   const fs = await import("node:fs");
   const uiSrc = fs.readFileSync(new URL("../src/ui/ui.js", import.meta.url), "utf8");
   const mainSrc = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  check(/if \(ui\.gunb\) return \["gunb", \(\) => gunBuilderModal\(state, ui\)\];\s*\/\/[^\n]*\n(\s*if \(ui\.inv && ui\.inv\.(?:team != null|form)\)[^\n]*\n)*\s*if \(ui\.inv\) return/.test(uiSrc), "ui.js pickModal opens it just above the inventory (and the team inventory: ui/teaminv.js; the Form a team window: ui/teamform.js)");
+  check(/if \(ui\.gunb\) return \["gunb", \(\) => gunBuilderModal\(state, ui\)\];\s*\/\/[^\n]*\n(\s*if \((?:ui\.inv && ui\.inv\.(?:team != null|form)|ui\.meet)\)[^\n]*\n)*\s*if \(ui\.inv\) return/.test(uiSrc), "ui.js pickModal opens it just above the inventory (and the team inventory: ui/teaminv.js; the Form a team window: ui/teamform.js; teams together on a tile: ui/teammeet.js, TEAM-05)");
   check(uiSrc.indexOf('if (ui.gunb) return ["gunb"') > uiSrc.indexOf("if (state.combat) return state.gameOver"), "after the battle's line: never over a battle");
   check(/Object\.entries\(GB_ACTIONS\)/.test(mainSrc) && /Object\.entries\(GB_CHANGE\)/.test(mainSrc) && /data-gbhover/.test(mainSrc) && /if \(ui\.gunb\) \{/.test(mainSrc) && /!!ui\.gunb/.test(mainSrc), "main.js: its actions, the Ammo list, the hover, Esc and the paused clock");
   check(/gb-open/.test(uiSrc) && /<b>Gun builder:<\/b>/.test(GB.GUNBUILDER_HELP), "the base's Armory tab has the ⚙; the Help topic");

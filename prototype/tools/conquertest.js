@@ -219,13 +219,13 @@ section("The coalition victory: only members left, more than half the land, hive
     n++;
   }
   check(st.hives.length > 0, `hives still stand (${st.hives.length})`);
-  check(A.allianceVictory(st), `victory: land ${(A.controlledLand(st).pct * 100).toFixed(1)}% with ${n} outposts, ${st.bases.filter((b) => b.captured).length} captured bases`);
-  check(checkGameOver(st) && st.victory && st.victoryReason === "alliance" && st.log.some((l) => /^The Calder Coalition holds/.test(l.text)), "checkGameOver: the coalition's victory and its line");
-  // Keep playing: the hive victory can still come once.
-  st.victoryKept = true; st.gameOver = false;
-  check(!checkGameOver(st), "after Keep playing the coalition victory does not repeat");
+  check(A.controlledLand(st).pct > A.ALLIANCE.LAND_NEEDED && !A.allianceVictory(st), "with hives standing there is no victory yet (2026-10-13: no hive may stand), whatever the land");
+  const hives0 = st.hives.slice(), sites0 = st.hiveSites.slice();
   st.hives.length = 0; st.hiveSites.length = 0;
-  check(checkGameOver(st) && st.victoryReason === "hives", "then destroying every hive is the hive victory");
+  check(A.allianceVictory(st), `victory: land ${(A.controlledLand(st).pct * 100).toFixed(1)}% with ${n} outposts, ${st.bases.filter((b) => b.captured).length} captured bases, no hive, no group outside`);
+  check(checkGameOver(st) && st.victory && st.victoryReason === "alliance" && st.log.some((l) => /^The Calder Coalition holds/.test(l.text)), "checkGameOver: the coalition's victory and its line");
+  check(st.hivesWon === true, "with no hive standing it is both victories at once");
+  st.hives.push(...hives0); st.hiveSites.push(...sites0);
   // Nobody left at all: you alone.
   const st3 = world();
   for (const f of st3.factions.filter((x) => x.alive)) { while (f.bases.length > 1) f.bases.pop(); C.captureBase(st3, f, f.bases[0], null, {}); }
@@ -240,7 +240,13 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
 {
   const V = await import("../src/sim/visitors.js");
   const st = world();
+  // A cook fire: the hub starts bare and is left to itself here. Seed 42's hub lies in a town's suburb ring (mapgen.js,
+  // POI foundation: +0.06 infection, its tile 0.39 -> 0.45, past the 40% where greens carry the worm's eggs), and with
+  // no hot food (eating.js EAT.cold) and the greens eaten raw the holdout walked out and its last one died of the worm
+  // by day 30: a game over, so visitorsDaily did nothing and no band settled.
+  addBuilding(hub(st), "cookhouse");
   tick(st, 24 * 30);
+  check(!st.gameOver, "the holdout still stands after 30 days");
   st.cards.length = 0;
   // A band with people and loot in the middle of the map.
   const n0 = st.factions.length;
@@ -248,7 +254,7 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
   check(!!v, "a raider band crosses the border");
   if (v) {
     const g = st.grid;
-    const spot = st.tiles.find((t) => t.loc && !t.hive && t.owner == null && st.bases.every((b) => g.distance(b.tile, t.id) >= 8) && st.factions.every((f) => !f.alive || f.bases.every((x) => g.distance(x, t.id) >= 10)));
+    const spot = st.tiles.find((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && t.terrain !== "water" && !t.hive && t.owner == null && st.bases.every((b) => g.distance(b.tile, t.id) >= 8) && st.factions.every((f) => !f.alive || f.bases.every((x) => g.distance(x, t.id) >= 10)));
     v.tile = spot.id; v.path = [spot.id]; v.idx = 0; v.phase = "travel";
     for (const k of Object.keys(v.stock)) v.stock[k] = 0;
     setFood(v, 30); v.stock.ammo = 120; // too poor to settle (value below SETTLE.goods)
@@ -286,10 +292,14 @@ section("Late gangs: raider bands that settle, at any time; the coalition's cond
   }
   const { makeGang } = await import("../src/sim/factions.js");
   const far = st3.tiles.find((t) => t.loc && free(st3, t.id) && st3.bases.every((b) => g3.distance(b.tile, t.id) >= 8));
+  const hv3 = st3.hives.slice(), sites3 = st3.hiveSites.slice();
+  st3.hives.length = 0; st3.hiveSites.length = 0; // the rule (2026-10-13): no hive stands
+  check(A.allianceVictory(st3), "with no hive and every group in or broken the coalition wins");
   const late = makeGang(st3, far.id, { pop: 10 });
-  check(A.allianceVictory(st3) && late.alive, "a gang that settles does not block the coalition's win (conquest counts: beat it or leave it)");
+  check(late.alive && !A.allianceVictory(st3), "a gang that settles outside the coalition blocks the win again (2026-10-13: no enemy group may be left)");
   while (late.bases.length) C.captureBase(st3, late, late.bases[0], null, {});
   check(!late.alive && A.allianceVictory(st3) && checkGameOver(st3) && st3.victoryReason === "alliance", "beaten: the coalition wins at that moment");
+  st3.hives.push(...hv3); st3.hiveSites.push(...sites3);
 }
 
 section("A group breaks at 3 people");

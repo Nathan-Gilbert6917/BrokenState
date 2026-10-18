@@ -233,11 +233,12 @@ export function packMags(list, crew) {
   }
   return out;
 }
-// Shells at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's): a
-// shotgun loaded from loose shells (mags.js SHELLS) reloads only from what is at hand, so each shotgunner takes up to
-// SHELLS.CARRY of the shells of its load out of the team's packed rounds (supplies: the factory round, then the
-// bench's) into a pocket or a rig pouch: onto a stack of them there first, else a free pocket, else a free admin pouch.
-// What does not fit stays in the pack. Returns the lines for the log ("24 shells at hand (Ann)").
+// Shells at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's) and
+// for a base's defenders as a fight at its walls starts (combat.js createBattle, out of the base's stock): a shotgun
+// (mags.js SHELLS) loads only from the shells on the person, so each shotgunner takes up to SHELLS.CARRY of the shells
+// of its load out of the team's packed rounds (supplies: the factory round, then the bench's) into a pocket or a rig
+// pouch: onto a stack of them there first, else a free pocket, else a free admin pouch. What does not fit stays where
+// it was (the pack, the stock). Returns the lines for the log ("24 shells at hand (Ann)").
 /** @param {Record<string, number>} supplies @param {any[]} crew */
 export function packShells(supplies, crew) {
   const out = [];
@@ -562,7 +563,8 @@ export const KIT_HELP = `<b>Magazines</b> are items: a 9mm pistol magazine, a 30
   fight loading is free. Teams take spare magazines from the armory when they leave (4 a rifle, 3 a pistol); found
   guns often come with one or two; enemies carry theirs and drop them.
   <br><b>Rigs:</b> a chest rig (or a tactical vest's or a plate carrier's own pouches) holds magazines, a grenade, a radio
-  and small things (admin pouches: meds, a flashlight). A chest rig does not go over a vest with pouches.
+  and small things (admin pouches: meds, a flashlight; pocket pouches: anything a pocket takes, two on a chest rig or a
+  tactical vest, one on a makeshift rig or a plate carrier). A chest rig does not go over a vest with pouches.
   <b>Plate carriers</b> hold two plates, front and back: ceramic (AC5, cracks and cannot be repaired), steel (AC4,
   heavy, can be patched at a workbench) or soft (AC2). A hit on the chest meets the plate on that side, then the
   carrier's soft backer. A broken plate is gone after the fight: swap in a spare (2 actions from the pack in a fight,

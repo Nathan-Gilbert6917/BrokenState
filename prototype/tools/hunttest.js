@@ -29,7 +29,7 @@ import { baseFarming, FARM_ACTIONS, FARM_CHANGE } from "../src/ui/farming.js";
 import {
   launchExpedition, partyTile, planPath, partyMembers, poolLoad, cargoLoad, hoursLeft, carried, cargoRoom,
 } from "../src/sim/parties.js";
-import { startOrder, queueOrder, queueEstimate } from "../src/sim/orders.js";
+import { startOrder, queueOrder, queueEstimate, taskHour } from "../src/sim/orders.js";
 import { estimatePlan, PRESETS } from "../src/sim/plans.js";
 import { recomputeOwnership } from "../src/sim/factions.js";
 import * as H from "../src/sim/hunting.js";
@@ -497,6 +497,9 @@ section("The hunting cabin, the Hunt and Fish jobs");
     if (!H.cabinProblem(st, hub(st)) && H.gameLand(st, hub(st)) >= 6) { state = st; base = hub(st); }
   }
   check(!!state, "a seed with game land around the hub");
+  // The hub stands in a town and every town has a ring of suburbs round it (mapgen.js): the game land is 2 tiles out,
+  // none next door. Give it back its wild ground (the bare suburb blocks next to it become forest) for the no-cabin rule.
+  for (const n of state.grid.neighbors(base.tile)) { const t = state.tiles[n]; if (t.terrain === "suburb" && !t.loc) t.terrain = "forest"; }
   const city = { ...base, id: -1, tile: state.tiles.find((t) => t.terrain === "city").id, type: "outpost", buildings: [], construction: [], stock: { scrap: 50 }, armory: [] };
   check(!canBuild(state, city, "huntcabin").ok && /game land/.test(canBuild(state, city, "huntcabin").reason), "no hunting cabin in a city");
   check(canBuild(state, base, "huntcabin").ok, "a hunting cabin where the land has game");
@@ -693,8 +696,11 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   // Bows with no arrows go to the traps.
   H.setHuntMix(base, { traps: 0, bows: 100, guns: 0 });
   base.stock.arrows = 0;
+  const kept = { wood: base.stock.wood, scrap: base.stock.scrap };
+  base.stock.wood = 0; base.stock.scrap = 0; // nothing to make arrows from (hunting.js arrows before the bow)
   state.hour += 24;
   const dry = huntDay(state, base);
+  Object.assign(base.stock, kept);
   check(dry.hrs.traps > 0 && !dry.hrs.bows && !dry.hrs.guns && !dry.shots && !dry.arrows, "bow hours with no arrows: the snare lines");
   // Guns with no ammo above the walls' keep: the bows (never louder than the mix).
   H.setHuntMix(base, H.DEFAULT_MIX);
@@ -710,12 +716,13 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   const rifles = huntDay(state, base);
   check(rifles.hrs.traps > 0 && !rifles.hrs.bows && !rifles.hrs.guns && !rifles.shots, "100% bows with only rifles: the snare lines, not a shot");
   hunters[2].gear.weapon = newItem("compbow");
-  // The day's hours: one hunter at 50% guns shoots 1 or 2 of 3 in turn (the fraction carries over).
+  // The day's hours (CABIN.huntHours, 4): one hunter at 30% guns shoots 1.2 a day: 1, 1, 1, 1, then 2 (the fraction
+  // carries over).
   const one = [hunters[0]];
   delete base.huntCarry;
-  const mix = { traps: 50, bows: 0, guns: 50 };
-  const plans = [0, 1, 2, 3].map(() => H.cabinPlan(state, base, one, 100, 100, mix)[0]);
-  check(plans.map((x) => x.guns).join("") === "1212" && plans.every((x) => x.guns + x.traps === 3), `one hunter at 50% guns: gun hours ${plans.map((x) => x.guns).join(", ")} (the half hour carries over)`);
+  const mix = { traps: 70, bows: 0, guns: 30 };
+  const plans = [0, 1, 2, 3, 4].map(() => H.cabinPlan(state, base, one, 100, 100, mix)[0]);
+  check(plans.map((x) => x.guns).join("") === "11112" && plans.every((x) => x.guns + x.traps === H.CABIN.huntHours), `one hunter at 30% guns: gun hours ${plans.map((x) => x.guns).join(", ")} (the fraction carries over)`);
   // Gun hours go to the guns, bow hours to the bow.
   const pl = H.cabinPlan(state, base, hunters, 100, 100, { traps: 30, bows: 30, guns: 40 });
   delete base.huntCarry;
@@ -852,6 +859,36 @@ section("Orders and the planner: hunting and fishing trips, the ETA and the haul
   partyMembers(state, p)[0].gear.weapon = newItem("crossbow");
   const m1 = startOrder(state, p, { type: "hunt", hours: 6 });
   check(p.phase === "task" && p.task.type === "hunt" && p.task.hours === 6, `a 6h hunt starts (${m1})`);
+  // A bow and no arrows: a dozen made first from the firewood and scrap carried, then the hunt.
+  {
+    const st2 = mk();
+    const t2 = cleanTile(st2, "forest");
+    const b = placeTeam(st2, t2.id, { weapon: null, second: null, arrows: 0, skills: { mechanics: 3, shooting: 6 } });
+    partyMembers(st2, b)[0].gear.backpack = partyMembers(st2, b)[0].gear.backpack || newItem("backpack");
+    const pk = partyMembers(st2, b)[0].gear.backpack.contents; pk[0] = newItem("compbow"); // a bow in the pack counts
+    b.supplies.wood = 40; b.supplies.scrap = 2;
+    const msg = startOrder(st2, b, { type: "hunt", hours: 6 });
+    check(b.phase === "task" && b.task.type === "craft" && b.task.recipe === "arrows" && b.orders[0] && b.orders[0].type === "hunt", `a bow and no arrows: arrows first, the hunt queued after (${msg})`);
+    for (let i = 0; i < CRAFTS.arrows.hours + 1 && b.task && b.task.type === "craft"; i++) { st2.hour++; taskHour(st2, b); }
+    check((b.supplies.arrows || 0) >= CRAFTS.arrows.supplies.arrows && b.supplies.wood <= 40 - CRAFTS.arrows.in.wood && b.phase === "task" && b.task.type === "hunt", `then the hunt, with ${b.supplies.arrows} arrows (firewood ${b.supplies.wood})`);
+    const c = placeTeam(st2, t2.id, { weapon: "compbow", second: null, arrows: 0 });
+    c.supplies.wood = 0; c.supplies.scrap = 0;
+    startOrder(st2, c, { type: "hunt", hours: 6 });
+    check(!(c.task && c.task.type === "craft"), "nothing to make arrows from: no craft (the hunt goes as before)");
+  }
+  // A base's Hunt job: a bow hunter and none in store make a dozen from the base's stores, the hours off the hunt.
+  {
+    const st3 = mk();
+    const h3 = hub(st3);
+    const s3 = atBase(st3, h3.id)[0];
+    for (const x of atBase(st3, h3.id)) x.role = "rest";
+    s3.role = "hunt"; s3.gear.weapon = newItem("compbow"); s3.skills.mechanics = 3; s3.inBed = false; s3.health = 100; s3.conditions = [];
+    Object.assign(h3.stock, { arrows: 0, wood: 100, scrap: 5 });
+    H.setHuntMix(h3, { traps: 0, bows: 100, guns: 0 });
+    delete h3.huntPlan;
+    const row = H.hunterDayPlan(st3, h3, s3);
+    check(h3.stock.arrows === CRAFTS.arrows.supplies.arrows && h3.stock.wood === 100 - CRAFTS.arrows.in.wood && row.bows > 0, `the Hunt job: ${h3.stock.arrows} arrows made at the base first, then the bow (${row.bows}h of ${row.hours}h with it)`);
+  }
   queueOrder(state, p, { type: "hunt", hours: 30 });
   const q = queueEstimate(state, p);
   check(q.length === 1 && q[0].hours === 24 && /Hunt 30h/.test(q[0].label) === false, "queued hunts are kept within 2–24 hours");

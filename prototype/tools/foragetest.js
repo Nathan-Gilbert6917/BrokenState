@@ -327,7 +327,9 @@ section("The Forage job at a base: work type, role, the daily gathering, the lan
   const sum = run("summer", 28);
   const lvl = mean(F.baseForageTiles(state, base).slice(0, 5).map((t) => F.forageLevel(state, t.id)));
   note(`three foragers at the hub through a summer: ${r1(sum.food)} food (${r1(sum.food / 28 / 3)} a forager a day; first week ${r1(sum.daily.slice(0, 7).reduce((a, b) => a + b, 0))}, last ${r1(sum.daily.slice(21).reduce((a, b) => a + b, 0))}); the best land around picked to ${Math.round(lvl * 100)}%`);
-  check(sum.food / 28 / 3 > 0.6 && sum.food / 28 / 3 < 2.5, "about a ration or so a forager a day in summer: a help, not a farm");
+  // 0.5: the lunch hour (meals.js, TIME-03) stops the foragers for an hour of the day's trips (jobtrips.js tripHours),
+  // about a tenth of their work: 0.74 a forager a day on this seed before it, 0.60 with it.
+  check(sum.food / 28 / 3 > 0.5 && sum.food / 28 / 3 < 2.5, "about a ration or so a forager a day in summer: a help, not a farm");
   // Job trips (jobtrips.js): the foragers go to the best ground for its walk (forageTripTile), not always the top tiles by
   // what they hold: the ground they worked is what is picked down.
   const worked = Math.min(...F.baseForageTiles(state, base).map((t) => F.forageLevel(state, t.id)));

@@ -285,8 +285,9 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   const needScrap = st.tiles[tile0].ruin ? STAGING.HARDCORE.needs.scrap - STAGING.RUIN_SCRAP : STAGING.HARDCORE.needs.scrap;
   check(job && job.type === "camp_up" && gatherRows(job).find((r) => r.key === "scrap").need === needScrap && gatherRows(job).find((r) => r.key === "buildmat").need === STAGING.HARDCORE.needs.buildmat && job.hours === STAGING.HARDCORE.work, `its step up is queued: ${needText(STAGING.HARDCORE.needs)}, ${job && job.hours} work-hours`);
   check(atBase(st, camp.id).every((s) => s.role === "build"), "everyone on Build");
-  check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 0 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 1, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, no crop plots, one utility plot`);
-  check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "smoker").ok && /shelter stands/.test(canBuild(st, camp, "smoker").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
+  check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, one crop plot, two utility plots`);
+  // (BASE-03, 2026-10-12: the drying rack, bench, boiler and cook fire are camp buildings now; the watchtower still waits.)
+  check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "watchtower").ok && /shelter stands/.test(canBuild(st, camp, "watchtower").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
   check(establishOption(st, null, landNear(st, tile0, 2).id) === null, "with a base (the camp): no Establish base");
   // Half the materials: the work goes as far as they allow and waits.
   Object.assign(camp.stock, { scrap: Math.ceil(needScrap / 2), buildmat: STAGING.HARDCORE.needs.buildmat / 2 });
@@ -318,7 +319,8 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
     Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10 });
     const ok = (k) => canBuild(st, h, k).ok;
     check(ok("rain_catcher") && ok("smoker") && ok("barricades") && ok("farm_plot") && ok("hub_up"), "a shelter builds a rain catcher, a drying rack, a barricade, a farm plot, and the step up into a base");
-    check(!ok("walls") && !ok("well") && !ok("bunkhouse") && !ok("infirmary") && !ok("storehouse"), "no walls, wells, bunkhouses or the rest at a shelter (no building plots)");
+    check(!ok("walls") && !ok("well") && !ok("storehouse") && !ok("radio"), "no walls, wells, storehouse or the rest at a shelter");
+    check(ok("bunkhouse") && ok("infirmary"), "its one building plot (2026-10-12) takes a bunkhouse or an infirmary");
     check(ok("watchtower") && ok("boiler") && ok("water_barrel") && ok("crates") && ok("cookhouse"), "a shelter's two utility plots take the yard things");
     queueBuild(st, h, "farm_plot");
     check(!canBuild(st, h, "farm_plot").ok && /room for 1/.test(canBuild(st, h, "farm_plot").reason), "one farm plot at most");
@@ -342,6 +344,7 @@ section("Camp danger: the camp's Heat (its fire, vehicles parked, shooting latel
   st.cards.length = 0;
   establishNow(st, p);
   const camp = campOf(st);
+  camp.stock.wood = 300; // a camp fire burns firewood from the store, and is lit again only with some (woodcutting.js canLight)
   const night = st.hour - (st.hour % 24) + 22, noon = st.hour - (st.hour % 24) + 36;
   const heat = (hour = night) => shelterHeat(st, camp, hour);
   check(camp.fire === true && heat().rows.some((r) => r.key === "fire"), `a new camp has its fire lit: ${heat().text}`);

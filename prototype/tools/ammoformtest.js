@@ -3,7 +3,7 @@
 //     7.62×39 20; .22 LR 100, premium 50; 9mm 50, defensive 20; .50 BMG 10), a calibre or load the data adds later
 //     by its class; weight and worth follow the rounds;
 //   - a slot: up to 80 loose rounds of one type, or up to five boxes of one kind; loose and boxed never merge; boxes open
-//     into loose rounds (never back);
+//     into loose rounds, and loose rounds box again (tools/supitemstest.js: Box, loose and boxed dropped on each other);
 //   - bulk containers: an ammo can (one type, 500), a carton (one calibre, 1000), a bag (any, 2000): weight and worth by
 //     their rounds; a handful comes out; opened into the stock at a base or in cargo; in a pack in a fight their rounds
 //     are the pack's (a shotgun's need Get shells);

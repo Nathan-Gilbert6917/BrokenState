@@ -141,7 +141,7 @@ export function dropCard(state, card, why) {
 // Answers a card with its default choice (it waited TRAY_HOURS in the tray). A card out of date is dropped instead;
 // an error in its choice drops it too (one line in the console), so a card can never stop the game.
 // Returns the line written to the log, or "".
-export function autoAnswer(state, card) {
+export function autoAnswer(state, card, byPlayer = false) { // byPlayer: the tray's ✓ all, not the wait
   const i = state.cards.indexOf(card);
   if (i < 0) return "";
   const why = trayStale(state, card);
@@ -158,7 +158,7 @@ export function autoAnswer(state, card) {
   }
   if (Array.isArray(state.cards)) for (let j = state.cards.length - 1; j >= 0; j--) if (state.cards[j].partyId != null && cardStale(state, state.cards[j])) state.cards.splice(j, 1);
   const where = card.where ? ` (${card.where})` : "";
-  const line = `Left unanswered for ${TRAY_HOURS} hours, "${card.title}"${where} took its default: ${c.label}.${text ? ` ${text}` : ""}`;
+  const line = `${byPlayer ? `"${card.title}"${where}: you took its default` : `Left unanswered for ${TRAY_HOURS} hours, "${card.title}"${where} took its default`}: ${c.label}.${text ? ` ${text}` : ""}`;
   log(state, line, "info");
   return line;
 }

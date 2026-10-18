@@ -26,6 +26,10 @@
 //   next to it nobody holds, its own cap outside the field works', paid with a coil of snare wire from the armory or
 //   the scrap gathered for a step up, checked by anyone fit with no hunter home; the governor's lines (hardcore from
 //   the start, more while food is short; one field job at a time) and the groups' (wanted first, ready the next day)
+// - WORLD-02 (2026-10-12): your snare line is set by a team sent to the tile and only a team checking it finds out what
+//   it holds (no morning check from home, no news of a robbery); one of the dead caught in it (under 10% a day) keeps
+//   the game away until the team puts it down; a standing check sends a team on its day; across a river with no bridge
+//   near, the team crosses by boat (the scrap for both boats from the base, refused without it)
 import { createWorld, tickHour, hub, atBase, residents, newId, liveTiles, baseVision, day, outOnTrip, homeAt } from "../src/sim/world.js";
 import { launchExpedition, partyTile, carried, outpostName, spawnAiParty } from "../src/sim/parties.js";
 import { queueOrder, startOrder } from "../src/sim/orders.js";
@@ -40,7 +44,8 @@ import * as FW from "../src/sim/fieldworks.js";
 import { wellYield } from "../src/sim/claims.js";
 import { createVehicle } from "../src/sim/vehicles.js";
 import { startWar } from "../src/sim/diplomacy.js";
-import { huntTripTile, gameAbundance, expectHunt } from "../src/sim/hunting.js";
+import { huntTripTile, gameAbundance, expectHunt, SNARE, snareZombieChance } from "../src/sim/hunting.js";
+import { crossingsFrom } from "../src/sim/crossing.js";
 import { fieldworkAlerts } from "../src/ui/fieldworks.js";
 import { food, setFood, clearFood, addDays } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { LAYERS } from "../src/sim/markers.js";
@@ -86,6 +91,7 @@ function standing(state, kind, d = 2, extra) {
   const at = spot(state, kind, d, extra) || spot(state, kind, 1, extra) || spot(state, kind, 3, extra);
   if (!at) return null;
   const r = FW.planFieldWork(state, hub(state), kind, at.tile);
+  if (kind === "snares") { tick(state, 48, () => r.fw.built); return r.fw; } // a team walks out and sets it (WORLD-02)
   const job = FW.jobFor(state, r.fw);
   job.progress = job.hours;
   builders(state, 1);
@@ -613,43 +619,124 @@ section("Hunting blind: more game for the base's hunters on its tile, reached pa
 }
 
 // ---------------------------------------------------------------------------------------------------------
-section("Snare line: catches day by day, a hunter checks it, the catch rots or is robbed; a team checks it");
+section("Snare line (WORLD-02): a team sets it; it catches day by day; only a team checking it finds out what it holds");
 {
   const state = mk();
   const h = hub(state);
-  const fw = standing(state, "snares", 2, (id) => ["forest", "hills"].includes(state.tiles[id].terrain)) || standing(state, "snares", 2);
-  if (check(!!fw, "a snare line on forest, hills or farmland")) {
+  const at = spot(state, "snares", 2, (id) => ["forest", "hills"].includes(state.tiles[id].terrain)) || spot(state, "snares", 2) || spot(state, "snares", 1);
+  if (check(!!at, "a tile for a snare line on forest, hills or farmland")) {
     const city = FW.placeTiles(state, h, "snares").find((x) => !["forest", "hills", "plains"].includes(state.tiles[x.tile].terrain));
     if (city) check(/forest, hills or farmland/.test(city.why), `refused off game land: "${city.why}"`);
-    // Nobody on Hunt (and only the day's roll here, not the morning's check): the catch waits in the snares.
-    for (const s of atBase(state, h.id)) if (s.role === "hunt") s.role = "rest";
-    const keepRob = FW.FIELD.SNARES.theft, keepNear = FW.FIELD.SNARES.near;
-    FW.FIELD.SNARES.theft = 0; FW.FIELD.SNARES.near = 0;
+    for (const s of atBase(state, h.id)) Object.assign(s, { health: 100, conditions: [], inBed: false });
+    const r = FW.planFieldWork(state, h, "snares", at.tile);
+    const fw = r.fw;
+    const team = fw && FW.snareTeam(state, fw);
+    check(!r.error && !fw.built && !!team && FW.snareRoute(state, h, at.tile).land, `placing it sends a team out over land; nothing is set yet (${r.error || r.text})`);
+    check(!FW.fieldJobs(state, h).length, "it is no job for the builders");
+    tick(state, 48, () => fw.built);
+    check(fw.built && fw.checked && fw.checked.set, `the team set it at the tile (${FW.fwStatusText(state, fw)})`);
+    tick(state, 48, () => !state.parties.includes(team));
+    check(!state.parties.includes(team), "and walked home");
+    // Day by day (no thieves, none of the dead): the catch waits in the snares.
+    const keep = { theft: FW.FIELD.SNARES.theft, near: FW.FIELD.SNARES.near, z: SNARE.zombie, zn: SNARE.zombieNear };
+    FW.FIELD.SNARES.theft = 0; FW.FIELD.SNARES.near = 0; SNARE.zombie = 0; SNARE.zombieNear = 0;
     for (let i = 0; i < 4; i++) { state.hour += 24; FW.fieldworksDaily(state); }
     check(fw.caught > 0, `4 days: ${fw.caught} caught (about ${FW.snareExpect(state, fw)} a day expected), ${FW.snareHeld(fw)} still in the snares, ${fw.rotted || 0} rotted`);
     if (!FW.snareHeld(fw)) fw.held = [{ day: day(state), n: 3 }];
-    // A hunter at the base checks them in the morning.
+    // Nobody at home checks it, hunter or not, and the base does not know what it holds.
     const hunter = atBase(state, h.id).find((x) => !x.leader);
     Object.assign(hunter, { role: "hunt", health: 100, conditions: [], inBed: false });
-    const food0 = food(h), n = FW.snareHeld(fw);
+    const n = FW.snareHeld(fw);
+    const game = () => (h.stock.f_smallgame || 0) + (h.stock.f_fowl || 0);
     toHour(state, FW.FIELD.HAUL.hour);
-    check(!FW.snareHeld(fw) && food(h) > food0 && fw.checked, `a hunter brought ${n} small game in (food ${Math.round(food0)} → ${Math.round(food(h))})`);
-    // Robbed: the catch gone and the wires torn.
+    check(FW.snareHeld(fw) === n && !state.parties.some((q) => q.snareFor === fw.id), `the morning comes and goes: nobody checks it from home (${n} still in it)`);
+    const st0 = FW.fwStatusText(state, fw);
+    check(/unknown until a team checks it/.test(st0) && !new RegExp(`${n} small game`).test(st0), `the tab does not know what it holds ("${st0}")`);
+    // Robbed: nobody at home hears of it; the team that checks it does.
     FW.FIELD.SNARES.theft = 1;
-    fw.held = [{ day: day(state), n: 2 }];
     const hp0 = fw.hp;
     state.hour += 24; FW.fieldworksDaily(state);
-    FW.FIELD.SNARES.theft = keepRob; FW.FIELD.SNARES.near = keepNear;
-    check(fw.robbed >= 2 && fw.hp < hp0 && state.fieldworks.news.some((x) => /robbed the snare line/.test(x.text)), `robbed: ${fw.robbed} taken, condition ${hp0} → ${fw.hp}`);
-    // A team checks it (its catch into the cargo).
+    FW.FIELD.SNARES.theft = 0;
+    check(fw.robbed >= n && fw.hp < hp0 && !state.fieldworks.news.some((x) => /robbed the snare line/.test(x.text)), `robbed out of sight: ${fw.robbed} taken, condition ${hp0} → ${fw.hp}, no news at home`);
     fw.held = [{ day: day(state), n: 2 }];
-    const ids = atBase(state, h.id).filter((x) => x.location.kind === "base" && !x.leader).slice(0, 1).map((x) => x.id);
+    // Send a team to check it: the catch comes home with it, and the robbery is found out.
+    const sent = FW.sendSnareTeam(state, fw.id);
+    check(!sent.error && /to check the snare line/.test(sent.text), `Send a team to check (${sent.error || sent.text})`);
+    check(!!FW.sendSnareTeam(state, fw.id).error, "one team at a time");
+    const ct = sent.party;
+    const game0 = game();
+    tick(state, 72, () => !state.parties.includes(ct));
+    check(!FW.snareHeld(fw) && fw.checked && fw.checked.n === 2 && fw.checked.robbed >= n && game() > game0, `the team checked it and brought the catch home (${FW.snareKnownText(state, fw)}; small game at home ${game0} → ${game()})`);
+    // One of the dead caught in the wires: no game while it hangs there; the team puts it down.
+    const zmax = SNARE.zombieMax;
+    SNARE.zombie = 1; SNARE.zombieMax = 1;
+    fw.hp = fw.max; // mended (a torn line catches nothing, the dead included)
+    const c0 = fw.caught;
+    state.hour += 24; FW.fieldworksDaily(state);
+    check(!!fw.zombie && fw.caught === c0, `one of the dead in the wires: it catches nothing more (caught ${c0} → ${fw.caught})`);
+    SNARE.zombie = keep.z; SNARE.zombieNear = keep.zn; SNARE.zombieMax = zmax;
+    const ids = atBase(state, h.id).filter((x) => x.location.kind === "base" && !x.leader).slice(0, 2).map((x) => x.id);
     const t = launchExpedition(state, { memberIds: ids, dest: fw.tile, mission: "move", stance: "normal", supplies: { food: 3, water: 3 } }).party;
     tick(state, 24, () => t.phase === "waiting" && partyTile(t) === fw.tile);
-    check(FW.teamActs(state, t, fw.tile).some((a) => a.act === "check"), "the team's menu: Check the snare line");
+    check(FW.teamActs(state, t, fw.tile).some((a) => a.act === "check" && !/\d+ small game/.test(a.hint)), "a team at the line: Check the snare line (its menu does not say what is in it)");
     startOrder(state, t, { type: "fwork", act: "check" });
     tick(state, 3, () => t.phase === "waiting");
-    check(!FW.snareHeld(fw), "checked by the team: the catch is in its cargo");
+    check(!fw.zombie && fw.checked.zombie, "the team put it down");
+    FW.FIELD.SNARES.theft = keep.theft; FW.FIELD.SNARES.near = keep.near;
+    // Under 10% a day, even with a horde beside it.
+    const zc0 = snareZombieChance(state, fw.tile);
+    state.hordes.push(makeHorde(state, { tile: fw.tile, size: 40, role: "roam" }));
+    const zc1 = snareZombieChance(state, fw.tile);
+    state.hordes.length = 0;
+    check(zc0 > 0 && zc0 < 0.1 && zc1 > zc0 && zc1 < 0.1, `one of the dead in a line: ${Math.round(zc0 * 100)}% a day, ${Math.round(zc1 * 100)}% with the dead about`);
+    // A standing check: a team goes out on its day.
+    tick(state, 48, () => !state.parties.includes(t));
+    check(/every 2 days/.test(FW.setSnareCheck(state, fw, 2)), "a standing check every 2 days");
+    fw.check.next = day(state) + 1;
+    state.hour += 24;
+    toHour(state, FW.CHECK_HOUR + 1);
+    check(!!FW.snareTeam(state, fw) && fw.check.last && fw.check.last.ok && fw.check.next === fw.check.last.day + 2, `on its day a team went out (${FW.snareCheckText(state, fw)})`);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Snare line across a river (WORLD-02): by land or not at all, unless the team can take a boat");
+{
+  const state = mk();
+  const h = hub(state);
+  // A shore tile with land straight across one stretch of river, and no way round by land within the team's walk.
+  let found = null;
+  for (const tl of state.tiles) {
+    if (tl.terrain === "water" || state.bases.some((b) => b.tile === tl.id) || state.factions.some((f) => f.bases.includes(tl.id))) continue;
+    for (const c of crossingsFrom(state, tl.id)) {
+      const ft = state.tiles[c.tile];
+      if (!["forest", "hills", "plains"].includes(ft.terrain) || ft.hive || state.factions.some((f) => f.bases.includes(c.tile))) continue;
+      const r = FW.snareRoute(state, { tile: tl.id }, c.tile);
+      if (r && r.boat) { found = { shore: tl.id, far: c.tile }; break; }
+    }
+    if (found) break;
+  }
+  if (check(!!found, "a riverbank with a tile across and no bridge near")) {
+    // The hub stands on that bank (for the test) and holds the land across.
+    h.tile = found.shore;
+    state.tiles[found.far].owner = "player";
+    for (const id of state.grid.neighbors(found.far)) if (state.tiles[id].terrain !== "water") state.tiles[id].owner = state.tiles[id].owner ?? null;
+    const route = FW.snareRoute(state, h, found.far);
+    check(route && route.boat && !route.land && route.scrap === FW.boatScrap(), `the way there is by boat (from ${route.boat.from} to ${route.boat.to}, ${route.scrap} scrap)`);
+    h.stock.scrap = 2;
+    const why = FW.placeProblem(state, h, "snares", found.far);
+    check(/boat/.test(why), `with only the line's scrap: refused ("${why}")`);
+    check(!FW.placeProblem(state, h, "snares", found.far, false), "but the tile is still offered once there is scrap (connectivity alone)");
+    h.stock.scrap = 2 + route.scrap + 4;
+    check(!FW.placeProblem(state, h, "snares", found.far), "with scrap for the boats there and back: allowed");
+    for (const s of atBase(state, h.id)) Object.assign(s, { health: 100, conditions: [], inBed: false });
+    const r = FW.planFieldWork(state, h, "snares", found.far);
+    const p = r.fw && FW.snareTeam(state, r.fw);
+    check(!!p && carried(p, "scrap") >= route.scrap && p.orders.filter((o) => o.type === "cross").length === 2, `the team takes the scrap and crosses there and back (${r.error || r.text})`);
+    tick(state, 72, () => r.fw.built);
+    check(r.fw.built, `it reached the far bank by boat and set the line (${FW.fwStatusText(state, r.fw)})`);
+    // Open water itself: no route (and nowhere to set a line).
+    check(!FW.snareRoute(state, h, state.grid.neighbors(found.shore).find((id) => state.tiles[id].terrain === "water")), "open water: no route");
   }
 }
 
@@ -658,8 +745,13 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
 {
   const S = FW.FIELD.KINDS.snares;
   check(S.craft && S.cost.scrap === 2 && Object.keys(S.cost).length === 1 && S.hours === 1, `cheap: ${FW.costText(S.cost)}, ${S.hours} work-hour (was 4 scrap, 15 firewood, 3 hours)`);
+  // The hub stands in a town and every town has a ring of suburbs round it (mapgen.js): no snare ground next to it on
+  // any seed. Give the camp back its wild ground (the suburb blocks next to it become forest, a shop's too: room for
+  // a third line to meet the cap).
+  const wild = (st, b) => { for (const n of st.grid.neighbors(b.tile)) { const t = st.tiles[n]; if (t.terrain === "suburb") t.terrain = "forest"; } };
   const state = mk();
   const h = hub(state);
+  wild(state, h);
   // A camp: it holds only its own tile and keeps no field works, but snare lines next to it.
   Object.assign(h, { tier: 0, camp: true });
   recomputeOwnership(state);
@@ -669,37 +761,39 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
   const far = state.grid.within(h.tile, 2).find((id) => state.grid.distance(h.tile, id) === 2 && ["forest", "hills", "plains"].includes(state.tiles[id].terrain));
   check(ok.length > 0 && ok.every((x) => state.grid.distance(h.tile, x.tile) <= FW.FIELD.SNARES.reach), `a camp: snare lines on ${ok.length} tiles next to it`);
   if (far != null) check(!!FW.placeProblem(state, h, "snares", far), `a camp: not 2 tiles out on land it does not hold ("${FW.placeProblem(state, h, "snares", far)}")`);
-  // Nobody on Build: anyone at home sets it, in about an hour plus the walk.
+  // Nobody on Build: a team walks out and sets it (an hour there, plus the walk).
   for (const s of atBase(state, h.id)) Object.assign(s, { role: "rest", health: 100, conditions: [], inBed: false });
   h.construction.length = 0;
   h.stock.scrap = 2; h.stock.wood = 0;
   const r = ok.length ? FW.planFieldWork(state, h, "snares", ok[0].tile) : { error: "no tile" };
   if (check(!r.error && h.stock.scrap === 0, `planned with 2 scrap and no firewood (${r.error || r.text})`)) {
     const job = FW.jobFor(state, r.fw);
-    check(job.hours <= 2, `an hour's work and the walk: ${job.hours} hours`);
+    check(job.type === "team" && job.hours <= 2, `an hour's work there: ${job.hours} hours`);
     let hrs = 0;
-    while (!r.fw.built && hrs < 6) { FW.fieldBuildHour(state, h); hrs++; }
-    check(r.fw.built && hrs <= 2, `set by anyone at the camp with nobody on Build (${hrs} hours)`);
+    while (!r.fw.built && hrs < 24) { tick(state, 1); hrs++; }
+    check(r.fw.built && hrs <= 12, `set by a team from the camp with nobody on Build (${hrs} hours with the walk)`);
     // The cap: SNARES.max lines, and they do not count against the field works.
     h.stock.scrap = 20;
     const ok2 = FW.placeTiles(state, h, "snares").filter((x) => !x.why);
-    if (ok2.length) { const r2 = FW.planFieldWork(state, h, "snares", ok2[0].tile); FW.jobFor(state, r2.fw).progress = 99; FW.fieldBuildHour(state, h); }
+    if (ok2.length) FW.planFieldWork(state, h, "snares", ok2[0].tile);
     const third = FW.placeTiles(state, h, "snares").find((x) => !FW.fwAt(state, x.tile) && state.grid.distance(h.tile, x.tile) === 1);
     if (third) check(/at most/.test(FW.placeProblem(state, h, "snares", third.tile)), `a camp keeps ${FW.maxSnares(h)} lines: "${FW.placeProblem(state, h, "snares", third.tile)}"`);
-    // Checked each morning with no hunter at the base: anyone fit at home brings the catch in.
+    // With no hunter at the camp, a team of whoever is fit goes to check it and brings the small game in.
+    tick(state, 48, () => !state.parties.some((q) => q.snareFor != null));
     tick(state, 1); // the old generic stores typed first (foods.js), so the food count below is the catch's
     r.fw.held = [{ day: day(state), n: 2 }];
-    delete r.fw.checked;
     const game0 = (h.stock.f_smallgame || 0) + (h.stock.f_fowl || 0);
-    toHour(state, FW.FIELD.HAUL.hour);
-    const by = r.fw.checked && state.survivors.find((x) => x.id === r.fw.checked.by);
-    check(!FW.snareHeld(r.fw) && by && by.role !== "hunt" && (h.stock.f_smallgame || 0) + (h.stock.f_fowl || 0) > game0, `no hunter: ${by ? by.name : "nobody"} (${by ? by.role : "-"}) checked it and brought the small game in`);
+    const sent = FW.sendSnareTeam(state, r.fw.id);
+    const crew = sent.party ? sent.party.members.map((id) => state.survivors.find((x) => x.id === id)) : [];
+    if (sent.party) tick(state, 48, () => !state.parties.includes(sent.party));
+    check(!FW.snareHeld(r.fw) && crew.length && crew.every((x) => x.role !== "hunt") && (h.stock.f_smallgame || 0) + (h.stock.f_fowl || 0) > game0, `no hunter: ${crew.map((x) => `${x.name} (${x.role})`).join(", ") || sent.error} checked it and brought the small game in`);
   }
   // No scrap in the stores: a coil of snare wire from the armory (it comes back on a cancel), or the scrap gathered
   // for the camp's step up (not yet worked in).
   {
     const w = mk();
     const wh = hub(w);
+    wild(w, wh);
     Object.assign(wh, { tier: 0, camp: true });
     recomputeOwnership(w);
     wh.stock.scrap = 0; wh.construction.length = 0;
@@ -719,6 +813,7 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
   // The governor: a line at the camp from the start in hardcore; none in a normal game while fed, one when food is short.
   const g = mk();
   const gh = hub(g);
+  wild(g, gh);
   Object.assign(gh, { tier: 0, camp: true });
   recomputeOwnership(g);
   check(FW.govFieldWorks(g, gh, { foodShort: 0 }).length === 0 && !FW.playerWorks(g, gh).length, "normal, fed: no snare line");
@@ -727,8 +822,9 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
   check(FW.snareLinesWanted(g, gh, 0) === 1 && FW.snareLinesWanted(g, gh, 2) === FW.maxSnares(gh), `hardcore: one line from the start, up to ${FW.maxSnares(gh)} while short`);
   const said = FW.govFieldWorks(g, gh, { foodShort: 0 });
   const line = FW.playerWorks(g, gh).find((x) => x.kind === "snares");
-  check(!!line && said.some((x) => /Snare line planned/.test(x)), `hardcore: the governor sets a line at the camp (${said.join(" ") || "nothing"})`);
-  check(FW.govFieldWorks(g, gh, { foodShort: 2 }).every((x) => !/Snare line planned/.test(x)), "one field job at a time: no second line while the first is going up");
+  check(!!line && said.some((x) => /Snare line planned/.test(x)) && line.check && line.check.every === FW.FIELD.SNARES.govCheck, `hardcore: the governor sets a line at the camp, a team checking it every ${FW.FIELD.SNARES.govCheck} days (${said.join(" ") || "nothing"})`);
+  FW.govFieldWorks(g, gh, { foodShort: 2 });
+  check(FW.playerWorks(g, gh).filter((x) => x.kind === "snares").length <= FW.snareLinesWanted(g, gh, 2), "no more lines than it wants while food is short");
   // The steward and the governor at a full base (maxWorks > 0): the line comes before the rest, then nothing else that day.
   const n = mk();
   const nh = hub(n);

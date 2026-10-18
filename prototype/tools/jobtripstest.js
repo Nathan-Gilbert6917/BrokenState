@@ -16,7 +16,8 @@
 import { createWorld, tickHour, hub, atBase, hourOfDay, outOnTrip, homeAt, isHome } from "../src/sim/world.js";
 import { TRIP, TRIP_JOBS, walkHours, onTileHours, distFactor, tripScale, ownedWater, workLand, tripRoute, NO_WATER, waterTripsADay } from "../src/sim/tripland.js";
 import { tripState, tripTarget, planTrip, tripDay, outWorkers, loadText } from "../src/sim/jobtrips.js";
-import { groupFoodLand, groupWoodLand, groupHomeShare, groupWalkers, groupFetchedWater, GROUP_TRIPS } from "../src/sim/grouptrips.js";
+import { PACK, packFood } from "../src/sim/eating.js"; // the food a trip takes out (lunch)
+import { groupFoodLand, groupWoodLand, groupHomeShare, groupWalkers, groupFetchedWater, GROUP_TRIPS, GROUP_LUNCH_SHARE } from "../src/sim/grouptrips.js";
 import { describeActivity, baseWork } from "../src/sim/activity.js";
 import { outputDays } from "../src/sim/output.js";
 import * as Wd from "../src/sim/woodcutting.js";
@@ -69,7 +70,7 @@ section("The hours: the walk costs time on the tile");
   note(`hours on the tile a day: wood ${w.join(" / ")} (0, 1, 2 tiles out), hunting ${h.join(" / ")} (1, 2 out); trips of water a day ${[1, 2].map(waterTripsADay).join(" / ")}`);
   check(w[0] > w[1] && w[1] > w[2] && h[0] > h[1], "the farther the tile, the fewer hours on it");
   check(near(distFactor("wood", 1), 1) && near(distFactor("hunt", 2), 1) && near(distFactor("fish", 1), 1), "each job's day at its reference distance is the old job's (wood 1 tile, hunting 2, fishing 1)");
-  check(near(onTileHours("wood", 1) * tripScale("wood"), 6) && near(onTileHours("hunt", 2) * tripScale("hunt"), 3), "the old daily hours there (wood 6, hunting 3)");
+  check(near(onTileHours("wood", 1) * tripScale("wood"), 6) && near(onTileHours("hunt", 2) * tripScale("hunt"), 4), "the daily hours there (wood 6, hunting 4: CABIN.huntHours since 2026-10-12)");
   check(distFactor("wood", 0) > 1.1 && distFactor("wood", 2) < 0.85 && distFactor("hunt", 1) > 1.4, `a near tile gives more, a far one less (wood ${r1(distFactor("wood", 0) * 100) / 100} / 1 / ${r1(distFactor("wood", 2) * 100) / 100})`);
   check(waterTripsADay(1) > waterTripsADay(2), "water fetched from farther: fewer trips a day");
 }
@@ -85,6 +86,7 @@ section("A woodcutter's day: home outside the hours, out on the base's land, the
   check(!cutter.trip && !outOnTrip(state, cutter) && isHome(state, cutter), "03:00: at home (asleep), no trip");
   tickTo(state, 7);
   const t = cutter.trip;
+  check(packFood(cutter) >= PACK.trip - 1e-6, `out with at least ${PACK.trip} day of food for lunch (${Math.round(packFood(cutter) * 10) / 10})`);
   check(t && t.job === "wood" && t.leave === state.hour && outOnTrip(state, cutter, state.hour + 0.5), `07:00: out on a trip (${t && `to tile ${t.tile}, ${t.d} out, home at ${t.home}`})`);
   const land = new Set(workLand(state, base.tile));
   const route = t ? tripRoute(state, base.tile, t.tile) : [];
@@ -154,6 +156,8 @@ section("Hunters: out at dawn and dusk, the catch in as they arrive");
   check(hunter.trip && outOnTrip(state, hunter, state.hour + 0.5) && hunter.trip.d === H.huntTripTile(state, base).d, `07:00: out hunting ${hunter.trip && hunter.trip.d} tiles out`);
   tickTo(state, 12);
   check(!hunter.trip, "midday: home between the hunts");
+  check(/^Eating lunch/.test(describeActivity(state, hunter).text), `12:00, lunch at home: "${describeActivity(state, hunter).text}"`);
+  tickTo(state, 13);
   check(/out again at dusk/.test(describeActivity(state, hunter).text), `"${describeActivity(state, hunter).text}"`);
   tickTo(state, 17);
   check(hunter.trip && hunter.trip.home <= state.hour - (state.hour % 24) + 20, "17:00: out for the dusk hunt, home by 20:00");
@@ -172,7 +176,10 @@ section("Hunters: out at dawn and dusk, the catch in as they arrive");
 // ======================================================================
 section("Hunting without a cabin: the tiles next to the base; a cabin widens the grounds");
 {
-  const state = seedWith((st, b) => !H.huntWorkWhy(st, b) && !b.buildings.some((x) => x.type === "huntcabin"));
+  // The hub stands in a town and every town has a ring of suburbs round it (mapgen.js), so no seed's hub has game
+  // land next door any more: give it back its wild ground (the bare suburb blocks next to it become forest).
+  const wild = (st, b) => { for (const n of st.grid.neighbors(b.tile)) { const t = st.tiles[n]; if (t.terrain === "suburb" && !t.loc) t.terrain = "forest"; } };
+  const state = seedWith((st, b) => { wild(st, b); return !H.huntWorkWhy(st, b) && !b.buildings.some((x) => x.type === "huntcabin"); });
   const base = hub(state);
   check(H.huntRadius(base) === 1 && H.huntWorkWhy(state, base) === "", `no cabin: the Hunt job works (${H.huntGrounds(state, base).length} tiles of hunting grounds)`);
   const hunter = onJob(state, base, atBase(state, base.id)[1], "hunt");
@@ -271,7 +278,8 @@ section("The groups: their land, their walls by day, their walkers");
   const fs = state.factions.filter((f) => f.alive && f.bases.length);
   const food = fs.map((f) => groupFoodLand(state, f)), wood = fs.map((f) => groupWoodLand(state, f));
   note(`food from the land × ${food.map((x) => x.toFixed(2)).join(", ")}; firewood × ${wood.map((x) => x.toFixed(2)).join(", ")}`);
-  check(food.every((x) => x >= 0.9 - 1e-9 && x <= 1.1 + GROUP_TRIPS.fish + 1e-9) && wood.every((x) => x >= 0.5 && x <= 1.5), "by the land their bases hold (0.9–1.1 food, 0.5–1.5 firewood)");
+  check(food.every((x) => x >= 0.9 - 1e-9 && x <= 1.1 + GROUP_TRIPS.fish + 1e-9) && wood.every((x) => x >= 0.5 * GROUP_LUNCH_SHARE - 1e-9 && x <= 1.5 * GROUP_LUNCH_SHARE + 1e-9), "by the land their bases hold (0.9–1.1 food, 0.5–1.5 firewood, less the lunch hour)");
+  check(Math.abs(GROUP_LUNCH_SHARE - 11 / 12) < 1e-9, "their woodcutters stop for lunch too (11 of their 12 outdoor hours)");
   check(groupHomeShare(12) < 1 && groupHomeShare(23) === 1, `by day ${Math.round((1 - groupHomeShare(12)) * 100)}% of them are out at work, none at night`);
   const f = fs.find((x) => x.pop / x.bases.length >= 4) || fs[0];
   const ws = groupWalkers(state, f, f.bases[0], 10 * 24 + 11);

@@ -91,6 +91,10 @@ for (const seed of seeds) {
     const res = launchExpedition(state, { memberIds: crew, dest: dest.id, mission: "move", stance, vehicleId: byTruck ? truck.id : null, supplies });
     if (!check(!res.error, `launch: ${res.error}`)) continue;
     const p = res.party;
+    // Night on the road (nightmarch.js): the estimates time the march itself, so the team pushes on through every
+    // night of the trip (a "Night falls" card's Make camp spends the night's hours by the player's choice, not a slower
+    // road; this resolver picks the first choice, which camped the queue and redirect legs 8-10h past the estimate).
+    p.nightPlan = "push";
     // The carry limit itself: the same crew on foot cannot leave with the full load.
     if (c === 0) {
       const heavy = launchExpedition(state, { memberIds: atBase(state, h.id).slice(0, 1).map((s) => s.id), dest: dest.id, mission: "move", stance, supplies: { food: 60, water: 60 } });
@@ -181,6 +185,7 @@ for (const seed of seeds) {
     const res = launchExpedition(state, { memberIds: crew, dest: shore, mission: "move", stance: "normal", vehicleId: byTruck ? truck.id : null, supplies: byTruck ? supplies : { food: 6, water: 6 } });
     if (!check(!res.error, `crossing launch: ${res.error}`)) continue;
     const p = res.party;
+    p.nightPlan = "push"; // as above: the crossing's estimate is the march and the build, not a night's camp
     Object.assign(p.supplies, supplies); // on foot: handed the rest after leaving within the carry limit
     const s1 = { cards: 0, delay: 0 };
     runUntil(state, p, (q) => q.phase === "waiting", s1, false);

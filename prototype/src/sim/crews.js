@@ -27,7 +27,7 @@ import {
 } from "./parties.js";
 import { startOrder } from "./orders.js";
 import { nearbySites } from "./plans.js";
-import { searchHour, extract } from "./scavenge.js";
+import { searchHour, extract, searchExitHeat } from "./scavenge.js";
 import { vehiclesAtBase, vehicleById, refuel, wreckSupplies } from "./vehicles.js";
 import { saveSupplyRun, dispatchSupplyRun, deleteSupplyRun, supplyRunById } from "./supply.js";
 import { attitude, isAggressiveType } from "./factions.js";
@@ -377,6 +377,7 @@ function searchStep(state, role, p) {
   if (!e) return;
   if (p.phase !== "task" || !p.task || p.task.type !== "crewsearch") {
     // Turned home by a rule or a card mid-search: what was found and fits goes into the cargo.
+    searchExitHeat(state, e); // scavenge.js: out of the place (pois.js tile heat)
     typeFind(state, e.found.supplies, "house"); // foods.js: its food as items
     let room = partyCapacity(state, p) - cargoLoad(p.cargo);
     for (const g of e.found.gear) if (addGearToCargo(state, p, g)) room = partyCapacity(state, p) - cargoLoad(p.cargo);

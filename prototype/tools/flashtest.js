@@ -416,7 +416,7 @@ section("7. The UI: the throw preview, STN / DZ, the lines");
   place(me, 4, 6, [1, 0]); place(e0, 10, 6, [-1, 0]); place(e1, 11, 7, [-1, 0]);
   stow(st.survivors.find((x) => x.id === me.sid), newItem("flashbang"));
   UI.cui.sel = me.id;
-  const panel0 = UI.renderCombatPanel(st);
+  const panel0 = UI.renderCombatScreen(st);
   check(/Throw flashbang \(1\)/.test(panel0), "the throw button names the flashbang and the count");
   UI.combatAction(st, "cb-act", { v: "throw", k: "flashbang" });
   check(UI.cui.mode === "throw" && UI.cui.throwKey === "flashbang" && /flash reaches/.test(UI.cui.msg), `G picks it: ${UI.cui.msg}`);
@@ -428,7 +428,7 @@ section("7. The UI: the throw preview, STN / DZ, the lines");
   UI.cui.mode = "move"; UI.cui.hover = { x: 10, y: 6, px: 100, py: 100 };
   for (const view of ["iso"]) { try { UI.drawCombat(st, 1e9); UI.drawCombat(st, 1e9 + 700); } catch (e) { err += `${view}: ${e.message} `; } }
   check(!err, `the flash and the STN / DZ tags draw${err ? `: ${err}` : ""}`);
-  const panel = UI.renderCombatPanel(st);
+  const panel = UI.renderCombatScreen(st);
   check(/\(stunned\)|\(dazed\)/.test(panel) && /BANG!/.test(panel), "the enemy lines say who is stunned; the log has the bang");
   check(/stunned \(−\d action|dazed \(aim/.test(panel), "the hovered enemy's line says how badly");
 }

@@ -25,7 +25,9 @@
 // factions.js, caravans.js): they have no per-person inventories to sort, so nothing of theirs goes through here.
 /** @import { State, Party, Base, Item, Survivor, Stock } from "./types" */
 import { SUPPLIES } from "./data.js";
-import { survivorById } from "./world.js";
+import { survivorById, log } from "./world.js";
+import { settleBase } from "./ammo.js";
+import { isRoundKey } from "./rounds.js"; // rounds put away in the armory become stock
 import { partyMembers, partyTile, partyCapacity, poolLoad, weighTeam, onTheMove } from "./parties.js";
 import { partyFleet as partyVehicle, vehicleLabel } from "./vehicles.js"; // every vehicle of the team's: the cargo is pooled across them
 import { ensureInv, EQUIP_SLOTS, packOf, rigPouches, isCarrier, insertsOf, INSERT_SIDES, itemLoad, stow, removeAt, parseLoc } from "./inventory.js";
@@ -33,6 +35,8 @@ import { wornLoad, maxLoad } from "./load.js";
 import { FOODS, moveFood, moveFoodUnits, stockOf, foodWord, packPick, foodIn, foodText } from "./foods.js"; // food moves with its lots
 import { bodiesHome } from "./carriers.js";
 import { settleHold, holdView, HOLD_KEYS } from "./carry.js"; // who holds the supplies where (one pool, placed)
+import { parseTarget, suppliesOnto, PLACE_WORDS, placeSlots, itemKeyOf, stockKeyOf } from "./supitems.js"; // supplies onto a named member: pockets, pack or rig (2026-10-17, any supply 2026-10-18)
+import { isRoundItem, amountOf, splitOff } from "./itemstack.js";
 
 const EPS = 1e-6;
 const num = (v) => (Number.isFinite(v) ? v : 0);
@@ -69,7 +73,7 @@ export const teamsAtBase = (state, base) => state.parties.filter((p) => isPlayer
 // ---------- what a team has ----------
 // Every place an item is on a person, with how to take it off and put it back: worn and held, pockets, the rig's
 // pouches, a worn carrier's plates, the pack's slots. { item, where, loc, take(), put(item) }.
-function spotsOf(s) {
+export function spotsOf(s) {
   ensureInv(s);
   const pre = `s:${s.id}`;
   const out = [];
@@ -275,8 +279,12 @@ export function dropAllSupplies(state, p) {
 // picks: { items: [armory location strings or Item objects], supplies: { key: amount } }.
 // target: "cargo" (the team's cargo: the vehicle, or carried by hand) or a member's survivor id (their own slot if it
 // is free, a rig pouch, a pocket, the pack; something that fits none of them is refused: load it into the cargo).
-// Supplies go into the team's packed supplies, as many as it can carry.
-/** @param {State} state @param {Party} p @param {{ items?: (string | Item)[], supplies?: Record<string, number> }} picks @param {"cargo" | number | string} target */
+// Supplies go into the team's packed supplies, as many as it can carry; with a person target of the form
+// { sid, where: "pocket" | "pack" | "rig", loose? } (supitems.js parseTarget) a pick of any supply with an item form
+// (rounds, water, meds, a food...: supitems.js itemKeyOf) goes onto that member instead, as items in that place (rounds
+// boxed or loose; supitems.js suppliesOnto: their room and max load, and the team's carry limit, since what they wear
+// comes off what it can carry); "food" (days of it) and anything with no item form still go into the pool.
+/** @param {State} state @param {Party} p @param {{ items?: (string | Item)[], supplies?: Record<string, number> }} picks @param {"cargo" | number | string | { sid: number, where?: string | null, loose?: boolean }} target */
 export function loadFromBase(state, p, picks = {}, target = "cargo") {
   const why = transferProblem(state, p);
   if (why) return { moved: [], refused: [why], text: why };
@@ -284,8 +292,9 @@ export function loadFromBase(state, p, picks = {}, target = "cargo") {
   p.cargo = p.cargo || { supplies: {}, gear: [] };
   p.supplies = p.supplies || {};
   const moved = [], refused = [];
-  const toCargo = target === "cargo" || target == null;
-  const s = toCargo ? null : survivorById(state, Number(target));
+  const T = parseTarget(target);
+  const toCargo = !T;
+  const s = toCargo ? null : survivorById(state, T.sid);
   if (!toCargo && (!s || !(p.members || []).includes(s.id) || !s.alive)) return result([], ["That person is not on the team."], "");
   const first = s ? s.name.split(" ")[0] : "";
   for (const it of resolveArmoryItems(base, picks.items || [])) {
@@ -332,6 +341,12 @@ export function loadFromBase(state, p, picks = {}, target = "cargo") {
     const fit = sup.weight > 0 ? Math.min(want, Math.floor((room + EPS) / sup.weight)) : want;
     if (fit < want - EPS) refused.push(fit > 0 ? `Only ${qtyText(fit)} of the ${qtyText(want)} ${supName(k)} fit (${r1(room)} kg free).` : `No room for ${supName(k)} (${r1(room)} kg free).`);
     if (!(fit > 0)) continue;
+    if (s && T && T.where && itemKeyOf(k)) { // onto the member, in that place (rounds boxed or loose; supitems.js suppliesOnto: a food with its lots)
+      const r = suppliesOnto(state, [base], k, fit, s, { where: T.where, loose: T.loose });
+      if (r.moved > 0) moved.push(`${r.moved} ${supName(k)} (${first}'s ${PLACE_WORDS[T.where]}${T.loose && isRoundKey(k) ? ", loose" : ""})`);
+      if (r.why) refused.push(r.why);
+      continue;
+    }
     if (FOODS[k]) { moveFood(base, p, { [k]: fit }, { state }); moved.push(`${qtyText(fit)} ${supName(k)}`); continue; } // foods.js: with its lots, the oldest first
     base.stock[k] = have - fit;
     if (Math.abs(base.stock[k]) < 1e-9) base.stock[k] = 0;
@@ -341,6 +356,33 @@ export function loadFromBase(state, p, picks = {}, target = "cargo") {
   if (moved.length) { reweigh(state, p); settleHold(state, p); } // carry.js: loaded supplies go in packs, pockets, the vehicle, then the arms
   return result(moved, refused, toCargo ? `onto the team${partyVehicle(state, p) ? ` (${vehicleLabel(/** @type {any} */ (partyVehicle(state, p)))})` : ""}` : `onto the team (items to ${first})`);
 }
+// The reverse of a supply pick onto a member (the team window's "fewer" while editing a team at a base): up to n units
+// of a stock key (rounds in a form) out of one place on them into the base's stores (whole stacks, or a part split off).
+// Put in the armory they are stock at once (ammo.js settleBase: rounds, and supply items with a food's shelf), as when a
+// team comes home. Returns { moved, refused, text }.
+/** @param {State} state @param {Party} p @param {{ sid: number, key: string, n: number, where: string, loose?: boolean }} pick */
+export function dropSupplies(state, p, pick) {
+  const why = transferProblem(state, p);
+  if (why) return { moved: [], refused: [why], text: why };
+  const base = /** @type {Base} */ (teamBase(state, p));
+  const s = survivorById(state, Number(pick.sid));
+  if (!s || !(p.members || []).includes(s.id) || !s.alive) return result([], ["That person is not on the team."], "");
+  let left = Math.max(0, Math.floor(num(pick.n))), got = 0;
+  for (const { list, i } of placeSlots(s, pick.where) || []) {
+    const it = list[i];
+    if (!(left > 0)) break;
+    if (!it || stockKeyOf(it) !== pick.key || (isRoundItem(it) && !!it.loose !== !!pick.loose)) continue;
+    const q = Math.min(left, amountOf(it));
+    const piece = q < amountOf(it) ? splitOff(it, q) : (list[i] = null, it);
+    if (!piece) continue;
+    base.armory.push(piece);
+    got += q;
+    left -= q;
+  }
+  if (got > 0) { settleBase(state, base); reweigh(state, p); settleHold(state, p); }
+  return result(got > 0 ? [`${got} ${supName(pick.key)}`] : [], got > 0 ? [] : [`${s.name.split(" ")[0]} has no ${pick.loose ? "loose " : "boxed "}${supName(pick.key)} in the ${PLACE_WORDS[pick.where] || pick.where}.`], `from ${s.name.split(" ")[0]} into ${base.name}`);
+}
+export const dropRounds = dropSupplies; // the first day's name
 
 // ---------- helpers ----------
 function result(moved, refused, where) {
@@ -348,7 +390,7 @@ function result(moved, refused, where) {
   return { moved, refused, text };
 }
 // Picks to the items themselves (location strings name a place now; the items are what move).
-function resolveTeamItems(state, p, list) {
+export function resolveTeamItems(state, p, list) {
   const out = [];
   for (const x of list) {
     let it = null;
@@ -372,7 +414,7 @@ function resolveArmoryItems(base, list) {
   return out;
 }
 // Where an item is on the team now: { take(), put(item) } or null.
-function findOnTeam(state, p, it) {
+export function findOnTeam(state, p, it) {
   const ci = p.cargo.gear.indexOf(it);
   if (ci >= 0) return { take: () => { const j = p.cargo.gear.indexOf(it); if (j >= 0) p.cargo.gear.splice(j, 1); }, put: (x) => p.cargo.gear.splice(Math.min(ci, p.cargo.gear.length), 0, x) };
   for (const s of partyMembers(state, p)) {
@@ -381,3 +423,85 @@ function findOnTeam(state, p, it) {
   }
   return null;
 }
+
+// ---------- home from a trip: unpacking (INV-01) ----------
+// A team that comes home (parties.js returnHome) puts its supplies and cargo into the stores at once; what its people
+// carry on them (the pack's slots, a bag in the arms, the pockets) stays theirs. If any of them carries something
+// there, the base gets a pending unpack (state.unpack: [{ baseId, sids, team, stored, hour }], one per base): the
+// "Home from a trip" window (ui/teaminv.js unpackModal) lists those things, the pack, the bag and the rounds ticked,
+// and puts the ticked ones in the armory, the rounds and the bulk ammo cans into the stores (ammo.js settleBase), each
+// once. The autopilot never gets one (its governor sorts the armory itself).
+const UNPACK_AT = ["pack", "bag", "pocket"];
+// What one person could put away: [{ item, where, loc, kg, def (ticked to start with) }].
+/** @param {Survivor} s */
+export function unpackSpots(s) {
+  if (!s || !s.alive) return [];
+  return spotsOf(s).filter((x) => UNPACK_AT.includes(x.where)).map(({ item, where, loc }) => ({ item, where, loc, kg: itemLoad(item), def: where !== "pocket" || !!item.jobTool || isRoundItemKey(item) }));
+}
+const isRoundItemKey = (it) => !!(it && isRoundKey(it.key));
+// Called when a player team is home: a pending unpack for its people who carry something (merged with one already up).
+/** @param {State} state @param {Base} base @param {Survivor[]} members @param {string} team @param {string} stored */
+export function noteUnpack(state, base, members, team, stored = "") {
+  if (state.autopilot || !base) return null;
+  const sids = members.filter((s) => s.alive && unpackSpots(s).length).map((s) => s.id);
+  if (!sids.length) return null;
+  const list = Array.isArray(state.unpack) ? state.unpack : (state.unpack = []);
+  const was = list.find((u) => u.baseId === base.id);
+  if (was) { for (const id of sids) if (!was.sids.includes(id)) was.sids.push(id); was.team = team; was.stored = [was.stored, stored].filter(Boolean).join("; "); was.hour = state.hour; return was; }
+  const u = { baseId: base.id, sids, team, stored, hour: state.hour };
+  list.push(u);
+  return u;
+}
+// The pending unpack shown now (the first one still about someone at its base with something to put away), or null.
+// Out-of-date ones (the base gone, everyone left or put it all away) are dropped.
+/** @param {State} state */
+export function pendingUnpack(state) {
+  const list = Array.isArray(state.unpack) ? state.unpack : null;
+  if (!list) return null;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const u = list[i];
+    const base = state.bases.find((b) => b.id === u.baseId);
+    u.sids = base ? u.sids.filter((id) => { const s = survivorById(state, id); return s && s.alive && s.location.kind === "base" && s.location.baseId === base.id && unpackSpots(s).length; }) : [];
+    if (!u.sids.length) list.splice(i, 1);
+  }
+  if (!list.length) { delete state.unpack; return null; }
+  return list[0];
+}
+// Puts the picked things (location strings "s:<id>:pack:<i>" …) of the people of a pending unpack into the base's
+// armory; rounds and ammo cans go on into the stores (ammo.js settleBase). Ends the pending unpack. Returns
+// { moved: [names], rounds (rounds added to the stores), text }.
+/** @param {State} state @param {number} baseId @param {string[]} locs */
+export function unpackHome(state, baseId, locs = []) {
+  const list = Array.isArray(state.unpack) ? state.unpack : [];
+  const u = list.find((x) => x.baseId === baseId);
+  const base = state.bases.find((b) => b.id === baseId);
+  if (!u || !base) return { moved: [], rounds: 0, text: "Nothing to put away." };
+  const items = [];
+  for (const loc of locs) {
+    const L = parseLoc(loc);
+    if (L.o !== "s" || !u.sids.includes(L.id)) continue;
+    const s = survivorById(state, L.id);
+    if (!s || !s.alive || s.location.kind !== "base" || s.location.baseId !== baseId) continue;
+    const spot = unpackSpots(s).find((x) => x.loc === loc);
+    if (spot && !items.some((x) => x.item === spot.item)) items.push({ s, item: spot.item });
+  }
+  // Take them all off first (a location string names a slot: taking one never moves another), then store them.
+  const moved = [];
+  for (const { s, item } of items) {
+    const spot = spotsOf(s).find((x) => x.item === item);
+    if (!spot) continue;
+    spot.take();
+    delete item.jobTool; // a job's tool back where it belongs
+    base.armory.push(item);
+    moved.push(item.name);
+  }
+  const before = roundsInStock(base.stock);
+  settleBase(state, base); // ammo.js: boxes of rounds and bulk cans in the armory are stock there
+  const rounds = roundsInStock(base.stock) - before;
+  list.splice(list.indexOf(u), 1);
+  if (!list.length) delete state.unpack;
+  const text = moved.length ? `Put away in ${base.name}: ${moved.length <= 6 ? moved.join(", ") : `${moved.length} things`}${rounds > 0 ? ` (${rounds} rounds into the stores)` : ""}.` : "Everyone keeps what they carry.";
+  if (moved.length) log(state, text, "info");
+  return { moved, rounds, text };
+}
+const roundsInStock = (st) => Object.entries(st || {}).reduce((a, [k, q]) => a + (isRoundKey(k) && Number.isFinite(q) ? Math.max(0, Math.floor(q)) : 0), 0);

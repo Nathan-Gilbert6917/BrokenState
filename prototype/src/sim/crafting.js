@@ -15,7 +15,8 @@ import { GEAR, SKILL_NAMES, SUPPLIES } from "./data.js";
 import { log, atBase, skill, newId, gearEffect } from "./world.js";
 import { count, BUILDINGS, benchOf } from "./buildings.js";
 import { partyMembers, addGearToCargo } from "./parties.js";
-import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf } from "./inventory.js";
+import { ARMOR_SLOTS, SLOT_NAMES, EQUIP_SLOTS, ensurePack, stow, packOf, rigPouches } from "./inventory.js";
+import { stackMax, withCount, mergeInto, isSpent, roomIn } from "./itemstack.js"; // a recipe that makes a stack (n: makeshift picks) joins one of the same thing
 import { workFactor } from "./health.js";
 import { hasPerk, hash01, gainXp } from "./skills.js";
 import { craftLock, craftEdgeQuality, craftEdgeSpeed } from "./blueprints.js";
@@ -67,6 +68,13 @@ export const CRAFTS = {
   arrows:      { name: "Arrows (12)", supplies: { arrows: 12 }, in: { wood: 30, scrap: 1 }, hours: 4, skill: "mechanics", min: 1, field: true,
                  desc: "Straight shafts split from firewood, fletched, with points filed from scrap: 12 arrows (or crossbow bolts), what a bow or crossbow shoots in fights and on hunts. A hunt loses about half the arrows it shoots; a won fight gets about half back." },
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
+  // Makeshift picks (locks.js MAKESHIFT_PICK): n a craft as one stack (data-stacks.js STACK_MAX), always known, a team too.
+  makeshiftpick: { name: "Makeshift picks (3)", gear: "makeshiftpick", n: 3, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
+  // Makeshift ear protection (hearing.js; data.js ragplugs): rag twists dipped in wax, a few pairs a craft, a team too.
+  ragplugs:    { gear: "ragplugs",    in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
+  // Boards and nails (barricade.js; data.js GEAR.boards): planks split from a bundle of firewood, nails from a scrap.
+  // Anywhere, a team too: boarded up over a door or a window in a fight.
+  boards:      { gear: "boards",      in: { wood: 30, scrap: 1 }, hours: 1,  skill: "mechanics", min: 0, field: true },
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
   // tune-jobcaps: a filter that clogs at a base leaves its bucket and frame (base.spentFilters); fresh sand and
   // charcoal make it a filter again for a quarter of the scrap. spent: clogged filters it uses (at this base).
@@ -87,6 +95,7 @@ export const CRAFTS = {
   // Lights (lights.js): a torch from firewood anywhere, a headlamp and a lantern at the bench, a spotlight in a workshop.
   torch:       { gear: "torch",       in: { wood: 1, scrap: 1 },  hours: 1,  skill: "mechanics", min: 0, field: true },
   headlamp:    { gear: "headlamp",    in: { scrap: 1, parts: 1 }, hours: 5,  skill: "mechanics", min: 3 },
+  windlight:   { gear: "windlight",   in: { scrap: 2, parts: 1 }, hours: 4,  skill: "mechanics", min: 2 }, // a dynamo from a motor out of the scrap
   lantern:     { gear: "lantern",     in: { scrap: 3, parts: 1, fuel: 1 }, hours: 6, skill: "mechanics", min: 2 },
   spotlight:   { gear: "spotlight",   in: { scrap: 4, parts: 3 }, hours: 12, skill: "mechanics", min: 5, needs: "workshop" },
   suppressor:  { gear: "suppressor",  in: { scrap: 4, parts: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" },
@@ -105,6 +114,8 @@ export const CRAFTS = {
   ram:         { gear: "ram",         in: { scrap: 8, parts: 2 }, hours: 10, skill: "mechanics", min: 3, needs: "workshop" },
   tripwire:    { gear: "tripwire",    in: { scrap: 1 },           hours: 2,  skill: "mechanics", min: 0, field: true },
   slingbag:    { gear: "slingbag",    in: { scrap: 2 },           hours: 3,  skill: "mechanics", min: 0 },
+  // The camp cook pot (cooking.js POT): small meals at a base with no Kitchen or cook fire, or on a team's camp fire.
+  cookpot:     { gear: "cookpot",     in: { scrap: 3 },           hours: 3,  skill: "cooking",   min: 0, field: true },
   // Camp kit against Heat (fieldheat.js): made by whoever knows how to keep quiet.
   ghillie:     { gear: "ghillie",     in: { scrap: 2 },           hours: 6,  skill: "stealth",   min: 2, field: true },
   ragboots:    { gear: "ragboots",    in: { scrap: 1 },           hours: 2,  skill: "stealth",   min: 0, field: true },
@@ -209,9 +220,14 @@ export function craftOutputText(key) {
     if (LIGHTS[r.gear]) fx.push(`a light: at night sees ${LIGHTS[r.gear].sight} tiles (7 without) and searches without fumbling, but is seen ${LIGHTS[r.gear].seen} tile${LIGHTS[r.gear].seen === 1 ? "" : "s"} further${LIGHTS[r.gear].free ? "; hands free" : "; in the off hand"}`); // lights.js
     if (d.heat) fx.push(`${Object.entries(d.heat).filter(([k]) => k !== "hours").map(([k, v]) => `Heat ×${v} ${k === "stay" ? "staying put" : k === "camp" ? "camping" : "searching"}`).join(", ")}${d.heat.hours ? `, for ${d.heat.hours} hours, used up` : ""}`);
     if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
+    // Wave 2 cooking (cooking.js): the camp cook pot was a bare "tool" here; it says what it cooks and where.
+    if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 firewood an hour), and a camping team's fresh food into simple meals at a lit fire");
+    if (d.ears) fx.push(`ear protection carried in a pocket or the pack, under any helmet (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear} tiles; a pair a fight`);
+    if (r.gear === "makeshiftpick") fx.push("picks locks in a raid without the crowbar and lockpicks (locks.js): 30% + 4% a Stealth point − 15% a difficulty step, as quiet, but one snaps in two every attempt; not a safe, a steel security door or a gun safe");
     bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" || (d.selfStab && !d.medKit) ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
   if (d.req && d.skill) bits.push(`needs ${SKILL_NAMES[d.skill]} ${d.req}`);
+  if (r.n > 1) bits.push(`${r.n} a craft, a stack of up to ${stackMax(r.gear)} in one slot`); // makeshift picks
   if (d.dur) bits.push(`lasts ${ownMax(d) ? `about ${d.dur}` : d.dur} ${durUnit(r.gear)}${ownMax(d) ? " (more when well made)" : ""}`);
   if (d.noise === 0 && d.slot === "weapon") bits.push("silent");
   return bits.join(", ");
@@ -223,6 +239,7 @@ export function durUnit(key) {
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
   if (d.selfStab) return "use"; // a tourniquet (medics.js MEDIC.SELF): one use
+  if (d.ears && d.slot === "pack") return "fights"; // earplugs (hearing.js settleEars): a pair a fight
   if (key === "repairkit") return "repairs"; // repair.js: a field repair a use
   if (d.cart) return "wear (a tile off the roads wears 0.5–2)"; // carts.js CART_WEAR
   if (d.suppressor) return "shots";
@@ -391,10 +408,12 @@ export function craftingHour(state) {
       for (const [k, v] of Object.entries(r.supplies)) base.stock[k] = (base.stock[k] || 0) + v;
       log(state, `${craftName(job.recipe)} finished at ${base.name}.`, "good");
     } else {
-      const item = makeItem(r.gear, quality);
+      const item = craftItem(r, quality);
       if (item.dur && team.some((s) => hasPerk(s, "tinkerer"))) { item.dur = Math.round(item.dur * 1.5); if (!GEAR[item.key].tabs) item.durMax = item.dur; } // Tinkerer (skills.js): lasts 50% longer
-      base.armory.push(item);
-      log(state, `${item.name} crafted at ${base.name} (condition ${Math.round(item.quality * 100)}%). It is in the armory.`, "good");
+      // A stack (r.n: makeshift picks) joins one of the same thing in the armory first (itemstack.js mergeInto), the rest a stack of its own.
+      if (r.n > 1) for (const it of base.armory) if (it && mergeInto(it, item) > 0 && isSpent(item)) break;
+      if (!(r.n > 1) || !isSpent(item)) base.armory.push(item);
+      log(state, r.n > 1 ? `${r.n} ${item.name.toLowerCase()} crafted at ${base.name}. They are in the armory.` : `${item.name} crafted at ${base.name} (condition ${Math.round(item.quality * 100)}%). It is in the armory.`, "good");
     }
     // Crafting XP for whoever worked it, by their share of the work this hour (skills.js gainXp: the daily use cap).
     const xp = craftXp(r, quality);
@@ -421,6 +440,11 @@ export function makeItem(key, quality = 1) {
   if (d.slots) ensurePack(item); // a pack comes with empty pack slots
   return item;
 }
+// What a gear recipe makes: a stack of r.n at full quality (stacks merge only at one quality: itemstack.js canStack;
+// the roll still sets the XP), else one item at the rolled quality.
+export const craftItem = (r, quality = 1) => (r.n > 1 ? withCount(makeItem(r.gear, 1), r.n) : makeItem(r.gear, quality));
+// A person carries a stack of this thing with room for more (a stack recipe needs no free slot then: inventory.js stow merges).
+const stackRoomOn = (s, key) => [...(s.pockets || []), ...(rigPouches(s) || []), ...(packOf(s) || [])].some((it) => it && it.key === key && roomIn(it) > 0);
 
 // Uses left (null = does not wear). Items made before durability (loot, older code) start full.
 export function itemDur(item) {
@@ -630,7 +654,7 @@ export function fieldCraft(state, party, recipeKey) {
   const r = CRAFTS[recipeKey];
   // An item nobody can wear needs room in the cargo (parties.js addGearToCargo); checked before materials are used.
   const worn = !r.supplies && EQUIP_SLOTS.includes(GEAR[r.gear].slot);
-  const roomOn = (s) => (worn ? !s.gear[GEAR[r.gear].slot] : (GEAR[r.gear].small && (s.pockets || []).includes(null)) || (!GEAR[r.gear].bulky && (packOf(s) || []).includes(null)));
+  const roomOn = (s) => (worn ? !s.gear[GEAR[r.gear].slot] : (GEAR[r.gear].small && (s.pockets || []).includes(null)) || (!GEAR[r.gear].bulky && (packOf(s) || []).includes(null)) || (r.n > 1 && stackRoomOn(s, r.gear)));
   if (!r.supplies && !partyMembers(state, party).some(roomOn)) {
     const probe = makeItem(r.gear, 1);
     if (!addGearToCargo(state, party, probe)) return `No free ${SLOT_NAMES[GEAR[r.gear].slot] || "slot"} on anyone and no room in the cargo for a ${probe.name}: not made.`;
@@ -649,22 +673,24 @@ export function fieldCraft(state, party, recipeKey) {
     for (const [k, v] of Object.entries(r.supplies)) party.supplies[k] = (party.supplies[k] || 0) + v;
     return `${who} makes ${craftName(recipeKey).toLowerCase()} (${opt.out}) in about ${r.hours} hours.`;
   }
-  const item = makeItem(r.gear, quality);
+  const item = craftItem(r, quality);
   const slot = GEAR[r.gear].slot;
-  // Worn kit to a free slot; small things (throwables, camp kit) to a pocket or a pack (they are not worn).
+  const what = r.n > 1 ? `${r.n} ${item.name.toLowerCase()}` : `a ${item.name}`, them = r.n > 1 ? "them" : "it"; // a stack: "3 makeshift picks"
+  // Worn kit to a free slot; small things (throwables, camp kit) to a pocket or a pack (they are not worn); a stack
+  // onto one of the same thing first (stow merges).
   if (!EQUIP_SLOTS.includes(slot)) {
     for (const s of members) {
       const at = stow(s, item);
-      if (at) return `${who} makes a ${item.name} in about ${r.hours} hours; ${s.name.split(" ")[0]} keeps it (${at.includes(":pocket:") ? "pocket" : "pack"}).`;
+      if (at) return `${who} makes ${what} in about ${r.hours} hours; ${s.name.split(" ")[0]} keeps ${them} (${at.includes(":pocket:") ? "pocket" : at.includes(":rig:") ? "rig" : "pack"}).`;
     }
   }
   const taker = EQUIP_SLOTS.includes(slot) ? members.find((s) => !s.gear[slot]) : null;
   if (taker) {
     taker.gear[slot] = item;
-    return `${who} makes a ${item.name} in about ${r.hours} hours; ${taker.name.split(" ")[0]} takes it (${slot}).`;
+    return `${who} makes ${what} in about ${r.hours} hours; ${taker.name.split(" ")[0]} takes ${them} (${slot}).`;
   }
   party.cargo = party.cargo || { supplies: {}, gear: [] };
   party.cargo.gear.push(item);
-  return `${who} makes a ${item.name} in about ${r.hours} hours. It goes in the cargo.`;
+  return `${who} makes ${what} in about ${r.hours} hours. ${r.n > 1 ? "They go" : "It goes"} in the cargo.`;
 }
 

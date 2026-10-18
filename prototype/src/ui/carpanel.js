@@ -29,7 +29,7 @@ export function carPanel(state, b, u) {
     ${rec.inspected ? `<div class="small muted">${esc(verdictText(rec))}</div>` : ""}
     <div class="row" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.15rem">
       ${button("enter", "Get in (1 action)", "Open the door: it is not locked.")}
-      ${o.pick ? button("pick", `Pick ${pct(o.pick.chance)} (1 action)`, "Pick the door lock with lockpicks: 1 action a try, Heat +1.") : ""}
+      ${o.pick ? button("pick", `Pick${o.pick.makeshift ? " (makeshift)" : ""} ${pct(o.pick.chance)} (1 action)`, o.pick.makeshift ? `Pick the door lock with a bent wire (makeshift picks): 1 action a try, Heat +1; every try snaps one pick in two (${o.pick.left} left).` : "Pick the door lock with lockpicks: 1 action a try, Heat +1.") : ""}
       ${o.force ? button("force", force, o.force.glass ? "No pry bar: smash a window and reach in (both actions, Heat +10, breaking glass wakes everything within 11 tiles)." : "Jimmy the door with a pry bar (1 action, Heat +6, wakes everything within 8 tiles).") : ""}
       ${button("keys", `Look for keys ${o.keys ? pct(o.keys.chance) : ""}`, "The sun visor, the glovebox, the pockets of the dead lying near it (1 action, once).")}
       ${button("hotwire", `Hotwire ${o.hotwire ? pct(o.hotwire.chance) : ""}`, "Mechanics: pull the wires under the dash (1 action a try, Heat +1 on a raid; older cars are easier).")}

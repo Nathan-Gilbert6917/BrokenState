@@ -23,6 +23,7 @@
 //  - A plain move that got there raises no card (a log line instead) when the team can be reached without one; out of
 //    contact, under the autopilot and for a mission with a result (recon) the card still comes.
 // Usage: node tools/mapmovetest.js [seed]
+import { commandable } from "../src/sim/plans.js";
 import { createWorld, tickHour, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, planPath, partyTile, glideAt, giveOrder, teamName, setClockFrac, hoursLeft, hourCourse, clockText, arrivalsDue, onTheMove, plannedPos, plannedArrival, dispatchConvoy } from "../src/sim/parties.js";
 import { teamTileMenu, runTeamAction } from "../src/ui/teamctx.js";
@@ -733,7 +734,7 @@ section("Arriving in radio contact: a plain move raises no card, a log line inst
   check(state.cards.some((c) => c.partyId === p.id && c.isOrders && !c.quietArrival) && cardUp(state, ui), "a recon still reports with its card (and it stops the clock)");
 }
 
-section("Arriving out of contact: the orders card is the only way to reach the team, so it comes, in the tray (no pop-up)");
+section("Arriving out of radio range: orders reach it anyway (TEAM-01), so a plain move gets a log line, no card");
 {
   const state = mk();
   const dest = tileNear(state, hub(state).tile, 3, 4);
@@ -743,11 +744,34 @@ section("Arriving out of contact: the orders card is the only way to reach the t
   pacingFrame(state, ui);
   const card = state.cards.find((c) => c.partyId === p.id && c.isOrders);
   check(!p.radioLive && p.phase === "waiting", `the team got there out of contact (no radio station) and waits (${p.phase})`);
-  check(card && card.quietArrival, `its orders card came (${card ? card.title : "none"})`);
-  check(card && trayCards(state).includes(card) && !cardUp(state, ui), "it waits in the tray: nothing pops up, the clock runs");
-  // Left there, it opens by itself instead of taking "Hold here" (that would leave the team out of reach).
+  check(!card && !cardUp(state, ui) && commandable(state, p), `no orders card, nothing pops up, the clock runs, and it takes orders (${card ? card.title : "none"})`);
   for (let h = 0; h < 9; h++) { beforeHour(state, ui); tickHour(state); calm(state, p, card); pacingFrame(state, ui); }
-  check(state.cards.includes(card) && card.tray.kind === "always" && cardUp(state, ui), "left 8 hours, it opens (the team is still reachable)");
+  check(p.phase === "waiting" && !state.cards.some((c) => c.partyId === p.id && c.isOrders), "8 hours on it still waits quietly (no check-in cards)");
+}
+
+section("A card on the last tile (a surge of the dead: hide 4 hours) leaves the team on its destination: it still arrives");
+{
+  // Got there part-way through the hour (arrivalsDue: movedHour), the card met on the tile cut the move short before the
+  // arrival, and once answered the team carries on at the end of its way with a delay owed: "0m left", never arriving.
+  for (const how of ["minute", "tick"]) {
+    const state = mk(SEED + 90);
+    const dest = tileNear(state, hub(state).tile, 2, 3);
+    const p = send(state, 2, dest);
+    calm(state, p);
+    p.idx = p.path.length - 1;
+    p.progress = -4 * 0.9;
+    p.movedHour = state.hour + 1;
+    check(orderStatus(state, p).left === 0 && p.phase === "out", `${how}: on its destination, still out, 0m left (${p.phase})`);
+    if (how === "minute") {
+      setClockFrac(0.4);
+      arrivalsDue(state, 0.4);
+      setClockFrac(0);
+      check(p.phase === "waiting", `at the next minute on the clock it arrives and waits (${p.phase})`);
+    } else {
+      tickHour(state);
+      check(p.phase === "waiting", `headless, the hour's tick arrives it, moved that hour or not (${p.phase})`);
+    }
+  }
 }
 
 console.log(`\n${fails ? `${fails} failed, ` : ""}${passed} passed.`);

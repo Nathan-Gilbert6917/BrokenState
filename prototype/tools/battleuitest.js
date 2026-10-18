@@ -37,9 +37,9 @@ console.log("AI plays my side");
   const { st, b } = battles(21, ["field-town"])[0];
   draw(st);
   check(!cui.autoPlay, "a battle starts in your hands");
-  check(/data-action="cb-autoplay"[^>]*>🤖 AI plays my side/.test(UI.renderCombatPanel(st)), "the panel has AI plays my side");
+  check(/data-action="cb-autoplay"[^>]*><i class="bb-ic">🤖<\/i><span class="bb-cl">AI plays my side/.test(UI.renderCombatScreen(st)), "the bottom bar has AI plays my side");
   UI.combatAction(st, "cb-autoplay", {});
-  check(cui.autoPlay && /Take back control/.test(UI.renderCombatPanel(st)) && /data-action="cb-end" disabled/.test(UI.renderCombatPanel(st)), "on: Take back control, End turn greyed");
+  check(cui.autoPlay && /Take back control/.test(UI.renderCombatScreen(st)) && /data-action="cb-end" disabled/.test(UI.renderCombatScreen(st)), "on: Take back control, End turn greyed");
   const turn0 = b.turn;
   let t = 1e6, guard = 0;
   while (!b.over && b.turn < turn0 + 3 && guard++ < 2000) { t += 500; UI.combatTick(st, t); }
@@ -98,7 +98,7 @@ console.log("The threat preview");
       cui.sel = u.id;
       cui.hover = { x: hx, y: hy, px: 400, py: 300 };
       const n0 = nan, err = draw(st);
-      const html = UI.renderCombatPanel(st);
+      const html = UI.renderCombatScreen(st);
       if (err || nan !== n0) console.log(`  (${name} ${seed}: ${err || "NaN in the threat lines"})`);
       check(!err && nan === n0 && /Threat<\/b> \(enemies you see/.test(html), `${name} ${seed}: hovering a threatened tile shows the threat line and draws its lines`);
       cui.hover = null;
@@ -121,17 +121,17 @@ console.log("Ground, fog and Restart battle");
     const n0 = nan, g0 = ISO.iso.builds.ground;
     let err = draw(st);
     const built = ISO.iso.builds.ground - g0;
-    for (let r = 0; r < 4 && !err; r++) { ISO.isoRotate(b, 1); err = draw(st); }
+    for (let r = 0; r < 8 && !err; r++) { ISO.isoRotate(b, 1); err = draw(st); } // the eight views (ui/isoview.js isoRotate)
     const rebuilt = ISO.iso.builds.ground - g0 - built;
-    check(!err && nan === n0 && built <= 1 && (b.floors && b.floors.length > 1 ? true : rebuilt === 0), `${name}: drawn in all four turns of the view with no NaN, the ground painted ${built}× and not again on turning${err ? ` (${err})` : ""}`);
+    check(!err && nan === n0 && built <= 1 && (b.floors && b.floors.length > 1 ? true : rebuilt === 0), `${name}: drawn in all eight turns of the view with no NaN, the ground painted ${built}× and not again on turning${err ? ` (${err})` : ""}`);
   }
   const { st, b } = battles(42, ["field-forest"])[0];
   draw(st);
-  check(!/set-battlereload/.test(UI.renderCombatPanel(st)), "no Restart battle without a battle-start save");
+  check(!/set-battlereload/.test(UI.renderCombatScreen(st)), "no Restart battle without a battle-start save");
   b.saveKey = "k"; b.saveOk = true;
-  check(/data-action="set-battlereload"/.test(UI.renderCombatPanel(st)), "Restart battle with one");
+  check(/data-action="set-battlereload"/.test(UI.renderCombatScreen(st)), "Restart battle with one");
   st.ironman = { id: "ironX" };
-  check(!/set-battlereload/.test(UI.renderCombatPanel(st)), "never in Ironman");
+  check(!/set-battlereload/.test(UI.renderCombatScreen(st)), "never in Ironman");
 }
 
 // ---------- 4. the weapons overhaul's gun orders (ui/combat.js gunButtons, gunOrder, aimArea, ammoChooser) ----------
@@ -154,12 +154,12 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     const key = (code) => ({ code, shiftKey: true, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {} });
     cui.sel = u.id; cui.mode = "move"; cui.msg = "";
     u.ap = 2;
-    let html = UI.renderCombatPanel(st);
+    let html = UI.renderCombatScreen(st);
     check(!/data-v="(firemode|unjam|suppress|throwspear)"/.test(html), "a plain gun on today's sim: no fire mode, unjam, suppress or spear buttons");
     check(/reacts to every enemy that moves in range until your next turn or the magazine runs dry/i.test(html), "the Overwatch tooltip: sustained");
     // Fire modes.
     u.modes = ["single", "burst", "auto"]; u.mode = "single";
-    html = UI.renderCombatPanel(st);
+    html = UI.renderCombatScreen(st);
     check(/data-v="firemode"[^>]*>Fire: Single/.test(html) && /data-v="suppress"/.test(html), "a gun with fire modes: Fire: Single and Suppress");
     // (the sim knows the act now, sim/gunfire.js: these faked modes are not the pistol's, so it refuses the burst)
     const { modeRefusal } = await import("../src/sim/gunfire.js");
@@ -169,17 +169,17 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     UI.combatKey(st, key("KeyF"));
     check(cui.msg !== "Unknown action." && cui.msg === modeRefusal(u, "burst"), "Shift+F does the same");
     u.mode = "burst";
-    html = UI.renderCombatPanel(st);
+    html = UI.renderCombatScreen(st);
     check(/Fire: Burst/.test(html) && /\[Burst\]/.test(html), "the button and the unit's line follow u.mode");
     // Unjam.
     u.jam = { kind: "stovepipe", ap: 1 };
-    html = UI.renderCombatPanel(st);
+    html = UI.renderCombatScreen(st);
     check(/data-v="unjam"/.test(html) && /JAMMED/.test(html), "a jam: the Unjam button and a JAMMED badge");
     cui.msg = "";
     UI.combatKey(st, key("KeyJ"));
     check(cui.msg !== "Unknown action." && !u.jam && u.ap === 1, `Shift+J sends combatAct "unjam" (cleared, 1 action)${cui.msg ? ` [${cui.msg}]` : ""}`);
     delete u.jam;
-    check(!/data-v="unjam"/.test(UI.renderCombatPanel(st)), "no jam, no Unjam");
+    check(!/data-v="unjam"/.test(UI.renderCombatScreen(st)), "no jam, no Unjam");
     // Suppress: a targeting mode with its cone.
     UI.combatAction(st, "cb-act", { v: "suppress" });
     check(cui.mode === "suppress", "Suppress: a targeting mode");
@@ -189,7 +189,7 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     check(band[e.y * b.w + e.x] === 2 && band.some((v) => v === 1) && band.every((v, i) => !v || vis[i]), "the cone: the target cell and the seen cells around the line of fire");
     const far = band.findIndex((v, i) => v && Math.hypot((i % b.w) - u.x, ((i / b.w) | 0) - u.y) > Math.hypot(e.x - u.x, e.y - u.y) + 2.01);
     check(far < 0, "no farther than 2 tiles past the target");
-    check(/<b>Suppress<\/b>/.test(UI.renderCombatPanel(st)), "the hover line counts who in the cone keeps their head down");
+    check(/<b>Suppress<\/b>/.test(UI.renderCombatScreen(st)), "the hover line counts who in the cone keeps their head down");
     for (const v of ["iso"]) { const n0 = nan; const err = draw(st); check(!err && nan === n0, `the cone drawn in the ${v} view, no NaN${err ? ` (${err})` : ""}`); }
     UI.combatAction(st, "cb-act", { v: "suppress" });
     check(cui.mode === "move", "Suppress again: back to moving");
@@ -198,7 +198,7 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     const W0 = C.WEAPONS.pipespear.reach;
     C.WEAPONS.pipespear.reach = 2;
     u.weapon = "pipespear"; u.weaponName = "Pipe spear";
-    html = UI.renderCombatPanel(st);
+    html = UI.renderCombatScreen(st);
     check(/data-v="throwspear"/.test(html), "a spear in hand: Throw spear");
     UI.combatKey(st, key("KeyG"));
     check(cui.mode === "throwspear", "Shift+G: the spear's targeting mode");
@@ -210,14 +210,14 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     const nx = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [u.x + dx, u.y + dy]).find(([x, y]) => x >= 0 && y >= 0 && x < b.w && y < b.h) || [u.x, u.y];
     u.spearOut = { key: "pipespear", name: "Pipe spear" };
     b.spears = [{ id: 9999, x: nx[0], y: nx[1], f: u.f || 0, key: "pipespear", owner: u.id, side: "player", name: "Pipe spear" }];
-    html = UI.renderCombatPanel(st);
+    html = UI.renderCombatScreen(st);
     check(/data-v="pickspear"[^>]*>Pick up spear/.test(html) && !/data-v="pickspear"[^>]*disabled/.test(html), "a spear of theirs next to them: Pick up spear");
     for (const v of ["iso"]) { const n0 = nan; const err = draw(st); check(!err && nan === n0, `the spear on the ground drawn in the ${v} view`); }
     delete u.spearOut; b.spears = [];
     if (W0 === undefined) delete C.WEAPONS.pipespear.reach; else C.WEAPONS.pipespear.reach = W0;
     [u.weapon, u.weaponName] = held;
     delete u.modes; delete u.mode;
-    check(!/data-v="throwspear"/.test(UI.renderCombatPanel(st)), "a gun again: no spear button");
+    check(!/data-v="throwspear"/.test(UI.renderCombatScreen(st)), "a gun again: no spear button");
     // The Reload ammo chooser: two kinds of the gun's round to hand.
     const cal = C.WEAPONS[u.weapon].cal, types = CALIBERS[cal].types.slice(0, 2);
     const boxes = ammoBoxes();
@@ -234,7 +234,7 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
       check(list.length === 2 && list[0].n === 20 && list[1].n === 7, `the rounds to hand by kind (${list.map((x) => `${x.name} ${x.n}`).join(", ")})`);
       cui.msg = ""; cui.ammoAsk = null;
       UI.combatAction(st, "cb-act", { v: "reload" });
-      html = UI.renderCombatPanel(st);
+      html = UI.renderCombatScreen(st);
       check(cui.ammoAsk === u.id && (html.match(/data-v="reload" data-k="/g) || []).length === 2, "Reload opens the chooser: a button a kind");
       const pick0 = cui.ammoPick[u.id];
       UI.combatKey(st, key("KeyI"));
@@ -245,7 +245,7 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
       check(cui.msg === "" ? u.ap === ap0 - cost && cui.ammoAsk === null : cui.msg === why0 || cui.msg === C.reloadRefusal(b, u), `a kind picked: combatAct "reload" with act.ammo (${cui.msg || "reloaded"})`);
       // Your own line shows the round loaded; an enemy's never does.
       u.load = types[1];
-      check(UI.renderCombatPanel(st).includes(`<span class="muted">${AMMO_TYPES[types[1]].name}</span>`), "your gun's line shows the kind loaded");
+      check(UI.renderCombatScreen(st).includes(`<span class="muted">${AMMO_TYPES[types[1]].name}</span>`), "your gun's line shows the kind loaded");
       delete u.load;
     } finally {
       b.pools = pools0; b.units.forEach((x, i) => { x.boxes = boxes0[i]; });
@@ -254,14 +254,44 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     }
     e.load = "ap";
     cui.hover = { x: e.x, y: e.y, px: 400, py: 300 }; cui.mode = "move";
-    html = UI.renderCombatPanel(st);
+    html = UI.renderCombatScreen(st);
     const prev = (html.split('id="cbprev"')[1] || "").split("Enemies in sight")[0]; // the hovered enemy's preview only (your own lines show your load)
     check(prev.includes(e.weaponName.replace(/&/g, "&amp;")) && !/armour-piercing|hollow point/i.test(prev) && !/\bAP\b/.test(prev), "the enemy line: its gun and parts, never its ammo"); // (the preview: your own line shows your load)
     delete e.load;
     e.jam = { kind: "stovepipe", ap: 1 };
-    check(/JAMMED/.test(UI.renderCombatPanel(st)), "a jammed enemy shows JAMMED");
+    check(/JAMMED/.test(UI.renderCombatScreen(st)), "a jammed enemy shows JAMMED");
     delete e.jam;
   }
+}
+// ---------- 5. the selected survivor's kit (ui/combat.js cb-inv, Shift+B; ui/inventory.js peekModal) ----------
+console.log("The selected survivor's kit, look only");
+{
+  const INV = await import("../src/ui/inventory.js");
+  const { st, b } = battles(23, ["field-town"])[0];
+  draw(st);
+  const u = b.units.find((x) => x.side === "player" && x.sid != null && C.active(x));
+  cui.sel = u.id;
+  check(new RegExp(`data-action="cb-inv" data-id="${u.id}"`).test(UI.renderCombatScreen(st)), "the bottom bar has the selected survivor's 🎒 Inventory button");
+  const ui = { started: true, inv: null };
+  UI.combatKey(st, { code: "KeyB", shiftKey: true, preventDefault() {} });
+  INV.takeLootReq(st, ui);
+  check(ui.inv && ui.inv.peek && ui.inv.sid === u.sid, "Shift+B opens it for the selected one");
+  // (2026-10-17: on their turn with an action left the window is theirs to sort, 1 action a move; with none left, look only)
+  const ap0 = u.ap;
+  u.ap = 2; b.phase = "player";
+  let html = INV.inventoryModal(st, ui) || "";
+  check(/Inventory: /.test(html) && /data-action="inv-click"/.test(html) && /data-drop=/.test(html) && /each move here costs 1/.test(html), "the window shows their kit, movable for 1 action a move on their turn");
+  u.ap = 0;
+  html = INV.inventoryModal(st, ui) || "";
+  check(/Inventory: /.test(html) && !/data-action="inv-click"/.test(html) && !/data-drop=/.test(html) && /No action left/.test(html), "with no action left it is look only, and says so");
+  u.ap = ap0;
+  const mate = b.units.find((x) => x.side === "player" && x.sid != null && x.sid !== u.sid);
+  check(!mate || new RegExp(`data-action="inv-who" data-id="${mate.sid}"`).test(html), "tabs for the others in the fight");
+  ui.inv = null;
+  const foe = b.units.find((x) => x.side === "enemy");
+  UI.combatAction(st, "cb-inv", { id: foe.id });
+  INV.takeLootReq(st, ui);
+  check(!ui.inv, "never an enemy's");
 }
 console.log(`\n${passed} passed, ${failed} failed. (${Math.round(performance.now() - t0)} ms)`);
 process.exit(failed ? 1 : 0);

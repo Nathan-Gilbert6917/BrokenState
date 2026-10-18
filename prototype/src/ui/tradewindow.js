@@ -1,6 +1,7 @@
 // Trade window (two columns like RimWorld / Fallout), the radio panel for one group, the trade caravan planner,
 // and the bits of the Groups and Bases tabs that lead to them. Handlers: TRADE_ACTIONS / TRADE_CHANGE_ACTIONS,
 // registered by main.js. The rules live in sim/trade.js, sim/radio.js and sim/caravans.js.
+import { openAsked } from "./pacing.js"; // a trade closed back to its card opens it
 import { FOOD_PACK_KG } from "../sim/parties.js"; // days of food packed: about this a day
 import { FOODS, foodIn, bestFoodKey } from "../sim/foods.js"; // food by type in the trade window
 import { foodTip } from "./food.js";
@@ -167,6 +168,8 @@ export function tradeWindow(state, ui) {
     ? `Over the radio · trading from ${radioBasePick(state, ctx)}'s stores and armory · nothing changes hands until a caravan carries it`
     : ctx.visitor // outsiders (ui/visitors.js)
     ? `${visitorTradeHead(state, ctx)} · ${ctx.base ? `at ${esc(ctx.base.name)} until ${when(ctx.visitor.stayUntil)} · trading from ${esc(ctx.base.name)}'s stores and armory` : `met on the road (${esc(tileLabel(state, ctx.center))}) · trading from what the team carries`}`
+    : ctx.nomad // nomads (sim/nomads.js)
+    ? `Nomads, ${esc(ctx.nomad.label.replace(/^Nomads \((.*)\)$/, "$1").toLowerCase())}, no base · met near ${esc(tileLabel(state, ctx.center))} · trading from what the team carries`
     : ctx.kind === "visit"
     ? `Your team at their gates (${esc(tileLabel(state, ctx.center))}) · trading from what the team carries`
     : `Their caravan at ${esc(ctx.base.name)} · ${caravanGuards(f, c)} guards · leaves ${when(c.stayUntil)} · trading from ${esc(ctx.base.name)}'s stores and armory`;
@@ -174,7 +177,7 @@ export function tradeWindow(state, ui) {
   const pct = total > 0 ? Math.round((tot.offer / total) * 100) : 50;
   const held = ctx.kind === "visit" ? captivesOf(state, f.id) : [];
   return `<div class="box wide tradebox"><h1><span class="swatch" style="background:${f.color}"></span>${esc(f.name)}</h1>
-    <div class="where">${FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)} · your best Speech ${speech}${f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""}</div>
+    <div class="where">${f.label || FACTION_TYPES[f.type].label} · <span style="color:${attColor(a)}">${a}</span> · goodwill ${Math.round(f.goodwill)} · your best Speech ${speech}${f.pact ? ` · ${f.pact === "trade" ? "trade pact" : "non-aggression pact"}` : ""}</div>
     <div class="small muted">${where}</div>
     ${held.length ? `<div class="small danger">They hold ${held.map(first).join(", ")}. A ransom was offered when you arrived; a Rescue team can also get them out.</div>` : ""}
     ${radio ? deliveryPick(state, ctx) : ""}
@@ -199,7 +202,7 @@ export function tradeWindow(state, ui) {
     <div class="row" style="margin-top:0.7rem;flex-wrap:wrap">
       <button class="primary" data-action="dotrade" ${v.ok ? "" : "disabled"}${tip(!v.ok ? v.reason : radio ? (ctx.delivery === "deliver" ? "Ask them to bring it. They may say no; if they agree, their caravan sets out and the trade window opens when it arrives." : "Book the deal. Their side is set aside for you, and the trade caravan planner opens to take your side to them.") : "Swap the goods. Bigger deals and overpaying earn goodwill (up to 4 a day).")}>${radio ? "Agree the deal" : "Accept the deal"}</button>
       ${radio ? "" : `<button data-action="gift" ${tot.offer > 0 ? "" : "disabled"}${tip("Give your side for nothing in return. Raises goodwill (up to 15 a day).")}>Give your side as a gift</button>`}
-      ${ctx.visitor ? visitorTradeButtons(state, ui, ctx) : `<button data-action="pact" data-k="nonaggression" ${f.pact ? "disabled" : ""}${tip("They stop treating you as a target. Needs goodwill about -10 or more.")}>Non-aggression pact</button>
+      ${ctx.visitor ? visitorTradeButtons(state, ui, ctx) : ctx.nomad ? "" : `<button data-action="pact" data-k="nonaggression" ${f.pact ? "disabled" : ""}${tip("They stop treating you as a target. Needs goodwill about -10 or more.")}>Non-aggression pact</button>
       <button data-action="pact" data-k="trade" ${f.pact === "trade" ? "disabled" : ""}${tip("Lets you set up a recurring trade route. Needs goodwill 20.")}>Trade pact</button>
       ${c ? `<button data-action="tw-attack" data-id="${c.id}"${tip(`Fight its ${caravanGuards(f, c)} guards for everything it carries. ${f.name} turn hostile for good, other groups think less of you, and ${f.name} will raid you. Asks first.`)}>Attack the caravan…</button>` : ""}`}
       <button data-action="tradeleave" style="margin-left:auto"${tip(radio ? "Hang up: back to the radio panel" : c ? "Close the window. The caravan stays until its day is up; reopen it from the Bases tab." : "End the visit. The team then waits for orders.")}>${radio ? "Hang up" : c ? "Close" : "Leave"}</button>
@@ -407,7 +410,7 @@ export const TRADE_ACTIONS = {
   },
   gift: (state, ui) => { ui.tradeMsg = giftAll(state); },
   pact: (state, ui, d) => { const f = state.trade && factionById(state, state.trade.factionId); if (f) ui.tradeMsg = proposePact(state, f, d.k); },
-  tradeleave: (state, ui) => { if (state.trade && state.trade.radio) ui.radioWith = state.trade.factionId; endTrade(state); ui.tradeMsg = ""; ui.attackConfirm = null; },
+  tradeleave: (state, ui) => { if (state.trade && state.trade.radio) ui.radioWith = state.trade.factionId; const toCard = !!(state.trade && state.trade.visitorId != null && state.trade.back); if (toCard) openAsked(state, ui, () => endTrade(state, { back: true })); else endTrade(state, { back: true }); ui.tradeMsg = ""; ui.attackConfirm = null; }, // back to the outsiders' card, open (ui/pacing.js)
   // Attack the caravan: asks first (ui/confirm.js), then a battle at your base against its guards.
   "tw-attack": (state, ui, d) => {
     const c = caravanById(state, d.id), f = c ? factionById(state, c.owner) : null;

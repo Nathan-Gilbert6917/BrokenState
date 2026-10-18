@@ -9,6 +9,10 @@
 //   pick    lockpicks (the "Crowbar and lockpicks" item on the unit): 55% + 4% a Stealth point − 15% a difficulty step
 //           above 1 (+10% Quiet Hands), 5–95%; 1 action an attempt, Heat +1, the picks lose 1 use; Stealth XP 6 on a
 //           success, 2 on a miss. A safe can only be picked or keyed.
+//           Without the crowbar, makeshift picks (GEAR makeshiftpick: bent wire, crafted three at a time from a scrap,
+//           a stack of up to 10 in a pocket): the same roll from 30% (MAKESHIFT_PICK), as quiet, but every attempt
+//           snaps one pick from the stack half the time, open or not, and a safe, a steel security door or a gun
+//           safe is beyond them. The crowbar's picks are used first when both are carried (picksOf).
 //   force   with the crowbar (or a pry weapon: a crowbar, fire axe or sledgehammer, barOf): 85% + 1.5% a
 //           Mechanics point − 20% a step, 1 action, loud: Heat +6 and it wakes
 //           everything within 8 tiles. Without one (kick, smash): 50% − 20% a step, both actions, Heat +10, wakes
@@ -22,10 +26,12 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, LOCATIONS, SUPPLIES } from "./data.js";
 import { log, skill, survivorById, day } from "./world.js";
 import { hash01, gainXp, hasPerk, anyPerk } from "./skills.js";
-import { lootItem, allItems } from "./inventory.js";
+import { lootItem, allItems, rigPouches } from "./inventory.js";
+import { countOf, useOne } from "./itemstack.js"; // makeshift picks: a stack, one snaps at a time
 import { lockSource } from "./itemcond.js";
 const siteTypeAt = (state, tileId) => { const t = state.tiles && state.tiles[tileId]; return t && t.loc ? t.loc.type : null; }; // lockSource: a gun store's cages
 import { rollBlueprint, bpOfItem } from "./blueprints.js";
+import { BMAP, DOOR_KINDS } from "./buildingmaps.js"; // a locked door's strength, a door's kind (lock.dk: its lock's difficulty, whether it can be kicked; call-time only: safe in the import cycle)
 import { CELL, nearBox, inBox } from "./combat.js"; // nearBox / inBox: a container may cover several cells (a car)
 import { addFindVia } from "./ammo.js"; // rounds by calibre
 import { say as sayB, fx as fxB, setFloor } from "./combat.js"; // gun safes: a charge that goes off at the start of a turn (safeTurn)
@@ -57,6 +63,10 @@ export const LOCKS = {
   cargobed: { name: "Padlocked cargo bed", diff: 2, force: true, loot: "miltruck", nokey: true },
 };
 export const PICK = { base: 0.55, perStealth: 0.04, perDiff: 0.15, quiet: 0.1, heat: 1, xpWin: 6, xpMiss: 2 };
+// Makeshift picks (GEAR makeshiftpick, crafting.js CRAFTS.makeshiftpick): the pick roll from a lower base (the Stealth,
+// difficulty and Quiet Hands terms are PICK's), one pick snapped from the stack with chance `snap` on every attempt;
+// `no` lists the lock kinds a bent wire cannot work (every gun safe tier too: LOCKS tier).
+export const MAKESHIFT_PICK = { base: 0.3, snap: 0.5, no: ["safe", "vault"] };
 export const FORCE = { base: 0.85, perMech: 0.015, perDiff: 0.2, heat: 6, radius: 8, noise: 2 };
 export const SMASH = { base: 0.5, perDiff: 0.2, heat: 10, radius: 11, noise: 3, maxDiff: 2, ap: 2, glassBonus: 0.4 }; // glassBonus: a car window nearly always gives
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -122,26 +132,61 @@ function itemsOf(s) {
   const pack = s.gear && s.gear.backpack && s.gear.backpack.contents ? s.gear.backpack.contents.filter(Boolean) : [];
   return [...items, ...pack];
 }
-export const picksOf = (s) => itemsOf(s).find((it) => it.key === "crowbar" && !(Number.isFinite(it.dur) && it.dur <= 0)) || null;
+// The crowbar and lockpicks item with uses left, anywhere on the person.
+export const crowbarOf = (s) => itemsOf(s).find((it) => it.key === "crowbar" && !(Number.isFinite(it.dur) && it.dur <= 0)) || null;
+// A stack of makeshift picks with one left (itemstack.js: item.n, a single has none).
+export const makeshiftPicksOf = (s) => itemsOf(s).find((it) => it.key === "makeshiftpick" && countOf(it) >= 1) || null;
+export const isMakeshiftPicks = (it) => !!it && it.key === "makeshiftpick";
+// What they pick with: the crowbar's picks first, else makeshift picks, else null.
+export const picksOf = (s) => crowbarOf(s) || makeshiftPicksOf(s);
 // Something to force a lock with: the lockpicks' crowbar, or a pry weapon (data.js GEAR pry: a crowbar, a fire axe,
-// a sledgehammer) carried anywhere on the person.
-export const barOf = (s) => picksOf(s) || itemsOf(s).find((it) => GEAR[it.key] && GEAR[it.key].pry) || null;
-// Wears the picks one use; removes them when they are worn out. Returns true if they snapped.
-function wearPicks(s, it) {
-  if (!Number.isFinite(it.dur)) return false;
-  it.dur -= 1;
-  if (it.dur > 0) return false;
+// a sledgehammer) carried anywhere on the person. Makeshift picks pry nothing.
+export const barOf = (s) => crowbarOf(s) || itemsOf(s).find((it) => GEAR[it.key] && GEAR[it.key].pry) || null;
+// Can makeshift picks work this lock kind at all (a safe, a steel security door and the gun safes are beyond them)?
+export const makeshiftPickable = (kind) => { const def = LOCKS[kind]; return !!def && !def.tier && !MAKESHIFT_PICK.no.includes(kind); };
+// The pick odds for a person on a lock definition with the picks they hold (null or the crowbar: the real picks' roll).
+// quiet: the unit's Quiet Hands (u.quiet in battle, the perk anywhere).
+export function pickChance(s, def, picks = null, quiet = false) {
+  const base = isMakeshiftPicks(picks) ? MAKESHIFT_PICK.base : PICK.base;
+  return clamp(base + PICK.perStealth * (s ? skill(s, "stealth") : 0) - PICK.perDiff * (def.diff - 1) + (quiet || (s && hasPerk(s, "quiethands")) ? PICK.quiet : 0), 0.05, 0.95);
+}
+// Takes an item off the person wherever it is carried (the picks snapped, the stack gone).
+function dropFrom(s, it) {
   for (const k of Object.keys(s.gear || {})) if (s.gear[k] === it) s.gear[k] = null;
   if (s.pockets) s.pockets = s.pockets.map((x) => (x === it ? null : x));
+  if (s.loose) s.loose = s.loose.filter((x) => x !== it);
   const pack = s.gear && s.gear.backpack;
   if (pack && pack.contents) pack.contents = pack.contents.map((x) => (x === it ? null : x));
-  return true;
+  const rp = rigPouches(s); // a chest rig's or a vest's pouches (inventory.js)
+  if (rp) rp.forEach((x, i) => { if (x === it) rp[i] = null; });
+}
+// Wears the picks one attempt. The crowbar's picks lose a use and go when worn out; makeshift picks snap one of the
+// stack with MAKESHIFT_PICK.snap (roll: a 0–1 die from the caller's hash), the stack going at 0. Returns
+// { snapped, left (makeshift: the picks left after; the crowbar's: its uses), gone }.
+export function wearPicks(s, it, roll = 1) {
+  if (isMakeshiftPicks(it)) {
+    if (!(roll < MAKESHIFT_PICK.snap)) return { snapped: false, left: countOf(it), gone: false };
+    if (useOne(it)) return { snapped: true, left: countOf(it), gone: false };
+    dropFrom(s, it);
+    return { snapped: true, left: 0, gone: true };
+  }
+  if (!Number.isFinite(it.dur)) return { snapped: false, left: null, gone: false };
+  it.dur -= 1;
+  if (it.dur > 0) return { snapped: false, left: it.dur, gone: false };
+  dropFrom(s, it);
+  return { snapped: true, left: 0, gone: true };
 }
 
 // ---------- odds ----------
 // For a unit (battle unit u with u.sid) and a lock: { key, pick, force } each { ok, chance, why, ap, label }.
 export function openOdds(state, b, u, lock) {
   const def = LOCKS[lock.kind] || LOCKS.door;
+  // A door's kind (buildingmaps.js DOOR_KINDS, lock.dk): its own lock's difficulty (a glass door's is easy, a security
+  // door's hard), whether it can be kicked in, whether it can be forced at all.
+  const K = (lock.dk && DOOR_KINDS[lock.dk]) || null;
+  const diff = K && K.diff != null ? K.diff : def.diff;
+  const forceable = def.force && !(K && K.force === false), kickable = !(K && K.kick === false);
+  const name = K ? K.name.toLowerCase() : def.name.toLowerCase();
   const s = survivorById(state, u.sid);
   const site = b.tileId;
   const out = {};
@@ -149,12 +194,17 @@ export function openOdds(state, b, u, lock) {
   out.key = def.nokey ? { ok: false, chance: 0, ap: 1, label: "Key", why: "Whoever had the keys to this car took them." }
     : hasKey(state, site) ? { ok: true, chance: 1, ap: 1, label: "Key", why: "" } : { ok: false, chance: 0, ap: 1, label: "Key", why: `No key for ${b.place} on the key ring.` };
   const picks = picksOf(s);
-  const pc = clamp(PICK.base + PICK.perStealth * (s ? skill(s, "stealth") : 0) - PICK.perDiff * (def.diff - 1) + (u.quiet || (s && hasPerk(s, "quiethands")) ? PICK.quiet : 0), 0.05, 0.95);
-  out.pick = picks ? { ok: true, chance: pc, ap: 1, label: "Pick", why: "" } : { ok: false, chance: pc, ap: 1, label: "Pick", why: "Needs lockpicks (the Crowbar and lockpicks item) on this person." };
-  if (!def.force) out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: `A ${def.name.toLowerCase()} cannot be forced: pick it or use a key.` };
-  else if (barOf(s)) out.force = { ok: true, chance: clamp(FORCE.base + FORCE.perMech * (s ? skill(s, "mechanics") : 0) - FORCE.perDiff * (def.diff - 1), 0.05, 0.95), ap: 1, label: "Force", crowbar: true, why: "" };
+  const mk = isMakeshiftPicks(picks);
+  const pc = pickChance(s, { ...def, diff }, picks, !!u.quiet); // the door's kind sets the difficulty (DOOR_KINDS)
+  // Makeshift picks: the lower roll, one snapping half the time, and some locks beyond a bent wire.
+  if (!picks) out.pick = { ok: false, chance: pc, ap: 1, label: "Pick", why: "Needs lockpicks (the Crowbar and lockpicks item, or makeshift picks) on this person." };
+  else if (mk && !makeshiftPickable(LOCKS[lock.kind] ? lock.kind : "door")) out.pick = { ok: false, chance: 0, ap: 1, label: "Pick (makeshift)", makeshift: true, why: `A ${name} is beyond makeshift picks: it takes the crowbar and lockpicks${forceable ? ", a key or force" : " or a key"}.` };
+  else out.pick = { ok: true, chance: pc, ap: 1, label: mk ? "Pick (makeshift)" : "Pick", ...(mk ? { makeshift: true, snap: MAKESHIFT_PICK.snap, left: countOf(picks) } : {}), why: "" };
+  if (!forceable) out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: `A ${name} cannot be forced: pick it or use a key${K ? ", or batter it down" : ""}.` };
+  else if (barOf(s)) out.force = { ok: true, chance: clamp(FORCE.base + FORCE.perMech * (s ? skill(s, "mechanics") : 0) - FORCE.perDiff * (diff - 1), 0.05, 0.95), ap: 1, label: "Force", crowbar: true, why: "" };
   // Without a crowbar: kick it in, or on a car shatter a window and reach in (glass): both actions and the loudest way.
-  else if (def.diff <= SMASH.maxDiff) out.force = { ok: u.ap >= SMASH.ap, chance: clamp(SMASH.base - SMASH.perDiff * (def.diff - 1) + (def.glass ? SMASH.glassBonus : 0), 0.05, 0.95), ap: SMASH.ap, label: def.glass ? "Break glass" : "Smash", glass: !!def.glass, why: u.ap >= SMASH.ap ? "" : `${def.glass ? "Breaking the glass" : "Smashing it"} takes both actions.` };
+  else if (!kickable) out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: `A ${name} cannot be kicked in: a crowbar, lockpicks or a key.` };
+  else if (diff <= SMASH.maxDiff) out.force = { ok: u.ap >= SMASH.ap, chance: clamp(SMASH.base - SMASH.perDiff * (diff - 1) + (def.glass ? SMASH.glassBonus : 0), 0.05, 0.95), ap: SMASH.ap, label: def.glass ? "Break glass" : "Smash", glass: !!def.glass, why: u.ap >= SMASH.ap ? "" : `${def.glass ? "Breaking the glass" : "Smashing it"} takes both actions.` };
   else out.force = { ok: false, chance: 0, ap: 1, label: "Force", why: "Too solid to smash without a crowbar." };
   if (def.tier) safeOdds(state, b, u, lock, def, s, out); // gun safes: combination, crack, bypass, drill, grind, blow (below)
   return out;
@@ -169,8 +219,9 @@ export function lockRaid(state, b) {
   R.doors = R.doors || [];
   R.foundKeys = R.foundKeys || [];
   const t = state.tiles[b.tileId];
-  const type = t && t.loc ? t.loc.type : null;
-  const roll = (...k) => hash01(state.seed, "lock", b.tileId, state.hour, ...k);
+  // A point of interest (poicont.js R.poiDice): its kind, and dice keyed by it instead of the hour (the same locks every visit).
+  const type = (R.poiDice && b.setup && b.setup.raid && b.setup.raid.kind) || (t && t.loc ? t.loc.type : null);
+  const roll = (...k) => hash01(state.seed, "lock", b.tileId, R.poiDice ?? state.hour, ...k);
   placeGunSafes(state, b, type, roll); // gun safes (below): before the other locks, so a safe is not also a cage
   // Crash-site containers are named for what they are.
   for (const c of R.containers) {
@@ -204,7 +255,7 @@ export function lockRaid(state, b) {
       const a = cands[(start + i) % cands.length];
       if (sealRoom(b, a)) {
         const kind = VAULT_AREAS.includes(a.type) ? "vault" : "door";
-        for (const [x, y] of a.doors) R.doors.push({ id: R.doors.length + 1, x, y, area: a.id, lock: { kind, open: false, tries: 0 } });
+        for (const [x, y] of a.doors) { const dk = b.cells[y * b.w + x].dk; R.doors.push({ id: R.doors.length + 1, x, y, area: a.id, lock: { kind, open: false, tries: 0, ...(dk ? { dk } : {}) } }); } // dk: the door's kind (buildingmaps.js DOOR_KINDS)
         for (const c of R.containers) if (c.area === a.id) c.room = true;
         a.locked = true;
         break;
@@ -224,10 +275,11 @@ export function lockRaid(state, b) {
 function sealRoom(b, a) {
   const W = b.w, H = b.h;
   const idx = (x, y) => y * W + x;
-  const doors = (a.doors || []).filter(([x, y]) => b.cells[idx(x, y)] && b.cells[idx(x, y)].k === "open");
+  const doors = (a.doors || []).filter(([x, y]) => b.cells[idx(x, y)] && ["open", "idoor", "odoor"].includes(b.cells[idx(x, y)].k)); // its doors (combat.js genRaidMap: closed ones)
   if (!doors.length || doors.some(([x, y]) => b.units.some((u) => !u.dead && u.x === x && u.y === y))) return false;
   const old = doors.map(([x, y]) => b.cells[idx(x, y)].k);
-  for (const [x, y] of doors) b.cells[idx(x, y)].k = "door";
+  const hp0 = doors.map(([x, y]) => [b.cells[idx(x, y)].hp, b.cells[idx(x, y)].mhp]);
+  for (const [x, y] of doors) { const c = b.cells[idx(x, y)]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR.locked; } // locked: as strong as any locked door (BMAP.DOOR)
   // Flood from the entry zone over walkable cells (doors and walls are not).
   const z = b.raid.zones[0];
   const seen = new Uint8Array(W * H);
@@ -244,7 +296,7 @@ function sealRoom(b, a) {
   const inside = b.raid.containers.filter((c) => c.area === a.id);
   const cut = inside.every((c) => ![[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dy]) => seen[idx(c.x + dx, c.y + dy)] && walk(c.x + dx, c.y + dy)));
   if (cut) { a.doors = doors; b.losCache.fill(0); return true; }
-  doors.forEach(([x, y], i) => { b.cells[idx(x, y)].k = old[i]; });
+  doors.forEach(([x, y], i) => { const c = b.cells[idx(x, y)]; c.k = old[i]; c.hp = hp0[i][0]; c.mhp = hp0[i][1]; if (c.hp == null) delete c.hp; if (c.mhp == null) delete c.mhp; });
   return false;
 }
 // Cell kinds a unit can stand on (combat.js CELL walk: true; read when called, the modules load in a circle).
@@ -254,26 +306,27 @@ const WALK = { has: (k) => !!(CELL[k] && CELL[k].walk) };
 // Targets: { ref: "c<id>" | "d<id>", x, y, lock, name, box?, door? }.
 // Containers and doors carry f (their storey, buildingmaps.js): only the active floor's are next to anyone on it.
 const onFloor = (b, o) => (o.f || 0) === (b.floor || 0);
+// The locked doors: a raid's (R.doors), or a field map's houses' (combat.js genMap FIELD_DOOR: b.doors, no containers).
+export const doorsOf = (b) => (b.raid ? b.raid.doors : b.doors) || [];
+const boxesOf = (b) => (b.raid ? b.raid.containers : []);
 export function lockedNear(b, u) {
-  if (!b.raid) return [];
   const near = (o) => (o.f || 0) === (u.f || 0) && Math.max(Math.abs(u.x - o.x), Math.abs(u.y - o.y)) <= 1;
   const out = [];
-  for (const c of b.raid.containers) if (c.lock && !c.lock.open && !c.searched && nearBox(u, c)) out.push({ ref: `c${c.id}`, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c });
-  for (const d of b.raid.doors || []) if (!d.lock.open && near(d)) out.push({ ref: `d${d.id}`, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d });
+  for (const c of boxesOf(b)) if (c.lock && !c.lock.open && !c.searched && nearBox(u, c)) out.push({ ref: `c${c.id}`, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c });
+  for (const d of doorsOf(b)) if (!d.lock.open && near(d)) out.push({ ref: `d${d.id}`, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d });
   return out;
 }
 export function lockAt(b, x, y) {
-  if (!b.raid) return null;
-  const d = (b.raid.doors || []).find((q) => q.x === x && q.y === y && onFloor(b, q));
+  const d = doorsOf(b).find((q) => q.x === x && q.y === y && onFloor(b, q));
   if (d) return { ref: `d${d.id}`, x, y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d };
-  const c = b.raid.containers.find((q) => inBox(q, x, y) && q.lock && onFloor(b, q));
+  const c = boxesOf(b).find((q) => inBox(q, x, y) && q.lock && onFloor(b, q));
   return c ? { ref: `c${c.id}`, x, y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c } : null;
 }
 const targetOf = (b, ref) => {
-  if (!b.raid || typeof ref !== "string") return null;
+  if (typeof ref !== "string") return null;
   const id = Number(ref.slice(1));
-  if (ref[0] === "c") { const c = b.raid.containers.find((q) => q.id === id); return c && c.lock ? { ref, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c } : null; }
-  const d = (b.raid.doors || []).find((q) => q.id === id);
+  if (ref[0] === "c") { const c = boxesOf(b).find((q) => q.id === id); return c && c.lock ? { ref, x: c.x, y: c.y, lock: c.lock, name: LOCKS[c.lock.kind].name, box: c } : null; }
+  const d = doorsOf(b).find((q) => q.id === id);
   return d ? { ref, x: d.x, y: d.y, lock: d.lock, name: LOCKS[d.lock.kind].name, door: d } : null;
 };
 export const lockedMsg = (box) => `The ${LOCKS[box.lock.kind].name.toLowerCase()} is locked: open it first (key, lockpicks or force).`;
@@ -291,7 +344,8 @@ export function openLock(state, b, u, act, H) {
   if (!o) return "Unknown way to open it.";
   if (!o.ok) return o.why;
   if (SAFE_METHODS.includes(act.method)) return openSafe(state, b, u, t, o, act, H); // gun safes (below)
-  const R = b.raid;
+  const R = b.raid; // null on a field map (b.doors): no Heat there, the noise still carries
+  const heat = (n) => { if (R) R.heat = Math.min(100, R.heat + n); };
   const s = survivorById(state, u.sid);
   const def = LOCKS[t.lock.kind];
   const lower = def.name.toLowerCase();
@@ -300,15 +354,18 @@ export function openLock(state, b, u, act, H) {
   const ok = roll < o.chance;
   u.ap = Math.max(0, u.ap - o.ap);
   if (act.method === "pick") {
-    R.heat = Math.min(100, R.heat + PICK.heat);
+    heat(PICK.heat);
     const picks = picksOf(s);
+    const mk = isMakeshiftPicks(picks);
     if (s) gainXp(state, s, "stealth", ok ? PICK.xpWin : PICK.xpMiss);
-    if (picks && s && wearPicks(s, picks)) H.say(b, `${u.name}'s lockpicks snap: the crowbar and picks are worn out.`, "danger");
-    H.say(b, ok ? `${u.name} picks the ${lower} (${Math.round(o.chance * 100)}%).` : `${u.name} works the pins of the ${lower}, but it holds (${Math.round(o.chance * 100)}%). Try again or force it.`, ok ? "good" : "info");
+    // The picks wear: the crowbar's a use an attempt, makeshift ones snap one of the stack half the time (their own die).
+    const w = picks && s ? wearPicks(s, picks, hash01(state.seed, "snap", b.tileId, b.turn, t.ref, t.lock.tries, u.id)) : null;
+    H.say(b, ok ? `${u.name} picks the ${lower}${mk ? " with a bent wire" : ""} (${Math.round(o.chance * 100)}%).` : `${u.name} works the pins of the ${lower}${mk ? " with a bent wire" : ""}, but it holds (${Math.round(o.chance * 100)}%). Try again or force it.`, ok ? "good" : "info");
+    if (w && w.snapped) H.say(b, mk ? `${u.name}'s makeshift pick snaps in the lock${w.gone ? ": that was the last one." : ` (${w.left} left).`}` : `${u.name}'s lockpicks snap: the crowbar and picks are worn out.`, "danger");
   } else if (act.method === "force") {
     const smash = !o.crowbar;
     const P = smash ? SMASH : FORCE;
-    R.heat = Math.min(100, R.heat + P.heat);
+    heat(P.heat);
     b.noise = (b.noise || 0) + P.noise;
     if (o.glass) H.say(b, ok ? `${u.name} shatters the car's window with a crash and reaches in (${Math.round(o.chance * 100)}%).` : `${u.name} hits the car's window; it cracks and holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
     else H.say(b, ok ? `${u.name} ${smash ? "smashes" : "forces"} the ${lower} open with a crash (${Math.round(o.chance * 100)}%).` : `${u.name} ${smash ? "kicks at" : "heaves on"} the ${lower}, but it holds (${Math.round(o.chance * 100)}%).`, ok ? "good" : "danger");
@@ -320,17 +377,17 @@ export function openLock(state, b, u, act, H) {
     t.lock.open = true;
     t.lock.how = act.method === "force" && !o.crowbar ? "smash" : act.method;
     if (t.door) {
-      // An opened door: open floor on the street map; an open door in a building (buildingmaps.js, no longer two
-      // storeys of sight-blocking).
-      const openCell = (dc) => { dc.k = R.interior ? "odoor" : "open"; dc.f = "floor"; delete dc.t; };
+      // An opened door swings open (odoor; no longer two storeys of sight-blocking, buildingmaps.js): in a building, on
+      // the street map (its houses' doors: combat.js genRaidMap) and in a field map's houses.
+      const openCell = (dc) => { dc.k = "odoor"; dc.f = "floor"; delete dc.t; };
       const cellsOf = (d) => (b.floors && b.floors[d.f || 0] ? b.floors[d.f || 0].cells : b.cells); // the door's own storey (buildingmaps.js)
       openCell(cellsOf(t.door)[t.y * b.w + t.x]);
       b.losCache.fill(0);
-      const area = t.door.area != null ? R.areas[t.door.area] : null;
+      const area = R && t.door.area != null ? R.areas[t.door.area] : null;
       // Every door of the room opens with the same key; a forced door is just broken.
-      if (act.method === "key") for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; openCell(cellsOf(d)[d.y * b.w + d.x]); }
+      if (act.method === "key" && R) for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; openCell(cellsOf(d)[d.y * b.w + d.x]); }
       if (area) H.say(b, `The ${area.name.toLowerCase()} is open.`, "info");
-      else H.say(b, "The way out is open.", "info");
+      else H.say(b, R ? "The way out is open." : "The door is open.", "info");
     }
     H.fx(b, { type: "loot", to: [t.x, t.y], text: "unlocked", how: fxHow(act.method, o) });
   } else H.fx(b, { type: "loot", to: [t.x, t.y], text: "locked", how: fxHow(act.method, o) });
@@ -361,7 +418,7 @@ export function lockedLoot(state, b, u, box, sup, gear) {
   const R = b.raid;
   if (!R) return;
   R.foundKeys = R.foundKeys || [];
-  const roll = (...k) => hash01(state.seed, "lloot", b.tileId, state.hour, box.id, ...k);
+  const roll = (...k) => hash01(state.seed, "lloot", b.tileId, R.poiDice ?? state.hour, box.id, ...k); // a point of interest's: the same every visit (poicont.js)
   comboNotes(b, u, box); // gun safes: a note with a safe's combination in this container or on this body (below)
   const giveKey = (p, why) => {
     if (roll("key", why) >= p) return;
@@ -473,21 +530,27 @@ export function lockedSearchHour(state, e, p, members) {
   const kind = SEARCH_KIND[t.loc.type] || (roll("k") < 0.5 ? "lockbox" : "locker");
   const def = LOCKS[kind];
   const best = (k) => members.reduce((a, s) => (skill(s, k) > skill(a, k) ? s : a), members[0]);
-  const picker = members.filter((s) => picksOf(s)).sort((a, b) => skill(b, "stealth") - skill(a, "stealth"))[0] || null;
-  let how = null, chance = 0, heat = 0;
+  // The picker: the best Stealth with the crowbar's picks, else with makeshift picks (not on a lock beyond them).
+  const mkOf = (s) => isMakeshiftPicks(picksOf(s));
+  const picker = members.filter((s) => picksOf(s) && (!mkOf(s) || makeshiftPickable(kind))).sort((a, b) => (mkOf(a) ? 1 : 0) - (mkOf(b) ? 1 : 0) || skill(b, "stealth") - skill(a, "stealth"))[0] || null;
+  let how = null, chance = 0, heat = 0, snapped = 0;
   if (hasKey(state, e.tile)) { how = "key"; chance = 1; }
   else if (picker && e.approach !== "loud") {
     how = "pick";
-    chance = clamp(PICK.base + PICK.perStealth * skill(picker, "stealth") - PICK.perDiff * (def.diff - 1) + (hasPerk(picker, "quiethands") ? PICK.quiet : 0), 0.05, 0.95);
+    const picks = picksOf(picker);
+    chance = pickChance(picker, def, picks);
     chance = 1 - (1 - chance) ** 2; // two tries in the hour
     heat = PICK.heat * 2;
     gainXp(state, picker, "stealth", PICK.xpWin);
-  } else if (def.force && (picker || members.some((s) => barOf(s)))) { how = "force"; chance = clamp(FORCE.base + FORCE.perMech * skill(best("mechanics"), "mechanics") - FORCE.perDiff * (def.diff - 1), 0.05, 0.95); heat = 8; }
+    // Makeshift picks snap by the try (the crowbar's picks wear in the raid only, as before).
+    if (isMakeshiftPicks(picks)) for (let i = 0; i < 2 && makeshiftPicksOf(picker) === picks; i++) if (wearPicks(picker, picks, roll("snap", i)).snapped) snapped++;
+  } else if (def.force && (members.some((s) => barOf(s)))) { how = "force"; chance = clamp(FORCE.base + FORCE.perMech * skill(best("mechanics"), "mechanics") - FORCE.perDiff * (def.diff - 1), 0.05, 0.95); heat = 8; }
   else if (def.force && def.diff <= SMASH.maxDiff) { how = "smash"; chance = clamp(SMASH.base - SMASH.perDiff * (def.diff - 1), 0.05, 0.95); heat = 12; }
   e.heat = Math.min(100, e.heat + heat);
   const lower = def.name.toLowerCase();
   if (!how) return ` A ${lower} could not be opened (lockpicks or a key needed).${bits.length ? ` Also found ${bits.join(" and ")}.` : ""}`;
-  if (roll("open") >= chance) return ` A ${lower} held against ${how === "pick" ? "the lockpicks" : how === "key" ? "the key" : "a crowbar"}${heat >= 8 ? " (loud)" : ""}.${bits.length ? ` Also found ${bits.join(" and ")}.` : ""}`;
+  const snapNote = snapped ? ` (${snapped} makeshift pick${snapped > 1 ? "s" : ""} snapped)` : "";
+  if (roll("open") >= chance) return ` A ${lower} held against ${how === "pick" ? (snapped || mkOf(picker) ? "the makeshift picks" : "the lockpicks") : how === "key" ? "the key" : "a crowbar"}${heat >= 8 ? " (loud)" : ""}${snapNote}.${bits.length ? ` Also found ${bits.join(" and ")}.` : ""}`;
   // Inside.
   const L = LOCK_LOOT[def.loot] || LOCK_LOOT.cash;
   L.sup.forEach(([k, pp, lo, hi], i) => {
@@ -505,7 +568,7 @@ export function lockedSearchHour(state, e, p, members) {
     if (tile != null && addKey(state, tile, `found in ${/^[aeiou]/i.test(lower) ? "an" : "a"} ${lower} at ${t.loc.name}`)) bits.push(`a key (${keyName(state, tile)})`);
   }
   const verb = how === "key" ? "unlocked" : how === "pick" ? "picked" : how === "force" ? "forced (loud)" : "smashed open (loud)";
-  return ` ${verb[0].toUpperCase()}${verb.slice(1)} ${/^[aeiou]/i.test(lower) ? "an" : "a"} ${lower}: ${bits.length ? bits.join(", ") : "nothing much inside"}.`;
+  return ` ${verb[0].toUpperCase()}${verb.slice(1)} ${/^[aeiou]/i.test(lower) ? "an" : "a"} ${lower}${snapNote}: ${bits.length ? bits.join(", ") : "nothing much inside"}.`;
 }
 export { bpOfItem };
 
@@ -830,7 +893,7 @@ function comboNotes(b, u, box) {
   }
 }
 function gunSafeLoot(state, b, u, box, sup, gear, lk, giveKey) {
-  const roll = (...k) => hash01(state.seed, "gsafe", b.tileId, state.hour, box.id, ...k);
+  const roll = (...k) => hash01(state.seed, "gsafe", b.tileId, b.raid.poiDice ?? state.hour, box.id, ...k);
   const st = rollGunStash(roll, TIER_STASH[lk.tier], siteOf(state, b.tileId), { box });
   gear.push(...st.gear);
   for (const [k, v] of Object.entries(st.sup)) sup[k] = (sup[k] || 0) + v;
@@ -843,7 +906,7 @@ function areaGunFinds(state, b, box, lk) {
   const area = b.raid.areas[box.area];
   if (!area) return [];
   const site = siteOf(state, b.tileId);
-  const roll = (...k) => hash01(state.seed, "gfind", b.tileId, state.hour, box.id, ...k);
+  const roll = (...k) => hash01(state.seed, "gfind", b.tileId, b.raid.poiDice ?? state.hour, box.id, ...k);
   const out = rollAreaGunFinds(roll, area.type, site);
   if (lk && lk.loot === "car" && roll("carcase") < CAR_CASE) out.push(rollGunCase((...k) => roll("cc", ...k), roll("cck") < 0.6 ? "pistolcase" : "riflecase", site));
   return out;

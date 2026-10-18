@@ -74,9 +74,9 @@ export const PLACE_NAMES = { pocket: "Pockets", pouch: "Pouches", pack: "Pack" }
 // pack: no packs, no rig, nothing bulky, no bicycle).
 /** @param {string} slot */
 export const slotChoices = (slot) => Object.keys(GEAR).filter((k) => GEAR[k].slot === slot);
-export const carryChoices = () => Object.keys(GEAR).filter((k) => { const d = GEAR[k]; return !["backpack", "cargo", "rig"].includes(d.slot) && !d.bulky && !d.slots; });
+export const carryChoices = () => Object.keys(GEAR).filter((k) => { const d = GEAR[k]; return !["backpack", "cargo", "rig"].includes(d.slot) && !d.bulky && !d.slots && !d.supKey; }); // supplies held as items (supitems.js) are not starting kit
 // The vehicle's back holds anything but another vehicle.
-export const trunkChoices = () => Object.keys(GEAR).filter((k) => k !== "bicycle");
+export const trunkChoices = () => Object.keys(GEAR).filter((k) => k !== "bicycle" && !GEAR[k].supKey);
 
 const limitOf = (where) => (where === "pocket" ? POCKETS : where === "pouch" ? START_GEAR.POUCHES : START_GEAR.PACK); // (read late: inventory.js loads after this file)
 // Anything kept on the colonist or carried in a crew snapshot, made safe: unknown keys and slots dropped, an item only
@@ -315,9 +315,14 @@ export function carryReason(key, where, i, spec) {
 export function firstFit(P, key, spec) {
   const carry = (P && P.carry) || {};
   const free = (where, i) => !(carry[where] && carry[where][i]);
-  const order = ["pouch", ...(isSmall(key) ? ["pocket"] : []), "pack", "pocket"]; // a pouch that takes it (magazines, grenades, a radio, meds in the admin pouch) first
-  for (const where of order) {
-    for (let i = 0; i < spec[where].n; i++) if (free(where, i) && !carryReason(key, where, i, spec)) return { where, i };
+  // A pouch of its kind first (magazines, grenades, a radio, meds in the admin pouch), then a pocket, then the rig's own
+  // pockets (data-kit.js "pocket": a pouch that takes anything small), then the pack.
+  /** @param {number} i */
+  const pocketPouch = (i) => spec.pouch.kinds[i] === "pocket";
+  /** @type {["pocket" | "pouch" | "pack", (i: number) => boolean][]} */
+  const order = [["pouch", (i) => !pocketPouch(i)], ...(isSmall(key) ? /** @type {["pocket" | "pouch", (i: number) => boolean][]} */ ([["pocket", () => true], ["pouch", pocketPouch]]) : []), ["pack", () => true], ["pocket", () => true]];
+  for (const [where, ok] of order) {
+    for (let i = 0; i < spec[where].n; i++) if (ok(i) && free(where, i) && !carryReason(key, where, i, spec)) return { where, i };
   }
   return null;
 }
@@ -333,18 +338,24 @@ function takeCarried(s) {
   for (const list of [rigPouches(s), packOf(s)]) (list || []).forEach((it, i) => { if (it) { out.push(it); list[i] = null; } });
   return out;
 }
-// A rig pouch of its kind (meds and tablets an admin pouch), else a pocket for a small thing, else the pack (no pack in
-// a pack, nothing bulky). Returns false when there is no room.
+// A rig pouch of its kind (meds and tablets an admin pouch), else a pocket for a small thing, else the rig's own pocket
+// pouch, else the pack (no pack in a pack, nothing bulky). Returns false when there is no room.
 /** @param {any} s @param {any} it */
 function place(s, it) {
   const r = KIT_LOOT.on ? rigOf(s) : null;
+  const pr = r ? rigPouches(s) || [] : [], kinds = r ? pouchesOf(r) || [] : [];
   if (r) {
-    const pr = rigPouches(s) || [], kinds = pouchesOf(r) || [], d = GEAR[it.key];
+    const d = GEAR[it.key];
     const want = pouchKindOf(it) || (d && (d.medKit || d.tabs || d.selfStab) ? "admin" : null);
     const i = want ? kinds.findIndex((k, j) => !pr[j] && k === want && !pouchReason(it, want)) : -1;
     if (i >= 0) { pr[i] = it; return true; }
   }
-  if (isSmall(it.key)) { const i = s.pockets.indexOf(null); if (i >= 0) { s.pockets[i] = it; return true; } }
+  if (isSmall(it.key)) {
+    const i = s.pockets.indexOf(null);
+    if (i >= 0) { s.pockets[i] = it; return true; }
+    const j = kinds.findIndex((k, n) => !pr[n] && k === "pocket" && !pouchReason(it, "pocket"));
+    if (j >= 0) { pr[j] = it; return true; }
+  }
   const pk = packOf(s);
   if (pk && !packSize(it) && !isBulky(it.key)) { const i = pk.indexOf(null); if (i >= 0) { pk[i] = it; return true; } }
   return false;
@@ -545,6 +556,6 @@ export function kitLoad(s) {
 /** @param {any} state */
 export function clearStartGear(state) {
   for (const s of state.survivors) {
-    for (const k of ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints", "carPool"]) delete s[k];
+    for (const k of ["startGear", "startDice", "diceKit", "diceRoll", "diceTrunk", "startVehicle", "startPoints", "carPool", "grabRoll", "grabPick", "carRoll", "bgKept"]) delete s[k];
   }
 }

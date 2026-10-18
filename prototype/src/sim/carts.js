@@ -61,12 +61,16 @@
 //     or behind (no corner, nothing further; the UI highlights the free ones). Let go (letGoCart, free; Drop carried
 //     does the same) is the emergency drop: the free side cell nearest the other side, else under their feet (no
 //     barricade). Its items and supplies stay in it (the supplies leave the pool, as a load set down does). Its cell is
-//     a barricade (the user's pick): CELL cart, nobody walks through it (both sides' pathing and the dead's go round),
-//     low cover (1) for whoever stands beside it, sight passes. Knocked out of the way (cartKnocked), the cell is open
-//     again and the cart stays there with all in it: battered over by the dead (c.hp: cart.hp 10 and 16; their siege
-//     field counts it; CART_WEAR.bash), smashed aside by a brute in one blow (zombietypes.js; CART_WEAR.brute 15),
-//     driven through by a vehicle (combat.js driveTo, RAMMING.WEAR.cart 3 to the vehicle; CART_WEAR.ram 25: wrecked).
-//     It can plug a doorway (a doorway, a broken door, a breach are parkable).
+//     a barricade (the user's pick): CELL cart, half cover like crates and the same rule as the rest of the half cover
+//     on the maps (barricade.js, 2026-10-18): nobody stands on it; a person with free arms vaults it (combat.js VAULT),
+//     the dead crawl over it (barricade.js CRAWL: a walker's whole turn) or batter it over, whichever their siege field
+//     finds cheaper; low cover (1) for whoever stands beside it, sight passes. It is not furniture: it is never shoved
+//     (barricade.js FURNITURE has no cart, and nothing is shoved onto it): Take cart and Park cart move it. Knocked out
+//     of the way (cartKnocked), the cell is open again and the cart stays there with all in it: battered over by the
+//     dead (c.hp: cart.hp 10 and 16; CART_WEAR.bash), smashed aside by a brute in one blow (zombietypes.js;
+//     CART_WEAR.brute 15), driven through by a vehicle (combat.js driveTo, RAMMING.WEAR.cart 3 to the vehicle;
+//     CART_WEAR.ram 25: wrecked). It can plug a doorway (a doorway, a broken door, a breach are parkable): the dead
+//     then crawl over it or batter it, a slower way in.
 //   What is in a cart is had only through the cart (the user's rule): Load cart (the search window on the cart) or
 //     Take cart; never off the ground (ground.js pilesNear skips carts: the Ground window and Pick up do not list it),
 //     never spilled (its grid's slots and kg are checked going in, boxRefusal, so it always packs back in). On the

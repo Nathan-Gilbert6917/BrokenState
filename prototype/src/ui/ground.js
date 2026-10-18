@@ -6,6 +6,7 @@ import { searchableNear } from "../sim/combat.js";
 import { SEARCH } from "../sim/search.js";
 import { HAUL } from "../sim/raidloot.js";
 import { GEAR } from "../sim/data.js"; // a cart's look (sim/data-carts.js)
+import { facesBox, faceRefusal } from "../sim/vision.js"; // looting needs the looter facing it
 
 const first = (u) => u.name.split(" ")[0];
 
@@ -20,7 +21,8 @@ export function groundButtons(state, b, u, btn) {
     const who = (o) => (downedFoe(o) ? o.name : o.side === "player" ? `${o.name}'s body` : `the body of ${o.name}`);
     const tip = t ? `${fresh ? `${SEARCH.ap} action` : "Free (searched already)"}: go through ${who(t)}${downedFoe(t) ? " (down, alive: what they carry is taken off them; if they get up again they fight bare-handed)" : ""}: their gun, rounds, magazines, armour, what is in their rig and pack. Take what ${first(u)} can carry (the first ${HAUL.free} kg a turn are free to haul, then ${HAUL.per} kg an action); what is left stays on the body and is loot after a won fight.${near.length > 1 ? ` ${near.length} bodies within reach: click the one to search.` : ""}`
       : "Stand on or next to a body to search it: the dead of any side, the enemy's downed (knocked out, surrendered, tied, wounded), and of the walking dead only those that carried something (a soldier in their kit, one who walks in what they died in).";
-    html += btn(b.raid ? "searchBody" : "search", "Search body", tip, !!t && (!fresh || u.ap >= SEARCH.ap), b.raid ? "" : "⇧S");
+    const why = !t ? "Stand on or next to a body to search it." : !facesBox(u, { x: t.x, y: t.y }) ? faceRefusal("the body") : fresh && u.ap < SEARCH.ap ? "No actions left this turn." : ""; // the sim's own refusals (sim/ground.js searchBody)
+    html += btn(b.raid ? "searchBody" : "search", "Search body", tip, !why, b.raid ? "" : "⇧S", { why, ap: fresh ? SEARCH.ap : 0 });
   }
   const piles = pilesNear(b, u);
   const n = piles.reduce((a, p) => a + pileCount(p), 0);

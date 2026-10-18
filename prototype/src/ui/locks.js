@@ -2,9 +2,10 @@
 // key line in the raid header and the hover text (the iso view draws the padlocks: ui/isoview.js). ui/combat.js calls
 // these; the "lk-open" handler is registered in main.js (LOCK_ACTIONS).
 import { combatAct } from "../sim/combat.js";
-import { LOCKS, PICK, lockedNear, lockAt, openOdds, hasKey, keyName } from "../sim/locks.js";
+import { LOCKS, PICK, MAKESHIFT_PICK, lockedNear, lockAt, openOdds, hasKey, keyName } from "../sim/locks.js";
 import { SAFE, safeLine, caseTargets, caseOdds } from "../sim/locks.js"; // gun safes and gun cases (sim/locks.js, sim/gunsafes.js)
 import { caseText } from "../sim/gunsafes.js";
+import { DOOR_KINDS } from "../sim/buildingmaps.js"; // a locked door's kind (its name, its own lock's difficulty)
 import { survivorById, skill } from "../sim/world.js";
 import { hasPerk } from "../sim/skills.js";
 import { cui } from "./combat.js";
@@ -16,7 +17,7 @@ let lastState = null; // the hover text has no state of its own (ui/combat.js pr
 // Under the unit's action buttons: one row per locked thing next to it.
 export function lockPanel(state, b, u) {
   lastState = state;
-  if (!b.raid || !u) return "";
+  if (!u) return ""; // a raid's locks, or a field map's houses' locked doors (sim/combat.js b.doors)
   const near = lockedNear(b, u);
   if (!near.length) return casePanel(state, b, u);
   const can = b.phase === "player" && !b.over && u.ap > 0;
@@ -33,23 +34,27 @@ export function lockPanel(state, b, u) {
     // How the pick odds come about (sim/locks.js PICK): the picker's Stealth against the lock's difficulty.
     const s = survivorById(state, u.sid);
     const st = s ? skill(s, "stealth") : 0, quiet = !!(u.quiet || (s && hasPerk(s, "quiethands")));
-    const why = `${pct(PICK.base)} + ${pct(PICK.perStealth)} a Stealth point (Stealth ${st}: +${pct(PICK.perStealth * st)})${def.diff > 1 ? ` − ${pct(PICK.perDiff)} a difficulty step above 1 (−${pct(PICK.perDiff * (def.diff - 1))})` : ""}${quiet ? ` + ${pct(PICK.quiet)} Quiet Hands` : ""}, 5–95%`;
-    return `<div class="small" style="margin-top:0.3rem">🔒 <b>${esc(t.name)}</b> <span class="muted">difficulty ${def.diff}${t.lock.tries ? ` · ${t.lock.tries} tr${t.lock.tries === 1 ? "y" : "ies"}` : ""}${t.door ? " · a locked room behind it" : ""}</span>
+    // Makeshift picks (sim/locks.js MAKESHIFT_PICK): the lower base, one snapping half the time an attempt.
+    const mk = !!o.pick.makeshift;
+    const why = `${pct(mk ? MAKESHIFT_PICK.base : PICK.base)}${mk ? " with makeshift picks" : ""} + ${pct(PICK.perStealth)} a Stealth point (Stealth ${st}: +${pct(PICK.perStealth * st)})${def.diff > 1 ? ` − ${pct(PICK.perDiff)} a difficulty step above 1 (−${pct(PICK.perDiff * (def.diff - 1))})` : ""}${quiet ? ` + ${pct(PICK.quiet)} Quiet Hands` : ""}, 5–95%`;
+    const wearText = mk ? `Every try snaps one pick in ${Math.round(1 / MAKESHIFT_PICK.snap)} (${o.pick.left} left), open or not` : "The lockpicks lose a use";
+    return `<div class="small" style="margin-top:0.3rem">🔒 <b>${esc(t.name)}</b> <span class="muted">difficulty ${def.diff}${t.lock.tries ? ` · ${t.lock.tries} tr${t.lock.tries === 1 ? "y" : "ies"}` : ""}${t.door && t.door.area != null ? " · a locked room behind it" : ""}</span>
       <div class="row" style="flex-wrap:wrap;gap:0.25rem;margin-top:0.15rem">
         ${button("key", hasKey(state, b.tileId) ? "Key ✓" : "Key ✗", `Unlock it with the ${keyName(state, b.tileId)} (1 action, silent).`)}
-        ${button("pick", `Pick ${pct(o.pick.chance)} a try (1 action)`, `Pick the lock: 1 action a try, ${pct(o.pick.chance)} each try (${why}). Heat +1 a try, the lockpicks lose a use, Stealth XP. Once it is open, searching it takes 1 action.`)}
-        ${button("force", force, o.force.glass ? `No crowbar: shatter a window and reach in (both actions, Heat +10, breaking glass wakes everything within 11 tiles). ${pct(o.force.chance)}.` : o.force.label === "Smash" ? `No crowbar: kick it in or smash it (both actions, Heat +10, wakes everything within 11 tiles). ${pct(o.force.chance)}.` : `Crowbar it open (1 action, Heat +6, wakes everything within 8 tiles). ${pct(o.force.chance)}.`)}
+        ${button("pick", `${o.pick.label} ${pct(o.pick.chance)} a try (1 action)`, `Pick the lock${mk ? " with a bent wire" : ""}: 1 action a try, ${pct(o.pick.chance)} each try (${why}). ${b.raid ? "Heat +1 a try, " : ""}${b.raid ? wearText[0].toLowerCase() + wearText.slice(1) : wearText}, Stealth XP.${t.box ? " Once it is open, searching it takes 1 action." : ""}`)}
+        ${button("force", force, o.force.glass ? `No crowbar: shatter a window and reach in (both actions, ${b.raid ? "Heat +10, " : ""}breaking glass wakes everything within 11 tiles). ${pct(o.force.chance)}.` : o.force.label === "Smash" ? `No crowbar: kick it in or smash it (both actions, ${b.raid ? "Heat +10, " : ""}wakes everything within 11 tiles). ${pct(o.force.chance)}.` : `Crowbar it open (1 action, ${b.raid ? "Heat +6, " : ""}wakes everything within 8 tiles). ${pct(o.force.chance)}.`)}
       </div></div>`;
   }).join("") + casePanel(state, b, u);
 }
 
-// Raid header: whether you hold this site's key.
-export function raidKeyLine(state, b) {
+// Raid header: whether you hold this site's key. { inline: true }: a chip for the raid's top strip (ui/combat.js renderRaidTop).
+export function raidKeyLine(state, b, { inline = false } = {}) {
   lastState = state;
   if (!b.raid) return "";
   const locked = b.raid.containers.filter((c) => c.lock && !c.lock.open).length + (b.raid.doors || []).filter((d) => !d.lock.open).length;
-  if (hasKey(state, b.tileId)) return `<div class="small good" style="margin-top:0.25rem" data-tip="Opens every lock here: 1 action, silent.">🔑 You have the ${esc(keyName(state, b.tileId))}.</div>`;
-  return locked ? `<div class="small muted" style="margin-top:0.25rem" data-tip="Locked containers and doors (padlock markers). Stand next to one: key, lockpicks (crowbar and lockpicks item) or force.">🔒 ${locked} locked here.</div>` : "";
+  const wrap = (cls, tip, text) => (inline ? `<span class="ct-sub ${cls}" data-tip="${tip}">${text}</span>` : `<div class="small ${cls}" style="margin-top:0.25rem" data-tip="${tip}">${text}</div>`);
+  if (hasKey(state, b.tileId)) return wrap("good", "Opens every lock here: 1 action, silent.", `🔑 You have the ${esc(keyName(state, b.tileId))}.`);
+  return locked ? wrap("muted", "Locked containers and doors (padlock markers). Stand next to one: key, lockpicks (the crowbar and lockpicks item, or makeshift picks: lower odds, one snaps half the time, not a safe) or force.", `🔒 ${locked} locked here.`) : "";
 }
 
 // Hover text for a locked container or door ("" when there is none at that cell).
@@ -62,9 +67,12 @@ export function lockPreview(b, u, x, y) {
   let odds = "";
   if (lastState && u && u.side === "player") {
     const o = openOdds(lastState, b, u, t.lock);
-    odds = `<br>${o.key.ok ? "Key: sure · " : ""}Pick ${o.pick.ok ? pct(o.pick.chance) : "(no lockpicks)"} · ${o.force.ok || o.force.chance ? `${o.force.label} ${pct(o.force.chance)}` : "cannot be forced"}`;
+    odds = `<br>${o.key.ok ? "Key: sure · " : ""}${o.pick.label || "Pick"} ${o.pick.ok ? pct(o.pick.chance) : o.pick.makeshift ? "(beyond a bent wire)" : "(no lockpicks)"} · ${o.force.ok || o.force.chance ? `${o.force.label} ${pct(o.force.chance)}` : "cannot be forced"}`;
   }
-  return `<b>🔒 ${esc(t.name)}</b> · difficulty ${def.diff}${t.door ? " · a locked room" : ""}${t.box && t.box.searched ? " · searched" : ""}<br><span class="muted">Locked things hold more: supplies, gear, keys and blueprints.</span>${odds}<br>${near ? "Open it from the panel: key, pick or force." : "Move next to it to open it."}`;
+  // A door: what it does in the way and how to get through (a click from next to it tries the surest way: ui/combat.js).
+  const K = t.lock.dk && DOOR_KINDS[t.lock.dk] ? DOOR_KINDS[t.lock.dk] : null; // the door's kind (sim/buildingmaps.js): its own lock's difficulty, its name
+  if (t.door) return `<b>🔒 ${esc(K ? `Locked ${K.name.toLowerCase()}` : t.name)}</b> · difficulty ${K && K.diff != null ? K.diff : def.diff}${t.door.area != null ? " · a locked room" : ""}${K && K.force === false ? " · not forced" : K && K.kick === false ? " · not kicked in" : ""}<br><span class="muted">Blocks the way and sight. Open it from right next to it: click it (key, else lockpicks, else force) or pick the way in the panel. The dead and the enemy batter it down.</span>${odds}<br>${near ? "Click it to open it." : "Move next to it to open it."}`;
+  return `<b>🔒 ${esc(t.name)}</b> · difficulty ${def.diff}${t.box && t.box.searched ? " · searched" : ""}<br><span class="muted">Locked things hold more: supplies, gear, keys and blueprints.</span>${odds}<br>${near ? "Open it from the panel: key, pick or force." : "Move next to it to open it."}`;
 }
 
 function padlock(ctx, x, y, r, color) {

@@ -36,6 +36,7 @@ import { SITE_KIT, AREA_KIT, WARE_KIT } from "../src/sim/carrykit.js"; // carry 
 import { BLADE_FINDS, AREA_BLADES, WARE_BLADES } from "../src/sim/blades.js"; // knives and swords (their own dice)
 import { ARSENAL_FINDS } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js: their own dice)
 import { gunsFrom } from "../src/sim/gundist.js";
+import { CANNER } from "../src/sim/buildings.js"; // the old crafted canner (an old save's)
 
 const quiet = process.argv.includes("--quiet");
 let pass = 0, fail = 0;
@@ -95,6 +96,9 @@ addAll(Object.keys(AMMO_GEAR), "rounds");
 addAll(Object.keys(BULK_GEAR), "bulk finds"); // ammo.js bulkFind: raid containers and Army trucks now and then (2026-10-10) // a box is the item form of a supply of rounds found by key everywhere (ammo.js: starting colonists' pockets, opened into the stock)
 addAll(Object.keys(RECRUIT_WEAPONS), "recruits"); addAll(RECRUIT_ARMOR, "recruits"); addAll(RECRUIT_KIT, "recruits"); addAll(RECRUIT_PERSONAL, "recruits");
 for (const [k, r] of Object.entries(CRAFTS)) if (r.gear) addAll([r.gear], `craft:${k}`);
+// The pressure canner is no longer made or found (machines-2, 84c5145: fitted to a preserving room where it stands);
+// the item stays only for one kept from an old save, fitted on load or paying for a fitting (buildings.js CANNER.item).
+if (!CRAFTS.canner) addAll([CANNER.item], "old saves");
 addAll(HUMVEE_GEAR, "event:humvee"); addAll(HIKER_STUFF, "event:hiker"); addAll(["hikingpack", "rucksack"], "event:hiker");
 for (const k of Object.keys(GEAR)) if (GEAR[k].blueprint) add(k, "blueprints");
 for (const [a, f] of Object.entries(GUN_FINDS)) addAll(Object.keys(f), `raid:${a}`); // gunsafes.js: tools and gun cases in raid containers
@@ -119,7 +123,7 @@ for (const [t, p] of Object.entries(PART_FINDS.wares)) if (p > 0) addAll(Object.
 console.log("Sources");
 check(!unknown.length, `every listed item exists in GEAR${unknown.length ? ` (unknown: ${unknown.join(", ")})` : ""}`);
 // (The M203, an attachment, is in army stock since the launcher wave: loot.js SITE_MODS / AREA_MODS.)
-const orphans = Object.keys(GEAR).filter((k) => !src.has(k));
+const orphans = Object.keys(GEAR).filter((k) => !src.has(k) && !GEAR[k].supKey); // a supply held as an item (sim/supitems.js) comes from its supply
 check(!orphans.length, `every item has at least one source${orphans.length ? ` (none for: ${orphans.join(", ")})` : ""}`);
 const VAL5 = ["goldring", "cigarettes", "whiskey", "coffee", "batteries"];
 check(VAL5.every((k) => [...(src.get(k) || [])].some((l) => /^(find|raid|body):/.test(l))), "the five old valuables can now be found (searches, raids or bodies)");
@@ -164,7 +168,7 @@ check(KITS.raiders.finds.includes("cigarettes") && KITS.raiders.finds.includes("
 // ---------- every item ----------
 console.log("Items");
 const bad = (pred) => Object.entries(GEAR).filter(([k, d]) => pred(k, d)).map(([k]) => k);
-check(!bad((k, d) => !CATEGORIES[d.cat]).length, `every item has a trade category (${bad((k, d) => !CATEGORIES[d.cat]).join(", ") || "all"})`);
+check(!bad((k, d) => !CATEGORIES[d.cat] && !d.supKey).length, `every item has a trade category (${bad((k, d) => !CATEGORIES[d.cat] && !d.supKey).join(", ") || "all"}; a supply held as an item is priced as its supply)`);
 check(!bad((k, d) => !(Number.isFinite(d.weight) && d.weight > 0)).length, `every item weighs something (${bad((k, d) => !(Number.isFinite(d.weight) && d.weight > 0)).join(", ") || "all"})`);
 check(!bad((k, d) => !(d.value > 0)).length, `every item has a hidden value (${bad((k, d) => !(d.value > 0)).join(", ") || "all"})`);
 check(!bad((k, d) => !d.desc).length, `every item has a description (${bad((k, d) => !d.desc).join(", ") || "all"})`);

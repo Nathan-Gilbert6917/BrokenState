@@ -438,14 +438,21 @@ const groupOf = (state, type) => {
     const f3 = groupOf(s3, "raider");
     f3.goodwill = -80; f3.raidCooldown = 99;
     Object.assign(h3.stock, { ammo: 100, scrap: 100 }); setFood(h3, 100);
+    // Nobody out scavenging: base scavenging turns up scrap most days now (WORLD-01, 1.5 supplies a day), and the
+    // scrap is what shows the raid took nothing.
+    for (const s of atBase(s3, h3.id)) if (s.role === "scavenge") s.role = "guard";
     const r3 = spawnAiParty(s3, f3, "raid", f3.bases[0], h3.tile, { strength: 300, target: { kind: "player", baseId: h3.id, tile: h3.tile } });
     if (check(!!r3, "a raid can be sent at the hub (tribute at the walls)")) {
       r3.path = [h3.tile]; r3.idx = 0; r3.phase = "siege"; r3.siegeLeft = 8; r3.warned = true;
       raidWarning(s3, r3);
       pick(s3.cards.pop(), /^Pay tribute/).resolve(s3);
+      const seen = new Set(s3.log);
       for (let k = 0; k < 12; k++) { s3.cards.length = 0; tickHour(s3); }
       const hit = s3.log.some((l) => l.text.startsWith(`${f3.name} overran`) || l.text.startsWith(`${f3.name} broke into`) || l.text.includes(`drove off the ${f3.name} raid`));
-      check(!s3.parties.includes(r3) && !hit && h3.stock.scrap === 100, `tribute paid at the walls ends the raid: no break-in afterwards (scrap ${h3.stock.scrap})`);
+      // The hub's own scavengers still bring scrap home meanwhile (economy.js scavCredit: "Kenji turned up 4 scrap
+      // around ..."): counted out, the store is untouched (a break-in would have carried some off).
+      const found = s3.log.filter((l) => !seen.has(l) && l.text.includes(`around ${h3.name}.`)).reduce((a, l) => a + Number((/turned up (?:[^.]*?, )?(\d+) scrap/.exec(l.text) || [0, 0])[1]), 0);
+      check(!s3.parties.includes(r3) && !hit && h3.stock.scrap - found === 100, `tribute paid at the walls ends the raid: no break-in afterwards (scrap ${h3.stock.scrap}, ${found} of it found by the hub's scavengers)`);
     }
   }
   // A war raid beaten off in person counts for your side of the war, like one held by the numbers.

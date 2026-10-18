@@ -66,7 +66,7 @@ section("Build outpost pitches a camp");
   if (check(!!b, "a base stands there")) {
     check(b.type === "outpost" && isShelter(b) && b.tier === 0 && b.camp === true, `it is a camp: tier 0 outpost, a camp (${b.type}, tier ${b.tier}, camp ${b.camp})`);
     check(tierName(b) === "Outpost camp", `called an outpost camp (${tierName(b)})`);
-    check(baseWalls(b) === 0 && plotCap(b, "building") === 0 && plotCap(b, "utility") === 1, "a camp's rules: no walls, no building plots, 1 utility plot");
+    check(baseWalls(b) === 0 && plotCap(b, "building") === 0 && plotCap(b, "utility") === 2, "a camp's rules: no walls, no building plots, 2 utility plots");
     const job = tierUpJob(b);
     check(job && job.type === "outpost_up" && job.paid, "its step up is queued at once, gathering its materials");
     check(atBase(st, b.id).length === 2 && atBase(st, b.id).every((s) => s.role === "build"), "the team is its staff, on Build");

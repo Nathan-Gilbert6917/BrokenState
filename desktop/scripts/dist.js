@@ -3,9 +3,13 @@
 //   dist/Broken State-win32-x64/             the unpacked app ("Broken State.exe" plus its files)
 //   dist/Broken State <version> Setup.exe    installer (Start Menu + desktop shortcuts, uninstaller)
 //   dist/Broken State <version> Portable.exe one file, no install (unpacks itself to %TEMP% on each launch)
+//   dist/latest.yml                          what installed copies read to find the newest version (updater.js)
 // Saves are in %APPDATA%\Broken State whichever one runs.
 //   npm run dist -- --game=<folder>   package another copy of the game folder (default ../prototype)
 //   npm run dist -- --folder-only     skip the installer and the portable exe
+//   npm run release                   the same, then uploads it as a GitHub release ("updates" in package.json), which
+//                                     installed copies pick up by themselves. Raise "version" first; needs GH_TOKEN set
+//                                     to a GitHub token that can write to that repo.
 const fs = require("fs");
 const path = require("path");
 const { packager } = require("@electron/packager");
@@ -15,7 +19,10 @@ const gameArg = process.argv.find((a) => a.startsWith("--game="));
 const GAME = gameArg ? path.resolve(gameArg.slice(7)) : path.resolve(DESKTOP, "..", "prototype");
 const STAGE = path.join(DESKTOP, "build", "prototype");
 
+const PUBLISH = process.argv.includes("--publish");
+
 (async () => {
+  if (PUBLISH && !process.env.GH_TOKEN) throw new Error('npm run release needs GH_TOKEN: a GitHub token that can write releases to the repo in package.json "updates".');
   // 1. A clean copy of what the game needs at runtime (not the tools, README or dev server).
   fs.rmSync(path.join(DESKTOP, "build"), { recursive: true, force: true });
   fs.mkdirSync(STAGE, { recursive: true });
@@ -58,6 +65,7 @@ const STAGE = path.join(DESKTOP, "build", "prototype");
     prepackaged: out,
     projectDir: DESKTOP,
     targets: builder.Platform.WINDOWS.createTarget(["nsis", "portable"], builder.Arch.x64),
+    publish: PUBLISH ? "always" : "never",
     config: {
       appId: "com.brokenstate.game",
       productName: pkg.productName,
@@ -75,7 +83,9 @@ const STAGE = path.join(DESKTOP, "build", "prototype");
         artifactName: "${productName} ${version} Setup.${ext}",
       },
       portable: { artifactName: "${productName} ${version} Portable.${ext}" },
+      publish: [{ ...pkg.updates, releaseType: "release" }], // published straight away, not left as a draft
     },
   });
+  if (PUBLISH) console.log(`\nPublished ${pkg.version} to https://github.com/${pkg.updates.owner}/${pkg.updates.repo}/releases`);
   console.log(`\n${files.filter((f) => f.endsWith(".exe")).map((f) => `Built: ${f}`).join("\n")}`);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -34,13 +34,14 @@ import { makeHorde, hordeScore, HORDE_SIZES, reduceHorde } from "./hordes.js";
 import { partyMembers, partyTile, tileLabel, awaitOrders } from "./parties.js";
 import { registerBattleLayout, registerBattleSize, HIVE_W, HIVE_H } from "./combat.js";
 import { bossUnit, placeUnitRight } from "./defences.js";
-import { startHiveCrawl, denOf, crawlEstimate, crawlRecText } from "./hivecrawl.js"; // the hive crawl: from the mouth to the Hivemind in the core
+import { startHiveCrawl, denOf, crawlEstimate, crawlRecText, mouthsOf, mouthSide, mouthNote } from "./hivecrawl.js"; // the hive crawl: from one of its four mouths to the Hivemind in the core
 export { assaultHive } from "./hivecrawl.js"; // the core fight (the old storm's entry point: the tools call it)
 import { HIVE, BOSS_NAMES, GROWTHS, ZTYPES } from "./hiveconst.js";
 import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay, hiveStarve } from "./eras.js";
 import { worldScale } from "./worldsize.js";
 import { findPath } from "./hex.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
+import { clearPois } from "./pois.js"; // a hive tile holds no points of interest: gone when it rises, still gone when it falls
 import {
   growthIncome, growthStep, growthsDaily, guardMin, extraOut, attackRange, canRaiseBoss, hiveMix, borderMix, markThreat, witherGrowths, assaultTypes, hiveMods,
   savingFor, growthsOf, growthCounts,
@@ -122,6 +123,7 @@ export const hiveStats = (state) => (ensureHives(state), state.hiveInfo.stats);
 
 export function newHive(state, tile, res) {
   state.tiles[tile].hive = true;
+  clearPois(state.tiles[tile]); // pois.js: the hive replaces the tile's points of interest
   return { id: (state.hiveSeq = (state.hiveSeq || 0) + 1), tile, res, born: state.hour, income: 0, bossReady: false, bossHorde: null, name: hiveName(state, tile) };
 }
 
@@ -453,6 +455,13 @@ function radiate(state) {
 }
 
 // ---------- territory, danger and toughness ----------
+// The hives still on the tiles a cache was made for, in the same order (compared one by one, not as a joined string:
+// hiveDistance asks it for every tile looked at).
+function sameTiles(tiles, hives) {
+  if (tiles.length !== hives.length) return false;
+  for (let i = 0; i < tiles.length; i++) if (tiles[i] !== hives[i].tile) return false;
+  return true;
+}
 // Distance to the nearest hive (Infinity with none). hives: a list of tile ids (what the player knows, for the map)
 // or nothing (the real hives).
 export function hiveDistance(state, tileId, hiveTiles = null) {
@@ -460,10 +469,9 @@ export function hiveDistance(state, tileId, hiveTiles = null) {
     // The real hives: cached per tile until the set of hives changes (zombieToughness asks for every tile the
     // governor and the woodcutters look at, every hour: 5% of a huge map's hour without the cache).
     ensureHives(state);
-    const key = state.hives.map((h) => h.tile).join(",");
     let c = state.hiveDistCache;
-    if (!c || c.key !== key) {
-      c = { key, dist: new Float32Array(state.tiles.length).fill(-1) };
+    if (!c || !sameTiles(c.tiles, state.hives)) {
+      c = { tiles: state.hives.map((h) => h.tile), dist: new Float32Array(state.tiles.length).fill(-1) };
       Object.defineProperty(state, "hiveDistCache", { value: c, writable: true, configurable: true, enumerable: false }); // not saved
     }
     if (c.dist[tileId] < 0) {
@@ -513,6 +521,7 @@ export function destroyHive(state, hive, how = "", opts = {}) {
   if (i < 0) return false;
   state.hives.splice(i, 1);
   state.tiles[hive.tile].hive = false;
+  clearPois(state.tiles[hive.tile]); // pois.js: whatever stood there is destroyed with it; the tile stays empty
   for (const id of state.grid.within(hive.tile, 7)) {
     const t = state.tiles[id];
     // A ruin full of its own dead (t.ruin.dead: hardcore-groups.js, the fallen military's base) keeps them: the hive
@@ -599,20 +608,26 @@ function hiveCard(state, p, hive) {
     title: `The hive: ${hive.name}`,
     where: tileLabel(state, hive.tile),
     partyId: p.id,
-    text: `A mound of fused bodies, pulsing and warm, and the dead packed around it${force.guard ? ` (about ${force.guard})` : ""}. The hive is a den of chambers: its core, where the ${BOSS_NAMES.hivemind} sits guarded by the ${BOSS_NAMES.hive}, lies ${den.depth} chamber${den.depth === 1 ? "" : "s"} in from the mouth by the shortest way (there are other ways, and dead ends). ` +
+    text: `A mound of fused bodies, pulsing and warm, and the dead packed around it${force.guard ? ` (about ${force.guard})` : ""}. The hive is a den of chambers with four mouths, one on each side: its core, where the ${BOSS_NAMES.hivemind} sits guarded by the ${BOSS_NAMES.hive}, lies ${den.depth} chamber${den.depth === 1 ? "" : "s"} in from the nearest mouth by the shortest way (there are other ways, and walls to go round). ` +
       `Your squad's combat power is ${power}. Expect about ${est.fights} fight${est.fights === 1 ? "" : "s"} on the way in, each tougher than the last, then the core. Bring five or six well-armed fighters, armor, ammunition and meds, a light each, Molotovs and flashbangs for the core (fire burns the Hivemind and stops its brood, a bang stops its pulse), and fuel for the egg chambers. Nothing from outside kills a hive: only its Hivemind's death does.${been}` +
       alliesText(state, hive, force.count) + // alliance.js: fighters from coalition members and job givers
       growthsText(state, hive, force), // hivetech.js: what has grown around it, the special dead in its brood
+    // One way in for each of its mouths (hivecrawl.js: north, east, south, west), with what your crawls know of it; the
+    // autopilot takes the one its estimate picks (autopilot.js hiveChoice: the choice's mouth).
     choices: [
-      {
-        label: "Enter the hive (crawl to the core)",
-        hint: `Crawl it chamber by chamber: follow the warmth to the core (${den.depth} chambers deep) and kill the ${BOSS_NAMES.hivemind}. You can fall back and leave the way you came at any time`,
-        resolve: (st) => {
-          if (gone(st)) return moved(st);
-          startHiveCrawl(st, p, hive);
-          return "";
-        },
-      },
+      ...mouthsOf(den).map((id) => {
+        const side = mouthSide(den, id);
+        return {
+          label: side ? `Enter the hive from the ${side}` : "Enter the hive (crawl to the core)",
+          mouth: id,
+          hint: `${mouthNote(state, hive, id)} Crawl it chamber by chamber: follow the warmth to the core (${den.depth} chambers deep from the nearest mouth) and kill the ${BOSS_NAMES.hivemind}. Leaving is a walk back out to any of the four mouths`,
+          resolve: (st) => {
+            if (gone(st)) return moved(st);
+            startHiveCrawl(st, p, hive, id);
+            return "";
+          },
+        };
+      }),
       { label: "Back off", hint: "No fight", resolve: (st) => { awaitOrders(st, p, "The team pulled back from the hive."); return "The team pulls back."; } },
     ],
   };

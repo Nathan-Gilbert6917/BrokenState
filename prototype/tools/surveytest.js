@@ -30,6 +30,7 @@ import { GEAR, LOCATIONS, CATEGORIES, TRADE_PREFS } from "../src/sim/data.js";
 import { hiddenSites, siteKnown, siteKnownTo, isPublicSite } from "../src/sim/discovery.js";
 import { launchExpedition, partyTile, sightRadius, removeParty, planPath, cargoLoad, STANCES, carried, onTheMove, partyMembers } from "../src/sim/parties.js";
 import { queueEstimate } from "../src/sim/orders.js";
+import { setNightPlan } from "../src/sim/nightmarch.js";
 import { estimatePlan } from "../src/sim/plans.js";
 import { spotFirstChance } from "../src/sim/conflicts.js";
 import { stealthSetup } from "../src/sim/stealth.js";
@@ -45,6 +46,8 @@ import { AREAS } from "../src/sim/combat.js";
 import { WARES } from "../src/sim/trade.js";
 import { RARE_GEAR } from "../src/sim/visitors.js";
 import { opticsFor, baseOpticsSight, OPTICS } from "../src/sim/optics.js";
+import { LIGHTS } from "../src/sim/lights.js";
+import { darkSight } from "../src/sim/vision.js";
 import {
   SURVEY, RUMOUR, siteOdds, lookContext, sweepRoute, sweepEstimate, sweepPreview, sendSurvey, sweepStatus, addRumour,
   rumoursOf, rumourFromNews, surveyDaily, surveyTarget, surveyCandidate, orderSweepAt, sweeping,
@@ -197,7 +200,7 @@ function runTeam(st, p, maxHours = 400, cards = "first") {
     const res = sendSurvey(st, { memberIds: crew.map((x) => x.id), tile: center, radius: 3, hours: 30, supplies: { food: 12, water: 12 } });
     if (!check(!res.error, `a survey team leaves (${res.error || "ok"})`)) break;
     const p = res.party;
-    check(p.mission === "sweep" && p.sweepPlan.radius === 3 && p.sweepPlan.hours === 30 && /^Survey team/.test(p.teamMission === "sweep" ? "Survey team" : ""), "it is a Survey team with its radius and hours");
+    check(p.mission === "sweep" && p.sweepPlan.radius === 3 && p.sweepPlan.hours === 30 && p.teamMission === "sweep", "it is a Sweep area team with its radius and hours");
     let status = "", foundAt = null, sawTask = false;
     for (let i = 0; i < 200 && st.parties.includes(p); i++) {
       st.hordes.length = 0;
@@ -210,7 +213,7 @@ function runTeam(st, p, maxHours = 400, cards = "first") {
     check(sawTask && /Surveying 3 tiles around .*: 14 of 30 hours, \d+ places? found/.test(status), `the team panel's progress ("${status}")`);
     check(siteKnown(st, site), `${st.tiles[site].loc.name} (${st.tiles[site].loc.type}, ${st.tiles[site].terrain}) found${foundAt != null ? ` in hour ${foundAt}` : ""} and on the map`);
     const line = st.log.find((l) => l.text.includes(st.tiles[site].loc.name) && /🧭/.test(l.text));
-    check(!!line && /Survey team/.test(line.text), `the discovery log names the survey team ("${line ? line.text.slice(0, 120) : "none"}")`);
+    check(!!line && /Sweep area team/.test(line.text), `the discovery log names the sweep team ("${line ? line.text.slice(0, 120) : "none"}")`);
     // It stays discovered: a save and a load later, and days on.
     const B = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
     for (let i = 0; i < 48; i++) tickHour(B);
@@ -302,6 +305,9 @@ console.log("Estimates: hours, rations and fuel");
     if (!check(!res.error && est, `case ${c}: launched (${res.error || "ok"})`)) continue;
     cases++;
     const p = res.party;
+    // The team panel's "At night: Push through" (sim/nightmarch.js): the plan's ETA and rations are for a team that
+    // keeps moving at night; a "Night falls" card stops it for the hour it asks and making camp is the player's own stop.
+    setNightPlan(st, p, "push");
     const fuel0 = mode === "car" ? partyFuel(st, p) : 0;
     const food0 = carried(p, "food"), water0 = carried(p, "water");
     // Rations the gauges count (needs.js, as loadtest.js): what the team took from its supplies plus the hunger
@@ -405,6 +411,7 @@ console.log("Estimates in winter: the cold and the camp fire");
     if (!check(!res.error && est, `winter case ${c}: launched (${res.error || "ok"})`)) continue;
     cases++;
     const p = res.party;
+    setNightPlan(st, p, "push"); // as above: the estimates are for a team that keeps moving at night
     const food0 = carried(p, "food"), water0 = carried(p, "water");
     const gauge = (key) => crew.reduce((a, s) => a + s[key], 0);
     const hunger0 = gauge("hunger"), thirst0 = gauge("thirst");
@@ -549,7 +556,9 @@ console.log("Optics");
   const b = { raid: true, setup: {}, units: [{ side: "player", sid: crew[1].id, sight: 13, x: 1, y: 1 }], lures: [] };
   crew[1].gear.tool = newItem("thermal", 1);
   stealthSetup(st, b);
-  check(b.night && b.units[0].nvg && b.units[0].sight === 13, "in a night battle a thermal in the off hand sees like night vision (sight 13, not 7)");
+  // Night vision sees as far as a military flashlight's beam (12, vision.js nvgSight; the user's request of 2026-10-12,
+  // as stealthtest.js and defencetest.js), no longer the full day's 13; the plain dark by the hour (vision.js darkSight).
+  check(b.night && b.units[0].nvg && b.units[0].sight === LIGHTS.tacflash.sight && darkSight(b) < LIGHTS.tacflash.sight, `in a night battle a thermal in the off hand sees like night vision (sight ${b.units[0].sight}, not the dark's ${darkSight(b)})`);
   const v0 = baseVision(h);
   h.armory.push(newItem("telescope", 1));
   check(baseVision(h) === v0 + (h.watchtower ? 2 : 1) && baseOpticsSight(h) >= 1, `a telescope in the hub's armory: view ${v0} → ${baseVision(h)} tiles`);
@@ -694,12 +703,75 @@ console.log("On screen (the real map renderer on a stub canvas, the panels)");
   check(/Surveying 3 tiles/.test(tipS) && (!r || /Rumour/.test(tipR)), "the tooltip tells of the survey and the rumour");
   p.contactHour = st.hour; // in contact this hour (as when answering one of its cards): the panel shows its orders
   const panel = UI.renderRight(st, { selected: -1, expedition: p.id });
-  check(/Surveying: \d+ of 24 hours/.test(panel) && /Survey 3 tiles, 24h/.test(panel) && !/undefined|NaN/.test(panel), `the team panel: the survey's progress and Survey orders, no undefined or NaN (${(panel.match(/Surveying[^<]*/) || ["no progress"])[0]}${/Survey 3 tiles, 24h/.test(panel) ? "" : "; no Survey order"}${/undefined/.test(panel) ? "; undefined" : ""}${/NaN/.test(panel) ? "; NaN" : ""})`);
+  check(/Surveying: \d+ of 24 hours/.test(panel) && /Sweep 3 tiles, 24h/.test(panel) && /Survey the tile \(8h\)/.test(panel) && !/undefined|NaN/.test(panel), `the team panel: the survey's progress, Sweep and Survey orders, no undefined or NaN (${(panel.match(/Surveying[^<]*/) || ["no progress"])[0]}${/Sweep 3 tiles, 24h/.test(panel) ? "" : "; no Sweep order"}${/Survey the tile \(8h\)/.test(panel) ? "" : "; no Survey order"}${/undefined/.test(panel) ? "; undefined" : ""}${/NaN/.test(panel) ? "; NaN" : ""})`);
   const pl = { dest: center, mission: "sweep", crew: new Set(atBase(st, h.id).slice(0, 2).map((s) => s.id)), vehicleId: null, stance: "normal", supplies: { food: 6, water: 6 } };
   const html = PLAN.planSection(st, pl, PLAN.planEstimate(st, pl));
-  check(/Odds: <b class="(good|warn|danger)">(good|fair|poor)<\/b>/.test(html) && /Survey trip/.test(html) && /data-action="pl-sweep-r"/.test(html) && /data-action="pl-sweep-h"/.test(html) && !/undefined|NaN/.test(html), "the planner's Survey box: radius, hours, the odds word and the Survey trip preset");
+  check(/Odds: <b class="(good|warn|danger)">(good|fair|poor)<\/b>/.test(html) && /Sweep trip/.test(html) && /Survey trip/.test(html) && /data-action="pl-sweep-r"/.test(html) && /data-action="pl-sweep-h"/.test(html) && !/undefined|NaN/.test(html), "the planner's Sweep box: radius, hours, the odds word, the Sweep trip and Survey trip presets");
   check(Object.keys(PLAN.PLAN_ACTIONS).includes("pl-sweep-r") && Object.keys(PLAN.PLAN_CHANGE).includes("pl-sweep-h"), "its buttons and inputs have handlers");
-  check(UI.tileActions(st, center).some(([m]) => m === "sweep"), "right-click: Survey the area on any land tile");
+  check(UI.tileActions(st, center).some(([m]) => m === "sweep") && UI.tileActions(st, center).some(([m]) => m === "fullsurvey"), "right-click: Sweep the area and Survey this tile on any land tile");
+}
+
+// ---------- 9b. the POI surveys: Survey (8h) and Quick look (2h) ----------
+console.log("The POI surveys: Survey (8h, the own tile and its ring with optics) and Quick look (2h)");
+{
+  const { poisOf, knownPois, morePoisHidden, poiAt, poiKnowledge, inKnownZone } = await import("../src/sim/pois.js");
+  const { LOOK, lookOdds, lookPreview, surveying } = await import("../src/sim/survey.js");
+  const { startOrder, queueEstimate } = await import("../src/sim/orders.js");
+  const { LOCATIONS: LOCS } = await import("../src/sim/data.js");
+  const st = W(61);
+  st.hour = Math.floor(st.hour / 24) * 24 + 32; // 08:00
+  const h = hub(st);
+  const ok = (t) => !t.loc && poisOf(t).length >= 2 && morePoisHidden(st, t) && knownPois(st, t).length >= 1 && land(st, t.id) && !!planPath(st, h.tile, t.id, false) && !st.bases.some((b) => b.tile === t.id);
+  const t = st.tiles.filter(ok).sort((a, b) => st.grid.distance(a.id, h.tile) - st.grid.distance(b.id, h.tile))[0];
+  if (check(!!t, "a tile with a hidden place and a known one exists")) {
+    const crew = scoutOf(st, 2, 16);
+    const res = launchExpedition(st, { memberIds: crew.map((x) => x.id), dest: t.id, mission: "move", stance: "normal", supplies: { food: 8, water: 8 } });
+    const p = res.party;
+    p.path = [t.id]; p.idx = 0; p.progress = 0; p.dest = t.id; p.phase = "waiting"; p.plan = null; p.orders = []; st.cards.length = 0;
+    // The orders' hours: 8 and 2.
+    p.orders = [{ type: "mission", mission: "fullsurvey", at: t.id }, { type: "mission", mission: "survey", at: t.id }];
+    const est = queueEstimate(st, p);
+    check(est.length === 2 && est[0].hours === LOOK.hours && est[1].hours === LOOK.quickHours, `the queue's estimate: Survey ${est[0] && est[0].hours}h, Quick look ${est[1] && est[1].hours}h`);
+    p.orders = [];
+    // Own tile only without optics; the ring of six with binoculars, never further (no reach past OPTICS.maxReach matters: one ring).
+    clearOptics(crew[0]); clearOptics(crew[1]);
+    const pv0 = lookPreview(st, p);
+    check(!!pv0 && !pv0.ring && pv0.more, `without optics the own tile only (${pv0 ? pv0.text : "none"})`);
+    giveItem(crew[0], "spotscope");
+    const pv1 = lookPreview(st, p);
+    check(!!pv1 && pv1.ring && pv1.chance >= pv0.chance, "a spotting scope (reach 2) still takes in one ring only, at better odds");
+    const ctx = lookContext(st, crew, { mode: false, stance: "normal", cargo: p.cargo });
+    const ring = st.grid.neighbors(t.id).filter((id) => land(st, id));
+    check(ring.every((id) => lookOdds(st, ctx, id, t.id) * LOOK.ring < lookOdds(st, ctx, id, t.id)), `the ring at ×${LOOK.ring} of the odds`);
+    // The Survey runs 8 hours on the spot; the Quick look 2.
+    const hidden0 = poisOf(t).length - knownPois(st, t, p).length;
+    startOrder(st, p, { type: "mission", mission: "fullsurvey" });
+    check(surveying(p) && p.task.hours === LOOK.hours, "the Survey is an 8-hour task on the spot");
+    let hours = 0;
+    while (surveying(p) && hours < 12) { tickHour(st); hours++; st.cards = st.cards.filter((c) => c.isOrders); }
+    const text = (st.cards.find((c) => c.partyId === p.id) || {}).text || "";
+    const rec = (p.poiFinds && p.poiFinds.get(t.id)) || poiKnowledge(st, t.id);
+    check(hours === LOOK.hours && p.phase === "waiting", `it ends after ${hours} hours`);
+    check(!!rec && rec.surveyed === day(st), "the tile is stamped surveyed");
+    const found = poisOf(t).length - knownPois(st, t, p).length;
+    const sure = !/Not sure you found everything/.test(text);
+    check(sure ? found === 0 : found >= 0, `${hidden0} hidden before, ${found} after${sure ? " (sure)" : " (not sure it found everything)"}`);
+    check(!/\d+ hidden|\d+ unknown|\d+ more/.test(text), `no count of the hidden in the report ("${text.slice(0, 100)}")`);
+    check(knownPois(st, t, p).every((i) => poiAt(t, i).threatStamp && poiAt(t, i).threatStamp.src === "survey"), "every place known there has a survey threat stamp");
+    st.cards.length = 0;
+    // The Quick look on another such tile: 2 hours, the kind only.
+    const t2 = st.tiles.filter((x) => ok(x) && x.id !== t.id)[0];
+    if (t2) {
+      p.path = [t2.id]; p.idx = 0; p.dest = t2.id; p.phase = "waiting"; p.task = null;
+      startOrder(st, p, { type: "mission", mission: "survey" });
+      check(p.phase === "task" && p.task.type === "survey" && p.task.hours === LOOK.quickHours, "the Quick look is a 2-hour task");
+      let h2 = 0;
+      while (p.phase === "task" && h2 < 4) { tickHour(st); h2++; st.cards = st.cards.filter((c) => c.isOrders); }
+      const rec2 = (p.poiFinds && p.poiFinds.get(t2.id)) || poiKnowledge(st, t2.id);
+      check(h2 === LOOK.quickHours && !!rec2 && rec2.looked === day(st) && rec2.surveyed == null, "it ends after 2 hours, stamped looked and not surveyed");
+      check(poisOf(t2).every((x) => !x.threatStamp), "a quick look leaves no threat stamp");
+    }
+  }
 }
 
 // ---------- 10. how much faster the autopilot finds the hidden sites near the hub ----------

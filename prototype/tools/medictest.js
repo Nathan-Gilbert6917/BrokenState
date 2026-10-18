@@ -101,8 +101,8 @@ section("A med kit makes a medic (off hand, pocket or pack); the badge");
   const sk = skill(people[1], "medicine");
   check(MED.isMedic(c) && c.kitPack && c.medicine === sk + c.kitBonus, `${c.name}: one in a pocket counts too (Medicine ${c.medicine} = ${sk} + ${c.kitBonus})`);
   check(!MED.isMedic(n), `${n.name}: no kit, no medic`);
-  UI.renderCombatPanel(st); UI.cui.sel = a.id; // a new battle resets the selection (sync)
-  const html = UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st); UI.cui.sel = a.id; // a new battle resets the selection (sync)
+  const html = UI.renderCombatScreen(st);
   check((html.match(/class="good cbmedic"/g) || []).length === 2, "the roster shows the medic badge (✚) on the two with a kit");
   check(/data-v="heal"/.test(html) && /Shift\+H/.test(html), "a medic has the Heal button (Shift+H)");
   check(people[0].gear.tool && people[0].gear.tool.key === "bandagekit", "the kit stays on them");
@@ -166,8 +166,8 @@ section("A failed revive still stabilizes; no revive without a kit and meds");
   n.down = false; n.hp = 50; n.ap = 2; n.stab = false; n.x = 2; n.y = 3;
   const why = MED.reviveRefusal(b, n, m);
   check(/med kit/.test(why), `no kit: “${why}”`);
-  UI.renderCombatPanel(st); UI.cui.sel = n.id;
-  const html = UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st); UI.cui.sel = n.id;
+  const html = UI.renderCombatScreen(st);
   const btn = (html.match(/<button[^>]*data-v="revive"[^>]*>/) || [""])[0];
   check(/disabled/.test(btn) && /Revive needs a med kit/.test(btn), "the Revive button is there, disabled, with the reason");
   // A kit but no meds.
@@ -310,10 +310,10 @@ section("Finishing a downed enemy: only by Finish, dead for good; a plain click 
   downFoe(b, E, a); downFoe(b, F, a);
   const errShoot = combatAct(st, { type: "shoot", unit: a.id, target: E.id });
   check(/Finish/.test(errShoot) && !E.dead, `Shoot at a downed enemy: “${errShoot}”`);
-  UI.renderCombatPanel(st); UI.cui.sel = a.id; UI.cui.mode = "move";
+  UI.renderCombatScreen(st); UI.cui.sel = a.id; UI.cui.mode = "move";
   UI.combatAction(st, "cb-target", { id: String(E.id) });
   check(!E.dead && /Finish/.test(UI.cui.msg), `a plain click on them (the target list): “${UI.cui.msg}”`);
-  const html = UI.renderCombatPanel(st);
+  const html = UI.renderCombatScreen(st);
   check(/Finish \(downed\)/.test(html), "the hit-chance tooltip says Finish (downed)");
   const ammo0 = ammoLeft(b);
   const err = forced(b, true, () => combatAct(st, { type: "finish", unit: a.id, target: E.id }));
@@ -502,8 +502,8 @@ const ringOk = (b, v, u) => !(u.x >= v.x && u.y >= v.y && u.x < v.x + v.w && u.y
   a.ap = 2;
   check(/down/.test(MED.reviveRefusal(b, a, n)) && /next to the vehicle/.test(MED.pullRefusal(b, a, n)), `inside nobody can treat them; from afar: “${MED.pullRefusal(b, a, n)}”`);
   a.x = v.x - 1; a.y = v.y + 1;
-  UI.renderCombatPanel(st); UI.cui.sel = a.id;
-  const html = UI.renderCombatPanel(st);
+  UI.renderCombatScreen(st); UI.cui.sel = a.id;
+  const html = UI.renderCombatScreen(st);
   const btnHtml = (html.match(/<button[^>]*data-v="pullOut"[^>]*>[^<]*/) || [""])[0];
   check(btnHtml && !/disabled/.test(btnHtml) && /Pull out/.test(btnHtml), "next to the vehicle: the Pull out button, enabled");
   const err = combatAct(st, { type: "pullOut", unit: a.id });
@@ -684,8 +684,8 @@ section("Laying a bleeding ally in the vehicle stabilizes them first (1 action),
     n.x = 6; n.y = 6; c.x = 6; c.y = 5; c.ap = 2; h.stock.meds = meds;
     combatAct(st, { type: "dragAlly", unit: c.id, target: n.id });
     c.ap = ap;
-    UI.renderCombatPanel(st); UI.cui.sel = c.id;
-    const html = UI.renderCombatPanel(st);
+    UI.renderCombatScreen(st); UI.cui.sel = c.id;
+    const html = UI.renderCombatScreen(st);
     const btn = (html.match(/<button[^>]*data-v="dropVehicle"[^>]*>[^<]*/) || [""])[0];
     const err = forced(b, roll, () => combatAct(st, { type: "dropAlly", unit: c.id, into: "vehicle" }));
     return { btn, err };
@@ -839,7 +839,7 @@ section("One model of the downed with the non-lethal kit (nonlethal.js): states,
   const [a, c, n] = ps;
   n.x = 3; n.y = 2; c.x = 4; c.y = 2; a.x = 2; a.y = 20;
   downPlayer(b, n);
-  UI.renderCombatPanel(st); UI.cui.sel = c.id;
+  UI.renderCombatScreen(st); UI.cui.sel = c.id;
   UI.combatAction(st, "cb-act", { v: "drag" });
   check(c.dragging === n.id, `Shift+D (Drag) next to a downed teammate: ${c.name} takes hold of ${n.name}`);
   UI.combatAction(st, "cb-act", { v: "drag" });

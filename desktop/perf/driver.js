@@ -1,6 +1,11 @@
 // Performance driver. Runs inside the game page (injected by main.js in Electron, or by perf/browser-bench.js
 // in a normal browser), so both are measured by exactly the same code. It does not change the game: it types
-// the seed, clicks Start, opens the dev panel and clicks the real Reveal map / Autopilot / 200x controls.
+// the seed, clicks Start and sets the speed, Reveal map and the autopilot through the game's real controls.
+// Options (run({...})): seed (42), speed (5: a top-bar speed 0.25-5, or a dev fast-forward from window.game.devSpeeds,
+// 60 / 300 / 1200), seconds (60), warmup (3), reveal (false: the fog of war as a player has it; true inflates the
+// map's figure cache far beyond real play), autopilot (true: it answers the cards, else the clock stops on the
+// first one), devPanel (false: the dev panel costs 3-6% of every refresh, which a player pays only with Show dev
+// tools on).
 (() => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const frame = () => new Promise((r) => requestAnimationFrame(r));
@@ -16,9 +21,12 @@
   }
   const click = async (sel, what) => { (await until(() => q(sel), what || sel)).click(); await frame(); };
 
-  async function setup({ seed, speed }) {
+  async function setup({ seed, speed, reveal, autopilot, devPanel }) {
     await until(() => window.game && window.game.state, "window.game (the game did not start: a script failed to load or threw; open DevTools)");
     const g = window.game;
+    const devSpeeds = g.devSpeeds || [];
+    const isDev = speed > 5;
+    if (isDev && !devSpeeds.includes(speed)) throw new Error(`perf driver: speed ${speed} is not a top-bar speed (0.25-5) nor a dev speed (${devSpeeds.join(", ")})`);
     // New game on the wanted seed (the new-run screen's Seed box), then Start.
     if (g.ui.started) throw new Error("perf driver: a game is already running; reload first");
     if (g.ui.title) await click('[data-action="title-new"]', "the title screen's New game"); // ui/title.js
@@ -28,17 +36,16 @@
     await until(() => g.state.seed === seed, `seed ${seed}`);
     await click('[data-action="begin"]', "the Start button");
     await until(() => g.ui.started, "the game to start");
-    // Dev panel: the ` key or the Dev button in the top bar (both only with Menu → Options → Display → Show dev
-    // tools on), else window.game.dev() opens it for this session without changing the player's options.
-    window.dispatchEvent(new KeyboardEvent("keydown", { code: "Backquote", key: "`", bubbles: true }));
-    await frame();
-    if (!g.ui.dev && g.dev) g.dev(true);
-    if (!g.ui.dev) await click('[data-action="dev-toggle"]', "the Dev button");
+    // Dev panel (Reveal map, the autopilot, the dev speeds): window.game.dev() opens it for this session without
+    // changing the player's options; it is closed again unless devPanel asks for it.
+    if (!g.ui.dev) g.dev(true);
     await until(() => g.ui.dev && q('#devpanel input[data-action="dev-reveal"]'), "the dev panel");
-    if (!q('#devpanel input[data-action="dev-reveal"]').checked) await click('#devpanel input[data-action="dev-reveal"]');
-    if (!g.state.autopilot) await click('#devpanel input[data-action="dev-autopilot"]');
-    await click(`#devpanel button[data-action="speed"][data-speed="${speed}"]`, `the ${speed}x button`);
-    await until(() => g.ui.speed === speed && g.state.autopilot && q('#devpanel input[data-action="dev-reveal"]').checked, "reveal + autopilot + speed");
+    if (q('#devpanel input[data-action="dev-reveal"]').checked !== !!reveal) await click('#devpanel input[data-action="dev-reveal"]');
+    if (!!g.state.autopilot !== !!autopilot) await click('#devpanel input[data-action="dev-autopilot"]');
+    if (isDev) await click(`#devpanel button[data-action="speed"][data-speed="${speed}"]`, `the ${speed}x button`);
+    if (!devPanel) { g.dev(false); await frame(); }
+    if (!isDev) await click(`#tb-speed button[data-action="speed"][data-speed="${speed}"]`, `the ${speed}x button in the top bar`);
+    await until(() => g.ui.speed === speed && !!g.state.autopilot === !!autopilot, "speed and autopilot");
   }
 
   function stats(deltas, seconds) {
@@ -68,7 +75,7 @@
   const heap = () => (performance.memory ? { usedMB: Math.round(performance.memory.usedJSHeapSize / 1048576 * 10) / 10, totalMB: Math.round(performance.memory.totalJSHeapSize / 1048576 * 10) / 10 } : null);
 
   async function run(opts) {
-    const o = { seed: 42, speed: 200, seconds: 60, warmup: 3, ...opts };
+    const o = { seed: 42, speed: 5, seconds: 60, warmup: 3, reveal: false, autopilot: true, devPanel: false, ...opts };
     await setup(o);
     const g = window.game;
     await sleep(o.warmup * 1000);
@@ -112,7 +119,7 @@
       jsHeapEnd: heap(),
       game: {
         seed: g.state.seed, speed: g.ui.speed, autopilot: !!g.state.autopilot,
-        reveal: !!(q('#devpanel input[data-action="dev-reveal"]') || {}).checked,
+        reveal: !!o.reveal, devPanel: !!g.ui.dev,
         clockStart: startClock, clockEnd: clock(), gameOverAtSecond: gameOverAt,
         frameErrors: g.frameErrors ? [...g.frameErrors.keys()] : [],
       },

@@ -5,12 +5,19 @@
 // late game nine (DEPTH by hivetech.js hiveTier; a screamer spire grows it one deeper).
 //
 // The den (hive.den, made on first look from the world's seed and the hive: the same chambers every visit; regrown when
-// the hive's tier deepens it) is a layered graph: the mouth, 2–4 chambers a layer, the core. Two routes that share no
-// chamber run from the mouth to the core, with side branches, dead ends, pockets and lateral passages that make loops,
-// so there is a real choice of which way to go round. Every chamber has a kind (tunnels, galleries, nurseries, egg
-// chambers, bone pits, worm pools, the roots of the hive's growths, collapses) and a warmth from its distance to the
-// core: the core is the hottest place in the hive, and each passage carries a draft that says whether it leads warmer
-// or colder (a team with poor Scouting misreads one now and then: the visit's own dice, hash01, never the world's).
+// the hive's tier deepens it) is a round grid, as the city crawl's (2026-10-13): rings of chambers in from the rim.
+// 3 open, 1 wall (2026-10-13): every chamber is a T, a hallway through it and a room off the side, so it opens on 3 of
+// its 4 sides; the wall between two chambers is the one wall of both, so the inner walls pair the chambers off (the
+// hive's dice). A rim chamber's outside is its wall (where the rim steps, two sides outside: a bend, open on 2). Four
+// entrances, one on each side of the den (north, east, south, west, at a spot along it by the hive's dice), each a
+// rim chamber open to its own mouth outside the rim, the mouth's own brood in it: the team picks one going in and
+// walks out by any of them. One chamber of the innermost rings is the core, and it opens on only 1 or 2 of its sides
+// (a shut side is the wall of the chamber beside it). Every chamber has a kind (tunnels, galleries, nurseries, egg chambers, bone pits,
+// worm pools, the roots of the hive's growths, collapses), a warmth from its distance to the core along the passages
+// and a sound, the Hivemind's beat, from its distance through the walls: the beat says how near the core is, the
+// warmth which way leads into it. Each passage carries a draft that says whether it leads warmer or colder (a team
+// with poor Scouting misreads one now and then: the visit's own dice, hash01, never the world's) and the beat louder
+// or fainter.
 // The brood in a chamber grows with its depth (more of them, tougher, the special dead and the elite deeper; the
 // chambers next to the core are the worst) and with the hive's guard horde (hives.js hiveGuard): the guard is the brood
 // spread through the den, so each one killed inside takes its share of the guard (cutGuard), and a guard thinned by a
@@ -19,11 +26,15 @@
 // and the AI groups' war parties (groupHiveCrawl): the AI groups crawl the same den with the same depth, coarsely.
 //
 // The team's crawl is plain data on the team (p.hiveCrawl), saved and loaded mid-crawl like the city crawl's p.crawl:
-//   { v, hiveId, tile, name, at (the chamber), from, trail (the way back to the mouth), visited, seen, slipped (crept
-//     past this visit), alert, enc (what is in front of the team), leaving, kills, lost, log, tally, deepest, started }
+//   { v, hiveId, tile, name, mouth (the one it came in by), at (the chamber), from, trail (the walk from that mouth,
+//     loops cut: a record), visited, seen, slipped (crept past: met again walking back in), alert, enc (what is in
+//     front of the team), headOut (the autopilot's: making for a mouth), kills, lost, log, tally, deepest, started }
+// Leaving is a walk (2026-10-13): chamber by chamber to any of the four entrances and out through its mouth (its brood
+// in the way if it is there); nothing walks the team out on its own. A cleared chamber walked back into may have
+// filled again with the noise made in it (HCRAWL.HEAT refillPerHeat), so the way back stays dangerous.
 // The hive's Alert (0–100) rises with noise (fights, fire, a failed sneak) and fades lying still; from CONVERGE the
 // brood converges on the team (a swarm in the chamber, cleared chambers behind it filling again), from BLOCK the
-// mouth packs up behind it.
+// mouths pack up behind it.
 //
 // Hooks elsewhere (small): hives.js hiveCard (Enter the hive), parties.js arrive; conflicts.js engagedWith (the crawl
 // holds the team); combat.js registerBossAI (the Hivemind's own turn and death), shotPri; defences.js BOSSES.hivemind;
@@ -36,7 +47,7 @@ import { hash01, gainXpAll, USE } from "./skills.js";
 import { SUPPLIES, GEAR, supWeight } from "./data.js";
 import { log, hurt, tickHour, day, snapshot, survivorById } from "./world.js";
 import { partyMembers, partyTile, bestSkill, awaitOrders, wipeParty, tileLabel, teamName, cargoRoom, unitsThatFit } from "./parties.js";
-import {
+import { coversCell, nearCell, unitCells,
   registerCombatHandler, registerBattleLayout, registerBattleSize, registerBossAI, startCombat, autoResolveCombat, finishCombat, byNumbersOdds,
   say, fx, damage, enemyUnit, active, reachable, pathTo, moveAlong, los,
 } from "./combat.js";
@@ -73,14 +84,19 @@ import { spreadMult } from "./data-ammo.js";
 import { SHELLS, usesInternal } from "./mags.js";
 import { gunMods } from "./gunmods.js";
 import { calOf } from "./ammo.js";
+import { cellsOf, ringOf, inGrid, headingToward, DIRS, DIR_NAMES } from "./citygrid.js"; // the den's round grid, as the city's
 import { typeFor, keyFor, withHand } from "./rounds.js";
 
 // ---------- tuning ----------
 export const HCRAWL = {
-  DEPTH: [2, 3, 5, 7, 9],       // chambers from the mouth to the core room on the shortest way (moves), by hive tier 0–4
+  DEPTH: [2, 3, 5, 7, 9],       // rings from the den's rim to its heart, where the core lies (genDen), by hive tier 0–4
   SPIRE_DEPTH: 1,               // a screamer spire grown at the hive makes it one deeper
-  WIDTH: [[2, 2], [2, 3], [2, 3], [2, 4], [3, 4]], // chambers in each layer between the mouth and the core, by tier
-  FORWARD: 0.5, LATERAL: 0.3, CROSS: 0.2, POCKET: 0.4, CORE_EXTRA: 0.35, // the den's extra passages and side pockets
+  // The round grid (genDen, 2026-10-13): rings × the depth rings from rim to heart, at least 2 (a young hive 3 chambers
+  // across, the oldest 11: the shortest way in from the nearest of the four mouths about as long as `depth`, with the
+  // core's walls to go round). Every chamber opens on 3 of its sides, the fourth its one wall (3 open, 1 wall: the
+  // walls pair the chambers off by the hive's dice); the core opens on 2 of its sides at `doors` (by tier: a young
+  // hive's always on 2), else on 1. tries: dice for the pairs before a cut-off chamber gets a wall knocked through.
+  GRID: { rings: 0.65, doors: [1, 0.75, 0.5, 0.5, 0.5], tries: 12 },
   MOVE_HOURS: 1, TREAT_HOURS: 1, FIGHT_HOURS: 1, SNEAK_HOURS: 1, SEARCH_HOURS: 1, BURN_HOURS: 1, LIE_HOURS: 2, BACK_HOURS: 1,
   // The brood in a chamber: (base + perLayer × its layer) × its kind's share × the guard's scale (√(guard / guardRef),
   // within scale), between min and max; × nearCore next to the core. Their power: the hive's brood (hives.js
@@ -92,10 +108,25 @@ export const HCRAWL = {
   // The hive's Alert: start + per visit made lately; noise: move, a fight by the numbers, a fight on the map (+ the
   // shots fired / 20), fire, searching, a failed sneak; decay an hour; lie (lying still). From converge the brood comes
   // (swarm: the chance an hour at 100, rising from converge; refill: a cleared chamber behind you fills again); from
-  // block the mouth packs up behind you.
+  // block every mouth packs up behind you.
   ALERT: { start: 10, visit: 6, move: 2, fight: 10, mapFight: 6, burn: 12, search: 3, sneakFail: 8, decay: 3, lie: 15, converge: 60, swarm: 0.3, refill: 0.25, block: 85,
     names: ["Dormant", "Stirring", "Restless", "Roused", "Swarming"] },
-  // Creeping past a chamber's brood: best Stealth + d10 against dc + perLayer × layer + Alert × perAlert (+ big a
+  // Brood activity (2026-10-13, as the city crawl's zombie activity, citycrawl.js CRAWL.THREAT): each chamber of a den
+  // has its own level, 1-5, by the hive's dice (the same every visit; known once you stand in it). Its mult multiplies
+  // the heat there (roomHeat: the hive's Alert and the chamber's own heat): the chance its brood has seen you, creeping
+  // past them, a swarm pouring in, a patrol finding you lying still. A little noise in a seething chamber is worse than
+  // a lot in a torpid one. Levels by weight.
+  THREAT: { names: ["", "Torpid", "Stirring", "Active", "Teeming", "Seething"], mult: [0, 0.6, 0.8, 1, 1.35, 1.8], weights: [0, 0.2, 0.25, 0.25, 0.18, 0.12] },
+  // A chamber's own heat (2026-10-13, as the city crawl's trail): the noise made in it (whatever raises the Alert there:
+  // walking in, fights and shots, fire, searching, a failed sneak) stays in it, × (1 + perPerson for each of the team
+  // over 3), × stealthy for a team travelling stealthily, at most 100; it fades decay an hour (as fast as the Alert),
+  // and lying still in it cools it as it does the Alert. perPerson 0 and decay 3: the crawl harness's hive rows
+  // (tools/crawlbalance.js) stay where they were (docs/crawl-balance.md); 0.15 and 1 made every row harder.
+  // refillPerHeat (2026-10-13, the round-grid branch): walking back into a cleared chamber you made noise in (on the
+  // way out, or round again; leaving is a walk now), it may have filled again: its heat × its activity ×
+  // refillPerHeat, at most refillMax.
+  HEAT: { perPerson: 0, stealthy: 0.6, decay: 3, refillPerHeat: 0.003, refillMax: 0.3 },
+  // Creeping past a chamber's brood: best Stealth + d10 against dc + perLayer × layer + its heat × perAlert (+ big a
   // person over three, + spotted when they have seen you).
   SNEAK: { dc: 7, perLayer: 0.7, perAlert: 0.05, big: 1, spotted: 4 },
   BACK: { hurt: 0.15, perLayer: 0.03, dmg: [8, 20] }, // falling back from a chamber's brood: each person's risk and wound
@@ -203,7 +234,7 @@ export const ROOM_KINDS = {
   bones:    { short: "B", name: "Bone pit", brood: 0.5, power: 1, special: false, search: true, size: [26, 16], text: "Bones picked clean, and among them the packs and guns of the teams that came before you." },
   pool:     { short: "W", name: "Worm pool", brood: 0.8, power: 1, special: true, search: true, size: [26, 16], text: "Black water to the knee, and it moves. The worm breeds here: every step is a risk." },
   growth:   { short: "R", name: "Growth root", brood: 1, power: 1, special: true, burn: true, size: [28, 16], text: "The roots of one of the hive's growths reach down here, thick as a man and beating." },
-  collapse: { short: "C", name: "Collapsed tunnel", brood: 0, power: 1, special: false, size: [24, 14], text: "The roof has come down. Rubble and flesh seal the far end: nothing lives here, and there is no way on." },
+  collapse: { short: "C", name: "Collapsed tunnel", brood: 0, power: 1, special: false, size: [24, 14], text: "The roof has come down over most of it: rubble and flesh to crawl over on your belly. Nothing lives here, and the air goes nowhere." },
   core:     { short: "★", name: "The core", brood: 0, power: 1, special: false, size: [34, 22], text: "The heart of the hive." },
 };
 const DRAFT_WORD = { warmer: "warmer", colder: "colder", level: "no draft" };
@@ -213,6 +244,20 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const seedOf = (...parts) => Math.floor(hash01(...parts) * 4294967296);
 const partyById = (state, id) => state.parties.find((x) => x.id === id) || null;
 export const alertName = (a) => HCRAWL.ALERT.names[clamp(Math.floor(a / 20), 0, 4)];
+// A chamber's brood activity: { level 1-5, name, mult } by the hive's dice (HCRAWL.THREAT).
+export function chamberThreat(state, hiveId, roomId) {
+  const T = HCRAWL.THREAT;
+  let r = hash01(state.seed, "hc-threat", hiveId, roomId), level = 1;
+  for (let i = 1; i < T.weights.length; i++) { if (r < T.weights[i]) { level = i; break; } r -= T.weights[i]; level = i; }
+  return { level, name: T.names[level], mult: T.mult[level] };
+}
+// The heat in a chamber: the hive's Alert and the chamber's own heat, × its activity.
+export const roomHeat = (state, c, room, mult = chamberThreat(state, c.hiveId, room.id).mult) => (c.alert + ((c.heat || {})[room.id] || 0)) * mult;
+// How much heat the team leaves in a chamber for each point of Alert it raises there (HCRAWL.HEAT).
+export function heatMultOf(state, p) {
+  const H = HCRAWL.HEAT;
+  return (1 + H.perPerson * Math.max(0, partyMembers(state, p).length - 3)) * (p.stance === "stealthy" ? H.stealthy : 1);
+}
 const guardSize = (state, hive) => { const g = hiveGuard(state, hive); return g ? g.size : 0; };
 function say2(c, text, k = "info", hour = null) {
   c.log.push({ text, k, hour });
@@ -226,90 +271,184 @@ export function denDepth(state, hive) {
   const t = clamp(hiveTier(state, hive), 0, HCRAWL.DEPTH.length - 1);
   return HCRAWL.DEPTH[t] + (hiveMods(state, hive).spire ? HCRAWL.SPIRE_DEPTH : 0);
 }
+const DEN_V = 3; // 3: 3 open, 1 wall, four mouths (2026-10-13); 2: the grid's first cut (one mouth, passages open at random); 1: the layered web before it (an old save's den is made again once no team is inside)
 // The hive's den, made on first use (and again, keeping what it remembers, when the hive has grown deeper).
 export function denOf(state, hive) {
   const depth = denDepth(state, hive);
-  if (hive.den && hive.den.v === 1 && hive.den.depth === depth) return hive.den;
+  if (hive.den && hive.den.v === DEN_V && hive.den.depth === depth) return hive.den;
   // Not while a team is inside: its chamber, trail and the chambers it has seen are this den's (the progression census
   // of 2026-10-09, seed 6002: a hive reached tier 1 with a team in a side pocket that the deeper den does not have,
   // and the crawl crashed on the missing chamber). It deepens once the team is out.
-  if (hive.den && hive.den.v === 1 && state.parties.some((p) => p.hiveCrawl && p.hiveCrawl.hiveId === hive.id)) return hive.den;
-  const grew = !!hive.den;
+  // A den of an older make (v 1, v 2: one mouth) is the same: the team walks it out (mouthsOf), then it is made again.
+  if (hive.den && state.parties.some((p) => p.hiveCrawl && p.hiveCrawl.hiveId === hive.id)) return hive.den;
+  const old = hive.den, grew = !!old && old.depth !== depth;
   hive.den = genDen(state, hive, depth, clamp(hiveTier(state, hive), 0, 4));
-  if (grew) {
-    hive.den.grew = state.hour;
-    if (hive.crawlRec) { hive.crawlRec.mapped = {}; hive.crawlRec.core = false; hive.crawlRec.coreHeard = false; hive.crawlRec.grew = day(state); } // its chambers are new: the map starts again
+  if (old) {
+    if (grew) hive.den.grew = state.hour;
+    if (hive.crawlRec) { hive.crawlRec.mapped = {}; hive.crawlRec.mouths = {}; hive.crawlRec.core = false; hive.crawlRec.coreHeard = false; if (grew) hive.crawlRec.grew = day(state); } // its chambers are new: the map starts again
   }
   return hive.den;
 }
 export const roomById = (den, id) => den.rooms.find((r) => r.id === id) || null;
+// The den's mouths: ids, north, east, south, west. A den of the old make (v 2) with a team still inside: its one mouth.
+export const mouthsOf = (den) => (!den ? [] : den.mouths || (den.mouth != null ? [den.mouth] : []));
+export const isMouth = (den, id) => mouthsOf(den).includes(id);
+// The side of the den a mouth opens on ("north"), or "" (the old make's one mouth).
+export const mouthSide = (den, id) => { const r = roomById(den, id); return r && r.side != null ? DIR_NAMES[r.side] : ""; };
+// The mouth an entrance chamber opens to, or null.
+export const mouthBy = (den, room) => (room ? room.links.find((id) => isMouth(den, id)) || null : null);
 // The den's chambers and passages, by the world's seed and the hive (no state dice): the same den every visit.
+// A round grid (2026-10-13, as the city crawl's, citygrid.js): a square with its corners cut away in a curve, GRID.rings
+// × depth rings from its rim to its heart. A chamber's layer is its ring scaled to the depth (1 on the rim, `depth` at
+// the heart): what the brood reads. One chamber of the innermost rings is the core, and only 1 or 2 of its sides open
+// (GRID.doors); the rest is wall. Its sound carries through the walls (soundOf: the grid distance), its warmth only
+// along the passages (warmthOf: the walking distance), so a team beside the wrong wall hears the Hivemind beat right
+// there and has to find the way round to a door.
+// Four entrances (2026-10-13): on each side, north, east, south and west, a rim chamber facing out that way (the side
+// of the centre it lies on), at a spot along that side of the hive's dice, opens to its own mouth outside the rim.
+// 3 open, 1 wall (2026-10-13): every chamber is a T, a hallway through it and a room off the side, so it opens on 3 of
+// its 4 sides. Its one wall is: its outside, on the rim (where the rim steps and two sides lie outside, both: a bend,
+// open on 2; where the rim meets a shut side of the core in the smallest dens, the same); a shut side of the core; or,
+// for every other chamber (an entrance's outside is its mouth, so an entrance is one of them), a wall shared with a
+// chamber beside it, the one wall of both: the inner walls pair those chambers off, the most pairs the grid allows,
+// by the hive's dice. A chamber the pairs leave over (the grid's parity) has no wall: open on 4. The pairs are dealt
+// again (GRID.tries) while a chamber is cut off from the mouths (never through the core); failing that a wall is
+// knocked through.
 export function genDen(state, hive, depth, tier) {
+  const G = HCRAWL.GRID;
   const rng = new Rng(seedOf(state.seed, "hiveden", hive.id, hive.tile, depth));
+  const rings = Math.max(2, Math.round(depth * G.rings)), size = 2 * rings - 1;
+  const g = { size, r: size / 2 };
+  /** @type {any[]} */
   const rooms = [];
-  const add = (id, layer, slot, kind = null, pocket = false) => { const r = { id, layer, slot, kind, links: [], dist: 0, pocket }; rooms.push(r); return r; };
+  const at = new Map();
+  const key = (x, y) => `${x}_${y}`;
+  const add = (id, layer, x, y, kind = null) => { const r = { id, layer, slot: x, x, y, kind, links: [], dist: 0, gd: 0, pocket: false }; rooms.push(r); at.set(key(x, y), r); return r; };
   const link = (a, b) => { if (!a || !b || a === b || a.links.includes(b.id)) return; a.links.push(b.id); b.links.push(a.id); };
-  const mouth = add("m", 0, 0, "mouth");
-  const layers = [[mouth]];
-  const [wlo, whi] = HCRAWL.WIDTH[tier];
-  for (let L = 1; L < depth; L++) {
-    const w = rng.int(wlo, whi), row = [];
-    for (let s = 0; s < w; s++) row.push(add(`r${L}-${s}`, L, s));
-    layers.push(row);
+  const cell = (x, y) => at.get(key(x, y)) || null;
+  // The core: in the innermost rings (the heart alone in a small den), not beside a bend of the rim (two sides outside
+  // and a shut side of the core would leave it a dead end).
+  const cells = cellsOf(g);
+  const inner = Math.max(...cells.map(([x, y]) => ringOf(g, x, y)));
+  const bend = (x, y) => DIRS.filter(([dx, dy]) => !inGrid(g, x + dx, y + dy)).length >= 2;
+  const ringed = cells.filter(([x, y]) => ringOf(g, x, y) >= Math.max(Math.min(2, inner), inner - 1));
+  const clear = ringed.filter(([x, y]) => !DIRS.some(([dx, dy]) => inGrid(g, x + dx, y + dy) && bend(x + dx, y + dy)));
+  const deep = clear.length ? clear : ringed;
+  const [cx, cy] = deep[rng.int(0, deep.length - 1)];
+  // A chamber's layer (the brood's depth): its ring, scaled so the heart is `depth` deep.
+  const layerOf = (x, y) => clamp(Math.round((ringOf(g, x, y) * depth) / inner), 1, depth);
+  for (const [x, y] of cells) add(x === cx && y === cy ? "core" : `h${x}_${y}`, layerOf(x, y), x, y, x === cx && y === cy ? "core" : null);
+  const core = cell(cx, cy);
+  const grid = rooms.filter((r) => r !== core);
+  // The core's doors: 1 or 2 of its sides. A young hive (tier 0) is still being dug: its first door faces a side of
+  // the den of the hive's dice, the side of one of its entrances.
+  const sides = DIRS.map(([dx, dy]) => cell(cx + dx, cy + dy)).filter(Boolean);
+  const doors = Math.min(sides.length, rng.chance(G.doors[clamp(tier, 0, G.doors.length - 1)]) ? 2 : 1);
+  const d0 = tier === 0 ? rng.int(0, 3) : -1, toward = d0 >= 0 ? cell(cx + DIRS[d0][0], cy + DIRS[d0][1]) : null;
+  for (let i = 0; i < doors; i++) link(core, sides.splice(i === 0 && toward && sides.includes(toward) ? sides.indexOf(toward) : rng.int(0, sides.length - 1), 1)[0]);
+  // Each chamber's walls it cannot help: its sides outside the rim (not the side to its own mouth) and a shut side of
+  // the core.
+  const fixed = (r) => DIRS.filter(([dx, dy]) => { const o = cell(r.x + dx, r.y + dy); return !o || (o.kind === "mouth" && !o.links.includes(r.id)) || (o === core && !core.links.includes(r.id)); }).length;
+  // The four entrances and their mouths, north, east, south, west: on each side a rim chamber facing out that way, at a
+  // spot of the hive's dice. An entrance with one side outside has its wall to deal (it opens to its mouth there), so
+  // the dice pick among the spots that keep the chambers to be paired off even on the grid's checkerboard (fewer left
+  // over with no wall).
+  const odd = (r) => ((r.x + r.y) % 2 === 0 ? 1 : -1);
+  let tilt = grid.reduce((a, r) => a + (fixed(r) === 0 ? odd(r) : 0), 0);
+  const mouths = [];
+  for (let d = 0; d < 4; d++) {
+    const [dx, dy] = DIRS[d];
+    const out = grid.filter((r) => !inGrid(g, r.x + dx, r.y + dy) && r.gate == null && !cell(r.x + dx, r.y + dy));
+    const facing = out.filter((r) => (headingToward(g, r.x, r.y) + 2) % 4 === d);
+    const can = facing.length ? facing : out;
+    const shift = (r) => (fixed(r) === 1 ? odd(r) : 0);
+    const best = Math.min(...can.map((r) => Math.abs(tilt + shift(r))));
+    const gate = rng.pick(can.filter((r) => Math.abs(tilt + shift(r)) === best));
+    tilt += shift(gate);
+    gate.gate = d;
+    const m = add(`m${"nesw"[d]}`, 0, gate.x + dx, gate.y + dy, "mouth");
+    m.side = d;
+    link(m, gate);
+    mouths.push(m);
   }
-  const core = add("core", depth, 0, "core");
-  layers.push([core]);
-  // Two routes from the mouth to the core that share no chamber.
-  let a = mouth, b2 = mouth;
-  const spine = new Set();
-  for (let L = 1; L < depth; L++) {
-    const row = layers[L];
-    const ia = rng.int(0, row.length - 1), ib = (ia + 1 + rng.int(0, row.length - 2)) % row.length;
-    link(a, row[ia]); link(b2, row[ib]);
-    a = row[ia]; b2 = row[ib];
-    spine.add(a.id); spine.add(b2.id);
-  }
-  link(a, core); link(b2, core);
-  // The rest: each chamber reached from the layer before, a way on now and then (else a dead end).
-  for (let L = 1; L < depth; L++) {
-    for (const r of layers[L]) {
-      if (spine.has(r.id)) continue;
-      link(r, rng.pick(layers[L - 1]));
-      if (rng.chance(HCRAWL.FORWARD)) link(r, L + 1 < depth ? rng.pick(layers[L + 1]) : rng.chance(HCRAWL.CORE_EXTRA) ? core : null);
-    }
-  }
-  // Passages within a layer (loops) and across the routes.
-  for (let L = 1; L < depth; L++) {
-    const row = layers[L];
-    for (let s = 0; s + 1 < row.length; s++) if (rng.chance(HCRAWL.LATERAL)) link(row[s], row[s + 1]);
-    if (L + 1 < depth && rng.chance(HCRAWL.CROSS)) link(rng.pick(row), rng.pick(layers[L + 1]));
-  }
-  // Side pockets: a dead-end chamber off one of the layer's.
-  for (let L = 1; L < depth; L++) if (rng.chance(HCRAWL.POCKET)) link(add(`p${L}`, L, layers[L].length, null, true), rng.pick(layers[L]));
-  // Distances to the core (the warmth), the way on (dead ends), and the kinds.
+  // The sides between two chambers of the grid (not the core's: its doors are made), and the chambers with no wall
+  // yet: the ones the pairs are dealt from.
+  const sideBy = [];
+  for (const r of grid) for (const o of [cell(r.x + 1, r.y), cell(r.x, r.y + 1)]) if (o && o !== core && o.kind !== "mouth") sideBy.push([r, o]);
+  const free = new Set(grid.filter((r) => fixed(r) === 0));
   const byId = new Map(rooms.map((r) => [r.id, r]));
-  for (const r of rooms) r.dist = Infinity;
+  const wk = (a, b) => (a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`);
+  // The most pairs (a matching on the grid's checkerboard, by augmenting paths), the hive's dice in the order.
+  const deal = () => {
+    const adj = new Map([...free].map((r) => [r, []]));
+    for (const [a, b] of sideBy) if (free.has(a) && free.has(b)) { adj.get(a).push(b); adj.get(b).push(a); }
+    for (const l of adj.values()) rng.shuffle(l);
+    const mate = new Map();
+    const aug = (u, seen) => {
+      for (const v of adj.get(u)) {
+        if (seen.has(v)) continue;
+        seen.add(v);
+        const w = mate.get(v);
+        if (!w || aug(w, seen)) { mate.set(v, u); mate.set(u, v); return true; }
+      }
+      return false;
+    };
+    for (const u of rng.shuffle([...free].filter((r) => (r.x + r.y) % 2 === 0))) aug(u, new Set());
+    const walls = new Set();
+    for (const [u, v] of mate) if ((u.x + u.y) % 2 === 0) walls.add(wk(u, v));
+    return walls;
+  };
+  // The chambers reached from the mouths along the passages (the open sides, the mouths' own), never through the core.
+  const reached = (walls) => {
+    const open = new Map(grid.map((r) => [r, []]));
+    for (const [a, b] of sideBy) if (!walls.has(wk(a, b))) { open.get(a).push(b); open.get(b).push(a); }
+    const seen = new Set(mouths), q = [...mouths];
+    while (q.length) {
+      const r = q.shift();
+      const next = [...(open.get(r) || []), ...r.links.map((id) => byId.get(id)).filter((o) => o !== core)];
+      for (const o of next) if (!seen.has(o)) { seen.add(o); q.push(o); }
+    }
+    return seen;
+  };
+  let walls = deal();
+  for (let t = 1; t < G.tries && grid.some((r) => !reached(walls).has(r)); t++) walls = deal();
+  for (let seen = reached(walls); grid.some((r) => !seen.has(r)); seen = reached(walls)) { // a wall knocked through to a chamber cut off
+    const [a, b] = sideBy.find(([x, y]) => walls.has(wk(x, y)) && seen.has(x) !== seen.has(y));
+    walls.delete(wk(a, b));
+  }
+  for (const [a, b] of sideBy) if (!walls.has(wk(a, b))) link(a, b);
+  // Distances to the core: along the passages (the warmth) and through the walls (the sound).
+  for (const r of rooms) { r.dist = Infinity; r.gd = Math.abs(r.x - cx) + Math.abs(r.y - cy); }
   core.dist = 0;
   const q = [core];
   while (q.length) { const r = q.shift(); for (const id of r.links) { const n = byId.get(id); if (n.dist > r.dist + 1) { n.dist = r.dist + 1; q.push(n); } } }
+  // The kinds. No chamber is a dead end any more (3 open, 1 wall); where the den runs out the dead-end kinds come up
+  // more (bone pits, eggs, collapses): a bend of the rim (open on 2), and the far end of a way, a chamber with no
+  // passage out of it that leads colder.
   const growths = growthsOf(state, hive);
   let gi = 0;
   for (const r of rooms) {
     if (r.kind) continue;
-    const on = r.links.some((id) => byId.get(id).layer > r.layer);
-    r.dead = !on;
-    const w = on
+    r.dead = r.links.length <= 2 || r.links.every((id) => byId.get(id).dist <= r.dist);
+    const w = !r.dead
       ? { tunnel: 3, gallery: 2.5, nursery: r.layer >= 2 ? 1.5 : 0.4, pool: r.layer >= 2 ? 1 : 0.3, eggs: 1, growth: growths.length ? 1.2 : 0, bones: 0.6 }
       : { bones: 2, eggs: 1.5, collapse: 1.5, pool: 1, nursery: 0.5, growth: growths.length ? 0.8 : 0 };
     r.kind = rng.weighted(Object.keys(w), (k) => w[k]);
-    if (r.kind === "growth") { const g = growths[gi++ % growths.length]; r.gid = g.id; r.gkind = g.kind; }
+    if (r.kind === "growth") { const gr = growths[gi++ % growths.length]; r.gid = gr.id; r.gkind = gr.kind; }
   }
-  return { v: 1, depth, tier, mouth: mouth.id, core: core.id, width: Math.max(...layers.map((l) => l.length)) + 1, rooms };
+  const far = Math.max(...rooms.map((r) => r.dist)), farGd = Math.max(...rooms.map((r) => r.gd));
+  return { v: DEN_V, grid: true, depth, tier, size, rings: inner, coreRing: ringOf(g, cx, cy), far, farGd, coreAt: { x: cx, y: cy }, doors, mouths: mouths.map((m) => m.id), core: core.id, width: size, rows: size, rooms };
 }
 // The chamber next to the core (its brood is the worst).
 const nearCore = (den, room) => room.links.includes(den.core);
-// The shortest way from a chamber to the core, by the distances (ids, the core last).
-export function shortestPath(den, fromId = den.mouth) {
+// The mouth nearest the core along the passages (the shortest way in; north first on a tie).
+export function nearestMouth(den) {
+  let best = null;
+  for (const id of mouthsOf(den)) { const r = roomById(den, id); if (r && (!best || r.dist < best.dist)) best = r; }
+  return best ? best.id : null;
+}
+// The shortest way from a chamber (the nearest mouth) to the core, by the distances (ids, the core last).
+export function shortestPath(den, fromId = nearestMouth(den)) {
   const out = [];
   let r = roomById(den, fromId);
   while (r) {
@@ -320,18 +459,52 @@ export function shortestPath(den, fromId = den.mouth) {
   }
   return out;
 }
-// Warmth 0–100: the core 100, falling with the distance to it (the mouth 100 / (depth + 1)).
-export const warmthOf = (den, room) => (room ? clamp(Math.round(100 * (1 - room.dist / (den.depth + 1))), 0, 100) : 0);
+// The cheapest way from a chamber to one that `goal` picks, never through the core: the price of stepping into a
+// chamber is cost(room) (null: not that way). [the ids after fromId, the goal last], or null.
+export function cheapestWay(den, fromId, goal, cost = (r) => 1) {
+  const byId = new Map(den.rooms.map((r) => [r.id, r]));
+  const best = new Map([[fromId, 0]]), prev = new Map(), done = new Set();
+  for (;;) {
+    let u = null, du = Infinity;
+    for (const [id, d] of best) if (!done.has(id) && d < du) { u = id; du = d; }
+    if (u == null) return null;
+    done.add(u);
+    if (u !== fromId && goal(byId.get(u))) { const out = []; for (let x = u; x !== fromId; x = prev.get(x)) out.unshift(x); return out; }
+    for (const id of byId.get(u).links) {
+      const r = byId.get(id);
+      if (!r || r.kind === "core" || done.has(id)) continue;
+      const k = cost(r);
+      if (k == null) continue;
+      if (du + k < (best.get(id) ?? Infinity)) { best.set(id, du + k); prev.set(id, u); }
+    }
+  }
+}
+// Warmth 0–100: the core 100, falling with the distance to it along the passages.
+// On the grid the scale is the farthest chamber's distance (den.far), so every step toward the core is warmer.
+export const warmthOf = (den, room) => (room ? clamp(Math.round(100 * (1 - room.dist / ((den.far ?? den.depth) + 1))), 0, 100) : 0);
+// Sound 0–100: the Hivemind's beat through the flesh, by the grid distance to the core (through the walls: a chamber
+// beside the core's wall hears it loud whether or not a door is on its side). A den from before the grid: the warmth.
+export const soundOf = (den, room) => (room ? clamp(Math.round(100 * (1 - (room.gd ?? room.dist) / ((den.farGd ?? den.far ?? den.depth) + 1))), 0, 100) : 0);
+export function soundText(v) {
+  return v >= 90 ? "the beat is all around you, so close the walls shake with it" : v >= 70 ? "a heavy beat, loud through the wall" : v >= 50 ? "a slow beat you feel in your teeth" : v >= 30 ? "a dull beat somewhere ahead" : "a faint, slow beat, far off";
+}
+// Which way a passage goes on the grid: "north", "east", "south" or "west" (citygrid.js DIR_NAMES); "" off the grid.
+export function passageDir(den, from, to) {
+  if (!den.grid || !from || !to) return "";
+  const i = DIRS.findIndex(([dx, dy]) => to.x - from.x === dx && to.y - from.y === dy);
+  return i >= 0 ? DIR_NAMES[i] : "";
+}
 export function warmthText(w) {
   return w >= 90 ? "the walls sweat and the air is hot and thick; something vast beats close by" : w >= 70 ? "hot: the walls pulse under your hand" : w >= 50 ? "warm as breath" : w >= 30 ? "close and clammy" : "cool and damp";
 }
 export const roomName = (room, state = null) => {
   if (!room) return "?";
   if (room.kind === "growth" && room.gkind && GROWTHS[room.gkind]) return `Root of the ${GROWTHS[room.gkind].name.toLowerCase()}`;
+  if (room.kind === "mouth" && room.side != null) return `The ${DIR_NAMES[room.side]} mouth`; // one of the four (2026-10-13)
   return ROOM_KINDS[room.kind] ? ROOM_KINDS[room.kind].name : room.kind;
 };
 
-// "the tunnel", "the mouth", "the root of the brood chamber".
+// "the tunnel", "the north mouth", "the root of the brood chamber".
 export const roomThe = (room) => { const n = roomName(room); return /^The /.test(n) ? n.toLowerCase() : `the ${n.toLowerCase()}`; };
 
 // ---------- the brood ----------
@@ -402,10 +575,16 @@ export function coreForce(state, hive, G = guardSize(state, hive)) {
     hp: HIVEMIND.hp + HIVEMIND.perTier * den.tier, bossPower: (HIVEMIND.power + HIVEMIND.powerTier * den.tier + HIVEMIND.broodPower) * HIVEMIND.numbersK,
   };
 }
-// Every brood of the den when full (the core's too): the guard spread through it (cutGuard).
+// Every brood of the den when full (the core's too): the guard spread through it (cutGuard). The four mouths count
+// as one (their mean, 2026-10-13: the guard shuffles in and out by all of them), so a brood killed is worth the share of
+// the guard it was with one mouth (four whole mouths made every kill, yours and the groups', thin the guard a quarter
+// less in a young hive: tools/grouphivetest.js, a fortress's war no longer burned its hive in 400 days).
 export function denBroodTotal(state, hive, G = guardSize(state, hive)) {
   const den = denOf(state, hive);
-  return den.rooms.reduce((a, r) => a + roomFull(state, hive, den, r, G), 0) + coreForce(state, hive, G).count;
+  const ms = mouthsOf(den);
+  const inner = den.rooms.reduce((a, r) => a + (isMouth(den, r.id) ? 0 : roomFull(state, hive, den, r, G)), 0);
+  const mouths = ms.length ? ms.reduce((a, id) => a + roomFull(state, hive, den, roomById(den, id), G), 0) / ms.length : 0;
+  return inner + mouths + coreForce(state, hive, G).count;
 }
 // Brood killed in the den: each takes its share of the guard horde. Returns the guard lost.
 export function cutGuard(state, hive, killed) {
@@ -427,6 +606,13 @@ export function hiveCrawlOf(state, p) {
   if (!state.parties.includes(p) || !partyMembers(state, p).length || partyTile(p) !== c.tile) { delete p.hiveCrawl; return null; }
   if (!hiveById(state, c.hiveId)) { crawlGone(state, p); return null; }
   if (p.phase !== "engaged") p.phase = "engaged";
+  if (!(c.v >= 2)) { // a save from before leaving was a walk (2026-10-13): its walk out is the autopilot's to make now
+    c.v = 2;
+    if (c.leaving) c.headOut = true;
+    delete c.leaving;
+    if (c.mouth == null) c.mouth = c.trail[0];
+  }
+  broodBack(state, c);
   return c;
 }
 // The hive is gone with the team inside (its Hivemind killed by an AI group's war party, or taken off the map some
@@ -449,34 +635,78 @@ export function activeHiveCrawl(state) {
 export const crawlHive = (state, c) => hiveById(state, c.hiveId);
 export const crawlRoom = (state, c) => { const h = crawlHive(state, c); return h ? roomById(denOf(state, h), c.at) : null; };
 
-// Into the hive (the hive card's Enter the hive): at its mouth, the brood of the mouth in front.
-export function startHiveCrawl(state, p, hive) {
+// Into the hive (the hive card's Enter the hive from the north, east, south or west): at that mouth, its brood in
+// front. mouthId: one of the den's mouths (mouthsOf); none, the one the autopilot would pick (crawlEstimate).
+export function startHiveCrawl(state, p, hive, mouthId = null) {
   const den = denOf(state, hive);
+  const at = isMouth(den, mouthId) ? mouthId : crawlEstimate(state, hive).mouth || mouthsOf(den)[0];
   const mem = memOf(hive);
   mem.visits += 1;
   const left = Math.max(0, (mem.lastAlert || 0) - (state.hour - (mem.lastHour || 0)));
   p.phase = "engaged";
   p.hiveCrawl = {
-    v: 1, hiveId: hive.id, tile: hive.tile, name: hive.name, visit: mem.visits, started: state.hour,
-    at: den.mouth, from: null, trail: [den.mouth], visited: { [den.mouth]: true }, seen: {}, slipped: {},
-    alert: clamp(Math.round(Math.max(HCRAWL.ALERT.start, left)), 0, 100), enc: null, leaving: false, deepest: 0,
+    v: 2, hiveId: hive.id, tile: hive.tile, name: hive.name, visit: mem.visits, started: state.hour, mouth: at,
+    at, from: null, trail: [at], visited: { [at]: true }, seen: {}, slipped: {},
+    alert: clamp(Math.round(Math.max(HCRAWL.ALERT.start, left)), 0, 100), enc: null, headOut: false, deepest: 0,
     kills: 0, lost: [], log: [], tally: { supplies: {}, gear: [] }, hadVehicle: !!p.vehicle,
-    lit: true, heard: {}, warned: {},
+    lit: true, heard: {}, warned: {}, heat: {}, heatMult: heatMultOf(state, p),
   };
   const c = p.hiveCrawl;
   const rec = crawlRecOf(state, hive);
   rec.visits += 1;
-  markSeen(den, c, den.mouth);
+  const used = rec.mouths || (rec.mouths = {});
+  (used[at] || (used[at] = { in: 0, out: 0 })).in++;
+  markSeen(den, c, at);
   markThreat(state, hive); // hivetech.js: it builds for defence
   hive.playerDay = day(state); // hives.js notePlayerFight: a group fighting it warms to you
-  const mouth = roomById(den, den.mouth);
+  const mouth = roomById(den, at);
   const lights = teamLights(state, p);
-  say2(c, `${teamName(state, p)} ${partyMembers(state, p).length === 1 ? "goes" : "go"} into ${hive.name}. ${den.grew ? "It has grown deeper since anyone was last inside. " : ""}The air is ${warmthText(warmthOf(den, mouth))}. ${lights ? `${lights} light${lights === 1 ? "" : "s"} on.` : "Nobody has a light: you feel your way in the dark."}`, "info", state.hour);
-  log(state, `${teamName(state, p)} crawls into ${hive.name}.`, "info");
+  const side = mouthSide(den, at);
+  say2(c, `${teamName(state, p)} ${partyMembers(state, p).length === 1 ? "goes" : "go"} into ${hive.name}${side ? ` by its ${side} mouth` : ""}. ${den.grew ? "It has grown deeper since anyone was last inside. " : ""}The air is ${warmthText(warmthOf(den, mouth))}. ${lights ? `${lights} light${lights === 1 ? "" : "s"} on.` : "Nobody has a light: you feel your way in the dark."}`, "info", state.hour);
+  log(state, `${teamName(state, p)} crawls into ${hive.name}${side ? ` from the ${side}` : ""}.`, "info");
   enterRoom(state, p, c, mouth, null);
   return true;
 }
 const markSeen = (den, c, id) => { const r = roomById(den, id); if (r) for (const n of r.links) c.seen[n] = true; };
+// The walk the team has made from its mouth (c.trail, loops cut): a step to a chamber already on it cuts it there.
+function stepTrail(c, id) {
+  const i = c.trail.indexOf(id);
+  if (i >= 0) c.trail.length = i + 1; else c.trail.push(id);
+}
+// Where the team falls back to from a chamber: the way it came (back, or the chamber before it on its walk), else a
+// chamber beside it it has been in (not the core). null: nowhere (at the mouth it came in by: out is the way).
+function backOf(c, den, room, back = null) {
+  const ok = (id) => id != null && id !== den.core && room.links.includes(id) && !!c.visited[id] && !!roomById(den, id);
+  if (ok(back)) return back;
+  const i = c.trail.lastIndexOf(room.id);
+  if (i > 0 && ok(c.trail[i - 1])) return c.trail[i - 1];
+  return room.links.find(ok) || null;
+}
+// Back into a chamber the team cleared (HCRAWL.HEAT): the noise it made there drew the brood back, and it may have
+// filled again. True: it has.
+function refillOnReturn(state, c, hive, den, to) {
+  const H = HCRAWL.HEAT, heat = (c.heat || {})[to.id] || 0;
+  if (!(heat > 0) || broodLeft(state, hive, to) > 0 || roomFull(state, hive, den, to) <= 0) return false;
+  if (!state.rng.chance(Math.min(H.refillMax, heat * chamberThreat(state, c.hiveId, to.id).mult * H.refillPerHeat))) return false;
+  setLeft(state, hive, to, Math.ceil(roomFull(state, hive, den, to) / 2));
+  say2(c, `The noise you made in ${roomThe(to)} drew the brood back into it.`, "danger", state.hour);
+  return true;
+}
+// The team falls back from a chamber (`from`) into one it has been in: its walk and the way it came from there (never
+// the chamber it fled), and a chance the chamber it falls into filled again (refillOnReturn).
+function fallBackTo(state, c, hive, den, to, from) {
+  stepTrail(c, to.id);
+  c.at = to.id;
+  const prev = c.trail.length > 1 ? c.trail[c.trail.length - 2] : null;
+  c.from = prev !== from ? prev : null;
+  refillOnReturn(state, c, hive, den, to);
+}
+// Out of the hive through the mouth the team stands in: the crawl ends.
+function outOf(state, p, c, den, room, text = "") {
+  const hive = crawlHive(state, c);
+  if (hive) { const rec = crawlRecOf(state, hive), used = rec.mouths || (rec.mouths = {}); (used[room.id] || (used[room.id] = { in: 0, out: 0 })).out++; }
+  return finishHiveCrawl(state, p, text, { side: mouthSide(den, room.id) });
+}
 
 // The team walks into a chamber: what waits there.
 function enterRoom(state, p, c, room, from) {
@@ -485,8 +715,7 @@ function enterRoom(state, p, c, room, from) {
   const den = denOf(state, hive);
   c.from = from;
   c.at = room.id;
-  const i = c.trail.indexOf(room.id);
-  if (i >= 0) c.trail.length = i + 1; else c.trail.push(room.id);
+  stepTrail(c, room.id);
   const fresh = !c.visited[room.id];
   c.visited[room.id] = true;
   markSeen(den, c, room.id);
@@ -500,9 +729,15 @@ function enterRoom(state, p, c, room, from) {
   }
   const n = broodLeft(state, hive, room);
   const K = ROOM_KINDS[room.kind];
-  const look = `${roomName(room)}: ${fresh ? K.text + " " : ""}The air is ${warmthText(warmthOf(den, room))}.`;
+  // The core's wall beside you with no door on this side (the grid): the beat through the flesh, and no way through.
+  const wall = den.grid && room.gd === 1 && !room.links.includes(den.core) ? " The beat comes through the wall right beside you, but there is no way through on this side." : "";
+  // An entrance: a mouth opens off it, a way out.
+  const gate = !isMouth(den, room.id) && mouthBy(den, room);
+  const out = gate ? ` Cold air from outside: the ${mouthSide(den, gate) || "hive's"} mouth opens off it, a way out.` : "";
+  const look = `${roomName(room)}: ${fresh ? K.text + " " : ""}The air is ${warmthText(warmthOf(den, room))}; ${soundText(soundOf(den, room))}.${wall}${out}`;
   if (n > 0 && !c.slipped[room.id]) {
-    const spotted = (c.warned && c.warned[room.id]) || (c.alert >= 50 && hash01(state.seed, "hcspot", c.hiveId, room.id, c.visit, state.hour) < (c.alert - 40) / 100); // warned: a listener they heard
+    const heat = roomHeat(state, c, room); // HCRAWL.THREAT: the chamber's activity × its heat
+    const spotted = (c.warned && c.warned[room.id]) || (heat >= 50 && hash01(state.seed, "hcspot", c.hiveId, room.id, c.visit, state.hour) < (heat - 40) / 100); // warned: a listener they heard
 
     c.enc = { kind: "brood", room: room.id, back: from, spotted };
     say2(c, `${look} ${n} of the brood${spotted ? " have seen you and turn" : " are here"}.`, spotted ? "danger" : "info", state.hour);
@@ -518,22 +753,48 @@ function passHours(state, p, hours) {
     if (!p.hiveCrawl) return true;
     if (!crawlHive(state, c)) { crawlGone(state, p); return true; } // the hive died meanwhile (an AI group's war party): the callers see no crawl
     c.alert = Math.max(0, c.alert - HCRAWL.ALERT.decay);
+    coolHeat(c, null, HCRAWL.HEAT.decay);
     converge(state, p, c);
   }
   return true;
 }
-const addAlert = (c, v) => { c.alert = clamp(c.alert + v, 0, 100); };
+// The guard back at the hive (it was away when the team came in, the chamber empty): its brood fills the chamber the
+// team stands in again, and they are in front of it (checked whenever the crawl is looked at,
+// hiveCrawlOf); else the team stood stuck in a chamber with brood and no answer to them.
+function broodBack(state, c) {
+  if (c.enc || state.combat) return;
+  const hive = crawlHive(state, c);
+  const room = hive && roomById(denOf(state, hive), c.at);
+  if (!room || room.kind === "core" || c.slipped[room.id]) return;
+  const n = broodLeft(state, hive, room);
+  if (n <= 0) return;
+  c.enc = { kind: "brood", room: room.id, back: c.from, spotted: false };
+  say2(c, `The brood comes back into ${roomThe(room)} around you: ${n} of them.`, "danger", state.hour);
+}
+// Noise: the hive's Alert, and the chamber it was made in (at) keeps its own heat (HCRAWL.HEAT).
+const addAlert = (c, v, at = c.at) => {
+  c.alert = clamp(c.alert + v, 0, 100);
+  if (v > 0 && at) { const h = c.heat || (c.heat = {}); h[at] = clamp((h[at] || 0) + v * (c.heatMult ?? 1), 0, 100); }
+};
+// A chamber's heat fades (at null: every chamber's).
+function coolHeat(c, at, v) {
+  const h = c.heat || {};
+  for (const k of at ? [at] : Object.keys(h)) if (h[k] != null) h[k] = Math.max(0, h[k] - v);
+}
 // From ALERT.converge the brood comes for the team (an hour's roll): a swarm into its chamber, cleared chambers on the
-// way back filling again; from ALERT.block the mouth packs up.
+// way back filling again; from ALERT.block every mouth packs up (the one the team stands in aside).
 function converge(state, p, c) {
   const A = HCRAWL.ALERT;
-  if (c.alert < A.converge || c.enc || state.combat) return;
+  if (c.enc || state.combat) return;
   const hive = crawlHive(state, c);
   if (!hive) return;
   const den = denOf(state, hive);
+  const here = roomById(den, c.at);
+  const heat = Math.min(100, here ? roomHeat(state, c, here) : c.alert); // HCRAWL.THREAT: the swarm comes by the heat in the team's chamber (at most as a hive at Alert 100)
+  if (c.alert < A.converge && heat < A.converge) return;
   const rng = state.rng;
   const over = (c.alert - A.converge) / (100 - A.converge);
-  if (rng.chance(A.refill * (0.5 + over))) {
+  if (c.alert >= A.converge && rng.chance(A.refill * (0.5 + over))) {
     const back = c.trail.slice(0, -1).map((id) => roomById(den, id)).filter((r) => r && broodLeft(state, hive, r) === 0 && roomFull(state, hive, den, r) > 0);
     if (back.length) {
       const r = rng.pick(back);
@@ -542,19 +803,22 @@ function converge(state, p, c) {
     }
   }
   if (c.alert >= A.block) {
-    const m = roomById(den, den.mouth);
-    if (broodLeft(state, hive, m) === 0 && roomFull(state, hive, den, m) > 0 && c.at !== den.mouth) { setLeft(state, hive, m, roomFull(state, hive, den, m)); say2(c, "The hive is roused: the brood has packed the mouth behind you.", "danger", state.hour); }
+    const packed = mouthsOf(den).map((id) => roomById(den, id)).filter((m) => m && m.id !== c.at && broodLeft(state, hive, m) === 0 && roomFull(state, hive, den, m) > 0);
+    for (const m of packed) setLeft(state, hive, m, roomFull(state, hive, den, m));
+    if (packed.length) say2(c, `The hive is roused: the brood has packed ${packed.length === mouthsOf(den).length || packed.length > 1 ? "its mouths" : roomThe(packed[0])} behind you.`, "danger", state.hour);
   }
-  if (rng.chance(A.swarm * over)) {
-    const room = roomById(den, c.at);
-    const n = clamp(Math.round(2 + room.layer * 0.5 + (c.alert - A.converge) / 10), 2, 12);
+  const overHere = clamp((heat - A.converge) / (100 - A.converge), 0, 1);
+  if (overHere > 0 && rng.chance(A.swarm * overHere)) {
+    const room = here;
+    const n = clamp(Math.round(2 + room.layer * 0.5 + (heat - A.converge) / 10), 2, 12);
     c.enc = { kind: "swarm", room: room.id, back: c.from, spotted: true, enemy: { kind: "zombies", count: n, power: roomPower(state, hive, den, room), types: broodTypes(state, hive, n, room.layer + 1), elite: false, name: "the brood converging on you" } };
     say2(c, `The hive is roused: ${n} of the brood pour into ${roomThe(room)} from the dark.`, "danger", state.hour);
   }
 }
 
-// The passages out of the team's chamber: { id, room (null: not been there), draft (as the team reads it), visited,
-// dist (the real one, for the tools) }.
+// The passages out of the team's chamber: { id, room (null: not been there; a mouth is always known), draft (as the
+// team reads it), sound (the beat louder, fainter or the same that way), dir (north, east, south, west on the grid),
+// visited, back, core, heard, mouth (it leads to a mouth: a way out), side (the mouth's: "north") }.
 export function exitsOf(state, p) {
   const c = hiveCrawlOf(state, p);
   if (!c) return [];
@@ -563,7 +827,9 @@ export function exitsOf(state, p) {
   const here = roomById(den, c.at);
   return here.links.map((id) => {
     const r = roomById(den, id);
-    return { id, room: c.visited[id] ? r : null, kind: c.visited[id] ? r.kind : null, draft: draftOf(state, p, c, den, here, r), visited: !!c.visited[id], back: id === c.from, core: id === den.core && !!c.visited[id], heard: (c.heard && c.heard[id]) || null };
+    const ds = soundOf(den, r) - soundOf(den, here); // the beat that way: louder, fainter or the same (heard true)
+    const m = isMouth(den, id); // the mouths are known from outside: the way out
+    return { id, room: c.visited[id] || m ? r : null, kind: c.visited[id] || m ? r.kind : null, draft: draftOf(state, p, c, den, here, r), sound: ds > 0 ? "louder" : ds < 0 ? "fainter" : "same", dir: passageDir(den, here, r), visited: !!c.visited[id], back: id === c.from, core: id === den.core && !!c.visited[id], heard: (c.heard && c.heard[id]) || null, mouth: m, side: m ? mouthSide(den, id) : "" };
   });
 }
 // The draft from a passage as the team reads it: warmer, colder or level; misread now and then by a team without a
@@ -836,23 +1102,28 @@ export function groupTakeHoard(state, f, hive) {
   return { items, rounds };
 }
 
-// Move to a chamber next to this one (an hour).
+// Move to a chamber next to this one (an hour): deeper, round, or back toward a mouth (into a mouth: then Leave by
+// this mouth). A chamber the team has been in: one it cleared may have filled again with the noise it made there
+// (refillOnReturn), and the brood it crept past is in front of it again.
 export function moveTo(state, p, id) {
   const c = hiveCrawlOf(state, p);
   if (!c) return "The team is not in a hive.";
   if (c.enc) return "Deal with what is in front of you first.";
-  if (c.leaving) return "The team is on its way out.";
   const hive = crawlHive(state, c);
   const den = denOf(state, hive);
   const here = roomById(den, c.at);
   const to = roomById(den, id);
   if (!to || !here.links.includes(id)) return "No passage leads there.";
   if (!canMoveOn(state, c) && id !== c.from) return "The brood is still in this chamber: fight it, creep past, or go back the way you came.";
-  addAlert(c, HCRAWL.ALERT.move + (lightsOn(state, p, c) ? HCRAWL.LIGHT.move : 0)); // lights: the brood sees them coming
+  // Into a chamber it has not been in: noise (lights: the brood sees them coming; the noise is the chamber walked
+  // into's). Back through ones it has (2026-10-13): quiet, as the walk out always was before leaving became a walk (a
+  // noisy walk back roused the deep hives on the way out: tools/crawlbalance.js, a rifle squad at tier 4 wiped 2 in 8).
+  if (!c.visited[to.id]) addAlert(c, HCRAWL.ALERT.move + (lightsOn(state, p, c) ? HCRAWL.LIGHT.move : 0), to.id);
   if (!passHours(state, p, HCRAWL.MOVE_HOURS)) return goneText(state, p);
   if (!p.hiveCrawl) return "";
   if (c.enc) return ""; // the brood came for you on the way (converge)
   if (to.kind === "pool") wormSearch(state, p, c.tile, HCRAWL.POOL_WORM); // worm.js: wading through it
+  if (c.visited[to.id]) { refillOnReturn(state, c, hive, den, to); delete c.slipped[to.id]; }
   enterRoom(state, p, c, to, here.id);
   return "";
 }
@@ -902,15 +1173,16 @@ export function encounterOptions(state, p) {
     out.push({ id: "numbers", label: "Fight by the numbers", tip: `Quick: about ${Math.round(odds.win * 100)}% to win (Alert +${HCRAWL.ALERT.fight}).`, odds: odds.win });
     if (e.kind !== "turned") { const s = sneakOdds(state, p, c, room, e); out.push({ id: "sneak", label: e.kind === "swarm" ? "Hide from them" : "Creep past", tip: `Stealth ${bestSkill(state, p, "stealth")} + d10 against ${s.dc}: about ${Math.round(s.p * 100)}%. An hour. Fail and they fall on you first (Alert +${HCRAWL.ALERT.sneakFail}).${e.kind === "brood" ? " Past them you can go on, but they stay: on the way back you meet them again." : ""}`, odds: s.p }); }
   }
-  if (e.back || e.kind === "core") out.push({ id: "back", label: "Fall back", tip: `Back to the chamber you came from (an hour): each of you about ${Math.round(backHurt(room) * 100)}% to be hurt getting away.`, odds: 1 });
-  else out.push({ id: "out", label: "Get out of the hive", tip: `Back out through the mouth: each of you about ${Math.round(backHurt(room) * 100)}% to be hurt getting away.`, odds: 1 });
+  // Fall back: one chamber back, the way you came. Get out: only at a mouth (leaving is a walk to one).
+  if (backOf(c, den, room, e.back)) out.push({ id: "back", label: "Fall back", tip: `Back to the chamber you came from (an hour): each of you about ${Math.round(backHurt(room) * 100)}% to be hurt getting away.`, odds: 1 });
+  if (isMouth(den, room.id)) out.push({ id: "out", label: "Get out of the hive", tip: `Back out through ${roomThe(room)}: each of you about ${Math.round(backHurt(room) * 100)}% to be hurt getting away.`, odds: 1 });
   return out;
 }
 const backHurt = (room) => Math.min(0.9, HCRAWL.BACK.hurt + HCRAWL.BACK.perLayer * (room ? room.layer : 0));
 export function sneakOdds(state, p, c, room, e = c.enc) {
   const S = HCRAWL.SNEAK;
   const n = partyMembers(state, p).length;
-  const dc = Math.ceil(S.dc + S.perLayer * room.layer + c.alert * S.perAlert + Math.max(0, n - 3) * S.big + (e && e.spotted ? S.spotted : 0) + (lightsOn(state, p, c) ? HCRAWL.LIGHT.sneak : 0));
+  const dc = Math.ceil(S.dc + S.perLayer * room.layer + roomHeat(state, c, room) * S.perAlert + Math.max(0, n - 3) * S.big + (e && e.spotted ? S.spotted : 0) + (lightsOn(state, p, c) ? HCRAWL.LIGHT.sneak : 0));
   return { dc, p: clamp((bestSkill(state, p, "stealth") + 10 - dc + 1) / 10, 0, 1) };
 }
 // The answer. opts.map: a fight on the battle map (the browser), else by the numbers.
@@ -949,6 +1221,8 @@ export function resolveHiveEnc(state, p, choice, opts = {}) {
     return "They saw you.";
   }
   if (choice === "back" || choice === "out") {
+    const to = choice === "back" ? backOf(c, den, room, e.back) : null;
+    if (choice === "out" ? !isMouth(den, room.id) : !to) return choice === "out" ? "No way out from here: the mouths are the way out." : "Nowhere to fall back to.";
     const hit = [];
     for (const s of partyMembers(state, p)) {
       if (!rng.chance(backHurt(room))) continue;
@@ -961,13 +1235,10 @@ export function resolveHiveEnc(state, p, choice, opts = {}) {
     c.enc = null;
     if (!passHours(state, p, HCRAWL.BACK_HOURS)) return goneText(state, p);
     if (!p.hiveCrawl) return "";
-    if (choice === "out" || !e.back) return finishHiveCrawl(state, p, "The team fell back out of the hive.");
-    const to = roomById(den, e.back);
-    c.trail = c.trail.filter((id) => id !== room.id);
-    c.from = c.trail.length > 1 ? c.trail[c.trail.length - 2] : null;
-    c.at = to.id;
-    if (c.trail[c.trail.length - 1] !== to.id) c.trail.push(to.id);
-    if (broodLeft(state, hive, to) > 0 && !c.slipped[to.id]) enterRoom(state, p, c, to, c.from); // it filled again behind you
+    if (choice === "out") return outOf(state, p, c, den, room, "The team fell back out of the hive.");
+    const back = roomById(den, to);
+    fallBackTo(state, c, hive, den, back, room.id);
+    if (broodLeft(state, hive, back) > 0 && !c.slipped[back.id]) enterRoom(state, p, c, back, c.from); // it filled again behind you
     return "You fell back.";
   }
   return "Unknown choice.";
@@ -1045,14 +1316,13 @@ registerCombatHandler("hiveChamber", (state, result, setup, battle) => {
   if (!passHours(state, p, HCRAWL.FIGHT_HOURS)) { goneText(state, p); return; }
   if (!p.hiveCrawl) return;
   if (won) return;
-  // Broken off or beaten back: to the chamber the team came from, or out of the hive from the mouth.
-  if (!e.back) { finishHiveCrawl(state, p, "Beaten back, the team stumbled out of the hive."); return; }
+  // Broken off or beaten back: to the chamber the team came from, or out of the hive at a mouth.
   const den = denOf(state, hive);
-  c.trail = c.trail.filter((id) => id !== e.room);
-  c.at = e.back;
-  if (c.trail[c.trail.length - 1] !== e.back) c.trail.push(e.back);
-  c.from = c.trail.length > 1 ? c.trail[c.trail.length - 2] : null;
-  say2(c, `You fall back to ${roomThe(roomById(den, e.back))}.`, "danger", state.hour);
+  const room = roomById(den, e.room) || roomById(den, c.at);
+  const back = room && backOf(c, den, room, e.back);
+  if (!back) { if (room && isMouth(den, room.id)) outOf(state, p, c, den, room, "Beaten back, the team stumbled out of the hive."); return; } // else it stands its ground where it is
+  fallBackTo(state, c, hive, den, roomById(den, back), room.id);
+  say2(c, `You fall back to ${roomThe(roomById(den, back))}.`, "danger", state.hour);
 });
 
 // ---------- in a chamber ----------
@@ -1085,6 +1355,8 @@ export function roomActions(state, p) {
   out.push({ id: "treat", label: `Tend the wounded (${HCRAWL.TREAT_HOURS} h)`, disabled: !tend.length,
     tip: tend.length ? `Field treatment with the team's meds for ${tend.map(first).join(", ")} (each once a day: medical.js, as on the road).` : "Nobody the team can treat here now (not hurt, treated today, or no meds)." });
   out.push({ id: "lie", label: `Lie still (${HCRAWL.LIE_HOURS} h)`, disabled: false, tip: `Wait in the dark: the Alert falls by ${HCRAWL.ALERT.lie + HCRAWL.ALERT.decay * HCRAWL.LIE_HOURS}. ${c.alert >= 40 ? "Something may still find you." : ""}` });
+  // At a mouth: out of the hive (leaving is a walk to any of the four; nothing walks the team out on its own).
+  if (isMouth(den, room.id)) out.push({ id: "out", label: "Leave by this mouth", disabled: !canMoveOn(state, c), tip: canMoveOn(state, c) ? `Step out of ${roomThe(room)} into the daylight: the crawl ends here.` : "The brood is still in the mouth." });
   return out;
 }
 export function roomAct(state, p, id) {
@@ -1097,6 +1369,7 @@ export function roomAct(state, p, id) {
   if (id === "search") return searchRoom(state, p, c);
   if (id === "lie") return lieStill(state, p, c);
   if (id === "treat") return tendWounded(state, p, c);
+  if (id === "out") return outOf(state, p, c, denOf(state, crawlHive(state, c)), crawlRoom(state, c));
   return "";
 }
 function burnRoom(state, p, c) {
@@ -1180,7 +1453,10 @@ function tendWounded(state, p, c) {
 }
 function lieStill(state, p, c) {
   addAlert(c, -HCRAWL.ALERT.lie);
-  const risk = c.alert >= 40 ? 0.05 + c.alert / 500 : 0;
+  coolHeat(c, c.at, HCRAWL.ALERT.lie); // the chamber settles too
+  const here = crawlRoom(state, c);
+  const heat = here ? roomHeat(state, c, here) : c.alert; // HCRAWL.THREAT: a patrol by the heat in the chamber
+  const risk = heat >= 40 ? Math.min(0.5, 0.05 + heat / 500) : 0;
   if (!passHours(state, p, HCRAWL.LIE_HOURS)) return goneText(state, p);
   if (!p.hiveCrawl || c.enc) return "";
   if (state.rng.chance(risk)) {
@@ -1214,41 +1490,9 @@ function give(state, p, c, sup = {}, gear = []) {
   return `${got.length ? got.join(", ") : "nothing useful"}${left.length ? ` (no room for ${left.join(", ")})` : ""}`;
 }
 
-// ---------- leaving ----------
-// Back out the way the team came, a chamber an hour; a chamber that filled again (or one it crept past) is in the way.
-export function leaveHive(state, p) {
-  const c = hiveCrawlOf(state, p);
-  if (!c) return "The team is not in a hive.";
-  if (c.enc) return "Deal with what is in front of you first.";
-  c.leaving = true;
-  say2(c, "You turn back for the mouth.", "info", state.hour);
-  return stepOut(state, p);
-}
-export function stepOut(state, p) {
-  const c = hiveCrawlOf(state, p);
-  if (!c || c.enc) return "";
-  const hive = crawlHive(state, c);
-  const den = denOf(state, hive);
-  for (let guard = 0; guard < 40 && p.hiveCrawl && !c.enc; guard++) {
-    const here = roomById(den, c.at);
-    if (here.id === den.mouth && (broodLeft(state, hive, here) === 0 || c.slipped[here.id] || c.trail.length <= 1)) return finishHiveCrawl(state, p, "");
-    const back = c.trail.length > 1 ? c.trail[c.trail.length - 2] : den.mouth;
-    const to = roomById(den, back);
-    if (!passHours(state, p, HCRAWL.BACK_HOURS)) return goneText(state, p);
-    if (!p.hiveCrawl || c.enc) return "";
-    c.trail.pop();
-    c.from = here.id; // fall back = deeper again
-    c.at = to.id;
-    if (broodLeft(state, hive, to) > 0) {
-      c.enc = { kind: "brood", room: to.id, back: here.id, spotted: c.alert >= 50 };
-      say2(c, `On the way out: ${roomThe(to)} is full of the brood again (${broodLeft(state, hive, to)}).`, "danger", state.hour);
-      return "";
-    }
-    if (to.id === den.mouth) return finishHiveCrawl(state, p, "");
-  }
-  return "";
-}
-// opts.orders false: the team's orders wait (crawlGone, while its battle is on).
+// ---------- the crawl's end ----------
+// opts.orders false: the team's orders wait (crawlGone, while its battle is on); opts.side: the mouth it came out by.
+/** @param {any} state @param {any} p @param {string} [extra] @param {{ orders?: boolean, side?: string }} [opts] */
 export function finishHiveCrawl(state, p, extra = "", opts = {}) {
   const c = p.hiveCrawl;
   if (!c) return "";
@@ -1257,7 +1501,7 @@ export function finishHiveCrawl(state, p, extra = "", opts = {}) {
   delete p.hiveCrawl;
   const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k}`), ...c.tally.gear];
   const den = hive ? denOf(state, hive) : null;
-  const text = `${extra ? extra + " " : ""}Out of ${c.name} after ${state.hour - c.started} h, ${c.deepest ? `${c.deepest} chamber${c.deepest === 1 ? "" : "s"} deep${den ? ` of ${den.depth}` : ""}` : "no deeper than the mouth"}, ${c.kills} of the brood killed${got.length ? `, with ${got.join(", ")}` : ""}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}`;
+  const text = `${extra ? extra + " " : ""}Out of ${c.name}${opts.side ? ` by its ${opts.side} mouth` : ""} after ${state.hour - c.started} h, ${c.deepest ? `${c.deepest} chamber${c.deepest === 1 ? "" : "s"} deep${den ? ` of ${den.depth}` : ""}` : "no deeper than the mouth"}, ${c.kills} of the brood killed${got.length ? `, with ${got.join(", ")}` : ""}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}`;
   log(state, `${teamName(state, p)}: ${text}`, c.lost.length ? "danger" : "info");
   if (state.parties.includes(p)) { p.seen.set(c.tile, snapshot(state, c.tile)); if (opts.orders !== false) awaitOrders(state, p, text); }
   return text;
@@ -1447,8 +1691,9 @@ registerCombatHandler("hiveAssault", (state, result, setup, battle) => {
     addAlert(c, HCRAWL.ALERT.fight);
     say2(c, text, "danger", state.hour);
     const den = hive ? denOf(state, hive) : null;
-    const back = c.from || (den ? shortestPath(den).slice(-2)[0] : null);
-    if (back && den) { c.trail = c.trail.filter((id) => id !== den.core); c.at = back; if (c.trail[c.trail.length - 1] !== back) c.trail.push(back); c.from = c.trail.length > 1 ? c.trail[c.trail.length - 2] : null; }
+    const core = den && roomById(den, den.core);
+    const back = core && (backOf(c, den, core, c.from) || core.links[0]);
+    if (back) { stepTrail(c, back); c.at = back; const prev = c.trail.length > 1 ? c.trail[c.trail.length - 2] : null; c.from = prev !== den.core ? prev : null; }
     log(state, `${text} (${tileLabel(state, partyTile(p))})`, "danger");
     return;
   }
@@ -1555,9 +1800,10 @@ registerBattleLayout("hivecore", (b, ctx) => {
   const hm = bossUnit(b, "hivemind");
   const hp = (setup.enemy && setup.enemy.hp) || HIVEMIND.hp;
   hm.hp = hm.maxHp = hp;
-  const taken = b.units.find((u) => u.x === hx && u.y === cy);
-  if (taken) { if (!placeUnitRight(b, ctx, taken, Math.max(0, hx - 10), hx - 2)) taken.x = Math.max(0, hx - 6); }
-  hm.x = hx; hm.y = cy;
+  // Its 2 × 2 footprint round the pocket's cell: the first corner whose four cells stand; whoever stood there moves off.
+  const corner = [[hx - 1, cy - 1], [hx - 1, cy], [hx, cy - 1], [hx, cy]].find(([x, y]) => unitCells(hm, x, y).every(([cx2, cy2]) => cx2 >= 0 && cy2 >= 0 && cx2 < ctx.W && cy2 < ctx.H && ctx.standable(cx2, cy2))) || [hx, cy];
+  for (const taken of b.units.filter((u) => unitCells(hm, corner[0], corner[1]).some(([x, y]) => u.x === x && u.y === y))) { if (!placeUnitRight(b, ctx, taken, Math.max(0, hx - 10), hx - 2)) taken.x = Math.max(0, hx - 6); }
+  hm.x = corner[0]; hm.y = corner[1];
   b.units.push(hm);
   b.hivemind = { id: hm.id, tier: (setup.context && setup.context.tier) || 0, spawned: 0, turns: 0 };
   if (ctx.state) { // what your side brought for its weak spots (the AI's retreat counts what is still in hand: fightOutlook)
@@ -1608,11 +1854,13 @@ function phaseTwo(b, u, st) {
   }
   say(b, `${fell.length} pillar${fell.length === 1 ? "" : "s"} of flesh and bone come down${hurt.length ? `: ${hurt.join(", ")} caught under the falling flesh` : ""}.`, "danger");
 }
+// The centre cell of a boss's 2 × 2 body (its one cell when it has one): what its own reach and the throws at it go by.
+const heart = (u) => [u.x + (u.size > 1 ? 1 : 0), u.y + (u.size > 1 ? 1 : 0)];
 // The Hivemind's weak spots at the start of its turn (HIVEMIND.WEAK): what landed near it since its last turn
 // (throwables.js b.landed) and the flames around it. Returns { burning, stunned } for this turn.
 function weakSpots(b, u, st) {
   const W = HIVEMIND.WEAK, rng = b.rng;
-  const cheb = (x, y) => Math.max(Math.abs(x - u.x), Math.abs(y - u.y));
+  const cheb = (x, y) => { const [cx, cy] = nearCell(u, x, y); return Math.max(Math.abs(x - cx), Math.abs(y - cy)); }; // from the nearest cell of its 2 × 2 body: what lands on it or burns next to it
   for (const L of b.landed || []) {
     if (L.side === "enemy") continue;
     if (L.fx === "fire" && cheb(L.x, L.y) <= W.near + 1) st.burnLeft = W.burnTurns;
@@ -1650,9 +1898,11 @@ function weakSpots(b, u, st) {
 function hivemindThrowAt(b, u, t, have) {
   if (!have || u.dead || !active(t)) return null;
   const W = HIVEMIND.WEAK, st = b.hivemind || {};
-  const d = Math.hypot(t.x - u.x, t.y - u.y);
-  const clear = (r) => !b.units.some((o) => o.side === t.side && active(o) && Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y)) <= r);
-  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => Math.max(Math.abs(c.x - u.x), Math.abs(c.y - u.y)) <= W.near);
+  const [hx0, hy0] = heart(u), chebU = (x, y) => Math.max(Math.abs(x - hx0), Math.abs(y - hy0)); // from its heart (the centre cell of its 2 × 2 body): where to stand and throw, as for its one cell before
+  const touch = (x, y) => { const [cx, cy] = nearCell(u, x, y); return Math.max(Math.abs(x - cx), Math.abs(y - cy)); }; // from the edge of it: the flames on it
+  const [nx0, ny0] = nearCell(u, t.x, t.y), d = Math.hypot(t.x - nx0, t.y - ny0); // to the nearest part of its body
+  const clear = (r) => !b.units.some((o) => o.side === t.side && active(o) && chebU(o.x, o.y) <= r);
+  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => touch(c.x, c.y) <= W.near);
   const want = [];
   if (have.molotov && !burning && clear(W.safe)) want.push("molotov");
   if (!((st.stunLeft || 0) > 0)) {
@@ -1670,8 +1920,8 @@ function hivemindThrowAt(b, u, t, have) {
     for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
       const c = r.dist[y * b.w + x];
       if (!(c < Infinity)) continue;
-      const dd = Math.hypot(x - u.x, y - u.y), ch = Math.max(Math.abs(x - u.x), Math.abs(y - u.y));
-      if (dd > range || ch <= pulse || !los(b, x, y, u.x, u.y)) continue;
+      const [nx, ny] = nearCell(u, x, y), dd = Math.hypot(x - nx, y - ny), ch = chebU(x, y);
+      if (dd > range || ch <= pulse || !los(b, x, y, nx, ny)) continue;
       if (!best || c < best.c) best = { x, y, c };
     }
     if (!best) return null;
@@ -1679,15 +1929,16 @@ function hivemindThrowAt(b, u, t, have) {
     moveAlong(b, t, pathTo(r, best.x, best.y));
     if (!active(t) || t.ap < 1) return null;
   }
-  if (throwBlind(b, t, u.x, u.y) === null) return null;
-  return { item: key, x: u.x, y: u.y };
+  const [lx, ly] = nearCell(u, t.x, t.y); // onto the nearest part of its body
+  if (throwBlind(b, t, lx, ly) === null) return null;
+  return { item: key, x: lx, y: ly };
 }
 // The Hivemind's turn (combat.js registerBossAI): the pulse, a lash, the brood out of the walls.
 // The battle AI's outlook on it (combat.js fightOutlook): burning or reeling it counts for less, and the fire and bangs
 // your side still has for it count for you (HIVEMIND.WEAK outlook).
 function hivemindOutlook(b, u) {
   const W = HIVEMIND.WEAK, st = b.hivemind || {};
-  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => Math.max(Math.abs(c.x - u.x), Math.abs(c.y - u.y)) <= W.near);
+  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => { const [cx, cy] = nearCell(u, c.x, c.y); return Math.max(Math.abs(c.x - cx), Math.abs(c.y - cy)) <= W.near; }); // the flames next to its body
   const reeling = (st.stunLeft || 0) > 0;
   const left = Math.max(0, Math.min(4, (st.prep || 0) - (st.used || 0)));
   return { life: (burning ? W.burnLife : 1) * (reeling ? W.stunLife : 1), fire: reeling ? 0 : burning ? W.burnFire : 1, ours: 1 + W.prepEdge * left };
@@ -1705,7 +1956,7 @@ function hivemindOnLand(b, u, L) {
 function panicBrood(b, u, st, at = null) {
   const W = HIVEMIND.WEAK;
   const cheb = (z, x, y) => Math.max(Math.abs(z.x - x), Math.abs(z.y - y));
-  const near = (z) => (at ? cheb(z, at.x, at.y) <= W.panic + 1 : cheb(z, u.x, u.y) <= W.panicNear) || (b.fires || []).some((c) => cheb(z, c.x, c.y) <= W.panic);
+  const near = (z) => (at ? cheb(z, at.x, at.y) <= W.panic + 1 : cheb(z, ...heart(u)) <= W.panicNear) || (b.fires || []).some((c) => cheb(z, c.x, c.y) <= W.panic);
   const shy = b.units.filter((z) => z.called && z.side === "enemy" && active(z) && !z.reel && near(z));
   for (const z of shy) z.reel = { next: nextTurnOf(b, z), why: "the flames around the Hivemind" };
   if (shy.length) { st.panicked = (st.panicked || 0) + shy.length; say(b, `${shy.length} of the brood it called shy away from the flames.`, "good"); }
@@ -1715,7 +1966,7 @@ registerBossAI("broodmother", {
   onLand(b, u, L) {
     const W = HIVEMIND.WEAK;
     if (L.side !== "player" || !active(u)) return;
-    const d = Math.max(Math.abs(L.x - u.x), Math.abs(L.y - u.y));
+    const [cx, cy] = nearCell(u, L.x, L.y), d = Math.max(Math.abs(L.x - cx), Math.abs(L.y - cy)); // to the nearest cell of her 2 × 2 body
     const ap = L.fx === "flash" && d <= W.flash ? W.dazeFlash : (L.fx === "frag" || L.fx === "blast") && d <= W.blast ? W.dazeBlast : 0;
     if (!ap) return;
     const next = nextTurnOf(b, u);
@@ -1737,7 +1988,8 @@ registerBossAI("hivemind", {
     if (u.dead) return;
     if (M.P2.on && !st.phase2 && u.hp < u.maxHp * M.P2.at) phaseTwo(b, u, st);
     const P = st.phase2 ? M.P2 : M;
-    const cheb = (o) => Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y));
+    const [hx0, hy0] = heart(u), cheb = (o) => Math.max(Math.abs(o.x - hx0), Math.abs(o.y - hy0)); // the pulse from its heart (the centre cell of its 2 × 2 body)
+    const touch = (o) => { const [cx, cy] = nearCell(u, o.x, o.y); return Math.max(Math.abs(o.x - cx), Math.abs(o.y - cy)); }; // a lash from the edge of it
     const foes = b.units.filter((o) => o.side === "player" && active(o));
     const near = weak.stunned ? [] : foes.filter((o) => cheb(o) <= P.pulse); // reeling from a bang: no pulse, no lash
     if (near.length) {
@@ -1748,7 +2000,7 @@ registerBossAI("hivemind", {
         if (active(t) && rng.chance(P.stun) && !(t.stun && !t.stun.applied && t.stun.next >= nextTurnOf(b, t))) t.stun = { aim: 15, ap: 1, next: nextTurnOf(b, t), dazed: false };
       }
     }
-    const lash = weak.stunned ? [] : foes.filter((o) => active(o) && cheb(o) <= 1);
+    const lash = weak.stunned ? [] : foes.filter((o) => active(o) && touch(o) <= 1);
     if (lash.length) {
       const t = rng.pick(lash);
       const eff = Math.round(damage(b, t, rng.int(M.lash[0], M.lash[1]), u, false, { how: "melee", crit: false }));
@@ -1759,10 +2011,10 @@ registerBossAI("hivemind", {
     const due = st.phase2 ? (st.turns - st.phase2) % M.P2.spawnEvery === 0 : st.turns % M.spawnEvery === 1;
     if (due && st.spawned < cap && !weak.burning && !weak.stunned) { // burning or reeling: the walls give up nothing
       const cells = [];
-      for (let y = u.y - 6; y <= u.y + 6; y++) for (let x = u.x - 8; x <= u.x + 1; x++) {
+      for (let y = hy0 - 6; y <= hy0 + 6; y++) for (let x = hx0 - 8; x <= hx0 + 1; x++) { // round its heart (the old one cell), as before its 2 × 2 body
         if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
         const c = b.cells[y * b.w + x];
-        if (c.k !== "open" || !b.reach[y * b.w + x] || b.units.some((o) => o.x === x && o.y === y && !o.dead && !o.left)) continue;
+        if (c.k !== "open" || !b.reach[y * b.w + x] || b.units.some((o) => coversCell(o, x, y) && !o.dead && !o.left)) continue;
         let wall = false;
         for (let dy = -1; dy <= 1 && !wall; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < b.w && yy < b.h && b.cells[yy * b.w + xx].k === "hivewall") { wall = true; break; } }
         if (wall) cells.push([x, y]);
@@ -1795,6 +2047,8 @@ registerBossAI("hivemind", {
 // should win, creep past what it can, burn eggs when it has the fuel or a Molotov, search bone pits, lie still when the
 // hive is roused, and turn back when the team is badly hurt or the core is beyond it (it comes back on a later trip:
 // the chambers it cleared stay clear for a while). The core: played out on the map headless, as the old storm was.
+// Turned back (c.headOut, 2026-10-13: leaving is a walk), it makes for the nearest, safest mouth a chamber a step
+// (wayOut) and leaves by it.
 export function hiveCrawlAutoStep(state, p) {
   const c = hiveCrawlOf(state, p);
   if (!c) return;
@@ -1809,49 +2063,92 @@ export function hiveCrawlAutoStep(state, p) {
     if (c.enc.kind === "core") {
       const ok = fit >= Math.min(A.coreFit, members.length) && fit === members.length && get("numbers").odds >= A.coreOdds; // only the whole team fit, at good odds
       resolveHiveEnc(state, p, ok ? "fight" : "back", { map: false });
-      if (!ok && p.hiveCrawl && !p.hiveCrawl.enc) { p.hiveCrawl.leaving = true; say2(p.hiveCrawl, "The core is too much for the team as it is: it turns back, to come again.", "danger", state.hour); }
+      if (!ok && p.hiveCrawl && !p.hiveCrawl.enc) { p.hiveCrawl.headOut = true; say2(p.hiveCrawl, "The core is too much for the team as it is: it turns back, to come again.", "danger", state.hour); }
       return;
     }
-    const num = get("numbers"), sneak = get("sneak");
-    const pick = num && num.odds >= A.sureOdds ? "numbers" : sneak && sneak.odds >= A.sneakOdds && !c.enc.spotted && !c.leaving ? "sneak" : num && num.odds >= A.fightOdds ? "numbers" : get("back") ? "back" : "out";
+    const num = get("numbers"), sneak = get("sneak"), out = get("out");
+    // Too many hurt to fight again (a swarm on the heels of a fight in a hot chamber: HCRAWL.THREAT): fall back and out.
+    const spent = hurtBad >= 2 || fit < Math.max(2, Math.ceil(members.length / 2));
+    // At a mouth on the way out (or spent): out past them.
+    if (out && (c.headOut || spent)) { resolveHiveEnc(state, p, "out", { map: false }); return; }
+    // On the way out, falling back means away from the mouth and the same brood in the way (a loop that killed a hurt
+    // team one by one, the round grid's young-hive runs, seed 165): it creeps past or fights its way on when the odds
+    // are fair; fallen back, its way out goes round them (wayOut).
+    const outFight = c.headOut && num && num.odds >= A.fightOdds;
+    const retreat = get("back") ? "back" : out ? "out" : "numbers";
+    const creep = sneak && sneak.odds >= A.sneakOdds && !c.enc.spotted;
+    const pick = spent && !outFight ? retreat : spent ? "numbers" : num && num.odds >= A.sureOdds ? "numbers" : creep ? "sneak" : num && num.odds >= A.fightOdds ? "numbers" : retreat;
     resolveHiveEnc(state, p, pick, { map: false });
-    if (pick !== "numbers" && pick !== "sneak") { const cc = p.hiveCrawl; if (cc && !cc.enc) cc.leaving = true; }
+    if (pick !== "numbers" && pick !== "sneak") { const cc = p.hiveCrawl; if (cc && !cc.enc) cc.headOut = true; }
     return;
   }
-  if (c.leaving) { stepOut(state, p); return; }
-  const acts = roomActions(state, p);
-  if (members.some((s) => s.health < A.treat) && acts.some((a) => a.id === "treat" && !a.disabled)) { roomAct(state, p, "treat"); return; }
-  if (hurtBad >= 2 || fit < Math.max(2, Math.ceil(members.length / 2))) { say2(c, "Too many hurt: the team turns back.", "danger", state.hour); leaveHive(state, p); return; }
-  if (c.alert >= A.lie) { roomAct(state, p, "lie"); return; }
-  const burn = acts.find((a) => a.id === "burn" && !a.disabled);
-  if (burn && c.alert < 50) { roomAct(state, p, "burn"); return; }
-  const search = acts.find((a) => a.id === "search" && !a.disabled);
   const hive = crawlHive(state, c);
   const den = denOf(state, hive);
+  if (c.headOut) { autoOut(state, p, c, den); return; }
+  const acts = roomActions(state, p);
+  if (members.some((s) => s.health < A.treat) && acts.some((a) => a.id === "treat" && !a.disabled)) { roomAct(state, p, "treat"); return; }
+  if (hurtBad >= 2 || fit < Math.max(2, Math.ceil(members.length / 2))) { turnBack(state, p, c, den, "Too many hurt: the team turns back."); return; }
+  const heat = roomHeat(state, c, crawlRoom(state, c)); // HCRAWL.THREAT: the chamber's activity × its heat
+  if (heat >= A.lie) { roomAct(state, p, "lie"); return; }
+  const burn = acts.find((a) => a.id === "burn" && !a.disabled);
+  if (burn && heat < 50) { roomAct(state, p, "burn"); return; }
+  const search = acts.find((a) => a.id === "search" && !a.disabled);
   if (search && crawlRoom(state, c).kind === "bones") { roomAct(state, p, "search"); return; }
-  if (!canMoveOn(state, c)) { leaveHive(state, p); return; }
-  // Two or more ways on that do not read colder and that it knows nothing of: a good listener listens at the first
-  // (an hour), else a flare goes down it while the hive is quiet (the window's Listen and Flare).
-  const unknown = exitsOf(state, p).filter((x) => !x.visited && !x.heard && x.draft !== "colder").sort((a, b) => a.id.localeCompare(b.id));
-  if (unknown.length >= 2 && c.alert < A.lie - 10) {
+  if (!canMoveOn(state, c)) { turnBack(state, p, c, den, ""); return; }
+  // Two or more ways on that do not read colder (or where the beat is louder) and that it knows nothing of: a good
+  // listener listens at the first (an hour), else a flare goes down it while the hive is quiet (Listen and Flare).
+  const unknown = exitsOf(state, p).filter((x) => !x.visited && !x.mouth && !x.heard && (x.draft !== "colder" || x.sound === "louder")).sort((a, b) => a.id.localeCompare(b.id));
+  if (unknown.length >= 2 && heat < A.lie - 10) {
     if (listener(state, p).v >= HCRAWL.LISTEN.auto) { listenAt(state, p, unknown[0].id); return; }
-    if (c.alert < 40 && flaresOf(state, p).length) { throwFlare(state, p, unknown[0].id); return; }
+    if (heat < 40 && flaresOf(state, p).length) { throwFlare(state, p, unknown[0].id); return; }
   }
   const next = autoNext(state, p, c, den);
-  if (!next) { leaveHive(state, p); return; }
+  if (!next) { turnBack(state, p, c, den, "Nowhere left to look: the team turns back."); return; }
   moveTo(state, p, next);
 }
-// The next chamber on the autopilot's way: a passage with a warmer draft it has not taken, else any it has not taken
-// (not back), else the first step toward the nearest chamber it knows of and has not been in.
+// The autopilot turns back: it makes for a mouth from now on, starting this hour.
+function turnBack(state, p, c, den, text) {
+  c.headOut = true;
+  if (text) say2(c, text, "danger", state.hour);
+  autoOut(state, p, c, den);
+}
+// A step on the autopilot's way out: out by the mouth it stands in, else a chamber along wayOut (one it can walk into
+// from here: with the brood still in its chamber, only back the way it came).
+function autoOut(state, p, c, den) {
+  const here = roomById(den, c.at);
+  if (isMouth(den, here.id) && canMoveOn(state, c)) { roomAct(state, p, "out"); return; }
+  if (!canMoveOn(state, c)) { const b = backOf(c, den, here, c.from); if (b) moveTo(state, p, b); else if (isMouth(den, here.id)) outOf(state, p, c, den, here, ""); return; }
+  const way = wayOut(state, c);
+  const next = way && way.length ? way[0] : backOf(c, den, here, null);
+  if (next) moveTo(state, p, next);
+}
+// The way out (the autopilot's, and the window's hint): the cheapest walk to any mouth over the chambers the team
+// knows (been in, or seen from one), never through the core. A step costs 1, a chamber it has not been in +3, one it
+// has been in with the brood in it now (not crept past: filled again, or never cleared) +6 and its heat / 20.
+// [ids from the next chamber to the mouth], or null.
+export function wayOut(state, c) {
+  const hive = crawlHive(state, c);
+  if (!hive) return null;
+  const den = denOf(state, hive);
+  return cheapestWay(den, c.at, (r) => isMouth(den, r.id), (r) => {
+    if (!c.visited[r.id] && !c.seen[r.id]) return null;
+    const known = !!c.visited[r.id];
+    const brood = known ? broodLeft(state, hive, r) : 0;
+    return 1 + (known ? 0 : 3) + (brood > 0 && !c.slipped[r.id] ? 6 + ((c.heat || {})[r.id] || 0) / 20 : 0);
+  });
+}
+// The next chamber on the autopilot's way: a passage it has not taken with a warmer draft or a louder beat (both
+// first), else a level one, else the first step toward the nearest chamber it knows of and has not been in.
 function autoNext(state, p, c, den) {
   const ex = exitsOf(state, p).filter((x) => !(x.visited && x.room && (x.room.kind === "collapse" || x.room.dead && !ROOM_KINDS[x.room.kind].burn && !ROOM_KINDS[x.room.kind].search)));
-  const fresh = ex.filter((x) => !x.visited && !(x.heard && x.heard.q !== "vague" && x.heard.kind === "collapse")); // heard or lit: a dead end
+  const fresh = ex.filter((x) => !x.visited && !x.mouth); // a mouth is the way out, not on
   // What it knows of a way on (listening, a flare): the core first, then the fewest of the brood; unknown ones as 6.
   const est = (x) => (!x.heard ? 6 : x.heard.kind === "core" && x.heard.q !== "vague" ? -1 : x.heard.q === "exact" ? x.heard.n : (x.heard.lo + x.heard.hi) / 2);
-  const warm = fresh.filter((x) => x.draft === "warmer");
-  if (warm.length) return warm.sort((a, b) => est(a) - est(b) || a.id.localeCompare(b.id))[0].id;
-  const level = fresh.filter((x) => x.draft === "level");
-  if (level.length) return level[0].id;
+  // A way on that reads warmer, level, or where the beat is louder (heard true, through the walls: a draft that reads
+  // colder may be misread): warmer and louder first, then warmer, then louder against the draft, then level.
+  const score = (x) => (x.draft === "warmer" ? 0 : x.draft === "level" ? 0.6 : 1) + (x.sound === "louder" ? 0 : x.sound === "same" ? 0.5 : 1);
+  const on = fresh.filter((x) => x.draft !== "colder" || x.sound === "louder").sort((a, b) => (est(a) < 0 ? -1 : score(a)) - (est(b) < 0 ? -1 : score(b)) || est(a) - est(b) || a.id.localeCompare(b.id));
+  if (on.length) return on[0].id;
   // Known chambers: a breadth-first walk over the chambers the team has been in to the nearest unexplored passage.
   const start = c.at, prev = new Map([[start, null]]), q = [start];
   let goal = null;
@@ -1861,7 +2158,7 @@ function autoNext(state, p, c, den) {
     for (const n of roomById(den, id).links) {
       if (prev.has(n)) continue;
       prev.set(n, id);
-      if (!c.visited[n]) { goal = n; break; }
+      if (!c.visited[n] && !isMouth(den, n)) { goal = n; break; }
       const r = roomById(den, n);
       if (r.kind === "core" || (broodLeft(state, hive, r) > 0 && !c.slipped[n])) continue; // not through the core, nor a chamber full of brood
       q.push(n);
@@ -1876,9 +2173,22 @@ function autoNext(state, p, c, den) {
 // The autopilot's estimate of a crawl (autopilot.js hiveCandidate, hiveChoice, hiveJobOk): with a guard of G, the den's
 // depth, the fights on the shortest way (brood × power / 5.2 of each), the core (its brood and the bosses as one
 // strength), the hours inside and the wear (each fight on the way costs the squad a little: wear per fight).
+// The way in by each of the four mouths (2026-10-13): the one with the least brood on its shortest way (then the
+// shortest) is the autopilot's (mouth: its id; ways: each mouth's { mouth, fights, brood, worst, steps }).
 export function crawlEstimate(state, hive, G = guardSize(state, hive)) {
   const den = denOf(state, hive);
-  const path = shortestPath(den);
+  const ways = mouthsOf(den).map((m) => wayIn(state, hive, den, m, G));
+  const best = ways.reduce((a, w) => (!a || w.brood < a.brood - 1e-9 || (Math.abs(w.brood - a.brood) <= 1e-9 && w.steps < a.steps) ? w : a), null) || { mouth: null, fights: 0, brood: 0, worst: 0, steps: 0 };
+  const { fights, brood, worst } = best;
+  const core = coreForce(state, hive, G);
+  const allies = hiveAllies(state, hive).fighters;
+  const count = core.count ? broodAfterAllies(core.count, allies) : 0;
+  const coreStrength = (count * core.power + core.bossPower) / 5.2;
+  return { depth: den.depth, fights, brood, worst, coreStrength, wear: 1 + HCRAWL.AUTO.wear * fights, strength: coreStrength * (1 + HCRAWL.AUTO.wear * fights), hours: den.depth * (HCRAWL.MOVE_HOURS + HCRAWL.FIGHT_HOURS) + 6, mouth: best.mouth, ways };
+}
+// The fights on the shortest way in from a mouth, with a guard of G (crawlEstimate).
+function wayIn(state, hive, den, mouth, G) {
+  const path = shortestPath(den, mouth);
   let fights = 0, brood = 0, worst = 0;
   for (const id of path) {
     const r = roomById(den, id);
@@ -1887,11 +2197,24 @@ export function crawlEstimate(state, hive, G = guardSize(state, hive)) {
     const v = (n * roomPower(state, hive, den, r, G)) / 5.2;
     if (n > 0) { fights++; brood += v; worst = Math.max(worst, v); }
   }
-  const core = coreForce(state, hive, G);
-  const allies = hiveAllies(state, hive).fighters;
-  const count = core.count ? broodAfterAllies(core.count, allies) : 0;
-  const coreStrength = (count * core.power + core.bossPower) / 5.2;
-  return { depth: den.depth, fights, brood, worst, coreStrength, wear: 1 + HCRAWL.AUTO.wear * fights, strength: coreStrength * (1 + HCRAWL.AUTO.wear * fights), hours: den.depth * (HCRAWL.MOVE_HOURS + HCRAWL.FIGHT_HOURS) + 6 };
+  return { mouth, fights, brood, worst, steps: path.length - 1 };
+}
+// What your teams know of a mouth from their crawls (the hive card's Enter from the north): how often they went in and
+// came out by it, its brood when they last stood in it, and the way to the core from it over the chambers they mapped.
+export function mouthNote(state, hive, id) {
+  const den = denOf(state, hive);
+  const rec = hive.crawlRec;
+  const used = (rec && rec.mouths && rec.mouths[id]) || { in: 0, out: 0 };
+  const m = roomById(den, id);
+  if (!m || !rec || !(rec.mapped && rec.mapped[id]) && !used.in && !used.out) return "Nobody of yours has been in by it.";
+  const bits = [];
+  if (used.in || used.out) bits.push(`your teams went in by it ${used.in} time${used.in === 1 ? "" : "s"} and came out by it ${used.out}`);
+  if (rec.mapped && rec.mapped[id]) { const n = broodLeft(state, hive, m); bits.push(n ? `its brood back (about ${n})` : "its brood cleared lately"); }
+  const mapped = (r) => !!(rec.mapped && rec.mapped[r.id]);
+  const way = rec.core && mapped(m) ? cheapestWay(den, id, (r) => r.links.includes(den.core) && mapped(r), (r) => (mapped(r) ? 1 : null)) : null; // to a door of the core, over mapped chambers
+  if (way) bits.push(`the core ${way.length + 1} chambers in by the way you mapped`);
+  const t = bits.join("; ");
+  return t ? t[0].toUpperCase() + t.slice(1) + "." : "";
 }
 
 // ---------- the AI groups' crawl ----------
@@ -1899,26 +2222,38 @@ export function crawlEstimate(state, hive, G = guardSize(state, hive)) {
 // guard's units (its fighters' power × GROUP_HIVE.FIGHT, as before); the whole way in costs the guard × (depth + 1) /
 // GROUP.depthDiv, spread over the brood on the shortest way and in the core (each chamber costs its brood left), and
 // the core the Hivemind and the Broodmother on top (GROUP.boss + bossTier × tier). The guard it kills: the brood it
-// killed × the guard each stands for (as your teams', cutGuard). It clears
+// killed × the guard each stands for (the guard over the brood on its way in, so the whole way in is the guard). It clears
 // what it pays for (the hive remembers: the chambers stay clear for a while, for your teams too), stops where the
 // budget runs out (driven off partway; a later party starts from what is still clear), and kills the Hivemind (the hive dies) when it
-// reaches and pays for the core. Returns { burned, cut (the guard killed), met (all it ran into), reached (chambers
-// deep), depth }.
+// reaches and pays for the core. Four mouths (2026-10-13): it goes in by one of the hive's dice (its group's), and a party driven
+// off walks back out the shortest way to the nearest mouth. Returns { burned, cut (the guard killed), met (all it ran
+// into), reached (chambers deep), depth, mouth, path (its way in), out (its way out) }.
 export function groupHiveCrawl(state, hive, budget, fid = null) {
   budget *= 1 + HCRAWL.GROUP.light; // torches and flares, listening at the passages: the party's strength goes further (coarse)
   const den = denOf(state, hive);
   const g = hiveGuard(state, hive);
   const G = g ? g.size : 0;
-  const path = shortestPath(den);
+  // In by one of the four mouths, the hive's dice for the group (the world's untouched): a group comes at a hive from
+  // its own side every time, so a later party goes on from what the last one cleared on the way (with a mouth of each
+  // party's own dice the war wore a hive down far slower: tools/grouphivetest.js, a fortress's 200 days became 278).
+  // The group by its place among the groups (its id comes from a counter that runs on across worlds in one process).
+  const ms = mouthsOf(den), gi = fid == null ? -1 : state.factions.findIndex((x) => x.id === fid);
+  const mouth = ms[Math.floor(hash01(state.seed, "grpmouth", hive.id, gi) * ms.length) % ms.length];
+  const path = shortestPath(den, mouth);
   const core = coreForce(state, hive, G);
   // What a brood costs a war party: the whole way in (the brood on the shortest way and in the core, full) is worth
   // the guard × (depth + 1) / depthDiv of its strength: a young hive about its guard, a deep one three times it.
   const full = path.reduce((a, id) => { const r = roomById(den, id); return a + (r.kind === "core" ? core.count : roomFull(state, hive, den, r, G)); }, 0);
   const unit = full > 0 ? (G * (den.depth + 1)) / (HCRAWL.GROUP.depthDiv * full) : 0;
-  const share = G / Math.max(1, denBroodTotal(state, hive, G)); // the guard each brood stands for (cutGuard)
-  let left = budget, met = 0, reached = 0, burned = false, killed = 0;
+  // The guard each brood it kills stands for: the guard spread over the brood on its way in (the den's brood comes to
+  // the party along its way). Over the whole den's brood, as your teams' cutGuard, the round grid's side chambers
+  // (2026-10-13: 13 chambers, under half the brood on the shortest way, where the old den's way held most of it)
+  // made each kill worth a third of the guard it was: tools/grouphivetest.js, a fortress's 133 days became 334.
+  const share = G / Math.max(1, full);
+  let left = budget, met = 0, reached = 0, burned = false, killed = 0, stop = mouth;
   for (const id of path) {
     const r = roomById(den, id);
+    stop = id;
     if (r.kind === "core") {
       const prep = groupPrep(state, fid);
       const cost = core.count * unit + (HCRAWL.GROUP.boss + HCRAWL.GROUP.bossTier * den.tier + (HIVEMIND.P2.on ? HCRAWL.GROUP.phase2 : 0)) * (1 - HCRAWL.GROUP.prep * prep.share); // its second phase too; their fire and bangs on it
@@ -1938,10 +2273,14 @@ export function groupHiveCrawl(state, hive, budget, fid = null) {
     left = 0;
     break;
   }
+  // Driven off: back out the shortest way to the nearest mouth (not always the one it came in by); the brood on it
+  // that its way in did not clear is met again (it gets past them, at a cost: met).
+  const out = burned ? [] : cheapestWay(den, stop, (x) => isMouth(den, x.id)) || [];
+  for (const id of out) met += broodLeft(state, hive, roomById(den, id), G) * unit;
   const cut = Math.min(G, Math.round(killed * share));
   if (g && cut > 0) reduceHorde(state, g, cut);
   noteGroupCrawl(hive, fid, reached); // how deep its parties got (the State Map's hive panel)
-  return { burned, cut, met: Math.round(met), reached, depth: den.depth, spent: Math.round(budget - left) };
+  return { burned, cut, met: Math.round(met), reached, depth: den.depth, spent: Math.round(budget - left), mouth, path, out };
 }
 
 // A group about to send a war party makes Molotovs for the core first (coarse, AI parity with the autopilot's kit):
@@ -1968,10 +2307,13 @@ function groupPrep(state, fid) {
 }
 
 // ---------- help ----------
-export const HIVE_CRAWL_HELP = `A hive is destroyed from the inside. Send a team with the <b>Destroy hive</b> mission and choose <b>Enter the hive</b> on its card: the team crawls through the hive chamber by chamber, from the mouth to the <b>core room</b>, where the <b>${BOSS_NAMES.hivemind}</b> sits, the organ that thinks for the hive. Kill it and the hive dies, its brood with it. A young hive is shallow (${HCRAWL.DEPTH[0]} chambers from the mouth to the core); every tier it grows makes it deeper (${HCRAWL.DEPTH.join(", ")} by tier, one more with a screamer spire): the crawl is the mid and late game's work.<br>
-<b>Finding the way.</b> The chambers form a web: at least two routes run to the core, with side branches, dead ends and loops. You see the passages out of every chamber you have been in; what lies beyond is dark until you go. The core is the hottest place in the hive: every chamber has a <b>warmth</b> (the gauge, and the air: <i>cool and damp</i>, <i>close and clammy</i>, <i>warm as breath</i>, <i>hot</i>, <i>the walls sweat</i>), and every passage a draft, <i>warmer</i> or <i>colder</i>. A team without a good scout misreads a draft now and then (${Math.round(HCRAWL.DRAFT.miss * 100)}% less ${Math.round(HCRAWL.DRAFT.perScout * 1000) / 10} a point of the best Scouting). The deeper, the louder and faster the hive's pulse and the warmer its drone (the mixer's <i>Hive crawl pulse</i>), and the redder the window.<br>
+export const HIVE_CRAWL_HELP = `A hive is destroyed from the inside. Send a team with the <b>Destroy hive</b> mission and choose <b>Enter the hive</b> on its card: the team crawls through the hive chamber by chamber, from one of its four mouths to the <b>core room</b>, where the <b>${BOSS_NAMES.hivemind}</b> sits, the organ that thinks for the hive. Kill it and the hive dies, its brood with it. A young hive is shallow (${HCRAWL.DEPTH[0]} chambers from the nearest mouth to the core); every tier it grows makes it deeper (${HCRAWL.DEPTH.join(", ")} by tier, one more with a screamer spire): the crawl is the mid and late game's work.<br>
+<b>Four ways in.</b> The den has four entrances, one on each side (north, east, south and west), each with its own mouth and the brood in it. Choose one on the hive's card (it says what your teams know of each from earlier crawls); the autopilot picks the one with the least brood on its way in, the other groups' war parties any of them.<br>
+<b>Finding the way.</b> The den is a round grid of chambers, as a city is of blocks: every chamber is a T, a hallway through it and a room off the side, so it opens on three of its sides (north, east, south, west) and the fourth is wall, shared with the chamber beside it (on the rim the outside is the wall; where the rim steps a chamber opens on only two). The core lies deep in the middle, and its walls open on only one or two sides. You see the passages out of every chamber you have been in; what lies beyond is dark until you go. Two things lead you to it. The <b>sound</b>: the Hivemind's beat, louder the nearer the core, carried through the walls (the gauge, the window's pulse, and each passage <i>louder</i> or <i>fainter</i>), so it tells you where the core is, but not where its door is: beside the wrong wall it beats loud, and there is no way through. The <b>warmth</b>: the air from the core runs only along the passages (the gauge, and the air: <i>cool and damp</i>, <i>close and clammy</i>, <i>warm as breath</i>, <i>hot</i>, <i>the walls sweat</i>), and every passage has a draft, <i>warmer</i> or <i>colder</i>, that leads round to a door. A team without a good scout misreads a draft now and then (${Math.round(HCRAWL.DRAFT.miss * 100)}% less ${Math.round(HCRAWL.DRAFT.perScout * 1000) / 10} a point of the best Scouting); the beat never lies. The warmer, the warmer the drone and the redder the window; the nearer, the louder and faster the beat (the mixer's <i>Hive crawl pulse</i>).<br>
 <b>The brood.</b> Every chamber holds some of the hive's brood: more and tougher the deeper you go, the special dead the hive breeds among them, the elite deeper still, and the chambers next to the core the worst. A hive's guard horde is its brood: every one killed inside thins the guard, and a war party's crawl means emptier chambers. Nothing from outside the hive hurts it: no fires, no bombs; the crawl is the only way to kill a hive. Fight them (on a cave map or by the numbers), creep past (Stealth; they stay there and you meet them again on the way back), or fall back. Cleared chambers stay clear for about ${HCRAWL.REFILL_DAYS} days, then the brood flows back: you can crawl part of the way, come home to heal and come back. Kinds of chamber: tunnels, galleries, <i>nurseries</i> (many and weak), <i>egg chambers</i> (burn them with ${HCRAWL.BURN.fuel} fuel or a Molotov: the hive loses stores and some of its guard, and fills its chambers more slowly), <i>bone pits</i> (the remains of teams that came before: their worn guns, armour, packs, ammunition and meds), <i>worm pools</i> (the worm's eggs: wading through is a risk, feeling through the water more), the <i>roots</i> of the hive's growths (burn one to hurt the growth above), and collapses that lead nowhere.<br>
-<b>The hive's Alert.</b> Moving, fighting, fire and a failed sneak make noise; lying still lets it fade. From ${HCRAWL.ALERT.converge} the brood converges on you: it pours into your chamber and fills the chambers behind you again; from ${HCRAWL.ALERT.block} it packs the mouth. Leaving means going back the way you came.<br>
+<b>The hive's Alert.</b> Moving, fighting, fire and a failed sneak make noise; lying still lets it fade. From ${HCRAWL.ALERT.converge} the brood converges on you: it pours into your chamber and fills the chambers behind you again; from ${HCRAWL.ALERT.block} it packs the mouths.<br>
+<b>Getting out.</b> Leaving is a walk: chamber by chamber to any of the four entrances, into its mouth (its brood in the way if it is there), then <i>Leave by this mouth</i>. Back through chambers you have been in you go quietly (no Alert). A chamber you cleared and made noise in may have filled again when you walk back into it, and the brood you crept past is still there. <i>Fall back</i> takes you one chamber back the way you came; <i>Get out of the hive</i> only from a mouth.<br>
+<b>Brood activity and heat.</b> Every chamber has its own brood activity, the hive's own (the same every visit; you learn it when you stand in it): ${HCRAWL.THREAT.names.slice(1).map((n, i) => `${n} ×${HCRAWL.THREAT.mult[i + 1]}`).join(", ")}. The noise you make in a chamber also stays there as its heat (less travelling stealthily), fading ${HCRAWL.HEAT.decay} an hour. The hive's Alert and the chamber's heat, × its activity, decide whether its brood has seen you, how hard it is to creep past, whether the brood pours in and how many, and whether a patrol finds you lying still: a little noise in a seething chamber is worse than a lot in a torpid one.<br>
 <b>The ${BOSS_NAMES.hivemind}.</b> In the core the ${BOSS_NAMES.hive} and the last of the brood guard it. It never moves, but every turn it pulses (everyone within ${HIVEMIND.pulse} tiles hurt and sometimes stunned), lashes at anyone next to it, and every other turn tears more brood out of the walls. It has ${HIVEMIND.hp} health (+${HIVEMIND.perTier} a tier) and thick flesh. Below ${Math.round(HIVEMIND.P2.at * 100)}% it tears open in a <b>second phase</b>: the cave quakes and pillars of flesh come down, its pulse reaches ${HIVEMIND.P2.pulse} tiles and hits harder, and the walls give up ${HIVEMIND.P2.spawn[0]}–${HIVEMIND.P2.spawn[1]} brood at a time. Its death kills the brood around it.<br>
 <b>Its weak spots.</b> Fire: a Molotov on it or next to it burns it ${HIVEMIND.WEAK.burnDmg[0]}–${HIVEMIND.WEAK.burnDmg[1]} a turn (through its thick flesh) for ${HIVEMIND.WEAK.burnTurns} of its turns after the last flames touch it, and while it burns the walls give up no brood. A bang: a flashbang within ${HIVEMIND.WEAK.flash} tiles stuns it for ${HIVEMIND.WEAK.stunFlash} of its turns, a frag grenade or a pipe bomb within ${HIVEMIND.WEAK.blast} for ${HIVEMIND.WEAK.stunBlast}: no pulse, no lash, no brood called, and its flesh lies open to your shots; a bang next to the ${BOSS_NAMES.hive} dazes her too (a flashbang costs her ${HIVEMIND.WEAK.dazeFlash} actions, a grenade ${HIVEMIND.WEAK.dazeBlast}). Fire panics the brood it calls: those near the flames (or near it while it burns) shy away and lose an action. The battle AI (and <i>AI plays my side</i>) steps into reach and throws them at it first, never with one of yours in the fire or the flash, and it holds on in a core it is winning with fire (its retreat counts the Hivemind burning or reeling and the Molotovs and bangs still in hand). By the numbers, Molotovs and bangs (up to ${HIVEMIND.NUMBERS.kit} of each) and lights count against its power. Bring them: preparation beats headcount. The autopilot packs lights, Molotovs, flashbangs, a grenade and road flares for its hive squads when the armory has them. The other groups crawl hives too (their war parties clear chambers on the shortest way and come back, and take the hoard of a hive they burn), and allied fighters thin the brood in every chamber.<br>
 <b>The hoard.</b> In the dead core lies what the hive dragged in from the dead: guns, armour, rounds, meds, gun parts and scrap, now and then something rare (night vision, a thermal sight, a military radio, a surgical kit), all worn as the dead left it; more the higher the hive's tier and the fuller its stores. The team takes what fits (the best first); the rest stays at the hive, marked on the map: Recover it.<br>

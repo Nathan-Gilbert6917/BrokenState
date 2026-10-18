@@ -659,7 +659,7 @@ section("Drawing them (stub canvases: ui/isoview.js, ui/combat.js, ui/mapsprites
   const tx = tc % b.w, ty = (tc / b.w) | 0;
   for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [1, 1], [-1, 1], [1, -1]]) { const x = tx + dx, y = ty + dy; if (x >= 0 && y >= 0 && x < b.w && y < b.h && CELL[b.cells[y * b.w + x].k].walk) { u.x = x; u.y = y; break; } }
   UI.cui.sel = u.id;
-  const html = UI.renderCombatPanel(st);
+  const html = UI.renderCombatScreen(st);
   check(/data-action="car-act"/.test(html) && /Inspect/.test(html), "next to a truck the panel has the car row (Get in, Inspect, Claim …)");
   const prev = CP.carPreview(st, b, tx, ty);
   check(/Army|Humvee|MRAP/.test(prev), `hovering a truck names it ("${prev.replace(/<[^>]+>/g, "").slice(0, 50)}…")`);

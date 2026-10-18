@@ -7,6 +7,7 @@
 // once a turn even cut every time; a locked container is 1 action a pick attempt at odds by Stealth, then 1 action to search; a raid
 // saved mid-search keeps what is hidden; the raid bot rummages when pressed and searches in full when not.
 // Usage: node tools/searchtest.js [seed] [v]
+import { faceToward } from "../src/sim/vision.js";
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { SUPPLIES } from "../src/sim/data.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -19,7 +20,7 @@ import { BMAP } from "../src/sim/buildingmaps.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { inventoryModal, INV_ACTIONS, INV_CHANGE, invDrop } from "../src/ui/inventory.js";
 import { chosenQty } from "../src/ui/stackmove.js";
-import { renderCombatPanel } from "../src/ui/combat.js";
+import { renderCombatScreen as renderCombatPanel } from "../src/ui/combat.js"; // the panel and the bottom bar
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -59,6 +60,7 @@ function standNext(b, u, x, y) {
     const nx = x + dx, ny = y + dy;
     if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || !CELL[b.cells[ny * b.w + nx].k].walk || unitAt(b, nx, ny)) continue;
     u.x = nx; u.y = ny;
+    faceToward(u, x, y); // vision.js: looting needs them facing it
     return true;
   }
   return false;
@@ -151,11 +153,13 @@ console.log("The search window: pick how many, then where");
   INV_ACTIONS["inv-click"](st, ui, { loc: `haul:${u.id}:list` });
   check(u.haul.sup.f_rationbar === 3 && box.contents.sup.f_rationbar === 3 && ui.invSel == null, `then click Carried: 3 taken, 3 left (${ui.invMsg})`);
   INV_ACTIONS["inv-click"](st, ui, { loc: src }, { shiftKey: true });
-  check(u.haul.sup.f_rationbar === 6 && !(box.contents.sup.f_rationbar >= 1), "Shift+click: the rest of the stack straight across");
+  const sv = st.survivors.find((x) => x.id === u.sid);
+  const held = () => [...sv.pockets, ...((sv.gear.backpack && sv.gear.backpack.contents) || [])].reduce((a, it) => a + (it && it.key === "s_f_rationbar" ? it.dur : 0), 0);
+  check(u.haul.sup.f_rationbar === 3 && held() === 3 && !(box.contents.sup.f_rationbar >= 1), `Shift+click: the rest of the stack straight across, into the pockets as items (${ui.invMsg})`);
   invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `rbox:${box.id}:list`, false, true);
-  check(u.haul.sup.f_rationbar === 5 && box.contents.sup.f_rationbar === 1, "Ctrl-drop: one");
+  check(u.haul.sup.f_rationbar === 2 && box.contents.sup.f_rationbar === 1, "Ctrl-drop: one");
   invDrop(st, ui, `haul:${u.id}:sup:f_rationbar`, `rbox:${box.id}:list`, true);
-  check(u.haul.sup.f_rationbar === 3 && box.contents.sup.f_rationbar === 3, "Shift-drop: half");
+  check(u.haul.sup.f_rationbar === 1 && box.contents.sup.f_rationbar === 2, "Shift-drop: half");
   // A rummaged container: the window says more may be hidden and offers the full search.
   fresh(b, u);
   const q = freshBox(b, u, [box]);

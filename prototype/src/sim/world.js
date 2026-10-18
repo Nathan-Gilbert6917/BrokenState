@@ -5,6 +5,7 @@
 import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
+import { pickStart } from "./startpick.js"; // the new-run screen's New start position
 import { generateMap } from "./mapgen.js";
 import { DEFAULT_SIZE, sizeDef, customDef, isCustom, clampHives } from "./worldsize.js";
 import { FIRST_NAMES, LAST_NAMES, SKILLS, ROLLED_SKILLS, TRAITS, BIRTH_TRAITS, clashIn, GEAR, SUPPLIES, SUPPLY_KEYS, supValue } from "./data.js";
@@ -20,7 +21,7 @@ function radioBasesInRange(state, tileId, extra = 0) {
   return coverNodes(state, tileId, extra).map((n) => n.base);
 }
 import { createFactions, factionsDaily, recomputeOwnership } from "./factions.js";
-import { movePartiesHour, clockFrac, setClockFrac } from "./parties.js";
+import { movePartiesHour, clockFrac, setClockFrac, reportsLive } from "./parties.js";
 import { fieldSight, fieldworksHour, fieldworksDaily } from "./fieldworks.js"; // field works outside the bases
 import { hordesHour, hordesDaily } from "./hordes.js";
 import { ensureHives, hivesSecured } from "./hives.js";
@@ -41,14 +42,15 @@ import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a c
 import { settleAll, starterLoad, pocketBox, gunsArmed, drawShots } from "./ammo.js"; // rounds by calibre
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
-import { autopilotHour } from "./autopilot.js";
+import { foodMarkAll } from "./foodlog.js"; // the bases' food ledger (the Food tab): marks between the hour's steps
+import { autopilotHour, autopilotResolve } from "./autopilot.js";
 import { productionHour } from "./production.js";
 import { stewardHour } from "./steward.js";
 import { cookShiftHour, cooksHour } from "./kitchen.js"; // part-time cooks: the cooking hours (kitchen-plus)
 import { workHour, workDayRoles } from "./work.js";
 import { stallDaily } from "./activity.js";
 import { leaderIdleHour } from "./idlework.js";
-import { isMealHour } from "./meals.js"; // the leader and the governor move people off stalled jobs once a day // the day each job at a base was first found unable to work (the stalled-job alert)
+import { isMealHour, isLunchHour } from "./meals.js"; // the leader and the governor move people off stalled jobs once a day // the day each job at a base was first found unable to work (the stalled-job alert)
 import { packOnDeath } from "./eating.js"; // a death: their pack of food and water
 import { watchHour, watchDayRoles } from "./watch.js";
 import { sickRestHour } from "./sickrest.js"; // sick people rest: Manual and pinned people's jobs kept and given back
@@ -71,8 +73,10 @@ import { prisonersHour, prisonersDaily, jailGuardHour } from "./prisoners.js";
 import { groupJailsDaily, groupJailsHour } from "./groupjails.js"; // jailhouse: the groups' jails, prisoner labour and trades
 import { ransomHour } from "./ransom.js";
 import { visitorsHour, visitorsDaily } from "./visitors.js";
+import { nomadsHour, nomadsDaily } from "./nomads.js"; // baseless bands that camp, raid the places round them and move on
 import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
+import { ensurePois, poiSnapshot, learnPois, mergePoiFinds, tileHeatDaily } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
 import { festivalHour } from "./festival.js"; // the yearly harvest festival at the hub
 import { baseOpticsSight } from "./optics.js";
@@ -124,22 +128,25 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // [{ name?, skills?, traits?, budget?, appearance?, gear?, leader? }]. Headless tools leave it out.
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
 // "custom" with customW × customH hexes (experimental: worldsize.js customDef).
-// hives (optional): how many hives the map starts with, 0–10 (null: what the size makes; mapgen.js).
+// hives (optional): how many hives the map starts with, 0–20 (null: what the size makes; mapgen.js).
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
 // crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
 // new-run screen's Randomize all); left out, the world's seed decides them.
 // startPeople (optional, Hardcore): how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out),
 // kept as state.startPeople. A normal start is a full hub of six and ignores it.
+// start (optional): { roll, not } where you start drawn with dice of their own on the same map (the new-run screen's
+// New start position; startpick.js): the hub's town, or the Hardcore roadside tile. Kept as state.startRoll.
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
- *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any }} opts
+ *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
+ *   start?: { roll: number, not?: number | null } | null }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
-  const map = generateMap(rng, sdef, { hives: clampHives(hives) });
+  const map = generateMap(rng, sdef, { hives: clampHives(hives), seed });
   /** @type {State} */
   const state = {
     seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
@@ -170,9 +177,11 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // hardcore crew's picks resolve whatever the browser's list holds later. Not in a world without any.
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
+  if (start && start.roll != null) state.startRoll = start.roll; // startpick.js: a start of its own on this map
   noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
+  ensurePois(state); // pois.js: every tile's points of interest (hash dice from the seed: the map's dice are untouched)
   if (state.mode === "hardcore") {
-    hardcoreCreate(state, { factionCount, crew, crewRoll, ...(startPeople != null ? { startPeople } : {}) });
+    hardcoreCreate(state, { factionCount, crew, crewRoll, start, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
     hardcoreAfterHives(state);
     state.ammoCal = 2; // rounds by calibre from the start (save.js migrates older saves)
@@ -197,7 +206,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const clearCandidates = clear ? towns.filter((t) => farFrom(t, clear, 12, 12) && central(t)) : [];
   const hubCandidates = clearCandidates.length ? clearCandidates : towns.filter((t) => farFrom(t, 16, 12, 12) && central(t));
   const nearCandidates = towns.filter((t) => farFrom(t, 12, 8, 8));
-  const hubTile = rng.pick(hubCandidates.length ? hubCandidates : nearCandidates.length ? nearCandidates : towns);
+  const hubTile = pickStart(rng, [() => hubCandidates, () => nearCandidates, () => towns], start); // startpick.js
   state.bases.push({
     id: newId(), tile: hubTile.id, type: "hub", name: `${hubTile.loc.name} Holdout`,
     // Fuel is scarce (economy rework). Food: two weeks for six plus a few shelves of canned and jarred food, in the
@@ -746,7 +755,7 @@ function coalitionWins(state) {
   const members = state.alliance ? state.alliance.members.length : 0;
   const pct = Math.round(controlledLand(state).pct * 100);
   // Keep the opening words: the timelapse (chronicle.js) recognises this line by them.
-  log(state, members ? `The Calder Coalition holds the State of Calder: ${pct}% of the land, and ${members} member${members === 1 ? "" : "s"} beside you (the groups outside do not count: conquest). ${alive(state).length} survivors made it to day ${day(state)}.` : `The Calder Coalition holds the State of Calder: ${pct}% of the land, and no other group left standing to join it or oppose it. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
+  log(state, members ? `The Calder Coalition holds the State of Calder: ${pct}% of the land, and ${members} member${members === 1 ? "" : "s"} beside you (no hive left, no group outside the coalition). ${alive(state).length} survivors made it to day ${day(state)}.` : `The Calder Coalition holds the State of Calder: ${pct}% of the land, and no other group left standing to join it or oppose it. ${alive(state).length} survivors made it to day ${day(state)}.`, "good");
   return true;
 }
 
@@ -824,14 +833,16 @@ export function baseVision(base, state = null) {
   return (base.tier === 0 ? 1 : base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js); a shelter (buildings.js SHELTER, tier 0) sees 1 tile
 }
 
-/** @param {State} state @param {number} tileId @returns {TileSnapshot} */
-export function snapshot(state, tileId) {
+// ix: tileIndex(state), when many tiles are looked at in a row (updateVision); without it each list is searched.
+/** @param {State} state @param {number} tileId @param {ReturnType<typeof tileIndex> | null} [ix] @returns {TileSnapshot} */
+export function snapshot(state, tileId, ix = null) {
   const t = state.tiles[tileId];
-  const here = state.hordes.filter((h) => h.tile === tileId);
+  const here = ix ? ix.hordes.get(tileId) || [] : state.hordes.filter((h) => h.tile === tileId);
   const hordeSize = here.reduce((s, h) => s + h.size, 0);
-  const site = state.hiveSites ? state.hiveSites.find((x) => x.tile === tileId) : null;
+  const site = ix ? ix.sites.get(tileId) : state.hiveSites ? state.hiveSites.find((x) => x.tile === tileId) : null;
+  const death = ix ? ix.deaths.get(tileId) : state.deathSites.find((d) => d.tile === tileId);
   // hiding.js: a group's hidden outpost you have not found is bare ground on your map (state.intel.unseen).
-  const factionBase = state.intel && state.intel.unseen && state.intel.unseen[tileId] != null ? null : state.factions.find((f) => f.alive && f.bases.includes(tileId));
+  const factionBase = state.intel && state.intel.unseen && state.intel.unseen[tileId] != null ? null : ix ? ix.groupBase.get(tileId) : state.factions.find((f) => f.alive && f.bases.includes(tileId));
   return {
     hour: state.hour,
     owner: t.owner,
@@ -844,9 +855,22 @@ export function snapshot(state, tileId) {
     loot: t.loot,
     hive: !!t.hive,
     site: site ? { biomass: site.biomass, started: site.started != null } : null,
-    deathSite: state.deathSites.find((d) => d.tile === tileId) ? state.deathSites.find((d) => d.tile === tileId).items.length : 0,
+    deathSite: death ? death.items.length : 0,
     abandoned: abandonedSnap(state, tileId), // groupworld.js: a base standing empty here (occupy.js: the Occupy order)
+    ...(poiSnapshot(state, tileId) || {}), // pois.js: the points of interest the player knows here, and when it was surveyed or looked at
   };
+}
+// What snapshot reads, by tile, built once for a pass over many tiles: the hordes on each (in state.hordes order), and
+// the first hive site, living group's base and death site there (what each list's find would return). Valid while the
+// lists do not change: updateVision builds it, then only reads.
+/** @param {State} state */
+export function tileIndex(state) {
+  const hordes = new Map(), sites = new Map(), groupBase = new Map(), deaths = new Map();
+  for (const h of state.hordes) { const a = hordes.get(h.tile); if (a) a.push(h); else hordes.set(h.tile, [h]); }
+  for (const x of state.hiveSites || []) if (!sites.has(x.tile)) sites.set(x.tile, x);
+  for (const f of state.factions) if (f.alive) for (const b of f.bases) if (!groupBase.has(b)) groupBase.set(b, f);
+  for (const d of state.deathSites) if (!deaths.has(d.tile)) deaths.set(d.tile, d);
+  return { hordes, sites, groupBase, deaths };
 }
 // What a look at an abandoned base tells you: whose it was, since when, and how much stands there.
 /** @param {State} state @param {number} tileId */
@@ -867,7 +891,7 @@ export function liveTiles(state) {
   for (const id of fieldSight(state)) set.add(id); // fieldworks.js: your manned watch towers
   // Radio: parties in range report what they see right now.
   for (const p of state.parties) {
-    if (p.owner === "player" && p.radioLive) for (const id of p.sightNow || []) set.add(id);
+    if (p.owner === "player" && reportsLive(p)) for (const id of p.sightNow || []) set.add(id); // parties.js: live intel
   }
   return set;
 }
@@ -876,8 +900,9 @@ export function liveTiles(state) {
 export function updateVision(state) {
   const live = liveTiles(state);
   state.live = live;
+  const ix = tileIndex(state);
   for (const id of live) {
-    state.knowledge[id] = snapshot(state, id);
+    state.knowledge[id] = snapshot(state, id, ix);
     for (const f of state.factions) if (f.bases.includes(id)) { f.known = true; if (f.alive) noteLook(state, id, "sight"); } // intelnotes.js: what the base looks like
   }
   // Hidden sites (discovery.js) the bases and watchtowers see for the first time: a log line.
@@ -895,6 +920,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
     // Radio news of a stripped site (aiscav.js) newer than the team's look keeps its loot.
     if (!cur || cur.hour <= snap.hour) state.knowledge[id] = cur && cur.lootHour > snap.hour ? { ...snap, loot: cur.loot, lootHour: cur.lootHour, lootSrc: cur.lootSrc } : snap;
     if (snap.gb) keepLook(state, id, snap.gb); // intelnotes.js: what the team saw of a group's base
+    if (snap.pois) learnPois(state, id, snap); // pois.js: the points of interest the report knows there
     if (snap.factionBase) {
       const f = factionById(state, snap.factionBase);
       if (f) f.known = true;
@@ -902,6 +928,7 @@ export function mergeKnowledge(state, seen, spotted, who = null) {
   }
   noteFinds(state, seen.keys(), who ? { party: who } : null);
   if (who) mergeLooked(state, who); // discovery.js: where the team looked hard (the map's Known area layer)
+  if (who) mergePoiFinds(state, who); // pois.js: the hidden points of interest its surveys found
 }
 
 // ---------- tick ----------
@@ -921,22 +948,26 @@ function hourOfWorld(state) {
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
   riversHour(state); // rivers.js: rivers freezing over or thawing (before anyone moves this hour)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace
+  foodMarkAll(state, "player"); // foodlog.js: what was traded, packed or unloaded between the hours
   movePartiesHour(state);
+  foodMarkAll(state, "team"); // teams home and setting out
   campsHour(state); // staging.js: camps (neglect, the hub among them) and the shelters' fires
   needsHour(state); // needs.js: hunger and thirst at bases and on errands (teams eat in movePartiesHour), teams' treats
+  foodMarkAll(state, "pack"); // the eating is booked as it happens; packs topped up and emptied
   releaseStranded(state); // conflicts.js: a halted team with nothing left to resolve it checks in for orders
   hordesHour(state);
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state
+  nomadsHour(state); // nomads.js: nomad bands on the move, their camps seen, meeting your teams
   caravanRaidsHour(state); // caravanraids.js: caravans met on the road, chased, robbed (by you or by the groups)
   if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   fieldworksHour(state); // fieldworks.js: the lookouts posted at field works (gone, moved, enemies there)
-  const meal = isMealHour(state.hour); // meals.js: breakfast and dinner, the builders, crafters and the bench stop for them
+  const meal = isMealHour(state.hour, state); // meals.js: breakfast, lunch and dinner, the builders, crafters and the bench stop for them
   if (!meal) constructionHour(state);
   if (!meal) repairHour(state); // repair.js: the base repair queue (before crafting: the crafters' hour goes to a repair first)
   rezeroHour(state); // repair.js: budget sights re-zeroed at a workbench every morning (gunmods.js driftOf)
   if (!meal) craftingHour(state);
-  garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating)
+  if (!isLunchHour(state.hour, state)) garageHour(state); // vehicles.js: vehicle upgrades in the garage (glass, plating); the fitters stop for lunch
   productionHour(state); // production.js: station orders and their fallbacks, power, repeating craft orders
   medicalHour(state);
   diplomacyHour(state); // diplomacy.js: jobs for other groups checked every hour (jobs.js)
@@ -944,6 +975,7 @@ function hourOfWorld(state) {
   groupJailsHour(state); // groupjails.js: your people just taken: jailed, or sold, ransomed, let go or killed when there is no room
   ransomHour(state); // ransom.js: captives brought home, envoys back with their price, handovers nobody came to
   volunteersHour(state); // volunteers.js: volunteers joining and leaving your teams, your people lent out, the groups' asks
+  foodMarkAll(state); // foodlog.js: building, crafting, the stations, visitors
   if (state.hour % 24 === 0) {
     workDayRoles(state); // work.js: people asleep or off at midnight count at their day's work (set again below)
     watchDayRoles(state); // watch.js: Manual people on watch likewise
@@ -968,11 +1000,13 @@ function hourOfWorld(state) {
     conquestDaily(state); // conquest.js: infamy fades, bases taken from you are patched up by their holders
     radioDaily(state); // radio.js: relay upkeep, groups' water and wares, grudge raids, groups calling you
     visitorsDaily(state); // visitors.js: outsiders crossing the border, guests sheltering at your bases
+    nomadsDaily(state); // nomads.js: nomad bands camp, survey, raid, forage, eat, recruit, move on; a slow respawn
     skillsDaily(state); // skills.js: XP from the day's work, teaching, reading, decay, perk effects
     trainingDaily(state); // training.js: medics' ward rounds, the doctor's lessons to Medic trainees
     familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
+    tileHeatDaily(state); // pois.js: the heat raids left on the tiles falls 10% a day
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead
@@ -981,6 +1015,7 @@ function hourOfWorld(state) {
     causesDaily(state); // causes.js: the day each base's water, food, scrap, meds, ammo or firewood ran out
     ensureLeader(state);
     if (day(state) % 5 === 0) log(state, `Day ${day(state)}. ${alive(state).length} survivors.`, "info");
+    foodMarkAll(state, "player"); // foodlog.js: supply runs and trade routes
   }
   settleAll(state); // ammo.js: generic ammo that came in or went out this hour sorted into (or out of) rounds by calibre
   // Safety net: no stock below zero, whatever subtracted from it.
@@ -1001,9 +1036,13 @@ function hourOfWorld(state) {
   jailGuardHour(state); // prisoners.js: Manual people on a jail's roster guard it while anyone is held there
   sickRestHour(state); // sickrest.js: the ill at a base rest (Manual and pinned: their job back when well); a log line each way
   cooksHour(state); // kitchen.js: whoever is on Cook in a cooking hour counts as one of the day's cooks (s.cookHour)
+  foodMarkAll(state, "player"); // the governor, the stewards and the crews: trades, teams packed
   jobTripsHour(state); // jobtrips.js: the outdoor jobs' trips (out to the base's land, the work, home with the load)
+  foodMarkAll(state, "job"); // the hunters', fishers' and foragers' loads home
   tiredHour(state); // sleep.js: the hour's sleep owed or slept off (a watch in someone's sleep hours keeps them up)
   settleAll(state); // ammo.js: again, for what the work, the crews and the governor moved after the first settle (no generic ammo is left in a holder of yours between hours)
   recordChronicle(state); // a timelapse frame once a day (cheap check otherwise)
   historyHour(state); // history.js: stock flows marked, a row a day for the Ledger and the run summary
+  foodMarkAll(state); // foodlog.js: the rest of the hour
+  if (state.autopilot) autopilotResolve(state); // cards the hour raised after the governor's turn (a job trip's perk milestone): answered now, as the browser does every frame
 }

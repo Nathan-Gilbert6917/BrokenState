@@ -57,7 +57,9 @@
 //   it (1h) also takes it up. Each day a line catches 1 small game (2 rations) × abundance × level × season, caught
 //   game keeps 3 days (2 in the heat, 6 in the cold), and from the third day without a check each day has an 8%
 //   chance (more by towns, in hive land, with a horde near) that it is robbed or sprung: the catch is gone, and
-//   30% of the time the line with it. Quiet: Heat × 0.8 while setting or checking.
+//   30% of the time the line with it. Each day one of the dead may blunder into it (SNARE.zombie: 4%, 7% with the dead
+//   about, always under 10%): it hangs in the wires keeping the game away until the team checking it puts it down.
+//   Quiet: Heat × 0.8 while setting or checking.
 // Fish (team order, N hours on a river bank or a lake shore, with a fishing rod, a net or a spear carried): 0.6
 //   rations an hour a rod (a makeshift rod 0.42), 1.2 a net worked by two (0.7 by one), a spear 0.5 (a pipe spear
 //   0.35; GEAR fishPower), each × its condition (0.6 + 0.4 × quality: a well-made rod catches more) × water (a deep river bend or a lake 1, a river 0.85, a pond 0.6)
@@ -80,8 +82,9 @@
 //
 // Hunting cabin (buildings.js "huntcabin", any base with game land within 2 tiles: abundance there adding up to 3):
 //   the people on the Hunt work type / role (no fixed cap: as many as the food the land must bring in wants,
-//   CABIN above) hunt the land within 2 tiles 3 hours a day (dawn and dusk) by the base's hunting mix, with
-//   their own weapons, the base's ammo (never its last 3 a head + 10: those are for the walls) and its arrows, the same
+//   CABIN above) hunt the land within 2 tiles 4 hours a day (dawn and dusk: CABIN.huntHours) by the base's hunting
+//   mix, with their own weapons or one lent for the day (huntLoans: the armory's, or a resident's who is not hunting
+//   or on guard), the base's ammo (never its last 3 a head + 10: those are for the walls) and its arrows, the same
 //   rolls and depletion as a team; trap hours (and a hunter without a weapon) tend
 //   snares there (two lines' worth a full day). Gunshots around the base add to its Heat (base.huntNoise, hordes.js
 //   baseHeat: the gun's noise / 3 a kill) and each wandering horde within 3 tiles of a hunting ground with gunfire that
@@ -91,10 +94,10 @@
 import { gunMods, wearMuzzle, hasScope, isScope } from "./gunmods.js"; // a suppressed gun is quieter on a hunt; a scoped one hunts better
 import { FACTORY_FIT } from "./data-guns.js"; // a gun that comes with its scope (the hunting rifle): its hunting numbers have it in
 import { GEAR, SUPPLIES } from "./data.js";
-import { log, skill, gearEffect, atBase, newId, baseById, hub } from "./world.js";
+import { log, skill, gearEffect, atBase, newId, baseById, hub, hurt } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
 import { packOf, allCarried } from "./inventory.js";
-import { wearHeld } from "./crafting.js"; // fishing tools wear by the day's fishing
+import { wearHeld, CRAFTS, CRAFT_SKILL, craftSkill, canAttempt } from "./crafting.js"; // fishing tools wear by the day's fishing; arrows made before a bow hunt
 import { hasPerk, gainXp } from "./skills.js";
 import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
@@ -120,14 +123,39 @@ export const ANIMALS = {
   small: { name: "small game", plural: "small game", rations: 2, big: false, item: null }, // rabbit or fowl (gameItem)
   fish:  { name: "fish", plural: "fish", rations: 1, big: false, item: "f_fish" },
 };
-export const SNARE = { count: 8, perDay: 1, setHours: 2, checkHours: 1, scrap: 2, theft: 0.08, wireLoss: 0.3, deplete: 60, safeDays: 2 };
+export const SNARE = { count: 8, perDay: 1, setHours: 2, checkHours: 1, scrap: 2, theft: 0.08, wireLoss: 0.3, deplete: 60, safeDays: 2,
+  // One of the dead caught in a line (WORLD-02, 2026-10-12: under 10%): zombie a day, + zombieNear with the dead about
+  // (a horde within 2 tiles, or a hive's land), never zombieMax or more. Caught, it hangs in the wires until someone
+  // comes: no game comes near the line meanwhile (rot and theft go on as before). Putting it down: zombieHurt of the
+  // time it gets a hand on someone (zombieDmg).
+  zombie: 0.04, zombieNear: 0.03, zombieMax: 0.09, zombieHurt: 0.1, zombieDmg: [5, 15] };
+// The day's chance that one of the dead blunders into a snare line on this tile (always under 10%).
+export function snareZombieChance(state, tile) {
+  const near = (state.hordes || []).some((h) => state.grid.distance(h.tile, tile) <= 2) || (state.hives && !!zombieToughness(state, tile));
+  return Math.min(SNARE.zombieMax, SNARE.zombie + (near ? SNARE.zombieNear : 0));
+}
+// The dead in a line, put down by the people who came to check it (a team, a base's hunter): a line for the report,
+// maybe a scratch for one of them (SNARE.zombieHurt).
+export function putDownSnared(state, people, tile, where) {
+  const live = people.filter((s) => s && s.alive);
+  if (!live.length) return "One of the dead hangs in the wires.";
+  const s = live[state.rng.int(0, live.length - 1)];
+  if (state.rng.chance(SNARE.zombieHurt)) {
+    hurt(state, s, state.rng.int(SNARE.zombieDmg[0], SNARE.zombieDmg[1]), tile, `putting down one of the dead caught in the snares near ${where}`);
+    return `One of the dead was caught in the wires; ${s.name.split(" ")[0]} put it down, ${s.alive ? "but not before it got a hand on them" : "and did not survive it"}.`;
+  }
+  return `One of the dead was caught in the wires; ${s.name.split(" ")[0]} put it down.`;
+}
 export const FISH = { rod: 0.6, net: 1.2, netAlone: 0.7, deplete: 50, halfLife: 10, ice: 0.5, wearHours: 6, spearWear: 0.5 };
 // The cabin's Hunt job has no head-count cap (tune-jobcaps: it was 2): hunters are sized to the food the land must
 // bring in (foraging.js landFoodHands), each takes the best tile left and a kill thins it hard (a deer −0.3), so a
 // crowd soon hunts poor ground. Fishers likewise (one rod or net each: the tools are the cap); the base's one spot
 // gives each fisher past the first fishCrowd less (fishers' bank space and spooked fish; at least fishCrowdFloor).
 export const MEAT_KG = 1.35; // kg of raw game a day of food, about (venison 1.33, boar 1, rabbit and fowl 1.4, fish 1.4)
-export const CABIN = { radius: 2, hours: 3, smoke: 6, smokeOut: 5, land: 3, spoil: 0.6, snareLines: 2, fishCrowd: 0.1, fishCrowdFloor: 0.4 };
+// huntHours (2026-10-12, user request "improve hunting work at bases, it does not seem to do anything"): a base hunter's
+// day at dawn and dusk, 4 hours (it was CABIN.hours, 3, the fishers' day still); the trip's scale is the same
+// (tripland.js TRIP_JOBS.hunt.nominal).
+export const CABIN = { radius: 2, hours: 3, huntHours: 4, smoke: 6, smokeOut: 5, land: 3, spoil: 0.6, snareLines: 2, fishCrowd: 0.1, fishCrowdFloor: 0.4 };
 export const GAME_TERRAIN = { forest: 1, hills: 0.8, mountain: 0.5, plains: 0.55, suburb: 0.12, city: 0.03, water: 0 };
 // Hunting weapons by trade category (data.js GEAR cat); a GEAR entry's own `hunt: { big, small }` overrides it.
 export const HUNT_CAT = {
@@ -240,9 +268,10 @@ export const hunterMult = (s) => (0.55 + 0.09 * hunterSkill(s)) * (hasPerk(s, "h
 // only: "bow" (bows and crossbows), "gun" (firearms) or null (any).
 // ammo: a number (any rounds) or a stock record (ammo.js: a gun needs rounds of its own calibre; its loaded type, R9,
 // sets how it does on big and small game while there are rounds of it).
-export function bestHuntWeapon(s, ammo = Infinity, arrows = Infinity, only = null) {
+// extra: more weapons to hand (a base's armory lends its hunters one: huntLoans).
+export function bestHuntWeapon(s, ammo = Infinity, arrows = Infinity, only = null, extra = null) {
   let best = null;
-  for (const it of carriedItems(s)) {
+  for (const it of extra ? [...carriedItems(s), ...[].concat(extra)] : carriedItems(s)) {
     let w = huntWeaponInfo(it);
     if (!w || (w.ammo && huntRounds(ammo, it) < 1) || (w.arrows && arrows < 1)) continue;
     if ((only === "bow" && !w.arrows) || (only === "gun" && !w.ammo)) continue;
@@ -254,8 +283,53 @@ export function bestHuntWeapon(s, ammo = Infinity, arrows = Infinity, only = nul
   }
   return best;
 }
+// The hunting weapons lent to the base's hunters for the day (2026-10-12: a base's hunters went out with a pistol, or
+// with nothing but snares, while a rifle lay in the armory or hung on the shoulder of someone farming; woodcutters take
+// the armory's axes the same way): the armory's, and the weapon in hand of anyone living here who is neither hunting
+// nor on guard. The best one to the hunter it helps most, one each, only where it beats their own (ammo and arrows
+// aside: the day's plan checks those). Nothing changes hands in the stores. hunters: who hunts (default: those on the
+// Hunt job here). Map of survivor id → item.
+export function huntLoans(state, base, hunters = null) {
+  const out = new Map();
+  const here = atBase(state, base.id);
+  const who = hunters || here.filter((x) => x.role === "hunt");
+  if (!who.length) return out;
+  const ids = new Set(who.map((x) => x.id));
+  const list = [...(base.armory || []), ...here.filter((x) => !ids.has(x.id) && x.role !== "guard" && x.gear && x.gear.weapon).map((x) => x.gear.weapon)].filter((it) => huntWeaponInfo(it));
+  if (!list.length) return out;
+  const val = (s, it) => { const w = huntWeaponInfo(it), e = gearEffect(s, it); return e.usable ? (w.big + 0.3 * w.small) * e.mult : 0; };
+  const own = (s) => { const b = bestHuntWeapon(s); return b ? b.v : 0; };
+  const left = [...list];
+  for (const s of [...who].sort((a, b) => own(a) - own(b) || hunterMult(b) - hunterMult(a) || a.id - b.id)) {
+    let best = null, bv = own(s);
+    for (const it of left) { const v = val(s, it); if (v > bv + 1e-9) { best = it; bv = v; } }
+    if (best) { out.set(s.id, best); left.splice(left.indexOf(best), 1); }
+  }
+  return out;
+}
 // Does anyone here carry a bow or crossbow they can use (arrows aside)?
 export const hasBow = (people) => people.some((s) => !!bestHuntWeapon(s, 0, Infinity, "bow"));
+// Arrows before the bow (2026-10-12, user request "If a bow is in the inventory craft arrows before using"): someone
+// about to hunt with a bow or crossbow carried anywhere on them (hands, pockets, pack) and no arrows to hand makes a
+// dozen first from the firewood and scrap there (crafting.js CRAFTS.arrows: 30 firewood + 1 scrap, its hours). A team:
+// orders.js runs a field craft before the hunt (its hours pass first). A base's Hunt job: the day's plan
+// (hunterDayPlan) has the best crafter among the bow hunters make them from the base's stores at home before the dawn
+// trip (the materials, not the hunting hours: a hunter's day on the ground is CABIN.hours).
+export const bowmen = (people) => people.filter((s) => !!bestHuntWeapon(s, 0, Infinity, "bow"));
+export const arrowsWanted = (people, arrows) => bowmen(people).length > 0 && Math.floor(arrows || 0) < 1;
+function baseArrowsFirst(state, base, hunters) {
+  if (!arrowsWanted(hunters, base.stock.arrows)) return null;
+  const R = CRAFTS.arrows;
+  if (Object.entries(R.in).some(([k, v]) => (base.stock[k] || 0) < v)) return null;
+  const able = bowmen(hunters).filter((s) => canAttempt(s, R));
+  if (!able.length) return null;
+  const maker = able.reduce((a, s) => (craftSkill(s) > craftSkill(a) ? s : a), able[0]);
+  for (const [k, v] of Object.entries(R.in)) base.stock[k] -= v;
+  for (const [k, v] of Object.entries(R.supplies)) base.stock[k] = (base.stock[k] || 0) + v;
+  gainXp(state, maker, CRAFT_SKILL, 0.3);
+  log(state, `${maker.name.split(" ")[0]} makes ${R.supplies.arrows} arrows at ${base.name} before the hunt (none in store for the bows): ${Object.entries(R.in).map(([k, v]) => `${v} ${k === "wood" ? "firewood" : k}`).join(" and ")}, made at home before the dawn trip.`, "info");
+  return maker;
+}
 
 // ---------- the hunting mix (base.huntMix) ----------
 const tens = (v) => Math.max(0, Math.min(100, Math.round((Number(v) || 0) / 10) * 10));
@@ -668,8 +742,8 @@ export function fishSpot(state, tile) {
 }
 const isRod = (it) => it && (it.key === "fishrod" || (GEAR[it.key] && GEAR[it.key].fish === "rod"));
 const isNet = (it) => it && (it.key === "fishnet" || (GEAR[it.key] && GEAR[it.key].fish === "net"));
-const isSpear = (it) => !!(it && GEAR[it.key] && GEAR[it.key].fish === "spear");
-const isFishTool = (it) => isRod(it) || isNet(it) || isSpear(it);
+export const isSpear = (it) => !!(it && GEAR[it.key] && GEAR[it.key].fish === "spear");
+export const isFishTool = (it) => isRod(it) || isNet(it) || isSpear(it);
 // A tool's catch by its condition: a well-made (or well-kept) rod catches more (crafting.js: quality from the crafter).
 const qualityYield = (it) => 0.6 + 0.4 * Math.max(0, Math.min(1, it.quality ?? 1));
 export const fishToolPower = (it) => (GEAR[it.key].fishPower ?? FISH.rod) * qualityYield(it);
@@ -753,7 +827,12 @@ export function fishSummary(state, p, t) {
   const left = got.left >= 1 ? ` No room for ${Math.floor(got.left)} more.` : "";
   const word = gameWord(fishLevel(state, partyTile(p)));
   p.lastHaul = { kind: "fish", rations: got.rations, hour: state.hour };
-  if (got.rations > 0) log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice}: ${Math.floor(got.rations)} days of food in raw fish.`, "good");
+  // The trip's catch so far (parties.js returnHome: what was caught against what reached the stores).
+  const c = p.caught || (p.caught = { fish: 0, fished: 0 });
+  c.fish = Math.round((c.fish + Math.max(0, got.rations || 0)) * 100) / 100;
+  c.fished++;
+  if (got.rations > 0) log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice}: ${r1(got.rations)} days of food in raw fish.`, "good");
+  else log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice} for ${t.done}h and caught nothing.`, "info");
   return got.rations > 0
     ? `Fished ${t.done}h${ice}: ${Math.floor(got.rations)} days of food in raw fish (it spoils in a day or two).${wormNote(state, partyTile(p))}${left} Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`
     : `Fished ${t.done}h${ice} and caught nothing worth keeping. Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`;
@@ -810,11 +889,13 @@ export function expectSnare(state, tile, from, to) {
 function rollSnares(state, line) {
   const start = line.check ?? line.set;
   const days = Math.max(0, (state.hour - start) / 24);
-  let held = [], robbed = 0, rotted = 0, gone = false;
+  let held = [], robbed = 0, rotted = 0, gone = false, zombie = false;
   for (let d = 0; d < Math.ceil(days - 1e-9); d++) {
     const frac = Math.min(1, days - d);
     const hour = start + d * 24;
-    const per = Math.min(0.9, snareDayRate(state, line.tile, hour) / SNARE.count) * frac;
+    // One of the dead in the wires (SNARE.zombie): no game comes near the line until someone puts it down.
+    if (!zombie && state.rng.chance(snareZombieChance(state, line.tile) * frac)) zombie = true;
+    const per = zombie ? 0 : Math.min(0.9, snareDayRate(state, line.tile, hour) / SNARE.count) * frac;
     let n = 0;
     for (let i = 0; i < SNARE.count; i++) if (state.rng.chance(per)) n++;
     for (let i = 0; i < n; i++) held.push(d);
@@ -829,7 +910,7 @@ function rollSnares(state, line) {
       if (state.rng.chance(SNARE.wireLoss)) { gone = true; break; }
     }
   }
-  return { animals: held.length, robbed, rotted, gone, days };
+  return { animals: held.length, robbed, rotted, gone, days, zombie };
 }
 // The snare order's work, when its hours are done (orders.js finishTask). mode: set, check or lift.
 export function snareWork(state, p, mode) {
@@ -865,6 +946,7 @@ export function snareWork(state, p, mode) {
   let text = r.animals ? `The snares held ${r.animals} small game (${Math.round(kept * 10) / 10} days of food in raw meat${kept < rations - 0.05 ? `; no room for ${Math.round((rations - kept) * 10) / 10}` : ""}).${wormNote(state, tile, infested)}` : "The snares were empty.";
   if (r.rotted) text += ` ${r.rotted} caught earlier had gone bad.`;
   if (r.robbed) text += ` Something got to the line first: ${r.robbed} taken.`;
+  if (r.zombie) text += ` ${putDownSnared(state, members, tile, where)}`;
   const lift = mode === "lift" || r.gone;
   if (lift) {
     state.snares.splice(state.snares.indexOf(line), 1);
@@ -875,7 +957,7 @@ export function snareWork(state, p, mode) {
       text += " Lifted the line: the snare wire is back in the cargo.";
     } else text += " Lifted the line.";
   } else text += " The line stays set.";
-  if (r.animals || r.robbed) log(state, `${teamName(state, p)} checked the snares near ${where}: ${r.animals} small game${r.robbed ? `, ${r.robbed} stolen` : ""}.`, r.animals ? "good" : "info");
+  if (r.animals || r.robbed || r.zombie) log(state, `${teamName(state, p)} checked the snares near ${where}: ${r.animals} small game${r.robbed ? `, ${r.robbed} stolen` : ""}${r.zombie ? ", one of the dead caught in the wires" : ""}.`, r.animals ? "good" : "info");
   return text;
 }
 // Lines nobody comes back for: after 30 days unchecked a line is gone (torn up, rusted, sprung for good).
@@ -942,7 +1024,7 @@ export const fishCrowdShare = (n) => {
   return a / n;
 };
 // Expected food a day for one hunter at this base now (an average one with a hunting rifle, a compound bow for the
-// mix's bow hours, the snare lines for its trap hours: the job's sizing), from the best tile around, CABIN.hours at
+// mix's bow hours, the snare lines for its trap hours: the job's sizing), from the best tile around, CABIN.huntHours at
 // dawn and dusk.
 export function baseHuntDay(state, base, hour = state.hour) {
   const t = huntTripTile(state, base, hour);
@@ -952,7 +1034,7 @@ export function baseHuntDay(state, base, hour = state.hour) {
   const m = 0.82, rifle = { big: m * HUNT_CAT.rifle.big, small: m * HUNT_CAT.rifle.small }, bow = { big: m * 0.86, small: m * 0.9 };
   const dayStart = hour - (hour % 24);
   let r = 0;
-  for (const hh of DAWN_DUSK.slice(0, CABIN.hours)) {
+  for (const hh of DAWN_DUSK.slice(0, CABIN.huntHours)) {
     const o = huntOdds(state, rifle, tile, dayStart + hh);
     r += sh.guns * (o.big * bigAvg(o.deer) + o.small * ANIMALS.small.rations);
     if (sh.bows > 0) { const b = huntOdds(state, bow, tile, dayStart + hh); r += sh.bows * (b.big * bigAvg(b.deer) + b.small * ANIMALS.small.rations); }
@@ -1029,7 +1111,8 @@ const DAWN_DUSK = [6, 17, 7, 18, 5, 19]; // the hours a base's hunters and fishe
 // (bow-only hunters first); every other hour is on the snare lines. The fraction of an hour the mix asks for carries
 // over to the next day (base.huntCarry), so one hunter at 50% guns shoots 1 or 2 of their 3 hours in turn.
 export function cabinPlan(state, base, hunters, ammo = Infinity, arrows = Infinity, mix = huntMixOf(base)) {
-  const rows = hunters.map((s) => ({ s, hours: Math.round(CABIN.hours * Math.min(1, workFactor(s))), guns: 0, bows: 0, traps: 0, any: bestHuntWeapon(s, ammo, arrows), bow: bestHuntWeapon(s, ammo, arrows, "bow") }));
+  const lend = huntLoans(state, base, hunters);
+  const rows = hunters.map((s) => ({ s, hours: Math.round(CABIN.huntHours * Math.min(1, workFactor(s))), guns: 0, bows: 0, traps: 0, any: bestHuntWeapon(s, ammo, arrows, null, lend.get(s.id)), bow: bestHuntWeapon(s, ammo, arrows, "bow", lend.get(s.id)) }));
   const S = rows.reduce((a, r) => a + r.hours, 0);
   // Whole hours: the guns' share, and the guns' and bows' together (the rest is the traps'), each with its carry.
   const carry = { ...(base.huntCarry || {}) };
@@ -1054,7 +1137,10 @@ export function hunterDayPlan(state, base, s) {
   if (!P || P.day !== dayIdx) {
     const hunters = atBase(state, base.id).filter((x) => x.role === "hunt" && !x.inBed && workFactor(x) >= 0.35);
     P = base.huntPlan = { day: dayIdx, rows: {} };
-    for (const r of cabinPlan(state, base, hunters, spare, quiver)) P.rows[r.s.id] = { guns: r.guns, bows: r.bows, traps: r.traps, hours: r.hours };
+    const maker = baseArrowsFirst(state, base, hunters); // a bow and no arrows: a dozen made first
+    const quiver1 = Math.max(0, base.stock.arrows || 0);
+    for (const r of cabinPlan(state, base, hunters, spare, quiver1)) P.rows[r.s.id] = { guns: r.guns, bows: r.bows, traps: r.traps, hours: r.hours };
+    void maker;
   }
   if (!P.rows[s.id]) {
     const keep = base.huntCarry;
@@ -1064,14 +1150,15 @@ export function hunterDayPlan(state, base, s) {
   }
   return P.rows[s.id];
 }
-// One hunter's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them: the day's CABIN.hours
+// One hunter's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them: the day's CABIN.huntHours
 // one tile out) on `tile`, read at `hour` (dawn or dusk). Their share of the day's plan by method (hunterDayPlan); each
 // hour's weapon chosen again (the ammo or arrows may run out), whole hours rolled as the old job did and the last
 // part-hour at its share of the odds. The walls' ammo is never taken (ammoKeep). Returns the catch (rations, deer,
 // hog, small, shots, arrows, trapped, hrs, noise, gunfire { tile: quiet }, worm, infested): it comes home with them.
 export function huntTrip(state, base, s, tile, hours, hour) {
   const row = hunterDayPlan(state, base, s);
-  const frac = hours / CABIN.hours;
+  const frac = hours / CABIN.huntHours;
+  const lent = huntLoans(state, base).get(s.id); // the armory's hunting weapon this hunter takes out today, if any
   const blind = tileGameMult(state, base, tile); // a hunting blind there (sim/fieldworks.js): more game for the hunters
   const got = { rations: 0, shots: 0, hrs: { traps: 0, bows: 0, guns: 0 }, noise: 0, gunfire: {} };
   const spare = () => Math.max(0, totalRounds(base.stock) - ammoKeep(state, base));
@@ -1080,7 +1167,7 @@ export function huntTrip(state, base, s, tile, hours, hour) {
   const parts = (a) => { const out = []; let x = a; while (x > 1e-9) { out.push(Math.min(1, x)); x -= 1; } return out; };
   let trapHours = row.traps * frac, shot = false;
   for (const [m, a] of [["guns", row.guns * frac], ["bows", row.bows * frac]]) for (const w of parts(a)) {
-    const b = bestHuntWeapon(s, spareFor(), quiver(), m === "bows" ? "bow" : null);
+    const b = bestHuntWeapon(s, spareFor(), quiver(), m === "bows" ? "bow" : null, lent);
     if (!b) { trapHours += w; continue; }
     shot = true;
     got.hrs[b.w.arrows ? "bows" : "guns"] += w;
@@ -1116,9 +1203,9 @@ export function huntTrip(state, base, s, tile, hours, hour) {
   }
   if (trapHours > 1e-9) {
     // Trap hours (and a hunter without a weapon): the cabin's snare lines (two lines; a full day's work is
-    // CABIN.hours on them).
+    // CABIN.huntHours on them).
     got.hrs.traps += trapHours;
-    const rate = snareDayRate(state, tile, hour) * CABIN.snareLines * (trapHours / CABIN.hours) * blind;
+    const rate = snareDayRate(state, tile, hour) * CABIN.snareLines * (trapHours / CABIN.huntHours) * blind;
     let n = 0;
     for (let i = 0; i < SNARE.count * CABIN.snareLines; i++) if (state.rng.chance(Math.min(0.9, rate / (SNARE.count * CABIN.snareLines)))) n++;
     if (n) {
@@ -1135,9 +1222,13 @@ export function huntTrip(state, base, s, tile, hours, hour) {
 // The base's fishing tools are shared out over its fishers (fishTools; each one past the first catches a little less:
 // fishCrowdShare), so their trips together catch what the old day's fishing did. Returns { rations, fish, worm, infested }.
 export function fishTrip(state, base, s, shore, hours, hour) {
-  const fishers = atBase(state, base.id).filter((x) => x.role === "fish" && !x.inBed && workFactor(x) >= 0.35);
+  // Only the tools they took out (jobtrips.js checkOutTool: from the armory into their hands or pack): one who has
+  // none catches nothing, and the armory's rods left at home fish for nobody.
+  const frozen = frozenAt(state, hour);
+  if (!carriedItems(s).some((it) => isFishTool(it) && (!frozen || !isSpear(it)))) return { rations: 0, fish: 0, noTool: true };
+  const fishers = atBase(state, base.id).filter((x) => x.role === "fish" && !x.inBed && workFactor(x) >= 0.35 && x.trip && x.trip.job === "fish");
   if (!fishers.includes(s)) fishers.push(s);
-  const k0 = fishTools(state, base, fishers, { frozen: frozenAt(state, hour) });
+  const k0 = fishKit(fishers, [], { frozen });
   const share = fishCrowdShare(k0.used) / fishers.length;
   const kit = { ...k0, power: k0.power * share, spear: (k0.spear || 0) * share };
   const want = fishRate(state, kit, shore, hour) * hours;

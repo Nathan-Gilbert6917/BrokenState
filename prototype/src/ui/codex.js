@@ -12,14 +12,25 @@
 // "???" with its category. state.codex = { seen: { key: day }, fresh: [keys not looked at yet] } is saved with the
 // campaign (sim/save.js writes the whole state); an older save without it opens what its world already shows.
 import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
+import { STORE, FACTOR } from "../sim/storage.js"; // the food chain entries: food rooms and spoilage
+import { WOOD } from "../sim/woodcutting.js"; // a camp's fire a day
+import { COOK } from "../sim/cooking.js"; // a cook fire's firewood
+import { EAT } from "../sim/eating.js"; // "No hot food"
+import { KITCHEN } from "../sim/kitchen.js"; // the stove's firewood
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
-import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES } from "../sim/data.js";
+import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
+import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known; tile heat
+import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
+import { STREET, DOOR_KINDS } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses; the kinds of door
+import { WINDOW } from "../sim/windows.js"; // the map's windows: open, locked, fixed or broken
+import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/barricade.js"; // furniture shoved in the way, boards over doors and windows, the dead crawling over half cover
+import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
 import { bossUnit, DEFENCE } from "../sim/defences.js";
-import { ZOMBIE_MOVE, playerSees } from "../sim/combat.js";
+import { ZOMBIE_MOVE, playerSees, VAULT } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { FLASH } from "../sim/throwables.js"; // a flashbang's numbers
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
@@ -31,6 +42,7 @@ import { BLUEPRINTS, CRAFT_BOOKS, LOCKED, techName, unlockName } from "../sim/bl
 import { BIRTH } from "../sim/hivebirth.js"; // a hive being born: breaking up the gathering
 import { HCRAWL, HIVEMIND } from "../sim/hivecrawl.js"; // the hive crawl and the Hivemind
 import { FRONT_KINDS, FRONT, ICE, WEATHER, visibleFronts, iceRow } from "../sim/weather.js"; // weather fronts and river ice
+import { threatForecast, THREAT } from "../sim/forecast.js"; // the top bar's 7-day threat forecast
 import { zombieCanvas, armoredCanvas, enemyCanvas } from "./sprites.js";
 import { keyLabel } from "./keymap.js";
 import { ztypeBattleCanvas, bossBattleCanvas, growthCanvas, siteSpriteCanvas } from "./hivesprites.js";
@@ -44,7 +56,7 @@ const list = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} a
 
 export const CODEX_CATS = [
   ["dead", "The dead"], ["hives", "Hives"], ["items", "Items"], ["supplies", "Supplies"], ["buildings", "Buildings"],
-  ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
+  ["places", "Places"], ["conditions", "Illness and injury"], ["groups", "Groups and outsiders"], ["weather", "Weather"],
 ];
 const CAT_NAME = Object.fromEntries(CODEX_CATS);
 
@@ -141,9 +153,9 @@ function hiveEntries() {
 // How to use an item, by its trade category (data.js CATEGORIES); the item's own description says the rest.
 const ITEM_HOW = {
   melee: "Hold it in the Hands slot and use Melee (E) next to an enemy: silent and needs no ammo. Quick weapons strike for 1 action (strike, then step away); spears reach 2 tiles and can be thrown. See Help: Guns and melee weapons.",
-  pistol: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action) and makes noise (it draws the dead, and Heat in a raid). Fits a pocket. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
-  shotgun: "Hands slot: Shoot (F) costs a shell from the tube; Reload (I: 1 action) thumbs 2–4 shells in from those at hand (a pocket, the rig, a side-saddle; a trip packs a box of them at hand), the pack's need Get shells first. Hits hard up close, poorly at range (buckshot spreads), and is loud. Buckshot catches a worm swarm. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
-  rifle: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action); the long-range gun, and loud. Rifle rounds get through the armoured dead. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
+  pistol: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action from a magazine or rounds in a pocket or the rig, both actions from the pack) and makes noise (it draws the dead, and Heat in a raid). Fits a pocket. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
+  shotgun: "Hands slot: Shoot (F) costs a shell from the tube; Reload (I: 1 action) thumbs 2–4 shells in from those at hand (a pocket, the rig, a side-saddle); the pack's load for both actions, or Get shells (1 action) brings a handful to hand first. The pack is their own backpack and, on the road, the team's bags; never a base's stock (its defenders grab a box of shells out of it as the fight starts; a trip packs one at hand). Nobody starts with a free handful: a shotgunner with no shells on them or in the team's bags has only what is in the tube. Hits hard up close, poorly at range (buckshot spreads), and is loud. Buckshot catches a worm swarm. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
+  rifle: "Hands slot: Shoot (F) costs ammo from the magazine (Reload, I: 1 action from a magazine, a clip or rounds in a pocket or the rig, both actions from the pack); the long-range gun, and loud. Rifle rounds get through the armoured dead. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
   automatic: "Hands slot: Shoot (F) fires by its fire mode (single, burst or full auto: Shift+F) from its magazine (Reload, I: 1 action): the best gun there is, hungry for ammo. Suppress (Shift+O) pins whoever is in the cone. Modify (⚙) opens the gun builder: its parts, its ammo, how reliable it is.",
   bow: "Hands slot: silent shots that use arrows (1 a shot), never ammo, and no reloading. With no arrows it is only a club. After a won fight about half the arrows shot are picked up again.",
   explosive: "From a pocket or the pack: Throw (G) in battle. Thrown, it is gone. Kept in a base's armory, some of them work as decoys when a horde comes.",
@@ -154,7 +166,7 @@ const ITEM_HOW = {
   electronics: "In the Off hand, or kept in a base's armory: see its description.",
   packs: "Worn on the Backpack slot: more pack slots and a higher load.",
   tools: "In the Off hand or the pack: see its description for where it helps.",
-  optics: "Carried by anyone on a team: the team sees further (see its description).",
+  optics: "Carried by anyone on a team: the team sees further (see its description). A scout sent before a raid looks from further off with it (binoculars or a spotting scope +3 tiles by day, a monocular or a thermal +2; at night only a thermal): better odds of going unseen (Help: Choices before a raid).",
   camp: "Carried by a team: it helps where the team camps.",
   books: "Read at a base: it teaches its skill up to the level it names (or lifts the mood).",
   manuals: "Studied at a base: it opens buildings or recipes that need it.",
@@ -163,12 +175,16 @@ const ITEM_HOW = {
 };
 // Items with a line of their own (over their kind's).
 const ITEM_HOW_KEY = {
+  nvg: "In the Off hand (or on a helmet's mount): at night it sees 12 tiles down the cone with no light to give you away; switch it off and on for free (Alt+N). A scout sent before a night raid looks from 12 tiles with it, not the dark's 4–7 (Help: Choices before a raid).",
   flashbang: "Throw (G) it into a room before you go in, or at two or more of them bunched in cover: the stunned lose actions and aim and cannot overwatch the doorway. Keep your own people out of its 2 tiles (or facing away). Useless against the dead, except as a loud lure.",
+  ragplugs: "Crafted (Rag earplugs: 1 scrap, 1 hour, no skill, no book; a team makes them in the field too). Kept in a pocket or the pack they work on their own, under any helmet (a full-shell helmet takes no muffs): a pair goes in at the start of a fight and the tin lasts about 4 fights (more when well made). Weaker than foam earplugs (2 off a bang's loudness, not 3): a rifle fired outdoors still rings the shooter's ears now and then. When both are carried the foam ones are used.",
+  makeshiftpick: "Crafted (Makeshift picks (3): 1 scrap, 1 hour, no skill, no book; a team makes them in the field too), three to a stack of up to 10 in a pocket. In a raid, stand next to a locked door, cabinet or car: the Pick (makeshift) button shows the odds; the crowbar and lockpicks are used first when both are carried. Expect to lose one pick every other try; a safe, a steel security door or a gun safe needs the real picks, a key or force.",
 };
 const TRADE_HOW = "A trade good: groups pay for it by their kind (raiders love liquor and drugs; zealots will not touch them). Use it at a base for mood, or sell it.";
 function itemEntries() {
   const out = [];
   for (const [k, g] of Object.entries(GEAR)) {
+    if (g.supKey) continue; // a supply held as an item (sim/supitems.js): the supply's own entry covers it
     const cat = CATEGORIES[g.cat];
     const stats = [["Kind", cat ? cap(cat.name) : "—"], ["Slot", SLOT_NAMES[g.slot] || (g.slot === "pack" ? "Pocket or pack" : g.slot === "cargo" ? "Team cargo" : g.slot)]];
     if (g.power && ["weapon", "armor", "head", "arms", "legs"].includes(g.slot)) stats.push([g.slot === "weapon" ? "Power" : "Armor", g.power]);
@@ -229,7 +245,7 @@ function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => (FOODS[k] ? {
     // Food by type (sim/foods.js): its calories, weight and shelf life, its kind and quality.
     key: `s:${k}`, cat: "supplies", name: `${FOODS[k].icon} ${v.name}`, sub: "Food",
-    stats: [["Kind", FOOD_GROUPS[FOODS[k].group].name], ["Calories", `${FOODS[k].kcal} kcal (${Math.round((FOODS[k].kcal / 2000) * 100) / 100} of a day)`], ["Weight", `${v.weight} kg`], ["Keeps", FOODS[k].shelf >= 365 ? `about ${Math.round(FOODS[k].shelf / 365)} years` : `about ${FOODS[k].shelf} days at room temperature`], ["Quality", FOODS[k].tier]],
+    stats: [["Kind", FOOD_GROUPS[FOODS[k].group].name], ["Food value", `${FOODS[k].fv.toFixed(2)} (a meal is 1.00, three a day)`], ["Calories", `${FOODS[k].kcal} kcal (${Math.round((FOODS[k].kcal / 2000) * 100) / 100} of a day)`], ["Weight", `${v.weight} kg`], ["Keeps", FOODS[k].shelf >= 365 ? `about ${Math.round(FOODS[k].shelf / 365)} years` : `about ${FOODS[k].shelf} days at room temperature`], ["Quality", FOODS[k].tier]],
     text: FOODS[k].desc, how: FOODS[k].stable ? "Needs no cold room. Eaten after the food that spoils sooner." : "Fresh: it fills the base's food rooms, coldest first (a root cellar triples its life, a cold store in winter or a freezer much more); outside it spoils faster. The soonest to spoil is eaten first; spoiled food is thrown out.", sprite: null,
   } : {
     key: `s:${k}`, cat: "supplies", name: v.name, sub: "Supply",
@@ -275,7 +291,7 @@ function conditionEntries() {
   out.push({
     key: "c:worm", cat: "conditions", name: "🪱 The worm", sub: "Illness",
     stats: [["Course", `about ${WORM.COURSE} days; in the brain from day ${WORM.BRAIN_FROM}`], ["Health", `−${WORM.DAY_HP[0]} on day 1, rising to −${WORM.LATE_HP} a day`], ["Work", `${pct(WORM.GUT_WORK)} in the gut, ${pct(WORM.BRAIN_WORK)} in the brain`],
-      ["Healing", `${pct(WORM.HEAL)} of the usual while it is in them`], ["Cures", `a dewormer (sure) or a purge (${WORM.PURGE_MEDS} meds) in the gut; then only surgery (${WORM.SURGERY_MEDS} meds, a Clinic or better)`]],
+      ["Healing", `${pct(WORM.HEAL)} of the usual while it is in them; a hospital bed does nothing for them`], ["Meds", `${WORM.DOSE_MEDS} a day from the base or the team once it is spotted: ${pct(WORM.MEDS_HP)} of the damage, the course half as fast (it never clears it)`], ["Cures", `a dewormer (sure) or a purge (${WORM.PURGE_MEDS} meds) in the gut; then only surgery (${WORM.SURGERY_MEDS} meds, a Clinic or better)`]],
     text: "The parasite the dead carry. Caught by swallowing its eggs: un-purified water, food grown or gathered on infected ground, game that was not cooked, hands that handled the dead. Whoever dies with it gets up as one of the dead.",
     how: "Purify the water, cook the meat, wash after searching. Watch for it (a medic spots it sooner) and cure it in the gut stage: a dewormer is a sure cure.",
     sprite: null,
@@ -325,10 +341,92 @@ function groupEntries() {
     how: "Hear their news (free), buy the scouts' maps, trade, shelter them for a few days or take them in. Keep an eye out: a few rob the base that shelters them.",
     sprite: () => enemyCanvas("raiders", "#9a9a9a", null, null, 2),
   });
+  // Nomad bands (sim/nomads.js): one entry a tier, opened when one is seen.
+  const NOMAD_TEXT = {
+    1: ["hostile", "melee weapons and a pistol or two, no armour", "They rob a team they can take and scatter before one that is stronger. Pay them, talk them down, fight or run; a team stronger than they are can run them down for what they drop.", "From the start."],
+    2: ["neutral, willing to trade", "hunting rifles, bows and shotguns, light armour", "The best foragers and hunters on the road, with a medic or two. Trade with them, swap news, share food; they remember a kindness.", "From year 2."],
+    3: ["neutral and defensive", "rifles and carbines, plate carriers and steel (armour class 3 and up), a pickup or a Humvee", "Well armed and careful: they keep you at rifle range but will trade. Attacking them is a hard fight.", "From year 4."],
+  };
+  for (const tier of [1, 2, 3]) {
+    const T = NOMADS.TIERS[tier], [att, arms, how, from] = NOMAD_TEXT[tier];
+    out.push({
+      key: `n:${tier}`, cat: "groups", name: `Nomads: ${T.name}`, sub: "Nomads",
+      stats: [["Size", `${T.size[0]}–${T.size[1]} people (they start small and stay small)`], ["Attitude", att], ["Arms", arms], ["Appears", from]],
+      text: `Baseless bands that camp a few days, survey and pick over the places round their camp, then move on 4–8 tiles. They forage and hunt, eat and drink every day, and can starve, fall to the dead or to you; new bands come in from the edge of the map so there are always about half as many as there are groups. They take in neutral wanderers and refugees when they have food to spare. They are not one of the state's groups: no land, no base, no pacts, never in the Calder Coalition. Their camps show on the map once your people have seen one.`,
+      how: `${how} Send a team to attack a camp you have spotted (the tile's Attack the nomad camp). They take what you left in a container you opened near their camp.`,
+      sprite: () => enemyCanvas(T.kit === "preppers" ? "soldiers" : "raiders", NOMADS.COLORS[tier], null, null, tier + 1),
+    });
+  }
   return out;
 }
 
 let ENTRIES = null, BY_KEY = null;
+// Points of interest (sim/pois.js): how places work, and one entry a kind (data.js LOCATIONS) with its map sprite,
+// opened once the player knows one on a tile seen or reported.
+const likely = (def) => Object.entries(def.loot).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => (k === "food" ? "food" : k === "preserved" ? "food that keeps" : SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k)).join(", ");
+function placeEntries() {
+  const out = [{
+    key: "k:pois", cat: "places", name: "📍 Points of interest", sub: "How places work",
+    stats: [["Per tile", `up to ${POI.MAX} by the land (mountains 0–1, hills and forest 0–2, farmland 0–3, suburbs 1–4); none on water, in a city or town centre or on a hive's tile`], ["Known", "on and by roads and in the towns' and cities' footprints all but a few are known from the start; elsewhere none until a team surveys the tile"], ["Loot", "a pool of its own in each place, from what its kind holds; nothing grows back, and other groups strip them too"]],
+    text: "The houses, sheds, shops and camps a tile holds besides its site: a tile's best place is drawn on the map once you know it (a site tile keeps its site), the tile panel's Places rows list the ones you know with how picked over each is, and a pip at the sprite's corner counts them. What is hidden is never counted: the panel says \"possibly more unknown\".",
+    how: "Click a tile to read its Places. Send a Survey (8 hours on the tile) to find the hidden ones, a Quick look (2 hours) for a faster, rougher look. Scavenge or raid a tile to pick one of its places to search.", sprite: null,
+  }, {
+    key: "k:containers", cat: "places", name: "📦 Containers that stay", sub: "What a place keeps between visits",
+    stats: [["Unopened", "stays unopened with what it always held, until someone loots it"], ["Opened", "kept as you left it when the raid ends: what you did not take, what you put in or swapped, what a rummage left hidden, the lock picked or forced"], ["Lost", "things dropped on the floor and loot left on bodies"], ["Ransacked", "emptied by someone else (or by your own crews' searches): it stands open and empty"]],
+    text: "Each place is the same building with the same drawers, cupboards and cars on every visit, and each container holds the same things whenever it is first opened. How picked over a place is (rich, some, little, picked clean) is how many of its containers are still untouched: other groups' raids ransack them, and they can take what you left behind too. What you leave in a container never makes the place richer.",
+    how: "Leave things in a container you opened on a raid to come back for them. The dialogue that picks a place shows the containers you opened, what you left there, and \"looted by others since your visit\".", sprite: null,
+  }, {
+    key: "k:tileheat", cat: "places", name: "🔥 Tile heat", sub: "How stirred up a tile is",
+    stats: [["Rises", `going into a place (+${TILE_HEAT.ENTER}), coming out (sneaking ${7}, normal ${13}, loud ${22}, plus the shots fired), other groups' raids (+${TILE_HEAT.AI})`], ["Falls", "about 10% a day"], ["Effect", `the threat of every place on the tile (up to +${TILE_HEAT.THREAT}), more of the dead in a raid there, and when very hot a horde or a wandering band drawn by the noise`], ["Words", "cold, warm, hot, very hot"]],
+    text: "A tile's heat stays after the raid: every visit to its places stirs it up a little more, and noise and gunfire most. It is not the Heat of one raid (which starts afresh each time) nor a team's Field Heat. You see it as your people last saw it: the tile panel's Tile heat row and the place dialogue say how hot it was and how long ago, stale after two weeks.",
+    how: "Spread your raids over several tiles, sneak in and out, and let a hot tile cool down for a week or two before going back.", sprite: null,
+  }, {
+    key: "k:aipois", cat: "places", name: "🎒 Other scavengers", sub: "Who else picks the places over",
+    stats: [["Who", "the other groups' scavenging parties, raiders and travellers from outside, and in hardcore the bands on the road"], ["What they know", "the places by the roads and in the towns near where they live, and what their own surveys find (8 hours on a tile, as yours)"], ["Where first", "the places on the roads near their bases go first; off-road and unknown ground stays richer for longer"], ["Same tile", "in different places nobody minds; in the same place you meet them (a group at war with you comes for you either way)"]],
+    text: "The places run down without you: the groups send parties to the places they know near their bases, one place at a time, and survey tiles to find the hidden ones. They ransack containers as they go, they take what you left in a container you opened, and their raids stir a tile up. A party in a place shows on the map beside your team, and the place dialogue says when one is in it right now. The log says when a place you can see (or hear of on your radio) is picked clean, or when strangers emptied what you left.",
+    how: "Do not leave things in a container near a group's base for long. Survey off the roads for the places nobody has picked over yet.", sprite: null,
+  }];
+  // Windows and doors on the battle maps (sim/windows.js, sim/buildingmaps.js DOOR_KINDS; opened on the first map with one).
+  out.push({
+    key: "k:windows", cat: "places", name: "🪟 Windows", sub: "Open, locked, fixed or broken",
+    stats: [["Check", "free, from right next to it: unlocked, locked or fixed"], ["Open or close", `${WINDOW.OPEN_AP} action, quiet; an unlocked one from either side, a locked one from the inside only; a fixed one never`], ["Break", `${WINDOW.BREAK.ap} action, loud: the raid's noise +${WINDOW.BREAK.noise}, Heat +${WINDOW.BREAK.heat}, the unaware within ${WINDOW.BREAK.radius} tiles wake`], ["Through it", `a move may vault through an open or broken one (+${VAULT.COST} tiles, winded after) or crash through a closed one (as loud as breaking it, ${WINDOW.HURT[0]}–${WINDOW.HURT[1]} cuts); on a building's map Climb window (L) from next to it, quiet when it is open`], ["Cover", "half cover at the sill in every state; shots and sight pass; a throw passes an open or broken one"]],
+    text: "Every window on a battle map is unlocked, locked or fixed; houses mostly open, shop fronts and offices are mostly fixed glass, and a few stand broken already. Nobody knows which until someone tries it. The dead never open a window: they clamber through an open or broken one, and on a base's map they claw a closed one in.",
+    how: "Stand next to a window (not diagonally): click it or Check window to learn it; Open window for a quiet way out (locked ones from indoors only); Break window, or vault straight through with a move, for a loud quick escape. Shut a window behind you to keep a throw out.", sprite: null,
+  }, {
+    key: "k:doors", cat: "places", name: "🚪 Doors", sub: "The kinds of door",
+    stats: Object.values(DOOR_KINDS).filter((K) => K.diff != null || K.lock === false).map((K) => [K.name, `${K.hp} hit points · ${K.desc}${K.see ? " · seen through when shut" : ""}${K.lock === false ? " · no lock" : K.diff != null ? ` · lock difficulty ${K.diff}` : ""}${K.kick === false ? " · not kicked in" : ""}${K.force === false ? " · not forced" : ""}`]),
+    text: "A building's doors come by its kind: houses have a solid front door and a screen or a patio door at the back, shops and offices glass fronts and steel fire exits, police stations, armories, gun stores and cell blocks security doors, garages roller doors, barns plain wood. The kind sets how long the dead take to batter it down, whether it is seen through when shut, how hard its lock is to pick and whether it can be kicked in.",
+    how: "Hover a door to read its kind. A glass or a screen door hides nothing: close it to slow the dead, not to break their sight. Pick a glass door's lock (easy) or just break it (loud). A security door is picked or keyed, never kicked or forced: batter it down if you must.", sprite: null,
+  });
+  // Barricades (sim/barricade.js): furniture shoved in the way, boards and nails over a door or window, the dead crawling over half cover.
+  out.push({
+    key: "k:barricades", cat: "places", name: "🪵 Barricades", sub: "Shove furniture, board up doors and windows",
+    stats: [["Shove", `${SHOVE.AP} actions, from right next to it: a shelf, cabinet, counter, table, bed, crate, locker, tall shelving, barrel, hay or sandbags one tile, pushed onto a free cell beside it or pulled onto your own cell (you step back); the scrape is heard ${SHOVE.RADIUS} tiles off`], ["Board up", `${BOARD.AP} actions and a bundle of boards and nails (crafted from 30 firewood and a scrap, anywhere): nailed across a closed door, a doorway or a window from either side; ${BOARD.HP} hit points a layer, up to ${BOARD.MAX} layers, on top of a closed door's own; loud (heard ${BOARD.RADIUS} tiles off, Heat +${BOARD.HEAT} in a raid)`], ["Tear down", `${BOARD.TEAR.ap} actions from either side: the door or window back, shut; the boards are spent`], ["The dead", `crawl over half cover (a table, a shelf, crates, a fence) at +${CRAWL.COST} tiles, a walker's whole turn; never a closed window; batter boards and a shoved tall piece (${FURNITURE.locker.hp} hit points for lockers) or go round`], ["Raiders", `vault half cover as your people do; batter boards when there is no other way in`]],
+    text: "Furniture in a doorway or a corridor slows the dead and stops a crowd: they crawl over a table or a shelf one at a time, spending their turn on it, and a tall piece (lockers, tall shelving) they must batter down or go round. Boards nailed across a door or a window close it for good until someone batters through: no sight, no way, full cover. Everything you can do, the other side can undo: the dead claw boards down and tear through a shoved locker, raiders batter their way in.",
+    how: "Before the dead arrive, shove a shelf across the doorway and board up the windows of the room you hold: each board-up is loud, so do it early. Keep boards in the pack (4 kg a bundle). Tear the boards down again when you leave, or vault out of a window.", sprite: null,
+  });
+  // A kind with more to say than the rest: the neighbourhood is a whole street of houses on one raid map (sim/buildingmaps.js streetMap).
+  const NOTES = {
+    neighbourhood: {
+      stat: ["Map", `a street of ${STREET.HOUSES[0]}–${STREET.HOUSES[1]} houses, two storeys each, cars along the kerb, back gardens`],
+      text: "Neighbourhood: a street of houses in a suburb or a small town, raided as one place. The raid opens on the street itself: a row of houses each side of the road, every house with its own rooms, doors, stairs and containers, side yards and fenced back gardens between them, cars parked along the kerb. The ways out are both ends of the street and the back gardens. More of the dead wander a street than a lone house.",
+      how: "Pick it in the list of places like any other. Go through the houses one at a time: each house keeps its own containers between visits (one you never went into stays untouched, what you leave in one stays there), and the place's one picked-over band falls as the houses are searched. Searching hour by hour (crews, the autopilot) a team goes through it a house at a time, so it lasts several times as long as a lone house.",
+    },
+  };
+  for (const k of allPoiKinds()) {
+    const d = LOCATIONS[k];
+    if (!d) continue;
+    const zone = SITE_ZONES[d.cat], note = NOTES[k];
+    out.push({
+      key: `p:${k}`, cat: "places", name: d.name, sub: `${zone ? zone.name : "Place"} · point of interest`,
+      stats: [["Danger", DANGER_NAMES[siteDanger({ type: k, zone: d.cat })]], ["Likely", likely(d)], ["Gear", d.gear.length ? list(d.gear.slice(0, 4).map((g) => (GEAR[g] ? GEAR[g].name.toLowerCase() : g))) + (d.gear.length > 4 ? "…" : "") : "none"], ["Worth", d.richness >= 0.5 ? "a good haul when untouched" : d.richness >= 0.3 ? "a modest haul when untouched" : "slim pickings even untouched"], ...(note && note.stat ? [note.stat] : [])],
+      text: note ? note.text : `${d.name}: a place a tile holds${d.cat === "rural" ? " out in the countryside" : d.cat === "town" ? " in a suburb or a small town" : " on a city block"}, with loot of its own.`,
+      how: note ? note.how : "Scavenge or raid the tile and pick it in the list of places; the search goes through its rooms and containers. A survey shows whether it stands on a tile before you go.",
+      sprite: () => poiSpriteCanvas(k),
+    });
+  }
+  return out;
+}
 // Field works (sim/fieldworks.js FIELD.KINDS): opened once one stands on the map where you see it (yours, or a group's).
 function fieldEntries() {
   return FIELD.ORDER.map((k) => {
@@ -340,9 +438,29 @@ function fieldEntries() {
     return { key: `fw:${k}`, cat: "buildings", name: `${d.icon} ${d.name}`, sub: "Field work", stats, text: d.desc, how: "Plan it from a base's Field works tab and click a green tile: the builders walk out and put it up. Help: Field works.", sprite: null };
   });
 }
+// How food works (the base window's Food tab, ui/foodchain.js): the chain, spoilage, fires. Open from the start.
+const FOOD_CHAIN_KEYS = ["k:foodchain", "k:spoilage", "k:fires"];
+function foodChainEntries() {
+  return [{
+    key: "k:foodchain", cat: "supplies", name: "🍽️ The food chain", sub: "How food works",
+    stats: [["Where", "a base's window, Food tab"], ["Record", "the last 7 days, saved with the game"], ["A day of food", "2000 kcal (one person's day)"]],
+    text: "Food runs left to right: Sources (farms and harvests, hunting and snares, fishing, foraging, scavenging and teams home, trade and gifts, your other bases; and the crops ripening), Stores (days of food on hand for everyone fed there, each food room and the days until its next lot spoils), Kitchen (the cooking stations, their bills, purified water and the fire's firewood), Eating (heads, eaten a day, the ration level, what kind of food, hot food) and Losses (spoiled, eaten raw, sent out with teams, into packs). It ends with how long the food lasts at this rate and the biggest drain.",
+    how: "Open the Food tab when the food chip turns yellow: the verdict names the biggest drain and one or two things to do (a root cellar, cooking the meat before it turns, more people on Farm, Hunt, Fish or Forage, Lean rations).", sprite: null,
+  }, {
+    key: "k:spoilage", cat: "supplies", name: "🗑️ Spoilage", sub: "How food works",
+    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`]],
+    text: "Every food keeps its own time at room temperature (bread days, raw meat two or three, potatoes a month, cans years). Fresh food fills the base's food rooms, the food that spoils fastest in the coldest room first; what does not fit sits outside and spoils fastest. Canned, dry and preserved food needs no room. A lot whose time runs out is thrown out (a line in the log). The soonest to spoil is eaten first.",
+    how: "Build a root cellar (or a storehouse, a cold store, a freezer) before the harvest, dry the surplus on drying racks, cook raw meat into meals, and do not hunt more than the base eats in a few days.", sprite: null,
+  }, {
+    key: "k:fires", cat: "supplies", name: "🔥 Fires and firewood", sub: "How food works",
+    stats: [["Camp or shelter fire", `${WOOD.fire.shelter} firewood a day (half where deadfall lies about)`], ["Cook fire", `${COOK.fireWood} firewood an hour it cooks (${COOK.fireHours} hours a day)`], ["Kitchen stove", `${KITCHEN.wood.stove} a day + ${KITCHEN.wood.meal} a meal served`], ["No hot food", `${EAT.coldV[0]} mood after ${EAT.cold[0]} days, ${EAT.coldV[1]} after ${EAT.cold[1]}`]],
+    text: "A camp's or shelter's fire burns its firewood by the hour and goes out when the woodpile runs dry: no warmth, boiled water or cooking on it until it is lit again. A cook fire burns firewood while it cooks; the Kitchen's stove every day. No fire, nothing cooks: raw meat is eaten raw (food poisoning, Ate raw food −7) and after a few days without a cooked meal everyone minds it (No hot food).",
+    how: "Keep a few days of firewood in store (the Food tab shows the hours left), put someone on Cut wood, and light the fire again once wood comes in.", sprite: null,
+  }];
+}
 export function codexEntries() {
   if (!ENTRIES) {
-    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...buildingEntries(), ...fieldEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
+    ENTRIES = [...deadEntries(), ...hiveEntries(), ...itemEntries(), ...supplyEntries(), ...foodChainEntries(), ...buildingEntries(), ...fieldEntries(), ...placeEntries(), ...conditionEntries(), ...groupEntries(), ...weatherEntries()];
     BY_KEY = new Map(ENTRIES.map((e) => [e.key, e]));
   }
   return ENTRIES;
@@ -369,7 +487,7 @@ export function codexUnlock(state, key, quiet = false) {
 
 // Everything the player can see now, as codex keys.
 function seenNow(state) {
-  const keys = new Set(["z:walker"]); // everyone knows the ordinary dead
+  const keys = new Set(["z:walker", ...FOOD_CHAIN_KEYS]); // everyone knows the ordinary dead, and how food works
   const live = state.live || new Set();
   const known = (tile) => live.has(tile) || !!(state.knowledge && state.knowledge[tile]);
   const item = (it) => { if (it && it.key && GEAR[it.key]) keys.add(`i:${it.key}`); if (it && Array.isArray(it.contents)) it.contents.forEach(item); };
@@ -398,6 +516,10 @@ function seenNow(state) {
   for (const g of state.hiveGrowths || []) if (known(g.tile) && GROWTHS[g.kind]) keys.add(`h:${g.kind}`);
   for (const f of state.factions || []) if (f.known && FACTION_TYPES[f.type]) keys.add(`g:${f.type}`);
   for (const v of state.visitors || []) if (v && live.has(v.tile)) keys.add(`o:${v.kind}`);
+  for (const b of (state.nomads && state.nomads.bands) || []) if (b && b.known && live.has(b.tile)) keys.add(`n:${b.tier}`); // sim/nomads.js
+  // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
+  for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); if (poisOf(t)[i].cont && poisOf(t)[i].cont.last) keys.add("k:aipois"); }
+  if (Object.values(state.poiKnow || {}).some((k) => k && k.heat)) keys.add("k:tileheat"); // a team has seen a tile's heat (sim/pois.js noteTileHeat)
   weatherSeen(state, keys);
   return keys;
 }
@@ -421,12 +543,20 @@ function weatherEntries() {
     text: "A river frozen hard enough to walk on. Your teams can cross it, and so can other groups and the dead: a river that kept a base safe is open until the thaw.",
     how: "Watch the river by your bases in winter (an alert says when it freezes): man the walls on that side. When it thaws, anyone on it scrambles ashore.", sprite: null,
   });
+  // The top bar's threat forecast (sim/forecast.js, ui/threatbar.js): opened the first time it shows more than calm.
+  out.push({
+    key: "w:threat", cat: "weather", name: "📊 Threat forecast", sub: "The top bar",
+    stats: [["Days", `${THREAT.DAYS}, today first`], ["Levels", THREAT.NAMES.join(", ")], ["The sky", "read 3 days ahead; 4 with a watchtower, 5 with a radio station"], ["Sources", "weather and fronts, hordes and their drift, raids seen or heard on the radio, food, water, firewood and generator fuel, crops and the frost, the worm and illness, teams in the field, a hive due near a base"]],
+    text: "The seven bars beside the Needs button: each as tall and as hot as the worst thing coming that day. Hover (or click) for the causes: what, on which day, how sure, whom it hits and where it was learned. It holds only what your people know: a horde never seen, a raid nobody saw or heard, is not on it.",
+    how: "Read it each morning: a red bar days out is time to man the walls, bring food in, cut wood or call a team home. Click a cause to see it (the base, the team, the horde on the map). A watchtower, a radio station and Listen in on a group's channel see further.", sprite: null,
+  });
   return out;
 }
 function weatherSeen(state, keys) {
   try {
     for (const f of visibleFronts(state, 0)) keys.add(`w:${f.k}`);
     if (state.weather && iceRow(state) >= 0) keys.add("w:ice");
+    if (Array.isArray(state.bases) && threatForecast(state).level >= 1) keys.add("w:threat");
   } catch { /* no weather yet */ }
 }
 
@@ -441,6 +571,10 @@ function battleSeen(state, out) {
     try { if ((t.ztype !== "crawler" || zRevealed(b, t)) && (b.over || playerSees(b, t))) out.add(key); } catch { /* a unit the sight check does not know */ }
   }
   for (const c of b.corpses || []) if (c.sleeper && (c.spotted || c.burst)) out.add("z:sleeper");
+  // Windows and doors (sim/windows.js, sim/buildingmaps.js DOOR_KINDS): the entries open on the first map with one.
+  if (!codexSeen(state, "k:windows") && b.cells && b.cells.some((c) => c.k === "window" || c.k === "smashed")) out.add("k:windows");
+  if (!codexSeen(state, "k:doors") && b.cells && b.cells.some((c) => c.k === "idoor" || c.k === "odoor" || c.k === "door" || c.k === "bdoor")) out.add("k:doors");
+  if (!codexSeen(state, "k:barricades") && b.cells && b.cells.some((c) => isBoarded(c) || (shoveable(c) && c.f === "floor"))) out.add("k:barricades"); // sim/barricade.js: the first map with furniture indoors, or boards
 }
 
 // main.js refresh: opens what the player sees. The full scan once an in-game hour (or force), the battle each time.

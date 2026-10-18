@@ -45,12 +45,14 @@ import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into 
 import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
 import { BUILDINGS, CAMP } from "./buildings.js"; // a new outpost is a camp first, its step up queued (outpost_up)
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
+import { noteUnpack } from "./teaminv.js"; // home from a trip: what the people carry, put away or kept
 import { bodiesHome } from "./carriers.js"; // bodies carried home in the car (bury or burn them at the base)
 import { growthAt, growthArrive } from "./hivetech.js";
 import { gatheringCull } from "./hivebirth.js"; // hive birth you can see: breaking up a gathering at a build site
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore } from "./hordes.js";
 import { supplyArrive, supplyReturned } from "./supply.js";
+import { nightFalls } from "./nightmarch.js"; // night on the road: make camp or push through
 import { taskHour, startTask, startOrder, continueQueue, resumeQueue, orderLabel, queueText, tasksDue } from "./orders.js";
 import { applyPlan, fieldHour } from "./plans.js";
 import { packSiegeKit } from "./kit.js";
@@ -81,7 +83,9 @@ import { teamNeedsHour } from "./needs.js";
 import { wormTeamHour, packWater, wormHome, packTablets } from "./worm.js";
 import { siteKnown, siteNamed, noteLooked } from "./discovery.js";
 import { lookoutsSpot, surpriseAt, watchSawText } from "./watch.js"; // the lookouts' warning; an unwatched night
-import { startSweep, sweepOpts, sweeping } from "./survey.js";
+import { startSweep, sweepOpts, sweeping, LOOK, quickLook } from "./survey.js";
+import { poisOf } from "./pois.js"; // the tile's points of interest: a raid goes into one of them
+import { scavengeProblem, pickedOverAt, poiPickWanted, poiPickCard } from "./poiraid.js"; // which POI to raid: the dialogue card, or the pick made for you
 import { opticsFor } from "./optics.js";
 import { withYou } from "./hardcore-start.js";
 import { teamReceives, networksAt } from "./radio.js"; // a team's receiver: hears a network inside its coverage, cannot call (updateRadio)
@@ -94,6 +98,9 @@ import { waterIn, drawWater, waterText, teamWaterIn, takeTeamWater, stockHas, ta
 import { partySaw } from "./groupworld.js"; // a group learns your bases its parties pass
 import { lyingFor, INTEL } from "./intel.js"; // a gang that overheard a group's caravan waits for it
 import { withLook, surveyErr, noteLook } from "./intelnotes.js"; // what a team sees of a group's base (the State Map's estimates, intelest.js)
+import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood task counts its own haul (call-time only: safe in the import cycle)
+import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
+import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
 
 export const STANCES = {
   stealthy: { name: "Stealthy", speed: 0.75, events: 0.6, desc: "25% slower, 40% fewer events. Good for scouting dangerous ground." },
@@ -113,14 +120,16 @@ export const MISSIONS = {
   cull:        { name: "Cull horde",       desc: "Thin out or lure away a horde on or next to this tile." },
   hive:        { name: "Destroy hive",     desc: "Storm an infestation hive: a hard tactical battle against its brood and the Broodmother inside. Win and the hive is destroyed. Bring five or six well-armed fighters." },
   growth:      { name: "Burn the growth",  desc: "Attack a structure a hive has grown beside it (a pit, a brood chamber, a warren...): fight its guard in a small battle, or burn it with 4 fuel or 2 Molotovs (it may take two fires). Gone, the hive loses what it gave: income, a bigger guard, a kind of special dead, its Wallbreakers. Bring three or four fighters." },
+  nomads:      { name: "Attack the nomad camp", desc: "Go to a nomad camp your people spotted (nomads.js) and attack it: a battle against the band with its tier's kit (looters: clubs and pistols; survivalists: hunting rifles and bows; preppers: rifles and plate armour). Win and what they carry is yours. They move on every few days: the camp may be gone when you get there." },
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running. A vehicle found on a map that needs work is repaired on the spot (foundcars.js)." },
   drivehome:   { name: "Drive it home",    desc: "One of the team drives a found vehicle home on their own (foundcars.js).", hidden: true },
   rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak in or storm the base (on its map, or by the numbers), negotiate or pay a ransom." },
   handover:    { name: "Ransom handover",  desc: "Take the ransom to the meeting point a group named and bring your people back (ransom.js).", hidden: true },
-  sweep:       { name: "Survey",           desc: "Sweep the land around the target for hidden places (farms, cabins, lodges, camps off the roads) and finds: the team moves from spot to spot within the radius for the hours set, then ends back at the centre. Scouting, open ground, daylight and binoculars help; a car covers ground but sees little." },
+  sweep:       { name: "Sweep area",       desc: "Sweep the land around the target for hidden places (farms, cabins, lodges, camps off the roads) and finds: the team moves from spot to spot within the radius for the hours set, then ends back at the centre. Scouting, open ground, daylight and binoculars help; a car covers ground but sees little." },
+  fullsurvey:  { name: "Survey",           desc: "Eight hours looking the tile over for the places it hides (pois.js): one roll at the end finds them all, or each on its own with worse odds; optics that reach (binoculars, a scope) take in the ring of tiles round the team at lower odds. It also finds a hidden site here, stamps the tile surveyed and sizes up the threat of every place known here (a word with skulls that goes stale with the days). Not in a fight or on the move. Scouting, open ground, daylight, people and optics help." },
   assault:     { name: "Assault their base", desc: "Attack a group's base (or one of yours they took): a tactical battle against its defenders behind their walls. Win and it is your outpost, with its land and part of its stores; a group that loses its last base is finished. Bring five or six fighters. Attacking a group that is not hostile costs dearly with it, its friends and every peaceful group." },
-  survey:      { name: "Look around",      desc: "Spend 2 hours surveying nearby tiles. Better odds of spotting hidden finds.", hidden: true },
+  survey:      { name: "Quick look",       desc: "Two hours looking the tile over: a chance at each place it hides (about half a Survey's odds, the kind only, no threat; optics help the odds, never the range) and better odds of spotting hidden finds nearby.", hidden: true },
   help:        { name: "Relief squad",     desc: "Help a group under attack.", hidden: true },
   route:       { name: "Convoy",           desc: "Trade-route convoy.", hidden: true },
   retreat:     { name: "Retreat",          desc: "People who left a base before it fell, on their way to another (conquest.js).", hidden: true },
@@ -240,7 +249,8 @@ export const poolLoad = (p) => supplyLoad(p.supplies) + cargoLoad(p.cargo);
 export function cargoRoom(state, p) {
   let cap = partyCapacity(state, p);
   if (p.haulCap != null && !p.vehicle) cap = Math.min(cap, p.haulCap);
-  if (p.task && p.task.capKg != null && p.task.pool0 != null) cap = Math.min(cap, p.task.pool0 + p.task.capKg); // carry.js capTask: collect only as much as asked
+  if (p.task && p.task.capKg != null && p.task.kind0 != null && KEY_KINDS[p.task.type]) cap = Math.min(cap, poolLoad(p) + Math.max(0, p.task.capKg - (keyKg(p, KEY_KINDS[p.task.type]) - p.task.kind0))); // carry.js capTask: water and firewood counted by themselves
+  else if (p.task && p.task.capKg != null && p.task.pool0 != null) cap = Math.min(cap, p.task.pool0 + p.task.capKg); // carry.js capTask: collect only as much as asked
   return Math.max(0, cap - poolLoad(p));
 }
 
@@ -1196,9 +1206,13 @@ export function glideAt(state, p, frac, held = false) {
 export function arrivalsDue(state, frac, held = () => false) {
   let any = false;
   for (const p of [...state.parties]) {
-    if (!state.parties.includes(p) || !arrivesOnTime(p) || !onTheMove(p) || p.movedHour === state.hour + 1 || held(p)) continue;
-    const c = hourCourse(state, p);
-    if (!c.arrive || frac + 1e-9 < c.arriveFrac) continue;
+    if (!state.parties.includes(p) || !arrivesOnTime(p) || held(p)) continue;
+    // Already on the last tile of its way (wayDone: a card met there cut the move short) arrives now, moved this hour or not.
+    if (!wayDone(p)) {
+      if (!onTheMove(p) || p.movedHour === state.hour + 1) continue;
+      const c = hourCourse(state, p);
+      if (!c.arrive || frac + 1e-9 < c.arriveFrac) continue;
+    }
     p.movedHour = state.hour + 1;
     moveHour(state, p, state.hour + 1);
     any = true;
@@ -1210,6 +1224,11 @@ export function arrivalsDue(state, frac, held = () => false) {
 // Parties that arrive at the minute (arrivalsDue): all of yours, teams and convoys.
 /** @param {Party} p */
 const arrivesOnTime = (p) => p.owner === "player";
+// On its way out or back with no step left, but not arrived: a card on the last tile (a surge of the dead, a fight) held
+// the move up after it got there, and the team carried on ("Continue") at the end of its way. The panels say "0m left"
+// (hoursLeft 0); moveHour finishes it (arrive, returnHome).
+/** @param {Party} p */
+const wayDone = (p) => (p.phase === "out" || p.phase === "back") && Array.isArray(p.path) && p.idx >= p.path.length - 1;
 
 // The place on a course at progress u (pos: i + the share of the step from path[i] to path[i + 1]) and the waypoint
 // the stretch ends at (k).
@@ -1307,15 +1326,23 @@ export function hourCourse(state, p, held = false) {
 /** @param {Party} p @param {number} hour */
 const hourUsed = (p, hour) => (p.hourUsed && p.hourUsed.hour === hour ? p.hourUsed.f : 0);
 
+// Live intel from your teams. TEAM_INTEL_EVERYWHERE (for now): every team of yours reports what it sees as it sees it,
+// wherever it is, as orders reach it anywhere (plans.js commandable). Off: only teams in radio coverage (p.radioLive)
+// report live, the rest when they get home or come into range. Everything that asks "does this team's sight reach the
+// map now?" goes through reportsLive; p.radioLive itself stays "in your radio coverage" (the 📻 badge, listening in).
+export const TEAM_INTEL_EVERYWHERE = true;
+/** @param {Party | null | undefined} p */
+export const reportsLive = (p) => !!p && (!!p.radioLive || (TEAM_INTEL_EVERYWHERE && p.owner === "player" && p.kind !== "convoy"));
+
 /** @param {State} state @param {Party} p */
 function updateRadio(state, p) {
   // Hardcore before the first hub (hardcore-start.js): you are with this team, so it is always in contact.
   p.radioLive = withYou(state, p) || radioBasesInRange(state, partyTile(p), hasMilRadio(state, p) ? 4 : 0).length > 0;
-  p.sightNow = p.radioLive ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
-  if (p.radioLive) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
+  p.sightNow = reportsLive(p) ? state.grid.within(partyTile(p), sightRadius(state, p)) : [];
+  if (reportsLive(p)) mergeKnowledge(state, p.seen, p.spotted, p.owner === "player" ? p : null);
   // Listening (radio.js networks): a team carrying a receiver (a hand-crank or military radio) out of two-way reach
   // hears a radio network only while it stands inside that network's coverage (a group's, or yours: nothing beyond
-  // it). It is not in contact (no orders, nothing reported). What it picks up on the channel it tuned to (Listen
+  // it). It does not report live (its sightings wait until it reports); orders reach it anyway (plans.js commandable). What it picks up on the channel it tuned to (Listen
   // in, radiolisten.js) goes to p.heard each day.
   if (p.owner !== "player" || p.kind === "convoy") return;
   p.radioHear = !p.radioLive && teamReceives(state, p) && networksAt(state, partyTile(p)).length > 0;
@@ -1382,9 +1409,15 @@ function playerPartyHour(state, p) {
     if (state.parties.includes(p)) updateRadio(state, p);
     return;
   }
-  // Moved this hour already: it got where it was going part-way through the hour (arrivalsDue).
-  if (p.movedHour === state.hour) {
+  // Moved this hour already: it got where it was going part-way through the hour (arrivalsDue). Still out at the end of
+  // its way (wayDone: a card there held it up), it arrives now: moveHour has nothing left to travel.
+  if (p.movedHour === state.hour && !wayDone(p)) {
     updateRadio(state, p);
+    return;
+  }
+  // Night falls on the road (nightmarch.js): make camp until dawn or push through the night (asked once a night).
+  if (nightFalls(state, p)) {
+    if (state.parties.includes(p)) updateRadio(state, p);
     return;
   }
   moveHour(state, p, state.hour);
@@ -1603,6 +1636,13 @@ export function addGearToCargo(state, p, item) {
 }
 
 // ---------- orders ----------
+// Scavenge / raid: a site (t.loc) can be searched again and again; each search picks it over (t.loot falls to a 0.03
+// floor, scavenge.js) so a stripped site yields little, but it is never closed. Open ground needs something left
+// (loot above 0.05). loot: what you know of the tile (a stale report) instead of the live value.
+/** @param {{ loc?: any, loot?: number } | null | undefined} t @param {number} [loot] */
+export const scavengeable = (t, loot = t ? t.loot : 0) => !!t && (!!t.loc || (loot || 0) > 0.05);
+export const PICKED_OVER = 0.05; // at or below: the site is picked over (searching again finds little)
+
 // What the team can do on the tile where it stands. tile: another tile instead (the right-click menu, ui/teamctx.js,
 // asks for the tile the team would move to first: the labels, and the reasons an option would fail with what it carries).
 /** @param {State} state @param {Party} p @param {number} [tile] */
@@ -1613,8 +1653,13 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   const enter = enterOption(state, p, tile); // on one of your bases: move in, the team disbanded (moveout.js)
   if (enter) out.push(enter);
   add("survey");
+  if (t.terrain !== "water" || t.bridge) add("fullsurvey", state.combat ? "Not in a fight." : null); // the POI survey (survey.js fullSurveyDone)
   if (t.terrain !== "water") add("sweep");
-  if (t.loot > 0.05) add("scavenge");
+  // A tile with points of interest (pois.js): the raid goes into one of them, so one has to be known (poiraid.js).
+  if (scavengeable(t) || poisOf(t).length) {
+    add("scavenge", scavengeProblem(state, p, tile));
+    if (!out[out.length - 1].disabled && pickedOverAt(state, p, tile)) out[out.length - 1].desc += " Picked over: searching again finds little.";
+  }
   const fb = state.factions.find((f) => f.alive && f.bases.includes(tile));
   if (fb) add("trade");
   if (p.caravan) add("caravan"); // a trade caravan's stop card (caravans.js)
@@ -1640,6 +1685,7 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   if (site && site.items.length) add("recover");
   if (state.hordes.some((h) => state.grid.distance(h.tile, tile) <= 1)) add("cull");
   if (hiveAt(state, tile)) add("hive");
+  if (nomadCampAt(state, tile)) add("nomads"); // nomads.js: a camp you know of
   const gr = growthAt(state, tile);
   if (gr && gr.withered == null) add("growth"); // hivetech.js
   if (t.hidden && !t.hidden.taken && (t.hidden.known || p.spotted?.has(`${t.hidden.type}:${tile}`))) add("investigate");
@@ -1677,7 +1723,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
       // caravanraids.js: a caravan in sight, attack it (within a tile) or go after it.
       ...caravanOrderChoices(state, p),
       ...opts.map((o) => ({
-        label: o.mission === "sweep" ? `Survey ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep",
+        label: o.mission === "sweep" ? `Sweep ${sweepOpts(p.sweepPlan || {}).radius} tiles around (${sweepOpts(p.sweepPlan || {}).hours}h)` : o.mission === "fullsurvey" ? `Survey this tile (${LOOK.hours}h)` : o.mission === "survey" ? `Quick look (${LOOK.quickHours}h)` : o.label, hint: o.disabled || o.desc, disabled: !!o.disabled, order: o.mission === "survey" || o.mission === "sweep" || o.mission === "fullsurvey",
         resolve: (st) => {
           // Checked again now: the card may have been open while things changed.
           const now = orderOptions(st, p).find((x) => x.mission === o.mission);
@@ -1709,7 +1755,7 @@ export function ordersCard(state, p, text, doneLabel, title) {
 /** @param {State} state @param {Party} p @returns {"log" | "tray" | null} */
 function quietArrival(state, p) {
   if (p.owner !== "player" || state.autopilot || p.crewRole != null || p.kind === "convoy") return null;
-  return p.radioLive || state.bases.some((b) => b.tile === partyTile(p)) ? "log" : "tray";
+  return "log"; // orders reach a team anywhere (plans.js commandable): no radio-range limit
 }
 
 // The team stops and reports in. opts.failed: the order could not be done (the card is not titled "Done: …");
@@ -1793,8 +1839,9 @@ export function orderMove(state, p, tile) {
 }
 
 // debit: take the two hours from the next move (recon); a timed Look around order already spent them.
-/** @param {State} state @param {Party} p @param {number} bonus @param {boolean} [debit] */
-export function survey(state, p, bonus, debit = true) {
+// pois: the Quick look at the tile's points of interest too (survey.js quickLook; the Survey makes its own rolls).
+/** @param {State} state @param {Party} p @param {number} bonus @param {boolean} [debit] @param {{ pois?: boolean }} [opts] */
+export function survey(state, p, bonus, debit = true, { pois = true } = {}) {
   const tile = partyTile(p);
   const members = partyMembers(state, p);
   const opt = opticsFor(members, p.cargo, { still: true, night: state.hour % 24 < 6 || state.hour % 24 >= 20 }); // optics.js
@@ -1803,11 +1850,12 @@ export function survey(state, p, bonus, debit = true) {
   for (const id of around) p.seen.set(id, state.grid.distance(tile, id) <= 1 + opt.reach ? withLook(state, snapshot(state, id), id, "survey", surveyErr(state, opt)) : withLook(state, snapshot(state, id), id));
   const found = perceive(state, p, members, around, bonus + (opt.look - 1) * 0.3);
   noteLooked(state, p, around); // discovery.js: looked hard at (the map's Known area layer)
+  const places = pois ? quickLook(state, p) : ""; // survey.js: the places the tile hides, each on its own
   gainXpAll(state, members, "scouting", USE.survey); // skills.js
   if (debit) p.progress -= 2 * partySpeed(p); // two hours spent looking around before moving on (at any pace)
   updateRadio(state, p);
   const crash = crashSurvey(state, p); // crashes.js: a downed aircraft found, or its search circle narrowed
-  return `${found.length ? `Spotted: ${found.map((f) => `${MARKER_TYPES[f.type].name} at ${tileLabel(state, f.tile)}`).join("; ")}.` : "Nothing new spotted nearby."}${crash ? ` ${crash}` : ""}`;
+  return `${found.length ? `Spotted: ${found.map((f) => `${MARKER_TYPES[f.type].name} at ${tileLabel(state, f.tile)}`).join("; ")}.` : "Nothing new spotted nearby."}${places ? ` ${places}` : ""}${crash ? ` ${crash}` : ""}`;
 }
 
 // The pitching is done (orders.js task "pitch"): the camp stands, checked again (the tile may have been taken meanwhile).
@@ -1854,13 +1902,25 @@ function arrive(state, p) {
     case "survey":
       startTask(state, p, { type: "survey", hours: 2 });
       return "The team spends two hours looking around.";
+    case "fullsurvey": // the POI survey (survey.js fullSurveyDone when the hours are up): a task on the spot
+      if (state.combat || (t.terrain === "water" && !t.bridge)) {
+        awaitOrders(state, p, state.combat ? "No surveying in a fight." : "A survey cannot start on open water.", { failed: true });
+        return "";
+      }
+      startTask(state, p, { type: "fullsurvey", hours: LOOK.hours });
+      return `The team starts surveying ${tileLabel(state, p.dest)} (${LOOK.hours}h).`;
     case "sweep":
       return startSweep(state, p, p.sweepPlan || {}); // survey.js
-    case "scavenge":
+    case "scavenge": {
       if (t.terrain === "water" && !t.bridge) { // a bridge is searched: the cars left on it (combat.js AREAS.roadcars)
         awaitOrders(state, p, "There is nothing to search on the water.", { failed: true });
         return "";
       }
+      // A tile with points of interest (poiraid.js): one of them has to be known, and you pick which (the dialogue
+      // card) unless something picks for you (the autopilot, a crew, a headless tool: the best known one).
+      const why = scavengeProblem(state, p, p.dest);
+      if (why) { awaitOrders(state, p, why, { failed: true }); return ""; }
+      if (poiPickWanted(state, p, p.dest)) { awaitOrders(state, p, "", { card: (st, q) => poiPickCard(st, q), hold: true }); return ""; }
       p.phase = "engaged";
       // Headless searches share one slot (state.engagement): a second team waits its turn instead of replacing it.
       if (startScavenge(state, p) === false) {
@@ -1868,6 +1928,7 @@ function arrive(state, p) {
         return "";
       }
       return "The team starts searching.";
+    }
     case "trade": {
       const f = state.factions.find((f) => f.alive && f.bases.includes(p.dest));
       if (!f) {
@@ -1970,6 +2031,8 @@ function arrive(state, p) {
       addCard(state, gatheringCull(state, p, horde, cullCard(state, p, horde))); // hivebirth.js: at a hive build site, Break up the gathering
       return "";
     }
+    case "nomads":
+      return nomadCampArrive(state, p); // nomads.js: the camp, if it is still there
     case "investigate":
       return investigate(state, p);
     case "getvehicle": {
@@ -2256,7 +2319,7 @@ function cullCard(state, p, horde) {
 /** @param {State} state @param {Party} p */
 export function startReturn(state, p) {
   if (wipeIfEmpty(state, p)) return "That team is gone.";
-  const known = p.radioLive || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
+  const known = reportsLive(p) || p.phase === "waiting" || p.phase === "task"; // ordered home by you, not on its own
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { // no base left at all (conquest.js): the team stays on the road until it founds or takes one
     if (p.phase !== "waiting") awaitOrders(state, p, "There is no base to go home to. Found a new one (Establish base: a camp you build up into your hub) or take one back (Assault their base).", { failed: true, hold: true });
@@ -2318,6 +2381,7 @@ function unloadAt(state, p, base, members) {
   addStock(base, p.supplies);
   addStock(base, p.cargo.supplies);
   base.armory.push(...p.cargo.gear);
+  for (const m of members) unpackPerson(state, m, base); // supitems.js: the water, meds, food… they carry as items, into the stores
   bodiesHome(state, p, base); // carriers.js
   const vs = partyVehicles(state, p); // every one it has (vehicles.js fleets)
   for (const x of vs) x.loc = { kind: "base", baseId: base.id };
@@ -2341,16 +2405,49 @@ export function settleInto(state, p, base) {
   removeParty(state, p);
 }
 
+// What a stock gained between two snapshots: { key: q } (supplies and food by type; at least 0.05 of each).
+/** @param {Stock} before @param {Stock} after */
+export function stockGain(before, after) {
+  /** @type {Stock} */
+  const out = {};
+  for (const [k, v] of Object.entries(after || {})) {
+    const d = (Number.isFinite(v) ? v : 0) - (Number.isFinite(before[k]) ? before[k] : 0);
+    if (d >= 0.05 && (SUPPLIES[k] || FOODS[k])) out[k] = d;
+  }
+  return out;
+}
+// "6 days of food (30 cans of beans), 7 water, a machete": a gain in words ("" when nothing).
+/** @param {Stock} gain @param {Item[]} [gear] */
+export function storedText(gain, gear = []) {
+  const food = Object.fromEntries(Object.entries(gain).filter(([k]) => FOODS[k]));
+  const days = foodIn(food);
+  const parts = days >= 0.05 ? [`${r1(days)} days of food (${foodText(food, 3)})`] : [];
+  for (const [k, q] of Object.entries(gain)) if (!FOODS[k] && q >= 0.5) parts.push(`${Math.round(q)} ${keyWord(k)}`);
+  if (gear.length) parts.push(gear.length <= 3 ? gear.map((g) => g.name).join(", ") : `${gear.length} items`);
+  return parts.join(", ");
+}
+const r1 = (x) => Math.round(x * 10) / 10;
+
 /** @param {State} state @param {Party} p */
 function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
   const members = partyMembers(state, p);
   const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${keyWord(k)}`); // "un-purified water", not the key (before the food goes into the stores)
+  const stockBefore = { ...home.stock }, armoryBefore = new Set(home.armory);
   unloadAt(state, p, home, members); // the stores, armory, vehicle, bikes, bodies and prisoners
+  // What reached the stores and the armory (the stock's real change: packed leftovers and finds alike), for the log.
+  const gain = stockGain(stockBefore, home.stock);
+  const stored = storedText(gain, home.armory.filter((it) => !armoryBefore.has(it)));
+  const caught = p.caught && p.caught.fished ? p.caught : null; // hunting.js fishSummary: the trip's fishing
+  /** @type {Stock} */
+  const fishGain = {};
+  for (const [k, q] of Object.entries(gain)) if (FOODS[k] && FOODS[k].group === "rawfish") fishGain[k] = q;
+  const fishHome = caught ? foodIn(fishGain) : 0;
   const routeActive = p.kind === "convoy" && state.routes.some((r) => r.id === p.routeId && r.active);
   for (const m of members) m.location = routeActive ? { kind: "route", routeId: p.routeId } : { kind: "base", baseId: home.id };
   if (p.owner === "player") tripDone(state, p, members, home); // relations.js: the service record, rough trips
+  if (p.owner === "player" && p.kind !== "convoy") noteUnpack(state, home, members, teamName(state, p), stored); // teaminv.js: what they carry on them, put away or kept (the Home from a trip window)
   if (p.tripSpec) noteTripHome(state, p); // trips.js: a trip sent from the planner goes to the recent trips (Repeat trip)
   const before = state.knowledge.filter(Boolean).length;
   const markersBefore = state.markers.length;
@@ -2365,7 +2462,10 @@ function returnHome(state, p) {
     log(state, `Convoy back from ${route ? factionById(state, route.factionId)?.name : "the route"}${loot.length ? `: ${loot.join(", ")}` : ""}.`, "good");
   } else {
     // p.movingIn: a team that moved into another of your bases (moveout.js joinBase): it lives there now.
-    log(state, `${teamName(state, p)} ${p.movingIn ? `moved into ${home.name}` : "is home"}${loot.length ? ` with ${loot.join(", ")}` : ""}.${revealed > 0 ? ` ${revealed} new tiles mapped.` : " Map intel updated."}${newMarkers > 0 ? ` ${newMarkers} new marker${newMarkers === 1 ? "" : "s"} on the map.` : ""}`, "good");
+    const searched = p.mission === "scavenge" || p.teamMission === "scavenge" || !!p.searched;
+    const what = loot.length ? ` with ${loot.join(", ")}` : searched ? ": found nothing" : "";
+    const fish = caught ? (caught.fish > 0.05 ? ` Caught ${r1(caught.fish)} days of food in fish, ${r1(fishHome)} brought into the stores.` : " Caught no fish.") : "";
+    log(state, `${teamName(state, p)} ${p.movingIn ? `moved into ${home.name}` : "is home"}${what}.${stored ? ` Into ${home.name}'s stores: ${stored}.` : ""}${fish}${revealed > 0 ? ` ${revealed} new tiles mapped.` : " Map intel updated."}${newMarkers > 0 ? ` ${newMarkers} new marker${newMarkers === 1 ? "" : "s"} on the map.` : ""}`, "good");
   }
   removeParty(state, p);
 }

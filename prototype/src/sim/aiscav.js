@@ -38,6 +38,19 @@
 //     station at one of your bases "On the radio: Red Hand has been stripping the Calder Mall." (one a day at most,
 //     a site at most every AISCAV.newsGap days); the radio line also updates the loot you know there (only the loot,
 //     knowledge.lootHour / lootSrc "radio"; the rest of what you know keeps its age).
+//   Points of interest (pois.js; grouppois.js keeps what each group knows of them): a party goes for one POI, the
+//     site of a tile among them (its pool is tile.loot, as before). bestSite (grouppois.js groupTargets) scores every
+//     POI the group knows within range by need × what is left / (1 + distance / 5), a POI that is not the site
+//     × AISCAV.poiW, and tiles it may find more on with a survey (× GPOI.SURVEY_W, by what it expects there). A survey
+//     stop: the party stands GPOI.HOURS on the tile (shown on the map), rolls with its group's Scouting
+//     (groupSurveyTile), then raids the best POI it knows there, or goes home empty-handed. At a POI it takes through
+//     poicont.js lootPoiAbstract (grouppois.js raidPoiAsGroup: the pool, the container ledger, what your people left
+//     in opened containers, a little tile heat, AISCAV.AI_HEAT a raid in all), the haul by the POI's kind; picked
+//     clean, it moves on to the next POI it knows on the tile. q.poi marks the POI it is in (pois.js raidingNow: the
+//     dialogue's "being raided now"). A tile with no POIs but a site (a city or town centre) is searched as before.
+//     Same tile as your team: raiding different POIs, nobody minds (both on the map, opposite sides of the hex); the
+//     same POI (or your team in none), the contest card as before; a group at war with you contests either way.
+//     Their own land's POIs fall by AISCAV.landRate a day like its sites.
 // Decisions use hash01 (skills.js), never the world's random numbers, so the rest of a run draws the same dice.
 import { typedFood, siteMix, shopFood, drawShop, unitsOf } from "./foods.js"; // the food a site holds, as items; the shops run down
 import { supplyAmt } from "./rounds.js"; // "food": days of food (foods.js)
@@ -55,6 +68,10 @@ import { scavFinds, partyLost } from "./arsenal.js";
 import { aiCartsOut, aiCartMult, aiCartsHome, aiWorkMult } from "./carts.js"; // a group's carts (AI parity, coarse)
 import { groupFindBlueprint, groupGotBlueprint } from "./groupworks.js"; // machines-2: the groups' manuals
 import { prio } from "./groupcare.js";
+import { poisOf, poiAt, poiPool, poiBand, isSitePoi, permanentSite } from "./pois.js"; // points of interest: one POI a party
+import { groupTargets, bestGroupPoi, groupSurveyTile, groupWouldSurvey, groupKnowsPoi, raidPoiAsGroup, groupPoisDaily, poiPlace, GPOI } from "./grouppois.js"; // what the groups know of the POIs, the survey stop, the raid
+import { atWarWithYou } from "./playerwars.js"; // a group at war with you contests a tile whatever POI your team is in
+import { addToArsenal, arsenalWorthy } from "./arsenal.js"; // gear your people left in a container, taken home
 import { scavVehicle, scavSaw } from "./groupworld.js"; // a wreck brought home now and then; the bases they saw // GROUP_PRIORITIES scavenge: how often a type sends parties out // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
 
 export const AISCAV = {
@@ -63,6 +80,8 @@ export const AISCAV = {
   landRate: 0.003, landEff: 0.5, newsTake: 0.12, newsRange: 15, newsGap: 10,
   // A party drives out (VEHICLES by the dice) when the group has the fuel: FUEL in stock, FUEL_USE of it for the trip.
   carChance: 0.5, carFuel: 6, carFuelUse: 2, VEHICLES: ["truck", "sedan", "van", "suv"],
+  // Points of interest (grouppois.js): × a POI's score against a site's (1: the same scale); the tile heat a raid adds in all.
+  poiW: 1, AI_HEAT: 4, landPoiEff: 0.25, // AI_HEAT: pois.js TILE_HEAT.AI (a literal here: the modules load in a cycle); landPoiEff: the haul from their land's POIs (landEff for its sites)
 };
 // Share of the old production from nothing a group keeps (factions.js factionsDaily): ammo, scrap, fuel, meds.
 export const FACTION_MAKE = 0.4;
@@ -111,39 +130,50 @@ export function groupNeeds(f) {
 // Food (the table's food and preserved, days of food) comes as the items the site holds (foods.js: the site's mix,
 // whole items by the food dice), as much as a shop still has (shopFood: AI parity, the same shelves your teams empty),
 // and the shop runs down by it (drawShop). state: null for an estimate (no dice, no shop drawn).
-export function haulFor(t, taken, level, eff, state = null) {
-  const table = t.loc && LOCATIONS[t.loc.type] ? LOCATIONS[t.loc.type].loot : { scrap: 2, food: 1 };
-  const mm = haulMult(t);
-  const weights = {};
-  for (const [k, w] of Object.entries(table)) weights[k] = w * (k === "meds" ? mm : 1);
-  const total = Object.values(weights).reduce((a, v) => a + v, 0) || 1;
+// kind: a POI's kind (pois.js) when it is not the tile's site: its loot table and food mix, no shop drawn down.
+export function haulFor(t, taken, level, eff, state = null, kind = null) {
+  const type = kind || (t.loc ? t.loc.type : null);
+  const { keys, w, total } = haulWeights(type, haulMult(kind ? { loc: { type: kind } } : t));
   const units = taken * AISCAV.perLoot * Math.max(0, level) * eff;
   const out = {};
-  for (const [k, w] of Object.entries(weights)) out[k] = units * (w / total) * (MULT[k] || 1);
+  for (let i = 0; i < keys.length; i++) out[keys[i]] = units * (w[i] / total) * (MULT[keys[i]] || 1);
   if (state && (out.food > 0 || out.preserved > 0)) {
-    const type = t.loc ? t.loc.type : "";
-    const shop = shopFood(state, t);
+    const shop = kind ? 1 : shopFood(state, t);
     let drawn = 0;
     for (const key of ["food", "preserved"]) {
       if (!(out[key] > 0)) continue;
-      const items = typedFood(state, siteMix(type, key === "preserved"), out[key] * shop);
+      const items = typedFood(state, siteMix(type || "", key === "preserved"), out[key] * shop);
       for (const [k, q] of Object.entries(items)) { out[k] = (out[k] || 0) + q; drawn += unitsOf(k, q); }
       delete out[key];
     }
-    drawShop(state, t, drawn);
+    if (!kind) drawShop(state, t, drawn);
   }
   // Car parts are a group's own stock (trade.js POOLED_KINDS): the site's share of its parts (loot.js PARTS_MIX: an
   // auto shop's are mostly car parts) comes home as car parts; the other kinds stay in the one count of parts.
-  const car = out.parts && PARTS_MIX[t.loc && t.loc.type] ? out.parts * (PARTS_MIX[t.loc.type].carparts || 0) : 0;
+  const car = out.parts && PARTS_MIX[type] ? out.parts * (PARTS_MIX[type].carparts || 0) : 0;
   if (car > 0) { out.parts -= car; out.carparts = car; }
   return out;
 }
+// A site type's loot table as haul weights (its meds × mm: medfinds.js haulMult) and their total, kept per type and
+// cut: the tables are fixed, and every group strips its land's sites and points of interest this way every day.
+const WEIGHTS = new Map();
+function haulWeights(type, mm) {
+  const key = `${type}|${mm}`;
+  let W = WEIGHTS.get(key);
+  if (!W) {
+    const table = type && LOCATIONS[type] ? LOCATIONS[type].loot : { scrap: 2, food: 1 };
+    const keys = [], w = [];
+    for (const [k, v] of Object.entries(table)) { keys.push(k); w.push(v * (k === "meds" ? mm : 1)); }
+    WEIGHTS.set(key, (W = { keys, w, total: w.reduce((a, v) => a + v, 0) || 1 }));
+  }
+  return W;
+}
 const addTo = (into, goods, k = 1) => { for (const [g, q] of Object.entries(goods)) into[g] = (into[g] || 0) + q * k; };
 
-// Can a group's party work this site?
-function workable(state, f, t) {
-  if (!t.loc || t.loc.crash || t.loc.convoy || t.hive || t.terrain === "water") return false; // convoy: miltrucks.js races for it itself
-  if ((t.loot || 0) < AISCAV.minLoot) return false;
+// Can a group's party go to this tile at all (what is left there aside: grouppois.js groupTargets weighs it)?
+function tileWorkable(state, f, t) {
+  if ((t.loc && (t.loc.crash || t.loc.convoy)) || t.hive || t.terrain === "water") return false; // convoy: miltrucks.js races for it itself
+  if (!t.loc && !poisOf(t).length) return false;
   if (t.owner != null && t.owner !== f.id) return false; // your land or another group's
   if (state.bases.some((b) => b.tile === t.id)) return false;
   if (state.factions.some((o) => o.alive && o.bases.includes(t.id))) return false;
@@ -152,25 +182,15 @@ function workable(state, f, t) {
   return true;
 }
 
-// The best site for a group by its needs (or null): { tile, from, score }.
+// A tile with points of interest is raided one POI at a time (pois.js); a temporary site over them is not one.
+const poiTile = (t) => poisOf(t).length > 0 && !(t.loc && !permanentSite(t));
+
+// The best target for a group by its needs (or null): { tile, from, d, score, poi, survey } (grouppois.js
+// groupTargets: poi a POI index, -1 for a survey stop, null for a site without POIs; a tile's site is its POI 0,
+// scored by its tile.loot as before).
 export function bestSite(state, f) {
-  const g = state.grid;
   const need = groupNeeds(f);
-  const seen = new Set(), cands = [];
-  for (const b of f.bases) for (const id of g.within(b, AISCAV.range)) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const t = state.tiles[id];
-    if (!workable(state, f, t)) continue;
-    const table = LOCATIONS[t.loc.type] ? LOCATIONS[t.loc.type].loot : {};
-    const total = Object.values(table).reduce((a, v) => a + v, 0) || 1;
-    let value = 0;
-    for (const [k, w] of Object.entries(table)) value += (w / total) * (AISCAV.baseWant + (need[k] || 0));
-    const from = f.bases.reduce((best, x) => (g.distance(x, id) < g.distance(best, id) ? x : best), f.bases[0]);
-    const d = g.distance(from, id);
-    cands.push({ tile: id, from, d, score: (value * t.loot) / (1 + d / 5) });
-  }
-  cands.sort((a, b) => b.score - a.score || a.tile - b.tile);
+  const cands = groupTargets(state, f, f.bases, { range: AISCAV.range, need, ok: (t) => tileWorkable(state, f, t), poiW: AISCAV.poiW });
   for (const c of cands.slice(0, 4)) if (planPath(state, c.from, c.tile, false)) return c;
   return null;
 }
@@ -179,6 +199,7 @@ export function bestSite(state, f) {
 export function aiScavDaily(state) {
   if (state.aiScavOff) return; // test switch (tools/depletetest.js): groups that do not scavenge, the old economy
   const S = aiScav(state);
+  groupPoisDaily(state); // grouppois.js: the records of groups and bands that are gone
   state.factions.forEach((f, i) => {
     if (!f.alive || !f.bases.length) return;
     // Their own land, stripped a little every day.
@@ -190,6 +211,15 @@ export function aiScavDaily(state) {
       t.loot -= take;
       S.stats.land += take;
     }
+    // ... and the other points of interest on it (pois.js; a site's own is its tile.loot, above).
+    for (const id of landPoiTiles(state, f)) {
+      const t = state.tiles[id];
+      poisOf(t).forEach((_, j) => {
+        if (isSitePoi(t, j) || poiPool(t, j) <= AISCAV.floor) return;
+        const r = raidPoiAsGroup(state, f, t, j, poiPool(t, j) * AISCAV.landRate, { eff: AISCAV.landPoiEff, heat: 0, news: false, count: false });
+        if (r && r.took > 0) { addTo(f.stock, r.goods); S.stats.land += r.took; }
+      });
+    }
     // A party out.
     if (f.scavNext == null) f.scavNext = state.hour + 24 * (1 + Math.floor(roll(state, "first", i) * AISCAV.gapMax));
     if (state.hour < f.scavNext) return;
@@ -198,7 +228,7 @@ export function aiScavDaily(state) {
     const need = groupNeeds(f);
     const site = Math.max(...Object.values(need)) >= AISCAV.minNeed ? bestSite(state, f) : null;
     if (!site) { f.scavNext = state.hour + 24 * AISCAV.retry; return; }
-    sendParty(state, f, site.from, site.tile);
+    sendParty(state, f, site.from, site.tile, site);
     f.scavNext = state.hour + Math.round(24 * (AISCAV.gapMin + Math.floor(roll(state, "gap", i, n, state.hour) * (AISCAV.gapMax - AISCAV.gapMin + 1))) / Math.max(0.5, prio(f, "scavenge")));
   });
 }
@@ -215,14 +245,28 @@ export function landSites(state, f) {
   return out;
 }
 
-export function sendParty(state, f, from, site) {
+// Tiles with points of interest inside a group's land (a site tile's site is in landSites).
+export function landPoiTiles(state, f) {
+  const out = [], seen = new Set();
+  for (const b of f.bases) for (const id of state.grid.within(b, 2)) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const t = state.tiles[id];
+    if (t.owner === f.id && poiTile(t)) out.push(id);
+  }
+  return out;
+}
+
+// pick: the target bestSite chose ({ poi, survey }); without one the party picks its POI at the site.
+export function sendParty(state, f, from, site, pick = null) {
   // The group's vehicle when it has the fuel for the trip: they drive (faster on the roads), and it stands on the battle
   // map if you fight them (combat.js setup.enemy.vehicle: theirs to lose).
   const drive = (f.stock.fuel || 0) >= AISCAV.carFuel && state.rng.chance(AISCAV.carChance);
   const q = spawnAiParty(state, f, "scav", from, site, { strength: Math.max(2, Math.round(f.pop * AISCAV.share)), vehicle: drive });
   if (!q) return null;
   if (q.vehicle) { q.vehicleType = state.rng.pick(AISCAV.VEHICLES); f.stock.fuel = Math.max(0, f.stock.fuel - AISCAV.carFuelUse); }
-  q.scav = { site, home: from, left: AISCAV.searchHours, got: {}, taken: 0, str0: q.strength, met: [], band0: lootBand(state.tiles[site], state.tiles[site].loot) };
+  q.scav = { site, home: from, left: AISCAV.searchHours, got: {}, taken: 0, str0: q.strength, met: [], band0: lootBand(state.tiles[site], state.tiles[site].loot),
+    poi: pick && pick.poi != null ? pick.poi : null, survey: !!(pick && pick.survey), done: [] };
   aiCartsOut(f, q); // carts.js: on foot, up to two of the group's carts go along (a bigger haul)
   aiScav(state).stats.trips++;
   return q;
@@ -238,6 +282,7 @@ export function scavArrived(state, p) {
       for (const [k, q] of Object.entries(p.scav.got)) f.stock[k] = (f.stock[k] || 0) + Math.floor(q);
       S.stats.goods += Object.values(p.scav.got).reduce((a, q) => a + Math.floor(q), 0);
       S.stats.gear = (S.stats.gear || 0) + scavFinds(state, f, p).length; // arsenal.js: guns, armour, explosives by the site's gear list
+      for (const it of p.scav.gear || []) if (arsenalWorthy(it)) addToArsenal(state, f, it, "scavenged"); // what your people left in a container there
       if (scavVehicle(state, f, p.scav.site)) S.stats.vehicles = (S.stats.vehicles || 0) + 1; // groupworld.js
       if (p.scav.bp) { groupGotBlueprint(f, p.scav.bp); S.stats.manuals = (S.stats.manuals || 0) + 1; } // machines-2: a manual to study
       if (aiCartsHome(state, f, p)) S.stats.carts = (S.stats.carts || 0) + 1; // carts.js: its carts back, now and then one found
@@ -250,7 +295,41 @@ export function scavArrived(state, p) {
   if (f && f.alive) scavSaw(state, f, p.scav.site); // groupworld.js: what they see around the site
   const t = state.tiles[p.scav.site];
   if (t.infection > 0.5) p.strength *= 0.9; // the dead are thick here
-  contest(state, p);
+  choosePoi(state, p);
+  if (!p.scav.surveyLeft) contest(state, p);
+}
+
+// The group as its party at the site sees things (grouppois.js): what the group knows, and the tile it stands on.
+const partyEyes = (f, p) => ({ id: p.owner, bases: f ? f.bases : [], type: f ? f.type : null, known: !!(f && f.known), name: f ? f.name : "", scouting: f ? f.scouting : undefined, tile: p.scav.site, seeRange: 0 });
+// The POI the party goes into (pois.js): the one it came for while it knows it and it holds something, else the best
+// one it knows on the tile; it came to survey, or knows nothing worth it there: a survey stop first (GPOI.HOURS).
+function choosePoi(state, p) {
+  const t = state.tiles[p.scav.site];
+  if (!p.scav.done) p.scav.done = [];
+  if (!poiTile(t)) { p.scav.poi = null; return; } // a city or town centre (no POIs): the site as before
+  const f = factionById(state, p.owner);
+  const who = partyEyes(f, p);
+  const want = p.scav.poi;
+  if (p.scav.survey && groupWouldSurvey(state, who, t)) return startSurvey(p);
+  p.scav.survey = false;
+  let i = typeof want === "number" && want >= 0 && !p.scav.done.includes(want) && groupKnowsPoi(state, who, t, want) && poiPool(t, want) > AISCAV.floor + 1e-9 ? want : -1;
+  if (i < 0) i = bestGroupPoi(state, who, t, f ? groupNeeds(f) : null, p.scav.done);
+  if (i < 0 && !p.scav.surveyed && groupWouldSurvey(state, who, t)) return startSurvey(p);
+  setPoi(state, p, i);
+}
+function startSurvey(p) {
+  p.scav.poi = -1;
+  p.scav.survey = false;
+  p.scav.surveyLeft = GPOI.HOURS;
+  delete p.poi;
+}
+function setPoi(state, p, i) {
+  const t = state.tiles[p.scav.site];
+  p.scav.poi = i;
+  if (i == null || i < 0) { delete p.poi; return; }
+  p.poi = i; // pois.js raidingNow: the dialogue's "being raided now"
+  p.scav.kind = isSitePoi(t, i) ? null : poiAt(t, i).kind; // arsenal.js scavFinds: the gear of the place they search
+  p.scav.band0 = poiBand(t, i);
 }
 
 // One hour at the site.
@@ -265,9 +344,45 @@ export function scavSearchHour(state, p) {
     if (p.strength < 1) { lose(state, p); return; }
     return goHome(state, p); // they pull out with what they have
   }
-  // Your team searching here: they wait it out (and challenge it when it is done).
+  // A survey stop: GPOI.HOURS on the tile, then the roll (grouppois.js) and the best POI they know there.
+  if (p.scav.surveyLeft > 0) {
+    p.scav.surveyLeft -= 1;
+    if (p.scav.surveyLeft > 0) return;
+    const f = factionById(state, p.owner);
+    groupSurveyTile(state, partyEyes(f, p), t, { n: p.strength, start: state.hour - GPOI.HOURS + 1 });
+    p.scav.surveyed = true;
+    p.scav.poi = null;
+    choosePoi(state, p);
+    if (p.scav.poi == null || p.scav.poi < 0) return goHome(state, p); // nothing worth it here after all
+    contest(state, p);
+    return;
+  }
+  // Your team searching here (in the same POI): they wait it out (and challenge it when it is done).
   const busy = contest(state, p);
-  if (!busy) {
+  if (!busy && p.scav.poi != null && p.scav.poi >= 0) {
+    // A point of interest: through its container ledger (grouppois.js raidPoiAsGroup), its kind's haul.
+    const hands = Math.max(0.5, Math.min(1.5, p.strength / 3));
+    const crew = Math.min(AISCAV.crewMax, hands);
+    const i = p.scav.poi;
+    const f = factionById(state, p.owner);
+    const who = partyEyes(f, p);
+    const take = Math.min(Math.max(0, poiPool(t, i) - AISCAV.floor), AISCAV.take * crew);
+    if (take > 0) {
+      const r = raidPoiAsGroup(state, who, t, i, take, { eff: AISCAV.eff * hands / crew, heat: AISCAV.AI_HEAT / AISCAV.searchHours, news: isSitePoi(t, i) ? "left" : true });
+      if (r) {
+        addTo(p.scav.got, r.goods);
+        if (r.gear.length) (p.scav.gear || (p.scav.gear = [])).push(...r.gear);
+        if (f && !p.scav.bp && isSitePoi(t, i)) p.scav.bp = groupFindBlueprint(state, f, t.id, localId(state, p.id)) || undefined;
+        p.scav.taken += r.took;
+        aiScav(state).stats.taken += r.took;
+      }
+    }
+    // Picked clean: on to the next POI they know on the tile.
+    if (poiPool(t, i) <= AISCAV.floor + 1e-9) {
+      p.scav.done.push(i);
+      setPoi(state, p, bestGroupPoi(state, who, t, f ? groupNeeds(f) : null, p.scav.done));
+    }
+  } else if (!busy && p.scav.poi == null) { // a site without POIs (a city or town centre): its tile.loot as before
     const hands = Math.max(0.5, Math.min(1.5, p.strength / 3));
     const crew = Math.min(AISCAV.crewMax, hands); // more hands than that pick it cleaner, not faster
     const take = Math.min(Math.max(0, t.loot - AISCAV.floor), AISCAV.take * crew);
@@ -277,11 +392,13 @@ export function scavSearchHour(state, p) {
       if (fg) p.scav.bp = groupFindBlueprint(state, fg, t.id, localId(state, p.id)) || undefined; // machines-2: a manual on the shelves, by your odds (groupworks.js)
       t.loot -= take;
       p.scav.taken += take;
+      if (t.loc && (t.loc.type === "city" || t.loc.type === "town")) { const m = (t.crawlMem = t.crawlMem || { visits: 0, looted: {}, alert: 0, hour: 0 }); m.aiLoot = (m.aiLoot || 0) + take; } // citycrawl.js aiLootCells: the blocks near the rim they went through
       aiScav(state).stats.taken += take;
     }
   }
   p.scav.left -= 1;
-  if (p.scav.left <= 0 || t.loot <= AISCAV.floor + 1e-9) {
+  const empty = p.scav.poi != null ? p.scav.poi < 0 : t.loot <= AISCAV.floor + 1e-9;
+  if (p.scav.left <= 0 || empty) {
     news(state, p);
     goHome(state, p);
   }
@@ -293,6 +410,7 @@ function goHome(state, p) {
   const home = f && f.bases.length ? f.bases.reduce((b, x) => (state.grid.distance(x, site) < state.grid.distance(b, site) ? x : b), f.bases[0]) : p.scav.home;
   const res = planPath(state, site, home, false);
   p.phase = "home";
+  delete p.poi;
   p.scav.home = home;
   if (!res || res.path.length < 2) { scavArrived(state, p); return; }
   p.path = res.path;
@@ -316,15 +434,37 @@ export function ambushHaul(state, p, raiders) {
   aiScav(state).stats.ambushed++;
 }
 
-// A team of yours on the site. Returns true while one of your teams is searching there (the party waits).
+// The POI a team of yours is in right now (its search, its crew's search, its raid on a map), or null.
+export function teamPoi(state, team) {
+  const e = state.engagement;
+  if (e && !e.done && e.partyId === team.id) return e.poi ?? null;
+  if (team.crewSearch && !team.crewSearch.done) return team.crewSearch.poi ?? null;
+  const c = state.combat && state.combat.setup;
+  if (c && c.partyId === team.id && c.raid) return c.raid.poi ?? null;
+  return null;
+}
+// A team of yours on the site. Returns true while one of your teams is searching there (the party waits). On a tile of
+// points of interest only a team in the same POI counts, or one in none (as before): in different ones they keep out
+// of each other's way, unless the group is at war with you.
 function contest(state, p) {
   const f = factionById(state, p.owner);
   const tile = p.scav.site;
   let busy = false;
   for (const team of state.parties) {
     if (team.owner !== "player" || team.kind === "convoy" || partyTile(team) !== tile || !partyMembers(state, team).length) continue;
-    if (team.phase === "engaged" || (state.engagement && !state.engagement.done && state.engagement.partyId === team.id)) { busy = true; continue; }
+    const tp = teamPoi(state, team);
+    const same = p.scav.poi == null || p.scav.poi < 0 || tp == null || tp === p.scav.poi;
+    const searching = team.phase === "engaged" || (state.engagement && !state.engagement.done && state.engagement.partyId === team.id) || !!(team.crewSearch && !team.crewSearch.done);
+    if (searching && same) { busy = true; continue; }
     if (!f || p.scav.met.includes(team.id) || state.cards.some((c) => c.partyId === team.id)) continue;
+    if (!same && !atWarWithYou(state, f)) {
+      // Different POIs on one tile: both get on with it (and both stir the tile up).
+      p.scav.met.push(team.id);
+      const t = state.tiles[tile];
+      if (f.known) log(state, `${f.name} scavengers are going through ${poiPlace(state, t, p.scav.poi)} while your team searches another place there; nobody gets in anyone's way.`, "info");
+      aiScav(state).stats.coexist = (aiScav(state).stats.coexist || 0) + 1;
+      continue;
+    }
     p.scav.met.push(team.id);
     const att = attitude(f);
     if (f.pact || att === "Friendly" || att === "Allied") {
@@ -358,6 +498,7 @@ export function driveOff(state, team, scavPartyId, addCargo) {
 // ---------- news ----------
 function news(state, p) {
   const t = state.tiles[p.scav.site];
+  if (p.scav.poi != null && (p.scav.poi < 0 || !isSitePoi(t, p.scav.poi))) return; // a POI's own news: grouppois.js raidPoiAsGroup
   const f = factionById(state, p.owner);
   const S = aiScav(state);
   const dropped = lootBand(t, t.loot) > p.scav.band0;

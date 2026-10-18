@@ -131,6 +131,30 @@ export const FOOD_KEYS = Object.keys(FOODS);
 export const isFood = (k) => !!(k && FOODS[k]);
 for (const k of FOOD_KEYS) { const f = FOODS[k]; f.key = k; f.stable = f.shelf >= STABLE_DAYS; }
 
+// ---------- food value (user request 2026-10-13: "Balance food so people eat 1 food value each meal Breakfast, Lunch,
+// Dinner. Each food item has x.xx food value. Each survivor eat enough items to meet at least 1 food value each meal.
+// Calculate food based on this for the base") ----------
+// FOODS[k].fv: one item's food value, to two places: MEAL_KCAL (a third of DAY_KCAL) is 1.00, a meal. A can of beans
+// 0.60, a can of meat 0.90, an MRE 1.88, a kilo of rice 5.40. Three meals a day: MEALS_A_DAY food value is a day of food
+// (a ration), so fvIn(stock) is foodIn(stock) × 3 at the items' rounded values.
+// Everyone eats at least MEAL_FV at each meal, at a base and on a team (eating.js sharedMeal): one pot for everyone
+// eating together, whole items worth a meal or less opened by the closest fit and shared out, an item worth more than a
+// meal (a kilo of rice, a loaf, a jar of peanut butter, an MRE) cut to the portion still needed.
+export const MEALS_A_DAY = 3;
+export const MEAL_KCAL = DAY_KCAL / MEALS_A_DAY;
+export const MEAL_FV = 1;
+for (const k of FOOD_KEYS) FOODS[k].fv = Math.max(0.01, Math.round((FOODS[k].kcal / MEAL_KCAL) * 100) / 100);
+export const fvOf = (k) => (FOODS[k] ? FOODS[k].fv : 0);
+// Food value in a stock (every food item, positive amounts).
+export function fvIn(stock) {
+  if (!stock) return 0;
+  let v = 0;
+  for (const k in stock) { const f = FOODS[k]; if (f) { const q = stock[k]; if (q > 0) v += q * f.fv; } }
+  return v;
+}
+// "1.20" (two places, as the items show them).
+export const fv2 = (v) => (Math.round((Number.isFinite(v) ? v : 0) * 100) / 100).toFixed(2);
+
 // ---------- value ----------
 // SUPPLIES[k].value = kcal / 1000 × VALUE.perKcal × the tier's TIER_VALUE × keeps (0.7 + 0.25 × log10(1 + shelf)):
 // a can of beans 0.47 (1.17 a day's food), an MRE 2.4 (1.9 a day), a kilo of venison 0.74 (0.49 a day), jarred food
@@ -518,6 +542,9 @@ export const SITE_MIX = {
   town: "house", apartments: "house", motel: "house", school: "house", church: "house", city: "house", suburb: "house",
   farm: "farm", barn: "farm", ranch: "farm", feedstore: "farm",
   cabin: "wild", lodge: "wild", ranger: "wild", campground: "wild",
+  // points of interest (pois.js)
+  house: "house", neighbourhood: "house", garage: "house", corner: "shop", pizza: "diner", farmstand: "farm", shed: "farm",
+  blind: "wild", campsite: "wild", hikercamp: "wild", mineshack: "wild",
   convoy: "military", crash_cargo: "military", airdrop: "military", base: "military", armory: "military", military: "military",
   prison: "prison", warehouse: "warehouse",
 };
@@ -527,14 +554,16 @@ export const findable = (k, state) => FOODS[k] && (FOODS[k].until == null || out
 // `units` days of food as items of a mix (or a { key: weight } table): a few kinds (more for more food), the calories
 // split by the mix's weights among them, each count rounded by the dice so the average holds (an MRE where the share
 // was 0.6 of one: 60% of the time). Early-only shop items are left out once they are gone (their share goes to the
-// rest). opts.whole: false keeps fractions (no dice). Returns { key: q }.
+// rest). opts.whole: false keeps fractions (no dice). opts.stable (a point of interest's container, poicont.js: the
+// same things on any visit): the kinds are drawn from the whole mix and the early-only ones gone by now are simply
+// left out (the bread rotted), so the rest come out the same whatever the day. Returns { key: q }.
 /** @returns {{ [key: string]: number }} */
-export function typedFood(state, mix, units, { whole: whole0 = true, kinds = null, rng = null } = {}) {
+export function typedFood(state, mix, units, { whole: whole0 = true, kinds = null, rng = null, stable = false } = {}) {
   let whole = whole0;
   const table = typeof mix === "string" ? MIXES[mix] || MIXES.stores : mix || MIXES.stores;
   const out = {};
   if (!(units > EPS)) return out;
-  const keys = Object.keys(table).filter((k) => table[k] > 0 && FOODS[k] && (!state || findable(k, state)));
+  const keys = Object.keys(table).filter((k) => table[k] > 0 && FOODS[k] && (stable || !state || findable(k, state)));
   if (!keys.length) return out;
   // rng false: no dice at all (the kinds with the most weight, fractions kept): a stock filled where no game state is
   // at hand.
@@ -553,7 +582,7 @@ export function typedFood(state, mix, units, { whole: whole0 = true, kinds = nul
   for (const k of picked) {
     const x = qtyOf(k, (units * table[k]) / w);
     const q = !whole ? x : Math.floor(x) + (R.next() < x - Math.floor(x) ? 1 : 0);
-    if (q > 0) out[k] = (out[k] || 0) + q;
+    if (q > 0 && !(stable && state && !findable(k, state))) out[k] = (out[k] || 0) + q;
   }
   return out;
 }
@@ -571,7 +600,8 @@ export function addFoodUnits(state, h, mix, units, opts = {}) {
 // SHOP_FOOD days of food empties a full one), and every site's food falls with time since the outbreak as well
 // (other survivors, rats, burst packets: half every SHOP.halfLife days after a normal game's start, never below
 // SHOP.floor). Food found there × shopFood(state, t). Later scavenging must go further out.
-export const SHOP_FOOD = { supermarket: 300, grocery: 150, mall: 220, diner: 60, gas: 40, truckstop: 60, pharmacy: 20, warehouse: 200, feedstore: 80, town: 160, apartments: 120, motel: 50, school: 60, church: 40, city: 100 };
+export const SHOP_FOOD = { supermarket: 300, grocery: 150, mall: 220, diner: 60, gas: 40, truckstop: 60, pharmacy: 20, warehouse: 200, feedstore: 80, town: 160, apartments: 120, motel: 50, school: 60, church: 40, city: 100,
+  house: 15, neighbourhood: 60, corner: 60, pizza: 40, farmstand: 30 }; // points of interest (pois.js)
 export const SHOP = { halfLife: 300, floor: 0.2, hardcoreStart: 0.75 };
 export const isShop = (type) => !!SHOP_FOOD[type];
 export function shopTime(state) {
@@ -752,6 +782,19 @@ export function foodNeeds(needs, theirHave = null, have = null) {
   if (sell && !(sell in out)) out[sell] = n;
   return out;
 }
+// The governor's spare table (autopilot.js tradeSpare: { food: days of food, water, ammo }) read for one trade key: a
+// food item gets as many of it as the days of food left to spare allow (fix 2026-10-12, turtle-food: the trades are
+// made by item, so `spare[f_grain]` was undefined and the food cap never held: seed 6005's Turtle hub sold 113 days of
+// grain to merchants on day 78, twice the 55 its rule allowed, and went into the winter short). undefined: no cap.
+export const spareOf = (spare, k) => (!spare ? undefined : FOODS[k] && spare.food != null ? Math.max(0, Math.floor(qtyOf(k, spare.food) + 1e-9)) : spare[k]);
+// ...and what a deal paid comes off it (food items in days of food), so a second deal pays from what is left.
+export function spendSpare(spare, paid) {
+  if (!spare) return;
+  for (const [k, q] of Object.entries(paid || {})) {
+    if (FOODS[k] && spare.food != null) spare.food = Math.max(0, spare.food - unitsOf(k, q));
+    else if (spare[k] != null) spare[k] = Math.max(0, spare[k] - q);
+  }
+}
 // `units` days of food a holder can sell or give (a caravan's goods, a deal's food): the items it holds the most days
 // of first (whole items), never food with the worm's eggs. Returns { key: q } (not moved yet).
 export function sellPick(h, units) {
@@ -772,7 +815,7 @@ export function sellPick(h, units) {
 export const AREA_MIX = { house: "house", farmhouse: "farm", store: "shop", kitchen: "diner", pharmacy: "pharmacy", warehouse: "warehouse", barracks: "army", barn: "farm", cabin: "wild", cellblock: "prison", campsite: "wild", wreck: "travel", roadcars: "travel", chapel: "house", fuselage: "military", cargodrop: "military" };
 // A find's "food" / "preserved" (days of food, a loot table's roll) turned into items in place: by `mix`, as much as
 // the site's shelves still hold (shopFood, when the tile is given) and lowering them. Returns the find.
-export function typeFind(state, sup, mix = "house", tile = null) {
+export function typeFind(state, sup, mix = "house", tile = null, rng = null) { // rng: the find's own dice (a point of interest's container, poicont.js), else the food dice
   if (!sup || !((sup.food || 0) > 0 || (sup.preserved || 0) > 0)) { if (sup) { delete sup.food; delete sup.preserved; } return sup; }
   const t = tile != null && state && state.tiles ? state.tiles[tile] : null;
   const k = t ? shopFood(state, t) : 1;
@@ -781,7 +824,7 @@ export function typeFind(state, sup, mix = "house", tile = null) {
     const u = (sup[key] || 0) * k;
     delete sup[key];
     if (!(u > 0)) continue;
-    for (const [kk, q] of Object.entries(typedFood(state, key === "preserved" ? (mix === "military" || mix === "army" ? mix : "keeps") : mix, u))) { sup[kk] = (sup[kk] || 0) + q; drawn += unitsOf(kk, q); }
+    for (const [kk, q] of Object.entries(typedFood(state, key === "preserved" ? (mix === "military" || mix === "army" ? mix : "keeps") : mix, u, rng ? { rng, stable: true } : undefined))) { sup[kk] = (sup[kk] || 0) + q; drawn += unitsOf(kk, q); }
   }
   if (t) drawShop(state, t, drawn);
   return sup;

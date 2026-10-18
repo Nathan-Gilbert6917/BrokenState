@@ -5,7 +5,7 @@
 // magazine never shows more than the team has, enemies reload, your side's AI and the raid bot reload, a save in the
 // middle of a battle keeps the magazines, a weapon swapped mid-raid (refitUnit), the UI's Reload button and I key.
 // Usage: node tools/magtest.js [seed]
-import { setRounds, giveRounds } from "../src/sim/ammo.js"; // rounds by calibre
+import { setRounds, giveRounds, newBox } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import {
   WEAPONS, createBattle, combatAct, registerCombatHandler, runEnemyPhase, enemyStep, endPlayerTurn, autoPlayerTurn, canFire,
@@ -20,7 +20,7 @@ import { gunMods, NO_MODS } from "../src/sim/gunmods.js";
 import { starterMags, magRoundsKg } from "../src/sim/carrykit.js";
 import { reloadPlan } from "../src/sim/mags.js";
 import { GEAR } from "../src/sim/data.js";
-import { rigPouches as ensureRigOf, itemLoad } from "../src/sim/inventory.js";
+import { rigPouches as ensureRigOf, itemLoad, packOf } from "../src/sim/inventory.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -133,7 +133,8 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   check(magShown(b, p) === 3 && magLabel(b, p) === "3/15", "14 loaded but 3 left in the team: it shows 3/15 (never more than the team has)");
   check(/spare/i.test(reloadRefusal(b, p)), "nothing to reload with: refused (every round left is loaded)");
   q.ap = 2; loadMag(q, 1); setAmmo(4);
-  check(combatAct(st, { type: "reload", unit: q.id }) === "" && q.mag === 4 && magShown(b, q) === 4, "with 4 rounds left a rifle reloads to 4/5");
+  check(combatAct(st, { type: "reload", unit: q.id }) === "" && q.mag === 4 && magShown(b, q) === 4 && q.ap === 0, "with 4 rounds left a rifle reloads to 4/5 (out of the team's bags: both actions)");
+  b.phase = "player"; // the reload took the last actions: the turn ended
   setAmmo(0); loadMag(q, 0); q.ap = 2;
   check(/no ammo/i.test(combatAct(st, { type: "reload", unit: q.id })) && q.ap === 2, "no ammo at all: Reload refused, no action spent");
   check(/out of ammo/i.test(fireRefusal(b, q)), "and the gun is out of ammo, not just empty");
@@ -283,11 +284,15 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
   refitUnit(b, p, a);
   check(p.weapon === "shotgun" && p.mag === 0 && p.magMax === 6 && magEmpty(b, p), "a shotgun picked up: it comes empty (0/6), Reload to load it");
   p.ap = 2;
-  check(/no ammo/i.test(reloadRefusal(b, p)), "with no shells to hand it cannot be loaded (ammo.js: a gun takes its own calibre)");
+  check(/on them/.test(reloadRefusal(b, p)), "with no shells on them it cannot be loaded (mags.js SHELLS: a shotgun loads only what its shooter carries)");
   b.pools[0].a_12ga_buck = 20;
-  // mags.js SHELLS (tools/shotgunreloadtest.js): the shells came after the gun, so none are at hand: Get shells first
-  // (that act ends this fight, its foes all off the map: the Reload after it is the sim's reload).
-  check(/in the pack/.test(combatAct(st, { type: "reload", unit: p.id })) && combatAct(st, { type: "getshells", unit: p.id }) === "" && (reload(b, p), p.mag >= 3) && p.mag <= 4 && p.ap === 0, `with shells in the team's bags: Get shells (1 action), then a Reload puts 3–4 in the pump's tube (${p.mag}/6: an internal magazine, a shell at a time)`);
+  check(/on them/.test(reloadRefusal(b, p)) && /base's 20 are in its stock/.test(reloadRefusal(b, p)), `the base's 20 in its stock do not load it; the refusal says where they are ("${reloadRefusal(b, p)}")`);
+  // mags.js SHELLS (tools/shotgunreloadtest.js): a box of shells in their own backpack, none at hand: a Reload digs them
+  // straight out of the pack for both actions (Get shells, 1 action, would bring a handful to hand instead).
+  a.gear.backpack = newItem("backpack"); packOf(a)[0] = newBox("a_12ga_buck", 20);
+  refitUnit(b, p, a);
+  p.ap = 2;
+  check(reloadCost(b, p) === 2 && combatAct(st, { type: "reload", unit: p.id }) === "" && p.mag >= 3 && p.mag <= 4 && p.ap === 0, `with a box of shells in their backpack: a Reload straight from the pack (both actions) puts 3–4 in the pump's tube (${p.mag}/6: an internal magazine, a shell at a time)`);
   a.gear.weapon = null;
   refitUnit(b, p, a);
   check(p.weapon === "fists" && !hasMag(p) && magLabel(b, p) === "", "put down: fists, no magazine");
@@ -361,7 +366,8 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
     const first = reloadPlan(b2, u);
     reload(b2, u);
     const want = k === "revolver" || k === "huntrifle" ? u.magMax : k === "shotgun" ? Math.max(3, Math.min(4, u.mag)) : Math.min(u.magMax, inc[k]); // the pump: 3–4 shells for a steady hand (mags.js SHELLS)
-    check(u.magMode === "internal" && u.mag === want && u.ap === 1, `${WEAPONS[k].name}: an internal magazine, a Reload puts ${want} in (${first.mode}${first.mode === "clip" ? `: a ${GEAR[u.clips[first.i].key].name.toLowerCase()}` : ""}), 1 action`);
+    const apLeft = first.mode === "internal" && first.from !== "hand" ? 0 : 1; // rounds out of the base's stock (no clip, no shells at hand): both actions
+    check(u.magMode === "internal" && u.mag === want && u.ap === apLeft, `${WEAPONS[k].name}: an internal magazine, a Reload puts ${want} in (${first.mode}${first.mode === "clip" ? `: a ${GEAR[u.clips[first.i].key].name.toLowerCase()}` : ""}), ${apLeft ? "1 action" : "both actions"}`);
     if (k === "revolver" || k === "huntrifle") { loadMag(u, 0); u.ap = 2; reload(b2, u); check(u.mag === inc[k], `${WEAPONS[k].name}: the clip is used once a fight; the next Reload puts ${inc[k]} in`); }
   }
   // An enemy's spares.
@@ -394,12 +400,12 @@ const logHas = (b, re) => b.log.some((l) => re.test(l.text));
     place(p, 5, 5); place(e, 10, 5); toughen(e);
     UI.cui.sel = p.id;
     loadMag(p, 7);
-    let html = UI.renderCombatPanel(st);
+    let html = UI.renderCombatScreen(st);
     const has = (s) => html.includes(s);
     const out = [];
     out.push([(has("9mm pistol <b>7/15</b>") && has('data-v="reload"')), "the panel shows 9mm pistol 7/15 and a Reload button"]);
     loadMag(p, 0);
-    html = UI.renderCombatPanel(st);
+    html = UI.renderCombatScreen(st);
     out.push([has("Empty — reload"), "an empty gun is flagged: Empty — reload"]);
     const k = KM.KEY_BY_ID.get("battle.reload");
     out.push([!!k && k.keys.includes("KeyI"), "the I key is Reload (battle.reload)"]);

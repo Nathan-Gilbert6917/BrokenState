@@ -35,7 +35,7 @@ export function gunRoundsLabel(item, loc = null, state = null) {
   const cls = r.n <= 0 ? "empty" : r.n >= r.cap ? "full" : "part";
   const what = isRoundGun(item) ? "in the gun" : "in the magazine";
   const how = r.src === "ready" ? ` (loaded from the rounds to hand before a fight: ${r.roundName})` : r.src === "fight" ? ` (${r.roundName}, now)` : r.src === "in it" ? ` (${r.roundName})` : "";
-  const tip = r.n > 0 ? `${r.n} of ${r.cap} rounds ${what}${how}` : r.src === "ready" ? `Empty: no ${r.roundName} to hand to load it with` : `Empty (${r.cap} rounds when loaded)`;
+  const tip = r.n > 0 ? `${r.n} of ${r.cap} rounds ${what}${how}` : r.src === "unloaded" ? `Unloaded: kept empty until it is loaded again (right-click it: Load)` : r.src === "ready" ? `Empty: no ${r.roundName} to hand to load it with` : `Empty (${r.cap} rounds when loaded)`;
   return { text: `${r.n}/${r.cap}`, cls, tip, n: r.n, cap: r.cap, load: r.load, roundName: r.roundName };
 }
 // The badge's markup (styles.css .irounds), or "".

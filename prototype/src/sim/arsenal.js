@@ -135,7 +135,9 @@ export const ARSENAL = {
   },
 };
 // The kit of each group type (the same as conflicts.js KIND_OF).
-export const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
+export const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia",
+  // Nomad bands by tier (nomads.js; not group types: a band carries no arsenal, its spare gun comes from starterKit).
+  nomad1: "looters", nomad2: "survivalists", nomad3: "preppers" };
 export const kitOf = (f) => KIT_OF[f && f.type] || "survivors";
 
 // Off switch for tests (tools/arsenaltest.js: the world made without arsenals draws the same dice).
@@ -235,6 +237,9 @@ export function seedArsenal(state, f) {
   A.rounds = kitLaunchRounds(A.items); // launchers.js: their launchers' rounds, kept with the arsenal (not in f.stock: the world's dice read its keys)
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
   A.smoke = true; // dealt with smoke grenades (topUpSmoke)
+  // The kit factor's yardstick for the type (kitRef: a dozen starter kits, built once per type, pure), made now while
+  // the world is being made rather than on its first night, when every group's strength is first read.
+  if (FACTION_TYPES[f.type]) kitRef(f.type);
   return A;
 }
 // Smoke grenades came into most kits later (2026-10, siege.js coverSmoke: smoke over a retreat): an arsenal dealt
@@ -306,11 +311,14 @@ const SORTED = new WeakMap();
 function sortedKit(A) {
   const c = SORTED.get(A);
   if (c && c.rev === A.rev) return c;
-  const byV = (fn) => (a, b) => fn(b) - fn(a) || String(a.aid).localeCompare(String(b.aid));
-  const W = A.items.filter((it) => isWeaponKey(it.key) && !isLauncherKey(it.key)).sort(byV(weaponValue));
-  const L = A.items.filter((it) => isLauncherKey(it.key)).sort(byV(weaponValue));
+  // Best first, then by id: each item's worth and id string worked out once, not in every comparison (the same
+  // comparisons, so the same order).
+  const byV = (list, fn) => list.map((it) => ({ it, v: fn(it), id: String(it.aid) }))
+    .sort((a, b) => b.v - a.v || a.id.localeCompare(b.id)).map((x) => x.it);
+  const W = byV(A.items.filter((it) => isWeaponKey(it.key) && !isLauncherKey(it.key)), weaponValue);
+  const L = byV(A.items.filter((it) => isLauncherKey(it.key)), weaponValue);
   const S = {};
-  for (const slot of ARMOUR_SLOTS) S[slot] = A.items.filter((it) => isArmourKey(it.key) && GEAR[it.key].slot === slot).sort(byV(armourValue));
+  for (const slot of ARMOUR_SLOTS) S[slot] = byV(A.items.filter((it) => isArmourKey(it.key) && GEAR[it.key].slot === slot), armourValue);
   const T = A.items.filter((it) => isThrowKey(it.key));
   const out = { rev: A.rev, W, L, S, T };
   SORTED.set(A, out);
@@ -734,23 +742,24 @@ export function partyLost(state, f, people) {
 export function scavFinds(state, f, p) {
   if (!ensureArsenal(state, f) || !p.scav) return [];
   const t = state.tiles[p.scav.site];
-  const table = t && t.loc && LOCATIONS[t.loc.type] ? (LOCATIONS[t.loc.type].gear || []).filter((k) => arsenalWorthy({ key: k })) : [];
+  const type = p.scav.kind || (t && t.loc ? t.loc.type : null); // the POI they searched (aiscav.js setPoi), else the site
+  const table = type && LOCATIONS[type] ? (LOCATIONS[type].gear || []).filter((k) => arsenalWorthy({ key: k })) : [];
   if (!table.length) return [];
   const A = f.arsenal;
   const tag = [state.seed, "arsscav", f.name, A.next, state.hour];
   const n = Math.floor((p.scav.taken || 0) * ARSENAL.SCAV_ITEMS + hash01(...tag, "n"));
   const got = [];
   for (let i = 0; i < n; i++) {
-    const key = swapGun(`site:${t.loc.type}`, table[Math.floor(hash01(...tag, "k", i) * table.length) % table.length], [...tag, "g", i]); // gundist.js: the same draws as your searches there (AI parity)
-    const it = lootItem(key, siteSource(t.loc.type), [...tag, i]);
+    const key = swapGun(`site:${type}`, table[Math.floor(hash01(...tag, "k", i) * table.length) % table.length], [...tag, "g", i]); // gundist.js: the same draws as your searches there (AI parity)
+    const it = lootItem(key, siteSource(type), [...tag, i]);
     if (addToArsenal(state, f, it, "scavenged")) got.push(it);
   }
   // Knives and swords (blades.js): the same site table your searches roll, on their dice (AI parity).
-  const bk = (p.scav.taken || 0) > 0 ? scavBlade(t.loc.type, [...tag, "bl"]) : null;
-  if (bk && GEAR[bk]) { const it = lootItem(bk, siteSource(t.loc.type), [...tag, "bl"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
+  const bk = (p.scav.taken || 0) > 0 ? scavBlade(type, [...tag, "bl"]) : null;
+  if (bk && GEAR[bk]) { const it = lootItem(bk, siteSource(type), [...tag, "bl"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
   // The newer guns (gunfinds.js GUN_FINDS.site, scav): the same site table your searches roll, on their dice.
-  const gk = scavGun(t.loc.type, p.scav.taken || 0, [...tag, "ars"]);
-  if (gk && GEAR[gk]) { const it = lootItem(gk, siteSource(t.loc.type), [...tag, "ars"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
+  const gk = scavGun(type, p.scav.taken || 0, [...tag, "ars"]);
+  if (gk && GEAR[gk]) { const it = lootItem(gk, siteSource(type), [...tag, "ars"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
   return got;
 }
 // Gear you sold or gave them (trade.js): fighting gear goes into the arsenal while they want it (WANT weapons a head).

@@ -1,14 +1,15 @@
-// The battle HUD over the map (user requests 2026-10-09): the selected unit's weapon panel (bottom middle), the squad
-// strip (top left: a row per person of yours, always there, with who is off screen), big colour-coded hit chances over
-// the enemies (and the breakdown of the one under the mouse), and markers at the edge of the view pointing at your
-// people off screen. ui/combat.js calls hudPaint (canvas, every frame) and hudSync (DOM) from drawCombat.
+// The battle HUD over the map (user requests 2026-10-09): the selected unit's weapon panel (drawn on the bottom bar,
+// ui/battlebar.js), the squad strip (top left: a row per person of yours, always there, with who is off screen), big
+// colour-coded hit chances over the enemies (and the breakdown of the one under the mouse), and markers at the edge of
+// the view pointing at your people off screen. ui/combat.js calls hudPaint (canvas, every frame) and hudSync (DOM)
+// from drawCombat.
 //   - Numbers: every hit chance is the sim's own (sim/combat.js shotOdds / meleeOdds, through ui/combat.js odds): the
 //     breakdown is shotOdds' own steps (opts.parts), so it cannot drift from the roll a shot makes.
 //   - Cost: the DOM is written only when what it shows changed (a key per part, built from a few numbers each frame);
 //     the canvas marks are a handful of rectangles and texts.
 //   - The strip folds to a narrow column (its header, or ` : bview.hud); folded or not is kept in this browser.
 import { WEAPONS, active, isRanged, hasMag, magShown, magMaxOf, magEmpty, arrowsLeft, shotOdds, meleeOdds, heightAt, sidearmOf, CRIT_MULT } from "../sim/combat.js";
-import { tracksMags, isShellGun, shellsAt, shellKind, spareSplit, SHELLS } from "../sim/mags.js";
+import { tracksMags, isShellGun, shellsAt, shellKind, spareSplit, roundSplit, SHELLS, MAGS } from "../sim/mags.js"; // roundSplit: the reserve rounds at hand, in the pack, the team's (a Reload from the pack takes both actions)
 import { roundsOf, unitRound, loadOf } from "../sim/ammo.js";
 import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
 import { gunQ, gunCond, jamChance, modesOf, modeOf, modeRolls, modeAim, FIRE_MODES } from "../sim/gunfire.js";
@@ -44,14 +45,14 @@ export function toggleHud(on = !HUD.open) {
 export const AMMO_SHORT = { fmj: "FMJ", hp: "HP", ap: "AP", buck: "Buck", slug: "Slug", sp: "SP", plusp: "+P", subsonic: "Subsonic", match: "Match", tracer: "Tracer", ball: "Ball", birdshot: "Birdshot", rubber: "Rubber", beanbag: "Beanbag" };
 const typeShort = (t) => AMMO_SHORT[t] || (AMMO_TYPES[t] ? AMMO_TYPES[t].name : t || "");
 // What the weapon panel shows of a unit's weapon (pure data; tools/battlehudtest.js reads it):
-// { name, key, ranged, bow, mag: { in, cap } | null, empty, cal, load, loadShort, reserve, spares: spareSplit | null,
-//   shells: { at, pack, kind } | null, clips, modes, mode, rolls, jam, jamPct, cond, q, melee: { chance, dmg } | null,
-//   arrows, sidearm, launcher }
+// { name, key, ranged, bow, mag: { in, cap } | null, empty, cal, load, loadShort, reserve, rounds: roundSplit | null
+//   (the reserve by where: hand, pack, mate, pool), spares: spareSplit | null, shells: { at, pack, kind } | null, clips,
+//   modes, mode, rolls, jam, jamPct, cond, q, melee: { chance, dmg } | null, arrows, sidearm, launcher }
 export function weaponInfo(state, b, u) {
   const w = WEAPONS[u.weapon] || {};
   const ranged = isRanged(u);
   const gun = ranged && !w.arrows && !w.acid;
-  const info = { name: u.weaponName || w.name || u.weapon, key: u.weapon, ranged, gun, bow: !!w.arrows, mag: null, empty: false, cal: "", load: null, loadShort: "", reserve: null, spares: null, shells: null, clips: 0, modes: [], mode: null, rolls: 1, jam: null, jamPct: 0, cond: null, q: null, melee: null, arrows: null, sidearm: "", launcher: "" };
+  const info = { name: u.weaponName || w.name || u.weapon, key: u.weapon, ranged, gun, bow: !!w.arrows, mag: null, empty: false, cal: "", load: null, loadShort: "", reserve: null, rounds: null, spares: null, shells: null, clips: 0, modes: [], mode: null, rolls: 1, jam: null, jamPct: 0, cond: null, q: null, melee: null, arrows: null, sidearm: "", launcher: "" };
   if (gun) {
     const r = unitRound(u); // the round loaded: its own calibre (a 5.56 gun with .223 in it shows ".223 Rem")
     const c = CALIBERS[r ? r.cal : w.cal];
@@ -61,7 +62,7 @@ export function weaponInfo(state, b, u) {
     info.load = r ? r.type : c ? c.base : null;
     info.loadShort = typeShort(info.load);
     if (hasMag(u)) { info.mag = { in: magShown(b, u), cap: magMaxOf(u) }; info.empty = magEmpty(b, u); }
-    if (u.side === "player" && info.load) info.reserve = Math.max(0, Math.floor(roundsOf(b, u, loadOf(u))) - (info.mag ? info.mag.in : 0)); // every round of the type to hand, past the ones loaded
+    if (u.side === "player" && info.load) { info.reserve = Math.max(0, Math.floor(roundsOf(b, u, loadOf(u))) - (info.mag ? info.mag.in : 0)); info.rounds = roundSplit(b, u); } // every round of the type to hand, past the ones loaded; by where (mags.js: a pocket or the rig 1 action, the pack both)
     if (isShellGun(u)) { const s = shellsAt(b, u); info.shells = { at: s.at, pack: s.pack, kind: shellKind(u) }; }
     else if (tracksMags(u) && u.magMode !== "internal") info.spares = spareSplit(b, u);
     else if (tracksMags(u)) info.clips = (u.clips || []).filter((x) => !x.used).length;
@@ -116,15 +117,21 @@ export function weaponPanelHtml(state, b, u) {
   if (info.shells) {
     const s = info.shells, perLoad = s.kind === "break" ? SHELLS.BREAK : s.kind === "single" ? 1 : `${SHELLS.MIN}–${SHELLS.MAX}`;
     spare.push(`<span class="${s.at < 1 ? "danger" : ""}" data-tip="${esc(`Shells at hand (pockets, rig, loose): a Reload (1 action) loads ${perLoad} from these.`)}">${s.at} at hand</span>`);
-    spare.push(`<span class="${s.at < 1 && s.pack > 0 ? "warn" : "muted"}" data-tip="${esc(`Shells in the pack: Get shells (1 action) takes up to ${SHELLS.GRAB} out, loose at hand.`)}">${Number.isFinite(s.pack) ? s.pack : "∞"} in the pack</span>`);
+    spare.push(`<span class="${s.at < 1 && s.pack > 0 ? "warn" : "muted"}" data-tip="${esc(`Shells in the pack: a Reload straight from them takes both actions; Get shells (1 action) takes up to ${SHELLS.GRAB} out, loose at hand, for 1-action Reloads.`)}">${Number.isFinite(s.pack) ? s.pack : "∞"} in the pack</span>`);
   } else if (info.spares) {
     const h = info.spares.hand, p = info.spares.pack;
-    if (!h.mags && !p.mags) spare.push(`<span class="warn" data-tip="${esc("No loaded spare magazine: a Reload tops up the one in the gun from the rounds to hand (2 actions).")}">no spare mags</span>`);
+    if (!h.mags && !p.mags) spare.push(`<span class="warn" data-tip="${esc(`No loaded spare magazine: a Reload tops up the one in the gun from the rounds to hand (${MAGS.SOURCE_AP.hand} action from a pocket or the rig, both from the pack, ${MAGS.TOPUP_AP} from a teammate's or the team's bags).`)}">no spare mags</span>`);
     else spare.push(`<span data-tip="${esc("Loaded spare magazines in rig pouches and pockets: a Reload from one is 1 action.")}">${h.mags} mag${h.mags === 1 ? "" : "s"} at hand${h.rounds ? ` <span class="muted">(${h.rounds})</span>` : ""}</span>`);
-    if (h.mags || p.mags) spare.push(`<span class="muted" data-tip="${esc("Loaded spare magazines in the pack: a Reload from one is 2 actions. With no loaded spare left, a Reload tops up the one in the gun (2 actions).")}">${p.mags} in the pack${p.rounds ? ` (${p.rounds})` : ""}</span>`);
+    if (h.mags || p.mags) spare.push(`<span class="muted" data-tip="${esc("Loaded spare magazines in the pack: a Reload from one is 2 actions. With no loaded spare left, a Reload tops up the one in the gun from the rounds to hand (1 action from a pocket or the rig, both from the pack).")}">${p.mags} in the pack${p.rounds ? ` (${p.rounds})` : ""}</span>`);
     if (h.empty + p.empty) spare.push(`<span class="muted">${h.empty + p.empty} empty</span>`);
   } else if (info.clips) spare.push(`<span data-tip="Clips or speedloaders: a Reload with one fills the gun at once.">${info.clips} ${info.clips === 1 ? "clip" : "clips"}</span>`);
-  if (info.reserve != null && !info.shells) spare.push(`<span class="muted" data-tip="${esc("Every round of this calibre and type your side has to hand, past the ones in the gun.")}">${info.reserve} rds</span>`);
+  // The reserve rounds by where they are (mags.js roundSplit): at hand (a pocket or the rig: 1 action), in the pack (both actions), the team's (a teammate's boxes, the bags: both actions too).
+  if (info.rounds && !info.shells) {
+    const r = info.rounds, team = r.mate + r.pool;
+    spare.push(`<span class="${r.hand > 0 ? "" : "muted"}" data-tip="${esc("Rounds of this calibre and type loose or boxed in the pockets and the rig, past the ones loaded: a top-up or an internal magazine's Reload from them is 1 action.")}">${r.hand} rds at hand</span>`);
+    if (r.pack > 0) spare.push(`<span class="muted" data-tip="${esc("In the pack, past the ones loaded: a Reload from them takes both actions (the Inventory moves a box to a pocket for 1 action).")}">${r.pack} in the pack</span>`);
+    if (team > 0) spare.push(`<span class="muted" data-tip="${esc(`A teammate's boxes and the team's bags, past the ones loaded: a top-up or an internal magazine's Reload from them takes both actions, like the pack.`)}">${team} the team's</span>`);
+  }
   if (spare.length) rows.push(`<div class="bh-spare">${spare.join('<span class="bh-dot">·</span>')}</div>`);
   // The state of the gun: jammed, empty, the jam risk.
   const st = [];
@@ -183,6 +190,7 @@ export function unitChips(state, b, p) {
   if (p.suppressed > 0) c.push(["SUPP", "warn", "Suppressed: −20 aim, no overwatch until their turn ends."]);
   if (p.ow) c.push(["OW", "info", "On overwatch: shoots at the first enemy that moves in range."]);
   if (p.hunker) c.push(["HUNK", "info", "Hunkered down: harder to hit in cover."]);
+  if (p.vaulted > 0 && !p.down) c.push(["WINDED", "info", `Winded from a vault: ${p.vaulted} tile${p.vaulted === 1 ? "" : "s"} less of movement for the rest of this turn.`]); // sim/combat.js VAULT
   if (p.shaken && !p.down) c.push(["SHAKEN", "warn", "Shaken from being revived: worse aim for the rest of the battle."]);
   if (p.stun && !p.down) c.push([p.stun.dazed ? "DAZED" : "STUN", "warn", "Dazed or stunned by a flash or a taser."]);
   for (const e of earStatus(p)) c.push([e.split(" ")[0].toUpperCase(), "warn", e]);
@@ -224,7 +232,7 @@ export function rosterHtml(state, b, list, { sel = null, offMap = null, salt = 0
   if (!list.length) return "";
   const rows = list.map((p, i) => rosterRow(state, b, p, i < 9 ? i + 1 : 0, sel, offMap ? offMap.get(p.id) || "" : "", salt, !open)).join("");
   const nOff = offMap ? [...offMap.values()].filter(Boolean).length : 0;
-  return `<div class="bh-roster${open ? "" : " folded"}"><button class="bh-fold" data-action="cb-view" data-v="hud" data-tip="${esc(`${open ? "Fold" : "Open"} the squad strip and the weapon panel (${keyLabel("bview.hud", 1) || "`"}).`)}">${open ? "Squad ▴" : "▾"}${nOff && open ? ` <span class="bh-offn">${nOff} off screen</span>` : ""}</button>${rows}</div>`;
+  return `<div class="bh-roster${open ? "" : " folded"}"><button class="bh-fold" data-action="cb-view" data-v="hud" data-tip="${esc(`${open ? "Fold" : "Open"} the squad strip (${keyLabel("bview.hud", 1) || "`"}).`)}">${open ? "Squad ▴" : "▾"}${nOff && open ? ` <span class="bh-offn">${nOff} off screen</span>` : ""}</button>${rows}</div>`;
 }
 
 // ---------- off screen ----------
@@ -264,10 +272,10 @@ function badge(ctx, X, Y, text, col, fs, sub = "", strong = false) {
 // Over each enemy the selected unit could hit: its chance (bigger while Shoot or Melee is armed); the one under the
 // mouse a big card with damage and cover. hits: Map id -> odds (ui/combat.js hitLabels); hoverT/hoverO: the enemy
 // under the mouse and its odds. Your people off screen: a blue arrow with their number at the edge of the view.
-export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel, avoid }) {
+export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel, avoid, bottom = 0 }) {
   const S = ISO_ZOOMS[iso.zoom] || 2, ui = uiScale();
   const armed = mode === "shoot" || mode === "melee";
-  const head = (t) => { const big = t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1; return project(t.x + 0.5, t.y + 0.5, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down ? 10 : 30 * big)); };
+  const head = (t) => { const big = t.size === 2 ? 1.3 : t.boss ? 1.35 : t.ztype === "brute" ? 1.15 : 1, h = (t.size || 1) / 2; return project(t.x + h, t.y + h, heightAt(b, t.x, t.y) * LV + liftOf(b) + (t.down ? 10 : 30 * big)); }; // a 2 × 2 boss: over its footprint's centre
   const tagRoom = Math.max(10, Math.round(3.4 * S)) + 14; // the health bar and the tags over a head (isoview.js drawLabels)
   if (hits && hits.size) {
     const fs = Math.round(Math.min(26, Math.max(armed ? 17 : 13, (armed ? 4.6 : 3.8) * S)) * ui);
@@ -292,20 +300,21 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
   }
   // Your people off screen: an arrow at the edge with their number, clear of the strip (avoid: its rect).
   if (list && list.length && !b.over) {
-    const m = 18, cx = cw / 2, cy = ch / 2;
+    const chA = Math.max(60, ch - bottom); // above the bottom bar (ui/battlebar.js)
+    const m = 18, cx = cw / 2, cy = chA / 2;
     const fs = Math.round(11 * ui);
     const placed = [];
     list.forEach((p, i) => {
       if (p.dead || p.left || p.fled || p.off || p.down && p.dead || p.x < 0 || !onFloor(b, p)) return;
       const [X, Y] = project(p.x + 0.5, p.y + 0.5, heightAt(b, p.x, p.y) * LV + liftOf(b) + 15);
-      if (X >= m && Y >= m && X <= cw - m && Y <= ch - m) return;
+      if (X >= m && Y >= m && X <= cw - m && Y <= chA - m) return;
       const dx = X - cx, dy = Y - cy;
-      const k = Math.min((cw / 2 - m) / Math.max(1e-6, Math.abs(dx)), (ch / 2 - m) / Math.max(1e-6, Math.abs(dy)));
+      const k = Math.min((cw / 2 - m) / Math.max(1e-6, Math.abs(dx)), (chA / 2 - m) / Math.max(1e-6, Math.abs(dy)));
       let ex = cx + dx * k, ey = cy + dy * k;
       if (avoid && ex < avoid.x1 + m && ey < avoid.y1 + m) { if (ex - avoid.x1 < ey - avoid.y1) ex = avoid.x1 + m; else ey = avoid.y1 + m; } // not under the strip
-      if (ex < 80 && ey > ch - 80) { if (Math.abs(dx) * ch > Math.abs(dy) * cw) ey = ch - 80; else ex = 80; } // nor the compass (isoview.js drawCompass)
+      if (ex < 80 && ey > chA - 80) { if (Math.abs(dx) * chA > Math.abs(dy) * cw) ey = chA - 80; else ex = 80; } // nor the compass (isoview.js drawCompass)
       const side = Math.abs(ex - m) < 2 || Math.abs(ex - (cw - m)) < 2 || ex === avoid?.x1 + m; // on a left or right edge: stack along it
-      for (let g = 0; g < 12 && placed.some(([qx, qy]) => Math.hypot(qx - ex, qy - ey) < 20); g++) { if (side) ey += ey > ch / 2 ? -20 : 20; else ex += ex > cw / 2 ? -20 : 20; }
+      for (let g = 0; g < 12 && placed.some(([qx, qy]) => Math.hypot(qx - ex, qy - ey) < 20); g++) { if (side) ey += ey > chA / 2 ? -20 : 20; else ex += ex > cw / 2 ? -20 : 20; }
       placed.push([ex, ey]);
       const col = p.id === sel ? "#ffd166" : "#8fc1ff";
       ctx.save();
@@ -325,15 +334,15 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
 }
 
 // ---------- the DOM ----------
-// Writes the strip, the weapon panel and the target card into #cbhud, each only when its key changed. args: { state,
+// Writes the strip and the target card into #cbhud, each only when its key changed. args: { state,
 // b, list (your people, in number-key order), sel, salt, cw, ch, hoverT, hoverO, mode }. Returns the strip's rect
 // (CSS px in the map) for the edge arrows, or null.
 const shown = { roster: null, weapon: null, target: null, rect: null };
 export function hudSync(el, { state, b, list, sel, salt, cw, ch, hoverT, hoverO, mode }) {
   if (!el) return null;
   if (!el.firstChild || !el.querySelector || !el.querySelector(".bh-rosterbox")) {
-    el.innerHTML = `<div class="bh-rosterbox"></div><div class="bh-bottom"><div class="bh-targetbox"></div><div class="bh-weaponbox"></div></div>`;
-    shown.roster = shown.weapon = shown.target = null;
+    el.innerHTML = `<div class="bh-rosterbox"></div><div class="bh-bottom"><div class="bh-targetbox"></div></div>`;
+    shown.roster = shown.target = null;
   }
   const hide = !!b.over;
   el.classList.toggle("hidden", hide);
@@ -350,12 +359,7 @@ export function hudSync(el, { state, b, list, sel, salt, cw, ch, hoverT, hoverO,
     box.innerHTML = rosterHtml(state, b, list, { sel, offMap, salt, open: HUD.open });
     shown.rect = box.firstElementChild && box.firstElementChild.getBoundingClientRect && el.getBoundingClientRect ? (() => { const r = box.firstElementChild.getBoundingClientRect(), o = el.getBoundingClientRect(); return { x1: r.right - o.left, y1: r.bottom - o.top }; })() : null;
   }
-  // The weapon panel: the selected unit's weapon.
-  const wk = u ? `${b.rev}:${b.log.length}:${u.id}:${u.weapon}:${u.mag}:${u.load}:${u.mode}:${u.jam ? u.jam.kind || 1 : 0}:${u.hand ? JSON.stringify(u.hand) : ""}:${HUD.open}` : `none:${HUD.open}`;
-  if (wk !== shown.weapon) {
-    shown.weapon = wk;
-    el.querySelector(".bh-weaponbox").innerHTML = HUD.open && u ? weaponPanelHtml(state, b, u) : "";
-  }
+  // The weapon panel (weaponPanelHtml) is on the bottom bar now, by the turn controls (ui/battlebar.js).
   // The target card: the enemy under the mouse.
   const tk = hoverT && u ? `${b.rev}:${u.id}:${hoverT.id}:${mode}:${hoverO ? hoverO.chance : "-"}:${HUD.open}` : "";
   if (tk !== shown.target) {
@@ -364,4 +368,4 @@ export function hudSync(el, { state, b, list, sel, salt, cw, ch, hoverT, hoverO,
   }
   return shown.rect;
 }
-export function hudReset() { shown.roster = shown.weapon = shown.target = shown.rect = null; }
+export function hudReset() { shown.roster = shown.target = shown.rect = null; }

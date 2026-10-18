@@ -619,7 +619,7 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
   const { SG_ACTIONS, SG_CHANGE, startGearEditor } = await import("../src/ui/startgear.js"); // the starting gear window (Customize)
   Object.assign(CLICK, SG_ACTIONS);
   Object.assign(CHANGE, SG_CHANGE);
-  const { WORLD_SIZES, SIZE_KEYS, clampGroups } = await import("../src/sim/worldsize.js");
+  const { WORLD_SIZES, SIZE_KEYS, clampGroups, HIVES_MAX } = await import("../src/sim/worldsize.js");
   for (const k of SIZE_KEYS) {
     const d = WORLD_SIZES[k];
     const w = createWorld({ seed: seed + 9, factionCount: d.defGroups, size: k });
@@ -631,7 +631,7 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     const groupIn = /<input[^>]*data-action="factioncount"[^>]*>/.exec(html);
     check(groupIn && /min="0"/.test(groupIn[0]) && /max="50"/.test(groupIn[0]) && new RegExp(`value="${d.defGroups}"`).test(groupIn[0]), `${d.label}: AI groups 0–50, ${d.defGroups} set (got ${groupIn && groupIn[0]})`);
     const hiveSel = /<select data-action="hivecount">([\s\S]*?)<\/select>/.exec(html);
-    check(hiveSel && (hiveSel[1].match(/<option/g) || []).length === 12 && hiveSel[1].includes(`value="default" selected>Default (${w.hives.length})`), `${d.label}: starting hives Default (${w.hives.length}) and 0–10`);
+    check(hiveSel && (hiveSel[1].match(/<option/g) || []).length === HIVES_MAX + 2 && hiveSel[1].includes(`value="default" selected>Default (${w.hives.length})`), `${d.label}: starting hives Default (${w.hives.length}) and 0–${HIVES_MAX}`);
     check(!html.includes("Experimental"), `${d.label}: no custom-size warning on a preset`);
     check(html.includes(`${w.factions.length} other groups`), `${d.label}: the text counts the groups`);
     check(clampGroups(k, 99) === 50 && clampGroups(k, -1) === 0, `${d.label}: group count clamped to 0–50`);
@@ -1166,11 +1166,11 @@ section("Map overlays: Known area, ruins, Coalition land (render.js, help.js, si
   R.view.layers = new Set([...R.view.layers, "coalition"]);
   const lgOn = renderLegend(R.view, { legendCollapsed: false }, w);
   const pctWant = Math.round(controlledLand(w).pct * 100);
-  check(new RegExp(`Coalition land <span class="muted"[^>]*>${pctWant}%/${Math.round(ALLIANCE.LAND_NEEDED * 100)}%</span>`).test(lgOn), `the Coalition land line shows the share held and the goal (${pctWant}%/50%)`);
+  check(new RegExp(`Coalition land <span class="muted"[^>]*>${pctWant}%/${Math.round(ALLIANCE.LAND_NEEDED * 100)}%</span>`).test(lgOn), `the Coalition land line shows the share held and the goal (${pctWant}%/60%)`);
   htmlOk(lgOn, "Layers box with Coalition land on");
   const topics = helpTopics();
   const layersTxt = strip(topics.find((t) => t.id === "map-layers").html), legendTxt = strip(topics.find((t) => t.id === "map-legend").html);
-  check(/Known area/.test(layersTxt) && /hatching/.test(layersTxt) && /Coalition land/.test(layersTxt) && /50%/.test(layersTxt) && /Ruins of/.test(layersTxt), "Help → Map layers explains Known area, Coalition land and the ruins");
+  check(/Known area/.test(layersTxt) && /hatching/.test(layersTxt) && /Coalition land/.test(layersTxt) && /60%/.test(layersTxt) && /Ruins of/.test(layersTxt), "Help → Map layers explains Known area, Coalition land and the ruins");
   check(["Ruins", "Known area", "Coalition land"].every((s) => legendTxt.includes(s)), "Help → Map legend has Ruins, Known area and Coalition land");
 
   // Searched tiles: a team's looks wait for its report, then go on the map; saved and loaded.
@@ -1456,7 +1456,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     check(key("ArrowLeft") && ISO.iso.keys.has("ArrowLeft") && (UI.combatKeyUp(ft.st, { code: "ArrowLeft" }), !ISO.iso.keys.has("ArrowLeft")), "the arrow keys pan while held");
     check([["KeyW", "ArrowUp"], ["KeyA", "ArrowLeft"], ["KeyS", "ArrowDown"], ["KeyD", "ArrowRight"]].every(([k, a]) => key(k) && ISO.iso.keys.has(a) && (UI.combatKeyUp(ft.st, { code: k }), !ISO.iso.keys.has(a))), "W A S D pan while held");
     const bar = UI.viewBar();
-    { const p = scan(UI.renderCombatPanel(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
+    { const p = scan(UI.renderCombatScreen(ft.st), "battle panel"); check(!p.length, `the battle panel with the view bar: clean HTML (${p.slice(0, 2).join(" | ")})`); }
     { // Bows use arrows (sim/combat.js arrowsLeft): the panel shows the arrows beside the ammo, and a bow out of arrows
       // says so on Shoot. The planner's Auto-fill packs a dozen a bow (main.js autofill, sim/world.js ARROWS.PACK).
       const b = ft.b, u = b.units.find((x) => x.side === "player" && C.active(x));
@@ -1464,9 +1464,9 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
         const keep = { weapon: u.weapon, weaponName: u.weaponName, ap: u.ap, phase: b.phase, sel: UI.cui.sel, arrows: b.pools[0].arrows };
         u.weapon = "compbow"; u.weaponName = "Compound bow"; u.ap = 2; b.phase = "player"; UI.cui.sel = u.id;
         b.pools[0].arrows = 7;
-        const withArrows = UI.renderCombatPanel(ft.st);
+        const withArrows = UI.renderCombatScreen(ft.st);
         b.pools[0].arrows = 0;
-        const without = UI.renderCombatPanel(ft.st);
+        const without = UI.renderCombatScreen(ft.st);
         check(/Arrows <b>7<\/b>/.test(withArrows) && /Arrows <b>0<\/b>/.test(without) && /Out of arrows/.test(without) && !C.canFire(b, u), "the battle panel shows the arrows carried, and a bow with none is out of arrows");
         const p = scan(without, "battle panel, bow out of arrows");
         check(!p.length, `the panel with a bow out of arrows: clean HTML (${p.slice(0, 2).join(" | ")})`);
@@ -1482,7 +1482,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       if (s) {
         const keep = { hunger: s.hunger, health: s.health };
         s.hunger = 3; s.health = 20;
-        const html = UI.renderCombatPanel(ft.st);
+        const html = UI.renderCombatScreen(ft.st);
         check(html.includes('data-st="hunger"') && !html.includes('data-st="health"'), "the battle roster shows a starving unit's icon, and no low-health one");
         Object.assign(s, keep);
       } else console.log("  (no survivor unit in this battle: battle icons skipped)");
@@ -1579,6 +1579,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       const n0 = nan;
       const tour = [0, 1, top, 1, 0];
       let errs = 0, imgs = [], builds = [], prev = 0;
+      const painted = new Set(); // the upper floors whose ground has been painted (ui/isoview.js groundFor keeps a few)
       for (const f of tour) {
         try {
           UI.setViewFloor(b, f);
@@ -1586,14 +1587,16 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
           log = []; UI.drawCombat(st, NOW);
           imgs.push(log.filter((l) => l.startsWith("drawImage")).length);
           UI.drawCombat(st, NOW); // the same floor again: nothing rebuilt
-          builds.push([ISO.iso.builds.scene - s0, ISO.iso.builds.ground - g0, f !== prev ? 1 : 0]);
+          builds.push([ISO.iso.builds.scene - s0, ISO.iso.builds.ground - g0, f !== prev ? 1 : 0, f !== 0 && !painted.has(f) ? 1 : 0]);
+          if (f !== 0) painted.add(f);
           prev = f;
         } catch (e) { if (errs++ < 2) console.log(`  error drawing floor ${f}: ${e.stack}`); }
       }
       check(!errs && nan === n0 && imgs.every((k) => k >= 2), `a ${n}-floor building draws on each floor (${tour.join(", ")}) without errors (${errs}) or NaN, the ground and the blocks drawn (${imgs.join(", ")} images)`);
       // The ground floor's ground is painted once per battle in map space (isoview.js flatGroundFor) and kept: coming
-      // back down to it repaints nothing. An upper floor's (groundFor) is painted when the floor changes.
-      check(builds.every(([s, g, want], i) => s === want && g === (tour[i] === 0 && i > 0 ? 0 : want)), `the scene cache is rebuilt once when the floor changes (the key carries the floor) and not again; the ground once for an upper floor, the ground floor's kept (${builds.map((x) => x.slice(0, 2).join("/")).join(", ")})`);
+      // back down to it repaints nothing. An upper floor's (groundFor) is painted the first time the view goes up to it
+      // and kept for coming back (a few floors and views).
+      check(builds.every(([s, g, want, wantG]) => s === want && g === wantG), `the scene cache is rebuilt once when the floor changes (the key carries the floor) and not again; the ground once for each upper floor and kept on coming back, the ground floor's kept (${builds.map((x) => x.slice(0, 2).join("/")).join(", ")})`);
       check(b.floor === 0 && b.cells === b.floors[0].cells, "back on the ground floor the aliases point at its arrays");
       // The upper floor is raised: a cell's top at its lifted height picks itself (or a nearer cell in front).
       UI.setViewFloor(b, top); UI.drawCombat(st, NOW);
@@ -1640,31 +1643,36 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       // The panel: the Floor control, each unit's floor in the team list, Go up on a stairwell, the hint off floor.
       const bar = UI.viewBar(b);
       check(new RegExp(`Floor 1 of ${n}`).test(bar) && /data-v="fup"/.test(bar) && /data-v="fdown"/.test(bar), `the view bar: Floor 1 of ${n} ▲ ▼`);
-      let html = UI.renderCombatPanel(st);
+      let html = UI.renderCombatScreen(st);
       { const p = scan(html, "battle panel with floors"); check(!p.length, `the battle panel with floors: clean HTML (${p.slice(0, 2).join(" | ")})`); }
-      check((html.match(/class="cbfl off"/g) || []).length === 1 && (html.match(/class="cbfl"/g) || []).length === b.units.filter((u) => u.side === "player").length - 1, `the team list shows everyone's floor (F1, and F${n} dimmed for the one upstairs)`);
+      // A raid has no side panel (ui/combat.js raidLayout): the squad strip marks whoever is on another floor than the
+      // one shown (battlehud.js offDir), the top strip names the floor shown.
+      const HUD = await import("../src/ui/battlehud.js");
+      const marks = b.units.filter((u) => u.side === "player" && !u.dead).map((u) => HUD.offDir(b, u, 1600, 900));
+      check(marks.filter((m) => m === `F${n}`).length === 1 && !marks.some((m) => /^F/.test(m) && m !== `F${n}`) && new RegExp(`class="ct-floor"[^>]*>Floor 1 of ${n}`).test(UI.renderRaidTop(st)), `the squad strip marks the one upstairs F${n}, the top strip names the floor shown (Floor 1 of ${n})`);
       // Hover tips: the empty stairwell, and open air (outside the footprint, off the extraction zones) upstairs.
       UI.cui.hover = { x: stairs % b.w, y: (stairs / b.w) | 0, px: 0, py: 0 };
-      const stairTip = /Stairwell/.test(UI.renderCombatPanel(st));
+      const stairTip = /Stairwell/.test(UI.renderCombatScreen(st));
       UI.setViewFloor(b, top);
       const vi = b.cells.findIndex((c, i) => c.k === "void" && C.zoneAt(b, i % b.w, (i / b.w) | 0) < 0);
       UI.cui.hover = { x: vi % b.w, y: (vi / b.w) | 0, px: 0, py: 0 };
-      check(stairTip && vi >= 0 && /Open air/.test(UI.renderCombatPanel(st)), "hover tips: the stairwell, and open air outside the footprint upstairs");
+      check(stairTip && vi >= 0 && /Open air/.test(UI.renderCombatScreen(st)), "hover tips: the stairwell, and open air outside the footprint upstairs");
       UI.cui.hover = null;
       UI.setViewFloor(b, 0);
       const onStairs = mine[1];
       onStairs.x = stairs % b.w; onStairs.y = (stairs / b.w) | 0; onStairs.ap = 2;
-      html = UI.renderCombatPanel(st);
+      html = UI.renderCombatScreen(st);
       check(/data-v="goup"/.test(html) && !/data-v="godown"/.test(html), "standing on the stairwell on the ground floor: a Go up button, no Go down");
       UI.setViewFloor(b, 1);
-      html = UI.renderCombatPanel(st);
+      html = UI.renderCombatScreen(st);
       check(new RegExp(`Showing floor 2 of ${n}`).test(html) && /data-v="fgo"/.test(html) && !/data-v="goup"/.test(html), "looking at another floor: the panel says so with a way back, no actions for the unit");
       UI.combatAction(st, "cb-view", { v: "fgo" });
       check(b.floor === 0, "Go to <name> returns to their floor");
       // Each floor draws, the banner naming the floor shown.
       let bad = 0;
-      for (const f of [top, 0]) { UI.setViewFloor(b, f); try { log = []; UI.drawCombat(st, NOW); if (f === top && !log.some((l) => l.includes(`FLOOR ${n} OF ${n}`))) bad++; } catch (e) { bad++; console.log(`  error drawing floor ${f}: ${e.stack}`); } }
-      check(!bad && nan === n0, `each floor draws, the banner naming it (FLOOR ${n} OF ${n})`);
+      // (a raid draws no banner on the map: its top strip names the floor, renderRaidTop)
+      for (const f of [top, 0]) { UI.setViewFloor(b, f); try { log = []; UI.drawCombat(st, NOW); if (f === top && !new RegExp(`class="ct-floor"[^>]*>Floor ${n} of ${n}`).test(UI.renderRaidTop(st))) bad++; } catch (e) { bad++; console.log(`  error drawing floor ${f}: ${e.stack}`); } }
+      check(!bad && nan === n0, `each floor draws, the top strip naming it (Floor ${n} of ${n})`);
       check(key("PageUp") && b.floor === 1, "PageUp shows the floor above");
       check((await import("../src/ui/help.js")).helpTopics().find((t) => t.id === "battle-view").html.includes("PageUp") && readme.includes("PageUp / PageDown"), "Help → Battle view and the README explain the floors and PageUp / PageDown");
       // The fixture off again: the battle draws as a single floor.

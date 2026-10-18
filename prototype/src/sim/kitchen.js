@@ -256,12 +256,15 @@ export function setCookPlus(state, s, second) {
 }
 
 // What a cook is doing at hour h (activity.js describeActivity): { text, why } or null outside the cooks' hours.
-export function cookActivity(h) {
+// lunch: the game's lunch hour (meals.js lunchHour); the full-day cooks serve it (lunch is cold cuts, bread and the
+// stock pot: no cooking hours of its own, KITCHEN.cookHours).
+export function cookActivity(h, lunch = MEALS.lunch) {
   if (h < KITCHEN.day[0] || h > KITCHEN.day[1]) return null;
   if (h === 5) return { text: "Cooking breakfast", why: "Up before the others: porridge, eggs and tea on for breakfast at 06:00." };
   if (h === 6) return { text: "Serving breakfast", why: "Breakfast at the kitchen; the cooks eat when everyone is served." };
   if (h === 7) return { text: "Washing up after breakfast", why: "" };
   if (h === MEALS.lateBreakfast) return { text: "Serving the hunters' breakfast", why: "The hunters and fishers eat when they are back from the dawn trip." };
+  if (h === lunch) return { text: "Serving lunch", why: "Lunch at the kitchen: bread, soup from the stock pot and what is left from breakfast." };
   if (h < 16) return { text: "Kitchen work: bread, stock, soaking beans", why: "Between the meals: the bread, the stock pot and tomorrow's beans." };
   if (h < 20) return { text: "Cooking dinner", why: "Dinner is at 20:00." };
   if (h === 20) return { text: "Serving dinner", why: "Dinner at the kitchen; the cooks eat when everyone is served." };

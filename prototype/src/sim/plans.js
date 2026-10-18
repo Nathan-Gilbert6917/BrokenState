@@ -6,10 +6,9 @@
 // rations for the whole plan (estimatePlan, the same hour-by-hour stepping as the real trip, winter's appetite
 // included: ×1.1 / ×1.2 below 0 / −8°C, except by a lit camp fire).
 //
-// Radio rule: a team in radio coverage (stations and linked relays, radio.js) takes new orders at any time. Out of
-// contact it keeps following its plan, and you can only give it orders through the cards it raises (arrival,
-// "Done", interruptions, finds): answering one of its cards opens contact for that hour (commandable).
-// A waiting team out of contact checks in again every 12 hours, and an open-ended camp every 24.
+// Orders: every team of yours takes new orders at any time, wherever it is (commandable: no radio-range limit). Radio
+// coverage (stations and linked relays, radio.js) still decides whether its sightings reach your map live. A team
+// with an active plan follows it until you give it other orders.
 //
 // To keep the player involved while a team is out of contact, the plan watches for things worth a decision and
 // raises a card (once each per trip): a horde in sight, a rich site in sight that is not on the plan, supplies
@@ -28,7 +27,7 @@ import { travelMode } from "./vehicles.js";
 import { startOrder, FETCH_WATER_HOURS } from "./orders.js";
 import { fieldHeatHour, fireLit } from "./fieldheat.js";
 import { foodNeedFactor } from "./weather.js";
-import { sweepEstimate, sweepOpts, SURVEY } from "./survey.js";
+import { sweepEstimate, sweepOpts, SURVEY, LOOK } from "./survey.js";
 import { huntHours } from "./orders.js";
 import {
   HUNT, MEAT_KG, huntTeam, expectHunt, fishKit, expectFish, snareLine, snareHours, expectSnare, packFishingGear, meatIn,
@@ -36,7 +35,7 @@ import {
 } from "./hunting.js";
 import { teamLoad, burdenRecord, wornLoad } from "./load.js";
 import { expectForage } from "./foraging.js";
-import { expectWood, chopCrew, chopPower, fireLandOk, WOOD } from "./woodcutting.js";
+import { expectWood, chopCrew, chopPower, fireBurn, WOOD } from "./woodcutting.js";
 import { partyFleet } from "./vehicles.js";
 import { supplyLoad, poolLoad, packedSupplies } from "./parties.js";
 import { sumRecs } from "./rounds.js"; // rounds by calibre
@@ -51,9 +50,10 @@ export const SEARCH_AREA_HOURS = 22; // the estimate for "Search the area": abou
 
 // Step kinds the planner offers (kind → label, default fields).
 export const STEP_KINDS = {
-  sweep:    { label: "Survey the area", desc: "Sweep the land around where the team stands for hidden places and finds: it moves from spot to spot within the radius for the hours set and ends back where it started (survey.js). Food and water at the moving rate; Heat builds at half the rate of standing still." },
-  survey:   { label: "Look around (2h)", desc: "Two hours surveying nearby tiles: better odds of spotting caches, wrecks and camps." },
-  scavenge: { label: "Scavenge here", desc: "Search the site the team stands on (a raid on its own map)." },
+  sweep:    { label: "Sweep the area", desc: "Sweep the land around where the team stands for hidden places and finds: it moves from spot to spot within the radius for the hours set and ends back where it started (survey.js). Food and water at the moving rate; Heat builds at half the rate of standing still." },
+  fullsurvey: { label: "Survey the tile (8h)", desc: "Eight hours looking the tile over for the places it hides (pois.js): one roll at the end finds them all, or each on its own with worse odds; optics that reach take in the ring of tiles round the team; the threat of every place known here is sized up." },
+  survey:   { label: "Quick look (2h)", desc: "Two hours looking the tile over: a chance at each place it hides (the kind only) and better odds of spotting caches, wrecks and camps nearby." },
+  scavenge: { label: "Scavenge here", desc: "Search the site the team stands on (a raid on its own map). A tile with several places (pois.js): the best known one, or the one you pick when you drive the team." },
   nearby:   { label: "Scavenge nearby sites", desc: "Search the best known sites within a few tiles, richest first (what the team sees on the way counts). Sites are picked when the step starts, so the plan adapts." },
   camp:     { label: "Rest", desc: "Rest on the spot (no camp is set up): the hurt heal slowly. Staying put builds Heat (a camp fire most), and Heat brings trouble." },
   gather:   { label: "Gather boat materials (3h)", desc: "Search the shore for scrap (only on a shore with a crossing)." },
@@ -73,7 +73,8 @@ export const STEP_KINDS = {
 export const PRESETS = {
   recon:    { name: "Recon and return", mission: "recon", steps: () => [{ kind: "home" }], desc: "Travel there, survey the area, come home." },
   scavenge: { name: "Scavenge and return", mission: "scavenge", steps: () => [{ kind: "home" }], desc: "Travel there, search the site, come home." },
-  survey:   { name: "Survey trip", mission: "sweep", steps: () => [{ kind: "home" }], desc: "Go there, survey the area around it for the hours set (hidden farms, cabins, lodges, camps, caches), come home." },
+  survey:   { name: "Sweep trip", mission: "sweep", steps: () => [{ kind: "home" }], desc: "Go there, sweep the area around it for the hours set (hidden farms, cabins, lodges, camps, caches), come home." }, // the id stays "survey" (saves, the autopilot's trips)
+  poisurvey: { name: "Survey trip", mission: "fullsurvey", steps: () => [{ kind: "home" }], desc: "Go there, survey the tile for 8 hours (the places it hides, pois.js, and the threat of each known there), come home." },
   explore:  { name: "Explore", mission: "recon", steps: () => [{ kind: "nearby", radius: 3, count: 2 }, { kind: "home" }], desc: "Recon the target, then search the best sites within 3 tiles by loot (up to 2), then come home." },
   hunt:     { name: "Hunting trip", mission: "move", steps: (days, plan) => [{ kind: "hunt", hours: (plan && plan.add && plan.add.hunt) || HUNT.defHours }, { kind: "home" }], desc: "Go there, hunt for the hours set, come home with the game. Fresh game is heavy (a vehicle helps) and spoils fast: eat it, dry it or smoke it." },
   fish:     { name: "Fishing trip", mission: "move", steps: (days, plan) => [{ kind: "fish", hours: (plan && plan.add && plan.add.hunt) || HUNT.defHours }, { kind: "home" }], desc: "Go to a river or lake shore, fish for the hours set, come home. Needs a fishing rod or net (the hub's goes along)." },
@@ -122,6 +123,7 @@ export function stepsToOrders(state, steps, tile) {
     const place = known ? { at } : {};
     switch (s.kind) {
       case "survey": out.push({ type: "mission", mission: "survey", ...place }); break;
+      case "fullsurvey": out.push({ type: "mission", mission: "fullsurvey", ...place }); break; // the POI survey (survey.js)
       case "sweep": out.push({ type: "sweep", ...sweepOpts(s) }); break;
       case "scavenge": out.push({ type: "mission", mission: "scavenge", ...place }); break;
       case "nearby": out.push({ type: "nearby", radius: s.radius || 3, count: s.count || 1, center: at }); known = false; break;
@@ -147,7 +149,8 @@ export const stepLabel = (state, s) => {
     case "nearby": return `Scavenge up to ${s.count || 1} site${(s.count || 1) === 1 ? "" : "s"} within ${s.radius || 3} tiles, richest first`;
     case "camp": return `Rest ${s.hours % 24 === 0 ? `${s.hours / 24} day${s.hours === 24 ? "" : "s"}` : `${s.hours}h`}`;
     case "wait": return `Wait ${s.hours || 6}h`;
-    case "sweep": { const o = sweepOpts(s); return `Survey ${o.radius} tiles around for ${o.hours}h`; }
+    case "sweep": { const o = sweepOpts(s); return `Sweep ${o.radius} tiles around for ${o.hours}h`; }
+    case "fullsurvey": return `Survey the tile (${LOOK.hours}h)`;
     case "hunt": return `Hunt ${huntHours(s)}h`;
     case "fish": return `Fish ${huntHours(s)}h`;
     case "forage": return `Forage ${huntHours(s)}h`;
@@ -223,8 +226,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     if (kind !== "camp") return 0;
     if (s && s.fire != null) lit = !!s.fire;
     if (!lit) return 0;
-    if (fireLandOk(state, tile)) return hours;
-    const per = WOOD.fire.camp / 24;
+    const per = fireBurn(state, tile, WOOD.fire.camp) / 24; // deadfall stretches the firewood carried, never replaces it
     const wood = Math.max(0, (p ? carried(p, "wood") : supplies.wood || 0) + woodHaul - woodBurnt);
     const paid = Math.min(hours, Math.floor(wood / per + 1e-9));
     woodBurnt += paid * per;
@@ -263,14 +265,15 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
   if (!travel(dest, `To ${tileLabel(state, dest)}`)) return null;
   const outPath = legs[0] ? legs[0].path : [tile], hoursOut = legs[0] ? legs[0].hours : 0;
   // On site: a search 6h, a recovery or other mission 1h; a recon's 2 hours are paid by the next move.
-  const onSite = mission === "scavenge" ? SEARCH_HOURS : mission === "recon" || mission === "move" || mission === "outpost" || mission === "sweep" ? 0 : mission === "occupy" ? 2 : 1;
+  const onSite = mission === "scavenge" ? SEARCH_HOURS : mission === "fullsurvey" ? LOOK.hours : mission === "recon" || mission === "move" || mission === "outpost" || mission === "sweep" ? 0 : mission === "occupy" ? 2 : 1;
   if (onSite) stay(`${MISSIONS[mission]?.name || mission} at ${tileLabel(state, dest)}`, onSite, mission === "scavenge" ? "scavenge" : null);
   if (mission === "sweep") surveyLeg(sweep || (p && p.sweepPlan) || {});
   if (mission === "recon") { owed = Math.min(0, (legs[0] ? legs[0].left : 0) - 2 * (veh ? pace.rideSpeed ?? pace.speed : sp)); legs.push({ label: `Recon at ${tileLabel(state, dest)} (2h, on the next move)`, hours: 0, from: tile, to: tile, start: at }); }
   let returns = false, open = false;
   const chosen = [];
   for (const s of steps || []) {
-    if (s.kind === "survey") stay("Look around", SURVEY_STEP_HOURS);
+    if (s.kind === "survey") stay("Quick look", SURVEY_STEP_HOURS);
+    else if (s.kind === "fullsurvey") stay(`Survey ${tileLabel(state, tile)}`, LOOK.hours);
     else if (s.kind === "sweep") surveyLeg(s);
     else if (s.kind === "scavenge") stay(`Scavenge ${tileLabel(state, tile)}`, SEARCH_HOURS, "scavenge");
     else if (s.kind === "gather") stay("Gather materials", GATHER_STEP_HOURS);
@@ -406,18 +409,16 @@ export function startNearby(state, p, o) {
 }
 
 // ---------- the radio rule ----------
+// Orders reach every team of yours wherever it is: no radio-range limit (each order still checks the team's state,
+// its path and what the spot allows). Convoys follow their route.
 export function commandable(state, p) {
-  if (!p || p.owner !== "player" || p.kind === "convoy") return false;
-  if (p.radioLive) return true;
-  if (p.contactHour === state.hour) return true; // you just answered one of its cards
-  if (state.cards.some((c) => c.partyId === p.id && (c.isOrders || c.planCard))) return true; // it is waiting for your answer
-  return state.bases.some((b) => b.tile === partyTile(p));
+  return !!p && p.owner === "player" && p.kind !== "convoy";
 }
 export const NO_RADIO = "No radio contact: the team follows its plan. New orders only through the cards it raises, or once it is in radio range (a station or a linked relay).";
 // A team carrying a receiver out of two-way reach, inside some radio network (parties.js updateRadio p.radioHear):
 // it listens, that is all (radiolisten.js: Listen in tunes it to one channel).
 export const HAND_RADIO = "Hand-crank radio: hears the networks around it, cannot call in";
-export const HAND_RADIO_TIP = "The team carries a receiver (a hand-crank radio, or a military radio): inside a radio network's coverage (yours, or a group's own around its bases) it hears that network, and nothing beyond every network. It cannot answer, so it is not in contact: no orders, nothing reported, until it is in radio range or raises a card. Listen in (1h, from the team panel while in contact) tunes it to one channel; then it picks up that channel's traffic each day while in range.";
+export const HAND_RADIO_TIP = "The team carries a receiver (a hand-crank radio, or a military radio): inside a radio network's coverage (yours, or a group's own around its bases) it hears that network, and nothing beyond every network. It cannot transmit, so what the team sees does not reach your map until it is in radio range or reports. Listen in (1h, from the team panel) tunes it to one channel; then it picks up that channel's traffic each day while in range.";
 
 // ---------- hourly (parties.js playerPartyHour) ----------
 export function fieldHour(state, p) {
@@ -428,10 +429,10 @@ export function fieldHour(state, p) {
   if (p.plan && p.plan.active) planWatch(state, p);
 }
 
-// Out of contact a team cannot hear you: one that is waiting with no card (held) checks in again every 12 hours,
-// an open-ended camp once a day.
+// A team you cannot order would check in again every 12 hours (an open-ended camp once a day); orders now reach every
+// team (commandable), so this stays as the fallback for a team outside it.
 function checkIn(state, p) {
-  if (p.radioLive || state.cards.some((c) => c.partyId === p.id)) { delete p.checkInAt; return; }
+  if (commandable(state, p) || p.radioLive || state.cards.some((c) => c.partyId === p.id)) { delete p.checkInAt; return; }
   const camp = p.phase === "task" && p.task && p.task.type === "camp" && p.task.hours == null;
   if (p.phase !== "waiting" && !camp) { delete p.checkInAt; return; }
   if (p.checkInAt == null) { p.checkInAt = state.hour + (camp ? CAMP_CHECKIN : CHECKIN_HOURS); return; }
@@ -443,12 +444,12 @@ function checkIn(state, p) {
 
 // Days of food left at the rate the team eats on the move (more under a load, load.js), as the plan's "food falls
 // below N days" rule counts it; in the cold, ×today's appetite (weather.js foodNeedFactor: no camp fire on the move).
-const foodDays = (state, p) => {
+export const foodDays = (state, p) => {
   const m = partyMembers(state, p);
   const perDay = Math.max(1, partyPace(state, p).eatMove, m.length) * foodNeedFactor(state);
   return carried(p, "food") / perDay; // days of food (foods.js)
 };
-function hoursHome(state, p) {
+export function hoursHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) return null; // no base left (conquest.js exiles)
   const res = planPath(state, partyTile(p), home.tile, p.vehicle) || planPath(state, partyTile(p), home.tile, false);

@@ -7,7 +7,10 @@
 // containers and dead on a bigger site; the anti-slog ends (a couple of far-off unaware stragglers: the AI ends it,
 // the player is offered it; a fleeing raider out of sight is gone). Then the measurement: battles by size class played
 // out by the AI on both sides (avg turns, % over the 60-turn limit, ends called "clear enough", the AI's time a turn).
-// Usage: node tools/sizetest.js [battles per matchup=10] [seed=3] [--quick: the checks only]
+// The measurement's matchups run side by side in worker threads (tools/pool.js) after the checks, on half the cores:
+// each enemy turn is timed, and busier cores time it slower (on 4 cores, 3 workers put the p99 a third over a serial
+// run's, 2 workers within 10%). --workers N to choose (--workers 1: one after another).
+// Usage: node tools/sizetest.js [battles per matchup=10] [seed=3] [--quick: the checks only] [--workers N]
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -20,8 +23,10 @@ import {
 import { yardDims, interiorSize, INTERIOR, structuresOf } from "../src/sim/interior.js";
 import "../src/sim/hives.js";
 import "../src/sim/conquest.js";
+import { cpus } from "node:os";
+import { pool, serve, isMainThread, workerCount, withoutWorkers } from "./pool.js";
 
-const args = process.argv.slice(2);
+const args = withoutWorkers(process.argv.slice(2));
 const QUICK = args.includes("--quick");
 const nums = args.filter((a) => !a.startsWith("--"));
 const N = Number(nums[0] || 10);
@@ -114,6 +119,53 @@ function built(ctx, seed) {
 }
 const sig = (b) => `${b.w}x${b.h}|${b.cells.map((c) => c.k[0] + c.k[1]).join("")}|${b.units.map((u) => `${u.side[0]}${u.x},${u.y}`).join(";")}`;
 const pcOf = (b) => { const P = b.units.filter((u) => u.side === "player" && !u.dead); return P.reduce((a, u) => [a[0] + u.x / P.length, a[1] + u.y / P.length], [0, 0]); };
+
+// ---------- the measurement's matchups (section 5), each one a job for a worker ----------
+const MATCH = [
+  { cls: "S", name: "raid: gas station (3, 5 of the dead)", raid: "gas", groups: [{ kind: "zombies", count: 5, power: 2 }] },
+  { cls: "M", name: "raid: supermarket (3, 7 of the dead)", raid: "supermarket", groups: [{ kind: "zombies", count: 7, power: 2 }] },
+  { cls: "L", name: "raid: hospital (3, 9 of the dead)", raid: "hospital", groups: [{ kind: "zombies", count: 9, power: 2.5 }] },
+  { cls: "M", name: "field: 3 vs 4 raiders", players: 3, terrain: "plains", enemy: { kind: "raiders", count: 4, power: 5 } },
+  { cls: "M", name: "field: 3 vs 12 dead", players: 3, terrain: "forest", enemy: { kind: "zombies", count: 12, power: 2 } },
+  { cls: "M", name: "field: you ambush 4 vs 12 dead", players: 4, terrain: "hills", enemy: { kind: "zombies", count: 12, power: 2 }, ambush: "player" },
+  { cls: "M", name: "field: 6 vs 8 raiders, suburb", players: 6, terrain: "suburb", loc: "town", enemy: { kind: "raiders", count: 8, power: 5 } },
+  { cls: "L", name: "field: 8 vs 10 raiders, plains", players: 8, terrain: "plains", enemy: { kind: "raiders", count: 10, power: 5 } },
+  { cls: "L", name: "field: 6 vs 20 dead, plains", players: 6, terrain: "plains", enemy: { kind: "zombies", count: 20, power: 3 } },
+  { cls: "L", name: "hive: 6 vs 14 brood + Broodmother", players: 6, terrain: "forest", enemy: { kind: "zombies", count: 14, power: 5 }, layout: "hive" },
+  { cls: "M", name: "group base: 5 vs 4 (6 people)", players: 5, terrain: "plains", enemy: { kind: "raiders", count: 4, power: 4.5, walls: 2, people: 6 }, layout: "baseAssault" },
+  { cls: "XL", name: "group base: 6 vs 10 (60 people)", players: 6, terrain: "plains", enemy: { kind: "raiders", count: 10, power: 4.5, walls: 4, people: 60 }, layout: "baseAssault" },
+  { cls: "L", name: "hub siege: 8 vs 16 dead (walls, few buildings)", players: 8, base: ["walls", "barricades", "bunkhouse"], enemy: { kind: "zombies", count: 16, power: 3 } },
+  { cls: "XL", name: "hub siege: 8 vs 20 dead (fully built)", players: 8, base: HUB_FULL, enemy: { kind: "zombies", count: 20, power: 3.5 } },
+  { cls: "M", name: "outpost: 5 vs 5 raiders (no walls)", players: 5, base: [], outpost: true, enemy: { kind: "raiders", count: 5, power: 4 } },
+];
+// One matchup: N battles played out by the AI on both sides, the enemy's turn timed.
+function matchup(m) {
+  let turns = 0, over = 0, clear = 0, won = 0, size = "";
+  const ms = [];
+  for (let i = 0; i < N; i++) {
+    const st = world(SEED * 1000 + i, m.raid ? 3 : m.players);
+    let b;
+    if (m.raid) b = raid(st, m.raid, m.groups);
+    else if (m.base) b = baseFight(st, m.base, { ...m.enemy, name: "attackers" }, m.base.includes("walls"), m.outpost ? "outpost" : "hub");
+    else b = field(st, m.terrain, m.loc || null, m.enemy, { layout: m.layout, ambush: m.ambush });
+    st.combat = b;
+    size = `${b.w}×${b.h}`;
+    const limit = b.raid ? 200 : b.tier && b.tier.map === "fort" ? 120 : 60; // a fort (fort.js) is a siege: the margin, the wall, the yard
+    let guard = 0;
+    while (!b.over && guard++ < limit) {
+      autoPlayerTurn(st);
+      const t1 = performance.now();
+      runEnemyPhase(st);
+      ms.push(performance.now() - t1);
+    }
+    if (!b.over) over++;
+    else { if (b.clearedEarly) clear++; if (b.result.outcome === "victory" || b.result.outcome === "extracted") won++; }
+    turns += b.turn;
+    if (b.over) closeCombat(st); else st.combat = null;
+  }
+  return { turns, over, clear, won, size, ms };
+}
+if (!isMainThread) { await serve((i) => matchup(MATCH[i])); process.exit(0); } // a worker plays matchups only
 
 // ---------- 1. the table ----------
 section("The size table (battlesize.js SIZE_CLASSES, SIZES)");
@@ -292,52 +344,17 @@ section("The anti-slog ends");
 }
 
 // ---------- 5. measurement ----------
-const MATCH = [
-  { cls: "S", name: "raid: gas station (3, 5 of the dead)", raid: "gas", groups: [{ kind: "zombies", count: 5, power: 2 }] },
-  { cls: "M", name: "raid: supermarket (3, 7 of the dead)", raid: "supermarket", groups: [{ kind: "zombies", count: 7, power: 2 }] },
-  { cls: "L", name: "raid: hospital (3, 9 of the dead)", raid: "hospital", groups: [{ kind: "zombies", count: 9, power: 2.5 }] },
-  { cls: "M", name: "field: 3 vs 4 raiders", players: 3, terrain: "plains", enemy: { kind: "raiders", count: 4, power: 5 } },
-  { cls: "M", name: "field: 3 vs 12 dead", players: 3, terrain: "forest", enemy: { kind: "zombies", count: 12, power: 2 } },
-  { cls: "M", name: "field: you ambush 4 vs 12 dead", players: 4, terrain: "hills", enemy: { kind: "zombies", count: 12, power: 2 }, ambush: "player" },
-  { cls: "M", name: "field: 6 vs 8 raiders, suburb", players: 6, terrain: "suburb", loc: "town", enemy: { kind: "raiders", count: 8, power: 5 } },
-  { cls: "L", name: "field: 8 vs 10 raiders, plains", players: 8, terrain: "plains", enemy: { kind: "raiders", count: 10, power: 5 } },
-  { cls: "L", name: "field: 6 vs 20 dead, plains", players: 6, terrain: "plains", enemy: { kind: "zombies", count: 20, power: 3 } },
-  { cls: "L", name: "hive: 6 vs 14 brood + Broodmother", players: 6, terrain: "forest", enemy: { kind: "zombies", count: 14, power: 5 }, layout: "hive" },
-  { cls: "M", name: "group base: 5 vs 4 (6 people)", players: 5, terrain: "plains", enemy: { kind: "raiders", count: 4, power: 4.5, walls: 2, people: 6 }, layout: "baseAssault" },
-  { cls: "XL", name: "group base: 6 vs 10 (60 people)", players: 6, terrain: "plains", enemy: { kind: "raiders", count: 10, power: 4.5, walls: 4, people: 60 }, layout: "baseAssault" },
-  { cls: "L", name: "hub siege: 8 vs 16 dead (walls, few buildings)", players: 8, base: ["walls", "barricades", "bunkhouse"], enemy: { kind: "zombies", count: 16, power: 3 } },
-  { cls: "XL", name: "hub siege: 8 vs 20 dead (fully built)", players: 8, base: HUB_FULL, enemy: { kind: "zombies", count: 20, power: 3.5 } },
-  { cls: "M", name: "outpost: 5 vs 5 raiders (no walls)", players: 5, base: [], outpost: true, enemy: { kind: "raiders", count: 5, power: 4 } },
-];
 if (!QUICK) {
   section(`Battle length by size class (${N} battles each, the AI on both sides, 60-turn limit; raids to extraction)`);
   const byClass = {};
   let worstMs = 0, allMs = [];
-  for (const m of MATCH) {
-    let turns = 0, over = 0, clear = 0, won = 0, size = "";
-    const ms = [];
-    for (let i = 0; i < N; i++) {
-      const st = world(SEED * 1000 + i, m.raid ? 3 : m.players);
-      let b;
-      if (m.raid) b = raid(st, m.raid, m.groups);
-      else if (m.base) b = baseFight(st, m.base, { ...m.enemy, name: "attackers" }, m.base.includes("walls"), m.outpost ? "outpost" : "hub");
-      else b = field(st, m.terrain, m.loc || null, m.enemy, { layout: m.layout, ambush: m.ambush });
-      st.combat = b;
-      size = `${b.w}×${b.h}`;
-      const limit = b.raid ? 200 : b.tier && b.tier.map === "fort" ? 120 : 60; // a fort (fort.js) is a siege: the margin, the wall, the yard
-      let guard = 0;
-      while (!b.over && guard++ < limit) {
-        autoPlayerTurn(st);
-        const t1 = performance.now();
-        runEnemyPhase(st);
-        ms.push(performance.now() - t1);
-      }
-      if (!b.over) over++;
-      else { if (b.clearedEarly) clear++; if (b.result.outcome === "victory" || b.result.outcome === "extracted") won++; }
-      turns += b.turn;
-      if (b.over) closeCombat(st); else st.combat = null;
-    }
-    ms.sort((a, c) => a - c);
+  // After the checks, not beside them, and on half the cores: each enemy turn is timed (see the header).
+  const results = await pool(import.meta.url, MATCH.map((_, i) => i), { workers: workerCount(process.argv, Math.max(1, Math.floor(cpus().length / 2))) });
+  MATCH.forEach((m, mi) => {
+    const r = results[mi];
+    if (r.error) { check(false, `${m.name}: crashed: ${r.error.split("\n").slice(0, 3).join(" | ")}`); return; }
+    const { turns, over, clear, won, size } = r;
+    const ms = r.ms.sort((a, c) => a - c);
     const avgMs = ms.reduce((a, c) => a + c, 0) / Math.max(1, ms.length), maxMs = ms[ms.length - 1] || 0, p95 = ms[Math.floor(ms.length * 0.95)] || 0;
     worstMs = Math.max(worstMs, maxMs);
     allMs.push(...ms);
@@ -345,13 +362,14 @@ if (!QUICK) {
     const k = (byClass[kc] = byClass[kc] || { turns: 0, n: 0, over: 0 });
     k.turns += turns; k.n += N; k.over += over; k.fort = (k.fort || 0) + (m.layout === "baseAssault" ? N : 0); // a fort siege (fort.js) is long by design
     console.log(`  ${kc.padEnd(2)} ${m.name.padEnd(46)} ${size.padStart(5)}  turns ${(turns / N).toFixed(1).padStart(4)}  over 60: ${Math.round((over / N) * 100)}%  won ${Math.round((won / N) * 100)}%  called clear ${clear}  AI a turn ${avgMs.toFixed(1)} ms (p95 ${p95.toFixed(1)}, max ${maxMs.toFixed(1)})`);
-  }
+  });
   console.log(`  by class: ${CLASS_KEYS.filter((k) => byClass[k]).map((k) => `${SIZE_CLASSES[k].name} ${(byClass[k].turns / byClass[k].n).toFixed(1)} turns, ${Math.round((byClass[k].over / byClass[k].n) * 100)}% over the limit`).join("; ")}`);
   allMs.sort((a, c) => a - c);
   const p99 = allMs[Math.floor(allMs.length * 0.99)] || 0;
   check(Object.values(byClass).every((k) => k.fort === k.n || (k.over - (k.fort ? 0 : 0)) / Math.max(1, k.n - (k.fort || 0)) <= 0.05 || k.over <= (k.fort || 0)), "at most 5% of the battles of any class run past the turn limit (fort sieges apart)");
   check(p99 < 40, `the enemy's turn: 99% under 40 ms (p99 ${p99.toFixed(1)} ms, worst ${worstMs.toFixed(1)} ms)`);
 }
+
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
 process.exit(fail ? 1 : 0);

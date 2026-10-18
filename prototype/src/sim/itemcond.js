@@ -103,6 +103,7 @@ export const SITE_SOURCE = {
   police: "police", prison: "police",
   gunstore: "shop", hardware: "shop", mall: "shop", pharmacy: "shop", supermarket: "shop", grocery: "shop", feedstore: "shop",
   town: "home", city: "home", apartments: "home", motel: "home", farm: "home", ranch: "home", cabin: "home",
+  house: "home", neighbourhood: "home", corner: "shop", pizza: "shop", farmstand: "shop", // points of interest (pois.js)
   crashsite: "wreck", crash_mil: "wreck", crash_cargo: "wreck", crash_med: "wreck", crash_news: "wreck",
 };
 // A raid container's area type (combat.js AREAS); an armoury goes by its site (a police or a military one).
@@ -119,7 +120,7 @@ export const LOCK_SOURCE = {
   crash: "military", miltruck: "military", car: "home",
 };
 // A body by its kit (combat.js KITS).
-export const KIT_SOURCE = { soldiers: "soldier", contractors: "soldier", guards: "guard", escorts: "guard", fighters: "fighter", militia: "militia", raiders: "raider", zealots: "raider", survivors: "survivor" };
+export const KIT_SOURCE = { soldiers: "soldier", contractors: "soldier", guards: "guard", escorts: "guard", fighters: "fighter", militia: "militia", raiders: "raider", zealots: "raider", survivors: "survivor", looters: "raider", survivalists: "militia", preppers: "fighter" };
 // A group's trader by its type (data.js FACTION_TYPES).
 export const TRADER_SOURCE = { military: "traderMil", raider: "traderRaider", zealot: "traderRaider" };
 

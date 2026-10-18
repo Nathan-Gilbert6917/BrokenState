@@ -31,19 +31,20 @@ import { FOODS, foodIn, unitsOf, groupFoodWant, foodNeeds, DAY_VALUE } from "./f
 import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew, supValue, supWeight } from "./data.js";
 import { log, day, newId, survivorById, factionById, baseById, atBase, skill, snapshot, mergeKnowledge } from "./world.js";
 import { PAYOUT } from "./upkeep.js"; // the pay-out reserve: days of food and water a head kept back
-import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad, cargoRoom } from "./parties.js";
+import { partyMembers, partyTile, bestSkill, awaitOrders, partyCapacity, cargoLoad, cargoRoom, reportsLive } from "./parties.js";
 import { attitude, changeGoodwill, isAggressiveType } from "./factions.js";
 import { ransomOnTradeCard } from "./conflicts.js";
 import { itemLoad, lootItem } from "./inventory.js";
 import { traderSource, spend } from "./itemcond.js"; // the condition of what they sell, by the kind of group
 import { gunmodWares, pickWeighted } from "./loot.js"; // a gun attachment on the table now and then
 import { gunWares } from "./gunfinds.js"; // one of the newer guns now and then (its own dice)
-import { itemValue, itemCat, catOf, catName, priceInfo, starveBoost, gearNeed, heldLike, margin, refuses } from "./valuation.js";
+import { itemValue, itemCat, catOf, catName, priceInfo, starveBoost, gearNeed, heldLike, margin, refuses, withPrices } from "./valuation.js";
 import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
 import { tradeSpeech, bookWares, gainXp, USE, hash01 } from "./skills.js";
 import { armsSold } from "./diplomacy.js";
-import { visitorTradeContext, resumeVisitorTrade } from "./visitors.js";
+import { visitorTradeContext, resumeVisitorTrade, tradeBack } from "./visitors.js";
+import { nomadTradeContext, resumeNomadTrade } from "./nomads.js"; // nomad bands, met on the road or at their camp
 import { RAW, keyWord } from "./water.js";
 import { isRoundKey, totalRounds, ROUND_KEYS, roundOf, spendAmmo, baseKey } from "./rounds.js"; // rounds by calibre
 import { kindShare, kindTheme, kindMix, expandAmmo, partyCals, baseCals, wantedKey, dealRounds, holderCals } from "./ammo.js";
@@ -345,7 +346,9 @@ export const wantQty = (f, k) => (FOODS[k] ? Math.max(1, Math.ceil(lotOf(k) / 2)
 // Food on the board: one item they ask for (their kind's favourite: foods.js groupFoodWant) and the items they hold
 // most of to spare (at most FOOD_SURPLUS of them), not every kind of food.
 export const FOOD_SURPLUS = 3;
-export function marketLists(state, f, speech = 0) {
+// Every price on the lists reads one group's conditions: worked out once for the whole list (valuation.js withPrices).
+export function marketLists(state, f, speech = 0) { return withPrices(f, () => listMarket(state, f, speech)); }
+function listMarket(state, f, speech) {
   const wants = [], surplus = [], prices = {};
   const foodSpare = [];
   for (const k of SUPPLY_KEYS) {
@@ -595,6 +598,7 @@ export function advanceTradeQueue(state) {
   while (!state.trade && q && q.length) {
     const v = q.shift();
     if (v.visitorId != null) { resumeVisitorTrade(state, v); continue; } // outsiders (visitors.js)
+    if (v.nomadId != null) { resumeNomadTrade(state, v); continue; } // nomads (nomads.js)
     const f = factionById(state, v.factionId);
     if (v.caravanId != null) {
       const c = state.parties.find((x) => x.id === v.caravanId);
@@ -616,6 +620,7 @@ export function tradeContext(state) {
   const t = state.trade;
   if (!t) return null;
   if (t.visitorId != null) return visitorTradeContext(state, t); // merchants and travellers from outside (visitors.js)
+  if (t.nomadId != null) return nomadTradeContext(state, t); // nomad bands (nomads.js): a visit, from what the team carries
   if (t.radio) return radioTradeContext(state, t); // over the radio (radiotrade.js)
   const f = factionById(state, t.factionId);
   if (!f || !f.alive) return null;
@@ -857,7 +862,7 @@ export function executeTrade(state) {
   if (tiles.length) {
     if (ctx.p) {
       for (const id of tiles) ctx.p.seen.set(id, snapshot(state, id));
-      if (ctx.p.radioLive) mergeKnowledge(state, ctx.p.seen);
+      if (reportsLive(ctx.p)) mergeKnowledge(state, ctx.p.seen);
     } else for (const id of tiles) state.knowledge[id] = snapshot(state, id);
     got.push(`a report on ${tiles.length} tile${tiles.length === 1 ? "" : "s"}`);
   }
@@ -911,6 +916,7 @@ export function giftAll(state) {
 }
 
 export function proposePact(state, f, kind) {
+  if (f && f.outsider) return `${f.name} sign nothing: they are not one of the state's groups.`; // outsiders and nomads (visitors.js, nomads.js)
   const att = attitude(f);
   if (att === "Hostile") return `${f.name} will not sign anything with you.`;
   if (kind === "nonaggression") {
@@ -933,10 +939,17 @@ export function proposePact(state, f, kind) {
 }
 
 // Closing the window. A team waits for orders (a trade caravan of yours gets its caravan card back); their
-// caravan stays at your base until its day is up (reopen it from the Bases tab).
-export function endTrade(state) {
+// caravan stays at your base until its day is up (reopen it from the Bases tab). back: the player closed it (the
+// trade window's Leave): a trade opened from an outsiders' card (visitors.js openVisitorTrade where.back) goes back
+// to that card, with the group as it is now, instead of ending the meeting. The autopilot's closes never do.
+export function endTrade(state, { back = false } = {}) {
   const ctx = tradeContext(state);
+  const t = state.trade;
   state.trade = null;
+  if (back && t && t.visitorId != null && t.back && tradeBack(state, t)) {
+    advanceTradeQueue(state);
+    return;
+  }
   if (ctx && ctx.p) {
     if (ctx.p.caravan) caravanCard(state, ctx.p, `Left ${ctx.f.name}.`);
     else awaitOrders(state, ctx.p, `Left ${ctx.f.name}.`);

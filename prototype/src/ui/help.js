@@ -13,6 +13,7 @@ import { VOLUNTEERS_HELP } from "../sim/volunteers.js"; // volunteers lent betwe
 import { FESTIVAL_HELP } from "../sim/festival.js";
 import { EATING_HELP } from "../sim/eating.js"; // meal breaks, carried rations, ration levels, food and mood
 import { cookingHelp } from "../sim/cooking.js"; // wave 2 cooking
+import { foodChainHelp } from "./foodchain.js"; // the base window's Food tab, spoilage, fires, lunch and hot food
 import { machinesHelp } from "../sim/breakdowns.js"; // machines, parts, the freezer
 import { keysSheet } from "./controls.js"; // Help → Keys: the printable key sheet (the keys as they are set now)
 import { keyLabel } from "./keymap.js";
@@ -36,6 +37,7 @@ import { TRAINING_HELP } from "../sim/training.js"; // the hospital trains medic
 import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled blows, surrender
 import { CARAVAN_HELP } from "../sim/caravanraids.js"; // caravans on the road: escorts, robbing them, witnesses
 import { RESCUE_HELP } from "../sim/rescueraid.js"; // getting captives back: the rescue raid, ransoms
+import { raidPlanHelp } from "../sim/raidplan.js"; // choices before a raid: the side, a scout, the night
 import { BLOCS_WARS_HELP } from "../sim/playerwars.js"; // blocs between groups, wars with you
 import { traitsHelp } from "./traitpick.js"; // every trait, its tiers and points
 import { fieldWorksHelp } from "../sim/fieldworks.js"; // roadblocks, towers, stockpiles, blinds, snares, caches, spikes
@@ -70,19 +72,19 @@ export function swatch(k) {
 // here shows its own description from sim/markers.js.
 const LAYER_HELP = {
   towersight: "A faint gold ring round each of your watch towers with a lookout on duty now: the tiles it shows live on the map (3 by day, 1 at night; sim/fieldworks.js). Without the layer, hover or select a tower to see its ring. Off by default.",
-  pois: "Towns and sites with their names. A site is a building for its type on a plate colored by its zone; the more faded, the less loot was left when you last saw it. Skulls under a name show its danger when zoomed in; small sites become dots when zoomed out. The ruins of a razed base (yours or a group's) stand in its place, named \"Ruins of …\".",
+  pois: "Towns and sites with their names. A site is a building for its type on a plate colored by its zone; the more faded, the less loot was left when you last saw it. Skulls under a name show its danger when zoomed in; small sites become dots when zoomed out. The ruins of a razed base (yours or a group's) stand in its place, named \"Ruins of …\". Points of interest: most land tiles hold up to four small places (a house, a shed, a hunting blind, a corner shop…) with loot of their own; a tile with no site draws its best one once you know it, and a pip at the sprite's corner counts the places known on the tile (two and up). The tile panel's Places rows list them; what is hidden is never counted (\"possibly more unknown\"): a Survey finds them. Below them, Tile heat: how stirred up the tile is by raids on its places (cold, warm, hot, very hot) as your people last saw it; it fades about 10% a day, and a hot tile is more dangerous to raid.",
   territory: "Land held by you and by the groups you know, tinted in their color. Their bases are compounds in that color. Tiles your teams claimed (Claim this tile) are a lighter blue; hover one for Claimed by you (day N) and its well.",
-  teams: "Your teams (! waiting for orders, ? an estimated position out of radio contact), plus the raiders, convoys, caravans and scavengers of other groups you can see. Their parties look like the group: bikers, humvees, robed zealots, caravans; scavengers carry a stuffed sack.",
+  teams: "Your teams (! waiting for orders, ? an estimated position out of radio contact), plus the raiders, convoys, caravans and scavengers of other groups you can see, and nomad bands (no base: they camp a few days, pick the places round them over and move on; a camp has a wisp of smoke). Their parties look like the group: bikers, humvees, robed zealots, caravans; scavengers carry a stuffed sack.",
   workers: "Your bases' people out on their outdoor jobs (Cut wood, Hunt, Fish, Forage, Scavenge, Fetch water): walking out over the base's land in their job's hours, at work on a tile (a ring over them fills as they work), walking home with the load (a bundle of logs, a deer across the shoulders, a string of fish, a full basket or sack, full buckets) and a \"+18 meat\" over the base as it goes into the store, then out again. A crowd at one base is drawn as a few figures with ×N. Hover one: who, the job, what they are doing. By the groups' bases you can see, a couple of their people going out and in by day.",
   hordes: "Hordes you see now (size on the badge), faded \"N?\" badges where one was last seen, known hives with their dark-red land and red-skull ring, and hives being built.",
   deaths: "Graves where your people died, with what was left on them.",
   vehicles: "Vehicles you left behind: a red can needs fuel, smoke means damaged.",
-  finds: "Caches, wrecked cars and abandoned camps your teams spotted, with how long ago.",
+  finds: "Caches, wrecked cars and abandoned camps your teams spotted, with how long ago, and nomad camps your people saw (they move on every few days; send a team with Attack the nomad camp).",
   infection: "A red wash over the land: the redder, the more infected. Hives radiate it; it fades once the hive is gone. Also the I key.",
   weather: "The season and the statewide sky as a wash over the land (snow cover, rain, heat), with faint drifting clouds where weather fronts pass: dark for thunderstorms and rain belts, white for blizzards and snow squalls, grey for fog banks. A front's weather is only under it.",
   fronts: "The weather fronts drawn strongly: each one's edge (dashed: inside it, its weather), its name and an arrow to where it will be in 6 hours. Fronts come in from the map's edges (mostly the west) and cross it in hours to a couple of days; fog forms where it lies before dawn and burns off by midday. Hover a tile for the front over it. Off by default (Shift+W toggles it).",
   known: "Teal hatching where your people looked hard for hidden places and finds: the spots a Survey covered hour by hour, what a Look around took in, the sites they searched. Brighter (with a faint teal wash) for the last 30 days, fainter before; a thin teal line runs round the searched ground. Unhatched land is where nobody has looked yet: survey there. A team's looks reach the map with its report (radio contact or home). The tile panel says on which day a tile was searched. Off by default.",
-  coalition: "The land the coalition controls (you and the members whose land counts: a year in the coalition and not at war; the land the alliance victory counts), each tile in the color of the nearest base's owner: blue for you, a member's color for its land, with a border in that color where another owner's land begins, and a thin gold line round the coalition's land as a whole (rivers and lakes inside it do not count as land). The layer's line shows the share held against the goal: more than 50% (with every group still standing in the coalition) wins. Other groups' land is on the Territory layer. Off by default.",
+  coalition: "The land the coalition controls (you and the members whose land counts: a year in the coalition and not at war; the land the alliance victory counts), each tile in the color of the nearest base's owner: blue for you, a member's color for its land, with a border in that color where another owner's land begins, and a thin gold line round the coalition's land as a whole (rivers and lakes inside it do not count as land). The layer's line shows the share held against the goal: more than 60% (with no hive left and every group still standing in the coalition) wins. Other groups' land is on the Territory layer. Off by default.",
 };
 
 // The symbols on the map (formerly the text under the layer list).
@@ -90,14 +92,14 @@ const ZONE = (c, t) => `<span style="color:${c}">${t}</span>`;
 const LEGEND = [
   [`<i class="sw" style="background:#4d8fd6"></i>`, "Your bases", "Blue walled town = your hub; blue cabin = an outpost. Walls and buildings show on them."],
   [`<i class="sw" style="background:rgba(110,160,230,0.6)"></i>`, "Other groups", "Compounds in a group's color are its bases. Its convoys and raids look like the group (bikers, humvees, robed zealots, caravans…); its scavengers carry a stuffed sack. A group's wagon or truck beside your base is its caravan."],
-  [swatch("pois"), "Sites", `A building per type on a plate colored by zone: ${ZONE("#e2826f", "city")}, ${ZONE("#e2b85c", "town")}, ${ZONE("#9cc46e", "countryside")}, ${ZONE("#b79be6", "landmark")}. The more faded, the less loot as you last saw it (rich, some, little, picked clean). Small sites are dots when zoomed out.`],
+  [swatch("pois"), "Sites", `A building per type on a plate colored by zone: ${ZONE("#e2826f", "city")}, ${ZONE("#e2b85c", "town")}, ${ZONE("#9cc46e", "countryside")}, ${ZONE("#b79be6", "landmark")}. The more faded, the less loot as you last saw it (rich, some, little, picked clean). Small sites are dots when zoomed out. A tile with no site shows its best point of interest (a house, a shed, a camp…) once you know it; a pip counts the places known on the tile.`],
   [`<i class="sw" style="background:#c8ccd2">☠</i>`, "Danger", "Skulls under a site's name, shown up close."],
   [`<i class="sw" style="background:#8f2a2a"></i>`, "Hordes", "A crowd of the dead, its size on the badge; a faded \"N?\" is where one was last seen. A grey brute with a concrete fist at its head is a Wallbreaker."],
   [`<i class="sw" style="background:#c0392b"></i>`, "Hives", "A red glowing mound. Its land is tinted dark red (sites there show at least 3 skulls); the ring around it is brighter, with red skulls: much tougher dead."],
   [`<i class="sw" style="background:#6b4a3a"></i>`, "Hive being built", "A raw mound with bones and a red bar: the dead gathered, of 1,000. It grows with the dead massed there; the line under it says how many days until the hive stands, as far as you know (a \"?\" when your last look is old). A dashed red ring: a gathering you marked."],
   [`<i class="sw" style="background:#4a3f36;box-shadow:inset 0 0 0 1.5px #a0603a"></i>`, "Ruins", "Charred wall stubs, a lone chimney and rubble on a smouldering rim: a base burned to the ground in a raid, named \"Ruins of …\" (a torn blue rag: it was yours). The tile panel shows who burned it, the salvage left, the danger and the 5 scrap a new outpost there needs; founding one replaces the ruins."],
   [swatch("known"), "Known area", "Teal hatching (Known area layer): ground your people searched, brighter for the last 30 days, with a thin teal line round it. Unhatched ground has not been looked over for hidden places."],
-  [swatch("coalition"), "Coalition land", "A wash in each owner's color with a border where another owner's land begins (Coalition land layer), and a thin gold line round all of the coalition's land; the layer's line shows the share held against the 50% goal."],
+  [swatch("coalition"), "Coalition land", "A wash in each owner's color with a border where another owner's land begins (Coalition land layer), and a thin gold line round all of the coalition's land; the layer's line shows the share held against the 60% goal."],
   [`<i class="sw" style="background:#7a3a3a"></i>`, "Hive growths", "Small structures of flesh and bone beside a hive: a bubbling pit, amber egg sacs, a field of bones, a warren with red eyes, a grey brute in a pit, green acid bladders, a shrieking tower, a burrow with grasping hands, an arch of ribs (the Wallbreaker den), a glowing magenta vat. Faint while growing, grey once their hive is gone. Burn the growth to take it away from the hive."],
   [`<i class="sw" style="background:transparent;box-shadow:inset 0 0 0 2px #ffd166"></i>`, "Blocs", "A dashed ring in a bloc's colour round a group's base: it belongs to that bloc (Groups tab: Blocs and wars; Help: Blocs and wars)."],
   [`<i class="sw" style="background:#c8ccd2">✝</i>`, "Markers", "On a ring: a grave = death site, your vehicle (red can = needs fuel, smoke = damaged), a wreck, a cache, a camp. Dots when zoomed out."],
@@ -128,12 +130,12 @@ const see = (...ids) => ` <span class="muted">More:</span> ${ids.map(([id, t]) =
 function startHereTopic() {
   return `Broken State in a few lines. The <b>First-week guide</b> under the alerts on the right walks you through the first days (⚙ Menu → Game shows it again).<br><br>
     <b>Your people.</b> A handful of survivors in the State of Calder, years after the dead rose (in Hardcore, on the day it falls, with no home yet). Keep them fed, watered, healthy and in good spirits: everything else follows from that.${see(["goal", "Goal"], ["hardcore-mode", "Hardcore mode"])}<br><br>
-    <b>Bases.</b> Your hub is home. The people there farm, build, guard, craft and treat the sick, by the job you give them or by work priorities. <i>Manage</i> on the Bases tab opens its screen: stock, Work, Farming, Construction and the rest. Food and water days are always in the top bar. Outposts come later.${see(["bases-manage", "Bases (Manage)"], ["food-and-the-winter", "Food and the winter"], ["water-and-the-summer", "Water and the summer"])}<br><br>
+    <b>Bases.</b> Your hub is home. The people there farm, build, guard, craft and treat the sick, by the job you give them or by work priorities. <i>Manage</i> on the Bases tab opens its screen: stock, Work, Farming, Construction and the rest. Food and water days are always in the top bar, and the threat forecast beside them shows the week coming. Outposts come later.${see(["bases-manage", "Bases (Manage)"], ["food-and-the-winter", "Food and the winter"], ["water-and-the-summer", "Water and the summer"], ["threat-forecast", "Threat forecast"])}<br><br>
     <b>Teams.</b> Everything beyond the walls is done by teams. Click a site on the map, pick a mission (scavenge, recon, trade…), choose who goes and what they carry, and launch. They walk there, search, fight if they must and bring home what they found. Out of radio range they report when they get back.${see(["sending-a-team", "Sending a team"], ["team-panel", "Team panel"], ["raids-scavenging-a-site", "Raids"])}<br><br>
     <b>The State Map.</b> Bright land is what your people see now, dim land your last report of it, dark land unknown. Hordes of the dead roam it, hives breed them, and other groups hold towns of their own: trade with them, ally or fight.${see(["map", "Map"], ["map-legend", "Map legend"], ["groups", "Groups"])}<br><br>
     <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card asks what to do. The big ones (a fight, a raid, a death, a team waiting for orders) stop the clock; the rest wait in the card tray at the top of the map while the clock runs, and take their safest answer if left for 8 hours (⚙ Menu → Options → Pause for… sets which stop it). The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["pause-rules-and-the-card-tray", "Pause rules and the card tray"], ["alerts", "Alerts"])}<br><br>
     <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 0–5 set the speed (0 is 0.25× to watch up close, 5× for quiet stretches; it drops back to 1× when something happens); windows and the cards that stop the clock hold it while they are open.<br><br>
-    <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than half the land for a year (a member's land counts after a year in the coalition, and not while it is at war); neither comes before year ${ERAS.WIN_FROM_YEAR}. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
+    <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than 60% of the land for a year, with no hive left and no group outside it, (a member's land counts after a year in the coalition, and not while it is at war); neither comes before year ${ERAS.WIN_FROM_YEAR}. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
 }
 
 // "Why?" on deaths and lost bases (sim/causes.js, ui/causes.js).
@@ -160,7 +162,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "map") { add("Map layers", layersTopic()); add("Map legend", legendTopic()); }
     if (out[out.length - 1].id === "keys-on-the-map") add("Windows and panels", windowsHelp()); // ui/layout.js
     if (out[out.length - 1].id === "hives-and-hordes") { add("The hive crawl", HIVE_CRAWL_HELP); add("Hives being born", HIVE_BIRTH_HELP); } // sim/hivecrawl.js, sim/hivebirth.js
-    if (out[out.length - 1].id === "food-and-the-winter") { add("Meals and rations", EATING_HELP); add("The harvest festival", FESTIVAL_HELP); } // sim/eating.js, sim/festival.js
+    if (out[out.length - 1].id === "food-and-the-winter") { add("Meals and rations", EATING_HELP); add("The food chain", foodChainHelp()); add("The harvest festival", FESTIVAL_HELP); } // sim/eating.js, ui/foodchain.js, sim/festival.js
     if (out[out.length - 1].id === "sending-a-team") add("Templates, Repeat trip and Undo", tripsHelp()); // ui/trips.js
     if (out[out.length - 1].id === "moving-people-between-bases") add("Traits", traitsHelp()); // ui/traitpick.js
     if (out[out.length - 1].id === "alerts") add("Why did this happen?", WHY_HELP); // ui/causes.js
@@ -168,7 +170,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
     if (out[out.length - 1].id === "inventory") add("Gun attachments", GUNMODS_HELP); // sim/gunmods.js
     if (out[out.length - 1].id === "gun-attachments") { add("Guns and melee weapons", ROSTER_HELP); add("Knives and swords", BLADES_HELP); } // sim/data-guns.js, sim/data-blades.js
-    if (out[out.length - 1].id === "battles") add("Medics and the downed", MEDICS_HELP); // sim/medics.js
+    if (out[out.length - 1].id === "battles") { add("Medics and the downed", MEDICS_HELP); add("Choices before a raid", raidPlanHelp()); } // sim/medics.js, sim/raidplan.js
     if (out[out.length - 1].id === "medical") add("Training medics", TRAINING_HELP); // sim/training.js
     if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); add("Blocs and wars", BLOCS_WARS_HELP); add("Volunteers", VOLUNTEERS_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js; sim/blocs.js, playerwars.js
   }
@@ -187,11 +189,13 @@ export function helpTopics() {
   if (!seen.has("volunteers")) add("Volunteers", VOLUNTEERS_HELP); // sim/volunteers.js
   if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);
   if (!seen.has("meals-and-rations")) add("Meals and rations", EATING_HELP); // sim/eating.js
+  if (!seen.has("the-food-chain")) add("The food chain", foodChainHelp()); // ui/foodchain.js
   if (!seen.has("the-harvest-festival")) add("The harvest festival", FESTIVAL_HELP);
   if (!seen.has("gun-attachments")) add("Gun attachments", GUNMODS_HELP);
   if (!seen.has("guns-and-melee-weapons")) add("Guns and melee weapons", ROSTER_HELP);
   if (!seen.has("knives-and-swords")) add("Knives and swords", BLADES_HELP);
   if (!seen.has("medics-and-the-downed")) add("Medics and the downed", MEDICS_HELP);
+  if (!seen.has("choices-before-a-raid")) add("Choices before a raid", raidPlanHelp());
   if (!seen.has("training-medics")) add("Training medics", TRAINING_HELP);
   add("Non-lethal weapons and surrender", NL_HELP); // sim/nonlethal.js
   if (!seen.has("field-works")) add("Field works", fieldWorksHelp()); // sim/fieldworks.js

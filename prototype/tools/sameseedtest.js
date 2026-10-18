@@ -7,25 +7,28 @@
 // strength, population and stores, parties, hordes, hives, diplomacy and a hash of every log line (tools/digest.js,
 // with ids written as offsets from each world's first id). The autopilot plays its battles out (live tactical battles
 // and fights by the numbers); the run counts the tactical ones so a quiet run is visible.
-// Usage: node tools/sameseedtest.js [days=120] [seeds=42,7,1234,99] [styles=balanced,aggressive,cautious] [mode=normal|hardcore]
+// Each pair of worlds (and each battle pair) runs in a worker thread of its own, side by side (tools/pool.js);
+// --workers 1 runs them one after another.
+// Usage: node tools/sameseedtest.js [days=120] [seeds=42,7,1234,99] [styles=balanced,aggressive,cautious] [mode=normal|hardcore] [--workers N]
 import { createWorld, tickHour, day, newId, hub, atBase } from "../src/sim/world.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler } from "../src/sim/combat.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { strength } from "../src/sim/factions.js";
 import { digest } from "./digest.js";
 import { createHash } from "node:crypto";
+import { pool, serve, isMainThread, workerCount, withoutWorkers } from "./pool.js";
 
-const days = Number(process.argv[2] || 120);
-const seeds = (process.argv[3] || "42,7,1234,99").split(",").map(Number);
-const styles = (process.argv[4] || "balanced,aggressive,cautious").split(",");
-const mode = process.argv[5] || "normal"; // or "hardcore"
+const argv = withoutWorkers(process.argv.slice(2));
+const days = Number(argv[0] || 120);
+const seeds = (argv[1] || "42,7,1234,99").split(",").map(Number);
+const styles = (argv[2] || "balanced,aggressive,cautious").split(",");
+const mode = argv[3] || "normal"; // or "hardcore"
 const sha = (s) => createHash("sha1").update(s).digest("hex");
-let fails = 0, passes = 0;
 
 // Each world's ids start at the next multiple of a million (tools/digest.js normalizeIds), so world B's ids are
 // never world A's.
 const ID_STEP = 1e6;
-function run(seed, style) {
+function run(seed, style, days, mode) {
   let id0 = newId();
   while (id0 % ID_STEP) id0 = newId();
   const st = createWorld({ seed, factionCount: 8, mode });
@@ -54,36 +57,32 @@ function summary({ st, lines, battles }) {
   };
 }
 
-const t0 = performance.now();
-console.log(`Same seed twice in one process (${mode}): ${days} days, seeds ${seeds.join(", ")}, styles ${styles.join(", ")}`);
-for (const seed of seeds) for (const style of styles) {
-  const A = run(seed, style), B = run(seed, style);
+// One pair: world A then world B on the same seed and style, in one thread: { ok, line(s) }.
+function pair({ seed, style, days, mode }) {
+  const A = run(seed, style, days, mode), B = run(seed, style, days, mode);
   const sa = summary(A), sb = summary(B);
   const da = digest(A), db = digest(B);
   const head = `seed ${seed} ${style}`;
   const bits = Object.keys(sa).filter((k) => JSON.stringify(sa[k]) !== JSON.stringify(sb[k]));
   if (da === db && !bits.length) {
-    passes++;
     const str = sa.groups.filter((g) => g[1]).reduce((a, g) => a + g[3], 0);
-    console.log(`  ${head}: identical (day ${sa.day}${sa.over ? ", game over" : ""}, ${sa.alive.length} alive, ${sa.groups.filter((g) => g[1]).length} groups strength ${Math.round(str)}, ${sa.battles} tactical battles, ${sa.logLines} log lines ${sa.logHash}; ids from ${A.id0} and ${B.id0})`);
-  } else {
-    fails++;
-    console.log(`  FAIL ${head}: ${bits.length ? `differs in ${bits.join(", ")}` : "the full digest differs"}`);
-    let i = 0;
-    while (i < da.length && i < db.length && da[i] === db[i]) i++;
-    console.log(`    digest at char ${i}: …${da.slice(Math.max(0, i - 120), i + 80)}… vs …${db.slice(Math.max(0, i - 120), i + 80)}…`);
-    let j = 0;
-    while (j < A.lines.length && j < B.lines.length && A.lines[j] === B.lines[j]) j++;
-    if (j < A.lines.length || j < B.lines.length) console.log(`    first different log line (${j}): A "${A.lines[j]}" / B "${B.lines[j]}"`);
+    return { ok: true, lines: [`  ${head}: identical (day ${sa.day}${sa.over ? ", game over" : ""}, ${sa.alive.length} alive, ${sa.groups.filter((g) => g[1]).length} groups strength ${Math.round(str)}, ${sa.battles} tactical battles, ${sa.logLines} log lines ${sa.logHash}; ids from ${A.id0} and ${B.id0})`] };
   }
+  const lines = [`  FAIL ${head}: ${bits.length ? `differs in ${bits.join(", ")}` : "the full digest differs"}`];
+  let i = 0;
+  while (i < da.length && i < db.length && da[i] === db[i]) i++;
+  lines.push(`    digest at char ${i}: …${da.slice(Math.max(0, i - 120), i + 80)}… vs …${db.slice(Math.max(0, i - 120), i + 80)}…`);
+  let j = 0;
+  while (j < A.lines.length && j < B.lines.length && A.lines[j] === B.lines[j]) j++;
+  if (j < A.lines.length || j < B.lines.length) lines.push(`    first different log line (${j}): A "${A.lines[j]}" / B "${B.lines[j]}"`);
+  return { ok: false, lines };
 }
 // The autopilot plays few tactical battles, so: a battle at the hub against each kind of enemy (soldiers bring armour
 // plates, launchers, rigs and medics; guards tactical vests; zombies the dead), on the seed's world after 10 days,
 // played out by the autopilot's turns: world A, then world B (same seed, made after A) must fight it the same way.
-console.log("Tactical battles at the hub after 10 days, every enemy kind");
-registerCombatHandler("sameseed", () => {});
 const KINDS = ["raiders", "soldiers", "guards", "fighters", "militia", "zealots", "zombies"];
-function battle(seed, kind) {
+function battle(seed, kind, mode) {
+  registerCombatHandler("sameseed", () => {});
   let id0 = newId();
   while (id0 % ID_STEP) id0 = newId();
   const st = createWorld({ seed, factionCount: 8, mode });
@@ -101,17 +100,41 @@ function battle(seed, kind) {
     u.pieces ? Object.values(u.pieces).map((x) => (x ? `${x.key}:${x.dur}` : "")) : null, u.gl ? 1 : 0, u.rigKey || "", u.medKit ? u.medKit.key : "", u.selfKits ? u.selfKits.length : 0]);
   return { key: JSON.stringify([b.over, b.turn, units, b.log.map((l) => l.text)]), turns: b.turn, lines: b.log.length };
 }
-for (const seed of seeds) {
-  const res = [];
-  for (const kind of KINDS) {
-    const A = battle(seed, kind), B = battle(seed, kind);
-    res.push(!A || !B ? `${kind}: no one to fight` : A.key === B.key ? null : `${kind}: differs`);
-    if (A && B && A.key === B.key) res[res.length - 1] = null;
-  }
-  const bad = res.filter(Boolean);
-  if (!bad.length) { passes++; console.log(`  seed ${seed}: ${KINDS.length} battles identical`); }
-  else { fails++; console.log(`  FAIL seed ${seed}: ${bad.join("; ")}`); }
+// One kind's battle on world A, then on world B: null when the same, else what went wrong.
+function battlePair({ seed, kind, mode }) {
+  const A = battle(seed, kind, mode), B = battle(seed, kind, mode);
+  return !A || !B ? `${kind}: no one to fight` : A.key === B.key ? null : `${kind}: differs`;
 }
 
-console.log(`\n${passes} passed, ${fails} failed. (${Math.round((performance.now() - t0) / 1000)} s)`);
-process.exit(fails ? 1 : 0);
+if (!isMainThread) serve((job) => (job.kind === "pair" ? pair(job) : battlePair(job)));
+else {
+  const t0 = performance.now();
+  const pairs = seeds.flatMap((seed) => styles.map((style) => ({ kind: "pair", seed, style, days, mode })));
+  const battles = seeds.flatMap((seed) => KINDS.map((kind) => ({ kind, seed, mode })));
+  const jobs = [...pairs, ...battles]; // the long campaigns first
+  const res = await pool(import.meta.url, jobs, { workers: workerCount(process.argv), onResult: () => process.stdout.write(".") });
+  process.stdout.write("\n");
+  let fails = 0, passes = 0;
+  const crash = (j, r) => `${j.kind === "pair" ? `seed ${j.seed} ${j.style}` : `seed ${j.seed} ${j.kind}`} crashed: ${r.error.split("\n").slice(0, 4).join(" | ")}`;
+  console.log(`Same seed twice in one process (${mode}): ${days} days, seeds ${seeds.join(", ")}, styles ${styles.join(", ")}`);
+  pairs.forEach((j, i) => {
+    const r = res[i];
+    if (r && r.error) { fails++; console.log(`  FAIL ${crash(j, r)}`); return; }
+    if (r.ok) passes++; else fails++;
+    for (const l of r.lines) console.log(l);
+  });
+  console.log("Tactical battles at the hub after 10 days, every enemy kind");
+  for (const seed of seeds) {
+    const bad = [];
+    battles.forEach((j, k) => {
+      if (j.seed !== seed) return;
+      const r = res[pairs.length + k];
+      if (r && r.error) bad.push(crash(j, r));
+      else if (r) bad.push(r);
+    });
+    if (!bad.length) { passes++; console.log(`  seed ${seed}: ${KINDS.length} battles identical`); }
+    else { fails++; console.log(`  FAIL seed ${seed}: ${bad.join("; ")}`); }
+  }
+  console.log(`\n${passes} passed, ${fails} failed. (${Math.round((performance.now() - t0) / 1000)} s)`);
+  process.exit(fails ? 1 : 0);
+}

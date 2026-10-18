@@ -39,6 +39,7 @@
 //
 // AI parity: an enemy (or a third side's) fighter with no gun in hand standing on or next to a pile with a gun in it
 // takes it up (aiGrabGun, 1 action), the very item: if they fall it is on their body again.
+import { facesBox, faceRefusal } from "./vision.js"; // looting needs the looter facing it
 import { GEAR, SUPPLIES } from "./data.js";
 import { lootLayer, fieldLayer, raidMove, raidTakeAll, quickTarget, haulOf } from "./raidloot.js";
 import { survivorById, baseById } from "./world.js";
@@ -216,6 +217,7 @@ export function searchBody(state, b, u, t) {
   if (why) return why;
   if (b.raid && !downedFoe(t)) return "In a raid the dead are searched like any container (Search).";
   if ((t.f || 0) !== (u.f || 0) || cheb(u, t.x, t.y) > GROUND.reach) return "Stand on or next to the body to search it.";
+  if (!facesBox(u, { x: t.x, y: t.y })) return faceRefusal("the body"); // vision.js: next to it and facing it
   fieldReady(b, state);
   if (bodyBoxOf(b, t)) return "";
   if ((u.ap || 0) < SEARCH.ap) return "No actions left this turn.";
@@ -404,6 +406,7 @@ export function groundAct(state, b, u, act) {
   if (act.type === "pickUp") {
     const where = act.x != null ? { x: act.x, y: act.y, f: u.f || 0 } : null;
     const pile = where ? groundAt(b, where.x, where.y, where.f) : pilesNear(b, u)[0];
+    if (pile && !facesBox(u, pile)) return faceRefusal("what is on the ground"); // vision.js: next to it and facing it
     const item = pile && act.item != null ? pile.contents.gear[act.item] || null : null;
     const r = pickUpFromGround(state, b, u, pile || where, item, !!act.arms);
     if (!r.got.length) return r.msg || "Nothing there fits.";

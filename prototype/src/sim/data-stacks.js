@@ -10,6 +10,7 @@
 export const STACK_MAX = {
   // small (10): a pack of cigarettes, a candy bar, a pill bottle, a battery pack, a lighter
   cigarettes: 10, smokes: 10, tobacco: 10, chocolate: 10, candy: 10, tea: 10, instcoffee: 10, batteries: 10, lighters: 10, dewormer: 10,
+  makeshiftpick: 10, // bent-wire lock picks (locks.js MAKESHIFT_PICK): no dur, one snaps whole off the stack
   // medium (5): a tin of coffee, a jar of honey, a box of cigars, a bag of candles, a roll pack of toilet paper
   coffee: 5, honey: 5, cigars: 5, candles: 5, toiletpaper: 5,
   // larger (3): bottles

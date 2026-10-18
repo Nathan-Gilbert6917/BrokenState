@@ -7,9 +7,11 @@
 //   npm start            run from source: serves ../prototype live (Ctrl+R picks up game changes)
 //   packaged build       serves the copy in resources/prototype
 //   --perf               hidden performance test (perf/driver.js), prints JSON and quits
+// The installed build updates itself (updater.js).
 const { app, BrowserWindow, Menu, protocol, screen, session, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const updates = require("./updater");
 
 const SCHEME = "app";
 const HOST = "brokenstate";
@@ -161,6 +163,9 @@ function buildMenu() {
       submenu: [
         { label: "Reload", accelerator: "CmdOrCtrl+R", click: () => { const w = focused(); if (w) w.webContents.reloadIgnoringCache(); } },
         { type: "separator" },
+        { label: "Check for Updates…", click: () => updates.checkNow() },
+        { label: `Version ${app.getVersion()}`, enabled: false },
+        { type: "separator" },
         { label: "Quit", accelerator: "CmdOrCtrl+Q", role: "quit" },
       ],
     },
@@ -214,6 +219,9 @@ function createWindow() {
   // dying (out of memory, a GPU fault) or hanging. Each asks before reloading; the game opens on its title screen
   // again, and the last autosave (and a crash save, if one was written) are in the save list.
   if (!PERF) {
+    // The GPU process dying (a driver reset, a fault) takes every kept picture with it: the game drops them and draws
+    // them again when its canvases come back (src/ui/pictures.js). Noted here so a report can say it happened.
+    app.on("child-process-gone", (_e, d) => { if (d && d.type === "GPU" && d.reason !== "clean-exit") console.error(`Broken State: the GPU process went (${d.reason}, code ${d.exitCode}); the game redraws its pictures when the canvas comes back.`); });
     win.webContents.on("render-process-gone", (_e, d) => {
       if (!d || d.reason === "clean-exit" || win.isDestroyed()) return;
       dialog.showMessageBox(win, { type: "error", title: TITLE, message: "The game stopped unexpectedly.", detail: `Its page closed (${d.reason}, code ${d.exitCode}). Reload opens the title screen again: your autosaves and saves are in Load game.`, buttons: ["Reload", "Quit"], defaultId: 0, cancelId: 1 })
@@ -245,8 +253,10 @@ function createWindow() {
 }
 
 // ---------- performance test (npm run perf, or "Broken State.exe" --perf) ----------
-// Starts a new game on seed 42, turns on Reveal map and the autopilot at 200x through the game's own buttons
+// Starts a new game on seed 42, sets the speed, Reveal map and the autopilot through the game's own buttons
 // (perf/driver.js runs in the page), and measures frame times at 1920x1080 and at the maximized size.
+// --perf-speed=5 (a top-bar speed 0.25-5 or a dev speed 60 / 300 / 1200), --perf-reveal=off, --perf-autopilot=on,
+// --perf-dev-panel=off (perf/driver.js says what each does).
 async function runPerf(win) {
   const seconds = Number(flag("perf-seconds")) || 60;
   const out = flag("perf-out");
@@ -269,6 +279,8 @@ async function runPerf(win) {
   // player gets it on this display, at Windows display scaling. maximized-dpr1: the same pixels at 100%, so
   // the largest layout and the most map on screen (the heaviest case).
   const sizes = (flag("perf-sizes") || "1080p,maximized,maximized-dpr1").split(",");
+  const onOff = (name, dflt) => { const v = flag(name); return v == null ? dflt : /^(on|1|true|yes)$/i.test(String(v)); };
+  const perfRun = { seed: 42, speed: Number(flag("perf-speed")) || 5, seconds, warmup: 3, reveal: onOff("perf-reveal", false), autopilot: onOff("perf-autopilot", true), devPanel: onOff("perf-dev-panel", false) };
   const runs = [];
   for (const label of sizes) {
     win.setFullScreen(false);
@@ -289,7 +301,7 @@ async function runPerf(win) {
     app.getAppMetrics(); // resets the CPU counters: the next call reports usage over the run
     let result;
     try {
-      result = await win.webContents.executeJavaScript(`${driver}\n;window.__bsPerf.run(${JSON.stringify({ seed: 42, speed: Number(flag("perf-speed")) || 300, seconds, warmup: 3 })})`, true);
+      result = await win.webContents.executeJavaScript(`${driver}\n;window.__bsPerf.run(${JSON.stringify(perfRun)})`, true);
     } catch (e) {
       result = { error: String(e && e.message ? e.message : e) };
     }
@@ -303,6 +315,7 @@ async function runPerf(win) {
     display: { size: display.size, scaleFactor: sf, physical: [Math.round(display.size.width * sf), Math.round(display.size.height * sf)], refreshHz: display.displayFrequency },
     gpu: app.getGPUFeatureStatus(),
     seconds,
+    options: perfRun,
     runs,
   };
   const json = JSON.stringify(summary, null, 2);
@@ -337,4 +350,5 @@ app.whenReady().then(() => {
     runPerf(win);
   }
   else win.loadURL(`${ORIGIN}/index.html`);
+  updates.start({ perf: PERF });
 });

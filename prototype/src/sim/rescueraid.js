@@ -57,7 +57,7 @@ import { assaultForce } from "./conquest.js";
 import { fortAssault, fortSize, assaultBase } from "./fort.js";
 import { lootItem, stripAll, ARMOR_SLOTS, itemLoad } from "./inventory.js";
 import { kitSource, spend } from "./itemcond.js";
-import { PICK, FORCE, SMASH, picksOf, barOf } from "./locks.js";
+import { PICK, MAKESHIFT_PICK, FORCE, SMASH, picksOf, barOf, isMakeshiftPicks } from "./locks.js";
 import { changeGoodwill, collapseFaction, groupBroken } from "./factions.js";
 import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, addGearToCargo } from "./parties.js";
 import { itemValue } from "./valuation.js";
@@ -147,7 +147,7 @@ export function startRescueRaid(state, p, f, mode = "assault") {
   startCombat(state, {
     tile, partyId: p.id,
     enemy: { kind: force.kind, count: force.count, power: force.power, factionId: f.id, name: `${f.name} guards`, walls: force.walls, gate: force.gate, fortified: mode === "sneak" ? 1 : force.fortified },
-    ambush: mode === "sneak" ? "player" : null, canRetreat: true, handler: "rescueRaid", layout: "rescueRaid",
+    ambush: mode === "sneak" ? "player" : null, canRetreat: true, handler: "rescueRaid", layout: "rescueRaid", plan: true, // raidplan.js: a scout first, or the night
     context: { partyId: p.id, factionId: f.id, tile, mode, captiveIds: list.map((s) => s.id), people: force.people, night, tier: jailTier(f, tile, state) },
   });
   return "";
@@ -321,8 +321,9 @@ export function ropeOdds(state, b, u) {
 }
 export function pickOdds(state, b, u, d) {
   const s = survivorById(state, u.sid);
-  const tool = s && picksOf(s) ? "picks" : u.pin ? "pin" : "none";
-  const c = PICK.base + PICK.perStealth * (s ? skill(s, "stealth") : 0) - PICK.perDiff * (d.diff - 1) + (u.quiet || (s && hasPerk(s, "quiethands")) ? PICK.quiet : 0) + (tool === "pin" ? RESCUE_RAID.PIN_PICK : tool === "none" ? RESCUE_RAID.BARE_PICK : 0);
+  const picks = s ? picksOf(s) : null;
+  const tool = picks ? (isMakeshiftPicks(picks) ? "makeshift" : "picks") : u.pin ? "pin" : "none"; // makeshift: bent wire from the lower base (locks.js MAKESHIFT_PICK)
+  const c = (tool === "makeshift" ? MAKESHIFT_PICK.base : PICK.base) + PICK.perStealth * (s ? skill(s, "stealth") : 0) - PICK.perDiff * (d.diff - 1) + (u.quiet || (s && hasPerk(s, "quiethands")) ? PICK.quiet : 0) + (tool === "pin" ? RESCUE_RAID.PIN_PICK : tool === "none" ? RESCUE_RAID.BARE_PICK : 0);
   return { chance: clamp(c, 0.05, 0.95), tool };
 }
 export function forceOdds(state, b, u, d) {
@@ -352,7 +353,7 @@ export function rescueOptions(state, b, u) {
     const d = doors[0];
     if (hasKeys(b, u)) out.push({ op: "unlock", label: "Unlock (keys)", tip: "1 action, silent: the jailer's keys open it.", ok: ap > 0 });
     const po = pickOdds(state, b, u, d);
-    out.push({ op: "pick", label: "Pick the lock", tip: `1 action: ${Math.round(po.chance * 100)}% (${po.tool === "picks" ? "lockpicks" : po.tool === "pin" ? "with a pin: −15%" : "bare hands: −35%"}). Quiet.`, ok: ap > 0 });
+    out.push({ op: "pick", label: "Pick the lock", tip: `1 action: ${Math.round(po.chance * 100)}% (${po.tool === "picks" ? "lockpicks" : po.tool === "makeshift" ? "makeshift picks: from 30%" : po.tool === "pin" ? "with a pin: −15%" : "bare hands: −35%"}). Quiet.`, ok: ap > 0 });
     const fo = forceOdds(state, b, u, d);
     out.push({ op: "force", label: fo.bar ? "Force the door" : "Smash the door", tip: fo.why || `${fo.ap} action${fo.ap > 1 ? "s" : ""}: ${Math.round(fo.chance * 100)}%. Loud: the alarm goes up.`, ok: !fo.why && ap >= fo.ap });
   }
@@ -775,7 +776,7 @@ export function afterRescueBattle(state, result, setup, battle) {
   if (held.length) bits.push(`${held.map((s) => first(s.name)).join(", ")} ${held.length === 1 ? "is" : "are"} still held by ${f ? f.name : "them"}.`);
   if (lost.length) bits.push(`${lost.map((s) => first(s.name)).join(", ")} did not live through it.`);
   if (R.took && R.took.length) bits.push(`Out of their armory: ${R.took.map((it) => it.name).join(", ")}.`);
-  const text = `${result.outcome === "victory" ? "The guards are beaten." : result.outcome === "retreat" ? "The team got out." : "The rescue failed."} ${bits.join(" ")}`.trim();
+  const text = `${result.outcome === "victory" ? "The guards are beaten." : result.calledOff ? "The rescue was called off before it began." : result.outcome === "retreat" ? "The team got out." : "The rescue failed."} ${bits.join(" ")}`.trim();
   return { freed, held, lost, text };
 }
 

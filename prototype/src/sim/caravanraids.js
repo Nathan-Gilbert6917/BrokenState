@@ -425,7 +425,7 @@ export function caravanCard(state, p, c, lead = "", ambush = null) {
   const f = c.type === "merchants" ? null : factionById(state, c.owner);
   const who = c.type === "merchants" ? `A merchant caravan from ${c.ref.home}` : f && f.known ? `A ${f.name} ${c.type}` : `A ${c.type} of a group you have not met`;
   const choices = [];
-  if (c.type === "merchants" && attitude(c.ref) !== "Hostile") choices.push({ label: "Trade with them", hint: "The trade window, from what the team carries", ai: () => 60, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, c.ref, { partyId: p.id }); delete p.conflictResume; return ""; } });
+  if (c.type === "merchants" && attitude(c.ref) !== "Hostile") choices.push({ label: "Trade with them", hint: "The trade window, from what the team carries", ai: () => 60, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, c.ref, { partyId: p.id, back: "raid" }); delete p.conflictResume; return ""; } });
   choices.push({
     label: `Attack the caravan (${pct(odds)} by the numbers)`,
     hint: `A fight with its guards (${guardText(state, c)}). Win and everything it carries is yours, and its vehicle if it still runs. If anyone gets away or sees it, ${c.type === "merchants" ? "merchants will shun you" : `${f ? f.name : "its group"} will be your enemies`}`,

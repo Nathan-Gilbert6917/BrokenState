@@ -179,7 +179,7 @@ function ledgerRows(state, key, range) {
     }));
     const land = rows.map((x) => val(x, "land") / 10);
     out.push(chartRow(`${id}-land`, {
-      title: `<b${tip("The coalition's share of the land (your bases' reach, members' bases, claimed tiles): over 50% for a year wins")}>Land</b>`,
+      title: `<b${tip("The coalition's share of the land (your bases' reach, members' bases, claimed tiles): over 60% for a year, with no hive and no group outside, wins")}>Land</b>`,
       days, panels: [{ series: [{ v: land, color: "--info", kind: "area", label: "%" }], min: 0, max: Math.max(60, ...land), label: "%", marks: [50] }],
       read: (i) => `${dayText(rows[i])} · <b>${n1(land[i])}%</b> of the land`,
     }));
@@ -497,7 +497,7 @@ export function sparkNode(values) {
 export function ledgerHelp() {
   return `The <b>Ledger</b> (📈 Ledger in the top bar, or <b>E</b>; E or Esc closes it) keeps the books: one line a day for each base and for the whole colony, written at midnight.<br><br>
     <b>Resources:</b> a row each for food (fresh and preserved), water (purified and un-purified), fuel, firewood, meds, ammo, parts and scrap. The left chart is what came <span class="good">in</span> each day (harvests, hunting, foraging, wells, workshops, what teams and trade brought home) against what went <span class="danger">out</span> (eaten, drunk, burned, spent, spoiled, packed by teams, traded); the right one the stock. For one base a dashed <span style="color:var(--info)">moved</span> line is what the outposts' daily run shipped to or from your other bases; for <i>All bases</i> that nets out (only what the road loses shows). The figure by the name is in minus out a day on average over the days shown. Supply runs and trade convoys count as out where they load and in where they unload.<br><br>
-    <b>People:</b> population (everyone alive, and those at a base), deaths and arrivals a day, mood and Heat; for All bases also the hives you know of and the hives destroyed, the groups you know (allied, hostile) and the coalition's share of the land (the 50% line is what the alliance victory needs).<br><br>
+    <b>People:</b> population (everyone alive, and those at a base), deaths and arrivals a day, mood and Heat; for All bases also the hives you know of and the hives destroyed, the groups you know (allied, hostile) and the coalition's share of the land (the 60% line is what the alliance victory needs).<br><br>
     <b>Days:</b> 30, 90, 365 or the whole run. Move the mouse over a chart for that day's numbers. The last 120 days are kept day by day, older ones as weekly averages, anything older than about two years and four months as 28-day averages. A game saved before the Ledger existed starts its history on the day it was loaded.<br><br>
     <b>Run summary</b> (the Ledger's second tab, and the game-over and victory screens): the timeline of population, food, water, Heat, hives and land; the best of your people (most kills, longest with the group, top skill, most trips, most treated, most built), the worst day, deaths by cause (from the memorial wall), what happened (the timelapse's captions) and <i>Watch the timelapse</i>.<br><br>
     <b>Top bar trends:</b> the <b>Needs</b> button in the top bar (hover, click or tab to it) lists every supply at the hub with its days left, the critical ones first; each shows ▲ (up), ▼ (down) or – (steady) for the last full day against the day before, green when it grew and red when it fell. Its tooltip says by how much, with a sparkline of the last 14 days (water counts both kinds).`;

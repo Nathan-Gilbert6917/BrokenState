@@ -19,6 +19,7 @@
 import { GEAR } from "./data.js";
 import { atBase, gearEffect, combatPower, usesArrows } from "./world.js";
 import { calOf, drawShots } from "./ammo.js";
+import { isRoundKey } from "./rounds.js";
 import { armorPower, allCarried, stow, isSmall, itemArmor } from "./inventory.js";
 import { lightOf, packLights, LIGHTS, LIGHT_KEYS } from "./lights.js";
 import { TRIP_JOBS } from "./tripland.js";
@@ -29,10 +30,15 @@ const DUSK = new Set(["hunt", "fish"]); // home after dark: a light helps
 const isOut = (s) => !!(s && s.alive && TRIP_JOBS[s.role]);
 const isMelee = (d) => !!d && d.cat === "melee";
 const isBowKey = (k) => !!(GEAR[k] && (GEAR[k].cat === "bow" || k === "crossbow"));
-// Rounds or arrows for this weapon at the base (a dry run on a copy of the stock).
+// Rounds or arrows for this weapon at the base (a dry run on a copy of the stock: its rounds and generic ammo, all a
+// gun's draw reads; ammo.js drawShots. A base's stock is a big dictionary object, slow to copy whole).
 function ammoFor(base, s, it) {
   if (!it) return false;
-  if (calOf(it.key)) { const was = s.gear.weapon; s.gear.weapon = it; const n = drawShots({ ...(base.stock || {}) }, [s], 1).n; s.gear.weapon = was; return n >= 1; }
+  if (calOf(it.key)) {
+    const st = base.stock || {}, rec = {};
+    for (const k in st) if (k === "ammo" || isRoundKey(k)) rec[k] = st[k];
+    const was = s.gear.weapon; s.gear.weapon = it; const n = drawShots(rec, [s], 1).n; s.gear.weapon = was; return n >= 1;
+  }
   if (isBowKey(it.key)) return (base.stock && base.stock.arrows || 0) >= 1;
   return true;
 }

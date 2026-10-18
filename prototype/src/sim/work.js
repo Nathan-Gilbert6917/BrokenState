@@ -331,7 +331,7 @@ export const WORK_TYPES = {
   // base that holds water.
   hunt: {
     name: "Hunt", ing: "Hunting", short: "Hunt", role: "hunt", skill: "shooting",
-    desc: "Hunts the base's hunting grounds (the tiles next to it; with a Hunting cabin the land within 2 tiles) while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), at dawn and dusk by the base's hunting mix (Farming tab: traps, bows, guns): their own rifle or gun (this base's ammo: shots add Heat and can draw the dead), bow (this base's arrows: silent) or snares (silent, less food; also without a weapon). Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
+    desc: "Hunts the base's hunting grounds (the tiles next to it; with a Hunting cabin the land within 2 tiles) while food is short of the season's goal (as many as it takes to bring the stores up, no fixed cap: each takes the best ground left, so a crowd hunts poorer land), at dawn and dusk 4 hours a day by the base's hunting mix (Farming tab: traps, bows, guns): their own rifle or gun, or one lent for the day (the armory's, or a gun or bow of someone here who is not hunting or on guard; this base's ammo: shots add Heat and can draw the dead), bow (this base's arrows: silent) or snares (silent, less food; also without a weapon). Fresh game spoils fast; the land runs short of game when hunted hard and grows back over weeks.",
     open(ctx) {
       const why = huntWorkWhy(ctx.state, ctx.base);
       if (why) return { cap: 0, why };
@@ -340,7 +340,9 @@ export const WORK_TYPES = {
       // No fixed cap (tune-jobcaps: it was 2): hunters to close the food the land must bring in (hunting.js huntWorkCap).
       return { cap: huntWorkCap(ctx.state, ctx.base, foodGoal(ctx.state)), urg: days < 7 ? 7 : days < 20 ? 4.5 : 2.5 };
     },
-    rank: (s) => hunterMult(s) * 10 * (bestHuntWeapon(s) ? 1 : 0.4),
+    // By their hunting weapon (a hunting rifle 1.24, a bow about 1.1, a pistol 0.48; snares only 0.4), so the one with
+    // the rifle goes, not whoever has any gun.
+    rank: (s) => hunterMult(s) * 10 * Math.max(0.4, (bestHuntWeapon(s) || { v: 0 }).v),
   },
   fish: {
     name: "Fish", ing: "Fishing", short: "Fish", role: "fish", skill: "scouting",

@@ -2,6 +2,7 @@
 // The panel shows a team's people, gear, supplies, vehicle and order queue, with actions on the spot
 // (camp, scavenge, look around, repair, treat, move, go home). Timed actions go through the order queue
 // (sim/orders.js); buttons use data-action handlers in main.js.
+import { meetLine } from "./teammeet.js"; // other teams of yours on its tile: Teams together…
 import { foodIn } from "../sim/foods.js"; // days of food
 import { teamFoodHtml } from "./food.js"; // the team's food by kind
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/data.js";
@@ -12,6 +13,8 @@ import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, up
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
 import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, REPAIR_HOURS, SURVEY_HOURS, besideWater, FETCH_WATER_HOURS } from "../sim/orders.js";
+import { LOOK } from "../sim/survey.js"; // the POI survey's hours
+import { poiRaidSummary } from "../sim/poiraid.js"; // "3 places known, possibly more unknown"
 import { crossingsFrom, boatPlan, boatTip, gatherInfo, matsText } from "../sim/crossing.js";
 import { fieldCraftOptions, craftQueue, craftName } from "../sim/crafting.js";
 import { BUILDINGS } from "../sim/buildings.js";
@@ -23,11 +26,12 @@ import { weather as wxNow, travelEffects, foodNeedFactor } from "../sim/weather.
 import { commandable, planStatus, conditionText, NO_RADIO } from "../sim/plans.js";
 import { listenBlock, teamRadioLine } from "./radiolisten.js"; // the team's receiver: Listen in, what it heard
 import { heatInfo, rowsText } from "../sim/fieldheat.js";
+import { NIGHT_PLANS, NIGHT_MARCH } from "../sim/nightmarch.js"; // the night plan toggle
 import { fireButton, campStatusCard } from "./hardcore.js"; // Establish base while you have no base
 import { HUNT, huntProblem, huntInfo, fishProblem, fishKit, expectFish, fishSpot, snareLine, snareProblem, expectSnare, meatIn, frozenAt, SNARE, partyHuntMix, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { teamWormText, teamWaterHow, teamTabCount, WORM } from "../sim/worm.js";
 import { teamWaterIn, teamRawIn, keyWord } from "../sim/water.js"; // purified and un-purified water
-import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock, foodOnThem } from "./needs.js";
+import { gaugeRows, treatsRow, needsEffectText, teamNeedsBlock, foodOnThem, teamUpkeepCard } from "./needs.js";
 import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/foraging.js";
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
@@ -137,7 +141,7 @@ export function renderExpedition(state, ui, p) {
   const ord = (type, extra, label, hint, disabled) => btn(`data-action="xp-order" data-id="${p.id}" data-type="${type}"${extra}`, label, hint, disabled);
 
   const head = `<div class="spread"><h2 style="margin:0">Team: ${members.map(first).join(", ")}</h2><span class="row">${watchlistPin(state, "team", p.id, `team (${members.map((m) => m.name.split(" ")[0]).join(", ")})`)}<button class="mini" data-action="xp-close"${tip("Back to the tile view (Esc)")}>✕</button></span></div>
-    <div class="small muted">${esc(MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team")} · ${v ? esc(vehicleLabel(partyFleet(state, p))) : "on foot"}${p.walkers > 0 && p.vehicle ? ` <span class="warn"${tip("Not enough seats after a vehicle was lost: they walk, and the team goes at walking pace (the cargo stays in the vehicles) until a seat turns up")}>(${p.walkers} walking: foot pace)</span>` : ""} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}${live ? editTeamButton(state, p) : ""}`;
+    <div class="small muted">${esc(MISSIONS[p.teamMission === "formed" && p.mission === "move" ? "formed" : p.mission]?.name || "Team")} · ${v ? esc(vehicleLabel(partyFleet(state, p))) : "on foot"}${p.walkers > 0 && p.vehicle ? ` <span class="warn"${tip("Not enough seats after a vehicle was lost: they walk, and the team goes at walking pace (the cargo stays in the vehicles) until a seat turns up")}>(${p.walkers} walking: foot pace)</span>` : ""} · ${STANCES[p.stance]?.name || ""} · home ${esc(home.name)}</div>${teamInvBar(state, p, live)}${live ? meetLine(state, p) : ""}${live ? editTeamButton(state, p) : ""}`;
 
   const status = `<div class="card small" style="margin-top:0.5rem">
       <div class="spread"><b>Now</b>${live ? `<button class="mini" data-action="center" data-tile="${tile}"${tip("Center the map on this team")}>Locate</button>` : ""}</div>
@@ -148,18 +152,21 @@ export function renderExpedition(state, ui, p) {
       ${queueBlock(state, p, cmd, ui)}
       ${planBlock(state, p)}
       ${live ? heatBlock(state, p) : ""}
+      ${cmd && p.kind === "expedition" ? nightRow(p) : ""}
     </div>`;
 
   const camp = campStatusCard(state, p); // no base yet: where to set up camp (Establish base) and what its step up needs
 
   if (!cmd) {
-    return head + camp + status + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
+    return head + camp + status + teamUpkeepCard(state, p) + teamRadioLine(state, p, true) + `<div class="card small muted"${tip(NO_RADIO)}>No radio contact. The team follows its ${p.plan && p.plan.active ? "plan" : "orders"} and reports when it checks in (a card), gets home, or comes into radio range (a station or a linked relay). New orders only then.${ui.xpMsg ? `<div class="result small">${esc(ui.xpMsg)}</div>` : ""}</div>` +
       teamVolBlock(state, p) + `<h3>People</h3>${members.map((m) => memberCard(state, p, m, false)).join("")}`;
   }
 
   // Actions on the spot.
-  const opts = orderOptions(state, p).filter((o) => o.mission !== "survey" && o.mission !== "sweep");
-  const loot = state.tiles[tile].loot > 0.05;
+  const opts = orderOptions(state, p).filter((o) => o.mission !== "survey" && o.mission !== "sweep" && o.mission !== "fullsurvey");
+  const scavOpt = orderOptions(state, p).find((o) => o.mission === "scavenge") || null; // a site, or a tile's known places (sim/poiraid.js: "survey first" with none)
+  const loot = !!scavOpt && !scavOpt.disabled; // a site can be searched again (picked over: little left)
+  const poiNote = poiRaidSummary(state, tile, p);
   const rep = repairInfo(state, p);
   const camping = p.phase === "task" && p.task && p.task.type === "camp";
   const working = p.phase === "task" && p.task && !camping;
@@ -173,18 +180,19 @@ export function renderExpedition(state, ui, p) {
       ${p.phase === "engaged" ? `<div class="muted">Busy on site. New orders wait in the queue.</div>` : ""}
       <div class="row" style="margin-top:0.35rem;flex-wrap:wrap">
         ${btn(`data-action="xp-move" data-id="${p.id}"`, queueing ? "Queue move…" : "Move…", queueing ? "Click a tile on the map. The move is added to the end of the team's queue." : "Click a tile on the map. The team sets off for it (when the clock runs).")}
-        ${moving && p.radioLive ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now (radio contact).") : ""}
+        ${moving ? btn(`data-action="movemode" data-id="${p.id}"`, "Redirect…", "Change the current destination now.") : ""}
         ${!hub(state) ? "" : ord("home", "", queueing ? "Queue: return home" : "Return home", queueing ? `Added to the end of the queue: after the orders before it the team heads back to ${home.name} with everything carried.` : `Head back to ${home.name} now with everything carried. This drops the rest of the queue.`)}
         ${camping ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop resting", "Pack up now. The next queued order starts.") : ""}
         ${working ? btn(`data-action="xp-stop" data-id="${p.id}"`, "Stop work", "Give up on the current job (nothing is used up).") : ""}
       </div>
       <div class="xpgrid">
-        ${ord("mission", ` data-mission="scavenge"`, "Scavenge here", loot || queueing ? MISSIONS.scavenge.desc : "Nothing left worth searching on this tile.", !loot && !queueing)}
-        ${ord("mission", ` data-mission="survey"`, `Look around (${SURVEY_HOURS}h)`, MISSIONS.survey.desc)}
-        ${[[2, 12], [3, 24], [4, 48]].map(([r, h]) => ord("sweep", ` data-radius="${r}" data-hours="${h}"`, `Survey ${r} tiles, ${h}h`, `${MISSIONS.sweep.desc} From here: ${r} tiles around for ${h} hours, back here at the end.`)).join("")}
+        ${ord("mission", ` data-mission="scavenge"`, poiNote ? "Scavenge a place here" : "Scavenge here", loot || queueing ? `${MISSIONS.scavenge.desc}${poiNote ? ` Here: ${poiNote}; you pick the place when the team is ready.` : ""}` : scavOpt && scavOpt.disabled ? scavOpt.disabled : "Nothing left worth searching on this tile.", !loot && !queueing)}
+        ${ord("mission", ` data-mission="survey"`, `Quick look (${SURVEY_HOURS}h)`, MISSIONS.survey.desc)}
+        ${ord("mission", ` data-mission="fullsurvey"`, `Survey the tile (${LOOK.hours}h)`, `${MISSIONS.fullsurvey.desc}${poiNote ? ` Here: ${poiNote}.` : ""}`)}
+        ${[[2, 12], [3, 24], [4, 48]].map(([r, h]) => ord("sweep", ` data-radius="${r}" data-hours="${h}"`, `Sweep ${r} tiles, ${h}h`, `${MISSIONS.sweep.desc} From here: ${r} tiles around for ${h} hours, back here at the end.`)).join("")}
         ${besideWater(state, queueing ? queueEndTile(state, p) : tile) ? ord("water", "", `Fetch water (${FETCH_WATER_HOURS}h)`, `Fill every free container from the river or lake and carry it home (room for about ${Math.floor(cargoRoom(state, p) / SUPPLIES.water.weight)} water now; 1 kg each). Un-purified water for a base that runs short in summer: the base purifies it; on the way a filter, a lit camp fire or purification tablets make it safe to drink.`) : ""}
         ${ord("repair", "", `Repair vehicle (${REPAIR_HOURS}h)`, rep.ok ? `${REPAIR_HOURS} hours, 1 part: about +${rep.gain}% condition (best Mechanics ${rep.mech}).` : rep.reason, !rep.ok && !queueing)}
-        ${ord("claim", "", `Claim this tile (${CLAIM.HOURS}h)`, claimWhy && !queueing ? `Claim this tile: ${claimWhy}` : `Raise a marker post here (${CLAIM.SCRAP} scrap carried): the tile counts as land the coalition holds, toward the 50% the alliance victory needs. Lost if a group founds or takes a base on or beside it, a hive rises there, or a hostile band camps on it over a day.`, !!claimWhy && !queueing)}
+        ${ord("claim", "", `Claim this tile (${CLAIM.HOURS}h)`, claimWhy && !queueing ? `Claim this tile: ${claimWhy}` : `Raise a marker post here (${CLAIM.SCRAP} scrap carried): the tile counts as land the coalition holds, toward the 60% the alliance victory needs. Lost if a group founds or takes a base on or beside it, a hive rises there, or a hostile band camps on it over a day.`, !!claimWhy && !queueing)}
         ${claimOwner(state, claimAt) === "player" || queueing ? ord("well", "", `Dig a well (${CLAIM.WELL_HOURS}h)`, wellWhy && !queueing ? `Dig a well: ${wellWhy}` : `Dig a well on this claim (${CLAIM.WELL_SCRAP} scrap, ${CLAIM.WELL_PARTS} part carried): about ${wellYield(state, claimAt)} water a day here, hauled by the people at your base next to it (one well per ${CLAIM.WELL_PER_PEOPLE} people there counts). It holds 1,500–4,000 water and runs dry in time.`, !!wellWhy && !queueing) : ""}
         ${opts.filter((o) => o.mission !== "scavenge").map((o) => ord("mission", ` data-mission="${o.mission}"`, esc(o.label), o.disabled || o.desc, !!o.disabled && !queueing)).join("")}
       </div>
@@ -195,7 +203,7 @@ export function renderExpedition(state, ui, p) {
       ${ui.xpMsg ? `<div class="result small" style="margin-top:0.4rem">${esc(ui.xpMsg)}</div>` : ""}
     </div>`;
 
-  return head + camp + status + actions + teamCarryCard(state, ui, p) + teamVolBlock(state, p) +
+  return head + camp + status + teamUpkeepCard(state, p) + actions + teamCarryCard(state, ui, p) + teamVolBlock(state, p) +
     `<h3>People (${members.length})</h3>${teamNeedsBlock(state, p, true)}${members.map((m) => memberCard(state, p, m, true, queueing)).join("")}` +
     suppliesBlock(state, p) + vehicleBlock(state, p, v);
 }
@@ -425,11 +433,22 @@ export function heatBlock(state, p) {
   return `<div class="row" style="margin-top:0.3rem"${tip(h.text)}><span class="muted" style="width:3.5rem">Heat</span><div style="flex:1">${bar(h.heat, color)}</div><span style="width:5.5rem;text-align:right" class="${h.heat >= 50 ? "warn" : ""}">${Math.round(h.heat)} · ${h.activity ? `${(h.chance * 100).toFixed(1)}%/h` : "falling"}</span></div>${camp}`;
 }
 
+// What the team does when night falls on the road (sim/nightmarch.js): ask with a card, make camp, or push through.
+function nightRow(p) {
+  const cur = p.nightPlan || "ask";
+  const tips = {
+    ask: "A \"Night falls\" card each night the team is still on its way at 22:00.",
+    camp: `Make camp at 22:00 wherever it is and move on at ${NIGHT_MARCH.TO}:00 (a night's sleep, the hurt heal a little). No card.`,
+    push: `Keep moving through the night: road events ×${NIGHT_MARCH.EVENTS}, run-ins with the dead or raiders ×${NIGHT_MARCH.CONFLICT}, it sees only its own tile, and nobody sleeps (Tired by dawn). No card.`,
+  };
+  return `<div class="row small" style="margin-top:0.3rem;flex-wrap:wrap"${tip("What the team does when night falls while it is still on the road (for this trip)")}><span class="muted" style="width:3.5rem">At night</span>${Object.entries(NIGHT_PLANS).map(([k, label]) => `<button class="mini ${cur === k ? "active" : ""}" data-action="xp-night" data-id="${p.id}" data-plan="${k}"${tip(tips[k])}>${label}</button>`).join("")}</div>`;
+}
+
 // The plan the team left with (sim/plans.js): name, steps left and its "come home" rule.
 function planBlock(state, p) {
   if (!p.plan) return "";
   const c = conditionText(p.plan.conditions);
-  return `<div class="muted" style="margin-top:0.3rem"${tip("The plan set in the planner. Out of radio contact the team follows it and reports in with cards on finds (a horde, a rich site, low supplies) and when it ends; in contact you can change it any time.")}>Plan: ${esc(planStatus(state, p))}${c ? ` · comes home if ${esc(c)}` : ""}</div>`;
+  return `<div class="muted" style="margin-top:0.3rem"${tip("The plan set in the planner. The team follows it and reports in with cards on finds (a horde, a rich site, low supplies) and when it ends; you can change it any time, wherever it is.")}>Plan: ${esc(planStatus(state, p))}${c ? ` · comes home if ${esc(c)}` : ""}</div>`;
 }
 
 // The team's water (sim/water.js): purified and un-purified, and how it drinks the un-purified water now (sim/worm.js
@@ -441,6 +460,6 @@ function teamWaterNote(state, p) {
   const tabs = teamTabCount(state, p);
   const lit = p.phase === "task" && p.task && p.task.type === "camp" && p.campFire !== false;
   const text = how === "filter" ? "now: through the water filter carried (safe)" : how === "fire" ? "now: boiled at the camp fire (safe; no tablets used)" : how === "tabs" ? `now: purification tablets (${lit ? "the camp fire has nothing to burn" : "on the move"}; ${tabs} tablet${tabs === 1 ? "" : "s"} carried, one per ${WORM.TABS_WATER})` : `now: drunk as it is (${(p.wormEggs || 0) > 0 ? "it carries the worm's eggs" : "it can carry the worm"}: camp with the fire lit and firewood, or carry a filter or purification tablets)`;
-  return `<div class="small ${how === "unsafe" ? "danger" : "muted"}"${tip("Purified water (bottled, boiled, filtered) is drunk first. Un-purified water (fetched from a river or lake, or a base's well water) can carry the worm and turn the stomach; it is made safe, in this order: a water filter carried; a lit camp fire with firewood carried or deadfall on the land (it also boils some into purified water each hour); purification tablets (one per " + WORM.TABS_WATER + " water: on the move, or at a camp whose fire cannot be kept going); otherwise it is drunk as it is.")}>Water: ${n0(carriedW(p))} purified, ${n0(raw)} un-purified: ${esc(text)}.</div>`;
+  return `<div class="small ${how === "unsafe" ? "danger" : "muted"}"${tip("Purified water (bottled, boiled, filtered) is drunk first. Un-purified water (fetched from a river or lake, or a base's well water) can carry the worm and turn the stomach; it is made safe, in this order: a water filter carried; a lit camp fire with firewood carried (deadfall on the land stretches it; it also boils some into purified water each hour); purification tablets (one per " + WORM.TABS_WATER + " water: on the move, or at a camp whose fire cannot be kept going); otherwise it is drunk as it is.")}>Water: ${n0(carriedW(p))} purified, ${n0(raw)} un-purified: ${esc(text)}.</div>`;
 }
 const carriedW = (p) => Math.max(0, p.supplies.water || 0) + Math.max(0, (p.cargo && p.cargo.supplies.water) || 0);

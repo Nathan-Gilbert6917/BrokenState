@@ -48,6 +48,7 @@ import { isNight } from "./world.js";
 import { dimsAt, baseScale, baseSide, densify } from "./battlesize.js";
 import { siegeWallCut } from "./siege.js";
 import { lateOut } from "./defenceplan.js"; // those not on watch when the attack hit come out
+import { rollWin, winMixOf } from "./windows.js"; // the windows' states
 
 // W × H: the smallest map (no base: a test, a base with nothing built); a base's own is its size class's (yardDims),
 // H_GROW rows taller at a time (up to H_TRIES times) if its buildings do not all fit, and its wall map is as much longer
@@ -234,7 +235,7 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
     const mid = y0 + Math.floor(h / 2);
     const doors = [];
     const door = (x, y, hp) => { const c = put(x, y, "bdoor", "floor"); c.hp = c.mhp = hp; delete c.t; indoor[y * W + x] = 1; doors.push([x, y]); out.doors.push([x, y]); };
-    const win = (x, y) => { const c = at(x, y); if (!c || c.k !== "wall") return; const corner = (x === x0 || x === x0 + w - 1) && (y === y0 || y === y0 + h - 1); if (corner) return; put(x, y, "window", "floor"); c.hp = c.mhp = INTERIOR.WINDOW_HP; delete c.t; out.windows.push([x, y]); };
+    const win = (x, y) => { const c = at(x, y); if (!c || c.k !== "wall") return; const corner = (x === x0 || x === x0 + w - 1) && (y === y0 || y === y0 + h - 1); if (corner) return; put(x, y, "window", "floor"); c.hp = c.mhp = INTERIOR.WINDOW_HP; delete c.t; c.win = rollWin(rng.state, winMixOf("house"), x, y); out.windows.push([x, y]); }; // windows.js: the base's windows open, lock or are fixed like a house's (the map's own dice, read not consumed)
     // The upper floor: the back (west) half, up the stairs at its east end.
     const loftX = two ? x0 + Math.floor((w - 2) / 2) : -1;
     if (two) {
@@ -364,32 +365,43 @@ const GROUND_PROPS = { grass: ["tree", "tree", "rock", "fence", "hay"], field: [
 const YARD_PROPS = { dirt: ["crate", "barrel", "crate", "hay"], field: ["hay"], grass: ["rock", "tree"] };
 
 // Clutter (not buildings) on the way from the back gate to every door, ladder and the wall is cleared.
+const DX4 = [1, -1, 0, 0], DY4 = [0, 0, 1, -1];
 function connect(cells, W, H, out) {
   const start = [0, Math.floor(H / 2)];
   const targets = [...out.doors.map(([x, y]) => outsideOf(cells, W, H, x, y)), ...out.buildings.filter((b) => b.ladder).map((b) => b.ladder), [W - 3, Math.floor(H / 2)], [W - 1, 0], [W - 1, H - 1]].filter(Boolean);
-  const hard = (c) => ["wall", "window", "bdoor", "roof", "palisade", "tower", "loft", "stairs"].includes(c.k);
+  const HARD = new Set(["wall", "window", "bdoor", "roof", "palisade", "tower", "loft", "stairs"]);
+  const hard = (c) => HARD.has(c.k);
+  // The search from the back gate depends on the cells alone (not the target: a ladder is not hard, so a target
+  // ladder needs no way in of its own): it is run again only after a path
+  // cleared something (the yard's turn into the interior map spent most of the enemy's turn here: sizetest).
+  // step: what entering each cell costs (Infinity: hard), kept up to date as the clutter is cleared.
+  const step = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) step[i] = hard(cells[i]) ? Infinity : CELL[cells[i].k].walk ? 1 : 6;
+  let d = null, prev = null;
   for (const [tx, ty] of targets) {
-    const d = new Float32Array(W * H).fill(Infinity), prev = new Int32Array(W * H).fill(-1);
-    const s = start[1] * W + start[0];
-    d[s] = 0;
-    const open = [s];
-    while (open.length) {
-      let bi = 0;
-      for (let i = 1; i < open.length; i++) if (d[open[i]] < d[open[bi]]) bi = i;
-      const cur = open[bi]; open[bi] = open[open.length - 1]; open.pop();
-      const x = cur % W, y = (cur / W) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const c = cells[ny * W + nx];
-        if (hard(c) && !(nx === tx && ny === ty && c.k === "ladder")) continue;
-        const nd = d[cur] + (CELL[c.k].walk ? 1 : 6);
-        if (nd < d[ny * W + nx]) { if (d[ny * W + nx] === Infinity) open.push(ny * W + nx); d[ny * W + nx] = nd; prev[ny * W + nx] = cur; }
+    if (!d) {
+      d = new Float32Array(W * H).fill(Infinity); prev = new Int32Array(W * H).fill(-1);
+      const s = start[1] * W + start[0];
+      d[s] = 0;
+      const open = [s];
+      while (open.length) {
+        let bi = 0;
+        for (let i = 1; i < open.length; i++) if (d[open[i]] < d[open[bi]]) bi = i;
+        const cur = open[bi]; open[bi] = open[open.length - 1]; open.pop();
+        const x = cur % W, y = (cur / W) | 0;
+        for (let k = 0; k < 4; k++) {
+          const nx = x + DX4[k], ny = y + DY4[k];
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const j = ny * W + nx, nd = d[cur] + step[j];
+          if (nd < d[j]) { if (d[j] === Infinity) open.push(j); d[j] = nd; prev[j] = cur; }
+        }
       }
     }
     let i = ty * W + tx;
     if (!isFinite(d[i])) continue;
-    while (i >= 0) { const c = cells[i]; if (!CELL[c.k].walk && !hard(c)) c.k = "open"; i = prev[i]; }
+    let changed = false;
+    while (i >= 0) { const c = cells[i]; if (!CELL[c.k].walk && !hard(c)) { c.k = "open"; step[i] = 1; changed = true; } i = prev[i]; }
+    if (changed) d = null;
   }
 }
 // The cell outside a door (the side away from the building's inside).
@@ -428,11 +440,12 @@ export function interiorUnits(b, ctx, base, c) {
   const horde = b.setup.enemy.kind === "zombies";
   const most = horde ? [1, 6, 12, 18].filter((n) => enemies.length >= n).length : 1;
   const extra = ctx.rng.shuffle(["north", "south"]).concat(b.evacCols ? [] : ["west"]).slice(0, Math.max(0, ctx.rng.int(1, Math.max(1, most)) - 1));
+  // The edge first, then okCell (both only read the map): the same cells in the same order, unitAt asked of a few.
   const sideCells = (s) => {
     const out = [];
     for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) {
-      if (!okCell(x, y)) continue;
-      if (s === "east" ? x >= W0 - 3 && Math.abs(y - H0 / 2) <= 8 : s === "north" ? y <= 1 && x >= 4 : s === "south" ? y >= H0 - 2 && x >= 4 : x <= 1) out.push([x, y]);
+      if (!(s === "east" ? x >= W0 - 3 && Math.abs(y - H0 / 2) <= 8 : s === "north" ? y <= 1 && x >= 4 : s === "south" ? y >= H0 - 2 && x >= 4 : x <= 1)) continue;
+      if (okCell(x, y)) out.push([x, y]);
     }
     return out;
   };

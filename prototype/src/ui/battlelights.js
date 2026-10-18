@@ -1,5 +1,6 @@
-// Lights in a night battle (b.night; dusk, b.dark, lighter): everyone carrying a light (sim/lights.js, u.light: set by
-// sim/stealth.js) shines it. A headlamp, a flashlight (a weapon light or a helmet light counts as one) and a spotlight
+// Lights in a night battle (b.night; dusk, b.dark, lighter): everyone carrying a light switched on (sim/lights.js,
+// u.light: set by sim/stealth.js; sim/vision.js activeLight: not switched off, u.lightOff) shines it; night vision
+// gives off no light and draws nothing. A headlamp, a flashlight (a weapon light or a helmet light counts as one) and a spotlight
 // throw a soft cone the way the unit faces (u.face, the sim's: set by every move, shot and blow), as long as the light
 // lets them see (LIGHTS sight: 6–9 tiles; a spotlight the full 12) and as wide as its cone; a torch and a lantern a warm
 // flickering pool all around (LIGHTS cone: the pool's radius). Fires, flares and the base's floodlit cells light the
@@ -12,11 +13,17 @@
 // Cheap: the lights are painted at half the screen's resolution into one reused canvas (gradients cached, unit radius,
 // placed by the transform), clipped with a one-pixel-a-tile mask of the cells not seen, then used twice: added as a
 // warm glow on the ground before the units are drawn, and cut out of the night's darkness laid over the whole scene.
+// Inside a raid's buildings (sim/indoorlight.js): a room lit by its switch at night glows warm like the floodlit cells
+// (cut out of the darkness); by day the floors of the dark rooms (a barn, a storeroom) are shaded (drawShade, under the
+// units and walls), and only there does a light switched on by day shine (its beam cut out of the shade).
 import { LIGHTS } from "../sim/lights.js";
 import { FLARE } from "../sim/throwables.js";
+import { activeLight } from "../sim/vision.js"; // the light a unit has switched on
+import { roomCells, darkAt } from "../sim/indoorlight.js";
+import { onForgetPictures } from "./pictures.js";
 
 export const LIGHT_SCALE = 0.5;               // the light canvas's resolution, of the screen's
-export const DARK = { night: 0.5, dusk: 0.26 }; // the darkness over what no light reaches (was 0.34 / 0.18)
+export const DARK = { night: 0.5, dusk: 0.26, room: 0.55 }; // the darkness over what no light reaches (was 0.34 / 0.18); room: a dark room's floor by day
 const DARK_RGB = "4,8,22";
 
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
@@ -50,13 +57,16 @@ export function facingAngle(b, t) {
 // pos(t): where a unit is drawn (sliding along its move).
 export function lightSources(b, v, pos = (t) => [t.x + 0.5, t.y + 0.5]) {
   const out = [];
-  if (!b.night && !b.dark) return out;
+  const day = !b.night && !b.dark; // by day: only lights switched on in a dark room (sim/indoorlight.js)
+  if (day && !b.indoor) return out;
   for (const t of b.units) {
-    if (!t.light || t.dead || t.down || t.left || t.fled || t.off || t.x < 0) continue;
+    const key = activeLight(t);
+    if (!key || t.dead || t.down || t.left || t.fled || t.off || t.x < 0) continue;
+    if (day && !darkAt(b, t.x, t.y, t.f)) continue;
     if (t.side !== "player" && !(v && v.seen && v.seen.has(t.id))) continue; // an enemy's light only once you see them
     if (b.floors && (t.f || 0) !== (b.floor || 0)) continue;
     const [x, y] = pos(t);
-    out.push({ x, y, beam: beamOf(t.light), ang: facingAngle(b, t), id: t.id, unit: t });
+    out.push({ x, y, beam: beamOf(key), ang: facingAngle(b, t), id: t.id, unit: t, key });
   }
   return out;
 }
@@ -94,7 +104,11 @@ let lastNow = 0;
 // groundXform with 1 px a tile). Returns the number of lights, 0 when there is nothing to draw (by day).
 export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
   LIGHTS_DRAWN.n = 0;
-  if (!b.night && !b.dark) return 0;
+  LIGHTS_DRAWN.shade = null;
+  const day = !b.night && !b.dark;
+  const shade = day ? roomCells(b, "dark") : null; // by day: the dark rooms' floors (drawShade)
+  if (day && !shade.length) return 0;
+  LIGHTS_DRAWN.shade = shade; LIGHTS_DRAWN.xf = xf;
   const w = Math.max(1, Math.ceil(cw * LIGHT_SCALE)), h = Math.max(1, Math.ceil(ch * LIGHT_SCALE));
   if (!LC || LC.width !== w || LC.height !== h) { LC = mkCanvas(w, h); DC = mkCanvas(w, h); GRADS.clear(); }
   const c = LC.getContext("2d");
@@ -112,8 +126,8 @@ export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
     c.setTransform(...base);
     c.translate(s.x, s.y);
     if (B.kind === "pool") {
-      const fl = s.unit.light === "torch" ? 1 + 0.06 * Math.sin(now / 83 + s.id * 1.7) + 0.03 * Math.sin(now / 37 + s.id) : 1 + 0.015 * Math.sin(now / 140 + s.id);
-      c.globalAlpha = s.unit.light === "torch" ? 0.88 + 0.12 * Math.sin(now / 61 + s.id * 2.3) : 1;
+      const fl = s.key === "torch" ? 1 + 0.06 * Math.sin(now / 83 + s.id * 1.7) + 0.03 * Math.sin(now / 37 + s.id) : 1 + 0.015 * Math.sin(now / 140 + s.id);
+      c.globalAlpha = s.key === "torch" ? 0.88 + 0.12 * Math.sin(now / 61 + s.id * 2.3) : 1;
       c.scale(B.r * fl, B.r * fl);
       c.fillStyle = grad(c, B.col, B.a, true);
       c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
@@ -138,26 +152,35 @@ export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
   let n = src.length;
   // Fires and flares (sim/throwables.js) and the floodlit cells of a base at night (sim/deploy.js b.lit).
   c.setTransform(...base);
-  for (const f of b.fires || []) {
+  for (const f of day ? [] : b.fires || []) { // by day (a dark room's shade only): no glow from them, as before
     if (b.floors && (f.f || 0) !== (b.floor || 0)) continue;
     const r = 2.2 * (1 + 0.07 * Math.sin(now / 71 + f.x * 3 + f.y));
     c.setTransform(...base); c.translate(f.x + 0.5, f.y + 0.5); c.scale(r, r);
     c.globalAlpha = 0.9; c.fillStyle = grad(c, "255,140,50", 0.9, true); c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
     n++;
   }
-  for (const f of b.flares || []) {
+  for (const f of day ? [] : b.flares || []) {
     const r = (f.r || FLARE.r) * (1 + 0.03 * Math.sin(now / 47 + f.x));
     c.setTransform(...base); c.translate(f.x + 0.5, f.y + 0.5); c.scale(r, r);
     c.globalAlpha = 1; c.fillStyle = grad(c, "255,96,76", 0.8, true); c.beginPath(); c.arc(0, 0, 1, 0, Math.PI * 2); c.fill();
     n++;
   }
-  if (b.lit && b.floodAim) {
+  if (!day && b.lit && b.floodAim) {
     c.setTransform(...base);
     c.globalAlpha = 0.6; c.fillStyle = "rgb(255,236,170)";
     c.beginPath();
     let any = false;
     for (let i = 0; i < b.w * b.h; i++) if (b.lit[i]) { c.rect(i % b.w, (i / b.w) | 0, 1, 1); any = true; }
     if (any) { c.fill(); n++; }
+  }
+  // A raid's rooms with their lights on at night (sim/indoorlight.js): warm light over their floors.
+  const lit = b.night ? roomCells(b, "lit") : [];
+  if (lit.length) {
+    c.setTransform(...base);
+    c.globalAlpha = 0.6; c.fillStyle = "rgb(255,214,150)";
+    c.beginPath();
+    for (const i of lit) c.rect(i % b.w, (i / b.w) | 0, 1, 1);
+    c.fill(); n++;
   }
   c.globalAlpha = 1;
   // Clip to what your people see: the light is cut out of every cell they do not.
@@ -173,7 +196,29 @@ export function paintLights(b, v, xf, cw, ch, now = 0, pos) {
   LIGHTS_DRAWN.src = src;
   return n;
 }
-export const LIGHTS_DRAWN = { n: 0, src: [] };
+export const LIGHTS_DRAWN = { n: 0, src: [], shade: null, xf: null };
+
+// By day, the floors of the dark rooms (a barn, a storeroom: sim/indoorlight.js) shaded, the lights switched on there
+// cut out of the shade. Drawn on the ground before the units and walls (the shade is the floor's, not theirs).
+export function drawShade(ctx, b, cw, ch) {
+  const S = LIGHTS_DRAWN.shade;
+  if (b.night || b.dark || !S || !S.length || !DC || !LIGHTS_DRAWN.xf) return;
+  const c = DC.getContext("2d"), k = LIGHT_SCALE, xf = LIGHTS_DRAWN.xf;
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = "source-over";
+  c.clearRect(0, 0, DC.width, DC.height);
+  c.setTransform(xf[0] * k, xf[1] * k, xf[2] * k, xf[3] * k, xf[4] * k, xf[5] * k);
+  c.fillStyle = `rgba(${DARK_RGB},${DARK.room})`;
+  c.beginPath();
+  for (const i of S) c.rect(i % b.w, (i / b.w) | 0, 1, 1);
+  c.fill();
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  if (LIGHTS_DRAWN.n && LC) { c.globalCompositeOperation = "destination-out"; c.drawImage(LC, 0, 0); c.globalCompositeOperation = "source-over"; }
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(DC, 0, 0, cw, ch);
+  ctx.restore();
+}
 
 // The lights as a warm glow on the ground (before the units and blocks are drawn).
 export function drawGlow(ctx, cw, ch) {
@@ -204,3 +249,4 @@ export function drawDarkness(ctx, b, cw, ch) {
   ctx.drawImage(DC, 0, 0, cw, ch);
   ctx.restore();
 }
+onForgetPictures(() => { LC = DC = MASK = null; GRADS.clear(); }); // ui/pictures.js: the mask of the cells not seen would be blank after a lost GPU context

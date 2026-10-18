@@ -17,6 +17,9 @@ import { wormOf, WORM } from "../sim/worm.js";
 import { partyTile, partyMembers, MISSIONS } from "../sim/parties.js";
 import { needAlerts } from "../sim/needs.js";
 import { contactable } from "../sim/orders.js";
+import { commandable } from "../sim/plans.js";
+import { selectedTeam } from "./teamsel.js"; // Shift+B: the selected team's inventory
+import { isPlayerTeam } from "../sim/teaminv.js";
 import { diaryEntries, diarySync, decodeRefs } from "../sim/diary.js";
 import { camera } from "./render.js";
 import { brokenAt, fixtureName, jobFor, fxDef } from "../sim/breakdowns.js";
@@ -433,6 +436,13 @@ export function mapHotkey(state, ui, e, act, modal) {
   if (tabs[k]) { ui.tab = tabs[k]; return true; }
   if (k === "dev.autopilot") { act["dev-autopilot"](); return true; }
   if (k === "team.next" || k === "team.prev") { nextWaitingTeam(state, ui, act, k === "team.prev"); return true; }
+  if (k === "team.inventory") { // the selected team's inventory (ui/teaminv.js), as its panel's 🎒 Team inventory
+    const p = selectedTeam(state, ui);
+    const why = !p ? "Select a team first (click it on the map, or its row in the Teams tab)." : !isPlayerTeam(p) ? "Only your own teams' kit can be looked at." : !(contactable(p) || commandable(state, p)) ? "No radio contact with that team: its kit can be seen when it is back in touch." : "";
+    if (why) ui.flash = { text: why, at: performance.now() };
+    else act["ti-open"]({ id: p.id, tab: "team" });
+    return true;
+  }
   if (KEY_WINDOWS[k]) { openWindow(ui, KEY_WINDOWS[k]); return true; }
   return false;
 }

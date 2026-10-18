@@ -16,8 +16,9 @@ import { fieldCraftOptions, fieldCraft } from "./crafting.js";
 import { estimatePlan, startNearby } from "./plans.js";
 import { startSearchArea } from "./crashes.js";
 import { finishFixCar } from "./foundcars.js"; // a found vehicle repaired on the spot
-import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel } from "./survey.js";
+import { startSweep, sweepHour, sweepDone, sweepOpts, sweepEstimate, routeFuel, fullSurveyDone, LOOK } from "./survey.js";
 import { fireLit, FIRE } from "./fieldheat.js";
+import { arrowsWanted } from "./hunting.js"; // a bow and no arrows: they are made before the hunt
 import { HUNT, huntProblem, huntHour, huntSummary, fishProblem, fishHour, fishSummary, snareProblem, snareWork, snareMode, snareHours } from "./hunting.js";
 import { forageProblem, forageHour, forageSummary, campForageHour, campForageNote } from "./foraging.js";
 import { healMult } from "./traits.js"; // Quick Healer
@@ -44,8 +45,9 @@ export function describeOrder(state, o) {
     case "repair": return "Repair vehicle";
     case "fixcar": return "Repair a found vehicle"; // foundcars.js
     case "treat": { const s = survivorById(state, o.survivorId); return `Treat ${s ? s.name.split(" ")[0] : "someone"}`; }
-    case "survey": return "Look around";
-    case "sweep": { const s = sweepOpts(o); return o.done != null ? `Surveying: ${o.done} of ${s.hours} hours, ${(o.found || []).length} place${(o.found || []).length === 1 ? "" : "s"} found` : `Survey ${s.radius} tiles around, ${s.hours}h`; }
+    case "survey": return "Quick look";
+    case "fullsurvey": return o.done != null ? `Surveying the tile: ${o.done} of ${o.hours} hours` : `Survey the tile (${LOOK.hours}h)`; // the POI survey (survey.js)
+    case "sweep": { const s = sweepOpts(o); return o.done != null ? `Surveying: ${o.done} of ${s.hours} hours, ${(o.found || []).length} place${(o.found || []).length === 1 ? "" : "s"} found` : `Sweep ${s.radius} tiles around, ${s.hours}h`; }
     case "home": return "Return home";
     case "cross": return `Build a boat, cross to ${tileLabel(state, o.tile)}${o.mode === "leave" ? " (leave the vehicle)" : o.mode === "raft" ? " (raft the vehicle)" : ""}`;
     case "gather": return "Gather boat materials";
@@ -86,8 +88,9 @@ export function orderLabel(state, p) {
 
 export const queueText = (state, p) => (p.orders || []).map((o) => describeOrder(state, o)).join(" → ");
 
-// Teams you can give orders to: waiting or working on the spot (you know where they are), or in radio range.
-export const contactable = (p) => p.owner === "player" && p.kind !== "convoy" && (p.phase === "waiting" || p.phase === "task" || p.radioLive);
+// Teams you can give orders to: any of your teams, wherever it is (no radio-range limit on orders; radio range only
+// decides whether its sightings reach your map live, parties.js updateRadio). Convoys run their own route.
+export const contactable = (p) => p.owner === "player" && p.kind !== "convoy";
 
 // Status of the current order for the panels: label, hours left (null = open-ended) and share done.
 export function orderStatus(state, p) {
@@ -100,7 +103,9 @@ export function orderStatus(state, p) {
     left = hoursLeft(state, p, byMinute()); // to the minute it gets there (parties.js arrivalsDue; whole hours headless)
     elapsed = Math.max(0, state.hour - (p.orderStart ?? p.departed ?? state.hour));
   } else if (p.phase === "waiting") left = 0;
-  const pct = left == null ? null : elapsed + left > 0 ? elapsed / (elapsed + left) : 1;
+  // left counts from the top of this hour: the minutes of it already gone on the clock (clockFrac, 0 headless) are done.
+  const now = left == null ? 0 : Math.min(left, clockFrac(state));
+  const pct = left == null ? null : elapsed + left > 0 ? (elapsed + now) / (elapsed + left) : 1;
   return { label, left, elapsed, pct };
 }
 
@@ -161,6 +166,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "repair") hours = REPAIR_HOURS;
     else if (o.type === "treat") hours = FIELD_TREAT_HOURS;
     else if (o.type === "mission" && o.mission === "survey") hours = SURVEY_HOURS;
+    else if (o.type === "fullsurvey" || (o.type === "mission" && o.mission === "fullsurvey")) hours = LOOK.hours; // the POI survey (survey.js)
     else if (o.type === "mission" && pitchHoursFor(state, o.mission)) hours = pitchHoursFor(state, o.mission); // pitching a camp (parties.js)
     else if (o.type === "sweep" || (o.type === "mission" && o.mission === "sweep")) {
       const sw = sweepEstimate(state, { ...sweepOpts(o.type === "sweep" ? o : p.sweepPlan || {}), center: tile, mode: vehicle, stance: p.stance, fuelMult: paceOpts(p).fuelMult });
@@ -289,7 +295,7 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "gather", "water", "hunt", "fish", "forage", "wood", "snare", "claim", "well", "fwork"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "fullsurvey", "gather", "water", "hunt", "fish", "forage", "wood", "snare", "claim", "well", "fwork"]; // order types tied to the tile they were queued for
 // Hours of a hunt, fishing or foraging order: as given, within 2–24 (8 if none).
 export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours)));
 
@@ -326,6 +332,8 @@ export function startOrder(state, p, o) {
     }
     case "survey":
       return startOrder(state, p, { type: "mission", mission: "survey" });
+    case "fullsurvey": // the POI survey (survey.js): the queue's Survey step, the team panel, the right-click menu
+      return startOrder(state, p, { type: "mission", mission: "fullsurvey" });
     case "sweep":
       // A survey around where the team stands (survey.js): the queue's Survey step, the team panel, the right-click menu.
       if (state.tiles[partyTile(p)].terrain === "water" && !state.tiles[partyTile(p)].bridge) return fail("Survey: not from the water.");
@@ -380,6 +388,17 @@ export function startOrder(state, p, o) {
       return `The team fills every container it has with water (${FETCH_WATER_HOURS}h).`;
     }
     case "hunt": {
+      // A bow or crossbow carried and no arrows (hunting.js arrowsWanted): a dozen made first from the firewood and scrap
+      // carried (a field craft), then the hunt.
+      if (arrowsWanted(partyMembers(state, p), carried(p, "arrows"))) {
+        const opt = fieldCraftOptions(state, p).find((x) => x.key === "arrows");
+        if (opt && opt.ok) {
+          p.orders = p.orders || [];
+          p.orders.unshift(o);
+          startTask(state, p, { type: "craft", recipe: "arrows", hours: opt.hours });
+          return `No arrows for the bows: the team makes a dozen first (${opt.hours}h), then hunts.`;
+        }
+      }
       const why = huntProblem(state, p);
       if (why) return fail(`Hunt: ${why}`);
       startTask(state, p, { type: "hunt", hours: huntHours(o), qty: o.qty });
@@ -553,6 +572,7 @@ function finishTask(state, p) {
   let text = "";
   if (t.type === "pitch") { p.task = null; pitchDone(state, p); return ""; } // parties.js: the camp stands (or the card says why not)
   if (t.type === "survey") text = survey(state, p, 0.25, false);
+  else if (t.type === "fullsurvey") text = fullSurveyDone(state, p); // survey.js: the POI survey's rolls and stamps
   else if (t.type === "sweep") text = sweepDone(state, p);
   else if (t.type === "camp") text = `Broke camp after ${t.done} hour${t.done === 1 ? "" : "s"} of rest. ${healthLine(state, p)}${campForageNote(state, p, t)}`;
   else if (t.type === "repair") text = fieldRepair(state, p);

@@ -9,6 +9,7 @@
 // and without wars between groups.
 // Usage: node tools/diplotest.js [seed] [days] [collapse seeds, e.g. 1,2,3,4,5,6]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
+import { FOODS } from "../src/sim/foods.js"; // food kinds: the lists offer food by kind (trade.js marketLists)
 import { createWorld, tickHour, hub, atBase, day, alive, newId, checkGameOver, snapshot } from "../src/sim/world.js";
 import { GEAR, SUPPLY_KEYS, STOCK_KEYS } from "../src/sim/data.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -22,7 +23,7 @@ import { canRadioGroup, offerCard as radioOfferCard } from "../src/sim/radio.js"
 import {
   need, demand, wantQty, available, sellPrice, buyPrice, gearSellPrice, gearBuyPrice, marketLists, refreshMarket, marketOf, marketBoard, priceTrend, WANT_NEED, SURPLUS_NEED,
 } from "../src/sim/trade.js";
-import { PART_KINDS } from "../src/sim/trade.js"; // parts by kind: offered only in the trade window, never on the lists
+import { POOLED_KINDS } from "../src/sim/trade.js"; // gun parts and electronics: in a group's one count of parts, offered by kind only in the trade window (car parts are their own count, on the lists)
 import { caravanSurplus } from "../src/sim/caravans.js";
 import * as D from "../src/sim/diplomacy.js";
 import * as J from "../src/sim/jobs.js";
@@ -654,34 +655,35 @@ section("Alliance victory");
   seasoned();
   const g0 = A.goalsProgress(st);
   console.log(`  start: land ${(g0.alliance.land.pct * 100).toFixed(1)}%, ${g0.alliance.members} of ${g0.alliance.groups} groups in, ${g0.hives.left} hives`);
-  check(!A.allianceVictory(st), "not with hives standing, land under half and a group outside");
+  check(!A.allianceVictory(st), "not with hives standing, land short and a group outside");
   st.hives.length = 0; st.hiveSites.length = 0;
-  check(!A.allianceVictory(st), "not with no hives but land under half and a group outside");
+  check(!A.allianceVictory(st), "not with no hives but land short and a group outside");
   // More land: members spread out (test only).
   const ms = A.allianceMembers(st);
   let k = 0;
   for (const t of st.tiles) {
-    if (A.controlledLand(st).pct > 0.55) break;
+    if (A.controlledLand(st).pct > A.ALLIANCE.LAND_NEEDED + 0.05) break;
     if (t.terrain === "water" || (t.x + t.y * 3) % 11) continue;
     if (st.grid.distance(t.id, hub(st).tile) > 4 && free(st, t.id)) ms[k++ % ms.length].bases.push(t.id);
   }
-  check(A.controlledLand(st).pct > 0.5 && A.allianceVictory(st), `land ${(A.controlledLand(st).pct * 100).toFixed(1)}% held with ${last.name} outside: the victory stands (groups outside no longer block it; members are enough)`);
+  // 2026-10-13: the coalition wins only with 60% of the land, no hive and no group outside it.
+  check(A.controlledLand(st).pct > A.ALLIANCE.LAND_NEEDED && !A.allianceVictory(st), `land ${(A.controlledLand(st).pct * 100).toFixed(1)}% held with ${last.name} outside: no victory while a group stays outside`);
   last.bases.unshift(nearTile(st, hub(st).tile, 2, 7));
   A.inviteToAlliance(st, last);
   seasoned();
-  check(A.isMember(st, last) && A.allianceVictory(st), "land over half, every group in, no hive: victory");
+  check(A.isMember(st, last) && A.allianceVictory(st), "land over 60%, every group in, no hive: victory");
   st.hives.push({ id: 999, tile: 0, res: 0 });
-  check(A.allianceVictory(st), "a hive still standing does not stop it (the coalition is its own victory)");
+  check(!A.allianceVictory(st), "a hive still standing stops it");
   st.hives.length = 0;
   st.hiveSites.push({ id: 1, tile: 5, started: 1, biomass: 10 });
-  check(A.allianceVictory(st), "nor a hive being built");
+  check(!A.allianceVictory(st), "so does a hive being built");
   st.hiveSites.length = 0;
-  // A collapsed group does not count against you.
+  // A group outside blocks it; a collapsed one does not count.
   const outsider = st.factions.find((f) => f.alive && A.isMember(st, f));
   st.alliance.members = st.alliance.members.filter((id) => id !== outsider.id);
-  check(A.allianceVictory(st) && A.allianceMembers(st).length > 0, "a living group outside the coalition no longer blocks the victory (members and land are what count)");
+  check(!A.allianceVictory(st) && A.allianceMembers(st).length > 0, "a living group outside the coalition blocks the victory");
   outsider.alive = false; outsider.bases = [];
-  check(A.allianceVictory(st) === (A.controlledLand(st).pct > 0.5), "a collapsed group does not count");
+  check(A.allianceVictory(st) === (A.controlledLand(st).pct > A.ALLIANCE.LAND_NEEDED), "a collapsed group does not count");
   st.alliance.members.push(outsider.id);
   seasoned();
   outsider.alive = true;
@@ -705,16 +707,16 @@ section("Wants and surplus, the market board");
     f.stock.meds = 0; setFood(f, f.pop * 20);
     const m = refreshMarket(st, f);
     nlists += m.wants.length + m.surplus.length;
-    if (m.wants.some((x) => PART_KINDS.includes(x.key)) || m.surplus.some((x) => PART_KINDS.includes(x.key))) bad++; // they want and offer "parts"
-    for (const k of STOCK_KEYS.filter((x) => !PART_KINDS.includes(x))) { // rounds by calibre are not market goods of their own: the lists carry "ammo" (ammo.js)
+    if (m.wants.some((x) => POOLED_KINDS.includes(x.key)) || m.surplus.some((x) => POOLED_KINDS.includes(x.key))) bad++; // they want and offer "parts" (car parts: their own count, trade.js POOLED_KINDS)
+    for (const k of STOCK_KEYS.filter((x) => !POOLED_KINDS.includes(x))) { // rounds by calibre are not market goods of their own: the lists carry "ammo" (ammo.js)
       const n = demand(st, f, k); // stock, their kind and their state (trade.js)
       const w = m.wants.find((x) => x.key === k), s = m.surplus.find((x) => x.key === k);
       if ((n >= WANT_NEED) !== !!w) bad++;
       if ((n <= SURPLUS_NEED && available(f, k) >= 5) !== !!s) bad++;
-      if (w && (w.qty !== wantQty(f, k) || w.qty < Math.ceil(({ food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, scrap: 3, preserved: 2, jars: 1, buildmat: 1 }[k]) * f.pop - Math.max(0, f.stock[k] ?? 0)) || Math.abs(w.price - sellPrice(st, f, k, 0, { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, scrap: 20, preserved: 10, jars: 10, buildmat: 5 }[k])) > 1e-9)) bad++;
+      if (w && (w.qty !== wantQty(f, k) || w.qty < Math.ceil(({ food: 6, water: 5, fuel: 2, meds: 1, ammo: 10, parts: 0.5, carparts: 0.15, scrap: 3, preserved: 2, jars: 1, buildmat: 1 }[k]) * f.pop - Math.max(0, f.stock[k] ?? 0)) || Math.abs(w.price - sellPrice(st, f, k, 0, { food: 20, water: 20, fuel: 10, meds: 6, ammo: 50, parts: 3, carparts: 3, scrap: 20, preserved: 10, jars: 10, buildmat: 5 }[k])) > 1e-9)) bad++;
       if (s && s.qty !== available(f, k)) bad++;
     }
-    if (!m.wants.some((x) => x.key === "meds") || !m.surplus.some((x) => x.key === "food")) bad++;
+    if (!m.wants.some((x) => x.key === "meds") || !m.surplus.some((x) => FOODS[x.key])) bad++; // food is offered by kind (a ration bar, ...), not as "food"
   }
   check(bad === 0, `every group's lists match its stock and need (${nlists} entries checked)`);
   const f = st.factions.find((x) => x.alive && canRadioGroup(st, x));

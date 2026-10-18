@@ -4,11 +4,12 @@
 // click elsewhere) on a stand-in for the page.
 // Usage: node tools/needsbartest.js [seed]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
+import { fvIn } from "../src/sim/foods.js"; // the Food row counts food value (a meal 1.00)
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { STOCK_KEYS } from "../src/sim/data.js";
 import { RAW } from "../src/sim/water.js";
 import { topbarParts, renderTopbar } from "../src/ui/ui.js";
-import { needsBar, baseNeeds, sortNeeds, needsSummary, initNeedsBar, NEEDS_ICON } from "../src/ui/needsbar.js";
+import { needsBar, baseNeeds, sortNeeds, needsSummary, initNeedsBar, NEEDS_ICON, needsBase, NB_ACTIONS, LEVEL_CLS } from "../src/ui/needsbar.js";
 
 const SEED = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -32,7 +33,7 @@ section("The bar: one Needs button, the list behind it");
   check(!rowOf(tb.stock, "jars").length && !rowOf(tb.stock, "arrows").length && !rowOf(tb.stock, RAW).length, "no rows for jars, arrows (in Ammo) or raw water (in Water)");
   check(shown.every((k) => (rowOf(tb.stock, k)[2] || "").includes(NEEDS_ICON[k])), "each row has its icon");
   const fr = rowOf(tb.stock, "food")[2] || "";
-  check(new RegExp(`<span class="nb-amt">${Math.floor(food(h))}<`).test(fr) && /<span class="nb-note">(\d+d|<1d|99\+d|∞)<\/span>/.test(fr), `Food: the amount and the days left (${fr.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()})`);
+  check(new RegExp(`<span class="nb-amt">${Math.floor(fvIn(h.stock) + 1e-9)}<`).test(fr) && /<span class="nb-note">(\d+d|<1d|99\+d|∞)<\/span>/.test(fr), `Food: the food value and the days left (${fr.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()})`);
   check(renderTopbar(st, { speed: 1 }).includes('id="nb-btn"'), "the whole bar as one string has it too");
 }
 
@@ -69,6 +70,29 @@ section("Urgency: colours, the critical first, the button's summary");
   check(needsBar(st, h).list === nb.list && needsBar(st, h).btn === nb.btn, "unchanged stock: the same HTML (no rewrite)");
   h.stock.scrap = (h.stock.scrap || 0) + 7;
   check(needsBar(st, h).list !== nb.list && needsBar(st, h).btn === nb.btn, "a count changes: only the list's string changes");
+}
+
+section("Every base: a chip each, the one picked");
+{
+  const st = mk(), h = hub(st);
+  check(!needsBar(st, h).head.includes("nb-bases"), "one base: no chips");
+  const out = { ...JSON.parse(JSON.stringify(h)), id: 987654, type: "outpost", name: "Test outpost", tile: st.tiles.find((t) => t.id !== h.tile && t.terrain !== "water").id, buildings: [], construction: [], stock: { water: 0 }, armory: [] };
+  st.bases.push(out);
+  const ui = {};
+  check(needsBase(st, ui, h) === h, "nothing picked: the hub");
+  const nb = needsBar(st, needsBase(st, ui, h));
+  check(/class="nb-bases"/.test(nb.head) && nb.head.includes(`data-action="nb-base" data-id="${h.id}"`) && nb.head.includes(`data-action="nb-base" data-id="${out.id}"`), "two bases: a chip for each in the panel's head");
+  check(/class="nb-chip active"[^>]*data-id="\d+"[^>]*>.*🏠/.test(nb.head), "the hub's chip is the active one, with the house");
+  const outLv = LEVEL_CLS[needsSummary(baseNeeds(st, out)).level];
+  check(new RegExp(`data-id="987654"[^>]*><span class="nb-dot ${outLv}"`).test(nb.head), `the outpost's chip shows its own dot (${outLv})`);
+  NB_ACTIONS["nb-base"](st, ui, { id: String(out.id) });
+  const b = needsBase(st, ui, h);
+  check(b === out, "a chip picks that base");
+  const nb2 = needsBar(st, b);
+  check(nb2.head.includes("Test outpost stores") && nb2.btn.includes("Test outpost") && nb2.list.includes(`data-id="${out.id}"`), "the panel, the button and Open base speak for the outpost");
+  check(nb2.btn.startsWith(`<span class="nb-dot ${outLv}"`), "the button's dot is the outpost's");
+  st.bases = st.bases.filter((x) => x !== out);
+  check(needsBase(st, ui, h) === h, "the picked base gone: back to the hub");
 }
 
 section("No base: the road team's list");

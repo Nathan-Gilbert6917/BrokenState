@@ -2,7 +2,10 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
-import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText } from "../sim/parties.js";
+import { setPoiReveal, poisOf, poiKnown, knownPois, poiLootBand, POI } from "../sim/pois.js"; // points of interest: a bare tile's top POI drawn once known, the known-count pip; the dev tools' Reveal map shows every one (resetView puts the fog back)
+import { poiHeading, poiTipLines } from "./poiview.js"; // the hover text's lines on a tile's POIs
+import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText, reportsLive } from "../sim/parties.js";
+import { contactable } from "../sim/orders.js";
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
 import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
 import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team held up on the road
@@ -28,19 +31,21 @@ import { inCoverage } from "../sim/radio.js";
 import { visitorTipLines } from "../sim/visitors.js";
 import { caravanTipLines } from "../sim/caravanraids.js"; // the groups' caravans and convoys you can see
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
+import { nomadMapBands, nomadTipLines } from "../sim/nomads.js";
 import { stagingTip } from "../sim/staging.js";
 import { unseenOutpost } from "../sim/hiding.js"; // the groups' hidden outposts
 import { siteKnown, hiddenSites, searchedVersion, searchedDay } from "../sim/discovery.js";
 import { countedMembers, baseRadius, controlRadius, ALLIANCE } from "../sim/alliance.js";
 import { claimText, wellText } from "../sim/claims.js"; // land claims: the Territory layer and the hover text
 import { drawFieldWorks, fwTooltipLine } from "./fieldworks.js"; // field works: sprites, the tile picker, hover lines
-import { outsiderPartyCanvas, OUTSIDER_COLORS, ruinSpriteCanvas, emptyBaseSpriteCanvas } from "./mapsprites.js";
+import { OUTSIDER_COLORS, ruinSpriteCanvas, emptyBaseSpriteCanvas } from "./mapsprites.js";
+// The moving pieces as low-poly figures with a heading and a cycle frame (people walking, wheels turning, oars pulling).
+import { mapPartyCanvas, mapGroupPartyCanvas, mapSoloCanvas, mapGroupSoloCanvas, mapOutsiderSoloCanvas, mapCyclistCanvas, mapOutsiderPartyCanvas, mapHordeCanvas, mapHerdCanvas, drawPiece, pieceBox, yawOf, dirOf, FRAMES, soloKind } from "./mapfigures.js";
 import { occupyPreview } from "../sim/occupy.js"; // empty bases: the tooltip
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } from "./hivesprites.js";
 import {
-  partySpriteCanvas, upsCode, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas, stagingSpriteCanvas,
-  groupPartyCanvas, siegeCampCanvas, hordeSpriteCanvas, herdSpriteCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
-  soloSpriteCanvas, cyclistSpriteCanvas, groupSoloCanvas, soloKind, outsiderSoloCanvas,
+  upsCode, drawMapSprite, baseSpriteCanvas, factionBaseCanvas, campSpriteCanvas, markerSpriteCanvas, poiSpriteCanvas, skullCanvas, stagingSpriteCanvas,
+  siegeCampCanvas, hiveSpriteCanvas, iconCanvas, wakeCanvas, bridgeCanvas, gridW, searchSmokeCanvas,
 } from "./mapsprites.js";
 import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, placeDecor, drawDecor, SEASON_LOOK } from "./terraindeco.js";
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
@@ -48,6 +53,7 @@ import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in th
 import { drawWorkers } from "./workermap.js"; // your bases' people out on job trips (sim/jobtrips.js), the groups' walkers
 import { drawNight } from "./nightfx.js"; // the time-of-day shade and the lights through it
 import { lightningFrame, drawLightning, lightningWants } from "./lightningfx.js"; // lightning in storms: lifts the night shade, flashes after it
+import { onForgetPictures, watchCanvas } from "./pictures.js"; // the map's chunks are drawn again after a lost GPU context
 
 export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
@@ -66,6 +72,7 @@ export function resetView() {
   view.hover = -1;
   view.preview = null;
   view.devReveal = false;
+  setPoiReveal(false); // pois.js: the points of interest back under the fog too
   view.layers = new Set(DEFAULT_LAYERS);
   camera.zoom = 1;
 }
@@ -89,6 +96,7 @@ let canvas, ctx, W = 0, H = 0, dpr = 1;
 export function initRenderer(el) {
   canvas = el;
   ctx = canvas.getContext("2d");
+  watchCanvas(el); // ui/pictures.js: a lost GPU context coming back drops every kept picture (the chunks, the sprites), drawn again
   resize();
   window.addEventListener("resize", resize);
 }
@@ -186,6 +194,11 @@ const MAX_LEVELS = 4;      // zoom levels kept
 let lastFrac = 0; // the clock's minutes at the last frame: the fronts glide while they change
 let curS = 1; // device pixels per world pixel this frame: passed to drawMapSprite so it need not read the transform
 const sprite = (cv, x, y, w, o) => drawMapSprite(ctx, cv, x, y, w, o, curS);
+// A figure piece (mapfigures.js) with its ground point at (gx, gy), one grid px `u` world px; the box it covers.
+const piece = (cv, gx, gy, u, o) => drawPiece(ctx, cv, gx, gy, u, o, curS);
+const notePiece = (cv, gx, gy, u) => { const [bx, by, bw, bh] = pieceBox(cv, gx, gy, u); spriteBoxes.push([bx, by, bw, bh]); };
+const GROUND = 4;   // world px below a party's tile point where its figures stand (the ring is drawn round there)
+const PIECE_PX = 1; // world px per grid px of a party's piece (zoomBoost scales it)
 // ---------- animation ----------
 // The sprites are single cached canvases; they come alive by motion and small overlays drawn each frame: teams and
 // parties on the move bob in step (vehicles rumble and raise dust), boats rock, live hordes shamble, herds graze,
@@ -219,24 +232,13 @@ function sway(k, amp, periodMs) {
   wantFrames();
   return Math.sin((animNow / periodMs + phaseOf(k)) * Math.PI * 2) * amp;
 }
-// A lone walker's frame (mapsprites.js paintSolo), in step with stepBob over the same period: standing still 0; on the
-// way the two strides (1, 3) at the low points of the bob and the passing step (2) at its top. Animations off: a stride, held.
-// A limp ("limp"): over two steps, a long stride onto the good leg, the passing step, a short dragged step on the hurt
-// one (frame 4), the passing step.
-function walkFrame(k, moving, periodMs = 380, gait = "") {
+// A piece's cycle frame (mapfigures.js: 1–FRAMES over one cycle of two steps, a wheel's turn, a stroke of the oars),
+// in step with stepBob: a step is periodMs, the cycle twice that. Standing still 0. Animations off: a stride, held.
+function cycleFrame(k, moving, periodMs = 380) {
   if (!moving) return 0;
-  if (!animOn()) return gait === "limp" ? 4 : 1;
+  if (!animOn()) return 3;
   wantFrames();
-  const u = animNow / periodMs + phaseOf(k), t = u % 1;
-  if (gait === "limp") { const c = (u / 2) % 1; return c < 0.4 ? 1 : c < 0.5 ? 2 : c < 0.8 ? 4 : 2; }
-  return t >= 0.25 && t < 0.75 ? 2 : Math.floor(u + 0.25) % 2 ? 3 : 1;
-}
-// A lone cyclist's pedalling frame (mapsprites.js paintCyclist): 0 stopped, then 1 and 2 by turns.
-function pedalFrame(k, moving, periodMs = 240) {
-  if (!moving) return 0;
-  if (!animOn()) return 1;
-  wantFrames();
-  return Math.floor(animNow / periodMs + phaseOf(k) * 2) % 2 ? 2 : 1;
+  return 1 + Math.floor(((animNow / (2 * periodMs) + phaseOf(k)) % 1) * FRAMES);
 }
 // An engine's rumble: a fraction of a pixel of jitter, a few times a second.
 function rumble(k, amp) {
@@ -270,14 +272,14 @@ function fireGlow(k, x, y, s) {
   const t = (animNow / 700 + ph) % 1;
   if (t < 0.6) { ctx.fillStyle = `rgba(255,200,90,${(0.8 * (1 - t / 0.6)).toFixed(3)})`; ctx.fillRect(x + Math.sin(t * 9 + ph * 5) * 1.2 * s - 0.4 * s, y - (1 + t * 7) * s, 0.8 * s, 0.8 * s); }
 }
-// Dust behind a vehicle on the move (facing: +1 heading east, -1 west).
-function dustTrail(k, x, y, s, facing, w) {
+// Dust behind a vehicle on the move: dir the screen direction it heads in (mapfigures.js dirOf), w its width.
+function dustTrail(k, x, y, s, dir, w) {
   if (!animOn()) return;
   wantFrames();
   for (let i = 0; i < 3; i++) {
-    const t = (animNow / 650 + i / 3 + phaseOf(k)) % 1;
+    const t = (animNow / 650 + i / 3 + phaseOf(k)) % 1, d = w / 2 + t * 9 * s;
     ctx.beginPath();
-    ctx.arc(x - facing * (w / 2 + t * 9 * s), y - t * 2.5 * s, (1 + t * 2.2) * s, 0, Math.PI * 2);
+    ctx.arc(x - dir[0] * d, y - dir[1] * d * 0.5 - t * 2.5 * s, (1 + t * 2.2) * s, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(160,140,110,${(0.32 * (1 - t)).toFixed(3)})`;
     ctx.fill();
   }
@@ -328,7 +330,9 @@ function geometry(state) {
     G.color[i] = Math.max(0, keys.indexOf(t.terrain)) * 3;
     G.water[i] = t.terrain === "water" ? 1 : 0;
     g.neighbors(t.id).forEach((m, j) => (G.nb[i * 6 + j] = m));
-    if (t.loc && !t.loc.crash && !t.loc.convoy) G.sites.push(i); // crash sites and convoys come and go: drawn on their own (sim/crashes.js, sim/miltrucks.js)
+    // Crash sites and convoys come and go: drawn on their own (sim/crashes.js, sim/miltrucks.js). A bare tile with
+    // points of interest (sim/pois.js) draws its top POI once that is known, so it is a site tile here too.
+    if ((t.loc && !t.loc.crash && !t.loc.convoy) || poisOf(t).length) G.sites.push(i);
     if (t.bridge) {
       const [a, b] = t.roadLinks.length > 1 ? t.roadLinks : [t.id, t.roadLinks[0] ?? t.id];
       const [ax, ay] = g.toPixel(a, HEX), [bx, by] = g.toPixel(b, HEX);
@@ -356,7 +360,7 @@ let cacheKey = "", cacheDpr = 0, frameNo = 0;
 // ms a frame, the rest on the next frames; chunks that have never been drawn are always drawn at once.
 export const mapTuning = { budgetMs: 3 };
 // Counters for performance checks (frames drawn and skipped, chunks drawn and the ms spent on them).
-export const mapStats = { drawn: 0, skipped: 0, chunks: 0, chunkMs: 0 };
+export const mapStats = { drawn: 0, skipped: 0, scans: 0, chunks: 0, chunkMs: 0 };
 const ckey = (i, j) => (i + 1024) * 4096 + (j + 1024);
 function dropLevel(L) {
   for (const ch of L.chunks.values()) if (ch.cv) pool.push(ch.cv);
@@ -624,9 +628,10 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
   for (const id of G.sites) {
     const t = tiles[id];
     let code = 0, fb = null;
+    const site = !!t.loc && !t.loc.crash && !t.loc.convoy;
     // A hidden site nobody has found (sim/discovery.js) is not drawn at all; found, its code changes and the chunks
     // around it are drawn again.
-    if (!ownBase.has(id) && !G.ruin[id] && (live.has(id) || siteKnown(state, id))) {
+    if (site && !ownBase.has(id) && !G.ruin[id] && (live.has(id) || siteKnown(state, id))) {
       const isLive = live.has(id), snap = isLive ? null : k[id];
       fb = isLive ? fbAt.get(id) : snap && snap.factionBase ? factionById(state, snap.factionBase) : null;
       if (fb) code = 1 | ((factionIdx.get(fb) + 1) << 4) | (isLive && besiegedFb.has(id) ? 8 : 0) | (blocNo(state, fb) << 16); // sim/blocs.js: its bloc's ring
@@ -637,7 +642,16 @@ function scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase) {
         const band = loot == null || t.loc.type === "city" || t.loc.type === "town" ? 0 : lootBand(t, loot);
         code = 3 | (busy.has(id) ? 4 : 0) | (band >= 2 ? 8 : 0) | (band << 4);
       }
+    } else if (!t.loc && F.poisOn && !ownBase.has(id) && !G.ruin[id] && poiKnown(state, t, 0)) {
+      // A bare tile's top point of interest (sim/pois.js), once the player knows it: drawn like a site (bit 64 says
+      // it is a POI, not a tile.loc), faded by its pool's band as seen now or last seen (the snapshot's pool).
+      const isLive = live.has(id), snap = isLive ? null : k[id];
+      const seen = !isLive && snap && snap.pois ? snap.pois.find((x) => x.i === 0) : null;
+      const band = state.timelapse ? 0 : isLive ? poiLootBand(t, 0) : seen && seen.pool != null ? poiLootBand(t, 0, seen.pool) : 0;
+      code = 3 | 64 | (busy.has(id) ? 4 : 0) | (band >= 2 ? 8 : 0) | (band << 4);
     }
+    // The pip with the number of POIs known on the tile (bits 8–11): a change redraws the chunk.
+    if ((code & 3) === 3 && poisOf(t).length > 1) code |= Math.min(POI.MAX, knownPois(state, t).length) << 8;
     if (code !== G.siteCode[id]) {
       if (G.siteCode[id] > 0) markSite(G.x[id], G.y[id]);
       G.siteCode[id] = code;
@@ -666,15 +680,25 @@ const markClear = (i) => markDirty(geo.x[i] - 52, geo.y[i] - 48, geo.x[i] + 52, 
 // 2 a dot (minor sites zoomed out), 3 a site sprite on its zone plate. Also where its name goes.
 function siteDesc(state, id, code, fb) {
   const t = state.tiles[id], px = geo.x[id], py = geo.y[id], kind = code & 3;
-  const zone = SITE_ZONES[t.loc.zone || LOCATIONS[t.loc.type].cat] || SITE_ZONES.special;
-  // Tier 0 = city centers, 1 = towns, landmarks and group bases, 2 = everything else (shops, farms, cabins…).
-  const tier = t.loc.type === "city" ? 0 : fb || t.loc.type === "town" || t.loc.zone === "special" ? 1 : 2;
+  const loc = siteLocOf(t, code);
+  const zone = SITE_ZONES[loc.zone || LOCATIONS[loc.type].cat] || SITE_ZONES.special;
+  // Tier 0 = city centers, 1 = towns, landmarks and group bases, 2 = everything else (shops, farms, cabins, POIs…).
+  const tier = loc.type === "city" ? 0 : fb || loc.type === "town" || loc.zone === "special" ? 1 : 2;
   if (kind === 1) {
     const s = zoomBoost(), w = PLACE_W.faction * s, cy = py - 5 * s, cv = factionBaseCanvas(fb.type, fb.color), h = spriteH(cv, w);
-    return { kind, tier, zone, fb, s, w, h, cy, cv, dyn: !!(code & 8), labelY: cy + h / 2 + 6, side: null, bloc: code >> 16 ? blocColorOf(state, fb) : null };
+    return { kind, tier, zone, loc, fb, s, w, h, cy, cv, dyn: !!(code & 8), labelY: cy + h / 2 + 6, side: null, bloc: code >> 16 ? blocColorOf(state, fb) : null };
   }
-  if (tier === 2 && F.zoom < 0.7) return { kind: 2, tier, zone, dyn: false }; // zoomed out: a dot in the zone's color
-  return { kind, tier, zone, dyn: false, alpha: code & 4 ? 0.55 : 1, ...siteLook(t, px, py, tier, (code >> 4) & 3) };
+  if (tier === 2 && F.zoom < 0.7) return { kind: 2, tier, zone, loc, dyn: false }; // zoomed out: a dot in the zone's color
+  // The pip with the number of points of interest known on the tile (2 and up: one is the sprite itself), zoomed in.
+  const pip = F.zoom >= 0.7 ? (code >> 8) & 15 : 0;
+  return { kind, tier, zone, loc, dyn: false, alpha: code & 4 ? 0.55 : 1, pip: pip >= 2 ? pip : 0, ...siteLook(loc, px, py, tier, (code >> 4) & 3) };
+}
+// What a site tile is drawn as: its site, or (bit 64 of the code) its top point of interest as a site of that
+// kind in the kind's zone (sim/pois.js: a bare tile never gets a tile.loc).
+function siteLocOf(t, code) {
+  if (!(code & 64)) return t.loc;
+  const top = poisOf(t)[0], def = top ? LOCATIONS[top.kind] : null;
+  return def ? { type: top.kind, name: def.name, zone: def.cat, poi: true } : t.loc;
 }
 
 function paintSite(d, px, py) {
@@ -1028,6 +1052,7 @@ function moverHash(state) {
   for (const x of state.herds || []) h = (h * 31 + x.tile * 5 + x.size) % 2147483647; // infested herds (sim/worm.js)
   for (const v of state.visitors || []) h = (h * 31 + v.tile * 7 + (v.phase ? v.phase.length : 0)) % 2147483647; // outsiders (sim/visitors.js)
   for (const b of hcMapBands(state)) h = (h * 31 + b.tile * 11 + b.pop) % 2147483647; // hardcore bands and the strike force (sim/hardcore-groups.js)
+  for (const b of nomadMapBands(state)) h = (h * 31 + b.tile * 13 + b.pop + (b.camp ? 7 : 0)) % 2147483647; // nomad bands (sim/nomads.js)
   for (const b of state.bases) h = (h * 31 + b.buildings.length + (b.alert ? 5 : 0) + b.tile + (b.tier === 0 ? campStage(b) * 7 + (b.fire === false ? 3 : 0) : 0)) % 2147483647; // a camp's or shelter's look (its step up, its fire)
   if (state.staging) h = (h * 31 + state.staging.tile * 3 + Math.round(oldCampPct(state.staging) * 50)) % 2147483647; // a timelapse frame's camp (sim/chronicle.js)
   // Hidden sites found (sim/discovery.js), also while paused (intel bought, a prisoner questioned).
@@ -1054,6 +1079,19 @@ function unchanged(state, now) {
   forceDraw = false;
   return false;
 }
+// scanTiles' own inputs, from the frame check's fingerprint (`last`): the world as you know it (the state, what is in
+// view, your reports, the hour, the movers), the layers, Reveal map, the zoom (site sizes) and the detail. A frame drawn
+// only because the camera, the hover, a glide or an animation moved shows every tile as the last pass left it, so the
+// pass is not run again; it runs when any of these changed, when a draw is forced (redrawMap: an order while paused, a
+// lost picture), and at least every IDLE_MS (the frame check's own net for a change its fingerprint misses).
+const lastScan = { G: null, state: null, live: null, know: null, hour: NaN, zoom: NaN, dpr: 0, reveal: null, layers: "", hash: NaN, detail: true, at: -Infinity };
+function scanDue(G, now) {
+  const L = lastScan;
+  if (L.G === G && L.state === last.state && L.live === last.live && L.know === last.know && L.hour === last.hour && L.zoom === last.zoom &&
+    L.dpr === last.dpr && L.reveal === last.reveal && L.layers === last.layers && L.hash === last.hash && L.detail === last.detail && now - L.at < IDLE_MS) return false;
+  Object.assign(L, { G, state: last.state, live: last.live, know: last.know, hour: last.hour, zoom: last.zoom, dpr: last.dpr, reveal: last.reveal, layers: last.layers, hash: last.hash, detail: last.detail, at: now });
+  return true;
+}
 // The next render draws even if nothing seems to have changed; all: also draw the cached layers again from scratch.
 export function redrawMap(all = false) {
   forceDraw = true;
@@ -1064,6 +1102,7 @@ export function render(state) {
   if (!ctx) return;
   const now = performance.now();
   if (lightningWants(now)) forceDraw = true; // ui/lightningfx.js: a flash running or a strike due
+  const forced = forceDraw;
   if (!state.timelapse && unchanged(state, now)) { mapStats.skipped++; return; }
   frameNo++;
   mapStats.drawn++;
@@ -1114,7 +1153,7 @@ export function render(state) {
     else hordeAt.set(h.tile, { size: h.size, target: h.target, bosses: h.bosses || 0 });
   }
   const siteAt = new Map((state.hiveSites || []).map((x) => [x.tile, x]));
-  scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase);
+  if (state.timelapse || forced || scanDue(G, now)) { scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase); mapStats.scans++; }
 
   // The cached layers: the chunks on screen, drawn again where something changed, then copied 1:1 to whole device
   // pixels (the camera is rounded to a device pixel, so the copies are exact).
@@ -1199,6 +1238,7 @@ export function render(state) {
   if (state.staging) baseTiles.set(state.staging.tile, (STAGING_W * zoomBoost()) / 2); // a timelapse frame's camp
   spriteBoxes = [];
   besideCount = new Map();
+  tileCrowd = countCrowd(state, live);
   const labels = []; // drawn last (over parties, hordes and markers), most important first, skipping any that would overlap
   const hasHives = G.nHives > 0;
   for (const id of G.sites) {
@@ -1215,11 +1255,12 @@ export function render(state) {
     // Danger skulls go in a row under the name; where the name is not shown at this zoom, under the sprite.
     // Cities, towns, landmarks and group bases keep their names at every zoom (overlapping ones give way, the
     // most important first); small sites only up close.
-    const tier = d.tier, named = tier < 2 || camera.zoom > 1.3;
+    const tier = d.tier, named = tier < 2 || camera.zoom > 1.3, loc = d.loc || t.loc; // d.loc: a bare tile's top POI drawn as a site (siteLocOf)
     const hd = hasHives && !fb ? G.dist[id] : Infinity; // inside a known hive's land: at least 3 skulls, red on the ring
-    const skulls = !fb && camera.zoom > SKULL_ZOOM ? Math.max(siteDanger(t.loc), hd <= HIVE.TERRITORY ? 3 : 0) : 0;
+    const skulls = !fb && camera.zoom > SKULL_ZOOM ? Math.max(siteDanger(loc), hd <= HIVE.TERRITORY ? 3 : 0) : 0;
     if (named || skulls) {
-      labels.push({ text: named ? (tier === 2 ? siteLabel(state, t) : t.loc.name) : "", x: px, y: labelY, pri: named ? tier : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
+      // A bare tile's POI name gives way to a site's (pri 2.5 after the sites' 2) when the two would overlap.
+      labels.push({ text: named ? (loc.poi ? loc.name : tier === 2 ? siteLabel(state, t) : loc.name) : "", x: px, y: labelY, pri: named ? (loc.poi ? 2.5 : tier) : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
     }
   }
   // Ruins (drawn in the cached chunks): their names, "Ruins of Oak Hill Outpost", the same size as a town's.
@@ -1507,10 +1548,13 @@ export function render(state) {
     const based = baseTiles.has(id) || (hasHives && G.dist[id] === 0) || siteAt.has(id) || !!(k[id] && k[id].site && !isLive);
     const s = zoomBoost() * (based ? 0.85 : 1), o = Math.min(zoomBoost(), BESIDE_MAX); // the offset stays inside the tile when zoomed out
     const x = based ? px + 17 * o : px, y = based ? py + 13 * o : py + 3 * s;
-    const cv = hordeSpriteCanvas(hordeFigures(size)), w = gridW(cv) * 1.15 * s, h = spriteH(cv, w);
+    const moving = !stale && target != null && target !== id;
     const facing = target != null && target !== id && G.x[target] < px ? -1 : 1;
+    const yaw = moving ? yawOf(G.x[target] - px, G.y[target] - py) : HEAD6[id % 6]; // a horde faces where it drifts, else its own way
+    const cv = mapHordeCanvas(hordeFigures(size), yaw, stale ? 0 : cycleFrame(id * 7 + 3, true, moving ? 700 : 1700)), u = PIECE_PX * s, gy = y + GROUND * s;
+    const [, , w, h] = pieceBox(cv, x, gy, u);
     ctx.beginPath();
-    ctx.ellipse(x, y + h / 2 - 1.5 * s, w * 0.52, 4 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, gy + 1.5 * s, w * 0.4, 4 * s, 0, 0, Math.PI * 2);
     ctx.fillStyle = stale ? "rgba(120,20,20,0.18)" : "rgba(120,20,20,0.42)";
     ctx.fill();
     ctx.strokeStyle = stale ? "rgba(255,120,110,0.5)" : PAL.foe;
@@ -1518,27 +1562,28 @@ export function render(state) {
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.setLineDash([]);
-    const moving = !stale && target != null && target !== id;
-    const sw = stale ? 0 : sway(id * 7 + 1, moving ? 0.06 : 0.025, moving ? 1400 : 2600), hb = stale ? 0 : stepBob(id * 7 + 3, (moving ? 1.3 : 0.5) * s, moving ? 700 : 1700);
-    sprite(cv, x, y + hb, w, { facing, alpha: stale ? 0.45 : 1, angle: sw });
+    const sw = stale ? 0 : sway(id * 7 + 1, moving ? 0.03 : 0.012, moving ? 1400 : 2600), hb = stale ? 0 : stepBob(id * 7 + 3, (moving ? 0.8 : 0.3) * s, moving ? 700 : 1700);
+    piece(cv, x, gy + hb, u, { alpha: stale ? 0.45 : 1, angle: sw });
     // A Wallbreaker with the horde: the brute with the concrete fist stands at its head.
-    if (bosses) sprite(wallbreakerMapCanvas(), x - facing * (w / 2 + 2 * s), y - 2 * s + (stale ? 0 : stepBob(id * 7 + 5, (moving ? 1.6 : 0.6) * s, moving ? 900 : 2000)), 14 * s * 1.2, { facing, alpha: stale ? 0.5 : 1 });
-    pill(x + w / 2, y - h / 2 + 2 * s, stale ? `${size}?` : `${size}`, stale ? "rgba(122,28,24,0.6)" : "#8a1c18", s);
+    if (bosses) sprite(wallbreakerMapCanvas(), x - facing * (w * 0.4 + 2 * s), y - 2 * s + (stale ? 0 : stepBob(id * 7 + 5, (moving ? 1.6 : 0.6) * s, moving ? 900 : 2000)), 14 * s * 1.2, { facing, alpha: stale ? 0.5 : 1 });
+    pill(x + w * 0.3, gy - h * 0.6, stale ? `${size}?` : `${size}`, stale ? "rgba(122,28,24,0.6)" : "#8a1c18", s);
   }
   // Infested animals (sim/worm.js): herds you can see now, grey and gaunt on a pale ring, their number on a badge.
   for (const hd of on("hordes") ? state.herds || [] : []) {
     if (!live.has(hd.tile) || !inView(hd.tile)) continue;
     const s = zoomBoost(), px = G.x[hd.tile] - 14 * Math.min(s, BESIDE_MAX), py = G.y[hd.tile] + 10 * Math.min(s, BESIDE_MAX);
-    const cv = herdSpriteCanvas(hd.kind, hd.size >= 6 ? 3 : hd.size >= 4 ? 2 : 1), w = gridW(cv) * 1.1 * s, h = spriteH(cv, w);
+    const u = PIECE_PX * s, gy = py + 3 * s; // grazing: a slow step now and then, each herd facing its own way
+    const cv = mapHerdCanvas(hd.kind, hd.size >= 6 ? 3 : hd.size >= 4 ? 2 : 1, HEAD6[(hd.tile * 7) % 6], cycleFrame(hd.tile * 5 + 11, true, 1900));
+    const [, , w, h] = pieceBox(cv, px, gy, u);
     ctx.beginPath();
-    ctx.ellipse(px, py + h / 2 - 1.5 * s, w * 0.52, 3.5 * s, 0, 0, Math.PI * 2);
+    ctx.ellipse(px, gy + 1 * s, w * 0.4, 3.5 * s, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(150,140,120,0.3)";
     ctx.fill();
     ctx.strokeStyle = "#c9b98f";
     ctx.lineWidth = 1.2;
     ctx.stroke();
-    sprite(cv, px, py + stepBob(hd.tile * 5 + 11, 0.7 * s, 1900), w, { angle: sway(hd.tile * 5 + 13, 0.02, 3100) });
-    pill(px + w / 2, py - h / 2 + 2 * s, `${hd.size}`, "#6b5a3a", s);
+    piece(cv, px, gy + stepBob(hd.tile * 5 + 11, 0.4 * s, 1900), u, { angle: sway(hd.tile * 5 + 13, 0.01, 3100) });
+    pill(px + w * 0.3, gy - h * 0.55, `${hd.size}`, "#6b5a3a", s);
   }
   // Other groups' parties you can currently see, by group type: convoys by vehicle (spiked pickup, humvee, armored
   // truck, caravan, tractor…), raids and convoys on foot in the group's colors. Raids stand on a red-tinted ring; a
@@ -1552,53 +1597,55 @@ export function render(state) {
     const color = f ? f.color : "#cccccc", type = f ? f.type : "fortress";
     const kind = p.vehicle || p.kind === "caravan" ? "convoy" : p.kind === "raid" ? "raid" : p.kind === "scav" ? "scav" : "walk"; // a caravan: their wagon or truck; scavengers with their sack
     const n = p.members ? p.members.length + (p.kind === "raid" ? 1 : 0) : p.strength >= 15 ? 4 : p.strength >= 7 ? 3 : 2;
-    const fo = facingOf(state, p), onWay = p.path && p.idx < p.path.length - 1;
+    const hd = headingOf(state, p), onWay = p.path && p.idx < p.path.length - 1;
     const solo = kind !== "convoy" && n === 1 && p.phase !== "siege"; // a party of one on foot: one figure, walking (as your teams of one)
-    const cv = solo ? groupSoloCanvas(type, kind, color, walkFrame(p.id, onWay)) : groupPartyCanvas(type, kind, color, n), s = zoomBoost();
-    const w = gridW(cv) * (solo ? SOLO_PX : kind === "convoy" ? 1.2 : 1.1) * s;
-    if (p.phase === "siege") {
-      const o = Math.min(s, BESIDE_MAX);
+    const s = zoomBoost(), siege = p.phase === "siege";
+    const fr = siege ? 0 : cycleFrame(p.id, onWay, kind === "convoy" ? 240 : 380);
+    const cv = solo ? mapGroupSoloCanvas(type, kind, color, hd.yaw, fr) : mapGroupPartyCanvas(type, kind, color, n, siege ? 135 : hd.yaw, fr);
+    const u = (solo ? SOLO_PX : PIECE_PX) * s;
+    if (siege) {
+      const o = Math.min(s, BESIDE_MAX), sx = px + 24 * o, sy = py + 12 * o + GROUND * s;
       sprite(siegeCampCanvas(color), px - 25 * o, py + 17 * o, 26 * s);
       smokeWisps(p.id * 3 + 1, px - 25 * o, py + 17 * o - 8 * s, s, { n: 3, rise: 14 });
       groundRing(px + 24 * o, py + 12 * o, color, false, true);
       if (view.pick === `group:${p.id}`) pickRing(px + 24 * o, py + 12 * o);
-      sprite(cv, px + 24 * o, py + 12 * o - 3, w, { facing: -1 });
+      piece(cv, sx, sy, u); // the attackers face the base
       sprite(iconCanvas("siege"), px, py - 30 * s, ICON_W * 1.2 * s);
-      noteSprite(px + 24 * o, py + 12 * o - 3, w, spriteH(cv, w));
+      notePiece(cv, sx, sy, u);
       continue;
     }
     // On a base's tile (passing through, or arriving) the party stands beside the base, not on top of it.
-    const [x, y, k2] = besideBase(tile, px, py);
+    const [x, y, k2] = besideBase(tile, px, py), gy = y + GROUND * s, uk = u * k2;
+    const w = pieceBox(cv, x, gy, uk)[2];
     groundRing(x, y, color, false, p.kind === "raid");
     if (view.pick === `group:${p.id}`) pickRing(x, y); // selected on the map (ui/mapselect.js)
-    if (onWay && kind === "convoy") dustTrail(p.id, x, y + 4 * s, s, fo, w * k2);
-    const dy = !onWay ? 0 : kind === "convoy" ? rumble(p.id, 0.35 * s) : stepBob(p.id, 1.1 * s, 380);
+    if (onWay && kind === "convoy") dustTrail(p.id, x, gy, s, hd.dir, w * 0.6);
+    const dy = !onWay ? 0 : kind === "convoy" ? rumble(p.id, 0.35 * s) : stepBob(p.id, 0.8 * s, 380);
     // A raid with its vehicles (vehicles.js assignRaidHumvee) is a mixed party too: its vehicle behind the people on foot.
     const hv = kind === "raid" && p.humvee != null ? raidHumvees(state, p) : [];
     if (hv.length) {
-      const cvv = groupPartyCanvas(type, "convoy", color), wv = gridW(cvv) * 1.05 * s * k2;
-      if (onWay) dustTrail(p.id * 3 + 1, x - fo * w * k2 * 0.45, y + 2 * s, s, fo, wv);
-      sprite(cvv, x - fo * w * k2 * 0.45, y - 6 * s + (onWay ? rumble(p.id * 3 + 1, 0.35 * s) : 0), wv, { facing: fo });
+      const cvv = mapGroupPartyCanvas(type, "convoy", color, 3, hd.yaw, cycleFrame(p.id * 3 + 1, onWay, 240)), bx = x - hd.dir[0] * 12 * s * k2, by = gy - hd.dir[1] * 6 * s * k2 - 2 * s;
+      if (onWay) dustTrail(p.id * 3 + 1, bx, by, s, hd.dir, w * 0.5);
+      piece(cvv, bx, by + (onWay ? rumble(p.id * 3 + 1, 0.35 * s) : 0), uk);
     }
-    sprite(cv, x, y - 3 + dy, w * k2, { facing: fo });
-    noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
+    piece(cv, x, gy + dy, uk);
+    notePiece(cv, x, gy, uk);
   }
   // Hardcore mode (sim/hardcore-groups.js): bands on the road that will found a group, in that group's colors, where
   // you can see them; the military's strike force on its way to the city hive as its convoy of trucks.
-  if (on("teams")) for (const b of hcMapBands(state)) {
+  if (on("teams")) for (const b of [...hcMapBands(state), ...nomadMapBands(state)]) { // and the nomads (sim/nomads.js): a camp has its fire
     if (!live.has(b.tile)) continue;
     const [px, py] = g.toPixel(b.tile, HEX);
-    const cv = groupPartyCanvas(b.type, b.convoy ? "convoy" : "walk", b.color, b.pop >= 15 ? 4 : b.pop >= 7 ? 3 : 2), s = zoomBoost();
-    const w = gridW(cv) * 1.1 * s;
-    const next = b.path && b.path[b.idx + 1];
-    const facing = next != null && next !== b.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
-    const [x, y, k2] = besideBase(b.tile, px, py);
+    const s = zoomBoost(), next = b.path && b.path[b.idx + 1], onWay = next != null && next !== b.tile;
+    const hd = onWay ? headingTo(px, py, ...g.toPixel(next, HEX)) : headingAt(HEAD6[b.tile % 6]);
+    const cv = mapGroupPartyCanvas(b.type, b.convoy ? "convoy" : "walk", b.color, b.pop >= 15 ? 4 : b.pop >= 7 ? 3 : 2, hd.yaw, cycleFrame(b.tile * 13 + 1, onWay, b.convoy ? 240 : 380));
+    const [x, y, k2] = besideBase(b.tile, px, py), u = PIECE_PX * s * k2, gy = y + GROUND * s;
     groundRing(x, y, b.color, false, false);
-    if (view.pick === `band:${b.id}`) pickRing(x, y);
-    const onWay = next != null && next !== b.tile;
-    if (onWay && b.convoy) dustTrail(b.tile * 13 + 7, x, y + 4 * s, s, facing, w * k2);
-    sprite(cv, x, y - 3 + (!onWay ? 0 : b.convoy ? rumble(b.tile * 13, 0.35 * s) : stepBob(b.tile * 13 + 1, 1.1 * s, 380)), w * k2, { facing });
-    noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
+    if (view.pick === `${b.nomad ? "nomad" : "band"}:${b.id}`) pickRing(x, y);
+    if (b.camp) smokeWisps(b.tile * 7 + 3, x - 9 * s * k2, y - 2 * s, s, { n: 2, rise: 10 }); // a nomad camp's fire
+    if (onWay && b.convoy) dustTrail(b.tile * 13 + 7, x, gy, s, hd.dir, pieceBox(cv, x, gy, u)[2] * 0.6);
+    piece(cv, x, gy + (!onWay ? 0 : b.convoy ? rumble(b.tile * 13, 0.35 * s) : stepBob(b.tile * 13 + 1, 0.8 * s, 380)), u);
+    notePiece(cv, x, gy, u);
   }
   // Outsiders (sim/visitors.js): raiders from outside in dark red, merchants in gold, travellers in grey. Drawn where
   // you can see them; in radio coverage only (heard, not seen) faded on a dashed ring. The timelapse shows them all.
@@ -1610,22 +1657,21 @@ export function render(state) {
     const [px, py] = g.toPixel(v.tile, HEX);
     // Merchants by their escort (sim/escorts.js): a guard ahead of the wagon, a pickup behind it, a Humvee or an MRAP leading it.
     const esc = v.kind === "merchants" && v.escort ? { tier: v.escort.tier, vehicle: v.vehicleLost ? "" : v.escort.vehicle } : null;
-    const cv = outsiderPartyCanvas(v.kind, v.sub, Math.ceil(v.size / 2), esc), s = zoomBoost();
-    const w = gridW(cv) * (v.kind === "merchants" ? (esc && esc.tier !== "light" ? 1.75 : 1.4) : 1.15) * s;
-    const next = v.path && v.path[v.idx + 1];
-    const facing = next != null && next !== v.tile ? (g.toPixel(next, HEX)[0] >= px ? 1 : -1) : 1;
-    const [x, y, k2] = besideBase(v.tile, px, py);
+    const s = zoomBoost(), next = v.path && v.path[v.idx + 1], onWay = !heard && next != null && next !== v.tile;
+    const hd = next != null && next !== v.tile ? headingTo(px, py, ...g.toPixel(next, HEX)) : headingAt(HEAD6[v.tile % 6]);
+    const k0 = (v.id || v.tile) * 17 + 3, period = v.kind === "merchants" ? 520 : 380;
+    const cv = mapOutsiderPartyCanvas(v.kind, v.sub, Math.ceil(v.size / 2), esc, hd.yaw, cycleFrame(k0, onWay, period));
+    const [x, y, k2] = besideBase(v.tile, px, py), u = PIECE_PX * s * k2, gy = y + GROUND * s;
     groundRing(x, y, color, heard, v.kind === "raiders");
     if (view.pick === `visitor:${v.id}`) pickRing(x, y);
-    const onWay = !heard && next != null && next !== v.tile;
-    const few = v.kind !== "merchants" && v.size >= 1 && v.size <= 2; // one or two: walkers of their own (mapsprites.js outsiderSoloCanvas)
-    if (few) for (let i = v.size - 1; i >= 0; i--) { // the second a step behind and up, drawn first
-      const k = (v.id || v.tile) * 17 + 3 + i * 11, cvi = outsiderSoloCanvas(v.kind, v.sub, i, walkFrame(k, onWay));
-      const ox = v.size === 2 ? (i ? -5 : 4) * facing * s * k2 : 0, oy = v.size === 2 ? (i ? -2.5 : 1) * s * k2 : 0;
-      sprite(cvi, x + ox, y - 3 + oy + (onWay ? stepBob(k, 1.1 * s, 380) : 0), gridW(cvi) * SOLO_PX * s * k2, { facing, alpha: heard ? 0.55 : 1 });
+    const few = v.kind !== "merchants" && v.size >= 1 && v.size <= 2; // one or two: walkers of their own (mapfigures.js mapOutsiderSoloCanvas)
+    if (few) for (let i = v.size - 1; i >= 0; i--) { // the second a step behind, drawn first
+      const k = k0 + i * 11, cvi = mapOutsiderSoloCanvas(v.kind, v.sub, i, hd.yaw, cycleFrame(k, onWay));
+      const d = v.size === 2 ? (i ? -5 : 4) * s * k2 : 0;
+      piece(cvi, x + hd.dir[0] * d, gy + hd.dir[1] * d * 0.5 + (onWay ? stepBob(k, 0.8 * s, 380) : 0), SOLO_PX * s * k2, { alpha: heard ? 0.55 : 1 });
     }
-    else sprite(cv, x, y - 3 + (onWay ? stepBob((v.id || v.tile) * 17 + 3, 1.1 * s, v.kind === "merchants" ? 520 : 380) : 0), w * k2, { facing, alpha: heard ? 0.55 : 1 });
-    noteSprite(x, y - 3, w * k2, spriteH(cv, w * k2));
+    else piece(cv, x, gy + (onWay ? stepBob(k0, 0.8 * s, period) : 0), u, { alpha: heard ? 0.55 : 1 });
+    notePiece(cv, x, gy, u);
     if (v.phase === "siege") sprite(iconCanvas("siege"), x, y - 26 * s, ICON_W * s);
   }
   // Your bases' people out on job trips (ui/workermap.js, sim/jobtrips.js): walking out over the base's land, at work
@@ -1633,7 +1679,7 @@ export function render(state) {
   if (on("workers") && !state.timelapse) {
     const t = state.hour + hourFrac();
     const walking = drawWorkers(ctx, state, {
-      HEX, toPixel: (id) => [G.x[id], G.y[id]], sprite, walkFrame, stepBob, zoom: zoomBoost(), baseHalf: (PLACE_W.hub * zoomBoost()) / 2, t, color: PLAYER_COLOR, live, groups: true, hoverSid: view.workerHover, // the hovered worker: their route (main.js)
+      HEX, toPixel: (id) => [G.x[id], G.y[id]], piece, cycleFrame, stepBob, zoom: zoomBoost(), baseHalf: (PLACE_W.hub * zoomBoost()) / 2, t, color: PLAYER_COLOR, live, groups: true, hoverSid: view.workerHover, // the hovered worker: their route (main.js)
       near: (x, y) => !(x < minX - HEX * 3 || x > maxX + HEX * 3 || y < minY - HEX * 3 || y > maxY + HEX * 3),
     });
     if (walking && !readable.still) glidingNow = true; // drawn again as the minutes go by
@@ -1686,12 +1732,13 @@ const CLAIM_COLOR = "#8db9ea";     // the tiles your teams claimed (sim/claims.j
 const ROUTE_COLOR = "#c9e07a";     // trade-route convoys
 const SUPPLY_COLOR = "#5cc8b4";    // supply runs between your bases
 const PHASE_COLOR = { waiting: "#ffd166", task: "#9be39b" }; // ring under your teams; moving: light blue
-const lastFacing = new WeakMap();   // UI only: keeps a team facing the way it last moved
+const lastHeading = new WeakMap();  // UI only: keeps a team heading the way it last moved (its yaw)
+const HEAD6 = [315, 30, 60, 135, 210, 240]; // the six ways a road leaves a hex, as yaws (mapfigures.js yawOf): E, SE, SW, W, NW, NE
 
 const PLACE_W = { hub: 46, outpost: 34, shelter: 38, faction: 40 }; // base sprite widths in world pixels (before zoomBoost)
 const placeW = (b) => (isCamp(b) ? STAGING_W : b.tier === 0 ? PLACE_W.shelter : b.type === "hub" ? PLACE_W.hub : PLACE_W.outpost);
 const STAGING_W = 34; // a camp's sprite width (sim/staging.js), an outpost's
-const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, vehicle: 20 };
+const MARKER_W = { death: 13, cache: 15, car: 19, camp: 16, nomadcamp: 16, vehicle: 20 };
 const LAYER_COLOR = { vehicles: "#7fb0e6", deaths: "#d8cfb8", finds: "#c9b98a" }; // marker rings and far-out dots
 const ICON_W = 11;                 // status icons (alert, work, radio, siege, "?")
 // Site sprites: world pixels per sprite pixel, and a size factor by zone so a shop drawn for a city block comes out
@@ -1706,24 +1753,48 @@ const BESIDE_LABEL_Y = 31; // a base's name drops below whatever stands beside t
 
 // Per frame: tiles drawn as a base, sprites the skull rows keep clear of (bases and parties), and parties already
 // placed beside a base.
-let baseTiles = new Map(), spriteBoxes = [], besideCount = new Map(); // baseTiles: tile -> half the base sprite's width
+let baseTiles = new Map(), spriteBoxes = [], besideCount = new Map(), tileCrowd = new Map(); // baseTiles: tile -> half the base sprite's width; tileCrowd: tile -> parties drawn on it
 const noteSprite = (x, y, w, h) => spriteBoxes.push([x - w / 2, y - h / 2, w, h]);
+// How many parties each tile shows this frame (your teams and convoys, the groups' parties, bands and outsiders you
+// can see): two or more on a tile without a base are drawn on opposite sides of the hex (besideBase), both to be
+// picked (ui/mapselect.js picks by tile).
+function countCrowd(state, live) {
+  const out = new Map();
+  const add = (tile) => out.set(tile, (out.get(tile) || 0) + 1);
+  if (on("teams")) {
+    for (const p of state.parties) {
+      if (p.owner === "player") { if (p.kind === "convoy" || contactable(p)) add(partyTile(p)); }
+      else if (p.phase !== "siege" && live.has(partyTile(p))) add(partyTile(p));
+    }
+    for (const b of hcMapBands(state)) if (live.has(b.tile)) add(b.tile);
+    for (const b of nomadMapBands(state)) if (live.has(b.tile)) add(b.tile);
+    for (const v of state.visitors || []) if (live.has(v.tile) || (!state.timelapse && inCoverage(state, v.tile))) add(v.tile);
+  }
+  return out;
+}
 // Where a party on this tile is drawn: beside the base (lower left, further left for a second one) at 85% size
-// when the tile has a base, otherwise on the tile. Returns [x, y, scale].
+// when the tile has a base; on a tile two or more parties share, the first on the left side of the hex and the
+// second on the right (a third and fourth below them), at 90%; otherwise on the tile. Returns [x, y, scale].
+const CROWD_X = 13, CROWD_Y = 9; // world px between parties sharing a tile, by zoomBoost (capped as beside a base)
 function besideBase(tile, px, py) {
-  if (!baseTiles.has(tile)) return [px, py, 1];
+  const o = Math.min(zoomBoost(), BESIDE_MAX);
+  if (!baseTiles.has(tile)) {
+    if ((tileCrowd.get(tile) || 0) < 2) return [px, py, 1];
+    const n = besideCount.get(tile) || 0;
+    besideCount.set(tile, n + 1);
+    return [px + (n % 2 ? CROWD_X : -CROWD_X) * o, py + Math.floor(n / 2) * CROWD_Y * o, 0.9];
+  }
   const n = besideCount.get(tile) || 0;
   besideCount.set(tile, n + 1);
-  const o = Math.min(zoomBoost(), BESIDE_MAX);
   return [px - Math.min(baseTiles.get(tile) * 0.8 + 8, 28) - 12 * n * o, py + 12 * o, 0.85];
 }
 
 // Where a site's sprite goes on its zone plate, where its label goes (labelY), and the spot beside the plate (side)
 // that the danger skulls fall back to when there is no room under the name. faded: the loot band (0–3, aiscav.js).
-function siteLook(t, px, py, tier, faded) {
-  const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[t.loc.type];
-  const cv = poiSpriteCanvas(t.loc.type, t.loc.type === "military" && / depot$/i.test(t.loc.name) ? "depot" : "", faded);
-  const w = gridW(cv) * POI_PX * s * ((ZONE_K[t.loc.zone] || 1) / (ZONE_K[t.loc.type === "city" ? "urban" : def.cat] || 1));
+function siteLook(loc, px, py, tier, faded) {
+  const s = tier < 2 ? zoomBoost() : 1, def = LOCATIONS[loc.type];
+  const cv = poiSpriteCanvas(loc.type, loc.type === "military" && / depot$/i.test(loc.name) ? "depot" : "", faded);
+  const w = gridW(cv) * POI_PX * s * ((ZONE_K[loc.zone] || 1) / (ZONE_K[loc.type === "city" ? "urban" : def.cat] || 1));
   const h = spriteH(cv, w), foot = py + 7 * s, rx = Math.max(9 * s, w * 0.46), ry = (tier < 2 ? 4.5 : 3.6) * s;
   return { s, cv, w, h, foot, rx, ry, lw: tier < 2 ? 1.8 : 1.3, labelY: foot + ry + 6, side: [px + rx + 2 * s, foot] };
 }
@@ -1740,6 +1811,26 @@ function drawSite(d, px, py, zone, alpha) {
   ctx.stroke();
   ctx.globalAlpha = 1;
   sprite(d.cv, px, d.foot - d.h / 2 + 0.6 * d.s, d.w, { alpha });
+  if (d.pip) poiPip(px + d.rx - 1.5 * d.s, d.foot - d.h - 1.5 * d.s, d.pip, d.s, alpha);
+}
+// The pip at a site's top right with the number of points of interest known on its tile (sim/pois.js): a small dark
+// disc with the count, in the sites' label colour.
+function poiPip(x, y, n, s, alpha = 1) {
+  const r = 3.6 * s;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(12,14,18,0.9)";
+  ctx.fill();
+  ctx.strokeStyle = "#d9d2c0";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.fillStyle = "#f0e8d4";
+  ctx.font = `bold ${(5.4 * s).toFixed(1)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(n), x, y + 0.3 * s);
+  ctx.globalAlpha = 1;
 }
 
 // Tiles with something drawn over a site (a team or group party, a horde): the site sprite fades there. Markers
@@ -1750,7 +1841,7 @@ function busyTiles(state, live) {
   if (on("teams")) for (const p of state.parties) {
     if (!p.path || !p.path.length) continue;
     const tile = partyTile(p);
-    if (p.owner === "player" ? p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task" : live.has(tile)) out.add(tile);
+    if (p.owner === "player" ? p.kind === "convoy" || contactable(p) : live.has(tile)) out.add(tile);
   }
   return out;
 }
@@ -1885,25 +1976,26 @@ function siteLabel(state, t) {
 
 // Grows sprites a little when zoomed far out so they stay readable.
 const zoomBoost = () => Math.max(1, Math.sqrt(0.9 / camera.zoom));
-// Sprite width in world pixels.
-const PARTY_W = { walkers: 22, raid: 22, scouts: 18, relief: 26, cart: 26, supplycart: 26, boat: 30, raft: 30, convoy: 30, supply: 30 };
-const spriteW = (kind) => (PARTY_W[kind] || 28) * zoomBoost();
-// A team of one (mapsprites.js soloSpriteCanvas, cyclistSpriteCanvas, groupSoloCanvas): map px per sprite pixel, a little
-// bigger than a group's figures so one person reads at a glance.
-const SOLO_PX = 1.3;
+// A team of one (mapfigures.js mapSoloCanvas, mapCyclistCanvas, mapGroupSoloCanvas): world px per grid px, a little
+// bigger than a party's figures so one person reads at a glance.
+const SOLO_PX = 1.25;
 
-// 1 = right, -1 = left: toward the next tile on the path (or the far shore while crossing).
-function facingOf(state, p) {
+// A party's heading: { yaw (mapfigures.js), dir (the screen direction, unit), facing (+1 right, -1 left) } toward the
+// next tile on its path (or the far shore while crossing); standing still, the way it last moved (315: east).
+function headingTo(ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, yaw = yawOf(dx, dy);
+  return { yaw, dir: dirOf(yaw), facing: dx < -0.5 ? -1 : 1 };
+}
+const headingAt = (yaw) => ({ yaw, dir: dirOf(yaw), facing: yaw > 45 && yaw < 225 ? -1 : 1 });
+function headingOf(state, p) {
   const g = state.grid;
   const from = partyTile(p);
   const next = p.phase === "task" && p.task?.type === "cross" ? p.task.tile : p.path && p.path[p.idx + 1];
-  let f = lastFacing.get(p) || 1;
-  if (next != null && next !== from) {
-    const dx = g.toPixel(next, HEX)[0] - g.toPixel(from, HEX)[0];
-    if (Math.abs(dx) > 0.5) f = dx > 0 ? 1 : -1;
-  }
-  lastFacing.set(p, f);
-  return f;
+  let h = lastHeading.get(p);
+  if (next != null && next !== from) { const [ax, ay] = g.toPixel(from, HEX), [bx, by] = g.toPixel(next, HEX); if (Math.hypot(bx - ax, by - ay) > 0.5) h = headingTo(ax, ay, bx, by); }
+  if (!h) h = headingAt(315);
+  lastHeading.set(p, h);
+  return h;
 }
 
 // Which sprite one of your parties gets and in what color: convoys carry crates (trade routes) or drums (supply
@@ -1921,19 +2013,23 @@ function partyLook(state, p) {
   return { color, kind, count, solo, ups: v && p.kind !== "convoy" ? upsCode(v.upgrades) : "" }; // ups: its upgrades (mapsprites.js upsCode)
 }
 
-// The sprite for one of your teams this frame: a team of one gets its own figure (walking or standing, a rider pedalling
-// or stopped; at night the light it carries is lit); the rest the cached party sprite. Returns [canvas, width in map px].
-// Also how the lone walker's step bobs: [canvas, width, bob] (bob: map px, 0 standing or for the rest).
-function teamCanvas(state, p, look, moving, night = false) {
-  if (!look.solo) return [partySpriteCanvas(look.kind, look.color, look.count, look.ups), spriteW(look.kind), 0];
-  const s = partyMembers(state, p)[0], light = night && s ? lightOf(s) || "" : "", sz = zoomBoost();
-  if (look.solo === "cyclist") { const cv = cyclistSpriteCanvas(look.color, pedalFrame(p.id, moving)); return [cv, gridW(cv) * SOLO_PX * sz, moving ? stepBob(p.id, 0.4 * sz, 480) : 0]; }
-  const gait = soloGait(p, s), ms = GAIT_MS[gait], f = walkFrame(p.id, moving, ms, gait);
-  const cv = soloSpriteCanvas(look.kind, look.color, f, light, gait);
-  // A limp dips on the hurt leg; a heavy load bobs less.
-  const bob = !moving ? 0 : stepBob(p.id, (gait === "heavy" ? 0.7 : 1.1) * sz, ms) + (f === 4 && animOn() ? 0.8 * sz : 0);
-  return [cv, gridW(cv) * SOLO_PX * sz, bob];
+// The piece for one of your teams this frame, at its heading: a team of one gets its own figure (walking or standing,
+// a rider pedalling or stopped; at night the light it carries is lit); the rest the party's piece (people walking, the
+// wheels turning, the cart rolling). Returns [canvas, world px per grid px, bob] (bob: map px, 0 standing).
+function teamCanvas(state, p, look, moving, yaw, night = false) {
+  const sz = zoomBoost();
+  if (!look.solo) {
+    const motor = MOTOR.has(look.kind), ms = motor ? 240 : look.kind.includes("cart") ? 520 : 380;
+    return [mapPartyCanvas(look.kind, look.color, look.count, look.ups, yaw, cycleFrame(p.id, moving, ms)), PIECE_PX * sz, !moving ? 0 : motor ? rumble(p.id, 0.35 * sz) : stepBob(p.id, (look.kind.includes("cart") ? 0.6 : 0.8) * sz, ms)];
+  }
+  const s = partyMembers(state, p)[0], light = night && s ? lightOf(s) || "" : "";
+  if (look.solo === "cyclist") return [mapCyclistCanvas(look.color, yaw, cycleFrame(p.id, moving, 240)), SOLO_PX * sz, moving ? stepBob(p.id, 0.3 * sz, 480) : 0];
+  const gait = soloGait(p, s), ms = GAIT_MS[gait];
+  // A heavy load bobs less; a limp dips on the hurt leg (every other step).
+  const bob = !moving ? 0 : stepBob(p.id, (gait === "heavy" ? 0.5 : 0.8) * sz, ms) + (gait === "limp" && animOn() && Math.floor(animNow / ms + phaseOf(p.id)) % 2 ? 0.8 * sz : 0);
+  return [mapSoloCanvas(look.kind, look.color, yaw, cycleFrame(p.id, moving, ms), light, gait), SOLO_PX * sz, bob];
 }
+const MOTOR = new Set(["truck", "sedan", "miltruck", "convoy", "supply"]);
 // How a lone walker goes: "limp" when hurt (under 60% health, an infected wound, or a cut or sprain: health.js injuries),
 // "heavy" when their load is Heavy or more (load.js bands, as last weighed: p.burden), else "" (a steady walk).
 const GAIT_MS = { "": 380, heavy: 520, limp: 560 };
@@ -1950,12 +2046,13 @@ function sideFigure(state, p) {
   if (partyVehicles(state, p).some((v) => v.type === "bike")) return "cyclist";
   return "";
 }
-// Draws that figure beside and a little behind the vehicle (cx, cy its center, w its width), walking or riding.
-function drawSideFigure(p, side, color, cx, cy, w, facing, moving, k2 = 1, alpha = 1) {
+// Draws that figure behind the vehicle and a little to the near side (gx, gy the vehicle's ground point, hd its
+// heading, w its width), walking or riding.
+function drawSideFigure(p, side, color, gx, gy, w, hd, moving, k2 = 1, alpha = 1) {
   const sz = zoomBoost(), k = p.id * 7 + 5;
-  const cv = side === "cyclist" ? cyclistSpriteCanvas(color, pedalFrame(k, moving)) : soloSpriteCanvas("walkers", color, walkFrame(k, moving));
-  const bob = moving ? stepBob(k, (side === "cyclist" ? 0.4 : 1.1) * sz, side === "cyclist" ? 480 : 380) : 0;
-  sprite(cv, cx - facing * w * 0.46, cy + 3 * sz + bob, gridW(cv) * SOLO_PX * sz * 0.9 * k2, { facing, alpha });
+  const cv = side === "cyclist" ? mapCyclistCanvas(color, hd.yaw, cycleFrame(k, moving, 240)) : mapSoloCanvas("walkers", color, hd.yaw, cycleFrame(k, moving));
+  const bob = moving ? stepBob(k, (side === "cyclist" ? 0.3 : 0.8) * sz, side === "cyclist" ? 480 : 380) : 0;
+  piece(cv, gx - hd.dir[0] * w * 0.42, gy - hd.dir[1] * w * 0.21 + 3 * sz + bob, SOLO_PX * sz * 0.9 * k2, { alpha });
 }
 
 // Oval "shadow" under a sprite: phase color for your teams, owner color for others. dashed: position is a guess;
@@ -2037,8 +2134,8 @@ function drawSurveys(state, minX, maxX, minY, maxY, labels) {
     ctx.setLineDash([8, 5]);
     ctx.stroke();
     ctx.setLineDash([]);
-    // The way it has come (and, in contact, the next spots): a line through the tiles of its route.
-    if (p.radioLive) {
+    // The way it has come (and, reporting live, the next spots): a line through the tiles of its route.
+    if (reportsLive(p)) {
       const upto = Math.min(t.route.length - 1, t.done);
       const path = (from, to, style, width) => {
         ctx.beginPath();
@@ -2104,8 +2201,8 @@ function drawPlayerParty(state, p) {
   const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? PAL.task : "#7fd0ff";
   const look = partyLook(state, p);
   const ring = p.kind === "convoy" ? look.color : p.phase === "task" ? PAL.task : PHASE_COLOR[p.phase] || "#7fd0ff";
-  // Waiting or working on the spot (camp, repairs): you know where they are.
-  if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") {
+  // Your teams are always in reach of your orders (sim/plans.js commandable), so you know where they are.
+  if (p.kind === "convoy" || contactable(p)) {
     let [px, py] = g.toPixel(partyTile(p), HEX);
     // On the move: part of the way to the next tile, by the minutes gone of the hour (sim/parties.js glideAt).
     // A team holding for a card in the tray (ui/pacing.js) stays put: it does not move on when the hour ticks.
@@ -2129,11 +2226,8 @@ function drawPlayerParty(state, p) {
       ctx.lineTo(x, y);
     }
     ctx.stroke();
-    let facing = facingOf(state, p);
-    if (glide) {
-      const dx = g.toPixel(glide.to, HEX)[0] - g.toPixel(glide.from, HEX)[0];
-      if (Math.abs(dx) > 0.5) { facing = dx > 0 ? 1 : -1; lastFacing.set(p, facing); }
-    }
+    let hd = headingOf(state, p);
+    if (glide) { const [ax, ay] = g.toPixel(glide.from, HEX), [bx, by] = g.toPixel(glide.to, HEX); if (Math.hypot(bx - ax, by - ay) > 0.5) { hd = headingTo(ax, ay, bx, by); lastHeading.set(p, hd); } }
     const cross = p.phase === "task" && p.task && p.task.type === "cross" ? p.task : null;
     if (cross) {
       // The planned crossing, and the boat out on the water once it is launched.
@@ -2151,9 +2245,10 @@ function drawPlayerParty(state, p) {
         px = fx + (tx - fx) * f;
         py = fy + (ty - fy) * f;
         const kind = cross.mode === "raft" ? "raft" : "boat";
-        const s = zoomBoost();
-        sprite(wakeCanvas(), px - facing * 10 * s, py + 5 * s, 30 * s, { facing });
-        sprite(partySpriteCanvas(kind, look.color), px, py + sway(p.id * 3 + 2, 1 * s, 1500), spriteW(kind), { facing, angle: sway(p.id * 3 + 1, 0.07, 1900) }); // the boat rocks
+        const s = zoomBoost(), bh = headingTo(fx, fy, tx, ty);
+        sprite(wakeCanvas(), px - bh.dir[0] * 10 * s, py + 2 * s - bh.dir[1] * 5 * s, 30 * s, { facing: bh.facing });
+        const bcv = mapPartyCanvas(kind, look.color, 3, "", bh.yaw, cycleFrame(p.id, true, kind === "raft" ? 900 : 600)); // the oars pull; the poler leans
+        piece(bcv, px, py + 2 * s + sway(p.id * 3 + 2, 1 * s, 1500), PIECE_PX * s, { angle: sway(p.id * 3 + 1, 0.05, 1900) }); // the boat rocks
         crewTag(p, px, py);
         return;
       }
@@ -2180,14 +2275,13 @@ function drawPlayerParty(state, p) {
     if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(px, py); // selected (ui/mapselect.js)
     // On the move: people bob in step, a cart a little slower; a vehicle rumbles and raises dust.
     const onWay = (p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1;
-    const [cvp, w1, bob] = teamCanvas(state, p, look, onWay, isNight(state)), wp = w1 * k2;
-    const motor = ["truck", "sedan", "convoy", "supply"].includes(look.kind), sz = zoomBoost();
-    if (onWay && motor) dustTrail(p.id, px, py + 4 * sz, sz, facing, wp);
-    const dy = !onWay ? 0 : look.solo ? bob : motor ? rumble(p.id, 0.35 * sz) : stepBob(p.id, (look.kind.includes("cart") ? 0.8 : 1.1) * sz, look.kind.includes("cart") ? 520 : 380);
-    sprite(cvp, px, py - 3 + dy, wp, { facing });
-    const side = sideFigure(state, p); // a mixed team: someone walking (or riding a bike) beside the vehicle
-    if (side) drawSideFigure(p, side, look.color, px, py - 3, wp, facing, onWay, k2);
-    noteSprite(px, py - 3, wp, spriteH(cvp, wp));
+    const [cvp, u1, bob] = teamCanvas(state, p, look, onWay, hd.yaw, isNight(state)), up = u1 * k2, sz = zoomBoost(), fy = py + GROUND * sz; // fy: where the figures stand
+    const wp = pieceBox(cvp, px, fy, up)[2];
+    if (onWay && MOTOR.has(look.kind)) dustTrail(p.id, px, fy, sz, hd.dir, wp * 0.6);
+    piece(cvp, px, fy + bob, up);
+    const side = sideFigure(state, p); // a mixed team: someone walking (or riding a bike) behind the vehicle
+    if (side) drawSideFigure(p, side, look.color, px, fy, wp, hd, onWay, k2);
+    notePiece(cvp, px, fy, up);
     if (p.kind !== "convoy" && (p.heat || 0) >= 5 && !state.timelapse) heatBar(px, py, p.heat); // fieldheat.js: standing still draws attention
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
     else if (p.phase === "task" && !camping) badge(px, py, "work");
@@ -2235,18 +2329,19 @@ function drawPlayerParty(state, p) {
     ex = ax + (bx - ax) * k;
     ey = ay + (by - ay) * k;
     ke = 1;
-    if (Math.abs(bx - ax) > 0.5) lastFacing.set(p, bx > ax ? 1 : -1);
+    if (Math.hypot(bx - ax, by - ay) > 0.5) lastHeading.set(p, headingTo(ax, ay, bx, by));
     glidingNow = true;
   }
-  // Faded sprite on a dashed ring: where the team should be if the plan held.
+  // Faded piece on a dashed ring: where the team should be if the plan held, mid-stride the way it was last heading.
   groundRing(ex, ey, color, true);
   if (view.pick === `team:${p.id}` || view.pick === `convoy:${p.id}`) pickRing(ex, ey);
-  const cve = look.solo === "walker" ? soloSpriteCanvas(look.kind, look.color, 1) : look.solo ? cyclistSpriteCanvas(look.color, 1) : partySpriteCanvas(look.kind, look.color, look.count, look.ups); // a team of one: mid-stride, held (a guess, not seen)
-  const we = (look.solo ? gridW(cve) * SOLO_PX * zoomBoost() : spriteW(look.kind)) * ke;
-  sprite(cve, ex, ey - 3, we, { facing: lastFacing.get(p) || 1, alpha: 0.5 });
+  const hd = lastHeading.get(p) || headingAt(315), sz = zoomBoost(), gy = ey + GROUND * sz;
+  const cve = look.solo === "walker" ? mapSoloCanvas(look.kind, look.color, hd.yaw, 3) : look.solo ? mapCyclistCanvas(look.color, hd.yaw, 3) : mapPartyCanvas(look.kind, look.color, look.count, look.ups, hd.yaw, 3);
+  const ue = (look.solo ? SOLO_PX : PIECE_PX) * sz * ke, we = pieceBox(cve, ex, gy, ue)[2];
+  piece(cve, ex, gy, ue, { alpha: 0.5 });
   const side = sideFigure(state, p);
-  if (side) drawSideFigure(p, side, look.color, ex, ey - 3, we, lastFacing.get(p) || 1, false, ke, 0.5);
-  noteSprite(ex, ey - 3, we, spriteH(cve, we));
+  if (side) drawSideFigure(p, side, look.color, ex, gy, we, hd, false, ke, 0.5);
+  notePiece(cve, ex, gy, ue);
   badge(ex, ey, "unknown", color);
   crewTag(p, ex, ey);
 }
@@ -2273,7 +2368,8 @@ export function tileTooltip(state, id) {
   const isLive = liveSet(state).has(id);
   const snap = state.knowledge[id];
   const loc = mapLoc(state, id); // a hidden site nobody has found is bare ground (sim/discovery.js)
-  const lines = [`<b>${esc(loc ? loc.name : TERRAIN[t.terrain].name)}</b>`];
+  const top = loc ? null : poiHeading(state, id); // a bare tile's top point of interest once known (ui/poiview.js)
+  const lines = [`<b>${esc(loc ? loc.name : top || TERRAIN[t.terrain].name)}</b>`];
   const ownHere = state.bases.find((b) => b.tile === id);
   if (ownHere) lines.push(`<span style="color:#cfe2f7">${esc(ownHere.name)}</span>`);
   const campTip = stagingTip(state, id); // sim/staging.js
@@ -2283,7 +2379,13 @@ export function tileTooltip(state, id) {
     lines.push(`<span class="muted">${def.name}${zone ? ` · ${zone.name.toLowerCase()}` : ""} · ${TERRAIN[t.terrain].name}${t.road ? " · road" : " · off-road"}</span>`);
     lines.push(`<span class="muted">Danger: ${DANGER_NAMES[siteDanger(loc)].toLowerCase()}</span>`);
   }
+  else if (top) {
+    const def = LOCATIONS[poisOf(t)[0].kind], zone = SITE_ZONES[def.cat];
+    lines.push(`<span class="muted">${def.name}${zone ? ` · ${zone.name.toLowerCase()}` : ""} · ${TERRAIN[t.terrain].name}${t.road ? " · road" : " · off-road"}</span>`);
+    lines.push(`<span class="muted">Danger: ${DANGER_NAMES[siteDanger({ type: poisOf(t)[0].kind, zone: def.cat })].toLowerCase()}</span>`);
+  }
   else lines.push(`<span class="muted">${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}</span>`);
+  for (const line of poiTipLines(state, id, isLive, snap)) lines.push(line); // ui/poiview.js: the places known on the tile, the hidden remainder
   if (isLive) lines.push(`<span class="good">Live view</span>`);
   else if (snap) lines.push(`<span class="muted">Last seen ${ageText(state, snap)}</span>`);
   else lines.push(`<span class="muted">No current intel</span>`);
@@ -2300,7 +2402,7 @@ export function tileTooltip(state, id) {
   for (const p of state.parties.filter((p) => p.owner === "player" && p.phase === "waiting" && partyTile(p) === id)) lines.push(`<span style="color:#ffd166">Team waiting for orders</span>`);
   for (const pin of jobPins(state)) if (pin.tile === id) lines.push(`<span style="color:#e0b84f">${pin.icon} Job: ${pin.label.replace(/[&<>"]/g, "")}</span>`); // ui/diplomacy.js
   // Heat of your teams standing here (sim/fieldheat.js): what the bar under the sprite means.
-  for (const p of state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && (p.heat || 0) >= 5 && (p.phase === "waiting" || p.phase === "task" || p.radioLive) && partyTile(p) === id)) lines.push(`<span class="${p.heat >= 50 ? "warn" : "muted"}">${esc(heatInfo(state, p).text)}</span>`);
+  for (const p of state.parties.filter((p) => p.owner === "player" && p.kind !== "convoy" && (p.heat || 0) >= 5 && (p.phase === "waiting" || p.phase === "task" || reportsLive(p)) && partyTile(p) === id)) lines.push(`<span class="${p.heat >= 50 ? "warn" : "muted"}">${esc(heatInfo(state, p).text)}</span>`);
   const held = state.survivors.filter((s) => s.alive && s.location && s.location.kind === "captive" && s.location.tile === id);
   if (held.length) lines.push(`<span style="color:#ff6b6b">Holds your people: ${held.map((s) => esc(s.name.split(" ")[0])).join(", ")}</span>`);
   for (const line of crashTip(state, id)) lines.push(`<span style="color:#ffb07a">${esc(line)}</span>`); // sim/crashes.js
@@ -2309,6 +2411,7 @@ export function tileTooltip(state, id) {
   for (const o of visitorTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color === "#7a1a1a" ? "#ff8a7f" : o.color}">${esc(o.text)}</span>`); // sim/visitors.js
   for (const line of caravanTipLines(state, id, liveSet(state))) lines.push(`<span style="color:#e0c070">${esc(line)}</span>`); // sim/caravanraids.js: the groups' caravans and convoys
   for (const o of bandTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/hardcore-groups.js
+  for (const o of nomadTipLines(state, id, liveSet(state))) lines.push(`<span style="color:${o.color}">${esc(o.text)}</span>`); // sim/nomads.js
   if (hasKey(state, id)) lines.push(`<span class="good">🔑 You hold a key for this place: it opens its locks.</span>`); // sim/locks.js
   // An empty base you know of (sim/occupy.js): what stands and, in view, who is inside (out of view: as last seen).
   const em = ownHere ? null : emptyKnown(state, id);
@@ -2327,3 +2430,4 @@ export function tileTooltip(state, id) {
 }
 
 export { ageText, day, hub };
+onForgetPictures(() => dirtyAll()); // ui/pictures.js: every chunk is blank after a lost GPU context; drawn again within the frame budget

@@ -9,6 +9,7 @@
 // Usage: node tools/wormtest.js [seed]
 import { food, setFood, addDays, clearFood, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { tripDay } from "../src/sim/jobtrips.js"; // the outdoor jobs in trips: a day of them before the midnight tally
+import { PACK, topUpPack, packFood } from "../src/sim/eating.js"; // the job trips' packed lunch
 import { createWorld, hub, atBase, residents, day, makeSurvivor } from "../src/sim/world.js";
 import { addBuilding, count } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
@@ -203,7 +204,7 @@ function drinkDay(st, b) {
   p.supplies.rawwater += 10; addWormWater(st, p, 10, 0.5);
   check(near(p.wormEggs, 0.5), "river water from infected land carries its eggs");
   // A camp fire boils it into purified water.
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fire burns firewood (woodcutting.js campFireHour): none carried, nothing boils
   st.tiles[h.tile].infection = 0.2; // under the camping threshold: only the boiling is under test
   const pure0 = p.supplies.water;
   wormTeamHour(st, p, members);
@@ -311,7 +312,7 @@ function drinkDay(st, b) {
   const raw = withNums(WORM, { RAW: 1 }, () => eatRawCargo(st, p, members, 4));
   check(near(raw, 4) && caught(members) === members.length && near(wormMeatIn(p.cargo), 6), "then raw as the last resort, and catches it (pinned)");
   clearAll(members);
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
   st.tiles[h.tile].infection = 0.2;
   wormTeamHour(st, p, members);
   check(wormMeatIn(p.cargo) === 0, "a camp fire cooks it");
@@ -437,8 +438,9 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
   check(eaten.slice(0, WORM.BRAIN_FROM - 1).every((f) => near(f, WORM.GUT_EAT)) && near(eaten[WORM.BRAIN_FROM - 1] || 0, 0), `eats ${WORM.GUT_EAT} more a day in the gut stage (days 1–${WORM.BRAIN_FROM - 1}), not in the brain`);
   check(diedOn >= 6 && diedOn <= 7 && !s.alive, `someone at full health dies of it on day ${diedOn} (6–7)`);
   check(st.log.some((l) => /died of the worm\./.test(l.text)) && st.log.some((l) => new RegExp(`${s.name} died with the worm in them at ${h.name} and got up again`).test(l.text)), "and gets up again at the base (a log line)");
-  // Someone hurt dies sooner.
-  const t = here[1];
+  // Someone hurt dies sooner. (Not here[1] blindly: s got up again at the base and may have killed someone before
+  // they put them down, carriers.js; here[3] is the next check's.)
+  const t = here.find((x, i) => i !== 0 && i !== 3 && x.alive);
   t.worm = course(0); t.health = 40;
   let d2 = 0;
   for (let d = 1; d <= 10 && t.alive; d++) { withNums(WORM, noSpot, () => wormDaily(st)); if (!t.alive) d2 = d; }
@@ -470,9 +472,9 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
     const fClean = fieldTreatInfo(hw.st, tp, tm[0]).heal;
     tm[0].worm = course(1);
     const fSick = fieldTreatInfo(hw.st, tp, tm[0]).heal;
-    check(bedClean > 0 && near(bedSick, bedClean * WORM.HEAL) && fClean > 0 && Math.abs(fSick - fClean * WORM.HEAL) <= 0.5, `in a hospital bed with no meds today ${(bedClean * 24).toFixed(1)} → ${(bedSick * 24).toFixed(1)} a day; a field treatment +${fClean} → +${fSick}`);
-    // Bed healing is full healing with meds: a hospital bed on a day their care used meds heals at the full rate;
-    // out of a bed, at a base with no hospital, or a patient given no meds: half.
+    const cotClean0 = (x.worm = null, healRatePerHour(hw.st, hw.h, x, activeHospital(hw.st, hw.h), false));
+    check(bedClean > 0 && near(bedSick, cotClean0 * WORM.HEAL) && bedSick < bedClean * WORM.HEAL && fClean > 0 && Math.abs(fSick - fClean * WORM.HEAL) <= 0.5, `a hospital bed does nothing for a carrier: ${(bedClean * 24).toFixed(1)} a day clean → ${(bedSick * 24).toFixed(1)} (half a cot's ${(cotClean0 * 24).toFixed(1)}); a field treatment +${fClean} → +${fSick}`);
+    // Meds do not bring the bed back: a carrier treated today heals in a hospital bed as on a cot, at half.
     {
       const hosp = activeHospital(hw.st, hw.h);
       x.health = 40; x.worm = course(2);
@@ -486,9 +488,9 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
       x.medsHour = hw.st.hour - 30; // yesterday's: no longer today
       const bedStale = healRatePerHour(hw.st, hw.h, x, hosp, true);
       check(medsToday(hw.st, { medsHour: hw.st.hour - 3 }) && !medsToday(hw.st, { medsHour: hw.st.hour - 30 }) && !medsToday(hw.st, {}), "meds today: within the last 24 hours");
-      check(near(bedMeds, bedClean) && near(cotMeds, cotClean * WORM.HEAL) && near(noHosp, noHospClean * WORM.HEAL) && near(bedStale, bedClean * WORM.HEAL),
-        `bed healing is full with meds: a hospital bed with meds today ${(bedMeds * 24).toFixed(1)} a day (the clean rate ${(bedClean * 24).toFixed(1)}); out of bed ${(cotMeds * 24).toFixed(1)}, no hospital ${(noHosp * 24).toFixed(1)}, yesterday's meds ${(bedStale * 24).toFixed(1)}: half`);
-      // The treatment itself (it is the meds): full heal in a hospital bed, half on a cot.
+      check(near(bedMeds, cotMeds) && near(cotMeds, cotClean * WORM.HEAL) && near(noHosp, noHospClean * WORM.HEAL) && near(bedStale, cotMeds) && bedMeds < bedClean * WORM.HEAL,
+        `no bed healing for a carrier, meds or not: a hospital bed with meds today ${(bedMeds * 24).toFixed(1)} a day (clean ${(bedClean * 24).toFixed(1)}), out of bed ${(cotMeds * 24).toFixed(1)}, no hospital ${(noHosp * 24).toFixed(1)}, yesterday's meds ${(bedStale * 24).toFixed(1)}`);
+      // The treatment itself: half, in a bed or not.
       delete x.medsHour; x.health = 40;
       x.inBed = true;
       const tBed = treatAtBaseInfo(hw.st, hw.h, x).heal;
@@ -497,7 +499,7 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
       x.worm = null;
       const tClean = treatAtBaseInfo(hw.st, hw.h, x).heal;
       x.worm = course(2);
-      check(tBed === tClean && Math.abs(tCot - tClean * WORM.HEAL) <= 0.5, `a wound treated in a hospital bed heals +${tBed} (clean +${tClean}); out of a bed +${tCot}`);
+      check(tBed === tCot && Math.abs(tCot - tClean * WORM.HEAL) <= 0.5, `a wound treated in a hospital bed heals +${tBed} (clean +${tClean}), as out of a bed +${tCot}`);
       hw.h.stock.meds = 20;
       const h0 = hw.st.hour;
       treatAtBase(hw.st, hw.h, x.id);
@@ -618,11 +620,12 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
     w.h.armory.push(newItem("dewormer"));
     const m0 = w.h.stock.meds;
     wormDaily(w.st);
-    check(!y.worm && !w.h.armory.some((it) => it && it.key === "dewormer") && w.h.stock.meds === m0, "the night's automatic care uses a dewormer from the armory (no meds)");
+    check(!y.worm && !w.h.armory.some((it) => it && it.key === "dewormer") && w.h.stock.meds === m0 - WORM.DOSE_MEDS, "the night's automatic care uses a dewormer from the armory (no meds but the day's dose)");
+    const m1 = w.h.stock.meds;
     y.health = 100;
     y.worm = course(2, { seen: 1 });
     withNums(WORM, { PURGE: 1, PURGE_MAX: 1 }, () => wormDaily(w.st));
-    check(!y.worm && w.h.stock.meds === m0 - WORM.PURGE_MEDS, "with none, a purge with the base's meds");
+    check(!y.worm && w.h.stock.meds === m1 - WORM.DOSE_MEDS - WORM.PURGE_MEDS, "with none, a purge with the base's meds");
     y.health = 100;
     y.worm = course(2);
     withNums(WORM, noSpot, () => wormDaily(w.st));
@@ -782,6 +785,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   sOther.health = 100;
   sOther.location = { kind: "base", baseId: bw.h.id };
   bw.h.autoTreat = false;
+  bw.h.stock.meds = 0; // no daily dose: the full day
   wormDaily(bw.st);
   check(near(100 - sOther.health, dayHp(3) - dayHp(3) / 24, 0.01), "and at midnight that day's damage is less what the battle took");
   // On another storey.
@@ -928,7 +932,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   // Camped with the fire lit that night: washed, SEARCH_WASH of the time.
   withNums(WORM, { SEARCH: 1 }, () => wormSearch(st, p, site, 1));
   p.wormHands.day -= 1;
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
   st.tiles[site].infection = 0.3; // under the camping threshold: only the hands are under test
   withNums(WORM, { SEARCH_WASH: 1 }, () => wormTeamHour(st, p, members));
   check(caught(members) === 0 && !p.wormHands, "camped with the fire lit that night: washed, nobody caught it (SEARCH_WASH pinned to 1)");
@@ -963,6 +967,11 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   clearFood(h);
   h.buildings = h.buildings.filter((b) => b.type !== "cookhouse" && b.type !== "kitchen");
   const people = residents(st, h.id);
+  // Everyone's pack holds a day's clean food first (eating.js PACK.trip): a job trip sets out with one, topped up from
+  // the stores (the lunch break, 2026-10-12), and on this bare store that would be the infected potatoes below.
+  addDays(h, people.length * (PACK.trip + 1) + 40, "f_beans"); // (the stores keep PACK.keepDays of everyone's eating back)
+  for (const s of people) topUpPack(st, h, s, { food: PACK.trip + 0.5 });
+  clearFood(h);
   people[0].role = "farm";
   const f = farmOf(st, h);
   const plot = f.plots[0];
@@ -974,14 +983,18 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   check(near(kindsOf(h).f_grain, 8) && near(wormVegAt(h).crop, 10), "dry grain (keeps for years) is threshed and cooked: safe");
   check(!cropEggs(st, clean), "nothing from clean land");
   // Foraging around the base on infected land.
-  const food0 = food(h);
   for (const id of st.grid.within(h.tile, 2)) st.tiles[id].infection = 0.8; // the foragers' land too
   people[1].role = "forage";
   Object.assign(people[1], { pinned: true, health: 100, inBed: false, conditions: [], mood: 70 });
   st.hour = 24 * 51; // summer (day 50): there is something to gather; the day's job trips (jobtrips.js), then its midnight
+  const food0 = food(h);
   tripDay(st, h);
   const got = foragingDaily(st, h);
   const fed = (h.tripTally && h.tripTally.forage && h.tripTally.forage.food) || 0; // the trips' food (got.rations is it rounded)
+  // The forager set out with a day's food in the pack for lunch (eating.js PACK.trip): the grain packed from the stores
+  // goes back, so the stores below are the harvest and what the forage brought in.
+  const packed = 8 - (kindsOf(h).f_grain || 0);
+  addDays(h, packed, "f_grain");
   check(got && got.rations > 0 && near(wormVegAt(h).forage, fed, 0.01) && near(food(h) - food0, fed, 0.01), `forage gathered on infected ground carries eggs too (${got && got.rations.toFixed(1)} rations)`);
   // Eaten last, after the clean food: the crops and forage with eggs (the soonest to spoil first: the summer's forage
   // before the potatoes), the raw meat last of all.
@@ -1018,7 +1031,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
   const raw = withNums(WORM, { FORAGE: 1 }, () => eatRawForageCargo(st, p, members, 2));
   check(near(raw, 2) && caught(members) === members.length && near(wormForageIn(p.cargo), 2), "then the forage raw, and catches it (pinned)");
   clearAll(members);
-  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true;
+  p.phase = "task"; p.task = { type: "camp" }; p.campFire = true; p.supplies.wood = 20; // a fed fire (it burns firewood)
   st.tiles[h.tile].infection = 0.2;
   wormTeamHour(st, p, members);
   check(wormForageIn(p.cargo) === 0, "a camp fire boils it");
@@ -1101,7 +1114,7 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
 {
   console.log("The death day, healing at half");
   // Untreated from full health, a day of the course then a day's healing (medicalHour), until they die.
-  // meds: the night's care treats the wound with meds every day (the hospital bed then heals at the full rate).
+  // meds: the night's care treats the wound with meds every day (that slows the worm; the bed still does nothing).
   const deathDay = (hosp, med = 6, admit = null, meds = false) => {
     const w = wormWorld(0.05, seed + 20);
     w.h.autoTreat = false;
@@ -1111,22 +1124,61 @@ const dying = (s) => { s.worm = course(WORM.BRAIN_FROM + 1, { seen: 1, carded: "
     if (hosp) { addBuilding(w.h, hosp); for (const m of ppl.slice(0, 3)) { m.role = "medic"; m.skills.medicine = med; } }
     const s = ppl[ppl.length - 1];
     s.worm = course(0, { seen: 0 });
-    if (meds) { w.h.stock.meds = 99; w.h.medsReserve = 0; }
+    w.h.stock.meds = meds ? 99 : 0; // meds: the daily dose and the night's care; none: neither
+    if (meds) w.h.medsReserve = 0;
     for (let d = 1; d <= 30; d++) {
       wormDaily(w.st);
       if (!s.alive) return d;
-      if (meds) { w.h.autoTreat = true; autoCare(w.st, w.h); w.h.autoTreat = false; } // the night's care for the wound with meds (below the auto line of 70), not for the worm (wormCare stays off)
+      if (meds) { w.h.autoTreat = true; autoCare(w.st, w.h); w.h.autoTreat = false; } // the night's care for the wound with meds (a spotted carrier whenever hurt: meds slow it), not for the worm (wormCare stays off)
       for (let i = 0; i < 24; i++) { medicalHour(w.st); w.st.hour++; }
     }
     return 99;
   };
   const none = deathDay(null), clinic = deathDay("clinic"), best = deathDay("clinic", 10, 100);
   check(none >= 7 && none <= 8, `untreated, resting at a base with no hospital, someone at full health dies on day ${none} (the ramp outpaces half-rate healing)`);
-  check(clinic > none && clinic <= 10, `in a staffed Clinic's bed with a medic and no meds (Medicine 6, the default admit line) on day ${clinic}; at best (Medicine 10, admitted at once) day ${best}`);
+  check(clinic === none && best === none, `a staffed Clinic's bed does nothing for them: with a medic and no meds (Medicine 6, the default admit line) day ${clinic}; Medicine 10, admitted at once, day ${best}`);
   const medsDef = deathDay("clinic", 6, null, true), medsBest = deathDay("clinic", 10, 100, true), cotMeds = deathDay(null, 6, null, true);
   const dayText = (d) => (d >= 99 ? "never within 30 days" : `day ${d}`);
   console.log(`  (the night's care with meds, no cure for the worm: in a Clinic's bed, Medicine 6, the default admit line, ${dayText(medsDef)}; Medicine 10, admitted at once, ${dayText(medsBest)}; no hospital, ${dayText(cotMeds)})`);
-  check(medsDef > clinic && medsBest >= medsDef && cotMeds < medsDef, `bed healing is full with meds: the worm uncured but the wound treated with meds each night in a Clinic's bed, they die ${dayText(medsDef)} (${dayText(medsBest)} at best), against day ${clinic} without meds; with no hospital ${dayText(cotMeds)} (half healing)`);
+  check(cotMeds > none && medsDef >= cotMeds, `the wound treated with meds each night slows it: with no hospital they die ${dayText(cotMeds)} against day ${none}; in a Clinic (its medics treat better) ${dayText(medsDef)}`);
+}
+
+// ---------- 6e2. the daily meds slow it, never clear it ----------
+{
+  console.log("A med a day slows the worm");
+  // Two carriers from day 0 at a base with no hospital and no care; one is known (spotted) and takes a med a day from
+  // the base's stores, the other is not known yet, so nobody doses them. After six days: the dosed one is fewer days
+  // in and less hurt, and the base has six meds fewer.
+  const w = wormWorld(0.05, seed + 24);
+  w.h.autoTreat = false;
+  w.h.stock.meds = 99;
+  const ppl = atBase(w.st, w.h.id);
+  for (const p of ppl) { p.role = "rest"; p.health = 100; p.skills.medicine = 0; p.worm = null; }
+  const [a, b] = ppl.slice(-2);
+  a.worm = course(0, { seen: 0 }); b.worm = course(0);
+  const lost = { a: 0, b: 0 };
+  const m0 = w.h.stock.meds;
+  for (let d = 1; d <= 6; d++) {
+    const ha = a.health, hb = b.health;
+    withNums(WORM, { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0 }, () => wormDaily(w.st)); // the brain stage would give the other away
+    lost.a += ha - a.health; lost.b += hb - b.health;
+    for (let i = 0; i < 24; i++) { medicalHour(w.st); w.st.hour++; }
+  }
+  check(near(m0 - w.h.stock.meds, 6 * WORM.DOSE_MEDS) && b.worm.seen == null, `a known carrier takes ${WORM.DOSE_MEDS} med a day from the base (${m0 - w.h.stock.meds} in six days); one not yet spotted takes none`);
+  check(a.worm && a.worm.day < b.worm.day && a.worm.day >= 3, `with a med every day the course moves half as fast: day ${a.worm && a.worm.day} against day ${b.worm.day}`);
+  check(lost.a < lost.b * WORM.MEDS_HP + 1, `and does ${Math.round(WORM.MEDS_HP * 100)}% of the damage: ${Math.round(lost.a)} health lost to it against ${Math.round(lost.b)}`);
+  check(!!a.worm && a.alive, "the meds never clear it: still infected (a dewormer, a purge or surgery does)");
+  // Out of meds: the full day again.
+  w.h.stock.meds = 0;
+  const d0 = a.worm.day, h0 = a.health;
+  withNums(WORM, { SPOT: 0, SPOT_MED: 0 }, () => wormDaily(w.st));
+  check(a.worm.day === d0 + 1 && near(h0 - a.health, dayHp(a.worm.day)), `no meds left: the full day (day ${d0} → ${a.worm.day}, −${Math.round(h0 - a.health)} health)`);
+  // On a team: the dose comes from the team's packs.
+  const { p: tp, members: tm } = team(w.st, w.h, w.h.tile, 2);
+  tp.supplies.meds = 3;
+  tm[0].health = 100; tm[0].worm = course(1, { seen: 0 });
+  withNums(WORM, { SPOT: 0, SPOT_MED: 0, TEAM_SPOT: 0, TEAM_SPOT_MED: 0 }, () => wormDaily(w.st));
+  check(near(tp.supplies.meds, 3 - WORM.DOSE_MEDS) && near(100 - tm[0].health, dayHp(tm[0].worm.day) * WORM.MEDS_HP), `on a team the med comes from its packs (${tp.supplies.meds} left), and the day does half (−${100 - tm[0].health})`);
 }
 
 // ---------- 6f. prisoners and guests: spotted, treated, thanked ----------

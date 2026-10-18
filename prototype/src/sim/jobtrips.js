@@ -17,15 +17,20 @@
 // may no longer be out: hurt, the role changed, on the watch, the base under attack (buildings.js underAttack: on
 // alert or under siege: "On hold"), and dropped when they leave the base (a team, an errand).
 // While out (world.js outOnTrip, from leaving the gate to coming back in) they are not at hand for a fight at the base.
+// Lunch (meals.js, the lunch hour): out at work they stop where they are and eat from their pack (eating.js: they set out
+// with at least PACK.trip, a day of food, topped up from the stores as they leave); the hour inside the work does not
+// count toward the load, nor does the lunch hour of a walk out or home (tripHours: lunchOverlap), and nobody sets out
+// in it (activity.js: they are eating).
 //
 // The day's totals: base.tripTally = { day, [job]: { …sums, who: [ids] } } (the daily systems read it at midnight for
 // the noise, the log and the summaries); base.tripPops: the last deposits (the map's "+12 food" pops, ui/render.js).
 import { atBase, survivorById } from "./world.js";
 import { TRIP, TRIP_JOBS, tripWindow, walkHours, tripScale, depositPoint, drawSource, walkMult } from "./tripland.js";
 import { describeActivity } from "./activity.js";
-import { woodTripTile, woodTrip } from "./woodcutting.js";
+import { woodTripTile, woodTrip, isChopTool, chopMult } from "./woodcutting.js";
 import { forageTripTile, forageTrip, FORAGE, addForage } from "./foraging.js";
-import { huntTripTile, huntTrip, fishWater, fishTrip, meatAt, depositGame } from "./hunting.js";
+import { huntTripTile, huntTrip, fishWater, fishTrip, meatAt, depositGame, isFishTool, isSpear, fishToolPower, frozenAt } from "./hunting.js";
+import { allCarried, stow, packOf } from "./inventory.js"; // a job's tool goes out with the one who uses it
 import { scavTripTile, scavTrip, scavCredit, fetchWaterTile, rawRoom } from "./economy.js";
 import { econStats } from "./farming.js";
 import { addFood, qtyOf } from "./foods.js"; // food by type: the loads come home as items
@@ -33,12 +38,60 @@ import { noteOutput } from "./output.js";
 import { tileLabel } from "./parties.js";
 import { RAW } from "./water.js";
 import { armTripEvent, fireTripEvent, holdTrip, creditBonus, holdText } from "./tripevents.js"; // trouble on the way (trips-plus #2)
+import { lunchOverlap, isLunchHour } from "./meals.js"; // the lunch break out at work
+import { PACK, packFood, topUpPack } from "./eating.js"; // the food they take out for lunch
 
 const r2 = (v) => Math.round((v || 0) * 100) / 100;
 const POPS = 12; // deposits kept for the map
 const dayOf = (t) => Math.floor(t / 24);
 // The day a credit at tick `now` counts for (output.js workDay − 1: 0-based; the midnight tick is the day before).
 const tallyDay = (now) => Math.floor((now - 1) / 24);
+
+// ---------- the job's tools (INV-03) ----------
+// The tools a job trip uses are carried, not left in the armory: a fisher takes a rod, a net or a spear (Fish needs
+// one: no tool, no trip), a woodcutter without an axe of their own takes the armory's best (Cut wood goes on by hand
+// without one). The tool leaves the armory for their pack (or the hand it goes in; a rod or a net in the off hand when
+// the pack has no room), marked item.jobTool, and goes back into the armory as soon as they are home with no trip
+// planned (jobTripsHour; a team member's at the Home from a trip window, sim/teaminv.js). One item, one person: a tool
+// out on a trip cannot be loaded onto a team, nor taken by a second fisher.
+const JOB_TOOLS = {
+  fish: { is: (state, it) => isFishTool(it) && !(frozenAt(state) && isSpear(it)), rank: (it) => fishToolPower(it), need: true, offHand: (it) => !isSpear(it) },
+  wood: { is: (state, it) => isChopTool(it), rank: (it) => chopMult(it), need: false, offHand: () => false },
+};
+// Could s go out on `job` for want of a tool? (checkOutTool without taking anything: the activity line.)
+export function hasJobTool(state, base, s, job) {
+  const J = JOB_TOOLS[job];
+  if (!J || !J.need) return true;
+  return allCarried(s).some((it) => J.is(state, it)) || (base.armory || []).some((it) => it && J.is(state, it));
+}
+// Does s carry a tool for `job` now? Else one is checked out of the base's armory. Returns false only when the job
+// needs a tool and there is none to take.
+export function checkOutTool(state, base, s, job) {
+  const J = JOB_TOOLS[job];
+  if (!J) return true;
+  if (allCarried(s).some((it) => J.is(state, it))) return true;
+  const list = (base.armory || []).filter((it) => it && J.is(state, it)).sort((a, b) => J.rank(b) - J.rank(a));
+  for (const it of list) {
+    const i = base.armory.indexOf(it);
+    base.armory.splice(i, 1);
+    let at = stow(s, it);
+    if (!at && J.offHand(it) && s.gear && !s.gear.tool) { s.gear.tool = it; at = `s:${s.id}:tool`; }
+    if (at) { it.jobTool = job; return true; }
+    base.armory.splice(i, 0, it); // no room on them for it: back on the shelf
+  }
+  return !J.need;
+}
+// A job's tools a person at a base carries back into its armory. Returns how many went back.
+export function returnTools(state, base, s) {
+  let n = 0;
+  if (!s || !s.gear || !base) return 0;
+  const take = (arr, k) => { const it = arr[k]; if (it && it.jobTool) { delete it.jobTool; arr[k] = null; base.armory.push(it); n++; } };
+  for (const k of Object.keys(s.gear)) if (k !== "backpack" && k !== "rig" && k !== "armor" && k !== "carry") take(s.gear, k);
+  (s.pockets || []).forEach((_, i) => take(s.pockets, i));
+  const pk = packOf(s);
+  if (pk) pk.forEach((_, i) => take(pk, i));
+  return n;
+}
 
 // ---------- where they go ----------
 // The job's tile at this base: { tile (the target on the map), at (where they work), d } or null.
@@ -101,9 +154,11 @@ export function planTrip(state, base, s, job, start, from = null) {
   return { job, base: base.id, tile: tg.tile, at: tg.at, d: tg.d, leave: start, arrive: start + out, workEnd: home - back, home, ...(next != null ? { next } : {}), ...(drop != null ? { drop, wh: walk } : {}), ...(from != null && from !== base.tile && !c.fixed ? { from } : {}), ...(tg.well ? { well: true } : {}) };
 }
 
-// The old job's hours a trip's work counts as (Fetch water: its share of a full fill).
-const tripHours = (t) => {
-  const w = Math.max(0, t.workEnd - t.arrive);
+// The old job's hours a trip's work counts as (Fetch water: its share of a full fill). The lunch hour inside the trip,
+// at the work or on the walk, is an hour's stop: it comes off the work (a walk home over lunch gets home an hour later
+// in the old reckoning, so the work before it ends an hour sooner).
+const tripHours = (state, t) => {
+  const w = Math.max(0, t.workEnd - t.arrive - lunchOverlap(t.leave, t.home, state));
   return TRIP_JOBS[t.job].fixed ? Math.min(1, w / TRIP_JOBS[t.job].fixed.fill) : w * tripScale(t.job);
 };
 // The hour the job's odds are read at: dawn or dusk for hunting and fishing, else the middle of the work.
@@ -116,7 +171,7 @@ function sampleHour(t) {
 
 // The load, rolled when the work ends: { job-specific fields } (the dice of the old daily jobs, for these hours).
 function rollLoad(state, base, s, t) {
-  const hrs = tripHours(t);
+  const hrs = tripHours(state, t);
   if (!(hrs > 1e-6)) return { empty: true };
   const h = sampleHour(t);
   switch (t.job) {
@@ -262,6 +317,12 @@ export function cutShort(t, now, why) {
   t.cut = why;
 }
 
+// Setting out from the base: at least a day of food in the pack for lunch out there (eating.js PACK.trip; from the
+// stores, if they can spare it). A trip on from a stockpile (t.from) never came through the gate: nothing to top up from.
+function packForTrip(state, base, s) {
+  if (s.trip && s.trip.from == null && packFood(s) < PACK.trip) topUpPack(state, base, s);
+}
+
 // One person's trips up to the end of the hour starting at `now`.
 function stepPerson(state, base, s, now) {
   const end = now + 1;
@@ -290,7 +351,7 @@ function stepPerson(state, base, s, now) {
       if (from < end && dayOf(from) === dayOf(t.leave)) {
         const job = mayGo(state, base, s, Math.floor(from));
         const nt = job === t.job ? planTrip(state, base, s, job, from, at) : null;
-        if (nt) { nt.n = n; s.trip = nt; continue; }
+        if (nt && checkOutTool(state, base, s, job)) { nt.n = n; s.trip = nt; packForTrip(state, base, s); continue; }
       } else if (t.next != null || dayOf(from) === dayOf(t.leave)) s.tripNext = { t: r2(from), n, day: dayOf(t.leave), ...(at != null ? { from: at } : {}) };
       return;
     }
@@ -300,10 +361,11 @@ function stepPerson(state, base, s, now) {
     const start = Math.max(now, nx ? nx.t : now);
     if (start >= end) return;
     const nt = planTrip(state, base, s, job, start, nx && nx.from != null ? nx.from : null);
-    if (!nt) return;
+    if (!nt || !checkOutTool(state, base, s, job)) return;
     nt.n = nx ? nx.n : 0;
     delete s.tripNext;
     s.trip = nt;
+    packForTrip(state, base, s);
   }
 }
 
@@ -314,7 +376,7 @@ export function jobTripsHour(state, now = state.hour) {
     const l = s.location;
     if (!s.alive || !l || l.kind !== "base" || (s.trip && l.baseId !== s.trip.base)) { delete s.trip; delete s.tripNext; }
   }
-  for (const base of state.bases) for (const s of atBase(state, base.id)) stepPerson(state, base, s, now);
+  for (const base of state.bases) for (const s of atBase(state, base.id)) { if (!s.trip) returnTools(state, base, s); stepPerson(state, base, s, now); }
 }
 
 // For the tests (tools/*test.js) that drive one base's day without the rest of the world: the trips of the 24 hours
@@ -326,7 +388,7 @@ export function tripDay(state, base, end = state.hour) {
   for (const s of atBase(state, base.id)) { delete s.trip; delete s.tripNext; }
   for (let h = end - 24; h < end; h++) {
     state.hour = h;
-    for (const s of atBase(state, base.id)) stepPerson(state, base, s, h);
+    for (const s of atBase(state, base.id)) { if (!s.trip) returnTools(state, base, s); stepPerson(state, base, s, h); }
   }
   state.hour = was;
   return base.tripTally && base.tripTally.day === tallyDay(end) ? base.tripTally : null;
@@ -345,6 +407,9 @@ export function tripState(state, s, t = state.hour) {
   const wtext = tr.job === "fish" || tr.job === "water" ? (state.tiles[tr.tile] && state.tiles[tr.tile].river ? "the river" : "the water") : where;
   const span = Math.max(1e-6, tr.workEnd - tr.arrive);
   const progress = Math.max(0, Math.min(1, (t - tr.arrive) / span));
+  // The lunch hour at the work: stopped there, eating from the pack (on a walk out or home it is eaten on the way: the
+  // walk's line stays).
+  if (t >= tr.arrive && t < tr.workEnd && isLunchHour(Math.floor(t), state)) return { phase: "work", f: progress, progress, text: `Lunch break at ${wtext} (from their pack)`, stage: "Lunch", job: tr.job, lunch: true };
   if (t < tr.arrive) return { phase: "out", f: (t - tr.leave) / Math.max(1e-6, tr.arrive - tr.leave), progress: 0, text: `Heading to ${wtext}`, stage: "", job: tr.job };
   if (t < tr.workEnd) {
     const stage = c.stage[Math.min(c.stage.length - 1, Math.floor(progress * c.stage.length))];

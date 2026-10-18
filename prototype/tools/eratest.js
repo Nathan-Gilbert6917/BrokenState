@@ -103,7 +103,9 @@ async function main() {
   {
     // The coalition: every group in and over half the land on day 30 is not a victory; the Accord has to run.
     const st = world(1);
+    setAutopilot(st, true, "balanced"); // played: left alone, a bare-start holdout is gone by day 30 (and the game with it)
     while (day(st) < 30) tickHour(st);
+    setAutopilot(st, false);
     const A = ensureAlliance(st);
     for (const f of st.factions) if (f.alive) { f.known = true; f.pact = "trade"; f.goodwill = 80; if (!A.members.includes(f.id)) A.members.push(f.id); }
     A.founded = 1;
@@ -117,6 +119,7 @@ async function main() {
       st.bases.push({ id: 900000 + n, tile: t.id, type: "outpost", name: `Test ${n}`, stock: { food: 0, water: 0 }, buildings: [], construction: [], armory: [] });
       n++;
     }
+    st.hives.length = 0; st.hiveSites.length = 0; // 2026-10-13: the coalition wins only with no hive standing and no group outside
     check(allianceVictory(st), `the coalition's conditions hold on day 30 (${n} outposts, ${(controlledLand(st).pct * 100).toFixed(0)}% land)`);
     check(!checkGameOver(st), "but no victory: it is year 1 and the Accord has not been held");
     E.erasVictoryDaily(st, true, false); E.erasVictoryDaily(st, true, false);

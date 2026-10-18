@@ -15,11 +15,12 @@
 // - view.pick ("kind:id") tells the map which sprite to ring in gold (ui/render.js pickRing).
 // Only what you could see: the same sight (state.live, by night as far as your people see) and radio coverage the
 // map draws by.
-import { partyTile, plannedTile, partyMembers, teamName, MISSIONS, tileLabel, cargoLoad, partyCapacity } from "../sim/parties.js";
+import { partyTile, plannedTile, partyMembers, teamName, MISSIONS, tileLabel, cargoLoad, partyCapacity, glideAt, onTheMove } from "../sim/parties.js";
 import { contactable } from "../sim/orders.js";
 import { baseIntel, partyIntel, rangeText } from "../sim/intelest.js";
 import { hcMapBands, bandTipLines } from "../sim/hardcore-groups.js";
-import { visitorTipLines, visitorById } from "../sim/visitors.js";
+import { nomadMapBands, nomadTipLines } from "../sim/nomads.js";
+import { visitorTipLines, visitorById, gateTalkBase, gateTrayCard } from "../sim/visitors.js";
 import { roadCaravans, guardText, cargoText } from "../sim/caravanraids.js";
 import { inCoverage } from "../sim/radio.js";
 import { canRadio } from "../sim/trade.js";
@@ -36,10 +37,15 @@ const swatch = (c) => `<span class="swatch" style="background:${esc(c)}"></span>
 const PICK_TIP = "Click the tile again for the next thing on it, then the tile itself. Shift+click picks the tile.";
 
 // ---------- what is on a tile ----------
-// Where one of your teams shows on the map: where it is (in contact, waiting, working, a convoy), else where it
-// should be by its plan (ui/render.js drawPlayerParty).
+// Where one of your teams shows on the map: where it is (your teams are always in reach of orders, convoys tracked;
+// a team on the move counts on the tile its sprite is nearer, glideAt), else where it should be by its plan (ui/render.js
+// drawPlayerParty).
 export function teamTileOf(state, p) {
-  if (p.radioLive || p.kind === "convoy" || p.phase === "waiting" || p.phase === "task") return partyTile(p);
+  if (p.kind === "convoy" || contactable(p)) {
+    if (state.timelapse || !onTheMove(p)) return partyTile(p);
+    const gl = glideAt(state, p, view.hourFrac || 0);
+    return gl && gl.to !== gl.from && gl.t >= 0.5 ? gl.to : gl ? gl.from : partyTile(p);
+  }
   const plan = p.planPath || p.path;
   if (!plan || !plan.length) return partyTile(p);
   if (p.etaOut != null) return plannedTile(state, p);
@@ -62,6 +68,7 @@ export function picksAt(state, tile, live = liveSet(state)) {
     out.push({ kind: "group", id: p.id, label: `${f && f.known ? f.name.replace(/^The /, "") : "Unknown"} ${shortKind[p.kind] || "party"}` });
   }
   if (live.has(tile)) for (const b of hcMapBands(state)) if (b.tile === tile) out.push({ kind: "band", id: b.id, label: b.strike ? "Military strike force" : b.known ? b.name : "A band on the road" });
+  if (live.has(tile)) for (const b of nomadMapBands(state)) if (b.tile === tile) out.push({ kind: "nomad", id: b.id, label: b.known ? b.name.replace(/^./, (c) => c.toUpperCase()) : "Nomads" });
   for (const v of state.visitors || []) if (v.tile === tile && (live.has(tile) || inCoverage(state, tile))) out.push({ kind: "visitor", id: v.id, label: v.name ? v.name.replace(/^./, (c) => c.toUpperCase()) : "Outsiders" });
   return out;
 }
@@ -115,6 +122,10 @@ function locate(state, sel, live) {
     const b = hcMapBands(state).find((x) => String(x.id) === String(sel.id));
     return b && live.has(b.tile) ? { tile: b.tile, ref: b } : null;
   }
+  if (sel.kind === "nomad") {
+    const b = nomadMapBands(state).find((x) => String(x.id) === String(sel.id));
+    return b && live.has(b.tile) ? { tile: b.tile, ref: b } : null;
+  }
   if (sel.kind === "visitor") {
     const v = visitorById(state, sel.id);
     return v && (live.has(v.tile) || inCoverage(state, v.tile)) ? { tile: v.tile, ref: v } : null;
@@ -125,7 +136,14 @@ function locate(state, sel, live) {
 // and tell the map which sprite to ring.
 export function syncPick(state, ui) {
   const sel = ui.mapSel;
-  if (sel && sel.kind === "team") { if (ui.expedition !== Number(sel.id)) ui.mapSel = null; }
+  if (sel && sel.kind === "team") {
+    if (ui.expedition !== Number(sel.id)) ui.mapSel = null;
+    else if (ui.selected === sel.tile) { // a team on the move: the selection follows it (its panel stays open)
+      const p = state.parties.find((q) => q.id === Number(sel.id));
+      const at = p ? teamTileOf(state, p) : sel.tile;
+      if (at !== sel.tile) { sel.tile = at; ui.selected = at; view.selected = at; }
+    }
+  }
   else if (sel) {
     if (ui.selected !== sel.tile) ui.mapSel = null;
     else {
@@ -165,7 +183,8 @@ export function pickCard(state, ui) {
   if (sel.kind === "group") return bar + groupPartyCard(state, at.ref, live, back);
   if (sel.kind === "convoy") return bar + convoyCard(state, at.ref, back);
   if (sel.kind === "band") return bar + linesCard(state, at.ref.strike ? "Military strike force" : "A band on the road", bandTipLines(state, at.tile, live).map((o) => o.text), at.tile, back, at.ref.color);
-  if (sel.kind === "visitor") return bar + linesCard(state, "Outsiders", visitorTipLines(state, at.tile, live).map((o) => o.text), at.tile, back, null, !live.has(at.tile));
+  if (sel.kind === "nomad") return bar + linesCard(state, "Nomads", nomadTipLines(state, at.tile, live).map((o) => o.text), at.tile, back, at.ref.color);
+  if (sel.kind === "visitor") return bar + linesCard(state, "Outsiders", visitorTipLines(state, at.tile, live).map((o) => o.text), at.tile, talkButton(state, at.ref) + back, null, !live.has(at.tile));
   return null;
 }
 
@@ -209,6 +228,16 @@ function convoyCard(state, p, back) {
       <div>Load</div><div>${Math.round(cargoLoad(p.cargo))}/${Math.round(partyCapacity(state, p))} kg${goods ? ` · ${esc(goods)}` : ""}</div>
     </div>
     <div class="row" style="margin-top:0.4rem;flex-wrap:wrap"><button class="mini" data-action="center" data-tile="${partyTile(p)}">Locate</button>${p.supplyJobId != null && baseById(state, p.homeBaseId) ? `<button class="mini" data-action="openbase" data-id="${p.homeBaseId}" data-tab="convoys">Supply runs…</button>` : ""}${back}</div></div>`;
+}
+
+// Travellers at your gate whose card was put off, left in the tray or closed by a trade: talk to them again
+// (sim/visitors.js reopenGate; a card still in the tray opens from there).
+function talkButton(state, v) {
+  const c = gateTrayCard(state, v);
+  if (c) return `<button class="mini" data-action="tray-open" data-id="${c.tray.id}"${tip("Their card is waiting in the tray: open it")}>Talk to them</button>`;
+  const b = gateTalkBase(state, v);
+  if (!b) return "";
+  return `<button class="mini" data-action="vis-gate" data-id="${v.id}"${tip(v.phase === "travel" ? `Call them back to the gate of ${b.name}` : `Talk to them at the gate of ${b.name} again`)}>${v.phase === "travel" ? "Call them back" : "Talk to them"}</button>`;
 }
 
 function linesCard(state, title, lines, tile, back, color = null, heard = false) {

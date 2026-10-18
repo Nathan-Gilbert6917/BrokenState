@@ -736,7 +736,7 @@ section("9. The battle screen: the unit line, Launch (Shift+L), the arming ring 
   const [r, m] = P(b);
   place(r, 10, 10); place(m, 8, 10);
   UI.cui.sel = r.id;
-  const panel = UI.renderCombatPanel(st);
+  const panel = UI.renderCombatScreen(st);
   check(/RPG 1\/1 rocket/.test(panel) && /Launch: RPG 1\/1 rocket/.test(panel), "the unit line and the Launch button show the rocket loaded");
   const k = KM.KEY_BY_ID.get("battle.launch");
   check(k && k.keys.includes("Shift+KeyL") && k.v === "launch" && KM.KEYMAP.filter((x) => x.ctx === "battle" && x.keys.includes("Shift+KeyL")).length === 1, "Shift+L launches (and no other battle key has it)");
@@ -753,7 +753,7 @@ section("9. The battle screen: the unit line, Launch (Shift+L), the arming ring 
   const nan0 = nan; // (the first frame of this hand-built field draws a few NaNs whatever the mode: only what the launch mode adds counts)
   UI.cui.mode = "launch";
   for (const view of ["iso"]) { void view; try { UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); } }
-  const prev = UI.renderCombatPanel(st);
+  const prev = UI.renderCombatScreen(st);
   check(!err && nan === nan0, `both views draw the launch targeting${err ? `: ${err}` : ""} (NaN: ${nan - nan0} with it, ${nan0} without)`);
   check(/backblast on/.test(prev) && /Fire the Rocket launcher/.test(prev), "the preview warns of the teammate in the backblast");
   delete globalThis.document;

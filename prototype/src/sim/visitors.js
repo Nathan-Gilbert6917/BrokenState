@@ -32,6 +32,12 @@
 // - Other groups: a siege of 12 hours, then factions.js resolveRaidOnFaction (the same odds and losses as a raid
 //   between groups); they keep 60% of what the group lost. Caravans and convoys are robbed when the band is 10%
 //   stronger than their escort, else the band loses people. Sites lose 10–18% of their loot.
+// - Points of interest (pois.js; grouppois.js keeps what a band knows of them: the known zone's places within 3 tiles
+//   of where it stands and along its trail, and what its own surveys found): a tile whose known places (the site
+//   aside) hold as much as a rich site is a target too. On a tile of points of interest raiders first survey it (8
+//   hours, grouppois.js groupSurveyTile) unless they did not long ago, then take 10–18% of one place's pool, the one
+//   they came for or the best they know there, through its container ledger (grouppois.js raidPoiAsGroup: what your
+//   people left in a container goes too). A site is its tile's POI 0; explorers pick through a site's.
 // - Radio (Groups tab, their tile in your coverage): pay them to leave the state, 1.25 × the tribute, 2% less a point
 //   of Speech (at most 30%).
 //
@@ -75,7 +81,7 @@
 //
 // Seen only when you can see them (state.live) or hear them (radio coverage, a faded sprite on the map); the
 // Groups tab lists those you know with their last known position. Decisions use state.visitorInfo.rng.
-import { FOODS, foodIn, typedFood, typeGoods, takeFood, addFoodsTo, DAY_VALUE, foodNeeds } from "./foods.js"; // food by type (foods.js)
+import { FOODS, foodIn, typedFood, typeGoods, takeFood, addFoodsTo, DAY_VALUE, foodNeeds, spareOf, spendSpare } from "./foods.js"; // food by type (foods.js)
 import { Rng } from "./rng.js";
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, supplyFew, supValue, supWeight } from "./data.js";
 import {
@@ -114,6 +120,8 @@ import { rumourFromNews } from "./survey.js";
 import { raiderSizeBonus, raiderPowerBonus, isLate, ERAS, raidPaceOpen, noteRaid, outsiderPrep } from "./eras.js";
 import { coalitionMask, controlledLand, ALLIANCE } from "./alliance.js";
 import { hcNoRaiders } from "./hardcore-groups.js";
+import { poisOf, poiPool, isSitePoi, permanentSite } from "./pois.js"; // points of interest: a band raids one at a time
+import { groupKnownPois, bestGroupPoi, groupWouldSurvey, groupSurveyTile, groupSees, raidPoiAsGroup, poiPlace, GPOI } from "./grouppois.js"; // what a band knows of them, its survey, the raid
 import { UPKEEP, coldFactor } from "./upkeep.js";
 import { eatFromStore } from "./storage.js";
 import { gunmodWares } from "./loot.js"; // a sight or a suppressor among a merchant's goods
@@ -122,7 +130,7 @@ import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there
 import { expandAmmo, baseCals } from "./ammo.js"; // rounds by calibre
 import { merchantReload } from "./reloading.js"; // an arms dealer's powder and primers
 import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
-import { escortEnemy, lootCaravan, witnessesOf, consequences } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
+import { escortEnemy, lootCaravan, witnessesOf, consequences, roadCaravans, caravanCard as roadCaravanCard } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a merchant carries
 import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
 
@@ -548,6 +556,10 @@ function visitorHour(state, v) {
     return;
   }
   if (v.phase === "search") {
+    if (v.surveyLeft > 0) { // a survey stop (grouppois.js): the hours, then the roll
+      if (--v.surveyLeft === 0) { groupSurveyTile(state, v, v.tile, { n: v.size }); v.act = `looting ${tileLabel(state, v.tile)}`; }
+      return;
+    }
     v.searchLeft -= 1;
     if (v.searchLeft <= 0) { searchSite(state, v); if (state.visitors.includes(v)) nextGoal(state, v); }
     return;
@@ -679,6 +691,12 @@ function arrive(state, v) {
       v.phase = "search";
       v.searchLeft = vrng(state).int(4, 8);
       v.act = `${v.kind === "raiders" ? "looting" : "exploring"} ${tileLabel(state, goal.tile)}`;
+      // Raiders on a tile of points of interest they may not know all of: a survey stop first (grouppois.js).
+      const t = state.tiles[goal.tile];
+      if (v.kind === "raiders" && poisOf(t).length && !(t.loc && !permanentSite(t)) && groupWouldSurvey(state, v, t)) {
+        v.surveyLeft = GPOI.HOURS;
+        v.act = `surveying ${tileLabel(state, goal.tile)}`;
+      }
       return;
     }
     default: return nextGoal(state, v);
@@ -746,9 +764,16 @@ export function raidTargets(state, v) {
   }
   for (const id of g.within(v.tile, 14)) {
     const t = state.tiles[id];
-    if (!t.loc || t.loot < R.siteMin || t.owner != null || t.hive || state.bases.some((b) => b.tile === id)) continue;
+    if (t.owner != null || t.hive || t.terrain === "water" || state.bases.some((b) => b.tile === id)) continue;
     if (nearGroups(state, id)) continue; // the groups' own scavenging grounds (aiscav.js): outsiders keep away
-    out.push({ w: t.loot * 1.2 / (1 + g.distance(v.tile, id) / 8), goal: { kind: "site", tile: id }, act: `heading for ${tileLabel(state, id)}` });
+    const far = 1 + g.distance(v.tile, id) / 8;
+    if (t.loc && t.loot >= R.siteMin) out.push({ w: t.loot * 1.2 / far, goal: { kind: "site", tile: id, poi: isSitePoi(t, 0) ? 0 : null }, act: `heading for ${tileLabel(state, id)}` });
+    // The other points of interest the band knows there (grouppois.js: what it sees along its way, what it surveyed):
+    // a tile whose known places hold as much as a rich site.
+    if (!poisOf(t).length || (t.loc && !permanentSite(t)) || !groupSees(state, v, id)) continue;
+    const known = groupKnownPois(state, v, t).filter((i) => !isSitePoi(t, i));
+    const sum = known.reduce((a, i) => a + poiPool(t, i), 0);
+    if (sum >= R.siteMin) out.push({ w: sum / far, goal: { kind: "site", tile: id, poi: bestGroupPoi(state, v, t, null, poisOf(t).map((_, i) => i).filter((i) => isSitePoi(t, i))) }, act: `heading for ${tileLabel(state, id)}` });
   }
   return out;
 }
@@ -1105,21 +1130,45 @@ function hitConvoy(state, v, p) {
   nextGoal(state, v);
 }
 
+// The place they search on the tile: a point of interest when the tile has them (pois.js; the site is its POI 0):
+// the one they came for while it holds something, else the best one they know (explorers the site first); a tile
+// without POIs (a city or town centre), its site's tile.loot as before.
+function searchPoi(state, v, t) {
+  if (!poisOf(t).length || (t.loc && !permanentSite(t))) return null;
+  const want = v.goal.poi;
+  if (typeof want === "number" && poiPool(t, want) > 0.03 + 1e-9 && groupKnownPois(state, v, t).includes(want)) return want;
+  if (v.kind !== "raiders" && isSitePoi(t, 0) && poiPool(t, 0) > 0.03) return 0;
+  const i = bestGroupPoi(state, v, t);
+  return i >= 0 ? i : null;
+}
 function searchSite(state, v) {
   const t = state.tiles[v.goal.tile];
-  if (!t || !t.loc) return;
+  if (!t) return;
   const rng = vrng(state);
   const range = v.kind === "raiders" ? O.raiders.siteTake : O.explorers.searchTake;
-  const take = t.loot * rng.range(range[0], range[1]);
   // aiscav.js keeps a floor under every site; outsiders never take it below that either.
   const floor = 0.03;
-  const got = Math.max(0, Math.min(take, t.loot - floor));
-  if (got <= 0) return;
-  t.loot -= got;
+  const poi = searchPoi(state, v, t);
+  let got = 0;
+  if (poi != null) {
+    // Through the POI's container ledger (grouppois.js raidPoiAsGroup): what your people left there goes too.
+    const r = raidPoiAsGroup(state, v, t, poi, poiPool(t, poi) * rng.range(range[0], range[1]), { floor, haul: false, news: v.kind === "raiders" ? true : "left", name: v.kind === "raiders" ? cap1(v.name) : undefined });
+    got = r ? r.took : 0;
+    if (r && r.gear.length) v.wares.push(...r.gear); // things your people left there
+    if (r) for (const [k, q] of Object.entries(r.left)) if (SUPPLIES[k] && q > 0) v.stock[k] = (v.stock[k] || 0) + q;
+    if (got <= 0) return;
+  } else {
+    if (!t.loc) return;
+    const take = t.loot * rng.range(range[0], range[1]);
+    got = Math.max(0, Math.min(take, t.loot - floor));
+    if (got <= 0) return;
+    t.loot -= got;
+  }
   visitorInfo(state).stats.sites++;
   const value = got * (v.kind === "raiders" ? 300 : 120);
   addToStock(v, { food: Math.round(value * 0.35 / 2), ammo: Math.round(value * 0.25 / 0.5), scrap: Math.round(value * 0.2), meds: Math.round(value * 0.1 / 6), fuel: Math.round(value * 0.1 / 3) });
-  if (state.live.has(t.id)) log(state, `${cap1(v.name)} ${v.kind === "raiders" ? "loot" : "pick through"} ${t.loc.name}.`, v.kind === "raiders" ? "danger" : "info");
+  const name = poi != null ? poiPlace(state, t, poi) : t.loc.name;
+  if (state.live.has(t.id)) log(state, `${cap1(v.name)} ${v.kind === "raiders" ? "loot" : "pick through"} ${name}.`, v.kind === "raiders" ? "danger" : "info");
 }
 
 // ---------- merchants ----------
@@ -1301,11 +1350,15 @@ export function inviteMerchants(state, v, base = null) {
 // ---------- trading with them (trade.js tradeContext / advanceTradeQueue call these) ----------
 // where: { baseId } (they stop at your base) or { partyId } (your team meets them). Returns true when the window
 // opened, false when it waits its turn behind another trade.
+// where.back: the card the trade was opened from ("gate", "road", "raid"), which closing the window brings back
+// (tradeBack); a team's resume order rides on the trade meanwhile, so the card's Move on still picks up its trip.
 export function openVisitorTrade(state, v, where) {
   const t = { visitorId: v.id, baseId: where.baseId ?? null, partyId: where.partyId ?? null, factionId: null, offer: {}, ask: {}, offerGear: [], askGear: [], intel: { area: "", sightings: false, sell: false } };
+  if (where.back) t.back = where.back;
   if (t.partyId != null) {
     const p = state.parties.find((x) => x.id === t.partyId);
     if (!p) return false;
+    if (where.back && p.conflictResume) t.resume = p.conflictResume;
     p.phase = "engaged";
   }
   if (state.trade && state.trade.visitorId === v.id) return true;
@@ -1366,13 +1419,14 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
     for (const k of plenty) {
       if (tradeVerdict(state).ok) break;
       if (!t.ask[k]) balanceWith(state, k);
-      if (spare[k] != null && (t.offer[k] || 0) > spare[k]) setQty(state, "mine", k, spare[k]); // never below what the hub needs
+      const cap = spareOf(spare, k); // a food item: by the days of food to spare (foods.js spareOf)
+      if (cap != null && (t.offer[k] || 0) > cap) setQty(state, "mine", k, cap); // never below what the hub needs
     }
     if (tradeVerdict(state).ok) {
       const paid = { ...t.offer };
       const r = executeTrade(state);
       if (/^Traded/.test(r)) {
-        for (const [k, q] of Object.entries(paid)) if (spare[k] != null) spare[k] = Math.max(0, spare[k] - q); // a second deal pays from what is left
+        spendSpare(spare, paid); // a second deal pays from what is left (food items in days of food)
         out.push(r.replace(/^Traded with [^:]+: /, "").replace(/\.$/, ""));
         return true;
       }
@@ -1389,7 +1443,7 @@ export function autoVisitorTrade(state, needs, styleKey = "balanced", spare = {}
   // govguns.js: a gun for the unarmed at home (its guards and scavengers with only a club too): an arms dealer's best.
   if (home && plenty.length && tradeContext(state)) {
     const price = (it) => gearBuyPrice(state, ctx.f, it, ctx.speech);
-    const budget = plenty.reduce((a, k) => { const q = spare[k] != null ? spare[k] : ctx.have[k] || 0; return a + (q > 0 ? q * sellPrice(state, ctx.f, k, ctx.speech, q) : 0); }, 0);
+    const budget = plenty.reduce((a, k) => { const q = spareOf(spare, k) ?? (ctx.have[k] || 0); return a + (q > 0 ? q * sellPrice(state, ctx.f, k, ctx.speech, q) : 0); }, 0);
     const gun = pickGunToBuy(state, home, ctx.theirGear, price, budget);
     if (gun) { const cost = price(gun); t.askGear = [gun]; if (tryDeal()) noteGunBought(state, gun, cost, ctx.f.spec === "arms" ? "arms dealer" : "merchants"); }
   }
@@ -1475,7 +1529,7 @@ export function giveIntel(state, v, r = 1, to = null) {
     if (to) { const cur = to.seen.get(id); if (!cur || cur.hour < snap.hour) { to.seen.set(id, snap); n++; } }
     else { const cur = state.knowledge[id]; if (!cur || cur.hour < snap.hour) { state.knowledge[id] = snap; n++; } }
   }
-  if (to && to.radioLive) mergeKnowledge(state, to.seen);
+  if (to && Parties.reportsLive(to)) mergeKnowledge(state, to.seen);
   visitorInfo(state).stats.intel++;
   return n;
 }
@@ -1528,11 +1582,18 @@ function gateCard(state, v, base, lead) {
       },
     });
   }
-  if (!v.done.trade && (SUPPLY_KEYS.some((k) => available(v, k) > 0) || v.wares.length)) {
+  if (SUPPLY_KEYS.some((k) => available(v, k) > 0) || v.wares.length) {
     choices.push({
-      label: "Trade with them", hint: "Opens the trade window (they carry little). Their other offers wait in the Groups tab",
+      label: v.done.trade ? "Trade with them again" : "Trade with them", hint: "Opens the trade window (they carry little). Closing it brings you back here",
       ai: () => -50,
-      resolve: (st) => { if (!here(st)) return gone; v.done.trade = true; openVisitorTrade(st, v, { baseId: base.id }); v.phase = "stop"; v.stayUntil = st.hour + 6; return ""; },
+      resolve: (st) => {
+        if (!here(st) || v.phase !== "gate") return gone;
+        v.done.trade = true;
+        v.phase = "stop"; // visitorTradeContext: the window is open while they stand at the base
+        v.stayUntil = Math.max(v.stayUntil, st.hour + 6);
+        openVisitorTrade(st, v, { baseId: base.id, back: "gate" });
+        return "";
+      },
     });
   }
   if (v.joiners > 0 && !v.hostile) {
@@ -1571,15 +1632,22 @@ function gateCard(state, v, base, lead) {
       },
     });
   }
+  // The card closed unanswered (left in the tray, or put off): they wait at the gate until their time is up, and
+  // selecting them (the map, the Groups tab) brings the card back (reopenGate).
   choices.push({
-    label: "Send them on their way", hint: "No cost",
+    label: "Decide later", hint: "They wait at the gate a while. Select them on the map (or Outsiders in the Groups tab) to talk again",
+    default: true, ai: () => -20,
+    resolve: (st) => { if (!here(st)) return gone; v.stayUntil = Math.max(v.stayUntil, st.hour + 6); return `${cap1(v.name)} wait at the gate of ${base.name}.`; },
+  });
+  choices.push({
+    label: "Send them on their way", hint: "No cost. Until they leave the tile you can still call them back (select them on the map)",
     ai: () => 5,
-    resolve: (st) => { if (!here(st)) return gone; if (v.phase === "gate") nextGoal(st, v); return `${cap1(v.name)} walk on.`; },
+    resolve: (st) => { if (!here(st)) return gone; if (v.phase === "gate") { v.sentOff = { baseId: base.id, hour: st.hour }; nextGoal(st, v); } return `${cap1(v.name)} walk on.`; },
   });
   const kind = v.sub === "scouts" ? `${n} scouts from ${v.home}, mapping the roads` : v.sub === "refugees" ? `${n} refugees from ${v.home}, tired and hungry` : `${n === 1 ? "a wanderer" : "two wanderers"} from ${v.home}`;
   addCard(state, {
     title: `Travellers at ${base.name}`, visitorId: v.id,
-    text: `${lead ? `${lead} ` : ""}${cap1(kind)} at the gate${people.length ? "" : " (nobody is there to talk to them)"}. They came in from the ${v.from} ${Math.max(1, Math.round((state.hour - v.entered) / 24))} days ago.`,
+    text: `${lead ? `${lead} ` : ""}${cap1(kind)} at the gate${people.length ? "" : " (nobody is there to talk to them)"}. They came in from the ${v.from} ${((n) => (n === 1 ? "a day" : `${n} days`))(Math.max(1, Math.round((state.hour - v.entered) / 24)))} ago.`,
     choices,
   });
 }
@@ -1790,7 +1858,7 @@ function merchantRoadCard(state, v, p) {
     title: `Traders on the road: ${cap1(v.name)}`, partyId: p.id, visitorId: v.id, where: tileLabel(state, partyTile(p)),
     text: `A caravan from ${v.home}: wagons, ${v.guards} guards and ${O.merchants.traders} traders (${escortWords(v.escort) || "guards on foot"}), ${v.act}. They carry ${goodsText(v)}.${hostile ? " They have heard what you did to other traders and keep their rifles on you." : ""}`,
     choices: [
-      { label: "Trade with them", hint: hostile ? "They will not trade with you" : "The trade window, from what the team carries", disabled: hostile, ai: () => 60, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id }); delete p.conflictResume; return ""; } },
+      { label: "Trade with them", hint: hostile ? "They will not trade with you" : "The trade window, from what the team carries", disabled: hostile, ai: () => 60, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id, back: "road" }); delete p.conflictResume; return ""; } },
       {
         label: "Ask for news of the road", hint: "Free: the way they came, on your team's map, and news of other states", disabled: () => !!v.done.roadNews || hostile, ai: () => 70,
         resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); v.done.roadNews = true; const n = giveIntel(st, v, 1, p); return done(st, `"${rumor(st, v)}" They mark the way they came (${n} tiles).`); },
@@ -1812,7 +1880,7 @@ function explorerRoadCard(state, v, p) {
       resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); v.done.roadNews = true; const k = giveIntel(st, v, v.sub === "scouts" ? 2 : 1, p); return done(st, `"${rumor(st, v)}" They show you the way they came (${k} tiles).`); },
     },
   ];
-  if (SUPPLY_KEYS.some((k) => available(v, k) > 0) || v.wares.length) choices.push({ label: "Trade with them", hint: "The trade window (they carry little)", ai: () => -20, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id }); delete p.conflictResume; return ""; } });
+  if (SUPPLY_KEYS.some((k) => available(v, k) > 0) || v.wares.length) choices.push({ label: "Trade with them", hint: "The trade window (they carry little)", ai: () => -20, resolve: (st) => { if (!ok(st)) return done(st, "They are gone."); openVisitorTrade(st, v, { partyId: p.id, back: "road" }); delete p.conflictResume; return ""; } });
   if (v.joiners > 0) {
     choices.push({
       label: `Hear who wants to join (${v.joiners})`, hint: "A recruit card: take them along, send them to a base, or part ways", ai: () => 45,
@@ -2019,7 +2087,7 @@ export function visitorView(state, v) {
     payPlan: v.kind === "raiders" && hub(state) ? stockPlan(hub(state).stock, radioPayValue(state, v), baseCals(state, hub(state))) : null,
     canInvite: v.kind === "merchants" && (live || heard) && hasNetwork(state) && inCoverage(state, v.tile) && attitude(v) !== "Hostile" && !(v.goal && v.goal.kind === "base"),
     tradeHere: v.kind !== "raiders" && v.phase === "stop" && v.goal && v.goal.kind === "base" ? baseById(state, v.goal.baseId) : null,
-    gate: v.kind === "explorers" && v.phase === "gate" && !state.cards.some((c) => c.visitorId === v.id) ? baseById(state, v.gateBase) : null,
+    gate: gateTalkBase(state, v),
     canNews: v.kind === "explorers" && !v.hostile && !v.done.radioNews && (live || heard) && hasNetwork(state) && inCoverage(state, v.tile),
   };
 }
@@ -2053,12 +2121,55 @@ export function radioNewsFrom(state, v) {
   log(state, text, "info");
   return text;
 }
-export function reopenGate(state, v) {
+// Travellers whose gate card is gone (put off, left in the tray, closed by a trade window, or sent on their way and
+// still on the base's tile): the base you can talk to them at, else null. Their card waiting in the tray is not
+// "gone" (gateTrayCard).
+export function gateTalkBase(state, v) {
+  if (!v || v.kind !== "explorers" || v.hostile || !state.visitors.includes(v) || state.cards.some((c) => c.visitorId === v.id)) return null;
+  if ((state.trade && state.trade.visitorId === v.id) || (state.tradeQueue || []).some((t) => t.visitorId === v.id)) return null; // their window is open or waits its turn
   const base = baseById(state, v.gateBase);
-  if (!base || v.phase !== "gate" || state.cards.some((c) => c.visitorId === v.id)) return "";
-  v.stayUntil = Math.max(v.stayUntil, state.hour + 6);
-  gateCard(state, v, base, "");
+  if (!base || v.tile !== base.tile) return null;
+  if (v.phase === "gate" || v.phase === "stop") return base;
+  const s = v.sentOff;
+  if (v.phase === "travel" && s && s.baseId === base.id && state.hour - s.hour <= 12) return base;
+  return null;
+}
+// Their card still in the tray (ui/pacing.js): selecting them opens it.
+export const gateTrayCard = (state, v) => (v ? state.cards.find((c) => c.visitorId === v.id && c.tray) || null : null);
+export function reopenGate(state, v) {
+  const base = gateTalkBase(state, v);
+  if (!base) return "";
+  const back = v.phase === "travel";
+  v.phase = "gate";
+  delete v.sentOff;
+  v.act = `at the gate of ${base.name}`;
+  v.stayUntil = Math.max(v.stayUntil || 0, state.hour + 6);
+  gateCard(state, v, base, back ? "You call them back." : "");
   return "";
+}
+
+// The trade window closed (trade.js endTrade, by the player): back to the card it was opened from. Returns true when
+// a card came back; false leaves the close as it was (a team waits for orders).
+export function tradeBack(state, t) {
+  const v = visitorById(state, t.visitorId);
+  if (!v || !state.visitors.includes(v) || attitude(v) === "Hostile") return false;
+  if (t.back === "gate") {
+    const base = baseById(state, t.baseId);
+    if (!base || v.gateBase !== base.id || v.phase !== "stop" || v.tile !== base.tile) return false;
+    v.phase = "gate";
+    v.act = `at the gate of ${base.name}`;
+    gateCard(state, v, base, "");
+    return true;
+  }
+  const p = state.parties.find((q) => q.id === t.partyId);
+  if (!p || p.phase !== "engaged" || !partyMembers(state, p).length || state.grid.distance(partyTile(p), v.tile) > 1) return false;
+  let card = null;
+  if (t.back === "road") card = v.kind === "merchants" ? merchantRoadCard(state, v, p) : v.kind === "explorers" ? explorerRoadCard(state, v, p) : null;
+  else if (t.back === "raid") { const c = roadCaravans(state).find((x) => x.ref === v); card = c ? roadCaravanCard(state, p, c) : null; }
+  if (!card) return false;
+  if (t.resume) p.conflictResume = t.resume;
+  addCard(state, card);
+  return true;
 }
 
 export function visitorAlertsData(state) {

@@ -32,6 +32,8 @@ import * as V from "../src/sim/visitors.js";
 import { outsidersSection, visitorAlerts, visitorTradeButtons, visitorTradeHead, VISITOR_ACTIONS } from "../src/ui/visitors.js";
 import { tradeWindow } from "../src/ui/tradewindow.js";
 import { digest } from "./digest.js";
+import { poisOf, poiPool } from "../src/sim/pois.js"; // points of interest (Session 4b: the bands raid them)
+import { groupWouldSurvey, bestGroupPoi } from "../src/sim/grouppois.js";
 
 const days = Number(process.argv[2] || 365);
 const seed = Number(process.argv[3] || 42);
@@ -261,8 +263,23 @@ section("Raiders and everyone else: groups, their caravans, merchants, sites; le
   place(st, r4, site.id);
   r4.goal = { kind: "site", tile: site.id };
   const loot0 = site.loot;
-  tick(st, 10);
+  tick(st, 1);
+  // A tile of points of interest (pois.js; the site is its POI 0): a survey stop first (grouppois.js), then the raid.
+  check(!poisOf(site).length || r4.surveyLeft > 0 || !groupWouldSurvey(st, r4, site), `on a tile of points of interest they survey first (${r4.act})`);
+  tick(st, 19);
   check(site.loot < loot0 && site.loot >= 0.03 && site.loot > loot0 * 0.7, `a site is looted (${loot0.toFixed(2)} → ${site.loot.toFixed(2)})`);
+  check(!poisOf(site).length || (poisOf(site)[0].cont && poisOf(site)[0].cont.last && poisOf(site)[0].cont.last.by === r4.id), "through the site's container ledger (poicont.js)");
+  // Points of interest that are not a site: a band raids the best one it knows on a tile.
+  const pt = st.tiles.find((t) => !t.loc && t.terrain === "suburb" && poisOf(t).length && t.owner == null && !t.hive && !V.nearGroups(st, t.id) && !st.bases.some((x) => x.tile === t.id));
+  if (pt) {
+    const r5 = V.spawnVisitor(st, "raiders", { size: 5, power: 3 });
+    place(st, r5, pt.id);
+    r5.goal = { kind: "site", tile: pt.id, poi: bestGroupPoi(st, r5, pt) };
+    const sum = () => poisOf(pt).reduce((a, _, i) => a + poiPool(pt, i), 0);
+    const s0 = sum();
+    tick(st, 20);
+    check(sum() < s0, `a POI on a bare tile raided (${s0.toFixed(2)} → ${sum().toFixed(2)} on the tile)`);
+  }
   let sitesSeen = 0, onGrounds = 0;
   for (const t of st.tiles.filter((x) => x.terrain !== "water").filter((_, i) => i % 97 === 0)) {
     place(st, r4, t.id);
@@ -338,7 +355,17 @@ section("Your teams meet them");
       mc.choices.find((x) => /^Trade with them/.test(x.label)).resolve(st);
       const ctx = tradeContext(st);
       check(ctx && ctx.kind === "visit" && ctx.visitor === m && ctx.p === p, "the trade window opens for the team");
-      endTrade(st);
+      // Leave (the player): back to the traders' card, the team still stopped with its resume order kept.
+      endTrade(st, { back: true });
+      const mc2 = st.cards.find((x) => x.partyId === p.id && /^Traders on the road/.test(x.title));
+      check(!st.trade && !!mc2 && p.phase === "engaged" && p.conflictResume === "waiting" && st.cards.filter((x) => x.visitorId === m.id).length === 1, "closing the trade window brings back the traders' card (one, the team's resume order kept)");
+      if (mc2) {
+        st.cards.splice(st.cards.indexOf(mc2), 1);
+        mc2.choices.find((x) => /^Trade with them/.test(x.label)).resolve(st);
+        check(!!tradeContext(st), "and trading again from it opens the window again");
+        endTrade(st); // the autopilot's close: the team waits for orders, no card
+        check(!st.cards.some((x) => x.visitorId === m.id) && p.phase !== "engaged", "a close without back ends the meeting as before");
+      }
     }
     // Explorers on the road.
     clearCards(st);
@@ -392,7 +419,7 @@ section("The governor and a toll that would strand the team");
     }
     return { why: "no toll card in 12 tries" };
   };
-  const dry = tollAi({ water: 9, food: 6 });
+  const dry = tollAi({ water: 20, food: 6 }); // enough water to pay the toll (food travels as typed items, water partly in canteens), not enough left for the way home
   check(dry.ai === 5, `a toll paid in the water the team needs to get home: score ${dry.ai} (${dry.label || dry.why})`);
   const rich = tollAi({ water: 20, food: 12, scrap: 30 });
   check(rich.ai >= 55, `a toll paid from spare scrap: the usual score ${rich.ai} (${rich.label || rich.why})`);
@@ -558,6 +585,60 @@ section("Explorers: intel, maps, recruits, shelter, thieves");
   const l0 = site.loot;
   tick(st, 10);
   check(site.loot < l0 && site.loot > l0 * 0.88, `ruins explored: loot ${l0.toFixed(2)} → ${site.loot.toFixed(2)}`);
+}
+
+// ======================================================================================
+section("Travellers at the gate: put off, sent off, after a trade (DIALOG-01, DIALOG-02)");
+{
+  const st = world();
+  tick(st, 24);
+  clearCards(st);
+  const h = hub(st);
+  const e = V.spawnVisitor(st, "explorers", { sub: "wanderers", hostile: false, wantsYou: false });
+  place(st, e, h.tile);
+  e.goal = { kind: "base", baseId: h.id, tile: h.tile };
+  e.phase = "travel";
+  e.joiners = 0;
+  e.stock.meds = 3;
+  tick(st);
+  const gc = () => st.cards.find((c) => c.visitorId === e.id && /^Travellers at/.test(c.title));
+  check(e.phase === "gate" && !!gc(), "at the gate: a card");
+  const decide = gc() && gc().choices.find((c) => /^Decide later/.test(c.label));
+  check(!!decide && decide.default === true, "Decide later is the card's default (a tray card left alone keeps them at the gate)");
+  answer(st, /^Decide later/);
+  check(!gc() && e.phase === "gate" && V.gateTalkBase(st, e) === h, "put off: they wait at the gate, and can be talked to again");
+  check(V.visitorView(st, e).gate === h, "the Groups tab offers the gate again");
+  tick(st, 2);
+  check(e.phase === "gate", "still waiting a few hours on");
+  V.reopenGate(st, e);
+  check(!!gc() && st.cards.filter((c) => c.visitorId === e.id).length === 1, "selecting them brings the card back (one)");
+  V.reopenGate(st, e);
+  check(st.cards.filter((c) => c.visitorId === e.id).length === 1, "never two cards");
+  // A trade from the gate: closing the window comes back to the gate card, nothing restarted.
+  answer(st, /^Trade with them/);
+  check(!!tradeContext(st) && e.phase === "stop", "the trade window opens");
+  endTrade(st, { back: true });
+  check(!st.trade && e.phase === "gate" && !!gc() && gc().choices.some((c) => /^Trade with them again/.test(c.label)) && st.cards.filter((c) => c.visitorId === e.id).length === 1, "closing it brings back the gate card (Trade with them again)");
+  check(gc() && gc().choices.some((c) => /^Hear their news/.test(c.label)), "the rest of their offers are still there");
+  answer(st, /^Hear their news/);
+  check(!!gc() && !gc().choices.some((c) => /^Hear their news/.test(c.label)), "what was done stays done");
+  // Sent on their way: called back while still on the base's tile.
+  answer(st, /^Send them on their way/);
+  check(e.phase === "travel" && V.gateTalkBase(st, e) === h, "sent off but still at the gate: they can be called back");
+  V.reopenGate(st, e);
+  check(e.phase === "gate" && !!gc() && /call them back/.test(gc().text), "called back: the gate card again");
+  answer(st, /^Send them on their way/);
+  place(st, e, st.grid.within(h.tile, 1).find((t) => t !== h.tile));
+  check(V.gateTalkBase(st, e) === null, "once they leave the tile, no calling back");
+  // The map's selection card (ui/mapselect.js) and its handler.
+  place(st, e, h.tile);
+  e.phase = "gate";
+  e.known = true;
+  const sel = readFileSync(new URL("../src/ui/mapselect.js", import.meta.url), "utf8");
+  check(/talkButton\(state, at\.ref\)/.test(sel) && /data-action="vis-gate"/.test(sel) && typeof VISITOR_ACTIONS["vis-gate"] === "function", "a selected traveller's card has Talk to them (vis-gate)");
+  VISITOR_ACTIONS["vis-gate"](st, {}, { id: e.id });
+  check(!!gc(), "vis-gate opens the card");
+  clearCards(st);
 }
 
 // ======================================================================================
