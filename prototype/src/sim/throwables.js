@@ -43,6 +43,7 @@ import { ZTYPES } from "./hiveconst.js";
 import { armorVs } from "./deadsoldiers.js";
 import { GEAR } from "./data.js";
 import { deafen, HEAR } from "./hearing.js"; // the bang: deafened near a blast
+import { noteBlast } from "./crossfire.js"; // their blast heard by your people, not seen: a marker in the fog with a guess
 import { blastHit, cookOffs, groundBlast } from "./launchers.js"; // section 24: what a blast does to the gear of those it hits (and to what lies there); carried bombs set off
 export { registerHearing } from "./launchers.js"; // hearing.js (w2-helmets) hands its deafen here: launcher blasts and rocket launches call it
 import { breakRam } from "./siege.js"; // a rocket breaks a battering ram
@@ -183,7 +184,8 @@ export function landEffect(b, u, T, x, y) {
     const parts = B.impact ? [...hurtAll(b, u, list.filter((t) => t.x === x && t.y === y), B.impact, "BOOM"), ...hurtAll(b, u, list.filter((t) => t.x !== x || t.y !== y), B.dmg, "BOOM")] : hurtAll(b, u, list, B.dmg, "BOOM");
     b.noise = (b.noise || 0) + B.noise;
     if (!T.blast) deafen(b, x, y, HEAR.BLAST[T.fx] || HEAR.BLAST.frag); // hearing.js: the bang deafens those near it (a launcher's round: launchers.js deafenAt, its own bang, once)
-    alertNear(b, x, y, B.wake, "The blast wakes everything nearby.");
+    alertNear(b, x, y, B.wake, "The blast wakes everything nearby.", u); // crossfire.js: theirs, while you are unseen, draws the dead to the spot
+    noteBlast(b, u, x, y, T.fx === "frag" ? "frag" : (T.blast && T.blast.kind) || "blast");
     const torn = wreck(b, x, y, B.r, B.struct, u, !!B.heavy);
     const rams = B.rams ? ramsHit(b, x, y, B.r) : "";
     groundBlast(b, x, y, B.r, !!B.heavy); // launchers.js: what lies within it (containers, the dead, spears, dropped guns, the vehicle's cargo) is worn by how close
@@ -310,6 +312,7 @@ function flashBurst(b, by, x, y) {
   }
   b.noise = (b.noise || 0) + FLASH.noise;
   deafen(b, x, y, HEAR.BLAST.flash); // hearing.js: the bang rings in the ears too
+  noteBlast(b, by, x, y, "flash"); // crossfire.js: theirs, heard out of sight
   // The people within earshot wake (the dead turn to the noise instead: the lure, stealth.js throwAt).
   const pods = new Set();
   for (const e of b.units) if (e.side === "enemy" && e.kind === "human" && !e.aware && active(e) && dist(e.x, e.y, x, y) <= FLASH.wake) pods.add(e.pod);

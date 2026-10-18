@@ -73,7 +73,7 @@ export function windowWord(c) {
 export function insideOf(b, x, y) {
   if (x < 0 || y < 0 || x >= b.w || y >= b.h) return false;
   const c = b.cells[y * b.w + x];
-  if (!c || c.k === "wall" || isWindow(c)) return false;
+  if (!c || c.k === "wall" || c.k === "boarded" || isWindow(c)) return false; // boarded: a door or window under boards (barricade.js)
   if (b.raid && b.raid.areas) {
     const f = b.floor || 0;
     for (const a of b.raid.areas) if (!a.outdoor && (a.f || 0) === f && x > a.x0 && x < a.x0 + a.w - 1 && y > a.y0 && y < a.y0 + a.h - 1) return true;

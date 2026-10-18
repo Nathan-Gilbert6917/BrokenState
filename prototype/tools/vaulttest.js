@@ -1,7 +1,7 @@
 // Vaulting half cover (src/sim/combat.js VAULT, vaultable, canVault, reachable, distField, moveAlong, moveMob; the
 // user's request of 2026-10-17): a survivor and a human enemy cross a fence line a walker cannot; the end cell is
 // never the fence; the step over it costs 1 + VAULT.COST; nobody vaults with a bag in their arms; the Climber's own
-// way over (middead.js climbOver) still works; a vault is a scuff and the raid's noise (b.noise), and leaves the unit
+// way over (middead.js climbOver) still works; a walker crawls over it instead, dearer (sim/barricade.js CRAWL); a vault is a scuff and the raid's noise (b.noise), and leaves the unit
 // winded (VAULT.COST tiles less of movement for the rest of the turn, cleared by the next); a mid-fight save and load
 // keeps it; the enemy turn completes on a map full of fences, and the human AI's field goes over them.
 // Usage: node tools/vaulttest.js [seed]
@@ -11,6 +11,7 @@ import {
   dashRange, VAULT, MOVE, CELL, vaultable, canVault,
 } from "../src/sim/combat.js";
 import { newItem } from "../src/sim/inventory.js";
+import { CRAWL } from "../src/sim/barricade.js"; // the dead crawl over half cover (2026-10-18)
 import { saveToString, loadFromString } from "../src/sim/save.js";
 
 const seed = Number(process.argv[2] || 7);
@@ -83,7 +84,9 @@ console.log("A fence line between two open cells");
   // The field the human AI steers by goes over it; a walker's does not.
   const fe = distField(b, [[u.x, u.y]], e);
   check(isFinite(fe[idx(b, e.x, e.y)]) && Math.abs(fe[idx(b, e.x, e.y)] - (4 + VAULT.COST)) < 1e-6, `distField for a person goes over the fence at the vault's cost (${fe[idx(b, e.x, e.y)]}: 4 steps + ${VAULT.COST})`);
-  check(!isFinite(distField(b, [[u.x, u.y]], { ...e, kind: "zombie" })[idx(b, e.x, e.y)]) && !isFinite(distField(b, [[u.x, u.y]])[idx(b, e.x, e.y)]), "for a walker, and for nobody in particular, the fence is a wall");
+  // A walker crawls over it since 2026-10-18 (sim/barricade.js CRAWL: dearer than a vault); the field of nobody in particular still treats it as a wall.
+  const fz = distField(b, [[u.x, u.y]], { ...e, kind: "zombie" })[idx(b, e.x, e.y)];
+  check(isFinite(fz) && Math.abs(fz - (4 + CRAWL.COST)) < 1e-6 && !isFinite(distField(b, [[u.x, u.y]])[idx(b, e.x, e.y)]), `for a walker the fence is crawled over at the crawl's cost (${fz}: 4 steps + ${CRAWL.COST}, more than a vault), for nobody in particular it is a wall`);
 }
 
 console.log("The dead: a walker stops, the Climber goes over its own way");
@@ -95,7 +98,8 @@ console.log("The dead: a walker stops, the Climber goes over its own way");
   place(u, 2, 2); place(w, 2, 4);
   fenceLine(b, 10);
   place(z, 12, 10); place(c, 12, 14);
-  check(!canVault(z) && !isFinite(reachable(b, z, 20).dist[idx(b, 9, 10)]), "a walker cannot cross the fence line");
+  const rz = reachable(b, z, 20);
+  check(!canVault(z) && isFinite(rz.dist[idx(b, 9, 10)]) && rz.dist[idx(b, 9, 10)] === 2 + 1 + CRAWL.COST && !isFinite(rz.dist[idx(b, 10, 10)]), `a walker never vaults: it crawls over the fence line at 1 + CRAWL.COST a step (${rz.dist[idx(b, 9, 10)]}), never stopping on it (sim/barricade.js)`);
   c.ztype = "climber";
   const rc = reachable(b, c, 20);
   check(isFinite(rc.dist[idx(b, 9, 14)]) && !isFinite(rc.dist[idx(b, 10, 14)]), "a Climber still goes over it (climbOver), not stopping on it");

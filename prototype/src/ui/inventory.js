@@ -202,6 +202,10 @@ function battleLine(holder) {
   const what = B.mob === 5 && !B.dash ? "full speed" : `${B.mob} tiles an action${B.dash ? `, a dash ${B.mob * 2 + B.dash}` : ""}`;
   return `<div class="small muted"${tip(`In a fight they carry ${Math.round(kg * 10) / 10} kg (worn, held, pockets, rig, pack and the rounds in their magazines): Light up to 18 kg moves 5 tiles an action, Medium up to 28 still 5 but a dash (both actions) 9, Heavy up to 38 4, more 3. Enemies are slowed by their kit the same way.`)}>Fight: ${esc(B.name)} (${esc(what)})</div>`;
 }
+// A team's supplies as one stock for the tiles: what it found (the cargo) and what it packed, by key. A move draws on
+// the found cargo first, then the packed supplies (teamHolders: the order sim/supitems.js suppliesOnto takes them).
+const teamPool = (p) => { const out = {}; for (const pool of [p.cargo && p.cargo.supplies, p.supplies]) for (const [k, v] of Object.entries(pool || {})) if (SUPPLIES[k] && v > 0) out[k] = (out[k] || 0) + v; return out; };
+const teamHolders = (p) => [p.cargo || (p.cargo = { supplies: {}, gear: [] }), p];
 // Storage at a place: the base armory or the team's cargo, as a drop box with item tiles.
 export function storageBox(state, ui, place, user) {
   const st = storageFor(state, place);
@@ -220,13 +224,16 @@ export function storageBox(state, ui, place, user) {
     const bulk = junk.length ? ` <button class="mini" data-action="inv-burnjunk" data-base="${st.id}"${tip(`Break down every piece of junk with firewood in it (wooden, paper or cloth things worth ${BURN.junkValue} or less, not marked Keep): ${junk.length} item${junk.length === 1 ? "" : "s"}, +${burnablesWood(junk)} firewood into ${b.name}'s stores.`)}>Break down junk for firewood (+${burnablesWood(junk)})</button>` : "";
     head = `<div class="spread"><b${tip("Gear stored at this base. Equip it on anyone here.")}>Armory</b><span class="small muted">${st.list.length} items${bulk}</span></div>${b ? repairsBox(state, b) : ""}`;
   }
-  // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's found cargo, the base's stores.
-  const pool = st.o === "cargo" ? st.party.cargo.supplies : ((baseById(state, st.id) || {}).stock || {});
+  // The supplies kept here, as stacks with their weight (firewood too: 0.1 kg each): the team's supplies (what it packed
+  // and what it found, one stock for the tiles: teamPool; the user's request 2026-10-18: the packed rounds in the truck
+  // dragged onto a survivor before a raid, not a line of text), the base's stores.
+  const pool = st.o === "cargo" ? teamPool(st.party) : ((baseById(state, st.id) || {}).stock || {});
   // Stack tiles (ui/stackmove.js): movable where something can take them (INV_STACK_DESTS), else just shown.
   const sups = Object.entries(pool).filter(([k, v]) => SUPPLIES[k] && v >= 1);
   const supKg = sups.reduce((a, [k, v]) => a + supWeight(k) * v, 0);
-  const supHtml = sups.length ? `<div class="invlabel"${tip(st.o === "cargo" ? "Supplies the team found on the way, by weight: shared out among the people with the packed supplies (or riding in the vehicle)" : "The base's stores: food, water, firewood, fuel, meds, rounds by calibre and type, parts")}>${st.o === "cargo" ? "Found supplies" : "In the stores"} (${kg(supKg)} kg)</div>
-    <div class="istore supgrid">${sups.map(([k, v]) => { const l = `${st.o}:${st.id}:sup:${k}`; return supTile(ui, l, k, v, "", invDests(state, ui, l).length > 0); }).join("")}</div>` : "";
+  const packedOf = (k) => (st.o === "cargo" ? Math.floor(Math.max(0, (st.party.supplies || {})[k] || 0)) : 0);
+  const supHtml = sups.length ? `<div class="invlabel"${tip(st.o === "cargo" ? "The team's supplies, by weight: what it packed at the start and what it found on the way (one pool: shared out among the people, or riding in the vehicle). Drag a stack onto a member's pockets, rig or pack (rounds boxed or loose), or click it and say how many." : "The base's stores: food, water, firewood, fuel, meds, rounds by calibre and type, parts")}>${st.o === "cargo" ? "Supplies" : "In the stores"} (${kg(supKg)} kg)</div>
+    <div class="istore supgrid">${sups.map(([k, v]) => { const l = `${st.o}:${st.id}:sup:${k}`; const pk = packedOf(k); const extra = pk > 0 && pk < Math.floor(v) ? ` ${pk} packed at the start, ${Math.floor(v) - pk} found on the way.` : pk > 0 ? " Packed at the start." : st.o === "cargo" ? " Found on the way." : ""; return supTile(ui, l, k, v, extra, invDests(state, ui, l).length > 0); }).join("")}</div>` : "";
   return `${head}${storageGroups(state, ui, st, loc, user)}
     ${supHtml}`;
 }
@@ -822,18 +829,18 @@ INV_STACK_DESTS.push((state, ui, loc) => {
   if (!s || L.slot !== "sup" || !itemKeyOf(L.i)) return [];
   const st = storageFor(state, `${L.o === "armory" ? "base" : "party"}:${L.id}`);
   if (!st || personPlace(s) !== `${st.o === "armory" ? "base" : "party"}:${st.id}`) return [];
-  const holder = st.o === "cargo" ? st.party.cargo : baseById(state, st.id);
+  const holders = st.o === "cargo" ? teamHolders(st.party) : [baseById(state, st.id)]; // a team: its found cargo, then its packed supplies
   const name = shortName(s), what = (SUPPLIES[L.i] || { name: L.i }).name.toLowerCase();
   const loose = isRoundKey(L.i) && !!ui.invLoose;
   const form = isRoundKey(L.i) ? (loose ? ", loose" : ", boxed") : "";
   const out = SUP_PLACES.filter((w) => w === "pocket" || (w === "rig" ? rigOf(s) : packOf(s))).map((w) => {
     const room = supRoom(s, L.i, w, loose);
     return { id: w, label: `${name}: ${PLACE_WORDS[w]}`, fit: room.n, err: room.why,
-      move: (state2, ui2, qty) => { const r = suppliesOnto(state2, [holder], L.i, qty, s, { where: w, loose }); return r.moved ? `${r.moved} ${what} → ${name}'s ${PLACE_WORDS[w]}${form}.${r.why ? ` ${r.why}` : ""}` : r.why || `No room for the ${what}.`; } };
+      move: (state2, ui2, qty) => { const r = suppliesOnto(state2, holders, L.i, qty, s, { where: w, loose }); return r.moved ? `${r.moved} ${what} → ${name}'s ${PLACE_WORDS[w]}${form}.${r.why ? ` ${r.why}` : ""}` : r.why || `No room for the ${what}.`; } };
   });
   const fit = roomOn(s, L.i, { hand: true });
   out.push({ id: "hand", label: `${name}: off hand`, fit, err: fit ? "" : `${name}'s off hand is full.`,
-    move: (state2, ui2, qty) => { const n = stockToPerson(state2, holder, L.i, qty, s, { hand: true }); return n ? `${n} ${what} → ${name}'s off hand.` : `No room for the ${what}.`; } });
+    move: (state2, ui2, qty) => { let n = 0; for (const h of holders) { if (!(qty - n >= 1)) break; n += stockToPerson(state2, h, L.i, qty - n, s, { hand: true }); } return n ? `${n} ${what} → ${name}'s off hand.` : `No room for the ${what}.`; } });
   return out;
 });
 // The boxed / loose chips under the mover for a stack of rounds (ui.invLoose; the amount picked is worked out again).
@@ -844,12 +851,12 @@ registerStackScreen("inv", {
     const L = parseLoc(ui.invSel);
     if ((L.o !== "armory" && L.o !== "cargo") || L.slot !== "sup") return null;
     const st = storageFor(state, `${L.o === "armory" ? "base" : "party"}:${L.id}`);
-    const pool = !st ? null : st.o === "cargo" ? st.party.cargo.supplies : (baseById(state, st.id) || {}).stock;
+    const pool = !st ? null : st.o === "cargo" ? teamPool(st.party) : (baseById(state, st.id) || {}).stock;
     const dests = invDests(state, ui, ui.invSel);
     if (!pool || !dests.length) return null;
     const to = (dests.find((d) => d.fit > 0) || dests[0]).id; // the first place with room (pockets, pack, rig, the off hand)
     const hint = isRoundKey(L.i) && dests.some((d) => SUP_PLACES.includes(d.id)) ? looseChips(ui) : "";
-    return { key: L.i, have: Math.floor(pool[L.i] || 0), at: ui.invSel, splits: invSplits(ui), from: st.o === "cargo" ? "Team cargo" : `${baseById(state, st.id).name} stores`, dests, to, hint };
+    return { key: L.i, have: Math.floor(pool[L.i] || 0), at: ui.invSel, splits: invSplits(ui), from: st.o === "cargo" ? "Team supplies" : `${baseById(state, st.id).name} stores`, dests, to, hint };
   },
   move(state, ui, to, qty) { const d = invDests(state, ui, ui.invSel).find((x) => x.id === to); if (d) ui.invMsg = d.move(state, ui, qty); },
   cancel(state, ui) { ui.invSel = null; },

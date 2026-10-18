@@ -79,6 +79,7 @@ import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fle
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { volFought } from "./volunteers.js"; // volunteers: an allied group's people with your team, moved by their AI (volunteerTurn below)
 import { thirdFoes, enemyTargetsThird, hostilePair, thirdPlan, thirdSideHit, thirdSideUnit, placeThird, thirdResult } from "./thirdside.js";
+import { crossFoes, crossTurn, crossDraw, crossHit, noteShot, crossRound } from "./crossfire.js"; // a raid's raiders and dead fight on contact; their noise draws the dead to them while you are unseen; shots heard, not seen
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
 import { isHardcore } from "./hardcore.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
@@ -110,6 +111,7 @@ import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
 import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
+import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, boardedName } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
 import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its containers as the ledger keeps them, their own dice
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
@@ -611,7 +613,8 @@ export const MOVE = 5, ZOMBIE_MOVE = 3, ZOMBIE_FAST = 4; // tiles per action poi
 // sandbags, a table: CELL cover 1 and walk false; vaultable) instead of round it, at COST tiles more than a plain step
 // (reachable, distField), never stopping on it, and lands winded: COST tiles less of movement for the rest of the turn
 // (u.vaulted, read by moveMob; the next turn clears it). A scuff is heard nearby and the raid's noise (b.noise) rises
-// by NOISE a vault, no alert. The dead never vault (the Climber has climbOver), nor anyone with their arms full.
+// by NOISE a vault, no alert. The dead never vault (the Climber has climbOver; a walker crawls over the same cells at
+// the dearer CRAWL.COST: barricade.js), nor anyone with their arms full.
 export const VAULT = { COST: 2, NOISE: 1 };
 const SIGHT = 13, ZOMBIE_SIGHT = 9;
 export const COVER_DEF = [0, 20, 40];     // aim penalty for no / half / full cover
@@ -688,6 +691,9 @@ export const CELL = {
   bdoor:     { walk: true,  cover: 0, los: true,  name: "Barred door", bar: true },
   doorway:   { walk: true,  cover: 0, los: false, name: "Broken door" },
   smashed:   { walk: false, cover: 1, los: false, name: "Broken window" }, // the sill is half cover like a window's; vaulted through (windows.js), nobody stands in it
+  // A door, a doorway or a window with boards nailed across it (barricade.js): a wall for sight and movement, full
+  // cover, battered through by the dead and the human enemy (its hit points), torn down again from either side.
+  boarded:   { walk: false, cover: 2, los: true,  name: "Boards" },
   rubble:    { walk: true,  cover: 0, los: false, name: "Rubble" },
   well:      { walk: false, cover: 1, los: false, name: "Well" },
   barrel:    { walk: false, cover: 1, los: false, name: "Rain barrels" },
@@ -2412,9 +2418,10 @@ export function reachable(b, u, maxCost, opts = {}) {
   const passes = (x, y) => cellAt(b, x, y).walk || (climber && climbOver(u, b.cells[idx(x, y)].k));
   // A person vaults half cover (VAULT, vaultable): over it at vaultCost more (a closed window crashed through dearer
   // still), never stopping on it, and never round a corner of it (the corner rule below reads passes, not vaults).
-  // One of the dead clambers through an open or broken window the same way (clambers, windows.js).
+  // One of the dead clambers through an open or broken window the same way (clambers, windows.js), and crawls over
+  // half cover at CRAWL.COST (barricade.js crawlable: never a closed window).
   const vaulter = canVault(u), clamber = !vaulter && !climber && clambers(u);
-  const vaults = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultable(b, c) : clamber && windowOpen(c); };
+  const vaults = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultable(b, c) : clamber && (windowOpen(c) || crawlable(b, c)); };
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
@@ -2439,7 +2446,7 @@ export function reachable(b, u, maxCost, opts = {}) {
       if (avoid && avoid.has(j)) continue;
       const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
-      const step = (diag ? 1.5 : 1) + climb + (vault ? vaultCost(b, b.cells[j]) : 0);
+      const step = (diag ? 1.5 : 1) + climb + (vault ? overCost(b, u, b.cells[j]) : 0); // a vault, a clamber through a window, the dead's crawl (barricade.js)
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
       if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) { open.push(j); reached.push(j); }
@@ -2483,7 +2490,8 @@ export function distField(b, sources, walker = null) {
   const climber = !!walker && walker.ztype === "climber"; // middead.js: over walls and fences, up a level anywhere
   const vaulter = !climber && canVault(walker); // a person: over half cover at vaultCost (vaultable)
   const clamber = !climber && !vaulter && (!walker || clambers(walker)); // the dead, or nobody in particular: through an open or broken window (windows.js)
-  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${vaulter ? "v" : ""}${clamber ? "t" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
+  const crawl = clamber && !!walker; // one of the dead (not the field of nobody in particular): over half cover at CRAWL.COST (barricade.js)
+  const key = `${siege ? 1 : 0}${climber ? "c" : ""}${vaulter ? "v" : ""}${clamber ? "t" : ""}${crawl ? "w" : ""}${per}|${burning ? [...burning].join(".") : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
   const cache = fieldCache(b);
   const hit = cache.get(key);
   if (hit) return hit;
@@ -2491,7 +2499,7 @@ export function distField(b, sources, walker = null) {
   if (cache.size >= 8) cache.delete(cache.keys().next().value);
   cache.set(key, d);
   const over = (x, y) => climber && climbOver(walker, b.cells[idx(x, y)].k);
-  const vault = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultable(b, c) : clamber && windowOpen(c); };
+  const vault = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultable(b, c) : clamber && (windowOpen(c) || (crawl && crawlable(b, c))); };
   const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c)) || over(x, y) || vault(x, y)) && !(burning && burning.has(idx(x, y))); };
   const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
@@ -2507,7 +2515,7 @@ export function distField(b, sources, walker = null) {
     sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
     climbA[i] = climbAt(b, x, y) ? 1 : 0;
     hA[i] = h(b, x, y);
-    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? vaultCost(b, c) : 0; // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window
+    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : 0; // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover
     bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
   }
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
@@ -2767,7 +2775,7 @@ export const isRanged = (u) => !WEAPONS[u.weapon].melee;
 export const adjacent = (a, t) => { const [tx, ty] = nearCell(t, a.x, a.y), [ax, ay] = nearCell(a, tx, ty); return Math.max(Math.abs(ax - tx), Math.abs(ay - ty)) === 1; };
 // A blow struck diagonally past a corner: blocked when both cells between the two (the orthogonal pair) are walls or
 // closed doors (MELEE_SOLID; a gate or door only while barred or locked). Low cover (crates, sandbags) does not block it.
-export const MELEE_SOLID = new Set(["wall", "palisade", "door", "idoor", "bdoor", "hivewall", "window", "bars", "fence", "rack", "locker", "tree", "boulder", "truck", "void"]);
+export const MELEE_SOLID = new Set(["wall", "palisade", "door", "idoor", "bdoor", "boarded", "hivewall", "window", "bars", "fence", "rack", "locker", "tree", "boulder", "truck", "void"]);
 const solidForMelee = (b, x, y) => {
   if (x < 0 || y < 0 || x >= b.w || y >= b.h) return true;
   const c = b.cells[y * b.w + x];
@@ -2926,7 +2934,7 @@ export function throwSpear(b, u, x, y, s = null) {
     line.text = `${u.name} throws the ${w.name.toLowerCase()}${off ? " (it flies wide)" : ""}: ${crit ? "critical hit on" : "it hits"} ${t.name} for ${eff}.${meleeAfter(b, u, t, w, crit)}`;
     line.k = u.side === "player" ? (t.side === "player" ? "danger" : "good") : "danger";
     fx(b, { type: "melee", from: [u.x, u.y], to: [t.x, t.y], hit: true, crit, dmg: eff, side: u.side });
-    if (t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+    if (t.side === "enemy" && !t.dead && !t.aware && !crossHit(b, u, t)) alertPod(b, t.pod, `${t.name} cries out!`); // crossfire.js
   } else line.text = `${u.name} throws the ${w.name.toLowerCase()}${off || glance ? " and it flies wide" : ""}: a miss.`;
   (b.spears || (b.spears = [])).push({ id: b.nextId++, x: lx, y: ly, f: u.f || 0, key, owner: u.id, side: u.side, name: w.name });
   unarm(b, u, s);
@@ -3172,7 +3180,7 @@ function trackGhosts(b) {
     if (playerSees(b, e)) g[e.id] = [e.x, e.y, b.turn, e.f || 0]; // [x, y, turn, floor]
   }
 }
-const playerSeesCell = (b, x, y) => b.units.some((u) => u.side === "player" && active(u) && canSeeAt(b, u, x, y));
+export const playerSeesCell = (b, x, y) => b.units.some((u) => u.side === "player" && active(u) && canSeeAt(b, u, x, y));
 // The ghosts to draw: enemies not seen now with a last-seen spot.
 export function enemyGhosts(b) {
   if (!b.ghosts) return [];
@@ -3735,12 +3743,13 @@ export function createBattle(state, setup) {
 // Who a unit fights. Zombies drawn in by noise attack anyone alive, and raiders shoot back.
 // thirdside.js: the third side fights its own foes; enemy people go after it by enemyTargetsThird; the dead go for
 // anyone; your people never go after it on their own (only an order to shoot one does: damage turns it hostile).
+// crossfire.js: in a raid the dead add the raiders they are in contact with, and the raiders the dead coming at them.
 function foesOf(b, u) {
   if (u.side === "third") return thirdFoes(b, u);
   if (u.wild) return b.units.filter((o) => active(o) && o.kind !== "zombie");
-  if (u.side === "enemy" && u.kind === "human") return b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u))));
+  if (u.side === "enemy" && u.kind === "human") return crossFoes(b, u, b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u)))));
   // A Sleeper lying where it is (sleepers.js) is shot only by order: the AI keeps clear of it.
-  return b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && (o.side === "third" || o.dormant)));
+  return crossFoes(b, u, b.units.filter((o) => o.side !== u.side && active(o) && !(u.side === "player" && (o.side === "third" || o.dormant))));
 }
 
 // ---------- actions ----------
@@ -3937,7 +3946,7 @@ export function moveAlong(b, u, path) {
   // cell before (nobody stands on a cell nobody can walk on).
   if (walked.length && !CELL[b.cells[idx(u.x, u.y)].k].walk) { walked.pop(); const back = walked.length ? walked[walked.length - 1] : from; u.x = back[0]; u.y = back[1]; }
   if (vaulted.length) {
-    u.vaulted = (u.vaulted || 0) + VAULT.COST * vaulted.length; // winded: moveMob for the rest of the turn
+    u.vaulted = (u.vaulted || 0) + (u.kind === "zombie" ? CRAWL.COST : VAULT.COST) * vaulted.length; // winded: moveMob for the rest of the turn (the dead crawled: barricade.js)
     if (u.side === "player") { b.noise = (b.noise || 0) + VAULT.NOISE * vaulted.length; say(b, `${u.name} vaults ${[...new Set(vaulted)].join(" and ")}.`, "info"); }
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
@@ -4085,15 +4094,16 @@ export function fire(b, a, t, opts = {}) {
   line.k = a.side === "player" ? (hits ? "good" : "info") : hits ? "danger" : "info";
   if (trig.jam) { jamGun(b, a, trig.jam); say(b, `${a.name}'s ${gunWord(a)} jams: ${jamLabel(a).toLowerCase()}!`, a.side === "player" ? "danger" : "good"); }
   gunfireAlert(b, a, w, noise, "The muffled shots still carry.", "The gunshots alert everything nearby.", "The gunshots alert everyone nearby.");
+  noteShot(b, a, w, noise, moded && mode !== "single"); // crossfire.js: a shot of theirs your people hear but do not see: a marker in the fog with a guess of the gun
   // Any hit that leaves a sleeper alive wakes its group, however quiet the weapon (a crossbow bolt, a shot from
-  // beyond earshot in a raid).
-  if (hits && t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+  // beyond earshot in a raid). crossfire.js: one of the dead hit by a raider goes for the shooter instead.
+  if (hits && t.side === "enemy" && !t.dead && !t.aware && !crossHit(b, a, t)) alertPod(b, t.pod, `${t.name} cries out!`);
   if (w.mounted) afterTurretBurst(b, a, t, rolls > 0); // the turret: its belt, Heat, the pin (none when it jammed before firing)
 }
 // Who hears a shot (fire, suppressing fire): in a raid those near it, a muffled one near it, else everyone.
 function gunfireAlert(b, a, w, noise, muffled, raid, all) {
-  if (noise && b.raid) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? muffled : raid);
-  else if (noise && noise < w.noise) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), muffled);
+  if (noise && b.raid) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), noise < w.noise ? muffled : raid, a);
+  else if (noise && noise < w.noise) alertNear(b, a.x, a.y, (9 + w.noise * 2) * (noise / w.noise), muffled, a);
   else if (noise) alertAll(b, all);
 }
 // Over-penetration (section 20, R6): a hit that got through the armour (or killed) carries on, by the round's chance
@@ -4148,12 +4158,13 @@ export function suppress(b, a, x, y) {
   fx(b, { type: "shot", from: [a.x, a.y], to: [x, y], hit: false, side: a.side, suppress: true, rounds: trig.fired });
   if (trig.jam) { jamGun(b, a, trig.jam); say(b, `${a.name}'s ${gunWord(a)} jams: ${jamLabel(a).toLowerCase()}!`, a.side === "player" ? "danger" : "good"); }
   if (trig.fired) gunfireAlert(b, a, w, noise, "The muffled shots still carry.", "The gunfire alerts everything nearby.", "The gunfire alerts everyone nearby.");
+  if (trig.fired) noteShot(b, a, w, noise, true); // crossfire.js: heard, not seen
 }
 
 // Where a blow landed and what took it, for its sound (ui/sfx-melee.js): loc, the armour's material (armour.js mat:
 // soft, padding, hard, steel, ceramic) and whether the blow went through it.
 const blowFx = (h) => (h.piece ? { loc: h.loc, mat: (armourSpec(h.piece.key) || {}).mat || "hard", through: !!h.through } : h.loc ? { loc: h.loc } : {});
-function strike(b, a, t) {
+export function strike(b, a, t) {
   if (nlStrike(b, a, t)) return; // nonlethal.js: pulling the blows on a living person
   const o = meleeOdds(b, a, t);
   const rng = b.rng;
@@ -4179,7 +4190,7 @@ function strike(b, a, t) {
     fx(b, { type: "melee", from: [a.x, a.y], to: [t.x, t.y], hit: false, side: a.side });
   }
   // A struck sleeper that survives wakes its group.
-  if (t.side === "enemy" && !t.dead && !t.aware) alertPod(b, t.pod, `${t.name} cries out!`);
+  if (t.side === "enemy" && !t.dead && !t.aware && !crossHit(b, a, t)) alertPod(b, t.pod, `${t.name} cries out!`); // crossfire.js: one of theirs struck by the other half of their side: no wake to you
 }
 
 function heal(b, u, t) {
@@ -4627,6 +4638,13 @@ export function combatAct(state, act) {
       syncFloor(b);
       break;
     }
+    case "shove": case "boardup": case "teardown": { // barricade.js: furniture shoved a tile (both actions), boards nailed over a door or window, the boards torn down again
+      const err = act.type === "shove" ? shoveAct(state, b, u, act, { say, alertNear, fx }) : act.type === "boardup" ? boardAct(state, b, u, act, { say, alertNear, fx }) : tearAct(state, b, u, act, { say, alertNear, fx });
+      if (err) return err;
+      b.reach = flood(b.cells, u.x, u.y); // what is in reach on foot changes with a way blocked or opened
+      syncFloor(b);
+      break;
+    }
     // stealth.js: Subdue (takedowns, knock-outs), Tie up, Throw (bottles, noise makers, firecrackers), Drag.
     case "subdue": case "tie": case "throw": case "drag": {
       const err = stealthAct(state, b, u, t, act);
@@ -4777,6 +4795,7 @@ export function runEnemyPhase(state) {
 
 function startPlayerTurn(state, b) {
   heardGhosts(b); // hearing.js: the enemies your people heard move or fire unseen ("?" markers), before the ears tick
+  crossRound(b); // crossfire.js: the heard-noise markers fade
   tickEars(b, ["player"]); // hearing.js: deafness and a daze wear off a turn
   stunTurnEnd(b, ["enemy", "third"]); // throwables.js: their stun wears off with the enemy turn
   b.turn++;
@@ -4880,7 +4899,7 @@ export function shotPriority(b, t) {
   if (t.shotPri) v *= t.shotPri; // a unit marked as the one to kill (hivecrawl.js: the Hivemind, its brood dies with it)
   return v;
 }
-function bestShot(b, u, foes, opts = {}) {
+export function bestShot(b, u, foes, opts = {}) {
   if (!canFire(b, u)) return null;
   let best = null;
   for (const t of foes) {
@@ -4979,6 +4998,7 @@ function aiUnit(b, u) {
   }
   const rng = b.rng;
   if (u.kind === "human") aiFlashlight(b, u, true); // ailights.js: a flashlight on once they know the fight is on, in the dark
+  if (crossTurn(b, u)) return; // crossfire.js: an unaware raider with the dead on them, or one of the dead with raiders in reach: they fight each other
   if (!u.aware && stealthAI(b, u)) return; // stealth.js: finding bodies, going to look where a bottle landed
   if (!u.aware && b.raid) {
     patrol(b, u);
@@ -5336,7 +5356,7 @@ export function openDoor(b, x, y, u = null) {
 }
 
 export function structureName(c) {
-  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "bdoor" || c.k === "idoor" || c.k === "door" ? (c.roll ? "Roller door" : c.dk && DOOR_KINDS[c.dk] ? DOOR_KINDS[c.dk].name : "Door") : c.k === "window" ? "Window" : CELL[c.k].name;
+  return c.k === "gate" ? "Gate" : c.k === "palisade" ? "Wall section" : c.k === "boarded" ? boardedName(c) : c.k === "bdoor" || c.k === "idoor" || c.k === "door" ? (c.roll ? "Roller door" : c.dk && DOOR_KINDS[c.dk] ? DOOR_KINDS[c.dk].name : "Door") : c.k === "window" ? "Window" : CELL[c.k].name;
 }
 
 // A structure gives way: a wall section becomes a breach (and the walkway behind it comes down), the gate hangs open,
@@ -5357,6 +5377,8 @@ export function breakCell(b, x, y, by = null) {
   else if (c.k === "bdoor") c.k = "doorway";
   else if (c.k === "idoor" || c.k === "door") doorBroken(b, x, y); // a building's door stays broken (buildingmaps.js)
   else if (c.k === "window") smashWindow(b, c); // windows.js: broken, half cover still, vaulted through
+  else if (c.k === "boarded") breakBoarded(b, c, x, y); // barricade.js: the boards go, and the door or window with them
+  else if (FURNITURE[c.k]) { c.k = "rubble"; delete c.moved; } // a shoved piece of furniture (barricade.js): smashed to splinters, open floor again
   else if (c.k === "tanktrap") c.k = "rubble"; // a bridge barricade's trap, broken up: open ground again (a vehicle can pass)
   b.losCache.fill(0);
   if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;
@@ -6659,8 +6681,10 @@ export function notice(b, e) {
 }
 
 // Noise wakes everything within earshot (raids, and suppressed shots in ordinary battles; else everyone wakes).
-export function alertNear(b, x, y, radius, why) {
+// src: who made it (crossfire.js: one of theirs while you are still unseen draws the unaware to the spot, nobody wakes).
+export function alertNear(b, x, y, radius, why, src = null) {
   bindDims(b);
+  if (src && crossDraw(b, x, y, radius, src, why)) return;
   const near = b.units.filter((u) => u.side === "enemy" && !u.aware && active(u) && dist(u.x, u.y, x, y) <= radius);
   if (!near.length && !b.floors) return;
   const pods = new Set(near.map((u) => u.pod));

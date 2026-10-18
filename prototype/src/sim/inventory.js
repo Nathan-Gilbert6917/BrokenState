@@ -32,7 +32,7 @@ import { GEAR, SUPPLIES, supValue } from "./data.js";
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
-import { bodyRounds, findRounds } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
+import { bodyRounds, findRounds, unbox } from "./ammo.js"; // rounds by calibre (call-time only: safe in the import cycle)
 import { condition, kitSource, spend } from "./itemcond.js"; // the condition loot comes in (one roller for every source)
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
@@ -907,10 +907,14 @@ export function quickMove(state, fromStr, sid) {
   return moveItem(state, fromStr, empty || tries[0]);
 }
 
-// Supply items put in storage go back into its stock at once (supitems.js): a base's stores, a team's found cargo.
+// Supply items put in storage go back into its stock at once (supitems.js): a base's stores, a team's found cargo. So do
+// boxes of rounds (ammo.js unbox, as the hourly settle does): a box dragged out of a pocket into the truck is the
+// team's rounds again at once, its stack tile counting them (the user's request 2026-10-18).
 function settleStore(state, st) {
   if (!st) return;
-  settleItems(state, st.list, st.o === "cargo" ? st.party.cargo : baseById(state, st.id));
+  const holder = st.o === "cargo" ? st.party.cargo : baseById(state, st.id);
+  settleItems(state, st.list, holder);
+  if (holder) unbox(st.list, st.o === "cargo" ? (holder.supplies = holder.supplies || {}) : (holder.stock = holder.stock || {}));
 }
 // Box (the inventory's button): loose rounds packed back into boxes (itemstack.js boxRounds): all of them in place
 // when they fit a slot's boxes, else a full stack of boxes beside them. Returns the message.

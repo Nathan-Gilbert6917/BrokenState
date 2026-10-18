@@ -3,7 +3,10 @@
 // gear dice "gives me 33 over 80 points"; the vehicle's back "gave the same two items each time ... have it empty then
 // set the new gear"). Each is a fresh draw every time (not the world's dice) and stays within the colonist's points
 // (sim/custompoints.js), whatever else they have:
-//   randomKit: what they wear, hold and carry, for the points left after their skills, traits and the vehicle's back;
+//   randomKit: what they wear, hold and carry, for the points left after their skills, traits and the vehicle's back
+//     (a gun in the hands brings its spare magazines and a box or two of its rounds in the pockets, pouches or pack:
+//     the user's request 2026-10-18, "when a gun is set also set some loose or magazine(s) of ammo ... in the inventory
+//     slots of the survivor"; the rounds in the gun's price go to the stock as ever);
 //   randomTrunk: the vehicle's back, for what its payer has left and the car pool, in the room there is;
 //   randomTraits: traits only, within what they have left (the crew card's Traits);
 //   randomBuild: a whole colonist from a blank slate: traits (none to two), skills and kit, the rest into skills;
@@ -16,7 +19,9 @@ import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehicleP
 import { tierCount, traitPoints, tidyTiers } from "./traits.js";
 import { standardMag } from "./mags.js";
 import { baseKey } from "./rounds.js";
-import { gunCals } from "./ammo.js";
+import { gunCals, calOf } from "./ammo.js";
+import { CALIBERS } from "./data-ammo.js";
+import { pickN, pickStackMax } from "./startgear.js"; // a box of rounds onto a stack of them already picked
 import { randomSkills, fitSkills, skillTotal, SKILL_MAX } from "./appearance.js";
 
 // Worn and held slots after the weapon: [slot, chance it is filled]. Shuffled each draw.
@@ -55,11 +60,13 @@ export function randomKit(budget, rng, opts = {}) {
   if (!P.carry) P.carry = blankCarry();
   for (const w of CARRY_PLACES) P.carry[w] = [...(P.carry[w] || [])];
   let left = Math.max(0, Math.floor(budget));
+  let reserve = 0; // points kept for the gun's rounds while the other slots are drawn (released when they are put)
   // A thing for an empty slot priced from lo×left up to share×left (anything cheaper when nothing is that dear).
   const take = (slot, share, lo = 0) => {
     if (P.slots[slot]) return;
     if (slot === "rig" && P.slots.armor && GEAR[P.slots.armor].pouches) return; // not over a vest with pouches
-    const cap = Math.min(left, Math.max(left * share, 1));
+    const spend = Math.max(0, left - reserve);
+    const cap = Math.min(spend, Math.max(spend * share, 1));
     const ok = slotChoices(slot).filter((k) => noLauncher(k) && slotPoints(slot, k) <= cap && !(slot === "armor" && P.slots.rig && GEAR[k].pouches)); // nor a vest with pouches over a rig
     const dear = ok.filter((k) => slotPoints(slot, k) >= left * lo);
     const list = dear.length ? dear : ok;
@@ -69,7 +76,7 @@ export function randomKit(budget, rng, opts = {}) {
     left -= slotPoints(slot, k);
   };
   const put = (key) => {
-    if (!GEAR[key] || loosePoints(key) > left) return false;
+    if (!GEAR[key] || loosePoints(key) > left - reserve) return false; // (the reserve: the gun's box of rounds comes first)
     const at = firstFit(P, key, carrySpec(P)); // the containers as picked so far
     if (!at) return false;
     const list = P.carry[at.where];
@@ -78,13 +85,36 @@ export function randomKit(budget, rng, opts = {}) {
     left -= loosePoints(key);
     return true;
   };
+  // The gun's rounds: the box key of the common round of its calibre (null: no gun, or one with no boxed rounds: a bow,
+  // a launcher), and a box onto a stack of them already carried (up to a slot's worth: pickStackMax) or into a new spot.
+  const roundKey = () => { const cal = P.slots.weapon ? calOf(P.slots.weapon) : null; const k = cal && CALIBERS[cal] ? baseKey(cal) : null; return k && GEAR[k] ? k : null; };
+  const boxesOf = (key) => CARRY_PLACES.reduce((a, w) => a + P.carry[w].reduce((b, e) => b + (pickKey(e) === key ? pickN(e) : 0), 0), 0);
+  const putBox = (key) => {
+    if (!GEAR[key] || loosePoints(key) > left) return false;
+    for (const w of CARRY_PLACES) {
+      const list = P.carry[w];
+      for (let i = 0; i < list.length; i++) if (pickKey(list[i]) === key && pickN(list[i]) < pickStackMax(key)) { list[i] = { key, n: pickN(list[i]) + 1 }; left -= loosePoints(key); return true; }
+    }
+    return put(key);
+  };
+  // Rounds for the gun in the hands: lo to hi boxes of its common round where they fit (a pouch of their kind, a pocket,
+  // the pack), as far as the points go; at least `least` boxes with it in all. Nothing for a gun with no boxed rounds.
+  const putRounds = (lo, hi, least = 0) => {
+    reserve = 0;
+    const key = roundKey();
+    if (!key) return;
+    const want = Math.max(least - boxesOf(key), rng.int(lo, hi));
+    for (let n = want; n > 0; n--) if (!putBox(key)) break;
+  };
   const pool = new Set(carryChoices());
   const extras = CARRY_POOL.filter((k) => pool.has(k));
   if (!opts.onto) {
     take("weapon", 0.8); // most of it may go on the weapon (a gun is a pistol or better)
+    reserve = roundKey() ? loosePoints(/** @type {string} */ (roundKey())) : 0; // a box of its rounds is kept for after the slots
     for (const [slot, p] of rng.shuffle(SLOT_ODDS.map((x) => [...x]))) if (rng.chance(/** @type {number} */ (p))) take(/** @type {string} */ (slot), 0.5);
     const mag = P.slots.weapon && standardMag(P.slots.weapon);
     if (mag) for (let n = rng.int(1, 2); n > 0; n--) put(mag);
+    putRounds(1, 2); // its rounds to hand: a box or two in the pockets, a pouch or the pack
     for (let n = rng.int(1, 5); n > 0 && left > 0; n--) put(rng.pick(extras));
   }
   if (opts.fill) {
@@ -94,6 +124,7 @@ export function randomKit(budget, rng, opts = {}) {
     empty.forEach((slot, i) => take(slot, i === empty.length - 1 ? 1 : 0.6, 0.15));
     const mag = P.slots.weapon && standardMag(P.slots.weapon);
     if (mag) for (let n = 2; n > 0; n--) put(mag);
+    putRounds(1, 2, 1); // a gun with no rounds on them yet gets a box at least
     for (let tries = 0; tries < 40 && left > 0; tries++) put(rng.pick(extras));
   }
   return P;
