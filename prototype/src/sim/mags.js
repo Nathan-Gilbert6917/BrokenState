@@ -137,7 +137,7 @@ export function fitMags(b, u, spots, staticCap) {
     u.magMode = "internal";
     u.mags = [];
     u.clips = clipsFor(u, spots);
-    if (isShellGun(u)) startHand(b, u); // SHELLS: the loose shells they start with (a side-saddle's)
+    if (isShellGun(u)) startHand(b, u, staticCap); // SHELLS: a handful of loose shells out of the team's bags
     return;
   }
   u.magMode = "box";
@@ -184,31 +184,22 @@ export function enemyMagCount(kind, ...salt) {
 // A shotgun (SHELLS.GUNS: the tube-fed pump and semi-auto, the break-action double barrel and sawn-off, the pipe gun)
 // is loaded a shell at a time from the shells AT HAND: "Shotguns reload from shells in your pocket, rig or anything that
 // holds them that is not your backpack that needs an additional action".
-// 2026-10-18 (the user's bug: "free reloads not pulling from the survivor's inventory ... they can reload forever"):
-// Reload loads only the shells AT HAND on the person (boxes in pockets and rig pouches, loose ones taken out of a pack),
-// and nobody starts a fight with a free handful. What counts as the pack depends on the fight:
-//   - a team on the road (a party's fight, a raid, a crawl): their own backpack and the team's bags (what the team
-//     packed, its cargo, a raid's finds, a teammate's box: b.pools and the side's boxes, carried on the team's backs);
-//   - a base's defence: their own backpack only. The base's stock sits in the armory, not on anyone: nothing is loaded
-//     from it in the fight (before, every defender dug out of it for as long as it lasted). Defenders get CARRY shells
-//     each out of the stock into a pocket as the fight starts (combat.js createBattle: carrykit.js packShells).
-// With no shells at hand or in the pack, Reload and Get shells are refused (the refusal says where the shells are).
 // At hand (shellsAt), per type:
 //   - box: boxes of shells in the shooter's pockets and rig pouches (the first u.handBoxes of u.boxes: fitMags puts the
 //     rig's boxes right after the pockets', so a shot, which takes its round from the shooter's own boxes first, spends
 //     them first), less what is already in the gun;
-//   - hand: loose shells taken out of the pack (u.hand[type], virtual like the magazines: a shot spends the pack's box or
-//     the team's rounds). Every other side: their reserve is endless, so they take the field with START_HAND loose.
-//   - a side-saddle (or an elastic shell holder) on a tube's receiver holds SADDLE shells of its own on the gun, out of
-//     their own pack: that many loose at the start on top, and the most kept loose (HAND_MAX) that many more (and a
-//     Reload puts a shell more in);
-//   - pack: the rest (above: their backpack, and on the road the team's bags; every other side: endless). Not loaded
-//     from directly: Get shells (1 action: getShells) takes GRAB of them out, up to HAND_MAX loose; a Reload with none
-//     at hand is refused ("Shells are in the pack: take some out first"). The AI (reload(): doReload's "fetch" plan)
-//     spends that action itself.
+//   - hand: loose shells on the person out of the team's bags (u.hand[type], virtual like the magazines). The team's
+//     packed rounds (b.pools) have no place on anyone, so a shotgunner takes the field with a handful of them loose
+//     (START_HAND, topped up to that with what their pockets and rig hold), every other side the same (AI parity:
+//     their reserve is endless, their handful the same).
+//   - a side-saddle (or an elastic shell holder) on a tube's receiver holds SADDLE shells of its own on the gun: the
+//     handful at the start and the most kept loose (HAND_MAX) are that many more (and a Reload puts a shell more in);
+//   - pack: the rest (a box in the shooter's own pack, a teammate's, the team's bags; every other side: endless). Not
+//     loaded from directly: Get shells (1 action: getShells) takes GRAB of them out, up to HAND_MAX loose; a Reload with
+//     none at hand is refused ("Shells are in the pack: take some out first"). The AI (reload(): doReload's "fetch"
+//     plan) spends that action itself.
 // A team packed for a trip (parties.js launchExpedition: carrykit.js packShells) carries CARRY shells a shotgunner in a
-// pocket or a rig pouch, out of what it packs, so the first reloads need no digging; a base's defenders get the same out
-// of its stock as the fight starts (combat.js createBattle), so a shotgun at home is not a club after six shots.
+// pocket or a rig pouch, out of what it packs, so it takes the field with more than the handful at hand.
 // Shells a Reload (1 action) puts in: a tube BASE (2 or 3, the battle's dice) + 1 steady hands (aim STEADY_AIM+: a
 // colonist with Shooting 6, a power-4 enemy) - 1 shaken (hurt below half, pinned by suppressing fire, dazed by a
 // flashbang), MIN..MAX; a break action both barrels (2), the pipe gun its one; never more than the room in the gun and
@@ -254,15 +245,13 @@ function shellsIn(list, keys) {
   for (const it of list || []) if (it && keys.includes(it.key)) n += Math.max(0, Math.floor(num(it.dur)));
   return n;
 }
-// The shells of a type this unit carries (u.boxes: pockets, rig, pack), none of the team's.
-const ownShells = (u, keys) => shellsIn(u.boxes || [], keys);
-// A fight at one of your bases: its stock is the pool, and not on anyone (a team's fight: the pools are its bags).
-export const stockFight = (b) => !!(b && b.setup && b.setup.baseId && !b.setup.partyId);
-// The shells of a type this unit can load in this fight, counting what is in the gun out (mag: the rounds in the gun
-// to count with; a switch of type empties it): { box (pockets, rig), hand (loose, out of the pack), pack, at (box +
-// hand) }. The pack: their backpack, and on the road the team's bags (never a base's stock: stockFight). The gun's load
-// is claimed out of these first (the boxes at hand, then the pack): a shotgunner with nothing on them and a loaded tube
-// has 0 at hand, 0 in the pack, and the tube's shells to shoot.
+function poolShells(b, keys) {
+  let n = 0;
+  for (const p of b.pools || []) for (const k of keys) n += Math.max(0, Math.floor(num(p[k])));
+  return n;
+}
+// The shells of a type this unit has: { box (pockets, rig), hand (loose, out of the bags), pack, at (box + hand) }, none
+// of them counting what is in the gun. mag: the rounds in the gun to count with (a switch of type empties it).
 export function shellsAt(b, u, type = null, mag = null) {
   const cal = calOf(u.weapon);
   const t = typeFor(cal, type || u.load);
@@ -271,21 +260,24 @@ export function shellsAt(b, u, type = null, mag = null) {
   const hand0 = Math.max(0, num(u.hand && u.hand[t]));
   if (u.side !== "player") return { box: 0, hand: hand0, pack: Infinity, at: hand0 };
   const keys = withHand(keyFor(cal, t));
-  const total = stockFight(b) ? ownShells(u, keys) : Math.max(0, roundsOf(b, u, t));
+  const total = Math.max(0, roundsOf(b, u, t));
   const boxN = Math.min(total, shellsIn((u.boxes || []).slice(0, Math.max(0, u.handBoxes || 0)), keys));
   const box = Math.max(0, boxN - claimed);
   const rest = Math.max(0, total - Math.max(claimed, boxN));
   const hand = Math.min(hand0, rest);
   return { box, hand, pack: rest - hand, at: box + hand };
 }
-// The loose shells a shotgunner takes the field with (fitMags, enemyMags). Your side: none but a side-saddle's or a
-// buttstock holder's, out of the pack (shellsAt bounds them); every other side: START_HAND out of an endless reserve.
-function startHand(b, u) {
+// The handful a shotgunner takes the field with (fitMags, enemyMags): loose shells of the loaded type out of the team's
+// bags, up to START_HAND with what the pockets and rig hold beyond the gun's load (cap: the gun loads out of them first).
+function startHand(b, u, cap = 0) {
   u.hand = {};
   const cal = calOf(u.weapon), t = typeFor(cal, u.load);
   const cuff = Math.max(0, num(unitMods(u).hand)); // a buttstock shell holder (gunmods.js hand)
-  const hold = saddleHold(u) + cuff; // a side-saddle's shells and a buttstock holder's
-  u.hand[t] = (u.side !== "player" ? SHELLS.START_HAND : 0) + hold;
+  const hold = saddleHold(u) + cuff; // a side-saddle's shells and a buttstock holder's on top of the handful
+  if (u.side !== "player") { u.hand[t] = SHELLS.START_HAND + hold; return; }
+  const keys = withHand(keyFor(cal, t));
+  const box = shellsIn((u.boxes || []).slice(0, Math.max(0, u.handBoxes || 0)), keys);
+  u.hand[t] = Math.max(0, Math.min(Math.max(0, SHELLS.START_HAND - Math.max(0, box - Math.max(0, cap || 0))) + hold, poolShells(b, keys)));
 }
 export const isShaken = (u) => !!((u.maxHp > 0 && u.hp < u.maxHp * SHELLS.HURT) || u.suppressed || u.stun);
 // The shells a Reload puts in now with the dice at roll (0: BASE[0], 1: BASE[1]): { n, at, pack, steady, shaken, room }.
@@ -313,7 +305,7 @@ export function getShellsRefusal(b, u, type = null) {
   if (!isShellGun(u)) return "Only a shotgun is loaded from loose shells.";
   const cal = calOf(u.weapon), t = typeFor(cal, type || u.load);
   const s = shellsAt(b, u, t);
-  if (!(s.pack > 0)) return s.at > 0 ? `No more ${roundName(cal, t)} in the pack: ${s.at} at hand.` : `No ${roundName(cal, t)} in the pack.${teamNote(b, u, t)}`;
+  if (!(s.pack > 0)) return s.at > 0 ? `No more ${roundName(cal, t)} in the pack: ${s.at} at hand.` : `No ${roundName(cal, t)} in the pack.`;
   if (s.hand >= handMax(u)) return `${s.hand} loose shells at hand already: room for no more.`;
   return "";
 }
@@ -344,32 +336,6 @@ export function shellsLine(b, u, type = null) {
   return `${s.at} ${s.at === 1 ? "shell" : "shells"} at hand${pk}`;
 }
 export const PACK_REFUSAL = "Shells are in the pack: take some out first (Get shells, 1 action).";
-// Where the shells of the type this unit cannot load are (a base's defence: its stock, a teammate's pockets), for the
-// refusal: " The base's 40 are in its stock and 12 are on teammates, not to hand in a fight: …" / "" (nowhere else).
-export function teamNote(b, u, type = null) {
-  if (u.side !== "player" || !stockFight(b)) return "";
-  const cal = calOf(u.weapon), t = typeFor(cal, type || u.load), keys = withHand(keyFor(cal, t));
-  let pool = 0;
-  for (const p of b.pools || []) for (const k of keys) pool += Math.max(0, Math.floor(num(p[k])));
-  const mates = Math.max(0, roundsOf(b, u, t) - ownShells(u, keys) - pool);
-  if (!(pool > 0) && !(mates > 0)) return "";
-  const parts = [];
-  if (pool > 0) parts.push(`the base's ${pool} are in its stock`);
-  if (mates > 0) parts.push(`${mates} are on teammates`);
-  const line = parts.join(" and ");
-  return ` ${line[0].toUpperCase()}${line.slice(1)}, not to hand in a fight: a shotgun loads only the shells its shooter carries (pockets, rig, pack).`;
-}
-// Why a shotgun cannot be loaded at all now ("" when some shells of the type are to hand or in the pack): none.
-export function noShellsRefusal(b, u, type = null, mag = null) {
-  if (!isShellGun(u) || u.side !== "player") return "";
-  const cal = calOf(u.weapon), t = typeFor(cal, type || u.load);
-  const s = shellsAt(b, u, t, mag);
-  if (s.at + s.pack > 0) return "";
-  const keys = withHand(keyFor(cal, t));
-  const total = stockFight(b) ? ownShells(u, keys) : Math.max(0, roundsOf(b, u, t));
-  if (total > 0) return `No spare ${roundName(cal, t)}: every shell ${stockFight(b) ? "they carry" : "the team has"} is already loaded.${teamNote(b, u, t)}`;
-  return stockFight(b) ? `No ${roundName(cal, t)} on them (none in their pockets, rig or pack).${teamNote(b, u, t)}` : `No ${roundName(cal, t)} left to load (none on them or in the team's bags).`;
-}
 // A Reload now would have to dig in the pack first (no shells of the type at hand, some in the pack).
 export const shellsInPack = (b, u, type = null) => isShellGun(u) && tracksMags(u) && reloadPlan(b, u, type).mode === "fetch";
 
@@ -386,12 +352,6 @@ export function reloadPlan(b, u, type = null) {
   const max = u.magMax ?? 0, m = u.mag ?? 0;
   if (u.magMode === "internal") {
     if (!sw && m >= max) return { mode: "internal", cost: 1, load: want, why: `The ${gunWord(u)} is full (${max}/${max}).` };
-    if (isShellGun(u) && u.side === "player") { // SHELLS: the shells at hand and in the pack (shellsAt: never a base's stock)
-      const why = noShellsRefusal(b, u, want, sw ? 0 : m);
-      if (why) return { mode: "internal", cost: 1, load: want, why };
-      if (shellsAt(b, u, want, sw ? 0 : m).at < 1) return { mode: "fetch", cost: 1, load: want, why: "" }; // none at hand, some in the pack (Get shells; the AI's reload() does it)
-      return { mode: "internal", cost: 1, load: want, why: "" };
-    }
     const pool = avail(b, u, want);
     if (pool < 1) return { mode: "internal", cost: 1, load: want, why: `No ammo left to load (no ${roundName(cal, want)}).` };
     if (!sw && u.side === "player" && pool <= m) return { mode: "internal", cost: 1, load: want, why: `No spare ammo (${roundName(cal, want)}): every round left is already loaded.` };
@@ -399,7 +359,7 @@ export function reloadPlan(b, u, type = null) {
     let ci = -1;
     for (let i = 0; i < clips.length; i++) if (!clips[i].used && (ci < 0 || MAGS.AP[clips[i].where] < MAGS.AP[clips[ci].where])) ci = i;
     const room = sw ? max : max - m;
-    if (isShellGun(u) && shellsAt(b, u, want, sw ? 0 : m).at < 1) return { mode: "fetch", cost: 1, load: want, why: "" }; // SHELLS (the AI's shotgun): none at hand, their endless bag (reload() digs: doReload's "fetch")
+    if (isShellGun(u) && shellsAt(b, u, want, sw ? 0 : m).at < 1) return { mode: "fetch", cost: 1, load: want, why: "" }; // SHELLS: none at hand, some in the pack (Get shells; the AI's reload() does it)
     if (ci >= 0 && room > internalOf(u.weapon)) return { mode: "clip", cost: MAGS.AP[clips[ci].where] || 1, i: ci, load: want, why: "" };
     return { mode: "internal", cost: 1, load: want, why: "" };
   }

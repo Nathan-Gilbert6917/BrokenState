@@ -98,7 +98,7 @@ import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals:
 // Grenade launchers and rockets (section 13) and what explosions do to gear (section 24): a unit's second weapon (u.gl).
 import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit, blastBox, blastPiles } from "./launchers.js";
 import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, PACK_REFUSAL } from "./mags.js"; // magazines as items (section 15): spares, reload sources, top-up, internal magazines
-import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate, packShells } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines; a base's shotgunners' shells out of its stock
+import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
 import { allCarried, carriedSpots } from "./inventory.js";
 import { deepShift } from "./deeploot.js";
 import { typesOf, withHand } from "./rounds.js"; // shells and rounds at hand (takeHandRounds)
@@ -3201,9 +3201,6 @@ export function createBattle(state, setup) {
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   const base = setup.baseId ? state.bases.find((x) => x.id === setup.baseId) : null;
   if (party) settleParty(state, party); else if (base) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened)
-  // A shotgun loads only from the shells on the person (mags.js SHELLS), so a base's defenders grab theirs out of its
-  // stock as the fight starts, as a team packing for a trip does (carrykit.js packShells: a pocket or a rig pouch).
-  const shellLines = base && !party ? packShells(base.stock, combatants(state, setup)) : [];
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.
   const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId), locks: !setup.layout }); // Army trucks (miltrucks.js), not on a base's wall map; locked doors only on an open field
@@ -3218,7 +3215,6 @@ export function createBattle(state, setup) {
   };
   // The houses' locked doors (genMap FIELD_DOOR): opened like a raid's (locks.js openLock, combatAct "open").
   if (map.locked.length) b.doors = map.locked.map(([x, y], i) => ({ id: i + 1, x, y, lock: { kind: "door", open: false, tries: 0 } }));
-  if (shellLines.length) say(b, `Shells out of the stock: ${shellLines.join(", ")}.`, "info");
   b.reinfMax = Math.round(b.infection * 5);
   b.zmix = armoredOf(setup.enemy && setup.enemy.mix); // the dead drawn in later: soldiers among them at a military site
   const layout = setup.layout && layouts ? layouts.get(setup.layout) : null;
