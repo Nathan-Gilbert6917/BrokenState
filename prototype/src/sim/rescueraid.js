@@ -775,7 +775,7 @@ export function afterRescueBattle(state, result, setup, battle) {
   if (held.length) bits.push(`${held.map((s) => first(s.name)).join(", ")} ${held.length === 1 ? "is" : "are"} still held by ${f ? f.name : "them"}.`);
   if (lost.length) bits.push(`${lost.map((s) => first(s.name)).join(", ")} did not live through it.`);
   if (R.took && R.took.length) bits.push(`Out of their armory: ${R.took.map((it) => it.name).join(", ")}.`);
-  const text = `${result.outcome === "victory" ? "The guards are beaten." : result.outcome === "retreat" ? "The team got out." : "The rescue failed."} ${bits.join(" ")}`.trim();
+  const text = `${result.outcome === "victory" ? "The guards are beaten." : result.calledOff ? "The rescue was called off before it began." : result.outcome === "retreat" ? "The team got out." : "The rescue failed."} ${bits.join(" ")}`.trim();
   return { freed, held, lost, text };
 }
 

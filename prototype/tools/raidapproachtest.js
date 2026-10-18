@@ -9,13 +9,16 @@
 //   raid's Heat starts at 0, the map is the same.
 // - The AI playing your side closes the plan (scouts with a good scout) and plays the raid out; a battle without a
 //   plan (setup.plan unset: tests, fights by the numbers) has none.
+// - Going in from a side (enterFrom: the team placed on that edge, the plan closed, the battle on); Leave (callOff):
+//   the battle ends at once, nobody hurt, nothing searched, a raid as called off (afterRaid: the team awaits orders,
+//   no more hours), an assault as a retreat with everyone out.
 // - A save keeps an open plan (and the scout's marks); the hour-by-hour search's scout and night.
 import { createWorld, hub, atBase, isNight, hourOfDay } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
-import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler } from "../src/sim/combat.js";
+import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, finishCombat } from "../src/sim/combat.js";
 import { raidEnemies, startScavenge } from "../src/sim/scavenge.js";
 import { newItem } from "../src/sim/inventory.js";
-import { planOf, planOpen, setEntry, sendScout, waitNight, goIn, botPlan, scoutChoices, scoutOdds, SCOUT, hoursToNight, engScout, engWaitNight, engScoutChoices } from "../src/sim/raidplan.js";
+import { planOf, planOpen, setEntry, sendScout, waitNight, goIn, enterFrom, callOff, botPlan, scoutChoices, scoutOdds, SCOUT, hoursToNight, engScout, engWaitNight, engScoutChoices } from "../src/sim/raidplan.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 
 const N = Number(process.argv[2] || 40);
@@ -36,7 +39,7 @@ function raid(seed, siteType, opts = {}) {
   const p = res.party;
   p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
   const groups = raidEnemies(state, tile.id);
-  const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "test", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: isNight(state) ? 0 : 5 }, context: {}, plan: opts.plan === false ? undefined : true };
+  const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: opts.handler || "test", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: isNight(state) ? 0 : 5 }, context: {}, plan: opts.plan === false ? undefined : true };
   if (opts.building) setup.raid.building = opts.building;
   state.combat = createBattle(state, setup);
   return { state, p, tile, setup };
@@ -207,6 +210,49 @@ const layout = (b) => b.cells.map((c) => (BOX.has(c.k) ? "box" : c.k === "vehicl
   const r2 = raid(9951, "town");
   goIn(r2.state);
   ok(!planOpen(r2.state.combat), "Go in closes the plan");
+}
+
+// ---------- going in from a side; leaving ----------
+{
+  let entered = 0, left = 0;
+  for (let i = 0; i < Math.max(6, N / 4); i++) {
+    const r = raid(9970 + i, SITES[i % SITES.length], { vehicle: i % 2 === 0, hour: 10 + (i % 8) });
+    if (!r) continue;
+    const { state } = r;
+    const P = planOf(state.combat);
+    // Another side than the one the map was made with: the team is placed on that edge and the plan is closed.
+    const side = P.sides.find((x) => x !== P.side) || P.side;
+    const err = enterFrom(state, side);
+    ok(!err, `enter ${i}: enterFrom ${side}: ${err}`);
+    const b = state.combat;
+    ok(b && !b.over && !planOpen(b) && planOf(b).side === side && b.raid.zones[0].side === side, `enter ${i}: in from the ${side}, the plan closed`);
+    const us = mine(b);
+    const ax = mean(us.map((u) => u.x)) / b.w, ay = mean(us.map((u) => u.y)) / b.h;
+    ok(side === "west" ? ax < 0.25 : side === "east" ? ax > 0.75 : side === "north" ? ay < 0.25 : ay > 0.75, `enter ${i}: the team stands on the ${side} edge`);
+    ok(enterFrom(state, side) !== "" && callOff(state) !== "", `enter ${i}: nothing to plan once in`);
+    entered++;
+  }
+  for (let i = 0; i < Math.max(6, N / 4); i++) {
+    const r = raid(9980 + i, SITES[i % SITES.length], { vehicle: i % 2 === 1, hour: 9 + (i % 8), handler: "scavenge" });
+    if (!r) continue;
+    const { state, p } = r;
+    const hp0 = Object.fromEntries(mine(state.combat).map((u) => [u.sid, state.survivors.find((s) => s.id === u.sid).health]));
+    if (i % 2 === 0) sendScout(state); // a scout first (an hour on the clock), then second thoughts
+    const b = state.combat, P = planOf(b);
+    ok(P.open, `leave ${i}: still planning before Leave`);
+    const h0 = state.hour, hours = P.hours;
+    const err = callOff(state);
+    ok(!err, `leave ${i}: callOff: ${err}`);
+    ok(b.over && !planOpen(b) && P.calledOff, `leave ${i}: the battle is over at once, called off`);
+    const R = b.result && b.result.raid;
+    ok(R && R.calledOff && R.hours === 0 && R.searched === 0 && b.result.outcome === "extracted", `leave ${i}: a raid called off: no hours on the site, nothing searched, everyone out (${JSON.stringify(R && { calledOff: R.calledOff, hours: R.hours, searched: R.searched })}, ${b.result && b.result.outcome})`);
+    ok(!b.result.survivorsDead.length && Object.entries(hp0).every(([sid, hp]) => { const s = state.survivors.find((x) => x.id === Number(sid)); return s.alive && (P.scout && P.scout.sid === Number(sid) ? s.health >= hp - (P.scout.wound || 0) - 0.01 : s.health >= hp - 0.01); }), `leave ${i}: nobody hurt but a scout who was seen`);
+    ok(R && R.vehicleKept === R.hadVehicle, `leave ${i}: the vehicle comes back with them`);
+    finishCombat(state, b.setup, b.result); // scavenge.js afterRaid: the team turns back for orders, no more hours
+    ok(!state.combat && state.hour === h0 && state.parties.includes(p) && p.phase !== "engaged", `leave ${i}: the team is out of the fight awaiting orders (phase ${p.phase}), the clock where it was (${hours} h spent before)`);
+    left++;
+  }
+  console.log(`Going in from a side: ${entered} raids; Leave: ${left} raids called off`);
 }
 
 // ---------- saves ----------

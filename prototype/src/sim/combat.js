@@ -5464,6 +5464,15 @@ function checkEnd(state, b) {
 export function endBattleNow(state, outcome) {
   if (state.combat && !state.combat.over) endBattle(state, state.combat, outcome);
 }
+// raidplan.js callOff: the team turns back before going in (every one of yours marked left, b.calledOff set): the battle
+// ends now, a raid as one nobody searched (endRaid: 0 hours, result.raid.calledOff), anything else as a retreat with
+// everyone out (endBattle: no gear worn, result.calledOff).
+export function endCalledOff(state) {
+  const b = state.combat;
+  if (!b || b.over) return;
+  bindDims(b);
+  if (b.raid) { leaveAboard(b); endRaid(state, b); } else endBattle(state, b, "retreat");
+}
 
 function endBattle(state, b, outcome) {
   const rng = state.rng;
@@ -5518,7 +5527,7 @@ function endBattle(state, b, outcome) {
     if (u.down) lines.push(carried ? `${u.name} was carried out, barely alive (health ${Math.round(s.health)}).` : `${u.name} pulled through, barely (health ${Math.round(s.health)}).`);
   }
   if (b.retreatOrder) lines.unshift(...b.retreatOrder.lines);
-  wearFielded(state, b, true);
+  wearFielded(state, b, !b.calledOff); // called off before anyone went in (raidplan.js callOff): nothing fought with, nothing worn
   armsDropsEnd(state, b, outcome); // carry.js: won, the loads set down from the arms are picked up again (before the piles become loot)
   groundEnd(state, b, outcome); // ground.js: what your people carry loose comes home; a body searched in the battle keeps what is left on it
   // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home (the
@@ -5573,6 +5582,7 @@ function endBattle(state, b, outcome) {
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     // Played on the map: gear wear is done, and the dead were there to search (so handlers add no "loot from the bodies").
     tactical: true, worn: true, bodies: b.bodies.length,
+    calledOff: !!b.calledOff, // raidplan.js callOff: turned back before going in (conquest.js, rescueraid.js say so)
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js: taken home by finishCombat
     carriedIds, // the downed taken out in a retreat
     third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)
@@ -5582,7 +5592,7 @@ function endBattle(state, b, outcome) {
     retreatOrder: b.retreatOrder ? { by: b.retreatOrder.by, turn: b.retreatOrder.turn, escaped: b.retreatOrder.escaped.slice(), caught: b.retreatOrder.caught.slice(), carried: b.retreatOrder.carried.slice(), dropped: b.retreatOrder.dropped.slice() } : null,
   };
   b.summary = lines;
-  say(b, outcome === "victory" ? "Victory. The area is clear." : outcome === "retreat" ? "You pulled out of the fight." : "Defeat. Your team is down.", outcome === "victory" ? "good" : "death");
+  say(b, outcome === "victory" ? "Victory. The area is clear." : b.calledOff ? "Called off. The team turns back." : outcome === "retreat" ? "You pulled out of the fight." : "Defeat. Your team is down.", outcome === "victory" ? "good" : b.calledOff ? "info" : "death");
   // No one to pick through the bodies by hand (headless tools, auto-combat): take all that fits now.
   if (b.bodies.length && (state.autoCombat || typeof window === "undefined")) takeAllBodies(state);
   bump(b);
@@ -6501,13 +6511,14 @@ function endRaid(state, b) {
     raid: {
       extractedIds, carriedIds, vehicleKept, hadVehicle, heat: Math.round(R.heat),
       searched: R.containers.filter((c) => c.searched && c.kind !== "body" && c.kind !== "ground").length, total: R.containers.filter((c) => c.kind !== "body" && c.kind !== "ground").length, // ground.js piles are not places to search
-      hours: Math.max(1, Math.ceil(b.turn / 6)),
+      hours: b.calledOff ? 0 : Math.max(1, Math.ceil(b.turn / 6)), // called off before going in (raidplan.js callOff): no time on the site
       alerted: original.some((u) => u.kind === "human" && (u.aware || u.dead)),
+      calledOff: !!b.calledOff, // scavenge.js afterRaid: the team turned back
     },
   };
   b.summary = lines;
   raidLocksEnd(state, b); // locks.js: keys found go on the key ring
-  say(b, outcome === "extracted" ? "You made it out." : "Nobody made it out.", outcome === "extracted" ? "good" : "death");
+  say(b, b.calledOff ? "Called off. The team turns back." : outcome === "extracted" ? "You made it out." : "Nobody made it out.", b.calledOff ? "info" : outcome === "extracted" ? "good" : "death");
   bump(b);
 }
 

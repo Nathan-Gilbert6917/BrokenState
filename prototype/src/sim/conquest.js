@@ -274,9 +274,9 @@ registerCombatHandler("baseAssault", (state, result, setup) => {
     if (p && state.parties.includes(p)) awaitOrders(state, p, text);
     return;
   }
-  C.stats.lost++;
+  if (!result.calledOff) C.stats.lost++; // raidplan.js callOff: turned back before going in, no assault fought
   if (f) f.pop = Math.max(0, f.pop - Math.ceil((result.enemiesKilled || 0) * 0.6));
-  let text = result.outcome === "retreat" ? "You pulled back from the walls." : result.outcome === "victory" ? "The defenders are beaten, but the base is no longer theirs to take." : "The assault failed.";
+  let text = result.calledOff ? "The assault was called off before it began." : result.outcome === "retreat" ? "You pulled back from the walls." : result.outcome === "victory" ? "The defenders are beaten, but the base is no longer theirs to take." : "The assault failed.";
   if (p && state.parties.includes(p) && f && result.outcome === "defeat") {
     const m = partyMembers(state, p);
     if (m.length > 1 && state.rng.chance(0.3)) { const s = state.rng.pick(m); takeCaptive(state, s, f, p); text += ` ${s.name} was caught.`; }

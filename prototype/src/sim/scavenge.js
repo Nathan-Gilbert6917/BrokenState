@@ -161,6 +161,12 @@ export function afterRaid(state, result, setup) {
     if (f) changeGoodwill(state, f, -10, "you raided their land");
   }
   const loot = [...Object.entries(result.loot.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...result.loot.gear.map((g) => g.name)];
+  // Called off before going in (raidplan.js callOff): nobody set foot on the site; the team turns back for orders.
+  if (r.calledOff) {
+    log(state, `Raid at ${tileLabel(state, setup.tile)} called off: the team turned back without going in.`, "info");
+    if (p && state.parties.includes(p) && partyMembers(state, p).length) awaitOrders(state, p, `The team turned back from ${tileLabel(state, setup.tile)} without going in.`);
+    return;
+  }
   log(state, `Raid at ${tileLabel(state, setup.tile)}: ${result.outcome === "extracted" ? `got out with ${loot.join(", ") || "nothing"}` : "nobody made it out"} (${r.searched}/${r.total} searched, ${r.hours}h).`, result.outcome === "extracted" ? "good" : "death");
   if (!p || !state.parties.includes(p)) return;
   if (!partyMembers(state, p).length) {

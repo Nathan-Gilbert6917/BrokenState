@@ -53,7 +53,7 @@ import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // 
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, vehicleOf, pullTargets, pullRefusal, layInStab, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy, pulling one out of a vehicle
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
-import { planHtml, planAction } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (sim/raidplan.js)
+import { planAsideHtml, planAction } from "./raidplan.js"; // choices before a raid, a window over the battle (sim/raidplan.js); the card while it is put aside
 import { planOpen, botPlan } from "../sim/raidplan.js";
 import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
 import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's card, the orders, the turn controls (user request 2026-10-12)
@@ -121,6 +121,11 @@ const inTeamVehicle = (b, x, y) => { const v = b.vehicle; return !!v && x >= v.x
 
 // ---------- helpers ----------
 const players = (b) => b.units.filter((u) => u.side === "player" && u.vol == null); // yours to order (volunteers are not: sim/combat.js volunteerTurn)
+// Before going in (sim/raidplan.js: the plan open) the team is not on the map yet. A captive of yours on a rescue raid
+// (sim/rescueraid.js u.captive) is there already, tied up in their base: shown and yours to order (acting with them
+// goes in as things stand, the one way in a base has).
+const holding = (b) => !!b && planOpen(b) && !b.over;
+const held = (b, u) => holding(b) && !!u && u.side === "player" && !u.captive;
 const allSide = (b) => b.units.filter((u) => u.side === "player"); // your side, volunteers too (heal, revive, drag)
 const VOL_COLOR = "#c9a2ff"; // volunteers' ring, name and tag (ui/isoview.js the same)
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -149,8 +154,10 @@ function autoSelect(b, center = true) {
   const cur = cui.sel != null ? unitById(b, cui.sel) : null;
   if (cur && cur.side === "player" && alive(cur) && cur.ap > 0) return;
   if (cur && cur.side === "player" && cur.down && !cur.dead && b.phase === "player" && (cui.pickedDown === cur.id || !selfStabRefusal(b, cur))) return; // sim/medics.js: one of the downed picked in the roster (their panel: stabilize yourself)
-  const next = players(b).find((u) => alive(u) && u.ap > 0);
-  cui.sel = next ? next.id : cur && alive(cur) ? cur.id : null;
+  const hold = holding(b);
+  if (hold && cur && held(b, cur)) cui.sel = null; // the team is not on the map yet: nobody of it is picked
+  const next = players(b).find((u) => alive(u) && u.ap > 0 && !held(b, u));
+  cui.sel = next ? next.id : cur && alive(cur) && !held(b, cur) ? cur.id : null;
   cui.mode = "move";
   if (cui.sel != null && (!cur || cui.sel !== cur.id)) { // a new pick: the view goes to its floor, and the camera to them
     followFloor(b);
@@ -165,14 +172,38 @@ function view(b) {
   if (cui.cache.key === key) return cui.cache;
   // Fog of war (sim/combat.js playerVision): what your people see now, by height, light, night and optics; the
   // enemies they see; ghosts where unseen ones were last seen.
-  const vis = playerVision(b);
+  // Before going in (sim/raidplan.js: the plan open): the team is not on the map yet, so nothing is seen and nobody of
+  // theirs; the scout's marks (b.ghosts, the fog's memory) are all the team knows.
+  const hold = holding(b);
+  const eyes = hold ? b.units.filter((e) => e.side === "player" && e.captive && active(e)) : []; // a rescue raid's captives see from where they are held
+  const vis = hold ? heldVision(b, eyes) : playerVision(b);
   const u = selUnit(b);
-  const reach = u && active(u) && u.ap > 0 && b.phase === "player" ? reachable(b, u, SIM.moveMob(u) * u.ap, { manual: true }) : null; // an order by hand may walk into fire
-  const seen = new Set(b.units.filter((e) => e.side !== "player" && active(e) && (b.over || playerSees(b, e))).map((e) => e.id)); // the enemy and the third side (sim/thirdside.js)
-  const ghosts = b.over ? [] : enemyGhosts(b);
+  const reach = u && active(u) && u.ap > 0 && b.phase === "player" && !held(b, u) ? reachable(b, u, SIM.moveMob(u) * u.ap, { manual: true }) : null; // an order by hand may walk into fire
+  const seen = new Set((hold ? b.units.filter((e) => e.side !== "player" && active(e) && eyes.some((eye) => canSeeAt(b, eye, e.x, e.y)))
+    : b.units.filter((e) => e.side !== "player" && active(e) && (b.over || playerSees(b, e)))).map((e) => e.id)); // the enemy and the third side (sim/thirdside.js)
+  const ghosts = b.over ? [] : hold ? planGhosts(b) : enemyGhosts(b);
   const known = rememberSeen(b, vis);
   cui.cache = { key, vis, reach, seen, u, ghosts, known };
   return cui.cache;
+}
+// What the captives see while the plan is open (the team's eyes are not on the map yet).
+function heldVision(b, eyes) {
+  const vis = new Uint8Array(b.w * b.h);
+  if (!eyes.length) return vis;
+  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) for (const e of eyes) if ((e.x === x && e.y === y) || canSeeAt(b, e, x, y)) { vis[y * b.w + x] = 1; break; }
+  return vis;
+}
+// The scout's marks while the plan is open (sim/raidplan.js applyScout: b.ghosts), whoever of theirs the team placed by
+// the sim would see from the zone: nobody is there yet.
+function planGhosts(b) {
+  const out = [];
+  for (const e of b.units) {
+    const g = b.ghosts && b.ghosts[e.id];
+    if (!g || e.side !== "enemy" || e.dead || e.left || e.fled || e.off) continue;
+    if (b.floors && (g[3] || 0) !== (b.floor || 0)) continue;
+    out.push({ id: e.id, x: g[0], y: g[1], turn: g[2], f: g[3] || 0, kind: e.kind, name: e.name, unit: e, heard: !!g[4] });
+  }
+  return out;
 }
 // What your people have ever seen on each floor of this battle (the fog of war indoors, ui/isoview.js): the cells,
 // and each container's state when last seen (its marker under the fog shows that, not what it is now). Kept on the
@@ -385,6 +416,7 @@ export function combatClick(state, px, py) {
   const b = state.combat;
   if (!b || b.over) return;
   sync(b);
+  if (holding(b) && !(selUnit(b) && selUnit(b).captive)) { cui.msg = "Nobody is on the map yet: pick the side to go in from in the plan (Back to the plan, or Esc)."; return; } // sim/raidplan.js: looking at the site before going in (a captive of yours can still act)
   // The marker of a unit on another floor (ui/isoview.js): jump to that floor (and select them if they are yours).
   if (floorsOf(b)) {
     const p = isoPick(b, px, py);
@@ -1049,6 +1081,7 @@ export function combatKey(state, e) {
   sync(b);
   const k = keyAction(e, "battle"); // ui/keymap.js
   if (viewKey(state, b, e, k)) return true;
+  if (holding(b) && !(selUnit(b) && selUnit(b).captive)) return true; // sim/raidplan.js: before going in (the window, or the site looked at): no orders, no turn to end (Esc: main.js closeTopLayer → planEsc)
   const confirm = k === "battle.confirm", space = k === "battle.endTurn";
   if (b.over) {
     if (confirm || space) { closeCombat(state); return true; }
@@ -1404,7 +1437,7 @@ export function renderCombatPanel(state) {
   autoSelect(b);
   const e = b.setup.enemy;
   const u = selUnit(b);
-  const phase = b.over ? `<b>${b.result.outcome === "victory" ? "Victory" : b.result.outcome === "extracted" ? "Got out" : b.result.outcome === "retreat" ? "Retreated" : "Defeat"}</b>` :
+  const phase = b.over ? `<b>${(b.result.raid && b.result.raid.calledOff) || b.result.calledOff ? "Called off" : b.result.outcome === "victory" ? "Victory" : b.result.outcome === "extracted" ? "Got out" : b.result.outcome === "retreat" ? "Retreated" : "Defeat"}</b>` :
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
   let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b)}`;
@@ -1419,7 +1452,7 @@ export function renderCombatPanel(state) {
     ${tierHtml(b)}
   </div>`;
 
-  if (planOpen(b) && !b.over) html += planHtml(state, b); // sim/raidplan.js: before going in (first, under the title)
+  if (planOpen(b) && !b.over) html += planAsideHtml(state, b); // sim/raidplan.js: before going in, the window put aside to look at the site (the window itself: ui.js pickModal)
   html += `<h3>Your team</h3><div class="cbroster">`; // the 🎒 Inventory of the selected one: the bottom bar (ui/battlebar.js)
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})${selfNote(b, p)}`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
@@ -1504,6 +1537,7 @@ export function renderCombatBar(state) {
   autoSelect(b);
   if (b.over) return "";
   const u = selUnit(b);
+  if (holding(b) && !(u && u.captive)) return ""; // sim/raidplan.js: nobody is on the map before going in: no orders, no turn controls (a captive of yours: theirs)
   const ord = unitOrders(state, b, u);
   const k = (id, d = "") => keyLabel(id, 1) || d;
   const wallMap = !!(b.tier && b.tier.map === "wall");
@@ -2229,21 +2263,22 @@ export function drawCombat(state, now) {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawIsoView(state, b, now, cw, ch); // the battle map is isometric only (ui/isoview.js)
-  hudFrame(state, b, cw, ch); // ui/battlehud.js: the big hit chances, your people off screen, the strip and the weapon panel
-  barkFrame(ctx, state, b, now, barkView(b, now, cw, ch)); // combat barks over the units' heads (ui/barks.js)
+  // Before going in (sim/raidplan.js: the plan open) the team is not on the map: no squad strip, no hit chances, no barks.
+  hudFrame(state, b, cw, ch, holding(b)); // ui/battlehud.js: the big hit chances, your people off screen, the strip and the weapon panel
+  if (!holding(b)) barkFrame(ctx, state, b, now, barkView(b, now, cw, ch)); // combat barks over the units' heads (ui/barks.js)
   drawBanner(b, cw, 40);
 }
 // The battle HUD (ui/battlehud.js): the enemy under the mouse and its odds, the hit chances over the enemies (the
 // isometric view's own small labels and hover bubble are left out: these replace them), your people in number-key order.
 let hudEl;
-function hudFrame(state, b, cw, ch) {
+function hudFrame(state, b, cw, ch, hold = false) {
   const v = view(b), u = v.u;
   const h = cui.hover;
-  const t = h && u && active(u) && b.phase === "player" && !b.over ? unitAt(b, h.x, h.y) : null;
+  const t = h && u && active(u) && b.phase === "player" && !b.over && !held(b, u) ? unitAt(b, h.x, h.y) : null;
   const hoverT = t && t.side === "enemy" && active(t) && v.seen.has(t.id) ? t : null;
   const hoverO = hoverT ? odds(b, u, hoverT) : null;
-  const list = players(b);
-  const sel = cui.sel;
+  const list = hold ? players(b).filter((p) => p.captive) : players(b); // hold: nobody of yours on the map yet but a rescue raid's captives (sim/raidplan.js)
+  const sel = held(b, u) ? null : cui.sel;
   if (hudEl === undefined || (hudEl && !hudEl.isConnected)) hudEl = typeof document !== "undefined" && document.getElementById ? document.getElementById("cbhud") : null;
   const bottom = barInset();
   const avoid = hudSync(hudEl, { state, b, list, sel, salt: cui.salt, cw, ch, hoverT, hoverO, mode: cui.mode });
@@ -2380,7 +2415,7 @@ function coneOf(b, t, sel) {
 }
 function drawCones(b, v) {
   const u = v.u, sel = u && u.side === "player" ? u : null;
-  const shown = (t) => onFloor(b, t) && !t.dead && !t.down && !t.left && !t.fled && !t.off && t.x >= 0 && t.y >= 0 && t.x < b.w && t.y < b.h;
+  const shown = (t) => onFloor(b, t) && !t.dead && !t.down && !t.left && !t.fled && !t.off && t.x >= 0 && t.y >= 0 && t.x < b.w && t.y < b.h && !held(b, t); // held: not on the map yet (sim/raidplan.js)
   if (cui.cones) {
     for (const t of b.units) {
       if (!shown(t) || (t.side !== "player" && !v.seen.has(t.id)) || t === u) continue;
@@ -2415,9 +2450,10 @@ function drawIsoView(state, b, now, cw, ch) {
   const v = view(b);
   const plan = retreatAskOpen(b) ? askPlan(b) : null;
   const fp = cui.mode === "facemove" && cui.facePick && v.u && cui.facePick.uid === v.u.id ? cui.facePick : null; // a move's tile picked: its path stays drawn while the way to face is picked
+  const hold = held(b, v.u); // sim/raidplan.js: before going in nobody of yours is on the map (no selected one, no cones; a rescue raid's captives are there)
   drawIso(ctx, cw, ch, state, b, now, {
     known: v.known, allKnown: ownGround(b), // the fog of war indoors (ui/isoview.js)
-    v, u: v.u, sel: cui.sel, mode: fp ? "move" : cui.mode, hover: fp ? { x: fp.x, y: fp.y } : cui.hover, salt: cui.salt,
+    v, u: hold ? null : v.u, sel: hold ? null : cui.sel, mode: fp ? "move" : cui.mode, hover: fp ? { x: fp.x, y: fp.y } : cui.hover, salt: cui.salt,
     animPos: (t, n) => { const [x, y] = animTile(b, t, n); return [x + 0.5, y + 0.5]; },
     fxAge: (f, n) => { if (!cui.anim.has(f.seq)) cui.anim.set(f.seq, n); return Math.max(0, n - cui.anim.get(f.seq)); },
     unitAt: (x, y) => unitAt(b, x, y), pathTo, odds, bubble: noBubble, // the hover card is ui/battlehud.js's
@@ -2426,7 +2462,7 @@ function drawIsoView(state, b, now, cw, ch) {
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
   });
-  if (!b.over && b.phase !== "deploy") drawCones(b, v); // sim/vision.js: the view cones (the selected one's, the toggle's, the way being picked)
+  if (!b.over && b.phase !== "deploy" && !hold) drawCones(b, v); // sim/vision.js: the view cones (the selected one's, the toggle's, the way being picked)
   // Suppressing fire's cone, a thrown spear's reach: ground diamonds over the scene (isoview.js project).
   if (v.u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) {
     const band = aimArea(b, v.u, v.vis, cui.hover, cui.mode);

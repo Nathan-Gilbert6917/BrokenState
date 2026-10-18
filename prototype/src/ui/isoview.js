@@ -37,6 +37,7 @@ import { paintLights, drawGlow, drawDarkness, drawShade, setLightsCanvas } from 
 import { ingestMarks, revealMarks, drawMarks, knownBody, setMarksCanvas } from "./battlemarks.js"; // blood, brass, scorch, glass that stay
 import { drawGroundIso, drawPileIso } from "./ground.js";
 import { groundPiles, pileCount } from "../sim/ground.js"; // things on the ground (sim/ground.js)
+import { planOpen } from "../sim/raidplan.js"; // before a raid: while the plan is open the team is not on the map yet (not drawn)
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -1452,7 +1453,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   iso.cw = cw; iso.ch = ch;
   stepCamera(b, now);
   setFrame(b, cw, ch);
-  const S = FR.S, r = iso.rot, st = FR.st, v = H.v, u = H.u, players = b.units.filter((p) => p.side === "player");
+  // Before going in (sim/raidplan.js: the plan open; the user's request 2026-10-18): nobody of yours is on the map yet.
+  // The sim has the team at its zone; the drawing leaves them out until the side to go in from is picked.
+  // A captive of yours on a rescue raid (sim/rescueraid.js u.captive) is there already, tied up in their base: drawn.
+  const hold = planOpen(b) && !b.over;
+  const held = (p) => hold && p.side === "player" && !p.captive;
+  const S = FR.S, r = iso.rot, st = FR.st, v = H.v, u = H.u, players = b.units.filter((p) => p.side === "player" && !held(p));
   const scene = sceneFor(b);
   const [Wv, Hv] = viewDims(b);
   ctx.imageSmoothingEnabled = false;
@@ -1469,9 +1475,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   if (!iso.roofs) scene.blds.forEach((B) => cut.add(B.id));
   const open = !!H.allKnown || b.over || b.phase === "deploy";
   if (open) {
-    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && (p.side === "player" || v.seen.has(p.id))) cutAt(p.x, p.y);
+    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && ((p.side === "player" && !held(p)) || v.seen.has(p.id))) cutAt(p.x, p.y);
     if (H.hover) cutAt(H.hover.x, H.hover.y);
-  } else if (u && u.side === "player" && !u.dead && !u.left && !u.off && onFloor(b, u) && u.x >= 0) cutAt(u.x, u.y);
+  } else if (u && u.side === "player" && !held(u) && !u.dead && !u.left && !u.off && onFloor(b, u) && u.x >= 0) cutAt(u.x, u.y);
   const peeks = (b.peeks || []).filter((p) => p.turn === b.turn); // a peek through a door (sim/buildingmaps.js) lifts the roof too
   for (const p of peeks) cutAt(p.x, p.y);
   // A building's own map (sim/buildingmaps.js): the walls are lowered around your people, the enemies you see and the
@@ -1479,7 +1485,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   let focus = null;
   if (b.raid && b.raid.interior && iso.roofs) {
     focus = [];
-    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && (p.side === "player" || v.seen.has(p.id))) focus.push([p.x, p.y]);
+    for (const p of b.units) if (!p.dead && !p.left && !p.fled && !p.off && onFloor(b, p) && ((p.side === "player" && !held(p)) || v.seen.has(p.id))) focus.push([p.x, p.y]);
     if (H.hover) focus.push([H.hover.x, H.hover.y]);
     for (const p of peeks) focus.push([p.x, p.y]);
   }
@@ -1651,6 +1657,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const shown = [];
   for (const t of b.units) {
     if (t.left || t.fled || t.off || !onFloor(b, t)) continue; // on another floor: a marker only (below)
+    if (held(t)) continue; // not on the map until the team goes in (sim/raidplan.js)
     if (t.side !== "player" && !(active(t) ? v.seen.has(t.id) : knownBody(b, t, vis))) continue; // the enemy and the third side (sim/thirdside.js) under the fog; a body once seen stays
     const [wx, wy] = H.animPos(t, now);
     const [uu, vv] = ptView(wx, wy, r, b.w, b.h);
@@ -1784,7 +1791,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     for (const t of b.units) {
       const tf = t.f || 0;
       if (t.left || t.fled || t.off || t.dead || tf === floorNo(b)) continue;
-      if (t.side !== "player" && !v.seen.has(t.id)) continue;
+      if (t.side !== "player" ? !v.seen.has(t.id) : held(t)) continue; // (held: the team is not on the map yet)
       const [X, Y] = project(t.x + 0.5, t.y + 0.5, standZ(b, t.x, t.y));
       const col = t.side === "player" ? "rgba(143,193,255,0.7)" : "rgba(255,143,133,0.7)";
       ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
@@ -1929,7 +1936,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     }
     if (!floorNo(b)) for (const z of b.raid.zones) { // ground floor only (see the zone highlights above)
       const [X, Y] = project(z.x0 + z.w / 2, z.y0 + z.h / 2, 0);
-      tag(ctx, z.vehicle ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle ? "#a9cbff" : COL.good, Math.max(10, 4 * S));
+      tag(ctx, z.vehicle && !hold ? "VEHICLE · EXTRACT" : z.name ? `${z.name.toUpperCase()} · EXTRACT` : "EXTRACT", X, Y + 4 * S, z.vehicle && !hold ? "#a9cbff" : COL.good, Math.max(10, 4 * S)); // hold (sim/raidplan.js): the team and its vehicle are not there yet
     }
   }
   drawDoorMarks(ctx, b, scene, cut, looks, vis, S, topFloor);

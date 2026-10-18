@@ -74,7 +74,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 ## 6. Tactical combat (XCOM-style)
 - **Turn-based tactical battles** with an isometric view [combat, ui/isoview].
 - **Battle map sizes** by context, from 24×18 up to 48×34, with anti-slog endings [battlesize].
-- **Raids into building interiors**: procedurally generated buildings, containers and searches, raid loot carried by hand [buildingmaps, search, raidloot]. Also raid planning (entry side, scout, wait for night) [raidplan], and locks, keys and safes [locks, gunsafes].
+- **Raids into building interiors**: procedurally generated buildings, containers and searches, raid loot carried by hand [buildingmaps, search, raidloot]. Also raid planning, a window before going in with the site under the fog and nobody placed yet (scout, wait for night, look at the map, go in from a side, or leave) [raidplan, ui/raidplan], and locks, keys and safes [locks, gunsafes].
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Hearing and deafening** [hearing].
 - **Non-lethal weapons and taking people alive** (taser, stun baton, pepper spray) [nonlethal].

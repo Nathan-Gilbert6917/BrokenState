@@ -6,8 +6,15 @@
 // Where: a raid on a site played on its map (scavenge.js startScavenge in the browser), the storming of a group's base
 // (conquest.js startAssault) and a rescue raid (rescueraid.js startRescueRaid): their setups carry plan: true, and the
 // battle opens with the plan (setup.plan, plain data: a save keeps it) offered before anyone acts, as a site's choice of
-// building is (combat.js R.choose). Acting with anyone, or Go in, closes it. Fights by the numbers (headless, the
-// autopilot, auto-resolve) have no plan; the hour-by-hour search (state.engagement) has its own two below.
+// building is (combat.js R.choose). While the plan is open the team is not on the map yet (the user's request
+// 2026-10-18): the battle screen shows the site under the fog of war with nobody of yours placed (ui/combat.js view,
+// ui/isoview.js), and the plan is a window over it (ui/raidplan.js, ui.js pickModal). Going in is picking the side to
+// come in from (enterFrom: the side, then goIn), with or without a scout first; a scout's marks can be looked at on
+// the map before going in (Look at the map first, only once a scout has been). Leave (callOff) turns the team back
+// without going in: the battle ends at once with nobody hurt (a raid as called off: scavenge.js afterRaid; an assault
+// or a rescue as a retreat with everyone out), the hours a scout or the wait took spent. Acting with anyone (the
+// bots), or Go in, closes the plan as before. Fights by the numbers (headless, the autopilot, auto-resolve) have no
+// plan; the hour-by-hour search (state.engagement) has its own two below.
 //
 // Entry side (setEntry): the raid map's ways in and out are its extraction zones (west and east and one of north or
 // south on a street map; a building's front, back and side exits); the one the team comes in at is zones[0], where it
@@ -43,7 +50,7 @@ import { helmetNvg } from "./helmets.js";
 import { VISION } from "./vision.js";
 import { STEALTH } from "./stealth.js";
 import { wakeLights } from "./ailights.js";
-import { createBattle, combatants, startCombat, say } from "./combat.js";
+import { createBattle, combatants, startCombat, say, endCalledOff } from "./combat.js";
 import { armsDropsEnd } from "./carry.js";
 import { partyMembers, wipeParty, tileLabel } from "./parties.js";
 
@@ -117,7 +124,7 @@ export function planStart(state, b, rs) {
   if (P.scout) applyScout(state, b, P.scout);
   if (P.open && !P.replay && !P.said) {
     P.said = true;
-    say(b, `Before you go in: ${P.sides.length > 1 ? "pick the side to come in from, " : ""}send a scout first, or ${b.night ? "go in under the dark" : "wait for night"} (the panel). Acting with anyone goes in as you are.`, "good");
+    say(b, `Before you go in: send a scout first, ${b.night ? "" : "wait for night, "}${P.sides.length > 1 ? "pick the side to come in from" : "go in"}, or leave. Nobody is on the map until you go in.`, "good");
   }
 }
 // Closed: the team goes in as it is (combat.js combatAct: anyone acted).
@@ -132,6 +139,41 @@ export function goIn(state) {
   P.open = false;
   say(b, `The team goes in from the ${P.side}${P.scout ? (P.scout.ok ? ", knowing what the scout saw" : ", and they know you are here") : ""}${P.night ? ", under the dark" : ""}.`, "info");
   b.rev++;
+  return "";
+}
+// Go in from a side (the window's North / East / South / West, or Go in where there is one way): the team is placed
+// at that zone (setEntry: the same map again when it is another side) and the plan closes. side null: the side as it
+// stands. Returns "" or why not.
+export function enterFrom(state, side = null) {
+  const b = state.combat;
+  const P = planOf(b);
+  if (!P || !P.open || b.over) return "Nothing to plan now.";
+  if (side && side !== P.side) {
+    const err = setEntry(state, side);
+    if (err) return err;
+    if (!state.combat || state.combat.over) return "";
+  }
+  return goIn(state);
+}
+// Leave without going in: the team turns back from the site. Nobody steps onto the map, so nobody is hurt and nothing
+// is searched; the hours a scout or the wait for night took are spent (the clock ran then). The battle ends at once
+// (combat.js endCalledOff): a raid as called off (its result's raid.calledOff; scavenge.js afterRaid says so and
+// takes no more time), an assault or a rescue as a retreat with everyone out. Returns "" or why not.
+export function callOff(state) {
+  const b = state.combat;
+  const P = planOf(b);
+  if (!P || !P.open || b.over) return "Nothing to plan now.";
+  P.open = false;
+  P.calledOff = true;
+  b.calledOff = true;
+  const hadVehicle = !!(b.raid && (b.raid.hasVehicle ?? b.raid.vehicleZone >= 0));
+  for (const u of b.units) {
+    if (u.side !== "player" || u.dead) continue;
+    u.left = true; u.aboard = false; u.off = false; u.ap = 0; u.ow = u.hunker = false;
+    if (b.raid) { u.exitZone = hadVehicle ? b.raid.vehicleZone : 0; u.exitVehicle = hadVehicle; }
+  }
+  say(b, `${b.raid ? "The raid" : P.kind === "rescue" ? "The rescue" : "The assault"} is called off: the team turns back without going in${P.hours ? ` (${P.hours} h spent)` : ""}.`, "info");
+  endCalledOff(state);
   return "";
 }
 
@@ -346,8 +388,9 @@ export function engWaitNight(state) {
 }
 // Help → Choices before a raid (ui/help.js).
 const P100 = (v) => `${Math.round(v * 100)}%`;
-export const raidPlanHelp = () => `<p>A raid on a site played on its map (and the storming of a group's base, or a rescue raid) opens with <b>Before you go in</b> at the top of the battle panel: a small map of the site with its ways in (green; bright where the team comes in), the team and its vehicle (blue), and what the team knows. It stays until anyone acts or you press <b>Go in</b>.</p>
-<p><b>Come in from</b> North, East, South or West: the sides the map has a way in on (its extraction zones: on a street map the west, the east and one of north or south; a building's front, back and side exits). The same site; the team and the vehicle start at that zone, and the enemy is placed away from it. A base has one way in here. No time lost.</p>
+export const raidPlanHelp = () => `<p>A raid on a site played on its map (and the storming of a group's base, or a rescue raid) opens with the <b>Before you go in</b> window over the battle screen. Behind it the site lies under the fog of war with nobody of yours on it: the team is not placed until you go in. The window shows a small map of the site, all fog but for its ways in (green) until a scout has been round, then what the scout saw.</p>
+<p><b>Go in from</b> North, East, South or West: the sides the map has a way in on (its extraction zones: on a street map the west, the east and one of north or south; a building's front, back and side exits). Picking one goes in: the team and the vehicle are placed at that zone, the enemy away from it, and the fight begins. A base has one way in: <b>Go in</b>. You can go in with or without a scout first; a scout only tells you more. No time lost.</p>
+<p><b>Look at the map first</b> (once a scout has come back unseen): the window is put aside and you can look over the site under the fog with the scout's marks on it (pan and zoom as in a fight); <b>Back to the plan</b> on the panel, or Esc, brings the window back. <b>Leave</b> calls the raid off: the team turns back without going in, nobody is hurt and nothing is searched; the hours a scout or the wait for night took are spent.</p>
 <p><b>Send a scout first</b> (${SCOUT.HOURS} hour on the clock; each of the team with their odds, the best starred). Their notice range: 8 tiles, one less for every 4 points of the scout's Stealth (at least 3); the dead at most 5; at night × ${STEALTH.NIGHT_DETECT} (at least 2). The scout's look: ${SCOUT.DAY_LOOK} tiles by day, +3 with binoculars or a spotting scope, +2 with a monocular or a thermal; at night what the dark lets them see by the hour (4–7 tiles) or ${SCOUT.NVG_LOOK} with night vision or a thermal. The odds of going unseen: ${P100(SCOUT.BASE)} + ${P100(SCOUT.PER_TILE)} for every tile the look beats their notice + ${P100(SCOUT.PER_SKILL)} a point of Scouting (${P100(SCOUT.MIN)}–${P100(SCOUT.MAX)}).</p>
 <p>Unseen: within ${SCOUT.REACH} × the look of the site's middle, everyone of theirs is marked on the map where they stood (faded, as last seen), and the rooms, containers and locked doors there are seen under the fog of war; you learn how many they are (all of them on a clean look). Seen: every one of their people starts alerted, the dead near the middle too, the raid's Heat +${SCOUT.FAIL_HEAT}, and ${P100(SCOUT.WOUND)} of the time the scout comes back hurt (${SCOUT.HURT[0]}–${SCOUT.HURT[1]} health, never to death).</p>
 <p><b>Wait for night</b> (by day): the team holds out of sight until ${NIGHT_FROM}:00 while the clock runs (they eat and drink; the world moves on), then the same site in the dark. Stealth up: they notice you at × ${STEALTH.NIGHT_DETECT} the range, the dead see ${STEALTH.NIGHT_ZOMBIE_SIGHT} tiles, a raid's Heat starts at 0 instead of 5. Sight down: your people see 4–7 tiles ahead in the dark, ${SCOUT.NVG_LOOK} with night vision; a light switched on is a beam that gives you away (see Help: Battles).</p>

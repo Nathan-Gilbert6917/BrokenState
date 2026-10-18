@@ -15,6 +15,7 @@ import { thirstAhead } from "./sim/weather.js";
 import { armoryTabs, TABS_TRIP_DAYS } from "./sim/worm.js"; // purification tablets for the road
 import { searchHour, extract, engagementParty } from "./sim/scavenge.js";
 import { engScout, engWaitNight } from "./sim/raidplan.js"; // before the search: a scout first, or the night
+import { planEsc } from "./ui/raidplan.js"; // before a raid: Esc brings the Before you go in window back
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
@@ -2148,6 +2149,7 @@ function closeTopLayer() {
     else { ui.inv = null; ui.invMsg = ""; }
     return true;
   }
+  if (state.combat && planEsc(state)) return true; // ui/raidplan.js: the Leave question, or the map put aside, back to the window
   if (state.combat) return false; // the battle has its own Esc (cancel the current action)
   if (ui.meet) { ui.meet = null; return true; } // ui/teammeet.js
   if (ui.volPick) { ui.volPick = null; return true; } // ui/volunteers.js
