@@ -23,8 +23,17 @@ Ranked by what a player feels first, then by balance-run throughput. "Win" is th
 | PERF-4 | The groups' daily work | `aiScavDaily`, `groupTargets`, `groupTripLosses`, `groupWorldDaily` recompute per tile and per group | 7.6% + 5.6% + 3% of a no-autopilot run; midnight 55 ms Normal, ~120 ms Huge | roughly halves the midnight tick | none if done as memos; staggering would change behaviour (not in scope) |
 | PERF-5 | Autopilot planners (balance runs and the dev autopilot) | Re-plans from scratch every hour: `buildWishes`, `planRoles`, `equipFromArmory`, `planTrip`, `handleTrade` | 54% of an autopilot run; 11 ms/hour average, p99 82 ms, worst 718 ms | 30–40% off census throughput | none if memo-only; must keep the autopilot's choices identical |
 | PERF-6 | Hourly knowledge and food ledger | `updateVision`/`snapshot` rebuild every live tile each hour; `foodMarkAll` runs ~7 times an hour | ~2% each | small | none |
+| PERF-7 | Browser: the panel refresh | `refresh()` rebuilds the HTML of every panel on every game minute, then discards it as identical | 54–70% of game JS per frame at 5×; 6–15 ms per refresh, worst 91 ms | most of it | stale panel text if the minute split is wrong |
+| PERF-8 | Browser: the State Map draw | `scanTiles` makes three passes over all 2,688 tiles on every drawn frame, and a gliding team makes every frame a drawn frame | 43–52% of `render()` JS; 576 of 576 frames drawn during a glide at 5× | about half of `render()` | none for the scan; a glide-rate cap is a visible choice |
+| PERF-9 | Browser: figures on the map | The figure canvas cache clears itself at 2,400 entries and each miss repaints a limb point by point with string colours | misses 5–11 ms each; hitches when a team first walks a new heading; 23% of wall time with Reveal at 300× | 2–4× per miss | none if pixel-identical |
 
-**Work in progress:** PERF-0 to PERF-6 (the simulation) are written. The sessions for the browser (State Map and panels), the battle engine and view, and saves, memory and start-up are still being profiled and are added below when their numbers are in.
+| PERF-10 | Saves: history that never stops growing | Diary, chronicle events/frames/`said`, and the dead are kept forever; the save is linear in game days (~11 KB a day) | day 1000: 14.9 MB save, diary 6.5 MB of it | `said` prune: 4–6% for free; chunking: most of it | pruning `said` none; chunking needs a loader; compacting the dead is high-risk |
+| PERF-11 | Saves: the autosave freeze | `serializeState` + `JSON.stringify` + thumbnail run synchronously on the main thread every dawn and each battle | 170–225 ms long task at day 365 in Chromium; one freeze every 1.6–8 real minutes | lazy path labels: 15–20% prototyped byte-identical; idle scheduling: most of the felt cost | none if output stays byte-identical |
+| PERF-12 | Saves: `localStorage` runs out | A day-365 save is 5.0–7.2 M chars against a 5.2 M-char quota; the Ironman close-save silently fails | 9–11 compressed slots fit at day 365, 4 at day 1000, the UI promises 17+ | IndexedDB / files | existing saves must keep loading |
+| PERF-13 | Start-up and the new-run screen | 397 modules, no cache headers, `createWorld` at import; every New-run tweak rebuilds the whole world | 2.4–2.6 s to first frame; 0.1–0.7 s per click | ~15% from caching; most of each click | world must stay identical per seed |
+| PERF-14 | Audio bakes and per-frame cues | First-use bakes run synchronously (crowd bed ~210 ms, music engine ~120 ms); `uiCues` snapshots every team every frame | 241 ms per 25 s at 5× | small, removes first-use hitches | none |
+
+**Work in progress:** PERF-0 to PERF-14 (the simulation, the State Map in the browser, saves, start-up and audio) are written. The session for the tactical battle engine and its view is still being profiled and is added below when its numbers are in.
 
 ---
 
@@ -81,6 +90,7 @@ The reference numbers, so a session knows what "before" looked like (Normal map,
 2. `perfcpu.js`: reads a `.cpuprofile` and prints the top self-time and inclusive-time functions, plus `--callers fn` and `--callees fn [depth]`. Document the `node --cpu-prof` invocation in its header.
 3. `perfgolden.js`: runs `node tools/dettest.js --digest <days> <seed>` for the three golden seeds (42, 7, 1234; 60 days) in parallel child processes, prints the three hashes, and with `--save file.json` / `--check file.json` records and compares them. Exit code 1 on a mismatch with the seeds that differ named.
 4. Add the three tools to the tools list in `prototype/README.md`.
+5. Repair the browser benchmark so the browser sessions (PERF-7 to PERF-9) can use it. At the 2026-10-18 survey `desktop/perf/driver.js` (line ~71) and `desktop/perf/browser-bench.js` (line ~48) ask for `speed: 200`, but the dev panel only offers `DEV_SPEEDS = [60, 300, 1200]` (`ui/devtools.js`), so the driver times out waiting for "the 200x button" (Electron's `main.js` passes 300 and works). It also always turns **Reveal map** on, which overweights figure-cache misses against real play, leaves the dev panel open (3–6% extra refresh cost that a player only pays with *Show dev tools* on), and has no way to run at 1× or 2×. Give it `--speed` (any of 1, 2, 3, 5 through the real speed buttons, or a dev speed), `--reveal on|off` (default **off**), `--dev-panel on|off` (default off) and `--autopilot on|off`, make the default speed one that exists, and keep Electron's `--perf` working. Print the frame-time stats it already prints plus the share of `step()` spent in `refresh`, `render`, `audioFrame` and the sim tick (wrap those calls through `window.game` hooks only if that needs no change to `src/`; otherwise report only what a CDP CPU profile gives, and document the profile recipe in the file header).
 
 **Verify.** Run each once; paste the output into the Handoff (this becomes the "before" for the other sessions). `perfgolden.js --check` against a file it just saved passes; run it twice in a row to show the hashes are stable between processes.
 
@@ -198,3 +208,180 @@ Then, if the profile still shows it: `wealthOf` computes `Object.keys(SUPPLIES).
 **Approach.** (a) In `updateVision`, index hordes by tile, group bases by tile (honouring `state.intel.unseen`), hive sites by tile and death sites by tile **once per call**, then let `snapshot` read the indexes (add an optional `index` argument; other callers of `snapshot` keep working unchanged). Keep every field of the snapshot identical and in the same key order (it is stored in `state.knowledge` and saved). Compute `liveTiles` and `noteFinds`' `within` lists from one cached per-base list per `(tile, radius)` (PERF-3). (b) In `foodMark`, compare `now` and `last` first with a cheap pass and return when equal and `x` is empty, otherwise do exactly what it does now. Do not skip a mark: the *phase* of the next change depends on it.
 
 **Verify.** Golden hashes; `node tools/visiontest.js`, `node tools/foodchaintest.js`, `node tools/foodtypestest.js`, `node tools/discoverytest.js` if present (`ls tools | grep -i -E "discover|vision|foodlog|foodchain"`), `node tools/savetest.js` (the snapshots are saved). Report ms/hour of `updateVision` and `foodMarkAll` before and after.
+
+---
+
+# About the browser sessions (PERF-7 to PERF-9)
+
+These come from a Chromium 141 profile (headless, software GL, 1920×1080, seed 42, the autopilot playing, a mature game around day 30–38 with 8–13 people and one base) driven with the CDP profiler. Software-GL canvas costs (`drawImage`, `Commit`) are not representative of a GPU, so only JS costs are quoted. Numbers are single runs on a fast machine; **the ranking is reliable, the exact percentages are not** (a second run of the same configuration moved some shares by up to 20 points). Only one seed, one world size and one base were tried; late-game scale (many bases and people) was not reached, and refresh and save costs were still growing between day 1 and day 30.
+
+Where a frame went (share of `step()` time): at 5× on day 30–37 without Reveal, `refresh()` 67–70%, `render()` 22–23%, audio 5%, the sim tick 1.5%; at 1× on day 1, `refresh()` 29%, `render()` 48%. Mature game at 5×: `step` averaged 4.2–5.8 ms with p95 16–20 ms and about 10% of frames over 16 ms; while a team glides, every frame is drawn, `step` averaged 10.9 ms and p95 was 37 ms. Browser style, layout and paint added about 7% of a core.
+
+**The measuring tool is PERF-0's repaired `desktop/perf/driver.js` (`--reveal off`, a real speed).** Do not measure these sessions with Reveal on: it inflates figure-cache misses far beyond real play.
+
+---
+
+# PERF-7: the panel refresh that runs every game minute
+
+**Evidence.** `main.js` marks `dirty` whenever the clock shows a new minute (~line 320: `if (minute !== shownMinute) { shownMinute = minute; dirty = true; }`), and the frame then calls `refresh(false)` (~line 331; `refresh` is at ~499–545). So at 1× it runs about 3 times a second and at 5× about 15 times a second. Each run builds the HTML string of every panel (`renderLeft`, `topbarParts` / `needsBar`, `renderAlerts`, `renderRight`, `renderLogPanel`, `renderDevPanel`, `renderLegend`, the watchlist, the guide, overlays) and `setHTML` then discards nearly all of it because the string came out the same. Measured: only the running-orders panel actually changed on a minute (207 of 207 refreshes, 0.7 KB); the left panel was written 3–4 times in about 200 refreshes, the rest 1–3 times. DOM writes were about 2% of refresh time; building the strings was 98%.
+- Day 1 at 5×: 623 refreshes in 41.6 s, 6.0 ms average, worst 91 ms: 8.9% of a core and 54% of all game JS.
+- Day 30–37 at 5×: 11–14.7 ms average, worst 32–81 ms: 16–22% of a core; refresh frames average 13–17 ms against a 16.7 ms frame.
+- 1× day 1: 3 refreshes a second, 8.4 ms average, worst 59 ms.
+- Repeated derivations inside one refresh (instrumented, one base): `storage.js placeFood` 14 times, `foodStore` 13, `economy.js foodOutlook` 7, plus `woodShortfall` and `waterOutlook`; callers include `ui/needsbar.js:42`, `ui/ui.js:264` and `:325 baseStrip`, `ui/farming.js:95`, `ui/alerts.js:69 supplies`. `placeFood` also sorts every time.
+- Forced layout: `ui/overlaydrag.js applyOne` (~182) reads `wrap.clientWidth/clientHeight` and calls `getComputedStyle` (`remPx`, ~151) for every overlay on every refresh, after the DOM writes; `ui/sfx-vehicles.js mapCam` (~328) reads `el.clientWidth`; `main.js writeNeeds` (~360) reads `list.scrollTop`; the `#tb-min` write each minute dirties layout first. A trace shows 2 forced layouts per refresh (308 `Layout` + 308 `UpdateLayoutTree` events in 10 s); `applyOne` is 475 ms per 25.7 s at 5× on day 1 and about 14% of a mature refresh.
+- The map `mousemove` handler (`main.js` ~1844–1890) rebuilds the tooltip (`tileTooltip()`, `tip.innerHTML`, then `placeTip` reading `offsetWidth/offsetHeight`) on every event even when the tile did not change: 0.8–0.9 ms per event, up to ~55 ms a second while the mouse moves.
+
+**Check this first (a trap).** `placeFood` calls `syncLots(base, state)`, which *mutates* the sim state: it adds a lot for stock the lots do not cover, with `newLeft(k, state)` (for shop-only foods that is `shelf − outbreakDays(state)`). So the UI refresh can write to sim state, which means a headless run and a browser run could in principle differ. Whatever you do must keep that first `syncLots` call exactly where and when it happens today (do not move it to the hour tick, do not drop it from the memo's first call), and your Handoff must say whether the golden hash is identical for a run with the refresh path exercised and without. (`tools/uitest.js` and `uishelltest.js` run the diary, alerts, roster and shell code without a browser, with a stubbed DOM; read how they stub it, and have your new test call the real panel builders the same way. Establish the baseline first: does a headless run that calls `renderLeft` each minute reach the same digest as one that never does?)
+
+**Where.** `prototype/src/main.js` (`refresh`, `step`, `writeNeeds`, the `mousemove` handler, `placeTip`), `ui/ui.js` (`renderLeft`, `renderRight`, `baseStrip`), `ui/needsbar.js`, `ui/alerts.js`, `ui/overlaydrag.js`, `ui/sfx-vehicles.js`, `sim/storage.js placeFood / foodStore`, `sim/economy.js foodOutlook / waterOutlook`, `sim/woodcutting.js`.
+
+**Approach.**
+1. **A per-refresh memo.** A "refresh epoch": `refresh()` opens it at the top and closes it in a `finally`; `placeFood`, `foodStore`, `foodOutlook`, `woodShortfall` and `waterOutlook` (add others the counters show) memoize by `(base, args)` while it is open. Nothing writes sim state between the first and last read of a refresh, apart from the `syncLots` normalisation, which still runs on the first call. A call outside a refresh (the sim, the autopilot, an action handler) never sees the memo.
+2. **Split the minute from the hour.** Find, empirically, which panels' HTML changes with the clock minute alone: run N minutes through the old path and record every panel string in the `shown` map; the set whose strings differ is the minute-dependent set (running orders, the Teams tab and team panels, ETAs, the clock). A minute-only refresh then rebuilds only those; the rest rebuild on an hour tick, a user action (`refresh(true)`), `dirtyNow`, a modal opening or closing, or a layout change. Lock it with a test: for a scripted run over several hours with a team out, the full path and the split path must produce **equal strings for every panel after every minute**; the test fails if a panel the split skipped would have changed.
+3. **Layout reads.** Run `syncOverlays` only when an overlay panel's `setHTML` returned true, or when a `ResizeObserver` on the map fires; cache `remPx`; take the map size from `render.js` (`W`/`H`) rather than from `clientWidth`; put the `#tb-min` write after the reads.
+4. **Tooltip.** Skip the rebuild when the hovered tile, `view.workerHover` and the hour are unchanged.
+
+**Don't.** Don't change what any panel shows. Don't change `SLOW_REFRESH_MS` or the speed thresholds. Don't turn refresh into a diff-and-patch framework.
+
+**Verify.** The "equal strings" test above (add it as `tools/refreshsplittest.js`); `node tools/uitest.js`, `node tools/uishelltest.js`, `node tools/overlaytest.js`, `node tools/armoryviewtest.js`, `node tools/guidetest.js`, `node tools/foodchaintest.js`; the golden hashes; and the repaired browser benchmark at 1×, 2× and 5×, Reveal off, dev panel off: report the share of `step()` in `refresh` and its average and worst ms before and after, on day 1 and after a fast-forward to day 30.
+
+---
+
+# PERF-8: the State Map draw loop
+
+**Evidence.** `ui/render.js scanTiles` (~553, called from ~1142) runs three passes over all 2,688 tiles plus every site and POI tile on **every drawn frame**, with `poiKnown` / `knownPois` / `poisOf` / `siteKnown` calls, and allocates a new `Set` and several `Map`s (`ownerColor`, `emptyAt`, `hordeAt`, `siteAt`). It costs 0.9–1.1 ms on day 1 and 1.9–2.6 ms from day 30, which is 43–52% of `render()` JS in four profiles and 2.6–4% of a core. The gate `unchanged()` (~1068) skips a frame when nothing changed, but a frame is "changed" far more often than the map is: `GLIDE_STEPS = 600` draws the map every 1/600 of an hour while any of your teams glides between tiles, which at 2× or more is every animation frame (576 of 576 frames drawn at 5× during a glide); at 1×–5× without a glide, 23–38% of frames are drawn anyway because smoke, fires and step bobs request 15 fps. `unchanged()` itself is cheap (0.03 ms) and a frame where nothing changed costs 0.2–0.5 ms, so the gate works; the problem is what a drawn frame redoes.
+
+Separately: (a) the wheel zoom keys map levels by the exact float zoom (`levelFor`, ~377; `MAX_LEVELS = 4`; wheel factor 1.12 at `main.js` ~1925), so each notch builds a new level synchronously: the first frame after a notch took 36–66 ms with 9–12 chunks repainted (about 25 ms of JS per notch; software GL inflates the rest), and a revisit within the last four levels took 4–5 ms; never-drawn chunks bypass the 3 ms budget (~1190). (b) The lost-picture sentinel (`ui/pictures.js` ~68–81, called once a second from `step`) creates a canvas and calls `getImageData` each second: about 10 ms per 25 s on software GL; on a real GPU a `getImageData` is a synchronous readback (not measured, an assumption).
+
+**Where.** `prototype/src/ui/render.js` (`scanTiles`, `unchanged`, `moverHash`, `GLIDE_STEPS`, `glideSteps`, `levelFor`, `MAX_LEVELS`, the chunk budget), `main.js` (wheel handler ~1925), `ui/pictures.js`. `fbAt`, `factionIdx`, `besiegedFb` and `ownerColor` are used only inside `scanTiles`; the `G.*` arrays persist across frames.
+
+**Approach.**
+1. **Re-scan only when the scan's inputs changed.** Keep a signature of everything `scanTiles` reads (`state`, `live`, `state.knowledge`, `state.hour`, `moverHash` (`last.hash`), the layer flags `F.*`, reveal, the zoom/decoration flags, `busy`, `ownBase`, `state.abandoned`, factions' colours) and re-scan when it differs, or at most once per `IDLE_MS`. `busy` changes when a party reaches a site tile mid-hour, which is why the signature must include `moverHash`; verify by listing every variable the function reads before relying on it. Reuse the per-frame `Map`/`Set` objects (clear them) rather than allocating.
+2. **Prove the draw is identical.** Render a fixed set of frames (a fresh game, a mid-game state, a glide in progress, a night frame, each layer on) before and after and compare the canvas pixels (`tools/mapfxtest.js`, `maptest.js`, `mapmovetest.js` show how the map is driven headlessly; extend them with a pixel hash if they lack one).
+3. **Optional, owner's call, a visible change:** cap the glide redraw at about 30 a second whatever the speed (`glideSteps` already does this below 1×). It changes motion cadence, not any still frame; ship it behind the existing options style or leave it out and say so.
+4. **Optional:** snap the wheel to a fixed zoom ladder with enough cached levels, or keep showing the previous level scaled while the new level's chunks paint inside the budget. Transitional frames differ; final frames must not.
+5. **Optional:** reuse the sentinel's probe canvas, and read it back less often (the lost-context detection must keep working: `tools/picturestest.js`).
+
+**Don't.** Don't change what a tile shows or the layers' order. Don't remove the gate or the chunk budget.
+
+**Verify.** `node tools/maptest.js`, `mapmovetest.js`, `mapselecttest.js`, `mapfxtest.js`, `picturestest.js`, `uitest.js`, the pixel comparison above, and the repaired browser benchmark at 1× and 5× with a team gliding: report `scanTiles` ms per drawn frame, `render()` share of `step()`, frames drawn per second, and the long-frame count, before and after.
+
+---
+
+# PERF-9: figures on the State Map: the cache and the painter
+
+**Evidence.** Every moving piece on the State Map is a low-poly figure painted into a cached canvas (`ui/mapfigures.js`, built from `ui/figures.js`). Two problems:
+- **The cache** (`mapfigures.js` ~129–139): keys are `kind:color:yaw(24 steps):frame(8–9):…`, so the key space is huge (group parties, outsiders and workers key per faction colour), and when the Map passes 2,400 entries it does `cache.clear()`, dropping everything including the entries in use. Each miss rebuilds synchronously, 5–11 ms. With Reveal on at 300× for 40 s: 1,839 misses cost 9.27 s (23% of wall time): workers 3.6 s, group parties 2.2 s, outsiders 1.5 s, hordes 0.76 s. A 60 s run reached 2,572 unique keys, cleared once and rebuilt about 534 of them; cumulative canvas memory built was 125 MB and renderer RSS rose from 446 MB to 769 MB (software GL; only the relative growth means anything). In normal play without Reveal there are only 9–25 misses per 40 s, but at 6–11 ms each (17 `party` misses cost 192 ms) it is a hitch whenever a team first walks a new heading or frame. Exposure grows with the number of distinct movers you have seen. `workermap.js` (~164) and `mapWorkerCanvas` (`mapfigures.js` ~735) are among the callers.
+- **The painter** (`figures.js paintLimb`, ~62–110): for every sample point of a limb it calls `lit(nf, col)` = `shade(col, light(N(nf)))`, re-normalising the rotated normal and calling `light()` and `shade()` for each point, although the normal is constant per face or end and only the texture colour varies. `shade` (`ui/itemart/kit.js` ~29) parses a hex string with a regex, maps an array, pads, joins and returns a new `#rrggbb` string every call. `mapfigures.js toCanvas` (~107) then does two `fillRect` passes per pixel. At 300× `shade` alone was 2,030 ms self time (8.3% of all busy time) plus the `kit.js:33` anonymous function 500 ms; `paintLimb` + `plot` about 1 s; `toCanvas` 515 ms inclusive; together roughly 40% of miss time. At 1× with Reveal on, `lit` was 7.9% inclusive.
+
+**Where.** `prototype/src/ui/mapfigures.js` (`cached`, `toCanvas`, `paintPiece` (exported, returns the painter), `mapWorkerCanvas`), `ui/figures.js` (`paintLimb`, `plot`, `lit`, `light`, `faceOf`), `ui/itemart/kit.js shade`, `ui/workermap.js`. The battle view uses the same `figures.js` for its figures (the Hive and the dead too), so a painter change helps there as well and must stay byte-identical there as well.
+
+**Approach.**
+1. **Painter first (no behaviour question).** Compute the light once per face or end rather than per point; memoize `shade` per (colour, light) or, better, convert the texture colour to numeric RGB once, apply the light factor in integer maths, and keep a small colour-string table for output; write `toCanvas` through an `ImageData` buffer in one pass instead of `fillRect` per pixel. The painted pixels must be **byte-identical**: before changing, record, for a fixed set of (kind, yaw, frame) triples covering every kind (survivor, dead of each type, bosses, vehicles, hordes, herds, workers), a hash of the `px` array that `paintPiece` produces and of the final canvas bytes; after, they must match exactly. Mind the rounding in `shade`: it rounds each channel; reproduce `Math.round` on the same float values in the same order.
+2. **Cache.** Replace clear-all with a real LRU (a `Map` is insertion-ordered: delete and re-insert on hit, evict the oldest) or a per-kind cap, sized by an estimated byte budget (width × height × 4 per canvas) rather than a bare count of 2,400. Keep the `onForgetPictures` clear (the lost-GPU-context path, `ui/pictures.js`) and the key scheme: the key must still fully determine the pixels (`curNear` derives from yaw, so it is safe).
+3. **Idle pre-build.** When a heading appears for a team (a new yaw bucket), build the remaining walk frames for that heading in `requestIdleCallback` slices, so the glide does not hitch on the first frame of each. Keep it bounded (a few ms per slice).
+4. **Optional:** recolour per faction by compositing a shared grey figure instead of painting a new one per colour; only if the output is pixel-identical or the owner accepts a tiny difference.
+
+**Don't.** Don't change the figures' look, the yaw/frame quantisation or the walk cycles.
+
+**Verify.** `node tools/mapfigurestest.js`, `figurespintest.js`, `picturestest.js`, `battleviewtest.js`, `mapfxtest.js`; the pixel-hash comparison above; the repaired benchmark at 1× and 5× with Reveal **off** (and one run with it on for the worst case): report misses per 40 s, ms per miss, the number of cache clears and the renderer's canvas memory before and after.
+
+---
+
+# About the persistence, start-up and audio sessions (PERF-10 to PERF-14)
+
+These come from Node 22 on a 4-core VM and Chromium 141 pinned to one core with software GL. Absolute times are probably 1.5–3× slower than a desktop; the ratios should hold. A world was played forward with the Balanced autopilot (seed 1, Normal) to days 30, 180, 365 and 1000, plus other seeds, sizes and styles at day 365 and 730, and the saves and heaps were measured at each.
+
+| Day | Save JSON | Stored in browser (gzip, 15 bits per char) | `serializeState` warm / first call | `JSON.stringify` | Load (parse + deserialize) | Live state heap | Process heap after GC |
+|---|---|---|---|---|---|---|---|
+| 30 | 1.43 MB | 115K chars | 38 / 150 ms | 12 ms | 39 ms | 3.9 MB | 55 MB |
+| 180 | 3.10 MB | 264K | 56 / 173 | 19 | 66 | 6.1 | 82 |
+| 365 | 5.19 MB (other seeds 5.0–7.2) | 457K (450–650K) | 83 / 182 (Large 111, Aggressive 294) | 31 | 97 | 9.9 | 88–92 |
+| 730 (seed 2) | 8.20 MB | 715K | 154 / 390 | 43 | 113 | 15.3 | 90 |
+| 1000 | 14.9 MB | 1.30M | 206 / 382 | 89 | 187 | 24.7 | 115 |
+
+The same pipeline in Chromium on one core: day 365 `serializeState` 236–407 ms, stringify 86–126 ms, load 136–292 ms; day 1000 serialize 315–526 ms, stringify 141–163 ms, load 150–355 ms, `localStorage.setItem` 17–25 ms, `pack15` 25–44 ms. World creation (Node; first run cold): Small 93–166 ms, Normal 145–258, Large 250–353, Huge 428–628, Hardcore Normal 208–311. **No heap leak was found** (it plateaus around 105–117 MB from day 500; the live state itself is 4–25 MB), and the per-frame audio JS is negligible (`audioFrame` 26 µs a frame when muted).
+
+Save size is linear in game days, about 11 KB per game day, and what grows is append-only data. Share of the save's bytes at day 365 / day 1000: diary 26% / 45%, chronicle 21% / 28% (events 14%, frames 8%, `said` 6% at day 1000), tiles 13% / 4.5%, knowledge 12% / 4.8%, factions 9.5% / 4.6% (their markets 5.7% / 2.7%), `poiMods` 5.6% / 2.9%, survivors 3.5% / 3.0%.
+
+---
+
+# PERF-10: append-only history that grows without bound (diary, chronicle, the dead)
+
+**Evidence.** By day 1000 the save is 14.9 MB; the diary is 6.5 MB of it. `sim/diary.js` caps entries *per day* (`DIARY_CAP`) but never drops days. `sim/chronicle.js` keeps every `events` entry (14,771 at day 1000), every timelapse `frames` entry and a `said` Map of captions (10,043 entries, 0.87 MB) used only to de-duplicate captions within `DEDUPE_HOURS`. `state.survivors` keeps every dead person (107 of 126 at day 1000, about 3.5 KB each) and `alive(state)` (`world.js` ~440) filters a list that is 85% dead by then; `sim/relations.js` (~521) keeps `state.memorial`; `state.poiMods` grows. History (`history.js`), the log (200 lines) and `base.foodLog` (8 days) are already bounded. The cost shows up as save and load time (below) and as autosave freezes (PERF-11). Cost in tick CPU today is small: the diary, history and chronicle together are about 1.3% of tick CPU at day 365.
+
+**Where.** `prototype/src/sim/chronicle.js` (`events`, `frames`, `said`, `caption`, `siteNames`, lines ~103, ~149–152), `sim/diary.js`, `sim/relations.js`, `sim/save.js`, `ui/diary.js`, `ui/timelapse.js`.
+
+**Approach, safest first.**
+1. **Prune `chronicle.said`** of entries older than `DEDUPE_HOURS` plus a margin. `caption()` only suppresses a caption when `e.h − last < DEDUPE_HOURS`, so an older entry can never matter: zero behavioural effect, 4–6% of the save. Do not save `chronicle.siteNames` (a lazy cache, ~5 KB): rebuild it on demand.
+2. **Chunk the immutable history.** Old diary days and chronicle events/frames never change once the day is over. Store them in finished chunks (a chunk per N days) that are encoded **once** and reused, so each autosave re-encodes only the live tail. This is a save-format change: write a loader for old saves (a save without chunks is read as one chunk), keep the version stamp, and keep the format readable by the previous release for as long as the repo promises that (check `save.js` for the stated policy). The UI (diary list, timelapse) must read chunks lazily or all at once, identically.
+3. **Optional, high risk, ask the owner before doing it:** compact dead survivors (drop what no reader needs). Dead people are referenced by id all over the sim (`survivorById`, the memorial, relations, causes, the diary); do not remove them without auditing every reader and getting the golden hash identical. A cheaper variant that changes no reader is to keep a separate `state.dead` index so `alive(state)` stops filtering a mostly-dead list.
+
+**Don't.** Don't change what the diary or timelapse show. Don't drop `market` on load: `marketOf` would recompute it from the current stock and change behaviour versus the continuing run.
+
+**Verify.** `node tools/savetest.js`, `node tools/loadtest.js`, `node tools/savecorpustest.js` and `node tools/savehealthtest.js` (the corpus in `tools/saves/` must still load), `node tools/historytest.js`, a before/after table (days 30/180/365/1000 × save bytes, serialize ms, load ms), and the golden hashes. Report the day-1000 save size (14.9 MB before).
+
+---
+
+# PERF-11: the autosave freeze
+
+**Evidence.** The default is an autosave at every in-game dawn (`DEFAULT_OPTIONS.autosaveDays: 1`, `ui/saves.js` ~26), and `doBattleSave` saves again as each battle opens (except on autopilot). `ui/settings.js autosaveCheck` (~441, every frame) → `doAutosave` (~536) → `ui/saves.js writeSave` (~159–168) runs `serializeState` and `JSON.stringify` **synchronously** before its first `await`, and the thumbnail (`main.js` ~1656, `toDataURL`) is synchronous too; after the await, `pack15` and `localStorage.setItem` also run on the main thread. That is one freeze every 1.6–8 real minutes of play (5× to 1×). Measured: in Node at day 365 serialize 83 ms + stringify 31 ms; in Chromium on one core day 365 about 170–225 ms per chunk in `PerformanceObserver` long tasks, and day 1000 more (serialize 315–526 ms). The first autosave of a session is a cold-JIT run (150–380 ms regardless of size). A CPU profile of the encoder at day 365: `encodeGraph` pass 1 `visit` (`sim/save.js` ~338) is 29%, because every visited property allocates a path-label string (`keyLabel` and a regex, ~329, ~359), GC is 21%, and `getOwnPropertyDescriptor` is called per key (~358).
+
+**Where.** `prototype/src/sim/save.js` (`encodeGraph`, `visit`, `keyLabel`, `serializeState`, `deserializeState`), `ui/saves.js` (`writeSave`, `writeSaveSync`, `pack15`, `listSaves`), `ui/settings.js` (`autosaveCheck`, `doAutosave`, `doBattleSave`, `ironUnload`, `ironHidden`), `main.js` (thumbnail).
+
+**Approach.**
+1. **Lazy path labels (prototyped, byte-identical).** Build the path label only when a save fails (to name the offending path), not for every visited property; stop calling `getOwnPropertyDescriptor` per key where `Object.keys` + a direct read gives the same result. A scratch version produced byte-identical output to the current encoder and cut the median serialize at day 365 from about 125 ms to about 100 ms (15–20%). Prove byte-identity on every corpus save (`tools/saves/`) and on worlds at days 30/180/365/1000: the encoded string must be equal, not just loadable.
+2. **Do the freeze when nobody is looking.** Take the serialize at an idle moment or while the game is paused (an in-game dawn at 5× is rarely idle; waiting for the first pause, a card, or `requestIdleCallback` with a deadline of a few seconds is fine), but keep "the save is of the state at dawn" true: either snapshot cheaply at dawn and serialize the snapshot later, or serialize at dawn but time-slice `encodeGraph` across frames if (and only if) the state cannot change between slices (the sim tick is paused while it runs, or the encoder works on a copy). Say in the Handoff which you chose and why it is safe.
+3. **Cheaper pieces.** Reuse a small thumbnail canvas and cap its size; do `pack15` in the same idle slice.
+4. **Not in scope here:** shrinking the save (PERF-10) and moving slot bodies out of `localStorage` (PERF-12).
+
+**Don't.** Don't change the save format in this session (output stays byte-identical). Serialization never touches the RNG; keep it that way.
+
+**Verify.** `node tools/savetest.js` (it includes size, serialize and load times at day 365), `node tools/loadtest.js`, `node tools/savecorpustest.js`, byte-equality of the encoded string before/after on the corpus and on four generated worlds, and a Chromium run reporting long tasks per autosave (`PerformanceObserver`) at day 30 and day 365, before and after.
+
+---
+
+# PERF-12: localStorage fills up; the Ironman close-save fails
+
+**Evidence.** In Chromium 141 the `localStorage` capacity is 5,226,496 characters. A day-365 save is 5.0–7.2 M chars uncompressed. `ui/settings.js ironUnload` (~524) calls `ui/saves.js writeSaveSync` (~192), which writes the uncompressed `BSJ1|` JSON synchronously, and swallows the error; at day 365 that write throws a quota error, so the Ironman "save on page close" silently saves nothing (at day 180 it fits). The compressed slots (`pack15`, stored at `saves.js` ~166) that still fit: 19 at day 180, 9–11 at day 365, 4 at day 1000, while the UI promises 3 autosaves a campaign, 12 manual slots, a battle save and a crash save. `pack15` itself costs 25–44 ms at day 1000.
+
+**Where.** `prototype/src/ui/saves.js` (`writeSave`, `writeSaveSync`, `listSaves`, `SLOT_KEY`), `ui/settings.js` (`ironUnload`, `ironHidden`, `autosaveCheck`), `desktop/main.js` (the Electron side could write files). Note `writeSaveSync` already turns a `setItem` failure into a `SaveError(…, "quota")`; `ironUnload` then swallows it (`catch { return false; }`).
+
+**Approach.** Move slot bodies to IndexedDB in the browser and to files in Electron (through a narrow preload bridge if one exists; `sandbox: true` and `contextIsolation: true` are set, so keep it that way and add nothing that widens the renderer's reach without telling the owner), keep only the slot **index** in `localStorage`, and read from both stores so existing slots keep loading (migrate lazily on first read, never delete the old copy until the new one is confirmed). The Ironman close path becomes best-effort async (`ironHidden` already saves on hide) with the old synchronous write kept only when it fits. `pack15` can go when the body is stored as bytes.
+
+**Don't.** Don't lose a player's existing saves. Don't change the save string format (that is a different session).
+
+**Verify.** `node tools/savetest.js` (its storage section uses a stand-in `localStorage`: extend the stand-in to IndexedDB), `savecorpustest.js`, a quota test at day 365 and day 1000 that shows every promised slot fits, and a manual note in the Handoff for the Electron path (it cannot be run headless here).
+
+---
+
+# PERF-13: start-up and the new-run screen
+
+**Evidence.**
+- **Start-up.** The static import graph is 397 modules, 13.4 MB of source, 188K lines, depth 84. Chromium takes 2.4–2.6 s to reach `window.game` and the first frame; the last module arrives at about 1.9 s. `main.js` (~194) calls `createWorld` at import time, behind the title screen, about 0.65 s of main-thread self time. `prototype/server.cjs` (~48) and `desktop/main.js` (~97) send `Cache-Control: no-store` (so Reload shows files as on disk). With cache headers, repeat loads took about 2.15 s (about 15% faster); gzip and `modulepreload` gave no gain locally, so the cost is compile and run, not the fetch waterfall. Module top-level work is small (30 ms for the sim, 124 ms for sim + UI under Node with DOM stubs; the biggest: `gunmods` 12 ms, `data` 10, `gunart` 9, `relations` 6, `data-ammo` 5.5, `audio` 5.4, `terraindeco` 4.9).
+- **The new-run screen.** `main.js` `newWorld` (~1557, and again under Customize ~1574) calls `createWorld` for **every** tweak: a seed, group count, hive count, mode, starting people, each gear pick, each dice reroll, each background pick (~1135–1625). Each click costs the world-creation time (Small 93–166 ms, Normal 145–258, Large 250–353, Huge 428–628 ms). In a profile of Normal `createWorld`: `createFactions` 31%, `generateMap` 36%, `slotRules` 15% inclusive (PERF-2 removes that part).
+- The first autosave flips all 2,688 tiles from fast to dictionary property mode: `sim/pois.js withPoisPacked` (~217–222) does `delete t.pois` on every tile on every save (called from `save.js` ~106). A tile-field scan is 1.2–1.5× slower afterwards; an end-to-end `tickHour` A/B was too noisy to show it (ratios 0.82 and 1.25), so the real impact is **unproven**. Skipping the key in the encoder instead of deleting and restoring it also removes a 9–18 ms loop per save.
+- Load and save redo avoidable work (Node, day 365–1000): `sim/save.js` (~244) calls `relocateMisfits` (`gunmods.js` ~487) on every load, a full-graph walk (28–45 ms); `ensurePois` (`pois.js` ~170) regenerates every tile's POIs on load (14–54 ms) and `packPois` (~203) regenerates them again on every save to diff (4–10 ms); `decodeGraph` 22–81 ms; the whole `deserializeState` 160–245 ms at day 1000.
+
+**Approach, in order of safety.**
+1. After PERF-2 (slotRules memo), re-measure the new-run click. Then split `newWorld` so a tweak that does not change the map (starting people, gear, backgrounds, customize points) does not regenerate the map: keep the map by `(seed, size, hives)` and rebuild only what depends on the tweak. The RNG position after map generation must be kept **exactly** (the factions and crew roll from it): compare the full world digest after a tweak with the old path's.
+2. Do not call `createWorld` at import. Build the title screen first and create the world on first need (a New game click or Continue), unless the title's background map needs it; the first frame must still look the same.
+3. Lazy `import()` for the big, rarely used modules: `sim/hivecrawl.js`, `sim/citycrawl.js`, `ui/isoview.js`, `ui/gunbuilder.js`, `ui/codex.js`/help, `ui/zombiesfx.js`. Each is entered through one function; load it on the first call and `await` it where the caller can wait. List every static import of each and make sure nothing else pulls it back in, or nothing is gained.
+4. Replace `no-store` with ETag revalidation (the dev flow that wants "files as on disk" keeps a flag or `reloadIgnoringCache`, which Electron's Reload already uses). The Electron scheme's `codeCache` privilege might also help (not verified: read the current Electron docs before relying on it).
+5. Skip the `pois` key in the encoder rather than deleting and restoring it; gate `relocateMisfits` on a rules-version stamp stored in the save (the stamp must bump when the rules change; the code says it runs "every load, the rules may change again"); neither may change a loaded world.
+
+**Don't.** Don't change a world a seed makes. Don't make load order depend on timing.
+
+**Verify.** Golden hashes (a world made through the new path equals the old); `node tools/maptest.js`, `savetest.js`, `loadtest.js`, `savecorpustest.js`, `newrunpointstest.js`, `custompointstest.js`, `customtest.js`; Chromium time to `window.game` + first frame (2.4–2.6 s before) and per-click time on the new-run screen before and after, with the lazy modules listed.
+
+---
+
+# PERF-14: audio bakes and per-frame cues
+
+**Evidence.** One-time bakes run synchronously on the main thread the first time they are needed (Node, cold, contended, so upper bounds): `ui/zombiesfx.js crowdBuffers` (~1395) about 210 ms on the first battle with dead or the first horde heard on the map (it is not in `prewarmBattle`, `ui/battlesfx.js` ~33); `ui/music.js ensureEngine` (~387) → `createEngine` on the first frame after the first click: `makeMusicIR` about 70–90 ms and `makeHiss` about 31 ms (about 120 ms or more together), instrument bakes 11–75 ms each; gun voices about 45–80 ms each (`prewarmBattle` prewarms only the wielded guns, through idle callbacks); blasts 15–114 ms; vehicle engines about 26 ms each. And from the browser profile: `audioFrame` (`ui/audio.js` ~258) runs `uiCues` / `mapCues` (`ui/sfx-gear.js` ~70, `ui/sfx-vehicles.js` ~358) every frame even when audio is off: it builds a new `Map` and calls `teamSnap` (`teamVehicles`, `partyMembers`, `cargoSig`) for every team each frame, and computes `pan = panOn(camOf(), tile)` eagerly (~409, ~449), which calls `mapCam` and reads layout. `uiCues` was 241 ms per 25.6 s at 5× (135 ms of it in `camOf`) and 64 ms at 1×; `musicFrame` another 68–78 ms. (An earlier read found the muted path at 26 µs a frame; the two are not the same measurement: the muted path exits early, the unmuted one does the snapshot. Re-measure both before and after.)
+
+**Approach.** Bake in `requestIdleCallback` slices (with the setTimeout fallback the file already uses) and add the crowd bed and the first music bake to the idle pre-warm; compute `pan` lazily inside `say()`; snapshot teams at 5–10 Hz while silent (the memory still has to advance while muted: see the comment near `audio.js` ~233, so the snapshot cadence must not skip a state change a cue depends on; latency up to 100–200 ms for a cue is acceptable and affects no sim state).
+
+**Don't.** Don't change what plays or when it is chosen; don't touch the sim RNG (the audio code uses its own).
+
+**Verify.** `node tools/audiotest.js`, `ambiencetest.js`, `musictest.js`, `zombiesfxtest.js`, `barkstest.js`; report the first-battle and first-click frame times in Chromium before and after, and `uiCues` ms per 25 s at 1× and 5×.
