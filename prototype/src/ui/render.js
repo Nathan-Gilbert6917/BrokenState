@@ -360,7 +360,7 @@ let cacheKey = "", cacheDpr = 0, frameNo = 0;
 // ms a frame, the rest on the next frames; chunks that have never been drawn are always drawn at once.
 export const mapTuning = { budgetMs: 3 };
 // Counters for performance checks (frames drawn and skipped, chunks drawn and the ms spent on them).
-export const mapStats = { drawn: 0, skipped: 0, chunks: 0, chunkMs: 0 };
+export const mapStats = { drawn: 0, skipped: 0, scans: 0, chunks: 0, chunkMs: 0 };
 const ckey = (i, j) => (i + 1024) * 4096 + (j + 1024);
 function dropLevel(L) {
   for (const ch of L.chunks.values()) if (ch.cv) pool.push(ch.cv);
@@ -1079,6 +1079,19 @@ function unchanged(state, now) {
   forceDraw = false;
   return false;
 }
+// scanTiles' own inputs, from the frame check's fingerprint (`last`): the world as you know it (the state, what is in
+// view, your reports, the hour, the movers), the layers, Reveal map, the zoom (site sizes) and the detail. A frame drawn
+// only because the camera, the hover, a glide or an animation moved shows every tile as the last pass left it, so the
+// pass is not run again; it runs when any of these changed, when a draw is forced (redrawMap: an order while paused, a
+// lost picture), and at least every IDLE_MS (the frame check's own net for a change its fingerprint misses).
+const lastScan = { G: null, state: null, live: null, know: null, hour: NaN, zoom: NaN, dpr: 0, reveal: null, layers: "", hash: NaN, detail: true, at: -Infinity };
+function scanDue(G, now) {
+  const L = lastScan;
+  if (L.G === G && L.state === last.state && L.live === last.live && L.know === last.know && L.hour === last.hour && L.zoom === last.zoom &&
+    L.dpr === last.dpr && L.reveal === last.reveal && L.layers === last.layers && L.hash === last.hash && L.detail === last.detail && now - L.at < IDLE_MS) return false;
+  Object.assign(L, { G, state: last.state, live: last.live, know: last.know, hour: last.hour, zoom: last.zoom, dpr: last.dpr, reveal: last.reveal, layers: last.layers, hash: last.hash, detail: last.detail, at: now });
+  return true;
+}
 // The next render draws even if nothing seems to have changed; all: also draw the cached layers again from scratch.
 export function redrawMap(all = false) {
   forceDraw = true;
@@ -1089,6 +1102,7 @@ export function render(state) {
   if (!ctx) return;
   const now = performance.now();
   if (lightningWants(now)) forceDraw = true; // ui/lightningfx.js: a flash running or a strike due
+  const forced = forceDraw;
   if (!state.timelapse && unchanged(state, now)) { mapStats.skipped++; return; }
   frameNo++;
   mapStats.drawn++;
@@ -1139,7 +1153,7 @@ export function render(state) {
     else hordeAt.set(h.tile, { size: h.size, target: h.target, bosses: h.bosses || 0 });
   }
   const siteAt = new Map((state.hiveSites || []).map((x) => [x.tile, x]));
-  scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase);
+  if (state.timelapse || forced || scanDue(G, now)) { scanTiles(state, live, k, hordeAt, siteAt, busy, ownBase); mapStats.scans++; }
 
   // The cached layers: the chunks on screen, drawn again where something changed, then copied 1:1 to whole device
   // pixels (the camera is rounded to a device pixel, so the copies are exact).
