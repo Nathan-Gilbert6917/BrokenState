@@ -371,8 +371,14 @@ export function expandAmmo(rec, theme) {
 /** @param {number} avail @param {string} kind @param {string} key */
 export function kindShare(avail, kind, key) {
   const mix = kindMix(kind);
-  const tot = Object.values(mix).reduce((a, b) => a + b, 0);
-  return mix[key] ? Math.floor((avail * mix[key]) / tot) : 0;
+  return mix[key] ? Math.floor((avail * mix[key]) / mixTotal(mix)) : 0;
+}
+// A mix's weights summed, once per mix (themeMix keeps each one).
+const MIX_TOTAL = new WeakMap();
+function mixTotal(mix) {
+  let t = MIX_TOTAL.get(mix);
+  if (t === undefined) MIX_TOTAL.set(mix, (t = Object.values(mix).reduce((a, b) => a + b, 0)));
+  return t;
 }
 
 // The rounds on one of the dead (combat.js enemyUnit's people: their gun's calibre and load; anyone else, the rounds a
