@@ -191,6 +191,8 @@ Then, if the profile still shows it: `wealthOf` computes `Object.keys(SUPPLIES).
 
 **Verify.** Golden hashes; `node tools/poiaitest.js`, `node tools/depletetest.js`, `node tools/arsenaltest.js`, `node tools/arsenalbalancetest.js`, `node tools/poipacingtest.js`, `node tools/grouphivetest.js` (and any other group-related test: `ls tools | grep -i -E "group|faction|conflict"`). Report the midnight tick (the 60 ms+ hours' count and the stage table for `factionsDaily`) on Normal/8 groups and Huge/20 groups, before and after.
 
+**Handoff (2026-10-18).** Done: step 2 (`groupTargets` finds the nearest centre in one loop, each distance worked out once, the first of the nearest kept as `reduce` did) and step 5 (`arsenal.js sortedKit` works out each item's value and id string once per rebuild; `localeCompare` kept, so the order is the same). Also: `aiscav.js haulFor` takes a site type's haul weights and total from a Map per (type, meds factor), not rebuilt with `Object.entries`/`values` for every site every day, and `grouppois.js kindValue` takes a kind's loot table and total from a Map per kind (`LOCATIONS` is never written). With PERF-1 to PERF-3 under it, the no-autopilot profile (seed 3, 120 days) went from 8.9 to 6.6 s of CPU. Golden hashes identical; poiaitest 49, poipacingtest 10, grouphivetest 28, arsenaltest, arsenalbalancetest, typecheck, dettest pass. Not done: step 1 (an occupancy view for `tileWorkable` and per-base `within` lists: PERF-3 made `within` cheap), step 3 (`kitFactor` per (group, hour): needs proof nothing between calls changes the group) and step 4 (`bestLand` per day). depletetest was still running on the final tree at merge time (it timed out twice on the loaded machine).
+
 ---
 
 # PERF-5: the autopilot's hourly planners (balance runs, the dev autopilot)
@@ -217,6 +219,8 @@ Then, if the profile still shows it: `wealthOf` computes `Object.keys(SUPPLIES).
 
 **Verify.** The golden hashes (the autopilot is what the digest plays, so these are the proof). Also `node tools/autotest.js`, `node tools/autosafetytest.js`, and a 365-day, three-style (`balanced`, `aggressive`, `cautious`) comparison of `autopilotStats(state)` and the final log hash before and after on two seeds. Report the 180-day wall time and profile shares before and after, and how many campaign50 games per hour that is on the owner's machine class (estimate from the ratio).
 
+**Handoff (2026-10-18).** Done: three hot spots the profile named. `hives.js hiveDistance` checks its cache by comparing the hive tiles one by one instead of joining them into a string for every tile asked (857 ms of self time in a 180-day autopilot profile). `ammo.js kindShare` sums a mix's weights once per mix (a WeakMap). `tripgear.js ammoFor` dry-runs a gun's draw on a copy of only the stock's rounds and generic ammo (all `drawShots` reads for a gun), not a spread of the whole stock, a big dictionary object. Golden hashes identical (the autopilot is what the digest plays); autotest (0 problems) and autosafetytest pass. Not done: step 2 (hoisting per-hour values through `buildWishes`/`planRoles`: each needs proof nothing in between changes what it reads), step 3 (`foodIn`) and step 5. The 180-day before/after and the three-style `autopilotStats` comparison are still to be run on a quiet machine.
+
 ---
 
 # PERF-6: the hourly knowledge pass and the food ledger
@@ -228,6 +232,8 @@ Then, if the profile still shows it: `wealthOf` computes `Object.keys(SUPPLIES).
 **Approach.** (a) In `updateVision`, index hordes by tile, group bases by tile (honouring `state.intel.unseen`), hive sites by tile and death sites by tile **once per call**, then let `snapshot` read the indexes (add an optional `index` argument; other callers of `snapshot` keep working unchanged). Keep every field of the snapshot identical and in the same key order (it is stored in `state.knowledge` and saved). Compute `liveTiles` and `noteFinds`' `within` lists from one cached per-base list per `(tile, radius)` (PERF-3). (b) In `foodMark`, compare `now` and `last` first with a cheap pass and return when equal and `x` is empty, otherwise do exactly what it does now. Do not skip a mark: the *phase* of the next change depends on it.
 
 **Verify.** Golden hashes; `node tools/visiontest.js`, `node tools/foodchaintest.js`, `node tools/foodtypestest.js`, `node tools/discoverytest.js` if present (`ls tools | grep -i -E "discover|vision|foodlog|foodchain"`), `node tools/savetest.js` (the snapshots are saved). Report ms/hour of `updateVision` and `foodMarkAll` before and after.
+
+**Handoff (2026-10-18).** Done, both parts. (a) `world.js updateVision` builds `tileIndex(state)` once a pass (the hordes on each tile in list order; the first hive site, living group's base and death site there: what `filter`/`find` returned), and `snapshot(state, id, ix)` reads it; other callers of `snapshot` are unchanged, and a hidden outpost is still read live from `state.intel.unseen` (`noteLook` writes only the intel ledger). (b) `foodlog.js foodMark` ends at once when nothing was booked since the last mark and the stock's food equals the last mark's item for item, in the same order, so the kept `last` is the object `foodStock` would make. Golden hashes identical; a whole day-30 save equals the base's (the chronicle's timing masked); visiontest 71, foodchaintest 57, foodtypestest 85, discoverytest 173, savetest 68 pass. The ms/hour of `updateVision` and `foodMarkAll` before and after are still to be measured on a quiet machine.
 
 ---
 
@@ -367,6 +373,8 @@ Save size is linear in game days, about 11 KB per game day, and what grows is ap
 
 **Verify.** `node tools/savetest.js` (it includes size, serialize and load times at day 365), `node tools/loadtest.js`, `node tools/savecorpustest.js`, byte-equality of the encoded string before/after on the corpus and on four generated worlds, and a Chromium run reporting long tasks per autosave (`PerformanceObserver`) at day 30 and day 365, before and after.
 
+**Handoff (2026-10-18).** Done: steps 1 and 2. `save.js encodeGraph` keeps where the walk is as raw steps (kind, value) and writes the path as text only when something cannot be saved (the same messages), instead of a string for each of a long game's million properties. It also passes over each tile's `pois` (`skipKey`/`skipIn`; `serializeState` packs them with `packPois`) instead of deleting the key from every tile and putting it back (`pois.js withPoisPacked`, removed), which left every tile a slow dictionary object for the rest of the session. The save text is byte-identical to the base encoder's at days 30, 120 and 365 (the chronicle's measured `ms` masked). `ui/saves.js writeSave` serializes at once (the save is that moment's world: `serializeState` builds a new tree), then waits for an idle moment (`requestIdleCallback`, 250 ms at most) before the text, the packing and the write, so an autosave is two shorter stalls rather than one long one. savetest 68, loadtest 99, savecorpustest 144, savehealthtest 41, ironmantest 37 pass. Not done: step 3 (a reused thumbnail canvas). The serialize timings measured under load were too noisy to quote; to be measured on a quiet machine.
+
 ---
 
 # PERF-12: localStorage fills up; the Ironman close-save fails
@@ -403,6 +411,8 @@ Save size is linear in game days, about 11 KB per game day, and what grows is ap
 **Don't.** Don't change a world a seed makes. Don't make load order depend on timing.
 
 **Verify.** Golden hashes (a world made through the new path equals the old); `node tools/maptest.js`, `savetest.js`, `loadtest.js`, `savecorpustest.js`, `newrunpointstest.js`, `custompointstest.js`, `customtest.js`; Chromium time to `window.game` + first frame (2.4–2.6 s before) and per-click time on the new-run screen before and after, with the lazy modules listed.
+
+**Handoff (2026-10-18).** Done: step 4 and the first half of step 5. `server.cjs` answers with `Cache-Control: no-cache` and an ETag from the file's size and modified time, and 304 for an unchanged file, instead of `no-store` and the whole file each time; a reload still shows the files on disk, and the unchanged modules keep the browser's compiled code. Missing files and directories still 404. The save encoder skips the `pois` key (PERF-11). After PERF-2, a repeat `createWorld` (each tweak on the new-run screen) is about twice as fast. Golden hashes identical; maptest, savetest, loadtest, savecorpustest pass. Not done (behaviour or load-order changes, or the owner's call): splitting `newWorld` to keep the map, creating the world on first need instead of at import, lazy `import()` of the big rarely used modules, gating `relocateMisfits` on a rules stamp, the Electron scheme's cache. The reload timing measured under load was inconclusive (base 2.3-3.3 s, new 2.2-2.7 s).
 
 ---
 
