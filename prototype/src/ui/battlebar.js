@@ -19,8 +19,11 @@
 //   - Hovering an order lights the card's action diamonds it would spend (data-spend on the button, data-s on the
 //     diamonds: 1 is the last; styles.css :has). Orders that need doing now (a jam, a gun or shotgun empty, someone to
 //     revive) pulse (URGENT).
-//   - Fits from 1280×720 up to a TV: the bar is a size container; narrow, the buttons fold to their icons (the label
-//     is in the tip), very wide it grows (styles.css #cbbar).
+//   - Each order is a tile that reads without a hover (the user's request 2026-10-18): the icon over its name, its key as
+//     a keycap at the top left, its cost as a pill at the top right (◆1, ◆2, free, ends turn; a tray button: +N orders
+//     behind it). The turn controls on the right are labelled tiles too. styles.css #cbbar .bb-btn / .bb-ctl.
+//   - Fits from 1280×720 up to a TV: the bar is a size container; narrow, the tiles shrink a little and wrap to a
+//     second row, very wide it grows (styles.css #cbbar).
 import { KEYMAP, KEY_BY_ID, keyLabel } from "./keymap.js";
 import { unitChips, weaponPanelHtml } from "./battlehud.js";
 import { statusIcons } from "./status.js";

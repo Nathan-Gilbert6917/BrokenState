@@ -1053,7 +1053,8 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 
 /* The battle's bottom bar, XCOM-style (ui/battlebar.js): the selected one's card and everyone's tabs, the orders, the
    turn controls. Sized in em off .bb so one font size scales it all; the bar is a size container: narrow, the order
-   buttons fold to their icons (the label is in the tip) and the turn controls to theirs; very wide (a TV), it grows. */
+   tiles shrink a little and wrap to a second row (their names stay: nothing needs a hover to be read); very wide (a
+   TV), it grows. */
 #cbbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; pointer-events: none; container: cbbar / inline-size; }
 #cbbar .bb { display: flex; align-items: flex-end; gap: 0.5em; padding: 0.9em 0.5em 0.4em; font-size: 1rem; background: linear-gradient(to top, rgba(10,12,15,0.9) 60%, rgba(10,12,15,0)); }
 #cbbar .bb > div { pointer-events: auto; }
@@ -1069,7 +1070,7 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 #cbbar .bb-look .bb-btn { width: 1.9em; height: 1.9em; padding: 0; font-size: 0.85em; }
 #cbbar .bb-look .bb-btn .bb-ic { top: 50%; transform: translateY(-50%); font-size: 1.1em; }
 #cbbar .bb-look .bb-btn .key, #cbbar .bb-look .bb-btn .bb-ap { display: none; }
-#cbbar .bb-look .bb-btn { color: transparent; } /* the name stays in the markup (and the tip) */
+#cbbar .bb-look .bb-btn { color: transparent; text-shadow: none; background: rgba(28,32,38,0.96); box-shadow: none; } /* the name stays in the markup (and the tip) */
 #cbbar .bb-look .bb-btn .bb-ic { color: var(--text); }
 #cbbar .bb-face .sprite { display: block; }
 #cbbar .bb-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.12em; }
@@ -1118,26 +1119,38 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 #cbbar .bb-trayx { padding: 0 0.4em; font-size: 0.9em; line-height: 1.4; }
 #cbbar .bb-trayrow { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.25em; }
 #cbbar .bb-sep { align-self: stretch; width: 1px; margin: 0.25em 0.15em; background: var(--line); }
-#cbbar .bb-btn { position: relative; display: block; width: 5.8em; height: 5.2em; padding: 2.8em 0.15em 0; font-size: 0.7em; line-height: 1.1; text-align: center; overflow: hidden; overflow-wrap: anywhere; background: rgba(28,32,38,0.96); border-radius: 7px; }
-#cbbar .bb-btn.active { background: #4a3816; box-shadow: inset 0 0 0 1px var(--accent); }
-#cbbar .bb-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* An order button: a tile that says what it is without a hover (the user's request 2026-10-18: "larger and easier to
+   understand what each do without needing to hover"). The name is always shown under the icon (two lines at most),
+   its key as a keycap at the top left, its cost as a pill at the top right: ◆1 / ◆2 (the diamonds it spends, as on the
+   card), free, or "ends turn". The markup's order (name, key, icon, cost) is what the tools read (tools/battlebartest.js);
+   the CSS places the pieces. Sized in em off the button's own font so the bar's font scales it all. */
+#cbbar .bb-btn { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; width: 6.3em; height: 6.6em; padding: 0 0.2em 0.4em; font-size: 0.74em; font-weight: 700; line-height: 1.1; text-align: center; overflow: hidden; overflow-wrap: anywhere; color: var(--text); background: linear-gradient(180deg, rgba(44,49,58,0.97), rgba(26,29,35,0.97)); border: 1px solid #3f4754; border-bottom-color: #2a2f37; border-radius: 9px; box-shadow: 0 2px 5px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05); text-shadow: 0 1px 0 rgba(0,0,0,0.7); transition: transform 0.08s ease-out, border-color 0.08s, background 0.08s; }
+#cbbar .bb-btn:hover:not(:disabled) { border-color: var(--accent); background: linear-gradient(180deg, rgba(56,62,72,0.98), rgba(32,36,43,0.98)); transform: translateY(-1px); }
+#cbbar .bb-btn:active:not(:disabled) { transform: translateY(0); }
+#cbbar .bb-btn.active { background: linear-gradient(180deg, #5a4420, #3c2c11); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), 0 2px 5px rgba(0,0,0,0.45); }
+#cbbar .bb-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 #cbbar .bb-btn:disabled .bb-ic { filter: grayscale(1); }
 #cbbar .bb-btn.stub { border-style: dashed; }
-#cbbar .bb-btn.bb-traybtn { background: rgba(36,40,48,0.96); box-shadow: inset 0 -2px 0 rgba(143,193,255,0.35); }
+/* A group's tray button (Moving, Fight, Loot …): bluish, a caret where the key would be, "+N" for the orders behind it. */
+#cbbar .bb-btn.bb-traybtn { background: linear-gradient(180deg, rgba(40,50,66,0.97), rgba(24,30,40,0.97)); border-color: #3c4f6b; }
+#cbbar .bb-btn.bb-traybtn:hover:not(:disabled) { background: linear-gradient(180deg, rgba(52,64,84,0.98), rgba(30,37,49,0.98)); }
 #cbbar .bb-btn.bb-traybtn.off { opacity: 0.55; }
-#cbbar .bb-btn.bb-traybtn.active { background: #4a3816; box-shadow: inset 0 0 0 1px var(--accent); }
-#cbbar .bb-btn.bb-traybtn.busy:not(.active) { box-shadow: inset 0 0 0 1px var(--accent), inset 0 -2px 0 var(--accent); }
-#cbbar .bb-btn .bb-caret { position: absolute; left: 0.35em; top: 0.25em; font-size: 0.85em; font-style: normal; line-height: 1; color: #8fc1ff; }
-#cbbar .bb-btn.bb-allbtn, #cbbar .bb-orders .bb-btn.bb-allbtn { width: 2.6em; padding-left: 0; padding-right: 0; } /* slim: its name is in the tip; the top padding as its neighbours', so it lines up */
-#cbbar .bb-btn.bb-allbtn .bb-lbl { display: none; }
-#cbbar .bb-btn.bb-allbtn .bb-ic { top: 50%; transform: translateY(-50%); }
-#cbbar .bb-btn.bb-allbtn .bb-ap { left: 0; right: 0; text-align: center; color: var(--muted); }
+#cbbar .bb-btn.bb-traybtn.active { background: linear-gradient(180deg, #5a4420, #3c2c11); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), 0 2px 5px rgba(0,0,0,0.45); }
+#cbbar .bb-btn.bb-traybtn.busy:not(.active) { box-shadow: inset 0 0 0 1px var(--accent), 0 2px 5px rgba(0,0,0,0.45); }
+#cbbar .bb-btn .bb-caret { position: absolute; left: 0.35em; top: 0.3em; font-size: 1.05em; font-style: normal; line-height: 1; color: #8fc1ff; }
+#cbbar .bb-btn.bb-traybtn .bb-ap::before { content: "+"; }
+#cbbar .bb-btn.bb-traybtn .bb-ap { background: rgba(143,193,255,0.16); color: #a9cff5; }
+/* All / Ready only: a tile like the rest, its name shown, "+N" the orders it would add. */
+#cbbar .bb-btn.bb-allbtn { border-style: dashed; }
+#cbbar .bb-btn.bb-allbtn .bb-ap { color: var(--muted); background: rgba(154,160,168,0.14); }
 #cbbar .bb-ic { font-style: normal; }
-#cbbar .bb-btn .bb-ic { position: absolute; left: 0; right: 0; top: 0.35em; font-size: 1.9em; line-height: 1.15; }
-#cbbar .bb-btn .key { position: absolute; left: 0.3em; top: 0.25em; font-size: 0.85em; font-weight: 700; line-height: 1; color: var(--muted); }
-#cbbar .bb-btn .bb-ap { position: absolute; right: 0.3em; top: 0.25em; font-size: 0.85em; font-style: normal; font-weight: 700; line-height: 1; color: #8fc1ff; }
-#cbbar .bb-btn .bb-ap.end { color: #ffb36b; }
-#cbbar .bb-btn .bb-ap.free { color: var(--good); }
+#cbbar .bb-btn .bb-ic { position: absolute; left: 0; right: 0; top: 0.5em; font-size: 2.1em; line-height: 1.1; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.6)); pointer-events: none; }
+#cbbar .bb-btn .key { position: absolute; left: 0.3em; top: 0.3em; font-size: 0.82em; font-weight: 700; line-height: 1.25; color: var(--muted); background: rgba(0,0,0,0.35); border: 1px solid rgba(154,160,168,0.35); border-bottom-width: 2px; border-radius: 4px; padding: 0 0.3em; text-shadow: none; }
+#cbbar .bb-btn .bb-ap { position: absolute; right: 0.3em; top: 0.3em; font-size: 0.76em; font-style: normal; font-weight: 700; line-height: 1.4; padding: 0 0.35em; border-radius: 99px; color: #8fc1ff; background: rgba(143,193,255,0.18); text-shadow: none; white-space: nowrap; }
+#cbbar .bb-btn:not(.bb-traybtn):not(.bb-allbtn) .bb-ap:not(.end):not(.free)::before { content: "◆"; font-size: 0.8em; margin-right: 0.15em; }
+#cbbar .bb-btn .bb-ap.end { color: #ffb36b; background: rgba(255,179,107,0.18); }
+#cbbar .bb-btn .bb-ap.end::after { content: "s turn"; } /* the markup says "end" (the tools read it); the pill reads "ends turn" */
+#cbbar .bb-btn .bb-ap.free { color: var(--good); background: rgba(108,196,138,0.18); }
 #cbbar .bb-turn { display: flex; gap: 0.5em; align-items: baseline; justify-content: space-between; font-size: 0.85em; background: rgba(23,26,31,0.95); border: 1px solid var(--line); border-radius: 7px; padding: 0.25em 0.55em; }
 #cbbar .bb-weapon .bh-wpanel { min-width: 0; font-size: 0.88em; padding: 0.25em 0.5em; gap: 0.05em; background: rgba(23,26,31,0.95); }
 #cbbar .bb-weapon .bh-wtop { min-width: 0; }
@@ -1146,13 +1159,18 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
 #cbbar .bb-weapon .bh-count { font-size: 1.05em; }
 #cbbar .bb-weapon .bh-magbar { width: 5em; }
 #cbbar .bb-weapon .bh-magline, #cbbar .bb-weapon .bh-spare, #cbbar .bb-weapon .bh-wstate { flex-wrap: wrap; row-gap: 0; }
-#cbbar .bb-ctls { display: flex; flex-wrap: wrap; gap: 0.25em; }
-#cbbar .bb-ctl { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 0.3em; padding: 0.3em 0.45em; font-size: 0.78em; line-height: 1.15; white-space: nowrap; }
-#cbbar .bb-ctl:not(.bb-end):not(.active):not(.wide) .bb-cl { display: none; } /* the label is in the tip; a wide bar (a TV) shows it */
-@container cbbar (min-width: 125rem) { #cbbar .bb-ctl:not(.bb-end):not(.active):not(.wide) .bb-cl { display: inline; } }
-#cbbar .bb-ctl .bb-ic { font-size: 1.15em; }
-#cbbar .bb-ctl .key { font-size: 0.8em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 0.25em; }
-#cbbar .bb-ctl.bb-end { flex-basis: 100%; font-size: 1em; font-weight: 700; padding: 0.45em; }
+/* The turn controls: End turn across the top, the rest as small labelled tiles under it (icon over its name, the key
+   as a keycap): no hover needed to tell the retreat from the AI from the auto-resolve. */
+#cbbar .bb-ctls { display: grid; grid-template-columns: repeat(auto-fit, minmax(4.6em, 1fr)); gap: 0.3em; }
+#cbbar .bb-ctl { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 0.15em; min-height: 4.3em; padding: 1.1em 0.4em 0.35em; font-size: 0.74em; font-weight: 700; line-height: 1.1; text-align: center; background: linear-gradient(180deg, rgba(44,49,58,0.97), rgba(26,29,35,0.97)); border: 1px solid #3f4754; border-bottom-color: #2a2f37; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05); text-shadow: 0 1px 0 rgba(0,0,0,0.7); }
+#cbbar .bb-ctl:hover:not(:disabled) { border-color: var(--accent); background: linear-gradient(180deg, rgba(56,62,72,0.98), rgba(32,36,43,0.98)); }
+#cbbar .bb-ctl.active { background: linear-gradient(180deg, #5a4420, #3c2c11); border-color: var(--accent); }
+#cbbar .bb-ctl .bb-ic { font-size: 1.5em; line-height: 1.1; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.6)); }
+#cbbar .bb-ctl .bb-cl { display: block; }
+#cbbar .bb-ctl .key { position: absolute; right: 0.3em; top: 0.3em; font-size: 0.78em; line-height: 1.25; color: var(--muted); background: rgba(0,0,0,0.35); border: 1px solid rgba(154,160,168,0.35); border-bottom-width: 2px; border-radius: 4px; padding: 0 0.3em; text-shadow: none; }
+#cbbar .bb-ctl.bb-end { grid-column: 1 / -1; flex-direction: row; gap: 0.4em; min-height: 0; font-size: 1.05em; padding: 0.5em; }
+#cbbar .bb-ctl.bb-end .bb-ic { font-size: 1.2em; }
+#cbbar .bb-ctl.bb-end .key { position: static; margin-left: 0.2em; }
 #cbbar .bb-ask { position: absolute; right: 0; bottom: calc(100% + 0.4em); width: min(27em, 80cqw); max-height: 60vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 0.1em 0.6em 0.5em; box-shadow: 0 6px 24px rgba(0,0,0,0.55); }
 @container cbbar (max-width: 75rem) {
   #cbbar .bb { gap: 0.4em; }
@@ -1164,13 +1182,15 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
   #cbbar .bb-orders { gap: 0.18em; }
   #cbbar .bb-orders .bb-sep { margin: 0.25em -0.08em; } /* the line takes no gap of its own: 11 orders and ⋯ fit one row at 1280×720 */
 }
-/* The bar's own buttons fold to their icons (the name is in the tip) below about 1400 px of bar (1600×900 and less);
-   a tray keeps its names. */
+/* A narrower bar (1600×900 with the side panel, 1280×720): the side columns give way and the tiles shrink a little so
+   the usual eleven fit one row at 1600×900; narrower still they wrap to a second row. Their names stay. */
 @container cbbar (max-width: 88rem) {
-  #cbbar .bb-orders .bb-btn { width: 3.4em; height: 3.4em; padding-top: 3.4em; }
-  #cbbar .bb-orders .bb-btn .bb-ic { top: 50%; transform: translateY(-50%); font-size: 1.75em; }
-  #cbbar .bb-orders .bb-btn .key { top: auto; bottom: 0.2em; left: 0.2em; }
-  #cbbar .bb-orders .bb-btn .bb-ap { right: 0.2em; top: 0.2em; }
+  #cbbar .bb-left { flex-basis: 13em; }
+  #cbbar .bb-right { flex-basis: 15em; }
+  #cbbar .bb-orders { gap: 0.2em; }
+  #cbbar .bb-orders .bb-sep { margin: 0.25em 0; }
+  #cbbar .bb-orders .bb-btn { width: 5.8em; height: 6.3em; }
+  #cbbar .bb-orders .bb-btn .bb-ic { top: 0.52em; font-size: 1.95em; }
 }
 @container cbbar (max-width: 47.5rem) {
   #cbbar .bb { flex-wrap: wrap; }
