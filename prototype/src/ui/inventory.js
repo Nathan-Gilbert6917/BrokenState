@@ -127,7 +127,7 @@ export function tile(item, loc, s, drag = true) {
 function slotBox(state, ui, loc, label, s, readonly) {
   const item = itemAt(state, loc);
   const sel = ui.invSel === loc ? " sel" : "";
-  const act = readonly ? "" : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`;
+  const act = readonly ? (item ? ` data-loc="${loc}"` : "") : ` data-action="inv-click" data-loc="${loc}" data-drop="${loc}"`; // read-only: still right-clicked for the item menu (ui/itemmenu.js)
   return `<div class="islot${sel}${item ? "" : " empty"}"${act}${item ? "" : tip(`${label}: empty`)}><span class="islab">${label}</span>${item ? tile(item, loc, s, !readonly) : ""}${!readonly && /:weapon$/.test(loc) ? gearCog(state, ui, item, loc) : ""}</div>`;
 }
 // ⚙ on a gun: the gun builder (ui/gunbuilder.js). Not on a body, not in the loot or search windows, not in a battle.
@@ -139,7 +139,7 @@ function gearCog(state, ui, item, loc) {
 // The paper doll: portrait in the middle, hands / off hand / pack on the left, head / body / arms / legs on the
 // right, pockets and pack below. holder = survivor or body; prefix = "s:<id>" or "body:<i>".
 // "Food on them": the pack of food and water everyone carries (sim/eating.js), counted in their load.
-const foodLine = (s) => `<div class="small muted"${tip(`Their pack of food and water (sim/eating.js: about ${PACK.food} days of each, topped up from the stores at a base each morning; eaten away from the stores). Counted in the load above.`)}>Food on them: ${Math.round(packFood(s) * 10) / 10} d · water ${Math.round(packWater(s) * 10) / 10} (${Math.round(packKg(s) * 10) / 10} kg)</div>`;
+const foodLine = (s) => `<div class="small muted" data-imenu="ration:${s.id}"${tip(`Their pack of food and water (sim/eating.js: about ${PACK.food} days of each, topped up from the stores at a base each morning; eaten away from the stores). Counted in the load above. Right-click: eat or drink from it now.`)}>Food on them: ${Math.round(packFood(s) * 10) / 10} d · water ${Math.round(packWater(s) * 10) / 10} (${Math.round(packKg(s) * 10) / 10} kg)</div>`;
 export function doll(state, ui, holder, prefix, portrait, { readonly = false, user = null, weightLine = null } = {}) {
   ensureInv(holder);
   const box = (slot) => slotBox(state, ui, `${prefix}:${slot}`, SLOT_NAMES[slot], user, readonly);
@@ -399,7 +399,7 @@ export function inventoryModal(state, ui) {
       <div class="invcol">${readonly ? "" : storageBox(state, ui, place, s)}</div>
     </div>
     ${selBar(state, ui, place)}${stackPanel(state, ui, "inv")}
-    <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps.</div>
+    <div class="small muted" style="margin-top:0.5rem">Click an item, then click where it should go (or drag it). Click a selected item again to send it across: onto ${esc(s.name.split(" ")[0])}, or into storage. A full slot swaps. Right-click an item for what can be done with it (equip, reload, unload, modify, repair, eat, drink, use...).</div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close">Close</button></div>
   </div>`;
 }
@@ -416,7 +416,8 @@ function peekModal(state, ui) {
   const where = u ? (u.dead ? "dead" : u.left ? "got away" : u.down ? "down" : `${Math.round(u.hp)} hp`) : "";
   return `<div class="box wide invbox">
     <div class="spread"><h1>Inventory: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}${where ? ` · ${esc(where)}` : ""}</span></div>
-    <div class="small muted">In the fight: look only. Things move by orders (Reload, Throw, Search, Ground).</div>
+    ${ui.invMsg ? `<div class="result small">${esc(ui.invMsg)}</div>` : ""}
+    <div class="small muted">In the fight things move by orders (Reload, Throw, Search, Ground). Right-click a thing of the one whose turn it is for what can be done with it now (reload, use meds, eat, drink, modify the gun): each row says what it costs in actions.</div>
     <div class="invcols"><div class="invcol">${whoTabs(state, ui, people, s.id)}${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 7), { readonly: true, user: s })}</div></div>
     <div class="row" style="margin-top:0.8rem;justify-content:flex-end"><button class="primary" data-action="inv-close"${tip("Back to the battle (Esc)")}>Close</button></div>
   </div>`;

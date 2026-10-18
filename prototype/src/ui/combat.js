@@ -381,6 +381,9 @@ function act(state, a) {
   return !err;
 }
 
+// An order from outside the battle panel (ui/itemmenu.js: the item menu's Reload, Use meds, a bite): as a button would.
+export const battleOrder = (state, a) => act(state, a);
+
 export function combatClick(state, px, py) {
   const b = state.combat;
   if (!b || b.over) return;

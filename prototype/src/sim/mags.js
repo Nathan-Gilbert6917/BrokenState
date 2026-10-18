@@ -151,7 +151,7 @@ export function fitMags(b, u, spots, staticCap) {
     const load = magLoad(x.item, cal, u.load, key);
     if (!magTakes(x.item.key, loadCal(cal, load))) continue; // (the gun's load is a calibre this magazine cannot hold)
     const cap = magCapOf(x.item.key) || MAGAZINES[x.item.key].cap;
-    u.mags.push({ key: x.item.key, cap, load, n: cap, where: x.where });
+    u.mags.push({ key: x.item.key, cap, load, n: x.item.unloaded ? 0 : cap, where: x.where }); // itemacts.js: one unloaded (the item menu) stays empty
   }
 }
 // An enemy's magazines (carrykit.js kitEnemy): the gun's and `count` spares of its standard magazine (or the given

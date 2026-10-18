@@ -58,6 +58,7 @@ import { drillAct } from "./defenceplan.js"; // a defence drill on the base's ba
 import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./interior.js";
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
+import { battleUse, battleMod } from "./itemacts.js"; // the item menu's orders in a fight (useItem, modPart)
 import { lockRaid, openLock, lockedLoot, raidLocksEnd, autoLock, lockTargets, lockedMsg, botDone } from "./locks.js";
 import { safeTurn } from "./locks.js"; // gun safes: a charge set on one goes off at the start of the next turn
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList, siteList } from "./zombietypes.js"; // a hive's special dead
@@ -4066,6 +4067,17 @@ export function combatAct(state, act) {
       const why = glReloadRefusal(b, u, act.ammo || null);
       if (why) return why;
       glReload(b, u, act.ammo || null);
+      break;
+    }
+    // itemacts.js: the item menu's orders (ui/itemmenu.js). A treat, a bite or a drink (1 action to hand, 2 from the
+    // pack); a gun part fitted or taken off in the gun builder over the battle (1 action). Refitted at once: a buzz's aim,
+    // hunger's and thirst's, the gun's new numbers.
+    case "useItem": case "modPart": {
+      const s = u.sid != null ? survivorById(state, u.sid) : null;
+      if (s && !u.fit) { const id = b.nextId; const f0 = playerUnit(b, s); b.nextId = id; u.fit = { aim: f0.aim, dmgMult: f0.dmgMult, armor: f0.armor, medicine: f0.medicine }; } // refitUnit's baseline (as ground.js fieldReady)
+      const why = handsRefusal(u, act.type === "modPart" ? "reload" : "meds") || (act.type === "modPart" ? battleMod : battleUse)(state, b, u, act, say);
+      if (why) return why;
+      if (s) refitUnit(b, u, s);
       break;
     }
     case "hunker":

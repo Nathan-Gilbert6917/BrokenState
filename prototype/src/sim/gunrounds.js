@@ -130,6 +130,7 @@ function fillOne(item, at, claimed, magDflt = null) {
     const load = r ? loadId(cal, r.cal, r.type) : gun ? typeFor(cal, item.load && item.load !== "auto" ? item.load : null) : magLoad(item, cal, null);
     return { n: Math.min(cap, rec), cap, cal, load, src: rec > 0 ? "in it" : "empty" };
   }
+  if (!gun && item.unloaded) return { n: 0, cap, cal, load: magLoad(item, cal, magDflt), src: "unloaded" }; // itemacts.js: kept empty until loaded again
   const load = gun ? gunLoadAt(item, at, claimed) : magLoadAt(item, at, claimed, magDflt);
   const key = keyFor(cal, load);
   const want = Math.max(0, cap - rec);

@@ -795,6 +795,7 @@ function pickModal(state, ui) {
   if (ui.settings) return ["settings", () => settingsModal(state, ui)]; // ui/settings.js: over everything, a battle included
   if (ui.title) return null; // the title screen (ui/title.js) is up: the new-run screen waits for New game
   takeLootReq(state, ui); // a raid's search window asked for by the battle (ui/combat.js, sim/raidloot.js)
+  if (ui.gunb && ui.gunb.battle != null && state.combat && !state.combat.over) return ["gunb", () => gunBuilderModal(state, ui)]; // ui/gunbuilder.js over a battle (the item menu's Modify on a fighter's gun)
   if (ui.inv && (ui.inv.loot || ui.inv.raid || ui.inv.peek)) return [ui.inv.raid ? "rloot" : ui.inv.peek ? `peek:${ui.inv.sid}` : "loot", () => inventoryModal(state, ui)]; // over the battle screen (peek: a survivor's kit, read-only)
   if (!ui.started && ui.nrMap) return null; // the new-run screen put aside to look at the map (View map)
   if (!ui.started) return ["newrun", () => newRunScreen(state, ui)];
@@ -820,7 +821,7 @@ function pickModal(state, ui) {
   if (ui.caravanPlan) return ["caravan", () => caravanPlanModal(state, ui)];
   if (ui.planner) return ["planner", () => plannerModal(state, ui)];
   if (ui.routeSetup) return ["route", () => routeModal(state, ui)];
-  if (ui.gunb) return ["gunb", () => gunBuilderModal(state, ui)]; // ui/gunbuilder.js: over the inventory (never in a battle: above)
+  if (ui.gunb) return ["gunb", () => gunBuilderModal(state, ui)]; // ui/gunbuilder.js: over the inventory (in a battle: above)
   if (ui.inv && ui.inv.form) return ["teamform", () => teamFormModal(state, ui)]; // ui/teamform.js: Form a team at a base, or edit one waiting there
   if (ui.inv && ui.inv.team != null) return ["teaminv", () => teamInvModal(state, ui)]; // ui/teaminv.js: a whole team; Drop off and Load at a base
   if (ui.meet) return ["teammeet", () => teamMeetModal(state, ui)]; // ui/teammeet.js: your teams together on a tile

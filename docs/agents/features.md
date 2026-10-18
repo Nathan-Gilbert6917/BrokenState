@@ -93,6 +93,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Attachments and gun builder**, Tarkov-style: sights, muzzles, stocks and more; factory-fitted guns; finishes and paint [gunmods, data-gunmods, partfinds, factoryfit, data-finish, ui/gunbuilder, ui/gunpaint].
 - **Armour classes AC 1–6** with per-hit durability, helmets and face shields, plate carriers and rigs [armour, helmets, data-helmets, data-kit].
 - **Inventory**: RPG equipment slots, pockets, packs and stacks [inventory, itemstack, stacks].
+- **Item right-click menu**, Tarkov-style, in every inventory view: equip, reload with a round, unload, modify (the gun builder, in a fight too at an action a part), repair, salvage, eat, drink and use, with each row's cost in actions in a fight [itemacts, ui/itemmenu].
 - **Item condition and repair** that costs max durability, Tarkov-style [itemcond, repair].
 - **Loot distribution** by site theme and gun distribution tables [loot, gundist, gunfinds, blades].
 - **Hidden item values** and worth tiers [valuation].
