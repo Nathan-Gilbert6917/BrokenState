@@ -37,7 +37,11 @@
   </div>
   <div id="modal" class="hidden"></div>
   <div id="combat" class="hidden">
-    <div id="cbmapwrap"><canvas id="combatmap"></canvas><div id="cbhud"></div><div id="cbbar"></div></div>
+    <div id="cbmapwrap"><canvas id="combatmap"></canvas><div id="cbhud"></div><div id="cbbar"></div>
+      <div id="cbtop"></div><!-- a raid without the side panel: Heat, the floor, the view, the Menu and the Log button (ui/combat.js renderRaidTop) -->
+      <div id="cbcards"></div><!-- its cards over the map: before you go in, the building, the result, the hover details -->
+      <div id="cblogwin" class="hidden"><div class="lw-head"><span class="lw-title">📜 Log</span><span class="lw-btns"><button class="mini" data-action="cb-log" data-v="min" data-tip="Fold the log to its title bar (again: open it)">–</button><button class="mini" data-action="cb-log" data-v="close" data-tip="Hide the log (the Log button at the top shows it again)">×</button></span></div><div class="cblog lw-body" id="cblogbody"></div><div class="lw-foot" id="cblogfoot"></div><div class="lw-grip" data-tip="Drag to resize the log"></div></div>
+    </div>
     <aside id="cbpanel"></aside>
   </div>
   <div id="itemmenu" class="hidden"></div>
