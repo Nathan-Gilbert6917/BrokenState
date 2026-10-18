@@ -37,7 +37,7 @@ import { condition, kitSource, spend } from "./itemcond.js"; // the condition lo
 import { armourCond, lootArmour } from "./armour.js"; // per-hit armour: condition, an enemy body's worn piece
 import { lootGun } from "./gunfire.js"; // an enemy's gun: the condition it fought in
 import { MEDS } from "./medfinds.js"; // how rare meds are
-import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
+import { CLIPS, ADMIN_KG, POUCH_NAMES, KIT_LOOT, SUPPLY_POUCHES } from "./data-kit.js"; // rigs, pouches, magazines and clips (sections 15-16)
 import { bodyKit } from "./carrykit.js"; // an enemy's rig and magazines onto its body (call-time only: safe in the import cycle)
 import { burnOf, burnShare } from "./woodcutting.js"; // the firewood an item makes (call-time only: safe in the import cycle)
 import { enemyGunLoaded, unloadInto, stockFor } from "./gunload.js"; // the rounds left in a gun, kept on it (call-time only: safe in the import cycle)
@@ -139,7 +139,8 @@ export const packOf = (s) => (s && s.gear && s.gear.backpack ? ensurePack(s.gear
 // ---------- rigs and plate carriers (docs/weapons-overhaul-plan.md section 16) ----------
 // A rig's pouches are its item.contents, one slot a pouch, of the kinds in GEAR[key].pouches (data-kit.js): rifle and
 // pistol magazines (and clips), a grenade (anything thrown, 40 mm rounds), a radio, admin (small things up to ADMIN_KG:
-// meds, a flashlight, tablets, a small box of rounds). The rig is the chest rig (slot "rig") or a worn armour piece
+// meds, a flashlight, tablets, a small box of rounds), and pocket (anything a pocket takes, no weight cap of its own;
+// 2026-10-18 user request: the bigger rigs have two). The rig is the chest rig (slot "rig") or a worn armour piece
 // with pouches of its own (a tactical vest, a plate carrier): rigOf. A chest rig does not go over a pouched vest.
 export const pouchesOf = (item) => (item && GEAR[item.key] && GEAR[item.key].pouches) || null;
 export function ensureRig(item) {
@@ -171,6 +172,7 @@ export function pouchReason(item, kind) {
   const d = item && GEAR[item.key];
   if (!d) return "Unknown item.";
   const k = pouchKindOf(item);
+  if (kind === "pocket") return d.small ? "" : `A rig's pocket takes what a pocket takes: the ${item.name} is too big for it.`; // a pouch like a pocket (data-kit.js)
   if (kind === "admin") return d.small && !d.mag && !d.throw && itemLoad(item) <= ADMIN_KG + 1e-9 ? "" : `An admin pouch takes small things up to ${ADMIN_KG} kg (meds, a flashlight, tablets, a small box of rounds).`;
   if (k === kind || (kind === "rifle" && k === "pistol")) return ""; // a pistol magazine fits a rifle pouch too
   if (kind === "pistol" && k === "rifle") return `The ${item.name} is too long for a pistol pouch.`;
@@ -331,6 +333,8 @@ export function stow(s, item, prefix = `s:${s.id}`) {
   if (isSmall(item.key)) {
     const i = s.pockets.indexOf(null);
     if (i >= 0) { s.pockets[i] = item; return `${prefix}:pocket:${i}`; }
+    const j = sparePouchFor(s, item); // the pockets full: a rig's pocket pouch, then an admin pouch that takes it
+    if (j >= 0) { rigPouches(s)[j] = item; return `${prefix}:rig:${j}`; }
   }
   const pk = packOf(s);
   if (pk && !packSize(item) && !isBulky(item.key)) {
@@ -365,6 +369,19 @@ function pouchFor(s, item) {
   const want = pouchKindOf(item) || (d && (d.medKit || d.tabs || d.selfStab) ? "admin" : null);
   if (!want) return -1;
   return kinds.findIndex((k, i) => !pr[i] && k === want && !pouchReason(item, want));
+}
+// The free rig pouch a small thing with no pouch of its kind goes in once the pockets are full: a pocket pouch, else an
+// admin pouch that takes it (SUPPLY_POUCHES, in that order), or -1. The rig's extra pockets (data-kit.js).
+function sparePouchFor(s, item) {
+  const r = KIT_LOOT.on ? rigOf(s) : null;
+  if (!r || pouchKindOf(item)) return -1;
+  const pr = r.contents || [];
+  const kinds = pouchesOf(r);
+  for (const want of SUPPLY_POUCHES) {
+    const i = kinds.findIndex((k, j) => !pr[j] && k === want && !pouchReason(item, want));
+    if (i >= 0) return i;
+  }
+  return -1;
 }
 // Why an item cannot go in a slot ("" when it can). slot: an equip slot, "pocket", "pack", "pouch" (a rig pouch of
 // `kind`), "insert" (a carrier's plate pocket). h: the person (or body) it goes on: a chest rig does not go over a vest
@@ -880,6 +897,7 @@ export function quickMove(state, fromStr, sid) {
   const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) : [];
   if (rp) rp.forEach((x, i) => { if (!x && (pouchKindOf(item) ? kinds[i] === pouchKindOf(item) : false) && !pouchReason(item, kinds[i])) tries.push(`s:${sid}:rig:${i}`); }); // a magazine, a grenade, a radio: its pouch
   if (isSmall(item.key)) s.pockets.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pocket:${i}`); });
+  if (rp && isSmall(item.key) && !pouchKindOf(item)) for (const want of SUPPLY_POUCHES) rp.forEach((x, i) => { if (!x && kinds[i] === want && !pouchReason(item, want)) tries.push(`s:${sid}:rig:${i}`); }); // the rig's pockets, then an admin pouch that takes it
   const pk = packOf(s);
   if (pk && !packSize(item) && !isBulky(item.key)) pk.forEach((x, i) => { if (!x) tries.push(`s:${sid}:pack:${i}`); });
   if (isBulky(item.key) && !tries.length) return from.o === "body" || from.o === "s" ? toStorage(state, fromStr) : `The ${item.name} only goes in storage.`;

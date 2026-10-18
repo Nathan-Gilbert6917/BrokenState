@@ -302,7 +302,7 @@ console.log("The inventory window");
   clearFood(h); h.stock.f_rationbar = 120; // 120 ration bars
   const s = atBase(st, h.id)[0];
   const ui = { inv: { sid: s.id }, invSel: null, invMsg: "" };
-  const builtIn = INV_STACK_DESTS.splice(0); // the stores' own destinations (pockets & pack, off hand): checked after the hook mechanism
+  const builtIn = INV_STACK_DESTS.splice(0); // the stores' own destinations (pockets, rig, pack, off hand): checked after the hook mechanism
   let html = render(st, ui);
   const loc = `armory:${h.id}:sup:f_rationbar`;
   check(/In the stores \(/.test(html) && html.includes('<span class="iname">Ration bar</span><span class="icount">×120</span>') && /islot store stack[^"]*still/.test(html) && !html.includes(`data-loc="${loc}"`), "the base's stores are stack tiles (nowhere to move them on their own: shown, not clickable)");
@@ -333,7 +333,7 @@ console.log("The inventory window");
   check(html.includes(`data-loc="${loc}"`), "the stores' ration bars are movable: onto the person, as items");
   INV_ACTIONS["inv-click"](st, ui, { loc });
   html = render(st, ui);
-  check(/pockets &amp; pack/.test(html) && /off hand/.test(html), "the mover offers the pockets & pack and the off hand");
+  check(/: pockets/.test(html) && /off hand/.test(html), "the mover offers the pockets and the off hand (the rig and the pack when worn)");
   STACK_CHANGE["sm-qtyset"](st, ui, { value: "7" });
   INV_ACTIONS["sm-go"](st, ui);
   const inPockets = s.pockets.reduce((a, it) => a + (it && it.key === "s_f_rationbar" ? it.dur : 0), 0);

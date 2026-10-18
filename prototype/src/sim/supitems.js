@@ -20,8 +20,8 @@ import { FOODS, stockOf, takeItem, addFood, newLeft } from "./foods.js";
 import { ROUND_SUPPLIES } from "./data-ammo.js";
 import { isSupItem, isRoundItem, roundItems, roundItem, supItemCap, roundCap, canStack, roomIn, mergeInto, isSpent, amountOf } from "./itemstack.js";
 import { AMMO_STACK } from "./data-stacks.js";
-import { ADMIN_KG } from "./data-kit.js";
-import { ensureInv, packOf, rigPouches, rigOf, pouchesOf, fitReason, stow, battleBodies, storageFor, battlePlace, itemLoad } from "./inventory.js"; // call-time only: safe in the import cycle
+import { ADMIN_KG, SUPPLY_POUCHES } from "./data-kit.js"; // the rig pouches that take supplies (admin within its weight, pocket)
+import { ensureInv, packOf, rigPouches, rigOf, pouchesOf, pouchReason, isSmall, fitReason, stow, battleBodies, storageFor, battlePlace, itemLoad } from "./inventory.js"; // call-time only: safe in the import cycle
 import { wornLoad, maxLoad } from "./load.js";
 import { cargoRoom, unitsThatFit } from "./parties.js"; // call-time only: safe in the import cycle
 
@@ -146,11 +146,13 @@ export function roomOn(s, k, { hand = false } = {}) {
   let n = 0;
   for (const list of [s.pockets, rigPouches(s), packOf(s)]) for (const it of list || []) if (it && canStack(it, probe)) n += roomIn(it);
   if (!fitReason(probe, "pocket")) n += s.pockets.filter((x) => !x).length * cap;
+  const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) || [] : [];
+  if (rp && !fitReason(probe, "pocket")) n += rp.filter((x, i) => !x && kinds[i] === "pocket" && !pouchReason(probe, "pocket")).length * cap; // the rig's pockets (stow: once the pockets are full)
   const pk = packOf(s);
   if (pk && !fitReason(probe, "pack")) n += pk.filter((x) => !x).length * cap;
   return n;
 }
-// Puts items on a person (stacks first, then pockets and the pack: inventory.js stow), or into the off hand. Returns
+// Puts items on a person (stacks first, then pockets, the rig's pockets and the pack: inventory.js stow), or into the off hand. Returns
 // what did not fit (the caller puts it back where it came from).
 /** @param {any} s @param {any[]} items @param {{ hand?: boolean }} [opt] */
 export function stowItems(s, items, { hand = false } = {}) {
@@ -179,132 +181,170 @@ export function stockToPerson(state, holder, k, n, s, opt = {}) {
   for (const it of back) putBack(state, holder, it);
   return moved - back.reduce((a, it) => a + num(it.dur), 0);
 }
-// ---------- rounds onto a named person (2026-10-17 user request: "move loose ammo to survivor pockets and backpack
-// when setting up teams or transferring any inventories") ----------
-// Wherever supplies change hands (forming a team, Load at a base, giving goods between teams) a pick of a round key can
-// go onto one member as items in a place of theirs: the pockets, the pack or the rig's admin pouches (the one pouch
-// that takes rounds: a small box or a handful up to ADMIN_KG), boxed or loose. The target is { sid, where, loose }
-// (teaminv.js loadFromBase, teammeet.js giveGoods, teamform.js formTeam). The limits are the inventory's own: the
-// stacks' room (AMMO_STACK), free slots, the admin pouch's weight, the person's max load; the team's carry limit is the
-// caller's (what they wear comes off what the team can carry). A refusal says why.
-export const ROUND_PLACES = ["pocket", "pack", "rig"];
-export const PLACE_WORDS = { pocket: "pockets", pack: "pack", rig: "rig's admin pouches" };
+// ---------- supplies onto a named person (2026-10-17 user request: "move loose ammo to survivor pockets and backpack
+// when setting up teams or transferring any inventories"; 2026-10-18: "move x loose ammo or any other item in the
+// stores into the pockets, rig, pack") ----------
+// Wherever supplies change hands (forming a team, Load at a base, giving goods between teams, the inventory window's
+// stores) a pick of a stock key that has an item form (itemKeyOf: rounds, water, meds, fuel, a food, parts...) can go
+// onto one member as items in a place of theirs: the pockets, the pack or the rig's pouches that take supplies (an
+// admin pouch up to ADMIN_KG, a pocket pouch anything small: data-kit.js SUPPLY_POUCHES). Rounds go boxed or loose.
+// The target is { sid, where, loose } (teaminv.js loadFromBase, teammeet.js giveGoods, teamform.js formTeam). The
+// limits are the inventory's own: the stacks' room (AMMO_STACK, a supply item's stack), free slots, what the place
+// takes (a pocket small things, a pack nothing bulky, the pouches their kinds), the admin pouch's weight, the person's
+// max load; the team's carry limit is the caller's (what they wear comes off what the team can carry). A refusal says
+// why. The round* names are the first day's: the sup* ones are the same functions for any supply.
+export const SUP_PLACES = ["pocket", "pack", "rig"];
+export const ROUND_PLACES = SUP_PLACES;
+export const PLACE_WORDS = { pocket: "pockets", pack: "pack", rig: "rig's pouches" };
 const EPSW = 1e-9;
 const firstOf = (s) => (s && s.name ? s.name.split(" ")[0] : "They");
-// The slots of a place on a person: [{ list, i, pouch }] (rig: its admin pouches only). null: they have no such place.
-/** @param {any} s @param {string} where */
-export function placeSlots(s, where) {
+const supWord = (k) => (SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k);
+// One unit of a stock key as the item it is held as (rounds in a form), to ask what takes it. null: it has no item form.
+/** @param {string} k @param {boolean} [loose] */
+export function probeOf(k, loose = false) {
+  if (ROUND_SUPPLIES[k] && GEAR[k]) return roundItem(k, 1, loose);
+  return supItems(k, 1)[0] || null;
+}
+// The slots of a place on a person: [{ list, i, kind }] (kind: a rig pouch's kind, null for a pocket or a pack slot).
+// The rig's slots are its pouches that take supplies (admin, pocket); with a probe, only those that take that thing
+// (pouchReason). null: they have no such place.
+/** @param {any} s @param {string} where @param {any} [probe] */
+export function placeSlots(s, where, probe = null) {
   ensureInv(s);
-  if (where === "pocket") return s.pockets.map((_, i) => ({ list: s.pockets, i, pouch: false }));
-  if (where === "pack") { const pk = packOf(s); return pk ? pk.map((_, i) => ({ list: pk, i, pouch: false })) : null; }
+  if (where === "pocket") return s.pockets.map((_, i) => ({ list: s.pockets, i, kind: null }));
+  if (where === "pack") { const pk = packOf(s); return pk ? pk.map((_, i) => ({ list: pk, i, kind: null })) : null; }
   if (where === "rig") {
     const rp = rigPouches(s), kinds = rp ? pouchesOf(rigOf(s)) || [] : [];
-    const out = rp ? rp.map((_, i) => ({ list: rp, i, pouch: true })).filter((x) => kinds[x.i] === "admin") : null;
+    const out = rp ? rp.map((_, i) => ({ list: rp, i, kind: kinds[i] })).filter((x) => SUPPLY_POUCHES.includes(x.kind) && (!probe || !pouchReason(probe, x.kind))) : null;
     return out && out.length ? out : null;
   }
   return null;
 }
-// Why rounds cannot go in that place on them at all ("" when they can), before the room is counted.
-/** @param {any} s @param {string} where */
-export function placeReason(s, where) {
-  if (!ROUND_PLACES.includes(where)) return "Rounds go in the pockets, the pack or a rig's admin pouch.";
+// Why a supply cannot go in that place on them at all ("" when it can), before the room is counted. k: the stock key
+// (none: only whether they have the place).
+/** @param {any} s @param {string} where @param {string | null} [k] @param {boolean} [loose] */
+export function placeReason(s, where, k = null, loose = false) {
+  if (!SUP_PLACES.includes(where)) return "Supplies go in the pockets, the pack or a rig's admin or pocket pouch.";
   if (where === "pack" && !packOf(s)) return `${firstOf(s)} wears no pack.`;
   if (where === "rig" && !rigOf(s)) return `${firstOf(s)} wears no rig.`;
-  if (where === "rig" && !placeSlots(s, "rig")) return `${firstOf(s)}'s ${rigOf(s).name} has no admin pouch (the one pouch that takes rounds).`;
+  if (where === "rig" && !placeSlots(s, "rig")) return `${firstOf(s)}'s ${rigOf(s).name} has no admin or pocket pouch (the pouches that take supplies).`;
+  if (k == null) return "";
+  const probe = probeOf(k, loose);
+  if (!probe) return `The ${supWord(k)} is not something to hold: it goes to the team's supplies.`;
+  if (where === "pocket" || where === "pack") return fitReason(probe, where);
+  if (where === "rig" && !placeSlots(s, "rig", probe)) return `No pouch of ${firstOf(s)}'s ${rigOf(s).name} takes the ${supWord(k)}${isSmall(probe.key) ? ` (its admin pouch${placeSlots(s, "rig").some((x) => x.kind === "admin") ? "" : "es"} take up to ${ADMIN_KG} kg)` : ": it is too big for a pocket"}.`;
   return "";
 }
-// Rounds of a key, in a form, a pouch takes on top of `have` kg (ADMIN_KG), never more than the form's stack.
-const pouchCap = (perKg, cap, have = 0) => (perKg > 0 ? Math.max(0, Math.min(cap, Math.floor((ADMIN_KG - have + EPSW) / perKg))) : cap);
-// How many rounds of a key, in a form, fit in a place on a person now: onto their stacks of it there (the same form),
+// Units of a key, in a form, a pouch takes on top of `have` kg (an admin pouch: ADMIN_KG; a pocket pouch: the stack),
+// never more than the form's stack.
+const pouchCap = (slot, perKg, cap, have = 0) => (slot.kind !== "admin" || !(perKg > 0) ? cap : Math.max(0, Math.min(cap, Math.floor((ADMIN_KG - have + EPSW) / perKg))));
+// How many units of a key, in a form, fit in a place on a person now: onto their stacks of it there (the same form),
 // then free slots (an admin pouch as far as ADMIN_KG goes), and never past their max load. { n, why }: why says what
-// stops it when n is 0 (no such place, no room, over their max load).
+// stops it when n is 0 (no such place, the thing does not go there, no room, over their max load).
 /** @param {any} s @param {string} k @param {string} where @param {boolean} [loose] */
-export function roundRoom(s, k, where, loose = false) {
-  if (!s || !ROUND_SUPPLIES[k] || !GEAR[k]) return { n: 0, why: "Not a round." };
-  const why = placeReason(s, where);
+export function supRoom(s, k, where, loose = false) {
+  if (!s || !itemKeyOf(k)) return { n: 0, why: `The ${supWord(k)} is not something to hold.` };
+  const why = placeReason(s, where, k, loose);
   if (why) return { n: 0, why };
-  const probe = roundItem(k, 1, loose);
+  const probe = probeOf(k, loose);
   const perKg = itemLoad(probe);
-  const cap = loose ? AMMO_STACK.LOOSE : roundCap(probe);
+  const cap = roundCap(probe);
   let n = 0;
-  for (const { list, i, pouch } of placeSlots(s, where) || []) {
-    const it = list[i];
-    if (!it) { n += pouch ? pouchCap(perKg, cap) : cap; continue; }
-    if (canStack(it, probe)) n += pouch ? Math.min(roomIn(it), pouchCap(perKg, cap, itemLoad(it))) : roomIn(it);
+  for (const slot of placeSlots(s, where, probe) || []) {
+    const it = slot.list[slot.i];
+    if (!it) { n += pouchCap(slot, perKg, cap); continue; }
+    if (canStack(it, probe)) n += Math.min(roomIn(it), pouchCap(slot, perKg, cap, itemLoad(it)));
   }
-  if (!n) return { n: 0, why: `No room in ${firstOf(s)}'s ${PLACE_WORDS[where]} for the ${SUPPLIES[k].name.toLowerCase()}.` };
+  if (!n) return { n: 0, why: `No room in ${firstOf(s)}'s ${PLACE_WORDS[where]} for the ${supWord(k)}.` };
   const byLoad = perKg > 0 ? Math.max(0, Math.floor((maxLoad(s) - wornLoad(s) + EPSW) / perKg)) : n;
   if (!byLoad) return { n: 0, why: `Too heavy for ${firstOf(s)}: ${firstOf(s)} wears ${Math.round(wornLoad(s) * 10) / 10} of ${maxLoad(s)} kg.` };
   return { n: Math.min(n, byLoad), why: "" };
 }
-// Puts round items into a place on a person: their stacks of it there first (the same form), then free slots (an
-// admin pouch as far as its weight goes, the rest in the next). Returns the rounds that found no room.
+export const roundRoom = supRoom;
+// A part of a count stack as an item of its own (rounds keep their form, a food its shelf and eggs).
+const pieceOf = (it, q) => { const out = { ...it, dur: q }; delete out.loaded; return out; };
+// Puts supply items (count stacks: rounds in a form, supply items) into a place on a person: their stacks of it there
+// first (the same form), then free slots (an admin pouch as far as its weight goes, the rest in the next). Returns the
+// items (or parts) that found no room.
 /** @param {any} s @param {any[]} items @param {string} where */
-export function placeRounds(s, items, where) {
-  const slots = placeSlots(s, where) || [];
-  let left = 0;
+export function placeSupplies(s, items, where) {
+  const left = [];
   for (const it of items) {
-    const perKg = itemLoad(roundItem(it.key, 1, !!it.loose)), cap = roundCap(it);
-    for (const { list, i, pouch } of slots) { // onto the stacks of it there
+    const one = pieceOf(it, 1); // what takes one of it (an admin pouch asks the weight of a unit, not of the stack)
+    const slots = placeSlots(s, where, one) || [];
+    const perKg = itemLoad(one), cap = roundCap(it);
+    for (const slot of slots) { // onto the stacks of it there
       if (isSpent(it)) break;
-      const cur = list[i];
+      const cur = slot.list[slot.i];
       if (!cur || !canStack(cur, it)) continue;
-      const q = Math.min(amountOf(it), pouch ? Math.min(roomIn(cur), pouchCap(perKg, cap, itemLoad(cur))) : roomIn(cur));
-      if (q > 0) { cur.dur = amountOf(cur) + q; it.dur = amountOf(it) - q; }
+      const q = Math.min(amountOf(it), Math.min(roomIn(cur), pouchCap(slot, perKg, cap, itemLoad(cur))));
+      if (q > 0) { mergeInto(cur, pieceOf(it, q)); it.dur = amountOf(it) - q; }
     }
     let placed = false;
-    for (const { list, i, pouch } of slots) { // then free slots
+    for (const slot of slots) { // then free slots
       if (isSpent(it)) break;
-      if (list[i]) continue;
-      const q = pouch ? pouchCap(perKg, cap) : cap;
+      if (slot.list[slot.i]) continue;
+      const q = pouchCap(slot, perKg, cap);
       if (q < 1) continue;
-      if (amountOf(it) <= q) { list[i] = it; placed = true; break; }
-      list[i] = roundItem(it.key, q, !!it.loose);
+      if (amountOf(it) <= q) { slot.list[slot.i] = it; placed = true; break; }
+      slot.list[slot.i] = pieceOf(it, q);
       it.dur = amountOf(it) - q;
     }
-    if (!placed && !isSpent(it)) left += amountOf(it);
+    if (!placed && !isSpent(it)) left.push(it);
   }
   return left;
 }
-// Up to n rounds of a key out of stock records (drawn in order) onto a person, in a place, in a form. The caller caps
-// n by what its team can carry. Returns { moved, why } (why: the refusal when nothing moved, or what cut it short).
-/** @param {Record<string, number>[]} pools @param {string} k @param {number} n @param {any} s @param {{ where: string, loose?: boolean }} opt */
-export function roundsOnto(pools, k, n, s, { where, loose = false }) {
-  const have = pools.reduce((a, st) => a + Math.max(0, Math.floor(num(st && st[k]))), 0);
+/** @param {any} s @param {any[]} items @param {string} where the rounds that found no room (the first day's name) */
+export const placeRounds = (s, items, where) => placeSupplies(s, items, where).reduce((a, it) => a + amountOf(it), 0);
+// Up to n units of a key out of stock holders (a base, a team's packed supplies or its cargo, or bare { key: n }
+// records; drawn in order) onto a person, in a place, in a form (rounds loose or boxed). Food comes off its oldest lots
+// with the shelf it has left (takeOut). The caller caps n by what its team can carry. Returns { moved, why } (why: the
+// refusal when nothing moved, or what cut it short).
+/** @param {any} state @param {any[]} holders @param {string} k @param {number} n @param {any} s @param {{ where: string, loose?: boolean }} opt */
+export function suppliesOnto(state, holders, k, n, s, { where, loose = false }) {
+  const have = holders.reduce((a, h) => { const st = stockOf(h); return a + Math.max(0, Math.floor(num(st && st[k]) + EPS)); }, 0);
   const want = Math.min(Math.floor(n), have);
-  if (!(want >= 1)) return { moved: 0, why: `No ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : k} to take.` };
-  const room = roundRoom(s, k, where, loose);
+  if (!(want >= 1)) return { moved: 0, why: `No ${supWord(k)} to take.` };
+  const room = supRoom(s, k, where, loose);
   const q = Math.min(want, room.n);
   if (!(q >= 1)) return { moved: 0, why: room.why };
-  let left = q;
-  for (const st of pools) { // the first pool first (a team's found cargo before its packed supplies)
-    const take = Math.min(left, Math.max(0, Math.floor(num(st && st[k]))));
+  const items = [];
+  let left = q, last = holders[0];
+  for (const h of holders) { // the first holder first (a team's found cargo before its packed supplies)
+    const st = stockOf(h);
+    const take = Math.min(left, Math.max(0, Math.floor(num(st && st[k]) + EPS)));
     if (!(take > 0)) continue;
-    st[k] = num(st[k]) - take;
-    if (st[k] < EPS) delete st[k];
+    last = h;
+    const got = takeOut(state, h, k, take);
+    if (ROUND_SUPPLIES[k] && loose) items.push(...roundItems(k, got.reduce((a, it) => a + amountOf(it), 0), true)); // out of the stores as loose handfuls
+    else items.push(...got);
     left -= take;
     if (!left) break;
   }
-  const back = placeRounds(s, roundItems(k, q, loose), where);
-  if (back > 0) { const last = pools[pools.length - 1]; last[k] = num(last[k]) + back; } // (the room was counted: nothing should come back)
-  const moved = q - back;
-  return { moved, why: moved < want ? `Only ${moved} of the ${want} ${SUPPLIES[k].name.toLowerCase()} fit in ${firstOf(s)}'s ${PLACE_WORDS[where]}.` : "" };
+  const back = placeSupplies(s, items, where);
+  for (const it of back) putBack(state, last, it); // (the room was counted: nothing should come back)
+  const moved = q - back.reduce((a, it) => a + amountOf(it), 0);
+  return { moved, why: moved < want ? `Only ${moved} of the ${want} ${supWord(k)} fit in ${firstOf(s)}'s ${PLACE_WORDS[where]}.` : "" };
 }
+/** @param {Record<string, number>[]} pools @param {string} k @param {number} n @param {any} s @param {{ where: string, loose?: boolean }} opt rounds out of bare stock records (the first day's name) */
+export const roundsOnto = (pools, k, n, s, opt) => suppliesOnto(null, pools, k, n, s, opt);
 // A transfer's target ({ sid, where, loose }, a bare survivor id, or "cargo" / null): { sid, where, loose } with where
 // null for "onto them the usual way" (items by stow, supplies into the pool), or null for the cargo.
 /** @param {any} target */
 export function parseTarget(target) {
-  if (target && typeof target === "object") return { sid: Number(target.sid), where: ROUND_PLACES.includes(target.where) ? target.where : null, loose: !!target.loose };
+  if (target && typeof target === "object") return { sid: Number(target.sid), where: SUP_PLACES.includes(target.where) ? target.where : null, loose: !!target.loose };
   if (target === "cargo" || target == null) return null;
   return { sid: Number(target), where: null, loose: false };
 }
-// The rounds of a key, in a form, a person holds in a place (the Team forming window's "Carried" column).
+// The units of a key a person holds in a place (the Team forming window's "Carried" column): rounds in a form, a
+// supply's items.
 /** @param {any} s @param {string} k @param {string} where @param {boolean} [loose] */
-export function roundsHeld(s, k, where, loose = false) {
+export function suppliesHeld(s, k, where, loose = false) {
   let n = 0;
-  for (const { list, i } of placeSlots(s, where) || []) { const it = list[i]; if (it && it.key === k && isRoundItem(it) && !!it.loose === !!loose) n += amountOf(it); }
+  for (const { list, i } of placeSlots(s, where) || []) { const it = list[i]; if (it && stockKeyOf(it) === k && (!isRoundItem(it) || !!it.loose === !!loose)) n += amountOf(it); }
   return n;
 }
+export const roundsHeld = suppliesHeld;
 
 // Is this a thing held as a supply: rounds in any form, a bench's bag, a supply item.
 /** @param {any} it */

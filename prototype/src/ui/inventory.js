@@ -43,7 +43,8 @@ import { battleKg, bandFor } from "../sim/carrykit.js"; // the battle load band 
 import { roundName, calName } from "../sim/rounds.js";
 import { stackLabel, isRoundItem, isBulk, amountOf, countOf, boxesIn, bulkRecord, roundCap, stackMax } from "../sim/itemstack.js"; // stacks in a slot (2026-10-10)
 import { splitAt, openAt, boxAt } from "../sim/inventory.js";
-import { itemKeyOf, roomOn, stockToPerson, bodyToPerson } from "../sim/supitems.js"; // supplies out of the stores as items you hold (2026-10-16)
+import { itemKeyOf, roomOn, stockToPerson, bodyToPerson, supRoom, suppliesOnto, SUP_PLACES, PLACE_WORDS } from "../sim/supitems.js"; // supplies out of the stores as items you hold (2026-10-16); onto a place of theirs (2026-10-18)
+import { isRoundKey } from "../sim/rounds.js"; // rounds out of the stores: boxed or loose
 import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
 import { bagRefusal } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms
 import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
@@ -185,7 +186,7 @@ function rigBoxes(state, ui, holder, prefix, user, readonly) {
   const rig = rigOf(holder);
   if (!rig) return "";
   const P = pouchesOf(rig);
-  return `<div class="invlabel"${tip(`The ${rig.name}'s pouches: ${pouchText(P)}. Rifle and pistol pouches take magazines (and speedloaders, stripper clips), a grenade pouch anything thrown, a radio pouch a radio, an admin pouch small things up to 0.5 kg (meds, a flashlight, tablets). A magazine from a pouch reloads in 1 action (2 from the pack); a grenade or meds from a pouch take 1 as from a pocket.`)}>Rig (${esc(rig.name)})</div>
+  return `<div class="invlabel"${tip(`The ${rig.name}'s pouches: ${pouchText(P)}. Rifle and pistol pouches take magazines (and speedloaders, stripper clips), a grenade pouch anything thrown, a radio pouch a radio, an admin pouch small things up to 0.5 kg (meds, a flashlight, tablets), a pocket pouch anything a pocket takes (a knife, a pistol, a phone, meds, boxes or a handful of rounds, a magazine). A magazine from a pouch reloads in 1 action (2 from the pack); a grenade or meds from a pouch take 1 as from a pocket.`)}>Rig (${esc(rig.name)})</div>
     <div class="invgrid">${P.map((k, i) => slotBox(state, ui, `${prefix}:rig:${i}`, `${POUCH_ICON[k] || ""} ${POUCH_NAMES[k] || k}`, user, readonly)).join("")}</div>`;
 }
 // A plate carrier's plate pockets (front, back) under the body slot, with their durability bars.
@@ -808,8 +809,11 @@ registerStackScreen("loot", {
 // and nobody holds a stack of their own yet; ux-carry's held supplies (pockets, pack, arms, the vehicle) plug in here.
 export const INV_STACK_DESTS = [];
 const invDests = (state, ui, loc) => INV_STACK_DESTS.flatMap((f) => f(state, ui, loc) || []);
-// Out of the stores onto the person whose inventory is open (sim/supitems.js): as the items that hold it, into their
-// pockets and pack (the stacks of it they have first), or into the off hand.
+// Out of the stores onto the person whose inventory is open (sim/supitems.js suppliesOnto, 2026-10-18 user request:
+// "move x loose ammo or any other item in the stores into the pockets, rig, pack"): as the items that hold it, into the
+// place of theirs picked in the mover (their pockets, their rig's admin and pocket pouches, their pack; the stacks of it
+// they have there first; the fit counts the place's room and their max load), or into the off hand. Rounds go boxed or
+// loose (the chips under the panel: ui.invLoose). A stack dropped on one of their slots opens the mover on that place.
 INV_STACK_DESTS.push((state, ui, loc) => {
   const L = parseLoc(loc);
   const s = ui.inv && ui.inv.sid != null ? survivorById(state, ui.inv.sid) : null;
@@ -818,13 +822,20 @@ INV_STACK_DESTS.push((state, ui, loc) => {
   if (!st || personPlace(s) !== `${st.o === "armory" ? "base" : "party"}:${st.id}`) return [];
   const holder = st.o === "cargo" ? st.party.cargo : baseById(state, st.id);
   const name = shortName(s), what = (SUPPLIES[L.i] || { name: L.i }).name.toLowerCase();
-  const dest = (id, label, hand) => {
-    const fit = roomOn(s, L.i, { hand });
-    return { id, label, fit, err: fit ? "" : hand ? `${name}'s off hand is full.` : `No room in ${name}'s pockets or pack for the ${what}.`,
-      move: (state2, ui2, qty) => { const n = stockToPerson(state2, holder, L.i, qty, s, { hand }); return n ? `${n} ${what} → ${name}'s ${hand ? "off hand" : "pockets and pack"}.` : `No room for the ${what}.`; } };
-  };
-  return [dest("kit", `${name}: pockets & pack`, false), dest("hand", `${name}: off hand`, true)];
+  const loose = isRoundKey(L.i) && !!ui.invLoose;
+  const form = isRoundKey(L.i) ? (loose ? ", loose" : ", boxed") : "";
+  const out = SUP_PLACES.filter((w) => w === "pocket" || (w === "rig" ? rigOf(s) : packOf(s))).map((w) => {
+    const room = supRoom(s, L.i, w, loose);
+    return { id: w, label: `${name}: ${PLACE_WORDS[w]}`, fit: room.n, err: room.why,
+      move: (state2, ui2, qty) => { const r = suppliesOnto(state2, [holder], L.i, qty, s, { where: w, loose }); return r.moved ? `${r.moved} ${what} → ${name}'s ${PLACE_WORDS[w]}${form}.${r.why ? ` ${r.why}` : ""}` : r.why || `No room for the ${what}.`; } };
+  });
+  const fit = roomOn(s, L.i, { hand: true });
+  out.push({ id: "hand", label: `${name}: off hand`, fit, err: fit ? "" : `${name}'s off hand is full.`,
+    move: (state2, ui2, qty) => { const n = stockToPerson(state2, holder, L.i, qty, s, { hand: true }); return n ? `${n} ${what} → ${name}'s off hand.` : `No room for the ${what}.`; } });
+  return out;
 });
+// The boxed / loose chips under the mover for a stack of rounds (ui.invLoose; the amount picked is worked out again).
+const looseChips = (ui) => `<span class="muted">Rounds go</span> <button class="mini${ui.invLoose ? "" : " active"}" data-action="inv-loose" data-v="0"${tip("As boxes (up to five boxes a slot)")}>boxed</button> <button class="mini${ui.invLoose ? " active" : ""}" data-action="inv-loose" data-v="1"${tip("Loose (up to 80 rounds a slot; a handful in an admin pouch)")}>loose</button>`;
 registerStackScreen("inv", {
   spec(state, ui) {
     if (!ui.inv || ui.inv.raid || !ui.invSel) return null;
@@ -833,7 +844,10 @@ registerStackScreen("inv", {
     const st = storageFor(state, `${L.o === "armory" ? "base" : "party"}:${L.id}`);
     const pool = !st ? null : st.o === "cargo" ? st.party.cargo.supplies : (baseById(state, st.id) || {}).stock;
     const dests = invDests(state, ui, ui.invSel);
-    return pool && dests.length ? { key: L.i, have: Math.floor(pool[L.i] || 0), at: ui.invSel, splits: invSplits(ui), from: st.o === "cargo" ? "Team cargo" : `${baseById(state, st.id).name} stores`, dests } : null;
+    if (!pool || !dests.length) return null;
+    const to = (dests.find((d) => d.fit > 0) || dests[0]).id; // the first place with room (pockets, pack, rig, the off hand)
+    const hint = isRoundKey(L.i) && dests.some((d) => SUP_PLACES.includes(d.id)) ? looseChips(ui) : "";
+    return { key: L.i, have: Math.floor(pool[L.i] || 0), at: ui.invSel, splits: invSplits(ui), from: st.o === "cargo" ? "Team cargo" : `${baseById(state, st.id).name} stores`, dests, to, hint };
   },
   move(state, ui, to, qty) { const d = invDests(state, ui, ui.invSel).find((x) => x.id === to); if (d) ui.invMsg = d.move(state, ui, qty); },
   cancel(state, ui) { ui.invSel = null; },
@@ -967,7 +981,15 @@ export function invDrop(state, ui, from, to, half = false, one = false, at = nul
   if (ui.inv.peek) { if (/^s:\d+:/.test(from)) fightMove(state, ui, from, to); return; } // the fight's window: through the sim, 1 action
   const F = parseLoc(from);
   if (F.slot === "sup") {
-    if (F.o !== "body") { if (invDests(state, ui, from).length) { ui.invSel = from; openStack(ui, "inv", { pop }); } return; }
+    if (F.o !== "body") {
+      // A stack out of the stores dropped on someone's slot: the mover opens on that place of theirs (their pockets, a
+      // rig pouch, the pack, the off hand); elsewhere, on the first place with room.
+      const T = parseLoc(to);
+      if (T.o === "s" && ui.inv && !ui.inv.loot && survivorById(state, T.id)) ui.inv.sid = T.id;
+      const where = T.o !== "s" ? null : T.slot === "pocket" ? "pocket" : T.slot === "rig" && T.i != null ? "rig" : T.slot === "pack" ? "pack" : T.slot === "tool" ? "hand" : null;
+      if (invDests(state, ui, from).length) { ui.invSel = from; openStack(ui, "inv", { pop, to: where }); }
+      return;
+    }
     const n = lootFit(state, F.id, F.i).have;
     if (one || half || n <= 1) { ui.invMsg = takeSupply(state, F.id, F.i, one ? 1 : half ? Math.max(1, Math.floor(n / 2)) : Infinity); ui.invSel = null; closeStack(ui); return; }
     if (parseLoc(to).o === "body") return; // dropped back on a body
@@ -989,6 +1011,7 @@ export const INV_ACTIONS = {
   "inv-mate": (state, ui, d) => { if (!ui.inv || !ui.inv.peek) return; if (d.id === "" || d.id == null) delete ui.inv.mate; else ui.inv.mate = Number(d.id); ui.invSel = null; ui.invMsg = ""; }, // the hand-over window: another mate in reach, or the acting one's own kit alone
   "inv-click": (state, ui, d, ev) => clickLoc(state, ui, d.loc, ev),
   "inv-cancel": (state, ui) => { ui.invSel = null; closeStack(ui); },
+  "inv-loose": (state, ui, d) => { ui.invLoose = d.v === "1"; if (ui.stack) ui.stack.qty = null; }, // rounds out of the stores onto a person: boxed or loose (the mover's chips)
   "inv-store": (state, ui) => { if (ui.invSel) ui.invMsg = toStorage(state, ui.invSel); ui.invSel = null; },
   // Gun attachments (sim/inventory.js fitModAt / unfitModAt; sim/gunmods.js).
   "inv-fitmod": (state, ui, d) => { if (!ui.invSel) return; const gun = itemAt(state, ui.invSel); ui.invMsg = fitModAt(state, ui.invSel, d.mod); reselect(state, ui, gun); },

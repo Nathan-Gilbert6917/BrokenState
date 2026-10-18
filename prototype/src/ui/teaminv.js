@@ -18,7 +18,7 @@ import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
 import { supplyName } from "../sim/itemnames.js";
 import { isRoundKey } from "../sim/rounds.js"; // rounds in the stores: "… FMJ — loose", the count on the right
-import { roundRoom, ROUND_PLACES, PLACE_WORDS } from "../sim/supitems.js"; // rounds onto a member: their pockets, pack or rig, boxed or loose (2026-10-17)
+import { supRoom, SUP_PLACES, PLACE_WORDS, itemKeyOf } from "../sim/supitems.js"; // supplies onto a member: their pockets, pack or rig (2026-10-17 rounds boxed or loose, 2026-10-18 any supply)
 import { wornLoad, maxLoad } from "../sim/load.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -137,29 +137,30 @@ function transferTab(state, ui, p, base, tab) {
     <div class="istore">${supTiles(ui, B.stock, !drop, "base") || `<span class="small muted">Empty.</span>`}</div></div>`;
   // What is picked, with how many of each supply, and the button.
   const pickedItems = Object.keys(ui.tiPick.items).length;
-  // Rounds picked go into the packed supplies, or (a member the target, a place picked: ui.tiWhere, ui.tiLoose) onto
-  // that member as boxed or loose items in their pockets, pack or rig (sim/supitems.js roundsOnto); the chip says the room.
+  // Supplies picked go into the packed supplies, or (a member the target, a place picked: ui.tiWhere, ui.tiLoose) onto
+  // that member as items in their pockets, pack or rig (sim/supitems.js suppliesOnto; rounds boxed or loose); the chip
+  // says the room.
   const who = !drop && String(target) !== "cargo" ? survivorById(state, Number(target)) : null;
-  const where = who && ROUND_PLACES.includes(ui.tiWhere) ? ui.tiWhere : null;
+  const where = who && SUP_PLACES.includes(ui.tiWhere) ? ui.tiWhere : null;
   const supRows = Object.entries(ui.tiPick.sup).map(([k, q]) => {
     const have = drop ? (H.cargo.supplies[k] ? H.cargo.supplies[k].all : 0) : B.stock[k] || 0;
     if (!(have > 0) || !SUPPLIES[k]) return "";
     const v = Math.min(have, q);
-    const room = where && isRoundKey(k) ? roundRoom(who, k, where, !!ui.tiLoose) : null;
-    const roomText = room ? ` <span class="${room.n ? "muted" : "danger"}"${tip(room.why || `${room.n} fit in ${first(who)}'s ${PLACE_WORDS[where]} now (${ui.tiLoose ? "loose" : "boxed"}), within ${first(who)}'s max load`)}>(${room.n ? `${room.n} fit` : "no room"})</span>` : "";
+    const room = where && itemKeyOf(k) ? supRoom(who, k, where, isRoundKey(k) && !!ui.tiLoose) : null;
+    const roomText = room ? ` <span class="${room.n ? "muted" : "danger"}"${tip(room.why || `${room.n} fit in ${first(who)}'s ${PLACE_WORDS[where]} now (${isRoundKey(k) ? (ui.tiLoose ? "loose" : "boxed") : "as items"}), within ${first(who)}'s max load`)}>(${room.n ? `${room.n} fit` : "no room"})</span>` : "";
     return `<span class="chip">${supplyIcon(k)} <input type="number" class="qty" min="0" max="${qty(have)}" step="1" value="${qty(v)}" data-action="ti-qty" data-key="${k}" style="width:4em"${tip(`How many of the ${qty(have)} ${SUPPLIES[k].name.toLowerCase()} (${supWeight(k)} kg each)`)}> of ${qty(have)} ${esc(SUPPLIES[k].name.toLowerCase())}${roomText} <button class="mini" data-action="ti-sup" data-key="${k}" data-side="${drop ? "team" : "base"}"${tip("Leave it")}>×</button></span>`;
   }).join(" ");
   const tgtName = String(target) === "cargo" ? `the team's cargo${H.cargo.vehicle ? ` (${esc(H.cargo.name.replace(/ \(team cargo\)$/, ""))})` : ""}` : (() => { const s = survivorById(state, Number(target)); return s ? first(s) : "the cargo"; })();
   const roundsTo = !who ? "" : (() => {
     const chip = (act, v, label, on, hint) => `<button class="mini ${on ? "active" : ""}" data-action="${act}" data-v="${v}"${tip(hint)}>${on ? "✓ " : ""}${label}</button>`;
-    const places = ROUND_PLACES.map((w) => chip("ti-where", w, `${first(who)}: ${PLACE_WORDS[w]}`, where === w, `Rounds picked go onto ${who.name.split(" ")[0]} as items in their ${PLACE_WORDS[w]}: their own rounds (their gun draws on them first in a fight)`)).join("");
-    const form = where ? `${chip("ti-loose", "0", "boxed", !ui.tiLoose, "As boxes (up to five boxes a slot)")}${chip("ti-loose", "1", "loose", !!ui.tiLoose, "Loose (up to 80 rounds a slot; a handful in an admin pouch)")}` : "";
-    return `<div class="row small" style="margin-top:0.3rem;gap:0.25rem;flex-wrap:wrap;align-items:center"><span class="muted">Rounds go to:</span>${chip("ti-where", "", "Team supplies", !where, "Rounds picked go into the team's packed supplies, shared out as before")}${places}${form}<span class="muted"${tip("What they wear and carry on them against their max load")}>${first(who)} wears ${kg(wornLoad(who))}/${maxLoad(who)} kg</span></div>`;
+    const places = SUP_PLACES.map((w) => chip("ti-where", w, `${first(who)}: ${PLACE_WORDS[w]}`, where === w, `Supplies picked (rounds, water, meds, food, parts…) go onto ${who.name.split(" ")[0]} as items in their ${PLACE_WORDS[w]}${w === "rig" ? " (its admin and pocket pouches)" : ""}, where they fit: their own (their gun draws on their own rounds first in a fight); they go back into the stores with Drop off or when the team comes home`)).join("");
+    const form = where ? `<span class="muted" style="margin-left:0.3rem">rounds</span>${chip("ti-loose", "0", "boxed", !ui.tiLoose, "Rounds as boxes (up to five boxes a slot)")}${chip("ti-loose", "1", "loose", !!ui.tiLoose, "Rounds loose (up to 80 rounds a slot; a handful in an admin pouch)")}` : "";
+    return `<div class="row small" style="margin-top:0.3rem;gap:0.25rem;flex-wrap:wrap;align-items:center"><span class="muted">Supplies go to:</span>${chip("ti-where", "", "Team supplies", !where, "Supplies picked go into the team's packed supplies, shared out as before")}${places}${form}<span class="muted"${tip("What they wear and carry on them against their max load")}>${first(who)} wears ${kg(wornLoad(who))}/${maxLoad(who)} kg</span></div>`;
   })();
   const any = pickedItems || supRows;
   const go = drop
     ? `<button class="primary" data-action="ti-go" ${any ? "" : "disabled"}${tip(`Put what is picked in ${base.name}'s armory and stores. Something a member wears that the team needs to carry its load (a pack, a rig) stays.`)}>Drop off picked</button>`
-    : `<button class="primary" data-action="ti-go" ${any ? "" : "disabled"}${tip("Items go where the ✓ is (a member, or the cargo); supplies into the team's packed supplies. Only what the team can carry moves.")}>Load picked</button>`;
+    : `<button class="primary" data-action="ti-go" ${any ? "" : "disabled"}${tip("Items go where the ✓ is (a member, or the cargo); supplies into the team's packed supplies, or onto the member in the place picked under them. Only what the team can carry moves.")}>Load picked</button>`;
   const quick = drop
     ? `<button class="mini" data-action="ti-dropcargo"${tip(`Everything in the cargo: its gear, the found supplies${H.cargo.bodies ? " and the bodies in the car" : ""}, as when the team comes home. The kit on the people and the packed supplies stay.`)}>Drop off all cargo</button>
        <button class="mini" data-action="ti-dropsup"${tip("Every supply the team has, packed and found (food, water, rounds, meds…). The kit stays on the people.")}>Drop off all supplies</button>`
@@ -225,12 +226,12 @@ export const TEAMINV_ACTIONS = {
       const have = ui.inv.tab === "drop" ? (teamHoldings(state, p).cargo.supplies[k] || { all: 0 }).all : base ? base.stock[k] || 0 : 0;
       supplies[k] = q >= have - 1e-9 ? Infinity : q; // all of it: fractions too
     }
-    const tgt = ui.tiTarget == null || ui.tiTarget === "cargo" ? "cargo" : ROUND_PLACES.includes(ui.tiWhere) ? { sid: Number(ui.tiTarget), where: ui.tiWhere, loose: !!ui.tiLoose } : ui.tiTarget; // rounds onto the member (sim/supitems.js)
+    const tgt = ui.tiTarget == null || ui.tiTarget === "cargo" ? "cargo" : SUP_PLACES.includes(ui.tiWhere) ? { sid: Number(ui.tiTarget), where: ui.tiWhere, loose: !!ui.tiLoose } : ui.tiTarget; // supplies onto the member (sim/supitems.js)
     const r = ui.inv.tab === "drop" ? dropOff(state, p, { items, supplies }) : loadFromBase(state, p, { items, supplies }, tgt);
     ui.invMsg = r.text;
     resetPick(ui);
   },
-  "ti-where": (state, ui, d) => { ui.tiWhere = ROUND_PLACES.includes(d.v) ? d.v : null; }, // rounds onto the member: the place (empty: the team's supplies)
+  "ti-where": (state, ui, d) => { ui.tiWhere = SUP_PLACES.includes(d.v) ? d.v : null; }, // supplies onto the member: the place (empty: the team's supplies)
   "ti-loose": (state, ui, d) => { ui.tiLoose = d.v === "1"; },
   "ti-dropheld": (state, ui, d) => { const p = partyOf(state, ui); if (p) { ui.invMsg = dropHeldOff(state, p, Number(d.sid)).text; resetPick(ui); } },
   "ti-dropcargo": (state, ui) => { const p = partyOf(state, ui); if (p) { ui.invMsg = dropAllCargo(state, p).text; resetPick(ui); } },

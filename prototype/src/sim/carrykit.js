@@ -560,7 +560,8 @@ export const KIT_HELP = `<b>Magazines</b> are items: a 9mm pistol magazine, a 30
   fight loading is free. Teams take spare magazines from the armory when they leave (4 a rifle, 3 a pistol); found
   guns often come with one or two; enemies carry theirs and drop them.
   <br><b>Rigs:</b> a chest rig (or a tactical vest's or a plate carrier's own pouches) holds magazines, a grenade, a radio
-  and small things (admin pouches: meds, a flashlight). A chest rig does not go over a vest with pouches.
+  and small things (admin pouches: meds, a flashlight; pocket pouches: anything a pocket takes, two on a chest rig or a
+  tactical vest, one on a makeshift rig or a plate carrier). A chest rig does not go over a vest with pouches.
   <b>Plate carriers</b> hold two plates, front and back: ceramic (AC5, cracks and cannot be repaired), steel (AC4,
   heavy, can be patched at a workbench) or soft (AC2). A hit on the chest meets the plate on that side, then the
   carrier's soft backer. A broken plate is gone after the fight: swap in a spare (2 actions from the pack in a fight,
