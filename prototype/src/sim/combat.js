@@ -888,6 +888,17 @@ export function unitCells(u, x0 = u.x, y0 = u.y) { const s = unitSize(u), out = 
 export const nearCell = (u, x, y) => { const s = unitSize(u); return [Math.max(u.x, Math.min(u.x + s - 1, x)), Math.max(u.y, Math.min(u.y + s - 1, y))]; };
 export const unitCenter = (u) => [u.x + unitSize(u) / 2, u.y + unitSize(u) / 2];
 export const unitAt = (b, x, y) => b.units.find((u) => onMap(u) && (u.size > 1 ? coversCell(u, x, y) : u.x === x && u.y === y));
+// unitAt for every cell of a w × h map at once: 1 where someone stands. For the set-up scans that ask it of every cell
+// (combat.js pickCells, deploy.js): made fresh for each scan, as nobody moves while one runs.
+export function occupancy(b, w, h) {
+  const occ = new Uint8Array(w * h);
+  for (const u of b.units) {
+    if (!onMap(u)) continue;
+    const s = u.size > 1 ? u.size : 1;
+    for (let y = u.y; y < u.y + s; y++) for (let x = u.x; x < u.x + s; x++) if (x >= 0 && y >= 0 && x < w && y < h) occ[y * w + x] = 1;
+  }
+  return occ;
+}
 export const unitById = (b, id) => b.units.find((u) => u.id === id);
 // The evac strip: the left evacCols columns, or b.evacMask (a cell mask, deploy.js: base battles turned to face the
 // attack get theirs on the side away from it, b.evacSide) when there is one; then the cell's y is needed.
@@ -3488,12 +3499,12 @@ export function createBattle(state, setup) {
     // Only the lead one is driven.
     if (b.vehicle) placeConvoy(b, party, partyVehicles(state, party).filter((x) => x !== pv), W, H, inside);
   }
-  const occupied = (x, y) => !!unitAt(b, x, y);
-  const spot = (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occupied(x, y);
   const coverScore = (x, y) => coverSides(b, x, y).reduce((s, c) => s + c, 0);
+  // A free cell your people can reach: the cells taken worked out once a scan (occupancy), the dice drawn for the same
+  // cells in the same order as asking unitAt of each.
   const pickCells = (n, test, score) => {
-    const list = [];
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (spot(x, y) && test(x, y)) list.push([x, y, score(x, y) + rng.next() * 2]);
+    const list = [], occ = occupancy(b, W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occ[idx(x, y)] && test(x, y)) list.push([x, y, score(x, y) + rng.next() * 2]);
     list.sort((a, c) => c[2] - a[2]);
     return list.slice(0, n);
   };
@@ -6368,6 +6379,7 @@ export function createRaid(state, setup) {
   b.zmix = armoredOf(((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix); // the dead drawn in by the Heat
   const occupied = (x, y) => !!unitAt(b, x, y);
   const ok = (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occupied(x, y);
+  const okIn = (occ, x, y) => b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occ[idx(x, y)]; // ok over the whole map: the cells taken worked out once a scan (occupancy)
   const entry = map.zones[0];
 
   // Your team starts in the entry zone (next to the vehicle if you brought one).
@@ -6402,8 +6414,8 @@ export function createRaid(state, setup) {
       for (let i = 0; i < count; i++) {
         const u = enemyUnit(b, rng, "zombies", g.power, ++zn);
         if (zl[i]) applyZType(u, zl[i], false, g.power);
-        const cells = [];
-        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ok(x, y) && dist(x, y, center[0], center[1]) >= 8 && zoneAt(b, x, y) < 0) cells.push([x, y]);
+        const cells = [], occ = occupancy(b, W, H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (okIn(occ, x, y) && dist(x, y, center[0], center[1]) >= 8 && zoneAt(b, x, y) < 0) cells.push([x, y]);
         const c = rng.pick(cells);
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod++; u.home = [c[0], c[1]];
@@ -6414,8 +6426,8 @@ export function createRaid(state, setup) {
       const hx = home ? home.x0 + Math.floor(home.w / 2) : rng.int(W / 2, W - 4), hy = home ? home.y0 + Math.floor(home.h / 2) : rng.int(3, H - 4);
       for (let i = 0; i < count; i++) {
         const u = enemyUnit(b, rng, g.kind, g.power, ++hn);
-        const cells = [];
-        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ok(x, y) && dist(x, y, hx, hy) <= 5 && dist(x, y, center[0], center[1]) >= 9) cells.push([x, y]);
+        const cells = [], occ = occupancy(b, W, H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (okIn(occ, x, y) && dist(x, y, hx, hy) <= 5 && dist(x, y, center[0], center[1]) >= 9) cells.push([x, y]);
         const c = rng.pick(cells);
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod; u.home = [hx, hy];

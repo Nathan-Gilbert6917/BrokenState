@@ -440,11 +440,12 @@ export function interiorUnits(b, ctx, base, c) {
   const horde = b.setup.enemy.kind === "zombies";
   const most = horde ? [1, 6, 12, 18].filter((n) => enemies.length >= n).length : 1;
   const extra = ctx.rng.shuffle(["north", "south"]).concat(b.evacCols ? [] : ["west"]).slice(0, Math.max(0, ctx.rng.int(1, Math.max(1, most)) - 1));
+  // The edge first, then okCell (both only read the map): the same cells in the same order, unitAt asked of a few.
   const sideCells = (s) => {
     const out = [];
     for (let y = 0; y < H0; y++) for (let x = 0; x < W0; x++) {
-      if (!okCell(x, y)) continue;
-      if (s === "east" ? x >= W0 - 3 && Math.abs(y - H0 / 2) <= 8 : s === "north" ? y <= 1 && x >= 4 : s === "south" ? y >= H0 - 2 && x >= 4 : x <= 1) out.push([x, y]);
+      if (!(s === "east" ? x >= W0 - 3 && Math.abs(y - H0 / 2) <= 8 : s === "north" ? y <= 1 && x >= 4 : s === "south" ? y >= H0 - 2 && x >= 4 : x <= 1)) continue;
+      if (okCell(x, y)) out.push([x, y]);
     }
     return out;
   };
