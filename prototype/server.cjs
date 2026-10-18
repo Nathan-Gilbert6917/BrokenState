@@ -38,16 +38,28 @@ http
       res.writeHead(403);
       return res.end("Forbidden");
     }
-    fs.readFile(file, (err, data) => {
-      if (err) {
+    // Cached by the browser but asked about every time (no-cache + an ETag from the file's size and time): a reload
+    // still shows the files as they are on disk, and the hundreds of modules that did not change come back as "304 Not
+    // Modified", with the browser's compiled code kept.
+    fs.stat(file, (err, st) => {
+      if (err || !st.isFile()) {
         res.writeHead(404);
         return res.end("Not found");
       }
-      res.writeHead(200, {
-        "Content-Type": TYPES[path.extname(file)] || "application/octet-stream",
-        "Cache-Control": "no-store",
+      const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+      const head = { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-cache", ETag: etag };
+      if (req.headers["if-none-match"] === etag) {
+        res.writeHead(304, head);
+        return res.end();
+      }
+      fs.readFile(file, (err2, data) => {
+        if (err2) {
+          res.writeHead(404);
+          return res.end("Not found");
+        }
+        res.writeHead(200, head);
+        res.end(data);
       });
-      res.end(data);
     });
   })
   .listen(PORT, () => console.log(`Broken State prototype running at http://localhost:${PORT}`));
