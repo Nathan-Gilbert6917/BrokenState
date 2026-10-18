@@ -15,6 +15,10 @@
 //   - Trays: the most used orders of each group stand on the bar (PRIMARY); the others of a group sit behind one button
 //     (Moving, Fight, Wounded, Loot, Doors & lights, Vehicle, Other) that opens them in a tray over the bar. A group
 //     with only one other order shows it on the bar instead, and so does a short list (TRAY_FROM): no tray for a few.
+//   - Ready only reaches the panels over the bar too (a lock's, a car's): their greyed buttons hide (styles.css).
+//   - Hovering an order lights the card's action diamonds it would spend (data-spend on the button, data-s on the
+//     diamonds: 1 is the last; styles.css :has). Orders that need doing now (a jam, a gun or shotgun empty, someone to
+//     revive) pulse (URGENT).
 //   - Fits from 1280×720 up to a TV: the bar is a size container; narrow, the buttons fold to their icons (the label
 //     is in the tip), very wide it grows (styles.css #cbbar).
 import { KEYMAP, KEY_BY_ID, keyLabel } from "./keymap.js";
@@ -64,6 +68,12 @@ export const COST = {
 };
 const costOf = (o) => (o.ap != null ? o.ap : COST[o.v] != null ? COST[o.v] : String(o.v).startsWith("rescue:") ? 1 : null);
 const costWord = (c) => (c === 0 ? "Free" : c === "end" ? "Ends the unit's turn" : c === "all" ? "Uses everyone's actions" : c == null ? "" : `${c} action${c === 1 ? "" : "s"}`);
+// The diamonds an order spends: a number, "all" (it ends the turn, or uses everyone's), or none (free). Move: 1 (a dash 2).
+const spendOf = (c) => (c === "end" || c === "all" ? "all" : typeof c === "number" ? (c > 0 ? String(c) : "") : c === "1–2" ? "1" : "");
+// Orders that need doing now: they pulse while they can be given (an empty Reload and shells left in the pack say so
+// in red in their label: ui/combat.js unitOrders).
+const URGENT = new Set(["unjam", "revive"]);
+const urgentOf = (o) => o.ok && (URGENT.has(o.v) || /class="danger"/.test(String(o.label)));
 const costBadge = (c) => (c === 0 ? "free" : c === "end" ? "end" : c === "all" ? "all" : c == null ? "" : String(c));
 
 // The bar's groups, left to right (a thin line between them): moving, fighting, the wounded, loot, doors and lights,
@@ -150,8 +160,9 @@ function orderBtn(o, u, inTray = false) {
   const tip = `${title}${why ? `\nNot now: ${why}` : ""}${o.tip && plain(o.tip) !== why ? `\n${plain(o.tip)}` : ""}`;
   const data = act === "cb-act" ? ` data-v="${esc(o.v)}"` : act === "cb-view" ? ` data-v="${esc(o.dv)}"` : "";
   const extra = `${o.k != null ? ` data-k="${esc(o.k)}"` : ""}${o.id != null ? ` data-id="${esc(o.id)}"` : ""}${inTray ? ` data-tray="1"` : ""}`; // given from a tray: it closes
-  const cls = ["bb-btn", o.on ? "active" : "", o.ok ? "" : "off", o.stub ? "stub" : ""].filter(Boolean).join(" ");
-  return `<button class="${cls}" data-action="${act}"${data}${extra} ${o.ok ? "" : "disabled"} data-tip="${esc(tip)}" data-tip-pre data-bv="${esc(o.v)}">${o.label}${o.keyNow ? ` <span class="key">${esc(o.keyNow)}</span>` : ""}<i class="bb-ic">${iconOf(o.v)}</i>${costBadge(c) ? `<i class="bb-ap${c === "end" ? " end" : c === 0 ? " free" : ""}">${costBadge(c)}</i>` : ""}</button>`;
+  const cls = ["bb-btn", o.on ? "active" : "", o.ok ? "" : "off", o.stub ? "stub" : "", urgentOf(o) ? "urgent" : ""].filter(Boolean).join(" ");
+  const spend = o.ok ? spendOf(c) : "";
+  return `<button class="${cls}" data-action="${act}"${data}${extra} ${o.ok ? "" : "disabled"} data-tip="${esc(tip)}" data-tip-pre data-bv="${esc(o.v)}"${spend ? ` data-spend="${spend}"` : ""}>${o.label}${o.keyNow ? ` <span class="key">${esc(o.keyNow)}</span>` : ""}<i class="bb-ic">${iconOf(o.v)}</i>${costBadge(c) ? `<i class="bb-ap${c === "end" ? " end" : c === 0 ? " free" : ""}">${costBadge(c)}</i>` : ""}</button>`;
 }
 // What stands on the bar: shown (sorted by group) cut into the groups, each its PRIMARY orders (greyed: the core ones
 // only) and either the rest too (one other, or a short list) or a tray button for them. flat: everything on the bar, no trays.
@@ -193,7 +204,8 @@ export function facingWord(u) {
   if (a == null) return "";
   return FACE_WORDS[(Math.round(a / (Math.PI / 4)) + 8) % 8];
 }
-const pips = (n, max) => `<span class="bb-pips">${"<i class=on></i>".repeat(Math.max(0, n))}${"<i></i>".repeat(Math.max(0, max - n))}</span>`;
+// num: each lit diamond carries its place from the last (data-s, 1 = the last): the card's, lit by a hovered order's cost.
+const pips = (n, max, num = false) => `<span class="bb-pips">${Array.from({ length: Math.max(0, n) }, (_, i) => (num ? `<i class=on data-s=${n - i}></i>` : "<i class=on></i>")).join("")}${"<i></i>".repeat(Math.max(0, max - n))}</span>`;
 const hpCol = (f) => (f > 0.6 ? PAL.good : f > 0.3 ? PAL.mid : PAL.bad);
 function sprite(state, b, p, salt, size) {
   try { return spriteImg(canvasURL(unitCanvas(state, b, p, salt)), size); } catch { return ""; } // no canvas (a headless tool)
@@ -221,7 +233,7 @@ function cardHtml(state, b, u, n, salt, head, look = "") {
   const icons = s && !u.dead && !u.left ? statusIcons(state, s, { skip: ["health"] }) : "";
   const chips = cardChips(state, b, u);
   const apLine = !acting ? `<span class="muted">${b.phase === "enemy" ? "Enemy turn" : b.phase === "deploy" ? "Deploying" : ""}</span>`
-    : head ? `<span class="warn">${esc(head)}</span>` : `${pips(u.ap, max)}<b>${u.ap}</b><span class="muted"> action${u.ap === 1 ? "" : "s"} left</span>`;
+    : head ? `<span class="warn">${esc(head)}</span>` : `${pips(u.ap, max, true)}<b>${u.ap}</b><span class="muted"> action${u.ap === 1 ? "" : "s"} left</span>`;
   return `<div class="bb-card" data-tip="${esc(`${u.name}: ${Math.round(u.hp)} of ${u.maxHp} health. ${u.weaponName || ""}. Aim ${Math.round(u.aim || 0)}.`)}">
     <span class="bb-face">${sprite(state, b, u, salt, 2.6)}</span>
     <div class="bb-who"><div class="bb-name"><b>${esc(u.name)}</b>${n ? `<span class="bb-n">${n}</span>` : ""}</div>
@@ -274,7 +286,7 @@ export function barHtml(d) {
   const open = d.flat ? null : d.tray;
   const allBtn = canAct && !d.flat && (hidden || d.all) ? `<i class="bb-sep"></i><button class="bb-btn bb-allbtn${d.all ? " active" : ""}" data-action="cb-bar" data-v="all" data-tip="${esc(d.all ? "Ready only: show just the orders that can be given now (all of them are shown now)." : `All orders: the ${hidden} that cannot be given now too, greyed, each saying why or when it applies.`)}" data-tip-pre><span class="bb-lbl">${d.all ? "Ready only" : "All"}</span><i class="bb-ic">${ICON.more}</i>${d.all ? "" : `<i class="bb-ap">+${hidden}</i>`}</button>` : "";
   const float = `${acting && d.extra ? `<div class="bb-extra">${d.extra}</div>` : ""}${trayHtml(layout, sel, open)}`;
-  const mid = `<div class="bb-mid">${note ? `<div class="bb-note">${esc(note)}</div>` : ""}${float ? `<div class="bb-float">${float}</div>` : ""}<div class="bb-orders">${ordersHtml(layout, sel, open)}${allBtn}</div></div>`;
+  const mid = `<div class="bb-mid">${note ? `<div class="bb-note">${esc(note)}</div>` : ""}${float ? `<div class="bb-float${all ? "" : " ready"}">${float}</div>` : ""}<div class="bb-orders">${ordersHtml(layout, sel, open)}${allBtn}</div></div>`;
   // Right: the turn, the weapon, the turn controls (and their question above them).
   const phase = b.phase === "player" ? `<b class="good">Your turn</b>` : b.phase === "enemy" ? `<b class="danger">Enemy turn</b>` : `<b class="warn">Deploy</b>`;
   const ready = b.phase === "player" ? team.filter((p) => !p.dead && !p.left && !p.fled && !p.down && p.ap > 0).length : 0;

@@ -166,6 +166,17 @@ console.log("Greyed with the reason, from the sim's own refusals");
   // On foot: Vehicle greyed, "You came on foot".
   const v = order(st, "vehicle");
   check(v.disabled && (b.vehicle ? true : /on foot/.test(v.tip)), `Vehicle: ${b.vehicle ? "next to the car or not" : "greyed, on foot"}`);
+  // The diamonds a hovered order would spend: Hunker (ends the turn) all, Move 1, Face none (styles.css lights them on the card).
+  const raw = UI.renderCombatBar(st), sp = (v) => (new RegExp(`data-bv="${v}"( data-spend="([^"]*)")?>`).exec(raw) || [])[2] || "";
+  check(sp("hunker") === "all" && sp("move") === "1" && sp("face") === "" && /<i class=on data-s=1><\/i>/.test(raw), `hovering spends: Hunker ${sp("hunker")}, Move ${sp("move")}, Face ${sp("face") || "none"}; the card's diamonds numbered from the last`);
+  // A jammed gun: Unjam pulses (urgent); nothing else does.
+  const jg = b.units.find((x) => x.side === "player" && C.active(x) && C.isRanged && C.isRanged(x)) || b.units.find((x) => x.side === "player" && C.active(x) && C.hasMag(x));
+  if (jg) {
+    cui.sel = jg.id; jg.jam = { kind: "stovepipe" };
+    const uj = barBtns(st).find((x) => x.v === "unjam");
+    check(uj && /\burgent\b/.test(uj.cls) && barBtns(st).filter((x) => /\burgent\b/.test(x.cls)).length === 1, `a jammed gun: Unjam on the bar, pulsing (${uj ? uj.cls : "no button"})`);
+    jg.jam = null; cui.sel = u.id;
+  }
   // Costs: Shoot ends the turn, Move 1–2, Search 1.
   check(order(st, "shoot").cost === "end" && order(st, "move").cost === "1–2" && order(st, "face").cost === "free", "costs: Shoot end, Move 1–2, Face free");
 }
@@ -207,7 +218,7 @@ console.log("The card, the tabs, the turn controls");
   const team = b.units.filter((x) => x.side === "player" && x.vol == null);
   check((html.match(/class="bb-tab[^"]*" data-action="cb-sel"/g) || []).length === team.length, `a tab for each of yours (${team.length})`);
   check(new RegExp(`class="bb-tab on" data-action="cb-sel" data-id="${u.id}"`).test(html), "the selected one's tab is marked");
-  check(html.includes(`<b>${u.name}</b>`) && /<b>2<\/b><span class="muted"> actions left/.test(html) && (html.match(/<i class=on><\/i>/g) || []).length >= 2, "the card: the name, 2 actions left as pips");
+  check(html.includes(`<b>${u.name}</b>`) && /<b>2<\/b><span class="muted"> actions left/.test(html) && /<i class=on data-s=2><\/i><i class=on data-s=1><\/i>/.test(html), "the card: the name, 2 actions left as pips (numbered from the last)");
   u.sneaking = true; u.light = "flashlight"; u.lightOff = false; faceToward(u, u.x, u.y - 1);
   html = UI.renderCombatBar(st);
   check(/>SNEAK</.test(html) && />FACING N</.test(html) && />LIGHT ON</.test(html), "the card's chips: sneaking, facing north (N), the light on");
