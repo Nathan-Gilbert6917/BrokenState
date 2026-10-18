@@ -284,6 +284,13 @@ function step(now) {
   let ticks = 0;
   if (state.autopilot && ui.started && !ui.settings && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click (the menu holds everything)
   pacingFrame(state, ui); // ui/pacing.js: new cards get their kind, cards out of date leave the tray
+  // An event that stops the clock (a card, battle, search, trade or crawl) leaves the speed paused, so the clock
+  // is still stopped when the player leaves it; Space or Run goes back to the speed it had.
+  if (ui.started && ui.speed > 0 && !state.autopilot && !state.gameOver &&
+      (cardUp(state, ui) || !!state.combat || !!state.engagement || !!state.trade || !!activeCrawl(state) || !!activeHiveCrawl(state))) {
+    if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed;
+    ui.speed = 0;
+  }
   if (!blocked() && ui.speed > 0 && !ui.moveParty && !ui.fwPlace) { // ui/fieldworks.js: the clock waits for a field work's tile
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
