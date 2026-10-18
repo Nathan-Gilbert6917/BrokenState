@@ -1,13 +1,13 @@
 # Performance: session prompts
 
-A survey of where Broken State spends its time, turned into one prompt per fix. Written on 2026-10-18 from CPU profiles of headless campaigns (Node 22, commit `c427dd2`), a Chromium profile of the browser build, and a read of the hot code. Every number below was measured on that commit in a shared container, so read them as ratios, not absolutes. Where a finding was only read, not measured, it says so.
+A survey of where Broken State spends its time, turned into one prompt per fix. Written on 2026-10-18 from CPU profiles of headless campaigns (Node 22, commit `c427dd2`), a Chromium profile of the browser build, and a read of the hot code. Every number below was measured on that commit in a shared container, so read them as ratios, not absolutes. Where a finding was only read, not measured, it says so. The simulation numbers (PERF-0 to PERF-6) I measured myself, including three prototyped fixes whose golden hashes matched. The browser, save/start-up/audio and battle numbers (PERF-7 to PERF-17) come from three read-only audit passes that profiled the real code (a Chromium 141 run for the browser, a Node and Chromium study of saves and heap, a headless battle harness plus a Chromium battle run); I re-read the code each finding cites and it matches, but I did not re-run their timings, and the prototypes they mention (battle set-up, `reachable`, `playerVision`, lazy save path labels) were scratch copies that are not in the repo.
 
 The sessions are run as agents by a coordinator who merges each one into `claude/code-performance-areas-ccfyx9` (or whichever integration branch the owner names).
 
 ## How to use this file
 
 1. Each session runs in its own worktree branched from the integration branch. A session reads **only this file's "Shared brief", its own section**, and the code it names.
-2. Order: **Wave 0: PERF-0 alone (the measuring tools and the golden hashes).** Then **Wave 1: every other session in parallel** (they touch different files; where two share a file the section says which goes first).
+2. Order: **Wave 0: PERF-0 alone (the measuring tools and the golden hashes).** Then the waves under "Order, and who touches what" below the summary table.
 3. A session ends by appending a short **Handoff** note under its own section: the real functions it changed, the before/after numbers from the same tool, the golden hashes it compared, anything it deliberately left alone.
 4. Line numbers come from the 2026-10-18 survey and drift. Search by name.
 
@@ -33,7 +33,19 @@ Ranked by what a player feels first, then by balance-run throughput. "Win" is th
 | PERF-13 | Start-up and the new-run screen | 397 modules, no cache headers, `createWorld` at import; every New-run tweak rebuilds the whole world | 2.4–2.6 s to first frame; 0.1–0.7 s per click | ~15% from caching; most of each click | world must stay identical per seed |
 | PERF-14 | Audio bakes and per-frame cues | First-use bakes run synchronously (crowd bed ~210 ms, music engine ~120 ms); `uiCues` snapshots every team every frame | 241 ms per 25 s at 5× | small, removes first-use hitches | none |
 
-**Work in progress:** PERF-0 to PERF-14 (the simulation, the State Map in the browser, saves, start-up and audio) are written. The session for the tactical battle engine and its view is still being profiled and is added below when its numbers are in.
+| PERF-15 | Battle set-up | `pickCells` and `sideCells` scan every unit for every cell; raid-map generation runs a full-map BFS for every furniture placement | hub with no walls 173 / 209 ms; hospital raid 55% of `createRaid` in `connected()` | prototyped: 178 → 22 ms, 52 → 26 ms, battles identical in 96 of 96 | none if the RNG draw order is kept |
+| PERF-16 | Enemy phase and vision | `reachable` walks the whole map after every search; `distField`/`fieldCache` verify O(cells) on every hit; `scoreCell` recomputes unit-invariants per cell; `playerVision` is O(W·H·eyes) per revision | enemy phase p99 24 ms; vision 10–20 ms per revision on the big yard | `reachable` 7×, vision ~2× prototyped | medium for the AI loops (rng order), higher for `fieldCache` |
+| PERF-17 | Battle drawing | `fillCells` calls `closePath` per diamond (quadratic); figures paint lazily in the frame that needs them; one-slot ground cache | deploy step on a 66×66 yard 97–110 ms per frame; first frame 280–570 ms; floor switch 76–250 ms | deploy frame 97 → 11 ms prototyped | none if pixel-identical |
+
+## Order, and who touches what
+
+- **Wave 0:** PERF-0.
+- **Wave 1, in parallel** (disjoint files): PERF-1, PERF-3, PERF-7, PERF-8, PERF-9, PERF-10 (the `said` prune and `siteNames` only), PERF-11, PERF-14, PERF-15, PERF-16.
+- **Wave 2** (after the ones named): PERF-12 (after PERF-11: both change `ui/saves.js` and `ui/settings.js`); PERF-2 (touches `gunmods.js`, `arsenal.js`; PERF-13 reuses its `slotRules` memo and must follow it); PERF-4 (after PERF-1 and PERF-3: it uses their cached `within` and memo helpers); PERF-5 (after PERF-1, 2, 3); PERF-6 (after PERF-3); PERF-13 (after PERF-2 and PERF-11: all three change `save.js`/`createWorld`); PERF-10's format change (after PERF-11, so the byte-identical encoder work lands before a format change); PERF-17 (after PERF-9 and PERF-15: it shares `figures.js` with PERF-9 and `combat.js`'s view helpers with PERF-16).
+- **Shared files to watch:** `main.js` (PERF-7 and PERF-8 and PERF-13 each touch different functions); `ui/figures.js` (PERF-9, PERF-17); `sim/save.js` (PERF-10, 11, 13); `sim/combat.js` (PERF-15, PERF-16); `sim/hex.js` (PERF-3 only; the others call it).
+- A session that finds its base lacks a dependency stops and says so in its Handoff rather than reimplementing it.
+
+**Not covered here, and why.** Multi-threading: the game itself is single-threaded (no `Worker`, `SharedArrayBuffer` or `AudioWorklet` anywhere in `prototype/src`), only the dev tools use `worker_threads`. The sim is one mutable object graph that the UI reads directly (118 of 157 UI files import sim code), the RNG draw order is a hard requirement, and the profiles above show large algorithmic waste that is cheaper to remove than to parallelise. The one place threads are cheap and safe is the serial verification tools (`dettest.js`, `pacing.js`, `sameseedtest.js`, `sizetest.js`), which could use the worker pool `campaign50.js` already has; that is a possible follow-up for the owner to ask for.
 
 ---
 
@@ -385,3 +397,87 @@ Save size is linear in game days, about 11 KB per game day, and what grows is ap
 **Don't.** Don't change what plays or when it is chosen; don't touch the sim RNG (the audio code uses its own).
 
 **Verify.** `node tools/audiotest.js`, `ambiencetest.js`, `musictest.js`, `zombiesfxtest.js`, `barkstest.js`; report the first-battle and first-click frame times in Chromium before and after, and `uiCues` ms per 25 s at 1× and 5×.
+
+---
+
+# About the battle sessions (PERF-15 to PERF-17)
+
+These come from a headless Node harness that builds and plays battles of every size class, and a Chromium 141 run (software raster) that opens a battle and plays it. Timings are warm medians on a noisy machine; outliers are flagged.
+
+**What a player sees today.**
+- **End turn does not block.** `ui/combat.js combatTick` (~1450) runs `enemyStep` in 420 ms steps, up to 30 invisible steps a tick; `endPlayerTurn` costs 0.2–0.5 ms (worst 4.4). Only tests and `game.combat.enemyPhase` run the whole enemy phase at once: 1,601 phases measured p50 3.3 ms, p95 13.4, p99 24.3, worst 40.6 (this agrees with `tools/sizetest.js`: p99 25.4, worst 50.9 at the fully built hub siege). In play-throughs, a tick's sim work was p99 1.3–13 ms, worst 21–49 ms.
+- **Battle start (`createBattle`, p50 / p95):** gas raid 8 / 14 ms, supermarket raid 24 / 31, hospital raid 39 / 64 (worst 84), field fights 5–28 ms (6 dead vs 20 dead: 28 / 43), hub siege 34–65 / 50–86, a group's base 39 and 72 ms for 6 and 60 people, a hub **with no walls 173 / 209 (p99 229)**. The first battle in a process takes 15–175 ms.
+- **The first drawn frame of a battle** costs 280–570 ms of main-thread JS on top of that.
+- **Frames:** 2–4 ms steady on 34×26 to 40×30 maps, 7–10 ms on the 86×86 yard; play-throughs had p99 15–65 ms and worst 120–220 ms per frame; 3% of base-yard frames were over 33 ms; the deploy step on a 66×66 yard runs at **97–110 ms per frame** (PERF-17).
+- **Checked and fine:** `autoResolveCombat` 0.03 ms; city-crawl `genBlock` 0.0 ms and `startCrawl` p50 0.6 ms; hive-crawl `genDen` p50 0.8 ms; noise, hearing and stealth under 0.3 ms a battle; battle panel HTML 0.2–1.2 ms a refresh; the mousemove handler 0.1–0.6 ms; zombie audio median 0.6 ms an event; night lights (half-resolution canvas, cached gradients); `b.fx` is capped at 40; the LOS cache's sparse map stays at 5–40k entries; the ground bitmap is built once per battle, not per rotation; `autoResolve`, `search.js` and `raidloot.js` are simple per-action code (not profiled).
+- **Not measured:** a real GPU and Electron's raster. The `closePath` and figure-paint costs are CPU-side and apply there; `drawImage` costs would be lower.
+
+**The determinism rule is sharper here.** A battle is a seeded fight: `b.rng` is drawn per candidate cell in row-major order in several places (`pickCells` draws `rng.next()` once per candidate cell; `bestMove` once per reached cell). Reordering a loop, or skipping a candidate that used to draw, changes every battle on that seed. Every battle session must show **identical cells, units, `rng` position and log** for the same inputs on a few hundred battles of every size class, and again after 14 played turns, before and after. `tools/dettest.js` ends with a tactical battle played alone and with another world's battle set up halfway; its golden hash covers part of this, not all.
+
+---
+
+# PERF-15: building the battle (map set-up, placement, connectivity)
+
+**Evidence.**
+- `combat.js` (~3491–3500) `pickCells` → `spot` → `occupied` → `unitAt(b, x, y)`: for every enemy placed, every cell of the map calls `b.units.find(...)` **before** the cheap side test. Same pattern in `interior.js okCell` (~430) and `sideCells` (~443) and `deploy.js` (~197, ~210, the `okCell` loop for the hub siege's wall map). `unitAt` is 22% inclusive of all `createBattle` time in the profile. Prototyped: an occupancy `Uint8Array` built once per `pickCells` call, and the side test before `okCell` in `sideCells`: median `createBattle` hub-no-walls 178 → 22 ms, group base (60 people) 68 → 26, field 6-vs-20 dead 28 → 6.5, hive 17 → 4.4; **cells, units, rng state and log identical in 96 of 96 battles, also after 14 played turns.**
+- `buildingmaps.js connected()` (~1358, with `passable` ~1352 and `block` ~1378): a full-map BFS on **every** blocking furniture placement, with a `CELL[c.k]` lookup and a four-element direction array destructured per cell. It is 55% of a hospital `createRaid` (950 of 1,733 ms in the profile); a supermarket makes 135 calls (98 ms), a hospital 298 (67 ms). Prototyped: a walkable mask (`Uint8Array`), an int stack and a memoised kind lookup: hospital 52 → 26 ms and supermarket 26 → 13 ms with identical cells, containers and rng. A further 2× might come from skipping the BFS when a local 8-neighbourhood test shows the removal cannot split the map; that needs a verified "the map was connected before" flag, because other code mutates cells without checking, so treat it as an optional second step.
+- Hub siege (`interior.js toInterior`, ~589): one enemy step takes 14–47 ms, once per siege; `interiorSize` builds the whole interior once only to measure it (a memo per base layout, 22–33 ms on a miss); after the fixes above `densify`, `groundsBeyond` and `connect` still lead the hub-siege start.
+- `createWorld`'s ~40 ms per world in `createFactions` → `starterKit` → `enemyMods`/`slotRules` is PERF-2.
+
+**Where.** `prototype/src/sim/combat.js` (`pickCells`, `spot`, `occupied`, `unitAt`, `createBattle`, `createRaid`), `sim/interior.js` (`okCell`, `sideCells`, `toInterior`, `interiorSize`, `densify`, `groundsBeyond`, `connect`), `sim/deploy.js` (~190–215), `sim/buildingmaps.js` (`connected`, `block`, `passable`).
+
+**Approach.**
+1. **Occupancy once.** Build `occ` (a `Uint8Array` over the map) when `pickCells` is entered and mark cells as units are added by the caller; keep the iteration order (`y` outer, `x` inner) and keep drawing `rng.next()` for exactly the same candidates as today (a candidate is a cell for which `spot && test` holds; the draw happens only then). Do the same in `sideCells` and the deploy loop, with the cheap side test first only where `okCell` has no side effects and no RNG.
+2. **`connected()`** over typed arrays: precompute a `Uint8Array` of passable cells that `block` updates in place when it changes `c.k`, an `Int32Array` stack, the four neighbours unrolled; keep `stamp`/`marks`, the `anchor` fallback (`cells.findIndex(...)` when the anchor is not passable) and the return rule (`n === total`) exactly.
+3. Memoize `interiorSize` per base layout; measure the siege start again before touching `densify`/`groundsBeyond`/`connect`.
+
+**Don't.** Don't change which cells are candidates, their order, or what each draw is used for. Don't change the dice of any placement.
+
+**Verify.** A differential script that builds a few hundred battles per size class (fields with 6 and 20 dead, gas/supermarket/hospital raids, hub with and without walls, group bases with 6 and 60 people, hives, streets, city blocks), once on the base commit and once on yours, and compares the full signature: cells, units, containers, `b.rng` state, log. Then `node tools/sizetest.js` (its checks and the enemy-turn timing), `combattest.js`, `raidtest.js`, `siegetest.js`, `defencetest.js`, `interiortest.js`, `windowtest.js`, `vaulttest.js`, `poiraidtest.js`, `hivecrawltest.js`, `citycrawltest.js`, the golden hashes and `dettest.js`. Report `createBattle` p50/p95 per context before and after (the table above is the "before").
+
+---
+
+# PERF-16: the enemy phase and the player's vision
+
+**Evidence (the enemy phase today is p50 3.3 ms, p99 24, worst 41, so this matters most for the autopilot, the balance census and the AI-vs-AI tests, and for big hub sieges; a player sees it as the 420 ms steps never getting a hitch).**
+- `combat.js reachable` (~2373): after the Dijkstra, the tail (~2431) walks **all** `W×H` cells (`CELL[b.cells[j].k]`) and allocates four typed arrays plus a `slice`, even when `maxCost` is 1.5; that loop is 57% of `reachable`'s self samples, and `reachable` is 18% of the enemy phase with 100–280 calls a battle plus the view's `threats()`. Prototyped: loop only over the reached cells; `reachable(maxCost 1.5)` on maps over 3,000 cells went 0.239 → 0.035 ms with `dist`/`prev` identical over 7,560 calls; enemy-phase p95 improved about 11%.
+- `distField` (~2450) + `fieldCache` (~2514): 27% of the enemy phase (self 17.7%, `fieldCache` 5.4%). With a 75–90% cache hit rate, on big maps 25–39% of the time is `fieldCache`'s O(cells) verification **on hits** (four megamorphic property reads per cell), 34–44% is per-miss setup (six typed arrays plus closures per cell), and the Dijkstra itself is only 27–30%. An average call costs 0.14 ms (38×28) to 1.7 ms (hub); a cold one 2–4.4 ms on 4–7k cells.
+- `aiMelee` (~5092), `bestMove` (~4821), `scoreCell` (~4777): `aiMelee` self time is 12.6% of the enemy phase and `bestMove` 14.8% inclusive. `scoreCell` recomputes unit-invariant values (`canFire` 907 of 4,713 ms in `scoreCell`, `calOf`, `typeFor`, `unitMods`) for every cell and runs `shotOdds` per cell per foe; `aiMelee` re-runs `reachable` and `distField` up to three times a turn; `nextTo` scans units.
+- `playerVision` (~3093, called from `ui/combat.js view()` ~166) is O(W·H·eyes) on **every battle revision**: 0.3–2 ms on small maps, 4–7 ms on 40×30 raids and 66×66 yards, 10–20 ms on 86×86; in the browser a base-yard frame with a rev bump took 18–22 ms against 7–10 steady. Prototyped: only ask cells within each eye's maximum reach: mean 4.4 → 2.3 ms, p95 13.8 → 6.4 ms, `vis` arrays identical on 640 mid-battle states, day and night.
+- The dense LOS cache (`makeLosCache`) is (W·H)² bytes: 16.7 MB at 64×64 and 19 MB at 66×66, costing 2.2–4.7 ms per build. Low priority.
+
+**Where.** `prototype/src/sim/combat.js` (`reachable`, `distField`, `fieldCache`, `aiMelee`, `bestMove`, `scoreCell`, `canFire`, `shotOdds`, `nextTo`, `playerVision`, `makeLosCache`, `runEnemyPhase`), `ui/combat.js` (`view`, `threats`).
+
+**Approach, by risk.**
+1. **`reachable` tail** (low): loop over the cells the search reached, in ascending index order; produce the same `dist`/`prev` arrays. Prove it over every `reachable` call of a few hundred played battles (a differential wrapper that calls both and compares), not just `maxCost 1.5`.
+2. **`playerVision`** (low–medium): bound each eye's work to its maximum reach. The bound must cover **night cones, lamp pools, indoor light, flares, and thermal/night-vision gear**; derive it from the same constants the function uses rather than from a new one, and test it at night and in the dark interiors as well as by day. Also key the view cache on a vision signature so an out-of-sight enemy step does not recompute it.
+3. **`scoreCell`/`bestMove`/`aiMelee`** (medium): hoist the unit-invariants out of the per-cell loop; iterate only the reached cells **in ascending index order** (the draw `b.rng.next()` per reached cell must happen for the same cells in the same order); index foes by cell for `nextTo`; compute `shotOdds` once per (cell, foe) pair per call. Compare the chosen move, the rng position and the log over a few hundred AI turns.
+4. **`distField`/`fieldCache`** (medium–high; do last, or leave to the owner): cache the per-walker-class static arrays beside the field cache; replace the per-call O(cells) verification with a cell-change epoch bumped at the roughly 40 writers of `.k`, `.hp`, `.bar` (keep the full scan as a debug assertion that runs in the tests). **Trap:** `c.win.open` and `doorHeld` (a unit's brace) feed the arrays but are not part of the cache signature today; the epoch must be bumped for them too. Needs a differential run over `sizetest`, `siegetest`, `vaulttest` and the window tests.
+
+**Don't.** Don't change the AI's decisions: same move, same target, same rng position, every turn. Don't change view or hit rules.
+
+**Verify.** The differential scripts above (rng position and log identical over a few hundred battles of every size class, plus 14 played turns); `node tools/sizetest.js` (report the enemy-turn p50/p95/p99 and worst before and after: 3.3 / 13.4 / 24.3 / 40.6 ms now), `combattest.js`, `siegetest.js`, `vaulttest.js`, `windowtest.js`, `stealthtest.js`, `defencetest.js`, `visiontest.js`, `raidtest.js`, `raidhumveetest.js`, `battleviewtest.js`, `battleuitest.js`, the golden hashes, `dettest.js`.
+
+---
+
+# PERF-17: drawing the battle (highlight masks, figures, floors)
+
+**Run after PERF-9** (it changes `figures.js paintLimb` and `toCanvas`, which this session's figure work builds on).
+
+**Evidence.**
+1. **`ui/isoview.js fillCells` is quadratic because of `closePath`.** `fillCells` (~1375) builds one path of N diamonds and `diamond()` (~1367) calls `ctx.closePath()` after each; in Chromium `closePath` costs O(subpaths so far). It is used for the deploy-cell mask (~1576–1580, N = the whole yard, **every frame**), the unseen-interior fog (`fogFor` ~951), the floodlight area, the move range and the aim bands (`ui/combat.js` ~2571). Microbench: 2,000 diamonds 23 ms, 4,000 102 ms, 8,000 352 ms; without `closePath` 0.4–1.5 ms. Measured: the deploy step on a 66×66 yard runs at 97–110 ms per frame, `closePath` 60% of the profile; a copy with no `closePath` in `fillCells` went 96.8 → 10.6 ms p50, and the 72×72 fort assault 38.4 → 9.8 ms; in a base-yard play-through `fillCells` was 20% of draw time. Wall-map deploys (N about 700) are cheap.
+2. **Figures are painted lazily by the per-pixel rasteriser in the frame that first needs them** (`ui/figures.js figureCanvas` ~497, `paintBoxFigure` ~474, `paintLimb` ~62; the cache is `clear()`ed past **1,200** entries at ~502). Each new look × armour × weapon × 15° heading is painted on demand: 3.8–5.4 ms each in isolation (p95 8–10, worst 19); in play-throughs 60–84 figures were painted per battle at 7–8.5 ms each, 4–15 in a single frame. The worst frames were 118–221 ms with 43–114 ms of it in figure paints. The first frame after each view rotation took 75–166 ms (34×26) and 59–108 ms (86×86); pre-warming every yaw cut that to 46–102 and 22–102 ms.
+3. **Floor switches and the first frame.** `isoview.js groundFor` (~848) has a **single-slot** cache keyed by floor, so every floor change in a 3-storey raid re-rasterises the ground per pixel: 76–132 ms per switch (6 repeats), 209–250 ms the first time (`iso.builds.ground` increments each time). The first frame of a battle costs 278–573 ms: `flatGroundFor` 35–165 ms (~890), `battleedge.js skirtFor` 43–103 ms, and the first figures.
+4. Smaller items: `threats()` / `threatAt` (`ui/combat.js` ~270–305; `isoview.js` ~2058) does one `reachable` per seen enemy per rev, and `shotOdds` per ranged enemy per hover frame with no memo by (rev, cell): about 6% of draw time in the night scene (~1 ms a frame). `spriteCache.clear()` at 3,000 entries (`isoview.js` ~750): 107–162 block-sprite builds per battle at 0.3–0.4 ms each, and rotating the view built over 2,700 across three scenes, so a long session hits the clear and repaints everything at once. Per-frame array allocation and destructuring in the painter's loop (`fromView` ~1728 / ~1774): about 2 ms self time on the 86×86 yard. `ui/combat.js rememberSeen` (~209) builds an N-character string on every newly seen cell (static reading only, not measured).
+
+**Where.** `prototype/src/ui/isoview.js` (`diamond`, `fillCells`, `fogFor`, `groundFor`, `flatGroundFor`, `spriteCache`, `fromView`, the deploy-mask draw), `ui/battleedge.js` (`skirtFor`), `ui/figures.js` (`figureCanvas`, `paintBoxFigure`, the cache), `ui/combat.js` (`threats`, `rememberSeen`, the aim bands ~2571), `ui/battlehud.js`.
+
+**Approach.**
+1. **`fillCells` / `diamond`:** add a `close` parameter and have the *fill* path skip `closePath` (a fill closes subpaths itself, so the pixels are identical); keep `closePath` for stroked diamonds. Better: build the deploy-cell mask once per battle revision (the N `canPlace` calls once per rev, not per frame) and draw the cached result. Compare canvas bytes before and after for every caller (deploy mask, fog, floodlight, move range, aim bands) in day and night scenes.
+2. **Figures:** paint headings ahead of need in idle time or under a per-frame budget (fall back to the nearest cached yaw for that frame), share looks between zombies of one kind, replace `clear()` with an LRU sized by bytes (as PERF-9 does for the map's cache), and pre-warm the yaws of the current scene when the view rotates. The final frame must be pixel-identical to a fully-warmed one.
+3. **Ground:** cache per floor (a small `Map` keyed by `viewKey`+floor, invalidated exactly when `groundCache` is today), or draw the lifted ground from the flat map-space bitmap with an affine transform if it is byte-identical. Build `flatGroundFor`/`skirtFor` in idle slices or before the first frame is needed (while the battle card is open).
+4. **Smaller items,** after measuring: memoize `threats()` by `(rev, cell)`; raise or LRU the `spriteCache` bound; hoist the painter loop's allocations.
+
+**Don't.** Don't change what any cell, unit or highlight looks like. A transitional frame may differ only where this section says so.
+
+**Verify.** A pixel comparison of the battle canvas for a fixed set of scenes (a field fight, a night raid, the base yard at the deploy step, a hive, a three-storey raid on each floor, after a rotation) before and after, with the frame time for each; `node tools/battleviewtest.js`, `battleuitest.js`, `battlehudtest.js`, `battlebartest.js`, `battlelooktest.js`, `figurespintest.js`, `picturestest.js`; the repaired browser benchmark for the frame-time distribution (deploy step on the 66×66 yard: 97–110 ms per frame now), the number of figure paints per battle (60–84 now) and the first-frame time (278–573 ms now).
