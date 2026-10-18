@@ -2,8 +2,10 @@
 // (.bsave, the save's JSON) to download and to load from a file picker, for backups and moving a game between
 // browsers or into the desktop app. The world itself is written and read by sim/save.js.
 //
-// Storage keys:  brokenstate.saves          the index: [{ id, name, auto, ts, size, raw, thumb, day, hour, hub, … }]
-//                brokenstate.save.<id>      one save: "BSZ1|<bytes>|<gzip packed 15 bits a character>" or "BSJ1|<json>"
+// Storage keys:  brokenstate.saves          the index: [{ id, name, auto, ts, size, raw, thumb, day, hour, hub, store, … }]
+//                brokenstate.save.<id>      one save: "BSZ1|<bytes>|<gzip packed 15 bits a character>" or "BSJ1|<json>",
+//                                           in IndexedDB (store "idb": database brokenstate, object store saves) or
+//                                           in localStorage (store "ls", and every save from before IndexedDB)
 //                brokenstate.options        the Options tab (autosave, confirmations, pause on focus loss, UI size, map detail)
 // Nothing here runs at import time, so the headless tools can import it with no browser around.
 import { serializeState, deserializeState, checkSave, saveMeta, SaveError } from "../sim/save.js";
@@ -29,6 +31,59 @@ export const AUTOSAVE_DAYS = [1, 2, 3, 5, 7];
 const storage = () => {
   try { return typeof localStorage !== "undefined" ? localStorage : null; } catch { return null; }
 };
+
+// ---------- where a save's text lives ----------
+// IndexedDB, where the page has it (the browsers, the desktop app): localStorage holds about 5 million characters for
+// the whole site, and a long campaign's saves fill it (a day-365 save is 450-650 thousand characters packed, 5-7
+// million as text). The index stays in localStorage, read at once by the screens; its entry says where each save is
+// (`store`), and reading falls back to the other place. The headless tools (no IndexedDB) and a page that refuses it
+// keep everything in localStorage, as before.
+const DB_NAME = "brokenstate", DB_STORE = "saves";
+let dbOpen = null;
+function db() {
+  if (!dbOpen) dbOpen = new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === "undefined" || !indexedDB) return resolve(null);
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(DB_STORE)) req.result.createObjectStore(DB_STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = req.onblocked = () => resolve(null);
+    } catch { resolve(null); }
+  });
+  return dbOpen;
+}
+// One request in a transaction of its own: { result } once the transaction is done, or null with no database.
+async function idb(mode, request) {
+  const d = await db();
+  if (!d) return null;
+  return await new Promise((resolve, reject) => {
+    const tx = d.transaction(DB_STORE, mode), req = request(tx.objectStore(DB_STORE));
+    tx.oncomplete = () => resolve({ result: req.result });
+    tx.onerror = tx.onabort = () => reject(tx.error || new Error("IndexedDB"));
+  });
+}
+// Stores a save's text: IndexedDB (its old localStorage copy removed), else localStorage. Returns where it went
+// ("idb" | "ls"); throws when neither has room.
+async function storeBody(st, id, packed) {
+  let inDb = false;
+  try { inDb = !!(await idb("readwrite", (s) => s.put(packed, SLOT_KEY(id)))); } catch { inDb = false; } // full or refused: localStorage
+  if (inDb) { try { st.removeItem(SLOT_KEY(id)); } catch { /* ignore */ } return "idb"; }
+  st.setItem(SLOT_KEY(id), packed);
+  return "ls";
+}
+// A save's stored text from where its index entry says (then the other place), or null.
+async function loadBody(st, id) {
+  const fromLs = () => (st ? st.getItem(SLOT_KEY(id)) : null);
+  const fromDb = async () => { try { const r = await idb("readonly", (s) => s.get(SLOT_KEY(id))); return (r && typeof r.result === "string" && r.result) || null; } catch { return null; } };
+  const e = saveEntry(id);
+  if (e && e.store === "idb") return (await fromDb()) || fromLs();
+  return fromLs() || (await fromDb());
+}
+// Both places (the database's copy goes in the background).
+function dropBody(st, id) {
+  try { if (st) st.removeItem(SLOT_KEY(id)); } catch { /* ignore */ }
+  idb("readwrite", (s) => s.delete(SLOT_KEY(id))).catch(() => {});
+}
 
 // ---------- options ----------
 export function loadOptions() {
@@ -70,13 +125,14 @@ export function listSaves() {
 const writeIndex = (list) => storage().setItem(INDEX_KEY, JSON.stringify(list));
 export const latestSave = () => listSaves()[0] || null;
 export const saveEntry = (id) => listSaves().find((e) => e.id === id) || null;
-// Bytes the saves take in browser storage (UTF-16: two bytes a character), roughly.
-export const storageUsed = () => listSaves().reduce((a, e) => a + (e.size || 0) * 2 + (e.thumb ? e.thumb.length * 2 : 0), 0);
+// Bytes the saves take in browser storage (UTF-16: two bytes a character), roughly; inLocal: only what localStorage
+// holds (the index with its thumbnails, and the saves kept there), the part that has a hard limit.
+export const storageUsed = (inLocal = false) => listSaves().reduce((a, e) => a + (inLocal && e.store === "idb" ? 0 : (e.size || 0) * 2) + (e.thumb ? e.thumb.length * 2 : 0), 0);
 
 export function deleteSave(id) {
   const st = storage();
   if (!st) return false;
-  try { st.removeItem(SLOT_KEY(id)); } catch { /* ignore */ }
+  dropBody(st, id);
   try { writeIndex(listSaves().filter((e) => e.id !== id)); } catch { return false; }
   return true;
 }
@@ -160,17 +216,22 @@ export async function writeSave(id, state, opts = {}) {
   const st = storage();
   if (!st) throw new SaveError("This browser does not allow storage here, so the game cannot be saved in it. Use Export to save to a file.", "storage");
   const save = serializeState(state, { dropCards: !!opts.dropCards }); // throws while a card is open
+  // The save is a copy of the world as it is now (serializeState builds a new tree); its name and Ironman id too. The
+  // text, the packing and the write wait for a quiet moment, so an autosave is not one long freeze of the game.
+  const prev = saveEntry(id);
+  const name = String(opts.name || (prev && prev.name) || defaultSaveName(state)).slice(0, 60), iron = state.ironman ? state.ironman.id : "";
+  await quietMoment();
   const json = JSON.stringify(save);
   const packed = await packSave(json);
+  let store;
   try {
-    st.setItem(SLOT_KEY(id), packed);
+    store = await storeBody(st, id, packed);
   } catch (e) {
     throw new SaveError(`Not enough browser storage for this save (${Math.round(packed.length * 2 / 1024)} KB). Delete an old save, or use Export to keep it as a file.`, "quota");
   }
-  const prev = saveEntry(id);
   const entry = {
-    id, name: String(opts.name || (prev && prev.name) || defaultSaveName(state)).slice(0, 60), auto: autoSlot(id), bkey: opts.bkey || "",
-    iron: state.ironman ? state.ironman.id : "",
+    id, name, auto: autoSlot(id), bkey: opts.bkey || "",
+    iron, store,
     ts: Number.isFinite(opts.ts) ? opts.ts : Date.now(), size: packed.length, raw: json.length, v: save.v, game: save.game,
     thumb: opts.thumb || "", why: opts.why || "", ...save.meta,
   };
@@ -180,15 +241,20 @@ export async function writeSave(id, state, opts = {}) {
     // The index did not fit with the thumbnail: try without it.
     entry.thumb = "";
     try { writeIndex([entry, ...listSaves().filter((e) => e.id !== id)]); } catch {
-      try { st.removeItem(SLOT_KEY(id)); } catch { /* ignore */ }
+      dropBody(st, id);
       throw new SaveError("Not enough browser storage to list this save. Delete an old save first.", "quota");
     }
   }
   return entry;
 }
 
+// The next idle moment of the page (a setTimeout where there is no requestIdleCallback: Node, the tools).
+const quietMoment = () => new Promise((resolve) => (typeof requestIdleCallback === "function" ? requestIdleCallback(() => resolve(), { timeout: 250 }) : setTimeout(resolve, 0)));
+
 // The same, at once and uncompressed (BSJ1): an Ironman game written as the page closes (beforeunload), when an
-// asynchronous write would not finish. Throws a SaveError like writeSave; on a failure the slot keeps what it had.
+// asynchronous write would not finish. Throws a SaveError like writeSave; on a failure the slot keeps what it had (the
+// save made as the window was hidden, ui/settings.js ironHidden: in IndexedDB, where a long game's save fits). Only
+// localStorage can be written at once; the index then points at this copy (store "ls").
 export function writeSaveSync(id, state, opts = {}) {
   const st = storage();
   if (!st) throw new SaveError("No storage here.", "storage");
@@ -197,7 +263,7 @@ export function writeSaveSync(id, state, opts = {}) {
   const packed = `BSJ1|${json}`;
   try { st.setItem(SLOT_KEY(id), packed); } catch { throw new SaveError("Not enough browser storage.", "quota"); }
   const prev = saveEntry(id);
-  const entry = { ...(prev || {}), id, name: String(opts.name || (prev && prev.name) || defaultSaveName(state)).slice(0, 60), auto: autoSlot(id), ts: Date.now(), size: packed.length, raw: json.length, v: save.v, game: save.game, why: opts.why || "", iron: state.ironman ? state.ironman.id : "", ...save.meta };
+  const entry = { ...(prev || {}), id, name: String(opts.name || (prev && prev.name) || defaultSaveName(state)).slice(0, 60), auto: autoSlot(id), store: "ls", ts: Date.now(), size: packed.length, raw: json.length, v: save.v, game: save.game, why: opts.why || "", iron: state.ironman ? state.ironman.id : "", ...save.meta };
   try { writeIndex([entry, ...listSaves().filter((e) => e.id !== id)]); } catch { /* the slot is written; the index keeps the old line */ }
   return entry;
 }
@@ -245,12 +311,11 @@ export function dropIronCrash(ironId) {
 }
 // Browser storage is about 5 million characters a site (Chrome, Edge, the desktop app, Firefox); the saves' share of it.
 export const STORAGE_CHARS = 5 * 1024 * 1024;
-export const storageShare = () => storageUsed() / 2 / STORAGE_CHARS;
+export const storageShare = () => storageUsed(true) / 2 / STORAGE_CHARS;
 
 // The save's JSON text from a slot.
 export async function readSaveText(id) {
-  const st = storage();
-  const stored = st ? st.getItem(SLOT_KEY(id)) : null;
+  const stored = await loadBody(storage(), id);
   if (!stored) throw new SaveError("That save is gone from this browser's storage.", "missing");
   return await unpackSave(stored);
 }
@@ -302,8 +367,9 @@ export async function importSaveText(text, name = "") {
   if (!st) throw new SaveError("This browser does not allow storage here.", "storage");
   const id = newSlotId();
   const packed = await packSave(text);
-  try { st.setItem(SLOT_KEY(id), packed); } catch { throw new SaveError("Not enough browser storage for this save. Delete an old save first.", "quota"); }
-  const entry = { id, name: String(name || `Imported: ${save.meta && save.meta.hub ? `${save.meta.hub}, day ${save.meta.day}` : "save"}`).slice(0, 60), auto: false, ts: Date.now(), size: packed.length, raw: text.length, v: save.v, game: save.game, thumb: "", why: "imported", ...(save.meta || {}) };
+  let store;
+  try { store = await storeBody(st, id, packed); } catch { throw new SaveError("Not enough browser storage for this save. Delete an old save first.", "quota"); }
+  const entry = { id, store, name: String(name || `Imported: ${save.meta && save.meta.hub ? `${save.meta.hub}, day ${save.meta.day}` : "save"}`).slice(0, 60), auto: false, ts: Date.now(), size: packed.length, raw: text.length, v: save.v, game: save.game, thumb: "", why: "imported", ...(save.meta || {}) };
   writeIndex([entry, ...listSaves().filter((e) => e.id !== id)]);
   return entry;
 }
