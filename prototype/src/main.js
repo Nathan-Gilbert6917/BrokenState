@@ -194,6 +194,8 @@ initAudio(options, () => saveOptions(options)); // the Sound options, the first-
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize });
 let dirty = true;      // a tick changed something: redraw the panels (throttled at dev speeds)
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
+let clockDirty = false; // a new minute on the clock and nothing else: only what counts the minutes (refreshClock)
+let drawn = 0;           // panel redraws so far (refresh, refreshClock): the map's tooltip is built again after one
 
 function randomSeed() {
   return Math.floor(Math.random() * 1e6);
@@ -313,11 +315,11 @@ function step(now) {
   setClockFrac(view.hourFrac); // orders given from now on start this far into the hour (sim/parties.js wayOn)
   const mins = $("tb-min"), mm = String(Math.floor(view.hourFrac * 60)).padStart(2, "0");
   if (mins && mins.textContent !== mm) mins.textContent = mm;
-  // A new minute on the clock redraws the panels: the ETAs, the "left" times and the bars of the orders under way count
-  // the minutes of the hour already gone (sim/parties.js clockFrac), so they move with the clock, not only on the hour
-  // or at the next click. Panels whose HTML comes out the same are not touched (setHTML).
+  // A new minute on the clock redraws what counts the minutes: the ETAs, the "left" times and the bars of the orders
+  // under way count the minutes of the hour already gone (sim/parties.js clockFrac), so they move with the clock, not
+  // only on the hour or at the next click (refreshClock; the rest waits for the world or the player to change).
   const minute = state.hour * 60 + Math.floor(view.hourFrac * 60);
-  if (minute !== shownMinute) { shownMinute = minute; dirty = true; }
+  if (minute !== shownMinute) { shownMinute = minute; clockDirty = true; }
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
   if (ui.timelapse) tlFrame(state, ui, now); // recorded frames instead of the live map (ui/timelapse.js)
   else if (state.combat) {
@@ -329,6 +331,7 @@ function step(now) {
   if (ui.title) titleFrame(state, ui, now);
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
+  else if (clockDirty && ui.speed <= MAX_SPEED) refreshClock(); // (at dev speeds the throttled refresh has them too)
   if (ui.showFps) fpsFrame(now, gap, performance.now() - t0, ticks);
 }
 
@@ -499,6 +502,8 @@ function alertsHTML(html) {
 function refresh(user = true) {
   dirty = false;
   dirtyNow = false;
+  clockDirty = false;
+  drawn++;
   lastRefresh = last;
   tidyUi();
   syncPick(state, ui); // ui/mapselect.js: a selected party followed as it moves, the gold ring on the map
@@ -545,6 +550,23 @@ function refresh(user = true) {
   }
   if (tipTarget && tipTarget.isConnected === false) hideTip(); // only when the hovered element was replaced
   guidePulse(ui); // what the guide's Show me points at (ui/guide.js)
+}
+
+// A new minute on the clock and nothing else: only what counts the minutes is drawn again. The Teams tab, the running
+// orders, the watchlist, a team's panel or window (their ETAs and "left" times), and the selected team followed as
+// its sprite glides past the middle of a tile (ui/mapselect.js teamTileOf). The rest (the bases, the Needs and the
+// threat bars, the alerts, the log) changes only with the world (a tick, an arrival, an answer) or a click, which
+// set `dirty` and redraw everything (refresh). At 5x the clock shows a new minute 15 times a second, the hour once.
+function refreshClock() {
+  clockDirty = false;
+  drawn++;
+  syncPick(state, ui);
+  if (!layout.left && ui.tab === "teams") setHTML("left", renderLeft(state, ui), false);
+  if (!layout.right) setHTML("right", renderRight(state, ui), false);
+  refreshModal(false);
+  const orders = setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", false);
+  const watch = setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", false);
+  if (orders || watch) { syncWatchlist(state, ui, { act: actions, refresh }); syncOverlays(); } // their boxes kept on the map
 }
 
 function refreshModal(user) {
@@ -1836,6 +1858,7 @@ function placeTip(e) {
 
 // ---------- map input ----------
 let drag = null;
+let tipKey = ""; // what the map's tooltip shows (tile | worker | panel redraw)
 canvas.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   drag = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y, moved: false };
@@ -1866,7 +1889,12 @@ window.addEventListener("mousemove", (e) => {
     if (id >= 0) {
       const wk = workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y); // ui/workermap.js: a base worker out on a job trip
       view.workerHover = wk && wk.sid != null ? wk.sid : null; // ui/workermap.js: their route drawn faintly
-      tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
+      // The same tile and worker since the last redraw of the panels (nothing on it has changed): the text stays.
+      const key = `${id}|${wk ? wk.sid : ""}|${drawn}`;
+      if (key !== tipKey) {
+        tipKey = key;
+        tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
+      }
       tip.style.left = `${e.clientX - r.left + 16}px`;
       tip.style.top = `${e.clientY - r.top + 16}px`;
       tip.classList.remove("hidden");
@@ -1875,6 +1903,7 @@ window.addEventListener("mousemove", (e) => {
     view.hover = -1;
     view.workerHover = null;
     tip.classList.add("hidden");
+    tipKey = "";
   }
 });
 window.addEventListener("mouseup", (e) => {
