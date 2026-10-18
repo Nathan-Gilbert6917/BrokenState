@@ -144,7 +144,7 @@ function setFrame(b, cw, ch) {
 }
 
 // ---------- the scene: buildings, heights, what each cell looks like ----------
-const WALLISH = new Set(["wall", "window", "door", "bdoor", "doorway", "smashed", "idoor", "odoor"]);
+const WALLISH = new Set(["wall", "window", "door", "bdoor", "doorway", "smashed", "idoor", "odoor", "boarded"]); // boarded: a door or window under boards (sim/barricade.js)
 const FLOORED = new Set(["open", "counter", "cabinet", "shelf", "locker", "crate", "loft", "stairs", "rack", "table", "bed", "bars", "ladder"]);
 // Furniture that stands on a building's upper floor (sim/buildingmaps.js: a cell with a height that is not walked on)
 // is drawn on a slab of the upper floor, raised with it.
@@ -470,7 +470,7 @@ function prims(k, o) {
   const v = o.v || 0;
   if (o.car && (k === "car" || k === "truck" || k === "vehicle")) return carPieces(o.car, iso.rot);
   switch (k) {
-    case "wall": case "window": case "door": case "idoor": {
+    case "wall": case "window": case "door": case "idoor": case "boarded": {
       const top = o.stub ? STUB : o.top;
       const face = wallFace(o.mat ?? 0, o.dmg);
       const winFace = (axisFace) => (f, s, t, X, Y, sw) => {
@@ -482,6 +482,14 @@ function prims(k, o) {
           // A door, big and bright enough to find across the map: a painted leaf with panels in a light frame and a
           // brass knob (a closed door); a locked one (sim/locks.js) oxblood with a steel bar across and a brass lock
           // plate, a vault door steel.
+          // Boards nailed across a door or a window (sim/barricade.js): planks of raw wood, a nail head at each end.
+          if (k === "boarded" && s >= 1 && s < 15 && t < 28) {
+            const row = Math.floor(t / 5), lean = (row % 2 ? 1 : -1) * Math.floor(s / 7);
+            const tt = t + lean;
+            if (Math.floor(tt) % 5 === 4) return mul(PAL.woodDk, 0.7);
+            if ((s < 3 || s >= 13) && Math.floor(tt) % 5 === 2) return PAL.metalDk;
+            return mul(PAL.wood, 0.78 + n2(Math.floor(s / 4), row, 6) * 0.22);
+          }
           if ((k === "door" || k === "idoor") && s >= 3 && s < 13 && t < 27) {
             if (s < 4 || s >= 12 || t >= 26) return DOORC.trim;
             if (k === "door" && t >= 13 && t < 15) return PAL.metalDk;
@@ -1009,7 +1017,7 @@ function fogMaskFor(b, vis) {
 
 // ---------- per-cell looks ----------
 const JOINS = {
-  wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH,
+  wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH, boarded: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
@@ -1088,7 +1096,7 @@ function blockTop(k, o) {
 }
 function blockTop0(k, o) {
   switch (k) {
-    case "wall": case "window": case "door": case "bdoor": case "doorway": case "smashed": case "idoor": case "odoor": return o.stub ? STUB : o.top;
+    case "wall": case "window": case "door": case "bdoor": case "doorway": case "smashed": case "idoor": case "odoor": case "boarded": return o.stub ? STUB : o.top;
     case "rack": return 31; case "table": return 11; case "bed": return 8; case "bars": return o.stub ? STUB : 28;
     case "palisade": case "gate": return PALISADE;
     case "tower": return 2 * LV + 7;

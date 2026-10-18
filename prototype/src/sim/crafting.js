@@ -72,6 +72,9 @@ export const CRAFTS = {
   makeshiftpick: { name: "Makeshift picks (3)", gear: "makeshiftpick", n: 3, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
   // Makeshift ear protection (hearing.js; data.js ragplugs): rag twists dipped in wax, a few pairs a craft, a team too.
   ragplugs:    { gear: "ragplugs",    in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
+  // Boards and nails (barricade.js; data.js GEAR.boards): planks split from a bundle of firewood, nails from a scrap.
+  // Anywhere, a team too: boarded up over a door or a window in a fight.
+  boards:      { gear: "boards",      in: { wood: 30, scrap: 1 }, hours: 1,  skill: "mechanics", min: 0, field: true },
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
   // tune-jobcaps: a filter that clogs at a base leaves its bucket and frame (base.spentFilters); fresh sand and
   // charcoal make it a filter again for a quarter of the scrap. spent: clogged filters it uses (at this base).

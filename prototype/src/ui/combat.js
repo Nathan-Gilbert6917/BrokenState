@@ -20,6 +20,7 @@ import { loadsFor, roundName } from "../sim/ammo.js"; // the reload chooser: the
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions, DOOR_KINDS } from "../sim/buildingmaps.js";
 import { WINDOW, windowsBy, windowState, windowWord, openRefusal, isWindow, windowOpen } from "../sim/windows.js"; // the map's windows: check, open, close, break (the user's request 2026-10-17)
+import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
 import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
@@ -72,7 +73,7 @@ const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screame
 let W = MAP_W, H = MAP_H;
 const ENEMY_STEP_MS = 420;
 
-export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null }; // handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq)
+export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null, shoveAsk: null }; // handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq); shoveAsk: { uid, x, y } the piece picked for Shove, its destinations offered (sim/barricade.js)
 // The view cones of everyone (yours and the enemies you see), on or off (Alt+C, the view bar), kept per machine.
 const CONES_KEY = "bs.battle.cones";
 try { cui.cones = typeof localStorage !== "undefined" && localStorage.getItem(CONES_KEY) === "1"; } catch { cui.cones = false; }
@@ -414,8 +415,9 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
+    cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
   }
   autoSelect(b);
@@ -536,7 +538,9 @@ export function combatClick(state, px, py) {
   }
   // Raids: click a container next to the selected unit to search it.
   // A door picked for Peek, Close door or Brace (sim/buildingmaps.js); a window picked for a window order (sim/windows.js).
-  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
+  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "boardup", "teardown"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
+  // Shove (sim/barricade.js): the piece clicked opens its destinations; with a piece picked, a destination clicked shoves it there.
+  if (u && active(u) && (cui.mode === "shove" || (cui.shoveAsk && cui.shoveAsk.uid === u.id))) return void shoveClick(state, b, u, c);
   // A window right next to the selected unit (sim/windows.js): the next thing to do with it (check it, open it, climb through).
   if (isWindow(b.cells[c.y * W + c.x]) && windowsBy(b, u).some((o) => o.x === c.x && o.y === c.y)) return void windowClick(state, b, u, c);
   // A locked door (sim/locks.js: a raid's, a field map's houses'): a click tries it. A closed door is walked through
@@ -770,6 +774,68 @@ function handoverButton(state, b, u, btn) {
   const names = targets.map((t) => t.name.split(" ")[0]).join(", ");
   btn("handover", "Hand over", `${SIM.HANDOVER_AP} action a move: ${u.name.split(" ")[0]}'s kit and a teammate's side by side, the one right next to them in their view cone${names ? ` (${names})` : ""}. A thing given to them or taken from them (a pocket, a pack slot, a rig pouch, the hands, the off hand) costs ${u.name.split(" ")[0]} ${SIM.HANDOVER_AP} action; the teammate spends nothing. A gun handed over counts at once in the other's hands, as do rounds and magazines. In a raid's search window things still pass between neighbours for free.`,
     ap >= SIM.HANDOVER_AP && targets.length > 0, handKey(), { why: !targets.length ? "Nobody of yours right next to them in their view cone to trade with." : ap < SIM.HANDOVER_AP ? NO_AP : "", on: cui.handAsk === u.id || cui.mode === "handover", ap: SIM.HANDOVER_AP });
+}
+// ---------- barricades (sim/barricade.js) ----------
+// Shove (a piece of furniture a tile, both actions), Board up (boards and nails across a door or window) and Tear down.
+function barricadeButtons(state, b, u, btn) {
+  const first = u.name.split(" ")[0], ap = u.ap;
+  const pieces = shoveTargets(b, u);
+  const sWhy = shoveRefusal(b, u);
+  const names = [...new Set(pieces.map((p) => pieceName(p.c)))].join(", ");
+  btn("shove", "Shove", `${SHOVE.AP} actions: ${first} shoves the ${names || "shelf, cabinet, counter, table, bed, crate, locker, rack, barrel, hay or sandbags"} right next to them one tile: pushed onto a free open cell beside it, or pulled onto their own cell while they step back. In a doorway or a corridor it blocks the way: the dead crawl over half cover (a table, a shelf, crates: +${CRAWL.COST} tiles, a walker's whole turn) and batter a tall piece (lockers, tall shelving) or go round; people vault half cover. The scrape is heard ${SHOVE.RADIUS} tiles off.${pieces.length > 1 ? " Several pieces next to them: click the one." : ""}`,
+    !sWhy, "", { why: sWhy, ap: SHOVE.AP, on: cui.mode === "shove" || (cui.shoveAsk && cui.shoveAsk.uid === u.id) });
+  const targets = boardTargets(b, u), boards = boardsOf(state, u);
+  if (targets.length || boards) {
+    const bWhy = boardRefusal(state, b, u);
+    const what = [...new Set(targets.map((t) => t.word))].join(", ");
+    btn("boardup", "Board up", `${BOARD.AP} actions and a bundle of boards and nails${boards ? "" : " (none carried)"}: ${first} nails boards across the ${what || "closed door, doorway or window"} next to them, from either side. ${BOARD.HP} hit points a layer (up to ${BOARD.MAX}) on top of a closed door's own, no sight or way through: the dead and raiders batter it. Loud: the unaware within ${BOARD.RADIUS} tiles turn toward the hammering${b.raid ? `, Heat +${BOARD.HEAT}` : ""}.${targets.length > 1 ? " Several next to them: click the one." : ""}`,
+      !bWhy, "", { why: bWhy, ap: BOARD.AP, on: cui.mode === "boarded" });
+  }
+  const tears = tearTargets(b, u);
+  if (tears.length) btn("teardown", "Tear down", `${BOARD.TEAR.ap} actions: ${first} pries the boards off the ${[...new Set(tears.map((t) => boardedName(t.c).toLowerCase()))].join(", ")} next to them, from either side: the door or window as it was, shut. The boards are spent. Quieter than nailing them up (heard ${BOARD.TEAR.radius} tiles off).${tears.length > 1 ? " Several next to them: click the one." : ""}`,
+    ap >= BOARD.TEAR.ap, "", { why: NO_AP, ap: BOARD.TEAR.ap, on: cui.mode === "teardown" });
+}
+// The chooser over the orders once a piece is picked: a button for each place it can go (the cell clicked on the map works too).
+function shoveChooser(state, b, u) {
+  if (!u || !cui.shoveAsk || cui.shoveAsk.uid !== u.id || !active(u)) return "";
+  const { x, y } = cui.shoveAsk;
+  const c = b.cells[y * b.w + x];
+  if (!shoveable(c)) return "";
+  const dests = shoveDests(b, u, x, y);
+  return `<div class="small cbmsg cbammo" data-tip="${esc(`Where does the ${pieceName(c)} go? Pushed onto a free cell beside it, or pulled onto ${u.name.split(" ")[0]}'s own cell (they step back). Or click the cell on the map.`)}">Shove the ${esc(pieceName(c))}: ${dests.length ? dests.map((d) => `<button class="mini" data-action="cb-act" data-v="shove" data-k="${x},${y},${d.x},${d.y}" data-tip="${esc(`${d.word[0].toUpperCase()}${d.word.slice(1)}: ${SHOVE.AP} actions.`)}">${esc(d.word[0].toUpperCase() + d.word.slice(1))}</button>`).join(" ") : `<span class="muted">nowhere: no free open cell beside it, no room behind ${esc(u.name.split(" ")[0])}</span>`} <button class="mini" data-action="cb-act" data-v="shoveclose" data-tip="Close">✕</button></div>`;
+}
+// The Shove order (combatAction "cb-act" v "shove"; d.k: "px,py,tx,ty" from the chooser, or "px,py" for the piece).
+function shoveCbAct(state, b, u, d) {
+  const why = shoveRefusal(b, u);
+  if (why) { cui.msg = why; cui.shoveAsk = null; if (cui.mode === "shove") cui.mode = "move"; return; }
+  const k = d && d.k != null && d.k !== "" ? String(d.k).split(",").map(Number) : null;
+  if (k && k.length >= 4) return void act(state, { type: "shove", unit: u.id, x: k[0], y: k[1], tx: k[2], ty: k[3] });
+  const pieces = shoveTargets(b, u);
+  const pick = k && k.length >= 2 ? pieces.find((p) => p.x === k[0] && p.y === k[1]) : pieces.length === 1 ? pieces[0] : null;
+  if (pick) return void openShove(state, b, u, pick);
+  const open = cui.mode !== "shove";
+  cui.mode = open ? "shove" : "move";
+  cui.shoveAsk = null;
+  cui.msg = open ? `Which piece? Click the ${[...new Set(pieces.map((p) => pieceName(p.c)))].join(" or the ")} on the map.` : "";
+}
+// A piece picked: its destinations offered (the chooser), one of them doing it at once when it is the only one.
+function openShove(state, b, u, p) {
+  const dests = shoveDests(b, u, p.x, p.y);
+  if (dests.length === 1) return void act(state, { type: "shove", unit: u.id, x: p.x, y: p.y, tx: dests[0].x, ty: dests[0].y });
+  cui.shoveAsk = { uid: u.id, x: p.x, y: p.y };
+  cui.mode = "shove";
+  cui.msg = dests.length ? `Where does the ${pieceName(p.c)} go? Click a cell beside it on the map, or pick above the orders.` : `Nowhere to shove the ${pieceName(p.c)}: no free open cell beside it, and no room behind ${u.name.split(" ")[0]} to pull it.`;
+}
+// A map click in Shove mode: the piece (its destinations), or the destination of the piece picked.
+function shoveClick(state, b, u, c) {
+  const cell = b.cells[c.y * b.w + c.x];
+  if (cui.shoveAsk && cui.shoveAsk.uid === u.id) {
+    const { x, y } = cui.shoveAsk;
+    if (shoveDests(b, u, x, y).some((d) => d.x === c.x && d.y === c.y)) return void act(state, { type: "shove", unit: u.id, x, y, tx: c.x, ty: c.y });
+  }
+  const p = shoveTargets(b, u).find((o) => o.x === c.x && o.y === c.y);
+  if (p) return void openShove(state, b, u, p);
+  cui.msg = shoveable(cell) ? `Stand right next to the ${pieceName(cell)} (not diagonally) to shove it.` : "Click a piece of furniture right next to them, or a cell beside the one picked.";
 }
 // The chooser over the orders when more than one mate is in reach: a button each (the mate clicked on the map works too).
 function handChooser(state, b, u) {
@@ -1040,8 +1106,9 @@ export function unitOrders(state, b, u) {
   if (b.evacCols) btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R", { why: noAp || "Only from the green evac strip." });
   if (b.raid) raidButtons(state, b, u, btn);
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
+  barricadeButtons(state, b, u, btn); // sim/barricade.js: Shove, Board up, Tear down
   if (b.rescue) rescueButtons(state, b, u, btn);
-  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + ammoChooser(state, b, u) + handChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
+  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + ammoChooser(state, b, u) + handChooser(state, b, u) + shoveChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   return out;
 }
 
@@ -1199,7 +1266,7 @@ export function combatKey(state, e) {
   if (retreatAskOpen(b) && space) { cui.msg = `Press ${keyLabel("battle.confirm", 1) || "Enter"} or Sound the retreat to give the order, Esc to keep fighting.`; return true; }
   if (fallAskOpen(b) && confirm) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
   if (space || confirm) { requestEndTurn(state, space ? "space" : "enter"); return true; }
-  if (e.code === "Escape") { if (cui.barTray != null) { cui.barTray = null; return true; } cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; return true; }
+  if (e.code === "Escape") { if (cui.barTray != null) { cui.barTray = null; return true; } cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; cui.shoveAsk = null; return true; }
   if (k === "battle.autoplay") { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
   if (k === "battle.inventory") { combatAction(state, "cb-inv", {}); return true; } // the selected survivor's kit (read-only)
   if (b.phase === "deploy") return false;
@@ -1347,6 +1414,19 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   if (v === "sneak") return void act(state, { type: "sneak", unit: u.id });
   if (v === "handover") return void handoverCbAct(state, b, u, d); // sim/combat.js handoverTargets: the two-doll window, the chooser, or the free Face toward the mate
   if (v === "handclose") { cui.handAsk = null; if (cui.mode === "handover") cui.mode = "move"; cui.msg = ""; return; }
+  // sim/barricade.js: Shove (the piece, then where), Board up and Tear down (the door or window next to them).
+  if (v === "shove") return void shoveCbAct(state, b, u, d);
+  if (v === "shoveclose") { cui.shoveAsk = null; if (cui.mode === "shove") cui.mode = "move"; cui.msg = ""; return; }
+  if (v === "boardup" || v === "teardown") {
+    const list = v === "boardup" ? boardTargets(b, u) : tearTargets(b, u);
+    const why = v === "boardup" ? boardRefusal(state, b, u) : "";
+    if (why && (!list.length || !boardsOf(state, u))) { cui.msg = why; return; }
+    if (list.length === 1) return void act(state, { type: v, unit: u.id, x: list[0].x, y: list[0].y });
+    if (!list.length) { cui.msg = v === "boardup" ? "Stand right next to a closed door, a doorway or a window (not diagonally)." : "Stand right next to boards (not diagonally) to tear them down."; return; }
+    cui.mode = cui.mode === v ? "move" : v;
+    cui.msg = cui.mode === v ? (v === "boardup" ? "Click the door, doorway or window to board up." : "Click the boards to tear down.") : "";
+    return;
+  }
   if (v === "lights") return void act(state, { type: "lights", unit: u.id }); // sim/indoorlight.js: the switch in reach (the sim says why not)
   if (v === "light" || v === "nvg") { if (v === "light" ? u.light : u.nvg) return void act(state, { type: v, unit: u.id }); cui.msg = v === "light" ? `${u.name.split(" ")[0]} has no light.` : `${u.name.split(" ")[0]} has no night vision.`; return; } // sim/combat.js switchAct: free, even with no actions left
   if (v === "overwatch") {
@@ -2454,9 +2534,13 @@ function previewHtml(b, state = null) {
   }
   // Something the attackers batter (sim/combat.js bash): a wall section, the gate, a barred door, a window.
   const struct = cobj.mhp ? ` <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "warn"}">${Math.round(cobj.hp)}/${cobj.mhp} hit points</span>${barredCell(cobj) ? " · barred to the attackers (your people pass)" : ""}.` : "";
+  // Boards nailed across a door or a window (sim/barricade.js): what is under them, the layers, Tear down from next to it.
+  if (isBoarded(cobj)) return `<b>${esc(boardedName(cobj))}</b>${struct}<br><span class="muted">${cobj.boards || 1} layer${(cobj.boards || 1) === 1 ? "" : "s"} of boards over the ${esc(boardedUnder(cobj))}: full cover, no sight or way through for anyone until the dead or raiders batter it down (then the ${boardedUnder(cobj) === "window" ? "window is broken" : "door is broken in"}). Tear down (${BOARD.TEAR.ap} actions, from next to it, either side) gives it back; Board up again adds a layer (up to ${BOARD.MAX}).</span>`;
   // Half cover a person can vault (sim/combat.js VAULT, vaultable, canVault): the path may go over it, never end on it.
-  const vaultWord = !cell.walk && SIM.vaultable(b, cobj) ? (u && !SIM.canVault(u) ? ` <span class="muted">Could be vaulted, not by ${esc(u.name.split(" ")[0])} now (the arms must be free, and not the dead).</span>` : ` <span class="muted">Can be vaulted: a move may go over it at +${SIM.VAULT.COST} tiles (never end on it), a scuff heard nearby, and ${SIM.VAULT.COST} tiles less of movement for the rest of the turn.</span>`) : "";
-  if (!cell.walk) return `<b>${cobj.mhp ? structureName(cobj) : cell.name}</b>: ${cell.cover === 2 ? "full cover" : cell.cover === 1 ? "half cover" : "no cover"}${cell.los || cobj.t ? ", blocks sight from the ground" : ""}. Cannot stand here.${struct}${vaultWord}`;
+  const vaultWord = !cell.walk && SIM.vaultable(b, cobj) ? (u && !SIM.canVault(u) ? ` <span class="muted">Could be vaulted, not by ${esc(u.name.split(" ")[0])} now (the arms must be free, and not the dead).</span>` : ` <span class="muted">Can be vaulted: a move may go over it at +${SIM.VAULT.COST} tiles (never end on it), a scuff heard nearby, and ${SIM.VAULT.COST} tiles less of movement for the rest of the turn.${cell.cover === 1 && cobj.k !== "window" ? ` The dead crawl over it at +${CRAWL.COST} tiles.` : ""}</span>`) : "";
+  // A piece of furniture that can be shoved (sim/barricade.js): from right next to it, both actions.
+  const shoveWord = shoveable(cobj) ? ` <span class="muted">Can be shoved a tile (Shove, ${SHOVE.AP} actions, from right next to it${cobj.moved ? "; moved already" : ""}): in a doorway it blocks the way${cell.cover === 2 ? ": the dead batter it (its hit points) or go round" : ""}.</span>` : "";
+  if (!cell.walk) return `<b>${cobj.mhp ? structureName(cobj) : cell.name}</b>: ${cell.cover === 2 ? "full cover" : cell.cover === 1 ? "half cover" : "no cover"}${cell.los || cobj.t ? ", blocks sight from the ground" : ""}. Cannot stand here.${struct}${vaultWord}${shoveWord}`;
   const sides = coverSides(b, h.x, h.y);
   const best = Math.max(...sides);
   let s = best === 2 ? "Full cover next to this tile." : best === 1 ? "Half cover next to this tile." : "No cover here.";
