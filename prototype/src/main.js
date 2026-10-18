@@ -60,6 +60,7 @@ import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting
 import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
+import { ITEMMENU_ACTIONS, itemMenuHtml, openItemMenu, closeItemMenu } from "./ui/itemmenu.js"; // right-click on an item in an inventory view
 import { ARMV_ACTIONS, ARMV_INPUT } from "./ui/armoryview.js"; // the armory list: grouped, cards or compact rows
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE, UNPACK_ACTIONS, unpackUp } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { TEAMMEET_ACTIONS, TEAMMEET_CHANGE } from "./ui/teammeet.js"; // teams together on a tile: people, goods, merge
@@ -451,7 +452,7 @@ function tidyUi() {
   view.fwPlace = ui.fwPlace ? fwPlaceTiles(state, ui) : null; // ui/fieldworks.js: the tile picker's highlight
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid && !(ui.inv.peek && !state.combat.over)) { ui.inv = null; ui.invSel = null; } // only the loot screen, a raid's search window and a survivor's kit (look only, ui/inventory.js peekModal) go over a battle
   if (!state.combat && ui.inv && ui.inv.peek) { ui.inv = null; ui.invSel = null; } // the battle's kit view goes with the battle
-  if (state.combat && ui.gunb) ui.gunb = null; // the gun builder: never during a battle
+  if (state.combat && ui.gunb && !(ui.gunb.battle != null && !state.combat.over)) ui.gunb = null; // the gun builder: in a battle only on a fighter's gun (the item menu's Modify, ui/gunbuilder.js)
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
   if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
 }
@@ -542,6 +543,7 @@ function refresh(user = true) {
   syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
   syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
   setPanel("ask", askHtml(ui) + carryHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground
+  writeItemMenu(user);
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
@@ -569,6 +571,18 @@ function refreshClock() {
   const orders = setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", false);
   const watch = setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", false);
   if (orders || watch) { syncWatchlist(state, ui, { act: actions, refresh }); syncOverlays(); } // their boxes kept on the map
+}
+
+// The item right-click menu (ui/itemmenu.js) over the windows, kept inside the screen: where it would run off an edge
+// it is moved in once, and the place is kept (so the next redraw is the same markup).
+function writeItemMenu(user) {
+  if (ui.imenu && !ui.inv && !ui.baseView && !ui.gunb && !ui.meet) ui.imenu = null; // its window was closed
+  setPanel("itemmenu", itemMenuHtml(state, ui), user);
+  const box = ui.imenu && $("itemmenu").firstElementChild;
+  if (!box) return;
+  const r = box.getBoundingClientRect();
+  const x = Math.max(4, Math.min(ui.imenu.x, window.innerWidth - r.width - 4)), y = Math.max(4, Math.min(ui.imenu.y, window.innerHeight - r.height - 4));
+  if (x !== ui.imenu.x || y !== ui.imenu.y) { ui.imenu.x = Math.round(x); ui.imenu.y = Math.round(y); setPanel("itemmenu", itemMenuHtml(state, ui), true); }
 }
 
 function refreshModal(user) {
@@ -1268,6 +1282,7 @@ for (const [k, fn] of Object.entries(UNPACK_ACTIONS)) actions[k] = (d) => fn(sta
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
 for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
 for (const [k, fn] of Object.entries(ARMV_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/armoryview.js: the armory list's groups, view, find box and type chips
+for (const [k, fn] of Object.entries(ITEMMENU_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/itemmenu.js: the item right-click menu
 // The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
 for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1762,6 +1777,13 @@ function dropFocus() {
   if (a && a.blur && (a.tagName === "BUTTON" || a.tagName === "SELECT" || (a.tagName === "INPUT" && a.type === "checkbox"))) a.blur();
 }
 
+// A press anywhere but on the item menu closes it (the click goes on as usual).
+document.addEventListener("pointerdown", (ev) => {
+  if (!ui.imenu || (ev.target.closest && ev.target.closest("#itemmenu"))) return;
+  if (ev.button === 2 && ev.target.closest && ev.target.closest("[data-imenu], [data-loc]")) return; // another item: its own menu opens
+  closeItemMenu(ui);
+  dirtyNow = true;
+}, true);
 document.addEventListener("click", (ev) => {
   const el = ev.target.closest("[data-action]");
   if (!el || el.tagName === "SELECT" || (el.tagName === "INPUT" && el.type !== "checkbox")) return;
@@ -1774,8 +1796,14 @@ document.addEventListener("click", (ev) => {
   dropFocus();
   refresh();
 });
-// Right-click on a Work tab cell counts down (ui/work.js); elsewhere the browser's menu is left alone.
+// Right-click on a Work tab cell counts down (ui/work.js); on an item in a window, the item menu (ui/itemmenu.js);
+// elsewhere the browser's menu is left alone.
 document.addEventListener("contextmenu", (ev) => {
+  const it = ev.target.closest && ev.target.closest("[data-imenu], [data-loc]");
+  if (it && $("modal").contains(it) && !(ev.target.closest("#itemmenu"))) {
+    releaseHold();
+    if (openItemMenu(state, ui, it.dataset, ev.clientX, ev.clientY)) { ev.preventDefault(); hideTip(); refresh(); return; }
+  }
   const el = ev.target.closest && ev.target.closest("[data-rc]");
   if (!el) return;
   ev.preventDefault();
@@ -2219,6 +2247,7 @@ cbCanvas.addEventListener("contextmenu", (e) => e.preventDefault()); // right cl
 // ---------- keyboard ----------
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.
 function closeTopLayer() {
+  if (closeItemMenu(ui)) return true; // ui/itemmenu.js
   if (!$("ctxmenu").classList.contains("hidden")) { hideCtx(); return true; }
   if (ui.zombieLook) { ui.zombieLook = false; return true; }
   if (ui.bgEditor) { closeBackgrounds(); return true; }
