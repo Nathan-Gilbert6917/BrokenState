@@ -13,7 +13,7 @@ import { teamsOnTile, teamsTogether, meetProblem, standProblem, giveGoods, moveM
 import { partyFleet, partyVehicles, vehicleLabel, isBike } from "../sim/vehicles.js";
 import { supplyName } from "../sim/itemnames.js";
 import { shortName } from "./names.js";
-import { roundRoom, ROUND_PLACES, PLACE_WORDS } from "../sim/supitems.js"; // rounds onto a member of the other team: pockets, pack or rig, boxed or loose (2026-10-17)
+import { supRoom, SUP_PLACES, PLACE_WORDS, itemKeyOf } from "../sim/supitems.js"; // supplies onto a member of the other team: pockets, pack or rig (2026-10-17 rounds boxed or loose, 2026-10-18 any supply)
 import { isRoundKey } from "../sim/rounds.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -22,7 +22,7 @@ const kg = (x) => `${Math.round(x * 10) / 10}`;
 const qty = (q) => (Math.abs(q - Math.round(q)) < 1e-6 ? String(Math.round(q)) : kg(q));
 const first = (s) => esc(shortName(s));
 const byId = (state, id) => state.parties.find((q) => q.id === Number(id)) || null;
-const fresh = (m) => { m.people = {}; m.vehicles = {}; m.items = {}; m.sup = {}; m.target = "cargo"; m.where = null; m.loose = false; }; // where / loose: rounds onto the member picked (pockets, pack, rig; boxed or loose)
+const fresh = (m) => { m.people = {}; m.vehicles = {}; m.items = {}; m.sup = {}; m.target = "cargo"; m.where = null; m.loose = false; }; // where / loose: supplies onto the member picked (pockets, pack, rig; rounds boxed or loose)
 
 // ---------- ways in ----------
 // The tile panel's line under "Your teams here" when two or more of your teams stand on the tile.
@@ -102,23 +102,23 @@ function goodsTab(state, m, A, B, why) {
   const cargo = `<div style="margin-top:0.5rem"><b class="small">${esc(H.cargo.name)}</b><div class="istore">${H.cargo.gear.map((g) => pick(g.loc, g.item, "Cargo")).join("")}${sups}${!H.cargo.gear.length && !sups ? `<span class="small muted">Empty.</span>` : ""}</div></div>`;
   const tgt = (val, label, hint) => `<button class="mini ${String(m.target) === String(val) ? "active" : ""}" data-action="tm-target" data-v="${val}"${tip(hint)}>${String(m.target) === String(val) ? "✓ " : ""}${label}</button>`;
   const targets = `${tgt("cargo", "Into the cargo", `Items go into ${teamName(state, B)}'s cargo (as long as it can carry them)`)}${partyMembers(state, B).map((s) => tgt(s.id, `Onto ${first(s)}`, `Items go onto ${s.name.split(" ")[0]}: their own slot if free, a rig pouch, a pocket or the pack`)).join("")}`;
-  // Rounds picked go as they were, or (a member the target, a place picked: m.where, m.loose) onto that member as boxed
-  // or loose items in their pockets, pack or rig (sim/supitems.js roundsOnto); the chip says the room.
+  // Supplies picked go as they were, or (a member the target, a place picked: m.where, m.loose) onto that member as
+  // items in their pockets, pack or rig (sim/supitems.js suppliesOnto; rounds boxed or loose); the chip says the room.
   const who = String(m.target) !== "cargo" ? partyMembers(state, B).find((s) => s.id === Number(m.target)) || null : null;
-  const where = who && ROUND_PLACES.includes(m.where) ? m.where : null;
+  const where = who && SUP_PLACES.includes(m.where) ? m.where : null;
   const supRows = Object.entries(m.sup).map(([k, q]) => {
     const have = H.cargo.supplies[k] ? H.cargo.supplies[k].all : 0;
     if (!(have > 0)) return "";
-    const room = where && isRoundKey(k) ? roundRoom(who, k, where, !!m.loose) : null;
-    const roomText = room ? ` <span class="${room.n ? "muted" : "danger"}"${tip(room.why || `${room.n} fit in ${first(who)}'s ${PLACE_WORDS[where]} now (${m.loose ? "loose" : "boxed"}), within ${first(who)}'s max load`)}>(${room.n ? `${room.n} fit` : "no room"})</span>` : "";
+    const room = where && itemKeyOf(k) ? supRoom(who, k, where, isRoundKey(k) && !!m.loose) : null;
+    const roomText = room ? ` <span class="${room.n ? "muted" : "danger"}"${tip(room.why || `${room.n} fit in ${first(who)}'s ${PLACE_WORDS[where]} now (${isRoundKey(k) ? (m.loose ? "loose" : "boxed") : "as items"}), within ${first(who)}'s max load`)}>(${room.n ? `${room.n} fit` : "no room"})</span>` : "";
     return `<span class="chip">${esc(supplyName(k))} <input type="number" class="qty" min="0" max="${qty(have)}" step="1" value="${qty(Math.min(have, q))}" data-action="tm-qty" data-key="${k}" style="width:4em"> of ${qty(have)}${roomText} <button class="mini" data-action="tm-sup" data-key="${k}"${tip("Leave it")}>×</button></span>`;
   }).join(" ");
   const chip = (act, v, label, on, hint) => `<button class="mini ${on ? "active" : ""}" data-action="${act}" data-v="${v}"${tip(hint)}>${on ? "✓ " : ""}${label}</button>`;
-  const roundsTo = !who ? "" : `<div class="row small" style="margin-top:0.3rem;gap:0.25rem;flex-wrap:wrap;align-items:center"><span class="muted">Rounds go to:</span>${chip("tm-where", "", "Team supplies", !where, `Rounds picked go into ${teamName(state, B)}'s supplies as they were (packed or found)`)}${ROUND_PLACES.map((w) => chip("tm-where", w, `${first(who)}: ${PLACE_WORDS[w]}`, where === w, `Rounds picked go onto ${who.name.split(" ")[0]} as items in their ${PLACE_WORDS[w]}: their own rounds (their gun draws on them first in a fight)`)).join("")}${where ? `${chip("tm-loose", "0", "boxed", !m.loose, "As boxes (up to five boxes a slot)")}${chip("tm-loose", "1", "loose", !!m.loose, "Loose (up to 80 rounds a slot; a handful in an admin pouch)")}` : ""}<span class="muted"${tip("What they wear and carry on them against their max load")}>${first(who)} wears ${kg(wornLoad(who))}/${maxLoad(who)} kg</span></div>`;
+  const roundsTo = !who ? "" : `<div class="row small" style="margin-top:0.3rem;gap:0.25rem;flex-wrap:wrap;align-items:center"><span class="muted">Supplies go to:</span>${chip("tm-where", "", "Team supplies", !where, `Supplies picked go into ${teamName(state, B)}'s supplies as they were (packed or found)`)}${SUP_PLACES.map((w) => chip("tm-where", w, `${first(who)}: ${PLACE_WORDS[w]}`, where === w, `Supplies picked (rounds, water, meds, food, parts…) go onto ${who.name.split(" ")[0]} as items in their ${PLACE_WORDS[w]}${w === "rig" ? " (its admin and pocket pouches)" : ""}, where they fit: their own (their gun draws on their own rounds first in a fight)`)).join("")}${where ? `<span class="muted" style="margin-left:0.3rem">rounds</span>${chip("tm-loose", "0", "boxed", !m.loose, "Rounds as boxes (up to five boxes a slot)")}${chip("tm-loose", "1", "loose", !!m.loose, "Rounds loose (up to 80 rounds a slot; a handful in an admin pouch)")}` : ""}<span class="muted"${tip("What they wear and carry on them against their max load")}>${first(who)} wears ${kg(wornLoad(who))}/${maxLoad(who)} kg</span></div>`;
   const any = Object.keys(m.items).length || supRows;
   return `<div class="invcols"><div class="invcol"><div class="invlabel">From</div>${teamHead(state, A)}${people}${cargo}</div>
     <div class="invcol"><div class="invlabel">To</div>${teamHead(state, B)}<div class="row small" style="margin-top:0.4rem;gap:0.25rem;flex-wrap:wrap">${targets}</div>${roundsTo}
-    <div class="small muted" style="margin-top:0.4rem">Supplies go as they were: packed supplies into its packed supplies, found cargo into its cargo${who ? ", or rounds onto the member picked above" : ""}. Only what it can carry moves; nobody gives away a pack or rig their team needs to carry its load.</div></div></div>
+    <div class="small muted" style="margin-top:0.4rem">Supplies go as they were: packed supplies into its packed supplies, found cargo into its cargo${who ? ", or onto the member picked above as items in the place picked" : ""}. Only what it can carry moves; nobody gives away a pack or rig their team needs to carry its load.</div></div></div>
     <div class="invsel small" style="margin-top:0.6rem">${any ? `Picked: ${Object.keys(m.items).length ? `<b>${Object.keys(m.items).length} item(s)</b> ` : ""}${supRows}` : "Click the left team's items and supplies to pick them."}
     <div class="row" style="margin-top:0.4rem;gap:0.3rem"><button class="primary" data-action="tm-give" ${any && !why ? "" : "disabled"}${tip(why || `Hand what is picked to ${teamName(state, B)}`)}>Give picked →</button>${any ? `<button class="mini" data-action="tm-clear">Clear</button>` : ""}</div></div>`;
 }
@@ -173,7 +173,7 @@ export const TEAMMEET_ACTIONS = {
     if (e && e.all > 0) m.sup[d.key] = e.all; // all of it until changed
   },
   "tm-target": (state, ui, d) => { if (ui.meet) ui.meet.target = d.v === "cargo" ? "cargo" : Number(d.v); },
-  "tm-where": (state, ui, d) => { if (ui.meet) ui.meet.where = ROUND_PLACES.includes(d.v) ? d.v : null; }, // rounds onto the member: the place (empty: as they were)
+  "tm-where": (state, ui, d) => { if (ui.meet) ui.meet.where = SUP_PLACES.includes(d.v) ? d.v : null; }, // supplies onto the member: the place (empty: as they were)
   "tm-loose": (state, ui, d) => { if (ui.meet) ui.meet.loose = d.v === "1"; },
   "tm-clear": (state, ui) => { if (ui.meet) fresh(ui.meet); },
   "tm-give": (state, ui) => {
@@ -182,7 +182,7 @@ export const TEAMMEET_ACTIONS = {
     const H = teamHoldings(state, A);
     const supplies = {};
     for (const [k, q] of Object.entries(m.sup)) { const have = H.cargo.supplies[k] ? H.cargo.supplies[k].all : 0; supplies[k] = q >= have - 1e-9 ? Infinity : q; }
-    const tgt = m.target !== "cargo" && ROUND_PLACES.includes(m.where) ? { sid: Number(m.target), where: m.where, loose: !!m.loose } : m.target; // rounds onto the member (sim/supitems.js)
+    const tgt = m.target !== "cargo" && SUP_PLACES.includes(m.where) ? { sid: Number(m.target), where: m.where, loose: !!m.loose } : m.target; // supplies onto the member (sim/supitems.js)
     m.msg = giveGoods(state, A, B, { items: Object.keys(m.items), supplies }, tgt).text;
     const keep = m.target, keepWhere = m.where, keepLoose = m.loose;
     fresh(m);

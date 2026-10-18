@@ -35,7 +35,7 @@ import { wornLoad, maxLoad } from "./load.js";
 import { FOODS, moveFood, moveFoodUnits, stockOf, foodWord, packPick, foodIn, foodText } from "./foods.js"; // food moves with its lots
 import { bodiesHome } from "./carriers.js";
 import { settleHold, holdView, HOLD_KEYS } from "./carry.js"; // who holds the supplies where (one pool, placed)
-import { parseTarget, roundsOnto, PLACE_WORDS, placeSlots } from "./supitems.js"; // rounds onto a named member: pockets, pack or rig (2026-10-17)
+import { parseTarget, suppliesOnto, PLACE_WORDS, placeSlots, itemKeyOf, stockKeyOf } from "./supitems.js"; // supplies onto a named member: pockets, pack or rig (2026-10-17, any supply 2026-10-18)
 import { isRoundItem, amountOf, splitOff } from "./itemstack.js";
 
 const EPS = 1e-6;
@@ -280,9 +280,10 @@ export function dropAllSupplies(state, p) {
 // target: "cargo" (the team's cargo: the vehicle, or carried by hand) or a member's survivor id (their own slot if it
 // is free, a rig pouch, a pocket, the pack; something that fits none of them is refused: load it into the cargo).
 // Supplies go into the team's packed supplies, as many as it can carry; with a person target of the form
-// { sid, where: "pocket" | "pack" | "rig", loose? } (supitems.js parseTarget) a pick of a round key goes onto that
-// member instead, as boxed or loose items in that place (supitems.js roundsOnto: their room and max load, and the
-// team's carry limit, since what they wear comes off what it can carry); other supplies still go into the pool.
+// { sid, where: "pocket" | "pack" | "rig", loose? } (supitems.js parseTarget) a pick of any supply with an item form
+// (rounds, water, meds, a food...: supitems.js itemKeyOf) goes onto that member instead, as items in that place (rounds
+// boxed or loose; supitems.js suppliesOnto: their room and max load, and the team's carry limit, since what they wear
+// comes off what it can carry); "food" (days of it) and anything with no item form still go into the pool.
 /** @param {State} state @param {Party} p @param {{ items?: (string | Item)[], supplies?: Record<string, number> }} picks @param {"cargo" | number | string | { sid: number, where?: string | null, loose?: boolean }} target */
 export function loadFromBase(state, p, picks = {}, target = "cargo") {
   const why = transferProblem(state, p);
@@ -340,9 +341,9 @@ export function loadFromBase(state, p, picks = {}, target = "cargo") {
     const fit = sup.weight > 0 ? Math.min(want, Math.floor((room + EPS) / sup.weight)) : want;
     if (fit < want - EPS) refused.push(fit > 0 ? `Only ${qtyText(fit)} of the ${qtyText(want)} ${supName(k)} fit (${r1(room)} kg free).` : `No room for ${supName(k)} (${r1(room)} kg free).`);
     if (!(fit > 0)) continue;
-    if (s && T && T.where && isRoundKey(k)) { // onto the member, in that place, boxed or loose (supitems.js roundsOnto)
-      const r = roundsOnto([base.stock], k, fit, s, { where: T.where, loose: T.loose });
-      if (r.moved > 0) moved.push(`${r.moved} ${supName(k)} (${first}'s ${PLACE_WORDS[T.where]}${T.loose ? ", loose" : ""})`);
+    if (s && T && T.where && itemKeyOf(k)) { // onto the member, in that place (rounds boxed or loose; supitems.js suppliesOnto: a food with its lots)
+      const r = suppliesOnto(state, [base], k, fit, s, { where: T.where, loose: T.loose });
+      if (r.moved > 0) moved.push(`${r.moved} ${supName(k)} (${first}'s ${PLACE_WORDS[T.where]}${T.loose && isRoundKey(k) ? ", loose" : ""})`);
       if (r.why) refused.push(r.why);
       continue;
     }
@@ -355,11 +356,12 @@ export function loadFromBase(state, p, picks = {}, target = "cargo") {
   if (moved.length) { reweigh(state, p); settleHold(state, p); } // carry.js: loaded supplies go in packs, pockets, the vehicle, then the arms
   return result(moved, refused, toCargo ? `onto the team${partyVehicle(state, p) ? ` (${vehicleLabel(/** @type {any} */ (partyVehicle(state, p)))})` : ""}` : `onto the team (items to ${first})`);
 }
-// The reverse of a round pick onto a member (the team window's "fewer" while editing a team at a base): up to n rounds
-// of a key, in a form, out of one place on them into the base's stores (whole stacks, or a part split off). Rounds in
-// the armory are stock at once (ammo.js settleBase), as when a team comes home. Returns { moved, refused, text }.
+// The reverse of a supply pick onto a member (the team window's "fewer" while editing a team at a base): up to n units
+// of a stock key (rounds in a form) out of one place on them into the base's stores (whole stacks, or a part split off).
+// Put in the armory they are stock at once (ammo.js settleBase: rounds, and supply items with a food's shelf), as when a
+// team comes home. Returns { moved, refused, text }.
 /** @param {State} state @param {Party} p @param {{ sid: number, key: string, n: number, where: string, loose?: boolean }} pick */
-export function dropRounds(state, p, pick) {
+export function dropSupplies(state, p, pick) {
   const why = transferProblem(state, p);
   if (why) return { moved: [], refused: [why], text: why };
   const base = /** @type {Base} */ (teamBase(state, p));
@@ -369,7 +371,7 @@ export function dropRounds(state, p, pick) {
   for (const { list, i } of placeSlots(s, pick.where) || []) {
     const it = list[i];
     if (!(left > 0)) break;
-    if (!it || it.key !== pick.key || !isRoundItem(it) || !!it.loose !== !!pick.loose) continue;
+    if (!it || stockKeyOf(it) !== pick.key || (isRoundItem(it) && !!it.loose !== !!pick.loose)) continue;
     const q = Math.min(left, amountOf(it));
     const piece = q < amountOf(it) ? splitOff(it, q) : (list[i] = null, it);
     if (!piece) continue;
@@ -380,6 +382,7 @@ export function dropRounds(state, p, pick) {
   if (got > 0) { settleBase(state, base); reweigh(state, p); settleHold(state, p); }
   return result(got > 0 ? [`${got} ${supName(pick.key)}`] : [], got > 0 ? [] : [`${s.name.split(" ")[0]} has no ${pick.loose ? "loose " : "boxed "}${supName(pick.key)} in the ${PLACE_WORDS[pick.where] || pick.where}.`], `from ${s.name.split(" ")[0]} into ${base.name}`);
 }
+export const dropRounds = dropSupplies; // the first day's name
 
 // ---------- helpers ----------
 function result(moved, refused, where) {

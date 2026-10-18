@@ -3,7 +3,8 @@
 // sim/teammeet.js giveGoods, sim/teamform.js formTeam opts.rounds, sim/combat.js combatAct "inv" / refitKit):
 //   - a pick of a round key with a person target { sid, where: pocket | pack | rig, loose } at Load, at team form and
 //     at Give goods becomes boxed or loose items on that member (counts conserved against the stores, the stacks' room,
-//     an admin pouch's weight, the person's max load, refusals that say why; other supplies still go to the pool);
+//     an admin pouch's weight, the rig's pocket pouches, the person's max load, refusals that say why; another supply
+//     goes onto them the same way where it fits: tools/supplyplacestest.js has the rest of that);
 //   - the person's rounds go back: Drop off and the stores (settleBase), dropRounds; settleParty and unpackPerson never
 //     strip them off a person;
 //   - in a fight the acting unit's own kit moves for 1 action (pocket, pack, rig pouch, hands): the caches refit
@@ -94,12 +95,13 @@ section("Load from a base: rounds onto a member, boxed or loose, in pockets, pac
   const boxed = packOf(s0).find((it) => it && isRoundItem(it));
   check(r.moved.length === 1 && boxed && !boxed.loose && amountOf(boxed) === 100 && h.stock[K] === stock0 - 220, `100 boxed rounds into the pack as one stack of ${100 / BOX} boxes (${r.text})`);
   r = loadFromBase(state, p, { supplies: { [K]: 100 } }, { sid: s0.id, where: "rig", loose: true });
-  const pouches = (rigPouches(s0) || []).filter((it) => it && isRoundItem(it));
-  check(pouches.length === 2 && pouches.every((it) => it.loose && amountOf(it) === LOOSE_POUCH) && held(s0, "rig", true) === 2 * LOOSE_POUCH, `the rig's two admin pouches take ${LOOSE_POUCH} loose rounds each (${ADMIN_KG} kg a pouch)`);
-  check(r.refused.length === 1 && new RegExp(`Only ${2 * LOOSE_POUCH} of the 100`).test(r.refused[0]), `the rest is refused with why (${r.refused[0]})`);
+  const kinds = GEAR.chestrig.pouches;
+  const pouches = (rigPouches(s0) || []).map((it, i) => ({ it, kind: kinds[i] })).filter((x) => x.it && isRoundItem(x.it));
+  check(pouches.length === 3 && pouches.filter((x) => x.kind === "admin").every((x) => x.it.loose && amountOf(x.it) === LOOSE_POUCH) && held(s0, "rig", true) === 100, `the rig's two admin pouches take ${LOOSE_POUCH} loose rounds each (${ADMIN_KG} kg a pouch), the rest goes in one of its pockets`);
+  check(pouches.filter((x) => x.kind === "pocket").length === 1 && amountOf(pouches.find((x) => x.kind === "pocket").it) === 100 - 2 * LOOSE_POUCH && !r.refused.length, `the pocket pouch: ${100 - 2 * LOOSE_POUCH}, nothing refused (${r.text})`);
   check(h.stock[K] + onPerson(s0) === stock0, "counts conserved: the stores and the person add up");
   r = loadFromBase(state, p, { supplies: { [K]: 300 } }, { sid: s0.id, where: "pocket", loose: true });
-  const left = stock0 - 220 - 2 * LOOSE_POUCH;
+  const left = stock0 - 320;
   check(!(h.stock[K] > 0) && held(s0, "pocket", true) === 120 + left, `onto the stacks first, then free pockets, up to what the stores have (${left})`);
   // Refusals: no such place, no room, over the max load; other supplies still go to the pool.
   h.stock[K] = 200;
@@ -119,8 +121,13 @@ section("Load from a base: rounds onto a member, boxed or loose, in pockets, pac
   check(wornLoad(s1) >= maxLoad(s1), `${s1.name.split(" ")[0]} is loaded to the limit (${Math.round(wornLoad(s1))} of ${maxLoad(s1)} kg)`);
   r = loadFromBase(state, p, { supplies: { [K]: 10 } }, { sid: s1.id, where: "pocket", loose: true });
   check(!r.moved.length && /Too heavy/.test(r.text) && h.stock[K] === 200, `over their max load: refused, nothing taken (${r.text})`);
-  r = loadFromBase(state, p, { supplies: { water: 3 } }, { sid: s0.id, where: "pocket", loose: true });
-  check(r.moved.length === 1 && p.supplies.water >= 3, "a supply that is not rounds still goes into the team's pool");
+  const water0 = p.supplies.water || 0;
+  r = loadFromBase(state, p, { supplies: { water: 3 } }, { sid: s0.id, where: "pack", loose: true });
+  check(r.moved.length === 1 && roundsHeld(s0, "water", "pack") === 3 && (p.supplies.water || 0) === water0, `a supply that is not rounds goes onto them the same way, as items in the place picked (${r.text})`);
+  r = loadFromBase(state, p, { supplies: { water: 1 } }, { sid: s0.id, where: "pocket", loose: true });
+  check(!r.moved.length && /too big for a pocket/.test(r.text) && roundsHeld(s0, "water", "pack") === 3, `where it does not fit it is refused with why (${r.text})`);
+  r = loadFromBase(state, p, { supplies: { food: 1 } }, { sid: s0.id, where: "pack", loose: true });
+  check(r.moved.length === 1 && !r.refused.length, `"food" (days of it) has no item form: it still goes into the team's pool (${r.text})`);
   // The team's carry limit: what they wear comes off what the team can carry.
   const H = teamHoldings(state, p);
   check(H.load <= H.cap + 1e-6, `the team still carries its load (${Math.round(H.load)} of ${Math.round(H.cap)} kg)`);
@@ -419,7 +426,7 @@ section("roundRoom: the numbers");
   check(roundRoom(s, K, "pocket", false).n === 4 * AMMO_STACK.BOXES * BOX, `or ${4 * AMMO_STACK.BOXES * BOX} boxed (${AMMO_STACK.BOXES} boxes of ${BOX} a slot)`);
   check(roundRoom(s, K, "pack", true).n === 0 && /no pack/.test(roundRoom(s, K, "pack", true).why), "no pack: 0, with why");
   s.gear.rig = newItem("chestrig");
-  check(roundRoom(s, K, "rig", true).n === 2 * LOOSE_POUCH, `two admin pouches: ${2 * LOOSE_POUCH} loose`);
+  check(roundRoom(s, K, "rig", true).n === 2 * LOOSE_POUCH + 2 * AMMO_STACK.LOOSE, `two admin pouches and two pocket pouches: ${2 * LOOSE_POUCH + 2 * AMMO_STACK.LOOSE} loose`);
   s.pockets[0] = roundItem(K, 30, true);
   check(roundRoom(s, K, "pocket", true).n === 3 * AMMO_STACK.LOOSE + (AMMO_STACK.LOOSE - 30), "a part stack counts its room");
   const r = roundsOnto([{ [K]: 20 }], K, 50, s, { where: "pocket", loose: true });

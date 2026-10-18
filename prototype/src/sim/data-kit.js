@@ -104,10 +104,18 @@ Object.assign(CLIPS, CALIBRE_CLIPS);
 // Carry kit in loot and on bodies (carrykit.js bodyKit / gunMags / the kit tables; inventory.js stowing into rig
 // pouches): off only for tools/itemcondtest.js's baselines (the old finds and dice, before the carry kit only added).
 export const KIT_LOOT = { on: true };
-// Rig pouch kinds (section 16): what goes in each.
-export const POUCH_NAMES = { rifle: "Rifle mag", pistol: "Pistol mag", grenade: "Grenade", radio: "Radio", admin: "Admin" };
-export const POUCH_ICON = { rifle: "▮", pistol: "▯", grenade: "●", radio: "📻", admin: "✚" };
+// Rig pouch kinds (section 16): what goes in each. "pocket" (2026-10-18, user request: "add pocket for rigs that can be
+// any item that pocket can hold and larger rigs can have more than one slot"): a general pouch that takes anything a
+// pocket takes (GEAR small: a knife, a pistol, a phone, meds, a box of rounds, a handful of loose ones, a magazine), no
+// weight cap of its own; the bigger rigs have two. They come after the kinds a rig had, so an old save's rig (its
+// contents array as long as its pouches were) grows the new pouches at the end (inventory.js ensureRig).
+export const POUCH_NAMES = { rifle: "Rifle mag", pistol: "Pistol mag", grenade: "Grenade", radio: "Radio", admin: "Admin", pocket: "Pocket" };
+export const POUCH_ICON = { rifle: "▮", pistol: "▯", grenade: "●", radio: "📻", admin: "✚", pocket: "▢" };
 export const ADMIN_KG = 0.5; // an admin pouch takes small things up to this (meds, a flashlight, tablets, a small box of rounds)
+// The pouch kinds that take supplies out of the stores (supitems.js: rounds, meds, a bottle of water that is small enough)
+// and a small thing with no pouch of its kind once the pockets are full (inventory.js stow, quickMove), in that order: a
+// pocket pouch (anything small), then an admin pouch within ADMIN_KG.
+export const SUPPLY_POUCHES = ["pocket", "admin"];
 
 // The gun builder's art for a magazine (ui/gunart.js PART_ART): by its size.
 const magLook = (k, cap) => (k === "extmag" ? "extmag" : cap >= 50 ? "drum" : cap > 30 ? "stick40" : cap > 20 ? "stick30" : cap > 10 ? "stick20" : "stick10");
@@ -117,17 +125,17 @@ const P = (spec) => spec.flatMap(([kind, n]) => Array.from({ length: n }, () => 
 export const KIT_GEAR = {
   // Rigs (EQUIP slot "rig"): pouches by kind; carry: kg added to the max load.
   chestrig:     { name: "Chest rig", slot: "rig", skill: null, power: 0, req: 0, value: 30, noise: 0, weight: 0.8, carry: 2, cat: "packs",
-    pouches: P([["rifle", 4], ["pistol", 2], ["grenade", 1], ["admin", 2]]),
-    desc: "A military chest rig: 4 rifle magazine pouches, 2 pistol pouches, a grenade pouch and 2 admin pouches. A magazine from a pouch reloads in 1 action (2 from the pack); +2 kg max load. Not over a vest or a carrier with its own pouches." },
+    pouches: P([["rifle", 4], ["pistol", 2], ["grenade", 1], ["admin", 2], ["pocket", 2]]),
+    desc: "A military chest rig: 4 rifle magazine pouches, 2 pistol pouches, a grenade pouch, 2 admin pouches and 2 pockets (anything a pocket takes). A magazine from a pouch reloads in 1 action (2 from the pack); +2 kg max load. Not over a vest or a carrier with its own pouches." },
   makeshiftrig: { name: "Makeshift rig", slot: "rig", skill: null, power: 0, req: 0, value: 6, noise: 0, weight: 0.7, carry: 1, cat: "packs", makeshift: true, dur: 40, burnShare: 0.6,
-    pouches: P([["rifle", 2], ["pistol", 1], ["grenade", 1], ["admin", 1]]),
-    desc: "A school backpack cut down and sewn into pouches across the chest: 2 rifle magazine pouches, a pistol pouch, a grenade pouch and an admin pouch; +1 kg max load. Crafted from a backpack and a scrap." },
+    pouches: P([["rifle", 2], ["pistol", 1], ["grenade", 1], ["admin", 1], ["pocket", 1]]),
+    desc: "A school backpack cut down and sewn into pouches across the chest: 2 rifle magazine pouches, a pistol pouch, a grenade pouch, an admin pouch and a pocket (anything a pocket takes); +1 kg max load. Crafted from a backpack and a scrap." },
   tacvest:      { name: "Tactical vest", slot: "armor", skill: null, power: 2, req: 0, value: 70, noise: 0, weight: 3.2, carry: 2, dur: 45, cat: "armor",
-    pouches: P([["rifle", 3], ["pistol", 2], ["grenade", 1], ["radio", 1], ["admin", 1]]),
-    desc: "Soft armour (AC2) with pouches sewn on: 3 rifle magazine pouches, 2 pistol pouches, a grenade, a radio and an admin pouch; +2 kg max load. Police and SWAT kit." },
+    pouches: P([["rifle", 3], ["pistol", 2], ["grenade", 1], ["radio", 1], ["admin", 1], ["pocket", 2]]),
+    desc: "Soft armour (AC2) with pouches sewn on: 3 rifle magazine pouches, 2 pistol pouches, a grenade, a radio and an admin pouch, and 2 pockets (anything a pocket takes); +2 kg max load. Police and SWAT kit." },
   plate:        { name: "Plate carrier", slot: "armor", skill: null, power: 4, req: 0, value: 60, noise: 0, weight: 1.5, carry: 1, dur: 40, cat: "armor",
-    pouches: P([["rifle", 2], ["pistol", 1], ["grenade", 1], ["admin", 1]]), inserts: ["front", "back"],
-    desc: "A military carrier with a soft backer (AC2) and two plate pockets, front and back: ceramic (AC5), steel (AC4) or soft (AC2) inserts. A hit on the chest meets the front plate (the back plate from behind), then the backer. Pouches for 2 rifle magazines, a pistol magazine, a grenade and an admin pouch; +1 kg max load. Swapping a plate: 2 actions in a fight, free at camp." },
+    pouches: P([["rifle", 2], ["pistol", 1], ["grenade", 1], ["admin", 1], ["pocket", 1]]), inserts: ["front", "back"],
+    desc: "A military carrier with a soft backer (AC2) and two plate pockets, front and back: ceramic (AC5), steel (AC4) or soft (AC2) inserts. A hit on the chest meets the front plate (the back plate from behind), then the backer. Pouches for 2 rifle magazines, a pistol magazine, a grenade, an admin pouch and a pocket (anything a pocket takes); +1 kg max load. Swapping a plate: 2 actions in a fight, free at camp." },
   ceramicplate: { name: "Ceramic plate", slot: "insert", skill: null, power: 4, req: 0, value: 40, noise: 0, weight: 2.5, dur: 45, cat: "armor",
     desc: "A ceramic rifle plate for a plate carrier (AC5): stops rifle rounds, but cracks: shatters after enough hard hits, and cannot be repaired." },
   steelplate:   { name: "Steel plate", slot: "insert", skill: null, power: 3.5, req: 0, value: 25, noise: 0, weight: 3.5, dur: 80, cat: "armor",

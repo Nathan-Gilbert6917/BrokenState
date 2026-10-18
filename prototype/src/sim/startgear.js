@@ -315,9 +315,14 @@ export function carryReason(key, where, i, spec) {
 export function firstFit(P, key, spec) {
   const carry = (P && P.carry) || {};
   const free = (where, i) => !(carry[where] && carry[where][i]);
-  const order = ["pouch", ...(isSmall(key) ? ["pocket"] : []), "pack", "pocket"]; // a pouch that takes it (magazines, grenades, a radio, meds in the admin pouch) first
-  for (const where of order) {
-    for (let i = 0; i < spec[where].n; i++) if (free(where, i) && !carryReason(key, where, i, spec)) return { where, i };
+  // A pouch of its kind first (magazines, grenades, a radio, meds in the admin pouch), then a pocket, then the rig's own
+  // pockets (data-kit.js "pocket": a pouch that takes anything small), then the pack.
+  /** @param {number} i */
+  const pocketPouch = (i) => spec.pouch.kinds[i] === "pocket";
+  /** @type {["pocket" | "pouch" | "pack", (i: number) => boolean][]} */
+  const order = [["pouch", (i) => !pocketPouch(i)], ...(isSmall(key) ? /** @type {["pocket" | "pouch", (i: number) => boolean][]} */ ([["pocket", () => true], ["pouch", pocketPouch]]) : []), ["pack", () => true], ["pocket", () => true]];
+  for (const [where, ok] of order) {
+    for (let i = 0; i < spec[where].n; i++) if (ok(i) && free(where, i) && !carryReason(key, where, i, spec)) return { where, i };
   }
   return null;
 }
@@ -333,18 +338,24 @@ function takeCarried(s) {
   for (const list of [rigPouches(s), packOf(s)]) (list || []).forEach((it, i) => { if (it) { out.push(it); list[i] = null; } });
   return out;
 }
-// A rig pouch of its kind (meds and tablets an admin pouch), else a pocket for a small thing, else the pack (no pack in
-// a pack, nothing bulky). Returns false when there is no room.
+// A rig pouch of its kind (meds and tablets an admin pouch), else a pocket for a small thing, else the rig's own pocket
+// pouch, else the pack (no pack in a pack, nothing bulky). Returns false when there is no room.
 /** @param {any} s @param {any} it */
 function place(s, it) {
   const r = KIT_LOOT.on ? rigOf(s) : null;
+  const pr = r ? rigPouches(s) || [] : [], kinds = r ? pouchesOf(r) || [] : [];
   if (r) {
-    const pr = rigPouches(s) || [], kinds = pouchesOf(r) || [], d = GEAR[it.key];
+    const d = GEAR[it.key];
     const want = pouchKindOf(it) || (d && (d.medKit || d.tabs || d.selfStab) ? "admin" : null);
     const i = want ? kinds.findIndex((k, j) => !pr[j] && k === want && !pouchReason(it, want)) : -1;
     if (i >= 0) { pr[i] = it; return true; }
   }
-  if (isSmall(it.key)) { const i = s.pockets.indexOf(null); if (i >= 0) { s.pockets[i] = it; return true; } }
+  if (isSmall(it.key)) {
+    const i = s.pockets.indexOf(null);
+    if (i >= 0) { s.pockets[i] = it; return true; }
+    const j = kinds.findIndex((k, n) => !pr[n] && k === "pocket" && !pouchReason(it, "pocket"));
+    if (j >= 0) { pr[j] = it; return true; }
+  }
   const pk = packOf(s);
   if (pk && !packSize(it) && !isBulky(it.key)) { const i = pk.indexOf(null); if (i >= 0) { pk[i] = it; return true; } }
   return false;
