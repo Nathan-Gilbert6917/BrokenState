@@ -304,6 +304,7 @@ section("In a fight: a gun from the pack into the hands refits the unit; a save 
   const second = newItem("shotgun");
   const gunSlot = fitReason(second, "pack") ? null : 0;
   if (gunSlot != null) packOf(a)[gunSlot] = second;
+  packOf(a)[1] = roundItem("a_12ga_buck", 10, true); // shells for it, in the pack (a gun taken up is loaded out of what they carry)
   const mate = fighter(st, "pistol"); // (keeps an action, so the turn never ends in the middle of the checks)
   const b = openBattle(st, [a, mate]);
   const u = unitOf(b, a);
@@ -313,10 +314,15 @@ section("In a fight: a gun from the pack into the hands refits the unit; a save 
   if (gunSlot != null) {
     const err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), to: L(a, "weapon") });
     check(err === "" && u.ap === 1 && a.gear.weapon === second && packOf(a)[0] === first, `pack → hands: the shotgun in hand, the pistol in the pack (${err || "ok"})`);
-    check(u.weapon === "shotgun" && u.item === second && u.magsW === "shotgun" && u.magMode === "internal" && u.mag === u.magMax && u.magMax === 6, `the unit is refit: a shotgun (${u.weapon} ${u.mag}/${u.magMax}, ${u.magMode}), loaded as a gun carried into the fight is (gunload.js)`);
-    check(first.loaded && first.loaded.n === 9, "the pistol keeps its 9 rounds in the pack (gunload.js)");
+    check(u.weapon === "shotgun" && u.item === second && u.magsW === "shotgun" && u.magMode === "internal" && u.mag === 6 && u.magMax === 6 && stackN(u.stack) === 6 && amountOf(packOf(a)[1]) === 4, `the unit is refit: a shotgun (${u.weapon} ${u.mag}/${u.magMax}, ${u.magMode}), loaded out of the pack's 10 shells as a gun carried into the fight is (gunload.js; ${amountOf(packOf(a)[1])} left)`);
+    check(first.loaded && first.loaded.n === 9 && stackN(first.loaded.stack) === 9 && first.loaded.key === K, "the pistol keeps its 9 rounds on it in the pack (gunload.js: its stack is the record)");
+    // Back into the hands: the record's 9 are the gun's stack again. (The base's stock is emptied first: refitUnit
+    // → fillUnit tops a gun taken up with a record up out of what they carry and the team's bags, for free; with
+    // nothing to top it up from, the record alone shows. See the report on mags.js fillUnit.)
+    setRounds(hub(st).stock, 0);
     const err2 = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), to: L(a, "weapon") });
-    check(err2 === "" && u.ap === 0 && a.gear.weapon === first && u.weapon === "pistol" && u.mag === 9 && u.mags && u.mags.length === 3, `and back: the pistol with its 9 rounds and its magazines (${u.weapon} ${u.mag}/${u.magMax}, ${u.mags ? u.mags.length : 0} magazines)`);
+    check(err2 === "" && u.ap === 0 && a.gear.weapon === first && u.weapon === "pistol" && u.mag === 9 && stackN(u.stack) === 9 && !first.loaded && u.mags && u.mags.length === 3 && u.mags.filter((x) => x.where !== "gun").every((x) => x.n === 15), `and back: the pistol with its 9 rounds (the record off it, onto the unit) and its two full magazines (${u.weapon} ${u.mag}/${u.magMax}, ${u.mags ? u.mags.length : 0} magazines)`);
+    check(second.loaded && second.loaded.n === 6 && stackN(second.loaded.stack) === 6, "the shotgun put down in the pack keeps its 6 shells on it");
   } else check(false, "a shotgun does not go in a pack: the swap could not be tried");
   // Mid-fight save and load: the kit as moved, the unit's AP, another move on the loaded battle.
   u.ap = 1;
@@ -330,11 +336,11 @@ section("In a fight: a gun from the pack into the hands refits the unit; a save 
   // refitKit on its own (sessions D and E): a magazine moved by hand is placed again, the rounds in it kept.
   const u3 = unitOf(b2, a2);
   const sp = u3.mags.find((x) => x.where === "pack");
-  sp.n = 4;
+  sp.item.stack = [{ k: K, n: 4 }]; // (the rounds are on the item: the entry only reads them)
   const i = packOf(a2).indexOf(packOf(a2)[3]);
   a2.pockets[a2.pockets.indexOf(null)] = packOf(a2)[i]; packOf(a2)[i] = null;
   refitKit(b2, u3, a2);
-  check(!u3.mags.some((x) => x.where === "pack") && u3.mags.some((x) => x.where === "pocket" && x.n === 4), `refitKit: the magazine is in a pocket again with its 4 rounds (${u3.mags.map((x) => `${x.where}:${x.n}`).join(" ")})`);
+  check(!u3.mags.some((x) => x.where === "pack") && u3.mags.some((x) => x.where === "pocket" && x.item === sp.item && x.n === 4) && u3.mags.filter((x) => x.where !== "gun").reduce((s, x) => s + x.n, 0) === 19, `refitKit: the magazine is in a pocket again with its 4 rounds, the other spare its 15 (${u3.mags.map((x) => `${x.where}:${x.n}`).join(" ")})`);
 }
 
 section("In a fight: loose rounds dropped onto a spare magazine load it (1 action from a pocket or the rig, both from the pack)");
@@ -346,87 +352,94 @@ section("In a fight: loose rounds dropped onto a spare magazine load it (1 actio
   a.gear.rig = newItem("chestrig");
   const magKey = a.pockets.find((it) => it && GEAR[it.key] && GEAR[it.key].mag).key;
   for (let i = 0; i < a.pockets.length; i++) if (a.pockets[i] && GEAR[a.pockets[i].key].mag) a.pockets[i] = null; // the starter spares out: two of our own
-  const m1 = newItem(magKey), m2 = newItem(magKey);
+  const m1 = Object.assign(newItem(magKey), { unloaded: true }), m2 = Object.assign(newItem(magKey), { unloaded: true }); // kept empty (itemacts.js Unloaded): the fight's start fills every other spare
   a.pockets[0] = m1; a.pockets[1] = m2;
-  a.pockets[2] = roundItem(K, 20, true); // a loose handful in a pocket
+  a.pockets[2] = roundItem(K, 26, true); // a loose handful in a pocket (the gun takes 15 of it as the fight starts: 11 left)
   packOf(a)[0] = roundItem(K, 40, true); // and one in the pack
   packOf(a)[1] = roundItem(K, 50, false); // a box
   const b = openBattle(st, [a, mate]);
   const u = unitOf(b, a), mu = unitOf(b, mate);
   u.ap = 2; mu.ap = 2;
-  const cap = GEAR[magKey].mag.cap;
+  const cap = GEAR[magKey].mag.cap; // 15
   const spots = () => carriedSpots(a);
-  const e1 = magEntryAt(u, spots(), L(a, "pocket", 0)), e2 = magEntryAt(u, spots(), L(a, "pocket", 1));
-  check(e1 && e2 && e1 !== e2 && e1.where === "pocket" && e2.where === "pocket" && u.mags.indexOf(e1) < u.mags.indexOf(e2), `magEntryAt: the two magazines in the pockets are two entries, in order (${u.mags.map((x) => `${x.where}:${x.n}`).join(" ")})`);
+  const entry = (i) => magEntryAt(u, spots(), L(a, "pocket", i)); // (the entries are rebuilt after every load or move: never keep one across an act)
+  const lastLine = () => (b.log.length ? b.log[b.log.length - 1].text : "");
+  const e1 = entry(0), e2 = entry(1);
+  check(e1 && e2 && e1 !== e2 && e1.where === "pocket" && e2.where === "pocket" && e1.item === m1 && e2.item === m2 && u.mags.indexOf(e1) < u.mags.indexOf(e2), `magEntryAt: the two magazines in the pockets are two entries, in order, each knowing its item (${u.mags.map((x) => `${x.where}:${x.n}`).join(" ")})`);
   check(magEntryAt(u, spots(), L(a, "pocket", 2)) === null && magEntryAt(u, spots(), L(a, "weapon")) === null, "a handful of rounds or the gun itself: no entry");
-  // Empty both spares (as a swap would), then load one from the pocket's handful.
-  e1.n = 0; e2.n = 0;
-  check(loadedIn(b, u, e1) === 0 && gunRounds(st, m1, L(a, "pocket", 0)).n === 0 && gunRounds(st, m1, L(a, "pocket", 0)).src === "fight", "both empty: the badge on the magazine in a fight reads the unit's entry (0, fight)");
+  check(u.mag === 15 && amountOf(a.pockets[2]) === 11 && amountOf(packOf(a)[0]) === 40 && amountOf(packOf(a)[1]) === 50, "the fight's start filled the gun out of the pocket's handful (26 → 11); the pack's rounds are untouched");
+  // Both spares empty (kept Unloaded), then one loaded from the pocket's handful: 6 a time.
+  check(loadedIn(b, u, e1) === 0 && stackN(m1.stack) === 0 && gunRounds(st, m1, L(a, "pocket", 0)).n === 0 && gunRounds(st, m1, L(a, "pocket", 0)).src === "fight", "both empty: the badge on the magazine in a fight reads its stack (0, fight)");
   let p = loadMagPlan(b, u, e1, a.pockets[2], "pocket");
-  check(p.why === "" && p.cost === 1 && p.n === Math.min(cap, 20) && LOAD_AP.hand === 1 && LOAD_AP.pack === 2, `the plan from a pocket: 1 action, ${p.n} rounds (${p.why || "ok"})`);
+  check(p.why === "" && p.cost === 1 && p.n === MAGS.LOOSE && MAGS.LOOSE === 6 && LOAD_AP.hand === 1 && LOAD_AP.pack === 2, `the plan from a pocket: 1 action, ${p.n} rounds (up to ${MAGS.LOOSE} a time; ${p.why || "ok"})`);
   let err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pocket", 2), to: L(a, "pocket", 0) });
-  const line = b.log.length ? b.log[b.log.length - 1].text : "";
-  check(err === "" && u.ap === 1 && loadedIn(b, u, e1) === Math.min(cap, 20) && e1.load === "fmj" && a.pockets[2] && amountOf(a.pockets[2]) === 20 && a.pockets[0] === m1, `pocket → magazine: loaded for 1 action, the rounds stay where they lie ("${line}")`);
-  check(new RegExp(`loads ${Math.min(cap, 20)} 9mm FMJ into a magazine in a pocket from a pocket \\(${Math.min(cap, 20)}/${cap}\\)`).test(line), "the log line names the rounds, the places and the count");
-  check(gunRounds(st, m1, L(a, "pocket", 0)).n === Math.min(cap, 20), `the badge on it: ${gunRounds(st, m1, L(a, "pocket", 0)).n}/${cap}`);
-  // From the pack with one action left: refused; with both: both spent.
+  let line = lastLine();
+  check(err === "" && u.ap === 1 && loadedIn(b, u, entry(0)) === 6 && entry(0).load === "fmj" && stackText("9mm", m1.stack) === "9mm FMJ ×6" && a.pockets[2] && amountOf(a.pockets[2]) === 5 && a.pockets[0] === m1 && !m1.unloaded, `pocket → magazine: 6 loaded for 1 action, the 6 left the handful (5 left in the pocket) ("${line}")`);
+  check(/loads 6 9mm FMJ into a magazine in a pocket from a pocket \(6\/15\)\./.test(line), "the log line names the rounds, the places and the count");
+  check(gunRounds(st, m1, L(a, "pocket", 0)).n === 6, `the badge on it: ${gunRounds(st, m1, L(a, "pocket", 0)).n}/${cap}`);
+  // From the pack with one action left: refused; with both: 6 in, both spent.
   err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), to: L(a, "pocket", 1) });
-  check(/both actions to load a magazine from the pack/.test(err) && u.ap === 1 && loadedIn(b, u, e2) === 0, `pack → magazine with one action left: refused (${err})`);
+  check(/both actions to load a magazine from the pack/.test(err) && u.ap === 1 && loadedIn(b, u, entry(1)) === 0 && amountOf(packOf(a)[0]) === 40, `pack → magazine with one action left: refused, nothing moves (${err})`);
   u.ap = 2;
   err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 0), to: L(a, "pocket", 1) });
-  check(err === "" && u.ap === 0 && loadedIn(b, u, e2) === Math.min(cap, 40) && /from the pack \(\d+\/\d+, both actions\)/.test(b.log[b.log.length - 1].text) && packOf(a)[0] && amountOf(packOf(a)[0]) === 40, `with both: loaded for both actions ("${b.log[b.log.length - 1].text}")`);
+  check(err === "" && u.ap === 0 && loadedIn(b, u, entry(1)) === 6 && /from the pack \(6\/15, both actions\)/.test(lastLine()) && packOf(a)[0] && amountOf(packOf(a)[0]) === 34, `with both: 6 loaded for both actions, 34 left in the pack ("${lastLine()}")`);
   u.ap = 2;
-  // A box: open it first. A full magazine: refused. Another type into one with rounds in it: refused. Nothing spent.
+  // A box loads too (no opening first): 6 out of it. Another type goes on top of what is there (an assortment).
   err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pack", 1), to: L(a, "pocket", 0) });
-  check(/Open the box first/.test(err) && u.ap === 2 && packOf(a)[1] && !packOf(a)[1].loose && a.pockets[0] === m1, `a box onto a magazine: "${err}", nothing swapped`);
-  e1.n = cap;
-  err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pocket", 2), to: L(a, "pocket", 0) });
-  check(/is full/.test(err) && u.ap === 2, `a full magazine: "${err}"`);
-  e1.n = 3;
+  check(err === "" && u.ap === 0 && loadedIn(b, u, entry(0)) === 12 && packOf(a)[1] && !packOf(a)[1].loose && amountOf(packOf(a)[1]) === 44 && a.pockets[0] === m1, `a box onto a magazine: 6 out of the box (12/15, 44 left boxed), both actions from the pack ("${lastLine()}")`);
+  u.ap = 2;
   const other = Object.keys(SUPPLIES).find((k) => /^a_9mm_/.test(k) && k !== K && !/_hand$/.test(k));
   if (other) {
     rigPouches(a)[0] = roundItem(other, 10, true);
-    err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "rig", 0), to: L(a, "pocket", 0) });
-    check(/holds 9mm FMJ: no other rounds/.test(err) && u.ap === 2, `another type onto one with rounds in it: "${err}"`);
-    e1.n = 0;
     refitKit(b, u, a); // (placed by hand here; a move in the window refits as it goes)
     err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "rig", 0), to: L(a, "pocket", 0) });
-    const e1b = magEntryAt(u, spots(), L(a, "pocket", 0)); // (refitKit made the entries anew)
-    check(err === "" && u.ap === 1 && e1b.load !== "fmj" && loadedIn(b, u, e1b) === 10, `an empty one takes the other type from the rig for 1 action (${err || "ok"}: ${e1b.load}, ${loadedIn(b, u, e1b)} in)`);
+    const e1b = entry(0);
+    check(err === "" && u.ap === 1 && e1b.load !== "fmj" && loadedIn(b, u, e1b) === 15 && m1.stack.length === 2 && m1.stack[0].k === other && m1.stack[0].n === 3 && m1.stack[1].n === 12 && amountOf(rigPouches(a)[0]) === 7, `another type from the rig onto one with 12 FMJ in it: the 3 that fit go on top (an assortment, its load the top: ${e1b.load}; ${stackText("9mm", m1.stack)}), 1 action, 7 left in the rig`);
+    check(/into a magazine in a pocket from the rig \(15\/15: .*×3, 9mm FMJ ×12\)/.test(lastLine()), `the log names the assortment ("${lastLine()}")`);
     rigPouches(a)[0] = null;
+    refitKit(b, u, a);
   }
-  // Every round claimed already: nothing goes in, nothing is spent.
+  // A full magazine: refused, nothing spent.
+  u.ap = 2;
+  err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pocket", 2), to: L(a, "pocket", 0) });
+  check(/is full \(15\/15\)/.test(err) && u.ap === 2 && amountOf(a.pockets[2]) === 5, `a full magazine: "${err}"`);
+  // The gun's rounds are physical: a full gun claims nothing of the rounds on them, so a spare still takes them.
   u.ap = 2;
   const stock = hub(st).stock;
   setRounds(stock, 0);
   a.pockets[2] = roundItem(K, 15, true); packOf(a)[0] = null; packOf(a)[1] = null;
+  m1.stack = []; m2.stack = []; // (the test empties both spares)
   refitKit(b, u, a);
-  for (const x of u.mags) if (x.where !== "gun") { x.n = 0; x.load = "fmj"; }
-  const g = u.mags.find((x) => x.where === "gun");
   loadMag(u, 15);
   err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pocket", 2), to: L(a, "pocket", 0) });
-  check(/every round left is already loaded/.test(err) && u.ap === 2, `the gun holds the only 15 rounds: "${err}"`);
+  check(err === "" && u.ap === 1 && u.mag === 15 && loadedIn(b, u, entry(0)) === 6 && amountOf(a.pockets[2]) === 9, `the gun full with 15 loose in a pocket: the spare takes 6 of them anyway (the gun's rounds are its own; 9 left) (${err || "ok"})`);
   // A magazine of another gun: not loaded.
+  u.ap = 2;
   const rifleMag = Object.keys(GEAR).find((k) => GEAR[k].mag && k !== magKey && GEAR[k].small && /stanag/.test(k)) || Object.keys(GEAR).find((k) => GEAR[k].mag && k !== magKey && GEAR[k].small);
   if (rifleMag) {
     a.pockets[3] = newItem(rifleMag);
     refitKit(b, u, a);
     err = combatAct(st, { type: "inv", unit: u.id, from: L(a, "pocket", 2), to: L(a, "pocket", 3) });
-    check(/not one of the .*pistol's|does not take/.test(err) && u.ap === 2 && a.pockets[3].key === rifleMag, `another gun's magazine: "${err}"`);
+    check(/not one of the .*pistol's|does not take/.test(err) && u.ap === 2 && a.pockets[3].key === rifleMag && amountOf(a.pockets[2]) === 9, `another gun's magazine: "${err}"`);
     a.pockets[3] = null;
   }
-  // A swap keeps every entry in its place: the emptied one sits where the fresh one came from.
+  // A swap is physical: the fresh magazine becomes the gun's fitted one; the one that was in the gun (the gun's own
+  // standard magazine, made a thing of) lies where the fresh one came from, empty.
   a.pockets[2] = null;
   setRounds(stock, 0); giveRounds(stock, 200, ["pistol"]);
+  m1.stack = []; m2.stack = [{ k: K, n: cap }];
   refitKit(b, u, a);
-  const f1 = magEntryAt(u, spots(), L(a, "pocket", 0)), f2 = magEntryAt(u, spots(), L(a, "pocket", 1));
-  f1.n = 0; f2.n = cap;
+  const f1 = entry(0), f2 = entry(1);
+  check(f1.n === 0 && f2.n === cap && f2.item === m2, "the first pocket's magazine empty, the second's full");
   loadMag(u, 0);
   u.ap = 2;
+  const gun = a.gear.weapon;
   err = combatAct(st, { type: "reload", unit: u.id });
-  const n1 = magEntryAt(u, spots(), L(a, "pocket", 0)), n2 = magEntryAt(u, spots(), L(a, "pocket", 1));
-  check(err === "" && u.mag === cap && n2 !== f2 && n2.where === "pocket" && n2.n === 0 && n1 === f1, `Reload swaps in the second pocket's magazine; the emptied one is the second pocket's entry now (${u.mags.map((x) => `${x.where}:${x.n}`).join(" ")})`);
-  check(g && g.where === "pocket" && u.mags.find((x) => x.where === "gun") === f2, "the old gun entry is a pocket's; the fresh one is the gun's");
+  const n1 = entry(0), n2 = entry(1);
+  check(err === "" && u.ap === 1 && u.mag === cap && stackN(u.stack) === cap && fittedMag(gun) === m2 && stackN(m2.stack) === 0, `Reload swaps in the second pocket's full magazine (1 action, ${u.mag}/${cap}): it is the gun's fitted magazine now, its rounds the gun's stack`);
+  check(a.pockets[1] && a.pockets[1] !== m2 && a.pockets[1] !== m1 && a.pockets[1].key === magKey && stackN(a.pockets[1].stack) === 0 && a.pockets[1].unloaded && a.pockets[0] === m1, "the gun's own magazine lies in the second pocket, empty (kept Unloaded); the first pocket's is untouched");
+  check(n1 && n1.item === m1 && n1.n === 0 && n2 && n2.item === a.pockets[1] && n2.n === 0 && n2 !== f2 && u.mags.find((x) => x.where === "gun").key === magKey && u.mags.find((x) => x.where === "gun").n === cap, `the entries follow: the gun's (${cap}), the second pocket's the emptied one (${u.mags.map((x) => `${x.where}:${x.n}`).join(" ")})`);
+  check(/reloads the 9mm pistol[^:]*\(15\/15\): a fresh magazine from a pocket; the other goes there empty\./.test(lastLine()), `the log: "${lastLine()}"`);
 }
 
 section("roundRoom: the numbers");

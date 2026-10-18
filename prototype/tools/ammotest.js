@@ -122,7 +122,7 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   a.pockets[1] = Object.assign(newItem("mag_glock_15"), { load: "hp" }); // a spare magazine for hollow points (nothing to fill it with: empty)
   const b = openBattle(st, [a], { a_556_fmj: 60 });
   const u = by(b, a);
-  check(u.boxes.length === 1 && u.mag === 3 && a.pockets[0].dur === 0 && roundsOf(b, u) === 3, "the box in their pocket counts: its 3 rounds of 9mm FMJ are in the gun (the box empty)");
+  check(u.boxes.length === 0 && u.mag === 3 && a.pockets[0] === null && roundsOf(b, u) === 3, "the box in their pocket counts: its 3 rounds of 9mm FMJ are in the gun, the emptied box thrown away");
   const t = foes(b)[0];
   place(u, 2, 2); place(t, 6, 2); t.hp = t.maxHp = 100000;
   for (let i = 0; i < 3; i++) act(st, b, u, { type: "shoot", target: t.id });
@@ -147,10 +147,10 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   p2.pockets[1] = newBox("a_9mm_fmj", 2);
   const b2 = openBattle(st2, [p1, p2], { a_9mm_fmj: 20 });
   const u1 = by(b2, p1), u2 = by(b2, p2), t2 = foes(b2)[0];
-  check(u1.mag === 15 && u2.mag === 7 && p2.pockets[1].dur === 0 && b2.pools[0].a_9mm_fmj === 0, `the first pistol fills 15 out of the bags, the second its own 2 then the bags' last 5 (${u1.mag}, ${u2.mag})`);
+  check(u1.mag === 15 && u2.mag === 7 && p2.pockets[1] === null && b2.pools[0].a_9mm_fmj === 0, `the first pistol fills 15 out of the bags, the second its own 2 then the bags' last 5 (${u1.mag}, ${u2.mag}); the emptied box thrown away`);
   place(u1, 2, 2); place(u2, 2, 5); place(t2, 7, 2); t2.hp = t2.maxHp = 100000;
   act(st2, b2, u1, { type: "shoot", target: t2.id });
-  check(u1.mag === 14 && u2.mag === 7 && p2.pockets[1].dur === 0, "a shot comes out of the shooter's gun, nothing else");
+  check(u1.mag === 14 && u2.mag === 7, "a shot comes out of the shooter's gun, nothing else");
   endBattleNow(st2, "victory");
   closeCombat(st2, { take: false });
   check(p2.pockets.some((x) => x && x.key === "a_9mm_fmj" && x.loose && x.dur === 7) && !p2.pockets.some((x) => x && x.key === "a_9mm_fmj" && !x.loose), "after the fight the 7 in the gun are loose in a pocket again; the emptied box is thrown away");

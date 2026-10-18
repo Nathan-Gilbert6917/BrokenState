@@ -227,8 +227,9 @@ console.log("Gun orders: fire mode, unjam, suppress, throw spear, the ammo choos
     // The battle's rounds (sim/ammo.js: the side's boxes on its fighters and the pools): only these two boxes, on u.
     const pools0 = b.pools, boxes0 = b.units.map((x) => x.boxes);
     b.pools = [{}];
-    for (const x of b.units) if (x.side === "player") x.boxes = [];
+    for (const x of b.units) if (x.side === "player") { x.boxes = []; if (Array.isArray(x.stack)) x.stack = []; for (const m of x.mags || []) if (m.item && Array.isArray(m.item.stack)) m.item.stack = []; } // (physical rounds, mags.js: the gun's and the spares' stacks emptied too)
     u.boxes = [{ key: keys[0], name: boxes[keys[0]].name, quality: 1, dur: 20 }, { key: keys[1], name: boxes[keys[1]].name, quality: 1, dur: 7 }];
+    u.mag = 0;
     try {
       const list = UI.ammoToHand(st, b, u);
       check(list.length === 2 && list[0].n === 20 && list[1].n === 7, `the rounds to hand by kind (${list.map((x) => `${x.name} ${x.n}`).join(", ")})`);

@@ -3272,7 +3272,7 @@ export function refitUnit(b, u, s) {
   const came = swapped ? gunIn(b, u, u.item) : null; // gunload.js: what was in it (a record), null for a gun carried into the fight (loaded), 0 for one found empty
   loadMag(u, swapped ? came : u.weapon === held ? rounds : 0);
   if (swapped && isStacked(u)) { // physical rounds: the record's rounds into the gun (fillUnit reads item.loaded), a carried gun filled now, an empty one empty
-    if (came === null || u.item.loaded) fillUnit(b, u, { gun: came === null }); else { u.stack = []; syncMags(u); } // a carried gun: filled now (it was loaded from the start); one with a record: exactly that
+    if (came === null || u.item.loaded) { fillUnit(b, u, { gun: came === null, pools: false }); sweepBoxes(s); u.boxes = boxesOf(s); fitMags(b, u, carriedSpots(s), magCap(u), s); syncMags(u); } else { u.stack = []; syncMags(u); } // a carried gun: filled now out of what they carry (it was loaded from the start); one with a record: exactly that; never the team's bags in the middle of a fight
     loadMag(u, u.mag);
   }
   if (u.spearOut && u.weapon === u.spearOut.key) { delete u.spearOut; unarm(b, u, s); } // its spear still lies where it was thrown
@@ -3340,6 +3340,16 @@ export function refitKit(b, u, s) {
   u.mags = [...(gun ? [gun] : []), ...(t.mags || []).filter((m) => m.where !== "gun").map(same)];
   if (Array.isArray(t.clips)) u.clips = t.clips.map((c) => ({ ...c, used: (wasClips || []).some((o) => o.key === c.key && o.used) }));
   if (hand) u.hand = hand; // the shells loose at hand stay as they were
+}
+// The fight's start (createBattle, createRaid): the gun and the spares loaded physically (mags.js fillUnit), the stacks
+// it emptied thrown away (ammo.js sweepBoxes) and the unit's round caches rebuilt (the entries read the items' stacks).
+function fillBattleUnit(b, u, s) {
+  fillUnit(b, u);
+  sweepBoxes(s);
+  u.boxes = boxesOf(s);
+  fitMags(b, u, carriedSpots(s), magCap(u), s);
+  syncMags(u);
+  loadMag(u, u.mag);
 }
 // After rounds left a survivor's items physically (a Reload, a magazine loaded by hand: mags.js): the emptied stacks
 // are thrown away (ammo.js sweepBoxes) and the unit's caches refit (u.boxes, the magazine entries).
@@ -3611,7 +3621,7 @@ export function createBattle(state, setup) {
     const c = pcells[i] || pickCells(1, () => true, (x) => -x)[0];
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
-    fillUnit(b, u); // mags.js: the gun and the spares loaded physically (the gun's own rounds, then what they carry, then the team's bags)
+    if (!setup.drill) fillBattleUnit(b, u, s); // mags.js: the gun and the spares loaded physically (the gun's own rounds, then what they carry, then the team's bags); not for a drill's throw-away battle (defenceplan.js)
   });
   battlePerks(state, b); // skills.js: perks on the player's units (aim, crits, stealth, Rally, Commander...)
   fitHands(state, b); // carry.js: who starts with their hands full of the team's supplies
@@ -6516,7 +6526,7 @@ export function createRaid(state, setup) {
     const c = entryCells.find(([x, y]) => ok(x, y)) || [entry.x0, entry.y0];
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
-    fillUnit(b, u); // mags.js: the gun and the spares loaded physically
+    if (!setup.drill) fillBattleUnit(b, u, s); // mags.js: the gun and the spares loaded physically
   }
   for (const u of b.units) if (u.side === "player") u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit
   battlePerks(state, b); // skills.js: perks on the player's units

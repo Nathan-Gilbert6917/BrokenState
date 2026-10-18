@@ -103,7 +103,7 @@ const rounds = (s, key) => carriedSpots(s).filter((x) => x.item.key === key).red
   check(p.mag === 15 && p.magMax === 15 && magIn(p) === 15, "a pistol starts the battle loaded (15/15)");
   check(r.mag === 30 && magLabel(b, r) === "30/30", "an assault rifle starts loaded (30/30)");
   const humans = foes(b).filter((e) => e.kind === "human" && hasMag(e));
-  check(humans.length > 0 && humans.every((e) => e.mag === e.magMax && e.magMax === WEAPONS[e.weapon].cap), "enemy guns start loaded");
+  check(humans.length > 0 && humans.every((e) => e.mag === e.magMax && e.magMax === magCap(e) && e.magMax >= WEAPONS[e.weapon].cap), "enemy guns start loaded (full to the capacity of the magazine fitted: an extended one holds more than the gun's own)");
   const e = foes(b)[0];
   place(p, 5, 5); place(r, 5, 7); place(e, 10, 5); toughen(e);
   const pool0 = ammoLeft(b), used0 = b.ammoUsed;
@@ -113,7 +113,7 @@ const rounds = (s, key) => carriedSpots(s).filter((x) => x.item.key === key).red
   check(combatAct(st, { type: "shoot", unit: r.id, target: e.id }) === "", "the rifle fires");
   check(r.mag === 28 && ammoLeft(b) === pool0 - 3, "a burst takes 2 from the magazine and 2 off the side's total");
   // Empty it.
-  b.phase = "player"; p.ap = 2; loadMag(p, 0);
+  b.phase = "player"; p.ap = 2; loadMag(p, 0); p.jam = null; // (a jam on the shot before, the seed's dice, would be refused first: gunfire.js)
   check(magEmpty(b, p) && !canFire(b, p), "an empty pistol cannot fire");
   check(/empty/i.test(combatAct(st, { type: "shoot", unit: p.id, target: e.id })), "Shoot is refused: the gun is empty");
   check(/reload/i.test(combatAct(st, { type: "overwatch", unit: p.id })) && !p.ow, "Overwatch is refused with an empty gun");

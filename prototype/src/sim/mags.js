@@ -285,7 +285,7 @@ const runsFrom = (runs) => ((runs || []).some((r) => r.where === "pack") ? "pack
 // Fills a stack with rounds of a load up to cap: the person's own rounds first (pockets, rig, pack), then the team's
 // bags (b.pools: at a fight's start only). Nothing of that load (and the stack empty): the first other load the gun
 // (and the magazine) takes that there is any of. Returns { n, load } (the load used, or null when nothing went in).
-function fillTo(b, u, st, cap, load, magKey = null) {
+function fillTo(b, u, st, cap, load, magKey = null, pools = true) {
   const cal = calOf(u.weapon);
   if (!(Math.max(0, cap - stackN(st)) > 0)) return { n: 0, load: null };
   const tryLoad = (l) => {
@@ -299,7 +299,7 @@ function fillTo(b, u, st, cap, load, magKey = null) {
         const q = Math.min(want, src.n);
         if (q > 0) { src.item.dur = Math.floor(num(src.item.dur)) - q; pushBottom(st, k, q); want -= q; got += q; }
       }
-      for (const p of (b && b.pools) || []) {
+      for (const p of (pools && b && b.pools) || []) {
         if (want <= 0) break;
         const q = Math.min(want, Math.max(0, Math.floor(num(p && p[k]))));
         if (q > 0) { p[k] -= q; pushBottom(st, k, q); want -= q; got += q; }
@@ -313,9 +313,10 @@ function fillTo(b, u, st, cap, load, magKey = null) {
   return { n, load: used };
 }
 // Loads the gun and the spares physically (combat.js createBattle as the fight starts; refitUnit for a gun taken up in
-// the middle of one): the gun from the rounds kept on it (gunload.js item.loaded), then what they carry, then the
-// team's bags; each spare the same (one Unloaded in the item menu stays empty; one with a stack already keeps it).
-export function fillUnit(b, u, { gun = true } = {}) {
+// the middle of one): the gun from the rounds kept on it (gunload.js item.loaded: exactly those, gun: false says so),
+// then what they carry, then the team's bags (pools: false in the middle of a fight: never the bags then); each spare
+// the same (one Unloaded in the item menu stays empty; one with a stack already keeps it).
+export function fillUnit(b, u, { gun = true, pools = true } = {}) {
   if (!tracksMags(u) || u.side !== "player") return;
   if (!Array.isArray(u.stack)) u.stack = [];
   const cal = calOf(u.weapon);
@@ -329,14 +330,14 @@ export function fillUnit(b, u, { gun = true } = {}) {
     if (l) u.load = l;
     rec = true;
   }
-  if (gun && !rec) { const got = fillTo(b, u, u.stack, Math.max(0, num(u.magMax)), typeFor(cal, u.load)); if (got.load) u.load = got.load; }
+  if (gun && !rec) { const got = fillTo(b, u, u.stack, Math.max(0, num(u.magMax)), typeFor(cal, u.load), null, pools); if (got.load) u.load = got.load; }
   syncGun(u, cal);
   for (const m of spares(u)) {
     if (!m.item) continue;
     if (Array.isArray(m.item.stack)) continue; // loaded already (by hand, or when the gun was taken up)
     m.item.stack = [];
     if (m.item.unloaded) continue; // itemacts.js: kept empty on purpose
-    fillTo(b, u, m.item.stack, m.cap, m.load, m.key);
+    fillTo(b, u, m.item.stack, m.cap, m.load, m.key, pools);
   }
   syncMags(u);
 }

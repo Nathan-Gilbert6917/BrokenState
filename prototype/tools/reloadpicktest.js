@@ -19,7 +19,7 @@
 import { setRounds, giveRounds, sideRounds, totalRounds } from "../src/sim/ammo.js";
 import { ammoKey } from "../src/sim/data-ammo.js";
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
-import { createBattle, combatAct, registerCombatHandler, loadMag, reloadRefusal, reloadCost, magIn, magEmpty, autoPlayerTurn, ammoLeft, refitKit } from "../src/sim/combat.js";
+import { createBattle, combatAct, registerCombatHandler, loadMag, reloadRefusal, reloadCost, magIn, magEmpty, autoPlayerTurn, ammoLeft, refitKit, shotOdds } from "../src/sim/combat.js";
 import { newItem, packOf, rigPouches, carriedSpots } from "../src/sim/inventory.js";
 import { roundItem } from "../src/sim/itemstack.js";
 import { reloadPlan, reloadOptions, roundSources, unloadMagPlan, isStacked, MAGS, magEntryAt, fittedMag, migrateUnitStacks } from "../src/sim/mags.js";
@@ -342,6 +342,36 @@ const turn = (b, u) => { b.phase = "player"; u.ap = 2; };
     const r = o.rounds.find((x) => x.k === K556 && x.where === "pocket");
     check(o.box && r && combatAct(st, { type: "reload", unit: u.id, rounds: [{ i: r.i, n: 6 }] }) === "" && u.mag === 16, `the Reload picker in a raid: 6 by hand into the magazine in the gun (${u.mag}/30)`);
   }
+}
+
+// 9. An over/under with two kinds in its barrels (the user's example: one slug, one birdshot): each shot is its own
+// round's (damage, range, accuracy: combat.js shotOdds reads the chamber's load).
+{
+  console.log("An over/under: a slug and a birdshot");
+  const st = createWorld({ seed: seed + 8, factionCount: 4 });
+  const a = fighter(st, "ou12");
+  a.pockets[1] = roundItem(KSLUG, 10, true);
+  a.pockets[2] = roundItem(ammoKey("12ga", "bird"), 10, true);
+  const b = openBattle(st, [a], { [KBUCK]: 40 });
+  const u = by(b, a);
+  const e = keepFoe(b);
+  check(u.magMax === 2 && u.mag === 2 && u.load === "buck", `the barrels take the field with 2 buckshot out of the stock (${u.mag}/${u.magMax}, ${u.load})`);
+  turn(b, u); loadMag(u, 0);
+  const o = reloadOptions(b, u);
+  const slug = o.rounds.find((r) => r.k === KSLUG), bird = o.rounds.find((r) => r.k === ammoKey("12ga", "bird"));
+  check(slug && bird && combatAct(st, { type: "reload", unit: u.id, rounds: [{ i: slug.i, n: 1 }, { i: bird.i, n: 1 }] }) === "" && u.mag === 2 && u.load === "slug" && stackText("12ga", u.stack) === "12 gauge slug ×1, 12 gauge birdshot ×1", `one slug then one birdshot in the barrels: ${stackText("12ga", u.stack)}; the slug fires first`);
+  place(u, 5, 5); place(e, 10, 5);
+  const mid = (d) => (d[0] + d[1]) / 2;
+  const osl = shotOdds(b, u, e);
+  turn(b, u); combatAct(st, { type: "shoot", unit: u.id, target: e.id });
+  check(u.mag === 1 && u.load === "bird", `the slug fired: birdshot in the chamber now (${u.load})`);
+  const obi = shotOdds(b, u, e);
+  check(mid(osl.dmg) > mid(obi.dmg) * 1.3 && (osl.chance !== obi.chance || mid(osl.dmg) !== mid(obi.dmg)), `the two shots differ: the slug ${osl.chance}% for ${osl.dmg.join("–")}, the birdshot ${obi.chance}% for ${obi.dmg.join("–")} at 5 tiles`);
+  place(e, 16, 5);
+  const far = shotOdds(b, u, e);
+  u.stack = [{ k: KSLUG, n: 1 }]; u.load = "slug"; loadMag(u, 1);
+  const farSlug = shotOdds(b, u, e);
+  check(mid(farSlug.dmg) > mid(far.dmg) * 1.5, `at 11 tiles the birdshot has spread thin (${far.dmg.join("–")}) where a slug still hits hard (${farSlug.dmg.join("–")})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
