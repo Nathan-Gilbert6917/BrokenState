@@ -126,7 +126,7 @@ Then, if the profile still shows it: `wealthOf` computes `Object.keys(SUPPLIES).
 
 **Verify.** `node tools/tradetest.js`, `node tools/radiotradetest.js`, `node tools/arsenalbalancetest.js` (if it exercises prices), the golden hashes, and a market-equality script: for three seeds and 40 days, the SHA-1 of every group's `market` after each midnight before and after. Report the timing of `refreshMarkets` for 8 and 20 groups.
 
-**Handoff (2026-10-18).** Done as described: `valuation.js withPrices` around `trade.js marketLists` (the conditions once, each category's `priceInfo` once a list), `wealthOf` over `SUPPLY_KEYS`. Refreshing every group's market: 83-93 ms -> 15-20 ms (seeds 3, 5, 11, 40 days, 8 groups), the markets' SHA-1 identical. Golden hashes identical; tradetest 114, radiotradetest 74, watertest 64, woodtest 79 pass. diplotest outlived two time limits on the shared machine (it runs dozens of child processes) and is to be run on the final tree. Not done: staggering the refreshes across days (a behaviour change).
+**Handoff (2026-10-18).** Done as described: `valuation.js withPrices` around `trade.js marketLists` (the conditions once, each category's `priceInfo` once a list), `wealthOf` over `SUPPLY_KEYS`. Refreshing every group's market: 83-93 ms -> 15-20 ms (seeds 3, 5, 11, 40 days, 8 groups), the markets' SHA-1 identical. Golden hashes identical; tradetest 114, radiotradetest 74, watertest 64, woodtest 79 pass. diplotest passes on the merged tree (131 passed, 0 failed; 23 minutes on a quiet machine, it runs dozens of child processes). Not done: staggering the refreshes across days (a behaviour change).
 
 ---
 
