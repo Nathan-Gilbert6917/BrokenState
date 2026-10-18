@@ -6,8 +6,11 @@
 // back unseen: the window put aside, the site under the fog with the scout's marks; Back to the plan on the panel, or
 // Esc), the side to go in from (going in: the team is placed there and the fight begins; one way in: Go in), and Leave
 // (asks, then calls the raid off). Buttons: data-action="cb-plan" (ui/combat.js combatAction → planAction).
-import { planOf, planOpen, scoutChoices, scoutText, nightTradeoff, sendScout, waitNight, enterFrom, callOff, SCOUT, SIDES, NIGHT_FROM } from "../sim/raidplan.js";
+import { planOf, planOpen, scoutChoices, scoutText, nightTradeoff, sendScout, waitNight, enterFrom, callOff, unstage, refit, planParty, SCOUT, SIDES, NIGHT_FROM } from "../sim/raidplan.js";
 import { CELL } from "../sim/combat.js";
+import { teamsTogether } from "../sim/teammeet.js"; // your other teams on the site's tile: goods handed across before going in
+import { TEAMINV_ACTIONS } from "./teaminv.js"; // the team inventory window (every member and the cargo)
+import { TEAMMEET_ACTIONS } from "./teammeet.js"; // Teams together (goods between your teams on one tile)
 import { skill, hourOfDay } from "../sim/world.js";
 import { STEALTH } from "../sim/stealth.js";
 
@@ -17,15 +20,28 @@ const first = (s) => String(s || "").split(" ")[0];
 const SIDE_LABEL = { north: "North", east: "East", south: "South", west: "West" };
 const hh = (h) => `${String(((h % 24) + 24) % 24).padStart(2, "0")}:00`;
 
-// The window's own state (not saved: a load opens the window again): the window put aside to look at the map, and
-// the Leave question. Reset when the plan is gone (planUp).
-export const planUI = { map: false, leave: false, battle: null };
-// The plan's window is up: a battle with its plan open, not put aside to look at the map.
-export function planUp(state) {
+// The window's own state (not saved: a load opens the window again): the window put aside to look at the map, the
+// Leave question, and a kit window (the team inventory, Teams together) open over the plan. Reset when the plan is
+// gone (planUp).
+export const planUI = { map: false, leave: false, battle: null, kit: false };
+// The plan's window is up: a battle with its plan open, not put aside to look at the map, no kit window over it. ui:
+// main.js's screen state (ui.inv, ui.meet); a kit window just closed has the battle made again with the kit as it is
+// now (sim/raidplan.js refit).
+export function planUp(state, ui = null) {
   const b = state.combat;
-  if (!b || b.over || !planOpen(b)) { planUI.map = planUI.leave = false; planUI.battle = null; return false; }
-  if (planUI.battle !== b.setup) { planUI.map = planUI.leave = false; planUI.battle = b.setup; } // a new raid: the window up
+  if (!b || b.over || !planOpen(b)) { planUI.map = planUI.leave = planUI.kit = false; planUI.battle = null; return false; }
+  if (planUI.battle !== b.setup) { planUI.map = planUI.leave = planUI.kit = false; planUI.battle = b.setup; } // a new raid: the window up
+  if (ui) {
+    const open = kitUp(state, ui);
+    if (planUI.kit && !open) { planUI.kit = false; refit(state); if (!state.combat || state.combat.over || !planOpen(state.combat)) return false; }
+    if (open) return false;
+  }
   return !planUI.map;
+}
+// A kit window open over the plan (ui.js pickModal shows it while the battle waits at its plan).
+export function kitUp(state, ui) {
+  if (!state.combat || !planOpen(state.combat)) return false;
+  return !!((ui.inv && ui.inv.team != null) || ui.meet);
 }
 // Esc while the plan is open (main.js closeTopLayer): the Leave question first, then the map back to the window.
 export function planEsc(state) {
@@ -134,6 +150,12 @@ export function planModalHtml(state) {
   // Look at the map first: once a scout has been round and come back unseen (there is nothing to look at otherwise).
   if (scouted) html += `<div style="margin-top:0.5rem">${btn("map", "🗺 Look at the map first", "Put this window aside and look over the site under the fog of war with the scout's marks on it (pan and zoom as in a fight). Back to the plan on the panel, or Esc, brings the window back. Nobody is on the map until you go in.", true, "", "")}</div>`;
   else if (P.scout) html += `<div style="margin-top:0.5rem" class="small muted">The scout was seen and saw nothing to show: the site is still under the fog.</div>`;
+  // The kit: every member's inventory and the cargo, and goods to and from your other teams on this tile.
+  const party = planParty(state, b);
+  if (party) {
+    const others = teamsTogether(state, party);
+    html += `<div class="row" style="gap:0.25rem;flex-wrap:wrap;margin-top:0.5rem">${btn("inv", "🎒 Team inventory", "Every member's kit (worn, held, pockets, rig, pack) and the team's cargo (its vehicles' load) side by side: move things between members, and between a member and the cargo. The team takes the field with what each one wears and holds when you go in.", true, "", "mini")}${others.length ? btn("meet", `Teams together <span class="muted">(${others.length} other${others.length === 1 ? "" : "s"} here)</span>`, `Your other team${others.length === 1 ? "" : "s"} on this tile (${others.map((q) => q.name || `team ${q.id}`).join(", ")}): hand goods across, cargo to cargo or onto a member, before going in.`, true, "", "mini") : ""}</div>`;
+  }
   // Going in: the side (a raid map), or the one way in.
   html += `<div style="margin-top:0.6rem;border-top:1px solid var(--line);padding-top:0.5rem">`;
   if (R && P.sides.length > 1) {
@@ -160,11 +182,20 @@ export function planAsideHtml(state, b) {
     <div class="muted" style="margin-top:0.15rem">${P.scout && P.scout.ok ? "What the scout saw is marked under the fog: the dead and their people where they stood, the rooms and containers within reach." : "The site under the fog of war."} Nobody of yours is on the map until you go in.</div></div>`;
 }
 
-// cb-plan: d.v scout (d.id) | night | map | back | enter (d.k side, or none) | leave | leaveYes | leaveNo.
-// Returns the message for the panel ("" when done).
-export function planAction(state, d) {
+// cb-plan: d.v scout (d.id) | night | map | back | enter (d.k side, or none) | leave | leaveYes | leaveNo | inv | meet.
+// ui: main.js's screen state (the kit windows open on it). Returns the message for the panel ("" when done).
+export function planAction(state, d, ui = null) {
   const b = state.combat;
   if (!planOpen(b)) return "Nothing to plan now.";
+  if (d.v === "inv" || d.v === "meet") {
+    const p = planParty(state, b);
+    if (!p || !ui) return "The team is not here to sort.";
+    unstage(state); // the loads staged at the start back to the team first
+    planUI.kit = true; planUI.leave = false;
+    if (d.v === "inv") TEAMINV_ACTIONS["ti-open"](state, ui, { id: p.id, tab: "team" });
+    else TEAMMEET_ACTIONS["tm-open"](state, ui, { tile: b.tileId, a: p.id, tab: "goods" });
+    return "";
+  }
   if (d.v === "scout") return sendScout(state, d.id != null ? Number(d.id) : null);
   if (d.v === "night") return waitNight(state);
   if (d.v === "map") { planUI.map = true; planUI.leave = false; return ""; }

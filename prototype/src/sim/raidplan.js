@@ -44,6 +44,7 @@
 //   a guarded or badly infested site with a scout of SCOUT.BOT_ODDS (autopilot.js engagementHour).
 import { isNight, hourOfDay, skill, tickHour, hurt, localId } from "./world.js";
 import { woundMult } from "./traits.js";
+import { woundTrauma } from "./health.js";
 import { hash01 } from "./skills.js";
 import { battleOptic } from "./optics.js";
 import { helmetNvg } from "./helmets.js";
@@ -52,6 +53,7 @@ import { STEALTH } from "./stealth.js";
 import { wakeLights } from "./ailights.js";
 import { createBattle, combatants, startCombat, say, endCalledOff } from "./combat.js";
 import { armsDropsEnd } from "./carry.js";
+import { partyMembers as membersOf } from "./parties.js";
 import { partyMembers, wipeParty, tileLabel } from "./parties.js";
 
 export const SCOUT = {
@@ -155,6 +157,30 @@ export function enterFrom(state, side = null) {
   }
   return goIn(state);
 }
+// The team's kit before going in (the user's request 2026-10-18: the team inventory, and Teams together, from the
+// window). The battle staged the team's loads as it was made (carry.js: what was carried in the arms went into the
+// car or down on the start cell), so before a window that moves things about those go back to the team (unstage),
+// and afterwards the same battle is made again (refit): its units take the field with what each member wears and
+// holds now, the loads staged again, the scout's marks and the enemy's state as they were.
+export function unstage(state) {
+  const b = state.combat;
+  if (!planOpen(b)) return false;
+  armsDropsEnd(state, b, "victory"); // carry.js: the loads set down at the start back to the team
+  return true;
+}
+export function refit(state) {
+  const b = state.combat;
+  if (!planOpen(b)) return null;
+  const nb = rebuild(state);
+  if (nb) say(nb, "The team sorted its kit before going in.", "info");
+  return nb;
+}
+// The battle's own team (the window's inventory is theirs).
+export function planParty(state, b = state.combat) {
+  if (!b || !b.setup || b.setup.partyId == null) return null;
+  const p = state.parties.find((x) => x.id === b.setup.partyId);
+  return p && p.owner === "player" && membersOf(state, p).length ? p : null;
+}
 // Leave without going in: the team turns back from the site. Nobody steps onto the map, so nobody is hurt and nothing
 // is searched; the hours a scout or the wait for night took are spent (the clock ran then). The battle ends at once
 // (combat.js endCalledOff): a raid as called off (its result's raid.calledOff; scavenge.js afterRaid says so and
@@ -234,7 +260,7 @@ export function sendScout(state, sid = null) {
   if (!ok && hash01(state.seed, "raidscout-wound", b.tileId, state.hour, localId(state, c.id)) < SCOUT.WOUND) {
     const s = c.s;
     const amt = woundOf(state, s, "raidscout-hurt");
-    if (amt > 0) { hurt(state, s, amt, b.tileId, `spotted scouting ${b.place}`); sc.wound = amt; }
+    if (amt > 0) { scoutHurt(state, s, amt, b.tileId, `spotted scouting ${b.place}`); sc.wound = amt; }
   }
   P.scout = sc;
   // The hour it took: the clock runs (the world moves on), then the same map at the new hour.
@@ -249,6 +275,13 @@ export function sendScout(state, sid = null) {
 function woundOf(state, s, key) {
   const amt = SCOUT.HURT[0] + Math.floor(hash01(state.seed, key, localId(state, s.id), state.hour) * (SCOUT.HURT[1] - SCOUT.HURT[0] + 1));
   return Math.max(0, Math.min(amt, Math.floor((s.health - 10) / Math.max(1, woundMult(s)))));
+}
+// The wound as said (−amt health), taken as it is: a scramble when spotted, a fall, a graze on the run, not a hit
+// the armour worn takes (world.js hurt would shrink it by the armour and Tough, so a scout in a vest came back
+// "hurt (−12)" and stood at 98: the user's report 2026-10-18). Never to death (woundOf). It may need dressing.
+function scoutHurt(state, s, amt, tileId, cause) {
+  hurt(state, s, amt, tileId, cause, { raw: true });
+  if (s.alive) woundTrauma(state, s, amt); // health.js: a real wound may need dressing
 }
 export function scoutText(sc) {
   const who = first(sc);
@@ -367,7 +400,7 @@ export function engScout(state, p, sid = null) {
     e.heat = Math.min(100, e.heat + SCOUT.ENG_FAIL_HEAT);
     if (hash01(state.seed, "engscout-wound", e.tile, state.hour, localId(state, c.id)) < SCOUT.WOUND) {
       const amt = woundOf(state, c.s, "engscout-hurt");
-      if (amt > 0) { hurt(state, c.s, amt, e.tile, `spotted scouting ${tileLabel(state, e.tile)}`); e.scout.wound = amt; }
+      if (amt > 0) { scoutHurt(state, c.s, amt, e.tile, `spotted scouting ${tileLabel(state, e.tile)}`); e.scout.wound = amt; }
     }
     e.log.push(`${first(c)} was seen scouting (${Math.round(c.odds * 100)}%)${e.scout.wound ? ` and came back hurt` : ""}: the site is stirred up (Heat +${SCOUT.ENG_FAIL_HEAT}).`);
   }
@@ -391,6 +424,8 @@ const P100 = (v) => `${Math.round(v * 100)}%`;
 export const raidPlanHelp = () => `<p>A raid on a site played on its map (and the storming of a group's base, or a rescue raid) opens with the <b>Before you go in</b> window over the battle screen. Behind it the site lies under the fog of war with nobody of yours on it: the team is not placed until you go in. The window shows a small map of the site, all fog but for its ways in (green) until a scout has been round, then what the scout saw.</p>
 <p><b>Go in from</b> North, East, South or West: the sides the map has a way in on (its extraction zones: on a street map the west, the east and one of north or south; a building's front, back and side exits). Picking one goes in: the team and the vehicle are placed at that zone, the enemy away from it, and the fight begins. A base has one way in: <b>Go in</b>. You can go in with or without a scout first; a scout only tells you more. No time lost.</p>
 <p><b>Look at the map first</b> (once a scout has come back unseen): the window is put aside and you can look over the site under the fog with the scout's marks on it (pan and zoom as in a fight); <b>Back to the plan</b> on the panel, or Esc, brings the window back. <b>Leave</b> calls the raid off: the team turns back without going in, nobody is hurt and nothing is searched; the hours a scout or the wait for night took are spent.</p>
+<p><b>Team inventory</b> opens the team's inventory window from the plan: every member's kit and the team's cargo (its vehicles' load) side by side, to move things between members and between a member and the cargo. <b>Teams together</b> (when another team of yours stands on the tile) hands goods across, cargo to cargo or onto a member. When the window closes the battle is made again with the kit as it is now: each one takes the field with what they wear and hold.</p>
+<p>A scout who was seen and came back hurt loses exactly the health the message says (not a hit the armour worn would take); the battle made again after the scout shows it. A clean scout's marks, a seen scout's alerted guards and the Heat it added all carry into the battle however it is made again (another side, the night, a kit sorted).</p>
 <p><b>Send a scout first</b> (${SCOUT.HOURS} hour on the clock; each of the team with their odds, the best starred). Their notice range: 8 tiles, one less for every 4 points of the scout's Stealth (at least 3); the dead at most 5; at night × ${STEALTH.NIGHT_DETECT} (at least 2). The scout's look: ${SCOUT.DAY_LOOK} tiles by day, +3 with binoculars or a spotting scope, +2 with a monocular or a thermal; at night what the dark lets them see by the hour (4–7 tiles) or ${SCOUT.NVG_LOOK} with night vision or a thermal. The odds of going unseen: ${P100(SCOUT.BASE)} + ${P100(SCOUT.PER_TILE)} for every tile the look beats their notice + ${P100(SCOUT.PER_SKILL)} a point of Scouting (${P100(SCOUT.MIN)}–${P100(SCOUT.MAX)}).</p>
 <p>Unseen: within ${SCOUT.REACH} × the look of the site's middle, everyone of theirs is marked on the map where they stood (faded, as last seen), and the rooms, containers and locked doors there are seen under the fog of war; you learn how many they are (all of them on a clean look). Seen: every one of their people starts alerted, the dead near the middle too, the raid's Heat +${SCOUT.FAIL_HEAT}, and ${P100(SCOUT.WOUND)} of the time the scout comes back hurt (${SCOUT.HURT[0]}–${SCOUT.HURT[1]} health, never to death).</p>
 <p><b>Wait for night</b> (by day): the team holds out of sight until ${NIGHT_FROM}:00 while the clock runs (they eat and drink; the world moves on), then the same site in the dark. Stealth up: they notice you at × ${STEALTH.NIGHT_DETECT} the range, the dead see ${STEALTH.NIGHT_ZOMBIE_SIGHT} tiles, a raid's Heat starts at 0 instead of 5. Sight down: your people see 4–7 tiles ahead in the dark, ${SCOUT.NVG_LOOK} with night vision; a light switched on is a beam that gives you away (see Help: Battles).</p>

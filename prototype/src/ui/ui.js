@@ -41,7 +41,7 @@ import { HEAT } from "../sim/upkeep.js"; // the boiler's fuel a head in the help
 import { conditionChips, conditionTreatRow, illnessCard, isSick, bedChip, healPerDayText, nextTreatLine, illnessRowHtml, illnessSummary, othersWormHtml } from "./health.js";
 import { APPROACHES, heatStage, foundLoad, engagementParty } from "../sim/scavenge.js";
 import { engScoutChoices, hoursToNight, SCOUT, NIGHT_FROM } from "../sim/raidplan.js"; // before the search: a scout first, or the night
-import { planUp, planModalHtml } from "./raidplan.js"; // before a raid: the Before you go in window over the battle screen
+import { planUp, kitUp, planModalHtml } from "./raidplan.js"; // before a raid: the Before you go in window over the battle screen
 import { activeCrawl } from "../sim/citycrawl.js";
 import { crawlModal } from "./citycrawl.js";
 import { activeHiveCrawl, crawlRecText } from "../sim/hivecrawl.js";
@@ -797,7 +797,10 @@ function pickModal(state, ui) {
   if (ui.title) return null; // the title screen (ui/title.js) is up: the new-run screen waits for New game
   takeLootReq(state, ui); // a raid's search window asked for by the battle (ui/combat.js, sim/raidloot.js)
   if (ui.inv && (ui.inv.loot || ui.inv.raid || ui.inv.peek)) return [ui.inv.raid ? "rloot" : ui.inv.peek ? `peek:${ui.inv.sid}` : "loot", () => inventoryModal(state, ui)]; // over the battle screen (peek: a survivor's kit, read-only)
-  if (planUp(state)) return ["raidplan", () => planModalHtml(state)]; // ui/raidplan.js: before a raid, over the battle screen (the site under the fog, nobody placed)
+  // ui/raidplan.js: before a raid, over the battle screen (the site under the fog, nobody placed); its kit windows (the
+  // team inventory, Teams together) open over the plan while the battle waits.
+  if (kitUp(state, ui)) return ui.meet ? ["teammeet", () => teamMeetModal(state, ui)] : ["teaminv", () => teamInvModal(state, ui)];
+  if (planUp(state, ui)) return ["raidplan", () => planModalHtml(state)];
   if (!ui.started && ui.nrMap) return null; // the new-run screen put aside to look at the map (View map)
   if (!ui.started) return ["newrun", () => newRunScreen(state, ui)];
   // A card raised over a fight (sim/floorfolk.js: the survivors barricaded upstairs) is the one card that shows during it.

@@ -18,7 +18,7 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, finishCombat } from "../src/sim/combat.js";
 import { raidEnemies, startScavenge } from "../src/sim/scavenge.js";
 import { newItem } from "../src/sim/inventory.js";
-import { planOf, planOpen, setEntry, sendScout, waitNight, goIn, enterFrom, callOff, botPlan, scoutChoices, scoutOdds, SCOUT, hoursToNight, engScout, engWaitNight, engScoutChoices } from "../src/sim/raidplan.js";
+import { planOf, planOpen, setEntry, sendScout, waitNight, goIn, enterFrom, callOff, unstage, refit, botPlan, scoutChoices, scoutOdds, SCOUT, hoursToNight, engScout, engWaitNight, engScoutChoices } from "../src/sim/raidplan.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 
 const N = Number(process.argv[2] || 40);
@@ -247,12 +247,35 @@ const layout = (b) => b.cells.map((c) => (BOX.has(c.k) ? "box" : c.k === "vehicl
     const R = b.result && b.result.raid;
     ok(R && R.calledOff && R.hours === 0 && R.searched === 0 && b.result.outcome === "extracted", `leave ${i}: a raid called off: no hours on the site, nothing searched, everyone out (${JSON.stringify(R && { calledOff: R.calledOff, hours: R.hours, searched: R.searched })}, ${b.result && b.result.outcome})`);
     ok(!b.result.survivorsDead.length && Object.entries(hp0).every(([sid, hp]) => { const s = state.survivors.find((x) => x.id === Number(sid)); return s.alive && (P.scout && P.scout.sid === Number(sid) ? s.health >= hp - (P.scout.wound || 0) - 0.01 : s.health >= hp - 0.01); }), `leave ${i}: nobody hurt but a scout who was seen`);
+    if (P.scout && P.scout.wound) { const s = state.survivors.find((x) => x.id === P.scout.sid); ok(Math.abs(hp0[s.id] - s.health - P.scout.wound) < 0.01, `leave ${i}: the scout lost the health the message says (−${P.scout.wound}: ${hp0[s.id]} → ${s.health})`); }
     ok(R && R.vehicleKept === R.hadVehicle, `leave ${i}: the vehicle comes back with them`);
     finishCombat(state, b.setup, b.result); // scavenge.js afterRaid: the team turns back for orders, no more hours
     ok(!state.combat && state.hour === h0 && state.parties.includes(p) && p.phase !== "engaged", `leave ${i}: the team is out of the fight awaiting orders (phase ${p.phase}), the clock where it was (${hours} h spent before)`);
     left++;
   }
   console.log(`Going in from a side: ${entered} raids; Leave: ${left} raids called off`);
+  // The kit sorted before going in (the window's Team inventory): the staged loads back to the team, the battle made
+  // again with what each one wears now, the scout's marks kept.
+  let sorted = 0;
+  for (let i = 0; i < Math.max(4, N / 8); i++) {
+    const r = raid(9990 + i, SITES[i % SITES.length], { vehicle: i % 2 === 0, hour: 12 });
+    if (!r) continue;
+    const { state, p } = r;
+    sendScout(state);
+    const b0 = state.combat, ghosts = JSON.stringify(b0.ghosts || {}), aware = b0.units.filter((u) => u.side === "enemy" && u.aware).length, heat = b0.raid.heat;
+    ok(unstage(state) && !(b0.armsDrops || []).length, `kit ${i}: the loads staged at the start go back to the team`);
+    const [a, c] = mine(b0).map((u) => state.survivors.find((s) => s.id === u.sid));
+    const wa = a.gear.weapon, wc = c.gear.weapon;
+    a.gear.weapon = wc; c.gear.weapon = wa;
+    const nb = refit(state);
+    ok(nb && nb !== b0 && planOpen(nb) && nb.setup === b0.setup, `kit ${i}: the same battle made again, still at its plan`);
+    const ua = nb.units.find((u) => u.sid === a.id), uc = nb.units.find((u) => u.sid === c.id);
+    const name = (w) => (w ? w.name : "Fists");
+    ok(ua && uc && ua.weaponName.startsWith(name(wc).split(" (")[0]) && uc.weaponName.startsWith(name(wa).split(" (")[0]), `kit ${i}: the units take the field with the kit as it is now (${ua && ua.weaponName} / ${uc && uc.weaponName}; swapped ${name(wa)} and ${name(wc)})`);
+    ok(JSON.stringify(nb.ghosts || {}) === ghosts && nb.units.filter((u) => u.side === "enemy" && u.aware).length === aware && nb.raid.heat === heat, `kit ${i}: the scout's marks, the alerted and the Heat as before`);
+    sorted++;
+  }
+  console.log(`Kit sorted before going in: ${sorted} raids`);
 }
 
 // ---------- saves ----------

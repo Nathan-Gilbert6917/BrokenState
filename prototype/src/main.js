@@ -15,7 +15,7 @@ import { thirstAhead } from "./sim/weather.js";
 import { armoryTabs, TABS_TRIP_DAYS } from "./sim/worm.js"; // purification tablets for the road
 import { searchHour, extract, engagementParty } from "./sim/scavenge.js";
 import { engScout, engWaitNight } from "./sim/raidplan.js"; // before the search: a scout first, or the night
-import { planEsc } from "./ui/raidplan.js"; // before a raid: Esc brings the Before you go in window back
+import { planEsc, kitUp } from "./ui/raidplan.js"; // before a raid: Esc brings the Before you go in window back; its kit windows stay up over the battle
 import * as TradeSim from "./sim/trade.js";
 import { executeTrade, giftAll, proposePact, endTrade, radioTalk } from "./sim/trade.js";
 import { releaseEscorts, ESCORTS } from "./sim/economy.js";
@@ -442,7 +442,7 @@ function tidyUi() {
   if (ui.moveParty != null && !partyById(ui.moveParty)) endMoveMode();
   if (ui.fwPlace && !baseById(state, ui.fwPlace.baseId)) { ui.fwPlace = null; ui.fwMsg = ""; }
   view.fwPlace = ui.fwPlace ? fwPlaceTiles(state, ui) : null; // ui/fieldworks.js: the tile picker's highlight
-  if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid && !(ui.inv.peek && !state.combat.over)) { ui.inv = null; ui.invSel = null; } // only the loot screen, a raid's search window and a survivor's kit (look only, ui/inventory.js peekModal) go over a battle
+  if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid && !(ui.inv.peek && !state.combat.over) && !kitUp(state, ui)) { ui.inv = null; ui.invSel = null; } // only the loot screen, a raid's search window, a survivor's kit (look only, ui/inventory.js peekModal) and the plan's team inventory (ui/raidplan.js kitUp) go over a battle
   if (!state.combat && ui.inv && ui.inv.peek) { ui.inv = null; ui.invSel = null; } // the battle's kit view goes with the battle
   if (state.combat && ui.gunb) ui.gunb = null; // the gun builder: never during a battle
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
@@ -1173,7 +1173,7 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-plan", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv", "cb-bar"]) actions[k] = (d) => combatAction(state, k, d);
+for (const k of ["cb-sel", "cb-act", "cb-plan", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv", "cb-bar"]) actions[k] = (d) => combatAction(state, k, d, ui);
 // Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
 for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.
@@ -2149,9 +2149,9 @@ function closeTopLayer() {
     else { ui.inv = null; ui.invMsg = ""; }
     return true;
   }
+  if (ui.meet) { ui.meet = null; return true; } // ui/teammeet.js (in a battle: Teams together from the plan's window, ui/raidplan.js)
   if (state.combat && planEsc(state)) return true; // ui/raidplan.js: the Leave question, or the map put aside, back to the window
   if (state.combat) return false; // the battle has its own Esc (cancel the current action)
-  if (ui.meet) { ui.meet = null; return true; } // ui/teammeet.js
   if (ui.volPick) { ui.volPick = null; return true; } // ui/volunteers.js
   if (ui.volReq) { ui.volReq = null; return true; }
   if (ui.why) { ui.why = null; return true; } // ui/causes.js: the "Why?" panel

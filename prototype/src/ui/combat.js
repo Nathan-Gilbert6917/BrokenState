@@ -1127,7 +1127,7 @@ export function combatKey(state, e) {
 }
 
 // Panel buttons (data-action="cb-…").
-export function combatAction(state, key, d) {
+export function combatAction(state, key, d, ui = null) { // ui: main.js's screen state (the plan's kit windows open on it)
   const b = state.combat;
   if (!b) return;
   sync(b);
@@ -1220,7 +1220,7 @@ export function combatAction(state, key, d) {
     return;
   }
   // Before going in (sim/raidplan.js): the side, a scout, the night, Go in.
-  if (key === "cb-plan") { cui.msg = planAction(state, d) || ""; return; }
+  if (key === "cb-plan") { cui.msg = planAction(state, d, ui) || ""; return; }
   // A site with several buildings (sim/buildingmaps.js): which one to explore, or the street.
   if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;

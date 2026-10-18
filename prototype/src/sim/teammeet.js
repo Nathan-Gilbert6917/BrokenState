@@ -18,6 +18,7 @@
 // AI parity: the other groups' parties are strengths by the numbers (factions.js); they never sort their people or
 // goods between parties, so nothing of theirs goes through here.
 /** @import { State, Party, Item, Survivor } from "./types" */
+import { planOpen } from "./raidplan.js"; // a battle at its plan: the team about to go in can still hand goods across
 import { SUPPLIES, supWeight } from "./data.js";
 import { survivorById, log, newId } from "./world.js";
 import {
@@ -53,13 +54,20 @@ export function standProblem(state, p) {
   if (p.crewRole != null) return `${n} is a crew's team: its crew runs it.`;
   if (p.caravan) return `${n} is on a trade caravan.`;
   if (onTheMove(p)) return `${n} is on the move: stop it on this tile first.`;
-  if (p.phase === "engaged") return `${n} is busy on the site.`;
+  if (p.phase === "engaged" && !planHeld(state, p)) return `${n} is busy on the site.`;
   if (p.task && p.task.afloat) return `${n} is out on the water.`;
   if ((p.hiveCrawl && !p.hiveCrawl.done) || (p.crawl && !p.crawl.done)) return `${n} is inside.`;
   const e = state.engagement;
   if (e && !e.done && e.partyId === p.id) return `${n} is in the middle of a search.`;
-  if (state.combat) return "Not during a battle.";
+  if (state.combat && !planHeld(state)) return "Not during a battle.";
   return "";
+}
+// A battle still at its plan (raidplan.js: nobody has gone in; the window offers Teams together): the team about to
+// go in, and the teams on its tile, can still hand goods across. p: that team must be the battle's own.
+function planHeld(state, p = null) {
+  const b = state.combat;
+  if (!b || b.over || !planOpen(b)) return false;
+  return !p || b.setup.partyId === p.id;
 }
 // Why these two teams cannot meet ("" when they can).
 /** @param {State} state @param {Party} a @param {Party} b */
