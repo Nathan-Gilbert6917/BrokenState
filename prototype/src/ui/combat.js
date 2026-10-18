@@ -20,7 +20,7 @@ import { loadsFor, roundName } from "../sim/ammo.js"; // the reload chooser: the
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions, DOOR_KINDS } from "../sim/buildingmaps.js";
 import { WINDOW, windowsBy, windowState, windowWord, openRefusal, isWindow, windowOpen } from "../sim/windows.js"; // the map's windows: check, open, close, break (the user's request 2026-10-17)
-import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
+import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan, tallPiece, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
 import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
@@ -781,19 +781,21 @@ function handoverButton(state, b, u, btn) {
 function barricadeButtons(state, b, u, btn) {
   const first = u.name.split(" ")[0], ap = u.ap;
   const pieces = shoveTargets(b, u);
-  const sWhy = shoveRefusal(b, u);
+  const sWhy = shoveRefusal(b, u, state);
   const names = [...new Set(pieces.map((p) => pieceName(p.c)))].join(", ");
-  btn("shove", "Shove", `${SHOVE.AP} actions: ${first} shoves the ${names || "shelf, cabinet, counter, table, bed, crate, locker, rack, barrel, hay or sandbags"} right next to them one tile: pushed onto a free open cell beside it, or pulled onto their own cell while they step back. In a doorway or a corridor it blocks the way: the dead crawl over half cover (a table, a shelf, crates: +${CRAWL.COST} tiles, a walker's whole turn) and batter a tall piece (lockers, tall shelving) or go round; people vault half cover. The scrape is heard ${SHOVE.RADIUS} tiles off.${pieces.length > 1 ? " Several pieces next to them: click the one." : ""}`,
-    !sWhy, "", { why: sWhy, ap: SHOVE.AP, on: cui.mode === "shove" || (cui.shoveAsk && cui.shoveAsk.uid === u.id) });
-  const targets = boardTargets(b, u), boards = boardsOf(state, u);
+  const plan = pieces.length ? shovePlan(state, b, u, pieces[0].x, pieces[0].y) : null;
+  const helper = plan && plan.helper ? plan.helper.name.split(" ")[0] : "";
+  btn("shove", "Shove", `${helper ? `${SHOVE.HELP_AP} action each, with ${helper} lending a hand` : `${SHOVE.AP} actions alone (${SHOVE.HELP_AP} each with a teammate right next to the piece)`}: ${first} shoves the ${names || "shelf, cabinet, counter, table, bed, crate, locker, rack, barrel, hay or sandbags"} right next to them one tile: pushed onto a free cell beside it (open floor, or a broken or open door's frame to plug it), or pulled onto their own cell while they step back. Lockers and tall shelving take two people, or one with a Strong back or Melee ${SHOVE.STRONG_MELEE}+. In a doorway or a corridor it blocks the way: the dead crawl over half cover (a table, a shelf, crates: +${CRAWL.COST} tiles, a walker's whole turn) and batter a tall piece or go round; people vault half cover. The scrape is heard ${SHOVE.RADIUS} tiles off.${pieces.length > 1 ? " Several pieces next to them: click the one." : ""}`,
+    !sWhy, "", { why: sWhy, ap: plan ? plan.ap : SHOVE.AP, on: cui.mode === "shove" || (cui.shoveAsk && cui.shoveAsk.uid === u.id) });
+  const targets = boardTargets(b, u), boards = boardsOf(state, u, b);
   if (targets.length || boards) {
     const bWhy = boardRefusal(state, b, u);
     const what = [...new Set(targets.map((t) => t.word))].join(", ");
-    btn("boardup", "Board up", `${BOARD.AP} actions and a bundle of boards and nails${boards ? "" : " (none carried)"}: ${first} nails boards across the ${what || "closed door, doorway or window"} next to them, from either side. ${BOARD.HP} hit points a layer (up to ${BOARD.MAX}) on top of a closed door's own, no sight or way through: the dead and raiders batter it. Loud: the unaware within ${BOARD.RADIUS} tiles turn toward the hammering${b.raid ? `, Heat +${BOARD.HEAT}` : ""}.${targets.length > 1 ? " Several next to them: click the one." : ""}`,
+    btn("boardup", "Board up", `${BOARD.AP} actions and a bundle of boards and nails${boards ? "" : " (none carried)"}: ${first} nails boards across the ${what || "closed door, doorway or window"} next to them, from either side${boards && boards.where === "vehicle" ? " (the bundle out of the team's vehicle)" : " (a bundle in the team's vehicle counts from next to it)"}. ${BOARD.HP} hit points a layer (up to ${BOARD.MAX}) on top of a closed door's own, no sight or way through: the dead and raiders batter it. Loud: the unaware within ${BOARD.RADIUS} tiles turn toward the hammering${b.raid ? `, Heat +${BOARD.HEAT}` : ""}.${targets.length > 1 ? " Several next to them: click the one." : ""}`,
       !bWhy, "", { why: bWhy, ap: BOARD.AP, on: cui.mode === "boarded" });
   }
   const tears = tearTargets(b, u);
-  if (tears.length) btn("teardown", "Tear down", `${BOARD.TEAR.ap} actions: ${first} pries the boards off the ${[...new Set(tears.map((t) => boardedName(t.c).toLowerCase()))].join(", ")} next to them, from either side: the door or window as it was, shut. The boards are spent. Quieter than nailing them up (heard ${BOARD.TEAR.radius} tiles off).${tears.length > 1 ? " Several next to them: click the one." : ""}`,
+  if (tears.length) btn("teardown", "Tear down", `${BOARD.TEAR.ap} actions: ${first} pries the boards off the ${[...new Set(tears.map((t) => boardedName(t.c).toLowerCase()))].join(", ")} next to them, from either side: the door or window as it was, shut. About half the bundles come off whole (into the kit, or on the ground at their feet); the rest are splintered. Quieter than nailing them up (heard ${BOARD.TEAR.radius} tiles off).${tears.length > 1 ? " Several next to them: click the one." : ""}`,
     ap >= BOARD.TEAR.ap, "", { why: NO_AP, ap: BOARD.TEAR.ap, on: cui.mode === "teardown" });
 }
 // The chooser over the orders once a piece is picked: a button for each place it can go (the cell clicked on the map works too).
@@ -803,11 +805,14 @@ function shoveChooser(state, b, u) {
   const c = b.cells[y * b.w + x];
   if (!shoveable(c)) return "";
   const dests = shoveDests(b, u, x, y);
-  return `<div class="small cbmsg cbammo" data-tip="${esc(`Where does the ${pieceName(c)} go? Pushed onto a free cell beside it, or pulled onto ${u.name.split(" ")[0]}'s own cell (they step back). Or click the cell on the map.`)}">Shove the ${esc(pieceName(c))}: ${dests.length ? dests.map((d) => `<button class="mini" data-action="cb-act" data-v="shove" data-k="${x},${y},${d.x},${d.y}" data-tip="${esc(`${d.word[0].toUpperCase()}${d.word.slice(1)}: ${SHOVE.AP} actions.`)}">${esc(d.word[0].toUpperCase() + d.word.slice(1))}</button>`).join(" ") : `<span class="muted">nowhere: no free open cell beside it, no room behind ${esc(u.name.split(" ")[0])}</span>`} <button class="mini" data-action="cb-act" data-v="shoveclose" data-tip="Close">✕</button></div>`;
+  const plan = shovePlan(state, b, u, x, y);
+  const cost = plan.helper ? `${SHOVE.HELP_AP} action each, ${esc(plan.helper.name.split(" ")[0])} helping` : `${SHOVE.AP} actions`;
+  if (plan.why) return `<div class="small cbmsg cbammo">Shove the ${esc(pieceName(c))}: <span class="muted">${esc(plan.why)}</span> <button class="mini" data-action="cb-act" data-v="shoveclose" data-tip="Close">✕</button></div>`;
+  return `<div class="small cbmsg cbammo" data-tip="${esc(`Where does the ${pieceName(c)} go? Pushed onto a free cell beside it (open floor or a door frame), or pulled onto ${u.name.split(" ")[0]}'s own cell (they step back). Or click the cell on the map. ${cost}.`)}">Shove the ${esc(pieceName(c))} (${cost}): ${dests.length ? dests.map((d) => `<button class="mini" data-action="cb-act" data-v="shove" data-k="${x},${y},${d.x},${d.y}" data-tip="${esc(`${d.word[0].toUpperCase()}${d.word.slice(1)}: ${cost}.`)}">${esc(d.word[0].toUpperCase() + d.word.slice(1))}</button>`).join(" ") : `<span class="muted">nowhere: no free cell beside it, no room behind ${esc(u.name.split(" ")[0])}</span>`} <button class="mini" data-action="cb-act" data-v="shoveclose" data-tip="Close">✕</button></div>`;
 }
 // The Shove order (combatAction "cb-act" v "shove"; d.k: "px,py,tx,ty" from the chooser, or "px,py" for the piece).
 function shoveCbAct(state, b, u, d) {
-  const why = shoveRefusal(b, u);
+  const why = shoveRefusal(b, u, state);
   if (why) { cui.msg = why; cui.shoveAsk = null; if (cui.mode === "shove") cui.mode = "move"; return; }
   const k = d && d.k != null && d.k !== "" ? String(d.k).split(",").map(Number) : null;
   if (k && k.length >= 4) return void act(state, { type: "shove", unit: u.id, x: k[0], y: k[1], tx: k[2], ty: k[3] });
@@ -2541,7 +2546,7 @@ function previewHtml(b, state = null) {
   // Half cover a person can vault (sim/combat.js VAULT, vaultable, canVault): the path may go over it, never end on it.
   const vaultWord = !cell.walk && SIM.vaultable(b, cobj) ? (u && !SIM.canVault(u) ? ` <span class="muted">Could be vaulted, not by ${esc(u.name.split(" ")[0])} now (the arms must be free, and not the dead).</span>` : ` <span class="muted">Can be vaulted: a move may go over it at +${SIM.VAULT.COST} tiles (never end on it), a scuff heard nearby, and ${SIM.VAULT.COST} tiles less of movement for the rest of the turn.${cell.cover === 1 && cobj.k !== "window" ? ` The dead crawl over it at +${CRAWL.COST} tiles.` : ""}</span>`) : "";
   // A piece of furniture that can be shoved (sim/barricade.js): from right next to it, both actions.
-  const shoveWord = shoveable(cobj) ? ` <span class="muted">Can be shoved a tile (Shove, ${SHOVE.AP} actions, from right next to it${cobj.moved ? "; moved already" : ""}): in a doorway it blocks the way${cell.cover === 2 ? ": the dead batter it (its hit points) or go round" : ""}.</span>` : "";
+  const shoveWord = shoveable(cobj) ? ` <span class="muted">Can be shoved a tile (Shove, ${SHOVE.AP} actions alone or ${SHOVE.HELP_AP} each with a helper${tallPiece(cobj) ? `; two people, or a Strong back or Melee ${SHOVE.STRONG_MELEE}+` : ""}, from right next to it${cobj.moved ? "; moved already" : ""}${cobj.frame ? "; standing in a door frame" : ""}): in a doorway it blocks the way${cell.cover === 2 ? ": the dead batter it (its hit points) or go round" : ""}.</span>` : "";
   if (!cell.walk) return `<b>${cobj.mhp ? structureName(cobj) : cell.name}</b>: ${cell.cover === 2 ? "full cover" : cell.cover === 1 ? "half cover" : "no cover"}${cell.los || cobj.t ? ", blocks sight from the ground" : ""}. Cannot stand here.${struct}${vaultWord}${shoveWord}`;
   const sides = coverSides(b, h.x, h.y);
   const best = Math.max(...sides);
