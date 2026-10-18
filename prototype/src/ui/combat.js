@@ -1159,7 +1159,7 @@ export function combatKey(state, e) {
   if (retreatAskOpen(b) && space) { cui.msg = `Press ${keyLabel("battle.confirm", 1) || "Enter"} or Sound the retreat to give the order, Esc to keep fighting.`; return true; }
   if (fallAskOpen(b) && confirm) { combatAction(state, "cb-fallback", { v: "go" }); return true; }
   if (space || confirm) { requestEndTurn(state, space ? "space" : "enter"); return true; }
-  if (e.code === "Escape") { cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; return true; }
+  if (e.code === "Escape") { if (cui.barTray != null) { cui.barTray = null; return true; } cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; return true; }
   if (k === "battle.autoplay") { combatAction(state, "cb-autoplay", {}); return true; } // the AI plays your side
   if (k === "battle.inventory") { combatAction(state, "cb-inv", {}); return true; } // the selected survivor's kit (read-only)
   if (b.phase === "deploy") return false;
@@ -1194,7 +1194,9 @@ export function combatAction(state, key, d) {
     else if (d.v === "hud") toggleHud(); // ui/battlehud.js: the squad strip's fold button
     return;
   }
-  if (key === "cb-bar") { if (d.v === "more") cui.barMore = !cui.barMore; return; } // the bottom bar's ⋯ More (ui/battlebar.js)
+  // The bottom bar (ui/battlebar.js): All / Ready only, a group's tray open or closed (an order given from a tray closes it).
+  if (key === "cb-bar") { if (d.v === "all") setBarAll(!cui.barAll); else if (d.v === "tray") cui.barTray = cui.barTray === Number(d.g) ? null : Number(d.g); return; }
+  if (d && d.tray) cui.barTray = null;
   if (key === "cb-auto") {
     if (b.acted || b.turn > 1) return;
     state.combat = null;
@@ -1579,14 +1581,19 @@ export function renderCombatPanel(state) {
 // ---------- the bottom bar (ui/battlebar.js) ----------
 // The selected one's card and everyone's tabs, the orders (unitOrders), the turn controls with their questions (the
 // end turn, the retreat, the fall back to the yard), the weapon and the turn. main.js writes it into #cbbar.
-cui.barMore = false; // ⋯ More open: the key table's other orders, greyed with when they apply
+// All: the bar shows the orders that cannot be given now too, greyed (off by default: ready only), kept per machine.
+// barTray: the group whose tray is open (Esc or an order given from it closes it).
+const BAR_ALL_KEY = "bs.battle.barAll";
+try { cui.barAll = typeof localStorage !== "undefined" && localStorage.getItem(BAR_ALL_KEY) === "1"; } catch { cui.barAll = false; }
+cui.barTray = null;
+export function setBarAll(on) { cui.barAll = !!on; try { if (typeof localStorage !== "undefined") localStorage.setItem(BAR_ALL_KEY, on ? "1" : "0"); } catch { /* private mode */ } }
 function endAskHtml(b) {
   const n = unitsWithActions(b);
   return `<div class="small warn cbmsg cbconfirm"><b>${n} unit${n === 1 ? " still has" : "s still have"} actions</b> — press ${esc(keyLabel("battle.endTurn", 1) || "Space")} again or ${esc(keyLabel("battle.confirm", 1) || "Enter")} to end the turn (Esc to keep playing).
     <div style="margin-top:0.3rem"><button data-action="cb-end" data-now="1" data-tip="End the turn now; units with actions left do nothing.">End turn now</button>
     <button data-action="cb-confirm" data-tip="Stop asking: Space and End turn end the turn at once (turn it back on with the checkbox below the log).">Don't ask again</button></div></div>`;
 }
-export function renderCombatBar(state) {
+export function renderCombatBar(state, { flat = false } = {}) {
   const b = state.combat;
   if (!b) return "";
   sync(b);
@@ -1607,10 +1614,11 @@ export function renderCombatBar(state) {
   if (!b.raid && !b.acted && b.turn === 1 && !b.drill) controls.push({ act: "cb-auto", ic: "⏩", label: "Auto-resolve", ok: true, tip: "Skip the tactical battle and resolve it instantly by the numbers. Only before you act on turn 1." });
   if (restartable(state, b)) controls.push({ act: "set-battlereload", ic: "↺", label: "Restart battle", ok: true, tip: "Load the save made as this battle started and play it again from the beginning (asks first). Everything since it began is lost." });
   const ask = retreatAskOpen(b) ? retreatConfirmHtml(b, askPlan(b)) : fallAskOpen(b) ? fallBackConfirmHtml(b) : endAskOpen(b) ? endAskHtml(b) : "";
-  return barHtml({ state, b, u, team: players(b), orders: ord.list, head: ord.head, extra: ord.extra, controls, ask, more: cui.barMore, cones: cui.cones, autoPlay: cui.autoPlay, salt: cui.salt });
+  return barHtml({ state, b, u, team: players(b), orders: ord.list, head: ord.head, extra: ord.extra, controls, ask, all: cui.barAll, tray: cui.barTray, flat, cones: cui.cones, autoPlay: cui.autoPlay, salt: cui.salt });
 }
-// The panel and the bar together: what the battle screen shows (the tools read the screen's buttons from it).
-export const renderCombatScreen = (state) => renderCombatPanel(state) + renderCombatBar(state);
+// The panel and the bar together: what the battle screen shows (the tools read the screen's buttons from it), with
+// every order of the selected unit on the bar (greyed ones too, none in a tray).
+export const renderCombatScreen = (state) => renderCombatPanel(state) + renderCombatBar(state, { flat: true });
 
 // The view bar: turn, zoom, center, roofs; in a building with storeys the floor shown (`Floor 2 of 5 ▲ ▼`).
 export function viewBar(b = cui.battle) {
