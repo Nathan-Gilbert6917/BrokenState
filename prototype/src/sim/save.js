@@ -40,7 +40,7 @@ import { migrateStacks } from "./itemstack.js"; // stacks in a slot (2026-10-10)
 import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people rest" (old saves: on)
 import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
 import { migrateCanners } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
-import { ensurePois, withPoisPacked } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
+import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -103,11 +103,14 @@ export function serializeState(state, { dropCards = false } = {}) {
   const lean = root.combat && root.combat.losCache ? { ...root, combat: { ...root.combat, losCache: null, floors: Array.isArray(root.combat.floors) ? root.combat.floors.map((F) => ({ ...F, losCache: null })) : root.combat.floors } } : root;
   // The tiles' points of interest (pois.js) are left off the tiles and saved as the changes from the lists the seed
   // makes (state.poiMods, a few hundred bytes instead of a list on every land tile); ensurePois puts them back on load.
-  return withPoisPacked(lean, (poiMods) => ({
+  // The encoder passes over each tile's `pois` (taking the key off every tile and putting it back would turn all of
+  // them into slow dictionary objects for the rest of the session).
+  const poiMods = packPois(lean);
+  return {
     format: SAVE_FORMAT, v: SAVE_VERSION, game: GAME_VERSION,
     nextId: peekNextId(), meta: saveMeta(state),
-    state: encodeGraph({ ...lean, poiMods }),
-  }));
+    state: encodeGraph({ ...lean, poiMods }, { skipKey: "pois", skipIn: new Set(lean.tiles) }),
+  };
 }
 
 // Is this a save this version can load? { ok, why }.
@@ -328,13 +331,21 @@ const TYPED = { Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Arra
 const isPlain = (v) => { const p = Object.getPrototypeOf(v); return p === Object.prototype || p === null; };
 const keyLabel = (k) => (typeof k === "string" && /^[A-Za-z_$][\w$]*$/.test(k) ? `.${k}` : `[${typeof k === "string" ? JSON.stringify(k) : String(k)}]`);
 
-/** @param {any} root @returns {any} */
-export function encodeGraph(root) {
+// opts: skipKey / skipIn: a property left out of the objects in that set (serializeState: the tiles' pois).
+/** @param {any} root @param {{ skipKey?: string, skipIn?: Set<any> }} [opts] @returns {any} */
+export function encodeGraph(root, { skipKey = null, skipIn = null } = {}) {
+  const skip = (v, k) => k === skipKey && skipIn.has(v);
   // Pass 1: how often each object is reached, and anything that cannot be written.
   const count = new Map();
   const weaks = [];
-  const path = [];
-  const fail = (what) => { throw new SaveError(`${what} at state${path.join("")} cannot be saved.`, what === "Code" ? "function" : "type", path.join("")); };
+  // Where the walk is, as raw steps (kind, value): written out as text only when something cannot be saved, so a save
+  // makes no string for each of the million properties it passes.
+  const pathKind = [], pathVal = [];
+  const step = (kind, val) => { pathKind.push(kind); pathVal.push(val); };
+  const back = () => { pathKind.pop(); pathVal.pop(); };
+  const LABEL = [(i) => `[${i}]`, keyLabel, (k) => `{${String(k)}}`, (i) => `{#${i}}`, (t) => t];
+  const pathText = () => pathKind.map((k, i) => LABEL[k](pathVal[i])).join("");
+  const fail = (what) => { const at = pathText(); throw new SaveError(`${what} at state${at} cannot be saved.`, what === "Code" ? "function" : "type", at); };
   const visit = (v) => {
     const t = typeof v;
     if (t === "function") fail("Code");
@@ -344,22 +355,23 @@ export function encodeGraph(root) {
     if (n !== undefined) { count.set(v, n + 1); return; }
     count.set(v, 1);
     if (Array.isArray(v)) {
-      for (let i = 0; i < v.length; i++) { path.push(`[${i}]`); visit(v[i]); path.pop(); }
-      for (const k of Object.keys(v)) if (!(String(+k >>> 0) === k && (+k >>> 0) < v.length)) { path.push(keyLabel(k)); fail("A property on a list"); }
+      for (let i = 0; i < v.length; i++) { step(0, i); visit(v[i]); back(); }
+      for (const k of Object.keys(v)) if (!(String(+k >>> 0) === k && (+k >>> 0) < v.length)) { step(1, k); fail("A property on a list"); }
       return;
     }
     if (ArrayBuffer.isView(v)) { if (!TYPED[v.constructor.name]) fail(`A ${v.constructor.name}`); return; }
     if (v instanceof Rng || v instanceof HexGrid) return;
     if (v instanceof WeakMap || v instanceof WeakSet) { weaks.push(v); return; }
-    if (v instanceof Map) { for (const [k, x] of v) { path.push(`{${String(k)}}`); visit(k); visit(x); path.pop(); } return; }
-    if (v instanceof Set) { let i = 0; for (const x of v) { path.push(`{#${i++}}`); visit(x); path.pop(); } return; }
+    if (v instanceof Map) { for (const [k, x] of v) { step(2, k); visit(k); visit(x); back(); } return; }
+    if (v instanceof Set) { let i = 0; for (const x of v) { step(3, i++); visit(x); back(); } return; }
     if (!isPlain(v)) fail(`An object of class ${v.constructor ? v.constructor.name : "?"}`);
     for (const k of Object.keys(v)) {
+      if (skip(v, k)) continue;
       const d = Object.getOwnPropertyDescriptor(v, k);
-      path.push(keyLabel(k));
+      step(1, k);
       if (d && (d.get || d.set)) fail("Code (a getter)");
       visit(d.value);
-      path.pop();
+      back();
     }
     if (Object.getOwnPropertySymbols(v).length) fail("A symbol key");
   };
@@ -371,7 +383,7 @@ export function encodeGraph(root) {
     for (const w of weaks) weakKeys.set(w, objs.filter((o) => w.has(o)));
     for (const [w, keys] of weakKeys) for (const o of keys) {
       count.set(o, count.get(o) + 1);
-      if (w instanceof WeakMap) { path.length = 0; path.push(".(weak map value)"); visit(w.get(o)); }
+      if (w instanceof WeakMap) { pathKind.length = pathVal.length = 0; step(4, ".(weak map value)"); visit(w.get(o)); }
     }
   }
   // Pass 2: the encoded tree, shared objects as D (first sight) and R (after).
@@ -408,7 +420,7 @@ export function encodeGraph(root) {
     if (v instanceof WeakMap) return { $: "WM", e: weakKeys.get(v).map((k) => [enc(k), enc(v.get(k))]) };
     if (v instanceof WeakSet) return { $: "WS", e: weakKeys.get(v).map((k) => enc(k)) };
     const out = {};
-    for (const k of Object.keys(v)) out[k] = enc(v[k]);
+    for (const k of Object.keys(v)) if (!skip(v, k)) out[k] = enc(v[k]);
     return Object.prototype.hasOwnProperty.call(v, "$") ? { $: "O", v: out } : out;
   };
   return enc(root);
