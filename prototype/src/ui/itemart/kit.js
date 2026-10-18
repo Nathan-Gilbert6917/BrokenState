@@ -26,7 +26,27 @@ export const C = {
 };
 
 // A colour lighter (f > 0) or darker (f < 0) by a fraction.
+// The figures (ui/figures.js) shade every pixel they paint, so the common case (a colour string and a finite
+// fraction) keeps each colour's parse (RGB: the string -> its 0xrrggbb, or -1 when it is no colour; a few hundred
+// colours are in play, and a full table is simply emptied) and writes the channels through a table of two-digit hex
+// strings. The channel maths is the same float expression with the same Math.round, so the colour is the same string.
+const RGB = new Map(), HEX2 = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
 export function shade(hex, f) {
+  if (typeof hex !== "string" || typeof f !== "number" || !Number.isFinite(f)) return shadeAny(hex, f);
+  let n = RGB.get(hex);
+  if (n === undefined) {
+    const h = hex.replace("#", "");
+    n = /^[0-9a-f]{6}$/i.test(h) ? parseInt(h, 16) : -1;
+    if (RGB.size >= 4096) RGB.clear();
+    RGB.set(hex, n);
+  }
+  if (n < 0) return hex;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255, m = 1 + f;
+  if (f < 0) return `#${HEX2[Math.max(0, Math.min(255, Math.round(r * m)))]}${HEX2[Math.max(0, Math.min(255, Math.round(g * m)))]}${HEX2[Math.max(0, Math.min(255, Math.round(b * m)))]}`;
+  return `#${HEX2[Math.max(0, Math.min(255, Math.round(r + (255 - r) * f)))]}${HEX2[Math.max(0, Math.min(255, Math.round(g + (255 - g) * f)))]}${HEX2[Math.max(0, Math.min(255, Math.round(b + (255 - b) * f)))]}`;
+}
+// Any other input, as shade always did (a number for a colour, a fraction that is not a finite number).
+function shadeAny(hex, f) {
   const h = String(hex).replace("#", "");
   if (!/^[0-9a-f]{6}$/i.test(h)) return hex;
   const n = parseInt(h, 16), v = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => (f < 0 ? x * (1 + f) : x + (255 - x) * f));

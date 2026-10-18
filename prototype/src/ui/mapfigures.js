@@ -104,12 +104,61 @@ function paintScene(limbs, grid, yaw) {
   }
   return p;
 }
+// The piece on its canvas, UP px a grid px: every grid px that is not solid (empty, or a see-through glow) but
+// touches a solid one (an opaque colour) in OUTLINE, then every coloured px in its colour. Written as one ImageData
+// (a fillRect a pixel, toCanvasSlow, cost about as much as painting the piece once the painter got quicker): an
+// opaque "#rrggbb" is its own four bytes either way, and a see-through "#rrggbbaa" is still filled over what lies
+// under it (the outline or nothing), so it blends as before. Any other colour string goes to toCanvasSlow, so the
+// bytes are always toCanvasSlow's; so does a context with no ImageData (the tools' stub canvas records the fillRects).
+const PARSED = new Map(); // colour string -> 0xrrggbb, -2 for "#rrggbbaa", -1 for anything else (emptied when full)
+function colourOf(c) {
+  let n = PARSED.get(c);
+  if (n === undefined) {
+    n = typeof c !== "string" ? -1 : /^#[0-9a-f]{6}$/i.test(c) ? parseInt(c.slice(1), 16) : /^#[0-9a-f]{8}$/i.test(c) ? -2 : -1;
+    if (PARSED.size >= 4096) PARSED.clear();
+    PARSED.set(c, n);
+  }
+  return n;
+}
+const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1; // the byte order of a Uint32Array over the pixels
+const pack = (n) => (LITTLE ? (0xff000000 | ((n & 255) << 16) | (n & 0xff00) | ((n >> 16) & 255)) >>> 0 : ((n << 8) | 255) >>> 0);
+const OUT32 = pack(colourOf(OUTLINE));
 function toCanvas(p) {
   if (typeof document === "undefined") return null;
   const cv = document.createElement("canvas");
   cv.width = p.w * UP;
   cv.height = p.h * UP;
-  const c = cv.getContext("2d");
+  const c = cv.getContext("2d"), w = p.w, h = p.h, px = p.px, n = w * h, col = new Int32Array(n), solid = new Uint8Array(n); // col: 0xrrggbb, -2 a glow, -3 empty
+  let glows = 0;
+  for (let i = 0; i < n; i++) {
+    const v = px[i];
+    if (!v) { col[i] = -3; continue; }
+    const k = colourOf(v);
+    if (k === -1) return toCanvasSlow(p, cv, c);
+    if (k === -2) glows++;
+    col[i] = k;
+    solid[i] = k >= 0 ? 1 : 0;
+  }
+  const img = typeof c.createImageData === "function" ? c.createImageData(w * UP, h * UP) : null;
+  if (!img || !img.data) return toCanvasSlow(p, cv, c);
+  const d = new Uint32Array(img.data.buffer), row = w * UP;
+  for (let y = 0; y < h; y++) {
+    const r0 = y * UP * row;
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, k = col[i];
+      let v = 0;
+      if (k >= 0) v = pack(k);
+      else if ((x > 0 && solid[i - 1]) || (x < w - 1 && solid[i + 1]) || (y > 0 && solid[i - w]) || (y < h - 1 && solid[i + w])) v = OUT32;
+      if (v) for (let j = r0 + x * UP, e = j + UP; j < e; j++) d[j] = v;
+    }
+    for (let k = 1; k < UP; k++) d.copyWithin(r0 + k * row, r0, r0 + row); // the grid row's other UP - 1 canvas rows
+  }
+  c.putImageData(img, 0, 0);
+  if (glows) for (let i = 0; i < n; i++) if (col[i] === -2) { c.fillStyle = px[i]; c.fillRect((i % w) * UP, ((i / w) | 0) * UP, UP, UP); }
+  return cv;
+}
+// The same with a fillRect a pixel, on the canvas and context toCanvas made.
+function toCanvasSlow(p, cv, c) {
   c.fillStyle = OUTLINE;
   const solid = (x, y) => { const v = p.get(x, y); return !!v && v.length <= 7; };
   for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {

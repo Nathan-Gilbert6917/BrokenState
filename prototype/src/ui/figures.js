@@ -72,41 +72,49 @@ function paintLimb(p, zb, gb, L, W, g) {
   };
   const N = (nf) => norm(W.n ? W.n(nf) : W(nf)); // a normal through the transform (its own, when the transform is not a rotation)
   const light = W.light || LIGHT; // the transform may bring its own light rule (ui/mapfigures.js: harder shade on the map's small pieces)
-  const lit = (nf, col) => shade(col, light(N(nf)));
+  // A face's light is worked out once (its normal is the same at every point of it), and the colour shaded last is
+  // kept, since the texture gives runs of one colour: the same shade(col, light) as a point at a time, a few times.
+  const litOf = (nf) => { const f = light(N(nf)); let lc = litOf, ls = null; return (col) => (col === lc ? ls : (ls = shade((lc = col), f))); };
   const seen = (nf) => dot(N(nf), VIEW) > 0.02;
-  const n = L.sides, ST = 0.4;
-  const radial = (th, sc) => add(mul(u, L.ra * Math.cos(th) * sc), mul(v, L.rb * Math.sin(th) * sc));
-  // the sides
+  const n = L.sides, ST = 0.4, ra = L.ra, rb = L.rb, tex = L.tex;
+  const radial = (th, sc) => add(mul(u, ra * Math.cos(th) * sc), mul(v, rb * Math.sin(th) * sc));
+  const [u0, u1, u2] = u, [v0, v1, v2] = v;
+  // the sides (each point is C + radial(th, sc), written out: the same products and sums in the same order)
   for (let k = 0; k < n; k++) {
     const th0 = L.phase + (2 * Math.PI * k) / n, th1 = L.phase + (2 * Math.PI * (k + 1)) / n, mid = (th0 + th1) / 2;
-    const nf = norm(add(mul(u, Math.cos(mid) / L.ra), mul(v, Math.sin(mid) / L.rb)));
+    const nf = norm(add(mul(u, Math.cos(mid) / ra), mul(v, Math.sin(mid) / rb)));
     if (!seen(nf)) continue;
-    const face = faceOf(nf);
+    const face = faceOf(nf), lit = litOf(nf);
     const chord = len(sub(radial(th1, 1), radial(th0, 1)));
     const qs = Math.max(1, Math.ceil(chord / ST)), ts = Math.max(1, Math.ceil(length / ST));
     for (let ti = 0; ti <= ts; ti++) {
-      const t = ti / ts, sc = 1 + (L.taper - 1) * t, C = lerp(L.A, L.B, t);
+      const t = ti / ts, sc = 1 + (L.taper - 1) * t, C = lerp(L.A, L.B, t), [c0, c1, c2] = C;
       for (let qi = 0; qi <= qs; qi++) {
         const q = qi / qs, th = th0 + (th1 - th0) * q;
-        const P = add(C, radial(th, sc));
-        // s across the face: the point's place across the limb as seen from that face
-        const s = face === "front" ? 0.5 - (P[1] - C[1]) / (2 * L.rb) : face === "back" ? 0.5 + (P[1] - C[1]) / (2 * L.rb) : face === "left" ? 0.5 + (P[0] - C[0]) / (2 * L.ra) : 0.5 - (P[0] - C[0]) / (2 * L.ra);
-        const tc = L.tex ? L.tex(face, Math.max(0, Math.min(1, s)), t) : null;
-        plot(P, lit(nf, tc || L.col));
+        const ka = ra * Math.cos(th) * sc, kb = rb * Math.sin(th) * sc;
+        const P = [c0 + (u0 * ka + v0 * kb), c1 + (u1 * ka + v1 * kb), c2 + (u2 * ka + v2 * kb)];
+        let tc = null;
+        if (tex) {
+          // s across the face: the point's place across the limb as seen from that face
+          const s = face === "front" ? 0.5 - (P[1] - c1) / (2 * rb) : face === "back" ? 0.5 + (P[1] - c1) / (2 * rb) : face === "left" ? 0.5 + (P[0] - c0) / (2 * ra) : 0.5 - (P[0] - c0) / (2 * ra);
+          tc = tex(face, Math.max(0, Math.min(1, s)), t);
+        }
+        plot(P, lit(tc || L.col));
       }
     }
   }
   // the ends
-  for (const [C, nf, sc, face] of [[L.A, mul(axis, -1), 1, null], [L.B, axis, L.taper, null]]) {
+  for (const [C, nf, sc] of [[L.A, mul(axis, -1), 1], [L.B, axis, L.taper]]) {
     if (!seen(nf)) continue;
-    const f = faceOf(nf), rs = Math.max(1, Math.ceil(Math.max(L.ra, L.rb) * sc / ST));
+    const f = faceOf(nf), lit = litOf(nf), rs = Math.max(1, Math.ceil(Math.max(ra, rb) * sc / ST)), [c0, c1, c2] = C;
     for (let ri = 0; ri <= rs; ri++) {
-      const r = ri / rs, steps = Math.max(4, Math.ceil((2 * Math.PI * Math.max(L.ra, L.rb) * r * sc) / ST));
+      const r = ri / rs, steps = Math.max(4, Math.ceil((2 * Math.PI * Math.max(ra, rb) * r * sc) / ST)), rsc = r * sc;
       for (let k = 0; k <= steps; k++) {
-        const th = (2 * Math.PI * k) / steps;
-        const P = add(C, radial(th, r * sc));
-        const tc = L.tex ? L.tex(f, (Math.cos(th) * r + 1) / 2, (Math.sin(th) * r + 1) / 2) : null;
-        plot(P, lit(nf, tc || L.col));
+        const th = (2 * Math.PI * k) / steps, cos = Math.cos(th), sin = Math.sin(th);
+        const ka = ra * cos * rsc, kb = rb * sin * rsc;
+        const P = [c0 + (u0 * ka + v0 * kb), c1 + (u1 * ka + v1 * kb), c2 + (u2 * ka + v2 * kb)];
+        const tc = tex ? tex(f, (cos * r + 1) / 2, (sin * r + 1) / 2) : null;
+        plot(P, lit(tc || L.col));
       }
     }
   }
