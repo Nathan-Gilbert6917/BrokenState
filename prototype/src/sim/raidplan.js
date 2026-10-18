@@ -53,6 +53,9 @@ import { STEALTH } from "./stealth.js";
 import { wakeLights } from "./ailights.js";
 import { createBattle, combatants, startCombat, say, endCalledOff } from "./combat.js";
 import { armsDropsEnd } from "./carry.js";
+import { gunOut } from "./gunload.js"; // the rounds in each gun back onto the gun before the battle is made again
+import { isStacked } from "./mags.js";
+import { stackN } from "./roundstack.js";
 import { partyMembers as membersOf } from "./parties.js";
 import { partyMembers, wipeParty, tileLabel } from "./parties.js";
 
@@ -203,6 +206,18 @@ export function callOff(state) {
   return "";
 }
 
+// The rounds in each gun of yours back onto the gun before its unit is dropped (gunload.js gunOut: it.loaded with the
+// stack): the battle made again loads exactly those (mags.js fillUnit reads the record), so nothing is lost and nothing
+// is loaded twice. Without it every rebuild (another side, a scout, the night, the kit sorted) threw a magazine's
+// worth a gun away: the fill at the start had taken them out of the pockets' boxes and the team's bags onto the unit
+// (the user's report 2026-10-18: rounds moved onto a survivor before a raid gone when it started). A gun with a record
+// already (its unit emptied by an earlier pass) is left as it is.
+function gunsOut(b) {
+  for (const u of b.units || []) {
+    if (u.side !== "player" || u.dead || !isStacked(u) || !u.item || u.item.loaded || !(stackN(u.stack) > 0)) continue;
+    gunOut(b, u, u.item);
+  }
+}
 // The battle made again on the same setup from the same dice (the same map): what was set down at the start is
 // picked up first, and the clock's dice go on from where they are now. Returns the new battle, or null when nobody is
 // left to fight it (the battle is dropped, the next one queued opens).
@@ -210,6 +225,7 @@ function rebuild(state) {
   const b = state.combat;
   const setup = b.setup, P = setup.plan;
   armsDropsEnd(state, b, "victory"); // carry.js: the loads staged at the start back to the team
+  gunsOut(b); // the guns keep what is in them
   if (!combatants(state, setup).length) {
     state.combat = null;
     const p = setup.partyId != null ? state.parties.find((x) => x.id === setup.partyId) : null;

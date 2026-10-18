@@ -15,7 +15,8 @@ import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { createBattle, registerCombatHandler } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
-import { planOf, planOpen, sendScout } from "../src/sim/raidplan.js";
+import { planOf, planOpen, sendScout, refit, unstage, setEntry } from "../src/sim/raidplan.js";
+import { sideRounds } from "../src/sim/ammo.js";
 
 let passed = 0, failed = 0;
 const check = (ok, msg) => { if (ok) passed++; else failed++; console.log(`  ${ok ? "ok" : "FAIL"}: ${msg}`); };
@@ -138,6 +139,31 @@ console.log("Before you go in");
     check(!RP.planUI.map && !RP.planUI.leave, "a new battle: the window up, nothing put aside");
     void b;
   }
+}
+
+// ---------- 3b. the rounds survive the battle being made again ----------
+// The fill at the start takes a magazine's worth a gun out of the pockets' boxes and the team's bags onto the unit;
+// a rebuild (the kit window closing, another side, a scout, the night) must give them back (sim/raidplan.js gunsOut),
+// else rounds moved onto a survivor before going in were gone when the raid started (the user's report 2026-10-18).
+console.log("The rounds across a rebuild");
+{
+  let n = 0;
+  for (let i = 0; i < 6 && n < 3; i++) {
+    const st = plannedRaid(7300 + i, ["town", "farm", "gas", "police"][i % 4]);
+    if (!st || !planOpen(st.combat)) continue;
+    const P = planOf(st.combat);
+    const guns = st.combat.units.filter((u) => u.side === "player" && Array.isArray(u.stack) && u.stack.length).length;
+    if (!guns) continue;
+    n++;
+    const before = sideRounds(st.combat);
+    unstage(st);
+    refit(st);
+    check(sideRounds(st.combat) === before, `seed ${7300 + i}: ${before} rounds before the kit window, ${sideRounds(st.combat)} after it (${guns} gun${guns === 1 ? "" : "s"} loaded)`);
+    const other = P.sides.find((s) => s !== planOf(st.combat).side);
+    if (other) { setEntry(st, other); check(sideRounds(st.combat) === before, `seed ${7300 + i}: ${sideRounds(st.combat)} after coming in from the ${other}`); }
+    check(st.combat.units.filter((u) => u.side === "player" && Array.isArray(u.stack) && u.stack.length).length === guns, `seed ${7300 + i}: the same ${guns} gun${guns === 1 ? "" : "s"} loaded in the battle made again`);
+  }
+  check(n >= 1, `${n} planned raid${n === 1 ? "" : "s"} with a loaded gun tried`);
 }
 
 // ---------- 4. the log window's rules ----------
