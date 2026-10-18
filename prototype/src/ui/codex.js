@@ -24,6 +24,7 @@ import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js";
 import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
 import { STREET, DOOR_KINDS } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses; the kinds of door
 import { WINDOW } from "../sim/windows.js"; // the map's windows: open, locked, fixed or broken
+import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/barricade.js"; // furniture shoved in the way, boards over doors and windows, the dead crawling over half cover
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
@@ -397,6 +398,13 @@ function placeEntries() {
     text: "A building's doors come by its kind: houses have a solid front door and a screen or a patio door at the back, shops and offices glass fronts and steel fire exits, police stations, armories, gun stores and cell blocks security doors, garages roller doors, barns plain wood. The kind sets how long the dead take to batter it down, whether it is seen through when shut, how hard its lock is to pick and whether it can be kicked in.",
     how: "Hover a door to read its kind. A glass or a screen door hides nothing: close it to slow the dead, not to break their sight. Pick a glass door's lock (easy) or just break it (loud). A security door is picked or keyed, never kicked or forced: batter it down if you must.", sprite: null,
   });
+  // Barricades (sim/barricade.js): furniture shoved in the way, boards and nails over a door or window, the dead crawling over half cover.
+  out.push({
+    key: "k:barricades", cat: "places", name: "🪵 Barricades", sub: "Shove furniture, board up doors and windows",
+    stats: [["Shove", `${SHOVE.AP} actions, from right next to it: a shelf, cabinet, counter, table, bed, crate, locker, tall shelving, barrel, hay or sandbags one tile, pushed onto a free cell beside it or pulled onto your own cell (you step back); the scrape is heard ${SHOVE.RADIUS} tiles off`], ["Board up", `${BOARD.AP} actions and a bundle of boards and nails (crafted from 30 firewood and a scrap, anywhere): nailed across a closed door, a doorway or a window from either side; ${BOARD.HP} hit points a layer, up to ${BOARD.MAX} layers, on top of a closed door's own; loud (heard ${BOARD.RADIUS} tiles off, Heat +${BOARD.HEAT} in a raid)`], ["Tear down", `${BOARD.TEAR.ap} actions from either side: the door or window back, shut; the boards are spent`], ["The dead", `crawl over half cover (a table, a shelf, crates, a fence) at +${CRAWL.COST} tiles, a walker's whole turn; never a closed window; batter boards and a shoved tall piece (${FURNITURE.locker.hp} hit points for lockers) or go round`], ["Raiders", `vault half cover as your people do; batter boards when there is no other way in`]],
+    text: "Furniture in a doorway or a corridor slows the dead and stops a crowd: they crawl over a table or a shelf one at a time, spending their turn on it, and a tall piece (lockers, tall shelving) they must batter down or go round. Boards nailed across a door or a window close it for good until someone batters through: no sight, no way, full cover. Everything you can do, the other side can undo: the dead claw boards down and tear through a shoved locker, raiders batter their way in.",
+    how: "Before the dead arrive, shove a shelf across the doorway and board up the windows of the room you hold: each board-up is loud, so do it early. Keep boards in the pack (4 kg a bundle). Tear the boards down again when you leave, or vault out of a window.", sprite: null,
+  });
   // A kind with more to say than the rest: the neighbourhood is a whole street of houses on one raid map (sim/buildingmaps.js streetMap).
   const NOTES = {
     neighbourhood: {
@@ -566,6 +574,7 @@ function battleSeen(state, out) {
   // Windows and doors (sim/windows.js, sim/buildingmaps.js DOOR_KINDS): the entries open on the first map with one.
   if (!codexSeen(state, "k:windows") && b.cells && b.cells.some((c) => c.k === "window" || c.k === "smashed")) out.add("k:windows");
   if (!codexSeen(state, "k:doors") && b.cells && b.cells.some((c) => c.k === "idoor" || c.k === "odoor" || c.k === "door" || c.k === "bdoor")) out.add("k:doors");
+  if (!codexSeen(state, "k:barricades") && b.cells && b.cells.some((c) => isBoarded(c) || (shoveable(c) && c.f === "floor"))) out.add("k:barricades"); // sim/barricade.js: the first map with furniture indoors, or boards
 }
 
 // main.js refresh: opens what the player sees. The full scan once an in-game hour (or force), the battle each time.

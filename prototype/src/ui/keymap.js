@@ -131,7 +131,11 @@ export const KEYMAP = [
     ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"],
     // sim/combat.js handoverAct: trade with the teammate next to them in their view cone (1 action a move). H is
     // Hunker down and Shift+H Heal, so it sits on Alt+H.
-    ["handover", "Hand over: trade with the teammate next to them in their view cone (1 action a move)", "Alt+KeyH"]]
+    ["handover", "Hand over: trade with the teammate next to them in their view cone (1 action a move)", "Alt+KeyH"],
+    // sim/barricade.js: furniture shoved a tile, boards nailed across a door or window, the boards torn down (Alt: every
+    // Shift letter is taken; not Alt+D, E or F, which a browser takes for its own menus).
+    ["shove", "Shove: a piece of furniture next to them one tile (2 actions)", "Alt+KeyS"], ["boardup", "Board up: boards and nails across the door or window next to them (2 actions)", "Alt+KeyB"],
+    ["teardown", "Tear down: the boards next to them (2 actions)", "Alt+KeyJ"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 
   // ---------- the timelapse (ui/timelapse.js tlKey) ----------
