@@ -12,10 +12,13 @@
 // Usage:
 //   node tools/pacing.js [days] [cautious|balanced|aggressive|all] [seeds...]      (default 365 all, seeds 1-14)
 //   node tools/pacing.js log [days] [style] [seed]                                 (the full log of one run, day by day)
+//   --workers N: the campaigns run side by side in worker threads, one per core by default (tools/pool.js); 1 runs
+//   them one after another.
 import { createWorld, tickHour, day } from "../src/sim/world.js";
 import { setAutopilot, PERSONALITIES } from "../src/sim/autopilot.js";
+import { pool, serve, isMainThread, workerCount, withoutWorkers } from "./pool.js";
 
-const args = process.argv.slice(2);
+const args = withoutWorkers(process.argv.slice(2));
 const logMode = args[0] === "log";
 if (logMode) args.shift();
 const days = Number(args[0] || (logMode ? 120 : 365));
@@ -222,25 +225,35 @@ if (logMode) {
 }
 
 // ---------- the campaigns ----------
-const runs = [];
-const t0 = performance.now();
-let problems = 0;
-for (const style of styles) for (const seed of seeds) {
+// One campaign, played and analysed in a worker thread: { r, notes, problem } (notes: the "?" and "!" lines).
+function campaign({ style, seed }) {
+  const notes = [];
+  let problem = false;
   try {
     const { state, rec } = play(seed, style);
     const r = analyse(state, rec, style, seed);
-    runs.push(r);
     const unpicked = r.cards.filter((c) => c.pick == null && !c.orders);
     const dups = r.cards.filter((c) => c.dup), stale = r.cards.filter((c) => c.stale);
-    if (dups.length) console.log(`  ? ${style} seed ${seed}: ${dups.length} duplicate card(s) (${[...new Set(dups.map((c) => c.key))].slice(0, 5).join(", ")})`);
-    if (stale.length) console.log(`  ? ${style} seed ${seed}: ${stale.length} card(s) answered after their subject was gone (${[...new Set(stale.map((c) => c.key))].slice(0, 5).join(", ")})`);
+    if (dups.length) notes.push(`  ? ${style} seed ${seed}: ${dups.length} duplicate card(s) (${[...new Set(dups.map((c) => c.key))].slice(0, 5).join(", ")})`);
+    if (stale.length) notes.push(`  ? ${style} seed ${seed}: ${stale.length} card(s) answered after their subject was gone (${[...new Set(stale.map((c) => c.key))].slice(0, 5).join(", ")})`);
     // Cards nobody could answer (the autopilot drops what needs a map click): flagged.
     const stuck = unpicked.filter((c) => c.enabled === 0);
-    if (stuck.length) { problems++; console.log(`  ! ${style} seed ${seed}: ${stuck.length} card(s) with no choice that can be taken (${[...new Set(stuck.map((c) => c.key))].slice(0, 4).join(", ")})`); }
+    if (stuck.length) { problem = true; notes.push(`  ! ${style} seed ${seed}: ${stuck.length} card(s) with no choice that can be taken (${[...new Set(stuck.map((c) => c.key))].slice(0, 4).join(", ")})`); }
+    return { r, notes, problem };
   } catch (e) {
-    problems++;
-    console.log(`  ! CRASH ${style} seed ${seed}: ${e.stack.split("\n").slice(0, 4).join(" | ")}`);
+    return { r: null, notes: [`  ! CRASH ${style} seed ${seed}: ${e.stack.split("\n").slice(0, 4).join(" | ")}`], problem: true };
   }
+}
+if (!isMainThread) { await serve(campaign); process.exit(0); } // a worker only plays campaigns (the report is the main thread's)
+const runs = [];
+const t0 = performance.now();
+let problems = 0;
+const jobs = styles.flatMap((style) => seeds.map((seed) => ({ style, seed })));
+for (const res of await pool(import.meta.url, jobs, { workers: workerCount(process.argv) })) {
+  const out = res && res.error ? { r: null, notes: [`  ! CRASH: ${res.error.split("\n").slice(0, 4).join(" | ")}`], problem: true } : res;
+  for (const l of out.notes) console.log(l);
+  if (out.problem) problems++;
+  if (out.r) runs.push(out.r);
 }
 const secs = (performance.now() - t0) / 1000;
 
