@@ -1645,7 +1645,11 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       check(new RegExp(`Floor 1 of ${n}`).test(bar) && /data-v="fup"/.test(bar) && /data-v="fdown"/.test(bar), `the view bar: Floor 1 of ${n} ▲ ▼`);
       let html = UI.renderCombatScreen(st);
       { const p = scan(html, "battle panel with floors"); check(!p.length, `the battle panel with floors: clean HTML (${p.slice(0, 2).join(" | ")})`); }
-      check((html.match(/class="cbfl off"/g) || []).length === 1 && (html.match(/class="cbfl"/g) || []).length === b.units.filter((u) => u.side === "player").length - 1, `the team list shows everyone's floor (F1, and F${n} dimmed for the one upstairs)`);
+      // A raid has no side panel (ui/combat.js raidLayout): the squad strip marks whoever is on another floor than the
+      // one shown (battlehud.js offDir), the top strip names the floor shown.
+      const HUD = await import("../src/ui/battlehud.js");
+      const marks = b.units.filter((u) => u.side === "player" && !u.dead).map((u) => HUD.offDir(b, u, 1600, 900));
+      check(marks.filter((m) => m === `F${n}`).length === 1 && !marks.some((m) => /^F/.test(m) && m !== `F${n}`) && new RegExp(`class="ct-floor"[^>]*>Floor 1 of ${n}`).test(UI.renderRaidTop(st)), `the squad strip marks the one upstairs F${n}, the top strip names the floor shown (Floor 1 of ${n})`);
       // Hover tips: the empty stairwell, and open air (outside the footprint, off the extraction zones) upstairs.
       UI.cui.hover = { x: stairs % b.w, y: (stairs / b.w) | 0, px: 0, py: 0 };
       const stairTip = /Stairwell/.test(UI.renderCombatScreen(st));
@@ -1666,8 +1670,9 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
       check(b.floor === 0, "Go to <name> returns to their floor");
       // Each floor draws, the banner naming the floor shown.
       let bad = 0;
-      for (const f of [top, 0]) { UI.setViewFloor(b, f); try { log = []; UI.drawCombat(st, NOW); if (f === top && !log.some((l) => l.includes(`FLOOR ${n} OF ${n}`))) bad++; } catch (e) { bad++; console.log(`  error drawing floor ${f}: ${e.stack}`); } }
-      check(!bad && nan === n0, `each floor draws, the banner naming it (FLOOR ${n} OF ${n})`);
+      // (a raid draws no banner on the map: its top strip names the floor, renderRaidTop)
+      for (const f of [top, 0]) { UI.setViewFloor(b, f); try { log = []; UI.drawCombat(st, NOW); if (f === top && !new RegExp(`class="ct-floor"[^>]*>Floor ${n} of ${n}`).test(UI.renderRaidTop(st))) bad++; } catch (e) { bad++; console.log(`  error drawing floor ${f}: ${e.stack}`); } }
+      check(!bad && nan === n0, `each floor draws, the top strip naming it (Floor ${n} of ${n})`);
       check(key("PageUp") && b.floor === 1, "PageUp shows the floor above");
       check((await import("../src/ui/help.js")).helpTopics().find((t) => t.id === "battle-view").html.includes("PageUp") && readme.includes("PageUp / PageDown"), "Help → Battle view and the README explain the floors and PageUp / PageDown");
       // The fixture off again: the battle draws as a single floor.
