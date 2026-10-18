@@ -20,7 +20,7 @@ import { FOOD_PACK_KG } from "../sim/parties.js";
 import { SUPPLIES, SKILL_NAMES, supWeight } from "../sim/data.js";
 import { traitWords } from "./traitpick.js"; // "Tough II, Loud I"
 import { survivorById, atBase, baseById, skill } from "../sim/world.js";
-import { partyMembers, teamName, poolLoad, partyCapacity, STANCES } from "../sim/parties.js";
+import { partyMembers, teamName, poolLoad, partyCapacity, STANCES, supplyLoad } from "../sim/parties.js";
 import { vehiclesAtBase, carsAtBase, bikesAtBase, isBike, isCar, partyVehicles, partyFleet, vehicleLabel, payloadOf, tank, upgradeText, vehicleById, VEHICLE_TYPES, MAX_VEHICLES, seatsOf, vehicleCapacity } from "../sim/vehicles.js";
 import { SEATS } from "../sim/combat.js";
 import { ROLES } from "../sim/economy.js";
@@ -34,7 +34,7 @@ import { packLights, hasLight } from "../sim/lights.js";
 import { loadFromBase, dropOff, dropRounds } from "../sim/teaminv.js";
 import { roundRoom, roundsHeld, ROUND_PLACES, PLACE_WORDS } from "../sim/supitems.js"; // rounds onto a named member: pockets, pack or rig, boxed or loose (2026-10-17)
 import { isRoundKey } from "../sim/rounds.js";
-import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicles, toggleVehicle, setSupply, teamHas, gearSnapshot, gearChanged, restoreGear } from "../sim/teamform.js";
+import { formTeam, formPreview, editBase, editProblem, addMember, removeMember, setVehicles, toggleVehicle, setSupply, teamHas, gearSnapshot, gearChanged, restoreGear, loadoutCount } from "../sim/teamform.js";
 import { doll, storageBox, selBar, tile, INV_ACTIONS, invDrop } from "./inventory.js";
 import { supplyIcon } from "./stackmove.js"; // a supply's own drawing (ui/itemart.js)
 import { fleetPicker, toggleFleetIds } from "./fleetpick.js"; // the vehicle picker the planners share
@@ -159,11 +159,12 @@ export function teamFormModal(state, ui) {
 
 // The line at the top on every tab: who, how they travel, the weight against what they can carry, the warnings.
 function summary(state, F, b, p, crew) {
-  let load, cap, problem = "", pv = null;
+  let load, cap, problem = "", pv = null, loaded = 0, loadedKg = 0;
   if (p) { load = poolLoad(p); cap = partyCapacity(state, p); pv = partyFleet(state, p); }
   else {
     const pre = formPreview(state, previewOpts(F));
     load = pre.load; cap = pre.cap; problem = pre.problem; pv = pre.v;
+    loaded = loadoutCount(pre.loadout); loadedKg = supplyLoad(pre.loadout); // their guns and magazines leave loaded, out of the stores (sim/gunrounds.js loadoutRounds)
   }
   const v = pv; // one vehicle, or a fleet (sim/vehicles.js fleetOf: seats, payload and fuel together)
   const t = crew.length ? teamLoad(crew, load, pv || null) : null;
@@ -181,6 +182,7 @@ function summary(state, F, b, p, crew) {
       <span class="${load > cap + 1e-6 ? "danger" : "muted"}"${tip("The team's supplies and cargo against what it can carry on top of what its people wear: everyone's max load (40 kg, 28 with a Bad Back, more with a pack, a rig and Packrat) less what they wear, plus the bikes' racks (15 kg each) or the car's payload up to 125% (riders 80 kg each). Over it, the team cannot set off.")}>Load ${n1(load)} / ${n0(cap)} kg</span></div>
     ${bar(load, cap)}
     ${t ? `${paceLine(t)}${carLine(t, v && (v.fleet ? "the cars" : v.name))}` : ""}
+    ${loaded > 0 ? `<div class="muted"${tip("What the rounds badges show in their guns and spare magazines at the base: those rounds go with the team as its own (out of the stores, on top of the supplies picked), so the guns start a fight as full as the window shows them. They weigh in the load above.")}>Guns and magazines loaded: ${loaded} rounds (${n1(loadedKg)} kg) out of the stores</div>` : ""}
     ${warn.length ? `<div class="warn">${warn.map(esc).join("<br>")}</div>` : ""}
     ${problem && crew.length ? `<div class="danger">${esc(problem)}</div>` : ""}
   </div>`;

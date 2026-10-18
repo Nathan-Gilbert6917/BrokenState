@@ -15,6 +15,10 @@
 //   - anything else (on a body, on the ground, in a container, a trader's): what is in it (it.loaded), else empty.
 // A gun found in a building or a raid container (foundFill) comes with a believable few rounds in it, on dice of its
 // own (no draw from the world's random numbers): the found rounds are real (they join the team's like a body's gun's).
+// The badge is kept honest when people leave the stores behind (2026-10-18, user: the team window showed every gun and
+// magazine full, "but when I load into a raid some guns and magazines have 0/x"): a team forming at a base, or a person
+// joining one there, takes the rounds its guns and magazines show out of the base's stock as the team's own
+// (loadoutRounds; teamform.js formTeam / addMember), so the magazines in the fight hold what the badge said at home.
 import { GEAR } from "./data.js";
 import { CALIBERS } from "./data-ammo.js";
 import { MAGAZINES } from "./data-kit.js";
@@ -128,14 +132,14 @@ function fillOne(item, at, claimed, magDflt = null) {
   if (!at.mine) {
     const r = gun && item.loaded ? roundOf(item.loaded.key) : null;
     const load = r ? loadId(cal, r.cal, r.type) : gun ? typeFor(cal, item.load && item.load !== "auto" ? item.load : null) : magLoad(item, cal, null);
-    return { n: Math.min(cap, rec), cap, cal, load, src: rec > 0 ? "in it" : "empty" };
+    return { n: Math.min(cap, rec), cap, cal, load, src: rec > 0 ? "in it" : "empty", key: keyFor(cal, load), got: 0 };
   }
   const load = gun ? gunLoadAt(item, at, claimed) : magLoadAt(item, at, claimed, magDflt);
   const key = keyFor(cal, load);
   const want = Math.max(0, cap - rec);
-  const got = Math.min(want, countKey(at, key, claimed));
+  const got = Math.min(want, countKey(at, key, claimed)); // got: claimed from the rounds to hand (the stores and the person's own boxes)
   claimed.set(key, (claimed.get(key) || 0) + got);
-  return { n: Math.min(cap, rec + got), cap, cal, load, src: "ready" };
+  return { n: Math.min(cap, rec + got), cap, cal, load, src: "ready", key, got };
 }
 // Fills every gun and magazine at a location in turn: Map(item → { n, cap, cal, load, src }).
 /** @param {any[]} items @param {ReturnType<typeof roundsAt>} at */
@@ -176,6 +180,42 @@ function stillAt(state, loc, item) {
 function sharers(at) {
   if (at.s) return carriedSpots(at.s).map((x) => x.item);
   return at.list || [];
+}
+
+// ---------- the loadout a team takes ----------
+// The rounds these people's guns and magazines would be loaded with out of these pools (a base's stock), by supply key:
+// what the badge shows them holding at the base (fillAll, in turn: each person's held gun first, then their other guns,
+// then the spares), less what their own boxes cover (a gun draws on the boxes in its holder's pockets, rig and pack
+// first), person by person out of the same stores (a short stock loads the first picked first, as the fight would).
+// `less`: rounds of the stores already spoken for (the supplies and the round picks the team takes besides). A team
+// forming at a base or a person joining one takes these out of the stock as the team's own rounds (teamform.js), so the
+// fight's magazines hold what the window showed. Returns { key: n } (handloads under their own keys), nothing touched.
+/** @param {any[]} people @param {Record<string, number>[]} pools @param {Record<string, number>} [less] @returns {Record<string, number>} */
+export function loadoutRounds(people, pools, less = {}) {
+  /** @type {Record<string, number>} */
+  const work = {};
+  for (const p of pools || []) for (const [k, q] of Object.entries(p || {})) if (roundOf(k) && num(q) > 0) work[k] = num(work[k]) + Math.floor(num(q));
+  for (const [k, q] of Object.entries(less || {})) if (work[k] && num(q) > 0) work[k] = Math.max(0, work[k] - Math.floor(num(q)));
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const s of people || []) {
+    if (!s || !s.alive || !s.gear) continue;
+    const at = { pools: [work], boxes: boxesCarried(s), mine: true, s, list: null, place: null };
+    const all = fillAll(sharers(at), at);
+    /** @type {Map<string, number>} */
+    const need = new Map(); // claimed by base key, less the person's own boxes of it
+    for (const r of all.values()) if (r && r.got > 0) need.set(r.key, (need.get(r.key) || 0) + r.got);
+    for (const [key, q] of need) {
+      let left = q;
+      for (const k of withHand(key)) for (const it of at.boxes) if (it.key === k) left -= Math.max(0, Math.floor(num(it.dur)));
+      for (const k of withHand(key)) {
+        if (left <= 0) break;
+        const take = Math.min(left, Math.max(0, Math.floor(num(work[k]))));
+        if (take > 0) { work[k] -= take; out[k] = num(out[k]) + take; left -= take; }
+      }
+    }
+  }
+  return out;
 }
 
 // ---------- the answer ----------
