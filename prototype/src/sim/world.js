@@ -831,14 +831,16 @@ export function baseVision(base, state = null) {
   return (base.tier === 0 ? 1 : base.type === "hub" ? HUB_VISION : OUTPOST_VISION) + (base.watchtower ? 2 : 0) + baseOpticsSight(base); // a telescope in the armory (optics.js); a shelter (buildings.js SHELTER, tier 0) sees 1 tile
 }
 
-/** @param {State} state @param {number} tileId @returns {TileSnapshot} */
-export function snapshot(state, tileId) {
+// ix: tileIndex(state), when many tiles are looked at in a row (updateVision); without it each list is searched.
+/** @param {State} state @param {number} tileId @param {ReturnType<typeof tileIndex> | null} [ix] @returns {TileSnapshot} */
+export function snapshot(state, tileId, ix = null) {
   const t = state.tiles[tileId];
-  const here = state.hordes.filter((h) => h.tile === tileId);
+  const here = ix ? ix.hordes.get(tileId) || [] : state.hordes.filter((h) => h.tile === tileId);
   const hordeSize = here.reduce((s, h) => s + h.size, 0);
-  const site = state.hiveSites ? state.hiveSites.find((x) => x.tile === tileId) : null;
+  const site = ix ? ix.sites.get(tileId) : state.hiveSites ? state.hiveSites.find((x) => x.tile === tileId) : null;
+  const death = ix ? ix.deaths.get(tileId) : state.deathSites.find((d) => d.tile === tileId);
   // hiding.js: a group's hidden outpost you have not found is bare ground on your map (state.intel.unseen).
-  const factionBase = state.intel && state.intel.unseen && state.intel.unseen[tileId] != null ? null : state.factions.find((f) => f.alive && f.bases.includes(tileId));
+  const factionBase = state.intel && state.intel.unseen && state.intel.unseen[tileId] != null ? null : ix ? ix.groupBase.get(tileId) : state.factions.find((f) => f.alive && f.bases.includes(tileId));
   return {
     hour: state.hour,
     owner: t.owner,
@@ -851,10 +853,22 @@ export function snapshot(state, tileId) {
     loot: t.loot,
     hive: !!t.hive,
     site: site ? { biomass: site.biomass, started: site.started != null } : null,
-    deathSite: state.deathSites.find((d) => d.tile === tileId) ? state.deathSites.find((d) => d.tile === tileId).items.length : 0,
+    deathSite: death ? death.items.length : 0,
     abandoned: abandonedSnap(state, tileId), // groupworld.js: a base standing empty here (occupy.js: the Occupy order)
     ...(poiSnapshot(state, tileId) || {}), // pois.js: the points of interest the player knows here, and when it was surveyed or looked at
   };
+}
+// What snapshot reads, by tile, built once for a pass over many tiles: the hordes on each (in state.hordes order), and
+// the first hive site, living group's base and death site there (what each list's find would return). Valid while the
+// lists do not change: updateVision builds it, then only reads.
+/** @param {State} state */
+export function tileIndex(state) {
+  const hordes = new Map(), sites = new Map(), groupBase = new Map(), deaths = new Map();
+  for (const h of state.hordes) { const a = hordes.get(h.tile); if (a) a.push(h); else hordes.set(h.tile, [h]); }
+  for (const x of state.hiveSites || []) if (!sites.has(x.tile)) sites.set(x.tile, x);
+  for (const f of state.factions) if (f.alive) for (const b of f.bases) if (!groupBase.has(b)) groupBase.set(b, f);
+  for (const d of state.deathSites) if (!deaths.has(d.tile)) deaths.set(d.tile, d);
+  return { hordes, sites, groupBase, deaths };
 }
 // What a look at an abandoned base tells you: whose it was, since when, and how much stands there.
 /** @param {State} state @param {number} tileId */
@@ -884,8 +898,9 @@ export function liveTiles(state) {
 export function updateVision(state) {
   const live = liveTiles(state);
   state.live = live;
+  const ix = tileIndex(state);
   for (const id of live) {
-    state.knowledge[id] = snapshot(state, id);
+    state.knowledge[id] = snapshot(state, id, ix);
     for (const f of state.factions) if (f.bases.includes(id)) { f.known = true; if (f.alive) noteLook(state, id, "sight"); } // intelnotes.js: what the base looks like
   }
   // Hidden sites (discovery.js) the bases and watchtowers see for the first time: a log line.
