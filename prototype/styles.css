@@ -1076,11 +1076,12 @@ a.lk.why-lk { color: var(--accent); font-size: 0.85em; white-space: nowrap; }
   #cbbar .bb-tab .bb-pips { flex-direction: row; gap: 0.3em; padding: 0.15em 0 0; font-size: 0.6em; }
   #cbbar .bb-sep { margin: 0.25em 0.05em; }
   #cbbar .bb-orders { gap: 0.18em; }
+  #cbbar .bb-orders .bb-sep { margin: 0.25em -0.08em; } /* the line takes no gap of its own: 11 orders and ⋯ fit one row at 1280×720 */
 }
 /* The bar's own buttons fold to their icons (the name is in the tip) below about 1400 px of bar (1600×900 and less);
    a tray keeps its names. */
 @container cbbar (max-width: 88rem) {
-  #cbbar .bb-orders .bb-btn { width: 3.55em; height: 3.55em; padding-top: 3.55em; }
+  #cbbar .bb-orders .bb-btn { width: 3.4em; height: 3.4em; padding-top: 3.4em; }
   #cbbar .bb-orders .bb-btn .bb-ic { top: 50%; transform: translateY(-50%); font-size: 1.75em; }
   #cbbar .bb-orders .bb-btn .key { top: auto; bottom: 0.2em; left: 0.2em; }
   #cbbar .bb-orders .bb-btn .bb-ap { right: 0.2em; top: 0.2em; }
