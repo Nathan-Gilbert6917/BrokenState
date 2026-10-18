@@ -3,7 +3,9 @@
 // (farming.js), eating, food storage and spoiling (storage.js), illness (health.js), supply lines, trade routes and
 // death-site looting.
 /** @import { State, Base, Survivor } from "./types" */
-import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew } from "./data.js";
+import { TERRAIN, LOCATIONS, SUPPLIES, supplyFew, GEAR, supValue } from "./data.js";
+import { isCart, cartWorth, ROAD_CARTS } from "./carts.js"; // a cart left on a tile: stripped a thing at a time (deathSitesDaily)
+import { itemLoad } from "./inventory.js";
 import { sortParts, rollBuildmat } from "./loot.js"; // parts found by kind; building materials (their own dice)
 import {
   log, addCard, day, hub, atBase, alive, skill, hurt, survivorById, factionById, makeSurvivor, residents, checkGameOver, localId,
@@ -22,7 +24,7 @@ import { FOODS, foodIn, payFood, moveFoodUnits, packPick, takeItem, addFood, add
 import { baseMoraleDaily } from "./morale.js";
 import { makeCandidate, offerRecruits, recruitsDaily } from "./recruits.js";
 import { hubEventsDaily } from "./hubevents.js";
-import { hasPerk } from "./skills.js";
+import { hasPerk, hash01 } from "./skills.js";
 import { relationsDaily, noteMeals } from "./relations.js";
 import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
@@ -784,6 +786,24 @@ export function releaseEscorts(state, r) {
 }
 
 // ---------- death sites ----------
+// A cart on the ground with something in it loses the most valuable thing (an item, else a lot of supplies). Returns
+// true when it did (the cart stays, worth less).
+function stripCart(e) {
+  const c = e && e.kind === "gear" && isCart(e.item) ? e.item : null;
+  if (!c) return false;
+  const items = (c.contents || []).map((it, i) => ({ it, i })).filter((x) => x.it);
+  if (items.length) {
+    const best = items.sort((a, b) => ((GEAR[b.it.key] && GEAR[b.it.key].value) || 0) - ((GEAR[a.it.key] && GEAR[a.it.key].value) || 0))[0];
+    c.contents[best.i] = null;
+  } else if (c.held && c.held.length) {
+    c.held.sort((a, b) => b.q * supValue(b.k) - a.q * supValue(a.k));
+    c.held.shift();
+    if (!c.held.length) delete c.held;
+  } else return false;
+  e.value = cartWorth(c);
+  e.cartKg = Math.round(itemLoad(c) * 10) / 10;
+  return true;
+}
 /** @param {State} state */
 export function deathSitesDaily(state) {
   const rng = state.rng;
@@ -795,15 +815,18 @@ export function deathSitesDaily(state) {
     if (typeof t.owner === "number") traffic += 0.2;
     if (t.loc && (t.loc.type === "town" || t.loc.type === "city")) traffic += 0.1;
     const age = d - site.day;
-    const chance = Math.min(0.9, traffic * (1 + age / 8) + 0.02);
-    if (!rng.chance(chance) || !site.items.length) continue;
-    // Scavengers take the most valuable item first.
+    const chance = site.abandoned ? Math.min(0.9, traffic + 0.02) * ROAD_CARTS.scav : Math.min(0.9, traffic * (1 + age / 8) + 0.02); // carts.js: a cart abandoned on a road is found slowly
+    if ((site.abandoned ? hash01(state.seed, "roadcart", site.tile, d) >= chance : !rng.chance(chance)) || !site.items.length) continue; // carts.js: an abandoned cart rolls its own dice (the world's draws stay as they were)
+    // Scavengers take the most valuable item first. A cart (carts.js) is stripped first, the best thing in it at a time;
+    // empty, the cart itself goes (the nearest group keeps it: f.carts).
     site.items.sort((a, b) => b.value - a.value);
+    if (stripCart(site.items[0])) { if (state.live.has(site.tile)) log(state, `Someone has been at the ${site.items[0].name.toLowerCase()} left at ${t.loc ? t.loc.name : "the death site"}.`, "danger"); continue; }
     const taken = site.items.shift();
     if (taken.kind === "gear") {
       const f = state.factions.filter((f) => f.alive).sort((a, b) =>
         Math.min(...a.bases.map((x) => state.grid.distance(x, site.tile))) - Math.min(...b.bases.map((x) => state.grid.distance(x, site.tile))))[0];
       if (f) f.lootedGear.push(taken.name);
+      if (f && isCart(taken.item)) f.carts = (f.carts || 0) + 1; // carts.js: a group's carts (AI parity, coarse)
     }
     if (state.live.has(site.tile)) log(state, `Someone looted ${taken.name} from the bodies at ${t.loc ? t.loc.name : "the death site"}.`, "danger");
     if (!site.items.length && !(site.walked && site.walked.length)) state.deathSites.splice(state.deathSites.indexOf(site), 1); // walked: the grave stays (carriers.js)

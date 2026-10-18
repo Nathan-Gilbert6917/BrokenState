@@ -11,7 +11,7 @@ import { MOD_ATTACH } from "../src/sim/data-gunmods.js";
 import { HEAD_FINDS, AREA_HEAD, WARE_HEAD } from "../src/sim/helmets.js"; // helmets and ear protection (their own dice)
 import { GEAR, LOCATIONS, CATEGORIES } from "../src/sim/data.js";
 import "../src/sim/blueprints.js"; // registers the blueprint items
-import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, PARTS_MIX, sortParts, splitParts, SITE_GRENADES, AREA_GRENADES, SITE_LAUNCHERS, AREA_LAUNCHERS, fitsTags, rollFind, rollAreaFind, SITE_RELOAD, AREA_RELOAD } from "../src/sim/loot.js";
+import { SITE_TAGS, AREA_TAGS, ITEM_TAGS, SITE_FINDS, AREA_FINDS, HUNT_FINDS, LIGHT_FINDS, GUNMOD_FINDS, AREA_GUNMODS, WARE_GUNMODS, SITE_MODS, AREA_MODS, WARE_MODS, PARTS_MIX, sortParts, splitParts, SITE_GRENADES, AREA_GRENADES, SITE_LAUNCHERS, AREA_LAUNCHERS, fitsTags, rollFind, rollAreaFind, SITE_RELOAD, AREA_RELOAD, CART_FINDS, WARE_CARTS } from "../src/sim/loot.js";
 import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the new military weapons in Army trucks (factoryfit.js rosterTruckGear)
 import { FLASH_KIT } from "../src/sim/throwables.js"; // the flashbangs and smoke grenades soldiers and guards carry (on their bodies after)
 import { TRUCK_FLASH } from "../src/sim/miltrucks.js";
@@ -55,6 +55,8 @@ for (const [t, def] of Object.entries(LOCATIONS)) addAll(def.gear, `search:${t}`
 for (const [t, f] of Object.entries(SITE_FINDS)) addAll(Object.keys(f.items), `find:${t}`);
 for (const [t, f] of Object.entries(HUNT_FINDS)) addAll(Object.keys(f.items), `huntfind:${t}`);
 for (const [t, f] of Object.entries(LIGHT_FINDS)) addAll(Object.keys(f.items), `lightfind:${t}`);
+for (const [t, f] of Object.entries(CART_FINDS)) addAll(Object.keys(f.items), `cartfind:${t}`); // carts (loot.js CART_FINDS; carts.js)
+for (const [t, f] of Object.entries(WARE_CARTS)) addAll(Object.keys(f.items), `sold:${t}`);
 for (const [t, f] of Object.entries(GUNMOD_FINDS)) addAll(Object.keys(f.items), `modfind:${t}`); // gun attachments (gunmods.js)
 for (const [a, f] of Object.entries(AREA_GUNMODS)) addAll(Object.keys(f.items), `raid:${a}`);
 for (const [t, f] of Object.entries(WARE_GUNMODS)) addAll(Object.keys(f.items), `sold:${t}`);
@@ -135,6 +137,7 @@ const misfits = [];
 for (const [t, def] of Object.entries(LOCATIONS)) for (const k of [...def.gear, ...Object.keys((SITE_FINDS[t] || {}).items || {}), ...Object.keys((HUNT_FINDS[t] || {}).items || {}), ...Object.keys((LIGHT_FINDS[t] || {}).items || {}), ...Object.keys((GUNMOD_FINDS[t] || {}).items || {}), ...Object.keys((SITE_MODS[t] || {}).items || {}), ...Object.keys((HEAD_FINDS[t] || {}).items || {})]) if (!fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t}`);
 for (const [a, def] of Object.entries(AREAS)) for (const k of [...def.gear.map(([x]) => x), ...Object.keys((AREA_FINDS[a] || {}).items || {}), ...Object.keys((AREA_GUNMODS[a] || {}).items || {}), ...Object.keys((AREA_MODS[a] || {}).items || {}), ...Object.keys((AREA_GRENADES[a] || {}).items || {}), ...Object.keys((AREA_HEAD[a] || {}).items || {})]) if (!fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a}`);
 for (const [t, f] of Object.entries(SITE_GRENADES)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (grenades)`);
+for (const [t, f] of Object.entries(CART_FINDS)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (carts)`);
 for (const a of Object.keys(AREA_GRENADES)) if (!AREAS[a]) misfits.push(`grenades in unknown raid area ${a}`);
 for (const [t, f] of Object.entries(SITE_LAUNCHERS)) for (const k of Object.keys(f.items)) if (!LOCATIONS[t] || !fitsTags(k, SITE_TAGS[t] || [])) misfits.push(`${k} at ${t} (launchers)`);
 for (const [a, f] of Object.entries(AREA_LAUNCHERS)) for (const k of Object.keys(f.items)) if (!AREAS[a] || !fitsTags(k, AREA_TAGS[a] || [])) misfits.push(`${k} in raid area ${a} (launchers)`);

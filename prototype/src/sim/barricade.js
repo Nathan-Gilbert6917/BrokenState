@@ -51,6 +51,7 @@ import { dropToGround } from "./ground.js";
 import { trunkVehicle, atVehicle } from "./raidloot.js";
 import { hasTrait } from "./traits.js";
 import { hash01 } from "./skills.js";
+import { cartBoxes, shoveCart, cartAt } from "./carts.js"; // a parked cart is shoved as furniture is; nothing is shoved onto one (call-time only)
 
 export const SHOVE = { AP: 2, NOISE: 1, RADIUS: 3, HELP_AP: 1, STRONG_MELEE: 6 }; // HELP_AP: each of two people; STRONG_MELEE: Melee at which one person shoves a tall piece alone (or a Strong back)
 export const CRAWL = { COST: 4 };
@@ -72,7 +73,7 @@ const first = (u) => String(u.name || "").split(" ")[0];
 const burning = (b, x, y) => !!(b.fires && b.fires.some((f) => f.x === x && f.y === y));
 
 // ---------- shoving ----------
-export const shoveable = (c) => !!c && !!FURNITURE[c.k] && !c.car;
+export const shoveable = (c) => !!c && (!!FURNITURE[c.k] || c.k === "cart") && !c.car; // carts.js: a parked cart is shoved as furniture is (its load stays in it)
 export const canShove = (u) => canVault(u); // on their feet, arms free, not the dead, not carrying or dragging anyone
 export const pieceName = (c) => (c && CELL[c.k] ? CELL[c.k].name.toLowerCase() : "furniture");
 // The pieces right next to the unit (not diagonally): [{ x, y, c }].
@@ -90,7 +91,7 @@ export function shoveTargets(b, u) {
 const FRAMES = new Set(["doorway", "odoor"]);
 const FRAME_KEYS = ["k", "dk", "roll", "t", "tOpen", "hp", "mhp"];
 export const isFrame = (c) => !!c && FRAMES.has(c.k);
-const destOk = (b, x, y) => { const c = cellOf(b, x, y); return !!c && (c.k === "open" || isFrame(c)) && !unitAt(b, x, y) && !burning(b, x, y); };
+const destOk = (b, x, y) => { const c = cellOf(b, x, y); return !!c && (c.k === "open" || isFrame(c)) && !unitAt(b, x, y) && !burning(b, x, y) && !cartBoxes(b).some((o) => o.x === x && o.y === y && (o.f || 0) === (b.floor || 0)); }; // carts.js: nothing is shoved onto a cart
 // Where the piece at (px, py) can go from where the unit stands: [{ x, y, pull, back, frame, word }]. A push: any free
 // cell next to the piece. The pull: onto the unit's own cell, the unit stepping back to the free cell behind them.
 export function shoveDests(b, u, px, py) {
@@ -132,7 +133,7 @@ export function shoveRefusal(b, u, state = null) {
   if (!u || !active(u)) return "That unit cannot act.";
   if (!canShove(u)) return u.kind !== "human" ? "Only people shove furniture." : "The arms must be free to shove furniture (nothing carried, nobody dragged).";
   const list = shoveTargets(b, u);
-  if (!list.length) return "Stand right next to a shelf, cabinet, counter, table, bed, crate, locker, rack, barrel, hay or sandbags (not diagonally).";
+  if (!list.length) return "Stand right next to a shelf, cabinet, counter, table, bed, crate, locker, rack, barrel, hay, sandbags or a parked cart (not diagonally).";
   if (u.ap < SHOVE.HELP_AP) return "No action left.";
   if (list.every((p) => shovePlan(state, b, u, p.x, p.y).why)) return shovePlan(state, b, u, list[0].x, list[0].y).why;
   return "";
@@ -149,7 +150,7 @@ function movePiece(b, src, p, dst, d) {
   if (isFrame(dst)) { const fr = {}; for (const k of FRAME_KEYS) if (dst[k] !== undefined) fr[k] = dst[k]; for (const k of FRAME_KEYS) delete dst[k]; dst.frame = fr; }
   dst.k = data.k; dst.hp = data.hp; dst.mhp = data.mhp; dst.moved = true;
   // A raid's container stands on its piece: it keeps its cell (raidloot.js boxAt, searchableNear).
-  if (b.raid && b.raid.containers) for (const c of b.raid.containers) if (c.x === p.x && c.y === p.y && (c.f || 0) === (b.floor || 0)) { c.x = d.x; c.y = d.y; }
+  if (b.raid && b.raid.containers) for (const c of b.raid.containers) if (c.x === p.x && c.y === p.y && (c.f || 0) === (b.floor || 0) && !c.cart) { c.x = d.x; c.y = d.y; } // (a cart moves by carts.js shoveCart)
   b.losCache.fill(0);
 }
 // A shoved piece smashed (combat.js breakCell): the door frame it stood in is back, else rubble.
@@ -170,8 +171,9 @@ export function shoveAct(state, b, u, act, H) {
   const dests = shoveDests(b, u, p.x, p.y);
   const d = act.tx != null ? dests.find((o) => o.x === Number(act.tx) && o.y === Number(act.ty)) : dests.length === 1 ? dests[0] : null;
   if (!d) return dests.length ? "Say where it goes: a free cell next to it (open floor or a door frame), or onto their own cell (the pull: room behind them)." : `Nowhere to shove the ${pieceName(p.c)}: no free cell next to it, and no room behind ${first(u)} to pull it.`;
-  const src = p.c, dst = cellOf(b, d.x, d.y), name = pieceName(src);
-  movePiece(b, src, p, dst, d);
+  const src = p.c, dst = cellOf(b, d.x, d.y), name = src.k === "cart" ? cartAt(b, p.x, p.y) || "cart" : pieceName(src);
+  if (src.k === "cart") shoveCart(b, p.x, p.y, d.x, d.y); // carts.js: the cart and everything in it to the new cell (a door frame too); the old cell what it was
+  else movePiece(b, src, p, dst, d);
   const from = [u.x, u.y];
   if (d.pull) { u.x = d.back[0]; u.y = d.back[1]; }
   faceAt(u, d.x, d.y);
@@ -190,7 +192,7 @@ export function shoveAct(state, b, u, act, H) {
 // One of the dead crawls over what a person vaults, never a closed window (it batters that on a base's map, and goes
 // through an open or broken one at the vault's cost).
 export const crawls = (u) => clambers(u);
-export const crawlable = (b, c) => !!c && c.k !== "window" && vaultable(b, c);
+export const crawlable = (b, c) => !!c && c.k !== "window" && (vaultable(b, c) || c.k === "cart"); // carts.js: the dead crawl over a parked cart (the living never vault it: shove it or go round)
 // The tiles over the step a cell costs the one going over it: a person's vault (a closed window crashed through
 // dearer), the dead's clamber through a window, the dead's crawl over half cover.
 export const overCost = (b, u, c) => (canVault(u) ? vaultCost(b, c) : windowOpen(c) ? VAULT.COST : CRAWL.COST);

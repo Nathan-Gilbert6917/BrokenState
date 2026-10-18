@@ -386,6 +386,7 @@ export interface DeathSite {
   names: string[];
   lastConfirmed: number;
   walked?: string[]; // carriers.js: the names of the bodies that got up and walked off
+  abandoned?: boolean; // carts.js seedRoadCarts: a cart abandoned on a road near a town (a new world)
 }
 
 // Something on the map the player knows of (markers.js): a vehicle left behind, a death site, a find.

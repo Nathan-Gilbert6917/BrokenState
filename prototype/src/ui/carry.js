@@ -11,9 +11,10 @@ import { partyMembers, partyTile, cargoRoom } from "../sim/parties.js";
 import { parseLoc, placeOfLoc, itemAt, isCarryable, moveItem, itemLoad } from "../sim/inventory.js";
 import {
   COLLECT, HANDS_KG, PLACE_NAMES, holdView, unitKg, stackText, recText, qtyText, holdName, moveHeld, dropHeld, dropHands,
-  dropItemToGround, pickUpGround, pickUpAll, groundAt, groundItemText, collectInfo, roomAt,
+  dropItemToGround, pickUpGround, pickUpAll, groundAt, groundItemText, collectInfo, roomAt, setCartHelp, takeFromGroundCart,
 } from "../sim/carry.js";
 import { supplyName } from "../sim/itemnames.js";
+import { cartSpec, feltKg, cartBroken, cartFrac } from "../sim/carts.js"; // a wheelbarrow, a hand cart: a place for the supplies
 import { isRoundKey } from "../sim/rounds.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -64,6 +65,13 @@ function pickBox(state, ui) {
   const p = state.parties.find((x) => x.id === ui.carry.partyId);
   if (!p) { ui.carry = null; return ""; }
   const site = groundAt(state, partyTile(p));
+  // A cart lying here (sim/carts.js): taken whole, or opened: what is in it is had only through it (never loose here).
+  const cartRows = (it, i) => {
+    const c = it.item;
+    const things = [...(c.contents || []).map((x, j) => (x ? `<div class="spread small" style="margin:0.1rem 0 0.1rem 1.2rem"><span class="muted">in it: ${esc(x.name)}</span><button class="mini" data-action="carry-carttake" data-i="${i}" data-item="${j}"${tip(`Take the ${x.name} out of the cart (${kg(itemLoad(x))} kg)`)}>Take out</button></div>` : "")),
+      ...(c.held || []).map((l, j) => `<div class="spread small" style="margin:0.1rem 0 0.1rem 1.2rem"><span class="muted">in it: ${esc(`${qtyText(l.q)} ${String((SUPPLIES[l.k] && SUPPLIES[l.k].name) || l.k).toLowerCase()}`)}</span><button class="mini" data-action="carry-carttake" data-i="${i}" data-lot="${j}"${tip("Take as much of it out of the cart as the team can carry")}>Take out</button></div>`)].join("");
+    return things;
+  };
   const rows = site && site.items.length ? site.items.map((it, i) => {
     const stack = it.kind === "supply";
     const k = it.fresh ? "meat" : it.key;
@@ -71,7 +79,7 @@ function pickBox(state, ui) {
     return `<div class="spread small" style="margin:0.15rem 0"><span>${stack ? ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪" : "🎒"} ${esc(groundItemText(it))}${stack ? ` <span class="muted">(${unitKg(k)} kg each)</span>` : ""}</span><span class="row" style="gap:0.25rem">
       ${stack ? `<input type="number" min="1" max="${Math.max(1, Math.ceil(it.qty))}" value="${Math.max(1, Math.floor(fit))}" data-action="carry-pickn" data-i="${i}" style="width:4rem">` : ""}
       <button class="mini" data-action="carry-take" data-i="${i}"${tip(stack ? `Pick up that many (as far as the team has room: ${kg(cargoRoom(state, p))} kg free)` : `Pick up the ${it.name}`)}>Take</button>
-      ${!stack && it.item && isCarryable(it.item) ? partyMembers(state, p).filter((m) => !m.gear.carry).map((m) => `<button class="mini" data-action="carry-take" data-i="${i}" data-arms="${m.id}"${tip(`${m.name.split(" ")[0]} carries the ${it.name} in their arms, with what is in it (${kg(itemLoad(it.item))} kg): no weapon until it is set down`)}>${first(m)} carries</button>`).join("") : ""}</span></div>`;
+      ${!stack && it.item && isCarryable(it.item) ? partyMembers(state, p).filter((m) => !m.gear.carry).map((m) => `<button class="mini" data-action="carry-take" data-i="${i}" data-arms="${m.id}"${tip(`${m.name.split(" ")[0]} ${it.cartKg != null ? "pushes" : "carries"} the ${it.name} in their arms, with what is in it (${kg(itemLoad(it.item))} kg): no weapon until it is set down`)}>${first(m)} ${it.cartKg != null ? "pushes" : "carries"}</button>`).join("") : ""}</span></div>${it.cartKg != null && it.item ? cartRows(it, i) : ""}`;
   }).join("") : `<div class="small muted">Nothing on the ground here.</div>`;
   return `<div class="askwrap"><div class="askbox" role="dialog" style="max-width:32rem">
     <div class="asktitle">Pick up from the ground</div>
@@ -111,7 +119,8 @@ export function holdSection(state, ui, s) {
   let html = `<div class="card small" style="margin-top:0.5rem"><div class="spread"><b>Supplies ${first(s)} carries</b><span class="muted">${kg(me.kg)} kg</span></div>
     ${placeRow(ui, pid, s.id, "pocket", me.pocket, ` <span class="muted">(${me.pocketUsed} of ${me.freePockets} free pocket${me.freePockets === 1 ? "" : "s"} used)</span>`)}
     ${placeRow(ui, pid, s.id, "pack", me.pack, me.freePack || me.packUsed ? ` <span class="muted">(${me.packUsed} of ${me.freePack} free pack slot${me.freePack === 1 ? "" : "s"} used)</span>` : ` <span class="muted">(no pack, or it is full of items)</span>`)}
-    ${placeRow(ui, pid, s.id, "hands", me.hands, ` <span class="${me.handsKg > 0 ? "warn" : "muted"}">(${kg(me.handsKg)}/${HANDS_KG} kg${me.handsKg > 0 ? ": hands full, no weapon in a fight until it is set down" : ""})</span>`)}
+    ${me.cartItem ? "" : placeRow(ui, pid, s.id, "hands", me.hands, ` <span class="${me.handsKg > 0 ? "warn" : "muted"}">(${kg(me.handsKg)}/${HANDS_KG} kg${me.handsKg > 0 ? ": hands full, no weapon in a fight until it is set down" : ""})</span>`)}
+    ${me.cartItem ? placeRow(ui, pid, s.id, "cart", me.cart, ` <span class="muted"${tip(`The team's supplies in the ${me.cartItem.name.toLowerCase()}: ${first(s)} feels ${Math.round(cartFrac(me.cartItem, s) * 100)}% of them. Its items are in its grid above; together up to ${cartSpec(me.cartItem).cap} kg.`)}>(${esc(me.cartItem.name)}: ${kg(me.cartKg)} kg, ${kg(me.cartRoom)} kg free)</span>`) : ""}
     ${v.hasCar || v.rack ? placeRow(ui, pid, null, "car", v.car, v.rack ? ` <span class="muted">(${kg(v.carKg)}/${v.rack} kg on the racks)</span>` : "") : ""}`;
   const sel = ui.carrySel && ui.carrySel.pid === pid ? ui.carrySel : null;
   if (sel) {
@@ -123,15 +132,21 @@ export function holdSection(state, ui, s) {
       const dest = (w, label) => { const room = roomAt(state, p, w, sel.key); return `<button class="mini" data-action="carry-move" data-sid="${w.sid ?? ""}" data-place="${w.place}" ${room > 0 ? "" : "disabled"}${tip(room > 0 ? `Up to ${qtyText(Math.min(room, have))} go there` : "No room there")}>${label}</button>`; };
       const mates = v.people.filter((x) => x.s.id !== s.id);
       html += `<div class="invsel small" style="margin-top:0.3rem">Move <input type="number" min="1" max="${Math.ceil(have)}" value="${n}" data-action="carry-n" style="width:4rem"> of ${esc(stackText(sel.key, have))} to:
-        ${dest({ sid: s.id, place: "pocket" }, "Pockets")} ${dest({ sid: s.id, place: "pack" }, "Pack")} ${dest({ sid: s.id, place: "hands" }, "Carry")}
+        ${dest({ sid: s.id, place: "pocket" }, "Pockets")} ${dest({ sid: s.id, place: "pack" }, "Pack")} ${me.cartItem ? dest({ sid: s.id, place: "cart" }, esc(me.cartItem.name)) : dest({ sid: s.id, place: "hands" }, "Carry")}
         ${v.hasCar || v.rack ? dest({ place: "car" }, "Vehicle") : ""}
-        ${mates.map((m) => dest({ sid: m.s.id, place: roomAt(state, p, { sid: m.s.id, place: "pack" }, sel.key) > 0 ? "pack" : "hands" }, `${first(m.s)}`)).join(" ")}
+        ${mates.map((m) => dest({ sid: m.s.id, place: m.cartItem && roomAt(state, p, { sid: m.s.id, place: "cart" }, sel.key) > 0 ? "cart" : roomAt(state, p, { sid: m.s.id, place: "pack" }, sel.key) > 0 ? "pack" : "hands" }, `${first(m.s)}${m.cartItem ? ` (${esc(m.cartItem.name.toLowerCase())})` : ""}`)).join(" ")}
         <button class="mini" data-action="carry-dropsel"${tip("Put it on the ground here: it stays on this tile (a marker on the map) for any team to pick up, until scavengers find it; food spoils")}>Ground</button>
         <button class="mini" data-action="carry-unsel">Cancel</button></div>`;
     }
   }
-  if (me.bag) html += `<div class="small warn" style="margin-top:0.2rem">In arms: the ${esc(me.bag.name)} (${kg(me.bagKg)} kg with what is in it): hands full, no weapon in a fight until it is set down. Move it to Backpack to wear it.</div>`;
+  if (me.bag && me.cartItem) html += `<div class="small warn" style="margin-top:0.2rem">Pushing the ${esc(me.bag.name.toLowerCase())} (${kg(me.bagKg + me.cartKg)} kg in all, ${kg(feltKg(me.bag, s) + me.cartKg * cartFrac(me.bag, s))} kg felt): hands full, no weapon in a fight until it is let go. Set it down to leave it on this tile with everything in it.</div>`;
+  else if (me.bag) html += `<div class="small warn" style="margin-top:0.2rem">In arms: the ${esc(me.bag.name)} (${kg(me.bagKg)} kg with what is in it): hands full, no weapon in a fight until it is set down. Move it to Backpack to wear it.</div>`;
   if (me.handsKg > 0 || me.bag) html += `<div style="margin-top:0.3rem"><button class="mini" data-action="carry-drophands" data-pid="${pid}" data-sid="${s.id}"${tip("Put everything carried in the arms on the ground of this tile (pick it up again from the team panel)")}>Set down what ${first(s)} carries</button></div>`;
+  // Two on a hand cart (sim/carts.js twoMan): help a teammate pull theirs, or stop.
+  if (s.cartHelp != null) { const pu = v.people.find((x) => x.s.id === s.cartHelp); html += `<div class="small" style="margin-top:0.3rem">Helping ${pu ? first(pu.s) : "someone"} pull the ${pu && pu.cartItem ? esc(pu.cartItem.name.toLowerCase()) : "cart"} (hands full). <button class="mini" data-action="carry-help" data-pid="${pid}" data-sid="${s.id}" data-pusher=""${tip("Stop helping: hands free again; the cart drags and weighs on its puller as before")}>Stop helping</button></div>`; }
+  else if (!s.gear.carry) for (const x of v.people) if (x.s.id !== s.id && x.cartItem && cartSpec(x.cartItem).twoMan && x.s.cartHelper == null) html += `<div style="margin-top:0.3rem"><button class="mini" data-action="carry-help" data-pid="${pid}" data-sid="${s.id}" data-pusher="${x.s.id}"${tip(`${first(s)} helps ${first(x.s)} pull the ${x.cartItem.name.toLowerCase()}: ${first(x.s)} feels half the weight and the team goes at half the drag off the roads. ${first(s)}'s hands are full too (no supplies in the arms; in a fight a pistol at most, one-handed, until they let go).`)}>Help ${first(x.s)} pull the ${esc(x.cartItem.name.toLowerCase())}</button></div>`;
+  if (me.cartItem && s.cartHelper != null) { const hx = v.people.find((x) => x.s.id === s.cartHelper); if (hx) html += `<div class="small muted" style="margin-top:0.2rem">${first(hx.s)} helps pull it: half the weight felt, half the drag.</div>`; }
+  if (me.cartItem && cartBroken(me.cartItem)) html += `<div class="small danger" style="margin-top:0.2rem">A wheel is off: the ${esc(me.cartItem.name.toLowerCase())} drags (the team at half pace, ${Math.round(cartFrac(me.cartItem, s) * 100)}% of it felt). Repair it at a workbench or with a field repair kit (parts).</div>`;
   const loc = ui.invSel ? parseLoc(ui.invSel) : null;
   const place = loc && loc.o !== "body" ? placeOfLoc(state, loc) : null;
   const selItem = ui.invSel && loc && loc.o !== "body" ? itemAt(state, ui.invSel) : null;
@@ -146,8 +161,8 @@ export function teamCarryCard(state, ui, p) {
   const v = holdView(state, p);
   if (!v) return "";
   const lines = v.people.map((x) => {
-    const parts = [["pocket", "pockets"], ["pack", "pack"], ["hands", "carried"]].filter(([pl]) => Object.keys(x[pl]).length).map(([pl, w]) => `${w}: ${esc(recText(x[pl]))}`);
-    if (x.bag) parts.push(`in arms: the ${esc(x.bag.name)} (${kg(x.bagKg)} kg)`);
+    const parts = [["pocket", "pockets"], ["pack", "pack"], ["hands", "carried"], ["cart", x.cartItem ? x.cartItem.name.toLowerCase() : "cart"]].filter(([pl]) => Object.keys(x[pl]).length).map(([pl, w]) => `${esc(w)}: ${esc(recText(x[pl]))}`);
+    if (x.bag) parts.push(x.cartItem ? `pushes the ${esc(x.bag.name.toLowerCase())} (${kg(x.bagKg + x.cartKg)} kg in all)` : `in arms: the ${esc(x.bag.name)} (${kg(x.bagKg)} kg)`);
     return `<div${x.handsKg > 0 || x.bag ? ' class="warn"' : ""}>${first(x.s)}: ${parts.join(" · ") || '<span class="muted">nothing</span>'}${x.handsKg > 0 || x.bag ? ` <button class="mini" data-action="carry-drophands" data-pid="${p.id}" data-sid="${x.s.id}"${tip(`Set down what ${x.s.name.split(" ")[0]} carries in the arms (${kg(x.handsKg + x.bagKg)} kg) on this tile's ground`)}>Set down</button>` : ""}</div>`;
   }).join("");
   const carriers = v.people.filter((x) => x.handsKg > 0 || x.bag).length;
@@ -205,6 +220,7 @@ export const CARRY_ACTIONS = {
     ui.carryMsg = msg;
     if (!/^(Only|Items only|Too heavy|That slot|Nothing|Bodies|No room)/.test(msg)) ui.invSel = null;
   },
+  "carry-help": (state, ui, d) => { const p = state.parties.find((x) => x.id === Number(d.pid)); if (p) ui.carryMsg = setCartHelp(state, p, Number(d.sid), d.pusher === "" || d.pusher == null ? null : Number(d.pusher)); }, // sim/carry.js: two on a hand cart
   "carry-dropitem": (state, ui) => {
     if (!ui.invSel) return;
     ui.carryMsg = dropItemToGround(state, ui.invSel);
@@ -218,6 +234,10 @@ export const CARRY_ACTIONS = {
     const n = ui.carryPick && ui.carryPick[i] != null ? ui.carryPick[i] : Infinity;
     ui.carryMsg = pickUpGround(state, p, i, n, d.arms ? Number(d.arms) : null);
     ui.carryPick = {};
+  },
+  "carry-carttake": (state, ui, d) => { // sim/carry.js takeFromGroundCart: one thing out of a cart on the ground
+    const p = ui.carry && state.parties.find((x) => x.id === ui.carry.partyId);
+    if (p) ui.carryMsg = takeFromGroundCart(state, p, Number(d.i), d.item != null && d.item !== "" ? { item: Number(d.item) } : { lot: Number(d.lot) });
   },
   "carry-takeall": (state, ui) => {
     const p = ui.carry && state.parties.find((x) => x.id === ui.carry.partyId);

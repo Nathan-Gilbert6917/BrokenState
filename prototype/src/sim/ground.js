@@ -67,7 +67,7 @@ export const settlePile = settle; // carry.js: a pile a load was taken back from
 export const groundPiles = (b) => (lootLayer(b) ? lootLayer(b).containers.filter(isPile) : []);
 export function groundAt(b, x, y, f = 0) {
   const L = lootLayer(b);
-  return L ? L.containers.find((c) => isPile(c) && c.x === x && c.y === y && (c.f || 0) === f) || null : null;
+  return L ? L.containers.find((c) => isPile(c) && !c.cart && c.x === x && c.y === y && (c.f || 0) === f) || null : null; // a cart (carts.js) is never the pile things are dropped on
 }
 // The pile on a cell, made (empty) when there is none.
 export function groundPile(b, x, y, f = 0) {
@@ -79,7 +79,8 @@ export function groundPile(b, x, y, f = 0) {
   return p;
 }
 // The piles with something in them on or next to the unit (its own cell first).
-export const pilesNear = (b, u) => groundPiles(b).filter((c) => pileCount(c) && near(u, c)).sort((a, c) => cheb(u, a.x, a.y) - cheb(u, c.x, c.y));
+// A cart (carts.js) is not one: what is in it is had through the cart (Load cart, Take cart), never off the ground.
+export const pilesNear = (b, u) => groundPiles(b).filter((c) => !c.cart && pileCount(c) && near(u, c)).sort((a, c) => cheb(u, a.x, a.y) - cheb(u, c.x, c.y));
 
 // Puts a thing on the ground where the unit stands: an item already taken off whoever had it, or `count` of a supply
 // (its key). Returns the pile (null: nothing to put down).

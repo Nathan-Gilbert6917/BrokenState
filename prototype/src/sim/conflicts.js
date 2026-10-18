@@ -910,9 +910,11 @@ function startFight(state, p, c, ambush, goodwillHit, lead, extra = {}) {
   const enemy = extra.enemy || c.enemy;
   // Their party drove here (aiscav.js vehicleType): the vehicle stands on their side of the map, theirs to lose.
   const theirs = state.parties.find((q) => q.owner !== "player" && (q.id === c.aiPartyId || q.id === c.scavPartyId) && q.vehicleType);
+  // Their scavengers' carts (carts.js enemyCarts): pushed onto the map by some of them, loaded with part of their haul.
+  const carted = state.parties.find((q) => q.owner !== "player" && (q.id === c.aiPartyId || q.id === c.scavPartyId) && q.scav && q.scav.carts > 0);
   startCombat(state, {
     tile: partyTile(p), partyId: p.id,
-    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}), ...(theirs ? { vehicle: theirs.vehicleType, vehiclePartyId: theirs.id } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
+    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}), ...(theirs ? { vehicle: theirs.vehicleType, vehiclePartyId: theirs.id } : {}), ...(carted ? { carts: carted.scav.carts, cartPartyId: carted.id } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
     ambush, canRetreat: true, handler: "conflict",
     context: { ...c, lead, goodwillHit, resumePhase: p.conflictResume || "out", ...extra },
   });

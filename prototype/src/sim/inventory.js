@@ -29,6 +29,7 @@ import { FACTORY_FIT } from "./data-guns.js"; // guns found already fitted (sect
 import { fitMod, stripMod, modFitReason, fitsSlot, isGunmod, takesMods, fittedKg, ATTACH } from "./gunmods.js";
 import { itemDur } from "./crafting.js"; // a group's med kit with its uses (arsenal.js)
 import { GEAR, SUPPLIES, supValue } from "./data.js";
+import { isCart, heldKg, cartFree } from "./carts.js"; // a wheelbarrow, a hand cart: In arms only, its own grid takes bulky things
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
 import { bodyLoot } from "./deadsoldiers.js";
@@ -123,7 +124,7 @@ export const itemKg = (item) => {
   return stackKg(item, d.count && d.dur && Number.isFinite(item.dur) ? d.weight * Math.max(0, item.dur) / d.dur : d.weight);
 };
 // A gun also weighs its fitted attachments (gunmods.js: item.mods).
-export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item) + insertsKg(item);
+export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item) + insertsKg(item) + heldKg(item); // carts.js: the supplies a cart carries away from a team (item.held)
 const insertsKg = (item) => (item && GEAR[item.key] && GEAR[item.key].inserts ? Object.values(insertsOf(item)).reduce((a, x) => a + (x ? itemKg(x) : 0), 0) : 0); // a carrier's plates (section 16)
 const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? fittedKg(m) : 0), 0) : 0); // a lighter handguard or stock replaces the factory one (gunmods.js fittedKg)
 
@@ -389,6 +390,8 @@ function sparePouchFor(s, item) {
 export function fitReason(item, slot, h = null, kind = null) {
   const d = GEAR[item.key];
   if (!d) return "Unknown item.";
+  if (d.cart && slot !== "carry" && !EQUIP_SLOTS.includes(slot)) return `The ${item.name} is pushed in the arms (In arms), not packed.`; // carts.js
+  if (slot === "bag" && h && h.gear && isCart(h.gear.carry)) return cartFree(h.gear.carry) + 1e-9 >= itemLoad(item) ? "" : `The ${h.gear.carry.name} is full (${Math.round(cartFree(h.gear.carry) * 10) / 10} kg more fits; the ${item.name} weighs ${Math.round(itemLoad(item) * 10) / 10}).`; // a cart's grid: bulky things and packs too, up to its kg
   if (slot === "pocket") return d.small ? "" : `The ${item.name} is too big for a pocket.`;
   if (slot === "pack") return packSize(item) ? "A pack does not fit inside a pack." : d.bulky ? `The ${item.name} is too big for a pack: it goes in the cargo.` : "";
   if (slot === "pouch") return kind ? pouchReason(item, kind) : "No pouch there.";

@@ -67,6 +67,7 @@ export const REPAIR_KINDS = {
   steel:   { name: "steel plate",         skill: "mechanics", min: 3, in: { scrap: 4, fuel: 1 }, hours: 4 },
   camp:    { name: "camp kit",            skill: "crafting",  min: 1, in: { scrap: 1 }, hours: 1, soft: true },
   fish:    { name: "fishing gear",        skill: "crafting",  min: 0, in: { scrap: 1 }, hours: 1, soft: true },
+  cart:    { name: "cart wheel",          skill: "mechanics", min: 1, in: { parts: 1, scrap: 1 }, hours: 2 }, // carts.js: a wheel, its axle and bearings (a broken cart drags)
   recharge: { name: "battery swap",       skill: "mechanics", min: 0, in: {}, gearIn: { batteries: 1 }, hours: 0.5, soft: true }, // electronic ear protection, a team headset (data-helmets.js recharge: nothing off the maximum)
 };
 
@@ -80,6 +81,7 @@ export function repairKind(item) {
   const k = (kind) => ({ kind, def: REPAIR_KINDS[kind] });
   if (d.noRepair) return { refuse: d.noRepair }; // a cracked ballistic visor (data-helmets.js)
   if (d.recharge) return k("recharge"); // new batteries (data-helmets.js)
+  if (d.cart) return k("cart"); // carts.js: a wheelbarrow, a hand cart
   if (ARMOUR.includes(d.slot)) {
     const mat = materialOf(item.key) || (d.makeshift ? "padding" : "hard");
     if (mat === "ceramic") return { refuse: `Ceramic plates cannot be repaired: the ${item.name} has to be replaced.` };

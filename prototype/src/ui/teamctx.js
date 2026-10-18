@@ -34,6 +34,7 @@ import { campProblem } from "../sim/staging.js"; // Set up camp: where a camp ma
 import { crawlTile } from "../sim/citycrawl.js";
 import { transferProblem, loadFromBase, isPlayerTeam } from "../sim/teaminv.js";
 import { siteMissions } from "./ui.js";
+import { cartOf, cartRouteWear } from "../sim/carts.js"; // a cart pushed on foot: what the way wears it
 import { ask } from "./confirm.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -80,13 +81,14 @@ function travelTo(state, p, tile, append) {
   if (from === tile && !(startsNow(p, append) && drawnAway(state, p))) return { hours: 0, why: "" };
   const res = planPath(state, from, tile, p.vehicle);
   if (!res) return { hours: null, why: p.vehicle ? "The vehicle cannot get there. Leave it or pick another tile." : "No route there over land. Water in the way? Build a boat from the shore." };
+  const wear = !p.vehicle && partyMembers(state, p).some((s) => cartOf(s)) ? cartRouteWear(state, res.path) : 0; // sim/carts.js: what the way wears the carts
   if (startsNow(p, append)) {
     const e = moveEstimate(state, p, tile);
-    return { hours: e ? e.hours : null, why: "" };
+    return { hours: e ? e.hours : null, why: "", wear };
   }
   const move = { type: "move", tile };
   const est = append ? queueEstimate(state, { ...p, orders: [...(p.orders || []), move] }) : queueEstimate(state, standingAt(p, from, [move]));
-  return { hours: est.length ? est[est.length - 1].hours : null, why: "" };
+  return { hours: est.length ? est[est.length - 1].hours : null, why: "", wear };
 }
 // Hours of the job itself on the tile (null: it varies, a raid or a battle).
 function taskHours(state, p, tile, seq) {
@@ -249,7 +251,7 @@ export function teamTileMenu(state, ui, p, tile, { append = false } = {}) {
   const homeNow = home && !append && partyTile(p) !== home.tile ? moveEstimate(state, p, home.tile) : null;
   if (home) add("Team", "home", `Go home (${home.name})`, [{ type: "home" }], { move: false, task: homeNow ? homeNow.hours : undefined, why: partyTile(p) === home.tile && p.phase !== "out" && !append ? "The team is at home." : "", hint: `Head back to ${home.name} with everything carried.` });
 
-  const travelText = water ? "" : here ? (append ? "where its queue ends" : "here") : travel.hours == null ? "no route" : `~${hrsText(travel.hours)} away`;
+  const travelText = water ? "" : here ? (append ? "where its queue ends" : "here") : travel.hours == null ? "no route" : `~${hrsText(travel.hours)} away${travel.wear > 0 ? ` (this route costs the carts ~${Math.round(travel.wear)} wear)` : ""}`;
   const head = {
     name: `Team: ${partyMembers(state, p).map((s) => s.name.split(" ")[0]).join(", ")}`,
     situation: [v ? v.name : "on foot", cmd ? orderLabel(state, p) : "out of radio contact", travelText].filter(Boolean).join(" · "),

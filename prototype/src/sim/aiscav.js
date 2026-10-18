@@ -27,6 +27,9 @@
 //     they carried goes into your cargo, as far as it fits).
 //   Their own land: every site a group holds (tile.owner) loses AISCAV.landRate of its loot a day (relative, down to
 //     the floor), into the group's stock at AISCAV.landEff (no party, no risk).
+//   Carts (carts.js, coarse): a party on foot takes up to two of the group's carts (f.carts) and brings home 15% more a
+//     cart of what it finds (it picks the site cleaner, it does not strip it faster); a party lost loses them; one
+//     comes home now and then from a farm, a barn or a hardware store.
 //   Production from nothing (factions.js) is cut to FACTION_MAKE of what it was: the rest comes from the sites.
 //   What you learn: only what you see. The map and the tile panel show the loot you last saw (with its age), so a
 //     site stripped since still looks rich until a team, a base, recon or the radio tells you otherwise. News: when a
@@ -62,6 +65,7 @@ import { ZONE_RICHNESS } from "./mapgen.js";
 import { haulMult } from "./medfinds.js";
 import { PARTS_MIX } from "./loot.js"; // car parts by the kind of site (a group keeps them apart)
 import { scavFinds, partyLost } from "./arsenal.js";
+import { aiCartsOut, aiCartMult, aiCartsHome, aiWorkMult } from "./carts.js"; // a group's carts (AI parity, coarse)
 import { groupFindBlueprint, groupGotBlueprint } from "./groupworks.js"; // machines-2: the groups' manuals
 import { prio } from "./groupcare.js";
 import { poisOf, poiAt, poiPool, poiBand, isSitePoi, permanentSite } from "./pois.js"; // points of interest: one POI a party
@@ -203,7 +207,7 @@ export function aiScavDaily(state) {
       const t = state.tiles[id];
       const take = Math.min(t.loot - AISCAV.floor, t.loot * AISCAV.landRate);
       if (!(take > 0)) continue;
-      addTo(f.stock, haulFor(t, take, t.loot, AISCAV.landEff, state));
+      addTo(f.stock, haulFor(t, take, t.loot, AISCAV.landEff * aiWorkMult(f), state)); // carts.js: their carts haul a little more in (coarse)
       t.loot -= take;
       S.stats.land += take;
     }
@@ -263,6 +267,7 @@ export function sendParty(state, f, from, site, pick = null) {
   if (q.vehicle) { q.vehicleType = state.rng.pick(AISCAV.VEHICLES); f.stock.fuel = Math.max(0, f.stock.fuel - AISCAV.carFuelUse); }
   q.scav = { site, home: from, left: AISCAV.searchHours, got: {}, taken: 0, str0: q.strength, met: [], band0: lootBand(state.tiles[site], state.tiles[site].loot),
     poi: pick && pick.poi != null ? pick.poi : null, survey: !!(pick && pick.survey), done: [] };
+  aiCartsOut(f, q); // carts.js: on foot, up to two of the group's carts go along (a bigger haul)
   aiScav(state).stats.trips++;
   return q;
 }
@@ -280,6 +285,7 @@ export function scavArrived(state, p) {
       for (const it of p.scav.gear || []) if (arsenalWorthy(it)) addToArsenal(state, f, it, "scavenged"); // what your people left in a container there
       if (scavVehicle(state, f, p.scav.site)) S.stats.vehicles = (S.stats.vehicles || 0) + 1; // groupworld.js
       if (p.scav.bp) { groupGotBlueprint(f, p.scav.bp); S.stats.manuals = (S.stats.manuals || 0) + 1; } // machines-2: a manual to study
+      if (aiCartsHome(state, f, p)) S.stats.carts = (S.stats.carts || 0) + 1; // carts.js: its carts back, now and then one found
     }
     S.stats.home++;
     removeParty(state, p);
@@ -381,7 +387,7 @@ export function scavSearchHour(state, p) {
     const crew = Math.min(AISCAV.crewMax, hands); // more hands than that pick it cleaner, not faster
     const take = Math.min(Math.max(0, t.loot - AISCAV.floor), AISCAV.take * crew);
     if (take > 0) {
-      addTo(p.scav.got, haulFor(t, take, t.loot, AISCAV.eff * hands / crew, state));
+      addTo(p.scav.got, haulFor(t, take, t.loot, AISCAV.eff * hands / crew * aiCartMult(p), state)); // carts.js: its carts carry more of what it finds home (no faster stripping)
       const fg = !p.scav.bp && factionById(state, p.owner);
       if (fg) p.scav.bp = groupFindBlueprint(state, fg, t.id, localId(state, p.id)) || undefined; // machines-2: a manual on the shelves, by your odds (groupworks.js)
       t.loot -= take;

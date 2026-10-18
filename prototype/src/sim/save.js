@@ -42,6 +42,7 @@ import { SICK_REST_MODES } from "./sickrest.js"; // the Work tab's "Sick people 
 import { migrateGenerators, migrateGenTiers } from "./power.js"; // machines-2: generators without operators; gen-tiers: every old generator a tier-1 set
 import { migrateCanners } from "./buildings.js"; // machines-2: the pressure canner fitted to a preserving room
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
+import { tidyCarts } from "./carts.js"; // carts: grids sized, lots only real supplies (every load; nothing older needs changing)
 /** @import { State } from "./types" */
 /**
  * A save (serializeState; a save file is it as JSON): the world's encoded graph, the id counter and the save list's summary.
@@ -252,6 +253,7 @@ export function deserializeState(save) {
   if (!(state.magFitV >= 1)) migrateMagFits(state); // 2026-10-10: the AUG, FAL, M14 and SCAR-H take their own magazines
   // vehicles.js fleets: a team's vehicles as a list (p.vehicleIds) with the lead one in p.vehicleId; a save from before
   // has the one vehicleId, which becomes a list of one. Once: state.fleetV.
+  tidyCarts(state); // carts.js (2026-10-11): a wheelbarrow, a hand cart: their grids and lots kept tidy
   if (!(state.fleetV >= 1)) {
     for (const p of state.parties || []) if (!Array.isArray(p.vehicleIds) && p.vehicleId != null) p.vehicleIds = [p.vehicleId];
     state.fleetV = 1;

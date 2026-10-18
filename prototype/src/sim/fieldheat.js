@@ -18,7 +18,7 @@
 //     camp kit the team carries (GEAR heat, each kind once, together at least ×0.35): camo netting ×0.75, a ghillie
 //               wrap ×0.85, rag-wrapped boots ×0.95, a smokeless stove ×0.6 while camping, a gore scent mask ×0.6
 //               (worn for 24 hours: one is used up when the team starts to gain Heat or starts a search)
-//   searching (scavenge.js searchHeatMult): ghillie ×0.9, boots ×0.85, a scent mask ×0.75, a hiking pack ×1.05
+//   searching (scavenge.js searchHeatMult): ghillie ×0.9, boots ×0.85, a scent mask ×0.75, a hiking pack ×1.05, a cart ×1.05
 //   decay = 8 an hour on the move (and gone at your own bases); Heat is capped at 100.
 //   trouble = 12% × (Heat / 100)^1.5 × danger, danger = 0.15 + 3 × the road's conflict chance here
 //             (groups near, AI parties, infected ground, hordes, traffic) + 0.3 city / 0.15 suburbs
@@ -44,6 +44,7 @@ import { carriedAll } from "./comforts.js";
 import { log } from "./world.js";
 import { partyVehicles, isCar } from "./vehicles.js";
 import * as Weather from "./weather.js";
+import { cartOf, CART_NOISE } from "./carts.js"; // a cart rattles: a search makes more Heat
 import { canLight } from "./woodcutting.js"; // a fire burns firewood: none, and it cannot be lit
 
 export const HEAT_MAX = 100;
@@ -315,6 +316,8 @@ export function searchHeatMult(state, p) {
     const pk = s.gear && s.gear.backpack;
     if (pk && GEAR[pk.key] && GEAR[pk.key].searchHeat) { k.mult *= GEAR[pk.key].searchHeat; k.parts.push(`${GEAR[pk.key].name.toLowerCase()} ×${GEAR[pk.key].searchHeat}`); break; }
   }
+  const cart = partyMembers(state, p).map((s) => cartOf(s)).find(Boolean); // carts.js: a cart rattles about the site
+  if (cart) { k.mult *= CART_NOISE.search; k.parts.push(`a rattling ${cart.name.toLowerCase()} ×${CART_NOISE.search}`); }
   return k;
 }
 const hasTripwire = (state, p) => teamKit(state, p).some((it) => it && it.key === "tripwire");

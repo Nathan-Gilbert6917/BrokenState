@@ -101,6 +101,10 @@ export const CRAFTS = {
   suppressor:  { gear: "suppressor",  in: { scrap: 4, parts: 1 }, hours: 10, skill: "mechanics", min: 4, needs: "workshop" },
   // A bicycle built from frames and wheels (vehicles.js): it joins the base's bikes.
   bicycle:     { gear: "bicycle",     in: { scrap: 8, parts: 2 }, hours: 14, skill: "mechanics", min: 3, needs: "workshop" },
+  // Carts (carts.js, data-carts.js): a tray beaten out of scrap on a wheel and two handles; a plank bed on two wheels
+  // with a T handle. At a workshop (the welding, the wheels' bearings).
+  wheelbarrow: { gear: "wheelbarrow", in: { scrap: 6, parts: 1 }, hours: 8, skill: "mechanics", min: 2, needs: "workshop" },
+  handcart:    { gear: "handcart",    in: { scrap: 6, parts: 2, wood: 40 }, hours: 12, skill: "mechanics", min: 3, needs: "workshop" },
   // gearIn = items used up (from the base armory; in the field from the team's cargo or someone's pockets and pack).
   nailbat:     { gear: "nailbat",     gearIn: { bat: 1 }, in: { scrap: 1 }, hours: 2, skill: "mechanics", min: 0, field: true },
   molotov:     { gear: "molotov",     gearIn: { bottle: 1 }, in: { fuel: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
@@ -196,6 +200,7 @@ export function craftOutputText(key) {
   else if (d.slot === "rig") bits.push(`chest rig, ${(d.pouches || []).length} pouches (${[...new Set(d.pouches || [])].join(", ")}), +${d.carry || 0} kg more to carry (max load); not worn over a vest with pouches`); // carry kit (data-kit.js)
   else if (d.slot === "insert") bits.push(`plate for a plate carrier's front or back pocket, armor ${d.power} (${/steel/.test(r.gear) ? "steel: it can spall, and can be patched" : "ceramic: it can shatter, and cannot be patched"})`); // section 16
   else if (d.slot === "backpack") bits.push(`pack, ${d.slots} pack slots, +${d.carry} kg more to carry (max load)${d.ease ? `, load counts ${Math.round(d.ease * 100)}% lighter` : ""}`);
+  else if (d.cart) bits.push(`a cart pushed in the arms: ${d.cart.cap} kg in ${d.slots} slots, its pusher feels ${Math.round(d.cart.frac * 100)}% of it${d.cart.twoMan ? ", a second person can help pull" : ""}; hands full (a pistol one-handed at most)`); // carts.js
   else if (r.gear === "bicycle") bits.push("a bike for the base: teams ride out on bikes, one each (faster on roads, no fuel, a 15 kg rack)");
   else if (r.gear === "beartrap") bits.push("a bear trap kept in a base's stores: set on the approach when a horde attacks, it catches about 3 of the dead (up to 4 traps; a quarter break each time)");
   else if (r.gear === "repairkit") bits.push("a field repair kit: mends a gun, an attachment, armour or a makeshift tool anywhere, one use a repair (half a workbench's restore, twice the lost maximum; repair.js)");
@@ -236,6 +241,7 @@ export function durUnit(key) {
   if (d.selfStab) return "use"; // a tourniquet (medics.js MEDIC.SELF): one use
   if (d.ears && d.slot === "pack") return "fights"; // earplugs (hearing.js settleEars): a pair a fight
   if (key === "repairkit") return "repairs"; // repair.js: a field repair a use
+  if (d.cart) return "wear (a tile off the roads wears 0.5–2)"; // carts.js CART_WEAR
   if (d.suppressor) return "shots";
   if (d.cat === "gunmod") return key === "scrapscope" ? "fights" : "shots"; // makeshift gun parts (gunmods.js)
   if (d.fish) return "days of fishing";

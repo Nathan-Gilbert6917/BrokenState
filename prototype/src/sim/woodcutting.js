@@ -51,6 +51,7 @@ import { KITCHEN, hasKitchen, kitchenWood } from "./kitchen.js"; // the Kitchen'
 import { boilerUse, WORM } from "./worm.js"; // the water boiler burns firewood a head every day its water needs boiling
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult, tileFactor } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
+import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a woodcutter hauls more home (call-time only)
 
 // ---------- numbers ----------
 export const WOOD = {
@@ -306,7 +307,7 @@ export function woodTrip(state, base, s, tile, hours, hour) {
   if (!people.includes(s)) people.push(s);
   const crew = chopCrew(people); // their own tools: the armory's go out with them (jobtrips.js checkOutTool), the rest cut by hand
   const k = Math.max(0, crew.findIndex((c) => c.s === s)), c = crew[k] || chopCrew([s])[0];
-  const m = c.mult * Math.min(1, workFactor(s)) * woodCrowd(k);
+  const m = c.mult * Math.min(1, workFactor(s)) * woodCrowd(k) * (k < baseCarts(state, base) ? 1 + CART_JOB : 1); // carts.js: the first woodcutters wheel it home in the base's carts
   const amount = Math.round(woodRate(state, tile, hour, m) * hours * (0.7 + 0.6 * state.rng.next()) * 100) / 100;
   takeWood(state, tile, amount);
   const share = hours / WOOD.base.hours;

@@ -20,6 +20,7 @@ import { CELL, say, fx, reachable, pathTo, moveAlong, active, adjacent, enemyUni
 import { flareLit } from "./throwables.js";
 import { carrierTurn } from "./carriers.js";
 import { flingerTurn, nightmareTurn } from "./middead.js"; // the mid game's special dead
+import { cartKnocked } from "./carts.js"; // a brute smashes a parked cart aside in one blow
 
 export const ZKINDS = Object.keys(ZTYPES);
 const round = (v, n = 1000) => Math.round(v * n) / n;
@@ -307,7 +308,7 @@ function spitterTurn(b, u) {
 
 // What a brute can smash (and what is left there): barricades, the base's wall line (a breach), fences, crates,
 // sandbags, hay. Only cells that never block sight, so the battle's line-of-sight cache stays right.
-const SMASH = { barricade: "open", palisade: "breach", fence: "open", crate: "open", sandbag: "open", hay: "open" };
+const SMASH = { barricade: "open", palisade: "breach", fence: "open", crate: "open", sandbag: "open", hay: "open", cart: "open" }; // cart: carts.js cartKnocked (it stays there, its load in it)
 function bruteTurn(b, u) {
   const z = ZTYPES.brute;
   const foes = playerFoes(b);
@@ -332,6 +333,7 @@ function bruteTurn(b, u) {
   }
   if (!best) return false;
   const name = CELL[best.k].name.toLowerCase();
+  if (best.k === "cart") { cartKnocked(b, best.x, best.y, "brute"); u.face = [Math.sign(best.x - u.x), Math.sign(best.y - u.y)]; fx(b, { type: "melee", from: [u.x, u.y], to: [best.x, best.y], hit: true, crit: false, dmg: 0, side: "enemy", text: "SMASH" }); u.ap = 0; return true; } // carts.js: one blow
   b.cells[best.y * b.w + best.x].k = SMASH[best.k];
   u.face = [Math.sign(best.x - u.x), Math.sign(best.y - u.y)];
   fx(b, { type: "melee", from: [u.x, u.y], to: [best.x, best.y], hit: true, crit: false, dmg: 0, side: "enemy", text: "SMASH" });
