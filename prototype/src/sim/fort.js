@@ -19,6 +19,7 @@ import { densify, COVER } from "./battlesize.js"; // cover over the margin
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { armoryDefence, bossUnit } from "./defences.js";
+import { preBoardBase } from "./barricade.js"; // their outer windows and doors boarded before your assault (the user's pick 2026-10-18)
 
 export const FORT = {
   MARGIN: 8,          // open ground round the wall (where the attackers stage)
@@ -389,6 +390,7 @@ export function fortAssault(b, ctx, c) {
   for (const u of mine) { u.post = null; const s = west.find(([x, y]) => !unitAt(b, x, y)); if (s) { u.x = s[0]; u.y = s[1]; } }
   // Their vehicle? none. Your vehicle stands in the west margin (combat.js placed it by the edge): fine where it is.
   finishFort(b, F, "west", { attackers: "player", base: null, floodlit: false, night: isNight(state), deploy: true });
+  preBoardBase(state, b, (b.setup.enemy || {}).factionId, "west"); // barricade.js: their windows and doors on your side boarded, paid from their stock
   b.phase = "deploy";
   b.acted = false;
   say(b, "Their walls. Stage your people: click one, then a green cell anywhere in the open ground round the base (any side). The gates are in the middle of each wall; the ram, ladders and grenades are for the wall (siege.js). Then start the assault.", "info");

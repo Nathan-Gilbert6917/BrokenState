@@ -110,7 +110,7 @@ import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
 import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
-import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, boardedName } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
+import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, breakPiece, boardedName, aiBarricade, kitBoards } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
 import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its containers as the ledger keeps them, their own dice
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
@@ -3457,6 +3457,7 @@ export function enemyUnit(b, rng, kind, power, n) {
   syncModes(u);
   kitHeadgear(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // helmets.js: a helmet and ear protection by kit (own dice)
   kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
+  u.boards = kitBoards(kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // barricade.js BOARD.KIT: a bundle of boards to nail over a window while nothing is in sight (own dice)
   MED.kitSelfAid(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // medics.js SELF.KIT: a tourniquet to stabilize themselves (its own dice)
   kitLauncher(b, u, kind, p, n, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // launchers.js: an M203 on a soldier's rifle, now and then an RPG (its own dice)
   kitEnemy(b, u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // carrykit.js: a rig (a guard's tactical vest), spare magazines, the kit's weight → mob (own dice; after the helmet and the launcher: their kg)
@@ -3827,7 +3828,10 @@ export function moveAlong(b, u, path) {
         say(b, `${u.name} crashes through the window: the glass goes with a crash${b.raid ? ` (Heat +${WINDOW.BREAK.heat})` : ""}, and cuts ${u.name.split(" ")[0]} (${eff}).`, "danger");
         glassNoise(b, x, y, { say, alertNear });
         vaulted.push("through the window");
-      } else vaulted.push(over.k === "window" ? "through the open window" : over.k === "smashed" ? "through the broken window" : `the ${CELL[over.k].name.toLowerCase()}`);
+      } else {
+        vaulted.push(over.k === "window" ? "through the open window" : over.k === "smashed" ? "through the broken window" : `the ${CELL[over.k].name.toLowerCase()}`);
+        if (u.kind === "zombie" && playerSees(b, u)) fx(b, { type: "melee", from: [x, y], to: [x, y], hit: true, crit: false, dmg: 0, side: u.side, text: "CRAWL" }); // barricade.js: the crawl seen
+      }
       if (!active(u)) break; // cut down on the sill (the glass, overwatch): it falls back below
     }
     // A building's closed door swings open (buildingmaps.js); anyone but your people stops in the doorway to open it.
@@ -3870,6 +3874,7 @@ export function moveAlong(b, u, path) {
   if (vaulted.length) {
     u.vaulted = (u.vaulted || 0) + (u.kind === "zombie" ? CRAWL.COST : VAULT.COST) * vaulted.length; // winded: moveMob for the rest of the turn (the dead crawled: barricade.js)
     if (u.side === "player") { b.noise = (b.noise || 0) + VAULT.NOISE * vaulted.length; say(b, `${u.name} vaults ${[...new Set(vaulted)].join(" and ")}.`, "info"); }
+    else if (u.kind === "zombie" && playerSees(b, u)) say(b, `${u.name} crawls ${[...new Set(vaulted)].map((w) => (w.startsWith("through") ? w : `over ${w}`)).join(" and ")}.`, "info"); // barricade.js CRAWL: seen by one of yours
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
   if (walked.length && u.dragging != null) MED.dragFollow(b, u, from, walked); // medics.js: the downed ally comes along behind
@@ -4976,7 +4981,9 @@ function aiUnit(b, u) {
     // An attacker outside a fort's wall with no fair shot: on toward the nearest opening, or batter the gate (fortApproach).
     if (!shot || shot.o.chance < 45) { const fa = fortApproach(b, u, field); if (fa === "bash") return; if (fa === "moved") continue; }
     if (shot) { fire(b, u, shot.t); u.ap = 0; return; }
-    // Nothing to shoot and nowhere better to stand: an attacker at a wall, a door or the gate batters it.
+    // Nothing to shoot and nowhere better to stand: one holding a building barricades it (barricade.js aiBarricade: a
+    // piece into a door frame, boards over an outer window); an attacker at a wall, a door or the gate batters it.
+    if (u.kind === "human" && u.ap >= 2 && aiBarricade(b, u, { say, alertNear, fx })) return;
     const wall = siegeTarget(b, u);
     if (wall) { bash(b, u, wall[0], wall[1]); u.ap = 0; return; }
     const bi = breakIn(b, u, field); // no way to them but through a locked door: on to it (breakIn)
@@ -5297,7 +5304,7 @@ export function breakCell(b, x, y, by = null) {
   else if (c.k === "idoor" || c.k === "door") doorBroken(b, x, y); // a building's door stays broken (buildingmaps.js)
   else if (c.k === "window") smashWindow(b, c); // windows.js: broken, half cover still, vaulted through
   else if (c.k === "boarded") breakBoarded(b, c, x, y); // barricade.js: the boards go, and the door or window with them
-  else if (FURNITURE[c.k]) { c.k = "rubble"; delete c.moved; } // a shoved piece of furniture (barricade.js): smashed to splinters, open floor again
+  else if (FURNITURE[c.k]) breakPiece(b, c); // a shoved piece of furniture (barricade.js): smashed to splinters, open floor again (or the door frame it stood in)
   else if (c.k === "tanktrap") c.k = "rubble"; // a bridge barricade's trap, broken up: open ground again (a vehicle can pass)
   b.losCache.fill(0);
   if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;
