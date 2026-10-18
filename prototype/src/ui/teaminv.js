@@ -2,12 +2,16 @@
 // them works as in the one-person inventory), and, while the team stands on one of your bases' tiles, the two
 // transfer views: Drop off (the team's things into the base's armory and stores) and Load (the base's armory and
 // stores onto a member or into the team's cargo). Rules live in sim/teaminv.js; this file draws and picks.
-// ui.inv = { sid, team: partyId, tab: "team" | "drop" | "load" } (ui.inv.sid: the member whose inventory a click on
-// a cargo item sends things to, as in ui/inventory.js); ui.tiPick = { items: { loc: true }, sup: { key: qty } };
+// ui.inv = { sid, team: partyId, tab: "team" | "drop" | "load", open: { sid: true } } (ui.inv.sid: the member whose
+// inventory a click on a cargo item sends things to, as in ui/inventory.js; ui.inv.open: the members whose paper doll
+// is out, the rest sit folded in the strip above: a team of one to MAX_TEAM people and a fleet of several vehicles fit
+// one window, the user's request 2026-10-18); ui.tiPick = { items: { loc: true }, sup: { key: qty } };
 // ui.tiTarget = "cargo" | a member's id (where loaded items go).
 import { SUPPLIES, supWeight } from "../sim/data.js";
 import { survivorById } from "../sim/world.js";
-import { partyMembers, partyTile, tileLabel } from "../sim/parties.js";
+import { partyMembers, partyTile, tileLabel, partyCapacity } from "../sim/parties.js";
+import { partyVehicles, vehicleLabel, vehicleCapacity, isBike } from "../sim/vehicles.js"; // the fleet, vehicle by vehicle, under the cargo
+import { wornLoad, maxLoad } from "../sim/load.js"; // a folded member's load in the strip
 import { SLOT_NAMES, parseLoc, itemLoad } from "../sim/inventory.js";
 import { teamBase, transferProblem, teamsAtBase, teamHoldings, baseHoldings, dropOff, dropAllCargo, dropAllSupplies, loadFromBase, isPlayerTeam, dropHeldOff, pendingUnpack, unpackSpots, unpackHome } from "../sim/teaminv.js";
 import { recText, HANDS_KG } from "../sim/carry.js"; // the supplies each member holds (pockets, pack, arms)
@@ -80,15 +84,46 @@ export function teamInvModal(state, ui) {
   </div>`;
 }
 
-// Everyone's paper doll and the cargo; clicks and drags move things as in the one-person inventory.
+// How many paper dolls are out by themselves: a team this small shows everyone; a bigger one the receiving member
+// (the strip opens the others, or Show all).
+const OPEN_ALL = 3;
+// The members whose paper doll is out (ui.inv.open; set up on the first look).
+function openSet(ui, members) {
+  if (!ui.inv.open) ui.inv.open = Object.fromEntries((members.length <= OPEN_ALL ? members : members.filter((s) => s.id === ui.inv.sid)).map((s) => [s.id, true]));
+  for (const id of Object.keys(ui.inv.open)) if (!members.some((s) => s.id === Number(id))) delete ui.inv.open[id]; // someone gone
+  if (!members.some((s) => ui.inv.open[s.id])) ui.inv.open[(members.find((s) => s.id === ui.inv.sid) || members[0]).id] = true; // never nobody
+  return ui.inv.open;
+}
+// The strip over the dolls: everyone on the team as a chip (portrait, name, what they carry against their max), lit
+// when their doll is out; a click folds or unfolds them (unfolding makes them the one who receives). Show all / Show one.
+function memberStrip(state, ui, members, open) {
+  const chips = members.map((s) => {
+    const worn = wornLoad(s), max = maxLoad(s);
+    const on = !!open[s.id];
+    return `<button class="tichip${on ? " on" : ""}" data-action="ti-show" data-id="${s.id}"${tip(`${s.name}${s.leader ? " (leader)" : ""}: ${kg(worn)}/${max} kg on them${s.gear.weapon ? `, ${s.gear.weapon.name}` : ", unarmed"}. ${on ? "Click to fold their inventory away" : "Click to open their inventory"}${s.id === ui.inv.sid ? ". A cargo item clicked twice goes to them" : ""}.`)}>${spriteImg(survivorURL(s, state.seed), 2)}<span class="tiname">${s.leader ? "★ " : ""}${first(s)}${s.id === ui.inv.sid ? ' <span class="muted">·</span>' : ""}</span><span class="small ${worn > max ? "danger" : "muted"}">${kg(worn)}/${max}</span></button>`;
+  }).join("");
+  const nOpen = members.filter((s) => open[s.id]).length;
+  const all = nOpen === members.length;
+  return `<div class="tistrip"${tip("The team: a lit chip's inventory is open below. Open as many as you like; the rest wait folded here.")}>${chips}${members.length > 1 ? `<span class="small muted" style="margin-left:0.3rem">${nOpen} of ${members.length} open</span><button class="mini" data-action="ti-showall" ${all ? "disabled" : ""}${tip("Every member's inventory out at once (a big team wraps onto more rows; the cargo comes last)")}>Show all</button><button class="mini" data-action="ti-showone" ${nOpen === 1 ? "disabled" : ""}${tip("Only the one who receives")}>Show one</button>` : ""}</div>`;
+}
+// The fleet under the cargo's header when the team has more than one vehicle: each one with its share of the payload
+// (the cargo is one load across them: sim/vehicles.js fleetOf). On foot: how many pairs of hands carry it.
+function fleetLine(state, p, members) {
+  const vs = partyVehicles(state, p);
+  if (vs.length > 1) return `<div class="small muted tifleet"${tip("The team's vehicles. The cargo rides as one load across them (the payloads add up); each one's payload is what it takes on its own, riders included.")}>${vs.map((v) => `<span class="chip">${esc(vehicleLabel(v))}${isBike(v) ? "" : ` <span class="muted">${Math.round(vehicleCapacity(v))} kg</span>`}${v.condition != null && v.condition < 0.5 ? ` <span class="danger">${Math.round(v.condition * 100)}%</span>` : ""}</span>`).join(" ")}</div>`;
+  if (!vs.length) return `<div class="small muted tifleet"${tip("No vehicle: the cargo and the packed supplies are shared out among the people, by what each can carry on top of what they wear.")}>${members.length === 1 ? `Carried by hand: ${Math.round(partyCapacity(state, p))} kg at most.` : `Carried by ${members.length} people: ${Math.round(partyCapacity(state, p))} kg between them.`}</div>`;
+  return "";
+}
+// The paper dolls that are out and the cargo; clicks and drags move things as in the one-person inventory.
 function teamTab(state, ui, p, members) {
   const user = survivorById(state, ui.inv.sid);
-  const cols = members.map((s) => `<div class="invcol" style="flex:0 0 17rem"><div class="spread"><b>${s.leader ? "★ " : ""}${first(s)}</b>${s.id === ui.inv.sid ? `<span class="small muted"${tip("A cargo item clicked twice goes to this person")}>receives</span>` : ""}</div>${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 5), { user: s })}${holdSection(state, ui, s)}</div>`).join("");
+  const open = openSet(ui, members);
+  const cols = members.filter((s) => open[s.id]).map((s) => `<div class="invcol" style="flex:0 0 17rem"><div class="spread"><b>${s.leader ? "★ " : ""}${first(s)}</b><span class="row" style="gap:0.3rem">${s.id === ui.inv.sid ? `<span class="small muted"${tip("A cargo item clicked twice goes to this person")}>receives</span>` : ""}${members.length > 1 ? `<button class="mini" data-action="ti-show" data-id="${s.id}"${tip(`Fold ${s.name.split(" ")[0]}'s inventory away (the strip above opens it again)`)}>▾</button>` : ""}</span></div>${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 5), { user: s })}${holdSection(state, ui, s)}</div>`).join("");
   const packed = Object.entries(p.supplies || {}).filter(([k, v]) => SUPPLIES[k] && v >= 1).map(([k, v]) => `${SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪"} ${Math.floor(v)} ${SUPPLIES[k].name.toLowerCase()}`).join(" · ");
-  const cargo = `<div class="invcol" style="flex:1 0 17rem">${storageBox(state, ui, `party:${p.id}`, user)}${packed ? `<div class="small muted"${tip("Packed at the start: shared out among the people (or riding in the vehicle) and eaten first on the road")}>Packed: ${esc(packed)}</div>` : ""}</div>`;
-  const html = `<div class="row" style="align-items:flex-start;gap:1rem;overflow-x:auto;padding-bottom:0.4rem">${cols}${cargo}</div>
+  const cargo = `<div class="invcol" style="flex:1 0 17rem;min-width:17rem">${storageBox(state, ui, `party:${p.id}`, user)}${fleetLine(state, p, members)}${packed ? `<div class="small muted"${tip("Packed at the start: shared out among the people (or riding in the vehicle) and eaten first on the road")}>Packed: ${esc(packed)}</div>` : ""}</div>`;
+  const html = `${memberStrip(state, ui, members, open)}<div class="row" style="align-items:flex-start;gap:1rem;overflow-x:auto;padding-bottom:0.4rem">${cols}${cargo}</div>
     ${selBar(state, ui, `party:${p.id}`)}
-    <div class="small muted" style="margin-top:0.5rem">Click an item, then where it should go (another member's slot, pocket or pack cell, or the cargo), or drag it. Click an item twice: off a person into the cargo, or out of the cargo onto the person marked "receives" (the last one you clicked).</div>`;
+    <div class="small muted" style="margin-top:0.5rem">Click an item, then where it should go (another member's slot, pocket or pack cell, or the cargo), or drag it. Click an item twice: off a person into the cargo, or out of the cargo onto the person marked "receives" (the last one you clicked). The strip opens or folds each member.</div>`;
   return html.replace(/data-action="inv-click"/g, 'data-action="ti-click"');
 }
 
@@ -169,6 +204,16 @@ export const TEAMINV_ACTIONS = {
     resetPick(ui);
   },
   "ti-tab": (state, ui, d) => { if (!ui.inv || ui.inv.team == null) return; ui.inv.tab = d.tab; ui.invSel = null; ui.invMsg = ""; resetPick(ui); },
+  // The strip: a member's doll out or folded (out: they receive); everyone; the one who receives only.
+  "ti-show": (state, ui, d) => {
+    const p = partyOf(state, ui); if (!p || !ui.inv) return;
+    const members = partyMembers(state, p), open = openSet(ui, members), id = Number(d.id);
+    if (!members.some((s) => s.id === id)) return;
+    if (open[id]) { delete open[id]; if (ui.inv.sid === id) { const next = members.find((s) => open[s.id]); if (next) ui.inv.sid = next.id; else open[id] = true; } }
+    else { open[id] = true; ui.inv.sid = id; }
+  },
+  "ti-showall": (state, ui) => { const p = partyOf(state, ui); if (!p || !ui.inv) return; ui.inv.open = Object.fromEntries(partyMembers(state, p).map((s) => [s.id, true])); },
+  "ti-showone": (state, ui) => { const p = partyOf(state, ui); if (!p || !ui.inv) return; const members = partyMembers(state, p); const keep = members.find((s) => s.id === ui.inv.sid) || members[0]; ui.inv.open = { [keep.id]: true }; },
   // The team tab: a click on a member's item makes them the one a cargo item clicked twice goes to.
   "ti-click": (state, ui, d, ev) => {
     if (!ui.inv) return;
