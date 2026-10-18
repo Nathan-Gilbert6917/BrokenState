@@ -231,7 +231,7 @@ section("The bar: Hand over (Alt+H), Face <name>, the chooser, the two-doll wind
     }
     return out;
   };
-  const order = (st) => buttons(UI.renderCombatBar(st)).filter((x) => /\bbb-btn\b/.test(x.cls)).find((x) => x.action === "cb-act" && x.v === "handover");
+  const order = (st) => buttons(UI.renderCombatBar(st, { flat: true })).filter((x) => /\bbb-btn\b/.test(x.cls)).find((x) => x.action === "cb-act" && x.v === "handover"); // flat: every order on the bar, greyed ones too, none in a tray (ui/battlebar.js)
   const draw = (st) => { try { UI.drawCombat(st, 1e9); return ""; } catch (e) { return e.stack.split("\n").slice(0, 2).join(" "); } };
 
   const { st, b, a, m, c, u, t, w } = setup(SEED + 5);
