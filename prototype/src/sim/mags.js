@@ -28,15 +28,25 @@
 //     action), a double barrel both barrels at once (see shellPlan); with none at hand, straight out of the pack for
 //     both actions (plan { mode: tube | break | single, from: "pack" }), or Get shells (1 action) brings a handful to
 //     hand first for 1-action Reloads after.
+//   - a spare magazine loaded by hand (loadMagPlan / loadMagFrom, 2026-10-18 user request: "Reload magazine by dragging
+//     loose ammo onto a magazine uses action to do so from pocket to rig or two actions to reload from dragging loose
+//     ammo from pack to magazine"): in the fight's Inventory window loose rounds dropped onto one of the gun's spares
+//     (combat.js invAct, a "load") put up to what the handful holds into it, 1 action when the rounds are in a pocket or
+//     a rig pouch, both when they are in the pack (LOAD_AP: MAGS.SOURCE_AP). Its type becomes the rounds' (an empty
+//     one takes any the magazine and the gun accept; one with rounds in it only more of the same). The rounds stay
+//     where they lie, as every magazine's do (virtual rounds: a shot spends them, ammo.js takeBattleRounds), so a
+//     magazine fills only with rounds the gun and the quicker spares have not claimed (loaded). A box must be opened
+//     first; a magazine of another gun is not loaded (the unit tracks only its own gun's).
 // Units with no u.mags (made some other way, an old save's battle, a turret, a launcher) keep the old rule: Reload is 1
 // action and fills the magazine.
 import { GEAR } from "./data.js";
 import { MAGAZINES, INTERNAL, CLIPS } from "./data-kit.js";
-import { CALIBERS, ROUND_SUPPLIES, CAL_ACCEPTS } from "./data-ammo.js";
+import { CALIBERS, ROUND_SUPPLIES, CAL_ACCEPTS, HAND_SUPPLIES } from "./data-ammo.js";
 import { WEAPONS } from "./combat.js";
 import { modFits, platformOf, magCapOf, gunMods, unitMods } from "./gunmods.js";
 import { roundsOf, calOf, loadRefusal } from "./ammo.js";
-import { typeFor, roundName, typeName, withHand, keyFor, rebaseLoad, loadCal } from "./rounds.js";
+import { typeFor, roundName, typeName, withHand, keyFor, rebaseLoad, loadCal, loadId, roundOf } from "./rounds.js";
+import { isRoundItem, amountOf } from "./itemstack.js"; // loose rounds dropped onto a magazine (loadMagPlan)
 import { hash01 } from "./skills.js";
 
 export const MAGS = {
@@ -153,14 +163,34 @@ export function fitMags(b, u, spots, staticCap) {
   // n = cap: what a magazine holds is bounded as it is used by the rounds of its type to hand that the gun and the
   // quicker spares have not claimed (loaded).
   u.mags = [{ key: fit ? fit.key : standardMag(key), cap: staticCap, load: gunLoad, n: staticCap, where: "gun" }];
-  for (const x of spots) {
-    if (!isMag(x.item) || !["rig", "pocket", "pack"].includes(x.where) || !magFitsGun(key, x.item.key)) continue;
-    const load = magLoad(x.item, cal, u.load, key);
-    if (!magTakes(x.item.key, loadCal(cal, load))) continue; // (the gun's load is a calibre this magazine cannot hold)
-    const cap = magCapOf(x.item.key) || MAGAZINES[x.item.key].cap;
-    u.mags.push({ key: x.item.key, cap, load, n: cap, where: x.where });
-  }
+  for (const x of spots) { const m = spareFor(key, cal, u.load, x); if (m) u.mags.push(m); }
 }
+// The spare a carried thing (a carriedSpots entry) makes for this gun, or null: a magazine in a pocket, a rig pouch or
+// the pack that fits the gun and holds a calibre its load can be. The entries of u.mags follow the spots' order, so
+// the k-th of one key in one place is the k-th such item carried (magEntryAt; refitKit and doReload keep the order).
+function spareFor(key, cal, uLoad, x) {
+  if (!x || !isMag(x.item) || !["rig", "pocket", "pack"].includes(x.where) || !magFitsGun(key, x.item.key)) return null;
+  const load = magLoad(x.item, cal, uLoad, key);
+  if (!magTakes(x.item.key, loadCal(cal, load))) return null; // (the gun's load is a calibre this magazine cannot hold)
+  const cap = magCapOf(x.item.key) || MAGAZINES[x.item.key].cap;
+  return { key: x.item.key, cap, load, n: cap, where: x.where };
+}
+// The u.mags entry of the magazine item at an inventory location on the unit's survivor (spots: inventory.js
+// carriedSpots(s)), or null (no such item, not one of this gun's, or no magazines tracked). The k-th magazine of its
+// key in its place among the spots is the k-th entry of that key and place.
+export function magEntryAt(u, spots, loc) {
+  if (!tracksMags(u) || u.magMode !== "box") return null;
+  const key = u.weapon, cal = calOf(key);
+  const i = (spots || []).findIndex((x) => x.loc === loc);
+  if (i < 0 || !spareFor(key, cal, u.load, spots[i])) return null;
+  const it = spots[i].item, where = spots[i].where;
+  let k = 0;
+  for (let j = 0; j < i; j++) if (spots[j].item.key === it.key && spots[j].where === where && spareFor(key, cal, u.load, spots[j])) k++;
+  const same = u.mags.filter((m) => m.where !== "gun" && m.key === it.key && m.where === where);
+  return same[k] || same[same.length - 1] || null;
+}
+// What a magazine of the unit holds now (loaded: bounded by the rounds of its type to hand not claimed before it).
+export const loadedIn = (b, u, m) => loaded(b, u, m);
 // An enemy's magazines (carrykit.js kitEnemy): the gun's and `count` spares of its standard magazine (or the given
 // items: a group's own, arsenal.js), all of the unit's load; where: "rig" when it wears one, else pockets then the pack.
 export function enemyMags(u, staticCap, count, hasRig, items = null) {
@@ -475,7 +505,11 @@ export function doReload(b, u, plan) {
   if (plan.mode === "swap") {
     const fresh = u.mags[plan.i], g = gunEntry(u);
     const n = loaded(b, u, fresh);
-    if (g) { g.n = u.mag ?? 0; g.where = fresh.where; } // the emptied magazine is kept: where the fresh one came from
+    if (g) { // the emptied magazine is kept: where the fresh one came from (and in its place in the list: magEntryAt)
+      g.n = u.mag ?? 0; g.where = fresh.where;
+      const gi = u.mags.indexOf(g), fi = u.mags.indexOf(fresh);
+      if (gi >= 0 && fi >= 0) { u.mags[gi] = fresh; u.mags[fi] = g; }
+    }
     fresh.where = "gun";
     u.load = fresh.load;
     u.magMax = fresh.cap;
@@ -531,6 +565,52 @@ export function doReload(b, u, plan) {
 }
 const shown = (b, u) => (u.side === "player" ? Math.min(u.mag || 0, Math.max(0, roundsOf(b, u))) : u.mag || 0);
 const gunWord = (u) => { const n = u.weaponName || (WEAPONS[u.weapon] && WEAPONS[u.weapon].name) || "gun"; return /^[A-Z][a-z]/.test(n) ? n[0].toLowerCase() + n.slice(1) : n; };
+
+// ---------- loading a spare magazine by hand (the fight's Inventory window) ----------
+export const LOAD_AP = MAGS.SOURCE_AP; // the loose rounds' place decides: a pocket or the rig 1, the pack both
+const placeWord = (w) => (w === "pack" ? "the pack" : w === "rig" ? "the rig" : "a pocket");
+// What dropping the loose rounds `it` (lying in `from`: "pocket" | "rig" | "pack") onto the unit's magazine entry `m`
+// would do: { cost, n (rounds that go in), load (the type it is loaded with then), why ("" or the refusal) }.
+export function loadMagPlan(b, u, m, it, from) {
+  const cost = LOAD_AP[from === "pack" ? "pack" : "hand"];
+  const out = { cost, n: 0, load: m ? m.load : null, why: "" };
+  const no = (why) => ({ ...out, why });
+  if (!tracksMags(u) || u.magMode !== "box") return no(`The ${gunWord(u)} takes no magazines to load.`);
+  if (!m || m.where === "gun") return no(`Only a spare magazine of the ${gunWord(u)} is loaded by hand (the one in the gun: Reload).`);
+  if (!isRoundItem(it)) return no("Only rounds load a magazine.");
+  if (!it.loose) return no("Open the box first (Open box, 1 action): loose rounds load a magazine.");
+  const cal = calOf(u.weapon);
+  const r = roundOf(it.key) || (HAND_SUPPLIES[it.key] && HAND_SUPPLIES[it.key].round);
+  if (!cal || !r) return no("Only rounds load a magazine.");
+  if (!magTakes(m.key, r.cal)) return no(`The ${magName(m)} does not take ${roundName(r.cal, r.type)}.`);
+  const load = loadId(cal, r.cal, r.type);
+  const bad = loadRefusal(u.weapon, load);
+  if (bad) return no(bad);
+  const cur = loaded(b, u, m);
+  if (cur > 0 && m.load !== load) return no(`The ${magName(m)} holds ${roundName(cal, m.load)}: no other rounds go in until it is empty.`);
+  if (cur >= m.cap) return no(`The ${magName(m)} is full (${m.cap}/${m.cap}).`);
+  const have = amountOf(it);
+  if (have < 1) return no("No rounds there.");
+  // The rounds stay where they lie (virtual rounds): what the gun and the quicker spares have claimed is not free.
+  const wasN = m.n, wasLoad = m.load;
+  m.load = load; m.n = Math.min(m.cap, cur + have);
+  const after = loaded(b, u, m);
+  m.n = wasN; m.load = wasLoad;
+  if (after <= cur) return no(`No spare ${roundName(cal, load)}: every round left is already loaded (the ${gunWord(u)} and the other magazines claim them).`);
+  return { cost, n: after - cur, load, why: "" };
+}
+const magName = (m) => String((GEAR[m.key] && GEAR[m.key].name) || "magazine").toLowerCase();
+// Carries out a plan (combat.js invAct: the actions are taken there). Returns the log line.
+export function loadMagFrom(b, u, m, it, from, plan = null) {
+  const p = plan || loadMagPlan(b, u, m, it, from);
+  if (p.why) return "";
+  const cal = calOf(u.weapon);
+  const cur = loaded(b, u, m);
+  m.load = p.load;
+  m.n = Math.min(m.cap, cur + p.n);
+  const now = loaded(b, u, m);
+  return `${u.name} loads ${p.n} ${roundName(cal, p.load)} into a magazine in ${placeWord(m.where)} from ${placeWord(from)} (${now}/${m.cap}${p.cost === 1 ? "" : ", both actions"}).`;
+}
 
 // The magazines line on a unit's card: "+3 mags (2 rig, 1 pack)" / "2 speedloaders" / "".
 export function magsLine(b, u) {
