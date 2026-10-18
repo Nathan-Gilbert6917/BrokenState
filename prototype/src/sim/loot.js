@@ -122,6 +122,7 @@ export const ITEM_TAGS = {
   // base defences
   barbedwire: ["farm", "tools", "military", "industry", "prison"], beartrap: ["hunt", "farm", "outdoor", "tools"],
   tripwire: ["camp", "crime", "military", "outdoor", "tools"], sandbags: ["military", "fire", "industry", "tools"],
+  boards: ["tools", "farm"], // boards and nails (barricade.js): hardware stores and farms (data.js LOCATIONS)
   // camp kit against Heat
   // hunting.js: snares and fishing gear
   snarewire: ["farm", "hunt", "outdoor", "tools", "camp"], fishrod: ["outdoor", "hunt", "camp", "tools", "shop", "sport"], fishnet: ["outdoor", "hunt", "camp", "farm", "tools"],
