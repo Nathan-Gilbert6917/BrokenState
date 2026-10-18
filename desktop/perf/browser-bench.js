@@ -3,6 +3,7 @@
 // on the way out (the game's files are not changed); the page posts its result back. The browser runs as a
 // real window (not headless, so it has the real GPU and vsync) on a throwaway profile, and is closed afterwards.
 //   node perf/browser-bench.js [--seconds=60] [--sizes=1080p,maximized,maximized-dpr1] [--browser=C:\path\to\chrome.exe] [--out=file.json]
+//                              [--speed=5] [--reveal=off] [--autopilot=on] [--dev-panel=off]   (perf/driver.js says what each does)
 const http = require("http");
 const fs = require("fs");
 const os = require("os");
@@ -12,6 +13,8 @@ const { spawn, execFileSync } = require("child_process");
 const arg = (name, dflt) => { const a = process.argv.find((x) => x.startsWith(`--${name}=`)); return a ? a.slice(name.length + 3) : dflt; };
 const SECONDS = Number(arg("seconds", 60));
 const SIZES = arg("sizes", "1080p,maximized,maximized-dpr1").split(",");
+const on = (name, dflt) => /^(on|1|true|yes)$/i.test(arg(name, dflt ? "on" : "off"));
+const RUN = { seed: 42, speed: Number(arg("speed", 5)), seconds: SECONDS, warmup: 3, reveal: on("reveal", false), autopilot: on("autopilot", true), devPanel: on("dev-panel", false) };
 const ROOT = path.resolve(__dirname, "..", "..", "prototype");
 const DRIVER = fs.readFileSync(path.join(__dirname, "driver.js"), "utf8");
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml" };
@@ -45,7 +48,7 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(ROOT)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end("Not found"); }
-    if (path.basename(file) === "index.html") data = Buffer.from(data.toString("utf8").replace("</body>", `${inject({ seed: 42, speed: 200, seconds: SECONDS, warmup: 3 })}</body>`));
+    if (path.basename(file) === "index.html") data = Buffer.from(data.toString("utf8").replace("</body>", `${inject(RUN)}</body>`));
     res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-store" });
     res.end(data);
   });
@@ -91,7 +94,7 @@ async function main() {
     try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* files still locked: left in the temp folder */ }
   }
   server.close();
-  const json = JSON.stringify({ host: "browser", browser, seconds: SECONDS, runs }, null, 2);
+  const json = JSON.stringify({ host: "browser", browser, seconds: SECONDS, options: RUN, runs }, null, 2);
   const out = arg("out", null);
   if (out) fs.writeFileSync(path.resolve(out), json);
   console.log(json);

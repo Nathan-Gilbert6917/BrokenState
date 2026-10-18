@@ -213,13 +213,6 @@ export function packPois(state) {
   }
   return out;
 }
-/** Runs fn with the lists off the tiles and their changes packed (save.js serializeState), then puts them back. @template T @param {State} state @param {(mods: any) => T} fn @returns {T} */
-export function withPoisPacked(state, fn) {
-  const mods = packPois(state);
-  const lists = state.tiles.map((t) => t.pois);
-  for (const t of state.tiles) delete t.pois;
-  try { return fn(mods); } finally { state.tiles.forEach((t, i) => { if (lists[i] !== undefined) t.pois = lists[i]; }); }
-}
 /** A hive rose or a hive was destroyed here: its POIs are gone for good. @param {Tile} t */
 export function clearPois(t) {
   if (t) t.pois = [];

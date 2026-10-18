@@ -104,12 +104,61 @@ function paintScene(limbs, grid, yaw) {
   }
   return p;
 }
+// The piece on its canvas, UP px a grid px: every grid px that is not solid (empty, or a see-through glow) but
+// touches a solid one (an opaque colour) in OUTLINE, then every coloured px in its colour. Written as one ImageData
+// (a fillRect a pixel, toCanvasSlow, cost about as much as painting the piece once the painter got quicker): an
+// opaque "#rrggbb" is its own four bytes either way, and a see-through "#rrggbbaa" is still filled over what lies
+// under it (the outline or nothing), so it blends as before. Any other colour string goes to toCanvasSlow, so the
+// bytes are always toCanvasSlow's; so does a context with no ImageData (the tools' stub canvas records the fillRects).
+const PARSED = new Map(); // colour string -> 0xrrggbb, -2 for "#rrggbbaa", -1 for anything else (emptied when full)
+function colourOf(c) {
+  let n = PARSED.get(c);
+  if (n === undefined) {
+    n = typeof c !== "string" ? -1 : /^#[0-9a-f]{6}$/i.test(c) ? parseInt(c.slice(1), 16) : /^#[0-9a-f]{8}$/i.test(c) ? -2 : -1;
+    if (PARSED.size >= 4096) PARSED.clear();
+    PARSED.set(c, n);
+  }
+  return n;
+}
+const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1; // the byte order of a Uint32Array over the pixels
+const pack = (n) => (LITTLE ? (0xff000000 | ((n & 255) << 16) | (n & 0xff00) | ((n >> 16) & 255)) >>> 0 : ((n << 8) | 255) >>> 0);
+const OUT32 = pack(colourOf(OUTLINE));
 function toCanvas(p) {
   if (typeof document === "undefined") return null;
   const cv = document.createElement("canvas");
   cv.width = p.w * UP;
   cv.height = p.h * UP;
-  const c = cv.getContext("2d");
+  const c = cv.getContext("2d"), w = p.w, h = p.h, px = p.px, n = w * h, col = new Int32Array(n), solid = new Uint8Array(n); // col: 0xrrggbb, -2 a glow, -3 empty
+  let glows = 0;
+  for (let i = 0; i < n; i++) {
+    const v = px[i];
+    if (!v) { col[i] = -3; continue; }
+    const k = colourOf(v);
+    if (k === -1) return toCanvasSlow(p, cv, c);
+    if (k === -2) glows++;
+    col[i] = k;
+    solid[i] = k >= 0 ? 1 : 0;
+  }
+  const img = typeof c.createImageData === "function" ? c.createImageData(w * UP, h * UP) : null;
+  if (!img || !img.data) return toCanvasSlow(p, cv, c);
+  const d = new Uint32Array(img.data.buffer), row = w * UP;
+  for (let y = 0; y < h; y++) {
+    const r0 = y * UP * row;
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, k = col[i];
+      let v = 0;
+      if (k >= 0) v = pack(k);
+      else if ((x > 0 && solid[i - 1]) || (x < w - 1 && solid[i + 1]) || (y > 0 && solid[i - w]) || (y < h - 1 && solid[i + w])) v = OUT32;
+      if (v) for (let j = r0 + x * UP, e = j + UP; j < e; j++) d[j] = v;
+    }
+    for (let k = 1; k < UP; k++) d.copyWithin(r0 + k * row, r0, r0 + row); // the grid row's other UP - 1 canvas rows
+  }
+  c.putImageData(img, 0, 0);
+  if (glows) for (let i = 0; i < n; i++) if (col[i] === -2) { c.fillStyle = px[i]; c.fillRect((i % w) * UP, ((i / w) | 0) * UP, UP, UP); }
+  return cv;
+}
+// The same with a fillRect a pixel, on the canvas and context toCanvas made.
+function toCanvasSlow(p, cv, c) {
   c.fillStyle = OUTLINE;
   const solid = (x, y) => { const v = p.get(x, y); return !!v && v.length <= 7; };
   for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
@@ -124,18 +173,60 @@ function toCanvas(p) {
   }
   return cv;
 }
-const cache = new Map();
+// The pieces' canvases by key. The key holds all a picture depends on (the kind, colours, count, upgrades, the yaw
+// bucket and the frame; curNear follows the yaw, and the figures are numbered from 1), so a canvas never goes stale.
+// Least recently used first (a Map keeps insertion order; a hit moves its key to the end), the oldest dropped past
+// BUDGET bytes of canvas (w × h × 4 a piece: some 2,000 of them), so the pieces in use stay however many a long
+// session has seen (it used to clear them all past 2,400 entries and paint the ones on screen again at once).
+const cache = new Map(), BUDGET = 96 << 20; // key -> { cv, bytes }
+let cacheBytes = 0;
+export const mapFigureStats = { built: 0, ms: 0, idle: 0, idleMs: 0, dropped: 0 }; // pieces painted when drawn and in idle time (preBuild), and dropped (the tools, the dev view)
+export const mapFigureCache = () => ({ count: cache.size, bytes: cacheBytes, queued: idleQ.size });
 let curNear = 1; // the side nearer the viewer at the yaw being built (nearOf): the hand that carries things
-function cached(key, grid, yaw, build) {
-  let cv = cache.get(key);
-  if (cv === undefined) {
-    if (cache.size > 2400) cache.clear();
-    curNear = nearOf(yaw);
-    cv = toCanvas(paintScene(build(), grid, yaw));
-    if (cv) cv.grid = grid;
-    cache.set(key, cv);
-  }
+let idling = false; // painting a queued frame (preBuild): it queues nothing more
+// frame: the piece's frame (0 standing); again(g): the same piece at frame g, through its own function (preBuild).
+function cached(key, grid, yaw, frame, again, build) {
+  const e = cache.get(key);
+  if (e !== undefined) { cache.delete(key); cache.set(key, e); return e.cv; }
+  const t0 = performance.now();
+  curNear = nearOf(yaw);
+  groupSeq = 1; // the piece's figures numbered from 1 (place), so the key alone sets the picture
+  const cv = toCanvas(paintScene(build(), grid, yaw));
+  if (cv) cv.grid = grid;
+  const bytes = grid.w * grid.h * UP * UP * 4; // the canvas's (headless too, where there is none: the same bound)
+  cache.set(key, { cv, bytes });
+  cacheBytes += bytes;
+  while (cacheBytes > BUDGET && cache.size > 1) { const [k, old] = cache.entries().next().value; cache.delete(k); cacheBytes -= old.bytes; mapFigureStats.dropped++; }
+  const ms = performance.now() - t0;
+  if (idling) { mapFigureStats.idle++; mapFigureStats.idleMs += ms; } else { mapFigureStats.built++; mapFigureStats.ms += ms; }
+  if (!idling && frame > 0 && again) preBuild(key, frame, again);
   return cv;
+}
+// A moving piece that misses has turned onto a new heading (a team onto a new road, a horde drifting round): the
+// other frames of its cycle at that heading follow within a second, each a miss in the frame that first shows it.
+// They are queued (again: the piece's own function at the other frame, so each asks for exactly the key a frame would)
+// and painted in idle time, a few ms a slice (requestIdleCallback, else a timer); the queue keeps the newest IDLE_Q,
+// and a frame painted meanwhile is a cache hit.
+const idleQ = new Map(), IDLE_Q = 96, SLICE_MS = 4; // `${key}>${frame}` -> () => canvas, oldest first
+let idleOn = false;
+const later = typeof requestIdleCallback === "function" ? (fn) => requestIdleCallback(fn, { timeout: 500 }) : (fn) => setTimeout(() => fn(null), 30);
+function preBuild(key, frame, again) {
+  for (let g = 1; g <= FRAMES; g++) if (g !== frame) { const k = `${key}>${g}`; idleQ.delete(k); idleQ.set(k, () => again(g)); }
+  while (idleQ.size > IDLE_Q) idleQ.delete(idleQ.keys().next().value);
+  if (!idleOn) { idleOn = true; later(idleSlice); }
+}
+function idleSlice(deadline) {
+  const t0 = performance.now();
+  idling = true;
+  try {
+    for (const [k, fn] of idleQ) {
+      idleQ.delete(k);
+      try { fn(); } catch { /* best effort: the frame is painted when it is drawn */ }
+      if (performance.now() - t0 > SLICE_MS || (deadline && !deadline.didTimeout && deadline.timeRemaining() < 1)) break;
+    }
+  } finally { idling = false; }
+  if (idleQ.size) later(idleSlice);
+  else idleOn = false;
 }
 // The frame as a phase of the cycle: 0 standing (null), else 0..1.
 const phaseOf = (frame) => (frame > 0 ? ((frame - 1) % FRAMES) / FRAMES : null);
@@ -146,6 +237,10 @@ const clampFrame = (f) => (f > 0 ? (((f | 0) - 1) % FRAMES) + 1 : 0); // 0 stand
 // ground at z = 0) and placed: place(F, O, turn, build) builds through `build(push)` and moves every limb to O, turned
 // by `turn` degrees about its own origin, in a group of its own (so the rim separates one figure from the next); a
 // limb's own `group` (G.*) marks a part within it (the head, the legs, the wheels, a weapon) that gets a rim too.
+// The groups are bytes (paintLimbs' Uint8Array: a figure's number mod 16 in the high half), and at one depth the rim
+// goes to the higher group, so a counter run on from piece to piece let a piece built after a wrap give the rim to the
+// other figure: the same key painted two ways by what was built before it (9% of the multi-figure pieces at some
+// headings). cached() starts every piece at 1, where its figures never wrap.
 let groupSeq = 1;
 const G = { body: 0, legs: 1, arms: 2, head: 3, hat: 4, pack: 5, carry: 6, weapon: 7, wheels: 8, cab: 9, bonnet: 10, rails: 11, load: 12, deck: 13 };
 function place(F, O, turn, build) {
@@ -550,7 +645,7 @@ const nearOf = (yaw) => (yaw > 45 && yaw < 225 ? -1 : 1);
 export function mapPartyCanvas(kind, color, count = 3, ups = "", yaw = 315, frame = 0) {
   const y = roundYaw(yaw), f = clampFrame(frame), n = Math.max(1, Math.min(4, count));
   const people = PEOPLE.has(kind);
-  return cached(`party:${kind}:${color}:${people ? n : ""}:${ups}:${y}:${f}`, GRIDS.party, y, () => {
+  return cached(`party:${kind}:${color}:${people ? n : ""}:${ups}:${y}:${f}`, GRIDS.party, y, f, (g) => mapPartyCanvas(kind, color, count, ups, y, g), () => {
     const F = [], t = phaseOf(f), U = upsOf(ups);
     const push = (L) => F.push(L); push.F = F;
     if (kind === "truck") place(F, [0, 0, 0], 0, (q) => pickup(q, color, t, U, (q2, bx) => q2(boxL([bx, 0, 4.0], [bx + 5.4, 0, 4.0], 0.9, 2.4, "#8c7a52", { u: [0, 0, 1], group: G.load, tex: (face) => (face === "top" ? shade("#8c7a52", 0.2) : null) }))));
@@ -589,7 +684,7 @@ export const soloKind = (kind) => PEOPLE.has(kind);
 // | "limp" (wounded: the hurt leg swings short, bandaged) | "heavy" (bent under a big load with a bedroll).
 export function mapSoloCanvas(kind, color, yaw = 315, frame = 0, light = "", gait = "") {
   const y = roundYaw(yaw), f = clampFrame(frame), l = light ? (light === "torch" ? "torch" : "lamp") : "", g = gait === "limp" || gait === "heavy" ? gait : "";
-  return cached(`solo:${kind}:${color}:${y}:${f}:${l}:${g}`, GRIDS.solo, y, () => {
+  return cached(`solo:${kind}:${color}:${y}:${f}:${l}:${g}`, GRIDS.solo, y, f, (fr) => mapSoloCanvas(kind, color, y, fr, light, gait), () => {
     const F = [], look = soloLook(kind, color, f > 0);
     if (l) look.arm = l;
     if (g === "heavy") { look.bigpack = true; look.pack = false; }
@@ -601,14 +696,14 @@ export function mapSoloCanvas(kind, color, yaw = 315, frame = 0, light = "", gai
 // A team of one on a bike: frame 0 stopped, a foot down; the cranks and the wheels turn.
 export function mapCyclistCanvas(color, yaw = 315, frame = 0) {
   const y = roundYaw(yaw), f = clampFrame(frame);
-  return cached(`cyclist:${color}:${y}:${f}`, GRIDS.solo, y, () => { const F = []; place(F, [0, 0, 0], 0, (q) => cyclist(q, color, phaseOf(f))); return F; });
+  return cached(`cyclist:${color}:${y}:${f}`, GRIDS.solo, y, f, (g) => mapCyclistCanvas(color, y, g), () => { const F = []; place(F, [0, 0, 0], 0, (q) => cyclist(q, color, phaseOf(f))); return F; });
 }
 
 // ---------- the groups' parties ----------
 // type: a FACTION_TYPES key; kind: "convoy" (the group's vehicle) | "raid" | "scav" (scavengers, a sack) | "walk"; n people.
 export function mapGroupPartyCanvas(type, kind, color, n = 3, yaw = 315, frame = 0) {
   const y = roundYaw(yaw), f = clampFrame(frame), k = kind === "convoy" ? 0 : Math.max(1, Math.min(4, n));
-  return cached(`gp:${type}:${kind}:${color}:${k}:${y}:${f}`, GRIDS.party, y, () => {
+  return cached(`gp:${type}:${kind}:${color}:${k}:${y}:${f}`, GRIDS.party, y, f, (g) => mapGroupPartyCanvas(type, kind, color, n, y, g), () => {
     const F = [], t = phaseOf(f);
     const push = (L) => F.push(L); push.F = F;
     if (kind === "convoy") {
@@ -641,7 +736,7 @@ export function mapGroupPartyCanvas(type, kind, color, n = 3, yaw = 315, frame =
 // A group's party of one on foot, in its group's look (the lead figure); kind "walk" | "raid" | "scav".
 export function mapGroupSoloCanvas(type, kind, color, yaw = 315, frame = 0) {
   const y = roundYaw(yaw), f = clampFrame(frame);
-  return cached(`gsolo:${type}:${kind}:${color}:${y}:${f}`, GRIDS.solo, y, () => {
+  return cached(`gsolo:${type}:${kind}:${color}:${y}:${f}`, GRIDS.solo, y, f, (g) => mapGroupSoloCanvas(type, kind, color, y, g), () => {
     const F = [], look = groupLook(type, color, 0, kind === "raid");
     if (kind === "scav") { look.pack = true; look.arm = "bar"; look.sack = true; }
     place(F, [0, 0, 0], 0, (q) => person(q, look, walkPose(f, 0)));
@@ -659,7 +754,7 @@ export function mapOutsiderPartyCanvas(kind, sub = "", n = 3, escort = null, yaw
   const y = roundYaw(yaw), f = clampFrame(frame), k = Math.max(1, Math.min(3, n));
   const tier = kind === "merchants" && escort ? escort.tier : "", veh = kind === "merchants" && escort ? escort.vehicle || "" : "";
   const big = kind === "merchants";
-  return cached(`out:${kind}:${sub || ""}:${big ? `${tier}:${veh}` : k}:${y}:${f}`, big ? GRIDS.wide : GRIDS.party, y, () => {
+  return cached(`out:${kind}:${sub || ""}:${big ? `${tier}:${veh}` : k}:${y}:${f}`, big ? GRIDS.wide : GRIDS.party, y, f, (g) => mapOutsiderPartyCanvas(kind, sub, n, escort, y, g), () => {
     const F = [], t = phaseOf(f);
     const push = (L) => F.push(L); push.F = F;
     if (kind === "raiders") {
@@ -687,7 +782,7 @@ export function mapOutsiderPartyCanvas(kind, sub = "", n = 3, escort = null, yaw
 // Outsiders in ones and twos, walking: kind "raiders" | "explorers" (sub as above); i 0 the lead, 1 the second.
 export function mapOutsiderSoloCanvas(kind, sub, i = 0, yaw = 315, frame = 0) {
   const y = roundYaw(yaw), f = clampFrame(frame), k = i ? 1 : 0;
-  return cached(`osolo:${kind}:${sub || ""}:${k}:${y}:${f}`, GRIDS.solo, y, () => {
+  return cached(`osolo:${kind}:${sub || ""}:${k}:${y}:${f}`, GRIDS.solo, y, f, (g) => mapOutsiderSoloCanvas(kind, sub, i, y, g), () => {
     const F = [];
     if (kind === "raiders") place(F, [0, 0, 0], 0, (q) => person(q, raiderLook(k), walkPose(f, k)));
     else place(F, [0, 0, 0], 0, (q) => person(q, travellerLook(sub, k, f > 0), walkPose(f, k, sub === "refugees" ? { lean: 0.25, stride: 0.7 } : {})));
@@ -703,7 +798,7 @@ const CROWD = [[2.7, -2.7], [-2.7, 3.0], [6.1, 2.4], [-5.8, -3.4], [0.7, 6.4], [
 // A horde of n (2–7) of the dead shuffling along, reaching ahead, each a little off the others' step and heading.
 export function mapHordeCanvas(n, yaw = 315, frame = 0) {
   const look = zombieLook(), y = roundYaw(yaw), f = clampFrame(frame), k = Math.max(2, Math.min(7, n));
-  return cached(`horde:${k}:${look.palette}:${look.eyes}:${y}:${f}`, GRIDS.horde, y, () => {
+  return cached(`horde:${k}:${look.palette}:${look.eyes}:${y}:${f}`, GRIDS.horde, y, f, (g) => mapHordeCanvas(n, y, g), () => {
     const F = [], pals = look.palette && ZSKIN[look.palette] ? [ZSKIN[look.palette]] : [ZSKIN.rotten, ZSKIN.ashen, ZSKIN.pale, ZSKIN.rotten];
     const eye = look.eyes in ZEYES ? ZEYES[look.eyes] : ZEYES.glow;
     for (let i = 0; i < k; i++) {
@@ -719,7 +814,7 @@ export function mapHordeCanvas(n, yaw = 315, frame = 0) {
 // n (1–3) gaunt grey deer or hogs with raw sores, heads hanging, grazing (frame: a slow step).
 export function mapHerdCanvas(kind, n, yaw = 315, frame = 0) {
   const y = roundYaw(yaw), f = clampFrame(frame), k = Math.max(1, Math.min(3, n)), kd = kind === "hog" ? "hog" : "deer";
-  return cached(`herd:${kd}:${k}:${y}:${f}`, GRIDS.herd, y, () => {
+  return cached(`herd:${kd}:${k}:${y}:${f}`, GRIDS.herd, y, f, (g) => mapHerdCanvas(kind, n, y, g), () => {
     const F = [];
     [[0, 0], [-7.0, 3.6], [6.6, -3.8]].slice(0, k).forEach(([pf, pl], i) => place(F, [pf, pl, 0], (i % 2 ? -1 : 1) * 20 * (i > 0 ? 1 : 0), (q) => beast(q, kd, { t: f > 0 ? (phaseOf(f) + i * 0.4) % 1 : null }, { sick: true, hide: i % 2 ? "#8d877a" : "#7f796e" })));
     return F;
@@ -734,7 +829,7 @@ export function mapHerdCanvas(kind, n, yaw = 315, frame = 0) {
 // game bend them under the weight.
 export function mapWorkerCanvas(job, color, yaw = 315, frame = 0, load = "") {
   const y = roundYaw(yaw), f = clampFrame(frame);
-  return cached(`worker:${job}:${color}:${y}:${f}:${load}`, GRIDS.solo, y, () => {
+  return cached(`worker:${job}:${color}:${y}:${f}:${load}`, GRIDS.solo, y, f, (g) => mapWorkerCanvas(job, color, y, g, load), () => {
     const F = [], heavy = load === "logs" || load === "game";
     const look = { cloth: color, pack: job === "hunt" || job === "fish", hat: job === "hunt" ? "cap" : job === "forage" || job === "wood" ? "straw" : "", hatColor: shade(color, -0.4), load: !!load, carry: load };
     look.arm = heavy ? "none" : job === "hunt" ? "rifle" : job === "scavenge" ? "bar" : job === "wood" ? "axe" : job === "fish" ? "rod" : job === "forage" ? "basket" : job === "water" ? "buckets" : "none";
@@ -753,4 +848,4 @@ export const gridW = (cv) => (cv ? cv.width / UP : 0);
 // For the sheets and tests: the painter of a piece without the canvas cache.
 export const paintPiece = (limbs, grid, yaw) => paintScene(limbs, grid, yaw);
 export const _test = { person, beast, pickup, place, GRIDS };
-onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context
+onForgetPictures(() => { cache.clear(); cacheBytes = 0; idleQ.clear(); }); // ui/pictures.js: drawn again after a lost GPU context

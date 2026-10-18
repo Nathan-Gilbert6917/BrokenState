@@ -38,7 +38,7 @@ import { itemLoad, lootItem } from "./inventory.js";
 import { traderSource, spend } from "./itemcond.js"; // the condition of what they sell, by the kind of group
 import { gunmodWares, pickWeighted } from "./loot.js"; // a gun attachment on the table now and then
 import { gunWares } from "./gunfinds.js"; // one of the newer guns now and then (its own dice)
-import { itemValue, itemCat, catOf, catName, priceInfo, starveBoost, gearNeed, heldLike, margin, refuses } from "./valuation.js";
+import { itemValue, itemCat, catOf, catName, priceInfo, starveBoost, gearNeed, heldLike, margin, refuses, withPrices } from "./valuation.js";
 import { canRadioGroup, radioGreet } from "./radio.js";
 import { caravanCard } from "./caravans.js";
 import { tradeSpeech, bookWares, gainXp, USE, hash01 } from "./skills.js";
@@ -346,7 +346,9 @@ export const wantQty = (f, k) => (FOODS[k] ? Math.max(1, Math.ceil(lotOf(k) / 2)
 // Food on the board: one item they ask for (their kind's favourite: foods.js groupFoodWant) and the items they hold
 // most of to spare (at most FOOD_SURPLUS of them), not every kind of food.
 export const FOOD_SURPLUS = 3;
-export function marketLists(state, f, speech = 0) {
+// Every price on the lists reads one group's conditions: worked out once for the whole list (valuation.js withPrices).
+export function marketLists(state, f, speech = 0) { return withPrices(f, () => listMarket(state, f, speech)); }
+function listMarket(state, f, speech) {
   const wants = [], surplus = [], prices = {};
   const foodSpare = [];
   for (const k of SUPPLY_KEYS) {

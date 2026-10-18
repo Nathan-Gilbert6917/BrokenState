@@ -26,14 +26,15 @@ export class HexGrid {
   inBounds(x, y) {
     return x >= 0 && y >= 0 && x < this.width && y < this.height;
   }
+  // A new array every call (callers sort and splice what they get). The arithmetic is xy's, without its pair.
   /** @param {number} id @returns {number[]} */
   neighbors(id) {
-    const [x, y] = this.xy(id);
+    const w = this.width, x = id % w, y = Math.floor(id / w);
     const dirs = y & 1 ? ODD_DIRS : EVEN_DIRS;
     const out = [];
-    for (const [dx, dy] of dirs) {
-      const nx = x + dx, ny = y + dy;
-      if (this.inBounds(nx, ny)) out.push(this.id(nx, ny));
+    for (let k = 0; k < 6; k++) {
+      const nx = x + dirs[k][0], ny = y + dirs[k][1];
+      if (nx >= 0 && ny >= 0 && nx < w && ny < this.height) out.push(ny * w + nx);
     }
     return out;
   }
@@ -43,15 +44,31 @@ export class HexGrid {
     const q = x - (y - (y & 1)) / 2;
     return [q, y, -q - y];
   }
+  // cube() for both tiles, written out: no arrays (it is called hundreds of thousands of times an hour). s = -q - r, so
+  // the third axis' difference is -(dq + dr).
   /** @param {number} a @param {number} b @returns {number} */
   distance(a, b) {
-    const [aq, ar, as] = this.cube(a);
-    const [bq, br, bs] = this.cube(b);
-    return Math.max(Math.abs(aq - bq), Math.abs(ar - br), Math.abs(as - bs));
+    const w = this.width, ay = Math.floor(a / w), by = Math.floor(b / w);
+    const dq = a - ay * w - (ay - (ay & 1)) / 2 - (b - by * w - (by - (by & 1)) / 2), dr = ay - by;
+    return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
   }
-  // All tile ids within radius of center (inclusive).
+  // All tile ids within radius of center (inclusive), row by row, each row's ids ascending. On a row dr away the tiles
+  // in reach are one run of cube q (from max(-r, -dr - r) to min(r, -dr + r) about the centre's), so each row is a
+  // range rather than a bounding box tested tile by tile. A radius that is not a whole number takes the old way.
   /** @param {number} center @param {number} radius @returns {number[]} */
   within(center, radius) {
+    if (!Number.isInteger(radius)) return this.withinTested(center, radius);
+    const w = this.width, cy = Math.floor(center / w), cq = center - cy * w - (cy - (cy & 1)) / 2;
+    const out = [];
+    for (let y = Math.max(0, cy - radius); y <= Math.min(this.height - 1, cy + radius); y++) {
+      const dr = y - cy, off = (y - (y & 1)) / 2;
+      const x0 = Math.max(0, cq + Math.max(-radius, -dr - radius) + off), x1 = Math.min(w - 1, cq + Math.min(radius, -dr + radius) + off);
+      for (let x = x0; x <= x1; x++) out.push(y * w + x);
+    }
+    return out;
+  }
+  /** @param {number} center @param {number} radius @returns {number[]} */
+  withinTested(center, radius) {
     const [cx, cy] = this.xy(center);
     const out = [];
     for (let y = Math.max(0, cy - radius); y <= Math.min(this.height - 1, cy + radius); y++) {
@@ -104,37 +121,52 @@ export class HexGrid {
  */
 export function findPath(grid, start, goal, costFn, maxCost = Infinity, minStep = 0.5) {
   if (start === goal) return { path: [start], cost: 0 };
-  const open = new MinHeap();
-  const g = new Map([[start, 0]]);
-  const came = new Map();
-  open.push(start, grid.distance(start, goal));
-  while (open.size) {
-    const cur = open.pop();
-    if (cur === goal) {
-      const path = [cur];
-      let c = cur;
-      while (came.has(c)) {
-        c = came.get(c);
-        path.push(c);
+  const S = scratch(grid.size), { g, came, seen, ex, exSeen } = S, mark = S.mark;
+  const best = (n) => (seen[n] === mark ? g[n] : Infinity);
+  try {
+    const open = new MinHeap();
+    seen[start] = mark; g[start] = 0; came[start] = -1;
+    open.push(start, grid.distance(start, goal));
+    while (open.size) {
+      const cur = open.pop();
+      if (cur === goal) {
+        const path = [cur];
+        for (let c = came[cur]; c >= 0; c = came[c]) path.push(c);
+        path.reverse();
+        return { path, cost: g[goal] };
       }
-      path.reverse();
-      return { path, cost: g.get(goal) };
-    }
-    const gc = g.get(cur);
-    for (const n of grid.neighbors(cur)) {
-      const step = costFn(cur, n);
-      if (!isFinite(step)) continue;
-      const ng = gc + step;
-      if (ng > maxCost) continue;
-      if (ng < (g.get(n) ?? Infinity)) {
-        g.set(n, ng);
-        came.set(n, cur);
-        open.push(n, ng + grid.distance(n, goal) * minStep);
+      const gc = g[cur];
+      // A tile already expanded at its best cost so far pushes nothing when expanded again (every neighbour was
+      // offered gc + step then, and a neighbour's cost only falls; a push needs strictly less), so a later copy of it
+      // on the heap is skipped. The heap pops in the same order either way.
+      if (exSeen[cur] === mark && ex[cur] === gc) continue;
+      exSeen[cur] = mark; ex[cur] = gc;
+      for (const n of grid.neighbors(cur)) {
+        const step = costFn(cur, n);
+        if (!isFinite(step)) continue;
+        const ng = gc + step;
+        if (ng > maxCost) continue;
+        if (ng < best(n)) {
+          seen[n] = mark; g[n] = ng; came[n] = cur;
+          open.push(n, ng + grid.distance(n, goal) * minStep);
+        }
       }
     }
-  }
-  return null;
+    return null;
+  } finally { release(S); }
 }
+
+// findPath's per-tile numbers (the best cost so far, where it came from, the cost it was expanded at) in typed arrays
+// kept between searches: a search stamps the tiles it touches with its own mark, so nothing is cleared between them.
+// A search started inside another (a cost function that plans a path) takes a second set.
+const SPARE = [];
+function scratch(size) {
+  let S = SPARE.pop();
+  if (!S || S.g.length !== size) S = { g: new Float64Array(size), came: new Int32Array(size), seen: new Uint32Array(size), ex: new Float64Array(size), exSeen: new Uint32Array(size), mark: 0 };
+  if (++S.mark === 0xffffffff) { S.seen.fill(0); S.exSeen.fill(0); S.mark = 1; }
+  return S;
+}
+const release = (S) => { if (SPARE.length < 4) SPARE.push(S); };
 
 class MinHeap {
   constructor() {
@@ -180,7 +212,8 @@ class MinHeap {
   }
   /** @param {number} a @param {number} b */
   swap(a, b) {
-    [this.items[a], this.items[b]] = [this.items[b], this.items[a]];
-    [this.prio[a], this.prio[b]] = [this.prio[b], this.prio[a]];
+    const it = this.items[a], p = this.prio[a];
+    this.items[a] = this.items[b]; this.prio[a] = this.prio[b];
+    this.items[b] = it; this.prio[b] = p;
   }
 }

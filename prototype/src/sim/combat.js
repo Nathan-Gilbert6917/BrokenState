@@ -120,7 +120,7 @@ import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, ai
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
 import { aiLights, aiFlashlight, aiRoomLights, wakeLights } from "./ailights.js"; // the AI's flashlights and room lights (the user's request 2026-10-12)
 import { indoorSetup, lightAt, indoorSees, lightsAct } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
-import { VISION, hasFront, inArc, coned, nightSees, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox, activeLight, nvgOn, nvgSight } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
+import { VISION, hasFront, inArc, coned, nightSees, nightEyes, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox, activeLight, nvgOn, nvgSight } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
 import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
 
@@ -889,6 +889,17 @@ export function unitCells(u, x0 = u.x, y0 = u.y) { const s = unitSize(u), out = 
 export const nearCell = (u, x, y) => { const s = unitSize(u); return [Math.max(u.x, Math.min(u.x + s - 1, x)), Math.max(u.y, Math.min(u.y + s - 1, y))]; };
 export const unitCenter = (u) => [u.x + unitSize(u) / 2, u.y + unitSize(u) / 2];
 export const unitAt = (b, x, y) => b.units.find((u) => onMap(u) && (u.size > 1 ? coversCell(u, x, y) : u.x === x && u.y === y));
+// unitAt for every cell of a w × h map at once: 1 where someone stands. For the set-up scans that ask it of every cell
+// (combat.js pickCells, deploy.js): made fresh for each scan, as nobody moves while one runs.
+export function occupancy(b, w, h) {
+  const occ = new Uint8Array(w * h);
+  for (const u of b.units) {
+    if (!onMap(u)) continue;
+    const s = u.size > 1 ? u.size : 1;
+    for (let y = u.y; y < u.y + s; y++) for (let x = u.x; x < u.x + s; x++) if (x >= 0 && y >= 0 && x < w && y < h) occ[y * w + x] = 1;
+  }
+  return occ;
+}
 export const unitById = (b, id) => b.units.find((u) => u.id === id);
 // The evac strip: the left evacCols columns, or b.evacMask (a cell mask, deploy.js: base battles turned to face the
 // attack get theirs on the side away from it, b.evacSide) when there is one; then the cell's y is needed.
@@ -2396,7 +2407,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
-  const open = [start];
+  const open = [start], reached = [start]; // reached: every cell the search got to (the others stay Infinity)
   while (open.length) {
     let bi = 0;
     for (let i = 1; i < open.length; i++) if (d[open[i]] < d[open[bi]]) bi = i;
@@ -2420,7 +2431,7 @@ export function reachable(b, u, maxCost, opts = {}) {
       const step = (diag ? 1.5 : 1) + climb + (vault ? vaultCost(b, b.cells[j]) : 0);
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
       if (nr <= maxCost + 1e-6 && nd < d[j]) {
-        if (d[j] === Infinity) open.push(j);
+        if (d[j] === Infinity) { open.push(j); reached.push(j); }
         d[j] = nd;
         if (aw) real[j] = nr;
         prev[j] = cur;
@@ -2428,11 +2439,14 @@ export function reachable(b, u, maxCost, opts = {}) {
     }
   }
   // Downed bodies can be stepped over but not stood on; nor is half cover vaulted, a window gone through or a
-  // Climber's wall stood on: no cell nobody can walk on ends a move.
-  const stop = real.slice();
-  for (let j = 0; j < W * H; j++) if (occ[j] === 2 || (j !== start && !CELL[b.cells[j].k].walk) || (climber && barredCell(b.cells[j]))) stop[j] = Infinity;
-  return { dist: stop, prev };
+  // Climber's wall stood on: no cell nobody can walk on ends a move. Only a cell reached can be anything but Infinity,
+  // and the search's own arrays are this call's: real becomes the answer in place.
+  for (const j of reached) if (occ[j] === 2 || (j !== start && !CELL[b.cells[j].k].walk) || (climber && barredCell(b.cells[j]))) real[j] = Infinity;
+  return { dist: real, prev, reached };
 }
+// The cells a search reached (reachable's r.reached) in ascending index order: the order a scan of the whole map meets
+// them, for the loops that draw a die per cell or keep the first of equals. Sorted once per search, kept on it.
+const reachedInOrder = (r) => r.order || (r.order = Int32Array.from(r.reached).sort());
 
 export function pathTo(r, x, y) {
   const path = [];
@@ -3091,16 +3105,31 @@ export function playerSees(b, t) {
 // ---------- fog of war ----------
 // Every cell your people can see now (1) or not (0): the union of what each one standing sees (canSeeAt: sight by
 // height, night, light, night vision, optics; walls and buildings block it). Everything after the battle is over.
+// Each eye asks only the cells within its furthest sight (sightBound), the eyes in order, a cell an earlier one sees not
+// asked again: the same cells seen, and the same lines of sight asked, as asking every eye of every cell.
 export function playerVision(b) {
   bindDims(b);
   const vis = new Uint8Array(W * H).fill(b.over ? 1 : 0);
   if (b.over) return vis;
   const eyes = b.units.filter((u) => u.side === "player" && active(u));
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    for (const e of eyes) if ((e.x === x && e.y === y) || canSeeAt(b, e, x, y)) { vis[y * W + x] = 1; break; }
-    if (!vis[y * W + x] && b.peeks && peekSees(b, x, y)) vis[y * W + x] = 2; // a peek through a door this turn (buildingmaps.js)
+  for (const e of eyes) {
+    const r = Math.ceil(sightBound(b, e)) + 1, R = r >= 0 ? r : Infinity; // NaN: the whole map
+    const x0 = Math.max(0, e.x - R), x1 = Math.min(W - 1, e.x + R), y0 = Math.max(0, e.y - R), y1 = Math.min(H - 1, e.y + R);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (!vis[y * W + x] && ((e.x === x && e.y === y) || canSeeAt(b, e, x, y))) vis[y * W + x] = 1;
   }
+  if (b.peeks) for (let i = 0; i < W * H; i++) if (!vis[i] && peekSees(b, i % W, (i / W) | 0)) vis[i] = 2; // a peek through a door this turn (buildingmaps.js)
   return vis;
+}
+// The furthest a player's eye e can see a cell (canSeeAt is false past it): the longest of every reach canSeeAt and
+// indoorSees can use, from the same terms: its range (height, optics, a visor); a lit room at night, its daylight
+// range; a dark room with night vision, its daylight sight; the night cones, a beam and a lamp's pool (vision.js
+// nightEyes: a dark room's are no longer); a cell lit by a flare or a floodlight, SIGHT from where it stands.
+function sightBound(b, e) {
+  const range = sightRange(b, e), extra = range - e.sight, hh = HEIGHT.SIGHT * hAt(b, e.x, e.y);
+  const ne = nightEyes(b, e, extra);
+  let r = Math.max(range, (e.daySight ?? SIGHT) + hh + (e.optic || 0) + (e.vsight || 0), (e.daySight ?? e.sight) + extra, SIGHT + hh + (e.optic || 0), ne.near);
+  for (const c of ne.cones) r = Math.max(r, c.r);
+  return r;
 }
 // Last-seen ghosts: where each enemy was when your people last saw it ({ id: [x, y, turn] }); forgotten once it is
 // seen dead, flees or a new map starts (interior.js). The battle screen draws them faded where nobody sees now.
@@ -3489,12 +3518,12 @@ export function createBattle(state, setup) {
     // Only the lead one is driven.
     if (b.vehicle) placeConvoy(b, party, partyVehicles(state, party).filter((x) => x !== pv), W, H, inside);
   }
-  const occupied = (x, y) => !!unitAt(b, x, y);
-  const spot = (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occupied(x, y);
   const coverScore = (x, y) => coverSides(b, x, y).reduce((s, c) => s + c, 0);
+  // A free cell your people can reach: the cells taken worked out once a scan (occupancy), the dice drawn for the same
+  // cells in the same order as asking unitAt of each.
   const pickCells = (n, test, score) => {
-    const list = [];
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (spot(x, y) && test(x, y)) list.push([x, y, score(x, y) + rng.next() * 2]);
+    const list = [], occ = occupancy(b, W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occ[idx(x, y)] && test(x, y)) list.push([x, y, score(x, y) + rng.next() * 2]);
     list.sort((a, c) => c[2] - a[2]);
     return list.slice(0, n);
   };
@@ -4786,32 +4815,40 @@ function bestShot(b, u, foes, opts = {}) {
 
 // A shotgunner's pull toward the foes a tile past its shot's full-damage range (scoreCell; buckshot spreads, data-ammo.js).
 const SPREAD_CLOSE = 1.5;
-function scoreCell(b, u, x, y, foes, cost, field) {
+// What scoreCell reads of the mover and its foes that is the same on every cell: nothing moves, fires or reloads while
+// one move is weighed, so bestMove works it out once for all its cells (the gun's state, its round and attachments,
+// each foe's reach).
+function scoreFacts(b, u, foes) {
+  const fire = canFire(b, u), cal = calOf(u.weapon), spread = unitMods(u).spread || 0;
+  const sf0 = fire && cal ? typeFx(typeFor(cal, u.load)).spreadFull : null;
+  const ranged = foes.map((f) => isRanged(f));
+  return { fire, cal, sty: cal ? typeFor(cal, u.load) : null, spread, sfull: sf0 != null ? sf0 + spread : null, sniper: isSniper(u), ranged, range: foes.map((f, k) => (ranged[k] ? sightRange(b, f) : 0)) };
+}
+function scoreCell(b, u, x, y, foes, cost, field, facts = scoreFacts(b, u, foes)) {
   let s = -cost * 0.4, best = 0, nearest = 99;
-  for (const f of foes) {
-    const d = dist(x, y, f.x, f.y);
+  for (let k = 0; k < foes.length; k++) {
+    const f = foes[k], d = dist(x, y, f.x, f.y);
     nearest = Math.min(nearest, d);
-    if (!isRanged(f)) { if (d < 2.5) s -= 10; else if (d < 5) s -= (5 - d) * 2; continue; }
-    if (d > sightRange(b, f) || !los(b, x, y, f.x, f.y)) continue;
+    if (!facts.ranged[k]) { if (d < 2.5) s -= 10; else if (d < 5) s -= (5 - d) * 2; continue; }
+    if (d > facts.range[k] || !los(b, x, y, f.x, f.y)) continue;
     const c = coverAgainst(b, x, y, f.x, f.y).level;
     s += c === 2 ? 0 : c === 1 ? -5 : -14;
   }
-  if (canFire(b, u)) {
+  if (facts.fire) {
     // Buckshot and birdshot do less the further off (data-ammo.js spreadMult): a shotgunner's spot is worth what its
     // shot keeps there, so both sides' shotguns close in rather than plink from afar (1 for any other round).
-    const sty = calOf(u.weapon) ? typeFor(calOf(u.weapon), u.load) : null, sgm = unitMods(u);
+    const range = sightRange(b, u, x, y);
     for (const f of foes) {
-      if (dist(x, y, f.x, f.y) > sightRange(b, u, x, y) || !los(b, x, y, f.x, f.y)) continue;
+      if (dist(x, y, f.x, f.y) > range || !los(b, x, y, f.x, f.y)) continue;
       const o = shotOdds(b, u, f, x, y);
-      best = Math.max(best, (o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)) * spreadMult(sty, dist(x, y, f.x, f.y), { cal: calOf(u.weapon), extra: sgm.spread || 0 })); // a target with no cover
+      best = Math.max(best, (o.chance + (o.crit - (u.critBonus || 0) >= CRIT.EXPOSED ? 12 : 0)) * spreadMult(facts.sty, dist(x, y, f.x, f.y), { cal: facts.cal, extra: facts.spread })); // a target with no cover
     }
   }
   s += best * 0.3;
   // A shotgunner with buckshot loaded also wants to close to where it hits full (spreadFull): a slope toward the foes.
-  const sf0 = canFire(b, u) && calOf(u.weapon) ? typeFx(typeFor(calOf(u.weapon), u.load)).spreadFull : null;
-  const sfull = sf0 != null ? sf0 + (unitMods(u).spread || 0) : null; // a choke: more tiles at full damage
+  const sfull = facts.sfull; // a choke: more tiles at full damage
   if (sfull != null && nearest > sfull) s -= (Math.min(nearest, 16) - sfull) * SPREAD_CLOSE;
-  if (isSniper(u)) s += sniperCell(nearest); // gunfire.js: a sniper keeps its distance (10–15 tiles)
+  if (facts.sniper) s += sniperCell(nearest); // gunfire.js: a sniper keeps its distance (10–15 tiles)
   // Nothing to shoot: closer to the foes is better, the walking distance up to 40 tiles. A unit standing farther off than
   // that still gets a slope toward them (a team left 40+ tiles off on a big fort map stood still for good:
   // conquertest's stalled assault).
@@ -4833,11 +4870,11 @@ function outsideBase(b, u, i) {
 function bestMove(b, u, foes, field = null) {
   const r = reachable(b, u, moveMob(u)); // moveMob: a tile short while winded from a vault (VAULT)
   field = field || distField(b, foes.map((f) => [f.x, f.y]), u);
-  let best = null;
-  for (let i = 0; i < W * H; i++) {
+  let best = null, facts = null;
+  for (const i of reachedInOrder(r)) { // a die for each cell it can stand on, in the map's order
     if (!isFinite(r.dist[i]) || r.dist[i] === 0 || outsideBase(b, u, i)) continue;
     const x = i % W, y = (i / W) | 0;
-    const sc = scoreCell(b, u, x, y, foes, r.dist[i], field) + b.rng.next() * 1.5;
+    const sc = scoreCell(b, u, x, y, foes, r.dist[i], field, facts || (facts = scoreFacts(b, u, foes))) + b.rng.next() * 1.5;
     if (!best || sc > best.sc) best = { x, y, sc };
   }
   if (best) best.path = pathTo(r, best.x, best.y);
@@ -4870,7 +4907,7 @@ function aiUnit(b, u) {
     if (u.kind === "zombie" && !herded(b, u) && rng.chance(0.4)) {
       const r = reachable(b, u, 1.5);
       const opts = [];
-      for (let i = 0; i < W * H; i++) if (r.dist[i] > 0 && isFinite(r.dist[i])) opts.push(i);
+      for (const i of reachedInOrder(r)) if (r.dist[i] > 0 && isFinite(r.dist[i])) opts.push(i);
       if (opts.length) { const i = rng.pick(opts); moveAlong(b, u, pathTo(r, i % W, (i / W) | 0)); }
     }
     u.ap = 0;
@@ -5112,7 +5149,7 @@ function aiMelee(b, u) {
     const r = reachable(b, u, dashRange(u));
     const field = distField(b, foes.map((f) => [f.x, f.y]), u);
     let best = null;
-    for (let i = 0; i < W * H; i++) {
+    for (const i of reachedInOrder(r)) { // the first of equals kept: the map's order
       if (!isFinite(r.dist[i]) || (r.dist[i] > 0 && outsideBase(b, u, i))) continue;
       const x = i % W, y = (i / W) | 0;
       const nextTo = foes.some((f) => Math.max(Math.abs(f.x - x), Math.abs(f.y - y)) === 1 && !cornerBlocked(b, x, y, f.x, f.y) && !(u.side !== (b.holders || "player") && barredCell(b.cells[idx(f.x, f.y)])));
@@ -6380,6 +6417,7 @@ export function createRaid(state, setup) {
   b.zmix = armoredOf(((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix); // the dead drawn in by the Heat
   const occupied = (x, y) => !!unitAt(b, x, y);
   const ok = (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occupied(x, y);
+  const okIn = (occ, x, y) => b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occ[idx(x, y)]; // ok over the whole map: the cells taken worked out once a scan (occupancy)
   const entry = map.zones[0];
 
   // Your team starts in the entry zone (next to the vehicle if you brought one).
@@ -6414,8 +6452,8 @@ export function createRaid(state, setup) {
       for (let i = 0; i < count; i++) {
         const u = enemyUnit(b, rng, "zombies", g.power, ++zn);
         if (zl[i]) applyZType(u, zl[i], false, g.power);
-        const cells = [];
-        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ok(x, y) && dist(x, y, center[0], center[1]) >= 8 && zoneAt(b, x, y) < 0) cells.push([x, y]);
+        const cells = [], occ = occupancy(b, W, H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (okIn(occ, x, y) && dist(x, y, center[0], center[1]) >= 8 && zoneAt(b, x, y) < 0) cells.push([x, y]);
         const c = rng.pick(cells);
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod++; u.home = [c[0], c[1]];
@@ -6426,8 +6464,8 @@ export function createRaid(state, setup) {
       const hx = home ? home.x0 + Math.floor(home.w / 2) : rng.int(W / 2, W - 4), hy = home ? home.y0 + Math.floor(home.h / 2) : rng.int(3, H - 4);
       for (let i = 0; i < count; i++) {
         const u = enemyUnit(b, rng, g.kind, g.power, ++hn);
-        const cells = [];
-        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (ok(x, y) && dist(x, y, hx, hy) <= 5 && dist(x, y, center[0], center[1]) >= 9) cells.push([x, y]);
+        const cells = [], occ = occupancy(b, W, H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (okIn(occ, x, y) && dist(x, y, hx, hy) <= 5 && dist(x, y, center[0], center[1]) >= 9) cells.push([x, y]);
         const c = rng.pick(cells);
         if (!c) continue;
         u.x = c[0]; u.y = c[1]; u.aware = false; u.pod = pod; u.home = [hx, hy];

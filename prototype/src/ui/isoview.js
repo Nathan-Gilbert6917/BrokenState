@@ -72,8 +72,9 @@ export function setRoofs(on) {
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); }
 const spriteCache = new Map();
-let groundCache = null, fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
-export function clearIsoCache() { spriteCache.clear(); groundCache = fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
+const groundCaches = new Map(), GROUNDS = 6; // groundFor: key -> picture, of one battle (dropped with a new one), least recently used first
+let fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
+export function clearIsoCache() { spriteCache.clear(); groundCaches.clear(); fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
 export const isoCacheSize = () => spriteCache.size;
 
 // ---------- small helpers ----------
@@ -739,23 +740,41 @@ function prims(k, o) {
 const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall",
   "table", "bed", "rack", "locker", "shelf", "cabinet", "counter", "gunsafe", "tanktrap", "spikes", "beartrap", "stairs", "ladder", "tower", "bars", "gate", "palisade"]); // props stand out with a rim, as the figures do; runs (walls, fences, rails) would seam
 
+// The cells' block sprites by look (sprite, roofSprite, massSprite; null: nothing to draw): a key holds all the picture
+// depends on, so one never goes stale. Each entry keeps the frame it was last drawn in (iso.frames); past SPRITES
+// entries, those not drawn in this frame or the last are dropped, so the scene on screen stays (rotating the view or a
+// long battle used to pass 3,000, clear them all and paint the whole scene again in one frame).
+const SPRITES = 6000;
+let spriteSweep = SPRITES;
+function spriteGet(key) {
+  const e = spriteCache.get(key);
+  if (e === undefined) return undefined;
+  e.used = iso.frames;
+  return e.s;
+}
+function spritePut(key, s) {
+  if (spriteCache.size >= spriteSweep) {
+    for (const [k, e] of spriteCache) if (e.used < iso.frames - 1) spriteCache.delete(k);
+    spriteSweep = Math.max(SPRITES, spriteCache.size + SPRITES / 4); // a scene bigger than the bound: swept again a quarter later, not every sprite
+  }
+  spriteCache.set(key, { s, used: iso.frames });
+}
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
   const key = `${iso.straight ? "s|" : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${fog ? 1 : 0}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}`;
-  let s = spriteCache.get(key);
+  let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
     s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) }) : null;
     iso.builds.sprites++;
-    if (spriteCache.size > 3000) spriteCache.clear();
-    spriteCache.set(key, s);
+    spritePut(key, s);
   }
   return s;
 }
 // A roof piece over one cell of a building: a flat slab at the walls' height with a lip on the outside edges.
 function roofSprite(mat, top, edges, fog) {
   const key = `${iso.straight ? "s|" : ""}roof|${mat}|${top}|${edges}|${fog ? 1 : 0}`;
-  let s = spriteCache.get(key);
+  let s = spriteGet(key);
   if (s === undefined) {
     const base = [PAL.tar, PAL.rust, PAL.shingle, PAL.conc][mat & 3];
     const m = (f, sx, t, X, Y) => {
@@ -772,7 +791,7 @@ function roofSprite(mat, top, edges, fog) {
     if (edges & 4) p.push({ u0: 0, u1: 1, v0: 0.92, v1: 1, z0: top + 3, z1: top + 5, m: lm });
     s = paint(p, { fog });
     iso.builds.sprites++;
-    spriteCache.set(key, s);
+    spritePut(key, s);
   }
   return s;
 }
@@ -783,7 +802,7 @@ function roofSprite(mat, top, edges, fog) {
 // A darker course marks each storey.
 function massSprite(mat, lift, faces, fog) {
   const key = `${iso.straight ? "s|" : ""}mass|${mat}|${lift}|${faces}|${fog ? 1 : 0}`;
-  let s = spriteCache.get(key);
+  let s = spriteGet(key);
   if (s === undefined) {
     const face = wallFace(mat & 3, 0);
     const m = (f, sx, t, X, Y) => {
@@ -793,7 +812,7 @@ function massSprite(mat, lift, faces, fog) {
     };
     s = faces ? paint([{ u0: 0, u1: 1, v0: 0, v1: 1, z0: 0, z1: lift, m }], { fog }) : null;
     iso.builds.sprites++;
-    spriteCache.set(key, s);
+    spritePut(key, s);
   }
   return s;
 }
@@ -845,9 +864,13 @@ function floorColor(c, k, x, y, lx, ly, mud) {
 }
 // The whole map's ground at art resolution (one canvas; the view origin's top vertex at (Hv × 16, 0); in a straight
 // view the origin at (0, 0): ox, the art x of its left edge).
+// Kept for a few floors and views (groundCaches: the key as the one-slot cache had, the view and the floor's ground
+// key, of this battle only), so going up and down the storeys does not paint each floor again (76-250 ms a switch).
 function groundFor(b, scene) {
   const r = iso.rot, st = iso.straight, key = `${viewKey()}:${scene.groundKey}`;
-  if (groundCache && groundCache.b === b && groundCache.key === key) return groundCache;
+  const hit = groundCaches.get(key);
+  if (hit && hit.b === b) { groundCaches.delete(key); groundCaches.set(key, hit); return hit; }
+  for (const [k, g] of groundCaches) if (g.b !== b) groundCaches.delete(k);
   const [Wv, Hv] = viewDims(b, r);
   // An upper floor (floorsOf): the canvas grows by the lift at the top (oy rows) and is painted twice: the ground
   // floor's surface at level 0, dimmed (looking down from the windows), then the footprint's cells raised.
@@ -878,9 +901,12 @@ function groundFor(b, scene) {
   const cv = mkCanvas(gw, gh), c = cv.getContext("2d"), img = c.createImageData(gw, gh);
   img.data.set(buf);
   c.putImageData(img, 0, 0);
-  groundCache = toBitmap({ b, key, cv, gw, gh, Hv, ox, oy: lift });
+  const g = toBitmap({ b, key, cv, gw, gh, Hv, ox, oy: lift });
+  groundCaches.delete(key);
+  groundCaches.set(key, g);
+  while (groundCaches.size > GROUNDS) groundCaches.delete(groundCaches.keys().next().value);
   iso.builds.ground++;
-  return groundCache;
+  return g;
 }
 // The ground on one storey (no floor raised), painted once per battle in map space: 16 × 16 texels a tile, the
 // texels floorColor works in, so the colours are the same; drawIso stretches it onto the diamonds with one affine
@@ -948,7 +974,7 @@ function fogFor(b, vis) {
     const [u, v] = toView(i % b.w, (i / b.w) | 0, r, b.w, b.h);
     const x = artX(u, v, st) - ox, y = artY(u, v, st) + lift - liftAt(b, i);
     if (st) c.rect(x, y, SW, SH);
-    else { c.moveTo(x, y); c.lineTo(x + HW, y + HH); c.lineTo(x, y + 2 * HH); c.lineTo(x - HW, y + HH); c.closePath(); }
+    else { c.moveTo(x, y); c.lineTo(x + HW, y + HH); c.lineTo(x, y + 2 * HH); c.lineTo(x - HW, y + HH); } // filled: no closePath (diamond)
   }
   c.fill();
   fogCache = toBitmap({ b, key, cv, canvas: cv, ox, oy: lift });
@@ -1363,13 +1389,16 @@ function dashedCell(ctx, b, x, y, z, col, width, inset = 0.5) {
 
 // ---------- drawing ----------
 const tileTop = (b, x, y) => standZ(b, x, y);
-// A cell's floor outline: a diamond, or a straight view's rectangle.
-function diamond(ctx, x, y, z, inset = 0) {
+// A cell's floor outline: a diamond, or a straight view's rectangle. close: end the subpath with closePath, which a
+// stroke needs for its last edge and join; a fill closes every subpath itself, so a path of many diamonds to fill
+// leaves it out (Chromium's closePath costs more the more subpaths the path has: fillCells went quadratic).
+function diamond(ctx, x, y, z, inset = 0, close = true) {
   const [u, v] = ptView(x + 0.5, y + 0.5, FR.r, FR.W, FR.H);
   const cx = artX(u, v, FR.st) * FR.S + FR.X0, cy = (artY(u, v, FR.st) - z) * FR.S + FR.Y0;
   if (FR.st) { const w = (SW / 2 - inset) * FR.S, h = (SH / 2 - inset / 2) * FR.S; ctx.rect(cx - w, cy - h, 2 * w, 2 * h); return; }
   const w = (HW - inset * 2) * FR.S, h = (HH - inset) * FR.S;
-  ctx.moveTo(cx, cy - h); ctx.lineTo(cx + w, cy); ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy); ctx.closePath();
+  ctx.moveTo(cx, cy - h); ctx.lineTo(cx + w, cy); ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy);
+  if (close) ctx.closePath();
 }
 // Fill the cells of a mask on the ground (and on raised floors at their height when `raised`).
 function fillCells(ctx, b, test, fill, raised = true) {
@@ -1380,10 +1409,22 @@ function fillCells(ctx, b, test, fill, raised = true) {
     if (!test(i)) continue;
     const x = i % b.w, y = (i / b.w) | 0, z = tileTop(b, x, y);
     if (z && !raised) continue;
-    diamond(ctx, x, y, z);
+    diamond(ctx, x, y, z, 0, false); // filled, so no closePath (diamond)
     any = true;
   }
   if (any) ctx.fill();
+}
+// The deploy step's green cells (sim/deploy.js canPlace at every cell), worked out once per battle revision instead of
+// every frame (4,356 calls a frame on the 66 × 66 yard): every deploy act bumps b.rev, and a new reach, zone or floor
+// is a new array (each part of the key), so the mask is the one canPlace would give now.
+let deployCache = null;
+function deployMask(b) {
+  const c = deployCache, D = b.deploy;
+  if (c && c.b === b && c.rev === b.rev && c.reach === b.reach && c.zone === D.zone && c.cells === b.cells) return c.ok;
+  const N = b.w * b.h, ok = new Uint8Array(N);
+  for (let i = 0; i < N; i++) ok[i] = canPlace(b, i % b.w, (i / b.w) | 0) ? 1 : 0;
+  deployCache = { b, rev: b.rev, reach: b.reach, zone: D.zone, cells: b.cells, ok };
+  return ok;
 }
 // The border of a mask's cells (ground level).
 function outlineCells(ctx, b, test, color, width = 2) {
@@ -1460,6 +1501,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   iso.cw = cw; iso.ch = ch;
   stepCamera(b, now);
   setFrame(b, cw, ch);
+  frameFigs.length = 0;
   const S = FR.S, r = iso.rot, st = FR.st, v = H.v, u = H.u, players = b.units.filter((p) => p.side === "player");
   const scene = sceneFor(b);
   const [Wv, Hv] = viewDims(b);
@@ -1573,9 +1615,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.setLineDash([]);
   }
   const deploying = b.deploy && b.phase === "deploy";
+  const ok = deploying ? deployMask(b) : null;
   if (deploying) {
-    const ok = new Uint8Array(N);
-    for (let i = 0; i < N; i++) ok[i] = canPlace(b, i % b.w, (i / b.w) | 0) ? 1 : 0;
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
@@ -1752,7 +1793,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const zt = tileTop(b, x, y);
       if (zt) {
         if (bands && bands[i]) { ctx.fillStyle = bands[i] === 1 ? "rgba(80,150,255,0.32)" : "rgba(255,200,60,0.22)"; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
-        if (deploying && canPlace(b, x, y)) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
+        if (deploying && ok[i]) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);
@@ -2082,6 +2123,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   }
   drawEdgeMarkers(ctx, b, cw, ch, v);
   drawCompass(ctx, cw, ch);
+  warmTurns(state, b, H);
   iso.frames++;
   if (t0) iso.frameMs = performance.now() - t0;
 }
@@ -2194,12 +2236,14 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
     // turns with the view; the flat picture (ui/downsprites.js) laid onto the floor's axes when there is none.
     const f = unitFacing(b, t);
     const fig = unitFigureDown(state, b, t, H.salt, dirYaw(b, t, FR.r, [-f, 0]));
+    frameFigs.push(["down", t]);
     if (fig) { drawFigure(ctx, fig, X, Y, S, !silhouette && t.dead ? 0.92 : 1); return; }
     const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
     drawDowned(ctx, unitDownCanvas(state, b, t, H.salt), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: downScale(t), alpha: !silhouette && t.dead ? 0.92 : 1 });
     return;
   }
   const fig = unitFigure(state, b, t, H.salt, unitYaw(b, t, FR.r)); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
+  frameFigs.push(["up", t]);
   const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
   const facing = sideFacing(b, t, FR.r);
@@ -2247,13 +2291,49 @@ function unitMoveDir(b, t) {
   }
   return null;
 }
-function unitYaw(b, t, r) {
-  return dirYaw(b, t, r, (t.face && (t.face[0] || t.face[1]) && t.kind === "human" ? t.face : null) || unitMoveDir(b, t) || [unitFacing(b, t), 0]);
+function unitYaw(b, t, r, st = iso.straight) {
+  return dirYaw(b, t, r, (t.face && (t.face[0] || t.face[1]) && t.kind === "human" ? t.face : null) || unitMoveDir(b, t) || [unitFacing(b, t), 0], st);
 }
-// A world direction at a unit's tile as a figure's yaw in view rotation r.
-function dirYaw(b, t, r, d) {
+// A world direction at a unit's tile as a figure's yaw in view rotation r (st: a straight view).
+function dirYaw(b, t, r, d, st = iso.straight) {
   const [u0, v0] = ptView(t.x + 0.5, t.y + 0.5, r, b.w, b.h), [u1, v1] = ptView(t.x + 0.5 + d[0], t.y + 0.5 + d[1], r, b.w, b.h);
-  return (Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI - (iso.straight ? 45 : 0);
+  return (Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI - (st ? 45 : 0);
+}
+// The figures for the views a turn away (E / Q): every body drawn this frame (frameFigs), at the heading it would show
+// one eighth either way, painted ahead in idle time, a few ms a slice (ui/figures.js keeps them by look and heading; a
+// frame that needs one not painted yet paints it itself, as before), so the first frame after a turn of the view does
+// not paint the whole scene's figures at once (75-166 ms). Queued again when the battle, its revision, the view, the
+// floor or the bodies drawn change; the newest WARM_Q kept. Only with requestIdleCallback (a browser; the tools warm
+// nothing).
+const frameFigs = []; // [kind ("up", "down", "corpse"), the unit or body] drawn this frame
+const WARM_Q = 240, WARM_MS = 4;
+let warmKey = "", warmB = null, warmQ = [], warmOn = false;
+function warmTurns(state, b, H) {
+  if (typeof requestIdleCallback !== "function") return;
+  const step = viewStep(), key = `${b.rev}|${step}|${floorNo(b)}|${H.salt}|${frameFigs.length}`;
+  if (warmB === b && warmKey === key) return;
+  warmB = b; warmKey = key; warmQ = [];
+  const once = { up: new Set(), down: new Set(), corpse: new Set() }, figs = frameFigs.filter(([kind, t]) => !once[kind].has(t) && once[kind].add(t)); // the see-through pass draws yours twice
+  for (const d of [1, -1]) {
+    const k = (step + d + 8) & 7, r = ((k + 1) >> 1) & 3, st = (k & 1) === 1;
+    for (const [kind, t] of figs) {
+      if (kind === "up") warmQ.push(() => unitFigure(state, b, t, H.salt, unitYaw(b, t, r, st)));
+      else if (kind === "down") warmQ.push(() => unitFigureDown(state, b, t, H.salt, dirYaw(b, t, r, [-unitFacing(b, t), 0], st)));
+      else warmQ.push(() => corpseFigure(t, dirYaw(b, t, r, [-(t.seed % 2 ? 1 : -1), 0], st)));
+    }
+  }
+  if (warmQ.length > WARM_Q) warmQ = warmQ.slice(-WARM_Q);
+  if (!warmOn && warmQ.length) { warmOn = true; requestIdleCallback(warmSlice, { timeout: 1000 }); }
+}
+function warmSlice(deadline) {
+  const t0 = performance.now();
+  while (warmQ.length) {
+    const fn = warmQ.shift();
+    try { fn(); } catch { /* best effort: the frame paints it when it needs it */ }
+    if (performance.now() - t0 > WARM_MS || (deadline && !deadline.didTimeout && deadline.timeRemaining() < 1)) break;
+  }
+  if (warmQ.length) requestIdleCallback(warmSlice, { timeout: 1000 });
+  else warmOn = false;
 }
 // A figure's canvas with its tile centre (feet, or a lying body's middle) at (X, Y), 1 grid px = 1 art px.
 function drawFigure(ctx, cv, X, Y, S, alpha = 1) {
@@ -2281,6 +2361,7 @@ function drawCorpseIso(ctx, b, c, fog) {
   const s = { wx: c.x + 0.5, wy: c.y + 0.5, z: standZ(b, c.x, c.y) };
   const [X, Y] = feet(s), f = c.seed % 2 ? 1 : -1;
   const fig = corpseFigure(c, dirYaw(b, c, FR.r, [-f, 0]));
+  frameFigs.push(["corpse", c]);
   if (fig) { drawFigure(ctx, fig, X, Y, FR.S, fog ? 0.5 : 0.92); return; }
   const [x1, y1] = project(s.wx + 1, s.wy, s.z), [x2, y2] = project(s.wx, s.wy + 1, s.z);
   drawDowned(ctx, corpseCanvas(c), X, Y, [x1 - X, y1 - Y], [x2 - X, y2 - Y], { facing: f, scale: 1.05, alpha: fog ? 0.5 : 0.92 });

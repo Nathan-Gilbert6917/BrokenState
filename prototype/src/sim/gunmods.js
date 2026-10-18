@@ -167,7 +167,15 @@ const expand = (slot) => (slot === "under" ? ["under", "grip"] : [slot]);
 export const gunCategory = (gunKey) => (PLATFORMS[platformOf(gunKey)] || {}).cat || null;
 // A gun's slot rules (data-gunmods.js PLATFORMS, CATEGORIES, WEAPON_SLOTS): slots: open bare; never: the slots it can
 // never have (its kind's, less its own `on`, plus its own `off` and its built-in parts' slots); parts: { slot: [keys] }.
+// Kept per gun key: the tables are fixed once loaded, and a gun item asks for its rules dozens of times (fitting,
+// migrating, every fit check), a group's starting kit thousands. The same object comes back: read it, never change it.
+const RULES = new Map();
 export function slotRules(gunKey) {
+  let r = RULES.get(gunKey);
+  if (!r) RULES.set(gunKey, (r = readSlotRules(gunKey)));
+  return r;
+}
+function readSlotRules(gunKey) {
   const P = PLATFORMS[platformOf(gunKey)];
   if (!P) return { slots: [], never: new Set(SLOTS), parts: {} };
   const own = WEAPON_SLOTS[gunKey] || {};
@@ -225,7 +233,14 @@ export const modsFor = (gunKey) => Object.keys(ATTACH).filter((k) => modFits(gun
 const nameOf = (key) => (GEAR[key] ? GEAR[key].name : key);
 // Every slot a gun can have: bare, or opened by a mount or a rail that fits it (the balance sheet, tools/gunslottest.js).
 const OPENERS = Object.keys(ATTACH).filter((k) => ATTACH[k].adds);
+// Kept per gun key, as slotRules (read it, never change it).
+const REACHABLE = new Map();
 export function reachableSlots(gunKey) {
+  let r = REACHABLE.get(gunKey);
+  if (!r) REACHABLE.set(gunKey, (r = readReachable(gunKey)));
+  return r;
+}
+function readReachable(gunKey) {
   const rules = slotRules(gunKey);
   const out = new Set(rules.slots);
   for (let grew = true; grew;) {

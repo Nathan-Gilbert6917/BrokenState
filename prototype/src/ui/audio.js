@@ -13,7 +13,7 @@ import { battleCues, worldCues, ambienceMix, makeThrottle, LISTEN, battleCrowd }
 import { installBus, spatial, playGun, playHand, labPlan, place } from "./gunsfx.js"; // the gun voices, the battle's sound space (pan, distance, reverb, ducking, the deafened muffle)
 import { frameListener, playCue, cueSpan, prewarmBattle } from "./battlesfx.js"; // guns, blasts and handling cues to their voices
 import { LAB, LAB_ACTIONS, LAB_CHANGE, labGunHtml, makeLimiter } from "./sfxlab.js"; // Settings → Sound: the gun and blast sound test
-import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, demoMapHive, demoCrowd, makeZombieBus } from "./zombiesfx.js"; // the dead's voices
+import { ZOMBIE_VOICES, ZOMBIE_LIMITS, zombieCrowd, zombieMapAmbience, hordeAmbience, hordeChorus, zombieTestHtml, zombiePick, playZombieTest, demoMapHorde, demoMapHive, demoCrowd, makeZombieBus, crowdPart, CROWD_PARTS } from "./zombiesfx.js"; // the dead's voices
 import { hiveCrawlAmbience, hiveCrawlHeard, demoHiveCrawl } from "./hivecrawlsfx.js"; // inside a hive: the pulse and the drone by the warmth
 import { playBlast } from "./blastsfx.js"; // the mixer's Explosions preview
 import { TOP_GROUPS, childrenOf, groupDef, groupGain, groupOf, groupVolume, groupOn, setGroupVolume, setGroupOn, groupBus, applyGroups, cleanMix, useMix, PRESETS, applyPreset, presetOf, resetMix } from "./soundgroups.js"; // the mixer: every sound's group
@@ -145,6 +145,15 @@ function unlock() {
   a.unlocked = true;
   if (wantOn() && a.ctx.state !== "running") a.ctx.resume().catch(() => {});
   applyGains();
+  // The dead's crowd loops (ui/zombiesfx.js, about 200 ms of work), made a loop an idle moment now rather than in the
+  // frame the first horde is heard on the map.
+  if (!a.warm && !a.test) {
+    a.warm = true;
+    const idle = typeof requestIdleCallback === "function" ? (f) => requestIdleCallback(f, { timeout: 2000 }) : (f) => setTimeout(f, 50);
+    const jobs = CROWD_PARTS.map((k) => () => crowdPart(a.ctx, k));
+    const next = () => { const j = jobs.shift(); if (!j) return; try { j(); } catch { /* best effort */ } idle(next); };
+    idle(next);
+  }
 }
 
 export function initAudio(options, save) {

@@ -187,13 +187,23 @@ export function groupSurveyTile(state, who, tile, opts = {}) {
 // ---------- targets ----------
 /** What a kind's loot is worth to a holder with these needs (aiscav.js bestSite's rule; no needs: the loot as it is). @param {string} kind @param {Record<string, number> | null} need */
 export function kindValue(kind, need) {
-  const def = LOCATIONS[kind];
-  const table = def ? def.loot : {};
-  const total = Object.values(table).reduce((a, v) => a + v, 0) || 1;
   if (!need) return 1;
+  const { entries, total } = lootTable(kind);
   let value = 0;
-  for (const [k, w] of Object.entries(table)) value += (w / total) * (AISCAV.baseWant + (need[k] || 0));
+  for (const [k, w] of entries) value += (w / total) * (AISCAV.baseWant + (need[k] || 0));
   return value;
+}
+// A kind's loot table as [key, weight] pairs and their total, kept per kind (the tables are fixed; kindValue is read
+// for every place a group weighs, every day).
+const TABLES = new Map();
+function lootTable(kind) {
+  let T = TABLES.get(kind);
+  if (!T) {
+    const def = LOCATIONS[kind];
+    const table = def ? def.loot : {};
+    TABLES.set(kind, (T = { entries: Object.entries(table), total: Object.values(table).reduce((a, v) => a + v, 0) || 1 }));
+  }
+  return T;
 }
 /** The best POI of a tile the holder knows with something left (-1: none), by need × what is left. @param {State} state @param {any} who @param {Tile | number} tile @param {Record<string, number> | null} [need] @param {number[]} [exclude] */
 export function bestGroupPoi(state, who, tile, need = null, exclude = []) {
@@ -222,8 +232,10 @@ export function groupTargets(state, who, centres, { range = GPOI.RANGE, need = n
     seen.add(id);
     const t = state.tiles[id];
     if (!ok(t)) continue;
-    const from = centres.reduce((b, x) => (g.distance(x, id) < g.distance(b, id) ? x : b), centres[0]);
-    const d = g.distance(from, id), far = 1 + d / 5;
+    // The nearest centre (the first of those nearest), each one's distance worked out once.
+    let from = centres[0], d = g.distance(from, id);
+    for (let k = 1; k < centres.length; k++) { const dk = g.distance(centres[k], id); if (dk < d) { from = centres[k]; d = dk; } }
+    const far = 1 + d / 5;
     const list = poisOf(t);
     if (!list.length || (t.loc && !permanentSite(t))) {
       // A site with no POIs (a city or town centre) as before: its loot.

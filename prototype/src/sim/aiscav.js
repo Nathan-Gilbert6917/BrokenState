@@ -129,14 +129,10 @@ export function groupNeeds(f) {
 // kind: a POI's kind (pois.js) when it is not the tile's site: its loot table and food mix, no shop drawn down.
 export function haulFor(t, taken, level, eff, state = null, kind = null) {
   const type = kind || (t.loc ? t.loc.type : null);
-  const table = type && LOCATIONS[type] ? LOCATIONS[type].loot : { scrap: 2, food: 1 };
-  const mm = haulMult(kind ? { loc: { type: kind } } : t);
-  const weights = {};
-  for (const [k, w] of Object.entries(table)) weights[k] = w * (k === "meds" ? mm : 1);
-  const total = Object.values(weights).reduce((a, v) => a + v, 0) || 1;
+  const { keys, w, total } = haulWeights(type, haulMult(kind ? { loc: { type: kind } } : t));
   const units = taken * AISCAV.perLoot * Math.max(0, level) * eff;
   const out = {};
-  for (const [k, w] of Object.entries(weights)) out[k] = units * (w / total) * (MULT[k] || 1);
+  for (let i = 0; i < keys.length; i++) out[keys[i]] = units * (w[i] / total) * (MULT[keys[i]] || 1);
   if (state && (out.food > 0 || out.preserved > 0)) {
     const shop = kind ? 1 : shopFood(state, t);
     let drawn = 0;
@@ -153,6 +149,20 @@ export function haulFor(t, taken, level, eff, state = null, kind = null) {
   const car = out.parts && PARTS_MIX[type] ? out.parts * (PARTS_MIX[type].carparts || 0) : 0;
   if (car > 0) { out.parts -= car; out.carparts = car; }
   return out;
+}
+// A site type's loot table as haul weights (its meds × mm: medfinds.js haulMult) and their total, kept per type and
+// cut: the tables are fixed, and every group strips its land's sites and points of interest this way every day.
+const WEIGHTS = new Map();
+function haulWeights(type, mm) {
+  const key = `${type}|${mm}`;
+  let W = WEIGHTS.get(key);
+  if (!W) {
+    const table = type && LOCATIONS[type] ? LOCATIONS[type].loot : { scrap: 2, food: 1 };
+    const keys = [], w = [];
+    for (const [k, v] of Object.entries(table)) { keys.push(k); w.push(v * (k === "meds" ? mm : 1)); }
+    WEIGHTS.set(key, (W = { keys, w, total: w.reduce((a, v) => a + v, 0) || 1 }));
+  }
+  return W;
 }
 const addTo = (into, goods, k = 1) => { for (const [g, q] of Object.entries(goods)) into[g] = (into[g] || 0) + q * k; };
 

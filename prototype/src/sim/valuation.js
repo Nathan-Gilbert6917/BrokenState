@@ -21,7 +21,7 @@
 // Effects that depend on a group's supplies (starving, rich, poor) apply only to gear, so trading supplies never
 // moves the price of the same supplies through them.
 import { foodIn } from "./foods.js"; // a group's food in days (every kind)
-import { SUPPLIES, GEAR, CATEGORIES, TRADE_PREFS, FACTION_TYPES, supValue } from "./data.js";
+import { SUPPLIES, SUPPLY_KEYS, GEAR, CATEGORIES, TRADE_PREFS, FACTION_TYPES, supValue } from "./data.js";
 import { day } from "./world.js";
 import { season } from "./weather.js";
 import { hash01 } from "./skills.js";
@@ -118,10 +118,24 @@ export function groupSick(state, f) {
   return hash01(state.seed ?? 0, "groupsick", f.name, Math.floor(d / SICK.cycle)) < (season(state).key === "winter" ? SICK.winter : SICK.chance);
 }
 const perHead = (f, key) => Math.max(0, (f.stock && f.stock[key]) || 0) / Math.max(1, f.pop || 1);
-const wealthOf = (f) => Object.keys(SUPPLIES).reduce((a, k) => a + Math.max(0, (f.stock && f.stock[k]) || 0) * supValue(k), 0) / Math.max(1, f.pop || 1) / 50;
+const wealthOf = (f) => SUPPLY_KEYS.reduce((a, k) => a + Math.max(0, (f.stock && f.stock[k]) || 0) * supValue(k), 0) / Math.max(1, f.pop || 1) / 50;
+// A market's lists price every supply of one group in a row (trade.js marketLists: 175 keys, each priced three times),
+// and every price reads the same conditions and, per category, the same kind-and-state multiplier. withPrices(f, fn)
+// works them out once for f while fn runs and forgets them after: pricing only reads, so nothing they depend on (the
+// group's stores, war, people, the hordes, the day) can change in between.
+let priced = null;
+export function withPrices(f, fn) {
+  const outer = priced;
+  priced = { f, cond: null, info: new Map() };
+  try { return fn(); } finally { priced = outer; }
+}
 // Everything about their situation that moves prices: { war, hordes, raided, lostBase, sick, season, winterSoon,
 // starving, thirsty, rich, poor }.
 export function conditions(state, f) {
+  if (priced && priced.f === f) return priced.cond || (priced.cond = readConditions(state, f));
+  return readConditions(state, f);
+}
+function readConditions(state, f) {
   const today = day(state);
   const s = season(state);
   const wealth = wealthOf(f);
@@ -163,7 +177,15 @@ export const STATE_CLAMP = [0.35, 2.6];
 
 // Their kind and state for one category: { pref, state (the state product, clamped), mult (pref × state),
 // refused, notes: [{ text, m }] } (notes: biggest effect first, only those of 10% or more). gear: pricing an item.
+// Inside withPrices the same object comes back for the same category: read it, never change it.
 export function priceInfo(state, f, cat, gear = false) {
+  if (!priced || priced.f !== f) return readPriceInfo(state, f, cat, gear);
+  const key = gear ? `${cat}|gear` : cat;
+  let info = priced.info.get(key);
+  if (!info) priced.info.set(key, (info = readPriceInfo(state, f, cat, gear)));
+  return info;
+}
+function readPriceInfo(state, f, cat, gear) {
   const pref = typePref(f, cat);
   const notes = [];
   const name = catName(cat);

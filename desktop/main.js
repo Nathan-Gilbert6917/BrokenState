@@ -253,8 +253,10 @@ function createWindow() {
 }
 
 // ---------- performance test (npm run perf, or "Broken State.exe" --perf) ----------
-// Starts a new game on seed 42, turns on Reveal map and the autopilot at 200x through the game's own buttons
+// Starts a new game on seed 42, sets the speed, Reveal map and the autopilot through the game's own buttons
 // (perf/driver.js runs in the page), and measures frame times at 1920x1080 and at the maximized size.
+// --perf-speed=5 (a top-bar speed 0.25-5 or a dev speed 60 / 300 / 1200), --perf-reveal=off, --perf-autopilot=on,
+// --perf-dev-panel=off (perf/driver.js says what each does).
 async function runPerf(win) {
   const seconds = Number(flag("perf-seconds")) || 60;
   const out = flag("perf-out");
@@ -277,6 +279,8 @@ async function runPerf(win) {
   // player gets it on this display, at Windows display scaling. maximized-dpr1: the same pixels at 100%, so
   // the largest layout and the most map on screen (the heaviest case).
   const sizes = (flag("perf-sizes") || "1080p,maximized,maximized-dpr1").split(",");
+  const onOff = (name, dflt) => { const v = flag(name); return v == null ? dflt : /^(on|1|true|yes)$/i.test(String(v)); };
+  const perfRun = { seed: 42, speed: Number(flag("perf-speed")) || 5, seconds, warmup: 3, reveal: onOff("perf-reveal", false), autopilot: onOff("perf-autopilot", true), devPanel: onOff("perf-dev-panel", false) };
   const runs = [];
   for (const label of sizes) {
     win.setFullScreen(false);
@@ -297,7 +301,7 @@ async function runPerf(win) {
     app.getAppMetrics(); // resets the CPU counters: the next call reports usage over the run
     let result;
     try {
-      result = await win.webContents.executeJavaScript(`${driver}\n;window.__bsPerf.run(${JSON.stringify({ seed: 42, speed: Number(flag("perf-speed")) || 300, seconds, warmup: 3 })})`, true);
+      result = await win.webContents.executeJavaScript(`${driver}\n;window.__bsPerf.run(${JSON.stringify(perfRun)})`, true);
     } catch (e) {
       result = { error: String(e && e.message ? e.message : e) };
     }
@@ -311,6 +315,7 @@ async function runPerf(win) {
     display: { size: display.size, scaleFactor: sf, physical: [Math.round(display.size.width * sf), Math.round(display.size.height * sf)], refreshHz: display.displayFrequency },
     gpu: app.getGPUFeatureStatus(),
     seconds,
+    options: perfRun,
     runs,
   };
   const json = JSON.stringify(summary, null, 2);

@@ -105,9 +105,12 @@ export function foodMark(state, base, phase = "other") {
   const fresh = !(base.foodLog && base.foodLog.v === 1);
   const L = foodLogOf(state, base);
   if (fresh) return; // the baseline was just taken
-  const now = foodStock(base);
   const last = L.last || {};
   const x = L.x || {};
+  // Most marks find nothing moved: the same items in the same amounts as the last mark and nothing booked since.
+  // Known from the stock at once (L.last already holds what foodStock would make now).
+  if (isEmpty(x) && unchanged(base.stock || {}, last)) { if (!L.last) L.last = {}; return; }
+  const now = foodStock(base);
   let r = null;
   const keys = new Set([...Object.keys(now), ...Object.keys(last), ...Object.keys(x)]);
   for (const k of keys) {
@@ -124,6 +127,15 @@ export function foodMark(state, base, phase = "other") {
   L.last = now;
   L.x = {};
 }
+// Does the stock's food (foodStock: every food item over EPS) match `last` exactly, item for item and in the same
+// order (so the kept `last` is the object foodStock would make)?
+function unchanged(st, last) {
+  const lk = Object.keys(last);
+  let i = 0;
+  for (const k in st) if (FOODS[k] && st[k] > EPS) { if (lk[i++] !== k || st[k] !== last[k]) return false; }
+  return i === lk.length;
+}
+const isEmpty = (o) => { for (const k in o) return false; return true; };
 export function foodMarkAll(state, phase = "other") {
   for (const b of state.bases || []) foodMark(state, b, phase);
 }

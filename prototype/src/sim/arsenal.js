@@ -237,6 +237,9 @@ export function seedArsenal(state, f) {
   A.rounds = kitLaunchRounds(A.items); // launchers.js: their launchers' rounds, kept with the arsenal (not in f.stock: the world's dice read its keys)
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
   A.smoke = true; // dealt with smoke grenades (topUpSmoke)
+  // The kit factor's yardstick for the type (kitRef: a dozen starter kits, built once per type, pure), made now while
+  // the world is being made rather than on its first night, when every group's strength is first read.
+  if (FACTION_TYPES[f.type]) kitRef(f.type);
   return A;
 }
 // Smoke grenades came into most kits later (2026-10, siege.js coverSmoke: smoke over a retreat): an arsenal dealt
@@ -308,11 +311,14 @@ const SORTED = new WeakMap();
 function sortedKit(A) {
   const c = SORTED.get(A);
   if (c && c.rev === A.rev) return c;
-  const byV = (fn) => (a, b) => fn(b) - fn(a) || String(a.aid).localeCompare(String(b.aid));
-  const W = A.items.filter((it) => isWeaponKey(it.key) && !isLauncherKey(it.key)).sort(byV(weaponValue));
-  const L = A.items.filter((it) => isLauncherKey(it.key)).sort(byV(weaponValue));
+  // Best first, then by id: each item's worth and id string worked out once, not in every comparison (the same
+  // comparisons, so the same order).
+  const byV = (list, fn) => list.map((it) => ({ it, v: fn(it), id: String(it.aid) }))
+    .sort((a, b) => b.v - a.v || a.id.localeCompare(b.id)).map((x) => x.it);
+  const W = byV(A.items.filter((it) => isWeaponKey(it.key) && !isLauncherKey(it.key)), weaponValue);
+  const L = byV(A.items.filter((it) => isLauncherKey(it.key)), weaponValue);
   const S = {};
-  for (const slot of ARMOUR_SLOTS) S[slot] = A.items.filter((it) => isArmourKey(it.key) && GEAR[it.key].slot === slot).sort(byV(armourValue));
+  for (const slot of ARMOUR_SLOTS) S[slot] = byV(A.items.filter((it) => isArmourKey(it.key) && GEAR[it.key].slot === slot), armourValue);
   const T = A.items.filter((it) => isThrowKey(it.key));
   const out = { rev: A.rev, W, L, S, T };
   SORTED.set(A, out);

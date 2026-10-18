@@ -72,41 +72,49 @@ function paintLimb(p, zb, gb, L, W, g) {
   };
   const N = (nf) => norm(W.n ? W.n(nf) : W(nf)); // a normal through the transform (its own, when the transform is not a rotation)
   const light = W.light || LIGHT; // the transform may bring its own light rule (ui/mapfigures.js: harder shade on the map's small pieces)
-  const lit = (nf, col) => shade(col, light(N(nf)));
+  // A face's light is worked out once (its normal is the same at every point of it), and the colour shaded last is
+  // kept, since the texture gives runs of one colour: the same shade(col, light) as a point at a time, a few times.
+  const litOf = (nf) => { const f = light(N(nf)); let lc = litOf, ls = null; return (col) => (col === lc ? ls : (ls = shade((lc = col), f))); };
   const seen = (nf) => dot(N(nf), VIEW) > 0.02;
-  const n = L.sides, ST = 0.4;
-  const radial = (th, sc) => add(mul(u, L.ra * Math.cos(th) * sc), mul(v, L.rb * Math.sin(th) * sc));
-  // the sides
+  const n = L.sides, ST = 0.4, ra = L.ra, rb = L.rb, tex = L.tex;
+  const radial = (th, sc) => add(mul(u, ra * Math.cos(th) * sc), mul(v, rb * Math.sin(th) * sc));
+  const [u0, u1, u2] = u, [v0, v1, v2] = v;
+  // the sides (each point is C + radial(th, sc), written out: the same products and sums in the same order)
   for (let k = 0; k < n; k++) {
     const th0 = L.phase + (2 * Math.PI * k) / n, th1 = L.phase + (2 * Math.PI * (k + 1)) / n, mid = (th0 + th1) / 2;
-    const nf = norm(add(mul(u, Math.cos(mid) / L.ra), mul(v, Math.sin(mid) / L.rb)));
+    const nf = norm(add(mul(u, Math.cos(mid) / ra), mul(v, Math.sin(mid) / rb)));
     if (!seen(nf)) continue;
-    const face = faceOf(nf);
+    const face = faceOf(nf), lit = litOf(nf);
     const chord = len(sub(radial(th1, 1), radial(th0, 1)));
     const qs = Math.max(1, Math.ceil(chord / ST)), ts = Math.max(1, Math.ceil(length / ST));
     for (let ti = 0; ti <= ts; ti++) {
-      const t = ti / ts, sc = 1 + (L.taper - 1) * t, C = lerp(L.A, L.B, t);
+      const t = ti / ts, sc = 1 + (L.taper - 1) * t, C = lerp(L.A, L.B, t), [c0, c1, c2] = C;
       for (let qi = 0; qi <= qs; qi++) {
         const q = qi / qs, th = th0 + (th1 - th0) * q;
-        const P = add(C, radial(th, sc));
-        // s across the face: the point's place across the limb as seen from that face
-        const s = face === "front" ? 0.5 - (P[1] - C[1]) / (2 * L.rb) : face === "back" ? 0.5 + (P[1] - C[1]) / (2 * L.rb) : face === "left" ? 0.5 + (P[0] - C[0]) / (2 * L.ra) : 0.5 - (P[0] - C[0]) / (2 * L.ra);
-        const tc = L.tex ? L.tex(face, Math.max(0, Math.min(1, s)), t) : null;
-        plot(P, lit(nf, tc || L.col));
+        const ka = ra * Math.cos(th) * sc, kb = rb * Math.sin(th) * sc;
+        const P = [c0 + (u0 * ka + v0 * kb), c1 + (u1 * ka + v1 * kb), c2 + (u2 * ka + v2 * kb)];
+        let tc = null;
+        if (tex) {
+          // s across the face: the point's place across the limb as seen from that face
+          const s = face === "front" ? 0.5 - (P[1] - c1) / (2 * rb) : face === "back" ? 0.5 + (P[1] - c1) / (2 * rb) : face === "left" ? 0.5 + (P[0] - c0) / (2 * ra) : 0.5 - (P[0] - c0) / (2 * ra);
+          tc = tex(face, Math.max(0, Math.min(1, s)), t);
+        }
+        plot(P, lit(tc || L.col));
       }
     }
   }
   // the ends
-  for (const [C, nf, sc, face] of [[L.A, mul(axis, -1), 1, null], [L.B, axis, L.taper, null]]) {
+  for (const [C, nf, sc] of [[L.A, mul(axis, -1), 1], [L.B, axis, L.taper]]) {
     if (!seen(nf)) continue;
-    const f = faceOf(nf), rs = Math.max(1, Math.ceil(Math.max(L.ra, L.rb) * sc / ST));
+    const f = faceOf(nf), lit = litOf(nf), rs = Math.max(1, Math.ceil(Math.max(ra, rb) * sc / ST)), [c0, c1, c2] = C;
     for (let ri = 0; ri <= rs; ri++) {
-      const r = ri / rs, steps = Math.max(4, Math.ceil((2 * Math.PI * Math.max(L.ra, L.rb) * r * sc) / ST));
+      const r = ri / rs, steps = Math.max(4, Math.ceil((2 * Math.PI * Math.max(ra, rb) * r * sc) / ST)), rsc = r * sc;
       for (let k = 0; k <= steps; k++) {
-        const th = (2 * Math.PI * k) / steps;
-        const P = add(C, radial(th, r * sc));
-        const tc = L.tex ? L.tex(f, (Math.cos(th) * r + 1) / 2, (Math.sin(th) * r + 1) / 2) : null;
-        plot(P, lit(nf, tc || L.col));
+        const th = (2 * Math.PI * k) / steps, cos = Math.cos(th), sin = Math.sin(th);
+        const ka = ra * cos * rsc, kb = rb * sin * rsc;
+        const P = [c0 + (u0 * ka + v0 * kb), c1 + (u1 * ka + v1 * kb), c2 + (u2 * ka + v2 * kb)];
+        const tc = tex ? tex(f, (cos * r + 1) / 2, (sin * r + 1) / 2) : null;
+        plot(P, lit(tc || L.col));
       }
     }
   }
@@ -488,7 +496,13 @@ export const paintBoxSurvivor = (app, weaponKey = null, armorKey = null, facing 
 export const paintBoxZombie = (variant, seed, facing = "SE", tile = false, look = undefined) => paintBoxFigure(zombieApp(variant, seed, look), null, null, YAW[facing] ?? 0, tile);
 
 // ---------- the cache, the units, the inventory's spin ----------
-const cache = new Map();
+// The figures' canvases by look, weapon, armour, pack and heading: the key holds all the picture depends on, so one
+// never goes stale. Least recently used first (a hit moves its key to the end of the Map), the oldest dropped past
+// FIG_BUDGET bytes of canvas (w × h × 4: some 600 figures, a big battle's every unit at every heading of three views),
+// so the figures on screen stay (it used to clear all of them past 1,200 and paint each one on screen again at once).
+const cache = new Map(), FIG_BUDGET = 96 << 20; // key -> { cv, bytes }
+let cacheBytes = 0;
+export const figureStats = { painted: 0, ms: 0, dropped: 0 }; // figures painted (a miss), their time, dropped (the tools)
 const MUZZLE = new WeakMap();
 export const figureMuzzle = (cv) => (cv && MUZZLE.get(cv)) || null;
 const lookKey = (a) => (a.key || [a.build, a.skin, a.hairStyle, a.hair, a.facial, a.topStyle, a.top, a.pants, a.accessory, a.accent, a.helmet, a.hood, a.sash, a.armband].join("|")) + (a.down ? `|down:${a.down.pose}:${a.down.pool ? 1 : 0}:${a.down.burnt ? 1 : 0}` : "");
@@ -497,14 +511,18 @@ const STEP = 15; // degrees a cached heading
 export function figureCanvas(app, look = null, armorKey = null, yaw = 0, o = {}) {
   const y = (((Math.round(yaw / STEP) * STEP) % 360) + 360) % 360;
   const key = `${lookKey(app)}|${look || ""}|${armorKey || ""}|${o.pack ? 1 : 0}|${y}`;
-  let cv = cache.get(key);
-  if (cv === undefined) {
-    if (cache.size > 1200) cache.clear();
-    const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory }, look ? String(look).split("|")[0] : null, armorKey, y, false);
-    cv = toCanvas(p);
-    if (cv) { cv.figure = p.fig; if (p.muzzle) MUZZLE.set(cv, p.muzzle); }
-    cache.set(key, cv);
-  }
+  const e = cache.get(key);
+  if (e !== undefined) { cache.delete(key); cache.set(key, e); return e.cv; }
+  const t0 = typeof performance !== "undefined" ? performance.now() : 0;
+  const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory }, look ? String(look).split("|")[0] : null, armorKey, y, false);
+  const cv = toCanvas(p);
+  if (cv) { cv.figure = p.fig; if (p.muzzle) MUZZLE.set(cv, p.muzzle); }
+  const bytes = p.w * p.h * 64; // the canvas, 4 × 4 px a grid px of 4 bytes (headless too, where there is none)
+  cache.set(key, { cv, bytes });
+  cacheBytes += bytes;
+  while (cacheBytes > FIG_BUDGET && cache.size > 1) { const [k, old] = cache.entries().next().value; cache.delete(k); cacheBytes -= old.bytes; figureStats.dropped++; }
+  figureStats.painted++;
+  if (t0) figureStats.ms += performance.now() - t0;
   return cv;
 }
 // A human enemy's look as a figure (ui/sprites.js enemyLookOf: the same rolls as its flat sprite).
@@ -690,4 +708,4 @@ function attachHand() {
   document.addEventListener("wheel", (ev) => { const key = figOf(ev); if (!key) return; ev.preventDefault(); wheelFigure(key, ev.deltaY); }, { passive: false, capture: true });
   document.addEventListener("click", (ev) => { const el = ev.target && ev.target.closest ? ev.target.closest("button[data-figreset]") : null; if (el) { ev.preventDefault(); spinFigure(el.dataset.figreset); } }, true);
 }
-onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context
+onForgetPictures(() => { cache.clear(); cacheBytes = 0; }); // ui/pictures.js: drawn again after a lost GPU context
