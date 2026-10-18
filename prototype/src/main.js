@@ -196,6 +196,7 @@ let dirty = true;      // a tick changed something: redraw the panels (throttled
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
 let clockDirty = false; // a new minute on the clock and nothing else: only what counts the minutes (refreshClock)
 let drawn = 0;           // panel redraws so far (refresh, refreshClock): the map's tooltip is built again after one
+let timedUi = false;     // the last refresh showed something that ends after real seconds (the alerts' flash, the guide's pulse)
 
 function randomSeed() {
   return Math.floor(Math.random() * 1e6);
@@ -319,7 +320,7 @@ function step(now) {
   // under way count the minutes of the hour already gone (sim/parties.js clockFrac), so they move with the clock, not
   // only on the hour or at the next click (refreshClock; the rest waits for the world or the player to change).
   const minute = state.hour * 60 + Math.floor(view.hourFrac * 60);
-  if (minute !== shownMinute) { shownMinute = minute; clockDirty = true; }
+  if (minute !== shownMinute) { shownMinute = minute; if (timedUi) dirty = true; else clockDirty = true; } // a flash or pulse showing: everything, so it goes on time
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
   if (ui.timelapse) tlFrame(state, ui, now); // recorded frames instead of the live map (ui/timelapse.js)
   else if (state.combat) {
@@ -550,6 +551,7 @@ function refresh(user = true) {
   }
   if (tipTarget && tipTarget.isConnected === false) hideTip(); // only when the hovered element was replaced
   guidePulse(ui); // what the guide's Show me points at (ui/guide.js)
+  timedUi = alerts.includes('class="al-flash"') || !!ui.guidePulse; // ui/alerts.js: 4 s; ui/guide.js: GUIDE.PULSE_MS
 }
 
 // A new minute on the clock and nothing else: only what counts the minutes is drawn again. The Teams tab, the running
