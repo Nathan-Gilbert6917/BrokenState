@@ -1391,24 +1391,31 @@ function normalize(L, R, peak) {
   for (let i = 0; i < L.length; i++) m = Math.max(m, Math.abs(L[i]), Math.abs(R[i]));
   if (m > 0) for (let i = 0; i < L.length; i++) { L[i] *= peak / m; R[i] *= peak / m; }
 }
-// The bed's three loops, made once per context (seeded: the same every time). About 1 M samples of work, once.
+// The bed's three loops, made once per context (seeded: the same every time). About 1 M samples of work, once; each
+// loop has its own dice, so they can be made one at a time ahead of need (crowdPart: battlesfx.js prewarmBattle).
+const CROWD_LOOPS = {
+  sparse: [11, (L, R, len, r) => { for (let i = 0; i < 5; i++) moanInto(L, R, len, r); }],
+  dense: [23, (L, R, len, r) => { for (let i = 0; i < 22; i++) moanInto(L, R, len, r); }],
+  feet: [37, (L, R, len, r) => { for (let i = 0; i < 70; i++) scuffInto(L, R, len, r); }],
+};
+export const CROWD_PARTS = Object.keys(CROWD_LOOPS);
+const PARTS = new WeakMap(); // context -> the loops made so far
+export function crowdPart(c, k) {
+  let P = PARTS.get(c);
+  if (!P) PARTS.set(c, (P = {}));
+  if (!P[k]) {
+    const len = CROWD_RATE * CROWD_SECS, [seed, fill] = CROWD_LOOPS[k];
+    const buf = c.createBuffer(2, len, CROWD_RATE);
+    const L = buf.getChannelData(0), R = buf.getChannelData(1);
+    fill(L, R, len, mulberry(seed));
+    normalize(L, R, 0.8);
+    P[k] = buf;
+  }
+  return P[k];
+}
 export function crowdBuffers(c) {
   let B = CROWD.get(c);
-  if (B) return B;
-  const len = CROWD_RATE * CROWD_SECS;
-  const mk = (seed, fill) => {
-    const buf = c.createBuffer(2, len, CROWD_RATE);
-    const L = buf.getChannelData(0), R = buf.getChannelData(1), r = mulberry(seed);
-    fill(L, R, r);
-    normalize(L, R, 0.8);
-    return buf;
-  };
-  B = {
-    sparse: mk(11, (L, R, r) => { for (let i = 0; i < 5; i++) moanInto(L, R, len, r); }),
-    dense: mk(23, (L, R, r) => { for (let i = 0; i < 22; i++) moanInto(L, R, len, r); }),
-    feet: mk(37, (L, R, r) => { for (let i = 0; i < 70; i++) scuffInto(L, R, len, r); }),
-  };
-  CROWD.set(c, B);
+  if (!B) CROWD.set(c, (B = { sparse: crowdPart(c, "sparse"), dense: crowdPart(c, "dense"), feet: crowdPart(c, "feet") }));
   return B;
 }
 // The bed: 3 looped sources and their gains, a low-pass, a level with a slow breathing wobble: 10 nodes in all.

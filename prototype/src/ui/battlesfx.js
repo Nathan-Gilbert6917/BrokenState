@@ -3,6 +3,7 @@
 // frame's listener. ui/audio.js calls frameListener once a frame and playCue for each such cue (after its throttle).
 import { spatial, place, listener, roomOf, playGun, playHand, prewarm, busOf, shotPlan } from "./gunsfx.js";
 import { playBlast, prewarmBlasts } from "./blastsfx.js";
+import { crowdPart, CROWD_PARTS } from "./zombiesfx.js"; // the dead's crowd bed, a loop at a time
 
 // The listener this frame: the selected unit of yours (LISTEN.sel), the battle view (LISTEN.cam) and the fog of war
 // (LISTEN.vis), all set by ui/combat.js; the room by where the battle is.
@@ -45,6 +46,8 @@ export function prewarmBattle(ctx, state, b) {
     jobs.push(() => prewarm(ctx, [p]));
   }
   for (const k of ["frag", "pipebomb", "molotov", "gl40", "rocket", "flash", "smoke", "secondary", "glass"]) jobs.push(() => prewarmBlasts(ctx, [k]));
+  // The dead's crowd bed (ui/zombiesfx.js: about 200 ms of work the first time a battle has them), a loop a job.
+  if ((b.units || []).some((u) => u.kind === "zombie")) for (const k of CROWD_PARTS) jobs.push(() => crowdPart(ctx, k));
   const idle = typeof requestIdleCallback === "function" ? (f) => requestIdleCallback(f, { timeout: 500 }) : (f) => setTimeout(f, 30);
   const next = () => { const j = jobs.shift(); if (!j) return; try { j(); } catch { /* best effort */ } idle(next); };
   idle(next);
