@@ -10,10 +10,17 @@
 // watchCanvas(el): the game's own canvases (the State Map's, the battle's) report the loss and the recovery as the
 // "contextlost" / "contextrestored" events (Chromium 99+, so the desktop app; a browser without them changes
 // nothing). On a restore the pictures are forgotten once (a burst of restores within GAP ms, one per canvas, counts
-// as one), and once more if it happens again later. Pure UI: nothing here reads or changes the sim.
+// as one), and once more if it happens again later.
+// checkPictures(now), from the frame loop: a browser may blank the kept pictures without a word to the game's canvases
+// (the small canvases taken off the GPU, a driver reset the page is not told about). A sentinel of the sprites' kind
+// (a small canvas painted once and kept) is drawn onto a fresh probe once a second and its pixel read back: found
+// blank, the pictures are forgotten (once per gap) and the sentinel made again; blank CHECK.giveUp times running, the
+// check stops and says so once (the browser cannot keep a picture at all: forgetting every second would only cost
+// frames). Pure UI: nothing here reads or changes the sim.
 const forgetters = new Set();
 export const PICTURES = { gap: 1000 }; // ms: restores closer together than this forget the pictures once
-export const pictureStats = { forgotten: 0, lost: 0, restored: 0, why: "", at: -1e9 }; // for the tools and the console
+export const CHECK = { every: 1000, giveUp: 5 }; // the sentinel: checked every ms; blank this many times running, given up
+export const pictureStats = { forgotten: 0, lost: 0, restored: 0, checks: 0, blank: 0, gaveUp: false, why: "", at: -1e9 }; // for the tools and the console
 
 // Registers how a module forgets its pictures. Returns a function that unregisters it.
 export function onForgetPictures(fn) {
@@ -49,5 +56,54 @@ export function watchCanvas(el) {
   el.addEventListener("contextrestored", () => { picturesRestored("the canvas came back"); });
   return true;
 }
+// ---------- the sentinel ----------
+let sentinel = null, nextCheck = -1e9, misses = 0;
+const SENT = [255, 128, 64]; // the sentinel's colour, read back from the probe
+function makeSentinel() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 8;
+  const g = c.getContext("2d");
+  g.fillStyle = `rgb(${SENT.join(",")})`;
+  g.fillRect(0, 0, 8, 8);
+  return c;
+}
+// Reads the sentinel back through a fresh probe: true intact, false blank, null when it cannot be read here (no DOM,
+// the tools' stubs, a hidden page).
+export function readSentinel() {
+  if (typeof document === "undefined" || !document || typeof document.createElement !== "function") return null;
+  if (document.visibilityState === "hidden") return null;
+  try {
+    if (!sentinel) sentinel = makeSentinel();
+    const p = document.createElement("canvas");
+    p.width = p.height = 2;
+    const g = p.getContext("2d", { willReadFrequently: true });
+    g.drawImage(sentinel, 0, 0, 2, 2);
+    const d = g.getImageData(0, 0, 1, 1).data;
+    if (!d || d.length < 4) return null;
+    return d[3] > 200 && Math.abs(d[0] - SENT[0]) < 40 && Math.abs(d[1] - SENT[1]) < 40;
+  } catch { return null; }
+}
+// Once a second from the frame loop. Returns what the sentinel said this time (null: not checked now).
+export function checkPictures(now) {
+  if (pictureStats.gaveUp || now < nextCheck) return null;
+  nextCheck = now + CHECK.every;
+  const ok = readSentinel();
+  if (ok == null) return null;
+  pictureStats.checks++;
+  if (ok) { misses = 0; return true; }
+  pictureStats.blank++;
+  misses++;
+  sentinel = null; // made again, so the next check reads the browser as it is now
+  if (misses >= CHECK.giveUp) {
+    pictureStats.gaveUp = true;
+    if (typeof console !== "undefined") console.warn("Broken State: a kept picture came back blank " + misses + " times running; the browser is not keeping pictures. The check stops (the pictures are not forgotten again until the canvas itself reports a restore).");
+    return false;
+  }
+  picturesRestored("a kept picture was found blank");
+  return false;
+}
+// For the tools: the check from the start.
+export function resetPictureCheck() { sentinel = null; nextCheck = -1e9; misses = 0; pictureStats.gaveUp = false; }
+
 // Is a context lost right now (Chromium 99+ says; elsewhere never)?
 export const contextLost = (ctx) => !!(ctx && typeof ctx.isContextLost === "function" && ctx.isContextLost());

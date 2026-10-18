@@ -5,6 +5,9 @@
 //   fog and the sprites again (the builds counted, canvases made);
 // - the battle canvas is watched: contextlost is counted, contextrestored forgets the pictures once for a burst of
 //   restores within the gap and again after it, with one console warning each time;
+// - the sentinel (checkPictures, once a second from the frame loop): intact it forgets nothing; found blank the
+//   pictures are forgotten and it is made again; blank CHECK.giveUp times running the check gives up with a word;
+//   a canvas that cannot be read, or a hidden page, is no verdict;
 // - a canvas that cannot report (the tools' stubs) is left alone; the sim is untouched by any of it.
 // Usage: node tools/picturestest.js
 import { battles } from "./isobattles.js";
@@ -85,6 +88,38 @@ console.log("The canvas reporting its context lost and back");
   const { st } = battles(46, ["raid"])[0];
   const e = draw(st);
   check(!e, `a raid drawn after it all${e ? `: ${e}` : ""}`);
+}
+
+// ---------- 3. the sentinel ----------
+console.log("The sentinel: a kept picture found blank");
+{
+  // Canvases that carry a colour: a fill paints it, drawImage copies the source's (nothing while "lost"), the probe reads it.
+  let lost = false;
+  const pix = () => { const cv = { width: 0, height: 0, col: null }; cv.getContext = () => ({ set fillStyle(v) { cv.fill = v; }, fillRect() { cv.col = [255, 128, 64, 255]; }, drawImage(src) { cv.col = lost ? null : src.col; }, getImageData: () => ({ data: cv.col || [0, 0, 0, 0] }) }); return cv; };
+  const doc0 = globalThis.document;
+  globalThis.document = { createElement: () => pix(), visibilityState: "visible" };
+  PIC.resetPictureCheck();
+  const f0 = PIC.pictureStats.forgotten, c0 = PIC.pictureStats.checks;
+  check(PIC.checkPictures(0) === true && PIC.checkPictures(500) === null && PIC.checkPictures(1000) === true, "an intact sentinel reads back, once a second, and forgets nothing");
+  check(PIC.pictureStats.forgotten === f0 && PIC.pictureStats.checks === c0 + 2, "no forget from an intact picture");
+  lost = true; // every kept canvas blank from here (the sentinel too)
+  PIC.PICTURES.gap = 0;
+  check(PIC.checkPictures(2000) === false && PIC.pictureStats.forgotten === f0 + 1 && PIC.pictureStats.blank === 1, "found blank: the pictures are forgotten and the sentinel made again");
+  lost = false;
+  check(PIC.checkPictures(3000) === true && PIC.pictureStats.forgotten === f0 + 1, "the new sentinel intact: nothing more forgotten");
+  lost = true;
+  let t = 4000, r = [];
+  for (let i = 0; i < 7; i++, t += 1000) r.push(PIC.checkPictures(t));
+  check(PIC.pictureStats.gaveUp && PIC.pictureStats.forgotten === f0 + 1 + PIC.CHECK.giveUp - 1 && r.slice(0, 5).every((x) => x === false) && r.slice(5).every((x) => x === null), `blank ${PIC.CHECK.giveUp} times running: the check gives up, having forgotten ${PIC.CHECK.giveUp - 1} more times, and no more`);
+  check(/not keeping pictures/.test(warnings[warnings.length - 1] || ""), "and says so once");
+  PIC.resetPictureCheck();
+  globalThis.document = { createElement: () => { throw new Error("no canvas"); }, visibilityState: "visible" };
+  check(PIC.checkPictures(1e5) === null && !PIC.pictureStats.gaveUp, "a canvas that cannot be read is no verdict");
+  globalThis.document = { ...doc0, visibilityState: "hidden" };
+  check(PIC.checkPictures(2e5) === null, "a hidden page is not checked");
+  globalThis.document = doc0;
+  PIC.resetPictureCheck();
+  PIC.PICTURES.gap = 1000;
 }
 console.warn = warn0;
 
