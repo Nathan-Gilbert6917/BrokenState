@@ -237,6 +237,9 @@ export function seedArsenal(state, f) {
   A.rounds = kitLaunchRounds(A.items); // launchers.js: their launchers' rounds, kept with the arsenal (not in f.stock: the world's dice read its keys)
   A.gear = f.gear || 1; // the eras' arms this kit was dealt with (eraArms: a later gang's strong guns already carry them)
   A.smoke = true; // dealt with smoke grenades (topUpSmoke)
+  // The kit factor's yardstick for the type (kitRef: a dozen starter kits, built once per type, pure), made now while
+  // the world is being made rather than on its first night, when every group's strength is first read.
+  if (FACTION_TYPES[f.type]) kitRef(f.type);
   return A;
 }
 // Smoke grenades came into most kits later (2026-10, siege.js coverSmoke: smoke over a retreat): an arsenal dealt
