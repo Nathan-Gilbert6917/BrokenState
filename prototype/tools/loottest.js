@@ -192,7 +192,9 @@ check(["compbow", "xbow", "crossbow"].every((k) => WEAPONS[k].ammo === 0 && WEAP
 check(["prybar", "fireaxe", "sledge"].every((k) => GEAR[k].pry), "crowbar, fire axe and sledgehammer force locks");
 const throwers = Object.entries(GEAR).filter(([, d]) => d.throw);
 check(throwers.every(([k, d]) => d.throw === k && THROWABLES[k]), "every throwable is in the throw table under its own key");
-check(Object.keys(THROWABLES).every((k) => GEAR[k] && GEAR[k].throw === k), "the throw table names only throwable items");
+// An entry for a kind of item rather than one item (item: "mag", emptymag: any empty spare magazine, 7e7011d3) is no GEAR key.
+const throwKinds = Object.keys(THROWABLES).filter((k) => THROWABLES[k].item);
+check(Object.keys(THROWABLES).every((k) => (GEAR[k] && GEAR[k].throw === k) || (THROWABLES[k].item && !GEAR[k])), `the throw table names only throwable items (and kinds of item: ${throwKinds.join(", ") || "none"})`);
 // Siege kit and decoys (siege.js, decoys.js): grenades and decoys are found, ladders and rams are made.
 const srcOf = (k) => [...(src.get(k) || [])];
 check(srcOf("frag").some((l) => /^(find|raid|body):/.test(l)) && srcOf("frag").some((l) => /military|soldiers|armory|barracks/.test(l)), `frag grenades come from soldiers and military places (${srcOf("frag").slice(0, 6).join(", ")})`);
