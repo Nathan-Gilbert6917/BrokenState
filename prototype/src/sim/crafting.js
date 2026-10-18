@@ -70,6 +70,8 @@ export const CRAFTS = {
   crowbar:     { gear: "crowbar",     in: { scrap: 4 },           hours: 5,  skill: "mechanics", min: 1 },
   // Makeshift picks (locks.js MAKESHIFT_PICK): n a craft as one stack (data-stacks.js STACK_MAX), always known, a team too.
   makeshiftpick: { name: "Makeshift picks (3)", gear: "makeshiftpick", n: 3, in: { scrap: 1 }, hours: 1, skill: "mechanics", min: 0, field: true },
+  // Makeshift ear protection (hearing.js; data.js ragplugs): rag twists dipped in wax, a few pairs a craft, a team too.
+  ragplugs:    { gear: "ragplugs",    in: { scrap: 1 },           hours: 1,  skill: "mechanics", min: 0, field: true },
   waterfilter: { gear: "waterfilter", in: { scrap: 4 },           hours: 6,  skill: "mechanics", min: 2, field: true },
   // tune-jobcaps: a filter that clogs at a base leaves its bucket and frame (base.spentFilters); fresh sand and
   // charcoal make it a filter again for a quarter of the scrap. spent: clogged filters it uses (at this base).
@@ -212,6 +214,7 @@ export function craftOutputText(key) {
     if (d.defence && d.defence.alarm) fx.push("an alarm for a base (everyone counts half on the walls) or a camp (less trouble)");
     // Wave 2 cooking (cooking.js): the camp cook pot was a bare "tool" here; it says what it cooks and where.
     if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 firewood an hour), and a camping team's fresh food into simple meals at a lit fire");
+    if (d.ears) fx.push(`ear protection carried in a pocket or the pack, under any helmet (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear} tiles; a pair a fight`);
     if (r.gear === "makeshiftpick") fx.push("picks locks in a raid without the crowbar and lockpicks (locks.js): 30% + 4% a Stealth point − 15% a difficulty step, as quiet, but one snaps in two every attempt; not a safe, a steel security door or a gun safe");
     bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" || (d.selfStab && !d.medKit) ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }
@@ -228,6 +231,7 @@ export function durUnit(key) {
   if (d.slot === "weapon" || ARMOR_SLOTS.includes(d.slot)) return "fights";
   if (d.medKit) return "treatments";
   if (d.selfStab) return "use"; // a tourniquet (medics.js MEDIC.SELF): one use
+  if (d.ears && d.slot === "pack") return "fights"; // earplugs (hearing.js settleEars): a pair a fight
   if (key === "repairkit") return "repairs"; // repair.js: a field repair a use
   if (d.suppressor) return "shots";
   if (d.cat === "gunmod") return key === "scrapscope" ? "fights" : "shots"; // makeshift gun parts (gunmods.js)

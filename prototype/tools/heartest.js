@@ -16,7 +16,8 @@
 //  10. flashbangs: ear protection alone takes at most 0.4, a near one still costs an action;
 //  11. enemies wear headgear by kit, their bodies drop it; group arsenals hold and issue it;
 //  12. loot: tags and sources, lootItem everywhere; repair: a cracked visor refused, a battery swap loses nothing;
-//      earplugs wear a pair a fight;
+//      earplugs wear a pair a fight; the makeshift rag earplugs (data.js ragplugs, crafting.js CRAFTS.ragplugs: a scrap,
+//      in the field): weaker than foam, worn from a pocket, a pair a fight, foam used first, never mended;
 //  13. a save round trip with helmet mods.
 // Usage: node tools/heartest.js [seed]
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
@@ -26,6 +27,9 @@ import { HEAR, HEARING, bangOf, deafen, exposure, tickEars, hearRange, hearMult,
 import { kitHeadgear as kitHeadgearT } from "../src/sim/helmets.js";
 import { HELMETS, HELMET_ATTACH, FACE, HEAD_KIT, HEAD_FINDS, AREA_HEAD, WARE_HEAD, helmetFitReason, fitHelmetMod, removeHelmetMod, helmetSlots, faceOf, visorAim, toggleVisor, helmetNvg, helmetLight, earGearOf, fitHelmetAt, stripHelmetAt, helmetChoices, rollHeadKit, rollHeadFind, rollAreaHead, headWares } from "../src/sim/helmets.js";
 import { HELMET_GEAR } from "../src/sim/data-helmets.js";
+import { CRAFTS, craftOutputText, makeItem } from "../src/sim/crafting.js"; // rag earplugs: the makeshift recipe
+import { craftLock } from "../src/sim/blueprints.js";
+import * as IA from "../src/ui/itemart.js";
 import { armourHit, battleDice } from "../src/sim/armour.js";
 import { detectRange, stealthSetup } from "../src/sim/stealth.js";
 import { landEffect, FLASH, flashCut } from "../src/sim/throwables.js";
@@ -586,6 +590,40 @@ section("12. Loot tags and sources; repair; earplugs wear a pair a fight");
   const muffsOnly = newItem("earmuffs");
   s.pockets[1] = muffsOnly;
   check(!earGearOf(s), "muffs in a pocket do nothing (worn only)");
+  // Rag earplugs (data.js ragplugs, crafting.js CRAFTS.ragplugs): makeshift plugs, weaker than foam, worn a pair a fight.
+  s.pockets[1] = null;
+  const rd = GEAR.ragplugs, rr = CRAFTS.ragplugs;
+  check(rd && rd.makeshift && rd.small && rd.slot === "pack" && rd.ears && rd.ears.cut < GEAR.earplugs.ears.cut && rd.ears.hear === GEAR.earplugs.ears.hear && rd.dur < GEAR.earplugs.dur, "rag earplugs: a small makeshift pocket item, a weaker cut than foam, the same hearing, fewer fights");
+  check(rr && rr.gear === "ragplugs" && rr.in.scrap === 1 && Object.keys(rr.in).length === 1 && rr.hours === 1 && rr.min === 0 && rr.field === true && !rr.needs, "the recipe: 1 scrap, 1 hour, no skill, in the field");
+  check(craftLock({ known: [] }, "ragplugs") === "", "no book or blueprint locks them");
+  check(/ear protection/.test(craftOutputText("ragplugs")) && /2 off/.test(craftOutputText("ragplugs")) && /fights/.test(craftOutputText("ragplugs")), `the recipe's output text says what they do (${craftOutputText("ragplugs")})`);
+  const rp = makeItem("ragplugs", 0.75);
+  check(rp.dur === rd.dur, `made at 75% they last the listed ${rd.dur} fights (${rp.dur})`);
+  check(makeItem("ragplugs", 1).dur > rd.dur, "well made, more");
+  s.pockets[0] = rp;
+  fitHeadgear(u, s);
+  check(u.ears && u.ears.key === "ragplugs" && u.ears.cut === 2 && u.ears.hear === -3 && !u.ears.elec && near(u.earCut, 0.2), "rag plugs in a pocket work (cut 2; a flashbang's 0.2)");
+  u.x = 0; u.y = 0;
+  const rifleOut = bangOf({ cells: [], w: 0 }, { x: 0, y: 0, weapon: "ar" }); // a rifle outdoors: bang 3 (section 1)
+  const shooterIn = (ears) => { const keep = u.ears; u.ears = ears; const e = exposure(u, 0, 0, rifleOut, u); u.ears = keep; return e; }; // the same unit as its own shooter (+1)
+  const inFoam = shooterIn(plugs), inRag = shooterIn(u.ears), bare = shooterIn(null);
+  check(inRag < HEAR.DEAF && inFoam < inRag, `a rifle outdoors rings its shooter's ears more in rag plugs (e = ${inRag}) than in foam (${inFoam}), neither deafened`);
+  check(inRag < bare && bare >= HEAR.DEAF, `bare ears are deafened by it (${bare})`);
+  check(hearMult(u) === HEAR.MULT.plugs, "a guard in rag plugs hears you behind them like one in foam");
+  settleEars(u, s, true);
+  check(rp.dur === rd.dur - 1, `a pair used in a fight (${rp.dur} left)`);
+  settleEars(u, s, false);
+  check(rp.dur === rd.dur - 1, "none used when nobody fought");
+  rp.dur = 1;
+  settleEars(u, s, true);
+  check(s.pockets[0] == null, "the last pair: the tin is gone");
+  s.pockets[0] = newItem("ragplugs"); s.pockets[1] = newItem("earplugs");
+  fitHeadgear(u, s);
+  check(u.ears && u.ears.key === "earplugs", "foam plugs are used over rag plugs when both are carried");
+  settleEars(u, s, true);
+  check(s.pockets[1].dur === GEAR.earplugs.dur - 1 && s.pockets[0].dur === rd.dur, "and only the foam strip wears");
+  check(repairKind(newItem("ragplugs")) === null && repairKind(newItem("earplugs")) === null, "earplugs are used up, never mended (repair.js)");
+  check(IA.hasItemArt("ragplugs", "gear"), "rag earplugs have their drawing (ui/itemart)");
 }
 
 // ---------- 13. save ----------

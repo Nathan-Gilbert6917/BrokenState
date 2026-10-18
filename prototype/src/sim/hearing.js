@@ -9,7 +9,9 @@
 // cut of their ear protection. e ≥ DEAF: deaf (u.deaf turns, +1, +2 at e ≥ DEAF2, at most MAX); e ≥ DAZE: dazed
 // (−DAZE_AIM aim for this turn and the next: u.dazed). Both tick down at the start of the side's turn (tickEars).
 // Your people hear (hearRange): BASE tiles + the helmet's muffle (helmets.js HELMETS: full shells cost hearing) + the
-// ear protection's HEAR (muffs and plugs −3, electronic +2, a team headset +3); nothing while deaf. An enemy that
+// ear protection's HEAR (muffs and plugs −3, electronic +2, a team headset +3); nothing while deaf. Earplugs (foam, or
+// the makeshift rag plugs crafted from a scrap: cut 2) work from a pocket under any helmet and wear a pair a fight
+// (isPlugsKey, settleEars). An enemy that
 // moved or fired in the enemy phase, unseen, within that range of one of your people is heard: a "?" marker where it
 // is (heardGhosts, b.ghosts with the heard flag; combat.js enemyGhosts).
 // Enemy humans hear you sneak up from behind (stealth.js detectRange: the behind arc × hearMult): deaf 0 (they notice
@@ -24,6 +26,7 @@ import { WEAPONS, active, canSee, fx, say, playerSees } from "./combat.js";
 import { modeOf, gunModes } from "./gunfire.js";
 import { unitMods } from "./gunmods.js";
 import { earGearOf, faceOf, HELMETS, syncVisorSight, helmetOf } from "./helmets.js";
+import { GEAR } from "./data.js"; // isPlugsKey: which ear protection is a strip of earplugs
 import { weather } from "./weather.js";
 import { wear } from "./crafting.js";
 import { registerHearing } from "./launchers.js"; // launcher blasts and rocket launches deafen through hearing.js (registered below, at load)
@@ -177,12 +180,15 @@ export function hearSetup(state, b) {
   try { w = state && b.tileId != null ? weather(state, state.hour, b.tileId) : null; } catch { w = null; }
   b.visorFog = !!(w && (w.temp <= 0 || w.rain > 0));
 }
+// Earplugs: ear protection that works from a pocket or the pack (helmets.js earGearOf), a strip of pairs that wears a
+// pair a fight: the foam ones (data-helmets.js) and the makeshift rag plugs (data.js ragplugs, crafting.js).
+export const isPlugsKey = (key) => !!(key && GEAR[key] && GEAR[key].ears && GEAR[key].slot === "pack" && GEAR[key].dur);
 // After a battle (combat.js wearFielded): a pair of earplugs used, a person's hearing lost for good (when on).
 export function settleEars(u, s, fought) {
   if (!u || !s) return;
-  if (fought && u.ears && u.ears.key === "earplugs") {
+  if (fought && u.ears && isPlugsKey(u.ears.key)) {
     const it = earGearOf(s);
-    if (it && it.key === "earplugs" && it.item && wear(it.item, 1)) {
+    if (it && it.key === u.ears.key && it.item && wear(it.item, 1)) {
       const i = (s.pockets || []).indexOf(it.item);
       if (i >= 0) s.pockets[i] = null;
       else { const pk = s.gear.backpack && s.gear.backpack.contents; const j = pk ? pk.indexOf(it.item) : -1; if (j >= 0) pk[j] = null; }

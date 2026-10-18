@@ -10,7 +10,7 @@ const K = {
   steel: "#7d858c", metal: "#9aa3ab", gun: "#2b2e33", dark: "#1a1c20", amber: "#a8611e", amberL: "#c9822e",
   bp: "#2d64a8", bpL: "#4a82c4", bpD: "#1d4478", binder: "#283447", binderL: "#3a4a62", teal: "#2f8f8a", tealD: "#22665f",
   hunter: "#e0672a", maroon: "#7a2a2e", navy: "#25365a", rust: "#9a5a2e", slate: "#4a5560", pinkD: "#b05a7a",
-  burlap: "#a08a5a", burlapD: "#7a6842", plaid: "#8a3a34", heat: "#e85a3a", therm1: "#3a1f5a", therm2: "#c0408a",
+  burlap: "#a08a5a", burlapD: "#7a6842", burlapL: "#bda87a", plaid: "#8a3a34", heat: "#e85a3a", therm1: "#3a1f5a", therm2: "#c0408a",
 };
 
 // Clear the inside of an oval (a hole, outlined by toCanvas).
@@ -284,6 +284,13 @@ export const GEAR_ART = {
     stamp(p, 1, 0, ["..yy....", ".yyyy...", ".yyyy...", "yyyyy...", "yyyyd...", ".yydd...", "..bb...."], { y: C.yellow, d: C.yellowD, b: C.blue });
     stamp(p, 9, 5, ["..yy..", ".yyyy.", ".yyyy.", "yyyyy.", "yyyyd.", ".yydd.", "..bb.."], { y: C.orange, d: C.orangeD, b: C.blue });
     line(p, 3, 7, 4, 13, C.blue); line(p, 4, 13, 9, 14, C.blue); line(p, 9, 14, 11, 12, C.blue);
+  },
+  ragplugs: (p) => { // a shallow tin, two rag twists dipped in wax lying in it
+    box(p, 0, 6, 15, 14, C.silver, C.white, C.silverD);
+    H(p, 1, 14, 7, C.silverD);
+    stamp(p, 2, 1, ["..bb..", ".bbbb.", "bbbbbb", "bbbwwb", ".bbww.", "..ww.."], { b: K.burlap, w: K.burlapD });
+    stamp(p, 9, 2, ["..bb..", ".bbbb.", "bbbbbb", "bbbwwb", ".bbww.", "..ww.."], { b: K.burlapL, w: K.burlap });
+    R(p, 3, 9, 12, 11, C.paperL); H(p, 3, 12, 12, K.burlap);
   },
   earmuffs: (p) => {
     oval(p, 2, 0, 13, 12, C.black); clearOval(p, 4, 2, 11, 14);
