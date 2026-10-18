@@ -3,7 +3,9 @@
 // (with what each one changes), fit one or take one off; the stats as the battle uses them (sim/gunstats.js gunStats),
 // before → after while the mouse is on a part; the ammo it is loaded with (item.load) and how reliable it is.
 // Opened from the inventory (Modify on a selected gun, ⚙ on the gun in hand, ⚙ on a gun in the armory), the base's
-// Armory tab; never during a battle (the raid's search window is read-only).
+// Armory tab, the item menu (right-click: ui/itemmenu.js). In a battle only from the item menu, on a gun one of your
+// fighters carries (ui.gunb.battle: the unit's id): the parts on that fighter (pockets, rig, pack), MOD_AP an action each
+// part fitted or taken off (sim/itemacts.js battleMod, combat.js "modPart"); no repair and no ammo change (Reload).
 // ui.gunb = { loc, slot, hover, sid, msg }: loc the gun's inventory location ("s:12:weapon", "armory:3:list:5",
 // "cargo:7:list:2"), slot the box picked, hover the part row under the mouse (its location, or "remove"), sid the person
 // whose inventory it was opened from.
@@ -16,7 +18,8 @@ import { GEAR } from "../sim/data.js";
 import { rigPouches } from "../sim/inventory.js"; // magazines in rig pouches (section 16)
 import { typeName, roundName } from "../sim/rounds.js";
 import { gunLoads, loadRefusal } from "../sim/ammo.js"; // calibre compatibility: the loads a gun takes // a magazine's load
-import { WEAPONS } from "../sim/combat.js";
+import { WEAPONS, combatAct } from "../sim/combat.js";
+import { battleParts, MOD_AP } from "../sim/itemacts.js"; // over a battle: the fighter's own parts, an action a part
 import * as GM from "../sim/gunmods.js";
 import * as DGM from "../sim/data-gunmods.js";
 import { gunStats } from "../sim/gunstats.js";
@@ -280,11 +283,22 @@ function whereText(state, loc) {
   return "";
 }
 
+// Over a battle: the fighter of yours who carries the gun at loc (an inventory location on a survivor), or null.
+export function battleUnitFor(state, loc) {
+  const b = state.combat;
+  if (!b || b.over) return null;
+  const L = parseLoc(loc);
+  return L.o === "s" ? b.units.find((u) => u.side === "player" && u.sid === L.id && u.vol == null && !u.dead && !u.left) || null : null;
+}
+const battleOf = (state, g) => (g && g.battle != null && state.combat && !state.combat.over ? state.combat.units.find((u) => u.id === g.battle) || null : null);
+
 export function gunBuilderModal(state, ui) {
   const g = ui.gunb;
   if (!g) return null;
   const gun = itemAt(state, g.loc);
-  if (state.combat || !gun || !isGunKey(gun.key) || parseLoc(g.loc).o === "body") { ui.gunb = null; return null; }
+  const fight = !!(state.combat && !state.combat.over);
+  const bu = battleOf(state, g);
+  if ((state.combat && !bu) || (g.battle != null && !fight) || !gun || !isGunKey(gun.key) || parseLoc(g.loc).o === "body") { ui.gunb = null; return null; }
   ensureCss();
   const slots = slotsOf(gun);
   if (g.slot && !slots.includes(g.slot)) g.slot = null;
@@ -327,7 +341,7 @@ export function gunBuilderModal(state, ui) {
   const rel = reliabilityText(gun, now);
   const relAfter = after ? reliabilityText(gun, after) : "";
   const loads = loadChoices(gun);
-  const loadSel = loads.length ? `<div class="row small" style="margin-top:0.4rem;gap:0.4rem"${tip("The round this gun is loaded with (item.load): its damage, penetration, noise and reliability. In battle Reload can switch it when another kind of this calibre is to hand. 'Best to hand' takes the best kind the team carries.")}><span class="muted">Ammo</span><select data-action="gb-load" data-search="1">${loads.map(([v, l]) => `<option value="${v}"${(gun.load || "") === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></div>` : "";
+  const loadSel = loads.length ? `<div class="row small" style="margin-top:0.4rem;gap:0.4rem"${tip(bu ? "In a fight the round is changed by Reload (the battle panel, or right-click the gun: Reload with)." : "The round this gun is loaded with (item.load): its damage, penetration, noise and reliability. In battle Reload can switch it when another kind of this calibre is to hand. 'Best to hand' takes the best kind the team carries.")}><span class="muted">Ammo</span><select data-action="gb-load" data-search="1"${bu ? " disabled" : ""}>${loads.map(([v, l]) => `<option value="${v}"${(gun.load || "") === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></div>` : "";
   const statsHtml = `<div><div class="spread"><b>Stats</b><span class="small muted">${after ? `now → ${esc(afterWhat)}` : "hover a part to compare"}</span></div>
     <table class="gbstats">${conditionHtml(gun)}${statRows}<tr${tip("How often a shot jams (gas and magazine-fed guns: Unjam clears it) or misfires (revolvers, bolt, lever, pump and double guns: the round is lost). Worse with wear, dirty guns, cheap rounds, bad weather and some parts.")}><td>Reliability</td><td class="n" data-stat="jam" data-v="${r2(now.jam)}">${esc(rel)}</td>${after ? `<td class="n ${after.jam < now.jam ? "up" : after.jam > now.jam ? "down" : ""}">${relAfter !== rel ? `→ ${esc(relAfter)}` : ""}</td>` : ""}</tr></table>
     ${loadSel}</div>`;
@@ -335,23 +349,24 @@ export function gunBuilderModal(state, ui) {
   let listHtml;
   if (g.slot) {
     const cur = gun.mods && gun.mods[g.slot];
-    const cands = partsInReach(state, g.loc, g.slot, g.sid);
+    const cands = bu ? battleParts(state, g.loc, g.slot, partFits) : partsInReach(state, g.loc, g.slot, g.sid);
+    const cost = bu ? ` ${MOD_AP} action (${bu.ap} left).` : "";
     const rowsHtml = cands.map((c) => {
       const d = deltaText(now, statsOf(withPart(gun, g.slot, c.item)));
-      return `<div class="gbrow${g.hover === c.loc ? " hov" : ""}" data-gbhover="${esc(c.loc)}"><span><b>${esc(c.item.name)}</b>${c.item.load ? ` <span class="gbd">${esc(typeName(c.item.load))}</span>` : ""} <span class="gbd">${esc(c.where)}</span><br><span class="gbd">${esc(d || "no change")}</span></span><button class="mini" data-action="gb-fit" data-slot="${g.slot}" data-part="${esc(c.loc)}"${tip(`Fit the ${c.item.name}${cur ? ` (the ${cur.name} comes off and goes where it came from)` : ""}.`)}>Fit</button></div>`;
+      return `<div class="gbrow${g.hover === c.loc ? " hov" : ""}" data-gbhover="${esc(c.loc)}"><span><b>${esc(c.item.name)}</b>${c.item.load ? ` <span class="gbd">${esc(typeName(c.item.load))}</span>` : ""} <span class="gbd">${esc(c.where)}</span><br><span class="gbd">${esc(d || "no change")}</span></span><button class="mini" data-action="gb-fit" data-slot="${g.slot}" data-part="${esc(c.loc)}"${bu && bu.ap < MOD_AP ? " disabled" : ""}${tip(`Fit the ${c.item.name}${cur ? ` (the ${cur.name} comes off and goes where it came from)` : ""}.${cost}`)}>Fit${bu ? ` · ${MOD_AP} AP` : ""}</button></div>`;
     }).join("");
     const kids = cur && modDefOf(cur.key) && modDefOf(cur.key).adds ? modDefOf(cur.key).adds.filter((s) => gun.mods && gun.mods[s]) : [];
-    const removeRow = cur ? `<div class="gbrow${g.hover === "remove" ? " hov" : ""}" data-gbhover="remove"><span><b>Remove the ${esc(cur.name)}</b><br><span class="gbd">${esc(deltaText(now, statsOf(withPart(gun, g.slot, null))) || "no change")}${kids.length ? ` · ${kids.map((s) => gun.mods[s].name).join(", ")} come${kids.length === 1 ? "s" : ""} off first` : ""}</span></span><button class="mini" data-action="gb-strip" data-slot="${g.slot}"${tip("Take it off: into the armory or the team's cargo where there is one, else a pocket or the pack.")}>Remove</button></div>` : "";
+    const removeRow = cur ? `<div class="gbrow${g.hover === "remove" ? " hov" : ""}" data-gbhover="remove"><span><b>Remove the ${esc(cur.name)}</b><br><span class="gbd">${esc(deltaText(now, statsOf(withPart(gun, g.slot, null))) || "no change")}${kids.length ? ` · ${kids.map((s) => gun.mods[s].name).join(", ")} come${kids.length === 1 ? "s" : ""} off first` : ""}</span></span><button class="mini" data-action="gb-strip" data-slot="${g.slot}"${bu && bu.ap < MOD_AP ? " disabled" : ""}${tip(bu ? `Take it off into a pocket or the pack.${cost}` : "Take it off: into the armory or the team's cargo where there is one, else a pocket or the pack.")}>Remove${bu ? ` · ${MOD_AP} AP` : ""}</button></div>` : "";
     listHtml = `<div><div class="spread"><b>${esc(SLOT_NAMES[g.slot] || g.slot)}</b><button class="mini" data-action="gb-slot" data-slot=""${tip("Close the list")}>✕</button></div>
-      ${removeRow}${rowsHtml || `<div class="small muted" style="margin:0.3rem 0">No part within reach fits this socket. Parts must be on someone here (a pocket or the pack) or in ${parseLoc(g.loc).o === "cargo" || (placeOfLoc(state, g.loc) || "").startsWith("party") ? "the team's cargo" : "the armory"}. Gun stores, police stations, the National Guard and soldiers' guns have them; traders sell some.</div>`}</div>`;
+      ${removeRow}${rowsHtml || bu && `<div class="small muted" style="margin:0.3rem 0">Nothing on ${esc(whereText(state, g.loc).replace(/'s .*$/, ""))} fits this socket. In a fight only the parts they carry (a pocket, the rig or the pack) can go on: pick them up in the search window first.</div>` || `<div class="small muted" style="margin:0.3rem 0">No part within reach fits this socket. Parts must be on someone here (a pocket or the pack) or in ${parseLoc(g.loc).o === "cargo" || (placeOfLoc(state, g.loc) || "").startsWith("party") ? "the team's cargo" : "the armory"}. Gun stores, police stations, the National Guard and soldiers' guns have them; traders sell some.</div>`}</div>`;
   } else {
-    listHtml = `<div class="small muted">Click a slot on the gun to see the parts within reach that fit it, with what each one changes. Hover a part to compare the stats. Fitting and taking parts off takes no time.${slots.length ? "" : " This gun takes no parts."}</div>`;
+    listHtml = `<div class="small muted">Click a slot on the gun to see the parts within reach that fit it, with what each one changes. Hover a part to compare the stats. ${bu ? `In the fight each part fitted or taken off takes ${MOD_AP} action (${bu.ap} left), from what the fighter carries.` : "Fitting and taking parts off takes no time."}${slots.length ? "" : " This gun takes no parts."}</div>`;
   }
   const plat = platformOf(gun.key);
   const platName = DGM.PLATFORMS && DGM.PLATFORMS[plat] && DGM.PLATFORMS[plat].name;
   return `<div class="box wide gbbox">
     <div class="spread"><h1>Gun builder: ${esc(gun.name)}</h1><span class="muted">${esc(whereText(state, g.loc))}${platName ? ` · ${esc(platName)}` : ""}${finishText(gun)}</span></div>
-    ${repairRow(state, g)}
+    ${bu ? `<div class="small warn" style="margin-top:0.3rem">In the fight: ${bu.ap} action${bu.ap === 1 ? "" : "s"} left, ${MOD_AP} a part. No repairs until it is over.</div>` : repairRow(state, g)}
     ${g.msg ? `<div class="result small">${esc(g.msg)}</div>` : ""}
     <div class="gbwrap">${img}<svg viewBox="0 0 ${V.W} ${V.H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${lines}</svg>${boxes}</div>
     <div class="gbcols"><div>${listHtml}</div>${statsHtml}</div>
@@ -396,19 +411,21 @@ function repairRow(state, g) {
 export const GB_ACTIONS = {
   // d.loc: the gun; d.slot: open with that slot's list; d.sid: whose inventory.
   "gb-open": (state, ui, d) => {
-    if (state.combat) { ui.invMsg = "Not during a battle: change parts after the fight."; return; }
+    const bu = state.combat ? battleUnitFor(state, d.loc) : null; // in a fight: a gun one of your fighters carries (the item menu)
+    if (state.combat && !bu) { ui.invMsg = state.combat.over ? "Not during a battle: change parts after the fight." : "In a fight only a gun your fighter carries: right-click it, Modify."; return; }
     const gun = itemAt(state, d.loc);
     if (!gun || !isGunKey(gun.key)) return;
     const sid = d.sid != null && d.sid !== "" ? Number(d.sid) : ui.inv && ui.inv.sid != null ? ui.inv.sid : parseLoc(d.loc).o === "s" ? parseLoc(d.loc).id : null;
-    ui.gunb = { loc: d.loc, slot: d.slot || null, hover: null, sid, msg: "" };
+    ui.gunb = { loc: d.loc, slot: d.slot || null, hover: null, sid, msg: "", ...(bu ? { battle: bu.id } : {}) };
   },
   "gb-close": (state, ui) => { ui.gunb = null; },
   "gb-slot": (state, ui, d) => { if (ui.gunb) { ui.gunb.slot = d.slot && ui.gunb.slot !== d.slot ? d.slot : null; ui.gunb.hover = null; } },
   "gb-fit": (state, ui, d) => {
     const g = ui.gunb;
-    if (!g || state.combat) return;
+    if (!g || (state.combat && !battleOf(state, g))) return;
     const gun = itemAt(state, g.loc);
     if (!gun) return;
+    if (battleOf(state, g)) { battleOrder(state, g, d.slot || g.slot, d.part, itemAt(state, d.part)); g.hover = null; return; }
     g.msg = fitPart(state, g.loc, d.slot || g.slot, d.part, g.sid);
     relocate(state, ui, gun);
     g.hover = null;
@@ -423,9 +440,10 @@ export const GB_ACTIONS = {
   },
   "gb-strip": (state, ui, d) => {
     const g = ui.gunb;
-    if (!g || state.combat) return;
+    if (!g || (state.combat && !battleOf(state, g))) return;
     const gun = itemAt(state, g.loc);
     if (!gun) return;
+    if (battleOf(state, g)) { battleOrder(state, g, d.slot || g.slot, null, gun.mods && gun.mods[d.slot || g.slot]); g.hover = null; return; }
     g.msg = stripPart(state, g.loc, d.slot || g.slot, g.sid);
     relocate(state, ui, gun);
     g.hover = null;
@@ -433,11 +451,17 @@ export const GB_ACTIONS = {
   // The part row under the mouse (main.js mouseover on [data-gbhover]); returns true when it changed.
   "gb-hover": (state, ui, d) => { if (!ui.gunb) return false; const v = d && d.v ? d.v : null; if (ui.gunb.hover === v) return false; ui.gunb.hover = v; return true; },
 };
+// A part fitted (part: its location) or taken off (null) over a battle: combat.js "modPart" (an action), the message.
+function battleOrder(state, g, slot, part, item) {
+  const err = combatAct(state, { type: "modPart", unit: g.battle, gun: g.loc, slot, part: part || null });
+  const u = battleOf(state, g);
+  g.msg = err || `${item ? `The ${item.name}` : "The part"} ${part ? "is on" : "is off"}.${u ? ` ${u.ap} action${u.ap === 1 ? "" : "s"} left.` : ""}`;
+}
 export const GB_CHANGE = {
   // The round it is loaded with (item.load: a type key, null for the standard round, "auto").
   "gb-load": (state, ui, el) => {
     const gun = ui.gunb && itemAt(state, ui.gunb.loc);
-    if (!gun) return;
+    if (!gun || state.combat) return;
     const v = String(el.value || "");
     const ok = v === "" || v === "auto" || loadChoices(gun).some(([x]) => x === v);
     if (!ok) { const why = loadRefusal(gun.key, v); if (why) ui.gunb.msg = why; return; } // (a calibre its chamber refuses: .300 BLK in a 5.56 gun)
@@ -456,7 +480,9 @@ export const GUNBUILDER_HELP = `<b>Gun builder:</b> select a gun in the inventor
   slots: a scope mount gives a sight slot, a rail handguard a grip, a light and a bipod (their boxes appear with a dotted
   line once it is on). Hover a part to see the stats change, before → after: aim, aim up close, best range and fall-off,
   damage, magazine, noise (and how far a shot is heard), weight, worth, the loaded round's penetration, and reliability
-  (how often it jams or misfires). The Ammo list picks the round it is loaded with. Not during a battle.`;
+  (how often it jams or misfires). The Ammo list picks the round it is loaded with. In a battle: right-click a gun one of
+  your fighters carries and pick Modify: only the parts on that fighter (a pocket, the rig or the pack), each part fitted or
+  taken off ${MOD_AP} action; the round is changed by Reload.`;
 
 // The gun's finish (sim/data-finish.js), for a gun that comes in more than one: " · finish: tan (FDE)".
 function finishText(gun) {

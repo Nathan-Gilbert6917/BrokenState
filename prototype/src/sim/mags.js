@@ -173,7 +173,7 @@ function spareFor(key, cal, uLoad, x) {
   const load = magLoad(x.item, cal, uLoad, key);
   if (!magTakes(x.item.key, loadCal(cal, load))) return null; // (the gun's load is a calibre this magazine cannot hold)
   const cap = magCapOf(x.item.key) || MAGAZINES[x.item.key].cap;
-  return { key: x.item.key, cap, load, n: cap, where: x.where };
+  return { key: x.item.key, cap, load, n: x.item.unloaded ? 0 : cap, where: x.where }; // itemacts.js: one unloaded (the item menu) stays empty
 }
 // The u.mags entry of the magazine item at an inventory location on the unit's survivor (spots: inventory.js
 // carriedSpots(s)), or null (no such item, not one of this gun's, or no magazines tracked). The k-th magazine of its
