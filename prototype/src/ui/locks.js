@@ -47,13 +47,14 @@ export function lockPanel(state, b, u) {
   }).join("") + casePanel(state, b, u);
 }
 
-// Raid header: whether you hold this site's key.
-export function raidKeyLine(state, b) {
+// Raid header: whether you hold this site's key. { inline: true }: a chip for the raid's top strip (ui/combat.js renderRaidTop).
+export function raidKeyLine(state, b, { inline = false } = {}) {
   lastState = state;
   if (!b.raid) return "";
   const locked = b.raid.containers.filter((c) => c.lock && !c.lock.open).length + (b.raid.doors || []).filter((d) => !d.lock.open).length;
-  if (hasKey(state, b.tileId)) return `<div class="small good" style="margin-top:0.25rem" data-tip="Opens every lock here: 1 action, silent.">🔑 You have the ${esc(keyName(state, b.tileId))}.</div>`;
-  return locked ? `<div class="small muted" style="margin-top:0.25rem" data-tip="Locked containers and doors (padlock markers). Stand next to one: key, lockpicks (the crowbar and lockpicks item, or makeshift picks: lower odds, one snaps half the time, not a safe) or force.">🔒 ${locked} locked here.</div>` : "";
+  const wrap = (cls, tip, text) => (inline ? `<span class="ct-sub ${cls}" data-tip="${tip}">${text}</span>` : `<div class="small ${cls}" style="margin-top:0.25rem" data-tip="${tip}">${text}</div>`);
+  if (hasKey(state, b.tileId)) return wrap("good", "Opens every lock here: 1 action, silent.", `🔑 You have the ${esc(keyName(state, b.tileId))}.`);
+  return locked ? wrap("muted", "Locked containers and doors (padlock markers). Stand next to one: key, lockpicks (the crowbar and lockpicks item, or makeshift picks: lower odds, one snaps half the time, not a safe) or force.", `🔒 ${locked} locked here.`) : "";
 }
 
 // Hover text for a locked container or door ("" when there is none at that cell).

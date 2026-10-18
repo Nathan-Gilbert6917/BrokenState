@@ -1,4 +1,9 @@
 // Tactical combat screen: canvas battle map plus the side panel. Reads state.combat; all rules live in sim/combat.js.
+// A raid on a site (b.raid) has no side panel (the user's request 2026-10-18, raidLayout): what the panel carried is a
+// strip at the top of the map (renderRaidTop: the place, the turn, Heat, the floor shown, the supplies; at the right the
+// Menu, the view's buttons and the Log button), cards over the map (renderRaidCards: the choices before you go in, the
+// building to search, the result, the hover details, a warning) and the log in its own small window (ui/logwindow.js,
+// renderRaidLog). main.js writes them into #cbtop, #cbcards, #cblogbody and #cblogfoot.
 import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import {
@@ -54,7 +59,8 @@ import { keyAction, keyLabel, actionsOfCode, KEY_BY_ID } from "./keymap.js"; // 
 import { isMedic, healRefusal, healAmount, reviveRefusal, reviveOdds, liftRefusal, dropRefusal, dragging, finishRefusal, finishOdds, handsOdds, MEDIC, vehicleOf, pullTargets, pullRefusal, layInStab, selfKit, selfOdds, selfStabRefusal } from "../sim/medics.js"; // medics, dragging the downed, finishing a downed enemy, pulling one out of a vehicle
 import { groundButtons, groundCbAct, groundClick } from "./ground.js"; // bodies searched where they fell, things on the ground (sim/ground.js)
 import { nlButtons, nlAskHtml, nlCbAct, nlMapClick, nlOdds, nlConeMask, nlPreview, nlTags, nlStatus } from "./nonlethal.js"; // tasers, pepper spray, pulled blows, surrender (sim/nonlethal.js)
-import { planHtml, planAction } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (sim/raidplan.js)
+import { planHtml, planAction, planChip } from "./raidplan.js"; // choices before a raid: a scout, the side, the night (sim/raidplan.js); the dialogue over the map at the start
+import { LOGWIN, logAction } from "./logwindow.js"; // the raid's log as a small window over the map (shown, folded, moved, resized)
 import { planOpen, botPlan } from "../sim/raidplan.js";
 import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
 import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's card, the orders, the turn controls (user request 2026-10-12)
@@ -141,6 +147,7 @@ function sync(b) {
   cui.msg = "";
   cui.hover = null;
   cui.anim.clear();
+  if (!again) cui.planAside = false; // the dialogue before a raid is shown at the start (renderRaidCards)
   if (!again) cui.salt = Math.floor(Math.random() * 9973); // varies zombie / enemy looks between battles (the same fight made again keeps them)
   cui.lastStep = performance.now();
   if (!again) cui.autoPlay = !!(b.setup && b.setup.watch); // a new battle starts in your hands (a fight you only watch plays itself: sim/volunteers.js)
@@ -336,7 +343,7 @@ export function combatMouse(state, px, py) {
   const c = cellFromPx(px, py);
   cui.hover = c ? { ...c, px, py } : null;
   const el = typeof document !== "undefined" && document.getElementById("cbprev");
-  if (el) el.innerHTML = previewHtml(b, state);
+  if (el) { el.innerHTML = previewHtml(b, state); el.classList.toggle("empty", !cui.hover); } // a raid's card over the map hides while nothing is hovered (styles.css)
 }
 export function combatLeave() { cui.hover = null; cui.drag = null; isoEdge(null); }
 
@@ -1114,6 +1121,7 @@ function viewKey(state, b, e, k) {
   if (k === "bview.cones") { setCones(!cui.cones); return true; } // vision.js: everyone's view cones
   if (k === "bview.center") { const u = selUnit(b); if (u) isoCenterOn(b, u.x, u.y); return true; }
   if (k === "bview.hud") { toggleHud(); return true; } // ui/battlehud.js: fold or open the squad strip
+  if (k === "bview.log") { if (raidLayout(b)) logAction("toggle"); return raidLayout(b); } // ui/logwindow.js: a raid's log window shown or hidden
   return false;
 }
 // A pan key let go: whatever modifiers are down now, the direction it held stops.
@@ -1267,7 +1275,12 @@ export function combatAction(state, key, d) {
     return;
   }
   // Before going in (sim/raidplan.js): the side, a scout, the night, Go in.
-  if (key === "cb-plan") { cui.msg = planAction(state, d) || ""; return; }
+  if (key === "cb-log") return void logAction(d.v); // ui/logwindow.js: the raid's log window shown, folded or hidden
+  if (key === "cb-plan") {
+    if (d.v === "aside" || d.v === "back") { cui.planAside = d.v === "aside"; return; } // the dialogue over the map put aside, or back (renderRaidCards)
+    cui.msg = planAction(state, d) || "";
+    return;
+  }
   // A site with several buildings (sim/buildingmaps.js): which one to explore, or the street.
   if (key === "cb-act" && d.v === "building") return void act(state, { type: "building", id: d.k });
   if (key !== "cb-act" || !u) return;
@@ -1618,10 +1631,100 @@ export function renderCombatBar(state, { flat = false } = {}) {
 }
 // The panel and the bar together: what the battle screen shows (the tools read the screen's buttons from it), with
 // every order of the selected unit on the bar (greyed ones too, none in a tray).
-export const renderCombatScreen = (state) => renderCombatPanel(state) + renderCombatBar(state, { flat: true });
+export const renderCombatScreen = (state) => (raidLayout(state.combat) ? renderRaidTop(state) + renderRaidCards(state) + renderRaidLog(state) + renderRaidLogFoot(state) : renderCombatPanel(state)) + renderCombatBar(state, { flat: true });
+
+// ---------- a raid without the side panel ----------
+// A raid on a site (sim/scavenge.js startScavenge, sim/combat.js createRaid) is played with the whole screen as the map
+// (styles.css #combat.noside). Every other battle (a field fight, a base's defence, a drill) keeps the side panel.
+export const raidLayout = (b) => !!(b && b.raid && !b.drill);
+const logLines = (b, n) => b.log.slice(-n).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("");
+
+// The strip along the top of the map (#cbtop). In the middle: the place, the turn and the clock, Heat with its bar, the
+// floor shown (▲ ▼) in a building with storeys, what is carried and left to search, the ways out, the keys, the night.
+// At the right: ⚙ Menu, the view's buttons (turn, zoom, center, Roofs, Cones) and 📜 Log.
+export function renderRaidTop(state) {
+  const b = state.combat;
+  if (!raidLayout(b)) return "";
+  sync(b);
+  autoSelect(b);
+  const R = b.raid;
+  const party = state.parties.find((x) => x.id === b.setup.partyId);
+  const sel = selUnit(b);
+  const me = sel && sel.side === "player" && party ? personalLoad(state, sel) : null;
+  const trunk = party ? trunkInfo(state, b) : null;
+  const stage = Math.min(3, Math.floor(R.heat / 25));
+  const left = R.containers.filter((c) => !c.searched && c.kind !== "body" && c.kind !== "ground").length;
+  const found = [...Object.entries(R.found).map(([k, n]) => `${n} ${keyWord(k)}`), ...R.foundGear.map((g) => g.name)];
+  const I = R.interior;
+  const street = !!(I && R.plan && R.plan.street);
+  const exits = I && R.plan ? (street ? R.zones.map((z) => (z.name || z.side).toLowerCase()) : ["the front", ...(R.plan.exits || []).filter((e) => e.zone >= 0).map((e) => e.name.toLowerCase())]) : [];
+  const waiting = I && R.occupants ? R.occupants.waiting.reduce((a, w) => a + w.count, 0) : 0;
+  const phase = b.over ? `<span class="ct-phase ${b.result.outcome === "extracted" ? "player" : "enemy"}">${b.result.outcome === "extracted" ? "Got out" : "Nobody made it out"}</span>` : b.phase === "player" ? `<span class="ct-phase player">Your turn</span>` : `<span class="ct-phase enemy">Enemy turn</span>`;
+  let mid = `<div class="ct-box"><span class="ct-title" data-tip="${esc(I ? `Scavenging the ${I.name.toLowerCase()} at ${b.place}.` : `Scavenging ${b.place}.`)}">${I ? `${esc(I.name)} · ` : ""}${esc(b.place)}</span>
+    <span class="ct-sub" data-tip="Six turns are about an hour on the map clock.">Turn ${b.turn} · ${Math.floor((b.turn - 1) / 6)}h ${((b.turn - 1) % 6) * 10}m in</span> ${phase}
+    <span class="ct-heat" data-tip="Heat rises every turn and faster with gunfire and car alarms. Each new stage (Stirring 25, Swarming 50, Overrun 75) brings a wave of the dead from the map edges.">Heat <b>${HEAT_NAMES[stage]}</b> <span class="muted">${Math.round(R.heat)}</span><span class="heat"><i style="left:${Math.min(100, R.heat)}%"></i></span></span>`;
+  const F = floorsOf(b);
+  if (F) {
+    const f = floorNo(b), name = F[f] && F[f].name ? ` (${F[f].name})` : "";
+    const fb = (v, label, tip, on) => `<button class="mini" data-action="cb-view" data-v="${v}" ${on ? "" : "disabled"} data-tip="${esc(tip)}">${label}</button>`;
+    mid += `<span class="ct-floor" data-tip="${esc(`The floor shown${name}. PageUp / PageDown or ▲ ▼ change it; selecting a unit shows its floor; clicking the marker of someone on another floor jumps there. Below the floor shown the building is its outer walls; above it is cut away, the roof only on the top floor.`)}">${esc(floorLabel(b, f))} ${fb("fup", "▲", f < F.length - 1 ? `Show the floor above (PageUp): ${floorLabel(b, f + 1).toLowerCase()}.` : "This is the top floor.", f < F.length - 1)}${fb("fdown", "▼", f > 0 ? `Show the floor below (PageDown): ${floorLabel(b, f - 1).toLowerCase()}.` : "This is the ground floor.", f > 0)}</span>`;
+  }
+  mid += `</div>`;
+  // The second line: what is carried, the ammo and meds, what is left, the finds, the ways out, the vehicle, the night, the keys.
+  mid += `<div class="ct-box cbsupply" style="gap:0.2rem 0.75rem;margin:0">
+    ${me ? `<span data-tip="${esc(`What ${sel.name.split(" ")[0]} carries: worn and held ${Math.round(me.worn)} kg${me.share ? `, their share of the team's supplies ${Math.round(me.share)} kg` : ""}, finds carried loose ${Math.round(me.haul)} kg. Each survivor carries their own finds; anything that does not fit stays in the container.${trunk ? " Unload at the vehicle (N) to free them up." : ""}`)}">${esc(sel.name.split(" ")[0])} <b class="${me.room < 2 ? "warn" : ""}">${Math.round(me.load)}/${Math.round(me.max)} kg</b></span>` : ""}
+    ${trunk ? `<span data-tip="${esc(`${trunk.name}: what is in it (the team's supplies and cargo) and how much more it takes${trunk.bike ? "" : ", counting everything your people carry, because the car takes all of it home"}.`)}">${trunk.bike ? "Racks" : "Vehicle"} <b>${Math.max(0, Math.round(trunk.space))} kg free</b></span>` : ""}
+    <span data-tip="Rounds carried, every calibre: each gun fires only rounds of its own calibre and loaded type (Reload with another type switches it). Each shot uses 1 (assault rifle bursts use 2). Reload (1 action) fills a gun's magazine from this. Bows and crossbows shoot arrows instead.">Ammo <b>${Math.floor(ammoLeft(b))}</b></span>
+    ${arrowsChip(b)}
+    <span data-tip="Meds carried. One treats a wound or stabilizes someone who is down.">Meds <b>${Math.floor(medsLeft(b))}</b></span>
+    <span data-tip="${esc(`Containers not yet searched. ${found.length ? `Found so far: ${found.join(", ")}.` : "Nothing found yet."}`)}">Left to search <b>${left}</b></span>
+    ${found.length ? `<span class="ct-sub" data-tip="${esc(`Found so far: ${found.join(", ")}. Each survivor carries their own finds.`)}">Found <b>${found.length}</b></span>` : ""}
+    ${I ? `<span class="ct-sub" data-tip="${esc(`Ways out: ${exits.join(", ")}. ${street ? "Both ends of the street and the back gardens are green extraction zones. Each house has its own doors and stairs; locked doors (padlocks) open like any lock, from either side." : "Every way out has a green extraction zone outside it. Locked doors (padlocks) open like any lock, from either side."}`)}">Ways out <b>${exits.length}</b></span>${waiting ? `<span class="warn" data-tip="People inside who have not shown themselves yet.">${waiting} other people inside</span>` : ""}` : ""}
+    ${(R.hasVehicle ?? R.vehicleZone >= 0) ? `<span class="warn" data-tip="Leave from another zone and the vehicle stays here, marked on the map. It can be driven (Drive) and extracts with whoever leaves from the zone it stands at.">${R.vehicleZone >= 0 ? "Vehicle at a zone" : "Vehicle away from the zones"}</span>` : ""}
+    ${b.night ? `<span class="warn" data-tip="${esc(`Night (${nightWord(b)}): everyone on foot sees down a cone the way they face, ${darkSight(b)} tiles ahead in the dark and only the cells right around them; a light is a beam the way its carrier faces, seen from far off. ${keyLabel("battle.light", 1) || "Light on / off"}, ${keyLabel("battle.nvg", 1) || "NVG on / off"}.`)}">Night, ${esc(nightWord(b))}: ${darkSight(b)} tiles</span>` : ""}
+    ${raidKeyLine(state, b, { inline: true })}
+    ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<span class="ct-sub" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. Only ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of what is inside turns up; ${quickHurtPct(state, b, sel)} chance of cutting yourself (less likely with Scavenging or Stealth, more in the dark without a light).`)}">Quick search: loud, ${quickHurtPct(state, b, sel)} cut</span>` : ""}
+    ${planOpen(b) && !b.over && cui.planAside ? planChip(b) : ""}
+  </div>`;
+  // The right: the Menu, the view, the Log.
+  const right = `<div class="ct-box"><button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b, { floor: false })}<button class="mini${LOGWIN.open ? " active" : ""}" data-action="cb-log" data-v="toggle" data-tip="${esc(`Show or hide the log (${keyLabel("bview.log") || "Shift+M"}). It is a small window: drag its title to move it, its corner to resize it, – to fold it to the title.`)}">📜 Log</button></div>`;
+  return `<div class="ct-mid">${mid}</div><div class="ct-right">${right}</div>`;
+}
+
+// The cards over the map (#cbcards), in the middle under the strip: the dialogue before you go in (unless put aside),
+// the building to search, a warning (cui.msg), the floor shown against the selected one's, the hover details, the result.
+export function renderRaidCards(state) {
+  const b = state.combat;
+  if (!raidLayout(b)) return "";
+  sync(b);
+  autoSelect(b);
+  const u = selUnit(b);
+  let html = "";
+  if (b.over) return `<div class="cbcard">${raidResultCard(state, b)}</div>`;
+  if (planOpen(b) && !cui.planAside) html += planHtml(state, b, { card: true });
+  if (b.raid.choose) html += `<div class="cbcard">${chooseHtml(b)}</div>`;
+  if (cui.msg) html += `<div class="cbcard ct-toast small warn">${esc(cui.msg)}</div>`;
+  if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
+    html += `<div class="cbcard small muted">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (Home also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
+  }
+  // The hover details, written straight into the box as the mouse moves (combatMouse): hidden while nothing is hovered.
+  if (!(planOpen(b) && !cui.planAside)) html += `<div id="cbprev" class="cbprev${cui.hover ? "" : " empty"}">${previewHtml(b, state)}</div>`;
+  return html;
+}
+
+// The log window's lines (#cblogbody) and its footer (#cblogfoot: the ask-before-ending toggle that sat under the panel's log).
+export function renderRaidLog(state) {
+  const b = state.combat;
+  return raidLayout(b) ? logLines(b, 80) : "";
+}
+export function renderRaidLogFoot(state) {
+  const b = state.combat;
+  if (!raidLayout(b) || b.over) return "";
+  return `<button class="mini ${cui.confirmEnd ? "active" : ""}" data-action="cb-confirm" data-tip="When on, Space or End turn asks once while units still have actions (Enter always ends at once). Remembered in this browser.">${cui.confirmEnd ? "✔" : "✗"} Ask before ending a turn with actions left</button>`;
+}
 
 // The view bar: turn, zoom, center, roofs; in a building with storeys the floor shown (`Floor 2 of 5 ▲ ▼`).
-export function viewBar(b = cui.battle) {
+export function viewBar(b = cui.battle, { floor = true } = {}) {
   const btn = (v, label, tip, active = false) => `<button class="mini${active ? " active" : ""}" data-action="cb-view" data-v="${v}" data-tip="${esc(tip)}">${label}</button>`;
   let html = `<div class="cbview">`;
   const kl = (id, def) => keyLabel(id) || def; // as bound now (Menu → Controls)
@@ -1631,7 +1734,7 @@ export function viewBar(b = cui.battle) {
   html += btn("center", "◎", `Center on the selected unit (${kl("bview.center", "Home")}). Drag the map, hold W A S D or the arrow keys, or push the mouse to the edge to pan.`);
   html += btn("roofs", iso.roofs ? "Roofs ✔" : "Roofs ✗", `Roofs on the buildings (${kl("bview.roofs", "B")}). A building is shown cut away only with the selected survivor inside it (inside, you see only the rooms your people see; the rest is fogged, what was seen before greyed with what was there then); off shows every one cut away, still fogged.`, iso.roofs);
   html += btn("cones", cui.cones ? "Cones ✔" : "Cones ✗", `View cones (${kl("bview.cones", "Alt+C")}): what each of your people watches and, for the enemies you see, how near an unaware one notices the selected unit in its cone (orange; the dashed ring: what it hears behind it) or where an aware one is looking (red). The selected unit's own cone is always shown.`, cui.cones);
-  const F = b && floorsOf(b);
+  const F = floor && b && floorsOf(b);
   if (F) {
     const f = floorNo(b), name = F[f] && F[f].name ? ` (${F[f].name})` : "";
     html += `<span class="cbfloor" data-tip="${esc(`The floor shown${name}. PageUp / PageDown or ▲ ▼ change it; selecting a unit shows its floor; clicking the marker of someone on another floor jumps there. Below the floor shown the building is its outer walls; above it is cut away, the roof only on the top floor; outside, the ground lies below, dimmed.`)}">${esc(floorLabel(b, f))}</span>`;
@@ -2093,7 +2196,8 @@ function prisonersHtml(state, b) {
     </div>`;
 }
 
-function raidResult(state, b) {
+function raidResult(state, b) { return `${raidResultCard(state, b)}<h3>Log</h3><div class="cblog" id="cblog">${logLines(b, 40)}</div>`; }
+function raidResultCard(state, b) {
   const r = b.result;
   const R = r.raid;
   const names = (ids) => ids.map((id) => esc((state.survivors.find((s) => s.id === id) || { name: "?" }).name)).join(", ");
@@ -2114,8 +2218,7 @@ function raidResult(state, b) {
     ${prisonersHtml(state, b)}
     <button class="primary" style="margin-top:0.7rem;width:100%" data-action="cb-close" data-tip="Return to the State Map. The team then waits for orders.">Continue</button>
     ${restartBtn(state, b, "margin-top:0.4rem;width:100%")}
-  </div>
-  <h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-40).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
+  </div>`;
 }
 
 function resultHtml(state, b) {
@@ -2371,7 +2474,7 @@ export function drawCombat(state, now) {
   drawIsoView(state, b, now, cw, ch); // the battle map is isometric only (ui/isoview.js)
   hudFrame(state, b, cw, ch); // ui/battlehud.js: the big hit chances, your people off screen, the strip and the weapon panel
   barkFrame(ctx, state, b, now, barkView(b, now, cw, ch)); // combat barks over the units' heads (ui/barks.js)
-  drawBanner(b, cw, 40);
+  if (!raidLayout(b)) drawBanner(b, cw, 40); // a raid's top strip carries the turn, Heat and the floor (renderRaidTop)
 }
 // The battle HUD (ui/battlehud.js): the enemy under the mouse and its odds, the hit chances over the enemies (the
 // isometric view's own small labels and hover bubble are left out: these replace them), your people in number-key order.
