@@ -114,7 +114,12 @@ section("Plots and crop plots by stage (user numbers 2026-10-12)");
   }
   check(CROP_PLOTS.camp === 1 && CROP_PLOTS.shelter === 2 && CROP_PLOTS.outpost === 4 && CROP_PLOTS.hub === 8 && CAMP.plots === 1 && SHELTER.plots === 2, "one table: CROP_PLOTS (CAMP.plots, SHELTER.plots the same)");
   asShelter(h); rich(h);
+  // The cabin also needs game land within 2 tiles (hunting.js cabinProblem); seed 42's hub lies in a town's suburb ring
+  // (mapgen.js, POI foundation), so the suburbs around it are made woods again for this check, then put back.
+  const ring = st.grid.within(h.tile, CABIN.radius).map((id) => [st.tiles[id], st.tiles[id].terrain]);
+  for (const [t, k] of ring) if (k === "suburb") t.terrain = "forest";
   check(["bunkhouse", "cellar", "infirmary", "huntcabin"].every((k) => canBuild(st, h, k).ok), "the shelter's building plot takes a bunkhouse, root cellar, infirmary or hunting cabin");
+  for (const [t, k] of ring) t.terrain = k;
   // Makeshift cots (user request 2026-10-12): +2 beds each at a shelter, no plot, up to 2.
   const beds0 = baseBeds(h), u0 = plotsUsed(h, "utility"), b0 = plotsUsed(h, "building");
   check(canBuild(st, h, "cots").ok && !BUILDINGS.cots.plot, "a shelter builds makeshift cots (no plot)");

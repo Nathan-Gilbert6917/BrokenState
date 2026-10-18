@@ -22,7 +22,7 @@ const pct = (c) => `${Math.round(c * 100)}%`;
 // One cause: a button (a click shows it), its icon, the line, and under it where it comes from, how sure and whom it hits.
 const rowHTML = (it) => {
   const meta = [it.source, `${it.sure} ${pct(it.confidence)}`, it.target && it.target.name].filter(Boolean).map(esc).join(" · ");
-  const go = it.go ? ` data-action="tf-go" data-key="${esc(it.key)}"` : " disabled";
+  const go = it.go ? ` data-action="tfc-go" data-key="${esc(it.key)}"` : " disabled";
   return `<button type="button" class="tf-row tf-l${it.level}"${go}${tip(`${levelName(it.level)}. ${it.why}${it.go ? " Click to see it." : ""}`)}><span class="tf-ic" aria-hidden="true">${it.icon || "•"}</span><span class="tf-txt">${esc(it.text)}<small>${meta}</small></span></button>`;
 };
 
@@ -64,7 +64,7 @@ export const initThreatBar = (root, doc = document, win = window) => initNeedsBa
 
 // A cause clicked: the base's window (its tab), the team's panel, the horde or the place on the map, the person.
 export const THREAT_ACTIONS = {
-  "tf-go": (state, ui, d, act) => {
+  "tfc-go": (state, ui, d, act) => {
     const it = threatForecast(state).items.find((x) => x.key === d.key);
     const g = it && it.go;
     if (!g) return;

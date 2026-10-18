@@ -5,7 +5,8 @@
 // - the window has one box and one leader line per slot, nested slots appear and go with their parent (dotted lines);
 // - fitting a part from the armory and taking it off again round-trips it; the stats shown are gunStats';
 // - hover before → after, the Ammo list (item.load), the condition bar, the entry points (Modify, the ⚙ on the gun in
-//   hand and in the armory), never during a battle, the tooltip's compact version.
+//   hand and in the armory), not during a battle (but for a fighter's own gun from the item menu: itemmenutest.js), the
+//   tooltip's compact version.
 // Usage: node tools/gunbuildertest.js
 const silent = () => new Proxy({ measureText: (t) => ({ width: String(t).length * 6 }) }, { get: (o, k) => (k in o ? o[k] : () => {}) });
 globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => silent(), toDataURL: () => "data:image/png;base64,AAAA" }), getElementById: () => null };
@@ -212,7 +213,7 @@ console.log("Fit, remove and the stats");
   check(GB.gunBuilderModal(st, ui) === null && ui.gunb === null, "a battle closes it");
   const ui2 = {};
   GB.GB_ACTIONS["gb-open"](st, ui2, { loc: gunLoc() });
-  check(!ui2.gunb && /Not during a battle/.test(ui2.invMsg || ""), "and it does not open during one");
+  check(!ui2.gunb && /Not during a battle|In a fight only a gun your fighter carries/.test(ui2.invMsg || ""), "and it does not open during one (but on a gun a fighter of yours carries: tools/itemmenutest.js)");
   st.combat = null;
   // A body's gun is out of reach.
   const ui3 = { gunb: { loc: "body:0:weapon", slot: null } };

@@ -71,9 +71,9 @@ export function stateSizeDef(state) {
 export const worldScale = (state) => (state && state.grid ? (state.grid.width * state.grid.height) / (BASE_W * BASE_H) : 1);
 
 // The new-run screen's limits: 0–50 AI groups on any size (each size suggests a range: groups above), and the
-// starting hives (null: what the map makes on its own, else 0–10).
+// starting hives (null: what the map makes on its own, else 0–20).
 export const GROUPS_MAX = 50;
-export const HIVES_MAX = 10;
+export const HIVES_MAX = 20;
 export function clampGroups(key, n) {
   const v = Math.round(Number(n));
   return Number.isFinite(v) && String(n).trim() !== "" ? Math.max(0, Math.min(GROUPS_MAX, v)) : sizeDef(key).defGroups;

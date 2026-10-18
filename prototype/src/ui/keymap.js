@@ -99,6 +99,7 @@ export const KEYMAP = [
   { id: "battle.inventory", label: "The selected survivor's inventory (look only)", group: "Battle", ctx: "battle", keys: ["Shift+KeyB"] },
   { id: "battle.clear", label: "The area is clear enough: end the fight", group: "Battle", ctx: "battle", keys: ["Shift+KeyC"] },
   { id: "bview.hud", label: "Fold or open the squad strip", group: "Battle view", ctx: "battle", keys: ["Backquote"] }, // ui/battlehud.js
+  { id: "bview.log", label: "Show or hide the log window (a raid)", group: "Battle view", ctx: "battle", keys: ["Shift+KeyM"] }, // ui/logwindow.js
   { id: "battle.search", label: "Search the container or body next to the unit", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyS"], v: "search" },
   { id: "battle.ground", label: "Ground: put things down, pick them up", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyX"], v: "ground" },
   { id: "battle.quick", label: "Quick search (raid)", group: "Battle orders", ctx: "battle", keys: ["Shift+KeyQ"], v: "quick" },
@@ -127,7 +128,10 @@ export const KEYMAP = [
     // Shift+N is the map's, free to rebind onto in battle: tools/navtest.js), so they sit on Alt: L for the light, N
     // for night vision.
     ["light", "Light on / off (free)", "Alt+KeyL"], ["nvg", "Night vision on / off (free)", "Alt+KeyN"],
-    ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"]]
+    ["launch", "Launch a grenade or a rocket (pick where; an empty launcher: reload it)", "Shift+KeyL"],
+    // sim/combat.js handoverAct: trade with the teammate next to them in their view cone (1 action a move). H is
+    // Hunker down and Shift+H Heal, so it sits on Alt+H.
+    ["handover", "Hand over: trade with the teammate next to them in their view cone (1 action a move)", "Alt+KeyH"]]
     .map(([v, label, code]) => ({ id: `battle.${v}`, label, group: "Battle orders", ctx: "battle", keys: [code], v })),
 
   // ---------- the timelapse (ui/timelapse.js tlKey) ----------

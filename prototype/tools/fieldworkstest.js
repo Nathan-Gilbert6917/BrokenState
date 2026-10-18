@@ -745,8 +745,13 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
 {
   const S = FW.FIELD.KINDS.snares;
   check(S.craft && S.cost.scrap === 2 && Object.keys(S.cost).length === 1 && S.hours === 1, `cheap: ${FW.costText(S.cost)}, ${S.hours} work-hour (was 4 scrap, 15 firewood, 3 hours)`);
+  // The hub stands in a town and every town has a ring of suburbs round it (mapgen.js): no snare ground next to it on
+  // any seed. Give the camp back its wild ground (the suburb blocks next to it become forest, a shop's too: room for
+  // a third line to meet the cap).
+  const wild = (st, b) => { for (const n of st.grid.neighbors(b.tile)) { const t = st.tiles[n]; if (t.terrain === "suburb") t.terrain = "forest"; } };
   const state = mk();
   const h = hub(state);
+  wild(state, h);
   // A camp: it holds only its own tile and keeps no field works, but snare lines next to it.
   Object.assign(h, { tier: 0, camp: true });
   recomputeOwnership(state);
@@ -788,6 +793,7 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
   {
     const w = mk();
     const wh = hub(w);
+    wild(w, wh);
     Object.assign(wh, { tier: 0, camp: true });
     recomputeOwnership(w);
     wh.stock.scrap = 0; wh.construction.length = 0;
@@ -807,6 +813,7 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
   // The governor: a line at the camp from the start in hardcore; none in a normal game while fed, one when food is short.
   const g = mk();
   const gh = hub(g);
+  wild(g, gh);
   Object.assign(gh, { tier: 0, camp: true });
   recomputeOwnership(g);
   check(FW.govFieldWorks(g, gh, { foodShort: 0 }).length === 0 && !FW.playerWorks(g, gh).length, "normal, fed: no snare line");

@@ -497,6 +497,9 @@ section("The hunting cabin, the Hunt and Fish jobs");
     if (!H.cabinProblem(st, hub(st)) && H.gameLand(st, hub(st)) >= 6) { state = st; base = hub(st); }
   }
   check(!!state, "a seed with game land around the hub");
+  // The hub stands in a town and every town has a ring of suburbs round it (mapgen.js): the game land is 2 tiles out,
+  // none next door. Give it back its wild ground (the bare suburb blocks next to it become forest) for the no-cabin rule.
+  for (const n of state.grid.neighbors(base.tile)) { const t = state.tiles[n]; if (t.terrain === "suburb" && !t.loc) t.terrain = "forest"; }
   const city = { ...base, id: -1, tile: state.tiles.find((t) => t.terrain === "city").id, type: "outpost", buildings: [], construction: [], stock: { scrap: 50 }, armory: [] };
   check(!canBuild(state, city, "huntcabin").ok && /game land/.test(canBuild(state, city, "huntcabin").reason), "no hunting cabin in a city");
   check(canBuild(state, base, "huntcabin").ok, "a hunting cabin where the land has game");

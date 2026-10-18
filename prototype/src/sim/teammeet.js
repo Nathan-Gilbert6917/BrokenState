@@ -30,6 +30,8 @@ import { wornLoad, maxLoad } from "./load.js";
 import { FOODS, moveFood, takeFood, foodIn } from "./foods.js";
 import { settleHold } from "./carry.js";
 import { resolveTeamItems, findOnTeam } from "./teaminv.js";
+import { parseTarget, suppliesOnto, PLACE_WORDS, itemKeyOf } from "./supitems.js"; // supplies onto a named member of the other team (2026-10-17, any supply 2026-10-18)
+import { isRoundKey } from "./rounds.js";
 import { prisonersWith, teamPace } from "./prisoners.js";
 import { reseat } from "./walkers.js";
 
@@ -139,9 +141,12 @@ function supplyAcross(from, to, k, want) {
 }
 // picks: { items: [location strings ("s:<id>:…", "cargo:<pid>:list:<i>") or Item objects], supplies: { key: amount } }.
 // target: "cargo" (the other team's cargo) or one of its members' survivor id (their own slot if free, a rig pouch, a
-// pocket, the pack). Supplies go as they were (found cargo, packed supplies), as many as the other team can carry.
+// pocket, the pack). Supplies go as they were (found cargo, packed supplies), as many as the other team can carry;
+// with a person target { sid, where: "pocket" | "pack" | "rig", loose? } (supitems.js parseTarget) a supply picked that
+// has an item form (rounds, water, meds, a food...) goes onto that member as items in that place instead (supitems.js
+// suppliesOnto; rounds boxed or loose), the found cargo's first.
 // Returns { moved: [text], refused: [text], text }.
-/** @param {State} state @param {Party} from @param {Party} to @param {{ items?: (string | Item)[], supplies?: Record<string, number> }} picks @param {"cargo" | number | string} [target] */
+/** @param {State} state @param {Party} from @param {Party} to @param {{ items?: (string | Item)[], supplies?: Record<string, number> }} picks @param {"cargo" | number | string | { sid: number, where?: string | null, loose?: boolean }} [target] */
 export function giveGoods(state, from, to, picks = {}, target = "cargo") {
   const why = meetProblem(state, from, to);
   if (why) return { moved: [], refused: [why], text: why };
@@ -149,8 +154,9 @@ export function giveGoods(state, from, to, picks = {}, target = "cargo") {
   to.cargo = to.cargo || { supplies: {}, gear: [] };
   from.supplies = from.supplies || {};
   to.supplies = to.supplies || {};
-  const toCargo = target === "cargo" || target == null;
-  const s = toCargo ? null : survivorById(state, Number(target));
+  const T = parseTarget(target);
+  const toCargo = !T;
+  const s = toCargo ? null : survivorById(state, T.sid);
   if (!toCargo && (!s || !s.alive || !(to.members || []).includes(s.id))) return result([], ["That person is not on the other team."], "");
   const moved = [], refused = [];
   for (const it of resolveTeamItems(state, from, picks.items || [])) {
@@ -193,6 +199,12 @@ export function giveGoods(state, from, to, picks = {}, target = "cargo") {
     const fit = w > 0 ? Math.min(want, Math.floor((room + EPS) / w)) : want;
     if (fit < want - EPS) refused.push(fit > 0 ? `Only ${qtyText(fit)} of the ${qtyText(want)} ${supName(k)} fit (${r1(room)} kg free).` : `No room for ${supName(k)} (${r1(room)} kg free).`);
     if (!(fit > EPS)) continue;
+    if (s && T && T.where && itemKeyOf(k)) { // onto the member of the other team, in that place (supitems.js suppliesOnto): the found cargo's first
+      const r = suppliesOnto(state, [from.cargo, from], k, Math.floor(fit), s, { where: T.where, loose: T.loose });
+      if (r.moved > 0) moved.push(`${r.moved} ${supName(k)} (${firstName(s)}'s ${PLACE_WORDS[T.where]}${T.loose && isRoundKey(k) ? ", loose" : ""})`);
+      if (r.why) refused.push(r.why);
+      continue;
+    }
     const got = supplyAcross(from, to, k, fit);
     if (got > 0) moved.push(`${qtyText(got)} ${supName(k)}`);
   }

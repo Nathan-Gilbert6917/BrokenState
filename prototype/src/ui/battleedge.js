@@ -11,6 +11,7 @@
 // Display → Battle map edge (ui/displayopts.js battleEdge): full (5 tiles, the scattered things, the vignette); light
 // (3 tiles of plain ground, no vignette); off (the fog colour behind the map, nothing else).
 import { weatherAt } from "../sim/weather.js";
+import { onForgetPictures } from "./pictures.js";
 
 export const EDGE_LEVELS = { full: 2, low: 1, off: 0 };
 export const EDGE = { level: 2 };
@@ -182,3 +183,4 @@ export function drawVignette(ctx, cw, ch, fog) {
   ctx.fillStyle = vig.g;
   ctx.fillRect(0, 0, cw, ch);
 }
+onForgetPictures(() => { skirtCache = null; vig = null; }); // ui/pictures.js: drawn again after a lost GPU context

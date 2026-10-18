@@ -7,6 +7,7 @@ import { setPalette } from "./palette.js";
 import { setReadable, setMapAnim, redrawMap, view } from "./render.js";
 import { MINIMAP_SIZES, BATTLE_LOOK_LEVELS, NIGHT_SHADES, LIGHTNING_LEVELS } from "./displayopts.js";
 import { setMarksLevel } from "./battlemarks.js"; // Battle ground marks
+import { setPoiReveal } from "../sim/pois.js"; // the dev tools hidden: the points of interest back under the fog
 import { setEdgeLevel } from "./battleedge.js"; // Battle map edge
 import { setNightShade, NIGHT_LEVELS } from "./nightfx.js"; // the State Map's night shade (Display → Night darkness)
 import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
@@ -77,7 +78,7 @@ export function displayRows(o) {
 const toggle = (ui, k) => {
   if (!OPT || !(k in OPT)) return;
   OPT[k] = !OPT[k];
-  if (k === "devTools" && !OPT.devTools && ui) { ui.dev = false; view.devReveal = false; } // hidden again: closed, and the map's fog back
+  if (k === "devTools" && !OPT.devTools && ui) { ui.dev = false; view.devReveal = false; setPoiReveal(false); } // hidden again: closed, and the map's fog back (pois.js too)
   if (SAVE) SAVE();
   applyDisplay();
 };

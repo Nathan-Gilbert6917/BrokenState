@@ -14,13 +14,13 @@ import { tripRoute, TRIP_JOBS, shoreOf } from "../sim/tripland.js";
 import { TRIP_EV } from "../sim/tripevents.js";
 import { groupWalkers } from "../sim/grouptrips.js";
 import { ROLES } from "../sim/economy.js";
-import { workerSpriteCanvas, gridW } from "./mapsprites.js";
+import { mapWorkerCanvas, pieceBox, yawOf } from "./mapfigures.js";
 
 export const LOADS = { wood: "logs", hunt: "game", fish: "fish", forage: "basket", scavenge: "sack", water: "buckets" };
 const RING = { wood: "#d8a860", hunt: "#e07a50", fish: "#5aa8e0", forage: "#9ad06a", scavenge: "#d8c890", water: "#7ac0f0" };
 const MAX_FIGS = 5;        // figures a base at most; more workers are drawn in groups with a ×N tag
 const POP_LIFE = 0.45;     // game hours a deposit's "+18 food" rises over the base
-const SOLO_PX = 1.25;      // map px per sprite pixel (a lone team walker is 1.3: these a touch smaller)
+const SOLO_PX = 1.2;       // world px per grid px of a worker's figure (a lone team walker is 1.25: these a touch smaller)
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const first = (s) => s.name.split(" ")[0];
 
@@ -33,9 +33,10 @@ function routeOf(state, from, to, owner) {
   return r;
 }
 const lerp = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-// A point a fraction u (0..1) of the way along a polyline, and the way it heads (+1 right, −1 left).
+// A point a fraction u (0..1) of the way along a polyline, the way it heads (+1 right, −1 left) and that way as a yaw
+// (mapfigures.js yawOf, the figure's heading).
 function along(pts, u) {
-  if (pts.length < 2) return { p: pts[0], dir: 1 };
+  if (pts.length < 2) return { p: pts[0], dir: 1, yaw: 315 };
   const seg = [];
   let L = 0;
   for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(d); L += d; }
@@ -43,11 +44,11 @@ function along(pts, u) {
   for (let i = 0; i < seg.length; i++) {
     if (want <= seg[i] || i === seg.length - 1) {
       const f = seg[i] > 0 ? Math.min(1, want / seg[i]) : 1;
-      return { p: lerp(pts[i], pts[i + 1], f), dir: pts[i + 1][0] >= pts[i][0] ? 1 : -1 };
+      return { p: lerp(pts[i], pts[i + 1], f), dir: pts[i + 1][0] >= pts[i][0] ? 1 : -1, yaw: yawOf(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) };
     }
     want -= seg[i];
   }
-  return { p: pts[pts.length - 1], dir: 1 };
+  return { p: pts[pts.length - 1], dir: 1, yaw: 315 };
 }
 const jitter = (k, r) => { const a = ((k * 2.399963) % (Math.PI * 2)); return [Math.cos(a) * r, Math.sin(a) * r * 0.6]; };
 
@@ -88,14 +89,14 @@ function placeOf(path, st, reach, job, k, t) {
   if (st.phase === "work") {
     const wander = job === "hunt" || job === "forage" || job === "scavenge";
     const [x, y] = path[path.length - 1];
-    if (!wander) return { x, y, dir: 1, moving: false, work: st.progress };
+    if (!wander) return { x, y, dir: 1, yaw: 45, moving: false, work: st.progress }; // at it, facing the viewer
     const a = st.progress * Math.PI * 3 + k;
     const r = 7;
-    return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r * 0.5, dir: -Math.sin(a) >= 0 ? 1 : -1, moving: true, work: st.progress };
+    return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r * 0.5, dir: -Math.sin(a) >= 0 ? 1 : -1, yaw: yawOf(-Math.sin(a), Math.cos(a) * 0.5), moving: true, work: st.progress };
   }
   const u = st.phase === "out" ? st.f * reach : reach * (1 - st.f);
   const a = along(path, u);
-  return { x: a.p[0], y: a.p[1], dir: st.phase === "out" ? a.dir : -a.dir, moving: true, work: null };
+  return { x: a.p[0], y: a.p[1], dir: st.phase === "out" ? a.dir : -a.dir, yaw: st.phase === "out" ? a.yaw : (a.yaw + 180) % 360, moving: true, work: null };
 }
 
 // The hovered worker's route: out (dashed), the work spot (a ring), back to the drop (dotted). Cheap: a few segments.
@@ -156,7 +157,7 @@ function tag(ctx, x, y, text, s) {
   ctx.fillText(text, x, y + 0.5);
 }
 
-// Draws them all. H: { HEX, toPixel(id) → [x, y], sprite(cv, x, y, w, o), walkFrame(k, moving), stepBob(k, amp),
+// Draws them all. H: { HEX, toPixel(id) → [x, y], piece(cv, gx, gy, u, o) (mapfigures.js drawPiece), cycleFrame(k, moving, ms), stepBob(k, amp),
 // zoom (the sprites' size factor), baseHalf (half a base sprite's width), near(x, y) (on screen or close), t (the clock: hours with the minutes), color (your
 // teams' blue), live (tiles in view now), still (no motion) }. Returns true when someone is on the move (the map
 // should be drawn again as the minutes go by).
@@ -190,11 +191,11 @@ export function drawWorkers(ctx, state, H) {
         if (pl.moving) moving = true;
         const c = tr.carry || {};
         const load = lead.st.phase === "back" && lead.st.load ? (job === "hunt" && !c.deer && !c.hog ? "small" : LOADS[job]) : "";
-        const cv = workerSpriteCanvas(job, H.color, H.walkFrame(k * 7 + 3, pl.moving, load === "logs" || load === "game" ? 520 : 380), load);
-        const w = gridW(cv) * SOLO_PX * s, h = cv ? w * (cv.height / cv.width) : w * 1.1;
-        const bob = pl.moving ? H.stepBob(k * 7 + 3, 0.9 * s) : 0;
-        ctx.beginPath(); ctx.ellipse(pl.x, pl.y + h * 0.42, 5 * s, 2 * s, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill();
-        H.sprite(cv, pl.x, pl.y + bob, w, { facing: pl.dir });
+        const cv = mapWorkerCanvas(job, H.color, pl.yaw, H.cycleFrame(k * 7 + 3, pl.moving, load === "logs" || load === "game" ? 520 : 380), load);
+        const u = SOLO_PX * s, gy = pl.y + 6 * s, [, , w, h] = pieceBox(cv, pl.x, gy, u);
+        const bob = pl.moving ? H.stepBob(k * 7 + 3, 0.7 * s) : 0;
+        ctx.beginPath(); ctx.ellipse(pl.x, gy + 1 * s, 5 * s, 2 * s, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill();
+        H.piece(cv, pl.x, gy + bob, u);
         if (pl.work != null) workRing(ctx, pl.x, pl.y - h * 0.5 - 5 * s, pl.work, RING[job] || "#fff", s);
         if (fig.members.length > 1) tag(ctx, pl.x + w * 0.5, pl.y - h * 0.1, `×${fig.members.length}`, s);
         // Trouble on the way (sim/tripevents.js): "!" while a card holds them, and for a little while after.
@@ -244,9 +245,9 @@ export function drawWorkers(ctx, state, H) {
         const pl = placeOf(path, st, 1, w.job, k, H.t);
         if (pl.moving) moving = true;
         const load = st.phase === "back" ? LOADS[w.job] : "";
-        const cv = workerSpriteCanvas(w.job, f.color, H.walkFrame(k, pl.moving), load);
-        const wd = gridW(cv) * SOLO_PX * s, h = cv ? wd * (cv.height / cv.width) : wd * 1.1;
-        H.sprite(cv, pl.x, pl.y + (pl.moving ? H.stepBob(k, 0.9 * s) : 0), wd, { facing: pl.dir, alpha: 0.92 });
+        const cv = mapWorkerCanvas(w.job, f.color, pl.yaw, H.cycleFrame(k, pl.moving), load);
+        const u = SOLO_PX * s, gy = pl.y + 6 * s, wd = pieceBox(cv, pl.x, gy, u)[2];
+        H.piece(cv, pl.x, gy + (pl.moving ? H.stepBob(k, 0.7 * s) : 0), u, { alpha: 0.92 });
         const what = TRIP_JOBS[w.job] ? TRIP_JOBS[w.job].ing.toLowerCase() : "working";
         hits.push({ x: pl.x, y: pl.y, r: Math.max(6, wd * 0.6), html: `<span style="color:${esc(f.color)}">${esc(f.known ? f.name : "A group")}</span><br>One of their people ${st.phase === "back" ? "heading home" : st.phase === "out" ? "heading out" : what} by their base`, faction: f.id });
       }

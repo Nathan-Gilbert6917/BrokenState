@@ -14,6 +14,7 @@
 // - Determinism: the same battle played with and without the sounds ends the same.
 // Usage: node tools/vehdoortest.js
 import * as C from "../src/sim/combat.js";
+import { BMAP, DOOR_KINDS } from "../src/sim/buildingmaps.js"; // the door hit points doorKind reads (vault, cell); the kinds of door (c.dk)
 import { battles } from "./isobattles.js";
 
 let passed = 0, failed = 0;
@@ -227,10 +228,11 @@ console.log("Battle: doors");
   const idx = (x, y) => y * b.w + x;
   const inner = b.cells.findIndex((c, i) => c.k === "idoor" && !DS.exteriorDoor(b, i % b.w, (i / b.w) | 0));
   const fr = b.raid.plan.front;
-  check(DS.doorKind(b, idx(fr.x, fr.y)) === (/(police|offices|hospital)/.test(b.raid.interior && b.raid.interior.key) ? "metal" : "front") || ["metal", "front"].includes(DS.doorKind(b, idx(fr.x, fr.y))), `the front door is an outer door (${DS.doorKind(b, idx(fr.x, fr.y))}, ${b.raid.interior && b.raid.interior.key})`);
+  check(["metal", "front", "glass", "screen"].includes(DS.doorKind(b, idx(fr.x, fr.y))) && DS.doorKind(b, idx(fr.x, fr.y)) === DOOR_KINDS[b.cells[idx(fr.x, fr.y)].dk].sfx, `the front door is an outer door of its kind (${DS.doorKind(b, idx(fr.x, fr.y))}: ${b.cells[idx(fr.x, fr.y)].dk}, ${b.raid.interior && b.raid.interior.key})`); // sim/buildingmaps.js DOOR_KINDS: a house's front door, a shop's glass door, a steel fire door
   check(inner < 0 || DS.doorKind(b, inner) === "wood", "an inner door is wooden");
   const kindWith = (patch) => { const i = inner >= 0 ? inner : 0, keep = { ...b.cells[i] }; Object.assign(b.cells[i], patch); const k = DS.doorKind(b, i); b.cells[i] = keep; return k; };
-  check(kindWith({ roll: true }) === "roller" && kindWith({ mhp: 90 }) === "vault" && kindWith({ mhp: 60 }) === "cell" && kindWith({ k: "bdoor" }) === "barred" && kindWith({ k: "gate" }) === "gate", "roller, steel security, cell, barred and gate doors by the cell");
+  check(kindWith({ roll: true }) === "roller" && kindWith({ mhp: BMAP.DOOR.vault, dk: undefined }) === "vault" && kindWith({ mhp: BMAP.DOOR.cell, dk: undefined }) === "cell" && kindWith({ k: "bdoor" }) === "barred" && kindWith({ k: "gate" }) === "gate", "roller, steel security, cell, barred and gate doors by the cell (no kind on it: the hit points' guess, as before)");
+  check(kindWith({ dk: "glass" }) === "glass" && kindWith({ dk: "screen" }) === "screen" && kindWith({ dk: "security" }) === "metal" && kindWith({ dk: "steel" }) === "metal" && kindWith({ dk: "front" }) === "front" && kindWith({ dk: "vault" }) === "vault", "a door's own kind first (sim/buildingmaps.js DOOR_KINDS c.dk): glass, screen, a security door's steel");
   if (inner >= 0) {
     const x = inner % b.w, y = (inner / b.w) | 0;
     // opened by a move through it (sim/combat.js openDoor), once

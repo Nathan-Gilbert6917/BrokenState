@@ -41,6 +41,7 @@ import { broodGrowth, hiveCap, hordePaceOpen, noteHorde, rampDay, hiveStarve } f
 import { worldScale } from "./worldsize.js";
 import { findPath } from "./hex.js";
 import { isPublicSite, knownLoc } from "./discovery.js";
+import { clearPois } from "./pois.js"; // a hive tile holds no points of interest: gone when it rises, still gone when it falls
 import {
   growthIncome, growthStep, growthsDaily, guardMin, extraOut, attackRange, canRaiseBoss, hiveMix, borderMix, markThreat, witherGrowths, assaultTypes, hiveMods,
   savingFor, growthsOf, growthCounts,
@@ -122,6 +123,7 @@ export const hiveStats = (state) => (ensureHives(state), state.hiveInfo.stats);
 
 export function newHive(state, tile, res) {
   state.tiles[tile].hive = true;
+  clearPois(state.tiles[tile]); // pois.js: the hive replaces the tile's points of interest
   return { id: (state.hiveSeq = (state.hiveSeq || 0) + 1), tile, res, born: state.hour, income: 0, bossReady: false, bossHorde: null, name: hiveName(state, tile) };
 }
 
@@ -453,6 +455,13 @@ function radiate(state) {
 }
 
 // ---------- territory, danger and toughness ----------
+// The hives still on the tiles a cache was made for, in the same order (compared one by one, not as a joined string:
+// hiveDistance asks it for every tile looked at).
+function sameTiles(tiles, hives) {
+  if (tiles.length !== hives.length) return false;
+  for (let i = 0; i < tiles.length; i++) if (tiles[i] !== hives[i].tile) return false;
+  return true;
+}
 // Distance to the nearest hive (Infinity with none). hives: a list of tile ids (what the player knows, for the map)
 // or nothing (the real hives).
 export function hiveDistance(state, tileId, hiveTiles = null) {
@@ -460,10 +469,9 @@ export function hiveDistance(state, tileId, hiveTiles = null) {
     // The real hives: cached per tile until the set of hives changes (zombieToughness asks for every tile the
     // governor and the woodcutters look at, every hour: 5% of a huge map's hour without the cache).
     ensureHives(state);
-    const key = state.hives.map((h) => h.tile).join(",");
     let c = state.hiveDistCache;
-    if (!c || c.key !== key) {
-      c = { key, dist: new Float32Array(state.tiles.length).fill(-1) };
+    if (!c || !sameTiles(c.tiles, state.hives)) {
+      c = { tiles: state.hives.map((h) => h.tile), dist: new Float32Array(state.tiles.length).fill(-1) };
       Object.defineProperty(state, "hiveDistCache", { value: c, writable: true, configurable: true, enumerable: false }); // not saved
     }
     if (c.dist[tileId] < 0) {
@@ -513,6 +521,7 @@ export function destroyHive(state, hive, how = "", opts = {}) {
   if (i < 0) return false;
   state.hives.splice(i, 1);
   state.tiles[hive.tile].hive = false;
+  clearPois(state.tiles[hive.tile]); // pois.js: whatever stood there is destroyed with it; the tile stays empty
   for (const id of state.grid.within(hive.tile, 7)) {
     const t = state.tiles[id];
     // A ruin full of its own dead (t.ruin.dead: hardcore-groups.js, the fallen military's base) keeps them: the hive

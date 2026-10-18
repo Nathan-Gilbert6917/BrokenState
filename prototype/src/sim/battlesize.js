@@ -42,6 +42,8 @@ export const SIZES = {
     gas: 0.5, diner: 0.5, grocery: 0.5, pharmacy: 0.5, clinic: 0.5, cabin: 0.5, barn: 0.5, gunstore: 0.5, hardware: 0.5,
     autoshop: 0.5, feedstore: 0.5, ranger: 0.5, radiotower: 0.5, airdrop: 0.5,
     farm: M, ranch: M, lodge: M, campground: M, crashsite: M, crash_mil: M, crash_cargo: M, crash_med: M, crash_news: M, convoy: M, // convoy: miltrucks.js
+    // Points of interest (pois.js): small places, the neighbourhood a street of houses.
+    house: 0.5, garage: 0.5, corner: 0.5, pizza: 0.5, farmstand: 0.5, shed: 0.5, blind: 0.5, campsite: 0.5, hikercamp: 0.5, mineshack: 0.5, neighbourhood: M,
   },
   TERRAIN: { city: L, suburb: M, plains: M, forest: M, hills: M, mountain: M, water: M },
   // Fights in the open: BASE, plus PER a combatant over FROM (each of the dead counts ZOMBIE: they bunch up), at most

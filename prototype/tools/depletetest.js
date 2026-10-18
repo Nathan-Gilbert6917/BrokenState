@@ -11,10 +11,16 @@
 // - Loot left at day 120 / 240 / 365 on five seeds and the group collapse rate, with and without scavenging groups
 //   (each year in a process of its own; the world goes on after the holdout falls, the groups do not stop).
 // - Determinism and a save / load round trip with parties out.
+// - Points of interest (pois.js, grouppois.js): a party now goes for one POI (a tile's site is its POI 0), so the sites'
+//   tile.loot measured here falls slower than before the POIs (the parties share their trips with the houses, sheds
+//   and shops round them: day 365 about 47% left on seeds 1, 2 against 27% / 35% before); the groups' POI raids take
+//   only through poicont.js lootPoiAbstract and only pois.js and hardcore-loot.js write a POI's pool. tools/poiaitest.js
+//   and tools/poipacingtest.js test the POIs themselves.
 // Usage: node tools/depletetest.js [seed] [days] [curve seeds, default 1,2,...,12]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync, readdirSync } from "node:fs";
 import { execFile } from "node:child_process";
+import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createWorld, tickHour, hub, day, atBase, snapshot, mergeKnowledge, updateVision } from "../src/sim/world.js";
@@ -266,10 +272,24 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   // fades. citycrawl.js: a crawl's searches lower the city tile's loot (Math.max(floor, loot - ...)), like a raid.
   // miltrucks.js: the abandoned Army convoy is an event site like a crash: it appears with its loot, a group that
   // reaches it strips it (× CONVOY.stripKeep) and when it burns out the tile is back to its old loot (c.prevLoot).
-  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js", "miltrucks.js"];
+  // pois.js: a site's point of interest keeps using tile.loot as its pool (poiTake lowers it like a search does).
+  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js", "miltrucks.js", "pois.js"];
   check([...setters].every((n) => allowed.includes(n)), `only ${allowed.join(", ")} set tile.loot outright (found: ${[...setters].join(", ")})`);
   check(takers.has("aiscav.js"), `the groups' scavenging only takes from it (-= in ${[...takers].join(", ")})`);
   check(adds === 0, "nothing adds to it or scales it (+=, *=, /=)");
+  // poicont.js (the POI container ledger) lowers a pool only through pois.js poiTake: it never sets one.
+  {
+    const src = readFileSync(join(dir, "poicont.js"), "utf8");
+    check(!/\.(loot|pool)\s*[-+*\/]?=(?!=)/.test(src) && /poiTake\(/.test(src), "the container ledger (poicont.js) lowers pools only through poiTake");
+  }
+  // grouppois.js (the other groups' raids on POIs, Session 4b) takes only through poicont.js lootPoiAbstract; a POI's own
+  // pool is written only by pois.js (poiTake) and hardcore-loot.js (the hardcore start's surplus, which only fades).
+  {
+    const src = readFileSync(join(dir, "grouppois.js"), "utf8");
+    check(!/\.(loot|pool)\s*[-+*\/]?=(?!=)/.test(src) && /lootPoiAbstract\(/.test(src), "the groups' POI raids (grouppois.js) take only through lootPoiAbstract");
+    const poolSetters = readdirSync(dir).filter((n) => n.endsWith(".js") && /\bp(oi)?\.pool\s*[-+*\/]?=(?!=)/.test(readFileSync(join(dir, n), "utf8")));
+    check(poolSetters.every((n) => ["pois.js", "hardcore-loot.js"].includes(n)), `only pois.js and hardcore-loot.js write a POI's pool (found: ${poolSetters.join(", ")})`);
+  }
   // A whole run, hour by hour.
   const st = world(7);
   setAutopilot(st, true, "balanced");
@@ -348,7 +368,8 @@ section("What you know: stale until seen, radio news, no fog leak");
   check(lootBand(t, t.loot) >= 2 && st.knowledge[id].loot > t.loot && st.knowledge[id].hour === seenHour, `stripped (${LOOT_BANDS[lootBand(t, t.loot)]}), but you still know it as ${LOOT_BANDS[lootBand(t, st.knowledge[id].loot)].toLowerCase()}`);
   const panel = strip(renderRight(st, { ...ui0(), selected: id }));
   check(/last seen \d+[dh] ago: rich/.test(panel) && /May be stripped since/.test(panel), `tile panel: "${(panel.match(/Loot [^·]*?: \w+/) || [""])[0]}" and the warning`);
-  check(!/picked clean|little/i.test(panel.replace(/May be stripped since[^.]*/, "")), "the panel does not leak the real loot");
+  // (The Cut wood line says "little" of a suburb's wood: the town ring, mapgen.js; not the loot.)
+  check(!/picked clean|little/i.test(panel.replace(/May be stripped since[^.]*/, "").replace(/\bWood (plenty|some|little|scraps|none)\b/, "Wood")), "the panel does not leak the real loot");
   const tip = strip(tileTooltip(st, id));
   check(/Loot: rich \(then\)/.test(tip), `tooltip: "${(tip.match(/Loot: [^)]*\)/) || [""])[0]}"`);
   check(tileActions(st, id).some(([m]) => m === "scavenge"), "the actions still offer a search (you think it is rich)");
@@ -487,7 +508,12 @@ section(`Loot left and group collapse over a year (seeds ${curveSeeds.join(", ")
 {
   const me = fileURLToPath(import.meta.url);
   const one = (s, mode) => new Promise((res, rej) => execFile(process.execPath, [me, "--curve", String(s), mode, String(days)], { maxBuffer: 1 << 26 }, (e, out) => (e ? rej(e) : res(JSON.parse(out)))));
-  const runs = await Promise.all(curveSeeds.flatMap((s) => [one(s, "on"), one(s, "off")]));
+  // At most one year a core at a time (as diplotest's collapse years): 24 years at once on a 4-core machine thrash
+  // it (each child holds a whole world) and finish no sooner.
+  const jobs = curveSeeds.flatMap((s) => [[s, "on"], [s, "off"]]), runs = new Array(jobs.length);
+  let next = 0;
+  const lane = async () => { while (next < jobs.length) { const i = next++; runs[i] = await one(...jobs[i]); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, availableParallelism())) }, lane));
   const on = runs.filter((_, i) => i % 2 === 0), off = runs.filter((_, i) => i % 2 === 1);
   const avg = (list, d) => list.reduce((a, r) => a + r.left[d], 0) / list.length;
   curveSeeds.forEach((s, i) => {

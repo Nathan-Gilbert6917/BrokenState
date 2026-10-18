@@ -596,15 +596,19 @@ export function hash01(...parts) {
 }
 
 // A book found at a site (or null). mult: Treasure Hunter ×2, loot left, the search pace. salt: makes each roll unique.
-export function rollBook(state, tileId, mult = 1, salt = "") {
+// opts (a point of interest's container, poicont.js): { hour: the dice key instead of the hour, loot: instead of the
+// tile's, kind: the place's kind instead of the site's }, so the same container holds the same book on any visit.
+export function rollBook(state, tileId, mult = 1, salt = "", opts = {}) {
   const t = state.tiles[tileId];
-  const site = t && t.loc ? BOOK_SITES[t.loc.type] : null;
+  const type = opts.kind || (t && t.loc ? t.loc.type : null);
+  const site = type ? BOOK_SITES[type] : null;
   if (!site) return null;
-  const loot = Math.max(0.1, Math.min(1, t.loot ?? 1));
-  if (hash01(state.seed, "book", tileId, state.hour, salt) >= site.p * loot * mult) return null;
+  const loot = Math.max(0.1, Math.min(1, opts.loot ?? t.loot ?? 1));
+  const hour = opts.hour ?? state.hour;
+  if (hash01(state.seed, "book", tileId, hour, salt) >= site.p * loot * mult) return null;
   const list = site.books.filter((k) => GEAR[k]);
   if (!list.length) return null;
-  const key = list[Math.floor(hash01(state.seed, "pick", tileId, state.hour, salt) * list.length) % list.length];
+  const key = list[Math.floor(hash01(state.seed, "pick", tileId, hour, salt) * list.length) % list.length];
   return newItem(key, 1);
 }
 

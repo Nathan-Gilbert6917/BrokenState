@@ -1,14 +1,17 @@
 // Doors and gates: a building's doors in battle by kind (a wooden inner door, a heavy front door, a steel fire door, a
-// cell door, a roller door rattling up, a barred door, a base's gate, a steel security door or a gun safe's), opened,
-// closed, tried while locked, picked, forced (a kick, a crowbar, glass), battered or broken; a soft sound at the
-// threshold of a door already open; a door eased ajar for a peek, a shoulder bracing one. On the State Map the
+// cell door, a roller door rattling up, a barred door, a base's gate, a steel security door or a gun safe's, a shop's
+// glass door, a house's screen door), opened, closed, tried while locked, picked, forced (a kick, a crowbar, glass),
+// battered or broken; a soft sound at the threshold of a door already open; a door eased ajar for a peek, a shoulder
+// bracing one. The map's windows (sim/windows.js): a sash slid open or shut, a pane smashed. On the State Map the
 // base's gate (ui/sfx-vehicles.js mapCues plays it) and a building's door on a city crawl.
 // Pure functions until a voice plays: node tools import it. UI only: nothing here touches the sim's dice.
 //
 //   DOOR_SOUNDS            the voices of this file (the mixer's People → Doors and gates: ui/soundgroups.js)
-//   doorKind(b, i)         wood | front | metal | cell | roller | barred | gate | vault (the cell at index i)
+//   doorKind(b, i)         wood | front | metal | cell | roller | barred | gate | vault | glass | screen (the cell at
+//                          index i: its own kind first, c.dk from sim/buildingmaps.js DOOR_KINDS, else by its place)
 //   doorCues(state, mem, fresh)  the battle's: doors opened and closed (by anyone: the sim's cells change), thresholds,
-//                          peeks, braces, a gate battered, doors broken. fresh: the frame's new fx (sfx-gear.js gearCues)
+//                          peeks, braces, a gate battered, doors broken, windows slid open or shut and smashed.
+//                          fresh: the frame's new fx (sfx-gear.js gearCues)
 //   doorLoot(b, f, rec)    a lock's fx ("loot": locked / unlocked, sim/locks.js how) at a door or a gun safe: the
 //                          rattle, the picks, the kick or the crowbar, the swing (null: not a door, sfx-gear.js lootSound)
 //   doorVoices(K)          the voices, on audio.js's building blocks K
@@ -17,9 +20,11 @@ import { playerSees } from "../sim/combat.js";
 import { panOfX } from "./sfx-out.js";
 import { assignGroup } from "./soundgroups.js"; // the mixer: People → Doors and gates
 
-export const DOOR_SOUNDS = ["door", "doorClose", "doorRattle", "lockPick", "doorForce", "doorBreak", "threshold", "doorPeek", "doorBrace", "gateBatter", "gateOpen"];
+export const DOOR_SOUNDS = ["door", "doorClose", "doorRattle", "lockPick", "doorForce", "doorBreak", "threshold", "doorPeek", "doorBrace", "gateBatter", "gateOpen", "sash", "glassBreak"];
 export const DOOR_GROUP = assignGroup(DOOR_SOUNDS, "people.doors");
-export const DOOR_KINDS = ["wood", "front", "metal", "cell", "roller", "barred", "gate", "vault"];
+export const DOOR_KINDS = ["wood", "front", "metal", "cell", "roller", "barred", "gate", "vault", "glass", "screen"];
+// The sim's kinds of door (sim/buildingmaps.js DOOR_KINDS, c.dk) → the voice that plays them.
+const SFX_OF_KIND = { screen: "screen", wood: "wood", front: "front", glass: "glass", steel: "metal", security: "metal", roller: "roller", cell: "cell", barred: "barred", gate: "gate", vault: "vault" };
 
 // ---------- what a door is ----------
 const DOORISH = new Set(["idoor", "odoor", "door", "bdoor", "doorway", "gate", "open"]);
@@ -28,10 +33,12 @@ const STEEL = new Set(["warehouse", "factory", "hangar", "motorpool", "autoshop"
   "lab", "barracks", "armorybldg", "cellblock", "control", "radio", "terminal", "firestation", "offices", "school", "supermarket", "deptstore", "messhall", "truckstop", "gasstation"]);
 const cellAt = (b, x, y) => (b && b.cells && x >= 0 && y >= 0 && x < b.w && y < b.h ? b.cells[y * b.w + x] : null);
 const raidDoorAt = (b, x, y) => ((b && (b.raid ? b.raid.doors : b.doors)) || []).find((d) => d.x === x && d.y === y && (d.f || 0) === (b.floor || 0)) || null; // a raid's locked doors, a field map's houses' (sim/combat.js b.doors)
-// A door in the building's outer wall (sim/buildingmaps.js plan.building), else one with the outdoors on a side.
+// A door in the building's outer wall (sim/buildingmaps.js plan.building; a street of houses: plan.buildings, each
+// house), else one with the outdoors on a side.
 export function exteriorDoor(b, x, y) {
-  const r = b && b.raid && b.raid.plan && b.raid.plan.building;
-  if (r) return x === r.x0 || y === r.y0 || x === r.x0 + r.w - 1 || y === r.y0 + r.h - 1;
+  const P = b && b.raid && b.raid.plan;
+  const rs = P ? P.buildings || (P.building ? [P.building] : null) : null;
+  if (rs) return rs.some((r) => x >= r.x0 && y >= r.y0 && x < r.x0 + r.w && y < r.y0 + r.h && (x === r.x0 || y === r.y0 || x === r.x0 + r.w - 1 || y === r.y0 + r.h - 1));
   let inside = false, outside = false;
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const n = cellAt(b, x + dx, y + dy);
@@ -47,6 +54,7 @@ export function doorKind(b, i) {
   if (c.k === "gate") return "gate";
   if (c.k === "bdoor") return "barred";
   if (c.roll) return "roller";
+  if (c.dk && SFX_OF_KIND[c.dk]) return SFX_OF_KIND[c.dk]; // the door's own kind (a glass door, a screen door, a security door's steel)
   const rd = raidDoorAt(b, x, y);
   if ((rd && rd.lock && rd.lock.kind === "vault") || c.mhp >= BMAP.DOOR.vault) return "vault";
   if (c.mhp === BMAP.DOOR.cell) return "cell";
@@ -65,6 +73,8 @@ function seed(b, mem) {
   if (b.cells) for (let i = 0; i < b.cells.length; i++) { const c = b.cells[i]; if (c && DOORISH.has(c.k) && c.k !== "open") mem.map.set(i, { k: c.k, held: c.held ?? null, bar: c.bar }); }
   mem.peeks = (b.peeks || []).length;
   mem.passed = new Map(); // door index -> the turn someone last went through it (the threshold: the first one through)
+  mem.wins = new Map(); // index -> { k, open }: the windows (sim/windows.js), slid open or shut, smashed
+  if (b.cells) for (let i = 0; i < b.cells.length; i++) { const c = b.cells[i]; if (c && (c.k === "window" || c.k === "smashed")) mem.wins.set(i, { k: c.k, open: !!(c.win && c.win.open) }); }
 }
 export const MAX_DOOR_CUES = 4;
 export function doorCues(state, mem, fresh = []) {
@@ -109,6 +119,17 @@ export function doorCues(state, mem, fresh = []) {
       if (heard(t.u)) out.push(cue(b, "threshold", x, y, { dk: doorKind(b, i), delay: t.delay, ...(t.u && t.u.side === "player" ? { enemy: false } : {}) }));
     }
     mem.map.set(i, now);
+  }
+  // The windows (sim/windows.js): a sash slid open or shut (quiet), a pane smashed (by hand, a blow, a vault through it,
+  // the climb: the shards; a blow's own sound is ui/sfx-melee.js's, the shards follow it).
+  if (mem.wins) for (const [i, was] of mem.wins) {
+    const c = b.cells[i];
+    if (!c) continue;
+    const x = i % b.w, y = (i / b.w) | 0;
+    const now = { k: c.k, open: !!(c.win && c.win.open) };
+    if (was.k === "window" && now.k === "smashed") out.push(cue(b, "glassBreak", x, y, { layer: fresh.some((f) => f.type === "melee" && f.to && f.to[0] === x && f.to[1] === y && f.dmg > 0) }));
+    else if (now.k === "window" && was.k === "window" && now.open !== was.open) out.push(cue(b, "sash", x, y, { close: !now.open, enemy: false }));
+    mem.wins.set(i, now);
   }
   // A peek through a closed door (buildingmaps.js doorAct "peek"): the door eased ajar.
   const peeks = b.peeks || [];
@@ -156,8 +177,8 @@ export const DOOR_LEVEL = 1; // × every door voice (tools/vdpreview measures it
 // wooden inner door, level with a footstep) to −24 (a roller door's racket), shutting a few dB over that, a 9 mm
 // shot near you about −19.
 const SWING = {
-  open: { wood: 10.7, front: 6, metal: 1.9, cell: 0.6, roller: 1.4, barred: 0.93, gate: 5.5, vault: 1.4 },
-  close: { wood: 1, front: 0.6, metal: 0.65, cell: 0.62, roller: 0.69, barred: 0.49, gate: 0.38, vault: 0.4 },
+  open: { wood: 10.7, front: 6, metal: 1.9, cell: 0.6, roller: 1.4, barred: 0.93, gate: 5.5, vault: 1.4, glass: 4, screen: 6 },
+  close: { wood: 1, front: 0.6, metal: 0.65, cell: 0.62, roller: 0.69, barred: 0.49, gate: 0.38, vault: 0.4, glass: 0.7, screen: 0.9 },
 };
 export function doorVoices(K) {
   const { env, filt, noise, tone, thud, bell, crackle, shards, lfo, R } = K;
@@ -205,6 +226,14 @@ export function doorVoices(K) {
         if (!shut) { chain(c, out, t, 0.4, 9, 0.13 * g); noise(c, "white", t + 0.35, 0.25, filt(c, "bandpass", 1600, 1.4, env(c, out, t + 0.35, 0.07 * g, 0.18, 0.05))); creak(c, out, t + 0.6, R(44, 52) * p, R(62, 72), 1.5, 420, 0.1 * g, 16, 7, 5); air(c, out, t + 0.7, 1.4, 160, 0.08 * g); }
         else { creak(c, out, t, 60 * p, 48, 0.9, 380, 0.07 * g, 14, 7, 5); thud(c, out, t + 0.85, 62 * p, 0.55 * g, 0.3); chain(c, out, t + 0.9, 0.3, 6, 0.1 * g); noise(c, "white", t + 1.15, 0.2, filt(c, "bandpass", 1500, 1.4, env(c, out, t + 1.15, 0.07 * g, 0.12, 0.03))); tick(c, out, t + 1.32, 900, 0.25 * g, 0.03, 2); }
         break;
+      case "glass": // a shop's or a patio's glass door: the handle's click, the pane humming in its frame, the closer's hiss; shut, the thump and the pane's rattle
+        if (!shut) { tick(c, out, t, 1600 * p, 0.22 * g, 0.015, 2); bell(c, out, t + 0.02, 1900 * p, 0.03 * g, 0.5); noise(c, "white", t + 0.08, 0.5, filt(c, "bandpass", 2600, 1.4, env(c, out, t + 0.08, 0.02 * g, 0.35, 0.12))); }
+        else { thud(c, out, t, 110 * p, 0.3 * g, 0.1); bell(c, out, t + 0.01, 2100 * p, 0.05 * g, 0.45); for (let i = 0; i < 3; i++) tick(c, out, t + 0.03 + i * 0.05, R(1500, 2300), 0.06 * g, 0.012, 3); }
+        break;
+      case "screen": // a house's screen door: the spring stretching, the frame's rattle; shut, the spring and the slap of the frame
+        if (!shut) { const v = tone(c, "sawtooth", 180 * p, 320 * p, t, 0.35, filt(c, "bandpass", 900, 5, env(c, out, t, 0.04 * g, 0.25, 0.08))); lfo(c, 28, 18, v.frequency).stop(t + 0.4); tick(c, out, t + 0.02, 2400 * p, 0.12 * g, 0.012, 3); chain(c, out, t + 0.1, 0.2, 3, 0.05 * g); }
+        else { const v = tone(c, "sawtooth", 300 * p, 170 * p, t, 0.2, filt(c, "bandpass", 900, 5, env(c, out, t, 0.03 * g, 0.12, 0.06))); lfo(c, 28, 18, v.frequency).stop(t + 0.25); thud(c, out, t + 0.2, 140 * p, 0.3 * g, 0.06); tick(c, out, t + 0.2, 2600 * p, 0.2 * g, 0.015, 2); tick(c, out, t + 0.27, 2200 * p, 0.08 * g, 0.012, 2); }
+        break;
       case "vault": // a steel security door or a gun safe: the bolts, the heavy hinge, the ring of the steel
         if (!shut) { for (let i = 0; i < 3; i++) { thud(c, out, t + i * 0.12, 150 * p, 0.2 * g, 0.06); tick(c, out, t + i * 0.12, 1700, 0.16 * g, 0.015, 2); } creak(c, out, t + 0.45, R(38, 44) * p, R(50, 58), 1.1, 300, 0.09 * g, 8, 6, 4); bell(c, out, t + 0.4, 210 * p, 0.04 * g, 1.4); }
         else { thud(c, out, t, 60 * p, 0.6 * g, 0.35); bell(c, out, t, 180 * p, 0.08 * g, 1.6); for (let i = 0; i < 3; i++) tick(c, out, t + 0.35 + i * 0.1, 1500, 0.15 * g, 0.015, 2); }
@@ -238,7 +267,7 @@ export function doorVoices(K) {
     // shrieks), glass (a car's window shattered).
     doorForce: { dur: 1, play(c, out, t, o) {
       const g = (o.gain ?? 1) * DOOR_LEVEL * 0.8, steel = o.dk === "metal" || o.dk === "vault" || o.dk === "cell" || o.dk === "roller";
-      if (o.how === "glass") {
+      if (o.how === "glass" || (o.dk === "glass" && o.how === "kick")) { // a car's window, or a glass door kicked: the pane goes
         thud(c, out, t, 140, 0.3 * g, 0.06);
         if (o.ok) { shards(c, out, t + 0.02, 14, 0.12 * g); crackle(c, out, t + 0.05, 10, 0.35, 0.08 * g); } else { tick(c, out, t + 0.01, 2400, 0.2 * g, 0.03, 2); }
       } else if (o.how === "pry") {
@@ -259,6 +288,8 @@ export function doorVoices(K) {
       const t1 = o.layer ? t + 0.05 : t;
       if (!o.layer) { thud(c, out, t, steel ? 110 : 80, 0.55 * g, 0.18); noise(c, "white", t, 0.1, filt(c, "bandpass", 1200, 0.9, env(c, out, t, 0.18 * g, 0.08, 0.002))); }
       if (steel) { const v = tone(c, "sawtooth", 1500, 700, t1 + 0.04, 0.4, filt(c, "bandpass", 1300, 5, env(c, out, t1 + 0.04, 0.05 * g, 0.3, 0.02))); lfo(c, 37, 40, v.frequency).stop(t1 + 0.5); bell(c, out, t1 + 0.35, 190, 0.1 * g, 0.9); bell(c, out, t1 + 0.38, 410, 0.06 * g, 0.6); }
+      else if (dk === "glass") { shards(c, out, t1, 18, 0.14 * g); crackle(c, out, t1 + 0.04, 12, 0.4, 0.07 * g); bell(c, out, t1 + 0.02, 2300, 0.03 * g, 0.5); } // the pane goes to pieces
+      else if (dk === "screen") { crackle(c, out, t1, 8, 0.2, 0.08 * g); tick(c, out, t1 + 0.05, 2500, 0.12 * g, 0.015, 2); } // the mesh tears, the frame splinters
       else if (dk === "gate") { crackle(c, out, t1, 16, 0.3, 0.14 * g); chain(c, out, t1 + 0.1, 0.6, 12, 0.12 * g); thud(c, out, t1 + 0.5, 55, 0.5 * g, 0.35); }
       else { crackle(c, out, t1, 20, 0.3, 0.13 * g); noise(c, "white", t1, 0.35, filt(c, "bandpass", 2500, 0.9, env(c, out, t1, 0.08 * g, 0.28, 0.003))); }
       thud(c, out, t1 + 0.42, steel ? 95 : 70, 0.4 * g, 0.2); // it comes down
@@ -282,6 +313,23 @@ export function doorVoices(K) {
       thud(c, out, t, 100, 0.35 * g, 0.1);
       noise(c, "brown", t, 0.08, filt(c, "lowpass", 500, 0.7, env(c, out, t, 0.2 * g, 0.06, 0.002)));
       for (let i = 0; i < 3; i++) tick(c, out, t + 0.03 + i * 0.04, R(1500, 2200), 0.07 * g, 0.012);
+    } },
+    // A window's sash slid open (o.close false) or shut: the wood or the metal running in its track, the stop. Quiet.
+    sash: { dur: 0.6, play(c, out, t, o) {
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 2.2, p = o.pitch || 1;
+      noise(c, "brown", t, 0.4, filt(c, "bandpass", 700 * p, 1.1, env(c, out, t, 0.06 * g, 0.3, 0.08)));
+      tick(c, out, t + 0.02, 1900 * p, 0.08 * g, 0.012, 3);
+      if (o.close) { thud(c, out, t + 0.38, 150 * p, 0.2 * g, 0.06); bell(c, out, t + 0.39, 1800 * p, 0.02 * g, 0.3); }
+      else { tick(c, out, t + 0.36, 1400 * p, 0.1 * g, 0.015, 2); thud(c, out, t + 0.37, 190 * p, 0.1 * g, 0.04); }
+    } },
+    // A window smashed (by hand, a vault through it, the climb, a blow): the pane going, the shards on the floor. o.layer:
+    // the blow itself already played (ui/sfx-melee.js), only the glass.
+    glassBreak: { dur: 0.9, play(c, out, t, o) {
+      const g = (o.gain ?? 1) * DOOR_LEVEL * 0.9, t1 = o.layer ? t + 0.04 : t;
+      if (!o.layer) thud(c, out, t, 150, 0.2 * g, 0.05);
+      shards(c, out, t1, 16, 0.14 * g);
+      bell(c, out, t1 + 0.01, 2400, 0.035 * g, 0.5);
+      crackle(c, out, t1 + 0.06, 14, 0.45, 0.07 * g);
     } },
     // The gate battered: its chains and hinges jumping under the blow (the blow itself: ui/sfx-melee.js).
     gateBatter: { dur: 0.6, play(c, out, t, o) {
@@ -308,9 +356,11 @@ export function doorVoices(K) {
 export const DOOR_LABELS = {
   door: "A door opening (by kind)", doorClose: "A door closing", doorRattle: "A locked door tried", lockPick: "Picking a lock", doorForce: "Forcing a door (kick, crowbar, glass)",
   doorBreak: "A door broken in", threshold: "Through an open door", doorPeek: "A door eased ajar (peek)", doorBrace: "Bracing a door", gateBatter: "The gate battered", gateOpen: "A base's gate (map)",
+  sash: "A window slid open or shut", glassBreak: "A window smashed",
 };
 // The throttle's limits (ui/audio.js LIMITS): gap in seconds between two starts, how many at once.
 export const DOOR_LIMITS = {
   door: { gap: 0.15, max: 3 }, doorClose: { gap: 0.15, max: 2 }, doorRattle: { gap: 0.3, max: 1 }, lockPick: { gap: 0.5, max: 1 }, doorForce: { gap: 0.4, max: 1 },
   doorBreak: { gap: 0.3, max: 2 }, threshold: { gap: 0.25, max: 2 }, doorPeek: { gap: 0.3, max: 1 }, doorBrace: { gap: 0.3, max: 1 }, gateBatter: { gap: 0.2, max: 2 }, gateOpen: { gap: 2, max: 1 },
+  sash: { gap: 0.3, max: 2 }, glassBreak: { gap: 0.25, max: 2 },
 };

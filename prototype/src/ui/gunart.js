@@ -22,6 +22,7 @@ import { C, R, H, V, dots, grip, guard, stockShape, STOCKS, MAGS, norm, ownKey, 
 import { GUN_ART, FALLBACK_LIKE } from "./gunspecs.js";
 import { PART_ART as PARTS, MOD_LOOK, SLOT_LOOK, lookOf, looksOf } from "./gunparts.js"; // the part looks' registry (the data-driven ones: ui/gunparts.js)
 import { finishOf } from "../sim/data-finish.js";
+import { onForgetPictures } from "./pictures.js";
 export { MOD_LOOK, lookOf, looksOf };
 
 export const ART_W = 64, ART_H = 24, ART_UP = 8;
@@ -544,3 +545,4 @@ export function gunIconHtml(item, h = 1.1, cls = "igun") {
   if (!t || !t.url) return "";
   return `<img class="${cls}" src="${t.url}" alt="" style="height:${h}rem;width:${Math.round((t.w / t.h) * h * 100) / 100}rem">`;
 }
+onForgetPictures(() => { cache.clear(); urls.clear(); thumbs.clear(); }); // ui/pictures.js: a blank gun canvas would make blank data URLs after a lost GPU context

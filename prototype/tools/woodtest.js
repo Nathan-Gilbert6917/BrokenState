@@ -361,7 +361,7 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
     setAutopilot(st, true, "balanced");
     st.governor.noWood = off;
     const winter = dayIn(st, "winter", 1);
-    let woodDays = 0, earliest = null, boiled = false;
+    let woodDays = 0, earliest = null, boiled = false, early = 0, kitchen = false;
     while (day(st) <= winter && !st.gameOver) {
       tickHour(st);
       if (st.hour % 24 === 12) {
@@ -369,16 +369,23 @@ section("The autopilot: the winter's firewood from late summer, none with the sw
         woodDays += n;
         if (n && earliest == null) earliest = Weather.season(st);
         if (boilerUse(st, hub(st)).active) boiled = true; // the water boiler (worm.js) burns firewood in every season
+        // Woodcutters before the summer only while the pile is pressing (woodcutting.js woodNeed): the boiler, or the
+        // Kitchen's stove with the pile under its KITCHEN.wood.keepDays (autopilot.js kitchenOnly: a day's worth of hands).
+        if (n && Weather.season(st).key === "spring") {
+          const w = Wd.woodNeed(st, hub(st));
+          if (!w.pressing) early++;
+          else if (w.kitchen > 0) kitchen = true;
+        }
       }
     }
     const h = hub(st);
-    return { wood: Math.round(h.stock.wood || 0), need: Wd.woodNeed(st, h).need, woodDays, earliest, boiled, fuel: Math.round(h.stock.fuel || 0), trips: st.governor.stats.woodTrips || 0, cut: Math.round((st.econStats.woodCut || 0) + (st.econStats.woodField || 0)) };
+    return { wood: Math.round(h.stock.wood || 0), need: Wd.woodNeed(st, h).need, woodDays, earliest, boiled, early, kitchen, fuel: Math.round(h.stock.fuel || 0), trips: st.governor.stats.woodTrips || 0, cut: Math.round((st.econStats.woodCut || 0) + (st.econStats.woodField || 0)) };
   };
   const shares = [];
   for (const seed of [SEED, SEED + 1]) {
     const on = run(seed, false), off = run(seed, true);
     note(`seed ${seed}: at the start of winter the hub has ${on.wood} firewood (the cold ahead needs ${on.need}); ${on.woodDays} woodcutter-days from ${on.earliest ? `${on.earliest.name} day ${on.earliest.dayOfSeason}` : "never"}, ${on.trips} wood trips; fuel ${on.fuel} · switch off: ${off.wood} firewood, fuel ${off.fuel}`);
-    check(on.woodDays > 0 && on.earliest && (on.earliest.key === "summer" || on.earliest.key === "autumn" || on.boiled), `woodcutters go out from late summer or autumn${on.boiled ? " (earlier here: the water boiler burns firewood all year, worm.js)" : ""}`);
+    check(on.woodDays > 0 && on.earliest && (on.earliest.key === "summer" || on.earliest.key === "autumn" || on.boiled || (on.kitchen && on.early === 0)), `woodcutters go out from late summer or autumn${on.boiled ? " (earlier here: the water boiler burns firewood all year, worm.js)" : on.kitchen ? " (earlier here only while the Kitchen's stove was short of its days of firewood, kitchen.js)" : ""}`);
     // At HEAT.wood 0.2 (tune-winter) a winter takes 0.5 firewood a head a freezing day: about half the plan (the
     // whole cold with WOOD.bitter and a fifth to spare) is in by its first day, and the fuel and the woodcutters
     // must carry the rest (a hub that falls short goes cold for a day or two late in the winter: winter bites).

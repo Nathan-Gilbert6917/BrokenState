@@ -20,6 +20,7 @@ import { LIGHTS } from "../sim/lights.js";
 import { FLARE } from "../sim/throwables.js";
 import { activeLight } from "../sim/vision.js"; // the light a unit has switched on
 import { roomCells, darkAt } from "../sim/indoorlight.js";
+import { onForgetPictures } from "./pictures.js";
 
 export const LIGHT_SCALE = 0.5;               // the light canvas's resolution, of the screen's
 export const DARK = { night: 0.5, dusk: 0.26, room: 0.55 }; // the darkness over what no light reaches (was 0.34 / 0.18); room: a dark room's floor by day
@@ -248,3 +249,4 @@ export function drawDarkness(ctx, b, cw, ch) {
   ctx.drawImage(DC, 0, 0, cw, ch);
   ctx.restore();
 }
+onForgetPictures(() => { LC = DC = MASK = null; GRADS.clear(); }); // ui/pictures.js: the mask of the cells not seen would be blank after a lost GPU context

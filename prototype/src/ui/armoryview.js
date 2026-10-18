@@ -19,6 +19,7 @@ import { itemLoad, SLOT_NAMES } from "../sim/inventory.js";
 import { stackLabel, countOf, isRoundItem, amountOf } from "../sim/itemstack.js";
 import { isHelmetPart } from "../sim/helmets.js";
 import { isGunKey, gunIconHtml, PART_ART } from "./gunart.js";
+import { itemArtHtml } from "./itemart.js"; // every item but a gun: its own drawing
 import { lookOf } from "./gunparts.js";
 import { painter, toCanvas } from "./sprites.js";
 import { slotOfPart } from "./gunbuilder.js";
@@ -176,6 +177,7 @@ function roundSvg(item) {
 export function itemPic(item, h = 2.4) {
   const { g } = itemGroup(item);
   if (g === "guns" && isGunKey(item.key)) { const html = gunIconHtml(item, Math.min(h, 2.2), "igun apicimg"); if (html) return html; }
+  if (!isGunKey(item.key)) { const html = itemArtHtml(item.key, Math.min(h, 2.3), "iart apicimg"); if (html) return html; } // ui/itemart.js
   if (g === "mags" || g === "attach") {
     const t = partThumb(item.key);
     if (t) return `<img class="igun apicimg" src="${t.url}" alt="" style="height:${Math.min(h * 0.85, Math.max(h * 0.45, t.h * 0.17)).toFixed(2)}rem;width:auto">`;

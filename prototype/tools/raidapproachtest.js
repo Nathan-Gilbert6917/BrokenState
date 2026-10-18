@@ -47,8 +47,10 @@ function raid(seed, siteType, opts = {}) {
 const mine = (b) => b.units.filter((u) => u.side === "player" && !u.off);
 const mean = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
 // The map's cells (a gun safe is one of the containers it may stand in, and a door locked or not: locks.js by the hour).
+// The street map's houses have closed doors (combat.js genRaidMap, real doors on houses), so a locked room's door is a
+// closed door (idoor) when it is not locked, where it was a gap (open) before.
 const BOX = new Set(["gunsafe", "crate", "cabinet", "locker", "shelf", "counter"]);
-const layout = (b) => b.cells.map((c) => (BOX.has(c.k) ? "box" : c.k === "vehicle" || c.k === "door" ? "open" : c.k)); // the team's vehicle moves with the entry; locks.js locks doors by the hour
+const layout = (b) => b.cells.map((c) => (BOX.has(c.k) ? "box" : c.k === "vehicle" ? "open" : c.k === "door" ? "idoor" : c.k)); // the team's vehicle moves with the entry; locks.js locks doors by the hour
 
 // ---------- entry side ----------
 {

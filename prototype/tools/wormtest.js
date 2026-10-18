@@ -438,8 +438,9 @@ const noSpot = { SPOT: 0, SPOT_MED: 0, BRAIN_SPOT: 0, TEAM_SPOT: 0, TEAM_SPOT_ME
   check(eaten.slice(0, WORM.BRAIN_FROM - 1).every((f) => near(f, WORM.GUT_EAT)) && near(eaten[WORM.BRAIN_FROM - 1] || 0, 0), `eats ${WORM.GUT_EAT} more a day in the gut stage (days 1–${WORM.BRAIN_FROM - 1}), not in the brain`);
   check(diedOn >= 6 && diedOn <= 7 && !s.alive, `someone at full health dies of it on day ${diedOn} (6–7)`);
   check(st.log.some((l) => /died of the worm\./.test(l.text)) && st.log.some((l) => new RegExp(`${s.name} died with the worm in them at ${h.name} and got up again`).test(l.text)), "and gets up again at the base (a log line)");
-  // Someone hurt dies sooner.
-  const t = here[1];
+  // Someone hurt dies sooner. (Not here[1] blindly: s got up again at the base and may have killed someone before
+  // they put them down, carriers.js; here[3] is the next check's.)
+  const t = here.find((x, i) => i !== 0 && i !== 3 && x.alive);
   t.worm = course(0); t.health = 40;
   let d2 = 0;
   for (let d = 1; d <= 10 && t.alive; d++) { withNums(WORM, noSpot, () => wormDaily(st)); if (!t.alive) d2 = d; }

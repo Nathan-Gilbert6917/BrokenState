@@ -365,7 +365,9 @@ export function mapCues(state, ui, mem, cam = null) {
   const now = new Map();
   for (const p of state.parties) if (p.owner === "player") now.set(p.id, { p, s: teamSnap(state, p) });
   const prev = mem.teams || new Map();
-  const say = (name, o) => out.push({ gain: MAP_GAIN, ...o, name });
+  // A cue's pan may come as a function: worked out (the camera, the map's size) only when a cue is actually played,
+  // not for every team on every frame.
+  const say = (name, o) => out.push({ gain: MAP_GAIN, ...o, ...(typeof o.pan === "function" ? { pan: o.pan() } : null), name });
   const camOf = () => cam || (cam = mapCam(state));
   // Setting off from one of your bases: the doors, the engine catching, a beep-beep from the lead vehicle (once, a
   // convoy too; bikes ring their bells), then the gate opening as they pull out. On foot: the gate. Cosmetic: the sim
@@ -406,7 +408,7 @@ export function mapCues(state, ui, mem, cam = null) {
     }
     for (const [id, { p, s }] of now) {
       const was = prev.get(id);
-      const pan = panOn(camOf(), s.tile);
+      const pan = () => panOn(camOf(), s.tile);
       const car = s.keys.length > 0, key = s.keys[0];
       const lead = s.lead || {};
       if (!was) {

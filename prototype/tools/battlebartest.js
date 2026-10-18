@@ -1,7 +1,9 @@
 // The battle's bottom bar (ui/battlebar.js, ui/combat.js unitOrders and renderCombatBar) on stub canvases:
-// - Every battle order of the key table (the Battle orders with a v, the inventory, the view cones) has a button on the
-//   bar: shown when it applies, greyed with the reason when it is a core one that cannot be given now, and the rest
-//   under ⋯ More, greyed with when they apply.
+// - Ready only by default: no greyed order on the bar, the All button counting the hidden ones. With All on, every
+//   battle order of the key table (the Battle orders with a v, the inventory, the view cones) has a button: shown when it
+//   applies, greyed with the reason when it cannot be given now, the rest greyed with when they apply.
+// - Trays: a long list keeps its PRIMARY orders on the bar and each group's others behind its tray button (never one
+//   alone in a tray); a short list has no trays; a tray opens and closes, Esc closes it, an order given from it too.
 // - Each button shows its key as bound now (a rebound key shows at once), its cost, and when greyed why: the sim's own
 //   refusals (no ammo, the magazine is full, not facing the body, no light carried, no actions left, on foot …).
 // - A button and its key run the same code: each pressed on one of two identical battles leaves them the same.
@@ -34,6 +36,7 @@ ISO.setIsoCanvas(cvs);
 UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => silent() });
 const cui = UI.cui;
 const draw = (st) => { try { UI.drawCombat(st, 1e9); return ""; } catch (e) { return e.stack.split("\n").slice(0, 2).join(" "); } };
+const plainText = (h) => String(h).replace(/<[^>]+>[^<]*<\/i>/g, "").replace(/<[^>]+>/g, "").trim();
 const unesc = (s) => String(s).replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 // The bar's buttons: { action, v, k, id, disabled, tip, key, cost, text }.
 function buttons(html) {
@@ -46,40 +49,64 @@ function buttons(html) {
   }
   return out;
 }
-const barBtns = (st) => buttons(UI.renderCombatBar(st)).filter((x) => /\bbb-btn\b/.test(x.cls));
+// The order buttons on the bar itself (not the tray and All buttons), and with every tray opened in turn.
+const isOrder = (x) => /\bbb-btn\b/.test(x.cls) && !/\bbb-(traybtn|allbtn)\b/.test(x.cls);
+const trayBtns = (st) => buttons(UI.renderCombatBar(st)).filter((x) => /\bbb-traybtn\b/.test(x.cls));
+const mainBtns = (st) => { const was = cui.barTray; cui.barTray = null; const r = buttons(UI.renderCombatBar(st)).filter(isOrder); cui.barTray = was; return r; };
+function barBtns(st) {
+  const was = cui.barTray, out = mainBtns(st);
+  for (const t of trayBtns(st)) { cui.barTray = Number(t.g); out.push(...buttons(UI.renderCombatBar(st)).filter((x) => isOrder(x) && x.tray)); }
+  cui.barTray = was;
+  return out;
+}
 const order = (st, v) => barBtns(st).find((x) => (x.action === "cb-act" ? x.v : x.action === "cb-inv" ? "inventory" : x.action === "cb-view" ? x.v : "") === v);
-const fresh = (seed = 51, name = "field-town") => {
+// all: the bar shows the greyed orders too (the reasons are read off them).
+const fresh = (seed = 51, name = "field-town", all = true) => {
   const { st, b } = battles(seed, [name])[0];
   draw(st); // a new battle: the screen picks its first unit
   const u = b.units.find((x) => x.side === "player" && x.vol == null && C.active(x) && x.sid != null);
-  cui.sel = u.id; cui.mode = "move"; cui.msg = ""; cui.barMore = false;
+  cui.sel = u.id; cui.mode = "move"; cui.msg = ""; cui.barAll = all; cui.barTray = null;
   return { st, b, u };
 };
 const vOf = (k) => (k.v ? k.v : k.id === "battle.inventory" ? "inventory" : "cones");
 
-// ---------- 1. every battle order of the key table has a button ----------
-console.log("Every battle order in the key table has a button");
+// ---------- 1. ready only; with All, every battle order of the key table has a button ----------
+console.log("Ready only by default; with All, every battle order in the key table has a button");
 {
   check(BAR.BAR_KEYS.length >= 40 && BAR.BAR_KEYS.some((k) => k.id === "battle.light") && BAR.BAR_KEYS.some((k) => k.id === "bview.cones"), `the bar's list is the key table's battle orders (${BAR.BAR_KEYS.length})`);
   for (const name of ["field-town", "raid", "raid-building"]) {
-    const { st } = fresh(52, name);
-    const mainBtns = barBtns(st);
-    const main = new Set(mainBtns.map((x) => (x.action === "cb-act" ? x.v : x.action === "cb-inv" ? "inventory" : x.v)));
-    cui.barMore = true;
+    const { st } = fresh(52, name, false);
+    const ready = barBtns(st);
+    const allBtn = buttons(UI.renderCombatBar(st)).find((x) => /\bbb-allbtn\b/.test(x.cls));
+    check(ready.length && ready.every((x) => !x.disabled || /\bactive\b/.test(x.cls)), `${name}: ready only, no greyed order on the bar or in its trays (${ready.length} orders: ${ready.map((x) => x.v || x.action).join(" ")})`);
+    check(allBtn && /\+\d+/.test(allBtn.text) && !/\bactive\b/.test(allBtn.cls), `${name}: the All button counts the hidden ones (${allBtn ? /\+\d+/.exec(allBtn.text) : "none"})`);
+    cui.barAll = true;
     const all = barBtns(st);
     const has = new Set(all.map((x) => (x.action === "cb-act" ? x.v : x.action === "cb-inv" ? "inventory" : x.v)));
     const missing = BAR.BAR_KEYS.map(vOf).filter((v) => !has.has(v));
-    check(!missing.length, `${name}: with More open, a button for each of the ${BAR.BAR_KEYS.length} (${missing.length ? `missing ${missing.join(", ")}` : "none missing"})`);
-    const core = BAR.CORE.filter((v) => !main.has(v));
-    check(!core.length && main.has("inventory") && main.has("cones"), `${name}: the core orders, Inventory and Cones always on the bar (${core.length ? `missing ${core.join(", ")}` : "all there"})`);
-    const minorOk = mainBtns.filter((x) => x.action === "cb-act").every((x) => /\bminor\b/.test(x.cls) === (x.disabled && !BAR.CORE.includes(x.v) && x.v !== "lights"));
-    check(minorOk, `${name}: the greyed orders that are not core ones are marked to wait under More on a narrow bar`);
+    check(!missing.length, `${name}: with All, a button for each of the ${BAR.BAR_KEYS.length} (${missing.length ? `missing ${missing.join(", ")}` : "none missing"})`);
+    const core = BAR.CORE.filter((v) => !has.has(v));
+    check(!core.length && has.has("inventory") && has.has("cones"), `${name}: the core orders, Inventory and Cones there with All (${core.length ? `missing ${core.join(", ")}` : "all there"})`);
     const greyNoWhy = all.filter((x) => x.disabled && !/\nNot now: \S/.test(x.tip));
     check(!greyNoWhy.length, `${name}: every greyed button says why (${greyNoWhy.map((x) => x.v).join(", ") || "all do"})`);
     const keyed = BAR.BAR_KEYS.filter((k) => all.some((x) => (x.v === vOf(k) || (k.id === "battle.inventory" && x.action === "cb-inv")) && x.key === KM.keyLabel(k.id, 1).replace(/Shift\+/g, "⇧").replace(/Ctrl\+/g, "Ctrl ")));
     check(keyed.length >= BAR.BAR_KEYS.length - 2, `${name}: the buttons show the keys bound now (${keyed.length} of ${BAR.BAR_KEYS.length})`);
-    cui.barMore = false;
+    // Trays: the PRIMARY orders and the view ones stand on the bar, every tray holds two or more.
+    const trays = trayBtns(st), main = mainBtns(st);
+    const sizes = trays.map((t) => { cui.barTray = Number(t.g); const n = buttons(UI.renderCombatBar(st)).filter((x) => isOrder(x) && x.tray); cui.barTray = null; return n; });
+    check(trays.length && sizes.every((n) => n.length >= 2) && !sizes.flat().some((x) => (BAR.PRIMARY.has(x.v) && (!x.disabled || BAR.CORE.includes(x.v))) || x.action !== "cb-act"), `${name}: ${trays.length} trays (${trays.map((t, i) => `${plainText(t.text)} ${sizes[i].length}`).join(", ")}), none with one order, no ready primary, core or view order in one`);
+    check(main.some((x) => x.v === "move") && main.some((x) => x.v === "shoot") && main.some((x) => x.action === "cb-inv") && main.length + trays.length < all.length / 2, `${name}: Move, Shoot and Inventory on the bar itself, ${main.length} orders and ${trays.length} trays there (${all.length} with the trays' orders): ${main.map((x) => x.v || "inventory").join(" ")}`);
+    cui.barAll = false;
     st.combat = null;
+  }
+  // A short list: everything on the bar, no trays.
+  {
+    const { st, b, u } = fresh(53, "field-town", false);
+    for (const p of b.units) if (p.side === "player") p.ap = 0;
+    cui.sel = u.id;
+    const main = mainBtns(st);
+    check(!trayBtns(st).length && main.every((x) => !x.disabled), `no actions left, ready only: ${main.length} free orders, all on the bar, no tray (${main.map((x) => x.v).join(" ")})`);
+    for (const p of b.units) if (p.side === "player") p.ap = 2;
   }
   // A rebound key shows on its button at once.
   const { st } = fresh(53);
@@ -139,6 +166,17 @@ console.log("Greyed with the reason, from the sim's own refusals");
   // On foot: Vehicle greyed, "You came on foot".
   const v = order(st, "vehicle");
   check(v.disabled && (b.vehicle ? true : /on foot/.test(v.tip)), `Vehicle: ${b.vehicle ? "next to the car or not" : "greyed, on foot"}`);
+  // The diamonds a hovered order would spend: Hunker (ends the turn) all, Move 1, Face none (styles.css lights them on the card).
+  const raw = UI.renderCombatBar(st), sp = (v) => (new RegExp(`data-bv="${v}"( data-spend="([^"]*)")?>`).exec(raw) || [])[2] || "";
+  check(sp("hunker") === "all" && sp("move") === "1" && sp("face") === "" && /<i class=on data-s=1><\/i>/.test(raw), `hovering spends: Hunker ${sp("hunker")}, Move ${sp("move")}, Face ${sp("face") || "none"}; the card's diamonds numbered from the last`);
+  // A jammed gun: Unjam pulses (urgent); nothing else does.
+  const jg = b.units.find((x) => x.side === "player" && C.active(x) && C.isRanged && C.isRanged(x)) || b.units.find((x) => x.side === "player" && C.active(x) && C.hasMag(x));
+  if (jg) {
+    cui.sel = jg.id; jg.jam = { kind: "stovepipe" };
+    const uj = barBtns(st).find((x) => x.v === "unjam");
+    check(uj && /\burgent\b/.test(uj.cls) && barBtns(st).filter((x) => /\burgent\b/.test(x.cls)).length === 1, `a jammed gun: Unjam on the bar, pulsing (${uj ? uj.cls : "no button"})`);
+    jg.jam = null; cui.sel = u.id;
+  }
   // Costs: Shoot ends the turn, Move 1–2, Search 1.
   check(order(st, "shoot").cost === "end" && order(st, "move").cost === "1–2" && order(st, "face").cost === "free", "costs: Shoot end, Move 1–2, Face free");
 }
@@ -159,7 +197,7 @@ console.log("A button and its key do the same");
       if (how === "button") {
         const x = order(st, v);
         if (!x) { runs.push("no button"); continue; }
-        const d = { v: x.v, k: x.k, id: x.id };
+        const d = { v: x.v, k: x.k, id: x.id, tray: x.tray };
         UI.combatAction(st, x.action, d);
       } else UI.combatKey(st, chordEvent(KM.keysOf(id)[0]));
       runs.push(snap(b, u));
@@ -180,7 +218,7 @@ console.log("The card, the tabs, the turn controls");
   const team = b.units.filter((x) => x.side === "player" && x.vol == null);
   check((html.match(/class="bb-tab[^"]*" data-action="cb-sel"/g) || []).length === team.length, `a tab for each of yours (${team.length})`);
   check(new RegExp(`class="bb-tab on" data-action="cb-sel" data-id="${u.id}"`).test(html), "the selected one's tab is marked");
-  check(html.includes(`<b>${u.name}</b>`) && /<b>2<\/b><span class="muted"> actions left/.test(html) && (html.match(/<i class=on><\/i>/g) || []).length >= 2, "the card: the name, 2 actions left as pips");
+  check(html.includes(`<b>${u.name}</b>`) && /<b>2<\/b><span class="muted"> actions left/.test(html) && /<i class=on data-s=2><\/i><i class=on data-s=1><\/i>/.test(html), "the card: the name, 2 actions left as pips (numbered from the last)");
   u.sneaking = true; u.light = "flashlight"; u.lightOff = false; faceToward(u, u.x, u.y - 1);
   html = UI.renderCombatBar(st);
   check(/>SNEAK</.test(html) && />FACING N</.test(html) && />LIGHT ON</.test(html), "the card's chips: sneaking, facing north (N), the light on");
@@ -217,11 +255,29 @@ console.log("The card, the tabs, the turn controls");
   html = UI.renderCombatBar(f.st);
   check(!C.retreatRefusal(f.b) ? /class="bb-ask"><div class="small cbmsg cbconfirm cbretreat">/.test(html) : true, "Sound the retreat: the odds over the controls");
   UI.combatAction(f.st, "cb-retreat", { v: "cancel" });
-  // More: opens and closes.
-  UI.combatAction(f.st, "cb-bar", { v: "more" });
-  check(cui.barMore && /class="bb-orders bb-more"/.test(UI.renderCombatBar(f.st)), "⋯ More opens the other orders");
-  UI.combatAction(f.st, "cb-bar", { v: "more" });
-  check(!cui.barMore && !/bb-more"/.test(UI.renderCombatBar(f.st)), "and closes them");
+  // All: on and off.
+  cui.barAll = false;
+  const nReady = barBtns(f.st).length;
+  UI.combatAction(f.st, "cb-bar", { v: "all" });
+  const nAll = barBtns(f.st).length;
+  check(cui.barAll && nAll > nReady && barBtns(f.st).some((x) => x.disabled) && /Ready only/.test(UI.renderCombatBar(f.st)), `All shows the greyed orders too (${nReady} → ${nAll}), its button now Ready only`);
+  UI.combatAction(f.st, "cb-bar", { v: "all" });
+  check(!cui.barAll && barBtns(f.st).length === nReady, "and Ready only hides them again");
+  // A tray: opens, closes; Esc closes it; an order given from it closes it.
+  cui.barAll = true;
+  const t = trayBtns(f.st)[0];
+  UI.combatAction(f.st, "cb-bar", { v: "tray", g: t.g });
+  html = UI.renderCombatBar(f.st);
+  check(cui.barTray === Number(t.g) && /class="bb-tray"/.test(html), `the ${plainText(t.text)} tray opens over the bar`);
+  UI.combatAction(f.st, "cb-bar", { v: "tray", g: t.g });
+  check(cui.barTray == null && !/class="bb-tray"/.test(UI.renderCombatBar(f.st)), "pressed again, it closes");
+  UI.combatAction(f.st, "cb-bar", { v: "tray", g: t.g });
+  UI.combatKey(f.st, { code: "Escape", shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, preventDefault() {} });
+  check(cui.barTray == null && cui.mode === "move", "Esc closes it (and only it)");
+  UI.combatAction(f.st, "cb-bar", { v: "tray", g: t.g });
+  const inTray = buttons(UI.renderCombatBar(f.st)).find((x) => isOrder(x) && x.tray);
+  UI.combatAction(f.st, inTray.action, { v: inTray.v, k: inTray.k, id: inTray.id, tray: inTray.tray });
+  check(cui.barTray == null, `an order given from it (${inTray.v}) closes it`);
   // The panel keeps none of the controls (no duplicates): the orders and the turn buttons are the bar's.
   const panel = UI.renderCombatPanel(f.st);
   check(!/data-action="cb-act" data-v="(shoot|move|reload)"/.test(panel) && !/data-action="cb-end"/.test(panel) && !/data-action="cb-autoplay"/.test(panel) && !/data-action="cb-inv"/.test(panel), "the side panel has no order or turn buttons left (they are the bar's)");

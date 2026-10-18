@@ -399,7 +399,7 @@ section("The real screens");
   const html = GB.loadChoices({ key: "ar" }).length ? `<select data-action="gb-load" data-search="1">${GB.loadChoices({ key: "ar" }).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>` : "";
   const gsrc = (await import("node:fs")).readFileSync(new URL("../src/ui/gunbuilder.js", import.meta.url), "utf8");
   modal.innerHTML = html;
-  check(/<select data-action="gb-load" data-search="1">/.test(gsrc) && wantsSearch(modal.querySelector("select")), `the gun builder's Ammo list (${GB.loadChoices({ key: "ar" }).length} options) opts in`);
+  check(/<select data-action="gb-load" data-search="1"[>$]/.test(gsrc) && wantsSearch(modal.querySelector("select")), `the gun builder's Ammo list (${GB.loadChoices({ key: "ar" }).length} options) opts in`); // [>$]: "disabled" in a fight may follow
   modal.innerHTML = "";
 }
 

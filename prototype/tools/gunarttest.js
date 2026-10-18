@@ -270,22 +270,25 @@ console.log("Thumbnails");
 console.log("Muzzle");
 {
   const ISO = await import("../src/ui/isoview.js");
-  const b = { fx: [], setup: {}, units: [] }, state = { factions: [], survivors: [], seed: 1 };
+  const b = { fx: [], setup: {}, units: [], w: 10, h: 10 }, state = { factions: [], survivors: [], seed: 1 }; // w, h: the view's turns need the map's size
   const bad = [], pts = {};
   for (const k of guns) {
     const t = { id: 3, side: "enemy", kind: "human", kit: "raiders", weapon: k, x: 1, y: 1 };
     const p = [0, 1, 2, 3].map((r) => ISO.muzzlePoint(state, b, t, 0, r, 1));
     if (p.some((q) => !q)) { bad.push(`${k} (none)`); continue; }
-    // Enemies face left (−x) unless the view is turned a half (rotations 1 and 2 mirror the sprite).
-    if (!(p[0][0] < 0 && p[3][0] < 0 && p[1][0] > 0 && p[2][0] > 0 && p[0][0] === -p[1][0] && p.every((q) => q[1] === p[0][1]))) bad.push(`${k} ${JSON.stringify(p)}`);
+    // Enemies face west (−x): on screen to the left in rotations 0 and 3, to the right in 1 and 2 (the figure turns
+    // with the view: ui/figures.js).
+    if (!(p[0][0] < 0 && p[3][0] < 0 && p[1][0] > 0 && p[2][0] > 0)) bad.push(`${k} ${JSON.stringify(p)}`);
     pts[k] = p[0];
   }
   check(!bad.length, `every gun's muzzle is on the side it faces, in all four view rotations${bad.length ? ` (not: ${list(bad)})` : ""}`);
-  check(Math.abs(pts.pistol[0]) < Math.abs(pts.m4[0]) && Math.abs(pts.m4[0]) < Math.abs(pts.sniper[0]) + 0.01, `a pistol's muzzle is nearer the body than a carbine's, a carbine's no further than a sniper rifle's (${pts.pistol[0].toFixed(1)}, ${pts.m4[0].toFixed(1)}, ${pts.sniper[0].toFixed(1)})`);
-  check(new Set(Object.values(pts).map((q) => q.join())).size > 8, "the muzzles are where each gun's barrel ends (many different points)");
+  // The figures hold one gun a class (ui/figures.js): a pistol out at arm's length, a long gun at the low ready (its
+  // muzzle down and nearer the body); the shot starts at the end of the gun drawn, so a class shares its point (the
+  // flat sprites drew each gun, and a suppressor, to its own length).
+  const same = (a, c) => pts[a].join() === pts[c].join();
+  check(Math.abs(pts.pistol[0]) > Math.abs(pts.m4[0]) && pts.pistol[1] < pts.m4[1] && same("pistol", "revolver") && same("m4", "sniper") && !same("pistol", "m4"), `a pistol's muzzle out at arm's length, a long gun's at the low ready, one point a class (pistol ${pts.pistol.map((v) => v.toFixed(1))}, m4 ${pts.m4.map((v) => v.toFixed(1))}, sniper ${pts.sniper.map((v) => v.toFixed(1))})`);
   const t = { id: 4, side: "enemy", kind: "human", kit: "raiders", weapon: "m4", gmWeapon: "m4", modItems: { muzzle: { key: "can556" } }, x: 1, y: 1 };
-  const can = ISO.muzzlePoint(state, b, t, 0, 0, 1);
-  check(Math.abs(can[0]) > Math.abs(pts.m4[0]), "a fitted suppressor moves the muzzle out to its end");
+  check(ISO.muzzlePoint(state, b, t, 0, 0, 1).join() === pts.m4.join(), "a fitted suppressor: the shot still starts at the gun drawn (the figure draws no suppressor)");
   check(ISO.muzzlePoint(state, b, { id: 5, side: "enemy", kind: "zombie", x: 1, y: 1 }, 0, 0, 1) === null, "no muzzle for the dead");
 }
 

@@ -47,7 +47,7 @@ import { hash01, gainXpAll, USE } from "./skills.js";
 import { SUPPLIES, GEAR, supWeight } from "./data.js";
 import { log, hurt, tickHour, day, snapshot, survivorById } from "./world.js";
 import { partyMembers, partyTile, bestSkill, awaitOrders, wipeParty, tileLabel, teamName, cargoRoom, unitsThatFit } from "./parties.js";
-import {
+import { coversCell, nearCell, unitCells,
   registerCombatHandler, registerBattleLayout, registerBattleSize, registerBossAI, startCombat, autoResolveCombat, finishCombat, byNumbersOdds,
   say, fx, damage, enemyUnit, active, reachable, pathTo, moveAlong, los,
 } from "./combat.js";
@@ -1800,9 +1800,10 @@ registerBattleLayout("hivecore", (b, ctx) => {
   const hm = bossUnit(b, "hivemind");
   const hp = (setup.enemy && setup.enemy.hp) || HIVEMIND.hp;
   hm.hp = hm.maxHp = hp;
-  const taken = b.units.find((u) => u.x === hx && u.y === cy);
-  if (taken) { if (!placeUnitRight(b, ctx, taken, Math.max(0, hx - 10), hx - 2)) taken.x = Math.max(0, hx - 6); }
-  hm.x = hx; hm.y = cy;
+  // Its 2 × 2 footprint round the pocket's cell: the first corner whose four cells stand; whoever stood there moves off.
+  const corner = [[hx - 1, cy - 1], [hx - 1, cy], [hx, cy - 1], [hx, cy]].find(([x, y]) => unitCells(hm, x, y).every(([cx2, cy2]) => cx2 >= 0 && cy2 >= 0 && cx2 < ctx.W && cy2 < ctx.H && ctx.standable(cx2, cy2))) || [hx, cy];
+  for (const taken of b.units.filter((u) => unitCells(hm, corner[0], corner[1]).some(([x, y]) => u.x === x && u.y === y))) { if (!placeUnitRight(b, ctx, taken, Math.max(0, hx - 10), hx - 2)) taken.x = Math.max(0, hx - 6); }
+  hm.x = corner[0]; hm.y = corner[1];
   b.units.push(hm);
   b.hivemind = { id: hm.id, tier: (setup.context && setup.context.tier) || 0, spawned: 0, turns: 0 };
   if (ctx.state) { // what your side brought for its weak spots (the AI's retreat counts what is still in hand: fightOutlook)
@@ -1853,11 +1854,13 @@ function phaseTwo(b, u, st) {
   }
   say(b, `${fell.length} pillar${fell.length === 1 ? "" : "s"} of flesh and bone come down${hurt.length ? `: ${hurt.join(", ")} caught under the falling flesh` : ""}.`, "danger");
 }
+// The centre cell of a boss's 2 × 2 body (its one cell when it has one): what its own reach and the throws at it go by.
+const heart = (u) => [u.x + (u.size > 1 ? 1 : 0), u.y + (u.size > 1 ? 1 : 0)];
 // The Hivemind's weak spots at the start of its turn (HIVEMIND.WEAK): what landed near it since its last turn
 // (throwables.js b.landed) and the flames around it. Returns { burning, stunned } for this turn.
 function weakSpots(b, u, st) {
   const W = HIVEMIND.WEAK, rng = b.rng;
-  const cheb = (x, y) => Math.max(Math.abs(x - u.x), Math.abs(y - u.y));
+  const cheb = (x, y) => { const [cx, cy] = nearCell(u, x, y); return Math.max(Math.abs(x - cx), Math.abs(y - cy)); }; // from the nearest cell of its 2 × 2 body: what lands on it or burns next to it
   for (const L of b.landed || []) {
     if (L.side === "enemy") continue;
     if (L.fx === "fire" && cheb(L.x, L.y) <= W.near + 1) st.burnLeft = W.burnTurns;
@@ -1895,9 +1898,11 @@ function weakSpots(b, u, st) {
 function hivemindThrowAt(b, u, t, have) {
   if (!have || u.dead || !active(t)) return null;
   const W = HIVEMIND.WEAK, st = b.hivemind || {};
-  const d = Math.hypot(t.x - u.x, t.y - u.y);
-  const clear = (r) => !b.units.some((o) => o.side === t.side && active(o) && Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y)) <= r);
-  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => Math.max(Math.abs(c.x - u.x), Math.abs(c.y - u.y)) <= W.near);
+  const [hx0, hy0] = heart(u), chebU = (x, y) => Math.max(Math.abs(x - hx0), Math.abs(y - hy0)); // from its heart (the centre cell of its 2 × 2 body): where to stand and throw, as for its one cell before
+  const touch = (x, y) => { const [cx, cy] = nearCell(u, x, y); return Math.max(Math.abs(x - cx), Math.abs(y - cy)); }; // from the edge of it: the flames on it
+  const [nx0, ny0] = nearCell(u, t.x, t.y), d = Math.hypot(t.x - nx0, t.y - ny0); // to the nearest part of its body
+  const clear = (r) => !b.units.some((o) => o.side === t.side && active(o) && chebU(o.x, o.y) <= r);
+  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => touch(c.x, c.y) <= W.near);
   const want = [];
   if (have.molotov && !burning && clear(W.safe)) want.push("molotov");
   if (!((st.stunLeft || 0) > 0)) {
@@ -1915,8 +1920,8 @@ function hivemindThrowAt(b, u, t, have) {
     for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
       const c = r.dist[y * b.w + x];
       if (!(c < Infinity)) continue;
-      const dd = Math.hypot(x - u.x, y - u.y), ch = Math.max(Math.abs(x - u.x), Math.abs(y - u.y));
-      if (dd > range || ch <= pulse || !los(b, x, y, u.x, u.y)) continue;
+      const [nx, ny] = nearCell(u, x, y), dd = Math.hypot(x - nx, y - ny), ch = chebU(x, y);
+      if (dd > range || ch <= pulse || !los(b, x, y, nx, ny)) continue;
       if (!best || c < best.c) best = { x, y, c };
     }
     if (!best) return null;
@@ -1924,15 +1929,16 @@ function hivemindThrowAt(b, u, t, have) {
     moveAlong(b, t, pathTo(r, best.x, best.y));
     if (!active(t) || t.ap < 1) return null;
   }
-  if (throwBlind(b, t, u.x, u.y) === null) return null;
-  return { item: key, x: u.x, y: u.y };
+  const [lx, ly] = nearCell(u, t.x, t.y); // onto the nearest part of its body
+  if (throwBlind(b, t, lx, ly) === null) return null;
+  return { item: key, x: lx, y: ly };
 }
 // The Hivemind's turn (combat.js registerBossAI): the pulse, a lash, the brood out of the walls.
 // The battle AI's outlook on it (combat.js fightOutlook): burning or reeling it counts for less, and the fire and bangs
 // your side still has for it count for you (HIVEMIND.WEAK outlook).
 function hivemindOutlook(b, u) {
   const W = HIVEMIND.WEAK, st = b.hivemind || {};
-  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => Math.max(Math.abs(c.x - u.x), Math.abs(c.y - u.y)) <= W.near);
+  const burning = (st.burnLeft || 0) > 0 || (b.fires || []).some((c) => { const [cx, cy] = nearCell(u, c.x, c.y); return Math.max(Math.abs(c.x - cx), Math.abs(c.y - cy)) <= W.near; }); // the flames next to its body
   const reeling = (st.stunLeft || 0) > 0;
   const left = Math.max(0, Math.min(4, (st.prep || 0) - (st.used || 0)));
   return { life: (burning ? W.burnLife : 1) * (reeling ? W.stunLife : 1), fire: reeling ? 0 : burning ? W.burnFire : 1, ours: 1 + W.prepEdge * left };
@@ -1950,7 +1956,7 @@ function hivemindOnLand(b, u, L) {
 function panicBrood(b, u, st, at = null) {
   const W = HIVEMIND.WEAK;
   const cheb = (z, x, y) => Math.max(Math.abs(z.x - x), Math.abs(z.y - y));
-  const near = (z) => (at ? cheb(z, at.x, at.y) <= W.panic + 1 : cheb(z, u.x, u.y) <= W.panicNear) || (b.fires || []).some((c) => cheb(z, c.x, c.y) <= W.panic);
+  const near = (z) => (at ? cheb(z, at.x, at.y) <= W.panic + 1 : cheb(z, ...heart(u)) <= W.panicNear) || (b.fires || []).some((c) => cheb(z, c.x, c.y) <= W.panic);
   const shy = b.units.filter((z) => z.called && z.side === "enemy" && active(z) && !z.reel && near(z));
   for (const z of shy) z.reel = { next: nextTurnOf(b, z), why: "the flames around the Hivemind" };
   if (shy.length) { st.panicked = (st.panicked || 0) + shy.length; say(b, `${shy.length} of the brood it called shy away from the flames.`, "good"); }
@@ -1960,7 +1966,7 @@ registerBossAI("broodmother", {
   onLand(b, u, L) {
     const W = HIVEMIND.WEAK;
     if (L.side !== "player" || !active(u)) return;
-    const d = Math.max(Math.abs(L.x - u.x), Math.abs(L.y - u.y));
+    const [cx, cy] = nearCell(u, L.x, L.y), d = Math.max(Math.abs(L.x - cx), Math.abs(L.y - cy)); // to the nearest cell of her 2 × 2 body
     const ap = L.fx === "flash" && d <= W.flash ? W.dazeFlash : (L.fx === "frag" || L.fx === "blast") && d <= W.blast ? W.dazeBlast : 0;
     if (!ap) return;
     const next = nextTurnOf(b, u);
@@ -1982,7 +1988,8 @@ registerBossAI("hivemind", {
     if (u.dead) return;
     if (M.P2.on && !st.phase2 && u.hp < u.maxHp * M.P2.at) phaseTwo(b, u, st);
     const P = st.phase2 ? M.P2 : M;
-    const cheb = (o) => Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y));
+    const [hx0, hy0] = heart(u), cheb = (o) => Math.max(Math.abs(o.x - hx0), Math.abs(o.y - hy0)); // the pulse from its heart (the centre cell of its 2 × 2 body)
+    const touch = (o) => { const [cx, cy] = nearCell(u, o.x, o.y); return Math.max(Math.abs(o.x - cx), Math.abs(o.y - cy)); }; // a lash from the edge of it
     const foes = b.units.filter((o) => o.side === "player" && active(o));
     const near = weak.stunned ? [] : foes.filter((o) => cheb(o) <= P.pulse); // reeling from a bang: no pulse, no lash
     if (near.length) {
@@ -1993,7 +2000,7 @@ registerBossAI("hivemind", {
         if (active(t) && rng.chance(P.stun) && !(t.stun && !t.stun.applied && t.stun.next >= nextTurnOf(b, t))) t.stun = { aim: 15, ap: 1, next: nextTurnOf(b, t), dazed: false };
       }
     }
-    const lash = weak.stunned ? [] : foes.filter((o) => active(o) && cheb(o) <= 1);
+    const lash = weak.stunned ? [] : foes.filter((o) => active(o) && touch(o) <= 1);
     if (lash.length) {
       const t = rng.pick(lash);
       const eff = Math.round(damage(b, t, rng.int(M.lash[0], M.lash[1]), u, false, { how: "melee", crit: false }));
@@ -2004,10 +2011,10 @@ registerBossAI("hivemind", {
     const due = st.phase2 ? (st.turns - st.phase2) % M.P2.spawnEvery === 0 : st.turns % M.spawnEvery === 1;
     if (due && st.spawned < cap && !weak.burning && !weak.stunned) { // burning or reeling: the walls give up nothing
       const cells = [];
-      for (let y = u.y - 6; y <= u.y + 6; y++) for (let x = u.x - 8; x <= u.x + 1; x++) {
+      for (let y = hy0 - 6; y <= hy0 + 6; y++) for (let x = hx0 - 8; x <= hx0 + 1; x++) { // round its heart (the old one cell), as before its 2 × 2 body
         if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
         const c = b.cells[y * b.w + x];
-        if (c.k !== "open" || !b.reach[y * b.w + x] || b.units.some((o) => o.x === x && o.y === y && !o.dead && !o.left)) continue;
+        if (c.k !== "open" || !b.reach[y * b.w + x] || b.units.some((o) => coversCell(o, x, y) && !o.dead && !o.left)) continue;
         let wall = false;
         for (let dy = -1; dy <= 1 && !wall; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < b.w && yy < b.h && b.cells[yy * b.w + xx].k === "hivewall") { wall = true; break; } }
         if (wall) cells.push([x, y]);
@@ -2215,7 +2222,7 @@ export function mouthNote(state, hive, id) {
 // guard's units (its fighters' power × GROUP_HIVE.FIGHT, as before); the whole way in costs the guard × (depth + 1) /
 // GROUP.depthDiv, spread over the brood on the shortest way and in the core (each chamber costs its brood left), and
 // the core the Hivemind and the Broodmother on top (GROUP.boss + bossTier × tier). The guard it kills: the brood it
-// killed × the guard each stands for (as your teams', cutGuard). It clears
+// killed × the guard each stands for (the guard over the brood on its way in, so the whole way in is the guard). It clears
 // what it pays for (the hive remembers: the chambers stay clear for a while, for your teams too), stops where the
 // budget runs out (driven off partway; a later party starts from what is still clear), and kills the Hivemind (the hive dies) when it
 // reaches and pays for the core. Four mouths (2026-10-13): it goes in by one of the hive's dice (its group's), and a party driven
@@ -2238,7 +2245,11 @@ export function groupHiveCrawl(state, hive, budget, fid = null) {
   // the guard × (depth + 1) / depthDiv of its strength: a young hive about its guard, a deep one three times it.
   const full = path.reduce((a, id) => { const r = roomById(den, id); return a + (r.kind === "core" ? core.count : roomFull(state, hive, den, r, G)); }, 0);
   const unit = full > 0 ? (G * (den.depth + 1)) / (HCRAWL.GROUP.depthDiv * full) : 0;
-  const share = G / Math.max(1, denBroodTotal(state, hive, G)); // the guard each brood stands for (cutGuard)
+  // The guard each brood it kills stands for: the guard spread over the brood on its way in (the den's brood comes to
+  // the party along its way). Over the whole den's brood, as your teams' cutGuard, the round grid's side chambers
+  // (2026-10-13: 13 chambers, under half the brood on the shortest way, where the old den's way held most of it)
+  // made each kill worth a third of the guard it was: tools/grouphivetest.js, a fortress's 133 days became 334.
+  const share = G / Math.max(1, full);
   let left = budget, met = 0, reached = 0, burned = false, killed = 0, stop = mouth;
   for (const id of path) {
     const r = roomById(den, id);

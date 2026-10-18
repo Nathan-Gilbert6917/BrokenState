@@ -174,7 +174,9 @@ export function planModalHtml(state) {
   return html;
 }
 
-// The card at the top of the battle panel while the window is put aside (Look at the map first): the way back.
+// The chip in a raid's top strip while the window is put aside (ui/combat.js renderRaidTop): the way back.
+export const planChip = (b) => (planOpen(b) && !b.over && planUI.map ? `<button class="mini" data-action="cb-plan" data-v="back" data-tip="Back to the Before you go in window (Esc does too): the scout, the night, the kit, the side to go in from, or leave.">▸ Back to the plan</button>` : "");
+// The card at the top of the battle panel (or over the map on a raid) while the window is put aside (Look at the map first): the way back.
 export function planAsideHtml(state, b) {
   if (!planOpen(b) || b.over || !planUI.map) return "";
   const P = planOf(b);

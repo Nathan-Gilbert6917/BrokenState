@@ -30,7 +30,7 @@
 // holds the gate (two with 9+), the best shots take the towers, the next best the walkway (spread out, not right
 // next to a breach), close fighters wait a few tiles behind the openings and any other shooters stand back in
 // columns 2–6, about 8 tiles from the openings.
-import { MAP_W, MAP_H, CELL, WEAPONS, active, unitAt, unitById, coverAgainst, transformBattle, say } from "./combat.js";
+import { MAP_W, MAP_H, CELL, WEAPONS, active, unitAt, unitById, coverAgainst, transformBattle, say, occupancy } from "./combat.js";
 import { setFortLit } from "./fort.js"; // the fort map's floodlights (setLit)
 import { count, baseWalls } from "./buildings.js";
 import { poweredType } from "./power.js";
@@ -206,9 +206,12 @@ export function deployUnits(b, ctx, base, c) {
   const inside = Math.round(enemies.length * DEPLOY.INSIDE_FRAC);
   enemies.forEach((u, i) => {
     const minX = i < inside ? DEPLOY.LINE_X - 1 : DEPLOY.ENEMY_X;
+    // okCell with the cells taken worked out once a scan (combat.js occupancy), the rows and columns tested first.
+    const occ = occupancy(b, W0, H0);
+    const free = (x, y) => x >= 0 && y >= 0 && x < W0 && y < H0 && b.reach[y * W0 + x] && CELL[cellK(x, y)].walk && !occ[y * W0 + x];
     const cells = [];
-    for (let y = 0; y < H0; y++) for (let x = minX; x < W0; x++) if (okCell(x, y) && inFront(H0, y) && (i >= inside || x >= DEPLOY.WALL_X - 1)) cells.push([x, y]);
-    if (!cells.length) for (let y = 0; y < H0; y++) for (let x = DEPLOY.WALL_X + 1; x < W0; x++) if (okCell(x, y)) cells.push([x, y]);
+    for (let y = 0; y < H0; y++) for (let x = minX; x < W0; x++) if (inFront(H0, y) && (i >= inside || x >= DEPLOY.WALL_X - 1) && free(x, y)) cells.push([x, y]);
+    if (!cells.length) for (let y = 0; y < H0; y++) for (let x = DEPLOY.WALL_X + 1; x < W0; x++) if (free(x, y)) cells.push([x, y]);
     if (!cells.length) return;
     let c0;
     if (u.pod != null) {

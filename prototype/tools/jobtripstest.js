@@ -176,7 +176,10 @@ section("Hunters: out at dawn and dusk, the catch in as they arrive");
 // ======================================================================
 section("Hunting without a cabin: the tiles next to the base; a cabin widens the grounds");
 {
-  const state = seedWith((st, b) => !H.huntWorkWhy(st, b) && !b.buildings.some((x) => x.type === "huntcabin"));
+  // The hub stands in a town and every town has a ring of suburbs round it (mapgen.js), so no seed's hub has game
+  // land next door any more: give it back its wild ground (the bare suburb blocks next to it become forest).
+  const wild = (st, b) => { for (const n of st.grid.neighbors(b.tile)) { const t = st.tiles[n]; if (t.terrain === "suburb" && !t.loc) t.terrain = "forest"; } };
+  const state = seedWith((st, b) => { wild(st, b); return !H.huntWorkWhy(st, b) && !b.buildings.some((x) => x.type === "huntcabin"); });
   const base = hub(state);
   check(H.huntRadius(base) === 1 && H.huntWorkWhy(state, base) === "", `no cabin: the Hunt job works (${H.huntGrounds(state, base).length} tiles of hunting grounds)`);
   const hunter = onJob(state, base, atBase(state, base.id)[1], "hunt");

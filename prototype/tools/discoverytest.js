@@ -18,6 +18,7 @@ import { LOCATIONS } from "../src/sim/data.js";
 import { isPublicSite, hiddenSites, siteKnown, siteKnownTo, nearRoad, knownLoc, discoveryHour } from "../src/sim/discovery.js";
 import { tileLabel, launchExpedition, partyTile, removeParty, planPath } from "../src/sim/parties.js";
 import { nearbySites } from "../src/sim/plans.js";
+import { knownPois } from "../src/sim/pois.js"; // the tile's known places (a raid goes into one of them)
 import { setAutopilot, crewAI } from "../src/sim/autopilot.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { radioNews, canRadioGroup } from "../src/sim/radio.js";
@@ -85,7 +86,9 @@ const namesDrawn = (st, id) => { drawn.length = 0; R.centerOn(st, id); R.redrawM
   let panel = "";
   try { panel = UI.renderRight(st, { selected: id }); } catch (e) { panel = `error ${e.message}`; }
   check(!panel.includes(name) && !panel.startsWith("error"), "the tile panel shows bare ground");
-  check(!UI.tileActions(st, id).some(([m]) => m === "scavenge"), "no Scavenge / raid among the right-click actions");
+  // Scavenge / raid goes into the tile's known places (pois.js): offered only when another place on the tile is known, never for the hidden site itself.
+  const offered = UI.tileActions(st, id).some(([m]) => m === "scavenge");
+  check(!offered || (knownPois(st, id).length > 0 && !knownPois(st, id).includes(0)), `no Scavenge / raid among the right-click actions for the hidden site${offered ? " (offered for another known place on the tile)" : ""}`);
   check(R.mapLoc(st, id) === null, "the map's site lookup gives nothing");
   check(!nearbySites(st, { center: id, radius: 3 }).some((s) => s.tile === id), "not among the planner's nearby sites");
   const need = crewAI.needs(st, "balanced");

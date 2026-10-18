@@ -31,6 +31,7 @@ import { treatAtBase } from "./sim/medical.js";
 import { makeMedic } from "./sim/training.js"; // "Make medic" for a graduated trainee
 import { queueCraft, cancelCraft, craftQueue } from "./sim/crafting.js";
 import { initRenderer, render, resize, centerOn, screenToTile, zoomAt, camera, view, tileTooltip, resetView, mapLoc } from "./ui/render.js";
+import { setPoiReveal } from "./sim/pois.js"; // the dev tools' Reveal map shows every point of interest
 import { workerAt } from "./ui/workermap.js"; // the base workers on the map: their tooltip, a click opens the person
 import { fieldworksActions, fieldworksChange, fwPlaceTiles, fwPlaceBanner, fwPlaceClick, fwPlaceCancel, teamFieldItems } from "./ui/fieldworks.js";
 import { fwAt as fieldWorkAt, FIELD, placeProblem, planFieldWork } from "./sim/fieldworks.js"; // field works: the base tab, the tile picker
@@ -52,14 +53,15 @@ import { fishSpot, gameAbundance } from "./sim/hunting.js";
 import { forageAbundance } from "./sim/foraging.js";
 import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
-import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
-import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
+import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatLeave, cui } from "./ui/combat.js";
+import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup } from "./ui/newgame.js";
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
 import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
+import { ITEMMENU_ACTIONS, itemMenuHtml, openItemMenu, closeItemMenu } from "./ui/itemmenu.js"; // right-click on an item in an inventory view
 import { ARMV_ACTIONS, ARMV_INPUT } from "./ui/armoryview.js"; // the armory list: grouped, cards or compact rows
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE, UNPACK_ACTIONS, unpackUp } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { TEAMMEET_ACTIONS, TEAMMEET_CHANGE } from "./ui/teammeet.js"; // teams together on a tile: people, goods, merge
@@ -89,6 +91,7 @@ import { PRISON_ACTIONS, PRISON_CHANGE } from "./ui/prisoners.js";
 import { openNegotiation, sendHandover, dealsOf } from "./sim/ransom.js"; // ransoms for your captives (the People tab)
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { playerTile } from "./sim/hardcore-start.js";
+import { freshRng } from "./sim/appearance.js"; // Random run: dice of their own for the settings
 import { START_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
@@ -113,6 +116,7 @@ import { MAX_SPEED, SPEEDS, SLOWEST_SPEED, initPacing, cardUp, trayEsc, pacingFr
 import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
 document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
+import { checkPictures } from "./ui/pictures.js"; // once a second: a kept picture found blank (a lost GPU context) is drawn again, with every other
 import { initCrash, reportCrash, crashUp } from "./ui/crash.js"; // the error screen: an uncaught exception stops the clock, writes the crash save
 import { newCampaignId } from "./sim/savesummary.js"; // each run's id: the save list groups its saves, its autosaves rotate
 import { loadOptions, saveOptions } from "./ui/saves.js";
@@ -125,6 +129,7 @@ import {
   loadLayout, saveLayout, setFolded, setShut, toggleAll, resetLayout, autoReveal, newDangerAlerts, alertsPill, alertsFoldButton, windowFrame,
 } from "./ui/layout.js";
 import { initPanels, applyLayout, setLogLine, setRailBadges, fitWindows, resetWindows, windowSizes, watchFloating } from "./ui/windows.js";
+import { initLogWindow, syncLogWindow } from "./ui/logwindow.js"; // a raid's log as a small window over the battle map
 import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js"; // the boxes over the map move (drag a header, Alt+arrows)
 import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
@@ -173,7 +178,7 @@ const freshUi = () => ({
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
   mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
 });
-const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -192,6 +197,9 @@ initAudio(options, () => saveOptions(options)); // the Sound options, the first-
 let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize });
 let dirty = true;      // a tick changed something: redraw the panels (throttled at dev speeds)
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
+let clockDirty = false; // a new minute on the clock and nothing else: only what counts the minutes (refreshClock)
+let drawn = 0;           // panel redraws so far (refresh, refreshClock): the map's tooltip is built again after one
+let timedUi = false;     // the last refresh showed something that ends after real seconds (the alerts' flash, the guide's pulse)
 
 function randomSeed() {
   return Math.floor(Math.random() * 1e6);
@@ -231,6 +239,7 @@ initCombatUI($("combatmap"));
 initMinimap($("mapwrap"), canvas, options); // ui/minimap.js: the map's corner
 initEdgeFx($("mapwrap"), $("cbmapwrap"), () => refresh(false)); // ui/edgefx.js: the screen-edge warnings
 initOverlays({ refresh: () => { dirtyNow = true; } }); // ui/overlaydrag.js: the boxes over the map keep where the player put them
+initLogWindow($("cblogwin"), $("cbmapwrap"), { refresh: () => { dirtyNow = true; } }); // ui/logwindow.js: the raid's log window (drag, resize, fold)
 // The map follows its box whatever changes it (a panel folded or dragged wider, the UI size).
 if (typeof ResizeObserver !== "undefined") {
   new ResizeObserver(() => {
@@ -271,12 +280,20 @@ function frame(now) {
 
 function step(now) {
   const t0 = ui.showFps ? performance.now() : 0;
+  checkPictures(now); // ui/pictures.js: the sentinel, once a second
   const gap = now - last;
   const dt = Math.min(0.25, gap / 1000);
   last = now;
   let ticks = 0;
   if (state.autopilot && ui.started && !ui.settings && autopilotResolve(state)) dirty = true; // cards and battles never wait for a click (the menu holds everything)
   pacingFrame(state, ui); // ui/pacing.js: new cards get their kind, cards out of date leave the tray
+  // An event that stops the clock (a card, battle, search, trade or crawl) leaves the speed paused, so the clock
+  // is still stopped when the player leaves it; Space or Run goes back to the speed it had.
+  if (ui.started && ui.speed > 0 && !state.autopilot && !state.gameOver &&
+      (cardUp(state, ui) || !!state.combat || !!state.engagement || !!state.trade || !!activeCrawl(state) || !!activeHiveCrawl(state))) {
+    if (ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed;
+    ui.speed = 0;
+  }
   if (!blocked() && ui.speed > 0 && !ui.moveParty && !ui.fwPlace) { // ui/fieldworks.js: the clock waits for a field work's tile
     acc += dt * ui.speed * HOURS_PER_SECOND;
     while (acc >= 1 && ticks < 12) {
@@ -310,11 +327,11 @@ function step(now) {
   setClockFrac(view.hourFrac); // orders given from now on start this far into the hour (sim/parties.js wayOn)
   const mins = $("tb-min"), mm = String(Math.floor(view.hourFrac * 60)).padStart(2, "0");
   if (mins && mins.textContent !== mm) mins.textContent = mm;
-  // A new minute on the clock redraws the panels: the ETAs, the "left" times and the bars of the orders under way count
-  // the minutes of the hour already gone (sim/parties.js clockFrac), so they move with the clock, not only on the hour
-  // or at the next click. Panels whose HTML comes out the same are not touched (setHTML).
+  // A new minute on the clock redraws what counts the minutes: the ETAs, the "left" times and the bars of the orders
+  // under way count the minutes of the hour already gone (sim/parties.js clockFrac), so they move with the clock, not
+  // only on the hour or at the next click (refreshClock; the rest waits for the world or the player to change).
   const minute = state.hour * 60 + Math.floor(view.hourFrac * 60);
-  if (minute !== shownMinute) { shownMinute = minute; dirty = true; }
+  if (minute !== shownMinute) { shownMinute = minute; if (timedUi) dirty = true; else clockDirty = true; } // a flash or pulse showing: everything, so it goes on time
   autosaveCheck(state, ui, settingsApi, now); // dawn, a hive assault, the end of the run (ui/settings.js)
   if (ui.timelapse) tlFrame(state, ui, now); // recorded frames instead of the live map (ui/timelapse.js)
   else if (state.combat) {
@@ -326,6 +343,7 @@ function step(now) {
   if (ui.title) titleFrame(state, ui, now);
   audioFrame(state, ui, now); // battle and map cues, the ambience (ui/audio.js)
   if (dirtyNow || (dirty && (ui.speed <= MAX_SPEED || now - lastRefresh >= SLOW_REFRESH_MS))) refresh(false);
+  else if (clockDirty && ui.speed <= MAX_SPEED) refreshClock(); // (at dev speeds the throttled refresh has them too)
   if (ui.showFps) fpsFrame(now, gap, performance.now() - t0, ticks);
 }
 
@@ -333,7 +351,7 @@ function step(now) {
 // Each panel keeps the HTML it shows; a refresh that produces the same string leaves the DOM alone, so buttons
 // stay clickable and hover descriptions stay up while the clock runs. A panel is not rebuilt while the mouse
 // button is down on it (the click would be lost), nor under an open drop-down when only a tick asked for it.
-const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "cbbar", "banner", "alerts", "watchlist", "ask"];
+const PANELS = ["tb-clock", "tb-speed", "nb-btn", "nb-head", "nb-list", "tb-stock", "tb-people", "tb-tools", "left", "right", "log", "modal", "legend", "devpanel", "orders", "cbpanel", "cbbar", "cbtop", "cbcards", "cblogbody", "cblogfoot", "banner", "alerts", "watchlist", "ask"];
 const shown = new Map(); // element id -> the HTML last written
 let held = null;         // panel the mouse button went down in
 let heldBack = false;    // a rebuild was skipped because of it
@@ -444,7 +462,7 @@ function tidyUi() {
   view.fwPlace = ui.fwPlace ? fwPlaceTiles(state, ui) : null; // ui/fieldworks.js: the tile picker's highlight
   if (state.combat && ui.inv && !ui.inv.loot && !ui.inv.raid && !(ui.inv.peek && !state.combat.over) && !kitUp(state, ui)) { ui.inv = null; ui.invSel = null; } // only the loot screen, a raid's search window, a survivor's kit (look only, ui/inventory.js peekModal) and the plan's team inventory (ui/raidplan.js kitUp) go over a battle
   if (!state.combat && ui.inv && ui.inv.peek) { ui.inv = null; ui.invSel = null; } // the battle's kit view goes with the battle
-  if (state.combat && ui.gunb) ui.gunb = null; // the gun builder: never during a battle
+  if (state.combat && ui.gunb && !(ui.gunb.battle != null && !state.combat.over)) ui.gunb = null; // the gun builder: in a battle only on a fighter's gun (the item menu's Modify, ui/gunbuilder.js)
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
   if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
 }
@@ -496,6 +514,8 @@ function alertsHTML(html) {
 function refresh(user = true) {
   dirty = false;
   dirtyNow = false;
+  clockDirty = false;
+  drawn++;
   lastRefresh = last;
   tidyUi();
   syncPick(state, ui); // ui/mapselect.js: a selected party followed as it moves, the gold ring on the map
@@ -533,6 +553,7 @@ function refresh(user = true) {
   syncWatchlist(state, ui, { act: actions, refresh }); // places the Watching panel; the map-note editor
   syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
   setPanel("ask", askHtml(ui) + carryHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground
+  writeItemMenu(user);
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
@@ -542,6 +563,36 @@ function refresh(user = true) {
   }
   if (tipTarget && tipTarget.isConnected === false) hideTip(); // only when the hovered element was replaced
   guidePulse(ui); // what the guide's Show me points at (ui/guide.js)
+  timedUi = alerts.includes('class="al-flash"') || !!ui.guidePulse; // ui/alerts.js: 4 s; ui/guide.js: GUIDE.PULSE_MS
+}
+
+// A new minute on the clock and nothing else: only what counts the minutes is drawn again. The Teams tab, the running
+// orders, the watchlist, a team's panel or window (their ETAs and "left" times), and the selected team followed as
+// its sprite glides past the middle of a tile (ui/mapselect.js teamTileOf). The rest (the bases, the Needs and the
+// threat bars, the alerts, the log) changes only with the world (a tick, an arrival, an answer) or a click, which
+// set `dirty` and redraw everything (refresh). At 5x the clock shows a new minute 15 times a second, the hour once.
+function refreshClock() {
+  clockDirty = false;
+  drawn++;
+  syncPick(state, ui);
+  if (!layout.left && ui.tab === "teams") setHTML("left", renderLeft(state, ui), false);
+  if (!layout.right) setHTML("right", renderRight(state, ui), false);
+  refreshModal(false);
+  const orders = setPanel("orders", ui.started ? renderRunningOrders(state, ui) : "", false);
+  const watch = setPanel("watchlist", ui.started ? renderWatchlist(state, ui, { folded: !!layout.all }) : "", false);
+  if (orders || watch) { syncWatchlist(state, ui, { act: actions, refresh }); syncOverlays(); } // their boxes kept on the map
+}
+
+// The item right-click menu (ui/itemmenu.js) over the windows, kept inside the screen: where it would run off an edge
+// it is moved in once, and the place is kept (so the next redraw is the same markup).
+function writeItemMenu(user) {
+  if (ui.imenu && !ui.inv && !ui.baseView && !ui.gunb && !ui.meet) ui.imenu = null; // its window was closed
+  setPanel("itemmenu", itemMenuHtml(state, ui), user);
+  const box = ui.imenu && $("itemmenu").firstElementChild;
+  if (!box) return;
+  const r = box.getBoundingClientRect();
+  const x = Math.max(4, Math.min(ui.imenu.x, window.innerWidth - r.width - 4)), y = Math.max(4, Math.min(ui.imenu.y, window.innerHeight - r.height - 4));
+  if (x !== ui.imenu.x || y !== ui.imenu.y) { ui.imenu.x = Math.round(x); ui.imenu.y = Math.round(y); setPanel("itemmenu", itemMenuHtml(state, ui), true); }
 }
 
 function refreshModal(user) {
@@ -584,9 +635,29 @@ function renderCombat(user) {
     return;
   }
   box.classList.remove("hidden");
-  if (setHTML("cbpanel", renderCombatPanel(state), user)) {
-    const clog = $("cblog");
-    if (clog) clog.scrollTop = clog.scrollHeight;
+  // A raid on a site has no side panel (ui/combat.js raidLayout): the top strip, the cards over the map and the log window instead.
+  const raid = raidLayout(state.combat);
+  box.classList.toggle("noside", raid);
+  if (raid) {
+    setHTML("cbpanel", "", user);
+    if (setHTML("cbtop", renderRaidTop(state), user)) {
+      const top = $("cbtop"), mid = top && top.querySelector(".ct-mid");
+      if (mid && mid.offsetHeight) top.parentElement.style.setProperty("--cbtop-h", `${Math.round(mid.offsetHeight) + 14}px`); // the cards start under the strip
+    }
+    setHTML("cbcards", renderRaidCards(state), user);
+    if (setHTML("cblogbody", renderRaidLog(state), user)) {
+      const clog = $("cblogbody");
+      if (clog) clog.scrollTop = clog.scrollHeight;
+    }
+    setHTML("cblogfoot", renderRaidLogFoot(state), user);
+    syncLogWindow(true);
+  } else {
+    for (const id of ["cbtop", "cbcards", "cblogbody", "cblogfoot"]) setHTML(id, "", user);
+    syncLogWindow(false);
+    if (setHTML("cbpanel", renderCombatPanel(state), user)) {
+      const clog = $("cblog");
+      if (clog) clog.scrollTop = clog.scrollHeight;
+    }
   }
   setHTML("cbbar", renderCombatBar(state), user); // the bottom bar: the selected one's card, the orders, the turn controls (ui/battlebar.js)
 }
@@ -594,7 +665,7 @@ function renderCombat(user) {
 // Banners at the top of the map: paused (with the orders waiting for the unpause) and move mode.
 function bannerHTML() {
   if (!ui.started && ui.nrMap && !ui.title) return `<div class="paused" data-tip="The new-run screen is put aside so you can look around the map: where you start, the groups, the roads. Nothing runs until you start.">` +
-    `<b class="big">Setting up</b> Looking at the map <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button></div>`;
+    `<b class="big">Setting up</b> Looking at the map <button data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start position</button> <button data-action="nr-map" data-tip="Back to the new-run screen (Esc)">◀ Back to setup</button>${ui.nrMsg ? ` <span class="small">${esc(ui.nrMsg)}</span>` : ""}</div>`;
   if (!ui.started || state.gameOver || state.combat || ui.timelapse) return "";
   let html = trayHTML(state, ui); // the card tray (ui/pacing.js)
   if (ui.speed === 0) {
@@ -738,7 +809,7 @@ const actions = {
   speed: (d) => { ui.speed = Number(d.speed) || 0; if (ui.speed > 0 && ui.speed <= MAX_SPEED) ui.lastSpeed = ui.speed; },
   tab: (d) => { ui.tab = d.tab; },
   "dev-toggle": () => { ui.dev = !ui.dev; },
-  "dev-reveal": () => { view.devReveal = !view.devReveal; },
+  "dev-reveal": () => { view.devReveal = !view.devReveal; setPoiReveal(view.devReveal); }, // pois.js: every point of interest shows too
   "dev-infection": () => { view.layers.has("infection") ? view.layers.delete("infection") : view.layers.add("infection"); },
   "dev-fps": () => { ui.showFps = !ui.showFps; fpsLog.length = 0; fpsShownAt = 0; const el = $("fps"); if (el) el.textContent = "… FPS"; },
   // Autopilot: an AI governor runs the holdout (sim/autopilot.js). A battle or loot screen left open is finished for you.
@@ -1130,10 +1201,58 @@ const actions = {
   pact: (d) => { const f = factionById(state, state.trade.factionId); ui.tradeMsg = proposePact(state, f, d.k); },
   tradeleave: () => TRADE_ACTIONS.tradeleave(state, ui), // ui/tradewindow.js (the trade window's own handler)
   reroll: () => newWorld(randomSeed()),
+  // New start position (ui/newgame.js): where you start rolled again on the same map and seed (sim/startpick.js), away
+  // from where it is now. The crew on screen is carried over as edited (the groups' dice move with the start, and a
+  // normal start's colonists come after them); looking at the map stays open so the new spot can be seen.
+  "nr-start": () => {
+    if (ui.started) return;
+    const was = playerTile(state), onMap = ui.nrMap;
+    ui.startPick = { roll: 1 + Math.floor(Math.random() * 2147483646), not: was };
+    ui.crewEdited = true;
+    newWorld(state.seed, true);
+    ui.nrMap = onMap;
+    const now = playerTile(state);
+    ui.nrMsg = now === was ? "There is nowhere else to start on this map: try another seed or size."
+      : `New start position: ${state.bases[0] ? state.bases[0].name : "another spot on the road"}, ${state.grid.distance(was, now)} hexes from the last one.${onMap ? "" : " View map to see it."}`;
+  },
+  // Random run (ui/newgame.js rollRandomRun): every setting rolled, a new seed, a random crew and its gear, then Start.
+  "nr-random": () => {
+    if (ui.started) return;
+    const line = rollRandomRun(ui, freshRng());
+    newWorld(randomSeed());
+    if (ui.freeEdit && !ui.ironman) { // Customize: random builds within the points (the vehicle's back too, if it has one)
+      const before = state;
+      actions["nr-everything"]();
+      if (state === before) actions["nr-allcrew"]();
+    } else actions["nr-allcrew"](); // a new seed's crew is the dice's already; this shuffles the gear among them too
+    actions.begin();
+    if (ui.started) log(state, line, "info");
+  },
+  // New map (the new-run screen): a new seed with the survivors as they are (names, looks, skills, traits, the leader,
+  // a Customize build); who they were is kept too, the dice's ones carried as rolled (ui/newgame.js crewWithBackgrounds).
+  "nr-newmap": () => {
+    if (ui.started) return;
+    const crew = crewSnapshot(state).map((c, i) => (c.background || !state.survivors[i].background ? c : { ...c, background: state.survivors[i].background, rolled: true }));
+    newWorld(randomSeed(), true, { crew, crewRoll: ui.crewRoll, pickRoll: ui.pickRoll });
+  },
   // Randomize all (ui/newgame.js): in Hardcore the world is built again on the same seed with the new crew roll.
   "nr-allcrew": () => { state = randomizeAllCrew(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
   // Randomize everything (Customize, ui/newgame.js): every colonist's build and the vehicle's back, the world built again.
   "nr-everything": () => { state = randomizeEverything(state, ui, (crew, crewRoll, pickRoll) => { newWorld(state.seed, true, { crew, crewRoll, pickRoll }); return state; }); },
+  // A crew card's Background: a random preset, as picking it in Background does (ui/newgame.js randomBackground).
+  "nr-rand-bg": (d) => {
+    const s = survivorById(state, Number(d.id));
+    if (!s || ui.ironman || ui.started) return;
+    const key = randomBackground(state, s);
+    const crew = key && crewWithBackground(state, s.id, key);
+    if (!crew) return;
+    const i = state.survivors.indexOf(s);
+    newWorld(state.seed, true, pickRebuild(crew));
+    pointsLoad([i]);
+  },
+  // A crew card's Gear and All (ui/newgame.js): the world again on the same seed where they need it.
+  "nr-rand-gear": (d) => { state = randomizeGear(state, ui, survivorById(state, Number(d.id)), cardRebuild); },
+  "nr-all": (d) => { state = randomizeOne(state, ui, survivorById(state, Number(d.id)), cardRebuild); },
   "bg-close": () => closeBackgrounds(), // Done in the custom backgrounds window: the world is built again if a colonist's background changed
   pickleader: (d) => { state.survivors.forEach((s) => (s.leader = s.id === Number(d.id))); ui.crewEdited = true; },
   // A new game starts paused: look around and give the first orders, then press Space.
@@ -1173,7 +1292,7 @@ const actions = {
   keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
 };
 
-for (const k of ["cb-sel", "cb-act", "cb-plan", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv", "cb-bar"]) actions[k] = (d) => combatAction(state, k, d, ui);
+for (const k of ["cb-sel", "cb-act", "cb-plan", "cb-log", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv", "cb-bar"]) actions[k] = (d) => combatAction(state, k, d, ui);
 // Prisoners tab of a base (ui/prisoners.js): question, ransom, trade back, release, recruit, execute.
 for (const [k, fn] of Object.entries(PRISON_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // The planner's PLAN section (ui/plan.js): presets, steps, conditions; supplies are packed again for the new plan.
@@ -1193,6 +1312,7 @@ for (const [k, fn] of Object.entries(UNPACK_ACTIONS)) actions[k] = (d) => fn(sta
 for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => { fn(state, ui, d, ev); hideCtx(); }; // ui/teamform.js
 for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
 for (const [k, fn] of Object.entries(ARMV_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/armoryview.js: the armory list's groups, view, find box and type chips
+for (const [k, fn] of Object.entries(ITEMMENU_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/itemmenu.js: the item right-click menu
 // The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
 for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1398,11 +1518,12 @@ const changeActions = {
   worldsize: (el) => {
     if (el.value === "custom") { ui.worldSize = "custom"; ui.customW = state.grid.width; ui.customH = state.grid.height; }
     else ui.worldSize = sizeDef(el.value).key;
+    ui.startPick = null; // a new map: the start is its own again
     ui.factionCount = (ui.worldSize === "custom" ? customDef(ui.customW, ui.customH) : sizeDef(ui.worldSize)).defGroups;
     newWorld(state.seed, true);
   },
-  customw: (el) => { ui.customW = clampCustomW(el.value); newWorld(state.seed, true); },
-  customh: (el) => { ui.customH = clampCustomH(el.value); newWorld(state.seed, true); },
+  customw: (el) => { ui.startPick = null; ui.customW = clampCustomW(el.value); newWorld(state.seed, true); },
+  customh: (el) => { ui.startPick = null; ui.customH = clampCustomH(el.value); newWorld(state.seed, true); },
   hivecount: (el) => { ui.hiveCount = clampHives(el.value); newWorld(state.seed, true); },
   // Normal or Hardcore (sim/hardcore.js): the same seed and the edited crew (the first three in Hardcore, or the Starting people).
   // The new-run screen's Ironman box (ui/newgame.js): an Ironman crew starts as rolled, so ticking it turns Customize
@@ -1503,6 +1624,7 @@ for (const [k, fn] of Object.entries(GB_CHANGE)) changeActions[k] = (el) => fn(s
 // keepCrew: carry colonists edited on the new-run screen into the rebuilt world (and their Hardcore crew roll).
 // fresh: { crew, crewRoll } from Randomize all, in place of the edited colonists.
 function newWorld(seed, keepCrew = false, fresh = null) {
+  if (seed !== state.seed) ui.startPick = null; // a new map: the start is its own again
   const crew = fresh ? fresh.crew : keepCrew && ui.crewEdited ? crewSnapshot(state) : null;
   if (!keepCrew && !fresh) ui.pointsCrew = null; // a new crew: no Customize build kept aside for it
   if (fresh) { ui.crewRoll = fresh.crewRoll; ui.pickRoll = !!fresh.pickRoll; } // pickRoll: the crew roll came from a background pick
@@ -1510,7 +1632,7 @@ function newWorld(seed, keepCrew = false, fresh = null) {
   if (ui.timelapse) closeTimelapse(state, ui);
   Object.assign(ui, freshUi());
   ui.crewEdited = !!crew;
-  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, customBackgrounds: ui.ironman ? null : customLibrary() });
+  state = createWorld({ seed, factionCount: ui.factionCount, crew, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, customBackgrounds: ui.ironman ? null : customLibrary(), start: ui.startPick });
   state.pointsMax = ui.pointsMax; // Customize: each colonist's max (sim/custompoints.js)
   // Customize: everyone is built on points; anyone the crew did not cover (a new map, more people in another mode)
   // starts blank, the crew's dice its own (the map and the groups stay the seed's).
@@ -1518,7 +1640,7 @@ function newWorld(seed, keepCrew = false, fresh = null) {
     const snap = crewSnapshot(state), blank = blankCrew(state);
     if (ui.crewRoll == null) { ui.crewRoll = fixedCrewRoll(seed); ui.pickRoll = true; }
     ui.crewEdited = true;
-    state = createWorld({ seed, factionCount: ui.factionCount, crew: state.survivors.map((s, i) => (s.startPoints ? snap[i] : blank[i])), size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, customBackgrounds: customLibrary() });
+    state = createWorld({ seed, factionCount: ui.factionCount, crew: state.survivors.map((s, i) => (s.startPoints ? snap[i] : blank[i])), size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount, mode: ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, customBackgrounds: customLibrary(), start: ui.startPick });
     state.pointsMax = ui.pointsMax;
   }
   resetView();
@@ -1535,6 +1657,13 @@ function newWorld(seed, keepCrew = false, fresh = null) {
 const fixedCrewRoll = (seed) => 1 + ((seed * 48271) % 2147483646);
 // A rebuild for a background picked: the crew roll kept, else one of the seed's own (pickRoll: Ironman goes back to none).
 const pickRebuild = (crew) => (ui.crewRoll != null ? { crew, crewRoll: ui.crewRoll, pickRoll: ui.pickRoll } : { crew, crewRoll: fixedCrewRoll(state.seed), pickRoll: true });
+// The crew cards' dice (ui/newgame.js randomizeGear, randomizeOne): crew null builds the world again with the edited
+// crew; else with this crew (pick: a background was picked, the crew roll as pickRebuild keeps it). Returns the new state.
+function cardRebuild(crew, pick = false) {
+  if (!crew) { ui.crewEdited = true; newWorld(state.seed, true); }
+  else newWorld(state.seed, true, pick ? pickRebuild(crew) : { crew, crewRoll: ui.crewRoll, pickRoll: ui.pickRoll });
+  return state;
+}
 // Closing the custom backgrounds window (ui/backgrounds.js): a colonist whose background was changed or deleted in it
 // is built again from it (the dice if it is gone), the world on the same seed.
 function closeBackgrounds() {
@@ -1678,6 +1807,13 @@ function dropFocus() {
   if (a && a.blur && (a.tagName === "BUTTON" || a.tagName === "SELECT" || (a.tagName === "INPUT" && a.type === "checkbox"))) a.blur();
 }
 
+// A press anywhere but on the item menu closes it (the click goes on as usual).
+document.addEventListener("pointerdown", (ev) => {
+  if (!ui.imenu || (ev.target.closest && ev.target.closest("#itemmenu"))) return;
+  if (ev.button === 2 && ev.target.closest && ev.target.closest("[data-imenu], [data-loc]")) return; // another item: its own menu opens
+  closeItemMenu(ui);
+  dirtyNow = true;
+}, true);
 document.addEventListener("click", (ev) => {
   const el = ev.target.closest("[data-action]");
   if (!el || el.tagName === "SELECT" || (el.tagName === "INPUT" && el.type !== "checkbox")) return;
@@ -1690,8 +1826,14 @@ document.addEventListener("click", (ev) => {
   dropFocus();
   refresh();
 });
-// Right-click on a Work tab cell counts down (ui/work.js); elsewhere the browser's menu is left alone.
+// Right-click on a Work tab cell counts down (ui/work.js); on an item in a window, the item menu (ui/itemmenu.js);
+// elsewhere the browser's menu is left alone.
 document.addEventListener("contextmenu", (ev) => {
+  const it = ev.target.closest && ev.target.closest("[data-imenu], [data-loc]");
+  if (it && $("modal").contains(it) && !(ev.target.closest("#itemmenu"))) {
+    releaseHold();
+    if (openItemMenu(state, ui, it.dataset, ev.clientX, ev.clientY)) { ev.preventDefault(); hideTip(); refresh(); return; }
+  }
   const el = ev.target.closest && ev.target.closest("[data-rc]");
   if (!el) return;
   ev.preventDefault();
@@ -1776,6 +1918,7 @@ function placeTip(e) {
 
 // ---------- map input ----------
 let drag = null;
+let tipKey = ""; // what the map's tooltip shows (tile | worker | panel redraw)
 canvas.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   drag = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y, moved: false };
@@ -1806,7 +1949,12 @@ window.addEventListener("mousemove", (e) => {
     if (id >= 0) {
       const wk = workerAt((e.clientX - r.left) / camera.zoom + camera.x, (e.clientY - r.top) / camera.zoom + camera.y); // ui/workermap.js: a base worker out on a job trip
       view.workerHover = wk && wk.sid != null ? wk.sid : null; // ui/workermap.js: their route drawn faintly
-      tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
+      // The same tile and worker since the last redraw of the panels (nothing on it has changed): the text stays.
+      const key = `${id}|${wk ? wk.sid : ""}|${drawn}`;
+      if (key !== tipKey) {
+        tipKey = key;
+        tip.innerHTML = wk ? `${wk.html}<hr style="border:0;border-top:1px solid #ffffff22;margin:4px 0">${tileTooltip(state, id)}` : tileTooltip(state, id);
+      }
       tip.style.left = `${e.clientX - r.left + 16}px`;
       tip.style.top = `${e.clientY - r.top + 16}px`;
       tip.classList.remove("hidden");
@@ -1815,6 +1963,7 @@ window.addEventListener("mousemove", (e) => {
     view.hover = -1;
     view.workerHover = null;
     tip.classList.add("hidden");
+    tipKey = "";
   }
 });
 window.addEventListener("mouseup", (e) => {
@@ -2128,6 +2277,7 @@ cbCanvas.addEventListener("contextmenu", (e) => e.preventDefault()); // right cl
 // ---------- keyboard ----------
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.
 function closeTopLayer() {
+  if (closeItemMenu(ui)) return true; // ui/itemmenu.js
   if (!$("ctxmenu").classList.contains("hidden")) { hideCtx(); return true; }
   if (ui.zombieLook) { ui.zombieLook = false; return true; }
   if (ui.bgEditor) { closeBackgrounds(); return true; }

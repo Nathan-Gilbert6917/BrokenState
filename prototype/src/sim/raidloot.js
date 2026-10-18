@@ -25,6 +25,12 @@
 //
 // Splitting stacks: supplies are stacks, and any part of one moves, 1 to all (raidMove qty; supplyFit says how many
 // would go without moving anything). Only what fits goes; hauling time is paid on what actually moved.
+// Into pockets and the pack (2026-10-16, user request: "when looting these items are not put into pockets, packs; the
+// carried section is meant for larger heavy objects"): a found supply moved onto a slot of a survivor (a pocket, a
+// pack cell, the off hand, a bag in the arms) becomes the item that holds it (supitems.js: rounds a loose handful, the
+// rest s_<key>, up to its stack a slot), and "stow:<unitId>" puts it in their pockets and pack, the stacks of it they
+// have first. Take all does that; a bulky supply (building materials, car parts), one with no item form and what the
+// pockets and pack have no room for are carried loose (so a searched container is emptied: the raid bot moves on). A supply item put back in a container, Carried or the vehicle is a supply stack there again.
 // A container only rummaged through (search.js box.quick) keeps the rest hidden (box.hidden, not in this window).
 //
 // Extraction: a survivor who comes home (walked out, or carried out while down) adds what they carry loose to the
@@ -38,6 +44,7 @@
 //   "haul:<unitId>:gear:<i>"       "haul:<uid>:sup:<key>" "haul:<uid>:list"       what a survivor carries loose
 //   "trunk:<partyId>:gear:<i>"     "trunk:<pid>:sup:<key>" "trunk:<pid>:list"     the vehicle (the team's cargo)
 //   "s:<survivorId>:<slot>[:<i>]"                                                  the survivor's own slots
+//   "stow:<unitId>"                                                                 a supply stack into their pockets and pack
 import { GEAR, SUPPLIES, supWeight } from "./data.js";
 const worthPerKg = (it) => ((GEAR[it.key] && GEAR[it.key].value) || 1) / Math.max(0.1, itemLoad(it));
 import { survivorById } from "./world.js";
@@ -48,7 +55,9 @@ import { teamLoad, wornLoad, maxLoad } from "./load.js";
 import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
 import { gunLeavesTeam, unloadInto, teamGuns } from "./gunload.js";
 import { pileToArms } from "./carry.js"; // the team's loads off the ground: into the arms (call-time only: safe in the import cycle) // the rounds in a gun go with it (call-time only: safe in the import cycle)
-import { canStack, mergeInto, isSpent, stackLabel } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
+import { canStack, mergeInto, isSpent, stackLabel, isSupItem, roomIn, roundCap, amountOf, roundItems } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
+import { itemKeyOf, stockKeyOf, foundItems, putBack } from "./supitems.js"; // found supplies as items for pockets and the pack (2026-10-16)
+import { ROUND_SUPPLIES } from "./data-ammo.js";
 
 const EPS = 1e-9;
 export const HAUL = { free: 8, per: 12 }; // kg a turn for free, then kg an action
@@ -221,14 +230,14 @@ export const matesOf = (b, u) => b.units.filter((x) => x.side === "player" && x 
 // The unit holding a location on a person ("s:<sid>…" or "haul:<uid>…"), or null.
 function ownerOf(b, loc) {
   if (loc.o === "s") return b.units.find((x) => x.side === "player" && x.sid === loc.id && !x.dead) || null;
-  if (loc.o === "haul") return b.units.find((x) => x.side === "player" && x.id === loc.id) || null;
+  if (loc.o === "haul" || loc.o === "stow") return b.units.find((x) => x.side === "player" && x.id === loc.id) || null;
   return null;
 }
 
 // Who may use a location from this window: the survivor (uid) and the teammates next to them, the box next to them,
 // the trunk at the vehicle.
 function reach(state, b, u, loc) {
-  if (loc.o === "s" || loc.o === "haul") {
+  if (loc.o === "s" || loc.o === "haul" || loc.o === "stow") {
     const o = ownerOf(b, loc);
     return o && (o === u || matesOf(b, u).includes(o)) ? "" : "Only someone right next to them can hand things over.";
   }
@@ -297,7 +306,8 @@ export function raidMove(state, uid, fromStr, toStr, qty = Infinity) {
   const e = reach(state, b, u, from) || reach(state, b, u, to);
   if (e) return e;
   lootLayer(b).lootBy = u.id; // the one whose window it is (messages name the others)
-  if (from.slot === "sup") return moveSupply(state, b, u, from, to, qty);
+  if (from.slot === "sup") return to.o === "stow" ? stowSupply(state, b, u, from, to, qty) : isList(to) ? moveSupply(state, b, u, from, to, qty) : slotSupply(state, b, u, from, to, qty);
+  if (to.o === "stow") return "Drop it on a pocket or a pack cell.";
   return moveGear(state, b, u, from, to);
 }
 
@@ -311,7 +321,7 @@ export function supplyFit(state, uid, fromStr, toStr, qty = Infinity) {
   const from = parseRaidLoc(fromStr), to = parseRaidLoc(toStr);
   if (from.slot !== "sup") return { have: 0, n: 0, err: "Not a supply stack." };
   const e = reach(state, b, u, from) || reach(state, b, u, to);
-  const P = planSupply(state, b, u, from, to, qty);
+  const P = to.o === "stow" ? planStow(state, b, u, from, to, qty) : isList(to) ? planSupply(state, b, u, from, to, qty) : planSlot(state, b, u, from, to, qty);
   return { have: P.have || 0, n: (e || P.err != null) ? 0 : P.n, err: e || P.err || "" };
 }
 
@@ -361,6 +371,161 @@ function planSupply(state, b, u, from, to, qty) {
   return { A, B, k, n, have, name, timed, w, shift };
 }
 
+// ---------- found supplies into a slot (supitems.js) ----------
+// The item a found supply is held as on a person: rounds a loose handful, the rest its s_<key> (a food fresh as its kind
+// is now). null: none (the abstract ammo count).
+function heldForm(state, k, n) {
+  if (!itemKeyOf(k)) return null;
+  return ROUND_SUPPLIES[k] ? roundItems(k, n, true)[0] || null : foundItems(state, k, n)[0] || null;
+}
+// The supply stack's pieces at `from`: how many there are, and shift(m) taking m of them (found first, then what the
+// team packed) with its undo.
+function supplySource(A, k) {
+  const have = Math.floor(Math.max(0, A.sup[k] || 0)) + (A.packed ? Math.floor(Math.max(0, A.packed[k] || 0)) : 0);
+  const take = (m) => {
+    const fromFound = Math.min(m, Math.floor(Math.max(0, A.sup[k] || 0)));
+    A.sup[k] = (A.sup[k] || 0) - fromFound;
+    const rest = m - fromFound;
+    if (rest > 0 && A.packed) A.packed[k] = (A.packed[k] || 0) - rest;
+    return () => { A.sup[k] = (A.sup[k] || 0) + fromFound; if (rest > 0) A.packed[k] += rest; };
+  };
+  return { have, take };
+}
+// The plan of a supply moved onto one slot of a survivor: { n, have, put(m) → undo, ... } or { err, have }.
+function planSlot(state, b, u, from, to, qty) {
+  const A = place(state, b, from), B = place(state, b, to);
+  if (!A || !B || !B.arr) return { err: "That is not there any more." };
+  const k = from.i;
+  const src = supplySource(A, k);
+  const have = src.have;
+  if (have < 1 || !SUPPLIES[k]) return { err: "Nothing there.", have: 0 };
+  const name = SUPPLIES[k].name.toLowerCase();
+  const probe = heldForm(state, k, 1);
+  if (!probe) return { err: `The ${name} is carried loose, not held in a slot.`, have };
+  const cur = getAt(B, to);
+  let room;
+  if (cur) {
+    if (!canStack(cur, probe)) return { err: `The ${cur.name} is there already: drop the ${name} on a free spot or on a stack of it.`, have };
+    room = roomIn(cur);
+    if (room < 1) return { err: `The ${stackLabel(cur)} is full.`, have };
+  } else {
+    const why = fitReason(probe, to.slot, B.s);
+    if (why) return { err: why, have };
+    room = roundCap(probe);
+  }
+  const put = (m) => {
+    const undoA = src.take(m);
+    if (cur) { const was = cur.dur; cur.dur = Math.floor(cur.dur) + m; return () => { cur.dur = was; undoA(); }; }
+    const it = heldForm(state, k, m);
+    B.arr[B.key] = it;
+    return () => { B.arr[B.key] = null; undoA(); };
+  };
+  const people = [...new Set([u, ownerOf(b, from), ownerOf(b, to)].filter(Boolean))];
+  const before = rooms(state, b, people);
+  const undoOne = put(1);
+  const one = rooms(state, b, people);
+  undoOne();
+  let n = Math.min(have, room, Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : have);
+  let limit = "";
+  for (const key of Object.keys(one)) {
+    if (one[key] == null) continue;
+    const per = before[key] - one[key];
+    if (per <= EPS) continue;
+    const fit = Math.max(0, Math.floor((before[key] + EPS) / per));
+    if (fit < n) { n = fit; limit = key; }
+  }
+  if (n < 1) return { err: tooHeavy(state, b, limit || u.id, name), have };
+  const w = supWeight(k);
+  const timed = hauling(from, to);
+  if (timed) {
+    const fit = Math.floor((haulBudget(b, u) + 1e-6) / w);
+    if (fit < 1) return { err: noTime(u, name), have };
+    n = Math.min(n, fit);
+  }
+  return { k, n, have, name, timed, w, put };
+}
+function slotSupply(state, b, u, from, to, qty) {
+  const P = planSlot(state, b, u, from, to, qty);
+  if (P.err != null) return P.err;
+  const { k, n, have, name, timed, w, put } = P;
+  put(n);
+  if (timed) payHaul(b, u, n * w);
+  tally(b, from, to, { sup: k, n });
+  const A = place(state, b, from);
+  afterBox(b, A && A.box);
+  const o = ownerOf(b, to), sv = survivorById(state, to.id);
+  if (o && sv) refit(state, b, o, sv);
+  return `${n} ${name} → ${where(state, b, to)}${n < have ? ` (${have - n} left)` : ""}.`;
+}
+// The slots a found supply would go in on a survivor, best first: the stacks of it they hold with room, then a free
+// pocket (a small one), a free pack cell (not a bulky one). [] when it has no held form or is bulky.
+function stowSlots(state, s, k) {
+  const probe = heldForm(state, k, 1);
+  if (!s || !probe || isBulky(probe.key)) return [];
+  ensureInv(s);
+  const out = [];
+  const pk = packOf(s);
+  s.pockets.forEach((it, i) => { if (it && canStack(it, probe) && roomIn(it) >= 1) out.push(`s:${s.id}:pocket:${i}`); });
+  (pk || []).forEach((it, i) => { if (it && canStack(it, probe) && roomIn(it) >= 1) out.push(`s:${s.id}:pack:${i}`); });
+  if (!fitReason(probe, "pocket")) s.pockets.forEach((it, i) => { if (!it) out.push(`s:${s.id}:pocket:${i}`); });
+  if (pk && !fitReason(probe, "pack")) pk.forEach((it, i) => { if (!it) out.push(`s:${s.id}:pack:${i}`); });
+  return out;
+}
+// How much of a stack "stow:<uid>" would take: the room in their pockets and pack, by weight and hauling time.
+function planStow(state, b, u, from, to, qty) {
+  const o = b.units.find((x) => x.id === to.id && x.side === "player" && !x.dead);
+  const s = o && survivorById(state, o.sid);
+  if (!s) return { err: "Nobody to carry it." };
+  const A = place(state, b, from);
+  if (!A) return { err: "That is not there any more." };
+  const k = from.i;
+  const have = supplySource(A, k).have;
+  if (have < 1 || !SUPPLIES[k]) return { err: "Nothing there.", have: 0 };
+  const name = SUPPLIES[k].name.toLowerCase();
+  const probe = heldForm(state, k, 1);
+  if (!probe) return { err: `The ${name} is carried loose, not held in a pocket or a pack.`, have };
+  if (isBulky(probe.key)) return { err: `The ${name} is too big for a pocket or a pack: carry it.`, have };
+  let n = 0;
+  for (const t of stowSlots(state, s, k)) {
+    const L = parseRaidLoc(t), P = place(state, b, L), cur = P && getAt(P, L);
+    n += cur ? roomIn(cur) : roundCap(probe);
+  }
+  if (n < 1) return { err: `No room for the ${name} in ${s.name.split(" ")[0]}'s pockets or pack.`, have };
+  n = Math.min(n, have, Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : have);
+  const w = supWeight(k);
+  if (o !== ownerOf(b, from) && w > EPS) {
+    const fit = Math.floor((personalRoom(state, o) + EPS) / w);
+    if (fit < 1) return { err: tooHeavy(state, b, o.id, name), have };
+    n = Math.min(n, fit);
+  }
+  if (hauling(from, { o: "s" }) && w > EPS) {
+    const fit = Math.floor((haulBudget(b, u) + 1e-6) / w);
+    if (fit < 1) return { err: noTime(u, name), have };
+    n = Math.min(n, fit);
+  }
+  return { n, have, name, s };
+}
+// A found supply into a survivor's pockets and pack (the stacks of it first), as much as fits.
+function stowSupply(state, b, u, from, to, qty) {
+  const P = planStow(state, b, u, from, to, qty);
+  if (P.err != null) return P.err;
+  const k = from.i;
+  let left = P.n, moved = 0;
+  const spots = [];
+  for (const t of stowSlots(state, P.s, k)) {
+    if (left < 1) break;
+    const L = parseRaidLoc(t);
+    const S = planSlot(state, b, u, from, L, left);
+    if (S.err != null) continue;
+    slotSupply(state, b, u, from, L, S.n);
+    moved += S.n; left -= S.n;
+    spots.push(L.slot === "pocket" ? "a pocket" : "the pack");
+  }
+  if (!moved) return `No room for the ${P.name} in ${P.s.name.split(" ")[0]}'s pockets or pack.`;
+  const left2 = P.have - moved;
+  return `${moved} ${P.name} → ${[...new Set(spots)].join(" and ")}${left2 > 0 ? ` (${left2} left)` : ""}.`;
+}
+
 // Moves n of the stack (n: as many as fit, at most qty; any part of a stack can be taken, 1 to all).
 function moveSupply(state, b, u, from, to, qty) {
   const P = planSupply(state, b, u, from, to, qty);
@@ -380,6 +545,7 @@ function moveGear(state, b, u, from, to) {
   const item = getAt(A, from);
   if (!item) return "Nothing there.";
   if (isList(from) && isList(to) && from.o === to.o && from.id === to.id) return "";
+  if (isList(to) && isSupItem(item)) return itemToStack(state, b, u, A, B, from, to, item);
   let cur = null;
   if (!isList(to)) {
     const why = fitReason(item, to.slot);
@@ -456,6 +622,29 @@ function moveGear(state, b, u, from, to) {
   return cur ? `${item.name} → ${where(state, b, to)}; the ${cur.name} → ${where(state, b, curTo)}.` : `${item.name} → ${where(state, b, to)}.`;
 }
 
+// A supply item (supitems.js) put in a container, Carried or the vehicle: a supply stack there again (its food back
+// in the team's cargo with the shelf it has left).
+function itemToStack(state, b, u, A, B, from, to, item) {
+  const k = stockKeyOf(item), q = amountOf(item);
+  if (!k || !(q >= 1)) return "Nothing there.";
+  const timed = hauling(from, to);
+  const kgMoved = itemLoad(item);
+  if (timed && haulCost(b, u, kgMoved) > (u.ap || 0) && !((u.ap || 0) >= 1 && kgMoved > haulBudget(b, u))) return noTime(u, item.name);
+  const people = [...new Set([u, ownerOf(b, from), ownerOf(b, to)].filter(Boolean))];
+  const before = rooms(state, b, people);
+  const was = B.sup[k];
+  const restore = A.arr ? (() => { const at = A.key; A.arr[at] = null; return () => (A.arr[at] = item); })() : (() => { const i = A.gear.indexOf(item); A.gear.splice(i, 1); return () => A.gear.splice(i, 0, item); })();
+  B.sup[k] = (B.sup[k] || 0) + q;
+  const which = broke(before, rooms(state, b, people));
+  if (which) { if (was === undefined) delete B.sup[k]; else B.sup[k] = was; restore(); return tooHeavy(state, b, which, item.name); }
+  if (to.o === "trunk" && B.p && B.p.cargo) { B.sup[k] -= q; if (!(B.sup[k] > 0)) delete B.sup[k]; putBack(state, B.p.cargo, item); } // its food a lot with the shelf it has left
+  if (timed) payHaul(b, u, kgMoved);
+  tally(b, from, to, { sup: k, n: q });
+  afterBox(b, A.box || B.box);
+  if (from.o === "s") { const o = ownerOf(b, from), sv = survivorById(state, from.id); if (o && sv) refit(state, b, o, sv); }
+  return `${stackLabel(item)} → ${where(state, b, to)}.`;
+}
+
 function where(state, b, loc) {
   if (loc.o === "rbox") { const c = lootLayer(b).containers.find((x) => x.id === loc.id); return c && c.kind === "ground" ? "on the ground" : c && c.kind === "body" ? "left on the body" : "left in the container"; }
   if (loc.o === "haul") {
@@ -497,8 +686,9 @@ export const setRefit = (fn) => (refitHook = fn);
 function refit(state, b, u, s) { if (refitHook) refitHook(b, u, s); }
 
 // ---------- whole loads ----------
-// Everything from the container that fits on this survivor: supplies first, then items by worth per kg (small
-// things to pockets and the pack, the rest carried). Returns { got: [names], left: n }.
+// Everything from the container that fits on this survivor: supplies first (into pockets and the pack as items; a bulky
+// one, and what has no room there, carried), then items by worth per kg (small things to pockets and the pack, the rest carried). Returns
+// { got: [names], left: n }.
 export function raidTakeAll(state, uid, boxId) {
   const b = state.combat;
   const u = b && b.units.find((x) => x.id === uid);
@@ -509,7 +699,10 @@ export function raidTakeAll(state, uid, boxId) {
   for (const k of Object.keys(box.contents.sup)) {
     if (!(box.contents.sup[k] >= 1)) continue;
     const before = Math.floor(box.contents.sup[k]);
-    raidMove(state, uid, `${src}:sup:${k}`, `haul:${u.id}:list`);
+    // Into pockets and the pack as the item that holds it; only a bulky supply (or one with no item form) is carried.
+    const probe = heldForm(state, k, 1);
+    if (probe && !isBulky(probe.key)) raidMove(state, uid, `${src}:sup:${k}`, `stow:${u.id}`);
+    if (box.contents.sup[k] >= 1) raidMove(state, uid, `${src}:sup:${k}`, `haul:${u.id}:list`); // bulky, or more than the pockets and pack hold: carried
     const took = before - Math.floor(box.contents.sup[k] || 0);
     if (took > 0) got.push(`${took} ${keyWord(k)}`);
   }
@@ -633,7 +826,7 @@ export function quickTarget(state, b, uid, fromStr, boxId) {
   const F = parseRaidLoc(fromStr);
   if (!u) return fromStr;
   if (F.o === "rbox" || F.o === "trunk") {
-    if (F.slot === "sup") return `haul:${u.id}:list`;
+    if (F.slot === "sup") { const probe = heldForm(state, F.i, 1); return probe && !isBulky(probe.key) && stowSlots(state, survivorById(state, u.sid), F.i).length ? `stow:${u.id}` : `haul:${u.id}:list`; } // pockets and the pack; Carried for the big things
     const it = raidItemAt(state, b, fromStr);
     return it ? stowTarget(state, b, u, it) : fromStr;
   }

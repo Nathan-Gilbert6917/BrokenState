@@ -282,7 +282,8 @@ section("The hub's menu is unchanged; the menu renders");
   const h = hub(state);
   const town = find(state, h.tile, (t) => t.loc && t.loot > 0.1, 2, 20);
   const acts = tileActions(state, town).map((a) => a[0]);
-  check(acts[0] === "recon" && acts[1] === "move" && acts[2] === "sweep", "hub menu: recon, send a team, survey first");
+  // The POI survey (Survey this tile, sim/survey.js) comes before the Sweep of the area (ui.js tileActions).
+  check(acts[0] === "recon" && acts[1] === "move" && acts[2] === "fullsurvey" && acts[3] === "sweep", "hub menu: recon, send a team, survey first");
   check(tileActions(state, h.tile).length === 0, "hub menu: nothing on your own base");
   const p = team(state, 2);
   const m = teamTileMenu(state, {}, p, town);
