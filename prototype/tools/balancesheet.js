@@ -43,7 +43,7 @@ export const GLOBALS = {
   "MAGS.AP.pocket": ["MAGS", ["AP", "pocket"], "Actions: reload from a pocket"],
   "MAGS.AP.pack": ["MAGS", ["AP", "pack"], "Actions: reload from the pack"],
   "MAGS.TOPUP_AP": ["MAGS", ["TOPUP_AP"], "Actions: top up the magazine in the gun (no loaded spare)"],
-  "SHELLS.START_HAND": ["SHELLS", ["START_HAND"], "Loose shells on a shotgunner at a fight's start"],
+  "SHELLS.START_HAND": ["SHELLS", ["START_HAND"], "Loose shells an enemy shotgunner starts a fight with (yours carry theirs)"],
   "SHELLS.GRAB": ["SHELLS", ["GRAB"], "Shells one Get shells takes out of the pack"],
   "SHELLS.HAND_MAX": ["SHELLS", ["HAND_MAX"], "Most loose shells kept at hand"],
   "SHELLS.MAX": ["SHELLS", ["MAX"], "Most shells a tube Reload puts in"],
