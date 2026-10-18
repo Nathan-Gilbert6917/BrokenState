@@ -7,7 +7,9 @@
 // inventory screen), the team's supplies from the stores and items for its cargo. formTeam sends them out through
 // launchExpedition (the same checks, packing and weighing as any trip: people at the base, the vehicle there and in
 // repair, supplies in stock, weight within what they can carry; spare magazines and, if asked, a light each from the
-// armory) with the base's own tile as the destination, and the team stands on that tile waiting for orders with no
+// armory) with the base's own tile as the destination, then takes the rounds the members' guns and spare magazines show
+// in their badges out of the stock as the team's own (gunrounds.js loadoutRounds, 2026-10-18: the window showed them
+// full and a raid started them at 0/x), and the team stands on that tile waiting for orders with no
 // mission ("Field team"): on the map, in the Teams tab, and with its panel open. From there it is a team like any
 // other: Move, every order on the orders card, the team inventory (sim/teaminv.js: drop off and load while it stands
 // on a base), Enter base (sim/moveout.js: back in, disbanded).
@@ -37,6 +39,8 @@ import { reseat } from "./walkers.js";
 import { settleHold } from "./carry.js"; // who holds the team's supplies where (kept by the gear snapshot)
 import { stockHas } from "./water.js"; // water: purified and un-purified; "ammo": any calibre
 import { supRoom, SUP_PLACES, itemKeyOf } from "./supitems.js"; // supplies onto a named member while forming (2026-10-17 rounds, 2026-10-18 any supply)
+import { loadoutRounds } from "./gunrounds.js"; // the rounds their guns and magazines leave loaded with, out of the stock (2026-10-18)
+import { isRoundKey } from "./rounds.js";
 
 const EPS = 1e-6;
 const num = (v) => (Number.isFinite(v) ? v : 0);
@@ -109,12 +113,15 @@ function applyFleet(state, p, base, plan) {
   reseat(state, p); // walkers.js: a seat for those who walked in
 }
 
-// What the window shows and formTeam checks before anything moves: { members, v, cap, load, cargoKg, problem }.
+// What the window shows and formTeam checks before anything moves: { members, v, cap, load, cargoKg, loadout, problem }.
 // opts: { baseId, memberIds, vehicleIds (or vehicleId), supplies, cargo, onto }. onto (the first day's name `rounds`
 // still works): picks of supplies onto a named member as items (supitems.js suppliesOnto: rounds boxed or loose, water,
 // meds, a food, anything with an item form): [{ key, n, sid, where: "pocket" | "pack" | "rig", loose? }], out of the
 // stores on top of the supplies; their weight is worn, not carried in the pool (the person's max load counts here, the
 // team's carry limit when they go on after the launch: teaminv.js loadFromBase).
+// loadout: the rounds the members' guns and spare magazines leave loaded with (gunrounds.js loadoutRounds: what the
+// rounds badge shows them holding at the base, out of the stock after the supplies and the round picks), taken as the
+// team's own rounds when it forms; they weigh in `load` like any supply.
 /** @param {State} state */
 export function formPreview(state, opts) {
   const base = baseById(state, opts.baseId);
@@ -129,9 +136,23 @@ export function formPreview(state, opts) {
   const rounds = (opts.onto || opts.rounds || []).filter((r) => r && SUPPLIES[r.key] && itemKeyOf(r.key) && num(r.n) >= 1 && SUP_PLACES.includes(r.where) && members.some((s) => s.id === Number(r.sid))).map((r) => ({ key: r.key, n: Math.floor(r.n), sid: Number(r.sid), where: r.where, loose: !!r.loose }));
   const cargo = base ? armoryItems(base, opts.cargo || []) : [];
   const cargoKg = cargo.reduce((a, it) => a + itemLoad(it), 0);
-  const load = supplyLoad(supplies) + cargoKg;
-  return { base, members, v, plan, cap, load, cargoKg, cargo, supplies, rounds, onto: rounds, problem: formProblem(state, base, members, plan, supplies, load, cap, rounds) };
+  const loadout = base ? teamLoadout(members, [base.stock], supplies, rounds) : {};
+  const load = supplyLoad(supplies) + cargoKg + supplyLoad(loadout);
+  return { base, members, v, plan, cap, load, cargoKg, cargo, supplies, rounds, onto: rounds, loadout, problem: formProblem(state, base, members, plan, supplies, load, cap, rounds) };
 }
+// The rounds these people's guns and magazines leave loaded with, out of these pools after what is already asked for
+// (the supplies by key and the round picks onto members): gunrounds.js loadoutRounds.
+/** @param {any[]} members @param {Record<string, number>[]} pools @param {Record<string, number>} [supplies] @param {{ key: string, n: number }[]} [rounds] */
+export function teamLoadout(members, pools, supplies = {}, rounds = []) {
+  /** @type {Record<string, number>} */
+  const less = {};
+  for (const [k, q] of Object.entries(supplies || {})) if (isRoundKey(k) && num(q) > 0) less[k] = num(less[k]) + num(q);
+  for (const r of rounds || []) if (r && isRoundKey(r.key)) less[r.key] = num(less[r.key]) + num(r.n);
+  return loadoutRounds(members, pools, less);
+}
+// How many rounds a loadout is, all keys together.
+/** @param {Record<string, number>} loadout */
+export const loadoutCount = (loadout) => Object.values(loadout || {}).reduce((a, q) => a + Math.max(0, Math.floor(num(q))), 0);
 function formProblem(state, base, members, plan, supplies, load, cap, rounds = []) {
   const v = plan ? plan.fleet : null;
   if (!base) return "That base is no longer yours.";
@@ -194,6 +215,10 @@ export function formTeam(state, opts) {
     const got = loadFromBase(state, p, { supplies: { [r.key]: r.n } }, { sid: r.sid, where: r.where, loose: r.loose });
     notes.push(...got.refused);
   }
+  if (loadoutCount(pre.loadout) > 0) { // their guns and magazines leave loaded (gunrounds.js): the rounds the window showed in them, as the team's own
+    const got = loadFromBase(state, p, { supplies: pre.loadout });
+    notes.push(...got.refused);
+  }
   weighTeam(state, p);
   const v = partyFleet(state, p);
   log(state, `${list(partyMembers(state, p).map(firstName))} formed a team at ${base.name}${isBike(v) ? " on bikes" : v ? ` with the ${vehicleLabel(v)}` : ""}. It waits outside for orders.`, "info");
@@ -234,10 +259,12 @@ export function addMember(state, p, sid) {
   // Its vehicles for one more: a bike more when it rides bikes, a seat when it has two or more vehicles.
   const plan = fleetPlan(state, base, p, partyVehicles(state, p).map((x) => x.id), partyMembers(state, p).length + 1);
   if (plan.problem) return plan.bike && /bikes/.test(plan.problem) ? `No bike for ${firstName(s)}: ${plan.problem}` : `No room for ${firstName(s)}: ${plan.problem}`;
+  const loadout = teamLoadout([s], [base.stock]); // their guns and magazines leave loaded (gunrounds.js loadoutRounds), as when the team formed
   p.members.push(s.id);
   s.location = { kind: "party", partyId: p.id };
   applyFleet(state, p, base, plan);
-  return `${firstName(s)} joins the team.`;
+  const got = loadoutCount(loadout) > 0 ? loadFromBase(state, p, { supplies: loadout }) : null;
+  return `${firstName(s)} joins the team.${got && got.refused.length ? ` ${got.refused.join(" ")}` : ""}`;
 }
 
 // One person goes back into the base (what they wear goes with them). Not the last one: Enter base disbands the team.
@@ -256,9 +283,11 @@ export function removeMember(state, p, sid) {
   if (plan.problem) return `Without ${firstName(s)}: ${plan.problem} Leave a vehicle at the base first.`;
   const cap = carryCapacity(state, left, plan.fleet || null);
   if (poolLoad(p) > cap + EPS) return `Without ${firstName(s)} the team could not carry its load (${Math.round(poolLoad(p))} kg on ${Math.floor(cap)} kg). Drop off some supplies or cargo first.`;
+  const loadout = teamLoadout([s], [p.supplies || {}, (p.cargo && p.cargo.supplies) || {}]); // what their guns and magazines hold of the team's rounds goes back in with them
   p.members = p.members.filter((id) => id !== s.id);
   s.location = { kind: "base", baseId: base.id };
   applyFleet(state, p, base, plan);
+  if (loadoutCount(loadout) > 0) dropOff(state, p, { supplies: loadout });
   return `${firstName(s)} goes back into ${base.name}.`;
 }
 

@@ -9,10 +9,11 @@
 import { payFood } from "../src/sim/foods.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
-import { partyTile, partyMembers, poolLoad, partyCapacity, teamName, orderOptions, MISSIONS, planPath, travelHours, paceOpts, carryCapacity, leaveVehicle, wipeParty, launchExpedition, movePartiesHour, orderMove, hoursLeft, partySpeed } from "../src/sim/parties.js";
+import { partyTile, partyMembers, poolLoad, partyCapacity, teamName, orderOptions, MISSIONS, planPath, travelHours, paceOpts, carryCapacity, leaveVehicle, wipeParty, launchExpedition, movePartiesHour, orderMove, hoursLeft, partySpeed, supplyLoad } from "../src/sim/parties.js";
 import { reseat } from "../src/sim/walkers.js";
 import { vehiclesAtBase, vehicleById, partyVehicle, isBike, createVehicle, parkBikes, seatsOf, MAX_VEHICLES, fleetOf, partyVehicles, payloadOf, typeSpeed, typeFuel, roadPace, partyFuel, useFuel, breakdownRoll, fleetJoinProblem, addPartyVehicle, driversFor } from "../src/sim/vehicles.js";
-import { createBattle, registerCombatHandler, vehicleBlast, settleVehicle } from "../src/sim/combat.js";
+import { createBattle, registerCombatHandler, vehicleBlast, settleVehicle, magShown, magCap } from "../src/sim/combat.js";
+import { roundsOf } from "../src/sim/ammo.js";
 import { ROCKET } from "../src/sim/launchers.js";
 import { newItem, stripAll, allCarried, itemLoad, packOf, quickMove, carriedSpots } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -20,7 +21,8 @@ import { SUPPLIES } from "../src/sim/data.js";
 import { contactable } from "../src/sim/orders.js";
 import { enterOption, joinBase } from "../src/sim/moveout.js";
 import { loadFromBase, dropOff } from "../src/sim/teaminv.js";
-import { formTeam, formPreview, editBase, editProblem, editableTeams, addMember, removeMember, setVehicle, setVehicles, toggleVehicle, setSupply, teamHas, FORMED, gearSnapshot, gearChanged, restoreGear } from "../src/sim/teamform.js";
+import { formTeam, formPreview, editBase, editProblem, editableTeams, addMember, removeMember, setVehicle, setVehicles, toggleVehicle, setSupply, teamHas, FORMED, gearSnapshot, gearChanged, restoreGear, loadoutCount, teamLoadout } from "../src/sim/teamform.js";
+import { gunCapacity, roundsText, loadoutRounds } from "../src/sim/gunrounds.js"; // the rounds their guns leave loaded with (2026-10-18)
 
 const SEED = Number(process.argv[2] || 42);
 let passed = 0, failed = 0;
@@ -126,10 +128,63 @@ section("Forming: people, a car, supplies and cargo leave the base, nothing lost
   check(a.gear.weapon === rifle && a.gear.backpack === pack, "they keep the kit set at the base");
   check(car.loc.kind === "party" && car.loc.partyId === p.id && partyVehicle(state, p) === car, "the car went with the team");
   check(p.cargo.gear.includes(crowbar) && !h.armory.includes(crowbar), "the crowbar went into the cargo");
-  check(teamHas(p, "food") >= 10 && teamHas(p, "food") < 11.21 && teamHas(p, "a_556_fmj") === 30 && teamHas(p, "fuel") === 5, "the supplies were packed");
+  check(teamHas(p, "food") >= 10 && teamHas(p, "food") < 11.21 && teamHas(p, "a_556_fmj") === 30 + gunCapacity(rifle) && teamHas(p, "fuel") === 5, `the supplies were packed, and the rifle's magazine on top (${teamHas(p, "a_556_fmj")} 5.56: 30 + ${gunCapacity(rifle)})`);
+  check(pre.loadout.a_556_fmj === gunCapacity(rifle) && loadoutCount(pre.loadout) === gunCapacity(rifle) && near(pre.load, supplyLoad({ food: 10, water: 10, fuel: 5, a_556_fmj: 30 + gunCapacity(rifle) }) + itemLoad(crowbar)), `the preview counts the loadout (${JSON.stringify(pre.loadout)}, ${pre.load} kg)`);
+  check(roundsText(state, rifle, `s:${a.id}:weapon`) === `${gunCapacity(rifle)}/${gunCapacity(rifle)}`, `on the team the rifle's badge still reads full (${roundsText(state, rifle, `s:${a.id}:weapon`)})`);
   check(!!enterOption(state, p), "Enter base is offered on its own tile");
   check(editBase(state, p) === h && editProblem(state, p) === "" && editableTeams(state, h).includes(p), "it can be changed at the base");
   check(poolLoad(p) <= partyCapacity(state, p) + 1e-9, "within what it can carry");
+}
+
+section("Forming: the guns and magazines leave as loaded as the window showed, and start a fight so (2026-10-18)");
+{
+  // The user: the team window showed every gun and magazine full, "but when I load into a raid some guns and magazines
+  // have 0/x". The badge at the base counts the stock; a team took only the rounds picked. Now the rounds the badges
+  // show go with the team as its own (sim/gunrounds.js loadoutRounds), out of the stock, person by person.
+  registerCombatHandler("teamformtest", () => {});
+  const state = mk();
+  const { h, crew, rifle } = setup(state);
+  const [a, b, c, d] = crew;
+  h.armory.splice(h.armory.indexOf(rifle), 1);
+  a.gear.weapon = rifle; a.pockets[0] = newItem("mag_stanag_30"); // 30 + a 30-round spare: 60 of 5.56
+  b.gear.weapon = newItem("pistol"); // 15 of 9mm
+  c.gear.weapon = newItem("pistol"); c.pockets[0] = newItem("a_9mm_fmj"); c.pockets[0].dur = 50; // a box of 50 in the pocket: the gun draws on it, nothing out of the stock
+  d.gear.weapon = newItem("pistol"); d.pockets[0] = newItem("mag_glock_15"); // 15 + 15 of 9mm
+  h.stock.a_556_fmj = 120; h.stock.a_9mm_fmj = 25; // short of 9mm: 15 for b, 10 of d's 30 (c has its own)
+  const at = (s, it) => roundsText(state, it, it === s.gear.weapon ? `s:${s.id}:weapon` : `s:${s.id}:pocket:0`);
+  const shown = { a: [at(a, rifle), at(a, a.pockets[0])], b: at(b, b.gear.weapon), c: [at(c, c.gear.weapon)] };
+  check(shown.a[0] === "30/30" && shown.a[1] === "30/30" && shown.b === "15/15" && shown.c[0] === "15/15", `at the base the badges read full (${shown.a} ${shown.b} ${shown.c})`);
+  const lo = teamLoadout(crew, [h.stock]);
+  check(lo.a_556_fmj === 60 && lo.a_9mm_fmj === 25 && loadoutCount(lo) === 85, `the loadout: 60 of 5.56, the 25 of 9mm there are (${JSON.stringify(lo)})`);
+  check(loadoutRounds([c], [h.stock]).a_9mm_fmj === undefined, "a gun covered by its holder's own box takes nothing out of the stock");
+  check(loadoutRounds([a], [h.stock], { a_556_fmj: 100 }).a_556_fmj === 20, "rounds already picked as supplies are spoken for (120 − 100 picked: 20 left for the magazines)");
+  const before = census(state);
+  const pre = formPreview(state, { baseId: h.id, memberIds: crew.map((s) => s.id), supplies: {} });
+  check(near(pre.load, supplyLoad(lo)), `the preview's load is the loadout's weight (${pre.load} kg)`);
+  const r = formTeam(state, { baseId: h.id, memberIds: crew.map((s) => s.id), supplies: {} });
+  check(r.party && !r.error && !r.notes.length, `the team forms with no rounds picked (${r.error || r.notes.join("; ")})`);
+  const p = r.party;
+  sameCensus(before, census(state), "forming with the loadout");
+  check(teamHas(p, "a_556_fmj") === 60 && teamHas(p, "a_9mm_fmj") === 25 && h.stock.a_556_fmj === 60 && h.stock.a_9mm_fmj === 0, `the team carries 60 of 5.56 and 25 of 9mm, the stock is down by them (${teamHas(p, "a_556_fmj")}, ${teamHas(p, "a_9mm_fmj")}; ${h.stock.a_556_fmj}, ${h.stock.a_9mm_fmj})`);
+  check(at(a, rifle) === "30/30" && at(a, a.pockets[0]) === "30/30" && at(b, b.gear.weapon) === "15/15" && at(c, c.gear.weapon) === "15/15", `on the team the badges read as at the base (${at(a, rifle)} ${at(a, a.pockets[0])} ${at(b, b.gear.weapon)} ${at(c, c.gear.weapon)})`);
+  // The fight: every magazine as full as the window said (b's and d's pistols share the 25: 15 and 10 of 30).
+  const tile = state.tiles.find((t) => t.id !== h.tile && !t.loc && t.terrain !== "water" && state.grid.distance(t.id, h.tile) > 1);
+  p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
+  state.combat = createBattle(state, { tile: tile.id, partyId: p.id, enemy: { kind: "raiders", count: 2, power: 3 }, ambush: null, canRetreat: true, handler: "teamformtest", context: {} });
+  const bt = state.combat;
+  const unit = (s) => bt.units.find((u) => u.side === "player" && u.sid === s.id);
+  const full = (s) => magShown(bt, unit(s)) === magCap(unit(s));
+  check(full(a) && full(b) && full(c), `in the fight the rifle and the pistols start full (${[a, b, c].map((s) => `${magShown(bt, unit(s))}/${magCap(unit(s))}`).join(" ")})`);
+  check(roundsOf(bt, unit(a)) === 60 && roundsOf(bt, unit(b)) + 0 === 25 + 50, `the side's rounds: 60 of 5.56; 25 and c's box of 9mm (${roundsOf(bt, unit(a))}, ${roundsOf(bt, unit(b))})`);
+  state.combat = null; p.phase = "waiting"; p.path = [h.tile]; p.idx = 0; p.dest = h.tile;
+  // Editing at the base: one more armed person brings their magazines' rounds; one going back in takes theirs with them.
+  h.stock.a_9mm_fmj = 40;
+  const e = atBase(state, h.id).find((s) => s.alive && s !== a);
+  stripAll(e); e.gear.weapon = newItem("pistol");
+  const b2 = census(state);
+  check(/joins/.test(addMember(state, p, e.id)) && teamHas(p, "a_9mm_fmj") === 40 && h.stock.a_9mm_fmj === 25, `a pistol joining brings its 15 (${teamHas(p, "a_9mm_fmj")} on the team, ${h.stock.a_9mm_fmj} in the stock)`);
+  check(/goes back/.test(removeMember(state, p, e.id)) && teamHas(p, "a_9mm_fmj") === 25 && h.stock.a_9mm_fmj === 40, `going back in takes them back (${teamHas(p, "a_9mm_fmj")} on the team, ${h.stock.a_9mm_fmj} in the stock)`);
+  sameCensus(b2, census(state), "editing with the loadout");
 }
 
 section("Forming on foot and on bikes");
