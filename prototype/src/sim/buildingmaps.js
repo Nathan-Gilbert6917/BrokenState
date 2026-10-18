@@ -931,33 +931,39 @@ export function streetMap(state, tileId, option, withVehicle) {
   // Dressing the street: nothing ever cuts a walkable cell off from the west end (locked doors count as ways through).
   const passable = (c) => !!(CELL[c.k] && CELL[c.k].walk) || c.k === "door";
   const start = I(zones[0].x0 + 1, zones[0].y0 + 1);
+  // The walk over a byte a cell (as assemble's): passable(cells[i]), kept in step by block and the cars (passAt).
+  const pass = new Uint8Array(W * H);
+  const passAt = (i) => { pass[i] = passable(cells[i]) ? 1 : 0; };
+  const passRect = (r) => { for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) passAt(I(x, y)); };
   let total = 0;
-  for (const c of cells) if (passable(c)) total++;
-  const seen = new Uint32Array(W * H);
+  for (let i = 0; i < cells.length; i++) { passAt(i); total += pass[i]; }
+  const seen = new Uint32Array(W * H), stack = new Int32Array(W * H), N = W * H;
   let stamp = 0;
   const connected = () => {
     stamp++;
-    const q = [start];
+    let sp = 0;
+    stack[sp++] = start;
     seen[start] = stamp;
     let got = 1;
-    while (q.length) {
-      const i = q.pop(), x = i % W, y = (i / W) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (!inside(nx, ny)) continue;
-        const j = I(nx, ny);
-        if (seen[j] === stamp || !passable(cells[j])) continue;
-        seen[j] = stamp; got++; q.push(j);
-      }
+    while (sp) {
+      const i = stack[--sp], x = i % W;
+      let j = i + 1;
+      if (x + 1 < W && seen[j] !== stamp && pass[j]) { seen[j] = stamp; got++; stack[sp++] = j; }
+      j = i - 1;
+      if (x > 0 && seen[j] !== stamp && pass[j]) { seen[j] = stamp; got++; stack[sp++] = j; }
+      j = i + W;
+      if (j < N && seen[j] !== stamp && pass[j]) { seen[j] = stamp; got++; stack[sp++] = j; }
+      j = i - W;
+      if (j >= 0 && seen[j] !== stamp && pass[j]) { seen[j] = stamp; got++; stack[sp++] = j; }
     }
     return got === total;
   };
   const free = (x, y) => inside(x, y) && cells[I(x, y)].k === "open" && !keep[I(x, y)] && !reserved[I(x, y)];
   const block = (x, y, k) => {
     if (!free(x, y)) return false;
-    const c = cells[I(x, y)];
-    c.k = k; total--;
-    if (!connected()) { c.k = "open"; total++; return false; }
+    const i = I(x, y), c = cells[i];
+    c.k = k; passAt(i); total--;
+    if (!connected()) { c.k = "open"; passAt(i); total++; return false; }
     return true;
   };
   // Cars parked along the kerb, a lane each side (a car keeps a free ring: the other lane stays open).
@@ -968,8 +974,9 @@ export function streetMap(state, tileId, option, withVehicle) {
     const x = rng.int(4, W - 9), y = rng.pick(lanes), L = rng.pick(CAR_LEN.car);
     const rect = placeCar(cells, W, H, x, y, "x", L, "car", (cx, cy) => free(cx, cy), rng.int(0, 1e6));
     if (!rect) continue;
+    passRect(rect);
     total -= rect.w * rect.h;
-    if (!connected()) { removeCar(cells, W, rect); total += rect.w * rect.h; continue; }
+    if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; continue; }
     containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f: 0, area: wreck.id, kind: "car", searched: false, label: `${wreck.name}: car` });
     placed++;
   }
@@ -1351,26 +1358,33 @@ export function assemble(rng, spec, opts = {}) {
   // ---------- connectivity (every walkable cell reachable from the front, locked doors counted as ways through) ----------
   const passable = (c) => !!(CELL[c.k] && CELL[c.k].walk) || c.k === "door";
   const anchor = upper ? I(stairCells[0][0], stairCells[0][1]) : I(zones[0].x0 + 1, zones[0].y0 + 1 - (opts.withVehicle ? 1 : 0)); // upstairs everything hangs off the stairwell
+  // The walk runs on every blocking thing put down (hundreds a building): over a byte a cell, passable(cells[i]) kept
+  // in step by everything below that changes a cell's kind from here on (block, the cars: passAt).
+  const pass = new Uint8Array(W * H);
+  const passAt = (i) => { pass[i] = passable(cells[i]) ? 1 : 0; };
+  const passRect = (r) => { for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) passAt(I(x, y)); };
   let total = 0;
-  for (const c of cells) if (passable(c)) total++;
+  for (let i = 0; i < cells.length; i++) { passAt(i); total += pass[i]; }
   let stamp = 0;
-  const marks = new Uint32Array(W * H);
+  const marks = new Uint32Array(W * H), stack = new Int32Array(W * H), N = W * H;
   function connected() {
     stamp++;
     let a = anchor;
     if (!passable(cells[a])) { a = cells.findIndex((c, i) => passable(c) && !inBldg(i % W, (i / W) | 0)); if (a < 0) return false; }
-    const q = [a];
+    let sp = 0;
+    stack[sp++] = a;
     marks[a] = stamp;
     let n = 1;
-    while (q.length) {
-      const i = q.pop(), x = i % W, y = (i / W) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (!inside(nx, ny)) continue;
-        const j = I(nx, ny);
-        if (marks[j] === stamp || !passable(cells[j])) continue;
-        marks[j] = stamp; n++; q.push(j);
-      }
+    while (sp) {
+      const i = stack[--sp], x = i % W;
+      let j = i + 1;
+      if (x + 1 < W && marks[j] !== stamp && pass[j]) { marks[j] = stamp; n++; stack[sp++] = j; }
+      j = i - 1;
+      if (x > 0 && marks[j] !== stamp && pass[j]) { marks[j] = stamp; n++; stack[sp++] = j; }
+      j = i + W;
+      if (j < N && marks[j] !== stamp && pass[j]) { marks[j] = stamp; n++; stack[sp++] = j; }
+      j = i - W;
+      if (j >= 0 && marks[j] !== stamp && pass[j]) { marks[j] = stamp; n++; stack[sp++] = j; }
     }
     return n === total;
   }
@@ -1382,9 +1396,10 @@ export function assemble(rng, spec, opts = {}) {
     if (room ? rid[i] !== room.id : rid[i] !== -2) return false;
     const was = c.k;
     c.k = k;
+    passAt(i);
     if (!passable(c)) {
       total--;
-      if (!connected()) { c.k = was; total++; return false; }
+      if (!connected()) { c.k = was; passAt(i); total++; return false; }
     }
     if (room && room.up) c.h = 1;
     return true;
@@ -1439,8 +1454,9 @@ export function assemble(rng, spec, opts = {}) {
         const L = rng.pick(CAR_LEN[kind]), ax = rng.chance(0.5) ? "x" : "y";
         const rect = placeCar(cells, W, H, x, y, ax, L, kind, (cx, cy) => free(cx, cy) && rid[I(cx, cy)] === room.id, rng.int(0, 1e6), { ring: false });
         if (!rect) return false;
+        passRect(rect);
         total -= rect.w * rect.h;
-        if (!connected()) { removeCar(cells, W, rect); total += rect.w * rect.h; return false; }
+        if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return false; }
         return true;
       },
       keep: keepAt,
@@ -1458,8 +1474,9 @@ export function assemble(rng, spec, opts = {}) {
     const L = rng.pick(CAR_LEN[kind]), ax = rng.chance(0.5) ? "x" : "y";
     const rect = placeCar(cells, W, H, x, y, ax, L, kind, (cx, cy) => outsideFree(cx, cy) && test(cx, cy), rng.int(0, 1e6), { ring: false });
     if (!rect) return null;
+    passRect(rect);
     total -= rect.w * rect.h;
-    if (!connected()) { removeCar(cells, W, rect); total += rect.w * rect.h; return null; }
+    if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
     return rect;
   };
   const scatter = (k, n, test = () => true) => {
