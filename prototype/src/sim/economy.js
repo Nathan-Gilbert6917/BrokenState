@@ -24,7 +24,7 @@ import { FOODS, foodIn, payFood, moveFoodUnits, packPick, takeItem, addFood, add
 import { baseMoraleDaily } from "./morale.js";
 import { makeCandidate, offerRecruits, recruitsDaily } from "./recruits.js";
 import { hubEventsDaily } from "./hubevents.js";
-import { hasPerk } from "./skills.js";
+import { hasPerk, hash01 } from "./skills.js";
 import { relationsDaily, noteMeals } from "./relations.js";
 import { mentalBreaksDaily } from "./mentalbreaks.js";
 import { huntingDaily, snaresDaily } from "./hunting.js";
@@ -816,7 +816,7 @@ export function deathSitesDaily(state) {
     if (t.loc && (t.loc.type === "town" || t.loc.type === "city")) traffic += 0.1;
     const age = d - site.day;
     const chance = site.abandoned ? Math.min(0.9, traffic + 0.02) * ROAD_CARTS.scav : Math.min(0.9, traffic * (1 + age / 8) + 0.02); // carts.js: a cart abandoned on a road is found slowly
-    if (!rng.chance(chance) || !site.items.length) continue;
+    if ((site.abandoned ? hash01(state.seed, "roadcart", site.tile, d) >= chance : !rng.chance(chance)) || !site.items.length) continue; // carts.js: an abandoned cart rolls its own dice (the world's draws stay as they were)
     // Scavengers take the most valuable item first. A cart (carts.js) is stripped first, the best thing in it at a time;
     // empty, the cart itself goes (the nearest group keeps it: f.carts).
     site.items.sort((a, b) => b.value - a.value);

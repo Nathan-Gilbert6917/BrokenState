@@ -12,9 +12,9 @@ import { wornLoad, teamLoad } from "../src/sim/load.js";
 import { launchExpedition, partyTile, cargoRoom, partyMembers, partyLoad, weighTeam } from "../src/sim/parties.js";
 import * as C from "../src/sim/carry.js";
 import * as K from "../src/sim/carts.js";
-import { createBattle, combatAct, closeCombat, registerCombatHandler, canFire, fireRefusal, endBattleNow, finishCombat, runEnemyPhase, vaultable, CELL, reachable, shotOdds, endPlayerTurn, bash, driveTo } from "../src/sim/combat.js";
+import { createBattle, combatAct, closeCombat, registerCombatHandler, canFire, fireRefusal, endBattleNow, finishCombat, runEnemyPhase, vaultable, siegeTarget, pathTo, moveAlong, CELL, reachable, shotOdds, endPlayerTurn, bash, driveTo } from "../src/sim/combat.js";
 import { searchHeatMult } from "../src/sim/fieldheat.js";
-import { crawlable, shoveable } from "../src/sim/barricade.js";
+import { crawlable, shoveable, shoveDests, overCost, CRAWL } from "../src/sim/barricade.js";
 import { repairKind, repairItem } from "../src/sim/repair.js";
 import { itemDur } from "../src/sim/crafting.js";
 import { buildRate } from "../src/sim/buildings.js";
@@ -317,9 +317,12 @@ console.log("AI groups: carts as a count, a bigger haul for a party on foot");
 }
 
 
+// One of the dead's siege target next to a cell, if it is that cell (a cart is never one: no hit points).
+const siegeTargetOf = (b, z, x, y) => { const zx = z.x, zy = z.y; z.x = x + 1; z.y = y; const t = siegeTarget(b, z); z.x = zx; z.y = zy; return !!t && t[0] === x && t[1] === y; };
+
 // ---------- 7. the picks of 2026-10-11: cover and blocking, noise, wear, terrain, two on a cart, found carts, bikes,
 // the enemy's carts, the base's jobs, a pistol one-handed ----------
-console.log("A cart let go: a barricade (no walking through, low cover), parked in a doorway, battered over by the dead");
+console.log("A cart let go: a barricade (low cover; the living shove it or go round, the dead crawl over it)");
 {
   check(CELL.cart && !CELL.cart.walk && CELL.cart.cover === 1 && !CELL.cart.los, "a cart's cell: no walking through, low cover (1), sight passes");
   const st = world();
@@ -333,22 +336,50 @@ console.log("A cart let go: a barricade (no walking through, low cover), parked 
   const err = combatAct(st, { type: "parkCart", unit: u.id, x: px, y: py });
   const box = K.cartBoxes(bt)[0];
   const c = bt.cells[py * bt.w + px];
-  check(!err && box && box.x === px && box.y === py && c.k === "cart" && c.hp === GEAR.handcart.cart.hp, `Park cart: on the cell asked (${px},${py}), its cell a barricade (${c.k}, ${c.hp} hp)`);
+  check(!err && box && box.x === px && box.y === py && c.k === "cart" && !(c.hp > 0), `Park cart: on the cell asked (${px},${py}), its cell a barricade (${c.k}; no hit points: the dead crawl over it, they do not batter it)`);
   const z = bt.units.find((x) => x.side === "enemy");
   const r = reachable(bt, z, 200);
   check(!isFinite(r.dist[py * bt.w + px]), "nobody stops on it (pathing goes round or over)");
-  check(vaultable(bt, c) && crawlable(bt, c) && !shoveable(c), "half cover like crates (barricade.js): people vault it, the dead crawl over it; never shoved like furniture");
+  check(!vaultable(bt, c) && crawlable(bt, c) && shoveable(c), "the barricades' rules: the living never vault it (they shove it or go round), the dead crawl over it");
+  check(overCost(bt, z, c) === CRAWL.COST, `one of the dead crawls over it at the half cover's cost (${overCost(bt, z, c)} tiles over the step: a walker's whole turn)`);
   const under = box.under.k;
-  const wear0 = itemDur(cart);
-  for (let i = 0; i < 20 && c.k === "cart"; i++) bash(bt, z, px, py);
-  check(c.k === under && !box.blocking && K.cartBoxes(bt).includes(box) && itemDur(cart) < wear0, `battered over: the way open again (${c.k}), the cart still there, worn (${r1(wear0)} → ${r1(itemDur(cart))})`);
+  const wear0 = itemDur(cart), load0 = JSON.stringify(box.contents);
+  for (let i = 0; i < 5; i++) bash(bt, z, px, py);
+  check(c.k === "cart" && box.blocking && itemDur(cart) === wear0 && !siegeTargetOf(bt, z, px, py), "the dead never batter it (no hit points: crawling over replaces battering it down)");
+  // One of the dead crawls across it: it lands on the far side; the cart and what is in it are not touched.
+  const sides = [[1, 0], [0, 1]].map(([dx, dy]) => [px + dx, py + dy, px - dx, py - dy]).find(([ax, ay, bx2, by2]) => [[ax, ay], [bx2, by2]].every(([x, y]) => x >= 0 && y >= 0 && x < bt.w && y < bt.h && CELL[bt.cells[y * bt.w + x].k].walk && !bt.units.some((o) => o !== z && o.x === x && o.y === y)));
+  if (sides) {
+    const [ax, ay, bx2, by2] = sides;
+    z.x = ax; z.y = ay; z.f = 0;
+    for (const o of bt.units) if (o.side === "player") { o.x = 0; o.y = 0; }
+    // Walls either side of the line for the test, so the only way is over the cart.
+    const nx = ay === by2 ? 0 : 1, ny = ay === by2 ? 1 : 0, walled = [];
+    for (let t2 = -1; t2 <= 1; t2++) for (const sg of [-1, 1]) { const x = px + t2 * (1 - nx) + sg * nx, y = py + t2 * (1 - ny) + sg * ny; const cl = x >= 0 && y >= 0 && x < bt.w && y < bt.h ? bt.cells[y * bt.w + x] : null; if (cl) { walled.push([cl, cl.k]); cl.k = "wall"; } }
+    const r2 = reachable(bt, z, 20);
+    const pth = pathTo(r2, bx2, by2);
+    moveAlong(bt, z, pth);
+    for (const [cl, k] of walled) cl.k = k;
+    check(isFinite(r2.dist[by2 * bt.w + bx2]) && pth.some(([x, y]) => x === px && y === py) && z.x === bx2 && z.y === by2 && JSON.stringify(box.contents) === load0 && K.cartBoxes(bt).includes(box) && box.blocking, `a walker crawls over it to the far side (${pth.map((q) => q.join(",")).join(" → ")}); the cart and its load untouched`);
+  } else check(true, "(no straight line over the cart on this map)");
+  // Shoved like furniture (barricade.js shove: both actions, one tile): the cart and its load go with it.
+  const v0 = bt.units.find((x) => x.sid === crew[1].id);
+  const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [px + dx, py + dy]).find(([x, y]) => x >= 0 && y >= 0 && x < bt.w && y < bt.h && CELL[bt.cells[y * bt.w + x].k].walk && !bt.units.some((o) => o !== v0 && o.x === x && o.y === y));
+  v0.x = spot[0]; v0.y = spot[1]; v0.ap = 2; z.x = bt.w - 1; z.y = bt.h - 1;
+  if (bt.phase !== "player") { bt.phase = "player"; }
+  const dests = shoveDests(bt, v0, px, py).filter((d) => !d.pull);
+  const n0 = box.contents.gear.length + Object.keys(box.contents.sup).length;
+  const err2 = dests.length ? combatAct(st, { type: "shove", unit: v0.id, x: px, y: py, tx: dests[0].x, ty: dests[0].y }) : "no room";
+  check(!err2 && box.x === dests[0].x && box.y === dests[0].y && bt.cells[box.y * bt.w + box.x].k === "cart" && bt.cells[py * bt.w + px].k === under && box.contents.gear.length + Object.keys(box.contents.sup).length === n0 && v0.ap === 0, `shoved one tile like furniture (both actions): to ${box.x},${box.y} with its load, its old cell ${bt.cells[py * bt.w + px].k} again${err2 ? ` (${err2})` : ""}`);
+  const npx = box.x, npy = box.y;
   // Take it back: its cell is what it was.
-  const v = bt.units.find((x) => x.sid === crew[1].id);
-  v.x = px; v.y = py + (py > 0 ? -1 : 1);
-  if (bt.units.some((o) => o !== v && o.x === v.x && o.y === v.y)) v.x = px - 1;
-  combatAct(st, { type: "letGoCart", unit: v.id }); // (nothing held: refused)
+  const v = v0;
+  v.ap = 2;
+  const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [npx + dx, npy + dy]).find(([x, y]) => x > 0 && y > 0 && x < bt.w - 1 && y < bt.h - 1 && CELL[bt.cells[y * bt.w + x].k].walk && !bt.units.some((o) => o !== v && o.x === x && o.y === y));
+  if (nb) { v.x = nb[0]; v.y = nb[1]; }
+  const under2 = box.under.k;
   const tk = combatAct(st, { type: "takeCart", unit: v.id, box: box.id });
-  check(!tk && crew[1].gear.carry === cart && bt.cells[py * bt.w + px].k === under, `Take cart: back in the arms, its cell ${bt.cells[py * bt.w + px].k} again (${tk || "ok"})`);
+  check(!tk && crew[1].gear.carry === cart && bt.cells[npy * bt.w + npx].k === under2, `Take cart: back in the arms, its cell ${bt.cells[npy * bt.w + npx].k} again (${tk || "ok"})`);
+  v.ap = 2;
   // Let go without a cell asked: next to its pusher, the free cell nearest the enemy.
   combatAct(st, { type: "letGoCart", unit: v.id });
   const b2 = K.cartBoxes(bt)[0];

@@ -61,16 +61,15 @@
 //     or behind (no corner, nothing further; the UI highlights the free ones). Let go (letGoCart, free; Drop carried
 //     does the same) is the emergency drop: the free side cell nearest the other side, else under their feet (no
 //     barricade). Its items and supplies stay in it (the supplies leave the pool, as a load set down does). Its cell is
-//     a barricade (the user's pick): CELL cart, half cover like crates and the same rule as the rest of the half cover
-//     on the maps (barricade.js, 2026-10-18): nobody stands on it; a person with free arms vaults it (combat.js VAULT),
-//     the dead crawl over it (barricade.js CRAWL: a walker's whole turn) or batter it over, whichever their siege field
-//     finds cheaper; low cover (1) for whoever stands beside it, sight passes. It is not furniture: it is never shoved
-//     (barricade.js FURNITURE has no cart, and nothing is shoved onto it): Take cart and Park cart move it. Knocked out
-//     of the way (cartKnocked), the cell is open again and the cart stays there with all in it: battered over by the
-//     dead (c.hp: cart.hp 10 and 16; CART_WEAR.bash), smashed aside by a brute in one blow (zombietypes.js;
-//     CART_WEAR.brute 15), driven through by a vehicle (combat.js driveTo, RAMMING.WEAR.cart 3 to the vehicle;
-//     CART_WEAR.ram 25: wrecked). It can plug a doorway (a doorway, a broken door, a breach are parkable): the dead
-//     then crawl over it or batter it, a slower way in.
+//     a barricade (the user's picks, 2026-10-18, under the barricades' rules): CELL cart, half cover, nobody stands on
+//     it, sight passes, low cover (1) for whoever stands beside it. The living never vault it (combat.js NO_VAULT): they
+//     shove it (barricade.js shoveAct: the furniture's action and cost, both actions, one tile; shoveCart moves the cart
+//     with everything in it) or go round. The dead crawl over it as over half cover (barricade.js crawlable, CRAWL.COST:
+//     a walker's whole turn) and never batter it (no hit points), and never touch what is in it. A brute smashes it
+//     aside in one blow (zombietypes.js; CART_WEAR.brute 15), a vehicle drives through it (combat.js driveTo,
+//     RAMMING.WEAR.cart 3 to the vehicle; CART_WEAR.ram 25: wrecked): the cell is open again and the cart stays there
+//     with all in it (cartKnocked). Nothing is shoved onto a cart. It can plug a doorway (a doorway, a broken door, a
+//     breach are parkable): the dead then crawl over it, a slower way in.
 //   What is in a cart is had only through the cart (the user's rule): Load cart (the search window on the cart) or
 //     Take cart; never off the ground (ground.js pilesNear skips carts: the Ground window and Pick up do not list it),
 //     never spilled (its grid's slots and kg are checked going in, boxRefusal, so it always packs back in). On the
@@ -111,7 +110,7 @@ import { itemLoad, itemKg, ensurePack, ensureInv, lootItem } from "./inventory.j
 import { siteSource } from "./itemcond.js";
 import { CELL, alertNear, evacAt } from "./combat.js"; // the battle map's cells (a cart parked: CELL cart); noise
 import { noiseAt } from "./stealth.js"; // a cart pushed rattles
-import { survivorById, baseById, log, newId } from "./world.js";
+import { survivorById, baseById, log } from "./world.js";
 import { lootLayer, fieldLayer } from "./raidloot.js"; // call-time only (safe in the import cycle)
 import { settlePile, groundAt as pileAt } from "./ground.js";
 import { say } from "./combat.js";
@@ -301,7 +300,7 @@ function block(b, box) {
   const c = cellsOf(b, box.f || 0)[box.y * b.w + box.x];
   box.under = { k: c.k, ...(c.hp != null ? { hp: c.hp } : {}), ...(c.mhp != null ? { mhp: c.mhp } : {}) };
   c.k = "cart";
-  c.hp = c.mhp = cartSpec(box.cart).hp || 10;
+  delete c.hp; delete c.mhp; // no hit points: the dead crawl over a cart, they do not batter it (a brute smashes it: cartKnocked)
   box.blocking = true;
   if (b.losCache) b.losCache.fill(0);
 }
@@ -497,6 +496,18 @@ export function cartAct(state, b, act) {
   const box = act.box != null ? cartBoxes(b).find((c) => c.id === act.box) || null : null;
   return takeCart(state, b, u, box);
 }
+// barricade.js shoveAct: a parked cart shoved one tile (the furniture's action and cost) from (x, y) to (tx, ty): the
+// cart and everything in it go with it (box.x / box.y), the old cell is what it was again, the new one the barricade.
+export function shoveCart(b, x, y, tx, ty) {
+  const box = cartBoxes(b).find((c) => c.blocking && c.x === x && c.y === y && (c.f || 0) === (b.floor || 0));
+  if (!box) return false;
+  unblock(b, box);
+  box.x = tx; box.y = ty;
+  block(b, box);
+  return true;
+}
+// The name of the cart parked on a cell (the shove's line), or "".
+export const cartAt = (b, x, y) => { const box = cartBoxes(b).find((c) => c.x === x && c.y === y && (c.f || 0) === (b.floor || 0)); return box ? box.cart.name.toLowerCase() : ""; };
 // The free side cells a unit could park its cart on (the UI's Park cart: the four highlighted).
 export const parkCells = (b, u) => (holdsCart(u) ? SIDES.map(([dx, dy]) => [u.x + dx, u.y + dy]).filter(([x, y]) => parkable(b, x, y, u.f || 0)) : []);
 
@@ -657,7 +668,7 @@ export function seedRoadCarts(state) {
     if (r < 0.25) addLot(cart, "scrap", 2 + Math.floor(roll("n") * 5));
     else if (r < 0.45) addLot(cart, "wood", 30 + Math.floor(roll("n") * 70));
     else if (r < 0.55) addLot(cart, "fuel", 1 + Math.floor(roll("n") * 2));
-    const site = { id: newId(), tile: t.id, items: [], day: 0, names: [], lastConfirmed: 0, abandoned: true };
+    const site = { id: -1 - t.id, tile: t.id, items: [], day: 0, names: [], lastConfirmed: 0, abandoned: true }; // an id of its own (by the tile), not the world's counter: nothing made after it changes
     site.items.push(groundGearOf(cart));
     state.deathSites.push(site);
     n++;

@@ -660,8 +660,8 @@ export const CELL = {
   counter: { walk: false, cover: 1, los: false, name: "Counter" },
   gunsafe: { walk: false, cover: 2, los: false, name: "Gun safe" }, // locks.js / gunsafes.js: a steel safe, waist to head high
   vehicle: { walk: false, cover: 2, los: true,  name: "Your vehicle" },
-  // A cart let go (carts.js): a mini barricade on its cell, half cover like crates: vaulted by people with free arms,
-  // crawled over or battered over by the dead (c.hp: cart.hp; barricade.js), never shoved.
+  // A cart let go (carts.js): a mini barricade on its cell, half cover: the living never vault it (NO_VAULT: they
+  // shove it, barricade.js, or go round), the dead crawl over it (barricade.js crawlable), a brute smashes it.
   cart:    { walk: false, cover: 1, los: false, name: "Cart" },
   // Base defences against hordes and the inside of a hive (defences.js, hives.js). trap: what happens to one of
   // the dead that steps in (spikes hurt, a trench stops it for the turn).
@@ -875,7 +875,7 @@ export const breakable = (c) => c.hp > 0;
 // nothing tall, no trap, not a plated vehicle (full cover, sideCover). Who vaults (canVault): people on their feet
 // with their arms free (carry.js handsBusy), not carrying or dragging a body, not on a ram's crew (siege.js); never
 // the dead (one of the dead clambers through an open or broken window: clambers, at the same cost).
-const NO_VAULT = new Set(["bars", "rail", "well"]);
+const NO_VAULT = new Set(["bars", "rail", "well", "cart"]); // cart: the living shove a parked cart or go round (carts.js); the dead crawl over it (barricade.js crawlable)
 export function vaultable(b, c) {
   const C = c && CELL[c.k];
   if (!C || C.walk || C.cover !== 1 || C.tall || C.trap || NO_VAULT.has(c.k)) return false;

@@ -31,7 +31,7 @@ import { windowOpen, smashWindow } from "./windows.js";
 import { doorBroken } from "./buildingmaps.js";
 import { survivorById } from "./world.js";
 import { carriedSpots } from "./inventory.js";
-import { cartBoxes } from "./carts.js"; // a cart is not furniture: never shoved, nothing shoved onto it (call-time only)
+import { cartBoxes, shoveCart, cartAt } from "./carts.js"; // a parked cart is shoved as furniture is; nothing is shoved onto one (call-time only)
 
 export const SHOVE = { AP: 2, NOISE: 1, RADIUS: 3 };
 export const CRAWL = { COST: 4 };
@@ -49,7 +49,7 @@ const first = (u) => String(u.name || "").split(" ")[0];
 const burning = (b, x, y) => !!(b.fires && b.fires.some((f) => f.x === x && f.y === y));
 
 // ---------- shoving ----------
-export const shoveable = (c) => !!c && !!FURNITURE[c.k] && !c.car;
+export const shoveable = (c) => !!c && (!!FURNITURE[c.k] || c.k === "cart") && !c.car; // carts.js: a parked cart is shoved as furniture is (its load stays in it)
 export const canShove = (u) => canVault(u); // on their feet, arms free, not the dead, not carrying or dragging anyone
 export const pieceName = (c) => (c && CELL[c.k] ? CELL[c.k].name.toLowerCase() : "furniture");
 // The pieces right next to the unit (not diagonally): [{ x, y, c }].
@@ -95,15 +95,18 @@ export function shoveAct(state, b, u, act, H) {
   const dests = shoveDests(b, u, p.x, p.y);
   const d = act.tx != null ? dests.find((o) => o.x === Number(act.tx) && o.y === Number(act.ty)) : dests.length === 1 ? dests[0] : null;
   if (!d) return dests.length ? "Say where it goes: a free open cell next to it, or onto their own cell (the pull: room behind them)." : `Nowhere to shove the ${pieceName(p.c)}: no free open cell next to it, and no room behind ${first(u)} to pull it.`;
-  const src = p.c, dst = cellOf(b, d.x, d.y), name = pieceName(src);
-  // The piece's own data goes with it: its kind, hit points, that it was moved; the cell it leaves is open floor.
-  dst.k = src.k;
-  if (src.hp > 0) { dst.hp = src.hp; dst.mhp = src.mhp; } else { dst.hp = dst.mhp = FURNITURE[src.k].hp; }
-  dst.moved = true;
-  src.k = "open";
-  delete src.hp; delete src.mhp; delete src.moved;
-  // A raid's container stands on its piece: it keeps its cell (raidloot.js boxAt, searchableNear).
-  if (b.raid && b.raid.containers) for (const c of b.raid.containers) if (c.x === p.x && c.y === p.y && (c.f || 0) === (b.floor || 0)) { c.x = d.x; c.y = d.y; }
+  const src = p.c, dst = cellOf(b, d.x, d.y), name = src.k === "cart" ? cartAt(b, p.x, p.y) || "cart" : pieceName(src);
+  if (src.k === "cart") shoveCart(b, p.x, p.y, d.x, d.y); // carts.js: the cart and everything in it to the new cell; the old cell what it was
+  else {
+    // The piece's own data goes with it: its kind, hit points, that it was moved; the cell it leaves is open floor.
+    dst.k = src.k;
+    if (src.hp > 0) { dst.hp = src.hp; dst.mhp = src.mhp; } else { dst.hp = dst.mhp = FURNITURE[src.k].hp; }
+    dst.moved = true;
+    src.k = "open";
+    delete src.hp; delete src.mhp; delete src.moved;
+    // A raid's container stands on its piece: it keeps its cell (raidloot.js boxAt, searchableNear).
+    if (b.raid && b.raid.containers) for (const c of b.raid.containers) if (c.x === p.x && c.y === p.y && (c.f || 0) === (b.floor || 0) && !c.cart) { c.x = d.x; c.y = d.y; }
+  }
   const from = [u.x, u.y];
   if (d.pull) { u.x = d.back[0]; u.y = d.back[1]; }
   faceAt(u, d.x, d.y);
@@ -122,7 +125,7 @@ export function shoveAct(state, b, u, act, H) {
 // One of the dead crawls over what a person vaults, never a closed window (it batters that on a base's map, and goes
 // through an open or broken one at the vault's cost).
 export const crawls = (u) => clambers(u);
-export const crawlable = (b, c) => !!c && c.k !== "window" && vaultable(b, c);
+export const crawlable = (b, c) => !!c && c.k !== "window" && (vaultable(b, c) || c.k === "cart"); // carts.js: the dead crawl over a parked cart (the living never vault it: shove it or go round)
 // The tiles over the step a cell costs the one going over it: a person's vault (a closed window crashed through
 // dearer), the dead's clamber through a window, the dead's crawl over half cover.
 export const overCost = (b, u, c) => (canVault(u) ? vaultCost(b, c) : windowOpen(c) ? VAULT.COST : CRAWL.COST);
