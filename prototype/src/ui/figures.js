@@ -19,6 +19,7 @@ import { shade } from "./itemart/kit.js";
 import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
 import { weaponLook, unitGun } from "./gunparts.js";
+import { onForgetPictures } from "./pictures.js";
 
 export const BW = 48, BH = 52; // the pixel grid of a figure at scale 1; the figure stands on the tile's centre at (OX, OY)
 const OX = BW / 2, OY = BH - 9;
@@ -689,3 +690,4 @@ function attachHand() {
   document.addEventListener("wheel", (ev) => { const key = figOf(ev); if (!key) return; ev.preventDefault(); wheelFigure(key, ev.deltaY); }, { passive: false, capture: true });
   document.addEventListener("click", (ev) => { const el = ev.target && ev.target.closest ? ev.target.closest("button[data-figreset]") : null; if (el) { ev.preventDefault(); spinFigure(el.dataset.figreset); } }, true);
 }
+onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context

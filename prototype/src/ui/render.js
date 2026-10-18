@@ -53,6 +53,7 @@ import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in th
 import { drawWorkers } from "./workermap.js"; // your bases' people out on job trips (sim/jobtrips.js), the groups' walkers
 import { drawNight } from "./nightfx.js"; // the time-of-day shade and the lights through it
 import { lightningFrame, drawLightning, lightningWants } from "./lightningfx.js"; // lightning in storms: lifts the night shade, flashes after it
+import { onForgetPictures, watchCanvas } from "./pictures.js"; // the map's chunks are drawn again after a lost GPU context
 
 export const HEX = 26;
 const BRIDGE_W = Math.round(HEX * Math.sqrt(3)); // a bridge's deck spans the hex edge to edge along the road (ui/mapsprites.js paintBridge)
@@ -95,6 +96,7 @@ let canvas, ctx, W = 0, H = 0, dpr = 1;
 export function initRenderer(el) {
   canvas = el;
   ctx = canvas.getContext("2d");
+  watchCanvas(el); // ui/pictures.js: a lost GPU context coming back drops every kept picture (the chunks, the sprites), drawn again
   resize();
   window.addEventListener("resize", resize);
 }
@@ -2414,3 +2416,4 @@ export function tileTooltip(state, id) {
 }
 
 export { ageText, day, hub };
+onForgetPictures(() => dirtyAll()); // ui/pictures.js: every chunk is blank after a lost GPU context; drawn again within the frame budget

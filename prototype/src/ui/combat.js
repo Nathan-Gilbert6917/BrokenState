@@ -58,6 +58,7 @@ import { planHtml, planAction } from "./raidplan.js"; // choices before a raid: 
 import { planOpen, botPlan } from "../sim/raidplan.js";
 import { hudPaint, hudSync, toggleHud, hitBreakdown, breakdownHtml, hitTone } from "./battlehud.js"; // the weapon panel, the squad strip, the big hit chances (user requests 2026-10-09)
 import { barHtml } from "./battlebar.js"; // the bottom bar: the selected one's card, the orders, the turn controls (user request 2026-10-12)
+import { watchCanvas } from "./pictures.js"; // the battle canvas reports a lost GPU context (the kept pictures would be blank)
 // Ground-ring colors of a hive's special dead (sim/zombietypes.js); ordinary dead keep the green ring.
 const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
 
@@ -79,6 +80,7 @@ let canvas = null, ctx = null;
 export function initCombatUI(cv) {
   canvas = cv;
   ctx = cv.getContext("2d");
+  watchCanvas(cv); // ui/pictures.js: a lost GPU context coming back drops every kept picture, so the figures and the ground are drawn again
 }
 
 // The battle view (ui/isoview.js): isometric, the only one (there is no top-down battle view).

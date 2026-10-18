@@ -219,6 +219,9 @@ function createWindow() {
   // dying (out of memory, a GPU fault) or hanging. Each asks before reloading; the game opens on its title screen
   // again, and the last autosave (and a crash save, if one was written) are in the save list.
   if (!PERF) {
+    // The GPU process dying (a driver reset, a fault) takes every kept picture with it: the game drops them and draws
+    // them again when its canvases come back (src/ui/pictures.js). Noted here so a report can say it happened.
+    app.on("child-process-gone", (_e, d) => { if (d && d.type === "GPU" && d.reason !== "clean-exit") console.error(`Broken State: the GPU process went (${d.reason}, code ${d.exitCode}); the game redraws its pictures when the canvas comes back.`); });
     win.webContents.on("render-process-gone", (_e, d) => {
       if (!d || d.reason === "clean-exit" || win.isDestroyed()) return;
       dialog.showMessageBox(win, { type: "error", title: TITLE, message: "The game stopped unexpectedly.", detail: `Its page closed (${d.reason}, code ${d.exitCode}). Reload opens the title screen again: your autosaves and saves are in Load game.`, buttons: ["Reload", "Quit"], defaultId: 0, cancelId: 1 })
