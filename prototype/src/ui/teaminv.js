@@ -15,8 +15,8 @@ import { SLOT_NAMES, parseLoc, itemLoad } from "../sim/inventory.js";
 import { teamBase, transferProblem, teamsAtBase, teamHoldings, baseHoldings, dropOff, dropAllCargo, dropAllSupplies, loadFromBase, isPlayerTeam, dropHeldOff, pendingUnpack, unpackSpots, unpackHome } from "../sim/teaminv.js";
 import { recText, HANDS_KG } from "../sim/carry.js"; // the supplies each member holds (pockets, pack, arms)
 import { holdSection } from "./carry.js"; // under each paper doll: the supplies they carry, moved about as in their own inventory
-import { doll, storageBox, selBar, tile, SUPPLY_ICON, INV_ACTIONS } from "./inventory.js";
-import { supplyIcon } from "./stackmove.js"; // a supply's own drawing (ui/itemart.js)
+import { doll, storageBox, selBar, tile, INV_ACTIONS } from "./inventory.js";
+import { supplyIcon, stackPanel } from "./stackmove.js"; // a supply's own drawing (ui/itemart.js); the stack mover under the team tab
 import { survivorURL, spriteImg } from "./sprites.js";
 import { shortName } from "./names.js";
 import { supplyName } from "../sim/itemnames.js";
@@ -121,11 +121,13 @@ function teamTab(state, ui, p, members) {
   const user = survivorById(state, ui.inv.sid);
   const open = openSet(ui, members);
   const cols = members.filter((s) => open[s.id]).map((s) => `<div class="invcol" style="flex:0 0 17rem"><div class="spread"><b>${s.leader ? "★ " : ""}${first(s)}</b><span class="row" style="gap:0.3rem">${s.id === ui.inv.sid ? `<span class="small muted"${tip("A cargo item clicked twice goes to this person")}>receives</span>` : ""}${members.length > 1 ? `<button class="mini" data-action="ti-show" data-id="${s.id}"${tip(`Fold ${s.name.split(" ")[0]}'s inventory away (the strip above opens it again)`)}>▾</button>` : ""}</span></div>${doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), 5), { user: s })}${holdSection(state, ui, s)}</div>`).join("");
-  const packed = Object.entries(p.supplies || {}).filter(([k, v]) => SUPPLIES[k] && v >= 1).map(([k, v]) => `${SUPPLY_ICON[k] || (SUPPLIES[k] && SUPPLIES[k].icon) || "▪"} ${Math.floor(v)} ${SUPPLIES[k].name.toLowerCase()}`).join(" · ");
-  const cargo = `<div class="invcol" style="flex:1 0 17rem;min-width:17rem">${storageBox(state, ui, `party:${p.id}`, user)}${fleetLine(state, p, members)}${packed ? `<div class="small muted"${tip("Packed at the start: shared out among the people (or riding in the vehicle) and eaten first on the road")}>Packed: ${esc(packed)}</div>` : ""}</div>`;
+  // The cargo box (ui/inventory.js storageBox): the team's items, and its supplies (packed and found, one stock) as
+  // stack tiles to drag onto a member's pockets, rig or pack, or into their off hand (the user's request 2026-10-18:
+  // the rounds and magazines in the truck onto the survivors before a raid, not a "Packed:" line).
+  const cargo = `<div class="invcol" style="flex:1 0 17rem;min-width:17rem">${storageBox(state, ui, `party:${p.id}`, user)}${fleetLine(state, p, members)}</div>`;
   const html = `${memberStrip(state, ui, members, open)}<div class="row" style="align-items:flex-start;gap:1rem;overflow-x:auto;padding-bottom:0.4rem">${cols}${cargo}</div>
-    ${selBar(state, ui, `party:${p.id}`)}
-    <div class="small muted" style="margin-top:0.5rem">Click an item, then where it should go (another member's slot, pocket or pack cell, or the cargo), or drag it. Click an item twice: off a person into the cargo, or out of the cargo onto the person marked "receives" (the last one you clicked). The strip opens or folds each member.</div>`;
+    ${selBar(state, ui, `party:${p.id}`)}${stackPanel(state, ui, "inv")}
+    <div class="small muted" style="margin-top:0.5rem">Click an item, then where it should go (another member's slot, pocket or pack cell, or the cargo), or drag it. Click an item twice: off a person into the cargo, or out of the cargo onto the person marked "receives" (the last one you clicked). A stack of supplies (rounds, water, meds…) dragged onto a member's pocket, rig pouch or pack cell asks how many; dropped on the cargo it goes back into the team's supplies. The strip opens or folds each member.</div>`;
   return html.replace(/data-action="inv-click"/g, 'data-action="ti-click"');
 }
 
