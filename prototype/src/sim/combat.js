@@ -97,7 +97,7 @@ import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get 
 import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
 // Grenade launchers and rockets (section 13) and what explosions do to gear (section 24): a unit's second weapon (u.gl).
 import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit, blastBox, blastPiles } from "./launchers.js";
-import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, isShellGun } from "./mags.js"; // magazines as items (section 15): spares, reload sources (a pocket or the rig 1 action, the pack both), top-up, internal magazines
+import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, isShellGun, isMag, magEntryAt, loadMagPlan, loadMagFrom } from "./mags.js"; // magazines as items (section 15): spares, reload sources (a pocket or the rig 1 action, the pack both), top-up, internal magazines
 import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines
 import { allCarried, carriedSpots } from "./inventory.js";
 import { parseLoc, itemAt, moveItem, slotKind, fitReason, splitAt, openAt, boxAt as boxRoundsAt, rigOf, pouchesOf } from "./inventory.js"; // the survivor's inventory in a fight (combatAct "inv"; boxAt here is a raid's container)
@@ -3227,6 +3227,9 @@ setRefit(refitUnit);
 // boxed) costs the same. Armour, a helmet, the rig and the pack stay as worn (a plate: "plate", carrykit.js PLATE_AP).
 // What changed counts at once (refitKit: the weapon in the hands, the boxes of rounds, where each magazine sits).
 // Sessions D and E build on this (reloads from pockets and rigs; a hand-over to the survivor next to you).
+// Loose rounds moved onto one of the gun's spare magazines (op "load", or a plain move whose target is a magazine) load
+// it instead (mags.js loadMagPlan / loadMagFrom, 2026-10-18 user request): 1 action with the rounds in a pocket or a
+// rig pouch, both with them in the pack (mags.js LOAD_AP); nothing changes place, so no refit.
 export const INV_AP = 1;
 const INV_SLOTS = ["pocket", "pack", "pouch", "weapon", "tool", "carry"]; // inventory.js slotKind: a rig pouch is "pouch", the rig itself "rig"
 const INV_WORN = "Armour, a helmet, the rig and the pack stay as they are in a fight: only the pockets, the pack's slots, the rig's pouches and the hands change.";
@@ -3286,6 +3289,19 @@ function invAct(state, b, u, act) {
     if (!INV_SLOTS.includes(slotKind(to))) return INV_WORN;
     if (act.from === act.to) return "";
     const cur = itemAt(state, act.to);
+    if (op === "load" || (isRoundItem(item) && isMag(cur))) { // rounds onto a magazine: loaded, not swapped (mags.js)
+      if (!isMag(cur)) return "Only a magazine is loaded with rounds.";
+      const m = magEntryAt(u, carriedSpots(s), act.to);
+      if (!m) return tracksMags(u) && u.magMode === "box" ? `The ${cur.name} is not one of the ${gunWord(u)}'s: only its magazines are loaded in a fight.` : `The ${gunWord(u)} takes no magazines to load.`;
+      const src = fk === "pouch" ? "rig" : fk === "pack" ? "pack" : "pocket";
+      const p = loadMagPlan(b, u, m, item, src);
+      if (p.why) return p.why;
+      if (u.ap < p.cost) return "The rounds are in the pack: both actions to load a magazine from the pack (a pocket's or the rig's load it in 1).";
+      say(b, loadMagFrom(b, u, m, item, src, p), "info");
+      u.ap -= p.cost;
+      u.hunker = false;
+      return "";
+    }
     const kindAt = (L) => (slotKind(L) === "pouch" ? (pouchesOf(rigOf(s)) || [])[L.i] : null);
     const back = cur && !canStack(cur, item) && !(isRoundItem(cur) && isRoundItem(item) && cur.key === item.key) ? fitReason(cur, fk, s, kindAt(from)) : "";
     if (back) return `No room: the ${cur.name} there has nowhere to go (${back.replace(/\.$/, "")}).`; // (out of a fight it would go to the team's cargo)

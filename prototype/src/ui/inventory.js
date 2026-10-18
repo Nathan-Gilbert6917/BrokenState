@@ -446,6 +446,7 @@ function fightMove(state, ui, from, to, op = "move") {
   const F = parseLoc(from), T = to ? parseLoc(to) : null;
   const mine = (L) => L.o === "s" && L.id === ui.inv.sid;
   let err, cost = INV_AP;
+  const ap0 = c.u.ap;
   if (ui.inv.mate != null && (!mine(F) || (T && !mine(T)))) {
     const h = handCan(state, ui.inv.sid, ui.inv.mate);
     if (!h.ok) { ui.invMsg = h.why; ui.invSel = null; return; }
@@ -455,7 +456,8 @@ function fightMove(state, ui, from, to, op = "move") {
     err = combatAct(state, { type: "handover", unit: c.u.id, to: h.t.id, from, toLoc: to });
   } else err = combatAct(state, { type: "inv", unit: c.u.id, from, to, op });
   const said = !err && b.log.length > n ? b.log[b.log.length - 1].text : "";
-  ui.invMsg = err || `${said || "Done."} (${cost} action; ${c.u.ap} left)`;
+  if (!err && ap0 - c.u.ap > 0) cost = ap0 - c.u.ap; // (loose rounds onto a magazine from the pack: both)
+  ui.invMsg = err || `${said || "Done."} (${cost} action${cost === 1 ? "" : "s"}; ${c.u.ap} left)`;
   ui.invSel = null;
 }
 // The selected item's line in the fight's window: Split / Open box / Box (1 action each), Cancel. mate: the hand-over
@@ -467,7 +469,7 @@ function peekBar(state, ui, ok, mate = null) {
   const from = parseLoc(ui.invSel);
   const own = from.o === "s" && from.id === ui.inv.sid;
   const who = mate ? (own ? `${esc(mate.name.split(" ")[0])}'s` : "their own") : "";
-  return `<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>${mate && !own ? ` (${esc(mate.name.split(" ")[0])}'s)` : ""}. ${ok ? `Click ${mate ? `${who} ` : "a "}pocket, pack cell, rig pouch, the hands or the off hand to move it there (${mate ? HANDOVER_AP : INV_AP} action${mate ? `, ${esc(survivorById(state, ui.inv.sid).name.split(" ")[0])}'s` : ""})${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}.` : ""}
+  return `<div class="invsel small">Selected: <b>${esc(rowName(item))}${rowCount(item) ? ` ${rowCount(item)}` : ""}</b>${mate && !own ? ` (${esc(mate.name.split(" ")[0])}'s)` : ""}. ${ok ? `Click ${mate ? `${who} ` : "a "}pocket, pack cell, rig pouch, the hands or the off hand to move it there (${mate ? HANDOVER_AP : INV_AP} action${mate ? `, ${esc(survivorById(state, ui.inv.sid).name.split(" ")[0])}'s` : ""})${countOf(item) > 1 || isRoundItem(item) ? "; onto the same thing: the stacks merge" : ""}${isRoundItem(item) && item.loose ? "; onto a spare magazine of the gun: it is loaded with them (1 action from a pocket or the rig, both from the pack)" : ""}.` : ""}
     ${ok && own ? stackButtons(item, from) : ""}
     ${detailsButton(ui, item)}<button class="mini" data-action="inv-cancel">Cancel</button>${detailsBlock(state, ui, item)}</div>`;
 }
@@ -509,7 +511,7 @@ function peekModal(state, ui) {
   const u = c.u;
   const where = u ? (u.dead ? "dead" : u.left ? "got away" : u.down ? "down" : `${Math.round(u.hp)} hp`) : "";
   const head = c.ok
-    ? `<div class="small"${tip("Pockets, the pack's slots, the rig's pouches, the hands and the off hand: click an item, then where it goes (or drag it), 1 action a move. Split, Open box and Box on a stack of rounds cost the same. Armour, the helmet, the rig and the pack stay as worn (a plate: the Plate order). What moved counts at once: a gun in the hands, a magazine in a pocket (a 1-action reload), boxes of rounds.")}>${esc(s.name.split(" ")[0])}'s turn, <b>${u.ap} action${u.ap === 1 ? "" : "s"}</b> left: each move here costs ${INV_AP}. Drag the figure to turn it.</div>`
+    ? `<div class="small"${tip("Pockets, the pack's slots, the rig's pouches, the hands and the off hand: click an item, then where it goes (or drag it), 1 action a move. Split, Open box and Box on a stack of rounds cost the same. Loose rounds dropped onto a spare magazine of the gun load it: 1 action with the rounds in a pocket or the rig, both actions from the pack (a box: open it first). Armour, the helmet, the rig and the pack stay as worn (a plate: the Plate order). What moved counts at once: a gun in the hands, a magazine in a pocket (a 1-action reload), boxes of rounds.")}>${esc(s.name.split(" ")[0])}'s turn, <b>${u.ap} action${u.ap === 1 ? "" : "s"}</b> left: each move here costs ${INV_AP}. Drag the figure to turn it.</div>`
     : `<div class="small warn">${esc(c.why)} Look only. Drag the figure to turn it.</div>`;
   return `<div class="box wide invbox">
     <div class="spread"><h1>Inventory: ${esc(s.name)}</h1><span class="muted">${esc(b.place)}${where ? ` · ${esc(where)}` : ""}</span></div>

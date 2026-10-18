@@ -11,7 +11,9 @@
 //     rounds of its load to hand there, in turn (the gun in the hands first, then the other guns, then the spares, so
 //     two pistols and 20 rounds show 15/15 and 5/15, not 15/15 twice), plus any rounds kept on the gun itself
 //     (gunload.js it.loaded: a picked start gun, one taken off a body);
-//   - a gun in a fight (the search window): the rounds in it now (the unit's magazine);
+//   - a gun in a fight (the search window): the rounds in it now (the unit's magazine); a spare magazine of the gun
+//     in the hands, carried by one of yours in a fight: what the unit's entry holds now (mags.js magEntryAt: a swap
+//     emptied it, loose rounds dropped onto it loaded it);
 //   - anything else (on a body, on the ground, in a container, a trader's): what is in it (it.loaded), else empty.
 // A gun found in a building or a raid container (foundFill) comes with a believable few rounds in it, on dice of its
 // own (no draw from the world's random numbers): the found rounds are real (they join the team's like a body's gun's).
@@ -21,7 +23,7 @@ import { MAGAZINES } from "./data-kit.js";
 import { WEAPONS, magCap, magShown } from "./combat.js";
 import { calOf, gunLoads } from "./ammo.js";
 import { keyFor, typeFor, withHand, roundOf, loadId, baseType, roundName, typesOf } from "./rounds.js";
-import { isMag, magLoad, magCalsOf, standardMag, fittedMag, usesInternal, magFitsGun } from "./mags.js";
+import { isMag, magLoad, magCalsOf, standardMag, fittedMag, usesInternal, magFitsGun, magEntryAt, loadedIn } from "./mags.js";
 import { magCapOf } from "./gunmods.js";
 import { parseLoc, carriedSpots, personPlace, battleBodies } from "./inventory.js";
 import { survivorById, baseById } from "./world.js";
@@ -191,6 +193,13 @@ export function gunRounds(state, item, loc = null) {
   if (b && !b.over && isRoundGun(item)) { // in a fight: the unit holding it has the count
     const u = (b.units || []).find((x) => x.side === "player" && !x.dead && x.item === item && x.magW === x.weapon);
     if (u) { const cal = calOf(u.weapon); return { n: Math.max(0, Math.floor(magShown(b, u))), cap: u.magMax || gunCapacity(item), cal, load: typeFor(cal, u.load), src: "fight", roundName: roundName(cal, u.load) }; }
+  }
+  if (b && !b.over && isMag(item) && loc) { // in a fight: one of the gun's spares as the unit counts it now
+    const L = parseLoc(loc);
+    const s = L.o === "s" ? survivorById(state, L.id) : null;
+    const u = s ? (b.units || []).find((x) => x.side === "player" && !x.dead && x.sid === s.id) : null;
+    const m = u ? magEntryAt(u, carriedSpots(s), loc) : null;
+    if (m) { const cal = calOf(u.weapon); return { n: Math.max(0, Math.floor(loadedIn(b, u, m))), cap: m.cap, cal, load: m.load, src: "fight", roundName: roundName(cal, m.load) }; }
   }
   const at = roundsAt(state, loc);
   let r;
