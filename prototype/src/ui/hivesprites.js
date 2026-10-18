@@ -3,6 +3,7 @@
 // a hive's build site, and the two bosses on the battle map: the Wallbreaker (a hulking brute with a slab of
 // concrete for a fist, the one that smashes your defences) and the Broodmother (the bloated queen inside a hive,
 // with egg sacs on her back and a crown of bone).
+import { onForgetPictures } from "./pictures.js";
 const UP = 4;
 const OUTLINE = "#0b0c0e";
 const BONE = "#d8d0bc";
@@ -477,3 +478,4 @@ function paintNightmare() {
 }
 const ZPAINT = { spitter: paintSpitter, screamer: paintScreamer, shepherd: paintShepherd, carrier: paintCarrier, swarm: paintSwarm, boneback: paintBoneback, climber: paintClimber, flinger: paintFlinger, sower: paintSower, nightmare: paintNightmare };
 export const ztypeBattleCanvas = (kind) => cached(`ztype:${kind}`, () => (ZPAINT[kind] || paintCrawler)());
+onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context

@@ -23,6 +23,7 @@ import { count } from "../sim/buildings.js";
 import { poweredType } from "../sim/power.js";
 import { festivalNow } from "../sim/festival.js";
 import { activeCrashes } from "../sim/crashes.js";
+import { onForgetPictures } from "./pictures.js";
 
 export const NIGHT_LEVELS = {
   off: { label: "Off", alpha: 0 },
@@ -187,3 +188,4 @@ export function drawNight(ctx, v) {
   ctx.restore();
   return aq;
 }
+onForgetPictures(() => { ovKey = ""; }); // ui/pictures.js: the shade is painted again after a lost GPU context

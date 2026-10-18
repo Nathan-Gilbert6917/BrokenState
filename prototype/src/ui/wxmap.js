@@ -8,6 +8,7 @@
 // scaled: one image draw a front a frame. They glide between hours as the clock runs; with Map animations off they
 // still move, but only when the map is drawn anyway.
 import { visibleFronts, frontAt, riverFrozen, thinIce, ICE, WEATHER } from "../sim/weather.js";
+import { onForgetPictures } from "./pictures.js";
 
 // Puff colour per kind (r, g, b) and its strength on the Weather layer (alpha); the Weather fronts layer shows them
 // FRONT_STRONG times as strong.
@@ -125,3 +126,4 @@ export function weatherTipLines(state, id) {
   if (riverFrozen(state, id)) out.push(`❄️ Frozen river: walkable on foot (${ICE.walk} h a tile), no vehicles${thinIce(state, id) ? "; the ice is thin" : ""}`);
   return out;
 }
+onForgetPictures(() => clouds.clear()); // ui/pictures.js: drawn again after a lost GPU context

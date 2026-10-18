@@ -10,6 +10,7 @@
 // The moving pieces (parties, solos, hordes, herds, workers) are drawn on the map as low-poly figures now
 // (ui/mapfigures.js); their flat painters here stay for the sprite catalogue, the headless tools and as fallbacks.
 import { zombieLook } from "./sprites.js";
+import { onForgetPictures } from "./pictures.js";
 
 const UP = 4;             // pre-upscale factor for the cached canvas
 const OUTLINE = "#0b0c0e";
@@ -2830,3 +2831,4 @@ export function drawMapSprite(ctx, cv, cx, cy, w, { facing = 1, alpha = 1, angle
   ctx.imageSmoothingEnabled = s0;
   ctx.imageSmoothingQuality = q0;
 }
+onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context

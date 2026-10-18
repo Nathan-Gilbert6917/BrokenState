@@ -16,6 +16,7 @@ import { ownKey, isGunKey } from "./gunpaint.js"; // every gun's own small drawi
 import { held, weaponLook, unitGun } from "./gunparts.js"; // ... in its finish, with its fitted parts
 import { bossBattleCanvas, ztypeBattleCanvas } from "./hivesprites.js";
 import { figureCanvas, zombieApp, unitFigure, BW as FW, BH as FH } from "./figures.js"; // the panels show the low-poly figures (a three-quarter heading); the flat painters stay for the fallbacks
+import { onForgetPictures } from "./pictures.js";
 const PANEL_YAW = 25;
 
 const GW = 22, GH = 26;   // pixel grid
@@ -679,3 +680,4 @@ export function unitCanvasFlat(state, b, t, salt = 0) {
   return enemyCanvas(t.kit || "raiders", f ? f.color : null, t.weapon && t.weapon !== "fists" ? weaponLook(unitGun(t)) : t.weapon, t.armorKey, seed);
 }
 
+onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context
