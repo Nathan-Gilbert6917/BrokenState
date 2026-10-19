@@ -22,7 +22,7 @@ import { noteOutput } from "./output.js"; // the base's Work now panel: what eac
 import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: the builders go out on the odd hours
 import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
-import { carryPlacement } from "./basemap.js"; // the base map: a finished job's building keeps the spot it was placed on
+import { carryPlacement, fittingRoom, fittingsIn } from "./basemap.js"; // the base map (call-time only): a finished job's building keeps the spot it was placed on; a general building with room for a fitting; the fittings inside one
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -228,6 +228,27 @@ export const BUILDINGS = {
   water_barrel: { name: "Water barrel",   plot: "utility", cost: { scrap: 4 },  hours: 6,  max: 4, barrel: true, desc: "A drum on a stand: 25 more water room, kept for the kind you choose. Un-purified: room for the well, rain and river water. Purified: room only safe water may use (water filters' surplus, bottled water brought home), so the well's water never crowds it out and teams always find safe water to pack. Upgrade each barrel on its own: a barrel rack (50), then a water tank (100)." },
   // Storage crates (storage.js storeSpaces): a little dry room for food, outdoors.
   crates:       { name: "Storage crates", plot: "utility", cost: { scrap: 4 },  hours: 5,  max: 4, desc: "Stacked, lidded crates under a tarp: +30 days of food room at room temperature." },
+  // General buildings (base building, the user's request 2026-10-19: "different sized general buildings that you can
+  // build things inside such as workbenches, beds, storage, kitchen etc."; basemap.js FOOT general / plain): empty
+  // shells of some size on the base map, no plot (the map is the limit), whose indoor cells take the fittings below and
+  // the yard's indoor props (benches, crates, the relay…). size: the smallest kind of base that puts one up (a camp a
+  // hut, a shelter a cabin, an outpost a lodge or a hall, the main base a barn). Priced by the floor: a hut (a 2 × 2
+  // floor) at a farm plot's scrap, a cabin (3 × 2) under a bunkhouse, a lodge (4 × 3) a bunkhouse and a part, a hall
+  // (6 × 4) two bunkhouses, a barn (8 × 5) three.
+  gen_hut:      { name: "Hut",            general: true, size: "camp",    cost: { scrap: 10 },           hours: 14, max: 6, desc: "A 4 × 4 shack of scrap and timber with one door: 2 × 2 of floor inside for bunk beds and a stove, or a bench. No plot: it stands wherever it is placed on the base map (Base map tab, Build). Lockers, shelves, beds and benches are built inside it; a hut right against another building can share a doorway with it." },
+  gen_cabin:    { name: "Cabin",          general: true, size: "shelter", cost: { scrap: 16 },           hours: 20, max: 6, desc: "A 5 × 4 cabin with a front and a back door: 3 × 2 of floor inside for bunks, shelves, a stove or a bench. No plot: it stands wherever it is placed on the base map, and right against another building it can share a doorway with it." },
+  gen_lodge:    { name: "Lodge",          general: true, size: "outpost", cost: { scrap: 26, parts: 1 }, hours: 30, max: 4, desc: "A 6 × 5 lodge with two doors: 4 × 3 of floor inside for bunks, lockers, shelves, a stove and benches. No plot: it stands wherever it is placed on the base map, and right against another building it can share a doorway with it." },
+  gen_hall:     { name: "Hall",           general: true, size: "outpost", cost: { scrap: 40, parts: 2 }, hours: 44, max: 3, desc: "An 8 × 6 hall with two doors: 6 × 4 of floor inside, room for a whole barracks' worth of bunks, or the workshop's benches under one roof. No plot: it stands wherever it is placed on the base map, and right against another building it can share a doorway with it." },
+  gen_barn:     { name: "Barn",           general: true, size: "hub",     cost: { scrap: 60, parts: 3 }, hours: 60, max: 2, desc: "A 10 × 7 barn with two doors: 8 × 5 of floor inside, the biggest roof the base puts up: storage shelves and lockers by the dozen, or bunks for twenty. No plot: it stands wherever it is placed on the base map, and right against another building it can share a doorway with it. Main base only." },
+  // Fittings (fit: true; basemap.js FOOT fit): built only inside a standing general building, on its floor (placed
+  // there on the base map; the game puts one in the first building with room). A fitting keeps its host's id (host).
+  // bunks: +2 beds each (BEDS). shelves and lockers: containers for the base's goods (containers.js: 200 kg and 120 kg;
+  // gear leans to the lockers) and a store on the map in a raid. stove: a cook fire indoors (as: "cookhouse": it
+  // counts as one wherever count(base, "cookhouse") is read).
+  bunks:        { name: "Bunk beds",      fit: true, cost: { scrap: 5 }, hours: 4, max: 24, desc: "A pair of bunks of scrap tubing and planks, 2 × 1 on the floor of a hut, cabin, lodge, hall or barn: +2 beds each. Overcrowding lowers mood every day." },
+  shelves:      { name: "Storage shelves", fit: true, cost: { scrap: 4 }, hours: 4, max: 24, desc: "Shelving of planks and angle iron, 2 × 1 on the floor of a general building: a container for 200 kg of the base's goods (Storage tab), kept under a roof. In a raid it is a store on the map that raiders go for once they are past the wall." },
+  lockers:      { name: "Lockers",        fit: true, cost: { scrap: 6 }, hours: 5, max: 12, desc: "A steel locker, 1 × 1 on the floor of a general building: a container for 120 kg of the base's goods, where the gear goes first (Storage tab). In a raid it is a store on the map." },
+  stove:        { name: "Wood stove",     fit: true, as: "cookhouse", cost: { scrap: 8 }, hours: 8, max: 4, desc: "A drum stove with a flue, 1 × 1 on the floor of a general building: a cook fire indoors. It counts as a cook fire (all the game and fish eaten here cooked through, the infected land's greens and roots boiled), so a base with one needs no fire pit in the yard." },
   // Base tiers (staging.js): a shelter (tier 0) is built up into a base (the hub, tier 1) by its builders. Not a
   // building: when it is done the shelter becomes a full hub (upgradeShelter).
   // gather (2026-10-09, user pick): as the outpost camp's, its materials are taken from the stores as they come in.
@@ -419,6 +440,23 @@ export function demolish(state, base, id) {
   if (!chk.ok) return chk.reason;
   const b = base.buildings.find((x) => x.id === id);
   const back = demolishRefund(b);
+  // A general building (base building 2026-10-19) comes down with the fittings standing inside it, placed there by
+  // hand (host) or by the game (basemap.js fittingsIn): their half back too, the ones queued for it cancelled and
+  // refunded; the benches and crates that stood inside go back to the yard (the game places them until they are
+  // placed by hand again).
+  const inside = [];
+  if (BUILDINGS[b.type].general) {
+    const down = new Set();
+    for (const f of fittingsIn(state, base, id)) { if (f.key.startsWith("c:")) cancelBuild(state, base, f.rec.id); else down.add(f.rec); }
+    for (const x of base.buildings) if (x.host === id && BUILDINGS[x.type] && BUILDINGS[x.type].fit) down.add(x);
+    for (const f of down) {
+      for (const [k, v] of Object.entries(demolishRefund(f))) back[k] = (back[k] || 0) + v;
+      base.buildings.splice(base.buildings.indexOf(f), 1);
+      inside.push(BUILDINGS[f.type].name.toLowerCase());
+    }
+    for (const x of base.buildings) if (x.host === id) { delete x.host; delete x.at; }
+    for (const c of base.construction.slice()) if (c.host === id) { if (BUILDINGS[c.type] && BUILDINGS[c.type].fit) cancelBuild(state, base, c.id); else { delete c.host; delete c.at; } }
+  }
   base.buildings.splice(base.buildings.indexOf(b), 1);
   for (const [k, v] of Object.entries(back)) base.stock[k] = (base.stock[k] || 0) + v;
   if (b.type === "radio") base.radio = count(base, "radio") > 0;
@@ -427,8 +465,10 @@ export function demolish(state, base, id) {
   assignStations(state, base);
   const name = b.type === "water_barrel" ? barrelName(b) : b.type === "generator" ? genName(b) : b.type === "walls" ? wallName(b) : BUILDINGS[b.type].name;
   const got = Object.entries(back).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${keyWord(k)}`).join(", ");
-  log(state, `${name} at ${base.name} pulled down${got ? ` (${got} salvaged)` : ""}.`, "info");
-  return `${name} pulled down${got ? `: ${got} salvaged` : ""}. Its plot is free.`;
+  const counted = [...inside.reduce((m, n) => m.set(n, (m.get(n) || 0) + 1), new Map())].map(([n, q]) => (q > 1 ? `${q} × ${n}` : `the ${n}`));
+  const withIn = counted.length ? ` with ${counted.length > 1 ? `${counted.slice(0, -1).join(", ")} and ${counted[counted.length - 1]}` : counted[0]} inside it` : "";
+  log(state, `${name} at ${base.name} pulled down${withIn}${got ? ` (${got} salvaged)` : ""}.`, "info");
+  return `${name} pulled down${withIn}${got ? `: ${got} salvaged` : ""}.${BUILDINGS[b.type].plot ? " Its plot is free." : ""}`;
 }
 
 // ---------- base tiers ----------
@@ -448,7 +488,8 @@ export const SHELTER = {
   // building on its building plot (a bunkhouse, a root cellar, a makeshift infirmary or a hunting cabin), a barricade,
   // a farm plot, the shelter's defences (the Defenses tab) and the step up.
   build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 2, trench: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2,
-    walls: 1, spike_pits: 2, barbed_wire: 2, sandbag_wall: 2 }, // the Defenses tab: a wall up to a timber palisade (WALL_TIERS), wire, pits, sandbags
+    walls: 1, spike_pits: 2, barbed_wire: 2, sandbag_wall: 2, // the Defenses tab: a wall up to a timber palisade (WALL_TIERS), wire, pits, sandbags
+    gen_hut: 2, gen_cabin: 1, bunks: 4, shelves: 4, stove: 1 }, // base building (2026-10-19): two huts or a cabin on the map, bunks, shelves and a stove inside them
 };
 export const isShelter = (base) => !!base && base.tier === 0;
 export const baseTier = (base) => (isShelter(base) ? 0 : 1);
@@ -474,7 +515,8 @@ export const CAMP = {
   // The yard things a camp may build (the most of each; they share its two utility plots). The crafting bench, the
   // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too. The camp's
   // defences (the Defenses tab, 2026-10-19): a stake fence (the wall's first tier), a spike pit, a line of barbed wire.
-  build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, spike_pits: 1, barbed_wire: 1, trench: 1 }, // the Defenses tab: a stake fence, a pit, a line of wire, a trench
+  build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, spike_pits: 1, barbed_wire: 1, trench: 1, // the Defenses tab: a stake fence, a pit, a line of wire, a trench
+    gen_hut: 1, bunks: 2, shelves: 2, stove: 1 }, // base building (2026-10-19): one hut on the map, bunks, shelves and a stove inside it
   ruinScrap: 10,     // on the ruins of a burned base: 10 scrap less for the step up (salvage)
   matScrap: 3, matHours: 3, // its builders make building materials for the step up from scrap (= crafting.js buildmat)
 };
@@ -512,8 +554,10 @@ export function upgradeShelter(state, base) {
   log(state, base.type === "outpost" ? `${base.name} is an established outpost now: a shack with a roof, a dug spring and a fence where the camp stood.` : `${base.name} is a real base now: a main house, a dug well, a cellar and a fence where the tarps stood.`, "good");
 }
 
-// Working buildings of a type: a broken one (breakdowns.js) does nothing until it is repaired. countAll: built, broken or not.
-export const count = (base, type) => base.buildings.filter((b) => b.type === type && !b.broken).length;
+// Working buildings of a type: a broken one (breakdowns.js) does nothing until it is repaired, and a building that
+// stands in for another (BUILDINGS as: the wood stove as a cook fire) counts as that type. countAll: built, broken or
+// not, the type itself only (the limits).
+export const count = (base, type) => base.buildings.filter((b) => (b.type === type || (BUILDINGS[b.type] && BUILDINGS[b.type].as === type)) && !b.broken).length;
 export const countAll = (base, type) => base.buildings.filter((b) => b.type === type).length;
 // ---------- walls by tier (the user's request 2026-10-19) ----------
 // The kinds of base by size, smallest first (DEF_SIZE): what a defence (BUILDINGS size) and a wall's tier need. An
@@ -589,8 +633,8 @@ export const underAttack = (state, base) => !!base.alert ||
   state.parties.some((q) => q.phase === "siege" && q.target && q.target.kind === "player" && q.target.baseId === base.id) ||
   (state.visitors || []).some((v) => v.phase === "siege" && v.goal && v.goal.kind === "base" && v.goal.baseId === base.id);
 // Beds: the hub 4, an outpost 2, a shelter SHELTER.beds, plus BEDS for each working bunkhouse or barracks (a broken one
-// sleeps nobody until it is repaired).
-export const BEDS = { bunkhouse: 6, barracks: 12, cots: 2 };
+// sleeps nobody until it is repaired) and each pair of bunk beds built inside a general building (base building 2026-10-19).
+export const BEDS = { bunkhouse: 6, barracks: 12, cots: 2, bunks: 2 };
 // Beds for the adults: less the beds children take (family.js updateKidBeds: two to a bed; babies sleep with a parent).
 export const baseBeds = (base) => (isCamp(base) ? CAMP.beds : isShelter(base) ? SHELTER.beds : base.type === "hub" ? 4 : 2) + Object.entries(BEDS).reduce((a, [t, n]) => a + count(base, t) * n, 0) - (base.kidBeds || 0);
 // Beds the construction queue adds when it is done: new bunkhouses and barracks, and a bunkhouse expanded into a
@@ -611,9 +655,10 @@ export function addBuilding(base, type) {
   if (type === "walls" && wallOf(base)) { const w = wallOf(base); w.tier = Math.min(WALL_TIERS.length - 1, wallTierOf(w) + 1); return w; }
   const b = { id: newId(), type };
   if (type === "walls") b.tier = 1;
-  // An upgrade (hospital tiers) replaces the lower tier of the same family, and keeps its spot on the base map.
+  // An upgrade (hospital tiers) replaces the lower tier of the same family, and keeps its spot on the base map (its
+  // host inside a general building and its doorway links too).
   const fam = BUILDINGS[type].family;
-  if (fam) { carryPlacement(base.buildings.find((x) => BUILDINGS[x.type].family === fam), b); base.buildings = base.buildings.filter((x) => BUILDINGS[x.type].family !== fam); }
+  if (fam) { carryPlacement(base.buildings.find((x) => BUILDINGS[x.type].family === fam), b, base); base.buildings = base.buildings.filter((x) => BUILDINGS[x.type].family !== fam); }
   base.buildings.push(b);
   if (type === "radio") base.radio = true;
   if (type === "watchtower") base.watchtower = true;
@@ -790,6 +835,8 @@ export function placeProblem(base, type) {
     if (!CAMP.build[type]) return type === "hub_up" ? "Build the camp up into a shelter first" : base.type === "outpost" ? "Available once the camp is an outpost (Establish the outpost)" : SHELTER.build[type] ? "Available once the shelter stands (build the camp up first)" : "Available once it is a base (camp → shelter → base)";
   } else if (isShelter(base) && !SHELTER.build[type]) return "Not at a shelter: build it up into a base first";
   if (def.plot && !plotCap(base, def.plot)) return `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[def.plot].toLowerCase()}s`;
+  // A fitting (base building 2026-10-19) stands only inside a general building with room on its floor for it.
+  if (def.fit && !fittingRoom(null, base, type)) return "Needs a building to stand in (a hut, cabin, lodge, hall or barn)";
   return "";
 }
 
@@ -999,7 +1046,7 @@ export function constructionHour(state) {
         continue;
       }
       const nb = addBuilding(base, job.type);
-      carryPlacement(job, nb); // basemap.js: where it was placed while it went up
+      carryPlacement(job, nb, base); // basemap.js: where it was placed while it went up, its host, and the doorway links that named the job
       log(state, `${job.type === "walls" ? wallName(nb) : BUILDINGS[job.type].name} finished at ${base.name}.`, "good");
     }
   }
