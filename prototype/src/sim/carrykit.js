@@ -256,7 +256,8 @@ export function handWant(s, gun) {
   if (!(loose > 0) || (SHELLS.on && SHELLS.GUNS[gun.key] && usesInternal(gun.key, gun))) return loose;
   const w = WEAPONS[gun.key], fit = fittedMag(gun), m = gunMods(gun);
   let n = gun.loaded ? 0 : Math.max(1, Math.round(((fit ? MAGAZINES[fit.key].cap : w.cap) || 1) * (m.capMult ?? 1)) + (m.cap || 0));
-  for (const x of carriedSpots(s)) if (x.item && x.item !== fit && isMag(x.item) && !Array.isArray(x.item.stack) && magFitsGun(gun.key, x.item.key)) n += MAGAZINES[x.item.key].cap;
+  const cal = calOf(gun.key), key = keyFor(cal, typeFor(cal, gun.load)); // a spare set to a round of its own (mags.js magItemLoad) loads that, not these
+  for (const x of carriedSpots(s)) if (x.item && x.item !== fit && isMag(x.item) && !Array.isArray(x.item.stack) && !x.item.unloaded && magFitsGun(gun.key, x.item.key) && keyFor(cal, typeFor(cal, x.item.load || gun.load)) === key) n += MAGAZINES[x.item.key].cap;
   return loose + n;
 }
 // Rounds at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's) and

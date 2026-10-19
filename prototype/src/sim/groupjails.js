@@ -46,6 +46,7 @@ import { allCaptives, CAPTIVE_TOOL } from "./conflicts.js";
 import { changeRelation, relation, warBetween, atWar, news, knownAs } from "./diplomacy.js";
 import { available } from "./trade.js";
 import { spendAmmo } from "./rounds.js"; // rounds paid by calibre
+import { roundsText } from "./ammo.js"; // and named so in the news
 import { tileLabel } from "./parties.js";
 import { openNegotiation, dealFor, talksOf, groupMemberWorth } from "./ransom.js"; // rescue: buying your people back; the value rule
 import { weightOf } from "./groupcare.js"; // the type profiles
@@ -286,11 +287,17 @@ function payWith(o, value) {
   return null;
 }
 const priceOf = (rec) => G.TRADE.value + G.TRADE.perPower * (rec.power || 3);
+// Returns what was paid as words for the news ("70 rounds of 9mm FMJ", "3 days of food", "12 scrap").
 function pay(from, to, terms) {
-  if (terms.key === "food") { addFoodsTo(to.stock, takeFood(from.stock, terms.qty).items); return; } // foods.js: days of food as the items they hold
-  if (terms.key === "ammo") { for (const [k, n] of Object.entries(spendAmmo(from.stock, terms.qty).keys)) to.stock[k] = (to.stock[k] || 0) + n; return; } // rounds.js: the very rounds, by calibre
+  if (terms.key === "food") { addFoodsTo(to.stock, takeFood(from.stock, terms.qty).items); return `${terms.qty} days of food`; } // foods.js: days of food as the items they hold
+  if (terms.key === "ammo") { // rounds.js: the very rounds, by calibre
+    const keys = spendAmmo(from.stock, terms.qty).keys;
+    for (const [k, n] of Object.entries(keys)) to.stock[k] = (to.stock[k] || 0) + n;
+    return roundsText(keys);
+  }
   from.stock[terms.key] = Math.max(0, (from.stock[terms.key] || 0) - terms.qty);
   to.stock[terms.key] = (to.stock[terms.key] || 0) + terms.qty;
+  return `${terms.qty} ${terms.key}`;
 }
 // Sold on: to a buyer as labour (into its jail) or to the military to be freed. False: nobody buys.
 function sellTo(state, f, rec) {
@@ -298,7 +305,7 @@ function sellTo(state, f, rec) {
   const buyer = buyerFor(state, f, rec.from, price);
   if (!buyer) return false;
   const terms = payWith(buyer, price);
-  pay(buyer, f, terms);
+  const paid = pay(buyer, f, terms);
   const from = factionById(state, rec.from);
   const list = groupPrisoners(f);
   if (list.includes(rec)) list.splice(list.indexOf(rec), 1);
@@ -311,7 +318,7 @@ function sellTo(state, f, rec) {
   groupPrisoners(buyer).push({ ...rec, since: day(state) });
   if (from && from.alive && relation(state, buyer, from) <= G.TRADE.enemyRel) changeRelation(state, f, from, G.TRADE.enemySaleRel); // sold to their enemies
   bump(state, "sold");
-  news(state, `${cap(knownAs(state, f))} sold a prisoner of ${knownAs(state, from)} to ${knownAs(state, buyer)} for ${terms.qty} ${terms.key}.`, "info", [buyer, f, from]);
+  news(state, `${cap(knownAs(state, f))} sold a prisoner of ${knownAs(state, from)} to ${knownAs(state, buyer)} for ${paid}.`, "info", [buyer, f, from]);
   return true;
 }
 const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
@@ -391,7 +398,7 @@ function overflowDue(state, s, f) {
 // Your captive sold on to another group: their factionId and tile change (rescue missions follow), and a card.
 function sellYours(state, s, f, buyer, value) {
   const terms = payWith(buyer, value);
-  if (terms) pay(buyer, f, terms);
+  const paid = terms ? pay(buyer, f, terms) : "";
   const tile = buyer.bases[0];
   s.location = { ...s.location, kind: "captive", factionId: buyer.id, tile, soldDay: day(state) }; // a hidden tool (rescue) goes with them
   delete s.location.fresh; delete s.location.overflow;
@@ -401,7 +408,7 @@ function sellYours(state, s, f, buyer, value) {
     return;
   }
   bump(state, "yoursSold");
-  const text = `${s.name} was sold to ${buyer.name} at ${tileLabel(state, tile)}${terms ? ` for ${terms.qty} ${terms.key}` : ""}.`;
+  const text = `${s.name} was sold to ${buyer.name} at ${tileLabel(state, tile)}${paid ? ` for ${paid}` : ""}.`;
   log(state, text, "danger");
   addCard(state, { title: `${first(s)} was sold`, text: `${text} A rescue or a ransom now has to go there.`, choices: [{ label: "OK", resolve: () => "" }] });
   news(state, `${cap(knownAs(state, f))} sold one of your people to ${knownAs(state, buyer)}.`, "danger", [f, buyer]);
@@ -434,12 +441,12 @@ export function groupJailsDaily(state) {
         const terms = payWith(from, priceOf(rec));
         // The value rule (ransom.js groupMemberWorth, as yours): worth the price to them, and not out of their last days of food.
         if (terms && groupMemberWorth(from, rec.power) >= priceOf(rec) && (terms.key !== "food" || foodIn(from.stock) - terms.qty >= from.pop * G.RANSOM_KEEP_DAYS)) {
-          pay(from, f, terms);
+          const paid = pay(from, f, terms);
           list.splice(list.indexOf(rec), 1);
           goHome(state, from, rec);
           changeRelation(state, f, from, T.ransomRel);
           bump(state, "ransomed");
-          if (f.known || from.known) news(state, `${cap(knownAs(state, from))} paid ${terms.qty} ${terms.key} to ${knownAs(state, f)} for one of their people.`, "info", [f, from]);
+          if (f.known || from.known) news(state, `${cap(knownAs(state, from))} paid ${paid} to ${knownAs(state, f)} for one of their people.`, "info", [f, from]);
           continue;
         }
       }
