@@ -17,6 +17,7 @@
 // ransomed (by radio or envoy with any group, raiders included: ransom.js; during a trade visit or at the gates), or
 // released when goodwill is high. Over time they may escape (likelier with a pin, lockpicks or the keys they kept:
 // location.tool), be recruited by their captors, or die.
+import { hasWall } from "./buildings.js"; // a wall closed round a base of yours (the raid's siege kit)
 import { spendAmmo } from "./rounds.js"; // a group's rounds by calibre
 import { takeFood, FOODS } from "./foods.js"; // their food, days of it
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES, supValue } from "./data.js";
@@ -1666,7 +1667,7 @@ function captiveEvent(state, key, title, text, kind) {
 }
 
 // ---------- base defense in person (from the raid warning) ----------
-const baseHasWalls = (base) => base.buildings.some((x) => x.type === "walls" && !x.broken);
+const baseHasWalls = (base) => hasWall(base); // buildings.js: a wall closed round it
 // A raid of a given strength as people on the battle map: the head count the lookouts report (at least 1), and
 // each attacker's power set so that count × power is the raid's stated strength.
 export function raidForce(f, strength) {

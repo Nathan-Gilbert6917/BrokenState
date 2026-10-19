@@ -125,7 +125,7 @@ import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
 import { available, need, demand, tradeContext, setQty, balanceWith, tradeVerdict, executeTrade, endTrade, maxBuyable, autoSellGear, groupPartsLow, groupStockKey, roundNeeds, gearBuyPrice, sellPrice } from "./trade.js";
 import { partDeficit, kitWants } from "./repair.js"; // the parts and kits the governor keeps (it buys below them)
 const PART_KEYS = ["parts", "carparts", "gunparts", "electronics"];
-import { count } from "./buildings.js";
+import { count, hasWall } from "./buildings.js";
 import { partyVehicle, createVehicle } from "./vehicles.js";
 import { chronicleNote } from "./chronicle.js";
 import { knownLoc } from "./discovery.js";
@@ -972,7 +972,7 @@ function raidWarning(state, v) {
 //     they have; on the map each throws their own (fighters.js fitThrowables).
 // Against an unwalled base: nothing.
 export function bandKit(state, v, base) {
-  if (!base || !count(base, "walls")) return null;
+  if (!base || !hasWall(base)) return null; // buildings.js: a wall closed round the base (its pieces)
   if (!v.siegeFor || v.siegeFor.baseId !== base.id) {
     v.siegeFor = { baseId: base.id, kit: raidSiegeKit(state, base, { count: clamp(v.size, 1, 14), key: v.serial * 31 + localId(state, base.id), /* never the raw ids: they are process-wide */ outsider: true, kind: v.power >= 5.5 ? "frag" : "pipebomb" }) };
     makeSiegeGear(state, v, v.siegeFor.kit);
@@ -1049,7 +1049,7 @@ function dropBandGoods(state, v, base = null, tile = v.tile) {
 // By the numbers, the grenades a band threw over your walls (bandKit's): off the people who carried them, gone.
 function throwBandGrenades(state, v, base) {
   const kit = bandKit(state, v, base);
-  if (!kit || !kit.grenades || !count(base, "walls")) return;
+  if (!kit || !kit.grenades || !hasWall(base)) return;
   let n = kit.grenades;
   for (const s of v.people || []) for (const c of carriedSpots(s)) if (n > 0 && c.item && GRENADES.includes(c.item.key)) { c.take(); n--; }
 }

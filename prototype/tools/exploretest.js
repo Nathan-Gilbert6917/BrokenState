@@ -534,7 +534,7 @@ console.log("Breakdowns and repairs");
   BD.breakdownsHour(st);
   h.hordeHits += 1;
   BD.breakdownsHour(st);
-  check(walls.wear > 10 && gate.wear > 10, `a horde attack wears the walls (${walls.wear.toFixed(0)}) and the gate (${gate.wear.toFixed(0)})`);
+  check(walls.wear >= 2 && gate.wear > 10, `a horde attack wears the walls (a 1×4 wall piece ${walls.wear.toFixed(1)}: each piece takes its share, breakdowns.js) and the gate (${gate.wear.toFixed(0)})`);
   // The hub pump: the storm hub event is this breakdown now.
   const st2 = W(seed + 5);
   const h2 = hub(st2);

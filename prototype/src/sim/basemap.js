@@ -9,8 +9,10 @@
 // placed; the open ground beyond the yard is GRID.out cells on every side). Coordinates are relative to the middle of
 // the base (0, 0), so a base that grows keeps every placement.
 //   The yard: the square [-C, C) the buildings, fields and cars stand in (C = yardHalf), one cell clear of its edge.
-//   The band: the two cells round the yard where the walkway and the wall ring stand when the base has walls (fort.js:
-//     the walkway at ±C, the wall at ±(C + 1)); nothing is placed on it, walls or no walls.
+//   The ring (ringHalf R: the yard's half-size when the first wall piece went up, base.plan.ring; the yard's own
+//     before): the two cells round [-R, R) where the game lays the wall pieces and gates it places itself (the outer
+//     line, ±(R + 1)) and the wall stands (the inner one, ±R). Nothing else goes on it; walls, gates and stands go
+//     anywhere (the user's request 2026-10-19: walls placed and turned by hand, 1×1, 1×2, 1×4; gates 1×4; stands).
 //   Outside: open ground to the grid's edge, where defences (and nothing else) may also go: a trench or spike pits
 //     well out in front of the wall, a watchtower on the approach.
 // The battle map (fort.js buildFort) is the grid cropped to what stands on it (the band, every defence and car) plus
@@ -32,6 +34,9 @@
 // the yard, pits and the trench in front of the wall, the floodlights and the watchtower at the corners). A thing
 // that fits nowhere is left off the map (it still counts by the numbers: defences.js).
 //
+// The wall (wallInfo, buildBaseMap): the pieces placed, nothing else. The base is walled when they close round the
+// base itself (with the houses: a house's walls and barred doors keep the dead out as well as a wall does); the
+// attackers then start outside and the fight opens at the wall, otherwise in the yard (a gap anywhere is a way in).
 // On the map: a building under construction (a queued job with a footprint) shows its outline (CELL "outline": stakes
 // and string on open ground, walkable) in the Base map view only; when the base is raided the outlines are gone and
 // the ground is open land. Every building keeps the 3D sprites of the battle map (ui/isoview.js): houses with barred
@@ -62,10 +67,10 @@
 // anything else (its length by type: carLen, an Army truck 5), in the yard or beyond the wall. Hordes and raiders batter what
 // stands in their way: doors, windows, walls, barricades and parked cars (combat.js bash); when the fight is over the
 // buildings battered on the map wear as fixtures (breakdowns.js) and the cars lose condition (settleBaseBattle).
-import { BUILDINGS, STORE_KG, count, isCamp, isShelter, farmSlots, tierName } from "./buildings.js";
-import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, WEAPONS, structureName } from "./combat.js";
+import { BUILDINGS, STORE_KG, count, isCamp, isShelter, farmSlots, tierName, pieceName, pieceHp, matOf, WALL_TIERS, WALL_DAMAGED } from "./buildings.js";
+import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, WEAPONS, structureName, barredCell } from "./combat.js";
 import { carsAtBase } from "./vehicles.js";
-import { wallHp, gateHp } from "./deploy.js";
+import { DEPLOY } from "./deploy.js"; // the reinforced gate's hit points (call-time only)
 import { INTERIOR, layoutSeed } from "./interior.js";
 import { densify, COVER } from "./battlesize.js";
 import { Rng } from "./rng.js";
@@ -154,6 +159,9 @@ export const FOOT = {
   animal_pen: { kind: "pen", w: 4, h: 3 },
   barricades: DEF("barricade", 3, 1), spike_pits: DEF("spikes", 3, 2), trench: DEF("trench", 16, 1), floodlights: DEF("lamp", 1, 1), watchtower: DEF("tower", 2, 2),
   sandbag_wall: DEF("sandbag", 4, 1), // the Defenses tab's sandbag positions: 4 cells, placed like a barricade
+  // The wall pieces (buildings.js piece): a line of wall cells, a 1×4 gate, a raised wall stand; turned by R.
+  wall1: { kind: "wall", w: 1, h: 1 }, wall2: { kind: "wall", w: 2, h: 1 }, wall4: { kind: "wall", w: 4, h: 1 }, gate4: { kind: "gate", w: 4, h: 1 },
+  stand1: { kind: "stand", w: 1, h: 1 }, stand2: { kind: "stand", w: 2, h: 1 }, stand4: { kind: "stand", w: 4, h: 1 },
   // Not placed (laid round the wall by the map itself: the wire rings, the guard towers on the walkway, the minefield
   // in the open ground): barbed_wire, razor_wire, guard_towers, minefield.
 };
@@ -161,6 +169,7 @@ export const FIELD = { kind: "field", w: 3, h: 2 };
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.
 const STORES = { warehouse: 4, storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, shed: 1.5, crates: 1, storebox: 0.5, armory: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest
 const BUILD_KINDS = new Set(["house", "roof", "prop", "pen", "field", "vehicle"]); // the kinds the yard grows for (footCount) and the cover props keep off
+export const WALL_KINDS = new Set(["wall", "gate", "stand"]); // the wall pieces: anywhere, the ring too
 export const hasFootprint = (type) => !!FOOT[type];
 
 // ---------- the middle: the camp, the shelter, the base ----------
@@ -196,7 +205,8 @@ export const coreName = (base) => tierName(base);
 
 // ---------- sizes ----------
 // How many buildings with a footprint stand or are queued (the yard grows with them).
-const footCount = (base) => base.buildings.filter((b) => FOOT[b.type] && FOOT[b.type].kind !== "defence").length + base.construction.filter((c) => !c.target && FOOT[c.type] && FOOT[c.type].kind !== "defence").length;
+const grows = (type) => !!FOOT[type] && FOOT[type].kind !== "defence" && !WALL_KINDS.has(FOOT[type].kind);
+const footCount = (base) => base.buildings.filter((b) => grows(b.type)).length + base.construction.filter((c) => !c.target && grows(c.type)).length;
 // The yard's half-size: by tier and buildings, and never smaller than what is placed inside it needs.
 export function yardHalf(base) {
   const g = gridOf(base);
@@ -204,7 +214,7 @@ export function yardHalf(base) {
   // Nothing placed stands under the wall ring: a thing the band would cut through (placed inside while the yard was
   // bigger, or just outside before the yard grew) pulls the yard out over it, up to the cap; a thing well beyond the
   // band stays outside the wall.
-  for (let grown = true; grown && C < g.cap;) {
+  for (let grown = !(base.plan && base.plan.ring != null); grown && C < g.cap;) { // once the ring is pegged out it stays where it is
     grown = false;
     for (const it of placedItems(base)) {
       if (!it.at) continue;
@@ -219,10 +229,22 @@ export function yardHalf(base) {
   return C;
 }
 // The grid's half-size: the yard, the band and the open ground beyond, at most GRID_MAX.
-export const gridHalf = (base) => Math.min(GRID_MAX, yardHalf(base) + 2 + gridOf(base).out);
+export const gridHalf = (base) => Math.min(GRID_MAX, Math.max(yardHalf(base), ringHalf(base)) + 2 + gridOf(base).out);
+// The ring the game lays the wall on (R): pegged out at the yard's edge when the first piece goes up (ensureRing), so
+// the pieces it placed stay put as the yard grows (Widen the wall: widenRing); the yard's own edge before that.
+export const ringHalf = (base) => (base && base.plan && base.plan.ring != null ? base.plan.ring : yardHalf(base));
+export function ensureRing(base) { const P = planOf(base); if (P.ring == null) P.ring = yardHalf(base); return P.ring; }
+// The yard has grown past the ring: the ring out to the yard's edge (the game's pieces move out with it; the gaps
+// they leave want more pieces: Ring wall). Returns a message.
+export function widenRing(base) {
+  const C = yardHalf(base), R = ringHalf(base);
+  if (C <= R) return "The wall already runs round the whole yard.";
+  planOf(base).ring = C;
+  return `The ring is pegged out ${C - R} cells further out, round the whole yard: the wall pieces the game places move out to it (close the gaps with Ring wall).`;
+}
 export const gridSize = (base) => gridHalf(base) * 2;
 const inYard = (x, y, C) => x >= -C && x < C && y >= -C && y < C;
-const onBand = (x, y, C) => !inYard(x, y, C) && inYard(x, y, C + 2);
+const onBand = (x, y, R) => !inYard(x, y, R) && inYard(x, y, R + 2);
 
 // ---------- items ----------
 // The dims of a footprint turned r quarter turns, and its rect at a position.
@@ -244,12 +266,12 @@ export function itemsOf(state, base) {
   for (const b of base.buildings) {
     const f = FOOT[b.type];
     if (!f) continue;
-    out.push({ key: `b:${b.id}`, type: b.type, ...f, label: label(b.type, n(b.type)), at: b.at || null, rec: b, built: true });
+    out.push({ key: `b:${b.id}`, type: b.type, ...f, label: WALL_KINDS.has(f.kind) ? `${pieceName(b)} ${n(pieceName(b))}` : label(b.type, n(b.type)), at: b.at || null, rec: b, built: true, ...(b.mat ? { mat: b.mat } : {}) });
   }
   for (const c of base.construction) {
     const f = FOOT[c.type];
     if (!f || c.target) continue; // an upgrade in place keeps the standing building's spot
-    out.push({ key: `c:${c.id}`, type: c.type, ...f, label: `${label(c.type, 0)} (building)`, at: c.at || null, rec: c, built: false });
+    out.push({ key: `c:${c.id}`, type: c.type, ...f, label: `${WALL_KINDS.has(f.kind) ? pieceName(c) : label(c.type, 0)} (building)`, at: c.at || null, rec: c, built: false, ...(c.mat ? { mat: c.mat } : {}) });
   }
   const plots = planOf(base).plots;
   for (let i = 0; i < farmSlots(base); i++) out.push({ key: `p:${i}`, type: "plot", ...FIELD, label: `Crop plot ${i + 1}`, at: plots[i] || null, built: true });
@@ -266,8 +288,8 @@ const carBody = (v) => (v && v.type === "miltruck" ? "m35" : v && v.type === "tr
 // Only what is placed by hand (sizes: yardHalf).
 function placedItems(base) {
   const out = [];
-  for (const b of base.buildings) if (FOOT[b.type] && b.at) out.push({ ...FOOT[b.type], at: b.at });
-  for (const c of base.construction) if (FOOT[c.type] && !c.target && c.at) out.push({ ...FOOT[c.type], at: c.at });
+  for (const b of base.buildings) if (FOOT[b.type] && b.at && !WALL_KINDS.has(FOOT[b.type].kind)) out.push({ ...FOOT[b.type], at: b.at });
+  for (const c of base.construction) if (FOOT[c.type] && !c.target && c.at && !WALL_KINDS.has(FOOT[c.type].kind)) out.push({ ...FOOT[c.type], at: c.at });
   for (const p of planOf(base).plots) if (p) out.push({ ...FIELD, at: p });
   return out;
 }
@@ -342,6 +364,18 @@ function propCells(f) {
   for (let y = 0; y < f.h; y++) for (let x = 0; x < f.w; x++) cells.push({ dx: x, dy: y, k: f.k, v: f.v, hp: f.k === "barricade" ? DEF_HP.barricade : undefined, h: f.k === "tower" ? 2 : undefined });
   return cells;
 }
+// A wall piece's cells (r = 0: the piece runs east–west): wall cells people shoot over from higher up (t 1), gate
+// cells (barred to the attackers; the cells either side kept open as a door's are), stand cells a level up with a
+// ladder (climb). Hit points and the material are the piece's own (buildBaseMap).
+function pieceCells(f) {
+  const out = [];
+  for (let x = 0; x < f.w; x++) {
+    if (f.kind === "wall") out.push({ dx: x, dy: 0, k: "palisade", f: "dirt", t: 1 });
+    else if (f.kind === "gate") out.push({ dx: x, dy: 0, k: "gate", f: "dirt", out: [x, -1], out2: [x, 1] });
+    else out.push({ dx: x, dy: 0, k: "stand", f: "dirt", h: 1 });
+  }
+  return out;
+}
 // The cells of a footprint at r = 0, by kind.
 function localCells(f) {
   if (f.kind === "house") return houseCells(f);
@@ -349,6 +383,7 @@ function localCells(f) {
   if (f.kind === "pen") return penCells(f);
   if (f.kind === "field") { const out = []; for (let y = 0; y < f.h; y++) for (let x = 0; x < f.w; x++) out.push({ dx: x, dy: y, k: "open", f: "field" }); return out; }
   if (f.kind === "vehicle") return []; // placeCar lays a car
+  if (WALL_KINDS.has(f.kind)) return pieceCells(f);
   return propCells(f);
 }
 // A local cell's offset turned r quarter turns (clockwise) within a w × h footprint.
@@ -367,12 +402,13 @@ export function cellsOf(it, at) {
     const [dx, dy] = turn(c.dx, c.dy, it.w, it.h, r);
     const o = { ...c, x: at[0] + dx, y: at[1] + dy };
     if (c.out) { const [ox, oy] = turn(c.out[0], c.out[1], it.w, it.h, r); o.out = [at[0] + ox, at[1] + oy]; }
+    if (c.out2) { const [ox, oy] = turn(c.out2[0], c.out2[1], it.w, it.h, r); o.out2 = [at[0] + ox, at[1] + oy]; }
     if (c.ladder) { const [lx, ly] = turn(c.ladder[0], c.ladder[1], it.w, it.h, r); o.ladder = [at[0] + lx, at[1] + ly]; }
     return o;
   });
 }
 // The cells outside an item's doors.
-export const doorCellsOf = (it, at) => cellsOf(it, at).filter((c) => c.out).map((c) => c.out);
+export const doorCellsOf = (it, at) => cellsOf(it, at).flatMap((c) => [c.out, c.out2]).filter(Boolean);
 
 // ---------- placement rules ----------
 const K = (x, y) => (y + 2048) * 4096 + (x + 2048);
@@ -395,25 +431,25 @@ export function occupancy(state, base, skip = null, auto = null) {
   return occ;
 }
 // Why an item cannot stand at (x, y) turned r, or "" when it can. occ: occupancy(…) without this item.
-export function placeProblemAt(base, it, x, y, r, occ) {
+export function placeProblemAt(base, it, x, y, r, occ, dims = null) { // dims: { G, R } worked out once (autoLayout)
   const at = [x, y, r & 3];
   const rect = rectOf(it, at);
-  const G = gridHalf(base), C = yardHalf(base);
+  const G = dims ? dims.G : gridHalf(base), R = dims ? dims.R : ringHalf(base), wallish = WALL_KINDS.has(it.kind);
   if (rect.x0 < -G || rect.y0 < -G || rect.x0 + rect.w > G || rect.y0 + rect.h > G) return "Off the map";
   for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) {
     const k = K(xx, yy);
-    if (onBand(xx, yy, C)) return "That is where the wall stands";
+    if (!wallish && onBand(xx, yy, R)) return "That is where the wall stands";
     if (occ.foot.has(k)) return `On top of ${nameOf(occ.foot.get(k))}`;
     if (occ.door.has(k)) return `In the doorway of ${nameOf(occ.door.get(k))}`;
   }
   for (const [ox, oy] of doorCellsOf(it, at)) {
     const k = K(ox, oy);
     if (occ.foot.has(k)) return `Its door would open onto ${nameOf(occ.foot.get(k))}`;
-    if (onBand(ox, oy, C)) return "Its door would open onto the wall";
+    if (!wallish && onBand(ox, oy, R)) return "Its door would open onto the wall";
   }
   return "";
 }
-const nameOf = (key) => (key === "core" ? "the base itself" : key.startsWith("p:") ? "a crop plot" : key.startsWith("v:") ? "a parked car" : key.startsWith("c:") ? "a building going up" : "a building");
+const nameOf = (key) => (key === "core" ? "the base itself" : key.startsWith("p:") ? "a crop plot" : key.startsWith("v:") ? "a parked car" : key.startsWith("c:") ? "a building going up" : key.startsWith("w:") ? "the wall" : "a building");
 // Place an item by hand (the Base map view). Returns an error, or "".
 export function placeItem(state, base, key, x, y, r = 0) {
   const it = itemByKey(state, base, key);
@@ -445,12 +481,12 @@ export function autoLayout(state, base, except = null) {
   stampGrid(state, base);
   const items = itemsOf(state, base);
   const sig = items.map((it) => `${it.key}${it.at ? `@${it.at.join(",")}` : ""}`).join("|");
-  const key = `${base.id}|${layoutSeed(base)}|${yardHalf(base)}|${except || ""}|${sig}`;
+  const key = `${base.id}|${layoutSeed(base)}|${yardHalf(base)}|${ringHalf(base)}|${except || ""}|${sig}`;
   let out = autoCache.get(key);
   if (out) return out;
   out = new Map();
   const rng = new Rng(layoutSeed(base) ^ 0x5bd1e995);
-  const C = yardHalf(base), G = gridHalf(base);
+  const C = yardHalf(base), G = gridHalf(base), R = ringHalf(base);
   const occ = occupancy(state, base, except, null);
   const take = (it, at) => {
     out.set(it.key, at);
@@ -458,7 +494,8 @@ export function autoLayout(state, base, except = null) {
     for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) occ.foot.set(K(x, y), it.key);
     for (const [x, y] of doorCellsOf(it, at)) if (!occ.door.has(K(x, y))) occ.door.set(K(x, y), it.key);
   };
-  const fits = (it, x, y, r) => !placeProblemAt(base, it, x, y, r, occ);
+  const dims = { G, R };
+  const fits = (it, x, y, r) => !placeProblemAt(base, it, x, y, r, occ, dims);
   // Buildings, fields and cars: spiral out from the middle, the first spot that fits (a few of the nearest, by dice).
   const spiral = (it, rs) => {
     const found = [];
@@ -474,7 +511,7 @@ export function autoLayout(state, base, except = null) {
   // the lights, the corners for the watchtower, in front of the wall for pits and the trench).
   const defSpots = (it) => {
     const k = it.k, spots = [];
-    const edge = C - 2, out = C + 3;
+    const edge = Math.min(C, R) - 2, out = R + 3; // inside the wall's ring, and in front of it
     if (k === "barricade") for (let i = 0; i < 12; i++) spots.push([rng.int(-edge + 1, edge - 4), rng.pick([-edge + 1, edge - 2, rng.int(-edge + 1, edge - 2)]), 0], [rng.pick([-edge + 1, edge - 2]), rng.int(-edge + 1, edge - 4), 1]);
     else if (k === "lamp") spots.push([edge, edge], [-edge, -edge], [edge, -edge], [-edge, edge]);
     else if (k === "tower") spots.push([edge - 1, edge - 1], [-edge, -edge], [edge - 1, -edge], [-edge, edge - 1]);
@@ -483,15 +520,179 @@ export function autoLayout(state, base, except = null) {
     for (const s of spots) if (s[0] >= -G && s[1] >= -G && fits(it, s[0], s[1], s[2] || 0)) return [s[0], s[1], s[2] || 0];
     return spiral(it, [0, 1]);
   };
+  // The wall pieces the game places (no dice): the gates in the middle of the ring's sides, then the walls round it from
+  // the north-west corner, longest first, each in the first run of the ring it fits (ringPlan counts the same way);
+  // the stands on the inner line, nearest the middle of a side first (by the gates).
+  const outer = ringSides(R), inner = ringSides(R, true);
+  // from: where to start in the order (the walls of a length resume after the last one placed: nothing before it has
+  // room for one, and only fills up). Returns [at, index] or null.
+  const fitFirst = (it, sides, order, from = 0) => { for (let k = from; k < order.length; k++) { const [si, i] = order[k]; const sd = sides[si]; if (i < 0 || i + it.w > sd.cells.length) continue; const at = alongAt(sd, i); if (fits(it, at[0], at[1], at[2])) return [at, k]; } return null; };
+  const runOrder = (sides) => sides.flatMap((sd, si) => sd.cells.map((_, i) => [si, i]));
+  const autoWall = items.filter((it) => !it.at && it.key !== except && WALL_KINDS.has(it.kind));
+  const outerOrder = runOrder(outer), resume = {};
+  const gateOrder = outerOrder.filter(([si, i]) => gateSpot(outer[si], i, 4));
+  for (const it of autoWall.filter((q) => q.kind === "gate")) { const f = fitFirst(it, outer, outer.map((sd, si) => [si, Math.floor((sd.cells.length - it.w) / 2)])) || fitFirst(it, outer, gateOrder); if (f) take(it, f[0]); }
+  for (const it of autoWall.filter((q) => q.kind === "wall").sort((a, c) => c.w - a.w)) { const f = fitFirst(it, outer, outerOrder, resume[it.w] || 0); resume[it.w] = f ? f[1] : outerOrder.length; if (f) take(it, f[0]); }
+  const standOrder = {};
+  for (const it of autoWall.filter((q) => q.kind === "stand").sort((a, c) => c.w - a.w)) {
+    const order = standOrder[it.w] || (standOrder[it.w] = runOrder(inner).sort(([sa, ia], [sb, ib]) => Math.abs(ia + it.w / 2 - inner[sa].cells.length / 2) - Math.abs(ib + it.w / 2 - inner[sb].cells.length / 2) || sa - sb));
+    const f = fitFirst(it, inner, order, resume[`s${it.w}`] || 0); resume[`s${it.w}`] = f ? f[1] : order.length; if (f) take(it, f[0]);
+  }
   for (const it of items) {
     if (it.key === except) continue;
-    if (it.at) continue;
+    if (it.at || WALL_KINDS.has(it.kind)) continue;
     const at = it.kind === "defence" ? defSpots(it) : spiral(it, it.kind === "field" || it.kind === "vehicle" ? [0, 1] : [0]);
     if (at) take(it, at);
   }
   if (autoCache.size > 300) autoCache.clear();
   autoCache.set(key, out);
   return out;
+}
+// ---------- the ring and the wall ----------
+// The ring round the yard (R: ringHalf): the outer line where the game lays walls and gates (the old wall ring's), the
+// inner one where it lays the stands (the old walkway's). Each side: its cells in order and how a piece lies along it
+// (north and south take the corners).
+export function ringSides(R, inner = false) {
+  const lo = inner ? -R - 1 : -R - 2, hi = inner ? R : R + 1;
+  const run = (n, f) => Array.from({ length: Math.max(0, n) }, (_, i) => f(i));
+  return [
+    { side: "north", horiz: true, cells: run(hi - lo + 1, (i) => [lo + i, lo]) },
+    { side: "east", horiz: false, cells: run(hi - lo - 1, (i) => [hi, lo + 1 + i]) },
+    { side: "south", horiz: true, cells: run(hi - lo + 1, (i) => [lo + i, hi]) },
+    { side: "west", horiz: false, cells: run(hi - lo - 1, (i) => [lo, lo + 1 + i]) },
+  ];
+}
+const alongAt = (sd, i) => [sd.cells[i][0], sd.cells[i][1], sd.horiz ? 0 : 1]; // a piece from cell i, lying along the side
+// A gate never takes a corner of the ring: the cell kept open inside it would be the next side's wall.
+const gateSpot = (sd, i, w) => !(sd.horiz && (i === 0 || i + w >= sd.cells.length));
+// What it takes to close the ring round the yard, given everything placed and going up: a gate in the middle of each
+// side that has none (where one fits), then each open run of the ring in 1×4s, a 1×2 and a 1×1 as it comes out (the
+// game lays them that way: autoLayout). { pieces (types, gates first), open (cells of the ring still open) }.
+export function ringPlan(state, base) {
+  stampGrid(state, base);
+  const R = ringHalf(base), G = gridHalf(base);
+  const auto = autoLayout(state, base);
+  const occ = occupancy(state, base, null, auto);
+  const free = (x, y) => x >= -G && y >= -G && x < G && y < G && !occ.foot.has(K(x, y)) && !occ.door.has(K(x, y));
+  const gates = itemsOf(state, base).filter((it) => it.kind === "gate").map((it) => it.at || auto.get(it.key)).filter(Boolean).map((at) => rectOf(FOOT.gate4, at));
+  const gateIt = { ...FOOT.gate4, type: "gate4" };
+  const out = { gate4: 0, wall4: 0, wall2: 0, wall1: 0 };
+  let open = 0;
+  const sides = ringSides(R).map((sd) => ({ sd, on: sd.cells.map(([x, y]) => free(x, y)) }));
+  const tryGate = (side, m) => {
+    const { sd, on } = side;
+    if (m < 0 || m + 4 > on.length || !gateSpot(sd, m, 4) || ![0, 1, 2, 3].every((k) => on[m + k])) return false;
+    const at = alongAt(sd, m);
+    if (placeProblemAt(base, gateIt, at[0], at[1], at[2], occ, { G, R })) return false;
+    out.gate4++; for (let k = 0; k < 4; k++) on[m + k] = false;
+    return true;
+  };
+  for (const side of sides) {
+    open += side.on.filter(Boolean).length;
+    const hasGate = gates.some((r) => side.sd.cells.some(([x, y]) => x >= r.x0 && x < r.x0 + r.w && y >= r.y0 && y < r.y0 + r.h));
+    if (!hasGate) tryGate(side, Math.floor((side.sd.cells.length - 4) / 2));
+  }
+  // No gate anywhere (none fits in the middle of a side): one at the first place along the ring it fits, as autoLayout
+  // lays a gate that misses the middles, so the ring always keeps a way in.
+  if (!gates.length && !out.gate4) for (const side of sides) { let done = false; for (let i = 0; i + 4 <= side.on.length && !done; i++) done = tryGate(side, i); if (done) break; }
+  for (const { on } of sides) {
+    for (let i = 0; i < on.length;) {
+      if (!on[i]) { i++; continue; }
+      let n = 0;
+      while (i + n < on.length && on[i + n]) n++;
+      out.wall4 += Math.floor(n / 4); out.wall2 += Math.floor((n % 4) / 2); out.wall1 += n % 2;
+      i += n;
+    }
+  }
+  const pieces = [];
+  for (const t of ["gate4", "wall4", "wall2", "wall1"]) for (let i = 0; i < out[t]; i++) pieces.push(t);
+  return { pieces, open, ...out };
+}
+// The base's wall by the numbers (buildings.js baseWalls, wallTier; the Defenses tab): the pieces placed (by hand or
+// by the game), and whether they close round the base itself, with the houses (a flood from the map's edge that never
+// reaches it: the dead cannot walk round). { walls, gates, stands (pieces standing), cells, enclosed, tier (the
+// material it is mostly of, 0 open), strength (its material's, by cell, two thirds where damaged; 0 open), hp (a wall
+// cell's on average), broken (pieces broken: gaps until repaired), gap ([x, y]: the first open cell of the ring, when it
+// is open there), byMat }.
+const infoCache = new Map();
+// A cheap stamp of what the layout depends on (the buildings, the jobs, the plots, the ring, the cars), so the hourly
+// callers (the hold limit, raids by the numbers) do not lay the base out again while nothing has changed.
+const quick = new WeakMap();
+const stampOf = (state, base) => `${state ? "s" : "n"}|${base.buildings.map((b) => `${b.id}${b.at ? `@${b.at}` : ""}${b.broken ? "x" : ""}${b.mat || ""}${(b.wear || 0) >= 60 ? "d" : ""}`).join(",")}|${base.construction.map((c) => `${c.id}${c.at ? `@${c.at}` : ""}`).join(",")}|${base.plan ? `${base.plan.ring}|${(base.plan.plots || []).map(String).join(";")}` : ""}|${base.tier}|${base.camp}|${base.type}|${state ? carsAtBase(state, base.id).map((v) => `${v.id}${v.at ? `@${v.at}` : ""}`).join(",") : ""}`;
+export function wallInfo(state, base) {
+  stampGrid(state, base);
+  const stamp = stampOf(state, base), slot = state ? "s" : "n", q = quick.get(base) || {};
+  if (q[slot] && q[slot].stamp === stamp) return q[slot].info;
+  const info = wallInfoOf(state, base);
+  quick.set(base, { ...q, [slot]: { stamp, info } });
+  return info;
+}
+function wallInfoOf(state, base) {
+  const lay = layoutOf(state, base);
+  const G = gridHalf(base);
+  const solid = (it) => it.built && (WALL_KINDS.has(it.kind) || it.kind === "house" || it.kind === "roof");
+  const sig = lay.filter((e) => e.at && solid(e.it)).map((e) => `${e.it.key}@${e.at.join(",")}${e.it.rec && e.it.rec.broken ? "x" : ""}${e.it.rec && e.it.rec.mat ? `m${e.it.rec.mat}` : ""}${e.it.rec && (e.it.rec.wear || 0) >= 60 ? "d" : ""}`).join("|");
+  const key = `${base.id}|${G}|${tierKey(base)}|${sig}`;
+  const hit = infoCache.get(key);
+  if (hit) return hit;
+  const N = 2 * G, at = (x, y) => (y + G) * N + (x + G);
+  const block = new Uint8Array(N * N);
+  const info = { walls: 0, gates: 0, stands: 0, broken: 0, cells: 0, enclosed: false, tier: 0, strength: 0, hp: 0, gap: null, byMat: [0, 0, 0, 0, 0] };
+  let sumS = 0, sumM = 0, sumHp = 0, nHp = 0;
+  const fill = (r) => { for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) if (x >= -G && y >= -G && x < G && y < G) block[at(x, y)] = 1; };
+  for (const p of coreParts(base)) if (p.kind === "house" || p.kind === "roof") fill({ x0: p.x, y0: p.y, w: p.w, h: p.h });
+  for (const e of lay) {
+    if (!e.at || !solid(e.it)) continue;
+    const it = e.it, rec = it.rec || {};
+    if (it.kind === "stand") { info.stands++; continue; }
+    if (WALL_KINDS.has(it.kind)) {
+      if (it.kind === "gate") info.gates++; else info.walls++;
+      if (rec.broken) { info.broken++; continue; } // a gap until it is repaired
+      const n = it.w, m = matOf(rec), dmg = (rec.wear || 0) >= 60 ? WALL_DAMAGED : 1;
+      info.cells += n; info.byMat[m] += n;
+      sumS += WALL_TIERS[m].strength * dmg * n; sumM += m * n;
+      if (it.kind === "wall") { sumHp += pieceHp(rec) * n; nHp += n; }
+    }
+    fill(rectOf(it, e.at));
+  }
+  // The flood from the map's edge: the dead walking in.
+  const seen = new Uint8Array(N * N), q = [];
+  for (let i = 0; i < N; i++) for (const [x, y] of [[i - G, -G], [i - G, G - 1], [-G, i - G], [G - 1, i - G]]) { const j = at(x, y); if (!block[j] && !seen[j]) { seen[j] = 1; q.push(j); } }
+  for (let h = 0; h < q.length; h++) {
+    const j = q[h], x = (j % N) - G, y = Math.floor(j / N) - G;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < -G || ny < -G || nx >= G || ny >= G) continue;
+      const k = at(nx, ny);
+      if (!block[k] && !seen[k]) { seen[k] = 1; q.push(k); }
+    }
+  }
+  let near = null;
+  for (const p of coreParts(base)) for (let y = p.y - 1; y <= p.y + p.h; y++) for (let x = p.x - 1; x <= p.x + p.w; x++) {
+    if (x < -G || y < -G || x >= G || y >= G || !seen[at(x, y)]) continue;
+    if (!near || Math.hypot(x, y) < Math.hypot(near[0], near[1])) near = [x, y];
+  }
+  info.enclosed = info.cells > 0 && !near;
+  if (info.enclosed) {
+    info.tier = Math.max(1, Math.min(WALL_TIERS.length - 1, Math.round(sumM / info.cells)));
+    info.strength = Math.round((sumS / info.cells) * 10) / 10;
+  } else if (info.walls + info.gates) {
+    // The gap the dead find: the first open cell of the ring round the yard, when the wall stands on it (a wall laid
+    // elsewhere by hand: no cell to name).
+    const line = ringSides(ringHalf(base)).flatMap((sd) => sd.cells).filter(([x, y]) => x >= -G && y >= -G && x < G && y < G);
+    if (line.some(([x, y]) => block[at(x, y)])) info.gap = line.find(([x, y]) => !block[at(x, y)]) || null;
+  }
+  info.hp = nHp ? Math.round(sumHp / nHp) : 0;
+  if (infoCache.size > 200) infoCache.clear();
+  infoCache.set(key, info);
+  return info;
+}
+// The side of a wall rect a cell faces (north, east, south or west of its middle), for the gates, the breaches and the
+// posts on the stands (fort.js).
+export function faceOf(F, x, y) {
+  const w = F.wall, cx = (w.x0 + w.x1) / 2, cy = (w.y0 + w.y1) / 2;
+  const u = (x - cx) / Math.max(1, (w.x1 - w.x0) / 2), v = (y - cy) / Math.max(1, (w.y1 - w.y0) / 2);
+  return Math.abs(u) > Math.abs(v) ? (u > 0 ? "east" : "west") : v > 0 ? "south" : "north";
 }
 // Every item with where it stands (by hand or by the game): { it, at, auto }. Those that fit nowhere have at null.
 export function layoutOf(state, base) {
@@ -509,11 +710,10 @@ export function layoutOf(state, base) {
 export function buildBaseMap(state, base, rng, opts = {}) {
   stampGrid(state, base);
   const view = !!opts.view;
-  const C = yardHalf(base), G = gridHalf(base);
-  const walled = count(base, "walls") > 0 && !isShelter(base);
+  const C = yardHalf(base), G = gridHalf(base), R = ringHalf(base), Bh = Math.max(C, R);
   const lay = layoutOf(state, base).filter((e) => e.at && (view || e.it.built));
-  // The crop: the band and everything on the map, plus the margin (and the view's pad), within the grid.
-  let x0 = -C - 2, y0 = -C - 2, x1 = C + 2, y1 = C + 2; // half-open
+  // The crop: the yard, the ring and everything on the map, plus the margin (and the view's pad), within the grid.
+  let x0 = -Bh - 2, y0 = -Bh - 2, x1 = Bh + 2, y1 = Bh + 2; // half-open
   for (const e of lay) { const r = rectOf(e.it, e.at); x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0); x1 = Math.max(x1, r.x0 + r.w); y1 = Math.max(y1, r.y0 + r.h); }
   if (opts.pitsAt) for (const at of opts.pitsAt) { if (!at) continue; const r = rectOf(FOOT.spike_pits, at); x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0); x1 = Math.max(x1, r.x0 + r.w); y1 = Math.max(y1, r.y0 + r.h); }
   const pad = MARGIN + (view ? VIEW_PAD : 0);
@@ -524,8 +724,8 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   const at = (x, y) => (inside(x, y) ? cells[y * W + x] : null);
   const used = new Uint8Array(W * H), indoor = new Uint8Array(W * H), keep = new Uint8Array(W * H);
   const F = {
-    W, H, cells, M: MARGIN, ox, oy, x0: -C + ox, y0: -C + oy, yw: 2 * C, yh: 2 * C, walled, view,
-    wall: { x0: -C - 2 + ox, x1: C + 1 + ox, y0: -C - 2 + oy, y1: C + 1 + oy }, ring: [], walkway: [], gates: { north: [], east: [], south: [], west: [] }, towers: [], ladders: [],
+    W, H, cells, M: MARGIN, ox, oy, x0: -C + ox, y0: -C + oy, yw: 2 * C, yh: 2 * C, walled: false, view,
+    wall: { x0: -R - 2 + ox, x1: R + 1 + ox, y0: -R - 2 + oy, y1: R + 1 + oy }, ring: [], walkway: [], gates: { north: [], east: [], south: [], west: [] }, towers: [], ladders: [], pieces: [],
     buildings: [], lofts: [], roofs: [], doors: [], windows: [], outlines: [], stores: [], vehicles: [], lights: [], inside: null, indoor, lay: { W, H, G: null, buildings: [] },
   };
   for (let y = -C; y < C; y++) for (let x = -C; x < C; x++) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; }
@@ -571,10 +771,21 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     }
     const doors = [], bcells = [], boxes = {};
     const weak = it.type === "armory" && it.rec && it.rec.broken; // the armory broken: its door an ordinary barred one
+    const piece = WALL_KINDS.has(it.kind) ? { bid: it.rec && key && key.startsWith("b:") ? it.rec.id : null, kind: it.kind, cells: [] } : null;
+    const broken = !!(piece && it.rec && it.rec.broken);
     for (const c of cellsOf(it, atG)) {
       const x = c.x + ox, y = c.y + oy, q = at(x, y);
       if (!q) continue;
       if (c.box) (boxes[c.box] = boxes[c.box] || []).push([x, y]);
+      if (piece) { // a wall piece (buildings.js piece): its material's hit points; broken, a breach or a gate hanging open
+        piece.cells.push([x, y]);
+        q.k = broken && c.k === "palisade" ? "breach" : c.k; q.f = "dirt"; delete q.h; delete q.t;
+        if (q.k === "palisade") { q.t = 1; q.hp = q.mhp = it.cellHp; q.wm = it.mat || 1; F.ring.push([x, y]); }
+        else if (q.k === "gate") { q.hp = q.mhp = it.cellHp; q.wm = it.mat || 1; q.keyed = true; if (broken) q.hp = 0; else q.bar = true; } // keyed: your people hold the key (keyAct)
+        else if (q.k === "stand") { q.h = 1; F.walkway.push([x, y]); }
+        used[y * W + x] = 1;
+        continue;
+      }
       q.k = c.k; if (c.f) q.f = c.f;
       if (c.dk && !weak) q.dk = c.dk; else delete q.dk;
       if (c.lockDoor) { q.lockDoor = true; if (weak) c.hp = INTERIOR.DOOR_HP; }
@@ -593,6 +804,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       if (c.ladder) { const l = at(c.ladder[0] + ox, c.ladder[1] + oy); if (l && l.k === "open") { l.k = "ladder"; F.ladders.push([c.ladder[0] + ox, c.ladder[1] + oy]); } }
       bcells.push([x, y]);
     }
+    if (piece) { F.pieces.push(piece); return; }
     if (it.kind === "house" || it.kind === "roof") {
       const b = { name, key: it.key0 || it.type, bid: it.rec && it.key && it.key.startsWith("b:") ? it.rec.id : null, type: it.type, x0: mx, y0: my, w: r.w, h: r.h, roof: it.kind === "roof", storeys: it.kind === "house" ? (it.storeys === 2 && r.w >= 4 && r.h >= 4 ? 2 : 1) : 0, doors };
       F.buildings.push(b);
@@ -605,56 +817,85 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   const coreW = coreParts(base).reduce((a, p) => a + (p.store || 0), 0) || 1;
   for (const p of coreParts(base)) lay1({ ...p, key0: p.key || p.k, room: p.store ? (coreStoreKg(base) * p.store) / coreW : 0 }, [p.x, p.y, 0], "core", true, p.name || coreName(base));
   // Everything placed, by hand or by the game.
+  const reinforced = count(base, "gate") ? DEPLOY.GATE_HP_REINFORCED : 0; // buildings.js gate: every gate stronger
   for (const e of lay) {
     const it = e.it;
     const store = STORES[it.type] || 0;
-    lay1({ ...it, store, room: store ? STORE_KG[it.type] || 0 : 0 }, e.at, it.key, it.built, it.label);
+    const cellHp = it.kind === "wall" ? pieceHp(it.rec) || WALL_TIERS[matOf(it.rec)].hp : it.kind === "gate" ? (pieceHp(it.rec) || WALL_TIERS[matOf(it.rec)].gateHp) + reinforced : 0;
+    lay1({ ...it, store, room: store ? STORE_KG[it.type] || 0 : 0, cellHp }, e.at, it.key, it.built, it.label);
   }
   if (opts.pitsAt) for (const atG of opts.pitsAt) if (atG) lay1({ ...FOOT.spike_pits, type: "spike_pits" }, atG, "pits", true, "Spike pits");
   layPiles(state, base, F, { C, G, inside, used, keep });
-  // The band: the wall ring with a gate in the middle of each side and the walkway inside it (a walled base), else
-  // open ground; the ladders up to the walkway where the yard's edge is free.
-  const w = F.wall;
-  if (walled) {
-    const hpWall = wallHp(base), hpGate = gateHp(base);
-    for (let y = w.y0; y <= w.y1; y++) for (let x = w.x0; x <= w.x1; x++) {
-      const onRing = x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1;
-      const onWalk = !onRing && (x === w.x0 + 1 || x === w.x1 - 1 || y === w.y0 + 1 || y === w.y1 - 1);
-      const q = at(x, y);
-      if (!q) continue;
-      if (onRing) { q.k = "palisade"; q.f = "dirt"; q.t = 1; q.hp = q.mhp = hpWall; delete q.h; F.ring.push([x, y]); }
-      else if (onWalk) { q.k = "walkway"; q.f = "dirt"; q.h = 1; delete q.t; F.walkway.push([x, y]); }
-    }
-    const cx = Math.floor((w.x0 + w.x1) / 2), cy = Math.floor((w.y0 + w.y1) / 2);
-    for (const side of ["north", "east", "south", "west"]) {
-      for (let i = 0; i < 2; i++) {
-        const o = i - 1;
-        const [x, y] = side === "north" ? [cx + o, w.y0] : side === "south" ? [cx + o, w.y1] : side === "west" ? [w.x0, cy + o] : [w.x1, cy + o];
-        const q = at(x, y);
-        if (!q) continue;
-        q.k = "gate"; delete q.t; q.bar = true; q.keyed = true; q.hp = q.mhp = hpGate;
-        F.gates[side].push([x, y]);
-        const [dx, dy] = side === "north" ? [0, 1] : side === "south" ? [0, -1] : side === "west" ? [1, 0] : [-1, 0];
-        const inn = at(x + dx, y + dy); if (inn) { inn.k = "open"; inn.f = "dirt"; delete inn.h; }
-        const outC = at(x - dx, y - dy); if (outC && outC.k !== "open") { outC.k = "open"; }
+  // The wall: the pieces placed (by hand or by the game). Walled when no way in from the map's edge reaches the base
+  // itself (the attackers' way: open ground they can walk, never a barred gate or door): the inside is then what they
+  // cannot reach round the base (its yard, its houses, the stands), the wall's rect its bounds; else the yard and the
+  // ring round it as on an open base (the pieces stand on it as they are: a gap is a way in).
+  const coreCells = [];
+  for (const p of coreParts(base)) for (let y = p.y; y < p.y + p.h; y++) for (let x = p.x; x < p.x + p.w; x++) if (inside(x + ox, y + oy)) coreCells.push([x + ox, y + oy]);
+  const reached = new Uint8Array(W * H), q0 = [];
+  const pass = (i) => CELL[cells[i].k].walk && !barredCell(cells[i]);
+  for (let x = 0; x < W; x++) for (const y of [0, H - 1]) if (pass(y * W + x) && !reached[y * W + x]) { reached[y * W + x] = 1; q0.push(y * W + x); }
+  for (let y = 0; y < H; y++) for (const x of [0, W - 1]) if (pass(y * W + x) && !reached[y * W + x]) { reached[y * W + x] = 1; q0.push(y * W + x); }
+  for (let h = 0; h < q0.length; h++) {
+    const i = q0[h], x = i % W, y = (i - x) / W;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, j = ny * W + nx; if (inside(nx, ny) && !reached[j] && pass(j)) { reached[j] = 1; q0.push(j); } }
+  }
+  const nearReached = ([x, y]) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inside(x + dx, y + dy) && reached[(y + dy) * W + x + dx]) return true; return false; };
+  const insideM = new Uint8Array(W * H);
+  F.walled = F.pieces.some((p) => p.kind !== "stand") && coreCells.length > 0 && !coreCells.some(nearReached);
+  if (F.walled) {
+    const qi = [];
+    for (const [x, y] of coreCells) { const i = y * W + x; if (!insideM[i]) { insideM[i] = 1; qi.push(i); } }
+    let mnx = W, mny = H, mxx = 0, mxy = 0;
+    for (let h = 0; h < qi.length; h++) {
+      const i = qi[h], x = i % W, y = (i - x) / W;
+      mnx = Math.min(mnx, x); mny = Math.min(mny, y); mxx = Math.max(mxx, x); mxy = Math.max(mxy, y);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy, j = ny * W + nx;
+        if (!inside(nx, ny) || insideM[j] || reached[j] || cells[j].k === "palisade" || cells[j].k === "gate") continue;
+        insideM[j] = 1; qi.push(j);
       }
     }
-    const ladderAt = (x, y) => { const q = at(x, y); if (q && q.k === "open" && !used[y * W + x]) { q.k = "ladder"; F.ladders.push([x, y]); } };
-    for (let x = F.x0 + 2; x < F.x0 + F.yw - 2; x += 7) { ladderAt(x, F.y0); ladderAt(x, F.y0 + F.yh - 1); }
-    for (let y = F.y0 + 2; y < F.y0 + F.yh - 2; y += 7) { ladderAt(F.x0, y); ladderAt(F.x0 + F.yw - 1, y); }
+    F.wall = { x0: Math.max(0, mnx - 1), x1: Math.min(W - 1, mxx + 1), y0: Math.max(0, mny - 1), y1: Math.min(H - 1, mxy + 1) };
+  } else {
+    const r = F.wall;
+    for (let y = r.y0 + 1; y <= r.y1 - 1; y++) for (let x = r.x0 + 1; x <= r.x1 - 1; x++) if (inside(x, y)) insideM[y * W + x] = 1;
   }
-  for (let y = w.y0; y <= w.y1; y++) for (let x = w.x0; x <= w.x1; x++) if (inside(x, y) && (x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1 || x === w.x0 + 1 || x === w.x1 - 1 || y === w.y0 + 1 || y === w.y1 - 1)) keep[y * W + x] = 1;
-  // The guard towers (buildings.js guard_towers): two more towers on the walkway, a quarter of the way along the north
-  // side and three quarters along the south.
-  if (walled && count(base, "guard_towers")) {
-    const q = Math.max(2, Math.round((w.x1 - w.x0) / 4));
-    for (const [x, y] of [[w.x0 + q, w.y0 + 1], [w.x1 - q, w.y1 - 1]]) { const t = at(x, y); if (t && t.k === "walkway") { t.k = "tower"; t.h = 2; F.towers.push([x, y]); } }
+  F.inside = insideM;
+  const w = F.wall;
+  // The gates by the side of the wall they face (fort.js: the gate facing the attack is held first).
+  for (const p of F.pieces) if (p.kind === "gate" && p.cells.length) {
+    const [mx, my] = p.cells[Math.floor(p.cells.length / 2)];
+    F.gates[faceOf(F, mx, my)].push(...p.cells);
+  }
+  // Cover keeps off the pieces (a cell round a wall, two round a gate: its way in and out stays clear).
+  for (const p of F.pieces) {
+    const d = p.kind === "gate" ? 2 : 1;
+    for (const [px, py] of p.cells) for (let y = py - d; y <= py + d; y++) for (let x = px - d; x <= px + d; x++) if (inside(x, y)) keep[y * W + x] = 1;
+  }
+  // The guard towers (buildings.js guard_towers): two more towers right behind the wall, a quarter of the way along
+  // its north side and three quarters along its south.
+  if (F.walled && count(base, "guard_towers")) {
+    const qd = Math.max(2, Math.round((w.x1 - w.x0) / 4));
+    const cand = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const k = cells[y * W + x].k;
+      if (!insideM[y * W + x] || !(k === "open" || k === "stand")) continue;
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inside(x + dx, y + dy) && cells[(y + dy) * W + x + dx].k === "palisade")) cand.push([x, y]);
+    }
+    for (const [tx, ty] of [[w.x0 + qd, w.y0 + 1], [w.x1 - qd, w.y1 - 1]]) {
+      let best = null;
+      for (const c of cand) if (cells[c[1] * W + c[0]].k !== "tower" && (!best || Math.hypot(c[0] - tx, c[1] - ty) < Math.hypot(best[0] - tx, best[1] - ty))) best = c;
+      if (best) { const t = cells[best[1] * W + best[0]]; t.k = "tower"; t.h = 2; F.towers.push(best); }
+    }
   }
   // The wire (buildings.js barbed_wire, razor_wire): rings round the band FORT.WIRE cells out for each barbed wire fence
   // and FORT.RAZOR for the concertina wire, with a gap in front of every gate; wireOut: the outermost ring (the
   // attackers start beyond it: fort.js fortDefence).
   F.wireOut = 0;
-  const gateLane = (x, y) => Object.entries(F.gates).some(([s, g]) => g.some(([gx, gy]) => (s === "north" || s === "south" ? Math.abs(gx - x) <= 1 && x >= w.x0 && x <= w.x1 : Math.abs(gy - y) <= 1 && y >= w.y0 && y <= w.y1)));
+  // A lane out from every gate (along its line, a cell either side) is kept clear of wire and mines: the way in.
+  const gateRects = F.pieces.filter((p) => p.kind === "gate" && p.cells.length).map((p) => ({ x0: Math.min(...p.cells.map((c) => c[0])), x1: Math.max(...p.cells.map((c) => c[0])), y0: Math.min(...p.cells.map((c) => c[1])), y1: Math.max(...p.cells.map((c) => c[1])) }));
+  const gateLane = (x, y) => gateRects.some((g) => (g.y0 === g.y1 ? x >= g.x0 - 1 && x <= g.x1 + 1 : y >= g.y0 - 1 && y <= g.y1 + 1));
   const ringAt = (d, razor) => {
     for (let y = w.y0 - d; y <= w.y1 + d; y++) for (let x = w.x0 - d; x <= w.x1 + d; x++) {
       if (x !== w.x0 - d && x !== w.x1 + d && y !== w.y0 - d && y !== w.y1 + d) continue;
@@ -669,10 +910,6 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   };
   for (let i = 0; i < Math.min(FORT.WIRE.length, count(base, "barbed_wire")); i++) ringAt(FORT.WIRE[i], false);
   if (count(base, "razor_wire")) ringAt(FORT.RAZOR, true);
-  // The masks: inside the ring (the walkway and the yard).
-  const insideM = new Uint8Array(W * H);
-  for (let y = w.y0 + 1; y <= w.y1 - 1; y++) for (let x = w.x0 + 1; x <= w.x1 - 1; x++) if (inside(x, y)) insideM[y * W + x] = 1;
-  F.inside = insideM;
   // Cover: a little in the yard (crates, barrels, hay on the open dirt, never in a buffer or by the wall), rocks and
   // trees over the open ground beyond (not within 2 cells of the band).
   const nearBand = (x, y) => x >= w.x0 - 2 && x <= w.x1 + 2 && y >= w.y0 - 2 && y <= w.y1 + 2 && !(x > w.x0 + 1 && x < w.x1 - 1 && y > w.y0 + 1 && y < w.y1 - 1);
@@ -1088,8 +1325,14 @@ export function settleBaseBattle(state, b) {
   // The armory's locks smashed open (forceLock): MAP_WEAR.lock a lock on the armory (both: broken, its containers
   // open until it is repaired).
   if (b.stores) for (const c of b.stores.containers) if (c.lock && !(c.lock.hp > 0) && c.bid != null) wearOn(base.buildings.find((x) => x.id === c.bid), MAP_WEAR.lock); // smashed, not unlocked with the key
-  const breaches = F.ring.filter(([x, y]) => b.cells[y * b.w + x].k === "breach").length - (F.breaches ? F.breaches.length : 0);
-  if (breaches > 0) { const walls = base.buildings.filter((x) => x.type === "walls"); if (walls.length) wearOn(walls[breaches % walls.length], MAP_WEAR.breach * breaches); }
+  // The wall pieces: a breach battered through a piece (not one there when the fight began), a gate battered open.
+  const pre = new Set((F.breaches || []).map(([x, y]) => y * b.w + x));
+  for (const p of F.pieces || []) {
+    const fx = p.bid != null ? base.buildings.find((x) => x.id === p.bid) : null;
+    if (!fx || fx.broken || p.kind === "stand") continue;
+    const n = p.cells.filter(([x, y]) => !pre.has(y * b.w + x) && (p.kind === "gate" ? !barredCell(b.cells[y * b.w + x]) && b.cells[y * b.w + x].mhp : b.cells[y * b.w + x].k === "breach")).length;
+    if (n) wearOn(fx, MAP_WEAR.breach * (p.kind === "gate" ? 1 : n));
+  }
   for (const e of layoutOf(state, base)) {
     if (!e.at || e.it.kind !== "defence" || e.it.k !== "barricade" || !e.it.rec) continue;
     const r = rectOf(e.it, e.at);
@@ -1256,5 +1499,6 @@ export function baseMapSummary(state, base) {
   const lay = layoutOf(state, base);
   const byHand = lay.filter((e) => !e.auto).length, off = lay.filter((e) => !e.at).length;
   const people = atBase(state, base.id).length;
-  return { grid: 2 * G, yard: 2 * C, walled: count(base, "walls") > 0 && !isShelter(base), items: lay.length, byHand, off, people, tier: tierName(base) };
+  const wi = wallInfo(state, base);
+  return { grid: 2 * G, yard: 2 * C, ring: 2 * ringHalf(base), walled: wi.enclosed, wall: wi, items: lay.length, byHand, off, people, tier: tierName(base) };
 }

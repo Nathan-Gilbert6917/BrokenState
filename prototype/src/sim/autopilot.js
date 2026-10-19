@@ -51,7 +51,7 @@ import { edibleFood, foodStore, storeCapacity } from "./storage.js";
 import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchenWood, isCookHour, cookedLately } from "./kitchen.js"; // the Kitchen: built at 8+ people, its cooks staffed (planRoles 5c)
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
-import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
+import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator, hasWall } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
 import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
@@ -1133,8 +1133,8 @@ function nextHousing(state, base) {
 }
 // A wish's check and cost: a new building (canBuild) or a bunkhouse expanded (canExpandBunkhouse).
 // A water barrel upgraded (w.barrel: its id; buildings.js WATER_BARREL tiers): the summer store's room (waterPlan).
-const wishCheck = (state, base, w) => (w.barrel != null ? canUpgradeBarrel(state, base, w.barrel) : w.upgrade != null ? canExpandBunkhouse(state, base, w.upgrade) : canBuild(state, base, w.type));
-const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : BUILDINGS[w.type].cost);
+const wishCheck = (state, base, w) => { const c = w.barrel != null ? canUpgradeBarrel(state, base, w.barrel) : w.upgrade != null ? canExpandBunkhouse(state, base, w.upgrade) : canBuild(state, base, w.type); if (w.type === "walls") w.wallCost = c.cost || {}; return c; }; // the Ring wall: what its pieces cost (buildings.js canBuildWall)
+const wishCost = (w) => (w.barrel != null ? w.cost : w.upgrade != null ? BARRACKS_UP.cost : w.wallCost || BUILDINGS[w.type].cost);
 const wishQueue = (state, base, w) => (w.barrel != null ? queueBarrelUpgrade(state, base, w.barrel) : w.upgrade != null ? queueBunkhouseExpand(state, base, w.upgrade) : queueBuild(state, base, w.type));
 // The housing wish (nextHousing) for buildWishes, and a bunkhouse after a barracks while a plot is free and the
 // barracks waits on scrap or parts (planBuilds takes the first it can build). Empty when nothing more fits.
@@ -2639,7 +2639,7 @@ function roleSummaries(state) {
 // ---------- construction ----------
 // The steward area each kind of building belongs to (anything else is plain Building).
 const BUILD_AREA = {
-  walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence", armory: "defence",
+  walls: "defence", wall1: "defence", wall2: "defence", wall4: "defence", gate4: "defence", stand1: "defence", stand2: "defence", stand4: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence", armory: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
   huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", freezer: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food", canteen: "food", grainmill: "food", meatgrinder: "food",
@@ -2871,8 +2871,8 @@ function buildWishes(state, base) {
   // a building plot to spare after it (the next beds) and two outdoor crop plots given to pasture. homeFood: the
   // first from 5 people (saved for), the second from 9; the other styles one from 8 people while the winter stores
   // fall short or the farmers are short of plots.
-  if (homeFood && isHub && pop >= 5 && count(base, "walls") + queued("walls") < 1) add("walls", "a fortress lives behind its walls (and its animals too)", true);
-  if (isHub && BUILDINGS.animal_pen && count(base, "walls") > 0 && plotsFree(base, "building") >= 2) {
+  if (homeFood && isHub && pop >= 5 && (hasWall(base) ? 1 : 0) + queued("walls") < 1) add("walls", "a fortress lives behind its walls (and its animals too)", true);
+  if (isHub && BUILDINGS.animal_pen && hasWall(base) && plotsFree(base, "building") >= 2) {
     const pens = countAll(base, "animal_pen") + queued("animal_pen");
     const wantPens = homeFood ? (pop >= 9 ? 2 : pop >= 5 ? 1 : 0) : here.length >= 8 && (winterShort(state, base) > 0 || g.farmShort[base.id]) ? 1 : 0;
     if (pens < wantPens) add("animal_pen", homeFood ? "food from its own land, winter too (eggs and milk)" : "food every day through the winter (eggs and milk)", homeFood);

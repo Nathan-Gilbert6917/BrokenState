@@ -24,7 +24,7 @@
 // - The governor (autopilot.js) moves into a nearby abandoned base it can clear instead of founding an outpost when it
 //   wants one (occupyCandidate there).
 import { typeGoods, FOODS } from "./foods.js"; // an abandoned base's food by type
-import { BUILDINGS, plotsFree, countAll, count, assignStations, underAttack, WALL_TIERS } from "./buildings.js";
+import { BUILDINGS, plotsFree, countAll, count, assignStations, underAttack, WALL_TIERS, addRing } from "./buildings.js";
 import { SUPPLIES, STOCK_KEYS } from "./data.js";
 import { log, addCard, day, hub, newId, combatPower, armedFactor, snapshot, atBase, removeBase } from "./world.js";
 import { evacuate, nearestOtherBase } from "./conquest.js"; // Abandon outpost: the people walk home
@@ -222,7 +222,7 @@ function raise(base, list) {
     if (def.plot && plotsFree(base, def.plot) <= 0) { left.push(src); continue; }
     const b = { ...JSON.parse(JSON.stringify(src)), id: newId() };
     if (def.barrel && !b.tier) { b.tier = 1; b.holds = "rawwater"; }
-    if (src.type === "walls" && !b.tier) b.tier = 2; // a wall from before the tiers: a palisade (buildings.js WALL_TIERS)
+    if (src.type === "walls") { addRing(base, b.tier || 2, b.wear || 0); continue; } // a group's wall: a ring of wall pieces of its tier (buildings.js addRing)
     base.buildings.push(b);
   }
   base.radio = count(base, "radio") > 0;
@@ -238,6 +238,7 @@ export function takeAbandoned(state, tile, p = null) {
   const name = mine && !state.bases.some((b) => b.name === rec.fromName) ? rec.fromName : outpostName(state, tile);
   const base = { id: newId(), tile, type: noHub ? "hub" : "outpost", name, stock: emptyStock(), radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
   base.occupiedFrom = { from: rec.from, name: rec.fromName, day: day(state), left: rec.day }; // the tile panel: whose it was
+  if (rec.plan) base.plan = JSON.parse(JSON.stringify(rec.plan)); // your old outpost: its map's plan (the crop plots placed, the wall's ring: basemap.js)
   const list = standingAt(state, rec);
   const rubble = raise(base, list);
   const got = stockText(rec.stock || {});

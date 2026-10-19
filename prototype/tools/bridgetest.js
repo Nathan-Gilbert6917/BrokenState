@@ -482,7 +482,7 @@ for (let i = 0; i < runs; i++) {
   const [mw, mh] = baseMapSize(state, h);
   check(b.tier && b.tier.map === "fort" && b.w === mw && b.h === mh && b.w >= 2 * yardHalf(h) + 4 + 2 * FORT.MARGIN, `the hub fights on its base map: the yard plus the rings and the margin (${b.w} × ${b.h} for a ${2 * yardHalf(h)} × ${2 * yardHalf(h)} yard)`);
   const gatesN = b.cells.filter((c) => c.k === "gate").length, towersN = b.cells.filter((c) => c.k === "tower").length;
-  check(gatesN === 4 * FORT.GATE && towersN >= 4, `a gate in the middle of each wall and towers at the corners (${gatesN} gate cells, ${towersN} towers)`);
+  check(gatesN === 4 * 4 && towersN >= 4, `a 1×4 gate in the middle of each side of the wall and towers at the corners (${gatesN} gate cells, ${towersN} towers)`);
   const inside = b.units.filter((u) => u.side === "player" && b.tier.interior[u.y * b.w + u.x]).length, outside = b.units.filter((u) => u.side === "enemy" && !b.tier.interior[u.y * b.w + u.x]).length;
   check(inside === b.units.filter((u) => u.side === "player").length && outside === b.units.filter((u) => u.side === "enemy").length, `defenders inside the ring, the dead in the margin on the ${b.tier.side} (${inside} in, ${outside} out)`);
   check(b.phase === "deploy" && b.deploy.zone.reduce((a, v) => a + v, 0) > 1000 && !b.deploy.zone[0], "the deploy step: the whole inside is theirs to stand in, not the margin");

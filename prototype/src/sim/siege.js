@@ -36,7 +36,7 @@ import { throwAt, THROWABLES, throwablesOf, botAttackThrow } from "./stealth.js"
 import { blastSpot, flashSpot, throwBlind as throwBlindOf, FRAG, BLAST, FIRE } from "./throwables.js";
 import { shepherdsOf } from "./decoys.js";
 import { ACID } from "./acid.js";
-import { count } from "./buildings.js";
+import { count, hasWall } from "./buildings.js";
 import { ZTYPES, SHEPHERD } from "./hiveconst.js";
 import { raidPrep, outsiderPrep } from "./eras.js";
 import { aiLaunch } from "./launchers.js"; // a grenade launcher or a rocket (section 13): rockets at your gate, your ram, your vehicle first
@@ -69,7 +69,7 @@ const roll = (...keys) => keys.reduce((h, k) => hash(h ^ Math.imul((k | 0) + 0x6
 // { ladders, ram, grenades, kind } or null. Deterministic: its own dice from the seed and the raid (no world dice).
 // opts: { count: fighters, key: the raid's id, outsider, prepared: escalated / a well-armed group, kind: "frag" | "pipebomb" }.
 export function raidSiegeKit(state, base, opts = {}) {
-  if (!base || !count(base, "walls")) return null;
+  if (!base || !hasWall(base)) return null;
   const n = opts.count || 0;
   if (n < RAID_KIT.MIN_FIGHTERS) return null;
   let level = opts.outsider ? (outsiderPrep(state) - 0.6) / 0.45 : (raidPrep(state) - 0.8) / 0.45;

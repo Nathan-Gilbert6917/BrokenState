@@ -40,6 +40,7 @@
 // over), your vehicles when a team is taken whole. Outflows:
 // the dead's kit, wear (a use a fight; broken is gone), rounds spent, explosives thrown at walls, smoke thrown over a
 // retreat by the numbers (smokeCover), what they sell, what others steal.
+import { hasWall } from "./buildings.js"; // a wall closed round a base of yours (raidOnBase: launchers first)
 import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { GEAR, FACTION_TYPES, LOCATIONS, supValue } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
@@ -970,7 +971,7 @@ export function raidOnBase(state, f, base, party, o) {
   wearGroupVehicles(state, f, o.outcome === "held", `raid${base.tile}`); // groupcare.js: their Humvee at your walls
   return out;
 }
-const baseWallsOf = (base) => (base && base.buildings ? base.buildings.filter((x) => x.type === "walls" && !x.broken).length : 0);
+const baseWallsOf = (base) => (base && base.buildings && hasWall(base) ? 1 : 0); // a wall closed round the base (buildings.js hasWall: its pieces, or a group's wall)
 
 // A clash between groups (factions.js resolveRaidOnFaction, diplomacy.js resolveWarRaid), or a group against the dead
 // (b null: a horde, a hive). a: the attacker (null: the dead), aN its fighters, aDead / bDead the people each lost,
