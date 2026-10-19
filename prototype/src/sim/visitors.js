@@ -130,7 +130,9 @@ import { supplyAmt, spendAmmo } from "./rounds.js"; // "ammo": every round there
 import { expandAmmo, baseCals } from "./ammo.js"; // rounds by calibre
 import { merchantReload } from "./reloading.js"; // an arms dealer's powder and primers
 import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, ESCORT_VEHICLES } from "./escorts.js";
-import { escortEnemy, lootCaravan, witnessesOf, consequences, roadCaravans, caravanCard as roadCaravanCard } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
+import { escortEnemy, lootCaravan, witnessesOf, consequences, roadCaravans, caravanCard as roadCaravanCard, convoyPeopleText } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
+import { fightSides, applyYours } from "./groupfight.js"; // a convoy of yours hit on the road: your people take the fight's rounds
+import { convoyPolicy } from "./breakoff.js";
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a merchant carries
 import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
 import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
@@ -1110,9 +1112,17 @@ function robMerchants(state, v, m) {
 function hitConvoy(state, v, p) {
   const rng = vrng(state);
   const members = partyMembers(state, p);
-  const mine = members.reduce((a, s) => a + combatPower(s), 0) * 1.1;
-  const win = rng.chance(clamp(0.5 + (vStrength(v) / Math.max(1, mine) - 1) * 0.6, 0.05, 0.95));
   const where = tileLabel(state, partyTile(p));
+  // groupfight.js fightSides (docs/adr/0001-ai-parity.md): your convoy's very people are the side in your place, the
+  // raiders by their numbers and strength; the rounds land on your people by your team's rules (applyYours: wounds,
+  // the carried out, the left behind dead: a band from outside takes no prisoners).
+  let win, mine = null;
+  if (members.length) {
+    const fight = fightSides(state, { f: null, people: [], kind: "raiders", count: Math.max(1, v.size), power: Math.max(1, vStrength(v)) }, { f: null, yours: true, people: members, party: p, policy: convoyPolicy(state, p), kind: "militia" }, { mine: "def" });
+    win = fight.attWon;
+    mine = applyYours(state, fight.rD, members, { tile: partyTile(p), cause: `when ${v.name} hit the convoy`, kind: "raiders", party: p });
+  } else win = true; // nobody to defend it
+  const hurtText = mine ? convoyPeopleText(state, mine) : "";
   if (win) {
     // The whole load (caravanraids.js: any caravan robbed loses all it carries); the crew keep their own supplies.
     const taken = {};
@@ -1125,13 +1135,13 @@ function hitConvoy(state, v, p) {
     note(state, "taken from you", roundsIn(addToStock(v, taken))); // ledger.js
     const items = p.cargo.gear.splice(0);
     if (items.length) v.wares = [...(v.wares || []), ...items];
-    if (members.length) hurt(state, members[rng.int(0, members.length - 1)], rng.int(15, 45), partyTile(p), `when ${v.name} hit the convoy`);
     visitorInfo(state).stats.robbed++;
-    log(state, `${cap1(v.name)}, raiders from outside, hit your convoy near ${where} and took ${[planText(taken), ...items.map((it) => it.name)].filter(Boolean).join(", ") || "nothing much"}.`, "danger");
+    log(state, `${cap1(v.name)}, raiders from outside, hit your convoy near ${where} and took ${[planText(taken), ...items.map((it) => it.name)].filter(Boolean).join(", ") || "nothing much"}.${hurtText}`, "danger");
   } else {
     v.size -= rng.int(1, 2);
-    log(state, `Your convoy near ${where} beat off ${v.name}, raiders from outside.`, "good");
+    log(state, `Your convoy near ${where} beat off ${v.name}, raiders from outside.${hurtText}`, "good");
   }
+  if (state.parties.includes(p) && !partyMembers(state, p).length) Parties.wipeParty(state, p); // nobody left: the vehicle and what is left stay on the tile
   if (v.size <= 0) return leaveMap(state, v, "broken");
   v.spared = [...(v.spared || []), `p${p.id}`];
   nextGoal(state, v);

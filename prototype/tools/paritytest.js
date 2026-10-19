@@ -6,10 +6,15 @@
 //      lost for good, going down and pulled through, meds, throwing what they carry, perks.
 //   4. Carrying and moving people: a nomad band carries what its people can by your teams' rule; a loan between
 //      groups moves the very people away and back, as yours are lent.
+//   5. Your bots' repertoire on their side too: a decoy they carry thrown on the dead pressing them (and off them after),
+//      a body in danger next to them crushed, neither with a foe next to them or nothing to throw.
 // Usage: node tools/paritytest.js [seed]
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
-import { createBattle, combatAct, registerCombatHandler, reload, loadMag, magIn } from "../src/sim/combat.js";
-import { fromPerson, THROW_KEYS } from "../src/sim/fighters.js";
+import { createBattle, combatAct, registerCombatHandler, reload, loadMag, magIn, enemyUnit, enemyStep } from "../src/sim/combat.js";
+import { fromPerson, THROW_KEYS, spentThrows } from "../src/sim/fighters.js";
+import { botDecoy } from "../src/sim/decoys.js";
+import { botCrush } from "../src/sim/carriers.js";
+import { DECOY_KEYS } from "../src/sim/stealth.js";
 import { newItem, stow, carriedSpots } from "../src/sim/inventory.js";
 import { newBox, setRounds } from "../src/sim/ammo.js";
 import { starterMags } from "../src/sim/carrykit.js";
@@ -47,6 +52,7 @@ function person(state, opts = {}) {
   if (opts.box !== false) stow(s, newBox(opts.boxKey || "a_9mm_fmj", opts.boxN ?? 20));
   stow(s, newItem("bandagekit"));
   stow(s, newItem("frag"));
+  if (opts.decoy) { s.gear.backpack = newItem("slingbag"); stow(s, newItem("noisemaker")); } // the pockets are full: a bag for it
   s.location = { kind: "base", baseId: hub(state).id };
   return s;
 }
@@ -190,6 +196,56 @@ section("4. Carrying and moving people: the same loads, the very people");
   VOL.LEND.lose = 0; VOL.LEND.stay = 0;
   loanHome(st, L, g, l);
   check(lent.every((s) => l.people.includes(s) && s.location.kind === "member" && s.fid === l.id) && l.pop === l.people.length, "back: the very same people in its list, the head count its list");
+}
+section("5. Your bots' repertoire, for everyone: a decoy on the dead, the crush (decoys.js botDecoy, carriers.js botCrush)");
+{
+  check(DECOY_KEYS.concat("flare").every((k) => THROW_KEYS.includes(k)), `a person not yours counts the decoys they carry among their throwables (${DECOY_KEYS.join(", ")}, flare)`);
+  // The same person on either side with a noise maker in a pocket, four of the dead closing on each (wild: after
+  // anyone living). Yours: the battle AI's call (autoPlayerTurn asks botDecoy); theirs: their own turn (aiUnit).
+  const { st, b, s, copy, mine, theirs } = pair({ decoy: true });
+  const deadNear = (u, n0) => { for (let i = 0; i < 4; i++) { const z = enemyUnit(b, b.rng, "zombies", 2, 60 + n0 + i); z.side = "enemy"; z.wild = true; z.aware = true; z.x = u.x + 2 + (i % 2); z.y = u.y - 1 + 2 * Math.floor(i / 2); z.ap = 0; b.units.push(z); } };
+  mine.y = theirs.y = 8; mine.x = 4; theirs.x = 20;
+  deadNear(mine, 0); deadNear(theirs, 10);
+  const held = (p) => carriedSpots(p).filter((c) => c.item.key === "noisemaker").length;
+  check(held(s) === 1 && held(copy) === 1 && (theirs.throwables || {}).noisemaker === 1, `both carry one noise maker (theirs counted: ${JSON.stringify(theirs.throwables)})`);
+  mine.ap = 2;
+  const threwMine = botDecoy(st, b, mine);
+  const lm = (b.lures || []).find((l) => l.side === "player"), apMine = mine.ap; // (their turn ends with yours starting: full actions again)
+  b.phase = "enemy"; theirs.ap = 2; theirs.aware = true; b.queue = [theirs.id];
+  enemyStep(st); // combat.js aiUnit: their turn
+  const lt = (b.lures || []).find((l) => l.side === "enemy");
+  check(threwMine && !!lm && lm.key === "noisemaker" && apMine === 1 && held(s) === 0, `yours throws the noise maker at the dead (1 action, off their person: ${held(s)} left)`);
+  check(!!lt && lt.key === "noisemaker" && (theirs.throwables || {}).noisemaker === 0 && theirs.ap <= 1, `theirs throws theirs the same way on their own turn (1 action; ${(theirs.throwables || {}).noisemaker} left)`);
+  const gone = spentThrows(theirs, copy); // fighters.js: what they threw leaves them when the fight ends
+  check(gone.length === 1 && gone[0].key === "noisemaker" && held(copy) === 0, "the thrown noise maker is off them after the fight, nothing more and nothing less");
+  check(Math.hypot(lm.x - mine.x, lm.y - mine.y) >= 5 && Math.hypot(lt.x - theirs.x, lt.y - theirs.y) >= 5, `each lands 5+ tiles from its side's people (${Math.round(Math.hypot(lm.x - mine.x, lm.y - mine.y))} / ${Math.round(Math.hypot(lt.x - theirs.x, lt.y - theirs.y))})`);
+  // Without a decoy to hand: nothing thrown, either side.
+  const p2 = pair();
+  p2.mine.y = p2.theirs.y = 8; p2.mine.x = 4; p2.theirs.x = 20;
+  for (const u of [p2.mine, p2.theirs]) for (let i = 0; i < 4; i++) { const z = enemyUnit(p2.b, p2.b.rng, "zombies", 2, 90 + i + u.x); z.side = "enemy"; z.wild = true; z.aware = true; z.x = u.x + 2 + (i % 2); z.y = u.y - 1 + 2 * Math.floor(i / 2); p2.b.units.push(z); }
+  p2.mine.ap = 2; p2.theirs.ap = 2; p2.theirs.aware = true;
+  check(!botDecoy(p2.st, p2.b, p2.mine) && !botDecoy(null, p2.b, p2.theirs) && !(p2.b.lures || []).some((l) => THROW_KEYS.includes(l.key)), "no decoy carried, none thrown, on either side");
+}
+{
+  // The crush: a body with the worm in it next to each, none of the other side next to them: each crushes its skull for
+  // 1 action. Then the two stand next to each other: neither does.
+  const { st, b, mine, theirs } = pair();
+  mine.y = theirs.y = 8; mine.x = 4; theirs.x = 20;
+  const body = (u, n) => { const c = enemyUnit(b, b.rng, "raiders", 3, 80 + n); c.x = u.x; c.y = u.y + 1; c.dead = true; c.hp = 0; c.wormed = true; b.units.push(c); return c; };
+  const bm = body(mine, 0), bt = body(theirs, 1);
+  mine.ap = 2;
+  const act = botCrush(b, mine);
+  if (act) combatAct(st, act);
+  const apMine = mine.ap;
+  b.phase = "enemy"; theirs.ap = 2; theirs.aware = true; b.queue = [theirs.id];
+  enemyStep(st);
+  check(bm.crushed && apMine === 1, `yours crushes the skull of the body next to them (1 action: ${apMine} left)`);
+  check(bt.crushed && theirs.ap <= 1, `theirs crushes the one next to them on their own turn (${theirs.ap} left)`);
+  const q = pair();
+  q.mine.y = q.theirs.y = 8; q.mine.x = 10; q.theirs.x = 11;
+  for (const [u, n] of [[q.mine, 0], [q.theirs, 1]]) { const c = enemyUnit(q.b, q.b.rng, "raiders", 3, 85 + n); c.x = u.x; c.y = u.y + 1; c.dead = true; c.hp = 0; c.wormed = true; q.b.units.push(c); }
+  q.mine.ap = 2; q.theirs.ap = 2; q.theirs.aware = true;
+  check(!botCrush(q.b, q.mine) && !botCrush(q.b, q.theirs), "with a foe right next to them, neither stops to crush a skull");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

@@ -16,7 +16,8 @@ export function roundsIn(stock) {
   for (const [k, q] of Object.entries(stock || {})) if ((/^a_/.test(k) || k === "ammo") && typeof q === "number" && q > 0) n += q;
   return n;
 }
-// The rounds in a list of items: boxes of loose rounds, what is loaded in a gun, a magazine's stack.
+// The rounds in a list of items: boxes of loose rounds, what is loaded in a gun, a magazine's stack, and what is in
+// a pack or a bag (item.contents: a person's pack taken off them whole).
 const stackN = (st) => (Array.isArray(st) ? st.reduce((a, x) => a + (x.n || 0), 0) : 0);
 export function goodsRounds(list) {
   let n = 0;
@@ -25,6 +26,7 @@ export function goodsRounds(list) {
     if (/^a_/.test(it.key || "") && it.dur != null) n += Math.floor(Number(it.dur) || 0);
     if (it.loaded) n += Array.isArray(it.loaded.stack) ? stackN(it.loaded.stack) : it.loaded.n || 0;
     n += stackN(it.stack);
+    if (Array.isArray(it.contents)) n += goodsRounds(it.contents);
   }
   return n;
 }

@@ -186,6 +186,33 @@ export function moveMember(state, from, to, s, tile = null, { give = null, take 
   for (const it of kit) if (take) take(it);
   return kit;
 }
+// One of yours goes over to a group (a deserter who did not come back: groupcare.js playerDeserters; one who follows a
+// group's preachers out: playerwars.js convert) as the very person, with all they carry: worn, held, pockets, the rig,
+// the pack (docs/adr/0001-ai-parity.md: not a newcomer made for the group). The record leaves your list for the
+// group's (members never live in state.survivors), and a stub of who they were stays in its place, carrying nothing
+// (alive false, left, joinedGroup: your history, family and friends still find them by their id; nothing is in two
+// places). The person takes a member's id (the stub keeps yours: were they ever yours again, taken or recruited, two
+// records of yours would share it); s.formerId remembers it. Their kit goes onto the group's books as a recruit's does
+// (the caller: arsenal.js addToArsenal). Returns them.
+export function joinFromYours(state, f, s, tile = null) {
+  const i = state.survivors ? state.survivors.indexOf(s) : -1;
+  if (i >= 0) {
+    const stub = structuredClone({ ...s, gear: {}, pockets: [], loose: [], carried: {} });
+    stub.alive = false;
+    stub.left = true;
+    stub.joinedGroup = f.id;
+    ensureInv(stub);
+    state.survivors[i] = stub;
+  }
+  // What tied them to your bases (a bed, a job, a station, a trip, a warning card's count) stays behind with the stub.
+  for (const k of ["left", "pending", "station", "inBed", "work", "trip", "away", "walking", "leader", "moodWarn", "wanderer"]) delete s[k];
+  s.formerId = s.id;
+  s.id = nextMemberId(state);
+  s.joinedGroup = f.id;
+  s.role = "member";
+  addMember(state, f, s, tile);
+  return s;
+}
 
 // ---------- the list ----------
 export const membersOf = (f) => (f && Array.isArray(f.people) ? f.people : []);

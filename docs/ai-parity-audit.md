@@ -164,8 +164,6 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
   still do nothing against it, and the horde's own losses keep hordes.js's formula.
 - 7.7, an AI group's judgement of a base it cannot hold (groupflight.js) still reads the wall counters for the
   decision. The fight itself goes through the defence tiers.
-- 5.15, vehicles: a vehicle's contents travel as the party's cargo and are robbed with it. An AI vehicle record
-  still has no cargo of its own.
 - Soldiers' field load: an AI person carries a weight by kit with no item behind it (carrykit.js CARRY.BASE_KG,
   fighters.js build), so the user's decision of 2026-10-08 ("soldiers in full kit move 4") holds. It is weighed by
   your rule (felt load, a strong back, Fleet-Footed) and leaves nothing on the body.
@@ -204,14 +202,44 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
   (founding, a band taken in, the strike force and the fall), tools/paritytest.js section 4, and
   tools/conservationtest.js (no person in two places at once; every group's head count is its list).
 
+**Closed in a follow-up pass (2026-10-19).**
+- Decoys and the crush: every other side's people get your bots' two moves on their own turn (combat.js aiUnit →
+  aiRepertoire), through the same functions: a decoy they carry thrown on the dead pressing their side, once a turn for
+  the side (decoys.js botDecoy; fighters.js counts the decoys and a flare among what a person throws, and the thrown
+  one leaves them after), and a body in danger next to them crushed for 1 action when none of their foes is next to
+  them (carriers.js botCrush, combat.js crushAct). A decoy pulls the dead off whoever they are fighting (decoys.js
+  lureTurn reads combat.js foesOf), and by the numbers a side's decoys and Molotovs count against the dead for every
+  side (groupfight.js fightSides reads decoys.js lureEdge).
+- Your convoy robbed: its very people are the side in your place in the fight (groupfight.js fightSides, a side
+  `{ yours: true }`), and its rounds land on them by your team's rules (groupfight.js applyYours → breakoff.js
+  landFight, the code your team's fights by the numbers use): wounds, deaths, the left behind taken by the band. A
+  convoy pulls out when the fight turns unless you set its policy (breakoff.js convoyPolicy). Beaten off, the convoy
+  takes what the band's dead carried; a convoy with nobody left is wiped as a team is (caravanraids.js groupRobs; the
+  raiders from outside the same way: visitors.js hitConvoy).
+- Your deserters: one who joins a group goes over as the very person with all they carry and the haul they took
+  from your stores (groupcare.js takeInFromYours, members.js joinFromYours: the record moves to the group's list under
+  a member's id, a stub of who they were stays in yours carrying nothing; the rounds are noted in the ledger). One who
+  follows a group's preachers out (playerwars.js convert) goes the same way.
+- 5.15, vehicles: a group's vehicle record has a cargo of its own in your vehicles' shape (v.cargo), and every move of
+  a vehicle between your vehicles and a group's records takes it along (vehicles.js carryCargo): a car of yours left
+  with cargo in it and taken off the map, your team's car taken with it, one stolen, bought, sold, seized with a base,
+  lost on a raid, an escort's truck taken with its caravan (it used to vanish; now the gang keeps it). Whoever ends up
+  with it unloads it at home (arsenal.js unloadVehicle, vehicles.js cargoToBase); what is in a car you sell or buy
+  stays with the seller.
+
+- The last head counts of people changing sides: a captive of yours who turns goes over as the very person
+  (conflicts.js captivesDaily → members.js joinFromYours, their kit onto the group's books), and a group's deserter
+  is always one of its people at home (groupcare.js desertOne): with everyone out with a party nobody walks out, so
+  no deserter is made up for your gates and no group gains a head from nobody.
+
 **Still open (small, noted for a later pass).**
-- Decoys and the crush are only in your bots' repertoire.
-- Your convoy people come out of a robbery unharmed.
-- One of your deserters joins a group as a fresh member, not with what they carried.
 - Refugees from outside joining a nomad band (nomads.js recruit) and someone off the road joining it still come as a
   head count; refugee bands have no people records until one is needed.
 - A hardcore band's stragglers and splinter groups still carry stores made by formula (makeSplinter's minimums, the
   stragglers' rations), not taken from the fallen base's stores.
+- The groups' loadouts do not hand decoys out (they share the explosives, flashbangs and smoke): an AI person throws a
+  decoy only when they carry one of their own. Left open because handing them out means putting decoys on the
+  groups' books (arsenal.js arsenalWorthy), which also changes what their scavenging keeps: an economy question.
 
 **Found on the way.** Dice keyed on a person's id came out differently in two worlds on one seed, because your
 people's and newcomers' ids come from a counter shared by the process; they now use a world-local key (members.js

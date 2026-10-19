@@ -58,7 +58,7 @@ import { hash01 } from "./skills.js";
 import { attitude, changeGoodwill, strength, isAggressiveType, launchRaidOnBase, playerRaidWeight, nearestOwnBase, RAIDS } from "./factions.js";
 import { noteStrife, SPLINTER } from "./splinters.js"; // a war on you they lost stirs strife (splinter bands)
 import { ensureDiplo, knownAs, relation, DIPLO } from "./diplomacy.js";
-import { weightOf, fitPeople } from "./groupcare.js";
+import { weightOf, fitPeople, takeInFromYours } from "./groupcare.js";
 import { knowsOf } from "./groupworld.js";
 import { blocOf, blocMates, blocSpare, threatApplies, jointRaid, playerStruck, blocTitle } from "./blocs.js";
 import { isMember, controlledLand } from "./alliance.js";
@@ -604,14 +604,15 @@ export function settle(state, warId, terms, lead = "Peace") {
   checkGameOver(state);
   return text;
 }
-// The least content at the hub (not the leader) goes over to them.
+// The least content at the hub (not the leader) goes over to them: the very person, with what they carry
+// (groupcare.js takeInFromYours: a stub of who they were stays in your list).
 function convert(state, f, hb) {
   const s = atBase(state, hb.id).filter((x) => !x.leader).sort((a, b) => (a.mood || 0) - (b.mood || 0) || a.id - b.id)[0];
   if (!s || atBase(state, hb.id).length <= 2) return null;
-  s.alive = false; s.left = true; s.station = null; s.inBed = false; s.joinedGroup = f.id;
-  f.pop += 1;
-  log(state, `${s.name} followed ${f.name}'s preachers out of ${hb.name}.`, "death");
-  return s;
+  const name = s.name;
+  const who = takeInFromYours(state, f, s, "convert");
+  log(state, `${name} followed ${f.name}'s preachers out of ${hb.name}.`, "death");
+  return who;
 }
 export function endPwar(state, w, how, text, terms = []) {
   const d = ensurePwars(state);

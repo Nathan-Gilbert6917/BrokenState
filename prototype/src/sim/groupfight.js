@@ -4,14 +4,16 @@
 // (defences.js tierMults, read off the group's own buildings); the odds are your fights' curve (combat.js winOdds);
 // the wounds land round by round on the very people (breakoff.js rollFight, one roll of the outcome for both sides,
 // each side's break-off policy by its type); the fallen are dead (or saved by a medic, or carried out, or left behind
-// and taken), the holder of the field takes the dead's kit (inventory.js stripAll, arsenal.js keepItem).
+// and taken), the holder of the field takes the dead's kit (inventory.js stripAll, arsenal.js keepItem). Your own
+// people in such a fight (a convoy of yours robbed on the road) take its rounds by your team's rules (applyYours).
 import { combatPower, isNight } from "./world.js";
 import { winOdds, powerEquiv } from "./combat.js";
-import { fightModel, rollFight, BREAKOFF } from "./breakoff.js";
+import { fightModel, rollFight, landFight, BREAKOFF } from "./breakoff.js";
 import { ammoFactor, keepItem } from "./arsenal.js";
 import { tierMults } from "./defences.js";
 import { removeMember, membersAt, partyPeople, syncMembers, isWounded } from "./members.js";
-import { stripAll } from "./inventory.js";
+import { stripAll, allCarried } from "./inventory.js";
+import { lureEdge } from "./decoys.js"; // decoys and Molotovs against the dead, by the numbers
 import { homeAt } from "./groupbases.js";
 import { spareKit } from "./loadouts.js";
 import { capturePeople } from "./groupjails.js";
@@ -52,15 +54,20 @@ export function fightSides(state, att, def, opts = {}) {
   const rng = state.rng;
   const mineIs = opts.mine === "def" ? def : att;
   const ammo = (x) => x.ammo ?? (x.f ? ammoFactor(x.f) : 1);
-  const pw = (x) => (x === mineIs ? peoplePower(x.people, ammo(x)) : (x.people || []).reduce((a, s) => a + powerEquiv(x.kind || "raiders", combatPower(s)), 0) * ammo(x)) * (x.mult || 1) + (x.power || 0);
+  // decoys.js lureEdge: the decoys and Molotovs a side's people carry count against the dead as yours do (combat.js
+  // byNumbersOdds), nothing against people or a Shepherd's pack.
+  const lure = (x) => { const o = x === att ? def : att; return x.people && x.people.length ? 1 + lureEdge({ kind: o.kind, types: o.types }, x.people.flatMap((s) => allCarried(s).map((it) => it.key))) : 1; };
+  const pw = (x) => (x === mineIs ? peoplePower(x.people, ammo(x)) : (x.people || []).reduce((a, s) => a + powerEquiv(x.kind || "raiders", combatPower(s)), 0) * ammo(x)) * lure(x) * (x.mult || 1) + (x.power || 0);
   const aP = pw(att), dP = pw(def);
   const aN = (att.people && att.people.length) || att.count || 1, dN = (def.people && def.people.length) || def.count || 1;
   const pA = mineIs === att ? winOdds(aP / Math.max(0.1, dP), { kind: def.kind || "raiders", count: dN, people: aN, ambush: opts.ambush || null })
     : 1 - winOdds(dP / Math.max(0.1, aP), { kind: att.kind || "raiders", count: aN, people: dN });
   const attWins = rng.chance(pA);
-  const cap = (taker, f) => (taker && taker.alive !== false && f && taker.bases && taker.bases.length ? BREAKOFF.CAPTURE : 0); // as a group takes yours (breakoff.js fightByNumbers)
-  const rA = att.people && att.people.length ? rollFight(rng, fightModel(state, att.people, { win: pA, enemy: { kind: def.kind || "raiders", count: dN }, capture: cap(def.f, att.f) }), att.policy ?? policyOf(att.f), attWins) : null;
-  const rD = def.people && def.people.length ? rollFight(rng, fightModel(state, def.people, { win: 1 - pA, enemy: { kind: att.kind || "raiders", count: aN }, capture: cap(att.f, def.f) }), def.policy ?? policyOf(def.f), !attWins) : null;
+  // A group takes the left-behind of a side of people (a group's, or yours: side.yours) as it takes yours in your
+  // team's fight (breakoff.js fightByNumbers). side.party: your team, for its vehicle on the way out (fightModel).
+  const cap = (taker, side) => (taker && taker.alive !== false && (side.f || side.yours) && taker.bases && taker.bases.length ? BREAKOFF.CAPTURE : 0);
+  const rA = att.people && att.people.length ? rollFight(rng, fightModel(state, att.people, { win: pA, enemy: { kind: def.kind || "raiders", count: dN }, capture: cap(def.f, att), party: att.party || null }), att.policy ?? policyOf(att.f), attWins) : null;
+  const rD = def.people && def.people.length ? rollFight(rng, fightModel(state, def.people, { win: 1 - pA, enemy: { kind: att.kind || "raiders", count: aN }, capture: cap(att.f, def), party: def.party || null }), def.policy ?? policyOf(def.f), !attWins) : null;
   let won = attWins;
   if (rA && rA.round != null && !(rD && rD.round != null)) won = false; // the attackers broke off: the field is the defenders'
   if (rD && rD.round != null && !(rA && rA.round != null)) won = true; // the defenders broke off and ran
@@ -98,4 +105,12 @@ export function applySide(state, f, r, people, { holder = null, captor = null } 
     if (!own && holder) for (const it of stripAll(s)) keepItem(state, holder, it, "battlefield"); // the field's holder takes the rest off the dead
   }
   return out;
+}
+// Your people in a fight nobody watched (a side { yours: true, people, party, policy } in fightSides, opts.mine on
+// their side: your rules for yours): the rounds land on them as on your team's fight by the numbers (breakoff.js
+// landFight: the wounds through armour and traits, a medic's save, the carried out and the left behind, taken by the
+// captor group or dead). Returns { hurtIds, deadIds, captured, carriedIds }.
+export function applyYours(state, r, people, { tile, cause, kind, captor = null, party = null }) {
+  if (!r) return { hurtIds: new Set(), deadIds: [], captured: [], carriedIds: [] };
+  return landFight(state, r, people, { tile, cause, kind, captor, party });
 }
