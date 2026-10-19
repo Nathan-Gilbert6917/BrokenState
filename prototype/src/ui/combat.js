@@ -1437,7 +1437,7 @@ export function renderCombatPanel(state) {
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
   let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b)}`;
-  if (b.layout) return html + layoutPanel(state, b, cui); // the base map (sim/basemap.js, ui/basemap.js)
+  if (b.layout) return html + layoutPanel(state, b, cui, `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`); // the base map (sim/basemap.js, ui/basemap.js)
   html += b.drill ? `<div class="cbhead"><div class="cbtitle">Defence drill at ${esc(((state.bases.find((x) => x.id === b.setup.baseId)) || {}).name || b.place)}</div>
     <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
@@ -2505,7 +2505,7 @@ function drawBanner(b, cw, cs) {
   const tierTag = b.tier ? (b.tier.map === "wall" ? " · THE WALLS" : b.tier.stage === "buildings" ? " · LAST STAND" : " · THE YARD") : "";
   const floorTag = floorsOf(b) ? ` · ${floorLabel(b, floorNo(b)).toUpperCase()}` : "";
   const label = b.over ? (b.result.outcome === "victory" ? "VICTORY" : b.result.outcome === "extracted" ? "GOT OUT" : b.result.outcome === "retreat" ? "RETREATED" : "DEFEAT") :
-    b.phase === "deploy" ? (b.drill ? `DEFENCE DRILL · ${planKey(b) === "fort" ? "PLAN YOUR POSTS" : "FACING AN ATTACK FROM THE EAST"}` : b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
+    b.phase === "deploy" ? (b.layout ? "BASE MAP · PLACE YOUR BUILDINGS AND DEFENCES" : b.drill ? `DEFENCE DRILL · ${planKey(b) === "fort" ? "PLAN YOUR POSTS" : "FACING AN ATTACK FROM THE EAST"}` : b.deploy && b.deploy.attackers ? "STAGE THE ASSAULT · ANY SIDE OF THEIR WALLS" : b.tier && b.tier.fellBackTurn != null ? "REDEPLOY · FALL BACK TO THE YARD" : `DEPLOY · THEY COME FROM THE ${String((b.deploy && b.deploy.side) || "east").toUpperCase()}`) :
     b.phase === "player" ? `YOUR TURN · ${b.turn}${heatTag}${tierTag}${nightTag}${floorTag}` : `ENEMY TURN${heatTag}${tierTag}${nightTag}${floorTag}`;
   const col = b.over ? (b.result.outcome === "victory" || b.result.outcome === "extracted" ? PAL.good : PAL.bad) : b.phase === "deploy" ? "#e0a84f" : b.phase === "player" ? "#8fb4e0" : PAL.bad;
   ctx.font = `700 ${Math.max(13, Math.round(cs * 0.36))}px Segoe UI, sans-serif`;

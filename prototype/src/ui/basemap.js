@@ -44,7 +44,7 @@ export function baseMapTab(state, b, ui) {
 // ---------- the battle screen in layout mode ----------
 // The side panel: what is picked, the lists to pick from, the stores, the close button. cui: ui/combat.js's state
 // (the message, the store being looked at).
-export function layoutPanel(state, b, cui) {
+export function layoutPanel(state, b, cui, preview = "") {
   const L = b.layout, base = baseById(state, L.baseId);
   if (!base) return "";
   const lay = layoutOf(state, base);
@@ -54,6 +54,7 @@ export function layoutPanel(state, b, cui) {
   if (picked) html += `<div class="card small" style="margin-top:0.4rem"><div class="spread"><b>${esc(picked.label)}</b><span class="muted">${sizeText(picked)}${L.rot & 1 ? " (turned)" : ""}</span></div>
     <div class="muted">${picked.kind === "defence" ? "A defence: no buffer, right next to anything, inside the yard or out in front of the wall." : picked.kind === "field" ? "A crop plot: in the yard, a cell clear of anything else." : picked.kind === "vehicle" ? "A parked car: in the yard, a cell clear of anything else; raiders and the dead batter it if it stands in their way." : "A building: in the yard, a cell clear of anything else, the cell outside its door free."}</div>
     <div class="cbactions" style="margin-top:0.3rem"><button data-action="cb-deploy" data-v="rotate" data-tip="Turn it a quarter (R)">Turn <span class="key">R</span></button><button data-action="cb-deploy" data-v="pick" data-k="" data-tip="Put the pick down without placing it (Esc)">Cancel <span class="key">Esc</span></button></div></div>`;
+  html += preview; // what is under the mouse (ui/combat.js previewHtml: the pick's fit, a placed thing, a store)
   const msg = L.msg || cui.msg;
   if (msg) html += `<div class="small ${cui.msg ? "warn" : "good"} cbmsg">${esc(msg)}</div>`;
   const groups = new Map();
