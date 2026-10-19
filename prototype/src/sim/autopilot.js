@@ -2638,7 +2638,7 @@ function roleSummaries(state) {
 // ---------- construction ----------
 // The steward area each kind of building belongs to (anything else is plain Building).
 const BUILD_AREA = {
-  walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
+  walls: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence", armory: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
   huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", freezer: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food", canteen: "food", grainmill: "food", meatgrinder: "food",
@@ -2918,6 +2918,7 @@ function buildWishes(state, base) {
       (here.some((s) => s.role === "craft") || craftQueue(base).length > 0 || countAll(base, "ammo_bench") + countAll(base, "reload_bench") > 0)) add("toolbench", "a master workbench: the crafters work faster and better");
   if (!count(base, "med_station") && pop >= 6 && best("medicine") >= 3 && (st.meds || 0) < pop) add("med_station", "meds are short");
   if (!count(base, "storehouse") && (hostileNear || state.stats.raidsRepelled > 0)) add("storehouse", "raiders steal less");
+  if (!count(base, "armory") && count(base, "storehouse") && (base.armory || []).length >= 8 && (hostileNear || state.stats.raidsRepelled > 0)) add("armory", "the guns and rounds under lock from raiders");
   if (!count(base, "machine_shop") && pop >= 7 && (st.parts || 0) < 6 && best("mechanics") >= 4) add("machine_shop", "spare parts");
   // Mood (relations.js): a common room once the hub is a real community and spirits are not sky high (saved up for
   // when they sag below 75), or as planned comfort for a big hub: at 12+ people once there is scrap for it, saved up

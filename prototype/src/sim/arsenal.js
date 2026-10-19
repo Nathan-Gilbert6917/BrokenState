@@ -758,7 +758,7 @@ export function capSiegeKit(state, f, kit) {
 // A raid on your base (factions.js resolveRaidOnPlayer): outcome "held" | "broken" | "overrun", theirDead (people they
 // lost), armory0 (the armory's length before the raid: what is after it is your dead's). Returns
 // { dropped, stole } (item lists) for the report.
-export const RAID_STEAL = { broken: 0.2, overrun: 0.5, store: 0.5 }; // the share of your armory's fighting gear they carry off (× store with a storehouse)
+export const RAID_STEAL = { broken: 0.2, overrun: 0.5, store: 0.5, armory: 0.5 }; // the share of your armory's fighting gear they carry off (× store with a storehouse, × armory with an armory's locks: buildings.js)
 export function raidOnBase(state, f, base, party, o) {
   const out = { dropped: [], stole: [] };
   if (!f || !ensureArsenal(state, f)) return out;
@@ -768,7 +768,7 @@ export function raidOnBase(state, f, base, party, o) {
   const youHold = o.outcome !== "overrun";
   // Stealing first (what they carry off is what was in the armory before their dead's kit is added).
   if (!youHold || o.outcome === "broken") {
-    const frac = (RAID_STEAL[o.outcome] || 0) * (o.store ? RAID_STEAL.store : 1);
+    const frac = (RAID_STEAL[o.outcome] || 0) * (o.store ? RAID_STEAL.store : 1) * (o.armory ? RAID_STEAL.armory : 1);
     const a0 = Math.min(base.armory.length, o.armory0 ?? base.armory.length);
     const yourDead = base.armory.slice(a0).filter(arsenalWorthy);
     const rest = base.armory.slice(0, a0).filter(arsenalWorthy).sort((a, b) => (weaponValue(b) + armourValue(b)) - (weaponValue(a) + armourValue(a)));
