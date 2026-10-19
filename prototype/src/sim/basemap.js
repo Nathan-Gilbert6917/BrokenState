@@ -104,7 +104,7 @@ export const FOOT = {
   meatgrinder: PROP("table"), craftbench: PROP("counter", 2, 1), workbench: PROP("counter", 2, 1), toolbench: PROP("counter", 2, 1), ammo_bench: PROP("counter", 2, 1),
   reload_bench: PROP("counter", 2, 1), med_station: PROP("counter", 2, 1), lockup: PROP("bars", 2, 2), relay: PROP("locker"),
   animal_pen: { kind: "pen", w: 4, h: 3 },
-  barricades: DEF("barricade", 3, 1), spike_pits: DEF("spikes", 3, 2), trench: DEF("trench", 10, 1), floodlights: DEF("lamp", 1, 1), watchtower: DEF("tower", 2, 2),
+  barricades: DEF("barricade", 3, 1), spike_pits: DEF("spikes", 3, 2), trench: DEF("trench", 16, 1), floodlights: DEF("lamp", 1, 1), watchtower: DEF("tower", 2, 2),
 };
 export const FIELD = { kind: "field", w: 3, h: 2 };
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.

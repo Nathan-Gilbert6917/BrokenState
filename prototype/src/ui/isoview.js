@@ -2005,8 +2005,8 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.fillStyle = "rgba(15,17,20,0.85)"; ctx.fillRect(X - w / 2, Y - 3, w, 4);
     ctx.fillStyle = f > 0.6 ? COL.good : f > 0.3 ? COL.mid : COL.bad; ctx.fillRect(X - w / 2, Y - 3, w * f, 4);
   }
-  // The deploy step: the gate and breaches, the side the attack comes from.
-  if (deploying) {
+  // The deploy step: the gate and breaches, the side the attack comes from (not on the base map: nothing attacks).
+  if (deploying && !b.layout) {
     const D = b.deploy;
     ctx.strokeStyle = "#e0a84f"; ctx.lineWidth = 2.5;
     ctx.beginPath();
