@@ -126,7 +126,7 @@ export function baseAmmo(state, base) {
   return Object.keys(cals).length ? usableIn(base.stock, cals) + Math.max(0, Math.floor(num(base.stock.ammo))) : totalRounds(base.stock);
 }
 // A team's: its packed rounds, the found cargo's (cargo false: not those), and the rounds its people carry (pockets,
-// rig, pack: a shotgunner's shells at hand, carrykit.js packShells; rounds put onto a member), the only ones a Reload
+// rig, pack: each gun's loose rounds at hand, carrykit.js packShells; rounds put onto a member), the only ones a Reload
 // draws on in a fight (mags.js, physical rounds).
 /** @param {any} state @param {any} p @param {boolean} [cargo] the found cargo too */
 export function teamAmmo(state, p, cargo = true) {
@@ -533,6 +533,31 @@ export function boxesOf(s) {
   for (const it of (pack && pack.contents) || []) if (it && ROUND_SUPPLIES[it.key]) out.push(it);
   for (const it of (pack && pack.contents) || []) if (isBulk(it)) out.push(...loadsOf(it)); // an ammo can in the pack: its rounds are the pack's (a fight draws on them after the boxes)
   return out;
+}
+// The loose rounds people carry (boxesOf: pockets, the rig, the pack) as one record by key: what a hunting team shoots
+// from besides its bags (hunting.js), as a fight's Reload draws on them.
+/** @param {any[]} people */
+export function carriedRec(people) {
+  /** @type {Record<string, number>} */
+  const rec = {};
+  for (const s of people || []) for (const it of boxesOf(s)) if (it && it.key) rec[it.key] = num(rec[it.key]) + Math.max(0, Math.floor(num(it.dur)));
+  return rec;
+}
+// n rounds of key taken out of what people carry (boxesOf order; the first person's first: the shooter). Returns how many.
+/** @param {any[]} people @param {string} key @param {number} n */
+export function spendCarried(people, key, n) {
+  let left = Math.max(0, Math.floor(num(n)));
+  for (const s of people || []) {
+    for (const it of boxesOf(s)) {
+      if (left <= 0) break;
+      if (!it || it.key !== key) continue;
+      const q = Math.min(left, Math.max(0, Math.floor(num(it.dur))));
+      it.dur = num(it.dur) - q; left -= q;
+    }
+    sweepBoxes(s);
+    if (left <= 0) break;
+  }
+  return Math.floor(num(n)) - left;
 }
 // Empty boxes thrown away (after a fight).
 /** @param {any} s */

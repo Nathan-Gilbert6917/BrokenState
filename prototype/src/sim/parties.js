@@ -77,7 +77,8 @@ import { totalRounds, spendAmmo, ROUND_KEYS, GENERIC_KEYS } from "./rounds.js"; 
 import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRounds, kindTheme, roundsText, settleParty } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
 import { loadoutRounds } from "./gunrounds.js"; // the rounds their guns and spare magazines leave loaded with (physical rounds)
-import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; a shotgun's shells at hand
+import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; each gun's rounds at hand
+import { SHELLS, usesInternal } from "./mags.js"; // a shotgun's shells at hand are its tube's load too
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
 import { scavArrived, scavSearchHour, ambushHaul, lose as loseScav } from "./aiscav.js";
@@ -1001,12 +1002,17 @@ export function launchExpedition(state, opts) {
   // first (ammo.js settleParty, as the hour's settleAll would): packShells reads the shells by their keys, so before
   // this a team packed from generic ammo left with every shell in its bags and none at hand.
   settleParty(state, p);
-  if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each shotgunner's shells at hand (a pocket or a rig pouch) out of the packed rounds, so the shotgun reloads without digging in the pack
-  // Their guns and spare magazines leave loaded (gunrounds.js loadoutRounds, out of the stores after what was packed, less the shells packShells just put at hand),
+  // Their guns and spare magazines leave loaded (gunrounds.js loadoutRounds, out of the stores after what was packed),
   // as the team-forming window does (teamform.js: it adds them itself, loadout false). With physical rounds (mags.js,
   // 2026-10-18) the guns are filled from the team's bags as a fight starts: without these the "ammo" line would have to
   // fill every gun and magazine before any of it was a reserve, where a gun used to start a fight loaded for nothing.
-  if (opts.loadout !== false) for (const [k, q] of Object.entries(loadoutRounds(members, [home.stock]))) { home.stock[k] = (home.stock[k] || 0) - q; p.supplies[k] = (p.supplies[k] || 0) + q; }
+  // Every gun but a shotgun's first: packShells then puts those loads at hand with the loose rounds besides (carrykit.js
+  // handWant). A shotgun's after, less the shells packShells put at hand (SHELLS.CARRY: the tube's load and the rest).
+  const shellGun = (s) => { const g = s.gear && s.gear.weapon; return !!(g && SHELLS.on && SHELLS.GUNS[g.key] && usesInternal(g.key, g)); };
+  const takeLoadout = (who) => { for (const [k, q] of Object.entries(loadoutRounds(who, [home.stock]))) { home.stock[k] = (home.stock[k] || 0) - q; p.supplies[k] = (p.supplies[k] || 0) + q; } };
+  if (opts.loadout !== false) takeLoadout(members.filter((s) => !shellGun(s)));
+  if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each gun's rounds at hand (handWant: a pocket or a rig pouch) out of the packed rounds, so it reloads without digging in the pack
+  if (opts.loadout !== false) takeLoadout(members.filter(shellGun));
   packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
   if (opts.tabs) packTablets(state, home, p); // worm.js: a tube of purification tablets for the road (when the armory has one)
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as

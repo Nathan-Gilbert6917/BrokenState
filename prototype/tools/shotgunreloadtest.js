@@ -33,6 +33,7 @@ import { launchExpedition, partyMembers } from "../src/sim/parties.js";
 import { refitPerson } from "../src/sim/fighters.js";
 import { fitMod } from "../src/sim/gunmods.js";
 import { totalRounds } from "../src/sim/ammo.js";
+import { looseWant, handWant } from "../src/sim/carrykit.js";
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -395,12 +396,13 @@ const range = (xs) => `${Math.min(...xs)}–${Math.max(...xs)}`;
   check(!!p, `a team of a pump, a double barrel and a pistol sets out (${res.error || "ok"})`);
   if (p) {
     const shellsOn = (s) => s.pockets.filter((x) => x && /^a_12ga_/.test(x.key)).reduce((a, x) => a + x.dur, 0);
-    const packed = totalRounds(p.supplies) + partyMembers(st, p).reduce((a, s) => a + shellsOn(s), 0);
-    check(shellsOn(sg) === SHELLS.CARRY && shellsOn(db) === SHELLS.CARRY && shellsOn(pi) === 0, `each shotgunner carries ${SHELLS.CARRY} shells in a pocket (${shellsOn(sg)}, ${shellsOn(db)}; the pistol none)`);
-    // (and the launch's loadout, parties.js: the pistol's magazine and the spares it carries; the shotguns' loads are
-    // the shells already at hand)
+    const roundsOn = (s) => s.pockets.filter((x) => x && /^a_/.test(x.key)).reduce((a, x) => a + x.dur, 0);
+    const atHand = partyMembers(st, p).reduce((a, s) => a + roundsOn(s), 0), packed = totalRounds(p.supplies) + atHand;
+    check(shellsOn(sg) === SHELLS.CARRY && shellsOn(db) === SHELLS.CARRY && shellsOn(pi) === 0 && roundsOn(pi) === handWant(pi, pi.gear.weapon) && roundsOn(pi) > looseWant(pi.gear.weapon), `each shotgunner carries ${SHELLS.CARRY} shells in a pocket (${shellsOn(sg)}, ${shellsOn(db)}); the pistol its load and a magazine's worth besides (${roundsOn(pi)})`);
+    // (and the launch's loadout, parties.js: the pistol's magazine and the spares it carries, on top of the 150; the
+    // shotguns' loads are the shells already at hand)
     const pistolLoad = WEAPONS.pistol.cap + carriedSpots(pi).filter((x) => x.item && GEAR[x.item.key] && GEAR[x.item.key].mag).reduce((a, x) => a + GEAR[x.item.key].mag.cap, 0);
-    check(packed === 150 + pistolLoad, `out of what the team packed: ${totalRounds(p.supplies)} in the pack + ${shellsOn(sg) + shellsOn(db)} at hand = ${packed} of 150 and the pistol's ${pistolLoad}`);
+    check(packed === 150 + pistolLoad, `out of what the team packed: ${totalRounds(p.supplies)} in the pack + ${atHand} at hand = ${packed} of 150 and the pistol's ${pistolLoad}`);
     const b = (st.combat = createBattle(st, { tile: dest, partyId: p.id, enemy: { kind: "raiders", count: 1, power: 3 }, ambush: null, canRetreat: true, handler: "shotguntest", context: {} }));
     const u = by(b, sg), s0 = shellsAt(b, u);
     check(u.mag === 6 && s0.box === SHELLS.CARRY - 6 && s0.at === SHELLS.CARRY - 6 && s0.hand === 0 && s0.pack === 0, `in the fight: 6 in the tube and ${s0.at} at hand out of the pocket's ${SHELLS.CARRY} (no loose handful), ${s0.pack} in the pack (the team's bags are not it)`);

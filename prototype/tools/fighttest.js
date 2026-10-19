@@ -4,7 +4,7 @@
 // you (size, escalation, siege pace, damage and repairs, tribute fading, provoked groups) and groups that grow.
 // Usage: node tools/fighttest.js [seed]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
-import { setRounds, totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
+import { setRounds, totalRounds, boxesOf, sweepBoxes } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, tickHour, hub, atBase, makeSurvivor, skill, survivorById, killSurvivor, usesArrows, armedFactor, spendShots, ARROWS } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
 import {
@@ -838,6 +838,7 @@ const groupOf = (state, type) => {
   // hand are packed from them), so none of any calibre is left in the bags.
   p2.supplies.arrows = 60; p2.supplies.ammo = 0;
   for (const k of Object.keys(p2.supplies)) if (/^a_/.test(k)) p2.supplies[k] = 0;
+  for (const s of m2) { for (const it of boxesOf(s)) it.dur = 0; sweepBoxes(s); } // and none at hand (carrykit.js looseWant)
   const noAmmo = fightOdds(st2, p2, enemy, null);
   check(empty < stocked && noAmmo < stocked && noAmmo > empty, `bows without arrows fight worse (odds ${Math.round(stocked * 100)}% → ${Math.round(empty * 100)}% with no arrows, ${Math.round(noAmmo * 100)}% with no ammo for the one rifle)`);
   check(armedFactor(m2, 0, 60) > 0.6 && armedFactor(m2, 0, 60) < 1 && armedFactor(m2, 60, 60) === 1 && Math.abs(armedFactor(m2, 0, 0) - 0.6) < 1e-12, "armedFactor weighs the bows and the guns by their power");

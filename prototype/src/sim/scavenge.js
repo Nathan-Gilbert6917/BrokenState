@@ -58,6 +58,8 @@ import { ZTYPES, BEASTS } from "./hiveconst.js";
 import { siteWanderers, siteEncounter, wanderersAfterRaid } from "./wanderers.js";
 import { crawlTile, startCrawl } from "./citycrawl.js";
 import { addFind, roundsText } from "./ammo.js"; // rounds by calibre
+import { carriedRec } from "./ammo.js"; // the loose rounds people carry
+import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -416,7 +418,7 @@ export function searchHour(state) {
     // The shots: a bow's in arrows, everyone else's in ammo (world.js spendShots); short of either, those count 60%.
     const shot = spendShots(p.supplies, members, e.approach === "loud" ? 6 : 2);
     if (shot.ammo > 0 && e.poi != null) { noteGunfire(state, e.tile, shot.ammo); e.shots = (e.shots || 0) + shot.ammo; } // fieldheat.js: the shots are heard; the tile's heat when the team comes out
-    const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, p.supplies, p.supplies.arrows || 0, { need: () => 1 });
+    const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, sumRecs(p.supplies, carriedRec(members)), p.supplies.arrows || 0, { need: () => 1 });
     if (power * rng.range(0.6, 1.4) > threat) {
       line += e.guarded ? " A guard patrol was taken down." : " The dead found you, and you put them down.";
       const back = arrowsBack(shot.arrows); // won: about half the arrows are picked up again

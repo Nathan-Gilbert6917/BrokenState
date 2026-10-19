@@ -12,11 +12,9 @@ import { hiveTier } from "../src/sim/hivetech.js";
 import { byNumbersOdds, winOdds, WEAPONS } from "../src/sim/combat.js";
 import * as HC from "../src/sim/hivecrawl.js";
 import { settleParty, calOf } from "../src/sim/ammo.js";
-import { packShells, packMags, CARRY } from "../src/sim/carrykit.js";
-import { standardMag, usesInternal, isMag, SHELLS } from "../src/sim/mags.js";
-import { newItem, carriedSpots, stow } from "../src/sim/inventory.js";
-import { roundItem } from "../src/sim/itemstack.js";
-import { keyFor, typeFor } from "../src/sim/rounds.js";
+import { packShells, packMags, CARRY, looseWant } from "../src/sim/carrykit.js";
+import { standardMag, usesInternal, isMag } from "../src/sim/mags.js";
+import { newItem, carriedSpots } from "../src/sim/inventory.js";
 import { MAGAZINES } from "../src/sim/data-kit.js";
 
 const TRIALS = Number(process.argv[2] || 24);
@@ -52,22 +50,14 @@ export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", arm
   // spare magazines for a magazine gun out of the hub's armory (carrykit.js packMags, CARRY.PACK a gun; here an armory
   // that has them), rounds enough to fill every gun and magazine it carries (at least `ammo`: 240 fills six hunting
   // rifles or pumps and their rounds at hand, not six assault rifles' magazines), the team's rounds by calibre, and the
-  // shotgunners' shells at hand (packShells). A hunting rifle's rounds go at hand the same way here (SHELLS.CARRY of its
-  // load): a trip packs them only for shotguns today, and a hand-loaded rifle with none on it fires what the fight's
-  // start put in it and no more (the fit is of a squad kitted for the core, not of that gap).
+  // loose rounds at hand of every gun (packShells: carrykit.js looseWant).
   const armory = [];
   for (const s of people) { const g = s.gear.weapon, mk = g ? standardMag(g.key) : null; if (mk && !usesInternal(g.key, g)) for (let j = 0; j < CARRY.PACK.rifle; j++) armory.push(newItem(mk)); }
   packMags(armory, people);
-  const full = people.reduce((a, s) => { const g = s.gear.weapon, W = g && WEAPONS[g.key]; if (!W || !calOf(g.key)) return a; return a + (W.cap || 0) + (usesInternal(g.key, g) ? SHELLS.CARRY : carriedSpots(s).filter((x) => isMag(x.item)).reduce((m, x) => m + MAGAZINES[x.item.key].cap, 0)); }, 0);
+  const full = people.reduce((a, s) => { const g = s.gear.weapon, W = g && WEAPONS[g.key]; if (!W || !calOf(g.key)) return a; return a + (W.cap || 0) + looseWant(g) + carriedSpots(s).filter((x) => isMag(x.item)).reduce((m, x) => m + MAGAZINES[x.item.key].cap, 0); }, 0);
   p.supplies.ammo = Math.max(ammo, full);
   settleParty(st, p);
   if (packed) packShells(p.supplies, people);
-  if (packed) for (const s of people) {
-    const g = s.gear.weapon, cal = g ? calOf(g.key) : null;
-    if (!cal || !usesInternal(g.key, g) || SHELLS.GUNS[g.key]) continue;
-    const key = keyFor(cal, typeFor(cal, g.load)), q = Math.min(SHELLS.CARRY, Math.floor(p.supplies[key] || 0));
-    if (q > 0 && stow(s, roundItem(key, q, true))) p.supplies[key] -= q;
-  }
   const t = hiveTier(st, hv);
   const hp = HC.coreForce(st, hv).hp;
   const p20 = HC.HM_STATS.phase2, b0 = HC.HM_STATS.burned, s0 = HC.HM_STATS.stunned;

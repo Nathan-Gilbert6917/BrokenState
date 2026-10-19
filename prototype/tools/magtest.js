@@ -13,7 +13,7 @@
 // keeps the magazines, a weapon swapped mid-raid (refitUnit), magazines as items (a physical swap, a top-up by hand, a
 // type asked for by name, a drum), internal magazines (6 a Reload, a clip when picked), the UI's Reload button and I key.
 // Usage: node tools/magtest.js [seed]
-import { setRounds, giveRounds, newBox } from "../src/sim/ammo.js"; // rounds by calibre
+import { setRounds, giveRounds, newBox, boxesOf, sweepBoxes } from "../src/sim/ammo.js"; // rounds by calibre
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import {
   WEAPONS, createBattle, combatAct, registerCombatHandler, runEnemyPhase, enemyStep, endPlayerTurn, autoPlayerTurn, canFire,
@@ -159,6 +159,7 @@ const rounds = (s, key) => carriedSpots(s).filter((x) => x.item.key === key).red
   const why = reloadRefusal(b, p);
   check(/^No ammo to load: no loaded spare magazine, and no rounds for the 9mm pistol/.test(why) && /none in their pockets, rig or pack/.test(why) && /The base's 3 are in its stock, not to hand in a fight/.test(why), `no loaded spare and nothing loose on them: refused, the base's 3 named as out of reach ("${why}")`);
   // The rifle: an internal magazine, loose rounds out of a pocket; the rounds leave the pocket as they go in.
+  for (const it of boxesOf(c)) it.dur = 0; sweepBoxes(c); // (the test empties what the rifle took to the field at hand: carrykit.js looseWant)
   q.ap = 2; loadMag(q, 1); setAmmo(4);
   check(/^No ammo to load: no \.308/.test(reloadRefusal(b, q)) && /base's 4 are in its stock/.test(reloadRefusal(b, q)) && combatAct(st, { type: "reload", unit: q.id }) !== "" && q.ap === 2, "a rifle at 1/5 with 4 in the stock and none on them: refused, nothing spent (the stock is not a source)");
   c.pockets[0] = roundItem("a_308_fmj", 4, true);

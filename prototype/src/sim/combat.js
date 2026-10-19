@@ -106,7 +106,7 @@ import { bandize, settleBand } from "./bands.js"; // nomad bands and visitors: t
 import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit, blastBox, blastPiles } from "./launchers.js";
 import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, isShellGun, isMag, magEntryAt, loadMagPlan, loadMagFrom, fillUnit, spares as spareMags, isStacked, syncMags, unloadMagPlan, unloadMagFrom } from "./mags.js";
 import { stackN, takeTop } from "./roundstack.js"; // physical rounds in a gun (loadMag) // magazines as items (section 15): spares, reload sources (a pocket or the rig 1 action, the pack both), top-up, internal magazines
-import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate, packShells as handOutShells } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines; a base's shotgunners' shells out of its stock (handOutShells: packShells is the AI's Get shells check below)
+import { weighPlayer, kitEnemy, unitMagItems, withMags, plateSwapPlan, swapPlate, packShells as handOutShells } from "./carrykit.js"; // the kit's weight: battle mob by load band (R17); enemies' rigs and magazines; a base's defenders' loose rounds out of its stock (handOutShells: packShells is the AI's Get shells check below)
 import { allCarried, carriedSpots, stow } from "./inventory.js";
 import { parseLoc, itemAt, moveItem, slotKind, fitReason, splitAt, openAt, boxAt as boxRoundsAt, rigOf, pouchesOf } from "./inventory.js"; // the survivor's inventory in a fight (combatAct "inv"; boxAt here is a raid's container)
 import { amountOf, canStack, isRoundItem } from "./itemstack.js";
@@ -3683,8 +3683,9 @@ export function createBattle(state, setup) {
   const party = setup.partyId ? state.parties.find((x) => x.id === setup.partyId) : null;
   const base = setup.baseId ? state.bases.find((x) => x.id === setup.baseId) : null;
   if (party) settleParty(state, party); else if (base) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened)
-  // A shotgun loads only from the shells on the person (mags.js SHELLS), so a base's defenders grab theirs out of its
-  // stock as the fight starts, as a team packing for a trip does (carrykit.js packShells: a pocket or a rig pouch).
+  // A gun reloads only from the rounds on the person (mags.js), so a base's defenders grab their loose rounds out of its
+  // stock as the fight starts, as a team packing for a trip does (carrykit.js packShells and looseWant: a pocket or a
+  // rig pouch).
   const shellLines = base && !party ? handOutShells(base.stock, combatants(state, setup)) : [];
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.

@@ -502,7 +502,10 @@ console.log("The autopilot's gate to the core, and its kit");
     const shots0 = HC.HIVEMIND.REACH.shots; HC.HIVEMIND.REACH.shots = 30; // a fight longer than the gun and the handful
     const sus = [HC.fireOf(pump, false).sustain, HC.fireOf(pump, true).sustain];
     HC.HIVEMIND.REACH.shots = shots0;
-    check(sus[1] > sus[0], `the gate counts the shells a trip packs at hand (a pump's sustained fire over 30 shots ${sus[0].toFixed(2)} → ${sus[1].toFixed(2)}: a Reload from the pack takes both actions, physical rounds)`);
+    // Physical rounds (mags.js): a Reload loads by hand up to MAGS.LOOSE out of what the shooter carries, the rounds at
+    // hand (pockets, rig) in 1 action, the pack's in both; a trip packs every gun's loose rounds at hand (carrykit.js
+    // packShells, looseWant), so a packed pump keeps up its fire better.
+    check(sus[1] > sus[0] && sus[0] < 1, `the gate counts the rounds a trip packs at hand (a pump's sustained fire over 30 shots ${sus[0].toFixed(2)} → ${sus[1].toFixed(2)})`);
     const shotTeam = [0, 1, 2, 3, 4, 5].map(() => one("shotgun", 7)), rifleTeam = [0, 1, 2, 3, 4, 5].map(() => one("huntrifle", 7));
     check(HC.coreFire(shotTeam, true).mult < HC.coreFire(rifleTeam, true).mult, `by the numbers six pumps count for less at the core than six hunting rifles of the same power (× ${HC.coreFire(shotTeam, true).mult.toFixed(2)} against × ${HC.coreFire(rifleTeam, true).mult.toFixed(2)})`);
   }
