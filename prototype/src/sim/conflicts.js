@@ -64,7 +64,7 @@ import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numb
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your caravan's route lies in wait
 import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a gun off their dead
 import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more run-ins
-import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 
 // ---------- small helpers ----------
@@ -282,7 +282,9 @@ export const allCaptives = (state) => state.survivors.filter(isCaptive);
 export function takeCaptive(state, s, f, p) {
   if (p) p.members = p.members.filter((id) => id !== s.id);
   // Everything on them is taken: worn, held, pockets and pack (inventory.js).
-  for (const g of stripAll(s)) { f.lootedGear.push(`${first(s)}'s ${g.name}`); keepItem(state, f, g, "stolen"); } // arsenal.js: the kit onto their books, the rest on their shelf
+  const kit = stripAll(s);
+  note(state, "taken from you", goodsRounds(kit)); // ledger.js: the rounds in their guns, magazines and boxes come over to the AI side
+  for (const g of kit) { f.lootedGear.push(`${first(s)}'s ${g.name}`); keepItem(state, f, g, "stolen"); } // arsenal.js: the kit onto their books, the rest on their shelf
   s.station = null;
   // fresh: their captors have still to find room for them (groupjails.js groupJailsHour: jailed, or sold, ransomed at
   // once, let go or killed when their jail is full).
@@ -309,7 +311,7 @@ function endIfEmpty(state, p, f) {
   if (!state.parties.includes(p) || partyMembers(state, p).length) return false;
   for (const v of partyVehicles(state, p)) { // every one of the team's (vehicles.js fleets)
     state.vehicles.splice(state.vehicles.indexOf(v), 1);
-    if (f) captureVehicle(f, v); // arsenal.js: it is theirs now (f.vehicles)
+    if (f) captureVehicle(f, v, state); // arsenal.js: it is theirs now (f.vehicles), and anything left in it
     log(state, `${f ? f.name : "They"} took the ${v.name}.`, "danger");
   }
   if (f) {

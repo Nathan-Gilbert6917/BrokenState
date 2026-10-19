@@ -12,7 +12,7 @@ import { newItem, lootItem, allCarried } from "../src/sim/inventory.js";
 import { groupArmory } from "../src/sim/rescueraid.js";
 import { fitMod } from "../src/sim/gunmods.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
-import { createVehicle, factionVehicles, upgradesOf, vehicleValue } from "../src/sim/vehicles.js";
+import { createVehicle, factionVehicles, upgradesOf, vehicleValue, seizeGroupVehicles } from "../src/sim/vehicles.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { worksAt } from "../src/sim/groupworks.js";
 import { newNeutralGroup, wanderersDaily } from "../src/sim/wanderers.js";
@@ -31,6 +31,7 @@ import { openCaravanTrade, tradeContext, endTrade } from "../src/sim/trade.js";
 import { openRadioTrade } from "../src/sim/radiotrade.js";
 import { carRecord, claimCar } from "../src/sim/foundcars.js";
 import { planPath } from "../src/sim/parties.js";
+import { ensureMembers } from "../src/sim/members.js";
 
 const seed = Number(process.argv[2] || 7);
 let passed = 0, failed = 0;
@@ -294,16 +295,39 @@ section("Desertion and recruiting");
   const rai = typed(s2, "raider", [com]);
   setFood(rai, rai.pop * 10);
   check(C.wandererJoinChance(s2, rai, { mood: "wary" }) === C.wandererJoinChance(s2, rai, { mood: "desperate" }) && C.wandererJoinChance(s2, rai, { mood: "wary" }) > C.wandererJoinChance(s2, com, { mood: "wary" }), "raiders press-gang: the wary go along as well");
-  // Your deserter joins a group near the base they left.
+  { // Your deserter joins a group near the base they left.
   const s3 = world(seed + 3), h3 = hub(s3);
   s3.factions[0].bases.push(s3.grid.within(h3.tile, 4).find((t) => s3.grid.distance(t, h3.tile) === 4));
   const d = atBase(s3, h3.id)[0];
   d.gear.weapon = newItem("shotgun", 0.9);
   const sg = d.gear.weapon;
+  // docs/adr/0001-ai-parity.md: they go over as the very person, with everything they carry (worn, the pockets, the
+  // pack) and what they took from your stores when they left, not as a newcomer made for the group.
+  d.gear.backpack = newItem("hikingpack");
+  const mreal = newItem("bandagekit"), torch = newItem("flashlight");
+  d.pockets[0] = mreal;
+  d.gear.backpack.contents = d.gear.backpack.contents || [];
+  d.gear.backpack.contents[0] = torch;
+  const had = allCarried(d), name = d.name, id0 = d.id, skills0 = JSON.stringify(d.skills), traits0 = JSON.stringify(d.traits);
   d.alive = false; d.left = true;
-  s3.deserters = [{ id: d.id, baseId: h3.id, day: 0, took: {} }];
+  s3.deserters = [{ id: d.id, baseId: h3.id, day: 0, took: { a_9mm_fmj: 12, meds: 2 } }];
+  s3.ledgerOn = true; s3.ledger = { total: 0, by: {} };
+  const fj = s3.factions.filter((x) => x.alive && !x.outsider && x.bases.length).sort((a, b) => Math.min(...a.bases.map((t) => s3.grid.distance(t, h3.tile))) - Math.min(...b.bases.map((t) => s3.grid.distance(t, h3.tile))) || a.id - b.id)[0];
+  if (fj) ensureMembers(s3, fj); // (their list exists before the join)
+  const pop0 = fj ? fj.pop : 0, list0 = fj && fj.people ? fj.people.length : 0, rounds0 = fj ? fj.stock.a_9mm_fmj || 0 : 0, meds0 = fj ? fj.stock.meds || 0 : 0;
   const joined = C.playerDeserters(s3, 30, true);
   check(joined.length === 1 && joined[0].f.arsenal.items.includes(sg), `your deserter ${d.name} joined ${joined[0] && joined[0].f.name}, with the shotgun`);
+  const who = joined[0] && joined[0].s, f3 = joined[0] && joined[0].f;
+  check(!!who && who === d && f3 === fj && f3.people.includes(who) && who.name === name && JSON.stringify(who.skills) === skills0 && JSON.stringify(who.traits) === traits0 && who.alive && who.fid === f3.id && f3.pop === pop0 + 1 && f3.people.length === list0 + 1, `the very person joins their list (${name}, their skills and traits; ${f3 && f3.name} ${pop0} → ${f3 && f3.pop}), not a newcomer`);
+  const now = who ? allCarried(who) : [];
+  check(had.length > 0 && had.every((it) => now.includes(it)) && now.length === had.length && who.pockets.includes(mreal) && who.gear.backpack && who.gear.backpack.contents.includes(torch), `with everything they carried, where they carried it (${now.length} pieces: the gun, the pack and the torch in it, the bandages in a pocket)`);
+  const stub = s3.survivors.find((x) => x.id === id0);
+  check(!!stub && stub !== who && !stub.alive && stub.left && stub.joinedGroup === f3.id && stub.name === name && !allCarried(stub).length && !s3.survivors.includes(who) && who.id !== id0 && who.formerId === id0, `your list keeps a stub of who they were (${stub && stub.name}, gone to ${f3 && f3.name}, carrying nothing); the person takes a member's id`);
+  check(f3 && (f3.stock.a_9mm_fmj || 0) === rounds0 + 12 && (f3.stock.meds || 0) === meds0 + 2, `what they took from your stores goes into the group's (9mm ${rounds0} → ${f3 && f3.stock.a_9mm_fmj}, meds ${meds0} → ${f3 && f3.stock.meds})`);
+  check(s3.ledger.by["a deserter of yours"] >= 12, `the rounds that came over are noted (ledger.js: ${JSON.stringify(s3.ledger.by)})`);
+  const everywhere = [...s3.survivors.filter((x) => x.alive !== false), ...s3.factions.flatMap((x) => x.people || []).filter((x) => x.alive !== false)].flatMap((x) => allCarried(x));
+  check(had.every((it) => everywhere.filter((y) => y === it).length === 1), "each of their things is in one place: on them (nothing duplicated, nothing lost)");
+  }
 }
 
 // ======================================================================================
@@ -407,6 +431,44 @@ section("Vehicles: found, taken, repaired, fitted out, stolen, traded");
   const theirs = factionVehicles(tr)[0];
   const got = G.buyVehicleFrom(st, tr, theirs, h, createVehicle);
   check(got && got.v && got.v.loc.baseId === h.id && !factionVehicles(tr).includes(theirs), `you buy their ${theirs.name} for ${got && got.price}`);
+  // A vehicle's cargo goes with it (vehicles.js carryCargo: your vehicles' model for their records too, audit 5.15).
+  st.ledgerOn = true; st.ledger = { total: 0, by: {} };
+  const left = createVehicle(st, "van", { kind: "abandoned", tile: rai.bases[0], since: 0 }, { condition: 50 });
+  const vest = newItem("vest", 0.8), tin = newItem("bandagekit");
+  left.cargo = { supplies: { scrap: 7, a_9mm_fmj: 20 }, gear: [vest, tin] };
+  const sc0 = rai.stock.scrap || 0, r9 = rai.stock.a_9mm_fmj || 0;
+  const took = G.takeVehicle(st, rai, left);
+  const kept = (it) => rai.arsenal.items.includes(it) || (rai.wares || []).includes(it);
+  check(took && !took.cargo && rai.stock.scrap === sc0 + 7 && rai.stock.a_9mm_fmj === r9 + 20 && kept(vest) && kept(tin), `a car of yours left with cargo in it: the group that takes it unloads it at home (scrap +7, 9mm +20, the vest and the bandages kept; it was lost)`);
+  check(st.ledger.by["taken from you"] === 20, `the 20 rounds are noted as taken from you (ledger.js: ${JSON.stringify(st.ledger.by)})`);
+  const vests = (f) => [...f.arsenal.items, ...(f.wares || [])].filter((it) => it === vest).length;
+  // From a group to a group: stolen, the cargo goes with it into the thieves' stores.
+  const pick = factionVehicles(rai).filter((v) => v.condition > 0).sort((a, c) => (upgradesOf(a).turret ? 1 : 0) - (upgradesOf(c).turret ? 1 : 0) || a.condition - c.condition)[0]; // the one they take (groupworld.js stealFromGroup)
+  pick.cargo = { supplies: { parts: 4 }, gear: [newItem("pipebomb")] };
+  const bomb = pick.cargo.gear[0], mp0 = mil.stock.parts || 0;
+  const back = G.stealFromGroup(st, mil, rai);
+  check(back === pick && !back.cargo && (mil.stock.parts || 0) - mp0 >= 4 && (mil.arsenal.items.includes(bomb) || (mil.wares || []).includes(bomb)) && vests(rai) === 1, `stolen between groups: what is in it goes to the thieves (parts +${(mil.stock.parts || 0) - mp0}, the pipe bomb)`);
+  // Yours sold to them: its cargo stays with you, all of it (the items too: they were dropped).
+  const van = createVehicle(st, "van", { kind: "base", baseId: h.id }, { condition: 80 });
+  const radio = newItem("flashlight");
+  van.cargo = { supplies: { meds: 3 }, gear: [radio] };
+  const hm0 = h.stock.meds || 0;
+  buyer.stock.scrap = 4000;
+  const sold2 = G.sellVehicleTo(st, buyer, van, h);
+  check(sold2 && h.armory.includes(radio) && (h.stock.meds || 0) === hm0 + 3 && !factionVehicles(buyer).some((r) => r.cargo), "you sell a van with cargo in it: the cargo stays at your base, the flashlight too");
+  // Theirs bought by you: its cargo stays with them, as yours stays with you.
+  const tv = factionVehicles(tr)[0];
+  tv.cargo = { supplies: { fuel: 5 }, gear: [] };
+  const tf0 = tr.stock.fuel || 0;
+  h.stock.scrap = 4000;
+  const got2 = G.buyVehicleFrom(st, tr, tv, h, createVehicle);
+  check(got2 && got2.v && !got2.v.cargo && (tr.stock.fuel || 0) === tf0 + 5, `you buy their van: what was in it stays with them (fuel ${tf0} → ${tr.stock.fuel})`);
+  // Their base taken: what is in their vehicles is the base's now (vehicles.js seizeGroupVehicles), even a wreck's.
+  const wreck = { id: "t-wreck", type: "truck", name: "Burnt-out pickup", fuel: 0, condition: 0, owner: mil.id, cargo: { supplies: { carparts: 2 }, gear: [newItem("machete")] } };
+  factionVehicles(mil).push(wreck);
+  const machete = wreck.cargo.gear[0], cp0 = h.stock.carparts || 0;
+  const seized = seizeGroupVehicles(st, mil, h);
+  check(seized.length > 0 && h.armory.includes(machete) && (h.stock.carparts || 0) === cp0 + 2 && !factionVehicles(mil).length, `their motor pool seized with their base: ${seized.length} running, and the wreck's cargo into your stores`);
 }
 
 // ======================================================================================

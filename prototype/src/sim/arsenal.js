@@ -44,7 +44,7 @@ import { GEAR, FACTION_TYPES, LOCATIONS, supValue } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
 import { lootItem, isCarrier, insertsOf, allCarried, salvageYield } from "./inventory.js";
 import { isRoundItem } from "./itemstack.js"; // loose rounds are the stores', not the books
-import { note, goodsRounds } from "./ledger.js"; // the conservation ledger (a test switch)
+import { note, goodsRounds, roundsIn } from "./ledger.js"; // the conservation ledger (a test switch)
 import { scavBlade } from "./blades.js"; // knives and swords their scavengers find
 import { scavSurv } from "./survival.js"; // survival gear their scavengers find
 import { scavGun } from "./gunfinds.js"; // the newer guns their scavengers find (the same table as your searches)
@@ -58,7 +58,7 @@ import { isEarKey, issueEars, starterHeadgear } from "./helmets.js"; // helmets 
 import { enemyPieces, armourSpec, armourBroken } from "./armour.js"; // its armour pieces: the arsenal's items themselves (their wear)
 import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { day, factionById } from "./world.js";
-import { factionVehicles, groupTurret } from "./vehicles.js";
+import { factionVehicles, groupTurret, carryCargo, cargoIn } from "./vehicles.js";
 import { workshopFactor, groupSkill, groupKnows, groupHas, canPayParts, payParts } from "./groupworks.js"; // ai-locks: their crafting by your rules
 import { CRAFTS, craftRoll, craftQuality, craftItem, craftXp, CRAFT_SKILL } from "./crafting.js"; // ai-locks: their crafting is your recipes, your crafting rolls
 import { LOCKED } from "./blueprints.js"; // ai-locks: and your manuals
@@ -1057,13 +1057,33 @@ export function smokeCover(state, f, loss) {
   for (const it of smoke.slice(0, n)) removeFromArsenal(f, it, "thrown");
   return Math.min(loss - 1, n * S.PER);
 }
-// A vehicle that falls to a group (your team taken whole: conflicts.js endIfEmpty; a broken group's motor pool).
-export function captureVehicle(f, v) {
+// A vehicle that falls to a group (your team taken whole: conflicts.js endIfEmpty; a broken group's motor pool). What
+// is in it goes with it (vehicles.js carryCargo) and, with state, into the group's stores as they drive it home
+// (unloadVehicle).
+export function captureVehicle(f, v, state = null) {
   if (!f || !v) return null;
   const rec = { id: `f${f.id}-v${v.id}`, type: v.type, name: v.name, fuel: v.fuel || 0, condition: v.condition ?? 60, owner: f.id };
   if (v.upgrades) rec.upgrades = JSON.parse(JSON.stringify(v.upgrades));
+  carryCargo(v, rec);
   factionVehicles(f).push(rec);
+  if (state) unloadVehicle(state, f, rec, "taken from you");
   return rec;
+}
+// What is in a vehicle of a group's motor pool (vehicles.js carryCargo: a car of yours left on a tile with cargo in it,
+// one taken with your team, one stolen, bought or taken from another group) goes into its stores as your team's
+// cargo does when it gets home: supplies into its stock, kit onto its books and the rest onto its shelf (keepItem:
+// nothing lost, nothing made). Rounds that come from outside the AI side are noted (ledger.js: why); between two
+// groups (fromAI) they are a transfer. Returns the items unloaded.
+export function unloadVehicle(state, f, rec, why = "a vehicle's cargo", fromAI = false) {
+  if (!f || !rec) return [];
+  const c = cargoIn(rec);
+  delete rec.cargo;
+  if (!c) return [];
+  const items = (c.gear || []).filter(Boolean);
+  if (!fromAI) note(state, why, roundsIn(c.supplies) + goodsRounds(items));
+  for (const [k, q] of Object.entries(c.supplies || {})) if (q > 0) { const tk = k === "rawwater" ? "water" : k; f.stock[tk] = (f.stock[tk] || 0) + q; } // one water pool (trade.js poolKey); food items by key (foods.js)
+  for (const it of items) keepItem(state, f, it, why);
+  return items;
 }
 // A group that takes over a broken one (factions.js takeOver): everything it owned that its people did not carry off
 // (the movers took theirs: members.js moveMember), its shelf, its vehicles. Nothing is lost (docs/adr/0001-ai-parity.md).
@@ -1071,7 +1091,7 @@ export function inheritArsenal(state, heir, f) {
   if (!heir || !f || !f.arsenal || !ensureArsenal(state, heir)) return;
   for (const it of f.arsenal.items.slice()) { removeFromArsenal(f, it, "taken"); keepItem(state, heir, it, "taken"); }
   for (const it of (f.wares || []).splice(0)) keepItem(state, heir, it, "taken");
-  for (const v of factionVehicles(f).splice(0)) { v.owner = heir.id; factionVehicles(heir).push(v); }
+  for (const v of factionVehicles(f).splice(0)) { v.owner = heir.id; factionVehicles(heir).push(v); unloadVehicle(state, heir, v, "taken", true); } // what is in them too
 }
 // A share of their spare kit to a place of yours (conquest.js captureBase: their stores at the base you took).
 export function arsenalShareTo(state, f, frac, into) {

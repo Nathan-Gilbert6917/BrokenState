@@ -55,10 +55,10 @@ import { groupStockKey } from "./trade.js"; // a group's one count of parts (par
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
 import { hash01 } from "./skills.js";
-import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT, VEH_UPGRADES, WRECK } from "./vehicles.js";
+import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT, VEH_UPGRADES, WRECK, carryCargo, cargoToBase } from "./vehicles.js";
 import { workshopFactor, worksAt, groupSkill, groupFreeParts } from "./groupworks.js";
 import { weightOf, tickOf, fitPeople } from "./groupcare.js";
-import { removeFromArsenal, issueKit } from "./arsenal.js";
+import { removeFromArsenal, issueKit, unloadVehicle } from "./arsenal.js"; // unloadVehicle: what is in a vehicle into their stores
 import { relation, changeRelation, pactBetween } from "./diplomacy.js"; // changeRelation: also a group moving into another's old base
 import { captivesOf } from "./conflicts.js";
 import { preparedDefense, strength, recomputeOwnership } from "./factions.js";
@@ -259,16 +259,19 @@ function record(f, v, extra = {}) {
   f.vehSeq = (f.vehSeq || 0) + 1;
   const rec = { id: `f${f.id}-g${f.vehSeq}${extra.salt || ""}`, type: v.type, name: v.name, fuel: Math.round(v.fuel || 0), condition: Math.round(v.condition ?? 60), owner: f.id };
   if (v.upgrades) rec.upgrades = JSON.parse(JSON.stringify(v.upgrades));
+  carryCargo(v, rec); // vehicles.js: what is in it goes with it
   factionVehicles(f).push(rec);
   return rec;
 }
-// One of yours (or one left on the map) into a group's motor pool.
+// One of yours (or one left on the map) into a group's motor pool, with what was left in it (parties.js leaveVehicle:
+// a team's cargo it could not carry on foot): driven home and unloaded into their stores (arsenal.js unloadVehicle).
 export function takeVehicle(state, f, v, why = "took") {
   const i = state.vehicles.indexOf(v);
   if (i < 0) return null;
   state.vehicles.splice(i, 1);
   for (let j = state.markers.length - 1; j >= 0; j--) if (state.markers[j].key === `vehicle:${v.id}`) state.markers.splice(j, 1);
   const rec = record(f, v);
+  unloadVehicle(state, f, rec, "taken from you");
   f.vehiclesTaken = (f.vehiclesTaken || 0) + 1;
   return rec;
 }
@@ -314,6 +317,7 @@ export function stealFromGroup(state, f, o, d = day(state)) {
   factionVehicles(o).splice(factionVehicles(o).indexOf(v), 1);
   v.owner = f.id;
   factionVehicles(f).push(v);
+  unloadVehicle(state, f, v, "stolen", true); // anything in it is the thieves' too (a transfer between groups)
   f.vehiclesStolen = (f.vehiclesStolen || 0) + 1;
   if (h(state, f.name, o.name, tickOf(f), "found") < 0.5) {
     changeRelation(state, f, o, -15);
@@ -347,6 +351,7 @@ export function sellBetween(state, f, buyer) {
   const worth = ["scrap", "fuel", "ammo", "parts", "food", "meds"].reduce((a, k) => a + Math.max(0, (k === "food" ? foodIn(buyer.stock) : buyer.stock[k] || 0) - (k === "food" ? 20 : 0)) * (k === "food" ? DAY_VALUE : (SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
   if (worth < price) return null;
   payGoods(buyer.stock, f.stock, price);
+  unloadVehicle(state, f, v, "kept", true); // what is in it stays with the seller (as yours does: vehicletrade.js sellVehicle)
   factionVehicles(f).splice(factionVehicles(f).indexOf(v), 1);
   v.owner = buyer.id;
   factionVehicles(buyer).push(v);
@@ -358,7 +363,7 @@ export function sellVehicleTo(state, f, v, base) {
   if (!v || !base || v.type === "bike") return null;
   const price = vehiclePrice(f, v);
   const { paid, short } = payGoods(f.stock, base.stock, price);
-  if (v.cargo && v.cargo.supplies) for (const [k, q] of Object.entries(v.cargo.supplies)) base.stock[k] = (base.stock[k] || 0) + q;
+  cargoToBase(base, v); // vehicles.js: its supplies into the stores, its items into the armory (none of it sold)
   takeVehicle(state, f, v);
   return { price, paid, short };
 }
@@ -370,6 +375,7 @@ export function buyVehicleFrom(state, f, rec, base, createVehicle) {
   const worth = ["scrap", "fuel", "ammo", "parts", "food", "meds"].reduce((a, k) => a + Math.max(0, k === "food" ? foodIn(base.stock) : base.stock[k] || 0) * (k === "food" ? DAY_VALUE : (SUPPLIES[k] && SUPPLIES[k].value) || 1), 0);
   if (worth < price) return { refused: `They want goods worth ${price}.` };
   payGoods(base.stock, f.stock, price);
+  unloadVehicle(state, f, rec, "kept", true); // what is in it stays with them (as yours does when you sell)
   factionVehicles(f).splice(i, 1);
   const v = createVehicle(state, VEHICLE_TYPES[rec.type] ? rec.type : "truck", { kind: "base", baseId: base.id }, { fuel: rec.fuel, condition: rec.condition, name: rec.name });
   if (rec.upgrades) v.upgrades = JSON.parse(JSON.stringify(rec.upgrades));

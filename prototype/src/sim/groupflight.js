@@ -39,7 +39,7 @@ import { hordeWallPower } from "./hordes.js";
 import { relation, pactBetween } from "./diplomacy.js";
 import { sameBloc } from "./blocs.js";
 import { canHearGroup } from "./radio.js";
-import { removeFromArsenal, addToArsenal } from "./arsenal.js";
+import { removeFromArsenal, addToArsenal, unloadVehicle } from "./arsenal.js";
 import { tileLabel } from "./parties.js";
 import { syncMembers, membersOf, ensureMembers, moveMember } from "./members.js"; // a group taken in by an ally: its people go over
 
@@ -157,7 +157,7 @@ function joinAlly(state, f, ally, tile) {
   for (const [k, q] of Object.entries(f.stock)) if (q > 0) ally.stock[k] = (ally.stock[k] || 0) + q;
   if (f.arsenal) for (const it of [...f.arsenal.items]) { removeFromArsenal(f, it, "joined"); addToArsenal(state, ally, it, "joined"); }
   if (ally.arsenal) ally.arsenal.pop0 = ally.pop;
-  for (const v of factionVehicles(f).splice(0)) { v.owner = ally.id; factionVehicles(ally).push(v); }
+  for (const v of factionVehicles(f).splice(0)) { v.owner = ally.id; factionVehicles(ally).push(v); unloadVehicle(state, ally, v, "joined", true); } // what is in them too (vehicles.js carryCargo)
   ally.wounded = (ally.wounded || 0) + (f.wounded || 0);
   f.pop = 0;
   f.joinedAlly = ally.id;

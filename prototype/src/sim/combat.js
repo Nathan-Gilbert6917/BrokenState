@@ -4849,10 +4849,8 @@ export function combatAct(state, act) {
       break;
     }
     case "crush": { // carriers.js: crush the skull of a body next to the unit, so the worm cannot raise it (1 action, silent)
-      const err = crush(b, u, t);
+      const err = crushAct(b, u, t);
       if (err) return err;
-      u.ap -= 1;
-      u.hunker = false;
       break;
     }
     case "doubletap": { // carriers.js: a round through a body's head from range (1 action, ammo, the noise of a shot)
@@ -5166,6 +5164,29 @@ function bestMove(b, u, foes, field = null) {
   return best;
 }
 
+// Crush the skull of a body next to the unit (carriers.js crush): 1 action, silent. The one path for an order of yours
+// (combatAct "crush") and for any side's AI (aiRepertoire). Returns "" or why not.
+function crushAct(b, u, t) {
+  const err = crush(b, u, t);
+  if (err) return err;
+  u.ap -= 1;
+  u.hunker = false;
+  return "";
+}
+// Your bots' repertoire for everyone else's people (docs/adr/0001-ai-parity.md: one brain): a decoy to pull the dead
+// off their side (decoys.js botDecoy) and the skull of a body in danger next to them crushed before it gets up
+// (carriers.js botCrush), by the same rules and for the same actions. A person not yours throws only a decoy they
+// carried into the fight (u.who: stealth.js throwablesOf), taken off them as they throw it. Yours are offered both by
+// autoPlayerTurn in its own order (the volunteers with you, played by aiUnit, take them here). Returns true when the
+// unit's turn is spent.
+function aiRepertoire(b, u) {
+  if (u.kind !== "human" || !u.who || u.sid != null) return false;
+  if (botDecoy(null, b, u) && (u.ap < 1 || !active(u))) return true;
+  const skull = botCrush(b, u);
+  if (skull) crushAct(b, u, unitById(b, skull.target));
+  return u.ap < 1 || !active(u);
+}
+
 function aiUnit(b, u) {
   if (!active(u)) return;
   if (u.gunner) return gunnerAI(b, u); // a turret's gunner (either side): stays on the gun
@@ -5206,6 +5227,7 @@ function aiUnit(b, u) {
   // raiders finishing (or taking) your downed. The rest of the turn goes on as usual.
   if (u.kind === "human" && MED.rescueTurn(b, u, flees) && (u.ap < 1 || !active(u))) return;
   if (flees) return flee(b, u);
+  if (aiRepertoire(b, u)) return; // decoys.js, carriers.js: a decoy on the dead pressing them, a body in danger crushed (as your bots do)
   if (u.side === "enemy" && u.kind === "human" && thiefTurn(b, u)) return; // basemap.js: a raider going for the stores, or off the map with the loot
   if (u.kind === "human" && (u.side === "enemy" || (u.side === "player" && b.takeAlive)) && nlAI(b, u)) return; // nonlethal.js: tie up, spray, tase, club down the weak
   if (u.side === "enemy" && u.kind === "human" && siegeAI(b, u)) return; // siege.js: the ram, a ladder, storming, a grenade

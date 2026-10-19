@@ -40,7 +40,9 @@
 // own deserters who do not come back may join a group near the base they left (playerDeserters).
 // Every roll is a hash (skills.js hash01): the world's dice are not touched (bar a recruit card's own).
 import { totalRounds, spendAmmo } from "./rounds.js"; // a group's rounds by calibre
-import { MEMBER, woundMembersBy, syncMembers, homeMembers, removeMember, addMember } from "./members.js"; // the wounded are people
+import { MEMBER, woundMembersBy, syncMembers, homeMembers, removeMember, addMember, joinFromYours } from "./members.js"; // the wounded are people
+import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { carriedRounds } from "./loadouts.js"; // the rounds on a person
 import { groupMedicalDaily } from "./groupmedical.js"; // and heal by your rules
 import { moveFoodUnits, DAY_VALUE, foodIn } from "./foods.js"; // food by type (foods.js)
 import { groupDietPressure } from "./eating.js"; // their rations and the sameness of their food (wave 2 eating)
@@ -579,6 +581,20 @@ export function wandererJoins(state, f, wg) {
   f.recruitedWanderers = (f.recruitedWanderers || 0) + n;
   return n;
 }
+// One of yours joins a group (a deserter: playerDeserters; a convert: playerwars.js): the very person, in its list
+// with everything they carry (members.js joinFromYours: a stub of who they were stays in yours), not a newcomer made
+// for it. Their kit goes onto the group's books as a recruit's does (wandererJoins), the rest stays on them; what they
+// brought besides (took: supplies by key, a deserter's haul from your stores) goes into the group's stock. The rounds
+// come over from your side (ledger.js note). Returns the person.
+export function takeInFromYours(state, f, s, why, took = {}) {
+  const rounds = carriedRounds(s) + roundsIn(took);
+  const who = joinFromYours(state, f, s);
+  for (const it of allCarried(who)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, why);
+  if (f.arsenal) f.arsenal.pop0 = f.pop; // their kit came with them (arsenalDaily's newcomers' guns are for the others)
+  for (const [k, q] of Object.entries(took || {})) if (q > 0) { const tk = k === "rawwater" ? "water" : k; f.stock[tk] = (f.stock[tk] || 0) + q; } // one water pool (trade.js poolKey); food items by key (foods.js)
+  note(state, `a ${why} of yours`, rounds);
+  return who;
+}
 // Your deserters who do not come back (recruits.js RETURN) may join a group near the base they left.
 export function playerDeserters(state, d = day(state), force = false) {
   const D = CARE.DESERT;
@@ -595,12 +611,9 @@ export function playerDeserters(state, d = day(state), force = false) {
     const f = state.factions.filter((x) => x.alive && !x.outsider && x.bases.length && near(x) <= D.playerRange).sort((a, b) => near(a) - near(b) || a.id - b.id)[0];
     if (!f) continue;
     state.deserters.splice(state.deserters.indexOf(e), 1);
-    s.joinedGroup = f.id;
-    f.pop += 1;
-    if (f.arsenal) f.arsenal.pop0 = f.pop;
-    for (const it of stripAll(s)) addToArsenal(state, f, it, "deserter");
-    log(state, `Word on the road: ${s.name}, who walked out on you, has joined ${f.known ? f.name : "a group nearby"}.`, "info");
-    out.push({ s, f });
+    const who = takeInFromYours(state, f, s, "deserter", e.took); // with what they took from your stores when they left (morale.js desertionHaul)
+    log(state, `Word on the road: ${who.name}, who walked out on you, has joined ${f.known ? f.name : "a group nearby"}.`, "info");
+    out.push({ s: who, f });
   }
   return out;
 }
