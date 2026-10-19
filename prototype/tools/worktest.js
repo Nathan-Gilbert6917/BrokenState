@@ -260,6 +260,7 @@ const at = (st, hour) => { st.hour = Math.floor(st.hour / 24) * 24 + hour; };
 {
   section("Emergencies: guard warnings, the sick and hurt rest, a patient in danger, a broken pump");
   const { st, h, ppl } = quiet();
+  addBuilding(h, "walls"); // a stake fence (the hub starts with none since the tiered walls): holds 15 + 18 a tier (defences.js wallHold)
   const r = role(st, "Gen", { farm: 1, guard: 4, scavenge: 3 });
   const f = role(st, "Farm only", { farm: 1, scavenge: 3 });
   join(st, ppl.slice(0, 3), r);

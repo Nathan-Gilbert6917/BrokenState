@@ -278,7 +278,7 @@ export function barHtml(d) {
   const hidden = list.length + more.length - list.filter(canGive).length;
   let note = "";
   if (b.phase === "enemy") note = "Enemy turn: watch the map. Your turn comes next.";
-  else if (b.phase === "deploy") note = b.drill ? "A drill: place your people (the panel), then Save as plan." : `Deploy: click one of your people, then a green cell. Start the fight in the panel (${keyLabel("battle.confirm", 1) || "Enter"}).`;
+  else if (b.phase === "deploy") note = b.layout ? "The base map: pick something in the panel and click where it goes (R turns it); click a placed thing to move it." : b.drill ? "A drill: place your people (the panel), then Save as plan." : `Deploy: click one of your people, then a green cell. Start the fight in the panel (${keyLabel("battle.confirm", 1) || "Enter"}).`;
   else if (d.autoPlay) note = `The AI is playing your side (${keyLabel("battle.autoplay", 1) || "Shift+A"} or Take back control to play again).`;
   else if (!sel) note = "Select one of your people: click them, their tab, or press 1–9 or Tab.";
   else if (sel.dead || sel.left || sel.fled) note = `${first(sel)} is out of the fight: select someone else (Tab).`;

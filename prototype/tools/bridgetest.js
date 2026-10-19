@@ -9,6 +9,7 @@
 //     foot of a bridge barricaded after it set out; AI groups take bridges when they expand
 // Usage: node tools/bridgetest.js [seed] [runs]
 import { setRounds } from "../src/sim/ammo.js";
+import { baseMapSize, yardHalf } from "../src/sim/basemap.js"; // the base map: the hub's battle map size
 import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
 import { launchExpedition, planPath, missionProblem, spawnAiParty, bridgeHolder, bridgeClosedTo, outpostName, partyTile } from "../src/sim/parties.js";
 import { createBattle, registerCombatHandler, CELL, AREAS, raidAreasFor, ROAD, bridgeSpan, combatAct, bash, LOS_DENSE, makeLosCache } from "../src/sim/combat.js";
@@ -477,7 +478,9 @@ for (let i = 0; i < runs; i++) {
   let b;
   try { b = state.combat = createBattle(state, { tile: h.tile, baseId: h.id, enemy: { kind: "zombies", count: 10, power: 3 }, ambush: null, canRetreat: true, handler: "bridgetest", layout: "baseDefence", deploy: true, context: { through: 50 } }); } finally { delete globalThis.window; }
   // The hub's battle is the fort map (fort.js): the yard, the walkway and wall rings and the margin all round.
-  check(b.tier && b.tier.map === "fort" && b.w === yw + 4 + 2 * FORT.MARGIN && b.h >= yh + 4 + 2 * FORT.MARGIN, `the hub fights on the fort map: the yard plus the rings and the margin (${b.w} × ${b.h} for a ${yw} × ${yh} yard)`);
+  // The base map (sim/basemap.js): the hub's own grid cropped to what stands on it plus the margin, the yard inside the ring.
+  const [mw, mh] = baseMapSize(state, h);
+  check(b.tier && b.tier.map === "fort" && b.w === mw && b.h === mh && b.w >= 2 * yardHalf(h) + 4 + 2 * FORT.MARGIN, `the hub fights on its base map: the yard plus the rings and the margin (${b.w} × ${b.h} for a ${2 * yardHalf(h)} × ${2 * yardHalf(h)} yard)`);
   const gatesN = b.cells.filter((c) => c.k === "gate").length, towersN = b.cells.filter((c) => c.k === "tower").length;
   check(gatesN === 4 * FORT.GATE && towersN >= 4, `a gate in the middle of each wall and towers at the corners (${gatesN} gate cells, ${towersN} towers)`);
   const inside = b.units.filter((u) => u.side === "player" && b.tier.interior[u.y * b.w + u.x]).length, outside = b.units.filter((u) => u.side === "enemy" && !b.tier.interior[u.y * b.w + u.x]).length;
@@ -491,7 +494,7 @@ for (let i = 0; i < runs; i++) {
   const dead = b.units.filter((u) => u.side === "enemy").slice(0, 4);
   dead.forEach((z, i) => { z.x = yardCells[i][0]; z.y = yardCells[i][1]; z.aware = true; });
   tierPlayerTurn(state, b);
-  check(b.tier.stage === "yard" && b.tier.map === "fort" && b.w === yw + 4 + 2 * FORT.MARGIN, `four of the dead inside the ring: the yard stage, still on the fort map (${b.tier.stage}, ${b.w} × ${b.h})`);
+  check(b.tier.stage === "yard" && b.tier.map === "fort" && b.w === mw, `four of the dead inside the ring: the yard stage, still on the fort map (${b.tier.stage}, ${b.w} × ${b.h})`);
   const yard = { w: yw, h: yh };
   check(yard.w * yard.h <= LOS_DENSE ? b.losCache instanceof Int8Array : true, "a small map keeps the typed sight cache");
   const big = makeLosCache(100, 100);
