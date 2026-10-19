@@ -116,27 +116,34 @@ function traced(on) {
 }
 for (let d = 0; d < DAYS; d++) {
   const sig = traced(TRACE.has(day(st) + 1));
-  for (let h = 0; h < 24; h++) { if (sig.wrapAll) sig.wrapAll(); tickHour(st); }
-  if (sig.size) { console.log(`    trace, day ${day(st)}:`); for (const [k, n] of [...sig.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) console.log(`      +${Math.round(n)} ${k}`); }
-  const now = holdings(st);
-  // A holder seen for the first time (a group, band or party just made) brings its holdings: its creation seed.
-  let born = 0;
-  const owners = (m) => new Set([...m.keys()].map((k) => k.split("|")[0]));
-  const was = owners(prev);
-  for (const [k, n] of now) if (!was.has(k.split("|")[0]) && !/^party of/.test(k)) born += n;
-  const grew = sum(now) - sum(prev), allowed = st.ledger.total - prevLedger + born;
-  const excess = grew - allowed;
-  if (excess > 0.5) {
-    bad++;
-    if (excess > worst) { worst = excess; worstDay = day(st); }
-    if (lines.length < 12) {
-      const gains = [...now.entries()].map(([k, n]) => [k, n - (prev.get(k) || 0)]).filter(([, g]) => g > 0.5).sort((a, b) => b[1] - a[1]).slice(0, 4);
-      lines.push(`day ${day(st)}: +${Math.round(grew)} held, ${Math.round(allowed)} noted: ${gains.map(([k, g]) => `${k} +${Math.round(g)}`).join(", ")}`);
+  // Checked every hour: a holder that appears brings its holdings as they are when it appears (a caravan that arrives
+  // and sells to a group the same day: its arrival stock is its creation seed, the sale a transfer).
+  let dayBad = false;
+  for (let h = 0; h < 24; h++) {
+    if (sig.wrapAll) sig.wrapAll();
+    tickHour(st);
+    const now = holdings(st);
+    // A holder seen for the first time (a group, band or visitor just made) brings its holdings: its creation seed.
+    let born = 0;
+    const owners = (m) => new Set([...m.keys()].map((k) => k.split("|")[0]));
+    const was = owners(prev);
+    for (const [k, n] of now) if (!was.has(k.split("|")[0]) && !/^party of/.test(k)) born += n;
+    const grew = sum(now) - sum(prev), allowed = st.ledger.total - prevLedger + born;
+    const excess = grew - allowed;
+    if (excess > 0.5) {
+      if (!dayBad) bad++;
+      dayBad = true;
+      if (excess > worst) { worst = excess; worstDay = day(st); }
+      if (lines.length < 12) {
+        const gains = [...now.entries()].map(([k, n]) => [k, n - (prev.get(k) || 0)]).filter(([, g]) => g > 0.5).sort((a, b) => b[1] - a[1]).slice(0, 4);
+        lines.push(`day ${day(st)}, hour ${st.hour % 24}: +${Math.round(grew)} held, ${Math.round(allowed)} noted: ${gains.map(([k, g]) => `${k} +${Math.round(g)}`).join(", ")}`);
+      }
     }
+    prev = now;
+    prevLedger = st.ledger.total;
   }
+  if (sig.size) { console.log(`    trace, day ${day(st)}:`); for (const [k, n] of [...sig.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) console.log(`      +${Math.round(n)} ${k}`); }
   if (!dupFirst) { const dups = duplicates(st); if (dups.length) dupFirst = `day ${day(st)}: ${dups.slice(0, 3).join("; ")}`; }
-  prev = now;
-  prevLedger = st.ledger.total;
 }
 for (const l of lines) console.log(`    ${l}`);
 console.log(`    noted sources: ${Object.entries(st.ledger.by).map(([k, n]) => `${k} ${Math.round(n)}`).join(", ") || "none"}`);
