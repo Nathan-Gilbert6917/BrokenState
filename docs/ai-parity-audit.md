@@ -158,9 +158,10 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
 **Done with a caveat.**
 - 4.16, siege kit: a raid on your base still brings its ladders, rams and grenades by kit dice, not from the raiders'
   stores. The grenades are the one remaining "from nothing" source in a fight.
-- 7.4, a horde at an AI base: fought through the shared resolver behind the base's defence tiers (groupfight.js
-  wallMult). Traps and special buildings at an AI base still do nothing against it, and the horde's own losses keep
-  hordes.js's formula.
+- 7.4, a horde at an AI base: your base's two steps. The walls hold back the dead up to the base's limit; the rest
+  break in as your break-in force (defences.js breakInForce) and are fought by the numbers on the very people there,
+  behind the base's defence tiers (hordes.js onHordeEnter, groupfight.js). Traps and special buildings at an AI base
+  still do nothing against it, and the horde's own losses keep hordes.js's formula.
 - 7.7, an AI group's judgement of a base it cannot hold (groupflight.js) still reads the wall counters for the
   decision. The fight itself goes through the defence tiers.
 - 5.15, vehicles: a vehicle's contents travel as the party's cargo and are robbed with it. An AI vehicle record
@@ -177,6 +178,11 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
 - A nomad band's trade shelf is still trimmed to size.
 - AI loans, hardcore merges, rescue jobs and war captive counts still move head counts in places.
 - One of your deserters joins a group as a fresh member, not with what they carried.
+
+**Found on the way.** Dice keyed on a person's id came out differently in two worlds on one seed, because your
+people's and newcomers' ids come from a counter shared by the process; they now use a world-local key (members.js
+personKey), and tools/dettest.js passes in full. A group that fell gave its heir half its stores without taking them
+out, and tributes and jail payments paid "ammo" from a generic count; both now move the very rounds.
 
 **Tests.** `tools/paritytest.js` swaps the sides of each shared rule and checks both come out the same.
 `tools/conservationtest.js` plays a campaign and checks the AI side never holds more rounds than its noted sources
