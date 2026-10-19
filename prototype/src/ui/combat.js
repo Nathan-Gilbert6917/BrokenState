@@ -39,7 +39,7 @@ import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chi
 import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out of sight: markers in the fog with a guess of the sound
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
-import { ghostAt, itemAtCell, storeAt } from "../sim/basemap.js";
+import { ghostAt, itemAtCell, storeAt, keyOptions, keyTargets, KEY_AP } from "../sim/basemap.js"; // keyOptions: the defenders' keys (Lock, Unlock)
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { roomText, totalRoom } from "../sim/prisoners.js"; // jailhouse: prisoner room at your bases
 import { bodyEmpty, itemLoad } from "../sim/inventory.js";
@@ -422,7 +422,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
@@ -528,6 +528,8 @@ export function combatClick(state, px, py) {
       return;
     }
   }
+  // Lock or Unlock picked with several locks in reach (sim/basemap.js keyAct): the door, the gate or the container clicked.
+  if (u && active(u) && (cui.mode === "keylock" || cui.mode === "keyunlock")) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
   // A store on a base map (sim/basemap.js): a click on the building (its walls, roof or crates) shows what is in it.
   if (b.stores && !who) { const sc = storeAt(b, c.x, c.y); if (sc && !CDEF(b.cells[c.y * W + c.x]).walk) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; } }
   // A field battle the team's vehicle came along to (sim/raidloot.js trunkVehicle): a click on it opens its trunk, the
@@ -1225,6 +1227,7 @@ export function unitOrders(state, b, u) {
   if (b.evacCols) btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R", { why: noAp || "Only from the green evac strip." });
   if (b.raid) raidButtons(state, b, u, btn);
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
+  keyButtons(b, u, btn); // sim/basemap.js: the defenders' keys on their base's map
   barricadeButtons(state, b, u, btn); // sim/barricade.js: Shove, Board up, Tear down
   if (b.rescue) rescueButtons(state, b, u, btn);
   out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + reloadPicker(state, b, u) + handChooser(state, b, u) + shoveChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
@@ -1658,6 +1661,15 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
     if (!list.length) { cui.msg = "Stand right next to a window (not diagonally)."; return; }
     cui.mode = cui.mode === v ? "move" : v;
     cui.msg = `Click the window to ${v === "checkwindow" ? "check" : v === "openwindow" ? "open" : v === "closewindow" ? "close" : "break"}.`;
+    return;
+  }
+  // The defenders' keys (sim/basemap.js keyAct): with one lock to work act at once, else click the one.
+  if (v === "keylock" || v === "keyunlock") {
+    const list = keyTargets(b, u, v === "keylock");
+    if (list.length === 1) return void act(state, { type: v, unit: u.id, x: list[0].x, y: list[0].y });
+    if (!list.length) { cui.msg = v === "keylock" ? "Stand next to an unlocked door, the open gate or an unlocked container of the base." : "Stand next to a locked door, the gate or a locked container of the base."; return; }
+    cui.mode = cui.mode === v ? "move" : v;
+    cui.msg = `Click the ${list.map((o) => o.name).filter((n, i, a) => a.indexOf(n) === i).join(" or ")} to ${v === "keylock" ? "lock" : "unlock"}.`;
     return;
   }
   // A building's doors (sim/buildingmaps.js): with one door next to the unit act at once, else click the door.
@@ -2095,6 +2107,28 @@ function doorButtons(b, u, btn, onlyNear = false) {
     + btn("brace", "Brace door", braces.length ? `The rest of the turn: ${first} puts a shoulder to the closed door next to them. People cannot open it (they must break it) and it takes half of each blow, until ${first} moves.` : "Stand next to a closed door (not diagonally) to brace it.", u.ap > 0 && braces.length > 0, "Y");
 }
 
+// Lock and Unlock (sim/basemap.js keyOptions, keyAct): on their own base's map the defenders hold the keys to its
+// buildings' doors, the gate and the armory's gun cage and ammo lockers; shown while one is next to the unit (a door or
+// the gate not diagonally), from inside or out.
+function keyButtons(b, u, btn) {
+  const opts = keyOptions(b, u);
+  if (!opts.length) return "";
+  const first = u.name.split(" ")[0];
+  const names = (list) => list.map((o) => `the ${o.name}`).filter((n, i, a) => a.indexOf(n) === i).join(", ");
+  const toLock = opts.filter((o) => !o.locked), toOpen = opts.filter((o) => o.locked);
+  const why = u.ap >= KEY_AP ? "" : NO_AP;
+  if (toOpen.length) btn("keyunlock", "Unlock", `${KEY_AP} action, quiet: ${first} unlocks ${names(toOpen)} with the base's key.${toOpen.some((o) => o.what === "door") ? " An unlocked door is an ordinary one: anyone opens it by walking in, raiders too (the dead still batter it), and it stays open behind whoever went through until it is shut." : ""}${toOpen.some((o) => o.what === "gate") ? " The gate unbarred stands open to everyone, the dead too." : ""}${toOpen.some((o) => o.what === "box") ? " An unlocked container is taken from without battering." : ""}${toOpen.length > 1 ? " Several: click the one." : ""}`, !why, "", { ap: KEY_AP, why });
+  if (toLock.length) btn("keylock", "Lock", `${KEY_AP} action, quiet: ${first} ${toLock.some((o) => o.what === "door") ? "shuts and " : ""}locks ${names(toLock)} again, with nobody in the doorway or gateway. Locked, raiders have to batter it open; your own people still go through a locked door.${toLock.length > 1 ? " Several: click the one." : ""}`, !why, "", { ap: KEY_AP, why });
+  return "";
+}
+// What the hover says of a base's own lock (sim/basemap.js keyAct): locked or not, and how to change it.
+function keyNote(c) {
+  if (!c || !c.keyed || !(c.hp > 0)) return "";
+  if (c.k === "gate") return c.bar ? " Barred: your people unbar it with Unlock (1 action, next to it)." : ' <span class="warn">Unbarred: open to everyone, the dead too.</span> Lock (1 action, next to it, nobody in the gateway) bars it again.';
+  if (c.k === "bdoor") return " Locked: your people hold the key (Unlock, 1 action, from either side).";
+  if (c.k === "idoor" || c.k === "odoor") return ' <span class="warn">Unlocked: anyone opens it, raiders too.</span> Lock (1 action, from either side, nobody in the doorway) shuts and locks it.';
+  return "";
+}
 // Check, open, close or break the window next to the unit (sim/windows.js windowAct): shown while one is right next to
 // them (not diagonally), in any building (a raid's, the street's houses, a field map's). Trying a window that has not
 // been checked opens it or says why not (locked from the inside, fixed) for free, as a check does.
@@ -2710,11 +2744,11 @@ function previewHtml(b, state = null) {
     const kindName = cobj.roll ? "Roller door" : K ? K.name : "Door";
     const kindNote = K ? ` ${esc(K.name)}: ${esc(K.desc)}${K.see ? "; seen through even shut" : ""}${K.glass ? "; broken, it goes with a crash that wakes the unaware nearby" : ""}.` : "";
     return shut
-      ? `<b>${esc(kindName)} (closed)</b>${hp}${held ? ` · <span class="good">braced by ${esc(held.name)}</span>` : ""}<br><span class="muted">${K && K.see ? "Blocks the way, not sight." : "Blocks sight."} Click it to walk through: your people open it as they go${cobj.roll ? " (loud: Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}; other people stop to open it; the dead must batter it down. Peek (K) through it from next to it.${kindNote}</span>`
-      : `<b>${esc(kindName)} (open)</b>${hp}<br><span class="muted">Close door (${esc(keyLabel("battle.close", 1) || "Shift+E")}) from next to it: 1 action, quiet${cobj.roll ? " (a roller door: loud)" : ""}. A shut door ${K && K.see ? "slows the dead (it is seen through)" : "stops sight and slows the dead"}.${kindNote}</span>`;
+      ? `<b>${esc(kindName)} (closed)</b>${hp}${held ? ` · <span class="good">braced by ${esc(held.name)}</span>` : ""}<br><span class="muted">${K && K.see ? "Blocks the way, not sight." : "Blocks sight."} Click it to walk through: your people open it as they go${cobj.roll ? " (loud: Heat +" + BMAP.ROLLER.heat + ")" : " (quiet)"}; other people stop to open it; the dead must batter it down. Peek (K) through it from next to it.${kindNote}${keyNote(cobj)}</span>`
+      : `<b>${esc(kindName)} (open)</b>${hp}<br><span class="muted">Close door (${esc(keyLabel("battle.close", 1) || "Shift+E")}) from next to it: 1 action, quiet${cobj.roll ? " (a roller door: loud)" : ""}. A shut door ${K && K.see ? "slows the dead (it is seen through)" : "stops sight and slows the dead"}.${kindNote}${keyNote(cobj)}</span>`;
   }
   // Something the attackers batter (sim/combat.js bash): a wall section, the gate, a barred door, a window.
-  const struct = cobj.mhp ? ` <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "warn"}">${Math.round(cobj.hp)}/${cobj.mhp} hit points</span>${barredCell(cobj) ? " · barred to the attackers (your people pass)" : ""}.` : "";
+  const struct = cobj.mhp ? ` <span class="${cobj.hp / cobj.mhp < 0.5 ? "danger" : "warn"}">${Math.round(cobj.hp)}/${cobj.mhp} hit points</span>${barredCell(cobj) ? " · barred to the attackers (your people pass)" : ""}.${keyNote(cobj)}` : "";
   // Boards nailed across a door or a window (sim/barricade.js): what is under them, the layers, Tear down from next to it.
   if (isBoarded(cobj)) return `<b>${esc(boardedName(cobj))}</b>${struct}<br><span class="muted">${cobj.boards || 1} layer${(cobj.boards || 1) === 1 ? "" : "s"} of boards over the ${esc(boardedUnder(cobj))}: full cover, no sight or way through for anyone until the dead or raiders batter it down (then the ${boardedUnder(cobj) === "window" ? "window is broken" : "door is broken in"}). Tear down (${BOARD.TEAR.ap} actions, from next to it, either side) gives it back; Board up again adds a layer (up to ${BOARD.MAX}).</span>`;
   // Half cover a person can vault (sim/combat.js VAULT, vaultable, canVault): the path may go over it, never end on it.
