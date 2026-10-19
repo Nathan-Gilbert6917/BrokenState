@@ -73,6 +73,7 @@ import { teamName } from "./parties.js";
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your convoy's route waits for it
 import { note, roundsIn, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
 import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
+import { isWounded } from "./members.js"; // the fit go out on a robbery
 const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -578,7 +579,7 @@ export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, s
   st.byGroups++;
   // groupfight.js: their band (the fittest of them at home, as many as the band's strength holds) against the
   // caravan's guards by its strength, by your by-the-numbers rules; the band's wounds and dead are their very people.
-  const A = fightersOf(state, f, { tile: f.bases[0] });
+  const A = fightersOf(state, f, { tile: f.bases[0] }).filter((s) => !isWounded(s)); // the fit go out (members.js sendMembers: as a party is picked)
   const per = A.length ? A.reduce((a, s) => a + combatPower(s), 0) / A.length : 1;
   const crew = A.slice(0, Math.max(1, Math.round(band / Math.max(0.5, per))));
   const fight = fightSides(state, { f, people: crew, kind: KIND_OF[f.type] || "raiders" }, { f: null, people: [], kind: c.type === "merchants" ? "guards" : "militia", count: Math.max(1, Math.round(strength / 3)), power: Math.max(1, strength) });

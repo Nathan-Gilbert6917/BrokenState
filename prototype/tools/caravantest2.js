@@ -344,7 +344,8 @@ section("The groups rob caravans");
   const cv = C.roadCaravans(st, { player: true }).find((x) => x.ref === q);
   check(!!cv && C.wouldRaid(st, r, cv), "and your convoys, when hostile");
   const f0 = food(r);
-  C.groupRobs(st, r, cv, 999, 1);
+  // (By your by-the-numbers rules the odds stop at 97%: the band may be beaten off; it tries again until it wins.)
+  for (let i = 0; i < 10 && !C.groupRobs(st, r, cv, 999, 1); i++);
   check(food(q.cargo) < 1e-6 && q.cargo.supplies.ammo === 0 && !q.cargo.gear.length && Math.abs(food(r) - f0 - 40) < 1e-6, `your convoy loses its whole load (food left ${food(q.cargo)}, the group +${food(r) - f0})`);
   st.parties.splice(st.parties.indexOf(q), 1);
   for (const s of crew) s.location = { kind: "base", baseId: h.id };
