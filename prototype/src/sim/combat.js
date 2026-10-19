@@ -4447,7 +4447,7 @@ export function combatAct(state, act) {
   if (u.gunner && !GUNNER_ACTS.has(act.type)) return "On the turret: fire, reload the belt, overwatch, drive, or get down (Man the turret again).";
   if (act.type === "turret") { if (!u.gunner) return vehicleTurret(b) ? "Man the turret first." : "No turret here."; act = { ...act, type: "shoot" }; }
   const t = act.target != null ? unitById(b, act.target) : null;
-  { const why = handsRefusal(u, act.type); if (why) return why; } // carry.js: hands full of supplies (or a body): no weapon, no throw, no treating
+  { const why = handsRefusal(u, act.type, act); if (why) return why; } // carry.js: hands full of supplies (or a body): no weapon, no throw, no treating; a case carried loose can be opened (set down to work it)
   switch (act.type) {
     case "takeCart": case "parkCart": { const err = cartAct(state, b, act); if (err) return err; break; } // carts.js: a cart within reach back in the arms; park the one pushed on a side cell (1 action each)
     case "setOver": { const err = setOverCover(state, b, u, act); if (err) return err; break; } // carry.js: everything carried set down beyond the half cover they face (1 action)
