@@ -204,6 +204,34 @@ export const MIDDEAD = {
 // body: spotted, it can be shot from afar (it splits where it lies) or burned (the worms cook: no swarm).
 export const SLEEPER = { COUNT: 4, AREA: 32 * 24, PER_INF: 4, MAX: 9, AWAY: 6, ODDS: 0.15, ODDS_INF: 0.25, ODDS_MAX: 0.45, SWARMS: 1, SPOT_RANGE: 3, SPOT: 0.2, SPOT_PER: 0.03, SPOT_MAX: 0.8 };
 
+// The dead beasts (deadbeasts.js): animals that died of the worm and walk, full of it, on the hills, in the woods and
+// over the farmland, and the pets that died of it in the towns and cities (never on a base's tile). They are among a tile's dead there
+// (beastMix: shares by the ground, as the armoured dead are by the site; deadbeasts.js has the words): a dead stag on
+// the hills and in the woods, a dead hog in the woods and by the farms, dead dogs and dead cattle where the farms were.
+// LAND: the shares by terrain in the countryside; TOWN: the dead pets (dogs and cats) by terrain in the suburbs and
+// cities (a town site in the countryside counts as suburb); SITE: more at a farm, barn or ranch, and the pets in the
+// houses, neighbourhoods, motels and apartment blocks (data.js LOCATIONS of those types);
+// HERD: an infested herd on the tile (worm.js state.herds) adds this much of its own kind (deer → stag, hog → hog).
+// The ground's Infection scales them: × (FLOOR + PER_INF × infection), at most 1; and only ODDS of tiles have them
+// in a week (a hash of the seed, the tile and the week: no world dice, the same tile the same beasts). INFEST: a
+// bite that someone living stands leaves the worm in them this often (a kill INFEST_KILL); BURST: killed, each kind
+// bursts into a worm swarm this often (never when fire killed it: the worms cook). PACK: a dead dog's bite is this
+// much surer for each other dead dog next to its target (at most PACK_MAX). Hordes crossing such land at HORDE_INF
+// infection or more pick some up (HORDE_ODDS a pass, HORDE_ADD, up to HORDE_MAX). CARD: the travel card's odds.
+export const BEASTS = {
+  LAND: { hills: { deadstag: 0.1, deadhog: 0.03 }, forest: { deadstag: 0.07, deadhog: 0.08, deadhound: 0.02 }, plains: { deadhound: 0.07, deadcow: 0.05, deadhog: 0.04 } },
+  TOWN: { suburb: { deadhound: 0.07, deadcat: 0.05 }, city: { deadhound: 0.04, deadcat: 0.06 } },
+  SITE: { farm: { deadcow: 0.12, deadhound: 0.12 }, barn: { deadcow: 0.14, deadhound: 0.08 }, ranch: { deadcow: 0.16, deadhound: 0.1 }, lodge: { deadstag: 0.06 }, cabin: { deadstag: 0.04 }, campground: { deadhound: 0.05 },
+          house: { deadhound: 0.12, deadcat: 0.1 }, neighbourhood: { deadhound: 0.12, deadcat: 0.08 }, motel: { deadcat: 0.08, deadhound: 0.05 }, apartments: { deadcat: 0.12, deadhound: 0.05 }, town: { deadhound: 0.08, deadcat: 0.06 } },
+  HERD: { deer: ["deadstag", 0.12], hog: ["deadhog", 0.12] },
+  FLOOR: 0.35, PER_INF: 1.3, ODDS: 0.6,
+  INFEST: 0.2, INFEST_KILL: 0.6, BURST: { deadstag: 0.35, deadhog: 0.6, deadhound: 0.2, deadcow: 1, deadcat: 0.15 },
+  PACK: 8, PACK_MAX: 16,
+  HORDE_INF: 0.3, HORDE_ODDS: 0.25, HORDE_ADD: 0.03, HORDE_MAX: 0.08,
+  SEARCH_THREAT: 3, // the hour-by-hour search (scavenge.js): + threat per point of the mix's extra weight
+  CARD: 1.5, // the travel card's weight (events.js "deadbeasts") on a tile that has them
+};
+
 // The special dead in a hive's new horde (hivetech.js hiveMix): each kind the hive breeds comes along at ODDS of the
 // horde's size (+ TIER a tier the hive is past the growth's own, + BROOD with a brood chamber, at most MAX), no more
 // than KINDS kinds (+1 at tier 3, +1 at tier 4); its guard brings every kind at GUARD. A hive fights its assault with
@@ -284,6 +312,23 @@ export const ZTYPES = {
   sleeper:  { name: "Sleeper", short: "Sl", hp: 0.6, dmg: 0, aim: 0, mob: 0, armor: 1, share: 0, wall: 1, weight: 1, senses: [],
               special: `A body like any other on the ground, so full of the worm that it splits open when anyone comes next to it: a worm swarm pours out and bites. Spotted (Scouting), it shows.`,
               counter: "Keep away from the bodies you have not checked. Shoot a spotted one from afar (it splits where it lies) or burn it (the worms cook)." },
+  // Not bred: the dead beasts (BEASTS above, deadbeasts.js): animals that died of the worm and walk, met on the hills,
+  // in the woods and over the farmland. beast: true marks them (zombietypes.js applyZType; the UI). mob: their own.
+  deadstag: { name: "Dead stag", short: "Dg", hp: 1.1, dmg: 1.3, aim: 5, mob: 5, armor: 1, share: 0, wall: 1.2, weight: 1.5, beast: true, senses: ["noise"],
+              special: "A stag the worm killed and walks: fast, and its antlers hit hard. It bites with the worm in it (a bite can leave the worm in someone) and now and then bursts into a worm swarm when it falls. The hills and the woods.",
+              counter: "Shoot it before it closes; a wall or a fence stops it. Keep your people together and watch anyone it gored for the worm." },
+  deadhog:  { name: "Dead hog",  short: "Hg", hp: 1.6, dmg: 1.2, aim: 5, mob: 3.5, armor: 0.8, share: 0, wall: 1.5, weight: 1.6, beast: true, senses: ["noise"], burn: 1.2,
+              special: "A wild hog swollen with the worm: thick hide and fat (takes 80% of each hit), hard to put down, and more often than not it splits into a worm swarm when it dies. Its bite can leave the worm in someone. The woods and the farms.",
+              counter: "Kill it away from your people (the swarm), or burn it: fire cooks the worms and the fat burns. Rifles and heavy blows." },
+  deadhound: { name: "Dead dog", short: "Dd", hp: 0.55, dmg: 0.7, aim: 10, mob: 5, armor: 1, share: 0, wall: 0.8, weight: 1.1, beast: true, senses: ["noise", "light"],
+              special: "Somebody's dog once, dead of the worm and still running: quick and weak, in packs, and the pack's bites are surer when two or more are on the same person. A bite can leave the worm in someone. Farmland, the towns and the cities, and the houses they were shut in.",
+              counter: "Keep together so no one is pulled down by a pack; a blade or a club each. They follow noise and light: a decoy pulls them off." },
+  deadcat:  { name: "Dead cat",  short: "Ct", hp: 0.35, dmg: 0.5, aim: 15, mob: 6, armor: 1, share: 0, wall: 0.5, weight: 1.05, beast: true, senses: ["heat"],
+              special: "A house cat the worm killed: tiny, very quick, and it hides, under a car, in a cupboard, in the long grass, unseen until it is within 2 tiles, in light or has struck, and its first bite from hiding hits hard. A bite can leave the worm in someone. The towns and the cities, the houses and the apartment blocks.",
+              counter: "Light (a flashlight, a flare, floodlights) and keeping together; a boot or a club once it shows. Watch anyone it bit for the worm." },
+  deadcow:  { name: "Dead cow",  short: "Cw", hp: 2.2, dmg: 1.3, aim: 0, mob: 2, armor: 0.9, share: 0, wall: 2, weight: 1.8, beast: true, senses: ["noise"], burn: 1.2, priority: 1.5,
+              special: "A cow the worm filled: huge, slow, so full of the worm that it bursts into a swarm when it falls, every time. Its bite can leave the worm in someone. Farmland: the barns, the ranches and the fields.",
+              counter: "Shoot it from range and well away from your people, or burn it (the worms cook). Never put it down next to someone." },
   // Not bred by hives (no growth unlocks them, share 0): the dead who were soldiers or riot police and still wear their
   // armour, found at military sites, police stations and in hordes that crossed them (deadsoldiers.js MILDEAD, where
   // the armour by weapon lives). armor here: the rough average the AI and fights by the numbers use; mob null: the

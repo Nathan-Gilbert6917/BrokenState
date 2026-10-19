@@ -19,6 +19,7 @@ import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
 import { sowTile } from "./middead.js"; // Sowers
 import { hordeMilitaryPickup } from "./deadsoldiers.js";
+import { hordeBeastPickup } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
 import { shelterHeat } from "./fieldheat.js";
 import { hordeOverrun, baseHold } from "./groupflight.js"; // a group whose base the dead overran may leave it
 import { SILENT } from "./hiding.js"; // a base running silent makes less noise
@@ -199,6 +200,7 @@ function onHordeEnter(state, h) {
   if (!state.hordes.includes(h)) return;
   hordeMilitaryPickup(state, h); // deadsoldiers.js: crossing a military site, some of its dead soldiers fall in
   sowTile(state, h); // middead.js: Sowers seed the land they cross with the worm's eggs
+  hordeBeastPickup(state, h); // deadbeasts.js: crossing bad land in the hills, the woods or the farms, some of its dead beasts fall in
   fieldHordeEnter(state, h); // fieldworks.js: a field work on the tile is battered (a roadblock holds the horde)
   const base = state.bases.find((b) => b.tile === h.tile);
   if (base) return hordeAttackBase(state, h, base);

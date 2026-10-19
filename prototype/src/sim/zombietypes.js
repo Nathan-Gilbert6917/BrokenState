@@ -184,6 +184,8 @@ export function applyZType(u, kind, elite = false, power = 2) {
   if (kind === "flinger") { u.cd = 0; u.throws = 0; u.windup = null; } // middead.js
   if (kind === "nightmare") { u.screamCd = 0; u.sight = Math.max(u.sight || 0, 11); }
   if (kind === "sleeper") { u.mob = 0; u.dormant = true; } // sleepers.js: a body on the ground until it splits
+  if (z.beast) { u.beast = true; u.wild = true; } // deadbeasts.js: a dead animal; it goes for every living thing
+  if (kind === "deadcat") u.low = true; // deadbeasts.js: it hides as a crawler does (zRevealed, strikeBonus)
   return u;
 }
 

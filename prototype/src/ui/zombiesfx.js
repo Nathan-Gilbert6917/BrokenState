@@ -95,6 +95,12 @@ export const PROFILE = { // sub: a second, detuned pulse an octave down (diploph
   sleeper:     { f0: 66, shift: 0.9, rasp: 0.8, drive: 2.4, wet: 0.7, fry: 0.4, sub: 0.3 },
   wallbreaker: { f0: 34, shift: 0.6, rasp: 1, drive: 5.5, wet: 0.4, fry: 0.8, sub: 0.5, slow: 1.35, giant: true },
   broodmother: { f0: 30, shift: 0.56, rasp: 0.85, drive: 4.5, wet: 1, fry: 0.7, sub: 0.5, slow: 1.4, giant: true },
+  // The dead beasts (sim/deadbeasts.js): animal throats, no words in them.
+  deadstag:    { f0: 95, shift: 1.0, rasp: 0.7, drive: 2.8, wet: 0.4, fry: 0.3, sub: 0.3 },
+  deadhog:     { f0: 48, shift: 0.76, rasp: 0.95, drive: 3.6, wet: 0.8, fry: 0.6, sub: 0.4, slow: 1.1 },
+  deadhound:   { f0: 180, shift: 1.15, rasp: 0.8, drive: 3, wet: 0.3, fry: 0.2, sub: 0.2 },
+  deadcow:     { f0: 38, shift: 0.66, rasp: 0.8, drive: 3.8, wet: 1, fry: 0.65, sub: 0.45, slow: 1.3 },
+  deadcat:     { f0: 240, shift: 1.22, rasp: 0.6, drive: 2.4, wet: 0.2, fry: 0.1, sub: 0.1 },
 };
 // The voice set a unit uses.
 // Every kind of the dead the simulation makes (tools/zombiesfxtest.js scans src/sim for them):
@@ -105,7 +111,9 @@ export const PROFILE = { // sub: a second, detuned pulse an octave down (diploph
 //   the plain dead → "walker", which is also the voice of every plain variant: a hive's guard, a horde, the dead a
 //     screamer calls in (u.called), the dead a Sleeper's or a Flinger's swarm leaves risen, a hardcore outbreak's dead
 //     (hardcore-outbreak.js makes plain units), a building's nest is its special dead (floorfolk.js: ZTYPES).
-//   Animals carrying the worm (worm.js, hunting.js) never fight on a battle map: no voice needed.
+//   The dead beasts (deadbeasts.js; ZTYPES deadstag, deadhog, deadhound, deadcat, deadcow): the worm's dead animals
+//     that walk, each its own throat (a stag's bellow, a hog's grunt, a dog's bark and yelp, a cat's hiss, a cow's low bellow). The living
+//     animals carrying the worm (worm.js herds, hunting.js) never fight on a battle map: no voice needed.
 export const FALLBACK_TO_WALKER = ["plain dead", "called in by a screamer", "hive guard", "horde", "hardcore outbreak dead", "turned without their person (no app)"];
 export function voiceKind(u) {
   if (!u) return "walker";
@@ -409,6 +417,8 @@ export const BREATH = {
   spitter: { rate: 0.9, band: 850, wet: 1, hiss: 0.1, pairs: 1 }, crawler: { rate: 1.2, band: 2600, wet: 0.3, hiss: 1, pairs: 1 },
   carrier: { rate: 0.8, band: 600, wet: 1, hiss: 0, pairs: 1 }, wallbreaker: { rate: 0.55, band: 380, wet: 0.5, hiss: 0, pairs: 1 },
   broodmother: { rate: 0.5, band: 340, wet: 1, hiss: 0, pairs: 1 }, nightmare: { rate: 0.8, band: 1500, wet: 0.2, hiss: 0.6, pairs: 1 },
+  deadstag: { rate: 1.3, band: 1000, wet: 0.4, hiss: 0.3, pairs: 1 }, deadhog: { rate: 0.9, band: 650, wet: 0.8, hiss: 0.1, pairs: 1 }, // the dead beasts (sim/deadbeasts.js)
+  deadhound: { rate: 2, band: 1400, wet: 0.3, hiss: 0.3, pairs: 2 }, deadcow: { rate: 0.6, band: 420, wet: 0.9, hiss: 0, pairs: 1 }, deadcat: { rate: 2.2, band: 2200, wet: 0.2, hiss: 0.8, pairs: 2 },
 };
 export const BREATH_LEVEL = 0.32; // the breath's peak: about 10 dB under a moan's loud level (measured in the previews)
 export function breathPlan(kind, seed, n = 0) {
@@ -904,6 +914,12 @@ export const VOICE_SETS = {
   sleeper: { ...COMMON, idle: "silent", aggro: "gasp", wake: "wake", death: "splat", step: "silent", snarl: "silent", breath: "silent" },
   wallbreaker: { ...COMMON, idle: "rumble", aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp", bash: "smash" },
   broodmother: { ...COMMON, idle: ["bellow", "bloat"], aggro: "roar", attack: "roarShort", death: "roarDeath", step: "stomp", bash: "smash" },
+  // The dead beasts (sim/deadbeasts.js): a stag, a hog, a dog, a cow.
+  deadstag: { ...COMMON, idle: ["wheeze", "rumble", "moan"], aggro: "bellow", attack: "snarl", hurt: "grunt", death: "rattle", step: "stomp" },
+  deadhog: { ...COMMON, idle: ["gurgle", "rumble", "gurgle"], aggro: "roarShort", attack: "snarl", hurt: "grunt", death: "roarDeath", step: "stomp" },
+  deadhound: { ...COMMON, idle: ["pant", "whimper", "growl"], aggro: "bark", attack: "bark", hurt: "yelp", death: "yelp", step: "slap", snarl: "growl" },
+  deadcow: { ...COMMON, idle: ["bellow", "bloat", "gurgle"], aggro: "bellow", attack: "snarl", hurt: "grunt", death: "burst", step: "stomp" },
+  deadcat: { ...COMMON, idle: ["lurk", "whimper"], aggro: "hiss", attack: "hiss", hurt: "yelp", death: "yelp", step: "crawl", snarl: "hiss" },
 };
 export const CORE_EVENTS = ["idle", "aggro", "attack", "bite", "hurt", "death", "step"];
 // Footsteps (shuffle, drag, slap, stomp, clank, bonestep, scrabble, crawl) are owned by the sfx-melee-steps branch: off
