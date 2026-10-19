@@ -110,7 +110,7 @@ import { itemLoad, itemKg, ensurePack, ensureInv, lootItem } from "./inventory.j
 import { siteSource } from "./itemcond.js";
 import { CELL, alertNear, evacAt } from "./combat.js"; // the battle map's cells (a cart parked: CELL cart); noise
 import { noiseAt } from "./stealth.js"; // a cart pushed rattles
-import { survivorById, baseById, log } from "./world.js";
+import { survivorById, baseById, log, localId } from "./world.js";
 import { lootLayer, fieldLayer } from "./raidloot.js"; // call-time only (safe in the import cycle)
 import { settlePile, groundAt as pileAt } from "./ground.js";
 import { say } from "./combat.js";
@@ -711,7 +711,7 @@ export function aiCartsHome(state, f, p) {
   if (!site || p.vehicle || (f.carts || 0) >= Math.max(1, f.pop * CART_AI.cap)) return 0;
   const hours = AISCAV.searchHours || 4;
   const chance = 1 - Math.pow(1 - Math.min(1, site.p * CART_AI.find), hours);
-  if (hash01(state.seed, "aicart", f.id, p.id, state.hour) >= chance) return 0;
+  if (hash01(state.seed, "aicart", localId(state, f.id), localId(state, p.id), state.hour) >= chance) return 0; // world.js localId: the same dice whatever ran in this process before
   f.carts = (f.carts || 0) + 1;
   return 1;
 }

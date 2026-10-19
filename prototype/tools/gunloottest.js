@@ -232,15 +232,23 @@ for (const mode of ["normal", "hardcore"]) {
     GUN_DIST.off = off;
     const st = createWorld({ seed: 4242, factionCount: 6, mode });
     const made = st.rng.state;
+    // Every world draw made inside the gun distribution (gundist.js): there must be none (it keys its swaps on hashes).
+    let own = 0;
+    const next = st.rng.next.bind(st.rng);
+    st.rng.next = () => { if (/gundist\.js/.test(new Error().stack || "")) own++; return next(); };
     st.started = true;
     setAutopilot(st, true, "balanced"); // searches, trades, fights: the swaps on the way
     for (let h = 0; h < days * 24 && !st.gameOver; h++) tickHour(st);
     GUN_DIST.off = false;
-    return { made, ran: st.rng.state };
+    return { made, ran: st.rng.state, own };
   };
   const a = run(true, 5), b = run(false, 5);
   check(a.made === b.made, `${mode}: a world is made on the same draws with the distribution off and on`);
-  check(a.ran === b.ran, `${mode}: its first 5 days (the autopilot playing) draw the same (${a.ran} / ${b.ran})`);
+  check(b.own === 0, `${mode}: the distribution's swaps draw none of the world's dice in its first 5 days (the autopilot playing)`);
+  // Normal: the same draws all through. Hardcore starts with the guns grabbed from the house (hc:home: swapped by the
+  // distribution), so its people carry other weights, travel at other paces and meet the road's dice at other hours:
+  // the draws part by consequence, not by the distribution's own dice (checked above).
+  if (mode === "normal") check(a.ran === b.ran, `${mode}: its first 5 days (the autopilot playing) draw the same (${a.ran} / ${b.ran})`);
 }
 
 // ---------- new guns in the extra rolls only (data-guns.js GUN_ADDED, GUN_NEWNESS) ----------
