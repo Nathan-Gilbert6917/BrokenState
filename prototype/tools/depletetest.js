@@ -269,7 +269,7 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   let adds = 0;
   for (const name of readdirSync(dir).filter((n) => n.endsWith(".js"))) {
     const src = readFileSync(join(dir, name), "utf8").replace(/\.loot\s*(===?|!==?)/g, "");
-    if (/\.loot\s*=(?!=)/.test(src)) setters.add(name);
+    if (/(?<!\bu)\.loot\s*=(?!=)/.test(src)) setters.add(name); // (u.loot: a raider's haul on the base map, basemap.js; not a tile's)
     if (/\.loot\s*-=/.test(src)) takers.add(name);
     adds += (src.match(/\.loot\s*[+*\/]=/g) || []).length;
   }
