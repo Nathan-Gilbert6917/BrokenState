@@ -471,10 +471,23 @@ function forceDoor(st, b, S) {
   if (theirs.length && by) thirdSideHit(b, theirs[0], by);
   const view = b.floor || 0;
   if (view !== f) setFloor(b, f);
+  const room = R.areas.find((r) => r.id === S.room);
   let shots = 0;
   for (const a of theirs) {
     if (!active(a) || !WEAPONS[a.weapon] || WEAPONS[a.weapon].melee) continue;
-    const t = mine.filter((x) => active(x) && canSee(b, a, x)).sort((x, y) => Math.hypot(x.x - a.x, x.y - a.y) - Math.hypot(y.x - a.x, y.y - a.y))[0];
+    const seen = () => mine.filter((x) => active(x) && canSee(b, a, x)).sort((x, y) => Math.hypot(x.x - a.x, x.y - a.y) - Math.hypot(y.x - a.x, y.y - a.y))[0];
+    let t = seen();
+    // Holed up behind that door, they had it covered: one whose spot does not look out of the doorway (the dice put
+    // them anywhere in the room) steps to the nearest free cell of the room that does, and fires from there.
+    if (!t && room) {
+      const from = [a.x, a.y];
+      for (const [x, y] of freeCells(b, room).sort((p, q) => Math.hypot(p[0] - from[0], p[1] - from[1]) - Math.hypot(q[0] - from[0], q[1] - from[1]))) {
+        a.x = x; a.y = y;
+        if ((t = seen())) break;
+      }
+      if (t) { a.home = [a.x, a.y]; a.wp = null; }
+      else { a.x = from[0]; a.y = from[1]; }
+    }
     if (!t) continue;
     fire(b, a, t);
     shots++;
