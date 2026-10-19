@@ -324,7 +324,7 @@ export function carLoot(b, f) {
 // mem: kept by the caller (sfx-gear.js uiCues). cam: { zoom, w, h, toScreen(tile) -> [x, y] } (mapCam, or a test's).
 export const MAP_GAIN = 0.6; // the map's one-shots, unpositioned, under the battle's
 const playerBase = (state, tile) => (state.bases || []).find((b) => b.tile === tile && (b.owner == null || b.owner === "player")) || null;
-const gateKind = (base) => { let w = 0; try { w = wallTier(base); } catch { w = 0; } return w >= 2 ? "steel" : w >= 1 ? "gate" : "front"; };
+const gateKind = (base) => { let w = 0; try { w = wallTier(base); } catch { w = 0; } return w >= 3 ? "steel" : w >= 1 ? "gate" : "front"; };
 export function mapCam(state) {
   try {
     const el = typeof document !== "undefined" && document.getElementById ? document.getElementById("map") : null;

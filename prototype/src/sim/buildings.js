@@ -81,17 +81,32 @@ export const BUILDINGS = {
   // Housing (BEDS, baseBeds): twice a bunkhouse's beds on one building plot, for a base whose plots run short. from: a
   // standing bunkhouse can be expanded into one where it stands (BARRACKS_UP: no new plot; its jobs count against max).
   barracks:     { name: "Barracks",       plot: "building", cost: { scrap: 40, parts: 2 },  hours: 54, max: 4, from: "bunkhouse", desc: "+12 beds on one building plot (a bunkhouse gives 6): bunks three high, a stove and lockers, for a base whose plots run short. A standing bunkhouse can also be expanded into a barracks where it stands (Construction, On the building plots: Expand; 24 scrap and 2 parts, 30 work-hours, no new plot; its 6 beds stay in use meanwhile). Overcrowding lowers mood every day." },
-  walls:        { name: "Walls",          cost: { scrap: 25 },            hours: 36, max: 3, desc: "+3 wall strength (each point adds 2 defense against raids, and holds back 18 more of a horde). In a base battle: the wall map (tier 1), with a walkway behind the wall to shoot down from; each wall section has 40 + 12 hit points a point of wall strength." },
-  // Defences against hordes (defences.js): they raise the size of horde the base holds out, and show up on the
-  // base's battle map when the dead break in anyway.
-  barricades:   { name: "Barricades",       cost: { scrap: 8 },             hours: 10, max: 3, defence: true, desc: "Cars, timber and sandbags behind the walls: the base holds back 12% more of a horde each, and they are full cover on the battle maps if the dead break in (behind the wall and across the yard: tier 2). One is wrecked in every break-in fight; a Wallbreaker smashes one each time it attacks." },
-  spike_pits:   { name: "Spike pits",       cost: { scrap: 6 },             hours: 8,  max: 2, defence: true, desc: "Sharpened stakes in covered pits on the approach. One use: the next horde to attack loses 7% + 4 of the dead per pit before it reaches the walls, and the pits are on the battle map (each of the dead that steps in is hurt)." },
-  trench:       { name: "Trench and stakes", cost: { scrap: 12 },           hours: 30, max: 1, defence: true, desc: "A ditch around the base: the base holds back 25% more of a horde, and on the battle map the dead that reach the trench lose the rest of their turn." },
-  gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, the gate has 180 hit points instead of 100 on the battle map, plus two more barricades there. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
-  floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
+  // Walls (WALL_TIERS below, the user's request 2026-10-19: "walls will now be a buildable thing and different tiers with
+  // more health"): one wall round the base, built as a stake fence and upgraded where it stands, a tier at a time, each
+  // tier opening at a bigger base (DEF_SIZE). No base has a wall it did not build (baseWalls). cost / hours: tier 1's;
+  // canBuild and queueBuild take the next tier's once one stands. tab: "defenses" (the Defenses tab of Construction);
+  // size: the smallest kind of base that takes it.
+  walls:        { name: "Walls",          cost: { scrap: 6 },            hours: 8,  max: 1, tab: "defenses", size: "camp", wall: true, desc: "A wall round the base, built as a stake fence and upgraded where it stands: a timber palisade (a shelter), a scrap-metal wall (an outpost or the main base), a concrete wall (the main base). Each tier has more wall strength (each point adds 2 defense against raids and holds back 18 more of a horde) and more hit points a section on the battle map. Without one there is no wall: the fight is in the yard from the first turn." },
+  // Defences against hordes and raiders (defences.js): they raise the size of horde the base holds out and its
+  // defence against raids (tierMults), and show up on the base's battle map. tab "defenses", size: the smallest base
+  // that takes one (DEF_SIZE: a camp, a shelter, an outpost, the main base).
+  barricades:   { name: "Barricades",       cost: { scrap: 8 },             hours: 10, max: 3, defence: true, tab: "defenses", size: "camp", desc: "Cars, timber and sandbags behind the walls: the base holds back 12% more of a horde each, and they are full cover on the battle maps if the dead break in (behind the wall and across the yard: tier 2). One is wrecked in every break-in fight; a Wallbreaker smashes one each time it attacks." },
+  spike_pits:   { name: "Spike pits",       cost: { scrap: 6 },             hours: 8,  max: 2, defence: true, tab: "defenses", size: "camp", desc: "Sharpened stakes in covered pits on the approach. One use: the next horde to attack loses 7% + 4 of the dead per pit before it reaches the walls, and the pits are on the battle map (each of the dead that steps in is hurt)." },
+  // Barbed wire (wire.js, the user's request 2026-10-19): a fence of wire on the approach that slows everyone, the
+  // living too, until it is cut with a multitool or another tool that cuts wire.
+  barbed_wire:  { name: "Barbed wire fence", cost: { scrap: 5 },            hours: 6,  max: 2, defence: true, tab: "defenses", size: "camp", desc: "Barbed wire strung on stakes across the approach: the base holds back 6% more of a horde a line and counts more against raiders. On the battle map it is a line of wire outside the wall (in front of the yard without one): the dead that reach it lose the rest of their turn, and people are snagged (the rest of their turn and a few cuts) unless they carry something to cut it with (a multitool, a field repair kit's pliers, an axe, a hatchet or a machete), which cuts a way through instead. Anyone of yours with a cutter can Cut wire next to them (1 action)." },
+  sandbag_wall: { name: "Sandbag positions", cost: { scrap: 6 },            hours: 10, max: 3, defence: true, tab: "defenses", size: "shelter", desc: "Sandbagged fighting positions in the yard: the base holds back 5% more of a horde each and counts more against raiders, and on the battle map they are 4 cells of sandbags (cover) behind the wall or across the yard." },
+  // Trenches (the user's request 2026-10-19: "trenches, which can slow down zombies more than humans"): any base, two
+  // lines at most (one at a camp or a shelter). On the battle map the dead that drop in lose the rest of their turn;
+  // the living climb out for one action (combat.js moveAlong, TRENCH_AP).
+  trench:       { name: "Trench and stakes", cost: { scrap: 12 },           hours: 30, max: 2, defence: true, tab: "defenses", size: "camp", desc: "A ditch with stakes in the bottom round the base: the base holds back 25% more of a horde (the second line 12% more). On the battle map a line of trench in front of the wall (in front of the yard without one): the dead that drop in lose the rest of their turn, while the living only lose an action climbing out, so it slows the dead far more than raiders. Two lines at most (one at a camp or a shelter)." },
+  gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, tab: "defenses", size: "outpost", desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, the gate has 180 hit points instead of 100 on the battle map, plus two more barricades there. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
+  floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, tab: "defenses", size: "outpost", desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
+  razor_wire:   { name: "Concertina wire",  cost: { scrap: 12, parts: 1 },  hours: 12, max: 1, defence: true, tab: "defenses", size: "outpost", desc: "Coils of razor wire further out than the barbed wire: the base holds back 10% more of a horde and counts more against raiders. On the battle map a line of razor wire: it stops the dead for the turn and cuts them, and snags people worse than barbed wire (more cuts) unless they carry a cutter. Cut wire (1 action) clears a cell of it too." },
+  guard_towers: { name: "Guard towers",     cost: { scrap: 30, parts: 2 },  hours: 36, max: 1, defence: true, tab: "defenses", size: "hub", req: { mechanics: 2 }, needsWall: true, desc: "Two raised gun towers on the wall midway along it: the base holds back 8% more of a horde and counts more against raiders. On the battle map two more towers on the walkway (height 2: full cover from anything not right next to them, +10 aim at anything lower). Needs a wall to stand on and a Mechanics 2+ survivor here to build." },
   // Hiding a base (hiding.js): netting and brush over the roofs and the yard, the paths kept off. Concealment + HIDE.CAMO.
-  camo:         { name: "Camouflage netting", cost: { scrap: 10, parts: 1 }, hours: 16, max: 1, desc: "Netting, brush and dull paint over the roofs and the yard, and the paths kept off the open ground: the base is harder to find (concealment +25%: the groups' scouts and passing parties miss it more often, and a base they have not seen for a month may slip out of what they know). See the base's Defence tab." },
-  watchtower:   { name: "Watchtower",     plot: "utility", cost: { scrap: 15 },            hours: 18, max: 1, desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner. On the battle maps it is two towers (height 2): full cover from anything not right next to them, +10 aim at anything lower and +4 sight, the widest view." },
+  camo:         { name: "Camouflage netting", cost: { scrap: 10, parts: 1 }, hours: 16, max: 1, tab: "defenses", size: "outpost", desc: "Netting, brush and dull paint over the roofs and the yard, and the paths kept off the open ground: the base is harder to find (concealment +25%: the groups' scouts and passing parties miss it more often, and a base they have not seen for a month may slip out of what they know). See the base's Defence tab." },
+  watchtower:   { name: "Watchtower",     plot: "utility", cost: { scrap: 15 },            hours: 18, max: 1, tab: "defenses", size: "shelter", desc: "+2 tiles of live vision around this base. Lookouts warn of raids sooner. On the battle maps it is two towers (height 2): full cover from anything not right next to them, +10 aim at anything lower and +4 sight, the widest view." },
   // Jails (family "jail", tiers 1–3, each upgrading the one below in place; prisoners.js JAIL has what each tier does):
   // a base keeps prisoners only in a jail (no jail, no room: the extras are released, executed, asked to join or walked
   // to a base with room, prisoners.js settle). Costs:
@@ -213,12 +228,12 @@ export const BUILDINGS = {
   // gather (2026-10-09, user pick): as the outpost camp's, its materials are taken from the stores as they come in.
   // User numbers 2026-10-09: "Upgrading to base 60 hours 100 scrap 5 building materials".
   hub_up:       { name: "Build up into a base", cost: { scrap: 100, buildmat: 5 }, hours: 60, max: 1, shelterOnly: true, hubOnly: true, tierUp: true, gather: true,
-                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, a fence with a gate, beds for four, 16 building plots and 14 utility plots. Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
+                  desc: "Turn the shelter into a real base: a main house, a dug well (12 water a day), a cellar, beds for four, 16 building plots and 14 utility plots. A wall it keeps as it stands (Construction, Defenses: upgrade it there). Shelters only. The materials are taken from the stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
   // An outpost camp (2026-10-09, user request: "When starting a base it should start as a camp with a progress bar with
   // needed items to upgrade to a more permanent base established"): Build outpost sets up a camp (tier 0, a shelter's
   // rules) and queues this at once. gather: the materials are not paid up front; the job takes them from the camp's
   // stores as they come in (teams, supply runs), and the work never runs ahead of the share delivered (gatherHour).
-  // Done: an outpost as before (its spring, wall 1, 6 + 6 plots). Not queued by hand: a camp has it from the start.
+  // Done: an outpost as before (its spring, 6 + 6 plots; no wall it did not build: the Defenses tab). Not queued by hand: a camp has it from the start.
   // User numbers 2026-10-09: "Upgrading to Outpost 20 hours 20 scrap 2 building materials".
   // A camp (2026-10-09, user request: "Make camps a pseudo temp base that can be upgraded to bases with time and
   // supplies but is the most barebones"; any team, anywhere: Set up camp, staging.js) built up into a shelter: the camp
@@ -227,7 +242,7 @@ export const BUILDINGS = {
   camp_up:      { name: "Build up into a shelter", cost: { scrap: 20, buildmat: 2 }, hours: 20, max: 1, campOnly: true, hubOnly: true, tierUp: true, gather: true,
                   desc: "Turn the camp into a shelter: a shack with a roof behind a scrap barricade, beds for four, a building plot, three utility plots and two crop plots; later the shelter is built up into a base. The materials are taken from the camp's stores as they come in; the builders here do the work, never more of it than the materials delivered allow." },
   outpost_up:   { name: "Establish the outpost", cost: { scrap: 20, buildmat: 2 }, hours: 20, max: 1, shelterOnly: true, outpostOnly: true, tierUp: true, gather: true,
-                  desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), a fence (wall 1), 6 building plots and 6 utility plots. The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
+                  desc: "Turn the outpost camp into a real outpost: a shack with a roof, a dug spring (3 water a day), 6 building plots and 6 utility plots (walls are built on the Defenses tab). The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
 
 // ---------- construction plots ----------
@@ -371,7 +386,7 @@ export function queueGenUpgrade(state, base, id) {
 }
 
 // The name of a queue job: a new building, a barrel's upgrade or a bunkhouse expanded into a barracks.
-export const jobName = (job) => (job.target && job.type === "generator" ? `Upgrade a generator to ${GEN_TIERS[job.tier] ? `a ${GEN_TIERS[job.tier].name.toLowerCase()}` : "the next tier"}` : job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
+export const jobName = (job) => (job.type === "walls" ? (job.target ? `Upgrade the wall to a ${WALL_TIERS[job.tier] ? WALL_TIERS[job.tier].name.toLowerCase() : "the next tier"}` : (WALL_TIERS[job.tier || 1] || WALL_TIERS[1]).name) : job.target && job.type === "generator" ? `Upgrade a generator to ${GEN_TIERS[job.tier] ? `a ${GEN_TIERS[job.tier].name.toLowerCase()}` : "the next tier"}` : job.target && job.type === "barracks" ? "Expand a bunkhouse into a barracks" : job.target && job.type === "reload_bench" ? "Upgrade an ammo bench into a reloading bench" : job.target && job.type === "canner" ? "Fit a pressure canner to a preserving room" : job.target ?`Upgrade to ${WATER_BARREL.tiers[job.tier] ? WATER_BARREL.tiers[job.tier].name.toLowerCase() : "the next tier"}` : BUILDINGS[job.type].name);
 
 // ---------- demolishing ----------
 // Pulls a building down to free its plot: half its scrap, parts and electronics back (rounded down), and for a barrel half of its
@@ -383,6 +398,7 @@ export function demolishRefund(b) {
   if (b.type === "water_barrel") for (let t = 2; t <= barrelTier(b); t++) add(WATER_BARREL.tiers[t].cost);
   if (b.type === "kitchen" && b.canner) add(BUILDINGS.canner.cost); // machines-2: its pressure canner's half too
   if (b.type === "generator") for (let t = 2; t <= genTier(b); t++) add(GEN_TIERS[t].cost); // gen-tiers: half of its upgrades too
+  if (b.type === "walls" && b.tier) { delete out.scrap; for (let t = 1; t <= wallTierOf(b); t++) add(WALL_TIERS[t].cost); } // WALL_TIERS: half of every tier it was built up through
   for (const k of Object.keys(out)) out[k] = Math.floor(out[k] / 2);
   return out;
 }
@@ -404,7 +420,7 @@ export function demolish(state, base, id) {
   if (b.type === "watchtower") base.watchtower = count(base, "watchtower") > 0;
   for (const s of atBase(state, base.id)) if (s.station === b.id) s.station = null;
   assignStations(state, base);
-  const name = b.type === "water_barrel" ? barrelName(b) : b.type === "generator" ? genName(b) : BUILDINGS[b.type].name;
+  const name = b.type === "water_barrel" ? barrelName(b) : b.type === "generator" ? genName(b) : b.type === "walls" ? wallName(b) : BUILDINGS[b.type].name;
   const got = Object.entries(back).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${keyWord(k)}`).join(", ");
   log(state, `${name} at ${base.name} pulled down${got ? ` (${got} salvaged)` : ""}.`, "info");
   return `${name} pulled down${got ? `: ${got} salvaged` : ""}. Its plot is free.`;
@@ -425,8 +441,9 @@ export const SHELTER = {
   river: 10,          // water a day hauled from a river or lake beside it (no well yet; the people carry it)
   // What a shelter may build (the most of each): yard things on its 3 utility plots (PLOTS.shelter), one roofed
   // building on its building plot (a bunkhouse, a root cellar, a makeshift infirmary or a hunting cabin), a barricade,
-  // a farm plot and the step up.
-  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2 },
+  // a farm plot, the shelter's defences (the Defenses tab) and the step up.
+  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 2, trench: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2,
+    walls: 1, spike_pits: 2, barbed_wire: 2, sandbag_wall: 2 }, // the Defenses tab: a wall up to a timber palisade (WALL_TIERS), wire, pits, sandbags
 };
 export const isShelter = (base) => !!base && base.tier === 0;
 export const baseTier = (base) => (isShelter(base) ? 0 : 1);
@@ -450,8 +467,9 @@ export const CAMP = {
   beds: 6, plots: 1, vision: 1, // plots: its crop plot (CROP_PLOTS.camp)
   setupHours: 1,     // Set up camp: an hour of work, no materials (the materials come with the step up)
   // The yard things a camp may build (the most of each; they share its two utility plots). The crafting bench, the
-  // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too.
-  build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1 },
+  // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too. The camp's
+  // defences (the Defenses tab, 2026-10-19): a stake fence (the wall's first tier), a spike pit, a line of barbed wire.
+  build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, spike_pits: 1, barbed_wire: 1, trench: 1 }, // the Defenses tab: a stake fence, a pit, a line of wire, a trench
   ruinScrap: 10,     // on the ruins of a burned base: 10 scrap less for the step up (salvage)
   matScrap: 3, matHours: 3, // its builders make building materials for the step up from scrap (= crafting.js buildmat)
 };
@@ -492,9 +510,74 @@ export function upgradeShelter(state, base) {
 // Working buildings of a type: a broken one (breakdowns.js) does nothing until it is repaired. countAll: built, broken or not.
 export const count = (base, type) => base.buildings.filter((b) => b.type === type && !b.broken).length;
 export const countAll = (base, type) => base.buildings.filter((b) => b.type === type).length;
-// Wall strength: the hub 3, an outpost 1, +3 a wall section, +2 for a section damaged in a raid (wear 60+,
-// breakdowns.js RAID_DAMAGE.damaged) and nothing for a broken one.
-export const baseWalls = (base) => (isShelter(base) ? SHELTER.walls : base.type === "hub" ? 3 : 1) + base.buildings.reduce((a, b) => a + (b.type !== "walls" || b.broken ? 0 : (b.wear || 0) >= 60 ? 2 : 3), 0);
+// ---------- walls by tier (the user's request 2026-10-19) ----------
+// The kinds of base by size, smallest first (DEF_SIZE): what a defence (BUILDINGS size) and a wall's tier need. An
+// outpost never becomes the main base, so the main base's own tier (the concrete wall, the guard towers) stays its own.
+export const DEF_SIZE = { camp: 0, shelter: 1, outpost: 2, hub: 3 };
+export const DEF_SIZE_NAMES = { camp: "Camp", shelter: "Shelter", outpost: "Outpost", hub: "Main hub" };
+const DEF_AT = { camp: "a camp", shelter: "a shelter", outpost: "an outpost or the main base", hub: "the main base" };
+export const sizeRank = (base) => DEF_SIZE[plotSize(base)];
+export const sizeFits = (base, size) => !size || sizeRank(base) >= DEF_SIZE[size];
+export const opensAt = (size) => `Opens at ${DEF_AT[size]}`;
+// One wall round a base (a "walls" building with its tier), upgraded where it stands: strength is its wall strength
+// (each point 2 defense against raids, factions.js baseDefense, and 18 more of a horde held back, defences.js
+// wallHold), hp a wall section's hit points on the battle map (deploy.js wallHp; fort.js), size the smallest base that
+// takes the tier. A section damaged in a raid (wear 60+, breakdowns.js RAID_DAMAGE.damaged) counts WALL_DAMAGED of its
+// strength and hit points; a broken one nothing until it is repaired.
+//   1 Stake fence      2 strength,  60 hp   6 scrap, 8 work-hours           any base (a camp too)
+//   2 Timber palisade  4 strength, 100 hp  14 scrap, 16 work-hours          a shelter and up
+//   3 Scrap-metal wall 8 strength, 160 hp  25 scrap, a part, 30 work-hours  an outpost or the main base
+//   4 Concrete wall   12 strength, 240 hp  40 scrap, 2 parts, 4 building materials, 48 work-hours, Mechanics 3: the main base
+// The old free wall (the hub 3, an outpost 1) is gone: a base with no wall built has none (the user: "when raided now
+// with no defense builds you will not have any walls"). A wall from before the tiers (no tier: a "section" of 3)
+// counts LEGACY_WALL; migrateWalls turns a save's sections into one wall of a tier.
+export const WALL_TIERS = [
+  null,
+  { name: "Stake fence",      strength: 2,  hp: 60,  size: "camp",    cost: { scrap: 6 },                          hours: 8,  desc: "Sharpened stakes and woven brush round the camp, waist high: it keeps the dead back a while and slows raiders." },
+  { name: "Timber palisade",  strength: 4,  hp: 100, size: "shelter", cost: { scrap: 14 },                         hours: 16, desc: "Logs set upright in a ditch, lashed and spiked: a real wall with a walkway behind it." },
+  { name: "Scrap-metal wall", strength: 8,  hp: 160, size: "outpost", cost: { scrap: 25, parts: 1 },               hours: 30, desc: "Car doors, sheet steel and shipping pallets welded and bolted onto the palisade's posts." },
+  { name: "Concrete wall",    strength: 12, hp: 240, size: "hub",     cost: { scrap: 40, parts: 2, buildmat: 4 }, hours: 48, req: { mechanics: 3 }, desc: "Cinder block and poured concrete on a footing, rebar through it: the strongest wall there is." },
+];
+export const WALL_DAMAGED = 2 / 3, LEGACY_WALL = 3;
+export const wallOf = (base) => (base && base.buildings ? base.buildings.find((b) => b.type === "walls") || null : null);
+export const wallTierOf = (b) => (!b ? 0 : Math.max(1, Math.min(WALL_TIERS.length - 1, b.tier || 2))); // a sectioned wall from before the tiers: a palisade
+export const wallName = (b) => (b && WALL_TIERS[wallTierOf(b)] ? WALL_TIERS[wallTierOf(b)].name : "No wall");
+// One wall building's strength: a stand-in base's own (b.str: fort.js assaultBase), its tier's, or a legacy section's.
+const wallPiece = (b) => (b.type !== "walls" || b.broken ? 0 : (b.str != null ? b.str : b.tier ? WALL_TIERS[wallTierOf(b)].strength : LEGACY_WALL) * ((b.wear || 0) >= 60 ? WALL_DAMAGED : 1));
+// Wall strength: what the walls standing here add up to (one tiered wall at your bases), nothing without one.
+export const baseWalls = (base) => Math.round(base.buildings.reduce((a, b) => a + wallPiece(b), 0) * 10) / 10;
+// The wall's tier here (0: none, or broken), and a section's hit points on the battle map (null: the old formula,
+// deploy.js wallHp, for a base whose walls have no tier).
+export const wallTier = (base) => { const w = wallOf(base); return w && !w.broken && w.tier ? wallTierOf(w) : w && !w.broken ? Math.min(WALL_TIERS.length - 1, base.buildings.filter((b) => b.type === "walls" && !b.broken).length + 1) : 0; };
+export const wallSectionHp = (base) => {
+  const w = wallOf(base);
+  if (!w || !w.tier || w.str != null) return null;
+  return Math.round(WALL_TIERS[wallTierOf(w)].hp * ((w.wear || 0) >= 60 ? WALL_DAMAGED : 1));
+};
+// A save's walls from before the tiers (up to three sections of 3 each, on top of the old free wall): one wall of the
+// tier nearest what they gave a main base (a section: a palisade, two: a scrap-metal wall, three: concrete), the worst
+// wear of them, broken only if all were. Idempotent: a base whose wall has a tier is left alone.
+export function migrateWalls(state) {
+  for (const base of state.bases || []) {
+    const ws = (base.buildings || []).filter((b) => b.type === "walls");
+    if (!ws.length || (ws.length === 1 && ws[0].tier)) continue;
+    const keep = ws[0];
+    keep.tier = Math.min(WALL_TIERS.length - 1, Math.max(keep.tier || 0, ws.length + 1));
+    keep.wear = Math.max(...ws.map((b) => b.wear || 0));
+    if (ws.every((b) => b.broken)) keep.broken = true; else delete keep.broken;
+    base.buildings = base.buildings.filter((b) => b.type !== "walls" || b === keep);
+    for (const job of base.construction || []) if (job.type === "walls" && !job.target) { job.target = keep.id; job.tier = Math.min(WALL_TIERS.length - 1, keep.tier + 1); }
+  }
+}
+// The next step for a base's wall: { tier, def } of the tier to build (1 with none), or null at the top. A queued
+// wall job counts as built (one step at a time).
+export function nextWallTier(base) {
+  const w = wallOf(base);
+  const job = base.construction.find((c) => c.type === "walls");
+  const have = job ? job.tier || 1 : w ? wallTierOf(w) : 0;
+  const tier = have + 1;
+  return WALL_TIERS[tier] ? { tier, def: WALL_TIERS[tier], queued: !!job } : null;
+}
 // A base on alert or under siege (a raid at its walls): builders and mechanics are on the walls, so construction
 // and repairs stop until it is over (the price of "Prepare defenses").
 export const underAttack = (state, base) => !!base.alert ||
@@ -518,7 +601,11 @@ export const benchType = (base) => Object.keys(BENCH).find((k) => BUILDINGS[k].t
 export const benchOf = (base) => (benchType(base) ? BENCH[benchType(base)] : null);
 
 export function addBuilding(base, type) {
+  // A wall (WALL_TIERS): one a base. Raised again where one stands (a group's sections handed over, conquest.js and
+  // occupy.js), it goes up a tier instead.
+  if (type === "walls" && wallOf(base)) { const w = wallOf(base); w.tier = Math.min(WALL_TIERS.length - 1, wallTierOf(w) + 1); return w; }
   const b = { id: newId(), type };
+  if (type === "walls") b.tier = 1;
   // An upgrade (hospital tiers) replaces the lower tier of the same family.
   const fam = BUILDINGS[type].family;
   if (fam) base.buildings = base.buildings.filter((x) => BUILDINGS[x.type].family !== fam);
@@ -691,6 +778,8 @@ export function placeProblem(base, type) {
   // A shelter (tier 0) builds only a few survival buildings, and the step up into a base; a base never the step.
   if (def.shelterOnly && !isShelter(base)) return "Shelters only (this is a base already)";
   if (def.campOnly && !isCamp(base)) return isShelter(base) ? "Camps only (this is a shelter already)" : "Camps only (this is a base already)";
+  // A defence for bigger bases (BUILDINGS size, DEF_SIZE): as the base grows, more of them open up.
+  if (def.size && !sizeFits(base, def.size)) return opensAt(def.size);
   if (isCamp(base)) {
     if (!CAMP.build[type]) return type === "hub_up" ? "Build the camp up into a shelter first" : base.type === "outpost" ? "Available once the camp is an outpost (Establish the outpost)" : SHELTER.build[type] ? "Available once the shelter stands (build the camp up first)" : "Available once it is a base (camp → shelter → base)";
   } else if (isShelter(base) && !SHELTER.build[type]) return "Not at a shelter: build it up into a base first";
@@ -698,8 +787,28 @@ export function placeProblem(base, type) {
   return "";
 }
 
+// The wall's next step (WALL_TIERS): build the stake fence, or upgrade the wall standing a tier. { ok, wall: true,
+// tier, def (the tier's), reason }. One step in the queue at a time; the tier's base size, materials and skill; a
+// broken wall is repaired first (Repairs tab).
+/** @returns {{ ok: boolean, reason?: string, wall?: boolean, tier?: number, def?: any, where?: boolean, camp?: boolean, top?: boolean, queued?: boolean, short?: boolean, size?: string }} */
+export function canBuildWall(state, base) {
+  const where = placeProblem(base, "walls");
+  if (where) return { ok: false, where: true, camp: isCamp(base) || undefined, reason: where };
+  const next = nextWallTier(base);
+  if (!next) return { ok: false, top: true, reason: `Already a ${WALL_TIERS[WALL_TIERS.length - 1].name.toLowerCase()} (the top tier)` };
+  const out = { wall: true, tier: next.tier, def: next.def };
+  if (next.queued) return { ...out, ok: false, queued: true, reason: "The wall's next tier is already queued" };
+  const w = wallOf(base);
+  if (w && w.broken) return { ...out, ok: false, reason: "The wall is broken: repair it first (Repairs tab)" };
+  if (!sizeFits(base, next.def.size)) return { ...out, ok: false, where: !w, size: next.def.size, reason: `${next.def.name}: ${opensAt(next.def.size).toLowerCase()}` };
+  for (const [k, v] of Object.entries(next.def.cost)) if ((base.stock[k] || 0) < v) return { ...out, ok: false, short: true, reason: `Needs ${v} ${keyWord(k)}` };
+  for (const [sk, lvl] of Object.entries(next.def.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ...out, ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
+  return { ...out, ok: true };
+}
+
 export function canBuild(state, base, type) {
   const def = BUILDINGS[type];
+  if (def && def.wall) return canBuildWall(state, base);
   const queued = base.construction.filter((c) => c.type === type && (!c.target || def.from)).length; // a barrel's upgrade is not a new one; a bunkhouse expanded into a barracks is one more barracks
   if (countAll(base, type) + queued >= def.max) return { ok: false, reason: `Limit reached (${def.max})` };
   // Not at this kind of base (placeProblem): said before anything else it would need.
@@ -731,6 +840,7 @@ export function canBuild(state, base, type) {
     return { ok: false, noPlot: true, reason: cap ? `No free ${PLOT_NAMES[kind].toLowerCase()} (${plotsUsed(base, kind)}/${cap}): demolish something or build at a bigger base` : `A ${tierName(base).toLowerCase()} has no ${PLOT_NAMES[kind].toLowerCase()}s` };
   }
   if (type === "huntcabin" && cabinProblem(state, base)) return { ok: false, reason: `Hunting cabin: ${cabinProblem(state, base)}` };
+  if (def.needsWall && !count(base, "walls")) return { ok: false, reason: "Needs a wall standing here first (Walls, on this tab)" };
   if (!def.gather) for (const [k, v] of Object.entries(def.cost)) if ((base.stock[k] || 0) < v) return { ok: false, reason: `Needs ${v} ${keyWord(k)}` }; // gather: taken as it comes in
   if (def.req) {
     for (const [sk, lvl] of Object.entries(def.req)) {
@@ -745,6 +855,12 @@ export function canBuild(state, base, type) {
 export function queueBuild(state, base, type) {
   const chk = canBuild(state, base, type);
   if (!chk.ok) return chk.reason;
+  if (BUILDINGS[type].wall) { // WALL_TIERS: a new wall's first tier, or the next tier of the one standing (job.target)
+    const wc = canBuildWall(state, base), w = wallOf(base);
+    for (const [k, v] of Object.entries(wc.def.cost)) base.stock[k] -= v;
+    base.construction.push({ id: newId(), type: "walls", tier: wc.tier, ...(w ? { target: w.id } : {}), cost: { ...wc.def.cost }, progress: 0, hours: wc.def.hours });
+    return w ? `${wallName(w)} → ${wc.def.name} queued at ${base.name}.` : `${wc.def.name} queued at ${base.name}.`;
+  }
   if (BUILDINGS[type].gather) { base.construction.push(BUILDINGS[type].tierUp ? tierUpJobFor(base, type) : gatherJob(type)); return `${BUILDINGS[type].name} queued at ${base.name}: the materials are taken from the stores as they come in.`; }
   for (const [k, v] of Object.entries(BUILDINGS[type].cost)) base.stock[k] -= v;
   base.construction.push({ id: newId(), type, progress: 0, hours: BUILDINGS[type].hours });
@@ -861,6 +977,11 @@ export function constructionHour(state) {
         if (b) { b.tier = Math.max(genTier(b), job.tier); log(state, `${base.name}: the generator is now a ${genName(b).toLowerCase()} (${GEN_TIERS[genTier(b)].out} power).`, "good"); }
         continue;
       }
+      if (job.target && job.type === "walls") { // the wall up a tier where it stands (WALL_TIERS); nothing if it was lost meanwhile
+        const b = base.buildings.find((x) => x.id === job.target && x.type === "walls");
+        if (b) { b.tier = Math.max(wallTierOf(b), job.tier || wallTierOf(b) + 1); log(state, `${base.name}: the wall is now a ${wallName(b).toLowerCase()} (wall strength ${baseWalls(base)}).`, "good"); }
+        continue;
+      }
       if (job.target && job.type === "reload_bench") { // an ammo bench upgraded (reloading.js); nothing if it was lost meanwhile
         const b = base.buildings.find((x) => x.id === job.target && x.type === "ammo_bench");
         if (b) { b.type = "reload_bench"; log(state, `${base.name}: an ammo bench is now a reloading bench.`, "good"); }
@@ -871,8 +992,8 @@ export function constructionHour(state) {
         if (b) { b.tier = Math.max(barrelTier(b), job.tier); log(state, `${base.name}: a water barrel is now a ${barrelName(b).toLowerCase()} (${barrelCap(b)} water).`, "good"); }
         continue;
       }
-      addBuilding(base, job.type);
-      log(state, `${BUILDINGS[job.type].name} finished at ${base.name}.`, "good");
+      const nb = addBuilding(base, job.type);
+      log(state, `${job.type === "walls" ? wallName(nb) : BUILDINGS[job.type].name} finished at ${base.name}.`, "good");
     }
   }
 }
@@ -880,12 +1001,12 @@ export function constructionHour(state) {
 export function buildingSummary(state, base) {
   const people = atBase(state, base.id).length;
   return [
-    ["Defense from walls", `+${baseWalls(base) * 2}`],
+    ["Walls", wallOf(base) ? `${wallName(wallOf(base))} (tier ${wallTierOf(wallOf(base))} of ${WALL_TIERS.length - 1}): wall strength ${baseWalls(base)}, +${Math.round(baseWalls(base) * 2)} defense${wallOf(base).broken ? " (broken: repair it)" : ""}` : "None: build one on Construction's Defenses tab"],
     ["Beds", `${baseBeds(base)} for ${people} people${people > baseBeds(base) ? " (overcrowded)" : ""}`],
     ["Crop plots", `${farmSlots(base)}${count(base, "greenhouse") ? ` + ${count(base, "greenhouse") * 2} under glass` : ""}`],
     ["Workshop stations", `${stations(base).length}`],
     ["Crafting", benchOf(base) ? `${BUILDINGS[benchType(base)].name}: crafters ${Math.round((benchOf(base).rate - 1) * 100)}% faster, +${Math.round(benchOf(base).quality * 100)}% condition${benchOf(base).workshop ? ", workshop recipes" : ""}` : "No crafting bench: only the simple (Field) recipes"],
-    ...(isCamp(base) ? [["Tier", "Camp: tarps, bedrolls and a fire. Build it up (Construction) into a shelter or an outpost for a roof and room to build"]] : isShelter(base) ? [["Tier", "Shelter (tier 0): tarps, a shack and a barricade. Build it up into a base (Construction) for walls, a well and every building"]] : []),
+    ...(isCamp(base) ? [["Tier", "Camp: tarps, bedrolls and a fire. Build it up (Construction) into a shelter or an outpost for a roof and room to build"]] : isShelter(base) ? [["Tier", "Shelter (tier 0): tarps and a shack. Build it up into a base (Construction) for a well, stronger walls and every building"]] : []),
     ["Vision", `${(isCamp(base) ? CAMP.vision : isShelter(base) ? SHELTER.vision : base.type === "hub" ? 3 : 2) + (base.watchtower ? 2 : 0)} tiles`],
     ["Radio", base.radio ? "Station" : count(base, "relay") ? (base.relayOffline ? "Relay (offline: needs 1 part)" : "Relay") : "No"],
     ["Vehicle repairs", count(base, "garage") ? "Garage (+25 per part)" : "Field repair (+12 per part, Mechanics 4+)"],

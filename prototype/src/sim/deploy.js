@@ -10,8 +10,8 @@
 //   18 columns deep and 13 rows long (longer for a base with more buildings: as long as its yard map is tall, less 3;
 //   defences.js registers the size, interior.js wallMapRows); the ladders' rows scale with it.
 //   a base with walls built has a wall line (column 12 of 18). Each wall section has hit points (WALL_HP + WALL_HP_PER
-//   × the base's wall strength, buildings.js baseWalls: a hub with one wall section 112, three 184; an outpost with
-//   one 88) and blocks sight from the ground; the gate (2 cells in the middle, 100 hit points, 180 with a reinforced
+//   by the wall's tier, buildings.js WALL_TIERS: a stake fence 60, a timber palisade 100, a scrap-metal wall 160, a
+//   concrete wall 240) and blocks sight from the ground; the gate (2 cells in the middle, 100 hit points, 180 with a reinforced
 //   gate) is barred to the attackers until it is battered open. Behind the wall runs a walkway (column 11, height 1:
 //   combat.js HEIGHT) the defenders shoot down from, reached by ladders (column 10); a watchtower adds 2 towers on it
 //   (height 2, full cover from anything not next to them). Breaches already made when the fight starts: for the dead
@@ -32,7 +32,7 @@
 // columns 2–6, about 8 tiles from the openings.
 import { MAP_W, MAP_H, CELL, WEAPONS, active, unitAt, unitById, coverAgainst, transformBattle, say, occupancy } from "./combat.js";
 import { setFortLit } from "./fort.js"; // the fort map's floodlights (setLit)
-import { count, baseWalls } from "./buildings.js";
+import { count, baseWalls, wallSectionHp } from "./buildings.js";
 import { poweredType } from "./power.js";
 import { armoryDefence } from "./defences.js";
 import { isNight } from "./world.js";
@@ -41,11 +41,12 @@ import { applyPlan, planFor, planStale, savePlan, planAct, PLAN_ACTS, lateAtStar
 
 export const DEPLOY = {
   WALL_X: 12, LINE_X: 11, BARRICADE_X: [8, 10], SPIKE_X: [13, 15], TRENCH_X: 14, ENEMY_X: 15, ZONE_OPEN: 7,
+  WIRE_X: [13, 14], RAZOR_X: 14, // the barbed wire fences' columns and the concertina wire's (its cells razor wire), in front of the wall and short of the attackers' start
   FLOOD_NIGHT: 12, FLOOD_DAY: 5, FLOOD_FROM_X: 7, MAX_BREACH: 4, INSIDE_FRAC: 0,
   // Default positions (calibrated with hivetest's break-ins): a gate holder with 7+ defenders, two with 9+; shooters
   // on the towers and the walkway; the rest in columns 2–6, about 8 tiles from the openings, a little forward.
   GATE_ONE: 7, GATE_TWO: 9, DEF_X: [2, 6], DEF_FORWARD: 0.2, DEF_OPEN: 8,
-  // The wall's hit points: a section 40 + 12 × wall strength, the gate 100 (+80 reinforced). The walkway (column 11)
+  // The wall's hit points without a tier (a group's stand-in base): a section 40 + 12 × wall strength; the gate 100 (+80 reinforced). The walkway (column 11)
   // and its ladders (column 10, these rows).
   WALL_HP: 40, WALL_HP_PER: 12, GATE_HP: 100, GATE_HP_REINFORCED: 80, LADDER_ROWS: [2, 4, 8, 10], WORN: 0.002, WORN_MAX: 0.85,
   TRAP_HP: 25, // a bridge barricade's tank traps (combat.js CELL.tanktrap)
@@ -95,8 +96,10 @@ export function sideUntf(side, W0 = MAP_W, H0 = MAP_H) {
   return (x, y) => [x, y];
 }
 
-// The hit points of a base's wall sections and its gate (WALL_HP …).
-export const wallHp = (base) => DEPLOY.WALL_HP + DEPLOY.WALL_HP_PER * (base ? baseWalls(base) : 0);
+// The hit points of a base's wall sections and its gate: the wall's tier's (buildings.js WALL_TIERS hp: a stake fence
+// 60 … a concrete wall 240, two thirds when damaged), else WALL_HP + WALL_HP_PER × wall strength (a group's stand-in
+// base, walls from before the tiers).
+export const wallHp = (base) => (base && wallSectionHp(base)) ?? DEPLOY.WALL_HP + DEPLOY.WALL_HP_PER * (base ? baseWalls(base) : 0);
 export const gateHp = (base) => DEPLOY.GATE_HP + (base && count(base, "gate") ? DEPLOY.GATE_HP_REINFORCED : 0);
 
 // ---------- the map (layout phase "map", attackers east) ----------
@@ -161,10 +164,27 @@ export function deployMap(b, ctx, base, c) {
   }
   // The trench, then the spike pits (used this attack), in front of the wall.
   if (count(base, "trench")) for (let y = 0; y < H; y++) if (ctx.free(DEPLOY.TRENCH_X, y) && y % 4 !== 2) ctx.put(DEPLOY.TRENCH_X, y, "trench");
+  if (count(base, "trench") >= 2) for (let y = 0; y < H; y++) if (ctx.free(DEPLOY.TRENCH_X - 1, y) && y % 4 !== 0) ctx.put(DEPLOY.TRENCH_X - 1, y, "trench"); // a second line, staggered
   for (let i = 0; i < (c.pits || 0) * 5; i++) {
     for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.SPIKE_X[0], DEPLOY.SPIKE_X[1]), y = rng.int(Math.max(0, mid - FRONT.HALF), Math.min(H - 1, mid + FRONT.HALF)); if (ctx.free(x, y)) { ctx.put(x, y, "spikes"); break; } }
   }
   layKit(ctx, rng, c.kit || armoryDefence(base), { wireX: [X + 1, X + 1], trapX: DEPLOY.SPIKE_X, bagX: [DEPLOY.BARRICADE_X[0], DEPLOY.BARRICADE_X[1] - 1] });
+  // The Defenses tab's (buildings.js, 2026-10-19): a column of barbed wire a fence (WIRE_X), concertina wire further
+  // out (razor), sandbag positions behind the wall, the guard towers on the walkway either side of the gate.
+  const line = (x, razor) => {
+    if (x >= ctx.W) return;
+    for (let y = 0; y < H; y++) {
+      if (!onDeck(y)) continue;
+      if (ctx.free(x, y)) ctx.put(x, y, "wire");
+      if (razor && ctx.cellAt(x, y).k === "wire") ctx.cellAt(x, y).razor = true;
+    }
+  };
+  for (let i = 0; i < count(base, "barbed_wire"); i++) line(DEPLOY.WIRE_X[i], false);
+  if (count(base, "razor_wire")) line(DEPLOY.RAZOR_X, true);
+  for (let i = 0; i < count(base, "sandbag_wall") * 4; i++) {
+    for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.BARRICADE_X[0] - 2, DEPLOY.BARRICADE_X[1] - 1), y = rng.int(Math.max(1, mid - FRONT.HALF), Math.min(H - 2, mid + FRONT.HALF)); if (ctx.free(x, y)) { ctx.put(x, y, "sandbag"); break; } }
+  }
+  if (count(base, "guard_towers")) for (const y of [mid - 3, mid + 2]) if (y >= 0 && y < H && ctx.cellAt(X - 1, y).k === "walkway") { ctx.put(X - 1, y, "tower"); ctx.cellAt(X - 1, y).h = 2; towers.push([X - 1, y]); }
   // A lane through the gate from the back of the yard to the far edge: whatever the barricades, the kit and the
   // ground put in the way, the yard always connects to the gate (and the battle's reach to the outside).
   for (const y of gate) for (let x = 0; x < ctx.W; x++) {

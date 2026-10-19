@@ -21,6 +21,7 @@ import { loadsFor, roundName } from "../sim/ammo.js"; // the reload chooser: the
 import { MILDEAD, armorVs, stabsGap } from "../sim/deadsoldiers.js";
 import { windowsNear, BMAP, peekOptions, closeOptions, braceOptions, DOOR_KINDS } from "../sim/buildingmaps.js";
 import { WINDOW, windowsBy, windowState, windowWord, openRefusal, isWindow, windowOpen } from "../sim/windows.js"; // the map's windows: check, open, close, break (the user's request 2026-10-17)
+import { WIRE, cutTargets, cutRefusal, cutterOf } from "../sim/wire.js"; // Cut wire (the user's request 2026-10-19)
 import { SHOVE, BOARD, CRAWL, shoveTargets, shoveDests, shoveRefusal, shovePlan, tallPiece, canShove, shoveable, pieceName, boardTargets, boardRefusal, boardsOf, tearTargets, isBoarded, boardedName, boardedUnder, targetWord } from "../sim/barricade.js"; // furniture shoved in the way, doors and windows boarded up (the user's request 2026-10-18)
 import { INTERIOR } from "../sim/interior.js";
 import { clearEnough } from "../sim/battlesize.js";
@@ -419,7 +420,7 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
@@ -544,7 +545,7 @@ export function combatClick(state, px, py) {
   }
   // Raids: click a container next to the selected unit to search it.
   // A door picked for Peek, Close door or Brace (sim/buildingmaps.js); a window picked for a window order (sim/windows.js).
-  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "boardup", "teardown"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
+  if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "boardup", "teardown", "cutwire"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
   // Shove (sim/barricade.js): the piece clicked opens its destinations; with a piece picked, a destination clicked shoves it there.
   if (u && active(u) && (cui.mode === "shove" || (cui.shoveAsk && cui.shoveAsk.uid === u.id))) return void shoveClick(state, b, u, c);
   // A window right next to the selected unit (sim/windows.js): the next thing to do with it (check it, open it, climb through).
@@ -845,6 +846,13 @@ function barricadeButtons(state, b, u, btn) {
     const what = [...new Set(targets.map((t) => t.word))].join(", ");
     btn("boardup", "Board up", `${BOARD.AP} actions and a bundle of boards and nails${boards ? "" : " (none carried)"}: ${first} nails boards across the ${what || "closed door, doorway or window"} next to them, from either side${boards && boards.where === "vehicle" ? " (the bundle out of the team's vehicle)" : " (a bundle in the team's vehicle counts from next to it)"}. ${BOARD.HP} hit points a layer (up to ${BOARD.MAX}) on top of a closed door's own, no sight or way through: the dead and raiders batter it. Loud: the unaware within ${BOARD.RADIUS} tiles turn toward the hammering${b.raid ? `, Heat +${BOARD.HEAT}` : ""}.${targets.length > 1 ? " Several next to them: click the one." : ""}`,
       !bWhy, "", { why: bWhy, ap: BOARD.AP, on: cui.mode === "boarded" });
+  }
+  // Cut wire (sim/wire.js): shown next to wire; refused (with why) without a cutter.
+  const wires = cutTargets(b, u);
+  if (wires.length) {
+    const cut = cutterOf(state, u), cWhy = cutRefusal(state, b, u);
+    btn("cutwire", "Cut wire", `${WIRE.AP} action${cut ? ` (${first} ${cut.how.replace(/\bit\b/, "the wire")})` : ""}: the ${wires.some((w) => w.c.razor) ? "razor wire" : "barbed wire"} next to ${first} is cut away, open ground from then on. Wire stops the dead for the turn and snags anyone who walks into it without a cutter (the rest of their turn and a few cuts); with one they cut through as they go. A little noise (heard ${WIRE.RADIUS} tiles off).${wires.length > 1 ? " Several next to them: click the one." : ""}`,
+      !cWhy, "", { why: cWhy, ap: WIRE.AP, on: cui.mode === "cutwire" });
   }
   const tears = tearTargets(b, u);
   if (tears.length) btn("teardown", "Tear down", `${BOARD.TEAR.ap} actions: ${first} pries the boards off the ${[...new Set(tears.map((t) => boardedName(t.c).toLowerCase()))].join(", ")} next to them, from either side: the door or window as it was, shut. About half the bundles come off whole (into the kit, or on the ground at their feet); the rest are splintered. Quieter than nailing them up (heard ${BOARD.TEAR.radius} tiles off).${tears.length > 1 ? " Several next to them: click the one." : ""}`,
@@ -1519,6 +1527,14 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
     if (!list.length) { cui.msg = v === "boardup" ? "Stand right next to a closed door, a doorway or a window (not diagonally)." : "Stand right next to boards (not diagonally) to tear them down."; return; }
     cui.mode = cui.mode === v ? "move" : v;
     cui.msg = cui.mode === v ? (v === "boardup" ? "Click the door, doorway or window to board up." : "Click the boards to tear down.") : "";
+    return;
+  }
+  if (v === "cutwire") { // sim/wire.js: the wire next to them (several: click the one)
+    const list = cutTargets(b, u), why = cutRefusal(state, b, u);
+    if (why) { cui.msg = why; return; }
+    if (list.length === 1) return void act(state, { type: "cutwire", unit: u.id, x: list[0].x, y: list[0].y });
+    cui.mode = cui.mode === v ? "move" : v;
+    cui.msg = cui.mode === v ? "Click the wire to cut." : "";
     return;
   }
   if (v === "lights") return void act(state, { type: "lights", unit: u.id }); // sim/indoorlight.js: the switch in reach (the sim says why not)

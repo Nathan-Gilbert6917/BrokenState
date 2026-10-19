@@ -494,6 +494,7 @@ function breakCard(state, base, s, what) {
         disabled: () => !t.who, ai: () => t.chance * 15,
         resolve: (st) => {
           if (!live()) return gone();
+          if (!t.who) return `Nobody is here to talk ${first(s)} round.`; // disabled then: an auto-answer that took it anyway
           const ok = st.rng.chance(t.chance);
           talkXp(st, t.who, ok); // skills.js: Speech for the talker
           addMood(st, s, ok ? 15 : 3, `Talked it through with ${first(t.who)}`);

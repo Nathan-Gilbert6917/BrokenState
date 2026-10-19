@@ -111,6 +111,7 @@ import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
 import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
+import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js"; // barbed wire snags the living unless they cut it (the user's request 2026-10-19)
 import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, breakPiece, boardedName, aiBarricade, kitBoards } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
 import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its containers as the ledger keeps them, their own dice
@@ -669,8 +670,9 @@ export const CELL = {
   barricade: { walk: false, cover: 2, los: false, name: "Barricade" },
   spikes:    { walk: true,  cover: 0, los: false, name: "Spike pit", trap: "spikes" },
   trench:    { walk: true,  cover: 0, los: false, name: "Trench", trap: "trench" },
-  // From the armory's defence kit (defences.js armoryDefence): wire stops the dead like the trench, a bear trap
-  // hurts and holds the first one to step in (then it is sprung).
+  // From the armory's defence kit (defences.js armoryDefence) and the base's wire fences (buildings.js barbed_wire,
+  // razor_wire; c.razor): wire stops the dead like the trench (razor wire cuts them too) and snags the living unless
+  // they cut it (wire.js wireStep); a bear trap hurts and holds the first one to step in (then it is sprung).
   wire:      { walk: true,  cover: 0, los: false, name: "Barbed wire", trap: "wire" },
   beartrap:  { walk: true,  cover: 0, los: false, name: "Bear trap", trap: "beartrap" },
   hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh", tall: 2 },
@@ -3223,7 +3225,7 @@ export function playerUnit(b, s) {
   const medKit = tool && GEAR[tool.key] && GEAR[tool.key].medKit ? tool : null;
   const u = {
     fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
-    id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
+    id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name), cutter: cutterKeyOf(s), // wire.js: what they cut wire with, if anything
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : modLabel(item), // "9mm pistol (red dot, suppressor)"
     gm: key === "fists" ? NO_MODS : gunMods(item), gmWeapon: key, // gunmods.js: what its attachments add (shotOdds, shotNoise)
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s) + illnessAim(s) + tiredAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js); illness (health.js); tiredness (sleep.js)
@@ -3269,6 +3271,7 @@ export function refitUnit(b, u, s) {
   if (f.medKit !== u.medKit) { u.medKit = f.medKit; u.kitBonus = f.kitBonus; u.kitLeft = f.kitLeft; }
   MED.refitSelfAid(u, s); // medics.js: a tourniquet or a trauma kit within reach now
   u.fit = { aim: f.aim, dmgMult: f.dmgMult, armor: f.armor, medicine: f.medicine };
+  u.cutter = f.cutter; // wire.js: a cutter picked up, handed over or put down
   const held = u.weapon, rounds = magIn(u), heldLoad = u.load, heldItem = u.item;
   const swapped = (heldItem || null) !== (f.item || null); // another gun in the hands (gunload.js): what was in the old one goes with it
   if (swapped && heldItem) gunOut(b, u, heldItem);
@@ -3540,6 +3543,7 @@ export function enemyUnit(b, rng, kind, power, n) {
   syncModes(u);
   kitHeadgear(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // helmets.js: a helmet and ear protection by kit (own dice)
   kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
+  u.cutter = kitCutter(kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // wire.js WIRE.KIT: snips for the wire (own dice)
   u.boards = kitBoards(kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // barricade.js BOARD.KIT: a bundle of boards to nail over a window while nothing is in sight (own dice)
   MED.kitSelfAid(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // medics.js SELF.KIT: a tourniquet to stabilize themselves (its own dice)
   kitLauncher(b, u, kind, p, n, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // launchers.js: an M203 on a soldier's rifle, now and then an RPG (its own dice)
@@ -3892,7 +3896,9 @@ export function moveAlong(b, u, path) {
   let burned = false;
   let reacted = null; // overwatchers that have fired at this mover already (once each per move)
   const vaulted = []; // the half cover gone over on the way (VAULT): winded after it, a scuff, the raid's noise
+  let stepI = -1; // the step's index in the path (a trench: the cell before it)
   for (const [x, y] of path) {
+    stepI++;
     const there = unitAt(b, x, y);
     const last = x === path[path.length - 1][0] && y === path[path.length - 1][1];
     // Your people squeeze past the third side on the way (reachable: through, never stopping there); stopping at the
@@ -3930,8 +3936,22 @@ export function moveAlong(b, u, path) {
         u.ap = 0;
         b.cells[idx(x, y)].k = "open"; // sprung
         say(b, `${u.name} is caught in a bear trap (${eff}).`, "good");
+      } else if (trap === "wire" && b.cells[idx(x, y)].razor) {
+        const eff = Math.round(damage(b, u, b.rng.int(WIRE.RAZOR_DEAD[0], WIRE.RAZOR_DEAD[1]), null));
+        u.ap = 0; say(b, `${u.name} is caught in the razor wire (${eff}).`, "good");
       } else { u.ap = 0; say(b, trap === "wire" ? `${u.name} is snagged on the barbed wire.` : `${u.name} flounders in the trench.`, "good"); }
       if (!active(u) || trap !== "spikes") break;
+    }
+    if (trap === "wire" && u.kind !== "zombie" && wireStep(null, b, u, x, y, { say, damage, fx })) break; // wire.js: the living snagged, or cutting through
+    // A trench (buildings.js trench, the user's request 2026-10-19: it slows the dead more than the living): the dead
+    // lose the rest of their turn (above); the living drop in and the move ends there, their next action kept to climb
+    // out. Once a trench: moving along it from a cell of it costs nothing more.
+    if (trap === "trench" && u.kind !== "zombie") {
+      const [px, py] = stepI > 0 ? path[stepI - 1] : from;
+      if (b.cells[idx(px, py)].k !== "trench") {
+        if (playerSees(b, u) || u.side === "player") say(b, `${u.name} drops into the trench.`, u.side === "player" ? "info" : "good");
+        break;
+      }
     }
     if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
     if (acidStep(b, u, x, y) && !active(u)) break; // into a spitter's acid (acid.js): once a round
@@ -4651,6 +4671,11 @@ export function combatAct(state, act) {
       if (err) return err;
       b.reach = flood(b.cells, u.x, u.y); // what is in reach on foot changes with an opening
       syncFloor(b);
+      break;
+    }
+    case "cutwire": { // wire.js: a cell of wire next to them cut away (1 action, a cutter carried)
+      const err = cutAct(state, b, u, act, { say, alertNear });
+      if (err) return err;
       break;
     }
     case "shove": case "boardup": case "teardown": { // barricade.js: furniture shoved a tile (both actions), boards nailed over a door or window, the boards torn down again
