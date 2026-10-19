@@ -10,7 +10,8 @@
 // staying, the armory (a windowless block with a locked security door raiders batter down and your people walk
 // through, and inside it two locked containers: the gun cage with every item of the armory, the ammo lockers with the
 // rounds and arrows; a raider batters a lock open over turns and takes nothing meanwhile, a pry tool is quicker, the
-// armory wears for the smashed locks and door, and broken it has an ordinary door and open containers), save / load of a plan, a finished job keeping its spot, a family upgrade
+// armory wears for the smashed locks and door, and broken it has an ordinary door and open containers), the
+// defenders' keys (a building's door, the gate and the armory's containers locked and unlocked from inside or out), save / load of a plan, a finished job keeping its spot, a family upgrade
 // keeping it, and the Base map view's commands (pick, put, turn, lift, close).
 // Usage: node tools/basemaptest.js [seed]
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
@@ -21,6 +22,7 @@ import { createVehicle } from "../src/sim/vehicles.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import * as BM from "../src/sim/basemap.js";
 import { baseMapTab, layoutPanel, layoutHover } from "../src/ui/basemap.js";
+import { unitOrders } from "../src/ui/combat.js"; // the order buttons (Lock, Unlock)
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -289,6 +291,87 @@ section("The armory's locked containers");
   const A2 = b2.deployPlan.fort.buildings.find((x) => x.type === "armory");
   const door2 = A2 ? b2.cells[A2.doors[0][1] * b2.w + A2.doors[0][0]] : null;
   check(!!door2 && door2.k === "bdoor" && door2.hp < BM.ARMORY_LOCK.DOOR_HP && !door2.dk, `and its door an ordinary barred door (${door2 ? door2.hp : "?"} hit points)`);
+  st.combat = null;
+}
+
+section("The defenders' keys: doors, the gate, the armory's containers");
+{
+  const st = world();
+  const h = fortHub(st, ["walls", "gate", "bunkhouse", "storehouse", "armory"], 2);
+  h.stock.ammo = 200;
+  h.armory.push(newItem("pistol"), newItem("vest"));
+  const b = baseBattle(st, h, { kind: "raiders", count: 8, power: 3, name: "raiders" }, {});
+  b.phase = "player";
+  const F = b.deployPlan.fort;
+  const A = F.buildings.find((x) => x.type === "armory");
+  const [dx0, dy0] = A.doors[0];
+  const door = b.cells[dy0 * b.w + dx0];
+  const inA = (x, y) => x >= A.x0 && y >= A.y0 && x < A.x0 + A.w && y < A.y0 + A.h;
+  const by = (want) => [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([ox, oy]) => [dx0 + ox, dy0 + oy]).find(([x, y]) => want(x, y) && CELL[b.cells[y * b.w + x].k].walk);
+  const out1 = by((x, y) => !inA(x, y)), in1 = by((x, y) => inA(x, y));
+  const P = b.units.filter((u) => u.side === "player"), E = b.units.filter((u) => u.side === "enemy");
+  const me = P[0], raider = E[0];
+  for (const u of b.units) if (u !== me && u !== raider) { u.x = 0; u.y = 0; } // out of the way
+  const place = (u, xy) => { u.x = xy[0]; u.y = xy[1]; u.ap = 2; };
+  check(door.keyed && door.k === "bdoor" && F.gates.north.every(([x, y]) => b.cells[y * b.w + x].keyed && b.cells[y * b.w + x].bar), "the base's doors and gates are keyed and start locked");
+  // From outside: one of yours unlocks the armory's door (1 action); the door is then an ordinary closed one.
+  place(me, out1);
+  check(BM.keyOptions(b, me).some((o) => o.what === "door" && o.locked && o.x === dx0 && o.y === dy0), "standing outside the armory's door, the door is theirs to unlock");
+  const vs = unitOrders(st, b, me).list.map((o) => o.v);
+  check(vs.includes("keyunlock") && !vs.includes("keylock"), "their orders offer Unlock (and no Lock: nothing next to them is unlocked)");
+  let err = combatAct(st, { type: "keyunlock", unit: me.id, x: dx0, y: dy0 });
+  check(!err && door.k === "idoor" && door.dk === "security" && door.hp === BM.ARMORY_LOCK.DOOR_HP && me.ap === 1, `unlocked from outside: an ordinary closed door now, still a security door with its hit points, 1 action (${err || "ok"})`);
+  // Unlocked, a raider walks in without battering.
+  me.x = 0; me.y = 0; place(raider, out1); // the one of yours out of the doorway's way
+  const inIdx = in1[1] * b.w + in1[0];
+  check(Number.isFinite(reachable(b, raider, raider.mob + 2).dist[inIdx]), "unlocked, a raider can walk in through it");
+  // Locked again from inside.
+  place(me, in1);
+  err = combatAct(st, { type: "keylock", unit: me.id, x: dx0, y: dy0 });
+  check(!err && door.k === "bdoor", `locked again from inside (${err || "ok"})`);
+  check(!Number.isFinite(reachable(b, raider, raider.mob + 2).dist[inIdx]), "locked, the raider cannot walk in");
+  // Locking needs the doorway clear; an open door is shut as it is locked.
+  combatAct(st, { type: "keyunlock", unit: me.id, x: dx0, y: dy0 });
+  door.k = "odoor";
+  const r0 = [raider.x, raider.y]; raider.x = dx0; raider.y = dy0; me.ap = 2;
+  err = combatAct(st, { type: "keylock", unit: me.id, x: dx0, y: dy0 });
+  check(!!err && door.k === "odoor", `with somebody in the doorway it cannot be locked (${err})`);
+  raider.x = r0[0]; raider.y = r0[1];
+  err = combatAct(st, { type: "keylock", unit: me.id, x: dx0, y: dy0 });
+  check(!err && door.k === "bdoor", "an open door is shut and locked in one action");
+  // The armory's containers: unlocked with the key, a raider takes without battering; locked again, they must batter.
+  const cage = b.stores.containers.find((c) => c.holds === "gear");
+  place(me, in1);
+  check(BM.keyOptions(b, me).some((o) => o.what === "box" && o.id === cage.id && o.locked), "inside, next to the gun cage: theirs to unlock");
+  err = combatAct(st, { type: "keyunlock", unit: me.id, x: cage.x, y: cage.y });
+  check(!err && !BM.lockedBox(cage) && cage.lock.hp === BM.ARMORY_LOCK.HP && BM.storeContents(cage).lock.open && !BM.storeContents(cage).lock.smashed, `the gun cage unlocked with the key, its lock whole (${err || "ok"})`);
+  me.ap = 2;
+  err = combatAct(st, { type: "keylock", unit: me.id, x: cage.x, y: cage.y });
+  check(!err && BM.lockedBox(cage), "and locked again");
+  // A raider holds no keys.
+  raider.ap = 2; raider.x = in1[0]; raider.y = in1[1]; me.x = 0; me.y = 0;
+  check(!BM.keyOptions(b, raider).length && !!BM.keyAct(st, b, raider, { type: "keyunlock" }, { say: () => {} }), "a raider holds none of the base's keys");
+  // A smashed lock can never be locked again.
+  cage.lock.hp = 0; cage.lock.open = true;
+  place(me, in1); raider.x = 0; raider.y = 0;
+  check(!BM.keyOptions(b, me).some((o) => o.id === cage.id), "a smashed lock is no longer the key's");
+  // The gate: unbarred it stands open to everyone; barred again, with nobody in the gateway.
+  const g = F.gates.north, gc = g.map(([x, y]) => b.cells[y * b.w + x]);
+  const gIn = [g[0][0], g[0][1] + 1];
+  place(me, gIn);
+  err = combatAct(st, { type: "keyunlock", unit: me.id, x: g[0][0], y: g[0][1] });
+  check(!err && gc.every((c) => !c.bar), `the gate unbarred from inside, all its cells (${err || "ok"})`);
+  me.ap = 2;
+  err = combatAct(st, { type: "keylock", unit: me.id, x: g[0][0], y: g[0][1] });
+  check(!err && gc.every((c) => c.bar), "and barred again");
+  // Diagonally next to a door: not in reach.
+  place(me, [dx0 + 1, dy0 + 1]);
+  check(!BM.keyOptions(b, me).some((o) => o.what === "door" && o.x === dx0 && o.y === dy0), "diagonally next to a door: not in reach");
+  // A key turned is not a smashed lock: no wear for it when the fight ends.
+  cage.lock.hp = BM.ARMORY_LOCK.HP; cage.lock.open = true; cage.lock.keyed = true;
+  const fxA = h.buildings.find((x) => x.type === "armory");
+  BM.settleBaseBattle(st, b);
+  check(!(fxA.wear > 0), "unlocked with the key, nothing wears");
   st.combat = null;
 }
 

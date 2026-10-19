@@ -76,7 +76,7 @@ export function layoutPanel(state, b, cui, preview = "") {
 export function storesHtml(b, cui) {
   if (!b.stores || !b.stores.containers.length) return "";
   let html = `<h3 data-tip="${esc("The base's own stock and armory, spread over the buildings that hold goods. Click one here or on the map to see what is in it. In a raid, raiders go for them once the wall is passed; what they get away with is gone. An armory's gun cage and ammo lockers are locked (🔒) behind its locked security door: a raider has to batter the door down and then the lock open.")}">Stores on the map</h3><div class="cbactions">`;
-  for (const c of b.stores.containers) html += `<button class="${cui.storeView === c.id ? "active" : ""}" data-action="cb-store" data-id="${c.id}" data-tip="${esc(`${c.label}: about ${Math.round(c.kg)} kg of goods.${c.lock ? (c.lock.open ? " Its lock is smashed open." : ` Locked (${c.lock.hp}/${c.lock.mhp}): a raider has to batter the lock open first.`) : ""} Click to see what is in it.`)}">${esc(c.label)}${lockMark(c)} <span class="key">${Math.round(c.kg)} kg</span></button>`;
+  for (const c of b.stores.containers) html += `<button class="${cui.storeView === c.id ? "active" : ""}" data-action="cb-store" data-id="${c.id}" data-tip="${esc(`${c.label}: about ${Math.round(c.kg)} kg of goods.${c.lock ? (!(c.lock.hp > 0) ? " Its lock is smashed open." : c.lock.open ? " Unlocked with the key." : ` Locked (${c.lock.hp}/${c.lock.mhp}): a raider has to batter the lock open first.`) : ""} Click to see what is in it.`)}">${esc(c.label)}${lockMark(c)} <span class="key">${Math.round(c.kg)} kg</span></button>`;
   html += `</div>`;
   const c = cui.storeView != null ? b.stores.containers.find((x) => x.id === cui.storeView) : null;
   if (c) {
@@ -89,7 +89,7 @@ export function storesHtml(b, cui) {
 }
 // The armory's locks (sim/basemap.js ARMORY_LOCK): a mark after a locked container's name, and the lock's line in its card.
 const lockMark = (c) => (c.lock ? (c.lock.open ? " 🔓" : " 🔒") : "");
-const lockLine = (L) => (!L ? "" : L.open ? `<div class="small danger">🔓 The lock is smashed open${L.by ? ` (${esc(L.by)})` : ""}: raiders take from it freely.</div>` : `<div class="small good">🔒 Locked (${L.hp}/${L.mhp}): a raider has to batter the lock open, a blow a turn, before anything can be taken.</div>`);
+const lockLine = (L) => (!L ? "" : L.smashed ? `<div class="small danger">🔓 The lock is smashed open${L.by ? ` (${esc(L.by)})` : ""}: raiders take from it freely.</div>` : L.open ? `<div class="small warn">🔓 Unlocked with the key: raiders take from it freely. Lock (1 action, next to it) locks it again.</div>` : `<div class="small good">🔒 Locked (${L.hp}/${L.mhp}): a raider has to batter the lock open, a blow a turn, before anything can be taken. Your people unlock it with the key (Unlock, 1 action, next to it).</div>`);
 // The hover line in layout mode: the pick's fit, or what stands there.
 export function layoutHover(state, b, h, ghost) {
   const L = b.layout, base = baseById(state, L.baseId);
@@ -108,7 +108,7 @@ export function layoutHover(state, b, h, ghost) {
 // A store container under the mouse in any base battle.
 export function storeHover(c) {
   const s = storeContents(c);
-  const lock = s.lock ? (s.lock.open ? " · lock smashed open" : ` · locked (${s.lock.hp}/${s.lock.mhp})`) : "";
+  const lock = s.lock ? (s.lock.smashed ? " · lock smashed open" : s.lock.open ? " · unlocked" : ` · locked (${s.lock.hp}/${s.lock.mhp})`) : "";
   return `<b>${esc(c.label)}</b> · stores${lock}<br><span class="muted">${s.sup.length || s.gear.length ? `${s.sup.slice(0, 4).map(([n, q]) => `${q} ${esc(n.toLowerCase())}`).join(", ")}${s.sup.length > 4 || s.gear.length ? ", …" : ""}` : "empty"} (about ${s.kg} kg). Click it, or its button in the panel, to see everything in it.</span>`;
 }
 

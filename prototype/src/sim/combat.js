@@ -56,7 +56,7 @@ import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke, botFlash, noiseAt } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
-import { thiefTurn, settleBaseBattle, layoutAct } from "./basemap.js"; // the base map: raiders stealing from the stores, what the fight leaves behind, the Base map view
+import { thiefTurn, settleBaseBattle, layoutAct, keyAct } from "./basemap.js"; // the base map: raiders stealing from the stores, what the fight leaves behind, the Base map view
 import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./interior.js";
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
@@ -4774,6 +4774,11 @@ export function combatAct(state, act) {
     }
     case "close": case "brace": case "peek": { // buildingmaps.js: a building's doors (close one, brace one, peek through one); a field map's houses too
       const err = doorAct(state, b, u, act, { say, alertNear, fx });
+      if (err) return err;
+      break;
+    }
+    case "keylock": case "keyunlock": { // basemap.js: the defenders' keys: a door, the gate or the armory's containers locked or unlocked (1 action, quiet)
+      const err = keyAct(state, b, u, act, { say });
       if (err) return err;
       break;
     }
