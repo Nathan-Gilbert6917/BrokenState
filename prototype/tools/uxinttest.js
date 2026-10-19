@@ -17,7 +17,7 @@
 import { FOODS, unitsOf } from "../src/sim/foods.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
-import { newItem, ensurePack } from "../src/sim/inventory.js";
+import { newItem, ensurePack, allCarried } from "../src/sim/inventory.js";
 import { addMeat, meatIn } from "../src/sim/hunting.js";
 import { createVehicle } from "../src/sim/vehicles.js";
 import { launchExpedition, partyTile, partyMembers } from "../src/sim/parties.js";
@@ -70,7 +70,14 @@ function openBattle(st, p) {
   }
   return { b, setup };
 }
-const rounds = (p, k) => Math.max(0, (p.supplies && p.supplies[k]) || 0) + Math.max(0, (p.cargo && p.cargo.supplies && p.cargo.supplies[k]) || 0);
+// The team's rounds of a key: its supplies and cargo, and (physical rounds: gunload.js, mags.js) what its people carry in
+// their guns, magazines and pockets, of that key.
+const inStack = (st, k) => (Array.isArray(st) ? st.reduce((a, x) => a + (x.k === k ? x.n || 0 : 0), 0) : 0);
+const carriedOf = (s, k) => allCarried(s).reduce((a, it) => a + (it.loaded ? (Array.isArray(it.loaded.stack) ? inStack(it.loaded.stack, k) : it.loaded.key === k ? it.loaded.n || 0 : 0) : 0) + inStack(it.stack, k) + (it.key === k ? Math.floor(Number(it.dur) || 0) : 0), 0);
+const rounds = (p, k, st = null) => Math.max(0, (p.supplies && p.supplies[k]) || 0) + Math.max(0, (p.cargo && p.cargo.supplies && p.cargo.supplies[k]) || 0)
+  + (st ? partyMembers(st, p).reduce((a, s) => a + carriedOf(s, k), 0) + (p.cargo ? p.cargo.gear.reduce((a, it) => a + (it.loaded && it.loaded.key === k ? it.loaded.n || 0 : 0), 0) : 0) : 0);
+// In a fight: the units' guns (u.stack) hold the rounds of the guns in hand.
+const fightRounds = (b, p, k, st) => rounds(p, k, st) + b.units.filter((u) => u.side === "player" && u.sid != null).reduce((a, u) => a + inStack(u.stack, k), 0);
 
 // ---------- 1. a load and a bag on the battle map's ground ----------
 section("1. A carrier sets down a load and a bag in a fight: ground piles, picked up again, the rounds in the bag's gun");
@@ -86,7 +93,7 @@ section("1. A carrier sets down a load and a bag in a fight: ground piles, picke
   ensurePack(pack)[0] = spare;
   a.gear.carry = pack; // a bag in the arms, with a gun in it
   C.settleHold(st, p);
-  const water0 = C.holdTotals(p).rawwater, r0 = rounds(p, "a_9mm_fmj");
+  const water0 = C.holdTotals(p).rawwater, r0 = rounds(p, "a_9mm_fmj", st);
   const { b, setup } = openBattle(st, p);
   const ua = b.units.find((u) => u.sid === a.id), uc = b.units.find((u) => u.sid === c.id);
   const carrier = b.units.find((u) => u.side === "player" && u.hands);
@@ -103,7 +110,7 @@ section("1. A carrier sets down a load and a bag in a fight: ground piles, picke
   check(!!pileB && pileB.contents.gear.includes(pack) && pack.contents.includes(spare), "the bag is in a pile on its cell, the gun still in it");
   check(near(C.holdTotals(p).rawwater, water0 - heldAll), `the supplies left the pool when set down (${water0} → ${Math.round(C.holdTotals(p).rawwater)} un-purified water)`);
   const inGun = spare.loaded ? spare.loaded.n : 0;
-  check(inGun > 0 && near(rounds(p, "a_9mm_fmj"), r0 - inGun), `the gun in the bag left the team loaded (${inGun} rounds in it, out of the team's ${r0})`);
+  check(inGun > 0 && near(fightRounds(b, p, "a_9mm_fmj", st), r0 - inGun), `the gun in the bag left the team loaded (${inGun} rounds in it, out of the team's ${r0}: ${fightRounds(b, p, "a_9mm_fmj", st)} left)`);
   // Drawn on the map.
   let fills = 0;
   const ctx = new Proxy({}, { get: (o, k) => (k in o ? o[k] : typeof k === "string" && /^(fill|stroke|beginPath|ellipse|fillRect|strokeText|fillText)/.test(k) ? () => { if (/^fill/.test(k)) fills++; } : undefined), set: (o, k, v) => { o[k] = v; return true; } });
@@ -148,7 +155,7 @@ section("1. A carrier sets down a load and a bag in a fight: ground piles, picke
   closeCombat(st);
   const back = partyMembers(st, p).some((s) => s.gear.carry === pack) || p.cargo.gear.includes(pack);
   check(back && !spare.loaded, `won: the bag is back (${a.gear.carry === pack ? "in its carrier's arms" : "in the cargo"}), the gun in it unloaded`);
-  check(near(rounds(p, "a_9mm_fmj"), r0), `no round made or lost (${r0} → ${rounds(p, "a_9mm_fmj")})`);
+  check(near(rounds(p, "a_9mm_fmj", st), r0), `no round made or lost (${r0} → ${rounds(p, "a_9mm_fmj", st)})`);
   check(near(C.holdTotals(p).rawwater, water0), `the water is all the team's still (${Math.round(C.holdTotals(p).rawwater)} of ${water0})`);
   check(partyMembers(st, p).some((s) => s.gear.carry === loot) || p.cargo.gear.includes(loot) || hub(st).armory.includes(loot), "the looted pack set down came back too");
 }

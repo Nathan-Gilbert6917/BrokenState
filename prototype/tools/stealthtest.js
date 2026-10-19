@@ -431,7 +431,10 @@ function prisonWorld(s, n = 2, cells = 1) {
   const day0 = raid(false), nite = raid(true), lit = raid(true, "flashlight"), nvg = raid(true, "nvg");
   const gd = day0.units.find((u) => u.side === "enemy" && u.kind === "human"), gn = nite.units.find((u) => u.side === "enemy" && u.kind === "human");
   const zn = nite.units.find((u) => u.side === "enemy" && u.kind === "zombie");
-  check(!day0.night && nite.night && gd.sight === 13 && gn.sight === STEALTH.NIGHT_SIGHT && zn.sight === STEALTH.NIGHT_ZOMBIE_SIGHT, `enemy sight by day ${gd.sight}, at night ${gn.sight} (the dead ${zn.sight})`);
+  // People are people (docs/adr/0001-ai-parity.md): an enemy in the dark with no light sees what yours do (the second
+  // of the crew carries none).
+  const mine = nite.units.find((u) => u.side === "player" && !u.light && !u.nvg);
+  check(!day0.night && nite.night && gd.sight === 13 && mine && gn.sight === mine.sight && zn.sight === STEALTH.NIGHT_ZOMBIE_SIGHT, `enemy sight by day ${gd.sight}, at night ${gn.sight} as yours (${mine && mine.sight}; the dead ${zn.sight})`);
   const me = (b) => b.units.find((u) => u.side === "player");
   // Night vision sees as far as a military flashlight's beam (12, vision.js nvgSight; the user's request of 2026-10-12:
   // "up to the military flashlight"), no longer the full day's 13.
