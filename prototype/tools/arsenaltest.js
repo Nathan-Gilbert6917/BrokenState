@@ -218,7 +218,9 @@ section("Repairs at a workshop, with parts");
   const gun = f.arsenal.items.find((x) => x.key === "ar" || x.key === "huntrifle" || x.key === "carbine");
   gun.dur = Math.round(GEAR[gun.key].dur * 0.3);
   const max0 = gun.durMax || GEAR[gun.key].dur;
-  for (let i = 0; i < 4; i++) { st.hour += 24; C.repairGear(st, f, day(st) + i); }
+  // Four days in a row (a group mends every CARE.REPAIR.every days, on a day of its own: day(st) + i stepped by two and,
+  // on a group whose turn is the odd days, never came round).
+  for (let i = 0; i < 4; i++) { st.hour += 24; C.repairGear(st, f); }
   check(gun.dur > GEAR[gun.key].dur * 0.5, `their ${gun.name} is mended (${gun.dur} of ${gun.durMax})`);
   check(gun.durMax < max0 && f.stock.parts < 10, `and loses some of its maximum, as yours do (${max0} → ${gun.durMax}); parts spent (${10 - f.stock.parts})`);
   const plan = C.groupRepairPlan({ key: "plate", name: "Plate carrier", dur: 5, durMax: 50, quality: 1 }, 5);
