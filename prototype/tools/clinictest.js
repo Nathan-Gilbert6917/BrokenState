@@ -22,6 +22,8 @@ import { peopleUp } from "../src/sim/factions.js";
 import { nextWork, groupWorksDaily, sickbayTier, worksText, groupsBuild, GROUP_WORKS, groupTech, groupSkill } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { ROLES } from "../src/sim/economy.js";
+import { ensureMembers, syncMembers, membersOf } from "../src/sim/members.js";
+import { skill as skillOf } from "../src/sim/world.js";
 
 const args = process.argv.slice(2);
 const SEED = Number(args.find((a) => /^\d+$/.test(a)) || 7);
@@ -303,11 +305,14 @@ console.log("AI sick bays");
   for (const id of ["fieldsurgery", "hospitalops"]) if (!groupTech(f).known.includes(id)) groupTech(f).known.push(id);
   const type0 = f.type;
   f.type = "commune";
-  for (let d = 0; d < 400 && sickbayTier(f) < 3; d++) groupWorksDaily(st, f);
-  for (let d = 0; d < 60; d++) groupWorksDaily(st, f);
+  // Their best mechanic is one of their people (groupworks.js groupSkill): a commune's best a 3, then a trader's 4.
+  const mechs = (n) => { for (const s of membersOf(f)) { s.skills.mechanics = n; s.skills.mechanics = Math.max(0, 2 * n - skillOf(s, "mechanics")); } }; // the effective skill (traits count) at n
+  ensureMembers(st, f); syncMembers(st, f); mechs(3);
+  for (let d = 0; d < 400 && sickbayTier(f) < 3; d++) { mechs(3); groupWorksDaily(st, f); } // (held there: builders learn, newcomers join)
+  for (let d = 0; d < 60; d++) { mechs(3); groupWorksDaily(st, f); }
   check(sickbayTier(f) === 3, `a commune (Mechanics ${groupSkill(f, "mechanics")}) stops at the clinic (tier ${sickbayTier(f)})`);
   f.type = "traders";
-  for (let d = 0; d < 400 && sickbayTier(f) < 4; d++) groupWorksDaily(st, f);
+  for (let d = 0; d < 400 && sickbayTier(f) < 4; d++) { mechs(4); groupWorksDaily(st, f); }
   check(sickbayTier(f) === 4, `with a Medicine 12 doctor and a Mechanics ${groupSkill(f, "mechanics")} hand they reach the trauma hospital (tier ${sickbayTier(f)})`);
   f.type = type0;
 }
