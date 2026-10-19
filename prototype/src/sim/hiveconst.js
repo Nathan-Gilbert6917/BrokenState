@@ -218,6 +218,7 @@ export const SLEEPER = { COUNT: 4, AREA: 32 * 24, PER_INF: 4, MAX: 9, AWAY: 6, O
 // bursts into a worm swarm this often (never when fire killed it: the worms cook). PACK: a dead dog's bite is this
 // much surer for each other dead dog next to its target (at most PACK_MAX). Hordes crossing such land at HORDE_INF
 // infection or more pick some up (HORDE_ODDS a pass, HORDE_ADD, up to HORDE_MAX). CARD: the travel card's odds.
+// LOCKED: the pets shut in a raid's locked house, let out when its door is opened.
 export const BEASTS = {
   LAND: { hills: { deadstag: 0.1, deadhog: 0.03 }, forest: { deadstag: 0.07, deadhog: 0.08, deadhound: 0.02 }, plains: { deadhound: 0.07, deadcow: 0.05, deadhog: 0.04 } },
   TOWN: { suburb: { deadhound: 0.07, deadcat: 0.05 }, city: { deadhound: 0.04, deadcat: 0.06 } },
@@ -230,6 +231,10 @@ export const BEASTS = {
   HORDE_INF: 0.3, HORDE_ODDS: 0.25, HORDE_ADD: 0.03, HORDE_MAX: 0.08,
   SEARCH_THREAT: 3, // the hour-by-hour search (scavenge.js): + threat per point of the mix's extra weight
   CARD: 1.5, // the travel card's weight (events.js "deadbeasts") on a tile that has them
+  // Pets shut in a raid's locked house (deadbeasts.js shutInPets / releasePets; locks.js lockRaid / openLock): a locked
+  // room of one of these kinds on a tile that has dead pets holds ODDS of the time COUNT[0]–COUNT[1] of them (the
+  // tile's likelier kind), which come out at whoever opens the door.
+  LOCKED: { ODDS: 0.55, COUNT: [1, 3], ROOMS: ["house", "farmhouse", "cabin", "garage", "kitchen"] },
 };
 
 // The special dead in a hive's new horde (hivetech.js hiveMix): each kind the hive breeds comes along at ODDS of the

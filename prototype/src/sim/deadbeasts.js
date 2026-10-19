@@ -15,6 +15,10 @@
 //   have them in a given week (a hash of the seed, the tile and the week: no world dice, the same tile the same
 //   beasts). In a raid the pets are in the rooms with the rest (buildingmaps.js placeInterior takes the mix), and a
 //   city crawl's streets have the city's (citycrawl.js). None on a base's tile, on a mountain or on water.
+//   A raid's locked house (locks.js lockRaid: a locked room of a kind in LOCKED.ROOMS on a tile that has dead pets)
+//   holds some of them LOCKED.ODDS of the time (shutInPets: area.pets, rolled with the raid's lock dice), shut in
+//   with nobody to bite; the moment its door is opened (locks.js openLock: a key, the picks or a boot) they come out
+//   at whoever opened it (releasePets: units inside the room by the door, aware, acting in the enemy turn).
 // - In a fight: the usual AI plays them (they go for every living thing: wild). A dead cat hides as a crawler does
 //   (zombietypes.js applyZType low: unseen until close, in light or once it has struck). A dead dog's bite is PACK surer for
 //   each other dead dog next to its target (packAim, combat.js meleeOdds). Their bite can leave the worm in someone
@@ -33,7 +37,8 @@ import { localId } from "./world.js"; // a horde's id counted from the world's o
 import { herdAt } from "./worm.js";
 import { mergeMix } from "./zombietypes.js";
 import { releaseSwarm } from "./carriers.js";
-import { say, adjacent, active } from "./combat.js";
+import { say, adjacent, active, enemyUnit, CELL } from "./combat.js";
+import { applyZType } from "./zombietypes.js";
 
 export const BEAST_KINDS = Object.keys(ZTYPES).filter((k) => ZTYPES[k].beast);
 export const isBeast = (k) => !!(k && ZTYPES[k] && ZTYPES[k].beast);
@@ -79,6 +84,60 @@ export function beastsOf(mix) {
 // The beasts in a mix as words: "dead stags, dead dogs" (the roster, the tile panel). "" when none.
 export function beastText(mix) {
   return BEAST_KINDS.filter((k) => mix && mix[k] > 0).map((k) => `${ZTYPES[k].name.toLowerCase()}s`).join(", ");
+}
+
+// ---------- shut in a locked house (locks.js) ----------
+const PET_KINDS = ["deadhound", "deadcat"];
+// A raid's locked room has just been sealed (locks.js lockRaid): a house, a kitchen, a garage, a cabin on a tile that
+// has dead pets holds some of them LOCKED.ODDS of the time. roll(...keys): the raid's lock dice (a hash: the same raid
+// the same pets). area.pets = { kind, n }; null when none.
+export function shutInPets(state, b, area, roll) {
+  if (!area || area.outdoor || !BEASTS.LOCKED.ROOMS.includes(area.type) || area.pets) return null;
+  const mix = beastMix(state, b.tileId);
+  const kinds = PET_KINDS.filter((k) => mix && mix[k] > 0);
+  if (!kinds.length || roll("pets", area.id) >= BEASTS.LOCKED.ODDS) return null;
+  const kind = kinds.reduce((a, k) => (mix[k] > mix[a] ? k : a));
+  const [lo, hi] = BEASTS.LOCKED.COUNT;
+  const n = lo + Math.floor(roll("petsn", area.id) * (hi - lo + 1)) % (hi - lo + 1);
+  area.pets = { kind, n };
+  return area.pets;
+}
+// The room's door has just been opened (locks.js openLock): the pets shut in it come out. Units inside the room on the
+// door's storey, nearest the door first, aware (they bite in the enemy turn: ap 0 now), not counted among the enemy
+// the battle began with (reinforcement). H: { say, fx }. Returns the units made.
+export function releasePets(state, b, door, area, H) {
+  const P = area && area.pets;
+  if (!P || P.out) return [];
+  P.out = true;
+  const f = door.f || 0, W = b.w;
+  const cells = b.floors && b.floors[f] ? b.floors[f].cells : b.cells;
+  const taken = (x, y) => b.units.some((u) => !u.dead && !u.off && (u.f || 0) === f && u.x === x && u.y === y);
+  const spots = [];
+  for (let y = area.y0; y < area.y0 + area.h; y++) for (let x = area.x0; x < area.x0 + area.w; x++) {
+    const c = cells[y * W + x];
+    if (!c || !CELL[c.k] || !CELL[c.k].walk || c.k === "odoor" || c.k === "idoor" || c.k === "door" || taken(x, y)) continue;
+    spots.push([x, y, Math.hypot(x - door.x, y - door.y)]);
+  }
+  spots.sort((a, c) => a[2] - c[2]);
+  const power = (b.setup && b.setup.enemy && b.setup.enemy.power) || 2 + (b.infection || 0) * 3;
+  const out = [];
+  for (let i = 0; i < P.n && i < spots.length; i++) {
+    const z = applyZType(enemyUnit(b, b.rng, "zombies", power, b.units.filter((o) => o.kind === "zombie").length + 1), P.kind, false, power);
+    z.x = spots[i][0]; z.y = spots[i][1]; z.f = f;
+    z.aware = true;
+    z.reinforcement = true;
+    z.ap = 0;
+    z.low = false; // out of hiding: it is on whoever opened the door
+    z.face = [Math.sign(door.x - z.x), Math.sign(door.y - z.y)];
+    b.units.push(z);
+    out.push(z);
+  }
+  if (!out.length) return out;
+  const name = ZTYPES[P.kind].name.toLowerCase();
+  const what = out.length === 1 ? `a ${name}` : `${out.length} ${name}s`;
+  H.say(b, `Something scrabbles at the door as it opens: ${what}, shut in here since the house fell, thin and full of the worm, ${out.length === 1 ? "comes" : "come"} out at whoever opened it.`, "danger");
+  if (H.fx) H.fx(b, { type: "loot", to: [door.x, door.y], text: out.length === 1 ? ZTYPES[P.kind].name.toUpperCase() : `${ZTYPES[P.kind].name.toUpperCase()}S` });
+  return out;
 }
 
 // ---------- in a fight ----------
