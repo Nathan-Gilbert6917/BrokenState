@@ -81,7 +81,7 @@ export function storesHtml(b, cui) {
   const c = cui.storeView != null ? b.stores.containers.find((x) => x.id === cui.storeView) : null;
   if (c) {
     const s = storeContents(c);
-    html += `<div class="cbprev"><div class="spread"><b>${esc(c.label)}</b><button class="mini" data-action="cb-store" data-id="" data-tip="Close">✕</button></div>
+    html += `<div class="card small" style="margin-top:0.4rem;flex-shrink:0"><div class="spread"><b>${esc(c.label)}</b><button class="mini" data-action="cb-store" data-id="" data-tip="Close">✕</button></div>
       ${s.sup.length || s.gear.length ? `<div class="small">${s.sup.map(([n, q]) => `${q} ${esc(n.toLowerCase())}`).join(", ")}${s.sup.length && s.gear.length ? "; " : ""}${s.gear.map(esc).join(", ")}</div>` : `<div class="small muted">Empty.</div>`}
       <div class="small muted">About ${s.kg} kg in all.</div></div>`;
   }
