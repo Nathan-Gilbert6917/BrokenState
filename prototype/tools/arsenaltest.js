@@ -14,7 +14,7 @@ import { createVehicle, factionVehicles, upgradesOf, vehicleValue } from "../src
 import { addBuilding } from "../src/sim/buildings.js";
 import { worksAt } from "../src/sim/groupworks.js";
 import { itemDurMax } from "../src/sim/crafting.js";
-import { newNeutralGroup, wanderersDaily } from "../src/sim/wanderers.js";
+import { newNeutralGroup, wanderersDaily, WANDER } from "../src/sim/wanderers.js";
 import { Rng } from "../src/sim/rng.js";
 import * as A from "../src/sim/arsenal.js";
 import * as C from "../src/sim/groupcare.js";
@@ -280,7 +280,12 @@ section("Desertion and recruiting");
   const pistol = newItem("pistol", 0.8);
   wg.people[0].gear.weapon = pistol;
   const pop0 = com.pop, n = wg.people.length;
+  // Nobody dies or settles elsewhere while they wait (WANDER.SIM's die and settle rolls: a lone wanderer at a 5% a day
+  // join could lose the race to the tile's 1–2% a day death, and on some seeds did).
+  const SIM0 = { ...WANDER.SIM };
+  Object.assign(WANDER.SIM, { DIE: 0, DIE_INF: 0, DIE_HORDE: 0, SETTLE: 0 });
   for (let i = 0; i < 120 && s2.wanderers.groups.includes(wg); i++) { s2.hour += 24; wg.tile = com.bases[0]; wanderersDaily(s2); }
+  Object.assign(WANDER.SIM, SIM0);
   check(com.pop === pop0 + n && com.arsenal.items.includes(pistol), `wanderers at the commune's gate join it (people ${pop0} → ${com.pop}, the pistol in its arsenal)`);
   const rai = typed(s2, "raider", [com]);
   setFood(rai, rai.pop * 10);
@@ -692,7 +697,12 @@ section("They know your bases as far as they have scouted");
   D.changeRelation(st, friend, near, 60 - D.relation(st, friend, near));
   if (st.groupWorks) worksAt(near, near.bases[0]).radio = 1; // ai-locks: one of them on the air (a radio station: radio.js groupNetwork)
   let heard = 0;
+  // Their turn on the air every KNOW.RADIO.EVERY days, the gossip's own roll forced (as KNOW.SCOUT above): 5–6 turns
+  // at 50% each all missed on some seeds.
+  const C0 = G.KNOW.RADIO.CHANCE;
+  G.KNOW.RADIO.CHANCE = 1;
   for (let d = 0; d < 40 && !heard; d++) { st.hour += 24; heard = G.radioGossip(st, friend, day(st)); }
+  G.KNOW.RADIO.CHANCE = C0;
   check(heard > 0 && !!G.knownBase(st, friend, h.tile), `a friend on the radio tells them where you are (${heard})`);
   // Saves keep each group's frontier.
   const B2 = deserializeState(JSON.parse(JSON.stringify(serializeState(st, { dropCards: true }))));
