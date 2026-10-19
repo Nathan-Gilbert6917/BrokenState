@@ -255,7 +255,7 @@ function rememberSeen(b, vis) {
   return k;
 }
 // Your own base (its yard, its buildings, a fall back to them): known inside out, no fog indoors.
-const ownGround = (b) => !!b.tier || (!b.raid && b.setup && b.setup.baseId != null);
+const ownGround = (b) => !!b.tier || (!b.raid && b.setup && b.setup.baseId != null && !b.setup.afield); // afield (sim/loneattack.js): one of the base's people attacked out on the land
 
 const selUnit = (b) => (cui.sel != null ? unitById(b, cui.sel) : null);
 // A rescue raid's actions for the selected unit (sim/rescueraid.js rescueOptions): the ropes, cut free, the cell's

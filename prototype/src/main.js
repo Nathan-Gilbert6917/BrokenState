@@ -114,7 +114,7 @@ import { LISTEN_ACTIONS } from "./ui/radiolisten.js"; // Listen in on radio traf
 import { activeCrawl } from "./sim/citycrawl.js";
 import { activeHiveCrawl } from "./sim/hivecrawl.js";
 import { MAX_SPEED, SPEEDS, SLOWEST_SPEED, initPacing, cardUp, trayEsc, pacingFrame, beforeHour, afterHour, holdsNextHour, afterRefresh, trayHTML, pauseWhyHTML, PACE_ACTIONS } from "./ui/pacing.js"; // pause rules, the card tray, the speeds
-import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden } from "./ui/settings.js";
+import { SETTINGS_ACTIONS, SETTINGS_CHANGE, initSettings, openSettings, autosaveCheck, autosaveState, unsaved, inDesktopApp, ironUnload, ironHidden, saveBeforeFight } from "./ui/settings.js";
 // An Ironman game saves when the window is hidden (another tab, minimized) as well as when the page closes.
 document.addEventListener("visibilitychange", () => { if (document.hidden && !crashUp()) ironHidden(state, ui); }); // not a world that just crashed (ui/crash.js)
 import { checkPictures } from "./ui/pictures.js"; // once a second: a kept picture found blank (a lost GPU context) is drawn again, with every other
@@ -1163,6 +1163,7 @@ const actions = {
     if (card.partyId != null) { const cp = partyById(card.partyId); if (cp) cp.contactHour = state.hour; }
     const text = c.resolve(state);
     if (Parties.pruneCards) Parties.pruneCards(state); // cards about a team or person that is gone now (parties.js)
+    if (c.uiAction && c.uiAction.type === "saveFight") saveBeforeFight(state, ui, c.uiAction.name); // sim/loneattack.js: "Save and fight": the game saved as the fight opens
     if (c.uiAction && c.uiAction.type === "move") {
       endMoveMode();
       ui.moveParty = c.uiAction.partyId;
