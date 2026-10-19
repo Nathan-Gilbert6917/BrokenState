@@ -3389,7 +3389,7 @@ function planTrip(state) {
   // least minOut may go while three stay home.
   const keepFrac = Math.ceil(home.length * (small ? 0.25 : P.homeFrac));
   const keep = Math.max(small ? 1 : 2, P.minOut && !small ? Math.min(keepFrac, Math.max(3, home.length - P.minOut)) : keepFrac, hordeNear ? Math.min(home.length, P.homeHorde) : 0);
-  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s));
+  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s)); // pinned people stay (never moved: the steward's rule)
   const spareHands = Math.min(pool.length, home.length - keep);
   if (spareHands < 1) return;
   const need = needs(state);
