@@ -834,7 +834,10 @@ const groupOf = (state, type) => {
   const stocked = fightOdds(st2, p2, enemy, null);
   p2.supplies.arrows = 0;
   const empty = fightOdds(st2, p2, enemy, null);
+  // No ammo: the team's generic rounds settle by calibre as it leaves (parties.js launchExpedition, so the shells at
+  // hand are packed from them), so none of any calibre is left in the bags.
   p2.supplies.arrows = 60; p2.supplies.ammo = 0;
+  for (const k of Object.keys(p2.supplies)) if (/^a_/.test(k)) p2.supplies[k] = 0;
   const noAmmo = fightOdds(st2, p2, enemy, null);
   check(empty < stocked && noAmmo < stocked && noAmmo > empty, `bows without arrows fight worse (odds ${Math.round(stocked * 100)}% → ${Math.round(empty * 100)}% with no arrows, ${Math.round(noAmmo * 100)}% with no ammo for the one rifle)`);
   check(armedFactor(m2, 0, 60) > 0.6 && armedFactor(m2, 0, 60) < 1 && armedFactor(m2, 60, 60) === 1 && Math.abs(armedFactor(m2, 0, 0) - 0.6) < 1e-12, "armedFactor weighs the bows and the guns by their power");

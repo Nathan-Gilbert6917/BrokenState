@@ -318,8 +318,10 @@ function fillTo(b, u, st, cap, load, magKey = null, pools = true) {
 // Loads the gun and the spares physically (combat.js createBattle as the fight starts; refitUnit for a gun taken up in
 // the middle of one): the gun from the rounds kept on it (gunload.js item.loaded: exactly those, gun: false says so),
 // then what they carry, then the team's bags (pools: false in the middle of a fight: never the bags then); each spare
-// the same (one Unloaded in the item menu stays empty; one with a stack already keeps it).
-export function fillUnit(b, u, { gun = true, pools = true } = {}) {
+// the same (one Unloaded in the item menu stays empty; one with a stack already keeps it). spares: only the first that
+// many spares (combat.js fillTeam: a team's guns first, then its spares one round at a time, so the bags load every
+// gun before anyone's fourth magazine).
+export function fillUnit(b, u, { gun = true, pools = true, spares: upTo = Infinity } = {}) {
   if (!tracksMags(u) || !physical(u)) return;
   if (u.side !== "player") pools = false; // the team's bags are yours: anyone else has only what they carry
   if (!Array.isArray(u.stack)) u.stack = [];
@@ -336,7 +338,8 @@ export function fillUnit(b, u, { gun = true, pools = true } = {}) {
   }
   if (gun && !rec) { const got = fillTo(b, u, u.stack, Math.max(0, num(u.magMax)), typeFor(cal, u.load), null, pools); if (got.load) u.load = got.load; }
   syncGun(u, cal);
-  for (const m of spares(u)) {
+  for (const [j, m] of spares(u).entries()) {
+    if (j >= upTo) break;
     if (!m.item) continue;
     if (Array.isArray(m.item.stack)) continue; // loaded already (by hand, or when the gun was taken up)
     m.item.stack = [];
