@@ -13,6 +13,9 @@ const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf(name); if (i < 0) return dflt; const v = args[i + 1]; args.splice(i, 2); return v; };
 const jobs = Number(opt("--jobs", Math.max(1, cpus().length)));
 const timeout = Number(opt("--timeout", 600)) * 1000;
+// Tests that run a year of 12 seeds twice in child processes (about 20 minutes alone on 4 cores, twice that while
+// other tests share them): this many times the timeout.
+const SLOW = { "depletetest.js": 4, "diplotest.js": 4 };
 const skip = (opt("--skip", "") || "").split(",").filter(Boolean);
 const jsonOut = opt("--json", null);
 const patterns = args;
@@ -32,11 +35,12 @@ const t0 = Date.now();
 function runOne(f) {
   return new Promise(res => {
     const start = Date.now();
-    const child = spawn(process.execPath, [join(here, f)], { cwd: dirname(here), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [join(here, f)], { cwd: dirname(here), stdio: ["ignore", "pipe", "pipe"], detached: true }); // its own process group: a timeout kills its children too
     let out = "";
     child.stdout.on("data", d => { out += d; if (out.length > 4e6) out = out.slice(-2e6); });
     child.stderr.on("data", d => { out += d; if (out.length > 4e6) out = out.slice(-2e6); });
-    const timer = setTimeout(() => { out += `\n[runtests] timed out after ${timeout / 1000}s\n`; child.kill("SIGKILL"); }, timeout);
+    const limit = timeout * (SLOW[f] || 1);
+    const timer = setTimeout(() => { out += `\n[runtests] timed out after ${limit / 1000}s\n`; try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); } }, limit);
     child.on("close", (code, sig) => {
       clearTimeout(timer);
       const ok = code === 0;
