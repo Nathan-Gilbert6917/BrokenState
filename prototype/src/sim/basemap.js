@@ -476,7 +476,8 @@ export function autoLayout(state, base, except = null) {
   const runOrder = (sides) => sides.flatMap((sd, si) => sd.cells.map((_, i) => [si, i]));
   const autoWall = items.filter((it) => !it.at && it.key !== except && WALL_KINDS.has(it.kind));
   const outerOrder = runOrder(outer), resume = {};
-  for (const it of autoWall.filter((q) => q.kind === "gate")) { const f = fitFirst(it, outer, outer.map((sd, si) => [si, Math.floor((sd.cells.length - it.w) / 2)])) || fitFirst(it, outer, outerOrder); if (f) take(it, f[0]); }
+  const gateOrder = outerOrder.filter(([si, i]) => gateSpot(outer[si], i, 4));
+  for (const it of autoWall.filter((q) => q.kind === "gate")) { const f = fitFirst(it, outer, outer.map((sd, si) => [si, Math.floor((sd.cells.length - it.w) / 2)])) || fitFirst(it, outer, gateOrder); if (f) take(it, f[0]); }
   for (const it of autoWall.filter((q) => q.kind === "wall").sort((a, c) => c.w - a.w)) { const f = fitFirst(it, outer, outerOrder, resume[it.w] || 0); resume[it.w] = f ? f[1] : outerOrder.length; if (f) take(it, f[0]); }
   const standOrder = {};
   for (const it of autoWall.filter((q) => q.kind === "stand").sort((a, c) => c.w - a.w)) {
@@ -508,6 +509,8 @@ export function ringSides(R, inner = false) {
   ];
 }
 const alongAt = (sd, i) => [sd.cells[i][0], sd.cells[i][1], sd.horiz ? 0 : 1]; // a piece from cell i, lying along the side
+// A gate never takes a corner of the ring: the cell kept open inside it would be the next side's wall.
+const gateSpot = (sd, i, w) => !(sd.horiz && (i === 0 || i + w >= sd.cells.length));
 // What it takes to close the ring round the yard, given everything placed and going up: a gate in the middle of each
 // side that has none (where one fits), then each open run of the ring in 1×4s, a 1×2 and a 1×1 as it comes out (the
 // game lays them that way: autoLayout). { pieces (types, gates first), open (cells of the ring still open) }.
@@ -521,15 +524,24 @@ export function ringPlan(state, base) {
   const gateIt = { ...FOOT.gate4, type: "gate4" };
   const out = { gate4: 0, wall4: 0, wall2: 0, wall1: 0 };
   let open = 0;
-  for (const sd of ringSides(R)) {
-    const on = sd.cells.map(([x, y]) => free(x, y));
-    open += on.filter(Boolean).length;
-    const hasGate = gates.some((r) => sd.cells.some(([x, y]) => x >= r.x0 && x < r.x0 + r.w && y >= r.y0 && y < r.y0 + r.h));
-    const m = Math.floor((sd.cells.length - 4) / 2);
-    if (!hasGate && m >= 0 && [0, 1, 2, 3].every((k) => on[m + k])) {
-      const at = alongAt(sd, m);
-      if (!placeProblemAt(base, gateIt, at[0], at[1], at[2], occ, { G, R })) { out.gate4++; for (let k = 0; k < 4; k++) on[m + k] = false; }
-    }
+  const sides = ringSides(R).map((sd) => ({ sd, on: sd.cells.map(([x, y]) => free(x, y)) }));
+  const tryGate = (side, m) => {
+    const { sd, on } = side;
+    if (m < 0 || m + 4 > on.length || !gateSpot(sd, m, 4) || ![0, 1, 2, 3].every((k) => on[m + k])) return false;
+    const at = alongAt(sd, m);
+    if (placeProblemAt(base, gateIt, at[0], at[1], at[2], occ, { G, R })) return false;
+    out.gate4++; for (let k = 0; k < 4; k++) on[m + k] = false;
+    return true;
+  };
+  for (const side of sides) {
+    open += side.on.filter(Boolean).length;
+    const hasGate = gates.some((r) => side.sd.cells.some(([x, y]) => x >= r.x0 && x < r.x0 + r.w && y >= r.y0 && y < r.y0 + r.h));
+    if (!hasGate) tryGate(side, Math.floor((side.sd.cells.length - 4) / 2));
+  }
+  // No gate anywhere (none fits in the middle of a side): one at the first place along the ring it fits, as autoLayout
+  // lays a gate that misses the middles, so the ring always keeps a way in.
+  if (!gates.length && !out.gate4) for (const side of sides) { let done = false; for (let i = 0; i + 4 <= side.on.length && !done; i++) done = tryGate(side, i); if (done) break; }
+  for (const { on } of sides) {
     for (let i = 0; i < on.length;) {
       if (!on[i]) { i++; continue; }
       let n = 0;
