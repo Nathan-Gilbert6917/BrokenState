@@ -69,8 +69,8 @@ import { SUPPLIES } from "./data.js";
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
-  THROWS: { raiders: ["pipebomb", "molotov"], zealots: ["molotov"], soldiers: ["frag"], fighters: ["pipebomb", "molotov"], guards: [], militia: ["molotov"] },
-  THROW_PER: { raiders: 0.25, zealots: 0.2, soldiers: 0.25, fighters: 0.12, guards: 0, militia: 0.08 },
+  THROWS: { drifters: ["molotov"], raiders: ["pipebomb", "molotov"], zealots: ["molotov"], soldiers: ["frag"], fighters: ["pipebomb", "molotov"], guards: [], militia: ["molotov"] },
+  THROW_PER: { drifters: 0.1, raiders: 0.25, zealots: 0.2, soldiers: 0.25, fighters: 0.12, guards: 0, militia: 0.08 },
   HOME: 0.35, // the home guard's share of the people (and every third piece of kit from the second best)
   MOD: 0.2, ARMOUR: 0.5, // a gun part's worth; armour counts half its power (world.js combatPower)
   KIT_MIN: 0.15, KIT_MAX: 2.5,
@@ -138,7 +138,7 @@ export const ARSENAL = {
 // The kit of each group type (the same as conflicts.js KIND_OF).
 export const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia",
   // Nomad bands by tier (nomads.js; not group types: a band carries no arsenal, its spare gun comes from starterKit).
-  nomad1: "looters", nomad2: "survivalists", nomad3: "preppers" };
+  nomad0: "drifters", nomad1: "looters", nomad2: "survivalists", nomad3: "preppers" };
 export const kitOf = (f) => KIT_OF[f && f.type] || "survivors";
 
 // Off switch for tests (tools/arsenaltest.js: the world made without arsenals draws the same dice).

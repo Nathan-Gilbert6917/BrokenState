@@ -343,11 +343,12 @@ function groupEntries() {
   });
   // Nomad bands (sim/nomads.js): one entry a tier, opened when one is seen.
   const NOMAD_TEXT = {
+    0: ["wary, not hostile; they trade", "only what they made from scrap: pipe spears, spiked bats, shivs, a scrap crossbow or a pipe shotgun, tyre vests", "The weakest people on the road, getting by on makeshift gear. Trade food for their handmade bits, swap news, share food; a fight with them is short, and all you take is scrap work.", "From the start."],
     1: ["hostile", "melee weapons and a pistol or two, no armour", "They rob a team they can take and scatter before one that is stronger. Pay them, talk them down, fight or run; a team stronger than they are can run them down for what they drop.", "From the start."],
     2: ["neutral, willing to trade", "hunting rifles, bows and shotguns, light armour", "The best foragers and hunters on the road, with a medic or two. Trade with them, swap news, share food; they remember a kindness.", "From year 2."],
     3: ["neutral and defensive", "rifles and carbines, plate carriers and steel (armour class 3 and up), a pickup or a Humvee", "Well armed and careful: they keep you at rifle range but will trade. Attacking them is a hard fight.", "From year 4."],
   };
-  for (const tier of [1, 2, 3]) {
+  for (const tier of [0, 1, 2, 3]) {
     const T = NOMADS.TIERS[tier], [att, arms, how, from] = NOMAD_TEXT[tier];
     out.push({
       key: `n:${tier}`, cat: "groups", name: `Nomads: ${T.name}`, sub: "Nomads",

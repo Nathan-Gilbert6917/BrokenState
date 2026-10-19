@@ -570,6 +570,7 @@ export const GUN_SOURCES = {
   "kit:escorts": { draws: "escorts", band: 0.6 }, "kit:contractors": { draws: "contractors", band: 0.6, era: { modern: 1, coldwar: 0.5, old: 0.2 } },
   "kit:survivors": { draws: "survivors", band: 0.6 },
   "kit:looters": { draws: "raiders", band: 0.6 }, "kit:survivalists": { draws: "militia", band: 0.6 }, "kit:preppers": { draws: "fighters", band: 0.6 }, // nomads.js tiers
+  "kit:drifters": { draws: {} }, "body:drifters": { draws: {} }, // nomads.js T0: no swap, their pipe shotgun stays one (only what they made)
   // ---- the spare gear on their bodies (KITS loot): any gun they would keep ----
   "body:raiders": { draws: "raiders" }, "body:soldiers": { draws: "soldiers" }, "body:zealots": { draws: "zealots" },
   "body:fighters": { draws: "fighters" }, "body:guards": { draws: "guards" }, "body:militia": { draws: "militia" },
