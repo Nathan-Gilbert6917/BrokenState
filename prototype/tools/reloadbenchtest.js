@@ -20,6 +20,7 @@ import {
 } from "../src/sim/reloading.js";
 import { roundsIn, withHand, isHandKey, factoryKey, takeRounds } from "../src/sim/rounds.js";
 import { nextHand, takeBattleRounds, roundsOf, packRounds, unbox } from "../src/sim/ammo.js";
+import { stackOf, topKey, pushTop, syncGun } from "../src/sim/roundstack.js";
 import { createBattle, registerCombatHandler, fire, endBattleNow, shotOdds } from "../src/sim/combat.js";
 import { jamChance, ammoJam, noteJamWeather, JAM } from "../src/sim/gunfire.js";
 import { shotNoise } from "../src/sim/stealth.js";
@@ -301,7 +302,9 @@ function openBattle(st, crew, stock) {
   const b = openBattle(st, [s], { a_9mm_fmj: 3, a_9mm_fmj_hand: 50 });
   const u = b.units.find((x) => x.sid === s.id);
   u.load = "fmj";
-  check(roundsOf(b, u) === 53 && nextHand(b, u) === null, "a gun counts its type's handloads too; the factory rounds go first");
+  // Physical rounds (mags.js, 2026-10-18): the fight's start fills the gun from the team's bags, and the gun counts what
+  // is in it (a Reload never digs in the bags): the 3 factory rounds on top, then 12 handloads.
+  check(roundsOf(b, u) === 15 && stackOf(u.stack, "a_9mm_fmj") === 3 && stackOf(u.stack, "a_9mm_fmj_hand") === 12 && topKey(u.stack) === "a_9mm_fmj" && nextHand(b, u) === null, "a gun counts its type's handloads too; the factory rounds go first");
   noteJamWeather(st, b);
   check(b.handQ && b.handQ.a_9mm_fmj_hand && b.handQ.a_9mm_fmj_hand.hq === 0.75 && u.loadCond !== "hand", "the battle notes the colony's makes; a factory round next: no marks");
   const fac = jamChance(b, u);
@@ -324,11 +327,12 @@ function openBattle(st, crew, stock) {
   u.loadBp = 1;
   check(Math.abs(shotNoise(b, u, { noise: 3 }) - n0 - RELOAD_FX.BLACK_NOISE) < 1e-9, "black powder: a shot 1 louder");
   u.loadBp = 0;
-  // Back to factory rounds: the marks go.
-  b.pools[0].a_9mm_fmj = 10;
+  // Back to factory rounds: the marks go (physical rounds: the chamber's round decides, so a factory round goes on top).
+  pushTop(u.stack, "a_9mm_fmj", 1); syncGun(u, "9mm");
   noteHandLoad(b, u);
   check(u.loadCond === "factory" && u.loadHq == null && !u.loadAim, "a factory round again: the marks are cleared");
-  // A test's "old" rounds are left alone.
+  // A test's "old" rounds are left alone (a gun with no stack: a factory round next in the bags).
+  b.pools[0].a_9mm_fmj = 10;
   const v = { side: "player", weapon: "pistol", load: "fmj", loadCond: "old", boxes: [] };
   noteHandLoad(b, v);
   check(v.loadCond === "old", "other rounds' marks are not touched");
@@ -345,7 +349,7 @@ function openBattle(st, crew, stock) {
     for (const x of b.units) if (x.side === "enemy" && x !== e) { x.dead = true; x.x = -10; x.y = -10; }
     e.x = u.x + 3; e.y = u.y; e.aware = true;
     let fired = 0;
-    for (let i = 0; i < shots; i++) { e.hp = e.maxHp = 100000; e.dead = false; e.down = false; u.ap = 2; u.jam = null; u.cd = 0; const before = b.ammoUsed; fire(b, u, e); fired += b.ammoUsed - before; if (u.mag != null && u.mag < 2) u.mag = u.magMax; }
+    for (let i = 0; i < shots; i++) { e.hp = e.maxHp = 100000; e.dead = false; e.down = false; u.ap = 2; u.jam = null; u.cd = 0; const before = b.ammoUsed; fire(b, u, e); fired += b.ammoUsed - before; if (u.mag != null && u.mag < 2) { u.stack = null; u.mag = u.magMax; } } // (physical rounds, mags.js: a stack is never filled from nothing; refilled plainly)
     if (outcome === "victory") for (const x of b.units) if (x.side === "enemy") { x.dead = true; }
     const h = hub(st);
     const b0 = num(h.stock.brass);
