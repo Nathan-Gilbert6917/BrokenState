@@ -106,6 +106,7 @@ import { tiredLevel, TIRED } from "./sleep.js"; // a worn-out jail guard counts 
 import { groupMemberWorth } from "./ransom.js"; // the value rule: a group pays for its people only when they are worth it
 import { knowsLine } from "./intel.js"; // what their group knows of you
 import { foundAllOf } from "./hiding.js"; // their hidden outposts, told
+import { addMember } from "./members.js"; // a prisoner set free goes back to their group as themselves
 
 // The jail tiers (buildings.js family "jail"; the AI groups' jails too, groupjails.js), lower ones easier to get out
 // of. cap: prisoners held; unguarded / guarded: escapes a day in the cell with no guard / one average jail guard
@@ -511,7 +512,15 @@ export function captiveRecords(state, b, captives) {
   return captives.map((u) => {
     const fid = u.factionId ?? e.factionId ?? null;
     const f = fid != null ? factionById(state, fid) : null;
-    return makeRecord(state, { factionId: fid, group: f ? f.name : e.name || "strangers", kit: u.kit || "raiders", power: e.power || 3, unitName: u.name, tile: b.tileId });
+    const rec = makeRecord(state, { factionId: fid, group: f ? f.name : e.name || "strangers", kit: u.kit || "raiders", power: e.power || 3, unitName: u.name, tile: b.tileId });
+    if (u.who && !u.who.transient && u.who.fid === fid) { // one of the group's people (members.js): the prisoner is that very person (arsenal.js settlePeople counted them out)
+      rec.member = true;
+      const P = u.who;
+      P.pending = true; P.mood = 30; P.health = Math.max(1, Math.min(P.health || rec.s.health, rec.s.health));
+      P.role = "prisoner"; // arsenal.js settlePeople takes them off their group's list (then their place is your cells)
+      rec.s = P; rec.name = P.name;
+    }
+    return rec;
   });
 }
 function makeRecord(state, o) {
@@ -585,7 +594,7 @@ export function capturePrisoners(state, setup, result, battle) {
     p.caught = day(state);
     all.push(p);
     const f = factionById(state, p.factionId);
-    if (f) f.pop = Math.max(0, f.pop - 1);
+    if (f && !p.member) f.pop = Math.max(0, f.pop - 1);
     if (at.kind === "party") {
       // Booked into a jail with room (home first): they walk with the team and are handed over there.
       const to = home && freeCells(state, home) > 0 ? home : (basesWithRoom(state)[0] || {}).base;
@@ -780,7 +789,8 @@ function goHome(state, p, goodwill = 0, why = "") {
   if (i >= 0) state.prisoners.splice(i, 1);
   const f = factionById(state, p.factionId);
   if (f && f.alive) {
-    f.pop += 1;
+    if (p.s && p.s.alive !== false) { delete p.s.pending; p.s.role = "member"; addMember(state, f, p.s); } // members.js: the very person back in their group's list
+    else f.pop += 1;
     if (goodwill) changeGoodwill(state, f, goodwill, why);
   }
   refreshTeam(state, p);

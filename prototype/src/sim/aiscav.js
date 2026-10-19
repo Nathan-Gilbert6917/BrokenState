@@ -72,8 +72,9 @@ import { prio } from "./groupcare.js";
 import { poisOf, poiAt, poiPool, poiBand, isSitePoi, permanentSite } from "./pois.js"; // points of interest: one POI a party
 import { groupTargets, bestGroupPoi, groupSurveyTile, groupWouldSurvey, groupKnowsPoi, raidPoiAsGroup, groupPoisDaily, poiPlace, GPOI } from "./grouppois.js"; // what the groups know of the POIs, the survey stop, the raid
 import { atWarWithYou } from "./playerwars.js"; // a group at war with you contests a tile whatever POI your team is in
-import { addToArsenal, arsenalWorthy } from "./arsenal.js"; // gear your people left in a container, taken home
+import { keepItem } from "./arsenal.js"; // gear your people left in a container, taken home
 import { scavVehicle, scavSaw } from "./groupworld.js"; // a wreck brought home now and then; the bases they saw // GROUP_PRIORITIES scavenge: how often a type sends parties out // group arsenals: weapons and armour found at the site; a party lost is people and kit lost
+import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 export const AISCAV = {
   minPop: 6, gapMin: 6, gapMax: 10, retry: 3, minNeed: 0.25, baseWant: 0.15, range: 10, share: 0.12,
@@ -210,6 +211,7 @@ export function aiScavDaily(state) {
       if (!(take > 0)) continue;
       const haul = haulFor(t, take, t.loot, AISCAV.landEff * aiWorkMult(f), state); // carts.js: their carts haul a little more in (coarse)
       sortFind(haul, themeOf(t.loc ? t.loc.type : null), state.seed, "aiscavland", f.name, id, state.hour); // ammo.js: the site's calibres
+      note(state, "scavenged", roundsIn(haul)); // ledger.js (a test switch)
       addTo(f.stock, haul);
       t.loot -= take;
       S.stats.land += take;
@@ -220,7 +222,7 @@ export function aiScavDaily(state) {
       poisOf(t).forEach((_, j) => {
         if (isSitePoi(t, j) || poiPool(t, j) <= AISCAV.floor) return;
         const r = raidPoiAsGroup(state, f, t, j, poiPool(t, j) * AISCAV.landRate, { eff: AISCAV.landPoiEff, heat: 0, news: false, count: false });
-        if (r && r.took > 0) { sortFind(r.goods, themeOf(t.loc ? t.loc.type : null), state.seed, "aiscavpoi", f.name, id, j, state.hour); addTo(f.stock, r.goods); S.stats.land += r.took; } // ammo.js: the site's calibres
+        if (r && r.took > 0) { sortFind(r.goods, themeOf(t.loc ? t.loc.type : null), state.seed, "aiscavpoi", f.name, id, j, state.hour); note(state, "scavenged", roundsIn(r.goods)); addTo(f.stock, r.goods); S.stats.land += r.took; } // ammo.js: the site's calibres
       });
     }
     // A party out.
@@ -289,7 +291,7 @@ export function scavArrived(state, p) {
       for (const [k, q] of Object.entries(p.scav.got)) f.stock[k] = (f.stock[k] || 0) + Math.floor(q);
       S.stats.goods += Object.values(p.scav.got).reduce((a, q) => a + Math.floor(q), 0);
       S.stats.gear = (S.stats.gear || 0) + scavFinds(state, f, p).length; // arsenal.js: guns, armour, explosives by the site's gear list
-      for (const it of p.scav.gear || []) if (arsenalWorthy(it)) addToArsenal(state, f, it, "scavenged"); // what your people left in a container there
+      for (const it of p.scav.gear || []) keepItem(state, f, it, "scavenged"); // what your people left in a container there: all of it (arsenal.js: kit on the books, the rest on their shelf)
       if (scavVehicle(state, f, p.scav.site)) S.stats.vehicles = (S.stats.vehicles || 0) + 1; // groupworld.js
       if (p.scav.bp) { groupGotBlueprint(f, p.scav.bp); S.stats.manuals = (S.stats.manuals || 0) + 1; } // machines-2: a manual to study
       if (aiCartsHome(state, f, p)) S.stats.carts = (S.stats.carts || 0) + 1; // carts.js: its carts back, now and then one found
@@ -377,6 +379,7 @@ export function scavSearchHour(state, p) {
     if (take > 0) {
       const r = raidPoiAsGroup(state, who, t, i, take, { eff: AISCAV.eff * hands / crew, heat: AISCAV.AI_HEAT / AISCAV.searchHours, news: isSitePoi(t, i) ? "left" : true });
       if (r) {
+        note(state, "scavenged", roundsIn(r.goods)); // ledger.js (a test switch)
         addTo(p.scav.got, r.goods);
         if (r.gear.length) (p.scav.gear || (p.scav.gear = [])).push(...r.gear);
         if (f && !p.scav.bp && isSitePoi(t, i)) p.scav.bp = groupFindBlueprint(state, f, t.id, localId(state, p.id)) || undefined;
@@ -394,7 +397,9 @@ export function scavSearchHour(state, p) {
     const crew = Math.min(AISCAV.crewMax, hands); // more hands than that pick it cleaner, not faster
     const take = Math.min(Math.max(0, t.loot - AISCAV.floor), AISCAV.take * crew);
     if (take > 0) {
-      addTo(p.scav.got, haulFor(t, take, t.loot, AISCAV.eff * hands / crew * aiCartMult(p), state)); // carts.js: its carts carry more of what it finds home (no faster stripping)
+      const hauled = haulFor(t, take, t.loot, AISCAV.eff * hands / crew * aiCartMult(p), state);
+      note(state, "scavenged", roundsIn(hauled)); // ledger.js (a test switch)
+      addTo(p.scav.got, hauled); // carts.js: its carts carry more of what it finds home (no faster stripping)
       const fg = !p.scav.bp && factionById(state, p.owner);
       if (fg) p.scav.bp = groupFindBlueprint(state, fg, t.id, localId(state, p.id)) || undefined; // machines-2: a manual on the shelves, by your odds (groupworks.js)
       t.loot -= take;

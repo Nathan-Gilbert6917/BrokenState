@@ -41,7 +41,8 @@ import { canRadioGroup } from "./radio.js";
 import { launchExpedition, partyMembers, partyTile, tileLabel, awaitOrders, planPath, wipeIfEmpty, carried } from "./parties.js";
 import { prisonersOf, teamPace, handOver } from "./prisoners.js";
 import { registerCombatHandler, startCombat, winOdds, WEAPONS } from "./combat.js";
-import { afterRescueBattle, tacticalPossible, groupArmory, kindOf } from "./rescueraid.js";
+import { afterRescueBattle, tacticalPossible, kindOf } from "./rescueraid.js";
+import { keepItem } from "./arsenal.js"; // what a ransom pays them goes onto their books
 import { assaultForce } from "./conquest.js";
 import { itemValue } from "./valuation.js";
 import { thirstAhead } from "./weather.js";
@@ -361,8 +362,7 @@ function pay(state, f, stock, armory, plan) {
   for (const it of plan.gear) {
     const i = armory ? armory.indexOf(it) : -1;
     if (i >= 0) armory.splice(i, 1);
-    const list = f.arsenal && Array.isArray(f.arsenal.items) ? f.arsenal.items : groupArmory(state, f);
-    list.push(it);
+    keepItem(state, f, it, "ransom"); // arsenal.js: onto their books (or their shelf), as anything else they take in
   }
 }
 // On the road between the hub and their base, about halfway (never on a base).
@@ -460,7 +460,7 @@ export function handoverArrive(state, p) {
 function completeHandover(state, p, f, deal) {
   const held = deal.captiveIds.map((id) => survivorById(state, id)).filter((s) => s && isCaptive(s) && s.location.factionId === f.id);
   for (const [k, q] of Object.entries(deal.supplies)) { const t = Math.min(q, Math.floor(p.cargo.supplies[k] || 0)); p.cargo.supplies[k] -= t; f.stock[k] = (f.stock[k] || 0) + t; }
-  for (const it of deal.gear) { const i = p.cargo.gear.indexOf(it); if (i >= 0) { p.cargo.gear.splice(i, 1); (f.arsenal && Array.isArray(f.arsenal.items) ? f.arsenal.items : groupArmory(state, f)).push(it); } }
+  for (const it of deal.gear) { const i = p.cargo.gear.indexOf(it); if (i >= 0) { p.cargo.gear.splice(i, 1); keepItem(state, f, it, "ransom"); } }
   for (const id of deal.prisonerIds) handOver(state, id);
   for (const s of held) freeCaptive(state, s, p);
   dealsOf(state).splice(dealsOf(state).indexOf(deal), 1);
@@ -494,7 +494,7 @@ function betrayalCard(state, p, f, deal) {
 // They keep the goods (and the prisoners walking with the team go back to them).
 function lostHandover(state, p, f, deal) {
   for (const [k, q] of Object.entries(deal.supplies)) { const t = Math.min(q, Math.floor((p.cargo.supplies[k] || 0))); p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) - t; f.stock[k] = (f.stock[k] || 0) + t; }
-  for (const it of deal.gear) { const i = p.cargo.gear.indexOf(it); if (i >= 0) { p.cargo.gear.splice(i, 1); (f.arsenal && Array.isArray(f.arsenal.items) ? f.arsenal.items : groupArmory(state, f)).push(it); } }
+  for (const it of deal.gear) { const i = p.cargo.gear.indexOf(it); if (i >= 0) { p.cargo.gear.splice(i, 1); keepItem(state, f, it, "ransom"); } }
   for (const id of deal.prisonerIds) { const pr = prisonersOf(state).find((x) => x.id === id); if (pr && pr.at.kind === "party" && pr.at.partyId === p.id) handOver(state, id); }
   const i = dealsOf(state).indexOf(deal);
   if (i >= 0) dealsOf(state).splice(i, 1);

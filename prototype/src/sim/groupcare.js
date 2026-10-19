@@ -40,7 +40,7 @@
 // own deserters who do not come back may join a group near the base they left (playerDeserters).
 // Every roll is a hash (skills.js hash01): the world's dice are not touched (bar a recruit card's own).
 import { totalRounds, spendAmmo } from "./rounds.js"; // a group's rounds by calibre
-import { MEMBER, woundMembersBy } from "./members.js"; // the wounded are people
+import { MEMBER, woundMembersBy, syncMembers, homeMembers, removeMember, addMember } from "./members.js"; // the wounded are people
 import { groupMedicalDaily } from "./groupmedical.js"; // and heal by your rules
 import { moveFoodUnits, DAY_VALUE, foodIn } from "./foods.js"; // food by type (foods.js)
 import { groupDietPressure } from "./eating.js"; // their rations and the sameness of their food (wave 2 eating)
@@ -51,7 +51,8 @@ import { groupPayoutSpare } from "./upkeep.js"; // the pay-out reserve (food)
 import { Rng } from "./rng.js";
 import { growthFactor, groupKitchenMorale } from "./groupworks.js";
 import { issueKit, removeFromArsenal, addToArsenal } from "./arsenal.js";
-import { stripAll } from "./inventory.js";
+import { stripAll, allItems, allCarried } from "./inventory.js";
+import { isRoundItem } from "./itemstack.js";
 import { makeCandidate, offerRecruits, RETURN } from "./recruits.js";
 import { newNeutralGroup } from "./wanderers.js";
 import { hash01 } from "./skills.js";
@@ -64,7 +65,12 @@ import { sameBloc } from "./blocs.js"; // AI blocs: food bought from a member fi
 import { atWarWithYou } from "./playerwars.js"; // a war with you presses on desertion
 import { noteStrife, SPLINTER } from "./splinters.js"; // deserters, and the dead of a fight, stir up strife (splinter bands)
 import { groupsBuild, sickbayTier, sleepingRough, groupFreeParts, groupGarageMult } from "./groupworks.js"; // bare-start groups build their sick bays (groupworks.js sickbayWork); the ill (illDaily)
-import { repairKind, acOf } from "./repair.js"; // ai-locks: your repairs' skill gates
+import { repairKind, acOf, repairMath, repairInputs, wornOut } from "./repair.js"; // your repairs: the gates, the math, the inputs
+import { homesOf } from "./groupbases.js";
+import { benchTier } from "./buildings.js";
+import { spareKit } from "./loadouts.js";
+import { skill } from "./world.js";
+import { gainXp } from "./skills.js";
 import { BUILDINGS } from "./buildings.js";
 import { hospitalTypes } from "./medical.js";
 import { USE, CAP_USE, CAP_STUDY, CAP_WARD, xpNeed, SKILL_MAX } from "./skills.js";
@@ -335,26 +341,7 @@ export function noteFight(f, dead, wounded = null) {
   if (dead > 0) f.blows = (f.blows || 0) + dead / Math.max(1, (f.pop || 0) + dead); // splinters.js: the share of them killed (strife, a fallen leader)
 }
 
-// ---------- repairs (the same contract as repair.js: repairMath / repairInputs) ----------
-const GUN_CATS = ["pistol", "shotgun", "rifle", "automatic"];
-const SOFT = ["vest", "tacvest", "softinsert"];
-const CERAMIC = ["plate", "ceramicplate"];
-export function groupLossRate(skill) { const R = CARE.REPAIR; return Math.max(R.lossMin, R.lossBase - R.lossPer * Math.max(0, skill || 0)); }
-// What mending one piece takes and does: { restore, newMax, parts, scrap } or null (nothing to mend, or it cannot be).
-export function groupRepairPlan(item, skill) {
-  const d = item && GEAR[item.key];
-  if (!d || !d.dur || d.throw) return null;
-  const max = itemDurMax(item), dur = itemDur(item);
-  if (max == null || dur == null || dur >= max) return null;
-  if (max < CARE.REPAIR.wornOut * d.dur - 1e-9) return null; // worn out
-  if (CERAMIC.includes(item.key)) return null; // replaced, not mended
-  const restore = max - dur;
-  let parts = 0, scrap = 1;
-  if (d.slot === "weapon" && GUN_CATS.includes(d.cat) && !d.makeshift) parts = Math.ceil(restore / (CARE.REPAIR.gunStep * d.dur) - 1e-9);
-  else if (["armor", "head", "arms", "legs"].includes(d.slot) && !d.makeshift) { parts = 1; scrap = 2; if (SOFT.includes(item.key)) scrap = 2; }
-  const newMax = Math.round(Math.max(1, max - restore * groupLossRate(skill)) * 10) / 10;
-  return { restore, newMax, parts, scrap };
-}
+// ---------- repairs (repair.js: the same kinds, gates, math and inputs) ----------
 // Your repair's skill minimum for an item (repair.js REPAIR_KINDS: its kind's, Mechanics 5 for armour of AC 4+); the
 // group's mechanic stands for the hand that mends it (Crafting too: groupworks.js groupSkill).
 export function repairMin(it) {
@@ -363,24 +350,48 @@ export function repairMin(it) {
   const d = GEAR[it.key];
   return d && ["armor", "head", "arms", "legs", "insert"].includes(d.slot) && acOf(it.key) >= 4 ? Math.max(rk.def.min, 5) : rk.def.min;
 }
+// A group mends its worn kit at its workshop by your repair rules (repair.js: the kind of repair, its skill gate, the
+// math of what comes back and what it costs the maximum, the inputs by the share restored; docs/adr/0001-ai-parity.md):
+// every REPAIR.every days, its pieces under REPAIR.below of their maximum, the most valuable first, each by the best of
+// its people at home with the skill for it (who gains the XP), at its workbench's tier, up to its hands a day.
 export function repairGear(state, f, d = day(state)) {
   const A = f.arsenal;
   const R = CARE.REPAIR;
   if (!A || workshopFactor(state, f) < 1 || (d + Math.floor(h(state, f.name, "rph") * R.every)) % R.every) return 0;
-  const skill = weightOf(f, "mechanic", R.mechanic);
+  syncMembers(state, f);
+  const hands = homeMembers(f).filter((s) => s.alive !== false && (s.health ?? 100) >= MEMBER.WOUNDED_BELOW);
+  if (!hands.length) return 0;
+  const main = Object.values(homesOf(state, f)).find((x) => x.type === "hub");
+  const tier = Math.max(1, main ? benchTier(main) : 1); // a workshop is a bench at least
   const worn = A.items.filter((it) => { const m = itemDurMax(it), u = itemDur(it); return m && u != null && u < m * R.below; })
     .sort((a, b) => (GEAR[b.key].value || 0) - (GEAR[a.key].value || 0) || String(a.aid).localeCompare(String(b.aid)));
+  const cap = Math.max(1, Math.round((f.pop / R.perPop) * weightOf(f, "repair")));
+  const spare = spareKit(f);
   let n = 0;
   for (const it of worn) {
-    if (n >= Math.max(1, Math.round((f.pop / R.perPop) * weightOf(f, "repair")))) break;
-    const p = groupRepairPlan(it, skill);
-    if (!p || groupFreeParts(f) < p.parts || (f.stock.scrap || 0) < p.scrap) continue; // machines-2: not the parts kept for their machines
-    if (skill < repairMin(it)) continue; // ai-locks: your repair's skill (guns Mechanics 3, armour of AC 4+ Mechanics 5)
-    f.stock.parts = (f.stock.parts || 0) - p.parts;
-    f.stock.scrap -= p.scrap;
+    if (n >= cap) break;
+    const rk = repairKind(it);
+    if (!rk || !rk.def || wornOut(it)) continue;
+    const min = repairMin(it);
+    const by = hands.filter((s) => skill(s, rk.def.skill) >= min).sort((a, b) => skill(b, rk.def.skill) - skill(a, rk.def.skill) || a.id - b.id)[0];
+    if (!by) continue; // ai-locks: nobody with your repair's skill for it
+    const m = repairMath(it, skill(by, rk.def.skill), { tier });
+    if (!(m.restore > 0)) continue;
+    const inp = repairInputs(it, rk.kind, m.restore);
+    const need = {};
+    for (const [k, q] of Object.entries(inp.supplies)) { const gk = groupStockKey(k, f); need[gk] = (need[gk] || 0) + q; }
+    if (need.parts && groupFreeParts(f) < need.parts) continue; // machines-2: not the parts kept for their machines
+    if (Object.entries(need).some(([k, q]) => k !== "parts" && (f.stock[k] || 0) < q)) continue;
+    const gearIn = [];
+    for (const [k, q] of Object.entries(inp.gear || {})) { const have = spare.filter((x) => x && x.key === k && !gearIn.includes(x)).slice(0, q); if (have.length < q) { gearIn.length = 0; gearIn.push(null); break; } gearIn.push(...have); }
+    if (gearIn.includes(null)) continue;
+    for (const [k, q] of Object.entries(need)) { if (k === "parts") f.stock.parts = (f.stock.parts || 0) - q; else f.stock[k] -= q; }
+    for (const x of gearIn) { removeFromArsenal(f, x, "used up"); spare.splice(spare.indexOf(x), 1); }
     if (it.durBase == null) it.durBase = itemDurMax(it);
-    it.durMax = p.newMax;
-    it.dur = p.newMax;
+    it.durMax = m.newMax;
+    it.dur = m.dur;
+    it.repairs = (it.repairs || 0) + 1;
+    gainXp(state, by, rk.def.skill, USE.repair); // skills.js: your repairs' XP
     A.rev++;
     A.stats.in.repaired = (A.stats.in.repaired || 0) + 1;
     n++;
@@ -455,6 +466,7 @@ export function raidAnswer(state, attacker, target, att, def) {
     // Food never out of the pay-out reserve (upkeep.js PAYOUT: PAYOUT.days a head), as your governor's tribute.
     const q = Math.min(Math.floor(supplyAmt(target.stock, k) * CARE.TRIBUTE), groupPayoutSpare(target, k));
     if (k === "food") { moveFoodUnits(target, attacker, q, { state }); continue; } // foods.js: days of food, the soonest to spoil first
+    if (k === "ammo") { for (const [rk, n] of Object.entries(spendAmmo(target.stock, q).keys)) attacker.stock[rk] = (attacker.stock[rk] || 0) + n; continue; } // rounds.js: the very rounds, by calibre
     target.stock[k] -= q;
     attacker.stock[k] = (attacker.stock[k] || 0) + q;
   }
@@ -490,13 +502,23 @@ export function desertDaily(state, f, d = day(state)) {
 // One of them walks out with their own gun and armour: to your gates, to another group, or onto the road.
 export function desertOne(state, f, d = day(state), where = null) {
   const D = CARE.DESERT;
+  // members.js: one of their people at home walks out with what they carry (docs/adr/0001-ai-parity.md); a group
+  // still counted by the numbers alone: one head, and a gun and a vest off the books.
+  syncMembers(state, f);
+  const home0 = homeMembers(f);
+  const who = home0.length ? home0[Math.floor(h(state, f.name, tickOf(f), "dk") * home0.length) % home0.length] : null;
   const kit = [];
-  if (f.arsenal) {
-    const issue = issueKit(state, f, f.pop, "home");
-    const lo = issue[Math.floor(h(state, f.name, tickOf(f), "dk") * issue.length)] || null;
-    for (const it of lo ? [lo.weapon, lo.armour.armor] : []) if (it && removeFromArsenal(f, it, "deserted")) kit.push(it);
+  if (who) {
+    for (const it of allCarried(who)) if (it && f.arsenal && f.arsenal.items.includes(it)) kit.push(it); // inventory.js: rig pouches, plates, mounts too
+    removeMember(state, f, who, "deserted"); // their kit leaves the group's books with them
+  } else {
+    if (f.arsenal) {
+      const issue = issueKit(state, f, f.pop, "home");
+      const lo = issue[Math.floor(h(state, f.name, tickOf(f), "dk") * issue.length)] || null;
+      for (const it of lo ? [lo.weapon, lo.armour.armor] : []) if (it && removeFromArsenal(f, it, "deserted")) kit.push(it);
+    }
+    f.pop -= 1;
   }
-  f.pop -= 1;
   f.deserted = (f.deserted || 0) + 1;
   noteStrife(f, SPLINTER.DESERTER); // splinters.js: every one who goes makes the rest think of going together
   if (f.wounded > f.pop) f.wounded = f.pop;
@@ -504,8 +526,9 @@ export function desertOne(state, f, d = day(state), where = null) {
   const g = state.grid, home = f.bases[0];
   const base = home != null ? state.bases.filter((b) => g.distance(b.tile, home) <= D.playerRange).sort((a, b) => g.distance(a.tile, home) - g.distance(b.tile, home))[0] : null;
   if (base && r < D.toPlayer && hub(state)) {
-    const s = makeCandidate(state, { quality: 0.8, minHealth: 45, gearChance: 0 });
-    for (const it of kit) { const slot = GEAR[it.key].slot; if (!s.gear[slot]) s.gear[slot] = it; }
+    const s = who || makeCandidate(state, { quality: 0.8, minHealth: 45, gearChance: 0 });
+    if (who) { delete s.fid; s.pending = true; s.role = "rest"; s.location = { kind: "pending" }; s.health = Math.max(s.health, 45); }
+    else for (const it of kit) { const slot = GEAR[it.key].slot; if (!s.gear[slot]) s.gear[slot] = it; }
     offerRecruits(state, [s], { source: "deserter", baseId: base.id, title: "A deserter at the gate", intro: `${s.name} walked out of ${f.known ? f.name : "a group nearby"} and asks to join you${kit.length ? `, bringing ${kit.map((x) => x.name).join(" and ")}` : ""}.` });
     return { to: "player", kit, who: s };
   }
@@ -515,7 +538,7 @@ export function desertOne(state, f, d = day(state), where = null) {
     const o = state.factions.filter((x) => x.alive && x !== f && !x.outsider && x.bases.length && !wars.has(x.id) && Math.min(...x.bases.map((b) => g.distance(b, home))) <= D.range && (where === "group" || per(x) > per(f)))
       .sort((a, b) => per(b) - per(a) || a.id - b.id)[0];
     if (o) {
-      o.pop += 1;
+      if (who) addMember(state, o, who); else o.pop += 1; // members.js: the very person, in the other group's list
       if (o.arsenal) o.arsenal.pop0 = o.pop; // their kit came with them
       for (const it of kit) addToArsenal(state, o, it, "deserter");
       if (o.known && f.known) log(state, `One of ${f.name} went over to ${o.name}.`, "info");
@@ -527,8 +550,8 @@ export function desertOne(state, f, d = day(state), where = null) {
   ng.people.length = 1;
   ng.mood = "desperate";
   ng.from = f.id;
-  const s = ng.people[0];
-  for (const it of kit) s.gear[GEAR[it.key].slot] = it;
+  if (who) { delete who.fid; delete who.pending; who.wanderer = true; who.location = { kind: "wanderer" }; ng.people[0] = who; } // the very person, on the road
+  else { const s = ng.people[0]; for (const it of kit) s.gear[GEAR[it.key].slot] = it; }
   return { to: "wanderer", wanderer: ng, kit };
 }
 
@@ -545,10 +568,12 @@ export function wandererJoinChance(state, f, wg) {
 }
 export function wandererJoins(state, f, wg) {
   const n = wg.people.length;
-  f.pop += n;
+  // members.js: the very people join the group's list with what they carry (its books take their kit in).
   for (const s of wg.people) {
-    for (const it of stripAll(s)) addToArsenal(state, f, it, "recruit");
     s.joinedGroup = f.id;
+    delete s.wanderer; delete s.pending;
+    addMember(state, f, s);
+    for (const it of allCarried(s)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, "recruit");
   }
   if (f.arsenal) f.arsenal.pop0 = f.pop; // their kit came with them (arsenalDaily's newcomers' guns are for the others)
   f.recruitedWanderers = (f.recruitedWanderers || 0) + n;

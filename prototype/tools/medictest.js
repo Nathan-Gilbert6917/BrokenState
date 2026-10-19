@@ -88,7 +88,7 @@ function arena({ seed = 11, kits = ["tool", "pocket", null], kind = "raiders", m
   b.phase = "player";
   return { st, b, ps, people, f, h };
 }
-const foe = (b, kind = "raiders", x = 20, y = 12) => { const e = enemyUnit(b, b.rng, kind, 3, b.units.length + 1); delete e.medKit; e.isMedicKit = false; e.kitBonus = 0; e.medicine = 0; e.x = x; e.y = y; e.aware = true; arm(e); b.units.push(e); return e; };
+const foe = (b, kind = "raiders", x = 20, y = 12) => { const e = enemyUnit(b, b.rng, kind, 3, b.units.length + 1); delete e.medKit; e.isMedicKit = false; e.kitBonus = 0; e.medicine = 0; e.x = x; e.y = y; e.aware = true; arm(e); if (e.who) e.medsBag = b.testMeds || (b.testMeds = { meds: 6 }); b.units.push(e); return e; };
 const downPlayer = (b, u) => { damage(b, u, 999, null); u.bleed = 3; return u; };
 const downFoe = (b, e, by = null) => { damage(b, e, (e.hp + 2) / e.armor, by); return e; }; // to 0 (through their armor), not an overkill
 const enemyTurn = (st, b, u) => { b.phase = "enemy"; u.ap = 2; b.queue = [u.id]; enemyStep(st); };
@@ -436,16 +436,17 @@ section("The meds reserve: the AI keeps meds back for a revive (MEDIC.RESERVE)")
   check(medsLeft(b) === 1 && b.log.some((l) => /patches up their own wounds/.test(l.text)), `with 2 meds ${n.name} patches themselves up, 1 kept`);
 }
 {
-  // The enemy's medic: their kit's uses are their meds. 7 of them: 3 kept back.
+  // The enemy's medic: the meds their side carries, the reserve as yours. 7 of them: 3 kept back.
   const { b } = arena({ kind: "soldiers" });
   const es = [];
   for (let i = 0; i < 7; i++) es.push(foe(b, "soldiers", 24 + (i % 3), 4 + i * 2));
   const M = MED.makeEnemyMedic(es[0], "traumakit", 5);
   const low = Math.round(M.maxHp * 0.3);
   M.hp = low; M.kitUses = 1; M.ap = 2; // badly hurt, 3 uses left: the old rule (keep 1) would heal
+  if (M.medsBag) M.medsBag.meds = 3; // their meds (combat.js medsOf: the side's bag, by your rule): 3, all kept back
   check(MED.medsReserve(b, "enemy") === 3 && MED.spareMeds(b, M) === 0, `7 of them: ${MED.medsReserve(b, "enemy")} kit uses kept back, ${MED.spareMeds(b, M)} to spare`);
   check(!MED.rescueStep(b, M) && M.hp === low && M.kitUses === 1, `${M.name} (3 uses left) does not heal their own wounds`);
-  M.kitUses = 0; M.ap = 2;
+  M.kitUses = 0; M.ap = 2; if (M.medsBag) M.medsBag.meds = 4;
   check(MED.rescueStep(b, M) && M.hp > low && M.kitUses === 1, `4 uses left: heals (${Math.round(M.hp)} health)`);
 }
 

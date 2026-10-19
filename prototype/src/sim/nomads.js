@@ -67,6 +67,7 @@ import { keyWord } from "./water.js";
 import { poisOf, poiPool, isSitePoi, permanentSite, poiThreat } from "./pois.js";
 import { groupTargets, groupSurveyTile, raidPoiAsGroup, groupKnownPois, groupHiddenGuess, poiPlace } from "./grouppois.js";
 import { chronicleNote } from "./chronicle.js";
+import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 // ---------- numbers ----------
 export const NOMADS = {
@@ -340,6 +341,7 @@ export function campWork(state, b) {
   b.raided++;
   b.lastRaid = { tile: t.id, poi: top.poi, hour: state.hour };
   b.act = `camped near ${tileLabel(state, b.camp ?? b.tile)}, picking through ${poiPlace(state, t, top.poi)}`;
+  note(state, "scavenged", roundsIn(Object.fromEntries(Object.entries(r.goods).filter(([k]) => SUPPLIES[k] || FOODS[k])))); // ledger.js
   for (const [k, q] of Object.entries(r.goods)) if (q > 0 && (SUPPLIES[k] || FOODS[k])) b.stock[k] = (b.stock[k] || 0) + q;
   // What your people left in a container they opened: into their wares (they carry it with them; they trade it on).
   for (const it of r.gear || []) b.wares.push(it);
@@ -770,7 +772,12 @@ function onNomadFight(state, result, setup) {
         for (const k of Object.keys(pool)) { const q = Math.floor((pool[k] || 0) * frac); if (q > 0) { pool[k] -= q; taken[k] = (taken[k] || 0) + q; } }
       }
       if (b && nomadsOf(state).includes(b)) for (const [k, q] of Object.entries(taken)) b.stock[k] = (b.stock[k] || 0) + q;
-      lines.push(result.outcome === "retreat" ? `You pulled back${planText(taken) ? `, dropping ${planText(taken)}` : ""}.` : `You lost the fight${planText(taken) ? ` and they took ${planText(taken)}` : ""}.`);
+      // The same share of the gear in the cargo, the very items (docs/adr/0001-ai-parity.md: as you take theirs when you win).
+      const gearN = b && nomadsOf(state).includes(b) ? Math.floor((p.cargo.gear || []).length * frac) : 0;
+      const gearTaken = gearN > 0 ? p.cargo.gear.splice(0, gearN) : [];
+      if (gearTaken.length) b.wares = [...(b.wares || []), ...gearTaken];
+      const tookText = [planText(taken), ...gearTaken.map((it) => it.name)].filter(Boolean).join(", ");
+      lines.push(result.outcome === "retreat" ? `You pulled back${tookText ? `, dropping ${tookText}` : ""}.` : `You lost the fight${tookText ? ` and they took ${tookText}` : ""}.`);
     } else lines.push("You lost the fight.");
     log(state, `Fight with ${name} (nomads): ${result.outcome}.`, "danger");
     if (b && nomadsOf(state).includes(b)) {

@@ -102,7 +102,19 @@ function drop(f, s, why, opts = {}) {
   bump();
   if (why === "died") { s.alive = false; s.health = 0; }
   if (opts.keepKit) stripRegistry(f, s);
+  else forgetCarried(f, s); // what they carry leaves the group's books with them (it is never dealt out twice)
   return true;
+}
+// The group's items a person carries, off its registry (they stay on the person): f.arsenal.items, its revision.
+function forgetCarried(f, s) {
+  const A = f && f.arsenal;
+  if (!A || !Array.isArray(A.items) || !A.items.length) return;
+  const held = new Set(allCarried(s));
+  if (!held.size) return;
+  const keep = A.items.filter((it) => !held.has(it));
+  if (keep.length === A.items.length) return;
+  A.items.splice(0, A.items.length, ...keep);
+  A.rev = (A.rev || 0) + 1;
 }
 // Takes a person out of the group's list (dead, taken prisoner, gone over to another group). Their kit stays on them;
 // what of it the group still owns (the registry) is taken off them and kept as spare when keepKit (they left it at
@@ -125,6 +137,28 @@ export function stripRegistry(f, s) {
 }
 const registrySet = (f) => new Set((f && f.arsenal && f.arsenal.items) || []);
 
+// Taken prisoner by another group by the numbers (groupjails.js groupCapture): the caller has taken them off the head
+// count already (f.pop), so this takes the very person out of the list quietly, with what they carry off the books.
+// The n to take: those hurt first, then the weakest fighters (they gave up), at the place hit (f.lossAt) first.
+export function captivesFrom(state, f, n) {
+  ensureMembers(state, f);
+  const at = f.lossAt;
+  const list = membersOf(f).filter((s) => s.alive && atHome(s));
+  list.sort((a, b) => (+(b.location.tile === at) - +(a.location.tile === at)) || (+isWounded(b) - +isWounded(a)) || fighterScore(a) - fighterScore(b) || a.id - b.id);
+  return list.slice(0, Math.max(0, Math.round(n)));
+}
+export function takeQuietly(state, f, s) {
+  if (!drop(f, s, "taken")) return false;
+  f.popSeen = Math.max(0, (Number.isFinite(f.popSeen) ? f.popSeen : f.people.length + 1) - 1);
+  s.location = { kind: "held" };
+  return true;
+}
+// A person of a group's back in its list (a prisoner freed, ransomed, swapped; one who turned joins their captors).
+export function homeAgain(state, f, s) {
+  if (!f || !s || s.alive === false) return false;
+  addMember(state, f, s);
+  return true;
+}
 // A person goes over to another group (a splinter band, an heir, an ally) with what they carry: the old group's
 // registry lets go of their kit (kept on them), the new one's takes it in.
 export function moveMember(state, from, to, s, tile = null, { give = null, take = null } = {}) {
@@ -164,6 +198,13 @@ export function sendMembers(state, f, p, n) {
   p.memberIds = go.map((s) => s.id);
   bump();
   return go;
+}
+// The n of a group's people who fought a fight nobody played on the map: its party's (partyId), else the fittest at home.
+export function groupFighters(state, f, partyId, n) {
+  syncMembers(state, f);
+  const out = partyId != null ? membersOf(f).filter((s) => s.alive && s.location && s.location.partyId === partyId) : [];
+  for (const s of fitAtHome(f)) { if (out.length >= n) break; if (!out.includes(s)) out.push(s); }
+  return out.slice(0, Math.max(0, Math.round(n)));
 }
 export const partyPeople = (f, p) => membersOf(f).filter((s) => s.location && s.location.partyId === p.id);
 export const fitAtHome = (f) => homeMembers(f).filter((s) => !isWounded(s)).sort((a, b) => fighterScore(b) - fighterScore(a) || a.id - b.id);

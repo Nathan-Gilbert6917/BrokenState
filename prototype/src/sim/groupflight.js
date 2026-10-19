@@ -41,6 +41,7 @@ import { sameBloc } from "./blocs.js";
 import { canHearGroup } from "./radio.js";
 import { removeFromArsenal, addToArsenal } from "./arsenal.js";
 import { tileLabel } from "./parties.js";
+import { syncMembers, membersOf, ensureMembers, moveMember } from "./members.js"; // a group taken in by an ally: its people go over
 
 export const FLIGHT = {
   NEAR: 3, RATIO: 1.6, ODDS: 0.5,
@@ -147,7 +148,12 @@ function moveCaptives(state, f, from, to) {
 // Taken in by an ally: everything they have goes over, and the group is no more.
 function joinAlly(state, f, ally, tile) {
   gatherStores(state, f); // groupbases.js: every base's stores go with them
-  ally.pop += f.pop;
+  // members.js: the very people go over, with what they carry (the ally's books take their kit in).
+  syncMembers(state, f);
+  const movers = membersOf(f).filter((s) => s.alive);
+  if (!Array.isArray(ally.people)) ensureMembers(state, ally);
+  for (const s of movers) moveMember(state, f, ally, s, null, { give: (it) => removeFromArsenal(f, it, "joined", { keepOn: true }), take: (it) => addToArsenal(state, ally, it, "joined") });
+  if (f.pop > 0) ally.pop += f.pop; // any not yet people
   for (const [k, q] of Object.entries(f.stock)) if (q > 0) ally.stock[k] = (ally.stock[k] || 0) + q;
   if (f.arsenal) for (const it of [...f.arsenal.items]) { removeFromArsenal(f, it, "joined"); addToArsenal(state, ally, it, "joined"); }
   if (ally.arsenal) ally.arsenal.pop0 = ally.pop;

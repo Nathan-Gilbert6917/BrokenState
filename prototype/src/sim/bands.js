@@ -11,6 +11,8 @@ import { MEMBER, touchMembers } from "./members.js";
 import { PEOPLE, fromPerson, stowGun } from "./fighters.js";
 import { nomadsOf } from "./nomads.js";
 import { visitorsOf } from "./visitors.js";
+import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { carriedRounds } from "./loadouts.js";
 
 export const bandCount = (band) => Math.max(0, Math.round(band.nomad ? band.pop || 0 : band.size ?? band.pop ?? 0));
 const keyOf = (band) => `${band.nomad ? "n" : "v"}${band.serial ?? 0}`;
@@ -34,6 +36,7 @@ function makeBandPerson(state, band, power, kind) {
   s.name = u.name;
   s.location = { kind: "band", ref: bandRef(band) };
   s.kitKind = kind;
+  note(state, "arrived", carriedRounds(s)); // ledger.js: a band's person made with their holdings (a creation seed)
   return s;
 }
 export function syncBand(state, band, power, kind) {

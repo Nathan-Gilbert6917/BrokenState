@@ -5,6 +5,7 @@ import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from ".
 import { createWorld, tickHour, day, hub, atBase, killSurvivor, makeSurvivor } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
 import { strength, peopleUp, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction } from "../src/sim/factions.js";
+import { collectRounds } from "../src/sim/loadouts.js";
 import { spawnAiParty } from "../src/sim/parties.js";
 import { createBattle, endBattleNow, closeCombat } from "../src/sim/combat.js";
 import { newItem, lootItem, allCarried } from "../src/sim/inventory.js";
@@ -66,7 +67,8 @@ section("Seeding by type, and the world's dice");
   const off = world();
   A.ARSENAL_SWITCH.off = false;
   const on = world();
-  const strip = (s) => JSON.stringify(s.factions.map((f) => [f.name, f.type, f.pop, f.bases, f.goodwill, f.stock, f.raidCooldown, f.color]));
+  const noRounds = (st) => Object.fromEntries(Object.entries(st || {}).filter(([k]) => !/^a_/.test(k) && k !== "ammo")); // the rounds their guns start loaded with are the arsenal's (loadouts.js seedRounds)
+  const strip = (s) => JSON.stringify(s.factions.map((f) => [f.name, f.type, f.pop, f.bases, f.goodwill, noRounds(f.stock), f.raidCooldown, f.color]));
   check(off.rng.state === on.rng.state && strip(off) === strip(on) && JSON.stringify(off.tiles.map((t) => t.loot)) === JSON.stringify(on.tiles.map((t) => t.loot)), "no world-dice drift at day 0: the same world with and without arsenals");
   check(on.factions.every((f) => f.arsenal) && off.factions.every((f) => !f.arsenal), "arsenals seeded at creation (and none with the switch off)");
 }
@@ -91,11 +93,13 @@ section("By the numbers: strength follows the arsenal, close to the old numbers 
   const s2 = strength(f);
   check(s2 < s0 * 0.75, `with no weapons left they are much weaker (${s2.toFixed(1)})`);
   for (let i = 0; i < f.pop; i++) A.addToArsenal(st, f, lootItem("pistol", "raider", [i, "p"]), "test");
-  const ammo = f.stock.ammo;
+  peopleUp(st, f); // the pistols handed out and loaded (loadouts.js kitOut)
   const s3 = strength(f);
-  f.stock.ammo = 0;
+  const kept = { ...f.stock }, bin = {};
+  for (const k of Object.keys(f.stock)) if (/^a_/.test(k) || k === "ammo") f.stock[k] = 0;
+  for (const p of f.people) collectRounds(f, p, bin); // nothing in the stores, nothing in their guns or pockets
   const s4 = strength(f);
-  f.stock.ammo = ammo;
+  Object.assign(f.stock, kept);
   check(s4 < s3 * 0.8 && s4 >= s3 * 0.65, `out of rounds, their guns count about 70% (${s3.toFixed(1)} → ${s4.toFixed(1)})`);
   C.woundGroup(f, Math.round(f.pop / 2)); // members.js: half of their people hurt (the wounded are people with wounds)
   check(strength(f) < s3 * 0.6, `half of them wounded: the wounded do not fight (${strength(f).toFixed(1)})`);
@@ -233,15 +237,20 @@ section("Repairs at a workshop, with parts");
   const f = typed(st, "fortress");
   st.groupWorks = st.groupWorks || {};
   worksAt(f, f.bases[0]).bench = 1;
-  f.stock.parts = 10; f.stock.scrap = 50;
+  f.stock.parts = 10; f.stock.scrap = 50; f.stock.gunparts = 0;
+  peopleUp(st, f);
+  const mech = f.people.find((s) => s.alive && s.location.partyId == null && s.health >= 60);
+  mech.skills.mechanics = 6; // members.js: their mechanic, one of their people (repair.js: guns need Mechanics 3)
   const gun = f.arsenal.items.find((x) => x.key === "ar" || x.key === "huntrifle" || x.key === "carbine");
   gun.dur = Math.round(GEAR[gun.key].dur * 0.3);
   const max0 = gun.durMax || GEAR[gun.key].dur;
   for (let i = 0; i < 4; i++) { st.hour += 24; C.repairGear(st, f, day(st) + i); }
   check(gun.dur > GEAR[gun.key].dur * 0.5, `their ${gun.name} is mended (${gun.dur} of ${gun.durMax})`);
   check(gun.durMax < max0 && f.stock.parts < 10, `and loses some of its maximum, as yours do (${max0} → ${gun.durMax}); parts spent (${10 - f.stock.parts})`);
-  const plan = C.groupRepairPlan({ key: "plate", name: "Plate carrier", dur: 5, durMax: 50, quality: 1 }, 5);
-  check(plan === null, "a ceramic plate carrier is not mended");
+  const { repairKind } = await import("../src/sim/repair.js");
+  const rk = repairKind({ key: "ceramicplate", name: "Ceramic plate", dur: 5, durMax: 50, quality: 1 });
+  check(!!(rk && rk.refuse), "a ceramic plate is not mended (replaced, as yours)");
+  check(mech.skills.mechanics >= 6 && (mech.xp ? Object.values(mech.xp).some((v) => v > 0) : true), "their mechanic did the work (XP by your rule)");
 }
 
 // ======================================================================================
@@ -263,7 +272,8 @@ section("Desertion and recruiting");
   check(lostH >= 2 && lostF <= 1, `a starving group bleeds deserters (${lostH} in 60 days), a well-fed one rarely (${lostF})`);
   const n0 = hungry.arsenal.items.length;
   const w = C.desertOne(st, hungry, 1, "wanderer");
-  check(w.to === "wanderer" && w.kit.length > 0 && w.wanderer.people[0].gear.weapon === w.kit[0] && hungry.arsenal.items.length === n0 - w.kit.length, `a deserter on the road carries their own ${w.kit[0] && w.kit[0].name}`);
+  const { allCarried: AIt } = await import("../src/sim/inventory.js");
+  check(w.to === "wanderer" && w.kit.length > 0 && w.kit.every((it) => AIt(w.wanderer.people[0]).includes(it)) && hungry.arsenal.items.length === n0 - w.kit.length, `a deserter on the road carries the group's kit they walked out with (${w.kit.map((it) => it.name).join(", ")}), off its books`);
   const g = C.desertOne(st, hungry, 2, "group");
   check(g.to === "group" && g.kit.every((it) => g.group.arsenal.items.includes(it)), `one goes over to ${g.group && g.group.name}, kit and all`);
   const p = C.desertOne(st, hungry, 3, "player");

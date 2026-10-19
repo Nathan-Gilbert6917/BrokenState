@@ -52,6 +52,7 @@ import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGe
 import { intoArsenalFromShelf, shelfSurplus } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
 import { swapGun } from "./gundist.js";
 import { groupMachineCount, groupMachParts } from "./groupworks.js"; // freezer-parts: their machines want spare parts // the gun distribution: which gun a group's shelf holds
+import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -455,10 +456,20 @@ export const WARES_MAX = 12;
 // military's kit kept up, raiders' knocked about), priced by it (valuation.js itemValue).
 export function ensureWares(state, f, refresh = false) {
   if (f.wares && !refresh) return f.wares;
+  // A group that lives here (docs/adr/0001-ai-parity.md): its shelf is stocked once, as it is made (a creation seed);
+  // after that it holds only what the group owns and would trade (arsenal.js keepItem, shelfSurplus): nothing new
+  // from nowhere, nothing dropped off the end. Visitors and nomads (outsiders) bring a fresh stock as they come.
+  if (!f.outsider && f.waresSeeded) {
+    f.wares = f.wares || [];
+    for (const it of shelfSurplus(state, f)) if (!f.wares.includes(it)) f.wares.push(it);
+    f.waresDay = day(state);
+    return f.wares;
+  }
+  if (!f.outsider) f.waresSeeded = true;
   const rng = state.rng;
   const pool = WARES[f.type] || WARES.traders;
   const n = f.type === "traders" ? rng.int(4, 6) : rng.int(1, 3);
-  const keep = (f.wares || []).slice(-Math.max(0, WARES_MAX - n));
+  const keep = f.outsider ? (f.wares || []).slice(-Math.max(0, WARES_MAX - n)) : [...(f.wares || [])]; // a group that lives here loses nothing off its shelf
   const src = traderSource(f.type);
   for (let i = 0; i < n; i++) {
     const listed = rng.pick(pool);
@@ -475,7 +486,7 @@ export function ensureWares(state, f, refresh = false) {
   keep.push(...gunWares(state, f.type, f.name, day(state))); // gunfinds.js: an over-under, a carbine, a battle rifle now and then (its own dice)
   keep.push(...bookWares(state, f)); // skills.js: now and then a book (its own dice: the rest of the stock is unchanged)
   keep.push(...shelfSurplus(state, f)); // arsenal.js: weapons beyond what their people need (no dice)
-  f.wares = keep.slice(-WARES_MAX);
+  f.wares = f.outsider ? keep.slice(-WARES_MAX) : keep;
   f.waresDay = day(state);
   return f.wares;
 }
@@ -843,6 +854,7 @@ export function executeTrade(state) {
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
     const tk = ctx.kind === "caravan" || isRoundKey(k) ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts; rounds by key (docs/adr/0001-ai-parity.md)
     theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" || FOODS[k] ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, firewood) starts from its comfortable stock
+    if (isRoundKey(k) || k === "ammo") note(state, "from you", q); // ledger.js
     gave.push(`${q} ${keyWord(k)}`);
   }
   for (const [k, q] of Object.entries(t.ask)) {
@@ -856,7 +868,7 @@ export function executeTrade(state) {
   for (const g of offerGear) { moveItem(ctx.myGear, theirGear, g); gave.push(g.name); }
   for (const g of askGear) { moveItem(theirGear, ctx.myGear, g); got.push(g.name); }
   if (ctx.kind !== "caravan") intoArsenalFromShelf(state, f, offerGear); // arsenal.js: the guns and armour they bought go to their fighters
-  if (ctx.kind === "visit" && f.wares.length > WARES_MAX) f.wares.splice(0, f.wares.length - WARES_MAX);
+  if (ctx.kind === "visit" && f.outsider && f.wares.length > WARES_MAX) f.wares.splice(0, f.wares.length - WARES_MAX); // a group that lives here keeps all it bought
   // Intel: the tiles paid for are reported (a team carries the report home, or radios it in when in contact).
   const tiles = intelTiles(state, ctx.center, t.intel);
   if (tiles.length) {

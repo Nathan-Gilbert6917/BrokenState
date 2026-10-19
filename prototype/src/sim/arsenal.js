@@ -36,12 +36,14 @@
 // bows while short of ranged weapons, pipe bombs or Molotovs: CRAFT, groupCraftable), trade (fighting gear you sell or give them goes in; surplus over
 // WANT a head goes on their shelf, trade.js), stealing (raids on your bases and other groups, robbing your teams,
 // captives stripped), the fields they hold after a fight, a broken group's arsenal (half to the group that takes it
-// over), your vehicles when a team is taken whole, a smoke grenade now and then while short (SMOKE_RESTOCK). Outflows:
+// over), your vehicles when a team is taken whole. Outflows:
 // the dead's kit, wear (a use a fight; broken is gone), rounds spent, explosives thrown at walls, smoke thrown over a
 // retreat by the numbers (smokeCover), what they sell, what others steal.
 import { GEAR, FACTION_TYPES, LOCATIONS, supValue } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
-import { lootItem } from "./inventory.js";
+import { lootItem, isCarrier, insertsOf, allCarried, salvageYield } from "./inventory.js";
+import { isRoundItem } from "./itemstack.js"; // loose rounds are the stores', not the books
+import { note, goodsRounds } from "./ledger.js"; // the conservation ledger (a test switch)
 import { scavBlade } from "./blades.js"; // knives and swords their scavengers find
 import { scavGun } from "./gunfinds.js"; // the newer guns their scavengers find (the same table as your searches)
 import { kitSource, siteSource } from "./itemcond.js";
@@ -51,12 +53,12 @@ import { totalRounds, spendAmmo } from "./rounds.js"; // a group's rounds: one a
 import { enemyLoad } from "./ammo.js"; // the round a unit armed from it loads (data-ammo.js KIT_AMMO by the group's kit)
 import { syncModes } from "./gunfire.js";
 import { isEarKey, issueEars, starterHeadgear } from "./helmets.js"; // helmets and ear protection by kit // the fire modes of the gun it is given
-import { enemyPieces } from "./armour.js"; // its armour pieces: the arsenal's items themselves (their wear)
+import { enemyPieces, armourSpec, armourBroken } from "./armour.js"; // its armour pieces: the arsenal's items themselves (their wear)
 import { itemDur, itemDurMax, wear } from "./crafting.js";
 import { day, factionById } from "./world.js";
 import { factionVehicles, groupTurret } from "./vehicles.js";
 import { workshopFactor, groupSkill, groupKnows, groupHas, canPayParts, payParts } from "./groupworks.js"; // ai-locks: their crafting by your rules
-import { CRAFTS } from "./crafting.js"; // ai-locks: their crafting is your recipes
+import { CRAFTS, craftRoll, craftQuality, craftItem, craftXp, CRAFT_SKILL } from "./crafting.js"; // ai-locks: their crafting is your recipes, your crafting rolls
 import { LOCKED } from "./blueprints.js"; // ai-locks: and your manuals
 import { groupBrass, groupReloadDaily } from "./reloading.js"; // the reloading bench, theirs: brass from their fights, rounds from their workshop
 import { fitPeople, noteFight, weightOf, woundsFor, wearGroupVehicles, tickOf } from "./groupcare.js"; // AI parity: the wounded do not fight; a fight's dead and wounded
@@ -64,9 +66,17 @@ import { armLauncher, settleArsenalLauncher } from "./launchers.js"; // a launch
 import { armKit, seedKit, kitWorthy } from "./carrykit.js"; // carry kit (sections 15-16): their rigs, spare magazines and plates
 import { swapGun, kitGunSource } from "./gundist.js"; // the gun distribution: which gun a kit, a newcomer, a scavenger or their gunsmith brings
 import { available } from "./trade.js"; // what a group can spare (call time only)
+import { relation, warBetween } from "./diplomacy.js"; // whose shelf a group may buy from
 import { SUPPLIES } from "./data.js";
 import { PEOPLE, memberize, spentThrows, stowGun } from "./fighters.js";
-import { carrierOf, removeMember, memberById, MEMBER, syncMembers, carriers } from "./members.js"; // the group's people: the registry's items are on them // the group's people on the battle map
+import { carrierOf, removeMember, memberById, MEMBER, syncMembers, carriers, homeMembers } from "./members.js"; // the group's people: the registry's items are on them // the group's people on the battle map
+import { carriedRounds, spareKit } from "./loadouts.js"; // the rounds its people carry count as the group's
+import { settleEars, isPlugsKey } from "./hearing.js"; // a member's ears after a fight, by your rule
+import { earGearOf } from "./helmets.js";
+import { skill } from "./world.js"; // a member's own skill
+import { gainXp } from "./skills.js";
+import { wornOut } from "./repair.js"; // past mending
+import { groupStockKey } from "./trade.js";
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -110,12 +120,8 @@ export const ARSENAL = {
   // Buying a gun from passing traders (groupBuysGun): every `every` days below `guns` guns a head, at value × markup,
   // paid from `share` of the scrap they can spare (trade.js available: past their reserve). Only well under the guns
   // a group usually holds (about 0.85 a head in 2-year autopilot runs), never with food, meds or fuel.
-  BUY: { every: 12, guns: 0.7, markup: 1.3, share: 0.5, keys: ["scrap"] },
+  BUY: { every: 12, guns: 0.7, markup: 1.3, share: 0.5, keys: ["scrap"], rel: -50 }, // rel: a seller not at war with them and not a bitter enemy (reloading.js RELOAD.GROUP's)
   SHELF: 2, // surplus pieces put on the shelf a refresh
-  // Smoke grenades (siege.js coverSmoke: over a retreat) come back coarsely, a day at a time: while a group holds fewer
-  // than its kit's share a head (NONLETHAL smokegren), it gets one a day at this chance from its scavenging and trade
-  // (military kit from Army sites and its own stores, traders' guards buy them, militia and raiders come across one).
-  SMOKE_RESTOCK: { soldiers: 0.15, guards: 0.1, militia: 0.05, fighters: 0.05, raiders: 0.03 },
   // A beaten side by the numbers (factions.js AI raids) with smoke covers its retreat: each grenade it throws (at most
   // MAX, out of its arsenal) spares PER of its people; at least one of the losses still falls.
   SMOKE_COVER: { PER: 1, MAX: 2 },
@@ -280,6 +286,15 @@ export function addToArsenal(state, f, it, why = "found") {
   put(A, f, it, why);
   return true;
 }
+// Anything a group takes in (stolen, bought, found, given): fighting kit onto the books, everything else onto its
+// shelf (trade.js f.wares: the goods it owns and would trade), never lost (docs/adr/0001-ai-parity.md).
+export function keepItem(state, f, it, why = "found") {
+  if (!f || !it) return false;
+  if (!f.outsider && addToArsenal(state, f, it, why)) return true;
+  const w = f.wares || (f.wares = []);
+  if (!w.includes(it)) w.push(it);
+  return true;
+}
 // opts.keepOn: the person carrying it keeps it (they leave the group with it: a deserter, a refugee).
 export function removeFromArsenal(f, it, why = "lost", opts = {}) {
   const A = f && f.arsenal;
@@ -303,6 +318,8 @@ function wearOwned(f, it, n = 1) {
 // ---------- rounds (ammo.js: a group keeps one abstract count, f.stock.ammo, and whatever rounds by key a deal or a
 // delivery left in its stores; its fighters load by their kit, enemyLoad) ----------
 export const arsenalRounds = (f) => (f && f.stock ? totalRounds(f.stock) : 0);
+// Every round the group has: its stores' and what its people carry (loadouts.js carriedRounds: loaded, in magazines, loose).
+export const groupRounds = (f) => arsenalRounds(f) + (f && Array.isArray(f.people) ? f.people.reduce((a, s) => a + (s.alive ? carriedRounds(s) : 0), 0) : 0);
 export function takeArsenalRounds(f, n) {
   if (!f || !f.stock) return 0;
   const got = spendAmmo(f.stock, Math.min(arsenalRounds(f), Math.max(0, Math.round(n)))).n; // generic first, then the cheapest rounds
@@ -396,7 +413,7 @@ export function ammoFactor(f) {
   const A = f && f.arsenal;
   if (!A) return 1;
   const need = gunsIn(A, Math.max(1, fitPeople(f))) * ARSENAL.AMMO_NEED;
-  const have = arsenalRounds(f);
+  const have = groupRounds(f);
   return !need || have >= need ? 1 : ARSENAL.AMMO_SHORT + (1 - ARSENAL.AMMO_SHORT) * have / need;
 }
 // The eras' arms (eras.js gangArms, f.gear: an aggressive group arms itself better each year from GROW_FROM), through
@@ -625,6 +642,17 @@ export function settleArsenal(state, setup, result, battle = null) {
 //     them holding it, they gather their own and keep them (spare at home);
 //   - the rest come home as they are: their health what the fight left them (the downed who pulled through 5–15),
 //     their kit worn a use (wearOwned: the old rule; batch 3 of the plan wears it by its hits).
+// The third side's people of a group (thirdside.js thirdSideUnit: a military squad of its members), settled as the
+// enemy's are (settlePeople). Not the group the battle was against (settleArsenal has done it).
+export function settleThird(state, setup, result, battle) {
+  if (!battle || !battle.units || !result) return;
+  const e = (setup && setup.enemy) || {};
+  const fids = new Set(battle.units.filter((u) => u.side === "third" && u.who && u.who.fid != null && u.who.fid !== e.factionId).map((u) => u.who.fid));
+  for (const fid of fids) {
+    const f = factionById(state, fid);
+    if (f && f.alive && !f.outsider && ensureArsenal(state, f)) settlePeople(state, f, battle, result, { dropped: [], took: [] });
+  }
+}
 export function settlePeople(state, f, battle, result, out) {
   const won = result.outcome === "victory";
   const raidMap = !!battle.raid;
@@ -642,13 +670,26 @@ export function settlePeople(state, f, battle, result, out) {
       const onField = raidMap ? !!u.bodied : won;
       if (onField) for (const it of u.bodyItems || []) if (removeFromArsenal(f, it, u.dead ? "died:battle" : "taken")) out.dropped.push(it);
       removeMember(state, f, s, u.dead ? "died" : "taken", { keepKit: !onField });
+      if (!u.dead && s.pending) { delete s.fid; s.location = { kind: "prisoner" }; } // prisoners.js captiveRecords: yours now
       lost++;
       continue;
     }
+    // What they took up in the fight (ground.js aiGrabGun, a body's kit) is the group's now, as yours keep what they carry home.
+    { const own = new Set(f.arsenal.items); for (const it of allCarried(s)) if (it && !own.has(it) && !isRoundItem(it)) addToArsenal(state, f, it, "picked up"); }
     const hp = u.down && !u.surr ? 5 + Math.floor(hash01(state.seed, "personhp", s.id, state.hour) * 11) : u.hp;
     s.health = Math.max(1, Math.min(100, Math.round(hp)));
+    const plug = u.ears && isPlugsKey(u.ears.key) ? (earGearOf(s) || {}).item || null : null;
+    settleEars(u, s, true); // hearing.js: a pair of earplugs used, hearing lost for good (by your rule)
+    if (plug && plug.dur != null && plug.dur <= 0) removeFromArsenal(f, plug, "used up");
     stowGun(u); // fighters.js: what is left in the gun stays in it (the magazines keep theirs); the day's kit-out counts it
-    for (const it of carriedOwn(f, s)) wearOwned(f, it);
+    // Wear by your rule (combat.js wearFielded): the gun a use for the fight, armour only by the hits it took (armour.js),
+    // a piece broken or shattered gone (a carrier's broken plate too).
+    for (const it of carriedOwn(f, s)) if (it === s.gear.weapon || !armourSpec(it.key)) wearOwned(f, it);
+    for (const it of carriedOwn(f, s)) {
+      if (it === s.gear.weapon || !armourSpec(it.key)) continue;
+      if (isCarrier(it)) { const ins = insertsOf(it); for (const side of ["front", "back"]) if (ins[side] && armourBroken(ins[side])) { removeFromArsenal(f, ins[side], "broke"); ins[side] = null; } }
+      if (armourBroken(it)) removeFromArsenal(f, it, "broke");
+    }
   }
   if (lost) { noteFight(f, lost, 0); battle.memberLoss = (battle.memberLoss || {}); battle.memberLoss[f.id] = (battle.memberLoss[f.id] || 0) + lost; }
   syncMembers(state, f);
@@ -858,20 +899,25 @@ export function newcomerKit(state, f, tag) {
   }
   return out;
 }
-// A group buys a gun from passing traders (AI parity with the governor's buying, govguns.js; coarse): every BUY.every
-// days while it has fewer than BUY.guns guns a head (its newcomers unarmed), one of its kit's guns (gundist.js: of its
-// kind in the band of its list's) at its value × BUY.markup, paid from BUY.share of what it can spare (trade.js
-// available: its reserves kept) of BUY.keys at their value, the most plentiful first. Hashed dice; the goods leave the
-// world.
+// A group buys a gun (AI parity with the governor's buying, govguns.js; docs/adr/0001-ai-parity.md: only through a
+// channel you could use): every BUY.every days while it has fewer than BUY.guns guns a head, the cheapest gun on a
+// shelf it can reach: another group's (trade.js f.wares, what that group owns and would trade; not one it is at
+// war with, nor a bitter enemy: BUY.rel) or a visiting trader's. It pays its value × BUY.markup from BUY.share of what it can spare (trade.js
+// available) of BUY.keys, the most plentiful first, into the seller's stores; the very gun changes hands. Nothing on
+// any shelf: no gun.
 function groupBuysGun(state, f, A, salt, dd) {
   const B = ARSENAL.BUY;
   if (!B || f.outsider || dd % B.every !== 0) return;
   if (sortedKit(A).W.filter((it) => usesRounds(it.key)).length >= f.pop * B.guns) return;
-  const list = (KITS[kitOf(f)] || KITS.survivors).weapons.filter((k) => usesRounds(k));
-  if (!list.length) return;
-  const key = swapGun(kitGunSource(kitOf(f)), list[Math.floor(hash01(...salt, "bw") * list.length) % list.length], [...salt, "bwg"]);
-  if (!GEAR[key]) return;
-  const price = (GEAR[key].value || 0) * B.markup;
+  const sellers = [
+    ...(state.factions || []).filter((g) => g !== f && g.alive && !g.outsider && !warBetween(state, f, g) && relation(state, f, g) > B.rel),
+    ...(state.visitors || []).filter((v) => v && v.alive !== false && v.type === "traders"),
+  ];
+  const offers = [];
+  for (const g of sellers) for (const it of g.wares || []) if (it && GEAR[it.key] && usesRounds(it.key) && GEAR[it.key].slot === "weapon") offers.push({ g, it, price: (GEAR[it.key].value || 0) * B.markup * (it.quality ?? 1) });
+  if (!offers.length) return;
+  offers.sort((a, b) => a.price - b.price || hash01(...salt, "bwo", a.it.key, a.g.name) - hash01(...salt, "bwo", b.it.key, b.g.name));
+  const { g, it, price } = offers[0];
   const pay = {};
   let left = price;
   for (const k of [...B.keys].sort((a, b) => available(f, b) * (supValue(b) || 1) - available(f, a) * (supValue(a) || 1) || (a < b ? -1 : 1))) {
@@ -880,9 +926,30 @@ function groupBuysGun(state, f, A, salt, dd) {
     if (left <= 0) break;
   }
   if (left > 0) return; // they cannot spare it
-  for (const [k, q] of Object.entries(pay)) f.stock[k] = Math.max(0, (f.stock[k] || 0) - q);
-  addToArsenal(state, f, lootItem(key, "merchant", [...salt, "bwi"]), "purchased");
+  for (const [k, q] of Object.entries(pay)) { f.stock[k] = Math.max(0, (f.stock[k] || 0) - q); if (g.stock) g.stock[k] = (g.stock[k] || 0) + q; }
+  g.wares.splice(g.wares.indexOf(it), 1);
+  keepItem(state, f, it, "purchased");
   A.spent = (A.spent || 0) + Math.round(price);
+}
+// A group takes apart the spare guns on its books that are past mending (repair.js wornOut) or broken: your salvage's
+// yield (inventory.js salvageYield: gun parts and a scrap; into its pooled parts, trade.js groupStockKey), the gun's
+// attachments kept on its books (docs/adr/0001-ai-parity.md). Returns how many.
+function groupSalvage(state, f) {
+  const A = f.arsenal;
+  if (!A) return 0;
+  let n = 0;
+  for (const it of spareKit(f)) {
+    const d = it && GEAR[it.key];
+    if (!d || d.slot !== "weapon" || !(wornOut(it) || itemDur(it) === 0)) continue;
+    const got = salvageYield(it);
+    if (!got) continue;
+    const mods = it.mods ? Object.values(it.mods).filter(Boolean) : [];
+    removeFromArsenal(f, it, "salvaged");
+    if (mods.length) { delete it.mods; for (const m of mods) addToArsenal(state, f, m, "salvaged"); }
+    for (const [k, q] of Object.entries(got)) { const gk = groupStockKey(k, f); f.stock[gk] = (f.stock[gk] || 0) + q; }
+    n++;
+  }
+  return n;
 }
 // Their daily upkeep (factions.js factionsDaily): newcomers' weapons, crafting from scrap, explosives.
 export function arsenalDaily(state, f) {
@@ -890,9 +957,10 @@ export function arsenalDaily(state, f) {
   if (!A) return;
   const d = day(state);
   const salt = [state.seed, "arsday", f.name, tickOf(f)]; // groupcare.js tickOf: the group's own day count
-  if (f.pop > A.pop0) for (let i = A.pop0; i < f.pop; i++) for (const it of newcomerKit(state, f, [...salt, "n", i])) addToArsenal(state, f, it, "recruit");
+  if (f.pop > A.pop0) for (let i = A.pop0; i < f.pop; i++) for (const it of newcomerKit(state, f, [...salt, "n", i])) { addToArsenal(state, f, it, "recruit"); note(state, "recruit", goodsRounds([it])); } // a newcomer's own kit: a creation seed (ledger.js)
   A.pop0 = f.pop;
-  restockSmoke(state, f, A, salt);
+  // (No smoke restock from nowhere: a group's smoke grenades come as yours do, from finds, trade and loot.)
+  groupSalvage(state, f); // inventory.js salvageYield: the guns past mending taken apart for parts, as yours
   groupReloadDaily(state, f, hasWorkshop(state, f) && groupHas(state, f, "reload")); // reloading.js: powder and primers bought, rounds loaded at their reloading bench (ai-locks: built by your Mechanics 3, groupworks.js)
   const C = ARSENAL.CRAFT, phase = Math.floor(h(state.seed, f.name, "craft") * 12);
   groupBuysGun(state, f, A, salt, d + phase); // AI parity with the governor's gun buying (govguns.js)
@@ -901,7 +969,7 @@ export function arsenalDaily(state, f) {
   if ((d + phase) % C.every === 0 && o.W.length < f.pop) {
     let key = C.weapons[Math.floor(hash01(...salt, "cw") * C.weapons.length) % C.weapons.length];
     if (!groupCraftable(state, f, key)) key = "spikedbat"; // a nail bat wants a bat
-    if (GEAR[key] && groupCraftable(state, f, key)) { payCraft(f, key); addToArsenal(state, f, lootItem(key, "militia", [...salt, "c"]), "crafted"); }
+    if (GEAR[key] && groupCraftable(state, f, key)) { payCraft(f, key); keepItem(state, f, groupCraftOut(state, f, key, [...salt, "c"]), "crafted"); }
   }
   if ((d + phase) % C.gunEvery === 0 && sortedKit(A).W.filter((it) => isRangedKey(it.key)).length < f.pop * C.guns) {
     const key = C.ranged.find((k) => groupCraftable(state, f, k)); // the best they may make (your recipes and manuals)
@@ -909,7 +977,7 @@ export function arsenalDaily(state, f) {
       const parts = (CRAFTS[key].in || {}).parts || 0;
       payCraft(f, key);
       f.partsGuns = (f.partsGuns || 0) + parts; // the parts that went into guns (tools/machinecensus.js)
-      addToArsenal(state, f, lootItem(CRAFTS[key].gear, "militia", [...salt, "g"]), "crafted");
+      keepItem(state, f, groupCraftOut(state, f, key, [...salt, "g"]), "crafted");
     }
   }
   const kind = kitOf(f), want = Math.round(f.pop * (ARSENAL.THROW_PER[kind] || 0));
@@ -917,12 +985,8 @@ export function arsenalDaily(state, f) {
   const pipe = kind !== "zealots" && kind !== "militia" && throws.includes("pipebomb") && groupCraftable(state, f, "pipebomb");
   const bomb = pipe ? "pipebomb" : kind === "zealots" || kind === "militia" || throws.includes("molotov") ? "molotov" : null;
   if (bomb && (d + phase) % C.bombEvery === 0 && o.T.length < want) {
-    if (bomb === "pipebomb") { payCraft(f, "pipebomb"); addToArsenal(state, f, lootItem(bomb, "militia", [...salt, "b"]), "crafted"); }
-    else if ((f.stock.scrap || 0) >= C.bombScrap + 2 && (f.stock.fuel || 0) >= C.bombFuel + 1) {
-      f.stock.scrap -= C.bombScrap; // the bottle (your recipe's: one from the armory)
-      f.stock.fuel -= C.bombFuel;
-      addToArsenal(state, f, lootItem(bomb, "militia", [...salt, "b"]), "crafted");
-    }
+    // Your recipes either way (crafting.js): a Molotov is a bottle and fuel, a pipe bomb scrap, a part and powder.
+    if (groupCraftable(state, f, bomb)) { payCraft(f, bomb); keepItem(state, f, groupCraftOut(state, f, bomb, [...salt, "b"]), "crafted"); }
   }
 }
 // ---------- their crafting by your rules (ai-locks; see ARSENAL.CRAFT) ----------
@@ -942,8 +1006,22 @@ export function groupCraftable(state, f, key) {
   for (const [k, q] of Object.entries(r.in || {})) {
     if (k === "parts" ? !canPayParts(f, q) : k === "ammo" ? arsenalRounds(f) < q : (f.stock[k] || 0) < q) return false;
   }
-  for (const [k, q] of Object.entries(r.gearIn || {})) if ((f.arsenal ? f.arsenal.items.filter((it) => it && it.key === k).length : 0) < q) return false;
+  for (const [k, q] of Object.entries(r.gearIn || {})) if (gearInputs(f, k).length < q) return false;
   return true;
+}
+// The items a recipe can use up: spare on their books (nobody carries it) or on their shelf (a bottle, a bat).
+const gearInputs = (f, k) => [...spareKit(f).filter((it) => it && it.key === k), ...(f.wares || []).filter((it) => it && it.key === k)];
+// What their crafter makes (crafting.js: your recipe's item at the quality your crafting rolls for the best of their
+// people at home who may attempt it, who gains the XP; docs/adr/0001-ai-parity.md).
+function groupCraftOut(state, f, key, tag) {
+  const r = CRAFTS[key];
+  const able = homeMembers(f).filter((s) => s.alive !== false && skill(s, r.skill) >= (r.min || 0) && skill(s, "crafting") >= (r.cmin || 0));
+  const by = able.sort((a, b) => skill(b, CRAFT_SKILL) - skill(a, CRAFT_SKILL) || a.id - b.id)[0] || null;
+  const lvl = by ? skill(by, CRAFT_SKILL) : groupSkill(f, CRAFT_SKILL);
+  const q = r.supplies ? 1 : craftRoll(state, craftQuality(lvl, r, false, state), lvl, `grp:${tag.join(":")}:${key}`);
+  const item = craftItem(r, q);
+  if (by) gainXp(state, by, CRAFT_SKILL, craftXp(r, q));
+  return item;
 }
 const groupHasNeed = (state, f, need) => (need === "machine_shop" ? groupHas(state, f, "shop") : need === "reload_bench" ? groupHas(state, f, "reload") : false);
 // Pays a recipe's inputs (call groupCraftable first).
@@ -954,14 +1032,9 @@ function payCraft(f, key) {
     else if (k === "ammo") takeArsenalRounds(f, q);
     else f.stock[k] = Math.max(0, (f.stock[k] || 0) - q);
   }
-  for (const [k, q] of Object.entries(r.gearIn || {})) for (let i = 0; i < q; i++) { const it = f.arsenal.items.find((x) => x && x.key === k); if (it) removeFromArsenal(f, it, "crafted"); }
-}
-// The day's smoke grenade (SMOKE_RESTOCK): one, while they hold fewer than their kit's share a head. Own dice.
-function restockSmoke(state, f, A, salt) {
-  const kind = kitOf(f), p = ARSENAL.SMOKE_RESTOCK[kind] || 0;
-  const want = Math.round(Math.max(0, f.pop || 0) * ((ARSENAL.NONLETHAL[kind] || {}).smokegren || 0));
-  if (!p || A.items.filter((it) => it && it.key === "smokegren").length >= want || hash01(...salt, "smoke") >= p) return;
-  addToArsenal(state, f, lootItem("smokegren", kitSource(kind), [...salt, "sm"]), "scavenged");
+  for (const [k, q] of Object.entries(r.gearIn || {})) for (const it of gearInputs(f, k).slice(0, q)) {
+    if (!removeFromArsenal(f, it, "crafted") && f.wares && f.wares.includes(it)) f.wares.splice(f.wares.indexOf(it), 1);
+  }
 }
 // A side beaten by the numbers covers its retreat with smoke (SMOKE_COVER): the grenades thrown leave the arsenal.
 // loss: its people lost; returns how many of them the smoke spared (never all of them).
@@ -981,10 +1054,12 @@ export function captureVehicle(f, v) {
   factionVehicles(f).push(rec);
   return rec;
 }
-// A group that takes over a broken one (factions.js takeOver): half its arsenal and its vehicles.
+// A group that takes over a broken one (factions.js takeOver): everything it owned that its people did not carry off
+// (the movers took theirs: members.js moveMember), its shelf, its vehicles. Nothing is lost (docs/adr/0001-ai-parity.md).
 export function inheritArsenal(state, heir, f) {
   if (!heir || !f || !f.arsenal || !ensureArsenal(state, heir)) return;
-  f.arsenal.items.slice().forEach((it, i) => { removeFromArsenal(f, it, "taken"); if (i % 2 === 0) addToArsenal(state, heir, it, "taken"); });
+  for (const it of f.arsenal.items.slice()) { removeFromArsenal(f, it, "taken"); keepItem(state, heir, it, "taken"); }
+  for (const it of (f.wares || []).splice(0)) keepItem(state, heir, it, "taken");
   for (const v of factionVehicles(f).splice(0)) { v.owner = heir.id; factionVehicles(heir).push(v); }
 }
 // A share of their spare kit to a place of yours (conquest.js captureBase: their stores at the base you took).
@@ -1039,7 +1114,7 @@ export function arsenalText(state, f) {
   };
   const armour = Object.values(o.S).flat();
   const parts = [count([...o.L, ...o.W]).join(", "), armour.length ? count(armour).join(", ") : "", o.T.length ? count(o.T).join(", ") : "", cars.map((v) => v.name).join(", ")].filter(Boolean);
-  return `${word} (${f.pop} people, ${arsenalRounds(f)} rounds): ${parts.join("; ")}.`;
+  return `${word} (${f.pop} people, ${groupRounds(f)} rounds): ${parts.join("; ")}.`;
 }
 // Totals for tools (A/B runs).
 export function arsenalStats(state) {

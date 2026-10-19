@@ -824,11 +824,20 @@ export function skillsHour(state) {
 // Battles (combat.js)
 // ======================================================================================
 // Called once the player's units are on the battle map: per-unit perks and the team-wide ones, and XP tallies.
+// Every person on the map, whatever their side (docs/adr/0001-ai-parity.md: a group's people have perks and earn XP as
+// yours do): called again once the other sides are placed, each unit once (u.perked); Rally and Commander are a side's.
+const personOfUnit = (state, u) => (u.who ? u.who : u.sid != null ? survivorById(state, u.sid) : null);
 export function battlePerks(state, b) {
-  const mine = b.units.filter((u) => u.side === "player");
-  let rally = false, commander = false;
+  const bySide = new Map();
+  for (const u of b.units) if (u.kind === "human" && (u.side === "player" || u.who)) { if (!bySide.has(u.side)) bySide.set(u.side, []); bySide.get(u.side).push(u); }
+  for (const list of bySide.values()) sidePerks(state, list);
+}
+function sidePerks(state, all) {
+  const mine = all.filter((u) => !u.perked);
+  let rally = all.some((u) => u.perked && u.rallyPerk), commander = all.some((u) => u.perked && u.commanderPerk);
   for (const u of mine) {
-    const s = survivorById(state, u.sid);
+    const s = personOfUnit(state, u);
+    u.perked = true;
     u.xpT = { shots: 0, hits: 0, kills: 0, swings: 0, melee: 0, mkills: 0, heals: 0, sneak: 0, boxes: 0 };
     if (!s) continue;
     if (hasPerk(s, "steadyaim")) u.aim += 5;
@@ -848,8 +857,8 @@ export function battlePerks(state, b) {
     if (hasPerk(s, "miracle")) u.miracle = true;
     if (hasPerk(s, "treasure")) u.scavBonus = 5;
     if (hasPerk(s, "quiethands")) u.quiet = true;
-    if (hasPerk(s, "rally")) rally = true;
-    if (hasPerk(s, "commander")) commander = true;
+    if (hasPerk(s, "rally")) { rally = true; u.rallyPerk = true; }
+    if (hasPerk(s, "commander")) { commander = true; u.commanderPerk = true; }
   }
   for (const u of mine) {
     if (rally) { u.aim += 5; u.meleeAim += 5; }
@@ -860,9 +869,9 @@ export function battlePerks(state, b) {
 // When a battle on the map ends: XP from what each unit did (combat.js wearFielded).
 export function battleXp(state, b) {
   for (const u of b.units) {
-    if (u.side !== "player" || !u.xpT) continue;
-    const s = survivorById(state, u.sid);
-    if (!s || !s.alive) continue;
+    if (!u.xpT || !(u.side === "player" || u.who)) continue;
+    const s = personOfUnit(state, u);
+    if (!s || s.alive === false || s.transient) continue; // a transient person (fighters.js) has no life after the fight
     const t = u.xpT;
     gainXp(state, s, "shooting", t.shots * USE.shot + t.hits * USE.hit + t.kills * USE.kill, "fight");
     gainXp(state, s, "melee", (t.swings || 0) * USE.swing + (t.melee || 0) * USE.melee + (t.mkills || 0) * USE.kill, "fight"); // swings, blows landed, melee kills

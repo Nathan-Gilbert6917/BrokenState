@@ -174,10 +174,10 @@ function takeSpent(s, it) {
 }
 // Meds out of your side's pool (the enemy carries their own: their kit).
 function spendMeds(b, u) {
-  if (u.side !== "player") return;
-  H.take(b, "meds", 1);
-  b.medsUsed++;
+  if (usesMeds(u)) H.spendMed(b, u); // combat.js: the team's, or the person's bag (docs/adr/0001-ai-parity.md)
 }
+// Meds count for your people and for every person of another side (fighters.js); the old units fought by the kit alone.
+const usesMeds = (u) => u.side === "player" || !!u.who;
 // The meds a side's AI keeps back for a revive (MEDIC.RESERVE): with a medic of theirs standing (or aboard), 1 for
 // every PER of their people still in the fight, at least MIN; with none, nothing (no one could revive).
 export function medsReserve(b, side) {
@@ -187,7 +187,7 @@ export function medsReserve(b, side) {
 }
 // What the AI may spend on healing the standing: your side's pool, an enemy medic's own kit uses, above the reserve.
 export function spareMeds(b, u) {
-  const have = u.side === "player" ? medsLeft(b) : isMedic(u) ? u.kitLeft - (u.kitUses || 0) : 0;
+  const have = usesMeds(u) ? H.medsOf(b, u) : isMedic(u) ? u.kitLeft - (u.kitUses || 0) : 0;
   return have - medsReserve(b, u.side);
 }
 const treated = (b, u) => { u.treating = b.turn; };
@@ -225,7 +225,7 @@ export function healRefusal(b, u, t) {
   if (t !== u && !meleeReach(b, u, t)) return "Must be next to them (not across a wall's corner).";
   if (t.down) return "They are down: Revive them (2 actions), or stabilize them with Use meds.";
   if (t.hp >= t.maxHp) return "Not hurt.";
-  if (u.side === "player" && medsLeft(b) < 1) return "No meds left.";
+  if (usesMeds(u) && H.medsOf(b, u) < 1) return "No meds left.";
   if (u.ap < 1) return "No actions left.";
   return "";
 }
@@ -257,7 +257,7 @@ const draggable = (t) => !!t && t.down && !t.dead && !t.left && !t.off && !t.sur
 export const takeShare = (kit) => { const type = Object.keys(TYPE_KIT).find((k) => TYPE_KIT[k] === kit); return (type && NL_TAKE[type]) || 0; };
 export function reviveRefusal(b, u, t) {
   if (!u.medKit || !(u.kitBonus > 0) || (u.kitUses || 0) >= u.kitLeft) return "Revive needs a med kit with uses left (a bandage, trauma or surgical kit) and meds: anyone can only stabilize (Use meds).";
-  if (u.side === "player" && medsLeft(b) < 1) return "Revive needs meds as well as the kit: none left.";
+  if (usesMeds(u) && H.medsOf(b, u) < 1) return "Revive needs meds as well as the kit: none left.";
   if (!revivable(t) || t.side !== u.side) return "Revive someone of yours who is down.";
   if (!meleeReach(b, u, t)) return "Move next to them first (not across a wall's corner).";
   if (u.ap < MEDIC.REVIVE.AP) return "Revive takes both actions.";
@@ -319,8 +319,8 @@ export function stabilizeByHand(b, u, t) {
 }
 // The AI's stabilize: meds from the pool (your side, sure: combat.js heal), the kit (an enemy medic, sure), else hands.
 function stabilize(b, u, t) {
-  if (u.side === "player" && medsLeft(b) >= 1) { H.heal(b, u, t); u.ap -= 1; treated(b, u); return; }
-  if (u.side !== "player" && isMedic(u)) {
+  if (usesMeds(u) && H.medsOf(b, u) >= 1) { H.heal(b, u, t); u.ap -= 1; treated(b, u); return; }
+  if (!usesMeds(u) && isMedic(u)) {
     useKit(b, u);
     t.stab = true;
     u.ap -= 1;
@@ -480,7 +480,7 @@ export function dropAlly(b, u, into = null, quiet = false) {
 // handsOdds) when the one laying them in has an action left. "meds", "hands" or "" (none: they go in bleeding).
 export function layInStab(b, u, t) {
   if (!revivable(t) || t.stab || !u || u.ap < 1) return "";
-  return u.side === "player" ? (medsLeft(b) >= 1 ? "meds" : "hands") : isMedic(u) ? "meds" : "hands";
+  return usesMeds(u) ? (H.medsOf(b, u) >= 1 ? "meds" : "hands") : isMedic(u) ? "meds" : "hands";
 }
 // The one who was dragging this downed unit lets go (it stood up, died, or was taken).
 function releaseDragged(b, t) {
@@ -604,7 +604,7 @@ export function downedHit(b, t, by, eff = 0) {
     killDowned(b, t, by);
     return true;
   }
-  if (t.side === "enemy" && t.kind === "human" && !t.down && !t.boss && !t.wild && eff < MEDIC.OVERKILL * (t.maxHp || 100)) {
+  if (t.side !== "player" && t.kind === "human" && !t.down && !t.boss && !t.wild && eff < MEDIC.OVERKILL * (t.maxHp || 100)) { // anyone not yours (the third side too) goes down first, as yours do
     t.down = true; t.wounded = true; t.hp = 0;
     t.bleed = MEDIC.BLEED;
     t.ow = t.hunker = false;
@@ -641,7 +641,7 @@ export function killFoe(b, t, line = "") {
 // combat.js endPlayerTurn: the enemy's downed bleed (stabilized ones do not).
 export function foesBleed(b) {
   for (const t of b.units) {
-    if (t.side !== "enemy" || !t.wounded || !t.down || t.dead || t.stab) continue;
+    if (t.side === "player" || !t.wounded || !t.down || t.dead || t.stab) continue;
     t.bleed = (t.bleed || MEDIC.BLEED) - 1;
     if (t.bleed <= 0) killFoe(b, t, `${t.name} bleeds out.`);
   }
@@ -649,11 +649,23 @@ export function foesBleed(b) {
 // combat.js endBattle / endRaid: the enemy's downed after the battle. Won: those stabilized or tied up are prisoners
 // (stealth.js prisonerOf: the one rule for battleCaptives, with the knocked out and the tied who surrendered); the rest die. Anything else: they die (their people leave with them or
 // they are left to bleed: either way not yours).
+// Their downed by your rule (combat.js endBattle; docs/adr/0001-ai-parity.md): a side that holds the field pulls its
+// downed through (stabilized: sure; else DOWNED.HOLD + their best medic's level × DOWNED.MEDIC), a side that lost the
+// field leaves them (DOWNED.LOST, + DOWNED.STAB stabilized: they crawl home). Your win: the stabilized or tied are your
+// prisoners. Own dice (the battle's are not spent). t.recovered: alive, back with their people (fighters.js settlePeople).
+export const DOWNED = { HOLD: 0.5, MEDIC: 0.02, LOST: 0.35, STAB: 0.3 };
 export function settleFoes(b, outcome) {
+  const youHold = outcome === "victory" || outcome === "raid";
+  const up = (o) => !o.dead && !o.down && !o.off;
+  const medic = {};
   for (const t of b.units) {
-    if (t.side !== "enemy" || !t.wounded || !t.down || t.dead) continue;
+    if (t.side === "player" || !t.wounded || !t.down || t.dead) continue;
     releaseDragged(b, t);
-    if ((outcome === "victory" || outcome === "raid") && (t.stab || t.tied)) continue; // prisoners (stealth.js prisonerOf, battleCaptives)
+    if (youHold && (t.stab || t.tied)) continue; // prisoners (stealth.js prisonerOf, battleCaptives)
+    const theyHold = t.side === "third" ? b.units.some((o) => o.side === "third" && o !== t && up(o) && !o.left) : !youHold;
+    if (!(t.side in medic)) medic[t.side] = medicLevel(b.units.filter((o) => o.side === t.side && up(o)));
+    const live = t.stabSure ? 1 : theyHold ? (t.stab ? 1 : DOWNED.HOLD + medic[t.side] * DOWNED.MEDIC) : DOWNED.LOST + (t.stab ? DOWNED.STAB : 0);
+    if (hash01("downed", b.tileId ?? 0, b.turn || 0, t.id) < live) { t.recovered = true; continue; }
     t.dead = true;
   }
 }
@@ -785,7 +797,7 @@ function downedOf(b, u) {
 // to revive), else null.
 const planOf = (b, t) => (t.plan && b.turn - t.plan.turn <= MEDIC.PLAN.TURNS && revivable(t) && canRevive(b, unitById(b, t.plan.medic)) ? t.plan : null);
 // A medic who could revive now (standing, a kit with uses, meds for your side).
-const canRevive = (b, m) => !!m && active(m) && isMedic(m) && (m.side !== "player" || medsLeft(b) >= 1);
+const canRevive = (b, m) => !!m && active(m) && isMedic(m) && (!usesMeds(m) || H.medsOf(b, m) >= 1);
 // The medic to name for reviving t once dragged to a quiet cell by u: u, else the nearest of their side who is
 // standing, free (not dragging) and within two moves of them. null: no one (the dragger only stabilizes then).
 function planMedic(b, u, t) {
@@ -851,7 +863,7 @@ export function rescueStep(b, u) {
     return putDown();
   }
   if (foes.some((f) => adjacent(u, f))) return false; // something is on them: fight first
-  const pool = u.side !== "player" || medsLeft(b) >= 1;
+  const pool = !usesMeds(u) || H.medsOf(b, u) >= 1;
   let reach = null; // where the unit can get to this turn (worked out once, only if someone needs going to)
   const mine = (t) => (planOf(b, t) && t.plan.medic === u.id ? 1 : 0); // the one this medic was named to revive: first
   for (const t of downedOf(b, u).sort((a, c) => mine(c) - mine(a) || dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, c.x, c.y))) {

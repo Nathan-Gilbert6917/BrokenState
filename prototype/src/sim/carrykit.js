@@ -78,9 +78,10 @@ export function bandFor(kg) {
   const i = bandIndex(kg);
   return { band: i, name: LOAD_BANDS[i].name, ...CARRY.BANDS[i] };
 }
-// combat.js playerUnit: the unit's kg (u.armLoad), mob and dash by its felt load.
+// combat.js playerUnit: the unit's kg (u.armLoad), mob and dash by its felt load. u.fieldKg: an AI person's field
+// load by kit (BASE_KG: water, food, a ruck, odds and ends; fighters.js build), weight they carry that is no item to loot.
 export function weighPlayer(u, s) {
-  const kg = battleKg(s);
+  const kg = battleKg(s) + num(u.fieldKg);
   const B = bandFor(kg * feelFactor(s));
   u.armLoad = r2(kg);
   u.mob = B.mob + fleetMob(s); // Fleet-Footed (traits.js): a tile more a move at any load

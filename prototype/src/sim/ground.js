@@ -43,7 +43,8 @@ import { facesBox, faceRefusal } from "./vision.js"; // looting needs the looter
 import { GEAR, SUPPLIES } from "./data.js";
 import { lootLayer, fieldLayer, raidMove, raidTakeAll, quickTarget, haulOf } from "./raidloot.js";
 import { survivorById, baseById } from "./world.js";
-import { ensureInv, allItems, stripAll, enemyBody, packSize, storageFor, battlePlace, leaveBodies } from "./inventory.js";
+import { ensureInv, allItems, stripAll, enemyBody, packSize, storageFor, battlePlace, leaveBodies, stow } from "./inventory.js";
+import { refitPerson } from "./fighters.js"; // a person who takes up a gun
 import { walkingBody, turnedBody } from "./carriers.js";
 import { launcherBody } from "./launchers.js";
 import { SEARCH } from "./search.js";
@@ -265,6 +266,16 @@ export function aiGrabGun(b, u) {
     const gun = p.contents.gear.find((it) => { const g = WEAPONS[it.key]; return g && !g.melee && !g.launcher && !g.mount && !g.mounted && GEAR[it.key] && GEAR[it.key].slot === "weapon"; });
     if (!gun) continue;
     p.contents.gear.splice(p.contents.gear.indexOf(gun), 1);
+    if (u.who) { // a person (fighters.js): the gun into their hands as yours take one up, the blade they held stowed or set down
+      const s = u.who, old = s.gear.weapon;
+      s.gear.weapon = gun;
+      if (old && !stow(s, old)) p.contents.gear.push(old);
+      settle(p);
+      refitPerson(b, u); // the unit built again from them: the gun's own rounds in it (gunload.js), their spares
+      u.ap = Math.max(0, (u.ap || 0) - 1);
+      say(b, `${u.name} snatches up the ${gun.name} lying on the ground!`, "danger");
+      return true;
+    }
     settle(p);
     u.weapon = gun.key; u.weaponName = gun.name; u.arsItem = gun; u.mag = null; u.magW = null;
     u.modItems = null; u.gmWeapon = null; u.mags = null; u.magsW = null;

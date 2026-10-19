@@ -30,7 +30,7 @@
 // Everything that is on the map is data any renderer can draw: battleOverlays.
 import { atVehicle } from "./raidloot.js"; // the team's vehicle on the map (loadRam / unloadRam)
 import { CELL, active, unitAt, unitById, say, fx, reachable, pathTo, distField, moveAlong, damage, heightAt, barredCell, breakCell, structureName, alertNear } from "./combat.js";
-import { throwAt, THROWABLES, throwablesOf } from "./stealth.js";
+import { throwAt, THROWABLES, throwablesOf, botAttackThrow } from "./stealth.js";
 import { blastSpot, flashSpot, throwBlind as throwBlindOf, FRAG, BLAST, FIRE } from "./throwables.js";
 import { shepherdsOf } from "./decoys.js";
 import { ACID } from "./acid.js";
@@ -52,6 +52,7 @@ export const RAID_KIT = { LADDERS: 0.9, RAM_FROM: 0.25, RAM_PER: 1.0, RAM_GATE: 
 export const CUT = { ladder: 0.06, ram: 0.1, grenade: 0.02, max: 0.25 };
 export const ASSAULT_CUT = { ladder: 0.15, ram: 0.2, grenade: 0.04, max: 0.6 };
 export const GRENADES = ["frag", "pipebomb"];
+const AI_THROWS = [...GRENADES, "molotov"]; // what anyone carrying them throws on a bunch of their foes (docs/adr/0001-ai-parity.md: a Molotov too)
 
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
@@ -594,10 +595,10 @@ function stormTurn(b, u) {
 // A grenade (the enemy's kit: u.throwables) on two or more of the defenders bunched up, once a turn for the side.
 export function enemyThrow(b, u) {
   if (!u.throwables || b.enemyThrowTurn === b.turn || u.ap < 1) return false;
-  for (const key of GRENADES) {
+  for (const key of AI_THROWS) {
     if (!(u.throwables[key] > 0)) continue;
     const T = THROWABLES[key];
-    const spot = blastSpot(b, u, T.range, key === "frag" ? FRAG.r : BLAST.r, { need: 2 });
+    const spot = blastSpot(b, u, T.range, key === "frag" ? FRAG.r : key === "molotov" ? FIRE.r : BLAST.r, { need: 2 });
     if (!spot) continue;
     const blind = throwBlindOf(b, u, spot.x, spot.y);
     u.throwables[key] -= 1;
@@ -671,6 +672,7 @@ export function siegeAI(b, u) {
   const dropped = (b.rams || []).find((x) => x.dropped && x.side === u.side && cheb(x.x, x.y, u.x, u.y) <= 1 && ramGoalsExist(b, u));
   if (dropped && !takeRam(b, u)) return true;
   if (u.gl && aiLaunch(b, u)) return true; // launchers.js: the turn's attack
+  if (u.who) { botAttackThrow(null, b, u); return u.ap < 1 || !active(u); } // a person throws as yours do (stealth.js: what they carry, 1 action, once a turn for the side)
   return enemyThrow(b, u);
 }
 const ramGoalsExist = (b, u) => b.cells.some((c) => ramable(c));

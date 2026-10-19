@@ -49,6 +49,7 @@ import { payoutBreaks } from "./upkeep.js"; // the governor never pays food or w
 import { groupEscort, escortStrength, cargoValue } from "./escorts.js"; // a caravan's guards: the cargo's wish, what they can spare
 import { pendingDeal, dealCarried, completeRadioDeal, goodsText } from "./radiotrade.js"; // deals agreed over the radio
 import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
+import { keepItem } from "./arsenal.js"; // a caravan home: what it carries onto the books or the shelf
 
 export const CARAVAN_STAY_HOURS = 24;
 export const CARAVAN_SPEED = 0.9; // on foot with a wagon (parties.js aiPartyHour)
@@ -144,7 +145,8 @@ export function caravanArrive(state, p) {
     // Home again: what it carries goes back into their stores.
     if (f && f.alive) {
       for (const [k, q] of Object.entries(p.goods.supplies)) { const tk = k === "rawwater" ? "water" : k; f.stock[tk] = (f.stock[tk] || 0) + Math.max(0, q); } // one water pool (trade.js poolKey)
-      f.wares = [...(f.wares || []), ...p.goods.gear].slice(-WARES_MAX);
+      for (const it of p.goods.gear) keepItem(state, f, it, "bought"); // arsenal.js: kit onto the books, the rest on their shelf (nothing dropped)
+      p.goods.gear = [];
     }
     removeParty(state, p);
     return;

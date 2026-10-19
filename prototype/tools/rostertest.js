@@ -127,7 +127,8 @@ for (let i = 0; i < 400 && units < 30; i++) {
   const u = enemyUnit(b, r, "soldiers", 9, i);
   if (u.weapon !== "sniper") continue;
   units++;
-  if (!u.modItems || !u.modItems.optic || u.modItems.optic.key !== "tacscope" || !u.modItems.bipod || u.modItems.bipod.key !== "bipod") bad++;
+  const mi = (u.item && u.item.mods) || u.modItems; // a person (fighters.js): the parts are on the gun in their hands
+  if (!mi || !mi.optic || mi.optic.key !== "tacscope" || !mi.bipod || mi.bipod.key !== "bipod") bad++;
   const body = enemyBody(new Rng(2000 + i), u, KITS.soldiers);
   if (body.gear && body.gear.weapon && body.gear.weapon.key === "sniper") { bodies++; if (!fitted(body.gear.weapon)) bad++; }
 }

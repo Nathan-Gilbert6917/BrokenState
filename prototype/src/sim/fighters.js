@@ -28,7 +28,12 @@ import { MAGAZINES } from "./data-kit.js";
 import { isLauncherKey } from "./arsenal.js";
 import { armLauncher } from "./launchers.js";
 import { keyFor } from "./rounds.js";
+import { CARRY, weighPlayer } from "./carrykit.js"; // an AI person's field load by kit
 import { typeFor } from "./rounds.js";
+import { stockAt } from "./groupbases.js";
+import { enemyPieces } from "./armour.js";
+import { isHelmet, earGearOf } from "./helmets.js";
+import { refitSenses } from "./stealth.js";
 
 export const PEOPLE = { on: true }; // test switch: off, the old units (power numbers and kit dice)
 export const THROW_KEYS = ["frag", "pipebomb", "molotov", "flashbang", "smokegren"];
@@ -65,9 +70,17 @@ function build(b, s, side, was) {
   u.mid = s.id;
   u.who = s;
   if (was) for (const k of KEEP) if (was[k] !== undefined) u[k] = was[k];
+  // Their field load by kit (carrykit.js CARRY.BASE_KG: the user's decision 2026-10-08, soldiers in full kit move 4),
+  // weighed by your rule (weighPlayer: the felt load sets the band).
+  const kit = (was && was.kit) || s.kit || null;
+  if (side !== "player" && kit && CARRY.BASE_KG[kit]) { u.fieldKg = CARRY.BASE_KG[kit]; weighPlayer(u, s); }
   u.armorKey = s.gear.armor ? s.gear.armor.key : null; // what the old builder named (bodies, sprites, the risen read it)
   u.rigKey = s.gear.rig ? s.gear.rig.key : null;
+  u.helmKey = s.gear.head && isHelmet(s.gear.head.key) ? s.gear.head.key : null; // the old builder's names for their headgear (bodies, carry weight)
+  { const e = earGearOf(s); u.earKey = e && e.item ? e.item.key : e && e.key ? e.key : null; }
   fitThrowables(u, s);
+  if (side !== "player") u.medsBag = s.carried || (s.carried = {}); // combat.js aiMeds: the meds they carry (a group's people: their stores, memberize)
+  if (b.units && !b.scratch) refitSenses(b, u, s); // stealth.js: their light, night vision and suppressor from what they carry (stealthSetup again at the start)
   if (b.units && !b.scratch) fillBattleUnit(b, u, s); // mags.js fillUnit: the gun and the spares loaded physically, from what they carry (never your team's bags)
   return u;
 }
@@ -89,6 +102,7 @@ export function personFromLegacy(b, rng, L, kind, power) {
   const salt = rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0;
   const seed = Math.floor(hash01("person", salt, L.id, b.tileId ?? 0) * 4294967296);
   const dice = new Rng(seed);
+  if (L.pieces === undefined) enemyPieces(b, L); // armour.js: their armour and kit helmet as rolled (worn as the body would drop them)
   const body = enemyBody(dice, L, kit); // what they carry: the same dice a body of theirs rolls
   const keepId = peekNextId();
   let s;
@@ -180,6 +194,10 @@ export function memberize(state, b, u, fid) {
   nu.kit = was.kit || null;
   nu.fearless = !!was.fearless;
   nu.kitPick = nu.weapon;
+  // Their meds (combat.js aiMeds): at one of their bases the stores there, on the road what their party packed.
+  const e = (b.setup && b.setup.enemy) || {};
+  const party = e.partyId != null ? (state.parties || []).find((p) => p.id === e.partyId && p.owner === f.id) : null;
+  nu.medsBag = (f.bases || []).includes(b.tileId) ? stockAt(state, f, b.tileId) : party || nu.medsBag;
   if (was.who && was.who.transient && b.people) delete b.people[was.who.id];
   for (const k of Object.keys(u)) delete u[k];
   Object.assign(u, nu);
@@ -208,7 +226,7 @@ export function refitPerson(b, u) {
   if (!u || !u.who) return u;
   const was = { ...u };
   const nu = build(b, u.who, u.side, was);
-  for (const k of ["name", "short", "kit", "fearless", "kitPick", "boards", "factionId", "arsFid", "team", "tgroup", "occupant"]) if (was[k] !== undefined) nu[k] = was[k];
+  for (const k of ["name", "short", "kit", "fearless", "kitPick", "boards", "factionId", "arsFid", "team", "tgroup", "occupant", "medsBag"]) if (was[k] !== undefined) nu[k] = was[k];
   if (was.kitGl && !nu.gl) { nu.gl = was.gl; nu.kitGl = true; }
   for (const k of Object.keys(u)) delete u[k];
   Object.assign(u, nu);

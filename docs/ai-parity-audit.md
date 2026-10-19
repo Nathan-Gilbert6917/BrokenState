@@ -150,3 +150,34 @@ through channels the player can use; loot from fights won; healing through the h
 `tools/magtest.js` ("Enemies keep the old rule") and the legacy-reload checks; parts of `arsenaltest.js`,
 `gunloottest.js`, `enemyaitest.js`, `volunteertest.js`, `prisonertest.js`, `nomadtest.js`, `calibrate.js`. These are
 rewritten to assert the shared rule as each batch lands.
+
+## Status (2026-10-19, end of the six batches)
+
+Every *Fix* finding above landed on the `ai-parity` branch, with these exceptions and notes.
+
+**Done with a caveat.**
+- 4.16, siege kit: a raid on your base still brings its ladders, rams and grenades by kit dice, not from the raiders'
+  stores. The grenades are the one remaining "from nothing" source in a fight.
+- 7.4, a horde at an AI base: fought through the shared resolver behind the base's defence tiers (groupfight.js
+  wallMult). Traps and special buildings at an AI base still do nothing against it, and the horde's own losses keep
+  hordes.js's formula.
+- 7.7, an AI group's judgement of a base it cannot hold (groupflight.js) still reads the wall counters for the
+  decision. The fight itself goes through the defence tiers.
+- 5.15, vehicles: a vehicle's contents travel as the party's cargo and are robbed with it. An AI vehicle record
+  still has no cargo of its own.
+- Soldiers' field load: an AI person carries a weight by kit with no item behind it (carrykit.js CARRY.BASE_KG,
+  fighters.js build), so the user's decision of 2026-10-08 ("soldiers in full kit move 4") holds. It is weighed by
+  your rule (felt load, a strong back, Fleet-Footed) and leaves nothing on the body.
+- The off-screen odds (combat.js ODDS) were refitted on 2,376 map fights after the change. No compensation was added:
+  where an AI side is now weaker, the fix is its starting gear or recruitment.
+
+**Still open (small, noted for a later pass).**
+- Decoys and the crush are only in your bots' repertoire.
+- Your convoy people come out of a robbery unharmed.
+- A nomad band's trade shelf is still trimmed to size.
+- AI loans, hardcore merges, rescue jobs and war captive counts still move head counts in places.
+- One of your deserters joins a group as a fresh member, not with what they carried.
+
+**Tests.** `tools/paritytest.js` swaps the sides of each shared rule and checks both come out the same.
+`tools/conservationtest.js` plays a campaign and checks the AI side never holds more rounds than its noted sources
+brought in, and that no item is in two places.

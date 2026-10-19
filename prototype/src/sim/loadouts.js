@@ -12,7 +12,7 @@ import { stow, allCarried } from "./inventory.js";
 import { equipPeople, equipTools } from "./equip.js";
 import { ensureArsenal, isThrowKey, isKitThrowKey, isNonlethalKey, isSelfAidKey, isLauncherKey, addToArsenal } from "./arsenal.js";
 import { ensureMembers, homeMembers, fighterScore, isWounded, carriers, stripRegistry, HOME_SHARE } from "./members.js";
-import { isEarKey } from "./helmets.js";
+import { isEarKey, earGearOf, isHelmet, helmetFitReason, fitHelmetMod } from "./helmets.js";
 import { WEAPONS } from "./combat.js";
 import { carriedSpots } from "./inventory.js";
 import { calOf, gunLoads, settleGroup } from "./ammo.js";
@@ -52,12 +52,14 @@ export function kitOut(state, f) {
   for (const x of equipPeople(spare, people)) handed.push(x);
   for (const x of equipTools(spare, people, { medic: (s) => (s.skills.medicine || 0) >= 5 })) handed.push(x);
   const fighters = people.filter((s) => !isWounded(s));
-  // One each, best fighters first: a tourniquet, ear protection.
+  // One each, best fighters first: a tourniquet, ear protection (muffs and headsets worn as yours wear them: on the
+  // helmet's ear mount, else on a bare head; plugs in a pocket).
   for (const want of [isSelfAidKey, (k) => isEarKey(k)]) {
     for (const s of fighters) {
-      if (allCarried(s).some((it) => it && want(it.key))) continue;
+      if (want !== isSelfAidKey ? earGearOf(s) : allCarried(s).some((it) => it && want(it.key))) continue;
       const it = spare.find((x) => want(x.key));
       if (!it) break;
+      if (want !== isSelfAidKey && wearEars(s, it)) { spare.splice(spare.indexOf(it), 1); handed.push({ s, item: it }); continue; }
       if (stow(s, it)) { spare.splice(spare.indexOf(it), 1); handed.push({ s, item: it }); }
     }
   }
@@ -154,6 +156,20 @@ export function seedRounds(f) {
 }
 export const LOOSE = { box: 1, internal: 2, shells: 18 }; // loose rounds carried besides: a magazine's worth, twice an internal magazine, shells
 const capOf = (gun) => { const w = WEAPONS[gun.key]; const fit = fittedMag(gun); return Math.max(1, fit && MAGAZINES[fit.key] ? MAGAZINES[fit.key].cap : (w && w.cap) || 1); };
+// The rounds a person carries, counted where they are (the gun's, the magazines', the loose ones), nothing moved.
+export function carriedRounds(s) {
+  let n = 0;
+  const gun = s && s.gear && s.gear.weapon;
+  if (gun && gun.loaded) { const r = gun.loaded; n += Array.isArray(r.stack) ? r.stack.reduce((a, x) => a + (x.n || 0), 0) : r.n || 0; }
+  for (const c of carriedSpots(s)) {
+    const it = c.item;
+    if (!it) continue;
+    if (Array.isArray(it.stack)) for (const x of it.stack) n += x.n || 0;
+    if (isRoundItem(it)) n += Math.floor(Number(it.dur) || 0);
+  }
+  if (s && s.carried) for (const [k, q] of Object.entries(s.carried)) if (/^a_/.test(k)) n += q;
+  return n;
+}
 // Everything of rounds a person carries goes back into the stock: the gun's record, each magazine's stack, the round
 // items in their pockets, rig and pack.
 export function collectRounds(f, s, stock) {
@@ -205,6 +221,13 @@ export function armRounds(f, s, stock, pass) {
   if (left > 0) stock[key] = (stock[key] || 0) + left; // no room on them: back in the stores
 }
 const p0 = (s) => s;
+// Ear protection put on: a helmet's ear mount (helmets.js), else the head slot when it is free. False: neither.
+function wearEars(s, it) {
+  const helm = s.gear.head;
+  if (helm && isHelmet(helm.key) && !helmetFitReason(helm, it)) { fitHelmetMod(helm, it); return true; }
+  if (!s.gear.head && GEAR[it.key] && GEAR[it.key].slot === "head") { s.gear.head = it; return true; }
+  return false;
+}
 const packRoom = (s) => { const pk = s.gear.backpack; return !!(pk && Array.isArray(pk.contents) && pk.contents.includes(null)); };
 // Their weapon can go in the off hand (a handgun or a light weapon) and the off hand is free.
 const sidearmable = (s) => !s.gear.tool && (!s.gear.weapon || (GEAR[s.gear.weapon.key] && (GEAR[s.gear.weapon.key].cat === "pistol" || GEAR[s.gear.weapon.key].cat === "melee")));

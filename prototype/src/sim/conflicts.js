@@ -56,13 +56,14 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalIn, sumRecs, ROUND_KEYS, isRoundKey } from "./rounds.js"; // rounds by calibre
 import { addFindVia, kindTheme, findRounds, calRounds, partyCals, roundsText } from "./ammo.js";
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
-import { unitPower, addToArsenal, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
+import { unitPower, addToArsenal, keepItem, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
 import { captiveEscape, captiveDecline, captiveTurnMult, groupJailGuards } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numbers on the road (meetOdds, stop, talkDc, bribes, pacts, ransoms, captives)
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your caravan's route lies in wait
 import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a gun off their dead
 import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more run-ins
+import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -231,12 +232,13 @@ export function payPlan(p, value) {
   return left > 0 ? null : plan;
 }
 const planText = (plan) => Object.entries(plan).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
-function payFrom(p, plan, f) {
+// state: given, the rounds paid to a group are noted (ledger.js, a test switch).
+function payFrom(p, plan, f, state = null) {
   for (const [k, q] of Object.entries(plan)) {
     const fromCargo = Math.min(q, Math.floor(p.cargo.supplies[k] || 0));
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) - fromCargo;
     p.supplies[k] = (p.supplies[k] || 0) - (q - fromCargo);
-    if (f) { const fk = isRoundKey(k) ? "ammo" : k; f.stock[fk] = (f.stock[fk] || 0) + q; } // a group keeps one ammo count
+    if (f) { f.stock[k] = (f.stock[k] || 0) + q; if (isRoundKey(k) || k === "ammo") note(state, "from you", q); } // rounds by key, as yours (docs/adr/0001-ai-parity.md)
   }
 }
 const carriedValue = (p) => Object.keys(SUPPLIES).reduce((a, k) => a + (Math.floor(p.supplies[k] || 0) + Math.floor(p.cargo.supplies[k] || 0)) * supValue(k), 0);
@@ -250,11 +252,11 @@ export function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
       if (q <= 0) continue;
       pool[k] -= q;
       taken[k] = (taken[k] || 0) + q;
-      if (f) { const fk = isRoundKey(k) ? "ammo" : k; f.stock[fk] = (f.stock[fk] || 0) + q; } // a group keeps one ammo count
+      if (f) { f.stock[k] = (f.stock[k] || 0) + q; if (isRoundKey(k) || k === "ammo") note(state, "taken from you", q); } // rounds by key, as yours (docs/adr/0001-ai-parity.md); ledger.js
     }
   }
   const gear = takeGear ? p.cargo.gear.splice(0) : [];
-  if (f) for (const g of gear) { f.lootedGear.push(g.name); addToArsenal(state, f, g, "stolen"); } // arsenal.js: guns, armour and explosives they will use
+  if (f) for (const g of gear) { f.lootedGear.push(g.name); keepItem(state, f, g, "stolen"); } // arsenal.js: guns, armour and explosives they will use, the rest on their shelf
   const parts = Object.entries(taken).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`);
   if (gear.length) parts.push(...gear.map((g) => g.name));
   return parts.length ? parts.join(", ") : "nothing much";
@@ -288,7 +290,7 @@ export const allCaptives = (state) => state.survivors.filter(isCaptive);
 export function takeCaptive(state, s, f, p) {
   if (p) p.members = p.members.filter((id) => id !== s.id);
   // Everything on them is taken: worn, held, pockets and pack (inventory.js).
-  for (const g of stripAll(s)) { f.lootedGear.push(`${first(s)}'s ${g.name}`); addToArsenal(state, f, g, "stolen"); } // arsenal.js
+  for (const g of stripAll(s)) { f.lootedGear.push(`${first(s)}'s ${g.name}`); keepItem(state, f, g, "stolen"); } // arsenal.js: the kit onto their books, the rest on their shelf
   s.station = null;
   // fresh: their captors have still to find room for them (groupjails.js groupJailsHour: jailed, or sold, ransomed at
   // once, let go or killed when their jail is full).
@@ -850,7 +852,7 @@ function bribeChoice(state, p, c, f) {
         addCard(st, forcedCard(st, p, c, !!c.followText));
         return "You no longer carry enough to pay that.";
       }
-      payFrom(p, pl, f);
+      payFrom(p, pl, f, state);
       if (st.rng.chance(chance)) {
         bump(st, "outcomes", "bribe-ok");
         changeGoodwill(st, f, 2);
@@ -1154,7 +1156,7 @@ function buyPrisonersCard(state, p, c, f) {
           addCard(st, buyPrisonersCard(st, p, c, f)); // the offer stands; pay later or leave them
           return "You no longer carry enough to pay that.";
         }
-        payFrom(p, pl, f);
+        payFrom(p, pl, f, state);
         for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
         const fresh = [];
         for (let i = 0; i < (c.strangers || 0); i++) fresh.push(newRecruit(st, p));
@@ -1499,7 +1501,7 @@ function rescueCard(state, p, f, held) {
             else { delete p.conflictResume; awaitOrders(st, p, `${f.name} holds none of your people here any more.`); }
             return "You no longer carry enough for the ransom.";
           }
-          payFrom(p, pl, f);
+          payFrom(p, pl, f, state);
           for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
           bump(st, "outcomes", "rescue-ransom");
           changeGoodwill(st, f, 2);
@@ -1581,7 +1583,7 @@ export function ransomOnTradeCard(state, p, f) {
         resolve: (st) => {
           const pl = payPlan(p, value);
           if (!pl) return "You no longer carry enough for the ransom. The trade visit goes on.";
-          payFrom(p, pl, f);
+          payFrom(p, pl, f, state);
           for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
           changeGoodwill(st, f, 2);
           bump(st, "outcomes", "trade-ransom");

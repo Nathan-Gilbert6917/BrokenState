@@ -3,6 +3,7 @@
 // combat with the new model, and a render smoke test of the inventory and loot screens.
 // Usage: node tools/invtest.js [battles per matchup] [seed]
 import { totalRounds, isRoundKey } from "../src/sim/ammo.js"; // rounds by calibre
+import { isRoundItem, amountOf } from "../src/sim/itemstack.js"; // loose round stacks
 import { createWorld, makeSurvivor, combatPower, hub, hurt, killSurvivor, newId, survivorById } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { makeItem, wearAfterFight, itemDurMax } from "../src/sim/crafting.js";
@@ -230,7 +231,9 @@ function strongTeam(n) {
   const enemyB = bodies.filter((x) => x.sid == null && x.kind === "human");
   const ally = bodies.find((x) => x.sid === team[3].id);
   check(enemyB.length >= 1 && enemyB.every((x) => x.gear.weapon), `each dead raider has their weapon (${enemyB.length} bodies)`);
-  check(enemyB.every((x) => totalRounds(x.supplies) >= 3 && !x.supplies.ammo), "each dead raider carries rounds (by calibre: ammo.js)");
+  // Their rounds: loose round stacks in pockets and rig (people carry real rounds: fighters.js), or rounds in supplies.
+  const bodyRounds = (x) => totalRounds(x.supplies) + allItems(x).filter(isRoundItem).reduce((a, it) => a + amountOf(it), 0);
+  check(enemyB.every((x) => bodyRounds(x) >= 3 && !x.supplies.ammo), "each dead raider carries rounds (by calibre: ammo.js)");
   check(!!ally && !team[3].alive, "the fallen teammate is a body to loot");
   check(b.result.loot.gear.length === 0 && !Object.keys(b.result.loot.supplies).length, "nothing is taken before the loot screen (browser)");
   const site = state.deathSites.find((d) => d.tile === b.tileId);
@@ -245,10 +248,14 @@ function strongTeam(n) {
   else check(taker.gear.weapon === gun && p.cargo.gear.length === cargoBefore + 1, "quick-taking a long gun equips it; the old one goes to the cargo");
   check(b.result.loot.gear.includes(gun), "taken items count as battle loot");
   check(/only for taking/.test(moveItem(state, `s:${taker.id}:pocket:0`, `body:${bi}:pocket:0`)) || !taker.pockets[0], "nothing goes back onto a body");
-  const ak = Object.keys(enemyB[0].supplies).find((k) => isRoundKey(k) && enemyB[0].supplies[k] > 0); // their rounds (ammo.js)
-  const ammo0 = p.cargo.supplies[ak] || 0;
-  takeSupply(state, bi, ak);
-  check((p.cargo.supplies[ak] || 0) > ammo0 && !enemyB[0].supplies[ak], `taking the stack of rounds puts it in the cargo (${ak})`);
+  { // their rounds (ammo.js): a stack in a pocket, taken as an item; or a supply stack, taken into the cargo
+    const pj = enemyB[0].pockets.findIndex((it) => isRoundItem(it));
+    const ak = pj >= 0 ? enemyB[0].pockets[pj].key : Object.keys(enemyB[0].supplies).find((k) => isRoundKey(k) && enemyB[0].supplies[k] > 0);
+    const had = () => (p.cargo.supplies[ak] || 0) + team.reduce((a, s) => a + allItems(s).filter((it) => it.key === ak).reduce((n, it) => n + amountOf(it), 0), 0) + p.cargo.gear.filter((it) => it.key === ak).reduce((n, it) => n + amountOf(it), 0);
+    const ammo0 = had();
+    if (pj >= 0) quickMove(state, `body:${bi}:pocket:${pj}`, team[1].id); else takeSupply(state, bi, ak);
+    check(had() > ammo0 && !enemyB[0].supplies[ak] && !(pj >= 0 && enemyB[0].pockets[pj]), `taking the stack of rounds takes it off the body (${ak})`);
+  }
   // The fallen teammate's kit: take it into a pocket; it leaves the death site.
   const ai = bodies.indexOf(ally);
   const kit = team[3].pockets[0];
@@ -280,7 +287,7 @@ function strongTeam(n) {
     state.combat = null;
   }
   const got = b.result.loot.gear.length + Object.keys(b.result.loot.supplies).length;
-  check(got > 0 && p.cargo.gear.length === b.result.loot.gear.length, `headless battle auto-takes loot (${b.result.loot.gear.map((g) => g.name).join(", ")})`);
+  check(got > 0 && p.cargo.gear.length === b.result.loot.gear.filter((g) => !isRoundItem(g)).length, `headless battle auto-takes loot (${b.result.loot.gear.map((g) => g.name).join(", ")})`);
   check(poolLoad(p) <= partyCapacity(state, p) + 1e-9, `auto-loot respects the carry limit (${poolLoad(p).toFixed(1)}/${partyCapacity(state, p).toFixed(1)} kg)`);
   closeCombat(state);
   check(!state.combat, "closes cleanly");

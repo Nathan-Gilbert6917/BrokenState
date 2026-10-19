@@ -149,7 +149,8 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const speed0 = partySpeed(p);
   closeCombat(st);
   const held = prisonersWith(st, p.id);
-  check(held.length === 1 && f.pop === pop0 - 1, `the prisoner walks with the team (their group ${pop0} → ${f.pop})`);
+  const fell = enemies.filter((e) => e.dead && e.who && !e.who.transient).length; // their people who died leave the group too (arsenal.js settlePeople)
+  check(held.length === 1 && f.pop === pop0 - 1 - fell, `the prisoner walks with the team (their group ${pop0} → ${f.pop}: the prisoner and ${fell} dead)`);
   check(Math.abs(partySpeed(p) - speed0 * (1 - PRISON.ROAD_SLOW)) < 1e-9, `a team on foot walks 10% slower per prisoner (${speed0} → ${partySpeed(p).toFixed(2)})`);
   const before = { food: food(p) + (food(p.cargo) || 0) };
   st.hour = Math.ceil(st.hour / 24) * 24 - 1;

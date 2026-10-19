@@ -11,6 +11,7 @@ import { WEAPONS, CELL, createBattle, combatAct, registerCombatHandler, runEnemy
 import { FIRE_MODES, modesOf, modeRounds, modeAim, syncModes, coneTargets, nextInLine, sniperCell, SUPPRESS, jamGun, gunModes } from "../src/sim/gunfire.js";
 import { AMMO_TYPES } from "../src/sim/data-ammo.js";
 import { newItem } from "../src/sim/inventory.js";
+import { fillGun } from "./roundkit.js"; // physical rounds: a gun filled by hand
 
 const seed = Number(process.argv[2] || 7);
 let fails = 0, passes = 0;
@@ -84,7 +85,7 @@ const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { 
   fire(b, p, e);
   check(magIn(p) === m0 - 3 && logHas(b, /fires a burst at/), "burst: 2 rounds, one line for the burst");
   combatAct(st, { type: "firemode", unit: p.id, mode: "auto" });
-  loadMag(p);
+  fillGun(p);
   fire(b, p, e);
   check(magIn(p) === magIn({ ...p, mag: null }) - 10 && logHas(b, /fires a stream at/), "full auto: 10 rounds");
   loadMag(p, 4);
@@ -94,7 +95,7 @@ const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { 
   combatAct(st, { type: "firemode", unit: p.id, mode: "burst" });
   const seen = new Set();
   for (let i = 0; i < 300; i++) {
-    loadMag(p);
+    fillGun(p);
     b.log.length = 0;
     fire(b, p, e);
     const l = b.log.find((x) => /fires a burst/.test(x.text));
@@ -134,7 +135,7 @@ const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { 
   loadMag(p, 10);
   moveAlong(b, e2, [[9, 9]]);
   check(!p.ow && magIn(p) === 0 && logHas(b, /fires a stream at/), "in full auto the stream empties the magazine and the watch is over");
-  p.ow = true; loadMag(p);
+  p.ow = true; fillGun(p);
   jamGun(b, p, "stovepipe");
   moveAlong(b, e1, [[6, 3]]);
   check(!p.ow || !canFire(b, p), "a jammed gun does not react");
@@ -194,7 +195,7 @@ const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { 
   const b2 = openBattle(st2, [a2, c2], { kind: "soldiers", count: 1, power: 3 });
   const p2 = by(b2, a2), q2 = by(b2, c2), s2 = foes(b2)[0];
   place(p2, 12, 6); place(q2, 12, 7); place(s2, 3, 6); toughen(p2); toughen(q2); toughen(s2);
-  s2.weapon = "ar"; s2.modesW = null; syncModes(s2); loadMag(s2); s2.aim = 0; // a poor shot: no fair shot to take
+  s2.weapon = "ar"; s2.modesW = null; syncModes(s2); fillGun(s2); s2.aim = 0; // a poor shot: no fair shot to take
   combatAct(st2, { type: "end" });
   runEnemyPhase(st2);
   check(logHas(b2, new RegExp(`${s2.name} lays down suppressing fire`)) && (p2.suppressed || q2.suppressed), "an enemy with an assault rifle pins two of yours");
@@ -225,7 +226,7 @@ const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { 
   // Your own people too.
   place(q, 8, 6); q.hp = q.maxHp = 100000; place(z2, 20, 21);
   const hq = q.hp;
-  for (let i = 0; i < 5 && q.hp === hq; i++) { loadMag(p); fire(b, p, z1); }
+  for (let i = 0; i < 5 && q.hp === hq; i++) { fillGun(p); fire(b, p, z1); }
   check(q.hp < hq, "either side: a round through one of the dead can hit your own person behind it");
   place(q, 3, 12);
   // Cover: a crate stops an FMJ round, not an AP one; a wall stops both.
