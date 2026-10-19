@@ -5190,11 +5190,13 @@ function planWood(state, base, people, areas, foodDays = Infinity) {
   // The water boiler (worm.js) burns its firewood every day: enough woodcutters to keep up with it, on top of the winter's.
   const want = woodCuttersFor(state, base, w);
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
-  const lean = dailyOnly(w) && foodDays < WOOD_AP.foodFirst; // food short out of season: one woodcutter, the rest feed the base (fire-nights)
+  // Food short out of season (fire-nights): the hands feed the base; one woodcutter goes ahead only with under two days
+  // of the fires in the pile (a hardcore camp of three sent one to the woods while its forager was its food: foragetest).
+  const lean = dailyOnly(w) && foodDays < WOOD_AP.foodFirst;
   return {
     cap: lean ? Math.min(1, cap) : cap,
     w,
-    critical: lean ? Math.min(1, want) : Math.min(want, woodCritical(state, base, w, people.length)),
+    critical: lean ? (w.have < w.daily * 2 ? Math.min(1, want) : 0) : Math.min(want, woodCritical(state, base, w, people.length)),
     stock: true,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 50 && !x.woundInfected,
     score: (x) => woodcutterMult(x) * bestChop(x).mult,

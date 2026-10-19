@@ -30,7 +30,7 @@ import { addBuilding, count } from "../src/sim/buildings.js";
 import { addBill, stationState, ensureStations, fireCrew, COOK } from "../src/sim/cooking.js";
 import { kitchenWood } from "../src/sim/kitchen.js";
 import { boilerUse } from "../src/sim/worm.js";
-import { shelterFire, fireBurn, WOOD } from "../src/sim/woodcutting.js";
+import { shelterFire, fireBurn, fireDayBurn, WOOD } from "../src/sim/woodcutting.js";
 import { CABIN } from "../src/sim/hunting.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { foodChainTab } from "../src/ui/foodchain.js";
@@ -228,8 +228,8 @@ section("The fires");
   h.tier = 0; h.fire = true;
   h.stock.wood = 7;
   const f = chainFires(st, h);
-  const burn = fireBurn(st, h.tile, WOOD.fire.shelter);
-  check(f.parts.length === 1 && f.parts[0].key === "fire" && near(f.parts[0].perDay, burn, 1e-9), `a shelter's fire: ${burn} firewood a day`);
+  const burn = fireDayBurn(st, h).total; // fire-nights: the fire, its people's warmth, boiling and the pot (woodcutting.js)
+  check(f.parts.length === 1 && f.parts[0].key === "fire" && near(f.parts[0].perDay, burn, 1e-9) && burn > fireBurn(st, h.tile, WOOD.fire.shelter), `a shelter's fire: ${burn} firewood a day (more than the bare fire's ${fireBurn(st, h.tile, WOOD.fire.shelter)})`);
   check(near(f.hours, 7 / (burn / 24), 1e-9) && near(f.perHour, burn / 24, 1e-9), `hours left = firewood ÷ the burn an hour (${f.hours.toFixed(2)} h)`);
   let hrs = 0;
   while (h.fire !== false && hrs < 500) { shelterFire(st, h); if (h.fire !== false) hrs++; }
