@@ -176,7 +176,11 @@ section("A stack like any supply: the raid window, the cargo, the stores, the lo
   const s = partyMembers(st, p)[0];
   const ui2 = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   const cargoHtml = inventoryModal(st, ui2) || "";
-  check(/Found supplies \(15 kg\)/.test(cargoHtml) && cargoHtml.includes(woodTile(150, 15)), "the team's cargo lists the firewood stack (150, 15 kg)");
+  // The cargo box shows the team's supplies as one pool under "Supplies" (ui/inventory.js teamPool: packed and found
+  // together, the user's request 2026-10-18), no longer a "Found supplies" heading of the cargo alone, so the
+  // heading's weight includes the packed food and water; the firewood stack's own tile still says 150 and 15 kg,
+  // and its tip that it was found on the way.
+  check(/>Supplies \([\d.]+ kg\)</.test(cargoHtml) && cargoHtml.includes(woodTile(150, 15)) && /150 firewood, 15 kg \(0\.1 kg each\)\.[^"]*Found on the way\./.test(cargoHtml), "the team's cargo lists the firewood stack (150, 15 kg, found on the way)");
   check(near(poolLoad(p) - poolLoad({ ...p, cargo: { ...p.cargo, supplies: { ...p.cargo.supplies, wood: 0 } } }), 15, 1e-6), "and it weighs 15 kg in the team's load");
   const h = hub(st);
   h.stock.wood = 300;
