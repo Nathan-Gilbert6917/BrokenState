@@ -726,10 +726,33 @@ function prims(k, o) {
     }
     case "trench": return [run(along(o) === "u" ? "u" : "v", 0.16, 0.22, 0, 7, flatM(PAL.woodDk), 0.2, 0.26), run(along(o) === "u" ? "u" : "v", 0.16, 0.22, 0, 7, flatM(PAL.woodDk), 0.7, 0.76)];
     case "beartrap": return [{ cyl: [0.5, 0.5, 0.2], z0: 0, z1: 2, m: (f, s, t) => (f === "top" && Math.hypot(s, t * 2) < 3 ? PAL.tire : PAL.metal) }];
+    // The base map (sim/basemap.js): a building's outline while it goes up (a stake at the corner with string along
+    // the sides toward the neighbours in the outline), a camp's tent, its fire pit, a floodlight on its pole.
+    case "outline": {
+      const j = o.j & 15, str = flatM(hex("#d8d2b8")), post = tex(PAL.woodDk, 0.1);
+      const out = [{ u0: 0.06, u1: 0.14, v0: 0.06, v1: 0.14, z0: 0, z1: 9, m: post }];
+      for (const d of [0, 1, 2, 3]) if (j & (1 << d)) { const [du, dv] = VD[d]; out.push({ u0: du ? Math.min(0.1, 0.1 + du * 0.5) : 0.09, u1: du ? Math.max(0.1, 0.1 + du * 0.5) : 0.11, v0: dv ? Math.min(0.1, 0.1 + dv * 0.5) : 0.09, v1: dv ? Math.max(0.1, 0.1 + dv * 0.5) : 0.11, z0: 6, z1: 7, m: str }); }
+      return out;
+    }
+    case "tent": {
+      const cloth = tex(hex("#6f7452"), 0.1, 3), dk = tex(hex("#4e5238"), 0.1, 4);
+      return [
+        { u0: 0.1, u1: 0.9, v0: 0.12, v1: 0.5, z0: 0, z1: 6, m: dk }, { u0: 0.1, u1: 0.9, v0: 0.5, v1: 0.88, z0: 0, z1: 6, m: cloth },
+        { u0: 0.18, u1: 0.82, v0: 0.3, v1: 0.7, z0: 6, z1: 11, m: cloth }, { u0: 0.3, u1: 0.7, v0: 0.42, v1: 0.58, z0: 11, z1: 15, m: dk },
+      ];
+    }
+    case "firepit": return [
+      { cyl: [0.5, 0.5, 0.36], z0: 0, z1: 4, m: (f, s, t, X, Y) => (f === "top" && Math.hypot(s, t * 2) < 5 ? mul(hex("#3a2a1c"), 0.9 + n2(X, Y, 2) * 0.2) : mul(PAL.stone, 0.85 + n2(X, Y, 3) * 0.2)) },
+      { blob: [0.5, 0.5, 2], ru: 0.1, rz: 5, m: flatM(hex("#e07a2a")) }, { blob: [0.44, 0.56, 2], ru: 0.08, rz: 7, m: flatM(hex("#f5b640")) },
+    ];
+    case "lamp": return [
+      { u0: 0.38, u1: 0.62, v0: 0.38, v1: 0.62, z0: 0, z1: 3, m: flatM(PAL.conc) }, { u0: 0.46, u1: 0.54, v0: 0.46, v1: 0.54, z0: 3, z1: 34, m: tex(PAL.metalDk, 0.1) },
+      { u0: 0.3, u1: 0.7, v0: 0.42, v1: 0.58, z0: 32, z1: 38, m: (f) => (f === "top" ? PAL.metal : hex("#f3e4a0")) },
+    ];
     default: return [];
   }
 }
-const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall"]);
+const OUTLINED = new Set(["tree", "boulder", "rock", "car", "truck", "vehicle", "crate", "hay", "pump", "barrel", "well", "barricade", "sandbag", "hivewall", "tent", "lamp", "firepit"]);
 
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
@@ -979,6 +1002,7 @@ const JOINS = {
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
   fence: new Set(["fence"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
+  outline: new Set(["outline"]), // the base map: a building's outline joins along its sides (sim/basemap.js)
 };
 // What a cell looks like in this view: its kind and options (see prims), or null for open ground. focus: on a building's
 // own map (sim/buildingmaps.js) the cutaway lowers only the walls within CUT_R tiles of these points (your people, the
@@ -1070,6 +1094,7 @@ function blockTop0(k, o) {
     case "boulder": return 20; case "crate": return o.v >= 2 ? 22 : 13;
     case "fence": return 14; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return 10; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
+    case "outline": return 9; case "tent": return 15; case "firepit": return 7; case "lamp": return 38; // the base map (sim/basemap.js)
     default: return 0;
   }
 }
@@ -1105,6 +1130,8 @@ function newBattleCamera(b, cw, ch) {
   // The same raid made again before going in (sim/raidplan.js: another side, a scout's hour, the night): the same map,
   // the view as it was, moved to the team.
   const prev = iso.battle;
+  // The base map laid out again after a change (sim/basemap.js refreshBaseMap): the same view, nothing moves.
+  if (prev && b.keepCam && b.layout && prev.layout === b.layout && prev.w === b.w && prev.h === b.h) { iso.battle = b; iso.mapKey = mapKey(b); return; }
   if (prev && prev !== b && prev.setup === b.setup && b.setup && b.setup.plan && prev.w === b.w && prev.h === b.h) {
     iso.battle = b;
     iso.mapKey = mapKey(b);
@@ -1565,11 +1592,26 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     ctx.setLineDash([]);
   }
   const deploying = b.deploy && b.phase === "deploy";
-  if (deploying) {
+  if (deploying && !b.layout) {
     const ok = new Uint8Array(N);
     for (let i = 0; i < N; i++) ok[i] = canPlace(b, i % b.w, (i / b.w) | 0) ? 1 : 0;
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
+  }
+  // The base map's layout mode (sim/basemap.js): the yard's edge, and the pick's footprint under the mouse (green
+  // where it fits, red where not), with the cells outside its doors.
+  if (b.layout && b.deployPlan && b.deployPlan.fort) {
+    const Fm = b.deployPlan.fort, w = Fm.wall;
+    const yard = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1 && (x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1); };
+    ctx.setLineDash([5, 4]);
+    outlineCells(ctx, b, yard, Fm.walled ? "rgba(200,170,110,0.55)" : "rgba(230,216,184,0.5)", 1.5);
+    ctx.setLineDash([]);
+  }
+  if (H.ghost) {
+    const inG = new Set(H.ghost.cells.map(([x, y]) => y * b.w + x)), inD = new Set(H.ghost.doors.map(([x, y]) => y * b.w + x));
+    fillCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.35)` : "rgba(220,70,60,0.35)");
+    outlineCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.95)` : "rgba(240,90,80,0.95)", 2);
+    if (inD.size) { fillCells(ctx, b, (i) => inD.has(i), "rgba(224,168,79,0.3)"); outlineCells(ctx, b, (i) => inD.has(i), "#e0a84f", 1.5); }
   }
   let bands = null;
   if (v.reach && H.mode === "move" && u) {
@@ -1939,6 +1981,21 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const xs = s.cells.map((c) => c[0]), ys = s.cells.map((c) => c[1]);
     const [X, Y] = project((Math.min(...xs) + Math.max(...xs) + 1) / 2, (Math.min(...ys) + Math.max(...ys) + 1) / 2, s.roof ? LV + 10 : (s.storeys === 2 ? WALL2 : WALL1) + 12);
     tag(ctx, s.name, X, Y, "#e6d8b8", Math.max(10, 3.8 * S));
+  }
+  // The stores on a base map (sim/basemap.js): a crate marker over each building that holds goods, with its weight.
+  if (b.stores) for (const c0 of b.stores.containers) {
+    const ci = c0.y * b.w + c0.x;
+    let seen = !!b.deploy || !!b.layout;
+    for (let yy = c0.y; yy < c0.y + c0.h && !seen; yy++) for (let xx = c0.x; xx < c0.x + c0.w; xx++) if (vis[yy * b.w + xx]) { seen = true; break; }
+    if (!seen) continue;
+    const L = looks[ci], top = Math.max(L ? L.top : 4, WALL1) + liftAt(b, ci);
+    const [X, Y] = project(c0.x + c0.w / 2, c0.y + c0.h / 2, top + 6);
+    const s = Math.max(7, 3.2 * S);
+    ctx.fillStyle = c0.kg > 0.5 ? "#b08a4a" : "rgba(60,64,70,0.9)"; ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 1;
+    rr(ctx, X - s, Y - s * 2, s * 2, s * 2, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#1a1a1a"; ctx.font = `700 ${Math.round(s * 1.4)}px Segoe UI, sans-serif`; ctx.textAlign = "center";
+    ctx.fillText("▣", X, Y - s * 0.45);
+    tag(ctx, `${Math.round(c0.kg)} kg`, X, Y + s * 0.4, c0.kg > 0.5 ? "#e6d8b8" : "#9aa0a8", Math.max(9, 3.2 * S));
   }
   for (let i = 0; i < N; i++) {
     const c = b.cells[i];

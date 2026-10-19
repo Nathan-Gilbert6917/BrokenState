@@ -20,6 +20,7 @@ import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "
 import { kitchenService, jobShare } from "./kitchen.js"; // the Kitchen's meals (buildingSummary)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: the builders go out on the odd hours
+import { carryPlacement } from "./basemap.js"; // the base map: a finished job's building keeps the spot it was placed on
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -518,9 +519,9 @@ export const benchOf = (base) => (benchType(base) ? BENCH[benchType(base)] : nul
 
 export function addBuilding(base, type) {
   const b = { id: newId(), type };
-  // An upgrade (hospital tiers) replaces the lower tier of the same family.
+  // An upgrade (hospital tiers) replaces the lower tier of the same family, and keeps its spot on the base map.
   const fam = BUILDINGS[type].family;
-  if (fam) base.buildings = base.buildings.filter((x) => BUILDINGS[x.type].family !== fam);
+  if (fam) { carryPlacement(base.buildings.find((x) => BUILDINGS[x.type].family === fam), b); base.buildings = base.buildings.filter((x) => BUILDINGS[x.type].family !== fam); }
   base.buildings.push(b);
   if (type === "radio") base.radio = true;
   if (type === "watchtower") base.watchtower = true;
@@ -869,7 +870,7 @@ export function constructionHour(state) {
         if (b) { b.tier = Math.max(barrelTier(b), job.tier); log(state, `${base.name}: a water barrel is now a ${barrelName(b).toLowerCase()} (${barrelCap(b)} water).`, "good"); }
         continue;
       }
-      addBuilding(base, job.type);
+      carryPlacement(job, addBuilding(base, job.type)); // basemap.js: where it was placed while it went up
       log(state, `${BUILDINGS[job.type].name} finished at ${base.name}.`, "good");
     }
   }

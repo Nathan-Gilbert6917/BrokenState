@@ -28,6 +28,8 @@ import { switchOptions, switchAt, roomAt, roomLit, INDOOR } from "../sim/indoorl
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
 import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chips, the Visor toggle (sim/helmets.js)
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
+import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
+import { ghostAt, itemAtCell, storeAt } from "../sim/basemap.js";
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { roomText, totalRoom } from "../sim/prisoners.js"; // jailhouse: prisoner room at your bases
 import { bodyEmpty } from "../sim/inventory.js";
@@ -395,6 +397,7 @@ export function combatClick(state, px, py) {
       return;
     }
   }
+  if (b.layout) return void layoutClick(state, b, px, py); // the base map (sim/basemap.js): placing things
   if (b.phase === "deploy") return void deployClick(state, b, px, py);
   if (b.phase !== "player") { cui.msg = "Wait for the enemy turn to finish."; return; }
   const c = cellFromPx(px, py);
@@ -470,6 +473,8 @@ export function combatClick(state, px, py) {
       return;
     }
   }
+  // A store on a base map (sim/basemap.js): a click on the building (its walls, roof or crates) shows what is in it.
+  if (b.stores && !who) { const sc = storeAt(b, c.x, c.y); if (sc && !CDEF(b.cells[c.y * W + c.x]).walk) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; } }
   // A field battle the team's vehicle came along to (sim/raidloot.js trunkVehicle): a click on it opens its trunk, the
   // same window as a raid's (no action; hauling in and out costs the usual time).
   if (!b.raid && b.vehicle && u && active(u) && inTeamVehicle(b, c.x, c.y) && (trunkVehicle(state, b) || b.vehicle.blownUp)) {
@@ -548,12 +553,24 @@ function bodyAt(b, x, y) {
   return b.units.find((o) => o.x === x && o.y === y && !o.fled && !o.left && dragable(o)) || null;
 }
 
+// The base map's layout mode (sim/basemap.js): a click puts the picked thing down, lifts a placed one, or looks into a store.
+function layoutClick(state, b, px, py) {
+  const c = cellFromPx(px, py);
+  if (!c) return;
+  if (b.layout.pick) return void act(state, { type: "put", x: c.x, y: c.y });
+  const e = itemAtCell(state, b, c.x, c.y);
+  if (e && e.at) return void act(state, { type: "lift", key: e.it.key });
+  const sc = storeAt(b, c.x, c.y);
+  if (sc) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; }
+  cui.msg = "Pick something from the list on the right, then click where it goes; or click a placed thing to move it.";
+}
 // Deploy step (sim/deploy.js): click a defender to pick them, then a green cell to put them there.
 function deployClick(state, b, px, py) {
   const c = cellFromPx(px, py);
   if (!c) return;
   const who = unitAt(b, c.x, c.y);
   if (who && who.side === "player" && who.id !== cui.sel) { cui.sel = who.id; cui.msg = ""; return; }
+  if (b.stores && !who) { const sc = storeAt(b, c.x, c.y); if (sc && !CDEF(b.cells[c.y * W + c.x]).walk) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; } } // a store's contents (sim/basemap.js)
   const u = selUnit(b);
   if (!u) { cui.msg = "Click one of your people first."; return; }
   act(state, { type: "place", unit: u.id, x: c.x, y: c.y });
@@ -1056,6 +1073,11 @@ export function combatKey(state, e) {
   }
   // Deploy step: Enter starts the fight (Space only says so: it is too easy to press by habit here).
   if (b.phase === "deploy") {
+    if (b.layout) { // the base map (sim/basemap.js): R turns the pick, Esc puts it down
+      if (e.code === "KeyR") { act(state, { type: "rotate" }); return true; }
+      if (e.code === "Escape") { if (b.layout.pick) act(state, { type: "pick", key: null }); cui.storeView = null; cui.msg = ""; return true; }
+      if (confirm || space) { cui.msg = "The base map: pick something and click where it goes, or Close the map."; return true; }
+    }
     if (b.drill) { if (confirm || space) cui.msg = "A drill: place your people, then Save as plan, or Close the drill."; return confirm || space; } // a base drill (no fight to start)
     if (confirm) { act(state, { type: "start" }); return true; }
     if (space) { cui.msg = `Place your defenders, then press ${keyLabel("battle.confirm", 1) || "Enter"} or Start the fight.`; return true; }
@@ -1169,7 +1191,14 @@ export function combatAction(state, key, d) {
   }
   if (key === "cb-redeploy") return void setAutoRedeploy(!cui.autoRedeploy);
   // Deploy step (sim/deploy.js): start, default positions, the selected defender to the gate, floodlight aim.
+  if (key === "cb-store") { cui.storeView = d.id ? Number(d.id) : null; cui.msg = ""; return; } // a store on the base map (sim/basemap.js)
   if (key === "cb-deploy") {
+    if (b.layout) { // the base map's layout mode (sim/basemap.js layoutAct)
+      if (d.v === "pick") return void act(state, { type: "pick", key: d.k || null });
+      if (d.v === "rotate" || d.v === "endLayout") return void act(state, { type: d.v });
+      if (d.v === "lift" || d.v === "unplace") return void act(state, { type: d.v, key: d.k });
+      return;
+    }
     if (d.v === "start") return void act(state, { type: "start" });
     if (d.v === "defaults") return void act(state, { type: "defaults" });
     if (d.v === "flood") return void act(state, { type: "flood", zone: d.z });
@@ -1408,6 +1437,7 @@ export function renderCombatPanel(state) {
     b.phase === "deploy" ? `<b class="warn">Deploy</b>` : b.phase === "player" ? `<b class="good">Your turn</b>` : `<b class="danger">Enemy turn</b>`;
   // The menu (ui/settings.js): save the battle as it stands, load, options. The battle waits while it is open.
   let html = `<button class="mini cbmenu" data-action="set-open" data-tip="Menu: save the battle as it stands, load, options">⚙ Menu</button>${viewBar(b)}`;
+  if (b.layout) return html + layoutPanel(state, b, cui); // the base map (sim/basemap.js, ui/basemap.js)
   html += b.drill ? `<div class="cbhead"><div class="cbtitle">Defence drill at ${esc(((state.bases.find((x) => x.id === b.setup.baseId)) || {}).name || b.place)}</div>
     <div class="small muted">Nobody to fight: place your people where they should stand when this base is attacked, then Save as plan. The clock stands still.</div></div>` : b.raid ? raidHead(state, b, phase) : `<div class="cbhead">
     <div class="cbtitle">Battle at ${esc(b.place)}</div>
@@ -1457,6 +1487,7 @@ export function renderCombatPanel(state) {
   if (b.phase === "deploy") return html + deployPanel(state, b, u);
   if (b.raid && b.raid.choose) html += chooseHtml(b);
   if (b.night && !b.raid && b.phase !== "deploy") html += nightHtml(b); // sim/vision.js: the dark, by the hour
+  if (b.stores) html += storesHtml(b, cui); // the stores on the base map (sim/basemap.js)
   // Looking at another floor than the selected unit's (PageUp / PageDown, the Floor control): say so, with the way back.
   if (u && alive(u) && floorsOf(b) && u.f != null && u.f !== floorNo(b)) {
     html += `<div class="small muted cbmsg">Showing ${floorLabel(b, floorNo(b)).toLowerCase()}; ${esc(u.name.split(" ")[0])} is on ${floorLabel(b, u.f).toLowerCase()}. <button class="mini" data-action="cb-view" data-v="fgo" data-tip="Back to the selected unit's floor (V also centers on them).">Go to ${esc(u.name.split(" ")[0])}</button></div>`;
@@ -1826,12 +1857,14 @@ function deployPanel(state, b, u) {
       <button data-action="cb-deploy" data-v="gate" ${u && D.walled ? "" : "disabled"} data-tip="${esc(u ? `Put ${u.name} in the gate (or a breach) to hold it.` : "Pick a defender first.")}">Hold the gate${u ? `: ${esc(u.name.split(" ")[0])}` : ""}</button>
       <button data-action="cb-deploy" data-v="defaults" data-tip="Back to the default posts: the toughest fighters in the gate (with 7+ defenders), the best shots on the towers, the rest in a line well back from the openings.">Default positions</button>
     </div>${planRow(state, b)}`;
-  if (D.floodlit) {
+  if (D.floodlit && D.fixedLit) html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights stand where they were placed on the base map and light the ground round them: shots at anything in the light get +${b.floodAim}${D.night ? ", and at night your people see what stands in it" : ""}.">Floodlights lit where they stand (+${b.floodAim} to hit in the light).</div>`;
+  else if (D.floodlit) {
     html += `<div class="small" style="margin-top:0.4rem" data-tip="The floodlights light a third of the approach: shots at anything in the light get +${b.floodAim}${D.night ? " (night)" : " (day)"}.">Floodlights (+${b.floodAim} to hit in the light):</div><div class="cbactions">
       ${Object.entries(LIT_ZONES).map(([z, name]) => `<button class="${D.lit === z ? "active" : ""}" data-action="cb-deploy" data-v="flood" data-z="${z}" data-tip="Aim the floodlights ${name.toLowerCase()} (as the defenders see it).">${name}</button>`).join("")}</div>`;
   }
   html += `<div id="cbprev" class="cbprev">${previewHtml(b, state)}</div>`;
   if (cui.msg) html += `<div class="small warn cbmsg">${esc(cui.msg)}</div>`;
+  html += storesHtml(b, cui); // the stores on the base map (sim/basemap.js)
   html += `<h3>Log</h3><div class="cblog" id="cblog">${b.log.slice(-20).map((l) => `<div class="k-${l.k}"><span class="t">T${l.turn}</span>${esc(l.text)}</div>`).join("")}</div>`;
   html += b.drill ? drillFoot(state, b) : `<div class="cbfoot"><button class="primary" data-action="cb-deploy" data-v="start" data-tip="Everyone is in place: the fight begins. (Enter)">Start the fight</button>
     ${!b.acted && b.turn === 1 ? `<button data-action="cb-auto" data-tip="Skip the tactical battle and resolve it instantly by the numbers.">Auto-resolve</button>` : ""}</div>`;
@@ -2075,6 +2108,8 @@ function previewHtml(b, state = null) {
   const h = cui.hover;
   const u = selUnit(b);
   if (!h) return `<span class="muted">Hover a tile or enemy for details.</span>`;
+  if (b.layout && state) return layoutHover(state, b, h, ghostAt(state, b, h.x, h.y)); // the base map (ui/basemap.js)
+  if (b.stores && !unitAt(b, h.x, h.y)) { const sc = storeAt(b, h.x, h.y); if (sc && (b.phase === "deploy" || !CDEF(b.cells[h.y * W + h.x]).walk)) return storeHover(sc); } // a store on the base map
   if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) return aimPreview(b, u, h); // the weapons overhaul's targeting
   const v = view(b);
   const t = unitAt(b, h.x, h.y);
@@ -2425,6 +2460,7 @@ function drawIsoView(state, b, now, cw, ch) {
     threat: (x, y) => threatAt(b, v, x, y), // the threat preview: lines from whoever could hit the hovered tile
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
+    ghost: b.layout && cui.hover ? ghostAt(state, b, cui.hover.x, cui.hover.y) : null, // the base map: the pick's footprint under the mouse (sim/basemap.js)
   });
   if (!b.over && b.phase !== "deploy") drawCones(b, v); // sim/vision.js: the view cones (the selected one's, the toggle's, the way being picked)
   // Suppressing fire's cone, a thrown spear's reach: ground diamonds over the scene (isoview.js project).

@@ -29,6 +29,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 ## 3. Bases and economy
 - **Base tiers**: camp, shelter, outpost and hub. Camps can be set up, struck and upgraded [staging].
 - **Buildings and construction queue**: plots by base size, demolition refunds, water barrels and storage crates [buildings]. Field works outside the walls [fieldworks].
+- **The base map**: every base's own grid map (a camp 40×40 up to a hub 300×300) with the camp, shelter or base in the middle; buildings, crop plots, defences and parked cars placed by hand (a 1-cell buffer between buildings and fields, doorways kept clear, defences right next to anything) or by the game; outlines for buildings going up; the map a horde or a raid fights over [basemap, ui/basemap].
 - **Work priorities** (RimWorld-style work tab): roles, a 1–5 priority grid and an hourly scheduler [work]. Also idle-worker assignment [idlework], the watch roster [watch], base stewards and leaders run by the governor [steward], and bulk roster actions [bulk].
 - **Daily economy and upkeep per head** [economy, upkeep].
 - **Water**: purified vs un-purified, wells and filters [water, claims].
@@ -109,6 +110,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 ## 9. Base defence and sieges
 - **Horde defences**: walls and what happens when the dead break in [defences].
 - **Deploy step**: wall map, then yard and buildings, and the fort map [deploy, interior, fort].
+- **Raids on the base map**: the attack from any side (N, E, S, W), the stores on the map as containers holding the real stock and armory (look into any at any time), raiders stealing from them and getting away with it, the dead and raiders battering doors, windows, walls, barricades and parked cars, and the wear afterwards [basemap, fort].
 - **Defence plans** drilled ahead of time [defenceplan].
 - **Raids on you**, sized to your defence and escalating [factions].
 

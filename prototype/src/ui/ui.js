@@ -133,6 +133,7 @@ import { cookingNote } from "./cooking.js"; // wave 2 cooking: the bills under t
 import { describeActivity } from "../sim/activity.js"; // the find box also looks through what they are doing ("asleep", "chopping") // what each person is doing now; the base's Work now panel (sim/activity.js)
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
+import { baseMapTab } from "./basemap.js"; // the base map: what stands where on the base's own map (sim/basemap.js)
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance, partyHuntMix, huntMixOf, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
 import { herdAt, infestedShare, WORM, wormMeatAt, baseWater, searchRiskText, boilerUse, armoryTabs } from "../sim/worm.js";
 import { LIGHTS, lightsPreview, litCount } from "../sim/lights.js"; // the planner's Lights line
@@ -1506,6 +1507,7 @@ const BASE_TABS = [
   ["workshops", "Workshops", "Base scavenging and workshop stations: who works where and what they produce"],
   ["buildings", "Buildings", "What is built here and the bonuses it gives"],
   ["construction", "Construction", "Build queue with timers, and what you can build"],
+  ["basemap", "Base map", "The base's own map: where every building, field, defence and parked car stands (the map a horde or a raid fights over); open it to place things by hand"],
   ["fieldworks", "Field works", "Roadblocks, wells, watch towers, relay masts and stockpiles out on the base's land: plan them on the map, post lookouts, repair them"],
   ["armory", "Armory", "Stored gear and everyone's equipment at this base"],
   ["crafting", "Crafting", "Hand-made makeshift gear and supplies: craft queue, crafters and recipes (no station needed)"],
@@ -1522,7 +1524,7 @@ function baseModal(state, ui) {
   // A camp (sim/staging.js, the barest base): its own Camp tab first, and only the tabs a camp has use for.
   const tabs = isCamp(b) ? BASE_TABS.filter(([k]) => CAMP_TABS.includes(k)) : BASE_TABS.filter(([k]) => k !== "camp");
   const tab = tabs.some(([k]) => k === ui.baseView.tab) ? ui.baseView.tab : tabs[0][0];
-  const body = { camp: campTab, overview: baseOverview, food: foodChainTab, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
+  const body = { camp: campTab, overview: baseOverview, food: foodChainTab, work: workTab, defence: defenceTab, farming: baseFarming, workshops: baseWorkshops, buildings: baseBuildings, construction: baseConstruction, basemap: baseMapTab, fieldworks: fieldWorksTab, armory: baseArmory, crafting: baseCrafting, vehicles: baseVehicles, convoys: baseConvoys, medical: baseMedical, repairs: repairsTab, prisoners: prisonTab }[tab](state, b, ui);
   return `<div class="box wide basebox">
     <div class="spread"><input class="basename" data-action="baserename" data-base="${b.id}" maxlength="40" value="${esc(b.name)}"${tip("Click to rename this base (Enter to confirm)")}>${renameButton(b, "✎ Rename")}<span class="muted">${tierName(b)} · ${atBase(state, b.id).length} people · Day ${day(state)} ${clock(state)}</span></div>
     <div class="tabs">${tabs.map(([k, l, t]) => `<button data-action="basetab" data-tab="${k}" class="${tab === k ? "active" : ""}"${tip(t)}>${l}</button>`).join("")}</div>
@@ -1533,7 +1535,7 @@ function baseModal(state, ui) {
 }
 
 // The tabs a camp shows (BASE_TABS keys).
-const CAMP_TABS = ["camp", "overview", "food", "construction", "armory", "vehicles", "crafting", "work", "medical"];
+const CAMP_TABS = ["camp", "overview", "food", "construction", "basemap", "armory", "vehicles", "crafting", "work", "medical"];
 
 // ---------- the camp (sim/staging.js) ----------
 // The Camp tab: the stage ladder and the step up (tierUpRows), what each stage opens up, the people at the camp, the

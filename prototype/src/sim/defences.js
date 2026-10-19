@@ -34,6 +34,7 @@ import { DECOY_KEYS, THROWABLES } from "./stealth.js";
 import { deployMap, deployUnits, endDeploy } from "./deploy.js";
 import { applyPlan } from "./defenceplan.js"; // the base's defence plan at the deploy step
 import { fortable, fortDefence, fortSize } from "./fort.js"; // a walled base on land: the whole battle on one fort map
+import { layoutOf } from "./basemap.js"; // the base map: where the spike pits stood (they are used up before the fight)
 import { raidDamage } from "./breakdowns.js";
 import { defensibleCount, wallMapRows } from "./interior.js";
 import { mixWeight, battleTypes, mixText } from "./zombietypes.js";
@@ -225,6 +226,7 @@ export function hordeAttackBase(state, h, base) {
   base.hordeHits = (base.hordeHits || 0) + 1;
   // Spike pits: one use.
   const pits = count(base, "spike_pits");
+  const pitsAt = pits ? layoutOf(state, base).filter((e) => e.it.type === "spike_pits" && e.at).map((e) => e.at) : []; // basemap.js: where they stood, for the fight's map
   if (pits) {
     const k = spikeKill(base, h.size);
     base.buildings = base.buildings.filter((b) => b.type !== "spike_pits");
@@ -281,7 +283,7 @@ export function hordeAttackBase(state, h, base) {
     tile: base.tile, baseId: base.id,
     enemy: { kind: "zombies", count: force.count, power: force.power, types: force.types, elite: force.elite, name: bosses ? `the horde and its ${BOSS_NAMES.horde}` : "the horde", bosses },
     ambush: sp ? "enemy" : null, canRetreat: true, handler: "hordeBreakIn", layout: "baseDefence", downedLive: 0.4, deploy: true, // canRetreat: a way out away from the breach (deploy.js)
-    context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null, kit, surprise: !!sp }, // surprise: an unwatched night (watch.js)
+    context: { hordeId: h.id, baseId: base.id, through, size: h.size, bosses, pits, pitsAt, floodlit: !!floodlit, night: isNight(state), fromTile: h.from ?? null, kit, surprise: !!sp }, // surprise: an unwatched night (watch.js); pitsAt: the base map's spike pits (basemap.js)
   });
 }
 
@@ -626,7 +628,7 @@ export function placeUnitRight(b, ctx, u, minX, maxX = ctx.W) {
 // battle opens on the yard map, which sets its own size.
 registerBattleSize("baseDefence", (state, setup) => {
   const base = state.bases.find((x) => x.id === setup.baseId) || null;
-  if (fortable(state, base, setup.context)) return fortSize(base, setup.context || {}); // fort.js: the margin, the wall ring and the yard
+  if (fortable(state, base, setup.context)) return fortSize(base, setup.context || {}, state); // fort.js: the margin, the wall ring and the yard (basemap.js: the base map)
   return base && count(base, "walls") > 0 ? [MAP_W, wallMapRows(base)] : [MAP_W, MAP_H];
 });
 registerBattleLayout("baseDefence", (b, ctx) => {
