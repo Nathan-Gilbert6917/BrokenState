@@ -234,16 +234,26 @@ section("Desertion and recruiting");
   const hungry = typed(st, "raider"), fed = typed(st, "fortress", [hungry]);
   hungry.pop = 30; setFood(hungry, 0); hungry.lossRecent = 6;
   fed.pop = 30; setFood(fed, 1000);
-  let lostH = 0, lostF = 0;
-  for (let i = 0; i < 60; i++) {
+  // The odds a day (desertDaily's CARE.DESERT.base × desertPressure, at most max) give the 60 days' deserters; 600 days
+  // of the dice must follow them (60 days alone: about 4.4 and 0.7 expected, so one seed in five fell either side).
+  const odds = (f) => Math.min(C.CARE.DESERT.max, C.CARE.DESERT.base * C.desertPressure(st, f));
+  const DAYS = 600;
+  let lostH = 0, lostF = 0, expH = 0, expF = 0;
+  for (let i = 0; i < DAYS; i++) {
     setFood(hungry, 0); setFood(fed, 1000);
+    expH += odds(hungry); expF += odds(fed);
     if (C.desertDaily(st, hungry, i)) lostH++;
     if (C.desertDaily(st, fed, i)) lostF++;
     C.tickGroup(hungry); C.tickGroup(fed);
     hungry.pop = Math.max(hungry.pop, 20);
     st.cards.length = 0;
   }
-  check(lostH >= 2 && lostF <= 1, `a starving group bleeds deserters (${lostH} in 60 days), a well-fed one rarely (${lostF})`);
+  const per60 = (x) => (x * 60) / DAYS;
+  check(per60(expH) >= 2 && per60(expF) <= 1, `a starving group bleeds deserters (${per60(expH).toFixed(1)} in 60 days by the odds), a well-fed one rarely (${per60(expF).toFixed(1)})`);
+  check(lostH >= expH / 2 && lostF <= expF * 2 + 3 && lostH > lostF * 2, `and the dice follow the odds: ${lostH} and ${lostF} deserters in ${DAYS} days (${expH.toFixed(1)} and ${expF.toFixed(1)} expected)`);
+  // Everyone armed first: the deserter is one of their loadouts (issueKit) at random, and a raider gang may have fewer
+  // guns than people (an unarmed one walks out with nothing).
+  for (let i = hungry.arsenal.items.filter((it) => A.isWeaponKey(it.key)).length; i < hungry.pop; i++) A.addToArsenal(st, hungry, lootItem("pistol", "raider", [i, "dp"]), "test");
   const n0 = hungry.arsenal.items.length;
   const w = C.desertOne(st, hungry, 1, "wanderer");
   check(w.to === "wanderer" && w.kit.length > 0 && w.wanderer.people[0].gear.weapon === w.kit[0] && hungry.arsenal.items.length === n0 - w.kit.length, `a deserter on the road carries their own ${w.kit[0] && w.kit[0].name}`);
