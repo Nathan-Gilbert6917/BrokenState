@@ -8,6 +8,7 @@
 //     people's ways but not as a destination, not to its owner and not to allies; a team on its way stops at the
 //     foot of a bridge barricaded after it set out; AI groups take bridges when they expand
 // Usage: node tools/bridgetest.js [seed] [runs]
+import { setRounds } from "../src/sim/ammo.js";
 import { baseMapSize, yardHalf } from "../src/sim/basemap.js"; // the base map: the hub's battle map size
 import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
 import { launchExpedition, planPath, missionProblem, spawnAiParty, bridgeHolder, bridgeClosedTo, outpostName, partyTile } from "../src/sim/parties.js";
@@ -42,6 +43,7 @@ const raidOn = (state, tile, withVehicle = false) => {
   const crew = atBase(state, h.id).slice(0, 3);
   // Nobody carries a pry tool: the only way into a locked car without picks is through the glass.
   for (const s of crew) { for (const slot of Object.keys(s.gear)) if (s.gear[slot] && GEAR[s.gear[slot].key] && GEAR[s.gear[slot].key].pry) s.gear[slot] = null; if (s.pack) s.pack = s.pack.filter((it) => !(GEAR[it.key] && GEAR[it.key].pry) && it.key !== "crowbar"); }
+  setRounds(h.stock, 200, crew.map((s) => s.gear.weapon && s.gear.weapon.key).filter(Boolean)); // ammo.js: rounds of the crew's calibres at the hub (each raid's team takes 30)
   const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest: tile, mission: "scavenge", stance: "normal", vehicleId: withVehicle ? state.vehicles[0].id : null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;

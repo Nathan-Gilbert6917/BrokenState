@@ -288,7 +288,7 @@ const groupOf = (state, type) => {
       const after = st.cards.find((c) => c.title === "After the fight");
       check((p.cargo.supplies.ammo || 0) - ammo0 === (loot.supplies.ammo || 0) && Math.abs((food(p.cargo) || 0) - food0 - (food(loot) || 0)) < 1e-6,
         `the team gains exactly what was on the bodies (ammo +${(p.cargo.supplies.ammo || 0) - ammo0}, on bodies ${loot.supplies.ammo || 0})`);
-      check(p.cargo.gear.length - gear0 === loot.gear.length, "no bonus gun on top of the looted ones");
+      check(p.cargo.gear.length - gear0 === loot.gear.filter((it) => !/^a_/.test(it.key)).length, "no bonus gun on top of the looted ones"); // loose rounds go in as rounds (cargo supplies by key), not gear
       check(poolLoad(p) <= partyCapacity(st, p) + 1e-6, "the team is not over what it can carry");
       check(!!after && /Taken from the bodies/.test(after.text) === (Object.values(loot.supplies).some((q) => q > 0) || loot.gear.length > 0), "the card lists what was taken, once");
     }
@@ -834,7 +834,10 @@ const groupOf = (state, type) => {
   const stocked = fightOdds(st2, p2, enemy, null);
   p2.supplies.arrows = 0;
   const empty = fightOdds(st2, p2, enemy, null);
+  // No ammo: the team's generic rounds settle by calibre as it leaves (parties.js launchExpedition, so the shells at
+  // hand are packed from them), so none of any calibre is left in the bags.
   p2.supplies.arrows = 60; p2.supplies.ammo = 0;
+  for (const k of Object.keys(p2.supplies)) if (/^a_/.test(k)) p2.supplies[k] = 0;
   const noAmmo = fightOdds(st2, p2, enemy, null);
   check(empty < stocked && noAmmo < stocked && noAmmo > empty, `bows without arrows fight worse (odds ${Math.round(stocked * 100)}% → ${Math.round(empty * 100)}% with no arrows, ${Math.round(noAmmo * 100)}% with no ammo for the one rifle)`);
   check(armedFactor(m2, 0, 60) > 0.6 && armedFactor(m2, 0, 60) < 1 && armedFactor(m2, 60, 60) === 1 && Math.abs(armedFactor(m2, 0, 0) - 0.6) < 1e-12, "armedFactor weighs the bows and the guns by their power");

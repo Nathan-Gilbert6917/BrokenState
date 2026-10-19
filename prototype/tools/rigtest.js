@@ -25,6 +25,9 @@ import { Rng } from "../src/sim/rng.js";
 import { itemValue } from "../src/sim/valuation.js";
 import { repairKind } from "../src/sim/repair.js";
 import { wornLoad, feelFactor } from "../src/sim/load.js";
+import { fleetMob } from "../src/sim/traits.js";
+// An enemy's band by your rule (fighters.js: they are people): the felt load (a strong back, a pack's frame) and Fleet-Footed.
+const ruleMob = (e) => (e.who ? bandFor(e.armLoad * feelFactor(e.who)).mob + fleetMob(e.who) : bandFor(e.armLoad).mob);
 
 const seed = Number(process.argv[2] || 11);
 let fails = 0, passes = 0;
@@ -152,7 +155,7 @@ section("Weight in a fight");
   check(dashRange(u) === 9, "a Medium load's dash: 9 tiles, not 10");
   u.dash = bandFor(felt).dash; u.mob = bandFor(felt).mob;
   const sol = b.units.filter((x) => x.side === "enemy" && x.kind === "human");
-  check(sol.length > 0 && sol.every((e) => e.armLoad > 0 && e.mob === bandFor(e.armLoad).mob), `enemies move by their kit's kg too (${sol.map((e) => `${e.armLoad} kg → ${e.mob}`).join(", ")})`);
+  check(sol.length > 0 && sol.every((e) => e.armLoad > 0 && e.mob === ruleMob(e)), `enemies move by their kit's kg too (${sol.map((e) => `${e.armLoad} kg → ${e.mob}`).join(", ")})`);
   const carriers = sol.filter((e) => e.armorKey === "plate");
   check(carriers.every((e) => e.armLoad > 20), "a soldier in a carrier carries over 20 kg");
   // The escape check reads kg.
@@ -205,7 +208,7 @@ section("Enemies");
   const many = [...sold, ...make("soldiers", 140).map((u) => u)];
   const fullKit = (u) => u.armorKey === "plate" || (!!u.rigKey && !!u.helmKey && ["ar", "carbine", "huntrifle"].includes(u.weapon));
   const full = many.filter(fullKit), light = many.filter((u) => !fullKit(u) && u.armorKey !== "plate");
-  check(full.length > 50 && full.every((u) => u.mob === 4), `soldiers in full kit (a plate carrier, or a rig with a helmet and a rifle) move 4 (${full.filter((u) => u.mob === 4).length}/${full.length}; ${Math.min(...full.map((u) => u.armLoad))}–${Math.max(...full.map((u) => u.armLoad))} kg)`);
+  check(full.length > 50 && full.every((u) => bandFor(u.armLoad).mob <= 4 && u.mob === ruleMob(u)) && full.filter((u) => u.mob === 4).length > full.length * 0.7, `soldiers in full kit (a plate carrier, or a rig with a helmet and a rifle) move 4, but for a strong back or fleet feet (${full.filter((u) => u.mob === 4).length}/${full.length}; ${Math.min(...full.map((u) => u.armLoad))}–${Math.max(...full.map((u) => u.armLoad))} kg)`);
   check(light.some((u) => u.mob === 5), `a lightly kitted soldier (no carrier) can still move 5 (${light.filter((u) => u.mob === 5).length}/${light.length})`);
   {
     // Your people by the same rule: the kg they carry into the fight sets the band. In a full-kit soldier's kit and

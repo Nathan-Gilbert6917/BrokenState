@@ -604,6 +604,7 @@ export function launcherLoot(u, src = "military") {
 // wear on everything. Returns the body.
 export function launcherBody(b, u, body) {
   if (!body || !u) return body;
+  if (u.who && !u.kitGl) return blastLoot(b, u, body); // fighters.js: a person's launcher and rounds are on their body already
   const L = launcherLoot(u, u.kit === "soldiers" ? "military" : "raider");
   for (const it of L.gear) {
     if (!body.gear.weapon) body.gear.weapon = it;

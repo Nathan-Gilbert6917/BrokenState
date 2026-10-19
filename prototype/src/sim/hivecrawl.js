@@ -195,10 +195,18 @@ export const HCRAWL = {
 // a rifle squad without fire wins a tier-2 core and loses a tier-4 one), lit 0.425, fire 0.55, stun 0.15, REACH range
 // 6, melee 0.35. RMS 0.258 → 0.192; where the numbers say 70% or more the map won 94% (43 configurations). Mean gap
 // (points, map against numbers) before → after: rifle squads 21 → 13, shotgun 16 → 13, mixed 14 → 16, melee 22 → 3.
+// Refitted 2026-10-19 after physical rounds (mags.js 2026-10-18: a Reload draws only on what the person carries; the
+// fit's squads kitted for the core, tools/hivecorecalib.js coreTrial: spare magazines, shells at hand, carrykit.js
+// packShells, and a hunting rifle's rounds at hand too) and the by-numbers odds refitted for AI parity (combat.js
+// ODDS): the same fit (--fit 16, 144 configurations of the six squads, FIT_CAREFUL=2; one process a squad, FIT_SAVE,
+// --refit).
+// numbersK 0.4, powerTier 23, lit 0.4, fire 0.65, stun 0.3, floor 0.05, REACH range 6, melee 0.3. RMS 0.239 → 0.212
+// (numbersK 0.6 alone: 0.368); where the numbers say 70% or more the map won 97% (45 configurations, at worst 69%).
+// Mean gap before → after: rifle squads 20 → 15, shotgun 22 → 17, mixed 19 → 18, melee 3 → 3.
 // P2: its second phase, below `at` of its health (once): the pulse reaches further and hits harder (pulse, pulseDmg,
 // stun), the walls give up brood every spawnEvery turns (spawn), cap more of them, and the cave quakes (quake: pillars
 // of flesh and bone come down in the open, everyone of yours caught under one hurt quakeDmg at quakeHit odds).
-export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 20, broodPower: 9, numbersK: 0.6,
+export const HIVEMIND = { hp: 480, perTier: 60, pulse: 3, pulseDmg: [4, 10], stun: 0.35, lash: [16, 30], spawnEvery: 2, spawn: [2, 3], cap: 8, capTier: 1, power: 13, powerTier: 23, broodPower: 9, numbersK: 0.4,
   P2: { on: true, at: 0.5, pulse: 4, pulseDmg: [6, 12], stun: 0.45, spawnEvery: 2, spawn: [3, 4], cap: 1, quake: [3, 5], quakeDmg: [3, 8], quakeHit: 0.35 } };
 // Its weak spots (WEAK): fire on it or next to it (a Molotov, flames spreading to it) burns it burnDmg a turn for
 // burnTurns of its turns after the last flames touched it, and while it burns the walls give up no brood; a bang next
@@ -218,7 +226,7 @@ HIVEMIND.WEAK = { burnDmg: [30, 45], burnTurns: 2, near: 1, flash: 3, blast: 2, 
 // brings, up to kit, − stun × the flashbangs, grenades and pipe bombs, up to kit). Fitted to the map with
 // tools/hivecorecalib.js (--fit): six squads, tiers 1, 2 and 4, guards 60 and 120, lit or not, with and without two
 // Molotovs and two flashbangs; the team's power × coreFire (below). A fight by the numbers spends what it counts.
-HIVEMIND.NUMBERS = { lit: 0.425, fire: 0.55, stun: 0.15, kit: 2 };
+HIVEMIND.NUMBERS = { lit: 0.4, fire: 0.65, stun: 0.3, kit: 2, floor: 0.05 }; // floor: the bosses × at least this for all a team brings (refit 2026-10-19; 0.3 before)
 // What the core battles did (the tools' calibration): battles fought on the map, how many saw the second phase, how
 // many saw the Hivemind burn or reel.
 export const HM_STATS = { battles: 0, phase2: 0, burned: 0, stunned: 0, dazed: 0, panicked: 0 };
@@ -1584,13 +1592,14 @@ export function coreBossMult(prep) {
 //     40 + 2.5 × Shooting + the gun's), × its load's spread there (data-ammo.js spreadMult: 00 buckshot 0.8 at 6
 //     tiles); a melee weapon (or none) REACH.melee: it has to cross the pulse and the brood to strike;
 //   sustain: of a long fight's REACH.shots shots, the share of the actions spent shooting, not reloading: a magazine
-//     swap takes one for a magazine's worth, an internal magazine one for its Reload's worth (data-kit.js INTERNAL),
-//     a shotgun one for the shells a Reload thumbs in (mags.js SHELLS: a pump 2–3, +1 steady hands at Shooting 6,
-//     +1 a side-saddle; a double barrel both barrels) and one Get shells for every GRAB beyond the gun and what is at
-//     hand (the shells in the pockets and the rig, the loose handful, a side-saddle's).
-// A pump at Shooting 7 with the trip's shells at hand: reach 0.62 (14 aim lost of 67, buckshot × 0.8) × sustain 0.86;
-// a hunting rifle 1 × 0.82; an assault rifle 1 × 1. The bosses' power (numbersK) is fitted against it.
-HIVEMIND.REACH = { range: 6, melee: 0.35, shots: 14 };
+//     swap takes one for a magazine's worth; an internal magazine (data-kit.js INTERNAL: a tube, a cylinder, a bolt's
+//     box) one for each MAGS.LOOSE loose rounds a Reload puts in by hand (physical rounds, mags.js 2026-10-18; a break
+//     action or a single shot bounded by its room), out of a pocket or the rig, and both actions (one more) for a
+//     Reload out of the pack once the rounds at hand are gone (MAGS.SOURCE_AP; Get shells is gone for your people).
+// A pump at Shooting 7 with the trip's shells at hand: reach 0.62 (14 aim lost of 67, buckshot × 0.8) × sustain 0.91;
+// a hunting rifle 1 × 0.80 (its rounds in the pack), 1 × 0.89 with them at hand; an assault rifle 1 × 1. The bosses'
+// power (numbersK) is fitted against it.
+HIVEMIND.REACH = { range: 6, melee: 0.3, shots: 14 };
 // What coreFire needs to know of a fighter (also the fit's: tools/hivecorecalib.js): { p (combat power), melee, aim,
 // opt, fall, type (the load: its spread), sustain }. packed: a squad not yet packed for the trip (the autopilot's gate):
 // a shotgunner will carry SHELLS.CARRY at hand (carrykit.js packShells).
@@ -1602,11 +1611,16 @@ export function fireOf(s, packed = false) {
   const shoot = skill(s, "shooting"), aim = 40 + 2.5 * shoot + (W.aim || 0);
   const shots = HIVEMIND.REACH.shots, need = shots * (W.ammo || 1), cap = Math.max(1, W.cap || 1);
   let per = cap, fetch = 0;
-  // Your people load by hand up to MAGS.LOOSE a Reload, whatever the gun (mags.js, 2026-10-18: physical rounds; a break
-  // action or a single shot is bounded by its room), out of what they carry; nothing is dug out first.
-  const shell = SHELLS.on && SHELLS.GUNS[it.key] && usesInternal(it.key, it) ? SHELLS.GUNS[it.key] : null;
-  if (shell) per = Math.min(cap, MAGS.LOOSE);
-  else if (INTERNAL[it.key] && usesInternal(it.key, it)) per = Math.min(cap, MAGS.LOOSE);
+  // Your people load by hand up to MAGS.LOOSE a Reload, whatever the gun (mags.js, 2026-10-18: physical rounds), out of
+  // what they carry: the rounds at hand (pockets, rig) in 1 action, the pack's in both.
+  if (INTERNAL[it.key] && usesInternal(it.key, it)) {
+    per = Math.min(cap, MAGS.LOOSE);
+    const keys = cal ? withHand(keyFor(cal, type)) : [];
+    let hand = 0;
+    for (const x of carriedSpots(s)) if ((x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)) hand += Math.max(0, Math.floor(x.item.dur || 0));
+    if (packed && SHELLS.on && SHELLS.GUNS[it.key]) hand = Math.max(hand, SHELLS.CARRY); // the trip packs a shotgun's at hand (packShells)
+    fetch = (Math.max(0, need - cap - hand) / per) * (MAGS.SOURCE_AP.pack - MAGS.SOURCE_AP.hand);
+  }
   const reloads = Math.max(0, need - cap) / per;
   return { p, melee: false, aim, opt: W.opt || 0, fall: W.fall || 0, type, sustain: shots / (shots + reloads + fetch) };
 }

@@ -2,6 +2,7 @@
 // World state, shared helpers and the hourly/daily tick.
 // Pure simulation: no DOM or canvas code lives here.
 /** @import { State, Survivor, Base, Item, Card, Stock, TileSnapshot, Marker } from "./types" */
+import { syncAllMembers } from "./members.js"; // the AI groups' people (docs/adr/0001-ai-parity.md)
 import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
 import { Rng } from "./rng.js";
@@ -949,6 +950,7 @@ function hourOfWorld(state) {
   if (state.gameOver) return;
   state.hour += 1;
   noteLootAge(state); // itemcond.js: the years since the fall, for every piece of loot rolled this hour
+  syncAllMembers(state); // members.js: the groups' head counts and their people made to agree (cheap when nothing changed)
   weatherHour(state); // weather.js: seasons and the day's weather (fixed ahead, so ETAs hold)
   riversHour(state); // rivers.js: rivers freezing over or thawing (before anyone moves this hour)
   skillsHour(state); // skills.js: travel XP, Pathfinder's pace

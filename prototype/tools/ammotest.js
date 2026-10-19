@@ -249,10 +249,12 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   check(ok, "every enemy's load is a type of its gun's calibre");
   check(rifles > 50 && Math.abs(ap / rifles - KIT_AMMO.soldiers.rifle.ap) < 0.1, `soldiers' rifles: about ${Math.round(KIT_AMMO.soldiers.rifle.ap * 100)}% armour-piercing (${ap} of ${rifles})`);
   check(enemyLoad("raiders", "pistol", 1, 2) === enemyLoad("raiders", "pistol", 1, 2), "an enemy's load comes from dice of its own (the same every time)");
-  const u = enemyUnit(b, rng, "guards", 4, 1);
-  u.weapon = "pistol"; u.load = "hp";
+  // fighters.js: a person's body is what they carried, the rounds for their own gun among it (their kit's load).
+  let u = enemyUnit(b, rng, "guards", 4, 1);
+  for (let i = 2; i < 40 && !(calOf(u.weapon) && u.load); i++) u = enemyUnit(b, rng, "guards", 4, i);
   const body = enemyBody(new Rng(3), u, null);
-  check(body.supplies.a_9mm_hp > 0 && !body.supplies.ammo, `their body: rounds of their calibre and load (${JSON.stringify(body.supplies)})`);
+  const want = `a_${calOf(u.weapon)}_${u.load}`;
+  check(Object.keys(body.supplies).some((k) => k.startsWith(`a_${calOf(u.weapon)}_`) && body.supplies[k] > 0) && !body.supplies.ammo, `their body: rounds of their calibre and load (${want}: ${JSON.stringify(body.supplies)})`);
   const z = { kind: "zombie", weapon: "claws", id: 5, name: "Zombie 5" };
   let zb = null;
   for (let i = 0; i < 80 && !zb; i++) { const bb = enemyBody(new Rng(i), z, null); if (Object.keys(bb.supplies).some(isRoundKey)) zb = bb; }

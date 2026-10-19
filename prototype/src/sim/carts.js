@@ -516,6 +516,10 @@ export const parkCells = (b, u) => (holdsCart(u) ? SIDES.map(([dx, dy]) => [u.x 
 // abandoned cart stands there as a cart on the map (a barricade on its cell), its own dice (hash01: nothing else of the
 // map changes). Taken (Take cart) it is the team's; untouched it stays part of the place when the fight ends.
 export const MAP_CARTS = { areas: { barn: 0.35, garage: 0.25, workshop: 0.2, warehouse: 0.25, farmhouse: 0.2, house: 0.05, store: 0.05 }, road: 0.12 };
+// A door of any kind or state (combat.js CELL door / idoor / odoor / bdoor / doorway; buildingmaps.js gives a door its
+// kind, c.dk): what locks.js may lock or unlock by the hour.
+const DOOR_CELLS = new Set(["door", "idoor", "odoor", "bdoor", "doorway"]);
+const isDoorCell = (c) => !!c && (DOOR_CELLS.has(c.k) || c.dk != null);
 function foundCart(state, b, x, y, f, key, tag) {
   if (!parkable(b, x, y, f) || x < 2 || y < 1 || x > b.w - 3 || y > b.h - 2 || evacAt(b, x, y)) return null; // not on the way out (the evac strip, the edges)
   const roll = (...k) => hash01(state.seed, "mapcart", b.tileId ?? 0, tag, ...k);
@@ -543,7 +547,11 @@ export function placeMapCarts(state, b) {
         const [x, y] = cells[(start + i) % cells.length];
         if (R.zones && R.zones.some((z) => x >= z.x0 && x < z.x0 + z.w && y >= z.y0 && y < z.y0 + z.h)) continue;
         if (R.containers.some((c) => !c.cart && x >= c.x && x < c.x + (c.w || 1) && y >= c.y && y < c.y + (c.h || 1))) continue;
-        if (/door/.test((cellsOf(b, a.f || 0)[y * b.w + x] || {}).k || "")) continue; // never in a doorway: it would take the door's place, and locks.js locks doors by the hour (the same map at night)
+        // Never in a door (any kind, locked or not): an abandoned cart stands inside, it does not plug the way in.
+        // locks.js (lockRaid, before this) locks doors by the hour, and a locked door is not parkable where the same
+        // door shut but unlocked is: a cart that could stand in a doorway moved with the clock (raidapproachtest:
+        // the same map by day and after waiting for night). Skipping doors keeps "its own dice" the hour's no matter.
+        if (isDoorCell(cellsOf(b, a.f || 0)[y * b.w + x]) || (a.doors && a.doors.some(([dx, dy]) => dx === x && dy === y))) continue;
         const key = hash01(state.seed, "mapcart", b.tileId ?? 0, "kind", a.id) < (a.type === "barn" || a.type === "farmhouse" || a.type === "warehouse" ? 0.55 : 0.2) ? "handcart" : "wheelbarrow";
         if (foundCart(state, b, x, y, a.f || 0, key, `a${a.id}`)) { n++; break; }
       }
@@ -581,8 +589,8 @@ export function enemyCarts(state, b) {
   if (!q) return 0;
   const who = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && !u.aboard && !u.dead).slice(0, e.carts);
   for (const [i, u] of who.entries()) {
-    const key = hash01(state.seed, "aicart", q.id, i) < 0.5 ? "handcart" : "wheelbarrow";
-    const cart = lootItem(key, siteSource("farm"), hash01(state.seed, "aicartq", q.id, i));
+    const key = hash01(state.seed, "aicart", localId(state, q.id), i) < 0.5 ? "handcart" : "wheelbarrow"; // world.js localId: ids count up across worlds in one process
+    const cart = lootItem(key, siteSource("farm"), hash01(state.seed, "aicartq", localId(state, q.id), i));
     for (const [k, v] of Object.entries(q.scav.got || {})) {
       if (!SUPPLIES[k] || !(v >= 1)) continue;
       const n = Math.min(Math.floor((v * 0.5) / (who.length - i)), Math.floor(cartFree(cart) / Math.max(1e-6, supWeight(k))));

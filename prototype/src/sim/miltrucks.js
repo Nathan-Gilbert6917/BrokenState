@@ -38,6 +38,7 @@ import { stockHas, keyWord } from "./water.js";
 import { sortFind, formFinds } from "./ammo.js"; // rounds by calibre; boxed and bulk forms
 import { unitPower, partyLost } from "./arsenal.js"; // an AI salvage party's fighters (their kit) and the kit of its dead
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a truck carries
+import { note, roundsIn, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 export const MILTRUCK = {
   ROAD_P: 0.02, DEAD_END: 0.5, JUNCTION: 1.5, TWO: 0.25,
@@ -497,6 +498,7 @@ export function stripConvoy(state, c, f) {
     const got = convoyHaul(state, c);
     if (got.gear.length || Object.keys(got.supplies).length) {
       c.aiHaul = (c.aiHaul || 0) + got.value;
+      note(state, "scavenged", roundsIn(got.supplies) + goodsRounds(got.gear)); // ledger.js (a test switch)
       takeInto(f, got, state); // caravanraids.js: supplies into its stock, guns, armour and explosives into its arsenal (arsenal.js), the rest on its shelf
     }
   }

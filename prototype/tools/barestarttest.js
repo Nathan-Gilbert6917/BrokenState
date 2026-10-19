@@ -142,7 +142,10 @@ const answerCards = (st) => { while (st.cards.length) { const c = st.cards.shift
   Object.assign(worksAt(f, t), { water: 9, farms: 9, beds: 9, walls: 99, bench: 1, store: 1, sickbay: 4, pens: GROUP_WORKS.PENS.max, kitchen: 1, mill: 1, grinder: 1 }); // kitchen: a group kitchen (kitchen branch); mill, grinder: wave 2 cooking (cooking.js); pens: an animal pen at a walled base with fields (groupworks.js PENS)
   const goal = CONQUEST.WALLED_TYPES.includes(f.type) ? CONQUEST.WALLS.typed : CONQUEST.WALLS.home;
   check(nativeWalls(f, t, st) === goal && groupBaseDefence(st, f, t) === GROUP_WORKS.WALL_DEF, `built up: the old walls (${nativeWalls(f, t, st)} of ${goal}) and the old defence`);
-  check(nextWork(st, f) === null || nextWork(st, f).tile !== t, "nothing more to build there");
+  // The works behind a lock (groupworks.js lockedWork: a radio station, a garage, a reloading bench, a machine shop)
+  // are built too: their best mechanic is one of their people now (groupSkill), who may well be up to it.
+  for (const k of ["radio", "garage", "reload", "shop", "gate"]) worksAt(f, t)[k] = Math.max(1, worksAt(f, t)[k] || 0);
+  check(nextWork(st, f) === null || nextWork(st, f).tile !== t, `nothing more to build there (${JSON.stringify(nextWork(st, f))})`);
   // Salvage: no scrap, the job still starts (twice the work) and finishes.
   const g = st.factions[1];
   g.stock.scrap = 0; g.stock.parts = 0;

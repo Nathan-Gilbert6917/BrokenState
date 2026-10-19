@@ -1,5 +1,6 @@
 // Item icons, the wear family (ui/itemart.js; the kit and the rules: ui/itemart/kit.js): melee weapons, bows and
-// crossbows, body armour, helmets and visors, plates, guards, packs, rigs, gun cases and the bicycle. Long things lie
+// crossbows, body armour, helmets and visors, plates, guards, packs, rigs, gun cases, the bicycle and the carts (a
+// wheelbarrow, a hand cart). Long things lie
 // on the diagonal, the handle bottom left and the head top right; armour, packs and guards face the viewer; helmets are
 // seen from the side, facing right. The blade and armour colours follow the battle sprites (ui/sprites.js drawWeapon,
 // drawArmor; sim/data-blades.js BLADE_LOOK).

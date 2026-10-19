@@ -28,6 +28,9 @@ import { groupFieldLock, groupFieldCost, FIELD, buildGroupWork } from "../src/si
 import { groupReloadDaily } from "../src/sim/reloading.js";
 import { lootItem, newItem } from "../src/sim/inventory.js";
 import { itemDurMax } from "../src/sim/crafting.js";
+import { ensureMembers, syncMembers } from "../src/sim/members.js";
+import { weightOf } from "../src/sim/groupcare.js";
+import { totalRounds } from "../src/sim/ammo.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -42,8 +45,15 @@ function G(st, type, { pop = 16, knows = [], works = {} } = {}) {
   Object.assign(f.stock, { scrap: 300, parts: 30, food: pop * 10, fuel: 60, ammo: 400, wood: 2000, brass: 0, powder: 0, primers: 0 }); // food under the machines' 12 days
   f.partsMach = 0;
   f.jails = { [f.bases[0]]: 3 }; // a jailhouse (groupjails.js): not the next job
+  // members.js: a group's skills are its people's (groupworks.js groupSkill: the best at home); its people at the
+  // level its type's profile names (groupcare.js GROUP_PRIORITIES mechanic), so the gates read as they did.
+  ensureMembers(st, f); syncMembers(st, f);
+  const m = weightOf(f, "mechanic", 3);
+  for (const p of f.people) { p.skills.mechanics = m; p.skills.crafting = m; p.health = 100; p.alive = true; p.location = { kind: "member", fid: f.id, tile: f.bases[0] }; }
   return f;
 }
+// A group's type changed in a test: its people's skills follow (G above).
+function retype(st, f, type) { f.type = type; const m = weightOf(f, "mechanic", 3); for (const p of f.people || []) { p.skills.mechanics = m; p.skills.crafting = m; } }
 const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens: 1, kitchen: 1, sickbay: 2 };
 
 // ---------- 1. the machine shop and its parts ----------
@@ -64,9 +74,9 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   worksAt(f, f.bases[0]).shop = 1;
   const full = partsRate(st, f);
   check(Math.abs(full - GROUP_WORKS.PARTS.rate) < 1e-9, `a machine shop, 16 people, Mechanics 4: ${full} a day`);
-  f.type = "military";
+  retype(st, f, "military");
   check(Math.abs(partsRate(st, f) - full) < 1e-9, "the military's Mechanics 6 makes no more than a 4 (your station: a part a day whoever runs it)");
-  f.type = "commune";
+  retype(st, f, "commune");
   check(Math.abs(partsRate(st, f) - full * GROUP_WORKS.PARTS.below) < 1e-9, `a commune (Mechanics 3) in a shop taken over: half (${partsRate(st, f)})`);
 }
 
@@ -132,7 +142,7 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   const pick = () => { for (let i = 0; i < 6; i++) { const n = nextWork(st, f); if (!n || n.type === "sickbay") return n; worksAt(f, n.tile)[n.type] = 9; } return nextWork(st, f); };
   const a = pick();
   check(!a || a.type !== "sickbay", "raiders (Mechanics 3), a doctor of 12, the manual: no trauma hospital");
-  f.type = "traders";
+  retype(st, f, "traders");
   f.med = { doc: 12, docXp: 0, staff: 8, staffXp: 0 };
   const b = pick();
   check(b && b.type === "sickbay", "traders (Mechanics 4): the trauma hospital");
@@ -149,7 +159,7 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   check((nextWork(st, f) || {}).type === "garage", `a car: a garage next (${JSON.stringify(nextWork(st, f))})`);
   worksAt(f, f.bases[0]).garage = 1;
   check(groupGarageMult(st, f) === 1, "a garage: the full repair step");
-  f.type = "traders"; worksAt(f, f.bases[0]).garage = 0;
+  retype(st, f, "traders"); worksAt(f, f.bases[0]).garage = 0;
   check(Math.abs(groupGarageMult(st, f) - GARAGE_LESS) < 1e-9, "traders (Mechanics 4), no garage: 12 of 25");
 }
 
@@ -160,14 +170,14 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   const f = G(st, "zealot", { works: { ...BUILT } });
   Object.assign(f.stock, { brass: 200, powder: 400, primers: 200 });
   check(workLock(st, f, "reload") === "Mechanics 3" && (nextWork(st, f) || {}).type !== "reload", "zealots (Mechanics 2): no reloading bench");
-  f.type = "raider";
+  retype(st, f, "raider");
   check((nextWork(st, f) || {}).type === "reload", `raiders (Mechanics 3) with brass: a reloading bench (${JSON.stringify(nextWork(st, f))})`);
-  const a0 = f.stock.ammo;
+  const a0 = totalRounds(f.stock); // rounds by calibre (docs/adr/0001-ai-parity.md)
   arsenalDaily(st, f);
   check(f.stock.brass === 200 && !(f.reloaded > 0), "no reloading bench: none of their brass loaded");
   worksAt(f, f.bases[0]).reload = 1;
   const n = groupReloadDaily(st, f, groupHas(st, f, "reload"));
-  check(n > 0 && f.stock.ammo > a0, `a reloading bench: ${n} rounds loaded`);
+  check(n > 0 && totalRounds(f.stock) > a0, `a reloading bench: ${n} rounds loaded`);
 }
 
 // ---------- 7. their crafting: your recipes only ----------
@@ -199,7 +209,8 @@ const BUILT = { water: 9, farms: 9, beds: 9, walls: 7, bench: 1, store: 1, pens:
   for (const [type, knows] of [["military", ["weaponplans", "bowyer"]], ["raider", []], ["expansionist", []], ["fortress", ["weaponplans"]]]) {
     const f = G(st, type, { knows, works: { ...BUILT } });
     ensureArsenal(st, f);
-    f.arsenal.items = []; f.arsenal.pop0 = f.pop;
+    f.arsenal.items = []; f.arsenal.pop0 = f.pop; f.arsenal.rev = (f.arsenal.rev || 0) + 1; // arsenal.js: its cached sorting by revision
+    if (type === "raider" || type === "expansionist") f.wares = Array.from({ length: 20 }, () => newItem("bottle")); // empty bottles on their shelf: your Molotov recipe wants one
     for (let d = 0; d < 120; d++) { st.hour += 24; f.careTick = (f.careTick || 0) + 1; f.stock.scrap = 300; f.stock.fuel = 60; f.stock.ammo = 400; arsenalDaily(st, f); }
     const made = f.arsenal.items.filter((it) => it && it.key !== "smokegren");
     const bad = made.filter((it) => !makeable.has(it.key));

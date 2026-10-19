@@ -34,6 +34,8 @@ import { PART_FINDS } from "../src/sim/data-gunmods.js";
 import { magCap } from "../src/sim/combat.js";
 import { SITE_KIT, AREA_KIT, WARE_KIT } from "../src/sim/carrykit.js"; // magazines as items (section 15): their own loot tables
 import { Rng } from "../src/sim/rng.js";
+// The parts on a unit's gun: a person's (fighters.js) are on the gun item itself, an old unit's in u.modItems.
+const modsOf = (u) => u.modItems || (u.item && u.item.mods && Object.keys(u.item.mods).length ? u.item.mods : null);
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -224,7 +226,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
       const u = enemyUnit(b, rng, kit, 8, i);
       units.push(u);
       tally[kit].n++;
-      if (u.modItems) { tally[kit].modded++; for (const m of Object.values(u.modItems)) tally[kit].parts[m.key] = (tally[kit].parts[m.key] || 0) + 1; }
+      if (modsOf(u)) { tally[kit].modded++; for (const m of Object.values(modsOf(u))) tally[kit].parts[m.key] = (tally[kit].parts[m.key] || 0) + 1; }
     }
   }
   console.log(`    ${Object.entries(tally).map(([k, t]) => `${k} ${Math.round((t.modded / t.n) * 100)}%`).join(", ")}`);
@@ -232,9 +234,9 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   const cheap = (k) => !["riflecan", "pistolcan", "drum", "holo", "acog", "can556", "peq", "m203"].includes(k);
   check(["raiders", "survivors", "zealots"].every((k) => Object.keys(tally[k].parts).every(cheap)) && tally.raiders.modded > 0, "raiders, survivors and zealots: only cheap or makeshift parts");
   check(tally.guards.parts.laser > 0 && (tally.militia.parts.scope4x || 0) > 0 && tally.soldiers.modded / tally.soldiers.n > tally.raiders.modded / tally.raiders.n, "guards carry lasers, militia scopes; soldiers far more often than raiders");
-  check(units.every((u) => !u.modItems || Object.values(u.modItems).every((m) => modFits(u.weapon, m.key))), "every part an enemy carries fits their gun");
-  check(units.every((u) => !u.modItems || !u.modItems.optic || slotsOf({ key: u.weapon, name: u.weapon, mods: u.modItems }).includes("optic") && (baseSlots(u.weapon).includes("optic") || u.modItems.mount)), "a sight on a gun that needs a mount for one comes with its mount");
-  const u0 = units.find((u) => u.modItems && Object.keys(u.modItems).join() === "optic" && u.modItems.optic.key === "reddot");
+  check(units.every((u) => !modsOf(u) || Object.values(modsOf(u)).every((m) => modFits(u.weapon, m.key))), "every part an enemy carries fits their gun");
+  check(units.every((u) => !modsOf(u) || !modsOf(u).optic || slotsOf({ key: u.weapon, name: u.weapon, mods: modsOf(u) }).includes("optic") && (baseSlots(u.weapon).includes("optic") || modsOf(u).mount)), "a sight on a gun that needs a mount for one comes with its mount");
+  const u0 = units.find((u) => modsOf(u) && Object.keys(modsOf(u)).join() === "optic" && modsOf(u).optic.key === "reddot");
   check(u0 && u0.gm.aim === 4 && u0.weaponName.includes("(red dot"), `an enemy's red dot counts in their stats and their name (${u0 && u0.weaponName})`);
   if (u0) {
     clearMap(b);
@@ -244,11 +246,11 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
     const plain = { ...u0, gm: NO_MODS };
     check(withDot === Math.min(95, shotOdds(b, plain, me).chance + 4), `their shots with it: ${shotOdds(b, plain, me).chance}% → ${withDot}%`);
   }
-  const sup = units.find((u) => u.suppressor && u.modItems && u.modItems.muzzle);
+  const sup = units.find((u) => u.suppressor && modsOf(u) && modsOf(u).muzzle);
   check(sup && shotNoise(b, sup, WEAPONS[sup.weapon]) <= WEAPONS[sup.weapon].noise * 0.7, `a suppressed enemy's shot is quieter (${sup && shotNoise(b, sup, WEAPONS[sup.weapon]).toFixed(2)} vs ${sup && WEAPONS[sup.weapon].noise}), so the alert is smaller`);
   check(units.every((u) => "load" in u), "every enemy has its loaded round (u.load, ammo.js enemyLoad)");
   // Looted with the gun.
-  const looted = units.filter((u) => u.modItems).slice(0, 30).map((u) => ({ u, keys: Object.values(u.modItems).map((m) => m.key).sort().join(), body: enemyBody(rng, u, KITS[u.kit]) }));
+  const looted = units.filter((u) => modsOf(u)).slice(0, 30).map((u) => ({ u, keys: Object.values(modsOf(u)).map((m) => m.key).sort().join(), body: enemyBody(rng, u, KITS[u.kit]) }));
   check(looted.every(({ body, keys, u }) => body.gear.weapon && body.gear.weapon.key === u.weapon && Object.values(body.gear.weapon.mods || {}).map((m) => m.key).sort().join() === keys), "an enemy's body: the gun comes with every part it carried");
   const swapped = enemyUnit(b, rng, "soldiers", 8, 999);
   if (swapped.modItems) { swapped.weapon = swapped.weapon === "ar" ? "shotgun" : "ar"; }
@@ -256,7 +258,7 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
   // A whole battle against soldiers runs with the parts on.
   const st3 = world(seed + 1);
   const b3 = baseBattle(st3, { count: 6, kind: "soldiers", power: 8, fighters: 3 });
-  check(b3.units.some((u) => u.side === "enemy" && u.modItems), "a battle against soldiers fields guns with parts");
+  check(b3.units.some((u) => u.side === "enemy" && modsOf(u)), "a battle against soldiers fields guns with parts");
 }
 
 // 9. Starting guns.

@@ -37,7 +37,7 @@ import { createBattle, combatAct, CELL } from "../src/sim/combat.js";
 import { hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { spawnVisitor, openVisitorTrade, autoVisitorTrade } from "../src/sim/visitors.js";
-import { lootItem } from "../src/sim/inventory.js";
+import { lootItem, newItem } from "../src/sim/inventory.js";
 import { GOV_GUNS, gunWant, pickGunToBuy } from "../src/sim/govguns.js";
 import { ARSENAL, arsenalDaily, ensureArsenal } from "../src/sim/arsenal.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -238,7 +238,10 @@ for (const mode of ["normal", "hardcore"]) {
     const next = st.rng.next.bind(st.rng);
     st.rng.next = () => { if (/gundist\.js/.test(new Error().stack || "")) own++; return next(); };
     st.started = true;
-    setAutopilot(st, true, "balanced"); // searches, trades, fights: the swaps on the way
+    // searches, trades, fights: the swaps on the way. Hardcore: the world's own (the groups' finds, trades, fights),
+    // not the governor's: its crew's grab and its first searches find another gun with the distribution on (that is
+    // what the distribution is), and a governor equips a found rifle and plays the day differently.
+    setAutopilot(st, mode !== "hardcore", "balanced");
     for (let h = 0; h < days * 24 && !st.gameOver; h++) tickHour(st);
     GUN_DIST.off = false;
     return { made, ran: st.rng.state, own };
@@ -386,12 +389,27 @@ console.log("AI groups buy guns");
   const f = st.factions.find((x) => x.alive && x.type === "traders") || st.factions.find((x) => x.alive);
   const A = ensureArsenal(st, f);
   const guns = () => A.items.filter((it) => isGun(it.key)).length;
-  A.items = A.items.filter((it) => !isGun(it.key));
+  A.items = A.items.filter((it) => !isGun(it.key)); A.rev = (A.rev || 0) + 1; // arsenal.js: its cached sorting by revision
   Object.assign(f.stock, { scrap: 2000, fuel: 2000, meds: 500 }); setFood(f, 5000);
+  // A channel you could use too (docs/adr/0001-ai-parity.md): another group's shelf with guns on it (not one at war with them).
+  const { relation: rel } = await import("../src/sim/diplomacy.js");
+  const seller = st.factions.filter((x) => x.alive && x !== f && !x.outsider).sort((a, b) => rel(st, f, b) - rel(st, f, a))[0];
+  seller.wares = Array.from({ length: 6 }, (_, i) => lootItem("pistol", "merchant", ["sell", i]));
+  const scrapS0 = seller.stock.scrap || 0;
   const pop = f.pop;
   for (let d = 0; d < 72; d++) { st.hour += 24; arsenalDaily(st, f); f.pop = pop; }
   const bought = (A.stats && A.stats.in && A.stats.in.purchased) || 0;
   check(bought >= 3 && guns() >= bought, `${f.name}, no guns and scrap to spare: buys ${bought} in 72 days (one every ${ARSENAL.BUY.every} days at most)`);
+  check(seller.wares.length === 6 - bought && (seller.stock.scrap || 0) > scrapS0, `the very guns off ${seller.name}'s shelf (${seller.wares.length} left), paid into its stores (scrap ${scrapS0} → ${seller.stock.scrap})`);
+  const st2b = createWorld({ seed: 79, factionCount: 6 });
+  const f2 = st2b.factions.find((x) => x.alive && x.type === f.type) || st2b.factions.find((x) => x.alive);
+  const Ab = ensureArsenal(st2b, f2);
+  Ab.items = Ab.items.filter((it) => !isGun(it.key)); Ab.rev = (Ab.rev || 0) + 1;
+  for (const g of st2b.factions) g.wares = (g.wares || []).filter((it) => !isGun(it.key));
+  st2b.visitors = [];
+  Object.assign(f2.stock, { scrap: 2000 });
+  for (let d = 0; d < 36; d++) { st2b.hour += 24; arsenalDaily(st2b, f2); }
+  check(!((Ab.stats && Ab.stats.in && Ab.stats.in.purchased) || 0), "no gun on any shelf: none bought (never from nowhere)");
   const B0 = ARSENAL.BUY; ARSENAL.BUY = null;
   const before = guns(); for (let d = 0; d < 20; d++) { st.hour += 24; arsenalDaily(st, f); f.pop = pop; } ARSENAL.BUY = B0;
   check(guns() - before <= 2, "with buying off none are bought (its gunsmith aside)");

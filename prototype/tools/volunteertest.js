@@ -380,12 +380,13 @@ console.log("The governor");
   check(/^Send/.test(dip) && tur === "Decline", `with ${home} fit at the hub: the Diplomat answers "${dip}", the Turtle "${tur}"`);
   // A marginal hive: the governor asks. Three pistols (four until the core's numbers were refitted, hivecrawl.js
   // HIVEMIND numbersK 2 -> 0.6 on 2026-10-10: the crawl's estimate fell by a third and four came out at 1.9 against
-  // Balanced's 1.5; three are at 1.45, about where four were before).
+  // Balanced's 1.5; three are at 1.45, about where four were before). Two since the refit of 2026-10-19 (numbersK 0.4,
+  // powerTier 23: three came out at 1.51, two at 1.01).
   const { st: s2, f: f2 } = world(SEED + 5);
   ensureHives(s2);
   const hv = s2.hives[0];
   makeHorde(s2, { tile: hv.tile, size: 120, role: "guard", hive: hv.id, target: hv.tile });
-  const { p } = team(s2, hv.tile, { n: 3, mission: "hive", phase: "waiting", weapon: "pistol" });
+  const { p } = team(s2, hv.tile, { n: 2, mission: "hive", phase: "waiting", weapon: "pistol" });
   p.path = [f2.bases[0]]; // at their gates on the way (in reach)
   s2.governor = { personality: "balanced" };
   V.autoAskVolunteers(s2);

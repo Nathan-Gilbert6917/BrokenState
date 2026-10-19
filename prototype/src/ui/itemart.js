@@ -4,7 +4,7 @@
 //   food.js       foods and the base supplies (water, fuel, wood, scrap, parts...)
 //   ammo.js       boxes of rounds (GEAR) and loose rounds (SUPPLIES), by calibre and type, hand-loads marked
 //   parts.js      gun attachments and magazines
-//   wear.js       melee weapons, bows, armour, helmets, plates, bags, rigs, cases, the bicycle
+//   wear.js       melee weapons, bows, armour, helmets, plates, bags, rigs, cases, the bicycle, the carts
 //   tools.js      books, manuals, tools, lights, optics, radios, medical kits, throwables, camp gear, defences
 //   valuables.js  trade goods and comforts: jewellery, smokes, liquor, treats, toiletries, gadgets, collectibles
 // Each drawing is a 16 × 16 grid, outlined by toCanvas into an 18 × 18 picture, 3 canvas pixels a grid pixel; cached by

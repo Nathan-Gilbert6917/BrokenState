@@ -91,7 +91,7 @@ export function deafen(b, x, y, bang, shooter = null) {
       const was = u.dazed || 0;
       u.dazed = Math.max(was, ownTurn(b, u) ? 2 : 1);
       if (!was && u.side === "player") say(b, `${u.name} is dazed by the blast of noise (−${HEAR.DAZE_AIM} aim).`, "danger");
-      if (HEARING.PERMANENT && u.side === "player" && !u.ears) u.hearLost = Math.round(((u.hearLost || 0) + HEARING.LOSS) * 100) / 100;
+      if (HEARING.PERMANENT && (u.side === "player" || u.who) && !u.ears) u.hearLost = Math.round(((u.hearLost || 0) + HEARING.LOSS) * 100) / 100;
     }
   }
   return out;
@@ -183,7 +183,7 @@ export function hearSetup(state, b) {
 // Earplugs: ear protection that works from a pocket or the pack (helmets.js earGearOf), a strip of pairs that wears a
 // pair a fight: the foam ones (data-helmets.js) and the makeshift rag plugs (data.js ragplugs, crafting.js).
 export const isPlugsKey = (key) => !!(key && GEAR[key] && GEAR[key].ears && GEAR[key].slot === "pack" && GEAR[key].dur);
-// After a battle (combat.js wearFielded): a pair of earplugs used, a person's hearing lost for good (when on).
+// After a battle (combat.js wearFielded; arsenal.js settlePeople for a group's people): a pair of earplugs used, a person's hearing lost for good (when on).
 export function settleEars(u, s, fought) {
   if (!u || !s) return;
   if (fought && u.ears && isPlugsKey(u.ears.key)) {

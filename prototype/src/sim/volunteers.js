@@ -33,6 +33,7 @@
 // The governor (autopilot) asks allies when a hive crawl or a base assault looks marginal (autoAskVolunteers, by its
 // style's STYLES row) and answers the groups' asks by its style (the card's ai scores: Diplomat generous, Turtle stingy).
 // Dice: state.volRng (its own, saved), never the world's.
+import { roundOf } from "./rounds.js"; // a round key's calibre
 import { giveFood, foodIn, DAY_VALUE, moveFoodUnits } from "./foods.js"; // food by type (foods.js)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -43,7 +44,9 @@ import { warsOf, enemyIn, relation, changeRelation } from "./diplomacy.js";
 import { jobsDoneFor } from "./jobs.js";
 import { isMember, reachVia } from "./alliance.js";
 import { issueKit, removeFromArsenal, addToArsenal, takeArsenalRounds, unitPower, arsenalWorthy, kitOf } from "./arsenal.js";
-import { allItems, newItem, stripAll } from "./inventory.js";
+import { allItems, allCarried, newItem, stripAll } from "./inventory.js";
+import { syncMembers, fitAtHome, removeMember, addMember } from "./members.js"; // volunteers are the group's own people
+import { isRoundItem } from "./itemstack.js";
 import { SUPPLIES, GEAR, supValue } from "./data.js";
 import { blocOf } from "./blocs.js";
 import { hiveAt } from "./hives.js";
@@ -262,9 +265,7 @@ export function askVolunteers(state, f, p, opts = {}) {
   (V.reqs || (V.reqs = [])).push(req);
   const eta = travelHours(state, f, p);
   const people = [];
-  const kit = issueKit(state, f, q.n, "field");
-  for (let i = 0; i < q.n; i++) people.push(makeVolunteer(state, f, req, kit[i], eta));
-  f.pop -= q.n;
+  for (let i = 0; i < q.n; i++) people.push(makeVolunteer(state, f, req, null, eta)); // members.js: the very people, out of the group (removeMember)
   const text = `${f.name} send ${listNames(people.map((s) => s.name))} for ${m.label}: ${q.days} days. They reach the team in about ${eta} hours.`;
   log(state, text, "good");
   return { ok: true, text, people };
@@ -275,25 +276,29 @@ function travelHours(state, f, p) {
   return clamp(Math.round(d * VOL.TRAVEL), VOL.TRAVEL_MIN, VOL.TRAVEL_MAX);
 }
 // One of the group's people for your team: skills by its type, kit from its arsenal (the pieces leave it).
+// One of the group's people (members.js, docs/adr/0001-ai-parity.md) for your team: the one who came before first
+// (f.volVets), else the fittest at home. They leave the group's list with what they carry (its kit off the group's
+// books while they are away) and come back to it as themselves (sendHomeAll). lo: unused (the old issued kit).
 export function makeVolunteer(state, f, req, lo, eta) {
+  void lo;
   const V = ensureVols(state);
-  const keep = state.rng;
-  state.rng = volRng(state); // the world's dice untouched (makeSurvivor draws its name, skills and traits)
-  // One who came before goes again first (f.volVets: the same people come back, and may ask to stay one day).
-  const vet = (f.volVets || []).filter((v) => !v.out && v.s && v.s.alive).sort((a, b) => b.trips - a.trips || a.s.id - b.s.id)[0];
-  let s;
-  if (vet) { state.rng = keep; s = vet.s; vet.out = true; s.health = Math.max(s.health, 80); }
-  else {
+  syncMembers(state, f);
+  const home = fitAtHome(f);
+  const vet = (f.volVets || []).filter((v) => !v.out && v.s && v.s.alive && home.includes(v.s)).sort((a, b) => b.trips - a.trips || a.s.id - b.s.id)[0];
+  let s = vet ? vet.s : home[0] || null;
+  if (vet) vet.out = true;
+  if (s) removeMember(state, f, s, "volunteer"); // their kit goes with them (off the books until they are back)
+  else { // nobody at home to send (a group the numbers alone still count): one made as the group's people are
+    const keep = state.rng;
+    state.rng = volRng(state); // the world's dice untouched (makeSurvivor draws its name, skills and traits)
     try { s = makeSurvivor(state, VOL.QUALITY[f.type] || 1); } finally { state.rng = keep; }
     s.skills.shooting = Math.min(20, (s.skills.shooting || 0) + (VOL.SHOOT[f.type] || 0));
     s.skills.melee = Math.min(20, (s.skills.melee || 0) + (VOL.MELEE[f.type] || 0));
+    f.pop = Math.max(0, (f.pop || 0) - 1);
   }
+  s.health = Math.max(s.health, vet ? 80 : s.health);
   s.role = "volunteer";
-  const lent = [];
-  if (lo) {
-    if (lo.weapon && removeFromArsenal(f, lo.weapon, "lent")) { s.gear.weapon = lo.weapon; lent.push(lo.weapon); }
-    for (const [slot, it] of Object.entries(lo.armour || {})) if (it && s.gear[slot] === null && removeFromArsenal(f, it, "lent")) { s.gear[slot] = it; lent.push(it); }
-  }
+  const lent = allCarried(s).filter(Boolean); // what they set out with (all the group's)
   if (!s.gear.weapon && GEAR.knife) s.gear.weapon = newItem("knife");
   if (req.mission === "hive" && !s.gear.tool && !lightOf(s) && GEAR.flashlight) s.gear.tool = newItem("flashlight"); // a hive is dark (hivecrawl.js LIGHT): they bring a light of their own
   s.vol = { fid: f.id, group: f.name, req: req.id, mission: req.mission, label: req.label, since: state.hour, until: state.hour + eta + req.days * 24, days: req.days, lent, fought: 0, vet: !!vet };
@@ -344,11 +349,16 @@ function join(state, s, p) {
   giveFood(state, p, days, "travel"); // foods.js: a day's food each day of the span, what travellers carry
   p.supplies.water = (p.supplies.water || 0) + days;
   const f = factionById(state, s.vol.fid);
-  if (f && s.gear.weapon && calOf(s.gear.weapon.key)) { // a gun: rounds of its calibre
-    const got = takeArsenalRounds(f, VOL.BRING.ammo);
+  if (f && s.gear.weapon && calOf(s.gear.weapon.key)) { // a gun: rounds of its calibre, out of their group's (by key: docs/adr/0001-ai-parity.md)
     const cal = calOf(s.gear.weapon.key);
-    const key = cal ? baseKey(cal) : "ammo"; // rounds of their own gun's calibre
-    if (got > 0) p.supplies[key] = (p.supplies[key] || 0) + got;
+    let want = VOL.BRING.ammo;
+    for (const k of Object.keys(f.stock)) {
+      if (want <= 0) break;
+      const r = roundOf(k);
+      if (!r || r.cal !== cal) continue;
+      const q = Math.min(want, Math.floor(f.stock[k] || 0));
+      if (q > 0) { f.stock[k] -= q; p.supplies[k] = (p.supplies[k] || 0) + q; want -= q; }
+    }
   }
   try { weighTeam(state, p); } catch { /* the load is weighed again on the next move */ }
   log(state, `${s.name}, a volunteer from ${s.vol.group}, joined the team at ${tileLabel(state, partyTile(p))} (${days} days' food and water, their own ${s.gear.weapon ? s.gear.weapon.name : "fists"}). Their group's orders, not yours, in a fight.`, "good");
@@ -378,8 +388,10 @@ function sendHomeAll(state, list) {
     if (p) { p.members = p.members.filter((id) => id !== s.id); teams.add(p); }
     const joinedAt = vol.joined ?? state.hour;
     if (f && f.alive) {
-      for (const it of stripAll(s)) if (arsenalWorthy(it)) addToArsenal(state, f, it, "back"); // the kit goes back; the rest was theirs
-      f.pop += 1;
+      // Back in their group's list as themselves, with what they carry: its kit on the group's books again (what
+      // they picked up with you comes home with them; loadouts.js deals it out with the rest tomorrow).
+      addMember(state, f, s);
+      for (const it of allCarried(s)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, "back");
       if (vol.fought) changeGoodwill(state, f, VOL.BACK, `${first(s)} came home safe after fighting beside you`);
       noteVet(state, f, s, Math.max(0, (state.hour - joinedAt) / 24), why);
     }
@@ -398,7 +410,7 @@ function sendHomeAll(state, list) {
 // A volunteer home alive is one of the group's old hands: they go first next time, and after VET.trips trips or
 // VET.days days with your teams (their group's goodwill VET.gw+, their health VET.hp+) they may ask to join you for
 // good (VET.ask a trip home): a card. Welcome them: they are yours from then on, at the hub; their group lets them go
-// for VET.cost goodwill (nothing when its goodwill is VET.free+, and then they bring a weapon from its arsenal, the
+// for VET.cost goodwill (nothing when its goodwill is VET.free+, and then they keep the kit they carry, the
 // best it can spare); else they come with what is their own (a knife).
 function noteVet(state, f, s, days, why) {
   const vets = f.volVets || (f.volVets = []);
@@ -408,7 +420,8 @@ function noteVet(state, f, s, days, why) {
   v.trips++;
   v.days += days;
   delete s.vol;
-  s.location = { kind: "away", factionId: f.id };
+  if (!(s.location && s.location.kind === "member")) s.location = { kind: "away", factionId: f.id }; // a member again (sendHomeAll): at home
+  s.role = s.location.kind === "member" ? "member" : s.role;
   while (vets.length > VOL.VET.keep) vets.splice(vets.findIndex((x) => !x.out), 1);
   const rng = volRng(state);
   if (/^hurt|called|goodwill/.test(why || "") || f.goodwill < VOL.VET.gw || s.health < VOL.VET.hp) return;
@@ -420,9 +433,9 @@ export function vetCard(state, f, v) {
   const free = f.goodwill >= VOL.VET.free;
   return {
     title: `${s.name} asks to join you`, volVet: s.id,
-    text: `${s.name} of ${f.name} has been out with your teams ${v.trips} time${v.trips === 1 ? "" : "s"} (${Math.round(v.days)} days) and asks to stay with your people for good.${free ? ` ${f.name} think well enough of you to let them go with their blessing and a weapon.` : ` ${f.name} would not like losing one of theirs.`}`,
+    text: `${s.name} of ${f.name} has been out with your teams ${v.trips} time${v.trips === 1 ? "" : "s"} (${Math.round(v.days)} days) and asks to stay with your people for good.${free ? ` ${f.name} think well enough of you to let them go with their blessing and the kit they carry.` : ` ${f.name} would not like losing one of theirs.`}`,
     choices: [
-      { label: "Welcome them", hint: free ? `They join your hub with a weapon from ${f.name}'s arsenal; no goodwill lost` : `They join your hub with a knife; ${-VOL.VET.cost} goodwill with ${f.name}`, ai: (st) => (hub(st) && atBase(st, hub(st).id).length < 30 ? 2 : 0), resolve: (st) => welcomeVet(st, f, v) },
+      { label: "Welcome them", hint: free ? `They join your hub with the kit they carry; no goodwill lost` : `They join your hub with a knife, their kit left with ${f.name}; ${-VOL.VET.cost} goodwill with ${f.name}`, ai: (st) => (hub(st) && atBase(st, hub(st).id).length < 30 ? 2 : 0), resolve: (st) => welcomeVet(st, f, v) },
       { label: "Not now", default: true, hint: "They stay with their group (and may ask again)", ai: () => 1, resolve: () => `${first(s)} goes back to ${f.name}.` },
     ],
   };
@@ -434,9 +447,8 @@ export function welcomeVet(state, f, v) {
   f.volVets = f.volVets.filter((x) => x !== v);
   const free = f.goodwill >= VOL.VET.free;
   if (!free) changeGoodwill(state, f, VOL.VET.cost, `${s.name} left them for you`);
-  f.pop = Math.max(0, f.pop - 1);
-  const lo = free ? issueKit(state, f, 1, "field")[0] : null;
-  if (lo && lo.weapon && removeFromArsenal(f, lo.weapon, "left with one of theirs")) s.gear.weapon = lo.weapon;
+  // Out of their group's list (members.js): with its goodwill they keep what they carry, else they leave it behind.
+  if (!removeMember(state, f, s, "joined you", { keepKit: !free })) f.pop = Math.max(0, f.pop - 1);
   if (!s.gear.weapon && GEAR.knife) s.gear.weapon = newItem("knife");
   s.location = { kind: "base", baseId: h.id };
   s.role = "scavenge";

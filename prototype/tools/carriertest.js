@@ -153,7 +153,7 @@ section("Bodies near a Carrier get up at once; the dead never do; the map marks 
   check(!!z && active(z) && z.kind === "zombie" && z.name === `${raider.name} (turned)` && z.x === raider.x && z.y === raider.y && raider.off, `at the enemy's turn it gets up at once: ${z ? z.name : "nothing"} where the body lay (the body gone from the map)`);
   check(logSince(b, n0).some((t) => /gets up/.test(t) && t.includes(raider.name)), `the log: “${logSince(b, n0).find((t) => /gets up/.test(t))}”`);
   check(!!z && z.ap === CARRIER.RISE_AP && z.wild && z.reinforcement && z.weapon === "claws", `up with ${CARRIER.RISE_AP} action, teeth and nails (no gun), after anything living, not one of the enemy the battle began with`);
-  check(!!z && Math.abs(z.armor - raider.armor) < 1e-9, `it wears the raider's vest: ×${z ? z.armor : "?"} of every hit`);
+  check(!!z && Math.abs(z.armor - (raider.wornArmor ?? raider.armor)) < 1e-9, `it wears the raider's vest: ×${z ? z.armor : "?"} of every hit`); // fighters.js: a person rises in what they wore, as yours do (no trait in it)
   check(!risenFrom(b, walkers[0]) && !risenFrom(b, far) && !risenFrom(b, beyond), "the walker never gets up again, nor the raiders out of reach");
   // Never twice: the risen killed lies still.
   kill(b, z);

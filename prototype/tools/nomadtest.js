@@ -442,6 +442,9 @@ if (!QUICK) {
     // their absence means anything (seed 42 small world: none in 8 after the holdout fell a few days later).
     check(r.after4 >= 12 ? S.tiers[3] > 0 : true, `${r.size}: the preppers came once unlocked (T3 ${S.tiers[3]} of ${r.after4} bands spawned after year 4${r.after4 < 12 ? ": too few to tell" : ""})`);
   }
+  const unlocked3 = results.filter((r) => r.samples.some((s) => s.tiers === 3));
+  const t3 = unlocked3.reduce((a, r) => a + r.stats.tiers[3], 0);
+  check(!unlocked3.length || t3 > 0, `the third tier came once unlocked, over the ${unlocked3.length} size(s) that unlocked it (${t3} bands)`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

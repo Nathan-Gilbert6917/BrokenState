@@ -18,6 +18,7 @@
 //   "armory:<baseId>:list[:<i>]"  "cargo:<partyId>:list[:<i>]"       storage (a base armory, a team's cargo)
 //   "body:<bodyIndex>:<slot>[:<i>]"  "body:<bodyIndex>:sup:<key>"     bodies of the battle that just ended
 // Items only move between people, storage and bodies at the same place (one base, or one team).
+import { personBody } from "./fighters.js"; // a person's body: what they carried
 import { typedFood, FOODS } from "./foods.js"; // a body's food as items; a food item's word
 import { Rng } from "./rng.js";
 // Which food a body carries is rolled on dice of its own, hashed from the body's dice position (never drawn from them:
@@ -948,6 +949,7 @@ export function toStorage(state, fromStr) {
 // gear, pockets, supplies }. A fallen survivor's body is the survivor's own inventory (their things are also
 // listed at the death site, see world.killSurvivor); an enemy body has its own.
 export function enemyBody(rng, u, kit) {
+  if (u && u.who && !u.bodied) return personBody(u); // fighters.js: a person's body is what they carried (docs/adr/0001-ai-parity.md)
   const body = ensureInv({ name: u.name, kind: u.kind, uid: u.id, kit: u.kit || null, supplies: {} });
   const add = (k, n) => { if (n > 0) body.supplies[k] = (body.supplies[k] || 0) + n; };
   if (u.kind === "zombie") {

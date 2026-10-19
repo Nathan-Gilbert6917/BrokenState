@@ -21,6 +21,7 @@ import { condRolled } from "../src/sim/itemcond.js";
 import { LIGHTS, lightOf } from "../src/sim/lights.js";
 import { ensureArsenal } from "../src/sim/arsenal.js";
 import { allCarried } from "../src/sim/inventory.js";
+import { starterMags } from "../src/sim/carrykit.js"; // a colonist's spare magazines
 import * as HC from "../src/sim/hivecrawl.js";
 import { coreTrial } from "./hivecorecalib.js";
 
@@ -48,6 +49,10 @@ function squad(st, hv, { n = 6, lights = true, flares = 0, scouting = 3, stealth
     s.gear.weapon = item("ar"); s.gear.armor = item("plate"); s.gear.tool = null;
     s.pockets = [lights ? item("headlamp") : null, null, null, null];
     s.health = 100;
+    // Physical rounds (mags.js, 2026-10-18): a Reload draws only on what the person carries, never the team's bags, so
+    // a rifle with no spare magazine fires its 30 and no more. Each gets a colonist's starting spares (CARRY.START, in
+    // the plate carrier's pouches), filled from the team's rounds as the fight starts, as a squad of yours goes in.
+    starterMags(s);
     st.survivors.push(s);
     people.push(s);
   }

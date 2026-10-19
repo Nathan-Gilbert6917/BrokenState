@@ -17,6 +17,7 @@
 // ransomed (by radio or envoy with any group, raiders included: ransom.js; during a trade visit or at the gates), or
 // released when goodwill is high. Over time they may escape (likelier with a pin, lockpicks or the keys they kept:
 // location.tool), be recruited by their captors, or die.
+import { spendAmmo } from "./rounds.js"; // a group's rounds by calibre
 import { takeFood, FOODS } from "./foods.js"; // their food, days of it
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES, supValue } from "./data.js";
 import { zombieToughness } from "./hives.js";
@@ -25,18 +26,18 @@ import { kitSource, spend } from "./itemcond.js";
 import { hasTrait, teamTraitFx, encounterMult, bribeMult } from "./traits.js"; // Fleet-Footed, Slow: a team on foot that runs from trouble; Night Owl; Strategic: fewer encounters; Diplomatic: cheaper bribes
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
-  armedFactor, usesArrows,
+  usesArrows,
 } from "./world.js";
 import {
   partyMembers, bestSkill, partyTile, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, awaitOrders,
   removeParty, startReturn, STANCES,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, partyVehicles, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, raidTurret, loseRaidHumvee, humveeLeftText, TURRET_ODDS, wearRaidHumvee } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, partyVehicles, createVehicle, VEHICLE_TYPES, fitTechnical, raidTurret, loseRaidHumvee, humveeLeftText, wearRaidHumvee } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
 import { perceptionChance, markAbandonedVehicle } from "./markers.js";
-import { registerCombatHandler, startCombat, battlePending, winOdds } from "./combat.js";
+import { registerCombatHandler, startCombat, battlePending, byNumbersOdds } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { travelEffects } from "./weather.js";
@@ -55,7 +56,7 @@ import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { totalIn, sumRecs, ROUND_KEYS, isRoundKey } from "./rounds.js"; // rounds by calibre
 import { addFindVia, kindTheme, findRounds, calRounds, partyCals, roundsText } from "./ammo.js";
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
-import { unitPower, addToArsenal, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
+import { unitPower, addToArsenal, keepItem, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
 import { applyStolen } from "./basemap.js"; // the base map: what raiders got away with from the stores on it
 import { captiveEscape, captiveDecline, captiveTurnMult, groupJailGuards } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
@@ -63,6 +64,7 @@ import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numb
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your caravan's route lies in wait
 import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a gun off their dead
 import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more run-ins
+import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -158,22 +160,12 @@ function stowGear(state, p, item) {
   return true;
 }
 
-function teamPower(state, p) {
-  return partyMembers(state, p).reduce((a, m) => a + combatPower(m), 0);
-}
-
-// Same maths as the quick resolver in combat.js, shown to the player as rough odds.
+// The quick resolver's own odds (combat.js byNumbersOdds), shown to the player: the team's power with the rounds and
+// arrows it carries, a group's very people on the other side (docs/adr/0001-ai-parity.md), an ambush, the vehicles.
 export function fightOdds(state, p, enemy, ambush) {
   const people = partyMembers(state, p);
   if (!people.length) return 0;
-  let mine = teamPower(state, p) * armedFactor(people, carriedRounds(p), carriedOf(p, "arrows")); // under 3 a head: the guns (ammo) or the bows (arrows) at 60%
-  let theirs = enemy.count * enemy.power;
-  if (ambush === "player") mine *= 1.4;
-  if (ambush === "enemy") theirs *= 1.4 * ambushMult(p.vehicle === true ? partyVehicle(state, p) : null, enemy.kind); // vehicles.js: bulletproof glass (combat.js byNumbersOdds)
-  if (enemy.turret) theirs += TURRET_ODDS[enemy.turret] || 0; // their turret (a military group's Humvee)
-  const pv = p.vehicle === true ? partyVehicle(state, p) : null;
-  if (pv && pv.upgrades && pv.upgrades.turret) mine += TURRET_ODDS[pv.upgrades.turret.gun] || 0; // the team's own turret
-  return winOdds(mine / Math.max(0.1, theirs), { ...enemy, people: people.length, ambush }); // combat.js: calibrated on the battle map
+  return byNumbersOdds(state, { tile: partyTile(p), partyId: p.id, enemy: { ...enemy }, ambush }, people, { ammo: carriedRounds(p), arrows: carriedOf(p, "arrows") }).win;
 }
 
 function enemyGroup(state, p, f, scale = 1, horde = null) {
@@ -231,12 +223,13 @@ export function payPlan(p, value) {
   return left > 0 ? null : plan;
 }
 const planText = (plan) => Object.entries(plan).map(([k, q]) => `${q} ${keyWord(k)}`).join(", ");
-function payFrom(p, plan, f) {
+// state: given, the rounds paid to a group are noted (ledger.js, a test switch).
+function payFrom(p, plan, f, state = null) {
   for (const [k, q] of Object.entries(plan)) {
     const fromCargo = Math.min(q, Math.floor(p.cargo.supplies[k] || 0));
     p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) - fromCargo;
     p.supplies[k] = (p.supplies[k] || 0) - (q - fromCargo);
-    if (f) { const fk = isRoundKey(k) ? "ammo" : k; f.stock[fk] = (f.stock[fk] || 0) + q; } // a group keeps one ammo count
+    if (f) { f.stock[k] = (f.stock[k] || 0) + q; if (isRoundKey(k) || k === "ammo") note(state, "from you", q); } // rounds by key, as yours (docs/adr/0001-ai-parity.md)
   }
 }
 const carriedValue = (p) => Object.keys(SUPPLIES).reduce((a, k) => a + (Math.floor(p.supplies[k] || 0) + Math.floor(p.cargo.supplies[k] || 0)) * supValue(k), 0);
@@ -250,11 +243,11 @@ export function rob(state, p, frac, f, takeGear = true, cargoOnly = false) {
       if (q <= 0) continue;
       pool[k] -= q;
       taken[k] = (taken[k] || 0) + q;
-      if (f) { const fk = isRoundKey(k) ? "ammo" : k; f.stock[fk] = (f.stock[fk] || 0) + q; } // a group keeps one ammo count
+      if (f) { f.stock[k] = (f.stock[k] || 0) + q; if (isRoundKey(k) || k === "ammo") note(state, "taken from you", q); } // rounds by key, as yours (docs/adr/0001-ai-parity.md); ledger.js
     }
   }
   const gear = takeGear ? p.cargo.gear.splice(0) : [];
-  if (f) for (const g of gear) { f.lootedGear.push(g.name); addToArsenal(state, f, g, "stolen"); } // arsenal.js: guns, armour and explosives they will use
+  if (f) for (const g of gear) { f.lootedGear.push(g.name); keepItem(state, f, g, "stolen"); } // arsenal.js: guns, armour and explosives they will use, the rest on their shelf
   const parts = Object.entries(taken).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`);
   if (gear.length) parts.push(...gear.map((g) => g.name));
   return parts.length ? parts.join(", ") : "nothing much";
@@ -288,7 +281,7 @@ export const allCaptives = (state) => state.survivors.filter(isCaptive);
 export function takeCaptive(state, s, f, p) {
   if (p) p.members = p.members.filter((id) => id !== s.id);
   // Everything on them is taken: worn, held, pockets and pack (inventory.js).
-  for (const g of stripAll(s)) { f.lootedGear.push(`${first(s)}'s ${g.name}`); addToArsenal(state, f, g, "stolen"); } // arsenal.js
+  for (const g of stripAll(s)) { f.lootedGear.push(`${first(s)}'s ${g.name}`); keepItem(state, f, g, "stolen"); } // arsenal.js: the kit onto their books, the rest on their shelf
   s.station = null;
   // fresh: their captors have still to find room for them (groupjails.js groupJailsHour: jailed, or sold, ransomed at
   // once, let go or killed when their jail is full).
@@ -850,7 +843,7 @@ function bribeChoice(state, p, c, f) {
         addCard(st, forcedCard(st, p, c, !!c.followText));
         return "You no longer carry enough to pay that.";
       }
-      payFrom(p, pl, f);
+      payFrom(p, pl, f, state);
       if (st.rng.chance(chance)) {
         bump(st, "outcomes", "bribe-ok");
         changeGoodwill(st, f, 2);
@@ -915,7 +908,7 @@ function startFight(state, p, c, ambush, goodwillHit, lead, extra = {}) {
   const carted = state.parties.find((q) => q.owner !== "player" && (q.id === c.aiPartyId || q.id === c.scavPartyId) && q.scav && q.scav.carts > 0);
   startCombat(state, {
     tile: partyTile(p), partyId: p.id,
-    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}), ...(theirs ? { vehicle: theirs.vehicleType, vehiclePartyId: theirs.id } : {}), ...(carted ? { carts: carted.scav.carts, cartPartyId: carted.id } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
+    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), partyId: c.aiPartyId ?? c.scavPartyId ?? undefined, name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}), ...(theirs ? { vehicle: theirs.vehicleType, vehiclePartyId: theirs.id } : {}), ...(carted ? { carts: carted.scav.carts, cartPartyId: carted.id } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
     ambush, canRetreat: true, handler: "conflict",
     context: { ...c, lead, goodwillHit, resumePhase: p.conflictResume || "out", ...extra },
   });
@@ -1100,7 +1093,7 @@ function stealChoice(state, p, c, f) {
         const stolen = addCargoRoundsRec(st, p, st.rng.int(15, 40), f ? kindTheme(f.type) : "raider", "steal", partyTile(p), st.hour); // ammo.js: their rounds, by calibre
         const ammo = Object.values(stolen).reduce((a, q) => a + q, 0);
         const food = addCargo(st, p, "food", st.rng.int(4, 10));
-        if (f) { f.stock.ammo = Math.max(0, f.stock.ammo - ammo); takeFood(f.stock, food); } // foods.js: out of their stores
+        if (f) { spendAmmo(f.stock, ammo); takeFood(f.stock, food); } // rounds.js: out of their rounds (docs/adr/0001-ai-parity.md: by calibre); foods.js: their food
         resume(st, p);
         return `You crawl out with ${roundsText(stolen)} and ${food} days of food. Nobody saw a thing.`;
       }
@@ -1154,7 +1147,7 @@ function buyPrisonersCard(state, p, c, f) {
           addCard(st, buyPrisonersCard(st, p, c, f)); // the offer stands; pay later or leave them
           return "You no longer carry enough to pay that.";
         }
-        payFrom(p, pl, f);
+        payFrom(p, pl, f, state);
         for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
         const fresh = [];
         for (let i = 0; i < (c.strangers || 0); i++) fresh.push(newRecruit(st, p));
@@ -1499,7 +1492,7 @@ function rescueCard(state, p, f, held) {
             else { delete p.conflictResume; awaitOrders(st, p, `${f.name} holds none of your people here any more.`); }
             return "You no longer carry enough for the ransom.";
           }
-          payFrom(p, pl, f);
+          payFrom(p, pl, f, state);
           for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
           bump(st, "outcomes", "rescue-ransom");
           changeGoodwill(st, f, 2);
@@ -1581,7 +1574,7 @@ export function ransomOnTradeCard(state, p, f) {
         resolve: (st) => {
           const pl = payPlan(p, value);
           if (!pl) return "You no longer carry enough for the ransom. The trade visit goes on.";
-          payFrom(p, pl, f);
+          payFrom(p, pl, f, state);
           for (const s of held) if (isCaptive(s)) freeCaptive(st, s, p);
           changeGoodwill(st, f, 2);
           bump(st, "outcomes", "trade-ransom");
@@ -1679,7 +1672,7 @@ export function defendInPerson(state, raid) {
   const force = raidForce(f, raid.strength);
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders`, siege: raid.siege || null, arsTask: baseHasWalls(base) ? "walls" : "raid", ...(raidTurret(state, raid) ? { turret: raidTurret(state, raid) } : {}) }, // siege.js: their ladders, ram and grenades; arsTask: arsenal.js issueKit; turret: the Humvee the raid brought (vehicles.js; on the map: combat.js placeRaidHumvee)
+    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, partyId: raid.id, name: `${f.name} raiders`, siege: raid.siege || null, arsTask: baseHasWalls(base) ? "walls" : "raid", ...(raidTurret(state, raid) ? { turret: raidTurret(state, raid) } : {}) }, // siege.js: their ladders, ram and grenades; arsTask: arsenal.js issueKit; turret: the Humvee the raid brought (vehicles.js; on the map: combat.js placeRaidHumvee)
     // raid.surprise (watch.js surpriseAt: an unwatched night): they are over the wall and have the first move.
     ambush: raid.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id, surprise: !!raid.surprise, armory0: base.armory.length }, // the way out: away from the attack (deploy.js); armory0: your dead's gear is what lands in the armory after it (arsenal.js)
     layout: "baseDefence", deploy: true, // deploy.js: the base's walls on the map, defenders placed first

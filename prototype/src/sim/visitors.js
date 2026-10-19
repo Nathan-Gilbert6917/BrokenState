@@ -133,6 +133,7 @@ import { merchantEscort, escortFighters, escortValue, escortWords, escortShort, 
 import { escortEnemy, lootCaravan, witnessesOf, consequences, roadCaravans, caravanCard as roadCaravanCard } from "./caravanraids.js"; // any caravan on the road: robbed, everything taken // what merchants carry, and the escort it buys
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a merchant carries
 import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
+import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -823,8 +824,10 @@ export function stockPlan(stock, value, keep = null) {
   return left > 0 ? null : plan;
 }
 const planText = (plan) => Object.entries(plan).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${keyWord(k)}`).join(", "); // rounds named by calibre
-function payFromStock(stock, plan, to) {
+// state: given, the rounds paid to them are noted (ledger.js: from you, a test switch).
+function payFromStock(stock, plan, to, state = null) {
   for (const [k, q] of Object.entries(plan)) {
+    if (state && to && (/^a_/.test(k) || k === "ammo")) note(state, "from you", q);
     if (k === "food" || k === "preserved") { const got = takeFood(stock, q, { eggs: false, only: k === "preserved" ? (x, f) => f.group === "preserved" : null }); if (to) addFoodsTo(to, got.items); continue; } // foods.js: days of food, the soonest to spoil first
     if (k === "ammo") spendAmmo(stock, q); // rounds.js: any calibre, the cheapest first
     else stock[k] = Math.max(0, (stock[k] || 0) - q);
@@ -872,7 +875,7 @@ function raidWarning(state, v) {
           if (!there(st)) return "The raiders are gone.";
           const plan = price();
           if (!plan) return `${base.name} no longer has that to give. They keep coming.`;
-          payFromStock(base.stock, plan, v.stock);
+          payFromStock(base.stock, plan, v.stock, state);
           paidOff(st, v, base);
           return `${cap1(v.name)} took ${planText(plan)} and turned back.`;
         },
@@ -888,7 +891,7 @@ function raidWarning(state, v) {
           if (!vrng(st).chance(tc)) return `They laugh at the offer. ${cap1(v.name)} keep coming.`;
           const plan = half();
           if (!plan) return "There is not enough in the stores even for that.";
-          payFromStock(base.stock, plan, v.stock);
+          payFromStock(base.stock, plan, v.stock, state);
           paidOff(st, v, base);
           return `${best ? firstName(best) : "Your speaker"} talked them down: they took ${planText(plan)} and turned back.`;
         },
@@ -927,7 +930,7 @@ function defendAgainst(state, v, base) {
   v.phase = "battle";
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name), siege: bandKit(state, v, base) },
+    enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name), siege: bandKit(state, v, base), band: { kind: "visitor", id: v.id } }, // bands.js: the band's own people
     ambush: v.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile, strength: vStrength(v), siegeHours, surprise: !!v.surprise }, // canRetreat: a way out away from them (deploy.js); they loot and move on; surprise: an unwatched night (watch.js)
     layout: "baseDefence", deploy: true,
   });
@@ -1042,15 +1045,19 @@ function raidGroup(state, v) {
   if (v.size <= 0) leaveMap(state, v, "broken");
 }
 const cargoWeight = (stock) => SUPPLY_KEYS.reduce((a, k) => a + Math.max(0, stock[k] || 0) * supWeight(k), 0);
+// Returns what went in (ledger.js: the rounds of it, noted by the callers that take from outside the AI side).
 function addToStock(v, sup) {
   let room = Math.max(0, v.capacity - cargoWeight(v.stock));
+  const added = {};
   for (const [k, q0] of Object.entries(typeGoods(null, sup, v.kind === "raiders" ? "raider" : "travel"))) { // foods.js: days of food as items (no dice here)
     if (!SUPPLIES[k]) continue;
     const q = Math.min(FOODS[k] ? q0 : Math.floor(q0), Math.floor(room / supWeight(k)));
     if (q <= 0) continue;
     v.stock[k] = (v.stock[k] || 0) + q;
+    added[k] = q;
     room -= q * supWeight(k);
   }
+  return added;
 }
 
 function robAiParty(state, v, q) {
@@ -1115,7 +1122,7 @@ function hitConvoy(state, v, p) {
       p.cargo.supplies[k] -= q;
       taken[k] = q;
     }
-    addToStock(v, taken);
+    note(state, "taken from you", roundsIn(addToStock(v, taken))); // ledger.js
     const items = p.cargo.gear.splice(0);
     if (items.length) v.wares = [...(v.wares || []), ...items];
     if (members.length) hurt(state, members[rng.int(0, members.length - 1)], rng.int(15, 45), partyTile(p), `when ${v.name} hit the convoy`);
@@ -1155,7 +1162,7 @@ function searchSite(state, v) {
     const r = raidPoiAsGroup(state, v, t, poi, poiPool(t, poi) * rng.range(range[0], range[1]), { floor, haul: false, news: v.kind === "raiders" ? true : "left", name: v.kind === "raiders" ? cap1(v.name) : undefined });
     got = r ? r.took : 0;
     if (r && r.gear.length) v.wares.push(...r.gear); // things your people left there
-    if (r) for (const [k, q] of Object.entries(r.left)) if (SUPPLIES[k] && q > 0) v.stock[k] = (v.stock[k] || 0) + q;
+    if (r) for (const [k, q] of Object.entries(r.left)) if (SUPPLIES[k] && q > 0) { v.stock[k] = (v.stock[k] || 0) + q; if (/^a_/.test(k) || k === "ammo") note(state, "scavenged", q); } // ledger.js
     if (got <= 0) return;
   } else {
     if (!t.loc) return;
@@ -1166,7 +1173,7 @@ function searchSite(state, v) {
   }
   visitorInfo(state).stats.sites++;
   const value = got * (v.kind === "raiders" ? 300 : 120);
-  addToStock(v, { food: Math.round(value * 0.35 / 2), ammo: Math.round(value * 0.25 / 0.5), scrap: Math.round(value * 0.2), meds: Math.round(value * 0.1 / 6), fuel: Math.round(value * 0.1 / 3) });
+  note(state, "scavenged", roundsIn(addToStock(v, { food: Math.round(value * 0.35 / 2), ammo: Math.round(value * 0.25 / 0.5), scrap: Math.round(value * 0.2), meds: Math.round(value * 0.1 / 6), fuel: Math.round(value * 0.1 / 3) })));
   const name = poi != null ? poiPlace(state, t, poi) : t.loc.name;
   if (state.live.has(t.id)) log(state, `${cap1(v.name)} ${v.kind === "raiders" ? "loot" : "pick through"} ${name}.`, v.kind === "raiders" ? "danger" : "info");
 }
@@ -1575,7 +1582,7 @@ function gateCard(state, v, base, lead) {
         if (!here(st)) return gone;
         const plan = price();
         if (!plan) return "You cannot pay for that now.";
-        payFromStock(base.stock, plan, v.stock);
+        payFromStock(base.stock, plan, v.stock, state);
         v.done.maps = true;
         v.done.news = true;
         return again(st, `You bought their maps: ${giveIntel(st, v, 2)} tiles on your map.`);
@@ -1667,7 +1674,7 @@ function endShelter(state, v) {
   if (base && v.hostile) {
     const took = {};
     for (const k of ["food", "meds", "ammo"]) { const q = Math.floor(supplyAmt(base.stock, k) * 0.12); if (q > 0) { if (k === "ammo") Object.assign(took, spendAmmo(base.stock, q).keys); else if (k === "food") Object.assign(took, takeFood(base, q, { eggs: false, state }).items); else { base.stock[k] -= q; took[k] = q; } } } // ammo: any calibre, by key (rounds.js)
-    addToStock(v, took);
+    note(state, "taken from you", roundsIn(addToStock(v, took))); // ledger.js
     v.hostile = false;
     log(state, `The guests at ${base.name} were thieves: ${cap1(v.name)} slipped away in the night with ${planText(took) || "what they could carry"}.`, "danger");
     return headOut(state, v, "with your supplies");
@@ -1985,7 +1992,7 @@ function onOutsiderFight(state, result, setup) {
       for (const pool of result.outcome === "retreat" ? [p.cargo.supplies] : [p.supplies, p.cargo.supplies]) {
         for (const k of Object.keys(pool)) { const q = Math.floor((pool[k] || 0) * frac); if (q > 0) { pool[k] -= q; taken[k] = (taken[k] || 0) + q; } }
       }
-      if (v && !c.robbing) addToStock(v, taken);
+      if (v && !c.robbing) note(state, "taken from you", roundsIn(addToStock(v, taken))); // ledger.js
       // A trade caravan of yours beaten by raiders: they take the whole load, not a share.
       if (v && !c.robbing && result.outcome !== "retreat" && p.caravan) { const items = p.cargo.gear.splice(0); for (const k of Object.keys(p.cargo.supplies)) { const q = Math.floor(p.cargo.supplies[k] || 0); if (q > 0) { p.cargo.supplies[k] -= q; taken[k] = (taken[k] || 0) + q; addToStock(v, { [k]: q }); } } v.wares = [...(v.wares || []), ...items]; }
       lines.push(result.outcome === "retreat" ? `You pulled back${planText(taken) ? `, dropping ${planText(taken)}` : ""}.` : `You lost the fight${planText(taken) ? ` and they took ${planText(taken)}` : ""}.`);
@@ -2106,7 +2113,7 @@ export function radioPayRaiders(state, v) {
   const h = hub(state);
   const plan = stockPlan(h.stock, radioPayValue(state, v), baseCals(state, h));
   if (!plan) return `${h.name} does not have ${radioPayValue(state, v)} worth of goods to offer.`;
-  payFromStock(h.stock, plan, v.stock);
+  payFromStock(h.stock, plan, v.stock, state);
   paidOff(state, v, null);
   log(state, `Over the radio, ${v.name} agreed to leave the state for ${planText(plan)}. A runner took it out to them.`, "info");
   return `${cap1(v.name)} took ${planText(plan)} and are leaving the state.`;

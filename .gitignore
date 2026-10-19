@@ -21,3 +21,6 @@ amb-preview/
 
 # Music previews (prototype/tools/musicpreview/main.cjs)
 music-preview/
+
+# The test runner's logs of failing tests (prototype/tools/runtests.js)
+prototype/tools/.testlogs/

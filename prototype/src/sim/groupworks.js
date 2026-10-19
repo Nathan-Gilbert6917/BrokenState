@@ -114,7 +114,7 @@
 //   up: none of this changes them. tools/barestarttest.js.
 import { foodIn, takeFood } from "./foods.js"; // days of food (every kind)
 import { groupFetchedWater } from "./grouptrips.js"; // water carried in from the water a base holds (as your Fetch water)
-import { day } from "./world.js";
+import { day, skill } from "./world.js";
 import { MEAL_WORK_SHARE } from "./meals.js"; // their crews stop for breakfast, lunch and dinner too (21 of 24 hours)
 import { season, THIRST } from "./weather.js"; // summer water: the season and its thirst
 import { weightOf, medOf, workingPeople } from "./groupcare.js"; // the type profiles; the group's doctor (a clinic needs a good one)
@@ -620,8 +620,11 @@ export function groupTech(f) {
 }
 export const groupKnows = (state, f, id) => !!f && (!groupsBuild(state, f) || groupTech(f).known.includes(id));
 const lacks = (f, id) => { const T = groupTech(f); return !T.known.includes(id) && !T.held.includes(id); };
-// The group's best at a skill, coarse.
+// The group's best at a skill: its best person at home who is up to work (members.js; docs/adr/0001-ai-parity.md: the
+// people's own skills, as your base's best hand), else the old coarse figure by type (a group not yet people).
 export function groupSkill(f, sk) {
+  const people = f && Array.isArray(f.people) ? f.people.filter((s) => s.alive !== false && s.location && s.location.kind === "member" && s.location.partyId == null && (s.health ?? 100) >= 60) : [];
+  if (people.length) return Math.max(0, ...people.map((s) => skill(s, sk)));
   if (sk === "medicine") return medOf(f).doc;
   if (sk === "farming") return TECH.farm[f.type] ?? TECH.farm.dflt;
   return weightOf(f, "mechanic", 3);

@@ -11,6 +11,8 @@
 // deploy step, zone = the margin). Defenders deploy anywhere inside the ring (the walkway, the towers, the gates, the
 // yard, the buildings). The fight runs through its tiers on this one map (interior.js tierPlayerTurn): the wall until
 // enough attackers are inside, then the yard, then the last stand in the buildings. No fall back: it is all here.
+import { homeAt } from "./groupbases.js"; // their base as they built it
+import { factionById } from "./world.js";
 import { CELL, unitAt, say, resizeBattle, WEAPONS, coverAgainst, active, isRanged } from "./combat.js";
 import { buildInterior } from "./interior.js";
 import { DEPLOY, attackSide, fromTileOf, wallHp, gateHp } from "./deploy.js";
@@ -412,6 +414,14 @@ export function assaultBase(state, setup) {
   if (setup.fortBase) return setup.fortBase;
   const e = setup.enemy || {}, walls = e.walls || 0, people = (setup.context && setup.context.people) || e.count * 3 || 8;
   const tile = typeof setup.tile === "object" ? setup.tile.id : setup.tile;
+  // groupbases.js (docs/adr/0001-ai-parity.md): the base they actually built there, its own buildings (the same objects:
+  // what the fight breaks stays broken).
+  const f = e.factionId != null ? factionById(state, e.factionId) : null;
+  const h = f ? homeAt(state, f, tile) : null;
+  if (h && h.buildings.some((x) => x.type === "walls" && !x.broken)) {
+    setup.fortBase = { id: -1, tile, type: walls >= 5 || h.type === "hub" ? "hub" : "outpost", name: e.name || h.name, buildings: h.buildings.slice(), construction: [], armory: [], stock: { fuel: 0 }, radio: h.buildings.some((x) => x.type === "radio"), watchtower: h.buildings.some((x) => x.type === "watchtower"), group: f.id };
+    return setup.fortBase;
+  }
   const kinds = ["bunkhouse", "storehouse", "common_room", "infirmary", "garage", "bunkhouse", "cellar", "radio", "storehouse", "bunkhouse", "ammo_bench", "common_room"];
   const n = Math.max(2, Math.min(kinds.length, Math.round(people / 3)));
   // Their wall as one piece of the strength the old sections and free wall gave (buildings.js baseWalls reads str), so

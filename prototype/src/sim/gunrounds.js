@@ -165,7 +165,7 @@ let INDEX = { state: null, at: 0, map: new Map() };
 export function locate(state, item) {
   const now = Date.now();
   const hit = INDEX.state === state && now - INDEX.at < 250 ? INDEX.map.get(item) : undefined;
-  if (hit !== undefined && (hit === null || stillAt(state, hit, item))) return hit;
+  if (hit != null && stillAt(state, hit, item)) return hit; // a cached "nowhere" is never trusted: an item put somewhere since would be missed for a moment, and what happens would hang on how fast the machine runs
   const map = new Map();
   for (const s of state.survivors || []) if (s && s.alive && s.gear) for (const x of carriedSpots(s)) map.set(x.item, x.loc);
   for (const b of state.bases || []) (b.armory || []).forEach((it, i) => it && map.set(it, `armory:${b.id}:list:${i}`));

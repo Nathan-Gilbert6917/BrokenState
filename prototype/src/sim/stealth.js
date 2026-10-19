@@ -52,6 +52,7 @@ import { battleOptic } from "./optics.js";
 import { LIGHTS, lightOf } from "./lights.js"; // headlamps, flashlights, torches, lanterns, spotlights
 import { loadNoise } from "./ammo.js"; // a round's noise (subsonic, +P)
 import { RELOAD_FX } from "./data-ammo.js"; // black-powder handloads are louder (reloading.js)
+import { nightLight } from "./fighters.js"; // a light for someone made for this fight, at night
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3, // LIGHT_*: a flashlight's (each light's own: lights.js LIGHTS)
@@ -122,6 +123,9 @@ function storeOf(state, b) {
 export const isEmptyMag = (it) => !!(it && isMag(it) && (Array.isArray(it.stack) ? stackN(it.stack) === 0 : !!it.unloaded));
 export function throwablesOf(state, b, u) {
   const out = {};
+  // A person of any side not yours (fighters.js): what they carried into the fight, counted down as they throw
+  // (u.throwables; fighters.js spentThrows takes the thrown items off them after).
+  if (u && u.who && u.sid == null) { for (const [k, n] of Object.entries(u.throwables || {})) if (n > 0) out[k] = n; return out; }
   const s = u && u.sid != null ? survivorById(state, u.sid) : null;
   // One pass over the person and one over the store (a base armory can hold thousands of items; the bot asks this
   // several times a unit a turn).
@@ -130,6 +134,7 @@ export function throwablesOf(state, b, u) {
   return out;
 }
 function takeThrowable(state, b, u, key) {
+  if (u.who && u.sid == null) { if (!(u.throwables && u.throwables[key] > 0)) return false; u.throwables[key] -= 1; return true; } // throwablesOf
   const s = survivorById(state, u.sid);
   if (key === "emptymag") { // the first empty spare carried: thrown away (it lies where it lands; combat.js thrownBack after a win), the unit's magazines refit
     const x = s && s.gear ? carriedSpots(s).find((c) => ["pocket", "rig", "pack"].includes(c.where) && isEmptyMag(c.item)) : null;
@@ -165,8 +170,12 @@ export function stealthSetup(state, b) {
   const theirs = b.units.filter((u) => u.side !== "player" && !u.off);
   const ex = theirs.length ? theirs.reduce((a, u) => a + u.x, 0) / theirs.length : b.w / 2, ey = theirs.length ? theirs.reduce((a, u) => a + u.y, 0) / theirs.length : b.h / 2;
   for (const u of b.units) {
-    if (u.side === "player") {
-      const s = survivorById(state, u.sid);
+    // Yours, and every person of another side (fighters.js: docs/adr/0001-ai-parity.md): their lights, night vision,
+    // suppressor and sight from what they carry. The old units (the dead) by their kit.
+    const person = u.side === "player" ? survivorById(state, u.sid) : u.who || null;
+    if (person) {
+      const s = person;
+      if (u.side !== "player") nightLight(b, u); // fighters.js: someone made for this fight carries their kit's light
       const tool = s && s.gear.tool;
       const had = { light: u.light, nvg: u.nvg };
       setLight(u, s);
@@ -177,7 +186,11 @@ export function stealthSetup(state, b) {
       setSuppressor(u, s);
       u.daySight = u.sight; // refitSenses
       senses(b, u, s); // the night caps the sight (night vision too: 12 down the cone); optics.js: binoculars and scopes see further (by day; a thermal at night too)
-      if (!u.face) faceToward(u, Math.round(ex), Math.round(ey)); // vision.js: toward the enemy (the map's middle when none is placed)
+      if (u.side === "player") { if (!u.face) faceToward(u, Math.round(ex), Math.round(ey)); } // vision.js: toward the enemy (the map's middle when none is placed)
+      else {
+        if (!u.face) { if (b.raid && !u.aware) setFacing(u, Math.floor(hash01("post", u.id, b.hour, u.x, u.y) * 8) * Math.PI / 4); else faceToward(u, Math.round(cx), Math.round(cy)); }
+        if (u.light && !u.aware) u.lightOff = true; // ailights.js: a guard at his post keeps it off until he is alerted
+      }
     } else {
       // Toward your people; a raid's guards (unaware, at their posts) any way at all (their own dice).
       if (!u.face) {
@@ -288,7 +301,7 @@ export function isBehind(a, t) {
 const flatFooted = (t) => !t.aware || !!t.surprised;
 export const staggering = (t) => t.hp <= t.maxHp * STEALTH.STAGGER;
 // b: the battle, for the wall-corner check (combat.js cornerBlocked); the UI's quick checks may leave it out.
-export const canSubdue = (a, t, b = null) => !!a && !!t && t.side === "enemy" && t.kind === "human" && active(t) && adjacent(a, t) && !(b && cornerBlocked(b, a.x, a.y, t.x, t.y));
+export const canSubdue = (a, t, b = null) => !!a && !!t && t.side !== a.side && t.kind === "human" && active(t) && adjacent(a, t) && !(b && cornerBlocked(b, a.x, a.y, t.x, t.y));
 
 // Odds of Subdue against an adjacent human: a takedown (knock-out roll) on the unaware or staggering, else a
 // non-lethal blow. { takedown, chance, dmg, behind, cover, label }.
@@ -365,7 +378,7 @@ export function stealthAct(state, b, u, t, act) {
       return "";
     }
     case "tie": {
-      if (!t || t.side !== "enemy" || !heldDown(t) || t.dead || t.fled || !meleeReach(b, u, t)) return "Tie up someone knocked out, down or who has surrendered, right next to you (not across a wall's corner).";
+      if (!t || t.side === u.side || t.kind !== "human" || !heldDown(t) || t.dead || t.fled || !meleeReach(b, u, t)) return "Tie up someone knocked out, down or who has surrendered, right next to you (not across a wall's corner).";
       if (t.tied) return "Already tied up.";
       t.tied = true;
       // Handcuffs (data.js cuffs) on the unit: no action, and they stay on the prisoner.
@@ -526,8 +539,8 @@ function pull(b, lure, first = false) {
 }
 // A sound somewhere (a door being battered, buildingmaps.js): the unaware within earshot come to look (the dead already
 // after someone keep at it).
-export function noiseAt(b, x, y, radius, key = "noise") {
-  return pull(b, { x, y, radius, key, turns: 1, divert: false });
+export function noiseAt(b, x, y, radius, key = "noise", side = null) { // side: whose noise it is (their own side does not turn toward it)
+  return pull(b, { x, y, radius, key, turns: 1, divert: false, side });
 }
 const divertable = (b, e) => !b.units.some((p) => p.side === "player" && active(p) && dist(p.x, p.y, e.x, e.y) <= BMAP.DIVERT_NEAR && los(b, e.x, e.y, p.x, p.y));
 
@@ -648,16 +661,19 @@ export function botStealth(state, b, u, combatAct) {
 // ---------- the AI's attacks with throwables (combat.js autoPlayerTurn) ----------
 // One throw a turn for the whole side: a pipe bomb, else a Molotov, on three or more aware enemies bunched within
 // a tile of each other with none of yours close (throwables.js blastSpot). Returns true if the unit threw.
+// Once a turn for a side (b.throwTurn by side): your side's AI and theirs alike (docs/adr/0001-ai-parity.md: one brain).
+const threwThisTurn = (b, u) => !!(b.throwTurn && b.throwTurn[u.side] === b.turn);
+const markThrow = (b, u) => { (b.throwTurn || (b.throwTurn = {}))[u.side] = b.turn; };
 export function botAttackThrow(state, b, u) {
-  if (b.botAttackTurn === b.turn || !active(u) || u.ap < 1) return false;
+  if (threwThisTurn(b, u) || !active(u) || u.ap < 1) return false;
   const have = throwablesOf(state, b, u);
   const boss = u.side === "player" ? bossThrowTarget(b, u, have) : null; // combat.js: a boss's weak spot first (the Hivemind: fire, a bang)
-  if (boss) { b.botAttackTurn = b.turn; return !stealthAct(state, b, u, null, { type: "throw", item: boss.item, x: boss.x, y: boss.y }); }
+  if (boss) { markThrow(b, u); return !stealthAct(state, b, u, null, { type: "throw", item: boss.item, x: boss.x, y: boss.y }); }
   for (const key of ["frag", "pipebomb", "molotov"]) {
     if (!have[key]) continue;
     const spot = blastSpot(b, u, THROWABLES[key].range, key === "frag" ? FRAG.r : key === "pipebomb" ? BLAST.r : FIRE.r, { fire: key === "molotov" });
     if (!spot) continue;
-    b.botAttackTurn = b.turn;
+    markThrow(b, u);
     return !stealthAct(state, b, u, null, { type: "throw", item: key, x: spot.x, y: spot.y });
   }
   return botFlash(state, b, u);
@@ -666,11 +682,11 @@ export function botAttackThrow(state, b, u) {
 // the side, then the rest of the turn as usual (the stunned cannot watch the way in). aware: only people who know of
 // the fight count (the raid bot does not throw one into a room of sleepers). Returns true if the unit threw.
 export function botFlash(state, b, u, aware = false) {
-  if (b.botAttackTurn === b.turn || !active(u) || u.ap < 1) return false;
+  if (threwThisTurn(b, u) || !active(u) || u.ap < 1) return false;
   if (!throwablesOf(state, b, u).flashbang) return false;
   const spot = flashSpot(b, u, THROWABLES.flashbang.range, { need: 2, aware });
   if (!spot) return false;
-  b.botAttackTurn = b.turn;
+  markThrow(b, u);
   return !stealthAct(state, b, u, null, { type: "throw", item: "flashbang", x: spot.x, y: spot.y });
 }
 

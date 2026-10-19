@@ -42,6 +42,7 @@ import { raidEnemies } from "../src/sim/scavenge.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
 import { assaultForce, assaultOdds } from "../src/sim/conquest.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
+import { ensureMembers, syncMembers, membersOf } from "../src/sim/members.js";
 
 const SEED = Number(process.argv[2] || 7);
 let pass = 0, fail = 0;
@@ -633,9 +634,14 @@ section("Turrets: an LMG turret built round an LMG item; the M2 bolted to its mi
   // ai-locks (2026-10-11): your turret wants a Mechanics 6 hand; a group's mechanic stands in (raiders 3: never).
   const type0 = f.type;
   f.type = "raider";
+  // Their best mechanic is one of their people (groupworks.js groupSkill): a raider band's best is a 3.
+  ensureMembers(st, f); syncMembers(st, f);
+  const crew = membersOf(f).filter((s) => s.alive !== false);
+  for (const s of crew) s.skills.mechanics = Math.min(s.skills.mechanics || 0, 3);
   for (let i = 0; i < 400 && !fit; i++) { f.careTick = i; const r = fitUpgrade(st, f); if (r && r.key === "turret") fit = r; }
   check(!fit && f.arsenal.items.includes(glmg), "raiders (Mechanics 3) fit no turret (your Mechanics 6)");
   f.type = "military"; f.stock.scrap = 100; f.stock.parts = 50; f.partsMach = 0;
+  if (crew[0]) { crew[0].skills.mechanics = 6; crew[0].health = 100; } // the military's: a Mechanics 6 hand
   for (let i = 0; i < 400 && !fit; i++) { f.careTick = i; const r = fitUpgrade(st, f); if (r && r.key === "turret") fit = r; }
   const tt = fit && upgradesOf(fit.v).turret;
   check(tt && tt.gun === "lmg" && tt.item === glmg && !f.arsenal.items.includes(glmg) && f.stock.scrap < 100, `an AI group with a Mechanics 6 hand (the military) fits an LMG turret from its arsenal, paying scrap and parts (${tt ? `${tt.gun}, scrap ${f.stock.scrap}` : "none"})`);

@@ -41,6 +41,7 @@ import { DIPLO_ACTIONS, DIPLO_CHANGE } from "../src/ui/diplomacy.js";
 import { LISTEN_ACTIONS } from "../src/ui/radiolisten.js"; // main.js registers these in a loop (xp-listen, bl-listen)
 import { INTEL_ACTIONS, INTEL_CHANGE } from "../src/ui/intel.js"; // and these (radio security: discipline, decoys)
 import { VOL_ACTIONS, VOL_CHANGE } from "../src/ui/volunteers.js"; // and these (the radio panel's Ask for volunteers: vol-open)
+import { groupRounds } from "../src/sim/arsenal.js";
 
 const seed = Number(process.argv[2] || 42);
 const longDays = Number(process.argv[3] || 200);
@@ -485,11 +486,11 @@ function dealWorld(s) {
     check(h.stock.meds === meds + 6 && totalRounds(h.stock) === ammo - q.minPay && c.dealDone, `done: +6 meds, −${q.minPay} ammo`);
     endTrade(st);
     check(!st.trade && caravansAt(st, h.id).includes(c), "closing the window: the caravan stays");
-    const stock0 = f.stock.ammo;
+    const stock0 = groupRounds(f); // arsenal.js: their stores' rounds and what their people carry (the day's kit-out moves rounds between them)
     drive(st, () => c.leaving, 30);
     check(c.leaving && c.phase === "out", "after a day it leaves");
     const home = drive(st, () => !st.parties.includes(c), 24 * 40);
-    check(home && f.stock.ammo >= stock0 + q.minPay - 1, "home again, the payment goes into their stores");
+    check(home && groupRounds(f) >= stock0 + q.minPay - 1, `home again, the payment goes into their stores (${stock0} → ${groupRounds(f)} rounds)`);
   }
 }
 

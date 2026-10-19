@@ -13,7 +13,7 @@ import { generatorHeat } from "./power.js";
 import { resolveRaidOnFaction } from "./factions.js";
 import { hordeSpeedAt, riverFrozen } from "./weather.js";
 import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
-import { hordeAttackBase, hordeWarnings, towerWatch } from "./defences.js";
+import { hordeAttackBase, hordeWarnings, towerWatch, breakInForce, DEFENCE } from "./defences.js";
 import { hordeGrowth, rampDay } from "./eras.js";
 import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
@@ -204,8 +204,20 @@ function onHordeEnter(state, h) {
   if (base) return hordeAttackBase(state, h, base);
   const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));
   if (f) {
+    // Your base's way (defences.js hordeAttackBase; docs/adr/0001-ai-parity.md): the walls hold back the dead up to
+    // their limit (the base's defence against the horde's weight on them); the rest break in and are fought inside,
+    // a break-in force of yours (breakInForce), by the numbers on both sides' people (factions.js, groupfight.js).
     const att = hordeWallPower(h), def = baseHold(state, f, h.tile);
-    const held = resolveRaidOnFaction(state, { strength: att, owner: null, target: { factionId: f.id, tile: h.tile } }, []);
+    let held;
+    if (att <= def) {
+      held = true; // the walls held
+      f.hitDay = f.hordeHitDay = day(state);
+    } else {
+      const lim = (h.size * def) / Math.max(0.01, att); // the dead the walls stop
+      const through = Math.min(h.size, Math.max(Math.round(h.size * 0.3), Math.round(h.size - lim * DEFENCE.HELD_BACK)));
+      const force = breakInForce(state, { tile: h.tile }, through, Math.min(2, h.bosses || 0), h);
+      held = !!resolveRaidOnFaction(state, { strength: att, owner: null, horde: { count: force.count, power: force.count * force.power }, target: { factionId: f.id, tile: h.tile } }, []);
+    }
     if (h.role === "attack") { h.role = "roam"; h.goal = null; }
     h.target = null;
     reduceHorde(state, h, h.size - h.size * (held ? 0.45 : 0.7));

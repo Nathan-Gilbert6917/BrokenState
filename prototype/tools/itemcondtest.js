@@ -64,6 +64,11 @@ import { gunsFrom, bodyGunSource, GUN_DIST } from "../src/sim/gundist.js"; // th
 import { PART_FINDS } from "../src/sim/data-gunmods.js"; // the parts catalogue's finds (partfinds.js, its own dice)
 import { partPool } from "../src/sim/partfinds.js";
 
+// A shelf's stock as the generator makes it (trade.js ensureWares): a group that lives here is stocked once and then
+// trades only what it owns (docs/adr/0001-ai-parity.md), so the generator is sampled the way a visitor's shelf is made.
+const restock = (state, f) => { const o = f.outsider; f.outsider = true; try { return ensureWares(state, f, true); } finally { f.outsider = o; } };
+
+
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const section = (t) => console.log(`\n${t}`);
@@ -177,7 +182,7 @@ st.started = true;
   st.hour = 0;
   sampleCheck("site finds (small finds, hunting, lights, gun parts)", items);
 }
-{ const items = []; for (let w = 0; w < 20; w++) for (const f of st.factions) { st.hour = w * 168; items.push(...ensureWares(st, f, true)); } st.hour = 0; sampleCheck("group traders' wares", items); }
+{ const items = []; for (let w = 0; w < 20; w++) for (const f of st.factions) { st.hour = w * 168; items.push(...restock(st, f)); } st.hour = 0; sampleCheck("group traders' wares", items); }
 {
   const items = [];
   for (let i = 0; i < 80; i++) for (const kind of ["merchants", "explorers"]) { const v = V.spawnVisitor(st, kind); if (v) items.push(...v.wares); st.visitors.length = 0; }
@@ -233,14 +238,14 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const f = st.factions.find((x) => x.type === type) || { ...st.factions[0], type, name: `test ${type}`, wares: null };
     const was = f.type; f.type = type;
     const its = [];
-    for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...ensureWares(st, f, true)); }
+    for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...restock(st, f)); }
     f.type = was;
     within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...Object.keys((WARE_SURV[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type]))])); // partfinds.js partWares: the catalogue's parts by the shelf's tags
   }
   st.hour = 0;
   const com = [];
   const cf = { ...st.factions[0], type: "commune", name: "Greenhollow test", wares: null };
-  for (let w = 0; w < 60; w++) { st.hour = w * 168; com.push(...ensureWares(st, cf, true)); }
+  for (let w = 0; w < 60; w++) { st.hour = w * 168; com.push(...restock(st, cf)); }
   st.hour = 0;
   check(com.some((it) => ["fishrod", "fishnet", "snarewire", "lantern", "honey", "tobacco"].includes(it.key)), "a farming commune sells the tools of the land now and then");
 }
@@ -339,7 +344,7 @@ const truckHooks = takeHooks(/truckflash|formFinds/); // and the boxed and bulk 
 {
   const rng = new Rng(9001);
   const ks = [];
-  const NEW_KITS = ["escorts", "contractors", "looters", "survivalists", "preppers"]; // added after the baseline (escorts.js: merchant caravans' guards; nomads.js: the nomad tiers)
+  const NEW_KITS = ["escorts", "contractors", "looters", "survivalists", "preppers", "drifters"]; // added after the baseline (escorts.js: merchant caravans' guards; nomads.js: the nomad tiers)
   // A carrier's empty pouches (contents []) are no items: stowing a thing first looks for a stack to merge onto in the
   // rig's pouches (inventory.js mergeOnto -> rigPouches makes the list), which the baseline's carriers never had.
   const bodyKeys = (items) => keysOf(items.map((it) => (it && it.contents && GEAR[it.key] && GEAR[it.key].pouches && !it.contents.some(Boolean) ? { key: it.key } : it)));
@@ -433,7 +438,7 @@ KIT_LOOT.on = false; // the carry kit's finds and wares (carrykit.js SITE_KIT / 
   WARE_EXTRAS.commune.p = 0; // the commune's extras are new (their own dice): without them the stock is what it was
   const gk = [];
   const r0 = w.rng.state;
-  for (let wk = 0; wk < 30; wk++) for (const f of w.factions) { w.hour = wk * 24 * 7; gk.push(f.type + ":" + keysOf(ensureWares(w, f, true))); }
+  for (let wk = 0; wk < 30; wk++) for (const f of w.factions) { w.hour = wk * 24 * 7; gk.push(f.type + ":" + keysOf(restock(w, f))); }
   WARE_EXTRAS.commune.p = p0;
   check(h16(gk.join("|")) === BASE.groupWares.keys, "group wares: the same kinds (less the commune's new extras)");
   check(w.rng.state - r0 === BASE.groupWares.rng, "group wares: the world's dice end where they did");
@@ -486,7 +491,7 @@ section("5. Merchants' specialities");
 section("6. Prices fall with condition");
 {
   const f = st.factions.find((x) => x.type === "traders") || st.factions[0];
-  ensureWares(st, f, true);
+  restock(st, f);
   const fine = newItem("ar", 1), worn = newItem("ar", 0.6), used = newItem("ar", 1);
   used.dur = Math.round(GEAR.ar.dur * 0.2);
   check(itemValue(worn) < itemValue(fine) && itemValue(used) < itemValue(fine), `worth: fine ${itemValue(fine).toFixed(1)}, worn ${itemValue(worn).toFixed(1)}, nearly worn out ${itemValue(used).toFixed(1)}`);

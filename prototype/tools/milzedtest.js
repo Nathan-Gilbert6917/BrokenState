@@ -246,6 +246,21 @@ function raidAt(state, tile, opts = {}) {
   const setup = { mode: "raid", tile, partyId: p.id, canRetreat: true, ambush: null, handler: "milz", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: 5 }, context: {} };
   state.combat = createBattle(state, setup);
   const b = state.combat;
+  // The ordinary-dead arm: the Army trucks on a military raid map have their turned crews standing round them
+  // (combat.js truckCrews, miltrucks.js MILTRUCK.AROUND dead soldiers each), whatever the site's mix says. Without
+  // this, "ordinary dead only" still had about 10 dead soldiers a raid (more than the mix gives), and the dead the bot
+  // kills near the trucks are those crews in both arms alike: the armour on the bodies came out identical (0.76 vs
+  // 0.76, then 0.88 vs 0.88). So the crews stand there as ordinary dead too, same place, same id, same power as
+  // truckCrews gives them. (A crew still strapped in a cab that tears free when a cargo bed is opened mid-raid,
+  // truckCrewRises, stays a soldier: rare, and in both arms.)
+  if (opts.noMix) {
+    const power = 2 + (b.infection || 0) * 3;
+    b.units = b.units.map((u) => {
+      if (u.kind !== "zombie" || !u.ztype || !ARMORED.includes(u.ztype)) return u;
+      const z = enemyUnit(b, b.rng, "zombies", power, 0);
+      return Object.assign(z, { id: u.id, name: u.name, x: u.x, y: u.y, f: u.f, aware: u.aware, pod: u.pod, home: u.home });
+    });
+  }
   const start = { soldiers: b.units.filter((u) => u.ztype === "soldier").length, dead: b.units.filter((u) => u.kind === "zombie").length };
   let guard = 0;
   while (!b.over && guard++ < 200) { autoPlayerTurn(state); runEnemyPhase(state); }

@@ -20,7 +20,6 @@ import {
 } from "../src/sim/reloading.js";
 import { roundsIn, withHand, isHandKey, factoryKey, takeRounds } from "../src/sim/rounds.js";
 import { nextHand, takeBattleRounds, roundsOf, packRounds, unbox } from "../src/sim/ammo.js";
-import { stackOf, topKey, pushTop, syncGun } from "../src/sim/roundstack.js";
 import { createBattle, registerCombatHandler, fire, endBattleNow, shotOdds } from "../src/sim/combat.js";
 import { jamChance, ammoJam, noteJamWeather, JAM } from "../src/sim/gunfire.js";
 import { shotNoise } from "../src/sim/stealth.js";
@@ -29,6 +28,8 @@ import { rollSiteReload, rollAreaReload, SITE_RELOAD, ITEM_TAGS } from "../src/s
 import { condRolled } from "../src/sim/itemcond.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { governBase } from "../src/sim/autopilot.js";
+import { peopleUp } from "../src/sim/factions.js";
+import { totalRounds } from "../src/sim/ammo.js";
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -299,12 +300,12 @@ function openBattle(st, crew, stock) {
   const st = W();
   st.handloads = { a_9mm_fmj_hand: { hq: 0.75, bp: 0, mp: 0, lo: 1 } };
   const s = fighter(st, "pistol");
-  const b = openBattle(st, [s], { a_9mm_fmj: 3, a_9mm_fmj_hand: 50 });
+  const b = openBattle(st, [s], {});
   const u = b.units.find((x) => x.sid === s.id);
   u.load = "fmj";
-  // Physical rounds (mags.js, 2026-10-18): the fight's start fills the gun from the team's bags, and the gun counts what
-  // is in it (a Reload never digs in the bags): the 3 factory rounds on top, then 12 handloads.
-  check(roundsOf(b, u) === 15 && stackOf(u.stack, "a_9mm_fmj") === 3 && stackOf(u.stack, "a_9mm_fmj_hand") === 12 && topKey(u.stack) === "a_9mm_fmj" && nextHand(b, u) === null, "a gun counts its type's handloads too; the factory rounds go first");
+  // Physical rounds (mags.js): what is in the gun, in the order it fires: 3 factory rounds on top of 12 handloads.
+  u.stack = [{ k: "a_9mm_fmj", n: 3 }, { k: "a_9mm_fmj_hand", n: 12 }]; u.mag = 15;
+  check(roundsOf(b, u) === 15 && nextHand(b, u) === null, "a gun counts its type's handloads too; the factory rounds go first");
   noteJamWeather(st, b);
   check(b.handQ && b.handQ.a_9mm_fmj_hand && b.handQ.a_9mm_fmj_hand.hq === 0.75 && u.loadCond !== "hand", "the battle notes the colony's makes; a factory round next: no marks");
   const fac = jamChance(b, u);
@@ -327,12 +328,11 @@ function openBattle(st, crew, stock) {
   u.loadBp = 1;
   check(Math.abs(shotNoise(b, u, { noise: 3 }) - n0 - RELOAD_FX.BLACK_NOISE) < 1e-9, "black powder: a shot 1 louder");
   u.loadBp = 0;
-  // Back to factory rounds: the marks go (physical rounds: the chamber's round decides, so a factory round goes on top).
-  pushTop(u.stack, "a_9mm_fmj", 1); syncGun(u, "9mm");
+  // Back to factory rounds: the marks go.
+  u.stack = [{ k: "a_9mm_fmj", n: 10 }]; u.mag = 10;
   noteHandLoad(b, u);
   check(u.loadCond === "factory" && u.loadHq == null && !u.loadAim, "a factory round again: the marks are cleared");
-  // A test's "old" rounds are left alone (a gun with no stack: a factory round next in the bags).
-  b.pools[0].a_9mm_fmj = 10;
+  // A test's "old" rounds are left alone.
   const v = { side: "player", weapon: "pistol", load: "fmj", loadCond: "old", boxes: [] };
   noteHandLoad(b, v);
   check(v.loadCond === "old", "other rounds' marks are not touched");
@@ -349,7 +349,7 @@ function openBattle(st, crew, stock) {
     for (const x of b.units) if (x.side === "enemy" && x !== e) { x.dead = true; x.x = -10; x.y = -10; }
     e.x = u.x + 3; e.y = u.y; e.aware = true;
     let fired = 0;
-    for (let i = 0; i < shots; i++) { e.hp = e.maxHp = 100000; e.dead = false; e.down = false; u.ap = 2; u.jam = null; u.cd = 0; const before = b.ammoUsed; fire(b, u, e); fired += b.ammoUsed - before; if (u.mag != null && u.mag < 2) { u.stack = null; u.mag = u.magMax; } } // (physical rounds, mags.js: a stack is never filled from nothing; refilled plainly)
+    for (let i = 0; i < shots; i++) { e.hp = e.maxHp = 100000; e.dead = false; e.down = false; u.ap = 2; u.jam = null; u.cd = 0; const before = b.ammoUsed; fire(b, u, e); fired += b.ammoUsed - before; if (u.mag != null && u.mag < 2) { if (Array.isArray(u.stack)) u.stack = [{ k: cal, n: u.magMax }]; u.mag = u.magMax; } } // physical rounds (mags.js): the gun filled again by hand
     if (outcome === "victory") for (const x of b.units) if (x.side === "enemy") { x.dead = true; }
     const h = hub(st);
     const b0 = num(h.stock.brass);
@@ -456,10 +456,12 @@ function openBattle(st, crew, stock) {
   groupBrass(f, 100);
   check(f.stock.brass === 30, "their fights leave them brass (30% of the rounds spent)");
   Object.assign(f.stock, { brass: 500, powder: 1000, primers: 500, scrap: 50, ammo: 10 });
-  const a0 = f.stock.ammo;
-  check(groupReloadDaily(st, f, false) === 0 && f.stock.ammo === a0, "no workshop: no reloading");
+  peopleUp(st, f); // members.js: their people (the operator is the best Mechanics at home)
+  for (const p of f.people) p.skills.mechanics = Math.max(p.skills.mechanics || 0, 4);
+  const a0 = totalRounds(f.stock);
+  check(groupReloadDaily(st, f, false) === 0 && totalRounds(f.stock) === a0, "no workshop: no reloading");
   const n = groupReloadDaily(st, f, true);
-  check(n === Math.floor(Math.min(RELOAD.GROUP.max, f.pop * RELOAD.GROUP.perHead)) && f.stock.ammo === a0 + n && f.stock.brass === 500 - n && f.stock.primers === 500 - n, `with a workshop: ${n} rounds into their ammo count, brass and primers used`);
+  check(n > 0 && totalRounds(f.stock) === a0 + n && f.stock.brass === 500 - n && f.stock.primers === 500 - n, `with a workshop: ${n} rounds by calibre (your bench's runReload), brass and primers used`);
   Object.assign(f.stock, { brass: 500, powder: 0, primers: 0 });
   check(groupReloadDaily(st, f, true) === 0 || f.reloadDeal != null, "no powder or primers: none (unless bought)");
   // Buying from a trading or military group.
@@ -574,9 +576,10 @@ function openBattle(st, crew, stock) {
   const f = st.factions.find((x) => x.alive && !x.outsider && x.type === "military") || st.factions.find((x) => x.alive && !x.outsider);
   f.type = "military";
   f.arsenal = { items: [newItem("pistol"), newItem("shotgun")] };
-  Object.assign(f.stock, { brass: 0, powder: 0, primers: 0, ammo: 2000 });
+  for (const k of Object.keys(f.stock)) if (/^a_/.test(k)) delete f.stock[k];
+  Object.assign(f.stock, { brass: 0, powder: 0, primers: 0, ammo: 0, a_556_fmj: 1000, a_308_fmj: 1000 }); // rounds by calibre (docs/adr/0001-ai-parity.md)
   const pn = groupPull(st, f);
-  check(pn > 0 && f.stock.ammo === 2000 - pn && f.stock.brass === pn && f.stock.powder > pn && f.stock.primers === Math.floor(pn * RELOAD.PULL.PRIMER), `a military group with only pistols and shotguns pulls ${pn} of its 5.56 and .308 into ${f.stock.brass} brass, ${f.stock.powder} powder, ${f.stock.primers} primers`);
+  check(pn > 0 && f.stock.a_556_fmj + f.stock.a_308_fmj === 2000 - pn && f.stock.brass === pn && f.stock.powder > pn && f.stock.primers === Math.floor(pn * RELOAD.PULL.PRIMER), `a military group with only pistols and shotguns pulls ${pn} of its 5.56 and .308 into ${f.stock.brass} brass, ${f.stock.powder} powder, ${f.stock.primers} primers`);
   f.arsenal = { items: [newItem("pistol"), newItem("shotgun"), newItem("ar"), newItem("huntrifle"), newItem("ak"), newItem("pistol45")] };
   Object.assign(f.stock, { brass: 0 });
   const few = groupPull(st, f);

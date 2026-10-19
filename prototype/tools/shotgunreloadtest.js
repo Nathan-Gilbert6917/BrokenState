@@ -29,6 +29,7 @@ import { createBattle, combatAct, registerCombatHandler, runEnemyPhase, autoPlay
 import { newItem, packOf, rigPouches } from "../src/sim/inventory.js";
 import { SHELLS, MAGS, shellsAt, shellRange, shellPlan, reloadText, reloadPlan, enemyMags, saddleHold } from "../src/sim/mags.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
+import { refitPerson } from "../src/sim/fighters.js";
 import { fitMod } from "../src/sim/gunmods.js";
 import { totalRounds } from "../src/sim/ammo.js";
 
@@ -266,31 +267,45 @@ const range = (xs) => `${Math.min(...xs)}–${Math.max(...xs)}`;
   check(combatAct(st, { type: "reload", unit: ux.id }) === "" && ux.mag === 8 && ux.ap === 0 && xBox.dur === SHELLS.CARRY - 16 && logHas(b, /racks in 2 12 gauge 00 buckshot from a pocket \(8\/8\)\.$/), `then 2 (8/8), ${xBox.dur} in the pocket`);
 }
 
-// 5. The AI's shotguns: enemies by the old rule (the extra action spent when the bag is all there is), yours straight
-// out of the pack.
+// 5. The AI's shotguns: an enemy is a person (fighters.js) and reloads by your rule, from what they carry: 6 a Reload
+// from a pocket (1 action), the pack both actions, never a loose counter.
 {
   console.log("AI parity");
   const st = createWorld({ seed: seed + 5, factionCount: 4 });
   const a = fighter(st, "pistol");
   const b = openBattle(st, [a], 200, { kind: "raiders", count: 2, power: 3 });
   const e = foes(b)[0];
-  e.weapon = "shotgun"; e.weaponName = "Pump shotgun"; e.item = null; e.arsItem = null; e.modItems = null;
-  enemyMags(e, 6, 0, false);
-  loadMag(e);
-  check(e.magMode === "internal" && e.hand && e.hand.buck === SHELLS.START_HAND, `an enemy's pump: a tube, ${SHELLS.START_HAND} loose shells at hand`);
-  const steady = e.aim >= SHELLS.STEADY_AIM;
-  const ce = counts(b, e, 30);
-  check(ce.every((n) => n >= (steady ? 3 : 2) && n <= (steady ? 4 : 3)), `an enemy (aim ${Math.round(e.aim)}): ${steady ? "3–4" : "2–3"} shells a Reload (${range(ce)})`);
-  e.hand = { buck: 0 }; loadMag(e, 0); e.ap = 2;
-  reload(b, e);
-  check(e.mag >= 2 && e.ap === 0 && logHas(b, /racks in \d shells out of a bag \(\d\/6, both actions\)/), `none at hand: the enemy's own Reload digs shells straight out of a bag, both actions (${e.mag})`);
-  // The enemy AI prefers a handful out of the bag (1 action) and a Reload from it (1 action): more at hand for the next.
-  e.hand = { buck: 0 }; loadMag(e, 0);
-  endPlayerTurn(st);
-  let n = 0;
-  while (b.phase === "enemy" && n++ < 20) enemyStep(st);
-  check(logHas(b, /digs 8 shells out of a bag \(8 at hand\)/) && e.mag >= 2, `the enemy AI with none at hand: digs a handful out of a bag (1 action), then loads from it (${e.mag}/6)`);
-  b.phase = "player";
+  const P = e.who;
+  check(!!P, "an enemy is a person with what they carry");
+  if (P) {
+    P.gear.weapon = newItem("shotgun"); P.gear.backpack = null; P.gear.rig = null;
+    P.pockets = P.pockets.map(() => null);
+    P.pockets[0] = newBox("a_12ga_buck", 20);
+    refitPerson(b, e);
+    e.x = 14; e.y = 6; e.dead = false; e.aware = true;
+    check(e.magMode === "internal" && e.mag === 6 && !e.hand, `an enemy's pump: a tube, loaded at the start out of their own pocket (${e.mag}/6), no loose counter`);
+    loadMag(e, 0); e.ap = 2;
+    const pe = reloadPlan(b, e);
+    check(pe.mode === "rounds" && pe.runs.length && pe.runs[0].where === "pocket" && pe.cost === 1 && pe.n === Math.min(MAGS.LOOSE, 6), `the enemy's Reload is yours: ${pe.n} shells from a pocket for ${pe.cost} action`);
+    reload(b, e);
+    check(e.mag === Math.min(MAGS.LOOSE, 6), `the shells went in (${e.mag}/6)`);
+    // None in a pocket, a box in the pack: both actions, as for yours.
+    P.gear.backpack = newItem("backpack");
+    const box = P.pockets.find((x) => x && x.key === "a_12ga_buck") || newBox("a_12ga_buck", 10);
+    P.pockets = P.pockets.map(() => null);
+    packOf(P)[0] = box;
+    refitPerson(b, e);
+    loadMag(e, 0); e.ap = 2;
+    const pp = reloadPlan(b, e);
+    check(pp.from === "pack" && pp.cost === 2, `none at hand: from the pack, both actions (${pp.from}, ${pp.cost})`);
+    // The enemy AI: the same Reload in its turn.
+    loadMag(e, 0); e.x = 14; e.y = 6;
+    endPlayerTurn(st);
+    let n = 0;
+    while (b.phase === "enemy" && n++ < 20) enemyStep(st);
+    check(e.dead || e.mag >= 1, `the enemy AI reloads out of its own pack (${e.mag}/6)`);
+    b.phase = "player";
+  }
   // Fights played by the AI: your side's shotguns out of the pocket's box, theirs out of the handful and the bag.
   const st2 = createWorld({ seed: seed + 6, factionCount: 4 });
   const crew = [fighter(st2, "shotgun", 5), fighter(st2, "shotgun", 7), fighter(st2, "dbshotgun", 4)];

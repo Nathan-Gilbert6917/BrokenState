@@ -347,7 +347,7 @@ function warDay(state, w) {
   // Weariness.
   let e = PW.EXH_DAY;
   if (foodIn(f.stock) < f.pop * 2) e += PW.EXH_HUNGRY;
-  if ((f.stock.ammo || 0) < f.pop * 3) e += PW.EXH_HUNGRY / 2;
+  if (totalRounds(f.stock) < f.pop * 3) e += PW.EXH_HUNGRY / 2;
   const des = (f.deserted || 0) - (w.deserted || 0);
   if (des > 0) e += des * PW.EXH_DESERT;
   w.deserted = f.deserted || 0;

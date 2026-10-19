@@ -475,7 +475,7 @@ section("Raiders' siege kit by preparedness (eras.js), the warning card, the bat
   globalThis.window = {};
   try { defendInPerson(st, raid); } finally { delete globalThis.window; }
   const b = st.combat;
-  const ladders = b.units.filter((u) => u.ladder > 0).length, gren = b.units.filter((u) => u.throwables).reduce((a, u) => a + Object.values(u.throwables).reduce((x, n) => x + n, 0), 0);
+  const ladders = b.units.filter((u) => u.ladder > 0).length, gren = b.units.filter((u) => u.throwables).reduce((a, u) => a + Object.entries(u.throwables).reduce((x, [k, n]) => x + n - ((u.throwStart || {})[k] || 0), 0), 0); // the siege kit's (siege.js), over what each brought of their own (fighters.js fitThrowables)
   check(b && b.setup.enemy.siege && b.rams.length === 1 && ladders === 2 && gren === 2, `defended in person: the ram with a crew of ${b.rams[0] && b.rams[0].crew.length}, ${ladders} ladder carriers, ${gren} pipe bombs among the raiders`);
   st.combat = null;
   st.parties.splice(st.parties.indexOf(raid), 1);

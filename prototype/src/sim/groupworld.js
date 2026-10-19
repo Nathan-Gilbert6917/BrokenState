@@ -445,10 +445,13 @@ function worksOfBuildings(list) {
   return works;
 }
 // A group's base its people left (it died out): the works stay, and some of the stores.
-export function leaveGroupBase(state, f, tile, share) {
+// left: the stores at that base (groupbases.js: its own, the group's other bases keep theirs); without it, `share` of
+// the group's (an old caller).
+export function leaveGroupBase(state, f, tile, share, left = null) {
   if (abandonedAt(state, tile) || state.bases.some((b) => b.tile === tile) || state.factions.some((o) => o.alive && o.bases.includes(tile))) return null;
   const stock = {};
-  for (const [k, q] of Object.entries(f.stock || {})) if (q > 0 && SUPPLIES[k]) stock[k] = Math.floor(q * share * ABANDON.STOCK);
+  if (left) { for (const [k, q] of Object.entries(left)) if (q > 0 && SUPPLIES[k]) stock[k] = Math.floor(q * ABANDON.STOCK); }
+  else for (const [k, q] of Object.entries(f.stock || {})) if (q > 0 && SUPPLIES[k]) stock[k] = Math.floor(q * share * ABANDON.STOCK);
   const rec = { tile, from: f.id, fromName: f.name, works: { ...((f.works && f.works[tile]) || {}) }, stock, day: day(state) };
   abandonedList(state).push(rec);
   return rec;

@@ -66,12 +66,15 @@ import { atWarWithYou, PW } from "./playerwars.js"; // wars with you: your convo
 import { caravanGuarded } from "./jobs.js";
 import { inCoverage } from "./radio.js";
 import { chronicleNote } from "./chronicle.js";
-import { WARES_MAX } from "./trade.js";
 import { escortWords, escortShort, guardGear, ESCORT_VEHICLES, cargoValue } from "./escorts.js";
-import { addToArsenal, removeFromArsenal, partyLost, issueKit } from "./arsenal.js"; // group arsenals: loot to their fighters, guards' kit lost
+import { addToArsenal, keepItem, removeFromArsenal, partyLost, issueKit } from "./arsenal.js"; // group arsenals: loot to their fighters, guards' kit lost
 import { noteFight } from "./groupcare.js";
 import { teamName } from "./parties.js";
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your convoy's route waits for it
+import { note, roundsIn, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
+import { isWounded } from "./members.js"; // the fit go out on a robbery
+const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const pct = (c) => `${Math.round(c * 100)}%`;
@@ -574,16 +577,19 @@ export function aiRaidsHour(state) {
 export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, strength = c.strength) {
   const st = (state.stats.caravanRaids = state.stats.caravanRaids || { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
   st.byGroups++;
-  const fi = state.factions.indexOf(f);
-  const win = hash01(state.seed, "cvwin", state.hour, c.key, fi) < clamp(0.5 + (band / Math.max(1, strength) - 1) * 0.6, 0.05, 0.95);
+  // groupfight.js: their band (the fittest of them at home, as many as the band's strength holds) against the
+  // caravan's guards by its strength, by your by-the-numbers rules; the band's wounds and dead are their very people.
+  const A = fightersOf(state, f, { tile: f.bases[0] }).filter((s) => !isWounded(s)); // the fit go out (members.js sendMembers: as a party is picked)
+  const per = A.length ? A.reduce((a, s) => a + combatPower(s), 0) / A.length : 1;
+  const crew = A.slice(0, Math.max(1, Math.round(band / Math.max(0.5, per))));
+  const fight = fightSides(state, { f, people: crew, kind: KIND_OF[f.type] || "raiders" }, { f: null, people: [], kind: c.type === "merchants" ? "guards" : "militia", count: Math.max(1, Math.round(strength / 3)), power: Math.max(1, strength) });
+  const win = fight.attWon;
   const seen = state.live.has(c.tile) || inCoverage(state, c.tile);
   const who = f.known ? f.name : "Raiders";
   const where = tileLabel(state, c.tile);
   c.ref.raidedAt = state.hour;
+  applySide(state, f, fight.rA, crew, { holder: win ? f : null, captor: null }); // beaten off, their dead's kit stays with the caravan's guards
   if (!win) {
-    const lost = Math.min(f.pop, 1 + Math.floor(hash01(state.seed, "cvloss", state.hour, c.key) * 2));
-    partyLost(state, f, lost); // arsenal.js: beaten off, their dead's kit stays with the caravan's guards
-    f.pop = Math.max(0, f.pop - lost);
     if (c.type === "merchants") { c.ref.size = Math.max(1, c.ref.size - 1); c.ref.guards = Math.max(0, (c.ref.guards || 0) - 1); }
     if (c.owner === "player") log(state, `Your convoy near ${where} beat off ${who}.`, "good");
     else if (seen) log(state, `The guards of ${c.name} beat off ${who} near ${where}.`, "info");
@@ -591,11 +597,12 @@ export function groupRobs(state, f, c, band = groupStrength(f) * AI_RAID.BAND, s
   }
   st.groupsWon++;
   const goods = goodsOf(c);
+  if (c.owner === "player") note(state, "taken from you", roundsIn(goods.supplies) + goodsRounds(goods.gear)); // ledger.js (a test switch)
   const took = takeInto(f, goods, state);
   if (c.type !== "merchants" && c.owner !== "player") escortLost(state, factionById(state, c.owner), c.ref, f);
   if (c.type === "merchants") {
     const v = c.ref;
-    f.pop = Math.max(0, f.pop - Math.ceil((v.guards || 0) * 0.25));
+    // (their own losses in the fight are on their people already: groupfight.js applySide)
     visitorInfo(state).stats.robbed++;
     if (seen || v.known) log(state, `${who} fell on ${v.name} near ${where} and took everything they carried.`, "danger");
     chronicleNote(state, `${who} plundered ${v.name}, merchants from outside, near ${where}.`, "world", c.tile);
@@ -623,8 +630,7 @@ export function takeInto(f, goods, state = null) {
   }
   const items = (goods.gear || []).splice(0);
   // arsenal.js: guns, armour and explosives go to their fighters; the rest on their shelf.
-  const shelf = state ? items.filter((it) => !addToArsenal(state, f, it, "stolen")) : items;
-  if (shelf.length) f.wares = [...(f.wares || []), ...shelf].slice(-WARES_MAX);
+  for (const it of items) { if (state) keepItem(state, f, it, "stolen"); else (f.wares || (f.wares = [])).push(it); } // arsenal.js: nothing lost off the end of a shelf
   if (f.lootedGear) for (const it of items) f.lootedGear.push(it.name);
   return [planText(got), ...items.map((it) => it.name)].filter(Boolean).join(", ");
 }
@@ -635,15 +641,24 @@ export function gangAmbush(state, r, q) {
   const band = groupStrength(r) * AI_RAID.BAND;
   const st = (state.stats.caravanRaids = state.stats.caravanRaids || { byYou: 0, won: 0, seen: 0, unseen: 0, byGroups: 0, groupsWon: 0, convoysLost: 0 });
   st.byGroups++;
-  const win = hash01(state.seed, "cvamb", state.hour, c.key, state.factions.indexOf(r)) < clamp(0.5 + (band / Math.max(1, c.strength) - 1) * 0.6, 0.05, 0.95);
+  // groupfight.js: the gang (the fittest at home, as many as its band) against the caravan's own people (members.js:
+  // the party's), by your by-the-numbers rules on both sides.
+  const owner = factionById(state, q.owner);
+  const A = fightersOf(state, r, { tile: r.bases[0] });
+  const per = A.length ? A.reduce((a, s) => a + combatPower(s), 0) / A.length : 1;
+  const crew = A.slice(0, Math.max(1, Math.round(band / Math.max(0.5, per))));
+  const D = owner ? fightersOf(state, owner, { party: q }) : [];
+  const fight = fightSides(state, { f: r, people: crew, kind: KIND_OF[r.type] || "raiders" }, { f: owner, people: D, kind: owner ? KIND_OF[owner.type] || "militia" : "militia", count: Math.max(1, D.length), power: D.length ? 0 : c.strength });
+  const win = fight.attWon;
+  applySide(state, r, fight.rA, crew, { holder: win ? r : owner, captor: owner });
+  if (owner) applySide(state, owner, fight.rD, D, { holder: win ? r : owner, captor: r });
   if (!win) {
     q.strength = (q.strength || 2) * 0.8;
-    r.pop = Math.max(0, r.pop - 1);
     return false;
   }
   st.groupsWon++;
   takeInto(r, goodsOf(c), state);
-  escortLost(state, factionById(state, q.owner), q, r); // arsenal.js: the guards' dead and their kit
+  if (!D.length) escortLost(state, owner, q, r); // arsenal.js: a caravan not yet people: the guards' dead and their kit by the numbers
   loseGroupVehicle(state, q);
   return true;
 }

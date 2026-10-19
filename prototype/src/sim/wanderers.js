@@ -291,7 +291,7 @@ export function siteWanderers(state, tileId) {
     if (r.kind === "neutral") {
       const g = groupById(state, r.wid);
       if (!g || !g.people.length) continue;
-      out.push({ kind: "survivors", side: "neutral", count: g.people.length, power: W.NEUTRAL_POWER, name: g.people.length === 1 ? g.people[0].name.split(" ")[0] : "the survivors hiding here", wid: g.wid, people: g.people.map((s) => ({ name: s.name, weapon: s.gear.weapon ? s.gear.weapon.key : "fists", hp: s.health })) });
+      out.push({ kind: "survivors", side: "neutral", count: g.people.length, power: W.NEUTRAL_POWER, name: g.people.length === 1 ? g.people[0].name.split(" ")[0] : "the survivors hiding here", wid: g.wid, people: g.people.map((s) => ({ name: s.name, weapon: s.gear.weapon ? s.gear.weapon.key : "fists", hp: s.health, s })) });
     } else if (r.kind === "hostile") {
       out.push({ kind: "survivors", count: r.n, power: W.HOSTILE_POWER, name: "armed survivors", guard: true, wanderer: "hostile" });
     } else {
@@ -319,7 +319,7 @@ export function interiorOccupants(state, tile, plan) {
   return siteWanderers(state, tileId).map((g, i) => {
     const kit = KITS[g.kind] || KITS.survivors;
     const rng = rngFor(state, "wander-inside", tileId, state.hour, i);
-    const people = g.people ? g.people.map((x) => ({ kit: g.kind, weapon: WEAPONS[x.weapon] ? x.weapon : "fists", power: g.power, name: x.name, hp: x.hp }))
+    const people = g.people ? g.people.map((x) => ({ kit: g.kind, weapon: WEAPONS[x.weapon] ? x.weapon : "fists", power: g.power, name: x.name, hp: x.hp, s: x.gear ? x : x.s })) // fighters.js: the person themselves
       : Array.from({ length: g.count }, () => ({ kit: g.kind, weapon: swapGun(kitGunSource(g.kind), rng.pick(kit.weapons), rng), power: g.power })); // gundist.js: a gun of their kind in the band
     const pool = !g.side || g.side === "hostile" ? (upstairs.length ? upstairs : rooms) : rooms; // the armed squatters (no side: the raid's guards)
     const room = pool.length ? pool[Math.floor(hash01(state.seed, "wander-room", tileId, state.hour, i) * pool.length)] : null;
@@ -546,7 +546,7 @@ function hostileSeenCard(state, p, n) {
 function robberyCard(state, p, n, g) {
   n = sized(state, p, n);
   const victims = g.people.length;
-  const third = [{ side: "neutral", kind: "survivors", count: victims, power: W.NEUTRAL_POWER, name: victims === 1 ? first(g.people[0]) : "the travellers", wid: g.wid, people: g.people.map((s) => ({ name: s.name, weapon: s.gear.weapon ? s.gear.weapon.key : "fists", hp: s.health })) }];
+  const third = [{ side: "neutral", kind: "survivors", count: victims, power: W.NEUTRAL_POWER, name: victims === 1 ? first(g.people[0]) : "the travellers", wid: g.wid, people: g.people.map((s) => ({ name: s.name, weapon: s.gear.weapon ? s.gear.weapon.key : "fists", hp: s.health, s })) }];
   const c = { type: "rescue", enemy: hostileEnemy(n), wid: g.wid, third, allyPower: victims * W.NEUTRAL_POWER * 0.5 };
   const sneak = skillChance(bestSkill(state, p, "stealth") + (isNight(state) ? 1 : 0), 8 + Math.round(n / 3));
   const text = `Up ahead, ${n === 1 ? "an armed stranger has" : `${NUM[n] || n} armed strangers have`} stopped ${lookOf(victims)} (${names(g.people)}) and ${n === 1 ? "is" : "are"} going through their bags at gunpoint. Nobody has noticed you.`;
@@ -645,6 +645,14 @@ function squadFightCard(state, p, f, n, dead) {
 }
 
 // ---------- after a fight ----------
+// A neutral group's losses on the map: the people whose units fell (thirdside.js thirdResult deadPeople), else as many
+// from the end of the list (a fight by the numbers); the rest keep the health the fight left them.
+function fallen(state, g, r) {
+  if (Array.isArray(r.deadPeople) && r.deadPeople.length) {
+    for (const s of r.deadPeople) { const i = g.people.indexOf(s); if (i >= 0) { g.people.splice(i, 1); s.dead = true; s.alive = false; bump(state, "died"); } }
+  } else for (let i = 0; i < r.dead && g.people.length; i++) { const s = g.people.pop(); s.dead = true; bump(state, "died"); }
+  for (const [s, hp] of r.hurt || []) if (g.people.includes(s)) s.health = Math.max(1, Math.min(100, Math.round(hp)));
+}
 registerCombatHandler("wanderer", onWandererCombat);
 
 function onWandererCombat(state, result, setup) {
@@ -663,7 +671,7 @@ function onWandererCombat(state, result, setup) {
       if (r.hostile) changeGoodwill(state, f, W.GW_ATTACK, "you fired on their soldiers");
     }
     if (r.team === "neutral" && g) {
-      for (let i = 0; i < r.dead && g.people.length; i++) { const s = g.people.pop(); s.dead = true; bump(state, "died"); }
+      fallen(state, g, r); // the very people who fell on the map (fighters.js), the rest with the health they kept
     }
     lines.push(...thirdPrisoners(state, r, r.team === "military" ? f : null, r.team === "neutral" ? g : null, setup.enemy));
   }
@@ -762,7 +770,7 @@ export function wanderersAfterRaid(state, p, result, tileId = null) {
     }
     const g = groupById(state, r.wid);
     if (!g) continue;
-    for (let i = 0; i < r.dead && g.people.length; i++) { const s = g.people.pop(); s.dead = true; bump(state, "died"); }
+    fallen(state, g, r); // the very people who fell on the map (fighters.js), the rest with the health they kept
     thirdPrisoners(state, r, null, g, null);
     if (r.hostile) {
       if (p && state.parties.includes(p)) for (const m of partyMembers(state, p)) m.mood = clamp(m.mood - 4, 0, 100);

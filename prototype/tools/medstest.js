@@ -176,8 +176,12 @@ if (!SAMPLE) {
     for (let i = 0; i < 24 * 10; i++) {
       for (const s of alive(st)) { s.health = 100; s.conditions = []; s.woundInfected = false; }
       st.cards = [];
-      const before = h.stock.meds;
+      const before = h.stock.meds, top = st.log[0];
       tickHour(st);
+      // (Morale runs down in a base left to itself: someone who walks away takes meds with them, morale.js
+      // desertionHaul. That is a theft, not care.)
+      const fresh = []; for (const l of st.log) { if (l === top) break; fresh.push(l); }
+      if (fresh.some((l) => /walked away/.test(l.text))) continue;
       if (h.stock.meds < before - 1e-9) {
         const ill = unwell();
         if (ill.length) { onNeed += before - h.stock.meds; if (before - h.stock.meds > ill.length * 2) needOk = false; continue; }

@@ -48,6 +48,7 @@
 //   least 0.4× the enemy's. Raids on your bases count for the war (held +2 your side, broken in +2 theirs). When
 //   your side wins you get half the tribute, and land taken in the terms is left free for your outpost (reserved
 //   from the groups' expansion for 60 days). After the peace the enemy settles at goodwill −35 (wary, not hostile).
+import { stockAt, loseBase, gainBase } from "./groupbases.js"; // their bases as base objects (what is there)
 import { foodIn, takeFood, addFoodsTo, foodShare, bestFoodKey, scaleFood } from "./foods.js"; // the groups' food by type
 import { Rng } from "./rng.js";
 import { groupCapture, jailsOn } from "./groupjails.js"; // jailhouse: war captives into the raider's jail
@@ -67,7 +68,7 @@ import { raidPaceOpen, noteRaid } from "./eras.js";
 import { hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
 import { raidTurretPower } from "./vehicles.js"; // the Humvee a raid brought (its M2)
-import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
+import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre: the ones its guns need least go
 import { warCaptureMult } from "./nonlethal.js"; // groups that take people alive take more prisoners in a war
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES warlike: a group's temper for war
@@ -75,6 +76,8 @@ import { noteStrife, SPLINTER } from "./splinters.js"; // a lost war stirs strif
 import { sameBloc, blocSpare, blocWarJoin, blocsDaily, jointRaid } from "./blocs.js"; // AI blocs (alliances of groups)
 import { pwarsDaily } from "./playerwars.js"; // wars declared on you (and by you)
 import { knownBase } from "./groupworld.js"; // a war raid on your base goes only for one they know
+import { fightSides, fightersOf, applySide, wallMult } from "./groupfight.js"; // fights nobody watches: your rules for both sides
+const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const DIPLO = {
   DRIFT: 0.02, PACT_REL: 28, PACT_BREAK: 10, PACT_CHANCE: 0.05, WAR_REL: -42, WAR_BASE: 0.01, WAR_RANGE: 18,
@@ -390,28 +393,34 @@ export function warRaid(state, w, f, o) {
 export function resolveWarRaid(state, party, attacker, target, helpPower) {
   const d = ensureDiplo(state), rng = diploRng(state);
   const w = warById(state, party.warId);
-  const att = party.strength + raidTurretPower(state, party); // vehicles.js: the Humvee they brought
-  const def = 4 + strength(target) * 0.5 + helpPower;
-  const won = rng.chance(att / (att + def));
+  // groupfight.js: the fight by your by-the-numbers rules on both sides' very people (docs/adr/0001-ai-parity.md).
+  const tile0 = party.target.tile;
+  const A = attacker ? fightersOf(state, attacker, { party }) : [];
+  const D = fightersOf(state, target, { tile: tile0 });
+  const fight = fightSides(state,
+    { f: attacker, people: A, kind: attacker ? KIND_OF[attacker.type] || "raiders" : "raiders", count: Math.max(1, A.length), power: (A.length ? 0 : party.strength) + raidTurretPower(state, party) },
+    { f: target, people: D, kind: KIND_OF[target.type] || "raiders", mult: wallMult(state, target, tile0), power: helpPower });
+  const won = fight.attWon;
   const report = state.live.has(party.target.tile) || (attacker && attacker.known && target.known);
   if (won) {
     d.stats.raidWins++;
-    const hit = Math.min(Math.max(1, Math.round(target.pop * rng.range(0.05, 0.1))), Math.max(0, target.pop - DIPLO.MIN_POP));
-    const loss = hit - smokeCover(state, target, hit); // arsenal.js: smoke over their retreat spares a few
-    target.pop -= loss;
-    clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, 0, target, loss, "a", 0.1, true, "war"); // arsenal.js
-    for (const k of ["ammo", "meds", "scrap"]) {
-      const take = Math.floor((target.stock[k] || 0) * 0.1);
-      target.stock[k] -= take;
+    const lostD = applySide(state, target, fight.rD, D, { holder: attacker, captor: attacker });
+    applySide(state, attacker, fight.rA, A, { holder: attacker, captor: target });
+    const loss = lostD.dead.length + lostD.taken;
+    const tile = party.target.tile;
+    const hitStock = stockAt(state, target, tile); // groupbases.js: the stores at the base hit
+    target.lossAt = tile; // members.js: the dead were the people there
+    for (const k of Object.keys(hitStock).filter((x) => /^a_/.test(x) || x === "ammo" || x === "meds" || x === "scrap")) { // rounds by key (docs/adr/0001-ai-parity.md)
+      const take = Math.floor((hitStock[k] || 0) * 0.1);
+      hitStock[k] = (hitStock[k] || 0) - take;
       if (attacker) attacker.stock[k] = (attacker.stock[k] || 0) + take;
     }
-    { const got = takeFood(target.stock, Math.floor(foodIn(target.stock) * 0.1), { state }); if (attacker) addFoodsTo(attacker.stock, got.items); } // foods.js: a tenth of their food, the soonest to spoil first
+    { const got = takeFood(hitStock, Math.floor(foodIn(hitStock) * 0.1), { state }); if (attacker) addFoodsTo(attacker.stock, got.items); } // foods.js: a tenth of their food, the soonest to spoil first
     let took = false;
-    const tile = party.target.tile;
     if (attacker && target.bases.length > 1 && tile !== target.bases[0] && attacker.bases.length < 5 && rng.chance(0.35 * Math.min(1, keepChance(state, attacker, tile) / 0.6))) { // factions.js keepChance: the same wish to keep a base as an ordinary raid
-      target.bases = target.bases.filter((x) => x !== tile);
+      const h = loseBase(state, target, tile); // groupbases.js: the base object, with what is left in it
       target.lostBaseDay = day(state); // valuation.js
-      attacker.bases.push(tile);
+      gainBase(state, attacker, tile, h ? h.stock : null);
       recomputeOwnership(state);
       took = true;
       d.stats.basesTaken++;
@@ -419,20 +428,13 @@ export function resolveWarRaid(state, party, attacker, target, helpPower) {
     if (w && attacker) {
       w.score[attacker.id] = (w.score[attacker.id] || 0) + 2 + (took ? 2 : 0);
       w.exh[target.id] = (w.exh[target.id] || 0) + 5 + (took ? 8 : 0);
-      if (rng.chance(0.25 * warCaptureMult(attacker))) {
-        const n = Math.min(1, Math.max(0, target.pop - DIPLO.MIN_POP));
-        // groupjails.js: in a world with the groups' jails the captive goes into the raider's jail (room, or by type:
-        // sold, let go, killed), where it can be swapped or turned; older saves keep the war's own count (back at peace).
-        if (n > 0) { target.pop -= n; if (jailsOn(state)) groupCapture(state, attacker, target, n); else w.captives[target.id] = (w.captives[target.id] || 0) + n; }
-      }
+      // (Their captives are the ones the fight left behind and caught: groupfight.js applySide.)
     }
     if (report) log(state, `${cap(knownAs(state, attacker))} raided ${knownAs(state, target)} at ${tileLabel(state, tile)} (${loss} dead${took ? ", the base taken" : ""}).`, "danger");
     return false;
   }
-  const tp = target.pop, ap = attacker ? attacker.pop : 0;
-  target.pop = Math.max(Math.min(target.pop, DIPLO.MIN_POP), target.pop - rng.int(0, 1));
-  if (attacker) { const hit = rng.int(1, 2); attacker.pop = Math.max(Math.min(attacker.pop, DIPLO.MIN_POP), attacker.pop - hit + smokeCover(state, attacker, hit)); } // arsenal.js: their smoke spares a few
-  clashKit(state, attacker, attacker ? raidCount(attacker, att) : 0, attacker ? ap - attacker.pop : 0, target, tp - target.pop, "b", 0, true, "war"); // arsenal.js: the defenders hold the field
+  applySide(state, target, fight.rD, D, { holder: target, captor: attacker }); // groupfight.js: the defenders hold the field
+  applySide(state, attacker, fight.rA, A, { holder: target, captor: target });
   if (w && attacker) {
     w.score[target.id] = (w.score[target.id] || 0) + 1;
     w.exh[attacker.id] = (w.exh[attacker.id] || 0) + 4;
@@ -468,10 +470,11 @@ export function makePeace(state, w, how = "terms") {
     terms = "land";
     const g = state.grid;
     const tile = lose.bases.slice(1).sort((x, y) => Math.min(...win.bases.map((z) => g.distance(x, z))) - Math.min(...win.bases.map((z) => g.distance(y, z))))[0];
-    lose.bases = lose.bases.filter((x) => x !== tile);
+    const h = loseBase(state, lose, tile); // groupbases.js: its people take their stores home in a peace
+    if (h) for (const [k, q] of Object.entries(h.stock)) if (typeof q === "number" && q > 0) lose.stock[k] = (lose.stock[k] || 0) + q;
     lose.lostBaseDay = day(state); // valuation.js
     if (youWon) d.reserved[tile] = day(state) + DIPLO.RESERVE_DAYS;
-    else if (win.bases.length < 5) win.bases.push(tile);
+    else if (win.bases.length < 5) gainBase(state, win, tile);
     recomputeOwnership(state);
     d.stats.land++;
     text = `${cap(knownAs(state, lose))} made peace with ${knownAs(state, win)} and gave up ${tileLabel(state, tile)}${youWon ? ": the land is free for an outpost of yours" : ""}.`;
@@ -487,9 +490,17 @@ export function makePeace(state, w, how = "terms") {
         if (youWon) { const h = hub(state); if (h) { addFoodsTo(h.stock, mine); const d0 = Math.floor(foodIn(mine)); if (d0 > 0) paid.food = d0; } }
         continue;
       }
+      const h = youWon ? hub(state) : null; // ai-locks: no hub left (lost, outposts only): the winner keeps it all (was a crash)
+      if (k === "ammo") { // rounds by calibre (rounds.js spendAmmo): every round they hold counts, the very rounds change hands
+        const q = Math.min(Math.floor(totalRounds(lose.stock) * DIPLO.TRIBUTE), groupPayoutSpare(lose, k));
+        const keys = spendAmmo(lose.stock, q).keys;
+        let mineN = 0;
+        for (const [rk, n] of Object.entries(keys)) { const m = h ? Math.floor(n / 2) : 0; win.stock[rk] = (win.stock[rk] || 0) + n - m; if (m > 0) { h.stock[rk] = (h.stock[rk] || 0) + m; mineN += m; } }
+        if (mineN > 0) paid.ammo = mineN;
+        continue;
+      }
       const q = Math.min(Math.floor((lose.stock[k] || 0) * DIPLO.TRIBUTE), groupPayoutSpare(lose, k));
       lose.stock[k] -= q;
-      const h = youWon ? hub(state) : null; // ai-locks: no hub left (lost, outposts only): the winner keeps it all (was a crash)
       const mine = h ? Math.floor(q / 2) : 0;
       win.stock[k] = (win.stock[k] || 0) + q - mine;
       if (h && mine > 0) { h.stock[k] = (h.stock[k] || 0) + mine; paid[k] = mine; }
@@ -558,7 +569,7 @@ export function warCard(state, w, f, foe) {
       { label: `Send ${payWord(state, h, 40)}`, hint: `+5 goodwill with ${f.name}; ${foe.name} hears of it (−2). The rounds your hub's guns need least`, disabled: (st) => totalRounds(hub(st).stock) < 40 || !warById(st, w.id),
         ai: (st) => (totalRounds(hub(st).stock) >= 160 && !(st.governor && st.governor.personality === "cautious") ? 1 : -1), resolve: (st) => {
           if (totalRounds(hub(st).stock) < 40 || !warById(st, w.id)) return "It is too late for that.";
-          const sent = payAmmoKeys(st, hub(st), 40); f.stock.ammo = (f.stock.ammo || 0) + 40; // their store keeps one count
+          const sent = payAmmoKeys(st, hub(st), 40); for (const [k, q] of Object.entries(sent)) f.stock[k] = (f.stock[k] || 0) + q; // their stores keep rounds by key (docs/adr/0001-ai-parity.md)
           changeGoodwill(st, f, 5, "you sent ammo for their war"); changeGoodwill(st, foe, -2, "you armed their enemy");
           return `${roundsText(sent)} sent to ${f.name}.`;
         } },
