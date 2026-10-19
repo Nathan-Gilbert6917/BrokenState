@@ -76,6 +76,7 @@ import { tripDone } from "./relations.js";
 import { totalRounds, spendAmmo, ROUND_KEYS, GENERIC_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
 import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRounds, kindTheme, roundsText, settleParty } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
+import { loadoutRounds } from "./gunrounds.js"; // the rounds their guns and spare magazines leave loaded with (physical rounds)
 import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; a shotgun's shells at hand
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
 import { prisonersHome } from "./prisoners.js";
@@ -1001,6 +1002,11 @@ export function launchExpedition(state, opts) {
   // this a team packed from generic ammo left with every shell in its bags and none at hand.
   settleParty(state, p);
   if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each shotgunner's shells at hand (a pocket or a rig pouch) out of the packed rounds, so the shotgun reloads without digging in the pack
+  // Their guns and spare magazines leave loaded (gunrounds.js loadoutRounds, out of the stores after what was packed, less the shells packShells just put at hand),
+  // as the team-forming window does (teamform.js: it adds them itself, loadout false). With physical rounds (mags.js,
+  // 2026-10-18) the guns are filled from the team's bags as a fight starts: without these the "ammo" line would have to
+  // fill every gun and magazine before any of it was a reserve, where a gun used to start a fight loaded for nothing.
+  if (opts.loadout !== false) for (const [k, q] of Object.entries(loadoutRounds(members, [home.stock]))) { home.stock[k] = (home.stock[k] || 0) - q; p.supplies[k] = (p.supplies[k] || 0) + q; }
   packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
   if (opts.tabs) packTablets(state, home, p); // worm.js: a tube of purification tablets for the road (when the armory has one)
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as

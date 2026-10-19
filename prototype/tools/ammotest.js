@@ -313,8 +313,19 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   const h = hub(st);
   setRounds(h.stock, 0);
   Object.assign(h.stock, { a_9mm_fmj: 100, a_308_fmj: 100, a_12ga_buck: 100, food: 100, water: 100 });
-  const res = launchExpedition(st, { memberIds: [a.id, c.id], dest: h.tile, mission: "move", stance: "normal", supplies: { food: 4, water: 4, ammo: 40 } });
+  // (loadout false: the plan's line alone; a launch also takes its guns' and spares' loads, checked below)
+  const res = launchExpedition(st, { memberIds: [a.id, c.id], dest: h.tile, mission: "move", stance: "normal", supplies: { food: 4, water: 4, ammo: 40 }, loadout: false });
   check(!res.error && res.party.supplies.a_9mm_fmj === 20 && res.party.supplies.a_308_fmj === 20 && !res.party.supplies.a_12ga_buck && h.stock.a_12ga_buck === 100, `a plan's 40 ammo packed as the rounds that fit (${res.error || JSON.stringify(Object.fromEntries(ROUND_KEYS.filter((k) => res.party.supplies[k] > 0).map((k) => [k, res.party.supplies[k]])))})`);
+  // Physical rounds (mags.js, 2026-10-18): a launch also takes the rounds its guns leave loaded with (gunrounds.js
+  // loadoutRounds) out of the stores, on top of the plan's line, which stays a reserve.
+  for (const m of res.party.members) { const s0 = st.survivors.find((x) => x.id === m); if (s0) s0.location = { kind: "base", baseId: h.id }; }
+  st.parties = st.parties.filter((x) => x !== res.party);
+  setRounds(h.stock, 0);
+  Object.assign(h.stock, { a_9mm_fmj: 100, a_308_fmj: 100, a_12ga_buck: 100 });
+  const caps = [a, c].reduce((n, x) => n + ((WEAPONS[x.gear.weapon.key] || {}).cap || 0), 0);
+  const res2 = launchExpedition(st, { memberIds: [a.id, c.id], dest: h.tile, mission: "move", stance: "normal", supplies: { food: 4, water: 4, ammo: 40 } });
+  const took = res2.error ? 0 : ROUND_KEYS.reduce((n, k) => n + (res2.party.supplies[k] || 0), 0);
+  check(!res2.error && took >= 40 + caps && h.stock.a_12ga_buck === 100, `...and the guns' loads on top (${took} rounds: the 40 and ${took - 40} for their guns and spares, at least the guns' ${caps})`);
   // The bench makes the calibres of the guns there, the shortest first.
   const st2 = createWorld({ seed: seed + 10, factionCount: 4 });
   const h2 = hub(st2);
