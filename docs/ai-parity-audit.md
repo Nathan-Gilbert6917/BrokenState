@@ -172,12 +172,46 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
 - The off-screen odds (combat.js ODDS) were refitted on 2,376 map fights after the change. No compensation was added:
   where an AI side is now weaker, the fix is its starting gear or recruitment.
 
+**Closed after the six batches.**
+- A nomad band's trade shelf is what it carries: nothing is cut off to fit a size (the 12-item trims in nomads.js,
+  trade.js and radiotrade.js are gone, WARES_MAX with them). Goods come onto it only as far as the band's people can
+  carry them by your teams' rule (nomads.js bandRoom: parties.js carryCapacity on its people, less its stores and
+  its shelf): what it cannot carry from a container it raids stays in the container (poicont.js lootPoiAbstract
+  opts.room), what it takes from a team it beat is what fits, and a trade that would load a band (or a visitor met on
+  the road, by its capacity) past it is turned down (trade.js tradeVerdict). Outsiders' shelves get nothing new from
+  nowhere (trade.js ensureWares). Checks: tools/nomadtest.js (raids, trade), tools/paritytest.js section 4.
+- AI people move as themselves, never as a head count (members.js header):
+  - Loans between groups (volunteers.js aiLendDaily, the council's councilVolVote): the lender's very people leave
+    its list with what they carry (lendPeople, location "lent"), are held on the loan, and come home as themselves
+    (loanHome); the ones who fell are buried by the group they fought for, which keeps their kit and rounds; one may
+    stay with it as its own.
+  - Hardcore: a band's people are records from the start (hardcore-groups.js makeBand), its road losses come off the
+    list, founding its hub makes that list the group's, a band taken in by a group moves into its list (joinGroup);
+    the military's strike force is its own list of the very soldiers (strike.people: their dead fall off it, the rest
+    come home into the list); when the base falls the garrison's dead and survivors are its people, the splinter
+    groups and stragglers are those same soldiers, and the ones who reach you are offered as themselves with their
+    kit. Your meds patch up their wounded instead of adding soldiers.
+  - Rescue jobs (jobs.js): the captives are the very people in the holders' jail (data.ids; raiders grabbing a group's
+    people on the road put them there, groupjails.js capturePeople), and freeing them walks those people home
+    (groupjails.js freeHeld). A job failed or called off moves nobody.
+  - War captives: the war's head count (w.captives) is gone; captives are people in the captor's jail and the peace
+    sends each side's home as themselves (diplomacy.js endWar). A jail record is always a person: no phantom
+    prisoners from a short head count (groupCapture), none brought home by a number (groupjails.js goHome,
+    prisoners.js goHome, conquest.js: your prisoners at a base the group takes back), and the dead head-count prisoner
+    calls in diplomacy.js are gone. A group that falls sends its heir only people it has (factions.js takeOver).
+  - Nomad bands taking in wanderers you met take those very people (nomads.js recruit).
+  Checks: tools/volunteers2test.js, tools/jailtest.js, tools/diplotest.js (rescue jobs, the peace), tools/hcgroupstest.js
+  (founding, a band taken in, the strike force and the fall), tools/paritytest.js section 4, and
+  tools/conservationtest.js (no person in two places at once; every group's head count is its list).
+
 **Still open (small, noted for a later pass).**
 - Decoys and the crush are only in your bots' repertoire.
 - Your convoy people come out of a robbery unharmed.
-- A nomad band's trade shelf is still trimmed to size.
-- AI loans, hardcore merges, rescue jobs and war captive counts still move head counts in places.
 - One of your deserters joins a group as a fresh member, not with what they carried.
+- Refugees from outside joining a nomad band (nomads.js recruit) and someone off the road joining it still come as a
+  head count; refugee bands have no people records until one is needed.
+- A hardcore band's stragglers and splinter groups still carry stores made by formula (makeSplinter's minimums, the
+  stragglers' rations), not taken from the fallen base's stores.
 
 **Found on the way.** Dice keyed on a person's id came out differently in two worlds on one seed, because your
 people's and newcomers' ids come from a counter shared by the process; they now use a world-local key (members.js

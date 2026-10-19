@@ -88,6 +88,13 @@ import { findPath } from "./hex.js";
 import { hcOutbreak, hcOutbreakCity } from "./hardcore-outbreak.js";
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
+// People, never head counts (docs/adr/0001-ai-parity.md): a band's people are records from the start (members.js),
+// and a band founding its hub, a band taken in by a group, the strike force going out and coming home, the garrison's
+// survivors when the base falls all move the very people, with what they carry.
+import { ensureMembers, syncMembers, addMember, removeMember, membersOf, fitAtHome, homeMembers, isWounded, lossOrder, touchMembers, MEMBER } from "./members.js";
+import { addToArsenal } from "./arsenal.js"; // what a newcomer carries goes on the group's books
+import { allCarried } from "./inventory.js";
+import { isRoundItem } from "./itemstack.js";
 
 export const HC_GROUPS = {
   // What a band starts with, by the type it will become (you: 3 people, about 10 food, 10 water, 6 ammo).
@@ -275,6 +282,14 @@ export function makeBand(state, type, opts = {}) {
     foundAt, forceAt: foundAt + B.FORCE_AFTER, campUntil: 0, started: d, remnant: !!opts.remnant, helped: false, lastSeen: null, act: "on the road",
   };
   if (opts.splinter) { b.splinter = true; b.splinterOf = opts.splinter; } // what was left of the military (militaryFalls)
+  // Its people (members.js): opts.people, the very survivors of a group that fell (militaryFalls), with what they
+  // carry; else made as a group's people are, under the band's own dice (a creation seed: the world's dice untouched).
+  if (opts.people) {
+    b.people = [];
+    for (const s of opts.people) { s.fid = b.id; s.alive = true; s.location = { kind: "member", fid: b.id, tile: null }; b.people.push(s); }
+    b.pop = b.popSeen = b.people.length;
+    touchMembers();
+  } else ensureMembers(state, b);
   H.bands.push(b);
   planRoute(state, b);
   return b;
@@ -468,6 +483,7 @@ function hordeBite(state, b) {
 
 function loseBandPeople(state, b, n, why) {
   b.pop = Math.max(0, b.pop - n);
+  syncMembers(state, b); // members.js: the very people, the wounded first, then by a hash
   if ((b.known && state.live.has(b.tile)) || (b.known && n >= 3)) log(state, `${b.name} lost ${n === 1 ? "one of their people" : `${n} people`} ${why}.`, "danger");
   if (b.pop <= 2) breakBand(state, b);
 }
@@ -628,12 +644,20 @@ function foundHub(state, b, tile) {
   if (b.pop < M.FOUND_MIN) return breakBand(state, b); // too few to hold a hub of their own
   const desperate = d >= hcRaidersFrom(state) && !b.remnant && b.type !== "military" && foodIn(b.stock) < b.pop * 2;
   const type = desperate ? "raider" : b.type;
+  // Its people are the band's own (members.js): the very list, now the group's, all at the new hub.
+  ensureMembers(state, b);
+  syncMembers(state, b);
+  const people = b.people;
+  b.people = [];
+  for (const s of people) s.location = { kind: "member", fid: b.id, tile };
   const f = {
-    id: b.id, name: b.name, type, color: b.color, bases: [tile], pop: b.pop, alive: true, known: b.known,
+    id: b.id, name: b.name, type, color: b.color, bases: [tile], pop: people.length, alive: true, known: b.known,
+    people, popSeen: people.length, madePeople: b.madePeople, namesGiven: b.namesGiven,
     goodwill: desperate ? Math.min(b.goodwill, -50) : b.goodwill, lastDiplomacy: 0, pact: null,
     stock: Object.fromEntries([...STOCK_KEYS.filter((k) => k !== "food" && k !== "preserved").map((k) => [k, Math.round(b.stock[k] || 0)]), ...Object.entries(foodShare(b.stock))]), // foods.js: their food, item by item
     lootedGear: [], raidCooldown: rng.int(8, 16), founded: d, hcBand: true,
   };
+  touchMembers();
   if (b.remnant) f.hcRemnant = true;
   if (b.splinter) f.hcSplinter = true; // what was left of the military (militaryFalls)
   if (desperate) f.prevType = b.type;
@@ -659,13 +683,23 @@ function noteFounding(state) {
   if (H.quietUntil == null && !bandsOf(state).some((x) => !x.remnant)) H.quietUntil = day(state) + B.QUIET_GRACE;
 }
 
+// A band taken in by a group (a remnant at its gates): its people go into the group's list as themselves, what they
+// carry on the group's books (members.js addMember, arsenal.js addToArsenal), its stores into the group's.
 function joinGroup(state, b, f) {
-  f.pop += b.pop;
+  ensureMembers(state, f);
+  ensureMembers(state, b);
+  syncMembers(state, b);
+  const people = b.people.filter((s) => s.alive !== false);
+  b.people = [];
+  for (const s of people) {
+    addMember(state, f, s, f.bases[0]);
+    for (const it of allCarried(s)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, "joined"); // loose rounds are the stores' (loadouts.js)
+  }
   for (const k of STOCK_KEYS) if (k !== "food" && k !== "preserved") f.stock[k] = (f.stock[k] || 0) + Math.round(b.stock[k] || 0);
   addFoodsTo(f.stock, foodShare(b.stock)); // foods.js: their food, item by item
   const list = bandsOf(state);
   list.splice(list.indexOf(b), 1);
-  if (b.known || f.known) log(state, `${b.name} reached ${f.known ? f.name : "another group"} and were taken in (${b.pop} people).`, "info");
+  if (b.known || f.known) log(state, `${b.name} reached ${f.known ? f.name : "another group"} and were taken in (${people.length} people).`, "info");
   chronicleNote(state, `${b.name} joined ${f.name}.`, "world", f.bases[0]);
   noteFounding(state);
 }
@@ -791,12 +825,24 @@ function strikeDaily(state, f, m) {
   if (s.phase === "fight") return fightDay(state, f, m, s);
   if (s.phase === "holed") {
     const rng = grng(state);
-    if (s.pop > 1 && rng.chance(M.HOLD_DEATH)) { s.pop--; s.lost++; }
+    if (s.pop > 1 && rng.chance(M.HOLD_DEATH)) s.lost += strikeLoss(state, s, 1);
     // The way home opens when the base's hive is gone (you, or the Guard, destroyed it), or after HOLD_MAX days.
     const O = hcOutbreak(state);
     const hiveGone = O && O.mil && O.mil.done != null;
     if (hiveGone || d >= s.failed + M.HOLD_MAX) goHome(state, f, m, s, hiveGone ? "the hive by the base is gone" : "the roads have thinned");
   }
+}
+
+// n of the strike force fall (the wounded first, then by a hash: members.js lossOrder): the very soldiers, dead where
+// they fought, in what they wore (they rise in it: fightDay). strike.pop is how many are left. Returns how many fell.
+function strikeLoss(state, s, n) {
+  s.people = s.people || [];
+  const dead = lossOrder(state, s.people,`strike:${s.left}:${s.lost}:${s.fought}`).slice(0, Math.max(0, n));
+  for (const p of dead) { p.alive = false; p.health = 0; p.location = { kind: "dead", fid: p.fid }; }
+  s.people = s.people.filter((p) => p.alive !== false);
+  s.pop = s.people.length;
+  touchMembers();
+  return dead.length;
 }
 
 function launchStrike(state, f, m) {
@@ -813,10 +859,15 @@ function launchStrike(state, f, m) {
   let res = bandPath(state, m.tile, stage, true);
   if (!res) { vehicle = false; res = bandPath(state, m.tile, stage, false); }
   if (!res) return;
+  syncMembers(state, f); // members.js: the head count is the list
   const n = Math.round(f.pop * rng.range(M.STRIKE_SHARE[0], M.STRIKE_SHARE[1]));
-  const sent = Math.max(0, Math.min(n, f.pop - M.STRIKE_KEEP));
+  // The soldiers who go: the fit at home, best fighters first (the wounded only to make up the number), off the
+  // group's list with what they carry (members.js removeMember: their kit off its books, on them) into the strike
+  // force's own (strike.people) until they come home or are cut off for good.
+  const go = [...fitAtHome(f), ...homeMembers(f).filter(isWounded)].slice(0, Math.max(0, Math.min(n, f.pop - M.STRIKE_KEEP)));
+  const sent = go.length;
   if (sent < 4) return;
-  f.pop -= sent;
+  for (const s of go) { removeMember(state, f, s, "strike"); s.location = { kind: "strike", fid: f.id }; }
   m.garrison = f.pop;
   m.breakPop = Math.max(M.BREAK_MIN, Math.round(m.garrison * M.GARRISON_BREAK));
   const ammo = Math.round(totalRounds(f.stock) * (sent / (sent + f.pop)));
@@ -827,7 +878,9 @@ function launchStrike(state, f, m) {
     name, the, pop: sent, start: sent, tile: m.tile, path: res.path, idx: 0, progress: 0, vehicle, phase: "travel",
     hiveId: hive.id, hiveTile: hive.tile, city, left: d, arrived: null, fightDays: rng.int(M.FIGHT_DAYS[0], M.FIGHT_DAYS[1]),
     fought: 0, lossGoal: null, killed: 0, lost: 0, cityDead: 0, guard0: 0, failed: null, hold: null, home: null, seen: false, ammo, color: f.color,
+    people: go, // the very soldiers (pop: how many of them are alive)
   };
+  touchMembers(); // members.js: memberById finds them with the strike force
   const s = m.strike;
   const place = tileLabel(state, city);
   log(state, `📻 ${f.name}: "${cap1(the)} is moving on ${place}. We strike the hive at the source and cut its brood down. Everyone else, stay off the roads."`, "info");
@@ -891,7 +944,13 @@ function strikeArrives(state, m, s) {
   } else if (s.phase === "home") {
     s.phase = "back";
     if (f && f.alive && f.bases.includes(m.tile)) {
-      f.pop += s.pop;
+      // The very soldiers back in the group's list, with what they carry on its books again (members.js addMember).
+      for (const p of (s.people || []).filter((x) => x.alive !== false)) {
+        addMember(state, f, p, m.tile);
+        for (const it of allCarried(p)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, "back"); // loose rounds are the stores' (loadouts.js)
+      }
+      s.people = [];
+      touchMembers();
       f.stock.ammo = (f.stock.ammo || 0) + s.ammo;
       m.garrison = Math.max(m.garrison || 0, f.pop);
       log(state, `📻 ${f.name}: "${cap1(s.the)} is home. ${s.pop} of the ${s.start} who went out."`, "info");
@@ -925,8 +984,7 @@ function fightDay(state, f, m, s) {
   const goal = Math.round(s.start * s.lossGoal);
   const last = s.fought >= s.fightDays;
   let lost = last ? goal - s.lost : Math.round((goal / s.fightDays) * rng.range(0.8, 1.2));
-  lost = clamp(lost, 1, Math.max(1, s.pop - 2));
-  s.pop -= lost;
+  lost = strikeLoss(state, s, clamp(lost, 1, Math.max(1, s.pop - 2))); // the very soldiers
   s.lost += lost;
   s.ammo = Math.max(0, s.ammo - Math.round(fire / 3));
   // The soldiers who fell rise in their body armour and join the hive's guard (zombietypes.js "soldier" dead).
@@ -977,6 +1035,18 @@ function goHome(state, f, m, s, why) {
   if (why) log(state, `📻 ${s.name}: "${cap1(why)}. We are coming home."`, "info");
 }
 
+// Your meds at their walls: MEDS_POP of their wounded (the worst first) are patched up and back on the walls, the
+// very soldiers (members.js: health up to the line the wounded are below), each using their share of the meds. Nobody
+// is added by a number: the meds not used (fewer wounded) go into their stores for the next ones.
+function medsToWalls(state, f, meds = 6) {
+  syncMembers(state, f);
+  const each = Math.ceil(meds / Math.max(1, M.MEDS_POP));
+  const hurt = homeMembers(f).filter(isWounded).sort((a, b) => a.health - b.health || a.id - b.id).slice(0, M.MEDS_POP);
+  for (const s of hurt) s.health = Math.max(s.health, MEMBER.WOUNDED_BELOW);
+  f.stock.meds = (f.stock.meds || 0) + Math.max(0, meds - hurt.length * each);
+  return hurt.length;
+}
+
 function helpCall(state, f, m) {
   const h = hub(state);
   const name = f.name;
@@ -995,7 +1065,7 @@ function helpCall(state, f, m) {
         label: "Send 6 meds", hint: `${M.MEDS_POP} of their wounded go back on the walls; goodwill +6`,
         ai: (st) => ((hub(st)?.stock.meds || 0) >= 25 ? 1 : -1),
         disabled: (st) => !hub(st) || (hub(st).stock.meds || 0) < 6,
-        resolve: (st) => { const hb = hub(st); if (!hb || (hb.stock.meds || 0) < 6) return "You no longer have 6 meds to spare."; hb.stock.meds -= 6; if (f.alive) f.pop += M.MEDS_POP; changeGoodwill(st, f, 6, "you sent meds"); return `Meds on their way to ${name}.`; },
+        resolve: (st) => { const hb = hub(st); if (!hb || (hb.stock.meds || 0) < 6) return "You no longer have 6 meds to spare."; hb.stock.meds -= 6; if (f.alive) medsToWalls(st, f); changeGoodwill(st, f, 6, "you sent meds"); return `Meds on their way to ${name}.`; },
       },
       { label: "Nothing to spare", hint: "Goodwill −3", ai: () => 0, resolve: (st) => { changeGoodwill(st, f, -3, "you would not help"); return `You told ${name} you have nothing to spare.`; } },
     ],
@@ -1022,15 +1092,23 @@ function militaryFalls(state, f, how) {
   const rng = grng(state), g = state.grid, d = day(state);
   m.fell = true; m.fellDay = d; m.how = how;
   const tile = m.tile;
-  const pop = Math.max(0, f.pop);
+  // The garrison is people (members.js): the very soldiers there at the end, the wounded first to fall.
+  if (f.alive) syncMembers(state, f);
+  const garrison = f.alive ? lossOrder(state, membersOf(f), `fall:${f.id}`) : [];
+  const pop = f.alive ? garrison.length : Math.max(0, f.pop);
   m.fallPop = pop;
+  const dead = Math.round(pop * rng.range(M.DEAD[0], M.DEAD[1])); // in the last fight
+  // The dead leave the list with the group's kit kept off them (it stays in the armory, among the dead); the rest
+  // leave it with what they carry, off the books (members.js removeMember).
+  for (const s of garrison.slice(0, dead)) removeMember(state, f, s, "died", { keepKit: true });
+  const outList = garrison.slice(dead);
+  for (const s of outList) removeMember(state, f, s, "left");
   const wasAlive = f.alive;
   f.alive = false; f.bases = []; f.pact = null; f.pop = 0;
   for (const q of [...state.parties]) if (q.owner === f.id) removeParty(state, q);
   const taken = state.bases.some((b) => b.tile === tile) || state.factions.some((o) => o.alive && o.bases.includes(tile));
   const t = state.tiles[tile];
   const place = tileLabel(state, tile);
-  const dead = Math.round(pop * rng.range(M.DEAD[0], M.DEAD[1])); // in the last fight
   const fallenAll = Math.max(dead, m.startPop - (pop - dead)); // all the soldiers the base cost
   if (!taken) {
     // dead: the garrison's own dead fill it; a hive killed nearby (its Hivemind dead: hives.js destroyHive) fades only what the
@@ -1055,25 +1133,29 @@ function militaryFalls(state, f, how) {
   // Who got out: a few to you, the garrison's survivors, and the strike force cut off out in the state.
   const h = hub(state);
   const team = !h ? state.parties.find((p) => p.owner === "player" && p.kind !== "convoy" && partyMembers(state, p).length) : null;
-  // 1–3 make it to you; enough of them stay together to be a group of their own when they can.
-  const out = Math.max(0, pop - dead);
+  // 1–3 make it to you; enough of them stay together to be a group of their own when they can. Every one of them is
+  // a soldier of the garrison or the strike force (outList, strike.people), moved as themselves with what they carry.
+  const out = outList.length;
   let toYou = (h || team) && out >= 2 ? Math.min(out, rng.int(1, 3)) : 0;
   if (toYou && out - toYou < M.HOLD_MIN && out > M.HOLD_MIN) toYou = out - M.HOLD_MIN;
-  let held = Math.max(0, out - toYou);
+  const youList = outList.slice(out - toYou); // the fittest of them (outList runs from the worst hurt)
+  let heldList = outList.slice(0, out - toYou);
   const s = hcStrike(state);
-  let cut = s ? s.pop : 0;
-  if (s) s.phase = "gone";
+  let cutList = s ? (s.people || []).filter((p) => p.alive !== false) : [];
+  if (s) { s.phase = "gone"; s.people = []; touchMembers(); }
   // Too few for a group of their own (HOLD_MIN): they make for the others.
-  if (held && held < M.HOLD_MIN && cut >= M.HOLD_MIN) { cut += held; held = 0; }
-  else if (cut && cut < M.HOLD_MIN && held >= M.HOLD_MIN) { held += cut; cut = 0; }
-  else if (held && cut && held < M.HOLD_MIN && cut < M.HOLD_MIN && held + cut >= M.HOLD_MIN) { cut += held; held = 0; }
+  const held = () => heldList.length, cut = () => cutList.length;
+  if (held() && held() < M.HOLD_MIN && cut() >= M.HOLD_MIN) { cutList = [...cutList, ...heldList]; heldList = []; }
+  else if (cut() && cut() < M.HOLD_MIN && held() >= M.HOLD_MIN) { heldList = [...heldList, ...cutList]; cutList = []; }
+  else if (held() && cut() && held() < M.HOLD_MIN && cut() < M.HOLD_MIN && held() + cut() >= M.HOLD_MIN) { cutList = [...cutList, ...heldList]; heldList = []; }
   const splinters = [];
   const holdName = holdoutsName(state, tile, f);
-  if (held >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "fortress", holdName, held, nearTile(state, tile), freeColor(state, f.color), "the garrison"));
-  if (cut >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "military", `Remnant of ${s.the}`, cut, s.tile, f.color, s.the, s));
+  if (held() >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "fortress", holdName, heldList, nearTile(state, tile), freeColor(state, f.color), "the garrison"));
+  if (cut() >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "military", `Remnant of ${s.the}`, cutList, s.tile, f.color, s.the, s));
   for (let i = splinters.length - 1; i >= 0; i--) if (!splinters[i]) splinters.splice(i, 1);
   // A handful in all: a peaceful group near takes them in, else they come to you; with neither they scatter.
-  let rest = (held < M.HOLD_MIN ? held : 0) + (cut < M.HOLD_MIN ? cut : 0);
+  const restList = [...(held() < M.HOLD_MIN ? heldList : []), ...(cut() < M.HOLD_MIN ? cutList : [])];
+  let rest = restList.length;
   let join = null;
   if (rest) {
     const dist = (o) => Math.min(...o.bases.map((x) => g.distance(x, tile)));
@@ -1081,12 +1163,12 @@ function militaryFalls(state, f, how) {
     join = peaceful.sort((a, b) => dist(a) - dist(b) || a.id - b.id)[0] || null;
     if (join) {
       const b = makeBand(state, "fortress", {
-        name: `${f.name} stragglers`, color: f.color, tile: nearTile(state, tile), pop: rest, remnant: true, joinId: join.id,
+        name: `${f.name} stragglers`, color: f.color, tile: nearTile(state, tile), pop: rest, people: restList, remnant: true, joinId: join.id,
         stock: { food: rest * 3, water: rest * 2, ammo: rest * 12, meds: 1, fuel: 0, parts: 0, scrap: 2, preserved: rest, jars: 0 },
         goodwill: f.goodwill, foundAt: d + 20,
       });
       if (b) b.known = f.known;
-    } else if (h || team) { toYou += rest; rest = 0; }
+    } else if (h || team) { youList.push(...restList); toYou += rest; rest = 0; }
   }
   m.splinters = splinters.map((b) => b.id);
   m.toYou = toYou;
@@ -1105,7 +1187,9 @@ function militaryFalls(state, f, how) {
     choices: [{ label: "OK", resolve: () => "" }],
   });
   if (toYou) {
-    const list = Array.from({ length: toYou }, () => makeCandidate(state, { quality: 1.05, minHealth: 35, gearChance: 0.9 }));
+    // The very soldiers, armed with what they carried out (as a deserter at your gate: groupcare.js desertOne).
+    const list = youList.map((s) => { delete s.fid; s.pending = true; s.role = "rest"; s.location = { kind: "pending" }; s.health = Math.max(s.health, 35); return s; });
+    touchMembers();
     offerRecruits(state, list, {
       source: "refugees", baseId: h ? h.id : null, partyId: team ? team.id : undefined, title: "Soldiers at the gate",
       intro: `${toYou === 1 ? "A soldier" : `${toYou} soldiers`} from ${place} reached ${h ? h.name : "your people"}, armed and exhausted. They ask to join you.`,
@@ -1115,12 +1199,14 @@ function militaryFalls(state, f, how) {
 
 // A group of what was left of the military: a band on the road that founds its hub somewhere defensible.
 // The garrison's survivors carry out a share of the base's stores (SPLINTER_GRAB); the strike force what it has left.
-function makeSplinter(state, f, type, name, pop, tile, color, of, strike = null) {
+// people: the very soldiers (members.js), who become the band's people with what they carry.
+function makeSplinter(state, f, type, name, people, tile, color, of, strike = null) {
   const rng = grng(state), d = day(state);
+  const pop = people.length;
   const st = f.stock || {}, k = strike ? 0 : M.SPLINTER_GRAB;
   const grab = (key, min) => Math.max(min, Math.round((key === "food" ? foodIn(st) : key === "preserved" ? 0 : st[key] || 0) * k)); // food: days of it (foods.js)
   const b = makeBand(state, type, {
-    name, color, tile, pop, remnant: true, splinter: of,
+    name, color, tile, pop, people, remnant: true, splinter: of,
     stock: {
       food: grab("food", pop * 4), water: grab("water", pop * 2), ammo: strike ? Math.max(pop * 10, strike.ammo) : grab("ammo", pop * 14), meds: grab("meds", 3),
       fuel: type === "military" ? 4 : grab("fuel", 0), parts: grab("parts", 1), scrap: grab("scrap", 6), preserved: grab("preserved", pop), jars: 0,

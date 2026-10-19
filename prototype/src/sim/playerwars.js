@@ -142,7 +142,7 @@ function knownNear(state, f) {
 export function grievanceOf(state, f) {
   const g = { ...(f.griev || {}) };
   for (const k of GRIEVANCES) g[k] = g[k] || 0;
-  g.prisoners += PW.PRISONER * Math.max(theirPrisoners(state, f).length, f.prisonersHeld || 0);
+  g.prisoners += PW.PRISONER * theirPrisoners(state, f).length; // prisoners.js: the very people you hold
   g.growth += PW.NEAR_BASE * knownNear(state, f).length;
   g.total = GRIEVANCES.reduce((a, k) => a + g[k], 0);
   return g;

@@ -36,7 +36,7 @@ import { startOrder } from "./orders.js";
 import { partyVehicle, partyFuel, vehicleById, isCar } from "./vehicles.js";
 import { itemLoad } from "./inventory.js";
 import {
-  available, need, demand, roundNeeds, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares, WARES_MAX,
+  available, need, demand, roundNeeds, openTrade, openCaravanTrade, tradeContext, executeTrade, endTrade, setQty, balanceWith, tradeVerdict, ensureWares,
   autoSellGear, gearBuyPrice, sellPrice,
 } from "./trade.js";
 import { marketOf, groupStockKey } from "./trade.js";

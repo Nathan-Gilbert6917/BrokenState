@@ -4,6 +4,8 @@
 //   2. Physical rounds: the same reload plan from what they carry, the same refusal when it is gone, rounds that run out.
 //   3. The rules that were keyed to a side: caught unaware, a flare's light, footsteps, a gun above their skill, hearing
 //      lost for good, going down and pulled through, meds, throwing what they carry, perks.
+//   4. Carrying and moving people: a nomad band carries what its people can by your teams' rule; a loan between
+//      groups moves the very people away and back, as yours are lent.
 // Usage: node tools/paritytest.js [seed]
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import { createBattle, combatAct, registerCombatHandler, reload, loadMag, magIn } from "../src/sim/combat.js";
@@ -18,6 +20,11 @@ import { deafen, HEARING } from "../src/sim/hearing.js";
 import { settleFoes } from "../src/sim/medics.js";
 import { throwablesOf } from "../src/sim/stealth.js";
 import { battlePerks } from "../src/sim/skills.js";
+import { spawnNomads, bandRoom } from "../src/sim/nomads.js";
+import { carryCapacity } from "../src/sim/parties.js";
+import { itemLoad } from "../src/sim/inventory.js";
+import { syncMembers } from "../src/sim/members.js";
+import { lendPeople, loanHome, VOL } from "../src/sim/volunteers.js";
 const stackN = (st) => st.reduce((a, x) => a + (x.n || 0), 0);
 
 const seed = Number(process.argv[2] || 7);
@@ -157,6 +164,32 @@ section("3. The rules once keyed to a side");
   t2.down = true; t2.wounded = true; t2.hp = 0; t2.stab = true;
   settleFoes(b2, "victory"); // you won: a prisoner of yours
   check(!t2.dead && !t2.recovered, "your win: their stabilized downed are your prisoners");
+}
+
+section("4. Carrying and moving people: the same loads, the very people");
+{
+  // A nomad band's shelf is what its people carry, by your teams' rule (parties.js carryCapacity): the same two
+  // people carry the same kg on either side.
+  const st = createWorld({ seed, factionCount: 4 });
+  st.started = true;
+  const tile = hub(st).tile;
+  const b = spawnNomads(st, { tier: 2, tile, pop: 2 });
+  const two = [person(st), person(st)];
+  b.people = two.map((s) => { s.alive = true; s.location = { kind: "band" }; return s; });
+  b.stock = {}; b.wares = [];
+  const yours = carryCapacity(st, two, null);
+  check(Math.abs(bandRoom(st, b) - yours) < 1e-6, `two people carry ${yours} kg as your team and ${Math.round(bandRoom(st, b) * 100) / 100} kg as a nomad band`);
+  b.wares.push(newItem("sledge"));
+  check(Math.abs(bandRoom(st, b) - (yours - itemLoad(b.wares[0]))) < 1e-6, "what is on the shelf is carried: it takes the same room it would in your cargo");
+  // A loan between groups moves the lender's very people, as yours are lent (location "lent"), and brings them back.
+  const [g, l] = st.factions;
+  syncMembers(st, g); syncMembers(st, l);
+  const L = lendPeople(st, l, g, 2, 0, "war");
+  const lent = L ? [...L.people] : [];
+  check(lent.length === 2 && lent.every((s) => s.location.kind === "lent" && !l.people.includes(s)) && l.pop === l.people.length, `lent: ${lent.length} of ${l.name}'s people away from its list, as yours are lent`);
+  VOL.LEND.lose = 0; VOL.LEND.stay = 0;
+  loanHome(st, L, g, l);
+  check(lent.every((s) => l.people.includes(s) && s.location.kind === "member" && s.fid === l.id) && l.pop === l.people.length, "back: the very same people in its list, the head count its list");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

@@ -29,7 +29,11 @@
 // day of the span their fight may come (AI.fight by the need) and each of them may be hurt or killed (coarse, by the
 // numbers, as that group's fights are). Home at the end with a share of the group's stores for each fight, goodwill,
 // or not at all. AI groups lend each other fighters the same way, coarse and cheap (aiLendDaily: a friend sends 1–3,
-// the lender's people away, their power on the asker's strength, a few lost, relations up).
+// the lender's people away, their power on the asker's strength, a few lost, relations up). Those fighters are the
+// lender's very people (members.js, docs/adr/0001-ai-parity.md), as yours are: off its list while they are away
+// (lendPeople: location "lent", their kit off its books and on them), held on the loan (L.people), and back at the
+// end as themselves with what they carry (loanHome); the ones who fell were buried by the group they died for, which
+// keeps what they had; one may stay with it as its own. A head count never moves.
 // The governor (autopilot) asks allies when a hive crawl or a base assault looks marginal (autoAskVolunteers, by its
 // style's STYLES row) and answers the groups' asks by its style (the card's ai scores: Diplomat generous, Turtle stingy).
 // Dice: state.volRng (its own, saved), never the world's.
@@ -43,9 +47,10 @@ import { attitude, changeGoodwill } from "./factions.js";
 import { warsOf, enemyIn, relation, changeRelation } from "./diplomacy.js";
 import { jobsDoneFor } from "./jobs.js";
 import { isMember, reachVia } from "./alliance.js";
-import { issueKit, removeFromArsenal, addToArsenal, takeArsenalRounds, unitPower, arsenalWorthy, kitOf } from "./arsenal.js";
+import { issueKit, removeFromArsenal, addToArsenal, takeArsenalRounds, unitPower, arsenalWorthy, kitOf, keepItem } from "./arsenal.js";
+import { collectRounds } from "./loadouts.js"; // a lent fighter who fell: their rounds into the stores of the group that buried them
 import { allItems, allCarried, newItem, stripAll } from "./inventory.js";
-import { syncMembers, fitAtHome, removeMember, addMember } from "./members.js"; // volunteers are the group's own people
+import { syncMembers, fitAtHome, removeMember, addMember, lossOrder, touchMembers } from "./members.js"; // volunteers are the group's own people
 import { isRoundItem } from "./itemstack.js";
 import { SUPPLIES, GEAR, supValue } from "./data.js";
 import { blocOf } from "./blocs.js";
@@ -759,10 +764,7 @@ export function aiLendDaily(state) {
     V.aiLoans = V.aiLoans.filter((x) => x !== L);
     const to = factionById(state, L.to), from = factionById(state, L.from);
     if (to) to.volAid = Math.max(0, (to.volAid || 0) - L.power);
-    const lost = Math.min(L.n, Math.round(L.n * VOL.LEND.lose * rng.range(0, 2)));
-    const stay = L.n - lost > 0 && to && to.alive && from && from.alive && rng.chance(VOL.LEND.stay) ? 1 : 0; // one of them stays with the group they helped (AI parity with your old hands)
-    if (from && from.alive) from.pop += L.n - lost - stay;
-    if (stay) { to.pop += 1; V.stats.aiStayed = (V.stats.aiStayed || 0) + 1; }
+    loanHome(state, L, to, from, rng);
     if (to && from && to.alive && from.alive) changeRelation(state, to, from, VOL.LEND.rel_up);
   }
   for (const g of state.factions) {
@@ -774,14 +776,66 @@ export function aiLendDaily(state) {
       && (relation(state, g, l) >= VOL.LEND.rel || (gb && blocOf(state, l) === gb)) && !warsOf(state, l).some((w) => enemyIn(w, l) === g.id));
     if (!friends.length) continue;
     const l = friends.sort((a, b) => relation(state, g, b) - relation(state, g, a) || a.id - b.id)[0];
-    const n = clamp(Math.floor(l.pop / 8), 1, 3);
-    const power = n * unitPower(l);
-    l.pop -= n;
-    g.volAid = (g.volAid || 0) + power;
-    V.aiLoans.push({ from: l.id, to: g.id, n, power, until: d + rng.int(VOL.LEND.days[0], VOL.LEND.days[1]), kind: need.kind });
+    const until = d + rng.int(VOL.LEND.days[0], VOL.LEND.days[1]);
+    const L = lendPeople(state, l, g, clamp(Math.floor(l.pop / 8), 1, 3), until, need.kind);
+    if (!L) continue; // nobody fit at home to send
+    const n = L.people.length;
+    V.aiLoans.push(L);
     V.stats.aiLoans++;
     if (g.known && l.known && reachVia(state, g)) log(state, `Heard on the radio: ${l.name} sent ${n} fighter${n === 1 ? "" : "s"} to help ${g.name} with ${need.label}.`, "info");
   }
+}
+// A loan between groups (aiLendDaily, the council's councilVolVote): n of the lender's fit people at home, best
+// fighters first, leave its list with what they carry (members.js removeMember: their kit off its books, on them) and
+// are held on the loan, away ("lent"), until it ends. Their power is on the borrower's strength while they are there
+// (f.volAid). Returns the loan ({ from, to, n, power, until, kind, people }), or null when nobody could go.
+export function lendPeople(state, l, g, n, until, kind, extra = {}) {
+  syncMembers(state, l);
+  const people = fitAtHome(l).slice(0, Math.max(0, Math.round(n)));
+  if (!people.length) return null;
+  const power = people.length * unitPower(l);
+  for (const s of people) {
+    removeMember(state, l, s, "lent");
+    s.location = { kind: "lent", fid: l.id, to: g.id, until };
+  }
+  touchMembers(); // members.js: memberById finds them on the loan
+  g.volAid = (g.volAid || 0) + power;
+  return { from: l.id, to: g.id, n: people.length, power, until, kind, people, ...extra };
+}
+// The loan is over: lost of them (by a roll, as their fights by the numbers went) did not come back: buried by the
+// group they fell for, which keeps what they had (its stores take their rounds, its books or shelf the rest:
+// loadouts.js collectRounds, arsenal.js keepItem). One of the rest may stay with that group as its own (VOL.LEND.stay,
+// parity with your old hands). The others go home as themselves, their kit on their group's books again; with their
+// group gone they stay where they are, and with both gone they scatter.
+export function loanHome(state, L, to, from, rng = volRng(state)) {
+  const V = ensureVols(state);
+  const people = (L.people || []).filter((s) => s && s.alive !== false);
+  L.people = [];
+  touchMembers();
+  const n = people.length;
+  const lost = Math.min(n, Math.round(n * VOL.LEND.lose * rng.range(0, 2)));
+  const stay = n - lost > 0 && to && to.alive && from && from.alive && rng.chance(VOL.LEND.stay) ? 1 : 0; // one of them stays with the group they helped (AI parity with your old hands)
+  const order = lossOrder(state, people, `loan:${L.from}:${L.to}:${L.until}`);
+  const fell = order.slice(0, lost), back = order.slice(lost);
+  const into = (f, s, why) => {
+    addMember(state, f, s, f.bases && f.bases[0] != null ? f.bases[0] : null);
+    for (const it of allCarried(s)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, why); // loose rounds are the stores' (loadouts.js deals them out)
+  };
+  const keeper = to && to.alive ? to : from && from.alive ? from : null; // with that group gone, their comrades carry it home
+  for (const s of fell) {
+    if (keeper) {
+      collectRounds(keeper, s, keeper.stock);
+      for (const it of stripAll(s)) keepItem(state, keeper, it, "buried");
+    }
+    s.alive = false; s.health = 0; s.location = { kind: "dead", fid: L.from };
+  }
+  if (stay) { into(to, back.pop(), "joined"); V.stats.aiStayed = (V.stats.aiStayed || 0) + 1; }
+  for (const s of back) {
+    if (from && from.alive) into(from, s, "back");
+    else if (to && to.alive) into(to, s, "joined");
+    else s.location = { kind: "gone", fid: L.from }; // both groups gone: they go their own way
+  }
+  return { lost, stay, home: back.length };
 }
 
 // ---------- the governor ----------
@@ -910,11 +964,10 @@ export function councilVolVote(state, m, e, yes, ids, rel = 10) {
   for (const v of votes) {
     if (!v.yes || v.f.pop < VOL.LEND.pop) continue;
     const n = rng.int(VOL.COUNCIL.n[0], VOL.COUNCIL.n[1]);
-    const power = n * unitPower(v.f);
-    v.f.pop -= n;
-    m.volAid = (m.volAid || 0) + power;
-    V.aiLoans.push({ from: v.f.id, to: m.id, n, power, until: day(state) + rng.int(VOL.COUNCIL.days[0], VOL.COUNCIL.days[1]), kind: "war", council: true });
-    sent.push(`${v.f.name} (${n})`);
+    const L = lendPeople(state, v.f, m, n, day(state) + rng.int(VOL.COUNCIL.days[0], VOL.COUNCIL.days[1]), "war", { council: true }); // the very people (members.js)
+    if (!L) continue;
+    V.aiLoans.push(L);
+    sent.push(`${v.f.name} (${L.people.length})`);
   }
   let mine = "";
   if (ids && ids.length) {
