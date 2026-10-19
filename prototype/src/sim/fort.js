@@ -11,6 +11,9 @@
 // deploy step, zone = the margin). Defenders deploy anywhere inside the ring (the walkway, the towers, the gates, the
 // yard, the buildings). The fight runs through its tiers on this one map (interior.js tierPlayerTurn): the wall until
 // enough attackers are inside, then the yard, then the last stand in the buildings. No fall back: it is all here.
+// A group's base you storm carries its real goods (assaultstores.js): their storage laid on the generated yard (their
+// main house, their storage buildings, piles outside for what their room does not hold) with what that base holds in
+// it, for your people to take and carry off.
 import { homeAt } from "./groupbases.js"; // their base as they built it
 import { factionById } from "./world.js";
 import { CELL, unitAt, say, resizeBattle, WEAPONS, coverAgainst, active, isRanged } from "./combat.js";
@@ -24,6 +27,7 @@ import { armoryDefence, bossUnit } from "./defences.js";
 import { layMines } from "./mines.js"; // the main base's minefield in the margin
 import { preBoardBase } from "./barricade.js"; // their outer windows and doors boarded before your assault (the user's pick 2026-10-18)
 import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD } from "./basemap.js"; // the base map: every real base's own layout, walled or not
+import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map of an assault
 
 // Which map a base fights on: its own base map (basemap.js: the player's layout, walled or not, the attack from any
 // side) for every real base; the generated yard (interior.js) for a group's base you storm (assaultBase, id −1) and
@@ -409,7 +413,9 @@ function fixedLit(b, F) {
 
 // ---------- a group's base you storm (conquest.js "baseAssault") ----------
 // A stand-in base for the group's: an outpost or a hub by the strength of their walls, with buildings for their
-// numbers, laid out by the same generator (deterministic for the tile).
+// numbers, laid out by the same generator (deterministic for the tile). Its stock and armory stay empty: their real
+// goods are laid on the map from their own base (assaultstores.js: its storage, by room, the rest on piles), and what
+// you carry off leaves that base when the fight ends.
 export function assaultBase(state, setup) {
   if (setup.fortBase) return setup.fortBase;
   const e = setup.enemy || {}, walls = e.walls || 0, people = (setup.context && setup.context.people) || e.count * 3 || 8;
@@ -449,6 +455,7 @@ export function fortAssault(b, ctx, c) {
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 10; t++) { const x = rng.int(F.x0, F.x0 + F.yw - 1), y = rng.int(F.y0, F.y0 + F.yh - 1); const q = F.cells[y * F.W + x]; if (q.k === "open" && q.f !== "floor" && !F.indoor[y * F.W + x]) { q.k = i % 2 ? "sandbag" : "barricade"; break; } }
     }
+    layAssaultStores(state, b.setup, F); // assaultstores.js: their storage buildings, their core and the piles outside (no dice)
     F.side = "west";
     resizeBattle(b, F.W, F.H, F.cells, 0, Math.floor(F.H / 2));
     b.deployPlan = { walled: true, fort: F, gate: [], breaches: [], towers: F.towers };
@@ -485,6 +492,7 @@ export function fortAssault(b, ctx, c) {
   // Their vehicle? none. Your vehicle stands in the west margin (combat.js placed it by the edge): fine where it is.
   finishFort(b, F, "west", { attackers: "player", base: null, floodlit: false, night: isNight(state), deploy: true });
   preBoardBase(state, b, (b.setup.enemy || {}).factionId, "west"); // barricade.js: their windows and doors on your side boarded, paid from their stock
+  stockAssaultStores(state, b, F, rng); // assaultstores.js: their real goods in those containers (makeStores), yours to take
   b.phase = "deploy";
   b.acted = false;
   say(b, "Their walls. Stage your people: click one, then a green cell anywhere in the open ground round the base (any side). The gates are in the middle of each wall; the ram, ladders and grenades are for the wall (siege.js). Then start the assault.", "info");

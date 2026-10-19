@@ -9,6 +9,8 @@
 import { baseById } from "../sim/world.js";
 import { openBaseMap, layoutOf, itemByKey, unplaceItem, baseMapSummary, storeContents, gridOfCell, FOOT, GRID, STEAL } from "../sim/basemap.js";
 import { BUILDINGS } from "../sim/buildings.js";
+import { nearRect, active } from "../sim/combat.js"; // who of yours stands next to a store of theirs (an assault)
+import { HAUL } from "../sim/raidloot.js";
 import { badge, hint } from "./uikit.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -78,8 +80,11 @@ export function layoutPanel(state, b, cui, preview = "") {
   return html;
 }
 // The stores on the map (any base battle): a button a container, and the contents of the one being looked at.
-export function storesHtml(b, cui) {
+// u: the selected unit. On an assault (sim/assaultstores.js: their stores, c.contents) the card offers Take (the search
+// window) or Force lock to one of yours standing next to it, once the fight has begun.
+export function storesHtml(b, cui, u = null) {
   if (!b.stores || !b.stores.containers.length) return "";
+  if (b.stores.containers.some((c) => c.contents)) return theirStoresHtml(b, cui, u);
   let html = `<h3 data-tip="${esc("The base's own stock and armory, spread over the buildings that hold goods and the parked cars; what there is no room for lies outside on piles. Click one here or on the map to see what is in it. In a raid, raiders go for them once the wall is passed (the piles first); what they get away with is gone. An armory's gun cage and ammo lockers are locked (🔒) behind its locked security door: a raider has to batter the door down and then the lock open.")}">Stores on the map</h3><div class="cbactions">`;
   for (const c of b.stores.containers) html += `<button class="${cui.storeView === c.id ? "active" : ""}" data-action="cb-store" data-id="${c.id}" data-tip="${esc(`${c.label}: about ${Math.round(c.kg)} kg of goods.${c.lock ? (!(c.lock.hp > 0) ? " Its lock is smashed open." : c.lock.open ? " Unlocked with the key." : ` Locked (${c.lock.hp}/${c.lock.mhp}): a raider has to batter the lock open first.`) : ""} ${c.pile ? ` ${PILE_NOTE}.` : ""} Click to see what is in it.`)}">${esc(c.label)}${lockMark(c)} <span class="key">${Math.round(c.kg)} kg</span></button>`;
   html += `</div>`;
@@ -93,6 +98,38 @@ export function storesHtml(b, cui) {
   }
   return html;
 }
+// Their stores on an assault's map (sim/assaultstores.js): the same buttons and card, their words.
+function theirStoresHtml(b, cui, u) {
+  let html = `<h3 data-tip="${esc("What this base of theirs really holds, in its storage: their main house, their storage buildings by their room, and what they have no room for on piles in the yard. One of yours next to one takes what they can carry (the search window: hauling takes time, quicker from a pile); a locked one is forced first. What your people carry off is gone from their stores; win and half of what is left is yours too. Lose, and what your people had taken stays with them.")}">Their stores</h3><div class="cbactions">`;
+  for (const c of b.stores.containers) html += `<button class="${cui.storeView === c.id ? "active" : ""}" data-action="cb-store" data-id="${c.id}" data-tip="${esc(`${c.label}: about ${Math.round(c.kg)} kg of goods.${c.lock && !c.lock.open ? ` Locked (${c.lock.hp}/${c.lock.mhp}).` : ""}${c.pile ? " Left outside: quicker to haul off." : ""} Click to see what is in it.`)}">${esc(c.label)}${lockMark(c)} <span class="key">${Math.round(c.kg)} kg</span></button>`;
+  html += `</div>`;
+  const c = cui.storeView != null ? b.stores.containers.find((x) => x.id === cui.storeView) : null;
+  if (c) {
+    const s = storeContents(c);
+    html += `<div class="card small" style="margin-top:0.4rem;flex-shrink:0"><div class="spread"><b>${esc(c.label)}</b><button class="mini" data-action="cb-store" data-id="" data-tip="Close">✕</button></div>
+      ${c.pile ? `<div class="small warn">Left outside: no lid, no lock, quicker to haul off.</div>` : ""}
+      ${s.sup.length || s.gear.length ? `<div class="small">${s.sup.map(([n, q]) => `${q} ${esc(n.toLowerCase())}`).join(", ")}${s.sup.length && s.gear.length ? "; " : ""}${s.gear.map(esc).join(", ")}</div>` : `<div class="small muted">Empty.</div>`}
+      ${theirLockLine(s.lock)}<div class="small muted">About ${s.kg} kg in all.</div>${takeButtons(b, c, u)}</div>`;
+  }
+  return html;
+}
+// A store of theirs (an assault): Take (the search window: into the hands, pockets and pack of the one next to it,
+// hauling time as a raid's search; a pile quicker) or Force lock (one blow, the rest of the turn).
+function takeButtons(b, c, u) {
+  if (b.phase === "deploy" || b.over) return `<div class="small muted">Once the assault has begun, one of yours standing next to it can take from it.</div>`;
+  const mine = u && u.side === "player" && active(u) ? u : null;
+  const near = !!mine && nearRect(c, mine.x, mine.y) && (c.f || 0) === (mine.f || 0);
+  const who = mine ? esc(mine.name.split(" ")[0]) : "";
+  const locked = !!(c.lock && !c.lock.open);
+  if (locked) {
+    const why = !mine ? "Pick one of your people next to it." : !near ? `${who} has to stand next to it.` : mine.ap < 1 ? "No actions left this turn." : "";
+    return `<div class="row" style="margin-top:0.3rem"><button class="mini" data-action="cb-store-force" data-id="${c.id}"${why ? " disabled" : ""}${tip(why || `${who} batters the lock with what they hold (a crowbar, a fire axe or a sledgehammer twice as hard): one blow, the rest of the turn, loud. At 0 it is open and they can take from it.`)}>Force lock</button></div>`;
+  }
+  const why = !mine ? "Pick one of your people next to it." : !near ? `${who} has to stand next to it.` : "";
+  const rate = c.haulRate > 1 ? ` From a pile it goes ${c.haulRate} times as fast.` : "";
+  return `<div class="row" style="margin-top:0.3rem"><button class="mini" data-action="cb-store-take" data-id="${c.id}"${why ? " disabled" : ""}${tip(why || `Open it for ${who}: take what they can carry into their hands, pockets and pack (their max load; two different things carried and their hands are full). Hauling takes time: the first ${HAUL.free} kg a turn are free, then ${HAUL.per} kg an action.${rate} What they carry when the fight ends comes home with them and is gone from their stores; a loss leaves it with them.`)}>Take</button></div>`;
+}
+const theirLockLine = (L) => (!L ? "" : L.smashed ? `<div class="small good">🔓 The lock is smashed open${L.by ? ` (${esc(L.by)})` : ""}.</div>` : L.open ? `<div class="small good">🔓 Open.</div>` : `<div class="small warn">🔒 Locked (${L.hp}/${L.mhp}): force the lock (next to it, a blow a turn) before anything can be taken.</div>`);
 // The armory's locks (sim/basemap.js ARMORY_LOCK): a mark after a locked container's name, and the lock's line in its card.
 const lockMark = (c) => (c.lock ? (c.lock.open ? " 🔓" : " 🔒") : "");
 const lockLine = (L) => (!L ? "" : L.smashed ? `<div class="small danger">🔓 The lock is smashed open${L.by ? ` (${esc(L.by)})` : ""}: raiders take from it freely.</div>` : L.open ? `<div class="small warn">🔓 Unlocked with the key: raiders take from it freely. Lock (1 action, next to it) locks it again.</div>` : `<div class="small good">🔒 Locked (${L.hp}/${L.mhp}): a raider has to batter the lock open, a blow a turn, before anything can be taken. Your people unlock it with the key (Unlock, 1 action, next to it).</div>`);

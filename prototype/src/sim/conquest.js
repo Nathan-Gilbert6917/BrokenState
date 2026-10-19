@@ -14,7 +14,9 @@
 //   goodwill with them at once and ends any pact; a coalition member you attack leaves the coalition.
 // - Win: the base is yours, an outpost on its tile (a group's base: their palisade, battered, two sections behind
 //   strong walls, and their bunkhouse; one of yours they held: its buildings as they stand, damage and all, and
-//   what is left of its stock). Its stores: half of that base's share of the group's stock. It holds land like your
+//   what is left of its stock). Its stores: half of that base's share of the group's stock, of what is left after
+//   what your people carried off the battle map (assaultstores.js: their real goods are in their storage on the map,
+//   yours to take; what you took is gone from that base before this half is counted). It holds land like your
 //   hub (alliance.js controlRadius "stronghold"). The team leaves one person (the weakest fighter, if the team has
 //   3+; everyone if you have no hub) as the first staff and waits for orders. Of the defenders who live, 40% get away to their
 //   group's other bases (none if it was the last); of those who give up a quarter ask to join you (a recruit card,
@@ -70,6 +72,7 @@ import { startCombat, registerCombatHandler, registerBattleLayout, registerBattl
 import { groupTurret, TURRET_ODDS, seizeGroupVehicles, upgradeText } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
 import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsenal.js"; // group arsenals: the defenders' kit; their stores of it
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
+import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map (the wall-line map too)
 import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
@@ -340,8 +343,12 @@ registerBattleLayout("baseAssault", (b, ctx) => {
     for (let i = 0; i < 2 + Math.min(6, walls); i++) {
       for (let t = 0; t < 8; t++) { const x = ctx.rng.int(X + 2, X + 5), y = ctx.rng.int(1, ctx.H - 2); if (ctx.free(x, y)) { ctx.put(x, y, i % 2 ? "sandbag" : "barricade"); break; } }
     }
+    // assaultstores.js: their stores on their side of the map (behind the wall line, or where it would be), as crates.
+    const yard = { W: ctx.W, H: ctx.H, cells: b.cells, x0: X + 2, y0: 1, yw: Math.max(0, ctx.W - X - 3), yh: ctx.H - 2, indoor: null, doors: [], buildings: [], stores: [] };
+    if (layAssaultStores(ctx.state, b.setup, yard)) b.assaultYard = { stores: yard.stores, assaultStores: true };
     return;
   }
+  stockAssaultStores(ctx.state, b, b.assaultYard, ctx.rng); // assaultstores.js: their goods in those crates (makeStores), yours to take
   // Units: half the defenders at the wall (right behind it), the rest where the battle put them (behind it too).
   if (walls < 1) return;
   const foes = b.units.filter((u) => u.side === "enemy");
