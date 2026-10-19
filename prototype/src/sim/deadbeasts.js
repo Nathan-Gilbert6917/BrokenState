@@ -23,12 +23,13 @@
 //   beast bursts into a worm swarm at its kind's BURST odds (a dead cow every time), never when fire killed it: the
 //   worms cook (beastDies; carriers.js releaseSwarm, the Carrier's swarm).
 // - On the State Map a horde crossing such land at HORDE_INF infection or more picks some up (hordeBeastPickup,
-//   hordes.js onHordeEnter), and they come with it to your walls (ZTYPES wall / weight). A team on foot crossing
+//   hordes.js onHordeEnter; hash dice of the seed, the horde's per-world id, the tile and the hour), and they come with it to your walls (ZTYPES wall / weight). A team on foot crossing
 //   such land meets them as a travel card now and then (events.js "deadbeasts": go around, put them down, burn them).
 // Battles without them draw no dice of the battle's here.
 import { BEASTS, ZTYPES } from "./hiveconst.js";
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
+import { localId } from "./world.js"; // a horde's id counted from the world's own start (the same seed the same dice)
 import { herdAt } from "./worm.js";
 import { mergeMix } from "./zombietypes.js";
 import { releaseSwarm } from "./carriers.js";
@@ -116,12 +117,13 @@ export function beastDies(b, t, hit) {
 
 // ---------- on the State Map ----------
 // A horde entering a tile (hordes.js onHordeEnter): on the beasts' land at HORDE_INF infection or more, some of the
-// dead beasts there fall in (HORDE_ODDS a pass, HORDE_ADD of the horde, up to HORDE_MAX). Hash dice: no world dice.
+// dead beasts there fall in (HORDE_ODDS a pass, HORDE_ADD of the horde, up to HORDE_MAX). Hash dice of the seed, the
+// horde's per-world id (world.js localId: two worlds of one seed roll alike), the tile and the hour: no world dice.
 export function hordeBeastPickup(state, h) {
   const t = state.tiles[h.tile];
   if (!t || !beastLand(t) || (t.infection || 0) < BEASTS.HORDE_INF) return false;
   if ((state.bases || []).some((b) => b.tile === h.tile)) return false;
-  if (hash01(state.seed, "beasts-horde", h.id, h.tile, state.hour) >= BEASTS.HORDE_ODDS) return false;
+  if (hash01(state.seed, "beasts-horde", localId(state, h.id), h.tile, state.hour) >= BEASTS.HORDE_ODDS) return false;
   const land = BEASTS.LAND[t.terrain];
   const kind = Object.keys(land).reduce((a, k) => (land[k] > land[a] ? k : a));
   const have = (h.mix && h.mix[kind]) || 0;

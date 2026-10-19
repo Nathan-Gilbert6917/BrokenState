@@ -219,6 +219,10 @@ section("On the State Map (hordes.js, events.js)");
   const hd = makeHorde(st, { tile: forest, size: 60, mix: { deadhog: BEASTS.HORDE_MAX } });
   check(!hordeBeastPickup(st, hd), "a horde with its fill of them takes no more");
   st.hordes.splice(st.hordes.indexOf(hd), 1);
+  // Two worlds of one seed, made one after the other (their hordes' global ids differ: world.js newId), roll alike.
+  const run = () => { const w = createWorld({ seed: 32, factionCount: 4 }); const f = fakeTile(w, "forest", null, 0.6); const out = []; for (let hour = 0; hour < 300; hour += 6) { w.hour = hour; const x = makeHorde(w, { tile: f, size: 60 }); out.push(hordeBeastPickup(w, x) ? 1 : 0); w.hordes.splice(w.hordes.indexOf(x), 1); } return out.join(""); };
+  const r1 = run(), r2 = run();
+  check(r1 === r2 && r1.includes("1"), "the same seed picks up the same beasts in a second world (the hash takes the horde's per-world id)");
   // The travel card.
   const hills = fakeTile(st, "hills", null, 0.4);
   st.hour = weekWith(st, hills) * 24 * 7;
