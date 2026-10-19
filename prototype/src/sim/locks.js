@@ -40,6 +40,7 @@ import { landEffect } from "./throwables.js";
 import { toolSource } from "./gunsafes.js";
 import { rollGunStash, TIER_STASH, blastContents, rollAreaGunFinds, CAR_CASE, rollGunCase, SEARCH_TOOLS, isGunCase, openCase, CASE } from "./gunsafes.js";
 import { haulOf } from "./raidloot.js";
+import { isBox, boxTool, boxCost, openBox, lockWords } from "./boxes.js"; // lock boxes and cases: the tools for their locks (2026-10-19)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a locked container holds
 // What rounds a locked thing holds (ammo.js themes), by its loot kind.
 const LOCK_AMMO = { guns: "guns", evidence: "police", miltruck: "military", crash: "military", safe: "home", cash: "home", gear: "home", car: "home" };
@@ -915,11 +916,11 @@ function areaGunFinds(state, b, box, lk) {
 // ---------- gun cases in a raid (openLock → openCaseAct) ----------
 // Cases this unit can open now: in an opened container next to them ("kb<id>.<i>"), carried loose ("kh<i>"), in a
 // pocket ("kq<i>") or the pack ("kp<i>"). [{ ref, item, where }].
-const caseFull = (it) => (it.contents && it.contents.some(Boolean)) || Object.values(it.sup || {}).some((v) => v > 0) || !!it.locked;
+const caseFull = (it) => !it.opened || (it.contents && it.contents.some(Boolean)) || Object.values(it.sup || {}).some((v) => v > 0) || !!it.locked;
 export function caseTargets(state, b, u) {
   const out = [];
   if (!b.raid || !u || u.side !== "player") return out;
-  const add = (it, ref, where) => { if (isGunCase(it) && caseFull(it)) out.push({ ref, item: it, where }); };
+  const add = (it, ref, where) => { if (isBox(it) && caseFull(it)) out.push({ ref, item: it, where }); }; // any box or case (boxes.js)
   for (const c of b.raid.containers) if (c.contents && nearBox(u, c)) c.contents.gear.forEach((it, i) => add(it, `kb${c.id}.${i}`, c.label));
   (u.haul ? u.haul.gear : []).forEach((it, i) => add(it, `kh${i}`, "carried"));
   const s = survivorById(state, u.sid);
@@ -931,12 +932,15 @@ export function caseTargets(state, b, u) {
   return out;
 }
 // What opening a case takes: { ok, why, ap, heat, tool }.
+// The lock's kind decides the tools and the cost (boxes.js, data-boxes.js BOX_LOCKS): lockpicks are quiet, a blade a
+// little noise, a pry bar or a power tool loud; a fire safe's steel lock takes 2 actions.
 export function caseOdds(state, b, u, item) {
   const s = survivorById(state, u.sid);
-  const tool = item.locked ? barOf(s) || itemsOf(s).find((it) => CASE.blades.includes(it.key)) || null : null;
-  if (item.locked && !tool) return { ok: false, ap: CASE.raidAp, heat: 0, why: "A locked case needs a blade or a crowbar to open." };
-  if (u.ap < CASE.raidAp) return { ok: false, ap: CASE.raidAp, heat: 0, why: "No actions left this turn." };
-  return { ok: true, ap: CASE.raidAp, heat: item.locked ? CASE.raidHeat : 0, tool, why: "" };
+  const t = item.locked ? boxTool(item, itemsOf(s)) : null;
+  const c = boxCost(item, t);
+  if (item.locked && !t) return { ok: false, ap: c.ap, heat: 0, why: `Locked with ${lockWords(item)}.` };
+  if (u.ap < c.ap) return { ok: false, ap: c.ap, heat: 0, why: c.ap > 1 ? `It takes ${c.ap} actions.` : "No actions left this turn." };
+  return { ok: true, ap: c.ap, heat: c.heat, tool: t ? t.item : null, kind: t ? t.kind : null, why: "" };
 }
 function openCaseAct(state, b, u, act, H) {
   const c = caseTargets(state, b, u).find((x) => x.ref === act.target);
@@ -950,8 +954,10 @@ function openCaseAct(state, b, u, act, H) {
   const m = /^kb(\d+)\./.exec(act.target);
   const box = m ? b.raid.containers.find((q) => q.id === Number(m[1])) : null;
   const dest = box ? box.contents : haulOf(u);
+  if (locked) openBox(c.item, { kind: o.kind, item: o.tool });
   const got = openCase(c.item, dest.gear, dest.sup);
-  H.say(b, `${u.name} ${locked ? `prises the ${c.item.name.toLowerCase()} open with the ${o.tool.name.toLowerCase()} (Heat +${o.heat})` : `opens the ${c.item.name.toLowerCase()}`}: ${got.length ? got.join(", ") : "empty"}.`, "good");
+  const verb = o.kind === "picks" ? "picks" : "prises";
+  H.say(b, `${u.name} ${locked ? `${verb} the ${c.item.name.toLowerCase()} open with the ${o.tool.name.toLowerCase()}${o.heat ? ` (Heat +${o.heat})` : ""}` : `opens the ${c.item.name.toLowerCase()}`}: ${got.length ? got.join(", ") : "empty"}.`, "good");
   H.fx(b, { type: "loot", to: [u.x, u.y], text: "case open" });
   return "";
 }

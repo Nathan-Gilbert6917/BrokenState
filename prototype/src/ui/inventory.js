@@ -48,7 +48,8 @@ import { itemKeyOf, roomOn, stockToPerson, bodyToPerson, supRoom, suppliesOnto, 
 import { isRoundKey } from "../sim/rounds.js"; // rounds out of the stores: boxed or loose
 import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
 import { bagRefusal } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms
-import { isGunCase, caseText, openCaseAt } from "../sim/gunsafes.js"; // gun cases: opened for free at a base or a camp
+import { isBox, isSealed, boxText, boxEmptyKg, openPlan, lockWords } from "../sim/boxes.js"; // lock boxes and cases (gun cases too): sealed until opened, then a window of what is inside (ui/boxview.js)
+import { openBoxWindow } from "./boxview.js"; // an opened box's window
 import { registerStackScreen, openStack, closeStack, stackPanel, chosenQty, supplyIcon, splitCount, STACK_ACTIONS, STACK_CHANGE } from "./stackmove.js"; // how many of a supply stack, and where
 import { lootFit } from "../sim/stacks.js";
 import { armoryView } from "./armoryview.js"; // the storage box's items grouped by type, cards or compact rows
@@ -80,7 +81,7 @@ function icon(key) {
 // Hover text for an item, with the skill-gap rule for the person who would use it.
 export function itemTip(item, s = null) {
   const d = GEAR[item.key];
-  const kgTxt = `${Math.round(itemLoad(item) * 10) / 10} kg${item.contents && item.contents.some(Boolean) ? " with what is inside" : ""}`;
+  const kgTxt = isSealed(item) ? `${Math.round(itemLoad(item) * 10) / 10} kg; ${boxEmptyKg(item)} kg empty` : `${Math.round(itemLoad(item) * 10) / 10} kg${item.contents && item.contents.some(Boolean) ? " with what is inside" : ""}`; // a sealed box: only its weight tells
   const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
@@ -112,7 +113,8 @@ export function itemTip(item, s = null) {
   if ((item.quality || 1) < 1) bits.push(`condition ${Math.round(item.quality * 100)}%`);
   const dur = itemDur(item);
   if (dur != null) bits.push(d.tabs ? `${dur} of ${d.dur} tablets left` : d.count ? `${dur} of ${d.dur} left` : d.groom ? `${dur} of ${d.dur} days of use left` : `${d.makeshift ? "makeshift: " : ""}${dur} of ${itemDurMax(item)} ${durUnit(item.key)} left before it breaks`);
-  if (item.contents) bits.push(`holds ${item.contents.filter(Boolean).length} of ${item.contents.length} items`);
+  if (isBox(item)) bits.push(isSealed(item) ? `${item.locked ? `locked (${lockWords(item)})` : "closed"}: what is inside is unknown until it is opened (right-click: Open)` : `opened${item.forced ? ", its lock broken" : ""}: ${boxText(item)}`);
+  else if (item.contents) bits.push(`holds ${item.contents.filter(Boolean).length} of ${item.contents.length} items`);
   return `${bits.join(". ")}.${d.desc ? ` ${d.desc}` : ""}`;
 }
 
@@ -125,7 +127,7 @@ export function tile(item, loc, s, drag = true) {
   const unusable = s && d.skill && d.req && !gearEffect(s, item).usable;
   return `<div class="itile${unusable ? " bad" : ""}"${drag ? ` draggable="true" data-drag="${loc}"` : ""}${tipAttrs(itemShortTip(item, loc, s), itemTip(item, s))}>
     ${gunTile(item) || `<span class="iico">${itemArtHtml(item.key) || icon(item.key)}</span>`}<span class="iname">${esc(rowName(item))}</span>${roundsBadge(item, loc)}<span class="ikg">${Math.round(itemLoad(item) * 10) / 10}</span>
-    ${item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : rowCount(item) ? `<span class="icount">${rowCount(item)}</span>` : ""}
+    ${isBox(item) ? `<span class="icount">${isSealed(item) ? (item.locked ? "🔒" : "?") : item.contents.filter(Boolean).length + Object.values(item.sup || {}).filter((v) => v > 0).length}</span>` : item.contents ? `<span class="icount">${item.contents.filter(Boolean).length}/${item.contents.length}</span>` : rowCount(item) ? `<span class="icount">${rowCount(item)}</span>` : ""}
     <i class="idur"><b style="width:${Math.round(Math.max(0.05, Math.min(1, frac)) * 100)}%;background:${col}"></b></i></div>`;
 }
 
@@ -295,7 +297,7 @@ export function selBar(state, ui, place) {
     ${st && from.o !== "armory" && from.o !== "cargo" ? `<button class="mini" data-action="inv-store"${tip(`Put it in ${st.name}`)}>${from.o === "body" ? "Take" : st.o === "armory" ? "Unequip to armory" : "Put in cargo"}</button>` : ""}
     ${GEAR[item.key] && GEAR[item.key].use && from.o !== "body" && ui.inv && !ui.inv.loot ? `<button class="mini" data-action="inv-use"${tip(`${survivorById(state, ui.inv.sid)?.name.split(" ")[0] || "They"} ${GEAR[item.key].useVerb || "use"} it now: ${useText(item.key)}. Used up.`)}>Use</button>` : ""}
     ${burnButtons(state, ui, item, from)}
-    ${isGunCase(item) && from.o !== "body" ? `<button class="mini" data-action="inv-opencase"${tip(`Inside: ${caseText(item)}${item.locked ? " (locked: prised open with a blade or a crowbar)" : ""}. Opening it here is free: the gun goes into ${st ? st.name : "storage"}, the rounds into the stores.`)}>${item.locked ? "Prise open" : "Open"} case</button>` : ""}
+    ${isBox(item) && from.o !== "body" ? `<button class="mini" data-action="inv-opencase"${tip(isSealed(item) ? `${item.locked ? `Locked with ${lockWords(item)}` : "Not locked"}. ${(() => { const o = openPlan(state, ui.invSel, ui.inv && ui.inv.sid); return o.ok ? (o.tool && o.tool.item ? `Opens with the ${o.tool.item.name.toLowerCase()}` : "Opens") + ": free here, and a window shows what is inside." : o.why; })()}` : "Its window: what is inside, to take out.")}>${isSealed(item) ? (item.locked ? "Force open" : "Open") : "Look inside"}</button>` : ""}
     ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" ? repairButtons(state, ui, item, from, place) : ""}
     ${detailsButton(ui, item)}<button class="mini" data-action="inv-cancel">Cancel</button>
     ${ui.inv && !ui.inv.loot && !ui.inv.raid && from.o !== "body" && !state.combat ? modBar(state, ui, item) + helmetBar(state, ui, item) : ""}${detailsBlock(state, ui, item)}</div>`;
@@ -1080,7 +1082,7 @@ export const INV_ACTIONS = {
     ui.invMsg = breakDownAt(state, ui.invSel);
     ui.invSel = null;
   },
-  "inv-opencase": (state, ui) => { if (ui.invSel) ui.invMsg = openCaseAt(state, ui.invSel); ui.invSel = null; }, // sim/gunsafes.js
+  "inv-opencase": (state, ui) => { if (ui.invSel) openBoxWindow(state, ui, ui.invSel, ui.inv && ui.inv.sid); ui.invSel = null; }, // sim/boxes.js, ui/boxview.js
   "inv-firemark": (state, ui, d) => { if (ui.invSel) ui.invMsg = setFireMark(state, ui.invSel, d.mark || null); },
   "inv-burnjunk": (state, ui, d) => { const b = baseById(state, Number(d.base)); if (b) ui.invMsg = breakDownJunk(state, b); ui.invSel = null; },
   "loot-open": (state, ui) => { ui.inv = { sid: null, loot: true, body: null }; ui.invSel = null; ui.invMsg = ""; },

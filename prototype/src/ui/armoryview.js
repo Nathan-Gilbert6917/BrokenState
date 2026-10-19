@@ -18,6 +18,7 @@ import { itemDur, itemDurMax } from "../sim/crafting.js";
 import { itemLoad, SLOT_NAMES } from "../sim/inventory.js";
 import { stackLabel, countOf, isRoundItem, amountOf } from "../sim/itemstack.js";
 import { isHelmetPart } from "../sim/helmets.js";
+import { isBox, isSealed } from "../sim/boxes.js"; // a sealed box shows its weight, not its contents
 import { isGunKey, gunIconHtml, PART_ART } from "./gunart.js";
 import { itemArtHtml } from "./itemart.js"; // every item but a gun: its own drawing
 import { lookOf } from "./gunparts.js";
@@ -107,6 +108,7 @@ export function statBits(item, loc = null, state = null) {
   const r = gunRoundsLabel(item, loc, state);
   if (r) out.push([r.text, r.tip, `irounds ${r.cls}`]);
   if (isRoundItem(item)) out.push([`${amountOf(item)} rds`, "Rounds in this stack"]);
+  else if (isBox(item)) out.push(isSealed(item) ? [item.locked ? "locked" : "closed", "What is inside is unknown until it is opened: its weight is the only clue"] : [`${item.contents.filter(Boolean).length + Object.values(item.sup || {}).filter((v) => v > 0).length} in`, "What it holds (right-click: Look inside)"]);
   else if (item.contents) out.push([`${item.contents.filter(Boolean).length}/${item.contents.length} in`, "What it holds"]);
   else if (countOf(item) > 1) out.push([`×${countOf(item)}`, "How many in the stack"]);
   const dur = itemDur(item);

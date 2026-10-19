@@ -7,7 +7,8 @@
 import { totalRounds } from "../src/sim/ammo.js"; // rounds by calibre
 import { roundsInItem } from "../src/sim/itemstack.js"; // a safe's rounds boxed (2026-10-10)
 import { standardMag, usesInternal } from "../src/sim/mags.js";
-import { SUPPLIES } from "../src/sim/data.js";
+import { SUPPLIES, supWeight } from "../src/sim/data.js";
+import * as B from "../src/sim/boxes.js"; // lock boxes and cases (2026-10-19)
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
@@ -430,35 +431,51 @@ console.log("Gun cases: carried locked, opened at a base for free; a cased gun i
   const st = world();
   const h = hub(st);
   let cs = null;
-  for (let i = 0; i < 200 && !cs; i++) { const it = G.rollGunCase((...k) => hash01(seed, "case", i, ...k), "riflecase", "farm"); if (it.locked) cs = it; }
+  // (since 2026-10-19 a case is a box, boxes.js: most hold a gun, some only rounds, gear or nothing)
+  const hasGun = (it) => (it.contents || []).some((c) => c && GEAR[c.key].slot === "weapon");
+  for (let i = 0; i < 400 && !cs; i++) { const it = G.rollGunCase((...k) => hash01(seed, "case", i, ...k), "riflecase", "farm"); if (it.locked && hasGun(it)) cs = it; }
   const gun = cs.contents[0];
   check(cs.locked && gun && GEAR[gun.key].slot === "weapon" && totalRounds(cs.sup) >= 5, `a locked rifle case with a ${gun.name} and ${totalRounds(cs.sup)} rounds`);
-  check(near(itemLoad(cs), GEAR.riflecase.weight + GEAR[gun.key].weight) && itemValue(cs) > GEAR.riflecase.value, `its weight and worth count the gun inside (${itemLoad(cs)} kg)`);
+  const supKg = Object.entries(cs.sup).reduce((a, [k, v]) => a + supWeight(k) * v, 0);
+  check(near(itemLoad(cs), GEAR.riflecase.weight + itemLoad(gun) + supKg) && itemLoad(cs) > GEAR.riflecase.weight + 2, `its weight is the case's own, the gun's and the rounds' (${itemLoad(cs).toFixed(2)} kg: a heavy case holds something)`);
+  check(near(itemValue(cs), itemValue({ ...cs, contents: [] })) && cs.opened !== true, "sealed, it is worth the case alone (nobody knows what is in it)");
   let n = 0, l = 0;
   for (let i = 0; i < 2000; i++) { const it = G.rollGunCase((...k) => hash01(seed, "case2", i, ...k), "pistolcase", "town"); n++; if (it.locked) l++; }
   check(Math.abs(l / n - 0.4) < 0.05, `40% of cases are locked (${pct(l / n)})`);
   // In a raid: carried loose, opened with a blade (1 action, Heat +1).
   const r = safeRaid("gunsafe1", "key");
   const { b, u, s } = r;
-  const cs2 = G.rollGunCase((...k) => hash01(seed, "case3", ...k), "pistolcase", "town");
+  let cs2 = null;
+  for (let i = 0; i < 400 && !cs2; i++) { const it = G.rollGunCase((...k) => hash01(seed, "case3", i, ...k), "pistolcase", "town"); if (hasGun(it)) cs2 = it; }
   cs2.locked = true;
   u.haul.gear.push(cs2);
   const tg = L.caseTargets(r.st, b, u);
   check(tg.length === 1 && tg[0].ref === "kh0", "a case carried loose can be opened from the raid panel");
   let err = combatAct(r.st, { type: "open", unit: u.id, target: "kh0", method: "case" });
-  check(/blade or a crowbar/.test(err), `a locked case needs a blade or a crowbar ("${err}")`);
+  check(/Locked with .*a blade.*a pry bar/.test(err), `a locked case needs lockpicks, a blade, a pry bar or a power tool ("${err}")`);
   s.gear.weapon = newItem("knife");
   const h0 = b.raid.heat, ap0 = u.ap;
   err = combatAct(r.st, { type: "open", unit: u.id, target: "kh0", method: "case" });
   check(!err && !cs2.locked && u.haul.gear.some((it) => it && GEAR[it.key].slot === "weapon") && b.raid.heat - h0 === 1 && ap0 - u.ap === 1, `prised open with a knife: 1 action, Heat +1, the gun comes out loose (${err || "ok"})`);
   // A case in the base armory opens for free.
   st.combat = null;
-  const cs3 = G.rollGunCase((...k) => hash01(seed, "case4", ...k), "riflecase", "farm");
+  let cs3 = null;
+  for (let i = 0; i < 400 && !cs3; i++) { const it = G.rollGunCase((...k) => hash01(seed, "case4", i, ...k), "riflecase", "farm"); if (hasGun(it) && totalRounds(it.sup) > 0) cs3 = it; }
   cs3.locked = true;
+  for (const x of [...st.survivors]) if (x.location && x.location.kind === "base") for (const k of Object.keys(x.gear)) if (x.gear[k] && (B.boxTool(cs3, [x.gear[k]]))) x.gear[k] = null; // nobody here has a tool
+  for (const x of st.survivors) { x.pockets = (x.pockets || []).map((it) => (it && B.boxTool(cs3, [it]) ? null : it)); if (x.gear && x.gear.backpack && x.gear.backpack.contents) x.gear.backpack.contents = x.gear.backpack.contents.map((it) => (it && B.boxTool(cs3, [it]) ? null : it)); }
+  h.armory = h.armory.filter((it) => !B.boxTool(cs3, [it]));
   h.armory.push(cs3);
+  const loc3 = `armory:${h.id}:list:${h.armory.length - 1}`;
+  const refused = G.openCaseAt(st, loc3);
+  check(cs3.locked && /Locked with/.test(refused), `at a base a locked case needs a tool too ("${refused}")`);
+  h.armory.unshift(newItem("knife"));
+  const loc3b = `armory:${h.id}:list:${h.armory.length - 1}`;
   const ammo0 = totalRounds(h.stock), n0 = h.armory.length;
-  const msg = G.openCaseAt(st, `armory:${h.id}:list:${h.armory.length - 1}`);
-  check(!cs3.locked && !cs3.contents.length && h.armory.length === n0 + 1 && totalRounds(h.stock) > ammo0, `at a base it opens for free: the gun into the armory, the rounds into the stores ("${msg}")`);
+  const msg = G.openCaseAt(st, loc3b);
+  check(!cs3.locked && cs3.opened && cs3.contents.length && h.armory.length === n0, `with a knife in the armory it opens for free, and what is inside stays in it for its window ("${msg}")`);
+  const took = B.takeAllFromBox(st, loc3b);
+  check(!cs3.contents.length && h.armory.length > n0 && totalRounds(h.stock) > ammo0, `Take all: the gun into the armory, the rounds into the stores ("${took}")`);
   // The autopilot opens what comes home.
   const cs4 = G.rollGunCase((...k) => hash01(seed, "case5", ...k), "pistolcase", "town");
   h.armory.push(cs4);
@@ -468,7 +485,8 @@ console.log("Gun cases: carried locked, opened at a base for free; a cased gun i
   const r2 = safeRaid("gunsafe1", "key", { from: 5 });
   const s2 = r2.s;
   s2.gear.weapon = null;
-  const cs5 = G.rollGunCase((...k) => hash01(seed, "case6", ...k), "riflecase", "farm");
+  let cs5 = null;
+  for (let i = 0; i < 400 && !cs5; i++) { const it = G.rollGunCase((...k) => hash01(seed, "case6", i, ...k), "riflecase", "farm"); if (hasGun(it)) cs5 = it; }
   givePack(s2);
   s2.gear.backpack.contents[0] = cs5;
   const q0 = cs5.contents[0].quality;

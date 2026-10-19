@@ -33,6 +33,7 @@ import { KIT_HELP } from "../sim/carrykit.js"; // magazines as items, rigs, plat
 import { ROSTER_HELP } from "../sim/data-guns.js"; // the guns and melee weapons (the weapons overhaul)
 import { BLADES_HELP } from "../sim/data-blades.js"; // knives and swords
 import { SURV_HELP } from "../sim/data-survival.js"; // survival guns, parts and gear
+import { BOX_HELP } from "../sim/data-boxes.js"; // lock boxes and cases
 import { MEDICS_HELP } from "../sim/medics.js"; // medics, the downed, dragging, finishing
 import { TRAINING_HELP } from "../sim/training.js"; // the hospital trains medics
 import { NL_HELP } from "../sim/nonlethal.js"; // tasers, pepper spray, pulled blows, surrender
@@ -170,7 +171,7 @@ export function helpTopics() {
     if (out[out.length - 1].id === "saving") add("Autosaves and crashes", savesHelpHtml()); // ui/savelist.js
     if (out[out.length - 1].id === "time") add("Pause rules and the card tray", pacingHelp()); // ui/pacing.js
     if (out[out.length - 1].id === "inventory") add("Gun attachments", GUNMODS_HELP); // sim/gunmods.js
-    if (out[out.length - 1].id === "gun-attachments") { add("Guns and melee weapons", ROSTER_HELP); add("Knives and swords", BLADES_HELP); add("Survival guns and gear", SURV_HELP); } // sim/data-guns.js, sim/data-blades.js
+    if (out[out.length - 1].id === "gun-attachments") { add("Guns and melee weapons", ROSTER_HELP); add("Knives and swords", BLADES_HELP); add("Survival guns and gear", SURV_HELP); add("Lock boxes and cases", BOX_HELP); } // sim/data-guns.js, sim/data-blades.js
     if (out[out.length - 1].id === "battles") { add("Medics and the downed", MEDICS_HELP); add("Choices before a raid", raidPlanHelp()); } // sim/medics.js, sim/raidplan.js
     if (out[out.length - 1].id === "medical") add("Training medics", TRAINING_HELP); // sim/training.js
     if (out[out.length - 1].id === "groups") { add("Caravans on the road", CARAVAN_HELP); add("Getting captives back", RESCUE_HELP); add("Blocs and wars", BLOCS_WARS_HELP); add("Volunteers", VOLUNTEERS_HELP); } // sim/caravanraids.js; sim/rescueraid.js, ransom.js; sim/blocs.js, playerwars.js

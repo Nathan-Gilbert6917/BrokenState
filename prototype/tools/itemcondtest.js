@@ -55,6 +55,7 @@ import { BLADE_FINDS, AREA_BLADES, WARE_BLADES } from "../src/sim/blades.js"; //
 import { BLADE_KIT_PATCH } from "../src/sim/data-blades.js";
 import { SURV_FINDS, AREA_SURV, WARE_SURV } from "../src/sim/survival.js"; // survival gear (its own dice)
 import { SURV_KIT_PATCH } from "../src/sim/data-survival.js";
+import { BOX_FINDS } from "../src/sim/data-boxes.js"; // lock boxes (boxes.js, their own dice, last)
 import { ARSENAL_FINDS, ARSENAL_KITS, CALIBRE_KITS, AR_KITS, SURV_KITS, ARSENAL_GEAR } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js, its own dice)
 import { standardMag } from "../src/sim/mags.js";
 import { isRoundItem, isBulk } from "../src/sim/itemstack.js"; // rounds loose or boxed, bulk ammo containers
@@ -284,7 +285,7 @@ for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot
 for (const B of Object.values(MILDEAD.BODY)) for (const f of ["items", "armor"]) if (Array.isArray(B[f]) && B[f].some((r) => LATER_KEYS.has(r[0]))) { nlStash.push([B, f, B[f]]); B[f] = B[f].filter((r) => !LATER_KEYS.has(r[0])); }
 for (const T of Object.values(TRUCK_LOOT)) if (T.gear.some((r) => LATER_KEYS.has(r[0]))) { nlStash.push([T, "gear", T.gear]); T.gear = T.gear.filter((r) => !LATER_KEYS.has(r[0])); }
 for (const type of Object.keys(WARES)) if (WARES[type].some((k) => LATER_KEYS.has(k))) { nlStash.push([WARES, type, WARES[type]]); WARES[type] = WARES[type].filter((k) => !LATER_KEYS.has(k)); }
-for (const T of [BLADE_FINDS, AREA_BLADES, WARE_BLADES, SURV_FINDS, AREA_SURV, WARE_SURV]) for (const v of Object.values(T)) { headStash.push([v, v.p]); v.p = 0; }
+for (const T of [BLADE_FINDS, AREA_BLADES, WARE_BLADES, SURV_FINDS, AREA_SURV, WARE_SURV, BOX_FINDS.site, BOX_FINDS.area]) for (const v of Object.values(T)) { headStash.push([v, v.p]); v.p = 0; }
 for (const f of ["site", "area", "wares"]) { nlStash.push([ARSENAL_FINDS, f, ARSENAL_FINDS[f]]); ARSENAL_FINDS[f] = {}; }
 // - the parts catalogue (partfinds.js: PART_FINDS site / area / wares chances at 0, rolled last on their own dice) and
 //   the gun distribution (gundist.js swapGun: a listed gun swapped for one of its source's pool on a hash; off, every
