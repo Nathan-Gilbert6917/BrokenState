@@ -391,7 +391,8 @@ console.log("Quick search costs: Heat +5, heard 7 tiles off (9 in the dark), a c
     b.phase = "player"; // the first of the crew is selected (autoSelect)
     let html = "";
     try { html = renderCombatPanel(st) || ""; } catch (e) { html = `ERR ${e.message}`; }
-    check(/Quick search: shows 30–50%, loud, 6% chance of cutting yourself/.test(html), `the raid panel: "Quick search: shows 30–50%, loud, 6% chance of cutting yourself" (${html.startsWith("ERR") ? html : "ok"})`);
+    // (the raid without a side panel, d58a9ca: the head's line is short; the share it shows is in its tip)
+    check(/Quick search: loud, 6% cut/.test(html), `the raid panel: "Quick search: loud, 6% cut" (${html.startsWith("ERR") ? html : "ok"})`);
     check(/data-v="quick"[^>]*data-tip="[^"]*6% chance of cutting yourself/.test(html), "the Quick search button's tooltip gives the chance");
   }
 

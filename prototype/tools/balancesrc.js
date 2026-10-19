@@ -147,6 +147,7 @@ export const REG = {
     S("data-guns.js", /export const ARSENAL_WEAPONS = /),
     S("data-guns.js", /export const AR_WEAPONS = /),
     S("data-guns.js", /export const CALIBRE_WEAPONS = /),
+    S("data-guns.js", /export const SURV_WEAPONS = /), // the survival guns (2026-10-19)
     S("data-guns.js", /export const WEAPON_PATCH = /, "patch"),
     S("data-nonlethal.js", /export const NL_WEAPONS = /),
     S("data-blades.js", /export const BLADE_WEAPONS = /),
@@ -163,6 +164,8 @@ export const REG = {
     S("data-guns.js", /const AR_DUR = /, "patch", { flat: true, only: "dur" }),
     S("data-guns.js", /export const CALIBRE_GEAR = /),
     S("data-guns.js", /const CALIBRE_DUR = /, "patch", { flat: true, only: "dur" }),
+    S("data-guns.js", /export const SURV_GEAR = /), // the survival guns (2026-10-19)
+    S("data-guns.js", /const SURV_DUR = /, "patch", { flat: true, only: "dur" }),
     S("data-guns.js", /export const LATER_GEAR = /),
     S("data-ammo.js", /export const RELOAD_GEAR = /),
     S("data-gunmods.js", /export const MOD_GEAR = /),
@@ -176,7 +179,7 @@ export const REG = {
     S("data.js", /export const GEAR_DUR = /, "default", { flat: true, only: "dur" }),
   ],
   // (CALIBRE_RARITY first: its keys are its own, and a gun with no rarity yet is added to GUN_RARITY, the last scope)
-  GUN_RARITY: [...one("data-guns.js", "CALIBRE_RARITY"), ...one("data-guns.js", "GUN_RARITY")],
+  GUN_RARITY: [...one("data-guns.js", "CALIBRE_RARITY"), ...one("data-guns.js", "SURV_RARITY"), ...one("data-guns.js", "GUN_RARITY")],
   ARSENAL_FINDS: one("data-guns.js", "ARSENAL_FINDS"),
   // the gun distribution (gundist.js): each gun's class and date, the draws (profiles, theme tags, places, sources)
   GUN_CLASS: one("data-guns.js", "GUN_CLASS"),
@@ -197,7 +200,7 @@ export const REG = {
   THEME_TYPES: one("data-ammo.js", "THEME_TYPES"),
   HAND_VALUE: one("data-ammo.js", "HAND_VALUE"),
   LAUNCH_VALUE: one("data-ammo.js", "LAUNCH_VALUE"),
-  MAGAZINES: [...one("data-kit.js", "MAGAZINES"), ...one("data-kit.js", "CALIBRE_MAGS")],
+  MAGAZINES: [...one("data-kit.js", "MAGAZINES"), ...one("data-kit.js", "CALIBRE_MAGS"), ...one("data-kit.js", "SURV_MAGS")],
   // gun attachments' numbers: gunmods.js LEGACY (the first fifteen) and data-gunmods.js MOD_ATTACH (the rest, the
   // parts catalogue included); magazines are MAGAZINES
   ATTACH: [S("gunmods.js", /const LEGACY = /), S("data-gunmods.js", /export const MOD_ATTACH = /)],

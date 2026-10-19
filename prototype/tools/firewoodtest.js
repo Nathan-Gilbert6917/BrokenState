@@ -176,7 +176,7 @@ section("A stack like any supply: the raid window, the cargo, the stores, the lo
   const s = partyMembers(st, p)[0];
   const ui2 = { inv: { sid: s.id }, invSel: null, invMsg: "" };
   const cargoHtml = inventoryModal(st, ui2) || "";
-  check(/Found supplies \(15 kg\)/.test(cargoHtml) && cargoHtml.includes(woodTile(150, 15)), "the team's cargo lists the firewood stack (150, 15 kg)");
+  check(/>Supplies \([\d.]+ kg\)/.test(cargoHtml) && cargoHtml.includes(woodTile(150, 15)), "the team's cargo lists the firewood stack (150, 15 kg)");
   check(near(poolLoad(p) - poolLoad({ ...p, cargo: { ...p.cargo, supplies: { ...p.cargo.supplies, wood: 0 } } }), 15, 1e-6), "and it weighs 15 kg in the team's load");
   const h = hub(st);
   h.stock.wood = 300;

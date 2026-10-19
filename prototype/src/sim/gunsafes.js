@@ -28,6 +28,7 @@ import { withMags } from "./carrykit.js"; // a gun's spare magazines (call-time 
 import { stashGun } from "./gunfinds.js"; // one of the newer guns now and then (call-time only)
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a safe or a case holds
 import { GUN_SOURCES } from "./data-guns.js";
+import { makeBox, isSealed, boxText, openBoxAt } from "./boxes.js"; // a case is a box (call-time only)
 
 // ---------- what is inside ----------
 // guns: weights (existing GEAR keys); n: [lo, hi] guns, more: the chance of one more; q: a quality range of the
@@ -165,17 +166,15 @@ export function blastContents(gear, sup) {
 export const CASE = { locked: 0.4, raidAp: 1, raidHeat: 1, blades: ["knife", "machete", "sawmachete", "pipespear"] };
 export const isGunCase = (item) => !!(item && GEAR[item.key] && GEAR[item.key].gunCase);
 // A case with what it holds. kind: "riflecase" | "pistolcase".
+// Since 2026-10-19 a case is a box (boxes.js makeBox, data-boxes.js BOX_HOLDS riflecase / pistolcase): most hold a
+// gun (this file's stash, on the same dice as before), some only rounds, a camera, optics or a fishing rod, some nothing.
 export function rollGunCase(roll, kind, siteType) {
-  const item = lootItem(kind, caseSource(siteType), roll("case"));
-  const s = rollGunStash(roll, kind, siteType);
-  item.contents = s.gear;
-  item.sup = s.sup;
-  if (roll("locked") < CASE.locked) item.locked = true;
-  return item;
+  return makeBox(kind, roll, siteType);
 }
 // What a case holds, for a tooltip ("Hunting rifle (85%), 12 ammo").
 export function caseText(item) {
   if (!isGunCase(item)) return "";
+  if (isSealed(item)) return boxText(item); // unknown until it is opened (boxes.js)
   const bits = (item.contents || []).filter(Boolean).map((c) => `${c.name}${c.quality != null && c.quality < 1 ? ` (${Math.round(c.quality * 100)}%)` : ""}`);
   for (const [k, v] of Object.entries(item.sup || {})) if (v > 0) bits.push(`${v} ${(SUPPLIES[k] && SUPPLIES[k].name.toLowerCase()) || k}`);
   return bits.length ? bits.join(", ") : "empty";
@@ -183,13 +182,14 @@ export function caseText(item) {
 // Empties a case: its items into gear (an array), its supplies into sup (an object). The case stays, empty and
 // unlocked. Returns the names of what came out.
 export function openCase(item, gear, sup) {
-  if (!isGunCase(item)) return [];
+  if (!isGunCase(item) && !(item && GEAR[item.key] && GEAR[item.key].box)) return []; // any box (boxes.js)
   const out = [];
   for (const it of item.contents || []) if (it) { gear.push(it); out.push(it.name); }
   for (const [k, v] of Object.entries(item.sup || {})) if (v > 0) { sup[k] = (sup[k] || 0) + v; out.push(`${v} ${SUPPLIES[k] && SUPPLIES[k].round ? SUPPLIES[k].name : k}`); } // rounds: "17 12 gauge 00 buckshot" (ammo.js)
   item.contents = [];
   item.sup = {};
   item.locked = false;
+  item.opened = true;
   return out;
 }
 // A base's armory (and its stock) or a team's cargo: every case with something in it is opened (free and silent).
@@ -204,7 +204,13 @@ export function openCasesIn(list, sup) {
 // The inventory screen's "Open case" (ui/inventory.js): a case in a base's armory, a team's cargo or on someone at a
 // base or with a team opens for free: what is inside goes into the armory or the cargo, the supplies into the base's
 // stock or the team's cargo. Not in a raid (there it takes an action: locks.js openCaseAct). Returns the message.
-export function openCaseAt(state, str) {
+// Since 2026-10-19 (boxes.js): any box or case, opened with the right tool when locked, and what is inside stays in it
+// for its window (ui/boxview.js: take things out one by one or all). sid: who opens it (their tools count). The old
+// empty-it-all rule is openCaseDump.
+export function openCaseAt(state, str, sid = null) {
+  return openBoxAt(state, str, sid).msg;
+}
+export function openCaseDump(state, str) {
   const item = itemAt(state, str);
   if (!isGunCase(item)) return "That is not a gun case.";
   if (state.combat && !state.combat.over) return "In a raid, open it from the raid panel (1 action).";

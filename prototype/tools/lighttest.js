@@ -141,7 +141,7 @@ console.log("Where they come from");
 {
   const found = new Set(Object.values(LIGHT_FINDS).flatMap((f) => Object.keys(f.items)));
   check(["headlamp", "lantern", "spotlight"].every((k) => found.has(k)), "headlamps, lanterns and spotlights are found");
-  check(Object.keys(LIGHTS).filter((k) => k !== "tacflash").every((k) => CRAFTS[k]), "every light can be made (but the military flashlight: issue kit, found)");
+  check(Object.keys(LIGHTS).filter((k) => !["tacflash", "anglelight", "solarlantern"].includes(k)).every((k) => CRAFTS[k]), "every light can be made (but the military flashlight, the angle-head flashlight and the solar lantern: factory kit, found)");
   check(found.has("tacflash") && found.has("windlight"), "military and wind-up flashlights are found");
   check(CRAFTS.torch.in.wood >= 1 && CRAFTS.torch.field, "a torch from firewood, anywhere");
 }

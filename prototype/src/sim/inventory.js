@@ -28,7 +28,7 @@ import { factoryFit, seedOf } from "./factoryfit.js";
 import { FACTORY_FIT } from "./data-guns.js"; // guns found already fitted (section 22)
 import { fitMod, stripMod, modFitReason, fitsSlot, isGunmod, takesMods, fittedKg, ATTACH } from "./gunmods.js";
 import { itemDur } from "./crafting.js"; // a group's med kit with its uses (arsenal.js)
-import { GEAR, SUPPLIES, supValue } from "./data.js";
+import { GEAR, SUPPLIES, supValue, supWeight } from "./data.js";
 import { isCart, heldKg, cartFree } from "./carts.js"; // a wheelbarrow, a hand cart: In arms only, its own grid takes bulky things
 import { survivorById, baseById, day, newId } from "./world.js";
 import { partyCapacity, poolLoad, cargoRoom, unitsThatFit } from "./parties.js";
@@ -124,7 +124,8 @@ export const itemKg = (item) => {
   return stackKg(item, d.count && d.dur && Number.isFinite(item.dur) ? d.weight * Math.max(0, item.dur) / d.dur : d.weight);
 };
 // A gun also weighs its fitted attachments (gunmods.js: item.mods).
-export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item) + insertsKg(item) + heldKg(item); // carts.js: the supplies a cart carries away from a team (item.held)
+export const itemLoad = (item) => itemKg(item) + (item && item.contents ? item.contents.filter(Boolean).reduce((a, c) => a + itemLoad(c), 0) : 0) + modsKg(item) + insertsKg(item) + heldKg(item) + boxSupKg(item); // carts.js: the supplies a cart carries away from a team (item.held); boxes.js: the rounds in a box or case (item.sup)
+const boxSupKg = (item) => (item && item.sup && GEAR[item.key] && GEAR[item.key].box ? Object.entries(item.sup).reduce((a, [k, v]) => a + (v > 0 ? supWeight(k) * v : 0), 0) : 0); // (boxes.js boxSupKg, here to keep the import cycle out)
 const insertsKg = (item) => (item && GEAR[item.key] && GEAR[item.key].inserts ? Object.values(insertsOf(item)).reduce((a, x) => a + (x ? itemKg(x) : 0), 0) : 0); // a carrier's plates (section 16)
 const modsKg = (item) => (item && item.mods ? Object.values(item.mods).reduce((a, m) => a + (m ? fittedKg(m) : 0), 0) : 0); // a lighter handguard or stock replaces the factory one (gunmods.js fittedKg)
 
