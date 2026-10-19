@@ -670,7 +670,7 @@ export const CELL = {
   // Base defences against hordes and the inside of a hive (defences.js, hives.js). trap: what happens to one of
   // the dead that steps in (spikes hurt, a trench stops it for the turn).
   barricade: { walk: false, cover: 2, los: false, name: "Barricade" },
-  spikes:    { walk: true,  cover: 0, los: false, name: "Spike pit", trap: "spikes" },
+  spikes:    { walk: true,  cover: 0, los: false, name: "Spike pit", trap: "spikes" }, // the living too, but never your own people (SPIKES, moveAlong)
   trench:    { walk: true,  cover: 0, los: false, name: "Trench", trap: "trench" },
   // From the armory's defence kit (defences.js armoryDefence) and the base's wire fences (buildings.js barbed_wire,
   // razor_wire; c.razor): wire stops the dead like the trench (razor wire cuts them too) and snags the living unless
@@ -3891,6 +3891,9 @@ export function lightSpotted(b, e, p) {
   return canSee(b, e, p);
 }
 
+// A spike pit's stakes: the dead blunder on through it (hurt, the turn lost: moveAlong), the living are hurt and
+// stopped in it (never your own people, who know where the pits are).
+export const SPIKES = { DEAD: [18, 28], LIVING: [12, 20] };
 export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
@@ -3935,7 +3938,7 @@ export function moveAlong(b, u, path) {
     // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
     const trap = CELL[b.cells[idx(x, y)].k].trap;
     if (trap && u.kind === "zombie") {
-      if (trap === "spikes") { const eff = Math.round(damage(b, u, b.rng.int(18, 28), null)); say(b, `${u.name} is impaled in a spike pit (${eff}).`, "good"); }
+      if (trap === "spikes") { const eff = Math.round(damage(b, u, b.rng.int(SPIKES.DEAD[0], SPIKES.DEAD[1]), null)); say(b, `${u.name} is impaled in a spike pit (${eff}).`, "good"); }
       else if (trap === "beartrap") {
         const eff = Math.round(damage(b, u, b.rng.int(14, 22), null));
         u.ap = 0;
@@ -3949,6 +3952,14 @@ export function moveAlong(b, u, path) {
     }
     if (trap === "wire" && u.kind !== "zombie" && wireStep(null, b, u, x, y, { say, damage, fx })) break; // wire.js: the living snagged, or cutting through
     if (b.cells[idx(x, y)].mine && mineStep(b, u, x, y, { say })) break; // mines.js: a mine underfoot (never one of yours)
+    // A spike pit (buildings.js spike_pits, the user's request 2026-10-19: they hurt raiders too): anyone not of yours
+    // drops through the cover onto the stakes (SPIKES.LIVING) and the move ends there; yours know where the pits are.
+    if (trap === "spikes" && u.kind !== "zombie" && u.side !== "player") {
+      const eff = Math.round(damage(b, u, b.rng.int(SPIKES.LIVING[0], SPIKES.LIVING[1]), null, false, { how: "spikes" }));
+      fx(b, { type: "melee", from: [x, y], to: [x, y], hit: true, crit: false, dmg: eff, side: "player", text: "SPIKES" });
+      say(b, `${u.name} falls into a spike pit (${eff}).`, "good");
+      break;
+    }
     // A trench (buildings.js trench, the user's request 2026-10-19: it slows the dead more than the living): the dead
     // lose the rest of their turn (above); the living drop in and the move ends there, their next action kept to climb
     // out. Once a trench: moving along it from a cell of it costs nothing more.

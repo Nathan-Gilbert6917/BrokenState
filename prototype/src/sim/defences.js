@@ -123,6 +123,11 @@ export function holdLimit(state, base, bosses = 0, surprise = false) {
   return Math.round((wallHold(base) + guardHold(state, base)) * (surprise ? 1 + (mult - 1) * SURPRISE.HORDE_DEFENCE : mult) * boss);
 }
 
+// A raid by the numbers (factions.js resolveRaidOnPlayer) and the spike pits: each pit has a raider or two fall in,
+// SPIKE_RAID of the time one of them is killed. The pits stay (a horde fills them with its dead; a raid only springs
+// a couple). Returns how many of them died.
+export const SPIKE_RAID = 0.5;
+export const pitsOnRaid = (state, base) => { let dead = 0; for (let i = count(base, "spike_pits"); i > 0; i--) if (state.rng.chance(SPIKE_RAID)) dead++; return dead; };
 export const spikeKill = (base, n) => {
   const k = count(base, "spike_pits");
   return k ? Math.min(n, Math.round(n * DEFENCE.SPIKE_FRAC * k + DEFENCE.SPIKE_FLAT * k)) : 0;
