@@ -259,6 +259,56 @@ section("The Wallbreaker smashes a piece");
   check(mats1 <= mats0, `a horde with Wallbreakers batters the wall's pieces (materials ${mats0} → ${mats1})`);
 }
 
+section("Repairing the wall: an order, so many hours a segment");
+{
+  const { WALL_REPAIR, wallSegHours, wallSegCost, wallRepairPlan, orderWallRepair, cancelWallRepair, breakdownsHour, breakdownsDaily, repairPlan, breakFixture } = await import("../src/sim/breakdowns.js");
+  const st = world();
+  const h = hub(st);
+  rich(h);
+  addRing(h, 3);
+  const ps = piecesOf(h, ["wall"]).filter((b) => b.type === "wall4");
+  check(wallSegHours(ps[0]) === WALL_REPAIR.HOURS[3] && wallSegHours({ type: "wall1", mat: 1 }) === 0.5 && wallSegHours({ type: "gate4", mat: 4 }) === WALL_REPAIR.HOURS[4] * 1.5, `the hours a segment: a scrap-metal 1×4 ${wallSegHours(ps[0])}h, a wooden 1×1 0.5h, a metal-sheet gate ${WALL_REPAIR.HOURS[4] * 1.5}h`);
+  check(wallSegCost(ps[0]).scrap === 2, "half its build cost (a scrap-metal 1×4: 2 scrap)");
+  breakFixture(st, h, ps[0], "test", { card: false, quiet: true });
+  ps[1].wear = 70; ps[2].wear = 40; ps[3].wear = 10;
+  check(!hasWall(h) && !repairPlan(st, h, ps[0], "repair").ok && /Repair the wall/.test(repairPlan(st, h, ps[0], "repair").why), "a broken piece opens the wall; it has no repair of its own");
+  // Upkeep leaves the wall alone.
+  for (const s of atBase(st, h.id)) s.role = "build";
+  const w2 = ps[2].wear;
+  breakdownsDaily(st);
+  check(ps[2].wear >= w2, `the builders' daily upkeep does not touch the wall (${w2} → ${ps[2].wear})`);
+  const plan = wallRepairPlan(st, h);
+  check(plan.ok && plan.list[0] === ps[0] && plan.list.includes(ps[1]) && plan.list.includes(ps[2]) && !plan.list.includes(ps[3]) && plan.broken === 1, `the order: the broken piece first, the worn ones after (${plan.list.length} segments, ${plan.hours}h)`);
+  const scrap0 = h.stock.scrap;
+  check(/repair the wall/.test(orderWallRepair(st, h)) && h.wallRepair && !wallRepairPlan(st, h).ok, "given to a builder (one order at a time)");
+  st.hour = Math.floor(st.hour / 24) * 24 + 7; // just before the day's work
+  let hours = 0;
+  for (; hours < 48 && h.wallRepair; hours++) { st.hour++; breakdownsHour(st); }
+  check(!h.wallRepair && !ps[0].broken && ps[0].wear === 8 && ps[1].wear === 8 && ps[2].wear === 8 && ps[3].wear >= 10, `done in ${hours} hours of the clock: every segment that wanted it mended, the rest left`);
+  check(hasWall(h) && h.stock.scrap === scrap0 - 3 * wallSegCost(ps[0]).scrap, `the wall closed again; paid segment by segment (${scrap0 - h.stock.scrap} scrap)`);
+  // Short of materials: it waits; cancelled: the segment's materials come back.
+  breakFixture(st, h, ps[4], "test", { card: false, quiet: true });
+  breakFixture(st, h, ps[5], "test", { card: false, quiet: true });
+  h.stock.scrap = 2;
+  orderWallRepair(st, h);
+  st.hour = Math.floor(st.hour / 24) * 24 + 33;
+  breakdownsHour(st);
+  check(h.wallRepair && h.wallRepair.cur === ps[4].id && h.stock.scrap === 0, "the first segment paid and started");
+  for (let i = 0; i < 4; i++) { st.hour++; breakdownsHour(st); }
+  check(h.wallRepair && /Needs/.test(h.wallRepair.stalled || "") && !ps[4].broken && ps[5].broken, `the next waits for scrap (${h.wallRepair && h.wallRepair.stalled})`);
+  h.stock.scrap = 10;
+  st.hour++; breakdownsHour(st);
+  const paid = h.wallRepair && h.wallRepair.paid ? h.wallRepair.paid.scrap : 0;
+  check(/called off/.test(cancelWallRepair(st, h)) && h.stock.scrap === 10 && !h.wallRepair && paid === 2, "called off: the segment under way's scrap back");
+  // The governor gives the order itself.
+  const st2 = world();
+  const h2 = hub(st2);
+  rich(h2); addRing(h2, 1);
+  st2.autopilot = { style: "balanced" };
+  breakFixture(st2, h2, piecesOf(h2, ["wall"])[0], "test", { card: false, quiet: true });
+  check(!!h2.wallRepair, "where the base is run for you, a broken piece gets the order at once");
+}
+
 section("The Defenses tab");
 {
   const ui = (baseView) => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView, expedition: null, diary: null, roster: null, help: false });

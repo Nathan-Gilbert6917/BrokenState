@@ -19,7 +19,7 @@ import {
   attitude, changeGoodwill, collapseFaction, recomputeOwnership, factionsDaily, raidWarning, deliverHelpCall,
   resolveRaidOnFaction, baseDefense, raidSize, siegePace, raidRepelled, resolveRaidOnPlayer, maxBases, strength, RAIDS,
 } from "../src/sim/factions.js";
-import { raidDamage, repairPlan } from "../src/sim/breakdowns.js";
+import { raidDamage, repairPlan, wallRepairPlan } from "../src/sim/breakdowns.js";
 import { addBuilding, baseWalls, baseBeds, queueBuild, constructionHour, isPiece } from "../src/sim/buildings.js";
 import { hordesHour, reduceHorde, HORDE_MAX_SIZE, HORDE_MIN_SIZE } from "../src/sim/hordes.js";
 import { endTrade, tradePending, routeProblem, routeWorth, routeExchange, createRoute } from "../src/sim/trade.js";
@@ -723,7 +723,7 @@ const groupOf = (state, type) => {
     const beds0 = baseBeds(b5);
     bunk.broken = { day: 1, cause: "test" };
     check(baseBeds(b5) === beds0 - 6, `a wrecked bunkhouse gives no beds (${beds0} → ${baseBeds(b5)})`);
-    check(repairPlan(s5, b5, wall, "repair").ok || /Needs/.test(repairPlan(s5, b5, wall, "repair").why), "a damaged (unbroken) wall can be patched with a proper repair");
+    check(!repairPlan(s5, b5, wall, "repair").ok && wallRepairPlan(s5, b5).ok && wallRepairPlan(s5, b5).list.includes(wall), "a damaged (unbroken) wall is mended by the wall's repair order, not a repair of its own");
     // Nobody builds or repairs while the base is on alert.
     b5.stock.scrap = 200;
     queueBuild(s5, b5, "smoker");
