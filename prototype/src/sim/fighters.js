@@ -14,7 +14,8 @@
 // back onto them (arsenal.js settleArsenal: settlePeople).
 import { playerUnit, KITS } from "./combat.js";
 import { GEAR } from "./data.js";
-import { ensureInv, enemyBody, allCarried, carriedSpots, EQUIP_SLOTS, newItem } from "./inventory.js";
+import { ensureInv, enemyBody, allCarried, carriedSpots, EQUIP_SLOTS, lootItem } from "./inventory.js";
+import { kitSource } from "./itemcond.js";
 import { makeSurvivor, peekNextId, setNextId, factionById, survivorById } from "./world.js";
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
@@ -159,7 +160,7 @@ export function nightLight(b, u) {
   const lk = (u.kit || s.kit) === "soldiers" ? "tacflash" : hash01("elight", u.id, b.hour, u.name) < 0.35 ? "flashlight" : null;
   if (!lk || !GEAR[lk]) return;
   const held = s.gear.tool;
-  s.gear.tool = newItem(lk);
+  s.gear.tool = lootItem(lk, kitSource(u.kit || s.kit), ["nightlight", u.id, b.hour, u.name]); // its condition as the kit's gear (itemcond.js)
   if (held && !stow(s, held)) s.gear.tool = held; // no room for what they held: they keep it and go without
 }
 
