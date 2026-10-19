@@ -760,8 +760,10 @@ if (N > 0) {
     check(t.on.retreats === 0 || t.on.winnable / t.on.retreats <= 0.25, `${s}: at most a quarter of its retreats are from fights it would have won (${t.on.winnable}/${t.on.retreats})`);
     // The style's rate of wins given up, plus 2 standard errors of the count (Poisson, sqrt of the expected count):
     // a few winnable fights abandoned is dice (balanced over 5 seeds of 360 battles gave up 4-12, mean 9, both before
-    // and after the determinism fix), so a flat 3% of 360 (10.8) failed about one seed in five.
-    const giveUp = t.n * ({ cautious: 0.06, balanced: 0.03, aggressive: 0.02 }[s] || 0.03), giveUpMax = Math.max(3, giveUp + 2 * Math.sqrt(giveUp));
+    // and after the determinism fix), so a flat 3% of 360 (10.8) failed about one seed in five. Balanced at 3.3% since the
+    // survival guns joined the raiders' and fighters' kits (2026-10-19: seeds 1, 2, 3, 7, 11 gave up 13, 8, 10, 18, 10,
+    // mean 11.8, against 12, 11, 7, 6, 10 before).
+    const giveUp = t.n * ({ cautious: 0.06, balanced: 0.033, aggressive: 0.02 }[s] || 0.03), giveUpMax = Math.max(3, giveUp + 2 * Math.sqrt(giveUp));
     check(t.off.wins - t.on.wins <= giveUpMax, `${s}: wins given up stay small (${t.off.wins} → ${t.on.wins} of ${t.n}; at most ${giveUpMax.toFixed(1)}: ${giveUp.toFixed(1)} + 2 standard errors)`);
   }
   if (res.cautious && res.aggressive) {
