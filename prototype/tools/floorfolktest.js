@@ -25,6 +25,7 @@ import * as CC from "../src/sim/citycrawl.js";
 import { FOLK, rollFolk, folkHint, folkTick, resolveBattleCards } from "../src/sim/floorfolk.js";
 import { crawlModal, CRAWL_ACTIONS } from "../src/ui/citycrawl.js";
 import { siteWanderers, interiorOccupants } from "../src/sim/wanderers.js";
+import { faceToward } from "../src/sim/vision.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok: ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -92,6 +93,17 @@ function outsideDoor(b, S) {
     const x = dx + ox, y = dy + oy;
     const c = cells[y * b.w + x];
     if (c && CELL[c.k].walk && c.k !== "stairs" && !(r && inRoom(r, { x, y }))) return [x, y];
+  }
+  return null;
+}
+// The floor cell inside the room right behind its door (straight through the doorway from the one outside).
+function insideDoor(b, S) {
+  const r = b.raid.areas.find((a) => a.id === S.room);
+  const cells = b.floors[S.f].cells;
+  for (const [dx, dy] of S.doors) for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const x = dx + ox, y = dy + oy;
+    const c = cells[y * b.w + x];
+    if (c && CELL[c.k].walk && c.k !== "stairs" && r && inRoom(r, { x, y })) return [x, y];
   }
   return null;
 }
@@ -306,9 +318,13 @@ console.log("Force the door: the barricade down, the group hostile, they fire fi
     place(b, u, S.f, spot[0], spot[1]); setFloor(b, S.f);
     folkTick(w.state, b);
     const card = battleCard(w.state);
-    // One of them has a pistol whatever the dice gave, so the shots-first path is played.
+    // One of them has a pistol whatever the dice gave, so the shots-first path is played; standing just inside the door
+    // and facing it (the dice put them anywhere in the room, and one with no line through the doorway has nobody to
+    // shoot at: forceDoor fires only at who they can see).
     const gun = survivors(b)[0];
     gun.weapon = "pistol"; gun.weaponName = "Pistol";
+    const inside = insideDoor(b, S);
+    if (check(!!inside, "test setup: a floor cell inside the door")) { place(b, gun, S.f, inside[0], inside[1]); faceToward(gun, u.x, u.y); }
     const armed = survivors(b).filter((x) => x.weapon !== "fists" && !["knife", "bat", "prybar", "machete", "spikedbat", "pipespear"].includes(x.weapon)).length;
     const shotsBefore = b.log.length;
     const text = sure(w.state, true, () => card.choices[3].resolve(w.state));
