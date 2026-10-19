@@ -7,8 +7,10 @@
 // placed spike pits and trench, the parked car, outlines in the view but open ground in a raid), the attack from any
 // side on a base without walls, the stores holding the base's real stock and armory (every unit accounted for), a
 // raider stealing from a container and getting away (only what left the map is gone from the stock), what is dropped
-// staying, save / load of a plan, a finished job keeping its spot, a family upgrade keeping it, and the Base map
-// view's commands (pick, put, turn, lift, close).
+// staying, the armory's two locked containers (the gun cage with every item of the armory, the ammo lockers with the
+// rounds and arrows; a raider batters the lock open over turns and takes nothing meanwhile, a pry tool is quicker, the
+// armory wears for the smashed locks), save / load of a plan, a finished job keeping its spot, a family upgrade
+// keeping it, and the Base map view's commands (pick, put, turn, lift, close).
 // Usage: node tools/basemaptest.js [seed]
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { createBattle, registerCombatHandler, autoPlayerTurn, runEnemyPhase, endPlayerTurn, combatAct, CELL, finishCombat, unitAt } from "../src/sim/combat.js";
@@ -197,6 +199,65 @@ section("Raiders stealing from the stores");
   const lostSup = Object.entries(t.loot.sup).every(([k, n]) => Math.floor(stock0[k]) - Math.floor(h.stock[k]) === n);
   check(res && lostSup && h.armory.length === arm0 - t.loot.gear.length, `the stock and armory lose exactly that (${res ? res.text : "nothing"})`);
   check(h.stock.meds === stock0.meds - (t.loot.sup.meds || 0), "the meds the dead raider dropped are still in the stores");
+  st.combat = null;
+}
+
+section("The armory's locked containers");
+{
+  const st = world();
+  const h = fortHub(st, ["bunkhouse", "storehouse", "armory"], 0);
+  for (const s of atBase(st, h.id)) s.gear.weapon = newItem("knife");
+  h.stock.meds = 40; h.stock.parts = 30; h.stock.ammo = 300; h.stock.arrows = 20;
+  h.armory.push(newItem("pistol"), newItem("vest"), newItem("knife"));
+  const b = baseBattle(st, h, { kind: "raiders", count: 10, power: 4, name: "raiders" }, {});
+  const cage = b.stores.containers.find((c) => c.holds === "gear"), lockers = b.stores.containers.find((c) => c.holds === "ammo");
+  check(!!cage && !!lockers && BM.lockedBox(cage) && BM.lockedBox(lockers) && cage.bid === lockers.bid && cage.bid === h.buildings.find((x) => x.type === "armory").id, "the armory is two locked containers on the map: the gun cage and the ammo lockers");
+  check(cage.w * cage.h + lockers.w * lockers.h === 12 && !(cage.x === lockers.x && cage.y === lockers.y), "each half the armory's footprint");
+  check(cage.gear.length === h.armory.length && b.stores.containers.filter((c) => c !== cage).every((c) => !c.gear.length), `every item of the armory (${cage.gear.length}) is in the gun cage, none anywhere else`);
+  const ammoKeys = (c) => Object.keys(c.sup).filter((k) => k === "ammo" || k === "arrows" || /^a_/.test(k));
+  check(lockers.sup.arrows === 20 && ammoKeys(lockers).length >= 2 && b.stores.containers.filter((c) => c !== lockers).every((c) => !ammoKeys(c).length), `the rounds (by calibre) and arrows are in the ammo lockers, none anywhere else (${ammoKeys(lockers).join(", ")})`);
+  check(!cage.sup.meds && !lockers.sup.meds && b.stores.containers.some((c) => c.sup.meds), "the meds and the rest are in the other stores, not the armory");
+  const s0 = BM.storeContents(cage);
+  check(s0.lock && !s0.lock.open && s0.lock.hp === BM.ARMORY_LOCK.HP, "the panel sees the lock and its hit points");
+  // A raider next to the gun cage batters the lock, taking nothing until it gives way.
+  for (const u of b.units) if (u.side === "enemy") u.thief = true;
+  for (const u of b.units) if (u.side === "player") { u.x = 0; u.y = 0; }
+  b.tier.stage = "yard";
+  // A free cell next to this container and no other (a raider next to several takes from an open one first).
+  const near = (c, x, y) => Math.max(c.x - x, x - (c.x + c.w - 1), c.y - y, y - (c.y + c.h - 1), 0) <= 1;
+  const spotBy = (box) => { for (let y = box.y - 1; y <= box.y + box.h; y++) for (let x = box.x - 1; x <= box.x + box.w; x++) { const c = b.cells[y * b.w + x]; if (CELL[c.k].walk && !unitAt(b, x, y) && !BM.storeAt(b, x, y) && b.stores.containers.every((o) => o === box || !near(o, x, y))) return [x, y]; } return null; };
+  const enemies = b.units.filter((u) => u.side === "enemy");
+  const t = enemies[0], t2 = enemies[1];
+  t.weapon = "knife"; t.aware = true;
+  let spot = spotBy(cage); t.x = spot[0]; t.y = spot[1];
+  let turns = 0;
+  while (BM.lockedBox(cage) && turns < 30) { t.ap = 2; BM.thiefTurn(b, t); turns++; }
+  check(turns >= 2 && !BM.lockedBox(cage) && !t.loot && cage.gear.length === h.armory.length, `a raider with a knife batters the lock open in ${turns} turns and takes nothing meanwhile`);
+  check(cage.lock.by === t.name && BM.storeContents(cage).lock.open, "the lock is marked smashed open, and by whom");
+  t.ap = 2; BM.thiefTurn(b, t);
+  check(!!t.loot && t.loot.gear.length > 0 && cage.gear.length < h.armory.length, `with the lock smashed the raider grabs ${t.loot ? t.loot.gear.length : 0} items from the cage`);
+  // Next to an open container and a locked one, a raider takes from the open one first.
+  const open1 = b.stores.containers.find((c) => !c.lock && c.kg > 0.5);
+  const t3 = enemies[2]; t3.aware = true;
+  const both = (() => { for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) { const c = b.cells[y * b.w + x]; if (CELL[c.k].walk && !unitAt(b, x, y) && !BM.storeAt(b, x, y) && near(lockers, x, y) && b.stores.containers.some((o) => !o.lock && o.kg > 0.5 && near(o, x, y))) return [x, y]; } return null; })();
+  if (both) { t3.x = both[0]; t3.y = both[1]; t3.ap = 2; const hp0 = lockers.lock.hp; BM.thiefTurn(b, t3); check(lockers.lock.hp === hp0 && !!t3.loot && t3.loot.kg > 0, "next to an open container and the locked lockers, a raider takes from the open one first"); }
+  else check(!!open1, "(no cell next to both an open container and the lockers on this layout)");
+  // A sledgehammer at the ammo lockers: shorter work of it.
+  t2.weapon = "sledge"; t2.aware = true;
+  spot = spotBy(lockers); t2.x = spot[0]; t2.y = spot[1];
+  let turns2 = 0;
+  while (BM.lockedBox(lockers) && turns2 < 30) { t2.ap = 2; BM.thiefTurn(b, t2); turns2++; }
+  check(turns2 >= 1 && turns2 < turns && !BM.lockedBox(lockers), `one with a sledgehammer smashes the ammo lockers' lock in ${turns2}`);
+  // The fight over: the armory wears for its smashed locks (both: broken until repaired).
+  const fxA = h.buildings.find((x) => x.type === "armory");
+  t.fled = true;
+  BM.settleBaseBattle(st, b);
+  check((fxA.wear || 0) >= 2 * BM.MAP_WEAR.lock && !!fxA.broken, `the armory wears ${fxA.wear} for the two smashed locks: broken until repaired`);
+  st.combat = null;
+  // With its locks smashed the containers stand open in the next fight.
+  const b2 = baseBattle(st, h, { kind: "raiders", count: 6, power: 3, name: "raiders" }, {});
+  const cage2 = b2.stores.containers.find((c) => c.holds === "gear");
+  check(!!cage2 && !cage2.lock && !BM.lockedBox(cage2), "with the armory broken its containers are on the map unlocked");
   st.combat = null;
 }
 
