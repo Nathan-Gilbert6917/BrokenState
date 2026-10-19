@@ -14,7 +14,7 @@
 // back onto them (arsenal.js settleArsenal: settlePeople).
 import { playerUnit, KITS } from "./combat.js";
 import { GEAR } from "./data.js";
-import { ensureInv, enemyBody, allCarried, carriedSpots, EQUIP_SLOTS } from "./inventory.js";
+import { ensureInv, enemyBody, allCarried, carriedSpots, EQUIP_SLOTS, newItem } from "./inventory.js";
 import { makeSurvivor, peekNextId, setNextId, factionById, survivorById } from "./world.js";
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
@@ -29,7 +29,8 @@ import { isLauncherKey } from "./arsenal.js";
 import { armLauncher } from "./launchers.js";
 import { keyFor } from "./rounds.js";
 import { CARRY, weighPlayer } from "./carrykit.js";
-import { spendSelfAid } from "./medics.js"; // an AI person's field load by kit
+import { spendSelfAid } from "./medics.js";
+import { LIGHTS } from "./lights.js"; // the lights (a kit's light at night: nightLight) // an AI person's field load by kit
 import { typeFor } from "./rounds.js";
 import { stockAt } from "./groupbases.js";
 import { enemyPieces } from "./armour.js";
@@ -146,6 +147,20 @@ export function personFromLegacy(b, rng, L, kind, power) {
   if (L.load && u.weapon === L.weapon) u.load = L.load;
   if (L.gl) { u.gl = L.gl; u.kitGl = true; } // an RPG or an M203's rounds by kit dice (launchers.js kitLauncher): not an item they carry
   return u;
+}
+
+// At night, someone made for this fight (no lasting record) carries the light their kit does (vision.js enemyLight's
+// dice: a soldier's military flashlight, a raider's flashlight one time in three), as the very item in the off hand
+// (what was there goes in a pocket or the pack): their light is what they carry, as yours is. stealth.js stealthSetup.
+export function nightLight(b, u) {
+  const s = u && u.who;
+  if (!b.night || !s || !s.transient || u.kind !== "human") return;
+  if (s.gear.tool && LIGHTS[s.gear.tool.key]) return;
+  const lk = (u.kit || s.kit) === "soldiers" ? "tacflash" : hash01("elight", u.id, b.hour, u.name) < 0.35 ? "flashlight" : null;
+  if (!lk || !GEAR[lk]) return;
+  const held = s.gear.tool;
+  s.gear.tool = newItem(lk);
+  if (held && !stow(s, held)) s.gear.tool = held; // no room for what they held: they keep it and go without
 }
 
 // ---------- AI groups' members ----------

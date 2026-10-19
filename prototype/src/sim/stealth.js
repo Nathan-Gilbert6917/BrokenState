@@ -52,6 +52,7 @@ import { battleOptic } from "./optics.js";
 import { LIGHTS, lightOf } from "./lights.js"; // headlamps, flashlights, torches, lanterns, spotlights
 import { loadNoise } from "./ammo.js"; // a round's noise (subsonic, +P)
 import { RELOAD_FX } from "./data-ammo.js"; // black-powder handloads are louder (reloading.js)
+import { nightLight } from "./fighters.js"; // a light for someone made for this fight, at night
 
 export const STEALTH = {
   NIGHT_SIGHT: 7, NIGHT_ZOMBIE_SIGHT: 5, LIGHT_SIGHT: 9, NIGHT_DETECT: 0.6, LIGHT_DETECT: 3, // LIGHT_*: a flashlight's (each light's own: lights.js LIGHTS)
@@ -174,6 +175,7 @@ export function stealthSetup(state, b) {
     const person = u.side === "player" ? survivorById(state, u.sid) : u.who || null;
     if (person) {
       const s = person;
+      if (u.side !== "player") nightLight(b, u); // fighters.js: someone made for this fight carries their kit's light
       const tool = s && s.gear.tool;
       const had = { light: u.light, nvg: u.nvg };
       setLight(u, s);
