@@ -190,7 +190,7 @@ export function jamChance(b, u) {
   const w = WEAPONS[u.weapon];
   if (!w || w.melee || !w.rel) return 0;
   const fq = 1 + 2 * (1 - gunQ(u)), fc = 1 + JAM.COND * (1 - gunCond(u));
-  return Math.min(JAM.CAP, (w.rel / 100) * fq * fc * ammoJam(u) * modJam(u) * weatherJam(b, u) * foulJam(u));
+  return Math.min(JAM.CAP, (w.rel / 100) * fq * fc * ammoJam(u) * modJam(u) * weatherJam(b, u) * foulJam(u)) * (b && b.failures != null ? b.failures : 1); // worldcfg.js: the run's Failures dial (on the battle)
 }
 // One trigger pull of n rounds: { fired, spent, jam: kind | null, misfire }.
 export function rollTrigger(b, u, n) {

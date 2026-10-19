@@ -22,6 +22,7 @@ import {
 import {
   appearanceURL, survivorURL, zombieURL, spriteImg, ZOMBIE_LOOK_OPTIONS, ZOMBIE_VARIANTS, zombieLook, setZombieLook, resetZombieLook,
 } from "./sprites.js";
+import { worldButton } from "./worldcfg.js"; // World…: the run's dials (sim/worldcfg.js), a preset or Custom
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -272,13 +273,14 @@ export function newRunScreen(state, ui) {
       <button data-action="nr-start"${tip(`Roll a new starting position on this same map and seed: ${hard ? "another roadside spot to flee from" : "another town for your hub"}, away from the hives and the cities as usual. The map, the hives and your colonists stay as they are (the groups settle around where you are). Look at it with View map; each click is a new spot`)}>📍 New start position</button>
       <button data-action="nr-allcrew"${tip(freeEdit(ui) ? "Every colonist: a new name, look and random build (traits, skills and what they wear, hold and carry, within their points; the vehicle's back stays). Build on a crew card does one colonist" : `Randomize every colonist's name, skills, traits, gear and look (skill totals stay the same; gear picked under Customize is cleared)${hard ? ". In Hardcore that is who they were, what they grabbed and whose car they fled in: the world is built again on the same seed" : ": the starting weapons and the vest are handed out again"}`)}>🎲 Randomize all</button>
       <button data-action="zlook-open"${tip("Change how the dead look in battle")}>Zombie look…</button>
+      ${worldButton(ui)}
     </div>
     ${customizeRow(state, ui)}
     ${customSizeRow(state, ui)}
     ${!hard && state.factions.length < ui.factionCount ? `<div class="small muted" style="margin-bottom:0.5rem">Only ${state.factions.length} of the ${ui.factionCount} groups found room on this map (each needs a site of its own, 8 hexes from the others).</div>` : ""}
     ${ui.nrMsg ? `<div class="small danger" style="margin-bottom:0.5rem">${esc(ui.nrMsg)}</div>` : ""}
     <div class="crew nrcrew">${people.map((s) => crewCard(state, ui, s)).join("")}</div>
-    <div class="row" style="margin-top:1rem;justify-content:flex-end">${loadButtons()}<button data-action="nr-random"${tip(`Random run: a new seed and a random world size, AI groups, starting hives, mode (Normal or Hardcore), starting people, zombie look, and a random crew with their gear${freeEdit(ui) ? " built within random Points each" : ""}, then it starts at once. Ironman, Customize, the First-week guide and Children stay as you set them; the settings rolled are in the log`)}>🎲 Random run</button><button class="primary" data-action="begin">Start</button></div>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end">${loadButtons()}<button data-action="nr-random"${tip(`Random run: a new seed and a random world size, AI groups, starting hives, mode (Normal or Hardcore), starting people, zombie look, and a random crew with their gear${freeEdit(ui) ? " built within random Points each" : ""}, then it starts at once. Ironman, Customize, the First-week guide, Children and the World… dials stay as you set them; the settings rolled are in the log`)}>🎲 Random run</button><button class="primary" data-action="begin">Start</button></div>
   </div>`;
 }
 

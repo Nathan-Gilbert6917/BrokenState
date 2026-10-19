@@ -28,6 +28,7 @@ import { WORM, rawWaterEggs, purifyCap } from "./worm.js"; // TABS_WATER: what o
 import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the filters in use: the tanks' room after the day's water (filtersInUse)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { craftedCond } from "./itemcond.js"; // a crafted item's condition is the craft's own roll
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -476,7 +477,8 @@ const used = (state, item) => { if (item && state && Number.isFinite(state.hour)
 export function wearSlot(state, s, slot, n = 1) {
   const item = s.gear[slot];
   used(state, item);
-  if (!item || !wear(item, n)) return false;
+  n *= cfgOf(state, "wear"); // worldcfg.js: the run's Durability loss dial (0: nothing wears)
+  if (!item || !(n > 0) || !wear(item, n)) return false;
   s.gear[slot] = null;
   log(state, `${s.name.split(" ")[0]}'s ${item.name} broke.`, "danger");
   return true;

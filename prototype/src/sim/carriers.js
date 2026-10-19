@@ -243,7 +243,7 @@ export function swarmHit(t, by) {
 // combat.js damage: a hit from the swarm that someone living takes and stands: CARRIER.INFEST of the time the worm
 // is in them now (wormed; wormBit: one of yours carries it home, endBodies).
 export function swarmBite(b, t, by) {
-  if (!by || by.ztype !== "swarm" || t.kind !== "human" || t.wormed || !b.rng.chance(CARRIER.INFEST)) return false;
+  if (!by || by.ztype !== "swarm" || t.kind !== "human" || t.wormed || !b.rng.chance(Math.min(1, CARRIER.INFEST * (b.infectBite ?? 1)))) return false; // worldcfg.js: the run's Infection from bites dial
   t.wormed = true;
   t.wormBit = true;
   say(b, `The worms get into ${first(t.name)}'s wound. The worm is in them now: if they die, they get up.`, t.side === "player" ? "death" : "info");

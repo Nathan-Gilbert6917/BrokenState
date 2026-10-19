@@ -28,6 +28,7 @@ import { WATCHLIST_HELP } from "./watchlist.js"; // the Watching panel and map n
 import { BULK_HELP } from "./rosterbulk.js"; // the roster's bulk actions
 import { pacingHelp } from "./pacing.js";
 import { displayHelp } from "./display.js"; // Minimap, Readability, Confirmations
+import { WORLDCFG_HELP } from "./worldcfg.js"; // the new-run screen's World… dials (sim/worldcfg.js)
 import { GUNMODS_HELP } from "../sim/gunmods.js"; // sights, suppressors, magazines on guns
 import { KIT_HELP } from "../sim/carrykit.js"; // magazines as items, rigs, plate carriers, weight in a fight
 import { ROSTER_HELP } from "../sim/data-guns.js"; // the guns and melee weapons (the weapons overhaul)
@@ -187,6 +188,7 @@ export function helpTopics() {
   for (const t of [BULK_HELP, WATCHLIST_HELP]) add(t.title, t.html);
   if (!seen.has("pause-rules-and-the-card-tray")) add("Pause rules and the card tray", pacingHelp());
   for (const [title, html] of displayHelp()) if (!seen.has(slug(title))) add(title, html);
+  if (!seen.has("world-configuration")) add("World configuration", WORLDCFG_HELP); // ui/worldcfg.js
   if (!seen.has("the-hive-crawl")) add("The hive crawl", HIVE_CRAWL_HELP);
   if (!seen.has("volunteers")) add("Volunteers", VOLUNTEERS_HELP); // sim/volunteers.js
   if (!seen.has("hives-being-born")) add("Hives being born", HIVE_BIRTH_HELP);

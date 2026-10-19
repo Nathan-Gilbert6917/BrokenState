@@ -86,6 +86,7 @@ import { gunMods } from "./gunmods.js";
 import { calOf } from "./ammo.js";
 import { cellsOf, ringOf, inGrid, headingToward, DIRS, DIR_NAMES } from "./citygrid.js"; // the den's round grid, as the city's
 import { typeFor, keyFor, withHand } from "./rounds.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Hive crawl shallowest / deepest
 
 // ---------- tuning ----------
 export const HCRAWL = {
@@ -277,7 +278,12 @@ const first = (s) => s.name.split(" ")[0];
 // Its depth: DEPTH by the hive's tier, one more with a screamer spire.
 export function denDepth(state, hive) {
   const t = clamp(hiveTier(state, hive), 0, HCRAWL.DEPTH.length - 1);
-  return HCRAWL.DEPTH[t] + (hiveMods(state, hive).spire ? HCRAWL.SPIRE_DEPTH : 0);
+  // worldcfg.js: the run's Hive crawl shallowest / deepest: the tier's depth stretched or squeezed between them (the
+  // usual 2–9 is the usual DEPTH), the spire still on top.
+  const lo = cfgOf(state, "hiveMin"), hi = cfgOf(state, "hiveMax");
+  const D0 = HCRAWL.DEPTH[0], D1 = HCRAWL.DEPTH[HCRAWL.DEPTH.length - 1];
+  const depth = lo === D0 && hi === D1 ? HCRAWL.DEPTH[t] : Math.round(lo + (hi - lo) * ((HCRAWL.DEPTH[t] - D0) / (D1 - D0)));
+  return Math.max(1, depth) + (hiveMods(state, hive).spire ? HCRAWL.SPIRE_DEPTH : 0);
 }
 const DEN_V = 3; // 3: 3 open, 1 wall, four mouths (2026-10-13); 2: the grid's first cut (one mouth, passages open at random); 1: the layered web before it (an old save's den is made again once no team is inside)
 // The hive's den, made on first use (and again, keeping what it remembers, when the hive has grown deeper).

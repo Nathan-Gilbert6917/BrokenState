@@ -59,6 +59,7 @@ import { FIXTURES, WEAR, breakFixture } from "./breakdowns.js";
 import { log, atBase } from "./world.js";
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / at most
 
 // The grid by tier: core = the half-size of the middle structure's own ground, yard = the yard's half-size to start
 // with, per = yard growth a building with a footprint, cap = the yard's largest half-size, out = open ground beyond the
@@ -82,7 +83,23 @@ export const STEAL = { SHARE: 0.4, KG: 22, DEFAULT_KG: 1 };
 export const MAP_WEAR = { door: 15, window: 8, breach: 30, barricade: 60, carCondition: 60 };
 
 export const tierKey = (base) => (isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost");
-export const gridOf = (base) => GRID[tierKey(base)];
+// The grid by tier, under the run's Base yard dials (worldcfg.js baseMin / baseMax, stamped on the base as base.gridCfg by
+// stampGrid from wherever a state is to hand: the yard to start with and the most it grows to are scaled, the yard
+// never under the core's ground + 2, the cap never under the yard nor past GRID_MAX; a standard run reads GRID itself).
+export function gridOf(base) {
+  const g = GRID[tierKey(base)];
+  const c = base && base.gridCfg;
+  if (!c || (c.min === 1 && c.max === 1)) return g;
+  const yard = Math.max(g.core + 2, Math.min(GRID_MAX - 2 - g.out, Math.round(g.yard * c.min)));
+  const cap = Math.max(yard, Math.min(GRID_MAX - 2 - g.out, Math.round(g.cap * c.max)));
+  return { ...g, yard, cap };
+}
+/** The run's Base yard dials on this base (once; a base made before they were set takes them on its next layout). @param {any} state @param {any} base */
+export function stampGrid(state, base) {
+  if (!base || base.gridCfg || !state || !state.worldCfg) return;
+  const min = cfgOf(state, "baseMin"), max = cfgOf(state, "baseMax");
+  if (min !== 1 || max !== 1) base.gridCfg = { min, max };
+}
 
 // ---------- footprints ----------
 // kind: house (walls, barred doors, windows, an upper floor with storeys 2), roof (a flat-roofed block climbed by a
@@ -188,6 +205,7 @@ export const planOf = (base) => base.plan || (base.plan = { plots: [] });
 // (b:id), queued ones with a footprint (c:id), the crop plots (p:i) and the cars parked here (v:id). at: where it was
 // placed by hand, else null. built: false for a queued job (an outline in the view, open ground in a raid).
 export function itemsOf(state, base) {
+  stampGrid(state, base);
   const out = [];
   const seen = {};
   const n = (type) => (seen[type] = (seen[type] || 0) + 1);
@@ -306,6 +324,7 @@ export const doorCellsOf = (it, at) => cellsOf(it, at).filter((c) => c.out).map(
 const K = (x, y) => (y + 2048) * 4096 + (x + 2048);
 // The occupancy of everything but `skip`: footprints and the cells outside doors, each with the key of what is there.
 export function occupancy(state, base, skip = null, auto = null) {
+  stampGrid(state, base);
   const occ = { foot: new Map(), door: new Map() };
   const put = (m, x, y, key) => { if (!m.has(K(x, y))) m.set(K(x, y), key); };
   const mark = (it, at, key) => {
@@ -369,6 +388,7 @@ export function carryPlacement(from, to) { if (from && from.at && to) to.at = fr
 // dice: interior.js layoutSeed and the items). except: an item left out (being placed by hand).
 const autoCache = new Map();
 export function autoLayout(state, base, except = null) {
+  stampGrid(state, base);
   const items = itemsOf(state, base);
   const sig = items.map((it) => `${it.key}${it.at ? `@${it.at.join(",")}` : ""}`).join("|");
   const key = `${base.id}|${layoutSeed(base)}|${yardHalf(base)}|${except || ""}|${sig}`;
@@ -421,6 +441,7 @@ export function autoLayout(state, base, except = null) {
 }
 // Every item with where it stands (by hand or by the game): { it, at, auto }. Those that fit nowhere have at null.
 export function layoutOf(state, base) {
+  stampGrid(state, base);
   const auto = autoLayout(state, base);
   return itemsOf(state, base).map((it) => ({ it, at: it.at || auto.get(it.key) || null, auto: !it.at }));
 }
@@ -432,6 +453,7 @@ export function layoutOf(state, base) {
 // W × H cells, the yard's origin and size, the wall rect, the ring, walkway, gates, towers, ladders, the masks, the
 // buildings, plus ox/oy (grid → map), stores (where the goods are), vehicles (the cars and their cells), lights.
 export function buildBaseMap(state, base, rng, opts = {}) {
+  stampGrid(state, base);
   const view = !!opts.view;
   const C = yardHalf(base), G = gridHalf(base);
   const walled = count(base, "walls") > 0 && !isShelter(base);
@@ -599,6 +621,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
 }
 // The battle map's size without building it (combat.js battleSize).
 export function baseMapSize(state, base, opts = {}) {
+  stampGrid(state, base);
   const F = buildBaseMap(state, base, new Rng(1), opts);
   return [F.W, F.H];
 }

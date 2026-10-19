@@ -30,6 +30,7 @@ import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on throug
 import { isHardcore } from "./hardcore.js"; // hardcore's year Calder falls: road cards of its own (HC_EVENTS)
 import { hardcoreEraOffset, hcOutbreakCity } from "./hardcore-outbreak.js";
 import { hcMilitary } from "./hardcore-groups.js";
+import { cfgChance } from "./worldcfg.js"; // the run's dials: Events
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
 export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren", "frag"];
@@ -825,7 +826,7 @@ export function rollTravelEvent(state, p, tileId) {
   // A hostile squad's checkpoint (conflicts.js) took this hour's card during that roll: no second card. Only that:
   // callers decide for themselves whether an event already came this hour.
   if (p.eventHour === state.hour && hourBefore !== state.hour) return null;
-  if (!state.rng.chance(chance)) return null;
+  if (!state.rng.chance(cfgChance(state, "events", chance))) return null; // worldcfg.js: the run's Events dial
   const options = ALL_EVENTS.filter((e) => e.when(state, p, t)); // HC_EVENTS: only in hardcore's first year
   if (!options.length) return null;
   const ev = state.rng.weighted(options, (e) => (typeof e.weight === "function" ? e.weight(state, p) : e.weight));

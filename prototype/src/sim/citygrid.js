@@ -8,6 +8,7 @@
 // tables read: citycrawl.js CRAWL, the old "block" number) climbs a level every LEVEL_RINGS rings, so the heart of the
 // biggest city is level 8 and a town's never goes past 3. Pure geometry: no state but what is passed in.
 import { hash01 } from "./skills.js";
+import { cfgOf, WORLD_CFG } from "./worldcfg.js"; // the run's dials: City crawl smallest / largest
 
 export const GRID = {
   CITY: [15, 30], TOWN: [9, 12],
@@ -19,11 +20,22 @@ export const DIR_NAMES = ["north", "east", "south", "west"];
 export const keyOf = (x, y) => `c${x}_${y}`;
 export function xyOf(key) { const m = /^c(-?\d+)_(-?\d+)$/.exec(key || ""); return m ? [Number(m[1]), Number(m[2])] : [0, 0]; }
 
+// The blocks across a crawl can be, [lo, hi]: GRID's, or the run's City crawl dials (worldcfg.js cityMin / cityMax; a
+// town keeps its share of a city's: 9–12 of 15–30 is 0.6–0.4), at least 3 across.
+export function crawlRange(state, town) {
+  const [lo, hi] = town ? GRID.TOWN : GRID.CITY;
+  const cLo = cfgOf(state, "cityMin"), cHi = cfgOf(state, "cityMax");
+  if (cLo === WORLD_CFG.cityMin.def && cHi === WORLD_CFG.cityMax.def) return [lo, hi];
+  if (!town) return [Math.min(cLo, cHi), Math.max(cLo, cHi)];
+  const a = Math.max(3, Math.round(cLo * (GRID.TOWN[0] / GRID.CITY[0]))), b = Math.max(3, Math.round(cHi * (GRID.TOWN[1] / GRID.CITY[1])));
+  return [Math.min(a, b), Math.max(a, b)];
+}
 // The grid of a site tile: { size, r } (r: the circle's radius in blocks). Towns are smaller.
 /** @param {any} state @param {any} t */
 export function gridOf(state, t) {
   const town = t && t.loc && t.loc.type === "town";
-  const [lo, hi] = town ? GRID.TOWN : GRID.CITY;
+  // worldcfg.js: the run's City crawl smallest / largest (a city's range itself; a town's scaled by the same shares).
+  const [lo, hi] = crawlRange(state, town);
   const size = lo + Math.floor(hash01(state.seed, "citygrid", t ? t.id : 0) * (hi - lo + 1));
   return { size, r: size / 2, town };
 }

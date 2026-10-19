@@ -32,6 +32,7 @@ import { tileLabel } from "./parties.js";
 import { isHardcore } from "./hardcore.js"; // hardcore's year Calder falls: hub events of its own
 import { hardcoreEraOffset, hcOutbreakCity } from "./hardcore-outbreak.js";
 import { hcMilitary } from "./hardcore-groups.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Events
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -715,7 +716,7 @@ export const HUB_EVENT_IDS = Object.keys(HUB_EVENTS);
 export function hubEventChance(state, base) {
   const n = atBase(state, base.id).length;
   const over = crowdInfo(state, base).over;
-  return Math.min(0.45, clamp(0.04 + 0.026 * n, 0.08, 0.4) * (1 + 0.3 * Math.min(1, over)));
+  return Math.min(1, Math.min(0.45, clamp(0.04 + 0.026 * n, 0.08, 0.4) * (1 + 0.3 * Math.min(1, over))) * cfgOf(state, "events")); // worldcfg.js: the run's Events dial
 }
 export function hubEventWeights(state, base) {
   const c = context(state, base);

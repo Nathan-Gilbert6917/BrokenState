@@ -1884,3 +1884,17 @@ button.ppl-idle.on { background: #45380f; color: #ffd166; }
 /* The kit warning before a raid (ui/combat.js kitWarnHtml): empty guns, no healing, the hurt */
 .cbkitwarn ul { margin: 0.25rem 0 0 1rem; padding: 0; }
 .cbkitwarn li { margin: 0.1rem 0; }
+/* world configuration window (ui/worldcfg.js): the dials in groups, a slider and a number box each */
+.wcgroups { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1.2rem; }
+.wcgroup h3 { margin: 0.4rem 0 0.2rem; font-size: 0.92rem; }
+.wcgroup:has(.wcrow:nth-child(8)) { grid-column: 1 / -1; }
+.wcgroup:has(.wcrow:nth-child(8)) .wcrows { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.2rem; }
+.wcrow { display: grid; grid-template-columns: 9.5rem 1fr 4.3rem 3.6rem; align-items: center; gap: 0.35rem; padding: 0.12rem 0; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
+.wcrow.wcbool { grid-template-columns: 9.5rem auto 1fr; cursor: pointer; }
+.wcrow.off .wcname { color: var(--accent); }
+.wcname { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wcslide { width: 100%; min-width: 4rem; margin: 0; }
+.wcnum { width: 100%; }
+.wcval { font-size: 0.82rem; white-space: nowrap; }
+.wcval i { font-style: normal; }
+@media (max-width: 60rem) { .wcgroups, .wcgroup:has(.wcrow:nth-child(8)) .wcrows { grid-template-columns: 1fr; } }

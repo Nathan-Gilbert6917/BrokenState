@@ -43,6 +43,7 @@ import { HUNT, meatAt, huntMixOf } from "./hunting.js";
 import { stewardOn } from "./steward.js";
 import { cutShort, loadText } from "./jobtrips.js";
 import * as Weather from "./weather.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Events
 
 export const TRIP_EV = {
   rate: 0.004,       // trouble an hour out of the walls (× the pace's ev, × weather)
@@ -131,7 +132,7 @@ export function armTripEvent(state, base, s, t) {
   st.trips++;
   const rng = diceFor(state, s, t);
   const hours = Math.max(0, t.home - t.leave);
-  const p = TRIP_EV.rate * hours * paceOf(state).ev * wxMult(state, t.at, t.leave);
+  const p = TRIP_EV.rate * hours * paceOf(state).ev * wxMult(state, t.at, t.leave) * cfgOf(state, "events"); // worldcfg.js: the run's Events dial
   if (!(rng.next() < p)) return null;
   t.ev = { at: r2(t.leave + rng.next() * hours * 0.98), seed: Math.floor(rng.next() * 1e9) };
   return t.ev;
