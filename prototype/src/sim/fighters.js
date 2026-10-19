@@ -39,7 +39,11 @@ import { isHelmet, earGearOf } from "./helmets.js";
 import { refitSenses } from "./stealth.js";
 
 export const PEOPLE = { on: true }; // test switch: off, the old units (power numbers and kit dice)
-export const THROW_KEYS = ["frag", "pipebomb", "molotov", "flashbang", "smokegren"];
+// What a person not yours throws from what they carry: the grenades, bombs and smoke (siege.js enemyThrow, stealth.js
+// botAttackThrow), and the decoys and a road flare to pull the dead off their side (decoys.js botDecoy), as yours do.
+// The decoys are stealth.js DECOY_KEYS written out (this module is loaded before stealth.js on some import paths;
+// tools/paritytest.js checks the two agree).
+export const THROW_KEYS = ["frag", "pipebomb", "molotov", "flashbang", "smokegren", "noisemaker", "firecracker", "alarmclock", "pocketradio", "handwarmer", "heatpack", "flare"];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // The person behind a unit, of any side.

@@ -9,19 +9,23 @@
 // The unaware dead go to look at any lure they sense (stealth.js pull). A decoy (THROWABLES decoy: a noise maker,
 // firecrackers, an alarm clock, a radio, hand warmers, a heat pack, a flare) and a fire also pull the dead that have
 // seen you: each of the enemy's turns, one of the dead that senses a decoy or a fire within its radius, and has
-// none of your people within PULL_FREE tiles, walks to it instead of coming for you (lureTurn): to the spot, or
-// into the flames. People are never fooled: a guard who hears a decoy looks to where it was thrown from (stealth.js).
+// nobody living it is after within PULL_FREE tiles, walks to it instead of coming for them (lureTurn): to the spot,
+// or into the flames. Whoever threw it: a decoy pulls the dead off the raiders as it pulls them off you. People are
+// never fooled: a guard who hears a decoy looks to where it was thrown from (stealth.js).
+// Who throws one (botDecoy): your bots, and every other side's people on their own turn (combat.js aiUnit), by one
+// rule: only a decoy they hold, once a turn for the side, when the dead press on its people (docs/adr/0001-ai-parity.md).
 //
 // The Shepherd (zombietypes.js, hiveconst.js SHEPHERD): every one of the dead within its aura (4 tiles) of a living
 // Shepherd senses nothing (herded): no decoy or fire pulls it, it comes for the living and the breaches, it does not
 // shuffle about, and it knows what the Shepherd knows (an aware Shepherd wakes its pack). Kill it and the aura ends.
 //
-// By the numbers (combat.js byNumbersOdds): decoys and Molotovs a team carries add LURE.PER each (at most LURE.MAX)
-// to its strength against the dead, nothing against a pack with a Shepherd among it or against people.
+// By the numbers (combat.js byNumbersOdds for yours, groupfight.js fightSides for anyone else's): decoys and Molotovs
+// a side carries add LURE.PER each (at most LURE.MAX) to its strength against the dead, nothing against a pack with
+// a Shepherd among it or against people.
 import { ZTYPES, SENSES, SHEPHERD } from "./hiveconst.js";
 import { THROWABLES, DECOY_KEYS, throwablesOf, stealthAct } from "./stealth.js";
 import { FIRE } from "./throwables.js";
-import { active, reachable, pathTo, distField, moveAlong, say } from "./combat.js";
+import { active, reachable, pathTo, distField, moveAlong, say, foesOf } from "./combat.js";
 
 export const LURE = { PULL_FREE: 2.5, PER: 0.02, MAX: 0.08, AI_MIN: 3, AI_KEEP: 5 };
 const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
@@ -72,13 +76,14 @@ export function pullOf(b, u, list = stimuli(b)) {
   return best;
 }
 
-// The enemy's turn for one of the dead (combat.js aiUnit): a decoy or a fire it senses pulls it there unless one of
-// your people is within PULL_FREE tiles (then it fights). Returns true when it went for the lure.
+// The enemy's turn for one of the dead (combat.js aiUnit): a decoy or a fire it senses pulls it there unless someone
+// living it is after is within PULL_FREE tiles (then it fights): your people, the third side, and on a raid's map the
+// raiders it is in contact with (combat.js foesOf, crossfire.js). Returns true when it went for the lure.
 export function lureTurn(b, u) {
   if (u.kind !== "zombie" || !active(u) || u.ap < 1) return false;
   const m = pullOf(b, u);
   if (!m) return false;
-  const near = b.units.some((o) => o.side !== u.side && active(o) && o.kind !== "zombie" && Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y)) <= LURE.PULL_FREE);
+  const near = foesOf(b, u).some((o) => o.kind !== "zombie" && Math.max(Math.abs(o.x - u.x), Math.abs(o.y - u.y)) <= LURE.PULL_FREE);
   if (near) return false;
   // Into the flames (the burning cells), or next to a decoy (it stays there, staring).
   const targets = m.fire ? (b.fires || []).filter((f) => dist(f.x, f.y, m.x, m.y) <= 1.5).map((f) => [f.x, f.y]) : [[m.x, m.y]];
@@ -110,16 +115,25 @@ export function shepherdTurn(b) {
   }
 }
 
-// ---------- the AI: a decoy to pull the dead off your people (combat.js autoPlayerTurn) ----------
-// One decoy a turn for the side: when AI_MIN or more aware dead that sense it are within 4 tiles of your people (at a
-// breach, the gate, around the team), a spot AI_KEEP+ tiles from all of yours, within range, that pulls the most.
+// ---------- the AI: a decoy to pull the dead off its people (every side: docs/adr/0001-ai-parity.md) ----------
+// Your bots ask it for each of yours (combat.js autoPlayerTurn), and every other side's people ask it on their own
+// turn (combat.js aiUnit: a raider, a guard, a soldier of the third side, a volunteer): the same rule, the same cost.
+// One decoy a turn for the side (b.decoyTurn by side): when AI_MIN or more of the dead that are after the side's
+// people (and sense it) are within 4 tiles of them (at a breach, the gate, around the team, at a raiders' post the dead
+// found: crossfire.js), a spot AI_KEEP+ tiles from all of them, within range, that pulls the most. Only a decoy the
+// unit holds (stealth.js throwablesOf: one of yours from what they carry or the team's cargo, anyone else's from what
+// they carried into the fight), taken off them as they throw it (1 action).
+const decoyTurns = (b) => b.decoyTurn || (b.decoyTurn = {});
 export function botDecoy(state, b, u) {
-  if (b.botDecoyTurn === b.turn || !active(u) || u.ap < 1) return false;
+  if (decoyTurns(b)[u.side] === b.turn || !active(u) || u.ap < 1) return false;
   const have = throwablesOf(state, b, u);
   const keys = DECOY_KEYS.filter((k) => have[k]).concat(have.flare ? ["flare"] : []);
   if (!keys.length) return false;
-  const mine = b.units.filter((o) => o.side === u.side && active(o));
-  const dead = b.units.filter((o) => o.side !== u.side && o.kind === "zombie" && active(o) && !o.off && mine.some((m) => dist(m.x, m.y, o.x, o.y) <= 4));
+  // The side's living people (on a raid's map the dead share the raiders' side: crossfire.js), and the dead after
+  // them: any of another side, and those of their own side in contact with them (combat.js foesOf).
+  const mine = b.units.filter((o) => o.side === u.side && o.kind !== "zombie" && active(o));
+  const after = (o) => o.side !== u.side || foesOf(b, o).some((m) => m.side === u.side && m.kind !== "zombie");
+  const dead = b.units.filter((o) => o.kind === "zombie" && active(o) && !o.off && mine.some((m) => dist(m.x, m.y, o.x, o.y) <= 4) && after(o));
   if (dead.length < LURE.AI_MIN) return false;
   let best = null;
   for (const key of keys) {
@@ -137,7 +151,7 @@ export function botDecoy(state, b, u) {
     }
   }
   if (!best) return false;
-  b.botDecoyTurn = b.turn;
+  decoyTurns(b)[u.side] = b.turn;
   return !stealthAct(state, b, u, null, { type: "throw", item: best.key, x: best.x, y: best.y });
 }
 

@@ -30,6 +30,9 @@ function resolveCards(state, p, stats) {
     const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(state) : x.disabled));
     if (ch) ch.resolve(state);
     stats.cards += 1;
+    // A card that offers a fight (loneattack.js: one of them set upon alone, "Fight") holds the team while it lasts: an
+    // event delay too (flagged as a 0.01h delay, as a load change below).
+    if (c.choices.some((x) => /^(Save and fight|Fight)\b/.test(x.label || "")) && stats.delay === 0) stats.delay = 0.01;
     if (p.progress < before) stats.delay += Math.round(((before - p.progress) / (STANCES[p.stance]?.speed || 1)) * 10) / 10; // delays are real hours at any pace
     // A card that hands the team something to carry (a find) or someone to carry it with changes its load, and a
     // heavier load slows it at once (sim/load.js): an event effect like a delay (flagged as a 0.01h delay).

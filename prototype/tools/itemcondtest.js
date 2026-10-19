@@ -66,7 +66,9 @@ import { partPool } from "../src/sim/partfinds.js";
 
 // A shelf's stock as the generator makes it (trade.js ensureWares): a group that lives here is stocked once and then
 // trades only what it owns (docs/adr/0001-ai-parity.md), so the generator is sampled the way a visitor's shelf is made.
-const restock = (state, f) => { const o = f.outsider; f.outsider = true; try { return ensureWares(state, f, true); } finally { f.outsider = o; } };
+// A fresh shelf as a group is made (trade.js ensureWares: the one seeding a group gets; outsiders and a seeded group get
+// nothing new from nowhere since the parity pass), so each call is a new draw of its list.
+const restock = (state, f) => { const o = f.outsider; f.outsider = false; f.waresSeeded = false; f.wares = []; try { return ensureWares(state, f, true); } finally { f.outsider = o; } };
 
 
 let fails = 0, passes = 0;
@@ -330,7 +332,9 @@ const BASE = {
   // WARE_BOOKS) are taken off above (NIGHT_LIGHTS, cookBook), so the old hashes hold (the world's dice unchanged). With
   // them left in they come to 449949deb71a9b49 and 6d226e0b96b09acc; the dazzling-bardeen merge (08ab2d0) carried both
   // that re-baseline and the take-off (8b2f1d3), which is why the two drift checks failed there.
-  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "2474e79ab28f41c7", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
+  // groupWares.keys: re-baselined for the parity pass (trade.js ensureWares: nobody's shelf rolls on from week to
+  // week any more, so each restock is a fresh shelf of the same draws, with no carry-over of the last 12).
+  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "dcbb48f4247749e8", rng: 2670422955354 }, visitors: { keys: "c6ac67fed2276a9e", merchants: "bf202c687fe737a0", rng: 12799878338062 },
 };
 // The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
 // own and only add: off for these samples, like the commune's extras below, so the old baselines hold.

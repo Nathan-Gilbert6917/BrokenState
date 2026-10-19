@@ -21,8 +21,10 @@
 // Who brings it: raiders and outsider bands coming for a walled base of yours, by how prepared they are (raidSiegeKit:
 //   eras.js raid preparedness, rising with the years; the State Map's raid warning card says what they carry), and
 //   your teams on an Assault (kit.js packSiegeKit: ladders, the ram, grenades from the hub's armory into the cargo,
-//   weighed by load.js). The battle hands it out (siegeSetup): the ram to the three strongest, the ladders to the
-//   next, the grenades to the shooters.
+//   weighed by load.js). A group's raid brings only what its stores hold (arsenal.js packRaidKit: its own ladders and
+//   ram, made by your recipe when it has none; grenades as throwables on the raiders), a band only what its people
+//   carry (visitors.js bandKit). The battle hands out the ram to the three strongest and the ladders to the next
+//   (siegeSetup); the grenades are already on whoever carries them (fighters.js fitThrowables).
 // By the numbers: the walls count less against a raid with kit (siegeWallCut: −6% a ladder, −10% a ram, −2% a
 //   grenade off the wall tier's bonus, at most −25%: defences.js raidTier, interior.js baseTiers) and an assault
 //   with kit faces less of its walls (assaultCut: −15% a ladder, −20% the ram, −4% a grenade of the walls' share of
@@ -81,6 +83,21 @@ export function raidSiegeKit(state, base, opts = {}) {
   const grenades = r(3) < (level - RAID_KIT.GREN_FROM) * RAID_KIT.GREN_PER * mult ? Math.min(3, 1 + Math.floor(n / 5)) : 0;
   if (!ladders && !ram && !grenades) return null;
   return { ladders, ram, grenades, kind: opts.kind || "pipebomb" };
+}
+// The ladders and the ram a band of raiders sets out with from beyond the border (visitors.js makeVisitor): the dice
+// raidSiegeKit throws for an outsider band against a walled base with a gate (the year's preparedness × OUTSIDER;
+// ladders 2 with 8+ of them, a ram with 4+), thrown once when it crosses the border, with no base in view yet. From
+// then on they are real items in the band's gear, carried by its people (nomads.js bandRoom), brought to a raid and
+// home from it (visitors.js bandKit, siegeGearBack): no ladder or ram is handed to it again. key: the band's serial.
+// { ladders, ram } or null.
+export function bandSetOutKit(state, n, key) {
+  if ((n || 0) < RAID_KIT.MIN_FIGHTERS) return null;
+  const level = clamp((outsiderPrep(state) - 0.6) / 0.45, 0, 1);
+  if (level <= 0) return null;
+  const r = (k) => roll(state.seed || 1, (key | 0) + 13, k, 0);
+  const ladders = r(1) < level * RAID_KIT.LADDERS * RAID_KIT.OUTSIDER ? (n >= 8 ? 2 : 1) : 0;
+  const ram = n >= 4 && r(2) < ((level - RAID_KIT.RAM_FROM) * RAID_KIT.RAM_PER + RAID_KIT.RAM_GATE) * RAID_KIT.OUTSIDER ? 1 : 0;
+  return ladders || ram ? { ladders, ram } : null;
 }
 // "they carry two ladders and a ram, and grenades" ("" without kit).
 export function kitText(kit) {
@@ -173,14 +190,8 @@ function hand(b, people, kit, walls, enemy) {
       u.mob = Math.max(2, u.mob0 - LADDER.SLOW);
     }
   }
-  if (enemy && kit.grenades) {
-    const shooters = left.filter((u) => !u.ladder).sort((a, c) => (c.aim || 0) - (a.aim || 0));
-    for (let i = 0; i < kit.grenades && shooters.length; i++) {
-      const u = shooters[i % shooters.length];
-      const k = kit.kind || "pipebomb";
-      (u.throwables || (u.throwables = {}))[k] = ((u.throwables || {})[k] || 0) + 1;
-    }
-  }
+  // The grenades are not handed out here: they are real throwables the raiders carry (arsenal.js packRaidKit; a band's
+  // own, visitors.js bandKit), counted on each from the items (fighters.js fitThrowables) and spent from them.
 }
 
 // ---------- ladders ----------

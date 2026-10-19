@@ -44,6 +44,7 @@ import { mixWeight, battleTypes, mixText } from "./zombietypes.js";
 import { climberSlip } from "./middead.js"; // Climbers over the walls
 import { SURPRISE, surpriseAt, lookoutsSpot, watchSawText } from "./watch.js"; // an unwatched night, the watch's early warning
 import { tiredLevel, TIRED } from "./sleep.js"; // an exhausted guard counts half
+import { membersAt, isWounded } from "./members.js"; // a group's people at a base of theirs (defendersAt)
 
 // A hive's special dead at the walls (hivetech.js, numbers in hiveconst.js ZTYPES): each one presses the walls by
 // its kind's `wall` weight (brutes 2.5, spitters picking off the defenders 1.4, screamers 1.2, runners 0.9,
@@ -72,7 +73,16 @@ export const DEFENCE = {
 // ---------- the hold limit ----------
 export const wallTier = (base) => wallTierBuilt(base); // buildings.js WALL_TIERS: 0 none, 1 a stake fence … 4 a concrete wall
 export const wallHold = (base) => DEFENCE.WALL_BASE + DEFENCE.WALL_PER * baseWalls(base);
-export const manned = (state, base) => !!base.hordeAlert && state.hour < base.hordeAlert;
+// A group's base (groupbases.js: base.group) is always manned when the dead come: its people take their posts as you
+// would on the warning card (Man the defences), their answer every time (an AI's choice a player could make).
+export const manned = (state, base) => !!(base && base.group) || (!!base.hordeAlert && state.hour < base.hordeAlert);
+// Who is at a base to hold its walls: your people there (world.js homeAt: not those out on a job trip), or a group's
+// people living at that base of theirs, the wounded (members.js isWounded: they do not fight) left out.
+export function defendersAt(state, base) {
+  if (!base || !base.group) return homeAt(state, base.id);
+  const f = (state.factions || []).find((x) => x.id === base.fid);
+  return f ? membersAt(f, base.tile).filter((s) => !isWounded(s)) : [];
+}
 
 // Defence kit kept in the base's armory (data.js GEAR defence): barbed wire +5% hold a roll (up to 3, one torn up
 // by every horde attack), sandbags +4% a bundle (up to 4), bear traps catch 3 of the dead each before the walls (up
@@ -90,7 +100,7 @@ export function guardHold(state, base) {
   let p = 0;
   const all = manned(state, base);
   const alarm = all ? 0 : armoryDefence(base).alarm; // a tripwire alarm: everyone half, warned or not
-  for (const s of homeAt(state, base.id)) { // world.js: not those out on a job trip
+  for (const s of defendersAt(state, base)) { // world.js: not those out on a job trip; a group's people at that base
     if (s.inBed) continue;
     if (s.role === "guard") p += combatPower(s) * (tiredLevel(s) >= 2 ? TIRED.GUARD : 1); // exhausted (sleep.js): half
     else if (all) p += combatPower(s) * DEFENCE.ALERT_WEIGHT;
@@ -170,7 +180,7 @@ export function defendersPower(state, base) {
   return p * armedFactor(people, base.stock, base.stock.arrows || 0);
 }
 // The dead that broke in, as a strength on the same scale (breakInForce's count × power, a Wallbreaker 12).
-const BOSS_STRENGTH = 12;
+export const BOSS_STRENGTH = 12;
 export const breakInStrength = (state, base, through, bosses = 0) => { const f = breakInForce(state, base, through, bosses); return f.count * f.power + bosses * BOSS_STRENGTH; };
 // How many of the dead that broke in each inner tier is expected to stop: the most `through` for which the defenders
 // still match them with the yard counted (yard), and with the buildings too (buildings). 0 when nobody is there.
@@ -230,29 +240,34 @@ export function holdSummary(state, base) {
   return { limit: holdLimit(state, base), boss: holdLimit(state, base, 1), tier: wallTier(base) };
 }
 
+
 // ---------- a horde at the gates ----------
-export function hordeAttackBase(state, h, base) {
-  ensureHives(state);
-  const rng = state.rng;
-  const stats = state.hiveInfo.stats;
-  const people = homeAt(state, base.id); // world.js: those out on a job trip are not in the fight
+// The walls' work, the same at every base (yours: hordeAttackBase below; a group's: groupfight.js hordeAtGroup;
+// docs/adr/0001-ai-parity.md): the spike pits take their share and are used up, the minefield its share, the bear
+// traps in the armory theirs (the wire and the traps then worn), the floodlights burn their fuel, a Wallbreaker and the
+// brutes smash defences, and the hold limit is set before the smashing. o: { surprise (watch.js surpriseAt's, or
+// null), map (keep where the pits stood, for the base's battle map), say (text, kind): the log, or nothing }. Returns
+// null when the dead were all killed before the walls, else { notes, limit, wm (the special dead's weight on the
+// walls), lim (the limit in plain dead: limit / wm), bosses, floodlit, kit, pits, pitsAt, sp }.
+export function atTheWalls(state, h, base, o = {}) {
+  const say = o.say || (() => {});
   const notes = [];
   base.hordeHits = (base.hordeHits || 0) + 1;
   // Spike pits: one use.
   const pits = count(base, "spike_pits");
-  const pitsAt = pits ? layoutOf(state, base).filter((e) => e.it.type === "spike_pits" && e.at).map((e) => e.at) : []; // basemap.js: where they stood, for the fight's map
+  const pitsAt = pits && o.map ? layoutOf(state, base).filter((e) => e.it.type === "spike_pits" && e.at).map((e) => e.at) : []; // basemap.js: where they stood, for the fight's map
   if (pits) {
     const k = spikeKill(base, h.size);
     base.buildings = base.buildings.filter((b) => b.type !== "spike_pits");
     notes.push(`The spike pits took about ${k}.`);
-    if (reduceHorde(state, h, k)) { log(state, `A horde ran onto the spike pits at ${base.name} and was torn apart. ${notes.join(" ")}`, "good"); return; }
+    if (reduceHorde(state, h, k)) { say(`A horde ran onto the spike pits at ${base.name} and was torn apart. ${notes.join(" ")}`, "good"); return null; }
   }
   // Land mines (mines.js): the dead set them off on the way in, MINES.KILL each; the rest stay buried (the battle map).
   const boom = minesKill(base, h.size);
   if (boom) {
     spendMines(base, Math.ceil(boom / MINES.KILL));
     notes.push(`The minefield took about ${boom}${minesLeft(base) ? ` (${minesLeft(base)} mines left)` : " (every mine gone off)"}.`);
-    if (reduceHorde(state, h, boom)) { log(state, `A horde walked into the minefield at ${base.name} and was blown apart. ${notes.join(" ")}`, "good"); return; }
+    if (reduceHorde(state, h, boom)) { say(`A horde walked into the minefield at ${base.name} and was blown apart. ${notes.join(" ")}`, "good"); return null; }
   }
   // The defence kit in the armory: bear traps catch a few; the wire and traps count for this attack (and the map),
   // then wear (a roll of wire torn up, some traps broken).
@@ -262,12 +277,12 @@ export function hordeAttackBase(state, h, base) {
   const floodlit = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL);
   const bosses = Math.min(2, h.bosses || 0);
   // An unwatched night (watch.js surpriseAt): the dead were at the walls before anyone woke.
-  const sp = surpriseAt(state, base);
+  const sp = o.surprise || null;
   if (sp) notes.unshift(`${sp.why}: the dead were at the walls before anyone woke, and the defences counted half with nobody manning them.`);
   const limit = holdLimit(state, base, bosses, !!sp);
   const worn = kit.wire || kit.traps ? wearDefenceKit(state, base) : "";
   if (worn) notes.push(worn);
-  if (caught && reduceHorde(state, h, caught)) { log(state, `The last of a horde was caught in the bear traps at ${base.name}. ${notes.join(" ")}`, "good"); return; }
+  if (caught && reduceHorde(state, h, caught)) { say(`The last of a horde was caught in the bear traps at ${base.name}. ${notes.join(" ")}`, "good"); return null; }
   if (floodlit && !poweredType(base, "floodlights")) base.stock.fuel -= DEFENCE.FLOOD_FUEL;
   // Brutes batter the defences too: every smashEvery of them smash one, like a Wallbreaker (at most 2).
   const brutes = Math.min(2, Math.floor((h.size * ((h.mix && h.mix.brute) || 0)) / ZTYPES.brute.smashEvery));
@@ -275,14 +290,29 @@ export function hordeAttackBase(state, h, base) {
   const smasher = bosses ? (bosses > 1 ? `The ${BOSS_NAMES.horde}s` : `The ${BOSS_NAMES.horde}`) + (brutes ? " and the brutes" : "") : "The brutes";
   if (smashed.length) notes.push(`${smasher} smashed ${smashed.length > 1 && smashed[0] === smashed[1] ? `two ${smashed[0].replace(/^a /, "")}s` : smashed.join(" and ")}.`);
   if (h.mix && mixText(h.mix, h.size)) notes.push(`Among them: ${mixText(h.mix, h.size)}${h.elite ? " (elite)" : ""}.`);
-  const shot = spendShots(base.stock, people, 3); // 3 a head from the base's stock: the bows' in arrows, the rest's in ammo
   // The special dead press the walls by their weight: the limit in plain dead is the hold limit / the weight.
   const wm = wallWeight(h);
-  const lim = limit / wm;
+  return { notes, limit, wm, lim: limit / wm, bosses, floodlit, kit, pits, pitsAt, sp };
+}
+// The dead cut down below walls that held: 8, and the guards' share, and an eighth of the horde.
+export const heldKill = (state, base, h) => Math.min(h.size, Math.round(8 + guardHold(state, base) * 0.8 + h.size * 0.12));
+// The dead that get in when the walls do not hold: the horde less what the walls still hold back outside (the limit in
+// plain dead × HELD_BACK), at least 30% of it.
+export const breakInCount = (size, lim) => Math.min(size, Math.max(Math.round(size * 0.3), Math.round(size - lim * DEFENCE.HELD_BACK)));
+
+export function hordeAttackBase(state, h, base) {
+  ensureHives(state);
+  const rng = state.rng;
+  const stats = state.hiveInfo.stats;
+  const people = homeAt(state, base.id); // world.js: those out on a job trip are not in the fight
+  const w = atTheWalls(state, h, base, { surprise: surpriseAt(state, base), map: true, say: (text, kind) => log(state, text, kind) });
+  if (!w) return;
+  const { notes, limit, lim, bosses, floodlit, kit, pits, pitsAt, sp } = w;
+  const shot = spendShots(base.stock, people, 3); // 3 a head from the base's stock: the bows' in arrows, the rest's in ammo
   if (h.size <= lim) {
     stats.held++;
     if (shot.arrows) base.stock.arrows = (base.stock.arrows || 0) + arrowsBack(shot.arrows); // held: about half the arrows are picked up below the walls
-    const killed = Math.min(h.size, Math.round(8 + guardHold(state, base) * 0.8 + h.size * 0.12));
+    const killed = heldKill(state, base, h);
     log(state, `A horde of ${h.size} hit ${base.name}. The defences held (they stop about ${limit}) and about ${killed} of the dead were cut down.${notes.length ? ` ${notes.join(" ")}` : ""}`, "good");
     if (people.length && h.size > lim * 0.7 && rng.chance(0.4)) hurt(state, rng.pick(people), rng.int(10, 30), base.tile, `fighting the horde at ${base.name}`);
     const slip = crawlerSlip(state, base, h, floodlit); // crawlers that got past the walls anyway
@@ -293,7 +323,7 @@ export function hordeAttackBase(state, h, base) {
   }
   // Break-in.
   stats.breakIns++;
-  const through = Math.min(h.size, Math.max(Math.round(h.size * 0.3), Math.round(h.size - lim * DEFENCE.HELD_BACK)));
+  const through = breakInCount(h.size, lim);
   log(state, `A horde of ${h.size}${bosses ? ` led by a ${BOSS_NAMES.horde}` : ""} broke through the defences of ${base.name} (they stop about ${limit}). About ${through} of the dead are inside.${notes.length ? ` ${notes.join(" ")}` : ""}`, "death");
   if (!people.length && base.type === "outpost") return wreckEmpty(state, base, h, through);
   if (!people.length) return overrun(state, base, h, through, "Nobody was there to stop them.");
@@ -351,7 +381,7 @@ registerCombatHandler("crawlerSlip", (state, result, setup) => {
 
 // The horde backs off after a fight: it falls back RETREAT_TILES from the base (on its own side) for
 // RETREAT_HOURS, and is not drawn back to that base for SHUN_DAYS (hordes.js hordesDaily).
-function retreat(state, h, base) {
+export function retreat(state, h, base) {
   h.busy = false;
   if (h.role === "attack") { h.role = "roam"; h.goal = null; }
   h.lureUntil = state.hour + DEFENCE.RETREAT_HOURS;
@@ -532,7 +562,8 @@ export function armoryDecoys(base, h) {
   return (base.armory || []).filter((it) => it && DECOY_KEYS.includes(it.key) && ((THROWABLES[it.key].sense || []).includes("noise") || heat)).slice(0, DECOY_ITEMS);
 }
 // The horde turns toward the lure: it falls back and leaves the base be for a few days (as when it is beaten off).
-function lureOff(st, h, base, hours = 96) {
+// A group's base too (groupfight.js hordeAtGroup: its decoys set out on the approach).
+export function lureOff(st, h, base, hours = 96) {
   retreat(st, h, base);
   h.lureUntil = st.hour + hours;
   h.warned = false;
