@@ -564,6 +564,14 @@ export const GEAR_ART = {
       box(p, x, y, x + 4, y + 6, C.silver, C.white, C.silverD); H(p, x, x + 4, y + 2, C.red); H(p, x, x + 4, y + 3, C.red);
     }
   },
+  boards: (p) => { // three split planks tied in a bundle with cord, a few nails beside it (barricade.js Board up)
+    for (const [x0, y0, x1] of [[0, 1, 12], [2, 4, 15], [1, 7, 13]]) {
+      box(p, x0, y0, x1, y0 + 2, C.brownL, shade(C.brownL, 0.25), C.brown);
+      p.set(x0 + 3 + (y0 % 4), y0 + 1, C.brown); p.set(x1 - 3, y0 + 1, C.brown); // the grain
+    }
+    for (const x of [4, 10]) V(p, x, 1, 9, C.rope); // the cord round them
+    for (const [x, y] of [[1, 12], [5, 14], [9, 12]]) { V(p, x, y - 1, y + 1, C.white); H(p, x + 1, x + 5, y, C.silver); } // nails: a head and a shank
+  },
   sandbags: (p) => {
     const bag = (x0, y0, x1, y1) => { oval(p, x0, y0, x1, y1, C.khaki); H(p, x0 + 2, x1 - 2, y0, shade(C.khaki, 0.25)); H(p, x0 + 1, x1 - 1, y1, C.khakiD); p.set(x1 - 1, y1 - 1, C.khakiD); dots(p, x0 + 2, x1 - 2, y0 + 2, C.khakiD, 3); };
     bag(0, 9, 7, 15); bag(8, 9, 15, 15); bag(3, 3, 12, 9);
