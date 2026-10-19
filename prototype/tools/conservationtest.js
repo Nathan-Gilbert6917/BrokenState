@@ -20,7 +20,9 @@ const check = (ok, msg) => { if (ok) passes++; else fails++; console.log(`  ${ok
 
 // The rounds in an item: a box of loose rounds, what is loaded in a gun (gunload.js it.loaded), a magazine's stack.
 const stackN = (st) => (Array.isArray(st) ? st.reduce((a, x) => a + (x.n || 0), 0) : 0);
-const inItem = (it) => (!it ? 0 : (isRoundItem(it) ? Math.floor(Number(it.dur) || 0) : 0) + (it.loaded ? (Array.isArray(it.loaded.stack) ? stackN(it.loaded.stack) : it.loaded.n || 0) : 0) + stackN(it.stack));
+// What is inside counts too: a pack's or a rig's contents (inventory.js item.contents), a gun's fitted parts.
+const inItem = (it) => (!it || typeof it !== "object" ? 0 : (isRoundItem(it) ? Math.floor(Number(it.dur) || 0) : 0) + (it.loaded ? (Array.isArray(it.loaded.stack) ? stackN(it.loaded.stack) : it.loaded.n || 0) : 0) + stackN(it.stack)
+  + (Array.isArray(it.contents) ? it.contents.reduce((a, x) => a + inItem(x), 0) : 0) + (it.mods ? Object.values(it.mods).reduce((a, x) => a + inItem(x), 0) : 0));
 const itemRounds = (list) => (list || []).reduce((a, it) => a + inItem(it), 0);
 // The AI side's rounds, by holder (a name for the report).
 function holdings(state) {

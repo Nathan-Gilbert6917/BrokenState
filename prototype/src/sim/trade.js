@@ -52,7 +52,7 @@ import { radioTradeContext, radioTradeProblem, bookRadioTrade, matchGear, sameGe
 import { intoArsenalFromShelf, shelfSurplus } from "./arsenal.js"; // group arsenals: the guns you sell them they use; their surplus is for sale
 import { swapGun } from "./gundist.js";
 import { groupMachineCount, groupMachParts } from "./groupworks.js"; // freezer-parts: their machines want spare parts // the gun distribution: which gun a group's shelf holds
-import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -912,8 +912,10 @@ export function giftAll(state) {
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
     const tk = ctx.kind === "caravan" ? k : groupStockKey(k, f);
     theirSup[tk] = (theirSup[tk] || 0) + q;
+    if (/^a_/.test(tk) || tk === "ammo") note(state, "from you", q); // ledger.js: a gift of yours
   }
   const given = liveGear(t.offerGear, ctx.myGear);
+  note(state, "from you", goodsRounds(given));
   for (const g of given) moveItem(ctx.myGear, theirGear, g);
   if (ctx.kind !== "caravan") intoArsenalFromShelf(state, f, given); // arsenal.js
   const today = day(state);

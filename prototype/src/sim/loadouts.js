@@ -7,6 +7,7 @@
 // When: kitOut every day at home (factions.js factionsDaily) for everyone at a base; a party keeps what its people
 // carried out (parties.js). Never as a fight is set up: a fight is fought with what they have on them.
 // The registry (f.arsenal.items) keeps every item the group owns, carried or not; spare is what nobody carries.
+import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
 import { GEAR } from "./data.js";
 import { stow, allCarried } from "./inventory.js";
 import { equipPeople, equipTools } from "./equip.js";
@@ -41,7 +42,7 @@ export function kitOut(state, f) {
   if (!people.length) return [];
   // Their rounds back into the stores first (the gun's, the magazines', the loose ones in their pockets: a day's run).
   settleGroup(state, f); // ammo.js: their stores' rounds by calibre (a new world's generic ammo becomes their guns')
-  if (!f.roundsSeeded) seedRounds(f); // their starting rounds (a group's starting holdings: ADR 0001), once
+  if (!f.roundsSeeded) seedRounds(f, state); // their starting rounds (a group's starting holdings: ADR 0001), once
   for (const s of people) collectRounds(f, s, f.stock);
   // Everyone at home hands the group's kit back, and it is dealt out again (an AI's choice a player could make: the
   // best of it to the best of them today, a med kit to whoever is their best Medicine now).
@@ -137,8 +138,9 @@ export function kitParty(state, f, go, kind = "raid", party = null) {
 // ---------- their rounds (docs/adr/0001-ai-parity.md: physical rounds for every side) ----------
 // A group's starting rounds, added once when it is made (its starting holdings, as your crew starts with its guns
 // loaded and a magazine or two): every gun it owns full, every magazine full, a handful loose, of the gun's common round.
-export function seedRounds(f) {
+export function seedRounds(f, state = null) {
   f.roundsSeeded = true;
+  const r0 = roundsIn(f.stock);
   const items = (f.arsenal && f.arsenal.items) || [];
   for (const gun of items) {
     if (!gun || !WEAPONS[gun.key] || !calOf(gun.key)) continue;
@@ -153,6 +155,7 @@ export function seedRounds(f) {
     const key = keyFor(m.cal, typeFor(m.cal, it.load || null));
     f.stock[key] = (f.stock[key] || 0) + m.cap;
   }
+  note(state, "starting rounds", roundsIn(f.stock) - r0); // ledger.js: a creation seed
 }
 export const LOOSE = { box: 1, internal: 2, shells: 18 }; // loose rounds carried besides: a magazine's worth, twice an internal magazine, shells
 const capOf = (gun) => { const w = WEAPONS[gun.key]; const fit = fittedMag(gun); return Math.max(1, fit && MAGAZINES[fit.key] ? MAGAZINES[fit.key].cap : (w && w.cap) || 1); };
@@ -164,6 +167,7 @@ export function carriedRounds(s) {
   for (const c of carriedSpots(s)) {
     const it = c.item;
     if (!it) continue;
+    if (it !== gun && it.loaded) { const r = it.loaded; n += Array.isArray(r.stack) ? r.stack.reduce((a, x) => a + (x.n || 0), 0) : r.n || 0; } // a gun in the off hand or the pack, loaded
     if (Array.isArray(it.stack)) for (const x of it.stack) n += x.n || 0;
     if (isRoundItem(it)) n += Math.floor(Number(it.dur) || 0);
   }
@@ -179,6 +183,7 @@ export function collectRounds(f, s, stock) {
   for (const c of carriedSpots(s)) {
     const it = c.item;
     if (!it) continue;
+    if (it.loaded) { const r = it.loaded; if (Array.isArray(r.stack)) for (const x of r.stack) add(x.k, x.n); else add(r.key, r.n); delete it.loaded; } // any gun they carry (the off hand, the pack)
     if (Array.isArray(it.stack)) { for (const x of it.stack) add(x.k, x.n); delete it.stack; }
     if (isRoundItem(it)) { add(it.key, Math.floor(Number(it.dur) || 0)); c.take(); }
   }
