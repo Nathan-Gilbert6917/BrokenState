@@ -116,7 +116,7 @@ export function pickUpFromGround(state, b, u, where, item = null, arms = false) 
   const pile = isPile(where) ? where : where ? groundAt(b, where.x, where.y, where.f ?? (u.f || 0)) : pilesNear(b, u)[0];
   if (!pile || !pileCount(pile)) { out.msg = "Nothing on the ground there."; return out; }
   if (!near(u, pile)) { out.msg = `${u.name.split(" ")[0]} has to be on it or next to it.`; return out; }
-  { const why = handsTakeRefusal(u, item ? `the ${item.name}` : "more"); if (why) { out.msg = why; return out; } } // carry.js: two different things carried already
+  { const why = handsTakeRefusal(u, item ? `the ${item.name}` : "more", item); if (why) { out.msg = why; return out; } } // carry.js: two different things carried already
   if (item) {
     const i = pile.contents.gear.indexOf(item);
     if (i < 0) { out.msg = "That is not there any more."; return out; }
@@ -377,7 +377,7 @@ export function groundLeftovers(state, b, outcome) {
   const out = [];
   let ground = null; // every pile on the ground is one "On the ground" entry
   for (const c of L.containers) {
-    if (!pileCount(c)) continue;
+    if (!pileCount(c) || c.kind === "store") continue; // assaultstores.js: a group's store stays theirs (a won base: conquest.js captureBase shares out what is left)
     let pile;
     if (isPile(c) && ground) {
       pile = ground;

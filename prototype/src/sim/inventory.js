@@ -113,8 +113,12 @@ export const isSmall = (key) => !!(GEAR[key] && GEAR[key].small);
 export const packSize = (item) => (item && GEAR[item.key] && GEAR[item.key].slots) || 0;
 export const carryOf = (item) => (item && GEAR[item.key] && GEAR[item.key].carry) || 0;
 export const isBulky = (key) => !!(GEAR[key] && GEAR[key].bulky);
-// A container that can be carried in the arms (EQUIP_SLOTS carry): a pack, a rig or a pouched vest, a gun case.
-export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase)); };
+// A container that can be carried in the arms (EQUIP_SLOTS carry): a pack, a rig or a pouched vest, a gun case, a fire
+// safe (twoHands).
+export const isCarryable = (item) => { const d = item && GEAR[item.key]; return !!(d && (d.slot === "backpack" || d.slot === "rig" || d.slots || d.pouches || d.gunCase || d.twoHands)); };
+// Carried in both arms only (GEAR twoHands: the fire safe, the rifle case; the user's request 2026-10-19, "small safes
+// (Carried only slot two hands)"): bulky (no pocket, pack slot or rig pouch), and it fills both hands (carry.js handsCount).
+export const isTwoHands = (item) => !!(item && GEAR[item.key] && GEAR[item.key].twoHands);
 // What an item weighs (kg): its own weight, and a pack also what is inside it.
 // A count stack (GEAR count: true, item.dur = how many are left: a box of rounds, a stack of boxes) weighs its share
 // left; loose rounds by the round, a bulk container empty and its rounds, a stack of a consumable n of it

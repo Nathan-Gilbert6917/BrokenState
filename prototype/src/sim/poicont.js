@@ -52,6 +52,8 @@ import { siteBuildings, SITES, BUILDINGS, streetHouses } from "./buildingmaps.js
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
 import { localId } from "./world.js"; // dice keyed by a group's world-local id (two worlds in one process roll the same)
+import { supWeight } from "./data.js";
+import { itemLoad } from "./inventory.js"; // what a raider can carry off (opts.room): a pack counts what is in it
 
 export const CONT = {
   FLOOR: 0.03, // the floor a raid leaves under a pool (scavenge.js takePoi's)
@@ -228,11 +230,12 @@ export function poiRaidEnd(state, b) {
  * tile's heat rises (opts.heat, TILE_HEAT.AI for others, none for the
  * player's own crews: their search adds its own). Items your side left count like any other loot: at risk.
  * who: a group's id (number or string), "player" (your own crews' searches), or an object with an id.
- * opts: { floor = 0, heat, left = true (false: leave opened containers alone), hours (for heat: × max(1, hours / 4)) }.
+ * opts: { floor = 0, heat, left = true (false: leave opened containers alone), hours (for heat: × max(1, hours / 4)),
+ * room (kg they can carry off from those containers; what does not fit stays in them: unlimited by default) }.
  * Returns { took (pool taken), left: { sup, gear } (things taken from your opened containers), boxes (how many of
- * those were emptied), marked (containers marked looted now), pool (after), stripped } or null without the POI.
+ * those were gone through), marked (containers marked looted now), pool (after), stripped } or null without the POI.
  * @param {State} state @param {any} who @param {Tile | number} tile @param {number} i @param {number} need
- * @param {{ floor?: number, heat?: number, left?: boolean, hours?: number }} [opts]
+ * @param {{ floor?: number, heat?: number, left?: boolean, hours?: number, room?: number }} [opts]
  */
 export function lootPoiAbstract(state, who, tile, i, need, opts = {}) {
   const t = tileOf(state, tile), poi = poiAt(t, i);
@@ -244,17 +247,28 @@ export function lootPoiAbstract(state, who, tile, i, need, opts = {}) {
   // The ledger: made for another group's raid (who took it last); your own crews' searches only use one already there.
   const c = poi.cont || (by !== "player" && took > 0 ? poiLedger(t, i) : { n: 0, looted: {}, mine: {} });
   const left = { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {any[]} */ ([]) };
-  let boxes = 0;
+  let boxes = 0, room = opts.room != null ? Math.max(0, opts.room) : Infinity;
   if (opts.left !== false && share > 0) {
     for (const k of Object.keys(c.mine)) {
       const m = c.mine[k];
       if (!itemsIn(m) || hash01(state.seed, "poileft", t.id, i, k, state.hour, localId(state, by)) >= share) continue;
+      // opts.room: the kg they can still carry (nomads.js bandRoom, your teams' rule). What does not fit stays in
+      // the container, as a team of yours leaves behind what it cannot carry (parties.js addGearToCargo).
+      const stays = { sup: /** @type {Record<string, number>} */ ({}), gear: /** @type {any[]} */ ([]) };
       for (const part of [m.contents, m.hidden]) {
         if (!part) continue;
-        for (const [s, q] of Object.entries(part.sup || {})) if (q > 0) left.sup[s] = (left.sup[s] || 0) + q;
-        left.gear.push(...(part.gear || []));
+        for (const [s, q] of Object.entries(part.sup || {})) {
+          if (!(q > 0)) continue;
+          const w = supWeight(s), n = w > 0 && room < Infinity ? Math.min(q, Math.max(0, Math.floor((room + 1e-9) / w))) : q;
+          if (n > 0) { left.sup[s] = (left.sup[s] || 0) + n; room -= n * w; }
+          if (q - n > 0) stays.sup[s] = (stays.sup[s] || 0) + q - n;
+        }
+        for (const it of part.gear || []) {
+          const kg = itemLoad(it);
+          if (kg <= room + 1e-9) { left.gear.push(it); room -= kg; } else stays.gear.push(it);
+        }
       }
-      m.contents = { sup: {}, gear: [] };
+      m.contents = stays;
       m.hidden = null; m.quick = false; m.searched = true; m.partial = false;
       if (by !== "player") c.looted[k] = by;
       boxes++;

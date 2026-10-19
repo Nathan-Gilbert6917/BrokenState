@@ -91,7 +91,8 @@ import { orderCell, racksCard, powerCard, craftOrdersCard, stewardCard, pinButto
 import { canUpgradeAmmoBench, RELOAD } from "../sim/reloading.js"; // the reloading bench: an ammo bench upgraded where it stands
 import { EQUIP_SLOTS, SLOT_NAMES, ensureInv, personPlace, armorPower, carriedSpots } from "../sim/inventory.js";
 import { inventoryModal, takeLootReq } from "./inventory.js";
-import { armoryView, armoryScope } from "./armoryview.js"; // the Armory tab's stored gear: grouped, cards or compact rows
+import { armoryView, armoryScope, storageCard, storageTags } from "./armoryview.js"; // the Armory tab's stored gear: grouped, cards or compact rows; its Storage card and the items' storage badges
+import { storageOf, storageSummary, vehicleStoreKg } from "../sim/basestorage.js"; // base storage limits: the Overview's Storage row, the camp's storage line, a parked car's room
 import { itemShortTip, tipAttrs } from "./itemlabels.js"; // the armory cards' short hover tip (Shift: the whole one)
 import { teamMeetModal, meetButton } from "./teammeet.js"; // teams together on a tile: people, goods, merge
 import { teamInvModal, teamsHereCard, transferButtons, unpackUp, unpackModal } from "./teaminv.js"; // the team inventory window; teams on a base's tile; Drop off / Load on its tile
@@ -141,7 +142,7 @@ import { cookingNote } from "./cooking.js"; // wave 2 cooking: the bills under t
 import { describeActivity } from "../sim/activity.js"; // the find box also looks through what they are doing ("asleep", "chopping") // what each person is doing now; the base's Work now panel (sim/activity.js)
 import { pickBar, pickCard, ownBaseCard, groupBaseCard } from "./mapselect.js"; // teams, parties and bands selected on the map; a base's card
 import { defenceTab } from "./defence.js"; // the watch roster and the defence plan
-import { baseMapTab } from "./basemap.js"; // the base map: what stands where on the base's own map (sim/basemap.js)
+import { baseMapTab, moveCarButton } from "./basemap.js"; // the base map: what stands where on the base's own map (sim/basemap.js)
 import { wallInfo, ringPlan, ringHalf, yardHalf } from "../sim/basemap.js"; // the wall pieces: whether they close round the base, what the ring still needs
 import { pieceCost, pieceHours, pieceName, matOf, ringMat, isPiece } from "../sim/buildings.js"; // the wall pieces' materials (Defenses tab)
 import { huntInfo, gameWord, fishKit, expectFish, fishLevel, snareLine, expectSnare, bestHuntWeapon, hunterMult, HUNT, frozenAt, meatAt, gameAbundance, partyHuntMix, huntMixOf, HUNT_METHODS, METHOD_NAMES } from "../sim/hunting.js";
@@ -1609,6 +1610,7 @@ function campTab(state, b) {
     <div>
       <h3>Stores</h3>
       <div class="card small">${stock.length ? `<div class="sk-tiles">${stock.map(([k, q]) => stockTile(k, k === "ammo" ? totalRounds(b.stock) : q)).join("")}</div>` : `<span class="muted">Nothing in the stores.</span>`}
+        ${campStorage(state, b)}
         ${hint(`🎒 ${b.armory.length} item${b.armory.length === 1 ? "" : "s"} in the camp\'s armory${infoTip("Teams set down what they carry when they enter, and take supplies and gear when they are formed or edited here.")}`)}
         <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="basetab" data-tab="armory">Armory</button><button class="mini" data-action="basetab" data-tab="construction">Construction</button></div>
       </div>
@@ -1627,6 +1629,14 @@ function campTab(state, b) {
       <div class="row" style="margin-top:0.6rem;justify-content:flex-end"><button class="danger" data-action="strikecamp" data-base="${b.id}" ${v.strike ? "disabled" : ""}${tip(v.strike || `${STRIKE_LABEL}: everyone here forms one team with the vehicles that run (as far as drivers and seats allow) and what they can carry of the stores and armory (water and food first). What is left stays here as a cache to recover, and the camp is gone.`)}>${STRIKE_LABEL}</button></div>
     </div>
   </div>`;
+}
+
+// The camp's storage line (sim/basestorage.js storageSummary): the kg kept against the room; a camp starts with none
+// ("No storage yet: park a vehicle here or build a storage box"), and what lies outside in red.
+function campStorage(state, b) {
+  const s = storageOf(state, b);
+  const [head, room, outside] = storageSummary(state, b);
+  return `<div class="small" style="margin-top:0.3rem"${tip("Base storage: everything the camp keeps (its stores and armory, by weight) against the room of its containers. A parked vehicle's load space counts while it is here; what does not fit lies outside, where things wear and raiders help themselves.")}><b>${esc(head)}</b><br><span class="${s.containers.length ? "muted" : "warn"}">${esc(room)}</span>${outside ? `<br><span class="danger">${esc(outside)}</span>` : ""}</div>`;
 }
 
 // ---------- medical ----------
@@ -1830,6 +1840,19 @@ function upgradeCard(state, b) {
     <div class="card small${ready ? " attn" : ""} upgradecard">${rows.sort((x, y) => y.ok - x.ok).map((r) => r.html).join("")}</div>`;
 }
 
+// Base storage limits (sim/basestorage.js, 2026-10-19): the Overview's Storage row, the goods kept (stores and armory,
+// by weight) against the containers' room, what lies outside in red with the hint to build storage; the Armory tab
+// has the whole card (ui/armoryview.js storageCard).
+function storageRow(state, b) {
+  const s = storageOf(state, b);
+  const rows = storageSummary(state, b);
+  const head = `${Math.round(s.used)} / ${Math.round(s.cap)} kg`;
+  const out = s.outsideKg > 0
+    ? `<br><span class="danger"${tip(`${rows[2] || ""}. Items outside wear a little every day (twice as fast in rain or snow) and raiders take what lies outside first.`)}>${Math.round(s.outsideKg)} kg outside</span> <a class="link small" data-action="basetab" data-tab="construction"${tip("Build storage: a storage box, crates, a shed (Construction), or park a vehicle here")}>build storage</a>`
+    : "";
+  return `<div${tip(`Base storage: everything kept here (the stores and the armory, by weight) against the room of its containers. ${rows[1] || ""}. What does not fit lies outside. The Armory tab has the details.`)}>Storage</div><div>${head}${s.cap ? "" : ` <span class="warn">no storage yet</span>`}${out}</div>`;
+}
+
 function baseOverview(state, b) {
   const people = atBase(state, b.id);
   const line = b.type === "outpost" ? (b.supplyLine || supplyLine(state, b)) : null;
@@ -1850,6 +1873,7 @@ function baseOverview(state, b) {
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
         ${rationRow(state, b)}
         <div${tip("Where the fresh food is kept (the food rooms: cellars, storehouse, cold store, a freezer; above them it is stored outside and spoils faster), what will spoil before it is eaten, and the food that keeps")}>Food storage</div>${storeCellHtml(state, b)}
+        ${storageRow(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}
         <div${tip("Food and water used up a day: a rate per person × everyone fed here (hover for the breakdown)")}>Upkeep</div>${upkeepCellHtml(state, b)}
         ${illnessRowHtml(state, b)}
@@ -2034,7 +2058,7 @@ function baseConstruction(state, b, ui) {
     return `<div class="gcard ${state_}${where ? " cx-na" : ""}"${tip(d.desc)}>
       <div class="gcard-top"><span class="gcard-title">${esc(d.name)}${have ? ` <span class="muted small"${tip(`${have} standing here, ${d.max} at most`)}>${have}/${d.max}</span>` : ""}${status}</span>${btn}</div>
       <div class="gcard-desc">${esc(firstSentence(d.desc))}</div>${isMachine(k) ? `<div class="small muted"${tip("A machine: it wears, breaks down and takes machine parts to keep (Help: Machines and machine parts)")}>⚙ ${esc(machineText(k))}${POWER_USERS[k] ? ` · draws ${POWER_USERS[k].need} power` : ""}</div>` : ""}
-      <div class="gcard-foot">${costChips(d.cost, where ? null : b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed${h != null ? `, ${n0(h)} in the stores` : ""}${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}</div>
+      <div class="gcard-foot">${costChips(d.cost, where ? null : b.stock, { tips: (c, h, n) => `${supName(c)}: ${n} needed${h != null ? `, ${n0(h)} in the stores` : ""}${d.gather ? " (taken from the stores as it comes in)" : ""}` })}${chip({ icon: "⏱", name: `${d.hours}h`, t: `${d.hours} work-hours for the builders` })}${d.storeKg ? chip({ icon: "📦", name: `${d.storeKg} kg storage`, tone: "ok", t: `Storage: holds ${d.storeKg} kg of the base's goods (its stores and armory, by weight); goods past the base's storage lie outside, where things wear and raiders take them first` }) : ""}</div>
       ${!where && k === "canteen" ? kitchenNote(state, b) : ""}${!where && k === "generator" ? genTiersNote(state, b) : ""}
       ${where ? `<div class="gcard-why">${esc(where)}</div>` : !chk.ok && !short && !lock ? `<div class="gcard-why">${esc(chk.reason)}</div>` : ""}${lock}
     </div>`;
@@ -2178,6 +2202,7 @@ function baseArmory(state, b) {
   const people = atBase(state, b.id);
   const slots = ["weapon", "armor", "tool"];
   return `
+    ${storageCard(state, b)}
     ${teamsHereCard(state, b)}${bodiesCard(state, b)}
     ${armoryStored(state, b, people)}
     <h3>Equipment</h3>
@@ -2198,7 +2223,8 @@ function baseArmory(state, b) {
 function armoryStored(state, b, people) {
   const ns = "base";
   const all = armoryScope(ns) === "all";
-  const entries = b.armory.map((item, i) => ({ item, loc: `armory:${b.id}:list:${i}`, sid: people[0] ? people[0].id : null }));
+  const stored = storageTags(state, b); // base storage: "Outside: weathering", an opened box's "+N kg storage"
+  const entries = b.armory.map((item, i) => ({ item, loc: `armory:${b.id}:list:${i}`, sid: people[0] ? people[0].id : null, tags: stored.tagsOf(i), outside: stored.outside.has(i) }));
   if (all) for (const s of people) for (const x of carriedSpots(s)) entries.push({ item: x.item, loc: x.loc, sid: s.id, who: `${shortName(s)} · ${(SLOT_NAMES[x.where] || x.where).toLowerCase()}`, whoTip: `${s.name} has it (${(SLOT_NAMES[x.where] || x.where).toLowerCase()})` });
   const carried = entries.length - b.armory.length;
   const scopeBar = people.length ? `<span class="armscope">${[["stored", "Stored"], ["all", "Everything here"]].map(([k, l]) => `<button class="mini${armoryScope(ns) === k ? " active" : ""}" data-action="armv-scope" data-ns="${ns}" data-scope="${k}"${tip(k === "all" ? "The armory and what everyone at the base wears and carries, with who has it" : "Only what is stored in the armory")}>${l}</button>`).join("")}</span>` : "";
@@ -2310,11 +2336,13 @@ function baseVehicles(state, b) {
       <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${(b.stock.scrap || 0) >= Math.ceil((v.count || 1) / 2) && v.condition < 100 ? "" : "disabled"}${tip("Patches, chain links, spokes: anyone can do it")}>Patch up (${Math.ceil((v.count || 1) / 2)} scrap)</button></div></div>` : `<div class="card small">
       <div class="spread"><b>${esc(v.name)}</b><span class="muted"${tip(`Riders (${RIDER_KG} kg each), what they wear and the cargo; loaded past 60% it burns more fuel (×1.3 at 100%, up to ×1.6 at 125%, the most it takes).${upgradeText(v) ? ` Its upgrades weigh ${VEHICLE_TYPES[v.type].payload - payloadOf(v)} kg of the ${VEHICLE_TYPES[v.type].payload}.` : ""} Worth about ${vehicleValue(v)} in trade.`)}>${payloadOf(v)} kg payload</span></div>
       ${upgradeText(v) ? `<div class="small"${tip(upgradeEffects(v))}>🛡 ${esc(upgradeText(v))}</div>` : ""}
+      ${vehicleStoreKg(v) ? `<div class="small"${tip("Base storage: a car parked here is a storage unit for the base's goods (its load space) until better storage is built. A team that drives off in it takes the room with it, and what it held then lies outside.")}>📦 Storage: ${vehicleStoreKg(v)} kg while parked here</div>` : ""}
       <div class="row"><span style="width:5.5rem" class="muted"${tip("Low condition means more breakdowns on the road")}>Condition</span><div style="flex:1">${bar(v.condition, v.condition < 35 ? "var(--danger)" : "var(--good)")}</div><span style="width:3rem">${Math.round(v.condition)}%</span></div>
       <div class="row"><span style="width:5.5rem" class="muted">Fuel</span><div style="flex:1">${bar((v.fuel / tank(v)) * 100, "var(--accent)")}</div><span style="width:3rem">${n0(v.fuel)}/${tank(v)}</span></div>
       <div class="row" style="margin-top:0.3rem">
         <button class="mini" data-action="refuel" data-base="${b.id}" data-id="${v.id}" ${v.fuel >= tank(v) || (b.stock.fuel || 0) < 1 ? "disabled" : ""}${tip(`Fill the tank from this base's fuel (${n0(b.stock.fuel)} in stock)`)}>Refuel</button>
         <button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${rep.ok && carPartsCost((k) => b.stock[k] || 0, 1).ok && v.condition < 100 ? "" : "disabled"}${tip(rep.ok ? `${carPartsText(1)} → +${rep.per} condition` : "Needs a garage or a Mechanics 4+ survivor here")}>Repair (1 car part)</button>
+        ${moveCarButton(state, b, v)}
         <button class="mini" data-action="stripv" data-base="${b.id}" data-id="${v.id}"${tip(`Take it apart for good: ${stripYield(v).carparts} car parts (by its condition), ${stripYield(v).scrap} scrap and the fuel in its tank. The vehicle is gone.`)}>Strip for parts</button>
       </div>${garageRow(state, b, v)}</div>`).join("") : `<div class="muted small">No vehicles parked here.</div>`}
     ${garageJobs(state, b)}

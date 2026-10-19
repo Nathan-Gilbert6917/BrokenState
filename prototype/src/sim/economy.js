@@ -48,6 +48,7 @@ import { tripEventsDaily } from "./tripevents.js"; // trouble on job trips: the 
 import { kitchenDaily, kitchenFireDaily } from "./kitchen.js"; // the Kitchen's day: meals served, food saved
 import { keepItem } from "./arsenal.js"; // a group that loots a death site keeps the very item
 import { lootQty } from "./worldcfg.js"; // the run's dials: the loot by kind (the base's scavengers)
+import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play): rounds off the ground
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -828,7 +829,7 @@ export function deathSitesDaily(state) {
     if (taken.kind === "gear") {
       const f = state.factions.filter((f) => f.alive).sort((a, b) =>
         Math.min(...a.bases.map((x) => state.grid.distance(x, site.tile))) - Math.min(...b.bases.map((x) => state.grid.distance(x, site.tile))))[0];
-      if (f) { f.lootedGear.push(taken.name); if (taken.item && !isCart(taken.item)) keepItem(state, f, taken.item, "found"); } // arsenal.js: the very item (docs/adr/0001-ai-parity.md)
+      if (f) { f.lootedGear.push(taken.name); if (taken.item && !isCart(taken.item)) { note(state, "found", goodsRounds([taken.item])); keepItem(state, f, taken.item, "found"); } } // arsenal.js: the very item (docs/adr/0001-ai-parity.md), the rounds loaded in it from outside the AI side (ledger.js)
       if (f && isCart(taken.item)) f.carts = (f.carts || 0) + 1; // carts.js: a group's carts (AI parity, coarse)
     }
     if (state.live.has(site.tile)) log(state, `Someone looted ${taken.name} from the bodies at ${t.loc ? t.loc.name : "the death site"}.`, "danger");

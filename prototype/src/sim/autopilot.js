@@ -3,7 +3,7 @@
 //   - resolves cards (travel events, conflicts, orders / "Done" cards, strangers, raid warnings), scavenging
 //     searches (one search hour per tick), trade visits and battles (state.autoCombat is on while it runs);
 //   - sets every role by need (food, threats, the injured, construction, stations, crafting), queues buildings
-//     and crafts, hands out gear from the armory and treats the injured with base meds;
+//     (storage among them when a base's goods lie outside: storageWish, basestorage.js) and crafts, hands out gear from the armory and treats the injured with base meds;
 //   - once a day (07:00) plans a trip: scavenging the best known site for what the hub needs, checking finds,
 //     recovering the dead or a vehicle, a trade visit, a rescue, or founding an outpost; and sends supply runs
 //     to outposts that need materials or hands;
@@ -55,6 +55,7 @@ import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpg
 import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
+import { storageOf, isStoreBuilding } from "./basestorage.js"; // base storage limits: storage when goods lie outside (storageWish)
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
 import { planTrainees, planDoctor } from "./training.js"; // a Medic trainee for a base short of skilled medics, the doctor on duty
 import { CRAFTS, canCraft, queueCraft, craftQueue, isFilterJob, filterRecipe, canAttempt, craftSkill, fieldCraftOptions } from "./crafting.js";
@@ -2638,7 +2639,7 @@ function roleSummaries(state) {
 // ---------- construction ----------
 // The steward area each kind of building belongs to (anything else is plain Building).
 const BUILD_AREA = {
-  walls: "defence", wall1: "defence", wall2: "defence", wall4: "defence", gate4: "defence", stand1: "defence", stand2: "defence", stand4: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence",
+  walls: "defence", wall1: "defence", wall2: "defence", wall4: "defence", gate4: "defence", stand1: "defence", stand2: "defence", stand4: "defence", barricades: "defence", spike_pits: "defence", trench: "defence", gate: "defence", floodlights: "defence", watchtower: "defence", armory: "defence",
   infirmary: "medical", field_hosp: "medical", clinic: "medical", hospital: "medical", med_station: "medical",
   huntcabin: "food", farm_plot: "food", greenhouse: "food", animal_pen: "food", cellar: "food", coldstore: "food", freezer: "food", storehouse: "food", smoker: "food", kitchen: "food", rain_catcher: "food", well: "food", cistern: "food", water_barrel: "food", crates: "food",
   boiler: "food", cookhouse: "food", canteen: "food", grainmill: "food", meatgrinder: "food",
@@ -2761,7 +2762,28 @@ function campYard(state, base, here, queued) {
   const crowded = () => living + returning(state, base) > baseBeds(base) + queuedBeds(base) + (pending.includes("cots") ? BEDS.cots : 0);
   if (!isCamp(base) && crowded()) add("cots", `${living} people for ${baseBeds(base)} beds`);
   if (!isCamp(base) && crowded()) add("bunkhouse", `${living} people for ${baseBeds(base)} beds`);
+  // Storage for the goods lying outside (storageWish): last in the yard, from the scrap the step up does not need; never
+  // in `pending` (a shelter's step up does not wait for it).
+  const sw = storageWish(state, base);
+  if (sw && (BUILDINGS[sw.type].cost.scrap || 0) <= spare && !BUILDINGS[sw.type].cost.parts) wishes.push(sw);
   return { wishes, pending };
+}
+// Base storage limits (basestorage.js, 2026-10-19): when a base's goods lie outside (STORE_WISH.minKg or more, or an
+// item that wears out there), one storage building at a time, from the ladder for its size, cheapest first: a storage
+// box at a camp, a box or storage crates at a shelter, crates or a storage shed at an outpost, crates, a shed, the
+// storehouse or a warehouse at the main base. The smallest it can build now that takes what lies outside, else the
+// biggest it can build now (canBuild: the materials, a plot, the skills). Never saved up for: the wishes ahead of it
+// (water, beds, food, defence, benches) keep their scrap, and planBuilds' reserves still apply.
+export const STORE_WISH = { minKg: 5, ladder: { camp: ["storebox"], shelter: ["storebox", "crates"], outpost: ["crates", "shed"], hub: ["crates", "shed", "storehouse", "warehouse"] } };
+export function storageWish(state, base) {
+  if (base.construction.some((c) => isStoreBuilding(c.type) && !c.target)) return null; // one at a time
+  const st = storageOf(state, base);
+  if (st.outsideKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
+  const size = isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost";
+  const ok = STORE_WISH.ladder[size].filter((t) => BUILDINGS[t] && canBuild(state, base, t).ok);
+  if (!ok.length) return null;
+  const type = ok.find((t) => BUILDINGS[t].storeKg >= st.outsideKg) || ok[ok.length - 1];
+  return { type, why: `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering (room for ${BUILDINGS[type].storeKg} kg)`, save: false };
 }
 function buildWishes(state, base) {
   const g = gov(state);
@@ -2891,6 +2913,7 @@ function buildWishes(state, base) {
   if (bw && !benchTier(base, true)) add("craftbench", "a bench to mend the fighters' worn gear", true);
   else if (bw >= 2 && benchTier(base, true) === 1 && best("mechanics") >= BUILDINGS.workbench.req.mechanics) add("workbench", "a workbench to mend the fighters' guns and armour", true);
   if (!benchTier(base, true) && !benchQueued && (here.some((s) => s.role === "craft") || craftQueue(base).length > 0)) add("craftbench", "a bench for the crafters (faster, better gear; most recipes need one)");
+  if (!isShelter(base)) { const sw = storageWish(state, base); if (sw) out.push(sw); } // goods outside: storage (a camp's and a shelter's: campYard)
   for (const w of jailWishes(state, base, best)) out.push(w);
   if (!isHub) return out;
   const hostileNear = state.factions.some((f) => f.alive && f.known && attitude(f) === "Hostile" && f.bases.some((b) => state.grid.distance(b, base.tile) <= 20));
@@ -2918,6 +2941,7 @@ function buildWishes(state, base) {
       (here.some((s) => s.role === "craft") || craftQueue(base).length > 0 || countAll(base, "ammo_bench") + countAll(base, "reload_bench") > 0)) add("toolbench", "a master workbench: the crafters work faster and better");
   if (!count(base, "med_station") && pop >= 6 && best("medicine") >= 3 && (st.meds || 0) < pop) add("med_station", "meds are short");
   if (!count(base, "storehouse") && (hostileNear || state.stats.raidsRepelled > 0)) add("storehouse", "raiders steal less");
+  if (!count(base, "armory") && count(base, "storehouse") && (base.armory || []).length >= 8 && (hostileNear || state.stats.raidsRepelled > 0)) add("armory", "the guns and rounds under lock from raiders");
   if (!count(base, "machine_shop") && pop >= 7 && (st.parts || 0) < 6 && best("mechanics") >= 4) add("machine_shop", "spare parts");
   // Mood (relations.js): a common room once the hub is a real community and spirits are not sky high (saved up for
   // when they sag below 75), or as planned comfort for a big hub: at 12+ people once there is scrap for it, saved up
@@ -3365,7 +3389,7 @@ function planTrip(state) {
   // least minOut may go while three stay home.
   const keepFrac = Math.ceil(home.length * (small ? 0.25 : P.homeFrac));
   const keep = Math.max(small ? 1 : 2, P.minOut && !small ? Math.min(keepFrac, Math.max(3, home.length - P.minOut)) : keepFrac, hordeNear ? Math.min(home.length, P.homeHorde) : 0);
-  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s));
+  const pool = home.filter((s) => s.health >= P.minHealth - (short.length || small ? 10 : 0) && !s.woundInfected && !s.inBed && !s.pinned && s.mood >= 20 && (!s.leader || home.length >= 9 || small) && tripFit(state, s)); // pinned people stay (never moved: the steward's rule)
   const spareHands = Math.min(pool.length, home.length - keep);
   if (spareHands < 1) return;
   const need = needs(state);

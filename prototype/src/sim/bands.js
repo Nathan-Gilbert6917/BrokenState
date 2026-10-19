@@ -3,12 +3,15 @@
 // would yield), kept from fight to fight: their wounds, their kit, their dead. The band's head count (a nomad band's
 // pop, a visitor's size) stays the number its own code works with; the list follows it (syncBand: newcomers, the
 // lost taken from the wounded first, by a hash). A fight with a band draws its people (bandize), and what the map did
-// to them is written back (settleBand: the dead and the taken leave the list, the rest keep their health).
+// to them is written back (settleBand: the dead and the taken leave the list, the rest keep their health). Someone who
+// joins a band from outside it (nomads.js recruit: a refugee, someone off the road) is made as one who joins you is
+// (bandNewcomer) and put in its list with the head count, never as a number.
 import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { enemyUnit } from "./combat.js";
-import { MEMBER, touchMembers } from "./members.js";
+import { MEMBER, touchMembers, withGroupDice } from "./members.js";
+import { makeCandidate } from "./recruits.js"; // a newcomer, made as one who joins you is
 import { PEOPLE, fromPerson, stowGun } from "./fighters.js";
 import { nomadsOf } from "./nomads.js";
 import { visitorsOf } from "./visitors.js";
@@ -38,6 +41,23 @@ function makeBandPerson(state, band, power, kind) {
   s.location = { kind: "band", ref: bandRef(band) };
   s.kitKind = kind;
   note(state, "arrived", carriedRounds(s)); // ledger.js: a band's person made with their holdings (a creation seed)
+  return s;
+}
+// A newcomer who joins a band (nomads.js recruit: a refugee from beyond the border, someone off the road), made as one
+// who joins you is (recruits.js makeCandidate: the same constructor, the same quality and health, and only what they
+// carry of their own: maybe a weapon, a piece of armour, a bit of kit, a keepsake, by its odds), under the band's own
+// dice (members.js withGroupDice: the world's dice and counters as they were). opts: makeCandidate's (quality,
+// minHealth). Not yet in the band's list (the caller puts them there with the head count). null with the people off
+// (fighters.js PEOPLE: the old units, a head count only).
+export function bandNewcomer(state, band, opts = {}) {
+  if (!PEOPLE.on) return null;
+  const s = withGroupDice(state, band, `join:${keyOf(band)}`, () => makeCandidate(state, opts));
+  delete s.pending;
+  s.id = state.memberSeq = Math.max(state.memberSeq || MEMBER.ID0, MEMBER.ID0) + 1;
+  s.transient = false;
+  s.band = keyOf(band);
+  s.location = { kind: "band", ref: bandRef(band) };
+  note(state, "recruit", carriedRounds(s)); // ledger.js: a newcomer with what they carry (a creation seed, as a group's)
   return s;
 }
 export function syncBand(state, band, power, kind) {

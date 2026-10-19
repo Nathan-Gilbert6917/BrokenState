@@ -22,7 +22,9 @@ import { spendAmmo } from "./rounds.js"; // a group's rounds by calibre
 import { takeFood, FOODS } from "./foods.js"; // their food, days of it
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES, supValue } from "./data.js";
 import { zombieToughness } from "./hives.js";
-import { stripAll, itemLoad, lootItem, armouredItem } from "./inventory.js";
+import { stripAll, itemLoad, lootItem, armouredItem, allCarried } from "./inventory.js";
+import { isRoundItem } from "./itemstack.js";
+import { joinFromYours } from "./members.js"; // one of yours who turns goes over as themselves
 import { kitSource, spend } from "./itemcond.js";
 import { hasTrait, teamTraitFx, encounterMult, bribeMult } from "./traits.js"; // Fleet-Footed, Slow: a team on foot that runs from trouble; Night Owl; Strategic: fewer encounters; Diplomatic: cheaper bribes
 import {
@@ -66,7 +68,7 @@ import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numb
 import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that overheard your caravan's route lies in wait
 import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a gun off their dead
 import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more run-ins
-import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play)
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 
 // ---------- small helpers ----------
@@ -285,7 +287,9 @@ export const allCaptives = (state) => state.survivors.filter(isCaptive);
 export function takeCaptive(state, s, f, p) {
   if (p) p.members = p.members.filter((id) => id !== s.id);
   // Everything on them is taken: worn, held, pockets and pack (inventory.js).
-  for (const g of stripAll(s)) { f.lootedGear.push(`${first(s)}'s ${g.name}`); keepItem(state, f, g, "stolen"); } // arsenal.js: the kit onto their books, the rest on their shelf
+  const kit = stripAll(s);
+  note(state, "taken from you", goodsRounds(kit)); // ledger.js: the rounds in their guns, magazines and boxes come over to the AI side
+  for (const g of kit) { f.lootedGear.push(`${first(s)}'s ${g.name}`); keepItem(state, f, g, "stolen"); } // arsenal.js: the kit onto their books, the rest on their shelf
   s.station = null;
   // fresh: their captors have still to find room for them (groupjails.js groupJailsHour: jailed, or sold, ransomed at
   // once, let go or killed when their jail is full).
@@ -312,7 +316,7 @@ function endIfEmpty(state, p, f) {
   if (!state.parties.includes(p) || partyMembers(state, p).length) return false;
   for (const v of partyVehicles(state, p)) { // every one of the team's (vehicles.js fleets)
     state.vehicles.splice(state.vehicles.indexOf(v), 1);
-    if (f) captureVehicle(f, v); // arsenal.js: it is theirs now (f.vehicles)
+    if (f) captureVehicle(f, v, state); // arsenal.js: it is theirs now (f.vehicles), and anything left in it
     log(state, `${f ? f.name : "They"} took the ${v.name}.`, "danger");
   }
   if (f) {
@@ -1639,10 +1643,13 @@ export function captivesDaily(state) {
       hurt(state, s, 999, null, `at the hands of ${f.name}`);
       captiveEvent(state, "killed", `${s.name} is dead`, `Word comes that ${f.name} "purified" ${s.name}.`, "death");
     } else if (days > 10 && !s.leader && rng.chance(weightOf(f, "turnCaptive", 0.015) * captiveTurnMult(s))) { // GROUP_PRIORITIES turnCaptive; broken by it: more likely
-      s.alive = false;
-      s.left = true;
-      s.recruitedBy = f.id;
-      f.pop += 1;
+      // They go over as the very person (members.js joinFromYours: into the group's list, a stub of who they were stays
+      // in yours), with whatever was left on them; their kit onto the group's books as a recruit's. Their rounds came
+      // over with them as a captive (takeCaptive noted them).
+      joinFromYours(state, f, s, f.bases && f.bases[0]);
+      for (const it of allCarried(s)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, "recruit");
+      const stub = state.survivors.find((x) => x.id === s.formerId);
+      if (stub) stub.recruitedBy = f.id;
       captiveEvent(state, "recruited", `${first(s)} has joined ${f.name}`, `After ${Math.floor(days)} days as a prisoner, ${s.name} has taken ${f.name}'s side. They are one of them now.`, "death");
       checkGameOver(state); // the last one alive changing sides ends the run (world.js)
     } else if (rng.chance(captiveEscape(state, s, f))) { // groupjails.js: their jail's tier, the work detail, Stealth, and a pin, lockpicks or the keys kept hidden (CAPTIVE_TOOL, rescueraid.js)

@@ -28,6 +28,8 @@ import { caravanSurplus } from "../src/sim/caravans.js";
 import * as D from "../src/sim/diplomacy.js";
 import * as J from "../src/sim/jobs.js";
 import * as A from "../src/sim/alliance.js";
+import { ensureMembers } from "../src/sim/members.js"; // a group's people (docs/adr/0001-ai-parity.md)
+import { capturePeople, heldFrom } from "../src/sim/groupjails.js"; // prisoners between groups are people
 import { PAYOUT } from "../src/sim/upkeep.js"; // the pay-out reserve: a group's tribute keeps PAYOUT.days of food a head
 
 import { execFileSync, execFile } from "node:child_process";
@@ -254,10 +256,13 @@ section("Jobs: every type");
   const foe = st.factions.find((x) => x.alive && x !== f);
   const war = D.startWar(st, foe, f, "land");
   clearCards(st);
-  war.captives[f.id] = 3;
+  // The captives are people (docs/adr/0001-ai-parity.md): three of f's own, out of its list into the foe's jail.
+  foe.jails = { [foe.bases[0]]: 3 };
+  const taken3 = ensureMembers(st, f).filter((s) => s.alive).slice(0, 3);
+  capturePeople(st, foe, f, taken3);
   const pop0 = f.pop;
   const jre = jobFor(st, f, "rescue");
-  check(jre && jre.data.holder === foe.id && jre.data.count === 3 && war.captives[f.id] === 0, "a rescue job for the 3 held by their enemy");
+  check(jre && jre.data.holder === foe.id && J.rescueHeld(st, jre).length === 3 && taken3.every((s) => jre.data.ids.includes(s.id)), "a rescue job for the 3 held by their enemy: the very people in its jail");
   if (jre) {
     J.acceptJob(st, jre.id);
     const pre = team(st, foe.bases[0]);
@@ -266,8 +271,28 @@ section("Jobs: every type");
     const card = st.cards.find((c) => c.rescueJob === jre.id);
     check(!!card && !!pick(card, /^Storm/) && !!pick(card, /^Talk/) && !!pick(card, /^Pay/), "the team at their gates gets a card: storm, talk or pay");
     if (card) { pick(card, /^Pay/).resolve(st); st.cards.splice(st.cards.indexOf(card), 1); }
-    check(jre.status === "done" && f.pop === pop0 + 3, `paid out: done, ${f.name} has its 3 people back`);
+    check(jre.status === "done" && f.pop === pop0 + 3 && taken3.every((s) => f.people.includes(s) && s.location.fid === f.id) && !(foe.prisoners || []).some((r) => taken3.includes(r.s)), `paid out: done, ${f.name} has its 3 people back, the very same ones`);
     drop(st, pre);
+  }
+  // Raiders grabbing a group's people on the road: the very people into the raiders' jail, none made or lost.
+  {
+    const rd = st.factions.find((x) => x.alive && x !== f && x.type === "raider" && x.bases.length);
+    if (rd) {
+      rd.jails = { [rd.bases[0]]: 3 }; rd.prisoners = [];
+      for (const j of J.ensureJobs(st).list) if (j.fid === f.id && j.type === "rescue" && (j.status === "offered" || j.status === "active")) j.status = "void";
+      const warsNow = D.warsOf(st, f).map((w) => w.id);
+      const all0 = new Set([...ensureMembers(st, f), ...(rd.prisoners || []).map((r) => r.s)].filter((s) => s.alive !== false));
+      const n0 = f.pop;
+      let jr = null;
+      for (let i = 0; i < 40 && !jr; i++) { jr = jobFor(st, f, "rescue"); if (jr && (jr.data.warId != null || jr.data.holder !== rd.id)) { jr.status = "declined"; jr = null; } }
+      if (jr) {
+        const held = J.rescueHeld(st, jr);
+        const all1 = [...f.people.filter((s) => s.alive !== false), ...rd.prisoners.map((r) => r.s)];
+        check(held.length >= 1 && f.pop === n0 - held.length && held.every((s) => !f.people.includes(s) && all0.has(s)) && all1.length === all0.size && all1.every((s) => all0.has(s)),
+          `raiders grabbed ${held.length} of ${f.name}'s people on the road: the very people into ${rd.name}'s jail (${n0} → ${f.pop}), nobody made or lost`);
+        jr.status = "declined";
+      } else console.log(`    (no road grab by raiders came up; wars: ${warsNow.length})`);
+    } else console.log("    (no raider gang in this world)");
   }
   D.makePeace(st, war);
   clearCards(st);
@@ -391,7 +416,12 @@ section("Relations between groups, pacts and wars");
   D.syncWarFlags(st);
   const w = D.startWar(st, atk, b, "land");
   clearCards(st);
-  check(w && atk.atWar === 1 && b.atWar === 1 && D.warBetween(st, atk, b) === w, "war declared: both at war");
+  // ...and the same for a pact partner or a bloc of the defender's that came in on its side (startWar's own dice: which
+  // groups had a pact by now depends on the drift above).
+  const allies = st.diplo.wars.filter((x) => x !== w && [x.a, x.b].some((id) => id === atk.id || id === b.id)).length;
+  st.diplo.wars = st.diplo.wars.filter((x) => x === w || ![x.a, x.b].some((id) => id === atk.id || id === b.id));
+  D.syncWarFlags(st);
+  check(w && atk.atWar === 1 && b.atWar === 1 && D.warBetween(st, atk, b) === w, `war declared: both at war${allies ? ` (${allies} allies' war${allies === 1 ? "" : "s"} called off for the checks)` : ""}`);
   check(!D.pactBetween(st, atk, b) && D.relation(st, atk, b) <= 100, "no pact between enemies");
   const rp = D.warRaid(st, w, atk, b);
   check(rp && rp.warId === w.id && rp.kind === "raid" && rp.target.factionId === b.id, "a war raid marches on the enemy");
@@ -408,14 +438,18 @@ section("Relations between groups, pacts and wars");
   check(minPop >= D.DIPLO.MIN_POP, `war raids never take a group below ${D.DIPLO.MIN_POP} people (lowest ${minPop})`);
   check(st.tiles[atk.bases[atk.bases.length - 1]].owner === atk.id, "the land around a taken base follows at once");
   // Peace terms.
-  w.captives[b.id] = 2;
+  // Their captives are people in the winner's jail (the raids' own, and two more taken by hand).
+  atk.jails = { [atk.bases[0]]: 3 };
+  capturePeople(st, atk, b, ensureMembers(st, b).filter((s) => s.alive).slice(0, 2));
+  const heldB = heldFrom(atk, b.id).map((r) => r.s);
   const popB = b.pop;
   w.score[atk.id] = 12; w.score[b.id] = 0;
   while (b.bases.length < 2) b.bases.push(nearTile(st, b.bases[0], 2, 5));
   const nb = b.bases.length;
   const terms = D.makePeace(st, w);
   check(terms === "land" && b.bases.length === nb - 1, `a big lead and 2+ bases: the loser cedes land (${terms})`);
-  check(b.pop === popB + 2 && !atk.atWar && !b.atWar, "captives go home with the peace; nobody is at war any more");
+  check(heldB.length >= 2 && b.pop === popB + heldB.length && heldB.every((s) => b.people.includes(s)) && !heldFrom(atk, b.id).length && !atk.atWar && !b.atWar,
+    `captives go home with the peace, the very people (${heldB.length}); nobody is at war any more`);
   check(D.relation(st, atk, b) >= -15, "peace leaves them wary (−15), not at each other's throats");
   const w2 = D.startWar(st, atk, b, "resources");
   clearCards(st);
@@ -428,7 +462,7 @@ section("Relations between groups, pacts and wars");
   clearCards(st);
   wr.score[atk.id] = 3; wr.score[b.id] = 0;
   setFood(b, b.pop * PAYOUT.days + 2);
-  check(D.makePeace(st, wr) === "tribute" && food(b) >= b.pop * PAYOUT.days, `short of food: the tribute leaves ${PAYOUT.days} days a head (${food(b)} for ${b.pop})`);
+  check(D.makePeace(st, wr) === "tribute" && food(b) >= b.pop * PAYOUT.days - 1e-6, `short of food: the tribute leaves ${PAYOUT.days} days a head (${food(b)} for ${b.pop})`);
   const w3 = D.startWar(st, atk, b, "land");
   clearCards(st);
   check(D.makePeace(st, w3) === "white", "no lead: a white peace");

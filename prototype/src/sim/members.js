@@ -4,6 +4,11 @@
 // Where they live: f.people (a list per group, never state.survivors: nothing that loops over your people meets one).
 // Each member: s.fid (the group), s.location = { kind: "member", fid, tile } at one of the group's bases (tile) or
 // { kind: "member", fid, tile: null, partyId } out with one of its parties (parties.js). memberById finds any of them.
+// People never change groups by a number: they move as themselves, with what they carry (moveMember, addMember,
+// removeMember). Away from the list for a while they are held where they are: lent to another group (volunteers.js
+// aiLendDaily: the loan's people, location "lent"), in another group's jail (groupjails.js: the prisoner's record),
+// the hardcore military's strike force (hardcore-groups.js: strike.people). A hardcore band on the road keeps a list
+// of its own (band.people) that becomes the group's when it founds its hub, or joins the group it walks to.
 //
 // f.pop stays the group's head count, read in some 300 places: it is kept equal to the living members (syncMembers).
 // Code that still writes f.pop (growth, hunger, a fight by the numbers) is reconciled on the next sync: a rise brings
@@ -46,6 +51,12 @@ export function memberById(state, id) {
     for (const f of state.factions) for (const s of f.people || []) map.set(s.id, s);
     for (const g of state.transients || []) map.set(g.id, g);
     for (const band of [...((state.nomads && state.nomads.bands) || []), ...(state.visitors || [])]) for (const s of band.people || []) map.set(s.id, s); // bands.js
+    // Off every group's list but still somebody's: a hardcore band on the road and the military's strike force
+    // (hardcore-groups.js), people lent to another group (volunteers.js aiLendDaily).
+    const H = state.hardcore && state.hardcore.groups;
+    for (const band of (H && H.bands) || []) for (const s of band.people || []) map.set(s.id, s);
+    for (const s of (H && H.military && H.military.strike && H.military.strike.people) || []) map.set(s.id, s);
+    for (const L of (state.vols && state.vols.aiLoans) || []) for (const s of L.people || []) map.set(s.id, s);
     c = { rev: REV, map };
     INDEX.set(state, c);
   }
@@ -150,6 +161,13 @@ export function captivesFrom(state, f, n) {
   list.sort((a, b) => (+(b.location.tile === at) - +(a.location.tile === at)) || (+isWounded(b) - +isWounded(a)) || fighterScore(a) - fighterScore(b) || a.id - b.id);
   return list.slice(0, Math.max(0, Math.round(n)));
 }
+// Killed by the numbers where the caller has already taken them off the head count (f.pop): the very person out of
+// the list, the count seen kept in step so the next sync takes nobody else (a raid's dead: arsenal.js raidOnBase).
+export function diedQuietly(state, f, s, opts = {}) {
+  if (!drop(f, s, "died", opts)) return false;
+  f.popSeen = Math.max(0, (Number.isFinite(f.popSeen) ? f.popSeen : f.people.length + 1) - 1);
+  return true;
+}
 export function takeQuietly(state, f, s) {
   if (!drop(f, s, "taken")) return false;
   f.popSeen = Math.max(0, (Number.isFinite(f.popSeen) ? f.popSeen : f.people.length + 1) - 1);
@@ -174,6 +192,33 @@ export function moveMember(state, from, to, s, tile = null, { give = null, take 
   s.location = { kind: "member", fid: to.id, tile: tile ?? (to.bases && to.bases[0] != null ? to.bases[0] : null) };
   for (const it of kit) if (take) take(it);
   return kit;
+}
+// One of yours goes over to a group (a deserter who did not come back: groupcare.js playerDeserters; one who follows a
+// group's preachers out: playerwars.js convert) as the very person, with all they carry: worn, held, pockets, the rig,
+// the pack (docs/adr/0001-ai-parity.md: not a newcomer made for the group). The record leaves your list for the
+// group's (members never live in state.survivors), and a stub of who they were stays in its place, carrying nothing
+// (alive false, left, joinedGroup: your history, family and friends still find them by their id; nothing is in two
+// places). The person takes a member's id (the stub keeps yours: were they ever yours again, taken or recruited, two
+// records of yours would share it); s.formerId remembers it. Their kit goes onto the group's books as a recruit's does
+// (the caller: arsenal.js addToArsenal). Returns them.
+export function joinFromYours(state, f, s, tile = null) {
+  const i = state.survivors ? state.survivors.indexOf(s) : -1;
+  if (i >= 0) {
+    const stub = structuredClone({ ...s, gear: {}, pockets: [], loose: [], carried: {} });
+    stub.alive = false;
+    stub.left = true;
+    stub.joinedGroup = f.id;
+    ensureInv(stub);
+    state.survivors[i] = stub;
+  }
+  // What tied them to your bases (a bed, a job, a station, a trip, a warning card's count) stays behind with the stub.
+  for (const k of ["left", "pending", "station", "inBed", "work", "trip", "away", "walking", "leader", "moodWarn", "wanderer"]) delete s[k];
+  s.formerId = s.id;
+  s.id = nextMemberId(state);
+  s.joinedGroup = f.id;
+  s.role = "member";
+  addMember(state, f, s, tile);
+  return s;
 }
 
 // ---------- the list ----------
@@ -268,6 +313,14 @@ export function woundMembers(state, f, n, tag = "") {
   let k = 0;
   for (const s of fit.slice(0, Math.round(n))) { s.health = Math.round(lo + (hi - lo) * hash01(state.seed, "memberhp", f.name, tag, personKey(state, s.id))); k++; }
   return k;
+}
+
+// Which of these people go first when n of them are lost or picked out by the numbers (a strike force's dead, the
+// last stand of a base, lent fighters who did not come back): the wounded first (the lowest health), then by a hash
+// (the same world, the same people). tag keeps one roll apart from another.
+export function lossOrder(state, list, tag = "") {
+  return list.filter((s) => s && s.alive !== false).sort((a, b) => (+isWounded(b) - +isWounded(a)) || (isWounded(a) && isWounded(b) ? a.health - b.health : 0) ||
+    hash01(state.seed, "lossorder", tag, personKey(state, a.id)) - hash01(state.seed, "lossorder", tag, personKey(state, b.id)));
 }
 
 // ---------- what they carry ----------

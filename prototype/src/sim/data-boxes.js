@@ -18,8 +18,8 @@
 export const BOX_GEAR = {
   cashbox:   { name: "Cash box",               slot: "pack", skill: null, power: 0, req: 0, value: 5,  noise: 0, weight: 1.2, cat: "containers", box: { lock: "cheap", locked: 0.6, holds: "cash" },
                desc: "A grey steel petty-cash box with a carry handle and a wafer lock: rings, coins, a watch, papers, or nothing at all. Locked, it opens to a blade or lockpicks (quiet) or a pry bar (loud). It weighs 1.2 kg empty: anything heavier has something inside." },
-  firebox:   { name: "Fireproof lock box",     slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, weight: 6, cat: "containers", box: { lock: "steel", locked: 0.85, holds: "safe" },
-               desc: "A small fire safe for papers and heirlooms from under a bed or a closet shelf: jewellery, coins, a stamp album, family photos, now and then a handgun and its rounds. Its steel lock wants a pry bar (loud, 2 actions in a fight), a power drill or an angle grinder; a blade or picks will not do. 6 kg empty." },
+  firebox:   { name: "Fireproof lock box",     slot: "pack", skill: null, power: 0, req: 0, value: 12, noise: 0, weight: 6, cat: "containers", bulky: true, twoHands: true, box: { lock: "steel", locked: 0.85, holds: "safe" },
+               desc: "A small fire safe for papers and heirlooms from under a bed or a closet shelf: jewellery, coins, a stamp album, family photos, now and then a handgun and its rounds. Its steel lock wants a pry bar (loud, 2 actions in a fight), a power drill or an angle grinder; a blade or picks will not do. 6 kg empty. Carried in both arms only (no pocket, pack or pouch takes it). Opened in a base's armory it is a little lockable storage: 15 kg of room." },
   toolbox:   { name: "Steel toolbox",          slot: "pack", skill: null, power: 0, req: 0, value: 6,  noise: 0, weight: 2.5, cat: "containers", box: { lock: "cheap", locked: 0.15, holds: "tools" },
                desc: "A red cantilever toolbox from a garage or a truck bed, now and then padlocked: hand tools, a multitool, tape and batteries, or someone already took them. 2.5 kg empty." },
   gearcase:  { name: "Hard equipment case",    slot: "pack", skill: null, power: 0, req: 0, value: 14, noise: 0, weight: 2.8, cat: "containers", box: { lock: "cheap", locked: 0.3, holds: "gear" },
@@ -30,9 +30,17 @@ export const BOX_GEAR = {
 // or optics gear, fishing rods in a long case, or nothing) and their cheap lock.
 /** @type {Record<string, any>} */
 export const BOX_PATCH = {
-  riflecase:  { box: { lock: "cheap", locked: 0.4, holds: "riflecase" } },
+  riflecase:  { twoHands: true, box: { lock: "cheap", locked: 0.4, holds: "riflecase" } },
   pistolcase: { box: { lock: "cheap", locked: 0.4, holds: "pistolcase" } },
 };
+
+// Base storage (basestorage.js, the user's request 2026-10-19: "You can steal storage boxes like small safes (Carried
+// only slot two hands) weapon cases etc."): an opened box (item.opened, or forced) kept in a base's armory is room for
+// the base's goods, this many kg a box (its own weight is not counted: it is the room). A sealed one is just an item
+// until it is opened. The fire safe and the rifle case are twoHands (GEAR): carried in the arms only (bulky: never a
+// pocket, a pack slot or a rig pouch), and they fill both hands (carry.js handsCount).
+/** @type {Record<string, number>} */
+export const BOX_STORE_KG = { cashbox: 3, firebox: 15, toolbox: 10, gearcase: 12, riflecase: 8, pistolcase: 3 };
 
 // The locks. tools: what opens it (sim/boxes.js boxTool: "blade" any knife or bladed melee weapon, "picks" lockpicks or
 // makeshift picks, "pry" a pry bar (locks.js barOf), "power" a power drill or an angle grinder), in the order they are

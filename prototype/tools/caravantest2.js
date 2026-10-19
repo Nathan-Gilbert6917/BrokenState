@@ -24,6 +24,8 @@ import * as E from "../src/sim/escorts.js";
 import * as C from "../src/sim/caravanraids.js";
 import { SUPPLIES, GEAR } from "../src/sim/data.js";
 import { KITS } from "../src/sim/combat.js";
+import { allCarried } from "../src/sim/inventory.js";
+import { factionVehicles } from "../src/sim/vehicles.js";
 import { digest } from "./digest.js";
 
 const seed = Number(process.argv[2] || 42);
@@ -335,7 +337,7 @@ section("The groups rob caravans");
   check(!C.wouldRaid(st, r, { type: "merchants", owner: r.id }), "never its own");
   // Your convoy.
   const h = hub(st);
-  const crew = atBase(st, h.id).slice(0, 1);
+  const crew = atBase(st, h.id).slice(0, 3);
   const q = { id: 9e9, owner: "player", kind: "convoy", members: crew.map((s) => s.id), path: [near], idx: 0, phase: "out", supplies: {}, cargo: { supplies: { ammo: 50 }, gear: [{ key: "pistol", name: "9mm pistol", quality: 1 }] } };
   setFood(q, 2); setFood(q.cargo, 40); // days of ration bars (tools/foodkit.js)
   for (const s of crew) s.location = { kind: "party", partyId: q.id };
@@ -344,22 +346,56 @@ section("The groups rob caravans");
   const cv = C.roadCaravans(st, { player: true }).find((x) => x.ref === q);
   check(!!cv && C.wouldRaid(st, r, cv), "and your convoys, when hostile");
   const f0 = food(r);
+  const hp0 = crew.map((s) => s.health), band0 = r.people.filter((s) => s.alive).map((s) => s.health);
   // (By your by-the-numbers rules the odds stop at 97%: the band may be beaten off; it tries again until it wins.)
-  for (let i = 0; i < 10 && !C.groupRobs(st, r, cv, 999, 1); i++);
-  check(food(q.cargo) < 1e-6 && q.cargo.supplies.ammo === 0 && !q.cargo.gear.length && Math.abs(food(r) - f0 - 40) < 1e-6, `your convoy loses its whole load (food left ${food(q.cargo)}, the group +${food(r) - f0})`);
-  st.parties.splice(st.parties.indexOf(q), 1);
-  for (const s of crew) s.location = { kind: "base", baseId: h.id };
+  let robbed = false;
+  const load = q.cargo; // (a convoy with nobody left afterwards is wiped: parties.js wipeParty gives it a fresh cargo)
+  for (let i = 0; i < 10 && !robbed && st.parties.includes(q); i++) robbed = C.groupRobs(st, r, cv, 999, 1);
+  check(robbed && food(load) < 1e-6 && load.supplies.ammo === 0 && !load.gear.length && Math.abs(food(r) - f0 - 40) < 1e-6, `your convoy loses its whole load (food left ${food(load)}, the group +${food(r) - f0})`);
+  // docs/adr/0001-ai-parity.md: your convoy's people fought it, and the fight's rounds landed on them as on the band's
+  // (groupfight.js applyYours; it was one of them hurt by a hash, the rest untouched).
+  const touched = crew.filter((s, i) => !s.alive || s.health < hp0[i] || (s.location && s.location.kind === "captive"));
+  const bandHit = r.people.filter((s) => s.alive).map((s) => s.health).filter((v, i) => v < band0[i]).length + Math.max(0, band0.length - r.people.filter((s) => s.alive).length);
+  check(touched.length > 0, `your convoy's people take the fight's wounds (${crew.map((s, i) => `${s.name.split(" ")[0]} ${hp0[i]} → ${s.alive ? Math.round(s.health) : "dead"}`).join(", ")}; the band's people hit: ${bandHit})`);
+  check(st.log.slice(0, 8).some((l) => /ambushed your convoy/.test(l.text) && /(hurt|died|taken)\./.test(l.text)), `the log says who was hurt (${(st.log.find((l) => /ambushed your convoy/.test(l.text)) || {}).text})`);
+  if (st.parties.includes(q)) st.parties.splice(st.parties.indexOf(q), 1);
+  for (const s of crew) if (s.alive && s.location && s.location.kind === "party") s.location = { kind: "base", baseId: h.id };
+  // A band beaten off by your convoy: what their dead carried is the convoy's (the field is yours), nothing lost.
+  {
+    const crew2 = atBase(st, h.id).filter((s) => s.alive).slice(0, 4);
+    for (const s of crew2) { s.health = 100; s.skills.shooting = 12; }
+    const q2 = { id: 9e9 + 2, owner: "player", kind: "convoy", members: crew2.map((s) => s.id), path: [near], idx: 0, phase: "out", supplies: {}, cargo: { supplies: {}, gear: [] } };
+    for (const s of crew2) s.location = { kind: "party", partyId: q2.id };
+    st.parties.push(q2);
+    const cv2 = C.roadCaravans(st, { player: true }).find((x) => x.ref === q2);
+    let off = null;
+    for (let i = 0; i < 40 && !off && st.parties.includes(q2); i++) {
+      const alive0 = new Set(r.people.filter((s) => s.alive)), kit0 = new Map([...alive0].map((s) => [s, allCarried(s).length]));
+      const onTile = () => st.deathSites.filter((d) => d.tile === near).reduce((a, d) => a + d.items.filter((x) => x.kind === "gear").length, 0);
+      const g0 = q2.cargo.gear.length + onTile();
+      if (!C.groupRobs(st, r, cv2, 2, 1)) { const dead = [...alive0].filter((s) => !r.people.includes(s)); if (dead.length) off = { dead, kit: dead.reduce((a, s) => a + kit0.get(s), 0), got: q2.cargo.gear.length + onTile() - g0 }; }
+      st.hour++;
+    }
+    check(!!off && off.got > 0 && off.dead.every((s) => !allCarried(s).length), `beaten off with their dead on the road: your convoy takes what they carried (${off ? `${off.dead.length} dead, ${off.kit} pieces, +${off.got} in the cargo or left on the tile` : "never beaten off"})`);
+    if (st.parties.includes(q2)) st.parties.splice(st.parties.indexOf(q2), 1);
+    for (const s of crew2) if (s.alive && s.location && s.location.kind === "party") s.location = { kind: "base", baseId: h.id };
+  }
   // A group's caravan near a raider base (parties.js aiPartyHour: gangAmbush).
   const g = st.factions.find((x) => x.alive && x !== r && x.bases.length && x.type !== "raider");
   if (g) {
-    const cq = { id: 9e9 + 1, owner: g.id, kind: "caravan", path: [near], idx: 0, phase: "out", strength: 1, goods: { supplies: { scrap: 5 }, gear: [{ key: "vest", name: "Vest", quality: 1 }] } };
+    // Its truck (escorts.js q.escort.vehicleId: one of the group's records) with something left in it (vehicles.js
+    // carryCargo: your vehicles' model, docs/adr/0001-ai-parity.md 5.15).
+    const truck = { id: `f${g.id}-test-truck`, type: "truck", name: "Pickup truck", fuel: 12, condition: 70, owner: g.id, cargo: { supplies: { parts: 3 }, gear: [] } };
+    factionVehicles(g).push(truck);
+    const cq = { id: 9e9 + 1, owner: g.id, kind: "caravan", path: [near], idx: 0, phase: "out", strength: 1, escort: { guards: 1, power: 3, vehicle: "truck", vehicleId: truck.id }, goods: { supplies: { scrap: 5 }, gear: [{ key: "vest", name: "Vest", quality: 1 }] } };
     setFood(cq.goods, 25); // days of ration bars (tools/foodkit.js)
     st.parties.push(cq);
-    const rf = food(r);
+    const rf = food(r), rp = r.stock.parts || 0, rv = factionVehicles(r).length;
     r.pop = Math.max(r.pop, 40);
     let ok = false;
     for (let i = 0; i < 6 && !ok; i++) { ok = C.gangAmbush(st, r, cq); st.hour++; } // 5% of the time a strong gang is still beaten off
     check(ok && Math.abs(food(r) - rf - 25) < 1e-6 && cq.goods.gear.length === 0 && ((r.wares || []).some((it) => it.key === "vest") || (r.arsenal && r.arsenal.items.some((it) => it.name === "Vest"))), `a gang's ambush on a group's caravan takes everything (the vest to their fighters: arsenal.js; ok ${ok}, food +${food(r) - rf})`);
+    check(ok && !factionVehicles(g).includes(truck) && factionVehicles(r).length === rv + 1 && factionVehicles(r).some((v) => v.type === "truck" && !v.cargo) && (r.stock.parts || 0) === rp + 3, `its truck is the gang's now, and what was in it is in their stores (parts ${rp} → ${r.stock.parts || 0}; it used to vanish with the caravan)`);
     st.parties.splice(st.parties.indexOf(cq), 1);
   }
 }
