@@ -2149,7 +2149,7 @@ function wallCard(state, b, ui) {
   const upMat = lows.length ? (mat > Math.min(...lows) ? mat : Math.min(...lows) + 1) : 0; // the material picked, or the next one up
   const up = upMat && WALL_TIERS[upMat] ? canBuild(state, b, "walls", { kind: "upgrade", mat: upMat }) : null;
   const bundle = (c, title, what, kind, m = mat) => `<div class="gcard ${c.ok ? "ok" : "locked"}">
-      <div class="gcard-top"><span class="gcard-title">${title}</span><button class="mini${c.ok ? " primary" : ""}" data-action="queuebuild" data-base="${b.id}" data-type="walls" data-kind="${kind}" data-mat="${m}" ${c.ok ? "" : "disabled"}${tip(c.ok ? "Pay now; builders do the rest. The game lays the pieces where the ring runs (move any of them on the base map)." : c.reason)}>Build</button></div>
+      <div class="gcard-top"><span class="gcard-title">${title}</span><button class="mini${c.ok ? " primary" : ""}" data-action="queuebuild" data-base="${b.id}" data-type="walls" data-kind="${kind}" data-mat="${m}" ${c.ok ? "" : "disabled"}${tip(c.ok ? "Queued now; its materials are taken from the stores as they come in (never the firewood the base needs for heat). The game lays the pieces where the ring runs: move any of them on the base map." : c.reason)}>Build</button></div>
       <div class="gcard-desc">${what}</div>
       ${c.cost && Object.keys(c.cost).length ? `<div class="gcard-foot">${costChips(c.cost, b.stock)}${chip({ icon: "⏱", name: `${c.hours}h`, t: `${c.hours} work-hours for the builders` })}</div>` : ""}
       ${!c.ok && !c.short ? `<div class="gcard-why">${esc(c.reason)}</div>` : ""}

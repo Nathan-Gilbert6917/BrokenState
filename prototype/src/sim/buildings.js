@@ -22,6 +22,7 @@ import { noteOutput } from "./output.js"; // the base's Work now panel: what eac
 import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: the builders go out on the odd hours
 import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
+import { woodNeed } from "./woodcutting.js"; // the Ring wall leaves the firewood for heating (call-time only)
 import { carryPlacement, wallInfo, ringPlan, ensureRing } from "./basemap.js"; // the base map: a finished job's building keeps the spot it was placed on; the wall pieces' ring (call-time only)
 
 export const RECIPES = {
@@ -94,11 +95,11 @@ export const BUILDINGS = {
   //   walls: the Ring wall, a bundle (queueBuild "walls"): every piece it takes to close the ring round the yard
   //   (kind "ring"), or every wall and gate raised to a better material (kind "upgrade"); a group's own wall (their
   //   works, groupbases.js) stays one building of a tier.
-  walls:        { name: "Ring wall",      cost: { wood: 20 },            hours: 8,  max: 1, tab: "defenses", size: "camp", wall: true, desc: "Every wall piece and gate it takes to close a ring round the yard, laid by the game where the ring runs (or, once the ring is closed, every piece raised to a better material). Each wall is only as good as the ring it makes: a gap anywhere lets the dead walk round it." },
-  wall1:        { name: "Wall 1×1",       piece: "wall", len: 1, cost: { wood: 5 },  hours: 0.5, max: 400, tab: "defenses", size: "camp", desc: "One cell of wall. Place it and turn it on the base map. The better the material, the more hit points it has and the more wall strength the ring gives." },
-  wall2:        { name: "Wall 1×2",       piece: "wall", len: 2, cost: { wood: 10 }, hours: 1,   max: 400, tab: "defenses", size: "camp", desc: "Two cells of wall in a line. Place it and turn it on the base map (R)." },
-  wall4:        { name: "Wall 1×4",       piece: "wall", len: 4, cost: { wood: 20 }, hours: 2,   max: 400, tab: "defenses", size: "camp", desc: "A four-cell section of wall. Place it and turn it on the base map (R)." },
-  gate4:        { name: "Gate 1×4",       piece: "gate", len: 4, cost: { wood: 30 }, hours: 3,   max: 8,   tab: "defenses", size: "camp", desc: "A four-cell gate of the wall's material: your people walk through it, raiders and the dead have to batter it down (or ram it). The reinforced gate (Defenses) adds hit points to every gate." },
+  walls:        { name: "Ring wall",      cost: { wood: 8 },             hours: 8,  max: 1, tab: "defenses", size: "camp", wall: true, gather: true, desc: "Every wall piece and gate it takes to close a ring round the yard, laid by the game where the ring runs (or, once the ring is closed, every piece raised to a better material). Queued at once: its materials are taken from the stores as they come in (never the firewood the base needs for heat). Each wall is only as good as the ring it makes: a gap anywhere lets the dead walk round it." },
+  wall1:        { name: "Wall 1×1",       piece: "wall", len: 1, cost: { wood: 2 },  hours: 0.5, max: 400, tab: "defenses", size: "camp", desc: "One cell of wall. Place it and turn it on the base map. The better the material, the more hit points it has and the more wall strength the ring gives." },
+  wall2:        { name: "Wall 1×2",       piece: "wall", len: 2, cost: { wood: 4 },  hours: 1,   max: 400, tab: "defenses", size: "camp", desc: "Two cells of wall in a line. Place it and turn it on the base map (R)." },
+  wall4:        { name: "Wall 1×4",       piece: "wall", len: 4, cost: { wood: 8 },  hours: 2,   max: 400, tab: "defenses", size: "camp", desc: "A four-cell section of wall. Place it and turn it on the base map (R)." },
+  gate4:        { name: "Gate 1×4",       piece: "gate", len: 4, cost: { wood: 12 }, hours: 3,   max: 8,   tab: "defenses", size: "camp", desc: "A four-cell gate of the wall's material: your people walk through it, raiders and the dead have to batter it down (or ram it). The reinforced gate (Defenses) adds hit points to every gate." },
   stand1:       { name: "Wall stand 1×1", piece: "stand", len: 1, cost: { wood: 4 },  hours: 0.5, max: 60, tab: "defenses", size: "camp", desc: "A raised platform a level up with a ladder: whoever climbs it sees and shoots over a wall next to it, with half cover from below. Place it right behind a wall." },
   stand2:       { name: "Wall stand 1×2", piece: "stand", len: 2, cost: { wood: 8, scrap: 1 }, hours: 1, max: 60, tab: "defenses", size: "camp", desc: "A two-cell firing platform a level up: two people see and shoot over the wall in front of it." },
   stand4:       { name: "Wall stand 1×4", piece: "stand", len: 4, cost: { wood: 16, scrap: 1 }, hours: 2, max: 60, tab: "defenses", size: "camp", desc: "A four-cell walkway a level up behind the wall: a firing line that sees and shoots over it." },
@@ -548,19 +549,20 @@ export const opensAt = (size) => `Opens at ${DEF_AT[size]}`;
 // the ring gives (each point 2 defense against raids, factions.js baseDefense, and 18 more of a horde held back,
 // defences.js wallHold). size: the smallest base that builds it (DEF_SIZE). cost / hours: a 1×4 section's (a 1×2 or a
 // 1×1 pays its share, rounded up: pieceCost); gate: the 1×4 gate's; gateHp a gate cell's hit points.
-//   1 Wooden wall      2 strength,  60 hp (gate  80)  20 firewood a section, 2 work-hours       any base (a camp too)
-//   2 Log palisade     4 strength, 100 hp (gate 110)  32 firewood, 1 scrap, 3 work-hours      a shelter and up
-//   3 Scrap-metal wall 8 strength, 160 hp (gate 150)  3 scrap, 4 work-hours                   an outpost or the main base
-//   4 Metal-sheet wall 12 strength, 240 hp (gate 200) 4 scrap, 1 building materials, 6 work-hours, Mechanics 3: the main base
+//   1 Wooden wall      2 strength,  60 hp (gate  80)  8 firewood a section, 2 work-hours        any base (a camp too)
+//   2 Log palisade     4 strength, 100 hp (gate 110)  12 firewood, 3 work-hours              a shelter and up
+//   3 Scrap-metal wall 8 strength, 160 hp (gate 150)  2 scrap, 4 work-hours                   an outpost or the main base
+//   4 Metal-sheet wall 12 strength, 240 hp (gate 200) 3 scrap, 1 building materials, 6 work-hours, Mechanics 3: the main base
+// (A main hub's ring is about 52 sections and 4 gates: some 460 firewood in wood, 120 scrap in scrap metal.)
 // A piece damaged in a raid (wear 60+, breakdowns.js RAID_DAMAGE.damaged) counts WALL_DAMAGED of its strength and hit
 // points; a broken one is a gap until it is repaired. A group's own wall (one "walls" building of a tier, their works:
 // groupbases.js) reads the same table; a wall from before the tiers (no tier) counts LEGACY_WALL.
 export const WALL_TIERS = [
   null,
-  { key: "wood",  name: "Wooden wall",      gateName: "Wooden gate",      mat: "Wood",         strength: 2,  hp: 60,  gateHp: 80,  size: "camp",    cost: { wood: 20 },            gate: { wood: 30 },                    hours: 2, desc: "Planks nailed to posts sunk in the ground, sharpened along the top: cheap, and it keeps the dead back a while." },
-  { key: "logs",  name: "Log palisade",     gateName: "Log gate",         mat: "Logs",         strength: 4,  hp: 100, gateHp: 110, size: "shelter", cost: { wood: 32, scrap: 1 },  gate: { wood: 48, scrap: 2 },          hours: 3, desc: "Logs set upright in a ditch, lashed, pinned and spiked: a real wall." },
-  { key: "scrap", name: "Scrap-metal wall", gateName: "Scrap-metal gate", mat: "Scrap metal",  strength: 8,  hp: 160, gateHp: 150, size: "outpost", cost: { scrap: 3 },            gate: { scrap: 6, parts: 1 },          hours: 4, desc: "Car doors, roofing and pallets welded and bolted onto steel posts." },
-  { key: "sheet", name: "Metal-sheet wall", gateName: "Metal-sheet gate", mat: "Metal sheets", strength: 12, hp: 240, gateHp: 200, size: "hub",     cost: { scrap: 4, buildmat: 1 }, gate: { scrap: 8, buildmat: 2, parts: 1 }, hours: 6, req: { mechanics: 3 }, desc: "Overlapping steel sheets bolted to a welded frame on a concrete footing: the strongest wall there is." },
+  { key: "wood",  name: "Wooden wall",      gateName: "Wooden gate",      mat: "Wood",         strength: 2,  hp: 60,  gateHp: 80,  size: "camp",    cost: { wood: 8 },             gate: { wood: 12 },                    hours: 2, desc: "Planks nailed to posts sunk in the ground, sharpened along the top: cheap, and it keeps the dead back a while." },
+  { key: "logs",  name: "Log palisade",     gateName: "Log gate",         mat: "Logs",         strength: 4,  hp: 100, gateHp: 110, size: "shelter", cost: { wood: 12 },            gate: { wood: 18, scrap: 1 },          hours: 3, desc: "Logs set upright in a ditch, lashed, pinned and spiked: a real wall." },
+  { key: "scrap", name: "Scrap-metal wall", gateName: "Scrap-metal gate", mat: "Scrap metal",  strength: 8,  hp: 160, gateHp: 150, size: "outpost", cost: { scrap: 2 },            gate: { scrap: 4, parts: 1 },          hours: 4, desc: "Car doors, roofing and pallets welded and bolted onto steel posts." },
+  { key: "sheet", name: "Metal-sheet wall", gateName: "Metal-sheet gate", mat: "Metal sheets", strength: 12, hp: 240, gateHp: 200, size: "hub",     cost: { scrap: 3, buildmat: 1 }, gate: { scrap: 6, buildmat: 2, parts: 1 }, hours: 6, req: { mechanics: 3 }, desc: "Overlapping steel sheets bolted to a welded frame on a concrete footing: the strongest wall there is." },
 ];
 // A wall stand's cost and hours (a 1×4's; the smaller ones pay their share): no material, the same for every base.
 export const STAND = { cost: { wood: 16, scrap: 1 }, hours: 2 };
@@ -916,20 +918,23 @@ export function canBuildWall(state, base, opts = {}) {
   const out = { wall: true, kind, tier, def, pieces, ids, cost, hours: Math.round(hours * 10) / 10 };
   if (!sizeFits(base, def.size)) return { ...out, ok: false, size: def.size, reason: `${def.name}: ${opensAt(def.size).toLowerCase()}` };
   for (const [sk, lvl] of Object.entries(def.req || {})) if (!atBase(state, base.id).some((s) => skill(s, sk) >= lvl)) return { ...out, ok: false, reason: `Needs a ${SKILL_NAMES[sk] || sk} ${lvl}+ survivor here` };
-  for (const [k, v] of Object.entries(cost)) if ((base.stock[k] || 0) < v) return { ...out, ok: false, short: true, reason: `Needs ${v} ${keyWord(k)}` };
-  return { ...out, ok: true };
+  return { ...out, ok: true, gather: true }; // its materials are taken as they come in (gatherHour)
 }
-// The material a new ring is closed in when none is asked for (the governor): the best this base builds and can pay
-// for now, else wood.
+// The material a new ring is closed in when none is asked for (the governor): the best this base builds that its
+// stores cover now (the firewood its heating needs kept back), else the one they cover most of.
 function bestRingMat(state, base, pieces) {
-  for (let m = WALL_TIERS.length - 1; m > 1; m--) {
-    const T = WALL_TIERS[m];
-    if (!sizeFits(base, T.size) || Object.entries(T.req || {}).some(([sk, lvl]) => !atBase(state, base.id).some((s) => skill(s, sk) >= lvl))) continue;
+  const fits = (m) => sizeFits(base, WALL_TIERS[m].size) && !Object.entries(WALL_TIERS[m].req || {}).some(([sk, lvl]) => !atBase(state, base.id).some((s) => skill(s, sk) >= lvl));
+  const keep = { wood: woodNeed(state, base).need };
+  let best = 1, bestShare = -1;
+  for (let m = WALL_TIERS.length - 1; m >= 1; m--) {
+    if (!fits(m)) continue;
     const cost = {};
     for (const type of pieces) for (const [k, v] of Object.entries(pieceCost(type, m))) cost[k] = (cost[k] || 0) + v;
-    if (Object.entries(cost).every(([k, v]) => (base.stock[k] || 0) >= v)) return m;
+    const share = Math.min(...Object.entries(cost).map(([k, v]) => Math.max(0, (base.stock[k] || 0) - (keep[k] || 0)) / v));
+    if (share >= 1) return m;
+    if (share > bestShare) { best = m; bestShare = share; }
   }
-  return 1;
+  return best;
 }
 // One wall piece, gate or stand of a material (opts.mat; a stand has none): its limit, the base, the material's base
 // size and skill, its cost.
@@ -1001,10 +1006,9 @@ export function queueBuild(state, base, type, opts = {}) {
   /** @type {any} */
   const chk = canBuild(state, base, type, opts);
   if (!chk.ok) return chk.reason;
-  if (BUILDINGS[type].wall) { // the Ring wall: the pieces to close the ring (job.pieces), or the pieces to raise (job.ids)
-    for (const [k, v] of Object.entries(chk.cost)) base.stock[k] -= v;
-    base.construction.push({ id: newId(), type: "walls", kind: chk.kind, mat: chk.tier, ...(chk.kind === "ring" ? { pieces: chk.pieces } : { ids: chk.ids }), cost: { ...chk.cost }, progress: 0, hours: Math.max(1, chk.hours) });
-    return chk.kind === "ring" ? `Ring wall queued at ${base.name}: ${chk.pieces.length} ${chk.def.mat.toLowerCase()} pieces, laid where the ring runs.` : `${base.name}: ${chk.ids.length} wall pieces to be raised to ${chk.def.mat.toLowerCase()}.`;
+  if (BUILDINGS[type].wall) { // the Ring wall: the pieces to close the ring (job.pieces), or the pieces to raise (job.ids); its materials gathered as they come in
+    base.construction.push({ id: newId(), type: "walls", kind: chk.kind, mat: chk.tier, ...(chk.kind === "ring" ? { pieces: chk.pieces } : { ids: chk.ids }), cost: { ...chk.cost }, paid: {}, progress: 0, hours: Math.max(1, chk.hours) });
+    return `${chk.kind === "ring" ? `Ring wall queued at ${base.name}: ${chk.pieces.length} ${chk.def.mat.toLowerCase()} pieces, laid where the ring runs` : `${base.name}: ${chk.ids.length} wall pieces to be raised to ${chk.def.mat.toLowerCase()}`}. The materials are taken from the stores as they come in.`;
   }
   if (BUILDINGS[type].piece) { // a wall piece, gate or stand of a material: placed on the base map while it goes up
     for (const [k, v] of Object.entries(chk.cost)) base.stock[k] -= v;
@@ -1057,13 +1061,15 @@ export const matName = (k, n = 2) => (k === "parts" ? (n === 1 ? "part" : "parts
 // next GATHER_AHEAD work-hours (a 100-scrap step up does not empty the stores the hour it is queued: the rest stays for
 // other builds until the work gets to it).
 export const GATHER_AHEAD = 12;
-function gatherHour(base) {
+function gatherHour(state, base) {
   for (const job of base.construction) {
     if (!job.paid) continue;
     const share = Math.min(1, (job.progress + GATHER_AHEAD) / Math.max(1, job.hours));
+    // The Ring wall leaves the firewood the base needs for its heating, its stove and its fire (woodcutting.js woodNeed).
+    const keep = job.type === "walls" && gatherRows(job).some((r) => r.key === "wood" && !r.ok) ? { wood: woodNeed(state, base).need } : {};
     for (const r of gatherRows(job)) {
       const want = Math.min(r.need, Math.ceil(r.need * share - 1e-9)) - r.have;
-      const take = Math.min(want, Math.floor(Math.max(0, base.stock[r.key] || 0)));
+      const take = Math.min(want, Math.floor(Math.max(0, (base.stock[r.key] || 0) - (keep[r.key] || 0))));
       if (take <= 0) continue;
       base.stock[r.key] -= take;
       job.paid[r.key] = (job.paid[r.key] || 0) + take;
@@ -1100,7 +1106,7 @@ export function constructionHour(state) {
     if (underAttack(state, base)) { fieldAwayEnd(state, base); continue; } // the builders out at a field work come in for it
     if (fieldBuildHour(state, base)) continue; // fieldworks.js: the builders are out at a field work this hour
     if (!base.construction.length) continue;
-    gatherHour(base);
+    gatherHour(state, base);
     if (campMaterialsHour(state, base)) continue; // a camp's builders make the building materials its step up waits for
     const job = base.construction.find((c) => !gatherStalled(c));
     if (!job) continue;

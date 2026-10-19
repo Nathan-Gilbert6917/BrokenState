@@ -77,7 +77,7 @@ console.log("Walls by material, a ring of pieces closed and raised (tools/wallpi
   check(c.ok && c.kind === "ring" && c.tier === 1 && c.def.name === "Wooden wall", "a camp closes a ring of wooden pieces");
   const wood0 = h.stock.wood;
   queueBuild(st, h, "walls");
-  check(h.stock.wood === wood0 - c.cost.wood && !canBuild(st, h, "walls").ok, `paid (${c.cost.wood} firewood); the next step waits for this one`);
+  check(h.stock.wood === wood0 && !canBuild(st, h, "walls").ok, `queued (${c.cost.wood} firewood, taken as the work goes); the next step waits for this one`);
   finishAll(st, h);
   check(hasWall(h) && wallTier(h) === 1 && baseWalls(h) === 2 && wallSectionHp(h) === 60 && wallHp(h) === 60, `standing: strength ${baseWalls(h)}, ${wallHp(h)} hp a cell`);
   c = canBuild(st, h, "walls");
@@ -106,7 +106,7 @@ console.log("Walls by material, a ring of pieces closed and raised (tools/wallpi
   check(baseWalls(h) === 8 && wallHp(h) === 160, "damaged: two thirds of the strength and the hit points");
   const p = piecesOf(h, ["wall"]).find((x) => x.type === "wall4");
   const back = demolishRefund(p);
-  check(back.scrap === 2 && back.buildmat === undefined, `a 1×4 of metal sheets pulled down: half its scrap back (${back.scrap}; its building materials are not salvaged)`);
+  check(back.scrap === 1 && back.buildmat === undefined, `a 1×4 of metal sheets pulled down: half its scrap back (${back.scrap}; its building materials are not salvaged)`);
 }
 
 console.log("Defenses count: the hold limit, raids by the numbers");
