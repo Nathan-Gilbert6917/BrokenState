@@ -26,18 +26,18 @@ import { kitSource, spend } from "./itemcond.js";
 import { hasTrait, teamTraitFx, encounterMult, bribeMult } from "./traits.js"; // Fleet-Footed, Slow: a team on foot that runs from trouble; Night Owl; Strategic: fewer encounters; Diplomatic: cheaper bribes
 import {
   log, addCard, day, hub, skill, hurt, isNight, factionById, snapshot, makeSurvivor, combatPower, alive, survivorById, checkGameOver,
-  armedFactor, usesArrows,
+  usesArrows,
 } from "./world.js";
 import {
   partyMembers, bestSkill, partyTile, tileLabel, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, awaitOrders,
   removeParty, startReturn, STANCES,
 } from "./parties.js";
 import * as Parties from "./parties.js";
-import { partyFuel, useFuel, partyVehicle, partyVehicles, createVehicle, VEHICLE_TYPES, fitTechnical, ambushMult, raidTurret, loseRaidHumvee, humveeLeftText, TURRET_ODDS, wearRaidHumvee } from "./vehicles.js";
+import { partyFuel, useFuel, partyVehicle, partyVehicles, createVehicle, VEHICLE_TYPES, fitTechnical, raidTurret, loseRaidHumvee, humveeLeftText, wearRaidHumvee } from "./vehicles.js";
 import { attitude, changeGoodwill, isAggressiveType, collapseFaction, resolveRaidOnPlayer, raidRepelled, groupBroken } from "./factions.js";
 import { raidDamage } from "./breakdowns.js";
 import { perceptionChance, markAbandonedVehicle } from "./markers.js";
-import { registerCombatHandler, startCombat, battlePending, winOdds } from "./combat.js";
+import { registerCombatHandler, startCombat, battlePending, byNumbersOdds } from "./combat.js";
 import { advanceTradeQueue, tradePending } from "./trade.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { travelEffects } from "./weather.js";
@@ -159,22 +159,12 @@ function stowGear(state, p, item) {
   return true;
 }
 
-function teamPower(state, p) {
-  return partyMembers(state, p).reduce((a, m) => a + combatPower(m), 0);
-}
-
-// Same maths as the quick resolver in combat.js, shown to the player as rough odds.
+// The quick resolver's own odds (combat.js byNumbersOdds), shown to the player: the team's power with the rounds and
+// arrows it carries, a group's very people on the other side (docs/adr/0001-ai-parity.md), an ambush, the vehicles.
 export function fightOdds(state, p, enemy, ambush) {
   const people = partyMembers(state, p);
   if (!people.length) return 0;
-  let mine = teamPower(state, p) * armedFactor(people, carriedRounds(p), carriedOf(p, "arrows")); // under 3 a head: the guns (ammo) or the bows (arrows) at 60%
-  let theirs = enemy.count * enemy.power;
-  if (ambush === "player") mine *= 1.4;
-  if (ambush === "enemy") theirs *= 1.4 * ambushMult(p.vehicle === true ? partyVehicle(state, p) : null, enemy.kind); // vehicles.js: bulletproof glass (combat.js byNumbersOdds)
-  if (enemy.turret) theirs += TURRET_ODDS[enemy.turret] || 0; // their turret (a military group's Humvee)
-  const pv = p.vehicle === true ? partyVehicle(state, p) : null;
-  if (pv && pv.upgrades && pv.upgrades.turret) mine += TURRET_ODDS[pv.upgrades.turret.gun] || 0; // the team's own turret
-  return winOdds(mine / Math.max(0.1, theirs), { ...enemy, people: people.length, ambush }); // combat.js: calibrated on the battle map
+  return byNumbersOdds(state, { tile: partyTile(p), partyId: p.id, enemy: { ...enemy }, ambush }, people, { ammo: carriedRounds(p), arrows: carriedOf(p, "arrows") }).win;
 }
 
 function enemyGroup(state, p, f, scale = 1, horde = null) {

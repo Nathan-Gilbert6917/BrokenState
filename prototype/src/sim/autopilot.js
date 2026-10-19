@@ -3982,7 +3982,7 @@ function conquestCandidate(state, home, pool) {
     const d = state.grid.distance(tile, h.tile);
     if (d > Math.max(20, P.range * 2.5)) continue;
     const force = assaultForce(state, f, tile);
-    const odds = assaultOdds(power, force, true, squad.length);
+    const odds = assaultOdds(power, force, true, squad.length, state);
     if (odds < (late ? Math.min(P.conquerOdds, P.lateConquer) : P.conquerOdds) - (retake ? 0.1 : 0)) continue;
     // One group at a time until it breaks: its main base (the leaders fall with it), the group it went for last, the
     // group with the fewest bases.
@@ -3993,7 +3993,7 @@ function conquestCandidate(state, home, pool) {
     // A base of yours they hold is always known to you.
     const f = factionById(state, o.factionId);
     const force = assaultForce(state, f, o.tile);
-    const odds = assaultOdds(power, force, true, squad.length);
+    const odds = assaultOdds(power, force, true, squad.length, state);
     const d = state.grid.distance(o.tile, h.tile);
     if (odds < P.conquerOdds - 0.1 || d > Math.max(20, P.range * 2.5)) continue;
     const score = odds * 4 + 3 - d / 10;
@@ -4012,7 +4012,7 @@ function hubRetake(state, home, pool) {
   const f = factionById(state, occ.factionId);
   const squad = [...pool].filter((s) => s.health >= 50 && !s.woundInfected).sort((a, b) => combatPower(b) - combatPower(a) || a.id - b.id).slice(0, Math.min(HIVE_SQUAD, Math.max(0, home.length - 2)));
   if (!f || squad.length < 3) return null;
-  const odds = assaultOdds(squadValue(squad), assaultForce(state, f, occ.tile), true, squad.length);
+  const odds = assaultOdds(squadValue(squad), assaultForce(state, f, occ.tile), true, squad.length, state);
   if (odds < 0.35) return null;
   return { mission: "assault", tile: occ.tile, score: 9, crew: squad.length, assault: true, squadMin: 3, minHealth: 50,
     why: `take back ${occ.name}, the old hub (${Math.round(odds * 100)}% against ${assaultForce(state, f, occ.tile).count} defenders)`, supplies: { ammo: 40, meds: 2 } };

@@ -66,7 +66,7 @@ import { attitude, changeGoodwill, isAggressiveType, collapseFaction, recomputeO
 import {
   partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, outpostName, removeParty, startReturn, orderMove, carryCapacity, planPath, settleInto,
 } from "./parties.js";
-import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds } from "./combat.js";
+import { startCombat, registerCombatHandler, registerBattleLayout, registerBattleSize, winOdds, enemyPower } from "./combat.js";
 import { groupTurret, TURRET_ODDS, seizeGroupVehicles, upgradeText } from "./vehicles.js"; // a military group's Humvee (M2 turret) defends its home base
 import { unitPower, arsenalShareTo, addToArsenal, arsenalWorthy } from "./arsenal.js"; // group arsenals: the defenders' kit; their stores of it
 import { fortAssault, fortSize, assaultBase } from "./fort.js"; // their walled base on one fort map
@@ -160,7 +160,7 @@ export function assaultForce(state, f, tile, p = null) {
   const bloc = occ && occ.factionId === f.id ? { fighters: 0, names: [] } : blocAssaultHelp(state, f, tile);
   count += bloc.fighters;
   return {
-    kind: KIND_OF[f.type], count, power: Math.round(unitPower(f, 2.6) * 10) / 10, factionId: f.id, name: `${f.name} defenders`, arsTask: "home", // arsenal.js: by their kit, all of it at home
+    kind: KIND_OF[f.type], count, power: Math.round(unitPower(f, 2.6) * 10) / 10, factionId: f.id, tile, name: `${f.name} defenders`, arsTask: "home", // arsenal.js: by their kit, all of it at home
     fortified: Math.round((1 + CONQUEST.WALL_FACTOR * walls * (1 - (walls >= 1 ? assaultCut(kit) : 0))) * 100) / 100, walls, people, occupied: !!(occ && occ.factionId === f.id),
     gate: occ && occ.factionId === f.id ? countBuilt(occ.base, "gate") > 0 : nativeGate(state, f, tile, walls), // fort.js assaultBase: their reinforced gate
     siegeKit: kit && (kit.ladders || kit.ram || kit.grenades) ? kit : null,
@@ -170,9 +170,10 @@ export function assaultForce(state, f, tile, p = null) {
   };
 }
 // The odds the card shows (the same sum the statistical resolver uses: combat.js autoResolveCombat).
-export function assaultOdds(power, force, ammoOk = true, people = 0) {
+// state: the world, so their very people are counted as the fight counts them (combat.js enemyPower).
+export function assaultOdds(power, force, ammoOk = true, people = 0, state = null) {
   const mine = power * (ammoOk ? 1 : 0.6);
-  const theirs = force.count * force.power * force.fortified + (force.turret ? TURRET_ODDS[force.turret] || 0 : 0); // combat.js byNumbersOdds: their turret
+  const theirs = (state ? enemyPower(state, { tile: force.tile, enemy: force }) : force.count * force.power * force.fortified) + (force.turret ? TURRET_ODDS[force.turret] || 0 : 0); // combat.js byNumbersOdds: their turret
   return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
 const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
@@ -188,7 +189,7 @@ function kitWords(k) {
 export function teamAssaultOdds(state, p, force) {
   const m = partyMembers(state, p);
   // Short of ammo the guns count 60%, short of arrows the bows (world.js armedFactor; with no bow: the old ammo check).
-  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0) * armedFactor(m, carriedAmmo(p), carriedOf(p, "arrows")), force, true, m.length);
+  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0) * armedFactor(m, carriedAmmo(p), carriedOf(p, "arrows")), force, true, m.length, state);
 }
 
 // Why attacking this group is a bad idea (the planner and the card): "" for a hostile group.

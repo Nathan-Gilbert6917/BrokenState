@@ -444,21 +444,28 @@ export function battlePending(state, partyId) {
 // × 1.4 when they struck first). win: winOdds(ratio, enemy) (the chance to win it fought out).
 // ammoOk: true / false for the whole team, or the shots it has { ammo, arrows } (world.js armedFactor: the bows short
 // of arrows and the guns short of ammo each count 0.6 under 3 a head).
+// The enemy's side of a fight by the numbers (before an ambush and vehicles): count × power, behind their walls
+// (fortified: conquest.js), the hive's special dead (typeStrength: zombietypes.js). A group's people (members.js) count
+// by who they are: each one's power read off the scale the odds were fitted on (powerEquiv), with the group's rounds
+// (arsenal.js ammoFactor); docs/adr/0001-ai-parity.md. Every card that shows odds against a group reads this.
+export function enemyPower(state, setup) {
+  const e = setup.enemy;
+  let theirs = e.count * e.power * (e.fortified || 1) * typeStrength(e);
+  const ef = state && e.factionId != null && e.kind !== "zombies" ? factionById(state, e.factionId) : null;
+  if (ef && ef.alive && !ef.outsider && Array.isArray(ef.people)) {
+    const party = e.partyId != null ? (state.parties || []).find((x) => x.id === e.partyId) : null;
+    const at = ef.bases.includes(setup.tile) ? setup.tile : ef.bases[0]; // at one of their bases: the people there; else the main one's
+    const them = fightersOf(state, ef, party ? { party, n: e.count } : { tile: at, n: e.count });
+    if (them.length) theirs = them.reduce((a, x) => a + powerEquiv(e.kind, combatPower(x)), 0) * ammoFactor(ef) * (e.fortified || 1) * typeStrength(e);
+  }
+  return theirs;
+}
 export function byNumbersOdds(state, setup, people = combatants(state, setup), ammoOk = true) {
   const armed = typeof ammoOk === "object" && ammoOk ? armedFactor(people, ammoOk.ammo, ammoOk.arrows) : ammoOk ? 1 : 0.6;
   let mine = people.reduce((a, s) => a + combatPower(s), 0) * armed * teamSpirit(state, people); // friends and rivals (relations.js)
   if (typeof ammoOk === "object" && ammoOk && ammoOk.ammo && typeof ammoOk.ammo === "object") mine *= ammoEdge(ammoOk.ammo, setup.enemy); // R8: the types of round drawn (ammo.js: AP against armour, hollow points against the rest)
   mine *= 1 + lureEdge(setup.enemy, carriedKeys(state, setup, people)); // decoys.js: decoys and Molotovs against the dead (not a Shepherd's pack)
-  let theirs = setup.enemy.count * setup.enemy.power * (setup.enemy.fortified || 1) * typeStrength(setup.enemy); // fortified: behind their walls (conquest.js); types: a hive's special dead (zombietypes.js)
-  // A group's people (members.js) count by who they are: each one's power read off the scale the odds were fitted on
-  // (powerEquiv), with the group's rounds (arsenal.js ammoFactor); docs/adr/0001-ai-parity.md.
-  const ef = setup.enemy.factionId != null && setup.enemy.kind !== "zombies" ? factionById(state, setup.enemy.factionId) : null;
-  if (ef && ef.alive && !ef.outsider && Array.isArray(ef.people)) {
-    const party = setup.enemy.partyId != null ? (state.parties || []).find((x) => x.id === setup.enemy.partyId) : null;
-    const at = ef.bases.includes(setup.tile) ? setup.tile : ef.bases[0]; // at one of their bases: the people there; else the main one's
-    const them = fightersOf(state, ef, party ? { party, n: setup.enemy.count } : { tile: at, n: setup.enemy.count });
-    if (them.length) theirs = them.reduce((a, x) => a + powerEquiv(setup.enemy.kind, combatPower(x)), 0) * ammoFactor(ef) * (setup.enemy.fortified || 1) * typeStrength(setup.enemy);
-  }
+  let theirs = enemyPower(state, setup);
   const vo = vehicleOdds(state, setup); // vehicles.js: bulletproof glass blunts an ambush on the road; their turret (a military group's Humvee)
   if (setup.ambush === "player") mine *= 1.4;
   if (setup.ambush === "enemy") theirs *= 1.4 * vo.theirsAmbush;
