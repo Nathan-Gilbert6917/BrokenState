@@ -6,7 +6,7 @@ import {
   canSee, canSeeAt, coverSides, isRanged, adjacent, meleeReach, canFire, ammoLeft, arrowsLeft, medsLeft, combatAct, enemyStep, playerSees,
   hasMag, magLabel, magEmpty, magShown, reloadRefusal, fireRefusal, hasShots,
   vehicleTurret, TURRET, RIDE, turretRounds, los, autoResolveCombat, finishCombat, closeCombat, zoneAt, boxAt, searchableNear, nearBox, boxCenter, DRIVE, RAMMING, aboardCount, evacRefusal, AREAS, areaHint, HEAT_NAMES,
-  playerVision, enemyGhosts, vehicleExit, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult,
+  playerVision, enemyGhosts, vehicleExit, heightAt, HEIGHT, sightRange, structureName, barredCell, doorHeld, WEAPONS, CRIT_MULT, hitMult, vaultsNear, vaultCost, VAULT,
 } from "../sim/combat.js";
 import * as SIM from "../sim/combat.js";
 import { magsLine, spareRounds, reloadText, isShellGun, shellsInPack, getShellsRefusal, shellsLine, SHELLS, tracksMags, reloadPlan } from "../sim/mags.js"; // magazines as items (section 15): spares, what a Reload does
@@ -44,7 +44,7 @@ import { ACID, acidAt } from "../sim/acid.js";
 import { ladderTargets, pushable, pushChance, ramTargets, ramOf, dropTargets, RAM, LADDER, DROP } from "../sim/siege.js";
 import { herded, sensesOf } from "../sim/decoys.js";
 import { crushable, tappable, liftable, carriedBy, carHere, endangered, imminent, bodyAt as humanBodyAt, bodyName, unitBodyLoad, carRoom } from "../sim/carriers.js"; // the Carrier: bodies in danger, the risen, bodies carried, shot or burnt
-import { recText, handsKg, carriedNear, handsBusy, armsText } from "../sim/carry.js"; // supplies carried in the arms in a fight: Drop carried (free), Pick up load
+import { recText, handsKg, carriedNear, handsBusy, armsText, handsCount, HANDS_MAX, takeRefusal } from "../sim/carry.js"; // supplies, a bag or finds carried in the hands in a fight: Drop carried (free), Set over cover, Pick up load
 import { statusIcons } from "./status.js"; // the survivor behind a unit: low mood, starving, thirsty, infected, sick (its own hit points are the bar)
 import { barkFrame } from "./barks.js"; // combat barks: short speech bubbles over the units' heads
 import { ingestMarks } from "./battlemarks.js"; // blood, brass and scorch read off each action's fx before the short fx list drops them
@@ -884,7 +884,8 @@ export function unitOrders(state, b, u) {
   const foesAdj = b.units.some((t) => t.side === "enemy" && active(t) && meleeReach(b, u, t)); // not across a wall's corner
   const noAp = ap > 0 ? "" : NO_AP;
   const fireWhy = gun ? (ammo ? noAp : fireRefusal(b, u) || outOf(u)) : "No usable gun: fists, a blade or a club fight in melee.";
-  btn("move", "Move", `Click a blue tile to move (1 action) or a yellow tile to dash (2 actions), then click the way to face there.${u.sneaking ? " Sneaking: slower, and silent." : ` A dash is heard ${VISION.DASH_NOISE} tiles off (the dead come to look); a plain move only now and then a scuff.`}`, ap > 0, "", { why: noAp });
+  const vaults = vaultsNear(b, u);
+  btn("move", "Move", `Click a blue tile to move (1 action) or a yellow tile to dash (2 actions), then click the way to face there.${u.sneaking ? " Sneaking: slower, and silent." : ` A dash is heard ${VISION.DASH_NOISE} tiles off (the dead come to look); a plain move only now and then a scuff.`} Half cover (a fence, sandbags, crates, a counter...) is vaulted straight over, never diagonally: ${2 + VAULT.OVER} tiles of movement for the two cells, ${(2 + VAULT.OVER) * VAULT.HANDS} with the hands full${vaults.length ? ` (${u.name.split(" ")[0]} can vault the ${vaults[0].name.toLowerCase()} here: ${vaultCost(u)} tiles)` : ""}.${handsBusy(u) ? " Hands full: closed doors stay shut to them." : ""}`, ap > 0, "", { why: noAp });
   btn("face", "Face", `Free (with an action left): turn where they stand. The cone is what they watch${b.night ? ` and all they see in the dark (${darkSight(b)} tiles ahead at ${nightWord(b)}, more down a flashlight's beam)` : ""}: an overwatch reacts only in it, and loot is searched only facing it.`, ap > 0, "⇧W", { why: ap > 0 ? "" : "Turning needs an action left (it costs none)." });
   btn("sneak", u.sneaking ? "Stop sneaking" : "Sneak", u.sneaking ? "Free: back to walking pace (a dash is heard, a plain move now and then)." : `Free: keep low. ${Math.round(VISION.SNEAK_MOB * 100)}% of the pace, no sound at all, and the enemy cannot see them behind half or full cover facing them (from further than a tile). Not while an aware enemy has eyes on them; a loud shot ends it (a suppressed one or a bow does not).`, ap > 0 || u.sneaking, "⇧Z", { why: "Sneaking needs an action left (it costs none).", on: !!u.sneaking });
   if (u.light) btn("light", activeLight(u) ? "Light off" : "Light on", lightTip(b, u), !u.aboard && !u.gunner, "Alt+L", { on: !!activeLight(u), why: "Get out of the vehicle first." }); // sim/combat.js switchAct
@@ -1305,7 +1306,7 @@ export function combatAction(state, key, d) {
     return;
   }
   if (v === "stowbody") return void act(state, { type: "stowbody", unit: u.id });
-  if (v === "dropCarried" || v === "dropAllCarried" || v === "pickCarried") return void act(state, { type: v, unit: u.id }); // sim/carry.js
+  if (v === "dropCarried" || v === "dropAllCarried" || v === "pickCarried" || v === "setOver") return void act(state, { type: v, unit: u.id }); // sim/carry.js
   // A building's doors (sim/buildingmaps.js): with one door next to the unit act at once, else click the door.
   if (v === "peek" || v === "close" || v === "brace") {
     const list = v === "peek" ? peekOptions(b, u) : v === "close" ? closeOptions(b, u) : braceOptions(b, u);
@@ -1423,7 +1424,7 @@ export function renderCombatPanel(state) {
   html += `<h3>Your team</h3><div class="cbroster">`; // the 🎒 Inventory of the selected one: the bottom bar (ui/battlebar.js)
   players(b).forEach((p, i) => {
     const status = p.roseAs != null ? "Turned: one of the dead" : p.burnt ? "Dead, burnt" : p.inVehicle ? "Dead, in the car" : p.carriedBy != null ? "Dead, carried" : p.crushed ? "Dead, will not get up" : imminent(b, p) ? "Dead: a Carrier is on them, crush the skull (U) or shoot (J)" : endangered(b, p) ? "Dead: a Carrier is near" : p.dead ? "Dead" : p.left ? "Got away" : p.down ? (nlStatus(b, p) || (p.stab ? "Down, stabilized" : `Down, bleeding out (${p.bleed})${selfNote(b, p)}`)) + (p.draggedBy != null ? `, dragged by ${(unitById(b, p.draggedBy) || {}).name || "someone"}` : "") :
-      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), ...earStatus(p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.jam ? "JAMMED" : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.suppressed > 0 ? "Suppressed" : "", p.spearOut ? "Spear thrown" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", handsBusy(p) ? `Hands full (${armsText(p)})` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
+      [p.tied && !p.down && p.captive ? "Tied up (captive)" : p.captive && !p.tied ? "Freed captive" : "", nlStatus(b, p), ...earStatus(p), p.late ? (b.tier && b.tier.map === "wall" ? "Not on watch: at the back, out after the attackers move" : "Not on watch: in the buildings, out after the attackers move") : "", p.jam ? "JAMMED" : "", p.stun ? cap1(stunLabel(p.stun)) : "", p.ow ? "Overwatch" : "", p.suppressed > 0 ? "Suppressed" : "", p.spearOut ? "Spear thrown" : "", p.hunker ? "Hunkered" : "", p.dragging != null ? `Dragging ${(unitById(b, p.dragging) || {}).name || "someone"}` : "", handsBusy(p) ? `${handsCount(p) >= HANDS_MAX ? "Both hands" : "Hands"} full (${armsText(p)})` : "", p.shaken ? `Shaken (−${MEDIC.REVIVE.SHAKEN} aim)` : "", evacAt(b, p.x, p.y) && b.evacCols ? "In evac zone" : ""].filter(Boolean).join(", ");
     const cls = ["cbunit", p.id === cui.sel ? "on" : "", !alive(p) ? "out" : p.ap === 0 ? "done" : ""].join(" ");
     const pips = alive(p) ? `<span class="ap">${"<i class=on></i>".repeat(p.ap)}${"<i></i>".repeat(2 - p.ap)}</span>` : "";
     // A building with storeys: everyone's floor (dimmer when it is not the one shown).
@@ -1730,12 +1731,21 @@ function medicButtons(state, b, u, btn) {
   return html;
 }
 
+const noApWhy = (u) => (u.ap > 0 ? "" : NO_AP);
 function bodyButtons(state, b, u, btn) {
   let html = "";
   // sim/carry.js: the team's supplies carried in the arms (no weapon until set down), and loads set down nearby.
-  if (handsBusy(u)) html += btn("dropCarried", "Drop carried", `Free: ${u.name.split(" ")[0]} sets down ${armsText(u)} (${Math.round(handsKg(u) * 10) / 10} kg) on this cell, and can shoot and fight again. Won, the team picks it all up after the fight; retreating, it stays on the ground of this tile.`, true);
-  if (handsBusy(u) && b.units.filter((x) => x.side === "player" && handsBusy(x)).length > 1) html += btn("dropAllCarried", "All drop carried", "Free: everyone of yours sets down what they carry in their arms.", true);
-  if (carriedNear(b, u).length) html += btn("pickCarried", "Pick up load", `1 action: take ${[recText(carriedNear(b, u).reduce((a, c) => { for (const [k, q] of Object.entries(c.sup || {})) a[k] = (a[k] || 0) + q; return a; }, {})), ...carriedNear(b, u).filter((c) => c.item).map((c) => `the ${c.item.name}`)].filter(Boolean).join(", ")} back in the arms (hands full again: no weapon; one bag at a time).`, u.ap > 0 && u.carrying == null && u.dragging == null);
+  const first = u.name.split(" ")[0];
+  if (handsBusy(u)) html += btn("dropCarried", "Drop carried", `Free: ${first} sets down ${armsText(u)} (${Math.round(handsKg(u) * 10) / 10} kg) on this cell, and can shoot, reload, open doors and fight again. Won, the team picks its own loads up after the fight${u.haul ? "; finds set down are picked up again from the ground (Ground)" : ""}; retreating, it stays on the ground of this tile.`, true);
+  if (handsBusy(u) && b.units.filter((x) => x.side === "player" && handsBusy(x)).length > 1) html += btn("dropAllCarried", "All drop carried", "Free: everyone of yours sets down what they carry in their hands.", true);
+  // Set over cover (sim/carry.js setOverCover): the load onto the far side of the half cover they face (1 action).
+  if (handsBusy(u)) {
+    const vs = vaultsNear(b, u);
+    const fx = u.face ? Math.round(u.face[0]) : 0, fy = u.face ? Math.round(u.face[1]) : 0;
+    const faced = vs.find((v) => v.x - u.x === fx && v.y - u.y === fy) || (vs.length === 1 ? vs[0] : null);
+    html += btn("setOver", "Set over cover", vs.length ? `1 action: ${first} sets ${armsText(u)} down on the far side of the ${(faced || vs[0]).name.toLowerCase()}${faced ? "" : " they face (Face is free: turn to the cover first)"}, where anyone can pick it up later from the ground (Ground, Pick up load). Then vault over after it with free hands (${2 + VAULT.OVER} tiles), instead of ${(2 + VAULT.OVER) * VAULT.HANDS} with the load.` : "Stand right next to half cover (a fence, sandbags, crates, a counter...) with room on the far side to set the load down beyond it.", u.ap > 0 && !!faced, "", { why: u.ap > 0 ? (vs.length ? "Face the half cover to set it over (Face is free)." : "No half cover with room beyond it next to them.") : NO_AP, ap: 1 });
+  }
+  if (carriedNear(b, u).length) { const whyTake = takeRefusal(u, "the load"); html += btn("pickCarried", "Pick up load", `1 action: take ${[recText(carriedNear(b, u).reduce((a, c) => { for (const [k, q] of Object.entries(c.sup || {})) a[k] = (a[k] || 0) + q; return a; }, {})), ...carriedNear(b, u).filter((c) => c.item).map((c) => `the ${c.item.name}`)].filter(Boolean).join(", ")} back in the arms (hands full again: no weapon, no doors; one bag at a time).${whyTake ? ` ${whyTake}` : ""}`, u.ap > 0 && u.carrying == null && u.dragging == null && !whyTake, "", { why: whyTake || noApWhy(u) }); }
   const held = carriedBy(b, u);
   const near = crushable(b, u), seen = tappable(b, u), lift = liftable(b, u);
   const danger = (c) => (imminent(b, c) ? " A Carrier is on it: it gets up at the end of this turn otherwise." : endangered(b, c) ? " A Carrier is near, or the worm is in it: it will get up when one reaches it." : "");

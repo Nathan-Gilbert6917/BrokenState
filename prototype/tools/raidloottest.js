@@ -134,10 +134,20 @@ console.log("On foot: each survivor carries their own share and finds");
   u.haul.gear.length = 0;
   const box4 = boxWith(b, u, { f_rationbar: 2, water: 2 }, [newItem("pistol")]);
   const r = RL.raidTakeAll(st, u.id, box4.id);
-  check(r.got.length >= 2 && box4.contents.gear.length === 0 && (u.haul.sup.f_rationbar || 0) >= 2, `Take all takes everything that fits (${r.got.join(", ")})`);
+  // The hands (sim/carry.js handsCount): two different things carried fill both hands, the pistol stays inside.
+  check(r.got.length === 2 && (u.haul.sup.f_rationbar || 0) >= 2 && (u.haul.sup.water || 0) >= 2 && box4.contents.gear.length === 1, `Take all takes two kinds of thing, then the hands are full (${r.got.join(", ")}; ${r.left} left)`);
+  check(!box4.searched && box4.partial, "a container with the pistol left in it is not done");
+  check(/Both hands full/.test(RL.raidMove(st, u.id, `rbox:${box4.id}:gear:0`, `s:${s.id}:pocket:1`)), "with both hands full nothing more is taken, not even into a pocket");
+  // The water back in the container (free): a hand free again, the pistol goes in a pocket; then Take all has the water.
+  RL.raidMove(st, u.id, `haul:${u.id}:sup:water`, `rbox:${box4.id}:list`);
+  const mp = RL.raidMove(st, u.id, `rbox:${box4.id}:gear:0`, `s:${s.id}:pocket:1`);
+  check(s.pockets[1] && s.pockets[1].key === "pistol", `a hand free: the pistol goes in a pocket (${mp})`);
+  const r2 = RL.raidTakeAll(st, u.id, box4.id);
+  check((u.haul.sup.water || 0) >= 2 && box4.contents.gear.length === 0 && !Object.values(box4.contents.sup).some((v) => v >= 1), `and Take all carries the water again: the container is emptied (${r2.got.join(", ")})`);
   check(box4.searched, "an emptied container is done");
 
-  // Found ammo can be used at once (the haul is one of the battle's pools).
+  // Found ammo can be used at once (the haul is one of the battle's pools). The hands: the water goes down first.
+  RL.raidMove(st, u.id, `haul:${u.id}:sup:water`, `rbox:${box4.id}:list`);
   const ammoBefore = b.pools.reduce((a, o) => a + Math.floor(o.ammo || 0), 0);
   const box5 = boxWith(b, u, { ammo: 5 });
   RL.raidMove(st, u.id, `rbox:${box5.id}:sup:ammo`, `haul:${u.id}:list`);

@@ -15,7 +15,7 @@ import { CALIBERS, AMMO_TYPES } from "../sim/data-ammo.js";
 import { gunQ, gunCond, jamChance, modesOf, modeOf, modeRolls, modeAim, FIRE_MODES } from "../sim/gunfire.js";
 import { glLabel } from "../sim/launchers.js";
 import { earStatus } from "../sim/hearing.js";
-import { handsBusy, armsText } from "../sim/carry.js";
+import { handsBusy, armsText, handsCount, HANDS_MAX } from "../sim/carry.js";
 import { tiredLevel, TIRED_WORDS } from "../sim/sleep.js";
 import { gunURL, isGunKey } from "./gunart.js";
 import { project, LV, liftOf, onFloor, isoOnScreen, ISO_ZOOMS, iso } from "./isoview.js";
@@ -188,7 +188,7 @@ export function unitChips(state, b, p) {
   if (p.stun && !p.down) c.push([p.stun.dazed ? "DAZED" : "STUN", "warn", "Dazed or stunned by a flash or a taser."]);
   for (const e of earStatus(p)) c.push([e.split(" ")[0].toUpperCase(), "warn", e]);
   if (p.jam) c.push(["JAM", "danger", "The gun is jammed: Unjam clears it."]);
-  if (handsBusy(p)) c.push(["HANDS", "warn", `Hands full: ${armsText(p)}.`]);
+  if (handsBusy(p)) c.push([handsCount(p) >= HANDS_MAX ? "HANDS ✋✋" : "HANDS ✋", "warn", `${handsCount(p) >= HANDS_MAX ? "Both hands" : "Hands"} full: ${armsText(p)}. No shooting, reloading, doors or windows until it is set down (Drop carried: free; Set over cover) or stowed in the pack, the pockets or the vehicle.${handsCount(p) >= HANDS_MAX ? " Two different things carried: nothing more can be taken." : ""}`]);
   if (p.dragging != null) c.push(["DRAG", "warn", "Dragging someone: half speed, no shooting."]);
   if (p.gunner) c.push(["TURRET", "info", "On the vehicle's turret."]);
   else if (p.aboard) c.push(["IN CAR", "info", "In the vehicle."]);
@@ -289,6 +289,15 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
     } else {
       const why = String(hoverO.label || "").split(/[.:(]/)[0].slice(0, 40);
       badge(ctx, X, Y - tagRoom, "—", "#9aa0a8", Math.round(fs * 0.7), why, false);
+    }
+  }
+  // Your people with their hands full (sim/carry.js): a mark over their heads, so it is seen on the map itself.
+  if (list && list.length && !b.over) {
+    const fs = Math.round(Math.min(18, Math.max(11, 3.2 * S)) * ui);
+    for (const p of list) {
+      if (!handsBusy(p) || p.dead || p.left || p.fled || p.off || p.down || !onFloor(b, p) || (hits && hits.get(p.id)) || (hoverT && hoverT.id === p.id)) continue;
+      const [X, Y] = head(p);
+      badge(ctx, X, Y - tagRoom, handsCount(p) >= HANDS_MAX ? "✋✋ hands full" : "✋ hands full", "#ffb347", fs, "", false);
     }
   }
   // Your people off screen: an arrow at the edge with their number, clear of the strip (avoid: its rect).

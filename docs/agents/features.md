@@ -58,7 +58,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Expeditions across the State Map**: supplies drain hour by hour, events roll tile by tile [parties].
 - **Order queue and trip planner**: plans, templates and repeat trips [orders, plans, trips, ui/undo].
 - **Team forming, team inventory, teams meeting on one tile** and handing goods over [teamform, teaminv, teammeet].
-- **Carry weight and load bands**, physical supply carrying and carry kit/rigs [load, carry, carrykit].
+- **Carry weight and load bands**, physical supply carrying and carry kit/rigs [load, carry, carrykit]. **The hands in a fight**: anything in the carried part of the inventory (a load or a bag in the arms, finds carried loose) fills them: no shooting, reloading, doors or windows until it is set down or stowed; two different things carried and nothing more is taken; half cover vaulted at double cost, or the load set down over it [carry, raidloot, combat VAULT].
 - **Vehicles**: fuel, condition, breakdowns and bicycles; one person per vehicle [vehicles, walkers]. Also found cars (hotwiring, claiming), military trucks, Humvees and MRAPs [foundcars, miltrucks], road blockages [roadblocks], repairs on the road [repairwait], and vehicle trade [vehicletrade].
 - **Boat crossings** over water [crossing].
 - **Night on the road**: make camp or push through [nightmarch].
@@ -79,7 +79,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Hearing and deafening** [hearing].
 - **Non-lethal weapons and taking people alive** (taser, stun baton, pepper spray) [nonlethal].
 - **Throwables**: Molotovs, pipe bombs, flares and smoke [throwables]. **Decoys and fire**, and what the dead follow [decoys].
-- **Things on the ground** and searching bodies [ground].
+- **Things on the ground** and searching bodies [ground]. **Vaulting half cover** (a fence, sandbags, crates, a counter...) as part of a move, your people only [combat VAULT, reachable].
 - **Retreat**: "Sound the retreat" on the map and break-off policies for auto-resolved fights [combat soundRetreat, breakoff].
 - **Third side**: neutrals and soldiers who are neither your team nor its enemies [thirdside].
 - **Siege kit**: ladders, rams and frag grenades [siege].

@@ -108,7 +108,7 @@ import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear,
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
-import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies or a bag carried in the arms: no weapon until set down (Drop carried: free)
+import { fitHands, handsRefusal, handsWord, handsBusy, handsCount, HANDS_MAX, carriedAct, pickCarried, setOverCover, botDropToFight, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies, a bag or finds carried in the hands: no weapon, no doors until set down (Drop carried: free; Set over cover)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
@@ -617,6 +617,7 @@ const MAX_PLAYERS = 8, MAX_ENEMIES = 20;
 // viewer high enough sees over it, verticality below). h: the height a unit standing there is raised to (a cell can
 // set its own c.h). climb: a ladder or stairs, the only way from one height to the next. bar: closed to the attackers
 // until it is broken (its hit points are on the cell: c.hp / c.mhp; c.bar does the same for one cell, a base's gate).
+// vault: half cover your people go straight over (reachable: VAULT), and set a load down beyond (carry.js setOverCover).
 // A cell can also block sight on its own with c.t (a base's wall: the defenders shoot over it from the walkway).
 export const CELL = {
   open:    { walk: true,  cover: 0, los: false, name: "Open ground" },
@@ -625,15 +626,15 @@ export const CELL = {
   wall:    { walk: false, cover: 2, los: true,  name: "Wall" },
   truck:   { walk: false, cover: 2, los: true,  name: "Burnt-out truck" },
   window:  { walk: false, cover: 1, los: false, name: "Window" },
-  rock:    { walk: false, cover: 1, los: false, name: "Rock" },
-  car:     { walk: false, cover: 1, los: false, name: "Car" },
-  fence:   { walk: false, cover: 1, los: false, name: "Fence" },
-  hay:     { walk: false, cover: 1, los: false, name: "Hay bales" },
-  crate:   { walk: false, cover: 1, los: false, name: "Crates" },
-  sandbag: { walk: false, cover: 1, los: false, name: "Sandbags" },
+  rock:    { walk: false, cover: 1, los: false, name: "Rock", vault: true },
+  car:     { walk: false, cover: 1, los: false, name: "Car", vault: true },
+  fence:   { walk: false, cover: 1, los: false, name: "Fence", vault: true },
+  hay:     { walk: false, cover: 1, los: false, name: "Hay bales", vault: true },
+  crate:   { walk: false, cover: 1, los: false, name: "Crates", vault: true },
+  sandbag: { walk: false, cover: 1, los: false, name: "Sandbags", vault: true },
   pump:    { walk: false, cover: 1, los: false, name: "Fuel pump" },
   water:   { walk: false, cover: 0, los: false, name: "Water" },
-  rail:    { walk: false, cover: 1, los: false, name: "Bridge railing" }, // a bridge's railing over the river (layRoad)
+  rail:    { walk: false, cover: 1, los: false, name: "Bridge railing", vault: true }, // a bridge's railing over the river (layRoad)
   // In front of a bridge barricade (deploy.js, conquest.js): steel hedgehogs people walk between but no vehicle can
   // drive through (driveTo wants open ground); battered down from next to them (c.hp, bash).
   tanktrap: { walk: true,  cover: 1, los: false, name: "Tank trap" },
@@ -641,7 +642,7 @@ export const CELL = {
   shelf:   { walk: false, cover: 1, los: false, name: "Shelves" },
   locker:  { walk: false, cover: 2, los: true,  name: "Lockers" },
   cabinet: { walk: false, cover: 1, los: false, name: "Cabinet" },
-  counter: { walk: false, cover: 1, los: false, name: "Counter" },
+  counter: { walk: false, cover: 1, los: false, name: "Counter", vault: true },
   gunsafe: { walk: false, cover: 2, los: false, name: "Gun safe" }, // locks.js / gunsafes.js: a steel safe, waist to head high
   vehicle: { walk: false, cover: 2, los: true,  name: "Your vehicle" },
   // Base defences against hordes and the inside of a hive (defences.js, hives.js). trap: what happens to one of
@@ -677,7 +678,7 @@ export const CELL = {
   smashed:   { walk: true,  cover: 0, los: false, name: "Smashed window" },
   rubble:    { walk: true,  cover: 0, los: false, name: "Rubble" },
   well:      { walk: false, cover: 1, los: false, name: "Well" },
-  barrel:    { walk: false, cover: 1, los: false, name: "Rain barrels" },
+  barrel:    { walk: false, cover: 1, los: false, name: "Rain barrels", vault: true },
   // Building interiors (buildingmaps.js): a closed door blocks sight until someone walks through it (moveAlong opens
   // it: odoor; a roller door is loud to haul up), tall shelving blocks sight (sneak down the aisles), tables, beds and
   // cell bars are half cover you see over or through.
@@ -686,8 +687,8 @@ export const CELL = {
   idoor:     { walk: true,  cover: 0, los: true,  name: "Closed door", bar: true },
   odoor:     { walk: true,  cover: 0, los: false, name: "Open door" },
   rack:      { walk: false, cover: 2, los: true,  name: "Shelving" },
-  table:     { walk: false, cover: 1, los: false, name: "Table" },
-  bed:       { walk: false, cover: 1, los: false, name: "Bed" },
+  table:     { walk: false, cover: 1, los: false, name: "Table", vault: true },
+  bed:       { walk: false, cover: 1, los: false, name: "Bed", vault: true },
   bars:      { walk: false, cover: 1, los: false, name: "Cell bars" },
   // A siege ladder set against a wall section (siege.js): the wall cell becomes a climb up to height 1, onto the
   // walkway behind it; whoever is on it stands exposed. Its wall stays a wall for sight from the ground (c.t).
@@ -699,6 +700,13 @@ export const CELL = {
 // it. Climbing a level (only on a ladder, stairs or a tower's own ladder, never diagonally) costs CLIMB moves, the
 // dead CLIMB_DEAD. A blow struck up at someone higher is MELEE_UP harder. EYE: eye height over the floor (sight lines).
 export const HEIGHT = { SIGHT: 2, AIM: 5, MAX_AIM: 10, COVER: 1, CLIMB: 1, CLIMB_DEAD: 2, MELEE_UP: 10, EYE: 0.6 };
+// Vaulting (the user's ask, 2026-10-19): your people go straight over half cover marked vault (a fence, sandbags,
+// crates, a car's bonnet, a counter, a table...) to the free cell beyond it on the level, never diagonally, as part of
+// a move: the two cells plus OVER tiles of movement, HANDS times that with the hands full (carry.js handsBusy: a load
+// in the arms, finds carried loose). The dead and the enemy do not vault (they batter, or go round). A load can be
+// set down on the far side instead (Set over cover, carry.js setOverCover: 1 action).
+export const VAULT = { OVER: 1, HANDS: 2 };
+export const vaultCost = (u) => (2 + VAULT.OVER) * (handsBusy(u) ? VAULT.HANDS : 1);
 // Battering a door, a window, the gate or a wall section (base battles): the cost in tiles the AI weighs it at.
 export const SIEGE = { COST: 2, PER_HP: 0.4 };
 // A field map's houses (genMap building): real doors, never a gap in the wall. The first door of a house is closed
@@ -2332,6 +2340,10 @@ export function reachable(b, u, maxCost, opts = {}) {
   // stopping on one of them.
   const climber = u.ztype === "climber";
   const passes = (x, y) => cellAt(b, x, y).walk || (climber && climbOver(u, b.cells[idx(x, y)].k));
+  // Your people vault half cover (VAULT) and, with their hands full (carry.js), cannot open a closed door.
+  const vaulter = u.side === "player" && u.kind === "human" && !climber;
+  const vStep = vaulter ? vaultCost(u) : Infinity;
+  const noDoors = vaulter && handsBusy(u);
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
@@ -2351,11 +2363,28 @@ export function reachable(b, u, maxCost, opts = {}) {
       const j = idx(nx, ny);
       if (occ[j] === 1) continue;
       if (foe && barredCell(b.cells[j]) && !doorOpens(b, u, b.cells[j]) && !(climber && climbOver(u, b.cells[j].k))) continue;
+      if (noDoors && b.cells[j].k === "idoor") continue; // hands full: a closed door stays shut to them
       if (avoid && avoid.has(j)) continue;
       const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
       const step = (diag ? 1.5 : 1) + climb;
       const nr = real[cur] + step, nd = aw ? d[cur] + step + aw[j] : nr;
+      if (nr <= maxCost + 1e-6 && nd < d[j]) {
+        if (d[j] === Infinity) open.push(j);
+        d[j] = nd;
+        if (aw) real[j] = nr;
+        prev[j] = cur;
+      }
+    }
+    // A vault (VAULT): straight over a vault cell next to this one onto the free, level cell beyond it. prev skips
+    // the cover cell; pathTo puts it back in the path (the move goes over it).
+    if (vaulter) for (const [dx, dy] of DIRS4) {
+      const vx = x + dx, vy = y + dy, nx = x + 2 * dx, ny = y + 2 * dy;
+      if (!inside(nx, ny) || !CELL[b.cells[idx(vx, vy)].k].vault) continue;
+      const j = idx(nx, ny), c = b.cells[j];
+      if (!CELL[c.k].walk || CELL[c.k].climb || barredCell(c) || occ[j] || hAt(b, nx, ny) !== hAt(b, x, y)) continue;
+      if (avoid && (avoid.has(j) || avoid.has(idx(vx, vy)))) continue;
+      const nr = real[cur] + vStep, nd = aw ? d[cur] + vStep + aw[j] : nr;
       if (nr <= maxCost + 1e-6 && nd < d[j]) {
         if (d[j] === Infinity) open.push(j);
         d[j] = nd;
@@ -2374,10 +2403,28 @@ export function pathTo(r, x, y) {
   const path = [];
   let i = idx(x, y);
   while (i >= 0 && r.prev[i] >= 0) {
-    path.unshift([i % W, (i / W) | 0]);
-    i = r.prev[i];
+    const p = r.prev[i];
+    const cx = i % W, cy = (i / W) | 0, px = p % W, py = (p / W) | 0;
+    path.unshift([cx, cy]);
+    if (Math.abs(cx - px) + Math.abs(cy - py) === 2 && (cx === px || cy === py)) path.unshift([(cx + px) / 2, (cy + py) / 2]); // a vault: over the half cover between (reachable VAULT)
+    i = p;
   }
   return path;
+}
+// Half cover next to the unit (not diagonally) that can be vaulted, with the level cell beyond it (vault: it is free
+// to land on). [{ x, y, to: [x, y], free, name }] (carry.js setOverCover, the orders' buttons).
+export function vaultsNear(b, u) {
+  bindDims(b);
+  const out = [];
+  if (!u || !onMap(u)) return out;
+  for (const [dx, dy] of DIRS4) {
+    const vx = u.x + dx, vy = u.y + dy, tx = u.x + 2 * dx, ty = u.y + 2 * dy;
+    if (!inside(vx, vy) || !inside(tx, ty) || !CELL[b.cells[idx(vx, vy)].k].vault) continue;
+    const c = b.cells[idx(tx, ty)];
+    if (!CELL[c.k].walk || CELL[c.k].climb || barredCell(c) || hAt(b, tx, ty) !== hAt(b, u.x, u.y)) continue;
+    out.push({ x: vx, y: vy, to: [tx, ty], free: !unitAt(b, tx, ty), name: CELL[b.cells[idx(vx, vy)].k].name });
+  }
+  return out;
 }
 
 // Walking distance from a set of cells to everywhere (ignores units). Used by AI to find a way around walls.
@@ -3566,6 +3613,13 @@ export function moveAlong(b, u, path) {
     if (b.corpses && b.corpses.length && u.kind !== "zombie" && active(u)) { wakeNear(b, u); spotCheck(b, u); } // sleepers.js: a Sleeper next to them splits open
     if (!active(u) || stopAtDoor) break;
   }
+  // Stopped (shot down on overwatch) on the half cover being vaulted (VAULT): they end on the last solid cell.
+  if (walked.length && u.kind === "human" && !CELL[b.cells[idx(u.x, u.y)].k].walk) {
+    const back = walked.slice().reverse().find(([x, y]) => CELL[b.cells[idx(x, y)].k].walk) || from;
+    u.x = back[0]; u.y = back[1];
+  }
+  const over = walked.filter(([x, y]) => CELL[b.cells[idx(x, y)].k].vault);
+  if (over.length && u.side === "player") say(b, `${u.name} vaults the ${CELL[b.cells[idx(over[0][0], over[0][1])].k].name.toLowerCase()}${handsBusy(u) ? ` with ${over.length > 1 ? "their" : "the"} arms full (slowly)` : ""}.`, "info");
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
   if (walked.length && u.dragging != null) MED.dragFollow(b, u, from, walked); // medics.js: the downed ally comes along behind
   if (walked.length && u.ram != null) afterMove(b, u); // siege.js: the ram's crew keeps up with its lead
@@ -3889,6 +3943,7 @@ export function combatAct(state, act) {
   { const why = handsRefusal(u, act.type); if (why) return why; } // carry.js: hands full of supplies (or a body): no weapon, no throw, no treating
   switch (act.type) {
     case "pickCarried": { const err = pickCarried(state, b, u); if (err) return err; u.ap -= 1; u.hunker = false; break; } // carry.js: a load set down within reach, back in the arms (1 action)
+    case "setOver": { const err = setOverCover(state, b, u, act); if (err) return err; break; } // carry.js: everything carried set down beyond the half cover they face (1 action)
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
       const r = reachable(b, u, dashRange(u), { manual: true, wary: !!act.wary }); // wary: the raid bot goes round acid (acid.js)
@@ -6608,9 +6663,10 @@ function autoRaidTurn(state) {
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
       // raidloot.js: each survivor carries their own finds; with a vehicle, a full one walks back to load it.
       const mine = party ? personalRoom(state, u) : 0, space = party ? trunkSpace(state, b) : null;
-      const unload = mine < 2 && space != null && space >= 2 && haulLoad(u) > 0.5 && R.heat < BOT_LEAVE.HEAT && u.noStash !== b.turn;
+      const both = handsCount(u) >= HANDS_MAX; // carry.js: two different things carried: nothing more taken until it is stowed
+      const unload = (mine < 2 || both) && space != null && space >= 2 && haulLoad(u) > 0.5 && R.heat < BOT_LEAVE.HEAT && u.noStash !== b.turn;
       if (unload && atVehicle(b, u)) { if (combatAct(state, { type: "stash", unit: u.id })) u.noStash = b.turn; continue; }
-      const full = !!party && mine < 2 && !unload;
+      const full = !!party && (mine < 2 || both) && !unload;
       const todo = (c) => !botDone(c) && !(c.skipBy && c.skipBy.includes(u.id)); // skipBy: nothing in it fits on this one
       const here = (c) => (c.f || 0) === (u.f || 0); // storeys (buildingmaps.js): this floor's containers
       const hereTodo = R.containers.some((c) => todo(c) && here(c));
@@ -6638,6 +6694,8 @@ function autoRaidTurn(state) {
       if (!leave && u.gl && aiLaunch(b, u)) break; // launchers.js: HE or a rocket on three or more bunched up (the turn's attack)
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
+      // carry.js: something to fight close by and the hands full of finds: set them down (free), take them up after.
+      if (foes.length && handsBusy(u)) botDropToFight(state, b, u);
       // A jammed gun: cleared (gunfire.js: a double feed by a reload when it can, else Unjam), then on.
       if (u.jam && !combatAct(state, { type: u.jam.kind === "double" && botReloadClears(b, u) ? "reload" : "unjam", unit: u.id })) continue;
       // An empty gun: reloaded (1 action) when something is close or there is time (not on the way out), then on.

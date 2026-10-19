@@ -52,7 +52,7 @@ import { KITS, WEAPONS, say, fx, unitById, loadMag, active, playerUnit } from ".
 import { gunOut, gunLeavesTeam, gunIn, unloadInto, stockFor, teamGuns } from "./gunload.js"; // the rounds in a gun, kept on it
 import { fireStuff, cookFrom } from "./launchers.js"; // fire on what lies on the ground; the explosives in it go off
 import { fireAt } from "./throwables.js";
-import { bagRefusal } from "./carry.js"; // Carry in arms: the one check for a bag going into the arms
+import { bagRefusal, takeRefusal } from "./carry.js"; // Carry in arms: the one check for a bag going into the arms; two different things carried: nothing more taken
 
 export const GROUND = { reach: 1 };
 const cheb = (a, x, y) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y));
@@ -81,11 +81,11 @@ export function groundPile(b, x, y, f = 0) {
 // The piles with something in them on or next to the unit (its own cell first).
 export const pilesNear = (b, u) => groundPiles(b).filter((c) => pileCount(c) && near(u, c)).sort((a, c) => cheb(u, a.x, a.y) - cheb(u, c.x, c.y));
 
-// Puts a thing on the ground where the unit stands: an item already taken off whoever had it, or `count` of a supply
-// (its key). Returns the pile (null: nothing to put down).
-export function dropToGround(b, u, what, count = 1) {
+// Puts a thing on the ground where the unit stands (at: on another cell, { x, y, f }: carry.js setOverCover): an item
+// already taken off whoever had it, or `count` of a supply (its key). Returns the pile (null: nothing to put down).
+export function dropToGround(b, u, what, count = 1, at = null) {
   if (!b || !u) return null;
-  const p = groundPile(b, u.x, u.y, u.f || 0);
+  const p = at ? groundPile(b, at.x, at.y, at.f || 0) : groundPile(b, u.x, u.y, u.f || 0);
   if (typeof what === "string") {
     if (!SUPPLIES[what] || !(count > 0)) return null;
     p.contents.sup[what] = (p.contents.sup[what] || 0) + count;
@@ -114,6 +114,7 @@ export function pickUpFromGround(state, b, u, where, item = null, arms = false) 
   const pile = isPile(where) ? where : where ? groundAt(b, where.x, where.y, where.f ?? (u.f || 0)) : pilesNear(b, u)[0];
   if (!pile || !pileCount(pile)) { out.msg = "Nothing on the ground there."; return out; }
   if (!near(u, pile)) { out.msg = `${u.name.split(" ")[0]} has to be on it or next to it.`; return out; }
+  { const why = takeRefusal(u, item ? `the ${item.name}` : "more"); if (why) { out.msg = why; return out; } } // carry.js: two different things carried already
   if (item) {
     const i = pile.contents.gear.indexOf(item);
     if (i < 0) { out.msg = "That is not there any more."; return out; }
