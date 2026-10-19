@@ -12,6 +12,7 @@ import { createWorld, hub, atBase, tickHour } from "../src/sim/world.js";
 import { launchExpedition, planPath, missionProblem, spawnAiParty, bridgeHolder, bridgeClosedTo, outpostName, partyTile } from "../src/sim/parties.js";
 import { createBattle, registerCombatHandler, CELL, AREAS, raidAreasFor, ROAD, bridgeSpan, combatAct, bash, LOS_DENSE, makeLosCache } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
+import { totalRounds, giveRoundsTo } from "../src/sim/ammo.js";
 import { LOCKS, openOdds, lockedNear } from "../src/sim/locks.js";
 import { GEAR } from "../src/sim/data.js";
 import { atVehicle } from "../src/sim/raidloot.js";
@@ -32,8 +33,11 @@ const idx = (b, x, y) => y * b.w + x;
 
 const emptyStock = () => ({ food: 0, water: 0, fuel: 0, meds: 0, ammo: 0, parts: 0, scrap: 0, preserved: 0, jars: 0 });
 const baseOn = (state, tile) => { const base = { id: 9000 + state.bases.length, tile, type: "outpost", name: outpostName(state, tile), stock: emptyStock(), radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; state.bases.push(base); return base; };
+// The hub's rounds kept at 80 or more: every launch below packs 30 (the same state launches several teams).
+const stockUp = (state) => { const h = hub(state); const n = totalRounds(h.stock); if (n < 80) giveRoundsTo(state, h, 80 - n); };
 const raidOn = (state, tile, withVehicle = false) => {
   const h = hub(state);
+  stockUp(state);
   const crew = atBase(state, h.id).slice(0, 3);
   // Nobody carries a pry tool: the only way into a locked car without picks is through the glass.
   for (const s of crew) { for (const slot of Object.keys(s.gear)) if (s.gear[slot] && GEAR[s.gear[slot].key] && GEAR[s.gear[slot].key].pry) s.gear[slot] = null; if (s.pack) s.pack = s.pack.filter((it) => !(GEAR[it.key] && GEAR[it.key].pry) && it.key !== "crowbar"); }
@@ -324,6 +328,7 @@ for (let i = 0; i < runs; i++) {
   const h = hub(state);
   const tile = state.tiles.find((t) => t.road && !t.loc && t.terrain !== "water" && t.id !== h.tile && state.grid.distance(t.id, h.tile) > 1) || state.tiles.find((t) => t.id !== h.tile && t.terrain !== "water");
   const crew = atBase(state, h.id).slice(0, 4).map((s) => s.id);
+  stockUp(state);
   const res = launchExpedition(state, { memberIds: crew, dest: tile.id, mission: "move", stance: "normal", vehicleId: state.vehicles[0] ? state.vehicles[0].id : null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
   if (!res.error && state.vehicles[0]) {
     const p = res.party;
@@ -431,6 +436,7 @@ for (let i = 0; i < runs; i++) {
     for (const s of atBase(state, h.id)) if (s.location.kind !== "base") s.location = { kind: "base", baseId: h.id };
     const crew = atBase(state, h.id).slice(0, 3).map((s) => s.id);
     if (crew.length < 1) break;
+    stockUp(state);
     const res = launchExpedition(state, { memberIds: crew, dest: t.id, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
     if (res.error) continue;
     const p = res.party;
