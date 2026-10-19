@@ -1663,10 +1663,12 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     fillCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.16)`);
     outlineCells(ctx, b, (i) => ok[i], `rgba(${COL.goodRgb},0.8)`, 1.5);
   }
-  // The base map's layout mode (sim/basemap.js): the yard's edge, and the pick's footprint under the mouse (green
+  // The base map's layout mode (sim/basemap.js): the no-build margin (c.nb: the cells within NO_BUILD of the grid's
+  // edge, a dark red wash under everything else), the yard's edge, and the pick's footprint under the mouse (green
   // where it fits, red where not), with the cells outside its doors.
   if (b.layout && b.deployPlan && b.deployPlan.fort) {
     const Fm = b.deployPlan.fort, w = Fm.wall;
+    fillCells(ctx, b, (i) => !!b.cells[i].nb, "rgba(150,40,40,0.22)", false);
     const yard = (i) => { const x = i % b.w, y = (i / b.w) | 0; return x >= w.x0 && x <= w.x1 && y >= w.y0 && y <= w.y1 && (x === w.x0 || x === w.x1 || y === w.y0 || y === w.y1); };
     ctx.setLineDash([5, 4]);
     outlineCells(ctx, b, yard, Fm.walled ? "rgba(200,170,110,0.55)" : "rgba(230,216,184,0.5)", 1.5);
@@ -1863,7 +1865,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const zt = tileTop(b, x, y);
       if (zt) {
         if (bands && bands[i]) { ctx.fillStyle = bands[i] === 1 ? "rgba(80,150,255,0.32)" : "rgba(255,200,60,0.22)"; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
-        if (deploying && ok[i]) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
+        if (deploying && ok && ok[i]) { ctx.fillStyle = `rgba(${COL.goodRgb},0.28)`; ctx.beginPath(); diamond(ctx, x, y, zt); ctx.fill(); }
       }
     }
     for (const c of bodies.get(d) || []) drawCorpseIso(ctx, b, c, !vis[c.y * b.w + c.x]);

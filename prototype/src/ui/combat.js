@@ -39,7 +39,10 @@ import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chi
 import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out of sight: markers in the fog with a guess of the sound
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
-import { ghostAt, itemAtCell, storeAt } from "../sim/basemap.js";
+import { ghostAt, itemAtCell, storeAt, FOOT } from "../sim/basemap.js";
+import { BUILDINGS, demolishRefund } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
+import { ask } from "./confirm.js"; // one confirmation style (the base map's Demolish asks as the Construction tab's does)
+const refundWords = (rec) => { const t = Object.entries(demolishRefund(rec) || {}).filter(([, q]) => q > 0).map(([k, q]) => `${q} ${k}`).join(", "); return t ? ` (${t})` : ""; };
 import { planFor, planStale, planKey, PLAN_MAPS, plansOf, currentPlan, planTags, startText, roleOf, PLAN, PLAN_WHO, PLAN_WHEN, PLAN_ROLES } from "../sim/defenceplan.js"; // the base's defence plans (the deploy step, the drill)
 import { roomText, totalRoom } from "../sim/prisoners.js"; // jailhouse: prisoner room at your bases
 import { bodyEmpty, itemLoad } from "../sim/inventory.js";
@@ -626,16 +629,23 @@ function bodyAt(b, x, y) {
   return b.units.find((o) => o.x === x && o.y === y && !o.fled && !o.left && dragable(o)) || null;
 }
 
-// The base map's layout mode (sim/basemap.js): a click puts the picked thing down, lifts a placed one, or looks into a store.
+// The base map's layout mode (sim/basemap.js): a click builds the picked type there, puts the picked thing down,
+// selects a placed one (a second click on the selected one lifts it: moving stays two clicks), or looks into a store.
 function layoutClick(state, b, px, py) {
   const c = cellFromPx(px, py);
   if (!c) return;
+  if (b.layout.pickType) return void act(state, { type: "build", x: c.x, y: c.y });
   if (b.layout.pick) return void act(state, { type: "put", x: c.x, y: c.y });
   const e = itemAtCell(state, b, c.x, c.y);
-  if (e && e.at) return void act(state, { type: "lift", key: e.it.key });
+  if (e && e.at) {
+    if (b.layout.sel === e.it.key) return void act(state, { type: "lift", key: e.it.key });
+    cui.storeView = null;
+    return void act(state, { type: "select", key: e.it.key });
+  }
   const sc = storeAt(b, c.x, c.y);
   if (sc) { cui.storeView = cui.storeView === sc.id ? null : sc.id; cui.msg = ""; return; }
-  cui.msg = "Pick something from the list on the right, then click where it goes; or click a placed thing to move it.";
+  if (b.layout.sel) return void act(state, { type: "select", key: null }); // open ground: deselect
+  cui.msg = "Pick something to build from the Build list, or a placed thing from the lists, then click where it goes; click a placed thing to select it, again to move it.";
 }
 // Deploy step (sim/deploy.js): click a defender to pick them, then a green cell to put them there.
 function deployClick(state, b, px, py) {
@@ -1360,9 +1370,9 @@ export function combatKey(state, e) {
   }
   // Deploy step: Enter starts the fight (Space only says so: it is too easy to press by habit here).
   if (b.phase === "deploy") {
-    if (b.layout) { // the base map (sim/basemap.js): R turns the pick, Esc puts it down
+    if (b.layout) { // the base map (sim/basemap.js): R turns the pick, Esc puts it down (then deselects)
       if (e.code === "KeyR") { act(state, { type: "rotate" }); return true; }
-      if (e.code === "Escape") { if (b.layout.pick) act(state, { type: "pick", key: null }); cui.storeView = null; cui.msg = ""; return true; }
+      if (e.code === "Escape") { if (b.layout.pickType) act(state, { type: "pickType", bt: null }); else if (b.layout.pick) act(state, { type: "pick", key: null }); else if (b.layout.sel) act(state, { type: "select", key: null }); cui.storeView = null; cui.msg = ""; return true; }
       if (confirm || space) { cui.msg = "The base map: pick something and click where it goes, or Close the map."; return true; }
     }
     if (b.drill) { if (confirm || space) cui.msg = "A drill: place your people, then Save as plan, or Close the drill."; return confirm || space; } // a base drill (no fight to start)
@@ -1482,10 +1492,18 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   // Deploy step (sim/deploy.js): start, default positions, the selected defender to the gate, floodlight aim.
   if (key === "cb-store") { cui.storeView = d.id ? Number(d.id) : null; cui.msg = ""; return; } // a store on the base map (sim/basemap.js)
   if (key === "cb-deploy") {
-    if (b.layout) { // the base map's layout mode (sim/basemap.js layoutAct)
+    if (b.layout) { // the base map's layout mode (sim/basemap.js layoutAct; the panel: ui/basemap.js layoutPanel)
       if (d.v === "pick") return void act(state, { type: "pick", key: d.k || null });
       if (d.v === "rotate" || d.v === "endLayout") return void act(state, { type: d.v });
       if (d.v === "lift" || d.v === "unplace") return void act(state, { type: d.v, key: d.k });
+      if (d.v === "select") return void act(state, { type: "select", key: d.k || null }); // a placed thing's card
+      if (d.v === "pickType") return void act(state, { type: "pickType", bt: d.bt || null }); // a type to build: the ghost is its footprint
+      if (d.v === "link" || d.v === "unlink") return void act(state, { type: d.v, a: d.a, b: d.b }); // a doorway between two buildings
+      if (d.v === "demolish") { // a standing building asks first (ui/confirm.js, as the Construction tab's Demolish); a queued job is only cancelled
+        const base = state.bases.find((x) => x.id === b.layout.baseId), rec = base && d.k && d.k.startsWith("b:") ? base.buildings.find((x) => x.id === Number(d.k.slice(2))) : null;
+        if (rec && ui && ask(ui, d, "cb-deploy", { kind: "demolish", title: `Pull down ${BUILDINGS[rec.type] ? BUILDINGS[rec.type].name : "this building"} at ${base.name}?`, text: `It is gone for good${FOOT[rec.type] && FOOT[rec.type].general ? ", and whatever stands inside it with it" : ""}. About half its scrap and parts come back${refundWords(rec)}.`, yes: "Pull it down" })) return;
+        return void act(state, { type: "demolish", key: d.k });
+      }
       return;
     }
     if (d.v === "start") return void act(state, { type: "start" });

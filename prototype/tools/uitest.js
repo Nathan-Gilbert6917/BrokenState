@@ -79,8 +79,10 @@ const inMain = (name) => new RegExp(`(^|[\\s{,])("${name}"|${/^[a-z]\w*$/i.test(
 import { WHY_ACTIONS } from "../src/ui/causes.js"; // Why? links on deaths and lost bases
 import { BN_ACTIONS, BN_INPUT } from "../src/ui/basename.js"; // naming and renaming bases
 import { WC_ACTIONS, WC_CHANGE } from "../src/ui/worldcfg.js"; // the new-run screen's World… window (the run's dials)
-const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS, ...WHY_ACTIONS, ...BN_ACTIONS, ...WC_ACTIONS };
-const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE, ...BN_INPUT, ...WC_CHANGE };
+import { BASEMAP_ACTIONS } from "../src/ui/basemap.js"; // the base map (the Construction tab's "Open the base map to build")
+import { STORAGE_ACTIONS, STORAGE_CHANGE } from "../src/ui/storage.js"; // the Storage tab (main.js registers both tables)
+const CLICK = { ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...EXPLORE_ACTIONS, ...WATCHLIST_ACTIONS, ...CONTROLS_ACTIONS, ...CODEX_ACTIONS, ...WHY_ACTIONS, ...BN_ACTIONS, ...WC_ACTIONS, ...BASEMAP_ACTIONS, ...STORAGE_ACTIONS };
+const CHANGE = { ...DIARY_CHANGE, ...ROSTER_CHANGE, ...EXPLORE_CHANGE, ...BN_INPUT, ...WC_CHANGE, ...STORAGE_CHANGE };
 function handlersOk(html, where) {
   const missing = [];
   for (const a of actionsIn(html)) {
@@ -703,7 +705,7 @@ section("Repairs tab after a raid (ui/explore.js, sim/breakdowns.js raidDamage)"
   check(html.includes("Last raid: day") && html.includes("Test raiders") && html.includes("a break-in"), "it shows the last raid: who, how it went, the hours");
   check(rep.broken.length < 2 || /data-action="rp-all"/.test(html), `a Repair all button with the bill when several are broken (${rep.broken.length})`);
   const damaged = BD.fixtures(h).find((fx) => !fx.broken && (fx.wear || 0) >= BD.RAID_DAMAGE.damaged);
-  check(!damaged || html.includes(">Patch</button>"), "a damaged building can be patched from the wear table");
+  check(!damaged || new RegExp(`data-action="rp-start" data-base="${h.id}" data-fx="${damaged.id}" data-m="repair"`).test(html), "a damaged building has a Repair order in the list (repair orders 2026-10-19)");
   EXPLORE_ACTIONS["rp-all"](w, ui, { base: String(h.id) });
   check((h.repairs || []).length >= Math.min(1, rep.broken.length) && /starts/.test(ui.baseMsg || ""), `Repair all starts the jobs ("${(ui.baseMsg || "").slice(0, 100)}")`);
   htmlOk(repairsTab(w, h), "repairs tab with jobs under way");

@@ -127,6 +127,7 @@ import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TIT
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
 import { BASEMAP_ACTIONS, openForJob } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
+import { STORAGE_ACTIONS, STORAGE_CHANGE } from "./ui/storage.js"; // the base window's Storage tab: the containers (sim/containers.js)
 import { INTEL_ACTIONS, INTEL_CHANGE } from "./ui/intel.js"; // hidden bases (Run silent) and radio security (sim/hiding.js, sim/intel.js)
 import { toManual } from "./sim/work.js";
 import {
@@ -1390,6 +1391,7 @@ for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(s
 // The Defence tab: the watch roster and the defence plan's drill (ui/defence.js).
 for (const [k, fn] of Object.entries(DEFENCE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 for (const [k, fn] of Object.entries(BASEMAP_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the base map (ui/basemap.js)
+for (const [k, fn] of Object.entries(STORAGE_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Storage tab (ui/storage.js): move goods between containers, tidy up
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 // The team panel's order queue (ui/expedition.js queueBlock): lines carry data-qdrag / data-qdrop (their index);
@@ -1651,6 +1653,7 @@ for (const [k, fn] of Object.entries(DEFENCE_CHANGE)) changeActions[k] = (el) =>
 for (const [k, fn] of Object.entries(INTEL_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // intel-discipline
 for (const [k, fn] of Object.entries(PRISON_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // prisoners-tab: the rations and work selects (ui/prisoners.js)
 for (const [k, fn] of Object.entries(INV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el);
+for (const [k, fn] of Object.entries(STORAGE_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/storage.js: the mover's from / to and how many
 for (const [k, fn] of Object.entries(TEAMINV_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teaminv.js: how many of a picked supply
 for (const [k, fn] of Object.entries(TEAMMEET_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teammeet.js
 for (const [k, fn] of Object.entries(TEAMFORM_CHANGE)) changeActions[k] = (el) => fn(state, ui, el); // ui/teamform.js: sort, supply amounts, days
