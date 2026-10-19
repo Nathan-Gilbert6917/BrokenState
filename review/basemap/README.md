@@ -29,7 +29,8 @@ Taken in headless Chromium from prepared saves (2026-10-19), 1500 × 900. Every 
 
 | Shot | What it shows |
 | --- | --- |
-| `18-hub-horde-attack.png` | The hub's map under a horde break-in, a few turns in: the dead at the wall and through a breach, the defenders on the walkway and the towers, the stores marked with their weight. |
+| `18-hub-horde-attack.png` | The hub's map under a horde break-in: the dead through the wall and into the yard round the watchtower, the hit chances over them, the yard stage. |
 | `19-hub-horde-store-contents.png` | A store clicked during the fight: everything in it, at any time (never an unknown container). |
 | `20-outpost-raid-attack.png` | The outpost raided: raiders in the yard, two of them at the stores grabbing what they can (the log). |
-| `21-outpost-raid-store-contents.png` | The storehouse's contents after the raiders took from it. |
+| `21-outpost-raid-store-contents.png` | The bunk shack's contents after the raiders took from it. |
+| `22-hub-horde-log.png`, `23-outpost-raid-log.png` | The battle log: the dead tearing into the defenders; raiders grabbing meds, parts, fuel and a shotgun from the stores. |
