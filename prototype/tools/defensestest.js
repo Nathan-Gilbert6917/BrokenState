@@ -259,6 +259,7 @@ console.log("Spike pits hurt raiders too");
   const hp0 = e.hp;
   moveAlong(b, e, [[6, 5], [7, 5], [8, 5]]);
   check(e.x === 7 && e.hp < hp0 && e.ap > 0, `a raider falls in: hurt (−${Math.round(hp0 - e.hp)}), the move ends in the pit, the next action kept to climb out`);
+  e.dead = true; // (the raider off the map: a foe seen on the way would stop the walk, and this is about the pit)
   u.x = 5; u.y = 8; u.ap = 2; at(b, 7, 8).k = "spikes";
   const hp1 = u.hp;
   moveAlong(b, u, [[6, 8], [7, 8], [8, 8]]);
