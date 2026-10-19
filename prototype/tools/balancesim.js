@@ -222,6 +222,7 @@ export function runCampaign({ seed, style, days, size = "normal", tune = "" }) {
   const engagedSince = new Map();
   const hiveTeams = new Set();
   const t0 = performance.now();
+  let sampledDay = 1;
   sample();
   try {
     while (day(state) <= days && !state.gameOver) {
@@ -255,7 +256,8 @@ export function runCampaign({ seed, style, days, size = "normal", tune = "" }) {
       }
       const n = alive(state).length;
       if (n > r.peak) { r.peak = n; r.peakDay = d; }
-      if (state.hour % 24 === 0 && ((d - 1) % SAMPLE === 0 || (d > 1 && yearStartDay(yearOfDay(d)) === d))) sample();
+      // The first tick of a sampled day (midnight, unless an hour was passed over: a fight, a wait).
+      if (d !== sampledDay && ((d - 1) % SAMPLE === 0 || (d > 1 && yearStartDay(yearOfDay(d)) === d))) { sampledDay = d; sample(); }
       // Health checks (as autotest.js): cards left open, NaN, teams halted with nothing to resolve them.
       if (state.cards.length && !state.gameOver) r.problems.push(`day ${d}: ${state.cards.length} card(s) left open (${state.cards[0].title})`);
       if (state.hour % 24 === 0) {
