@@ -9,23 +9,29 @@
 // over the stores, a broken well pump), a request for a feast, someone asking to leave on a personal errand, two
 // survivors who have grown close (partners, relations.js), remembering the dead (a memorial service), rats in the food
 // stores, the dead at the fence, a sick traveller at the gate, a cold snap in winter, music by the fire at night and a
-// wreck below the walls to strip.
+// wreck below the walls to strip. Hardcore's first year adds hungry people at the gate, a deserter from the Guard, the
+// emergency broadcast going quiet (once) and refugees from the city where the outbreak began.
 import { foodIn, payFood, takeFood, addFood, addFoodUnits, gainGoods, foodText } from "./foods.js"; // the cards' food in days (a feast, scraps, a theft)
 import { BUILDINGS, BEDS, count, assignStations } from "./buildings.js";
 import { SUPPLIES, supValue } from "./data.js";
-import { log, addCard, day, hub, baseById, atBase, residents, skill, hurt, killSurvivor, checkGameOver } from "./world.js";
+import { log, addCard, day, hub, baseById, atBase, residents, skill, hurt, killSurvivor, checkGameOver, factionById } from "./world.js";
 import { weatherOnDay, season } from "./weather.js";
 import { crowdInfo, talker } from "./morale.js";
 import { talkXp } from "./skills.js";
 import { quarrelBoost, quarrelPair, coupleBoost, couplePair, makePartners, relEvent, memorialWeight, memorialCard } from "./relations.js";
 import { makeCandidate, recruitCard } from "./recruits.js";
 import { foodOutlook } from "./economy.js";
-import { allItems } from "./inventory.js";
+import { allItems, newItem, START_DUR } from "./inventory.js";
 import { breakCard, fixtures, breakdownsDaily } from "./breakdowns.js";
 import { packErrand, unpackErrand } from "./needs.js";
 import { waterIn, drawWater, RAW, keyWord } from "./water.js"; // purified and un-purified water
 import { supplyAmt, useSupply, roundsIn } from "./rounds.js"; // "ammo": every round there, any calibre
 import { calibrateDeal, suppliesText, baseAmmo } from "./ammo.js"; // a deal's rounds named by calibre
+import { changeGoodwill } from "./factions.js";
+import { tileLabel } from "./parties.js";
+import { isHardcore } from "./hardcore.js"; // hardcore's year Calder falls: hub events of its own
+import { hardcoreEraOffset, hcOutbreakCity } from "./hardcore-outbreak.js";
+import { hcMilitary } from "./hardcore-groups.js";
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const firstName = (s) => s.name.split(" ")[0];
@@ -45,6 +51,12 @@ export const FENCE = { shots: 3 }; // rounds a head of the dead, shooting from t
 // A cold snap: three days' extra heating (upkeep.js HEAT: about 15 firewood or 0.1 fuel a head a day below freezing).
 export const COLD = { wood: 45, fuel: 0.3, frostbite: 0.3 };
 export const SALVAGE = { scrap: [6, 12], risk: 0.2 };
+// Hardcore's first year (until the day a normal game would start), the first weeks most.
+const hcYear = (st) => isHardcore(st) && day(st) <= hardcoreEraOffset(st);
+const hcFade = (st, days) => Math.exp(-(day(st) - 1) / days);
+export const HC_CROWD = { share: 0.05, little: 0.3, refused: 0.4 };
+export const HC_DESERTER = { goodwill: 8 };
+export const HC_SILENCE = { from: 10 }; // the broadcast stops no sooner than this day
 
 // ---------- the context an event is weighed and written from ----------
 function context(state, base) {
@@ -594,6 +606,99 @@ export const HUB_EVENTS = {
           { label: "Leave the wreck", hint: "Nothing happens", ai: () => 0, resolve: () => "The wreck rusts in the ditch." },
         ],
       };
+    },
+  },
+
+  // ---------- hardcore: the year Calder falls (hardcore.js) ----------
+  // Only in a hardcore run and only before the day a normal game would start (hcYear); most come in the first weeks.
+  hc_crowd: {
+    name: "Hungry people at the gate",
+    weight: (st, c) => (hcYear(st) ? 1.2 * hcFade(st, 30) : 0),
+    card: (st, c) => {
+      const n = st.rng.int(4, 8);
+      const steal = () => clamp(Math.round(foodIn(c.base.stock) * HC_CROWD.share), 2, 15);
+      const night = (s2, chance) => {
+        if (!s2.rng.chance(chance)) return "";
+        const lost = Math.round(payFood(c.base, Math.min(steal(), foodIn(c.base.stock)), s2));
+        return lost ? ` That night someone came over the fence: ${lost} food is gone.` : "";
+      };
+      return {
+        title: `Hungry people at ${c.base.name}`,
+        text: `${n} people from the houses down the road are at the gate of ${c.base.name}: a family with two children, an old couple, a man in a business suit gone grey with dirt. The shops are empty and the Guard never came. They ask for food.`,
+        choices: [
+          { label: `Feed them (${n} food)`, hint: "Everyone here mood +3", disabled: () => foodIn(c.base.stock) < n, ai: () => (c.foodDays > 25 ? 3 : -2), resolve: (s2) => { payFood(c.base, n, s2); moodAll(atBase(s2, c.base.id), 3); return "They eat at the gate and go on their way, thanking everyone (mood +3)."; } },
+          { label: "Give them a little (2 food)", hint: `Everyone here mood +1; ${pct(HC_CROWD.little)} some come back at night for more`, disabled: () => foodIn(c.base.stock) < 2, ai: () => 1, resolve: (s2) => { payFood(c.base, 2, s2); moodAll(atBase(s2, c.base.id), 1); return `It is not much, and they know it (mood +1).${night(s2, HC_CROWD.little)}`; } },
+          { label: "Turn them away", hint: `Everyone here mood -2; ${pct(HC_CROWD.refused)} some come back at night for what they were refused (about ${steal()} food)`, ai: () => -1.5, resolve: (s2) => { moodAll(atBase(s2, c.base.id), -2); return `They go, slowly, looking back (mood -2).${night(s2, HC_CROWD.refused)}`; } },
+        ],
+      };
+    },
+  },
+
+  // A soldier who walked away from the strike on the city hive (hardcore-groups.js): a recruit card, and the Guard
+  // thinks less of you if you take them in.
+  hc_deserter: {
+    name: "A deserter from the Guard",
+    weight: (st, c) => { if (!hcYear(st)) return 0; const m = hcMilitary(st); return m && !m.fell && m.strike ? 0.7 : 0; },
+    card: (st, c) => {
+      const s = makeCandidate(st, { quality: 0.9, minHealth: 50, gearChance: 0 });
+      s.gear.weapon = newItem("ar", Math.round(st.rng.range(0.5, 0.8) * 100) / 100, st.rng, START_DUR);
+      const m = hcMilitary(st);
+      const f = m ? factionById(st, m.id) : null;
+      const card = recruitCard(st, [s], {
+        source: "deserter_guard", baseId: c.base.id, title: "A deserter from the Guard",
+        intro: `${s.name} walked away from the National Guard's column in the night, still in uniform, with a rifle and an empty magazine. "They're sending us into the city to die." They ask to stay at ${c.base.name}.${f && f.alive ? ` If ${f.name} hears of it, they will not thank you.` : ""}`,
+      });
+      if (f && f.alive) {
+        for (const ch of card.choices.filter((x) => ["take", "takeOne", "send"].includes(x.kind))) {
+          const run = ch.resolve;
+          ch.hint = `${ch.hint}; ${f.name} goodwill -${HC_DESERTER.goodwill}`;
+          ch.resolve = (s2) => { const out = run(s2); if (!s.pending && !s.gone && f.alive) changeGoodwill(s2, f, -HC_DESERTER.goodwill, "you took in a deserter"); return out; };
+        }
+      }
+      return card;
+    },
+  },
+
+  // The emergency broadcast stops (once a run): the moment the people at the hub understand nobody is coming.
+  hc_silence: {
+    name: "The radio goes quiet",
+    weight: (st, c) => (hcYear(st) && c.d >= HC_SILENCE.from && !(st.hardcore && st.hardcore.silence) ? 1.5 : 0),
+    card: (st, c) => {
+      if (st.hardcore) st.hardcore.silence = c.d; // once a run, answered or not
+      const tk = talker(st, c.base, null);
+      return {
+        title: "The radio goes quiet",
+        text: `The emergency broadcast that has droned on every radio at ${c.base.name} since the fall stopped in the night, mid-sentence, and has not come back. Nobody says what everyone is thinking.`,
+        choices: [
+          {
+            label: tk.who ? `Gather everyone and talk it through (${firstName(tk.who)}, ${tk.who.leader ? "leader" : "Speech"} ${tk.score})` : "Gather everyone and talk it through",
+            hint: tk.who ? `${pct(tk.chance)}: everyone here mood +2, in this together; otherwise everyone mood -4` : "Nobody here to talk to them",
+            disabled: () => !tk.who, ai: () => (tk.who ? tk.chance * 6 - (1 - tk.chance) * 4 : -9),
+            resolve: (s2) => {
+              const ok = s2.rng.chance(tk.chance);
+              talkXp(s2, tk.who, ok);
+              moodAll(atBase(s2, c.base.id), ok ? 2 : -4);
+              return ok ? `${firstName(tk.who)} says it out loud: nobody is coming, so it is up to them. Heads nod (mood +2).` : "The words do not come out right. People drift off to their bunks (mood -4).";
+            },
+          },
+          { label: "Let people grieve in their own way", hint: "Everyone here mood -4", ai: () => -4, resolve: (s2) => { moodAll(atBase(s2, c.base.id), -4); return "A quiet, heavy day (mood -4)."; } },
+        ],
+      };
+    },
+  },
+
+  // People who walked out of the city where the outbreak began (hardcore-outbreak.js): a recruit card for two.
+  hc_cityfolk: {
+    name: "Refugees from the city",
+    weight: (st, c) => (hcYear(st) ? 0.8 * hcFade(st, 45) : 0),
+    card: (st, c) => {
+      const city = hcOutbreakCity(st);
+      const where = city != null ? tileLabel(st, city) : "the city";
+      const list = [makeCandidate(st, { quality: 0.7, minHealth: 40, gearChance: 0.2 }), makeCandidate(st, { quality: 0.7, minHealth: 40, gearChance: 0.2 })];
+      return recruitCard(st, list, {
+        source: "cityfolk", baseId: c.base.id, title: `Refugees from ${where}`,
+        intro: `${list[0].name} and ${list[1].name} walked out of ${where} the week it fell and have slept in ditches since. They saw the thing growing downtown, and what came out of it. They ask to stay at ${c.base.name}.`,
+      });
     },
   },
 
