@@ -55,6 +55,7 @@ import { gunMods, unitMods, modRange, modLabel, enemyMods, fittedSuppressor, NO_
 import { stealthSetup, stealthAct, stealthTurn, stealthAI, spotBodies, detectRange, shotNoise, searchCost, knockOut, battleCaptives, botStealth, botAttackThrow, botRetreatSmoke, botFlash, noiseAt } from "./stealth.js";
 import { deployAct, endDeploy } from "./deploy.js";
 import { drillAct } from "./defenceplan.js"; // a defence drill on the base's battle map
+import { thiefTurn, settleBaseBattle, layoutAct } from "./basemap.js"; // the base map: raiders stealing from the stores, what the fight leaves behind, the Base map view
 import { fallBack, tierEnemyTurn, tierPlayerTurn, tierAI, baseTiers } from "./interior.js";
 import { capturePrisoners, captiveRecords } from "./prisoners.js";
 import { fightByNumbers } from "./breakoff.js";
@@ -408,6 +409,7 @@ export function finishCombat(state, setup, result) {
   volFought(state, combatants(state, setup)); // volunteers.js: they fought beside you (goodwill when they get home)
   capturePrisoners(state, setup, result, battle); // prisoners.js: the knocked out go with the team or into the cells
   if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there
+  if (battle) settleBaseBattle(state, battle); // basemap.js: a base map's fight: the loot the raiders got away with, the cars and buildings battered
   settleCarried(state, setup, result, battle); // carry.js: won, the loads set down are picked up again; else they stay on the ground
   settleArsenal(state, setup, result, battle); // arsenal.js: a group's dead lose their kit (or it is picked up), the rest wears, rounds spent
   const fn = handlers && handlers.get(setup.handler);
@@ -677,6 +679,12 @@ export const CELL = {
   // they cut it (wire.js wireStep); a bear trap hurts and holds the first one to step in (then it is sprung).
   wire:      { walk: true,  cover: 0, los: false, name: "Barbed wire", trap: "wire" },
   beartrap:  { walk: true,  cover: 0, los: false, name: "Bear trap", trap: "beartrap" },
+  // The base map (basemap.js): a building's outline while it is going up (stakes and string: open ground to walk on,
+  // the Base map view only), the camp's tents and fire, a floodlight on its pole.
+  outline:   { walk: true,  cover: 0, los: false, name: "Building outline" },
+  tent:      { walk: false, cover: 1, los: false, name: "Tent" },
+  firepit:   { walk: false, cover: 1, los: false, name: "Fire pit" },
+  lamp:      { walk: false, cover: 1, los: false, name: "Floodlight" },
   hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh", tall: 2 },
   // A locked door in a raid (locks.js): blocks movement and sight until it is opened (then it is open floor).
   door:      { walk: false, cover: 2, los: true,  name: "Locked door" },
@@ -3800,7 +3808,7 @@ export function createBattle(state, setup) {
 // thirdside.js: the third side fights its own foes; enemy people go after it by enemyTargetsThird; the dead go for
 // anyone; your people never go after it on their own (only an order to shoot one does: damage turns it hostile).
 // crossfire.js: in a raid the dead add the raiders they are in contact with, and the raiders the dead coming at them.
-function foesOf(b, u) {
+export function foesOf(b, u) {
   if (u.side === "third") return thirdFoes(b, u);
   if (u.wild) return b.units.filter((o) => active(o) && o.kind !== "zombie");
   if (u.side === "enemy" && u.kind === "human") return crossFoes(b, u, b.units.filter((o) => active(o) && (o.side === "player" || o.wild || (o.side === "third" && enemyTargetsThird(o, u)))));
@@ -4323,6 +4331,7 @@ export function combatAct(state, act) {
     if (b.phase === "player") endPlayerTurn(state);
     return "";
   }
+  if (b.layout) { const err = layoutAct(state, b, act); if (!err && state.combat) bump(state.combat); return err; } // basemap.js: the Base map view, nothing is fought
   if (b.setup.drill) { const err = drillAct(state, b, act); if (!err && state.combat === b) bump(b); return err; } // defenceplan.js: a defence drill, nothing is fought
   if (act.type === "building") return chooseBuilding(state, act.id);
   // The whole team runs for it (soundRetreat): act.leave lists the downed not to carry. On a base's wall map that is
@@ -5129,6 +5138,7 @@ function aiUnit(b, u) {
   // raiders finishing (or taking) your downed. The rest of the turn goes on as usual.
   if (u.kind === "human" && MED.rescueTurn(b, u, flees) && (u.ap < 1 || !active(u))) return;
   if (flees) return flee(b, u);
+  if (u.side === "enemy" && u.kind === "human" && thiefTurn(b, u)) return; // basemap.js: a raider going for the stores, or off the map with the loot
   if (u.kind === "human" && (u.side === "enemy" || (u.side === "player" && b.takeAlive)) && nlAI(b, u)) return; // nonlethal.js: tie up, spray, tase, club down the weak
   if (u.side === "enemy" && u.kind === "human" && siegeAI(b, u)) return; // siege.js: the ram, a ladder, storming, a grenade
   if (u.side === "player" && aiMeds(b, u)) { if (u.ap < 1) return; }
@@ -5487,6 +5497,8 @@ export function breakCell(b, x, y, by = null) {
   else if (FURNITURE[c.k]) breakPiece(b, c); // a shoved piece of furniture (barricade.js): smashed to splinters, open floor again (or the door frame it stood in)
   else if (c.k === "tanktrap") c.k = "rubble"; // a bridge barricade's trap, broken up: open ground again (a vehicle can pass)
   else if (c.k === "cart") cartKnocked(b, x, y); // carts.js: shoved over, its cell open again (the cart and its load stay there)
+  else if (c.k === "barricade") c.k = "rubble"; // a base map's barricade battered through (basemap.js: it wears afterwards)
+  else if (c.k === "car" && c.car) { for (const q of b.cells) if (q.car && q.car.id === c.car.id) { q.k = "truck"; q.hp = 0; } } // a parked car wrecked (basemap.js: its condition afterwards)
   b.losCache.fill(0);
   if (b.tier) b.tier.broken = (b.tier.broken || 0) + 1;
   say(b, by && by.side === "enemy" ? `${by.kind === "zombie" ? "The dead" : by.name} break${by.kind === "zombie" ? "" : "s"} through the ${name}!` : `The ${name} gives way!`, "danger");

@@ -166,7 +166,8 @@ console.log("Raided: the defenses stand on the battle map");
   const h2 = hub(st2);
   for (const k of ["barbed_wire", "razor_wire", "trench", "sandbag_wall"]) addBuilding(h2, k);
   const b2 = raid(st2, h2);
-  check(b2.deployPlan.interior && cells(b2, "wire") > 10 && cells(b2, "wire", (c) => c.razor) > 5 && cells(b2, "trench") > 5, "no wall: the yard map with wire, concertina wire and a trench across the approach");
+  // The base map (sim/basemap.js): a base without walls fights on its own map, the wire rings round its yard, the trench where it was placed.
+  check(b2.tier.map === "fort" && !b2.tier.walled && cells(b2, "wire") > 10 && cells(b2, "wire", (c) => c.razor) > 5 && cells(b2, "trench") > 5, "no wall: the base map with wire rings, concertina wire and a trench");
   st2.combat = null;
   // The old wall-line map (a bridge, the tests' strip).
   const st3 = world();
@@ -363,7 +364,7 @@ console.log("Land mines on the battle map");
   const h2 = hub(st2);
   addBuilding(h2, "minefield");
   const b2 = raid(st2, h2);
-  check(b2.deployPlan.interior && b2.mines && b2.cells.filter((c) => c.mine).length === MINES.PER, "no wall: the mines are across the yard's approach");
+  check(b2.tier.map === "fort" && !b2.tier.walled && b2.mines && b2.cells.filter((c) => c.mine).length === MINES.PER, "no wall: the mines are in the open ground round the yard (the base map)");
 }
 
 console.log("The Defenses tab in the base window");

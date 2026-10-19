@@ -83,6 +83,7 @@ if (CHILD) {
       autoplay();
       tickHour(st);
       for (const b of N.nomadsOf(st)) out.maxPop[b.tier] = Math.max(out.maxPop[b.tier], b.pop);
+      if (out.at4 == null && N.nomadTiers(st).length === 4) out.at4 = N.nomads(st).stats.spawned; // the bands spawned before the preppers' unlock (year 4)
       if (day(st) !== was) {
         was = day(st);
         if (was % 28 === 0) out.samples.push({ day: was, ...N.nomadCounts(st), tiers: N.nomadTiers(st).length });
@@ -92,6 +93,7 @@ if (CHILD) {
   out.inFactions = st.factions.filter((f) => f.nomad || N.nomadsOf(st).some((b) => b.id === f.id)).length;
   out.owners = st.tiles.filter((t) => typeof t.owner === "number" && N.nomadsOf(st).some((b) => b.id === t.owner)).length;
   out.stats = N.nomads(st).stats;
+  out.after4 = out.at4 == null ? 0 : out.stats.spawned - out.at4; // bands spawned since the preppers unlocked
   out.cards = cards;
   out.ms = Date.now() - t0;
   process.stdout.write(JSON.stringify(out));
@@ -433,7 +435,12 @@ if (!QUICK) {
     check(lateMean >= r.target * 0.6 && Math.max(...counts) <= r.target, `${r.size}: the count stays near the target (mean ${lateMean.toFixed(1)} after day 56, at most ${Math.max(...counts)}, target ${r.target}; overall ${mean.toFixed(1)})`);
     check([0, 1, 2, 3].every((t) => r.maxPop[t] <= T[t].size[1]), `${r.size}: no tier cap passed (${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]} of ${T[1].size[1]}/${T[2].size[1]}/${T[3].size[1]})`);
     check(r.inFactions === 0 && r.owners === 0, `${r.size}: nobody grew into a base-holding group`);
-    check(r.samples.some((s) => s.tiers === 3) ? S.tiers[2] > 0 && S.tiers[3] > 0 : true, `${r.size}: the later tiers came once unlocked (T2 ${S.tiers[2]}, T3 ${S.tiers[3]})`);
+    check(r.samples.some((s) => s.tiers >= 3) ? S.tiers[2] > 0 : true, `${r.size}: the survivalists came once unlocked (T2 ${S.tiers[2]})`);
+    // The preppers take the top slot's share of the bands spawned after year 4 (nextTier: the slot furthest below an even
+    // share, ties by the era weights 50/35/15). With two bands on a small map a spawn mostly falls on a tie between the
+    // lone band's empty slots, so the preppers come about one spawn in four: a dozen spawns after the unlock before
+    // their absence means anything (seed 42 small world: none in 8 after the holdout fell a few days later).
+    check(r.after4 >= 12 ? S.tiers[3] > 0 : true, `${r.size}: the preppers came once unlocked (T3 ${S.tiers[3]} of ${r.after4} bands spawned after year 4${r.after4 < 12 ? ": too few to tell" : ""})`);
   }
 }
 

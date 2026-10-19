@@ -611,7 +611,9 @@ console.log("Crews and the autopilot");
   check(!!p && p.mission === "sweep" && p.sweepPlan && p.crewRole === role.id, `the crew goes on a survey (${role.crew.out ? role.crew.out.why : role.crew.status})`);
   if (p) {
     check(p.members.some((id) => { const s = survivorById(st, id); return [...(s.pockets || []), ...((s.gear.backpack && s.gear.backpack.contents) || []), s.gear.tool].some((it) => it && it.key === "binoculars"); }), "with the hub's binoculars");
-    for (let i = 0; i < 24 * 6 && role.crew.out; i++) { st.hordes.length = 0; tickHour(st); }
+    // The road's cards answered as runTeam answers them (the first open choice): a crew stopped by a Survivors in trouble card nobody answers stays engaged on the way home.
+    const answer = () => { for (let k = st.cards.length - 1; k >= 0; k--) { const c = st.cards[k]; if (!c) continue; st.cards.splice(k, 1); if (c.isOrders) continue; const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch) ch.resolve(st); } if (st.combat) st.combat = null; };
+    for (let i = 0; i < 24 * 6 && role.crew.out; i++) { st.hordes.length = 0; tickHour(st); answer(); }
     check(!role.crew.out && /survey/.test(role.crew.log[0] ? role.crew.log[0].why : ""), `home again, the trip in its log (${role.crew.log[0] ? `${role.crew.log[0].why}: ${role.crew.log[0].result}` : "none"})`);
   }
   // The autopilot: surveys go out; no team is sent to scavenge a site nobody has found.

@@ -56,6 +56,7 @@ import { totalIn, sumRecs, ROUND_KEYS, isRoundKey } from "./rounds.js"; // round
 import { addFindVia, kindTheme, findRounds, calRounds, partyCals, roundsText } from "./ammo.js";
 import { hostileOutsiderOn, outsiderAttackCard } from "./visitors.js"; // outsiders on the same tile (contactAttack)
 import { unitPower, addToArsenal, arsenalWorthy, captureVehicle, arsenalText } from "./arsenal.js"; // group arsenals: their people's power by their kit; what they take goes into it
+import { applyStolen } from "./basemap.js"; // the base map: what raiders got away with from the stores on it
 import { captiveEscape, captiveDecline, captiveTurnMult, groupJailGuards } from "./groupjails.js"; // jailhouse: their jail's tier, the work they are put to
 import { startRescueRaid, tacticalPossible, jailTier, JAIL } from "./rescueraid.js"; // the rescue played out on their base's map
 import { weightOf } from "./groupcare.js"; // GROUP_PRIORITIES: each type's numbers on the road (meetOdds, stop, talkDc, bribes, pacts, ransoms, captives)
@@ -1686,7 +1687,7 @@ export function defendInPerson(state, raid) {
   return "";
 }
 
-function onRaidDefenseCombat(state, result, setup) {
+function onRaidDefenseCombat(state, result, setup, battle = null) {
   const c = setup.context;
   const raid = state.parties.find((x) => x.id === c.raidId);
   const f = factionById(state, c.factionId);
@@ -1716,6 +1717,9 @@ function onRaidDefenseCombat(state, result, setup) {
     log(state, text, "good");
     if (hv) { text += ` ${humveeLeftText(f, hv, base)}`; log(state, humveeLeftText(f, hv, base), "good"); }
     else if (result.humveeOut) text += " Their Humvee got away.";
+    // What the raiders who slipped away carried off from the stores on the base map (basemap.js) goes home with them.
+    const took = battle && battle.stolen && base && state.bases.includes(base) ? applyStolen(state, base, battle.stolen) : null;
+    if (took && f) { for (const [k, q] of Object.entries(took.sup)) f.stock[k] = (f.stock[k] || 0) + q; for (const g of took.gear) { f.lootedGear.push(g.name); addToArsenal(state, f, g, "stolen"); } text += ` ${took.text}`; log(state, `Raiders got away from ${base.name} with some of the stores: ${took.text}`, "danger"); }
     // A stand-up fight at the walls still costs a little: a turn of the battle counts as 20 minutes of siege.
     if (base && raid && state.bases.includes(base)) {
       const dmg = raidDamage(state, base, { strength: raid.strength, hours: (raid.siegeHours || 0) + clamp((result.turns || 6) / 3, 1, 8), outcome: "won", by: f ? f.name : "the raiders" });
