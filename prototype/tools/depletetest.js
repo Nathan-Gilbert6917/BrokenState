@@ -37,6 +37,7 @@ import {
   siteFull, siteLootTotal, landSites, driveOff, haulFor,
 } from "../src/sim/aiscav.js";
 import { SCAV_DEPLETE, SCAV_FLOOR, scavLeft } from "../src/sim/economy.js";
+import { totalRounds } from "../src/sim/rounds.js"; // a group's rounds: by calibre now, with any generic ammo
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderRight, tileActions } from "../src/ui/ui.js";
 import { tileTooltip } from "../src/ui/render.js";
@@ -138,7 +139,10 @@ section("AI scavenging parties: need, the site, the haul home");
   const loot0 = t.loot, stock0 = stockSum(f), home0 = aiScav(st).stats.home, goods0 = aiScav(st).stats.goods;
   const table = LOCATIONS[t.loc.type].loot;
   const key = Object.keys(table).sort((a, b) => table[b] - table[a])[0];
-  const key0 = f.stock[key] || 0;
+  // Rounds come home sorted by the site's calibres (aiscav.js scavArrived, ammo.js sortFind: AI parity, ADR 0001), not
+  // as generic "ammo", so an ammo find is counted as every round in their stock (rounds.js totalRounds).
+  const held = (k) => (k === "ammo" ? totalRounds(f.stock) : f.stock[k] || 0);
+  const key0 = held(key);
   st.hordes = st.hordes.filter((h) => !q.path.includes(h.tile)); // a clear road for this check
   let searchHours = 0, h = 0;
   while (st.parties.includes(q) && h++ < 24 * 30) {
@@ -151,7 +155,7 @@ section("AI scavenging parties: need, the site, the haul home");
   const crew = Math.max(0.5, Math.min(AISCAV.crewMax, q.scav.str0 / 3));
   const land = t.owner === f.id ? loot0 * AISCAV.landRate * Math.ceil(h / 24) : 0; // a site in their own land is also stripped by the day
   check(taken > 0.02 && taken <= AISCAV.take * crew * AISCAV.searchHours + land + 1e-9, `the site lost ${r2(taken)} loot (${r2(loot0)} → ${r2(t.loot)}; at most ${AISCAV.take} × crew ${r2(crew)} an hour for ${AISCAV.searchHours} hours)`);
-  check(aiScav(st).stats.goods > goods0 && (f.stock[key] || 0) > key0, `the haul went into their stock (${aiScav(st).stats.goods - goods0} units; ${key} ${Math.round(key0)} → ${Math.round(f.stock[key])})`);
+  check(aiScav(st).stats.goods > goods0 && held(key) > key0, `the haul went into their stock (${aiScav(st).stats.goods - goods0} units; ${key === "ammo" ? "rounds" : key} ${Math.round(key0)} → ${Math.round(held(key))})`);
   check(stockSum(f) > stock0, `their stock grew (${Math.round(stock0)} → ${Math.round(stockSum(f))})`);
   // The haul per point of loot: what one of your teams would find (6.5 × loot per 0.05 searched) × eff.
   const hl = haulFor(t, 0.1, 1, 1);
@@ -243,12 +247,15 @@ section("Their own land");
   st2.aiScavOff = true;
   tickHour(st2);
   const f2 = st2.factions.find((x) => x.alive);
-  f2.stock.ammo = 0;
+  // AI parity (docs/adr/0001-ai-parity.md, "nothing from nowhere"): rounds and meds are no longer made from nothing
+  // with the switch on or off (factions.js); what is left of the old economy is the scrap, fuel and building material
+  // (the economy pass), at the full old rate with the switch off. So the old economy is checked on scrap, not ammo.
+  f2.stock.scrap = 0;
   const pop = f2.pop;
   for (let i = 0; i < 24; i++) tickHour(st2);
   check(!st2.parties.some((x) => x.kind === "scav") && !st2.aiScav, "switched off: no parties, no land stripping");
-  check(f2.stock.ammo > 0, `switched off: ammo from nothing as before (${r2(f2.stock.ammo)} for ${pop} people)`);
-  check(FACTION_MAKE < 1, `on: ${FACTION_MAKE * 100}% of the old ammo, scrap, fuel and meds from nothing`);
+  check(f2.stock.scrap > 0, `switched off: scrap from nothing as before (${r2(f2.stock.scrap)} for ${pop} people)`);
+  check(FACTION_MAKE < 1, `on: ${FACTION_MAKE * 100}% of the old scrap, fuel and building material from nothing`);
 }
 
 // ======================================================================================

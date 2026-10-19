@@ -241,22 +241,27 @@ export function settleAll(state) {
   for (const f of state.factions || []) if (f.stock && f.alive !== false) settleGroup(state, f);
   for (const p of state.parties || []) {
     if (p.owner === "player" || p.owner == null || !p.supplies) continue;
+    const sup = hasGeneric(p.supplies), cargo = !!(p.cargo && p.cargo.supplies && hasGeneric(p.cargo.supplies) && !(p.kind === "caravan" && p.phase === "trading"));
+    if (!sup && !cargo) continue; // nothing generic to sort: the calibres are not worked out (as settleBase)
     const f = (state.factions || []).find((x) => x.id === p.owner);
     const cals = groupCals(f);
-    if (hasGeneric(p.supplies)) settleRec(p.supplies, mixForCals(cals), cals);
-    if (p.cargo && p.cargo.supplies && hasGeneric(p.cargo.supplies) && !(p.kind === "caravan" && p.phase === "trading")) settleRec(p.cargo.supplies, mixForCals(cals), cals);
+    if (sup) settleRec(p.supplies, mixForCals(cals), cals);
+    if (cargo) settleRec(p.cargo.supplies, mixForCals(cals), cals);
   }
 }
 // The calibres an AI group's guns shoot: its people's and the kit it keeps (members.js, arsenal.js).
 export const groupCals = (f) => gunCals(f && Array.isArray(f.people) ? f.people.filter((s) => s.alive) : [], f && f.arsenal ? f.arsenal.items : []);
+// The calibres are worked out only when a store holds generic ammo (as settleBase): this runs for every group twice an
+// hour, and their people and kit are many.
 export function settleGroup(state, f) {
-  const cals = groupCals(f);
-  const mix = mixForCals(cals);
+  let cals = null, mix = null;
   const seen = new Set();
   for (const st of [f.stock, ...Object.values(f.homes || {}).map((h) => h.stock)]) {
     if (!st || seen.has(st)) continue;
     seen.add(st);
-    if (hasGeneric(st)) settleRec(st, mix, cals);
+    if (!hasGeneric(st)) continue;
+    if (!cals) { cals = groupCals(f); mix = mixForCals(cals); }
+    settleRec(st, mix, cals);
   }
 }
 // An old save: every generic ammo stock of yours becomes rounds split across the calibres of the guns that holder

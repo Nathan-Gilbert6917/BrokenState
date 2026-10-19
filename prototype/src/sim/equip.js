@@ -35,15 +35,26 @@ export function equipPeople(armory, people, opts = {}) {
   const handed = [];
   if (!Array.isArray(armory) || !armory.length || !people.length) return handed;
   for (const slot of EQUIP_ORDER) {
+    // This slot's pieces in the armory's order, kept in step with it (taken out as handed, what comes off added at the
+    // end as it is to the armory): the armory is not walked again for every person.
+    const items = armory.filter((it) => slotOf(it.key) === slot);
     for (const s of people) {
       ensureInv(s);
-      const items = armory.filter((it) => slotOf(it.key) === slot);
       if (!items.length) break;
-      const best = items.sort((a, b) => itemScore(s, b) - itemScore(s, a))[0];
-      if (itemScore(s, best) < itemScore(s, s.gear[slot]) + (s.gear[slot] ? 0.3 : 0.05)) continue; // only real upgrades
+      // The best piece for them: the first in the armory's order with the top score (what a stable sort by score put
+      // first), each piece scored once (itemScore is pure; a sort scored each one 2 log n times, and this runs for
+      // every person, every slot, every base each hour and every group each day).
+      let best = items[0], top = itemScore(s, best);
+      for (let i = 1; i < items.length; i++) {
+        const sc = itemScore(s, items[i]);
+        if (sc > top || (Number.isNaN(top) && !Number.isNaN(sc))) { best = items[i]; top = sc; }
+      }
+      if (top < itemScore(s, s.gear[slot]) + (s.gear[slot] ? 0.3 : 0.05)) continue; // only real upgrades
       if (slot === "weapon" && opts.weaponOk && !opts.weaponOk(s, best)) continue;
       armory.splice(armory.indexOf(best), 1);
-      if (s.gear[slot]) armory.push(s.gear[slot]);
+      items.splice(items.indexOf(best), 1);
+      const off = s.gear[slot];
+      if (off) { armory.push(off); if (slotOf(off.key) === slot) items.push(off); }
       s.gear[slot] = best;
       handed.push({ s, item: best });
     }
