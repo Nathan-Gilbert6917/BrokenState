@@ -20,7 +20,7 @@ import {
   resolveRaidOnFaction, baseDefense, raidSize, siegePace, raidRepelled, resolveRaidOnPlayer, maxBases, strength, RAIDS,
 } from "../src/sim/factions.js";
 import { raidDamage, repairPlan } from "../src/sim/breakdowns.js";
-import { addBuilding, baseWalls, baseBeds, queueBuild, constructionHour } from "../src/sim/buildings.js";
+import { addBuilding, baseWalls, baseBeds, queueBuild, constructionHour, isPiece } from "../src/sim/buildings.js";
 import { hordesHour, reduceHorde, HORDE_MAX_SIZE, HORDE_MIN_SIZE } from "../src/sim/hordes.js";
 import { endTrade, tradePending, routeProblem, routeWorth, routeExchange, createRoute } from "../src/sim/trade.js";
 import { routesDaily } from "../src/sim/economy.js";
@@ -706,16 +706,17 @@ const groupOf = (state, type) => {
     check(over.broken.length + (over.destroyed ? 1 : 0) >= 2, `overrun: ${over.text}`);
     const s5 = world(seed + 402), b5 = hub(s5);
     for (const t of ["walls", "walls", "gate", "barricades", "bunkhouse", "ammo_bench", "cistern", "common_room"]) addBuilding(b5, t);
-    const inner0 = b5.buildings.filter((b) => !["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0);
+    const isOuter = (b) => ["walls", "gate", "barricades"].includes(b.type) || isPiece(b.type); // the wall: its pieces (buildings.js)
+    const inner0 = b5.buildings.filter((b) => !isOuter(b)).reduce((a, b) => a + (b.wear || 0), 0);
     raidDamage(s5, b5, { strength: 40, hours: 8, outcome: "held" });
-    const outerW = b5.buildings.filter((b) => ["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0);
-    const innerW = b5.buildings.filter((b) => !["walls", "gate", "barricades"].includes(b.type)).reduce((a, b) => a + (b.wear || 0), 0) - inner0;
+    const outerW = b5.buildings.filter(isOuter).reduce((a, b) => a + (b.wear || 0), 0);
+    const innerW = b5.buildings.filter((b) => !isOuter(b)).reduce((a, b) => a + (b.wear || 0), 0) - inner0;
     check(outerW > innerW, `a raid driven off hits the defences first (outer ${outerW.toFixed(0)}, inner ${innerW.toFixed(0)})`);
     // Damaged and broken buildings work worse or not at all.
-    const wall = b5.buildings.find((b) => b.type === "walls");
-    wall.broken = null; wall.wear = 10;
+    const pieces = b5.buildings.filter((b) => isPiece(b.type)), wall = pieces[0];
+    for (const p of pieces) { p.broken = null; p.wear = 10; }
     const w0 = baseWalls(b5);
-    wall.wear = 70;
+    for (const p of pieces) p.wear = 70;
     check(Math.abs(baseWalls(b5) - w0 * 2 / 3) < 0.1, `a damaged wall gives two thirds of its wall strength (buildings.js WALL_DAMAGED: ${w0} → ${baseWalls(b5)})`);
     const bunk = b5.buildings.find((b) => b.type === "bunkhouse");
     bunk.broken = null;

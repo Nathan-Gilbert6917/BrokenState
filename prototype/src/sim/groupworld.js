@@ -50,7 +50,7 @@
 // whose base it was (still standing elsewhere) takes it ill: relations ABANDON.FORMER_REL.
 import { foodIn, takeFood, addFoodsTo, DAY_VALUE, typeGoods, groupMix } from "./foods.js"; // food paid in days
 import { SUPPLIES, GEAR } from "./data.js";
-import { wallTier } from "./buildings.js"; // WALL_TIERS: a base's wall by its tier
+import { wallTier, pieceKind, matOf } from "./buildings.js"; // WALL_TIERS: a base's wall by its tier
 import { groupStockKey } from "./trade.js"; // a group's one count of parts (part kinds come out of it)
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
@@ -441,7 +441,10 @@ const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", 
 // A lost outpost's buildings as works (standing ones only).
 function worksOfBuildings(list) {
   const works = {};
-  for (const b of list || []) { if (b.broken) continue; for (const k of [].concat(PLAYER_WORKS[b.type] || [])) works[k] = (works[k] || 0) + (b.type === "walls" && b.tier ? Math.max(1, b.tier - 1) : 1); } // a wall by its tier (buildings.js WALL_TIERS)
+  for (const b of list || []) { if (b.broken) continue; for (const k of [].concat(PLAYER_WORKS[b.type] || [])) works[k] = (works[k] || 0) + (b.type === "walls" && b.tier ? Math.max(1, b.tier - 1) : 1); }
+  // Wall pieces (buildings.js piece): a wall of their works by the material most of them are of, as one tiered wall was.
+  const ws = (list || []).filter((b) => !b.broken && (pieceKind(b.type) === "wall" || pieceKind(b.type) === "gate"));
+  if (ws.length) works.walls = (works.walls || 0) + Math.max(1, Math.round(ws.reduce((a, b) => a + matOf(b), 0) / ws.length) - 1); // a wall by its tier (buildings.js WALL_TIERS)
   return works;
 }
 // A group's base its people left (it died out): the works stay, and some of the stores.
@@ -464,7 +467,7 @@ export function leavePlayerBase(state, base) {
   const buildings = JSON.parse(JSON.stringify(base.buildings || []));
   const stock = {};
   for (const [k, q] of Object.entries(base.stock || {})) if (SUPPLIES[k] && k !== "water" && k !== "rawwater" && q >= 1) { const left = Math.floor(q * ABANDON.STOCK_YOURS); if (left > 0) stock[k] = left; }
-  const rec = { tile: base.tile, from: "player", fromName: base.name, works: worksOfBuildings(buildings), buildings, stock, day: day(state) };
+  const rec = { tile: base.tile, from: "player", fromName: base.name, works: worksOfBuildings(buildings), buildings, stock, day: day(state), ...(base.plan ? { plan: JSON.parse(JSON.stringify(base.plan)) } : {}) }; // plan: where things were placed, the wall's ring (basemap.js)
   abandonedList(state).push(rec);
   return rec;
 }
@@ -528,15 +531,19 @@ export function occupyAbandoned(state, f, tile) {
   return rec;
 }
 // One period's rot on a lost outpost's own buildings: one of them (by the dice) takes ABANDON.ROT wear, breaks at 100,
-// and one already broken falls in. The works follow.
+// and one already broken falls in. The wall's pieces (buildings.js piece) rot as one: the wall. The works follow.
 function rotBuildings(state, rec, d) {
   const list = rec.buildings;
   if (!list.length) return;
-  const b = list[Math.floor(h(state, rec.tile, d, "rot") * list.length) % list.length];
-  if (b.broken) list.splice(list.indexOf(b), 1);
-  else {
-    b.wear = Math.min(100, (b.wear || 0) + ABANDON.ROT);
-    if (b.wear >= 100) b.broken = { day: d, cause: "left to rot" };
+  const wall = list.filter((b) => pieceKind(b.type));
+  const units = list.filter((b) => !pieceKind(b.type)).map((b) => [b]);
+  if (wall.length) units.push(wall);
+  for (const b of units[Math.floor(h(state, rec.tile, d, "rot") * units.length) % units.length]) {
+    if (b.broken) list.splice(list.indexOf(b), 1);
+    else {
+      b.wear = Math.min(100, (b.wear || 0) + ABANDON.ROT);
+      if (b.wear >= 100) b.broken = { day: d, cause: "left to rot" };
+    }
   }
   rec.works = worksOfBuildings(list);
 }

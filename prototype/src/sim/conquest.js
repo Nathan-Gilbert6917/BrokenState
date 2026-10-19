@@ -74,7 +74,7 @@ import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
-import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt } from "./buildings.js"; // countBuilt: assaultForce has its own count
+import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt, addRing } from "./buildings.js"; // countBuilt: assaultForce has its own count
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
@@ -394,7 +394,7 @@ export function captureBase(state, f, tile, p, info = {}) {
     // What they built there: their palisade (battered: two sections behind strong walls, one behind any, none where they
     // had put up none yet) and their quarters (a bunkhouse, 6 beds, where they had built some: groupworks.js).
     const nw = nativeWalls(f, tile, state);
-    for (let i = 0; i < (nw > 1 ? 2 : nw > 0 ? 1 : 0); i++) { const wb = addBuilding(base, "walls"); wb.wear = 70; }
+    if (nw > 0) addRing(base, nw > 1 ? 2 : 1, 70); // buildings.js: their wall as a ring of pieces of yours, battered
     if (!groupsBuild(state, f) || ((f.works && f.works[tile] && f.works[tile].beds) || 0) > 0) addBuilding(base, "bunkhouse").wear = 30;
   }
   base.type = noHub ? "hub" : "outpost";

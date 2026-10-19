@@ -16,14 +16,14 @@ import { factionById } from "./world.js";
 import { CELL, unitAt, say, resizeBattle, WEAPONS, coverAgainst, active, isRanged } from "./combat.js";
 import { buildInterior } from "./interior.js";
 import { DEPLOY, attackSide, fromTileOf, wallHp, gateHp } from "./deploy.js";
-import { count } from "./buildings.js";
+import { count, hasWall } from "./buildings.js";
 import { densify, COVER } from "./battlesize.js"; // cover over the margin
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { armoryDefence, bossUnit } from "./defences.js";
 import { layMines } from "./mines.js"; // the main base's minefield in the margin
 import { preBoardBase } from "./barricade.js"; // their outer windows and doors boarded before your assault (the user's pick 2026-10-18)
-import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD } from "./basemap.js"; // the base map: every real base's own layout, walled or not
+import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD, faceOf } from "./basemap.js"; // the base map: every real base's own layout, walled or not
 
 // Which map a base fights on: its own base map (basemap.js: the player's layout, walled or not, the attack from any
 // side) for every real base; the generated yard (interior.js) for a group's base you storm (assaultBase, id −1) and
@@ -179,7 +179,7 @@ export function fortSize(base, c, state = null) {
 // after it (deploy.js, interior.js), which a bridge barricade still uses and the tests exercise.
 // Every real base on land fights on its base map (walled or not: usesGrid); the old strip maps keep the wall and yard
 // maps (deploy.js, interior.js), and so does a base on a bridge.
-export const fortable = (state, base, c = null) => !!base && (usesGrid(base, c) || count(base, "walls") > 0) && !(state.tiles[base.tile] && state.tiles[base.tile].bridge) && !(c && c.strip);
+export const fortable = (state, base, c = null) => !!base && (usesGrid(base, c) || hasWall(base)) && !(state.tiles[base.tile] && state.tiles[base.tile].bridge) && !(c && c.strip);
 
 // The side of the fort a cell lies on (which margin band), or null inside the ring.
 export function sideOf(F, x, y) {
@@ -191,7 +191,7 @@ export function sideOf(F, x, y) {
 // Breaches on the attack side's wall (a horde that broke through: `want` of them, on no corner, apart from each other).
 function breach(F, rng, side, want) {
   if (want <= 0 || F.walled === false) return [];
-  const w = F.wall, line = F.ring.filter(([x, y]) => sideOf(F, x, y) === side && !((x === w.x0 || x === w.x1) && (y === w.y0 || y === w.y1)) && F.cells[y * F.W + x].k === "palisade");
+  const w = F.wall, line = F.ring.filter(([x, y]) => faceOf(F, x, y) === side && !((x === w.x0 || x === w.x1) && (y === w.y0 || y === w.y1)) && F.cells[y * F.W + x].k === "palisade"); // the wall cells facing that side (the ring's, or the pieces': basemap.js)
   const out = [];
   for (const [x, y] of rng.shuffle(line.slice())) {
     if (out.length >= want) break;
@@ -316,7 +316,7 @@ function fortDefaults(b, F, side, okCell) {
   const dOpen = (x, y) => Math.min(99, ...openings.map(([ox, oy]) => dist(x, y, ox, oy)));
   const taken = [];
   const crowd = (x, y) => taken.reduce((a, [tx, ty]) => a + (Math.max(Math.abs(tx - x), Math.abs(ty - y)) <= 1 ? 3 : 0), 0);
-  const wallCells = F.walkway.filter(([x, y]) => sideOf(F, x, y) === null && b.cells[y * F.W + x].k === "walkway" && (side === "north" ? y === w.y0 + 1 : side === "south" ? y === w.y1 - 1 : side === "west" ? x === w.x0 + 1 : x === w.x1 - 1));
+  const wallCells = F.walkway.filter(([x, y]) => b.cells[y * F.W + x].k === "stand" ? faceOf(F, x, y) === side : sideOf(F, x, y) === null && b.cells[y * F.W + x].k === "walkway" && (side === "north" ? y === w.y0 + 1 : side === "south" ? y === w.y1 - 1 : side === "west" ? x === w.x0 + 1 : x === w.x1 - 1)); // the walkway facing the attack, or the wall stands on that side (basemap.js)
   for (const u of shooters()) {
     let best = null;
     for (const [x, y] of wallCells) {

@@ -2,6 +2,7 @@
 // tab, the known blueprints card (Buildings tab), the key ring (Armory tab) and the "Needs: …" lines on locked
 // buildings and recipes. Handlers in EXPLORE_ACTIONS (main.js registers them).
 import { SKILL_NAMES } from "../sim/data.js";
+import { BUILDINGS } from "../sim/buildings.js"; // the wall's pieces fold into one row of the wear table
 import { baseById, day, atBase, skill, survivorById } from "../sim/world.js";
 import { tileLabel } from "../sim/parties.js";
 import { blueprintRows, lockNote, craftBookRows, cookBookRows } from "../sim/blueprints.js";
@@ -99,7 +100,11 @@ export function repairsTab(state, base) {
     const plan = repairPlan(state, base, r.fx, "repair");
     return `<button class="mini" data-action="rp-start" data-base="${base.id}" data-fx="${r.fx.id}" data-m="repair" ${plan.ok ? "" : "disabled"}${tip(plan.ok ? `Patch it up before it gives way: ${firstName(plan.who)}, ${plan.hours} work-hours, ${costText(plan.cost)}. Wear back to ${WEAR.repairWear}.` : plan.why)}>Patch</button>`;
   };
-  const wearRows = rows.map((r) => {
+  // The wall's pieces (sim/buildings.js piece): one row for the sound ones, a row each only for the worn, broken or mended.
+  const isWallPiece = (r) => !!(BUILDINGS[r.fx.type] && BUILDINGS[r.fx.type].piece);
+  const soundWall = rows.filter((r) => isWallPiece(r) && !r.fx.broken && !r.job && !r.fx.rigged && r.wear < WEAR.riskFrom);
+  const wallRow = soundWall.length ? (() => { const avg = Math.round(soundWall.reduce((a, r) => a + r.wear, 0) / soundWall.length); return `<tr${tip("The wall's pieces, gates and stands that are sound: each wears on its own (horde attacks, raids, age) and shows on a row of its own once it is worn, broken or being mended.")}><td>Wall: ${soundWall.length} piece${soundWall.length === 1 ? "" : "s"} in good order</td><td style="width:40%">${bar(avg, "var(--good)")}</td><td>${avg}%</td><td class="muted">OK (average)</td></tr>`; })() : "";
+  const wearRows = wallRow + rows.filter((r) => !soundWall.includes(r)).map((r) => {
     const w = r.wear;
     const color = r.fx.broken ? "var(--danger)" : w >= WEAR.riskFrom ? "var(--warn, #e0a84f)" : "var(--good)";
     const state2 = r.fx.broken ? "Broken" : r.job ? "Being patched" : r.fx.rigged ? "Jury-rigged" : w >= RAID_DAMAGE.damaged && r.def.raidOnly ? "Damaged: may break" : w >= WEAR.riskFrom ? "Worn: may break" : "OK";

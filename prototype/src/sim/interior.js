@@ -39,7 +39,7 @@ import {
   CELL, active, unitAt, transformBattle, say, reachable, pathTo, distField, moveAlong, resizeBattle, floodReach,
   coverAgainst, isRanged, WEAPONS, placeCar, CAR_LEN, parkRaidCar,
 } from "./combat.js";
-import { count, countAll } from "./buildings.js";
+import { count, countAll, BUILDINGS } from "./buildings.js";
 import { Rng } from "./rng.js";
 import { attackSide, fromTileOf, sideTf, sideUntf, setLit, DEPLOY, gateHp, wallHp } from "./deploy.js";
 import { armoryDefence, tierMults, TIERS } from "./defences.js";
@@ -113,7 +113,10 @@ const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) 
 // The base's own dice for its map: the same base with the same buildings always looks the same.
 export function layoutSeed(base) {
   if (!base) return 7;
-  return hashStr(`${base.tile}|${base.type}|${base.buildings.map((x) => x.type).sort().join(",")}`);
+  // The wall's pieces (buildings.js piece) count as the one wall they were: adding a piece never reshuffles the map.
+  const types = base.buildings.filter((x) => !(BUILDINGS[x.type] && BUILDINGS[x.type].piece)).map((x) => x.type);
+  if (types.length < base.buildings.length && !types.includes("walls")) types.push("walls");
+  return hashStr(`${base.tile}|${base.type}|${types.sort().join(",")}`);
 }
 
 // ---------- the map (east-facing: the attackers on the east edge) ----------
@@ -691,7 +694,7 @@ export function tierPlayerTurn(state, b) {
   if (T.map === "wall") {
     const inside = foes.filter((f) => T.interior[f.y * b.w + f.x]).length;
     const need = Math.max(INTERIOR.BREACH_MIN, Math.ceil(foes.length * INTERIOR.BREACH_FRAC));
-    const onWall = b.units.some((u) => u.side === "player" && active(u) && ["walkway", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
+    const onWall = b.units.some((u) => u.side === "player" && active(u) && ["walkway", "stand", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
     if (inside >= need || (inside > 0 && !onWall)) toInterior(state, b, { why: "breach" });
     return;
   }
@@ -703,7 +706,7 @@ export function tierPlayerTurn(state, b) {
     if (T.stage === "wall") {
       const inside = attackers.filter((f) => T.interior[f.y * b.w + f.x]).length;
       const need = Math.max(INTERIOR.BREACH_MIN, Math.ceil(attackers.length * INTERIOR.BREACH_FRAC));
-      const onWall = b.units.some((u) => u.side === def && active(u) && ["walkway", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
+      const onWall = b.units.some((u) => u.side === def && active(u) && ["walkway", "stand", "tower", "gate", "breach", "rubble"].includes(b.cells[u.y * b.w + u.x].k));
       if (inside >= need || (inside > 0 && !onWall)) {
         T.stage = "yard"; T.fellBackTurn = b.turn; T.why = "breach";
         say(b, att === "enemy" ? "They are through the wall! Hold the yard, and the buildings if it falls." : "You are through their wall! Into the yard.", att === "enemy" ? "danger" : "good");

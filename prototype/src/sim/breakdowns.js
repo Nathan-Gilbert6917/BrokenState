@@ -54,7 +54,7 @@
 // parts. Broken, a machine stops (a station does nothing, a generator gives no power, a powered building draws none:
 // power.js; the freezer is then off and warms up).
 // Rolls use hash01 (skills.js), never the world's random numbers.
-import { BUILDINGS, count, assignStations, underAttack, onUpkeep } from "./buildings.js";
+import { BUILDINGS, count, assignStations, underAttack, onUpkeep, isPiece, pieceName } from "./buildings.js";
 import { log, addCard, day, hourOfDay, atBase, survivorById, skill } from "./world.js";
 import { hash01, gainXp, buildMult, hasPerk, USE } from "./skills.js";
 import { workFactor } from "./health.js";
@@ -117,6 +117,19 @@ export const FIXTURES = {
   canteen:     { raidOnly: true, repair: { hours: 5, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no hot meals: the food is eaten as before" }, // kitchen.js
   animal_pen:  { raidOnly: true, repair: { hours: 4, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a broken fence: the animals scattered, no food from the pen" },
 };
+// The wall pieces (buildings.js piece, the user's request 2026-10-19): each wears and breaks on its own, a little with
+// age and every horde attack (a share of the old single wall's, by its length), and the raids' outer line. A broken
+// wall piece or gate is a gap in the ring: no wall strength by the numbers until it is repaired (basemap.js wallInfo).
+const WALL_FX = (attack, hours, scrap, what) => ({ age: 0.01, attack, outer: true, repair: { hours, cost: { scrap }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what });
+Object.assign(FIXTURES, {
+  wall1: WALL_FX(1, 1, 1, "a gap in the wall: the ring does not close (no wall strength) until it is repaired"),
+  wall2: WALL_FX(1.5, 1, 1, "a gap in the wall: the ring does not close (no wall strength) until it is repaired"),
+  wall4: WALL_FX(3, 2, 2, "a gap in the wall: the ring does not close (no wall strength) until it is repaired"),
+  gate4: WALL_FX(5, 3, 3, "the gate hangs open: a way in, and no wall strength until it is repaired"),
+  stand1: { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "nobody can stand on it" },
+  stand2: { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "nobody can stand on it" },
+  stand4: { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "nobody can stand on it" },
+});
 FIXTURES.walls.outer = true;
 FIXTURES.gate.outer = true;
 // Raid damage (see the header): budget = strength × perStrength × clamp(hours / 8, minHours, maxHours) × outcome.
@@ -144,7 +157,7 @@ export function fixtures(base) {
 }
 // A key for the dice that does not depend on object ids (they differ between two worlds made in one process).
 const fxKey = (base, fx) => `${base.tile}:${fx.type}:${base.buildings.indexOf(fx)}`;
-export const fixtureName = (fx) => (fx.type === "pump" ? "Well pump" : fx.type === "generator" && genTier(fx) > 1 ? genName(fx) : (BUILDINGS[fx.type] && BUILDINGS[fx.type].name) || fx.type); // gen-tiers: a standby generator, an industrial diesel set
+export const fixtureName = (fx) => (fx.type === "pump" ? "Well pump" : fx.type === "generator" && genTier(fx) > 1 ? genName(fx) : isPiece(fx.type) ? pieceName(fx) : (BUILDINGS[fx.type] && BUILDINGS[fx.type].name) || fx.type); // gen-tiers: a standby generator, an industrial diesel set
 export const fixtureById = (base, id) => fixtures(base).find((f) => String(f.id) === String(id)) || null;
 export const isBroken = (fx) => !!(fx && fx.broken);
 export const isWaterFixture = (fx) => !!fx && (fx.type === "well" || fx.type === "pump");
@@ -492,7 +505,7 @@ export function repairRows(state, base) {
 // ---------- raid damage (see the header) ----------
 const addCost = (into, cost) => { for (const [k, v] of Object.entries(cost)) into[k] = (into[k] || 0) + v; return into; };
 // "2 wall sections and the ammo bench", and whether it takes a plural verb.
-const NOUNS = { walls: ["a wall section", "wall sections"], barricades: ["a barricade", "barricades"], floodlights: ["the floodlights", "floodlights"], rain_catcher: ["a rain catcher", "rain catchers"], smoker: ["a drying rack", "drying racks"] };
+const NOUNS = { walls: ["a wall section", "wall sections"], wall1: ["a wall piece", "wall pieces"], wall2: ["a wall piece", "wall pieces"], wall4: ["a wall section", "wall sections"], gate4: ["a gate", "gates"], stand1: ["a wall stand", "wall stands"], stand2: ["a wall stand", "wall stands"], stand4: ["a wall stand", "wall stands"], barricades: ["a barricade", "barricades"], floodlights: ["the floodlights", "floodlights"], rain_catcher: ["a rain catcher", "rain catchers"], smoker: ["a drying rack", "drying racks"] };
 function namesText(list, base = null) {
   const n = new Map();
   for (const fx of list) n.set(fx.type, (n.get(fx.type) || 0) + 1);
@@ -540,7 +553,7 @@ export function raidDamage(state, base, { strength = 0, hours = 8, outcome = "he
   const toBreak = [...hit].filter((fx) => fx.wear >= WEAR.breakAt);
   // Overrun: one building they wrecked is gone for good (never the walls or the hub's pump).
   let destroyed = null;
-  const doomed = toBreak.filter((fx) => fx.type !== "walls" && fx.type !== "pump");
+  const doomed = toBreak.filter((fx) => fx.type !== "walls" && fx.type !== "pump" && !isPiece(fx.type)); // the wall pieces are battered, never carried off
   if (outcome === "overrun" && doomed.length && hash01(state.seed, "rdx", key) < R.destroy) {
     destroyed = doomed[Math.floor(hash01(state.seed, "rdy", key) * doomed.length) % doomed.length];
     base.buildings.splice(base.buildings.indexOf(destroyed), 1);

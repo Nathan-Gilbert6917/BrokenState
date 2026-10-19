@@ -16,7 +16,7 @@
 // (kale, winter roots, winter wheat) for the winter and the hungry gap before the first spring harvest.
 import * as Weather from "./weather.js";
 import { log, atBase, skill, day, residents } from "./world.js";
-import { count, farmSlots } from "./buildings.js";
+import { count, farmSlots, hasWall } from "./buildings.js";
 import { workFactor } from "./health.js";
 import { jobShare } from "./kitchen.js"; // a part-time cook's share of the farm's day
 import { storeCapacity, storeFactor, stableLoss, edibleFood, spoilFresh } from "./storage.js";
@@ -101,7 +101,7 @@ const ALL_SEASONS = ["spring", "summer", "autumn", "winter"];
 export const PEN = { food: 3, skilled: 1, skillAt: 6, winter: 0.75, unwalled: 0.5, pasture: 2 };
 export function livestockYield(state, base, keeper = null, dayIdx = Math.floor(state.hour / 24)) {
   const winter = (Weather.seasonOfDay ? Weather.seasonOfDay(dayIdx).key : "summer") === "winter";
-  const q = (PEN.food + (keeper && skill(keeper, "farming") >= PEN.skillAt ? PEN.skilled : 0)) * (winter ? PEN.winter : 1) * (count(base, "walls") > 0 ? 1 : PEN.unwalled);
+  const q = (PEN.food + (keeper && skill(keeper, "farming") >= PEN.skillAt ? PEN.skilled : 0)) * (winter ? PEN.winter : 1) * (hasWall(base) ? 1 : PEN.unwalled);
   return Math.round(q * 100) / 100;
 }
 // The pens at a base with a keeper on them (the winter outlook counts their food).

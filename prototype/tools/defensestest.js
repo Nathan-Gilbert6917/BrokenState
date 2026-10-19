@@ -1,7 +1,8 @@
 // Defenses (the user's requests of 2026-10-19): a Defenses tab in Construction for every size of base, the first
 // defenses at a camp and more as the base grows (src/sim/buildings.js tab "defenses", size, DEF_SIZE); no wall a base
 // did not build (baseWalls); the wall built up a tier at a time where it stands (WALL_TIERS: a stake fence, a timber
-// palisade, a scrap-metal wall, a concrete wall), each with more wall strength and more hit points on the battle map;
+// palisade, a scrap-metal wall, a concrete wall), each with more wall strength and more hit points on the battle map
+// (since the same day: a ring of wall pieces of a material, wood to metal sheets: tools/wallpiecestest.js);
 // barbed wire and concertina wire that slow the living too unless they carry something to cut it with (src/sim/wire.js:
 // a multitool, a repair kit's pliers, an axe, a hatchet, a machete), Cut wire; trenches that slow the dead more than the
 // living; and every defense built standing on the base's battle map when it is raided (fort.js, interior.js, deploy.js).
@@ -9,6 +10,7 @@
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import {
   BUILDINGS, WALL_TIERS, count, canBuild, queueBuild, constructionHour, baseWalls, wallOf, wallTier, wallSectionHp, placeProblem, migrateWalls, addBuilding, cancelBuild, demolishRefund,
+  piecesOf, hasWall,
 } from "../src/sim/buildings.js";
 import { holdLimit, defenceMult, tierMults, DEFENCE } from "../src/sim/defences.js";
 import { baseDefense } from "../src/sim/factions.js";
@@ -28,7 +30,7 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 registerCombatHandler("deftest", () => {});
 const world = () => { const st = createWorld({ seed, factionCount: 6 }); st.started = true; st.hour = 24 * 3 + 12; return st; };
-const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9 });
+const rich = (base) => Object.assign(base.stock, { scrap: 999, parts: 99, buildmat: 99, electronics: 9, wood: 99999 });
 const asCamp = (base) => { base.tier = 0; base.camp = true; return base; };
 const asShelter = (base) => { base.tier = 0; delete base.camp; return base; };
 const asOutpost = (base) => { delete base.tier; delete base.camp; base.type = "outpost"; return base; };
@@ -66,44 +68,45 @@ console.log("The Defenses tab: what each size of base takes");
   check(at(h).length > outpost.length && at(h).includes("guard_towers"), `the main base: ${at(h).length}`);
 }
 
-console.log("Walls by tier, built up where they stand");
+console.log("Walls by material, a ring of pieces closed and raised (tools/wallpiecestest.js has the pieces themselves)");
 {
   const st = world();
   const h = asCamp(hub(st));
   rich(h);
   let c = canBuild(st, h, "walls");
-  check(c.ok && c.tier === 1 && c.def.name === "Stake fence", "a camp builds a stake fence");
-  const scrap0 = h.stock.scrap;
+  check(c.ok && c.kind === "ring" && c.tier === 1 && c.def.name === "Wooden wall", "a camp closes a ring of wooden pieces");
+  const wood0 = h.stock.wood;
   queueBuild(st, h, "walls");
-  check(h.stock.scrap === scrap0 - WALL_TIERS[1].cost.scrap && !canBuild(st, h, "walls").ok, "paid; the next tier waits for this one");
+  check(h.stock.wood === wood0 - c.cost.wood && !canBuild(st, h, "walls").ok, `paid (${c.cost.wood} firewood); the next step waits for this one`);
   finishAll(st, h);
-  check(wallOf(h) && wallOf(h).tier === 1 && baseWalls(h) === 2 && wallSectionHp(h) === 60 && wallHp(h) === 60, `standing: strength ${baseWalls(h)}, ${wallHp(h)} hp a section`);
+  check(hasWall(h) && wallTier(h) === 1 && baseWalls(h) === 2 && wallSectionHp(h) === 60 && wallHp(h) === 60, `standing: strength ${baseWalls(h)}, ${wallHp(h)} hp a cell`);
   c = canBuild(st, h, "walls");
-  check(!c.ok && c.tier === 2 && /shelter/.test(c.reason), `a camp goes no further: ${c.reason}`);
+  check(!c.ok && c.kind === "upgrade" && c.tier === 2 && /shelter/.test(c.reason), `a camp goes no further: ${c.reason}`);
   asShelter(h);
-  check(canBuild(st, h, "walls").ok, "a shelter upgrades it to a palisade");
+  check(canBuild(st, h, "walls").ok, "a shelter raises it to logs");
   queueBuild(st, h, "walls");
   const job = h.construction.find((j) => j.type === "walls");
-  check(job && job.target === wallOf(h).id && job.tier === 2, "an upgrade job on the wall standing");
+  check(job && job.kind === "upgrade" && job.mat === 2 && job.ids.length === piecesOf(h).length, "an upgrade job on every piece standing");
   finishAll(st, h);
-  check(h.buildings.filter((b) => b.type === "walls").length === 1 && wallOf(h).tier === 2 && baseWalls(h) === 4 && wallHp(h) === 100, "one wall, a timber palisade (4, 100 hp)");
-  check(!canBuild(st, h, "walls").ok, "a scrap-metal wall opens at an outpost");
+  check(!h.buildings.some((b) => b.type === "walls") && wallTier(h) === 2 && baseWalls(h) === 4 && wallHp(h) === 100, "the pieces are logs now (4, 100 hp)");
+  check(!canBuild(st, h, "walls").ok, "scrap metal opens at an outpost");
   h.tier = undefined; h.type = "outpost"; delete h.tier;
   queueBuild(st, h, "walls"); finishAll(st, h);
-  check(wallOf(h).tier === 3 && baseWalls(h) === 8 && wallHp(h) === 160, "an outpost: a scrap-metal wall (8, 160 hp)");
+  check(wallTier(h) === 3 && baseWalls(h) === 8 && wallHp(h) === 160, "an outpost: scrap metal (8, 160 hp)");
   const c4 = canBuild(st, h, "walls");
-  check(!c4.ok && /main base/.test(c4.reason), "concrete: the main base only");
+  check(!c4.ok && /main base/.test(c4.reason), "metal sheets: the main base only");
   h.type = "hub";
   for (const s of atBase(st, h.id)) s.skills.mechanics = 0;
-  check(/Mechanics 3/.test(canBuild(st, h, "walls").reason), "concrete needs a Mechanics 3+ survivor here");
+  check(/Mechanics 3/.test(canBuild(st, h, "walls").reason), "metal sheets need a Mechanics 3+ survivor here");
   skilled(st, h, "mechanics", 3);
   queueBuild(st, h, "walls"); finishAll(st, h);
-  check(wallOf(h).tier === 4 && baseWalls(h) === 12 && wallHp(h) === 240, "the main base: a concrete wall (12, 240 hp)");
-  check(canBuild(st, h, "walls").top, "the top tier");
-  wallOf(h).wear = 70;
+  check(wallTier(h) === 4 && baseWalls(h) === 12 && wallHp(h) === 240, "the main base: metal sheets (12, 240 hp)");
+  check(canBuild(st, h, "walls").top, "the best there is");
+  for (const p of piecesOf(h)) p.wear = 70;
   check(baseWalls(h) === 8 && wallHp(h) === 160, "damaged: two thirds of the strength and the hit points");
-  const back = demolishRefund(wallOf(h));
-  check(back.scrap === Math.floor((6 + 14 + 25 + 40) / 2), `pulled down: half of every tier's scrap back (${back.scrap})`);
+  const p = piecesOf(h, ["wall"]).find((x) => x.type === "wall4");
+  const back = demolishRefund(p);
+  check(back.scrap === 2 && back.buildmat === undefined, `a 1×4 of metal sheets pulled down: half its scrap back (${back.scrap}; its building materials are not salvaged)`);
 }
 
 console.log("Defenses count: the hold limit, raids by the numbers");
@@ -123,13 +126,14 @@ console.log("Saves: walls from before the tiers");
   const h = hub(st);
   for (let i = 0; i < 3; i++) h.buildings.push({ id: 9000 + i, type: "walls", wear: i * 10 });
   migrateWalls(st);
-  check(h.buildings.filter((b) => b.type === "walls").length === 1 && wallOf(h).tier === 4 && wallOf(h).wear === 20, "three old sections: one concrete wall (the worst wear)");
+  check(!wallOf(h) && wallTier(h) === 4 && piecesOf(h).every((b) => b.wear === 20), "three old sections: a ring of metal-sheet pieces (the worst wear)");
   const st2 = world();
   hub(st2).buildings.push({ id: 9100, type: "walls" });
   const back = loadFromString(saveToString(st2));
-  check(wallOf(hub(back)).tier === 2, "a save with one old section loads as a timber palisade");
+  check(wallTier(hub(back)) === 2 && !wallOf(hub(back)), "a save with one old section loads as a ring of log pieces");
+  const n = piecesOf(hub(back)).length;
   migrateWalls(back);
-  check(wallOf(hub(back)).tier === 2, "and again: nothing changes");
+  check(wallTier(hub(back)) === 2 && piecesOf(hub(back)).length === n, "and again: nothing changes");
 }
 
 // A raid on the main base with its defenses built (the battle map as the browser gets it: the deploy step).
@@ -296,7 +300,7 @@ console.log("Cancelling a wall upgrade");
   const scrap0 = h.stock.scrap;
   queueBuild(st, h, "walls");
   cancelBuild(st, h, h.construction[0].id);
-  check(h.stock.scrap === scrap0 && wallOf(h).tier === 1, "an untouched upgrade cancelled: everything back, the fence as it was");
+  check(h.stock.scrap === scrap0 && wallTier(h) === 1, "an untouched upgrade cancelled: everything back, the wall as it was");
 }
 
 console.log("Land mines: the main base's minefield");
@@ -378,7 +382,7 @@ console.log("The Defenses tab in the base window");
   check(/Buildings/.test(bld) && /Defenses/.test(bld) && !/Barbed wire fence/.test(bld), "Construction: a Buildings and a Defenses tab, the defenses not in the buildings' list");
   const html = renderModal(st, ui({ id: h.id, tab: "construction", cx: "defenses" }));
   const txt = plain(html);
-  check(/No wall\./.test(txt) && /Stake fence/.test(txt) && /Concrete wall/.test(txt) && /data-type="walls"/.test(html), "the wall's ladder: none yet, a Build button for the stake fence, the tiers up to concrete");
+  check(/No wall\./.test(txt) && /Wooden wall 1×4/.test(txt) && /Metal sheets/.test(txt) && /data-type="walls"/.test(html), "the walls card: none yet, the pieces in wood, the materials up to metal sheets, Close the ring");
   check(["Camp and up", "Shelter and up", "Outpost and up", "Main hub"].every((t) => txt.includes(t)) && /Barbed wire fence/.test(txt) && /Trench and stakes/.test(txt) && /Guard towers/.test(txt), "the defenses by the size of base they open at");
   asCamp(h);
   const camp = plain(renderModal(st, ui({ id: h.id, tab: "construction", cx: "defenses" })));
@@ -386,7 +390,7 @@ console.log("The Defenses tab in the base window");
   delete h.tier; delete h.camp;
   addBuilding(h, "walls"); addBuilding(h, "barbed_wire");
   const def = plain(renderModal(st, ui({ id: h.id, tab: "defence" })));
-  check(/Defenses built/.test(def) && /Stake fence/.test(def) && /barbed wire fence/.test(def) && /Build defenses/.test(def), "the Defence tab: what is built, a way to the Defenses list");
+  check(/Defenses built/.test(def) && /closed wall, mostly wooden wall/.test(def) && /barbed wire fence/.test(def) && /Build defenses/.test(def), "the Defence tab: what is built, a way to the Defenses list");
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

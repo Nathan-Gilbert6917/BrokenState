@@ -7,7 +7,8 @@ import { atBase, baseById, hourOfDay, skill } from "../sim/world.js";
 import { ROLES } from "../sim/economy.js";
 import { isManaged } from "../sim/work.js";
 import { holdSummary } from "../sim/defences.js";
-import { BUILDINGS, count, wallOf, wallName } from "../sim/buildings.js";
+import { BUILDINGS, count, wallOf, wallName, piecesOf, WALL_TIERS } from "../sim/buildings.js";
+import { wallInfo } from "../sim/basemap.js"; // the wall pieces: closed round the base or not
 import { minesLeft } from "../sim/mines.js"; // a minefield's mines still in the ground // the defenses built here (Construction, Defenses)
 import {
   WATCH_PRESETS, SHIFT_MAX, shiftText, shiftHours, watchCoverage, watchLine, watchWhy, setWatchPreset, addShift, removeShift,
@@ -51,9 +52,10 @@ export function defenceTab(state, b, ui) {
 
 // What stands of the Defenses tab's list here (sim/buildings.js tab "defenses"), for the hold card.
 function builtDefenses(b) {
-  const w = wallOf(b);
-  const rest = Object.entries(BUILDINGS).filter(([k, d]) => d.tab === "defenses" && k !== "walls" && count(b, k)).map(([k, d]) => `${count(b, k) > 1 ? `${count(b, k)} × ` : ""}${d.name.toLowerCase()}${k === "minefield" ? ` (${minesLeft(b)} mines)` : ""}`);
-  return [w ? wallName(w) : "no wall", ...rest].join(", ");
+  const w = wallOf(b), wi = piecesOf(b).length ? wallInfo(null, b) : null;
+  const wall = wi ? (wi.enclosed ? `a closed wall, mostly ${WALL_TIERS[wi.tier].name.toLowerCase()} (${wi.walls} pieces, ${wi.gates} gates, ${wi.stands} stands)` : `an open wall (${wi.walls} pieces, ${wi.gates} gates: it does not close)`) : w ? wallName(w) : "no wall";
+  const rest = Object.entries(BUILDINGS).filter(([k, d]) => d.tab === "defenses" && !d.wall && !d.piece && count(b, k)).map(([k, d]) => `${count(b, k) > 1 ? `${count(b, k)} × ` : ""}${d.name.toLowerCase()}${k === "minefield" ? ` (${minesLeft(b)} mines)` : ""}`);
+  return [wall, ...rest].join(", ");
 }
 
 // ---------- the watch roster ----------

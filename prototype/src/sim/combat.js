@@ -750,6 +750,9 @@ export const CELL = {
   tower:     { walk: true,  cover: 0, los: false, name: "Watchtower", perch: 2, h: 2, climb: true },
   // Verticality and the base's buildings (deploy.js, interior.js).
   walkway:   { walk: true,  cover: 0, los: false, name: "Wall walkway", h: 1 },
+  // A wall stand (basemap.js, the Defenses tab's 1×1, 1×2, 1×4): a platform a level up with its own ladder, so whoever
+  // climbs it sees and shoots over a wall next to it (the wall's top is a level up: c.t).
+  stand:     { walk: true,  cover: 0, los: false, name: "Wall stand", h: 1, climb: true },
   ladder:    { walk: true,  cover: 0, los: false, name: "Ladder", climb: true },
   stairs:    { walk: true,  cover: 0, los: false, name: "Stairs", climb: true },
   roof:      { walk: true,  cover: 0, los: false, name: "Flat roof", h: 1 },
