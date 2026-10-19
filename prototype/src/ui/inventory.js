@@ -52,7 +52,7 @@ import { isBox, isSealed, boxText, boxEmptyKg, openPlan, lockWords } from "../si
 import { openBoxWindow } from "./boxview.js"; // an opened box's window
 import { registerStackScreen, openStack, closeStack, stackPanel, chosenQty, supplyIcon, splitCount, STACK_ACTIONS, STACK_CHANGE } from "./stackmove.js"; // how many of a supply stack, and where
 import { lootFit } from "../sim/stacks.js";
-import { armoryView } from "./armoryview.js"; // the storage box's items grouped by type, cards or compact rows
+import { armoryView, storageTags } from "./armoryview.js"; // the storage box's items grouped by type, cards or compact rows
 import { itemShortTip, tipAttrs, roundsBadge } from "./itemlabels.js"; // the short hover tip (Shift: the full one), the rounds badge on a gun
 import { rowName, rowCount, supplyName, supplyCount } from "../sim/itemnames.js"; // row names: "magazine", rounds "— loose", the count on the right
 
@@ -82,7 +82,7 @@ function icon(key) {
 export function itemTip(item, s = null) {
   const d = GEAR[item.key];
   const kgTxt = isSealed(item) ? `${Math.round(itemLoad(item) * 10) / 10} kg; ${boxEmptyKg(item)} kg empty` : `${Math.round(itemLoad(item) * 10) / 10} kg${item.contents && item.contents.some(Boolean) ? " with what is inside" : ""}`; // a sealed box: only its weight tells
-  const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
+  const bits = [`${d.name} (${SLOT_NAMES[d.slot] || d.slot}${d.small ? ", fits a pocket" : d.twoHands ? ", both hands: carried only" : d.bulky ? ", cargo only" : ""}, ${kgTxt})`];
   if (d.slot === "weapon") bits.push(`power ${d.power}${d.req ? `, needs ${SKILL_NAMES[d.skill]} ${d.req} for full use` : ""}`);
   if (d.slot === "weapon" && item.mods) bits.push(modsText(item)); // sim/gunmods.js: what is fitted and the net effect
   if (isHelmet(item.key)) bits.push(`${item.mods ? `fitted: ${helmetLabel(item).replace(/^[^(]*\(|\)$/g, "")}; ` : ""}mounts: ${helmetSlots(item).map((m) => HELM_MOUNTS[m].toLowerCase()).join(", ") || "none (a full shell)"}`); // sim/helmets.js
@@ -260,7 +260,9 @@ export function storageBox(state, ui, place, user) {
 // The stored items grouped by type, as cards or compact rows (ui/armoryview.js), inside the drop box. Each keeps the
 // tile's clicks and drags: data-action="inv-click" data-loc (the item), data-drop (the list), data-drag; the ⚙ on a gun.
 function storageGroups(state, ui, st, loc, user) {
-  const entries = st.list.map((item, i) => ({ item, loc: `${loc}:${i}`, bad: !!(user && GEAR[item.key] && GEAR[item.key].skill && GEAR[item.key].req && !gearEffect(user, item).usable) }));
+  const base = st.o === "armory" ? baseById(state, st.id) : null;
+  const stored = base ? storageTags(state, base) : null; // base storage (sim/basestorage.js): "Outside: weathering", an opened box's "+N kg storage"
+  const entries = st.list.map((item, i) => ({ item, loc: `${loc}:${i}`, bad: !!(user && GEAR[item.key] && GEAR[item.key].skill && GEAR[item.key].req && !gearEffect(user, item).usable), tags: stored ? stored.tagsOf(i) : [], outside: !!(stored && stored.outside.has(i)) }));
   const cell = (e, inner, cls) => `<div class="islot store ${cls}${ui.invSel === e.loc ? " sel" : ""}" data-action="inv-click" data-loc="${e.loc}" data-drop="${loc}"${tip(`Weighs ${Math.round(itemLoad(e.item) * 10) / 10} kg`)}><div class="ain" draggable="true" data-drag="${e.loc}"${tipAttrs(itemShortTip(e.item, e.loc, user, state), itemTip(e.item, user))}>${inner}</div>${gearCog(state, ui, e.item, e.loc)}</div>`;
   const wrap = (inner) => `<div class="istore agroups" data-action="inv-click" data-loc="${loc}" data-drop="${loc}"${tip(`Drop or click here to put the selected item in ${st.name}`)}>${inner}</div>`;
   return armoryView(entries, { ns: "store", cell, wrap, state, empty: "Empty. Drop items here." });
