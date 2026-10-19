@@ -6,7 +6,8 @@
 //   tile,                       // State Map tile where the fight happens
 //   partyId?,                   // player team fighting (members = partyMembers)
 //   baseId?,                    // or: player base being defended (fighters = people at the base)
-//   fighterIds?,                // optional: only these survivors take part
+//   fighterIds?,                // optional: only these survivors take part (with baseId: wherever they stand, a worker out on a job trip too)
+//   afield?,                    // optional: the fighters are away from the base or the team's cargo: no stock to draw rounds or shells from (loneattack.js)
 //   enemy: {
 //     kind: "raiders" | "soldiers" | "zealots" | "zombies" | "mixed",
 //     count,                    // number of enemy units
@@ -359,7 +360,7 @@ export function combatants(state, setup) {
   if (setup.partyId) {
     const p = state.parties.find((x) => x.id === setup.partyId);
     list = p ? partyMembers(state, p) : [];
-  } else if (setup.baseId) list = homeAt(state, setup.baseId); // world.js: not those out of the walls on a job trip (jobtrips.js)
+  } else if (setup.baseId) list = setup.fighterIds ? atBase(state, setup.baseId) : homeAt(state, setup.baseId); // world.js: not those out of the walls on a job trip (jobtrips.js), unless named (loneattack.js: a worker attacked out there)
   else if (setup.lentIds) list = setup.lentIds.map((id) => survivorById(state, id)).filter((s) => s && s.alive); // volunteers.js: your people lent out, in their group's fight you watch
   if (setup.fighterIds) list = list.filter((s) => setup.fighterIds.includes(s.id));
   return list;
@@ -572,7 +573,7 @@ export function autoResolveCombat(state, setup) {
   // to 6 rounds a head, a bow's in arrows (world.js usesArrows), everyone else's in rounds of their gun's calibre
   // (ammo.js drawTeamShots: a team can only shoot the rounds that fit its guns; no gun, any rounds).
   if (party) settleParty(state, party); else if (base) settleBase(state, base);
-  const pools = party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}];
+  const pools = setup.afield ? [setup.pool || {}] : party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [{}]; // afield (loneattack.js): only what is on them
   const archers = people.filter(usesArrows).length;
   const draw = (k, want) => {
     const have = pools.reduce((a, o) => a + Math.max(0, Math.floor(o[k] || 0)), 0);
@@ -3685,7 +3686,7 @@ export function createBattle(state, setup) {
   if (party) settleParty(state, party); else if (base) settleBase(state, base); // ammo.js: rounds by calibre in the pools (generic ammo sorted, boxes in the cargo or armory opened)
   // A shotgun loads only from the shells on the person (mags.js SHELLS), so a base's defenders grab theirs out of its
   // stock as the fight starts, as a team packing for a trip does (carrykit.js packShells: a pocket or a rig pouch).
-  const shellLines = base && !party ? handOutShells(base.stock, combatants(state, setup)) : [];
+  const shellLines = base && !party && !setup.afield ? handOutShells(base.stock, combatants(state, setup)) : []; // afield (loneattack.js): away from the walls, only what is on them
   // A base's wall map (deploy.js: the wall at column 12 of an 18-wide map): on a bridge the river starts 3 columns before
   // it, so the wall, its walkway and ladders and the tank traps in front all stand on the deck.
   const map = genMap(rng, tile, { densify: setup.layout !== "baseDefence", bridgeC0: setup.layout === "baseDefence" ? 9 : undefined, trucks: setup.layout ? [] : trucksAt(state, tileId), locks: !setup.layout }); // Army trucks (miltrucks.js), not on a base's wall map; locked doors only on an open field
@@ -3693,7 +3694,7 @@ export function createBattle(state, setup) {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
     units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1,
-    pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [setup.pool || {}], // setup.pool: the rounds and meds a group hands your people lent out (volunteers.js watchSetup)
+    pools: setup.afield ? [setup.pool || {}] : party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : base ? [base.stock] : [setup.pool || {}], // afield (loneattack.js): one person out there with what is on them, no stores; setup.pool: the rounds and meds a group hands your people lent out (volunteers.js watchSetup)
     ammoUsed: 0, arrowsUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: setup.canRetreat ? 2 : 0, over: false, result: null, acted: false, queue: [],
     losCache: makeLosCache(W, H), rng, dark: isNight(state), // dark: escapes are easier (escapeOdds)
