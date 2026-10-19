@@ -40,11 +40,13 @@ const check = (ok, msg) => { if (ok) passed++; else { failed++; console.log(`  F
 const section = (t) => console.log(`\n== ${t}`);
 const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; return st; };
 const groupOf = (st, type) => st.factions.find((f) => f.alive && f.type === type) || null;
-// A group of this type (one of the world's, retyped and reseeded if the world has none). Its vehicles go too: the
-// new type's are dealt when next read (vehicles.js factionVehicles: a military group's motor pool, its M2 Humvee).
+// A group of this type (one of the world's, retyped and reseeded if the world has none). Its vehicles and its people go
+// too: the new type's are dealt when next read (vehicles.js factionVehicles: a military group's motor pool, its M2
+// Humvee; members.js ensureMembers, armed out of the new arsenal by peopleUp). People kept from before would still
+// carry the old type's kit, off the new books (its ids restart at #1).
 function typed(st, type, not = []) {
   let f = groupOf(st, type);
-  if (!f || not.includes(f)) { f = st.factions.find((x) => x.alive && !not.includes(x)); f.type = type; delete f.vehicles; A.seedArsenal(st, f); }
+  if (!f || not.includes(f)) { f = st.factions.find((x) => x.alive && !not.includes(x)); f.type = type; delete f.vehicles; delete f.people; A.seedArsenal(st, f); }
   return f;
 }
 const nextDay = (st) => { st.hour += 24; };
@@ -234,7 +236,9 @@ section("Healing: meds and medics");
   st3.hour += 24; C.groupCareDaily(st3, f3);
   check(!p3.alive || p3.health < hp0 + 2, `without meds an infected wound barely heals or worsens (${hp0} → ${Math.round(p3.health)})`);
   f3.stock.meds = 50; for (const q of f3.people) q.skills.medicine = 10;
-  for (let i = 0; i < 6 && p3.woundInfected; i++) { st3.hour += 24; C.groupCareDaily(st3, f3); }
+  // Each day's treatment cures it at 55% here (groupmedical.js: no hospital, Medicine 10), so up to 20 days: in 6 one
+  // world in a couple of hundred kept it (seed 31: six misses in a row).
+  for (let i = 0; i < 20 && p3.woundInfected; i++) { st3.hour += 24; C.groupCareDaily(st3, f3); }
   check(!p3.woundInfected, "with meds and a medic the infection is cleaned out");
 }
 
@@ -290,22 +294,25 @@ section("Desertion and recruiting");
   const per60 = (x) => (x * 60) / DAYS;
   check(per60(expH) >= 2 && per60(expF) <= 1, `a starving group bleeds deserters (${per60(expH).toFixed(1)} in 60 days by the odds), a well-fed one rarely (${per60(expF).toFixed(1)})`);
   check(lostH >= expH / 2 && lostF <= expF * 2 + 3 && lostH > lostF * 2, `and the dice follow the odds: ${lostH} and ${lostF} deserters in ${DAYS} days (${expH.toFixed(1)} and ${expF.toFixed(1)} expected)`);
-  // Everyone armed first: the deserter is one of their loadouts (issueKit) at random, and a raider gang may have fewer
-  // guns than people (an unarmed one walks out with nothing).
-  for (let i = hungry.arsenal.items.filter((it) => A.isWeaponKey(it.key)).length; i < hungry.pop; i++) A.addToArsenal(st, hungry, lootItem("pistol", "raider", [i, "dp"]), "test");
-  const n0 = hungry.arsenal.items.length;
-  const w = C.desertOne(st, hungry, 1, "wanderer");
+  // Who goes and what with: a fresh gang (600 days of the dice above emptied that one of its people: only its head count
+  // was held up). A deserter is one of their people at home with what they carry (members.js), and a raider gang may
+  // have fewer guns than people (an unarmed one walks out with nothing): a gun for every head first, handed out.
+  const sd = world(seed + 3), gang = typed(sd, "raider");
+  for (let i = gang.arsenal.items.filter((it) => A.isWeaponKey(it.key)).length; i < gang.pop; i++) A.addToArsenal(sd, gang, lootItem("pistol", "raider", [i, "dp"]), "test");
+  peopleUp(sd, gang);
+  const n0 = gang.arsenal.items.length;
+  const w = C.desertOne(sd, gang, 1, "wanderer");
   const { allCarried: AIt } = await import("../src/sim/inventory.js");
-  check(w.to === "wanderer" && w.kit.length > 0 && w.kit.every((it) => AIt(w.wanderer.people[0]).includes(it)) && hungry.arsenal.items.length === n0 - w.kit.length, `a deserter on the road carries the group's kit they walked out with (${w.kit.map((it) => it.name).join(", ")}), off its books`);
+  check(w.to === "wanderer" && w.kit.length > 0 && w.kit.every((it) => AIt(w.wanderer.people[0]).includes(it)) && gang.arsenal.items.length === n0 - w.kit.length, `a deserter on the road carries the group's kit they walked out with (${w.kit.map((it) => it.name).join(", ")}), off its books`);
   // Any group in reach (CARE.DESERT.range): on some maps the gang's nearest neighbour is further off, and the deserter
   // takes to the road instead (as designed).
   const range0 = C.CARE.DESERT.range;
   C.CARE.DESERT.range = 999;
-  const g = C.desertOne(st, hungry, 2, "group");
+  const g = C.desertOne(sd, gang, 2, "group");
   C.CARE.DESERT.range = range0;
   check(g.to === "group" && g.kit.every((it) => g.group.arsenal.items.includes(it)), `one goes over to ${g.group && g.group.name}, kit and all`);
-  const p = C.desertOne(st, hungry, 3, "player");
-  check(p.to === "player" || !st.bases.some((b) => st.grid.distance(b.tile, hungry.bases[0]) <= C.CARE.DESERT.playerRange), "one comes to your gates (a recruit card) when a base of yours is near");
+  const p = C.desertOne(sd, gang, 3, "player");
+  check(p.to === "player" || !sd.bases.some((b) => sd.grid.distance(b.tile, gang.bases[0]) <= C.CARE.DESERT.playerRange), "one comes to your gates (a recruit card) when a base of yours is near");
   // Wanderers near a commune's base join it.
   const s2 = world(seed + 2);
   const com = typed(s2, "commune");
