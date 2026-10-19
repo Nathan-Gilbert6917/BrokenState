@@ -1608,6 +1608,16 @@ export function fireOf(s, packed = false) {
   if (shell) per = Math.min(cap, MAGS.LOOSE);
   else if (INTERNAL[it.key] && usesInternal(it.key, it)) per = Math.min(cap, MAGS.LOOSE);
   const reloads = Math.max(0, need - cap) / per;
+  // A tube or a cylinder loads from what is at hand (a pocket, a rig pouch) for 1 action a Reload, from the pack for
+  // both (mags.js SOURCE_AP): packed, the shells a trip puts at hand (carrykit.js packShells, SHELLS.CARRY), else what
+  // they have there now.
+  if (shell || (INTERNAL[it.key] && usesInternal(it.key, it))) {
+    const keys = cal ? withHand(keyFor(cal, type)) : [];
+    let box = 0;
+    for (const x of carriedSpots(s)) if ((x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)) box += Math.max(0, Math.floor(x.item.dur || 0));
+    const fromHand = Math.min(reloads, Math.max(0, Math.max(packed ? SHELLS.CARRY : 0, box) - cap) / per);
+    fetch = fromHand * (MAGS.SOURCE_AP.hand - 1) + (reloads - fromHand) * (MAGS.SOURCE_AP.pack - 1); // (a Reload counts 1 below; the pack's second action here)
+  }
   return { p, melee: false, aim, opt: W.opt || 0, fall: W.fall || 0, type, sustain: shots / (shots + reloads + fetch) };
 }
 // One fighter's fire at the core (fireOf's record) at range R, a melee weapon counting m.

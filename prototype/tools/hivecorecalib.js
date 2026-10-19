@@ -5,7 +5,7 @@
 //        node tools/hivecorecalib.js --fit [trials=16]   (env FIT_ONLY=rifle,hunt a few squads, FIT_SAVE=file the rows, FIT_NOSTEEP=1 steepness 1)
 //        node tools/hivecorecalib.js --refit rows1.json[,rows2.json…] [numbersK]
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
-import { GEAR } from "../src/sim/data.js";
+import { GEAR, SUPPLIES } from "../src/sim/data.js";
 import { ensureHives } from "../src/sim/hives.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { hiveTier } from "../src/sim/hivetech.js";
@@ -15,6 +15,8 @@ import { settleParty } from "../src/sim/ammo.js";
 import { packShells, packMags, CARRY } from "../src/sim/carrykit.js";
 import { standardMag } from "../src/sim/mags.js";
 import { newItem } from "../src/sim/inventory.js";
+import { loadoutRounds } from "../src/sim/gunrounds.js";
+import { WEAPONS } from "../src/sim/combat.js";
 
 const TRIALS = Number(process.argv[2] || 24);
 const LIGHTS = process.argv[3] == null ? 1 : Number(process.argv[3]);
@@ -49,6 +51,13 @@ export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", arm
   // physical rounds (mags.js, 2026-10-18) a Reload draws only on what the person carries, the team's bags loading the
   // guns and the spares as the fight starts (no spares: a magazine gun's one magazine a fight).
   if (packed) packMags(people.flatMap((s) => { const mk = standardMag(s.gear.weapon.key); return mk ? Array.from({ length: CARRY.PACK.rifle }, () => newItem(mk)) : []; }), people);
+  // And the rounds those guns and magazines leave loaded with, on top of the 240 (parties.js launchExpedition takes
+  // them out of the stores as every trip does: gunrounds.js loadoutRounds; here from an ample armory of FMJ).
+  if (packed) {
+    const stores = {};
+    for (const s of people) { const cal = WEAPONS[s.gear.weapon.key] && WEAPONS[s.gear.weapon.key].cal; const k = cal && (SUPPLIES[`a_${cal}_fmj`] ? `a_${cal}_fmj` : Object.keys(SUPPLIES).find((x) => x.startsWith(`a_${cal}_`))); if (k) stores[k] = 1e6; } // (a shotgun's: buckshot)
+    for (const [k, q] of Object.entries(loadoutRounds(people, [stores]))) p.supplies[k] = (p.supplies[k] || 0) + q;
+  }
   const t = hiveTier(st, hv);
   const hp = HC.coreForce(st, hv).hp;
   const p20 = HC.HM_STATS.phase2, b0 = HC.HM_STATS.burned, s0 = HC.HM_STATS.stunned;

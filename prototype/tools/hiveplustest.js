@@ -497,7 +497,7 @@ console.log("The autopilot's gate to the core, and its kit");
     const shots0 = HC.HIVEMIND.REACH.shots; HC.HIVEMIND.REACH.shots = 30; // a fight longer than the gun and the handful
     const sus = [HC.fireOf(pump, false).sustain, HC.fireOf(pump, true).sustain];
     HC.HIVEMIND.REACH.shots = shots0;
-    check(sus[1] > sus[0], `the gate counts the shells a trip packs at hand (a pump's sustained fire over 30 shots ${sus[0].toFixed(2)} → ${sus[1].toFixed(2)}: no Get shells)`);
+    check(sus[1] > sus[0], `the gate counts the shells a trip packs at hand (a pump's sustained fire over 30 shots ${sus[0].toFixed(2)} → ${sus[1].toFixed(2)}: a Reload from the pack takes both actions, physical rounds)`);
     const shotTeam = [0, 1, 2, 3, 4, 5].map(() => one("shotgun", 7)), rifleTeam = [0, 1, 2, 3, 4, 5].map(() => one("huntrifle", 7));
     check(HC.coreFire(shotTeam, true).mult < HC.coreFire(rifleTeam, true).mult, `by the numbers six pumps count for less at the core than six hunting rifles of the same power (× ${HC.coreFire(shotTeam, true).mult.toFixed(2)} against × ${HC.coreFire(rifleTeam, true).mult.toFixed(2)})`);
   }

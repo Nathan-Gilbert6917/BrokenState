@@ -192,7 +192,7 @@ export function formTeam(state, opts) {
   const res = launchExpedition(state, {
     memberIds: pre.members.map((s) => s.id), dest: base.tile, mission: "move", stance: opts.stance || "normal",
     vehicleId: pre.plan && pre.plan.list.length === 1 ? pre.plan.list[0].id : null, vehicleIds: pre.plan && pre.plan.list.length > 1 ? pre.plan.list.map((x) => x.id) : [],
-    supplies: { ...pre.supplies }, fromBaseId: base.id, lights: !!opts.lights, tabs: !!opts.tabs, quiet: true,
+    supplies: { ...pre.supplies }, fromBaseId: base.id, lights: !!opts.lights, tabs: !!opts.tabs, quiet: true, loadout: false, // (the loadout below: the rounds the window showed)
   });
   if (res.error) return { error: res.error };
   const p = res.party;
