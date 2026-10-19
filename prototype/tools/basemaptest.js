@@ -1,9 +1,8 @@
 // The base map (src/sim/basemap.js, fort.js, ui/basemap.js): every base's own grid map, laid out by hand or by the
 // game, and the battle fought on it.
 // Checks: the grid by tier (a camp 40 × 40 with the camp within 20 × 20 in the middle, a shelter 48, an outpost and the
-// hub growing with their buildings, never past 300), placement rules (inside the yard, no overlap, a cell kept clear
-// between buildings and fields, doorways free, defences right next to anything and out in front of the wall, never on
-// the band), the auto layout (every item placed, deterministic, the same across the battle's size and map phases),
+// hub growing with their buildings, never past 300), placement rules (anywhere on the map and right against anything,
+// no overlap, doorways free, never on the band), the auto layout (every item placed, deterministic, the same across the battle's size and map phases),
 // the battle map built from the plan (a placed building at its cells, the wall ring, gates on every side, towers, the
 // placed spike pits and trench, the parked car, outlines in the view but open ground in a raid), the attack from any
 // side on a base without walls, the stores holding the base's real stock and armory (every unit accounted for), a
@@ -79,14 +78,16 @@ section("Placement rules");
   const C = BM.yardHalf(h);
   check(!BM.placeItem(st, h, bunk.key, 10, 10, 0) && bunk.rec.at && bunk.rec.at[0] === 10, "a bunkhouse placed at 10, 10 (kept on the building record)");
   check(BM.placeItem(st, h, store.key, 10, 10, 0).startsWith("On top of"), `the storehouse on top of it: refused (${BM.placeItem(st, h, store.key, 10, 10, 0)})`);
-  check(/Too close/.test(BM.placeItem(st, h, store.key, 15, 10, 0)), `right against it (no cell between): refused (${BM.placeItem(st, h, store.key, 15, 10, 0)})`);
-  check(!BM.placeItem(st, h, store.key, 16, 10, 0), "a cell clear between them: fine");
+  check(!BM.placeItem(st, h, store.key, 15, 10, 0), "right against it (no cell between): fine (no buffer: the one rule is the map itself)");
   BM.unplaceItem(st, h, store.key);
   check(/doorway/i.test(BM.placeItem(st, h, pits.key, 12, 14, 0)), `spike pits in the bunkhouse's doorway: refused (${BM.placeItem(st, h, pits.key, 12, 14, 0)})`);
-  check(!BM.placeItem(st, h, bar.key, 15, 10, 0), "a barricade right against the bunkhouse: fine (defences keep no buffer)");
+  check(!BM.placeItem(st, h, bar.key, 15, 10, 0), "a barricade right against the bunkhouse: fine");
   check(!BM.placeItem(st, h, pits.key, 0, C + 6, 0), "spike pits out in front of the wall: fine");
   check(/wall/i.test(BM.placeItem(st, h, pits.key, 0, C, 0)), `on the band where the wall stands: refused (${BM.placeItem(st, h, pits.key, 0, C, 0)})`);
-  check(/yard/i.test(BM.placeItem(st, h, plot.key, 0, C + 6, 0)), `a crop plot outside the yard: refused (${BM.placeItem(st, h, plot.key, 0, C + 6, 0)})`);
+  check(!BM.placeItem(st, h, plot.key, 8, C + 6, 0), "a crop plot out beyond the wall: fine (anywhere on the map)");
+  check(!BM.placeItem(st, h, store.key, 8, C + 10, 0) && store.rec.at && store.rec.at[1] === C + 10, "a storehouse out beyond the wall too");
+  check(/wall/i.test(BM.placeItem(st, h, store.key, 8, C, 0)), `a building on the band where the wall stands: refused (${BM.placeItem(st, h, store.key, 8, C, 0)})`);
+  BM.unplaceItem(st, h, store.key);
   check(/Off the map/.test(BM.placeItem(st, h, pits.key, 0, 1000, 0)), "off the map: refused");
   check(!BM.placeItem(st, h, plot.key, -12, -12, 1) && h.plan.plots[0][2] === 1, "a crop plot placed and turned (base.plan.plots)");
   check(/base itself/.test(BM.placeItem(st, h, store.key, -3, -3, 0)), `on the base itself in the middle: refused (${BM.placeItem(st, h, store.key, -3, -3, 0)})`);
@@ -96,7 +97,7 @@ section("Placement rules");
   check(lay.every((e) => e.at) && lay.filter((e) => !e.auto).length === 4, `everything else placed by the game (${lay.filter((e) => e.auto).length} auto, ${lay.filter((e) => !e.auto).length} by hand)`);
   const again = BM.layoutOf(st, h);
   check(lay.every((e, i) => again[i].at && e.at.join() === again[i].at.join()), "the auto layout is the same twice");
-  // Nothing auto-placed overlaps or touches anything else (the buffer).
+  // Nothing auto-placed overlaps anything else.
   let bad = 0;
   for (const e of lay) { const o = BM.occupancy(st, h, e.it.key, BM.autoLayout(st, h)); if (BM.placeProblemAt(h, e.it, e.at[0], e.at[1], e.at[2], o)) bad++; }
   check(bad === 0, `every placed thing passes the rules against the rest (${bad} do not)`);

@@ -18,7 +18,7 @@ Taken in headless Chromium from prepared saves (2026-10-19), 1500 × 900. Every 
 | Shot | What it shows |
 | --- | --- |
 | `03-hub-place-building-ghost.png` | A common room picked: its footprint follows the mouse, green where it fits, the cells outside its doors in orange, the hover line saying where it goes. |
-| `04-hub-place-defence-ghost.png`, `05-hub-place-defence-turned.png` | A barricade picked and turned with R (defences keep no buffer: right next to anything). |
+| `04-hub-place-defence-ghost.png`, `05-hub-place-defence-turned.png` | A barricade picked and turned with R (right next to anything). |
 | `06-hub-defence-placed.png` | The barricade put down; the map laid out again around it. |
 | `07-hub-construction-tab.png`, `08-hub-build-opens-map.png` | Build on the Construction tab queues the building and opens the map with its outline picked. |
 | `11-outpost-place-pits.png` | Spike pits placed out in front of the outpost's wall. |
