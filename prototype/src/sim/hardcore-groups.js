@@ -46,8 +46,9 @@
 //   before the hive stands, CULL_MASS of the gathering mass). Destroy the hive and the hordes stop.
 // - With HELP_AT of the garrison left it asks you for help (a card, with a hub): 40 ammo (harder sorties for
 //   SUPPLY_DAYS days) or 6 meds (MEDS_POP wounded back on the walls). At EVAC_AT it sends its civilians to you.
-// - It falls when the garrison is ground down to GARRISON_BREAK of what stayed (BREAK_MIN at least), its base is lost
-//   or the group is broken: the base is a ruin full of the dead (a horde of the fallen, infection, the armory's loot
+// - It falls when the garrison is ground down to GARRISON_BREAK of what stayed (BREAK_MIN at least), its base is lost,
+//   the group is broken, or a horde of OVERRUN_RATIO × what its walls hold walks in (hcMilitaryHordeHit: the garrison
+//   fights a break-in by the numbers like any group and mostly wins it, and it never flees): the base is a ruin full of the dead (a horde of the fallen, infection, the armory's loot
 //   left behind), DEAD of the last defenders die, 1–3 reach you as recruits. The military is gone, and what is left of
 //   it becomes groups of its own: the garrison's survivors (the "Holdouts" of the base, a fortress) and the strike
 //   force's stragglers ("Remnant of the 3rd Battalion", military), each a band on the road (as the first bands) that
@@ -118,8 +119,10 @@ export const HC_MILITARY = {
   STRIKE_DAY: [3, 12], STRIKE_SHARE: [0.5, 0.65], STRIKE_SPEED: 1.0, STRIKE_KEEP: 13,
   FIGHT_DAYS: [2, 4], FIGHT_KILL: [5, 9], FIGHT_LOSS: [0.5, 0.7], CITY_DEAD: [500, 900], CITY_REFILL: [60, 140],
   HIVE_HURT: 0.6, HIVE_RES: [2, 5], CUT_OFF_R: [3, 8], HOLD_MAX: 60, HOLD_DEATH: 0.02, SEE_R: 8,
-  // The garrison that stayed.
-  GARRISON_BREAK: 0.65, BREAK_MIN: 8,
+  // The garrison that stayed. OVERRUN_RATIO: the dead's weight on the walls (hordes.js hordeWallPower) over the base's
+  // hold (groupflight.js baseHold) that overruns it whatever the fight inside went: 1 / RAIDS.BREAK, the overrun of
+  // factions.js' numbers raids before AI parity, which the outbreak's hordes are sized by (hardcore-outbreak.js).
+  GARRISON_BREAK: 0.65, BREAK_MIN: 8, OVERRUN_RATIO: 1.25,
   SORTIE_RANGE: 6, SORTIE_CHANCE: 0.3, SORTIE_KILL: [0.6, 1.2], SORTIE_LOSS: 0.25,
   CULL_GAP: [10, 16], CULL_RANGE: 12, CULL_RES: [2, 5], CULL_GUARD: [0.1, 0.2], CULL_MASS: [0.08, 0.16], CULL_LOSS: 0.4,
   HELP_AT: 0.85, EVAC_AT: 0.7, SUPPLY_DAYS: 14, MEDS_POP: 2,
@@ -1014,6 +1017,20 @@ function evacuation(state, f, m) {
     source: "refugees", baseId: h ? h.id : null, partyId: team ? team.id : undefined, title: "Evacuees from the base",
     intro: `${f.name} cannot protect its civilians any more. A truck brought ${n} of them${h ? ` to ${h.name}` : " to your people"}: they ask to join you.`,
   });
+}
+
+// A horde at the besieged base (hordes.js onHordeEnter, after the walls and the fight inside): the garrison fights the
+// break-in by the numbers like any group (factions.js resolveOrdinaryRaid) and mostly wins it, since a break-in force
+// is 20 of the dead at most (defences.js breakInForce), and it never flees (hcNoGrow: groupflight.js hordeOverrun). The
+// outbreak's work sizes its hordes to break the base about the overrun day (hardcore-outbreak.js militaryDaily), so
+// the old rule holds here: a mass of OVERRUN_RATIO × the base's hold is past holding, and the base is overrun.
+// att: the horde's weight on the walls, def: the base's hold. True when the base fell to it.
+export function hcMilitaryHordeHit(state, f, h, att, def) {
+  const m = hcMilitary(state);
+  if (!m || m.fell || !f || f.id !== m.id || !f.alive || !f.bases.includes(m.tile) || h.tile !== m.tile) return false;
+  if (!(att >= M.OVERRUN_RATIO * def)) return false;
+  militaryFalls(state, f, "overrun");
+  return true;
 }
 
 // The base falls: a ruin full of the dead, most of the soldiers gone, a few to you, a remnant on the road.

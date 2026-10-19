@@ -379,8 +379,9 @@ function militaryDaily(state, O) {
   const t = clamp01((d - M.stood) / span);
   const breakAt = HC.MIL_BREAK_AT;
   const k = t <= breakAt ? lerp(HC.MIL_SIZE[0], 1, breakAt ? t / breakAt : 1) : lerp(1, HC.MIL_SIZE[1], (t - breakAt) / Math.max(0.01, 1 - breakAt));
-  // What breaks the base's defence (factions.js resolveRaidOnFaction: a horde of n hits with n × 0.12 against
-  // 8 + their strength × 0.8, and breaks it above 1.1 × that).
+  // What breaks the base's defence: a horde of n weighs n × 0.12 on the walls (hordes.js hordeWallPower) against
+  // 8 + their strength × 0.8 (groupflight.js baseHold), and a mass of HC_MILITARY.OVERRUN_RATIO × that overruns the
+  // base (hardcore-groups.js hcMilitaryHordeHit); 1.1 × here, the last hordes MIL_SIZE[1] × it.
   const need = ((8 + strength(f) * 0.8) * 1.1) / 0.12;
   let size = Math.max(30, Math.round(need * k * state.rng.range(0.85, 1.15)));
   M.sent++;

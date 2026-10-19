@@ -22,6 +22,7 @@ import { hordeMilitaryPickup } from "./deadsoldiers.js";
 import { hordeBeastPickup } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
 import { shelterHeat } from "./fieldheat.js";
 import { hordeOverrun, baseHold } from "./groupflight.js"; // a group whose base the dead overran may leave it
+import { hcMilitaryHordeHit } from "./hardcore-groups.js"; // hardcore's besieged military: a mass past its hold overruns the base
 import { SILENT } from "./hiding.js"; // a base running silent makes less noise
 import { hordeEnter as fieldHordeEnter } from "./fieldworks.js"; // field works in the dead's way
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Horde size
@@ -226,6 +227,7 @@ function onHordeEnter(state, h) {
     h.target = null;
     reduceHorde(state, h, h.size - h.size * (held ? 0.45 : 0.7));
     hordeOverrun(state, f, h.tile, att, def, !!held); // groupflight.js: overrun and no hope of holding it, they leave
+    if (f.hcMilitary) hcMilitaryHordeHit(state, f, h, att, def); // hardcore-groups.js: the besieged base, overrun by a mass past its hold
     return;
   }
   if (h.role === "build") {
