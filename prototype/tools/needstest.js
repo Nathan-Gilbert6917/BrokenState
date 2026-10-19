@@ -109,7 +109,22 @@ function team(st, n, supplies) {
   // eating.js: everyone eats by the hour at the mealtimes, each to their own target (80–100); the stores pay as they eat.
   // Two days to settle (the gauges start full), then a day measured against upkeep.js's per head × heads.
   for (let d = 0; d < 2; d++) { for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); } basesDaily(st); }
-  check(residents(st, h.id).every((s) => s.hunger >= 60 && s.hunger <= 100 && s.thirst >= 99.9), `fed in full, everyone stays in their band (${residents(st, h.id).map((s) => r1(s.hunger)).join(", ")})`);
+  check(residents(st, h.id).every((s) => s.hunger >= 60 && s.hunger <= 100 && s.thirst >= NEEDS.drink[0] && s.thirst <= 100), `fed and watered in full, everyone stays in their band (hunger ${residents(st, h.id).map((s) => r1(s.hunger)).join(", ")}; thirst ${residents(st, h.id).map((s) => r1(s.thirst)).join(", ")})`);
+  // Thirst moves at a base as hunger does (2026-10-19): it falls by the hour at the day's rate and they drink from the
+  // stores below the drink line, up to full; so over a day everyone drinks about a day's water at the day's thirst.
+  {
+    const r0 = residents(st, h.id)[0];
+    const t0 = r0.thirst;
+    st.hour++; needsHour(st);
+    check(near(r0.thirst, t0 - (NEEDS.water / 24) * thirstAt(st), 1e-6) || (t0 - (NEEDS.water / 24) * thirstAt(st) < NEEDS.drink[0] && near(r0.thirst, NEEDS.drink[1], 1e-6)), `thirst falls by the hour at a base (${r1(t0)} → ${r1(r0.thirst)}, ${r1((NEEDS.water / 24) * thirstAt(st))} an hour at today's thirst ${thirstAt(st)})`);
+    // Two days: the drinks (each hour's rise plus the hour's fall before it) add up to the days' water, give or take
+    // one drink (the sawtooth's phase), and the gauge never sits below the drink line.
+    let drank = 0, drinks = 0, tMin = 100;
+    for (let i = 0; i < 48; i++) { const b = r0.thirst; st.hour++; needsHour(st); const wr = (NEEDS.water / 24) * thirstAt(st); if (r0.thirst > b) { drank += r0.thirst - b + wr; drinks++; } tMin = Math.min(tMin, r0.thirst); if (st.hour % 24 === 0) basesDaily(st); }
+    const want = 2 * NEEDS.water * thirstAt(st), aDrink = NEEDS.drink[1] - NEEDS.drink[0];
+    check(drinks >= 2 && tMin >= NEEDS.drink[0] - 1e-6, `they drink from the stores below ${NEEDS.drink[0]} and never sit under it (${drinks} drinks in two days, lowest ${r1(tMin)})`);
+    check(Math.abs(drank - want) <= aDrink + 1e-6, `about a day's water a day, at the season's thirst (${r1(drank)} of ${r1(want)} points over two days)`);
+  }
   const e0 = econStats(st).eaten, f0 = food(h);
   for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); }
   basesDaily(st);
