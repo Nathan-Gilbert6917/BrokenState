@@ -291,7 +291,9 @@ function strongTeam(n) {
   check(poolLoad(p) <= partyCapacity(state, p) + 1e-9, `auto-loot respects the carry limit (${poolLoad(p).toFixed(1)}/${partyCapacity(state, p).toFixed(1)} kg)`);
   closeCombat(state);
   check(!state.combat, "closes cleanly");
-  // Base defense: everything goes to the armory, no carry limit.
+  // Base defense: everything goes to the armory, no carry limit. (Physical rounds: the rifles load from the base's
+  // stores as the fight starts, so the base holds their rounds.)
+  h.stock.a_556_fmj = (h.stock.a_556_fmj || 0) + 600;
   let arm0 = h.armory.length;
   let bb = null; tries = 0;
   while (tries++ < 20) {

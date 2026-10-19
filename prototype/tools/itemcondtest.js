@@ -344,7 +344,7 @@ const truckHooks = takeHooks(/truckflash|formFinds/); // and the boxed and bulk 
 {
   const rng = new Rng(9001);
   const ks = [];
-  const NEW_KITS = ["escorts", "contractors", "looters", "survivalists", "preppers"]; // added after the baseline (escorts.js: merchant caravans' guards; nomads.js: the nomad tiers)
+  const NEW_KITS = ["escorts", "contractors", "looters", "survivalists", "preppers", "drifters"]; // added after the baseline (escorts.js: merchant caravans' guards; nomads.js: the nomad tiers)
   // A carrier's empty pouches (contents []) are no items: stowing a thing first looks for a stack to merge onto in the
   // rig's pouches (inventory.js mergeOnto -> rigPouches makes the list), which the baseline's carriers never had.
   const bodyKeys = (items) => keysOf(items.map((it) => (it && it.contents && GEAR[it.key] && GEAR[it.key].pouches && !it.contents.some(Boolean) ? { key: it.key } : it)));
