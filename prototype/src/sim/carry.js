@@ -576,6 +576,14 @@ function addGroundSupply(site, key, q, extra = {}) {
     cur.value = cur.qty * supValue(key);
   } else site.items.push({ kind: "supply", key, name: SUPPLIES[key].name, qty: q, value: q * supValue(key), ...(FOODS[key] ? { left: extra.left ?? FOODS[key].shelf } : {}), ...(extra.eggs != null ? { eggs: extra.eggs } : {}), ...(extra.worm > 0 ? { worm: extra.worm } : {}) });
 }
+// Supplies left on a tile's ground by those who cannot carry them on (nomads.js leaveOnGround: a band's goods where
+// nobody of it is left to carry them, or what will not fit).
+export function leaveSuppliesAt(state, tile, sup) {
+  const list = Object.entries(sup || {}).filter(([k, q]) => SUPPLIES[k] && q > 1e-9);
+  if (!list.length || tile == null) return;
+  const site = groundAt(state, tile, true);
+  for (const [k, q] of list) addGroundSupply(site, k, q);
+}
 const touched = (state, site) => { site.lastConfirmed = day(state); markDeathSite(state, site); };
 function dropSite(state, site) {
   if (site.items.length || (site.walked && site.walked.length) || site.names.length) return;

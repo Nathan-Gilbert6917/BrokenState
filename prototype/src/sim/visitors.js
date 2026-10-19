@@ -14,9 +14,21 @@
 //
 // Raiders (kind "raiders")
 // - A band of clamp(3 + day / 30 + 0–2, 3, 14) people, each as strong as 2.6 + min(3.4, day / 80) (clubs and old
-//   pistols early, assault rifles and plate in the second year). They pick a target by its loot against how well it
-//   is defended (never one stronger than they are): your bases (baseDefense, only when their strength is at least
-//   0.6 of it), your teams in the field (not within 2 tiles of a base), your trade-route and supply convoys, other
+//   pistols early, assault rifles and plate in the second year).
+// - They live as a nomad band does (docs/adr/0001-ai-parity.md; nomads.js, the same code): their people are records
+//   with what they carry (bands.js), their stores and shelf are what those people can carry by your teams' rule
+//   (nomads.js bandRoom: what will not fit stays where it was or lies on the ground), every day their hands forage and
+//   find water as the looters among the nomads do and every head eats and drinks from their stores (bandFeeds:
+//   hungry, they lose people), and their wounded are cared for from their own meds (bandCare). They scavenge and loot
+//   places on their way (below), and, hostile, trade with nobody, as the looters do not.
+// - Siege kit: the ladders and the ram they set out with from beyond the border (siege.js bandSetOutKit: the old kit
+//   dice, thrown once at the border) are real items in their gear, carried like the rest. Against a walled base they
+//   bring all of them they have hands for (bandKit); short of what the raid's dice want they make more by a group's
+//   crafting (arsenal.js bandMakes: your recipe, your bench, paid from their stores) when they have the means. After
+//   the raid they go on with whoever is left (siegeGearBack); a band broken or wiped out leaves everything it carried
+//   where it ended (dropBandGoods: your base's stores and armory, else the ground).
+// - They pick a target by its loot against how well it is defended (never one stronger than they are): your bases
+//   (baseDefense, only when their strength is at least 0.6 of it), your teams in the field (not within 2 tiles of a base), your trade-route and supply convoys, other
 //   groups' bases (8 + strength × 0.8, at 1.2, one per band), groups' caravans on foot, merchant caravans from outside, and
 //   rich sites (loot 0.45+, nobody's land, not within 8 tiles of a group's base: their scavenging grounds). Once they carry loot worth 10 × their strength, have lost half the band,
 //   were paid off or their days are up, they head for the nearest border tile.
@@ -97,7 +109,7 @@ import { waterIn, drawWater, keyWord } from "./water.js"; // purified and un-pur
 import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText, makeGang } from "./factions.js";
 import { raidTier } from "./defences.js";
 import { lookoutsSpot, surpriseAt, watchSawText, SURPRISE } from "./watch.js"; // the lookouts' warning; an unwatched night
-import { raidSiegeKit, kitText, GRENADES } from "./siege.js";
+import { raidSiegeKit, kitText, GRENADES, bandSetOutKit } from "./siege.js";
 import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
@@ -106,7 +118,7 @@ import { inCoverage, hasNetwork, heardBy } from "./radio.js";
 import { borderTiles } from "./hives.js";
 import { newItem, lootItem, allCarried, carriedSpots } from "./inventory.js";
 import { syncBand } from "./bands.js"; // a band's people: the grenades they carry (bandKit)
-import { spend } from "./itemcond.js"; // the condition of what they carry
+import { spend, kitSource } from "./itemcond.js"; // the condition of what they carry
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
 import { travelFactor, thirstAt, thirstAhead } from "./weather.js";
@@ -137,6 +149,8 @@ import { convoyPolicy } from "./breakoff.js";
 import { swapGun } from "./gundist.js"; // the gun distribution: which gun a merchant carries
 import { pickGunToBuy, noteGunBought } from "./govguns.js"; // the governor buys a gun for the unarmed
 import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { NOMADS, bandRoom, bandFeeds, bandCare, shelveBand, stockBand, leaveOnGround } from "./nomads.js"; // a raider band lives as a nomad band does (call-time only: safe in the import cycle)
+import { bandMakes, keepItem } from "./arsenal.js"; // its ladders and ram made by a group's crafting; its gear to the gang it becomes
 
 // ---------- numbers ----------
 export const OUTSIDERS = {
@@ -296,11 +310,19 @@ function makeVisitor(state, kind, tile, opts = {}) {
     v.type = "raider";
     v.goodwill = -80;
     v.until = state.hour + 24 * rng.int(R.stay[0], R.stay[1]);
-    v.capacity = 40 + v.size * 25;
+    v.capacity = 40 + v.size * 25; // the old figure, kept for the trade code's reads: what they carry is their people's (nomads.js bandRoom)
     v.greed = Math.round(vStrength(v) * R.greed);
     v.hostile = true;
     addFoodsTo(v.stock, typedFood(state, "raider", v.size * 3)); // foods.js: what raiders eat
     v.stock.ammo = v.size * 10;
+    // Water for the road as a nomad band starts with (NOMADS.WATER_START days a head): they drink from it (raiderDay).
+    v.stock.water = Math.round(v.size * NOMADS.WATER_START);
+    v.kitKind = "raiders"; // bands.js: their people are made from the raiders' kit
+    // The ladders and the ram they set out with (siege.js bandSetOutKit: its own dice, the visitors' left as they
+    // were), real items in their gear from now on.
+    const kit = bandSetOutKit(state, v.size, v.serial);
+    for (let i = 0; kit && i < kit.ladders; i++) v.wares.push(lootItem("ladder", kitSource("raiders"), [state.seed, "bandkit", v.serial, "l", i]));
+    if (kit && kit.ram) v.wares.push(lootItem("ram", kitSource("raiders"), [state.seed, "bandkit", v.serial, "r"]));
   } else if (kind === "merchants") {
     const M = O.merchants;
     const fam = rng.pick(MERCHANT_NAMES.filter((n) => !taken.has(`the ${n} caravan`)).concat(MERCHANT_NAMES));
@@ -450,10 +472,13 @@ function headOut(state, v, why = "") {
   return false;
 }
 
-export function leaveMap(state, v, how = "left") {
+// opts (a band of raiders broken or wiped out): base, the base of yours where it ended (its goods into your stores and
+// armory); tile, where it ended (its goods on the ground there; v.tile by default).
+export function leaveMap(state, v, how = "left", opts = {}) {
   const i = visitorsOf(state).indexOf(v);
   if (i < 0) return;
   state.visitors.splice(i, 1);
+  if (v.kind === "raiders" && (how === "wiped" || how === "broken")) dropBandGoods(state, v, opts.base || null, opts.tile ?? v.tile);
   const info = visitorInfo(state);
   if (state.trade && state.trade.visitorId === v.id) state.trade = null;
   if (state.tradeQueue) state.tradeQueue = state.tradeQueue.filter((t) => t.visitorId !== v.id);
@@ -476,6 +501,7 @@ export function visitorsDaily(state) {
   const d = day(state);
   if (info.rep < 0) info.rep = Math.min(0, info.rep + O.rep.recover);
   for (const v of [...visitorsOf(state)]) if (v.phase === "sheltered") shelterDay(state, v);
+  for (const v of [...visitorsOf(state)]) if (v.kind === "raiders" && visitorsOf(state).includes(v)) raiderDay(state, v);
   if (state.visitorsOff) return; // tools: a world without outsiders (the comparison runs)
   settleBands(state);
   for (const kind of VISITOR_KINDS) {
@@ -486,6 +512,28 @@ export function visitorsDaily(state) {
     if (n < capFor(kind, d) + (kind === "raiders" && isLate(state) ? ERAS.LATE_RAIDER_BANDS : 0)) spawnVisitor(state, kind);
     info.next[kind] = d + gapDays(kind, d, info.rng);
   }
+}
+
+// ---------- raiders: a day on the road ----------
+// A band from beyond the border lives off what it carries and finds, by the nomads' own code (nomads.js): its hands
+// forage and find water as the looters among the nomads do (NOMADS.TIERS[1]), better at a stop by a river or a lake;
+// every head eats and drinks from its stores, and a hungry band loses people (bandFeeds); its wounded are cared for
+// from its own meds (bandCare). Its own dice (a hash of the band and the day): the visitors' dice stay as they were.
+// Not while it is in a fight.
+const RAIDER_LIFE = () => NOMADS.TIERS[1];
+export function raiderDay(state, v) {
+  if (v.phase === "battle" || !visitorsOf(state).includes(v)) return;
+  const rng = new Rng(Math.floor(hash01(state.seed, "raiderday", v.serial, day(state)) * 4294967296) >>> 0);
+  const S = visitorInfo(state).stats;
+  const lose = (n, why) => {
+    v.size = Math.max(0, v.size - n);
+    S[`raiders_${why}`] = (S[`raiders_${why}`] || 0) + n;
+    if (v.size > 0) return false;
+    leaveMap(state, v, "broken");
+    return true;
+  };
+  if (bandFeeds(state, v, RAIDER_LIFE(), rng, { camp: v.phase !== "travel", lose })) return;
+  bandCare(state, v, lose);
 }
 
 // ---------- raider bands that settle ----------
@@ -505,6 +553,8 @@ function settleBands(state) {
     const site = sites.sort((a, b) => (b.ruin ? 1 : 0) - (a.ruin ? 1 : 0) || g.distance(v.tile, a.id) - g.distance(v.tile, b.id) || a.id - b.id)[0];
     const name = cap1(v.name.replace(/^the /i, ""));
     const f = makeGang(state, site.id, { type: "raider", pop: v.size, name, stock: v.stock, known: !!v.known, rng: info.rng });
+    for (const it of v.wares || []) keepItem(state, f, it, "kept"); // their gear (their ladders and ram too) is the gang's
+    v.wares = [];
     state.stats.bandsSettled = (state.stats.bandsSettled || 0) + 1;
     const place = site.ruin ? `the ruins of ${site.ruin.name}` : tileLabel(state, site.id);
     if (state.live.has(site.id) || inCoverage(state, site.id)) log(state, `${cap1(v.name)} have dug in at ${place}: a new gang in the state (${f.name}, ${v.size} people).`, "danger");
@@ -910,22 +960,90 @@ function raidWarning(state, v) {
   });
 }
 
-// The siege kit an outsider band brings against this base (siege.js raidSiegeKit: sometimes, by preparedness),
-// fixed once it has picked the base. Its grenades are the ones its people carry (bands.js: they came with them;
-// docs/adr/0001-ai-parity.md, nothing from nowhere): up to what the kit's dice wanted, never more than they have, and
-// on the map each throws their own (fighters.js fitThrowables). The ladders and the ram come with a band from beyond
-// the border as it comes.
-function bandKit(state, v, base) {
-  if (!base) return null;
-  if (!v.siegeFor || v.siegeFor.baseId !== base.id) v.siegeFor = { baseId: base.id, kit: raidSiegeKit(state, base, { count: clamp(v.size, 1, 14), key: v.serial * 31 + localId(state, base.id), /* never the raw ids: they are process-wide */ outsider: true, kind: v.power >= 5.5 ? "frag" : "pipebomb" }) };
-  const want = v.siegeFor.kit;
-  if (!want) return null;
+// The siege kit an outsider band brings against a walled base of yours. The dice (siege.js raidSiegeKit: by
+// preparedness, thrown once when it picks the base) say what the raid wants; what it brings is its own
+// (docs/adr/0001-ai-parity.md, nothing from nowhere):
+//   - Ladders and the ram: the ones in its gear (it set out with them from beyond the border, siege.js bandSetOutKit,
+//     or made or took them since), as many as it has hands for (the ram takes two of its people, a ladder one more
+//     each, as a group's raid: arsenal.js packRaidKit). Short of what the dice want, it makes them as a group does
+//     (makeSiegeGear: arsenal.js bandMakes) when it has the means, into its gear. After the raid they go on with
+//     whoever is left (siegeGearBack).
+//   - Grenades: the ones its people carry (bands.js: they came with them), up to what the dice wanted, never more than
+//     they have; on the map each throws their own (fighters.js fitThrowables).
+// Against an unwalled base: nothing.
+export function bandKit(state, v, base) {
+  if (!base || !count(base, "walls")) return null;
+  if (!v.siegeFor || v.siegeFor.baseId !== base.id) {
+    v.siegeFor = { baseId: base.id, kit: raidSiegeKit(state, base, { count: clamp(v.size, 1, 14), key: v.serial * 31 + localId(state, base.id), /* never the raw ids: they are process-wide */ outsider: true, kind: v.power >= 5.5 ? "frag" : "pipebomb" }) };
+    makeSiegeGear(state, v, v.siegeFor.kit);
+  }
+  const want = v.siegeFor.kit || {};
   const people = syncBand(state, v, v.power, "raiders"); // bands.js: the very people who would fight (combat.js bandize)
+  const gear = siegeGearOf(v);
+  const ram = gear.ram && people.length >= 2 ? 1 : 0;
+  let ladders = 0;
+  while (ladders < gear.ladders.length && ram * 2 + ladders < people.length) ladders++;
   const carried = people.flatMap((s) => allCarried(s).filter((it) => it && GRENADES.includes(it.key)));
   const grenades = Math.min(want.grenades || 0, carried.length);
   const frags = carried.filter((it) => it.key === "frag").length;
-  const kit = { ladders: want.ladders || 0, ram: want.ram || 0, grenades, kind: !grenades ? want.kind : frags >= grenades ? "frag" : "pipebomb", carried: true };
+  const kit = { ladders, ram, grenades, kind: !grenades ? want.kind || "pipebomb" : frags >= grenades ? "frag" : "pipebomb", carried: true };
   return kit.ladders || kit.ram || kit.grenades ? kit : null;
+}
+// The ladders and the ram in a band's gear (its shelf, v.wares: what it carries).
+export const siegeGearOf = (v) => { const w = (v && v.wares) || []; return { ram: w.find((it) => it && it.key === "ram") || null, ladders: w.filter((it) => it && it.key === "ladder") }; };
+// Short of what a raid's dice want (want: { ladders, ram }), the band makes them now as a group does (arsenal.js
+// bandMakes: your recipe, its best hand's skill, your bench, the scrap and parts paid from its stores), each only if
+// its people can carry it on (bandRoom), into its gear. A band on the road has no bench: by your rules it makes a
+// ladder or a ram only where a group may without one (a world whose groups count as built: groupworks.js groupsBuild).
+// Returns the items made.
+export function makeSiegeGear(state, v, want) {
+  if (!want) return [];
+  const have = siegeGearOf(v), made = [];
+  const tag = [state.seed, "bandsiege", v.serial, day(state)];
+  const make = (key, i) => {
+    if (bandRoom(state, v) < (GEAR[key].weight || 0)) return false;
+    const it = bandMakes(state, v, key, [...tag, key, i]);
+    if (!it) return false;
+    v.wares.push(it);
+    made.push(it);
+    return true;
+  };
+  if (want.ram && !have.ram) make("ram", 0);
+  for (let i = have.ladders.length; i < (want.ladders || 0); i++) if (!make("ladder", i)) break;
+  return made;
+}
+// After a raid on your base (resolveRaidOnYou): the ladders and the ram go on with whoever of the band is left (the
+// ram takes two of them, a ladder one), as a group's raid brings its own home (arsenal.js siegeGearHome); what nobody
+// is left to carry lies in the yard of the base they hit (your armory), else on the ground there. Returns the items
+// left behind.
+export function siegeGearBack(state, v, base) {
+  const gear = siegeGearOf(v);
+  let hands = Math.max(0, v.size);
+  const left = [];
+  for (const it of [gear.ram, ...gear.ladders].filter(Boolean)) {
+    const need = it.key === "ram" ? 2 : 1;
+    if (hands >= need) { hands -= need; continue; }
+    v.wares.splice(v.wares.indexOf(it), 1);
+    left.push(it);
+  }
+  if (base && state.bases.includes(base)) base.armory.push(...left);
+  else leaveOnGround(state, v.tile, left);
+  return left;
+}
+// A band of raiders broken or wiped out (leaveMap): what it carried (its stores, its shelf with its ladders and ram)
+// lies where it ended: in the yard of your base it hit (your stores and armory), else on the ground there (carry.js).
+// Its people's own kit is on their bodies (a fight on the map) or went with them. Returns { sup, items }.
+function dropBandGoods(state, v, base = null, tile = v.tile) {
+  const sup = {};
+  for (const [k, q] of Object.entries(v.stock || {})) if (SUPPLIES[k] && q > 1e-9) sup[k] = q;
+  const items = (v.wares || []).filter(Boolean);
+  if (base && state.bases.includes(base)) {
+    for (const [k, q] of Object.entries(sup)) base.stock[k] = (base.stock[k] || 0) + q;
+    base.armory.push(...items);
+  } else leaveOnGround(state, tile, items, sup);
+  for (const k of Object.keys(v.stock || {})) v.stock[k] = 0;
+  v.wares = [];
+  return { sup, items };
 }
 
 // By the numbers, the grenades a band threw over your walls (bandKit's): off the people who carried them, gone.
@@ -958,13 +1076,16 @@ function defendAgainst(state, v, base) {
   return "";
 }
 
-function steal(base, frac, into) {
-  for (const k of Object.keys(base.stock)) {
-    const q = Math.floor((base.stock[k] || 0) * frac);
-    if (q <= 0) continue;
-    base.stock[k] -= q;
-    if (into && SUPPLIES[k]) into[k] = (into[k] || 0) + q;
-  }
+// They carry off up to frac of each supply in the base's stores, as far as their people can carry it (addToStock: a
+// raider band by your teams' rule), the most worth for its weight first; what they cannot carry stays.
+function steal(state, base, frac, v) {
+  const want = {};
+  const keys = Object.keys(base.stock).filter((k) => SUPPLIES[k]).sort((a, b) => supValue(b) / Math.max(1e-3, supWeight(b)) - supValue(a) / Math.max(1e-3, supWeight(a)) || (a < b ? -1 : 1));
+  for (const k of keys) { const q = Math.floor((base.stock[k] || 0) * frac); if (q > 0) want[k] = q; }
+  const took = addToStock(state, v, want);
+  for (const [k, q] of Object.entries(took)) base.stock[k] = Math.max(0, (base.stock[k] || 0) - q);
+  note(state, "taken from you", roundsIn(took)); // ledger.js
+  return took;
 }
 
 // At your walls not seen coming: at night with nobody awake on watch (watch.js surpriseAt) they are over the wall
@@ -1010,7 +1131,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
     outcome = "broken";
     head = rt && rt.tier === "buildings" ? `${cap1(v.name)} broke into ${base.name} and took the yard, but your people held the buildings and drove them out.` : `${cap1(v.name)} broke into ${base.name} before being pushed out.`;
     log(state, `${cap1(v.name)} broke into ${base.name} before being pushed out. Supplies were stolen.`, "danger");
-    steal(base, store ? 0.1 : 0.2, v.stock);
+    steal(state, base, store ? 0.1 : 0.2, v);
     for (let i = 0; i < 2 && people.length; i++) hurt(state, people[rng.int(0, people.length - 1)], rng.int(15, 45), base.tile, `defending ${base.name}`);
     v.size -= 1;
     v.spared = [...(v.spared || []), base.id];
@@ -1019,7 +1140,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
     outcome = "overrun";
     head = `${cap1(v.name)} overran ${base.name}.`;
     log(state, `${cap1(v.name)} overran ${base.name}.`, "death");
-    steal(base, store ? 0.25 : 0.5, v.stock);
+    steal(state, base, store ? 0.25 : 0.5, v);
     for (let i = 0; i < 3 && people.length; i++) hurt(state, people[rng.int(0, people.length - 1)], rng.int(30, 70), base.tile, `when ${base.name} was overrun`);
     v.spared = [...(v.spared || []), base.id];
     // Raiders from outside never keep a base (they are passing through, conquest.js): an outpost they overrun is
@@ -1035,7 +1156,8 @@ export function resolveRaidOnYou(state, v, beaten = null) {
     const took = stolenText(before, base.stock);
     raidReportCard(state, base, { title: outcome === "held" ? `${cap1(v.name)} driven off` : `Raid on ${base.name}`, text: [caught ? `${caught}: the raiders were over the wall before anyone woke.` : "", head, took ? `They took ${took}.` : "", dmg.text].filter(Boolean).join(" "), dmg });
   }
-  if (v.size <= 0) return leaveMap(state, v, "broken");
+  if (v.size <= 0) return leaveMap(state, v, "broken", { base }); // nobody left: what they carried lies in your yard
+  siegeGearBack(state, v, base); // their ladders and ram go on with whoever is left
   v.phase = "travel";
   if (!retargetRaiders(state, v)) headOut(state, v);
 }
@@ -1053,43 +1175,56 @@ function raidGroup(state, v) {
   const rng = vrng(state);
   if (held) v.size -= rng.int(1, 2);
   else {
-    let room = Math.max(0, v.capacity - cargoWeight(v.stock));
-    for (const k of SUPPLY_KEYS) {
-      const lost = Math.max(0, (before[k] || 0) - (f.stock[k] || 0));
-      const q = Math.min(Math.floor(lost * O.raiders.groupKeep), Math.floor(room / supWeight(k)));
-      if (q <= 0) continue;
-      v.stock[k] = (v.stock[k] || 0) + q;
-      room -= q * supWeight(k);
-    }
+    // Their share of what the group lost, as far as their people can carry it (nomads.js stockBand: bandRoom).
+    const keep = {};
+    for (const k of SUPPLY_KEYS) { const q = Math.floor(Math.max(0, (before[k] || 0) - (f.stock[k] || 0)) * O.raiders.groupKeep); if (q > 0) keep[k] = q; }
+    stockBand(state, v, keep);
     v.size -= rng.chance(0.5) ? 1 : 0;
   }
   chronicleNote(state, held ? `${f.name} held off ${v.name}, raiders from outside.` : `${cap1(v.name)}, raiders from outside, hit ${f.name} hard.`, "world", v.goal.tile);
   if (v.size <= 0) leaveMap(state, v, "broken");
 }
 const cargoWeight = (stock) => SUPPLY_KEYS.reduce((a, k) => a + Math.max(0, stock[k] || 0) * supWeight(k), 0);
-// Returns what went in (ledger.js: the rounds of it, noted by the callers that take from outside the AI side).
-function addToStock(v, sup) {
-  let room = Math.max(0, v.capacity - cargoWeight(v.stock));
-  const added = {};
-  for (const [k, q0] of Object.entries(typeGoods(null, sup, v.kind === "raiders" ? "raider" : "travel"))) { // foods.js: days of food as items (no dice here)
-    if (!SUPPLIES[k]) continue;
-    const q = Math.min(FOODS[k] ? q0 : Math.floor(q0), Math.floor(room / supWeight(k)));
-    if (q <= 0) continue;
-    v.stock[k] = (v.stock[k] || 0) + q;
-    added[k] = q;
-    room -= q * supWeight(k);
+// Supplies into the party's stores as far as it can carry them: a raider band by the rule its people carry by
+// (nomads.js stockBand: bandRoom, as a nomad band), any other party by its capacity. What will not fit goes back where
+// it came from (back: the stock it was taken out of) or lies on the ground (tile), else it stays where it is (the
+// caller took nothing yet). Returns what went in (ledger.js: the rounds of it, noted by the callers that take from
+// outside the AI side).
+function addToStock(state, v, sup, { back = null, tile = null } = {}) {
+  const typed = typeGoods(null, sup, v.kind === "raiders" ? "raider" : "travel"); // foods.js: days of food as items (no dice here)
+  let added = {};
+  if (v.kind === "raiders") added = stockBand(state, v, typed);
+  else {
+    let room = Math.max(0, v.capacity - cargoWeight(v.stock));
+    for (const [k, q0] of Object.entries(typed)) {
+      if (!SUPPLIES[k]) continue;
+      const q = Math.min(FOODS[k] ? q0 : Math.floor(q0), Math.floor(room / supWeight(k)));
+      if (q <= 0) continue;
+      v.stock[k] = (v.stock[k] || 0) + q;
+      added[k] = q;
+      room -= q * supWeight(k);
+    }
   }
+  const rest = {};
+  for (const [k, q] of Object.entries(typed)) { const r = q - (added[k] || 0); if (SUPPLIES[k] && r > 1e-9) rest[k] = r; }
+  if (back) for (const [k, q] of Object.entries(rest)) back[k] = (back[k] || 0) + q;
+  else if (tile != null) leaveOnGround(state, tile, [], rest);
   return added;
 }
+// Items onto the party's shelf: a raider band's as far as its people can carry them (nomads.js shelveBand), any other
+// party's all of them. Returns the ones it took; the rest are the caller's to leave where they were.
+const takeItems = (state, v, items) => (v.kind === "raiders" ? shelveBand(state, v, items) : (v.wares.push(...items), items));
 
 function robAiParty(state, v, q) {
   const f = factionById(state, q.owner);
   const rng = vrng(state);
   const seen = state.live.has(partyTile(q));
   if (vStrength(v) >= (q.strength || 2) * 1.1) {
-    if (q.goods && q.goods.supplies) addToStock(v, q.goods.supplies);
-    else addToStock(v, { food: 10, scrap: 10 });
-    if (q.goods && q.goods.gear && q.goods.gear.length) v.wares = [...(v.wares || []), ...q.goods.gear.splice(0)]; // the items too
+    // What the caravan carried, as far as they can carry it; the rest is left on the road (nothing from nowhere: a
+    // caravan with nothing on it gives nothing).
+    const at = partyTile(q);
+    if (q.goods && q.goods.supplies) addToStock(state, v, q.goods.supplies, { tile: at });
+    if (q.goods && q.goods.gear && q.goods.gear.length) { const items = q.goods.gear.splice(0); const kept = takeItems(state, v, items); leaveOnGround(state, at, items.filter((it) => !kept.includes(it))); } // the items too
     visitorInfo(state).stats.robbed++;
     if (seen) log(state, `${cap1(v.name)}, raiders from outside, robbed a ${f && f.known ? `${f.name} ` : ""}caravan near ${tileLabel(state, partyTile(q))}.`, "danger");
     removeParty(state, q);
@@ -1108,10 +1243,11 @@ function robMerchants(state, v, m) {
   const win = rng.chance(clamp(0.5 + (a / Math.max(1, d) - 1) * 0.6, 0.05, 0.95));
   const seen = state.live.has(m.tile) || state.live.has(v.tile);
   if (win) {
-    // Everything in the wagons is theirs (as far as they can carry it: the rest is burned or scattered), the items
-    // too; the merchants who got away walk home with nothing.
-    addToStock(v, m.stock);
-    v.wares = [...(v.wares || []), ...m.wares];
+    // Everything in the wagons is theirs as far as they can carry it (the rest scattered on the road), the items too;
+    // the merchants who got away walk home with nothing.
+    addToStock(state, v, m.stock, { tile: m.tile });
+    const kept = takeItems(state, v, m.wares);
+    leaveOnGround(state, m.tile, m.wares.filter((it) => !kept.includes(it)));
     m.wares = [];
     for (const k of SUPPLY_KEYS) m.stock[k] = 0;
     v.size -= rng.int(0, 1);
@@ -1152,9 +1288,12 @@ function hitConvoy(state, v, p) {
       p.cargo.supplies[k] -= q;
       taken[k] = q;
     }
-    note(state, "taken from you", roundsIn(addToStock(v, taken))); // ledger.js
-    const items = p.cargo.gear.splice(0);
-    if (items.length) v.wares = [...(v.wares || []), ...items];
+    // As far as they can carry it (a raider band: your teams' rule); what they cannot stays in the convoy.
+    const got = addToStock(state, v, taken, { back: p.cargo.supplies });
+    note(state, "taken from you", roundsIn(got)); // ledger.js
+    for (const k of Object.keys(taken)) { if (got[k] > 0) taken[k] = got[k]; else delete taken[k]; }
+    const items = takeItems(state, v, p.cargo.gear.slice());
+    for (const it of items) p.cargo.gear.splice(p.cargo.gear.indexOf(it), 1);
     visitorInfo(state).stats.robbed++;
     log(state, `${cap1(v.name)}, raiders from outside, hit your convoy near ${where} and took ${[planText(taken), ...items.map((it) => it.name)].filter(Boolean).join(", ") || "nothing much"}.${hurtText}`, "danger");
   } else {
@@ -1189,9 +1328,11 @@ function searchSite(state, v) {
   let got = 0;
   if (poi != null) {
     // Through the POI's container ledger (grouppois.js raidPoiAsGroup): what your people left there goes too.
-    const r = raidPoiAsGroup(state, v, t, poi, poiPool(t, poi) * rng.range(range[0], range[1]), { floor, haul: false, news: v.kind === "raiders" ? true : "left", name: v.kind === "raiders" ? cap1(v.name) : undefined });
+    // A raider band takes what your people left in a container only as far as it can carry it (bandRoom; poicont.js
+    // lootPoiAbstract opts.room), as a nomad band does.
+    const r = raidPoiAsGroup(state, v, t, poi, poiPool(t, poi) * rng.range(range[0], range[1]), { floor, haul: false, news: v.kind === "raiders" ? true : "left", name: v.kind === "raiders" ? cap1(v.name) : undefined, ...(v.kind === "raiders" ? { room: bandRoom(state, v) } : {}) });
     got = r ? r.took : 0;
-    if (r && r.gear.length) v.wares.push(...r.gear); // things your people left there
+    if (r && r.gear.length) { const kept = takeItems(state, v, r.gear); leaveOnGround(state, t.id, r.gear.filter((it) => !kept.includes(it))); } // things your people left there
     if (r) for (const [k, q] of Object.entries(r.left)) if (SUPPLIES[k] && q > 0) { v.stock[k] = (v.stock[k] || 0) + q; if (/^a_/.test(k) || k === "ammo") note(state, "scavenged", q); } // ledger.js
     if (got <= 0) return;
   } else {
@@ -1203,7 +1344,7 @@ function searchSite(state, v) {
   }
   visitorInfo(state).stats.sites++;
   const value = got * (v.kind === "raiders" ? 300 : 120);
-  note(state, "scavenged", roundsIn(addToStock(v, { food: Math.round(value * 0.35 / 2), ammo: Math.round(value * 0.25 / 0.5), scrap: Math.round(value * 0.2), meds: Math.round(value * 0.1 / 6), fuel: Math.round(value * 0.1 / 3) })));
+  note(state, "scavenged", roundsIn(addToStock(state, v, { food: Math.round(value * 0.35 / 2), ammo: Math.round(value * 0.25 / 0.5), scrap: Math.round(value * 0.2), meds: Math.round(value * 0.1 / 6), fuel: Math.round(value * 0.1 / 3) })));
   const name = poi != null ? poiPlace(state, t, poi) : t.loc.name;
   if (state.live.has(t.id)) log(state, `${cap1(v.name)} ${v.kind === "raiders" ? "loot" : "pick through"} ${name}.`, v.kind === "raiders" ? "danger" : "info");
 }
@@ -1704,7 +1845,9 @@ function endShelter(state, v) {
   if (base && v.hostile) {
     const took = {};
     for (const k of ["food", "meds", "ammo"]) { const q = Math.floor(supplyAmt(base.stock, k) * 0.12); if (q > 0) { if (k === "ammo") Object.assign(took, spendAmmo(base.stock, q).keys); else if (k === "food") Object.assign(took, takeFood(base, q, { eggs: false, state }).items); else { base.stock[k] -= q; took[k] = q; } } } // ammo: any calibre, by key (rounds.js)
-    note(state, "taken from you", roundsIn(addToStock(v, took))); // ledger.js
+    const got = addToStock(state, v, took, { back: base.stock }); // what they cannot carry stays
+    note(state, "taken from you", roundsIn(got)); // ledger.js
+    for (const k of Object.keys(took)) { if (got[k] > 0) took[k] = got[k]; else delete took[k]; }
     v.hostile = false;
     log(state, `The guests at ${base.name} were thieves: ${cap1(v.name)} slipped away in the night with ${planText(took) || "what they could carry"}.`, "danger");
     return headOut(state, v, "with your supplies");
@@ -1996,19 +2139,22 @@ function onOutsiderFight(state, result, setup) {
         // cannot carry stays in the vehicle or on the tile.
         after = lootCaravan(state, p, { supplies: v.stock, gear: v.wares }, { tile: partyTile(p), name: v.name, kit: setup.enemy.kind, guards: result.enemiesKilled || setup.enemy.count, tactical: !!result.tactical, vehicle: v.escort && !v.vehicleLost && !result.humveeOut ? v.escort.vehicle : null, key: c.key || `v${v.serial}`, result });
       } else if (p && state.parties.includes(p)) {
+        // What the team can carry is off them and in its cargo; the rest lies where they fell (leaveMap: dropBandGoods).
         got = cargoAdd(state, p, v.stock);
-        for (const g of [...v.wares]) { if (typeof Parties.addGearToCargo === "function") { Parties.addGearToCargo(state, p, g); if (p.cargo.gear.includes(g)) items.push(g.name); } }
+        for (const [k, q] of Object.entries(got)) v.stock[k] = Math.max(0, (v.stock[k] || 0) - q);
+        for (const g of [...v.wares]) { if (typeof Parties.addGearToCargo === "function") { Parties.addGearToCargo(state, p, g); if (p.cargo.gear.includes(g)) { items.push(g.name); v.wares.splice(v.wares.indexOf(g), 1); } } }
       } else if (base) {
-        for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got[k] = q; } }
+        for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got[k] = q; v.stock[k] -= q; } }
         items = v.wares.map((g) => g.name);
         base.armory.push(...v.wares);
+        v.wares = [];
         const V = v.escort && v.escort.vehicle && !v.vehicleLost && !result.humveeOut ? ESCORT_VEHICLES[v.escort.vehicle] : null; // humveeOut: it drove off (combat.js carTurn)
         if (V) { // their vehicle, into the base's motor pool (beaten up in the fight)
           const car = createVehicle(state, V.type, { kind: "base", baseId: base.id }, { fuel: 10, condition: 50, name: V.model === "humvee" ? "Humvee" : V.model === "mrap" ? "MRAP" : undefined });
           items.push(`their ${car.name.toLowerCase() === "humvee" || car.name === "MRAP" ? car.name : car.name.toLowerCase()} (in the motor pool)`);
         }
       }
-      leaveMap(state, v, "broken");
+      leaveMap(state, v, "broken", { tile: p && state.parties.includes(p) ? partyTile(p) : v.tile });
     }
     lines.push(`You beat ${name}.`);
     const what = [planText(got), ...items].filter(Boolean).join(", ");
@@ -2022,14 +2168,23 @@ function onOutsiderFight(state, result, setup) {
       for (const pool of result.outcome === "retreat" ? [p.cargo.supplies] : [p.supplies, p.cargo.supplies]) {
         for (const k of Object.keys(pool)) { const q = Math.floor((pool[k] || 0) * frac); if (q > 0) { pool[k] -= q; taken[k] = (taken[k] || 0) + q; } }
       }
-      if (v && !c.robbing) note(state, "taken from you", roundsIn(addToStock(v, taken))); // ledger.js
-      // A trade caravan of yours beaten by raiders: they take the whole load, not a share.
-      if (v && !c.robbing && result.outcome !== "retreat" && p.caravan) { const items = p.cargo.gear.splice(0); for (const k of Object.keys(p.cargo.supplies)) { const q = Math.floor(p.cargo.supplies[k] || 0); if (q > 0) { p.cargo.supplies[k] -= q; taken[k] = (taken[k] || 0) + q; addToStock(v, { [k]: q }); } } v.wares = [...(v.wares || []), ...items]; }
+      // What they take, as far as they can carry it (a raider band: your teams' rule); the rest is dropped there.
+      if (v && !c.robbing) note(state, "taken from you", roundsIn(addToStock(state, v, taken, { tile: partyTile(p) }))); // ledger.js
+      // A trade caravan of yours beaten by raiders: they take the whole load, not a share (as far as they can carry
+      // it: the rest stays in the caravan).
+      if (v && !c.robbing && result.outcome !== "retreat" && p.caravan) {
+        const load = {};
+        for (const k of Object.keys(p.cargo.supplies)) { const q = Math.floor(p.cargo.supplies[k] || 0); if (q > 0) { p.cargo.supplies[k] -= q; load[k] = q; } }
+        const got = addToStock(state, v, load, { back: p.cargo.supplies });
+        note(state, "taken from you", roundsIn(got)); // ledger.js
+        for (const [k, q] of Object.entries(got)) taken[k] = (taken[k] || 0) + q;
+        for (const it of takeItems(state, v, p.cargo.gear.slice())) p.cargo.gear.splice(p.cargo.gear.indexOf(it), 1);
+      }
       lines.push(result.outcome === "retreat" ? `You pulled back${planText(taken) ? `, dropping ${planText(taken)}` : ""}.` : `You lost the fight${planText(taken) ? ` and they took ${planText(taken)}` : ""}.`);
     } else lines.push(c.robbing ? "Their guards held you off and the wagons got away." : "You lost the fight.");
     log(state, `Fight with ${name}: ${result.outcome}.`, "danger");
     if (v && state.visitors.includes(v)) {
-      if (v.size <= 0) leaveMap(state, v, "broken");
+      if (v.size <= 0) leaveMap(state, v, "broken", { tile: p && state.parties.includes(p) ? partyTile(p) : v.tile });
       else {
         v.phase = "travel";
         if (p) v.spared = [...(v.spared || []), `p${p.id}`];
@@ -2057,9 +2212,15 @@ function onOutsiderRaid(state, result, setup) {
   if (result.outcome === "victory") {
     if (base) base.alert = false;
     state.stats.raidsRepelled += 1;
+    // Broken at your walls: everything they carried is in your yard (dropBandGoods: their stores, their shelf, their
+    // ladders and ram); what their dead carried lies on the bodies on the map.
     const got = [];
-    if (v && base) for (const k of SUPPLY_KEYS) { const q = Math.floor(v.stock[k] || 0); if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${keyWord(k)}`); } }
-    if (v) leaveMap(state, v, "broken");
+    if (v && base) {
+      const left = dropBandGoods(state, v, base);
+      for (const [k, q] of Object.entries(left.sup)) if (q >= 1) got.push(`${Math.floor(q)} ${keyWord(k)}`);
+      for (const it of left.items) got.push(it.name);
+    }
+    if (v) leaveMap(state, v, "broken", { base });
     text = `${base ? base.name : "The base"} broke ${v ? v.name : "the raiders"} in a stand-up fight.${got.length ? ` What they carried is yours: ${got.join(", ")}.` : ""}`;
     log(state, text, "good");
     // A stand-up fight at the walls still costs a little (breakdowns.js): a turn counts as 20 minutes of siege.
@@ -2071,7 +2232,7 @@ function onOutsiderRaid(state, result, setup) {
     const how = result.outcome === "retreat" ? "retreat" : left > 0.5 ? "overrun" : "broken";
     if (v) v.lastDamage = "";
     if (v && base && state.bases.includes(base) && v.size > 0) resolveRaidOnYou(state, v, how);
-    else if (v && v.size <= 0) leaveMap(state, v, "broken");
+    else if (v && v.size <= 0) leaveMap(state, v, "broken", { base });
     text = !v ? "The defenders were beaten, but the raiders had already gone." : how === "retreat" ? `Your people pulled out. ${cap1(v.name)} took what they wanted and moved on; ${base ? base.name : "the base"} is still yours.` : how === "overrun" ? `The defenders were beaten. ${cap1(v.name)} took what they wanted.` : `The defenders were beaten, but ${v.name} were too badly mauled to hold the base. They grabbed what they could carry.`;
     if (v && v.lastDamage) text += ` ${v.lastDamage}`;
   }

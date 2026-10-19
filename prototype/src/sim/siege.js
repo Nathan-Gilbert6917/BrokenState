@@ -84,6 +84,21 @@ export function raidSiegeKit(state, base, opts = {}) {
   if (!ladders && !ram && !grenades) return null;
   return { ladders, ram, grenades, kind: opts.kind || "pipebomb" };
 }
+// The ladders and the ram a band of raiders sets out with from beyond the border (visitors.js makeVisitor): the dice
+// raidSiegeKit throws for an outsider band against a walled base with a gate (the year's preparedness × OUTSIDER;
+// ladders 2 with 8+ of them, a ram with 4+), thrown once when it crosses the border, with no base in view yet. From
+// then on they are real items in the band's gear, carried by its people (nomads.js bandRoom), brought to a raid and
+// home from it (visitors.js bandKit, siegeGearBack): no ladder or ram is handed to it again. key: the band's serial.
+// { ladders, ram } or null.
+export function bandSetOutKit(state, n, key) {
+  if ((n || 0) < RAID_KIT.MIN_FIGHTERS) return null;
+  const level = clamp((outsiderPrep(state) - 0.6) / 0.45, 0, 1);
+  if (level <= 0) return null;
+  const r = (k) => roll(state.seed || 1, (key | 0) + 13, k, 0);
+  const ladders = r(1) < level * RAID_KIT.LADDERS * RAID_KIT.OUTSIDER ? (n >= 8 ? 2 : 1) : 0;
+  const ram = n >= 4 && r(2) < ((level - RAID_KIT.RAM_FROM) * RAID_KIT.RAM_PER + RAID_KIT.RAM_GATE) * RAID_KIT.OUTSIDER ? 1 : 0;
+  return ladders || ram ? { ladders, ram } : null;
+}
 // "they carry two ladders and a ram, and grenades" ("" without kit).
 export function kitText(kit) {
   if (!kit) return "";

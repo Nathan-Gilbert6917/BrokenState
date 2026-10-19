@@ -178,8 +178,6 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
   behind the wall tier). No wall counters or field towers. tools/flighttest.js "The judgement is the fight's".
 
 **Done with a caveat.**
-- 4.16, an outsider band (visitors.js) still brings ladders and a ram by its kit dice: it comes from beyond the
-  border with them, and has no stores or crafting on the map. Its grenades are its people's own (above).
 - Soldiers' field load: an AI person carries a weight by kit with no item behind it (carrykit.js CARRY.BASE_KG,
   fighters.js build), so the user's decision of 2026-10-08 ("soldiers in full kit move 4") holds. It is weighed by
   your rule (felt load, a strong back, Fleet-Footed) and leaves nothing on the body.
@@ -248,9 +246,38 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
   is always one of its people at home (groupcare.js desertOne): with everyone out with a party nobody walks out, so
   no deserter is made up for your gates and no group gains a head from nobody.
 
+**Closed in the follow-up pass (2026-10-19): outsider raiders and nomad newcomers.**
+- 4.16, an outsider band's siege kit: the ladders and the ram are real items in the band's gear. It sets out with
+  them from beyond the border by the old kit dice, thrown once (siege.js bandSetOutKit), and carries them by your
+  teams' rule (nomads.js bandRoom). Against a walled base of yours it brings all it has hands for (visitors.js bandKit;
+  the ram takes two, a ladder one more each, as packRaidKit); short of what the raid's dice want it makes more through
+  a group's crafting (makeSiegeGear → arsenal.js bandMakes: groupCraftable, payCraft, groupCraftOut, paid from its
+  stores) only with the means: your recipes need a bench and a band on the road has none, as your team in the field
+  has none. After the raid they go on with whoever is left, else lie in your yard (siegeGearBack); a band broken or
+  wiped out leaves all it carried where it ended (dropBandGoods: your base's stores and armory, else the ground).
+  Its grenades stay its people's own. The band lives as a nomad band does, by the nomads' code: people records, a
+  day's forage, food and water from its stores with hunger costing people (raiderDay → nomads.js bandFeeds), its
+  wounded cared for from its meds (bandCare), what it robs, loots or steals taken only as far as it can carry it
+  (addToStock → stockBand, shelveBand: the rest stays or lies on the ground), and no food or scrap from an empty
+  caravan. Hostile, it trades with nobody, as the nomad looters do not. Its gear goes to the gang it becomes when it
+  settles. tools/siegetest.js "Raiders from beyond the border", visitortest.js "Raiders live as a nomad band does",
+  paritytest.js section 4.
+- Newcomers to a nomad band (nomads.js recruit): refugees from outside and someone off the road each join as a person,
+  made as one who joins you is (bands.js bandNewcomer: recruits.js makeCandidate under the band's own dice), with only
+  what they carry of their own; a refugee party whose people a fight drew gives its very people. They are a mouth
+  the band's stores feed and water (bandFeeds: every head), its meds care for (bandCare: groupmedical.js
+  groupMedicalDaily on its people, no sick bay), and, up to work, hands that forage, find water, survey and raid for
+  it (bandHands) and carry for it (bandRoom). The last of a refugee party brings what they still carried, as far as
+  the band can carry it. tools/nomadtest.js "Newcomers", conservationtest.js (bands' people and shelves, the ground).
+
 **Still open (small, noted for a later pass).**
-- Refugees from outside joining a nomad band (nomads.js recruit) and someone off the road joining it still come as a
-  head count; refugee bands have no people records until one is needed.
+- A refugee or scout party from outside has no people records until a fight draws them (bands.js syncBand); its
+  stores are the party's, not any one person's.
+- tools/dettest.js fails on seed 42 already at 461f710 (seeds 7 and 1234 pass): two worlds on the seed in one process
+  part at hour 306 of the run, where Stonegate and River Market deal their people's kit in a different order (an m4 and
+  an AR swapped between the same people), and on day 38 their stores' 5.56 differs. Not yet traced.
+- A raider band that settles (visitors.js settleBands) still becomes a gang by factions.js makeGang's head count and
+  starting stores, not its very people (its gear does go with it).
 - A hardcore band's stragglers and splinter groups still carry stores made by formula (makeSplinter's minimums, the
   stragglers' rations), not taken from the fallen base's stores.
 - The groups' loadouts do not hand decoys out (they share the explosives, flashbangs and smoke): an AI person throws a

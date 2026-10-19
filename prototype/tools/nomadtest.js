@@ -7,7 +7,9 @@
 //   preppers' armour AC 3 and up.
 // - Survival: a band without food or water loses people and breaks up (starved); the respawn brings the count back.
 // - Recruiting: neutral wanderers (state.wanderers) and refugees from outside (visitors.js), never hostile ones, only
-//   with food in store, never past the cap.
+//   with food in store, never past the cap. Every newcomer is a person (refugees and someone off the road made as one
+//   who joins you is, recruits.js makeCandidate), people conserved; a mouth the band's stores feed and water, a pair of
+//   hands that forages and carries for it, a wounded one cared for from its meds until a hand again.
 // - Surveys: a camp near tiles it does not know surveys them first (grouppois.js knowledge grows by its survey only).
 // - Raids: a POI raid lowers the pool, marks the container ledger (cont.last by the band), takes what your people
 //   left in a container into the band's wares and stock.
@@ -116,7 +118,7 @@ const { CRAFTS } = await import("../src/sim/crafting.js");
 const { newNeutralGroup, wanderers } = await import("../src/sim/wanderers.js");
 const V = await import("../src/sim/visitors.js");
 const { foodIn } = await import("../src/sim/foods.js");
-const { newItem } = await import("../src/sim/inventory.js");
+const { newItem, allCarried } = await import("../src/sim/inventory.js");
 const { Rng } = await import("../src/sim/rng.js");
 const { setAutopilot } = await import("../src/sim/autopilot.js");
 const { attitude } = await import("../src/sim/factions.js");
@@ -278,6 +280,75 @@ section("Recruiting: neutral wanderers and refugees only, with food, up to the c
   check(!v || N.nomads(st).stats.recruits.refugees >= 1, `refugees from outside join (${N.nomads(st).stats.recruits.refugees})`);
   check(!vh || vh.size === s0, "robbers posing as refugees never join");
   check(b.pop <= T[2].size[1], `never past the cap (${b.pop} of ${T[2].size[1]})`);
+}
+
+section("Newcomers: every recruit a person, a mouth to feed and a pair of hands");
+{
+  const st = W();
+  const tile = st.tiles.find((t) => freeTile(st, t) && st.grid.distance(t.id, hub(st).tile) > 14).id;
+  const b = N.spawnNomads(st, { tier: 2, tile, pop: 4 });
+  for (const k of Object.keys(b.stock)) b.stock[k] = 0;
+  b.stock.f_beans = 400; b.stock.water = 200; b.stock.meds = 6;
+  const ws = wanderers(st);
+  ws.groups.length = 0;
+  for (const v of [...V.visitorsOf(st)]) V.leaveMap(st, v);
+  const people0 = N.bandPeople(st, b).slice();
+  // A party of refugees from beyond the border passing by: one or two of them join, each a person.
+  const v = V.spawnVisitor(st, "explorers", { tile, sub: "refugees", hostile: false });
+  const size0 = v ? v.size : 0, pop0 = b.pop;
+  const S = N.nomads(st).stats;
+  const road0 = N.NOMADS.ROADSIDE;
+  N.NOMADS.ROADSIDE = 0; // nobody off the road for now
+  for (let i = 0; i < 300 && S.recruits.refugees === 0 && v; i++) { v.tile = tile; v.phase = "travel"; N.recruit(st, b); }
+  N.NOMADS.ROADSIDE = road0;
+  const joined = b.pop - pop0;
+  const fresh = b.people.filter((s) => !people0.includes(s));
+  check(v && joined >= 1 && joined === S.recruits.refugees, `refugees join (${joined} of ${size0})`);
+  check(fresh.length === joined && b.people.length === b.pop && new Set(b.people.map((s) => s.id)).size === b.people.length, `each one a person in the band's list, never a number (${b.people.length} records for a head count of ${b.pop})`);
+  check(people0.every((s) => b.people.includes(s)), "the band's own people are still the very ones it had");
+  check(v && (st.visitors.includes(v) ? v.size === size0 - joined : size0 === joined), `people conserved: the refugees' party ${size0} → ${st.visitors.includes(v) ? v.size : 0}, the band ${pop0} → ${b.pop}`);
+  check(fresh.every((s) => s.skills && s.traits && s.location && s.location.kind === "band" && s.location.ref.id === b.id && s.joinedNomads === b.id && s.health >= 45 && s.health <= 100 && !s.pending),
+    `made as a refugee who joins you is (recruits.js makeCandidate: health ${fresh.map((s) => Math.round(s.health)).join(", ")}), at home in the band`);
+  const items = fresh.flatMap((s) => allCarried(s));
+  check(items.length <= fresh.length * 5 && fresh.every((s) => !s.gear.rig && (!s.gear.armor || s.gear.armor.key !== "plate")), `only what they carry of their own, a modest kit (${items.map((it) => it.key).join(", ") || "nothing"})`);
+  // Someone off the road: a person too.
+  const NN = N.NOMADS;
+  NN.ROADSIDE = 100;
+  if (st.visitors.includes(v)) V.leaveMap(st, v);
+  const before = b.people.slice();
+  N.recruit(st, b);
+  NN.ROADSIDE = road0;
+  const met = b.people.filter((s) => !before.includes(s));
+  check(S.recruits.roadside === 1 && met.length === 1 && b.people.length === b.pop && met[0].location.kind === "band", `someone off the road joins as a person (${met[0] ? met[0].name : "nobody"})`);
+  // A mouth to feed: every head eats and drinks from the band's stores (bandFeeds), the newest as much as the rest.
+  const T2 = T[2], f0 = T2.forage, w0 = T2.water;
+  T2.forage = 0; T2.water = 0;
+  const eaten = (st2, band) => { const a = foodIn(band.stock), w = band.stock.water; N.bandFeeds(st2, band, T2, new Rng(3), { lose: () => false }); return [a - foodIn(band.stock), w - band.stock.water]; };
+  const [food1, water1] = eaten(st, b);
+  check(food1 > b.pop * NN.EAT - 1e-6 && food1 < b.pop * NN.EAT + 0.1 && Math.abs(water1 - b.pop * NN.DRINK) < 1e-6, `a day: ${food1.toFixed(2)} days of food and ${water1.toFixed(2)} water for ${b.pop} heads, the newcomers' share with the rest`);
+  T2.forage = f0; T2.water = w0;
+  // A pair of hands: up to work, they forage, find water, survey and raid (bandHands) and carry (bandRoom).
+  const hands = N.bandHands(st, b);
+  check(hands === b.people.filter((s) => s.health >= 60).length, `${hands} hands of ${b.pop}: everyone up to work, newcomers among them`);
+  const one = met[0];
+  const roomWith = N.bandRoom(st, b);
+  b.people = b.people.filter((s) => s !== one); b.pop -= 1;
+  const roomWithout = N.bandRoom(st, b);
+  b.people.push(one); b.pop += 1;
+  check(roomWith > roomWithout + 1, `they carry for it: the band's room ${Math.round(roomWithout)} → ${Math.round(roomWith)} kg with them`);
+  // More hands forage more: the same day's dice, one more hand (a rich forage, so the food's whole units round little).
+  const rich = { ...T2, forage: 40 };
+  const fed = (n) => { const band = { ...b, stock: { water: 0 }, people: b.people.slice(0, n), pop: n, nomad: true, hungry: 0 }; const a = foodIn(band.stock); const E = NN.EAT, D = NN.DRINK; NN.EAT = 0; NN.DRINK = 0; N.bandFeeds(st, band, rich, new Rng(11), { lose: () => false }); NN.EAT = E; NN.DRINK = D; return foodIn(band.stock) - a; };
+  for (const s of b.people) s.health = 100;
+  const g4 = fed(4), g5 = fed(5);
+  check(g4 > 0 && Math.abs(g5 / g4 - 5 / 4) < 0.06, `foraging by hands: 4 bring in ${g4.toFixed(2)} days of food, 5 bring in ${g5.toFixed(2)}`);
+  // Taken care of: a wounded newcomer is no hand until healed, and is treated from the band's own meds (bandCare).
+  one.health = 40; one.woundInfected = false;
+  const meds0 = b.stock.meds, h0 = N.bandHands(st, b);
+  check(h0 === b.pop - 1, "wounded, they are fed but not out working (one hand fewer)");
+  let days2 = 0;
+  while (one.health < 60 && days2 < 30) { st.hour += 24; N.bandCare(st, b, () => false); days2++; }
+  check(one.health >= 60 && b.stock.meds < meds0 && N.bandHands(st, b) === b.pop, `cared for: healed to ${Math.round(one.health)} in ${days2} days, ${meds0 - b.stock.meds} of the band's meds used, a hand again`);
 }
 
 section("Surveys and raids through the groups' picker and the container ledger");

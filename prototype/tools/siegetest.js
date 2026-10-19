@@ -10,7 +10,9 @@
 // a decoy giving the thrower away); the Shepherd (its aura, decoys and fire wasted on its pack, the aura gone when it
 // dies, it keeps out of the flames, its growth by game year 10, the horde warning); raiders bringing kit by
 // preparedness (by the year, none against an unwalled base, outsiders less often, the raid warning card, the battle
-// handing it out); siege kit by the numbers (the wall tier, an assault's walls, decoys against the dead); the AI on
+// handing it out); raiders from beyond the border with the ladders and ram they set out with (items in their gear,
+// carried by the carry rule, brought to your walls, home with the living or left in your yard or on the ground, made
+// by a group's crafting only with the means); siege kit by the numbers (the wall tier, an assault's walls, decoys against the dead); the AI on
 // both sides (ladders, the ram, grenades; pushing ladders, rocks, decoys, a Molotov at a chokepoint, who it shoots
 // first); the State Map (decoys from the armory against a coming horde, an assault taking the hub's siege kit along);
 // determinism; saving and loading mid-battle with fire, ladders and a ram on the map.
@@ -33,7 +35,7 @@ import { THROWABLES, DECOY_KEYS, throwAt, throwablesOf } from "../src/sim/stealt
 import { landEffect, throwLanding, scatterChance, FIRE, FRAG, BLAST, burnRange, fireAt, burnRound, ignite, smokeBlocks, blastSpot, throwBlind } from "../src/sim/throwables.js";
 import { sensesOf, pullOf, herded, lureTurn, lureEdge } from "../src/sim/decoys.js";
 import {
-  siegeAct, raidSiegeKit, kitText, siegeWallCut, assaultCut, teamKit, battleOverlays, pushChance, canPush, ramOf, LADDER, RAM, DROP, CUT, ladderAt,
+  siegeAct, raidSiegeKit, bandSetOutKit, kitText, siegeWallCut, assaultCut, teamKit, battleOverlays, pushChance, canPush, ramOf, LADDER, RAM, DROP, CUT, ladderAt,
 } from "../src/sim/siege.js";
 import { applyZType } from "../src/sim/zombietypes.js";
 import { ZTYPES, GROWTHS, TECH, SHEPHERD, SENSES } from "../src/sim/hiveconst.js";
@@ -49,6 +51,9 @@ import { spareKit } from "../src/sim/loadouts.js";
 import { fitThrowables } from "../src/sim/fighters.js";
 import { CRAFTS } from "../src/sim/crafting.js";
 import { worksAt } from "../src/sim/groupworks.js"; // barestart: a group's walls are what it has built
+import * as V from "../src/sim/visitors.js"; // raiders from beyond the border: their own ladders and ram
+import { bandRoom } from "../src/sim/nomads.js";
+import { groundAt } from "../src/sim/carry.js";
 
 const seed = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
@@ -517,6 +522,86 @@ section("Raiders' siege kit by preparedness (eras.js), the warning card, the bat
   const k3 = packRaidKit(st, o, raid3, { ladders: 2, ram: 1, grenades: 3, kind: "frag" });
   check(!k3, `no explosives, no scrap to make a ladder or a ram: no siege kit (${JSON.stringify(k3)})`);
   removeParty(st, raid3);
+}
+
+// ---------- 7b. raiders from beyond the border: their own ladders and ram ----------
+section("Raiders from beyond the border: the ladders and the ram they set out with, carried, brought, home with the living");
+{
+  const st = world();
+  const h = fortHub(st);
+  st.hour = (yearStartDay(8) - 1) * 24;
+  // They set out with them (siege.js bandSetOutKit, thrown once at the border): real items in the band's gear.
+  const bands = [];
+  for (let i = 0; i < 40; i++) { const v = V.spawnVisitor(st, "raiders", { size: 9, power: 4 }); if (v) bands.push(v); }
+  const gearOf = (v) => V.siegeGearOf(v);
+  const withKit = bands.filter((v) => gearOf(v).ram || gearOf(v).ladders.length);
+  check(withKit.length > 5 && withKit.length < bands.length && bands.every((v) => { const k = bandSetOutKit(st, 9, v.serial) || { ladders: 0, ram: 0 }; return gearOf(v).ladders.length === k.ladders && !!gearOf(v).ram === !!k.ram; }),
+    `year 8: ${withKit.length} of ${bands.length} bands set out with ladders or a ram (${bands.filter((v) => gearOf(v).ram).length} rams), each as its set-out dice said, as items in their gear`);
+  const v = withKit.find((x) => gearOf(x).ram && gearOf(x).ladders.length) || withKit[0];
+  const kg = [gearOf(v).ram, ...gearOf(v).ladders].filter(Boolean).reduce((a, it) => a + GEAR[it.key].weight, 0);
+  const room = bandRoom(st, v), keep = v.wares.slice();
+  v.wares = v.wares.filter((it) => it.key !== "ram" && it.key !== "ladder");
+  check(Math.abs(bandRoom(st, v) - room - kg) < 1e-6, `they carry them: ${kg} kg of their people's load (nomads.js bandRoom, your teams' rule)`);
+  v.wares = keep;
+  for (const x of bands) if (x !== v) V.leaveMap(st, x);
+  // Against your walled base they bring all they have hands for; the card says so; against an open base, nothing.
+  const kit = V.bandKit(st, v, h);
+  const have = gearOf(v);
+  check(kit && kit.carried && kit.ladders === have.ladders.length && kit.ram === (have.ram ? 1 : 0), `at your walls: ${kitText(kit)} (their own: ${have.ladders.length} ladders, ${have.ram ? "a ram" : "no ram"})`);
+  const open = { ...h, id: -7, buildings: h.buildings.filter((x) => x.type !== "walls") };
+  check(V.bandKit(st, v, open) === null, "none against a base without walls");
+  // The battle on the map hands out exactly those (siege.js siegeSetup).
+  const b = wallBattle(st, { kind: "raiders", count: v.size, power: v.power, name: "Outsiders", siege: kit, band: { kind: "visitor", id: v.id } });
+  check(b.rams.length === kit.ram && b.units.filter((u) => u.ladder > 0).length === kit.ladders, `on the map: ${b.rams.length} ram, ${b.units.filter((u) => u.ladder > 0).length} ladder carriers, from their own gear`);
+  st.combat = null;
+  // Home with the living (siegeGearBack): two left carry the ram; the ladders nobody can carry lie in your yard.
+  const items0 = [have.ram, ...have.ladders].filter(Boolean), arm0 = h.armory.length;
+  v.size = 2;
+  const left = V.siegeGearBack(st, v, h);
+  const where = (it) => (v.wares.includes(it) ? 1 : 0) + (h.armory.includes(it) ? 1 : 0);
+  check(items0.every((it) => where(it) === 1) && (!have.ram || v.wares.includes(have.ram)) && left.length === items0.length - (have.ram ? 1 : 2) && h.armory.length === arm0 + left.length,
+    `two left: ${have.ram ? "the ram goes on with them" : "two ladders go on with them"}, ${left.length} left in your armory, every piece in one place`);
+  // Broken at your walls: everything they carried is in your yard, their stores in yours.
+  v.stock.scrap = 7;
+  const scrap0 = h.stock.scrap || 0, rest = v.wares.slice();
+  V.leaveMap(st, v, "broken", { base: h });
+  check(rest.every((it) => h.armory.includes(it)) && (h.stock.scrap || 0) === scrap0 + 7 && !v.wares.length, `broken at your walls: ${rest.length} piece${rest.length === 1 ? "" : "s"} and their 7 scrap in your base, nothing lost`);
+  // Wiped out on the road: it lies on the ground where they fell.
+  const w = V.spawnVisitor(st, "raiders", { size: 6, power: 3 });
+  w.wares.push(newItem("ladder"));
+  const lad = w.wares[w.wares.length - 1];
+  V.leaveMap(st, w, "wiped");
+  const ground = groundAt(st, w.tile);
+  check(ground && ground.items.some((x) => x.item === lad), "wiped out on the road: their ladder lies on the ground there (carry.js groundAt)");
+  // Nothing from nowhere: a band with none brings none. Short of what a raid's dice want, it makes them by a group's
+  // crafting (arsenal.js bandMakes) only when it has the means: your recipe needs a bench, and a band on the road has
+  // none (as your team in the field has none).
+  const n = V.spawnVisitor(st, "raiders", { size: 9, power: 4 });
+  n.wares = n.wares.filter((it) => it.key !== "ram" && it.key !== "ladder");
+  n.stock.scrap = 20; n.stock.parts = 4;
+  const people = bandRoom(st, n) && n.people;
+  people[0].skills.mechanics = 6; people[0].health = 100;
+  const made0 = V.makeSiegeGear(st, n, { ladders: 2, ram: 1 });
+  check(!made0.length && n.stock.scrap === 20 && n.stock.parts === 4, "a band on the road has no bench: it makes no ladder or ram, and pays nothing");
+  n.siegeFor = { baseId: h.id, kit: { ladders: 2, ram: 1, grenades: 0 } };
+  const kn = V.bandKit(st, n, h);
+  check(!kn || (!kn.ladders && !kn.ram), `with none of its own it brings none (${JSON.stringify(kn)})`);
+  // With the means (a world whose groups count as built, as old saves did: groupworks.js groupsBuild), the same path a
+  // group's raid takes (arsenal.js packRaidKit): your recipe, paid from its stores, into its gear.
+  const gw = st.groupWorks;
+  st.groupWorks = null;
+  const made = V.makeSiegeGear(st, n, { ladders: 2, ram: 1 });
+  st.groupWorks = gw;
+  const R = CRAFTS.ram.in, L = CRAFTS.ladder.in;
+  check(made.length === 3 && made.filter((it) => it.key === "ladder").length === 2 && made.some((it) => it.key === "ram") && made.every((it) => n.wares.includes(it)) &&
+    n.stock.scrap === 20 - R.scrap - 2 * L.scrap && n.stock.parts === 4 - R.parts, `with a bench: a ram and two ladders made by your recipes, paid from their stores (scrap 20 → ${n.stock.scrap}, parts 4 → ${n.stock.parts})`);
+  // By the numbers at your walls: every piece is with the band or in your yard after it, none made, none lost.
+  n.goal = { kind: "base", baseId: h.id, tile: h.tile };
+  n.tile = h.tile;
+  const all = [...gearOf(n).ladders, gearOf(n).ram].filter(Boolean), armA = h.armory.length;
+  V.resolveRaidOnYou(st, n);
+  check(all.every((it) => (n.wares.includes(it) && st.visitors.includes(n) ? 1 : 0) + (h.armory.includes(it) ? 1 : 0) === 1), `a raid by the numbers: their ${all.length} pieces after it are with whoever is left (${n.size}) or in your armory (${h.armory.length - armA})`);
+  V.leaveMap(st, n);
 }
 
 // ---------- 8. by the numbers ----------
