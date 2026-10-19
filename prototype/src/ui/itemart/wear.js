@@ -1,5 +1,6 @@
 // Item icons, the wear family (ui/itemart.js; the kit and the rules: ui/itemart/kit.js): melee weapons, bows and
-// crossbows, body armour, helmets and visors, plates, guards, packs, rigs, gun cases and the bicycle. Long things lie
+// crossbows, body armour, helmets and visors, plates, guards, packs, rigs, gun cases, the bicycle and the carts (a
+// wheelbarrow, a hand cart). Long things lie
 // on the diagonal, the handle bottom left and the head top right; armour, packs and guards face the viewer; helmets are
 // seen from the side, facing right. The blade and armour colours follow the battle sprites (ui/sprites.js drawWeapon,
 // drawArmor; sim/data-blades.js BLADE_LOOK).
@@ -767,6 +768,25 @@ function bicycle(p) { // a red mountain bike: knobby wheels, a diamond frame, fl
   R(p, 7, 12, 8, 12, "#c9ced3");
 }
 
+// ---------- the carts (sim/data-carts.js, sim/carts.js) ----------
+// Seen from the side like the bicycle, the front to the right.
+function wheelbarrow(p) { // a green steel tray on one wheel, two handles back to the left, a leg to stand on
+  const tray = "#4f8a3a";
+  rows(p, 3, [[2, 14], [3, 14], [4, 13], [5, 12], [6, 11]], tray); lit(p, tray);
+  H(p, 1, 14, 2, "#6faa52"); // the rolled rim
+  line(p, 0, 6, 12, 12, K.dark); line(p, 0, 5, 3, 6, K.wood); H(p, 0, 1, 5, K.woodL); // the frame, a wooden grip
+  V(p, 5, 9, 14, K.dark); H(p, 4, 6, 15, K.blk); // the leg
+  disc(p, 12, 12, 3, "#2a2d33"); ring(p, 12, 12, 3, "#4a4f57"); disc(p, 12, 12, 1, K.steel); p.set(12, 12, K.steelD);
+}
+function handcart(p) { // a wooden flatbed with slatted sides on two big spoked wheels, a long pull handle
+  R(p, 0, 4, 11, 8, K.wood); lit(p, K.wood);
+  for (const x of [3, 6, 9]) V(p, x, 4, 7, K.woodD); // the slats
+  H(p, 0, 11, 4, K.woodL); H(p, 0, 11, 9, K.woodD); // the top rail, the bed
+  line(p, 11, 8, 15, 2, K.ash); H(p, 14, 15, 2, K.woodL); // the handle
+  const wheel = ["..ttttt..", ".tt.s.tt.", "tt..s..tt", "t...s...t", "tssshssst", "t...s...t", "tt..s..tt", ".tt.s.tt.", "..ttttt.."];
+  stamp(p, 2, 7, wheel, { t: "#4a4f57", h: "#c9ced3", s: K.ash });
+}
+
 export const GEAR_ART = {
   knife: chef, steakknife: steak, filletknife: fillet, cleaver, huntknife: hunter, survivalknife: survival, bowie, bayonet,
   combatknife: combat, shiv, pocketknife: pocket, flipknife: flick, lockback, multitool, boxcutter, balisong,
@@ -777,5 +797,6 @@ export const GEAR_ART = {
   hardhat, footballhelmet, bikehelmet, riothelmet, milhelmet, rivethelmet, highcut, ballvisor, riotvisor, nvgmount,
   ceramicplate, steelplate, softinsert, kevlarkit,
   backpack, slingbag, assaultpack, hikingpack, rucksack, duffle, chestrig, makeshiftrig, riflecase, pistolcase, bicycle,
+  wheelbarrow, handcart,
 };
 export const SUPPLY_ART = {};
