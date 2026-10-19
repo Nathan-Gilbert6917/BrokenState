@@ -198,3 +198,8 @@ candidate spots it picked (up to its three nearest, else the thing is left off t
 but for the gate cells (the same cells `buildBaseMap` makes: the two middle cells of each side); the walkway inside the
 ring walks. The check uses what is placed by hand, the core, the band and (in autoLayout) what the layout has taken so
 far: things the game places re-flow after a hand placement and are re-validated then.
+
+Part F and the wall pieces (claude/kind-hawking-a4gby2, merged at integration): wall pieces block, gate pieces and
+stands walk. A wall piece that would close a ring with no gate in it is refused, by hand and by autoLayout, with
+"Needs a gate in the wall first: the wall would shut everything inside off from the outside" (the user's rule: a way in
+and out on foot always, gates counting).
