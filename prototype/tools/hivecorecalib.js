@@ -9,10 +9,15 @@ import { GEAR } from "../src/sim/data.js";
 import { ensureHives } from "../src/sim/hives.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { hiveTier } from "../src/sim/hivetech.js";
-import { byNumbersOdds, winOdds } from "../src/sim/combat.js";
+import { byNumbersOdds, winOdds, WEAPONS } from "../src/sim/combat.js";
 import * as HC from "../src/sim/hivecrawl.js";
-import { settleParty } from "../src/sim/ammo.js";
-import { packShells } from "../src/sim/carrykit.js";
+import { settleParty, calOf } from "../src/sim/ammo.js";
+import { packShells, packMags, CARRY } from "../src/sim/carrykit.js";
+import { standardMag, usesInternal, isMag, SHELLS } from "../src/sim/mags.js";
+import { newItem, carriedSpots, stow } from "../src/sim/inventory.js";
+import { roundItem } from "../src/sim/itemstack.js";
+import { keyFor, typeFor } from "../src/sim/rounds.js";
+import { MAGAZINES } from "../src/sim/data-kit.js";
 
 const TRIALS = Number(process.argv[2] || 24);
 const LIGHTS = process.argv[3] == null ? 1 : Number(process.argv[3]);
@@ -20,7 +25,7 @@ const TIERS = (process.argv[4] || "2,4").split(",").map(Number);
 if (process.env.HP_P2 === "0") HC.HIVEMIND.P2.on = false; // A/B: no second phase
 if (process.env.HP_DARK === "0") { HC.HCRAWL.LIGHT.dark = 99; HC.HCRAWL.LIGHT.lit = 99; } // A/B: no darkness on the sight
 const DAY = { 0: 0, 1: 400, 2: 900, 3: 1600, 4: 2100 };
-export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", armor = "plate", shoot = 10, melee = 0, fire = 0, stun = 0, guard = 80, alt = null, health = 100, packed = process.env.HP_PACK !== "0" } = {}) {
+export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", armor = "plate", shoot = 10, melee = 0, fire = 0, stun = 0, guard = 80, alt = null, health = 100, ammo = 240, packed = process.env.HP_PACK !== "0" } = {}) {
   const st = createWorld({ seed, factionCount: 3 });
   st.started = true;
   ensureHives(st);
@@ -37,12 +42,32 @@ export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", arm
     s.pockets = [lights ? { key: "headlamp", name: GEAR.headlamp.name, quality: 1 } : null, i < fire ? { key: "molotov", name: GEAR.molotov.name, quality: 1 } : null, i >= n - stun ? { key: "flashbang", name: GEAR.flashbang.name, quality: 1 } : null, null];
     st.survivors.push(s); people.push(s);
   }
-  const p = { id: 77000 + seed, owner: "player", kind: "expedition", mission: "hive", members: people.map((s) => s.id), supplies: { ammo: 240, meds: 6, food: 10, water: 10 }, cargo: { supplies: {}, gear: [] },
+  const p = { id: 77000 + seed, owner: "player", kind: "expedition", mission: "hive", members: people.map((s) => s.id), supplies: { ammo, meds: 6, food: 10, water: 10 }, cargo: { supplies: {}, gear: [] },
     path: [hv.tile], idx: 0, dest: hv.tile, phase: "engaged", seen: new Map(), spotted: new Map(), homeBaseId: hub(st).id, orders: [], stance: "normal" };
   for (const s of people) s.location = { kind: "party", partyId: p.id };
   st.parties.push(p);
-  settleParty(st, p); // the team's rounds by calibre, and its shotgunners' shells at hand as a trip packs them (carrykit.js packShells)
+  // Physical rounds (mags.js, 2026-10-18): a Reload draws only on what the person carries, and the team's bags fill the
+  // guns and the spare magazines once, as the fight starts (combat.js fillTeam). Before, every Reload drew on the
+  // team's 240 rounds, whoever shot them. So the squad goes kitted as a trip packs it (parties.js launchExpedition):
+  // spare magazines for a magazine gun out of the hub's armory (carrykit.js packMags, CARRY.PACK a gun; here an armory
+  // that has them), rounds enough to fill every gun and magazine it carries (at least `ammo`: 240 fills six hunting
+  // rifles or pumps and their rounds at hand, not six assault rifles' magazines), the team's rounds by calibre, and the
+  // shotgunners' shells at hand (packShells). A hunting rifle's rounds go at hand the same way here (SHELLS.CARRY of its
+  // load): a trip packs them only for shotguns today, and a hand-loaded rifle with none on it fires what the fight's
+  // start put in it and no more (the fit is of a squad kitted for the core, not of that gap).
+  const armory = [];
+  for (const s of people) { const g = s.gear.weapon, mk = g ? standardMag(g.key) : null; if (mk && !usesInternal(g.key, g)) for (let j = 0; j < CARRY.PACK.rifle; j++) armory.push(newItem(mk)); }
+  packMags(armory, people);
+  const full = people.reduce((a, s) => { const g = s.gear.weapon, W = g && WEAPONS[g.key]; if (!W || !calOf(g.key)) return a; return a + (W.cap || 0) + (usesInternal(g.key, g) ? SHELLS.CARRY : carriedSpots(s).filter((x) => isMag(x.item)).reduce((m, x) => m + MAGAZINES[x.item.key].cap, 0)); }, 0);
+  p.supplies.ammo = Math.max(ammo, full);
+  settleParty(st, p);
   if (packed) packShells(p.supplies, people);
+  if (packed) for (const s of people) {
+    const g = s.gear.weapon, cal = g ? calOf(g.key) : null;
+    if (!cal || !usesInternal(g.key, g) || SHELLS.GUNS[g.key]) continue;
+    const key = keyFor(cal, typeFor(cal, g.load)), q = Math.min(SHELLS.CARRY, Math.floor(p.supplies[key] || 0));
+    if (q > 0 && stow(s, roundItem(key, q, true))) p.supplies[key] -= q;
+  }
   const t = hiveTier(st, hv);
   const hp = HC.coreForce(st, hv).hp;
   const p20 = HC.HM_STATS.phase2, b0 = HC.HM_STATS.burned, s0 = HC.HM_STATS.stunned;

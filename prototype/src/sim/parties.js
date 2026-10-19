@@ -74,7 +74,7 @@ import { thinIceStep } from "./rivers.js"; // frozen rivers: thin ice early and 
 import { hasPerk, checkBonus, gainXpAll, USE, hash01 } from "./skills.js";
 import { tripDone } from "./relations.js";
 import { totalRounds, spendAmmo, ROUND_KEYS, GENERIC_KEYS } from "./rounds.js"; // rounds by calibre ("ammo": any of them)
-import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRounds, kindTheme, roundsText } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
+import { packRounds, addRecord, drawTeamShots, sortFind, suppliesText, findRounds, kindTheme, roundsText, settleParty } from "./ammo.js"; // a plan's "N ammo" packed as the rounds that fit
 import { packLauncherRounds } from "./launchers.js"; // the rounds for the launchers the crew carries (section 13)
 import { packMags, packShells } from "./carrykit.js"; // magazines as items (section 15): the spares go along; a shotgun's shells at hand
 import { noteTripHome } from "./trips.js"; // order templates and repeat trips
@@ -996,6 +996,10 @@ export function launchExpedition(state, opts) {
   state.parties.push(p);
   moveFood(home, p, foodReq, { state }); // foods.js: the lots go with it (what they have left of their shelf)
   packMags(home.armory, members); // carrykit.js: spare magazines for their guns from the armory (rig pouches, pockets, then the pack)
+  // Generic rounds packed from a stock not yet settled (packRounds takes them along as they are) settle in the team
+  // first (ammo.js settleParty, as the hour's settleAll would): packShells reads the shells by their keys, so before
+  // this a team packed from generic ammo left with every shell in its bags and none at hand.
+  settleParty(state, p);
   if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each shotgunner's shells at hand (a pocket or a rig pouch) out of the packed rounds, so the shotgun reloads without digging in the pack
   packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
   if (opts.tabs) packTablets(state, home, p); // worm.js: a tube of purification tablets for the road (when the armory has one)
