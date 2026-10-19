@@ -66,7 +66,8 @@ import { raidTier } from "./defences.js";
 import { SURPRISE } from "./watch.js"; // an unwatched night: the raiders get the first move
 import { hcNoRaiders, hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { raidSiegeKit, kitText } from "./siege.js";
-import { freezeShare } from "./woodcutting.js";
+import { freezeShare, chillShare } from "./woodcutting.js"; // the freezing days and the cool nights (fire-nights) their woodpiles burn for
+import { HEAT } from "./upkeep.js";
 import { ensureHives, hiveGuard, destroyHive, hivesLeftText } from "./hives.js";
 import { markThreat } from "./hivetech.js";
 import { groupHiveCrawl, groupTakeHoard, groupMakeKit } from "./hivecrawl.js"; // a war party crawls the same den as your teams; the core's hoard
@@ -306,8 +307,10 @@ export function razeGroupBase(state, target, tile, attacker) {
 }
 
 // A group's woodpile a head: at the start, the most it keeps, cut a day, burned on a freezing day (the share of freezing
-// days by the time of year, woodcutting.js FREEZE_SHARE).
+// days by the time of year, woodcutting.js FREEZE_SHARE) and HEAT.night of that for a cool night above freezing
+// (woodcutting.js chillShare; fire-nights, as your bases: upkeep.js HEAT.night).
 export const GROUP_WOOD = { start: 120, cap: 240, cut: 3.6, burn: 9 }; // firewood of 0.1 kg (30 times the old 3 kg units)
+export const groupHeatShare = (dayIdx) => freezeShare(dayIdx) + HEAT.night * chillShare(dayIdx);
 export function factionsDaily(state) {
   const rng = state.rng;
   const today = day(state);
@@ -329,7 +332,7 @@ export function factionsDaily(state) {
     // fish only where a base holds water, nothing from a besieged base's land. Their kitchens' hot meals stretch the
     // food and their cooks work no fields (groupworks.js KITCHEN).
     const hands = workingPeople(f);
-    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * freezeShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
+    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
     // Food by type (foods.js, coarse for the AI: no lots): their fields, hunters and pens bring in their kind of food
     // (groupFieldFood: crops, grain, game, eggs) by the people at work (their land: grouptrips.js groupFoodLand; their
     // cooks are in the kitchen), everyone eats a day's food (less where a kitchen feeds them: groupEatMult; the soonest
@@ -371,7 +374,7 @@ export function factionsDaily(state) {
     groupWorldDaily(state, f); // groupworld.js: scouting (and spies at your walls), vehicles taken, stolen, sold, fitted out
     // Firewood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
     // price, trade.js) runs low by the end of a winter and fills again by the autumn.
-    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * freezeShare(today - 1))); // grouptrips.js: the wood land their bases hold
+    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1))); // grouptrips.js: the wood land their bases hold
 
     // Expansion: claim a nearby site. Aggressive groups push out more, toward rich sites and toward you.
     const agg = isAggressiveType(f);

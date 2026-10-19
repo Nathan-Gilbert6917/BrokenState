@@ -526,7 +526,9 @@ export function heatDaily(state, base) {
   const es = econStats(state);
   es.heatWood = (es.heatWood || 0) + wood;
   es.heatFuel = (es.heatFuel || 0) + burn;
-  const short = Math.max(0, 1 - (burn + wood * HEAT.wood) / use.total);
+  // A cool night without a fire (fire-nights: use.night) is a share of a freezing day's cold (HEAT.night of the mood and
+  // health lost), a freezing day the whole of it.
+  const short = Math.max(0, 1 - (burn + wood * HEAT.wood) / use.total) * Math.min(1, use.each / HEAT.fuel);
   if (short < 0.02) { base.cold = false; return; }
   base.cold = Math.round(short * 100) / 100;
   const people = residents(state, base.id);
@@ -535,7 +537,7 @@ export function heatDaily(state, base) {
     hurt(state, s, Math.round(COLD.hp * short * 10) / 10, base.tile, `of cold at ${base.name}`, { raw: true });
   }
   es.coldDays = (es.coldDays || 0) + 1; // base-days with someone cold (the balance runs)
-  log(state, `${base.name} has ${burn > 0 || wood > 0 ? "too little" : "no"} firewood or fuel to keep warm (needs ${use.text}): everyone there is cold (mood −${r1(COLD.mood * short)}, health −${r1(COLD.hp * short)}, and illness as outdoors).`, "danger");
+  log(state, `${base.name} has ${burn > 0 || wood > 0 ? "too little" : "no"} firewood or fuel to keep warm (needs ${use.text}): everyone there is cold${use.night ? " through the night" : ""} (mood −${r1(COLD.mood * short)}, health −${r1(COLD.hp * short)}, and illness as outdoors).`, "danger");
 }
 
 // ---------- errands ----------

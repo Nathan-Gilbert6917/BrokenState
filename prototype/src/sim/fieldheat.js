@@ -139,7 +139,7 @@ export const SHELTER_HEAT = { fireDay: 1, fireNight: 3, car: 1.5, truck: 2, milt
 // water (without it: a raw chance a person a day of a stomach bug, at a camp; a shelter's dirty-water risk doubles) and
 // spirits (mood an hour in camp, lit / out; a shelter's people +moodLit a day with it, coldMood a day without it in the
 // cold).
-export const FIRE = { warm: 0.35, raw: 0.015, campMood: 0.3, campMoodOut: 0.1, shelterMood: 0.5, coldMood: -1, coldAt: 4 };
+export const FIRE = { warm: 0.35, raw: 0.015, campMood: 0.3, campMoodOut: 0.1, shelterMood: 0.5, coldMood: -1, coldAt: 8 }; // coldAt: as upkeep.js HEAT.chillAt (fire-nights: a night under it wants a fire)
 
 export const fireLit = (x) => !!x && (x.campFire ?? x.fire) !== false;
 // Where a team's Heat is a camp's: resting in the field (the internal rest task "camp": the governor's night stops,

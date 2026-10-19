@@ -20,8 +20,8 @@ import { cropProgress, farmOf, CROPS, plotLimit } from "../src/sim/farming.js";
 import { huntLoans, cabinPlan, huntWeaponInfo, CABIN } from "../src/sim/hunting.js";
 import { newItem } from "../src/sim/inventory.js";
 import { GEAR } from "../src/sim/data.js";
-import { woodNeed, shelterFire, fireLandOk, WOOD } from "../src/sim/woodcutting.js";
-import { heatUse, HEAT } from "../src/sim/upkeep.js";
+import { woodNeed, shelterFire, fireLandOk, fireDayBurn, WOOD } from "../src/sim/woodcutting.js";
+import { heatUse, HEAT, woodFor } from "../src/sim/upkeep.js";
 import { heatDaily } from "../src/sim/needs.js";
 import { boilerUse, purifyDaily } from "../src/sim/worm.js";
 import { WORK_TYPES } from "../src/sim/work.js";
@@ -272,14 +272,16 @@ section("BASE-05: firewood at a camp or a shelter, before any boiler");
     const job = WORK_TYPES.wood.open({ state: st, base: h, people: atBase(st, h.id) });
     check(job.cap > 0, `the Cut wood job opens at the shelter (${job.cap} wanted)`);
   }
-  // Its fire lit (woodcutting.js shelterFire, hourly in needs.js): it burns the woodpile every day, half as much where
-  // deadfall lies about (fireBurn), and keeps the place warm.
+  // Its fire lit (woodcutting.js shelterFire, hourly in needs.js): it burns the woodpile every day (fire-nights,
+  // fireDayBurn: the fire itself, its people's warmth on a freezing day, boiling the drinking and the pot), half as
+  // much where deadfall lies about, and keeps the place warm; the heating is wanted all the same (the fire burns it).
   const fireDay = (b) => { for (let i = 0; i < 24; i++) shelterFire(st, b); };
-  h.fire = true; h.stock.wood = 500;
+  h.fire = true; h.stock.wood = 1500;
   if (fireLandOk(st, h.tile)) {
+    const fdb = fireDayBurn(st, h);
     fireDay(h); heatDaily(st, h);
     const w = woodNeed(st, h);
-    check(Math.abs(h.stock.wood - (500 - WOOD.fire.shelter * WOOD.fire.deadfall)) < 0.01 && !h.cold && w.fire === WOOD.fire.shelter * WOOD.fire.deadfall && w.heat === 0, `the fire lit among trees: ${WOOD.fire.shelter * WOOD.fire.deadfall} firewood a day (deadfall), warm, no heating wanted on top`);
+    check(Math.abs(h.stock.wood - (1500 - fdb.total)) < 0.01 && !h.cold && fdb.land === WOOD.fire.deadfall && fdb.heat === n * woodFor(HEAT.fuel) && w.fire === (WOOD.fire.shelter + fdb.boil + fdb.cook) * WOOD.fire.deadfall && w.heat > 0, `the fire lit among trees: ${fdb.total} firewood a day (deadfall; ${fdb.fire} the fire, ${fdb.heat} warmth for ${n} on a freezing day, ${fdb.boil} boiling, ${fdb.cook} the pot), warm, the heating still wanted (${w.heat}: the fire burns it)`);
   }
   // On bare ground the lit fire burns its full day, and its days in store are wanted.
   const bare = st.tiles.find((t) => t.terrain === "city" && !fireLandOk(st, t.id));
@@ -288,17 +290,18 @@ section("BASE-05: firewood at a camp or a shelter, before any boiler");
     h.tile = bare.id;
     h.stock.wood = 0;
     const wb = woodNeed(st, h);
-    check(wb.fire === WOOD.fire.shelter && wb.daily >= WOOD.fire.shelter && wb.need >= WOOD.fire.shelter * WOOD.fire.keepDays && wb.pressing, `on bare ground the fire's ${WOOD.fire.shelter} a day is wanted (${wb.need} in store)`);
-    h.stock.wood = 100; h.fire = true;
+    const fb = fireDayBurn(st, h);
+    check(fb.land === 1 && wb.fire === WOOD.fire.shelter + fb.boil + fb.cook && wb.daily >= wb.fire && wb.need >= wb.fire * WOOD.fire.keepDays && wb.pressing, `on bare ground the fire's full ${wb.fire} a day is wanted (${wb.need} in store)`);
+    h.stock.wood = 1000; h.fire = true;
     fireDay(h); heatDaily(st, h);
-    check(Math.abs(h.stock.wood - (100 - WOOD.fire.shelter)) < 0.01 && h.fireFed === true && !h.cold, `the fire burns ${WOOD.fire.shelter} firewood a day and keeps everyone warm`);
+    check(Math.abs(h.stock.wood - (1000 - fb.total)) < 0.01 && h.fireFed === true && !h.cold, `the fire burns ${fb.total} firewood a day (${n} people's warmth in it) and keeps everyone warm`);
     // A boiler beside the lit fire: the fire boils the water, the boiler burns nothing (the wood once, not twice).
     addBuilding(h, "boiler");
     h.stock[RAW] = 60; h.stock.water = 0; h.stock.wood = 1000;
     check(!boilerUse(st, h).active, "a boiler beside the lit fire stands ready");
     purifyDaily(st, h);
     fireDay(h); heatDaily(st, h);
-    check(Math.abs(h.stock.wood - (1000 - WOOD.fire.shelter)) < 0.01 && h.boilerBurn.wood === 0 && h.stock.water > 0, `one day: only the fire's ${WOOD.fire.shelter} firewood burned, and the water boiled`);
+    check(Math.abs(h.stock.wood - (1000 - fireDayBurn(st, h).total)) < 0.01 && h.boilerBurn.wood === 0 && h.stock.water > 0, `one day: only the fire's ${fireDayBurn(st, h).total} firewood burned, and the water boiled`);
     // Put out, the boiler does the boiling and burns its own.
     h.fire = false; delete h.fireFed;
     check(boilerUse(st, h).active, "the fire out: the boiler burns");

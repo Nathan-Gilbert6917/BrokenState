@@ -311,17 +311,19 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   setAutopilot(st, false);
   // An outpost short of heating gets the hub's spare firewood over its supply line.
   // A shelter (tier 0): its lit fire burns firewood by the hour (deadfall about stretches it), else it goes out.
-  h.tier = 0; h.fire = true; h.stock.wood = 150;
+  h.tier = 0; h.fire = true; h.stock.wood = 1500; // fire-nights: the fire burns its people's warmth, boiling and pot too (fireDayBurn)
   const forestish = Wd.fireLandOk(st, h.tile);
   for (let i = 0; i < 24; i++) Wd.shelterFire(st, h);
-  if (forestish) check(heatUse(st, h).fire && h.fireFed === true && near(h.stock.wood, 150 - Wd.WOOD.fire.shelter * Wd.WOOD.fire.deadfall, 0.01), `a shelter in wooded land: its fire burns ${Wd.WOOD.fire.shelter * Wd.WOOD.fire.deadfall} firewood a day (deadfall stretches it)`);
+  const fdb = Wd.fireDayBurn(st, h);
+  if (forestish) check(heatUse(st, h).fire && h.fireFed === true && fdb.land === Wd.WOOD.fire.deadfall && fdb.total < Wd.WOOD.fire.shelter + fdb.heads * (Wd.WOOD.fire.boilHead + Wd.WOOD.fire.cookHead) + fdb.heat && near(h.stock.wood, 1500 - fdb.total, 0.01), `a shelter in wooded land: its fire burns ${fdb.total} firewood a day (the fire ${fdb.fire}, warmth ${fdb.heat}, boiling ${fdb.boil}, the pot ${fdb.cook} for ${fdb.heads}; deadfall stretches it ×${fdb.land})`);
   const bare = st.tiles.find((t) => t.terrain === "city" && !Wd.fireLandOk(st, t.id));
   if (bare) {
     const keep = h.tile;
     h.tile = bare.id;
-    h.stock.wood = 150;
+    h.stock.wood = 1500;
     for (let i = 0; i < 24; i++) Wd.shelterFire(st, h);
-    check(h.fireFed === true && near(h.stock.wood, 150 - Wd.WOOD.fire.shelter, 0.01) && heatUse(st, h).fire, `a shelter on bare ground: its fire burns ${Wd.WOOD.fire.shelter} firewood a day`);
+    const fdb2 = Wd.fireDayBurn(st, h);
+    check(h.fireFed === true && fdb2.land === 1 && near(fdb2.total, Wd.WOOD.fire.shelter + fdb2.heat + fdb2.boil + fdb2.cook, 0.01) && fdb2.cook === fdb2.heads * Wd.WOOD.fire.cookHead && near(h.stock.wood, 1500 - fdb2.total, 0.01) && heatUse(st, h).fire, `a shelter on bare ground: its fire burns ${fdb2.total} firewood a day (${Wd.WOOD.fire.shelter} the fire + ${fdb2.heat} warmth + ${fdb2.boil} boiling + ${fdb2.cook} the pot for ${fdb2.heads})`);
     h.stock.wood = 0.2;
     Wd.shelterFire(st, h);
     check(h.fire === false && h.stock.wood === 0 && !heatUse(st, h).fire && heatUse(st, h).total > 0, "no firewood left: the fire goes out and does not warm it");
@@ -334,19 +336,19 @@ section("Heating burns firewood first, then fuel; the outposts; the shelter's an
   // A team's camp fire on bare ground burns carried firewood, or goes out.
   if (bare) {
     const p = placeTeam(st, bare.id);
-    p.cargo.supplies.wood = 30;
+    p.cargo.supplies.wood = 300; let burnt = 0;
     startOrder(st, p, { type: "camp", hours: 30 });
-    for (let i = 0; i < 24; i++) { st.hour++; taskHour(st, p); }
-    check(p.campFire !== false && carried(p, "wood") < 30 && carried(p, "wood") > 15, `a camp on bare ground burns its firewood (${r2(30 - carried(p, "wood"))} a day)`);
+    for (let i = 0; i < 24; i++) { st.hour++; burnt += Wd.campDayBurn(st, p).total / 24; taskHour(st, p); }
+    check(p.campFire !== false && burnt > Wd.WOOD.fire.camp + partyMembers(st, p).length * Wd.WOOD.fire.campHead - 1e-9 && near(300 - carried(p, "wood"), burnt, 0.05), `a camp on bare ground burns its firewood: the fire, its people's warmth and the pot (${r2(300 - carried(p, "wood"))} a day for ${partyMembers(st, p).length})`);
     p.cargo.supplies.wood = 0;
     for (let i = 0; i < 2; i++) { st.hour++; taskHour(st, p); }
     check(p.campFire === false, "out of firewood there: the fire goes out");
   }
   const fp = placeTeam(st, cleanTile(st, "forest").id);
-  fp.cargo.supplies.wood = 30;
+  fp.cargo.supplies.wood = 300; let burntF = 0;
   startOrder(st, fp, { type: "camp", hours: 30 });
-  for (let i = 0; i < 24; i++) { st.hour++; taskHour(st, fp); }
-  check(fp.campFire !== false && near(30 - carried(fp, "wood"), Wd.WOOD.fire.camp * Wd.WOOD.fire.deadfall, 0.05), `a camp in the woods burns firewood, stretched by deadfall (${r2(30 - carried(fp, "wood"))} a day)`);
+  for (let i = 0; i < 24; i++) { st.hour++; burntF += Wd.campDayBurn(st, fp).total / 24; taskHour(st, fp); }
+  check(fp.campFire !== false && Wd.campDayBurn(st, fp).land === Wd.WOOD.fire.deadfall && near(300 - carried(fp, "wood"), burntF, 0.05), `a camp in the woods burns firewood, stretched by deadfall (${r2(300 - carried(fp, "wood"))} a day)`);
   fp.cargo.supplies.wood = 0;
   for (let i = 0; i < 2; i++) { st.hour++; taskHour(st, fp); }
   check(fp.campFire === false, "out of firewood in the woods too: the fire goes out");
