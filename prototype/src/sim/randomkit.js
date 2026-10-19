@@ -15,7 +15,7 @@
 // only: the AI groups are rolled as ever.
 import { GEAR, SKILLS, SUPPLIES, TRAITS, clashIn, traitKind } from "./data.js";
 import { START_GEAR, START_TRUNK, CARRY_PLACES, slotChoices, carryChoices, trunkChoices, carrySpec, firstFit, trunkKg, pickKey } from "./startgear.js";
-import { CUSTOM_POINTS, pricePerson, pointsMax, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost, ownPoints, carPool, loosePoints } from "./custompoints.js";
+import { CUSTOM_POINTS, pricePerson, maxFor, itemPoints, slotPoints, vehiclePoints, skillsCost, nextLevelCost, ownPoints, carPool, loosePoints } from "./custompoints.js";
 import { tierCount, traitPoints, tidyTiers } from "./traits.js";
 import { standardMag } from "./mags.js";
 import { baseKey } from "./rounds.js";
@@ -44,8 +44,8 @@ export const kitBudget = (state, s) => Math.max(0, pricePerson(state, { ...s, st
 // offers), less a normal start's background car backs (on the same bill: custompoints.js bgBacks).
 /** @param {any} state @param {any} payer */
 export function trunkBudget(state, payer) {
-  const max = pointsMax(state);
-  const K = carPool(state, max);
+  const max = maxFor(state, payer);
+  const K = carPool(state);
   const pool = K.offers.filter((o) => o.s.id !== payer.id).reduce((a, o) => a + o.n, 0);
   return Math.max(0, Math.max(0, max - ownPoints(state, payer, max)) + pool - K.extra);
 }
@@ -162,7 +162,7 @@ export function randomTrunk(budget, room, rng, cals = {}) {
 // first (they give points back, at most a third of the max), then the good ones, each only when it costs at most a
 // quarter of what there is. avail(): their points left as things stand (the default: pricePerson's).
 /** @param {any} state @param {any} s @param {import("./rng.js").Rng} rng @param {() => number} [avail] */
-export function randomTraits(state, s, rng, avail = () => pricePerson(state, s, pointsMax(state)).left) {
+export function randomTraits(state, s, rng, avail = () => pricePerson(state, s).left) {
   s.traits = [];
   delete s.traitTier;
   const count = rng.weighted([0, 1, 2, 3, 4, 5], (n) => [0.08, 0.14, 0.2, 0.22, 0.2, 0.16][n]);
@@ -190,7 +190,7 @@ export function randomTraits(state, s, rng, avail = () => pricePerson(state, s, 
 // opts.keep: points kept aside (left unspent: what randomEverything draws the vehicle's back on).
 /** @param {any} state @param {any} s @param {import("./rng.js").Rng} rng @param {{ keep?: number }} [opts] */
 export function randomBuild(state, s, rng, opts = {}) {
-  const max = pointsMax(state);
+  const max = maxFor(state, s);
   s.skills = Object.fromEntries(SKILLS.map((k) => [k, 0]));
   s.traits = [];
   delete s.traitTier;
@@ -229,7 +229,7 @@ export function randomBuild(state, s, rng, opts = {}) {
 export function randomEverything(state, payer, room, rng) {
   for (const s of state.survivors) delete s.startVehicle;
   for (const s of state.survivors) if (s !== payer) randomBuild(state, s, rng);
-  randomBuild(state, payer, rng, { keep: room ? Math.floor(pointsMax(state) * rng.range(0.1, 0.25)) : 0 });
+  randomBuild(state, payer, rng, { keep: room ? Math.floor(maxFor(state, payer) * rng.range(0.1, 0.25)) : 0 });
   if (!room) return state;
   const guns = state.survivors.map((s) => s.startGear.slots.weapon).filter(Boolean).map((key) => ({ key }));
   payer.startVehicle = randomTrunk(trunkBudget(state, payer), room(), rng, gunCals([], guns));

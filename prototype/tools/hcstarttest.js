@@ -638,9 +638,9 @@ section("Starting people (hardcore.js START_PEOPLE): 1, 2, 3 and 4 flee together
   const a = hc(42), b = hc(42, { startPeople: 3 });
   check(JSON.stringify(a.survivors.map((s) => [s.name, s.background, s.skills])) === JSON.stringify(b.survivors.map((s) => [s.name, s.background, s.skills])) && JSON.stringify(roadTeam(a).supplies) === JSON.stringify(roadTeam(b).supplies) && a.rng.next() === b.rng.next(), "leaving it out is the same as 3");
   check(hc(42, { startPeople: 0 }).survivors.length === 1 && hc(42, { startPeople: 7 }).survivors.length === 4, "out of range: clamped to 1–4");
-  // A normal start ignores it (a full hub of six).
+  // A normal start takes its own count (1–8, six when left out: hardcore.js NORMAL_PEOPLE).
   const nw = createWorld({ seed: 42, factionCount: 7, startPeople: 1 });
-  check(nw.mode === "normal" && nw.survivors.length === 6 && nw.startPeople === undefined, "a normal start ignores it (six at the hub)");
+  check(nw.mode === "normal" && nw.survivors.length === 1 && nw.startPeople === 1 && createWorld({ seed: 42, factionCount: 7 }).survivors.length === 6, "a normal start takes its own count (six when left out)");
   // Saves: the count comes back, the save list has it, and a hardcore save from before it loads as three.
   const two = hc(77, { startPeople: 2 });
   two.cards.length = 0;
@@ -667,8 +667,8 @@ section("Starting people (hardcore.js START_PEOPLE): 1, 2, 3 and 4 flee together
   }
   {
     const html = newRunScreen(createWorld({ seed: 5, factionCount: 7 }), { ...freshUi(), started: false, worldSize: "normal", factionCount: 7, startPeople: 2 });
-    const sel = /<select data-action="startpeople"([^>]*)>/.exec(html);
-    check(!!sel && /disabled/.test(sel[1]) && /Hardcore only/.test(html), "new-run screen (normal): Starting people greyed out, Hardcore only");
+    const sel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(html);
+    check(!!sel && !/disabled/.test(sel[1]) && /value="6" selected/.test(sel[2]) && (sel[2].match(/<option/g) || []).length === 8, "new-run screen (normal): Starting people 1–8, the world's six selected");
   }
 }
 

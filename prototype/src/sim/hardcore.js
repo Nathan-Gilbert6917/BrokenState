@@ -16,16 +16,20 @@ import { setupHardcoreOutbreak, hardcoreOutbreakDaily } from "./hardcore-outbrea
 import { setupHardcoreLoot, hardcoreLootDaily } from "./hardcore-loot.js";
 
 export const MODES = {
-  normal: { label: "Normal", tip: "6–12 months after the outbreak: you start with a hub, six survivors and supplies" },
+  normal: { label: "Normal", tip: "6–12 months after the outbreak: you start with a hub, six survivors (one to eight: Starting people) and supplies" },
   hardcore: { label: "Hardcore", tip: "The day Calder falls: one to four survivors (three by default) on the road with what they grabbed, no hub, and the outbreak just starting" },
 };
 
-// Starting people (the new-run screen, Hardcore only): how many flee together on day 1, MIN–MAX, DEF by default. A normal
-// start is a full hub of six and does not take it. createWorld's startPeople and state.startPeople (saved with the game).
+// Starting people (the new-run screen): how many flee together on day 1 (Hardcore, START_PEOPLE), or how many hold the
+// hub (a normal start, NORMAL_PEOPLE: six by default, up to eight; 2026-10-19, user request), MIN–MAX, DEF by default.
+// createWorld's startPeople and state.startPeople (saved with the game). Each mode keeps its own count on the screen.
 export const START_PEOPLE = { MIN: 1, MAX: 4, DEF: 3 };
-export function clampStartPeople(v) {
+export const NORMAL_PEOPLE = { MIN: 1, MAX: 8, DEF: 6 };
+export const peopleRange = (mode) => (mode === "hardcore" ? START_PEOPLE : NORMAL_PEOPLE);
+export function clampStartPeople(v, mode = "hardcore") {
+  const R = peopleRange(mode);
   const n = Math.round(Number(v));
-  return Number.isFinite(n) ? Math.max(START_PEOPLE.MIN, Math.min(START_PEOPLE.MAX, n)) : START_PEOPLE.DEF;
+  return Number.isFinite(n) ? Math.max(R.MIN, Math.min(R.MAX, n)) : R.DEF;
 }
 
 export const isHardcore = (state) => !!state && state.mode === "hardcore";
