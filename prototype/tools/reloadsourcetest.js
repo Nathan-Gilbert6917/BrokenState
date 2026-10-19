@@ -309,7 +309,9 @@ const NO_SOURCE = /^No ammo to load: no .* on them \(none in their pockets, rig 
     const ru = rb.units.find((x) => x.side === "player");
     const bags0 = rb.pools.reduce((n, p) => n + (p[K12] || 0), 0);
     check(isStacked(ru) && ru.mag === 6 && loose(g, K12) === SHELLS.CARRY - 6 && bags0 === 40 - SHELLS.CARRY, `the tube filled out of the pocket at the start (${loose(g, K12)} left there), the bags' ${bags0} untouched`);
-    loadMag(ru, 0);
+    // One action: the Reload and nothing after it (with more, the bot goes on to search and extract, and the battle's
+    // end puts the gun's rounds back in the pocket).
+    loadMag(ru, 0); ru.ap = 1;
     for (const x of rb.units) if (x.side !== "player") x.aware = false;
     st3.autoRetreat = false;
     autoPlayerTurn(st3);
