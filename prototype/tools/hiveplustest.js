@@ -397,9 +397,10 @@ console.log("The Hivemind's weak spots");
   let threw = 0, fired = 0, burned = 0, stunned = 0;
   for (let s = 0; s < 8; s++) {
     const { st, b } = core(SEED + 10 + s, { fire: 2, stun: 2 });
-    for (let i = 0; i < 60 && !b.over; i++) { if (b.phase === "player") autoPlayerTurn(st); else runEnemyPhase(st); }
-    if (b.log.some((l) => /throws a (Molotov|flashbang)/.test(l.text))) threw++;
-    if (b.log.some((l) => /throws a Molotov/.test(l.text))) fired++;
+    const seen = new Set(b.log); // the battle log keeps its last 80 lines (combat.js say): every line as it comes
+    for (let i = 0; i < 60 && !b.over; i++) { if (b.phase === "player") autoPlayerTurn(st); else runEnemyPhase(st); for (const l of b.log) seen.add(l); }
+    if ([...seen].some((l) => /throws a (Molotov|flashbang)/.test(l.text))) threw++;
+    if ([...seen].some((l) => /throws a Molotov/.test(l.text))) fired++;
     if (b.hivemind && b.hivemind.burned) burned++;
     if (b.hivemind && b.hivemind.stunned) stunned++;
     st.combat = null;

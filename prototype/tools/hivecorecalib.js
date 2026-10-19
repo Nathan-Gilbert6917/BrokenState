@@ -12,7 +12,9 @@ import { hiveTier } from "../src/sim/hivetech.js";
 import { byNumbersOdds, winOdds } from "../src/sim/combat.js";
 import * as HC from "../src/sim/hivecrawl.js";
 import { settleParty } from "../src/sim/ammo.js";
-import { packShells } from "../src/sim/carrykit.js";
+import { packShells, packMags, CARRY } from "../src/sim/carrykit.js";
+import { standardMag } from "../src/sim/mags.js";
+import { newItem } from "../src/sim/inventory.js";
 
 const TRIALS = Number(process.argv[2] || 24);
 const LIGHTS = process.argv[3] == null ? 1 : Number(process.argv[3]);
@@ -43,6 +45,10 @@ export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", arm
   st.parties.push(p);
   settleParty(st, p); // the team's rounds by calibre, and its shotgunners' shells at hand as a trip packs them (carrykit.js packShells)
   if (packed) packShells(p.supplies, people);
+  // And the spare magazines a trip packs out of the armory (parties.js launchExpedition, carrykit.js packMags): with
+  // physical rounds (mags.js, 2026-10-18) a Reload draws only on what the person carries, the team's bags loading the
+  // guns and the spares as the fight starts (no spares: a magazine gun's one magazine a fight).
+  if (packed) packMags(people.flatMap((s) => { const mk = standardMag(s.gear.weapon.key); return mk ? Array.from({ length: CARRY.PACK.rifle }, () => newItem(mk)) : []; }), people);
   const t = hiveTier(st, hv);
   const hp = HC.coreForce(st, hv).hp;
   const p20 = HC.HM_STATS.phase2, b0 = HC.HM_STATS.burned, s0 = HC.HM_STATS.stunned;

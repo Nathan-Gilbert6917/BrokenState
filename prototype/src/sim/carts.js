@@ -543,6 +543,7 @@ export function placeMapCarts(state, b) {
         const [x, y] = cells[(start + i) % cells.length];
         if (R.zones && R.zones.some((z) => x >= z.x0 && x < z.x0 + z.w && y >= z.y0 && y < z.y0 + z.h)) continue;
         if (R.containers.some((c) => !c.cart && x >= c.x && x < c.x + (c.w || 1) && y >= c.y && y < c.y + (c.h || 1))) continue;
+        if (/door/.test((cellsOf(b, a.f || 0)[y * b.w + x] || {}).k || "")) continue; // never in a doorway: it would take the door's place, and locks.js locks doors by the hour (the same map at night)
         const key = hash01(state.seed, "mapcart", b.tileId ?? 0, "kind", a.id) < (a.type === "barn" || a.type === "farmhouse" || a.type === "warehouse" ? 0.55 : 0.2) ? "handcart" : "wheelbarrow";
         if (foundCart(state, b, x, y, a.f || 0, key, `a${a.id}`)) { n++; break; }
       }

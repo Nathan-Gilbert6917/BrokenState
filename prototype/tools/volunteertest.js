@@ -358,10 +358,13 @@ console.log("The hive crawl");
   st.combat = null;
   st.autoCombat = true;
   HC.startHiveCrawl(st, p, hv);
+  // Their vol records held from here: one who lives through a crawl that kills all of yours goes home ("none of
+  // your people are left with them") and noteVet takes s.vol off.
+  const volOf = new Map(vols.map((s) => [s, s.vol]));
   let n = 0;
   while (p.hiveCrawl && n++ < 300 && st.parties.includes(p)) HC.hiveCrawlAutoStep(st, p);
-  const fought = vols.filter((s) => (s.vol.fought || 0) > 0 || !s.alive).length;
-  check(fought >= 1, `in the crawl's fights with your people: ${vols.map((s) => `${s.name} ${s.alive ? `${s.vol.fought} fights` : "fell"}`).join(", ")} (hive ${st.hives.includes(hv) ? "standing" : "destroyed"}, ${people.filter((s) => !s.alive).length} of yours lost)`);
+  const fought = vols.filter((s) => (volOf.get(s).fought || 0) > 0 || !s.alive).length;
+  check(fought >= 1, `in the crawl's fights with your people: ${vols.map((s) => `${s.name} ${s.alive ? `${volOf.get(s).fought} fights${s.vol ? "" : ", home"}` : "fell"}`).join(", ")} (hive ${st.hives.includes(hv) ? "standing" : "destroyed"}, ${people.filter((s) => !s.alive).length} of yours lost)`);
 }
 
 // ---------- 11. the governor ----------

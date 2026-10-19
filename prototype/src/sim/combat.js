@@ -3365,13 +3365,20 @@ export function refitKit(b, u, s) {
 }
 // The fight's start (createBattle, createRaid): the gun and the spares loaded physically (mags.js fillUnit), the stacks
 // it emptied thrown away (ammo.js sweepBoxes) and the unit's round caches rebuilt (the entries read the items' stacks).
-function fillBattleUnit(b, u, s) {
-  fillUnit(b, u);
+// Over the team in turns (fillTeamSpares): every gun first (spares false), then a spare each (gun false, spares 1) until
+// none is left, so the team's bags load each gun before anyone's spare magazines and share the spares out.
+function fillBattleUnit(b, u, s, { gun = true, spares = /** @type {boolean | number} */ (true) } = {}) {
+  const n = fillUnit(b, u, { gun, spares });
   sweepBoxes(s);
   u.boxes = boxesOf(s);
   fitMags(b, u, carriedSpots(s), magCap(u), s);
   syncMags(u);
   loadMag(u, u.mag);
+  return n;
+}
+/** @param {any} b @param {[any, any][]} team [unit, survivor] pairs, guns already loaded */
+function fillTeamSpares(b, team) {
+  for (let more = true, guard = 0; more && guard < 100; guard++) { more = false; for (const [u, s] of team) if (fillBattleUnit(b, u, s, { gun: false, spares: 1 }) > 0) more = true; }
 }
 // After rounds left a survivor's items physically (a Reload, a magazine loaded by hand: mags.js): the emptied stacks
 // are thrown away (ammo.js sweepBoxes) and the unit's caches refit (u.boxes, the magazine entries).
@@ -3640,13 +3647,15 @@ export function createBattle(state, setup) {
   // whatever the map's size, so the shooting starts in a turn or two.
   let rules = spawnRules([2, mid]);
   const pcells = pickCells(people.length, rules.player, (x, y) => coverScore(x, y) * 1.5 - Math.abs(y - mid) * 0.6);
+  const filled = [];
   people.forEach((s, i) => {
     const u = playerUnit(b, s);
     const c = pcells[i] || pickCells(1, () => true, (x) => -x)[0];
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
-    if (!setup.drill) fillBattleUnit(b, u, s); // mags.js: the gun and the spares loaded physically (the gun's own rounds, then what they carry, then the team's bags); not for a drill's throw-away battle (defenceplan.js)
+    if (!setup.drill) { fillBattleUnit(b, u, s, { spares: false }); filled.push([u, s]); } // mags.js: the gun and the spares loaded physically (the gun's own rounds, then what they carry, then the team's bags); not for a drill's throw-away battle (defenceplan.js)
   });
+  fillTeamSpares(b, filled); // then the spares, a spare each in turn, every gun loaded first
   battlePerks(state, b); // skills.js: perks on the player's units (aim, crits, stealth, Rally, Commander...)
   fitHands(state, b); // carry.js: who starts with their hands full of the team's supplies
 
@@ -6611,13 +6620,15 @@ export function createRaid(state, setup) {
   const entryCells = [];
   for (let y = entry.y0 - 1; y <= entry.y0 + entry.h; y++) for (let x = entry.x0; x <= entry.x0 + entry.w; x++) entryCells.push([x, y]);
   entryCells.sort((a, c) => (zoneAt(b, c[0], c[1]) === 0) - (zoneAt(b, a[0], a[1]) === 0));
+  const filled = [];
   for (const s of people) {
     const u = playerUnit(b, s);
     const c = entryCells.find(([x, y]) => ok(x, y)) || [entry.x0, entry.y0];
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
-    if (!setup.drill) fillBattleUnit(b, u, s); // mags.js: the gun and the spares loaded physically
+    if (!setup.drill) { fillBattleUnit(b, u, s, { spares: false }); filled.push([u, s]); } // mags.js: the gun and the spares loaded physically
   }
+  fillTeamSpares(b, filled); // then the spares, a spare each in turn, every gun loaded first
   for (const u of b.units) if (u.side === "player") u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit
   battlePerks(state, b); // skills.js: perks on the player's units
   fitHands(state, b); // carry.js: a bag carried in the arms (the team's supplies start set down in a raid)

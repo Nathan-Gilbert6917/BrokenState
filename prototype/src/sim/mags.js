@@ -23,7 +23,8 @@
 //     it) puts up to MAGS.LOOSE in on top.
 //   - The fight's start (fillUnit, combat.js createBattle): the gun and the spares are filled physically, from the
 //     gun's own rounds (gunload.js item.loaded), then the person's own rounds, then the team's bags (the rounds a team
-//     forming at a base took for its guns, gunrounds.js loadoutRounds); nothing of a teammate's. When the fight ends
+//     forming at a base took for its guns, gunrounds.js loadoutRounds; every gun on the team before anyone's spares,
+//     then a spare each in turn: combat.js fillTeamSpares); nothing of a teammate's. When the fight ends
 //     (gunload.js returnStacks) what is left in the gun and the magazines goes back onto the person as loose rounds (or
 //     into the stores), so out of a fight the rounds are counted where they always were.
 // Enemies and the third side keep the old rule (an endless reserve, u.mags counters, a shotgun's handful): planLegacy /
@@ -315,9 +316,13 @@ function fillTo(b, u, st, cap, load, magKey = null, pools = true) {
 // Loads the gun and the spares physically (combat.js createBattle as the fight starts; refitUnit for a gun taken up in
 // the middle of one): the gun from the rounds kept on it (gunload.js item.loaded: exactly those, gun: false says so),
 // then what they carry, then the team's bags (pools: false in the middle of a fight: never the bags then); each spare
-// the same (one Unloaded in the item menu stays empty; one with a stack already keeps it).
-export function fillUnit(b, u, { gun = true, pools = true } = {}) {
-  if (!tracksMags(u) || u.side !== "player") return;
+// the same (one Unloaded in the item menu stays empty; one with a stack already keeps it). spares: false loads the gun
+// only, a number at most that many spares not loaded yet (combat.js fillBattleUnit: every gun on the team first, then
+// a spare each in turn, so the bags never fill one person's spares while a teammate's gun starts empty). Returns how
+// many spares it loaded (or left empty).
+/** @returns {number} */
+export function fillUnit(b, u, { gun = true, pools = true, spares: withSpares = /** @type {boolean | number} */ (true) } = {}) {
+  if (!tracksMags(u) || u.side !== "player") return 0;
   if (!Array.isArray(u.stack)) u.stack = [];
   const cal = calOf(u.weapon);
   const it = u.item;
@@ -332,14 +337,18 @@ export function fillUnit(b, u, { gun = true, pools = true } = {}) {
   }
   if (gun && !rec) { const got = fillTo(b, u, u.stack, Math.max(0, num(u.magMax)), typeFor(cal, u.load), null, pools); if (got.load) u.load = got.load; }
   syncGun(u, cal);
+  let left = withSpares === true ? Infinity : Math.max(0, Number(withSpares) || 0), done = 0;
   for (const m of spares(u)) {
+    if (!(left > 0)) break;
     if (!m.item) continue;
     if (Array.isArray(m.item.stack)) continue; // loaded already (by hand, or when the gun was taken up)
     m.item.stack = [];
+    left--; done++;
     if (m.item.unloaded) continue; // itemacts.js: kept empty on purpose
     fillTo(b, u, m.item.stack, m.cap, m.load, m.key, pools);
   }
   syncMags(u);
+  return done;
 }
 // A unit of yours from a save made before physical rounds (u.mags counters, no u.stack): the rounds it showed loaded
 // become real, out of what it carries and the team's bags (save.js, on load).

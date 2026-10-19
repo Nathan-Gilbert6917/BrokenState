@@ -226,6 +226,13 @@ section("Their bodies (deadsoldiers.js bodyLoot; inventory.js enemyBody, deadBod
 }
 
 // ---------- raids: bodies to search, harder and richer at a base ----------
+// The armour a body of this kind of the dead carries on average (deadBodyFinds over 400 rolls of fixed dice).
+const ARM = ["vest", "plate", "milhelmet", "riothelmet"];
+const ARM_MEAN = new Map();
+function armourMean(ztype) {
+  if (!ARM_MEAN.has(ztype)) { const rng = new Rng(7919); let n = 0; for (let i = 0; i < 400; i++) n += deadBodyFinds(rng, ztype).gear.filter((g) => g && ARM.includes(g.key)).length; ARM_MEAN.set(ztype, n / 400); }
+  return ARM_MEAN.get(ztype);
+}
 function raidAt(state, tile, opts = {}) {
   const h = hub(state);
   const crew = atBase(state, h.id).slice(0, 3);
@@ -243,11 +250,11 @@ function raidAt(state, tile, opts = {}) {
   let guard = 0;
   while (!b.over && guard++ < 200) { autoPlayerTurn(state); runEnemyPhase(state); }
   const zb = b.raid.containers.filter((c) => c.kind === "body" && c.zombie);
-  // The armour the dead soldiers and riot cops killed in it carry (what is there to take, searched or not: a body not
-  // searched is rolled as a search would roll it, deadBodyFinds with its plates' wear, on dice of its own).
-  const ARM = ["vest", "plate", "milhelmet", "riothelmet"];
-  const gearOf = (c) => (c.contents && Array.isArray(c.contents.gear) ? c.contents.gear : deadBodyFinds(new Rng(c.id * 7919 + 13), c.ztype || null, c.plateDur ?? null).gear);
-  const armourOn = zb.reduce((a, c) => a + gearOf(c).filter((g) => g && ARM.includes(g.key)).length, 0);
+  // The armour the dead soldiers and riot cops killed in it carry (what is there to take, searched or not), in
+  // expectation: each body counts its kind's mean (armourMean: deadBodyFinds rolled many times). One roll a body (and a
+  // searched body's contents, less what the bot took off it) made the comparison below a coin toss: about +0.1 a raid
+  // between the two against ±0.17 of dice over 60 raids (0.86 vs 0.78 at one commit, 0.75 vs 0.76 at the next).
+  const armourOn = zb.reduce((a, c) => a + armourMean(c.ztype || null), 0);
   const out = { ...start, armourOn, over: b.over, result: b.result, zbodies: zb.length, zsearched: zb.filter((c) => c.searched).length, solBodies: zb.filter((c) => c.ztype === "soldier").length, solSearched: zb.filter((c) => c.ztype === "soldier" && c.searched).length, b };
   state.combat = null;
   return out;

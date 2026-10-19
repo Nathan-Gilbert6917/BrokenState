@@ -498,7 +498,10 @@ console.log("The autopilot");
   for (const hd of w.hordes) if (hd.hive === last.id && hd.role === "guard") hd.size = Math.min(hd.size, 40);
   const crew = [];
   for (let i = 0; i < 6; i++) { const s = makeSurvivor(w, 1); s.traits = []; s.skills.shooting = 10; s.health = 100; s.gear.weapon = { key: "shotgun", name: GEAR.shotgun.name, quality: 1 }; s.gear.armor = { key: "vest", name: GEAR.vest.name, quality: 1 }; s.location = { kind: "base", baseId: h.id }; w.survivors.push(s); crew.push(s); }
-  h.stock.ammo = Math.max(h.stock.ammo || 0, 200); h.stock.food = Math.max(h.stock.food || 0, 100); h.stock.water = Math.max(h.stock.water || 0, 80);
+  // The hub's shells as 12 gauge, not generic ammo: generic ammo set just before the launch goes along unsettled
+  // (ammo.js packRounds), so packShells puts none of it at hand, and with physical rounds (mags.js, 2026-10-18) a
+  // shotgun reloads only from the shells its holder carries (no Get shells from the team's bags).
+  h.stock.a_12ga_buck = (h.stock.a_12ga_buck || 0) + 200; h.stock.food = Math.max(h.stock.food || 0, 100); h.stock.water = Math.max(h.stock.water || 0, 80);
   const res = launchExpedition(w, { memberIds: crew.map((s) => s.id), dest: last.tile, mission: "hive", stance: "normal", supplies: { food: 30, water: 30, ammo: 150, meds: 6 } });
   let crawled = false;
   for (let i = 0; i < 24 * 30 && w.hives.includes(last); i++) { tickHour(w); if (res.party && res.party.hiveCrawl) crawled = true; }
