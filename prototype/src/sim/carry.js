@@ -787,7 +787,7 @@ export const keyKg = (p, k) => (((p.supplies && p.supplies[k]) || 0) + ((p.cargo
 // ---------- fights ----------
 // The acts that need free hands (combat.js combatAct). Carrying a body or dragging someone blocks the same.
 // Doors, locks, windows, a car's wires and a captive's ropes need the hands too (the user's ask, 2026-10-19).
-const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner", "open", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "car", "rescue"]);
+const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner", "open", "close", "brace", "keylock", "keyunlock", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "car", "rescue"]);
 export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0) + (u ? haulLoad(u) : 0);
 // Arms full of supplies or a bag (the loads: autoDrop, fitHands, the end of a fight); a hand on a cart (carts.js).
 export const armsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null)); // cartHelp: helping pull a hand cart (carts.js)

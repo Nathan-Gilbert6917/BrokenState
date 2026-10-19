@@ -55,13 +55,15 @@
 // cage with the base's gear and the ammo lockers with its rounds: a raider at one batters the lock a turn at a time
 // (forceLock, ARMORY_LOCK: a pry tool hits twice as hard) and takes nothing until it gives way; a lock smashed open
 // wears the armory afterwards (MAP_WEAR.lock, settleBaseBattle, as the broken door does: MAP_WEAR.door), and with the
-// armory broken its door is an ordinary barred door and its containers stand open until it is repaired.
+// armory broken its door is an ordinary barred door and its containers stand open until it is repaired. The base's
+// own people hold its keys (keyOptions / keyAct, the user's request 2026-10-19): next to a building's door, the gate
+// or a locked container they lock or unlock it, 1 action, from inside or out.
 // "You can move your vehicle to any unoccupied tiles of the base view which it can fit": a parked car is placed like
 // anything else (its length by type: carLen, an Army truck 5), in the yard or beyond the wall. Hordes and raiders batter what
 // stands in their way: doors, windows, walls, barricades and parked cars (combat.js bash); when the fight is over the
 // buildings battered on the map wear as fixtures (breakdowns.js) and the cars lose condition (settleBaseBattle).
 import { BUILDINGS, STORE_KG, count, isCamp, isShelter, farmSlots, tierName } from "./buildings.js";
-import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, WEAPONS } from "./combat.js";
+import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, WEAPONS, structureName } from "./combat.js";
 import { carsAtBase } from "./vehicles.js";
 import { wallHp, gateHp } from "./deploy.js";
 import { INTERIOR, layoutSeed } from "./interior.js";
@@ -587,7 +589,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       if (c.k === "window") F.windows.push([x, y]);
       if (c.k === "tower") F.towers.push([x, y]);
       if (c.k === "lamp") F.lights.push([x, y]);
-      if (c.door) { doors.push([x, y]); F.doors.push([x, y]); }
+      if (c.door) { doors.push([x, y]); F.doors.push([x, y]); q.keyed = true; } // the base's own door: its people hold the key (keyAct)
       if (c.ladder) { const l = at(c.ladder[0] + ox, c.ladder[1] + oy); if (l && l.k === "open") { l.k = "ladder"; F.ladders.push([c.ladder[0] + ox, c.ladder[1] + oy]); } }
       bcells.push([x, y]);
     }
@@ -630,7 +632,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
         const [x, y] = side === "north" ? [cx + o, w.y0] : side === "south" ? [cx + o, w.y1] : side === "west" ? [w.x0, cy + o] : [w.x1, cy + o];
         const q = at(x, y);
         if (!q) continue;
-        q.k = "gate"; delete q.t; q.bar = true; q.hp = q.mhp = hpGate;
+        q.k = "gate"; delete q.t; q.bar = true; q.keyed = true; q.hp = q.mhp = hpGate;
         F.gates[side].push([x, y]);
         const [dx, dy] = side === "north" ? [0, 1] : side === "south" ? [0, -1] : side === "west" ? [1, 0] : [-1, 0];
         const inn = at(x + dx, y + dy); if (inn) { inn.k = "open"; inn.f = "dirt"; delete inn.h; }
@@ -815,10 +817,100 @@ export const storeAt = (b, x, y) => (b.stores ? b.stores.containers.find((c) => 
 // What is in a container, for the panel: [[name, qty], …] supplies first, then the gear.
 export function storeContents(c) {
   const sup = Object.entries(c.sup).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).map(([k, n]) => [SUPPLIES[k] ? SUPPLIES[k].name : FOODS[k] ? FOODS[k].name : k, n]);
-  return { sup, gear: c.gear.map((g) => g.name), kg: Math.round(c.kg || 0), lock: c.lock ? { open: !!c.lock.open, hp: c.lock.hp, mhp: c.lock.mhp, by: c.lock.by || null } : null };
+  return { sup, gear: c.gear.map((g) => g.name), kg: Math.round(c.kg || 0), lock: c.lock ? { open: !!c.lock.open, smashed: !(c.lock.hp > 0), hp: c.lock.hp, mhp: c.lock.mhp, by: c.lock.by || null } : null };
 }
 // A container whose lock still holds (the armory's): a raider batters it before taking anything (forceLock).
 export const lockedBox = (c) => !!(c && c.lock && !c.lock.open);
+
+// ---------- the defenders' keys (the user's request 2026-10-19) ----------
+// The base's own people hold its keys: in a fight on their base's map, anyone of the side holding it (b.holders) next
+// to one of its locks unlocks it or locks it again, KEY_AP action, quiet, from either side of a door (combat.js
+// combatAct "keylock" / "keyunlock"; the order buttons: ui/combat.js keyButtons). The map starts with everything locked.
+//   A building's door (c.keyed: lay1): locked it is the barred door (bdoor) raiders batter down and your people pass;
+//     unlocked it is a closed door (idoor) anyone opens by walking in (the dead still batter it), left open (odoor)
+//     behind whoever went through until it is shut. Locking shuts it as well, with nobody in the doorway. The armory's
+//     keeps its kind either way (c.dk: the security door) and its hit points.
+//   The gate (c.keyed): locked it is barred (c.bar); unlocked it stands open to everyone, the dead too. Its cells go
+//     together, with nobody in the gateway to lock it.
+//   The armory's gun cage and ammo lockers (c.lock): unlocked with the key (lock.open, lock.keyed) a raider takes from
+//     them without battering; a lock smashed open (lock.hp 0) can no longer be locked.
+// Nothing broken (a door or the gate battered to 0) is locked or unlocked any more.
+export const KEY_AP = 1;
+const NEXT4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const DOOR_KS = new Set(["bdoor", "idoor", "odoor"]);
+const inBox = (c, x, y) => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h;
+// The cells of the gate a cell belongs to (its side's gate cells, side by side).
+function gateCellsAt(b, x, y) {
+  const out = [[x, y]];
+  for (let i = 0; i < out.length; i++) for (const [dx, dy] of NEXT4) {
+    const nx = out[i][0] + dx, ny = out[i][1] + dy;
+    if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || out.some(([px, py]) => px === nx && py === ny)) continue;
+    const n = b.cells[ny * b.w + nx];
+    if (n.k === "gate" && n.keyed && n.hp > 0) out.push([nx, ny]);
+  }
+  return out;
+}
+// Does this unit hold the base's keys: one of the side holding the map, a person.
+export const holdsKeys = (b, u) => !!(b && u && u.kind === "human" && u.side === (b.holders || "player") && !b.drill && !b.layout);
+// The locks next to a unit it can work: [{ x, y, what: "door" | "gate" | "box", locked, name, cells (a gate's), id (a box's) }].
+// A door or the gate right next to them (not diagonally), a container within a step (nearRect).
+export function keyOptions(b, u) {
+  if (!holdsKeys(b, u) || !active(u)) return [];
+  const out = [], seen = new Set();
+  for (const [dx, dy] of NEXT4) {
+    const x = u.x + dx, y = u.y + dy;
+    if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
+    const c = b.cells[y * b.w + x];
+    if (!c.keyed || !(c.hp > 0)) continue;
+    if (DOOR_KS.has(c.k)) out.push({ x, y, what: "door", locked: c.k === "bdoor", name: c.dk ? structureName(c).toLowerCase() : "door" });
+    else if (c.k === "gate") {
+      const cells = gateCellsAt(b, x, y), key = cells.map((p) => p.join(",")).sort()[0];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ x, y, what: "gate", locked: !!c.bar, name: "gate", cells });
+    }
+  }
+  if (b.stores) for (const c of b.stores.containers) if (c.lock && c.lock.hp > 0 && nearRect(c, u.x, u.y)) out.push({ x: c.x, y: c.y, what: "box", locked: !c.lock.open, name: c.label.toLowerCase(), id: c.id });
+  return out;
+}
+// What a Lock or an Unlock would work on (keyOptions with the right state), the one at (x, y) when given.
+export function keyTargets(b, u, lock, x = null, y = null) {
+  const list = keyOptions(b, u).filter((o) => o.locked !== lock);
+  if (x == null) return list;
+  x = Number(x); y = Number(y);
+  return list.filter((o) => (o.what === "box" ? inBox(b.stores.containers.find((c) => c.id === o.id), x, y) : o.what === "gate" ? o.cells.some(([gx, gy]) => gx === x && gy === y) : o.x === x && o.y === y));
+}
+// combatAct "keylock" / "keyunlock": { unit, x?, y? } (the lock clicked; else the only one next to them). H: { say }.
+export function keyAct(state, b, u, act, H) {
+  const lock = act.type === "keylock";
+  if (!holdsKeys(b, u)) return "Only the base's own people hold its keys.";
+  const o = keyTargets(b, u, lock, act.x, act.y)[0];
+  if (!o) return lock ? "Stand next to an unlocked door, the open gate or an unlocked container of the base (a door or the gate not diagonally)." : "Stand next to a locked door, the gate or a locked container of the base (a door or the gate not diagonally).";
+  if (u.ap < KEY_AP) return "No action left.";
+  if (o.what === "door") {
+    const c = b.cells[o.y * b.w + o.x];
+    if (lock) {
+      if (unitAt(b, o.x, o.y)) return "Somebody is standing in the doorway.";
+      if (c.k === "odoor" && c.tOpen) c.t = c.tOpen;
+      c.k = "bdoor";
+    } else c.k = "idoor";
+    delete c.held;
+  } else if (o.what === "gate") {
+    if (lock && o.cells.some(([x, y]) => unitAt(b, x, y))) return "Somebody is standing in the gateway.";
+    for (const [x, y] of o.cells) b.cells[y * b.w + x].bar = lock;
+  } else {
+    const box = b.stores.containers.find((c) => c.id === o.id);
+    box.lock.open = !lock;
+    if (lock) delete box.lock.keyed; else box.lock.keyed = true;
+  }
+  if (b.losCache) b.losCache.fill(0);
+  u.ap -= KEY_AP;
+  u.hunker = false;
+  u.face = [Math.sign(o.x - u.x), Math.sign(o.y - u.y)];
+  const what = o.what === "box" ? `the ${o.name}` : `the ${o.name}`;
+  H.say(b, lock ? `${u.name} ${o.what === "door" ? "shuts and locks" : o.what === "gate" ? "bars" : "locks"} ${what}.` : `${u.name} ${o.what === "gate" ? "unbars and opens" : "unlocks"} ${what}.`, "info");
+  return "";
+}
 
 // ---------- raiders stealing (combat.js aiUnit) ----------
 // Who among a raid's people goes for the stores (set when the units are placed: fort.js), and a thief's turn. Returns
@@ -995,7 +1087,7 @@ export function settleBaseBattle(state, b) {
   }
   // The armory's locks smashed open (forceLock): MAP_WEAR.lock a lock on the armory (both: broken, its containers
   // open until it is repaired).
-  if (b.stores) for (const c of b.stores.containers) if (c.lock && c.lock.open && c.bid != null) wearOn(base.buildings.find((x) => x.id === c.bid), MAP_WEAR.lock);
+  if (b.stores) for (const c of b.stores.containers) if (c.lock && !(c.lock.hp > 0) && c.bid != null) wearOn(base.buildings.find((x) => x.id === c.bid), MAP_WEAR.lock); // smashed, not unlocked with the key
   const breaches = F.ring.filter(([x, y]) => b.cells[y * b.w + x].k === "breach").length - (F.breaches ? F.breaches.length : 0);
   if (breaches > 0) { const walls = base.buildings.filter((x) => x.type === "walls"); if (walls.length) wearOn(walls[breaches % walls.length], MAP_WEAR.breach * breaches); }
   for (const e of layoutOf(state, base)) {
