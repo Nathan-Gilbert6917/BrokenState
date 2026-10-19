@@ -22,7 +22,7 @@ import {
 import {
   ROUND_KEYS, isRoundKey, calOf, totalRounds, roundsIn, roundsOf, settleRec, spendAmmo, addAmmo, giveRounds, setRounds, newBox, boxesOf,
   starterLoad, enemyLoad, findRounds, themeOf, mixForCals, gunCals, packRounds, drawShots, ammoEdge, benchRounds, baseAmmo, settleAll,
-  kindShare, softMult, typeFor, loadOf, pickLoad, huntLoad, foldRounds, migrateAmmo,
+  kindShare, softMult, typeFor, loadOf, pickLoad, huntLoad, foldRounds, migrateAmmo, carriedRec,
 } from "../src/sim/ammo.js";
 import { newItem, enemyBody, itemKg } from "../src/sim/inventory.js";
 import { roundItem, amountOf } from "../src/sim/itemstack.js";
@@ -314,7 +314,10 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; }
   setRounds(h.stock, 0);
   Object.assign(h.stock, { a_9mm_fmj: 100, a_308_fmj: 100, a_12ga_buck: 100, food: 100, water: 100 });
   const res = launchExpedition(st, { memberIds: [a.id, c.id], dest: h.tile, mission: "move", stance: "normal", supplies: { food: 4, water: 4, ammo: 40 } });
-  check(!res.error && res.party.supplies.a_9mm_fmj === 20 && res.party.supplies.a_308_fmj === 20 && !res.party.supplies.a_12ga_buck && h.stock.a_12ga_buck === 100, `a plan's 40 ammo packed as the rounds that fit (${res.error || JSON.stringify(Object.fromEntries(ROUND_KEYS.filter((k) => res.party.supplies[k] > 0).map((k) => [k, res.party.supplies[k]])))})`);
+  // Some of each gun's share rides at hand (carrykit.js looseWant), out of the same 40.
+  const packed = res.error ? {} : { ...carriedRec([a, c]) };
+  if (!res.error) for (const k of ROUND_KEYS) if (res.party.supplies[k] > 0) packed[k] = (packed[k] || 0) + res.party.supplies[k];
+  check(!res.error && packed.a_9mm_fmj === 20 && packed.a_308_fmj === 20 && !packed.a_12ga_buck && h.stock.a_12ga_buck === 100, `a plan's 40 ammo packed as the rounds that fit, in the pack and at hand (${res.error || JSON.stringify(packed)})`);
   // The bench makes the calibres of the guns there, the shortest first.
   const st2 = createWorld({ seed: seed + 10, factionCount: 4 });
   const h2 = hub(st2);

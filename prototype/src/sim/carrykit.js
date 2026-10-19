@@ -23,7 +23,7 @@ import { fittedKg, gunMods } from "./gunmods.js";
 import { calOf, roundsOf } from "./ammo.js";
 import { CALIBERS } from "./data-ammo.js";
 import { typeFor, keyFor, withHand } from "./rounds.js";
-import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad, SHELLS } from "./mags.js";
+import { standardMag, magFitsGun, isMag, enemyMags, enemyMagCount, magLoad, takesMagItems, usesInternal, magItemLoad, SHELLS, fittedMag } from "./mags.js";
 import { roundItem, mergeInto, canStack } from "./itemstack.js";
 import { feelFactor, bandIndex, LOAD_BANDS } from "./load.js";
 import { itemOnKg, cartOf, CART_FIGHT } from "./carts.js"; // a cart pushed in a fight: its share of the weight, a tile less a move
@@ -47,6 +47,10 @@ export const CARRY = {
   // Packing magazines for a trip (packMags): spares a gun.
   PACK: { rifle: 4, pistol: 3 },
   START: 2, // a colonist's starting gun comes with this many spare magazines
+  // Loose rounds at hand for any gun (packShells, every trip and a base's defenders; the AI's people by the same rule,
+  // loadouts.js armRounds): a magazine's worth for a gun with a box magazine (to reload a spare by hand), twice an
+  // internal magazine for a rifle, a lever gun or a revolver (loaded by hand); a shotgun SHELLS.CARRY (mags.js).
+  LOOSE: { box: 1, internal: 2 },
   GUN_MAGS: [0.35, 0.45, 0.2], // a found gun: 0, 1 or 2 spare magazines (its standard one)
   SPARE_PLATES: 2, // the governor keeps this many spare plates at a base with a carrier in use
 };
@@ -234,25 +238,36 @@ export function packMags(list, crew) {
   }
   return out;
 }
-// Shells at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's) and
-// for a base's defenders as a fight at its walls starts (combat.js createBattle, out of the base's stock): a shotgun
-// (mags.js SHELLS) loads only from the shells on the person, so each shotgunner takes up to SHELLS.CARRY of the shells
-// of its load out of the team's packed rounds (supplies: the factory round, then the bench's) into a pocket or a rig
-// pouch: onto a stack of them there first, else a free pocket, else a free admin pouch. What does not fit stays where
-// it was (the pack, the stock). Returns the lines for the log ("24 shells at hand (Ann)").
+// How many loose rounds of its load a gun's carrier keeps at hand (CARRY.LOOSE; a shotgun: SHELLS.CARRY).
+export function looseWant(gun) {
+  const w = gun && WEAPONS[gun.key];
+  if (!w || !calOf(gun.key)) return 0;
+  if (SHELLS.on && SHELLS.GUNS[gun.key] && usesInternal(gun.key, gun)) return SHELLS.CARRY;
+  const fit = fittedMag(gun), m = gunMods(gun);
+  const cap = Math.max(1, Math.round(((fit ? MAGAZINES[fit.key].cap : w.cap) || 1) * (m.capMult ?? 1)) + (m.cap || 0));
+  return (usesInternal(gun.key, gun) ? CARRY.LOOSE.internal : CARRY.LOOSE.box) * cap;
+}
+// Rounds at hand for a trip (parties.js launchExpedition, every trip of yours: the planner's and the autopilot's) and
+// for a base's defenders as a fight at its walls starts (combat.js createBattle, out of the base's stock): a Reload
+// draws only on what is on the person (mags.js, physical rounds), so each one with a gun takes its loose rounds at hand
+// (looseWant: a shotgun's shells, a rifle's or a revolver's handfuls, a magazine's worth for a box-magazine gun) of its
+// load out of the team's packed rounds (supplies: the factory round, then the bench's) into a pocket or a rig pouch:
+// onto a stack of them there first, else a free pocket, else a free pouch. What does not fit stays where it was (the
+// pack, the stock). Returns the lines for the log ("24 shells at hand (Ann)", "10 rounds at hand (Bo)").
 /** @param {Record<string, number>} supplies @param {any[]} crew */
 export function packShells(supplies, crew) {
   const out = [];
   if (!supplies) return out;
   for (const s of crew) {
     const gun = s && s.gear && s.gear.weapon;
-    if (!gun || !SHELLS.on || !SHELLS.GUNS[gun.key] || !usesInternal(gun.key, gun)) continue;
-    const cal = calOf(gun.key);
-    if (!cal) continue;
+    const cal = gun ? calOf(gun.key) : null;
+    if (!cal || !WEAPONS[gun.key]) continue;
+    const full = looseWant(gun);
+    if (!(full > 0)) continue;
     ensureInv(s);
     const keys = withHand(keyFor(cal, typeFor(cal, gun.load)));
     const atHand = () => carriedSpots(s).filter((x) => (x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)).reduce((a, x) => a + Math.max(0, Math.floor(num(x.item.dur))), 0);
-    let want = SHELLS.CARRY - atHand(), moved = 0;
+    let want = full - atHand(), moved = 0;
     for (const key of keys) {
       const q = Math.min(want, Math.max(0, Math.floor(num(supplies[key]))));
       if (!(q > 0)) continue;
@@ -271,7 +286,7 @@ export function packShells(supplies, crew) {
       supplies[key] -= put; moved += put; want -= put;
       if (want <= 0) break;
     }
-    if (moved > 0) out.push(`${moved} shells at hand (${String(s.name).split(" ")[0]})`);
+    if (moved > 0) out.push(`${moved} ${SHELLS.GUNS[gun.key] ? "shells" : "rounds"} at hand (${String(s.name).split(" ")[0]})`);
   }
   return out;
 }

@@ -86,6 +86,7 @@ import { groupWalls, groupsBuild, worksAt } from "./groupworks.js"; // barestart
 import { blocAssaultHelp } from "./blocs.js"; // AI blocs: members' fighters at an ally's walls
 import { askBaseName } from "./basenames.js"; // name a base you take
 import { pwarBaseTaken } from "./playerwars.js"; // wars with you: a base taken counts
+import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 
 export const CONQUEST = {
   FIGHT_SHARE: 0.6, MIN_DEF: 3, MAX_DEF: 16, HOME_WEIGHT: 2,
@@ -177,7 +178,7 @@ export function assaultOdds(power, force, ammoOk = true, people = 0, state = nul
   return winOdds(mine / Math.max(0.1, theirs), { kind: force.kind, count: force.count, people }); // combat.js: calibrated on the battle map
 }
 const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
-const carriedAmmo = (p) => sumRecs(p.supplies, p.cargo && p.cargo.supplies); // rounds by key: each gun judged by its own calibre (world.js armedFactor)
+const carriedAmmo = (p, people = []) => sumRecs(p.supplies, p.cargo && p.cargo.supplies, carriedRec(people)); // rounds by key: each gun judged by its own calibre (world.js armedFactor); and those they carry at hand
 // "2 ladders, a battering ram and 3 grenades" (the assault card).
 function kitWords(k) {
   const parts = [];
@@ -189,7 +190,7 @@ function kitWords(k) {
 export function teamAssaultOdds(state, p, force) {
   const m = partyMembers(state, p);
   // Short of ammo the guns count 60%, short of arrows the bows (world.js armedFactor; with no bow: the old ammo check).
-  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0) * armedFactor(m, carriedAmmo(p), carriedOf(p, "arrows")), force, true, m.length, state);
+  return assaultOdds(m.reduce((a, s) => a + combatPower(s), 0) * armedFactor(m, carriedAmmo(p, m), carriedOf(p, "arrows")), force, true, m.length, state);
 }
 
 // Why attacking this group is a bad idea (the planner and the card): "" for a hostile group.

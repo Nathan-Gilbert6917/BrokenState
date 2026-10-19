@@ -20,7 +20,8 @@ import { calOf, gunLoads, settleGroup } from "./ammo.js";
 import { keyFor, typeFor } from "./rounds.js";
 import { isRoundItem, roundItems } from "./itemstack.js";
 import { MAGAZINES } from "./data-kit.js";
-import { isMag, magFitsGun, usesInternal, fittedMag, SHELLS } from "./mags.js";
+import { isMag, magFitsGun, fittedMag } from "./mags.js";
+import { looseWant } from "./carrykit.js"; // loose rounds at hand: your rule
 
 export const LOADOUT = {
   THROWS: 2, // throwables a person at most (shared out one at a time, best fighters first)
@@ -145,8 +146,7 @@ export function seedRounds(f, state = null) {
   for (const gun of items) {
     if (!gun || !WEAPONS[gun.key] || !calOf(gun.key)) continue;
     const key = keyFor(calOf(gun.key), typeFor(calOf(gun.key), gun.load || null));
-    const internal = usesInternal(gun.key, gun);
-    const n = capOf(gun) + (SHELLS.GUNS[gun.key] ? LOOSE.shells : internal ? LOOSE.internal * capOf(gun) : LOOSE.box * capOf(gun));
+    const n = capOf(gun) + looseWant(gun);
     f.stock[key] = (f.stock[key] || 0) + n;
   }
   for (const it of items) {
@@ -157,7 +157,7 @@ export function seedRounds(f, state = null) {
   }
   note(state, "starting rounds", roundsIn(f.stock) - r0); // ledger.js: a creation seed
 }
-export const LOOSE = { box: 1, internal: 2, shells: 18 }; // loose rounds carried besides: a magazine's worth, twice an internal magazine, shells
+// Loose rounds carried besides (your rule: carrykit.js looseWant, CARRY.LOOSE and SHELLS.CARRY).
 const capOf = (gun) => { const w = WEAPONS[gun.key]; const fit = fittedMag(gun); return Math.max(1, fit && MAGAZINES[fit.key] ? MAGAZINES[fit.key].cap : (w && w.cap) || 1); };
 // The rounds a person carries, counted where they are (the gun's, the magazines', the loose ones), nothing moved.
 export function carriedRounds(s) {
@@ -218,9 +218,7 @@ export function armRounds(f, s, stock, pass) {
     }
     return;
   }
-  const internal = usesInternal(gun.key, gun);
-  const want = SHELLS.GUNS[gun.key] ? LOOSE.shells : internal ? LOOSE.internal * capOf(gun) : LOOSE.box * capOf(gun);
-  const n = take(want);
+  const n = take(looseWant(gun));
   let left = n;
   for (const it of roundItems(key, n, true)) { const q = Math.floor(Number(it.dur) || 0); if (!stow(s, it)) break; left -= q; }
   if (left > 0) stock[key] = (stock[key] || 0) + left; // no room on them: back in the stores

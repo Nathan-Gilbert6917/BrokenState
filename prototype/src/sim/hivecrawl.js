@@ -86,6 +86,7 @@ import { gunMods } from "./gunmods.js";
 import { calOf } from "./ammo.js";
 import { cellsOf, ringOf, inGrid, headingToward, DIRS, DIR_NAMES } from "./citygrid.js"; // the den's round grid, as the city's
 import { typeFor, keyFor, withHand } from "./rounds.js";
+import { looseWant } from "./carrykit.js"; // the loose rounds a trip packs at hand
 
 // ---------- tuning ----------
 export const HCRAWL = {
@@ -1602,7 +1603,7 @@ export function coreBossMult(prep) {
 HIVEMIND.REACH = { range: 6, melee: 0.3, shots: 14 };
 // What coreFire needs to know of a fighter (also the fit's: tools/hivecorecalib.js): { p (combat power), melee, aim,
 // opt, fall, type (the load: its spread), sustain }. packed: a squad not yet packed for the trip (the autopilot's gate):
-// a shotgunner will carry SHELLS.CARRY at hand (carrykit.js packShells).
+// every gun will carry its loose rounds at hand (carrykit.js packShells and looseWant).
 export function fireOf(s, packed = false) {
   const it = s.gear && s.gear.weapon, g = it ? GEAR[it.key] : null, W = it ? WEAPONS[it.key] : null;
   const p = combatPower(s);
@@ -1618,7 +1619,7 @@ export function fireOf(s, packed = false) {
     const keys = cal ? withHand(keyFor(cal, type)) : [];
     let hand = 0;
     for (const x of carriedSpots(s)) if ((x.where === "pocket" || x.where === "rig") && x.item && keys.includes(x.item.key)) hand += Math.max(0, Math.floor(x.item.dur || 0));
-    if (packed && SHELLS.on && SHELLS.GUNS[it.key]) hand = Math.max(hand, SHELLS.CARRY); // the trip packs a shotgun's at hand (packShells)
+    if (packed) hand = Math.max(hand, looseWant(it)); // the trip packs every gun's loose rounds at hand (carrykit.js packShells)
     fetch = (Math.max(0, need - cap - hand) / per) * (MAGS.SOURCE_AP.pack - MAGS.SOURCE_AP.hand);
   }
   const reloads = Math.max(0, need - cap) / per;

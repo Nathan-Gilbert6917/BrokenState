@@ -16,7 +16,7 @@
 //   - an empty spare magazine is a throwable lure (emptymag), picked up again after a win;
 //   - the kit check before the first move: an empty gun (with the rounds for it on them or not), no healing, the hurt.
 // Usage: node tools/reloadpicktest.js [seed]
-import { setRounds, giveRounds, sideRounds, totalRounds } from "../src/sim/ammo.js";
+import { setRounds, giveRounds, sideRounds, totalRounds, boxesOf, sweepBoxes } from "../src/sim/ammo.js";
 import { ammoKey } from "../src/sim/data-ammo.js";
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import { createBattle, combatAct, registerCombatHandler, loadMag, reloadRefusal, reloadCost, magIn, magEmpty, autoPlayerTurn, ammoLeft, refitKit, shotOdds } from "../src/sim/combat.js";
@@ -88,6 +88,12 @@ const turn = (b, u) => { b.phase = "player"; u.ap = 2; };
   keepFoe(b);
   check(isStacked(u) && u.mag === 6 && stackN(u.stack) === 6 && u.load === "fmj", `the revolver takes the field loaded (6/6) out of the base's stock: ${u.mag}, stack ${stackText("357", u.stack)}`);
   check(v.mag === 6 && c.pockets[0].dur === 34, `the teammate's cylinder filled out of their own pocket first (${c.pockets[0].dur} left of 40)`);
+  // A defender grabs a gun's loose rounds out of the stock as the fight starts (carrykit.js looseWant: two cylinders);
+  // the teammate had theirs in a pocket already. The test puts them back, so nothing is on them.
+  const atHand = boxesOf(a).reduce((n, it) => n + Math.floor(it.dur), 0);
+  check(atHand === 6 && hub(st).stock[K357] === 200 - 12 && c.pockets[0].dur === 34, `the defenders grab their loose rounds: 12 out of the stock, 6 into the cylinder and ${atHand} at hand; the teammate's own 34 are enough`);
+  for (const it of boxesOf(a)) { hub(st).stock[K357] += Math.floor(it.dur); it.dur = 0; }
+  sweepBoxes(a); refitKit(b, u, a);
   const total0 = sideRounds(b);
   turn(b, u); loadMag(u, 0);
   check(u.mag === 0 && stackN(u.stack) === 0 && magEmpty(b, u), "emptied: 0/6");

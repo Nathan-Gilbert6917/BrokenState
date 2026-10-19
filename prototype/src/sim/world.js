@@ -40,7 +40,7 @@ import { craftingHour, craftingDaily } from "./crafting.js";
 import { repairHour, rezeroHour } from "./repair.js"; // gear repairs at the bench; budget sights re-zeroed
 import { armorPower, armorMult, allItems, stripAll, newItem, START_DUR } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
-import { settleAll, starterLoad, pocketBox, gunsArmed, drawShots } from "./ammo.js"; // rounds by calibre
+import { settleAll, starterLoad, pocketBox, gunsArmed, drawShots, carriedRec, spendCarried } from "./ammo.js"; // rounds by calibre
 import { startChronicle, recordChronicle } from "./chronicle.js";
 import { historyHour } from "./history.js"; // the Ledger's daily rows (ui/ledger.js)
 import { foodMarkAll } from "./foodlog.js"; // the bases' food ledger (the Food tab): marks between the hour's steps
@@ -590,7 +590,21 @@ export function armedFactor(people, ammo, arrows, { need = (n) => n * 3, short =
 /** @param {Record<string, number>} stock @param {Survivor[]} people @param {number} perHead @returns {{ ammo: number, used: Record<string, number>, arrows: number }} */
 export function spendShots(stock, people, perHead) {
   const nb = archerCount(people);
-  const d = drawShots(stock, people.filter((s) => !usesArrows(s)), perHead);
+  // The stores (a team's bags, a base's stock) first, then the loose rounds the shooters carry (ammo.js carriedRec:
+  // their rounds at hand, carrykit.js packShells), as a fight's Reload draws on them.
+  const gunners = people.filter((s) => !usesArrows(s));
+  const onThem = carriedRec(gunners);
+  const both = { ...stock };
+  for (const [k, q] of Object.entries(onThem)) both[k] = (Number.isFinite(both[k]) ? both[k] : 0) + q;
+  const before = { ...both };
+  const d = drawShots(both, gunners, perHead);
+  for (const [k, q0] of Object.entries(before)) {
+    const used = q0 - (Number.isFinite(both[k]) ? both[k] : 0);
+    if (!(used > 0)) continue;
+    const fromStock = Math.min(used, Math.max(0, Number.isFinite(stock[k]) ? stock[k] : 0));
+    if (fromStock > 0) stock[k] -= fromStock;
+    if (used - fromStock > 0) spendCarried(gunners, k, used - fromStock);
+  }
   let arrows = 0;
   if (nb) {
     const b0 = stock.arrows || 0;

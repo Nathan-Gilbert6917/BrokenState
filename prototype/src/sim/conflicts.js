@@ -65,6 +65,7 @@ import { lyingFor, ambushSprung, INTEL } from "./intel.js"; // a group that over
 import { swapGun, bodyGunSource } from "./gundist.js"; // the gun distribution: a gun off their dead
 import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more run-ins
 import { note } from "./ledger.js"; // the conservation test's ledger (off in play)
+import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 
 // ---------- small helpers ----------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -147,7 +148,7 @@ export function addCargoRoundsRec(state, p, n, theme = null, ...salt) {
 // its bows and crossbows shoot.
 const carriedOf = (p, k) => Math.max(0, Math.floor(p.supplies[k] || 0)) + Math.max(0, Math.floor((p.cargo && p.cargo.supplies[k]) || 0));
 const carriedAmmo = (p) => totalIn(p.supplies, p.cargo && p.cargo.supplies); // every round, any calibre (rounds.js)
-const carriedRounds = (p) => sumRecs(p.supplies, p.cargo && p.cargo.supplies); // by key: the armed factor judges each gun by its own calibre
+const carriedRounds = (p, people = []) => sumRecs(p.supplies, p.cargo && p.cargo.supplies, carriedRec(people)); // by key: the armed factor judges each gun by its own calibre; and the rounds they carry at hand (ammo.js carriedRec)
 
 // Bonus gear goes into the cargo only if there is room for it (parties.js addGearToCargo when it exists).
 function stowGear(state, p, item) {
@@ -165,7 +166,7 @@ function stowGear(state, p, item) {
 export function fightOdds(state, p, enemy, ambush) {
   const people = partyMembers(state, p);
   if (!people.length) return 0;
-  return byNumbersOdds(state, { tile: partyTile(p), partyId: p.id, enemy: { ...enemy }, ambush }, people, { ammo: carriedRounds(p), arrows: carriedOf(p, "arrows") }).win;
+  return byNumbersOdds(state, { tile: partyTile(p), partyId: p.id, enemy: { ...enemy }, ambush }, people, { ammo: carriedRounds(p, people), arrows: carriedOf(p, "arrows") }).win;
 }
 
 function enemyGroup(state, p, f, scale = 1, horde = null) {

@@ -120,6 +120,8 @@ import { stagingNeeds, establishProblem, STAGING, besideWaterSource } from "./st
 import { isHardcore } from "./hardcore.js";
 import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers, wormOf } from "./worm.js";
 import { gunWant, pickGunToBuy, noteGunBought, radioGunDeal } from "./govguns.js"; // the governor buys guns for the unarmed
+import { carriedRec } from "./ammo.js"; // the loose rounds people carry
+import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -954,7 +956,7 @@ function pickChoice(state, card, opts, p) {
   if (/^The dead ahead/.test(t)) {
     const n = Number((/About (\d+)/.exec(card.text || "") || [0, 8])[1]);
     const ms = p ? partyMembers(state, p) : [];
-    const power = p ? ms.reduce((a, s) => a + combatPower(s), 0) * armedFactor(ms, p.supplies, p.supplies.arrows || 0, { need: (k) => (n * k) / Math.max(1, ms.length), short: 0.5 }) : 0; // events.js: the bows shoot arrows
+    const power = p ? ms.reduce((a, s) => a + combatPower(s), 0) * armedFactor(ms, sumRecs(p.supplies, carriedRec(ms)), p.supplies.arrows || 0, { need: (k) => (n * k) / Math.max(1, ms.length), short: 0.5 }) : 0; // events.js: the bows shoot arrows
     if (P.raid && power > n * 0.9) return find(/^Fight/);
     return (chance(/^Sneak around/) >= P.risk ? find(/^Sneak around/) : null) || find(/long way/);
   }

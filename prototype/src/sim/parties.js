@@ -1000,7 +1000,7 @@ export function launchExpedition(state, opts) {
   // first (ammo.js settleParty, as the hour's settleAll would): packShells reads the shells by their keys, so before
   // this a team packed from generic ammo left with every shell in its bags and none at hand.
   settleParty(state, p);
-  if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each shotgunner's shells at hand (a pocket or a rig pouch) out of the packed rounds, so the shotgun reloads without digging in the pack
+  if (opts.shells !== false) packShells(p.supplies, members); // carrykit.js: each gun's loose rounds at hand (looseWant: a pocket or a rig pouch) out of the packed rounds, so it reloads without digging in the pack
   packWater(state, p, home); // worm.js: the un-purified water packed carries the eggs of the base's
   if (opts.tabs) packTablets(state, home, p); // worm.js: a tube of purification tablets for the road (when the armory has one)
   // An assault takes the hub's siege kit along (kit.js packSiegeKit: the ram, ladders, grenades into the cargo, as

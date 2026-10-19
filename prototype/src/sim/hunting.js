@@ -107,7 +107,7 @@ import { foragingDaily, landFoodHands } from "./foraging.js";
 import { wormKill, huntYieldMult, WORM } from "./worm.js";
 import { FOODS, foodIn, foodUnits, addFood, takeFood, moveFood, ageLots, unitsOf, qtyOf, foodText, foodRng } from "./foods.js"; // game is raw meat by the animal
 import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
-import { huntRounds, huntLoad, takeHuntShots, baseAmmo } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
+import { huntRounds, huntLoad, takeHuntShots, baseAmmo, carriedRec, spendCarried } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, waterSources, shoreOf, NO_WATER, walkMult, tileGameMult } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
 
@@ -542,7 +542,8 @@ export function huntInfo(state, tile, { members = null, ammo = Infinity, arrows 
   return out;
 }
 // A team's huntTeam: what it carries and its home base's mix.
-export const partyHuntTeam = (state, p, members = partyMembers(state, p)) => huntTeam(state, members, sumRecs(p.supplies, p.cargo && p.cargo.supplies), { arrows: carried(p, "arrows"), mix: partyHuntMix(state, p) });
+// (ammo.js carriedRec: the loose rounds they carry count with the bags, as a fight's Reload draws on them.)
+export const partyHuntTeam = (state, p, members = partyMembers(state, p)) => huntTeam(state, members, sumRecs(p.supplies, p.cargo && p.cargo.supplies, carriedRec(members)), { arrows: carried(p, "arrows"), mix: partyHuntMix(state, p) });
 
 // Why a team cannot hunt here ("" = it can).
 export function huntProblem(state, p, tile = partyTile(p)) {
@@ -673,7 +674,10 @@ export function huntHour(state, p) {
     const who = state.rng.weighted(hs.slice(0, 3), (x) => (a.big ? x.big : x.small) + 1e-6);
     if (who.w.ammo) {
       const shots = 1 + (state.rng.chance(a.big ? HUNT.missChance : HUNT.missSmall) ? 1 : 0);
-      const used = takeHuntShots([p.cargo && p.cargo.supplies, p.supplies], who.item, shots); // ammo.js: the gun's own calibre, its load first
+      // ammo.js: the gun's own calibre, its load first; out of the bags, then the rounds they carry (the shooter's first)
+      const onThem = carriedRec(members), had = { ...onThem };
+      const used = takeHuntShots([p.cargo && p.cargo.supplies, p.supplies, onThem], who.item, shots);
+      for (const [k, q] of Object.entries(had)) { const d = q - (onThem[k] || 0); if (d > 0) spendCarried([who.s, ...members.filter((x) => x !== who.s)], k, d); }
       got.shots += Math.max(1, used);
       p.heat = Math.min(100, (p.heat || 0) + HUNT.shotHeat * (who.w.noise / 3) * Math.max(1, used));
       got.drawn += drawHordes(state, tile, who.w.quiet ?? 1);
