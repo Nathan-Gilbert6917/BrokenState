@@ -21,6 +21,7 @@ import { POWER_USERS } from "../src/sim/power.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { seasonOfDay } from "../src/sim/weather.js";
 import { setFood, clearFood } from "./foodkit.js"; // food by type (sim/foods.js)
+import { setMech } from "./groupkit.js"; // a group's mechanic is one of its people
 
 const govDays = Number(process.argv[2] || 60);
 const seeds = process.argv.length > 3 ? process.argv.slice(3).map(Number) : [1];
@@ -296,7 +297,7 @@ function govHub(seed, { summer = true } = {}) {
   const st = W(9);
   st.hour = 24 * 40;
   const f = st.factions.find((x) => x.alive && !x.hcMilitary);
-  f.type = "military"; // mechanic 6
+  f.type = "military"; setMech(st, f, 6); // mechanic 6
   groupTech(f).known.push("genschem", "refrig", "machinist");
   f.pop = 20;
   Object.assign(f.stock, { fuel: 40, parts: 30, scrap: 100 }); setFood(f.stock, 600); // days of ration bars
@@ -318,9 +319,9 @@ function govHub(seed, { summer = true } = {}) {
   f.fuelFlow.in = 2.2;
   check(/run it down/.test(groupPowerUpWhy(st, f, tile)), `never into a fuel deficit (${groupPowerUpWhy(st, f, tile)})`);
   f.fuelFlow.in = 6;
-  f.type = "commune"; // mechanic 3
+  f.type = "commune"; setMech(st, f, 3); // mechanic 3
   check(/Mechanics 4/.test(groupPowerUpWhy(st, f, tile)), `no Mechanics 4 hand (${groupPowerUpWhy(st, f, tile)})`);
-  f.type = "military";
+  f.type = "military"; setMech(st, f, 6);
   w.bench = 0;
   check(/workshop/.test(groupPowerUpWhy(st, f, tile)) && /workshop/.test(workLock(st, f, "power2")), `ai-locks' workLock: no workshop, no upgrade (${groupPowerUpWhy(st, f, tile)})`);
   w.bench = 1;
@@ -339,17 +340,17 @@ function govHub(seed, { summer = true } = {}) {
   check(/Industrial Power Manual/.test(groupPowerUpWhy(st, f, tile)), `tier 3 waits for the manual (${groupPowerUpWhy(st, f, tile)})`);
   groupTech(f).known.push("indpower");
   check(groupPowerUpWhy(st, f, tile) === "", "the manual known: they would");
-  f.type = "traders"; // mechanic 4
+  f.type = "traders"; setMech(st, f, 4); // mechanic 4
   check(/Mechanics 5/.test(groupPowerUpWhy(st, f, tile)), "tier 3 needs a Mechanics 5 hand");
-  f.type = "military";
+  f.type = "military"; setMech(st, f, 6);
   for (let i = 0; i < 20 && groupGenTier(w) < 3; i++) { f.fuelFlow.in = 9; f.fuelFlow.days = 30; setFood(f.stock, 600); f.stock.fuel = 60; groupWorksDaily(st, f); st.hour += 24; }
   check(groupGenTier(w) === 3, "an industrial diesel set");
   // Wear and repair by tier.
   const m = w.mach.power;
-  m.broken = true; f.type = "traders"; f.stock.parts = 30; f.stock.scrap = 100;
+  m.broken = true; f.type = "traders"; setMech(st, f, 4); f.stock.parts = 30; f.stock.scrap = 100;
   groupMachinesDaily(st, f);
   check(m.broken, "a broken tier 3 waits for a Mechanics 5 hand");
-  f.type = "military";
+  f.type = "military"; setMech(st, f, 6);
   const pp = f.stock.parts;
   groupMachinesDaily(st, f);
   check(!m.broken && pp - f.stock.parts >= FIXTURES.generator3.repair.cost.parts, `repaired with the tier's parts (${pp} → ${f.stock.parts})`);
