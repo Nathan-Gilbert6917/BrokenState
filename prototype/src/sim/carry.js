@@ -14,6 +14,18 @@
 //   hands   anything, carried in the arms: a 20 L jerrycan, a crate, an armful of firewood, a deer carcass. Up to
 //           HANDS_KG a person; past that someone is overloaded. Hands full: no gun, no blade, no reload, no throw,
 //           no treating (combat.js) until it is set down (Drop carried: free).
+//   THE HANDS (the user's ask, 2026-10-19). Everything in the "carried" part of the inventory fills the hands: the
+//           supplies in the arms (hands), a bag in the arms (bag) and the finds a survivor carries loose in a fight
+//           (raidloot.js u.haul: the search window's Carried column). With anything there (handsBusy) they cannot
+//           shoot, strike with a weapon, reload, throw, treat, open or close a door, work a lock, climb a window,
+//           hotwire a car or free a captive (HAND_ACTS, combatAct), and a closed door stops their move (reachable).
+//           Two different things carried (handsCount: a supply kind, an item, a bag each count one) are two hands
+//           full: nothing more can be taken from a container, a body, the ground, the vehicle or a teammate
+//           (handsTakeRefusal: raidloot.js raidMove, ground.js pickUpFromGround, carryBag, pickCarried) until something
+//           is put down (the ground: free) or moved into the pack, the pockets or the vehicle. Half cover (a fence,
+//           sandbags, crates, a counter: combat.js CELL vault) can still be vaulted, at twice the vault's cost
+//           (combat.js VAULT), and the load set down on its far side (Set over cover: 1 action, facing the cover;
+//           setOverCover): a ground pile anyone can pick up later from the ground.
 //   car     the team's car or truck takes all of it; bikes' racks up to their rack kg (vehicles.js).
 // Packs and pockets are the slots left free by the items kept there (inventory.js): putting an item in the pack
 // pushes supplies out of it, into someone's hands. Quantities are units of the supply (floats: food is eaten in
@@ -94,9 +106,10 @@ import { storeFactor } from "./storage.js";
 import { forageKg } from "./foraging.js"; // what a day of the season's forage weighs (call-time only)
 import * as Weather from "./weather.js";
 import { addWormWater } from "./worm.js";
-import { say, active } from "./combat.js";
+import { say, active, vaultsNear } from "./combat.js";
+import { faceToward } from "./vision.js"; // Set over cover turns them to the cover (free)
 import { dropToGround, pilesNear, settlePile } from "./ground.js"; // the battle map's piles (call-time only: safe in the import cycle)
-import { lootLayer, raidShares } from "./raidloot.js";
+import { lootLayer, raidShares, haulLoad, haulText, dropHaulInto } from "./raidloot.js"; // the finds carried loose fill the hands too (call-time only: safe in the import cycle)
 import { gunLeavesTeam } from "./gunload.js"; // a gun in a bag set down leaves the team loaded
 import { isCart, cartOf, cartFree, addLot, cartWorth, letGoCart, cartsEnd, oneHandOk, cartSpec } from "./carts.js"; // carts: a place for the supplies, a 1x1 thing in a fight (call-time only)
 
@@ -386,6 +399,7 @@ export function bagRefusal(state, where, who, item) {
   ensureInv(s);
   if (s.gear.carry) return `${s.name.split(" ")[0]} already carries the ${s.gear.carry.name} in their arms: set it down first.`;
   if (u && (u.carrying != null || u.dragging != null)) return "Hands full: put the body down first.";
+  if (u) { const why = handsTakeRefusal(u, `the ${item.name}`); if (why) return why; } // two different things carried already
   return "";
 }
 // Sets the bag down on the ground of the team's tile (one item, contents and all). Returns its name ("" if none).
@@ -771,12 +785,35 @@ export const keyKg = (p, k) => (((p.supplies && p.supplies[k]) || 0) + ((p.cargo
 
 // ---------- fights ----------
 // The acts that need free hands (combat.js combatAct). Carrying a body or dragging someone blocks the same.
-const HAND_ACTS = new Set(["shoot", "melee", "reload", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner"]);
-export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0);
-// Arms full of supplies or a bag (combat.js canFire, fireRefusal, reloadRefusal).
-export const handsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null)); // cartHelp: helping pull a hand cart (carts.js)
-export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.bag.name}` : "", u.cartHelp != null ? "a hand on the cart (helping pull it)" : ""].filter(Boolean).join(" and ");
-export const handsWord = (u) => (u.cartHelp != null && !u.bag ? `Hands full: ${u.name.split(" ")[0]} helps pull the cart. Let go first (free); a pistol fires one-handed.` : isCart(u.bag) ? `Hands full: ${u.name.split(" ")[0]} pushes the ${u.bag.name.toLowerCase()} (${r1(handsKg(u))} kg). Let go first (free); a pistol fires one-handed.` : `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free).`);
+// Doors, locks, windows, a car's wires and a captive's ropes need the hands too (the user's ask, 2026-10-19).
+const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner", "open", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "car", "rescue"]);
+export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0) + (u ? haulLoad(u) : 0);
+// Arms full of supplies or a bag (the loads: autoDrop, fitHands, the end of a fight); a hand on a cart (carts.js).
+export const armsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null)); // cartHelp: helping pull a hand cart (carts.js)
+// Finds carried loose (raidloot.js u.haul: the search window's Carried column).
+export const haulBusy = (u) => !!(u && u.haul && (u.haul.gear.length || Object.values(u.haul.sup).some((v) => v > EPS)));
+// Hands full: anything in the carried part of the inventory (combat.js canFire, fireRefusal, reloadRefusal, reachable).
+export const handsBusy = (u) => armsBusy(u) || haulBusy(u);
+// How many different things fill the hands: each kind of supply in the arms, the bag, each item and each kind of
+// supply carried loose. Two or more: both hands full (handsTakeRefusal). A cart pushed takes both hands, helping to
+// pull one a hand (carts.js).
+export function handsCount(u) {
+  if (!u) return 0;
+  let n = Object.values(u.hands || {}).filter((q) => q > EPS).length + (u.bag ? (isCart(u.bag) ? 2 : 1) : 0) + (u.cartHelp != null ? 1 : 0);
+  if (u.haul) {
+    const keys = new Set(u.haul.gear.map((it) => it.key));
+    n += keys.size + Object.values(u.haul.sup).filter((v) => v > EPS).length;
+  }
+  return n;
+}
+export const HANDS_MAX = 2; // two hands: two different things carried, and nothing more can be taken
+export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.bag.name}` : "", u.cartHelp != null ? "a hand on the cart (helping pull it)" : "", haulText(u)].filter(Boolean).join(" and ");
+export const handsWord = (u) => (u.cartHelp != null && !u.bag ? `Hands full: ${u.name.split(" ")[0]} helps pull the cart. Let go first (free); a pistol fires one-handed.` : isCart(u.bag) ? `Hands full: ${u.name.split(" ")[0]} pushes the ${u.bag.name.toLowerCase()} (${r1(handsKg(u))} kg). Let go first (free); a pistol fires one-handed.` : `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free${haulBusy(u) ? ", or put it in the pack, the pockets or the vehicle" : ""}).`);
+// Why this unit cannot take one more thing in hand ("" when it can): two different things carried already.
+export function handsTakeRefusal(u, what = "that") {
+  if (!u || handsCount(u) < HANDS_MAX) return "";
+  return `Both hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} and cannot take ${what} as well. Put something down (the ground: free), or into the pack, the pockets or the vehicle first.`;
+}
 // Why this act cannot be done with what the unit holds ("" when it can).
 export function handsRefusal(u, type) {
   if (!u || !HAND_ACTS.has(type)) return "";
@@ -874,7 +911,8 @@ const pileKey = (k) => k; // food lies in a pile as its items
 // The supplies leave the pool now (what lies there is anyone's: fire, the search window, the enemy); a bag goes down
 // whole (a gun in it leaves the team loaded, gunload.js). b.armsDrops remembers it: Pick up load and the end of the
 // fight take back what is still there. sup: { key: qty } or null; item: a bag, or null.
-export function groundDropCell(state, b, u, sup, item = null) {
+// at: another cell than the unit's ({ x, y, f }: the far side of half cover, setOverCover).
+export function groundDropCell(state, b, u, sup, item = null, at = null) {
   const p = battleParty(state, b);
   const rec = { pile: null, sup: {}, item: null, sid: u.sid };
   for (const [k, q] of Object.entries(sup || {})) {
@@ -882,29 +920,52 @@ export function groundDropCell(state, b, u, sup, item = null) {
     const parts = (k === "food" || k === "meat") && p ? takePoolLots(p, k, q).map((l) => [l.k, l.q]) : [[k, p ? takePool(p, k, q) : 0]];
     for (const [kk, n] of parts) {
       if (!(n > EPS)) continue;
-      const pile = dropToGround(b, u, pileKey(kk), n);
+      const pile = dropToGround(b, u, pileKey(kk), n, at);
       if (pile) { rec.pile = pile.id; rec.sup[kk] = (rec.sup[kk] || 0) + n; }
       else addPool(p, kk, n);
     }
   }
   if (item) {
-    const pile = dropToGround(b, u, item);
+    const pile = dropToGround(b, u, item, 1, at);
     if (pile) { rec.pile = pile.id; rec.item = item; gunLeavesTeam(b, item); } // gunload.js: the guns in it go out loaded
   }
   if (rec.pile != null) (b.armsDrops = b.armsDrops || []).push(rec);
 }
-// Drop carried: free. Supplies and the bag in the arms go down on the unit's cell. Returns "" or an error.
-export function dropCarried(state, b, u, quiet = false) {
+// Drop carried: free. Supplies and the bag in the arms, and the finds carried loose (raidloot.js u.haul), go down on
+// the unit's cell (at: on another cell, setOverCover). Returns "" or an error.
+export function dropCarried(state, b, u, quiet = false, at = null) {
   if (!u || !handsBusy(u)) return "Not carrying anything in the arms.";
   if (u.cartHelp != null && !u.bag && !u.hands) return letGoCart(state, b, u, { quiet }); // carts.js: a helper lets go
   const what = armsText(u);
   if (isCart(u.bag)) { letGoCart(state, b, u, { quiet }); if (!u.hands) return ""; } // carts.js: let go, a cart on the map
   const bag = u.bag || null;
   if (bag) { const s = survivorById(state, u.sid); if (s && s.gear && s.gear.carry === bag) s.gear.carry = null; }
-  groundDropCell(state, b, u, u.hands, bag);
-  if (!quiet) say(b, `${u.name} sets down ${what}.`, "info");
+  groundDropCell(state, b, u, u.hands, bag, at);
+  if (haulBusy(u)) dropHaulInto(b, u, at); // raidloot.js: the loose finds onto the same pile (still counted as found)
+  if (!quiet) say(b, `${u.name} sets down ${what}${at ? " on the far side of the cover" : ""}.`, "info");
   u.hands = null;
   u.bag = null;
+  return "";
+}
+// Set over cover (1 action): facing half cover that can be vaulted (combat.js vaultsNear), everything carried is set
+// down on the cell beyond it: a ground pile there, which anyone can pick up later from the ground (the Ground window,
+// Pick up load). act.x / act.y: the cover cell (else the one they face, else the only one next to them). Facing the
+// cover is free, so the action turns them to it. Returns "" or an error.
+export function setOverCover(state, b, u, act = {}) {
+  if (!u || !handsBusy(u)) return "Not carrying anything in the arms.";
+  if (isCart(u.bag) || u.cartHelp != null) return "A cart is parked (Park cart) or shoved over, not set over cover.";
+  if (u.ap < 1) return "No actions left this turn.";
+  const opts = vaultsNear(b, u);
+  if (!opts.length) return "Stand right next to half cover (a fence, sandbags, crates, a counter...) with room on the far side.";
+  let o = act.x != null ? opts.find((v) => v.x === Number(act.x) && v.y === Number(act.y)) : null;
+  if (act.x != null && !o) return "No half cover to set it over there.";
+  if (!o) { const fx = u.face ? Math.round(u.face[0]) : 0, fy = u.face ? Math.round(u.face[1]) : 0; o = (Math.abs(fx) + Math.abs(fy) === 1 ? opts.find((v) => v.x - u.x === fx && v.y - u.y === fy) : null) || (opts.length === 1 ? opts[0] : null); }
+  if (!o) return "Face the half cover to set the load over it (Face is free), or click the cover.";
+  faceToward(u, o.x, o.y); // vision.js: squarely at the cover
+  const err = dropCarried(state, b, u, false, { x: o.to[0], y: o.to[1], f: u.f || 0 });
+  if (err) return err;
+  u.ap -= 1;
+  u.hunker = false;
   return "";
 }
 // A record's pile, and what of it still lies there ({ sup: { key: qty }, item }).
@@ -953,6 +1014,7 @@ export function pickCarried(state, b, u) {
   const near = carriedNear(b, u);
   if (!near.length) return "Nothing set down within reach.";
   if (u.carrying != null || u.dragging != null) return "Hands full: put the body down first.";
+  { const why = handsTakeRefusal(u, "the load"); if (why) return why; } // two different things carried already
   const p = battleParty(state, b);
   let took = false;
   for (const c of near) {
@@ -982,6 +1044,13 @@ export function carriedAct(state, b, act) {
 // The battle AI on your side sets everything down before it fights (autoPlayerTurn).
 export function autoDrop(state, b) {
   for (const u of b.units) if (u.side === "player" && handsBusy(u) && active(u)) dropCarried(state, b, u);
+}
+// The raid bot (combat.js autoRaidTurn): with something to fight within reach it sets down what fills its hands (free)
+// and takes it up again from the pile when the way is clear (the pile is a container to search again).
+export function botDropToFight(state, b, u) {
+  if (!handsBusy(u) || !active(u)) return false;
+  dropCarried(state, b, u);
+  return true;
 }
 // The loads set down in the fight that still lie in their piles, taken back. Back: a won fight, or a load staged at the
 // start (stageLoads) of a fight the team was not beaten in (a retreat, a raid it got out of). Back: the supplies into

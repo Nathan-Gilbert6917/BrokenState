@@ -47,7 +47,7 @@ import { splitAt, openAt, boxAt } from "../sim/inventory.js";
 import { itemKeyOf, roomOn, stockToPerson, bodyToPerson, supRoom, suppliesOnto, SUP_PLACES, PLACE_WORDS } from "../sim/supitems.js"; // supplies out of the stores as items you hold (2026-10-16); onto a place of theirs (2026-10-18)
 import { isRoundKey } from "../sim/rounds.js"; // rounds out of the stores: boxed or loose
 import { holdSection } from "./carry.js"; // the team's supplies this person carries (pockets, pack, arms), the ground
-import { bagRefusal } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms
+import { bagRefusal, handsBusy, handsCount, HANDS_MAX } from "../sim/carry.js"; // Carry in arms (the search window): a bag, a rig or a case into the arms
 import { isBox, isSealed, boxText, boxEmptyKg, openPlan, lockWords } from "../sim/boxes.js"; // lock boxes and cases (gun cases too): sealed until opened, then a window of what is inside (ui/boxview.js)
 import { openBoxWindow } from "./boxview.js"; // an opened box's window
 import { registerStackScreen, openStack, closeStack, stackPanel, chosenQty, supplyIcon, splitCount, STACK_ACTIONS, STACK_CHANGE } from "./stackmove.js"; // how many of a supply stack, and where
@@ -754,7 +754,8 @@ function personCol(state, ui, b, u, s, isMe) {
   const dollHtml = doll(state, ui, s, `s:${s.id}`, spriteImg(survivorURL(s, state.seed), isMe ? 6 : 5), { user: s, weightLine });
   const hl = `haul:${u.id}`;
   const hsup = Object.entries(u.haul ? u.haul.sup : {}).filter(([, v]) => v >= 1);
-  return `${dollHtml}<div class="invlabel"${tip(`Finds ${first} carries loose (bags, arms). They count against ${first}'s max load and come home with ${first}; if ${first} bleeds out they drop where ${first} falls.${p && lootLayer(b).vehicleZone >= 0 ? ` Put them in the vehicle to keep them safe and free ${first} up.` : ""}`)}>Carried (${kg(me.haul)} kg)</div>
+  const hn = handsCount(u), handsOn = handsBusy(u);
+  return `${dollHtml}<div class="invlabel${handsOn ? " warn" : ""}"${tip(`Finds ${first} carries loose (bags, arms). They count against ${first}'s max load and come home with ${first}; if ${first} bleeds out they drop where ${first} falls.${p && lootLayer(b).vehicleZone >= 0 ? ` Put them in the vehicle to keep them safe and free ${first} up.` : ""} Hands: anything carried here fills them (no shooting, reloading, doors or windows until it is put down, on the ground for free, or stowed in the pack, the pockets or the vehicle); two different things carried are both hands full, and nothing more can be taken.`)}>Carried (${kg(me.haul)} kg)${handsOn ? ` · ${hn >= HANDS_MAX ? "✋✋ both hands full" : "✋ hands full"}` : ""}</div>
     <div class="istore" data-action="inv-click" data-loc="${hl}:list" data-drop="${hl}:list"${tip(`Drop here: ${first} carries it`)}>${hsup.map(([k, v]) => supTile(ui, `${hl}:sup:${k}`, k, v)).join("")}${gearTiles(ui, u.haul ? u.haul.gear : [], hl, s) || (hsup.length ? "" : `<span class="small muted">Nothing. Drop finds here.</span>`)}</div>`;
 }
 

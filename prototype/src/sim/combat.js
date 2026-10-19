@@ -120,8 +120,8 @@ import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its container
 // Medics (a med kit makes one: Heal, Revive), dragging the downed, enemies going down and finishing the downed.
 import * as MED from "./medics.js";
 import { deafen, bangOf, tickEars, heardGhosts, dazedAim, linkAim, linkEscape, fitHeadgear, settleEars } from "./hearing.js"; // ears: bangs, deafness, what your people hear, the team headset
-import { cartAct, cartKnocked, oneHandOk, CART_FIGHT, cartMoved, enemyCartsLetGo, enemyCarts, placeMapCarts, cartHelpStart } from "./carts.js"; // a wheelbarrow, a hand cart: let go (free), take it back (1 action)
-import { fitHands, handsRefusal, handsWord, handsBusy, carriedAct, pickCarried, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies or a bag carried in the arms: no weapon until set down (Drop carried: free)
+import { cartAct, cartKnocked, oneHandOk, CART_FIGHT, cartMoved, enemyCartsLetGo, enemyCarts, placeMapCarts, cartHelpStart, holdsCart } from "./carts.js"; // a wheelbarrow, a hand cart: let go (free), take it back (1 action)
+import { fitHands, handsRefusal, handsWord, handsBusy, armsText, handsCount, HANDS_MAX, carriedAct, pickCarried, setOverCover, botDropToFight, autoDrop, settleCarried, armsDropsEnd, stageAtStart } from "./carry.js"; // supplies, a bag or finds carried in the hands: no weapon, no doors, no windows until set down (Drop carried: free; Set over cover)
 import { kitHeadgear, visorAim, toggleVisor } from "./helmets.js"; // helmets: the face shield, an enemy's helmet and ear protection by kit
 import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, aiGrabGun } from "./ground.js";
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
@@ -884,9 +884,11 @@ const climbAt = (b, x, y) => !!CELL[b.cells[idx(x, y)].k].climb;
 export const breakable = (c) => c.hp > 0;
 // Half cover a person vaults (VAULT): waist high and not walkable, a window too (windows.js: an open or broken one
 // at the vault's cost, a closed one crashed through: vaultBreaks), never cell bars, a bridge railing or a well,
-// nothing tall, no trap, not a plated vehicle (full cover, sideCover). Who vaults (canVault): people on their feet
-// with their arms free (carry.js handsBusy), not carrying or dragging a body, not on a ram's crew (siege.js); never
-// the dead (one of the dead clambers through an open or broken window: clambers, at the same cost).
+// nothing tall, no trap, not a plated vehicle (full cover, sideCover). Who vaults (canVault): people on their feet,
+// not pushing or helping pull a cart (carts.js), not carrying or dragging a body, not on a ram's crew (siege.js); never
+// the dead (one of the dead clambers through an open or broken window: clambers, at the same cost). A load carried in
+// the hands (carry.js handsBusy: supplies, a bag, finds carried loose) is vaulted over with, at double the movement
+// (vaultCost), but never through a closed window (breaking one takes the hands: reachable, vaultNow).
 const NO_VAULT = new Set(["bars", "rail", "well", "cart"]); // cart: the living shove a parked cart or go round (carts.js); the dead crawl over it (barricade.js crawlable)
 export function vaultable(b, c) {
   const C = c && CELL[c.k];
@@ -894,12 +896,34 @@ export function vaultable(b, c) {
   if (c.car && c.car.up && (c.car.up.p || c.car.up.s)) return false;
   return true;
 }
-export const canVault = (u) => !!u && u.kind === "human" && !u.ztype && !u.dead && !u.down && !u.aboard && !u.gunner && !handsBusy(u) && u.carrying == null && u.dragging == null && u.ram == null;
+export const canVault = (u) => !!u && u.kind === "human" && !u.ztype && !u.dead && !u.down && !u.aboard && !u.gunner && !holdsCart(u) && u.cartHelp == null && u.carrying == null && u.dragging == null && u.ram == null;
 // A vault through this cell crashes through a closed window (loud, cuts: windows.js WINDOW.BREAK / HURT).
 export const vaultBreaks = (c) => !!c && c.k === "window" && !windowOpen(c);
 // The tiles a vault over this cell costs beyond the step: VAULT.COST, and a closed window SMASH_COST more (the path
-// takes an open way of the same length first).
-export const vaultCost = (b, c) => VAULT.COST + (vaultBreaks(c) ? WINDOW.SMASH_COST : 0);
+// takes an open way of the same length first). With the hands full (u: carry.js handsBusy) the whole crossing costs
+// double: the two steps and the vault, so the vault itself 2 + 2 x its cost (4 tiles over the 2 steps, 8 in all).
+export const vaultCost = (b, c, u = null) => { const s = VAULT.COST + (vaultBreaks(c) ? WINDOW.SMASH_COST : 0); return u && handsBusy(u) ? 2 + 2 * s : s; };
+// Can this unit go over this cell now: half cover or a window that is open or broken. A closed window is crashed
+// through, which the hands full of a load cannot do (carry.js: no breaking a window with the hands full).
+export const vaultNow = (u, b, c) => vaultable(b, c) && !(vaultBreaks(c) && handsBusy(u));
+// Half cover next to the unit (not diagonally) it can set a load over, with the level free cell beyond it (carry.js
+// setOverCover, the orders' Set over cover): an open or broken window counts, a closed one does not (the glass).
+// [{ x, y, to: [x, y], free, name }]
+export function vaultsNear(b, u) {
+  bindDims(b);
+  const out = [];
+  if (!u || !onMap(u)) return out;
+  for (const [dx, dy] of DIRS4) {
+    const vx = u.x + dx, vy = u.y + dy, tx = u.x + 2 * dx, ty = u.y + 2 * dy;
+    if (!inside(vx, vy) || !inside(tx, ty)) continue;
+    const c = b.cells[idx(vx, vy)];
+    if (CELL[c.k].walk || !(vaultable(b, c) || windowOpen(c)) || vaultBreaks(c)) continue;
+    const t = b.cells[idx(tx, ty)];
+    if (!CELL[t.k].walk || CELL[t.k].climb || barredCell(t) || hAt(b, tx, ty) !== hAt(b, u.x, u.y)) continue;
+    out.push({ x: vx, y: vy, to: [tx, ty], free: !unitAt(b, tx, ty), name: CELL[c.k].name });
+  }
+  return out;
+}
 // One of the dead clambers through an open or broken window (never a closed one: on a base's map it batters it);
 // a Climber goes over walls its own way (middead.js), a 2 × 2 boss never fits.
 export const clambers = (u) => !!u && u.kind === "zombie" && u.ztype !== "climber" && unitSize(u) === 1 && !u.dead;
@@ -2437,7 +2461,8 @@ export function reachable(b, u, maxCost, opts = {}) {
   // One of the dead clambers through an open or broken window the same way (clambers, windows.js), and crawls over
   // half cover at CRAWL.COST (barricade.js crawlable: never a closed window).
   const vaulter = canVault(u), clamber = !vaulter && !climber && clambers(u);
-  const vaults = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultable(b, c) : clamber && (windowOpen(c) || crawlable(b, c)); };
+  const vaults = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultNow(u, b, c) : clamber && (windowOpen(c) || crawlable(b, c)); };
+  const noDoors = u.side === "player" && u.kind === "human" && handsBusy(u) && !b.botTurn; // carry.js: the hands full, a closed door stays shut to them (opening it takes a hand)
   const start = idx(u.x, u.y);
   d[start] = 0;
   real[start] = 0;
@@ -2459,6 +2484,7 @@ export function reachable(b, u, maxCost, opts = {}) {
       const j = idx(nx, ny);
       if (occ[j] === 1) continue;
       if (foe && barredCell(b.cells[j]) && !doorOpens(b, u, b.cells[j]) && !(climber && climbOver(u, b.cells[j].k))) continue;
+      if (noDoors && b.cells[j].k === "idoor") continue;
       if (avoid && avoid.has(j)) continue;
       const climb = climber ? Math.abs(hAt(b, nx, ny) - hAt(b, x, y)) + (cellAt(b, nx, ny).walk && !barredCell(b.cells[j]) ? 0 : MIDDEAD.CLIMBER.COST) : climbCost(b, x, y, nx, ny, diag, per);
       if (climb === Infinity) continue;
@@ -2531,7 +2557,7 @@ export function distField(b, sources, walker = null) {
     sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
     climbA[i] = climbAt(b, x, y) ? 1 : 0;
     hA[i] = h(b, x, y);
-    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : 0; // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover
+    overA[i] = ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : 0; // a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover
     bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
   }
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
@@ -4008,7 +4034,7 @@ export function moveAlong(b, u, path) {
   if (walked.length && !CELL[b.cells[idx(u.x, u.y)].k].walk) { walked.pop(); const back = walked.length ? walked[walked.length - 1] : from; u.x = back[0]; u.y = back[1]; }
   if (vaulted.length) {
     u.vaulted = (u.vaulted || 0) + (u.kind === "zombie" ? CRAWL.COST : VAULT.COST) * vaulted.length; // winded: moveMob for the rest of the turn (the dead crawled: barricade.js)
-    if (u.side === "player") { b.noise = (b.noise || 0) + VAULT.NOISE * vaulted.length; say(b, `${u.name} vaults ${[...new Set(vaulted)].join(" and ")}.`, "info"); }
+    if (u.side === "player") { b.noise = (b.noise || 0) + VAULT.NOISE * vaulted.length; say(b, `${u.name} vaults ${[...new Set(vaulted)].join(" and ")}${handsBusy(u) ? ` with ${armsText(u)} in hand (twice the movement)` : ""}.`, "info"); }
     else if (u.kind === "zombie" && playerSees(b, u)) say(b, `${u.name} crawls ${[...new Set(vaulted)].map((w) => (w.startsWith("through") ? w : `over ${w}`)).join(" and ")}.`, "info"); // barricade.js CRAWL: seen by one of yours
   }
   if (walked.length) fx(b, { type: "move", unit: u.id, from, path: walked });
@@ -4329,7 +4355,7 @@ export function combatAct(state, act) {
   if (u && u.side === "player" && act.type === "sneak" && active(u)) return sneakAct(b, u, act); // vision.js: free, even with no actions left to stop
   if (u && u.side === "player" && (act.type === "light" || act.type === "nvg") && active(u)) return switchAct(state, b, u, act); // vision.js: a light, night vision on or off (free, even with no actions left)
   if (u && u.side === "player" && (act.type === "inv" || act.type === "handover") && active(u) && u.ap < INV_AP) return "No action left."; // the inventory window says why (invAct, handoverAct)
-  if (u && u.side === "player" && act.type === "checkwindow" && active(u)) { const err = windowAct(state, b, u, act, { say, alertNear, fx }); if (!err) bump(b); return err; } // windows.js: trying a window is free, even with no actions left
+  if (u && u.side === "player" && act.type === "checkwindow" && active(u)) { const why = handsRefusal(u, act.type); if (why) return why; const err = windowAct(state, b, u, act, { say, alertNear, fx }); if (!err) bump(b); return err; } // windows.js: trying a window is free, even with no actions left
   if (!u || u.side !== "player" || !(active(u) || aboardAct || boundAct) || u.ap < 1) return "That unit cannot act.";
   // On the turret (manTurret): fire it, reload the belt, watch, drive, or get down.
   if (b.vehicle && b.vehicle.blownUp && ["board", "drive", "turn", "gunner"].includes(act.type)) return "The vehicle is a burnt-out wreck."; // launchers.js: blown up
@@ -4339,6 +4365,7 @@ export function combatAct(state, act) {
   { const why = handsRefusal(u, act.type); if (why) return why; } // carry.js: hands full of supplies (or a body): no weapon, no throw, no treating
   switch (act.type) {
     case "takeCart": case "parkCart": { const err = cartAct(state, b, act); if (err) return err; break; } // carts.js: a cart within reach back in the arms; park the one pushed on a side cell (1 action each)
+    case "setOver": { const err = setOverCover(state, b, u, act); if (err) return err; break; } // carry.js: everything carried set down beyond the half cover they face (1 action)
     case "pickCarried": { const err = pickCarried(state, b, u); if (err) return err; u.ap -= 1; u.hunker = false; break; } // carry.js: a load set down within reach, back in the arms (1 action)
     case "move": {
       if (!inside(act.x, act.y)) return "Cannot move there.";
@@ -5825,7 +5852,15 @@ export function retreatAdvice(b, style = "balanced") {
 
 // Runs a whole player turn with the AI (used by headless tests).
 // opts.style: the style it fights in (aiStyle); opts.retreat === false: it never sounds the retreat (tools measuring it).
+// The battle AI playing your side (the AI-plays-my-side switch, the headless bots) is not held up by a closed door with
+// its hands full (b.botTurn: reachable's noDoors): it already sets its finds down to fight (carry.js botDropToFight) and
+// would otherwise never get through a door carrying its loot. Your own orders obey the door rule (carry.js).
 export function autoPlayerTurn(state, opts = {}) {
+  const b = state.combat;
+  if (b) b.botTurn = true;
+  try { return autoPlayerTurnPlay(state, opts); } finally { if (b) b.botTurn = false; }
+}
+function autoPlayerTurnPlay(state, opts = {}) {
   aiDrive++;
   try { return autoPlayerTurnNow(state, opts); } finally { aiDrive--; }
 }
@@ -7200,9 +7235,10 @@ function autoRaidTurn(state) {
     for (let step = 0; step < 3 && active(u) && u.ap > 0 && !b.over; step++) {
       // raidloot.js: each survivor carries their own finds; with a vehicle, a full one walks back to load it.
       const mine = party ? personalRoom(state, u) : 0, space = party ? trunkSpace(state, b) : null;
-      const unload = mine < 2 && space != null && space >= 2 && haulLoad(u) > 0.5 && R.heat < BOT_LEAVE.HEAT && u.noStash !== b.turn;
+      const both = handsCount(u) >= HANDS_MAX; // carry.js: two different things carried: nothing more taken until it is stowed
+      const unload = (mine < 2 || both) && space != null && space >= 2 && haulLoad(u) > 0.5 && R.heat < BOT_LEAVE.HEAT && u.noStash !== b.turn;
       if (unload && atVehicle(b, u)) { if (combatAct(state, { type: "stash", unit: u.id })) u.noStash = b.turn; continue; }
-      const full = !!party && mine < 2 && !unload;
+      const full = !!party && (mine < 2 || both) && !unload;
       const todo = (c) => !botDone(c) && !(c.skipBy && c.skipBy.includes(u.id)); // skipBy: nothing in it fits on this one
       const here = (c) => (c.f || 0) === (u.f || 0); // storeys (buildingmaps.js): this floor's containers
       const hereTodo = R.containers.some((c) => todo(c) && here(c));
@@ -7230,6 +7266,8 @@ function autoRaidTurn(state) {
       if (!leave && u.gl && aiLaunch(b, u)) break; // launchers.js: HE or a rocket on three or more bunched up (the turn's attack)
       // Fight only what is close; otherwise keep moving (shooting raises Heat).
       const foes = foesOf(b, u).filter((f) => f.aware && canSee(b, u, f) && dist(u.x, u.y, f.x, f.y) <= (leave ? 1.5 : 4));
+      // carry.js: something to fight close by and the hands full of finds: set them down (free), take them up after.
+      if (foes.length && handsBusy(u) && !holdsCart(u)) botDropToFight(state, b, u);
       // A jammed gun: cleared (gunfire.js: a double feed by a reload when it can, else Unjam), then on.
       if (u.jam && !combatAct(state, { type: u.jam.kind === "double" && botReloadClears(b, u) ? "reload" : "unjam", unit: u.id })) continue;
       // An empty gun: reloaded (1 action) when something is close or there is time (not on the way out), then on.

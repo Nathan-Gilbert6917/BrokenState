@@ -19,6 +19,12 @@
 // Handing over: teammates standing next to each other (a downed one too) pass things between them for free; each
 // one's own max load still holds.
 //
+// The hands (carry.js, the user's ask 2026-10-19): whatever a survivor carries loose fills their hands (no shooting,
+// reloading, doors, windows until it is put down or stowed), and with two different things carried (carry.js
+// handsCount) nothing more is taken from a container, a body, the ground, the vehicle or a teammate (handsTakeRefusal,
+// checked here in raidMove for the one who would hold it). Moving things between a survivor's own places (carried
+// into the pack or the pockets, out of the pack) is free of it, and so is putting things down or into the vehicle.
+//
 // Hauling takes time (HAUL): each turn a survivor moves the first HAUL.free kg out of a container or the vehicle (or
 // into the vehicle) for free, then every HAUL.per kg more costs one of their actions. With none left they wait for
 // the next turn. One heavy thing can always be lifted with all the actions they have left.
@@ -54,7 +60,8 @@ import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
 import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
 import { gunLeavesTeam, unloadInto, teamGuns, returnStacks } from "./gunload.js";
-import { pileToArms } from "./carry.js"; // the team's loads off the ground: into the arms (call-time only: safe in the import cycle) // the rounds in a gun go with it (call-time only: safe in the import cycle)
+import { pileToArms, handsTakeRefusal } from "./carry.js"; // the team's loads off the ground: into the arms; two different things carried: nothing more taken (call-time only: safe in the import cycle)
+import { groundPile, settlePile } from "./ground.js"; // the pile a load is set down on (call-time only: safe in the import cycle)
 import { canStack, mergeInto, isSpent, stackLabel, isSupItem, roomIn, roundCap, amountOf, roundItems, isRoundItem } from "./itemstack.js"; // stacks merge in a slot (2026-10-10)
 import { isMag } from "./mags.js"; // rounds onto a spare magazine in the search window load it (call-time only: the import cycle)
 import { combatAct } from "./combat.js"; // (call-time only)
@@ -126,6 +133,26 @@ export function raidShares(state, b) {
 
 // ---------- weights ----------
 export const haulOf = (u) => u.haul || (u.haul = { sup: {}, gear: [] });
+// What a survivor carries loose, in words ("3 9mm FMJ, a crowbar and a flashlight"); "" with nothing.
+export function haulText(u) {
+  const h = u && u.haul;
+  if (!h) return "";
+  const parts = Object.entries(h.sup).filter(([, v]) => v > 0).map(([k, v]) => `${Math.floor(v) || Math.round(v * 10) / 10} ${keyWord(k)}`);
+  for (const it of h.gear) parts.push(stackLabel(it));
+  return parts.join(", ");
+}
+// Everything a survivor carries loose onto a ground pile (carry.js dropCarried: free; at: another cell than theirs,
+// Set over cover). A pile holds things already found (drop: true), so the raid's tally keeps them; a gun among them
+// leaves the team loaded (gunload.js). Returns the pile (null: nothing carried).
+export function dropHaulInto(b, u, at = null) {
+  const h = u.haul;
+  if (!h || !(h.gear.length || Object.values(h.sup).some((v) => v > 0))) return null;
+  const pile = groundPile(b, at ? at.x : u.x, at ? at.y : u.y, at ? at.f || 0 : u.f || 0);
+  for (const [k, v] of Object.entries(h.sup)) if (v > 0) { pile.contents.sup[k] = (pile.contents.sup[k] || 0) + v; delete h.sup[k]; }
+  for (const it of h.gear.splice(0)) { pile.contents.gear.push(it); gunLeavesTeam(b, it); }
+  settlePile(pile);
+  return pile;
+}
 export const haulLoad = (u) => {
   const h = u.haul;
   if (!h) return 0;
@@ -325,9 +352,24 @@ function raidMoveAt(state, uid, fromStr, toStr, qty = Infinity) {
     const item = A ? getAt(A, from) : null, cur = B ? getAt(B, to) : null;
     if (item && cur && isRoundItem(item) && isMag(cur)) return combatAct(state, { type: "inv", unit: u.id, from: fromStr, to: toStr, op: "load" });
   }
+  { const why = takeRule(state, b, from, to, fromStr); if (why) return why; } // carry.js: two different things carried: nothing more taken
   if (from.slot === "sup") return to.o === "stow" ? stowSupply(state, b, u, from, to, qty) : isList(to) ? moveSupply(state, b, u, from, to, qty) : slotSupply(state, b, u, from, to, qty);
   if (to.o === "stow") return "Drop it on a pocket or a pack cell.";
   return moveGear(state, b, u, from, to);
+}
+// The hands rule of a move: the one who would hold what moves (the owner of `to`), taking it from anywhere but their
+// own places, must have a hand free (carry.js handsTakeRefusal). "" when the move is allowed.
+function takeRule(state, b, from, to, fromStr) {
+  const taker = ownerOf(b, to);
+  if (!taker) return "";
+  const giver = ownerOf(b, from);
+  if (giver === taker) return ""; // their own places: carried into the pack, out of the pack...
+  // More of a kind already in hand (scrap onto their scrap, a second box of the same rounds) joins that armful.
+  const h = taker.haul;
+  if (from.slot === "sup") { if (h && (h.sup[String(from.i)] || 0) > EPS) return ""; return handsTakeRefusal(taker, `the ${keyWord(String(from.i))}`); }
+  const item = raidItemAt(state, b, fromStr);
+  if (item && h && to.o === "haul" && h.gear.some((g) => g.key === item.key)) return "";
+  return handsTakeRefusal(taker, `the ${item ? item.name : "that"}`);
 }
 
 // How many of a supply stack a move would take (splitting stacks, search window): { have, n (what fits, ≤ qty),
