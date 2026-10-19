@@ -218,7 +218,9 @@ section("Repairs at a workshop, with parts");
   const gun = f.arsenal.items.find((x) => x.key === "ar" || x.key === "huntrifle" || x.key === "carbine");
   gun.dur = Math.round(GEAR[gun.key].dur * 0.3);
   const max0 = gun.durMax || GEAR[gun.key].dur;
-  for (let i = 0; i < 4; i++) { st.hour += 24; C.repairGear(st, f, day(st) + i); }
+  // Four days in a row (a group mends every CARE.REPAIR.every days, on a day of its own: day(st) + i stepped by two and,
+  // on a group whose turn is the odd days, never came round).
+  for (let i = 0; i < 4; i++) { st.hour += 24; C.repairGear(st, f); }
   check(gun.dur > GEAR[gun.key].dur * 0.5, `their ${gun.name} is mended (${gun.dur} of ${gun.durMax})`);
   check(gun.durMax < max0 && f.stock.parts < 10, `and loses some of its maximum, as yours do (${max0} → ${gun.durMax}); parts spent (${10 - f.stock.parts})`);
   const plan = C.groupRepairPlan({ key: "plate", name: "Plate carrier", dur: 5, durMax: 50, quality: 1 }, 5);
@@ -291,18 +293,19 @@ section("Type profiles: different mixes of what they do");
         seen.add(q.id);
         const f = st.factions.find((x) => x.id === q.owner);
         if (!f) continue;
-        const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, scav: 0, trade: 0 });
-        if (q.kind === "raid" && q.warId == null) t.raid++; // a war raid (diplomacy.js warRaid) is the war's, not the type's way
+        const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, war: 0, scav: 0, trade: 0 });
+        // A war's raids (diplomacy.js warRaid: q.warId) come from both sides whatever their type: counted apart.
+        if (q.kind === "raid") { if (q.warId != null) t.war++; else t.raid++; }
         if (q.kind === "scav") t.scav++;
       }
     }
-    for (const f of st.factions) { const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, scav: 0, trade: 0 }); t.groups++; t.trade += f.foodDeal != null ? 1 : 0; t.food = (t.food || 0) + (f.foodBought || 0); }
+    for (const f of st.factions) { const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, war: 0, scav: 0, trade: 0 }); t.groups++; t.trade += f.foodDeal != null ? 1 : 0; t.food = (t.food || 0) + (f.foodBought || 0); }
   }
   const per = (type, k) => (tally[type] ? tally[type][k] / Math.max(1, tally[type].groups) : 0);
-  console.log(`  120 days, 2 worlds: ${Object.entries(tally).map(([k, t]) => `${k} ${t.groups}g raid ${(t.raid / t.groups).toFixed(1)} scav ${(t.scav / t.groups).toFixed(1)} bought food ${((t.food || 0) / t.groups).toFixed(0)}`).join("; ")}`);
+  console.log(`  120 days, 2 worlds: ${Object.entries(tally).map(([k, t]) => `${k} ${t.groups}g raid ${(t.raid / t.groups).toFixed(1)} (war ${(t.war / t.groups).toFixed(1)}) scav ${(t.scav / t.groups).toFixed(1)} bought food ${((t.food || 0) / t.groups).toFixed(0)}`).join("; ")}`);
   // Against the peaceful types with two or more groups in the two worlds (one group's 120 days is no measure of a type).
   const peaceful = ["commune", "traders", "military", "fortress"].filter((k) => tally[k] && tally[k].groups >= 2);
-  check(per("raider", "raid") > Math.max(0, ...peaceful.map((k) => per(k, "raid"))), `raiders raid more than any peaceful type (${peaceful.map((k) => `${k} ${per(k, "raid").toFixed(1)}`).join(", ")})`);
+  check(per("raider", "raid") > Math.max(0, ...peaceful.map((k) => per(k, "raid"))), `raiders raid more than any peaceful type outside a war (${peaceful.map((k) => `${k} ${per(k, "raid").toFixed(1)}`).join(", ")})`);
   const W = C.GROUP_PRIORITIES;
   check(W.commune.trade > W.raider.trade && W.commune.heal > W.raider.heal && W.raider.raid > W.commune.raid && W.fortress.fortify > W.raider.fortify, "one profile table: communes trade and heal, raiders raid, a fortress fortifies");
   // Short of food: a commune buys it, raiders mostly do not (they raid for it).
