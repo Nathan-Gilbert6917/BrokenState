@@ -11,12 +11,18 @@
 // buildings' door lists, the cell inside kept clear, a stale link dropped when one is moved away, a queued building's
 // link rewritten when it finishes); the view with no units, pickType + build queuing and placing a job (and a fitting
 // onto a host), a refused spot leaving no job, demolish and select; buildMenu's groups; and a save / load round trip
-// keeping hosts and links.
+// keeping hosts and links. A way in and out (plan Part F, reachProblem): a ring of huts round the core refused when
+// the last one closes it (its door in: nothing could walk to it; its door out: the core shut off), allowed with a hall
+// or a doorway link letting the walk through; a hut closing a pocket round a crate refused, the empty pocket fine; a
+// fitting in a reached hut fine; a car across the lane to a hut's door refused; a walled hub's gates (gateCells and
+// the built map agree) sealed from outside one by one, the last refused; the hover's reason and build refusing it; the
+// auto layout of a built-up hub and a camp placing everything reachable; 50 checks on the 300 × 300 grid in time.
 // Usage: node tools/basebuildtest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { registerCombatHandler } from "../src/sim/combat.js";
 import { BUILDINGS, addBuilding, queueBuild, constructionHour, canBuild, placeProblem, count, countAll, baseBeds, demolish, CAMP, SHELTER } from "../src/sim/buildings.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
+import { createVehicle } from "../src/sim/vehicles.js";
 import * as BM from "../src/sim/basemap.js";
 
 const seed = Number(process.argv[2] || 11);
@@ -252,6 +258,154 @@ section("The view: nobody on it, Build, the menu");
   check(BM.layoutAct(st, b, { type: "demolish", key: keyOf(hut) }) === "" && !h.buildings.includes(hut) && /pulled down/.test(st.combat.layout.msg) && st.combat.layout.sel === null, "demolish on a standing building pulls it down and clears the selection");
   check(BM.layoutAct(st, st.combat, { type: "endLayout" }) === "" && !st.combat, "the map closed");
   check(SHELTER.build.gen_hut === 2 && SHELTER.build.gen_cabin === 1 && CAMP.build.gen_hut === 1 && CAMP.build.bunks === 2 && CAMP.build.stove === 1 && !CAMP.build.lockers, "a camp may build a hut, bunks, shelves and a stove; a shelter two huts or a cabin");
+}
+
+section("A way in and out");
+{
+  // A ring of huts round the hub's core (docs/base-building/plan.md Part F): a storehouse (a flat roof: no door) and a
+  // barricade fill each corner (the inner corner cell left empty: a pocket nobody needs), four huts a side with every
+  // door facing in. The last hut closes the ring: with its door facing in nothing could walk to it; turned so its
+  // door faces out it is a dead end that shuts the core off. The ring is let in by a hall (two doors) in place of two
+  // huts, or by a hut with its door out and a doorway link to its neighbour.
+  const ring = (st, h, { last = "in", hall = false, link = false } = {}) => {
+    const put = (b, x, y, r) => BM.placeItem(st, h, keyOf(b), x, y, r);
+    const errs = [];
+    for (const [sx, sy, bx, by] of [[-12, -14, -12, -11], [8, -14, 9, -11], [-12, 7, -12, 6], [8, 7, 9, 6]]) errs.push(put(addBuilding(h, "storehouse"), sx, sy, 0), put(addBuilding(h, "barricades"), bx, by, 0));
+    const slots = [];
+    for (let x = -8; x < 8; x += 4) slots.push([x, -14, 0]);  // the north row, doors south (in)
+    for (let y = -10; y < 6; y += 4) slots.push([-12, y, 3]); // the west column, doors east
+    for (let x = -8; x < 8; x += 4) slots.push([x, 6, 2]);    // the south row, doors north
+    for (let y = -10; y < 6; y += 4) slots.push([8, y, 1]);   // the east column, doors west
+    if (hall) { slots.splice(1, 2); errs.push(put(addBuilding(h, "gen_hall"), -4, -14, 0)); } // the north row's two middle huts
+    let linked = "";
+    if (link) { // the north row's third hut turned (its door out), its neighbour in, the doorway between them
+      const A = addBuilding(h, "gen_hut"), B = addBuilding(h, "gen_hut");
+      errs.push(put(A, 0, -14, 2), put(B, 4, -14, 0));
+      linked = BM.linkBuildings(st, h, keyOf(A), keyOf(B));
+      slots.splice(2, 2);
+    }
+    const huts = slots.map(() => addBuilding(h, "gen_hut"));
+    for (let i = 0; i < slots.length - 1; i++) errs.push(put(huts[i], ...slots[i]));
+    const s = slots[slots.length - 1];
+    const why = put(huts[huts.length - 1], s[0], s[1], last === "out" ? (s[2] + 2) & 3 : s[2]);
+    return { errs: errs.filter(Boolean), why, linked };
+  };
+  check(typeof BM.PATH === "object" && BM.PATH.WIDTH === 1, `PATH.WIDTH is ${BM.PATH.WIDTH}`);
+  const st = world();
+  const h = hub(st);
+  rich(h);
+  const r1 = ring(st, h);
+  check(r1.errs.length === 0 && r1.why === BM.REACH_WHY, `the ring closed by a hut with its door in: refused (${r1.why}); the rest placed (${r1.errs.join("; ") || "no errors"})`);
+  const st2 = world(seed + 2), h2 = hub(st2);
+  const r2 = ring(st2, h2, { last: "out" });
+  check(r2.errs.length === 0 && r2.why === "That would shut off Main house: no way to walk to it from outside the base", `closed by a hut with its door out (a dead end): refused (${r2.why})`);
+  const st3 = world(seed + 3), h3 = hub(st3);
+  const r3 = ring(st3, h3, { hall: true });
+  check(r3.errs.length === 0 && r3.why === "", `the same ring with a hall (a door out and a door in) in place of two huts: allowed (${r3.why || r3.errs.join("; ") || "placed"})`);
+  const st4 = world(seed + 4), h4 = hub(st4);
+  const r4 = ring(st4, h4, { link: true });
+  check(r4.errs.length === 0 && r4.linked === "" && r4.why === "", `the same ring with one hut turned door-out and a doorway into its neighbour: allowed (${r4.why || r4.linked || r4.errs.join("; ") || "placed"})`);
+  // Every hut in the closed-with-a-hall ring is still reached (through the hall), and the core.
+  const lay3 = BM.layoutOf(st3, h3).filter((e) => e.at);
+  check(lay3.every((e) => BM.reachProblem(st3, h3, e.it, e.at, null) === ""), `every placed thing of that base passes the check on its own (${lay3.length} things)`);
+  // A pocket in the yard: barricades above and below, crates at the west end, a crate inside; the hut that closes the
+  // east end shuts the crate inside off. An empty pocket closed is nobody's loss.
+  {
+    const st = world(seed + 5), h = hub(st);
+    const barN = addBuilding(h, "barricades"), barS = addBuilding(h, "barricades"), crA = addBuilding(h, "crates"), crB = addBuilding(h, "crates"), hut = addBuilding(h, "gen_hut");
+    check(!BM.placeItem(st, h, keyOf(barN), 8, 9, 0) && !BM.placeItem(st, h, keyOf(barS), 8, 11, 0) && !BM.placeItem(st, h, keyOf(crA), 7, 10, 0), "a pocket: barricades above and below, crates at its west end");
+    check(BM.placeItem(st, h, keyOf(hut), 11, 8, 0) === "", "a hut closing the east end of the empty pocket: fine");
+    BM.unplaceItem(st, h, keyOf(hut));
+    check(!BM.placeItem(st, h, keyOf(crB), 9, 10, 0), "a second crate inside the pocket");
+    const why = BM.placeItem(st, h, keyOf(hut), 11, 8, 0);
+    check(why === "That would shut off Storage crates 2: no way to walk to it from outside the base" && !hut.at, `the hut closing it now: refused (${why})`);
+    check(BM.placeItem(st, h, keyOf(hut), 12, 8, 0) === "" && hut.at, "one cell further east, a way round the crate left: fine");
+    // A fitting inside a hut whose door is reached is fine; a car parked so it closes the hut's door is not.
+    const bunks = addBuilding(h, "bunks");
+    check(BM.placeItem(st, h, keyOf(bunks), 13, 9, 0) === "" && bunks.host === hut.id, "bunks inside the hut: fine");
+    const hut2 = addBuilding(h, "gen_hut"), bw = addBuilding(h, "barricades"), be = addBuilding(h, "barricades");
+    check(!BM.placeItem(st, h, keyOf(hut2), 20, 20, 0) && !BM.placeItem(st, h, keyOf(bw), 21, 24, 1) && !BM.placeItem(st, h, keyOf(be), 23, 24, 1), "a hut with barricades either side of the lane from its door");
+    const car = createVehicle(st, "sedan", { kind: "base", baseId: h.id });
+    const whyCar = BM.placeItem(st, h, `v:${car.id}`, 22, 27, 0);
+    check(whyCar === "That would shut off Hut 2: no way to walk to it from outside the base" && !car.at, `the car parked across the end of the lane: refused (${whyCar})`);
+    check(BM.placeItem(st, h, `v:${car.id}`, 22, 28, 0) === "" && car.at, "a cell further off, the lane open: fine");
+  }
+  // A walled hub: the gates are the way in. Barricades outside three gates are fine while the fourth is open; the
+  // fourth is refused (the core shut off); one cell over, leaving a gate cell's outside open, it is fine.
+  {
+    const st = world(seed + 6), h = hub(st);
+    addBuilding(h, "walls");
+    const bars = [0, 1, 2, 3].map(() => addBuilding(h, "barricades")), cr = addBuilding(h, "crates"); // (everything first: a crate grows the yard)
+    const C = BM.yardHalf(h);
+    const gates = BM.gateCells(C);
+    check(gates.north[0].join() === `-2,${-C - 2}` && gates.south[1].join() === `-1,${C + 1}` && gates.west[0].join() === `${-C - 2},-2` && gates.east[1].join() === `${C + 1},-1`, `gateCells: the two middle cells of each side of the ring (north ${gates.north.map((g) => g.join(",")).join(" ")})`);
+    check(!openView(st, h), "the view opens");
+    const F = st.combat.deployPlan.fort;
+    check(["north", "east", "south", "west"].every((s) => F.gates[s].length === 2 && F.gates[s].every(([x, y], i) => x - F.ox === gates[s][i][0] && y - F.oy === gates[s][i][1])) && F.gates.north.every(([x, y]) => st.combat.cells[y * st.combat.w + x].k === "gate"), "the built map's gates are those cells");
+    st.combat = null;
+    const spots = [[-C - 3, -2, 1], [C + 2, -2, 1], [-2, -C - 3, 0], [-2, C + 2, 0]]; // across the cells outside the west, east, north and south gates
+    const e = spots.slice(0, 3).map((s, i) => BM.placeItem(st, h, keyOf(bars[i]), ...s));
+    check(e.every((x) => x === ""), `barricades across the outside of three gates: fine (${e.filter(Boolean).join("; ") || "all placed"})`);
+    const why4 = BM.placeItem(st, h, keyOf(bars[3]), ...spots[3]);
+    check(why4 === "That would shut off Main house: no way to walk to it from outside the base" && !bars[3].at, `the fourth, sealing the last gate: refused (${why4})`);
+    check(BM.placeItem(st, h, keyOf(bars[3]), -1, C + 2, 0) === "", "one cell east, the gate's west cell still open outside: fine");
+    const whyCr = BM.placeItem(st, h, keyOf(cr), -2, C + 2, 0);
+    check(/^That would shut off Main house/.test(whyCr) && !cr.at, `a crate on the last open cell: refused (${whyCr})`);
+    check(!BM.unplaceItem(st, h, keyOf(bars[0])) && BM.placeItem(st, h, keyOf(cr), -2, C + 2, 0) === "", "with the west gate's barricade lifted again, the crate is fine");
+  }
+  // The hover's reason and build: the ghost over the spot that would close the pocket is red with the reason, and a
+  // click there queues nothing.
+  {
+    const st = world(seed + 7), h = hub(st);
+    rich(h);
+    const barN = addBuilding(h, "barricades"), barS = addBuilding(h, "barricades"), crA = addBuilding(h, "crates"), crB = addBuilding(h, "crates");
+    check(!BM.placeItem(st, h, keyOf(barN), 8, 9, 0) && !BM.placeItem(st, h, keyOf(barS), 8, 11, 0) && !BM.placeItem(st, h, keyOf(crA), 7, 10, 0) && !BM.placeItem(st, h, keyOf(crB), 9, 10, 0), "the pocket again, a crate inside");
+    check(!openView(st, h) && BM.layoutAct(st, st.combat, { type: "pickType", bt: "gen_hut" }) === "", "the view opens, a hut picked to build");
+    const b = st.combat, F = b.deployPlan.fort;
+    const g = BM.ghostAt(st, b, 13 + F.ox, 10 + F.oy);
+    check(g && !g.ok && g.at.join() === "11,8,0" && g.why === "That would shut off Storage crates 2: no way to walk to it from outside the base", `the ghost at 11, 8 is red: ${g && g.why}`);
+    const n0 = h.construction.length, scrap0 = h.stock.scrap;
+    const err = BM.layoutAct(st, b, { type: "build", x: 13 + F.ox, y: 10 + F.oy });
+    check(/^That would shut off Storage crates 2/.test(err) && h.construction.length === n0 && h.stock.scrap === scrap0, `build there: refused (${err}), nothing queued or paid`);
+    const g2 = BM.ghostAt(st, b, 14 + F.ox, 10 + F.oy);
+    check(g2 && g2.ok && g2.why === "", "one cell east the ghost is green");
+    check(BM.layoutAct(st, b, { type: "build", x: 14 + F.ox, y: 10 + F.oy }) === "" && h.construction.length === n0 + 1 && h.construction[n0].at.join() === "12,8,0", "and a click there builds");
+    st.combat = null;
+  }
+  // The auto layout never leaves anything unreachable: a built-up walled hub with huts, a cabin, fittings, fields,
+  // defences and a parked car, everything placed by the game and every placed thing passing the check.
+  {
+    const st = world(seed + 8), h = hub(st);
+    for (const t of ["walls", "walls", "barricades", "barricades", "barricades", "watchtower", "bunkhouse", "storehouse", "ammo_bench", "infirmary", "cistern", "well", "gate", "rain_catcher", "spike_pits", "spike_pits", "trench", "floodlights", "gen_hut", "gen_hut", "gen_cabin", "bunks", "bunks", "shelves", "stove", "crates", "crates", "animal_pen", "machine_shop", "garage"]) addBuilding(h, t);
+    createVehicle(st, "sedan", { kind: "base", baseId: h.id });
+    createVehicle(st, "truck", { kind: "base", baseId: h.id });
+    const lay = BM.layoutOf(st, h), auto = BM.autoLayout(st, h);
+    const off = lay.filter((e) => !e.at), bad = lay.filter((e) => e.at && BM.reachProblem(st, h, e.it, e.at, null, { auto }) !== "");
+    check(lay.length >= 30 && off.length === 0, `a built-up walled hub: ${lay.length} things, all placed by the game${off.length ? ` (off the map: ${off.map((e) => e.it.label).join(", ")})` : ""}`);
+    check(bad.length === 0, `every one of them can be walked to from outside${bad.length ? ` (not: ${bad.map((e) => `${e.it.label} at ${e.at}`).join(", ")})` : ""}`);
+    const again = BM.autoLayout(st, h);
+    check(again === auto, "the layout is cached by its key");
+    // The camp and a shelter still place everything they can build.
+    const stC = world(seed + 9), camp = asCamp(hub(stC));
+    for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit) for (let i = 0; i < CAMP.build[t]; i++) addBuilding(camp, t);
+    for (const t of ["bunks", "stove"]) addBuilding(camp, t); // what the hut's 2 × 2 floor has room for
+    const layC = BM.layoutOf(stC, camp), autoC = BM.autoLayout(stC, camp);
+    check(layC.length >= 12 && layC.every((e) => e.at) && layC.every((e) => BM.reachProblem(stC, camp, e.it, e.at, null, { auto: autoC }) === ""), `a camp with everything on its list: ${layC.length} things placed, all reachable`);
+  }
+  // Performance: the check on the biggest grid (300 × 300).
+  {
+    const st = world(seed + 10), h = hub(st);
+    for (let i = 0; i < 30; i++) addBuilding(h, i % 2 ? "bunkhouse" : "common_room");
+    addBuilding(h, "walls");
+    check(BM.gridSize(h) === 300, `a hub with 30 buildings: a ${BM.gridSize(h)} × ${BM.gridSize(h)} grid`);
+    const it = { ...BM.FOOT.gen_hut, key: null, type: "gen_hut", label: "Hut", built: true };
+    const occ = BM.occupancy(st, h, null, null);
+    const tp = Date.now();
+    let why = "";
+    for (let i = 0; i < 50; i++) why = BM.reachProblem(st, h, it, [30 + (i % 5), 30, 0], occ);
+    const ms = Date.now() - tp;
+    check(ms < 2000 && why === "", `50 checks in ${ms} ms`);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

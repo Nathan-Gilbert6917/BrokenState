@@ -52,6 +52,10 @@
 //     them stay clear as any door's). neighboursOf / canLink / linkBuildings / unlinkBuildings / linksOf; a link whose
 //     buildings no longer touch is dropped when read; carryPlacement rewrites c:<job> keys to b:<building> when a
 //     queued building finishes.
+//   A way in and out (plan Part F; the "a way in and out" section): a walkable path at least PATH.WIDTH wide must join
+//     the grid's edge to everything placed (a house by a door of its own or of a doorway link, anything else by a
+//     cell next to it; the band blocks but for the gates: gateCells). reachProblem is the dearer check placeItem,
+//     ghostAt (so layoutAct put / build) and autoLayout run after placeProblemAt passes.
 //   The view (openBaseMap): nobody on the map (survivors never show); b.layout also keeps sel (a selected item's key)
 //     and pickType (a type to build: layoutAct build queues it and places the job at the ghost); buildMenu lists what
 //     can be built on the map by group.
@@ -486,10 +490,11 @@ export function placeItem(state, base, key, x, y, r = 0) {
   if (!it) return "That is not on this base any more.";
   const was = it.at ? it.at.slice() : null;
   const inside = hostOf(it) ? hostedItems(state, base, it) : [];
-  const occ = occupancy(state, base, new Set([key, ...inside.map((o) => o.key)]), null); // against what is placed by hand and the base itself: what the game placed moves out of the way (autoLayout)
-  const why = placeProblemAt(base, it, x, y, r, occ);
-  if (why) return why;
+  const skip = new Set([key, ...inside.map((o) => o.key)]);
+  const occ = occupancy(state, base, skip, null); // against what is placed by hand and the base itself: what the game placed moves out of the way (autoLayout)
   const at = [x, y, r & 3];
+  const why = placeProblemAt(base, it, x, y, r, occ) || reachProblem(state, base, it, at, occ, { skip }); // and a way in and out stays (the dearer check second)
+  if (why) return why;
   setAt(base, it, at);
   if (it.fit || it.indoor) setHost(it, floorHostAt(occ, x, y));
   if (hostOf(it)) carryInside(state, base, it, inside, was, at);
@@ -549,7 +554,8 @@ export function autoLayout(state, base, except = null) {
   stampGrid(state, base);
   const items = itemsOf(state, base);
   const sig = items.map((it) => `${it.key}${it.at ? `@${it.at.join(",")}` : ""}`).join("|");
-  const key = `${base.id}|${layoutSeed(base)}|${yardHalf(base)}|${except || ""}|${sig}|${linksArr(base).map((l) => `${l.a}>${l.b}`).join(",")}`;
+  const walled = count(base, "walls") > 0 && !isShelter(base); // the band blocks the way in and out (reachProblem): part of the key with the tier (the core's parts)
+  const key = `${base.id}|${tierKey(base)}|${walled ? "w" : ""}|${layoutSeed(base)}|${yardHalf(base)}|${except || ""}|${sig}|${linksArr(base).map((l) => `${l.a}>${l.b}`).join(",")}`;
   let out = autoCache.get(key);
   if (out) return out;
   out = new Map();
@@ -558,8 +564,12 @@ export function autoLayout(state, base, except = null) {
   const occ = occupancy(state, base, except, null);
   const take = (it, at) => { out.set(it.key, at); markOcc(occ, it, at, it.key); };
   const fits = (it, x, y, r) => !placeProblemAt(base, it, x, y, r, occ);
+  // A way in and out (reachProblem) against what is placed by hand and what the layout has taken so far (out).
+  const skips = new Set(except ? [except] : []);
+  const reach = (it, at) => !reachProblem(state, base, it, at, occ, { items, auto: out, skip: new Set([it.key, ...skips]) });
   const yardOnly = (it) => (it.indoor && !it.fit ? { ...it, indoor: false } : it); // the game puts an indoor prop in the yard, never inside
-  // Buildings, fields and cars: spiral out from the middle, the first spot that fits (a few of the nearest, by dice).
+  // Buildings, fields and cars: spiral out from the middle, the first spot that fits (a few of the nearest, by dice:
+  // the dice pick one of up to three, then the others in order, the first that leaves a way in and out).
   const spiral = (it, rs) => {
     const found = [];
     for (let d = 0; d <= C && found.length < 3; d++) {
@@ -568,7 +578,10 @@ export function autoLayout(state, base, except = null) {
         for (const r of rs) { const [w, h] = dimsOf(it, r); if (fits(it, x - Math.floor(w / 2), y - Math.floor(h / 2), r)) found.push([x - Math.floor(w / 2), y - Math.floor(h / 2), r]); }
       }
     }
-    return found.length ? found[rng.int(0, found.length - 1)] : null;
+    if (!found.length) return null;
+    const i = rng.int(0, found.length - 1);
+    for (const at of [found[i], ...found.filter((_, j) => j !== i)]) if (reach(it, at)) return at;
+    return null;
   };
   // Defences: the first of their default spots that fits (around the yard's edge inside the wall for barricades and
   // the lights, the corners for the watchtower, in front of the wall for pits and the trench).
@@ -580,7 +593,7 @@ export function autoLayout(state, base, except = null) {
     else if (k === "tower") spots.push([edge - 1, edge - 1], [-edge, -edge], [edge - 1, -edge], [-edge, edge - 1]);
     else if (k === "spikes") spots.push([-1, out, 0], [-1, -out - 1, 0], [out, -1, 1], [-out - 1, -1, 1], [5, out, 0], [-7, out, 0], [5, -out - 1, 0], [-7, -out - 1, 0]);
     else if (k === "trench") spots.push([-5, out + 2, 0], [out + 2, -5, 1], [-5, -out - 3, 0], [-out - 3, -5, 1], [-5, out + 1, 0], [out + 1, -5, 1], [-5, -out - 2, 0], [-out - 2, -5, 1]); // the nearer line too: a camp's grid ends in the margin two cells out
-    for (const s of spots) if (s[0] >= -G && s[1] >= -G && fits(it, s[0], s[1], s[2] || 0)) return [s[0], s[1], s[2] || 0];
+    for (const s of spots) if (s[0] >= -G && s[1] >= -G && fits(it, s[0], s[1], s[2] || 0) && reach(it, [s[0], s[1], s[2] || 0])) return [s[0], s[1], s[2] || 0];
     return spiral(it, [0, 1]);
   };
   for (const it of items) {
@@ -589,7 +602,8 @@ export function autoLayout(state, base, except = null) {
     if (at) take(it, at);
   }
   // The fittings: into the standing general buildings with room, those nearest the middle first, the first floor cell
-  // that fits (turned if need be); the cells inside the doorways between linked buildings stay clear.
+  // that fits (turned if need be) and leaves the way to the door; the cells inside the doorways between linked
+  // buildings stay clear.
   const pos = new Map(items.filter((it) => it.at || out.has(it.key)).map((it) => [it.key, it.at || out.get(it.key)]));
   for (const l of liveLinks(base, items, pos)) for (const [x, y] of l.inn) if (!occ.door.has(K(x, y))) occ.door.set(K(x, y), l.a);
   const mid = (it, at) => { const r = rectOf(it, at); return Math.hypot(r.x0 + r.w / 2, r.y0 + r.h / 2); };
@@ -598,7 +612,7 @@ export function autoLayout(state, base, except = null) {
     if (it.key === except || it.at || !it.fit) continue;
     let at = null;
     for (const h of hosts) {
-      for (const [x, y] of floorCellsOf(h.it, h.at)) { for (const r of [0, 1]) if (fits(it, x, y, r)) { at = [x, y, r]; break; } if (at) break; }
+      for (const [x, y] of floorCellsOf(h.it, h.at)) { for (const r of [0, 1]) if (fits(it, x, y, r) && reach(it, [x, y, r])) { at = [x, y, r]; break; } if (at) break; }
       if (at) break;
     }
     if (at) take(it, at);
@@ -714,6 +728,112 @@ export function unlinkBuildings(state, base, a, b) {
   const L = linksArr(base);
   L.splice(L.indexOf(l), 1);
   autoCache.clear();
+  return "";
+}
+
+// ---------- a way in and out ----------
+// The user's request 2026-10-19 (docs/base-building/plan.md Part F): "there needs to be at least a 1 × 4 tiles you can
+// walk through from in the base to out of the base and from out of the base to into the base. Gates count. You can
+// have a circle of buildings as long as one of the doors lets you in to the base to access all other buildings;
+// otherwise you cannot place". The rule: on the base's map as it would be built, a walkable path at least PATH.WIDTH
+// cells wide must join the grid's edge (the no-build margin is always open ground) to everything placed: a house-kind
+// building by one of its door cells (a doorway link's door counts: the walk goes through buildings' floors), a fitting
+// by a floor cell next to it (so its host's door must be reached), anything else (a prop, a crate, a defence, a crop
+// plot, a car, the core's fire) by a walkable cell next to its footprint; the core by its house's doors, or a cell next
+// to each part without a door. What walks is what CELL says walks on the battle map (open ground, fields, trenches,
+// pits, wire, doors, the gates, the walkway) less what stands raised (SOLID: a flat roof, a watchtower); walls,
+// windows, fences, props, crates, barricades, fittings, parked cars and the wall ring do not; a queued building counts
+// as built (it will be). reachProblem is the dearer check (one flood fill over the whole grid) callers run after
+// placeProblemAt passes: placeItem, ghostAt (the hover's reason, so layoutAct put / build refuse it) and autoLayout on
+// the spots it picks. It counts what is placed by hand, the core, the band and, with opts.auto, what the layout has
+// taken so far: what the game places re-flows after a hand placement and is checked again then.
+export const PATH = { WIDTH: 1 }; // the path's least width in cells. Only 1 is implemented: a 4-neighbour flood fill, where one open cell joins two; a wider path would fill over the cells a WIDTH × WIDTH block of open cells fits on. The constant is here so the rule reads as one number.
+export const REACH_WHY = "Nothing could walk to it from outside the base: leave a way in (a path at least one cell wide, a door or a gate)";
+const SOLID = new Set(["roof", "tower"]); // raised cells the battle map lets people climb onto (a ladder, a tower's own) but no path in or out goes over
+const walks = (k) => !SOLID.has(k) && !!CELL[k] && !!CELL[k].walk;
+// The gate cells of a walled base's ring, in grid coordinates: the two middle cells of each side of the ring, which runs
+// from -C - 2 to C + 1 (the walkway inside it at -C - 1 and C). buildBaseMap lays the gates here and reachProblem
+// leaves these cells open: one formula, so the two cannot drift apart.
+export function gateCells(C) {
+  const lo = -C - 2, hi = C + 1;
+  return { north: [[-2, lo], [-1, lo]], east: [[hi, -2], [hi, -1]], south: [[-2, hi], [-1, hi]], west: [[lo, -2], [lo, -1]] };
+}
+// Why `it` cannot stand at `at` (grid coordinates [x, y, r]) for want of a way in and out, or "". Checked after
+// placeProblemAt passes (occ: the same occupancy, kept for the signature; the grid is built afresh from the items).
+// Counted: the core, every item placed by hand (it.at) and, with opts.auto (a Map key → at, as occupancy takes), what
+// the layout has taken so far; never the keys in opts.skip (default: it.key; a general building being moved also skips
+// what stands inside it, which moves along). opts.items: the items (itemsOf) when the caller has them already.
+// Returns REACH_WHY when nothing could walk to the candidate itself, else "That would shut off <label>: no way to
+// walk to it from outside the base" naming the first thing (the core's parts first, then the items in their order)
+// the placement would cut off. One Uint8Array over the (2G)² grid and one flood fill: a few ms on the biggest grid.
+export function reachProblem(state, base, it, at, occ, opts = {}) {
+  stampGrid(state, base);
+  const G = gridHalf(base), C = yardHalf(base), N = 2 * G;
+  const on = (x, y) => x >= -G && x < G && y >= -G && y < G;
+  const idx = (x, y) => (y + G) * N + (x + G);
+  const blk = new Uint8Array(N * N);
+  const block = (x, y) => { if (on(x, y)) blk[idx(x, y)] = 1; };
+  // A thing's cells onto the grid: a car's whole rect and a flat-roofed block stand solid; anything else by its cells
+  // (cellsOf: a house's walls and windows block, its doors and floor walk; a pen's fence and hay block, its gap walks;
+  // a field walks; a prop, a fitting or a defence by its cell kind: a trench or pits walk, a barricade or a crate not).
+  const lay = (o, atO) => {
+    if (o.kind === "vehicle" || o.kind === "roof") { for (const [x, y] of rectCells(o, atO)) block(x, y); return; }
+    for (const c of cellsOf(o, atO)) if (!walks(c.k)) block(c.x, c.y);
+  };
+  const items = opts.items || itemsOf(state, base);
+  const skips = opts.skip instanceof Set ? opts.skip : new Set(opts.skip ? [opts.skip] : it && it.key ? [it.key] : []);
+  const auto = opts.auto || null;
+  const counted = [], pos = new Map();
+  for (const o of items) {
+    if (skips.has(o.key)) continue;
+    const a = o.at || (auto && auto.get(o.key)) || null;
+    if (!a) continue;
+    counted.push({ it: o, at: a }); pos.set(o.key, a); lay(o, a);
+  }
+  const core = coreParts(base);
+  for (const p of core) lay(p, [p.x, p.y, 0]);
+  if (it && at) { lay(it, at); if (it.key) pos.set(it.key, at); }
+  // The band of a walled base: the ring blocks but for its gates; the walkway inside it walks.
+  if (count(base, "walls") > 0 && !isShelter(base)) {
+    const lo = -C - 2, hi = C + 1;
+    for (let x = lo; x <= hi; x++) { block(x, lo); block(x, hi); }
+    for (let y = lo + 1; y < hi; y++) { block(lo, y); block(hi, y); }
+    for (const g of Object.values(gateCells(C))) for (const [x, y] of g) if (on(x, y)) blk[idx(x, y)] = 0;
+  }
+  // The doorways between linked buildings: both door cells walk.
+  const links = liveLinks(base, items, pos);
+  for (const l of links) for (const [x, y] of [l.da, l.db]) if (on(x, y)) blk[idx(x, y)] = 0;
+  // The flood fill from every open cell on the grid's edge (PATH.WIDTH 1: 4-neighbour, over the open cells).
+  const seen = new Uint8Array(N * N), q = new Int32Array(N * N);
+  let qh = 0, qt = 0;
+  const seed = (i) => { if (!blk[i] && !seen[i]) { seen[i] = 1; q[qt++] = i; } };
+  for (let i = 0; i < N; i++) { seed(i); seed((N - 1) * N + i); seed(i * N); seed(i * N + N - 1); }
+  while (qh < qt) {
+    const i = q[qh++], x = i % N, y = (i / N) | 0;
+    if (x > 0) seed(i - 1);
+    if (x < N - 1) seed(i + 1);
+    if (y > 0) seed(i - N);
+    if (y < N - 1) seed(i + N);
+  }
+  const reached = (x, y) => on(x, y) && seen[idx(x, y)] === 1;
+  // A thing is reached: a house by a door cell of its own or of a doorway link it is part of; anything else by a
+  // walkable cell 4-adjacent to its footprint (a fitting's: the host's open floor next to it).
+  const nextTo = (o, atO) => {
+    const r = rectOf(o, atO);
+    for (let x = r.x0; x < r.x0 + r.w; x++) if (reached(x, r.y0 - 1) || reached(x, r.y0 + r.h)) return true;
+    for (let y = r.y0; y < r.y0 + r.h; y++) if (reached(r.x0 - 1, y) || reached(r.x0 + r.w, y)) return true;
+    return false;
+  };
+  const doorsOf = (o, atO, key) => {
+    const d = cellsOf(o, atO).filter((c) => c.door).map((c) => [c.x, c.y]);
+    if (key) for (const l of links) { if (l.a === key) d.push(l.da); if (l.b === key) d.push(l.db); }
+    return d;
+  };
+  const ok = (o, atO, key) => (o.kind === "house" ? doorsOf(o, atO, key).some(([x, y]) => reached(x, y)) : nextTo(o, atO));
+  if (it && at && !ok(it, at, it.key)) return REACH_WHY;
+  const shut = (name) => `That would shut off ${name}: no way to walk to it from outside the base`;
+  for (const p of core) if (!ok(p, [p.x, p.y, 0], null)) return shut(p.name || coreName(base));
+  for (const e of counted) if (!ok(e.it, e.at, e.it.key)) return shut(e.it.label);
   return "";
 }
 
@@ -838,11 +958,10 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       if (onRing) { q.k = "palisade"; q.f = "dirt"; q.t = 1; q.hp = q.mhp = hpWall; delete q.h; F.ring.push([x, y]); }
       else if (onWalk) { q.k = "walkway"; q.f = "dirt"; q.h = 1; delete q.t; F.walkway.push([x, y]); }
     }
-    const cx = Math.floor((w.x0 + w.x1) / 2), cy = Math.floor((w.y0 + w.y1) / 2);
+    const gates = gateCells(C); // the two middle cells of each side (grid coordinates; reachProblem leaves the same cells open)
     for (const side of ["north", "east", "south", "west"]) {
-      for (let i = 0; i < 2; i++) {
-        const o = i - 1;
-        const [x, y] = side === "north" ? [cx + o, w.y0] : side === "south" ? [cx + o, w.y1] : side === "west" ? [w.x0, cy + o] : [w.x1, cy + o];
+      for (const [gx, gy] of gates[side]) {
+        const x = gx + ox, y = gy + oy;
         const q = at(x, y);
         if (!q) continue;
         q.k = "gate"; delete q.t; q.bar = true; q.hp = q.mhp = hpGate;
@@ -1259,7 +1378,7 @@ export function ghostAt(state, b, x, y) {
   const x0 = gx - Math.floor(w / 2), y0 = gy - Math.floor(h / 2);
   const skip = L.pick ? new Set([L.pick, ...hostedItems(state, base, it).map((o) => o.key)]) : null;
   const occ = occupancy(state, base, skip, null);
-  const why = placeProblemAt(base, it, x0, y0, L.rot, occ);
+  const why = placeProblemAt(base, it, x0, y0, L.rot, occ) || reachProblem(state, base, it, [x0, y0, L.rot], occ, { skip }); // the hover's reason: layoutAct put / build refuse what is red here
   const cells = [];
   for (let yy = y0; yy < y0 + h; yy++) for (let xx = x0; xx < x0 + w; xx++) cells.push([xx + F.ox, yy + F.oy]);
   const doors = doorCellsOf(it, [x0, y0, L.rot]).map(([dx, dy]) => [dx + F.ox, dy + F.oy]);
