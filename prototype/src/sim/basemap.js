@@ -21,14 +21,12 @@
 // Placement (placeItem / placeProblemAt): every building, construction job, crop plot and car is an item (itemsOf)
 // with a footprint (FOOT: w × h cells and what it is on the map, turned by r = 0–3 quarter turns) and a position: the
 // top-left cell of its footprint in grid coordinates, kept on the record itself (bld.at = [x, y, r] on a building,
-// job.at on a queued one, vehicle.at on a car, base.plan.plots[i] for the i-th crop plot). The rules (user request):
-//   - buildings, crop plots and cars never overlap, and keep a 1-cell buffer between them (a footprint never touches
-//     another's footprint or buffer), so nothing is built right against something else and doorways stay open;
-//   - the cell outside every door stays free of everything;
-//   - defences (barricades, spike pits, the trench, floodlights, the watchtower) have no buffer: they may stand right
-//     next to anything, inside the yard or out, only never on another footprint, on the band or in a doorway;
-//   - the middle of the map is the camp, shelter or base itself (CORE: tents round a fire, a shack behind a barricade,
-//     the main house with its cellar and well), with a buffer of its own.
+// job.at on a queued one, vehicle.at on a car, base.plan.plots[i] for the i-th crop plot). The one rule (user request,
+// 2026-10-19: "the restriction now is the ability to build within the base"): anything goes anywhere on the base's map,
+// inside the yard or out beyond the wall, right against anything else, so long as it stands on the map and not on top
+// of something else: another footprint, the base itself in the middle (CORE: tents round a fire, a shack behind a
+// barricade, the main house with its cellar and well), the band where the wall ring stands, or in a doorway (the cell
+// outside every door stays open, and a door never opens onto a footprint or the wall: the building could not be used).
 // Anything not placed by hand is placed by the game (autoLayout, deterministic for the same base and items): buildings
 // spiral out from the middle to the nearest spot that fits, defences take sensible default spots (barricades across
 // the yard, pits and the trench in front of the wall, the floodlights and the watchtower at the corners). A thing
@@ -72,7 +70,6 @@ export const GRID = {
 export const GRID_MAX = 150; // the biggest grid: 300 × 300
 export const MARGIN = 8;     // open ground round what stands on the battle map (fort.js FORT.MARGIN)
 export const VIEW_PAD = 8;   // the Base map view shows this much more than the battle map
-export const BUFFER = 1;     // the cells kept clear round a building, a field or a car
 export const FLOOD = { R: 7 }; // a placed floodlight lights the cells within this many tiles of it
 export const DEF_HP = { barricade: 60, car: 50 }; // hit points of a barricade and a parked car on the map (bash)
 // Raiders stealing from the stores: the share of a raid's people who go for the stores once the wall is passed, the
@@ -109,7 +106,7 @@ export const FOOT = {
 export const FIELD = { kind: "field", w: 3, h: 2 };
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.
 const STORES = { storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, crates: 1 };
-const BUILD_KINDS = new Set(["house", "roof", "prop", "pen", "field", "vehicle"]); // keep a buffer; inside the yard
+const BUILD_KINDS = new Set(["house", "roof", "prop", "pen", "field", "vehicle"]); // the kinds the yard grows for (footCount) and the cover props keep off
 export const hasFootprint = (type) => !!FOOT[type];
 
 // ---------- the middle: the camp, the shelter, the base ----------
@@ -150,10 +147,20 @@ const footCount = (base) => base.buildings.filter((b) => FOOT[b.type] && FOOT[b.
 export function yardHalf(base) {
   const g = gridOf(base);
   let C = Math.min(g.cap, g.yard + g.per * footCount(base));
-  for (const it of placedItems(base)) {
-    if (!BUILD_KINDS.has(it.kind) || !it.at) continue;
-    const r = rectOf(it, it.at);
-    C = Math.min(g.cap, Math.max(C, -r.x0 + 1, r.x0 + r.w + 1, -r.y0 + 1, r.y0 + r.h + 1));
+  // Nothing placed stands under the wall ring: a thing the band would cut through (placed inside while the yard was
+  // bigger, or just outside before the yard grew) pulls the yard out over it, up to the cap; a thing well beyond the
+  // band stays outside the wall.
+  for (let grown = true; grown && C < g.cap;) {
+    grown = false;
+    for (const it of placedItems(base)) {
+      if (!it.at) continue;
+      const r = rectOf(it, it.at);
+      const inside = r.x0 >= -C && r.y0 >= -C && r.x0 + r.w <= C && r.y0 + r.h <= C;
+      const beyond = r.x0 >= C + 2 || r.y0 >= C + 2 || r.x0 + r.w <= -C - 2 || r.y0 + r.h <= -C - 2;
+      if (inside || beyond) continue;
+      const need = Math.min(g.cap, Math.max(-r.x0, r.x0 + r.w, -r.y0, r.y0 + r.h));
+      if (need > C) { C = need; grown = true; }
+    }
   }
   return C;
 }
@@ -292,22 +299,20 @@ export const doorCellsOf = (it, at) => cellsOf(it, at).filter((c) => c.out).map(
 
 // ---------- placement rules ----------
 const K = (x, y) => (y + 2048) * 4096 + (x + 2048);
-// The occupancy of everything but `skip`: footprints, buffers (of the kinds that keep one) and the cells outside
-// doors, each with the key of what is there.
+// The occupancy of everything but `skip`: footprints and the cells outside doors, each with the key of what is there.
 export function occupancy(state, base, skip = null, auto = null) {
-  const occ = { foot: new Map(), buf: new Map(), door: new Map() };
+  const occ = { foot: new Map(), door: new Map() };
   const put = (m, x, y, key) => { if (!m.has(K(x, y))) m.set(K(x, y), key); };
-  const mark = (it, at, key, buffer) => {
+  const mark = (it, at, key) => {
     const r = rectOf(it, at);
     for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) put(occ.foot, x, y, key);
-    if (buffer) for (let y = r.y0 - BUFFER; y < r.y0 + r.h + BUFFER; y++) for (let x = r.x0 - BUFFER; x < r.x0 + r.w + BUFFER; x++) put(occ.buf, x, y, key);
     for (const [x, y] of doorCellsOf(it, at)) put(occ.door, x, y, key);
   };
-  for (const p of coreParts(base)) mark(p, [p.x, p.y, 0], "core", true);
+  for (const p of coreParts(base)) mark(p, [p.x, p.y, 0], "core");
   for (const it of itemsOf(state, base)) {
     if (it.key === skip) continue;
     const at = it.at || (auto && auto.get(it.key)) || null;
-    if (at) mark(it, at, it.key, BUILD_KINDS.has(it.kind));
+    if (at) mark(it, at, it.key);
   }
   return occ;
 }
@@ -316,20 +321,17 @@ export function placeProblemAt(base, it, x, y, r, occ) {
   const at = [x, y, r & 3];
   const rect = rectOf(it, at);
   const G = gridHalf(base), C = yardHalf(base);
-  const build = BUILD_KINDS.has(it.kind);
   if (rect.x0 < -G || rect.y0 < -G || rect.x0 + rect.w > G || rect.y0 + rect.h > G) return "Off the map";
-  if (build && (rect.x0 < -C + 1 || rect.y0 < -C + 1 || rect.x0 + rect.w > C - 1 || rect.y0 + rect.h > C - 1)) return `${it.kind === "field" ? "Fields" : it.kind === "vehicle" ? "Cars" : "Buildings"} go inside the yard, a cell clear of the wall`;
   for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) {
     const k = K(xx, yy);
     if (onBand(xx, yy, C)) return "That is where the wall stands";
     if (occ.foot.has(k)) return `On top of ${nameOf(occ.foot.get(k))}`;
     if (occ.door.has(k)) return `In the doorway of ${nameOf(occ.door.get(k))}`;
-    if (build && occ.buf.has(k)) return `Too close to ${nameOf(occ.buf.get(k))}: keep a cell clear between buildings and fields`;
   }
   for (const [ox, oy] of doorCellsOf(it, at)) {
     const k = K(ox, oy);
     if (occ.foot.has(k)) return `Its door would open onto ${nameOf(occ.foot.get(k))}`;
-    if (onBand(ox, oy, C) || !inYard(ox, oy, C)) return "Its door would open onto the wall";
+    if (onBand(ox, oy, C)) return "Its door would open onto the wall";
   }
   return "";
 }
@@ -373,9 +375,8 @@ export function autoLayout(state, base, except = null) {
   const occ = occupancy(state, base, except, null);
   const take = (it, at) => {
     out.set(it.key, at);
-    const r = rectOf(it, at), buffer = BUILD_KINDS.has(it.kind);
+    const r = rectOf(it, at);
     for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) occ.foot.set(K(x, y), it.key);
-    if (buffer) for (let y = r.y0 - BUFFER; y < r.y0 + r.h + BUFFER; y++) for (let x = r.x0 - BUFFER; x < r.x0 + r.w + BUFFER; x++) if (!occ.buf.has(K(x, y))) occ.buf.set(K(x, y), it.key);
     for (const [x, y] of doorCellsOf(it, at)) if (!occ.door.has(K(x, y))) occ.door.set(K(x, y), it.key);
   };
   const fits = (it, x, y, r) => !placeProblemAt(base, it, x, y, r, occ);
