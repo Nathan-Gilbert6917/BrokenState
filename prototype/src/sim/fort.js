@@ -334,7 +334,7 @@ function fortDefaults(b, F, side, okCell) {
     const close = isClose(u);
     let best = null;
     for (let y = F.y0; y < F.y0 + F.yh; y++) for (let x = F.x0; x < F.x0 + F.yw; x++) {
-      if (!okCell(x, y) || F.indoor[y * F.W + x]) continue;
+      if (!okCell(x, y) || F.indoor[y * F.W + x] || (F.inside && !F.inside[y * F.W + x])) continue; // inside the wall: a yard grown past it is not
       const d = dOpen(x, y);
       if (d < (close ? 2 : 1.5)) continue;
       let sc = coverAgainst(b, x, y, toward[0], toward[1]).level * (close ? 1 : 3) - Math.abs(d - (close ? 3 : DEPLOY.DEF_OPEN)) * 0.7 - crowd(x, y) * 0.7;

@@ -936,7 +936,7 @@ export function placeProblem(base, type) {
 // material: opts.mat, else what the wall is mostly of) or raise every wall and gate below a material to it (kind
 // "upgrade": opts.mat, else one above the poorest). { ok, wall: true, kind, tier (the material), def, pieces (types to
 // lay) or ids (to raise), cost, hours, reason }. One Ring wall job at a time; the material's base size, skill and cost.
-/** @returns {{ ok: boolean, reason?: string, wall?: boolean, kind?: string, tier?: number, def?: any, pieces?: string[], ids?: number[], cost?: any, hours?: number, where?: boolean, camp?: boolean, top?: boolean, queued?: boolean, short?: boolean, size?: string, gather?: boolean }} */
+/** @returns {{ ok: boolean, reason?: string, wall?: boolean, gather?: boolean, kind?: string, tier?: number, def?: any, pieces?: string[], ids?: number[], cost?: any, hours?: number, where?: boolean, camp?: boolean, top?: boolean, queued?: boolean, short?: boolean, size?: string }} */
 export function canBuildWall(state, base, opts = {}) {
   const where = placeProblem(base, "walls");
   if (where) return { ok: false, where: true, camp: isCamp(base) || undefined, reason: where };

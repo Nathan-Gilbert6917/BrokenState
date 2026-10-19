@@ -166,6 +166,18 @@ section("The Ring wall: closing the ring, raising it a material");
   check(baseWalls(h) < WALL_TIERS[3].strength && baseWalls(h) > WALL_TIERS[2].strength, `a damaged piece counts two thirds (strength ${baseWalls(h)})`);
 }
 
+section("No room for a gate in the middle of any side: the ring still gets one");
+{
+  const st = world();
+  const h = hub(st);
+  const R = BM.ringHalf(h);
+  for (const at of [[-2, -R - 2, 0], [-2, R + 1, 0], [R + 1, -2, 1], [-R - 2, -2, 1]]) { const b = addBuilding(h, "wall4"); b.at = at; }
+  const plan = BM.ringPlan(st, h);
+  check(plan.gate4 === 1, `the four middles walled by hand: one gate planned where it fits along the ring (${plan.gate4})`);
+  addRing(h, 1);
+  check(hasWall(h) && piecesOf(h, ["gate"]).length === 1, "laid: the ring closes, with its way in");
+}
+
 section("A wall built by hand somewhere else closes round the base too");
 {
   const st = world();
