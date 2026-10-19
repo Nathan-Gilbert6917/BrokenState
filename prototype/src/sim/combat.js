@@ -3481,6 +3481,9 @@ export function fillBattleUnit(b, u, s, { gun = true, spares = /** @type {boolea
   fitMags(b, u, carriedSpots(s), magCap(u), s);
   syncMags(u);
   loadMag(u, u.mag);
+  // Weighed again: the rounds that went from the boxes at hand into the gun and the spares weigh as the magazines' loads
+  // now (carrykit.js battleKg counts a magazine full), so the kg weighed as the unit was made counted them twice.
+  if (n > 0 && u.side === "player" && s && u.mob0 == null && u.dragMob == null) weighPlayer(u, s);
   return n;
 }
 /** @param {any} b @param {[any, any][]} team [unit, survivor] pairs, guns already loaded */

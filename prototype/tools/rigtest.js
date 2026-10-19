@@ -144,10 +144,10 @@ section("Weight in a fight");
   for (let i = 0; i < 6; i++) s.gear.backpack.contents[i] = newItem("frag");
   s.gear.backpack.contents[6] = newItem("ceramicplate"); s.gear.backpack.contents[7] = newItem("steelplate");
   for (let i = 8; i < s.gear.backpack.contents.length && battleKg(s) * feelFactor(s) < 30; i++) s.gear.backpack.contents[i] = newItem("steelplate"); // a heavy load: over 28 kg
-  const kg = battleKg(s);
   setRounds(h.stock, 300, ["ar"]);
   const b = (st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: [s.id], enemy: { kind: "soldiers", count: 4, power: 5 }, ambush: null, canRetreat: true, handler: "rigtest", context: {} }));
   const u = b.units.find((x) => x.sid === s.id);
+  const kg = battleKg(s); // weighed as the fight opens: the rounds at hand it took from the stock are on them (carrykit.js looseWant)
   const felt = kg * feelFactor(s);
   check(Math.abs(u.armLoad - kg) < 0.05 && u.mob === bandFor(felt).mob && u.dash === bandFor(felt).dash, `a fully kitted fighter: ${r1(kg)} kg (felt ${r1(felt)}: the pack's frame), mob ${u.mob}${u.dash ? `, dash ${u.dash}` : ""}`);
   check(felt > 28 && u.mob === 4, `over 28 kg felt: 4 tiles an action`);

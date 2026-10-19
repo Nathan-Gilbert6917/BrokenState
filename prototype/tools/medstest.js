@@ -123,7 +123,10 @@ if (!SAMPLE) {
   // Per container searched, not per raid: how many containers the bot gets through is its own business (raidloot.js,
   // breakoff.js) and changes with every bot change; what one container holds is the meds design (AREAS, locks.js
   // LOCK_LOOT, the upper storeys' richness).
-  const each = (x) => x.r.meds / Math.max(1, x.r.searched);
+  // Per container searched, at least one a raid: at a place where the bot gets through less than a container a raid
+  // (a supermarket since the dead pets, deadbeasts.js: the fight takes its turns), a raid's meds over a fraction of a
+  // container is not what a container holds.
+  const each = (x) => x.r.meds / Math.max(1, x.r.searched, x.r.raids);
   const worstOrd = ord.slice().sort((a, b) => each(b) - each(a))[0];
   // 0.4: food by type (sim/foods.js) weighs what it does (a day of a shop's cans about 2 kg): the bot fills its packs in
   // fewer containers at a supermarket, and the few it takes first are the ones it picks for meds.
