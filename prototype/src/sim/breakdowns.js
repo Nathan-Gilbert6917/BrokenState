@@ -53,6 +53,20 @@
 // canner 30. Buildings with no machine (walls, cellar, bunkhouse, cold store, drying rack, boiler, cook fire) take no
 // parts. Broken, a machine stops (a station does nothing, a generator gives no power, a powered building draws none:
 // power.js; the freezer is then off and warms up).
+// Repair orders and partial repairs (the user's request 2026-10-19: "a builder can be ordered to repair different
+// things. A list of most damaged to least damaged will show to select to repair, showing time and cost"): every
+// placed thing wears from raid damage and can be repaired, so FIXTURES has a raid-only entry for every building type
+// with a footprint on the base map (basemap.js FOOT: the hospitals, the greenhouse, the jails, the general buildings
+// gen_* and the fittings in them, the crates, cook fire, boiler and barrels, the benches, and the outer defences: spike
+// pits, trench, sandbag positions, the wires, guard towers and minefield, all outer). A repair order (orderRepair,
+// repairPlan "repair") on anything worn above WEAR.repairWear, not only a broken one, is a partial job: hours and
+// scrap × (wear − repairWear) / (breakAt − repairWear) (at least 1 hour and 1 scrap, a part only when the share rounds
+// to one); a broken one costs the full job; the hour's work and fixed() are as before (wear back to repairWear). The
+// worker (repairHands): anyone here with the job's minimum Mechanics, builders (role "build") first, then the best
+// mechanic; the player picks another from the list. repairList sorts every fixture most damaged first for the Repairs
+// tab (state, plan, rig). A job is dropped only when its fixture is gone or at or under repairWear. The autopilot and
+// stewards (autoHands) also order a repair, one an hour through the working day, on the most worn thing above
+// ORDERS.wear while the base keeps ORDERS.keepScrap scrap; Repair all takes the damaged (60+) too.
 // Rolls use hash01 (skills.js), never the world's random numbers.
 import { BUILDINGS, count, assignStations, underAttack, onUpkeep } from "./buildings.js";
 import { log, addCard, day, hourOfDay, atBase, survivorById, skill } from "./world.js";
@@ -116,9 +130,47 @@ export const FIXTURES = {
   meatgrinder: { ranDay: true, use: 0.6, idle: 0.01, spares: 40, repair: { hours: 3, cost: { scrap: 2, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no ground meat or sausage (the meat grinder)" },
   canteen:     { raidOnly: true, repair: { hours: 5, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no hot meals: the food is eaten as before" }, // kitchen.js
   animal_pen:  { raidOnly: true, repair: { hours: 4, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a broken fence: the animals scattered, no food from the pen" },
+  // Repair orders (the user's request 2026-10-19): everything placed on the base map wears from raid damage and can be
+  // ordered repaired. Costs about a third of the building's own scrap (a part where it took parts), hours about a
+  // quarter of its build hours; a jury-rig half of that. The hospitals.
+  infirmary:   { raidOnly: true, repair: { hours: 5, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no sick beds: no infirmary care" },
+  field_hosp:  { raidOnly: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "the tents torn down: no hospital care" },
+  clinic:      { raidOnly: true, repair: { hours: 15, cost: { scrap: 15, parts: 1 }, min: 1 }, rig: { hours: 5, cost: { scrap: 6 }, min: 0 }, what: "a wrecked treatment room: no hospital care" },
+  hospital:    { raidOnly: true, repair: { hours: 24, cost: { scrap: 23, parts: 2 }, min: 1 }, rig: { hours: 8, cost: { scrap: 9 }, min: 0 }, what: "a wrecked theatre: no hospital care" },
+  greenhouse:  { raidOnly: true, repair: { hours: 9, cost: { scrap: 7, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "broken glass: no sheltered plots" },
+  jailhouse:   { raidOnly: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a breached cell block: 8 fewer places for prisoners" },
+  lockup:      { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a torn cage: 2 fewer places for prisoners" },
+  // General buildings (basemap.js, buildings.js gen_*) and the fittings inside them.
+  gen_hut:     { raidOnly: true, repair: { hours: 4, cost: { scrap: 3 }, min: 0 }, rig: { hours: 2, cost: { scrap: 1 }, min: 0 }, what: "a wrecked hut: no shelter in it" },
+  gen_cabin:   { raidOnly: true, repair: { hours: 5, cost: { scrap: 5 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a wrecked cabin: no shelter in it" },
+  gen_lodge:   { raidOnly: true, repair: { hours: 8, cost: { scrap: 9, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a wrecked lodge: no shelter in it" },
+  gen_hall:    { raidOnly: true, repair: { hours: 11, cost: { scrap: 13, parts: 1 }, min: 1 }, rig: { hours: 4, cost: { scrap: 6 }, min: 0 }, what: "a wrecked hall: no shelter in it" },
+  gen_barn:    { raidOnly: true, repair: { hours: 15, cost: { scrap: 20, parts: 1 }, min: 1 }, rig: { hours: 5, cost: { scrap: 8 }, min: 0 }, what: "a wrecked barn: no shelter in it" },
+  bunks:       { raidOnly: true, repair: { hours: 1, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "2 fewer beds" },
+  shelves:     { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "collapsed shelves: no room on them" },
+  lockers:     { raidOnly: true, repair: { hours: 1, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a buckled locker: no room in it" },
+  stove:       { raidOnly: true, repair: { hours: 2, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no cook fire from the stove" },
+  // The yard: stores, water, the cook fire, the benches.
+  crates:      { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "smashed crates: 30 days less food room" },
+  cookhouse:   { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no cook fire: the game and fish are eaten as they come" },
+  boiler:      { raidOnly: true, repair: { hours: 3, cost: { scrap: 3 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no boiling: the ground water is drunk as it comes" },
+  water_barrel:{ raidOnly: true, repair: { hours: 2, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a holed barrel: 25 less water room" },
+  craftbench:  { raidOnly: true, repair: { hours: 3, cost: { scrap: 4, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 2 }, min: 0 }, what: "no hand crafting at the bench" },
+  workbench:   { raidOnly: true, repair: { hours: 5, cost: { scrap: 5, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "no crafting at the workbench" },
+  toolbench:   { raidOnly: true, repair: { hours: 8, cost: { scrap: 9, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "no crafting at the master workbench" },
+  // The outer defences (outer: raiders hit them first, with the walls and the barricades).
+  spike_pits:  { raidOnly: true, outer: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "filled-in pits: no toll on the next horde" },
+  trench:      { raidOnly: true, outer: true, repair: { hours: 8, cost: { scrap: 4 }, min: 0 }, rig: { hours: 3, cost: { scrap: 2 }, min: 0 }, what: "a caved-in trench: 25% less of a horde held back" },
+  sandbag_wall:{ raidOnly: true, outer: true, repair: { hours: 3, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "a burst position: 5% less of a horde held back, no cover there" },
+  barbed_wire: { raidOnly: true, outer: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "cut wire: 6% less of a horde held back" },
+  razor_wire:  { raidOnly: true, outer: true, repair: { hours: 3, cost: { scrap: 4, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 2 }, min: 0 }, what: "cut coils: 10% less of a horde held back" },
+  guard_towers:{ raidOnly: true, outer: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a tower down: 8% less of a horde held back" },
+  minefield:   { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 7, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "the mines dug up or set off: none left for the next attack" },
 };
 FIXTURES.walls.outer = true;
 FIXTURES.gate.outer = true;
+// Repair orders (see the header): the autopilot and stewards order a repair on anything above this wear, keeping this much scrap.
+export const ORDERS = { wear: 50, keepScrap: 20 };
 // Raid damage (see the header): budget = strength × perStrength × clamp(hours / 8, minHours, maxHours) × outcome.
 export const RAID_DAMAGE = {
   perStrength: 3, focus: 0.4, minHours: 0.15, maxHours: 1.5, hit: [30, 70], damaged: 60,
@@ -182,25 +234,40 @@ function fixed(state, base, fx, method) {
   if (fx.type === "watchtower") base.watchtower = true;
 }
 
-// What a repair takes: { ok, why, who, hours, cost, method }.
+// Who can take a repair job on this fixture (the user's request 2026-10-19: builders first): everyone at the base, not
+// in bed, well enough to work (0.35+), not on another repair job, with the job's minimum Mechanics; builders (role
+// "build") first, then the best mechanic, then by id. The first is the one the game picks; the Repairs tab lists them.
+export function repairHands(state, base, fx, method = "repair") {
+  const r = fxDef(fx)[method];
+  const busy = new Set(jobs(base).filter((j) => String(j.fx) !== String(fx.id)).map((j) => j.who));
+  return atBase(state, base.id).filter((s) => !s.inBed && workFactor(s) >= 0.35 && !busy.has(s.id) && skill(s, "mechanics") >= r.min)
+    .sort((a, b) => (b.role === "build") - (a.role === "build") || skill(b, "mechanics") - skill(a, "mechanics") || a.id - b.id);
+}
+// The share of the full job a repair order on this fixture is (the user's request 2026-10-19): a broken one the whole
+// job; a worn one the wear to take off over the wear a full repair takes off, (wear − repairWear) / (breakAt − repairWear).
+export const repairShare = (fx) => (fx.broken ? 1 : Math.max(0, Math.min(1, ((fx.wear || 0) - WEAR.repairWear) / (WEAR.breakAt - WEAR.repairWear))));
+// What a repair takes: { ok, why, who, hours, cost, method, min, share }. "repair" on a worn fixture (wear above
+// repairWear, not broken) is a partial job: hours and scrap × its share (at least 1 hour and 1 scrap, rounded up), a
+// part only when the share rounds to one; a broken one costs the full job. "rig" is for a broken fixture only.
 export function repairPlan(state, base, fx, method = "repair", whoId = null) {
   const def = fxDef(fx);
   const r = def[method];
-  const busy = new Set(jobs(base).filter((j) => String(j.fx) !== String(fx.id)).map((j) => j.who));
-  const able = atBase(state, base.id).filter((s) => !s.inBed && workFactor(s) >= 0.35 && !busy.has(s.id) && skill(s, "mechanics") >= r.min)
-    .sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics") || (a.role === "build") - (b.role === "build") || a.id - b.id);
+  const share = method === "repair" ? repairShare(fx) : 1;
+  const able = repairHands(state, base, fx, method);
   const who = whoId != null ? able.find((s) => s.id === whoId) || null : able[0] || null;
   const mech = who ? skill(who, "mechanics") : 0;
-  const hours = Math.max(1, Math.ceil(r.hours * Math.max(0.4, 1.2 - 0.03 * mech) / (who ? buildMult(who) : 1)));
-  // Scrap that is short can be made up with parts (1 part for SCRAP_PER_PART scrap).
-  const cost = { ...r.cost };
+  const hours = Math.max(1, Math.ceil(r.hours * share * Math.max(0.4, 1.2 - 0.03 * mech) / (who ? buildMult(who) : 1)));
+  // The full cost, then the share of it; scrap that is short can be made up with parts (1 part for SCRAP_PER_PART scrap).
+  const full = {};
+  for (const [k, v] of Object.entries(r.cost)) { const n = k === "scrap" ? Math.max(1, Math.ceil(v * share)) : Math.round(v * share); if (n > 0) full[k] = n; }
+  const cost = { ...full };
   const lack = Math.max(0, (cost.scrap || 0) - Math.floor(base.stock.scrap || 0));
   if (lack > 0) { cost.scrap -= lack; cost.parts = (cost.parts || 0) + Math.ceil(lack / SCRAP_PER_PART); if (!cost.scrap) delete cost.scrap; }
   const short = Object.entries(cost).filter(([k, v]) => (base.stock[k] || 0) < v);
-  // A damaged fixture (wear 60+, not broken yet) can be patched up with a proper repair before it gives way.
-  const why = !fx.broken && !(method === "repair" && (fx.wear || 0) >= RAID_DAMAGE.damaged) ? "Not broken." : jobFor(base, fx) ? "Already being worked on." : !who ? (r.min ? `Needs a free survivor with Mechanics ${r.min}+ here.` : "Nobody here is free and well enough.") :
-    short.length ? `Needs ${costText(r.cost)} (short scrap can be made up with parts, 1 for ${SCRAP_PER_PART}).` : "";
-  return { ok: !why, why, who, hours, cost, method, min: r.min };
+  const why = method === "rig" && !fx.broken ? "Not broken." : !fx.broken && share <= 0 ? "Nothing to repair." : jobFor(base, fx) ? "Already being worked on." :
+    !who ? (whoId != null ? "They cannot do it (not here, busy, unwell or short of Mechanics)." : r.min ? `Needs a free survivor with Mechanics ${r.min}+ here.` : "Nobody here is free and well enough.") :
+    short.length ? `Needs ${costText(full)} (short scrap can be made up with parts, 1 for ${SCRAP_PER_PART}).` : "";
+  return { ok: !why, why, who, hours, cost, method, min: r.min, share };
 }
 export const costText = (cost) => Object.entries(cost).map(([k, v]) => `${v} ${k === "parts" && v === 1 ? "part" : k}`).join(", ");
 
@@ -211,6 +278,9 @@ export function startRepair(state, base, fx, method = "repair", whoId = null) {
   jobs(base).push({ id: `${fx.id}`, fx: fx.id, method, who: plan.who.id, hours: plan.hours, done: 0, paid: { ...plan.cost }, started: state.hour });
   return `${plan.who.name.split(" ")[0]} starts ${method === "rig" ? "jury-rigging" : "repairing"} the ${fixtureName(fx).toLowerCase()} at ${base.name} (${plan.hours} work-hours, ${costText(plan.cost)}).`;
 }
+// A repair order by fixture id (the Repairs tab's list, the user's request 2026-10-19): a proper repair, partial on a
+// worn fixture, by the player's pick or the first of repairHands. Returns the message.
+export const orderRepair = (state, base, fxId, whoId = null) => { const fx = fixtureById(base, fxId); return fx ? startRepair(state, base, fx, "repair", whoId) : "No such building."; };
 export function cancelRepair(state, base, fxId) {
   const list = jobs(base);
   const i = list.findIndex((j) => String(j.fx) === String(fxId));
@@ -291,7 +361,7 @@ export function breakdownsHour(state) {
     const onWalls = underAttack(state, base); // on alert or under siege: nobody is free to repair
     for (const j of [...list]) {
       const fx = fixtureById(base, j.fx);
-      if (!fx || (!fx.broken && (fx.wear || 0) < RAID_DAMAGE.damaged)) { // gone, or patched by upkeep first: the materials go back
+      if (!fx || (!fx.broken && (fx.wear || 0) <= WEAR.repairWear)) { // gone, or mended by upkeep first: the materials go back (an order on a worn one stands)
         if (fx) for (const [k, v] of Object.entries(j.paid || {})) base.stock[k] = (base.stock[k] || 0) + v;
         list.splice(list.indexOf(j), 1);
         continue;
@@ -300,9 +370,7 @@ export function breakdownsHour(state) {
       const here = s && s.alive && s.location.kind === "base" && s.location.baseId === base.id;
       if (!here) { j.who = null; }
       if (j.who == null && autoHands(state, base)) {
-        const r = fxDef(fx)[j.method];
-        const busy = new Set(list.map((x) => x.who));
-        const pick = atBase(state, base.id).filter((o) => !o.inBed && workFactor(o) >= 0.35 && !busy.has(o.id) && skill(o, "mechanics") >= r.min).sort((a, b) => skill(b, "mechanics") - skill(a, "mechanics") || a.id - b.id)[0];
+        const pick = repairHands(state, base, fx, j.method)[0]; // builders first, then the best mechanic
         if (pick) j.who = pick.id;
       }
       if (j.who == null || onWalls || h < WEAR.workFrom || h >= WEAR.workTo) continue;
@@ -328,10 +396,20 @@ export function breakdownsHour(state) {
         if (isWaterFixture(fx) && fx.broken && !jobFor(base, fx)) waterWaits = true;
       }
       if (waterWaits) continue;
-      // Damaged defences (wear 60+) are patched before they give way, while the scrap lasts (20 kept back).
+      // Damaged defences (wear 60+) are patched before they give way, while the scrap lasts (ORDERS.keepScrap kept back).
       for (const fx of fixtures(base).filter((x) => !x.broken && fxDef(x).outer && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x))) {
         const plan = repairPlan(state, base, fx, "repair");
-        if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= 20) log(state, `${handIcon(state, base)} ${startRepair(state, base, fx, "repair")}`, "info");
+        if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= ORDERS.keepScrap) log(state, `${handIcon(state, base)} ${startRepair(state, base, fx, "repair")}`, "info");
+      }
+    }
+    // Repair orders (the user's request 2026-10-19): through the working day, one new order an hour on the most worn
+    // thing above ORDERS.wear (a partial repair, builders first: repairHands), while the base keeps ORDERS.keepScrap
+    // scrap after it; never while a broken well or pump waits for materials (water first, as above).
+    if (autoHands(state, base) && !onWalls && h >= WEAR.workFrom && h < WEAR.workTo && !brokenAt(base).some((fx) => isWaterFixture(fx) && !jobFor(base, fx))) {
+      const worn = fixtures(base).filter((x) => !x.broken && (x.wear || 0) > ORDERS.wear && !jobFor(base, x)).sort((a, b) => (b.wear || 0) - (a.wear || 0))[0];
+      if (worn) {
+        const plan = repairPlan(state, base, worn, "repair");
+        if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= ORDERS.keepScrap) log(state, `${handIcon(state, base)} ${startRepair(state, base, worn, "repair")}`, "info");
       }
     }
   }
@@ -488,6 +566,26 @@ export const machinesHelp = () => `Machines are the buildings with a motor, a pu
 export function repairRows(state, base) {
   return fixtures(base).map((fx) => ({ fx, name: fixtureName(fx), def: fxDef(fx), job: jobFor(base, fx), wear: Math.round(fx.wear || 0) }));
 }
+// The Repairs tab's list (the user's request 2026-10-19): every fixture, most damaged first (broken, then by wear, then
+// by name), each { fx, name, wear, state, job, plan (a proper repair, partial on a worn one), rig (the broken only), def }.
+// state: "Being repaired" (a job runs), "Broken", "Jury-rigged", "Damaged" (60+: may break any day), "Worn" (above repairWear), "OK".
+export function repairList(state, base) {
+  const rows = repairRows(state, base).map((r) => {
+    const w = r.fx.wear || 0;
+    const st = r.job ? "Being repaired" : r.fx.broken ? "Broken" : r.fx.rigged ? "Jury-rigged" : w >= RAID_DAMAGE.damaged ? "Damaged" : w > WEAR.repairWear ? "Worn" : "OK";
+    return { ...r, state: st, plan: repairPlan(state, base, r.fx, "repair"), rig: r.fx.broken ? repairPlan(state, base, r.fx, "rig") : null };
+  });
+  return rows.sort((a, b) => (b.fx.broken ? 1 : 0) - (a.fx.broken ? 1 : 0) || (b.fx.wear || 0) - (a.fx.wear || 0) || a.name.localeCompare(b.name));
+}
+// Repair all (the Repairs tab, the raid card): what nobody works on yet that a Repair all would start, the broken and
+// the damaged (60+), with the bill of their plans: { list, cost, hours }.
+export function repairAllBill(state, base) {
+  const list = repairList(state, base).filter((r) => !r.job && (r.fx.broken || (r.fx.wear || 0) >= RAID_DAMAGE.damaged));
+  const cost = {};
+  let hours = 0;
+  for (const r of list) { addCost(cost, r.plan.cost); hours += r.plan.hours; }
+  return { list, cost, hours };
+}
 
 // ---------- raid damage (see the header) ----------
 const addCost = (into, cost) => { for (const [k, v] of Object.entries(cost)) into[k] = (into[k] || 0) + v; return into; };
@@ -584,14 +682,18 @@ export function raidReportCard(state, base, { title, text, dmg }) {
   addCard(state, { title, text, raidReport: { baseId: base.id }, choices });
 }
 
-// Start every repair nobody has started at a base (the raid card's "Start the repairs", the Repairs tab): a proper
-// repair where it can be paid and someone fit is free, else a jury-rig. Returns what was started, as one line.
+// Start every repair nobody has started at a base (the raid card's "Start the repairs", the Repairs tab): the broken
+// first (a proper repair where it can be paid and someone fit is free, else a jury-rig), then a repair order on
+// everything damaged (wear 60+; the user's request 2026-10-19). Returns what was started, as one line.
 export function startAllRepairs(state, base) {
   const out = [];
   for (const fx of brokenAt(base)) {
     if (jobFor(base, fx)) continue;
     const msg = repairPlan(state, base, fx, "repair").ok ? startRepair(state, base, fx, "repair") : repairPlan(state, base, fx, "rig").ok ? startRepair(state, base, fx, "rig") : "";
     if (msg) out.push(msg);
+  }
+  for (const fx of fixtures(base).filter((x) => !x.broken && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x)).sort((a, b) => (b.wear || 0) - (a.wear || 0))) {
+    if (repairPlan(state, base, fx, "repair").ok) out.push(startRepair(state, base, fx, "repair"));
   }
   return out.length ? out.join(" ") : "Nothing could be started: no materials or nobody free with the skill (Repairs tab).";
 }

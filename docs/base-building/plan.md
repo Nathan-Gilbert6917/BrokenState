@@ -173,3 +173,28 @@ can be worked on, by the best free mechanic, and only building types in `FIXTURE
    `rp-who`, `rp-cancel`, `rp-all` working; add `rp-order` if a new action is needed.
 4. Autopilot and stewards (`autoHands`): besides what they start now, order a repair on anything over 50 wear when the
    base keeps 20 scrap after it, builders first.
+
+## Part F: a way in and out (the user's third request, 2026-10-19; owner: the paths agent)
+
+"When building the base there needs to be at least a 1 × 4 tiles you can walk through from in the base to out of the
+base and from out of the base to into the base. Gates count. You can have a circle of buildings as long as one of the
+doors lets you in to the base to access all other buildings; otherwise you cannot place if it breaks these rules."
+
+The rule (`PATH = { WIDTH: 1 }`; read as: a walkable path at least one cell wide must join the outside of the base to
+everything in it; the "4" is the band's two cells plus a gate's depth, which a gate already gives): on the base's map
+as it would be built (`buildBaseMap`'s cells: open ground, fields, trenches, pits and wire walk; walls, windows,
+fences, props, crates, barricades, parked cars and the wall ring do not; doors, doorway links and the gates do), every
+placed thing must be reachable on foot from the grid's edge (the no-build margin is always open ground):
+- a house-kind building (the core's house too): one of its door cells is reachable (through another building's door
+  and a doorway link counts: the walk goes through buildings' floors);
+- a fitting: a floor cell next to it is reachable (so its host's door must be);
+- anything else (a prop, a crate, a defence, a crop plot, a car, the core's fire): a walkable cell next to its footprint
+  is reachable.
+`reachProblem(state, base, it, at, occ)` → "" or why ("Nothing could walk to it from outside the base: leave a way in
+(a path at least one cell wide, a door or a gate)" / "That would shut off <label>: no way to walk to it from outside
+the base"). It is a separate, dearer check (a flood fill from the edge over the whole grid) that callers run after
+`placeProblemAt` passes: `placeItem`, `layoutAct` put / build, `ghostAt` (the hover's reason), and `autoLayout` on the
+candidate spots it picked (up to its three nearest, else the thing is left off the map). A walled base's band blocks
+but for the gate cells (the same cells `buildBaseMap` makes: the two middle cells of each side); the walkway inside the
+ring walks. The check uses what is placed by hand, the core, the band and (in autoLayout) what the layout has taken so
+far: things the game places re-flow after a hand placement and are re-validated then.
