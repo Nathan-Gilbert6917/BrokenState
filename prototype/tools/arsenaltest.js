@@ -4,7 +4,7 @@
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, killSurvivor, makeSurvivor } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
-import { strength, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction } from "../src/sim/factions.js";
+import { strength, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction, RAIDS } from "../src/sim/factions.js";
 import { spawnAiParty } from "../src/sim/parties.js";
 import { createBattle, endBattleNow, closeCombat } from "../src/sim/combat.js";
 import { newItem, lootItem } from "../src/sim/inventory.js";
@@ -15,6 +15,7 @@ import { addBuilding } from "../src/sim/buildings.js";
 import { worksAt } from "../src/sim/groupworks.js";
 import { itemDurMax } from "../src/sim/crafting.js";
 import { newNeutralGroup, wanderersDaily, WANDER } from "../src/sim/wanderers.js";
+import { gunsFrom, kitGunSource } from "../src/sim/gundist.js";
 import { Rng } from "../src/sim/rng.js";
 import * as A from "../src/sim/arsenal.js";
 import * as C from "../src/sim/groupcare.js";
@@ -58,7 +59,9 @@ section("Seeding by type, and the world's dice");
   }
   const mil = typed(st, "military"), com = typed(st, "commune", [mil]), rai = typed(st, "raider", [mil, com]);
   const keys = (f) => f.arsenal.items.map((it) => it.key);
-  check(keys(mil).includes("ar") && keys(mil).filter((k) => k === "vest" || k === "plate").length >= mil.pop * 0.9, "the military: assault rifles, and body armour for everyone");
+  // An assault rifle: the kit's "ar", or the gun the distribution dealt in its place (gundist.js swapGun: an M4, a SCAR…).
+  const rifles = gunsFrom(kitGunSource("soldiers"), { near: "ar" });
+  check(keys(mil).some((k) => rifles[k]) && keys(mil).filter((k) => k === "vest" || k === "plate").length >= mil.pop * 0.9, "the military: assault rifles, and body armour for everyone");
   check(!A.arsenalSummary(com).body, "a commune: no body armour");
   check(keys(rai).includes("pipebomb") || keys(rai).includes("molotov"), "raiders: pipe bombs and Molotovs");
   check(mil.arsenal.items.some((it) => it.mods && Object.keys(it.mods).length), "some of the military's guns come with parts fitted");
@@ -268,7 +271,12 @@ section("Desertion and recruiting");
   const n0 = hungry.arsenal.items.length;
   const w = C.desertOne(st, hungry, 1, "wanderer");
   check(w.to === "wanderer" && w.kit.length > 0 && w.wanderer.people[0].gear.weapon === w.kit[0] && hungry.arsenal.items.length === n0 - w.kit.length, `a deserter on the road carries their own ${w.kit[0] && w.kit[0].name}`);
+  // Any group in reach (CARE.DESERT.range): on some maps the gang's nearest neighbour is further off, and the deserter
+  // takes to the road instead (as designed).
+  const range0 = C.CARE.DESERT.range;
+  C.CARE.DESERT.range = 999;
   const g = C.desertOne(st, hungry, 2, "group");
+  C.CARE.DESERT.range = range0;
   check(g.to === "group" && g.kit.every((it) => g.group.arsenal.items.includes(it)), `one goes over to ${g.group && g.group.name}, kit and all`);
   const p = C.desertOne(st, hungry, 3, "player");
   check(p.to === "player" || !st.bases.some((b) => st.grid.distance(b.tile, hungry.bases[0]) <= C.CARE.DESERT.playerRange), "one comes to your gates (a recruit card) when a base of yours is near");
@@ -307,8 +315,16 @@ section("Desertion and recruiting");
 section("Type profiles: different mixes of what they do");
 {
   const tally = {};
-  for (const s of [seed, seed + 11]) {
-    const st = world(s);
+  // The raiders measured: the gangs with another group's base in their reach (RAIDS.FACTION_REACH). A gang with nobody
+  // in reach raids only you, and only once the eras' pace allows (eras.js raidPaceOpen): in 120 days, often never. More
+  // worlds (up to 6) until two such gangs have been measured.
+  const inReach = { groups: 0, raid: 0 };
+  let worlds = 0;
+  for (let i = 0; i < 6 && (i < 2 || inReach.groups < 2); i++) {
+    const st = world(seed + 11 * i);
+    worlds++;
+    const reaches = new Set(st.factions.filter((f) => f.type === "raider" && st.factions.some((o) => o !== f && o.bases.some((b) => f.bases.some((t) => st.grid.distance(b, t) <= RAIDS.FACTION_REACH)))).map((f) => f.id));
+    inReach.groups += reaches.size;
     const seen = new Set();
     for (let hr = 0; hr < 24 * 120; hr++) {
       tickHour(st);
@@ -321,17 +337,18 @@ section("Type profiles: different mixes of what they do");
         if (!f) continue;
         const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, war: 0, scav: 0, trade: 0 });
         // A war's raids (diplomacy.js warRaid: q.warId) come from both sides whatever their type: counted apart.
-        if (q.kind === "raid") { if (q.warId != null) t.war++; else t.raid++; }
+        if (q.kind === "raid") { if (q.warId != null) t.war++; else { t.raid++; if (reaches.has(f.id)) inReach.raid++; } }
         if (q.kind === "scav") t.scav++;
       }
     }
     for (const f of st.factions) { const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, war: 0, scav: 0, trade: 0 }); t.groups++; t.trade += f.foodDeal != null ? 1 : 0; t.food = (t.food || 0) + (f.foodBought || 0); }
   }
   const per = (type, k) => (tally[type] ? tally[type][k] / Math.max(1, tally[type].groups) : 0);
-  console.log(`  120 days, 2 worlds: ${Object.entries(tally).map(([k, t]) => `${k} ${t.groups}g raid ${(t.raid / t.groups).toFixed(1)} (war ${(t.war / t.groups).toFixed(1)}) scav ${(t.scav / t.groups).toFixed(1)} bought food ${((t.food || 0) / t.groups).toFixed(0)}`).join("; ")}`);
-  // Against the peaceful types with two or more groups in the two worlds (one group's 120 days is no measure of a type).
+  console.log(`  120 days, ${worlds} worlds: ${Object.entries(tally).map(([k, t]) => `${k} ${t.groups}g raid ${(t.raid / t.groups).toFixed(1)} (war ${(t.war / t.groups).toFixed(1)}) scav ${(t.scav / t.groups).toFixed(1)} bought food ${((t.food || 0) / t.groups).toFixed(0)}`).join("; ")}`);
+  // Against the peaceful types with two or more groups in the worlds (one group's 120 days is no measure of a type).
   const peaceful = ["commune", "traders", "military", "fortress"].filter((k) => tally[k] && tally[k].groups >= 2);
-  check(per("raider", "raid") > Math.max(0, ...peaceful.map((k) => per(k, "raid"))), `raiders raid more than any peaceful type outside a war (${peaceful.map((k) => `${k} ${per(k, "raid").toFixed(1)}`).join(", ")})`);
+  const raiders = inReach.raid / Math.max(1, inReach.groups);
+  check(inReach.groups >= 2 && raiders > Math.max(0, ...peaceful.map((k) => per(k, "raid"))), `raiders raid more than any peaceful type outside a war (${raiders.toFixed(1)} a gang with a group in reach, ${inReach.groups} gangs; ${peaceful.map((k) => `${k} ${per(k, "raid").toFixed(1)}`).join(", ")})`);
   const W = C.GROUP_PRIORITIES;
   check(W.commune.trade > W.raider.trade && W.commune.heal > W.raider.heal && W.raider.raid > W.commune.raid && W.fortress.fortify > W.raider.fortify, "one profile table: communes trade and heal, raiders raid, a fortress fortifies");
   // Short of food: a commune buys it, raiders mostly do not (they raid for it).
