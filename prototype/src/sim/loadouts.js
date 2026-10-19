@@ -27,12 +27,13 @@ export const LOADOUT = {
   THROWS: 2, // throwables a person at most (shared out one at a time, best fighters first)
 };
 
-// What the group owns that nobody carries.
+// What the group owns that nobody carries. A raid's ladders and ram are out with it (arsenal.js packRaidKit:
+// it.withParty) until it is home: not spare.
 export function spareKit(f) {
   const A = f && f.arsenal;
   if (!A) return [];
   const held = carriers(f);
-  return A.items.filter((it) => it && !held.has(it));
+  return A.items.filter((it) => it && !held.has(it) && it.withParty == null);
 }
 export function kitOut(state, f) {
   if (!f || f.alive === false || f.outsider) return [];

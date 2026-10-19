@@ -5,15 +5,15 @@
 // moves at most 2 tiles a day (12 hours a tile, slower in deep cold or snow: weather.js), merges with hordes it
 // meets that are on the same errand, and can split while each part keeps at least 10 of the dead. Its score
 // (hordeScore, from its size) is how tough it is when met and how much it adds to a new hive.
-import { newId, atBase, day } from "./world.js";
+import { newId, atBase } from "./world.js";
 import { bridgeHolder } from "./parties.js"; // a bridge barricaded with a base (nextStep)
 import { findPath } from "./hex.js";
 import { mannedStations } from "./buildings.js";
 import { generatorHeat } from "./power.js";
-import { resolveRaidOnFaction } from "./factions.js";
 import { hordeSpeedAt, riverFrozen } from "./weather.js";
 import { hivesDaily, hiveById, siteById, deliverToSite, drawnToSite } from "./hives.js";
-import { hordeAttackBase, hordeWarnings, towerWatch, breakInForce, DEFENCE } from "./defences.js";
+import { hordeAttackBase, hordeWarnings, towerWatch } from "./defences.js";
+import { hordeAtGroup } from "./groupfight.js"; // a horde at a group's base: your base's defence on theirs
 import { hordeGrowth, rampDay } from "./eras.js";
 import { mergeMix, mixWeight } from "./zombietypes.js";
 import { ZTYPES } from "./hiveconst.js";
@@ -21,7 +21,7 @@ import { sowTile } from "./middead.js"; // Sowers
 import { hordeMilitaryPickup } from "./deadsoldiers.js";
 import { hordeBeastPickup } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
 import { shelterHeat } from "./fieldheat.js";
-import { hordeOverrun, baseHold } from "./groupflight.js"; // a group whose base the dead overran may leave it
+import { hordeOverrun } from "./groupflight.js"; // a group whose base the dead overran may leave it
 import { SILENT } from "./hiding.js"; // a base running silent makes less noise
 import { hordeEnter as fieldHordeEnter } from "./fieldworks.js"; // field works in the dead's way
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
@@ -43,8 +43,9 @@ const WANDER = new Set(["roam", "border", undefined, null]);
 // A horde's score from its size: about 3 for a small horde, 8 for a medium one, 16 for a large one (20 at 200,
 // 33 at 400). It sets the horde's toughness in a fight and what it adds to a new hive (hives.js).
 export const hordeScore = (size) => Math.round((Math.max(0, size || 0) ** 0.8 / 3.4) * 10) / 10;
-// A horde's weight on a group's walls (onHordeEnter; groupflight.js judges a base it cannot hold by it): a
-// Wallbreaker at its head makes it half again as dangerous, special dead weigh more (zombietypes.js mixWeight).
+// A horde's weight on walls by the old scale (fieldworks.js: a field work in its way; factions.js: what a horde's raid
+// counts as against a group's flat defence): a Wallbreaker at its head makes it half again as dangerous, special dead
+// weigh more (zombietypes.js mixWeight). A group's base itself is held as yours is (groupfight.js hordeAtGroup).
 export const hordeWallPower = (h) => h.size * 0.12 * (h.bosses ? 1.6 : 1) * mixWeight(h.mix, "wall");
 export const hordeClass = (size) => (size < 40 ? "small" : size < 95 ? "medium" : size <= 220 ? "large" : "huge");
 
@@ -206,24 +207,14 @@ function onHordeEnter(state, h) {
   if (base) return hordeAttackBase(state, h, base);
   const f = state.factions.find((x) => x.alive && x.bases.includes(h.tile));
   if (f) {
-    // Your base's way (defences.js hordeAttackBase; docs/adr/0001-ai-parity.md): the walls hold back the dead up to
-    // their limit (the base's defence against the horde's weight on them); the rest break in and are fought inside,
-    // a break-in force of yours (breakInForce), by the numbers on both sides' people (factions.js, groupfight.js).
-    const att = hordeWallPower(h), def = baseHold(state, f, h.tile);
-    let held;
-    if (att <= def) {
-      held = true; // the walls held
-      f.hitDay = f.hordeHitDay = day(state);
-    } else {
-      const lim = (h.size * def) / Math.max(0.01, att); // the dead the walls stop
-      const through = Math.min(h.size, Math.max(Math.round(h.size * 0.3), Math.round(h.size - lim * DEFENCE.HELD_BACK)));
-      const force = breakInForce(state, { tile: h.tile }, through, Math.min(2, h.bosses || 0), h);
-      held = !!resolveRaidOnFaction(state, { strength: att, owner: null, horde: { count: force.count, power: force.count * force.power }, target: { factionId: f.id, tile: h.tile } }, []);
-    }
-    if (h.role === "attack") { h.role = "roam"; h.goal = null; }
-    h.target = null;
-    reduceHorde(state, h, h.size - h.size * (held ? 0.45 : 0.7));
-    hordeOverrun(state, f, h.tile, att, def, !!held); // groupflight.js: overrun and no hope of holding it, they leave
+    // Your base's way, step for step (groupfight.js hordeAtGroup, through defences.js as hordeAttackBase goes;
+    // docs/adr/0001-ai-parity.md): their spike pits, minefield and bear traps first, the walls holding the dead back up
+    // to the hold limit, the rest breaking in and fought on the very people there; the horde loses what it loses at
+    // yours and falls back (defences.js retreat).
+    const tile = h.tile;
+    const r = hordeAtGroup(state, h, f, tile);
+    if (state.hordes.includes(h) && h.target === tile) { if (h.role === "attack") { h.role = "roam"; h.goal = null; } h.target = null; } // not driven off (it would go on there)
+    if (r) hordeOverrun(state, f, tile, r.check, !!r.held); // groupflight.js: overrun and no hope of holding it, they leave
     return;
   }
   if (h.role === "build") {

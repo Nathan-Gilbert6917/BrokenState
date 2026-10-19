@@ -21,8 +21,10 @@
 // Who brings it: raiders and outsider bands coming for a walled base of yours, by how prepared they are (raidSiegeKit:
 //   eras.js raid preparedness, rising with the years; the State Map's raid warning card says what they carry), and
 //   your teams on an Assault (kit.js packSiegeKit: ladders, the ram, grenades from the hub's armory into the cargo,
-//   weighed by load.js). The battle hands it out (siegeSetup): the ram to the three strongest, the ladders to the
-//   next, the grenades to the shooters.
+//   weighed by load.js). A group's raid brings only what its stores hold (arsenal.js packRaidKit: its own ladders and
+//   ram, made by your recipe when it has none; grenades as throwables on the raiders), a band only what its people
+//   carry (visitors.js bandKit). The battle hands out the ram to the three strongest and the ladders to the next
+//   (siegeSetup); the grenades are already on whoever carries them (fighters.js fitThrowables).
 // By the numbers: the walls count less against a raid with kit (siegeWallCut: −6% a ladder, −10% a ram, −2% a
 //   grenade off the wall tier's bonus, at most −25%: defences.js raidTier, interior.js baseTiers) and an assault
 //   with kit faces less of its walls (assaultCut: −15% a ladder, −20% the ram, −4% a grenade of the walls' share of
@@ -173,14 +175,8 @@ function hand(b, people, kit, walls, enemy) {
       u.mob = Math.max(2, u.mob0 - LADDER.SLOW);
     }
   }
-  if (enemy && kit.grenades) {
-    const shooters = left.filter((u) => !u.ladder).sort((a, c) => (c.aim || 0) - (a.aim || 0));
-    for (let i = 0; i < kit.grenades && shooters.length; i++) {
-      const u = shooters[i % shooters.length];
-      const k = kit.kind || "pipebomb";
-      (u.throwables || (u.throwables = {}))[k] = ((u.throwables || {})[k] || 0) + 1;
-    }
-  }
+  // The grenades are not handed out here: they are real throwables the raiders carry (arsenal.js packRaidKit; a band's
+  // own, visitors.js bandKit), counted on each from the items (fighters.js fitThrowables) and spent from them.
 }
 
 // ---------- ladders ----------

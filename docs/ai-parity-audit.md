@@ -155,22 +155,38 @@ rewritten to assert the shared rule as each batch lands.
 
 Every *Fix* finding above landed on the `ai-parity` branch, with these exceptions and notes.
 
+**Closed in the follow-up pass (2026-10-19): the base's defence.**
+- 4.16, siege kit: the kit dice (siege.js raidSiegeKit) only say what a raid wants; it comes out of the group's own
+  stores (arsenal.js packRaidKit, from factions.js launchRaidOnBase). Ladders and the ram are items on the group's
+  books, made once by your recipe through its crafting (groupCraftable, payCraft, groupCraftOut) when it has none, out
+  with the raid (party.siegeGear, not spare at home) and home with whoever comes back, else left in your armory or on
+  the ground (siegeGearHome, parties.js removeParty). Grenades are real frag grenades and pipe bombs off its books or
+  off the people staying home, stowed on the raiders; the battle no longer hands any out (siege.js hand). Thrown on
+  the map they are spent (fighters.js spentThrows), by the numbers they leave the raiders who threw them
+  (raidOnBase), unthrown they come home, and a dead raider's are loot: on the body on the map, in your armory by the
+  numbers (raidOnBase's dead are now the raid's very people, members.js diedQuietly). An outsider band's grenades are
+  the ones its people carry (visitors.js bandKit). tools/siegetest.js, ailockstest.js, conservationtest.js.
+- 7.4, a horde at an AI base goes through your base's code step for step (groupfight.js hordeAtGroup, defences.js
+  atTheWalls, shared with hordeAttackBase): spike pits used up, the minefield, bear traps from the group's books or
+  shelf (worn as yours), floodlights' fuel, the Wallbreaker and brutes smashing defences, the hold limit with the
+  people there manning the walls (defences.js guardHold, defendersAt) and the defence buildings; held at the walls it
+  loses defences.js heldKill and falls back, crawlers that slip in are fought inside; a break-in is fought on the
+  people there and the horde loses what it loses at yours (all that broke in, else the share killed and 15% more).
+  hordes.js's own loss formula is gone. tools/paritytest.js section 4.
+- 7.7, an AI group's judgement of a base it cannot hold (groupflight.js cannotHold, hordeOverrun) is the fight's own
+  check (groupfight.js groupHoldCheck: the same pits, traps, mines, hold limit and break-in against the people there
+  behind the wall tier). No wall counters or field towers. tools/flighttest.js "The judgement is the fight's".
+
 **Done with a caveat.**
-- 4.16, siege kit: a raid on your base still brings its ladders, rams and grenades by kit dice, not from the raiders'
-  stores. The grenades are the one remaining "from nothing" source in a fight.
-- 7.4, a horde at an AI base: your base's two steps. The walls hold back the dead up to the base's limit; the rest
-  break in as your break-in force (defences.js breakInForce) and are fought by the numbers on the very people there,
-  behind the base's defence tiers (hordes.js onHordeEnter, groupfight.js). Traps and special buildings at an AI base
-  still do nothing against it, and the horde's own losses keep hordes.js's formula.
-- 7.7, an AI group's judgement of a base it cannot hold (groupflight.js) still reads the wall counters for the
-  decision. The fight itself goes through the defence tiers.
+- 4.16, an outsider band (visitors.js) still brings ladders and a ram by its kit dice: it comes from beyond the
+  border with them, and has no stores or crafting on the map. Its grenades are its people's own (above).
 - Soldiers' field load: an AI person carries a weight by kit with no item behind it (carrykit.js CARRY.BASE_KG,
   fighters.js build), so the user's decision of 2026-10-08 ("soldiers in full kit move 4") holds. It is weighed by
   your rule (felt load, a strong back, Fleet-Footed) and leaves nothing on the body.
 - The off-screen odds (combat.js ODDS) were refitted on 2,376 map fights after the change. No compensation was added:
   where an AI side is now weaker, the fix is its starting gear or recruitment.
 
-**Closed after the six batches.**
+**Closed in the follow-up pass (2026-10-19): people and goods move as themselves.**
 - A nomad band's trade shelf is what it carries: nothing is cut off to fit a size (the 12-item trims in nomads.js,
   trade.js and radiotrade.js are gone, WARES_MAX with them). Goods come onto it only as far as the band's people can
   carry them by your teams' rule (nomads.js bandRoom: parties.js carryCapacity on its people, less its stores and
@@ -202,7 +218,7 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
   (founding, a band taken in, the strike force and the fall), tools/paritytest.js section 4, and
   tools/conservationtest.js (no person in two places at once; every group's head count is its list).
 
-**Closed in a follow-up pass (2026-10-19).**
+**Closed in the follow-up pass (2026-10-19): combat, robbery, deserters, vehicles.**
 - Decoys and the crush: every other side's people get your bots' two moves on their own turn (combat.js aiUnit →
   aiRepertoire), through the same functions: a decoy they carry thrown on the dead pressing their side, once a turn for
   the side (decoys.js botDecoy; fighters.js counts the decoys and a flare among what a person throws, and the thrown

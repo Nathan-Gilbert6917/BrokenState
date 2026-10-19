@@ -95,7 +95,7 @@ A map of the game's major features, for agents getting oriented. Built from the 
 - **Things on the ground** and searching bodies [ground].
 - **Retreat**: "Sound the retreat" on the map and break-off policies for auto-resolved fights [combat soundRetreat, breakoff].
 - **Third side**: neutrals and soldiers who are neither your team nor its enemies [thirdside].
-- **Siege kit**: ladders, rams and frag grenades [siege].
+- **Siege kit**: ladders, rams and frag grenades [siege]; a group's raid brings only its own (its ladders and ram on its books, made by your recipe when it has none; grenades carried by the raiders) [arsenal packRaidKit, siegeGearHome].
 - **Vehicles in battle**: Humvee gunners, ramming gates [combat raidCarTurn].
 - **Auto-resolve by the numbers** [combat autoResolveCombat].
 
