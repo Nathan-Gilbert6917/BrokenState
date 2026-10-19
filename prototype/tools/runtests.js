@@ -15,7 +15,7 @@ const jobs = Number(opt("--jobs", Math.max(1, cpus().length)));
 const timeout = Number(opt("--timeout", 600)) * 1000;
 // Tests that run a year of 12 seeds twice in child processes (about 20 minutes alone on 4 cores, twice that while
 // other tests share them): this many times the timeout.
-const SLOW = { "depletetest.js": 4, "diplotest.js": 4 };
+const SLOW = { "depletetest.js": 4, "diplotest.js": 4, "worktest.js": 2 }; // worktest: about 32 minutes alone
 const skip = (opt("--skip", "") || "").split(",").filter(Boolean);
 const jsonOut = opt("--json", null);
 const patterns = args;
