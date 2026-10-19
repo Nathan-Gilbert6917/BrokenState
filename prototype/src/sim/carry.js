@@ -577,6 +577,19 @@ function addGroundSupply(site, key, q, extra = {}) {
   } else site.items.push({ kind: "supply", key, name: SUPPLIES[key].name, qty: q, value: q * supValue(key), ...(FOODS[key] ? { left: extra.left ?? FOODS[key].shelf } : {}), ...(extra.eggs != null ? { eggs: extra.eggs } : {}), ...(extra.worm > 0 ? { worm: extra.worm } : {}) });
 }
 const touched = (state, site) => { site.lastConfirmed = day(state); markDeathSite(state, site); };
+// Stores and kit left on a tile's ground by nobody's team (hardcore-groups.js militaryFalls: what nobody could carry
+// out of a fallen base stays in its ruin): every supply of `stock` as a stack, every item of `items` as itself.
+// Returns the site, or null with nothing to leave.
+export function leaveOnGround(state, tile, stock = {}, items = []) {
+  const sup = Object.entries(stock || {}).filter(([k, q]) => SUPPLIES[k] && Number.isFinite(q) && q > EPS);
+  const gear = (items || []).filter(Boolean);
+  if (!sup.length && !gear.length) return null;
+  const site = groundAt(state, tile, true);
+  for (const [k, q] of sup) addGroundSupply(site, k, q);
+  for (const it of gear) site.items.push(groundGear(it));
+  touched(state, site);
+  return site;
+}
 function dropSite(state, site) {
   if (site.items.length || (site.walked && site.walked.length) || site.names.length) return;
   const i = state.deathSites.indexOf(site);

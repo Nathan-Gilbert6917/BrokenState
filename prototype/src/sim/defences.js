@@ -562,7 +562,8 @@ export function armoryDecoys(base, h) {
   return (base.armory || []).filter((it) => it && DECOY_KEYS.includes(it.key) && ((THROWABLES[it.key].sense || []).includes("noise") || heat)).slice(0, DECOY_ITEMS);
 }
 // The horde turns toward the lure: it falls back and leaves the base be for a few days (as when it is beaten off).
-function lureOff(st, h, base, hours = 96) {
+// A group's base too (groupfight.js hordeAtGroup: its decoys set out on the approach).
+export function lureOff(st, h, base, hours = 96) {
   retreat(st, h, base);
   h.lureUntil = st.hour + hours;
   h.warned = false;

@@ -31,9 +31,10 @@
 // time), or stays (recovered) when they do, and then they also pick up your dead's gear; survivors' kit wears a use;
 // ROUNDS a fighter are spent.
 // Inflows: their scavenging (aiscav.js: SCAV_ITEMS items per loot taken, from the site's gear list, condition by the
-// site), newcomers (newcomerKit: RECRUIT, random: some bring nothing), their own crafting (ai-locks: your recipes only,
+// site; its job kit, SCAV_KIT more, on a draw of its own: what the group is short of first, jobKitShort), newcomers
+// (newcomerKit: RECRUIT, random: some bring nothing), their own crafting (ai-locks: your recipes only,
 // at your skill, bench and manuals: makeshift weapons while short of weapons, pipe shotguns, scrap crossbows and pulley
-// bows while short of ranged weapons, pipe bombs or Molotovs: CRAFT, groupCraftable), trade (fighting gear you sell or give them goes in; surplus over
+// bows while short of ranged weapons, pipe bombs or Molotovs, decoys while short of them: CRAFT, groupCraftable), trade (fighting gear you sell or give them goes in; surplus over
 // WANT a head goes on their shelf, trade.js), stealing (raids on your bases and other groups, robbing your teams,
 // captives stripped), the fields they hold after a fight, a broken group's arsenal (half to the group that takes it
 // over), your vehicles when a team is taken whole. Outflows:
@@ -106,6 +107,13 @@ export const ARSENAL = {
   // Before: 90% armed from the kit's list, every one with a kit armour draw.
   RECRUIT: { NONE: 0.3, MAKESHIFT: 0.2, OWN: 0.5, STRONG: 0.06, ARMOUR: 0.5 },
   SCAV_ITEMS: 6, // items a scavenging party finds per loot it takes (a full trip about 0.25 loot: 1.5 items)
+  // Job kit (isJobKitKey) a scavenging party picks up besides, per loot it takes, from the site's own gear list (a
+  // hardware store's crowbar, a campsite's packs and flares), on its own draw so the fighting kit's finds stay as they
+  // were. What its jobs are short of first (jobKitShort): a group seeks what its parties need, as you stock up.
+  SCAV_KIT: 2,
+  // What a group keeps of its job kit, a head (jobKitShort; loadouts.js JOB_KIT packs it): decoys and flares for the
+  // parties that go through the dead and for its walls, a pack for each of its scavengers, the scavengers' tools.
+  KIT_WANT: { decoy: 0.4, pack: 0.25, tool: 0.1 },
   // Their crafting (ai-locks 2026-10-11, the user's rule "AI groups need to have the same restrictions and gameplay
   // features"): only your recipes (crafting.js CRAFTS), at your skill (their mechanic: groupworks.js groupSkill, for
   // Crafting too), your bench (a recipe that needs a workshop: theirs) and your manuals (blueprints.js LOCKED: the
@@ -118,8 +126,10 @@ export const ARSENAL = {
   // while they have fewer than `guns` ranged weapons a head. Before: any group with a workshop rebuilt a gun of its
   // kit (an assault rifle for the military) from 8 scrap and a part, which you cannot do; factory guns now come only from
   // their finds (aiscav.js), newcomers, purchases (groupBuysGun, trade), raids and the fields they hold.
+  // decoys: a decoy of your recipes (a noise maker from scrap, firecrackers, a road flare) every decoyEvery days while
+  // the group holds fewer than KIT_WANT.decoy a head (as you make a few before a trip through the dead).
   CRAFT: { every: 4, weapons: ["pipespear", "spikedbat", "pipespear", "nailbat"], bombEvery: 6, bombScrap: 2, bombFuel: 1,
-    gunEvery: 5, guns: 1.1, ranged: ["pipegun", "crossbow", "pulleybow"] },
+    gunEvery: 5, guns: 1.1, ranged: ["pipegun", "crossbow", "pulleybow"], decoyEvery: 5, decoys: ["noisemaker", "flare", "noisemaker", "firecracker"] },
   WANT: 1.3, // weapons a head they keep; more goes on the trade shelf
   // Buying a gun from passing traders (groupBuysGun): every `every` days below `guns` guns a head, at value × markup,
   // paid from `share` of the scrap they can spare (trade.js available: past their reserve). Only well under the guns
@@ -174,11 +184,36 @@ export const isSelfAidKey = (k) => !!(GEAR[k] && GEAR[k].selfStab && !GEAR[k].me
 // Siege kit (data.js GEAR siege: the ladder and the battering ram): bulky, never worn or dealt out, kept on the books
 // between raids and carried out with one (packRaidKit).
 export const isSiegeKey = (k) => !!(GEAR[k] && GEAR[k].siege);
-export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key) || isMedKitKey(it.key) || isKitThrowKey(it.key) || isEarKey(it.key) || isSelfAidKey(it.key))); // isEarKey: ear protection (helmets.js issueEars)
+// Job kit (loadouts.js packForJob: what a party packs for the job it goes out on, as your team is packed for its trip):
+// the decoys and a road flare (decoys.js: what the dead follow; the decoys are stealth.js DECOY_KEYS, written out here
+// as fighters.js THROW_KEYS does, and tools/paritytest.js checks they agree), a scavenger's tools (the crowbar and
+// lockpicks, makeshift picks, a drill and a grinder for the safes: locks.js), and packs (bags to carry the haul in).
+// On the books like a gun: kept, scavenged, crafted and traded for, never dropped. Not dealt out at home every day
+// (loadouts.js kitOut): what nobody takes out stays at the base, where its decoys keep the dead off its walls
+// (groupfight.js hordeAtGroup: your armory's decoys, defences.js armoryDecoys).
+export const DECOY_KIT = ["noisemaker", "firecracker", "alarmclock", "pocketradio", "handwarmer", "heatpack", "flare"];
+export const SCAV_TOOLS = ["crowbar", "makeshiftpick", "powerdrill", "anglegrinder"];
+export const isDecoyKey = (k) => DECOY_KIT.includes(k);
+export const isScavToolKey = (k) => SCAV_TOOLS.includes(k);
+export const isPackKey = (k) => !!(GEAR[k] && GEAR[k].slot === "backpack");
+export const isJobKitKey = (k) => isDecoyKey(k) || isScavToolKey(k) || isPackKey(k);
+export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key) || isMedKitKey(it.key) || isKitThrowKey(it.key) || isEarKey(it.key) || isSelfAidKey(it.key) || isJobKitKey(it.key))); // isEarKey: ear protection (helmets.js issueEars)
 export const weaponValue = (it) => (it && isWeaponKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) + ARSENAL.MOD * fittedMods(it).length : 0);
 export const armourValue = (it) => (it && isArmourKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) * ARSENAL.ARMOUR : 0);
 const usesRounds = (k) => !!(WEAPONS[k] && WEAPONS[k].ammo > 0);
 const hasWorkshop = (state, f) => workshopFactor(state, f) >= 1;
+// The class of a piece of job kit (ARSENAL.KIT_WANT's keys), or null.
+export const kitClass = (k) => (isDecoyKey(k) ? "decoy" : isPackKey(k) ? "pack" : isScavToolKey(k) ? "tool" : null);
+// How short the group is of this kind of job kit: 0 with KIT_WANT a head or more on its books (carried or not), 1 with
+// none. What its scavengers look for first, what it crafts, what it pays more for (trade.js).
+export function jobKitShort(f, key) {
+  const c = kitClass(key);
+  if (!c || !f || !f.arsenal) return 0;
+  const want = Math.max(1, (f.pop || 0) * ARSENAL.KIT_WANT[c]);
+  let have = 0;
+  for (const it of f.arsenal.items) if (it && kitClass(it.key) === c) have++;
+  return clamp(1 - have / want, 0, 1);
+}
 
 // ---------- the dice: hashes only ----------
 const h = (seed, ...k) => hash01(seed, "arsenal", ...k);
@@ -266,6 +301,18 @@ function topUpSmoke(state, f, A) {
   if (!share || A.items.some((it) => it && it.key === "smokegren")) return;
   const src = kitSource(kind);
   for (let i = 0; i < Math.round(Math.max(0, f.pop || 0) * share); i++) put(A, f, lootItem("smokegren", src, [state.seed, "ars", f.name, "nsmokegren", i]), null);
+}
+// A group made of another's people (hardcore-groups.js foundHub: a splinter of a fallen group founding its hub): its
+// books are what its people carry and nothing else, no starting kit dealt (docs/adr/0001-ai-parity.md: nothing from
+// nowhere). Marked dealt (headgear, smoke, its launchers' rounds none), and its people's rounds are theirs already
+// (f.roundsSeeded: loadouts.js seedRounds adds none). Loose rounds on them go into its stores at the next kit-out.
+export function arsenalFromPeople(state, f, people) {
+  const A = (f.arsenal = newArsenal(f));
+  A.seeded = 0; A.headgear = true; A.smoke = true; A.rounds = {}; A.gear = f.gear || 1;
+  f.roundsSeeded = true;
+  for (const s of people || []) for (const it of allCarried(s)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, "own");
+  if (FACTION_TYPES[f.type]) kitRef(f.type);
+  return A;
 }
 // The group's arsenal, made the first time it is read (an old save's groups: the same rule as a new world's).
 export function ensureArsenal(state, f) {
@@ -975,12 +1022,26 @@ export function scavFinds(state, f, p) {
   if (!ensureArsenal(state, f) || !p.scav) return [];
   const t = state.tiles[p.scav.site];
   const type = p.scav.kind || (t && t.loc ? t.loc.type : null); // the POI they searched (aiscav.js setPoi), else the site
-  const table = type && LOCATIONS[type] ? (LOCATIONS[type].gear || []).filter((k) => arsenalWorthy({ key: k })) : [];
-  if (!table.length) return [];
+  const gearList = type && LOCATIONS[type] ? LOCATIONS[type].gear || [] : [];
+  const table = gearList.filter((k) => arsenalWorthy({ key: k }) && !isJobKitKey(k)); // the fighting kit (job kit: its own draw below)
   const A = f.arsenal;
   const tag = [state.seed, "arsscav", f.name, A.next, state.hour];
-  const n = Math.floor((p.scav.taken || 0) * ARSENAL.SCAV_ITEMS + hash01(...tag, "n"));
   const got = [];
+  // Job kit (SCAV_KIT): the packs, tools and flares on the site's list, the kind the group's jobs are shortest of
+  // first (jobKitShort), on its own dice.
+  const kitKeys = gearList.filter((k) => GEAR[k] && isJobKitKey(k));
+  if (kitKeys.length) {
+    const nk = Math.floor((p.scav.taken || 0) * ARSENAL.SCAV_KIT + hash01(...tag, "kn"));
+    for (let i = 0; i < nk; i++) {
+      const w = kitKeys.map((k) => 0.25 + jobKitShort(f, k));
+      let r = hash01(...tag, "kk", i) * w.reduce((a, x) => a + x, 0), j = 0;
+      while (j < kitKeys.length - 1 && r >= w[j]) r -= w[j++];
+      const it = lootItem(kitKeys[j], siteSource(type), [...tag, "kit", i]);
+      if (addToArsenal(state, f, it, "scavenged")) got.push(it);
+    }
+  }
+  if (!table.length) return got;
+  const n = Math.floor((p.scav.taken || 0) * ARSENAL.SCAV_ITEMS + hash01(...tag, "n"));
   for (let i = 0; i < n; i++) {
     const key = swapGun(`site:${type}`, table[Math.floor(hash01(...tag, "k", i) * table.length) % table.length], [...tag, "g", i]); // gundist.js: the same draws as your searches there (AI parity)
     const it = lootItem(key, siteSource(type), [...tag, i]);
@@ -1131,6 +1192,14 @@ export function arsenalDaily(state, f) {
   if (bomb && (d + phase) % C.bombEvery === 0 && o.T.length < want) {
     // Your recipes either way (crafting.js): a Molotov is a bottle and fuel, a pipe bomb scrap, a part and powder.
     if (groupCraftable(state, f, bomb)) { payCraft(f, bomb); keepItem(state, f, groupCraftOut(state, f, bomb, [...salt, "b"]), "crafted"); }
+  }
+  // Decoys for its parties and its walls (loadouts.js JOB_KIT, groupfight.js hordeAtGroup): your recipes, in turn,
+  // while it is short of them; the first it can make of the rest when it cannot make this one.
+  if ((d + phase) % C.decoyEvery === 0 && jobKitShort(f, "noisemaker") > 0) {
+    const at = Math.floor((d + phase) / C.decoyEvery);
+    const order = C.decoys.map((_, i) => C.decoys[(at + i) % C.decoys.length]);
+    const key = order.find((k) => GEAR[k] && groupCraftable(state, f, k));
+    if (key) { payCraft(f, key); keepItem(state, f, groupCraftOut(state, f, key, [...salt, "d"]), "crafted"); }
   }
 }
 // ---------- their crafting by your rules (ai-locks; see ARSENAL.CRAFT) ----------

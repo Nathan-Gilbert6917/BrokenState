@@ -10,7 +10,7 @@ import { combatPower, isNight, day, spendShots, arrowsBack } from "./world.js";
 import { winOdds, powerEquiv } from "./combat.js";
 import { fightModel, rollFight, landFight, BREAKOFF } from "./breakoff.js";
 import { ammoFactor, keepItem, removeFromArsenal } from "./arsenal.js";
-import { tierMults, atTheWalls, holdLimit, spikeKill, trapKill, breakInForce, breakInCount, heldKill, crawlerSlip, retreat, BOSS_STRENGTH } from "./defences.js"; // your base's defence, step for step
+import { tierMults, atTheWalls, holdLimit, spikeKill, trapKill, breakInForce, breakInCount, heldKill, crawlerSlip, retreat, BOSS_STRENGTH, armoryDecoys, decoyChance, lureOff } from "./defences.js"; // your base's defence, step for step; its decoys
 import { minesKill } from "./mines.js";
 import { mixWeight } from "./zombietypes.js";
 import { reduceHorde, hordeWallPower } from "./hordes.js";
@@ -182,6 +182,16 @@ export function hordeAtGroup(state, h, f, tile) {
   const bosses = Math.min(2, h.bosses || 0);
   const check = groupHoldCheck(state, f, tile, h.size, bosses, h.mix);
   f.hitDay = f.hordeHitDay = day(state); // valuation.js: a horde at their walls
+  // Walls that will not hold it: they set out the decoys kept at home first, as you would from your armory on the
+  // warning card (defences.js armoryDecoys: noise ones, heat ones for crawlers, up to DECOY_ITEMS; decoyChance; used up
+  // either way). Drawn off, the horde falls back for a few days (lureOff). Walls that hold: the decoys are kept.
+  if (check && !check.holds) {
+    const items = armoryDecoys(baseLike(state, f, tile) || { armory: [] }, h);
+    if (items.length) {
+      for (const it of items) if (!removeFromArsenal(f, it, "used up") && f.wares && f.wares.includes(it)) f.wares.splice(f.wares.indexOf(it), 1);
+      if (state.rng.chance(decoyChance(h, items.length))) { lureOff(state, h, { tile }); return { held: true, check, lured: items.length }; }
+    }
+  }
   const w = withKit(state, f, base, () => atTheWalls(state, h, base));
   if (!w) return { held: true, check }; // the pits, the mines or the traps finished it
   const people = fightersOf(state, f, { tile });

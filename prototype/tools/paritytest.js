@@ -10,6 +10,8 @@
 //      a body in danger next to them crushed, neither with a foe next to them or nothing to throw.
 //   6. A horde at a group's base: your base's defence step for step (spike pits, mines, bear traps, defence buildings,
 //      the hold limit), the horde's losses by your rule (groupfight.js hordeAtGroup).
+//   7. Packing for the job: a party through the dead takes your hive squad's flares and decoys off its own books and
+//      throws them as yours do; the decoys kept at home are set out at the walls by your warning card's odds.
 // Usage: node tools/paritytest.js [seed]
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import { createBattle, combatAct, registerCombatHandler, reload, loadMag, magIn, enemyUnit, enemyStep } from "../src/sim/combat.js";
@@ -40,6 +42,13 @@ import { defenceMult, holdLimit, spikeKill, guardHold } from "../src/sim/defence
 import { minesKill, minesLeft } from "../src/sim/mines.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { hordeAtGroup, groupHoldCheck } from "../src/sim/groupfight.js";
+import { keepItem } from "../src/sim/arsenal.js";
+import { kitOut, JOB } from "../src/sim/loadouts.js";
+import { HIVE_KIT } from "../src/sim/kit.js";
+import { spawnAiParty, planPath } from "../src/sim/parties.js";
+import { allCarried } from "../src/sim/inventory.js";
+import { fitThrowables } from "../src/sim/fighters.js";
+import { armoryDecoys, decoyChance } from "../src/sim/defences.js";
 const stackN = (st) => st.reduce((a, x) => a + (x.n || 0), 0);
 
 const seed = Number(process.argv[2] || 7);
@@ -297,6 +306,49 @@ section("6. A horde at a group's base meets your base's defence: its traps and d
   const r2 = hordeAtGroup(st2, h2, f2, t2);
   const left2 = st2.hordes.includes(h2) ? h2.size : 0;
   check(r2 && !c2.holds && c2.through > 0 && left2 >= big - c2.through - 1 && left2 < big && (r2.held ? left2 === Math.max(0, big - c2.through) || left2 === 0 : true), `a horde of ${big}: about ${c2.through} broke in (the check said ${c2.tier}); ${r2 && r2.held ? "held inside" : "overrun"}, the horde ${big} → ${left2}`);
+}
+
+section("7. Packing for the job and the decoys at the walls: as yours are packed and set out (loadouts.js packForJob, groupfight.js hordeAtGroup)");
+{
+  // A party of theirs going through the dead packs the decoys and flares your hive squad packs (kit.js HIVE_KIT: two
+  // flares), out of its own books; on the battle map a person of it counts the decoy among what they throw.
+  check(JOB.FLARES === HIVE_KIT.flare, `the road flares a party through the dead takes are your hive squad's (${JOB.FLARES})`);
+  const st = createWorld({ seed, factionCount: 4 });
+  st.started = true;
+  const f = st.factions.find((x) => x.alive && x.bases.length && x.pop >= 10);
+  ensureArsenal(st, f); ensureMembers(st, f); syncMembers(st, f);
+  for (const k of ["noisemaker", "noisemaker", "noisemaker", "alarmclock", "flare", "flare", "hikingpack", "hikingpack", "hikingpack", "hikingpack"]) keepItem(st, f, newItem(k), "test");
+  for (const t of st.tiles) t.infection = 0;
+  st.hordes.length = 0;
+  kitOut(st, f);
+  const g = st.grid, from = f.bases[0];
+  const to = g.within(from, 4).find((t) => g.distance(t, from) >= 2 && st.tiles[t].terrain !== "water" && !st.factions.some((o) => o.bases.includes(t)) && planPath(st, from, t, false, f.id));
+  st.tiles[to].infection = 0.9;
+  const books = new Set(f.arsenal.items);
+  const p = spawnAiParty(st, f, "scav", from, to, { strength: 4 });
+  const go = f.people.filter((s) => s.location && s.location.partyId === p.id);
+  const one = go.find((s) => allCarried(s).some((it) => DECOY_KEYS.includes(it.key)));
+  const u = {};
+  if (one) fitThrowables(u, one);
+  check(!!one && Object.keys(u.throwables || {}).some((k) => DECOY_KEYS.includes(k)) && allCarried(one).filter((it) => DECOY_KEYS.includes(it.key) || it.key === "flare").every((it) => books.has(it)), `${one ? one.name : "nobody"} goes out with a decoy off the group's own books and throws it as yours would (${JSON.stringify(u.throwables || {})})`);
+  // The decoys kept at home: the same three in your armory and on their books, a horde neither's walls can hold: the
+  // same decoys set out (defences.js armoryDecoys) by the same odds (decoyChance), used up on either side.
+  const st2 = createWorld({ seed, factionCount: 4 });
+  const f2 = st2.factions.find((x) => x.alive && x.bases.length);
+  ensureArsenal(st2, f2); ensureMembers(st2, f2); syncMembers(st2, f2);
+  const yours = hub(st2);
+  for (const k of ["noisemaker", "alarmclock", "pocketradio"]) { keepItem(st2, f2, newItem(k), "test"); yours.armory.push(newItem(k)); }
+  const t2 = f2.bases[0];
+  const big = Math.round(holdLimit(st2, homeAt(st2, f2, t2), 0) * 3);
+  const h = makeHorde(st2, { tile: t2, size: big, role: "roam", split: true });
+  const mineN = armoryDecoys(yours, h).length, want = decoyChance(h, mineN); // (before the fight: the odds go by the horde as it comes)
+  let theirOdds = null;
+  const roll = st2.rng.chance.bind(st2.rng);
+  st2.rng.chance = (q) => { if (theirOdds == null) theirOdds = q; return roll(q); };
+  hordeAtGroup(st2, h, f2, t2);
+  st2.rng.chance = roll;
+  const left = f2.arsenal.items.filter((it) => DECOY_KEYS.includes(it.key)).length;
+  check(mineN === 3 && left === 0 && theirOdds != null && Math.abs(theirOdds - want) < 1e-12, `three decoys set out at their walls as on your warning card: the same odds (${Math.round(want * 100)}%; theirs ${theirOdds == null ? "none" : Math.round(theirOdds * 100) + "%"}), used up (${left} left)`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

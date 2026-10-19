@@ -10,7 +10,7 @@
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, cartTer?: any, maxHours?: number, startHour?: number, weather?: boolean, known?: number, used?: number }} TravelOpts
  */
 import { sendMembers } from "./members.js"; // an AI party is its people (docs/adr/0001-ai-parity.md)
-import { kitParty } from "./loadouts.js"; // the launchers go with a raid
+import { kitParty, packForJob } from "./loadouts.js"; // the launchers go with a raid; the rest of the job's kit
 import { teamTraitFx, appetite } from "./traits.js"; // Keen Eye: the team's sight; Glutton: the food a trip takes
 import { repairPaid, repairWaitHour } from "./repairwait.js"; // a breakdown repaired on the road: told when it is over
 import { CARRIER } from "./hiveconst.js"; // a body's weight in the car (bodyLoad)
@@ -1085,7 +1085,11 @@ export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
     if (m >= 1) { f.stock.meds -= m; p.meds = m; }
   }
   state.parties.push(p);
-  if (!f.outsider) kitParty(state, f, sendMembers(state, f, p, p.heads || aiPartyHeads(f, opts.strength, ((FACTION_TYPES[f.type] && FACTION_TYPES[f.type].arms) || 1) * (f.gear || 1))), kind, p); // members.js: the people who go, with what they carry
+  if (!f.outsider) {
+    const go = sendMembers(state, f, p, p.heads || aiPartyHeads(f, opts.strength, ((FACTION_TYPES[f.type] && FACTION_TYPES[f.type].arms) || 1) * (f.gear || 1))); // members.js: the people who go, with what they carry
+    kitParty(state, f, go, kind, p);
+    packForJob(state, f, go, kind, p); // loadouts.js: packed for the job (a raid's grenades, the dead's decoys and flares, scavengers' packs and tools)
+  }
   if (kind === "raid" && f.vehicles) assignRaidHumvee(state, f, p); // vehicles.js: a group's turreted Humvee comes along (lost if the raid fails)
   return p;
 }

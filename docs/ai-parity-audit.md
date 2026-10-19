@@ -248,19 +248,56 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
   is always one of its people at home (groupcare.js desertOne): with everyone out with a party nobody walks out, so
   no deserter is made up for your gates and no group gains a head from nobody.
 
+**Closed in the follow-up pass (2026-10-19): packing for the job, the fallen base's stores.**
+- Scenario loadouts (the user's request: "AI groups need to act how a player would and be supplying their group for
+  different scenarios"). The job kit is on the groups' books (arsenal.js isJobKitKey, arsenalWorthy: decoys and road
+  flares, packs, the crowbar and lockpicks, makeshift picks, a drill and a grinder), kept, scavenged, crafted and
+  traded for like a gun, and not dealt out at home every day (loadouts.js kitOut). A party forming packs for its job
+  out of what the group holds (loadouts.js packForJob, JOB_KIT, called from parties.js spawnAiParty), as your planner
+  and governor pack a team (launchExpedition, kit.js packTripKit / packHiveKit): a pack on every empty back; a raid or
+  war party grenades, bombs and Molotovs, a flashbang or smoke and a tourniquet each, a med kit to its best Medicine
+  and a second helping of loose rounds out of the stores; a way through the dead (a horde on the path, land at
+  infection 0.5 or more) a decoy and a Molotov each, your hive squad's two flares and a blade beside the gun;
+  scavengers the crowbar to their best Scavenging, the picks and the drill; a caravan or convoy a med kit and
+  tourniquets; a hunting party (none is sent yet: the groups' hunting is a factor on their food) a hunting rifle or
+  bow in the hands of its best shot. It comes from spare first, then what the people staying home have stowed, never
+  more than room allows, and the home keeps a share of the decoys, Molotovs and flares (JOB.KEEP). Home defence: a
+  horde the walls will not hold meets the decoys kept at home first, set out by your warning card's odds and used up
+  (groupfight.js hordeAtGroup through defences.js armoryDecoys, decoyChance, lureOff). Seeking: a scavenging party
+  brings the site's job kit home on a draw of its own, what the group is shortest of first (arsenal.js scavFinds,
+  SCAV_KIT, jobKitShort); a group short of decoys makes them by your recipes (arsenalDaily, CRAFT.decoys); and it
+  pays more for job kit while it is short (trade.js gearPool counts the books' kit of that kind). Checks:
+  tools/jobkittest.js, tools/paritytest.js section 7, tools/conservationtest.js (parties packed under the checks),
+  tools/arsenaltest.js.
+- Hardcore splinters and stragglers (hardcore-groups.js militaryFalls, makeSplinter, makeBand): their stores are the
+  fallen base's. The soldiers who get out take what they can carry of the armory by the kit-out's rule (loadouts.js
+  grabKit); its stores go out with the groups they leave in, each by its people from the base and as far as they can
+  carry (carryOut: parties.js carryCapacity, your teams' rule); the strike force's remnant has what the strike took
+  out (its rounds, and rations and meds now packed from the base when it leaves: launchStrike, home again if it comes
+  back). What nobody can carry lies in the ruin's ground (carry.js leaveOnGround), in place of the loot the ruin was
+  given to stand for the armory (RUIN_LOOT, gone). makeSplinter's minimums and the stragglers' rations are gone; a
+  band keeps its stores to the unit (rounds by key too) when it founds its hub or joins a group, and a splinter that
+  founds a hub has its people's kit for books, with no starting kit or rounds dealt (arsenal.js arsenalFromPeople).
+  Checks: tools/hcgroupstest.js ("The fall: the splinters' stores are the fallen base's", and the founded splinters'
+  books).
+
 **Still open (small, noted for a later pass).**
 - Refugees from outside joining a nomad band (nomads.js recruit) and someone off the road joining it still come as a
   head count; refugee bands have no people records until one is needed.
-- A hardcore band's stragglers and splinter groups still carry stores made by formula (makeSplinter's minimums, the
-  stragglers' rations), not taken from the fallen base's stores.
-- The groups' loadouts do not hand decoys out (they share the explosives, flashbangs and smoke): an AI person throws a
-  decoy only when they carry one of their own. Left open because handing them out means putting decoys on the
-  groups' books (arsenal.js arsenalWorthy), which also changes what their scavenging keeps: an economy question.
+- The soldiers of a fallen base who reach you carry their kit and what they took of the armory, but none of its
+  stores (your recruit card takes people, not supplies); the strike force's food is carried, not eaten, while it is out.
+- tools/dettest.js fails again on the branch as it stood before the job-kit pass (461f710: seed 42, a world run after
+  another in the same process ends with a group's rounds and meds a little different); after the pass it fails on
+  seed 7 the same way. Something in the groups' stores still reads process-wide state; not found yet.
 
 **Found on the way.** Dice keyed on a person's id came out differently in two worlds on one seed, because your
 people's and newcomers' ids come from a counter shared by the process; they now use a world-local key (members.js
 personKey), and tools/dettest.js passes in full. A group that fell gave its heir half its stores without taking them
 out, and tributes and jail payments paid "ammo" from a generic count; both now move the very rounds.
+In the job-kit pass: a second helping of loose rounds onto a stack already on a person counted the part that merged
+twice when the rest had no room (loadouts.js armRounds); a group picking a loaded gun off a death site brought its
+rounds in unnoted (economy.js deathSitesDaily, now noted "found"); and a hardcore band dropped any rounds by key and
+car parts it scavenged and carried (bandDay, foundHub, joinGroup keep them now).
 
 **Tests.** `tools/paritytest.js` swaps the sides of each shared rule and checks both come out the same.
 `tools/conservationtest.js` plays a campaign and checks the AI side never holds more rounds than its noted sources

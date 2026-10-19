@@ -6,7 +6,13 @@
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, supplyValue, hub } from "../src/sim/world.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
-import { bandsOf, hcMilitary, hardcoreGroupsHour, makeBand, HC_GROUPS, HC_MILITARY } from "../src/sim/hardcore-groups.js";
+import { bandsOf, hcMilitary, hardcoreGroupsHour, makeBand, HC_GROUPS, HC_MILITARY, militaryFalls } from "../src/sim/hardcore-groups.js";
+import { SUPPLIES } from "../src/sim/data.js";
+import { groundAt } from "../src/sim/carry.js";
+import { allCarried } from "../src/sim/inventory.js";
+import { carryCapacity, supplyLoad } from "../src/sim/parties.js";
+import { roundsIn } from "../src/sim/ledger.js";
+import { foodIn } from "../src/sim/foods.js";
 import { ensureMembers } from "../src/sim/members.js"; // a group's people (docs/adr/0001-ai-parity.md)
 import { destroyHive } from "../src/sim/hives.js";
 import { tileLabel } from "../src/sim/parties.js";
@@ -246,6 +252,8 @@ for (const seed of MSEEDS) {
       `${tag} people, not head counts: the strike force (${r.strikeIds.size}) and the garrison were the very soldiers; the ${ids.length} who went on after the fall are those same people, each once`);
   }
   check(r.founded.length >= 1 && r.founded.every((f) => f.hcSplinter && f.founded > r.fell), `${tag} by day 100 ${r.founded.map((f) => `${f.name} founded at ${tileLabel(s, f.bases[0] ?? m.tile)} on day ${f.founded}${f.type === "raider" ? " (turned raider)" : ""}${f.alive ? "" : " (since gone)"}`).join("; ") || "none founded"}`);
+  // Their books are what their people carried out (arsenal.js arsenalFromPeople), never a starting kit dealt at founding.
+  check(r.founded.every((f) => !f.arsenal || (f.arsenal.seeded === 0 && f.roundsSeeded)), `${tag} the splinters' books are what their soldiers carried, no kit or rounds dealt from nowhere when they founded (${r.founded.map((f) => `${f.name}: ${f.arsenal ? f.arsenal.items.length : 0} pieces`).join("; ")})`);
   arcs.push(r);
 }
 {
@@ -298,6 +306,58 @@ for (const seed of MSEEDS) {
   const noHives = (st) => { for (const h of st.hives) st.tiles[h.tile].hive = false; st.hives.length = 0; st.hordes.length = 0; };
   runDays(s, 90, noHives); // (and none grows later: the world's own hives form on its dice, one may by the base)
   check(mil.alive && !hcMilitary(s).fell && mil.pop <= pop0 && mil.pop >= pop0 * 0.7, `no hive near: the base holds (soldiers ${pop0} → ${mil.pop})`);
+}
+
+// What the groups that leave a fallen base carry out is the base's own (docs/adr/0001-ai-parity.md: nothing from
+// nowhere): its stores and its armory, and what the strike force took out, split among the groups that leave and as far
+// as their people can carry; the rest lies in the ruin. Every unit of every supply and every piece of kit is somewhere
+// after the fall, once. A base that had little leaves them little.
+console.log("The fall: the splinters' stores are the fallen base's");
+{
+  const supOf = (st) => Object.fromEntries(Object.entries(st || {}).filter(([k, q]) => SUPPLIES[k] && Number.isFinite(q) && q > 1e-9));
+  const groundSup = (st, tile) => { const out = {}; const site = groundAt(st, tile); for (const i of (site && site.items) || []) if (i.kind === "supply") out[i.key] = (out[i.key] || 0) + i.qty; return out; };
+  const groundGear = (st, tile) => new Set(((groundAt(st, tile) || {}).items || []).filter((i) => i.kind === "gear").map((i) => i.item));
+  const add = (into, rec, k = 1) => { for (const [key, q] of Object.entries(rec || {})) into[key] = (into[key] || 0) + q * k; return into; };
+  // Runs a hardcore world until the strike force is cut off, then brings the base down there and then.
+  const fallNow = (seed, empty = false) => {
+    const s = createWorld({ seed, factionCount: 7, mode: "hardcore" });
+    const mil = s.factions.find((f) => f.type === "military");
+    for (let d = 0; d < 40 && !(hcMilitary(s).strike && hcMilitary(s).strike.failed != null); d++) runDays(s, 1);
+    const m = hcMilitary(s), x = m.strike;
+    if (empty) { // the stores run dry and the armory bare
+      for (const k of Object.keys(mil.stock)) mil.stock[k] = 0;
+      const held = new Set(mil.people.flatMap((p) => allCarried(p)));
+      for (const it of mil.arsenal.items.filter((i) => !held.has(i))) mil.arsenal.items.splice(mil.arsenal.items.indexOf(it), 1);
+      mil.wares = [];
+    }
+    const people = [...mil.people, ...((x && x.people) || [])];
+    const strike = x ? add(add({ ammo: x.ammo || 0 }, x.rations), { meds: x.meds || 0 }) : {};
+    const before = add(add(add(add({}, supOf(mil.stock)), supOf(strike)), groundSup(s, m.tile)), x ? groundSup(s, x.tile) : {});
+    const books = [...mil.arsenal.items, ...(mil.wares || [])];
+    const strikeTile = x ? x.tile : null, strikeIds = new Set(((x && x.people) || []).map((p) => p.id)), garrisonIds = new Set(mil.people.map((p) => p.id));
+    militaryFalls(s, mil, "overrun");
+    const bands = bandsOf(s).filter((b) => b.remnant && (b.people || []).some((p) => garrisonIds.has(p.id) || strikeIds.has(p.id)));
+    const after = add(add({}, groundSup(s, m.tile)), strikeTile != null ? groundSup(s, strikeTile) : {});
+    for (const b of bands) add(after, supOf(b.stock));
+    const ground = groundGear(s, m.tile);
+    return { s, mil, m, people, strike, before, after, books, bands, ground, strikeIds, garrisonIds };
+  };
+  const r = fallNow(4242);
+  const keys = [...new Set([...Object.keys(r.before), ...Object.keys(r.after)])];
+  const off = keys.filter((k) => Math.abs((r.before[k] || 0) - (r.after[k] || 0)) > 1e-6 * Math.max(1, r.before[k] || 0));
+  check(r.bands.length >= 1 && !off.length, `seed 4242: every supply of the base and the strike force is in a splinter's stores or in the ruin, to the unit (${keys.length} kinds${off.length ? `; off: ${off.slice(0, 4).map((k) => `${k} ${r.before[k] || 0}→${r.after[k] || 0}`).join(", ")}` : ""})`);
+  const carried = new Set(r.people.flatMap((p) => allCarried(p)));
+  const odd = r.books.filter((it) => carried.has(it) === r.ground.has(it));
+  check(r.books.length > 0 && !odd.length && !r.mil.arsenal.items.length && !(r.mil.wares || []).length, `the armory's ${r.books.length} pieces: each on one of the soldiers who got out or in the ruin, never both (${r.books.filter((it) => carried.has(it)).length} carried out, ${r.books.filter((it) => r.ground.has(it)).length} left${odd.length ? `; ${odd.length} neither or both: ${odd.slice(0, 4).map((it) => `${it.key}${it.withParty != null ? " (out with a party)" : ""}`).join(", ")}` : ""}${r.mil.arsenal.items.length ? `; ${r.mil.arsenal.items.length} still on the books: ${r.mil.arsenal.items.slice(0, 4).map((it) => `${it.key}${r.books.includes(it) ? "" : " (new)"}`).join(", ")} ${JSON.stringify(r.mil.arsenal.stats)}` : ""})`);
+  const garrisonBands = r.bands.filter((b) => !b.people.some((p) => r.strikeIds.has(p.id)));
+  check(garrisonBands.every((b) => supplyLoad(supOf(b.stock)) <= carryCapacity(r.s, b.people, null) + 1e-6), `the garrison's groups carry no more than their people can (${garrisonBands.map((b) => `${b.name}: ${Math.round(supplyLoad(supOf(b.stock)))} of ${Math.round(carryCapacity(r.s, b.people, null))} kg`).join("; ") || "none"})`);
+  const rem = r.bands.find((b) => b.people.every((p) => r.strikeIds.has(p.id)));
+  if (rem) check(Object.entries(supOf(r.strike)).every(([k, q]) => Math.abs((rem.stock[k] || 0) - q) < 1e-6), `${rem.name} carries what the strike took out: ${Math.round(r.strike.ammo || 0)} rounds, ${foodIn(r.strike).toFixed(1)} days of food, ${r.strike.meds || 0} meds`);
+  // Little in, little out: the stores dry and the armory bare, the garrison's groups leave with nothing in their stores.
+  const e = fallNow(4242, true);
+  const eg = e.bands.filter((b) => !b.people.some((p) => e.strikeIds.has(p.id)));
+  check(eg.every((b) => !Object.keys(supOf(b.stock)).length) && e.bands.every((b) => b.people.some((p) => e.strikeIds.has(p.id)) || roundsIn(b.stock) === 0),
+    `a base with nothing in its stores: ${eg.map((b) => `${b.name} leaves with ${Object.keys(supOf(b.stock)).length ? JSON.stringify(supOf(b.stock)) : "nothing"}`).join("; ") || "no garrison group"} (nothing made for them)`);
 }
 
 // ---------- raiders ----------

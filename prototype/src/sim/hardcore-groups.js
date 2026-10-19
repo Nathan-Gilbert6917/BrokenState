@@ -47,8 +47,11 @@
 // - With HELP_AT of the garrison left it asks you for help (a card, with a hub): 40 ammo (harder sorties for
 //   SUPPLY_DAYS days) or 6 meds (MEDS_POP wounded back on the walls). At EVAC_AT it sends its civilians to you.
 // - It falls when the garrison is ground down to GARRISON_BREAK of what stayed (BREAK_MIN at least), its base is lost
-//   or the group is broken: the base is a ruin full of the dead (a horde of the fallen, infection, the armory's loot
-//   left behind), DEAD of the last defenders die, 1–3 reach you as recruits. The military is gone, and what is left of
+//   or the group is broken: the base is a ruin full of the dead (a horde of the fallen, infection, what nobody could
+//   carry of its stores and armory on its ground), DEAD of the last defenders die, 1–3 reach you as recruits. The
+//   soldiers who get out take what they can carry of the armory, and the groups they leave in carry out the base's
+//   stores as far as their people can (carryOut); the strike force's remnant has what the strike took out (its rounds,
+//   rations and meds). Nothing is made for them. The military is gone, and what is left of
 //   it becomes groups of its own: the garrison's survivors (the "Holdouts" of the base, a fortress) and the strike
 //   force's stragglers ("Remnant of the 3rd Battalion", military), each a band on the road (as the first bands) that
 //   founds its hub somewhere defensible SPLINTER_FOUND days later; too few for one (under FOUND_MIN) join the other,
@@ -91,10 +94,17 @@ import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds
 // People, never head counts (docs/adr/0001-ai-parity.md): a band's people are records from the start (members.js),
 // and a band founding its hub, a band taken in by a group, the strike force going out and coming home, the garrison's
 // survivors when the base falls all move the very people, with what they carry.
-import { ensureMembers, syncMembers, addMember, removeMember, membersOf, fitAtHome, homeMembers, isWounded, lossOrder, touchMembers, MEMBER } from "./members.js";
-import { addToArsenal } from "./arsenal.js"; // what a newcomer carries goes on the group's books
+import { ensureMembers, syncMembers, addMember, removeMember, membersOf, fitAtHome, homeMembers, isWounded, lossOrder, touchMembers, MEMBER, fighterScore } from "./members.js";
+import { addToArsenal, removeFromArsenal, arsenalFromPeople } from "./arsenal.js"; // what a newcomer carries goes on the group's books
 import { allCarried } from "./inventory.js";
 import { isRoundItem } from "./itemstack.js";
+// A fallen base's stores and armory go out with the people who leave it, as far as they can carry them; the rest stays
+// in the ruin (nothing from nowhere: docs/adr/0001-ai-parity.md).
+import { SUPPLIES, supWeight } from "./data.js";
+import { carryCapacity, AI_PARTY_MEDS } from "./parties.js"; // your teams' carrying rule; a party's meds for the road
+import { grabKit } from "./loadouts.js"; // the kit-out's rule: the best of the armory to the best of them
+import { leaveOnGround } from "./carry.js"; // what nobody could carry lies in the ruin
+import { gatherStores } from "./groupbases.js";
 
 export const HC_GROUPS = {
   // What a band starts with, by the type it will become (you: 3 people, about 10 food, 10 water, 6 ammo).
@@ -121,7 +131,9 @@ export const HC_GROUPS = {
 export const HC_MILITARY = {
   POP: [36, 46], MIN_FROM_YOU: 12, HIVE_RANGE: 10, BREAK_POP: 10,
   // The strike on the city hive.
-  STRIKE_DAY: [3, 12], STRIKE_SHARE: [0.5, 0.65], STRIKE_SPEED: 1.0, STRIKE_KEEP: 13,
+  // STRIKE_FOOD: days of the base's food a head the column packs (a party packs eating.js PACK.food; trucks carry more),
+  // its meds as any party's (parties.js AI_PARTY_MEDS): out of the base's stores, home again with whoever comes back.
+  STRIKE_DAY: [3, 12], STRIKE_SHARE: [0.5, 0.65], STRIKE_SPEED: 1.0, STRIKE_KEEP: 13, STRIKE_FOOD: 3,
   FIGHT_DAYS: [2, 4], FIGHT_KILL: [5, 9], FIGHT_LOSS: [0.5, 0.7], CITY_DEAD: [500, 900], CITY_REFILL: [60, 140],
   HIVE_HURT: 0.6, HIVE_RES: [2, 5], CUT_OFF_R: [3, 8], HOLD_MAX: 60, HOLD_DEATH: 0.02, SEE_R: 8,
   // The garrison that stayed: the base is overrun with GARRISON_BREAK of it left (0.78 since a horde at a group's base meets
@@ -132,7 +144,10 @@ export const HC_MILITARY = {
   CULL_GAP: [10, 16], CULL_RANGE: 12, CULL_RES: [2, 5], CULL_GUARD: [0.1, 0.2], CULL_MASS: [0.08, 0.16], CULL_LOSS: 0.4,
   HELP_AT: 0.85, EVAC_AT: 0.7, SUPPLY_DAYS: 14, MEDS_POP: 2,
   // The fall, and the groups it leaves.
-  DEAD: [0.1, 0.25], FOUND_MIN: 4, HOLD_MIN: 5, SPLINTER_GRAB: 0.2, SPLINTER_TURN: 0.5, JOIN_RANGE: 20, RUIN_LOOT: 0.7, FALLEN_HORDE: [0.6, 1.0], FALLEN_SOLDIER: 0.6, SPLINTER_FOUND: [8, 20],
+  // What the groups that leave carry out of the fallen base is its own stores and armory (militaryFalls: carryOut),
+  // as far as its people can carry; the rest stays in the ruin. (SPLINTER_GRAB, the share of the stores a splinter
+  // took with a minimum made from nothing, and RUIN_LOOT, the ruin's loot raised to stand for the armory, are gone.)
+  DEAD: [0.1, 0.25], FOUND_MIN: 4, HOLD_MIN: 5, SPLINTER_TURN: 0.5, JOIN_RANGE: 20, FALLEN_HORDE: [0.6, 1.0], FALLEN_SOLDIER: 0.6, SPLINTER_FOUND: [8, 20],
 };
 const B = HC_GROUPS, M = HC_MILITARY;
 const STOCK_KEYS = ["food", "water", "fuel", "ammo", "meds", "parts", "scrap", "preserved", "jars"];
@@ -273,7 +288,9 @@ export function makeBand(state, type, opts = {}) {
   const stock = {};
   for (const k of STOCK_KEYS) stock[k] = 0;
   const src = opts.stock || cfg.stock;
-  for (const [k, q] of Object.entries(src)) stock[k] = Math.max(0, Math.round(q * (opts.stock ? 1 : rng.range(0.85, 1.15))));
+  // opts.stock: what a band made of a fallen group's people carried out (militaryFalls), to the unit as it is: rounds by
+  // key, food by item; nothing rounded up into being.
+  for (const [k, q] of Object.entries(src)) stock[k] = opts.stock ? Math.max(0, Number(q) || 0) : Math.max(0, Math.round(q * rng.range(0.85, 1.15)));
   typeFind(state, stock, GROUP_MIX[type] || "stores"); // foods.js: the band's food (days in the tables) as its kind's items
   const d = day(state);
   const foundAt = opts.foundAt != null ? opts.foundAt : d - 1 + B.FOUND_DAYS[0] + Math.floor(hash01(state.seed, "hc-found", H.bands.length, type) * (B.FOUND_DAYS[1] - B.FOUND_DAYS[0] + 1));
@@ -607,12 +624,12 @@ function bandDay(state, b) {
   const i = pois ? bestGroupPoi(state, b, t, groupNeeds(b)) : -1;
   if (i >= 0 && poiPool(t, i) > AISCAV.floor) {
     const r = raidPoiAsGroup(state, b, t, i, B.SCAV_TAKE, { eff: B.SCAV_EFF, name: b.known ? b.name : undefined });
-    if (r) for (const [k, q] of Object.entries(r.goods)) if (k in b.stock || STOCK_KEYS.includes(k) || FOODS[k]) b.stock[k] = (b.stock[k] || 0) + q;
+    if (r) for (const [k, q] of Object.entries(r.goods)) if (k in b.stock || STOCK_KEYS.includes(k) || FOODS[k] || SUPPLIES[k]) b.stock[k] = (b.stock[k] || 0) + q;
   } else if (!pois && b.phase === "camp" && t.loc && (t.loot || 0) > AISCAV.floor && !t.hive) {
     const take = Math.min(B.SCAV_TAKE, t.loot - AISCAV.floor);
     const got = haulFor(t, take, t.loot, B.SCAV_EFF, state);
     t.loot -= take;
-    for (const [k, q] of Object.entries(got)) if (k in b.stock || STOCK_KEYS.includes(k) || FOODS[k]) b.stock[k] = (b.stock[k] || 0) + q;
+    for (const [k, q] of Object.entries(got)) if (k in b.stock || STOCK_KEYS.includes(k) || FOODS[k] || SUPPLIES[k]) b.stock[k] = (b.stock[k] || 0) + q;
   }
   const stop = b.stops[0];
   // Joining another group (a remnant): at its gates they are taken in.
@@ -656,7 +673,7 @@ function foundHub(state, b, tile) {
     id: b.id, name: b.name, type, color: b.color, bases: [tile], pop: people.length, alive: true, known: b.known,
     people, popSeen: people.length, madePeople: b.madePeople, namesGiven: b.namesGiven,
     goodwill: desperate ? Math.min(b.goodwill, -50) : b.goodwill, lastDiplomacy: 0, pact: null,
-    stock: Object.fromEntries([...STOCK_KEYS.filter((k) => k !== "food" && k !== "preserved").map((k) => [k, Math.round(b.stock[k] || 0)]), ...Object.entries(foodShare(b.stock))]), // foods.js: their food, item by item
+    stock: bandStores(b.stock), // foods.js: their food, item by item; their rounds by key
     lootedGear: [], raidCooldown: rng.int(8, 16), founded: d, hcBand: true,
   };
   touchMembers();
@@ -666,6 +683,9 @@ function foundHub(state, b, tile) {
   const t = state.tiles[tile];
   if (t.ruin) delete t.ruin; // they built on the ruins
   state.factions.push(f);
+  // A band made of a fallen group's people (militaryFalls: a splinter, stragglers whose host is gone): its books are
+  // what its people carry (arsenal.js arsenalFromPeople), never a starting kit dealt from nowhere.
+  if (b.remnant || b.splinter) arsenalFromPeople(state, f, people);
   const list = bandsOf(state);
   list.splice(list.indexOf(b), 1);
   recomputeOwnership(state);
@@ -697,13 +717,22 @@ function joinGroup(state, b, f) {
     addMember(state, f, s, f.bases[0]);
     for (const it of allCarried(s)) if (it && !isRoundItem(it)) addToArsenal(state, f, it, "joined"); // loose rounds are the stores' (loadouts.js)
   }
-  for (const k of STOCK_KEYS) if (k !== "food" && k !== "preserved") f.stock[k] = (f.stock[k] || 0) + Math.round(b.stock[k] || 0);
+  for (const [k, q] of Object.entries(bandStores(b.stock))) if (!FOODS[k] && q > 0) f.stock[k] = (f.stock[k] || 0) + q; // their rounds by key too
   addFoodsTo(f.stock, foodShare(b.stock)); // foods.js: their food, item by item
   const list = bandsOf(state);
   list.splice(list.indexOf(b), 1);
   if (b.known || f.known) log(state, `${b.name} reached ${f.known ? f.name : "another group"} and were taken in (${people.length} people).`, "info");
   chronicleNote(state, `${b.name} joined ${f.name}.`, "world", f.bases[0]);
   noteFounding(state);
+}
+
+// A band's stores as a group keeps them: the old keys (STOCK_KEYS) whole as before, food item by item, and everything
+// else it carries (rounds by key, car parts) as it is: nothing it carried is left out (docs/adr/0001-ai-parity.md).
+function bandStores(stock) {
+  const out = {};
+  for (const k of STOCK_KEYS) if (k !== "food" && k !== "preserved") out[k] = Math.round((stock && stock[k]) || 0);
+  for (const [k, q] of Object.entries(stock || {})) if (!(k in out) && k !== "food" && k !== "preserved" && !FOODS[k] && SUPPLIES[k] && q > 0) out[k] = q;
+  return { ...out, ...foodShare(stock) };
 }
 
 function dirFrom(state, tile) {
@@ -874,12 +903,18 @@ function launchStrike(state, f, m) {
   m.breakPop = Math.max(M.BREAK_MIN, Math.round(m.garrison * M.GARRISON_BREAK));
   const ammo = Math.round(totalRounds(f.stock) * (sent / (sent + f.pop)));
   spendAmmo(f.stock, ammo); // their share of the rounds, by key (docs/adr/0001-ai-parity.md)
+  // Rations and meds for the road out of the base's stores (STRIKE_FOOD days a head; meds as parties.js spawnAiParty
+  // packs them): home again with whoever comes back, or what the strike's remnant lives on if it is cut off.
+  const food = takeFood(f.stock, Math.min(foodIn(f.stock), sent * M.STRIKE_FOOD), { eggs: false, state });
+  const meds = Math.min(Math.floor((f.stock.meds || 0) * AI_PARTY_MEDS.SHARE), Math.ceil(sent * AI_PARTY_MEDS.PER));
+  if (meds > 0) f.stock.meds -= meds;
   const { name, the } = strikeName(state, f);
   const city = O && O.city != null ? O.city : hive.tile;
   m.strike = {
     name, the, pop: sent, start: sent, tile: m.tile, path: res.path, idx: 0, progress: 0, vehicle, phase: "travel",
     hiveId: hive.id, hiveTile: hive.tile, city, left: d, arrived: null, fightDays: rng.int(M.FIGHT_DAYS[0], M.FIGHT_DAYS[1]),
     fought: 0, lossGoal: null, killed: 0, lost: 0, cityDead: 0, guard0: 0, failed: null, hold: null, home: null, seen: false, ammo, color: f.color,
+    rations: food.items, meds: Math.max(0, meds),
     people: go, // the very soldiers (pop: how many of them are alive)
   };
   touchMembers(); // members.js: memberById finds them with the strike force
@@ -954,6 +989,8 @@ function strikeArrives(state, m, s) {
       s.people = [];
       touchMembers();
       f.stock.ammo = (f.stock.ammo || 0) + s.ammo;
+      for (const [k, q] of Object.entries(strikeStores(s))) if (k !== "ammo") f.stock[k] = (f.stock[k] || 0) + q; // the rations and meds left
+      s.rations = {}; s.meds = 0;
       m.garrison = Math.max(m.garrison || 0, f.pop);
       log(state, `📻 ${f.name}: "${cap1(s.the)} is home. ${s.pop} of the ${s.start} who went out."`, "info");
       chronicleNote(state, `The last of ${s.the} made it back to ${tileLabel(state, m.tile)}.`, "world", m.tile);
@@ -1088,7 +1125,8 @@ function evacuation(state, f, m) {
 }
 
 // The base falls: a ruin full of the dead, most of the soldiers gone, a few to you, a remnant on the road.
-function militaryFalls(state, f, how) {
+// (Exported for tools/hcgroupstest.js: the fall on a chosen day, to weigh what goes out of the base against what was in it.)
+export function militaryFalls(state, f, how) {
   const m = hcMilitary(state);
   if (!m || m.fell) return;
   const rng = grng(state), g = state.grid, d = day(state);
@@ -1105,6 +1143,20 @@ function militaryFalls(state, f, how) {
   for (const s of garrison.slice(0, dead)) removeMember(state, f, s, "died", { keepKit: true });
   const outList = garrison.slice(dead);
   for (const s of outList) removeMember(state, f, s, "left");
+  // On their way out the soldiers who get out take what they can carry of the armory (docs/adr/0001-ai-parity.md: by
+  // the kit-out's rule, loadouts.js grabKit: a pack on an empty back, the best of it to the best of them, decoys and
+  // tools into the room left): the dead's kit and the spare, off the group's books and its shelf onto them. What a
+  // swap left behind and what nobody took stays in the ruin (below).
+  const pile = [...((f.arsenal && f.arsenal.items) || []).filter((it) => it && it.withParty == null), ...(f.wares || [])];
+  grabKit(pile, outList.slice().sort((a, b) => fighterScore(b) - fighterScore(a) || a.id - b.id));
+  // Whatever of it is on them now (a rig's magazines came with the rig), theirs: off the books and the shelf.
+  const took = new Set(outList.flatMap((p) => allCarried(p)));
+  for (const item of [...((f.arsenal && f.arsenal.items) || []), ...(f.wares || [])]) {
+    if (!took.has(item)) continue;
+    if (f.arsenal && f.arsenal.items.includes(item)) removeFromArsenal(f, item, "taken", { keepOn: true });
+    else if (f.wares && f.wares.includes(item)) f.wares.splice(f.wares.indexOf(item), 1);
+  }
+  gatherStores(state, f); // groupbases.js: every base's stores in one
   const wasAlive = f.alive;
   f.alive = false; f.bases = []; f.pact = null; f.pop = 0;
   for (const q of [...state.parties]) if (q.owner === f.id) removeParty(state, q);
@@ -1116,7 +1168,6 @@ function militaryFalls(state, f, how) {
     // dead: the garrison's own dead fill it; a hive killed nearby (its Hivemind dead: hives.js destroyHive) fades only what the
     // hive radiated, never below this, until someone builds on the ruin.
     t.ruin = { name: place, day: d, by: "the dead", from: f.name, dead: 0.85 };
-    t.loot = Math.max(t.loot || 0, M.RUIN_LOOT);
     t.infection = Math.max(t.infection || 0, 0.85);
     // The first year's spread (hardcore-outbreak.js) steers every tile toward its infGoal: raise that too, or it
     // would thin the dead out of the ruin again.
@@ -1145,6 +1196,14 @@ function militaryFalls(state, f, how) {
   const s = hcStrike(state);
   let cutList = s ? (s.people || []).filter((p) => p.alive !== false) : [];
   if (s) { s.phase = "gone"; s.people = []; touchMembers(); }
+  // Their stores (docs/adr/0001-ai-parity.md: nothing from nowhere): the strike force's people have what the strike
+  // took out (strikeStores: its rounds left, its rations and meds), the group they end up in takes it; the base's
+  // stores go out with the groups its soldiers leave in (carryOut, below).
+  const cutIds = new Set(cutList.map((p) => p.id));
+  const strikeStock = s ? strikeStores(s) : {};
+  if (s) { s.ammo = 0; s.rations = {}; s.meds = 0; }
+  let strikeGone = !Object.keys(strikeStock).length;
+  const storesOf = (list) => { if (strikeGone || !list.some((p) => cutIds.has(p.id))) return {}; strikeGone = true; return { ...strikeStock }; };
   // Too few for a group of their own (HOLD_MIN): they make for the others.
   const held = () => heldList.length, cut = () => cutList.length;
   if (held() && held() < M.HOLD_MIN && cut() >= M.HOLD_MIN) { cutList = [...cutList, ...heldList]; heldList = []; }
@@ -1152,25 +1211,43 @@ function militaryFalls(state, f, how) {
   else if (held() && cut() && held() < M.HOLD_MIN && cut() < M.HOLD_MIN && held() + cut() >= M.HOLD_MIN) { cutList = [...cutList, ...heldList]; heldList = []; }
   const splinters = [];
   const holdName = holdoutsName(state, tile, f);
-  if (held() >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "fortress", holdName, heldList, nearTile(state, tile), freeColor(state, f.color), "the garrison"));
-  if (cut() >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "military", `Remnant of ${s.the}`, cutList, s.tile, f.color, s.the, s));
+  if (held() >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "fortress", holdName, heldList, nearTile(state, tile), freeColor(state, f.color), "the garrison", storesOf(heldList)));
+  if (cut() >= M.HOLD_MIN) splinters.push(makeSplinter(state, f, "military", `Remnant of ${s.the}`, cutList, s.tile, f.color, s.the, storesOf(cutList)));
   for (let i = splinters.length - 1; i >= 0; i--) if (!splinters[i]) splinters.splice(i, 1);
   // A handful in all: a peaceful group near takes them in, else they come to you; with neither they scatter.
   const restList = [...(held() < M.HOLD_MIN ? heldList : []), ...(cut() < M.HOLD_MIN ? cutList : [])];
   let rest = restList.length;
-  let join = null;
+  let join = null, stragglers = null;
   if (rest) {
     const dist = (o) => Math.min(...o.bases.map((x) => g.distance(x, tile)));
     const peaceful = state.factions.filter((o) => o.alive && o.bases.length && !isAggressiveType(o) && dist(o) <= M.JOIN_RANGE);
     join = peaceful.sort((a, b) => dist(a) - dist(b) || a.id - b.id)[0] || null;
     if (join) {
-      const b = makeBand(state, "fortress", {
+      // Their rations are what they carry out (the strike's, and the base's: carryOut), never a ration made for them.
+      stragglers = makeBand(state, "fortress", {
         name: `${f.name} stragglers`, color: f.color, tile: nearTile(state, tile), pop: rest, people: restList, remnant: true, joinId: join.id,
-        stock: { food: rest * 3, water: rest * 2, ammo: rest * 12, meds: 1, fuel: 0, parts: 0, scrap: 2, preserved: rest, jars: 0 },
-        goodwill: f.goodwill, foundAt: d + 20,
+        stock: storesOf(restList), goodwill: f.goodwill, foundAt: d + 20,
       });
-      if (b) b.known = f.known;
+      if (stragglers) stragglers.known = f.known;
     } else if (h || team) { youList.push(...restList); toYou += rest; rest = 0; }
+  }
+  // The base's stores out with the groups its soldiers leave in, each by its people from the base and as far as they
+  // can carry (carryOut); the rest stays in the ruin, on its ground (carry.js leaveOnGround: the stores as stacks, the
+  // armory's kit nobody took as itself) for whoever comes for it. The strike's stores, if nobody of the strike is in
+  // a group (they came to you or scattered), lie where the strike force was.
+  {
+    const baseIds = new Set(outList.map((p) => p.id));
+    const leaving = [...splinters, ...(stragglers ? [stragglers] : [])].map((b) => ({ b, people: (b.people || []).filter((p) => baseIds.has(p.id)) })).filter((x) => x.people.length);
+    const left = carryOut(state, f.stock || {}, leaving);
+    if (f.stock) for (const k of Object.keys(f.stock)) f.stock[k] = 0;
+    const kit = [];
+    for (const it of pile) {
+      if (f.arsenal && f.arsenal.items.includes(it)) removeFromArsenal(f, it, "left");
+      else if (f.wares && f.wares.includes(it)) f.wares.splice(f.wares.indexOf(it), 1);
+      kit.push(it);
+    }
+    leaveOnGround(state, tile, left, kit);
+    if (!strikeGone && s) leaveOnGround(state, s.tile, strikeStock, []);
   }
   m.splinters = splinters.map((b) => b.id);
   m.toYou = toYou;
@@ -1200,25 +1277,56 @@ function militaryFalls(state, f, how) {
 }
 
 // A group of what was left of the military: a band on the road that founds its hub somewhere defensible.
-// The garrison's survivors carry out a share of the base's stores (SPLINTER_GRAB); the strike force what it has left.
-// people: the very soldiers (members.js), who become the band's people with what they carry.
-function makeSplinter(state, f, type, name, people, tile, color, of, strike = null) {
+// people: the very soldiers (members.js), who become the band's people with what they carry. stock: what the strike
+// force's people of it carried out (strikeStores), else nothing; the base's stores are added as they carry them out
+// (carryOut). Nothing is made for them: a base that had little leaves them little.
+function makeSplinter(state, f, type, name, people, tile, color, of, stock = {}) {
   const rng = grng(state), d = day(state);
   const pop = people.length;
-  const st = f.stock || {}, k = strike ? 0 : M.SPLINTER_GRAB;
-  const grab = (key, min) => Math.max(min, Math.round((key === "food" ? foodIn(st) : key === "preserved" ? 0 : st[key] || 0) * k)); // food: days of it (foods.js)
   const b = makeBand(state, type, {
-    name, color, tile, pop, people, remnant: true, splinter: of,
-    stock: {
-      food: grab("food", pop * 4), water: grab("water", pop * 2), ammo: strike ? Math.max(pop * 10, strike.ammo) : grab("ammo", pop * 14), meds: grab("meds", 3),
-      fuel: type === "military" ? 4 : grab("fuel", 0), parts: grab("parts", 1), scrap: grab("scrap", 6), preserved: grab("preserved", pop), jars: 0,
-    },
+    name, color, tile, pop, people, remnant: true, splinter: of, stock,
     goodwill: f.goodwill, foundAt: d + rng.int(M.SPLINTER_FOUND[0], M.SPLINTER_FOUND[1]),
   });
   if (!b) return null;
   b.known = f.known;
   log(state, `${name} (${pop} ${of === "the garrison" ? "of the garrison" : `of ${of}`}) ${type === "military" ? "keep their ranks and their flag" : "dig in for themselves"}: they mean to find a place of their own.`, "info");
   return b;
+}
+// What the strike force carries of the base's stores: its rounds left (a count: ammo.js settles them into its guns'
+// calibres when they reach a store), its rations and meds (launchStrike).
+function strikeStores(s) {
+  const out = {};
+  if (s.ammo > 0) out.ammo = s.ammo;
+  for (const [k, q] of Object.entries(s.rations || {})) if (q > 0) out[k] = (out[k] || 0) + q;
+  if (s.meds > 0) out.meds = (out.meds || 0) + s.meds;
+  return out;
+}
+// The fallen base's stores carried out by the groups that leave it (leaving: [{ b: the band, people: its people from
+// the base }]): each takes its share by its people from the base, as far as they can carry it on top of what they
+// wear (parties.js carryCapacity: your teams' rule; the kit they took is already on them), and then what the others
+// had no room for, while it has room. The rounds and the meds first, then food, water, fuel, parts and scrap, the rest
+// last; whole units but for food. Into the band's stock (b.stock). Returns what is left in the stores.
+const OUT_ORDER = (k) => (/^a_/.test(k) || k === "ammo" ? 0 : k === "meds" ? 1 : FOODS[k] ? 2 : k === "water" ? 3 : k === "fuel" ? 4 : k === "parts" || k === "scrap" ? 5 : 6);
+function carryOut(state, stock, leaving) {
+  const left = {};
+  for (const [k, q] of Object.entries(stock || {})) if (SUPPLIES[k] && Number.isFinite(q) && q > 0) left[k] = q;
+  if (!leaving.length) return left;
+  const heads = leaving.reduce((a, x) => a + x.people.length, 0);
+  const room = leaving.map((x) => Math.max(0, carryCapacity(state, x.people, null)));
+  for (const k of Object.keys(left).sort((a, b) => OUT_ORDER(a) - OUT_ORDER(b) || (a < b ? -1 : 1))) {
+    const w = supWeight(k) || 0, all = left[k];
+    for (let pass = 0; pass < 2; pass++) leaving.forEach((x, i) => {
+      let q = Math.min(left[k], pass === 0 ? (all * x.people.length) / heads : left[k]);
+      if (w > 0) q = Math.min(q, room[i] / w);
+      if (!FOODS[k]) q = Math.floor(q + 1e-9);
+      if (!(q > 0)) return;
+      x.b.stock[k] = (x.b.stock[k] || 0) + q;
+      left[k] -= q;
+      room[i] -= q * w;
+    });
+    if (left[k] <= 1e-9) delete left[k];
+  }
+  return left;
 }
 // "Marrow Guard Holdouts", "Cedar Falls Depot Holdouts": the garrison's survivors, by the base's name.
 function holdoutsName(state, tile, f) {
