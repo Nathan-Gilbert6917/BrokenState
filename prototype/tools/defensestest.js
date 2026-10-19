@@ -8,7 +8,7 @@
 // Usage: node tools/defensestest.js [seed]
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import {
-  BUILDINGS, WALL_TIERS, canBuild, queueBuild, constructionHour, baseWalls, wallOf, wallTier, wallSectionHp, placeProblem, migrateWalls, addBuilding, cancelBuild, demolishRefund,
+  BUILDINGS, WALL_TIERS, count, canBuild, queueBuild, constructionHour, baseWalls, wallOf, wallTier, wallSectionHp, placeProblem, migrateWalls, addBuilding, cancelBuild, demolishRefund,
 } from "../src/sim/buildings.js";
 import { holdLimit, defenceMult, tierMults, DEFENCE } from "../src/sim/defences.js";
 import { baseDefense } from "../src/sim/factions.js";
@@ -18,6 +18,9 @@ import { wallHp } from "../src/sim/deploy.js";
 import { newItem, ensureInv } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { renderModal } from "../src/ui/ui.js";
+import { MINES, minesLeft, minesKill, spendMines, settleMines, raidMines } from "../src/sim/mines.js";
+import { hordeAttackBase, holdCheck } from "../src/sim/defences.js";
+import { makeHorde } from "../src/sim/hordes.js";
 
 const seed = Number(process.argv[2] || 7);
 let pass = 0, fail = 0;
@@ -45,7 +48,7 @@ console.log("The Defenses tab: what each size of base takes");
   const st = world();
   const h = hub(st);
   const defs = Object.entries(BUILDINGS).filter(([, d]) => d.tab === "defenses").map(([k]) => k);
-  check(["walls", "barbed_wire", "trench", "spike_pits", "barricades", "sandbag_wall", "razor_wire", "guard_towers", "gate", "floodlights"].every((k) => defs.includes(k)), `the list: ${defs.join(", ")}`);
+  check(["walls", "barbed_wire", "trench", "spike_pits", "barricades", "sandbag_wall", "razor_wire", "guard_towers", "minefield", "gate", "floodlights"].every((k) => defs.includes(k)), `the list: ${defs.join(", ")}`);
   check(defs.every((k) => BUILDINGS[k].size), "every defense names the smallest base that takes it");
   const at = (base) => defs.filter((k) => !placeProblem(base, k));
   asCamp(h);
@@ -256,6 +259,74 @@ console.log("Cancelling a wall upgrade");
   queueBuild(st, h, "walls");
   cancelBuild(st, h, h.construction[0].id);
   check(h.stock.scrap === scrap0 && wallOf(h).tier === 1, "an untouched upgrade cancelled: everything back, the fence as it was");
+}
+
+console.log("Land mines: the main base's minefield");
+{
+  const st = world();
+  const h = hub(st);
+  rich(h);
+  for (const s of atBase(st, h.id)) s.skills.mechanics = 0;
+  check(/Mechanics 4/.test(canBuild(st, h, "minefield").reason), "needs a Mechanics 4+ survivor here");
+  skilled(st, h, "mechanics", 4);
+  check(canBuild(st, h, "minefield").ok, "the main base builds a minefield");
+  asOutpost(h);
+  check(placeProblem(h, "minefield") === "Opens at the main base", "an outpost does not (main hub only)");
+  h.type = "hub";
+  const f = addBuilding(h, "minefield");
+  check(f.mines === MINES.PER && minesLeft(h) === MINES.PER && minesKill(h, 100) === MINES.PER * MINES.KILL, `${MINES.PER} mines a field, ${MINES.KILL} of the dead each`);
+  const before = holdCheck(st, h, 60);
+  check(before.after === 60 - minesKill(h, 60), "the hold check counts the dead the mines take before the walls");
+  spendMines(h, MINES.PER - 1);
+  check(minesLeft(h) === 1 && count(h, "minefield") === 1, "mines spent one by one");
+  spendMines(h, 1);
+  check(!count(h, "minefield"), "an empty field is cleared away (build it again)");
+  addBuilding(h, "minefield");
+  const r = raidMines(st, h);
+  check(r.used === MINES.RAID && minesLeft(h) === MINES.PER - MINES.RAID, `a raid by the numbers sets off ${MINES.RAID}`);
+  // A horde by the numbers.
+  const st2 = world();
+  const h2 = hub(st2);
+  addBuilding(h2, "walls"); addBuilding(h2, "minefield");
+  const hd = makeHorde(st2, { tile: h2.tile, size: 30, split: true });
+  const size0 = hd.size;
+  hordeAttackBase(st2, hd, h2);
+  check(minesLeft(h2) < MINES.PER && (hd.size < size0 || !st2.hordes.includes(hd)), `a horde of ${size0} walks into it: ${MINES.PER - minesLeft(h2)} mines gone off, ${size0 - hd.size} of the dead taken`);
+}
+
+console.log("Land mines on the battle map");
+{
+  const st = world();
+  const h = hub(st);
+  addBuilding(h, "walls"); addBuilding(h, "minefield");
+  const b = raid(st, h);
+  const mines = b.cells.map((c, i) => [c, i]).filter(([c]) => c.mine);
+  check(b.mines && b.mines.laid === MINES.PER && mines.length === MINES.PER, `the fort map: ${mines.length} mines buried in the margin`);
+  const F = b.deployPlan.fort, w = F.wall;
+  check(mines.every(([, i]) => { const x = i % b.w, y = (i - x) / b.w; return Math.max(w.x0 - x, x - w.x1, w.y0 - y, y - w.y1) >= 2; }) && b.units.filter((u) => u.side === "enemy").every((u) => !b.cells[u.y * b.w + u.x].mine), "outside the wall's foot, none under an attacker at the start");
+  // A raider steps on one; one of yours does not set it off.
+  const [, mi] = mines[0];
+  const mx = mi % b.w, my = (mi - mx) / b.w;
+  const e = b.units.find((u) => u.side === "enemy");
+  const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [mx + dx, my + dy]).find(([x, y]) => b.cells[y * b.w + x] && CELL[b.cells[y * b.w + x].k].walk && !b.cells[y * b.w + x].mine);
+  const me = b.units.find((u) => u.side === "player");
+  const mx0 = me.x, my0 = me.y;
+  me.x = near[0]; me.y = near[1];
+  moveAlong(b, me, [[mx, my]]);
+  check(me.x === mx && b.cells[mi].mine, "one of yours steps on it: nothing (they know where it is)");
+  me.x = mx0; me.y = my0;
+  e.x = near[0]; e.y = near[1]; e.ap = 2;
+  const hp0 = e.hp;
+  moveAlong(b, e, [[mx, my], [mx + (mx - near[0]), my + (my - near[1])]]);
+  check(!b.cells[mi].mine && e.x === mx && (e.hp < hp0 || e.dead || e.down), `a raider steps on one: it goes off under them (${Math.round(hp0)} → ${e.dead ? "dead" : Math.round(e.hp)})`);
+  settleMines(st, b);
+  check(minesLeft(h) === MINES.PER - 1, `the fight over: the base keeps the ${minesLeft(h)} that did not go off`);
+  st.combat = null;
+  const st2 = world();
+  const h2 = hub(st2);
+  addBuilding(h2, "minefield");
+  const b2 = raid(st2, h2);
+  check(b2.deployPlan.interior && b2.mines && b2.cells.filter((c) => c.mine).length === MINES.PER, "no wall: the mines are across the yard's approach");
 }
 
 console.log("The Defenses tab in the base window");

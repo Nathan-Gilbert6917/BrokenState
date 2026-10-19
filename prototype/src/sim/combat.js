@@ -111,7 +111,8 @@ import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
 import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
-import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js"; // barbed wire snags the living unless they cut it (the user's request 2026-10-19)
+import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js";
+import { mineStep, settleMines } from "./mines.js"; // land mines: set off underfoot, the rest kept by the base when it is over // barbed wire snags the living unless they cut it (the user's request 2026-10-19)
 import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, breakPiece, boardedName, aiBarricade, kitBoards } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
 import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its containers as the ledger keeps them, their own dice
@@ -3943,6 +3944,7 @@ export function moveAlong(b, u, path) {
       if (!active(u) || trap !== "spikes") break;
     }
     if (trap === "wire" && u.kind !== "zombie" && wireStep(null, b, u, x, y, { say, damage, fx })) break; // wire.js: the living snagged, or cutting through
+    if (b.cells[idx(x, y)].mine && mineStep(b, u, x, y, { say })) break; // mines.js: a mine underfoot (never one of yours)
     // A trench (buildings.js trench, the user's request 2026-10-19: it slows the dead more than the living): the dead
     // lose the rest of their turn (above); the living drop in and the move ends there, their next action kept to climb
     // out. Once a trench: moving along it from a cell of it costs nothing more.
@@ -6121,6 +6123,7 @@ function wearFielded(state, b, fought) {
 export function closeCombat(state, { take = true } = {}) {
   const b = state.combat;
   if (!b || !b.over) return;
+  settleMines(state, b); // mines.js: the base's fields keep the mines that did not go off
   if (b.bodies && b.bodies.length) {
     if (take) takeAllBodies(state);
     leaveBodies(state, b);

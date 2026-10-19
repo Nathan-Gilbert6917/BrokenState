@@ -19,6 +19,7 @@ import { densify, COVER } from "./battlesize.js"; // cover over the margin
 import { poweredType } from "./power.js";
 import { isNight } from "./world.js";
 import { armoryDefence, bossUnit } from "./defences.js";
+import { layMines } from "./mines.js"; // the main base's minefield in the margin
 import { preBoardBase } from "./barricade.js"; // their outer windows and doors boarded before your assault (the user's pick 2026-10-18)
 
 export const FORT = {
@@ -30,7 +31,7 @@ export const FORT = {
   HORDE_SIDES: [1, 6, 12, 18], // a horde of at least this many of the dead can come from 1, 2, 3, 4 sides (how many: its dice)
   GATE_HOLD: 7, GATE_HOLD_TWO: 9, // defenders needed before one, two hold the gate facing the attack (DEPLOY.GATE_ONE / TWO)
   TRAP_HP: 25,
-  WIRE: [2, 4], RAZOR: 6, TRENCH: [3, 5], // cells out from the wall: the barbed wire fences' rings, the concertina wire's, the trenches' (within MARGIN)
+  WIRE: [2, 4], RAZOR: 6, TRENCH: [3, 5], MINES: [2, 6], // cells out from the wall: the barbed wire fences' rings, the concertina wire's, the trenches' (within MARGIN)
 };
 const SIDES = ["north", "east", "south", "west"];
 const OPPOSITE = { north: "south", south: "north", east: "west", west: "east" };
@@ -137,10 +138,24 @@ export function buildFort(base, c, rng, opts = {}) {
   for (let y = wy0 + 1; y <= wy1 - 1; y++) for (let x = wx0 + 1; x <= wx1 - 1; x++) inside[y * W + x] = 1;
   // Cover over the margin's open ground as on any field (battlesize.js densify), never within 2 cells of the wall.
   densify(cells, W, H, rng, { target: COVER.OPEN, keep: (x, y) => !!inside[y * W + x] || (x >= wx0 - 2 && x <= wx1 + 2 && y >= wy0 - 2 && y <= wy1 + 2) });
+  // Land mines (mines.js, the main base's Minefield): buried in the margin's open ground (after its cover, so nothing stands on one) FORT.MINES cells out, off the
+  // lanes to the gates (the base's own way out); the attackers start beyond them.
+  let minesLaid = 0;
+  if (base && count(base, "minefield")) {
+    const lane = (x, y) => SIDES.some((s) => gates[s].some(([gx, gy]) => (s === "north" || s === "south" ? Math.abs(gx - x) <= 1 : Math.abs(gy - y) <= 1)));
+    const cand = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const d = Math.max(wx0 - x, x - wx1, wy0 - y, y - wy1);
+      if (d >= FORT.MINES[0] && d <= FORT.MINES[1] && !lane(x, y) && at(x, y).k === "open") cand.push([x, y]);
+    }
+    minesLaid = layMines(null, base, cells, cand, rng, W);
+    if (minesLaid) wireOut = Math.max(wireOut, FORT.MINES[1]);
+  }
+
   for (let y = 0; y < yh; y++) for (let x = 0; x < yw; x++) if (lay.indoor[y * yw + x]) indoor[(y0 + y) * W + x0 + x] = 1;
   const buildings = lay.buildings.map((s) => ({ name: s.name, key: s.key, roof: !!s.roof, storeys: s.storeys || 0, x0: s.x0 + x0, y0: s.y0 + y0, w: s.w, h: s.h, doors: (s.doors || []).map(off) }));
   return {
-    W, H, cells, M, x0, y0, yw, yh, wall: { x0: wx0, x1: wx1, y0: wy0, y1: wy1 }, ring, walkway, gates, towers: [...towers, ...lay.towers.map(off)], ladders, wireOut,
+    W, H, cells, M, x0, y0, yw, yh, wall: { x0: wx0, x1: wx1, y0: wy0, y1: wy1 }, ring, walkway, gates, towers: [...towers, ...lay.towers.map(off)], ladders, wireOut, minesLaid,
     inside, indoor, buildings, lofts: lay.lofts.map(off), roofs: lay.roofs.map(off), doors: lay.doors.map(off), lay,
   };
 }
@@ -209,6 +224,7 @@ export function fortDefence(b, ctx, base, c) {
       for (let i = 0; i < (c.pits || 0) * 5; i++) { const s = spots.length ? spots.splice(rng.int(0, spots.length - 1), 1)[0] : null; if (s && F.cells[s[1] * F.W + s[0]].k === "open") F.cells[s[1] * F.W + s[0]].k = "spikes"; }
     }
     F.side = side;
+    if (F.minesLaid) b.mines = { baseId: base.id, laid: F.minesLaid }; // mines.js settleMines: what is left goes back to the base
     resizeBattle(b, F.W, F.H, F.cells, Math.floor(F.W / 2), 0);
     b.deployPlan = { walled: true, fort: F, gate: F.gates[side], breaches: F.breaches, towers: F.towers };
     return;

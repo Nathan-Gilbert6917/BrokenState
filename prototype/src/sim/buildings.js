@@ -20,6 +20,7 @@ import { livestockYield, PEN } from "./farming.js"; // the animal pen (station "
 import { kitchenService, jobShare } from "./kitchen.js"; // the Kitchen's meals (buildingSummary)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: the builders go out on the odd hours
+import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
 
 export const RECIPES = {
@@ -103,6 +104,9 @@ export const BUILDINGS = {
   gate:         { name: "Reinforced gate",  cost: { scrap: 14, parts: 1 },  hours: 20, max: 1, defence: true, tab: "defenses", size: "outpost", desc: "Steel plate and a bar on the gate: the base holds back 20% more of a horde, the gate has 180 hit points instead of 100 on the battle map, plus two more barricades there. Needs walls to matter; a Wallbreaker smashes it when no barricade is left." },
   floodlights:  { name: "Floodlights",      cost: { scrap: 8, parts: 2 },   hours: 12, max: 1, defence: true, tab: "defenses", size: "outpost", desc: "Work lights on the walls. Burns 2 fuel when a horde attacks: the base holds back 10% more, and defenders aim better on the battle map (+10 at night, +4 by day). No fuel, no lights." },
   razor_wire:   { name: "Concertina wire",  cost: { scrap: 12, parts: 1 },  hours: 12, max: 1, defence: true, tab: "defenses", size: "outpost", desc: "Coils of razor wire further out than the barbed wire: the base holds back 10% more of a horde and counts more against raiders. On the battle map a line of razor wire: it stops the dead for the turn and cuts them, and snags people worse than barbed wire (more cuts) unless they carry a cutter. Cut wire (1 action) clears a cell of it too." },
+  // Land mines (mines.js, the user's request 2026-10-19): the main base's own; MINES.PER mines a field (b.mines), spent
+  // as they go off and the field gone when it is empty.
+  minefield:    { name: "Minefield",        cost: { scrap: 20, parts: 3, fuel: 6 }, hours: 24, max: 2, defence: true, tab: "defenses", size: "hub", req: { mechanics: 4 }, desc: "Twelve improvised mines (fuel and scrap in pipe casings, pressure plates) buried in the open ground the attackers cross. A horde sets some off on the way in (each takes about 2 of the dead), a raid loses a raider or two to them, and while mines are left the base counts more against raiders. On the battle map they are hidden in the approach: anyone who is not one of yours steps on one and it goes off like a pipe bomb; your own people know where they are and step round them. Mines that go off are spent; an empty field is cleared away (build it again). Main base only; needs a Mechanics 4+ survivor here to build." },
   guard_towers: { name: "Guard towers",     cost: { scrap: 30, parts: 2 },  hours: 36, max: 1, defence: true, tab: "defenses", size: "hub", req: { mechanics: 2 }, needsWall: true, desc: "Two raised gun towers on the wall midway along it: the base holds back 8% more of a horde and counts more against raiders. On the battle map two more towers on the walkway (height 2: full cover from anything not right next to them, +10 aim at anything lower). Needs a wall to stand on and a Mechanics 2+ survivor here to build." },
   // Hiding a base (hiding.js): netting and brush over the roofs and the yard, the paths kept off. Concealment + HIDE.CAMO.
   camo:         { name: "Camouflage netting", cost: { scrap: 10, parts: 1 }, hours: 16, max: 1, tab: "defenses", size: "outpost", desc: "Netting, brush and dull paint over the roofs and the yard, and the paths kept off the open ground: the base is harder to find (concealment +25%: the groups' scouts and passing parties miss it more often, and a base they have not seen for a month may slip out of what they know). See the base's Defence tab." },
@@ -613,6 +617,7 @@ export function addBuilding(base, type) {
   if (type === "radio") base.radio = true;
   if (type === "watchtower") base.watchtower = true;
   if (BUILDINGS[type].barrel) { b.tier = 1; b.holds = WATER_BARREL.holds; }
+  if (type === "minefield") b.mines = MINES.PER; // mines.js: a full field
   if (type === "generator") b.tier = 1; // gen-tiers: a portable set (power.js GEN_TIERS)
   return b;
 }
