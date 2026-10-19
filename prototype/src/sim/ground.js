@@ -116,7 +116,7 @@ export function pickUpFromGround(state, b, u, where, item = null, arms = false) 
   const pile = isPile(where) ? where : where ? groundAt(b, where.x, where.y, where.f ?? (u.f || 0)) : pilesNear(b, u)[0];
   if (!pile || !pileCount(pile)) { out.msg = "Nothing on the ground there."; return out; }
   if (!near(u, pile)) { out.msg = `${u.name.split(" ")[0]} has to be on it or next to it.`; return out; }
-  { const why = handsTakeRefusal(u, item ? `the ${item.name}` : "more"); if (why) { out.msg = why; return out; } } // carry.js: two different things carried already
+  { const why = handsTakeRefusal(u, item ? `the ${item.name}` : "more", item); if (why) { out.msg = why; return out; } } // carry.js: two different things carried already
   if (item) {
     const i = pile.contents.gear.indexOf(item);
     if (i < 0) { out.msg = "That is not there any more."; return out; }

@@ -60,6 +60,15 @@ export const BENCH = {
 const benchText = (k) => `crafters here work ${Math.round((BENCH[k].rate - 1) * 100)}% faster and what they make comes out +${Math.round(BENCH[k].quality * 100)}% condition (at most 100%; condition sets a weapon's damage and armour's protection)`;
 const BENCH_GATE = "Hand crafting at a base needs a bench for everything but the simple recipes a team can make on the road (marked Field) and those made at their own station";
 
+// Base storage (basestorage.js, the user's request 2026-10-19: "needing to craft simple storage boxes up to buildings of
+// different sizes with the dedication to increasing the base storage"): the kg of the base's goods each building holds
+// (BUILDINGS storeKg). A ladder of sizes, cheapest first: the storage box (a camp's), the storage crates, the storage
+// shed, the storehouse, the warehouse (an outpost or the main base only: size); the root cellar, the cold store and the
+// walk-in freezer hold goods too. Costs (the design): the box 2 scrap, 2 work-hours (a camp builds up to 4, a shelter
+// 6; no plot: it stands anywhere in the yard); the shed 12 scrap and a building material, 12 hours, a building plot;
+// the warehouse 40 scrap, 4 building materials and a part, 48 hours, Mechanics 2.
+export const STORE_KG = { storebox: 60, crates: 150, shed: 600, storehouse: 2000, warehouse: 6000, cellar: 400, coldstore: 300, freezer: 300 };
+
 export const BUILDINGS = {
   farm_plot:    { name: "Farm plot",      cost: { scrap: 8 },             hours: 12, max: 10, desc: "+2 crop plots (Farming tab). Every base starts with some plots: a camp 1, a shelter 2, an outpost 4, the main base 8." },
   craftbench:   { name: "Crafting bench", plot: "utility", family: "bench", tier: 1, cost: { scrap: 12, parts: 1 }, hours: 12, max: 1, craft: BENCH.craftbench, // BENCH: why it costs this
@@ -136,7 +145,10 @@ export const BUILDINGS = {
   // Any base, the hub too, but not where a radio station stands (canBuild: the station's 12 tiles cover its 6).
   relay:        { name: "Radio relay",    plot: "utility", cost: { scrap: 15, parts: 3 },  hours: 24, max: 1, req: { mechanics: 3 }, desc: "An unmanned repeater mast for any base without a radio station: extends radio coverage 6 tiles around this base when a radio station or another linked relay is within range, so relays chain your coverage outward. Groups whose base lies within your coverage + 6 tiles can be called on the radio and invited into the coalition. No operator; uses 1 part every 10 days (from here, else the hub) or goes off the air. Needs a Mechanics 3+ survivor here to build." },
   garage:       { name: "Garage",         plot: "building", cost: { scrap: 20, parts: 2 },  hours: 30, max: 1, desc: "Vehicle repairs restore 25 condition per part (12 without). No mechanic needed. Keeps 2 cars out of the frost (vehicles.js GARAGE_SHELTER)." },
-  storehouse:   { name: "Storehouse",     plot: "building", cost: { scrap: 18 },            hours: 24, max: 1, desc: "Locked store: +150 days of food room at room temperature (fresh food keeps its own shelf life here, a little better in the cold), and raiders steal half as much from this base." },
+  storehouse:   { name: "Storehouse",     plot: "building", cost: { scrap: 18 },            hours: 24, max: 1, storeKg: STORE_KG.storehouse, desc: "Locked store: holds 2000 kg of the base's goods, +150 days of food room at room temperature (fresh food keeps its own shelf life here, a little better in the cold), and raiders steal half as much from this base." },
+  // Storage buildings (STORE_KG, basestorage.js): room for the base's goods; what does not fit lies outside.
+  shed:         { name: "Storage shed",   plot: "building", cost: { scrap: 12, buildmat: 1 }, hours: 12, max: 4, storeKg: STORE_KG.shed, desc: "A plank shed with a tin roof and a padlock: holds 600 kg of the base's goods out of the weather. Goods past a base's storage lie outside, where things wear and raiders help themselves." },
+  warehouse:    { name: "Warehouse",      plot: "building", cost: { scrap: 40, buildmat: 4, parts: 1 }, hours: 48, max: 2, req: { mechanics: 2 }, size: "outpost", storeKg: STORE_KG.warehouse, desc: "A steel-framed hall with a roller door and racking: holds 6000 kg of the base's goods. An outpost or the main base only; needs a Mechanics 2+ survivor here to build." },
   // Water and food keeping (economy.js WATER, spoilRate; farming.js greenhouse plots).
   well:         { name: "Well",           plot: "utility", cost: { scrap: 15, parts: 1 },  hours: 24, max: 2, desc: "+6 water a day (less in a dry spell). Fills the base up to its water capacity." },
   rain_catcher: { name: "Rain catcher",   plot: "utility", cost: { scrap: 5 },             hours: 8,  max: 4, desc: "Tarps and barrels: +2 water per unit of rain (about 4–7 on a wet day, up to 12 in a storm, nothing when dry)." },
@@ -144,9 +156,9 @@ export const BUILDINGS = {
   // The worm (worm.js): heat kills its eggs. The boiler makes a base's ground water safe; the cook fire its game.
   boiler:       { name: "Water boiler",   plot: "utility", cost: { scrap: 10 },            hours: 10, max: 1, desc: "A drum over a fire pit: everything this base draws from its well, springs and streams is boiled before it is drunk, so the worm's eggs in infected ground water die. Burns 6 firewood (0.6 kg) a day for every person fed here, in every season, on days un-purified water would be drunk and no water filter here covers it: firewood first, then cheap wooden, paper and cloth junk from the armory (novels, magazines, rag boots; anything you mark to burn; never weapons, tools or armour) while the base allows it, then fuel (0.04 a head). A day with nothing to burn it stays cold: the filters, then the armory's purification tablets, else the water is drunk unboiled. A water filter does the same job for nothing, as long as it lasts." },
   // Food storage (storage.js): room for fresh food; food above the room is stored outside and spoils fast.
-  cellar:       { name: "Root cellar",    plot: "building", cost: { scrap: 15 },            hours: 20, max: 2, desc: "+200 days of food room underground: fresh food keeps about three times as long in a root cellar (0.35× its shelf a day: potatoes for months). The hub already has a small cellar (200), an outpost only a pantry (40); fresh food above the room is stored outside and spoils faster (1.5×, more in heat and rain). Canned, dry and preserved food needs no room." },
+  cellar:       { name: "Root cellar",    plot: "building", cost: { scrap: 15 },            hours: 20, max: 2, storeKg: STORE_KG.cellar, desc: "Holds 400 kg of the base's goods. +200 days of food room underground: fresh food keeps about three times as long in a root cellar (0.35× its shelf a day: potatoes for months). The hub already has a small cellar (200), an outpost only a pantry (40); fresh food above the room is stored outside and spoils faster (1.5×, more in heat and rain). Canned, dry and preserved food needs no room." },
   // An ice house (machines-2, the user's pick: no power, no summer bonus).
-  coldstore:    { name: "Cold store",     plot: "building", cost: { scrap: 20 },            hours: 24, max: 1, desc: "An ice house packed with ice and snow: +150 days of food room, the best there is in winter (fresh food at 0.15–0.3× its shelf a day), still good in spring and autumn (0.6×), little better than a pantry in summer once the ice is gone (0.9×)." },
+  coldstore:    { name: "Cold store",     plot: "building", cost: { scrap: 20 },            hours: 24, max: 1, storeKg: STORE_KG.coldstore, desc: "Holds 300 kg of the base's goods. An ice house packed with ice and snow: +150 days of food room, the best there is in winter (fresh food at 0.15–0.3× its shelf a day), still good in spring and autumn (0.6×), little better than a pantry in summer once the ice is gone (0.9×)." },
   // The Preserving room (key "kitchen" in saves): jars food. The Kitchen that cooks the meals is "canteen" below
   // (kitchen.js).
   kitchen:      { name: "Preserving room", plot: "building", cost: { scrap: 18, parts: 1 }, hours: 24, max: 2, station: "preserve", desc: "Workshop station. One operator jars fresh food: 9 days of fresh food (what spoils soonest) + 3 water + 1 scrap + 4 empty jars → 8 portions of jarred food a day (9 with Farming 8+). Jarred food keeps a year and a half and needs no cold room; jars are found in kitchens, shops and farms, and most come back when the food is eaten here. Can be fitted with a pressure canner where it stands (Construction): +1 portion a day." },
@@ -179,8 +191,8 @@ export const BUILDINGS = {
   // machine parts and 2 electronics (the thermostat and the compressor's controls), 40 work-hours, Mechanics 3. Draws 2
   // of a generator's 6 power every day, wears like a machine (0.9 a day while it runs) and uses a spare part every 12
   // days on (breakdowns.js spares).
-  freezer:      { name: "Walk-in freezer", plot: "building", cost: { scrap: 30, parts: 5, electronics: 2 }, hours: 40, max: 2, req: { mechanics: 3 }, machine: true,
-                  desc: "An insulated room with a compressor: +300 food storage room, and while it has power the food in it keeps about twenty times longer than in a cellar. Draws 2 power every day from a running generator (Power card, Workshops tab); with no power, no fuel for the generator or a breakdown it is off and warms up, and the food in it keeps only as in a pantry. Wears like a machine: breakdowns need machine parts and a Mechanics 3+ survivor to fix, and it uses a spare part about every 12 days it runs. Needs a Mechanics 3+ survivor here to build." },
+  freezer:      { name: "Walk-in freezer", plot: "building", cost: { scrap: 30, parts: 5, electronics: 2 }, hours: 40, max: 2, req: { mechanics: 3 }, machine: true, storeKg: STORE_KG.freezer,
+                  desc: "Holds 300 kg of the base's goods. An insulated room with a compressor: +300 food storage room, and while it has power the food in it keeps about twenty times longer than in a cellar. Draws 2 power every day from a running generator (Power card, Workshops tab); with no power, no fuel for the generator or a breakdown it is off and warms up, and the food in it keeps only as in a pantry. Wears like a machine: breakdowns need machine parts and a Mechanics 3+ survivor to fix, and it uses a spare part about every 12 days it runs. Needs a Mechanics 3+ survivor here to build." },
   // The vacuum sealer (freezer-parts 2026-10-10, the user's pick): a powered packing machine on a utility plot, no
   // operator (like the freezer it is a power user, not a workshop station). Wave 2 cooking makes packaged survival
   // meals with it (cooking.js COOK_RECIPES.survival, needs: "sealer" → power.js hasSealer). 12 scrap, 2 machine parts, 2 electronics (the heat bar and its
@@ -226,8 +238,10 @@ export const BUILDINGS = {
                   desc: "Operating theatre on generator power. 10 beds: +24 health/day, meds 120% more effective, cleans infected wounds, full surgery (severe wounds heal 20% faster), med stations make +1 meds a day. Upgrades the clinic. Needs 3 Medics (a Medic trainee counts as half of one), and Medicine 10+ and Mechanics 4+ survivors here to build. Takes 3 Medic trainees; lessons and ward rounds teach 75% faster than in the infirmary, and a trainee can learn up to the doctor's own Medicine." },
   // Water barrels (WATER_BARREL below): up to 4, each upgraded on its own and set to hold purified or un-purified water.
   water_barrel: { name: "Water barrel",   plot: "utility", cost: { scrap: 4 },  hours: 6,  max: 4, barrel: true, desc: "A drum on a stand: 25 more water room, kept for the kind you choose. Un-purified: room for the well, rain and river water. Purified: room only safe water may use (water filters' surplus, bottled water brought home), so the well's water never crowds it out and teams always find safe water to pack. Upgrade each barrel on its own: a barrel rack (50), then a water tank (100)." },
-  // Storage crates (storage.js storeSpaces): a little dry room for food, outdoors.
-  crates:       { name: "Storage crates", plot: "utility", cost: { scrap: 4 },  hours: 5,  max: 4, desc: "Stacked, lidded crates under a tarp: +30 days of food room at room temperature." },
+  // Storage crates (storage.js storeSpaces): a little dry room for food, outdoors; and room for goods (basestorage.js).
+  crates:       { name: "Storage crates", plot: "utility", cost: { scrap: 4 },  hours: 5,  max: 4, storeKg: STORE_KG.crates, desc: "Stacked, lidded crates under a tarp: holds 150 kg of the base's goods, and +30 days of food room at room temperature." },
+  // The storage box (basestorage.js): the first storage a camp makes. No plot (it stands anywhere in the yard, like the cots).
+  storebox:     { name: "Storage box",    cost: { scrap: 2 }, hours: 2, max: 6, storeKg: STORE_KG.storebox, desc: "A lidded box knocked together from scrap, under a tarp: holds 60 kg of the base's goods. A camp starts with no storage (a parked vehicle's load space counts while it is here); goods past the room lie outside, where things wear and raiders help themselves. Needs no plot." },
   // Base tiers (staging.js): a shelter (tier 0) is built up into a base (the hub, tier 1) by its builders. Not a
   // building: when it is done the shelter becomes a full hub (upgradeShelter).
   // gather (2026-10-09, user pick): as the outpost camp's, its materials are taken from the stores as they come in.
@@ -447,7 +461,7 @@ export const SHELTER = {
   // What a shelter may build (the most of each): yard things on its 3 utility plots (PLOTS.shelter), one roofed
   // building on its building plot (a bunkhouse, a root cellar, a makeshift infirmary or a hunting cabin), a barricade,
   // a farm plot, the shelter's defences (the Defenses tab) and the step up.
-  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, watchtower: 1, barricades: 2, trench: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2,
+  build: { rain_catcher: 2, smoker: 1, boiler: 1, cookhouse: 1, water_barrel: 2, crates: 2, storebox: 6, watchtower: 1, barricades: 2, trench: 1, farm_plot: 1, hub_up: 1, outpost_up: 1, craftbench: 1, lockup: 1, bunkhouse: 1, cellar: 1, infirmary: 1, huntcabin: 1, cots: 2,
     walls: 1, spike_pits: 2, barbed_wire: 2, sandbag_wall: 2 }, // the Defenses tab: a wall up to a timber palisade (WALL_TIERS), wire, pits, sandbags
 };
 export const isShelter = (base) => !!base && base.tier === 0;
@@ -474,7 +488,7 @@ export const CAMP = {
   // The yard things a camp may build (the most of each; they share its two utility plots). The crafting bench, the
   // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too. The camp's
   // defences (the Defenses tab, 2026-10-19): a stake fence (the wall's first tier), a spike pit, a line of barbed wire.
-  build: { barricades: 1, rain_catcher: 1, crates: 1, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, spike_pits: 1, barbed_wire: 1, trench: 1 }, // the Defenses tab: a stake fence, a pit, a line of wire, a trench
+  build: { barricades: 1, rain_catcher: 1, crates: 1, storebox: 4, water_barrel: 1, craftbench: 1, boiler: 1, cookhouse: 1, smoker: 1, camp_up: 1, outpost_up: 1, walls: 1, spike_pits: 1, barbed_wire: 1, trench: 1 }, // the Defenses tab: a stake fence, a pit, a line of wire, a trench
   ruinScrap: 10,     // on the ruins of a burned base: 10 scrap less for the step up (salvage)
   matScrap: 3, matHours: 3, // its builders make building materials for the step up from scrap (= crafting.js buildmat)
 };
