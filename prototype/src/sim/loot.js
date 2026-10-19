@@ -124,6 +124,7 @@ export const ITEM_TAGS = {
   alarmclock: ["home", "kitchen", "travel", "shop"], pocketradio: ["home", "travel", "camp", "outdoor", "shop"],
   handwarmer: ["outdoor", "camp", "sport", "hunt", "travel"], heatpack: ["medical", "outdoor", "fire", "camp", "military"],
   // base defences
+  boards: ["tools", "farm", "industry", "home"], // barricade.js: boards and nails (found at hardware stores and farms)
   barbedwire: ["farm", "tools", "military", "industry", "prison"], beartrap: ["hunt", "farm", "outdoor", "tools"],
   tripwire: ["camp", "crime", "military", "outdoor", "tools"], sandbags: ["military", "fire", "industry", "tools"],
   // camp kit against Heat

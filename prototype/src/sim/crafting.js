@@ -223,6 +223,7 @@ export function craftOutputText(key) {
     // Wave 2 cooking (cooking.js): the camp cook pot was a bare "tool" here; it says what it cooks and where.
     if (r.gear === "cookpot") fx.push("cooks over a fire: a Camp fire station for simple meals and stew at a base without a Kitchen or a cook fire (1 firewood an hour), and a camping team's fresh food into simple meals at a lit fire");
     if (d.ears) fx.push(`ear protection carried in a pocket or the pack, under any helmet (hearing.js): takes ${d.ears.cut} off a bang's loudness (foam earplugs ${GEAR.earplugs.ears.cut}), hearing ${d.ears.hear} tiles; a pair a fight`);
+    if (r.gear === "boards") fx.push("boards up a door, a doorway or a window in a fight (barricade.js: both actions, loud): 40 hit points the dead and raiders must batter through, up to three layers; one bundle a board-up");
     if (r.gear === "makeshiftpick") fx.push("picks locks in a raid without the crowbar and lockpicks (locks.js): 30% + 4% a Stealth point − 15% a difficulty step, as quiet, but one snaps in two every attempt; not a safe, a steel security door or a gun safe");
     bits.push(`${d.throw || d.suppressor || d.siege || d.cat === "gunmod" || (d.selfStab && !d.medKit) ? "kit" : d.heat ? "camp kit" : "tool"}${fx.length ? `, ${fx.join(", ")}` : ""}`);
   }

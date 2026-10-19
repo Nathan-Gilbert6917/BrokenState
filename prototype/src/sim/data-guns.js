@@ -436,10 +436,10 @@ export const GUN_RARITY = {
 /** @type {Record<string, string>} */
 export const CALIBRE_RARITY = { fiveseven: "scarce", p90: "rare", vector: "rare", g3: "rare", famas: "rare", revolver44: "uncommon", lever44: "uncommon", single44: "uncommon" };
 Object.assign(GUN_RARITY, CALIBRE_RARITY);
-// The survival guns of 2026-10-19 (SURV_GEAR below): the SKS, the folding carbine and the takedown .22 about as common as
-// a lever gun, the Uzi and the bullpup pump scarce.
+// The survival guns of 2026-10-19 (SURV_GEAR below): the SKS and the folding carbine about as common as a lever gun; the
+// takedown .22, the Uzi and the bullpup pump scarce (tools/gunloottest.js: a common gun still 10× a very rare one).
 /** @type {Record<string, string>} */
-export const SURV_RARITY = { sks: "uncommon", uzi: "scarce", pcc9: "uncommon", ksg: "scarce", survival22: "uncommon" };
+export const SURV_RARITY = { sks: "uncommon", uzi: "scarce", pcc9: "uncommon", ksg: "scarce", survival22: "scarce" };
 Object.assign(GUN_RARITY, SURV_RARITY);
 // The extra-gun rolls (gunfinds.js, every roll on its own dice: nothing else found changes): which gun, the source's
 // draws in the gun distribution (gundist.js, GUN_SOURCES below: site:<type>, area:<type>, trader:<type>,

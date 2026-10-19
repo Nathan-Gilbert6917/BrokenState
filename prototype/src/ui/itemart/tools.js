@@ -592,6 +592,11 @@ export const GEAR_ART = {
     bag(0, 9, 7, 15); bag(8, 9, 15, 15); bag(3, 3, 12, 9);
     p.set(3, 6, C.rope); p.set(12, 6, C.rope);
   },
+  boards: (p) => { // a bundle of split planks tied with rope, nails poking out (barricade.js)
+    for (const [y, x0, x1] of [[3, 0, 13], [6, 2, 15], [9, 0, 14], [12, 1, 15]]) { R(p, x0, y, x1, y + 2, C.woodL); H(p, x0, x1, y, shade(C.woodL, 0.25)); H(p, x0, x1, y + 2, C.wood); p.set(x0, y + 1, C.wood); p.set(x1, y + 1, C.brownD); }
+    for (const x of [4, 10]) V(p, x, 2, 15, C.rope);
+    for (const [x, y] of [[1, 2], [14, 5], [2, 8], [13, 11]]) p.set(x, y, C.silver);
+  },
 };
 
 export const SUPPLY_ART = {};

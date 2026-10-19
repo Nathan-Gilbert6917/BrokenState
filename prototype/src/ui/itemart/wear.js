@@ -785,6 +785,20 @@ function gearcase(p) { // a yellow-tan waterproof case: ribbed sides, two big la
   disc(p, 7, 12, 1, "#55595e");
 }
 
+// ---------- carts (sim/carts.js) ----------
+function wheelbarrow(p) { // a green steel tray on one wheel, two wooden handles running back to the left
+  rows(p, 3, [[2, 14], [3, 14], [4, 13], [5, 12], [6, 11]], "#4f8a3a"); lit(p, "#4f8a3a");
+  line(p, 0, 4, 6, 9, "#94683e"); line(p, 0, 5, 6, 10, "#5e3e22");
+  disc(p, 11, 12, 3, "#2a2c30"); disc(p, 11, 12, 1, "#9aa1a8");
+  line(p, 6, 8, 5, 14, "#55595e"); H(p, 4, 6, 15, "#55595e");
+}
+function handcart(p) { // a wooden two-wheeled cart: slatted bed, a long pull handle, big spoked wheels
+  R(p, 1, 4, 12, 8, "#9a6d44"); for (const x of [4, 8]) V(p, x, 4, 8, "#7a5230"); H(p, 1, 12, 4, "#b98a5a"); H(p, 1, 12, 8, "#563820");
+  line(p, 12, 6, 15, 2, "#7a5230");
+  ring(p, 4, 11, 4, "#3a2a1c"); ring(p, 11, 11, 4, "#3a2a1c");
+  for (const [cx] of [[4], [11]]) { V(p, cx, 8, 14, "#7a5230"); H(p, cx - 3, cx + 3, 11, "#7a5230"); p.set(cx, 11, "#c9ced3"); }
+}
+
 // ---------- the bicycle ----------
 function bicycle(p) { // a red mountain bike: knobby wheels, a diamond frame, flat bars and a saddle
   const wheel = [".ttttt.", "tt...tt", "t..s..t", "tsshsst", "t..s..t", "tt...tt", ".ttttt."];
@@ -873,6 +887,7 @@ function legrig(p) { // a thigh platform: two pistol mag pouches, an admin flap,
 export const GEAR_ART = {
   halligan, pipewrench, leatherjacket, chainsleeves, motopants, legrig, // survival gear
   cashbox, firebox, toolbox, gearcase, // lock boxes and equipment cases
+  wheelbarrow, handcart, // carts (sim/carts.js)
   knife: chef, steakknife: steak, filletknife: fillet, cleaver, huntknife: hunter, survivalknife: survival, bowie, bayonet,
   combatknife: combat, shiv, pocketknife: pocket, flipknife: flick, lockback, multitool, boxcutter, balisong,
   machete, sawmachete, springmachete, kukri, katana, cutlass, sabre, broadsword,

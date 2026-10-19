@@ -29,6 +29,7 @@ import { setAutopilot } from "../src/sim/autopilot.js";
 import { KITS, AREAS } from "../src/sim/combat.js";
 import { enemyBody, deadBodyFinds, allItems, lootItem, newItem, ZOMBIE_FINDS, ZOMBIE_PACKS, ZOMBIE_PACK_STUFF, ZBODY } from "../src/sim/inventory.js";
 import { HEAD_FINDS, AREA_HEAD, WARE_HEAD } from "../src/sim/helmets.js"; // helmets and ear protection (their own dice)
+import { WARE_CARTS } from "../src/sim/loot.js"; // carts on a merchant's table (loot.js cartWares)
 import { SITE_FINDS, rollAreaFind, AREA_FINDS, rollFind, rollHuntFind, rollLightFind, LIGHT_FINDS, rollGunmodFind, rollAreaGunmod, AREA_GUNMODS, WARE_GUNMODS, WARE_MODS, SITE_MODS, AREA_MODS, rollSiteMod } from "../src/sim/loot.js"; // WARE_MODS / SITE_MODS / AREA_MODS: the economy agent's parts
 import { truckLoot, TRUCK_LOOT, TRUCK_LOOT_HOOKS, TRUCK_FLASH } from "../src/sim/miltrucks.js";
 import { TRUCK_GEAR } from "../src/sim/data-guns.js"; // the roster's military guns in Army trucks (factoryfit.js rosterTruckGear, plan section 22)
@@ -134,6 +135,7 @@ const ALLOWED = {
   "vehicles.js": /newItem\(t\.gun, 0\.8\)/, // a turret's own gun coming off a vehicle (not loot)
   "mags.js": /newItem\(stdKey/, // a gun's own standard magazine made a thing of as a swap takes it out (mags.js swapMag: not loot, and a magazine has no condition)
   "startgear.js": /newItem\(key, 1\)/, "custompoints.js": /newItem\(key, 1\)/, // starting gear picked under Customize (new), and its price probe: not loot
+  "barricade.js": /newItem\("boards"\)/, // boards pried off a door or window come back as bundles (the team's own: not loot)
   "volunteers.js": /newItem\("(knife|flashlight)"\)/, // a volunteer's own plain knife and light when their group lent no weapon (as recruit gear: not loot)
 };
 const strays = [];
@@ -462,7 +464,7 @@ section("5. Merchants' specialities");
   for (let i = 0; i < 300; i++) { const v = V.spawnVisitor(w, "merchants"); if (!v) continue; (by[v.spec] = by[v.spec] || []).push(v); w.visitors.length = 0; }
   check(Object.keys(V.MERCHANT_SPECS).every((k) => (by[k] || []).length >= 20), `every speciality turns up (${Object.keys(V.MERCHANT_SPECS).map((k) => `${k} ${(by[k] || []).length}`).join(", ")})`);
   const blue = new Set(Object.keys(GEAR).filter((k) => GEAR[k].blueprint));
-  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_HEAD.merchants.items), ...Object.keys(WARE_KIT.merchants.items), ...Object.keys(WARE_BLADES.merchants.items), ...Object.keys(WARE_SURV.merchants.items), ...Object.keys(partPool(PART_FINDS.WARE_TAGS.merchants))]); // WARE_BLADES: knives and swords (blades.js bladeWares, with the parts)
+  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_HEAD.merchants.items), ...Object.keys(WARE_KIT.merchants.items), ...Object.keys(WARE_BLADES.merchants.items), ...Object.keys(WARE_SURV.merchants.items), ...Object.keys(WARE_CARTS.merchants.items), ...Object.keys(partPool(PART_FINDS.WARE_TAGS.merchants))]); // WARE_BLADES: knives and swords (blades.js bladeWares, with the parts)
   for (const [k, S] of Object.entries(V.MERCHANT_SPECS)) {
     const vs = by[k] || [];
     const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : []), ...(k === "arms" ? newGuns("merchants") : []), ...Object.keys(gunsFrom("trader:merchants"))]); // gundist.js: a merchant's gun // an arms dealer's newer guns (visitors.js gunWares)
