@@ -2214,7 +2214,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // days a head) in the two months before the cold: the crew it takes to have the woodpile in by the cold (planWood's critical). Job trips (2026-10-10)
   // let any base hunt, and the hunters and a short winter outlook's farm crew took every hand of a small hub ahead of
   // step 4a: woodtest seed 43 met the winter with no firewood at all (30 woodcutter-days from late summer).
-  const wood = planWood(state, base, people, areas);
+  const wood = planWood(state, base, people, areas, foodDays);
   const woodFirst = !!wood && foodDays >= WOOD_AP.foodFirst && wood.w.toCold > 0 && wood.w.toCold <= WOOD_AP.autumn * 2; // the run-up to the coming cold (not the tail of the last one: a spring start builds first)
   if (woodFirst) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
   const landGoal = Math.max(40, foodTarget(state, base) * 1.5);
@@ -5176,22 +5176,35 @@ const crewDays = (k) => Array.from({ length: Math.max(0, k) }, (_, i) => woodCro
 // (the cold within WOOD_AP.autumn days, or here, or the boiler burning wood) the crew it takes to have the pile in by
 // the cold, at most woodCrewMax; in late summer what the summer must cut so that the autumn's full crew can finish it
 // (at least one, at most that crew; it was one, whatever the need). n: the people here.
-// Out of the stocking season with no boiler, a kitchen under its days of firewood (kitchen.js KITCHEN.wood.keepDays)
-// wants only the hands to keep its stove going and fill those days within a week (kitchenWoodHands), not the winter's.
-const kitchenOnly = (w) => !w.season && !(w.boiler > 0) && w.pressing && w.kitchen > 0;
-const kitchenWoodHands = (state, base, w) => Math.max(1, handsForDay(w.kitchen + Math.max(0, w.kitchen * KITCHEN.wood.keepDays - w.have) / 7, baseWoodDay(state, base), woodCrowd));
-export function woodCritical(state, base, w, n) {
-  if (kitchenOnly(w)) return Math.min(n <= 3 ? 1 : woodCrewMax(n, w), kitchenWoodHands(state, base, w));
+// Out of the stocking season with no boiler, the daily draws (a kitchen under its days of firewood, kitchen.js
+// KITCHEN.wood.keepDays; a camp's fire and the nights' fires under theirs, woodcutting.js woodNeed: fire-nights) want
+// only the hands to keep them going and fill those days within a week (dailyWoodHands), not the winter's.
+// A medium priority, behind the food and the water (fire-nights, the user's rule): out of season the crew is at most
+// half the stocking season's (dailyCrewMax: one at a base of 3 or fewer, 3 of 20), fills the days over WOOD.nightDays,
+// and is one woodcutter while food is short (planWood lean: under WOOD_AP.foodFirst days a head), the fires taking what
+// the pile holds (a cool night without it costs HEAT.night of a freezing day's: needs.js heatDaily).
+const dailyOnly = (w) => !w.season && !(w.boiler > 0) && w.pressing && w.daily > 0;
+const dailyCrewMax = (n, w) => (n <= 3 ? 1 : Math.max(1, Math.ceil(woodCrewMax(n, w) / 2)));
+const dailyWoodHands = (state, base, w) => Math.max(1, handsForDay(w.daily + Math.max(0, w.dailyKeep - w.have) / WOOD.nightDays, baseWoodDay(state, base), woodCrowd));
+export function woodCritical(state, base, w, n, foodDays = null) {
+  if (dailyOnly(w)) {
+    // Food first: with the food under its target (farmCrewLimits hungry, the farm's own rule) a woodcutter goes ahead of
+    // the farm only with under two days of the fires in the pile (worktest 2b: the farm's extra hands were pulled to
+    // the nights' wood; foragetest: a hardcore camp of three sent one to the woods while its forager was its food).
+    const fd = foodDays ?? edibleFood(base) / Math.max(1, mouthsAt(state, base).heads);
+    if (farmCrewLimits(state, base, fd, n).hungry) return w.have < w.daily * 2 ? 1 : 0;
+    return Math.min(dailyCrewMax(n, w), dailyWoodHands(state, base, w));
+  }
   const want = woodCuttersFor(state, base, w);
   if (n <= 3) return Math.min(1, want);
   const full = Math.min(want, woodCrewMax(n, w));
-  if (w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0) return full; // the boiler burns wood every day
+  if (w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 || w.fire > 0 || w.night > 0) return full; // the boiler, a camp's fire and the nights' fires burn wood every day
   const each = baseWoodDay(state, base);
   // What the autumn's crew will not cut, and what the Kitchen's stove (kitchen.js) burns every day until the cold.
   const left = Math.max(0, w.need - w.have + (w.kitchen || 0) * w.toCold - each * crewDays(full) * WOOD_AP.autumn);
   return Math.min(full, Math.max(1, handsForDay(left / Math.max(1, w.toCold - WOOD_AP.autumn), each, woodCrowd)));
 }
-function planWood(state, base, people, areas) {
+function planWood(state, base, people, areas, foodDays = Infinity) {
   // A shelter (tier 0) too (ap-food 2026-10-12): its fire is its only cooking (worm.js baseCooks) and burns firewood
   // from its store (woodcutting.js shelterFire, woodNeed's fire days); with none cut it was out most days, the raw game
   // and fish were eaten last (eating.js) and rotted (seed 6011, hardcore Turtle: 133 days of food thrown out against 337
@@ -5199,14 +5212,16 @@ function planWood(state, base, people, areas) {
   if (!areas.production || gov(state).noWood || woodWorkWhy(state, base)) return null;
   const w = woodNeed(state, base, base.type === "hub" ? returning(state, base) : 0);
   if (!w.short || !w.soon || w.need <= 0) return null;
-  const cap = kitchenOnly(w) ? woodCritical(state, base, w, people.length) : woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks (only the kitchen's days out of season)
+  const cap = dailyOnly(w) ? woodCritical(state, base, w, people.length) : woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks (only the daily draws' days out of season)
   // The water boiler (worm.js) burns its firewood every day: enough woodcutters to keep up with it, on top of the winter's.
   const want = woodCuttersFor(state, base, w);
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
+  // Food under its target out of season (fire-nights, woodCritical): the hands feed the base; one woodcutter at most.
+  const lean = dailyOnly(w) && farmCrewLimits(state, base, foodDays, people.length).hungry;
   return {
-    cap,
+    cap: lean ? Math.min(1, cap) : cap,
     w,
-    critical: Math.min(want, woodCritical(state, base, w, people.length)),
+    critical: Math.min(want, woodCritical(state, base, w, people.length, foodDays)),
     stock: true,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 50 && !x.woundInfected,
     score: (x) => woodcutterMult(x) * bestChop(x).mult,

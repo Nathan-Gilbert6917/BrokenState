@@ -48,7 +48,7 @@ if (CHILD) {
   const st = createWorld({ seed, factionCount: WORLD_SIZES[size].defGroups, size });
   st.started = true;
   const days = YEARS * YEAR_DAYS;
-  const out = { size, target: N.nomadTarget(st), samples: [], maxPop: { 1: 0, 2: 0, 3: 0 }, inFactions: 0, owners: 0, err: null };
+  const out = { size, target: N.nomadTarget(st), samples: [], maxPop: { 0: 0, 1: 0, 2: 0, 3: 0 }, inFactions: 0, owners: 0, err: null };
   const t0 = Date.now();
   let was = day(st), cards = 0;
   // simtest.js's auto-player: cards by the first enabled choice, searches of 3 hours, trades taken, teams home, a
@@ -110,6 +110,7 @@ const { KITS } = await import("../src/sim/combat.js");
 const { KIT_OF, starterKit } = await import("../src/sim/arsenal.js");
 const { ARMOUR } = await import("../src/sim/armour.js");
 const { GEAR } = await import("../src/sim/data.js");
+const { CRAFTS } = await import("../src/sim/crafting.js");
 const { newNeutralGroup, wanderers } = await import("../src/sim/wanderers.js");
 const V = await import("../src/sim/visitors.js");
 const { foodIn } = await import("../src/sim/foods.js");
@@ -179,24 +180,33 @@ for (const size of ["normal", "huge"]) {
 section("Tiers: era unlock, sizes and caps, kits");
 {
   const st = W();
-  check(JSON.stringify(N.nomadTiers(st)) === "[1]", "year 1: looters only");
+  check(JSON.stringify(N.nomadTiers(st)) === "[0,1]", "year 1: drifters and looters only");
   st.hour = (yearStartDay(2) - 1) * 24 + 1;
-  check(JSON.stringify(N.nomadTiers(st)) === "[1,2]", "year 2: survivalists too");
+  check(JSON.stringify(N.nomadTiers(st)) === "[0,1,2]", "year 2: survivalists too");
   st.hour = (yearStartDay(4) - 1) * 24 + 1;
-  check(JSON.stringify(N.nomadTiers(st)) === "[1,2,3]", "year 4: preppers too");
+  check(JSON.stringify(N.nomadTiers(st)) === "[0,1,2,3]", "year 4: preppers too");
   st.hour = (yearStartDay(3) - 1) * 24 + 1;
   const made = [];
   for (let i = 0; i < 40; i++) { const b = N.spawnNomads(st); if (b) made.push(b); }
-  check(made.length > 30 && made.every((b) => b.tier <= 2) && made.some((b) => b.tier === 2), `year 3: spawned tiers 1–2 only (${made.map((b) => b.tier).join("")})`);
+  check(made.length > 30 && made.every((b) => b.tier <= 2) && made.some((b) => b.tier === 2), `year 3: spawned tiers 0–2 only (${made.map((b) => b.tier).join("")})`);
   check(made.every((b) => b.pop >= T[b.tier].size[0] && b.pop <= T[b.tier].size[1]), "every band starts within its tier's size range");
   const hc = W({ mode: "hardcore" });
-  check(JSON.stringify(N.nomadTiers(hc)) === "[1]", "hardcore, early: looters only");
-  for (const tier of [1, 2, 3]) {
+  check(JSON.stringify(N.nomadTiers(hc)) === "[0,1]", "hardcore, early: drifters and looters only");
+  for (const tier of [0, 1, 2, 3]) {
     const K = KITS[T[tier].kit];
     check(!!K && [...K.weapons, ...K.strong].every((k) => GEAR[k] && GEAR[k].slot === "weapon") && K.armor.every((k) => k == null || GEAR[k]), `tier ${tier}: its kit (${T[tier].kit}) is real weapons and armour`);
     check(KIT_OF[`nomad${tier}`] === T[tier].kit && starterKit(seed, "x", `nomad${tier}`, 4).length >= 4, `tier ${tier}: arsenal.js KIT_OF and starterKit deal its kit`);
   }
   check(KITS.looters.armor.every((k) => k == null) && !KITS.looters.weapons.some((k) => ["ar", "carbine", "huntrifle"].includes(k)), "looters: no armour, no rifles");
+  // Drifters: every piece they fight with, carry, drop or trade is something a crafting.js recipe makes.
+  const crafted = new Set(Object.values(CRAFTS).map((c) => c.gear).filter(Boolean));
+  const D = KITS.drifters, drifterKeys = [...D.weapons, ...D.strong, ...D.armor.filter(Boolean), ...D.loot, ...D.finds, D.pack[0], ...T[0].gear];
+  check(drifterKeys.every((k) => crafted.has(k)), `drifters: only makeshift crafted gear (not crafted: ${drifterKeys.filter((k) => !crafted.has(k)).join(", ") || "none"})`);
+  const dk = starterKit(seed, "x", "nomad0", 8);
+  check(dk.length >= 8 && dk.every((it) => crafted.has(it.key)), `drifters' starting kit is crafted (${[...new Set(dk.map((it) => it.key))].join(", ")})`);
+  const dr = N.spawnNomads(st, { tier: 0 });
+  check(dr && dr.tier === 0 && dr.kit === "drifters" && dr.wares.length >= 3 && dr.wares.every((it) => crafted.has(it.key)), `a drifter band starts with makeshift gear (${dr ? dr.wares.map((it) => it.key).join(", ") : "none"})`);
+  check(N.nomadStrength(st, dr) < N.nomadStrength(st, { ...dr, tier: 1 }), "drifters are weaker than looters of the same size");
   check(KITS.preppers.armor.every((k) => k && (ARMOUR[k].ac >= 3 || ARMOUR[k].carrier)), "preppers: armour AC 3 and up (scrap steel, plate carriers with their plates)");
   // The cap: plenty of food and recruits, never past it.
   const b = N.spawnNomads(st, { tier: 1 });
@@ -237,9 +247,9 @@ section("Turnover: lifespans, every unlocked tier comes");
   const end = yearStartDay(5) + 20;
   while (day(st2) < end) days(st2, 1);
   const S = N.nomads(st2).stats;
-  check(N.nomadTiers(st2).length === 3 && [1, 2, 3].every((t) => S.tiers[t] >= 1), `by year 5 every unlocked tier has spawned (T1 ${S.tiers[1]}, T2 ${S.tiers[2]}, T3 ${S.tiers[3]}; ${S.left} bands left after their stay)`);
+  check(N.nomadTiers(st2).length === 4 && [0, 1, 2, 3].every((t) => S.tiers[t] >= 1), `by year 5 every unlocked tier has spawned (T0 ${S.tiers[0]}, T1 ${S.tiers[1]}, T2 ${S.tiers[2]}, T3 ${S.tiers[3]}; ${S.left} bands left after their stay)`);
   const now = N.nomadCounts(st2);
-  check(now.n <= N.nomadTarget(st2) && now[3] >= 1, `year 5: the count within the target (${now.n} of ${N.nomadTarget(st2)}) with preppers among them (${now[1]}/${now[2]}/${now[3]})`);
+  check(now.n <= N.nomadTarget(st2) && now[3] >= 1, `year 5: the count within the target (${now.n} of ${N.nomadTarget(st2)}) with preppers among them (${now[0]}/${now[1]}/${now[2]}/${now[3]})`);
 }
 
 section("Recruiting: neutral wanderers and refugees only, with food, up to the cap");
@@ -413,15 +423,15 @@ if (!QUICK) {
   for (const r of results) {
     const counts = r.samples.map((s) => s.n);
     const mean = counts.reduce((a, v) => a + v, 0) / Math.max(1, counts.length);
-    console.log(`  ${r.size}: target ${r.target}, ${Math.round(r.ms / 1000)} s, holdout ${r.fell ? `fell on day ${r.fell}` : "stood"}; bands every 28 days: ${r.samples.map((s) => `${s.n}${s.n ? `(${s[1]}/${s[2]}/${s[3]})` : ""}`).join(" ")}`);
-    console.log(`    people every 112 days: ${r.samples.filter((s) => s.day % 112 === 0).map((s) => `d${s.day} ${s.people}`).join(", ")}; largest by tier ${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]}`);
+    console.log(`  ${r.size}: target ${r.target}, ${Math.round(r.ms / 1000)} s, holdout ${r.fell ? `fell on day ${r.fell}` : "stood"}; bands every 28 days: ${r.samples.map((s) => `${s.n}${s.n ? `(${s[0]}/${s[1]}/${s[2]}/${s[3]})` : ""}`).join(" ")}`);
+    console.log(`    people every 112 days: ${r.samples.filter((s) => s.day % 112 === 0).map((s) => `d${s.day} ${s.people}`).join(", ")}; largest by tier ${r.maxPop[0]}/${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]}`);
     const S = r.stats;
-    console.log(`    spawned ${S.spawned} (T1 ${S.tiers[1]}, T2 ${S.tiers[2]}, T3 ${S.tiers[3]}); gone: left after their stay ${S.left || 0}, starved ${S.starved}, beaten ${S.beaten || 0}, road ${S.road || 0}, mishap ${S.mishap || 0}, horde ${S.horde || 0}; recruits ${S.recruited} (${JSON.stringify(S.recruits)}); surveys ${S.surveys} (found ${S.found}), raids ${S.raids} (took ${S.took.toFixed(1)}), your left items taken ${S.leftTaken}; met ${S.met}, fights ${S.fights}, trades ${S.trades}`);
+    console.log(`    spawned ${S.spawned} (T0 ${S.tiers[0]}, T1 ${S.tiers[1]}, T2 ${S.tiers[2]}, T3 ${S.tiers[3]}); gone: left after their stay ${S.left || 0}, starved ${S.starved}, beaten ${S.beaten || 0}, road ${S.road || 0}, mishap ${S.mishap || 0}, horde ${S.horde || 0}; recruits ${S.recruited} (${JSON.stringify(S.recruits)}); surveys ${S.surveys} (found ${S.found}), raids ${S.raids} (took ${S.took.toFixed(1)}), your left items taken ${S.leftTaken}; met ${S.met}, fights ${S.fights}, trades ${S.trades}`);
     check(!r.err, `${r.size}: no exceptions${r.err ? ` (${r.err})` : ""}`);
     const late = r.samples.filter((s) => s.day >= 56).map((s) => s.n);
     const lateMean = late.reduce((a, v) => a + v, 0) / Math.max(1, late.length);
     check(lateMean >= r.target * 0.6 && Math.max(...counts) <= r.target, `${r.size}: the count stays near the target (mean ${lateMean.toFixed(1)} after day 56, at most ${Math.max(...counts)}, target ${r.target}; overall ${mean.toFixed(1)})`);
-    check([1, 2, 3].every((t) => r.maxPop[t] <= T[t].size[1]), `${r.size}: no tier cap passed (${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]} of ${T[1].size[1]}/${T[2].size[1]}/${T[3].size[1]})`);
+    check([0, 1, 2, 3].every((t) => r.maxPop[t] <= T[t].size[1]), `${r.size}: no tier cap passed (${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]} of ${T[1].size[1]}/${T[2].size[1]}/${T[3].size[1]})`);
     check(r.inFactions === 0 && r.owners === 0, `${r.size}: nobody grew into a base-holding group`);
     check(r.samples.some((s) => s.tiers === 3) ? S.tiers[2] > 0 && S.tiers[3] > 0 : true, `${r.size}: the later tiers came once unlocked (T2 ${S.tiers[2]}, T3 ${S.tiers[3]})`);
   }

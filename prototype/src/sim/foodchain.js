@@ -26,7 +26,7 @@ import { nextHarvests, farmFoodPerDay } from "./farming.js";
 import { stationsAt, stationState, stationName, stationWhy, kitchenCrew, fireCrew, batchWhy, billDone, billWants, modeText, COOK, COOK_RECIPES } from "./cooking.js";
 import { hasKitchen, kitchenCold, kitchenWood } from "./kitchen.js";
 import { boilerUse } from "./worm.js";
-import { fireBurn, WOOD } from "./woodcutting.js";
+import { fireDayBurn } from "./woodcutting.js";
 import { fireLit } from "./fieldheat.js";
 import { count, isShelter, canBuild } from "./buildings.js";
 import { rationKey, RATION_LEVELS } from "./meals.js";
@@ -134,7 +134,7 @@ export function chainFires(state, base) {
   const keys = stationsAt(base, state);
   if (isShelter(base)) {
     const lit = fireLit(base);
-    parts.push({ key: "fire", name: base.type === "outpost" ? "Camp fire" : "Shelter fire", lit, perDay: lit ? fireBurn(state, base.tile, WOOD.fire.shelter) : 0, note: "warmth, boiled water and the cooking: it burns by the hour and goes out with the woodpile" });
+    parts.push({ key: "fire", name: base.type === "outpost" ? "Camp fire" : "Shelter fire", lit, perDay: lit ? fireDayBurn(state, base).total : 0, note: "warmth, boiled water and the cooking: it burns by the hour, more for every person here, on a cold night and in the frost, and goes out with the woodpile" });
   }
   if (keys.includes("cookhouse") && !(isShelter(base) && !count(base, "cookhouse"))) {
     const S = stationState(base, "cookhouse");

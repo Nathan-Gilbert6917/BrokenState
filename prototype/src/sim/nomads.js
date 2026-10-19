@@ -5,6 +5,9 @@
 // They hold no land and no claims and never found a base, so the coalition's land share and members never see them.
 //
 // Tiers (NOMADS.TIERS; fixed for a band's life; unlocked by the era: eras.js yearOf)
+// - T0 Drifters (year 1 on): 2–5 people with nothing but what they made themselves out of scrap: pipe spears, spiked
+//   bats, shivs, a scrap crossbow or a pipe shotgun, tyre vests (combat.js KITS.drifters, every piece a crafting.js
+//   recipe). Wary, not hostile: they trade their makeshift bits for food. The weakest people on the road.
 // - T1 Looters (year 1 on): 3–6 people, melee and a few pistols, no armour (combat.js KITS.looters). Hostile. Weak
 //   in a fight: they rob a team weaker than them and scatter before one that is stronger.
 // - T2 Survivalists (year 2 on): 4–8, the best foragers and hunters and a medic or two, hunting rifles, bows and
@@ -18,7 +21,8 @@
 // - How many: about half the AI group count of the world size (worldsize.js defGroups / 2, NOMADS.SHARE): the first
 //   ones on days FIRST, then one more every FILL days until the count is met; after that a slow respawn (GAP days)
 //   holds it there. A band stays LIFE (one to two game years) and then moves off the map or disbands (a log line when
-//   seen), so the bands turn over; a new band's tier is the open tier furthest below an even share (nextTier). A new band comes in at the map's edge (hives.js borderTiles) or far from your bases (FAR_YOU) and
+//   seen), so the bands turn over; a new band's tier is the open tier furthest below an even share (nextTier; the
+//   drifters and the looters share the low slot). A new band comes in at the map's edge (hives.js borderTiles) or far from your bases (FAR_YOU) and
 //   the groups' (FAR_GROUP), never on a hive's ground or among the dead.
 // - Camp: CAMP days (2–5) on a tile. Each camp day it does one thing within NEAR (3) tiles of the camp, by the
 //   groups' picker (grouppois.js groupTargets: need × what is left, POIs ahead of sites, POI_W): survey a tile it may
@@ -59,7 +63,7 @@ import { stateSizeDef } from "./worldsize.js";
 import { wanderDensity, WANDER } from "./wanderers.js";
 import { visitorsOf, leaveMap } from "./visitors.js";
 import { lootItem } from "./inventory.js";
-import { starterKit } from "./arsenal.js"; // a band's spare gun: one of its tier's kit (KIT_OF nomad1–3)
+import { starterKit } from "./arsenal.js"; // a band's spare gun: one of its tier's kit (KIT_OF nomad0–3)
 import { season } from "./weather.js";
 import { available, tradeContext } from "./trade.js";
 import { expandAmmo } from "./ammo.js";
@@ -89,6 +93,9 @@ export const NOMADS = {
   MEET_COOLDOWN: 48, TOLL: 0.3, TOLL_CAP: 3, FLEE_TEAM: 0.9, // meetings: looters scatter before a team this strong (× theirs)
   WARES_MAX: 12, ERA_POWER: 0.1, ERA_POWER_MAX: 0.6, // their power: + this a year from year 3
   TIERS: {
+    0: { key: "drifters", name: "Drifters", kit: "drifters", size: [2, 5], start: [2, 3], power: 1.7, type: "commune", goodwill: [-15, 5],
+      scouting: 2, forage: 0.6, water: 0.6, tough: 0.8, ammo: [0, 4], meds: [0, 1], theme: "farm", food: "wild", unlock: 1,
+      vehicle: null, wares: [2, 4], gear: ["pipespear", "shiv", "makeshiftrod", "makeshiftpick", "ragplugs", "ragboots", "torch", "tourniquet", "slingbag", "cookpot", "noisemaker", "padding", "tripwire"] },
     1: { key: "looters", name: "Looters", kit: "looters", size: [3, 6], start: [3, 4], power: 2.4, type: "raider", goodwill: [-60, -45],
       scouting: 3, forage: 0.55, water: 0.55, tough: 1, ammo: [4, 12], meds: [0, 1], theme: "raider", food: "raider", unlock: 1,
       vehicle: null, gear: ["crowbar", "flashlight", "slingbag", "lighters", "cigarettes", "watch", "goldchain", "smokes"] },
@@ -100,16 +107,18 @@ export const NOMADS = {
       vehicle: [["truck", 0.6], ["humvee", 0.4]], gear: ["binoculars", "handradio", "waterfilter", "stove", "nvg", "bandagekit", "rucksack", "milhelmet"] },
   },
   VEH_POWER: { truck: 3, humvee: 8 }, // a vehicle's strength (escorts.js ESCORT_VEHICLES' scale)
-  COLORS: { 1: "#b5652b", 2: "#7f9a4a", 3: "#5f7286" },
+  COLORS: { 0: "#8a7f6a", 1: "#b5652b", 2: "#7f9a4a", 3: "#5f7286" },
 };
 const N = NOMADS;
-export const NOMAD_TIERS = [1, 2, 3];
+export const NOMAD_TIERS = [0, 1, 2, 3];
 const NAMES = {
+  0: ["the Tin Can Folk", "the Scrap Walkers", "the Patchwork Band", "the Pipe Spears", "the Duct Tape Crew", "the Junk Pilgrims", "the Ragged Few", "the Bottle Kids"],
   1: ["the Scrap Rats", "the Crows", "the Ditch Kings", "the Rag Pickers", "the Gutter Dogs", "the Magpies", "the Rust Boys", "the Hollow Hands"],
   2: ["the Pine Walkers", "the Long Road Band", "the Creek People", "the Hawthorn Folk", "the Ash Hollow Band", "the Wayfarers", "the Fox Run Band", "the Ridge Walkers"],
   3: ["the Ironwood Preppers", "the Bunker Crew", "the Granite Company", "the Blackrock Outfit", "the Silo Men", "the Stockpile", "the Last Watch", "the Vault Families"],
 };
 const LOOK = {
+  0: "thin, ragged people with pipe spears, taped-up bats and tyre-rubber vests, everything they carry made by hand from scrap",
   1: "ragged people with clubs, machetes and a pistol or two, eyes on everything you carry",
   2: "weathered walkers with hunting rifles and bows, game hung on their packs",
   3: "a disciplined crew in plate carriers and helmets with good rifles, a vehicle close by",
@@ -129,7 +138,7 @@ export function nomads(state) {
   return state.nomads;
 }
 function newStats() {
-  return { spawned: 0, tiers: { 1: 0, 2: 0, 3: 0 }, left: 0, starved: 0, broke: 0, killed: 0, beaten: 0, horde: 0, mishap: 0, road: 0, recruited: 0, recruits: { wanderers: 0, refugees: 0, roadside: 0 }, surveys: 0, found: 0, raids: 0, took: 0, camps: 0, moves: 0, fled: 0, met: 0, fights: 0, trades: 0, leftTaken: 0, peak: 0 };
+  return { spawned: 0, tiers: { 0: 0, 1: 0, 2: 0, 3: 0 }, left: 0, starved: 0, broke: 0, killed: 0, beaten: 0, horde: 0, mishap: 0, road: 0, recruited: 0, recruits: { wanderers: 0, refugees: 0, roadside: 0 }, surveys: 0, found: 0, raids: 0, took: 0, camps: 0, moves: 0, fled: 0, met: 0, fights: 0, trades: 0, leftTaken: 0, peak: 0 };
 }
 const nrng = (state) => nomads(state).rng;
 export const nomadsOf = (state) => (state.nomads && Array.isArray(state.nomads.bands) ? state.nomads.bands : []);
@@ -151,16 +160,23 @@ export const tierName = (b) => `${tierOf(b).name}`;
 // ---------- spawning ----------
 const pickW = (rng, list) => { const tot = list.reduce((a, [, w]) => a + w, 0); let r = rng.next() * tot; for (const [k, w] of list) { r -= w; if (r < 0) return k; } return list[list.length - 1][0]; };
 const TIER_W = { 1: 0.5, 2: 0.35, 3: 0.15 };
-// The tier of a new band: the open tier furthest below an even share of the bands on the map (so a tier just unlocked
+// The low slot: drifters (T0) and looters (T1) share tier 1's place in the even share, so the drifters do not crowd
+// out the later tiers; within it the one with fewer bands, ties by LOW_W.
+const SLOT = { 0: 1, 1: 1, 2: 2, 3: 3 }, LOW_W = { 0: 0.45, 1: 0.55 };
+// The tier of a new band: the open slot furthest below an even share of the bands on the map (so a tier just unlocked
 // shows up with the next bands); ties by the era weights on the nomads' dice.
 export function nextTier(state, rng = nrng(state)) {
-  const tiers = nomadTiers(state), have = { 1: 0, 2: 0, 3: 0 };
-  for (const b of nomadsOf(state)) have[b.tier]++;
-  const even = (nomadsOf(state).length + 1) / tiers.length;
-  const gap = (t) => even - have[t];
-  const most = Math.max(...tiers.map(gap));
-  const short = tiers.filter((t) => gap(t) >= most - 1e-9);
-  return pickW(rng, short.map((t) => [t, TIER_W[t]]));
+  const tiers = nomadTiers(state), slots = [...new Set(tiers.map((t) => SLOT[t]))], have = { 0: 0, 1: 0, 2: 0, 3: 0 }, inSlot = { 1: 0, 2: 0, 3: 0 };
+  for (const b of nomadsOf(state)) { have[b.tier]++; inSlot[SLOT[b.tier] || 1]++; }
+  const even = (nomadsOf(state).length + 1) / slots.length;
+  const gap = (sl) => even - inSlot[sl];
+  const most = Math.max(...slots.map(gap));
+  const short = slots.filter((sl) => gap(sl) >= most - 1e-9);
+  const slot = pickW(rng, short.map((sl) => [sl, TIER_W[sl]]));
+  const low = tiers.filter((t) => SLOT[t] === slot);
+  if (low.length < 2) return low[0] ?? slot;
+  const fewest = Math.min(...low.map((t) => have[t]));
+  return pickW(rng, low.filter((t) => have[t] === fewest).map((t) => [t, LOW_W[t]]));
 }
 function spawnTile(state, rng) {
   const g = state.grid;
@@ -182,7 +198,7 @@ function spawnTile(state, rng) {
 // A new band (opts: { tier, tile, pop } for tools). Returns it, or null when nowhere fits.
 export function spawnNomads(state, opts = {}) {
   const S = nomads(state), rng = S.rng;
-  const tier = opts.tier && N.TIERS[opts.tier] ? opts.tier : nextTier(state, rng);
+  const tier = opts.tier != null && N.TIERS[opts.tier] ? opts.tier : nextTier(state, rng);
   const T = N.TIERS[tier];
   const tile = opts.tile != null ? opts.tile : spawnTile(state, rng);
   if (tile == null) return null;
@@ -206,12 +222,13 @@ export function spawnNomads(state, opts = {}) {
   b.stock.ammo = rng.int(T.ammo[0], T.ammo[1]);
   b.stock.meds = rng.int(T.meds[0], T.meds[1]);
   if (vehicle) b.stock.fuel = rng.int(6, 16);
-  for (let i = 0, n = rng.int(1, 3); i < n; i++) b.wares.push(lootItem(rng.pick(T.gear), "survivor", [state.seed, "nomadware", serial, i]));
+  const nw = T.wares || [1, 3]; // the drifters start with more of their makeshift bits: it is all they have to trade
+  for (let i = 0, n = rng.int(nw[0], nw[1]); i < n; i++) b.wares.push(lootItem(rng.pick(T.gear), "survivor", [state.seed, "nomadware", serial, i]));
   const spare = starterKit(state.seed, `nomads#${serial}`, `nomad${tier}`, 1).find((it) => it && it.key);
   if (spare) b.wares.push(spare);
   S.bands.push(b);
   S.stats.spawned++;
-  S.stats.tiers[tier]++;
+  S.stats.tiers[tier] = (S.stats.tiers[tier] || 0) + 1; // a save from before the drifters has no tier 0 count
   S.stats.peak = Math.max(S.stats.peak, S.bands.length);
   pitchCamp(state, b);
   return b;
@@ -268,7 +285,7 @@ export function nomadNeeds(b) {
   return {
     food: clamp(1 - foodIn(b.stock) / (pop * 6), 0, 1), preserved: clamp(1 - foodIn(b.stock) / (pop * 6), 0, 1) * 0.8,
     water: clamp(1 - (b.stock.water || 0) / (pop * 3), 0, 1), meds: clamp(1 - (b.stock.meds || 0) / (pop * 0.8), 0, 1),
-    ammo: clamp(1 - (b.stock.ammo || 0) / (pop * (b.tier === 1 ? 3 : 10)), 0, 1), fuel: b.vehicle ? clamp(1 - (b.stock.fuel || 0) / 12, 0, 1) : 0,
+    ammo: clamp(1 - (b.stock.ammo || 0) / (pop * (b.tier <= 1 ? 3 : 10)), 0, 1), fuel: b.vehicle ? clamp(1 - (b.stock.fuel || 0) / 12, 0, 1) : 0,
     scrap: 0.1, parts: 0.1,
   };
 }
@@ -633,7 +650,7 @@ function talkCard(state, b, p) {
   const hostile = attitude(b) === "Hostile";
   const done = (st, text) => { resume(st, p); return text; };
   const give = { food: 2 * b.pop };
-  const mood = b.tier === 3 ? "They keep your people at rifle range the whole time, polite and watchful." : b.tier === 2 ? "They are wary but glad of news." : "They watch your packs.";
+  const mood = b.tier === 3 ? "They keep your people at rifle range the whole time, polite and watchful." : b.tier === 2 ? "They are wary but glad of news." : b.tier === 0 ? "They keep their distance and their spears close, eyes on your food and your guns." : "They watch your packs.";
   const choices = [
     {
       label: "Trade with them", hint: hostile ? "They will not trade with you" : "The trade window, from what the team carries", disabled: hostile,
@@ -653,10 +670,10 @@ function talkCard(state, b, p) {
     },
     {
       label: `Share food (${give.food} days)`, hint: "Goodwill +10 with them", disabled: (st) => !st.parties.includes(p) || carried(p, "food") < give.food,
-      ai: (st) => (carried(p, "food") >= give.food * 3 && b.tier > 1 ? 15 : -20),
+      ai: (st) => (carried(p, "food") >= give.food * 3 && b.tier !== 1 ? 15 : -20),
       resolve: (st) => { if (!ok(st, b, p)) return done(st, "They are gone."); takeSupply(p, "food", give.food); giveFood(st, b.stock, give.food, "travel", { rng: nrng(st) }); changeGoodwill(st, b, 10, ""); return done(st, `${cap1(b.name)} take the food gratefully.`); },
     },
-    { label: `Attack them (${pct(odds)} by the numbers)`, hint: `A battle against ${b.pop} ${tierName(b).toLowerCase()} (${b.tier === 3 ? "plate armour and rifles" : b.tier === 2 ? "hunting rifles and bows" : "clubs and pistols"}). Win and what they carry is yours`, fight: { odds, enemy, ambush: "player" }, ai: () => -40, resolve: (st) => (ok(st, b, p) ? nomadFight(st, b, p, "player", { attacked: true }) : done(st, "They are gone.")) },
+    { label: `Attack them (${pct(odds)} by the numbers)`, hint: `A battle against ${b.pop} ${tierName(b).toLowerCase()} (${b.tier === 3 ? "plate armour and rifles" : b.tier === 2 ? "hunting rifles and bows" : b.tier === 0 ? "pipe spears and scrap weapons" : "clubs and pistols"}). Win and what they carry is yours`, fight: { odds, enemy, ambush: "player" }, ai: () => -40, resolve: (st) => (ok(st, b, p) ? nomadFight(st, b, p, "player", { attacked: true }) : done(st, "They are gone.")) },
     { label: "Move on", ai: () => 20, resolve: (st) => done(st, "") },
   ];
   return {
@@ -703,7 +720,7 @@ function nomadFight(state, b, p, ambush, opts = {}) {
   if (!nomadsOf(state).includes(b)) { resume(state, p); return "They are gone."; }
   const S = nomads(state).stats;
   S.fights++;
-  if (opts.attacked && b.tier > 1) changeGoodwill(state, b, -60, "you attacked them");
+  if (opts.attacked && b.tier !== 1) changeGoodwill(state, b, -60, "you attacked them");
   if (b.tier === 1 && opts.chase && nomadStrength(state, b) < teamPower(state, p) * N.FLEE_TEAM * 0.8) {
     // They run: what they drop is yours.
     const dropped = {};
@@ -838,7 +855,7 @@ export function nomadTipLines(state, tile, live = state.live) {
 }
 // Nomads alive now, by tier (tools, the stats).
 export function nomadCounts(state) {
-  const out = { n: 0, people: 0, 1: 0, 2: 0, 3: 0 };
+  const out = { n: 0, people: 0, 0: 0, 1: 0, 2: 0, 3: 0 };
   for (const b of nomadsOf(state)) { out.n++; out.people += b.pop; out[b.tier]++; }
   return out;
 }

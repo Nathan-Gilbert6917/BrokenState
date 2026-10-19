@@ -830,6 +830,10 @@ export const KITS = {
               finds: ["lighters", "candles", "honey", "tea", "photos", "harmonica", "flare", "cigarettes"] },
   preppers: { label: "Prepper",  aim: 4, hp: 5, weapons: ["ar", "carbine", "carbine", "huntrifle", "shotgun"], strong: ["ar", "carbine"], armor: ["plate", "plate", "scrapvest"], loot: ["ar", "carbine", "plate", "milhelmet", "binoculars", "handradio", "rucksack", "bandagekit", "nvg", "smokegren"], pack: ["rucksack", 0.4],
               finds: ["chocolate", "instcoffee", "batteries", "heatpack", "lighters", "watch", "flare", "toothpaste"] },
+  // The lowest nomad tier, drifters (nomads.js T0): only what they made themselves (crafting.js CRAFTS): pipe spears,
+  // spiked and nail bats, shivs, the saw-blade machete, a scrap crossbow or a pipe shotgun, tyre vests. No KIT_PATCH.
+  drifters: { label: "Drifter", aim: -5, hp: -5, weapons: ["pipespear", "pipespear", "spikedbat", "shiv", "nailbat", "spikedbat", "crossbow", "pipegun"], strong: ["pipegun", "crossbow", "sawmachete"], armor: [null, null, "tirevest"], loot: ["pipespear", "spikedbat", "shiv", "nailbat", "sawmachete", "padding", "shinguards", "tirevest", "makeshiftrig", "slingbag", "torch", "makeshiftrod"], pack: ["slingbag", 0.35],
+              finds: ["makeshiftpick", "makeshiftpick", "ragplugs", "tourniquet", "noisemaker", "bottlecan", "molotov", "tripwire"] },
   // Loose survivors on their own (wanderers.js): the aggressive ones who rob like raiders, and neutrals on the map.
   survivors: { label: "Survivor", aim: -4, hp: -5, weapons: ["knife", "bat", "prybar", "pistol", "pistol", "revolver", "huntrifle", "shotgun"], strong: ["shotgun", "huntrifle"], armor: [null, null, null, "vest"], loot: ["knife", "bat", "prybar", "pistol", "revolver", "slingbag", "flashlight", "bikehelmet", "tirevest"], pack: ["backpack", 0.25],
               finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries", "deodorant", "lipbalm", "wetwipes"] },
