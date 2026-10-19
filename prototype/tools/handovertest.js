@@ -15,8 +15,8 @@ import { createWorld, hub, makeSurvivor } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { newItem, packOf, itemAt, moveItem, fitReason } from "../src/sim/inventory.js";
 import { isRoundItem, amountOf, roundItem } from "../src/sim/itemstack.js";
-import { setRounds, giveRounds } from "../src/sim/ammo.js";
-import { createBattle, combatAct, registerCombatHandler, HANDOVER_AP, handoverTargets, handoverUnfaced, handoverRefusal, loadMag, active } from "../src/sim/combat.js";
+import { setRounds, giveRounds, boxesOf, sweepBoxes } from "../src/sim/ammo.js";
+import { createBattle, combatAct, registerCombatHandler, HANDOVER_AP, handoverTargets, handoverUnfaced, handoverRefusal, loadMag, active, refitKit } from "../src/sim/combat.js";
 import { faceToward, inArc } from "../src/sim/vision.js";
 import { starterMags } from "../src/sim/carrykit.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -69,6 +69,9 @@ function setup(seed) {
   a.pockets[2] = roundItem(K, 80, true); // a loose handful at hand (the fight's start loads the pistol and its two spares out of it: 45, 35 left; mags.js physical rounds)
   const b = openBattle(st, [a, m, c]);
   const u = unitOf(b, a), t = unitOf(b, m), w = unitOf(b, c);
+  // The mates grabbed their rounds at hand out of the stock as the fight started (carrykit.js handWant); the test puts
+  // them back, so the handful is the only rounds at anyone's hand.
+  for (const [s, x] of [[m, t], [c, w]]) { for (const it of boxesOf(s)) { b.pools[0][it.key] = (b.pools[0][it.key] || 0) + Math.floor(it.dur); it.dur = 0; } sweepBoxes(s); refitKit(b, x, s); }
   faceToward(u, t.x, t.y);
   faceToward(t, u.x, u.y);
   return { st, b, a, m, c, u, t, w };

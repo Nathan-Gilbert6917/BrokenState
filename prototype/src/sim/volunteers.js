@@ -41,7 +41,7 @@ import { roundOf } from "./rounds.js"; // a round key's calibre
 import { giveFood, foodIn, DAY_VALUE, moveFoodUnits } from "./foods.js"; // food by type (foods.js)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
-import { log, addCard, day, hub, atBase, factionById, combatPower, hurt, makeSurvivor, baseById, skill } from "./world.js";
+import { log, addCard, day, hub, atBase, factionById, combatPower, hurt, makeSurvivor, baseById, skill, localId } from "./world.js";
 import { partyMembers, partyTile, wipeIfEmpty, weighTeam, tileLabel, MISSIONS } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
 import { warsOf, enemyIn, relation, changeRelation } from "./diplomacy.js";
@@ -815,7 +815,7 @@ export function loanHome(state, L, to, from, rng = volRng(state)) {
   const n = people.length;
   const lost = Math.min(n, Math.round(n * VOL.LEND.lose * rng.range(0, 2)));
   const stay = n - lost > 0 && to && to.alive && from && from.alive && rng.chance(VOL.LEND.stay) ? 1 : 0; // one of them stays with the group they helped (AI parity with your old hands)
-  const order = lossOrder(state, people, `loan:${L.from}:${L.to}:${L.until}`);
+  const order = lossOrder(state, people, `loan:${localId(state, L.from)}:${localId(state, L.to)}:${L.until}`); // world-local ids: the same dice in any process (world.js localId)
   const fell = order.slice(0, lost), back = order.slice(lost);
   const into = (f, s, why) => {
     addMember(state, f, s, f.bases && f.bases[0] != null ? f.bases[0] : null);

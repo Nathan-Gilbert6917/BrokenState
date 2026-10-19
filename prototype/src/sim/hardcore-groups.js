@@ -71,7 +71,7 @@ import { spendAmmo } from "./rounds.js"; // a group's rounds by calibre
 import { FOODS, typeFind, GROUP_MIX, foodShare, addFoodsTo, foodIn, giveFood, takeFood, typeStray, ageCoarse } from "./foods.js"; // food by type (foods.js)
 import { Rng } from "./rng.js";
 import { FACTION_TYPES, FACTION_COLORS } from "./data.js";
-import { newId, log, addCard, day, hub, factionById, snapshot, hourOfDay } from "./world.js";
+import { newId, log, addCard, day, hub, factionById, snapshot, hourOfDay, localId } from "./world.js";
 import { PREFERRED_SITES, attitude, strength, isAggressiveType, recomputeOwnership, clearStaleAlerts, changeGoodwill } from "./factions.js";
 import { planPath, moveCost, partyMembers, partyTile, tileLabel, removeParty, carried, takeSupply } from "./parties.js";
 import { isHardcore } from "./hardcore.js";
@@ -1134,7 +1134,7 @@ export function militaryFalls(state, f, how) {
   const tile = m.tile;
   // The garrison is people (members.js): the very soldiers there at the end, the wounded first to fall.
   if (f.alive) syncMembers(state, f);
-  const garrison = f.alive ? lossOrder(state, membersOf(f), `fall:${f.id}`) : [];
+  const garrison = f.alive ? lossOrder(state, membersOf(f), `fall:${localId(state, f.id)}`) : [];
   const pop = f.alive ? garrison.length : Math.max(0, f.pop);
   m.fallPop = pop;
   const dead = Math.round(pop * rng.range(M.DEAD[0], M.DEAD[1])); // in the last fight
