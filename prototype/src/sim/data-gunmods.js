@@ -179,6 +179,21 @@ Object.assign(PLATFORMS, {
 Object.assign(PLATFORM_LIKE, { p90: "mp5", fn57: "glock", vector: "mp5", g3: "ar10", famas: "ar15" });
 Object.assign(PLATFORM_LIKE_SKIP, { p90: ["collapsible", "foldstock"], fn57: ["extmag"], famas: ["collapsible", "precision", "foldstock", "m203", "drum"] });
 Object.assign(WEAPON_PLATFORM, { fiveseven: "fn57", p90: "p90", vector: "vector", g3: "g3", famas: "famas", revolver44: "revolver", lever44: "lever", single44: "single" });
+// The survival guns of 2026-10-19 (data-guns.js SURV_GEAR): the SKS (a fixed ten-round box fed by stripper clips: no
+// magazine slot; scope rings on a side mount, an AK's stocks), the Uzi (its own magazines, an underfolding stock, a
+// scope mount on the cover), the folding 9mm carbine (the polymer pistols' magazines: data-kit.js adds "pcc" to them;
+// its stock is the gun), the bullpup pump shotgun (twin tubes, a rail on top and under; no stock to swap) and the
+// takedown .22 survival rifle (its own eight-round magazines).
+Object.assign(PLATFORMS, {
+  sks:      { name: "SKS carbine",           cat: "rifle",   slots: ["mount", "muzzle", "stock", "sling"] },
+  uzi:      { name: "Open-bolt SMG",         cat: "smg",     slots: ["mount", "muzzle", "mag", "stock", "sling"] },
+  pcc:      { name: "Folding pistol-calibre carbine", cat: "smg", slots: ["optic", "muzzle", "mag", "tactical", "sling"] },
+  ksg:      { name: "Bullpup pump shotgun",  cat: "bullpup", slots: ["optic", "muzzle", "grip", "tactical", "sling"] },
+  takedown: { name: "Takedown .22 rifle",    cat: "bolt",    slots: ["optic", "muzzle", "mag", "sling"] },
+});
+Object.assign(PLATFORM_LIKE, { sks: "ak", uzi: "mp5", pcc: "mp5", ksg: "pump", takedown: "rimrifle" });
+Object.assign(PLATFORM_LIKE_SKIP, { ksg: ["tubeext", "recoilpad", "sidesaddle", "cheapsaddle"], pcc: ["collapsible", "foldstock", "cheapstock"] });
+Object.assign(WEAPON_PLATFORM, { sks: "sks", uzi: "uzi", pcc9: "pcc", ksg: "ksg", survival22: "takedown" });
 // (The old name: the slots each gun lacks.)
 /** @type {Record<string, string[]>} */
 export const WEAPON_SLOTS_OFF = Object.fromEntries(Object.entries(WEAPON_SLOTS).filter(([, o]) => o.off).map(([k, o]) => [k, /** @type {string[]} */ (o.off)]));
@@ -505,6 +520,36 @@ Object.assign(MOD_ATTACH, { clawmount: { slot: "mount", short: "claw mount", loo
 Object.assign(PART_INFO, {
   clawmount: { name: "Claw scope mount (HK-style)", value: 35, weight: 0.3, tier: "brand", rarity: "scarce", tags: ["military", "guns"],
                desc: "A steel claw mount that clamps onto the G3's receiver and holds a sight rock-steady: it carries a scope, a red dot or a holo sight (the G3 has no top rail). Fits the roller-delayed battle rifle only." },
+});
+// The survival parts of 2026-10-19 (user: "more items a zombie survival game should have ... attachments"): a digital
+// night vision scope (aim at night, no thermal), a compact 2× prism (between a red dot and a 4×), an AK side-folding
+// stock, an angled foregrip of the brand tier, a linear compensator (less kick and no louder: the blast goes forward), a
+// single-point sling (quicker up close, less steady on the move than a two-point) and a flashlight duct-taped to the
+// barrel (a budget weapon light that falls apart). Found by tags and rarity like the rest of the catalogue (partfinds.js).
+Object.assign(MOD_ATTACH, {
+  nvscope:     { slot: "optic",    short: "NV scope",         look: "thermal", fits: { any: true }, aim: 2, opt: 2, fall: -0.3, close: -6, night: 8 },
+  prism2x:     { slot: "optic",    short: "2× prism",         look: "acog",    fits: { plat: ["ar15", "ar10", "ak", "mp5", "pump", "semi12", "m249", "ranch", "lever"] }, aim: 4, opt: 1, fall: -0.2, close: -1 },
+  zhukov:      { slot: "stock",    short: "Zhukov stock",     look: "stock_fold", fits: { plat: ["ak"] }, aim: 2, close: 3, wt: -0.15 },
+  afg:         { slot: "grip",     short: "AFG",              look: "agrip",   fits: { any: true, notPlat: ["revolver"] }, aim: 2, close: 4 },
+  linearcomp:  { slot: "muzzle",   short: "linear comp",      look: "brake",   fits: { cal: RIFLE_CALS }, aim: 1, close: 1 },
+  singlepoint: { slot: "sling",    short: "single-point sling", look: "sling", fits: { any: true }, moving: 1, close: 2 },
+  tapedlight:  { slot: "tactical", short: "taped flashlight", look: "light",   fits: { any: true }, light: true, nightNear: 5 },
+});
+Object.assign(PART_INFO, {
+  nvscope:     { name: "Digital night vision scope", value: 150, weight: 0.9, tier: "civil", rarity: "rare", tags: ["guns", "hunt", "military"],
+                 desc: "A digital day / night riflescope modelled on an ATN X-Sight, the hog hunter's favourite: +2 aim, +2 tiles of best range, a little less aim lost beyond it, −6 up close, and +8 aim at night (an infrared picture: no thermal, but no light needed). Fits any gun with a sight slot or rings." },
+  prism2x:     { name: "Compact 2× prism sight", value: 40, weight: 0.3, tier: "civil", rarity: "uncommon", tags: ["guns", "sport", "police", "hunt"],
+                 desc: "A small fixed 2× prism with an etched reticle modelled on a Primary Arms SLx: +4 aim, +1 tile of best range, −1 up close, and the reticle is there without a battery. Fits rifles, carbines, the SMG, shotguns and the lever-action (on rings)." },
+  zhukov:      { name: "Folding AK stock (Zhukov-style)", value: 45, weight: 0.4, tier: "brand", rarity: "uncommon", tags: ["guns", "crime", "military"],
+                 desc: "A polymer side-folding stock modelled on a Magpul Zhukov-S: a better cheek weld, +2 aim, +3 up close, lighter than the wood one (−0.15 kg fitted). Fits a Kalashnikov and an SKS." },
+  afg:         { name: "Angled foregrip (Magpul AFG-style)", value: 35, weight: 0.06, tier: "brand", rarity: "uncommon", tags: ["guns", "police", "military"],
+                 desc: "A low swept-back foregrip modelled on a Magpul AFG: the hand pulls the gun into the shoulder, +2 aim, +4 up close. Fits under a rail or a handguard (not a pistol, a revolver or a hunting gun)." },
+  linearcomp:  { name: "Linear compensator (Kaw Valley-style)", value: 30, weight: 0.15, tier: "civil", rarity: "uncommon", tags: ["guns", "sport", "home"],
+                 desc: "A can-shaped muzzle device modelled on a Kaw Valley linear comp that throws the blast forward, away from the shooter: +1 aim, +1 up close, and no louder than a bare muzzle (a brake is 30% louder). Fits rifles." },
+  singlepoint: { name: "Single-point sling", value: 8, weight: 0.12, tier: "civil", rarity: "common", tags: ["guns", "police", "sport", "home"],
+                 desc: "A bungee sling clipped to the back of the gun: it hangs ready and swings up fast, +2 up close and +1 aim when the shooter moved this turn." },
+  tapedlight:  { name: "Duct-taped flashlight", value: 3, weight: 0.3, tier: "budget", rarity: "common", tags: ["home", "garage", "camp", "crime", "shop"], brandOf: "weaponlight", dur: 15,
+                 desc: "A kitchen-drawer flashlight wrapped onto the barrel with a roll of duct tape: at night +5 aim within 6 tiles, a light without the off hand, until the tape gives and the batteries rattle loose (about 15 fights). Fits any gun with a light / laser rail." },
 });
 for (const [k, i] of Object.entries(PART_INFO)) MOD_GEAR[k] = MOD(i.name, i.value, i.weight, i.desc, { tier: i.tier, ...(i.dur ? { dur: i.dur, budget: true } : {}) });
 // The parts from before the catalogue, by tier and rarity (their places: loot.js ITEM_TAGS, GUNMOD_FINDS, SITE_MODS).

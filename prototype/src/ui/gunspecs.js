@@ -128,6 +128,14 @@ export const GUN_ART = {
   revolver44: { body: "revolver", fr: [18, 31], cyl: [21, 29], bar: 52, lug: true, rib: true, grips: "grip_wood", c: { frame: "blued", bar: "blued", grip: "walnut", cyl: "gun" } }, // a Model 29
   lever44: { body: "lever", r: [18, 26], bar: 47, tube: 44, fe: 34, band: true, stock: { t: "lever", c: "walnut" }, c: { body: "blued", fe: "walnut", furn: "walnut" } },
   single44: { body: "brk", kind: "rifle", n: 1, r: [19, 25], bar: 49, fe: 32, stock: { t: "wood", c: "walnut" }, c: { body: "blued", bar: "blued", fe: "walnut", furn: "walnut" } },
+  // the survival guns (2026-10-19): an SKS, an Uzi, a folding 9mm carbine, a bullpup pump shotgun, a takedown .22.
+  sks:     { body: "m14", r: [19, 30], hg: 41, bar: 50, gx: 21, stock: { t: "m14", c: "wood" }, mag: { t: "box", n: 3, w: 5 }, muzzle: "crown", c: { body: "blued", hg: "wood", furn: "wood" },
+             extra: (p, s, f, h) => h.H(p, 40, 48, 9, h.C.steel) }, // a fixed ten-round box, the folding bayonet under the barrel
+  uzi:     { body: "ump", kind: "smg", r: [16, 38], bar: 45, gx: 24, stock: { t: "folder" }, mag: { t: "box", n: 9, w: 3, curve: 0, col: "gun" }, muzzle: "crown", c: { body: "gun", furn: "gun", bar: "dark" } }, // stamped steel, the underfolder
+  pcc9:    { body: "vector", kind: "smg", r: [16, 40], bar: 50, gx: 22, stock: { t: "wire", c: "poly" }, mag: { t: "stick", n: 8, w: 3, curve: 0, col: "poly" }, c: { body: "poly", furn: "poly", bar: "dark", low: "poly" } }, // a Sub-2000: tube receiver, skeleton stock
+  ksg:     { body: "bullpup", v: "aug", kind: "shotgun", r: [8, 34], bar: 50, gx: 28, stock: null, mag: { t: "none" }, muzzle: "crown", c: { body: "gun", furn: "gun", bar: "dark" },
+             extra: (p, s, f, h) => { h.H(p, 35, 48, 9, h.C.gun); h.H(p, 35, 48, 10, h.C.dark); } }, // twin magazine tubes under the barrel
+  survival22: { body: "bolt", r: [20, 30], bar: 46, barRows: 1, fe: 31, bolt: "small", bead: false, stock: { t: "light", c: "poly" }, mag: { t: "box", n: 4, w: 3 }, c: { body: "gun", fe: "poly", furn: "poly", bar: "gun" } }, // an AR-7: slim barrel, floating stock
 };
 
 // ---------- finishes (sim/data-finish.js GUN_FINISH: which a gun comes in; item.finish) ----------

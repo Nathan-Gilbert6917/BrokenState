@@ -686,5 +686,53 @@ const MISC = {
   },
 };
 
-export const GEAR_ART = { ...MAGS, ...CLIPS, ...CANS, ...MUZZLE, ...SCOPES, ...DOTS, ...MOUNTS, ...GRIPS, ...STOCKS, ...LIGHTS, ...MISC };
+// ---------- the survival guns' magazines and clip, and the survival parts (2026-10-19, sim/data-survival.js) ----------
+const SURV = {
+  // the Uzi's: long straight stamped steel, ribbed; the takedown .22's: a short steel box
+  mag_uzi_20: (p) => mag(p, { x: 4, y: 4, w: 4, n: 10, c: C.steel, hc: C.metal, base: C.gun, bh: 2, bands: 3, cap: 20 }),
+  mag_uzi_32: (p) => mag(p, { x: 4, y: 1, w: 4, n: 13, c: C.steel, hc: C.metal, base: C.gun, bh: 2, bands: 3, cap: 32 }),
+  mag_ar7_8: (p) => mag(p, { x: 4, y: 6, w: 6, n: 7, c: C.gun, hc: C.hi, base: C.metal, bh: 2, bo: 1, bf: 1, rib: 2, cap: 8 }),
+  // ten 7.62×39 rounds on a steel clip: steel-cased, lacquered green-grey
+  stripper762: (p) => {
+    for (let i = 0; i < 5; i++) {
+      const x = 1 + i * 3;
+      R(p, x, 7, x + 1, 13, "#7c8070"); V(p, x, 7, 13, "#9ea292"); R(p, x, 4, x + 1, 6, C.copper); p.set(x, 3, C.copperD);
+    }
+    R(p, 0, 13, 15, 14, C.steel); H(p, 0, 15, 13, C.metal); H(p, 0, 15, 15, C.grey); for (const x of [2, 7, 12]) p.set(x, 14, C.dark);
+  },
+  // the digital night vision scope: a fat black body, a green screen glowing at the eyepiece
+  nvscope: (p) => {
+    rail(p, 4, 11, 12, C.gun); box(p, 2, 4, 12, 11, POLY, POLYL, C.dark); cyl(p, 12, 15, 3, 12, POLY); V(p, 15, 4, 11, "#3a5a3a"); p.set(15, 5, C.glow);
+    R(p, 0, 5, 2, 10, C.rubber); V(p, 0, 6, 9, C.nvg || "#7dff6a"); R(p, 5, 2, 8, 3, C.gun); p.set(6, 2, C.red); dots(p, 4, 10, 7, C.hi);
+  },
+  // the 2× prism: a short boxy body on a mount, a lit reticle
+  prism2x: (p) => {
+    R(p, 3, 11, 12, 12, C.gun); rail(p, 2, 13, 13, C.gun); box(p, 2, 4, 10, 10, POLY, POLYL, C.dark); cyl(p, 10, 14, 3, 10, POLY);
+    V(p, 14, 4, 9, C.glass); R(p, 0, 5, 2, 9, C.rubber); p.set(1, 7, DOT); R(p, 5, 2, 6, 3, C.gun); text(p, 5, 6, "2", LBL);
+  },
+  // the Zhukov: a tan side-folding polymer stock
+  zhukov: (p) => {
+    stamp(p, 0, 2, ["aaaaaaaaaaaa", "abbbbbbbbbbc", "abbbbbbbbbbc", "abbb....abbc", "abbb.....abc", "abbb......ac", "abbbbbbbbbbc", "accccccccccc"], { a: C.fdeL, b: C.fde, c: C.fdeD });
+    box(p, 12, 3, 15, 8, C.gun, C.hi, C.dark); disc(p, 13, 5, 1, C.metal); R(p, 0, 10, 2, 12, C.rubber);
+  },
+  // the AFG: a low swept-back wedge on a clamp, tan
+  afg: (p) => {
+    clamp(p, 0, 15, 3);
+    stamp(p, 0, 6, ["abbbbbbbbbbbbbbc", ".abbbbbbbbbbbbc.", "...abbbbbbbbbc..", ".....abbbbbbc...", ".......cccccc..."], { a: C.fdeL, b: C.fde, c: C.fdeD });
+  },
+  // the linear comp: a can-shaped sleeve with vent holes at the front only
+  linearcomp: (p) => { R(p, 0, 7, 2, 8, C.steel); cyl(p, 3, 14, 4, 11, C.gun); V(p, 15, 6, 9, C.dark); for (const y of [6, 9]) R(p, 11, y, 13, y, C.dark); R(p, 4, 6, 8, 9, C.hi); },
+  // a single-point sling: one bungee loop, a buckle and a QD swivel
+  singlepoint: (p) => {
+    band(p, 1, 3, 11, 14, 2, POLY); R(p, 10, 1, 15, 4, C.steel); disc(p, 13, 2, 1, C.metal); p.set(13, 2, C.dark);
+    R(p, 5, 13, 8, 15, C.gun); H(p, 5, 8, 13, C.hi);
+  },
+  // a kitchen flashlight wound onto nothing with silver duct tape
+  tapedlight: (p) => {
+    cyl(p, 0, 11, 6, 10, C.red); cyl(p, 11, 14, 4, 12, C.red); V(p, 15, 5, 11, LENS); p.set(15, 5, C.white);
+    for (const x of [3, 4, 7, 8]) V(p, x, 4, 12, x % 2 ? C.silver : C.silverD);
+  },
+};
+
+export const GEAR_ART = { ...MAGS, ...CLIPS, ...CANS, ...MUZZLE, ...SCOPES, ...DOTS, ...MOUNTS, ...GRIPS, ...STOCKS, ...LIGHTS, ...MISC, ...SURV };
 export const SUPPLY_ART = {};

@@ -286,6 +286,8 @@ function drawWeapon(p, look, R) {
     case "golfclub": p.rect(hx + 1, hy - 8, hx + 1, hy + 2, "#c2c9cf"); p.rect(hx + 1, hy - 9, hx + 3, hy - 9, "#55595e"); break;
     case "nailbat": drawWeapon(p, "bat", R); p.set(hx, hy - 6, metal); p.set(hx + 3, hy - 6, metal); p.set(hx, hy - 4, metal); p.set(hx + 3, hy - 4, metal); p.set(hx, hy - 2, metal); break;
     case "prybar": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#7d858c"); p.set(hx + 2, hy - 8, "#7d858c"); p.set(hx, hy + 2, "#7d858c"); break;
+    case "halligan": p.rect(hx + 1, hy - 8, hx + 1, hy + 2, "#9aa3ab"); p.rect(hx, hy - 9, hx + 3, hy - 9, "#9aa3ab"); p.set(hx + 3, hy - 8, "#9aa3ab"); p.set(hx, hy + 2, "#9aa3ab"); break; // a fork at the foot, an adze and a pick at the head (sim/data-survival.js)
+    case "pipewrench": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#c8362e"); p.rect(hx, hy - 7, hx + 2, hy - 6, "#55595e"); p.set(hx + 3, hy - 7, "#55595e"); break; // a red handle, the jaws (sim/data-survival.js)
     case "fireaxe": p.rect(hx + 1, hy - 7, hx + 1, hy + 2, "#b08a5a"); p.rect(hx + 2, hy - 8, hx + 3, hy - 5, "#c8362e"); p.set(hx + 4, hy - 7, metal); p.set(hx + 4, hy - 6, metal); break;
     case "sledge": p.rect(hx + 1, hy - 6, hx + 1, hy + 2, wood); p.rect(hx - 1, hy - 9, hx + 3, hy - 7, "#55595e"); break;
     case "baton": p.rect(hx + 1, hy - 5, hx + 1, hy + 2, "#1a1c20"); p.set(hx + 1, hy - 6, "#3a3d40"); break;

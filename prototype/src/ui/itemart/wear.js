@@ -767,7 +767,80 @@ function bicycle(p) { // a red mountain bike: knobby wheels, a diamond frame, fl
   R(p, 7, 12, 8, 12, "#c9ced3");
 }
 
+// ---------- survival gear (2026-10-19, sim/data-survival.js) ----------
+function halligan(p) { // a forged steel bar: a fork at the foot, an adze and a pick at the head
+  stamp(p, 0, 0, [
+    "...........kkkk.",
+    "..........klllkk",
+    "...........kld.d",
+    "...........ld...",
+    "..........ld....",
+    ".........ld.....",
+    "........ld......",
+    ".......ld.......",
+    "......ld........",
+    ".....ld.........",
+    "....ld..........",
+    "...ld...........",
+    "..ld............",
+    ".ld.............",
+    "kd.k............",
+    "k...............",
+  ], { k: "#8d959c", l: "#b4bcc3", d: "#6d7378" });
+  for (const [x, y] of [[6, 9], [8, 7], [10, 5]]) p.set(x, y, "#c8362e"); // the red rings of its knurled grip
+}
+function pipewrench(p) { // a red cast-iron handle, the hook jaw and its knurled nut at the top
+  stamp(p, 0, 0, [
+    "........ssss....",
+    ".......sggggs...",
+    "........ssssgs..",
+    "............gs..",
+    "..........nnn...",
+    ".........nnnn...",
+    "........rrn.....",
+    ".......rrr......",
+    "......rrr.......",
+    ".....rrr........",
+    "....rrr.........",
+    "...rrr..........",
+    "..rrr...........",
+    ".rrr............",
+    "rrr.............",
+    "rr..............",
+  ], { s: "#8d959c", g: "#b4bcc3", n: "#6d7378", r: "#c8362e" });
+  lit(p, "#c8362e");
+}
+function leatherjacket(p) { // a black biker's jacket: the asymmetric zip, wide lapels, silver snaps
+  rows(p, 1, [[4, 6, 9, 11], [2, 13], [1, 14], [1, 14], [0, 15], [0, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 1, 3, 12, 14, 15], [3, 12], [3, 12], [3, 12]], "#2a2622");
+  lit(p, "#2a2622");
+  line(p, 9, 3, 6, 14, "#c9ced3"); // the slanted zip
+  for (const [x, y] of [[4, 3], [11, 3], [3, 6], [12, 6]]) p.set(x, y, "#c9ced3");
+  line(p, 5, 2, 7, 6, "#4a443d"); line(p, 10, 2, 9, 5, "#4a443d"); // the lapels
+}
+function chainsleeves(p) { // a pair of butcher's chainmail gauntlets: a mesh of steel rings, a strap at the wrist
+  twin((x) => {
+    rows(p, 0, [[x + 1, x + 5], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x, x + 6], [x + 1, x + 5], [x + 1, x + 5], [x + 1, x + 5], [x + 1, x + 5], [x + 2, x + 4]], K.steel);
+    for (let y = 0; y < 14; y++) for (let i = x; i <= x + 6; i++) if ((i + y) % 2 && p.get(i, y)) p.set(i, y, K.steelD);
+    H(p, x, x + 6, 9, "#3a6fb0"); // the blue strap
+    p.set(x + 1, 1, K.glint);
+  });
+}
+function motopants(p) { // black riding trousers, grey knee and shin armour
+  rows(p, 0, [[2, 13], [2, 13], [2, 13], [2, 7, 8, 13], [2, 7, 8, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [2, 6, 9, 13], [1, 6, 9, 14]], "#2e3238");
+  lit(p, "#2e3238");
+  for (const x of [3, 10]) { R(p, x, 7, x + 2, 9, "#6d7378"); R(p, x, 11, x + 2, 14, "#55595e"); H(p, x, x + 2, 7, "#8d959c"); }
+  H(p, 2, 13, 1, "#c8362e");
+}
+function legrig(p) { // a thigh platform: two pistol mag pouches, an admin flap, the leg straps
+  for (const x of [5, 10]) V(p, x, 0, 3, "#2e3238");
+  rows(p, 3, [[3, 12], [2, 13], [2, 13], [2, 13], [2, 13], [2, 13], [2, 13], [2, 13], [3, 12], [4, 11]], "#9c8862"); lit(p, "#9c8862");
+  for (const x of [3, 6]) { R(p, x, 5, x + 1, 10, "#8a7856"); H(p, x, x + 1, 4, "#2a2d33"); H(p, x, x + 1, 5, "#b29e78"); }
+  R(p, 9, 6, 12, 10, "#8a7856"); H(p, 9, 12, 6, "#b29e78"); p.set(10, 8, "#c8402f");
+  for (const y of [8, 12]) { H(p, 0, 1, y, "#2e3238"); H(p, 14, 15, y, "#2e3238"); }
+}
+
 export const GEAR_ART = {
+  halligan, pipewrench, leatherjacket, chainsleeves, motopants, legrig, // survival gear
   knife: chef, steakknife: steak, filletknife: fillet, cleaver, huntknife: hunter, survivalknife: survival, bowie, bayonet,
   combatknife: combat, shiv, pocketknife: pocket, flipknife: flick, lockback, multitool, boxcutter, balisong,
   machete, sawmachete, springmachete, kukri, katana, cutlass, sabre, broadsword,

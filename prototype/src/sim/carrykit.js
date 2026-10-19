@@ -358,6 +358,18 @@ const CALIBRE_KIT = [
   [AREA_KIT.gunshop, { speedloader44: 0.6 }],
 ];
 for (const [row, add] of CALIBRE_KIT) Object.assign(row.items, add);
+// The survival guns of 2026-10-19 (data-kit.js SURV_MAGS, SURV_CLIPS): the Uzi's magazines at gun stores, police
+// armouries and on raiders' tables, the takedown .22's and the SKS's stripper clips at gun stores, gun counters and traders.
+const SURV_KIT = [
+  [SITE_KIT.gunstore, { mag_uzi_32: 0.3, mag_uzi_20: 0.2, mag_ar7_8: 0.6, stripper762: 1 }],
+  [SITE_KIT.police, { mag_uzi_32: 0.2 }],
+  [AREA_KIT.armory, { mag_uzi_32: 0.15 }],
+  [AREA_KIT.gunshop, { mag_ar7_8: 0.4, stripper762: 0.8, mag_uzi_20: 0.15 }],
+  [WARE_KIT.raider, { mag_uzi_32: 0.4, stripper762: 0.6 }],
+  [WARE_KIT.traders, { stripper762: 0.5, mag_ar7_8: 0.3 }],
+  [WARE_KIT.merchants, { mag_uzi_32: 0.2, stripper762: 0.4 }],
+];
+for (const [row, add] of SURV_KIT) Object.assign(row.items, add);
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();
   const tot = keys.reduce((a, k) => a + items[k], 0);

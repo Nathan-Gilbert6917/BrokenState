@@ -53,7 +53,9 @@ import { guardGear } from "../src/sim/escorts.js";
 import { starterKit } from "../src/sim/arsenal.js";
 import { BLADE_FINDS, AREA_BLADES, WARE_BLADES } from "../src/sim/blades.js"; // knives and swords (their own dice)
 import { BLADE_KIT_PATCH } from "../src/sim/data-blades.js";
-import { ARSENAL_FINDS, ARSENAL_KITS, CALIBRE_KITS, AR_KITS, ARSENAL_GEAR } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js, its own dice)
+import { SURV_FINDS, AREA_SURV, WARE_SURV } from "../src/sim/survival.js"; // survival gear (its own dice)
+import { SURV_KIT_PATCH } from "../src/sim/data-survival.js";
+import { ARSENAL_FINDS, ARSENAL_KITS, CALIBRE_KITS, AR_KITS, SURV_KITS, ARSENAL_GEAR } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js, its own dice)
 import { standardMag } from "../src/sim/mags.js";
 import { isRoundItem, isBulk } from "../src/sim/itemstack.js"; // rounds loose or boxed, bulk ammo containers
 import { gunsFrom, bodyGunSource, GUN_DIST } from "../src/sim/gundist.js"; // the gun distribution: which gun a source yields
@@ -229,7 +231,7 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const its = [];
     for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...ensureWares(st, f, true)); }
     f.type = was;
-    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type]))])); // partfinds.js partWares: the catalogue's parts by the shelf's tags
+    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...Object.keys((WARE_SURV[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type]))])); // partfinds.js partWares: the catalogue's parts by the shelf's tags
   }
   st.hour = 0;
   const com = [];
@@ -274,13 +276,15 @@ for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot
 //   WARE_BLADES, their own dice after a roll that found nothing: chances at 0);
 // - the arsenal of 2026-10-10 (gunfinds.js: ARSENAL_FINDS site / area / wares chances at 0, their own dice);
 // - boxed and bulk rounds (ammo.js formFinds, a truck hook on hashed dice: taken off with the flashbang hook below).
-const LATER_KEYS = new Set(["tourniquet", ...Object.values(BLADE_KIT_PATCH).flatMap((p) => Object.values(p).flat())]);
+// - survival gear (data-survival.js SURV_KIT_PATCH, appended to the kits' loot after the blades; survival.js SURV_FINDS /
+//   AREA_SURV / WARE_SURV, its own dice after everything else: chances at 0), 2026-10-19.
+const LATER_KEYS = new Set(["tourniquet", ...Object.values(BLADE_KIT_PATCH).flatMap((p) => Object.values(p).flat()), ...Object.values(SURV_KIT_PATCH).flatMap((p) => Object.values(p).flat())]);
 for (const T of [SITE_FINDS, AREA_FINDS]) for (const v of Object.values(T)) for (const k of Object.keys(v.items)) if (LATER_KEYS.has(k)) { nlStash.push([v.items, k, v.items[k]]); delete v.items[k]; }
 for (const K of Object.values(KITS)) for (const f of ["weapons", "strong", "loot", "finds"]) if (Array.isArray(K[f]) && K[f].some((k) => LATER_KEYS.has(k))) { nlStash.push([K, f, K[f]]); K[f] = K[f].filter((k) => !LATER_KEYS.has(k)); }
 for (const B of Object.values(MILDEAD.BODY)) for (const f of ["items", "armor"]) if (Array.isArray(B[f]) && B[f].some((r) => LATER_KEYS.has(r[0]))) { nlStash.push([B, f, B[f]]); B[f] = B[f].filter((r) => !LATER_KEYS.has(r[0])); }
 for (const T of Object.values(TRUCK_LOOT)) if (T.gear.some((r) => LATER_KEYS.has(r[0]))) { nlStash.push([T, "gear", T.gear]); T.gear = T.gear.filter((r) => !LATER_KEYS.has(r[0])); }
 for (const type of Object.keys(WARES)) if (WARES[type].some((k) => LATER_KEYS.has(k))) { nlStash.push([WARES, type, WARES[type]]); WARES[type] = WARES[type].filter((k) => !LATER_KEYS.has(k)); }
-for (const T of [BLADE_FINDS, AREA_BLADES, WARE_BLADES]) for (const v of Object.values(T)) { headStash.push([v, v.p]); v.p = 0; }
+for (const T of [BLADE_FINDS, AREA_BLADES, WARE_BLADES, SURV_FINDS, AREA_SURV, WARE_SURV]) for (const v of Object.values(T)) { headStash.push([v, v.p]); v.p = 0; }
 for (const f of ["site", "area", "wares"]) { nlStash.push([ARSENAL_FINDS, f, ARSENAL_FINDS[f]]); ARSENAL_FINDS[f] = {}; }
 // - the parts catalogue (partfinds.js: PART_FINDS site / area / wares chances at 0, rolled last on their own dice) and
 //   the gun distribution (gundist.js swapGun: a listed gun swapped for one of its source's pool on a hash; off, every
@@ -298,14 +302,14 @@ const cookBook = (k) => !!(GEAR[k] && GEAR[k].book && GEAR[k].book.skill === "co
 for (const B of Object.values(WARE_BOOKS)) if (B.books.some(cookBook)) { nlStash.push([B, "books", B.books]); B.books = B.books.filter((k) => !cookBook(k)); }
 // - and its guns in the kits (data-guns.js ARSENAL_KITS, then CALIBRE_KITS and AR_KITS, each appended to KIT_PATCH's
 //   lists in that order: the tail of each list once the non-lethal kit and the blades are off, taken off last first) and
-//   in Army trucks (TRUCK_GEAR rows of its guns, hashed dice).
+//   in Army trucks (TRUCK_GEAR rows of its guns, hashed dice). The survival guns (SURV_KITS, 2026-10-19) came after AR_KITS.
 let kitTails = true;
-for (const T of [AR_KITS, CALIBRE_KITS, ARSENAL_KITS]) for (const [kind, add] of Object.entries(T)) for (const [f, list] of Object.entries(add)) {
+for (const T of [SURV_KITS, AR_KITS, CALIBRE_KITS, ARSENAL_KITS]) for (const [kind, add] of Object.entries(T)) for (const [f, list] of Object.entries(add)) {
   const K = KITS[kind], cur = K && K[f];
   if (Array.isArray(cur) && cur.slice(-list.length).join() === list.join()) { nlStash.push([K, f, cur]); K[f] = cur.slice(0, -list.length); }
   else kitTails = false;
 }
-check(kitTails, "the later guns sit at the end of each kit's lists (ARSENAL_KITS, CALIBRE_KITS, AR_KITS in order: a new table goes in this list)");
+check(kitTails, "the later guns sit at the end of each kit's lists (ARSENAL_KITS, CALIBRE_KITS, AR_KITS, SURV_KITS in order: a new table goes in this list)");
 for (const kind of Object.keys(TRUCK_GEAR)) { nlStash.push([TRUCK_GEAR, kind, TRUCK_GEAR[kind]]); TRUCK_GEAR[kind] = TRUCK_GEAR[kind].filter((r) => !ARSENAL_GEAR[r[0]]); }
 const BASE = {
   bodies: { keys: "917048c944387995", rng: 94849467201019 }, areaFinds: { keys: "4f69608bbca97f26", rng: 19566617580356 }, trucks: "ddd64fb55272735e",
@@ -457,7 +461,7 @@ section("5. Merchants' specialities");
   for (let i = 0; i < 300; i++) { const v = V.spawnVisitor(w, "merchants"); if (!v) continue; (by[v.spec] = by[v.spec] || []).push(v); w.visitors.length = 0; }
   check(Object.keys(V.MERCHANT_SPECS).every((k) => (by[k] || []).length >= 20), `every speciality turns up (${Object.keys(V.MERCHANT_SPECS).map((k) => `${k} ${(by[k] || []).length}`).join(", ")})`);
   const blue = new Set(Object.keys(GEAR).filter((k) => GEAR[k].blueprint));
-  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_HEAD.merchants.items), ...Object.keys(WARE_KIT.merchants.items), ...Object.keys(WARE_BLADES.merchants.items), ...Object.keys(partPool(PART_FINDS.WARE_TAGS.merchants))]); // WARE_BLADES: knives and swords (blades.js bladeWares, with the parts)
+  const mods = new Set([...Object.keys(WARE_GUNMODS.merchants.items), ...Object.keys(WARE_MODS.merchants.items), ...Object.keys(WARE_HEAD.merchants.items), ...Object.keys(WARE_KIT.merchants.items), ...Object.keys(WARE_BLADES.merchants.items), ...Object.keys(WARE_SURV.merchants.items), ...Object.keys(partPool(PART_FINDS.WARE_TAGS.merchants))]); // WARE_BLADES: knives and swords (blades.js bladeWares, with the parts)
   for (const [k, S] of Object.entries(V.MERCHANT_SPECS)) {
     const vs = by[k] || [];
     const allowed = new Set([...S.gear, ...S.books, ...V.MERCHANT_VALUABLES, ...blue, ...(k === "arms" || k === "general" ? mods : []), ...(k === "arms" ? newGuns("merchants") : []), ...Object.keys(gunsFrom("trader:merchants"))]); // gundist.js: a merchant's gun // an arms dealer's newer guns (visitors.js gunWares)

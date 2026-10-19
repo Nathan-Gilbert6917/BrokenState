@@ -23,6 +23,7 @@
 import { GEAR } from "./data.js";
 import { EQUIP_SLOTS, packOf, stow } from "./inventory.js";
 import { helmetLight } from "./helmets.js";
+import { SURV_LIGHTS } from "./data-survival.js"; // the angle-head flashlight, the solar lantern
 
 export const LIGHTS = {
   headlamp:   { sight: 8,  seen: 1, survey: 0.42, free: true,  cone: 3.5, beam: 30, name: "headlamp" },
@@ -33,6 +34,7 @@ export const LIGHTS = {
   lantern:    { sight: 10, seen: 4, survey: 0.55, free: false, round: true, cone: 4.5, pool: 5, name: "lantern" },
   spotlight:  { sight: 11, seen: 6, survey: 0.7,  free: false, cone: 7.5, beam: 18, name: "spotlight" },
 };
+Object.assign(LIGHTS, SURV_LIGHTS); // survival gear (data-survival.js): an angle-head flashlight (hands free), a solar lantern
 // The order a team packs them in (lightest first) and the order "best" is judged in (brightest first).
 export const LIGHT_KEYS = Object.keys(LIGHTS).sort((a, b) => (GEAR[a]?.weight || 0) - (GEAR[b]?.weight || 0));
 const brighter = (a, b) => (!a ? b : !b ? a : LIGHTS[b].sight > LIGHTS[a].sight ? b : a);

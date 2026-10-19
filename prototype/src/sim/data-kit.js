@@ -79,6 +79,17 @@ export const CALIBRE_MAGS = {
   mag_famas_25:    { plat: ["famas"], cal: "556", cap: 25, kg: 0.15, value: 7, pouch: "rifle", name: "FAMAS-pattern magazine (25)" },
 };
 Object.assign(MAGAZINES, CALIBRE_MAGS);
+// The survival guns of 2026-10-19 (data-guns.js SURV_GEAR): the Uzi's own magazines (a 20 and the 32 it is known for),
+// the takedown .22's eight-rounders (they ride in its hollow stock); the folding 9mm carbine takes the polymer pistols'
+// magazines (plat "pcc" added to each below). The SKS has a fixed box (INTERNAL) filled by a stripper clip (CLIPS).
+/** @type {Record<string, { plat: string[], cal: string, cap: number, kg: number, value: number, name: string, aim?: number, jam?: number, pouch: string, desc?: string }>} */
+export const SURV_MAGS = {
+  mag_uzi_20:      { plat: ["uzi"], cal: "9mm", cap: 20, kg: 0.15, value: 4, pouch: "rifle", name: "Uzi magazine (20)" },
+  mag_uzi_32:      { plat: ["uzi"], cal: "9mm", cap: 32, kg: 0.2, value: 6, pouch: "rifle", name: "Uzi magazine (32)" },
+  mag_ar7_8:       { plat: ["takedown"], cal: "22lr", cap: 8, kg: 0.05, value: 3, pouch: "pistol", name: "Takedown .22 magazine (8)" },
+};
+Object.assign(MAGAZINES, SURV_MAGS);
+for (const m of Object.values(MAGAZINES)) if (m.plat.includes("glock") && !m.plat.includes("pcc")) m.plat.push("pcc"); // the folding 9mm carbine
 
 // Internal magazines (a tube, a cylinder, a fixed box): Reload (1 action) adds this many rounds. A clip item (a
 // speedloader, a stripper clip) carried fills it in one action instead (CLIPS). A gun with a magazine item fitted (a
@@ -92,6 +103,10 @@ export const INTERNAL = { shotgun: 4, semishotgun: 4, leverrifle: 4, huntrifle: 
 // More calibres of 2026-10-10: the .44 revolver's cylinder, the .44 lever's tube, the .44 single-shot (one a Reload).
 export const CALIBRE_INTERNAL = { revolver44: 2, lever44: 4, single44: 1 };
 Object.assign(INTERNAL, CALIBRE_INTERNAL);
+// The survival guns of 2026-10-19: the SKS's fixed ten-round box (three a Reload by hand, a stripper clip fills it), the
+// bullpup pump's twin tubes (four a Reload, as a pump).
+export const SURV_INTERNAL = { sks: 3, ksg: 4 };
+Object.assign(INTERNAL, SURV_INTERNAL);
 // Clip items: the guns they feed and how many rounds a clip puts in at once. Used once a fight (refilled free after it).
 export const CLIPS = {
   speedloader: { weapons: ["revolver", "service38"], n: 6, pouch: "pistol" }, // (the snub-noses' five-shot cylinders take none: a speed strip at most)
@@ -100,6 +115,9 @@ export const CLIPS = {
 // More calibres of 2026-10-10: a .44 speedloader (the .44 Magnum revolver's six fatter rounds; a .357's will not take them).
 export const CALIBRE_CLIPS = { speedloader44: { weapons: ["revolver44"], n: 6, pouch: "pistol" } };
 Object.assign(CLIPS, CALIBRE_CLIPS);
+// The SKS's stripper clip: ten 7.62×39 rounds pushed down into its fixed box at once.
+export const SURV_CLIPS = { stripper762: { weapons: ["sks"], n: 10, pouch: "rifle" } };
+Object.assign(CLIPS, SURV_CLIPS);
 
 // Carry kit in loot and on bodies (carrykit.js bodyKit / gunMags / the kit tables; inventory.js stowing into rig
 // pouches): off only for tools/itemcondtest.js's baselines (the old finds and dice, before the carry kit only added).
@@ -150,6 +168,8 @@ export const KIT_GEAR = {
 };
 KIT_GEAR.speedloader44 = { name: ".44 speedloader", slot: "pack", skill: null, power: 0, req: 0, value: 8, noise: 0, small: true, weight: 0.06, cat: "gunmod",
   desc: "Six .44 Magnum rounds held ready for the .44 revolver's cylinder: a Reload fills it at once (instead of 2 rounds), once a fight. In a pistol pouch or a pocket." };
+KIT_GEAR.stripper762 = { name: "7.62×39 stripper clip", slot: "pack", skill: null, power: 0, req: 0, value: 2, noise: 0, small: true, weight: 0.02, cat: "gunmod",
+  desc: "Ten 7.62×39 rounds on a steel clip: a Reload fills an SKS's fixed magazine at once (instead of 3 rounds), once a fight. In a rifle pouch or a pocket." };
 for (const [k, m] of Object.entries(MAGAZINES)) {
   KIT_GEAR[k] = { name: m.name, slot: "pack", skill: null, power: 0, req: 0, value: m.value, noise: 0, small: true, weight: m.kg, cat: "gunmod", mag: { plat: m.plat, cal: m.cal, cap: m.cap, ...(m.cals ? { cals: m.cals } : {}), ...(m.guns ? { guns: m.guns } : {}) }, pouch: m.pouch, look: magLook(k, m.cap),
     desc: m.desc || `A ${m.cap}-round magazine${m.aim ? ` (heavy and clumsy: ${m.aim} aim${m.jam ? `, jams ×${m.jam}` : ""})` : ""}. It holds one kind of round. A spare in a rig pouch or a pocket reloads in 1 action, from the pack in 2.` };
@@ -161,7 +181,7 @@ for (const [k, c] of Object.entries(CLIPS)) KIT_GEAR[k].pouch = c.pouch;
 export const KIT_TAGS = {
   chestrig: ["military", "guns", "crash"], makeshiftrig: ["crime", "camp"], tacvest: ["police", "prison", "guns"],
   ceramicplate: ["military", "crash"], steelplate: ["guns", "crime", "industry", "military"], softinsert: ["police", "military", "prison"],
-  speedloader: ["guns", "police", "home"], stripper308: ["hunt", "guns", "military"], speedloader44: ["guns", "hunt", "home"],
+  speedloader: ["guns", "police", "home"], stripper308: ["hunt", "guns", "military"], speedloader44: ["guns", "hunt", "home"], stripper762: ["guns", "crime", "military", "hunt"],
 };
 for (const [k, m] of Object.entries(MAGAZINES)) {
   const p = m.plat;
@@ -172,6 +192,9 @@ for (const [k, m] of Object.entries(MAGAZINES)) {
     : p.includes("g3") ? ["military", "guns", "crime"] : p.includes("p90") ? ["military", "police"]
     : (m.guns || []).some((g) => g === "fal" || g === "m1a") ? ["military", "guns", "hunt"] : ["military", "guns", "police", "crash"];
 }
+// The survival guns' magazines (2026-10-19): the Uzi's where the Uzi is (gangs, police armouries, surplus), the takedown
+// .22's where people camp and hunt.
+Object.assign(KIT_TAGS, { mag_uzi_20: ["crime", "guns", "police", "military"], mag_uzi_32: ["crime", "guns", "police", "military"], mag_ar7_8: ["guns", "hunt", "outdoor", "camp", "home"] });
 // The budget clones: where cheap things are (homes, malls, pawn shelves), not armouries.
 for (const k of ["mag_stanag_30c", "mag_glock_17c", "mag_ak_75c"]) KIT_TAGS[k] = ["home", "mall", "shop", "crime", "sport"];
 // Magazines as gun parts (gunmods.js ATTACH: the gun builder's magazine slot lists them by platform).
