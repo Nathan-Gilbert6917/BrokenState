@@ -74,10 +74,10 @@ import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
-import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt } from "./buildings.js"; // countBuilt: assaultForce has its own count
+import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt, addRing, isPiece } from "./buildings.js"; // countBuilt: assaultForce has its own count
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
-import { fixtures, fixtureName } from "./breakdowns.js";
+import { fixtures, fixtureName, WALL_REPAIR, wallToMend, wallSegHours } from "./breakdowns.js";
 import { markAbandonedVehicle } from "./markers.js";
 import { thirstAhead } from "./weather.js";
 import { keyWord } from "./water.js"; // "un-purified water" in texts
@@ -394,7 +394,7 @@ export function captureBase(state, f, tile, p, info = {}) {
     // What they built there: their palisade (battered: two sections behind strong walls, one behind any, none where they
     // had put up none yet) and their quarters (a bunkhouse, 6 beds, where they had built some: groupworks.js).
     const nw = nativeWalls(f, tile, state);
-    for (let i = 0; i < (nw > 1 ? 2 : nw > 0 ? 1 : 0); i++) { const wb = addBuilding(base, "walls"); wb.wear = 70; }
+    if (nw > 0) addRing(base, nw > 1 ? 2 : 1, 70); // buildings.js: their wall as a ring of pieces of yours, battered
     if (!groupsBuild(state, f) || ((f.works && f.works[tile] && f.works[tile].beds) || 0) > 0) addBuilding(base, "bunkhouse").wear = 30;
   }
   base.type = noHub ? "hub" : "outpost";
@@ -743,9 +743,18 @@ export function conquestDaily(state) {
     if (holder.id !== o.factionId) { o.factionId = holder.id; o.garrison = Math.max(CONQUEST.GARRISON_MIN, o.garrison * 0.6); }
     o.garrison = Math.min(o.garrisonMax, o.garrison + CONQUEST.GARRISON_GROW);
     for (const fx of fixtures(o.base)) {
+      if (isPiece(fx.type)) continue; // the wall: by the hour, below
       if (fx.broken) { if (state.rng.chance(CONQUEST.REPAIR)) { fx.broken = null; fx.wear = CONQUEST.REPAIR_WEAR; } }
       else if (fx.wear > 0) fx.wear = Math.max(0, fx.wear - CONQUEST.WEAR_FALL);
     }
+    // The wall's pieces (buildings.js piece) are mended as yours are (breakdowns.js WALL_REPAIR: the same work-hours a
+    // segment, broken first, then the most worn): each of the holders puts WALL_REPAIR.HOLDER work-hours a day into it.
+    o.wallHours = (o.wallHours || 0) + Math.max(1, Math.round(o.garrison)) * WALL_REPAIR.HOLDER;
+    for (let b = wallToMend(o.base)[0]; b && o.wallHours >= wallSegHours(b); b = wallToMend(o.base)[0]) {
+      o.wallHours -= wallSegHours(b);
+      b.broken = null; b.wear = CONQUEST.REPAIR_WEAR;
+    }
+    if (!wallToMend(o.base).length) o.wallHours = 0; // nothing left to mend: the hours are not banked
   }
   // Base abandoned before a raid that never came: nothing to do; the flag clears once that raid is gone.
   for (const b of state.bases) if (b.abandoned != null && !state.parties.some((q) => q.id === b.abandoned)) delete b.abandoned;

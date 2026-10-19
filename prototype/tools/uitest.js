@@ -704,8 +704,10 @@ section("Repairs tab after a raid (ui/explore.js, sim/breakdowns.js raidDamage)"
   htmlOk(html, "repairs tab after a raid");
   check(html.includes("Last raid: day") && html.includes("Test raiders") && html.includes("a break-in"), "it shows the last raid: who, how it went, the hours");
   check(rep.broken.length < 2 || /data-action="rp-all"/.test(html), `a Repair all button with the bill when several are broken (${rep.broken.length})`);
-  const damaged = BD.fixtures(h).find((fx) => !fx.broken && (fx.wear || 0) >= BD.RAID_DAMAGE.damaged);
+  const damaged = BD.fixtures(h).find((fx) => !fx.broken && (fx.wear || 0) >= BD.RAID_DAMAGE.damaged && !Buildings.isPiece(fx.type));
   check(!damaged || new RegExp(`data-action="rp-start" data-base="${h.id}" data-fx="${damaged.id}" data-m="repair"`).test(html), "a damaged building has a Repair order in the list (repair orders 2026-10-19)");
+  const mend = BD.wallToMend(h);
+  check(!mend.length || h.wallRepair || new RegExp(`data-action="rw-order" data-base="${h.id}"`).test(html), `the wall's pieces: one wall row with Repair the wall (${mend.length} segments to mend), no row a piece`);
   EXPLORE_ACTIONS["rp-all"](w, ui, { base: String(h.id) });
   check((h.repairs || []).length >= Math.min(1, rep.broken.length) && /starts/.test(ui.baseMsg || ""), `Repair all starts the jobs ("${(ui.baseMsg || "").slice(0, 100)}")`);
   htmlOk(repairsTab(w, h), "repairs tab with jobs under way");

@@ -14,9 +14,11 @@
 // keeping hosts and links. A way in and out (plan Part F, reachProblem): a ring of huts round the core refused when
 // the last one closes it (its door in: nothing could walk to it; its door out: the core shut off), allowed with a hall
 // or a doorway link letting the walk through; a hut closing a pocket round a crate refused, the empty pocket fine; a
-// fitting in a reached hut fine; a car across the lane to a hut's door refused; a walled hub's gates (gateCells and
-// the built map agree) sealed from outside one by one, the last refused; the hover's reason and build refusing it; the
-// auto layout of a built-up hub and a camp placing everything reachable; 50 checks on the 300 × 300 grid in time.
+// fitting in a reached hut fine; a car across the lane to a hut's door refused; wall pieces (merged from the wall
+// pieces branch): a ring of them laid by hand refused on its closing piece while it has no gate (GATE_WHY), the same
+// ring with a gate closing, walled, everything inside reached; the auto layout leaving a gateless ring's closing piece
+// off the map and closing it with its gates; the hover's reason and build refusing it; the auto layout of a built-up
+// hub and a camp (its Ring wall too) placing everything reachable; 50 checks on the 300 × 300 grid in time.
 // Usage: node tools/basebuildtest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { registerCombatHandler } from "../src/sim/combat.js";
@@ -59,11 +61,14 @@ section("The no-build margin");
   // The camp: a 40 × 40 grid, 30 × 30 to build on; everything a camp may build still finds a spot.
   const st2 = world(seed + 1), c2 = asCamp(hub(st2));
   rich(c2);
-  for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit) for (let i = 0; i < CAMP.build[t]; i++) addBuilding(c2, t);
+  for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit && !BUILDINGS[t].piece) for (let i = 0; i < CAMP.build[t]; i++) addBuilding(c2, t);
   const hut = last(c2, "gen_hut");
   for (const t of ["bunks", "stove"]) addBuilding(c2, t);
+  addBuilding(c2, "walls"); // a Ring wall's pieces (buildings.js addRing): the ring round the camp's yard lies inside the margin
   const lay = BM.layoutOf(st2, c2);
-  check(lay.length >= 12 && lay.every((e) => e.at), `a camp with everything it can build (${lay.length} things, ${lay.filter((e) => e.it.kind === "defence").length} defences): all placed by the game`);
+  const ringN = lay.filter((e) => BM.WALL_KINDS.has(e.it.kind)).length;
+  check(lay.length >= 12 && ringN >= 8 && lay.every((e) => e.at), `a camp with everything it can build (${lay.length} things, ${lay.filter((e) => e.it.kind === "defence").length} defences, ${ringN} wall pieces): all placed by the game`);
+  check(BM.wallInfo(st2, c2).enclosed, "the camp's ring of pieces closes round it (its gates laid first)");
   check(lay.every((e) => !inMargin(c2, e.it, e.at)), "none of it inside the margin");
   const bunksLay = lay.find((e) => e.it.type === "bunks"), hutLay = lay.find((e) => e.it.key === keyOf(hut));
   const floor = new Set(BM.floorCellsOf(hutLay.it, hutLay.at).map(([x, y]) => `${x},${y}`));
@@ -330,28 +335,64 @@ section("A way in and out");
     check(whyCar === "That would shut off Hut 2: no way to walk to it from outside the base" && !car.at, `the car parked across the end of the lane: refused (${whyCar})`);
     check(BM.placeItem(st, h, `v:${car.id}`, 22, 28, 0) === "" && car.at, "a cell further off, the lane open: fine");
   }
-  // A walled hub: the gates are the way in. Barricades outside three gates are fine while the fourth is open; the
-  // fourth is refused (the core shut off); one cell over, leaving a gate cell's outside open, it is fine.
+  // The wall pieces (claude/kind-hawking-a4gby2, merged at integration): wall pieces block, gates and stands walk. A
+  // ring of wall pieces laid by hand round the ring line closes on its last piece: refused while it has no gate
+  // (GATE_WHY); with a gate in place of one of its sections the same last piece closes it, the base is walled and
+  // everything inside (and the game's layout of the rest) is reached through the gate.
   {
     const st = world(seed + 6), h = hub(st);
-    addBuilding(h, "walls");
-    const bars = [0, 1, 2, 3].map(() => addBuilding(h, "barricades")), cr = addBuilding(h, "crates"); // (everything first: a crate grows the yard)
-    const C = BM.yardHalf(h);
-    const gates = BM.gateCells(C);
-    check(gates.north[0].join() === `-2,${-C - 2}` && gates.south[1].join() === `-1,${C + 1}` && gates.west[0].join() === `${-C - 2},-2` && gates.east[1].join() === `${C + 1},-1`, `gateCells: the two middle cells of each side of the ring (north ${gates.north.map((g) => g.join(",")).join(" ")})`);
+    rich(h);
+    const R = BM.ensureRing(h), sides = BM.ringSides(R);
+    const runs = []; // the ring line in 1×4s, then a 1×2 and a 1×1 where a side's length leaves them
+    for (const sd of sides) for (let i = 0; i < sd.cells.length;) { const n = sd.cells.length - i, len = n >= 4 ? 4 : n >= 2 ? 2 : 1; runs.push({ at: [sd.cells[i][0], sd.cells[i][1], sd.horiz ? 0 : 1], len, side: sd.side }); i += len; }
+    const pieces = runs.map((r) => ({ ...r, b: addBuilding(h, `wall${r.len}`) }));
+    const errs = pieces.slice(0, -1).map((p) => BM.placeItem(st, h, keyOf(p.b), ...p.at)).filter(Boolean);
+    check(errs.length === 0, `${pieces.length - 1} wall pieces round the ring by hand, all but the last: placed (${errs.slice(0, 3).join("; ") || "no errors"})`);
+    const lastP = pieces[pieces.length - 1];
+    const whyG = BM.placeItem(st, h, keyOf(lastP.b), ...lastP.at);
+    check(whyG === "Needs a gate in the wall first: the wall would shut everything inside off from the outside" && whyG === BM.GATE_WHY && !lastP.b.at, `the piece that would close a ring with no gate: refused (${whyG})`);
+    check(!BM.wallInfo(st, h).enclosed, "the ring stays open");
+    // A gate in place of a 1×4 in the middle of the north side.
+    const north = pieces.filter((p) => p.side === "north" && p.len === 4);
+    const mid = north[Math.floor(north.length / 2)];
+    demolish(st, h, mid.b.id);
+    const gate = addBuilding(h, "gate4");
+    check(BM.placeItem(st, h, keyOf(gate), ...mid.at) === "", `a gate where that section stood (${mid.at}): placed`);
+    const whyL = BM.placeItem(st, h, keyOf(lastP.b), ...lastP.at);
+    check(whyL === "" && lastP.b.at, `the same last piece now closes a ring with a gate in it: fine (${whyL || "placed"})`);
+    const wi = BM.wallInfo(st, h);
+    check(wi.enclosed && wi.gates === 1, `the ring closes round the base: walled (${wi.walls} walls, ${wi.gates} gate)`);
+    const lay = BM.layoutOf(st, h), auto = BM.autoLayout(st, h);
+    const inside = lay.filter((e) => e.at && !BM.WALL_KINDS.has(e.it.kind));
+    const bad = lay.filter((e) => e.at && BM.reachProblem(st, h, e.it, e.at, null, { auto }) !== "");
+    check(inside.length >= 3 && bad.length === 0 && lay.every((e) => e.at), `everything inside the gated ring (${inside.length} things, the game's layout too) is reached through the gate${bad.length ? ` (not: ${bad.map((e) => e.it.label).join(", ")})` : ""}`);
+    // A wall stand by the gate walks: no ring is closed by one, so the stands never need a gate.
+    const stand = addBuilding(h, "stand4");
+    check(BM.placeItem(st, h, keyOf(stand), mid.at[0], mid.at[1] + 3, 0) === "", "a wall stand inside the gate: fine (stands walk)");
+    // Built: the gate's cells are the gate, the wall's palisade.
     check(!openView(st, h), "the view opens");
     const F = st.combat.deployPlan.fort;
-    check(["north", "east", "south", "west"].every((s) => F.gates[s].length === 2 && F.gates[s].every(([x, y], i) => x - F.ox === gates[s][i][0] && y - F.oy === gates[s][i][1])) && F.gates.north.every(([x, y]) => st.combat.cells[y * st.combat.w + x].k === "gate"), "the built map's gates are those cells");
+    check(F.walled && F.pieces.some((p) => p.kind === "gate") && Object.values(F.gates).flat().length === 4 && st.combat.cells[(mid.at[1] + F.oy) * st.combat.w + mid.at[0] + F.ox].k === "gate", "the built map: walled, the gate's four cells barred gates");
     st.combat = null;
-    const spots = [[-C - 3, -2, 1], [C + 2, -2, 1], [-2, -C - 3, 0], [-2, C + 2, 0]]; // across the cells outside the west, east, north and south gates
-    const e = spots.slice(0, 3).map((s, i) => BM.placeItem(st, h, keyOf(bars[i]), ...s));
-    check(e.every((x) => x === ""), `barricades across the outside of three gates: fine (${e.filter(Boolean).join("; ") || "all placed"})`);
-    const why4 = BM.placeItem(st, h, keyOf(bars[3]), ...spots[3]);
-    check(why4 === "That would shut off Main house: no way to walk to it from outside the base" && !bars[3].at, `the fourth, sealing the last gate: refused (${why4})`);
-    check(BM.placeItem(st, h, keyOf(bars[3]), -1, C + 2, 0) === "", "one cell east, the gate's west cell still open outside: fine");
-    const whyCr = BM.placeItem(st, h, keyOf(cr), -2, C + 2, 0);
-    check(/^That would shut off Main house/.test(whyCr) && !cr.at, `a crate on the last open cell: refused (${whyCr})`);
-    check(!BM.unplaceItem(st, h, keyOf(bars[0])) && BM.placeItem(st, h, keyOf(cr), -2, C + 2, 0) === "", "with the west gate's barricade lifted again, the crate is fine");
+  }
+  // The auto layout keeps the rule too: a Ring wall's pieces (addRing) with its gates taken away leave the closing piece
+  // off the map; with a gate again, every piece is laid and the ring closes.
+  {
+    const st = world(seed + 11), camp = asCamp(hub(st));
+    addBuilding(camp, "walls");
+    const gates = camp.buildings.filter((b) => b.type === "gate4");
+    check(gates.length >= 1, `a camp's Ring wall: ${camp.buildings.filter((b) => BUILDINGS[b.type].piece).length} pieces, ${gates.length} gates`);
+    camp.buildings = camp.buildings.filter((b) => b.type !== "gate4");
+    const extra = [4, 4, 4, 4].map((n) => addBuilding(camp, `wall${n}`)); // the gates' cells in walls instead
+    const lay = BM.layoutOf(st, camp);
+    const off = lay.filter((e) => !e.at && BM.WALL_KINDS.has(e.it.kind));
+    check(off.length >= 1 && !BM.wallInfo(st, camp).enclosed, `no gate: the game leaves the closing piece${off.length > 1 ? "s" : ""} off the map (${off.length}) and the ring open`);
+    for (const g of gates) camp.buildings.push(g);
+    camp.buildings = camp.buildings.filter((b) => !extra.includes(b));
+    const lay2 = BM.layoutOf(st, camp), auto2 = BM.autoLayout(st, camp);
+    check(lay2.every((e) => e.at) && BM.wallInfo(st, camp).enclosed, `with the gates back: every piece laid (${lay2.filter((e) => BM.WALL_KINDS.has(e.it.kind)).length}) and the ring closed`);
+    check(lay2.every((e) => BM.reachProblem(st, camp, e.it, e.at, null, { auto: auto2 }) === ""), "and everything walked to through the gates");
+    check(BM.autoLayout(st, camp) === auto2, "the layout is deterministic and cached");
   }
   // The hover's reason and build: the ghost over the spot that would close the pocket is red with the reason, and a
   // click there queues nothing.
@@ -387,8 +428,8 @@ section("A way in and out");
     check(again === auto, "the layout is cached by its key");
     // The camp and a shelter still place everything they can build.
     const stC = world(seed + 9), camp = asCamp(hub(stC));
-    for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit) for (let i = 0; i < CAMP.build[t]; i++) addBuilding(camp, t);
-    for (const t of ["bunks", "stove"]) addBuilding(camp, t); // what the hut's 2 × 2 floor has room for
+    for (const t of Object.keys(CAMP.build)) if (BM.FOOT[t] && !BM.FOOT[t].fit && !BUILDINGS[t].piece) for (let i = 0; i < CAMP.build[t]; i++) addBuilding(camp, t);
+    for (const t of ["bunks", "stove", "walls"]) addBuilding(camp, t); // what the hut's 2 × 2 floor has room for; the Ring wall's pieces
     const layC = BM.layoutOf(stC, camp), autoC = BM.autoLayout(stC, camp);
     check(layC.length >= 12 && layC.every((e) => e.at) && layC.every((e) => BM.reachProblem(stC, camp, e.it, e.at, null, { auto: autoC }) === ""), `a camp with everything on its list: ${layC.length} things placed, all reachable`);
   }

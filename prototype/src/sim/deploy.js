@@ -32,7 +32,7 @@
 // columns 2–6, about 8 tiles from the openings.
 import { MAP_W, MAP_H, CELL, WEAPONS, active, unitAt, unitById, coverAgainst, transformBattle, say, occupancy } from "./combat.js";
 import { setFortLit } from "./fort.js"; // the fort map's floodlights (setLit)
-import { count, baseWalls, wallSectionHp } from "./buildings.js";
+import { count, baseWalls, wallSectionHp, gateMatHp, hasWall } from "./buildings.js";
 import { poweredType } from "./power.js";
 import { armoryDefence } from "./defences.js";
 import { isNight } from "./world.js";
@@ -96,16 +96,16 @@ export function sideUntf(side, W0 = MAP_W, H0 = MAP_H) {
   return (x, y) => [x, y];
 }
 
-// The hit points of a base's wall sections and its gate: the wall's tier's (buildings.js WALL_TIERS hp: a stake fence
-// 60 … a concrete wall 240, two thirds when damaged), else WALL_HP + WALL_HP_PER × wall strength (a group's stand-in
+// The hit points of a base's wall sections and its gate: its pieces' materials' (buildings.js WALL_TIERS hp: wood 60
+// … metal sheets 240, two thirds when damaged), else WALL_HP + WALL_HP_PER × wall strength (a group's stand-in
 // base, walls from before the tiers).
 export const wallHp = (base) => (base && wallSectionHp(base)) ?? DEPLOY.WALL_HP + DEPLOY.WALL_HP_PER * (base ? baseWalls(base) : 0);
-export const gateHp = (base) => DEPLOY.GATE_HP + (base && count(base, "gate") ? DEPLOY.GATE_HP_REINFORCED : 0);
+export const gateHp = (base) => ((base && gateMatHp(base)) ?? DEPLOY.GATE_HP) + (base && count(base, "gate") ? DEPLOY.GATE_HP_REINFORCED : 0); // a gate piece's material (buildings.js WALL_TIERS gateHp)
 
 // ---------- the map (layout phase "map", attackers east) ----------
 export function deployMap(b, ctx, base, c) {
   const rng = ctx.rng;
-  const walled = !!base && count(base, "walls") > 0;
+  const walled = hasWall(base);
   // No wall: the battle opens on the yard and buildings map (interior.js).
   if (!walled) return interiorMap(b, ctx, base, c);
   b.deployPlan = { walled, gate: [], breaches: [], towers: [], walkway: [], ladders: [] };

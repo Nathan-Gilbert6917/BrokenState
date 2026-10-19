@@ -79,7 +79,8 @@ import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
 import { COOK_ACTIONS, COOK_CHANGE } from "./ui/cooking.js"; // wave 2 cooking: the stations' bills
 import { PROD_ACTIONS, PROD_CHANGE } from "./ui/production.js";
 import { queueReloadUpgrade } from "./sim/reloading.js"; // the reloading bench
-import { queueCannerUpgrade, queueGenUpgrade } from "./sim/buildings.js"; // machines-2: the pressure canner fitted to a preserving room; gen-tiers: a generator upgraded
+import { queueCannerUpgrade, queueGenUpgrade } from "./sim/buildings.js";
+import { widenRing, refreshBaseMap } from "./sim/basemap.js"; // the Defenses tab's Widen the ring (the wall pieces the game places) // machines-2: the pressure canner fitted to a preserving room; gen-tiers: a generator upgraded
 import { HEALTH_ACTIONS, HEALTH_CHANGE } from "./ui/health.js";
 import { SKILL_ACTIONS, SKILL_CHANGE } from "./ui/skills.js";
 import { TRADE_ACTIONS, TRADE_CHANGE_ACTIONS } from "./ui/tradewindow.js";
@@ -864,6 +865,8 @@ const actions = {
     ui.supplyForm = null;
   },
   basetab: (d) => { ui.baseView.tab = d.tab; ui.baseMsg = ""; },
+  "wall-mat": (d) => { ui.baseView.wallMat = Number(d.mat) || 1; }, // the Defenses tab: the material the wall pieces are built of (sim/buildings.js WALL_TIERS)
+  "wall-widen": (d) => { const b = baseOf(d); if (b) ui.baseMsg = widenRing(b); },
   cxtab: (d) => { ui.baseView.cx = d.tab; ui.baseView.tab = "construction"; ui.baseMsg = ""; }, // Construction: the Buildings or the Defenses list (from the Defence tab too)
   closebase: () => { ui.baseView = null; ui.baseMsg = ""; ui.supplyForm = null; },
   // Supply runs (Supply runs tab of the base screen).
@@ -913,7 +916,7 @@ const actions = {
     baseSay(deleteSupplyRun(state, j));
   },
   makemedic: (d) => { const s = survivorById(state, Number(d.id)); ui.baseMsg = makeMedic(state, s); if (s && s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId)); }, // a graduated trainee (sim/training.js)
-  queuebuild: (d) => { const b = baseOf(d), n = b ? b.construction.length : 0; ui.baseMsg = queueBuild(state, b, d.type); if (b && b.construction.length > n) openForJob(state, ui, b, d.type); }, // a building with a footprint: the base map opens to place its outline (ui/basemap.js)
+  queuebuild: (d) => { const b = baseOf(d), n = b ? b.construction.length : 0; ui.baseMsg = queueBuild(state, b, d.type, { ...(d.mat ? { mat: Number(d.mat) } : {}), ...(d.kind ? { kind: d.kind } : {}) }); if (b && b.construction.length > n) openForJob(state, ui, b, d.type); }, // a building with a footprint: the base map opens to place its outline (ui/basemap.js)
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
   "bunk-expand": (d) => { ui.baseMsg = queueBunkhouseExpand(state, baseOf(d), Number(d.id)); },
@@ -925,6 +928,7 @@ const actions = {
     const name = what && BUILDINGS[what.type] ? BUILDINGS[what.type].name : "this building";
     if (ask(ui, d, "demolish", { kind: "demolish", title: `Pull down ${name}${b ? ` at ${b.name}` : ""}?`, text: `It is gone for good and its plot is free again. About half its scrap and parts come back${what ? ` (${demolishText(what)})` : ""}.`, yes: "Pull it down" })) return;
     ui.baseMsg = demolish(state, b, id);
+    if (state.combat && state.combat.layout && b && !b.buildings.some((x) => x.id === id)) { state.combat.layout.pick = null; refreshBaseMap(state); state.combat.layout.msg = ui.baseMsg; } // a wall piece pulled down on the base map (ui/basemap.js)
   },
   // The camp fire (sim/fieldheat.js): a camp's or shelter's (data-base) or a resting team's (data-team).
   campfire: (d) => {

@@ -5,7 +5,8 @@
 // orderRepair starts the job and the hourly work finishes it with the wear back at repairWear; a job on a worn fixture
 // is not dropped by the hourly work; raidDamage hits the new defences as the outer line; the Repairs tab renders the
 // list in order with a handler for every data-action it emits; the autopilot orders a repair on a 55-wear fixture
-// when the scrap allows and not when it does not.
+// when the scrap allows and not when it does not; the wall's pieces: no row a piece, one wall row mended by the wall's
+// order (the Repairs table, Repair all, never a repair each).
 // Usage: node tools/repairorderstest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { addBuilding, BUILDINGS } from "../src/sim/buildings.js";
@@ -22,7 +23,7 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 const t0 = Date.now();
 const byType = (base, type) => base.buildings.find((b) => b.type === type);
 // A hub with only these buildings, everyone at rest with no skills, the stock set; 09:00 on a quiet day.
-function setup(types = ["walls", "barricades", "bunkhouse", "spike_pits"], stock = { scrap: 100, parts: 5 }) {
+function setup(types = ["gate", "barricades", "bunkhouse", "spike_pits"], stock = { scrap: 100, parts: 5 }) {
   const st = createWorld({ seed, factionCount: 6 });
   st.started = true;
   st.noWanderers = true;
@@ -64,12 +65,12 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
 {
   console.log("repairList and the partial plan");
   const { st, h, people } = setup();
-  const walls = byType(h, "walls"), bar = byType(h, "barricades"), bunk = byType(h, "bunkhouse"), pits = byType(h, "spike_pits");
+  const walls = byType(h, "gate"), bar = byType(h, "barricades"), bunk = byType(h, "bunkhouse"), pits = byType(h, "spike_pits");
   bunk.wear = 30; bar.wear = 75; pits.wear = 0;
   breakFixture(st, h, walls, "test", { card: false, quiet: true });
-  check(walls.broken && walls.wear === WEAR.breakAt, "the wall is broken at 100");
+  check(walls.broken && walls.wear === WEAR.breakAt, "the reinforced gate is broken at 100");
   const list = repairList(st, h).filter((r) => r.fx.type !== "pump"); // the hub's own well pump is a fixture too (unworn here)
-  check(list.map((r) => r.fx.type).join(",") === "walls,barricades,bunkhouse,spike_pits", `most damaged first: ${list.map((r) => `${r.name} ${r.wear}${r.fx.broken ? " broken" : ""}`).join(" > ")}`);
+  check(list.map((r) => r.fx.type).join(",") === "gate,barricades,bunkhouse,spike_pits", `most damaged first: ${list.map((r) => `${r.name} ${r.wear}${r.fx.broken ? " broken" : ""}`).join(" > ")}`);
   check(list[0].state === "Broken" && list[1].state === "Damaged" && list[2].state === "Worn" && list[3].state === "OK", `states: ${list.map((r) => r.state).join(", ")}`);
   check(list[0].rig && !list[1].rig && list.every((r) => r.plan && r.def && r.name), "a rig plan on the broken only; a plan, a def and a name on every row");
   // Nobody has a skill yet: the plans still price the job.
@@ -88,7 +89,7 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
   check(repairPlan(st, h, bunk, "repair").why === "Nothing to repair.", "at repairWear: Nothing to repair.");
   bunk.wear = 30;
   check(repairPlan(st, h, bunk, "rig").why === "Not broken.", "a jury-rig is for a broken one only");
-  check(repairPlan(st, h, walls, "repair").share === 1 && repairPlan(st, h, walls, "rig").ok, "a broken wall costs the full job; its jury-rig is on");
+  check(repairPlan(st, h, walls, "repair").share === 1 && repairPlan(st, h, walls, "rig").ok, "a broken gate costs the full job; its jury-rig is on");
   // A part comes in only when the share rounds to one.
   const gen = addBuilding(h, "generator"); gen.built = 1; gen.wear = 30;
   mechanic.skills.mechanics = 5;
@@ -157,12 +158,12 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
   check(!!jobFor(h, bar), "an order stands while its fixture is still worn (40)");
   check(/cancelled/.test(cancelRepair(st, h, bar.id)) && !jobFor(h, bar), "and can be cancelled");
   // Repair all: the broken and the damaged (60+), not the worn.
-  const walls = byType(h, "walls");
+  const walls = byType(h, "gate");
   breakFixture(st, h, walls, "test", { card: false, quiet: true });
   bunk.wear = 30; bar.wear = 75;
   people[1].skills.mechanics = 3;
   const bill = repairAllBill(st, h);
-  check(bill.list.length === 2 && bill.list.map((r) => r.fx.type).join() === "walls,barricades" && bill.cost.scrap > 0 && bill.hours > 0, `Repair all's bill counts the broken wall and the 75-wear barricades (${bill.cost.scrap} scrap, ${bill.hours}h), not the 30-wear bunkhouse`);
+  check(bill.list.length === 2 && bill.list.map((r) => r.fx.type).join() === "gate,barricades" && bill.cost.scrap > 0 && bill.hours > 0, `Repair all's bill counts the broken gate and the 75-wear barricades (${bill.cost.scrap} scrap, ${bill.hours}h), not the 30-wear bunkhouse`);
   const all = startAllRepairs(st, h);
   check(jobFor(h, walls) && jobFor(h, bar) && !jobFor(h, bunk), `Repair all starts both ("${all.slice(0, 90)}…")`);
 }
@@ -194,18 +195,18 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
 {
   console.log("The Repairs tab");
   const { st, h, people } = setup();
-  const walls = byType(h, "walls"), bar = byType(h, "barricades"), bunk = byType(h, "bunkhouse");
+  const walls = byType(h, "gate"), bar = byType(h, "barricades"), bunk = byType(h, "bunkhouse");
   bunk.wear = 30; bar.wear = 75;
   breakFixture(st, h, walls, "test", { card: false, quiet: true });
   const builder = people[0]; builder.role = "build"; builder.skills.mechanics = 2;
   people[1].skills.mechanics = 5;
   const html = repairsTab(st, h);
   const at = (t) => html.indexOf(`<b>${fixtureName({ type: t })}</b>`);
-  check(at("walls") >= 0 && at("walls") < at("barricades") && at("barricades") < at("bunkhouse") && at("bunkhouse") < at("spike_pits"), "the rows run wall, barricades, bunkhouse, spike pits");
+  check(at("gate") >= 0 && at("gate") < at("barricades") && at("barricades") < at("bunkhouse") && at("bunkhouse") < at("spike_pits"), "the rows run gate, barricades, bunkhouse, spike pits");
   const first = builder.name.split(" ")[0];
   const plan = repairPlan(st, h, bar, "repair");
   check(html.includes(`>Repair: ${first}, ${plan.hours}h, ${plan.cost.scrap} scrap</button>`), `the barricades' button reads "Repair: ${first}, ${plan.hours}h, ${plan.cost.scrap} scrap"`);
-  check((html.match(/data-m="rig"/g) || []).length === 1 && new RegExp(`data-fx="${walls.id}" data-m="rig"`).test(html), "Jury-rig on the broken wall only");
+  check((html.match(/data-m="rig"/g) || []).length === 1 && new RegExp(`data-fx="${walls.id}" data-m="rig"`).test(html), "Jury-rig on the broken gate only");
   check(new RegExp(`<select data-action="rp-order" data-base="${h.id}" data-fx="${bar.id}"`).test(html) && html.includes(", builder)"), "a who-picker on an order (rp-order), builders marked");
   check(!/data-action="rp-start"[^>]*data-fx="[^"]*"[^>]*data-m="repair"[^>]*disabled/.test(html.split(`<b>${fixtureName({ type: "spike_pits" })}</b>`)[0]) && html.includes("<td><span class=\"muted\">—</span></td>"), "the unworn spike pits offer nothing");
   check(/data-action="rp-all"/.test(html) && html.includes(">Broken<") && html.includes(">Damaged<") && html.includes(">Worn<") && html.includes(">OK<"), "Repair all and the four states");
@@ -229,14 +230,14 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
   EXPLORE_ACTIONS["rp-cancel"](st, ui, { base: String(h.id), fx: String(bar.id) });
   check(!jobFor(h, bar), "rp-cancel stops it");
   EXPLORE_ACTIONS["rp-all"](st, ui, { base: String(h.id) });
-  check(jobFor(h, walls) && jobFor(h, bar), "rp-all starts the wall and the barricades");
+  check(jobFor(h, walls) && jobFor(h, bar), "rp-all starts the gate and the barricades");
   check(!/data-action="rp-all"/.test(repairsTab(st, h)), "with everything under way, no Repair all");
 }
 
 // 7. The autopilot orders a repair on the most worn thing over 50 when the scrap allows.
 {
   console.log("The autopilot's orders");
-  const { st, h, people } = setup(["walls", "barricades", "bunkhouse", "spike_pits"], { scrap: 100, parts: 5 });
+  const { st, h, people } = setup(["gate", "barricades", "bunkhouse", "spike_pits"], { scrap: 100, parts: 5 });
   st.autopilot = true;
   const builder = people[0]; builder.role = "build"; builder.skills.mechanics = 2;
   const bunk = byType(h, "bunkhouse"); bunk.wear = 55;
@@ -245,14 +246,14 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
   check(jobFor(h, bunk) && jobFor(h, bunk).who === builder.id && !jobFor(h, bar), `at 09:00 the 55-wear bunkhouse gets an order by the builder, the 45-wear barricades none (${(st.log.find((l) => /repairing the bunkhouse/.test(l.text)) || {}).text || "no log"})`);
   check((h.stock.scrap || 0) >= ORDERS.keepScrap, "the scrap kept");
   // Short of scrap: no order.
-  const s2 = setup(["walls", "barricades", "bunkhouse", "spike_pits"], { scrap: ORDERS.keepScrap + 1, parts: 0 });
+  const s2 = setup(["gate", "barricades", "bunkhouse", "spike_pits"], { scrap: ORDERS.keepScrap + 1, parts: 0 });
   s2.st.autopilot = true;
   s2.people[0].role = "build";
   byType(s2.h, "bunkhouse").wear = 55;
   breakdownsHour(s2.st);
   check(!jobFor(s2.h, byType(s2.h, "bunkhouse")), `with ${ORDERS.keepScrap + 1} scrap (the order would leave less than ${ORDERS.keepScrap}) nothing is ordered`);
   // One an hour: two worn things, two hours.
-  const s3 = setup(["walls", "barricades", "bunkhouse", "spike_pits"], { scrap: 100, parts: 5 });
+  const s3 = setup(["gate", "barricades", "bunkhouse", "spike_pits"], { scrap: 100, parts: 5 });
   s3.st.autopilot = true;
   s3.people[0].role = "build";
   byType(s3.h, "bunkhouse").wear = 55; byType(s3.h, "barricades").wear = 70;
@@ -262,12 +263,57 @@ const workHours = (st, n) => { for (let i = 0; i < n; i++) { breakdownsHour(st);
   breakdownsHour(s3.st);
   check(!!jobFor(s3.h, byType(s3.h, "bunkhouse")), "the next hour the other");
   // At night nothing is ordered.
-  const s4 = setup(["walls", "bunkhouse"], { scrap: 100 });
+  const s4 = setup(["gate", "bunkhouse"], { scrap: 100 });
   s4.st.autopilot = true;
   s4.st.hour += 14; // 23:00
   byType(s4.h, "bunkhouse").wear = 55;
   breakdownsHour(s4.st);
   check(!jobFor(s4.h, byType(s4.h, "bunkhouse")), "not at night");
+}
+
+// 8. The wall's pieces (merged from the wall pieces branch): no row a piece, one wall row sorted by its worst piece,
+// mended by the wall's order (orderWallRepair) from the row, Repair all and the autopilot, never by a repair each.
+{
+  console.log("The wall row");
+  const { st, h, people } = setup(["walls", "barricades", "bunkhouse", "spike_pits"], { scrap: 100, parts: 5, wood: 200 });
+  const pieces = h.buildings.filter((b) => BUILDINGS[b.type].piece);
+  check(pieces.length >= 8, `a Ring wall's pieces (${pieces.length})`);
+  const builder = people[0]; builder.role = "build"; builder.skills.mechanics = 2;
+  const bar = byType(h, "barricades"); bar.wear = 75;
+  const p0 = pieces.find((b) => b.type === "wall4"), p1 = pieces.filter((b) => b.type === "wall4")[1];
+  p1.wear = 50;
+  let list = repairList(st, h);
+  check(!list.some((r) => r.kind !== "wall" && (BUILDINGS[r.fx.type] || {}).piece) && list.filter((r) => r.kind === "wall").length === 1, "no row a piece, one row for the wall");
+  let wall = list.find((r) => r.kind === "wall");
+  check(wall.fx === p1 && wall.plan.list.length === 1 && wall.state === "Worn" && list.indexOf(wall) > list.findIndex((r) => r.fx === bar), `sorted by its worst piece (50 wear: after the 75-wear barricades), ${wall.plan.list.length} segment to mend, ${wall.state}`);
+  breakFixture(st, h, p0, "test", { card: false, quiet: true });
+  check(!jobFor(h, p0) && !h.wallRepair, "a broken piece by hand: no repair of its own, no order yet (a card would ask)");
+  const rp = repairPlan(st, h, p0, "repair");
+  check(!rp.ok && rp.hours > 0 && rp.cost && Object.keys(rp.cost).length > 0, `repairPlan on a piece: not ok, priced by the segment (${rp.hours}h): "${rp.why}"`);
+  list = repairList(st, h);
+  wall = list.find((r) => r.kind === "wall");
+  check(list[0] === wall && wall.fx === p0 && wall.state === "Broken" && wall.plan.list.length === 2 && wall.plan.broken === 1, "broken: the wall row at the top");
+  const html = repairsTab(st, h);
+  check(/data-action="rw-order"/.test(html) && /The wall/.test(html) && !html.includes(`data-fx="${p0.id}"`), "the Repairs table: Repair the wall on the wall row, no button a piece");
+  const bill = repairAllBill(st, h);
+  check(bill.list.filter((r) => r.kind === "wall").length === 1 && bill.list.some((r) => r.fx === bar), `Repair all's bill: the wall once and the barricades (${bill.list.length} rows)`);
+  const msg = startAllRepairs(st, h);
+  check(!!h.wallRepair && pieces.every((b) => !jobFor(h, b)) && jobFor(h, bar), `Repair all gives the wall's order once, no repair a piece ("${msg.slice(0, 80)}…")`);
+  wall = repairList(st, h).find((r) => r.kind === "wall");
+  check(wall.state === "Being repaired" && /data-action="rw-cancel"/.test(repairsTab(st, h)), "the wall row: Being repaired, with Cancel");
+  // The handlers: rw-cancel calls it off, rw-order gives it again.
+  const ui = {};
+  EXPLORE_ACTIONS["rw-cancel"](st, ui, { base: String(h.id) });
+  check(!h.wallRepair, "rw-cancel calls the order off");
+  EXPLORE_ACTIONS["rw-order"](st, ui, { base: String(h.id) });
+  check(!!h.wallRepair, `rw-order gives it ("${ui.baseMsg}")`);
+  // The autopilot: a 55-wear piece gets no repair order of its own at 09:00 (the most worn over 50 skips pieces).
+  const s2 = setup(["walls", "bunkhouse"], { scrap: 100, wood: 200 });
+  s2.st.autopilot = true;
+  s2.people[0].role = "build";
+  const q = s2.h.buildings.find((b) => b.type === "wall4"); q.wear = 55;
+  breakdownsHour(s2.st);
+  check(!jobFor(s2.h, q), "the autopilot's most-worn order skips the wall's pieces");
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

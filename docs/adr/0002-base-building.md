@@ -61,5 +61,9 @@ the stores but the wall. Beds, benches and storage were buildings of their own, 
 - Old saves load: `base.bins`, `item.store`, `rec.host` and `base.plan.links` read as empty when missing.
 - A camp's and a shelter's counts (`CAMP.build`, `SHELTER.build`) gain the general buildings and fittings they may put
   up, so the small bases are bounded by their lists and the big ones by the map.
+- Merged with the wall pieces (claude/kind-hawking-a4gby2): the wall is its placed pieces, no ring is drawn. For the
+  way in and out a wall piece blocks and a gate or a stand walks; a wall piece that would close a ring with no gate is
+  refused ("Needs a gate in the wall first: …"), by hand and by the auto layout, which lays the gates first. The pieces
+  have no Repairs rows of their own: one wall row, mended by the wall's repair order (breakdowns.js orderWallRepair).
 - `tools/basebuildtest.js`, `tools/containerstest.js`, `tools/basebuilduitest.js`, `tools/repairorderstest.js` and
   `tools/basebuildautotest.js` guard the parts.

@@ -23,7 +23,7 @@ import { scaleFood } from "./foods.js"; // the dead spoil every kind of food
 import { log, addCard, atBase, homeAt, hurt, combatPower, removeBase, isNight, baseVision, armedFactor, spendShots, arrowsBack } from "./world.js";
 import { GEAR } from "./data.js";
 import { minesLeft, minesKill, spendMines, MINES } from "./mines.js"; // land mines (the main base's Minefield)
-import { count, baseWalls, wallTier as wallTierBuilt, wallOf, wallTierOf, WALL_TIERS } from "./buildings.js";
+import { count, baseWalls, wallTier as wallTierBuilt, wallOf, wallTierOf, WALL_TIERS, hasWall, piecesOf, matOf, pieceName } from "./buildings.js";
 import { poweredType } from "./power.js";
 import {
   createBattle, startCombat, autoPlayerTurn, runEnemyPhase, closeCombat, combatants, registerCombatHandler, registerBattleLayout, endBattleNow,
@@ -70,7 +70,7 @@ export const DEFENCE = {
 };
 
 // ---------- the hold limit ----------
-export const wallTier = (base) => wallTierBuilt(base); // buildings.js WALL_TIERS: 0 none, 1 a stake fence … 4 a concrete wall
+export const wallTier = (base) => wallTierBuilt(base); // buildings.js WALL_TIERS: 0 none (or a ring that does not close), 1 wood … 4 metal sheets
 export const wallHold = (base) => DEFENCE.WALL_BASE + DEFENCE.WALL_PER * baseWalls(base);
 export const manned = (state, base) => !!base.hordeAlert && state.hour < base.hordeAlert;
 
@@ -102,7 +102,7 @@ export function guardHold(state, base) {
 export function defenceMult(state, base) {
   const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL); // on generator power they burn no fuel (power.js)
   return 1 + DEFENCE.BARRICADE * count(base, "barricades") + DEFENCE.TRENCH * Math.min(1, count(base, "trench")) + DEFENCE.TRENCH2 * Math.max(0, count(base, "trench") - 1) + DEFENCE.GATE * count(base, "gate") + (flood ? DEFENCE.FLOOD : 0) + armoryDefence(base).hold
-    + DEFENCE.WIRE * count(base, "barbed_wire") + DEFENCE.RAZOR * count(base, "razor_wire") + DEFENCE.BAGS * count(base, "sandbag_wall") + (count(base, "walls") ? DEFENCE.TOWERS * count(base, "guard_towers") : 0);
+    + DEFENCE.WIRE * count(base, "barbed_wire") + DEFENCE.RAZOR * count(base, "razor_wire") + DEFENCE.BAGS * count(base, "sandbag_wall") + (hasWall(base) ? DEFENCE.TOWERS * count(base, "guard_towers") : 0);
 }
 // Bear traps: the dead caught before they reach the walls.
 export const trapKill = (base, n) => Math.min(n, armoryDefence(base).traps * GEAR.beartrap.defence.kill);
@@ -151,7 +151,7 @@ export const TIERS = {
 };
 export function tierMults(state, base, night = false) {
   if (!base) return { wall: 1, yard: 1, buildings: 1, walled: false, held: 0 };
-  const T = TIERS, walls = count(base, "walls"), kit = armoryDefence(base);
+  const T = TIERS, walls = hasWall(base) ? 1 : 0, kit = armoryDefence(base);
   const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL);
   const wireOut = T.WALL.fence * count(base, "barbed_wire") + T.WALL.razor * count(base, "razor_wire"); // the wire lines: at the wall, or in front of the yard without one
   const wall = walls ? 1 + T.WALL.per * Math.min(T.WALL.max, wallTier(base) || walls) + (count(base, "watchtower") ? T.WALL.tower : 0) + (count(base, "gate") ? T.WALL.gate : 0)
@@ -371,9 +371,13 @@ function smash(state, base, bosses) {
     const gone = (type) => { const j = base.buildings.findIndex((b) => b.type === type); if (j < 0) return false; base.buildings.splice(j, 1); return true; };
     if (gone("barricades")) out.push("a barricade");
     else if (gone("gate")) out.push("the reinforced gate");
-    else if (count(base, "walls") && state.rng.chance(0.4)) { // the wall battered down a tier (WALL_TIERS); a stake fence is flattened
+    else if (hasWall(base) && state.rng.chance(0.4)) { // the wall battered: a group's wall down a tier; one of your wall pieces a material down, a wooden one broken (a gap until it is repaired)
       const w = wallOf(base);
-      if (wallTierOf(w) > 1) { w.tier = wallTierOf(w) - 1; out.push(`the wall (down to a ${WALL_TIERS[w.tier].name.toLowerCase()})`); } else if (gone("walls")) out.push("the stake fence");
+      if (w) { if (wallTierOf(w) > 1) { w.tier = wallTierOf(w) - 1; out.push(`the wall (down to a ${WALL_TIERS[w.tier].name.toLowerCase()})`); } else if (gone("walls")) out.push("the stake fence"); continue; }
+      const ps = piecesOf(base, ["wall", "gate"]).filter((b) => !b.broken);
+      const p = ps.length ? ps[state.rng.int(0, ps.length - 1)] : null;
+      if (p && matOf(p) > 1) { const was = pieceName(p); p.mat = matOf(p) - 1; out.push(`a ${was.toLowerCase()} (down to ${WALL_TIERS[p.mat].mat.toLowerCase()})`); }
+      else if (p) { p.broken = { day: Math.floor(state.hour / 24) + 1, cause: "smashed by a Wallbreaker" }; p.wear = 100; out.push(`a ${pieceName(p).toLowerCase()} (smashed: a gap in the wall)`); }
     }
   }
   return out;
@@ -656,7 +660,7 @@ export function placeUnitRight(b, ctx, u, minX, maxX = ctx.W) {
 registerBattleSize("baseDefence", (state, setup) => {
   const base = state.bases.find((x) => x.id === setup.baseId) || null;
   if (fortable(state, base, setup.context)) return fortSize(base, setup.context || {}, state); // fort.js: the margin, the wall ring and the yard (basemap.js: the base map)
-  return base && count(base, "walls") > 0 ? [MAP_W, wallMapRows(base)] : [MAP_W, MAP_H];
+  return base && hasWall(base) ? [MAP_W, wallMapRows(base)] : [MAP_W, MAP_H];
 });
 registerBattleLayout("baseDefence", (b, ctx) => {
   const setup = b.setup, c = setup.context || {};
@@ -704,10 +708,10 @@ export function defenceWishes(state, base, threat) {
   if (count(base, "barbed_wire") < 2) add("barbed_wire", "barbed wire on the approach");
   if (count(base, "sandbag_wall") < 2) add("sandbag_wall", "sandbag positions in the yard");
   if (!count(base, "trench") && base.type === "hub") add("trench", "a trench before the walls");
-  if (!count(base, "gate") && count(base, "walls")) add("gate", "a reinforced gate");
+  if (!count(base, "gate") && hasWall(base)) add("gate", "a reinforced gate");
   if (!count(base, "floodlights") && base.type === "hub") add("floodlights", "floodlights for night attacks");
   if (!count(base, "razor_wire") && count(base, "barbed_wire")) add("razor_wire", "concertina wire beyond the barbed wire");
-  if (!count(base, "guard_towers") && base.type === "hub" && count(base, "walls")) add("guard_towers", "guard towers on the wall");
+  if (!count(base, "guard_towers") && base.type === "hub" && hasWall(base)) add("guard_towers", "guard towers on the wall");
   if (count(base, "minefield") < 2 && base.type === "hub") add("minefield", "a minefield on the approach");
   return out;
 }

@@ -68,7 +68,7 @@
 // stewards (autoHands) also order a repair, one an hour through the working day, on the most worn thing above
 // ORDERS.wear while the base keeps ORDERS.keepScrap scrap; Repair all takes the damaged (60+) too.
 // Rolls use hash01 (skills.js), never the world's random numbers.
-import { BUILDINGS, count, assignStations, underAttack, onUpkeep } from "./buildings.js";
+import { BUILDINGS, count, assignStations, underAttack, onUpkeep, isPiece, pieceName, piecesOf, matOf, pieceCost } from "./buildings.js";
 import { log, addCard, day, hourOfDay, atBase, survivorById, skill } from "./world.js";
 import { hash01, gainXp, buildMult, hasPerk, USE } from "./skills.js";
 import { workFactor } from "./health.js";
@@ -167,6 +167,19 @@ export const FIXTURES = {
   guard_towers:{ raidOnly: true, outer: true, repair: { hours: 9, cost: { scrap: 10, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 4 }, min: 0 }, what: "a tower down: 8% less of a horde held back" },
   minefield:   { raidOnly: true, outer: true, repair: { hours: 6, cost: { scrap: 7, parts: 1 }, min: 1 }, rig: { hours: 2, cost: { scrap: 3 }, min: 0 }, what: "the mines dug up or set off: none left for the next attack" },
 };
+// The wall pieces (buildings.js piece, the user's request 2026-10-19): each wears and breaks on its own, a little with
+// age and every horde attack (a share of the old single wall's, by its length), and the raids' outer line. A broken
+// wall piece or gate is a gap in the ring: no wall strength by the numbers until it is repaired (basemap.js wallInfo).
+const WALL_FX = (attack, hours, scrap, what) => ({ age: 0.01, attack, outer: true, repair: { hours, cost: { scrap }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what });
+Object.assign(FIXTURES, {
+  wall1: WALL_FX(1, 1, 1, "a gap in the wall: the ring does not close (no wall strength) until it is repaired"),
+  wall2: WALL_FX(1.5, 1, 1, "a gap in the wall: the ring does not close (no wall strength) until it is repaired"),
+  wall4: WALL_FX(3, 2, 2, "a gap in the wall: the ring does not close (no wall strength) until it is repaired"),
+  gate4: WALL_FX(5, 3, 3, "the gate hangs open: a way in, and no wall strength until it is repaired"),
+  stand1: { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "nobody can stand on it" },
+  stand2: { raidOnly: true, repair: { hours: 1, cost: { scrap: 1 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "nobody can stand on it" },
+  stand4: { raidOnly: true, repair: { hours: 2, cost: { scrap: 2 }, min: 0 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "nobody can stand on it" },
+});
 FIXTURES.walls.outer = true;
 FIXTURES.gate.outer = true;
 // Repair orders (see the header): the autopilot and stewards order a repair on anything above this wear, keeping this much scrap.
@@ -196,7 +209,7 @@ export function fixtures(base) {
 }
 // A key for the dice that does not depend on object ids (they differ between two worlds made in one process).
 const fxKey = (base, fx) => `${base.tile}:${fx.type}:${base.buildings.indexOf(fx)}`;
-export const fixtureName = (fx) => (fx.type === "pump" ? "Well pump" : fx.type === "generator" && genTier(fx) > 1 ? genName(fx) : (BUILDINGS[fx.type] && BUILDINGS[fx.type].name) || fx.type); // gen-tiers: a standby generator, an industrial diesel set
+export const fixtureName = (fx) => (fx.type === "pump" ? "Well pump" : fx.type === "generator" && genTier(fx) > 1 ? genName(fx) : isPiece(fx.type) ? pieceName(fx) : (BUILDINGS[fx.type] && BUILDINGS[fx.type].name) || fx.type); // gen-tiers: a standby generator, an industrial diesel set
 export const fixtureById = (base, id) => fixtures(base).find((f) => String(f.id) === String(id)) || null;
 export const isBroken = (fx) => !!(fx && fx.broken);
 export const isWaterFixture = (fx) => !!fx && (fx.type === "well" || fx.type === "pump");
@@ -214,6 +227,11 @@ export function breakFixture(state, base, fx, cause = "worn out", { card = true,
   const def = fxDef(fx);
   if (!quiet) log(state, `⚠ The ${fixtureName(fx).toLowerCase()} at ${base.name} broke (${cause}): ${def.what} until it is repaired.`, "danger");
   state.stats.breakdowns = (state.stats.breakdowns || 0) + 1;
+  if (isPiece(fx.type)) { // a wall piece: the wall's repair order, not a repair of its own (one card for the wall at a time)
+    if (autoHands(state, base)) autoWallRepair(state, base);
+    else if (card && !base.wallRepair && !(state.cards || []).some((c) => c.wallBreak && c.wallBreak.baseId === base.id)) addCard(state, wallBreakCard(state, base, fx));
+    return true;
+  }
   if (autoHands(state, base)) autoRepair(state, base, fx);
   else if (card) addCard(state, breakCard(state, base, fx));
   return true;
@@ -250,6 +268,7 @@ export const repairShare = (fx) => (fx.broken ? 1 : Math.max(0, Math.min(1, ((fx
 // repairWear, not broken) is a partial job: hours and scrap × its share (at least 1 hour and 1 scrap, rounded up), a
 // part only when the share rounds to one; a broken one costs the full job. "rig" is for a broken fixture only.
 export function repairPlan(state, base, fx, method = "repair", whoId = null) {
+  if (isPiece(fx.type)) return { ok: false, why: "The wall is mended by the Repair the wall order (Repairs tab): a builder works through every damaged piece.", who: null, hours: wallSegHours(fx), cost: wallSegCost(fx), method, min: 0 };
   const def = fxDef(fx);
   const r = def[method];
   const share = method === "repair" ? repairShare(fx) : 1;
@@ -301,6 +320,134 @@ export function reassignRepair(state, base, fxId, whoId) {
   return `${s.name.split(" ")[0]} takes over the ${fixtureName(fx).toLowerCase()}.`;
 }
 
+// ---------- the wall's repair order (the user's request 2026-10-19) ----------
+// "A builder can be given an order to repair the wall which takes x hours per wall segment being repaired": the wall's
+// pieces (buildings.js piece) are not repaired one by one, nor patched by the builders' daily upkeep. One person is
+// given the order (base.wallRepair: { who, cur, done, paid, stalled, mended }); between 08:00 and 20:00, at the base and
+// fit to work, they mend every piece that wants it (broken, or worn to WALL_REPAIR.FROM), broken ones first then the
+// most worn, one segment at a time: each takes WALL_REPAIR.HOURS work-hours for a 1×4 section of its material (a 1×2
+// half, a 1×1 a quarter, a gate half again; at least half an hour), × 1.2 − 3% a Mechanics point (at least 40%),
+// faster with Handy / Master Builder, and WALL_REPAIR.COST of its build cost, paid as it is started (short: it waits
+// for the materials). A mended piece is at wear WEAR.repairWear. The order ends when nothing wants mending.
+export const WALL_REPAIR = { HOURS: [0, 1, 1.5, 2, 3], STAND: 1, FROM: 30, COST: 0.5, HOLDER: 2 };
+// A segment's work-hours (at Mechanics 0) and materials.
+export const wallSegHours = (b) => { const d = BUILDINGS[b.type]; const sec = d.piece === "stand" ? WALL_REPAIR.STAND : WALL_REPAIR.HOURS[matOf(b)]; return Math.max(0.5, Math.round(sec * (d.piece === "gate" ? 1.5 : d.len / 4) * 2) / 2); };
+export const wallSegCost = (b) => Object.fromEntries(Object.entries(pieceCost(b.type, matOf(b))).map(([k, v]) => [k, Math.max(1, Math.ceil(v * WALL_REPAIR.COST))]));
+export const wantsMending = (b) => isPiece(b.type) && (!!b.broken || (b.wear || 0) >= WALL_REPAIR.FROM);
+// The pieces to mend, in the order they are mended: broken first, then the most worn.
+export const wallToMend = (base) => piecesOf(base).filter(wantsMending).sort((a, b) => !!b.broken - !!a.broken || (b.wear || 0) - (a.wear || 0) || a.id - b.id);
+// How fast someone mends (the hours × this): Mechanics, Handy / Master Builder.
+const mendSpeed = (s) => (s ? buildMult(s) / Math.max(0.4, 1.2 - 0.03 * skill(s, "mechanics")) : 1);
+// Who would take the order: the builders first, then by Mechanics; not someone on another repair.
+function wallHands(state, base) {
+  const busy = new Set(jobs(base).map((j) => j.who));
+  return atBase(state, base.id).filter((s) => !s.inBed && workFactor(s) >= 0.35 && !busy.has(s.id))
+    .sort((a, b) => (b.role === "build") - (a.role === "build") || skill(b, "mechanics") - skill(a, "mechanics") || a.id - b.id);
+}
+// What the order would take: { ok, why, who, list (the pieces), broken, worn, hours (at who's speed), cost }.
+export function wallRepairPlan(state, base, whoId = null) {
+  const list = wallToMend(base);
+  const hands = wallHands(state, base);
+  const who = whoId != null ? atBase(state, base.id).find((s) => s.id === whoId) || null : hands[0] || null;
+  const cost = {};
+  let hours = 0;
+  for (const b of list) { addCost(cost, wallSegCost(b)); hours += wallSegHours(b); }
+  hours = Math.round((hours / mendSpeed(who)) * 10) / 10;
+  const broken = list.filter((b) => b.broken).length;
+  const why = !list.length ? "Nothing in the wall wants mending." : base.wallRepair ? "Someone already has the order." : !who ? "Nobody here is free to do it." : "";
+  return { ok: !why, why, who, list, broken, worn: list.length - broken, hours, cost };
+}
+export function orderWallRepair(state, base, whoId = null) {
+  const plan = wallRepairPlan(state, base, whoId);
+  if (!plan.ok) return plan.why;
+  base.wallRepair = { who: plan.who.id, cur: null, done: 0, paid: null, stalled: null, mended: 0, since: state.hour };
+  return `${plan.who.name.split(" ")[0]} is to repair the wall at ${base.name}: ${plan.list.length} segment${plan.list.length === 1 ? "" : "s"} (${plan.broken} broken), about ${plan.hours} work-hours, ${costText(plan.cost) || "nothing"} as they go.`;
+}
+// Someone else takes the order over.
+export function reassignWallRepair(state, base, whoId) {
+  const o = base.wallRepair, s = survivorById(state, whoId);
+  if (!o) return orderWallRepair(state, base, whoId);
+  if (!s || !atBase(state, base.id).includes(s)) return "They are not here.";
+  o.who = s.id;
+  return `${s.name.split(" ")[0]} takes over repairing the wall.`;
+}
+// The order called off: the materials of the segment under way go back.
+export function cancelWallRepair(state, base) {
+  const o = base.wallRepair;
+  if (!o) return "No one has that order.";
+  for (const [k, v] of Object.entries(o.paid || {})) base.stock[k] = (base.stock[k] || 0) + v;
+  delete base.wallRepair;
+  return "The wall's repair called off; the materials for the segment under way are back in stock.";
+}
+// The autopilot, a steward or someone on Repair: the order given to the first free hand, if the wall wants it.
+function autoWallRepair(state, base) {
+  if (base.wallRepair || !wallToMend(base).length) return "";
+  const msg = orderWallRepair(state, base);
+  if (base.wallRepair) log(state, `${handIcon(state, base)} ${msg}`, "info");
+  return msg;
+}
+// An hour of the order (breakdownsHour).
+function wallRepairHour(state, base, h, onWalls) {
+  const o = base.wallRepair;
+  if (!o) return;
+  let cur = o.cur != null ? base.buildings.find((b) => b.id === o.cur) || null : null;
+  if (o.cur != null && (!cur || !wantsMending(cur))) { // gone, or mended some other way: its materials go back
+    for (const [k, v] of Object.entries(o.paid || {})) base.stock[k] = (base.stock[k] || 0) + v;
+    o.cur = null; o.paid = null; o.done = 0; cur = null;
+  }
+  if (!cur && !wallToMend(base).length) {
+    delete base.wallRepair;
+    log(state, `🔧 The wall at ${base.name} is mended (${o.mended} segment${o.mended === 1 ? "" : "s"}).`, "good");
+    return;
+  }
+  const s = o.who != null ? survivorById(state, o.who) : null;
+  if (!(s && s.alive && s.location.kind === "base" && s.location.baseId === base.id)) {
+    o.who = null;
+    if (autoHands(state, base)) { const pick = wallHands(state, base)[0]; if (pick) o.who = pick.id; }
+  }
+  if (o.who == null || onWalls || h < WEAR.workFrom || h >= WEAR.workTo) return;
+  const w = survivorById(state, o.who);
+  if (!w || w.inBed || workFactor(w) < 0.35) return;
+  let budget = Math.max(0.5, workFactor(w)) * mendSpeed(w);
+  while (budget > 1e-9) {
+    if (!cur) {
+      const next = wallToMend(base)[0];
+      if (!next) break;
+      const cost = wallSegCost(next);
+      const short = Object.entries(cost).find(([k, v]) => (base.stock[k] || 0) < v);
+      if (short) { if (!o.stalled) log(state, `🔧 The wall's repair at ${base.name} waits: the next segment needs ${costText(cost)}.`, "danger"); o.stalled = `Needs ${costText(cost)}`; return; }
+      for (const [k, v] of Object.entries(cost)) base.stock[k] -= v;
+      o.cur = next.id; o.paid = cost; o.done = 0; o.stalled = null; cur = next;
+    }
+    const need = wallSegHours(cur) - o.done, use = Math.min(budget, need);
+    o.done += use; budget -= use;
+    if (o.done >= wallSegHours(cur) - 1e-9) {
+      fixed(state, base, cur, "repair");
+      gainXp(state, w, "mechanics", USE.repair);
+      o.mended++; o.cur = null; o.paid = null; o.done = 0; cur = null;
+    }
+  }
+}
+// The card when a piece of the wall gives way (one at a time for the wall).
+function wallBreakCard(state, base, fx) {
+  const plan = wallRepairPlan(state, base);
+  return {
+    title: `The wall at ${base.name} gave way`,
+    text: `${pieceName(fx)} broke (${fx.broken ? fx.broken.cause : "worn out"}): a gap in the wall until it is mended, and the wall holds nothing back while it is open. ${plan.list.length} segment${plan.list.length === 1 ? "" : "s"} want mending (${plan.broken} broken).`,
+    wallBreak: { baseId: base.id },
+    choices: [
+      {
+        label: plan.who ? `Repair the wall: ${plan.who.name.split(" ")[0]}, about ${plan.hours}h, ${costText(plan.cost) || "no materials"}` : "Repair the wall",
+        hint: plan.ok ? "They work through every damaged segment, 08:00–20:00, paying for each as they start it." : plan.why,
+        disabled: () => !wallRepairPlan(state, base).ok,
+        ai: () => (plan.ok ? 8 : 0),
+        resolve: (st) => orderWallRepair(st, base),
+      },
+      { label: "Leave it for now", hint: "The gap stays until someone is given the order (the base's Repairs tab).", ai: () => 0.5, resolve: () => `The wall at ${base.name} waits on its Repairs tab.` },
+    ],
+  };
+}
+
 // The card when something breaks (and the merged storm "well pump" hub event, hubevents.js).
 export function breakCard(state, base, fx, { pumpStorm = null } = {}) {
   const def = fxDef(fx);
@@ -345,6 +492,7 @@ export const autoHands = (state, base) => !!state.autopilot || (stewardOn(base) 
   (!!state.work && atBase(state, base.id).some((s) => isManaged(state, s) && prio(state, s, "repair") > 0));
 const handIcon = (state, base) => (state.autopilot ? "🤖" : stewardOn(base) && base.steward.areas.building !== false ? "🧭" : "🔧");
 function autoRepair(state, base, fx) {
+  if (isPiece(fx.type)) return autoWallRepair(state, base);
   if (!fx.broken || jobFor(base, fx)) return "";
   const rep = repairPlan(state, base, fx, "repair");
   const msg = rep.ok ? startRepair(state, base, fx, "repair") : repairPlan(state, base, fx, "rig").ok ? startRepair(state, base, fx, "rig") : "";
@@ -359,6 +507,7 @@ export function breakdownsHour(state) {
     attackWear(state, base);
     const list = jobs(base);
     const onWalls = underAttack(state, base); // on alert or under siege: nobody is free to repair
+    wallRepairHour(state, base, h, onWalls);
     for (const j of [...list]) {
       const fx = fixtureById(base, j.fx);
       if (!fx || (!fx.broken && (fx.wear || 0) <= WEAR.repairWear)) { // gone, or mended by upkeep first: the materials go back (an order on a worn one stands)
@@ -396,8 +545,10 @@ export function breakdownsHour(state) {
         if (isWaterFixture(fx) && fx.broken && !jobFor(base, fx)) waterWaits = true;
       }
       if (waterWaits) continue;
-      // Damaged defences (wear 60+) are patched before they give way, while the scrap lasts (ORDERS.keepScrap kept back).
-      for (const fx of fixtures(base).filter((x) => !x.broken && fxDef(x).outer && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x))) {
+      // Damaged defences (wear 60+) are patched before they give way, while the scrap lasts (ORDERS.keepScrap kept
+      // back); the wall's pieces by the wall's order, once some of them want mending.
+      if (wallToMend(base).some((b) => b.broken || (b.wear || 0) >= RAID_DAMAGE.damaged)) autoWallRepair(state, base);
+      for (const fx of fixtures(base).filter((x) => !x.broken && !isPiece(x.type) && fxDef(x).outer && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x))) {
         const plan = repairPlan(state, base, fx, "repair");
         if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= ORDERS.keepScrap) log(state, `${handIcon(state, base)} ${startRepair(state, base, fx, "repair")}`, "info");
       }
@@ -406,7 +557,7 @@ export function breakdownsHour(state) {
     // thing above ORDERS.wear (a partial repair, builders first: repairHands), while the base keeps ORDERS.keepScrap
     // scrap after it; never while a broken well or pump waits for materials (water first, as above).
     if (autoHands(state, base) && !onWalls && h >= WEAR.workFrom && h < WEAR.workTo && !brokenAt(base).some((fx) => isWaterFixture(fx) && !jobFor(base, fx))) {
-      const worn = fixtures(base).filter((x) => !x.broken && (x.wear || 0) > ORDERS.wear && !jobFor(base, x)).sort((a, b) => (b.wear || 0) - (a.wear || 0))[0];
+      const worn = fixtures(base).filter((x) => !x.broken && !isPiece(x.type) && (x.wear || 0) > ORDERS.wear && !jobFor(base, x)).sort((a, b) => (b.wear || 0) - (a.wear || 0))[0];
       if (worn) {
         const plan = repairPlan(state, base, worn, "repair");
         if (plan.ok && (base.stock.scrap || 0) - (plan.cost.scrap || 0) >= ORDERS.keepScrap) log(state, `${handIcon(state, base)} ${startRepair(state, base, worn, "repair")}`, "info");
@@ -532,7 +683,7 @@ export function breakdownsDaily(state) {
         return budget;
       };
       pts += mend(list.filter(isWaterFixture), keep);
-      mend(list, pts);
+      mend(list.filter((fx) => !isPiece(fx.type)), pts); // the wall is mended by its repair order, not by upkeep
     }
     // Parked vehicles in the frost; the garage keeps its cars out of it (vehicles.js frostWear).
     if (wx && wx.lo <= -3) { const inside = shelteredAt(state, base); for (const v of vehiclesAtBase(state, base.id)) v.condition = Math.max(1, v.condition - frostWear(state, base, v, wx.key === "blizzard" ? WEAR.vehicleBlizzard : WEAR.vehicleFrost, inside)); }
@@ -569,18 +720,31 @@ export function repairRows(state, base) {
 // The Repairs tab's list (the user's request 2026-10-19): every fixture, most damaged first (broken, then by wear, then
 // by name), each { fx, name, wear, state, job, plan (a proper repair, partial on a worn one), rig (the broken only), def }.
 // state: "Being repaired" (a job runs), "Broken", "Jury-rigged", "Damaged" (60+: may break any day), "Worn" (above repairWear), "OK".
+// The wall's pieces (buildings.js piece) have no row of their own: they are mended by the wall's order, one row for
+// the whole wall (kind "wall": fx its worst piece, plan wallRepairPlan, job the order base.wallRepair, pieces).
 export function repairList(state, base) {
-  const rows = repairRows(state, base).map((r) => {
+  const rows = repairRows(state, base).filter((r) => !isPiece(r.fx.type)).map((r) => {
     const w = r.fx.wear || 0;
     const st = r.job ? "Being repaired" : r.fx.broken ? "Broken" : r.fx.rigged ? "Jury-rigged" : w >= RAID_DAMAGE.damaged ? "Damaged" : w > WEAR.repairWear ? "Worn" : "OK";
     return { ...r, state: st, plan: repairPlan(state, base, r.fx, "repair"), rig: r.fx.broken ? repairPlan(state, base, r.fx, "rig") : null };
   });
+  const wall = wallRow(state, base);
+  if (wall) rows.push(wall);
   return rows.sort((a, b) => (b.fx.broken ? 1 : 0) - (a.fx.broken ? 1 : 0) || (b.fx.wear || 0) - (a.fx.wear || 0) || a.name.localeCompare(b.name));
 }
+// The wall's row of the Repairs list: its worst piece (broken first, then the most worn) sorts it among the rest.
+function wallRow(state, base) {
+  const ps = piecesOf(base);
+  if (!ps.length) return null;
+  const fx = ps.slice().sort((a, b) => !!b.broken - !!a.broken || (b.wear || 0) - (a.wear || 0) || a.id - b.id)[0];
+  const plan = wallRepairPlan(state, base), w = fx.wear || 0;
+  const st = base.wallRepair ? "Being repaired" : fx.broken ? "Broken" : w >= RAID_DAMAGE.damaged ? "Damaged" : plan.list.length ? "Worn" : "OK";
+  return { kind: "wall", fx, name: "The wall", def: fxDef(fx), job: base.wallRepair || null, wear: Math.round(w), state: st, plan, rig: null, pieces: ps.length };
+}
 // Repair all (the Repairs tab, the raid card): what nobody works on yet that a Repair all would start, the broken and
-// the damaged (60+), with the bill of their plans: { list, cost, hours }.
+// the damaged (60+), and the wall's order when any piece wants mending, with the bill of their plans: { list, cost, hours }.
 export function repairAllBill(state, base) {
-  const list = repairList(state, base).filter((r) => !r.job && (r.fx.broken || (r.fx.wear || 0) >= RAID_DAMAGE.damaged));
+  const list = repairList(state, base).filter((r) => !r.job && (r.kind === "wall" ? r.plan.list.length > 0 : r.fx.broken || (r.fx.wear || 0) >= RAID_DAMAGE.damaged));
   const cost = {};
   let hours = 0;
   for (const r of list) { addCost(cost, r.plan.cost); hours += r.plan.hours; }
@@ -590,7 +754,7 @@ export function repairAllBill(state, base) {
 // ---------- raid damage (see the header) ----------
 const addCost = (into, cost) => { for (const [k, v] of Object.entries(cost)) into[k] = (into[k] || 0) + v; return into; };
 // "2 wall sections and the ammo bench", and whether it takes a plural verb.
-const NOUNS = { walls: ["a wall section", "wall sections"], barricades: ["a barricade", "barricades"], floodlights: ["the floodlights", "floodlights"], rain_catcher: ["a rain catcher", "rain catchers"], smoker: ["a drying rack", "drying racks"] };
+const NOUNS = { walls: ["a wall section", "wall sections"], wall1: ["a wall piece", "wall pieces"], wall2: ["a wall piece", "wall pieces"], wall4: ["a wall section", "wall sections"], gate4: ["a gate", "gates"], stand1: ["a wall stand", "wall stands"], stand2: ["a wall stand", "wall stands"], stand4: ["a wall stand", "wall stands"], barricades: ["a barricade", "barricades"], floodlights: ["the floodlights", "floodlights"], rain_catcher: ["a rain catcher", "rain catchers"], smoker: ["a drying rack", "drying racks"] };
 function namesText(list, base = null) {
   const n = new Map();
   for (const fx of list) n.set(fx.type, (n.get(fx.type) || 0) + 1);
@@ -607,7 +771,7 @@ function namesText(list, base = null) {
 export function repairBill(list) {
   const cost = {};
   let hours = 0;
-  for (const fx of list) { addCost(cost, fxDef(fx).repair.cost); hours += fxDef(fx).repair.hours; }
+  for (const fx of list) { if (isPiece(fx.type)) { addCost(cost, wallSegCost(fx)); hours += wallSegHours(fx); continue; } addCost(cost, fxDef(fx).repair.cost); hours += fxDef(fx).repair.hours; }
   return { cost, hours };
 }
 // A raid on your base has been settled: smash what they reached. opts: strength (the raid's), hours (how long the
@@ -638,7 +802,7 @@ export function raidDamage(state, base, { strength = 0, hours = 8, outcome = "he
   const toBreak = [...hit].filter((fx) => fx.wear >= WEAR.breakAt);
   // Overrun: one building they wrecked is gone for good (never the walls or the hub's pump).
   let destroyed = null;
-  const doomed = toBreak.filter((fx) => fx.type !== "walls" && fx.type !== "pump");
+  const doomed = toBreak.filter((fx) => fx.type !== "walls" && fx.type !== "pump" && !isPiece(fx.type)); // the wall pieces are battered, never carried off
   if (outcome === "overrun" && doomed.length && hash01(state.seed, "rdx", key) < R.destroy) {
     destroyed = doomed[Math.floor(hash01(state.seed, "rdy", key) * doomed.length) % doomed.length];
     base.buildings.splice(base.buildings.indexOf(destroyed), 1);
@@ -684,15 +848,17 @@ export function raidReportCard(state, base, { title, text, dmg }) {
 
 // Start every repair nobody has started at a base (the raid card's "Start the repairs", the Repairs tab): the broken
 // first (a proper repair where it can be paid and someone fit is free, else a jury-rig), then a repair order on
-// everything damaged (wear 60+; the user's request 2026-10-19). Returns what was started, as one line.
+// everything damaged (wear 60+; the user's request 2026-10-19); the wall's pieces by one wall order (orderWallRepair).
+// Returns what was started, as one line.
 export function startAllRepairs(state, base) {
   const out = [];
+  if (wallToMend(base).length && !base.wallRepair) { const msg = orderWallRepair(state, base); if (base.wallRepair) out.push(msg); }
   for (const fx of brokenAt(base)) {
-    if (jobFor(base, fx)) continue;
+    if (jobFor(base, fx) || isPiece(fx.type)) continue;
     const msg = repairPlan(state, base, fx, "repair").ok ? startRepair(state, base, fx, "repair") : repairPlan(state, base, fx, "rig").ok ? startRepair(state, base, fx, "rig") : "";
     if (msg) out.push(msg);
   }
-  for (const fx of fixtures(base).filter((x) => !x.broken && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x)).sort((a, b) => (b.wear || 0) - (a.wear || 0))) {
+  for (const fx of fixtures(base).filter((x) => !x.broken && !isPiece(x.type) && (x.wear || 0) >= RAID_DAMAGE.damaged && !jobFor(base, x)).sort((a, b) => (b.wear || 0) - (a.wear || 0))) {
     if (repairPlan(state, base, fx, "repair").ok) out.push(startRepair(state, base, fx, "repair"));
   }
   return out.length ? out.join(" ") : "Nothing could be started: no materials or nobody free with the skill (Repairs tab).";

@@ -2,7 +2,9 @@
 // tab, the known blueprints card (Buildings tab), the key ring (Armory tab) and the "Needs: …" lines on locked
 // buildings and recipes. Handlers in EXPLORE_ACTIONS (main.js registers them).
 import { SKILL_NAMES } from "../sim/data.js";
-import { baseById, day, skill, survivorById } from "../sim/world.js";
+import { pieceName } from "../sim/buildings.js"; // the wall's segment under way (its row of the Repairs table)
+import { WALL_REPAIR, orderWallRepair, cancelWallRepair, reassignWallRepair, wallSegHours } from "../sim/breakdowns.js"; // the wall's repair order
+import { baseById, day, atBase, skill, survivorById } from "../sim/world.js";
 import { tileLabel } from "../sim/parties.js";
 import { blueprintRows, lockNote, craftBookRows, cookBookRows } from "../sim/blueprints.js";
 import { keyRing } from "../sim/locks.js";
@@ -67,12 +69,32 @@ export function keyRingCard(state) {
 // (breakdowns.js repairList), each row with its wear bar, state, and a Repair order ("Repair: <who>, <h>h, <cost>",
 // a partial job on a worn thing, the full one on a broken one), Jury-rig on the broken, a who-picker (rp-order starts
 // the job with that person; rp-who changes who works a running job), Cancel with the progress on a running job, and
-// Repair all for the broken and the damaged (60+). The last raid's card, the parked vehicles and the wear note stay.
+// Repair all for the broken and the damaged (60+). The wall is one row (wallRowHtml). The last raid's card, the parked
+// vehicles and the wear note stay.
+// The wall's row (repairList kind "wall"; sim/breakdowns.js WALL_REPAIR, the user's request 2026-10-19): its pieces are
+// mended by one order, a builder working through every damaged segment at so many hours a segment. What wants mending,
+// who has the order, the segment under way; give the order (rw-order) or change who has it (rw-who), call it off
+// (rw-cancel). The wear bar is its worst piece's.
+function wallRowHtml(state, base, r) {
+  const o = base.wallRepair, plan = r.plan, people = atBase(state, base.id);
+  const who = o && o.who != null ? survivorById(state, o.who) : null;
+  const cur = o && o.cur != null ? base.buildings.find((b) => b.id === o.cur) : null;
+  const pick = `<select data-action="rw-who" data-base="${base.id}"${tip(o ? "Who has the order" : "Give the order to someone (the builders are listed first)")}><option value="">${o ? (who ? "Change who…" : "Pick someone…") : "Give it to…"}</option>${people.filter((s) => !s.inBed).sort((a, b) => (b.role === "build") - (a.role === "build") || skill(b, "mechanics") - skill(a, "mechanics")).map((s) => `<option value="${s.id}">${esc(s.name)} (${s.role === "build" ? "builder, " : ""}Mechanics ${skill(s, "mechanics")})</option>`).join("")}</select>`;
+  const each = WALL_REPAIR.HOURS.slice(1).map((h, i) => `${["wood", "logs", "scrap metal", "metal sheets"][i]} ${h}h`).join(", ");
+  const w = r.wear;
+  const color = r.fx.broken ? "var(--danger)" : w >= WEAR.riskFrom ? "var(--warn, #e0a84f)" : "var(--good)";
+  const cls = r.fx.broken ? "danger" : w >= WEAR.riskFrom ? "warn" : plan.list.length ? "" : "muted";
+  const note = `<div class="small muted">${r.pieces} piece${r.pieces === 1 ? "" : "s"} (walls, gates, stands) · ${plan.list.length} segment${plan.list.length === 1 ? "" : "s"} to mend${plan.broken ? ` · <span class="danger">${plan.broken} broken: a gap until it is mended</span>` : ""}</div>`;
+  const act = o ? `<div>Repairing: ${who ? firstName(who) : `<span class="warn">nobody (pick someone)</span>`}${cur ? ` · ${esc(pieceName(cur))} ${Math.floor(o.done * 10) / 10}/${wallSegHours(cur)}h` : ""} · ${o.mended} mended${o.stalled ? ` · <span class="danger">${esc(o.stalled)}</span>` : ""}</div>
+        <div class="row" style="margin-top:0.2rem;flex-wrap:wrap;gap:0.3rem">${pick}<button class="mini" data-action="rw-cancel" data-base="${base.id}"${tip("Call the order off; the materials for the segment under way go back")}>Cancel</button></div>` :
+    plan.list.length ? `<div class="row" style="flex-wrap:wrap;gap:0.3rem"><button class="mini" data-action="rw-order" data-base="${base.id}" ${plan.ok ? "" : "disabled"}${tip(plan.ok ? `${firstName(plan.who)} works through the wall's ${plan.list.length} damaged segment${plan.list.length === 1 ? "" : "s"}, broken first, 08:00–20:00: about ${plan.hours} work-hours, ${costText(plan.cost) || "no materials"} as they go.` : plan.why)}>Repair the wall${plan.who ? `: ${firstName(plan.who)}, ${plan.hours}h, ${esc(costText(plan.cost)) || "no materials"}` : ` (${esc(costText(plan.cost))})`}</button>${pick}</div>` : `<span class="muted">—</span>`;
+  return `<tr${tip(`The wall is mended by an order, not a repair each: one person works through every broken or worn piece (wear ${WALL_REPAIR.FROM}+), broken first, 08:00–20:00. A 1×4 section takes ${each} (a 1×2 half, a 1×1 a quarter, a gate half again), faster with Mechanics; each segment's materials (half its build cost) are paid as it is started. The wear shown is the worst piece's.`)}><td><b>🧱 The wall</b>${note}</td><td style="width:22%">${bar(w, color)}</td><td>${w}%</td><td class="${cls}">${esc(r.state)}</td><td>${act}</td></tr>`;
+}
 const RAID_OUTCOME = { held: "driven off", won: "beaten in person", broken: "a break-in", overrun: "overrun" };
 export function repairsTab(state, base) {
   const rows = repairList(state, base);
   const broken = rows.filter((r) => r.fx.broken);
-  const worn = rows.filter((r) => !r.fx.broken && r.plan.share > 0);
+  const worn = rows.filter((r) => !r.fx.broken && (r.kind === "wall" ? r.plan.list.length > 0 : r.plan.share > 0));
   const mech = (s) => `${esc(s.name)} (Mechanics ${skill(s, "mechanics")}${s.role === "build" ? ", builder" : ""})`;
   // "Repair: Ana, 4h, 3 scrap" (the first of repairHands, or the plan's reason in the tooltip when it cannot be done).
   const btn = (r, method) => {
@@ -89,6 +111,7 @@ export function repairsTab(state, base) {
     return `<select data-action="${j ? "rp-who" : "rp-order"}" data-base="${base.id}" data-fx="${r.fx.id}"${tip(j ? "Who works on it (builders first, then the best mechanics)" : "Order the repair by someone else than the one the game picks (builders first, then the best mechanics)")}><option value="">${j ? (j.who != null ? "Change who…" : "Pick someone…") : "Repair by…"}</option>${able.map((s) => `<option value="${s.id}">${mech(s)}</option>`).join("")}</select>`;
   };
   const rowHtml = rows.map((r) => {
+    if (r.kind === "wall") return wallRowHtml(state, base, r);
     const w = r.wear;
     const j = r.job;
     const who = j && j.who != null ? survivorById(state, j.who) : null;
@@ -102,7 +125,7 @@ export function repairsTab(state, base) {
   }).join("");
   // Repair all: the broken and the damaged (60+) that nobody works on yet, with the bill of their plans.
   const all = repairAllBill(state, base);
-  const allHtml = all.list.length > 1 ? `<div class="row" style="margin:0.3rem 0"><button class="mini" data-action="rp-all" data-base="${base.id}"${tip(`Every broken building here gets a repairer (a proper repair where it can be paid and someone fit is free, else a jury-rig), and everything damaged (wear ${RAID_DAMAGE.damaged}+) a repair order. All ${all.list.length}: ${costText(all.cost)}, about ${all.hours} work-hours.`)}>Repair all (${esc(costText(all.cost))})</button></div>` : "";
+  const allHtml = all.list.length > 1 ? `<div class="row" style="margin:0.3rem 0"><button class="mini" data-action="rp-all" data-base="${base.id}"${tip(`Every broken building here gets a repairer (a proper repair where it can be paid and someone fit is free, else a jury-rig), everything damaged (wear ${RAID_DAMAGE.damaged}+) a repair order, and the wall its repair order. All ${all.list.length}: ${costText(all.cost)}, about ${all.hours} work-hours.`)}>Repair all (${esc(costText(all.cost))})</button></div>` : "";
   const lr = base.lastRaid;
   const how = lr ? RAID_OUTCOME[lr.outcome] || lr.outcome : "";
   const raidHtml = lr ? `<div class="card small"${tip("What the last raid on this base smashed: the longer the siege and the worse it went, the more. Broken buildings do nothing until repaired; damaged ones (wear 60+) may give way any day, and damaged walls give 2 wall strength instead of 3.")}>
@@ -133,6 +156,8 @@ export function crashLines(state) {
 
 // ---------- handlers ----------
 export const EXPLORE_ACTIONS = {
+  "rw-order": (state, ui, d) => { const base = baseById(state, Number(d.base)); if (base) ui.baseMsg = orderWallRepair(state, base); },
+  "rw-cancel": (state, ui, d) => { const base = baseById(state, Number(d.base)); if (base) ui.baseMsg = cancelWallRepair(state, base); },
   "rp-start": (state, ui, d) => {
     const base = baseById(state, Number(d.base));
     const fx = base && fixtureById(base, d.fx);
@@ -149,6 +174,7 @@ export const EXPLORE_ACTIONS = {
   },
 };
 export const EXPLORE_CHANGE = {
+  "rw-who": (state, ui, el) => { const base = baseById(state, Number(el.dataset.base)); if (base && el.value) ui.baseMsg = reassignWallRepair(state, base, Number(el.value)); },
   "rp-who": (state, ui, el) => {
     const base = baseById(state, Number(el.dataset.base));
     if (!base || !el.value) return;

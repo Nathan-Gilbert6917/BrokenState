@@ -21,7 +21,7 @@ import {
   createBattle, combatAct, autoPlayerTurn, runEnemyPhase, endPlayerTurn, registerCombatHandler, active, unitAt, CELL,
   reachable, shotOdds, coverAgainst, WEAPONS, canSeeAt, canFire, autoResolveCombat, byNumbersOdds, enemyUnit, shotPriority, moveAlong, pathTo, CRIT,
 } from "../src/sim/combat.js";
-import { addBuilding, count } from "../src/sim/buildings.js";
+import { addBuilding, count, isPiece } from "../src/sim/buildings.js";
 import { DEPLOY } from "../src/sim/deploy.js";
 import { raidTier, hordeWarnings, decoyChance, ledByShepherd, DECOY_FUEL } from "../src/sim/defences.js";
 import { baseTiers } from "../src/sim/interior.js";
@@ -459,7 +459,7 @@ section("Raiders' siege kit by preparedness (eras.js), the warning card, the bat
   console.log(`    ${rows.join("\n    ")}`);
   check(rising, "more of them every era");
   const bare = makeSurvivor(st);
-  const open = { ...h, buildings: h.buildings.filter((x) => x.type !== "walls") };
+  const open = { ...h, buildings: h.buildings.filter((x) => x.type !== "walls" && !isPiece(x.type)) }; // no wall: no pieces (buildings.js)
   check(raidSiegeKit(st, open, { count: 8, key: 1 }) === null, "none against a base without walls");
   check(raidSiegeKit(st, h, { count: 8, key: 5 }) === raidSiegeKit(st, h, { count: 8, key: 5 }) || JSON.stringify(raidSiegeKit(st, h, { count: 8, key: 5 })) === JSON.stringify(raidSiegeKit(st, h, { count: 8, key: 5 })), "the same raid always brings the same kit (no world dice)");
   check(kitText({ ladders: 2, ram: 1, grenades: 2, kind: "frag" }) === "They carry 2 ladders and a battering ram, and 2 grenades to throw over the walls.", `card text: "${kitText({ ladders: 2, ram: 1, grenades: 2, kind: "frag" })}"`);

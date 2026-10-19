@@ -56,7 +56,7 @@ import { tileLabel, partyTile } from "./parties.js";
 import { canRadioGroup, radioSpeech, radioDeal, dealQuote, radioGreet, radioPact, radioCooldown, radioScan, hasNetwork, canListen, relaySpotFor, GROUP_REACH, RELAY_RANGE } from "./radio.js";
 import { available, need, dealRoundKey } from "./trade.js";
 import { hivesSecured, hiveStats } from "./hives.js";
-import { count, isCamp } from "./buildings.js"; // a camp (staging.js) holds no land and wins nothing
+import { count, isCamp, hasWall } from "./buildings.js"; // a camp (staging.js) holds no land and wins nothing
 import { worldScale } from "./worldsize.js";
 import { inviteGoodwill, infamy, lostBases, assaultForce } from "./conquest.js";
 import { reduceHorde } from "./hordes.js";
@@ -446,7 +446,7 @@ export function controlRadius(state, kind, walled = false) {
   const r = kind === "stronghold" ? ALLIANCE.STRONGHOLD_RANGE : ALLIANCE.CONTROL_RANGE + (walled ? ALLIANCE.WALLED_RANGE : 0);
   return Math.max(3, Math.round(r * Math.sqrt(worldScale(state))));
 }
-export const baseRadius = (state, b) => controlRadius(state, b.type === "hub" || b.captured ? "stronghold" : "outpost", count(b, "walls") > 0);
+export const baseRadius = (state, b) => controlRadius(state, b.type === "hub" || b.captured ? "stronghold" : "outpost", hasWall(b));
 // Every centre of coalition land with its radius: your bases and the members' bases.
 // The land the coalition holds, as a mask over the tiles (1 = held). Gangs from beyond the border and raider bands
 // do not dig in there (factions.js newGangs, visitors.js settleBands): the coalition's patrols see them off.
