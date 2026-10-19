@@ -291,12 +291,25 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
       for (const [ox, oy] of [[2, 0], [2, 1], [2, -1]]) if (bags > 0 && free(dx + ox, dy + oy) && !used[(dy + oy) * W + dx + ox - 1]) { put(dx + ox, dy + oy, "sandbag"); bags--; break; }
     }
     scatter(bags, "sandbag", I.WALL_X - 8, I.WALL_X - 3);
+    // Sandbag positions (buildings.js sandbag_wall, the Defenses tab): 4 cells each across the yard.
+    scatter(count(base, "sandbag_wall") * 4, "sandbag", I.WALL_X - 8, I.WALL_X - 3);
+    // Without a wall the base's wire fences (barbed_wire, razor_wire) are lines in front of the yard, short of where
+    // the attackers start (the east edge): barbed wire 2 and 4 columns in from the wall's line, concertina wire 5 (the trench at 3, a second at 6)
+    // (wire.js: it snags the living unless they cut it). On the fort map they are rings outside the wall (fort.js).
+    if (!walled && !opts.fort) {
+      const line = (x, razor) => { for (let y = 0; y < H; y++) { const q = at(x, y); if (q && q.k === "open") q.k = "wire"; if (razor && q && q.k === "wire") q.razor = true; } };
+      for (let i = 0; i < Math.min(2, count(base, "barbed_wire")); i++) line(I.WALL_X - 2 - 2 * i, false);
+      if (count(base, "razor_wire")) line(I.WALL_X - 5, true);
+    }
     // Without walls the dead come straight over the yard: the wire, the bear traps, the pits and the trench are here.
     if (!walled) {
       scatter((kit.wire || 0) * 4, "wire", I.WALL_X - 5, I.WALL_X - 3);
       scatter(kit.traps || 0, "beartrap", I.WALL_X - 6, I.WALL_X - 2, (x, y) => free(x, y) && x >= I.WALL_X - 6);
       scatter((c.pits || 0) * 5, "spikes", I.WALL_X - 6, I.WALL_X - 2, (x, y) => free(x, y) && x >= I.WALL_X - 6);
-      if (count(base, "trench")) for (let y = 0; y < H; y++) if (free(I.WALL_X - 3, y) && y % 4 !== 2) put(I.WALL_X - 3, y, "trench");
+      if (!opts.fort) { // the fort map digs its trenches outside the wall (fort.js)
+        if (count(base, "trench")) for (let y = 0; y < H; y++) if (free(I.WALL_X - 3, y) && y % 4 !== 2) put(I.WALL_X - 3, y, "trench");
+        if (count(base, "trench") >= 2) for (let y = 0; y < H; y++) if (free(I.WALL_X - 6, y) && y % 4 !== 0) put(I.WALL_X - 6, y, "trench"); // a second line further back
+      }
     }
     // The base's own clutter as cover: wells, rain barrels, crates, a car from the garage; fields for the farm plots.
     scatter(countAll(base, "well"), "well", I.YARD_X - 2, I.WALL_X - 3, (x, y) => free(x, y) && x >= 4);

@@ -237,8 +237,8 @@ const t0 = Date.now();
   for (const s of alive(st)) s.role = "farm";
   h.buildings = h.buildings.filter((b) => b.type !== "walls");
   const lims = [];
-  for (let w = 0; w <= 3; w++) { lims.push(holdLimit(st, h)); addBuilding(h, "walls"); }
-  check(lims.join(",") === "69,123,177,231", `hub hold limit by wall tier 0–3 with nobody on guard: ${lims.join(", ")}`);
+  for (let w = 0; w <= 4; w++) { lims.push(holdLimit(st, h)); addBuilding(h, "walls"); } // buildings.js WALL_TIERS: no wall, then each tier where it stands
+  check(lims.join(",") === "15,51,87,159,231", `hub hold limit by wall tier 0–4 with nobody on guard: ${lims.join(", ")}`);
   const full = holdLimit(st, h);
   check(holdLimit(st, h, 1) === Math.round(full * 0.6), `a Wallbreaker cuts the limit to 60% (${full} → ${holdLimit(st, h, 1)})`);
   addBuilding(h, "barricades"); addBuilding(h, "trench");
@@ -269,6 +269,7 @@ const t0 = Date.now();
   // A cook fire, as above: without hot food (eating.js EAT.cold) the holdout walks out before the 65 days are up, the
   // run ends and the infection stops fading with it; this test is about the infection.
   addBuilding(hub(st), "cookhouse");
+  addBuilding(hub(st), "walls"); addBuilding(hub(st), "walls"); // a timber palisade: a base has no wall it did not build (buildings.js WALL_TIERS), and an overrun hub ends the run
   const hv = st.hives[0];
   const ring = st.grid.neighbors(hv.tile)[0];
   const far = st.tiles.find((t) => st.hives.every((h) => st.grid.distance(h.tile, t.id) > 6)).id;

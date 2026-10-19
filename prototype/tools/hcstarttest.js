@@ -287,7 +287,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(atBase(st, camp.id).every((s) => s.role === "build"), "everyone on Build");
   check(baseWalls(camp) === 0 && baseBeds(camp) === CAMP.beds && farmSlots(camp) === 1 && plotCap(camp, "building") === 0 && plotCap(camp, "utility") === 2, `a camp is barer than a shelter: walls 0, beds ${baseBeds(camp)}, one crop plot, two utility plots`);
   // (BASE-03, 2026-10-12: the drying rack, bench, boiler and cook fire are camp buildings now; the watchtower still waits.)
-  check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "watchtower").ok && /shelter stands/.test(canBuild(st, camp, "watchtower").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
+  check(!canBuild(st, camp, "hub_up").ok && !canBuild(st, camp, "watchtower").ok && /shelter/.test(canBuild(st, camp, "watchtower").reason) && /once it is a base/.test(canBuild(st, camp, "well").reason), "the rest waits for the shelter or the base (and says so)");
   check(establishOption(st, null, landNear(st, tile0, 2).id) === null, "with a base (the camp): no Establish base");
   // Half the materials: the work goes as far as they allow and waits.
   Object.assign(camp.stock, { scrap: Math.ceil(needScrap / 2), buildmat: STAGING.HARDCORE.needs.buildmat / 2 });
@@ -313,13 +313,13 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
   check(h && waterProduction(st, h).own === 0, "no well of its own");
   check(h && foodUse(st, h).heads === mouthsAt(st, h).heads && mouthsAt(st, h).residents === atBase(st, h.id).length && waterNeed(st, h).heads === mouthsAt(st, h).heads && Math.abs(foodUse(st, h).residents - mouthsAt(st, h).residents * foodUse(st, h).rate) < 1e-9,
     `the shelter's food and water go per head (${h && useText(foodUse(st, h))}; water ${h && waterNeed(st, h).total})`);
-  check(h && structuresOf(h).map((s) => s.key).join() === "shack" && wallHold(h) < wallHold({ ...h, tier: undefined }), `base battles: only a shack behind the barricade (${h && structuresOf(h).map((s) => s.key).join()}), it holds back fewer of the dead`);
+  check(h && structuresOf(h).map((s) => s.key).join() === "shack" && baseWalls(h) === 0 && wallHold(h) === wallHold({ ...h, tier: undefined }), `base battles: only a shack, and no wall it did not build (${h && structuresOf(h).map((s) => s.key).join()}; buildings.js WALL_TIERS)`);
   if (h) {
     h.construction.length = 0;
     Object.assign(h.stock, { scrap: 200, parts: 20, meds: 10, buildmat: 10 });
     const ok = (k) => canBuild(st, h, k).ok;
     check(ok("rain_catcher") && ok("smoker") && ok("barricades") && ok("farm_plot") && ok("hub_up"), "a shelter builds a rain catcher, a drying rack, a barricade, a farm plot, and the step up into a base");
-    check(!ok("walls") && !ok("well") && !ok("storehouse") && !ok("radio"), "no walls, wells, storehouse or the rest at a shelter");
+    check(ok("walls") && !ok("well") && !ok("storehouse") && !ok("radio"), "a wall (the Defenses tab: up to a timber palisade) but no well, storehouse or the rest at a shelter");
     check(ok("bunkhouse") && ok("infirmary"), "its one building plot (2026-10-12) takes a bunkhouse or an infirmary");
     check(ok("watchtower") && ok("boiler") && ok("water_barrel") && ok("crates") && ok("cookhouse"), "a shelter's two utility plots take the yard things");
     queueBuild(st, h, "farm_plot");
@@ -331,7 +331,7 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
     check(/queued/.test(queueBuild(st, h, "hub_up")), "Build up into a base is queued");
     const t0 = st.hour;
     run(st, 24 * 10, () => !isShelter(h), () => { for (const s of atBase(st, h.id)) s.role = "build"; });
-    check(!isShelter(h) && tierName(h) === "Main hub" && baseWalls(h) === 3 && baseVision(h) === 3 && waterProduction(st, h).own > 0 && canBuild(st, h, "walls").ok && tierInfo(st).stage === 2, `the builders build it up into a base in ${((st.hour - t0) / 24).toFixed(1)} days: walls, a well, vision, every building`);
+    check(!isShelter(h) && tierName(h) === "Main hub" && baseWalls(h) === 0 && baseVision(h) === 3 && waterProduction(st, h).own > 0 && canBuild(st, h, "walls").ok && tierInfo(st).stage === 2, `the builders build it up into a base in ${((st.hour - t0) / 24).toFixed(1)} days: a well, vision, every building (walls from the Defenses tab)`);
     check(!canBuild(st, h, "hub_up").ok && st.log.some((l) => /is a real base now/.test(l.text)), "once only, and the log says so");
   }
 }

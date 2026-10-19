@@ -1,11 +1,12 @@
 // Defences against hordes: when a horde reaches one of your bases, what holds it out and what happens when it
 // breaks in.
 //
-// Hold limit: walls hold back a horde up to 15 + 18 × wall strength (buildings.js baseWalls: hub 69 / 123 / 177 /
-// 231 for 0–3 walls, outposts 33 / 87 / 141 / 195), plus 2 for every point of combat power on guard duty (everyone
-// counts at 0.8 while the defences are manned after a warning), times the defence buildings' bonuses (barricades
-// +12% each, trench +25%, reinforced gate +20%, floodlights +10% with 2 fuel to burn; from the armory, barbed wire
-// +5% a roll and sandbags +4% a bundle, armoryDefence). Spike pits thin the horde first (7% + 4 per pit, used up),
+// Hold limit: walls hold back a horde up to 15 + 18 × wall strength (buildings.js baseWalls, WALL_TIERS: 15 with no
+// wall, 51 / 87 / 159 / 231 for a stake fence, a timber palisade, a scrap-metal wall, a concrete wall), plus 2 for every
+// point of combat power on guard duty (everyone counts at 0.8 while the defences are manned after a warning), times
+// the defence buildings' bonuses (barricades +12% each, trench +25% (a second line +12%), reinforced gate +20%, floodlights +10% with 2 fuel
+// to burn, a barbed wire fence +6% a line, concertina wire +10%, sandbag positions +5% each, guard towers +8%; from the
+// armory, barbed wire +5% a roll and sandbags +4% a bundle, armoryDefence). Spike pits thin the horde first (7% + 4 per pit, used up),
 // then bear traps from the armory (3 each); a tripwire alarm there has everyone count half on the walls unwarned. A Wallbreaker (hives.js) cuts the limit to 60% (two: 35%) and smashes a
 // defence every time it attacks (a barricade, the reinforced gate, else a wall section 40% of the time).
 // A horde at or under the limit is beaten off at the walls. Above it, the dead break in: the part the walls
@@ -20,7 +21,7 @@
 import { scaleFood } from "./foods.js"; // the dead spoil every kind of food
 import { log, addCard, atBase, homeAt, hurt, combatPower, removeBase, isNight, baseVision, armedFactor, spendShots, arrowsBack } from "./world.js";
 import { GEAR } from "./data.js";
-import { count, baseWalls } from "./buildings.js";
+import { count, baseWalls, wallTier as wallTierBuilt, wallOf, wallTierOf, WALL_TIERS } from "./buildings.js";
 import { poweredType } from "./power.js";
 import {
   createBattle, startCombat, autoPlayerTurn, runEnemyPhase, closeCombat, combatants, registerCombatHandler, registerBattleLayout, endBattleNow,
@@ -58,13 +59,15 @@ export function crawlerSlip(state, base, h, floodlit) {
 export const DEFENCE = {
   WALL_BASE: 15, WALL_PER: 18, GUARD_PER_POWER: 2, ALERT_WEIGHT: 0.8,
   BARRICADE: 0.12, TRENCH: 0.25, GATE: 0.2, FLOOD: 0.1, FLOOD_FUEL: 2,
+  TRENCH2: 0.12, // a second trench line
+  WIRE: 0.06, RAZOR: 0.1, BAGS: 0.05, TOWERS: 0.08, // the Defenses tab's (2026-10-19): a barbed wire fence a line, concertina wire, sandbag positions each, the guard towers
   SPIKE_FRAC: 0.07, SPIKE_FLAT: 4, BOSS: [1, 0.6, 0.35], HELD_BACK: 0.5,
   BREAK_BASE: 1.5, BREAK_DIV: 5, // the dead that break in: power 1.5 + (how many) / (5 × units on the map), at most 6
   RETREAT_TILES: 4, RETREAT_HOURS: 48, SHUN_DAYS: 10, // a horde beaten off falls back this far, this long, and leaves the base alone this many days
 };
 
 // ---------- the hold limit ----------
-export const wallTier = (base) => count(base, "walls");
+export const wallTier = (base) => wallTierBuilt(base); // buildings.js WALL_TIERS: 0 none, 1 a stake fence … 4 a concrete wall
 export const wallHold = (base) => DEFENCE.WALL_BASE + DEFENCE.WALL_PER * baseWalls(base);
 export const manned = (state, base) => !!base.hordeAlert && state.hour < base.hordeAlert;
 
@@ -95,7 +98,8 @@ export function guardHold(state, base) {
 
 export function defenceMult(state, base) {
   const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL); // on generator power they burn no fuel (power.js)
-  return 1 + DEFENCE.BARRICADE * count(base, "barricades") + DEFENCE.TRENCH * count(base, "trench") + DEFENCE.GATE * count(base, "gate") + (flood ? DEFENCE.FLOOD : 0) + armoryDefence(base).hold;
+  return 1 + DEFENCE.BARRICADE * count(base, "barricades") + DEFENCE.TRENCH * Math.min(1, count(base, "trench")) + DEFENCE.TRENCH2 * Math.max(0, count(base, "trench") - 1) + DEFENCE.GATE * count(base, "gate") + (flood ? DEFENCE.FLOOD : 0) + armoryDefence(base).hold
+    + DEFENCE.WIRE * count(base, "barbed_wire") + DEFENCE.RAZOR * count(base, "razor_wire") + DEFENCE.BAGS * count(base, "sandbag_wall") + (count(base, "walls") ? DEFENCE.TOWERS * count(base, "guard_towers") : 0);
 }
 // Bear traps: the dead caught before they reach the walls.
 export const trapKill = (base, n) => Math.min(n, armoryDefence(base).traps * GEAR.beartrap.defence.kill);
@@ -125,14 +129,15 @@ export const spikeKill = (base, n) => {
 // ---------- the three tiers (interior.js): wall, yard, buildings ----------
 // What each tier of a base's defence multiplies its defenders' strength by, in fights resolved by the numbers
 // (combat.js autoResolveCombat: a raid fought in person and auto-resolved, the autopilot's) and in the hold estimate
-// below. The wall: +5% a wall section (up to 3), a watchtower +5%, a reinforced gate +5%, the trench +3%, lit
-// floodlights at night +3%. The yard: +3% a barricade, +1.5% a sandbag bundle and a roll of wire in the armory, +2% a
-// spike pit. The buildings: +2% a building that can be held (interior.js defensibleCount, up to 5). A fight is held at
+// below. The wall: +4% a tier of the wall (a stake fence 4%, a concrete wall 16%), a watchtower +5%, a reinforced gate
+// +5%, a trench +3% a line, lit floodlights at night +3%, a barbed wire fence +3% a line and concertina wire +5% (the yard's
+// without a wall), the guard towers +4%. The yard: +3% a barricade, +1.5% a sandbag bundle and a roll of wire in the
+// armory, +2% a spike pit, +3% a sandbag position. The buildings: +2% a building that can be held (interior.js defensibleCount, up to 5). A fight is held at
 // the wall when the defenders are worth HELD_AT_WALL × the attackers there, else in the yard when they match them
 // with the yard counted, else in the buildings (the last stand), else lost.
 export const TIERS = {
-  WALL: { per: 0.05, max: 3, tower: 0.05, gate: 0.05, trench: 0.03, flood: 0.03 },
-  YARD: { barricade: 0.03, bags: 0.015, wire: 0.015, pits: 0.02 },
+  WALL: { per: 0.04, max: 4, tower: 0.05, gate: 0.05, trench: 0.03, flood: 0.03, fence: 0.03, razor: 0.05, towers: 0.04 },
+  YARD: { barricade: 0.03, bags: 0.015, wire: 0.015, pits: 0.02, positions: 0.03 },
   BUILDINGS: { per: 0.02, max: 5 },
   HELD_AT_WALL: 1.15,
 };
@@ -140,9 +145,10 @@ export function tierMults(state, base, night = false) {
   if (!base) return { wall: 1, yard: 1, buildings: 1, walled: false, held: 0 };
   const T = TIERS, walls = count(base, "walls"), kit = armoryDefence(base);
   const flood = count(base, "floodlights") && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= DEFENCE.FLOOD_FUEL);
-  const wall = walls ? 1 + T.WALL.per * Math.min(T.WALL.max, walls) + (count(base, "watchtower") ? T.WALL.tower : 0) + (count(base, "gate") ? T.WALL.gate : 0)
-    + (count(base, "trench") ? T.WALL.trench : 0) + (flood && night ? T.WALL.flood : 0) : 1;
-  const yard = 1 + T.YARD.barricade * count(base, "barricades") + T.YARD.bags * kit.bags + T.YARD.wire * kit.wire + T.YARD.pits * count(base, "spike_pits");
+  const wireOut = T.WALL.fence * count(base, "barbed_wire") + T.WALL.razor * count(base, "razor_wire"); // the wire lines: at the wall, or in front of the yard without one
+  const wall = walls ? 1 + T.WALL.per * Math.min(T.WALL.max, wallTier(base) || walls) + (count(base, "watchtower") ? T.WALL.tower : 0) + (count(base, "gate") ? T.WALL.gate : 0)
+    + T.WALL.trench * Math.min(2, count(base, "trench")) + (flood && night ? T.WALL.flood : 0) + wireOut + T.WALL.towers * count(base, "guard_towers") : 1;
+  const yard = 1 + T.YARD.barricade * count(base, "barricades") + T.YARD.bags * kit.bags + T.YARD.wire * kit.wire + T.YARD.pits * count(base, "spike_pits") + T.YARD.positions * count(base, "sandbag_wall") + (walls ? 0 : wireOut);
   const held = defensibleCount(base);
   const buildings = 1 + T.BUILDINGS.per * Math.min(T.BUILDINGS.max, held);
   return { wall, yard, buildings, walled: walls > 0, held };
@@ -348,7 +354,10 @@ function smash(state, base, bosses) {
     const gone = (type) => { const j = base.buildings.findIndex((b) => b.type === type); if (j < 0) return false; base.buildings.splice(j, 1); return true; };
     if (gone("barricades")) out.push("a barricade");
     else if (gone("gate")) out.push("the reinforced gate");
-    else if (count(base, "walls") && state.rng.chance(0.4) && gone("walls")) out.push("a section of wall");
+    else if (count(base, "walls") && state.rng.chance(0.4)) { // the wall battered down a tier (WALL_TIERS); a stake fence is flattened
+      const w = wallOf(base);
+      if (wallTierOf(w) > 1) { w.tier = wallTierOf(w) - 1; out.push(`the wall (down to a ${WALL_TIERS[w.tier].name.toLowerCase()})`); } else if (gone("walls")) out.push("the stake fence");
+    }
   }
   return out;
 }
@@ -675,8 +684,12 @@ export function defenceWishes(state, base, threat) {
   if (!threat) return out;
   if (count(base, "barricades") < 3) add("barricades", "barricades against the hordes");
   if (!count(base, "spike_pits")) add("spike_pits", "spike pits to thin a horde");
+  if (count(base, "barbed_wire") < 2) add("barbed_wire", "barbed wire on the approach");
+  if (count(base, "sandbag_wall") < 2) add("sandbag_wall", "sandbag positions in the yard");
   if (!count(base, "trench") && base.type === "hub") add("trench", "a trench before the walls");
   if (!count(base, "gate") && count(base, "walls")) add("gate", "a reinforced gate");
   if (!count(base, "floodlights") && base.type === "hub") add("floodlights", "floodlights for night attacks");
+  if (!count(base, "razor_wire") && count(base, "barbed_wire")) add("razor_wire", "concertina wire beyond the barbed wire");
+  if (!count(base, "guard_towers") && base.type === "hub" && count(base, "walls")) add("guard_towers", "guard towers on the wall");
   return out;
 }

@@ -516,7 +516,7 @@ console.log("Breakdowns and repairs");
   const walls = h.buildings.find((b) => b.type === "walls") || addBuilding(h, "walls");
   const wl0 = baseWalls(h);
   BD.breakFixture(st, h, walls, "test", { card: false });
-  check(baseWalls(h) === wl0 - 3, `broken walls lose their 3 wall strength (${wl0} → ${baseWalls(h)})`);
+  check(wl0 > 0 && baseWalls(h) === 0, `a broken wall loses its wall strength (${wl0} → ${baseWalls(h)})`);
   const radio = addBuilding(h, "radio");
   check(radioNodes(st).some((n) => n.base === h), "test setup: the radio station is on the air");
   BD.breakFixture(st, h, radio, "test", { card: false });

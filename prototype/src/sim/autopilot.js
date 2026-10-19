@@ -51,6 +51,7 @@ import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchen
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
+import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
@@ -2857,7 +2858,7 @@ function buildWishes(state, base) {
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
   // Hordes (defences.js): walls when a horde in sight would break in, then barricades, spike pits and the rest.
   const hz = hordeThreat(state, base);
-  if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && count(base, "walls") + queued("walls") < BUILDINGS.walls.max) add("walls", `a horde of ${hz.size} would break in`, true);
+  if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && !queued("walls") && nextWallTier(base)) add("walls", `a horde of ${hz.size} would break in`, true);
   if (hz.any) for (const w of defenceWishes(state, base, true)) if (!queued(w.type)) out.push(w);
   // A radio relay (radio.js) at any base (the hub too) where one would link to the network and bring a group you
   // know (not hostile) into radio reach: greetings, pacts and the coalition's invitation need it (alliance.js
@@ -2961,7 +2962,7 @@ function buildWishes(state, base) {
   if (!count(base, "garage") && carsAtBase(state, base.id).length && (st.parts || 0) >= 5) add("garage", "cheaper vehicle repairs");
   // Room for newcomers once the scrap is there (the housing's cost and HOUSING.scrapAhead more: 45 for a bunkhouse).
   if (people + (homeFood ? 6 : 2) > beds) for (const w of housingWishes(state, base, homeFood ? "spare beds (a fire in the bunkhouse must not crowd the fortress)" : "room for newcomers", false)) if ((st.scrap || 0) >= (wishCost(w).scrap || 0) + HOUSING.scrapAhead) { out.push(w); break; }
-  if (count(base, "walls") < 2 && (st.scrap || 0) >= 70) add("walls", "stronger defense");
+  if (wallTier(base) < 3 && !queued("walls") && (st.scrap || 0) >= 70) add("walls", "stronger defense"); // buildings.js WALL_TIERS: up to a scrap-metal wall when rich
   // Cautious (reserves): a med station as soon as meds run short (the surest source), and a radio station once
   // there are parts for it: scanning finds the groups in reach, and radio deals bring what runs short without a
   // trip (reserveRadio).
@@ -2970,7 +2971,7 @@ function buildWishes(state, base) {
     if (!count(base, "med_station") && pop >= 5 && rs.meds.short) add("med_station", "meds are below the reserve", true);
     if (!base.radio && (st.parts || 0) >= 6 + rs.parts.target && best("mechanics") >= 4) add("radio", "radio deals for what runs short", true);
     // Hordes are a known danger here: a second wall tier (each holds back 54 more of a horde, a Wallbreaker's 60%).
-    if (rs.threat >= 1 && count(base, "walls") + queued("walls") < 2) add("walls", "hordes are near: a stronger wall", true);
+    if (rs.threat >= 1 && wallTier(base) + queued("walls") < 3) add("walls", "hordes are near: a stronger wall", true);
   }
   return out;
 }

@@ -213,7 +213,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
     // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 6 crop plots, the well,
-    // the cellar, 3 wall strength: buildings.js) is all there is. The scrap and parts are for the first builds, the
+    // the cellar: buildings.js; no wall, which is built on the Defenses tab) is all there is. The scrap and parts are for the first builds, the
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
     // and 10 of food that keeps (jars, jerky, peanut butter).

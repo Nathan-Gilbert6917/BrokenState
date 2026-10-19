@@ -40,7 +40,7 @@ export const BLUEPRINTS = {
   // Mechanics 4 to study (the standby generator's hand), as the Hospital Operations Manual is a step above the clinic's.
   indpower: { name: "Industrial Power Manual", skill: "mechanics", min: 4, hours: 30, value: 70, unlocks: { upgrades: ["generator3"] },
     sites: ["dam", "factory", "quarry", "military", "hospital", "airport"], desc: "Service manuals for skid-mounted diesel sets: load banks, governors, paralleling and day tanks." },
-  armyeng: { name: "Army Engineering Manual", skill: "mechanics", min: 2, hours: 30, value: 70, unlocks: { buildings: ["gate", "trench"] },
+  armyeng: { name: "Army Engineering Manual", skill: "mechanics", min: 2, hours: 30, value: 70, unlocks: { buildings: ["gate", "trench"], from: { trench: 1 } }, // the first trench any base digs (the Defenses tab, 2026-10-19); the second line needs the manual
     sites: ["military", "prison", "police"], desc: "Field fortifications: obstacles, ditches, gates that hold." },
   watertreat: { name: "Water Treatment Schematics", skill: "mechanics", min: 2, hours: 20, value: 45, unlocks: { buildings: ["cistern"] },
     sites: ["dam", "univ", "factory", "firestation"], desc: "Settling tanks, sand filters and sealed storage." },

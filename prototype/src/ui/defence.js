@@ -7,6 +7,7 @@ import { atBase, baseById, hourOfDay, skill } from "../sim/world.js";
 import { ROLES } from "../sim/economy.js";
 import { isManaged } from "../sim/work.js";
 import { holdSummary } from "../sim/defences.js";
+import { BUILDINGS, count, wallOf, wallName } from "../sim/buildings.js"; // the defenses built here (Construction, Defenses)
 import {
   WATCH_PRESETS, SHIFT_MAX, shiftText, shiftHours, watchCoverage, watchLine, watchWhy, setWatchPreset, addShift, removeShift,
   setShiftHours, renameShift, toggleWatch, fillWatch, pruneWatch,
@@ -38,11 +39,20 @@ export function defenceTab(state, b, ui) {
         <h3>Holding the walls now</h3>
         <div class="card small"${tip("What this base's walls hold off before a horde breaks in (defences.js): the walls, everyone on guard (the watch counts here), the defence buildings and the armory's kit. A Wallbreaker cuts it.")}>
           <div class="kv"><div>Hold limit</div><div><b>${hold.limit}</b> of the dead (${hold.boss} with a Wallbreaker)</div>
-          <div>On guard now</div><div>${people.filter((s) => s.role === "guard").map((s) => esc(first(s)) + tiredChip(s)).join(", ") || "nobody"}</div></div>
+          <div>On guard now</div><div>${people.filter((s) => s.role === "guard").map((s) => esc(first(s)) + tiredChip(s)).join(", ") || "nobody"}</div>
+          <div>Defenses built</div><div>${esc(builtDefenses(b))}</div></div>
+          <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="cxtab" data-tab="defenses"${tip("Construction's Defenses list: walls by tier, wire, trenches and more for this size of base")}>Build defenses</button></div>
         </div>
       </div>
     </div>
   </div>`;
+}
+
+// What stands of the Defenses tab's list here (sim/buildings.js tab "defenses"), for the hold card.
+function builtDefenses(b) {
+  const w = wallOf(b);
+  const rest = Object.entries(BUILDINGS).filter(([k, d]) => d.tab === "defenses" && k !== "walls" && count(b, k)).map(([k, d]) => `${count(b, k) > 1 ? `${count(b, k)} × ` : ""}${d.name.toLowerCase()}`);
+  return [w ? wallName(w) : "no wall", ...rest].join(", ");
 }
 
 // ---------- the watch roster ----------

@@ -50,6 +50,7 @@
 // whose base it was (still standing elsewhere) takes it ill: relations ABANDON.FORMER_REL.
 import { foodIn, takeFood, addFoodsTo, DAY_VALUE, typeGoods, groupMix } from "./foods.js"; // food paid in days
 import { SUPPLIES, GEAR } from "./data.js";
+import { wallTier } from "./buildings.js"; // WALL_TIERS: a base's wall by its tier
 import { groupStockKey } from "./trade.js"; // a group's one count of parts (part kinds come out of it)
 import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
@@ -109,7 +110,7 @@ export function learnBase(state, f, tile, d = day(state)) {
   const K = f.knows || (f.knows = { bases: {} });
   const pb = state.bases.find((b) => b.tile === tile);
   if (pb) {
-    K.bases[tile] = { kind: "player", id: pb.id, def: Math.round(defOf(state, pb)), walls: pb.buildings.filter((x) => x.type === "walls" && !x.broken).length, value: Math.round(supplyValue(pb.stock)), day: d }; // value: the stores they saw (playerwars.js: a war for loot)
+    K.bases[tile] = { kind: "player", id: pb.id, def: Math.round(defOf(state, pb)), walls: wallTier(pb), value: Math.round(supplyValue(pb.stock)), day: d }; // value: the stores they saw (playerwars.js: a war for loot)
     return K.bases[tile];
   }
   const o = state.factions.find((x) => x.alive && x !== f && x.bases.includes(tile));
@@ -440,7 +441,7 @@ const PLAYER_WORKS = { walls: "walls", farm_plot: "farms", greenhouse: "farms", 
 // A lost outpost's buildings as works (standing ones only).
 function worksOfBuildings(list) {
   const works = {};
-  for (const b of list || []) { if (b.broken) continue; for (const k of [].concat(PLAYER_WORKS[b.type] || [])) works[k] = (works[k] || 0) + 1; }
+  for (const b of list || []) { if (b.broken) continue; for (const k of [].concat(PLAYER_WORKS[b.type] || [])) works[k] = (works[k] || 0) + (b.type === "walls" && b.tier ? Math.max(1, b.tier - 1) : 1); } // a wall by its tier (buildings.js WALL_TIERS)
   return works;
 }
 // A group's base its people left (it died out): the works stay, and some of the stores.

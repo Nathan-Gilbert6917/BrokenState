@@ -853,6 +853,7 @@ const actions = {
     ui.supplyForm = null;
   },
   basetab: (d) => { ui.baseView.tab = d.tab; ui.baseMsg = ""; },
+  cxtab: (d) => { ui.baseView.cx = d.tab; ui.baseView.tab = "construction"; ui.baseMsg = ""; }, // Construction: the Buildings or the Defenses list (from the Defence tab too)
   closebase: () => { ui.baseView = null; ui.baseMsg = ""; ui.supplyForm = null; },
   // Supply runs (Supply runs tab of the base screen).
   "sr-new": (d) => { ui.supplyForm = jobForm(state, null, Number(d.base)); ui.supplyError = ""; },

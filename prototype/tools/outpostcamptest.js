@@ -95,7 +95,7 @@ section("Build outpost pitches a camp");
     b.stock.buildmat = 3;
     hours(st, 24 * 8, () => !isShelter(b));
     check(!isShelter(b) && b.tier === undefined && b.type === "outpost", "established: an outpost (no tier)");
-    check(tierName(b) === "Outpost" && baseWalls(b) === 1 && plotCap(b, "building") === 6, "an outpost's wall and plots");
+    check(tierName(b) === "Outpost" && baseWalls(b) === 0 && plotCap(b, "building") === 6, "an outpost's plots, and no wall it did not build (the Defenses tab)");
     // The camp's builders make building materials from the scrap in its stores while the step up waits for them
     // (buildings.js campMaterialsHour), so of the three brought in it took what they had not made already.
     const made = st.log.filter((l) => /made building materials from scrap/.test(l.text)).length;
