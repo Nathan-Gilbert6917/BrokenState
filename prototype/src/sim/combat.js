@@ -520,7 +520,10 @@ export function powerEquiv(kind, cp) {
 }
 // Refitted 2026-10-19 after AI parity (enemies are people with finite rounds and your rules: docs/adr/0001-ai-parity.md),
 // a logistic on 2376 map fights (tools/calibrate.js --raw, seeds 5, 6 and 8): no compensation, the map's own odds.
-export const ODDS = { RATIO: 4.06, NUMBERS: 3.74, ZOMBIES: 2.17, MIXED: 2.76, SOLDIERS: -3.83, HIVE: -0.44, THEY_AMBUSH: 0.81, YOU_AMBUSH: -0.57, MIN: 0.03, MAX: 0.97 };
+// Refitted again the same day once every gun had its rounds at hand and the dead beasts were in (the map beat the dead
+// and a hive's brood far more often than the odds said: 3 vs 12 of the dead at power 4 won 67% on the map, 28% by
+// the numbers): 1,296 map fights (seed 5); the map wins 66%, the old odds said 52%, these 66%.
+export const ODDS = { RATIO: 4.79, NUMBERS: 3.0, ZOMBIES: 4.39, MIXED: 2.2, SOLDIERS: -2.78, HIVE: -0.62, THEY_AMBUSH: 0.32, YOU_AMBUSH: -1.14, MIN: 0.03, MAX: 0.97 };
 export function winOdds(ratio, enemy = null) {
   const e = enemy || {};
   const dead = e.kind === "zombies";
