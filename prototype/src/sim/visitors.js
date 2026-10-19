@@ -97,14 +97,15 @@ import { waterIn, drawWater, keyWord } from "./water.js"; // purified and un-pur
 import { baseDefense, strength as groupStrength, resolveRaidOnFaction, changeGoodwill, attitude, siegePace, stolenText, makeGang } from "./factions.js";
 import { raidTier } from "./defences.js";
 import { lookoutsSpot, surpriseAt, watchSawText, SURPRISE } from "./watch.js"; // the lookouts' warning; an unwatched night
-import { raidSiegeKit, kitText } from "./siege.js";
+import { raidSiegeKit, kitText, GRENADES } from "./siege.js";
 import { raidDamage, raidReportCard } from "./breakdowns.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { inCoverage, hasNetwork, heardBy } from "./radio.js";
 import { borderTiles } from "./hives.js";
-import { newItem, lootItem } from "./inventory.js";
+import { newItem, lootItem, allCarried, carriedSpots } from "./inventory.js";
+import { syncBand } from "./bands.js"; // a band's people: the grenades they carry (bandKit)
 import { spend } from "./itemcond.js"; // the condition of what they carry
 import { BP_KEYS, bpItemKey, isKnown } from "./blueprints.js";
 import { tradeSpeech, gainXp, USE, hash01 } from "./skills.js";
@@ -908,11 +909,29 @@ function raidWarning(state, v) {
 }
 
 // The siege kit an outsider band brings against this base (siege.js raidSiegeKit: sometimes, by preparedness),
-// fixed once it has picked the base.
+// fixed once it has picked the base. Its grenades are the ones its people carry (bands.js: they came with them;
+// docs/adr/0001-ai-parity.md, nothing from nowhere): up to what the kit's dice wanted, never more than they have, and
+// on the map each throws their own (fighters.js fitThrowables). The ladders and the ram come with a band from beyond
+// the border as it comes.
 function bandKit(state, v, base) {
   if (!base) return null;
   if (!v.siegeFor || v.siegeFor.baseId !== base.id) v.siegeFor = { baseId: base.id, kit: raidSiegeKit(state, base, { count: clamp(v.size, 1, 14), key: v.serial * 31 + localId(state, base.id), /* never the raw ids: they are process-wide */ outsider: true, kind: v.power >= 5.5 ? "frag" : "pipebomb" }) };
-  return v.siegeFor.kit;
+  const want = v.siegeFor.kit;
+  if (!want) return null;
+  const people = syncBand(state, v, v.power, "raiders"); // bands.js: the very people who would fight (combat.js bandize)
+  const carried = people.flatMap((s) => allCarried(s).filter((it) => it && GRENADES.includes(it.key)));
+  const grenades = Math.min(want.grenades || 0, carried.length);
+  const frags = carried.filter((it) => it.key === "frag").length;
+  const kit = { ladders: want.ladders || 0, ram: want.ram || 0, grenades, kind: !grenades ? want.kind : frags >= grenades ? "frag" : "pipebomb", carried: true };
+  return kit.ladders || kit.ram || kit.grenades ? kit : null;
+}
+
+// By the numbers, the grenades a band threw over your walls (bandKit's): off the people who carried them, gone.
+function throwBandGrenades(state, v, base) {
+  const kit = bandKit(state, v, base);
+  if (!kit || !kit.grenades || !count(base, "walls")) return;
+  let n = kit.grenades;
+  for (const s of v.people || []) for (const c of carriedSpots(s)) if (n > 0 && c.item && GRENADES.includes(c.item.key)) { c.take(); n--; }
 }
 
 function paidOff(state, v, base) {
@@ -968,6 +987,7 @@ export function resolveRaidOnYou(state, v, beaten = null) {
   const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings count (defences.js raidTier), with the same thresholds as a group's raid.
   const rt = beaten ? null : raidTier(state, base, def, vStrength(v), 1.2, 0.8, bandKit(state, v, base), !!caught); // siege.js: their ladders, ram and grenades
+  if (!beaten) throwBandGrenades(state, v, base); // the grenades they threw over the walls are gone
   const ratio = beaten ? (beaten === "broken" ? 1 : 0) : rt.ratio;
   const store = count(base, "storehouse") > 0;
   const att = vStrength(v);

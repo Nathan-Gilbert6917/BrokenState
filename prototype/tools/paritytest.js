@@ -4,6 +4,8 @@
 //   2. Physical rounds: the same reload plan from what they carry, the same refusal when it is gone, rounds that run out.
 //   3. The rules that were keyed to a side: caught unaware, a flare's light, footsteps, a gun above their skill, hearing
 //      lost for good, going down and pulled through, meds, throwing what they carry, perks.
+//   4. A horde at a group's base: your base's defence step for step (spike pits, mines, bear traps, defence buildings,
+//      the hold limit), the horde's losses by your rule (groupfight.js hordeAtGroup).
 // Usage: node tools/paritytest.js [seed]
 import { createWorld, makeSurvivor, hub } from "../src/sim/world.js";
 import { createBattle, combatAct, registerCombatHandler, reload, loadMag, magIn } from "../src/sim/combat.js";
@@ -18,6 +20,15 @@ import { deafen, HEARING } from "../src/sim/hearing.js";
 import { settleFoes } from "../src/sim/medics.js";
 import { throwablesOf } from "../src/sim/stealth.js";
 import { battlePerks } from "../src/sim/skills.js";
+import { GEAR } from "../src/sim/data.js";
+import { ensureArsenal } from "../src/sim/arsenal.js";
+import { ensureMembers, syncMembers } from "../src/sim/members.js";
+import { homeAt } from "../src/sim/groupbases.js";
+import { addBuilding, count } from "../src/sim/buildings.js";
+import { defenceMult, holdLimit, spikeKill, guardHold } from "../src/sim/defences.js";
+import { minesKill, minesLeft } from "../src/sim/mines.js";
+import { makeHorde } from "../src/sim/hordes.js";
+import { hordeAtGroup, groupHoldCheck } from "../src/sim/groupfight.js";
 const stackN = (st) => st.reduce((a, x) => a + (x.n || 0), 0);
 
 const seed = Number(process.argv[2] || 7);
@@ -157,6 +168,48 @@ section("3. The rules once keyed to a side");
   t2.down = true; t2.wounded = true; t2.hp = 0; t2.stab = true;
   settleFoes(b2, "victory"); // you won: a prisoner of yours
   check(!t2.dead && !t2.recovered, "your win: their stabilized downed are your prisoners");
+}
+
+section("4. A horde at a group's base meets your base's defence: its traps and defences work, its losses are yours");
+{
+  // A base of yours they took and hold (groupbases.js gainBase: real, its buildings yours): two spike pits, two
+  // barricades, a minefield, and two bear traps on the group's shelf (kept at its main base), against a horde.
+  const st = createWorld({ seed, factionCount: 4 });
+  const f = st.factions.find((x) => x.alive && x.bases.length);
+  ensureArsenal(st, f); ensureMembers(st, f); syncMembers(st, f);
+  const tile = f.bases[0];
+  const g = homeAt(st, f, tile);
+  g.real = true;
+  const yours = hub(st);
+  const m0 = { g: defenceMult(st, g), y: defenceMult(st, yours) };
+  for (const t of ["spike_pits", "spike_pits", "barricades", "barricades", "minefield"]) { addBuilding(g, t); addBuilding(yours, t); }
+  check(Math.abs((defenceMult(st, g) - m0.g) - (defenceMult(st, yours) - m0.y)) < 1e-9 && defenceMult(st, g) > m0.g, `the barricades raise their hold as they raise yours (×${m0.g.toFixed(2)} → ×${defenceMult(st, g).toFixed(2)}; yours ×${m0.y.toFixed(2)} → ×${defenceMult(st, yours).toFixed(2)})`);
+  f.wares = [...(f.wares || []), newItem("beartrap"), newItem("beartrap")];
+  const traps0 = f.wares.filter((it) => it.key === "beartrap").length;
+  // What your base's code takes off a horde of N before the walls, and what it cuts down below walls that hold.
+  const lim = holdLimit(st, g, 0);
+  const N = Math.floor(lim);
+  const s1 = N - spikeKill(g, N), s2 = s1 - minesKill(g, s1), s3 = s2 - Math.min(s2, traps0 * GEAR.beartrap.defence.kill);
+  const want = s3 - Math.min(s3, Math.round(8 + guardHold(st, g) * 0.8 + s3 * 0.12));
+  const mines0 = minesLeft(g);
+  const h = makeHorde(st, { tile, size: N, role: "roam", split: true });
+  const r = hordeAtGroup(st, h, f, tile);
+  const left = st.hordes.includes(h) ? h.size : 0;
+  check(r && r.held && r.check.tier === "wall", `a horde of ${N} against walls that stop ${Math.round(lim)}: held at the walls, as the check said (${r && r.check.tier})`);
+  check(!count(g, "spike_pits") && minesLeft(g) < mines0, `their spike pits took their share and are used up, their minefield went off (${mines0} → ${minesLeft(g)} mines)`);
+  check(left === (want >= 5 ? want : 0), `the horde's losses are your base's: pits ${N - s1}, mines ${s1 - s2}, traps ${s2 - s3}, then cut down below the walls: ${N} → ${left} (your rule: ${want})`);
+  check(f.wares.filter((it) => it.key === "beartrap").length <= traps0, `their bear traps worn as yours are (${traps0} → ${f.wares.filter((it) => it.key === "beartrap").length})`);
+  // A horde too big for the walls: the dead break in and are fought by the numbers; the horde loses no more than broke in.
+  const st2 = createWorld({ seed: seed + 1, factionCount: 4 });
+  const f2 = st2.factions.find((x) => x.alive && x.bases.length);
+  ensureArsenal(st2, f2); ensureMembers(st2, f2); syncMembers(st2, f2);
+  const t2 = f2.bases[0];
+  const big = Math.round(holdLimit(st2, homeAt(st2, f2, t2), 0) * 3);
+  const h2 = makeHorde(st2, { tile: t2, size: big, role: "roam", split: true });
+  const c2 = groupHoldCheck(st2, f2, t2, big);
+  const r2 = hordeAtGroup(st2, h2, f2, t2);
+  const left2 = st2.hordes.includes(h2) ? h2.size : 0;
+  check(r2 && !c2.holds && c2.through > 0 && left2 >= big - c2.through - 1 && left2 < big && (r2.held ? left2 === Math.max(0, big - c2.through) || left2 === 0 : true), `a horde of ${big}: about ${c2.through} broke in (the check said ${c2.tier}); ${r2 && r2.held ? "held inside" : "overrun"}, the horde ${big} → ${left2}`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

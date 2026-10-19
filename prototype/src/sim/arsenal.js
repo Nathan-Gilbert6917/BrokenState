@@ -42,7 +42,7 @@
 import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { GEAR, FACTION_TYPES, LOCATIONS, supValue } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
-import { lootItem, isCarrier, insertsOf, allCarried, salvageYield } from "./inventory.js";
+import { lootItem, isCarrier, insertsOf, allCarried, salvageYield, carriedSpots, stow } from "./inventory.js";
 import { isRoundItem } from "./itemstack.js"; // loose rounds are the stores', not the books
 import { note, goodsRounds } from "./ledger.js"; // the conservation ledger (a test switch)
 import { scavBlade } from "./blades.js"; // knives and swords their scavengers find
@@ -71,7 +71,7 @@ import { available } from "./trade.js"; // what a group can spare (call time onl
 import { relation, warBetween } from "./diplomacy.js"; // whose shelf a group may buy from
 import { SUPPLIES } from "./data.js";
 import { PEOPLE, memberize, spentThrows, stowGun } from "./fighters.js";
-import { carrierOf, removeMember, memberById, MEMBER, syncMembers, carriers, homeMembers } from "./members.js"; // the group's people: the registry's items are on them // the group's people on the battle map
+import { carrierOf, removeMember, memberById, MEMBER, syncMembers, carriers, homeMembers, fighterScore, diedQuietly } from "./members.js"; // the group's people: the registry's items are on them // the group's people on the battle map
 import { carriedRounds, spareKit } from "./loadouts.js"; // the rounds its people carry count as the group's
 import { settleEars, isPlugsKey } from "./hearing.js"; // a member's ears after a fight, by your rule
 import { earGearOf } from "./helmets.js";
@@ -80,6 +80,7 @@ import { gainXp } from "./skills.js";
 import { wornOut } from "./repair.js"; // past mending
 import { groupStockKey } from "./trade.js";
 import { spendSelfAid } from "./medics.js"; // a person's used tourniquets, as yours
+import { groundAt } from "./carry.js"; // a raid's ladders and ram left where it ended
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -170,6 +171,9 @@ export const isNonlethalKey = (k) => !!(GEAR[k] && (GEAR[k].nonlethal === "taser
 export const isMedKitKey = (k) => !!(GEAR[k] && GEAR[k].medKit);
 export const isKitThrowKey = (k) => k === "flashbang" || k === "smokegren";
 export const isSelfAidKey = (k) => !!(GEAR[k] && GEAR[k].selfStab && !GEAR[k].medKit); // a tourniquet (medics.js MEDIC.SELF)
+// Siege kit (data.js GEAR siege: the ladder and the battering ram): bulky, never worn or dealt out, kept on the books
+// between raids and carried out with one (packRaidKit).
+export const isSiegeKey = (k) => !!(GEAR[k] && GEAR[k].siege);
 export const arsenalWorthy = (it) => !!(it && GEAR[it.key] && (isWeaponKey(it.key) || isArmourKey(it.key) || isThrowKey(it.key) || isNonlethalKey(it.key) || isMedKitKey(it.key) || isKitThrowKey(it.key) || isEarKey(it.key) || isSelfAidKey(it.key))); // isEarKey: ear protection (helmets.js issueEars)
 export const weaponValue = (it) => (it && isWeaponKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) + ARSENAL.MOD * fittedMods(it).length : 0);
 export const armourValue = (it) => (it && isArmourKey(it.key) ? (GEAR[it.key].power || 0) * qual(it) * ARSENAL.ARMOUR : 0);
@@ -283,7 +287,7 @@ function headgearOnce(state, f) {
   for (const it of starterHeadgear(kind, Math.max(0, Math.round(A.pop0 ?? f.pop ?? 0)), (key, tag, i) => (GEAR[key] ? lootItem(key, src, [state.seed, "ars", f.name, tag, i]) : null))) put(A, f, it, null);
 }
 export function addToArsenal(state, f, it, why = "found") {
-  if (!arsenalWorthy(it) && !kitWorthy(it)) return false; // carrykit.js: rigs, magazines, plates too
+  if (!arsenalWorthy(it) && !kitWorthy(it) && !isSiegeKey(it.key)) return false; // carrykit.js: rigs, magazines, plates too; ladders and rams
   const A = ensureArsenal(state, f);
   if (!A || A.items.includes(it)) return false;
   put(A, f, it, why);
@@ -628,7 +632,7 @@ export function settleArsenal(state, setup, result, battle = null) {
   }
   if (e.turret) wearGroupVehicles(state, f, won, `fight${state.hour}`); // groupcare.js: the turret vehicle in the fight
   // The explosives a raid threw at your walls (siege.js grenades).
-  if (e.siege && e.siege.grenades) throwExplosives(f, e.siege.grenades, e.siege.kind);
+  if (e.siege && e.siege.grenades && !e.siege.carried) throwExplosives(f, e.siege.grenades, e.siege.kind); // carried (packRaidKit): the raiders threw their own (spentThrows)
   result.arsDropped = out.dropped;
   result.arsTook = out.took;
   // A fight at your base that you won: their dead lie in your yard, their gear goes in its armory.
@@ -738,19 +742,109 @@ function throwExplosives(f, n, kind) {
   for (const it of list.slice(0, n)) removeFromArsenal(f, it, "thrown");
 }
 
-// A raid's siege kit (siege.js raidSiegeKit) holds only the explosives the group has: as many as it holds at most,
-// frags if it has frags. Null when nothing is left of the kit.
-export function capSiegeKit(state, f, kit) {
-  if (!kit || !ensureArsenal(state, f)) return kit;
-  // ai-locks: a battering ram only from a group that could make yours (crafting.js CRAFTS.ram: a workshop and Mechanics
-  // 3; kept and carried again, so its scrap and parts are not paid a raid); ladders (Mechanics 1) any group can.
-  if (kit.ram && !(hasWorkshop(state, f) && groupSkill(f, CRAFTS.ram.skill) >= CRAFTS.ram.min)) kit.ram = 0;
-  if (kit.ladders && groupSkill(f, CRAFTS.ladder.skill) < CRAFTS.ladder.min) kit.ladders = 0;
-  const T = sortedKit(f.arsenal).T.filter((it) => it.key === "frag" || it.key === "pipebomb");
-  const frags = T.filter((it) => it.key === "frag").length;
-  kit.grenades = Math.min(kit.grenades || 0, T.length);
-  if (kit.grenades) kit.kind = frags >= kit.grenades ? "frag" : "pipebomb";
-  return kit.ladders || kit.ram || kit.grenades ? kit : null;
+// ---------- a raid's siege kit (docs/adr/0001-ai-parity.md: out of the raiders' own stores) ----------
+// What a raid on a walled base of yours wants (siege.js raidSiegeKit: by how prepared it is) comes out of the group's
+// stores as your Assault team's comes out of your armory (kit.js packSiegeKit), or it does not come:
+//   - Ladders and the battering ram: the group's own, on its books (or on its shelf) and not out with another raid;
+//     short of one, made now by your recipe through the group's crafting (groupCraftable: your bench, the skill, the
+//     scrap and parts paid; groupCraftOut: your roll, by their best hand). Made once, they are kept and carried again
+//     on the next raid. They go out with the raid (party.siegeGear, each item marked it.withParty so it is not spare
+//     at home: loadouts.js spareKit) and come home with whoever of it comes back (siegeGearHome).
+//   - Grenades (frag grenades and pipe bombs, siege.js GRENADES): real throwables on the raiders, as your people carry
+//     theirs: the ones they carry already, then spare ones off the books, then ones the people staying home carry,
+//     stowed on the raiders (inventory.js stow) as far as they have room, the kind the group favours first. Thrown,
+//     they are gone (fighters.js spentThrows on the map; raidOnBase by the numbers); unthrown they come home on the
+//     raiders; a dead raider's lie on the body (fighters.js personBody) or in your armory (raidOnBase).
+// No ladder, ram or grenade from nowhere: a group with no explosives brings none, one that holds no ram and cannot
+// make one brings none. Returns { ladders, ram, grenades, kind, carried: true } (siege.js reads the counts; carried:
+// the grenades are on the raiders, never handed out by the battle) or null.
+export const RAID_GRENADES = ["frag", "pipebomb"]; // siege.js GRENADES
+const isGrenade = (it) => !!(it && RAID_GRENADES.includes(it.key));
+export function packRaidKit(state, f, party, want) {
+  if (!want) return null;
+  if (ARSENAL_SWITCH.off) return want; // the test switch: the old kit by its dice
+  if (!f || !party || !ensureArsenal(state, f)) return null;
+  const A = f.arsenal;
+  const raiders = membersOfParty(f, party);
+  const gear = [];
+  const tag = [state.seed, "siegekit", f.name, tickOf(f), Math.floor((state.hour || 0) / 24)];
+  // One ladder or the ram: on the books, on the shelf (onto the books), else made now.
+  const piece = (key) => {
+    let it = A.items.find((x) => x && x.key === key && x.withParty == null && !gear.includes(x)) || null;
+    const w = !it && f.wares ? f.wares.find((x) => x && x.key === key) : null;
+    if (w) { f.wares.splice(f.wares.indexOf(w), 1); keepItem(state, f, w, "kept"); it = w; }
+    if (!it && groupCraftable(state, f, key)) { payCraft(f, key); it = groupCraftOut(state, f, key, [...tag, key, gear.length]); keepItem(state, f, it, "crafted"); }
+    if (it && A.items.includes(it)) { gear.push(it); return true; }
+    return false;
+  };
+  // The ram takes two to carry (siege.js RAM.MIN), a ladder one more each.
+  const ram = want.ram && raiders.length >= 2 && piece("ram") ? 1 : 0;
+  let ladders = 0;
+  for (let i = 0; i < (want.ladders || 0) && ram * 2 + ladders < raiders.length; i++) if (piece("ladder")) ladders++;
+  if (gear.length) { party.siegeGear = gear; for (const it of gear) it.withParty = party.id; A.rev++; }
+  // The grenades.
+  const prefer = RAID_GRENADES.includes(want.kind) ? want.kind : "pipebomb";
+  const onRaiders = () => raiders.reduce((a, s) => a + allCarried(s).filter(isGrenade).length, 0);
+  const goal = Math.max(0, want.grenades || 0);
+  if (goal && raiders.length && onRaiders() < goal) {
+    const going = new Set(raiders);
+    const byKind = (a, b) => +(b.key === prefer) - +(a.key === prefer);
+    const spare = spareKit(f).filter(isGrenade).sort(byKind).map((it) => ({ it, from: null }));
+    const home = [];
+    for (const s of homeMembers(f)) if (!going.has(s)) for (const c of carriedSpots(s)) if (isGrenade(c.item)) home.push({ it: c.item, from: { s, c } });
+    home.sort((a, b) => byKind(a.it, b.it));
+    const best = raiders.slice().sort((a, b) => fighterScore(b) - fighterScore(a) || a.id - b.id);
+    for (const { it, from } of [...spare, ...home]) {
+      if (onRaiders() >= goal) break;
+      if (from) from.c.take();
+      if (best.some((s) => stow(s, it))) continue;
+      if (from) stow(from.s, it); // no room on any of them: it stays where it was
+      break;
+    }
+  }
+  const carried = raiders.flatMap((s) => allCarried(s).filter(isGrenade));
+  const grenades = Math.min(goal, carried.length);
+  const frags = carried.filter((it) => it.key === "frag").length;
+  const kind = !grenades ? prefer : frags >= grenades && (prefer === "frag" || carried.length - frags < grenades) ? "frag" : "pipebomb";
+  return ladders || ram || grenades ? { ladders, ram, grenades, kind, carried: true } : null;
+}
+const membersOfParty = (f, p) => (Array.isArray(f.people) ? f.people.filter((s) => s.alive !== false && s.location && s.location.partyId === p.id) : []);
+// A raid's ladders and ram when it ends (parties.js removeParty): they come home with whoever of it is left (the ram
+// takes two of them, a ladder one), as your team brings its cargo home. What nobody is left to carry lies where the
+// raid ended: in the yard of your base it hit (your armory), else on the ground there (carry.js groundAt). A piece no
+// longer on the group's books (it went over to an heir or an ally with the rest) is theirs now, left as it is.
+export function siegeGearHome(state, p, tile = null) {
+  const gear = p && p.siegeGear;
+  if (!gear || !gear.length) return;
+  delete p.siegeGear;
+  const f = factionById(state, p.owner);
+  let hands = f && f.alive ? membersOfParty(f, p).length : 0;
+  const base = p.target && p.target.kind === "player" ? state.bases.find((b) => b.id === p.target.baseId && b.tile === tile) || null : null;
+  for (const it of gear.slice().sort((a, b) => +(b.key === "ram") - +(a.key === "ram"))) {
+    delete it.withParty;
+    if (!f || !f.arsenal || !f.arsenal.items.includes(it)) continue;
+    f.arsenal.rev++;
+    const need = it.key === "ram" ? 2 : 1;
+    if (hands >= need) { hands -= need; continue; }
+    removeFromArsenal(f, it, "left");
+    if (base) base.armory.push(it);
+    else if (tile != null) groundAt(state, tile, true).items.push({ kind: "gear", item: it, name: it.name });
+  }
+}
+// Safety net, daily (arsenalDaily): a piece marked out with a raid that is no more (a party dropped by other code) is
+// at home again.
+function siegeGearBack(state, f) {
+  const live = new Set((state.parties || []).map((p) => p.id));
+  for (const it of f.arsenal.items) if (it && it.withParty != null && !live.has(it.withParty)) { delete it.withParty; f.arsenal.rev++; }
+}
+// By the numbers, the grenades a raid threw over your walls: off the raiders who carry them (the kind it brought
+// first), gone. Returns how many.
+function throwCarried(f, raiders, n, kind) {
+  const spots = raiders.flatMap((s) => carriedSpots(s).filter((c) => isGrenade(c.item)));
+  spots.sort((a, b) => +(b.item.key === kind) - +(a.item.key === kind));
+  let k = 0;
+  for (const c of spots.slice(0, n)) { c.take(); removeFromArsenal(f, c.item, "thrown"); k++; }
+  return k;
 }
 
 // ---------- raids by the numbers ----------
@@ -777,17 +871,55 @@ export function raidOnBase(state, f, base, party, o) {
       if (i >= 0 && addToArsenal(state, f, it, "stolen")) { base.armory.splice(i, 1); out.stole.push(it); }
     }
   }
-  for (const lo of issue) {
-    const isDead = dead.includes(lo);
-    for (const it of loadoutItems(lo)) {
-      if (isDead && youHold) { if (removeFromArsenal(f, it, "died:raid")) { out.dropped.push(it); base.armory.push(it); } }
-      else wearOwned(f, it);
+  const raiders = membersOfParty(f, party);
+  // The grenades they threw over your walls: the very ones the raiders carried (packRaidKit), gone.
+  if (party.siege && party.siege.grenades && baseWallsOf(base)) {
+    if (party.siege.carried) throwCarried(f, raiders, party.siege.grenades, party.siege.kind);
+    else throwExplosives(f, party.siege.grenades, party.siege.kind);
+  }
+  if (raiders.length) {
+    // Their dead are raiders, the very people (docs/adr/0001-ai-parity.md): those of the raid the head count has lost
+    // and the list not yet (the caller took theirDead off f.pop), picked by a hash. You hold the field: what each
+    // carried is yours (the books' kit and anything else in your armory, loose rounds in your stores), as a body of
+    // theirs on the map would be (fighters.js personBody); their grenades with it. They hold it: they bury their own and
+    // keep their kit (members.js keepKit).
+    const pending = Math.max(0, (Number.isFinite(f.popSeen) ? f.popSeen : (f.people || []).length) - (f.pop || 0));
+    const k = Math.min(o.theirDead || 0, pending, raiders.length);
+    const order = raiders.slice().sort((a, b) => hash01(state.seed, "raiddead", base.tile, state.hour, personKey(state, a.id)) - hash01(state.seed, "raiddead", base.tile, state.hour, personKey(state, b.id)));
+    const fell = new Set(order.slice(0, k));
+    for (const s of fell) {
+      if (youHold) {
+        // The books' kit first, wherever it is on them (out of a pack or a pouch: removeFromArsenal takes it off the
+        // carrier); then what is left, as a body is stripped (fighters.js personBody): what they wear and hold, a pack
+        // or a rig with what is still in it, their pockets. Nothing twice.
+        const inside = (c) => c.loc.split(":").length > 3 && c.where !== "pocket"; // in a rig's pouch or a pack
+        const spots = carriedSpots(s).sort((a, b) => +inside(b) - +inside(a)); // what is inside first: out of its container before the container goes
+        for (const c of spots) if (f.arsenal.items.includes(c.item) && removeFromArsenal(f, c.item, "died:raid")) { out.dropped.push(c.item); base.armory.push(c.item); }
+        for (const it of allCarried(s)) if (f.arsenal.items.includes(it)) removeFromArsenal(f, it, "died:raid"); // a plate in its carrier: it goes with the carrier
+        for (const c of carriedSpots(s)) {
+          if (inside(c)) continue; // inside a container that goes with it
+          const it = c.item;
+          c.take();
+          if (isRoundItem(it)) base.stock[it.key] = (base.stock[it.key] || 0) + Math.floor(Number(it.dur) || 0);
+          else base.armory.push(it);
+        }
+      }
+      diedQuietly(state, f, s, { keepKit: !youHold });
+    }
+    // The rest come home with their kit a fight's use worn (the old rule's wear: wearOwned).
+    for (const s of raiders) if (!fell.has(s)) for (const it of carriedOwn(f, s)) wearOwned(f, it);
+  } else {
+    for (const lo of issue) {
+      const isDead = dead.includes(lo);
+      for (const it of loadoutItems(lo)) {
+        if (isDead && youHold) { if (removeFromArsenal(f, it, "died:raid")) { out.dropped.push(it); base.armory.push(it); } }
+        else wearOwned(f, it);
+      }
     }
   }
   takeArsenalRounds(f, n * ARSENAL.ROUNDS);
   noteFight(f, o.theirDead || 0, woundsFor(o.theirDead || 0) + (o.outcome === "held" ? 1 : 0)); // groupcare.js
   wearGroupVehicles(state, f, o.outcome === "held", `raid${base.tile}`); // groupcare.js: their Humvee at your walls
-  if (party.siege && party.siege.grenades && baseWallsOf(base)) throwExplosives(f, party.siege.grenades, party.siege.kind);
   return out;
 }
 const baseWallsOf = (base) => (base && base.buildings ? base.buildings.filter((x) => x.type === "walls" && !x.broken).length : 0);
@@ -971,6 +1103,7 @@ export function arsenalDaily(state, f) {
   if (f.pop > A.pop0) for (let i = A.pop0; i < f.pop; i++) for (const it of newcomerKit(state, f, [...salt, "n", i])) { addToArsenal(state, f, it, "recruit"); note(state, "recruit", goodsRounds([it])); } // a newcomer's own kit: a creation seed (ledger.js)
   A.pop0 = f.pop;
   // (No smoke restock from nowhere: a group's smoke grenades come as yours do, from finds, trade and loot.)
+  siegeGearBack(state, f); // a raid's ladders and ram home again if the raid is no more
   groupSalvage(state, f); // inventory.js salvageYield: the guns past mending taken apart for parts, as yours
   groupReloadDaily(state, f, hasWorkshop(state, f) && groupHas(state, f, "reload")); // reloading.js: powder and primers bought, rounds loaded at their reloading bench (ai-locks: built by your Mechanics 3, groupworks.js)
   const C = ARSENAL.CRAFT, phase = Math.floor(h(state.seed, f.name, "craft") * 12);

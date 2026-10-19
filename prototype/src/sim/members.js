@@ -150,6 +150,13 @@ export function captivesFrom(state, f, n) {
   list.sort((a, b) => (+(b.location.tile === at) - +(a.location.tile === at)) || (+isWounded(b) - +isWounded(a)) || fighterScore(a) - fighterScore(b) || a.id - b.id);
   return list.slice(0, Math.max(0, Math.round(n)));
 }
+// Killed by the numbers where the caller has already taken them off the head count (f.pop): the very person out of
+// the list, the count seen kept in step so the next sync takes nobody else (a raid's dead: arsenal.js raidOnBase).
+export function diedQuietly(state, f, s, opts = {}) {
+  if (!drop(f, s, "died", opts)) return false;
+  f.popSeen = Math.max(0, (Number.isFinite(f.popSeen) ? f.popSeen : f.people.length + 1) - 1);
+  return true;
+}
 export function takeQuietly(state, f, s) {
   if (!drop(f, s, "taken")) return false;
   f.popSeen = Math.max(0, (Number.isFinite(f.popSeen) ? f.popSeen : f.people.length + 1) - 1);

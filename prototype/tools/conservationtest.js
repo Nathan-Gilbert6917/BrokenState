@@ -3,7 +3,7 @@
 // road, the visitors and nomad bands) never holds more rounds than it held the day before plus what the legitimate
 // sources noted coming in that day (src/sim/ledger.js: scavenged, made at a bench, traded or taken from you, a group
 // or band created with its holdings). Transfers between AI groups cancel out. Also: no item is in two places at once
-// (a group's books hold an item only where one of its people carries it, or as its spare).
+// (a group's books hold an item only where one of its people carries it, out with its raid, or as its spare).
 // Usage: node tools/conservationtest.js [seed] [days]
 import { createWorld, tickHour, day } from "../src/sim/world.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -70,6 +70,12 @@ function duplicates(state) {
   for (const b of state.bases || []) for (const it of b.armory || []) put(it, `${b.name}'s armory`);
   for (const f of state.factions || []) for (const it of f.wares || []) put(it, `${f.name}'s shelf`);
   for (const p of state.parties || []) for (const it of (p.cargo && p.cargo.gear) || []) put(it, `party ${p.id}'s cargo`);
+  // A group's raid out with its ladders and ram (arsenal.js packRaidKit): on its own books, in no one's hands or lists.
+  for (const p of state.parties || []) for (const it of p.siegeGear || []) {
+    const f = (state.factions || []).find((x) => x.id === p.owner);
+    if (!f || !f.arsenal || !f.arsenal.items.includes(it) || it.withParty !== p.id) dup.push(`${it.name || it.key}: out with raid ${p.id} but not on ${f ? f.name : "its group"}'s books`);
+    else if (where.has(it)) dup.push(`${it.name || it.key}: out with raid ${p.id} and at ${where.get(it)}`);
+  }
   for (const f of state.factions || []) {
     const mine = new Set((f.people || []).filter((s) => s.alive !== false));
     for (const it of (f.arsenal && f.arsenal.items) || []) {

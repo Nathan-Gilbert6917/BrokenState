@@ -58,6 +58,7 @@ import { nightFalls } from "./nightmarch.js"; // night on the road: make camp or
 import { taskHour, startTask, startOrder, continueQueue, resumeQueue, orderLabel, queueText, tasksDue } from "./orders.js";
 import { applyPlan, fieldHour } from "./plans.js";
 import { packSiegeKit } from "./kit.js";
+import { siegeGearHome } from "./arsenal.js"; // a group's raid brings its ladders and ram home
 import { packLights, unpackLights } from "./lights.js"; // a light each from the armory on the way out
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad } from "./inventory.js";
@@ -2497,6 +2498,7 @@ export function removeParty(state, p) {
     if (f && f.alive && f.stock && (f.bases || []).includes(partyTile(p))) for (const [k, q] of Object.entries(p.rations)) if (q > 0) f.stock[k] = (f.stock[k] || 0) + q;
     delete p.rations;
   }
+  if (p.owner !== "player" && p.siegeGear) siegeGearHome(state, p, partyTile(p)); // arsenal.js: a raid's ladders and ram home with whoever is left, else where it ended
   if (p.owner !== "player" && p.meds > 0) { // its meds too
     const f = state.factions.find((x) => x.id === p.owner);
     if (f && f.alive && f.stock && (f.bases || []).includes(partyTile(p))) f.stock.meds = (f.stock.meds || 0) + p.meds;

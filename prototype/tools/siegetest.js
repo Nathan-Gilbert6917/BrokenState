@@ -26,7 +26,7 @@ import { DEPLOY } from "../src/sim/deploy.js";
 import { raidTier, hordeWarnings, decoyChance, ledByShepherd, DECOY_FUEL } from "../src/sim/defences.js";
 import { baseTiers } from "../src/sim/interior.js";
 import { makeHorde } from "../src/sim/hordes.js";
-import { newItem, stow } from "../src/sim/inventory.js";
+import { newItem, stow, allCarried } from "../src/sim/inventory.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { GEAR } from "../src/sim/data.js";
 import { THROWABLES, DECOY_KEYS, throwAt, throwablesOf } from "../src/sim/stealth.js";
@@ -42,7 +42,11 @@ import { yearStartDay, yearOfDay } from "../src/sim/eras.js";
 import { raidWarning } from "../src/sim/factions.js";
 import { defendInPerson } from "../src/sim/conflicts.js";
 import { assaultForce } from "../src/sim/conquest.js";
-import { launchExpedition, poolLoad } from "../src/sim/parties.js";
+import { launchExpedition, poolLoad, spawnAiParty, removeParty } from "../src/sim/parties.js";
+import { ensureArsenal, addToArsenal, removeFromArsenal, packRaidKit } from "../src/sim/arsenal.js"; // a raid's siege kit out of the group's stores
+import { ensureMembers, syncMembers, membersOf, partyPeople, removeMember } from "../src/sim/members.js";
+import { spareKit } from "../src/sim/loadouts.js";
+import { fitThrowables } from "../src/sim/fighters.js";
 import { CRAFTS } from "../src/sim/crafting.js";
 import { worksAt } from "../src/sim/groupworks.js"; // barestart: a group's walls are what it has built
 
@@ -464,10 +468,21 @@ section("Raiders' siege kit by preparedness (eras.js), the warning card, the bat
   check(raidSiegeKit(st, h, { count: 8, key: 5 }) === raidSiegeKit(st, h, { count: 8, key: 5 }) || JSON.stringify(raidSiegeKit(st, h, { count: 8, key: 5 })) === JSON.stringify(raidSiegeKit(st, h, { count: 8, key: 5 })), "the same raid always brings the same kit (no world dice)");
   check(kitText({ ladders: 2, ram: 1, grenades: 2, kind: "frag" }) === "They carry 2 ladders and a battering ram, and 2 grenades to throw over the walls.", `card text: "${kitText({ ladders: 2, ram: 1, grenades: 2, kind: "frag" })}"`);
   void bare;
-  // The warning card and the battle.
-  const f = st.factions.find((x) => x.alive);
-  const raid = { id: 777, owner: f.id, kind: "raid", target: { kind: "player", baseId: h.id, tile: h.tile }, strength: 40, siege: { ladders: 2, ram: 1, grenades: 2, kind: "pipebomb" } };
-  st.parties.push(raid);
+  // The warning card and the battle: a real raid of a group's, its kit out of the group's own stores (arsenal.js
+  // packRaidKit; docs/adr/0001-ai-parity.md): two ladders and a ram on its books, three pipe bombs spare.
+  const f = st.factions.find((x) => x.alive && x.bases.length);
+  ensureArsenal(st, f); ensureMembers(st, f); syncMembers(st, f);
+  const nG = () => new Set([...f.arsenal.items, ...membersOf(f).flatMap((s) => allCarried(s))].filter((it) => it && (it.key === "frag" || it.key === "pipebomb"))).size; // each grenade once, wherever it is
+  const kit0 = [newItem("ladder"), newItem("ladder"), newItem("ram")];
+  for (const it of [...kit0, newItem("pipebomb"), newItem("pipebomb"), newItem("pipebomb")]) addToArsenal(st, f, it, "test");
+  const books0 = new Set(f.arsenal.items.filter((it) => it.key === "frag" || it.key === "pipebomb")), g0 = nG();
+  const raid = spawnAiParty(st, f, "raid", f.bases[0], h.tile, { strength: 40, target: { kind: "player", baseId: h.id, tile: h.tile } });
+  raid.siege = packRaidKit(st, f, raid, { ladders: 2, ram: 1, grenades: 2, kind: "pipebomb" });
+  const raiders = partyPeople(f, raid);
+  const onThem = raiders.flatMap((s) => allCarried(s)).filter((it) => it.key === "frag" || it.key === "pipebomb");
+  check(raid.siege && raid.siege.carried && raid.siege.ladders === 2 && raid.siege.ram === 1 && raid.siege.grenades === 2 && kit0.every((it) => raid.siegeGear.includes(it) && it.withParty === raid.id && !spareKit(f).includes(it)),
+    `the raid takes the group's own two ladders and ram (out with it, not spare at home) and ${raid.siege && raid.siege.grenades} grenades`);
+  check(onThem.length >= 2 && onThem.every((it) => books0.has(it)) && nG() === g0, `the grenades are the group's own, carried by the raiders (${onThem.length} on ${raiders.length} of them; ${g0} in the group before and after: none made, none lost)`);
   st.cards = [];
   raidWarning(st, raid);
   const card = st.cards[st.cards.length - 1];
@@ -475,10 +490,33 @@ section("Raiders' siege kit by preparedness (eras.js), the warning card, the bat
   globalThis.window = {};
   try { defendInPerson(st, raid); } finally { delete globalThis.window; }
   const b = st.combat;
-  const ladders = b.units.filter((u) => u.ladder > 0).length, gren = b.units.filter((u) => u.throwables).reduce((a, u) => a + Object.entries(u.throwables).reduce((x, [k, n]) => x + n - ((u.throwStart || {})[k] || 0), 0), 0); // the siege kit's (siege.js), over what each brought of their own (fighters.js fitThrowables)
-  check(b && b.setup.enemy.siege && b.rams.length === 1 && ladders === 2 && gren === 2, `defended in person: the ram with a crew of ${b.rams[0] && b.rams[0].crew.length}, ${ladders} ladder carriers, ${gren} pipe bombs among the raiders`);
+  const theirs = b.units.filter((u) => u.side === "enemy" && u.who);
+  const thrown = (u) => Object.entries(u.throwables || {}).filter(([k]) => k === "frag" || k === "pipebomb").reduce((a, [, n]) => a + n, 0);
+  const held = (u) => allCarried(u.who).filter((it) => it.key === "frag" || it.key === "pipebomb").length;
+  const ladders = b.units.filter((u) => u.ladder > 0).length, gren = theirs.reduce((a, u) => a + thrown(u), 0);
+  check(b && b.setup.enemy.siege && b.rams.length === 1 && ladders === 2 && gren >= 2 && theirs.every((u) => thrown(u) === held(u)), `defended in person: the ram with a crew of ${b.rams[0] && b.rams[0].crew.length}, ${ladders} ladder carriers, ${gren} grenades among the raiders, each one an item someone carries (none handed out by the battle)`);
   st.combat = null;
-  st.parties.splice(st.parties.indexOf(raid), 1);
+  // Home again with whoever is left: the ladders and the ram are spare at home, on the books.
+  removeParty(st, raid);
+  check(kit0.every((it) => f.arsenal.items.includes(it) && it.withParty == null && spareKit(f).includes(it)), "the raid home: its ladders and ram back at home, spare on the books");
+  // A raid nobody comes back from, ended at your walls: what it carried lies in your yard.
+  const raid2 = spawnAiParty(st, f, "raid", f.bases[0], h.tile, { strength: 40, target: { kind: "player", baseId: h.id, tile: h.tile } });
+  raid2.siege = packRaidKit(st, f, raid2, { ladders: 1, ram: 0, grenades: 0, kind: "pipebomb" });
+  const lad = raid2.siegeGear && raid2.siegeGear[0];
+  for (const s of partyPeople(f, raid2)) removeMember(st, f, s, "died");
+  raid2.idx = raid2.path.length - 1;
+  removeParty(st, raid2);
+  check(lad && !f.arsenal.items.includes(lad) && h.armory.includes(lad), "a raid wiped out at your walls: its ladder is in your armory, off their books");
+  // A group with no explosives and no means to make a ram brings none.
+  const o = st.factions.find((x) => x.alive && x !== f && x.bases.length);
+  ensureArsenal(st, o); ensureMembers(st, o); syncMembers(st, o);
+  for (const it of o.arsenal.items.filter((x) => ["frag", "pipebomb", "ram", "ladder"].includes(x.key))) removeFromArsenal(o, it, "test");
+  for (const s of membersOf(o)) for (const it of allCarried(s)) if (it && (it.key === "frag" || it.key === "pipebomb")) removeFromArsenal(o, it, "test");
+  o.stock.scrap = 0;
+  const raid3 = spawnAiParty(st, o, "raid", o.bases[0], h.tile, { strength: 40, target: { kind: "player", baseId: h.id, tile: h.tile } });
+  const k3 = packRaidKit(st, o, raid3, { ladders: 2, ram: 1, grenades: 3, kind: "frag" });
+  check(!k3, `no explosives, no scrap to make a ladder or a ram: no siege kit (${JSON.stringify(k3)})`);
+  removeParty(st, raid3);
 }
 
 // ---------- 8. by the numbers ----------
@@ -525,7 +563,12 @@ section("The AI: raiders use ladders, the ram and grenades; defenders push ladde
   for (const s of [seed, seed + 7, seed + 11]) {
     const st = world(s);
     fortHub(st);
-    const b = wallBattle(st, { kind: "raiders", count: 9, power: 4, name: "raiders", siege: { ladders: 2, ram: 1, grenades: 3, kind: "pipebomb" } });
+    const b = wallBattle(st, { kind: "raiders", count: 9, power: 4, name: "raiders", siege: { ladders: 2, ram: 1, grenades: 3, kind: "pipebomb", carried: true } });
+    // Their three pipe bombs are things three of them carry (arsenal.js packRaidKit stows a group's on its raiders; the
+    // battle hands none out), counted on each by fighters.js fitThrowables.
+    const shooters = b.units.filter((u) => u.side === "enemy" && u.who && !u.ladder && u.ram == null).sort((a, c) => (c.aim || 0) - (a.aim || 0));
+    let packed = 0;
+    for (const u of shooters) { if (packed >= 3) break; if (stow(u.who, newItem("pipebomb"))) { fitThrowables(u, u.who); packed++; } }
     const seen = [];
     const keep = b.log.push.bind(b.log);
     b.log.push = (l) => { seen.push(l.text); return keep(l); };
