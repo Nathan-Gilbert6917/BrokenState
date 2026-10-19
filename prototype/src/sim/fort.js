@@ -221,7 +221,7 @@ export function fortDefence(b, ctx, base, c) {
       const spots = margin(F, side).filter(([x, y]) => dist(x, y, Math.floor((w.x0 + w.x1) / 2), Math.floor((w.y0 + w.y1) / 2)) < Math.max(F.W, F.H) && (band ? x >= band[0] && x <= band[1] : (side === "north" ? y >= w.y0 - 2 && y <= w.y0 - 1 : y >= w.y1 + 1 && y <= w.y1 + 2)));
       const lay = (n, k) => { for (let i = 0; i < n && spots.length; i++) { const j = rng.int(0, spots.length - 1); const [x, y] = spots.splice(j, 1)[0]; if (F.cells[y * F.W + x].k === "open") F.cells[y * F.W + x].k = k; } };
       lay((kit.wire || 0) * 4, "wire"); lay(kit.traps || 0, "beartrap");
-      for (let i = 0; i < (c.pits || 0) * 5; i++) { const s = spots.length ? spots.splice(rng.int(0, spots.length - 1), 1)[0] : null; if (s && F.cells[s[1] * F.W + s[0]].k === "open") F.cells[s[1] * F.W + s[0]].k = "spikes"; }
+      for (let i = 0; i < (c.pits ?? count(base, "spike_pits")) * 5; i++) { const s = spots.length ? spots.splice(rng.int(0, spots.length - 1), 1)[0] : null; if (s && F.cells[s[1] * F.W + s[0]].k === "open") F.cells[s[1] * F.W + s[0]].k = "spikes"; } // a horde passes the pits it had; a raid meets the pits standing
     }
     F.side = side;
     if (F.minesLaid) b.mines = { baseId: base.id, laid: F.minesLaid }; // mines.js settleMines: what is left goes back to the base

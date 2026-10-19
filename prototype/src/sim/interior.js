@@ -306,7 +306,7 @@ function layInterior(base, opts, W, H, tight = false, wide = false) {
     if (!walled) {
       scatter((kit.wire || 0) * 4, "wire", I.WALL_X - 5, I.WALL_X - 3);
       scatter(kit.traps || 0, "beartrap", I.WALL_X - 6, I.WALL_X - 2, (x, y) => free(x, y) && x >= I.WALL_X - 6);
-      scatter((c.pits || 0) * 5, "spikes", I.WALL_X - 6, I.WALL_X - 2, (x, y) => free(x, y) && x >= I.WALL_X - 6);
+      if (!opts.fort) scatter((c.pits ?? count(base, "spike_pits")) * 5, "spikes", I.WALL_X - 6, I.WALL_X - 2, (x, y) => free(x, y) && x >= I.WALL_X - 6); // a raid meets the pits standing; the fort map digs them outside its wall (fort.js)
       if (!opts.fort) { // the fort map digs its trenches outside the wall (fort.js)
         if (count(base, "trench")) for (let y = 0; y < H; y++) if (free(I.WALL_X - 3, y) && y % 4 !== 2) put(I.WALL_X - 3, y, "trench");
         if (count(base, "trench") >= 2) for (let y = 0; y < H; y++) if (free(I.WALL_X - 6, y) && y % 4 !== 0) put(I.WALL_X - 6, y, "trench"); // a second line further back

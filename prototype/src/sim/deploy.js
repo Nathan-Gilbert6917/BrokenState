@@ -165,7 +165,7 @@ export function deployMap(b, ctx, base, c) {
   // The trench, then the spike pits (used this attack), in front of the wall.
   if (count(base, "trench")) for (let y = 0; y < H; y++) if (ctx.free(DEPLOY.TRENCH_X, y) && y % 4 !== 2) ctx.put(DEPLOY.TRENCH_X, y, "trench");
   if (count(base, "trench") >= 2) for (let y = 0; y < H; y++) if (ctx.free(DEPLOY.TRENCH_X - 1, y) && y % 4 !== 0) ctx.put(DEPLOY.TRENCH_X - 1, y, "trench"); // a second line, staggered
-  for (let i = 0; i < (c.pits || 0) * 5; i++) {
+  for (let i = 0; i < (c.pits ?? count(base, "spike_pits")) * 5; i++) { // a horde passes the pits it had (used up then: defences.js); a raid meets the pits standing
     for (let t = 0; t < 8; t++) { const x = rng.int(DEPLOY.SPIKE_X[0], DEPLOY.SPIKE_X[1]), y = rng.int(Math.max(0, mid - FRONT.HALF), Math.min(H - 1, mid + FRONT.HALF)); if (ctx.free(x, y)) { ctx.put(x, y, "spikes"); break; } }
   }
   layKit(ctx, rng, c.kit || armoryDefence(base), { wireX: [X + 1, X + 1], trapX: DEPLOY.SPIKE_X, bagX: [DEPLOY.BARRICADE_X[0], DEPLOY.BARRICADE_X[1] - 1] });
