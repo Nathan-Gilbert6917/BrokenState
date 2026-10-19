@@ -398,7 +398,17 @@ export function launchCaravan(state, form) {
   // The goods to trade travel as cargo; the rest is what the crew lives on.
   for (const [k, q] of Object.entries(goods)) {
     p.supplies[k] -= q;
-    p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
+    // The crew's rounds at hand (parties.js launchExpedition: carrykit.js packShells, out of what was packed) came out
+    // of the goods when the rounds to trade were of their guns' calibre: the hub's stock covers them, as it does a
+    // trip's loadout; what it cannot cover is short in the cargo.
+    if (p.supplies[k] < 0) {
+      const owed = -p.supplies[k], take = Math.min(owed, Math.max(0, Math.floor(h.stock[k] || 0)));
+      h.stock[k] = (h.stock[k] || 0) - take;
+      p.supplies[k] += take;
+    }
+    const short = Math.max(0, -Math.min(0, p.supplies[k]));
+    p.supplies[k] = Math.max(0, p.supplies[k]);
+    p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q - short;
   }
   for (const i of idx) p.cargo.gear.push(...h.armory.splice(i, 1));
   p.teamMission = "caravan";
