@@ -292,7 +292,7 @@ section("Type profiles: different mixes of what they do");
         const f = st.factions.find((x) => x.id === q.owner);
         if (!f) continue;
         const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, scav: 0, trade: 0 });
-        if (q.kind === "raid") t.raid++;
+        if (q.kind === "raid" && q.warId == null) t.raid++; // a war raid (diplomacy.js warRaid) is the war's, not the type's way
         if (q.kind === "scav") t.scav++;
       }
     }
@@ -300,7 +300,9 @@ section("Type profiles: different mixes of what they do");
   }
   const per = (type, k) => (tally[type] ? tally[type][k] / Math.max(1, tally[type].groups) : 0);
   console.log(`  120 days, 2 worlds: ${Object.entries(tally).map(([k, t]) => `${k} ${t.groups}g raid ${(t.raid / t.groups).toFixed(1)} scav ${(t.scav / t.groups).toFixed(1)} bought food ${((t.food || 0) / t.groups).toFixed(0)}`).join("; ")}`);
-  check(per("raider", "raid") > Math.max(per("commune", "raid"), per("traders", "raid"), per("military", "raid"), per("fortress", "raid")), "raiders raid more than any peaceful type");
+  // Against the peaceful types with two or more groups in the two worlds (one group's 120 days is no measure of a type).
+  const peaceful = ["commune", "traders", "military", "fortress"].filter((k) => tally[k] && tally[k].groups >= 2);
+  check(per("raider", "raid") > Math.max(0, ...peaceful.map((k) => per(k, "raid"))), `raiders raid more than any peaceful type (${peaceful.map((k) => `${k} ${per(k, "raid").toFixed(1)}`).join(", ")})`);
   const W = C.GROUP_PRIORITIES;
   check(W.commune.trade > W.raider.trade && W.commune.heal > W.raider.heal && W.raider.raid > W.commune.raid && W.fortress.fortify > W.raider.fortify, "one profile table: communes trade and heal, raiders raid, a fortress fortifies");
   // Short of food: a commune buys it, raiders mostly do not (they raid for it).
