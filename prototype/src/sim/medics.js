@@ -164,6 +164,12 @@ export function wearPackKit(state, u, s) {
   // is gone (a tourniquet stays on the limb).
   for (const k of u.selfKits || []) if (k.used && k.item && k.item !== u.medKit && wear(k.item, k.used)) takeSpent(s, k.item);
 }
+// A person's body (fighters.js personBody): the tourniquets and trauma kits they used on themselves spent as yours are
+// (wearPackKit), once; a used-up one is not on the body.
+export function spendSelfAid(u, s) {
+  for (const k of u.selfKits || []) if (k.used && k.item && k.item !== u.medKit && wear(k.item, k.used)) takeSpent(s, k.item);
+  for (const k of u.selfKits || []) k.used = 0;
+}
 // combat.js refitUnit: what is in reach after the inventory changed in the middle of a raid (the uses spent stay spent).
 export function refitSelfAid(u, s) { fitSelfAid(u, s, u.selfKits); }
 // An item worn to nothing comes off them, wherever it is carried (inventory.js carriedSpots).

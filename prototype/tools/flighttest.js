@@ -18,6 +18,7 @@ import { abandonedAt, occupyAbandoned } from "../src/sim/groupworld.js";
 import { changeRelation, relation } from "../src/sim/diplomacy.js";
 import { tickGroup } from "../src/sim/groupcare.js";
 import { totalRounds } from "../src/sim/ammo.js";
+import { ensureMembers, syncMembers, membersOf } from "../src/sim/members.js";
 
 const t0 = Date.now();
 let passes = 0, fails = 0;
@@ -138,6 +139,10 @@ section("Overrun: the dead walk in and win");
 {
   const st = world();
   const { f, tile, h } = setup(st, "commune", 600, 1);
+  // Their people unarmed: the dead that break in (your rule, defences.js breakInForce: at most 20 of them, fought by
+  // the numbers on the very people there) beat them. (Twenty armed people would hold, as yours would.)
+  ensureMembers(st, f); syncMembers(st, f);
+  for (const s of membersOf(f)) { s.gear.weapon = null; s.gear.tool = null; }
   h.move = HOURS_PER_TILE - 0.01;
   const pop0 = f.pop;
   hordesHour(st); // the horde steps in: the fight (factions.js), then the flight

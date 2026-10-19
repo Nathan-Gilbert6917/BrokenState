@@ -979,7 +979,8 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
   const A = attacker ? fightersOf(state, attacker, { party }) : [];
   const D = fightersOf(state, target, { tile });
   const fight = fightSides(state,
-    { f: attacker, people: A, kind: attacker ? KIND_OF[attacker.type] || "raiders" : party.raidName ? "raiders" : "zombies", count: attacker ? A.length : Math.max(1, Math.round(party.strength / 3)), power: (A.length ? 0 : party.strength) + raidTurretPower(state, party) },
+    party.horde ? { f: null, people: [], kind: "zombies", count: party.horde.count, power: party.horde.power } // hordes.js: the dead that broke in, as a break-in force at your base
+      : { f: attacker, people: A, kind: attacker ? KIND_OF[attacker.type] || "raiders" : party.raidName ? "raiders" : "zombies", count: attacker ? A.length : Math.max(1, Math.round(party.strength / 3)), power: (A.length ? 0 : party.strength) + raidTurretPower(state, party) },
     { f: target, people: D, kind: KIND_OF[target.type] || "raiders", mult: wallMult(state, target, tile), power: helpPower + (tile === target.bases[0] ? groupTurretPower(target) : 0) },
     { mine: attacker || party.raidName ? "att" : "def" }); // a horde at their walls: the defenders in your place
   if (fight.attWon) {

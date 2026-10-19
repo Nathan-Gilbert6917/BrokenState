@@ -27,6 +27,7 @@ const carriedRounds = (p) => totalRounds(p.supplies) + totalRounds(p.cargo && p.
 import { WORM, rawWaterEggs, purifyCap } from "./worm.js"; // TABS_WATER: what one purification tablet treats (the recipe text); the filters in use
 import { WATER, waterCapacity, waterProduction } from "./economy.js"; // the filters in use: the tanks' room after the day's water (filtersInUse)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
+import { craftedCond } from "./itemcond.js"; // a crafted item's condition is the craft's own roll
 
 // in = materials (base stock), hours = work-hours, skill + min = who can make it, out = gear key or supplies.
 // needs: "workshop" (an ammo bench or machine shop at this base) or a building key. field: can be made by a team.
@@ -442,7 +443,7 @@ export function makeItem(key, quality = 1) {
 }
 // What a gear recipe makes: a stack of r.n at full quality (stacks merge only at one quality: itemstack.js canStack;
 // the roll still sets the XP), else one item at the rolled quality.
-export const craftItem = (r, quality = 1) => (r.n > 1 ? withCount(makeItem(r.gear, 1), r.n) : makeItem(r.gear, quality));
+export const craftItem = (r, quality = 1) => craftedCond(r.n > 1 ? withCount(makeItem(r.gear, 1), r.n) : makeItem(r.gear, quality)); // itemcond.js: its condition is the craft's roll
 // A person carries a stack of this thing with room for more (a stack recipe needs no free slot then: inventory.js stow merges).
 const stackRoomOn = (s, key) => [...(s.pockets || []), ...(rigPouches(s) || []), ...(packOf(s) || [])].some((it) => it && it.key === key && roomIn(it) > 0);
 

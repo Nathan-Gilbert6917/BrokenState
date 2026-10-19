@@ -186,6 +186,8 @@ export function condition(item, source, roll, opts = {}) {
   return item;
 }
 export const condRolled = (item) => !!item && ROLLED.has(item);
+// A crafted item's condition came from its maker's quality roll (crafting.js craftRoll), yours or a group's.
+export const craftedCond = (item) => { if (item && typeof item === "object") ROLLED.add(item); return item; };
 
 // A draw a creation point used to make for the quality, still taken so the rest of the world's dice stay put.
 /** @param {{ next: () => number }} rng */

@@ -28,7 +28,8 @@ import { MAGAZINES } from "./data-kit.js";
 import { isLauncherKey } from "./arsenal.js";
 import { armLauncher } from "./launchers.js";
 import { keyFor } from "./rounds.js";
-import { CARRY, weighPlayer } from "./carrykit.js"; // an AI person's field load by kit
+import { CARRY, weighPlayer } from "./carrykit.js";
+import { spendSelfAid } from "./medics.js"; // an AI person's field load by kit
 import { typeFor } from "./rounds.js";
 import { stockAt } from "./groupbases.js";
 import { enemyPieces } from "./armour.js";
@@ -258,6 +259,7 @@ export function spentThrows(u, s) {
 export function personBody(u) {
   const s = u.who;
   spentThrows(u, s);
+  spendSelfAid(u, s); // medics.js: a tourniquet used on themselves is spent
   const body = ensureInv({ name: u.name, kind: "human", uid: u.id, kit: u.kit || null, supplies: { ...(s.carried || {}) } });
   for (const k of EQUIP_SLOTS) { body.gear[k] = s.gear[k] || null; s.gear[k] = null; }
   body.pockets = (s.pockets || []).slice();

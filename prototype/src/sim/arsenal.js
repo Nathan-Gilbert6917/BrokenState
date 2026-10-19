@@ -78,6 +78,7 @@ import { skill } from "./world.js"; // a member's own skill
 import { gainXp } from "./skills.js";
 import { wornOut } from "./repair.js"; // past mending
 import { groupStockKey } from "./trade.js";
+import { spendSelfAid } from "./medics.js"; // a person's used tourniquets, as yours
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -665,7 +666,12 @@ export function settlePeople(state, f, battle, result, out) {
     for (const it of spentThrows(u, s)) removeFromArsenal(f, it, "thrown");
     settleArsenalLauncher(f, u, !!(u.dead || u.nlTaken || u.captured), (it, why) => removeFromArsenal(f, it, why)); // launchers.js: unfired rounds back in the stores, a fired tube gone
     if (u.medKit && u.kitUses && f.arsenal.items.includes(u.medKit) && wear(u.medKit, u.kitUses)) removeFromArsenal(f, u.medKit, "used up");
-    for (const k of u.selfKits || []) if (k.item && k.used && k.item !== u.medKit && f.arsenal.items.includes(k.item) && wear(k.item, k.used)) removeFromArsenal(f, k.item, "used up");
+    { // medics.js spendSelfAid: a tourniquet used on themselves spent as yours are; one used up off them and the books
+      const kits = (u.selfKits || []).map((k) => k.item).filter(Boolean);
+      spendSelfAid(u, s);
+      const still = new Set(allCarried(s));
+      for (const it of kits) if (!still.has(it)) removeFromArsenal(f, it, "used up");
+    }
     const taken = !u.dead && (u.nlTaken || u.captured || u.taken || (won && prisonerish(u)));
     if (u.dead || taken) {
       const onField = raidMap ? !!u.bodied : won;
