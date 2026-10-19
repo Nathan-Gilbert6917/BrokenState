@@ -124,8 +124,10 @@ export const HC_MILITARY = {
   STRIKE_DAY: [3, 12], STRIKE_SHARE: [0.5, 0.65], STRIKE_SPEED: 1.0, STRIKE_KEEP: 13,
   FIGHT_DAYS: [2, 4], FIGHT_KILL: [5, 9], FIGHT_LOSS: [0.5, 0.7], CITY_DEAD: [500, 900], CITY_REFILL: [60, 140],
   HIVE_HURT: 0.6, HIVE_RES: [2, 5], CUT_OFF_R: [3, 8], HOLD_MAX: 60, HOLD_DEATH: 0.02, SEE_R: 8,
-  // The garrison that stayed.
-  GARRISON_BREAK: 0.65, BREAK_MIN: 8,
+  // The garrison that stayed: the base is overrun with GARRISON_BREAK of it left (0.78 since a horde at a group's base meets
+  // your base's defence, groupfight.js hordeAtGroup: the walls hold longer, so the hive grinds the base down to a
+  // higher share before it breaks; the fall stays on days 20-60, tools/hcgroupstest.js).
+  GARRISON_BREAK: 0.78, BREAK_MIN: 8,
   SORTIE_RANGE: 6, SORTIE_CHANCE: 0.3, SORTIE_KILL: [0.6, 1.2], SORTIE_LOSS: 0.25,
   CULL_GAP: [10, 16], CULL_RANGE: 12, CULL_RES: [2, 5], CULL_GUARD: [0.1, 0.2], CULL_MASS: [0.08, 0.16], CULL_LOSS: 0.4,
   HELP_AT: 0.85, EVAC_AT: 0.7, SUPPLY_DAYS: 14, MEDS_POP: 2,

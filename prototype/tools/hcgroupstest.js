@@ -19,7 +19,7 @@ const t0 = Date.now();
 
 // Keeps your side alive and fed (this test is about the other groups, not your start): health and food topped up.
 function keepAlive(s) {
-  for (const x of s.survivors) if (x.alive) x.health = Math.max(x.health, 80);
+  for (const x of s.survivors) if (x.alive) { x.health = Math.max(x.health, 80); x.mood = Math.max(x.mood ?? 50, 50); } // (and their spirits: a team lost to despair ends the run before the arcs play out)
   for (const b of s.bases) { setFood(b, Math.max(food(b) || 0, 60)); b.stock.water = Math.max(b.stock.water || 0, 60); }
   for (const p of s.parties) if (p.owner === "player" && p.supplies) { setFood(p, Math.max(food(p) || 0, 10)); p.supplies.water = Math.max(p.supplies.water || 0, 10); }
 }
@@ -295,7 +295,8 @@ for (const seed of MSEEDS) {
   if (s.hardcore.outbreak) s.hardcore.outbreak.mil = null; // no hive by the base either (hardcore-outbreak.js)
   const mil = s.factions.find((f) => f.type === "military");
   const pop0 = mil.pop;
-  runDays(s, 90);
+  const noHives = (st) => { for (const h of st.hives) st.tiles[h.tile].hive = false; st.hives.length = 0; st.hordes.length = 0; };
+  runDays(s, 90, noHives); // (and none grows later: the world's own hives form on its dice, one may by the base)
   check(mil.alive && !hcMilitary(s).fell && mil.pop <= pop0 && mil.pop >= pop0 * 0.7, `no hive near: the base holds (soldiers ${pop0} → ${mil.pop})`);
 }
 
