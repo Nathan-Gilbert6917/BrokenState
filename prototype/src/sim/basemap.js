@@ -37,13 +37,20 @@
 // the ground is open land. Every building keeps the 3D sprites of the battle map (ui/isoview.js): houses with barred
 // doors and windows and an upper floor, flat-roofed stores, the props of the yard, fields, the wall ring.
 // The stores (makeStores): the base's own stock and armory are what is on the map in a battle, spread over the
-// buildings that hold goods (the core, the storehouse, cellars, the cold store, the freezer, the crates: STORES) as
-// containers whose contents can be looked at by clicking them at any time (never "unknown" ones: ui/combat.js).
-// Raiders steal from them (thiefTurn, combat.js aiUnit): a share of them (STEAL.SHARE) go for the nearest container
-// with goods once the wall is passed, batter a door in the way, fill up to STEAL.KG and make for the nearest edge of the
-// map; what a raider gets away with is gone from the stores when the fight ends (settleBaseBattle: b.stolen, applied by
-// conflicts.js applyStolen); what a raider dropped (killed, taken down) stays yours. The armory (buildings.js armory,
-// the user's requests 2026-10-19) is a windowless block with one locked security door (ARMORY_LOCK.DOOR_HP: raiders
+// buildings that hold goods (the core, the storage box, crates, shed, storehouse and warehouse, cellars, the cold store,
+// the freezer: STORES) and the parked cars that are storage, as containers whose contents can be looked at by clicking
+// them at any time (never "unknown" ones: ui/combat.js), each taking a share by its room (basestorage.js).
+// Base storage limits (2026-10-19, the user: "You can also leave things out not in containers but if they are outside
+// the durability decays and easier for raiders to steal. Camps start with no storage but using a vehicle you can use
+// the storage of the truck as a storage unit until better storage is made"): what does not fit the base's room
+// (basestorage.js storageOf) lies on the map as piles of crates in the yard near the middle (layPiles: open ground all
+// round, no door), holding exactly those goods; a camp with nothing but a car keeps its goods in the car and the rest on
+// the pile. Raiders steal from them (thiefTurn, combat.js aiUnit): a share of them (STEAL.SHARE) go for the nearest
+// pile once the wall is passed (then the nearest container with goods), batter a door in the way, grab up to STEAL.TURN
+// a turn (twice that from a pile) and STEAL.KG in all and make for the nearest edge of the map; what a raider gets away
+// with is gone from the stores when the fight ends (settleBaseBattle: b.stolen, applied by conflicts.js applyStolen,
+// a pile's and a car's goods alike from the base's stock and armory); what a raider dropped (killed, taken down) stays.
+// The armory (buildings.js armory, the user's requests 2026-10-19) is a windowless block with one locked security door (ARMORY_LOCK.DOOR_HP: raiders
 // batter it down like any barred door, your own people go in and out) and inside it two locked containers, the gun
 // cage with the base's gear and the ammo lockers with its rounds: a raider at one batters the lock a turn at a time
 // (forceLock, ARMORY_LOCK: a pry tool hits twice as hard) and takes nothing until it gives way; a lock smashed open
@@ -51,10 +58,11 @@
 // armory broken its door is an ordinary barred door and its containers stand open until it is repaired. The base's
 // own people hold its keys (keyOptions / keyAct, the user's request 2026-10-19): next to a building's door, the gate
 // or a locked container they lock or unlock it, 1 action, from inside or out.
-// Hordes and raiders batter what stands in their way: doors, windows, walls, barricades and parked cars (combat.js
-// bash); when the fight is over the buildings battered on the map wear as fixtures (breakdowns.js) and the cars lose
-// condition (settleBaseBattle).
-import { BUILDINGS, count, isCamp, isShelter, farmSlots, tierName } from "./buildings.js";
+// "You can move your vehicle to any unoccupied tiles of the base view which it can fit": a parked car is placed like
+// anything else (its length by type: carLen, an Army truck 5), in the yard or beyond the wall. Hordes and raiders batter what
+// stands in their way: doors, windows, walls, barricades and parked cars (combat.js bash); when the fight is over the
+// buildings battered on the map wear as fixtures (breakdowns.js) and the cars lose condition (settleBaseBattle).
+import { BUILDINGS, STORE_KG, count, isCamp, isShelter, farmSlots, tierName } from "./buildings.js";
 import { CELL, placeCar, say, fx, unitAt, active, distField, reachable, pathTo, moveAlong, bash, siegeTarget, foesOf, nearRect, createBattle, WEAPONS, structureName } from "./combat.js";
 import { carsAtBase } from "./vehicles.js";
 import { wallHp, gateHp } from "./deploy.js";
@@ -69,6 +77,7 @@ import { log, atBase } from "./world.js";
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / at most
+import { storageOf, coreStoreKg, vehicleStoreKg } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
 
 // The grid by tier: core = the half-size of the middle structure's own ground, yard = the yard's half-size to start
 // with, per = yard growth a building with a footprint, cap = the yard's largest half-size, out = open ground beyond the
@@ -86,7 +95,12 @@ export const FLOOD = { R: 7 }; // a placed floodlight lights the cells within th
 export const DEF_HP = { barricade: 60, car: 50 }; // hit points of a barricade and a parked car on the map (bash)
 // Raiders stealing from the stores: the share of a raid's people who go for the stores once the wall is passed, the
 // most one carries off (kg), and the kg of a supply with no weight of its own.
-export const STEAL = { SHARE: 0.4, KG: 22, DEFAULT_KG: 1 };
+// TURN: the most a raider grabs from a container in one turn (a heavy item alone may take the whole turn), × PILE from
+// a pile left outside (no lid, no lock, nothing to batter: "easier for raiders to steal").
+export const STEAL = { SHARE: 0.4, KG: 22, TURN: 11, PILE: 2, DEFAULT_KG: 1 };
+// The goods left outside (basestorage.js): piles of PILE.W × PILE.H cells in the yard near the base itself, one a
+// PILE.KG of what lies out, at most PILE.MAX.
+export const PILE = { W: 2, H: 1, KG: 200, MAX: 4, LABEL: "Pile outside" };
 // The armory's locks (buildings.js armory): the hit points of its locked security door (buildingmaps.js DOOR_KINDS
 // security: battered like any barred door, combat.js bash) and of the lock on each of its two containers, how much
 // harder a pry tool (a crowbar, a fire axe, a sledgehammer, a halligan bar, a pickaxe) hits a container's lock, and
@@ -131,6 +145,7 @@ export const FOOT = {
   machine_shop: HOUSE(5, 4), radio: HOUSE(4, 3), garage: HOUSE(5, 4, 1, { wide: true }), common_room: HOUSE(5, 4), chapel: HOUSE(4, 4), kitchen: HOUSE(4, 3),
   canteen: HOUSE(5, 4), huntcabin: HOUSE(3, 3), greenhouse: HOUSE(4, 3, 1, { glass: true }), cells: HOUSE(4, 4), jailhouse: HOUSE(5, 4), freezer: HOUSE(3, 3),
   cellar: ROOF(3, 2), coldstore: ROOF(3, 3), storehouse: ROOF(4, 3), cistern: ROOF(2, 2),
+  shed: ROOF(3, 2), warehouse: ROOF(6, 4), storebox: PROP("crate", 1, 1), // the storage ladder (basestorage.js): a box, a shed, a warehouse
   armory: HOUSE(5, 4, 1, { armory: true }), // armoryCells: one locked security door, no windows, the gun cage and the ammo lockers inside
   well: PROP("well"), rain_catcher: PROP("barrel"), water_barrel: PROP("barrel"), crates: PROP("crate", 1, 1, { v: 2 }), boiler: PROP("barrel"),
   cookhouse: PROP("firepit"), smoker: PROP("table", 2, 1), generator: PROP("pump", 2, 1), still: PROP("barrel"), sealer: PROP("table"), grainmill: PROP("table"),
@@ -144,7 +159,7 @@ export const FOOT = {
 };
 export const FIELD = { kind: "field", w: 3, h: 2 };
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.
-const STORES = { storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, crates: 1, armory: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest
+const STORES = { warehouse: 4, storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, shed: 1.5, crates: 1, storebox: 0.5, armory: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest
 const BUILD_KINDS = new Set(["house", "roof", "prop", "pen", "field", "vehicle"]); // the kinds the yard grows for (footCount) and the cover props keep off
 export const hasFootprint = (type) => !!FOOT[type];
 
@@ -239,11 +254,15 @@ export function itemsOf(state, base) {
   const plots = planOf(base).plots;
   for (let i = 0; i < farmSlots(base); i++) out.push({ key: `p:${i}`, type: "plot", ...FIELD, label: `Crop plot ${i + 1}`, at: plots[i] || null, built: true });
   if (state) for (const v of carsAtBase(state, base.id)) {
-    const L = v.type === "truck" || v.type === "miltruck" ? 4 : 3;
+    const L = carLen(v);
     out.push({ key: `v:${v.id}`, type: "vehicle", kind: "vehicle", w: L, h: 2, label: v.name, at: v.at || null, rec: v, built: true, veh: v });
   }
   return out;
 }
+// A parked car on the map: its length (2 cells wide) and what it is drawn as, as on any battle map (combat.js
+// placeVehicle: an Army truck 5 long drawn as the Army's, a pickup 4, a car 3).
+export const carLen = (v) => (v && v.type === "miltruck" ? 5 : v && v.type === "truck" ? 4 : 3);
+const carBody = (v) => (v && v.type === "miltruck" ? "m35" : v && v.type === "truck" ? "truck" : "car");
 // Only what is placed by hand (sizes: yardHalf).
 function placedItems(base) {
   const out = [];
@@ -525,7 +544,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       }
       return;
     }
-    F.stores.push({ id: F.stores.length + 1, label, x, y, w, h, weight, bid });
+    F.stores.push({ id: F.stores.length + 1, label, x, y, w, h, weight, bid, room: it.room || 0 });
   };
   // A thing's cells onto the map. built: false lays an outline instead (the view).
   const lay1 = (it, atG, key, built, name) => {
@@ -540,10 +559,13 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     }
     if (it.kind === "vehicle") {
       const ax = (atG[2] || 0) & 1 ? "y" : "x";
-      const rect = placeCar(cells, W, H, mx, my, ax, it.w, "car", (x, y) => inside(x, y) && cells[y * W + x].k === "open", (it.veh ? it.veh.id : 0) % 1000, { ring: false, body: it.veh && (it.veh.type === "truck" || it.veh.type === "miltruck") ? "truck" : "car" });
+      const rect = placeCar(cells, W, H, mx, my, ax, it.w, "car", (x, y) => inside(x, y) && cells[y * W + x].k === "open", (it.veh ? it.veh.id : 0) % 1000, { ring: false, body: carBody(it.veh) });
       if (rect) {
         for (let y = rect.y0; y < rect.y0 + rect.h; y++) for (let x = rect.x0; x < rect.x0 + rect.w; x++) { const c = cells[y * W + x]; c.hp = c.mhp = DEF_HP.car; used[y * W + x] = 1; }
         F.vehicles.push({ id: it.veh ? it.veh.id : null, name: it.label, x0: rect.x0, y0: rect.y0, w: rect.w, h: rect.h });
+        // A car that is storage (basestorage.js vehicleStoreKg: its payload while it is parked here) holds goods.
+        const room = it.veh ? vehicleStoreKg(it.veh) : 0;
+        if (room > 0) F.stores.push({ id: F.stores.length + 1, label: it.label, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, weight: 1, bid: null, vid: it.veh.id, room });
       }
       return;
     }
@@ -579,14 +601,17 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     } else if (it.store) pushStore(name, mx, my, r.w, r.h, it.store, it.rec && it.key.startsWith("b:") ? it.rec.id : null, it);
   };
   // The middle: the camp, the shelter or the base itself.
-  for (const p of coreParts(base)) lay1({ ...p, key0: p.key || p.k }, [p.x, p.y, 0], "core", true, p.name || coreName(base));
+  // room: the kg it holds (basestorage.js: the core's room shared over its stores, a storage building's STORE_KG).
+  const coreW = coreParts(base).reduce((a, p) => a + (p.store || 0), 0) || 1;
+  for (const p of coreParts(base)) lay1({ ...p, key0: p.key || p.k, room: p.store ? (coreStoreKg(base) * p.store) / coreW : 0 }, [p.x, p.y, 0], "core", true, p.name || coreName(base));
   // Everything placed, by hand or by the game.
   for (const e of lay) {
     const it = e.it;
     const store = STORES[it.type] || 0;
-    lay1({ ...it, store }, e.at, it.key, it.built, it.label);
+    lay1({ ...it, store, room: store ? STORE_KG[it.type] || 0 : 0 }, e.at, it.key, it.built, it.label);
   }
   if (opts.pitsAt) for (const atG of opts.pitsAt) if (atG) lay1({ ...FOOT.spike_pits, type: "spike_pits" }, atG, "pits", true, "Spike pits");
+  layPiles(state, base, F, { C, G, inside, used, keep });
   // The band: the wall ring with a gate in the middle of each side and the walkway inside it (a walled base), else
   // open ground; the ladders up to the walkway where the yard's edge is free.
   const w = F.wall;
@@ -683,39 +708,101 @@ export function baseMapSize(state, base, opts = {}) {
 }
 
 // ---------- the stores on the map ----------
-// The base's stock and armory spread over its containers (F.stores): supplies by whole units, the armory's items one
-// by one, each container taking its weight's share (food leans to the cellars and the cold store, gear to the core and
-// the storehouse). Nothing leaves the base's records: a container holds counts and armory indexes, and only what a
-// raider gets away with is taken from the base when the fight ends (settleBaseBattle, applyStolen). An armory's
-// containers (holds: "gear" | "ammo") take every item of the armory and every round and arrow, and nothing else.
+// What lies outside (basestorage.js storageOf: the goods past the base's room), as it goes on the map: whole units of
+// the supplies (a stack of 12.5 with 3.5 outside: 3 on the pile, the 9 that fit inside), the armory indices of the
+// items, and their weight. null when nothing whole lies out.
+export function outsideOf(state, base) {
+  if (!base) return null;
+  const st = storageOf(state, base);
+  const sup = {}, gear = [];
+  let kg = 0;
+  for (const [k, q] of Object.entries(st.outside.sup)) {
+    const n = Math.min(Math.floor((base.stock && base.stock[k]) || 0), Math.floor(q + 1e-6));
+    if (n > 0) { sup[k] = n; kg += n * kgOf(k); }
+  }
+  for (const i of st.outside.gear) { const it = base.armory && base.armory[i]; if (it) { gear.push(i); kg += itemKg(it); } }
+  return gear.length || Object.keys(sup).length ? { sup, gear, kg } : null;
+}
+// The piles of what lies outside, laid on the map (buildBaseMap, before the cover): crates stacked on the open ground
+// of the yard as near the middle as there is room, every cell of a pile free (never on a footprint, a buffer round
+// one, a doorway or the band) and open ground all round it (walkable, nothing to batter: no door). One a PILE.KG of
+// what lies out, at most PILE.MAX; a yard too full for one puts it on the open ground beyond the band, and with no room
+// at all the goods stay in the real containers (makeStores).
+function layPiles(state, base, F, m) {
+  const out = outsideOf(state, base);
+  if (!out) return;
+  const { C, G, inside, used, keep } = m, { cells, W, ox, oy } = F;
+  const n = Math.max(1, Math.min(PILE.MAX, Math.ceil(out.kg / PILE.KG)));
+  const pw = PILE.W, ph = PILE.H;
+  const free = (x, y) => inside(x, y) && !used[y * W + x] && !keep[y * W + x] && cells[y * W + x].k === "open";
+  const clear = (x, y) => inside(x, y) && !used[y * W + x] && cells[y * W + x].k === "open";
+  const fits = (gx, gy) => {
+    for (let y = gy - 1; y <= gy + ph; y++) for (let x = gx - 1; x <= gx + pw; x++) {
+      if (onBand(x, y, C)) return false;
+      const inR = x >= gx && x < gx + pw && y >= gy && y < gy + ph;
+      if (inR ? !free(x + ox, y + oy) : !clear(x + ox, y + oy)) return false;
+    }
+    return true;
+  };
+  let laid = 0;
+  for (let d = 0; d <= G && laid < n; d++) {
+    for (let gy = -d; gy <= d && laid < n; gy++) for (let gx = -d; gx <= d && laid < n; gx++) {
+      if (Math.max(Math.abs(gx), Math.abs(gy)) !== d || !fits(gx, gy)) continue;
+      const mx = gx + ox, my = gy + oy;
+      for (let y = my - 1; y <= my + ph; y++) for (let x = mx - 1; x <= mx + pw; x++) if (inside(x, y)) keep[y * W + x] = 1;
+      for (let y = my; y < my + ph; y++) for (let x = mx; x < mx + pw; x++) { const c = cells[y * W + x]; c.k = "crate"; c.v = (x + y) % 2 ? 1 : 2; c.pile = true; used[y * W + x] = 1; }
+      laid++;
+      F.stores.push({ id: F.stores.length + 1, label: n > 1 ? `${PILE.LABEL} ${laid}` : PILE.LABEL, x: mx, y: my, w: pw, h: ph, weight: 0, bid: null, pile: true, room: 0 });
+    }
+  }
+}
+// The base's stock and armory spread over its containers (F.stores): what lies outside (outsideOf) on the piles, the
+// rest over the real containers (the base itself, the storage buildings, the cars that are storage), supplies by whole
+// units, the armory's items one by one, each container taking a share by its room (food leans to the cellars, the cold
+// store, the freezer and the storehouse, gear to the core and the storehouse; with no room at all, by the STORES
+// weights). Nothing leaves the base's records: a container holds counts and armory indexes, and only what a raider gets
+// away with is taken from the base when the fight ends (settleBaseBattle, applyStolen). Deterministic (only rng).
+// An armory's containers (holds: "gear" | "ammo") take every item and every round and arrow kept inside, and nothing else.
 export function makeStores(state, base, F, rng) {
   if (!F.stores.length) return null;
   const boxes = F.stores.map((s) => ({ ...s, sup: {}, gear: [] }));
   const gearBox = boxes.find((b) => b.holds === "gear") || null, ammoBox = boxes.find((b) => b.holds === "ammo") || null;
-  const open = boxes.filter((b) => !b.holds).length ? boxes.filter((b) => !b.holds) : boxes; // the rest goes over the other stores
+  const piles = boxes.filter((b) => b.pile), real = boxes.filter((b) => !b.pile && !b.holds);
+  const out = (piles.length && outsideOf(state, base)) || { sup: {}, gear: [] };
+  const roomTot = real.reduce((a, b) => a + (b.room || 0), 0);
+  const wOf = (b) => (roomTot > 0 ? b.room || 0 : b.weight || 1);
   const split = (q, weights) => {
     const tot = weights.reduce((a, v) => a + v, 0) || 1;
-    const out = weights.map((v) => Math.floor((q * v) / tot));
-    let left = q - out.reduce((a, v) => a + v, 0);
-    while (left > 0) { out[weights.indexOf(Math.max(...weights))] += left; left = 0; }
-    return out;
+    const res = weights.map((v) => Math.floor((q * v) / tot));
+    const left = q - res.reduce((a, v) => a + v, 0);
+    if (left > 0) res[weights.indexOf(Math.max(...weights))] += left;
+    return res;
   };
   for (const [k, q0] of Object.entries(base.stock)) {
     const q = Math.floor(q0 || 0);
     if (!(q > 0)) continue;
-    if (ammoBox && isAmmoKey(k)) { ammoBox.sup[k] = q; continue; } // the rounds and arrows: the ammo lockers
-    const food = !!FOODS[k];
-    const weights = open.map((b) => Math.max(0.1, b.weight * (food && ["cellar", "coldstore", "freezer", "storehouse"].includes(typeOfStore(base, b)) ? 2 : 1) * rng.range(0.7, 1.3)));
-    split(q, weights).forEach((n, i) => { if (n > 0) open[i].sup[k] = n; });
+    const ammo = !!ammoBox && isAmmoKey(k); // the rounds and arrows kept inside: the ammo lockers
+    const inN = real.length || ammo ? q - Math.min(q, out.sup[k] || 0) : 0;
+    if (inN > 0 && ammo) ammoBox.sup[k] = inN;
+    else if (inN > 0) {
+      const food = !!FOODS[k];
+      const weights = real.map((b) => wOf(b) * (food && ["cellar", "coldstore", "freezer", "storehouse"].includes(typeOfStore(base, b)) ? 2 : 1) * rng.range(0.7, 1.3));
+      split(inN, weights).forEach((n, i) => { if (n > 0) real[i].sup[k] = n; });
+    }
+    if (q - inN > 0) split(q - inN, piles.map(() => 1)).forEach((n, i) => { if (n > 0) piles[i].sup[k] = n; });
   }
+  const outside = new Set(out.gear);
+  let pi = 0;
   base.armory.forEach((it, i) => {
     if (!it) return;
-    if (gearBox) { gearBox.gear.push({ ai: i, name: it.name, kg: itemKg(it) }); return; } // every item: the gun cage
-    const weights = open.map((b) => b.weight * (["core", "storehouse"].includes(typeOfStore(base, b)) ? 2 : 1));
+    const g = { ai: i, key: it.key, name: it.name, kg: itemKg(it) };
+    if (piles.length && (outside.has(i) || (!real.length && !gearBox))) { piles[pi++ % piles.length].gear.push(g); return; }
+    if (gearBox) { gearBox.gear.push(g); return; } // every item kept inside: the gun cage
+    const weights = real.map((b) => wOf(b) * (["core", "storehouse", "warehouse"].includes(typeOfStore(base, b)) ? 2 : 1));
     const tot = weights.reduce((a, v) => a + v, 0);
     let pick = rng.range(0, tot), j = 0;
     while (j < weights.length - 1 && pick > weights[j]) { pick -= weights[j]; j++; }
-    open[j].gear.push({ ai: i, name: it.name, kg: itemKg(it) });
+    real[j].gear.push(g);
   });
   for (const b of boxes) b.kg = Object.entries(b.sup).reduce((a, [k, n]) => a + n * kgOf(k), 0) + b.gear.reduce((a, g) => a + g.kg, 0);
   return { containers: boxes }; // plain data: a save mid-battle keeps it
@@ -724,7 +811,7 @@ export function makeStores(state, base, F, rng) {
 const kgOf = (k) => (SUPPLIES[k] ? SUPPLIES[k].weight : FOODS[k] ? FOODS[k].kg : STEAL.DEFAULT_KG);
 // A supply the ammo lockers hold: the abstract rounds and arrows, and any supply of the ammo kind (rounds by calibre).
 const isAmmoKey = (k) => k === "ammo" || k === "arrows" || !!(SUPPLIES[k] && SUPPLIES[k].cat === "ammo");
-const typeOfStore = (base, s) => (s.bid == null ? "core" : (base.buildings.find((b) => b.id === s.bid) || {}).type || "core");
+const typeOfStore = (base, s) => (s.pile ? "pile" : s.vid != null ? "vehicle" : s.bid == null ? "core" : (base.buildings.find((b) => b.id === s.bid) || {}).type || "core");
 // The container at a cell of the battle (ui/combat.js hover and click), or null.
 export const storeAt = (b, x, y) => (b.stores ? b.stores.containers.find((c) => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h) || null : null);
 // What is in a container, for the panel: [[name, qty], …] supplies first, then the gear.
@@ -836,17 +923,22 @@ export function thiefTurn(b, u) {
   const T = b.tier;
   if (!b.stores || !u.thief || !T || (T.walled && T.stage === "wall") || !active(u)) return false;
   const W = b.w, H = b.h;
-  if (u.loot && u.loot.kg >= STEAL.KG) return leaveWithLoot(b, u);
+  if (u.loot && (u.loot.kg >= STEAL.KG || u.loot.full)) return leaveWithLoot(b, u);
   const foes = foesOf(b, u);
   if (foes.some((f) => Math.max(Math.abs(f.x - u.x), Math.abs(f.y - u.y)) <= 1)) return false; // someone right there: fight
   const boxes = b.stores.containers.filter((c) => c.kg > 0.5);
   if (!boxes.length) return u.loot ? leaveWithLoot(b, u) : false;
-  const near = (x, y) => boxes.filter((c) => nearRect(c, x, y)).sort((a, c) => lockedBox(a) - lockedBox(c))[0] || null; // an open one before a lock
+  // A pile left outside first (no lid, no lock, no door to batter): the nearest one with goods; the rest once the
+  // piles are bare, an open one before a lock. Whatever container is right there is taken from all the same.
+  const piles = boxes.filter((c) => c.pile);
+  const goal = piles.length ? piles : boxes;
+  const nearIn = (list, x, y) => list.filter((c) => nearRect(c, x, y)).sort((a, c) => lockedBox(a) - lockedBox(c))[0] || null;
+  const near = (x, y) => nearIn(goal, x, y) || nearIn(boxes, x, y);
   const here = near(u.x, u.y);
   if (here) { if (lockedBox(here)) forceLock(b, u, here); else takeLoot(b, u, here); u.ap = 0; return true; }
-  // On toward the nearest one: the cells round every container with goods.
+  // On toward the nearest one: the cells round every container with goods (the piles while there are any).
   const targets = [];
-  for (const c of boxes) for (let y = c.y - 1; y <= c.y + c.h; y++) for (let x = c.x - 1; x <= c.x + c.w; x++) {
+  for (const c of goal) for (let y = c.y - 1; y <= c.y + c.h; y++) for (let x = c.x - 1; x <= c.x + c.w; x++) {
     if (x < 0 || y < 0 || x >= W || y >= H) continue;
     if ((x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h) || !CELL[b.cells[y * W + x].k].walk) continue;
     targets.push([x, y]);
@@ -899,15 +991,18 @@ export function forceLock(b, u, box) {
   return true;
 }
 // A raider fills up from a container: the gear first, then supplies dear by the kilo (meds, parts, fuel, rounds, then
-// the food, scrap and firewood last; never water), up to STEAL.KG in all.
+// the food, scrap and firewood last; never water), up to STEAL.KG in all and STEAL.TURN a turn (a heavy item alone may
+// take the turn), twice that from a pile left outside (STEAL.PILE). Nothing worth the weight left to take: off with
+// what it has (u.loot.full).
 export function takeLoot(b, u, box) {
   u.loot = u.loot || { sup: {}, gear: [], kg: 0 };
-  let room = STEAL.KG - u.loot.kg;
+  const carry = STEAL.KG - u.loot.kg;
+  let room = Math.min(carry, STEAL.TURN * (box.pile ? STEAL.PILE : 1));
   const got = [];
   for (const g of box.gear.slice()) {
-    if (g.kg > room) continue;
+    if (g.kg > room && !(got.length === 0 && g.kg <= carry)) continue;
     box.gear.splice(box.gear.indexOf(g), 1);
-    u.loot.gear.push(g); u.loot.kg += g.kg; room -= g.kg; box.kg -= g.kg;
+    u.loot.gear.push(g); u.loot.kg += g.kg; room = Math.max(0, room - g.kg); box.kg -= g.kg;
     got.push(g.name);
   }
   const keys = Object.keys(box.sup).filter((k) => box.sup[k] > 0 && k !== "water" && k !== "rawwater");
@@ -922,6 +1017,7 @@ export function takeLoot(b, u, box) {
     got.push(`${n} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : FOODS[k] ? FOODS[k].word : k}`);
   }
   if (got.length) say(b, `${u.name} grabs ${got.slice(0, 3).join(", ")}${got.length > 3 ? " and more" : ""} from the ${box.label.toLowerCase()}.`, "danger");
+  else if (u.loot.kg > 0) { u.loot.full = true; say(b, `${u.name} rifles through the ${box.label.toLowerCase()} and makes off with what they have.`, "info"); }
   else say(b, `${u.name} rifles through the ${box.label.toLowerCase()} and finds nothing worth the weight.`, "info");
 }
 // Off the map with the loot: toward the nearest edge, gone once it is reached.
@@ -1014,7 +1110,16 @@ export function applyStolen(state, base, stolen) {
     sup[k] = n;
     parts.push(`${n} ${SUPPLIES[k] ? SUPPLIES[k].name.toLowerCase() : FOODS[k] ? FOODS[k].word : k}`);
   }
-  const idx = [...new Set(stolen.gear.map((g) => g.ai))].filter((i) => base.armory[i]).sort((a, c) => c - a);
+  // The items by their armory index (makeStores: a pile's, a car's or a building's alike); one no longer where it was
+  // (the armory changed during the fight) is found again by its key.
+  const taken = new Set();
+  for (const g of stolen.gear) {
+    const at = base.armory[g.ai];
+    let i = at && !taken.has(g.ai) && (!g.key || at.key === g.key) ? g.ai : -1;
+    if (i < 0 && g.key) i = base.armory.findIndex((it, j) => it && !taken.has(j) && it.key === g.key && (!g.name || it.name === g.name));
+    if (i >= 0) taken.add(i);
+  }
+  const idx = [...taken].sort((a, c) => c - a);
   const gear = idx.map((i) => base.armory[i]);
   for (const i of idx) base.armory.splice(i, 1);
   for (const g of gear) parts.push(g.name);

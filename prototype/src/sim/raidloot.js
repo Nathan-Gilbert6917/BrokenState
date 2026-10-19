@@ -58,7 +58,7 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { partyMembers, cargoRoom, poolLoad, unitsThatFit } from "./parties.js";
 import { partyVehicle, isBike, VEHICLE_TYPES } from "./vehicles.js";
 import { teamLoad, wornLoad, maxLoad } from "./load.js";
-import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried } from "./inventory.js";
+import { ensureInv, packOf, ensurePack, itemLoad, carryOf, fitReason, isBulky, isSmall, packSize, EQUIP_SLOTS, SLOT_NAMES, allCarried, isTwoHands } from "./inventory.js";
 import { gunLeavesTeam, unloadInto, teamGuns, returnStacks } from "./gunload.js";
 import { pileToArms, handsTakeRefusal } from "./carry.js"; // the team's loads off the ground: into the arms; two different things carried: nothing more taken (call-time only: safe in the import cycle)
 import { groundPile, settlePile } from "./ground.js"; // the pile a load is set down on (call-time only: safe in the import cycle)
@@ -368,8 +368,8 @@ function takeRule(state, b, from, to, fromStr) {
   const h = taker.haul;
   if (from.slot === "sup") { if (h && (h.sup[String(from.i)] || 0) > EPS) return ""; return handsTakeRefusal(taker, `the ${keyWord(String(from.i))}`); }
   const item = raidItemAt(state, b, fromStr);
-  if (item && h && to.o === "haul" && h.gear.some((g) => g.key === item.key)) return "";
-  return handsTakeRefusal(taker, `the ${item ? item.name : "that"}`);
+  if (item && h && to.o === "haul" && !isTwoHands(item) && h.gear.some((g) => g.key === item.key)) return ""; // a second fire safe is not one armful: each takes both hands
+  return handsTakeRefusal(taker, `the ${item ? item.name : "that"}`, item);
 }
 
 // How many of a supply stack a move would take (splitting stacks, search window): { have, n (what fits, ≤ qty),
