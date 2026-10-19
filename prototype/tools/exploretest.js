@@ -351,6 +351,9 @@ console.log("Crash events");
   for (let k = 0; k < 24 * 120; k++) {
     tickHour(st);
     st.cards.length = 0;
+    // The crash clock is what is measured: a hub nobody runs loses hope and walks away within weeks (by day 38 to 89
+    // on seed 42, by its dice), so its people's mood is held up and it lasts the 120 days.
+    if (k % 24 === 0) for (const s of st.survivors) if (s.alive) s.mood = Math.max(s.mood ?? 0, 60);
     if ((st.crashSeq || 0) > seen.length) seen.push(day(st));
   }
   const gaps = seen.slice(1).map((d, i) => d - seen[i]);
