@@ -502,6 +502,7 @@ export const HUB_EVENTS = {
           {
             label: "Treat them (2 meds)", hint: "Everyone here mood +3; 50% they leave something in thanks", disabled: () => (c.base.stock.meds || 0) < 2, ai: () => ((c.base.stock.meds || 0) >= 8 ? 4 : -1),
             resolve: (s2) => {
+              if ((c.base.stock.meds || 0) < 2) return "There are no meds to spare."; // (the choice is off then; a stale card resolved later)
               c.base.stock.meds -= 2;
               moodAll(atBase(s2, c.base.id), 3);
               if (!s2.rng.chance(0.5)) return "In two days the fever breaks and they walk on, thanking everyone (mood +3).";
