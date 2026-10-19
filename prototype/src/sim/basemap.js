@@ -43,10 +43,12 @@
 // with goods once the wall is passed, batter a door in the way, fill up to STEAL.KG and make for the nearest edge of the
 // map; what a raider gets away with is gone from the stores when the fight ends (settleBaseBattle: b.stolen, applied by
 // conflicts.js applyStolen); what a raider dropped (killed, taken down) stays yours. The armory (buildings.js armory,
-// the user's request 2026-10-19) keeps the base's gear and its rounds in two locked containers, the gun cage and the
-// ammo lockers: a raider at one batters the lock a turn at a time (forceLock, ARMORY_LOCK: a pry tool hits twice as
-// hard) and takes nothing until it gives way; a lock smashed open wears the armory afterwards (MAP_WEAR.lock,
-// settleBaseBattle), and with its locks smashed (the fixture broken) its containers stand open until it is repaired.
+// the user's requests 2026-10-19) is a windowless block with one locked security door (ARMORY_LOCK.DOOR_HP: raiders
+// batter it down like any barred door, your own people go in and out) and inside it two locked containers, the gun
+// cage with the base's gear and the ammo lockers with its rounds: a raider at one batters the lock a turn at a time
+// (forceLock, ARMORY_LOCK: a pry tool hits twice as hard) and takes nothing until it gives way; a lock smashed open
+// wears the armory afterwards (MAP_WEAR.lock, settleBaseBattle, as the broken door does: MAP_WEAR.door), and with the
+// armory broken its door is an ordinary barred door and its containers stand open until it is repaired.
 // Hordes and raiders batter what stands in their way: doors, windows, walls, barricades and parked cars (combat.js
 // bash); when the fight is over the buildings battered on the map wear as fixtures (breakdowns.js) and the cars lose
 // condition (settleBaseBattle).
@@ -83,11 +85,12 @@ export const DEF_HP = { barricade: 60, car: 50 }; // hit points of a barricade a
 // Raiders stealing from the stores: the share of a raid's people who go for the stores once the wall is passed, the
 // most one carries off (kg), and the kg of a supply with no weight of its own.
 export const STEAL = { SHARE: 0.4, KG: 22, DEFAULT_KG: 1 };
-// The armory's locks (buildings.js armory): the hit points of the lock on each of its two containers, how much harder
-// a pry tool (a crowbar, a fire axe, a sledgehammer, a halligan bar, a pickaxe) hits it, and the blow of a raider with
-// no melee weapon (a gun's butt, as combat.js BASH). A knife-armed raider is about four turns at a lock, one with a
-// sledgehammer one.
-export const ARMORY_LOCK = { HP: 60, PRY: 2, PRY_WEAPONS: ["prybar", "crowbar", "fireaxe", "sledge", "halligan", "pickaxe"], BASH: [8, 12] };
+// The armory's locks (buildings.js armory): the hit points of its locked security door (buildingmaps.js DOOR_KINDS
+// security: battered like any barred door, combat.js bash) and of the lock on each of its two containers, how much
+// harder a pry tool (a crowbar, a fire axe, a sledgehammer, a halligan bar, a pickaxe) hits a container's lock, and
+// the blow at one of a raider with no melee weapon (a gun's butt, as combat.js BASH). A knife-armed raider is about
+// four turns at a lock, one with a sledgehammer one.
+export const ARMORY_LOCK = { DOOR_HP: 90, DOOR_KIND: "security", HP: 60, PRY: 2, PRY_WEAPONS: ["prybar", "crowbar", "fireaxe", "sledge", "halligan", "pickaxe"], BASH: [8, 12] };
 // What the map's battering does to the buildings afterwards (breakdowns.js wear): a door or window broken in, a wall
 // section breached, a barricade battered through, an armory lock smashed open; a parked car's condition lost for the
 // hit points it lost.
@@ -125,7 +128,8 @@ export const FOOT = {
   bunkhouse: HOUSE(5, 4, 2), barracks: HOUSE(6, 4, 2), infirmary: HOUSE(5, 4), field_hosp: HOUSE(5, 4), clinic: HOUSE(5, 4), hospital: HOUSE(6, 5, 2),
   machine_shop: HOUSE(5, 4), radio: HOUSE(4, 3), garage: HOUSE(5, 4, 1, { wide: true }), common_room: HOUSE(5, 4), chapel: HOUSE(4, 4), kitchen: HOUSE(4, 3),
   canteen: HOUSE(5, 4), huntcabin: HOUSE(3, 3), greenhouse: HOUSE(4, 3, 1, { glass: true }), cells: HOUSE(4, 4), jailhouse: HOUSE(5, 4), freezer: HOUSE(3, 3),
-  cellar: ROOF(3, 2), coldstore: ROOF(3, 3), storehouse: ROOF(4, 3), cistern: ROOF(2, 2), armory: ROOF(4, 3),
+  cellar: ROOF(3, 2), coldstore: ROOF(3, 3), storehouse: ROOF(4, 3), cistern: ROOF(2, 2),
+  armory: HOUSE(5, 4, 1, { armory: true }), // armoryCells: one locked security door, no windows, the gun cage and the ammo lockers inside
   well: PROP("well"), rain_catcher: PROP("barrel"), water_barrel: PROP("barrel"), crates: PROP("crate", 1, 1, { v: 2 }), boiler: PROP("barrel"),
   cookhouse: PROP("firepit"), smoker: PROP("table", 2, 1), generator: PROP("pump", 2, 1), still: PROP("barrel"), sealer: PROP("table"), grainmill: PROP("table"),
   meatgrinder: PROP("table"), craftbench: PROP("counter", 2, 1), workbench: PROP("counter", 2, 1), toolbench: PROP("counter", 2, 1), ammo_bench: PROP("counter", 2, 1),
@@ -253,6 +257,7 @@ export const itemByKey = (state, base, key) => itemsOf(state, base).find((it) =>
 // of the front (two for a wide one), a back door on bigger houses, windows, the upper floor (the back half) and its
 // stairs. Each cell: { dx, dy, k, ... }; doors carry out: the cell outside them.
 function houseCells(f) {
+  if (f.armory) return armoryCells(f);
   const { w, h } = f, two = f.storeys === 2 && w >= 5 && h >= 4;
   const cells = [];
   const border = (x, y) => x === 0 || y === 0 || x === w - 1 || y === h - 1;
@@ -278,6 +283,23 @@ function houseCells(f) {
     const c = at(mx > 1 ? mx - 1 : 1, 1);
     if (c.k === "open" && !cells.some((d) => d.door && Math.abs(d.dx - c.dx) + Math.abs(d.dy - c.dy) <= 1)) c.k = "counter";
   }
+  return cells;
+}
+// The armory (ARMORY_LOCK): walls all round with no windows and one locked security door in the middle of the front
+// (lockDoor), and inside, along the back, the gun cage (shelving: box "gear") and down one side the ammo lockers
+// (box "ammo"), with the floor in front of them where a raider stands to break their locks (5 × 4: two cells of each).
+function armoryCells(f) {
+  const { w, h } = f;
+  const cells = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const border = x === 0 || y === 0 || x === w - 1 || y === h - 1;
+    cells.push({ dx: x, dy: y, k: border ? "wall" : "open", f: "floor", t: 0, indoor: !border });
+  }
+  const at = (x, y) => cells[y * w + x];
+  const mx = Math.floor(w / 2);
+  Object.assign(at(mx, h - 1), { k: "bdoor", hp: ARMORY_LOCK.DOOR_HP, dk: ARMORY_LOCK.DOOR_KIND, lockDoor: true, indoor: true, door: true, out: [mx, h] });
+  for (let x = 1; x < w - 2; x++) Object.assign(at(x, 1), { k: "rack", box: "gear" });
+  for (let y = 1; y < h - 1; y++) Object.assign(at(w - 2, y), { k: "locker", box: "ammo" });
   return cells;
 }
 function roofCells(f) {
@@ -486,17 +508,19 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     buildings: [], lofts: [], roofs: [], doors: [], windows: [], outlines: [], stores: [], vehicles: [], lights: [], inside: null, indoor, lay: { W, H, G: null, buildings: [] },
   };
   for (let y = -C; y < C; y++) for (let x = -C; x < C; x++) { const c = at(x + ox, y + oy); if (c) c.f = "dirt"; }
-  // A container of the stores (makeStores). The armory (ARMORY_LOCK): two locked containers in place of one, the gun
-  // cage (holds "gear") and the ammo lockers (holds "ammo"), each half the footprint; with its locks smashed (the
-  // fixture broken: breakdowns.js) they stand open.
-  const pushStore = (label, x, y, w, h, weight, bid, it) => {
-    if (it.type === "armory") {
+  // A container of the stores (makeStores). The armory (ARMORY_LOCK): two locked containers inside it in place of one,
+  // the gun cage (holds "gear") and the ammo lockers (holds "ammo"), each over its own cells (boxes: the map cells
+  // armoryCells tagged, turned with the building); with the armory broken (breakdowns.js) they stand open.
+  const pushStore = (label, x, y, w, h, weight, bid, it, boxes = null) => {
+    if (it.type === "armory" && boxes) {
       const locked = !(it.rec && it.rec.broken);
-      const a = w >= h ? Math.ceil(w / 2) : Math.ceil(h / 2);
-      const halves = w >= h ? [{ x, y, w: a, h }, { x: x + a, y, w: w - a, h }] : [{ x, y, w, h: a }, { x, y: y + a, w, h: h - a }];
-      const lock = () => (locked ? { lock: { hp: ARMORY_LOCK.HP, mhp: ARMORY_LOCK.HP, open: false } } : {});
-      F.stores.push({ id: F.stores.length + 1, label: `${label} gun cage`, ...halves[0], weight: 0, bid, holds: "gear", ...lock() });
-      F.stores.push({ id: F.stores.length + 1, label: `${label} ammo lockers`, ...halves[1], weight: 0, bid, holds: "ammo", ...lock() });
+      for (const [holds, what] of [["gear", "gun cage"], ["ammo", "ammo lockers"]]) {
+        const list = boxes[holds] || [];
+        if (!list.length) continue;
+        const xs = list.map((p) => p[0]), ys = list.map((p) => p[1]);
+        const x0 = Math.min(...xs), y0 = Math.min(...ys);
+        F.stores.push({ id: F.stores.length + 1, label: `${label} ${what}`, x: x0, y: y0, w: Math.max(...xs) - x0 + 1, h: Math.max(...ys) - y0 + 1, weight: 0, bid, holds, ...(locked ? { lock: { hp: ARMORY_LOCK.HP, mhp: ARMORY_LOCK.HP, open: false } } : {}) });
+      }
       return;
     }
     F.stores.push({ id: F.stores.length + 1, label, x, y, w, h, weight, bid });
@@ -521,11 +545,15 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       }
       return;
     }
-    const doors = [], bcells = [];
+    const doors = [], bcells = [], boxes = {};
+    const weak = it.type === "armory" && it.rec && it.rec.broken; // the armory broken: its door an ordinary barred one
     for (const c of cellsOf(it, atG)) {
       const x = c.x + ox, y = c.y + oy, q = at(x, y);
       if (!q) continue;
+      if (c.box) (boxes[c.box] = boxes[c.box] || []).push([x, y]);
       q.k = c.k; if (c.f) q.f = c.f;
+      if (c.dk && !weak) q.dk = c.dk; else delete q.dk;
+      if (c.lockDoor) { q.lockDoor = true; if (weak) c.hp = INTERIOR.DOOR_HP; }
       if (c.t) q.t = c.t; else delete q.t;
       if (c.h) q.h = c.h; else delete q.h;
       if (c.hp) { q.hp = q.mhp = c.hp; }
@@ -545,7 +573,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       const b = { name, key: it.key0 || it.type, bid: it.rec && it.key && it.key.startsWith("b:") ? it.rec.id : null, type: it.type, x0: mx, y0: my, w: r.w, h: r.h, roof: it.kind === "roof", storeys: it.kind === "house" ? (it.storeys === 2 && r.w >= 4 && r.h >= 4 ? 2 : 1) : 0, doors };
       F.buildings.push(b);
       F.lay.buildings.push(b);
-      if (it.store) pushStore(name, mx, my, r.w, r.h, it.store, b.bid, it);
+      if (it.store) pushStore(name, mx, my, r.w, r.h, it.store, b.bid, it, boxes);
     } else if (it.store) pushStore(name, mx, my, r.w, r.h, it.store, it.rec && it.key.startsWith("b:") ? it.rec.id : null, it);
   };
   // The middle: the camp, the shelter or the base itself.
