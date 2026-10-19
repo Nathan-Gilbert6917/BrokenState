@@ -715,7 +715,9 @@ section("Drawing (stub canvases: ui/mapsprites.js, ui/isoview.js, ui/combat.js, 
   check(b.cells.some((c) => c.k === "vehicle" && c.car && c.car.up && c.car.up.t === "m2hb" && c.car.up.p === 1) && b.cells.some((c) => c.k === "truck" && c.car && c.car.up && c.car.up.t === "m2hb"), "the team's Humvee and the motor pool's carry their turret and plate on their cells");
   { const g = b.units.find((u) => u.side === "player"); b.phase = "player"; g.aboard = true; g.off = true; g.ap = 2; combatAct(st, { type: "gunner", unit: g.id }); UI.cui.sel = g.id; }
   const panel = UI.renderCombatScreen(st);
-  check(/Get down/.test(panel) && /on the (vehicle.s )?turret/i.test(panel) && /M2 turret/.test(panel), "the panel: Get down (⇧T), the gunner on the turret with the belt");
+  // A raid has no side panel and its roster since d58a9ca (raids without the side panel): the gunner on the turret is
+  // the battle HUD's TURRET chip (battlehud.js), not the roster's "on the turret".
+  check(/Get down/.test(panel) && />TURRET</.test(panel) && /On the vehicle's turret/.test(panel) && /M2 turret/.test(panel), "the panel: Get down (⇧T), the gunner on the turret with the belt");
   let err = "";
   for (const view of ["iso"]) { void view; try { UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); } }
   check(!err && !nan, `both battle views draw them, the turret manned${err ? `: ${err}` : ""}${nan ? ` (${nan} NaN)` : ""}`);

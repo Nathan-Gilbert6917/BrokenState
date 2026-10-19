@@ -85,7 +85,7 @@ import { surveyDaily } from "./survey.js";
 import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone who has it gets up when they die; the walking dead drift
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
-import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour } from "./hardcore.js";
+import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour, clampStartPeople, NORMAL_PEOPLE } from "./hardcore.js";
 import { countWord, normalStartBackgrounds, normalStartKit } from "./hardcore-start.js";
 import { campsHour } from "./staging.js";
 import { needsHour } from "./needs.js";
@@ -133,8 +133,8 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 // mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
 // crewRoll (optional, Hardcore): a seed of its own for the three's backgrounds, what they grabbed and the car (the
 // new-run screen's Randomize all); left out, the world's seed decides them.
-// startPeople (optional, Hardcore): how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out),
-// kept as state.startPeople. A normal start is a full hub of six and ignores it.
+// startPeople (optional): Hardcore, how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out); a
+// normal start, how many hold the hub, 1–8 (NORMAL_PEOPLE; 6 when left out). Kept as state.startPeople.
 // start (optional): { roll, not } where you start drawn with dice of their own on the same map (the new-run screen's
 // New start position; startpick.js): the hub's town, or the Hardcore roadside tile. Kept as state.startRoll.
 /**
@@ -214,7 +214,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     // town hall's cellar (storage.js); water for the first dry days while the sown fields get going; a woodpile
     // (woodcutting.js: the winter's heating is cut later).
     // Bare start (HUB_START): no buildings and every plot free; what the town hall gives (4 beds, 6 crop plots, the well,
-    // the cellar, 3 wall strength: buildings.js) is all there is. The scrap and parts are for the first builds, the
+    // the cellar: buildings.js; no wall, which is built on the Defenses tab) is all there is. The scrap and parts are for the first builds, the
     // player's (or the governor's) pick: a bunkhouse, a crafting bench, a farm plot and a rain catcher come to 45.
     // Food by type (foods.js): 80 days of a town's stores (cans, rice, pasta, oats, a few sacks of potatoes and onions)
     // and 10 of food that keeps (jars, jerky, peanut butter).
@@ -222,17 +222,19 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
   });
   const hubBase = state.bases[0];
-  // Six people in the town hall's four beds from the first hour: the new-run screen and the first-week guide say so,
-  // so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown at all once beds are up).
-  hubBase.crowdNote = { hour: state.hour, over: 2 };
+  // Six people (by default) in the town hall's four beds from the first hour: the new-run screen and the first-week guide
+  // say so, so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown at all once beds are up).
+  const people = clampStartPeople(startPeople ?? NORMAL_PEOPLE.DEF, "normal");
+  state.startPeople = people;
+  if (people > 4) hubBase.crowdNote = { hour: state.hour, over: people - 4 };
   createVehicle(state, "truck", { kind: "base", baseId: hubBase.id }, { fuel: 20, condition: 75 });
 
   createFactions(state, factionCount);
   recomputeOwnership(state);
 
-  for (let i = 0; i < 6; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
-  // Starting gear: a few basics spread among the colonists.
-  const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol"];
+  for (let i = 0; i < people; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
+  // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete).
+  const starts = ["pistol", "machete", "huntrifle", "knife", "knife", "pistol", "knife", "machete"];
   state.survivors.forEach((s, i) => (s.gear.weapon = newItem(starts[i], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
   state.survivors.forEach((s, i) => randomStarterMods(state.rng, s.gear.weapon, i)); // gunmods.js: a cheap part or two on some guns
   // Built on Customize's points (crew[i].points): what the dice hand them is theirs only as picks, so none of it
@@ -387,6 +389,8 @@ export function applyCrew(state, crew) {
     if (sv) s.startVehicle = sv; else delete s.startVehicle;
     // Their points left go to the car pool for the vehicle's back (custompoints.js carPool).
     if (c.carPool) s.carPool = true; else delete s.carPool;
+    // Their own points max, set on their card (custompoints.js maxFor; else the crew's Points each).
+    if (Number.isFinite(c.ownMax)) s.ownMax = c.ownMax; else delete s.ownMax;
   });
 }
 

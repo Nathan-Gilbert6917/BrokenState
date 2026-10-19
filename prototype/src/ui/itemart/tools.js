@@ -85,6 +85,29 @@ function manual(tab, emblem, key = { x: C.white }) {
 }
 
 export const GEAR_ART = {
+  // ---- survival gear (2026-10-19, sim/data-survival.js)
+  anglelight: (p) => { // an army right-angle flashlight: an olive body, the lens head bent forward, the belt clip
+    R(p, 3, 4, 10, 15, K.od); V(p, 3, 4, 15, K.odL); V(p, 10, 4, 15, K.odD); H(p, 3, 10, 15, K.odD);
+    box(p, 3, 0, 14, 4, K.od, K.odL, K.odD); R(p, 14, 0, 15, 4, C.silverD); V(p, 15, 1, 3, K.glow); p.set(15, 1, K.glowL);
+    R(p, 1, 6, 2, 12, K.metal); p.set(1, 6, C.silver); R(p, 5, 7, 8, 8, C.red); dots(p, 4, 9, 12, K.odD);
+  },
+  solarlantern: (p) => { // a collapsible lantern: a solar panel on the lid, a pale glowing body, the carry loop
+    stamp(p, 5, 0, ["......", ".x..x.", ".xxxx."], { x: C.silverD });
+    R(p, 2, 3, 13, 5, C.blackL); dots(p, 3, 12, 4, "#2c3b66"); H(p, 2, 13, 3, "#55595f");
+    R(p, 4, 6, 11, 12, K.glow); R(p, 5, 7, 7, 10, K.glowL); for (const y of [8, 11]) H(p, 4, 11, y, C.whiteD);
+    R(p, 3, 13, 12, 15, C.blackL); H(p, 3, 12, 13, "#55595f"); p.set(11, 14, C.green);
+  },
+  jumpbag: (p) => { // an orange EMS bag: a reflective stripe, a white star of life, the zip and handles
+    stamp(p, 4, 0, ["xxxxxxxx", "x......x"], { x: C.black });
+    box(p, 0, 2, 15, 15, C.orange, shade(C.orange, 0.25), C.orangeD); H(p, 1, 14, 4, C.black);
+    H(p, 0, 15, 12, C.silver); H(p, 0, 15, 13, C.silverD);
+    R(p, 6, 6, 9, 10, C.blue); R(p, 7, 5, 8, 11, C.blue); R(p, 5, 7, 10, 9, C.blue); R(p, 7, 7, 8, 9, C.white);
+  },
+  rangefinder: (p) => { // a hunter's laser rangefinder: a camo body, a big front lens, the eyepiece and a red button
+    box(p, 1, 4, 13, 12, K.od, K.odL, K.odD); for (const [x, y] of [[3, 6], [6, 9], [9, 6], [11, 10], [4, 10]]) R(p, x, y, x + 1, y, K.fdeD);
+    R(p, 13, 4, 15, 12, C.blackL); disc(p, 14, 8, 2, C.blueD); p.set(14, 7, C.blueL); p.set(15, 9, C.red);
+    R(p, 0, 6, 1, 10, C.black); R(p, 6, 2, 8, 3, C.red); H(p, 6, 8, 2, C.redL);
+  },
   // ---- skill books
   medbook: book(C.white, "cross", { x: C.red }, C.red),
   surgerybook: book(C.red, "scalpel", { x: C.white, h: C.silverD }),
@@ -564,18 +587,15 @@ export const GEAR_ART = {
       box(p, x, y, x + 4, y + 6, C.silver, C.white, C.silverD); H(p, x, x + 4, y + 2, C.red); H(p, x, x + 4, y + 3, C.red);
     }
   },
-  boards: (p) => { // three split planks tied in a bundle with cord, a few nails beside it (barricade.js Board up)
-    for (const [x0, y0, x1] of [[0, 1, 12], [2, 4, 15], [1, 7, 13]]) {
-      box(p, x0, y0, x1, y0 + 2, C.brownL, shade(C.brownL, 0.25), C.brown);
-      p.set(x0 + 3 + (y0 % 4), y0 + 1, C.brown); p.set(x1 - 3, y0 + 1, C.brown); // the grain
-    }
-    for (const x of [4, 10]) V(p, x, 1, 9, C.rope); // the cord round them
-    for (const [x, y] of [[1, 12], [5, 14], [9, 12]]) { V(p, x, y - 1, y + 1, C.white); H(p, x + 1, x + 5, y, C.silver); } // nails: a head and a shank
-  },
   sandbags: (p) => {
     const bag = (x0, y0, x1, y1) => { oval(p, x0, y0, x1, y1, C.khaki); H(p, x0 + 2, x1 - 2, y0, shade(C.khaki, 0.25)); H(p, x0 + 1, x1 - 1, y1, C.khakiD); p.set(x1 - 1, y1 - 1, C.khakiD); dots(p, x0 + 2, x1 - 2, y0 + 2, C.khakiD, 3); };
     bag(0, 9, 7, 15); bag(8, 9, 15, 15); bag(3, 3, 12, 9);
     p.set(3, 6, C.rope); p.set(12, 6, C.rope);
+  },
+  boards: (p) => { // a bundle of split planks tied with rope, nails poking out (barricade.js)
+    for (const [y, x0, x1] of [[3, 0, 13], [6, 2, 15], [9, 0, 14], [12, 1, 15]]) { R(p, x0, y, x1, y + 2, C.woodL); H(p, x0, x1, y, shade(C.woodL, 0.25)); H(p, x0, x1, y + 2, C.wood); p.set(x0, y + 1, C.wood); p.set(x1, y + 1, C.brownD); }
+    for (const x of [4, 10]) V(p, x, 2, 15, C.rope);
+    for (const [x, y] of [[1, 2], [14, 5], [2, 8], [13, 11]]) p.set(x, y, C.silver);
   },
 };
 

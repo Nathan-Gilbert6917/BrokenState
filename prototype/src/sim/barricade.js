@@ -57,7 +57,7 @@ export const SHOVE = { AP: 2, NOISE: 1, RADIUS: 3, HELP_AP: 1, STRONG_MELEE: 6 }
 export const CRAWL = { COST: 4 };
 export const BOARD = {
   AP: 2, HP: 40, MAX: 3, NOISE: 1.5, HEAT: 3, RADIUS: 6, TEAR: { ap: 2, noise: 0.5, radius: 3, BACK: 0.5 },
-  KIT: { guards: 0.4, militia: 0.4, fighters: 0.3, survivalists: 0.3, preppers: 0.5, soldiers: 0.2 }, // the chance a human of this kit carries a bundle (the AI's boards: u.boards)
+  KIT: { guards: 0.4, militia: 0.4, fighters: 0.3, survivalists: 0.3, preppers: 0.5, soldiers: 0.2, drifters: 0.15 }, // the chance a human of this kit carries a bundle (the AI's boards: u.boards)
   AI: { MAX: 6, WOOD: 30, SCRAP: 1 }, // a group's base boarded before an assault: at most this many bundles, each paid from their stock at the player's recipe
 };
 // What can be shoved, and the hit points a shoved piece gets (the dead batter it: combat.js bash, SIEGE).

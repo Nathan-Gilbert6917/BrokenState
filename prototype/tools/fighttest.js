@@ -716,7 +716,7 @@ const groupOf = (state, type) => {
     wall.broken = null; wall.wear = 10;
     const w0 = baseWalls(b5);
     wall.wear = 70;
-    check(baseWalls(b5) === w0 - 1, `a damaged wall section gives 2 wall strength instead of 3 (${w0} → ${baseWalls(b5)})`);
+    check(Math.abs(baseWalls(b5) - w0 * 2 / 3) < 0.1, `a damaged wall gives two thirds of its wall strength (buildings.js WALL_DAMAGED: ${w0} → ${baseWalls(b5)})`);
     const bunk = b5.buildings.find((b) => b.type === "bunkhouse");
     bunk.broken = null;
     const beds0 = baseBeds(b5);

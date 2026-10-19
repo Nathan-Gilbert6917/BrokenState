@@ -479,7 +479,7 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (r.gear === "cookpot") check(!/power|armor/.test(text) && text.length > 0, `${key}: the camp cook pot is a tool, no power or armor (${text})`); // sim/cooking.js: kept at a base without a Kitchen or a cook fire
     else if (d.ears) check(!/power|armor/.test(text) && /off a bang's loudness/.test(text) && /a pair a fight/.test(text) && /fights/.test(text), `${key}: earplugs say what they take off a bang and how they wear (${text})`); // sim/hearing.js: the rag earplugs
     else if (r.gear === "makeshiftpick") check(!/power|armor/.test(text) && /picks locks/.test(text) && /3 a craft/.test(text), `${key}: makeshift picks say what they pick and how many a craft (${text})`); // sim/locks.js
-    else if (r.gear === "boards") check(!/power|armor/.test(text) && text.length > 0, `${key}: boards and nails are a tool for barricades, no power or armor (${text})`); // sim/barricade.js
+    else if (r.gear === "boards") check(!/power|armor/.test(text) && /door/.test(text) && /window/.test(text) && /hit points/.test(text), `${key}: boards and nails say what they board up and how strong (${text})`); // sim/barricade.js
     else check(/armor/.test(text) && !/power/.test(text), `${key}: armor lists its armor value (${text})`);
   }
   const h = hub(st);

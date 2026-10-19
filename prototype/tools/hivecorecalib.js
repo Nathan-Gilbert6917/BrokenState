@@ -47,7 +47,7 @@ export function coreTrial(seed, tier, { lights = true, n = 6, weapon = "ar", arm
   for (const s of people) s.location = { kind: "party", partyId: p.id };
   st.parties.push(p);
   // Physical rounds (mags.js, 2026-10-18): a Reload draws only on what the person carries, and the team's bags fill the
-  // guns and the spare magazines once, as the fight starts (combat.js fillTeam). Before, every Reload drew on the
+  // guns and the spare magazines once, as the fight starts (combat.js fillTeamSpares). Before, every Reload drew on the
   // team's 240 rounds, whoever shot them. So the squad goes kitted as a trip packs it (parties.js launchExpedition):
   // spare magazines for a magazine gun out of the hub's armory (carrykit.js packMags, CARRY.PACK a gun; here an armory
   // that has them), rounds enough to fill every gun and magazine it carries (at least `ammo`: 240 fills six hunting

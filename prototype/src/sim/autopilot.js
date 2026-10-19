@@ -52,6 +52,7 @@ import { KITCHEN, hasKitchen, cooksWanted, kitchenCold, kitchenCanLight, kitchen
 import { conditionsOf, CONDITIONS, treatCondition, treatConditionInfo, medsToTreatAll, autoWantsCondition } from "./health.js";
 import { govCookBills } from "./cooking.js"; // wave 2 cooking: the governor's and the stewards' bills
 import { canUpgradeKitchen, queueCannerUpgrade, canUpgradeGenerator, queueGenUpgrade, stationOperator } from "./buildings.js"; // machines-2: the pressure canner; gen-tiers: a generator upgraded
+import { nextWallTier, wallTier } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
 import { BUILDINGS, RECIPES, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
 import { isHurt, hospitalDef, nextHospitalType, treatAtBase, treatAtBaseInfo, fieldTreatInfo, careNeed, treaters } from "./medical.js";
@@ -980,6 +981,22 @@ function pickChoice(state, card, opts, p) {
   if (/ patrol$/.test(t)) return find(/^Share news/);
   if (/^Abandoned supply truck/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search it/);
   if (/^Crashed military vehicle/.test(t)) return (chance(/^Search it/) >= P.risk ? find(/^Search it/) : null) || find(/^Leave it/);
+  if (/^A swollen creek/.test(t)) return (chance(/^Wade/) >= P.risk ? find(/^Wade/) : null) || find(/^Walk upstream/);
+  if (/^(Wolves|Feral dogs)$/.test(t)) return (chance(/^Back away/) >= P.risk ? find(/^Back away/) : null) || find(/^Throw them/) || find(/^Drive them off/) || find(/^Back away/);
+  if (/^A warning on the road/.test(t)) return (!careful(P) && chance(/^Scout ahead/) >= 0.7 ? find(/^Scout ahead/) : null) || find(/^Mark it/);
+  if (/^A lonely farmhouse/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search it/);
+  if (/^(A gone-wild orchard|Brambles in fruit)/.test(t)) return find(/^Pick/);
+  if (/^A roadside gas station/.test(t)) return (p && p.vehicle && !careful(P) ? find(/^Hand-pump/) : null) || find(/^Pick through/);
+  if (/^An overrun camp/.test(t)) return careful(P) ? find(/^Bury/) : find(/^Search the camp/);
+  if (/^A stranger with the worm/.test(t)) return find(/^Leave them food/) || find(/^Move on/);
+  // Hardcore's year Calder falls (events.js HC_EVENTS).
+  if (/^Gridlock$/.test(t)) return (p && p.vehicle ? find(/^Siphon/) : null) || find(/^Go through the luggage/);
+  if (/^An abandoned checkpoint/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search the crates/);
+  if (/^The emergency broadcast/.test(t)) return find(/^Listen/) || find(/^Note it/);
+  if (/^They would not leave/.test(t)) return (chance(/^Tell them/) >= 0.4 ? find(/^Tell them/) : null) || find(/^Move on/);
+  if (/^An? .+ being looted$/.test(t)) return (!careful(P) && chance(/^Slip in/) >= 0.75 ? find(/^Slip in/) : null) || find(/^Wait for them/);
+  if (/^Still in uniform/.test(t)) return find(/^Put them down/);
+  if (/^A relief drop/.test(t)) return careful(P) ? find(/^Grab/) : find(/^Take it all/);
   if (/^Tempers flare/.test(t)) return (chance(/^Step in/) >= 0.5 ? find(/^Step in/) : null) || find(/^Let them/);
   if (/^Cold feet/.test(t)) return find(/^Convince/);
   if (/^Horde of /.test(t)) return (p && p.vehicle && partyFuelOf(state, p) >= 8 ? find(/^Outrun/) : null) || find(/^Hide/);
@@ -2198,7 +2215,7 @@ function planRoles(state, base, areas = ALL_AREAS) {
   // days a head) in the two months before the cold: the crew it takes to have the woodpile in by the cold (planWood's critical). Job trips (2026-10-10)
   // let any base hunt, and the hunters and a short winter outlook's farm crew took every hand of a small hub ahead of
   // step 4a: woodtest seed 43 met the winter with no firewood at all (30 woodcutter-days from late summer).
-  const wood = planWood(state, base, people, areas);
+  const wood = planWood(state, base, people, areas, foodDays);
   const woodFirst = !!wood && foodDays >= WOOD_AP.foodFirst && wood.w.toCold > 0 && wood.w.toCold <= WOOD_AP.autumn * 2; // the run-up to the coming cold (not the tail of the last one: a spring start builds first)
   if (woodFirst) for (const s of ranked("wood", wood.score, wood.fit).slice(0, wood.critical)) give(s, "wood");
   const landGoal = Math.max(40, foodTarget(state, base) * 1.5);
@@ -2842,7 +2859,7 @@ function buildWishes(state, base) {
   if (Math.max(threat.urgent, threat.standing) > baseDefense(state, base) * 0.9) add("walls", "raiders or hordes nearby", true);
   // Hordes (defences.js): walls when a horde in sight would break in, then barricades, spike pits and the rest.
   const hz = hordeThreat(state, base);
-  if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && count(base, "walls") + queued("walls") < BUILDINGS.walls.max) add("walls", `a horde of ${hz.size} would break in`, true);
+  if (hz.size && !holdCheck(state, base, hz.size, hz.bosses, hz.mix).holds && !queued("walls") && nextWallTier(base)) add("walls", `a horde of ${hz.size} would break in`, true);
   if (hz.any) for (const w of defenceWishes(state, base, true)) if (!queued(w.type)) out.push(w);
   // A radio relay (radio.js) at any base (the hub too) where one would link to the network and bring a group you
   // know (not hostile) into radio reach: greetings, pacts and the coalition's invitation need it (alliance.js
@@ -2946,7 +2963,7 @@ function buildWishes(state, base) {
   if (!count(base, "garage") && carsAtBase(state, base.id).length && (st.parts || 0) >= 5) add("garage", "cheaper vehicle repairs");
   // Room for newcomers once the scrap is there (the housing's cost and HOUSING.scrapAhead more: 45 for a bunkhouse).
   if (people + (homeFood ? 6 : 2) > beds) for (const w of housingWishes(state, base, homeFood ? "spare beds (a fire in the bunkhouse must not crowd the fortress)" : "room for newcomers", false)) if ((st.scrap || 0) >= (wishCost(w).scrap || 0) + HOUSING.scrapAhead) { out.push(w); break; }
-  if (count(base, "walls") < 2 && (st.scrap || 0) >= 70) add("walls", "stronger defense");
+  if (wallTier(base) < 3 && !queued("walls") && (st.scrap || 0) >= 70) add("walls", "stronger defense"); // buildings.js WALL_TIERS: up to a scrap-metal wall when rich
   // Cautious (reserves): a med station as soon as meds run short (the surest source), and a radio station once
   // there are parts for it: scanning finds the groups in reach, and radio deals bring what runs short without a
   // trip (reserveRadio).
@@ -2955,7 +2972,7 @@ function buildWishes(state, base) {
     if (!count(base, "med_station") && pop >= 5 && rs.meds.short) add("med_station", "meds are below the reserve", true);
     if (!base.radio && (st.parts || 0) >= 6 + rs.parts.target && best("mechanics") >= 4) add("radio", "radio deals for what runs short", true);
     // Hordes are a known danger here: a second wall tier (each holds back 54 more of a horde, a Wallbreaker's 60%).
-    if (rs.threat >= 1 && count(base, "walls") + queued("walls") < 2) add("walls", "hordes are near: a stronger wall", true);
+    if (rs.threat >= 1 && wallTier(base) + queued("walls") < 3) add("walls", "hordes are near: a stronger wall", true);
   }
   return out;
 }
@@ -5122,22 +5139,35 @@ const crewDays = (k) => Array.from({ length: Math.max(0, k) }, (_, i) => woodCro
 // (the cold within WOOD_AP.autumn days, or here, or the boiler burning wood) the crew it takes to have the pile in by
 // the cold, at most woodCrewMax; in late summer what the summer must cut so that the autumn's full crew can finish it
 // (at least one, at most that crew; it was one, whatever the need). n: the people here.
-// Out of the stocking season with no boiler, a kitchen under its days of firewood (kitchen.js KITCHEN.wood.keepDays)
-// wants only the hands to keep its stove going and fill those days within a week (kitchenWoodHands), not the winter's.
-const kitchenOnly = (w) => !w.season && !(w.boiler > 0) && w.pressing && w.kitchen > 0;
-const kitchenWoodHands = (state, base, w) => Math.max(1, handsForDay(w.kitchen + Math.max(0, w.kitchen * KITCHEN.wood.keepDays - w.have) / 7, baseWoodDay(state, base), woodCrowd));
-export function woodCritical(state, base, w, n) {
-  if (kitchenOnly(w)) return Math.min(n <= 3 ? 1 : woodCrewMax(n, w), kitchenWoodHands(state, base, w));
+// Out of the stocking season with no boiler, the daily draws (a kitchen under its days of firewood, kitchen.js
+// KITCHEN.wood.keepDays; a camp's fire and the nights' fires under theirs, woodcutting.js woodNeed: fire-nights) want
+// only the hands to keep them going and fill those days within a week (dailyWoodHands), not the winter's.
+// A medium priority, behind the food and the water (fire-nights, the user's rule): out of season the crew is at most
+// half the stocking season's (dailyCrewMax: one at a base of 3 or fewer, 3 of 20), fills the days over WOOD.nightDays,
+// and is one woodcutter while food is short (planWood lean: under WOOD_AP.foodFirst days a head), the fires taking what
+// the pile holds (a cool night without it costs HEAT.night of a freezing day's: needs.js heatDaily).
+const dailyOnly = (w) => !w.season && !(w.boiler > 0) && w.pressing && w.daily > 0;
+const dailyCrewMax = (n, w) => (n <= 3 ? 1 : Math.max(1, Math.ceil(woodCrewMax(n, w) / 2)));
+const dailyWoodHands = (state, base, w) => Math.max(1, handsForDay(w.daily + Math.max(0, w.dailyKeep - w.have) / WOOD.nightDays, baseWoodDay(state, base), woodCrowd));
+export function woodCritical(state, base, w, n, foodDays = null) {
+  if (dailyOnly(w)) {
+    // Food first: with the food under its target (farmCrewLimits hungry, the farm's own rule) a woodcutter goes ahead of
+    // the farm only with under two days of the fires in the pile (worktest 2b: the farm's extra hands were pulled to
+    // the nights' wood; foragetest: a hardcore camp of three sent one to the woods while its forager was its food).
+    const fd = foodDays ?? edibleFood(base) / Math.max(1, mouthsAt(state, base).heads);
+    if (farmCrewLimits(state, base, fd, n).hungry) return w.have < w.daily * 2 ? 1 : 0;
+    return Math.min(dailyCrewMax(n, w), dailyWoodHands(state, base, w));
+  }
   const want = woodCuttersFor(state, base, w);
   if (n <= 3) return Math.min(1, want);
   const full = Math.min(want, woodCrewMax(n, w));
-  if (w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0) return full; // the boiler burns wood every day
+  if (w.cold || w.toCold <= WOOD_AP.autumn || w.boiler > 0 || w.fire > 0 || w.night > 0) return full; // the boiler, a camp's fire and the nights' fires burn wood every day
   const each = baseWoodDay(state, base);
   // What the autumn's crew will not cut, and what the Kitchen's stove (kitchen.js) burns every day until the cold.
   const left = Math.max(0, w.need - w.have + (w.kitchen || 0) * w.toCold - each * crewDays(full) * WOOD_AP.autumn);
   return Math.min(full, Math.max(1, handsForDay(left / Math.max(1, w.toCold - WOOD_AP.autumn), each, woodCrowd)));
 }
-function planWood(state, base, people, areas) {
+function planWood(state, base, people, areas, foodDays = Infinity) {
   // A shelter (tier 0) too (ap-food 2026-10-12): its fire is its only cooking (worm.js baseCooks) and burns firewood
   // from its store (woodcutting.js shelterFire, woodNeed's fire days); with none cut it was out most days, the raw game
   // and fish were eaten last (eating.js) and rotted (seed 6011, hardcore Turtle: 133 days of food thrown out against 337
@@ -5145,14 +5175,16 @@ function planWood(state, base, people, areas) {
   if (!areas.production || gov(state).noWood || woodWorkWhy(state, base)) return null;
   const w = woodNeed(state, base, base.type === "hub" ? returning(state, base) : 0);
   if (!w.short || !w.soon || w.need <= 0) return null;
-  const cap = kitchenOnly(w) ? woodCritical(state, base, w, people.length) : woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks (only the kitchen's days out of season)
+  const cap = dailyOnly(w) ? woodCritical(state, base, w, people.length) : woodHandsWanted(state, base, { w }); // the spare hands' crew: the pile in within three weeks (only the daily draws' days out of season)
   // The water boiler (worm.js) burns its firewood every day: enough woodcutters to keep up with it, on top of the winter's.
   const want = woodCuttersFor(state, base, w);
   const small = people.length <= 3; // a tiny hub (hardcore's first): the leader cuts wood too
+  // Food under its target out of season (fire-nights, woodCritical): the hands feed the base; one woodcutter at most.
+  const lean = dailyOnly(w) && farmCrewLimits(state, base, foodDays, people.length).hungry;
   return {
-    cap,
+    cap: lean ? Math.min(1, cap) : cap,
     w,
-    critical: Math.min(want, woodCritical(state, base, w, people.length)),
+    critical: Math.min(want, woodCritical(state, base, w, people.length, foodDays)),
     stock: true,
     fit: (x) => !x.inBed && (small || !x.leader) && (x.health ?? 100) >= 50 && !x.woundInfected,
     score: (x) => woodcutterMult(x) * bestChop(x).mult,

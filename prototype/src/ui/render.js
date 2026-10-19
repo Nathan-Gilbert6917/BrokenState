@@ -12,7 +12,7 @@ import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team hel
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById, partyVehicles, raidHumvees } from "../sim/vehicles.js";
 import { conditionsOf, CONDITIONS } from "../sim/health.js"; // a lone walker's limp
-import { BUILDINGS, count, tierUpJob, gatherCap, isCamp, CAMP } from "../sim/buildings.js";
+import { BUILDINGS, count, tierUpJob, gatherCap, isCamp, CAMP, wallTier } from "../sim/buildings.js";
 import { weatherTint, season, iceRow } from "../sim/weather.js";
 import { drawFronts, weatherTipLines } from "./wxmap.js"; // weather fronts over the land, frozen rivers in the tooltip
 import { radioNodes } from "../sim/radio.js";
@@ -1875,7 +1875,7 @@ function baseLook(b) {
   const hosp = Math.max(0, ...b.buildings.map((x) => (def(x).family === "hospital" ? def(x).tier : 0)));
   const farms = count(b, "farm_plot");
   return {
-    kind: b.tier === 0 ? "shelter" : b.type === "hub" ? "hub" : "outpost", color: PLAYER_COLOR, walls: Math.min(3, count(b, "walls")),
+    kind: b.tier === 0 ? "shelter" : b.type === "hub" ? "hub" : "outpost", color: PLAYER_COLOR, walls: Math.min(3, wallTier(b)),
     rain: count(b, "rain_catcher") > 0, rack: count(b, "smoker") > 0, fire: b.fire, // a shelter's look (mapsprites.js paintShelter)
     tower: !!b.watchtower, radio: !!b.radio || count(b, "relay") > 0, hosp, farms: farms >= 4 ? 2 : farms ? 1 : 0,
     workshop: b.buildings.some((x) => def(x).station), big: b.buildings.length >= 4,

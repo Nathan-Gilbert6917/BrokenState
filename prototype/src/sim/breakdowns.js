@@ -19,14 +19,14 @@
 // they overrun the base), the rest on the buildings inside (bunkhouses, stores, workshops, the radio, wells…); 40%
 // of the hits after the first fall on the building hit last, if it still stands (they hammer at a weak spot).
 // A building pushed to 100 wear breaks (it does nothing until repaired, as above); one at 60+ is damaged and may
-// break any day (damaged walls give 2 wall strength instead of 3, buildings.js baseWalls). An overrun base also
+// break any day (a damaged wall gives two thirds of its tier's wall strength, buildings.js baseWalls). An overrun base also
 // loses one broken building outright (60%: torn down or burned, never the walls). Raiders that are driven off
 // quickly leave scratches; a long siege, a break-in or an overrun leaves a repair bill (the result card and the
 // log list it; the Repairs tab keeps the last raid's damage). Nobody repairs or builds at a base while it is on
 // alert or under siege (the builders and mechanics are on the walls): that is what "Prepare defenses" costs.
 //
 // A broken fixture: a station does nothing, a well gives no water (the hub's pump: 6 less a day), the radio station
-// is off the air, walls lose their +3 wall strength, the gate its horde bonus, the storehouse its room. It shows in
+// is off the air, a wall loses its wall strength, the gate its horde bonus, the storehouse its room. It shows in
 // the alerts and the base's Repairs tab, with a card offering:
 //   Repair properly  the best free mechanic (Mechanics at least the job's minimum) for the job's hours (× 1.2 − 3% a
 //                    Mechanics point, at least 40%, faster with Handy / Master Builder), and its scrap and parts;
@@ -87,7 +87,7 @@ export const FIXTURES = {
   // with the canner's seals and gauge, its repair takes a machine part, a spare part every 30 days it runs (the sealer's).
   canner:      { use: 1.0, idle: 0.05, spares: 30, repair: { hours: 5, cost: { scrap: 2, parts: 1 }, min: 2 }, rig: { hours: 2, cost: { scrap: 1 }, min: 1 }, what: "no preserving (the kitchen and its pressure canner)" },
   radio:       { use: 0.7, storm: 6, spares: 20, repair: { hours: 10, cost: { scrap: 4, parts: 2 }, min: 4 }, rig: { hours: 3, cost: { scrap: 2 }, min: 2 }, what: "the radio station is off the air" },
-  walls:       { age: 0.05, attack: 18, repair: { hours: 12, cost: { scrap: 10 }, min: 0 }, rig: { hours: 4, cost: { scrap: 4 }, min: 0 }, what: "−3 wall strength" },
+  walls:       { age: 0.05, attack: 18, repair: { hours: 12, cost: { scrap: 10 }, min: 0 }, rig: { hours: 4, cost: { scrap: 4 }, min: 0 }, what: "no wall strength" },
   gate:        { age: 0.05, attack: 22, repair: { hours: 8, cost: { scrap: 6, parts: 1 }, min: 1 }, rig: { hours: 3, cost: { scrap: 3 }, min: 0 }, what: "the gate no longer holds hordes back" },
   storehouse:  { age: 0.1, storm: 8, rain: 1, repair: { hours: 6, cost: { scrap: 4 }, min: 0 }, rig: { hours: 2, cost: { scrap: 2 }, min: 0 }, what: "a leaking roof: no food room and no protection from raiders" },
   // Raid damage only (raidOnly: no wear from use, age or weather; outer: the defensive line raiders hit first).

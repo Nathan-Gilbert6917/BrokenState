@@ -50,6 +50,7 @@ import {
   factionById, baseById, survivorById, makeSurvivor, RADIO_RANGE, supplyValue, armedFactor, spendShots, arrowsBack,
 } from "./world.js";
 import { spawnAiParty, sendHelpSquad, removeParty, awaitOrders, tileLabel } from "./parties.js";
+import { raidMines } from "./mines.js"; // a minefield on a raid's way in
 import { baseWalls, count, isCamp } from "./buildings.js"; // a camp (staging.js): only its own tile, a light raid target
 import { radioBasesInRange, removeBase, localId } from "./world.js";
 import { goodwillMult } from "./traits.js"; // Diplomatic: goodwill gains and losses
@@ -66,11 +67,12 @@ import { raidDamage, raidReportCard, RAID_DAMAGE } from "./breakdowns.js";
 import { occupyPlayerBase, razePlayerBase, retreatFrom, nearestOtherBase, CONQUEST, ensureConquest } from "./conquest.js";
 import { controlledLand, ALLIANCE, coalitionMask, isMember as isMemberOf } from "./alliance.js";
 import { gangArms, recruitBonus, gangPopBonus, isLate, ERAS, raidPaceOpen, noteRaid, raidPrep, raidSizeRange } from "./eras.js";
-import { raidTier } from "./defences.js";
+import { raidTier, pitsOnRaid } from "./defences.js";
 import { SURPRISE } from "./watch.js"; // an unwatched night: the raiders get the first move
 import { hcNoRaiders, hcGroupRaidsQuiet } from "./hardcore-groups.js";
 import { raidSiegeKit, kitText } from "./siege.js";
-import { freezeShare } from "./woodcutting.js";
+import { freezeShare, chillShare } from "./woodcutting.js"; // the freezing days and the cool nights (fire-nights) their woodpiles burn for
+import { HEAT } from "./upkeep.js";
 import { ensureHives, hiveGuard, destroyHive, hivesLeftText } from "./hives.js";
 import { markThreat } from "./hivetech.js";
 import { groupHiveCrawl, groupTakeHoard, groupMakeKit } from "./hivecrawl.js"; // a war party crawls the same den as your teams; the core's hoard
@@ -324,8 +326,10 @@ export function razeGroupBase(state, target, tile, attacker) {
 }
 
 // A group's woodpile a head: at the start, the most it keeps, cut a day, burned on a freezing day (the share of freezing
-// days by the time of year, woodcutting.js FREEZE_SHARE).
+// days by the time of year, woodcutting.js FREEZE_SHARE) and HEAT.night of that for a cool night above freezing
+// (woodcutting.js chillShare; fire-nights, as your bases: upkeep.js HEAT.night).
 export const GROUP_WOOD = { start: 120, cap: 240, cut: 3.6, burn: 9 }; // firewood of 0.1 kg (30 times the old 3 kg units)
+export const groupHeatShare = (dayIdx) => freezeShare(dayIdx) + HEAT.night * chillShare(dayIdx);
 export function factionsDaily(state) {
   const rng = state.rng;
   const today = day(state);
@@ -349,7 +353,7 @@ export function factionsDaily(state) {
     // fish only where a base holds water, nothing from a besieged base's land. Their kitchens' hot meals stretch the
     // food and their cooks work no fields (groupworks.js KITCHEN).
     const hands = workingPeople(f);
-    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * freezeShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
+    groupKitchenDaily(state, f, f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1), f.stock.wood ?? f.pop * GROUP_WOOD.start); // groupworks.js: the kitchens' stoves burn their firewood (after the heating), or are cold
     // Food by type (foods.js, coarse for the AI: no lots): their fields, hunters and pens bring in their kind of food
     // (groupFieldFood: crops, grain, game, eggs) by the people at work (their land: grouptrips.js groupFoodLand; their
     // cooks are in the kitchen), everyone eats a day's food (less where a kitchen feeds them: groupEatMult; the soonest
@@ -393,7 +397,7 @@ export function factionsDaily(state) {
     groupWorldDaily(state, f); // groupworld.js: scouting (and spies at your walls), vehicles taken, stolen, sold, fitted out
     // Firewood (woodcutting.js): they cut a little every day and burn it on freezing days, so their woodpile (and its
     // price, trade.js) runs low by the end of a winter and fills again by the autumn.
-    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * freezeShare(today - 1))); // grouptrips.js: the wood land their bases hold
+    f.stock.wood = Math.max(0, Math.min(f.pop * GROUP_WOOD.cap, (f.stock.wood ?? f.pop * GROUP_WOOD.start) + hands * GROUP_WOOD.cut * groupWoodLand(state, f) - f.pop * GROUP_WOOD.burn * groupHeatShare(today - 1))); // grouptrips.js: the wood land their bases hold
 
     // Expansion: claim a nearby site. Aggressive groups push out more, toward rich sites and toward you.
     const agg = isAggressiveType(f);
@@ -806,6 +810,12 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
   const def = baseDefense(state, base, caught) + allies.power;
   const att = party.strength + raidTurretPower(state, party) + (baseWalls(base) ? wallPower(state, f, raidCount(f, party.strength)) : 0); // vehicles.js: the Humvee and its M2 if the raid brought it; arsenal.js: launchers against walls
   if (allies.names.length) log(state, `Fighters from ${allies.names.join(" and ")} came to help defend ${base.name}.`, "good");
+  // mines.js: the minefield on their way in (fought on the map, the mines are settled there instead).
+  const mined = beaten ? { used: 0, dead: 0 } : raidMines(state, base);
+  // defences.js: raiders who fall into the spike pits on the way in.
+  const pitDead = beaten || !count(base, "spike_pits") ? 0 : pitsOnRaid(state, base);
+  if (!beaten && count(base, "spike_pits")) { f.pop = Math.max(0, f.pop - pitDead); log(state, `${f.name} raiders blundered into the spike pits at ${base.name}${pitDead ? `: ${pitDead} of them killed on the stakes` : ", hurt but alive"}.`, "good"); }
+  if (mined.used) { f.pop = Math.max(0, f.pop - mined.dead); log(state, `${f.name} raiders ran into the minefield at ${base.name}: ${mined.used} mine${mined.used === 1 ? "" : "s"} went off${mined.dead ? `, ${mined.dead} of them killed` : ""}.`, "good"); }
   const shot = beaten ? { ammo: 0, arrows: 0 } : spendShots(base.stock, people, 3); // 3 a head: the bows' in arrows, the rest's in ammo
   // The walls, the yard and the buildings (defences.js raidTier): held at the wall, a break-in pushed back from the
   // yard or the buildings, or overrun.

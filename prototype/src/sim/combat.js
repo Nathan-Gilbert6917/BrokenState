@@ -88,6 +88,7 @@ import { GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH } from "./data-guns.js"; // the we
 import { withFactory } from "./factoryfit.js"; // a sniper rifle carried with its scope and bipod (section 22)
 import { throwLanding } from "./throwables.js"; // a thrown spear lands like any throw
 import { BLADE_WEAPONS, BLADE_KIT_PATCH } from "./data-blades.js"; // knives and swords (merged below)
+import { SURV_MELEE, SURV_KIT_PATCH } from "./data-survival.js"; // survival gear: the Halligan bar and the pipe wrench (merged below)
 import { NL_WEAPONS, NL_KIT_PATCH } from "./data-nonlethal.js"; // the stun baton; tasers and spray on guards (merged below)
 import { nlHit, nlDown, nlAfterHit, nlAimPen, nlNoOw, nlStrike, nlAct, nlSetup, nlEnemyPhase, nlTurnStart, nlAI, nlBreak, nlBattleEnd, nlRaidEnd, nlDropPiles, nlSpared, blinded, setTakeAlive } from "./nonlethal.js"; // non-lethal weapons, taking people alive, surrender
 import { ammoPen, spreadMult } from "./data-ammo.js"; // a round's penetration: what bulletproof glass stops (riderHitMult); shot spreading with range
@@ -113,6 +114,8 @@ import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
 import { raidBuilding, buildingMap, buildingOptions, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
 import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
+import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js";
+import { mineStep, settleMines } from "./mines.js"; // land mines: set off underfoot, the rest kept by the base when it is over // barbed wire snags the living unless they cut it (the user's request 2026-10-19)
 import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, breakPiece, boardedName, aiBarricade, kitBoards } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
 import { poiRaidStart, poiMapRng, boxRng } from "./poicont.js"; // its containers as the ledger keeps them, their own dice
@@ -717,10 +720,11 @@ export const CELL = {
   // Base defences against hordes and the inside of a hive (defences.js, hives.js). trap: what happens to one of
   // the dead that steps in (spikes hurt, a trench stops it for the turn).
   barricade: { walk: false, cover: 2, los: false, name: "Barricade" },
-  spikes:    { walk: true,  cover: 0, los: false, name: "Spike pit", trap: "spikes" },
+  spikes:    { walk: true,  cover: 0, los: false, name: "Spike pit", trap: "spikes" }, // the living too, but never your own people (SPIKES, moveAlong)
   trench:    { walk: true,  cover: 0, los: false, name: "Trench", trap: "trench" },
-  // From the armory's defence kit (defences.js armoryDefence): wire stops the dead like the trench, a bear trap
-  // hurts and holds the first one to step in (then it is sprung).
+  // From the armory's defence kit (defences.js armoryDefence) and the base's wire fences (buildings.js barbed_wire,
+  // razor_wire; c.razor): wire stops the dead like the trench (razor wire cuts them too) and snags the living unless
+  // they cut it (wire.js wireStep); a bear trap hurts and holds the first one to step in (then it is sprung).
   wire:      { walk: true,  cover: 0, los: false, name: "Barbed wire", trap: "wire" },
   beartrap:  { walk: true,  cover: 0, los: false, name: "Bear trap", trap: "beartrap" },
   hivewall:  { walk: false, cover: 2, los: true,  name: "Hive flesh", tall: 2 },
@@ -868,6 +872,10 @@ export const KITS = {
               finds: ["lighters", "candles", "honey", "tea", "photos", "harmonica", "flare", "cigarettes"] },
   preppers: { label: "Prepper",  aim: 4, hp: 5, weapons: ["ar", "carbine", "carbine", "huntrifle", "shotgun"], strong: ["ar", "carbine"], armor: ["plate", "plate", "scrapvest"], loot: ["ar", "carbine", "plate", "milhelmet", "binoculars", "handradio", "rucksack", "bandagekit", "nvg", "smokegren"], pack: ["rucksack", 0.4],
               finds: ["chocolate", "instcoffee", "batteries", "heatpack", "lighters", "watch", "flare", "toothpaste"] },
+  // The lowest nomad tier, drifters (nomads.js T0): only what they made themselves (crafting.js CRAFTS): pipe spears,
+  // spiked and nail bats, shivs, the saw-blade machete, a scrap crossbow or a pipe shotgun, tyre vests. No KIT_PATCH.
+  drifters: { label: "Drifter", aim: -5, hp: -5, weapons: ["pipespear", "pipespear", "spikedbat", "shiv", "nailbat", "spikedbat", "crossbow", "pipegun"], strong: ["pipegun", "crossbow", "sawmachete"], armor: [null, null, "tirevest"], loot: ["pipespear", "spikedbat", "shiv", "nailbat", "sawmachete", "padding", "shinguards", "tirevest", "makeshiftrig", "slingbag", "torch", "makeshiftrod"], pack: ["slingbag", 0.35],
+              finds: ["makeshiftpick", "makeshiftpick", "ragplugs", "tourniquet", "noisemaker", "bottlecan", "molotov", "tripwire"] },
   // Loose survivors on their own (wanderers.js): the aggressive ones who rob like raiders, and neutrals on the map.
   survivors: { label: "Survivor", aim: -4, hp: -5, weapons: ["knife", "bat", "prybar", "pistol", "pistol", "revolver", "huntrifle", "shotgun"], strong: ["shotgun", "huntrifle"], armor: [null, null, null, "vest"], loot: ["knife", "bat", "prybar", "pistol", "revolver", "slingbag", "flashlight", "bikehelmet", "tirevest"], pack: ["backpack", 0.25],
               finds: ["photos", "photos", "cigarettes", "lighters", "chocolate", "candy", "watch", "goldring", "batteries", "deodorant", "lipbalm", "wetwipes"] },
@@ -886,6 +894,9 @@ for (const [kind, patch] of Object.entries(NL_KIT_PATCH)) for (const [k, list] o
 // Knives and swords (data-blades.js): their battle numbers, and the kits whose bodies carry them (loot lists only).
 Object.assign(WEAPONS, BLADE_WEAPONS);
 for (const [kind, patch] of Object.entries(BLADE_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
+// Survival gear (data-survival.js): the two tool weapons' battle numbers, and what the kits' bodies carry (loot lists only).
+Object.assign(WEAPONS, SURV_MELEE);
+for (const [kind, patch] of Object.entries(SURV_KIT_PATCH)) for (const [k, list] of Object.entries(patch)) if (KITS[kind]) KITS[kind][k] = [...(KITS[kind][k] || []), ...list];
 
 const idx = (x, y) => y * W + x;
 const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
@@ -3288,7 +3299,7 @@ export function playerUnit(b, s, side = "player") { // side: fighters.js builds 
   const medKit = tool && GEAR[tool.key] && GEAR[tool.key].medKit ? tool : null;
   const u = {
     fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
-    id: b.nextId++, side, kind: "human", sid: s.id, name: s.name, short: initials(s.name),
+    id: b.nextId++, side, kind: "human", sid: s.id, name: s.name, short: initials(s.name), cutter: cutterKeyOf(s), // wire.js: what they cut wire with, if anything
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : modLabel(item), // "9mm pistol (red dot, suppressor)"
     gm: key === "fists" ? NO_MODS : gunMods(item), gmWeapon: key, // gunmods.js: what its attachments add (shotOdds, shotNoise)
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s) + illnessAim(s) + tiredAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js); illness (health.js); tiredness (sleep.js)
@@ -3334,6 +3345,7 @@ export function refitUnit(b, u, s) {
   if (f.medKit !== u.medKit) { u.medKit = f.medKit; u.kitBonus = f.kitBonus; u.kitLeft = f.kitLeft; }
   MED.refitSelfAid(u, s); // medics.js: a tourniquet or a trauma kit within reach now
   u.fit = { aim: f.aim, dmgMult: f.dmgMult, armor: f.armor, medicine: f.medicine };
+  u.cutter = f.cutter; // wire.js: a cutter picked up, handed over or put down
   const held = u.weapon, rounds = magIn(u), heldLoad = u.load, heldItem = u.item;
   const swapped = (heldItem || null) !== (f.item || null); // another gun in the hands (gunload.js): what was in the old one goes with it
   if (swapped && heldItem) gunOut(b, u, heldItem);
@@ -3422,23 +3434,21 @@ export function refitKit(b, u, s) {
 }
 // The fight's start (createBattle, createRaid): the gun and the spares loaded physically (mags.js fillUnit), the stacks
 // it emptied thrown away (ammo.js sweepBoxes) and the unit's round caches rebuilt (the entries read the items' stacks).
-export function fillBattleUnit(b, u, s, opts = {}) {
-  fillUnit(b, u, opts);
+// Over the team in turns (fillTeamSpares): every gun first (spares false), then a spare each (gun false, spares 1) until
+// none is left, so the team's bags load each gun before anyone's spare magazines and share the spares out. (fighters.js
+// builds every person through it too: a person's own kit, never your team's bags.)
+export function fillBattleUnit(b, u, s, { gun = true, spares = /** @type {boolean | number} */ (true) } = {}) {
+  const n = fillUnit(b, u, { gun, spares });
   sweepBoxes(s);
   u.boxes = boxesOf(s);
   fitMags(b, u, carriedSpots(s), magCap(u), s);
   syncMags(u);
   loadMag(u, u.mag);
+  return n;
 }
-// A team's start (createBattle, createRaid): every gun first, then the spares one round at a time (each one's first
-// spare, then each one's second…), so the team's bags never fill the first fighter's spares while the last one's gun
-// starts the fight empty (a squad of six rifles with four spares each and 240 rounds: 30 in every gun and a spare for
-// two, not 150 and 90 on two of them and four empty guns). each: [unit, survivor] pairs.
-export function fillTeam(b, each) {
-  for (const [u, s] of each) fillBattleUnit(b, u, s, { spares: 0 });
-  const most = Math.max(0, ...each.map(([u]) => spareMags(u).length));
-  for (let j = 1; j <= most; j++) for (const [u] of each) fillUnit(b, u, { gun: false, spares: j });
-  if (most > 0) for (const [u, s] of each) fillBattleUnit(b, u, s, { gun: false }); // the caches refit with the spares in
+/** @param {any} b @param {[any, any][]} team [unit, survivor] pairs, guns already loaded */
+function fillTeamSpares(b, team) {
+  for (let more = true, guard = 0; more && guard < 100; guard++) { more = false; for (const [u, s] of team) if (fillBattleUnit(b, u, s, { gun: false, spares: 1 }) > 0) more = true; }
 }
 // After rounds left a survivor's items physically (a Reload, a magazine loaded by hand: mags.js): the emptied stacks
 // are thrown away (ammo.js sweepBoxes) and the unit's caches refit (u.boxes, the magazine entries).
@@ -3615,6 +3625,7 @@ export function enemyUnit(b, rng, kind, power, n) {
   syncModes(u);
   kitHeadgear(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // helmets.js: a helmet and ear protection by kit (own dice)
   kitFlashbangs(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // throwables.js FLASH_KIT: a soldier's or a guard's flashbang (its own dice)
+  u.cutter = kitCutter(kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // wire.js WIRE.KIT: snips for the wire (own dice)
   u.boards = kitBoards(kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0, id); // barricade.js BOARD.KIT: a bundle of boards to nail over a window while nothing is in sight (own dice)
   MED.kitSelfAid(u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // medics.js SELF.KIT: a tourniquet to stabilize themselves (its own dice)
   kitLauncher(b, u, kind, p, n, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // launchers.js: an M203 on a soldier's rifle, now and then an RPG (its own dice)
@@ -3706,15 +3717,15 @@ export function createBattle(state, setup) {
   // whatever the map's size, so the shooting starts in a turn or two.
   let rules = spawnRules([2, mid]);
   const pcells = pickCells(people.length, rules.player, (x, y) => coverScore(x, y) * 1.5 - Math.abs(y - mid) * 0.6);
-  const team = [];
+  const filled = [];
   people.forEach((s, i) => {
     const u = playerUnit(b, s);
     const c = pcells[i] || pickCells(1, () => true, (x) => -x)[0];
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
-    team.push([u, s]);
+    if (!setup.drill) { fillBattleUnit(b, u, s, { spares: false }); filled.push([u, s]); } // mags.js: the gun and the spares loaded physically (the gun's own rounds, then what they carry, then the team's bags); not for a drill's throw-away battle (defenceplan.js)
   });
-  if (!setup.drill) fillTeam(b, team); // mags.js: the guns and then the spares loaded physically (the gun's own rounds, then what they carry, then the team's bags); not for a drill's throw-away battle (defenceplan.js)
+  fillTeamSpares(b, filled); // then the spares, a spare each in turn, every gun loaded first
   battlePerks(state, b); // skills.js: perks on the player's units (aim, crits, stealth, Rally, Commander...)
   fitHands(state, b); // carry.js: who starts with their hands full of the team's supplies
 
@@ -3961,6 +3972,9 @@ export function lightSpotted(b, e, p) {
   return canSee(b, e, p);
 }
 
+// A spike pit's stakes: the dead blunder on through it (hurt, the turn lost: moveAlong), the living are hurt and
+// stopped in it (never your own people, who know where the pits are).
+export const SPIKES = { DEAD: [18, 28], LIVING: [12, 20] };
 export function moveAlong(b, u, path) {
   bindDims(b);
   if (!path.length) return;
@@ -3971,7 +3985,9 @@ export function moveAlong(b, u, path) {
   let burned = false;
   let reacted = null; // overwatchers that have fired at this mover already (once each per move)
   const vaulted = []; // the half cover gone over on the way (VAULT): winded after it, a scuff, the raid's noise
+  let stepI = -1; // the step's index in the path (a trench: the cell before it)
   for (const [x, y] of path) {
+    stepI++;
     const there = unitAt(b, x, y);
     const last = x === path[path.length - 1][0] && y === path[path.length - 1][1];
     // Your people squeeze past the third side on the way (reachable: through, never stopping there); stopping at the
@@ -4003,14 +4019,37 @@ export function moveAlong(b, u, path) {
     // Traps on a base's battle map (defences.js): spikes hurt the dead, a trench stops them for the turn.
     const trap = CELL[b.cells[idx(x, y)].k].trap;
     if (trap && u.kind === "zombie") {
-      if (trap === "spikes") { const eff = Math.round(damage(b, u, b.rng.int(18, 28), null)); say(b, `${u.name} is impaled in a spike pit (${eff}).`, "good"); }
+      if (trap === "spikes") { const eff = Math.round(damage(b, u, b.rng.int(SPIKES.DEAD[0], SPIKES.DEAD[1]), null)); say(b, `${u.name} is impaled in a spike pit (${eff}).`, "good"); }
       else if (trap === "beartrap") {
         const eff = Math.round(damage(b, u, b.rng.int(14, 22), null));
         u.ap = 0;
         b.cells[idx(x, y)].k = "open"; // sprung
         say(b, `${u.name} is caught in a bear trap (${eff}).`, "good");
+      } else if (trap === "wire" && b.cells[idx(x, y)].razor) {
+        const eff = Math.round(damage(b, u, b.rng.int(WIRE.RAZOR_DEAD[0], WIRE.RAZOR_DEAD[1]), null));
+        u.ap = 0; say(b, `${u.name} is caught in the razor wire (${eff}).`, "good");
       } else { u.ap = 0; say(b, trap === "wire" ? `${u.name} is snagged on the barbed wire.` : `${u.name} flounders in the trench.`, "good"); }
       if (!active(u) || trap !== "spikes") break;
+    }
+    if (trap === "wire" && u.kind !== "zombie" && wireStep(null, b, u, x, y, { say, damage, fx })) break; // wire.js: the living snagged, or cutting through
+    if (b.cells[idx(x, y)].mine && mineStep(b, u, x, y, { say })) break; // mines.js: a mine underfoot (never one of yours)
+    // A spike pit (buildings.js spike_pits, the user's request 2026-10-19: they hurt raiders too): anyone not of yours
+    // drops through the cover onto the stakes (SPIKES.LIVING) and the move ends there; yours know where the pits are.
+    if (trap === "spikes" && u.kind !== "zombie" && u.side !== "player") {
+      const eff = Math.round(damage(b, u, b.rng.int(SPIKES.LIVING[0], SPIKES.LIVING[1]), null, false, { how: "spikes" }));
+      fx(b, { type: "melee", from: [x, y], to: [x, y], hit: true, crit: false, dmg: eff, side: "player", text: "SPIKES" });
+      say(b, `${u.name} falls into a spike pit (${eff}).`, "good");
+      break;
+    }
+    // A trench (buildings.js trench, the user's request 2026-10-19: it slows the dead more than the living): the dead
+    // lose the rest of their turn (above); the living drop in and the move ends there, their next action kept to climb
+    // out. Once a trench: moving along it from a cell of it costs nothing more.
+    if (trap === "trench" && u.kind !== "zombie") {
+      const [px, py] = stepI > 0 ? path[stepI - 1] : from;
+      if (b.cells[idx(px, py)].k !== "trench") {
+        if (playerSees(b, u) || u.side === "player") say(b, `${u.name} drops into the trench.`, u.side === "player" ? "info" : "good");
+        break;
+      }
     }
     if (!burned && fireStep(b, u, x, y)) { burned = true; if (!active(u)) break; } // into a Molotov's flames (throwables.js): once a move
     if (acidStep(b, u, x, y) && !active(u)) break; // into a spitter's acid (acid.js): once a round
@@ -4462,14 +4501,17 @@ export function combatAct(state, act) {
       const pick = Array.isArray(act.rounds) ? { rounds: act.rounds } : act.mag != null ? { mag: act.mag } : act.clip != null ? { clip: act.clip, load: act.ammo || null } : act.ammo || null;
       if (u.gunner && u.ap < TURRET.RELOAD_AP) return "A new belt takes both actions."; // (before a double feed is cleared by it)
       if (u.ap < reloadCost(b, u, pick) && !u.jam) return reloadRefusal(b, u, pick) || "Not enough actions left to reload."; // mags.js: from the pack: 2 actions
-      const dbl = u.jam && u.jam.kind === "double" && isStacked(u) ? u.jam : null; // physical rounds: the swap goes through on the double feed (mags.js planPlayer), so it is held until the fresh magazine is in
+      const dbl = u.jam && u.jam.kind === "double" ? u.jam : null;
       jamReload(b, u); // gunfire.js: a double feed is cleared by dropping the magazine (then this reload fills a fresh one)
-      if (dbl && !u.jam) u.jam = dbl;
+      // Physical rounds (mags.js): the plan must still see the double feed (a fresh magazine goes in over the jammed
+      // one, full or not), so the jam is cleared once the reload is made, not before it is planned.
+      const held = dbl && !u.jam && isStacked(u);
+      if (held) u.jam = dbl;
       const why = reloadRefusal(b, u, pick);
       if (why) return why;
       if (u.ap < reloadCost(b, u, pick)) return "Not enough actions left to reload.";
       reload(b, u, pick);
-      if (dbl) u.jam = null;
+      if (held) u.jam = null;
       if (u.gunner) { u.ap = 0; afterTurretReload(b, u); }
       if (isStacked(u) && u.sid != null) { const s = survivorById(state, u.sid); if (s) tidyRounds(b, u, s); } // the rounds left their stacks (mags.js): emptied ones thrown away, the caches refit
       break;
@@ -4732,6 +4774,11 @@ export function combatAct(state, act) {
       if (err) return err;
       b.reach = flood(b.cells, u.x, u.y); // what is in reach on foot changes with an opening
       syncFloor(b);
+      break;
+    }
+    case "cutwire": { // wire.js: a cell of wire next to them cut away (1 action, a cutter carried)
+      const err = cutAct(state, b, u, act, { say, alertNear });
+      if (err) return err;
       break;
     }
     case "shove": case "boardup": case "teardown": { // barricade.js: furniture shoved a tile (both actions), boards nailed over a door or window, the boards torn down again
@@ -6177,6 +6224,7 @@ function wearFielded(state, b, fought) {
 export function closeCombat(state, { take = true } = {}) {
   const b = state.combat;
   if (!b || !b.over) return;
+  settleMines(state, b); // mines.js: the base's fields keep the mines that did not go off
   if (b.bodies && b.bodies.length) {
     if (take) takeAllBodies(state);
     leaveBodies(state, b);
@@ -6643,15 +6691,15 @@ export function createRaid(state, setup) {
   const entryCells = [];
   for (let y = entry.y0 - 1; y <= entry.y0 + entry.h; y++) for (let x = entry.x0; x <= entry.x0 + entry.w; x++) entryCells.push([x, y]);
   entryCells.sort((a, c) => (zoneAt(b, c[0], c[1]) === 0) - (zoneAt(b, a[0], a[1]) === 0));
-  const team = [];
+  const filled = [];
   for (const s of people) {
     const u = playerUnit(b, s);
     const c = entryCells.find(([x, y]) => ok(x, y)) || [entry.x0, entry.y0];
     u.x = c[0]; u.y = c[1];
     b.units.push(u);
-    team.push([u, s]);
+    if (!setup.drill) { fillBattleUnit(b, u, s, { spares: false }); filled.push([u, s]); } // mags.js: the gun and the spares loaded physically
   }
-  if (!setup.drill) fillTeam(b, team); // mags.js: the guns and then the spares loaded physically
+  fillTeamSpares(b, filled); // then the spares, a spare each in turn, every gun loaded first
   for (const u of b.units) if (u.side === "player") u.fit = { aim: u.aim, dmgMult: u.dmgMult, armor: u.armor, medicine: u.medicine }; // refitUnit
   battlePerks(state, b); // skills.js: perks on the player's units
   fitHands(state, b); // carry.js: a bag carried in the arms (the team's supplies start set down in a raid)

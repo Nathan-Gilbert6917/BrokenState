@@ -156,7 +156,7 @@ section("A group's base: its works as buildings, within the plots");
   const b = st.bases.find((x) => x.tile === tile);
   check(b && st.bases.length === before + 1 && b.type === "outpost", "the empty base is your outpost");
   if (b) {
-    check(count(b, "walls") === 3, `7 wall points: 3 wall sections (${count(b, "walls")})`);
+    check(count(b, "walls") === 1 && b.buildings.find((x) => x.type === "walls").tier === 4, `7 wall points: 3 sections, one wall of tier 4 (buildings.js WALL_TIERS; ${count(b, "walls")})`);
     check(b.buildings.filter((x) => x.type === "farm_plot").length === 2 && count(b, "well") === 1 && count(b, "workbench") === 1, "fields as farm plots, a well, the workshop as a workbench");
     check(plotsUsed(b, "building") <= plotCap(b, "building"), `building plots ${plotsUsed(b, "building")}/${plotCap(b, "building")}: what does not fit is rubble`);
     check(/beyond saving/.test(text), `the log says what was lost (${text.slice(0, 120)}…)`);

@@ -110,7 +110,7 @@ section("1. A dead enemy searched where it fell");
   check(roundKeys.length > 0, `and its rounds (${rItem ? `${amountOf(rItem)} ${rItem.key}, a stack` : roundKeys.map((k) => `${box.contents.sup[k]} ${k}`).join(", ")})`);
   check(combatAct(st, { type: "searchBody", unit: me.id, target: foe.id }) === "" && G.bodyBoxOf(b, foe) === box, "searching it again opens the same body (no second roll)");
   // Take the gun into the hands and the rounds loose.
-  const gl = gun.loaded ? gun.loaded.n : -1, glk = gun.loaded ? gun.loaded.key : null;
+  const gl = gun.loaded ? gun.loaded.n : -1;
   check(gl === foeMag, `the rounds left in its gun are kept on the gun (${gl} of the ${foeMag} it had)`);
   s.gear.weapon = null;
   const gi = box.contents.gear.indexOf(gun);
@@ -490,14 +490,15 @@ section("8. The rounds in a gun go with it");
   C.loadMag(u0, 5);
   const p0 = pool(), pistol = s0.gear.weapon;
   combatAct(st, { type: "drop", unit: u0.id, loc: `s:${s0.id}:weapon` });
-  // The rounds in a gun are the gun's (physical rounds: never the team's pool), so its pool does not move.
-  check(pistol.loaded && pistol.loaded.n === 5 && pool() === p0, `a gun put down keeps the 5 rounds that were in it; the team's loose rounds stay as they were (${pistol.loaded ? pistol.loaded.n : "none"}; ${p0} → ${pool()})`);
+  // Physical rounds (mags.js, 2026-10-18): the rounds in a gun left the team's bags when it was filled at the fight's
+  // start, so a gun put down or taken up keeps its own and the bags stay as they are.
+  check(pistol.loaded && pistol.loaded.n === 5 && pool() === p0, `a gun put down keeps the 5 rounds that were in it, the team's bags untouched (${pistol.loaded ? pistol.loaded.n : "none"}; ${p0} → ${pool()})`);
   // u1 puts its own pistol in a pocket, then takes this one up.
   RL.raidMove(st, u1.id, `s:${s1.id}:weapon`, `s:${s1.id}:pocket:${s1.pockets.indexOf(null)}`);
   const pile = G.groundAt(b, 5, 5, 0);
   const p1 = pool();
   RL.raidMove(st, u1.id, `rbox:${pile.id}:gear:${pile.contents.gear.indexOf(pistol)}`, `s:${s1.id}:weapon`);
-  check(s1.gear.weapon === pistol && C.magIn(u1) === 5 && !pistol.loaded && pool() === p1, `taken up by a teammate: exactly those 5 rounds in it (${C.magIn(u1)}), nothing from the team's (${p1} → ${pool()})`);
+  check(s1.gear.weapon === pistol && C.magIn(u1) === 5 && !pistol.loaded && pool() === p1, `taken up by a teammate: exactly those 5 rounds (${C.magIn(u1)}), the team's bags untouched (${p1} → ${pool()})`);
   // A pocket gun carried into the fight, dropped unfired: it goes out loaded.
   const rev = s0.pockets[0];
   const rkey = keyFor(calOf("revolver"), null);

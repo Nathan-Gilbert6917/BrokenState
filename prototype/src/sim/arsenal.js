@@ -46,6 +46,7 @@ import { lootItem, isCarrier, insertsOf, allCarried, salvageYield } from "./inve
 import { isRoundItem } from "./itemstack.js"; // loose rounds are the stores', not the books
 import { note, goodsRounds } from "./ledger.js"; // the conservation ledger (a test switch)
 import { scavBlade } from "./blades.js"; // knives and swords their scavengers find
+import { scavSurv } from "./survival.js"; // survival gear their scavengers find
 import { scavGun } from "./gunfinds.js"; // the newer guns their scavengers find (the same table as your searches)
 import { kitSource, siteSource } from "./itemcond.js";
 import { enemyMods, fitMod, gunMods, modLabel, fittedSuppressor, takesMods, fittedMods } from "./gunmods.js";
@@ -82,8 +83,8 @@ import { spendSelfAid } from "./medics.js"; // a person's used tourniquets, as y
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
-  THROWS: { raiders: ["pipebomb", "molotov"], zealots: ["molotov"], soldiers: ["frag"], fighters: ["pipebomb", "molotov"], guards: [], militia: ["molotov"] },
-  THROW_PER: { raiders: 0.25, zealots: 0.2, soldiers: 0.25, fighters: 0.12, guards: 0, militia: 0.08 },
+  THROWS: { drifters: ["molotov"], raiders: ["pipebomb", "molotov"], zealots: ["molotov"], soldiers: ["frag"], fighters: ["pipebomb", "molotov"], guards: [], militia: ["molotov"] },
+  THROW_PER: { drifters: 0.1, raiders: 0.25, zealots: 0.2, soldiers: 0.25, fighters: 0.12, guards: 0, militia: 0.08 },
   HOME: 0.35, // the home guard's share of the people (and every third piece of kit from the second best)
   MOD: 0.2, ARMOUR: 0.5, // a gun part's worth; armour counts half its power (world.js combatPower)
   KIT_MIN: 0.15, KIT_MAX: 2.5,
@@ -147,7 +148,7 @@ export const ARSENAL = {
 // The kit of each group type (the same as conflicts.js KIND_OF).
 export const KIT_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia",
   // Nomad bands by tier (nomads.js; not group types: a band carries no arsenal, its spare gun comes from starterKit).
-  nomad1: "looters", nomad2: "survivalists", nomad3: "preppers" };
+  nomad0: "drifters", nomad1: "looters", nomad2: "survivalists", nomad3: "preppers" };
 export const kitOf = (f) => KIT_OF[f && f.type] || "survivors";
 
 // Off switch for tests (tools/arsenaltest.js: the world made without arsenals draws the same dice).
@@ -856,6 +857,9 @@ export function scavFinds(state, f, p) {
   // Knives and swords (blades.js): the same site table your searches roll, on their dice (AI parity).
   const bk = (p.scav.taken || 0) > 0 ? scavBlade(type, [...tag, "bl"]) : null;
   if (bk && GEAR[bk]) { const it = lootItem(bk, siteSource(type), [...tag, "bl"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
+  // Survival gear (survival.js): the same site table your searches roll, on their dice (AI parity).
+  const sv = (p.scav.taken || 0) > 0 ? scavSurv(type, [...tag, "sv"]) : null;
+  if (sv && GEAR[sv]) { const it = lootItem(sv, siteSource(type), [...tag, "sv"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }
   // The newer guns (gunfinds.js GUN_FINDS.site, scav): the same site table your searches roll, on their dice.
   const gk = scavGun(type, p.scav.taken || 0, [...tag, "ars"]);
   if (gk && GEAR[gk]) { const it = lootItem(gk, siteSource(type), [...tag, "ars"]); if (addToArsenal(state, f, it, "scavenged")) got.push(it); }

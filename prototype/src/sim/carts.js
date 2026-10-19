@@ -105,13 +105,12 @@
 // push a cart loaded with part of their haul, drawn as yours; they let go when their side first moves
 // (enemyCartsLetGo, your battle AI's rule); beaten, the carts and what is left in them are yours; else they keep them.
 // What stays abstract: their caravans carry no carts, and a group's base jobs are not per worker.
-import { localId } from "./world.js"; // ids into the dice: counted from the world's own start
 import { GEAR, SUPPLIES, supWeight, supValue } from "./data.js";
 import { itemLoad, itemKg, ensurePack, ensureInv, lootItem } from "./inventory.js";
 import { siteSource } from "./itemcond.js";
 import { CELL, alertNear, evacAt } from "./combat.js"; // the battle map's cells (a cart parked: CELL cart); noise
 import { noiseAt } from "./stealth.js"; // a cart pushed rattles
-import { survivorById, baseById, log } from "./world.js";
+import { survivorById, baseById, log, localId } from "./world.js";
 import { lootLayer, fieldLayer } from "./raidloot.js"; // call-time only (safe in the import cycle)
 import { settlePile, groundAt as pileAt } from "./ground.js";
 import { say } from "./combat.js";
@@ -553,7 +552,7 @@ export function placeMapCarts(state, b) {
         // door shut but unlocked is: a cart that could stand in a doorway moved with the clock (raidapproachtest:
         // the same map by day and after waiting for night). Skipping doors keeps "its own dice" the hour's no matter.
         if (isDoorCell(cellsOf(b, a.f || 0)[y * b.w + x]) || (a.doors && a.doors.some(([dx, dy]) => dx === x && dy === y))) continue;
-        const key =hash01(state.seed, "mapcart", b.tileId ?? 0, "kind", a.id) < (a.type === "barn" || a.type === "farmhouse" || a.type === "warehouse" ? 0.55 : 0.2) ? "handcart" : "wheelbarrow";
+        const key = hash01(state.seed, "mapcart", b.tileId ?? 0, "kind", a.id) < (a.type === "barn" || a.type === "farmhouse" || a.type === "warehouse" ? 0.55 : 0.2) ? "handcart" : "wheelbarrow";
         if (foundCart(state, b, x, y, a.f || 0, key, `a${a.id}`)) { n++; break; }
       }
     }
@@ -721,7 +720,7 @@ export function aiCartsHome(state, f, p) {
   if (!site || p.vehicle || (f.carts || 0) >= Math.max(1, f.pop * CART_AI.cap)) return 0;
   const hours = AISCAV.searchHours || 4;
   const chance = 1 - Math.pow(1 - Math.min(1, site.p * CART_AI.find), hours);
-  if (hash01(state.seed, "aicart", localId(state, f.id), localId(state, p.id), state.hour) >= chance) return 0; // world.js localId
+  if (hash01(state.seed, "aicart", localId(state, f.id), localId(state, p.id), state.hour) >= chance) return 0; // world.js localId: the same dice whatever ran in this process before
   f.carts = (f.carts || 0) + 1;
   return 1;
 }

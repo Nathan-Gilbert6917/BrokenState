@@ -343,12 +343,14 @@ console.log("Blueprints: locks, finding, studying");
 console.log("Crash events");
 {
   // Timing over a long quiet run. The hub starts bare (barestart) and a hub left to itself with nothing built falls
-  // to crowding within weeks, so it gets what the old start had standing and lasts the 120 days.
+  // to crowding within weeks, so it gets what the old start had standing and lasts the 120 days. Its cards go
+  // unanswered, so its people are kept from losing hope (morale.js): a colony that walks away stops the crashes too.
   const st = createWorld({ seed, factionCount: 6 });
   st.started = true;
   for (const t of ["farm_plot", "farm_plot", "craftbench", "bunkhouse", "walls"]) addBuilding(hub(st), t);
   const seen = [];
   for (let k = 0; k < 24 * 120; k++) {
+    if (k % 24 === 0) for (const s of st.survivors) if (s.alive) s.mood = Math.max(s.mood, 50);
     tickHour(st);
     st.cards.length = 0;
     // The crash clock is what is measured: a hub nobody runs loses hope and walks away within weeks (by day 38 to 89
@@ -517,7 +519,7 @@ console.log("Breakdowns and repairs");
   const walls = h.buildings.find((b) => b.type === "walls") || addBuilding(h, "walls");
   const wl0 = baseWalls(h);
   BD.breakFixture(st, h, walls, "test", { card: false });
-  check(baseWalls(h) === wl0 - 3, `broken walls lose their 3 wall strength (${wl0} → ${baseWalls(h)})`);
+  check(wl0 > 0 && baseWalls(h) === 0, `a broken wall loses its wall strength (${wl0} → ${baseWalls(h)})`);
   const radio = addBuilding(h, "radio");
   check(radioNodes(st).some((n) => n.base === h), "test setup: the radio station is on the air");
   BD.breakFixture(st, h, radio, "test", { card: false });

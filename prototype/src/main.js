@@ -62,6 +62,7 @@ import { clearStartGear } from "./sim/startgear.js";
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
 import { INV_ACTIONS, INV_CHANGE, invDrop } from "./ui/inventory.js";
 import { ITEMMENU_ACTIONS, itemMenuHtml, openItemMenu, closeItemMenu } from "./ui/itemmenu.js"; // right-click on an item in an inventory view
+import { BOX_ACTIONS, boxViewHtml } from "./ui/boxview.js"; // an opened lock box or case: a window of what is inside
 import { ARMV_ACTIONS, ARMV_INPUT } from "./ui/armoryview.js"; // the armory list: grouped, cards or compact rows
 import { TEAMINV_ACTIONS, TEAMINV_CHANGE, UNPACK_ACTIONS, unpackUp } from "./ui/teaminv.js"; // the team inventory, Drop off and Load at a base
 import { TEAMMEET_ACTIONS, TEAMMEET_CHANGE } from "./ui/teammeet.js"; // teams together on a tile: people, goods, merge
@@ -92,7 +93,7 @@ import { openNegotiation, sendHandover, dealsOf } from "./sim/ransom.js"; // ran
 import { setAutopilot, setPersonality, autopilotResolve } from "./sim/autopilot.js";
 import { playerTile } from "./sim/hardcore-start.js";
 import { freshRng } from "./sim/appearance.js"; // Random run: dice of their own for the settings
-import { START_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
+import { START_PEOPLE, NORMAL_PEOPLE, clampStartPeople } from "./sim/hardcore.js";
 import { setTeamPolicy } from "./sim/breakoff.js";
 import { noteNames } from "./ui/names.js";
 import { renderLogPanel, DIARY_ACTIONS, DIARY_CHANGE } from "./ui/diary.js";
@@ -178,7 +179,10 @@ const freshUi = () => ({
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
   mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
 });
-const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: START_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: Hardcore's starting team, 1–4
+const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, customW: BASE_W, customH: BASE_H, hiveCount: null, mode: "normal", startPeople: NORMAL_PEOPLE.DEF, ironman: false, freeEdit: false, pointsMax: CUSTOM_POINTS.DEF, crewEdited: false, crewRoll: null, startPick: null, ...freshUi() }; // mode: Normal or Hardcore (sim/hardcore.js); startPeople: the starting team (Normal 1–8, Hardcore 1–4); pointsMax: Customize's Points each
+// Each mode keeps its own Starting people and Points each (2026-10-19, user request): ui.startPeople and ui.pointsMax are the
+// current mode's, the other mode's wait here (switching mode swaps them: the gamemode select, ui/newgame.js rollRandomRun).
+ui.modeSets = { normal: { startPeople: NORMAL_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF }, hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF } };
 // Folded panels and their widths (ui/layout.js), remembered in the browser. The Layers box and the running orders
 // keep their old ui flags, which read and write the layout.
 const layout = loadLayout();
@@ -554,6 +558,8 @@ function refresh(user = true) {
   syncOverlays(); // ui/overlaydrag.js: moved boxes in their place, every box kept on the map
   setPanel("ask", askHtml(ui) + carryHtml(state, ui), user); // ui/confirm.js; ui/carry.js: how much to collect, picking up from the ground
   writeItemMenu(user);
+  if (ui.box && !ui.inv && !ui.baseView && !ui.gunb && !ui.meet) ui.box = null; // its window was closed (as the item menu)
+  setPanel("boxview", boxViewHtml(state, ui), user); // ui/boxview.js: an opened box's window, over the windows
   syncTitle(state, ui); // ui/title.js
   $("banner").classList.toggle("dev", !!ui.dev);
   const fps = $("fps");
@@ -850,6 +856,7 @@ const actions = {
     ui.supplyForm = null;
   },
   basetab: (d) => { ui.baseView.tab = d.tab; ui.baseMsg = ""; },
+  cxtab: (d) => { ui.baseView.cx = d.tab; ui.baseView.tab = "construction"; ui.baseMsg = ""; }, // Construction: the Buildings or the Defenses list (from the Defence tab too)
   closebase: () => { ui.baseView = null; ui.baseMsg = ""; ui.supplyForm = null; },
   // Supply runs (Supply runs tab of the base screen).
   "sr-new": (d) => { ui.supplyForm = jobForm(state, null, Number(d.base)); ui.supplyError = ""; },
@@ -1313,6 +1320,7 @@ for (const [k, fn] of Object.entries(TEAMFORM_ACTIONS)) actions[k] = (d, ev) => 
 for (const [k, fn] of Object.entries(CARRY_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev, actions); // ui/carry.js
 for (const [k, fn] of Object.entries(ARMV_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/armoryview.js: the armory list's groups, view, find box and type chips
 for (const [k, fn] of Object.entries(ITEMMENU_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/itemmenu.js: the item right-click menu
+for (const [k, fn] of Object.entries(BOX_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // ui/boxview.js: take things out of an opened box
 // The gun builder (ui/gunbuilder.js): open, pick a slot, fit, remove; the Ammo list.
 for (const [k, fn] of Object.entries(GB_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
 // Farming tab and illness (ui/farming.js, ui/health.js).
@@ -1559,8 +1567,12 @@ const changeActions = {
       ui.nrMsg = "Customize off: the crew is back as rolled (names, looks and the leader kept). Tick it again for your build.";
     }
   },
-  // Customize: the points each colonist may spend (the crew's max; sim/custompoints.js).
-  "nr-points": (el) => { ui.pointsMax = clampMax(el.value); state.pointsMax = ui.pointsMax; el.value = ui.pointsMax; },
+  // Customize: the points each colonist may spend (the crew's max; sim/custompoints.js). Every colonist goes back on it,
+  // their own points set on their card too (custompoints.js maxFor).
+  "nr-points": (el) => {
+    ui.pointsMax = clampMax(el.value); state.pointsMax = ui.pointsMax; el.value = ui.pointsMax;
+    for (const s of state.survivors) delete s.ownMax;
+  },
   // Customize (Normal and Hardcore): who a colonist was (a preset, a custom background, or "" for the dice). The world is built
   // again on the same seed (a crew roll of its own from now on, so the map and the groups stay put).
   "nr-bg": (el) => {
@@ -1573,9 +1585,21 @@ const changeActions = {
   },
   "nr-guide": (el) => { ui.guide = !!el.checked; }, // and its First-week guide box (ui/guide.js)
   children: (el) => { ui.childrenOff = !el.checked; }, // the new-run screen's Children box (sim/family.js)
-  gamemode: (el) => { ui.mode = el.value === "hardcore" ? "hardcore" : "normal"; newWorld(state.seed, true); },
-  // Starting people (Hardcore only, ui/newgame.js): 1–4 flee together; the same seed and the edited crew (as many as fit).
-  startpeople: (el) => { ui.startPeople = clampStartPeople(el.value); newWorld(state.seed, true); },
+  // Normal or Hardcore: each keeps its own Starting people and Points each (ui.modeSets); the crew goes on the new mode's
+  // Points each (their own points set on a card too).
+  gamemode: (el) => {
+    const mode = el.value === "hardcore" ? "hardcore" : "normal";
+    if (mode === ui.mode) return;
+    ui.modeSets[ui.mode] = { startPeople: ui.startPeople, pointsMax: ui.pointsMax };
+    ui.mode = mode;
+    ui.startPeople = clampStartPeople(ui.modeSets[mode].startPeople, mode);
+    ui.pointsMax = clampMax(ui.modeSets[mode].pointsMax);
+    for (const s of state.survivors) delete s.ownMax;
+    newWorld(state.seed, true);
+  },
+  // Starting people (ui/newgame.js): Normal 1–8 hold the hub, Hardcore 1–4 flee together; the same seed and the edited
+  // crew (as many as fit).
+  startpeople: (el) => { ui.startPeople = clampStartPeople(el.value, ui.mode); newWorld(state.seed, true); },
   rename: (el) => {
     // Empty names and a full name someone else already has are refused (world.renameSurvivor).
     const s = survivorById(state, Number(el.dataset.id));
@@ -1703,9 +1727,10 @@ function adopt(st, entry) {
   state = st;
   ui.title = false;
   if (!state.mode) state.mode = "normal"; // saves from before the modes
+  if (ui.mode !== state.mode) { ui.modeSets[ui.mode] = { startPeople: ui.startPeople, pointsMax: ui.pointsMax }; ui.pointsMax = clampMax(ui.modeSets[state.mode].pointsMax); } // each mode its own settings
   ui.mode = state.mode; // a new campaign from here keeps the mode you were playing
   ui.ironman = !!state.ironman; // and Ironman, if this one is
-  if (state.mode === "hardcore") ui.startPeople = clampStartPeople(state.startPeople); // and a hardcore game's Starting people
+  if (Number.isFinite(state.startPeople)) ui.startPeople = clampStartPeople(state.startPeople, state.mode); // and its Starting people
   ui.childrenOff = !!state.childrenOff; // and children off, if they were
   ui.started = true;
   ui.speed = 0;
@@ -2093,6 +2118,7 @@ Object.assign(actions, {
   },
   "tc-mode": () => { ui.tcAppend = !ui.tcAppend; showCtx(); }, // replace ⇄ add to the queue
   "tc-more": () => { ui.ctxMore = !ui.ctxMore; showCtx(); },   // the other teams and the hub, folded
+  "tc-all": () => { ui.ctxAll = !ui.ctxAll; showCtx(); },      // every order for the tile, and the team panel, folded (ui/teamctx.js)
 });
 // Right-click on the land straight across one water tile from a team you are in touch with: build a boat.
 function ctxBoats(teams, id) {
@@ -2278,6 +2304,7 @@ cbCanvas.addEventListener("contextmenu", (e) => e.preventDefault()); // right cl
 // Esc closes one layer per press, the topmost first. Returns false when there was nothing of ours to close.
 function closeTopLayer() {
   if (closeItemMenu(ui)) return true; // ui/itemmenu.js
+  if (ui.box) { ui.box = null; return true; } // ui/boxview.js
   if (!$("ctxmenu").classList.contains("hidden")) { hideCtx(); return true; }
   if (ui.zombieLook) { ui.zombieLook = false; return true; }
   if (ui.bgEditor) { closeBackgrounds(); return true; }

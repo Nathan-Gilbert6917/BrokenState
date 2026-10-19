@@ -125,17 +125,17 @@ export function baseAmmo(state, base) {
   const cals = baseCals(state, base);
   return Object.keys(cals).length ? usableIn(base.stock, cals) + Math.max(0, Math.floor(num(base.stock.ammo))) : totalRounds(base.stock);
 }
-// A team's: its bags (supplies; the found cargo too) and the rounds its people carry (physical rounds, mags.js: a
-// Reload draws on the person's own pockets, rig and pack, so the shells a trip packs at hand, carrykit.js packShells,
-// are still the team's to shoot).
+// A team's: its packed rounds, the found cargo's (cargo false: not those), and the rounds its people carry (pockets,
+// rig, pack: a shotgunner's shells at hand, carrykit.js packShells; rounds put onto a member), the only ones a Reload
+// draws on in a fight (mags.js, physical rounds).
 /** @param {any} state @param {any} p @param {boolean} [cargo] the found cargo too */
 export function teamAmmo(state, p, cargo = true) {
   if (!p) return 0;
   const cals = partyCals(state, p);
   /** @type {Record<string, number>} */
-  const carried = {};
-  for (const s of membersOf(state, p)) for (const it of boxesOf(s)) if (it && it.key) carried[it.key] = num(carried[it.key]) + Math.max(0, Math.floor(num(it.dur)));
-  const recs = [p.supplies, cargo && p.cargo ? p.cargo.supplies : null, carried];
+  const on = {};
+  for (const s of membersOf(state, p)) for (const it of boxesOf(s)) on[it.key] = (on[it.key] || 0) + Math.max(0, Math.floor(num(it.dur)));
+  const recs = [p.supplies, cargo && p.cargo ? p.cargo.supplies : null, on];
   if (!Object.keys(cals).length) return recs.reduce((a, r) => a + totalRounds(r), 0);
   return recs.reduce((a, r) => a + (r ? usableIn(r, cals) + Math.max(0, Math.floor(num(r.ammo))) : 0), 0);
 }

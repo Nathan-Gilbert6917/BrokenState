@@ -30,6 +30,7 @@ import { armorMult, ARMOR_SLOTS, isCarrier, insertsOf, migrateCarrier, stow, sto
 import { wearSlot, itemDurMax } from "./crafting.js";
 import { log } from "./world.js";
 import { faceOf, FACE } from "./helmets.js"; // the face zone of a head hit: the visor, the face cover
+import { SURV_ARMOUR } from "./data-survival.js"; // a leather jacket, chainmail sleeves, motorcycle trousers
 export { armorMult };
 
 // The pieces (section 17 table: AC, material; dmax is the GEAR dur, checked by tools/armortest.js). The plate carrier
@@ -57,6 +58,7 @@ export const ARMOUR = {
   milhelmet:      { ac: 3, dmax: 30, mat: "hard" },
   rivethelmet:    { ac: 2, dmax: 16, mat: "steel" }, // a crafted riveted-plate helmet (craft books)
 };
+Object.assign(ARMOUR, SURV_ARMOUR); // survival gear (data-survival.js)
 
 export const AR = {
   BLUNT: [1, 0.6, 0.45, 0.35, 0.3, 0.25, 0.2], // × a stopped hit by AC

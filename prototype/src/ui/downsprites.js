@@ -165,6 +165,8 @@ function droppedWeapon(p, key) {
     case "machete": case "sawmachete": case "springmachete": p.rect(15, y, 20, y, metal); p.set(14, y, "#3a2a1c"); break;
     case "bat": case "spikedbat": case "nailbat": p.rect(14, y, 20, y, "#a07a48"); p.set(21, y, "#8a6638"); break;
     case "prybar": case "crowbar": case "pipespear": case "spear": p.rect(14, y, 21, y, "#6d7378"); break;
+    case "halligan": p.rect(14, y, 21, y, "#9aa3ab"); p.set(22, y - 1, "#9aa3ab"); p.set(22, y + 1, "#9aa3ab"); break; // (sim/data-survival.js)
+    case "pipewrench": p.rect(14, y, 18, y, "#c8362e"); p.rect(19, y - 1, 20, y, "#55595e"); break;
     case "fireaxe": case "sledge": p.rect(14, y, 20, y, wood); p.rect(21, y - 1, 21, y, key === "sledge" ? "#5b5f63" : "#a83a2a"); break;
     case "crossbow": case "compbow": case "xbow": case "pulleybow": p.rect(13, y, 20, y, wood); p.rect(20, y - 2, 20, y, metal); break;
     default: { const L = BLADE_LOOK[key]; if (L) { const n = Math.max(2, Math.min(8, L.len)); p.set(14, y, L.handle); p.rect(15, y, 14 + n, y, L.blade); if (L.guard) p.set(15, y - 1, L.guard); } break; } // knives and swords (sim/data-blades.js)

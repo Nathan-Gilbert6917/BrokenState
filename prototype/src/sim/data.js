@@ -13,6 +13,8 @@ import { CART_GEAR } from "./data-carts.js"; // a wheelbarrow and a hand cart, p
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
 import { BLADE_GEAR } from "./data-blades.js"; // knives and swords (blades.js: where they turn up)
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
+import { SURV_ITEMS } from "./data-survival.js"; // survival gear: tools, armour against teeth, lights, a rig, a jump bag, a rangefinder (survival.js: where they turn up)
+import { BOX_GEAR, BOX_PATCH } from "./data-boxes.js"; // cash boxes, fire safes, toolboxes, equipment cases; the gun cases as boxes (boxes.js)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
 // off-road and a quarter of an hour on a road or a bridge (ROAD_COST); mountains are closed to cars.
@@ -718,6 +720,9 @@ for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
 Object.assign(GEAR, BLADE_GEAR); // knives and swords (data-blades.js)
+Object.assign(GEAR, SURV_ITEMS); // survival gear (data-survival.js)
+Object.assign(GEAR, BOX_GEAR); // lockable boxes (data-boxes.js)
+for (const [k, p] of Object.entries(BOX_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // the gun cases are boxes too
 Object.assign(GEAR, CART_GEAR); // carts (data-carts.js, carts.js)
 Object.assign(GEAR, supItemGear(SUPPLIES, GEAR)); // supplies as items: s_<key> (data-supitems.js; rounds keep their boxes)
 // The Melee skill (world.js MELEE_SKILL): every melee weapon goes by Melee, not Shooting (its req, the skill-gap rule).

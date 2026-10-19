@@ -298,7 +298,7 @@ section("Hub events: weights, frequency and effects");
       const text = c.resolve(s2);
       check(typeof text === "string" && text.length > 0 && !/undefined|NaN/.test(text), `${id} → ${c.label}: text (${text})`);
       const changed = snap(s2, hb) !== before || /gets it running|holds/.test(text); // a lucky fix costs nothing
-      const quiet = /^(Send them|Chase it off|Turn .* away|Leave them to it)/.test(c.label);
+      const quiet = /^(Send them|Chase it off|Turn .* away|Leave them to it|Leave the wreck)/.test(c.label);
       check(changed || quiet, `${id} → ${c.label}: changes something`);
     }
   }

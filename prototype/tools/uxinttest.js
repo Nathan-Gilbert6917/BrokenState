@@ -26,6 +26,9 @@ import * as G from "../src/sim/ground.js";
 import * as RL from "../src/sim/raidloot.js";
 import { createBattle, combatAct, registerCombatHandler, endBattleNow, finishCombat, closeCombat, canFire } from "../src/sim/combat.js";
 import { teamHoldings, dropHeldOff, loadFromBase, dropOff } from "../src/sim/teaminv.js";
+import { carriedWithBag } from "../src/sim/gunload.js";
+import { spares } from "../src/sim/mags.js";
+import { stackN } from "../src/sim/roundstack.js";
 import { drawPileIso } from "../src/ui/ground.js";
 import { teamInvModal } from "../src/ui/teaminv.js";
 
@@ -110,7 +113,10 @@ section("1. A carrier sets down a load and a bag in a fight: ground piles, picke
   check(!!pileB && pileB.contents.gear.includes(pack) && pack.contents.includes(spare), "the bag is in a pile on its cell, the gun still in it");
   check(near(C.holdTotals(p).rawwater, water0 - heldAll), `the supplies left the pool when set down (${water0} → ${Math.round(C.holdTotals(p).rawwater)} un-purified water)`);
   const inGun = spare.loaded ? spare.loaded.n : 0;
-  check(inGun > 0 && near(fightRounds(b, p, "a_9mm_fmj", st), r0 - inGun), `the gun in the bag left the team loaded (${inGun} rounds in it, out of the team's ${r0}: ${fightRounds(b, p, "a_9mm_fmj", st)} left)`);
+  // Physical rounds (mags.js, 2026-10-18): the fight's start fills the guns in hand and their spare magazines out of the
+  // team's bags too, so the bags are down by those as well as by the gun in the bag.
+  const armed = b.units.filter((u) => u.side === "player").reduce((n, u) => n + stackN(u.stack) + spares(u).reduce((m, g) => m + (g.item ? stackN(g.item.stack) : 0), 0), 0);
+  check(inGun > 0 && armed > 0 && near(rounds(p, "a_9mm_fmj"), r0 - inGun - armed), `the gun in the bag left the team loaded (${inGun} rounds in it, ${armed} in the guns in hand and their magazines, out of the team's ${r0})`);
   // Drawn on the map.
   let fills = 0;
   const ctx = new Proxy({}, { get: (o, k) => (k in o ? o[k] : typeof k === "string" && /^(fill|stroke|beginPath|ellipse|fillRect|strokeText|fillText)/.test(k) ? () => { if (/^fill/.test(k)) fills++; } : undefined), set: (o, k, v) => { o[k] = v; return true; } });
@@ -155,7 +161,10 @@ section("1. A carrier sets down a load and a bag in a fight: ground piles, picke
   closeCombat(st);
   const back = partyMembers(st, p).some((s) => s.gear.carry === pack) || p.cargo.gear.includes(pack);
   check(back && !spare.loaded, `won: the bag is back (${a.gear.carry === pack ? "in its carrier's arms" : "in the cargo"}), the gun in it unloaded`);
-  check(near(rounds(p, "a_9mm_fmj", st), r0), `no round made or lost (${r0} → ${rounds(p, "a_9mm_fmj", st)})`);
+  // (physical rounds: what was left in the guns in hand and their magazines went back onto their people as loose
+  // rounds, gunload.js returnStacks; the bag's gun into the team's bags)
+  const onThem = partyMembers(st, p).flatMap((s) => carriedWithBag(s)).reduce((n, it) => n + (it && it.key === "a_9mm_fmj" ? Math.floor(it.dur || 0) : 0), 0);
+  check(near(rounds(p, "a_9mm_fmj") + onThem, r0), `no round made or lost (${r0} → ${rounds(p, "a_9mm_fmj")} in the bags + ${onThem} on the team)`);
   check(near(C.holdTotals(p).rawwater, water0), `the water is all the team's still (${Math.round(C.holdTotals(p).rawwater)} of ${water0})`);
   check(partyMembers(st, p).some((s) => s.gear.carry === loot) || p.cargo.gear.includes(loot) || hub(st).armory.includes(loot), "the looted pack set down came back too");
 }

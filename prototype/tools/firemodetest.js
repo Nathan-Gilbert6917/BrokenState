@@ -47,6 +47,9 @@ const place = (u, x, y) => { u.x = x; u.y = y; u.dead = false; u.down = false; u
 const toughen = (u) => { u.hp = u.maxHp = 100000; };
 const logHas = (b, re) => b.log.some((l) => re.test(l.text));
 const logCount = (b, re) => b.log.filter((l) => re.test(l.text)).length;
+// A fresh magazine for a test shot: physical rounds (mags.js, 2026-10-18) cannot be conjured onto a gun's stack, so the
+// stack is dropped first and the magazine counted plainly (the rules of the shot are the same either way).
+const refill = (u, n = null) => { u.stack = null; loadMag(u, n); };
 const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { keep[k] = WEAPONS[k].rel; if (WEAPONS[k].rel) WEAPONS[k].rel = 0; } return () => { for (const k of Object.keys(keep)) WEAPONS[k].rel = keep[k]; }; };
 
 // 1. Modes.
@@ -88,7 +91,7 @@ const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { 
   fillGun(p);
   fire(b, p, e);
   check(magIn(p) === magIn({ ...p, mag: null }) - 10 && logHas(b, /fires a stream at/), "full auto: 10 rounds");
-  loadMag(p, 4);
+  refill(p, 4);
   fire(b, p, e);
   check(magIn(p) === 0, "a stream with 4 rounds left fires the 4");
   // Each round its own roll: at about 50% a burst of 2 lands 0, 1 or 2.
@@ -132,7 +135,7 @@ const noJams = () => { const keep = {}; for (const k of Object.keys(WEAPONS)) { 
   moveAlong(b, e3, [[24, 20]]);
   check(logCount(b, new RegExp(`${p.name} reacts on overwatch`)) === 3, "one moving out of range draws nothing");
   p.mode = "auto"; // (set in the player's turn; the act is refused while the enemy moves)
-  loadMag(p, 10);
+  refill(p, 10);
   moveAlong(b, e2, [[9, 9]]);
   check(!p.ow && magIn(p) === 0 && logHas(b, /fires a stream at/), "in full auto the stream empties the magazine and the watch is over");
   p.ow = true; fillGun(p);

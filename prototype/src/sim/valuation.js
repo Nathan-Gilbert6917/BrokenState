@@ -67,7 +67,8 @@ export function itemValue(item) {
   if (isBulk(item)) for (const l of loadsOf(item)) if (l) v += itemValue(l); // a bulk ammo container: its rounds
   // A maximum lowered by repairs (repair.js: item.durBase, the maximum before the first) sells low: × 0.4 at none left.
   if (item.durBase > 0 && dur != null) v *= 0.4 + 0.6 * clamp(itemDurMax(item) / item.durBase, 0, 1);
-  if (Array.isArray(item.contents)) for (const c of item.contents) if (c) v += itemValue(c);
+  // A box nobody has opened (boxes.js) is worth the box: neither side knows what is in it.
+  if (Array.isArray(item.contents) && !(d.box && !item.opened)) for (const c of item.contents) if (c) v += itemValue(c);
   if (item.mods) for (const m of Object.values(item.mods)) if (m) v += itemValue(m); // a gun's fitted attachments (gunmods.js) sell with it
   if (item.inserts) for (const p of Object.values(item.inserts)) if (p) v += itemValue(p); // a plate carrier's plates (section 16)
   return v;

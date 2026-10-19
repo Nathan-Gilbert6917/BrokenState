@@ -39,10 +39,10 @@ export const CARRY = {
   // Soldiers 18.5 (user decision 2026-10-08, "soldiers in full kit move 4, not 5"): a soldier in a plate carrier,
   // or in a rig with a helmet and a rifle, lands in the Heavy band (over 28 kg: 4 tiles); one in a plain vest with
   // a light gun can still be Medium.
-  BASE_KG: { soldiers: 18.5, escorts: 6, contractors: 8, guards: 4, raiders: 3, fighters: 4, militia: 4, zealots: 2, survivors: 3 },
+  BASE_KG: { soldiers: 18.5, escorts: 6, contractors: 8, guards: 4, raiders: 3, fighters: 4, militia: 4, zealots: 2, survivors: 3, drifters: 2 },
   THROW_KG: 0.45, MEDKIT_KG: 0.5,
   // Enemy rigs by kit: [chance, rig key] (a carrier or a tactical vest already has pouches).
-  RIG: { soldiers: [0.85, "chestrig"], escorts: [0.25, "chestrig"], contractors: [0.5, "chestrig"], raiders: [0.3, "makeshiftrig"], fighters: [0.15, "makeshiftrig"], militia: [0.15, "makeshiftrig"] },
+  RIG: { soldiers: [0.85, "chestrig"], escorts: [0.25, "chestrig"], contractors: [0.5, "chestrig"], raiders: [0.3, "makeshiftrig"], fighters: [0.15, "makeshiftrig"], militia: [0.15, "makeshiftrig"], drifters: [0.25, "makeshiftrig"] },
   TACVEST: { guards: 0.5, contractors: 0.3 }, // police and SWAT: a tactical vest instead of a plain vest
   // Packing magazines for a trip (packMags): spares a gun.
   PACK: { rifle: 4, pistol: 3 },
@@ -359,6 +359,18 @@ const CALIBRE_KIT = [
   [AREA_KIT.gunshop, { speedloader44: 0.6 }],
 ];
 for (const [row, add] of CALIBRE_KIT) Object.assign(row.items, add);
+// The survival guns of 2026-10-19 (data-kit.js SURV_MAGS, SURV_CLIPS): the Uzi's magazines at gun stores, police
+// armouries and on raiders' tables, the takedown .22's and the SKS's stripper clips at gun stores, gun counters and traders.
+const SURV_KIT = [
+  [SITE_KIT.gunstore, { mag_uzi_32: 0.3, mag_uzi_20: 0.2, mag_ar7_8: 0.6, stripper762: 1 }],
+  [SITE_KIT.police, { mag_uzi_32: 0.2 }],
+  [AREA_KIT.armory, { mag_uzi_32: 0.15 }],
+  [AREA_KIT.gunshop, { mag_ar7_8: 0.4, stripper762: 0.8, mag_uzi_20: 0.15 }],
+  [WARE_KIT.raider, { mag_uzi_32: 0.4, stripper762: 0.6 }],
+  [WARE_KIT.traders, { stripper762: 0.5, mag_ar7_8: 0.3 }],
+  [WARE_KIT.merchants, { mag_uzi_32: 0.2, stripper762: 0.4 }],
+];
+for (const [row, add] of SURV_KIT) Object.assign(row.items, add);
 function pickW(items, r) {
   const keys = Object.keys(items).filter((k) => GEAR[k]).sort();
   const tot = keys.reduce((a, k) => a + items[k], 0);
