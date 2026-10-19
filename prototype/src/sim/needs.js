@@ -84,6 +84,7 @@ import { teamPoisonHour } from "./cooking.js"; // wave 2 cooking: food poisoning
 import { teamWaterIn, takeTeamWater, drawWater, waterIn, RAW } from "./water.js"; // purified and un-purified water
 import { baseEatHour, eatingDaily, eatTarget, noteEat, eatPack, drinkPack, packFood, packWater, rationOf, emptyPack, PACK, teamMeal, roomU } from "./eating.js";
 import { mealOf } from "./meals.js"; // a team eats at breakfast, lunch and dinner too (eating.js teamMeal: a shared pot) // meal breaks and the carried rations (wave 2)
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Hunger
 
 export const NEEDS = {
   max: 100, food: 40, water: 60, lean: 50, leanRate: 0.6, ration: 0.6,
@@ -222,7 +223,7 @@ export function teamNeedsHour(state, p, members) {
   for (const s of members) {
     ensureNeeds(s);
     const r = personRation(p.burden, s, p.vehicle, moving);
-    s.hunger = clamp(s.hunger - (NEEDS.food / 24) * r * cold * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s)); // a Glutton (traits.js)
+    s.hunger = clamp(s.hunger - (NEEDS.food / 24) * cfgOf(state, "hunger") * r * cold * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s)); // a Glutton (traits.js); worldcfg.js: the Hunger dial
     s.thirst = clamp(s.thirst - (NEEDS.water / 24) * r * tf);
     // health.js frailty: hours marched today and their load (the ration multiplier), not riding in a car; reset nightly.
     if (moving && !(p.vehicle && p.vehicle.type !== "bike")) { s.marchHours = (s.marchHours || 0) + 1; s.marchLoad = (s.marchLoad || 0) + r; }
@@ -363,7 +364,7 @@ function errandHour(state, s) {
   const old = s.location.pack || null;
   if (old && old.food != null) delete old.food; // an errand packed before food was by type (save.js): it went hungry on it
   const tf = Weather.thirstAt ? Weather.thirstAt(state) : 1;
-  s.hunger = clamp(s.hunger - (NEEDS.food / 24) * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s));
+  s.hunger = clamp(s.hunger - (NEEDS.food / 24) * cfgOf(state, "hunger") * (s.hunger < NEEDS.lean ? NEEDS.leanRate : 1) * appetite(s)); // worldcfg.js: the Hunger dial
   s.thirst = clamp(s.thirst - (NEEDS.water / 24) * tf);
   const at = NEEDS.eat.full[0], to = eatTarget(s);
   // Breakfast, lunch and dinner from the pack: at least a meal's food value, the closest fit (eating.js).

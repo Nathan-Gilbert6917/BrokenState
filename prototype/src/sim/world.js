@@ -99,6 +99,7 @@ import { volunteersHour, volunteerFell } from "./volunteers.js"; // people lent 
 import { noteLook, keepLook } from "./intelnotes.js"; // what your people learned of the groups' bases (the State Map's estimates, intelest.js)
 import { jobTripsHour } from "./jobtrips.js"; // the outdoor jobs in trips: out to the base's land and home with the load
 import { seedRoadCarts } from "./carts.js"; // abandoned carts on the roads near towns (a new world)
+import { setWorldCfg } from "./worldcfg.js"; // the run's dials (World… on the new-run screen)
 
 export const HUB_VISION = 3;
 // A normal start's hub is bare (barestart): no buildings, every construction plot free. Its stores carry the first
@@ -140,10 +141,10 @@ export const localId = (state, id) => (typeof id === "number" ? id - (state.idBa
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
  *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
- *   start?: { roll: number, not?: number | null } | null }} opts
+ *   start?: { roll: number, not?: number | null } | null, worldCfg?: any }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null }) {
   const rng = new Rng(seed);
   const sdef = isCustom(size) ? customDef(customW, customH) : sizeDef(size);
   const worldSize = sdef.key;
@@ -179,6 +180,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   const bgs = customBackgrounds ? sanitizeLibrary(customBackgrounds) : {};
   if (Object.keys(bgs).length) state.customBackgrounds = bgs;
   if (start && start.roll != null) state.startRoll = start.roll; // startpick.js: a start of its own on this map
+  setWorldCfg(state, worldCfg); // worldcfg.js: the run's dials (the new-run screen's World… window), before the groups and hives are made
   noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
   ensurePois(state); // pois.js: every tile's points of interest (hash dice from the seed: the map's dice are untouched)
   if (state.mode === "hardcore") {

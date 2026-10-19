@@ -102,6 +102,7 @@ import { drawWater, waterIn, RAW } from "./water.js";
 import { carriedFactor } from "./hunting.js";
 import * as Weather from "./weather.js";
 import { poisonRoll } from "./cooking.js"; // wave 2 cooking: food poisoning from the lots each person ate (the eating contract)
+import { cfgOf } from "./worldcfg.js"; // the run's dials (World… on the new-run screen): Hunger
 
 export const EAT = {
   band: [80, 100], spread: [82, 96], meal: 5, snack: 55, night: 30, nightFrom: 22, nightTo: 6, short: [40, 48],
@@ -473,7 +474,7 @@ export function baseEatHour(state, base, people) {
   const key = rationKey(state, base);
   const use = key === "short" ? 1 : RATION_LEVELS[key].use;
   const cold = coldFactor(state);
-  const hr = NEEDS.food / 24;
+  const hr = (NEEDS.food / 24) * cfgOf(state, "hunger"); // worldcfg.js: the run's Hunger dial
   let ctx = null;
   const memo = {};
   if (h === RATION_PLAN.hour && runsFood(state, base)) {

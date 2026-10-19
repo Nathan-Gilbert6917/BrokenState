@@ -106,6 +106,7 @@ import { KEY_KINDS, keyKg } from "./carry.js"; // a capped water or firewood tas
 import { nomadCampAt, nomadCampArrive } from "./nomads.js"; // a nomad camp you spotted: attack it (call-time only)
 import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpacked at home (call-time only: safe in the import cycle)
 import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss, Fuel use
 const AI_KIND = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const STANCES = {
@@ -209,7 +210,7 @@ export function planPath(state, from, to, vehicle, who = "player") {
 /** @param {State} state @param {number[]} path @param {number} [mult] */
 export function fuelForPath(state, path, mult = 1) {
   let fuel = 0;
-  for (let i = 1; i < path.length; i++) fuel += tileFuel(true, state.tiles[path[i - 1]].roadLinks.includes(path[i]), mult);
+  for (let i = 1; i < path.length; i++) fuel += tileFuel(true, state.tiles[path[i - 1]].roadLinks.includes(path[i]), mult * cfgOf(state, "fuel")); // worldcfg.js: the run's Fuel use dial
   return fuel;
 }
 
@@ -519,7 +520,7 @@ export function travelHours(state, path, { vehicle = false, speed = 1, footSpeed
     for (const tileId of stepAlong(state, sim, sp * (hours === 1 ? 1 - used : 1), weather ? startHour + hours : null, known)) {
       if (sim.vehicle !== true) continue;
       const prev = sim.path[sim.path.lastIndexOf(tileId, sim.idx) - 1];
-      const use = tileFuel(true, state.tiles[prev].roadLinks.includes(tileId), fuelMult);
+      const use = tileFuel(true, state.tiles[prev].roadLinks.includes(tileId), fuelMult * cfgOf(state, "fuel")); // worldcfg.js: the Fuel use dial
       if (f < use - 1e-9) { f = 0; sim.vehicle = false; dryAt = tileId; } // same rule as useFuel
       else f -= use;
     }
@@ -1524,9 +1525,9 @@ function onEnterTile(state, p, tileId, hour = state.hour) {
     // The tile before this one (a fast vehicle can enter several tiles in one hour, so not always idx - 1).
     const prev = p.path[p.path.lastIndexOf(tileId, p.idx) - 1];
     const onRoad = state.tiles[prev].roadLinks.includes(tileId);
-    for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0); // every vehicle drives the tile (vehicles.js fleets)
-    // Fuel by the tile, times the car's load multiplier when it set off (load.js); bikes burn none.
-    if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p)))) {
+    for (const x of partyVehicles(state, p)) wear(x, onRoad, p.burden ? p.burden.fill : 0, cfgOf(state, "wear")); // every vehicle drives the tile (vehicles.js fleets); worldcfg.js: the Durability loss dial
+    // Fuel by the tile, times the car's load multiplier when it set off (load.js); bikes burn none. worldcfg.js: the run's Fuel use dial.
+    if (!useFuel(state, p, tileFuel(p.vehicle, onRoad, fuelMultOf(p) * cfgOf(state, "fuel")))) {
       const cars = partyVehicles(state, p).filter(isCar);
       const name = cars.length > 1 ? cars.map((x) => x.name).join(" and ") : v ? v.name : "vehicle";
       const bikesLeft = partyVehicles(state, p).filter(isBike);

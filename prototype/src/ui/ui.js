@@ -70,6 +70,7 @@ import { dealFor, talksOf, returnsOf } from "../sim/ransom.js"; // ransoms: the 
 import { RETREAT_POLICIES, POLICY_ORDER, teamPolicy, policySource, fightForecast, forecastText } from "../sim/breakoff.js";
 import { AT_DEST, supplyRuns, supplyRunById, jobParty, jobName, linesText, supplyStatus, supplyEstimate, escortFor } from "../sim/supply.js";
 import { newRunScreen, zombieLookModal, appearanceEditor } from "./newgame.js";
+import { worldConfigModal } from "./worldcfg.js"; // the new-run screen's World… window (the run's dials, sim/worldcfg.js)
 import { survivorURL, spriteImg } from "./sprites.js";
 import { renderExpedition, startsWhenUnpaused } from "./expedition.js";
 import { shortName } from "./names.js";
@@ -810,6 +811,7 @@ export function renderLog(state) {
 function pickModal(state, ui) {
   if (ui.timelapse) return null; // the timelapse viewer has its own overlay (ui/timelapse.js)
   if (ui.zombieLook) return ["zlook", () => zombieLookModal(ui)];
+  if (ui.wcOpen) return ["worldcfg", () => worldConfigModal(state, ui)]; // ui/worldcfg.js, over the new-run screen
   if (ui.bgEditor && !ui.started) return ["bgedit", () => backgroundEditor(state, ui)]; // ui/backgrounds.js, over the new-run screen
   if (ui.gearEdit && !ui.started) return ["gearedit", () => startGearEditor(state, ui)]; // ui/startgear.js, over the new-run screen
   if (ui.settings) return ["settings", () => settingsModal(state, ui)]; // ui/settings.js: over everything, a battle included

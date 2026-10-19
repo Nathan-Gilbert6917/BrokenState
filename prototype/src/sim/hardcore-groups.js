@@ -88,6 +88,7 @@ import { findPath } from "./hex.js";
 import { hcOutbreak, hcOutbreakCity } from "./hardcore-outbreak.js";
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
 import { payAmmo, payAmmoKeys, payWord, roundsText } from "./ammo.js"; // rounds by calibre
+import { cfgOf } from "./worldcfg.js"; // the run's dials: AI groups' starting gear
 
 export const HC_GROUPS = {
   // What a band starts with, by the type it will become (you: 3 people, about 10 food, 10 water, 6 ammo).
@@ -264,7 +265,7 @@ export function makeBand(state, type, opts = {}) {
   const stock = {};
   for (const k of STOCK_KEYS) stock[k] = 0;
   const src = opts.stock || cfg.stock;
-  for (const [k, q] of Object.entries(src)) stock[k] = Math.max(0, Math.round(q * (opts.stock ? 1 : rng.range(0.85, 1.15))));
+  for (const [k, q] of Object.entries(src)) stock[k] = Math.max(0, Math.round(q * (opts.stock ? 1 : rng.range(0.85, 1.15)) * (k === "ammo" ? cfgOf(state, "aiGear") : 1))); // worldcfg.js: the run's AI groups' starting gear dial (their rounds)
   typeFind(state, stock, GROUP_MIX[type] || "stores"); // foods.js: the band's food (days in the tables) as its kind's items
   const d = day(state);
   const foundAt = opts.foundAt != null ? opts.foundAt : d - 1 + B.FOUND_DAYS[0] + Math.floor(hash01(state.seed, "hc-found", H.bands.length, type) * (B.FOUND_DAYS[1] - B.FOUND_DAYS[0] + 1));

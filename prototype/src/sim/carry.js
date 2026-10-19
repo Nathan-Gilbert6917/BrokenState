@@ -112,6 +112,7 @@ import { dropToGround, pilesNear, settlePile } from "./ground.js"; // the battle
 import { lootLayer, raidShares, haulLoad, haulText, dropHaulInto } from "./raidloot.js"; // the finds carried loose fill the hands too (call-time only: safe in the import cycle)
 import { gunLeavesTeam } from "./gunload.js"; // a gun in a bag set down leaves the team loaded
 import { isCart, cartOf, cartFree, addLot, cartWorth, letGoCart, cartsEnd, oneHandOk, cartSpec } from "./carts.js"; // carts: a place for the supplies, a 1x1 thing in a fight (call-time only)
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage
 
 // ---------- the table ----------
 // pack: units a pack slot holds, pocket: units a pocket holds (0: never there). kg: per unit (food: FOOD_KG a day,
@@ -748,7 +749,7 @@ export function groundDaily(state) {
     for (const it of [...site.items]) {
       const f = it.kind === "supply" && FOODS[it.key];
       if (!f) continue;
-      it.left = (it.left ?? f.shelf) - storeFactor(f.stable ? "stable" : "outside", temp, { wet, heat });
+      it.left = (it.left ?? f.shelf) - storeFactor(f.stable ? "stable" : "outside", temp, { wet, heat }) * cfgOf(state, "spoil"); // worldcfg.js: the run's Food spoilage dial
       if (it.left <= 0 || it.qty < 0.05) site.items.splice(site.items.indexOf(it), 1);
       changed = true;
     }

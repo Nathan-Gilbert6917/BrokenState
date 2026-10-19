@@ -17,6 +17,7 @@ import { newId, log, day, atBase, skill, localId } from "./world.js";
 import { count, benchTier } from "./buildings.js";
 import { hasPerk, gainXp, USE, hash01 } from "./skills.js";
 import { newItem } from "./inventory.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
 
 // The hardcore start's cars (hardcore-start.js ARCHETYPES) added the SUV, the Hummer and the work van; anything that
 // draws or prices a car by type takes them as a truck unless it says otherwise (mapsprites.js, crossing.js, fieldheat.js).
@@ -261,8 +262,9 @@ export function breakdownChance(v, fill = 0) {
 // always. Several: one roll for any of them (1 − every one holding up), then which one, each by its own chance.
 export function breakdownRoll(state, p, fill = 0) {
   const vs = partyVehicles(state, p);
-  if (vs.length <= 1) { const v = partyVehicle(state, p); return v && state.rng.chance(breakdownChance(v, fill)) ? v : null; }
-  const cs = vs.map((v) => breakdownChance(v, fill));
+  const fm = cfgOf(state, "failures"); // worldcfg.js: the run's Failures dial
+  if (vs.length <= 1) { const v = partyVehicle(state, p); return v && state.rng.chance(Math.min(1, breakdownChance(v, fill) * fm)) ? v : null; }
+  const cs = vs.map((v) => Math.min(1, breakdownChance(v, fill) * fm));
   const any = 1 - cs.reduce((a, c) => a * (1 - c), 1);
   if (!state.rng.chance(any)) return null;
   let r = state.rng.next() * cs.reduce((a, c) => a + c, 0);
@@ -270,8 +272,8 @@ export function breakdownRoll(state, p, fill = 0) {
   return vs[vs.length - 1];
 }
 
-export function wear(v, onRoad, fill = 0) {
-  const w = isBike(v) ? (onRoad ? 0.1 : 0.4) : (onRoad ? 0.25 : 0.9) * (fill > 1 ? OVERLOAD_WEAR : 1);
+export function wear(v, onRoad, fill = 0, mult = 1) { // mult: the run's Durability loss dial (worldcfg.js; parties.js, survey.js pass it)
+  const w = (isBike(v) ? (onRoad ? 0.1 : 0.4) : (onRoad ? 0.25 : 0.9) * (fill > 1 ? OVERLOAD_WEAR : 1)) * mult;
   v.condition = Math.max(0, v.condition - w);
 }
 

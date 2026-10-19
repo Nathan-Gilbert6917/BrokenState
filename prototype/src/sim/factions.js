@@ -42,7 +42,7 @@ import { personKey } from "./members.js"; // dice the same in every world on the
 import { ensureMembers, syncMembers, placeMembers, moveMember, removeMember } from "./members.js"; // a group's people (docs/adr/0001-ai-parity.md)
 import { kitOut } from "./loadouts.js"; // what each of them carries
 import { syncBuildings, spreadStores, gatherStores, loseBase, gainBase, stockAt } from "./groupbases.js"; // their bases as base objects
-import { FOODS, foodIn, takeFood, payFood, giveFood, typedFood, typeGoods, typeStray, groupMix, ageCoarse, foodText, addFoodsTo as addItemsTo, groupStartFood, groupFieldFood } from "./foods.js"; // the groups' food by type (coarse: no lots)
+import { FOODS, foodIn, takeFood, payFood, giveFood, typedFood, typeGoods, typeStray, groupMix, ageCoarse, COARSE, foodText, addFoodsTo as addItemsTo, groupStartFood, groupFieldFood } from "./foods.js"; // the groups' food by type (coarse: no lots)
 import { groupFoodLand, groupTripLosses, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
 import {
@@ -103,6 +103,7 @@ import { sameBloc, blocOf, blocHelpFor, blocHelpAfter, jointRaid, jointAfter, bl
 import { flightDaily } from "./groupflight.js"; // groups leaving a base they cannot hold against the dead
 import { splinterDaily } from "./splinters.js"; // splinter bands
 import { fightSides, fightersOf, applySide, wallMult } from "./groupfight.js"; // fights nobody watches: your rules for both sides
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage, the groups' starting rounds, Raids on you
 const KIND_OF = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const RAIDS = {
@@ -201,7 +202,7 @@ export function createFactions(state, count) {
       id: newId(), name, type, color: FACTION_COLORS[i % FACTION_COLORS.length],
       bases: [site.id], pop, alive: true, known: false,
       goodwill: def.goodwill + rng.int(-8, 8), lastDiplomacy: 0, pact: null,
-      stock: { ammo: pop * 10 * def.arms, fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0, ...groupStartFood(state, type, pop) }, // food: foods.js (6.5 days a head of its kind's food); jars: storage.js; wood: woodcutting.js; brass..primers: reloading.js
+      stock: { ammo: pop * 10 * def.arms * cfgOf(state, "aiGear"), fuel: pop * 1, meds: pop, parts: 2, scrap: pop * 3, jars: 0, wood: pop * GROUP_WOOD.start, arrows: pop * 2, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0, ...groupStartFood(state, type, pop) }, // food: foods.js (6.5 days a head of its kind's food); jars: storage.js; wood: woodcutting.js; brass..primers: reloading.js
       lootedGear: [], raidCooldown: rng.int(4, 10),
     });
     factionVehicles(state.factions[state.factions.length - 1]); // vehicles.js: a military group starts with an Army truck and a Humvee (M2 turret)
@@ -373,7 +374,7 @@ export function factionsDaily(state) {
     const eat = Math.max(0, f.pop * mult - away);
     const hungry = takeFood(f.stock, eat, { state }).units < eat - 1e-6;
     f.hungryToday = hungry; // groupmedical.js: nobody heals on an empty stomach
-    f.foodSpoiled = ageCoarse(f.stock, 1, undefined, { frozen: groupFreezerOn(f) ? GROUP_WORKS.MACH.room : 0 }); // groupworks.js: a running walk-in freezer
+    f.foodSpoiled = ageCoarse(f.stock, 1, COARSE.factor * cfgOf(state, "spoil"), { frozen: groupFreezerOn(f) ? GROUP_WORKS.MACH.room : 0 }); // worldcfg.js: the Food spoilage dial // groupworks.js: a running walk-in freezer
     groupTripLosses(state, f); // grouptrips.js: their workers out on the land meet trouble too (fewer losses the better armed)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
     // wanderers and deserters join through their own systems (wanderers.js, groupcare.js).
@@ -471,7 +472,7 @@ export function factionsDaily(state) {
     // groupcare.js prio: hunger pushes a raid, the wounded hold it back (the type's own rate is FACTION_TYPES raid).
     // groupworld.js: a group that has scouted you lately comes more often.
     const scouted = f.scoutedYou != null && today - f.scoutedYou <= KNOW.SCOUTED_DAYS ? KNOW.SCOUTED : 1;
-    if (raidRate > 0 && f.raidCooldown <= 0 && fitPeople(f) >= 8 && !hcGroupRaidsQuiet(state) && rng.chance(raidRate * 1.5 * scouted * (weightOf(f, "raid") ? prio(f, "raid") / weightOf(f, "raid") : 1))) {
+    if (raidRate > 0 && f.raidCooldown <= 0 && fitPeople(f) >= 8 && !hcGroupRaidsQuiet(state) && rng.chance(raidRate * 1.5 * scouted * cfgOf(state, "raids") * (weightOf(f, "raid") ? prio(f, "raid") / weightOf(f, "raid") : 1))) { // worldcfg.js: the run's Raids on you dial
       launchRaid(state, f);
       f.raidCooldown = rng.int(8, 16) + (f.decoyWaste || 0); // intel.js decoyRaid: the march to a decoy outpost and back
       f.decoyWaste = 0;

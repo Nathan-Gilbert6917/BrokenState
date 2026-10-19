@@ -80,6 +80,7 @@ import { gainXp } from "./skills.js";
 import { wornOut } from "./repair.js"; // past mending
 import { groupStockKey } from "./trade.js";
 import { spendSelfAid } from "./medics.js"; // a person's used tourniquets, as yours
+import { cfgOf } from "./worldcfg.js"; // the run's dials: AI groups' starting gear
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -242,7 +243,7 @@ function put(A, f, it, why) {
 }
 export function seedArsenal(state, f) {
   const A = (f.arsenal = newArsenal(f));
-  for (const it of starterKit(state.seed, f.name, f.type, f.pop, f.gear || 1)) put(A, f, it, null);
+  for (const it of starterKit(state.seed, f.name, f.type, f.pop, (f.gear || 1) * cfgOf(state, "aiGear"))) put(A, f, it, null); // worldcfg.js: the run's AI groups' starting gear dial (above 1: more of the kit's strong guns)
   A.seeded = A.items.length;
   A.headgear = true; // starterKit dealt helmets and ear protection (helmets.js)
   A.rounds = kitLaunchRounds(A.items); // launchers.js: their launchers' rounds, kept with the arsenal (not in f.stock: the world's dice read its keys)

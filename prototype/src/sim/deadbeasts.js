@@ -150,7 +150,7 @@ export function packAim(b, a, t) {
 }
 // combat.js damage: a beast's bite that someone living takes and stands leaves the worm in them INFEST of the time.
 export function beastBite(b, t, by) {
-  if (!by || !by.beast || t.kind !== "human" || t.wormed || !b.rng.chance(BEASTS.INFEST)) return false;
+  if (!by || !by.beast || t.kind !== "human" || t.wormed || !b.rng.chance(Math.min(1, BEASTS.INFEST * (b.infectBite ?? 1)))) return false; // worldcfg.js: the run's Infection from bites dial
   t.wormed = true;
   t.wormBit = true;
   say(b, `${by.name}'s bite is full of the worm: it is in ${first(t.name)} now. If they die, they get up.`, t.side === "player" ? "death" : "info");
@@ -159,7 +159,7 @@ export function beastBite(b, t, by) {
 // combat.js damage: brought to 0 by a beast's bite: the worm is in them INFEST_KILL of the time (they get up).
 export function beastHit(b, t, by) {
   if (!by || !by.beast || t.kind !== "human" || t.wormed) return false;
-  if (!b.rng.chance(BEASTS.INFEST_KILL)) return false;
+  if (!b.rng.chance(Math.min(1, BEASTS.INFEST_KILL * (b.infectBite ?? 1)))) return false; // worldcfg.js: the Infection from bites dial
   t.wormed = true;
   return true;
 }

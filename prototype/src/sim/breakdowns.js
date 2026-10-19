@@ -65,6 +65,7 @@ import { stewardOn } from "./steward.js";
 import { vehiclesAtBase, shelteredAt, frostWear } from "./vehicles.js";
 import { isManaged, prio } from "./work.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Clean and mend (breakdownsDaily upkeep)
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Failures
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
@@ -430,7 +431,7 @@ export function breakdownsDaily(state) {
     for (const fx of list) {
       if (fx.broken) continue;
       const w = fx.wear || 0;
-      const p = w >= WEAR.breakAt ? 1 : w >= WEAR.riskFrom ? ((w - WEAR.riskFrom) / (WEAR.breakAt - WEAR.riskFrom)) ** 2 * WEAR.riskMax : 0;
+      const p = (w >= WEAR.breakAt ? 1 : w >= WEAR.riskFrom ? ((w - WEAR.riskFrom) / (WEAR.breakAt - WEAR.riskFrom)) ** 2 * WEAR.riskMax : 0) * cfgOf(state, "failures"); // worldcfg.js: the run's Failures dial (0: nothing fails, worn out or not)
       if (p > 0 && hash01(state.seed, "brk", fxKey(base, fx), d) < p) breakFixture(state, base, fx, w >= WEAR.breakAt ? "worn out" : "worn");
     }
     // Upkeep by builders with nothing to build, and by prisoners set to Clean and mend (prisoners-tab: prisoners.js

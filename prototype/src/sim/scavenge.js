@@ -60,6 +60,7 @@ import { crawlTile, startCrawl } from "./citycrawl.js";
 import { addFind, roundsText } from "./ammo.js"; // rounds by calibre
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
 import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its people carry
+import { cfgOf, lootQty } from "./worldcfg.js"; // the run's dials: Dead at sites, the loot by kind
 
 export const APPROACHES = {
   sneak:  { name: "Sneak",  loot: 0.7, heat: 7,  desc: "Slow and quiet. Stealth lowers Heat further." },
@@ -88,7 +89,8 @@ export function raidEnemies(state, tileId) {
   // A hive's land (hives.js): more of the dead and tougher (+1 power), and on the red-skull ring around a hive +3.
   const hz = zombieToughness(state, tileId);
   const heat = tileHeat(state, tileId); // pois.js: a tile stirred up by raids draws more of the dead (no dice of state.rng)
-  const z = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1)) + Math.floor(heat / TILE_HEAT.ROSTER);
+  const z0 = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1)) + Math.floor(heat / TILE_HEAT.ROSTER);
+  const zm = cfgOf(state, "siteDead"), z = zm === 1 ? z0 : Math.round(z0 * zm); // worldcfg.js: the run's Dead at sites dial
   // mix: the armoured dead here (deadsoldiers.js: soldiers at a National Guard base or an army wreck, riot police at a
   // police station), placed among them by share (combat.js createRaid, buildingmaps.js placeInterior).
   // The bred kinds too (hivetech.js siteSpecials): more in towns and cities as the years go by, and on a hive's land.
@@ -318,7 +320,7 @@ export function searchHour(state) {
   const rolls = 1 + (ap.loot > 1 ? 1 : 0);
   for (let i = 0; i < rolls; i++) {
     const key = rng.weighted(Object.keys(table), (k) => table[k]);
-    let qty = Math.round(rng.range(4, 9) * left * ap.loot * engLootMult(e) * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1)); // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
+    let qty = lootQty(state, key, Math.round(rng.range(4, 9) * left * ap.loot * engLootMult(e) * (1 + scav / 15) * lootPerk(key) * (key === "ammo" ? 6 : key === "scrap" ? 2.5 : key === "fuel" ? 0.7 : key === "jars" ? 2 : 1))); // worldcfg.js: the run's loot dial for this kind // fuel is scarce; ruins are full of scrap (expeditions are the source now); jars come by the box
     if (key === "meds" && qty > 0) qty = searchMeds(t, qty); // medfinds.js: a box of them only at a pharmacy, clinic, hospital or medevac wreck
     if (qty > 0 && key === "ammo") {
       finds.push(roundsText(addFind(e.found.supplies, kind, qty, false, e.tile, e.hours, i))); // ammo.js: the rounds a place like this holds, by calibre, named
@@ -334,7 +336,7 @@ export function searchHour(state) {
     }
   }
   const gearList = kind ? LOCATIONS[kind].gear : [];
-  if (gearList.length && rng.chance(0.07 * left * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1))) {
+  if (gearList.length && rng.chance(0.07 * left * (1 + scav / 15) * ap.loot * (perk("treasure") ? 2 : 1) * cfgOf(state, "lootGuns"))) { // worldcfg.js: the run's Guns and gear dial
     const g = swapGun(`site:${kind}`, rng.pick(gearList), rng); // gundist.js: which gun, by the site's draws (a hash of the draw: no extra one)
     const found = foundFill(lootItem(g, siteSource(kind), rng), e.tile, e.hours, "scav"); // itemcond.js: a gun shop's stock used, a crash site's scorched; gunrounds.js: a few rounds in it now and then (its own dice)
     e.found.gear.push(found, ...gunMags(found, siteSource(kind), e.tile, e.hours)); // carrykit.js: a gun's spare magazines (own dice)

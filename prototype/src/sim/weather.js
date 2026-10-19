@@ -51,6 +51,7 @@
 import { Rng } from "./rng.js";
 import * as data from "./data.js";
 import { log, hurt, hub } from "./world.js";
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Thirst
 /** @import { State, Party, Survivor } from "./types" */
 
 export const SEASON_DAYS = 28;
@@ -731,7 +732,7 @@ export const hotDay = (d) => d.k === "heat" || d.hi >= 30;
 /** @param {State} state @param {number} [dayIdx] */
 export function thirstFactor(state, dayIdx = dayIndex(state)) {
   const s = THIRST[seasonOfDay(dayIdx).key] ?? 1;
-  return hotDay(dayRec(state, dayIdx)) ? Math.max(s, THIRST.heat) : s;
+  return (hotDay(dayRec(state, dayIdx)) ? Math.max(s, THIRST.heat) : s) * cfgOf(state, "thirst"); // worldcfg.js: the run's Thirst dial
 }
 // The factor for the hour a team drinks in (parties.js consume runs after the clock moves on).
 /** @param {State} state @param {number} [hour] */

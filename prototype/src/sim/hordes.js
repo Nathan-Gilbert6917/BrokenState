@@ -24,6 +24,7 @@ import { shelterHeat } from "./fieldheat.js";
 import { hordeOverrun, baseHold } from "./groupflight.js"; // a group whose base the dead overran may leave it
 import { SILENT } from "./hiding.js"; // a base running silent makes less noise
 import { hordeEnter as fieldHordeEnter } from "./fieldworks.js"; // field works in the dead's way
+import { cfgOf } from "./worldcfg.js"; // the run's dials: Horde size
 // A horde may carry special dead from its hive's growths (hivetech.js): h.mix is the share of each kind
 // ({ runner: 0.15, brute: 0.08 }), kept through merges (weighted) and splits; h.elite from a mutation vat. Many
 // runners move it a quarter faster; screamers in it pull wandering hordes within 3 tiles along with it.
@@ -53,8 +54,9 @@ export const hordeClass = (size) => (size < 40 ? "small" : size < 95 ? "medium" 
 const GROWS = new Set(["roam", "attack", "border"]);
 export function makeHorde(state, o) {
   const grow = !o.split && GROWS.has(o.role || "roam") ? hordeGrowth(state) : 1;
+  const hm = o.split ? 1 : cfgOf(state, "hordes"); // worldcfg.js: the run's Horde size dial (a part split off keeps its size; at 1 the size is as it always was)
   const h = {
-    id: newId(), tile: o.tile, size: Math.round(o.size * grow), target: o.target ?? null, move: 0,
+    id: newId(), tile: o.tile, size: hm === 1 ? Math.round(o.size * grow) : Math.max(1, Math.round(o.size * grow * hm)), target: o.target ?? null, move: 0,
     role: o.role || "roam", hive: o.hive ?? null, site: o.site ?? null, bosses: o.bosses || 0, goal: o.goal || null, born: state.hour,
     mix: o.mix || null, elite: !!o.elite,
   };
