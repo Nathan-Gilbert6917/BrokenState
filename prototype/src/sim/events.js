@@ -15,6 +15,7 @@ import { hiveAt, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { growthsOf } from "./hivetech.js";
 import { GROWTHS, ZTYPES, BEASTS } from "./hiveconst.js";
 import { beastMix } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
+import { LONE, stragglerFits, stragglerCard } from "./loneattack.js"; // one of the team attacked alone on the road
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { travelEffects, weatherAt, season } from "./weather.js";
@@ -248,6 +249,9 @@ const EVENTS = [
       };
     },
   },
+  // One of the team, fallen behind on foot, set upon by the dead or the dead beasts: fought alone on the battle map
+  // with what they carry (loneattack.js stragglerCard: Save and fight, Fight, or by the numbers).
+  { id: "straggler", weight: (st, p) => LONE.ROAD * (1 + ((st.tiles[partyTile(p)] || {}).infection || 0) * 2), when: (st, p, t) => stragglerFits(st, p, t), card: (st, p, t) => stragglerCard(st, p, t) },
   // Zombies
   {
     id: "pack", weight: 5, when: (st, p, t) => t.infection > 0.2,

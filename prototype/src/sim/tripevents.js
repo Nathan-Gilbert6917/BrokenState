@@ -1,6 +1,7 @@
 // Trouble on job trips (trips-plus #2, user request: "events that can be handled by 1 single person; AI should gear
 // them enough to survive these occurrences"). A worker out alone on a job trip (sim/jobtrips.js) can meet:
 //   dead      1–3 of the wandering dead (more on infected ground, near a horde, at dusk)
+//   deadbeast 1–3 of the worm's dead animals (deadbeasts.js beastMix: a dead stag on the hills, dead dogs by the farms …)
 //   animal    a wolf, a wild boar, feral dogs or a bear, by the ground and the season (no bears in winter)
 //   injury    the job's own accident (an axe slip, a fall through a rotten floor, a slip into cold water …) or a turned
 //             ankle on the way
@@ -20,7 +21,10 @@
 // may turn toward the shots, on the trip's own dice).
 // The bigger moments (a bear, a stranger) bring a card with 2–3 choices while you run the base yourself (no governor,
 // no base leader); the worker holds where they are until it is answered (TRIP_EV.hold hours at most, then they do what
-// seems best: the default). Everything else, and every base the governor or a leader runs, resolves at once by the
+// seems best: the default). The dead and the dead beasts bring the card "<name> was attacked by …" (loneattack.js
+// attackCard): Save and fight, Fight (the battle map: that one person with what they carry, no stores; the worker
+// holds while it is fought, holdTrip), or leave it to them (by the numbers, as below); the fight's outcome goes back
+// into the trip (settleBattle). Everything else, and every base the governor or a leader runs, resolves at once by the
 // worker's own good sense (the same choice the governor would make).
 // Player-facing: one log line each; the map shows a "!" over the walker (base.tripAlerts, ui/workermap.js).
 // The day's tally: base.tripTally.ev = { n, kinds, hurt, killed, fled, shots, noise, gunfire { tile: quiet } }.
@@ -38,6 +42,9 @@ import { drawShots } from "./ammo.js";
 import { gunMods } from "./gunmods.js";
 import { tripKit } from "./tripgear.js";
 import { TRIP_JOBS, paceOf } from "./tripland.js";
+import { beastMix } from "./deadbeasts.js"; // the dead beasts of the land: a kind of trouble on a trip
+import { ZTYPES } from "./hiveconst.js";
+import { attackCard, tripAttackSetup, beastWords } from "./loneattack.js"; // the attack card and the lone fight on the battle map
 import { tileLabel } from "./parties.js";
 import { HUNT, meatAt, huntMixOf } from "./hunting.js";
 import { stewardOn } from "./steward.js";
@@ -46,7 +53,8 @@ import * as Weather from "./weather.js";
 
 export const TRIP_EV = {
   rate: 0.004,       // trouble an hour out of the walls (× the pace's ev, × weather)
-  kinds: { dead: 26, animal: 15, injury: 22, lost: 11, stranger: 8, find: 18 },
+  kinds: { dead: 26, animal: 15, injury: 22, lost: 11, stranger: 8, find: 18, deadbeast: 12 }, // deadbeast: × the beasts' share of the tile's dead (BEAST_SHARE, at most BEAST_MAX)
+  beastShare: 6, beastMax: 1.5,
   hold: 3,           // hours a card holds the worker before they take its default
   walker: 2.2,       // one of the dead in a fight (combatPower's scale: bare hands about 2, a machete 4, a rifle 7)
   hit: [8, 20],      // a blow from the dead, before armour (world.js woundMult, armorMult)
@@ -140,6 +148,8 @@ export function armTripEvent(state, base, s, t) {
 const phaseAt = (t, at) => (at < t.arrive ? "out" : at < t.workEnd ? "work" : "back");
 // Roughly where they are: the work tile (the base's own tile when they work there).
 const placeOf = (t) => t.at;
+// The dead beasts' share of a tile's dead (deadbeasts.js beastMix), 0 where there are none.
+const beastShareAt = (state, tile) => { const m = beastMix(state, tile); return m ? Object.values(m).reduce((a, v) => a + v, 0) : 0; };
 // The kinds' weights here and now.
 function kindWeights(state, base, s, t, phase, h) {
   const K = TRIP_EV.kinds;
@@ -151,6 +161,7 @@ function kindWeights(state, base, s, t, phase, h) {
   const animalW = Object.values(TRIP_ANIMALS).reduce((a, x) => a + (x.terr[terr] || 0) * (x.season[Weather.season(state, h).key] ?? 1), 0);
   const w = {
     dead: K.dead * (0.5 + 2.5 * inf) * (dusk ? 1.3 : 1) * (hordeNear ? 2 : 1),
+    deadbeast: K.deadbeast * Math.min(TRIP_EV.beastMax, beastShareAt(state, placeOf(t)) * TRIP_EV.beastShare) * (dusk ? 1.2 : 1), // deadbeasts.js: the worm's dead animals on this ground
     animal: K.animal * Math.min(1.4, animalW) * (t.job === "hunt" ? 1.4 : 1),
     injury: K.injury * ({ wood: 1.5, scavenge: 1.3, forage: 0.8, hunt: 1, fish: 0.9, water: 0.8 }[t.job] || 1) * accidentMult(s),
     lost: phase === "work" || t.d < 1 ? 0 : K.lost * ({ forest: 1.4, mountain: 1.6, hills: 1.2, plains: 0.5, suburb: 0.4, city: 0.5 }[terr] ?? 1) * wxMult(state, placeOf(t), h) * (dusk ? 1.3 : 1),
@@ -278,6 +289,14 @@ function buildEvent(state, base, s, t, rng, phase, h) {
   const sea = Weather.season(state, h).key;
   switch (kind) {
     case "dead": { const inf = tile.infection || 0; const n = rng.next() < 0.5 - inf * 0.3 ? 1 : rng.next() < 0.65 ? 2 : 3; return { kind, n }; }
+    case "deadbeast": { // the dead beasts of this ground (deadbeasts.js): the likelier kind; packs of dogs and cats up to 3, the big ones 1–2
+      const m = beastMix(state, placeOf(t));
+      if (!m) return { kind: "dead", n: 1 };
+      const kinds = Object.keys(m);
+      const beast = kinds.length === 1 ? kinds[0] : rng.weighted(kinds, (k) => m[k]);
+      const pack = beast === "deadhound" || beast === "deadcat";
+      return { kind, beast, n: rng.int(1, pack ? 3 : 2) };
+    }
     case "animal": {
       const list = Object.entries(TRIP_ANIMALS).map(([k, a]) => ({ k, w: (a.terr[tile.terrain] || 0) * (a.season[sea] ?? 1) })).filter((x) => x.w > 0);
       if (!list.length) return { kind: "find", find: TRIP_FINDS.indexOf(wpick(rng, TRIP_FINDS)) };
@@ -317,7 +336,7 @@ export function fireTripEvent(state, base, s, t, now) {
   T.n++;
   T.kinds[ev.kind] = (T.kinds[ev.kind] || 0) + 1;
   const big = (ev.kind === "animal" && TRIP_ANIMALS[ev.animal].big) || ev.kind === "stranger";
-  if (big && managed(state, base)) return raiseCard(state, base, s, t, now);
+  if ((big || ev.kind === "dead" || ev.kind === "deadbeast") && managed(state, base)) return raiseCard(state, base, s, t, now); // the dead, the dead beasts: the attack card (loneattack.js)
   return settle(state, base, s, t, null, now);
 }
 
@@ -361,7 +380,7 @@ function autoChoice(state, base, s, t) {
     const r = my / (my + A.power * ev.n);
     return r >= TRIP_EV.fightAt + (A.big ? 0.1 : 0) || (!A.big && fleeChance(state, s, t, ev.phase) < 0.5 && r >= 0.35) ? "fight" : A.big ? "back" : "run";
   }
-  if (ev.kind === "dead") return my / (my + TRIP_EV.walker * ev.n) >= TRIP_EV.fightAt ? "fight" : "run";
+  if (ev.kind === "dead" || ev.kind === "deadbeast") return my / (my + foeWorth(ev) * ev.n) >= TRIP_EV.fightAt ? "fight" : "run";
   if (ev.kind === "stranger" && ev.threat) return backOff(state, s, my, ev, k) >= 0.6 ? "refuse" : "give";
   if (ev.kind === "stranger") return sumStock(base.stock, TRIP_OFFERS[ev.offer].want) ? "trade" : "refuse";
   return "";
@@ -370,6 +389,10 @@ function autoChoice(state, base, s, t) {
 function backOff(state, s, my, ev, k) {
   return clamp(0.3 + 0.35 * (my / (ev.power + (ev.gun ? 2 : 0)) - 0.8) + 0.015 * skill(s, "speech") + (k.gun && k.ready ? 0.1 : 0), 0.1, 0.85);
 }
+
+// One of the dead on a trip is worth TRIP_EV.walker; a dead beast its kind's weight more (zombietypes.js).
+const foeWorth = (ev) => (ev.kind === "deadbeast" && ev.beast && ZTYPES[ev.beast] ? TRIP_EV.walker * ZTYPES[ev.beast].weight : TRIP_EV.walker);
+const foeWords = (ev) => (ev.kind === "deadbeast" && ev.beast ? beastWords(ev.beast, ev.n) : ev.n === 1 ? "one of the dead" : `${ev.n} of the dead`);
 
 function raiseCard(state, base, s, t, now) {
   const ev = t.ev;
@@ -380,6 +403,28 @@ function raiseCard(state, base, s, t, now) {
   const where = tileLabel(state, placeOf(t));
   const job = TRIP_JOBS[t.job] ? TRIP_JOBS[t.job].ing.toLowerCase() : "working";
   const A = ev.kind === "animal" ? TRIP_ANIMALS[ev.animal] : null;
+  if (ev.kind === "dead" || ev.kind === "deadbeast") { // the attack card (loneattack.js): Save and fight, Fight, or their own good sense
+    const who = foeWords(ev);
+    ev.what = `Attacked by ${who}`;
+    const enemy = ev.kind === "deadbeast" && ev.beast
+      ? { kind: "zombies", count: ev.n, power: Math.round((2 + (state.tiles[placeOf(t)].infection || 0) * 3) * 10) / 10, name: who, types: { [ev.beast]: ev.n }, mix: { [ev.beast]: 1 }, beast: ev.beast }
+      : { kind: "zombies", count: ev.n, power: Math.round((2 + (state.tiles[placeOf(t)].infection || 0) * 3) * 10) / 10, name: who };
+    const text = `${s.name}, out ${job} near ${where}${ev.phase === "back" ? " with the load on their back" : ""}, ${ev.kind === "deadbeast" ? `is set upon by ${who}: thin, the hide split, the worm moving in the splits` : `is set upon by ${who}`}. Nobody else is near: it is ${first(s)} alone, with what they have on them.`;
+    const { p: my } = tripPower(state, base, s, t);
+    const r = my / (my + foeWorth(ev) * ev.n);
+    const auto = autoChoice(state, base, s, t);
+    const card = attackCard(state, s, enemy, {
+      where, text, setup: tripAttackSetup(state, base, s, t, enemy), tags: { tripEv: s.id, tripEvAt: ev.at },
+      byNumbers: { label: auto === "fight" ? "Leave it to them (they stand and fight)" : "Leave it to them (they run for it)", hint: auto === "fight" ? `By the numbers: about ${Math.round(clamp(Math.pow(r, 1.5) * 1.6, 0.05, 0.97) * 100)}% to put ${ev.n === 1 ? "it" : "them"} down; shots from the base's rounds` : `By the numbers: ${Math.round(fleeChance(state, s, t, ev.phase) * 100)}% they get clear${ev.phase === "back" ? " (the load is dropped)" : ""}`, resolve: (st) => settle(st, base, s, t, null, st.hour) },
+    });
+    const open = card.choices[1].resolve; // loneattack.js: starts the fight
+    const fightChoice = (st) => { ev.battle = true; return open(st); };
+    card.choices[0].resolve = fightChoice; card.choices[1].resolve = fightChoice; // the worker holds while the fight is on (holdTrip)
+    addCard(state, card);
+    evStats(state).cards++;
+    alertPop(state, base, s, t, ev.what);
+    return true;
+  }
   ev.what = A ? `Facing ${A.name}` : ev.threat ? "Held up by a stranger" : "Talking to a stranger";
   const title = A ? `${first(s)} and ${A.name}` : ev.threat ? `${first(s)} is held up` : `A stranger meets ${first(s)}`;
   const text = A
@@ -401,6 +446,12 @@ function raiseCard(state, base, s, t, now) {
 // card is gone without an answer: a load, a dropped card) they do what seems best.
 export function holdTrip(state, base, s, t, now) {
   const ev = t.ev;
+  if (ev.battle) { // the fight on the battle map (loneattack.js): they hold while it is open or waits its turn; its handler settles the trip
+    const mine = (x) => !!(x && x.handler === "tripAttack" && x.context && x.context.sid === s.id && x.context.at === ev.at);
+    if ((state.combat && mine(state.combat.setup)) || (state.combatQueue || []).some(mine)) { shiftAfter(t, now, 1); return true; }
+    ev.battle = false; ev.pending = false; // over (settled by its handler) or never made: the trip goes on
+    return false;
+  }
   const i = (state.cards || []).findIndex((c) => c.tripEv === s.id && c.tripEvAt === ev.at);
   if (i >= 0 && now - ev.since < TRIP_EV.hold) { shiftAfter(t, now, 1); return true; }
   if (i >= 0) state.cards.splice(i, 1);
@@ -408,6 +459,34 @@ export function holdTrip(state, base, s, t, now) {
   return false;
 }
 
+// The fight on the battle map is over (loneattack.js onTripAttack: combat.js result): the trip goes on (a win), is cut
+// short (they ran: the load dropped on the way home or at the work) or ended with them (the battle killed them). The
+// battle wrote their wounds and death itself; this only steers the trip and tells the log.
+export function settleBattle(state, base, s, t, result, enemy) {
+  const ev = t.ev;
+  ev.battle = false;
+  ev.pending = false;
+  const now = state.hour;
+  const when = Math.max(ev.at, Math.min(now, t.home - 0.01));
+  const phase = ev.phase || phaseAt(t, when);
+  const where = tileLabel(state, placeOf(t));
+  const job = TRIP_JOBS[t.job] ? TRIP_JOBS[t.job].ing.toLowerCase() : "working";
+  const st = evStats(state);
+  const T = dayTally(state, base, now);
+  const who = enemy && enemy.name ? enemy.name : foeWords(ev);
+  if (!s.alive) { st.killed++; T.killed++; alertPop(state, base, s, t, "", "✝"); delete s.trip; log(state, `${s.name} was killed by ${who} out ${job} near ${where}.`, "death"); return; }
+  const hurtNote = (result.survivorsHurt || []).includes(s.id) ? ` (health ${Math.round(s.health)})` : "";
+  if (result.outcome === "victory") {
+    st.won++;
+    log(state, `${s.name} put down ${who} alone, out ${job} near ${where}${hurtNote}.`, hurtNote ? "danger" : "good");
+    return;
+  }
+  const dropped = phase !== "out" ? dropLoad(t) : "";
+  goHome(t, when, "fled");
+  st.fled++; T.fled++;
+  if (dropped) st.dropped++;
+  log(state, `${s.name} ${result.outcome === "retreat" ? "ran from" : "got away from"} ${who} near ${where} and is coming home${dropped ? `, leaving ${dropped}` : ""}${hurtNote}.`, "danger");
+}
 // The outcome: choice (a card's key, or null: their own good sense). Returns the text (a card's answer line).
 export function settle(state, base, s, t, choice, now, how = "") {
   const ev = t.ev;
@@ -447,10 +526,10 @@ export function settle(state, base, s, t, choice, now, how = "") {
     return { ok, dropped, w: wound(state, s, hits, rng, tile, cause) };
   };
   switch (ev.kind) {
-    case "dead": {
-      const n = ev.n, who = n === 1 ? "one of the dead" : `${n} of the dead`;
+    case "dead": case "deadbeast": {
+      const n = ev.n, who = foeWords(ev);
       if (pick === "fight") {
-        const f = fight(rng, my, TRIP_EV.walker, n, k);
+        const f = fight(rng, my, foeWorth(ev), n, k);
         spendShots(state, base, s, k, f.shots, now, tile);
         const w = wound(state, s, f.hits, rng, tile, `fighting the dead out ${job} near ${where}`);
         gainXp(state, s, k.melee || !k.weapon ? "melee" : "shooting", 3 * n);
