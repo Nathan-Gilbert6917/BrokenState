@@ -576,6 +576,14 @@ function addGroundSupply(site, key, q, extra = {}) {
     cur.value = cur.qty * supValue(key);
   } else site.items.push({ kind: "supply", key, name: SUPPLIES[key].name, qty: q, value: q * supValue(key), ...(FOODS[key] ? { left: extra.left ?? FOODS[key].shelf } : {}), ...(extra.eggs != null ? { eggs: extra.eggs } : {}), ...(extra.worm > 0 ? { worm: extra.worm } : {}) });
 }
+// Supplies left on a tile's ground by those who cannot carry them on (nomads.js leaveOnGround: a band's goods where
+// nobody of it is left to carry them, or what will not fit).
+export function leaveSuppliesAt(state, tile, sup) {
+  const list = Object.entries(sup || {}).filter(([k, q]) => SUPPLIES[k] && q > 1e-9);
+  if (!list.length || tile == null) return;
+  const site = groundAt(state, tile, true);
+  for (const [k, q] of list) addGroundSupply(site, k, q);
+}
 const touched = (state, site) => { site.lastConfirmed = day(state); markDeathSite(state, site); };
 // Stores and kit left on a tile's ground by nobody's team (hardcore-groups.js militaryFalls: what nobody could carry
 // out of a fallen base stays in its ruin): every supply of `stock` as a stack, every item of `items` as itself.

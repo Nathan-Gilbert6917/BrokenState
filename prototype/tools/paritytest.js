@@ -4,8 +4,9 @@
 //   2. Physical rounds: the same reload plan from what they carry, the same refusal when it is gone, rounds that run out.
 //   3. The rules that were keyed to a side: caught unaware, a flare's light, footsteps, a gun above their skill, hearing
 //      lost for good, going down and pulled through, meds, throwing what they carry, perks.
-//   4. Carrying and moving people: a nomad band carries what its people can by your teams' rule; a loan between
-//      groups moves the very people away and back, as yours are lent.
+//   4. Carrying and moving people: a nomad band carries what its people can by your teams' rule, and a band of raiders
+//      from beyond the border by the same rule, living by the same code (a day's food and water, the care of its
+//      wounded); a loan between groups moves the very people away and back, as yours are lent.
 //   5. Your bots' repertoire on their side too: a decoy they carry thrown on the dead pressing them (and off them after),
 //      a body in danger next to them crushed, neither with a foe next to them or nothing to throw.
 //   6. A horde at a group's base: your base's defence step for step (spike pits, mines, bear traps, defence buildings,
@@ -29,7 +30,10 @@ import { deafen, HEARING } from "../src/sim/hearing.js";
 import { settleFoes } from "../src/sim/medics.js";
 import { throwablesOf } from "../src/sim/stealth.js";
 import { battlePerks } from "../src/sim/skills.js";
-import { spawnNomads, bandRoom } from "../src/sim/nomads.js";
+import { spawnNomads, bandRoom, bandFeeds, bandCare, NOMADS } from "../src/sim/nomads.js";
+import { spawnVisitor, raiderDay, leaveMap } from "../src/sim/visitors.js";
+import { foodIn } from "../src/sim/foods.js";
+import { Rng } from "../src/sim/rng.js";
 import { carryCapacity } from "../src/sim/parties.js";
 import { itemLoad } from "../src/sim/inventory.js";
 import { lendPeople, loanHome, VOL } from "../src/sim/volunteers.js";
@@ -206,6 +210,25 @@ section("4. Carrying and moving people: the same loads, the very people");
   check(Math.abs(bandRoom(st, b) - yours) < 1e-6, `two people carry ${yours} kg as your team and ${Math.round(bandRoom(st, b) * 100) / 100} kg as a nomad band`);
   b.wares.push(newItem("sledge"));
   check(Math.abs(bandRoom(st, b) - (yours - itemLoad(b.wares[0]))) < 1e-6, "what is on the shelf is carried: it takes the same room it would in your cargo");
+  // Raiders from beyond the border live by the same code (visitors.js raiderDay → nomads.js): the same two people carry
+  // the same kg, their ladder takes its room, a day of food and water and a night's care come out the same.
+  const r = spawnVisitor(st, "raiders", { size: 2, power: 3 });
+  const twin = (s, k) => { const c = structuredClone(s); c.id = s.id + 500000 + k; c.alive = true; c.location = { kind: "band" }; return c; };
+  r.people = two.map(twin); r.stock = {}; r.wares = [];
+  check(Math.abs(bandRoom(st, r) - yours) < 1e-6, `the same two people carry ${Math.round(bandRoom(st, r) * 100) / 100} kg as raiders from beyond the border`);
+  r.wares.push(newItem("ladder"));
+  check(Math.abs(bandRoom(st, r) - (yours - itemLoad(r.wares[0]))) < 1e-6, "their ladder is carried: it takes the room it would in your cargo");
+  const T1 = NOMADS.TIERS[1], f1 = T1.forage, w1 = T1.water;
+  T1.forage = 0; T1.water = 0; // what they bring in aside: the day's eating and drinking
+  b.stock = { f_beans: 50, water: 50 }; r.stock = { f_beans: 50, water: 50 }; b.hungry = 0; r.hungry = 0;
+  bandFeeds(st, b, T1, new Rng(1), { lose: () => false });
+  raiderDay(st, r);
+  T1.forage = f1; T1.water = w1;
+  check(Math.abs(foodIn(b.stock) - foodIn(r.stock)) < 1e-9 && Math.abs(b.stock.water - r.stock.water) < 1e-9 && foodIn(r.stock) < foodIn({ f_beans: 50 }), `a day on the road: two heads eat and drink the same from a nomad band's stores and from the raiders' (${(foodIn({ f_beans: 50 }) - foodIn(r.stock)).toFixed(2)} days of food, ${(50 - r.stock.water).toFixed(2)} water)`);
+  b.people[0].health = 50; r.people[0].health = 50; b.people[0].woundInfected = false; r.people[0].woundInfected = false;
+  bandCare(st, b, () => false); bandCare(st, r, () => false);
+  check(b.people[0].health > 50 && Math.abs(b.people[0].health - r.people[0].health) < 1e-9, `a night's care heals the same wound the same on either (50 → ${Math.round(r.people[0].health)})`);
+  leaveMap(st, r);
   // A loan between groups moves the lender's very people, as yours are lent (location "lent"), and brings them back.
   const [g, l] = st.factions;
   syncMembers(st, g); syncMembers(st, l);

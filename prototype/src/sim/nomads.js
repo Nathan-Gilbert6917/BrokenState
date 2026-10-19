@@ -56,8 +56,9 @@ import {
   planPath, moveCost, partyTile, partyMembers, tileLabel, carried, takeSupply, awaitOrders, cargoRoom, unitsThatFit, addGearToCargo, wipeParty,
   carryCapacity, supplyLoad,
 } from "./parties.js";
-import { syncBand } from "./bands.js"; // the band's people as records (what they carry, their wounds)
-import { touchMembers } from "./members.js";
+import { syncBand, bandCount, bandNewcomer, bandRef } from "./bands.js"; // the band's people as records (what they carry, their wounds); newcomers
+import { touchMembers, isWounded } from "./members.js";
+import { groupMedicalDaily } from "./groupmedical.js"; // the band's wounded cared for by your rules, from its own meds
 import { attitude, changeGoodwill } from "./factions.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
 import { fightOdds, spotFirstChance, payPlan, COOLDOWN_HOURS } from "./conflicts.js";
@@ -69,7 +70,8 @@ import { yearOf } from "./eras.js";
 import { stateSizeDef } from "./worldsize.js";
 import { wanderDensity, WANDER } from "./wanderers.js";
 import { visitorsOf, leaveMap } from "./visitors.js";
-import { lootItem, itemLoad } from "./inventory.js";
+import { lootItem, itemLoad, stripAll } from "./inventory.js";
+import { groundAt, leaveSuppliesAt } from "./carry.js"; // what a band leaves where it was
 import { starterKit } from "./arsenal.js"; // a band's spare gun: one of its tier's kit (KIT_OF nomad0–3)
 import { season } from "./weather.js";
 import { available, tradeContext } from "./trade.js";
@@ -163,26 +165,32 @@ export const tierOf = (b) => N.TIERS[b.tier] || N.TIERS[1];
 export const nomadPower = (state, b) => Math.round((tierOf(b).power + clamp((yearOf(state) - 2) * N.ERA_POWER, 0, N.ERA_POWER_MAX)) * 10) / 10;
 export const nomadStrength = (state, b) => Math.max(0, b.pop) * nomadPower(state, b) + (b.vehicle ? N.VEH_POWER[b.vehicle] || 0 : 0);
 export const nomadEnemy = (state, b) => ({ kind: tierOf(b).kit, count: clamp(b.pop, 1, 14), power: nomadPower(state, b), name: cap1(b.name), band: { kind: "nomad", id: b.id } }); // bands.js: the band's own people
-// The band's people as records (bands.js syncBand: made from its kit's dice as they are first needed, kept after).
+// The band's people as records (bands.js syncBand: made from its kit's dice as they are first needed, kept after). A
+// band of raiders from beyond the border (visitors.js, kind "raiders") lives by the same code as a nomad band: its
+// people are made from the raiders' kit at its power.
 export function bandPeople(state, b) {
+  if (!b.nomad) return syncBand(state, b, b.power, b.kitKind || "raiders");
   const e = nomadEnemy(state, b);
   return syncBand(state, b, e.power, e.kind);
 }
 // The kg the band can still take on (docs/adr/0001-ai-parity.md: its shelf is what it carries, nothing cut off to fit
 // a size). Your teams' carry rule (parties.js carryCapacity: everyone's max load less what they wear, a vehicle's
-// payload) on its people, less what it carries already: its stores by weight and the items on its shelf. Without
-// people records (fighters.js PEOPLE off: the old units) a head carries CARRY_HEAD and a vehicle CARRY_VEHICLE.
+// payload) on its people, less what it carries already: its stores by weight and the items on its shelf (a raider
+// band's ladders and ram among them: they carry those too). Without people records (fighters.js PEOPLE off: the old
+// units) a head carries CARRY_HEAD and a vehicle CARRY_VEHICLE.
 export function bandRoom(state, b) {
   const people = bandPeople(state, b);
   const veh = b.vehicle ? { type: b.vehicle } : null;
-  const cap = people.length ? carryCapacity(state, people, veh) : N.CARRY_HEAD * Math.max(0, b.pop) + (veh ? N.CARRY_VEHICLE : 0);
+  const cap = people.length ? carryCapacity(state, people, veh) : N.CARRY_HEAD * bandCount(b) + (veh ? N.CARRY_VEHICLE : 0);
   return cap - supplyLoad(b.stock) - (b.wares || []).reduce((a, it) => a + itemLoad(it), 0);
 }
-// Items onto the band's shelf while they fit (bandRoom). Returns those it took; the rest stay where they were.
-function shelve(state, b, items) {
+// Items onto the band's shelf while they fit (bandRoom). Returns those it took; the rest stay where they were (the
+// caller leaves them there).
+export function shelveBand(state, b, items) {
   let room = bandRoom(state, b);
   const took = [];
   for (const it of items) {
+    if (!it) continue;
     const kg = itemLoad(it);
     if (kg > room + 1e-9) continue;
     b.wares.push(it);
@@ -190,6 +198,31 @@ function shelve(state, b, items) {
     room -= kg;
   }
   return took;
+}
+const shelve = shelveBand;
+// Supplies into the band's stores while they fit (bandRoom, by your teams' weights: parties.js supplyLoad), each key
+// in the order given, whole units (food by the item's own weight). Returns what went in; the rest is the caller's.
+export function stockBand(state, b, sup) {
+  let room = bandRoom(state, b);
+  const took = {};
+  for (const [k, q0] of Object.entries(sup || {})) {
+    if (!SUPPLIES[k] || !(q0 > 0)) continue;
+    const kg = supplyLoad({ [k]: 1 }), fit = kg > 0 ? Math.max(0, room) / kg : Infinity;
+    const n = FOODS[k] ? Math.min(q0, fit) : Math.min(Math.floor(q0), Math.floor(fit + 1e-9));
+    if (!(n > 1e-9)) continue;
+    b.stock[k] = (b.stock[k] || 0) + n;
+    took[k] = n;
+    room -= n * kg;
+  }
+  return took;
+}
+// The band's hands (docs/adr/0001-ai-parity.md): its people who are up to work, as your base's workers are (a person
+// under members.js MEMBER.WOUNDED_BELOW is wounded: fed and cared for, not out foraging or picking a place over). They
+// forage, find water, survey and raid for the band and carry for it (bandRoom); every head eats and drinks. Without
+// people records: the head count.
+export function bandHands(state, b) {
+  const people = bandPeople(state, b);
+  return people.length ? people.filter((s) => s.alive !== false && !isWounded(s)).length : bandCount(b);
 }
 const roundPop = (n) => (n >= 8 ? `about ${n}` : `${n}`);
 export const tierName = (b) => `${tierOf(b).name}`;
@@ -330,24 +363,12 @@ const waterAt = (state, tile) => { const t = state.tiles[tile]; return !!(t && (
 
 export function bandDay(state, b) {
   const rng = nrng(state), T = tierOf(b);
-  const t = state.tiles[b.tile];
-  // Food and water: what they forage, hunt and find, then what they eat and drink.
-  const s = season(state).key;
-  const ground = N.GROUND[t.terrain] ?? 0.8;
-  const forage = b.pop * T.forage * ground * (s === "winter" ? N.WINTER : s === "autumn" ? N.AUTUMN : 1) * rng.range(0.7, 1.3);
-  if (forage > 0) giveFood(state, b.stock, forage, { f_berries: 2, f_roots: 2, f_wildgreens: 2, f_nuts: 1, f_smallgame: 3 }, { rng });
-  b.stock.water = (b.stock.water || 0) + b.pop * T.water * (s === "winter" ? 0.8 : 1) * rng.range(0.6, 1.3);
-  if (b.phase === "camp" && waterAt(state, b.tile)) b.stock.water = Math.max(b.stock.water, b.pop * 4);
-  const eat = b.pop * N.EAT, drink = b.pop * N.DRINK;
-  const short = eat - takeFood(b.stock, eat, { state }).units;
-  ageCoarse(b.stock);
-  const dry = Math.max(0, drink - (b.stock.water || 0));
-  b.stock.water = Math.max(0, (b.stock.water || 0) - drink);
-  if (short > eat * 0.25 || dry > drink * 0.25) {
-    b.hungry = (b.hungry || 0) + 1;
-    if (rng.chance(N.STARVE * Math.min(2, b.hungry / 2 + 0.5)) && losePeople(state, b, 1, "starved", "to hunger")) return;
-  } else b.hungry = 0;
+  // Food and water: what its hands forage, hunt and find, then what every head eats and drinks (bandFeeds); then the
+  // night's care of its wounded from its own meds (bandCare).
+  const lose = (n, why, reason) => losePeople(state, b, n, why, reason);
+  if (bandFeeds(state, b, T, rng, { camp: b.phase === "camp", lose })) return;
   if (rng.chance(N.ROAD_DEATH) && losePeople(state, b, 1, "road", "on the road")) return;
+  if (bandCare(state, b, lose)) return;
   // Their time here is up (NOMADS.LIFE): they move off the map or go their separate ways; the respawn brings others.
   if (day(state) >= (b.until ?? b.born + N.LIFE[1]) && b.phase !== "battle") { breakUp(state, b, "left"); return; }
   // The dead near them: a horde they cannot face sends them the other way.
@@ -359,6 +380,63 @@ export function bandDay(state, b) {
   if (!nomadsOf(state).includes(b)) return;
   recruit(state, b);
   if (state.hour >= b.campUntil) breakCamp(state, b);
+}
+
+// ---------- food, water and care: a nomad band, and raiders from beyond the border (visitors.js raiderDay) ----------
+// A day of what a band lives on, from its own stores (b.stock): its hands (bandHands) forage and hunt life.forage a
+// head (× the ground, × the season) and find water life.water a head (a stop by a river or a lake fills it up: camp),
+// then every head eats EAT and drinks DRINK, the newest mouths as much as the rest. Short of a quarter of either it is
+// hungry: a chance of losing someone (STARVE, rising with the hungry days). lose(n, why, reason): the band's own way
+// of losing people (true when that was the end of it). Returns true when the band is gone.
+export function bandFeeds(state, b, life, rng, { camp = false, lose }) {
+  const t = state.tiles[b.tile];
+  const s = season(state).key;
+  const ground = N.GROUND[t.terrain] ?? 0.8;
+  const heads = bandCount(b), hands = bandHands(state, b);
+  const forage = hands * life.forage * ground * (s === "winter" ? N.WINTER : s === "autumn" ? N.AUTUMN : 1) * rng.range(0.7, 1.3);
+  if (forage > 0) giveFood(state, b.stock, forage, { f_berries: 2, f_roots: 2, f_wildgreens: 2, f_nuts: 1, f_smallgame: 3 }, { rng });
+  b.stock.water = (b.stock.water || 0) + hands * life.water * (s === "winter" ? 0.8 : 1) * rng.range(0.6, 1.3);
+  if (camp && waterAt(state, b.tile)) b.stock.water = Math.max(b.stock.water, heads * 4);
+  const eat = heads * N.EAT, drink = heads * N.DRINK;
+  const short = eat - takeFood(b.stock, eat, { state }).units;
+  ageCoarse(b.stock);
+  const dry = Math.max(0, drink - (b.stock.water || 0));
+  b.stock.water = Math.max(0, (b.stock.water || 0) - drink);
+  if (short > eat * 0.25 || dry > drink * 0.25) {
+    b.hungry = (b.hungry || 0) + 1;
+    if (rng.chance(N.STARVE * Math.min(2, b.hungry / 2 + 0.5)) && lose(1, "starved", "to hunger")) return true;
+  } else b.hungry = 0;
+  return false;
+}
+// The night's care of a band's wounded (groupmedical.js groupMedicalDaily, your rules): rest heals them, the best
+// medicine among them treats the worst off with the band's own meds (b.stock.meds), no sick bay (tier 0); a hungry
+// day heals nobody. One who dies of their wounds leaves the band's list; the band keeps what they carried, on its
+// shelf as far as it can carry it (bandRoom), the rest left where they died. Returns true when that was the end of it.
+export function bandCare(state, b, lose) {
+  const people = bandPeople(state, b).filter((s) => s.alive !== false);
+  if (!people.length || !people.some((s) => s.health < 100 || s.woundInfected)) return false;
+  let gone = false;
+  groupMedicalDaily(state, b, {
+    people, tier: 0, hungry: (b.hungry || 0) > 0,
+    died: (s) => {
+      s.alive = false; s.health = 0;
+      b.people = (b.people || []).filter((x) => x !== s);
+      touchMembers();
+      const kit = stripAll(s);
+      const kept = shelveBand(state, b, kit);
+      leaveOnGround(state, b.tile, kit.filter((it) => !kept.includes(it)));
+      if (!gone) gone = lose(1, "wounds", "to their wounds");
+    },
+  });
+  return gone;
+}
+// Items and supplies left where a band was (carry.js: the tile's ground, as a team's dropped things lie): what nobody
+// of it is left to carry, or what will not fit.
+export function leaveOnGround(state, tile, items, sup = null) {
+  if (tile == null) return;
+  const list = (items || []).filter(Boolean);
+  if (list.length) { const site = groundAt(state, tile, true); for (const it of list) site.items.push({ kind: "gear", item: it, name: it.name }); }
+  if (sup) leaveSuppliesAt(state, tile, sup);
 }
 
 function hordeThreat(state, b) {
@@ -382,12 +460,12 @@ export function campWork(state, b) {
   if (!top) return;
   const t = state.tiles[top.tile];
   if (top.survey) {
-    const r = groupSurveyTile(state, b, t, { n: Math.max(2, Math.round(b.pop / 2)) });
+    const r = groupSurveyTile(state, b, t, { n: Math.max(2, Math.round(bandHands(state, b) / 2)) }); // its hands, newcomers among them
     S.surveys++; S.found += r.found.length;
     b.act = `camped near ${tileLabel(state, b.camp ?? b.tile)}, surveying ${g.distance(top.tile, b.tile) ? tileLabel(state, top.tile) : "the ground round the camp"}`;
     return;
   }
-  const need = N.TAKE * b.pop;
+  const need = N.TAKE * bandHands(state, b); // what its hands go out for (bandHands: the wounded stay in camp)
   // What your people left in a container they opened is carried off only as far as the band can carry it (bandRoom):
   // the rest stays in the container (poicont.js lootPoiAbstract opts.room), as a team of yours leaves what will not fit.
   const r = raidPoiAsGroup(state, b, t, top.poi, need, { name: b.known ? cap1(b.name) : undefined, hours: 8, room: bandRoom(state, b) });
@@ -408,38 +486,73 @@ export function campWork(state, b) {
 
 // Recruits: neutral wanderers (wanderers.js: people you met and left, and the road's unmet ones by the ground's
 // density) and refugees from outside (visitors.js explorers), only while their food allows, less often the bigger
-// they are, never past the cap.
+// they are, never past the cap. Every one joins as a person (docs/adr/0001-ai-parity.md: people move as themselves,
+// never as a number): the very people when they are records already (a wandering group you met, a party from outside
+// whose people a fight drew), else a newcomer made as one who joins you is (bands.js bandNewcomer: recruits.js
+// makeCandidate under the band's own dice), with only what they carry of their own. From then on they are the band's:
+// a mouth its stores feed and water (bandFeeds: every head eats and drinks), one its meds care for (bandCare), and,
+// up to work, a pair of hands (bandHands) that forages, surveys and raids for it and carries for it (bandRoom).
+export const RECRUIT_AS = { refugees: { quality: 0.85, minHealth: 45 }, roadside: {} }; // makeCandidate's: refugees come as they come to your gate (visitors.js), someone off the road as a stranger does
 export function recruit(state, b) {
   const T = tierOf(b), S = nomads(state).stats, rng = nrng(state), g = state.grid;
   const room = T.size[1] - b.pop;
   if (room <= 0 || foodIn(b.stock) < b.pop * N.RECRUIT_FOOD) return;
   const small = Math.max(0.15, 1 - (b.pop - T.size[0]) / Math.max(1, T.size[1] - T.size[0]));
-  const join = (n, src) => { const k = Math.min(n, T.size[1] - b.pop); if (k <= 0) return 0; b.pop += k; S.recruited += k; S.recruits[src] += k; return k; };
+  // The people into the band's list with the head count (bands.js: the list follows the count; its own people made
+  // first, so the newcomers are never mistaken for the ones it had).
+  const join = (people, n, src) => {
+    const k = Math.min(n, T.size[1] - b.pop);
+    if (k <= 0) return 0;
+    bandPeople(state, b);
+    for (const s of people.slice(0, k)) { s.joinedNomads = b.id; s.band = `n${b.serial ?? 0}`; s.location = { kind: "band", ref: bandRef(b) }; s.alive = true; (b.people || (b.people = [])).push(s); }
+    b.pop += k; S.recruited += k; S.recruits[src] += k;
+    touchMembers();
+    return k;
+  };
   // People you met and left (state.wanderers): a neutral group within reach, if it fits.
   const ws = state.wanderers;
   if (ws && Array.isArray(ws.groups)) for (const wg of [...ws.groups]) {
     if (wg.kind !== "neutral" || !wg.people.length || wg.people.length > room || g.distance(wg.tile, b.tile) > N.RECRUIT_NEAR) continue;
     if (!rng.chance(N.JOIN_WANDERER * small)) continue;
     // The very people, with what they carry, into the band's list (bands.js: its people as records).
-    bandPeople(state, b);
-    for (const s of wg.people) { s.joinedNomads = b.id; s.band = `n${b.serial ?? 0}`; s.location = { kind: "band", ref: { kind: "nomad", id: b.id } }; b.people.push(s); }
-    join(wg.people.length, "wanderers");
+    join(wg.people, wg.people.length, "wanderers");
     ws.groups.splice(ws.groups.indexOf(wg), 1);
-    touchMembers();
     return;
   }
-  // Refugees and wanderers from outside, passing by.
+  // Refugees and wanderers from outside, passing by: one or two of them, each a person.
   for (const v of visitorsOf(state)) {
     if (v.kind !== "explorers" || v.hostile || (v.sub !== "refugees" && v.sub !== "wanderers") || v.size <= 0) continue;
     if (!["travel", "search"].includes(v.phase) || g.distance(v.tile, b.tile) > N.RECRUIT_NEAR || !rng.chance(N.JOIN_REFUGEE * small)) continue;
-    const k = join(Math.min(v.size, rng.int(1, 2)), "refugees");
+    const k = Math.min(v.size, rng.int(1, 2), T.size[1] - b.pop);
+    if (k <= 0) return;
+    // Their own records when a fight drew them (bands.js syncBand), else newcomers; off the visitor's list either way.
+    const own = Array.isArray(v.people) ? v.people.filter((s) => s.alive !== false).slice(0, k) : [];
+    if (own.length) v.people = v.people.filter((s) => !own.includes(s));
+    const fresh = [];
+    for (let i = own.length; i < k; i++) { const s = bandNewcomer(state, b, RECRUIT_AS.refugees); if (s) fresh.push(s); }
+    join([...own, ...fresh], k, "refugees");
     v.size -= k;
     v.joiners = Math.min(v.joiners || 0, v.size);
-    if (v.size <= 0) leaveMap(state, v, "broken");
+    if (v.size <= 0) { lastOfThem(state, b, v); leaveMap(state, v, "broken"); }
     return;
   }
   // Someone on the road (the wanderers' density of the ground: towns and roads more, the wild less).
-  if (rng.chance(N.ROADSIDE * wanderDensity(state, b.tile) * WANDER.KIND.neutral * small)) join(1, "roadside");
+  if (rng.chance(N.ROADSIDE * wanderDensity(state, b.tile) * WANDER.KIND.neutral * small)) {
+    const s = bandNewcomer(state, b, RECRUIT_AS.roadside);
+    join(s ? [s] : [], 1, "roadside");
+  }
+}
+// The last of a party from outside joins a band: what they still carried between them (the party's stores and
+// shelf) comes with them, as far as the band can carry it (bandRoom); the rest is left on the road (the ground: the
+// items; the supplies with them, carry.js).
+function lastOfThem(state, b, v) {
+  const took = stockBand(state, b, v.stock);
+  for (const [k, q] of Object.entries(took)) v.stock[k] = Math.max(0, (v.stock[k] || 0) - q);
+  note(state, "recruit", roundsIn(took)); // ledger.js: rounds from outside the map, come with the people who carried them
+  const kept = shelveBand(state, b, v.wares || []);
+  leaveOnGround(state, v.tile, (v.wares || []).filter((it) => !kept.includes(it)), v.stock);
+  v.wares = [];
+  for (const k of Object.keys(v.stock)) v.stock[k] = 0;
 }
 
 // ---------- camps and moves ----------

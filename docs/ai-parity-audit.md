@@ -178,8 +178,6 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
   behind the wall tier). No wall counters or field towers. tools/flighttest.js "The judgement is the fight's".
 
 **Done with a caveat.**
-- 4.16, an outsider band (visitors.js) still brings ladders and a ram by its kit dice: it comes from beyond the
-  border with them, and has no stores or crafting on the map. Its grenades are its people's own (above).
 - Soldiers' field load: an AI person carries a weight by kit with no item behind it (carrykit.js CARRY.BASE_KG,
   fighters.js build), so the user's decision of 2026-10-08 ("soldiers in full kit move 4") holds. It is weighed by
   your rule (felt load, a strong back, Fleet-Footed) and leaves nothing on the body.
@@ -281,14 +279,40 @@ Every *Fix* finding above landed on the `ai-parity` branch, with these exception
   Checks: tools/hcgroupstest.js ("The fall: the splinters' stores are the fallen base's", and the founded splinters'
   books).
 
+**Closed in the follow-up pass (2026-10-19): outsider raiders and nomad newcomers.**
+- 4.16, an outsider band's siege kit: the ladders and the ram are real items in the band's gear. It sets out with
+  them from beyond the border by the old kit dice, thrown once (siege.js bandSetOutKit), and carries them by your
+  teams' rule (nomads.js bandRoom). Against a walled base of yours it brings all it has hands for (visitors.js bandKit;
+  the ram takes two, a ladder one more each, as packRaidKit); short of what the raid's dice want it makes more through
+  a group's crafting (makeSiegeGear → arsenal.js bandMakes: groupCraftable, payCraft, groupCraftOut, paid from its
+  stores) only with the means: your recipes need a bench and a band on the road has none, as your team in the field
+  has none. After the raid they go on with whoever is left, else lie in your yard (siegeGearBack); a band broken or
+  wiped out leaves all it carried where it ended (dropBandGoods: your base's stores and armory, else the ground).
+  Its grenades stay its people's own. The band lives as a nomad band does, by the nomads' code: people records, a
+  day's forage, food and water from its stores with hunger costing people (raiderDay → nomads.js bandFeeds), its
+  wounded cared for from its meds (bandCare), what it robs, loots or steals taken only as far as it can carry it
+  (addToStock → stockBand, shelveBand: the rest stays or lies on the ground), and no food or scrap from an empty
+  caravan. Hostile, it trades with nobody, as the nomad looters do not. Its gear goes to the gang it becomes when it
+  settles. tools/siegetest.js "Raiders from beyond the border", visitortest.js "Raiders live as a nomad band does",
+  paritytest.js section 4.
+- Newcomers to a nomad band (nomads.js recruit): refugees from outside and someone off the road each join as a person,
+  made as one who joins you is (bands.js bandNewcomer: recruits.js makeCandidate under the band's own dice), with only
+  what they carry of their own; a refugee party whose people a fight drew gives its very people. They are a mouth
+  the band's stores feed and water (bandFeeds: every head), its meds care for (bandCare: groupmedical.js
+  groupMedicalDaily on its people, no sick bay), and, up to work, hands that forage, find water, survey and raid for
+  it (bandHands) and carry for it (bandRoom). The last of a refugee party brings what they still carried, as far as
+  the band can carry it. tools/nomadtest.js "Newcomers", conservationtest.js (bands' people and shelves, the ground).
+
 **Still open (small, noted for a later pass).**
-- Refugees from outside joining a nomad band (nomads.js recruit) and someone off the road joining it still come as a
-  head count; refugee bands have no people records until one is needed.
 - The soldiers of a fallen base who reach you carry their kit and what they took of the armory, but none of its
   stores (your recruit card takes people, not supplies); the strike force's food is carried, not eaten, while it is out.
-- tools/dettest.js fails again on the branch as it stood before the job-kit pass (461f710: seed 42, a world run after
-  another in the same process ends with a group's rounds and meds a little different); after the pass it fails on
-  seed 7 the same way. Something in the groups' stores still reads process-wide state; not found yet.
+- A refugee or scout party from outside has no people records until a fight draws them (bands.js syncBand); its
+  stores are the party's, not any one person's.
+- A raider band that settles (visitors.js settleBands) still becomes a gang by factions.js makeGang's head count and
+  starting stores, not its very people (its gear does go with it).
+- tools/dettest.js fails on one seed (42 at 461f710, 7 after the job-kit pass): two worlds on the seed in one
+  process part where two groups deal their people's kit in a different order, and later their stores' rounds differ.
+  Something in the groups' stores still reads process-wide state; not found yet.
 
 **Found on the way.** Dice keyed on a person's id came out differently in two worlds on one seed, because your
 people's and newcomers' ids come from a counter shared by the process; they now use a world-local key (members.js

@@ -1226,15 +1226,27 @@ export function groupCraftable(state, f, key) {
 const gearInputs = (f, k) => [...spareKit(f).filter((it) => it && it.key === k), ...(f.wares || []).filter((it) => it && it.key === k)];
 // What their crafter makes (crafting.js: your recipe's item at the quality your crafting rolls for the best of their
 // people at home who may attempt it, who gains the XP; docs/adr/0001-ai-parity.md).
+// A band with no base (visitors.js: raiders from beyond the border; nomads.js) has its people with it, not at home.
+const atWork = (f) => (f && f.outsider ? (f.people || []).filter((s) => s.alive !== false && s.location && s.location.kind === "band") : homeMembers(f));
 function groupCraftOut(state, f, key, tag) {
   const r = CRAFTS[key];
-  const able = homeMembers(f).filter((s) => s.alive !== false && skill(s, r.skill) >= (r.min || 0) && skill(s, "crafting") >= (r.cmin || 0));
+  const able = atWork(f).filter((s) => s.alive !== false && skill(s, r.skill) >= (r.min || 0) && skill(s, "crafting") >= (r.cmin || 0));
   const by = able.sort((a, b) => skill(b, CRAFT_SKILL) - skill(a, CRAFT_SKILL) || a.id - b.id)[0] || null;
   const lvl = by ? skill(by, CRAFT_SKILL) : groupSkill(f, CRAFT_SKILL);
   const q = r.supplies ? 1 : craftRoll(state, craftQuality(lvl, r, false, state), lvl, `grp:${tag.join(":")}:${key}`);
   const item = craftItem(r, q);
   if (by) gainXp(state, by, CRAFT_SKILL, craftXp(r, q));
   return item;
+}
+// A band from beyond the border makes a piece the same way (visitors.js bandKit: its ladders and ram, docs/adr/0001-
+// ai-parity.md): your recipe, its best hand's skill and Crafting (groupworks.js groupSkill reads its people), your bench
+// (a recipe that wants one wants the band's: a band on the road has none, as your team in the field has none, so it
+// makes only what your field crafting could), your manuals, the inputs paid from its own stores. Returns the item (the
+// caller puts it in the band's gear) or null when it has not the means.
+export function bandMakes(state, band, key, tag) {
+  if (!band || !groupCraftable(state, band, key)) return null;
+  payCraft(band, key);
+  return groupCraftOut(state, band, key, tag);
 }
 const groupHasNeed = (state, f, need) => (need === "machine_shop" ? groupHas(state, f, "shop") : need === "reload_bench" ? groupHas(state, f, "reload") : false);
 // Pays a recipe's inputs (call groupCraftable first).
