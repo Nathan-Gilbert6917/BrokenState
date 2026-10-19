@@ -74,7 +74,7 @@ import { assaultDims, CONTACT } from "./battlesize.js";
 import { captivesOf, takeCaptive } from "./conflicts.js";
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { surrenderPrisoners, prisonersOf } from "./prisoners.js";
-import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt, addRing } from "./buildings.js"; // countBuilt: assaultForce has its own count
+import { addBuilding, baseWalls, assignStations, isCamp, retypeCampJob, count as countBuilt, addRing, isPiece } from "./buildings.js"; // countBuilt: assaultForce has its own count
 import { pactsOf, relation } from "./diplomacy.js";
 import { isMember, allianceMembers, ensureAlliance, assaultAllies } from "./alliance.js";
 import { fixtures, fixtureName } from "./breakdowns.js";
@@ -742,8 +742,10 @@ export function conquestDaily(state) {
     }
     if (holder.id !== o.factionId) { o.factionId = holder.id; o.garrison = Math.max(CONQUEST.GARRISON_MIN, o.garrison * 0.6); }
     o.garrison = Math.min(o.garrisonMax, o.garrison + CONQUEST.GARRISON_GROW);
+    // The wall's broken pieces (buildings.js piece) are patched as one, as the one wall was: a roll for them all.
+    const wallFixed = o.base.buildings.some((b) => b.broken && isPiece(b.type)) && state.rng.chance(CONQUEST.REPAIR);
     for (const fx of fixtures(o.base)) {
-      if (fx.broken) { if (state.rng.chance(CONQUEST.REPAIR)) { fx.broken = null; fx.wear = CONQUEST.REPAIR_WEAR; } }
+      if (fx.broken) { if (isPiece(fx.type) ? wallFixed : state.rng.chance(CONQUEST.REPAIR)) { fx.broken = null; fx.wear = CONQUEST.REPAIR_WEAR; } }
       else if (fx.wear > 0) fx.wear = Math.max(0, fx.wear - CONQUEST.WEAR_FALL);
     }
   }

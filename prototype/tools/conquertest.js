@@ -9,7 +9,7 @@
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, day, alive, makeSurvivor, checkGameOver, newId, snapshot } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
-import { addBuilding, baseWalls } from "../src/sim/buildings.js";
+import { addBuilding, baseWalls, isPiece } from "../src/sim/buildings.js";
 import { launchExpedition, partyMembers, partyTile, outpostName, orderOptions, planPath, giveOrder as giveOrderP } from "../src/sim/parties.js";
 import { attitude, peopleUp, recomputeOwnership, resolveRaidOnFaction, resolveRaidOnPlayer, factionsDaily, keepChance, RAIDS, strength } from "../src/sim/factions.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -596,7 +596,7 @@ section("A lost base: weak walls at first, patched up later, then taken back");
   for (let i = 0; i < 3; i++) addBuilding(o, "walls");
   addBuilding(o, "bunkhouse");
   const walls0 = baseWalls(o);
-  for (const fx of fixtures(o)) if (fx.type === "walls") breakFixture(st, o, fx, "test", { card: false, quiet: true });
+  for (const fx of fixtures(o)) if (fx.type === "walls" || isPiece(fx.type)) breakFixture(st, o, fx, "test", { card: false, quiet: true }); // the wall: its pieces (buildings.js)
   const id = o.id;
   C.occupyPlayerBase(st, o, f, { garrison: 6, outcome: "overrun" });
   const occ = C.occupiedAt(st, t);
