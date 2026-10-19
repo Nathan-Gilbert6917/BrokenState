@@ -120,7 +120,7 @@ export const ITEM_TAGS = {
   alarmclock: ["home", "kitchen", "travel", "shop"], pocketradio: ["home", "travel", "camp", "outdoor", "shop"],
   handwarmer: ["outdoor", "camp", "sport", "hunt", "travel"], heatpack: ["medical", "outdoor", "fire", "camp", "military"],
   // base defences
-  barbedwire: ["farm", "tools", "military", "industry", "prison"], beartrap: ["hunt", "farm", "outdoor", "tools"],
+  barbedwire: ["farm", "tools", "military", "industry", "prison"], boards: ["farm", "tools"], beartrap: ["hunt", "farm", "outdoor", "tools"],
   tripwire: ["camp", "crime", "military", "outdoor", "tools"], sandbags: ["military", "fire", "industry", "tools"],
   // camp kit against Heat
   // hunting.js: snares and fishing gear

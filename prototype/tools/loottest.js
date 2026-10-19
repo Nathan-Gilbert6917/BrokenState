@@ -192,7 +192,8 @@ check(["compbow", "xbow", "crossbow"].every((k) => WEAPONS[k].ammo === 0 && WEAP
 check(["prybar", "fireaxe", "sledge"].every((k) => GEAR[k].pry), "crowbar, fire axe and sledgehammer force locks");
 const throwers = Object.entries(GEAR).filter(([, d]) => d.throw);
 check(throwers.every(([k, d]) => d.throw === k && THROWABLES[k]), "every throwable is in the throw table under its own key");
-check(Object.keys(THROWABLES).every((k) => GEAR[k] && GEAR[k].throw === k), "the throw table names only throwable items");
+// A stand-in (stealth.js THROWABLES item: an empty magazine) is any item of that kind, not an item of its own.
+check(Object.keys(THROWABLES).every((k) => (GEAR[k] && GEAR[k].throw === k) || (THROWABLES[k].item && !GEAR[k])), "the throw table names only throwable items (and stand-ins like an empty magazine)");
 // Siege kit and decoys (siege.js, decoys.js): grenades and decoys are found, ladders and rams are made.
 const srcOf = (k) => [...(src.get(k) || [])];
 check(srcOf("frag").some((l) => /^(find|raid|body):/.test(l)) && srcOf("frag").some((l) => /military|soldiers|armory|barracks/.test(l)), `frag grenades come from soldiers and military places (${srcOf("frag").slice(0, 6).join(", ")})`);
