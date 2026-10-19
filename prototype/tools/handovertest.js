@@ -15,7 +15,8 @@ import { createWorld, hub, makeSurvivor } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import { newItem, packOf, itemAt, moveItem, fitReason } from "../src/sim/inventory.js";
 import { isRoundItem, amountOf, roundItem } from "../src/sim/itemstack.js";
-import { setRounds, giveRounds } from "../src/sim/ammo.js";
+import { pushTop } from "../src/sim/roundstack.js";
+import { setRounds } from "../src/sim/ammo.js";
 import { createBattle, combatAct, registerCombatHandler, HANDOVER_AP, handoverTargets, handoverUnfaced, handoverRefusal, loadMag, active } from "../src/sim/combat.js";
 import { faceToward, inArc } from "../src/sim/vision.js";
 import { starterMags } from "../src/sim/carrykit.js";
@@ -44,8 +45,10 @@ function fighter(state, weapon = "pistol") {
 }
 function openBattle(state, crew) {
   const h = hub(state);
+  // No rounds in the base's stock: a fight at a base's walls hands its defenders their rounds at hand out of it
+  // (carrykit.js packShells), which would put a loose handful in the mate's pocket. The giver's own handful
+  // (setup: 80 in a pocket) loads their pistol and spares; the mate starts with nothing loose.
   setRounds(h.stock, 0);
-  for (const s of crew) giveRounds(h.stock, 200, [s.gear.weapon && s.gear.weapon.key].filter(Boolean));
   const b = (state.combat = createBattle(state, { tile: h.tile, baseId: h.id, fighterIds: crew.map((s) => s.id), enemy: { kind: "raiders", count: 2, power: 3 }, ambush: null, canRetreat: true, handler: "handovertest", context: {} }));
   for (const c of b.cells) c.k = "open";
   b.losCache.fill(0);
@@ -138,6 +141,7 @@ section("A gun handed into the mate's hands swaps the guns and refits both units
   else {
     packOf(a)[0] = shotgun;
     const theirPistol = m.gear.weapon, myPistol = a.gear.weapon;
+    t.stack = t.stack || []; pushTop(t.stack, K, 9); // the mate's gun starts empty (no rounds at hand): 9 of its own rounds in it
     loadMag(t, 9);
     let err = combatAct(st, { type: "handover", unit: u.id, to: t.id, from: L(a, "pack", 0), toLoc: L(m, "weapon") });
     check(err === "" && u.ap === 1 && t.ap === 2 && m.gear.weapon === shotgun && packOf(a)[0] === theirPistol, `the shotgun into ${m.name.split(" ")[0]}'s hands, their pistol back into the giver's pack (${err || "ok"})`);
