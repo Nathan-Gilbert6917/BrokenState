@@ -830,7 +830,7 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
   let outcome, head, keep = false, raze = false, theirDead = 0, kitMoved = null;
   // arsenal.js raidOnBase: their dead's kit (yours when you hold the field), your dead's gear and a share of your armory
   // (theirs when they got in), the rounds and explosives they spent.
-  const settleKit = () => (kitMoved = kitMoved || raidOnBase(state, f, base, party, { outcome, theirDead, armory0, store: count(base, "storehouse") > 0 }));
+  const settleKit = () => (kitMoved = kitMoved || raidOnBase(state, f, base, party, { outcome, theirDead, armory0, store: count(base, "storehouse") > 0, armory: count(base, "armory") > 0 }));
   if (ratio >= RAIDS.HOLD) {
     outcome = "held";
     state.stats.raidsRepelled += 1;

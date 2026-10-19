@@ -67,7 +67,7 @@ const BENCH_GATE = "Hand crafting at a base needs a bench for everything but the
 // walk-in freezer hold goods too. Costs (the design): the box 2 scrap, 2 work-hours (a camp builds up to 4, a shelter
 // 6; no plot: it stands anywhere in the yard); the shed 12 scrap and a building material, 12 hours, a building plot;
 // the warehouse 40 scrap, 4 building materials and a part, 48 hours, Mechanics 2.
-export const STORE_KG = { storebox: 60, crates: 150, shed: 600, storehouse: 2000, warehouse: 6000, cellar: 400, coldstore: 300, freezer: 300 };
+export const STORE_KG = { storebox: 60, crates: 150, shed: 600, storehouse: 2000, warehouse: 6000, cellar: 400, coldstore: 300, freezer: 300, armory: 400 };
 
 export const BUILDINGS = {
   farm_plot:    { name: "Farm plot",      cost: { scrap: 8 },             hours: 12, max: 10, desc: "+2 crop plots (Farming tab). Every base starts with some plots: a camp 1, a shelter 2, an outpost 4, the main base 8." },
@@ -149,6 +149,14 @@ export const BUILDINGS = {
   // Storage buildings (STORE_KG, basestorage.js): room for the base's goods; what does not fit lies outside.
   shed:         { name: "Storage shed",   plot: "building", cost: { scrap: 12, buildmat: 1 }, hours: 12, max: 4, storeKg: STORE_KG.shed, desc: "A plank shed with a tin roof and a padlock: holds 600 kg of the base's goods out of the weather. Goods past a base's storage lie outside, where things wear and raiders help themselves." },
   warehouse:    { name: "Warehouse",      plot: "building", cost: { scrap: 40, buildmat: 4, parts: 1 }, hours: 48, max: 2, req: { mechanics: 2 }, size: "outpost", storeKg: STORE_KG.warehouse, desc: "A steel-framed hall with a roller door and racking: holds 6000 kg of the base's goods. An outpost or the main base only; needs a Mechanics 2+ survivor here to build." },
+  // The armory (2026-10-19, the user's requests): a locked gun room. On the base map (basemap.js armoryCells) it is a
+  // windowless block with one locked security door raiders batter down (your people go in and out), and inside it two
+  // locked containers, the gun cage with every item of the base's armory and the ammo lockers with its rounds and
+  // arrows, in place of those things spread over the stores; a raider who reaches one batters the lock open first
+  // (ARMORY_LOCK: several turns, loud, quicker with a pry tool) before anything can be taken. A door or lock battered
+  // open wears the armory as a fixture (breakdowns.js: smashed locks, repaired after the fight). An outpost or the main
+  // base (size: a building plot). By the numbers (arsenal.js raidOnBase) it halves the fighting gear a raid carries off.
+  armory:       { name: "Armory",         plot: "building", cost: { scrap: 20, parts: 1 }, hours: 24, max: 1, size: "outpost", storeKg: STORE_KG.armory, desc: "A locked gun room: a windowless block with a steel security door, a gun cage and padlocked ammo lockers: holds 400 kg of the base's goods. On the base map the base's weapons, armour, magazines and the rest of its armory are kept in the gun cage, and its rounds and arrows in the ammo lockers, both inside and both locked. Raiders have to batter the security door down to get in (your own people come and go through it), and then batter a lock open (several turns, loud; a crowbar, a fire axe or a sledgehammer makes shorter work of it) before anything can be taken, so the defenders have time to stop them. Smashed locks are repaired after the fight. A raid settled by the numbers carries off half as much of the armory's fighting gear." },
   // Water and food keeping (economy.js WATER, spoilRate; farming.js greenhouse plots).
   well:         { name: "Well",           plot: "utility", cost: { scrap: 15, parts: 1 },  hours: 24, max: 2, desc: "+6 water a day (less in a dry spell). Fills the base up to its water capacity." },
   rain_catcher: { name: "Rain catcher",   plot: "utility", cost: { scrap: 5 },             hours: 8,  max: 4, desc: "Tarps and barrels: +2 water per unit of rain (about 4–7 on a wet day, up to 12 in a storm, nothing when dry)." },
@@ -1031,7 +1039,7 @@ export function buildingSummary(state, base) {
     ["Vision", `${(isCamp(base) ? CAMP.vision : isShelter(base) ? SHELTER.vision : base.type === "hub" ? 3 : 2) + (base.watchtower ? 2 : 0)} tiles`],
     ["Radio", base.radio ? "Station" : count(base, "relay") ? (base.relayOffline ? "Relay (offline: needs 1 part)" : "Relay") : "No"],
     ["Vehicle repairs", count(base, "garage") ? "Garage (+25 per part)" : "Field repair (+12 per part, Mechanics 4+)"],
-    ["Raid losses", count(base, "storehouse") ? "Halved by storehouse" : "Normal"],
+    ["Raid losses", [count(base, "storehouse") ? "Halved by storehouse" : "", count(base, "armory") ? "the armory's gear locked up" : ""].filter(Boolean).join(", ") || "Normal"],
     ["Water", `${isShelter(base) ? "no well (a river or lake beside it, rain catchers, or water brought in)" : `${(base.type === "hub" ? 12 : 3) + count(base, "well") * 6}/day from wells`}${count(base, "rain_catcher") ? `, ${count(base, "rain_catcher")} rain catcher${count(base, "rain_catcher") === 1 ? "" : "s"}` : ""}, holds ${(isShelter(base) ? SHELTER.waterCap : base.type === "hub" ? 80 : 40) + count(base, "cistern") * 150 + barrelRoom(base, "water") + barrelRoom(base, "rawwater")}${barrels(base).length ? ` (barrels: ${barrelRoom(base, "rawwater")} un-purified, ${barrelRoom(base, "water")} purified)` : ""}`],
     ["Plots", `building ${plotsUsed(base, "building")}/${plotCap(base, "building")}, utility ${plotsUsed(base, "utility")}/${plotCap(base, "utility")}`],
     ["Food storage", `${storeCapacity(base)} room for fresh food (${storeSpaces(base).map((x) => `${x.name.toLowerCase()} ${x.cap}`).join(", ")}); more is stored outside and spoils fast`],
