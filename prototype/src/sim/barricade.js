@@ -46,7 +46,7 @@ import { CELL, unitAt, active, canVault, vaultable, clambers, VAULT, vaultCost, 
 import { windowOpen, smashWindow, insideOf } from "./windows.js";
 import { doorBroken } from "./buildingmaps.js";
 import { survivorById, factionById, skill } from "./world.js";
-import { carriedSpots, newItem, stow } from "./inventory.js";
+import { carriedSpots, lootItem, stow } from "./inventory.js";
 import { dropToGround } from "./ground.js";
 import { trunkVehicle, atVehicle } from "./raidloot.js";
 import { hasTrait } from "./traits.js";
@@ -310,7 +310,9 @@ export function tearAct(state, b, u, act, H) {
   const s = u.sid != null ? survivorById(state, u.sid) : null;
   let kept = 0, down = 0;
   for (let i = 0; i < back; i++) {
-    const it = newItem("boards");
+    // Its condition through the roller like any other find (itemcond.js): planks pried off a wall with bent nails are
+    // knocked about, a wreck's range. Hash dice of the same parts as tearBack's, so the battle's dice stay put.
+    const it = lootItem("boards", "wreck", [b.turn || 0, b.tears, "tearq", o.x, o.y, i]);
     if (s && stow(s, it)) kept++;
     else { dropToGround(b, u, it); down++; }
   }
