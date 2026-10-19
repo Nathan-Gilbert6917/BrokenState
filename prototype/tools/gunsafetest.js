@@ -454,6 +454,10 @@ console.log("Gun cases: carried locked, opened at a base for free; a cased gun i
   let err = combatAct(r.st, { type: "open", unit: u.id, target: "kh0", method: "case" });
   check(/Locked with .*a blade.*a pry bar/.test(err), `a locked case needs lockpicks, a blade, a pry bar or a power tool ("${err}")`);
   s.gear.weapon = newItem("knife");
+  u.haul.gear.push(newItem("crowbar")); // something else carried as well: the hands are full
+  err = combatAct(r.st, { type: "open", unit: u.id, target: "kh0", method: "case" });
+  check(/^Hands full/.test(err || "") && cs2.locked, `the case alone can be worked; with something else carried too, the hands are full ("${err}")`);
+  u.haul.gear.pop();
   const h0 = b.raid.heat, ap0 = u.ap;
   err = combatAct(r.st, { type: "open", unit: u.id, target: "kh0", method: "case" });
   check(!err && !cs2.locked && u.haul.gear.some((it) => it && GEAR[it.key].slot === "weapon") && b.raid.heat - h0 === 1 && ap0 - u.ap === 1, `prised open with a knife: 1 action, Heat +1, the gun comes out loose (${err || "ok"})`);

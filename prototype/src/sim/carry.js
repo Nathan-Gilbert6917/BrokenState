@@ -819,11 +819,18 @@ export function handsTakeRefusal(u, what = "that", item = null) {
   if (handsCount(u) < HANDS_MAX) return "";
   return `Both hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} and cannot take ${what} as well. Put something down (the ground: free), or into the pack, the pockets or the vehicle first.`;
 }
-// Why this act cannot be done with what the unit holds ("" when it can).
-export function handsRefusal(u, type) {
+// Why this act cannot be done with what the unit holds ("" when it can). act: the order itself, for the one act that
+// works on the thing in the hands: opening a case or a box carried loose (locks.js openCaseAct, target "kh<i>") sets
+// it down to work it, so that case does not count; anything else carried still does.
+export function handsRefusal(u, type, act = null) {
   if (!u || !HAND_ACTS.has(type)) return "";
   if (type === "shoot" && oneHandOk(u)) return ""; // carts.js: a pistol, one-handed (an aim penalty, shotOdds)
-  if (handsBusy(u)) return handsWord(u);
+  const own = type === "open" && act && act.method === "case" ? /^kh(\d+)$/.exec(String(act.target || "")) : null;
+  if (own && u.haul && u.haul.gear[Number(own[1])]) {
+    const i = Number(own[1]);
+    const other = armsBusy(u) || u.haul.gear.some((it, j) => j !== i && it) || Object.values(u.haul.sup).some((v) => v > EPS);
+    if (other) return handsWord(u);
+  } else if (handsBusy(u)) return handsWord(u);
   if ((u.carrying != null || u.dragging != null) && (type === "melee" || type === "throw" || type === "throwspear" || type === "launch" || type === "finish" || type === "subdue" || type === "taser" || type === "pepper")) return u.carrying != null ? "Hands full: put the body down first." : "Hands full: dragging someone (put them down first, Shift+D).";
   return "";
 }
