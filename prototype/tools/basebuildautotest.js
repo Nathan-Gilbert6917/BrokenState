@@ -77,11 +77,12 @@ section("Beds when the building plots are used up");
   finishAll(st, h);
   check(count(h, "bunks") === 1 && baseBeds(h) === beds + 2, `built: ${baseBeds(h)} beds`);
   check(fittingsIn(st, h, barn.id).some((o) => o.rec.type === "bunks"), "the bunks stand inside the barn");
-  // The governor queues them itself (planBuilds): the first wishes it can queue, one an hour, until the queue is full.
+  // The governor queues them itself (planBuilds): the first wish it can queue an hour, until the queue is full; the
+  // water and the worm's wishes (a boiler, a cook fire) come before the beds, so the builders finish what it queued.
   setAutopilot(st, true, "balanced");
-  for (let i = 0; i < 6; i++) governBase(st, h);
-  const q = h.construction.map((c) => c.type);
-  check(q.includes("bunks"), `planBuilds queued bunk beds (queue: ${q.join(", ") || "empty"})`);
+  const seen = [];
+  for (let i = 0; i < 12 && !seen.includes("bunks"); i++) { governBase(st, h); seen.push(...h.construction.map((c) => c.type).filter((t) => !seen.includes(t))); if (!seen.includes("bunks")) finishAll(st, h); }
+  check(seen.includes("bunks"), `planBuilds queued bunk beds (queued in turn: ${seen.join(", ") || "nothing"})`);
 }
 {
   const st = world(), h = hub(st);
