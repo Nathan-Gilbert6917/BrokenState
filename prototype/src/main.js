@@ -124,6 +124,7 @@ import { loadOptions, saveOptions } from "./ui/saves.js";
 import { initTitle, showTitle, syncTitle, titleFrame, titleKey, titleCovers, TITLE_ACTIONS } from "./ui/title.js"; // the title screen the game opens on
 import { WORK_ACTIONS, WORK_CHANGE, workKey, applyRoleChoice } from "./ui/work.js";
 import { DEFENCE_ACTIONS, DEFENCE_CHANGE } from "./ui/defence.js";
+import { BASEMAP_ACTIONS, openForJob } from "./ui/basemap.js"; // the base map tab; Build opens the map to place the new building
 import { INTEL_ACTIONS, INTEL_CHANGE } from "./ui/intel.js"; // hidden bases (Run silent) and radio security (sim/hiding.js, sim/intel.js)
 import { toManual } from "./sim/work.js";
 import {
@@ -469,6 +470,8 @@ function tidyUi() {
   if (state.combat && ui.gunb && !(ui.gunb.battle != null && !state.combat.over)) ui.gunb = null; // the gun builder: in a battle only on a fighter's gun (the item menu's Modify, ui/gunbuilder.js)
   // A defence drill closed (ui/defence.js, sim/defenceplan.js): back to the base's Defence tab it was opened from.
   if (ui.drillFrom != null && !(state.combat && state.combat.drill)) { if (!state.combat && baseById(state, ui.drillFrom)) ui.baseView = { id: ui.drillFrom, tab: "defence" }; ui.drillFrom = null; }
+  // The base map closed (ui/basemap.js, sim/basemap.js): back to the base's tab it was opened from.
+  if (ui.mapFrom && !(state.combat && state.combat.layout)) { if (!state.combat && baseById(state, ui.mapFrom.id)) ui.baseView = { id: ui.mapFrom.id, tab: ui.mapFrom.tab }; ui.mapFrom = null; }
 }
 
 // ---------- folded panels ----------
@@ -905,7 +908,7 @@ const actions = {
     baseSay(deleteSupplyRun(state, j));
   },
   makemedic: (d) => { const s = survivorById(state, Number(d.id)); ui.baseMsg = makeMedic(state, s); if (s && s.location.kind === "base") assignStations(state, baseById(state, s.location.baseId)); }, // a graduated trainee (sim/training.js)
-  queuebuild: (d) => { ui.baseMsg = queueBuild(state, baseOf(d), d.type); },
+  queuebuild: (d) => { const b = baseOf(d), n = b ? b.construction.length : 0; ui.baseMsg = queueBuild(state, b, d.type); if (b && b.construction.length > n) openForJob(state, ui, b, d.type); }, // a building with a footprint: the base map opens to place its outline (ui/basemap.js)
   // Construction tab (sim/buildings.js): a water barrel's next tier, and pulling a building down (asks first: ui/confirm.js) to free its plot.
   "barrel-up": (d) => { ui.baseMsg = queueBarrelUpgrade(state, baseOf(d), Number(d.id)); },
   "bunk-expand": (d) => { ui.baseMsg = queueBunkhouseExpand(state, baseOf(d), Number(d.id)); },
@@ -1376,6 +1379,7 @@ for (const [k, fn] of Object.entries(CODEX_ACTIONS)) actions[k] = (d) => fn(stat
 for (const [k, fn] of Object.entries(WORK_ACTIONS)) actions[k] = (d, ev) => fn(state, ui, d, ev);
 // The Defence tab: the watch roster and the defence plan's drill (ui/defence.js).
 for (const [k, fn] of Object.entries(DEFENCE_ACTIONS)) actions[k] = (d) => fn(state, ui, d);
+for (const [k, fn] of Object.entries(BASEMAP_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the base map (ui/basemap.js)
 
 // Inventory drag and drop: tiles carry data-drag (their location), slots and storage boxes data-drop.
 // The team panel's order queue (ui/expedition.js queueBlock): lines carry data-qdrag / data-qdrop (their index);

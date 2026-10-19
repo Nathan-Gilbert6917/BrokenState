@@ -22,6 +22,7 @@ import { noteOutput } from "./output.js"; // the base's Work now panel: what eac
 import { fieldBuildHour, fieldAwayEnd } from "./fieldworks.js"; // field works: the builders go out on the odd hours
 import { MINES } from "./mines.js"; // a minefield's mines (call-time only)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a builder hauls the materials faster (call-time only)
+import { carryPlacement } from "./basemap.js"; // the base map: a finished job's building keeps the spot it was placed on
 
 export const RECIPES = {
   ammo:  { name: "Ammo",  in: { scrap: 3 },          out: { ammo: 8 },  skill: "mechanics", desc: "3 scrap → 8 rounds per day, the common rounds of the guns at the base (+4% per Mechanics point)" },
@@ -610,9 +611,9 @@ export function addBuilding(base, type) {
   if (type === "walls" && wallOf(base)) { const w = wallOf(base); w.tier = Math.min(WALL_TIERS.length - 1, wallTierOf(w) + 1); return w; }
   const b = { id: newId(), type };
   if (type === "walls") b.tier = 1;
-  // An upgrade (hospital tiers) replaces the lower tier of the same family.
+  // An upgrade (hospital tiers) replaces the lower tier of the same family, and keeps its spot on the base map.
   const fam = BUILDINGS[type].family;
-  if (fam) base.buildings = base.buildings.filter((x) => BUILDINGS[x.type].family !== fam);
+  if (fam) { carryPlacement(base.buildings.find((x) => BUILDINGS[x.type].family === fam), b); base.buildings = base.buildings.filter((x) => BUILDINGS[x.type].family !== fam); }
   base.buildings.push(b);
   if (type === "radio") base.radio = true;
   if (type === "watchtower") base.watchtower = true;
@@ -998,6 +999,7 @@ export function constructionHour(state) {
         continue;
       }
       const nb = addBuilding(base, job.type);
+      carryPlacement(job, nb); // basemap.js: where it was placed while it went up
       log(state, `${job.type === "walls" ? wallName(nb) : BUILDINGS[job.type].name} finished at ${base.name}.`, "good");
     }
   }
