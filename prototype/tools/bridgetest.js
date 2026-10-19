@@ -22,6 +22,7 @@ import { FORT } from "../src/sim/fort.js";
 import { makeHorde, hordesHour } from "../src/sim/hordes.js";
 import { yardDims, structuresOf, tierPlayerTurn } from "../src/sim/interior.js";
 import { baseSide } from "../src/sim/battlesize.js";
+import { giveRoundsTo } from "../src/sim/ammo.js";
 
 const seed0 = Number(process.argv[2] || 11);
 const runs = Number(process.argv[3] || 6);
@@ -37,6 +38,7 @@ const raidOn = (state, tile, withVehicle = false) => {
   const crew = atBase(state, h.id).slice(0, 3);
   // Nobody carries a pry tool: the only way into a locked car without picks is through the glass.
   for (const s of crew) { for (const slot of Object.keys(s.gear)) if (s.gear[slot] && GEAR[s.gear[slot].key] && GEAR[s.gear[slot].key].pry) s.gear[slot] = null; if (s.pack) s.pack = s.pack.filter((it) => !(GEAR[it.key] && GEAR[it.key].pry) && it.key !== "crowbar"); }
+  giveRoundsTo(state, h, 60); // (rounds by calibre: a start may leave the hub short of the 30 a raid packs)
   const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest: tile, mission: "scavenge", stance: "normal", vehicleId: withVehicle ? state.vehicles[0].id : null, supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
   if (res.error) throw new Error(res.error);
   const p = res.party;
