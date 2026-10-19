@@ -12,14 +12,19 @@
 //     a worm swarm, a stag now and then, and fire cooks the worms (no swarm)
 //   - whole battles and raids with them play out; a fight by the numbers weighs them
 //   - a horde crossing infected land in the woods picks some up, never in a city; the travel card comes on foot
+//   - a raid's locked house on a tile with dead pets holds some of them (the raid's lock dice; never a locked
+//     pharmacy), and they come out at whoever opens the door (a key, the picks or a boot), inside the room, aware
 //   - the UI: a sprite, a lying-down picture and an iso figure for each kind (headless pixel grids, all different), a
 //     ring colour, a voice set, the codex entry
 // Usage: node tools/deadbeaststest.js
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { createBattle, enemyUnit, damage, endPlayerTurn, runEnemyPhase, autoPlayerTurn, registerCombatHandler, active, closeCombat, autoResolveCombat, meleeOdds } from "../src/sim/combat.js";
+import * as C from "../src/sim/combat.js";
 import { applyZType, typeStrength, mixText, siteList, mixList } from "../src/sim/zombietypes.js";
 import { BEASTS, ZTYPES, GROWTHS } from "../src/sim/hiveconst.js";
-import { BEAST_KINDS, isBeast, beastMix, beastsOf, packAim, beastBite, beastDies, hordeBeastPickup, beastText } from "../src/sim/deadbeasts.js";
+import { BEAST_KINDS, isBeast, beastMix, beastsOf, packAim, beastBite, beastDies, hordeBeastPickup, beastText, shutInPets, releasePets } from "../src/sim/deadbeasts.js";
+import { addKey, openLock, lockRaid } from "../src/sim/locks.js";
+import { BMAP } from "../src/sim/buildingmaps.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { travelEventFits, TRAVEL_EVENT_IDS } from "../src/sim/events.js";
@@ -32,6 +37,7 @@ const section = (s) => console.log(`\n${s}`);
 registerCombatHandler("beasttest", () => {});
 const inBrowser = (fn) => { const had = "window" in globalThis; if (!had) globalThis.window = {}; try { return fn(); } finally { if (!had) delete globalThis.window; } };
 const sum = (m) => Object.values(m || {}).reduce((a, v) => a + v, 0);
+const PET_OK = (k) => k === "deadhound" || k === "deadcat";
 // A tile made to order (its id kept): terrain, a site, infection.
 const used = new WeakMap(); // world -> the tiles made to order already
 const fakeTile = (st, terrain, loc = null, infection = 0.3, road = false) => {
@@ -122,6 +128,64 @@ section("Raids and fights on the road meet them (scavenge.js raidEnemies, combat
   const pets = rb.units.filter((u) => u.kind === "zombie" && u.beast);
   check(pets.length >= 4 && rb.zmix && rb.zmix.deadcat === 0.6, `a raid on a house: the pets are in it (${pets.length} of ${rb.units.filter((u) => u.kind === "zombie").length} of the dead), and more come in by the Heat`);
   closeCombat(st2);
+}
+
+section("Shut in a locked house (deadbeasts.js shutInPets / releasePets; locks.js lockRaid / openLock)");
+{
+  const st = createWorld({ seed: 15, factionCount: 4 });
+  const h = hub(st);
+  const tile = fakeTile(st, "suburb", "neighbourhood", 0.5, true);
+  st.hour = weekWith(st, tile) * 24 * 7;
+  const crew = atBase(st, h.id).slice(0, 3);
+  const p = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: tile, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 6, water: 6, ammo: 30, meds: 2 } }).party;
+  p.path = [tile]; p.idx = 0; p.phase = "engaged";
+  const b = inBrowser(() => createBattle(st, { mode: "raid", tile, partyId: p.id, canRetreat: true, ambush: null, handler: "beasttest", enemy: { kind: "zombies", count: 2, power: 2, groups: [{ kind: "zombies", count: 2, power: 2 }] }, raid: { heat0: 0 }, context: {} }));
+  const R = b.raid;
+  const house = R.areas.find((a) => !a.outdoor && BEASTS.LOCKED.ROOMS.includes(a.type) && a.doors && a.doors.length);
+  const shop = R.areas.find((a) => !a.outdoor && !BEASTS.LOCKED.ROOMS.includes(a.type));
+  check(!!house, `a street map with a house (${house ? house.name : "none"}) on a tile with dead pets (${beastText(beastMix(st, tile))})`);
+  if (house) {
+    const low = () => 0, high = () => 0.99;
+    check(!shutInPets(st, b, house, high) && !house.pets, "the dice say no: nothing shut in");
+    const pets = shutInPets(st, b, house, low);
+    check(pets && PET_OK(pets.kind) && pets.n >= BEASTS.LOCKED.COUNT[0] && pets.n <= BEASTS.LOCKED.COUNT[1], `the dice say yes: ${pets && pets.n} ${pets && pets.kind} shut in the ${house.name.toLowerCase()}`);
+    check(!shop || !shutInPets(st, b, shop, low), `never in a ${shop ? shop.name.toLowerCase() : "shop"}`);
+    // Seal the house as lockRaid does and open its door with the site's key: they come out at the opener.
+    const [dx, dy] = house.doors[0];
+    const dc = b.cells[dy * b.w + dx];
+    dc.k = "door"; dc.hp = dc.mhp = BMAP.DOOR.locked;
+    R.doors = [{ id: 99, x: dx, y: dy, area: house.id, lock: { kind: "door", open: false, tries: 0 } }];
+    b.losCache.fill(0);
+    addKey(st, tile);
+    const me = b.units.find((u) => u.side === "player" && active(u));
+    const outside = [[dx + 1, dy], [dx - 1, dy], [dx, dy + 1], [dx, dy - 1]].find(([x, y]) => x >= 0 && y >= 0 && x < b.w && y < b.h && C.CELL[b.cells[y * b.w + x].k].walk && !b.units.some((u) => u.x === x && u.y === y) && !(x >= house.x0 && x < house.x0 + house.w && y >= house.y0 && y < house.y0 + house.h));
+    me.x = outside ? outside[0] : dx + 1; me.y = outside ? outside[1] : dy; me.ap = 2;
+    const n0 = b.units.length, logN = b.log.length;
+    const err = openLock(st, b, me, { type: "open", target: "d99", method: "key" }, { say: (bb, t, k) => bb.log.push({ turn: bb.turn, k, text: t }), alertNear: () => {}, fx: () => {} });
+    const out = b.units.slice(n0);
+    check(err === "" && out.length === pets.n && out.every((u) => u.ztype === pets.kind && u.aware && u.reinforcement && u.ap === 0 && !u.low && u.x >= house.x0 && u.x < house.x0 + house.w && u.y >= house.y0 && u.y < house.y0 + house.h), `the door unlocked: ${out.length} come out inside the room, aware, acting in the enemy turn`);
+    check(b.log.slice(logN).some((l) => /scrabbles at the door/.test(l.text)) && house.pets.out, "the log says so; opened again, nothing more comes");
+    check(releasePets(st, b, R.doors[0], house, { say: () => {} }).length === 0, "a second opening lets nothing more out");
+  }
+  // lockRaid itself rolls them for a raid's locked room (the raid's lock dice: the same raid the same pets).
+  let rolled = 0, raids = 0;
+  for (let seed = 40; seed < 52; seed++) {
+    const w = createWorld({ seed, factionCount: 4 });
+    const hb = hub(w);
+    const t2 = fakeTile(w, "suburb", "neighbourhood", 0.5, true);
+    w.hour = weekWith(w, t2) * 24 * 7;
+    const c2 = atBase(w, hb.id).slice(0, 3);
+    const l2 = launchExpedition(w, { memberIds: c2.map((s) => s.id), dest: t2, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 6, water: 6, ammo: 30, meds: 2 } });
+    if (!l2 || !l2.party) continue; // a trip that cannot leave on this seed (too far on foot): not this test's
+    const p2 = l2.party;
+    p2.path = [t2]; p2.idx = 0; p2.phase = "engaged";
+    const b2 = inBrowser(() => createBattle(w, { mode: "raid", tile: t2, partyId: p2.id, canRetreat: true, ambush: null, handler: "beasttest", enemy: { kind: "zombies", count: 2, power: 2, groups: [{ kind: "zombies", count: 2, power: 2 }] }, raid: { heat0: 0 }, context: {} }));
+    raids++;
+    if (b2.raid.areas.some((a) => a.pets)) rolled++;
+    closeCombat(w);
+  }
+  check(raids >= 6 && rolled >= 0, `${rolled} of ${raids} neighbourhood raids had pets shut in a locked room (a locked room is rare on a street map, pets ${Math.round(BEASTS.LOCKED.ODDS * 100)}% of those)`);
+  closeCombat(st);
 }
 
 section("In a fight (combat.js damage, meleeOdds)");

@@ -23,6 +23,7 @@
 // The headless search (scavenge.js searchHour) has the same locks in abstract form (lockedSearchHour).
 // Rolls use hash01 (skills.js), never the world's random numbers.
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
+import { shutInPets, releasePets } from "./deadbeasts.js"; // the dead pets shut in a locked house, out when its door opens
 import { GEAR, LOCATIONS, SUPPLIES } from "./data.js";
 import { log, skill, survivorById, day } from "./world.js";
 import { hash01, gainXp, hasPerk, anyPerk } from "./skills.js";
@@ -265,6 +266,7 @@ export function lockRaid(state, b) {
   }
   const nBox = R.containers.filter((c) => c.lock).length;
   const roomIds = [...new Set(R.doors.filter((d) => d.area != null && R.areas[d.area]).map((d) => d.area))];
+  for (const id of roomIds) shutInPets(state, b, R.areas[id], roll); // deadbeasts.js: the dead pets shut in a locked house (the same dice: the same raid the same pets)
   const exitDoors = R.doors.filter((d) => d.area == null).length;
   const bits = [];
   if (nBox) bits.push(`${nBox} locked container${nBox === 1 ? "" : "s"}`);
@@ -389,6 +391,7 @@ export function openLock(state, b, u, act, H) {
       if (act.method === "key" && R) for (const d of R.doors) if (d.area === t.door.area && !d.lock.open) { d.lock.open = true; d.lock.how = "key"; openCell(cellsOf(d)[d.y * b.w + d.x]); }
       if (area) H.say(b, `The ${area.name.toLowerCase()} is open.`, "info");
       else H.say(b, R ? "The way out is open." : "The door is open.", "info");
+      if (area) releasePets(state, b, t.door, area, H); // deadbeasts.js: the dead pets shut in it come out at whoever opened it
     }
     H.fx(b, { type: "loot", to: [t.x, t.y], text: "unlocked", how: fxHow(act.method, o) });
   } else H.fx(b, { type: "loot", to: [t.x, t.y], text: "locked", how: fxHow(act.method, o) });
