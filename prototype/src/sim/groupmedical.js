@@ -13,6 +13,7 @@
 //     heal (the tier's treat + half the medic's Medicine) × its eff; the cure chance by the tier and the medic.
 //   - the medic learns by it (skills.js gainXp, USE.wound).
 // Dice: hashes of the seed, the group and its day (the world's dice untouched).
+import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { BUILDINGS } from "./buildings.js";
 import { NO_HOSPITAL, BASE_HEAL_PER_DAY, SEVERE_BELOW, SEVERE_NO_BED, AUTO_BELOW, TREAT_MEDS, CURE_MEDS, TREATS_PER_MEDIC, UNTRAINED_TREATS, hospitalTypes } from "./medical.js";
 import { hash01, gainXp, USE, hasPerk } from "./skills.js";
@@ -52,15 +53,15 @@ export function groupMedicalDaily(state, f, { hungry = false } = {}) {
     f.medsUsed = (f.medsUsed || 0) + cost;
     time -= 1;
     s.health = Math.min(100, s.health + heal);
-    if (s.woundInfected && hash01(...tag, "cure", s.id) < (hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + med(m) * 0.03))) s.woundInfected = false;
+    if (s.woundInfected && hash01(...tag, "cure", personKey(state, s.id)) < (hosp.cures ? 1 : Math.min(0.9, 0.25 + hosp.tier * 0.15 + med(m) * 0.03))) s.woundInfected = false;
     if (m) gainXp(state, m, "medicine", USE.wound);
     out.treated++;
   }
   for (const s of people) {
     if (!s.alive) continue;
     // Infections setting in or clearing (medical.js medicalDaily).
-    if (s.woundInfected) { if (s.health >= 50 && hash01(...tag, "clear", s.id) < 0.1) s.woundInfected = false; }
-    else if (s.health < 40 && !(hosp.guards && beds.has(s)) && hash01(...tag, "infect", s.id) < 0.05) s.woundInfected = true;
+    if (s.woundInfected) { if (s.health >= 50 && hash01(...tag, "clear", personKey(state, s.id)) < 0.1) s.woundInfected = false; }
+    else if (s.health < 40 && !(hosp.guards && beds.has(s)) && hash01(...tag, "infect", personKey(state, s.id)) < 0.05) s.woundInfected = true;
     if (!hurtOne(s)) continue;
     const bed = beds.has(s) && hosp.tier > 0;
     let perDay = BASE_HEAL_PER_DAY + hosp.baseSkill * 0.4;

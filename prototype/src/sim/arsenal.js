@@ -39,6 +39,7 @@
 // over), your vehicles when a team is taken whole. Outflows:
 // the dead's kit, wear (a use a fight; broken is gone), rounds spent, explosives thrown at walls, smoke thrown over a
 // retreat by the numbers (smokeCover), what they sell, what others steal.
+import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { GEAR, FACTION_TYPES, LOCATIONS, supValue } from "./data.js";
 import { KITS, WEAPONS, loadMag, placeCar, floodReach } from "./combat.js";
 import { lootItem, isCarrier, insertsOf, allCarried, salvageYield } from "./inventory.js";
@@ -676,7 +677,7 @@ export function settlePeople(state, f, battle, result, out) {
     }
     // What they took up in the fight (ground.js aiGrabGun, a body's kit) is the group's now, as yours keep what they carry home.
     { const own = new Set(f.arsenal.items); for (const it of allCarried(s)) if (it && !own.has(it) && !isRoundItem(it)) addToArsenal(state, f, it, "picked up"); }
-    const hp = u.down && !u.surr ? 5 + Math.floor(hash01(state.seed, "personhp", s.id, state.hour) * 11) : u.hp;
+    const hp = u.down && !u.surr ? 5 + Math.floor(hash01(state.seed, "personhp", personKey(state, s.id), state.hour) * 11) : u.hp;
     s.health = Math.max(1, Math.min(100, Math.round(hp)));
     const plug = u.ears && isPlugsKey(u.ears.key) ? (earGearOf(s) || {}).item || null : null;
     settleEars(u, s, true); // hearing.js: a pair of earplugs used, hearing lost for good (by your rule)

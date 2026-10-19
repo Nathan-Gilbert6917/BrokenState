@@ -19,7 +19,7 @@
 // mood, sleep and relationships do not: they are treated as fed and rested (hunger and thirst full).
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
-import { makeSurvivor, peekNextId, setNextId } from "./world.js";
+import { makeSurvivor, peekNextId, setNextId, localId } from "./world.js";
 import { ensureInv, allCarried, carriedSpots } from "./inventory.js";
 
 export const MEMBER = {
@@ -64,6 +64,9 @@ export function withGroupDice(state, f, tag, fn) {
   state.namesGiven = f.namesGiven || (f.namesGiven = []);
   try { return fn(k); } finally { state.rng = keepRng; setNextId(keepId); state.peopleMade = keepMade; state.namesGiven = keepNames; }
 }
+// A person's id for dice that must come out the same in every world on the seed (tools/dettest.js): a member's id is
+// the world's own (MEMBER.ID0 up), one of yours or a newcomer from outside counts from the world's first id (world.js localId).
+export const personKey = (state, id) => (typeof id === "number" && id >= MEMBER.ID0 ? id : localId(state, id));
 const nextMemberId = (state) => (state.memberSeq = Math.max(state.memberSeq || MEMBER.ID0, MEMBER.ID0) + 1);
 // One new person of the group (not yet in its list: addMember). opts.quality overrides the type's.
 export function makeMember(state, f, opts = {}) {
@@ -240,7 +243,7 @@ export function syncMembers(state, f) {
     const at = f.lossAt;
     f.lossAt = null;
     const stray = (s) => +(atHome(s) && (!(f.bases || []).includes(s.location.tile) || s.location.tile === at)); // at a base the group just lost, or the one hit: they fell there
-    const order = f.people.slice().sort((a, b) => (gonePartyOf(b) - gonePartyOf(a)) || (stray(b) - stray(a)) || (isWounded(b) - isWounded(a)) || (+atHome(b) - +atHome(a)) || hash01(state.seed, "memberloss", f.name, a.id, seen) - hash01(state.seed, "memberloss", f.name, b.id, seen));
+    const order = f.people.slice().sort((a, b) => (gonePartyOf(b) - gonePartyOf(a)) || (stray(b) - stray(a)) || (isWounded(b) - isWounded(a)) || (+atHome(b) - +atHome(a)) || hash01(state.seed, "memberloss", f.name, personKey(state, a.id), seen) - hash01(state.seed, "memberloss", f.name, personKey(state, b.id), seen));
     for (const s of order.slice(0, -delta)) drop(f, s, "died", { keepKit: true });
   }
   // The rest of a party that is no more are home again.
@@ -260,10 +263,10 @@ export function woundMembers(state, f, n, tag = "") {
   if (!(n > 0)) return 0;
   ensureMembers(state, f);
   const fit = membersOf(f).filter((s) => s.alive && !isWounded(s))
-    .sort((a, b) => hash01(state.seed, "memberwound", f.name, tag, a.id) - hash01(state.seed, "memberwound", f.name, tag, b.id));
+    .sort((a, b) => hash01(state.seed, "memberwound", f.name, tag, personKey(state, a.id)) - hash01(state.seed, "memberwound", f.name, tag, personKey(state, b.id)));
   const [lo, hi] = MEMBER.WOUND_HEALTH;
   let k = 0;
-  for (const s of fit.slice(0, Math.round(n))) { s.health = Math.round(lo + (hi - lo) * hash01(state.seed, "memberhp", f.name, tag, s.id)); k++; }
+  for (const s of fit.slice(0, Math.round(n))) { s.health = Math.round(lo + (hi - lo) * hash01(state.seed, "memberhp", f.name, tag, personKey(state, s.id))); k++; }
   return k;
 }
 
@@ -299,7 +302,7 @@ export function placeMembers(state, f) {
   want[0] = Math.max(0, want[0] + home.length - sum);
   const at = (t) => home.filter((s) => s.location.tile === t);
   const pool = [];
-  f.bases.forEach((t, i) => { const here = at(t).sort((a, b) => hash01(state.seed, "memberplace", a.id) - hash01(state.seed, "memberplace", b.id)); pool.push(...here.slice(want[i])); });
+  f.bases.forEach((t, i) => { const here = at(t).sort((a, b) => hash01(state.seed, "memberplace", personKey(state, a.id)) - hash01(state.seed, "memberplace", personKey(state, b.id))); pool.push(...here.slice(want[i])); });
   f.bases.forEach((t, i) => { let n = at(t).length; while (n < want[i] && pool.length) { pool.shift().location.tile = t; n++; } });
 }
 // How many of the group's people are at a base now (null: the group has no people list yet).
@@ -308,9 +311,9 @@ export const peopleHere = (f, tile) => (f && Array.isArray(f.people) ? f.people.
 export function woundMembersBy(f, n) {
   if (!(n > 0) || !Array.isArray(f.people)) return 0;
   const k = (f.woundSeq = (f.woundSeq || 0) + 1);
-  const fit = f.people.filter((s) => s.alive && !isWounded(s)).sort((a, b) => hash01("memberwound", f.name, k, a.id) - hash01("memberwound", f.name, k, b.id));
+  const fit = f.people.filter((s) => s.alive && !isWounded(s)).sort((a, b) => hash01("memberwound", f.name, k, a.name, f.people.indexOf(a)) - hash01("memberwound", f.name, k, b.name, f.people.indexOf(b))); // (not the id: yours and newcomers' ids are the process's)
   const [lo, hi] = MEMBER.WOUND_HEALTH;
   let w = 0;
-  for (const s of fit.slice(0, Math.round(n))) { s.health = Math.round(lo + (hi - lo) * hash01("memberhp", f.name, k, s.id)); w++; }
+  for (const s of fit.slice(0, Math.round(n))) { s.health = Math.round(lo + (hi - lo) * hash01("memberhp", f.name, k, s.name, f.people.indexOf(s))); w++; }
   return w;
 }

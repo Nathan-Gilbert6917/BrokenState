@@ -4,6 +4,7 @@
 // pop, a visitor's size) stays the number its own code works with; the list follows it (syncBand: newcomers, the
 // lost taken from the wounded first, by a hash). A fight with a band draws its people (bandize), and what the map did
 // to them is written back (settleBand: the dead and the taken leave the list, the rest keep their health).
+import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { enemyUnit } from "./combat.js";
@@ -46,7 +47,7 @@ export function syncBand(state, band, power, kind) {
   const want = bandCount(band);
   while (band.people.length < want) { const s = makeBandPerson(state, band, power, kind); if (!s) break; band.people.push(s); }
   if (band.people.length > want) {
-    const order = band.people.slice().sort((a, b) => (a.health - b.health) || hash01(state.seed, "bandloss", keyOf(band), a.id) - hash01(state.seed, "bandloss", keyOf(band), b.id));
+    const order = band.people.slice().sort((a, b) => (a.health - b.health) || hash01(state.seed, "bandloss", keyOf(band), personKey(state, a.id)) - hash01(state.seed, "bandloss", keyOf(band), personKey(state, b.id)));
     const drop = new Set(order.slice(0, band.people.length - want));
     band.people = band.people.filter((s) => !drop.has(s));
   }
@@ -78,7 +79,7 @@ export function settleBand(state, setup, result, battle) {
     const s = u.who;
     const taken = !u.dead && (u.nlTaken || u.captured || (won && (u.ko || (u.surr && u.tied) || (u.wounded && u.down && (u.stab || u.tied)))));
     if (u.dead || taken) { s.alive = !u.dead && s.alive; band.people = band.people.filter((x) => x !== s); continue; }
-    s.health = Math.max(1, Math.min(100, Math.round(u.down && !u.surr ? 5 + Math.floor(hash01(state.seed, "bandhp", s.id, state.hour) * 11) : u.hp)));
+    s.health = Math.max(1, Math.min(100, Math.round(u.down && !u.surr ? 5 + Math.floor(hash01(state.seed, "bandhp", personKey(state, s.id), state.hour) * 11) : u.hp)));
     stowGun(u); // fighters.js: the rounds left in the gun stay in it
   }
   touchMembers();

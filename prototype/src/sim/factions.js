@@ -38,6 +38,7 @@
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
 //   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
 //   bands from outside that settle use it too, visitors.js settleBands).
+import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { ensureMembers, syncMembers, placeMembers, moveMember, removeMember } from "./members.js"; // a group's people (docs/adr/0001-ai-parity.md)
 import { kitOut } from "./loadouts.js"; // what each of them carries
 import { syncBuildings, spreadStores, gatherStores, loseBase, gainBase, stockAt } from "./groupbases.js"; // their bases as base objects
@@ -1086,7 +1087,7 @@ function takeOver(state, f, ruins, by) {
   }
   const joiners = state.rng.int(2, 4);
   // members.js: that many of the broken group's own people go over, with what they carry (the rest scatter).
-  const people = Array.isArray(f.people) ? f.people.filter((s) => s.alive).sort((a, b) => hash01(state.seed, "heir", f.name, a.id) - hash01(state.seed, "heir", f.name, b.id)).slice(0, joiners) : [];
+  const people = Array.isArray(f.people) ? f.people.filter((s) => s.alive).sort((a, b) => hash01(state.seed, "heir", f.name, personKey(state, a.id)) - hash01(state.seed, "heir", f.name, personKey(state, b.id))).slice(0, joiners) : [];
   if (people.length) { if (!Array.isArray(heir.people)) ensureMembers(state, heir); for (const s of people) moveMember(state, f, heir, s, null, { give: (it) => removeFromArsenal(f, it, "taken", { keepOn: true }), take: (it) => addToArsenal(state, heir, it, "taken") }); }
   else heir.pop += joiners;
   gatherStores(state, f); // groupbases.js: every base's stores
