@@ -9,7 +9,7 @@
 // Usage: node tools/etatest.js [cases per seed] [seeds...]
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, hub, atBase, survivorById } from "../src/sim/world.js";
-import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad, travelHours, paceOpts } from "../src/sim/parties.js";
+import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad, travelHours, paceOpts, partyMembers } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate } from "../src/sim/orders.js";
 import { vehiclesAtBase, partyFuel } from "../src/sim/vehicles.js";
 import { crossingsFrom, boatPlan, boatOrder } from "../src/sim/crossing.js";
@@ -26,14 +26,17 @@ function resolveCards(state, p, stats) {
     if (c.isOrders) { i++; continue; }
     state.cards.splice(i, 1);
     const before = p.progress;
-    const pace = JSON.stringify([p.members, cargoLoad(p.cargo)]);
+    // The living members: a dead one keeps their id on the list (parties.js partyMembers), and the load they carried
+    // falls on the rest (a straggler lost to the dead, loneattack.js, resolved by the numbers headless).
+    const crew = () => partyMembers(state, p).map((s) => s.id);
+    const pace = JSON.stringify([crew(), cargoLoad(p.cargo)]);
     const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(state) : x.disabled));
     if (ch) ch.resolve(state);
     stats.cards += 1;
     if (p.progress < before) stats.delay += Math.round(((before - p.progress) / (STANCES[p.stance]?.speed || 1)) * 10) / 10; // delays are real hours at any pace
     // A card that hands the team something to carry (a find) or someone to carry it with changes its load, and a
     // heavier load slows it at once (sim/load.js): an event effect like a delay (flagged as a 0.01h delay).
-    if (JSON.stringify([p.members, cargoLoad(p.cargo)]) !== pace && stats.delay === 0) stats.delay = 0.01;
+    if (JSON.stringify([crew(), cargoLoad(p.cargo)]) !== pace && stats.delay === 0) stats.delay = 0.01;
   }
   for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].isOrders) state.cards.splice(i, 1);
 }
