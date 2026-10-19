@@ -54,13 +54,13 @@ export function groundOf(wx) {
   };
 }
 
-const HEAVY_DEAD = new Set(["brute", "boneback", "flinger", "nightmare"]);
+const HEAVY_DEAD = new Set(["brute", "boneback", "flinger", "nightmare", "deadcow", "deadhog"]); // the dead beasts (sim/deadbeasts.js): a cow and a hog tread heavy, a stag and a dog run
 export function deadKind(u) {
   if (!u || u.kind !== "zombie") return null;
   if (u.low || u.ztype === "crawler") return "crawler";
   if (u.ztype === "soldier" || u.ztype === "riot") return "armoured";
   if (u.boss || HEAVY_DEAD.has(u.ztype) || u.variant === "wallbreaker" || u.variant === "broodmother") return "brute";
-  if (u.ztype === "runner" || u.ztype === "climber") return "runner";
+  if (u.ztype === "runner" || u.ztype === "climber" || u.ztype === "deadstag" || u.ztype === "deadhound") return "runner";
   return "shuffle";
 }
 export function gaitOf(b, u, len) {

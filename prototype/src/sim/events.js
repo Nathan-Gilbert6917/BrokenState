@@ -13,7 +13,8 @@ import { rollConflict } from "./conflicts.js";
 import { rollWanderer } from "./wanderers.js";
 import { hiveAt, zombieToughness, BOSS_NAMES } from "./hives.js";
 import { growthsOf } from "./hivetech.js";
-import { GROWTHS } from "./hiveconst.js";
+import { GROWTHS, ZTYPES, BEASTS } from "./hiveconst.js";
+import { beastMix } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
 import { mixWeight, mixText } from "./zombietypes.js";
 import { hordeScore, reduceHorde } from "./hordes.js";
 import { travelEffects, weatherAt, season } from "./weather.js";
@@ -210,6 +211,39 @@ const EVENTS = [
               return `The ${what} scatter, using ${shot.arrows ? `${roundsText(shot.used)} and ${shot.arrows} arrows (${back} picked up again)` : roundsText(shot.used)}.`;
             },
           },
+        ],
+      };
+    },
+  },
+  // The dead beasts (deadbeasts.js beastMix): the worm's dead animals on the hills, in the woods and over the farms,
+  // and its dead pets in the towns, on foot (a car drives on past them). Go round, put them down (they are quick, and full of the worm), or burn them.
+  {
+    id: "deadbeasts", weight: (st) => BEASTS.CARD, when: (st, p, t) => p.vehicle !== true && !!beastMix(st, t.id),
+    card: (st, p, t) => {
+      const mix = beastMix(st, t.id) || {};
+      const kind = Object.keys(mix).reduce((a, k) => (mix[k] > mix[a] ? k : a));
+      const name = ZTYPES[kind].name.toLowerCase();
+      const n = kind === "deadhound" ? st.rng.int(3, 6) : kind === "deadcow" ? st.rng.int(2, 4) : kind === "deadcat" ? st.rng.int(2, 5) : st.rng.int(1, 3);
+      const what = n === 1 ? `a ${name}` : `${n} ${name}s`;
+      const bit = `bitten by a ${name}`;
+      const where = t.terrain === "hills" ? "on the slope" : t.terrain === "forest" ? "between the trees" : t.terrain === "city" ? "in the street" : t.terrain === "suburb" || (t.loc && ["house", "neighbourhood", "motel", "apartments", "town"].includes(t.loc.type)) ? "in a yard" : "in the field";
+      return {
+        title: n === 1 ? ZTYPES[kind].name : `${ZTYPES[kind].name}s`,
+        text: `${what[0].toUpperCase()}${what.slice(1)} ${where}, standing wrong: thin, the hide split, pale worms moving in the splits. ${n === 1 ? "It turns its head toward the team." : "They turn their heads toward the team."} The worm killed them, and now they walk.`,
+        choices: [
+          { label: "Go around (1 hour)", hint: `${hint(st, p, "scouting", 5)}; otherwise they catch the team's scent and come`, resolve: (s) => check(s, p, "scouting", 5).ok ? (delay(p, 1), `The team gives them a wide berth and the ${what} ${n === 1 ? "loses" : "lose"} interest.`) : `They come at a run. ${injureRandom(s, p, 6, kind === "deadcow" ? 20 : 14, bit)}` },
+          {
+            label: "Put them down (uses ammo)", hint: "Loud; they are quick, and their bites carry the worm (bows use arrows)", resolve: (s) => {
+              const members = partyMembers(s, p);
+              const shot = takeShots(p, members, n * 2);
+              const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, shot.used, shot.arrows, { need: (k) => (n * k) / Math.max(1, members.length), short: 0.5 });
+              if (power <= n * ZTYPES[kind].weight * 0.6) return `They are on the team before enough shots land. ${injureRandom(s, p, 8, kind === "deadcow" ? 24 : 16, bit)}`;
+              const back = arrowsBack(shot.arrows);
+              if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
+              return `Put down, using ${shot.arrows ? `${roundsText(shot.used)} and ${shot.arrows} arrows (${back} picked up again)` : roundsText(shot.used)}. ${kind === "deadcow" || kind === "deadhog" ? "The carcasses split as they fall and the worms spill out; nobody goes near them." : "Nobody touches the carcasses."}`;
+            },
+          },
+          paid(p, { fuel: 1 }, { label: "Burn them (1 fuel)", hint: "The worms cook; the smoke is seen for miles", resolve: (s) => { delay(p, 1); return `A splash of fuel and a match: the ${what} ${n === 1 ? "goes" : "go"} up where ${n === 1 ? "it stands" : "they stand"}, the worms with ${n === 1 ? "it" : "them"}. The team waits out the smoke.`; } }),
         ],
       };
     },

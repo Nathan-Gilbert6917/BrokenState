@@ -2314,7 +2314,7 @@ function shieldsIso(ctx, b, x, y, alpha) {
 }
 
 // ---------- units ----------
-const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff" };
+const ZRING = { runner: "#ffb43b", brute: "#c8c4b0", spitter: "#9ad63a", screamer: "#c99ae0", crawler: "#6ab0c8", shepherd: "#e8e2ff", soldier: "#a8b878", riot: "#8aa0c8", carrier: "#e6d8a8", swarm: "#f0e4c0", boneback: "#d8b48a", climber: "#8fd0a0", flinger: "#e8a0c8", sower: "#e8e070", nightmare: "#e0506e", sleeper: "#b0d8ff", deadstag: "#d2a86a", deadhog: "#8c7a66", deadhound: "#c0b8a8", deadcow: "#e8dcc0", deadcat: "#b8a8c8" }; // the dead beasts (sim/deadbeasts.js)
 const ringOf = (t) => (t.side === "player" ? (t.vol != null ? "#c9a2ff" : "#8fc1ff") : t.side === "third" ? thirdRing(t) : t.kind === "zombie" ? (t.ztype ? ZRING[t.ztype] || "#b5d36a" : t.boss ? COL.bad : "#b5d36a") : "#ff8f85");
 function feet(s) { return project(s.wx, s.wy, s.z); }
 // The sprite, standing (or lying) at the unit's feet. silhouette: only the figure (for the see-through pass).
@@ -2433,7 +2433,7 @@ function drawFigure(ctx, cv, X, Y, S, alpha = 1) {
   ctx.drawImage(cv, X - g.ox * S, Y - g.oy * S, g.w * S, g.h * S);
   ctx.restore();
 }
-const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" ? 0.8 : 1);
+const unitBig = (t) => (t.boss === "hivemind" ? 1.8 : t.boss ? 1.35 : t.ztype === "brute" || t.ztype === "shepherd" || t.ztype === "carrier" || t.ztype === "boneback" || t.ztype === "sower" || t.ztype === "deadcow" ? 1.15 : t.ztype === "crawler" || t.ztype === "swarm" || t.ztype === "deadhound" ? 0.8 : t.ztype === "deadcat" ? 0.6 : 1);
 // Where a unit's gun muzzle is on screen, from its feet, in view rotation r at zoom S: the muzzle pixel of the gun
 // in its sprite's hand (ui/sprites.js muzzleOf; ui/gunpaint.js paintMini: past a fitted suppressor), the sprite drawn
 // as drawBody draws it (mirrored when it faces left). null: no gun drawn (a zombie, bare hands).

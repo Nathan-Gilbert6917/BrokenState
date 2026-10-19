@@ -476,6 +476,81 @@ function paintNightmare() {
   for (const [x, y] of [[1, 2], [0, 5], [20, 2], [21, 5], [1, 12], [20, 12]]) p.set(x, y, RING); // the scream
   return p;
 }
-const ZPAINT = { spitter: paintSpitter, screamer: paintScreamer, shepherd: paintShepherd, carrier: paintCarrier, swarm: paintSwarm, boneback: paintBoneback, climber: paintClimber, flinger: paintFlinger, sower: paintSower, nightmare: paintNightmare };
+// ---------- the dead beasts (sim/deadbeasts.js) ----------
+// The worm's dead animals that walk: thin, the hide split and pale worms in the splits, the eyes gone amber.
+const WORMY = (p, spots, WORM, WORM_D, SPLIT) => { for (const [x, y] of spots) { p.rect(x, y, x + 1, y, SPLIT); p.set(x, y + 1, WORM); p.set(x + 1, y + 1, WORM_D); } };
+// A dead stag: a tall tan body on long legs, the neck up to a narrow head with antlers of bone, ribs showing.
+function paintDeadStag() {
+  const p = painter(22, 26);
+  const HIDE = "#b08a5c", DARK = "#7c5c3a", LIT = "#cfae80", WORM = "#f0e4c0", WORM_D = "#cdbf94", SPLIT = "#5c1e1a", EYE = "#e8e07a";
+  p.rect(6, 11, 18, 16, HIDE); p.rect(6, 11, 18, 11, LIT); p.rect(17, 12, 18, 16, DARK);       // the body
+  for (const x of [9, 12, 15]) p.rect(x, 13, x, 15, DARK);                                       // ribs under the hide
+  for (const [x0, x1] of [[7, 8], [10, 11], [14, 15], [17, 18]]) { p.rect(x0, 17, x1, 24, DARK); p.rect(x0, 25, x1, 25, "#2a2622"); } // legs and hooves
+  p.rect(5, 6, 7, 11, HIDE); p.rect(4, 7, 6, 10, HIDE);                                          // the neck up and forward
+  p.rect(1, 4, 6, 7, HIDE); p.rect(1, 4, 6, 4, LIT); p.rect(0, 5, 1, 6, DARK);                   // the head, the muzzle forward
+  p.set(3, 5, EYE);
+  p.rect(2, 7, 4, 7, SPLIT); p.set(2, 8, WORM);                                                  // the jaw hangs, worms from it
+  for (const [x, y] of [[5, 3], [6, 2], [7, 1], [5, 1]]) p.set(x, y, BONE);                      // the antlers
+  for (const [x, y] of [[3, 3], [2, 2], [4, 2], [1, 1]]) p.set(x, y, BONE);
+  WORMY(p, [[8, 12], [13, 14], [16, 13]], WORM, WORM_D, SPLIT);
+  return p;
+}
+// A dead hog: low and heavy, a dark bristled body on short legs, the snout down, the hide split along the back.
+function paintDeadHog() {
+  const p = painter(22, 26);
+  const HIDE = "#6e5a48", DARK = "#4a3a2c", LIT = "#8e7860", WORM = "#f0e4c0", WORM_D = "#cdbf94", SPLIT = "#5c1e1a", EYE = "#e8e07a";
+  p.disc(12, 17, 8, 4.5, HIDE); p.rect(5, 13, 18, 13, LIT); p.rect(17, 15, 20, 19, DARK);         // the body, the rump
+  for (const x of [6, 8, 10, 12, 14, 16]) p.set(x, 12, DARK);                                      // bristles along the back
+  for (const [x0, x1] of [[6, 7], [9, 10], [14, 15], [17, 18]]) { p.rect(x0, 21, x1, 24, DARK); p.rect(x0, 25, x1, 25, "#2a2622"); } // short legs
+  p.rect(1, 15, 6, 20, HIDE); p.rect(1, 15, 6, 15, LIT); p.rect(0, 18, 2, 20, DARK);              // the head low, the snout
+  p.set(3, 16, EYE); p.set(1, 21, BONE); p.set(5, 21, BONE);                                       // an eye, the tusks
+  p.rect(2, 20, 4, 20, SPLIT); p.set(3, 21, WORM);
+  WORMY(p, [[8, 14], [12, 15], [15, 17], [10, 18]], WORM, WORM_D, SPLIT);
+  return p;
+}
+// A dead dog: small and quick, grey and thin, the ribs showing, ears back, the tail down; worms at the jaw.
+function paintDeadHound() {
+  const p = painter(22, 26);
+  const HIDE = "#8a8278", DARK = "#5a544c", LIT = "#aaa296", WORM = "#f0e4c0", WORM_D = "#cdbf94", SPLIT = "#5c1e1a", EYE = "#e8e07a";
+  p.rect(6, 16, 17, 20, HIDE); p.rect(6, 16, 17, 16, LIT);                                        // the body
+  for (const x of [9, 11, 13]) p.rect(x, 18, x, 19, DARK);                                         // ribs
+  p.rect(17, 17, 20, 18, DARK); p.set(20, 19, DARK);                                               // the tail down
+  for (const [x0, x1] of [[7, 8], [10, 11], [14, 15], [16, 17]]) { p.rect(x0, 21, x1, 24, DARK); p.rect(x0, 25, x1, 25, "#2a2622"); } // legs
+  p.rect(2, 13, 7, 17, HIDE); p.rect(2, 13, 7, 13, LIT); p.rect(0, 15, 2, 17, DARK);               // the head, the muzzle
+  p.set(4, 14, EYE); p.set(6, 12, DARK); p.set(5, 11, DARK);                                       // an eye, an ear back
+  p.rect(1, 18, 3, 18, SPLIT); p.set(1, 19, WORM); p.set(2, 19, WORM_D);                           // the jaw, worms
+  WORMY(p, [[9, 17], [15, 19]], WORM, WORM_D, SPLIT);
+  return p;
+}
+// A dead cow: huge and pale, the belly swollen with the worm and split, the head low with short horns.
+function paintDeadCow() {
+  const p = painter(22, 26);
+  const HIDE = "#d8ccb4", DARK = "#9a8e78", LIT = "#eee6d2", WORM = "#f0e4c0", WORM_D = "#cdbf94", SPLIT = "#5c1e1a", EYE = "#e8e07a";
+  p.rect(5, 8, 20, 12, HIDE); p.rect(5, 8, 20, 8, LIT);                                           // the back
+  p.disc(13, 15, 8, 5, HIDE); p.rect(19, 10, 21, 16, DARK);                                        // the belly, swollen; the rump
+  for (const [x, y] of [[8, 10], [14, 9], [17, 12], [10, 15]]) p.rect(x, y, x + 1, y + 1, DARK);   // patches
+  for (const [x0, x1] of [[6, 7], [9, 10], [15, 16], [18, 19]]) { p.rect(x0, 19, x1, 24, DARK); p.rect(x0, 25, x1, 25, "#2a2622"); } // legs
+  p.rect(2, 11, 6, 17, HIDE); p.rect(2, 11, 6, 11, LIT); p.rect(0, 14, 2, 17, DARK);               // the head low, the muzzle
+  p.set(4, 12, EYE); p.set(3, 9, BONE); p.set(2, 10, BONE); p.set(6, 9, BONE); p.set(7, 10, BONE);  // an eye, short horns
+  p.rect(1, 17, 3, 17, SPLIT); p.set(2, 18, WORM);
+  for (const [x, y] of [[9, 16], [12, 18], [15, 17]]) { p.rect(x, y, x + 2, y, SPLIT); p.set(x + 1, y - 1, SPLIT); } // the belly split
+  for (const [x, y] of [[10, 17], [13, 19], [16, 18], [8, 14]]) { p.set(x, y, WORM); p.set(x - 1, y + 1, WORM_D); } // worms pushing out
+  return p;
+}
+// A dead cat: small and low, grey, the back arched, ears flat, the tail up, worms at the mouth.
+function paintDeadCat() {
+  const p = painter(22, 26);
+  const HIDE = "#9890a0", DARK = "#5e5868", LIT = "#b8b0c0", WORM = "#f0e4c0", WORM_D = "#cdbf94", SPLIT = "#5c1e1a", EYE = "#e8e07a";
+  p.disc(12, 20, 5.5, 2.6, HIDE); p.rect(8, 17, 15, 17, LIT);                                     // the body, the back arched
+  p.rect(16, 13, 17, 18, DARK); p.set(16, 12, DARK);                                               // the tail up
+  for (const [x0, x1] of [[8, 8], [11, 11], [14, 14], [16, 16]]) p.rect(x0, 22, x1, 24, DARK);     // thin legs
+  p.rect(4, 16, 8, 20, HIDE); p.rect(4, 16, 8, 16, LIT); p.set(4, 15, DARK); p.set(8, 15, DARK);    // the head, ears flat
+  p.set(5, 17, EYE); p.set(7, 17, EYE);
+  p.rect(4, 20, 6, 20, SPLIT); p.set(5, 21, WORM); p.set(4, 21, WORM_D);                           // the mouth open, worms
+  p.rect(10, 19, 11, 19, SPLIT); p.set(11, 20, WORM);
+  p.rect(2, 24, 20, 25, "#4a6a30"); for (const x of [3, 7, 13, 19]) p.set(x, 23, "#5f8a3a");       // the grass (or the rug) it hides in
+  return p;
+}
+const ZPAINT = { spitter: paintSpitter, screamer: paintScreamer, shepherd: paintShepherd, carrier: paintCarrier, swarm: paintSwarm, boneback: paintBoneback, climber: paintClimber, flinger: paintFlinger, sower: paintSower, nightmare: paintNightmare, deadstag: paintDeadStag, deadhog: paintDeadHog, deadhound: paintDeadHound, deadcow: paintDeadCow, deadcat: paintDeadCat };
 export const ztypeBattleCanvas = (kind) => cached(`ztype:${kind}`, () => (ZPAINT[kind] || paintCrawler)());
 onForgetPictures(() => cache.clear()); // ui/pictures.js: drawn again after a lost GPU context

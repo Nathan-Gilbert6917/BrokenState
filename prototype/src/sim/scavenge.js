@@ -50,10 +50,11 @@ import { lockedSearchHour } from "./locks.js";
 import { truckSearchHour, convoyHeat0, convoyThreat } from "./miltrucks.js"; // an Army convoy's guard: Heat from the start, a harder fight
 import { gunSearchHour } from "./locks.js"; // gun safes, drills and grinders (their own dice)
 import { siteDeadMix, bodyLoot, MILDEAD, maxMix } from "./deadsoldiers.js";
+import { beastMix, BEAST_KINDS } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
 import { mixWeight } from "./zombietypes.js";
 import { searchMeds } from "./medfinds.js";
-import { ZTYPES } from "./hiveconst.js";
+import { ZTYPES, BEASTS } from "./hiveconst.js";
 import { siteWanderers, siteEncounter, wanderersAfterRaid } from "./wanderers.js";
 import { crawlTile, startCrawl } from "./citycrawl.js";
 import { addFind, roundsText } from "./ammo.js"; // rounds by calibre
@@ -89,8 +90,9 @@ export function raidEnemies(state, tileId) {
   // mix: the armoured dead here (deadsoldiers.js: soldiers at a National Guard base or an army wreck, riot police at a
   // police station), placed among them by share (combat.js createRaid, buildingmaps.js placeInterior).
   // The bred kinds too (hivetech.js siteSpecials): more in towns and cities as the years go by, and on a hive's land.
-  const mix = maxMix(siteDeadMix(state, tileId), siteSpecials(state, tileId));
-  if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : mix && mix.soldier >= 0.3 ? "the dead soldiers" : "the dead", mix });
+  // The dead beasts of the land too (deadbeasts.js beastMix: the hills, the woods, the farms).
+  const mix = maxMix(maxMix(siteDeadMix(state, tileId), siteSpecials(state, tileId)), beastMix(state, tileId));
+  if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : mix && mix.soldier >= 0.3 ? "the dead soldiers" : mix && BEAST_KINDS.some((k) => mix[k] >= 0.12) ? "the dead and the dead beasts" : "the dead", mix });
   const baseOwner = state.factions.find((f) => f.alive && f.bases.includes(tileId));
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   const kindOf = (f) => (f.type === "military" ? "soldiers" : f.type === "zealot" ? "zealots" : "raiders");
@@ -123,6 +125,8 @@ export function heatSurge(state, tileId) {
 
 // The special dead met searching hour by hour (hivetech.js siteSpecials): their extra weight, as the armoured dead's.
 const specialThreat = (state, tile) => { const sp = siteSpecials(state, tile); return sp ? (mixWeight(sp) - 1) * MILDEAD.SEARCH_THREAT : 0; };
+// The dead beasts of the land (deadbeasts.js beastMix): the same, at BEASTS.SEARCH_THREAT a point.
+const beastThreat = (state, tile) => { const bm = beastMix(state, tile); return bm ? (mixWeight(bm) - 1) * BEASTS.SEARCH_THREAT : 0; };
 
 // Registered as this module loads (not on the first raid), so a raid finishes correctly however it was started.
 registerCombatHandler("scavenge", afterRaid);
@@ -408,7 +412,7 @@ export function searchHour(state) {
   if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0) + tileHot * 0.1) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
     // The armoured dead (deadsoldiers.js) make a military site's fights harder, and their bodies pay for it.
     const mil = siteDeadMix(state, e.tile);
-    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile) + convoyThreat(state, e.tile) + tileHot * 6; // miltrucks.js CONVOY_GUARD: the convoy's guard; the tile's heat
+    const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile) + beastThreat(state, e.tile) + convoyThreat(state, e.tile) + tileHot * 6; // miltrucks.js CONVOY_GUARD: the convoy's guard; the tile's heat
     // The shots: a bow's in arrows, everyone else's in ammo (world.js spendShots); short of either, those count 60%.
     const shot = spendShots(p.supplies, members, e.approach === "loud" ? 6 : 2);
     if (shot.ammo > 0 && e.poi != null) { noteGunfire(state, e.tile, shot.ammo); e.shots = (e.shots || 0) + shot.ammo; } // fieldheat.js: the shots are heard; the tile's heat when the team comes out

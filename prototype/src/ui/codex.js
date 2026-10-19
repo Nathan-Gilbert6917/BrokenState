@@ -82,9 +82,9 @@ function deadEntries() {
     stats.push(["Follows", senses(z.senses)]);
     if (z.share) stats.push(["In a horde", `about ${pct(z.share)} of a horde from a hive that breeds it`]);
     if (z.wall && z.wall !== 1) stats.push(["At the walls", `presses ${x(z.wall)} as hard as one of the ordinary dead`]);
-    stats.push(["Comes from", g ? `a hive with a ${g.name} (tier ${g.tier})` : z.military ? "military sites, police stations and hordes that crossed them" : k === "swarm" ? "a Carrier or Flinger, a Sleeper bursting" : k === "sleeper" ? "the bodies lying on battle maps, more on infected ground" : "—"]);
+    stats.push(["Comes from", g ? `a hive with a ${g.name} (tier ${g.tier})` : z.military ? "military sites, police stations and hordes that crossed them" : z.beast ? (k === "deadcat" || k === "deadhound" ? "the towns and the cities (the houses, neighbourhoods, motels and apartment blocks most of all)" + (k === "deadhound" ? ", the farmland and the farms" : "") + ", more on infected ground" : "the hills, the woods and the farmland (more on infected ground, by the farms, barns and ranches, and where an infested herd grazes), and hordes that crossed such land") : k === "swarm" ? "a Carrier or Flinger, a Sleeper bursting" : k === "sleeper" ? "the bodies lying on battle maps, more on infected ground" : "—"]);
     out.push({
-      key: `z:${k}`, cat: "dead", name: z.name, sub: g ? "Special dead, bred by hives" : z.military ? "The armoured dead" : "Special dead",
+      key: `z:${k}`, cat: "dead", name: z.name, sub: g ? "Special dead, bred by hives" : z.military ? "The armoured dead" : z.beast ? "The dead beasts" : "Special dead",
       stats, text: z.special, how: z.counter,
       sprite: () => (k === "runner" || k === "brute" ? zombieCanvas(k, 7) : k === "soldier" || k === "riot" ? armoredCanvas(k, 7) : k === "sleeper" ? zombieCanvas("bloated", 3) : ztypeBattleCanvas(k)),
     });

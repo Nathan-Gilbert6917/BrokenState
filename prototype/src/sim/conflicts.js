@@ -49,6 +49,7 @@ import { warRaidOnPlayer } from "./diplomacy.js";
 import { pwarTeamMult, pwarTeamRange } from "./playerwars.js"; // wars with you: their patrols hunt your teams
 import { retreatFrom } from "./conquest.js";
 import { siteDeadMix, armoredOf, maxMix, bodyLoot } from "./deadsoldiers.js";
+import { beastMix } from "./deadbeasts.js"; // the dead beasts of the hills, the woods and the farmland
 import { convoyGuards } from "./miltrucks.js"; // an Army convoy's guard among the dead met there
 import { siteList } from "./zombietypes.js";
 import { siteSpecials } from "./hivetech.js"; // the special dead met exploring
@@ -179,7 +180,8 @@ function enemyGroup(state, p, f, scale = 1, horde = null) {
     // The armoured dead (deadsoldiers.js): by a military site, or the ones a horde picked up crossing one.
     // The bred kinds met away from a hive's hordes (hivetech.js siteSpecials: towns and cities as the years go by, a
     // hive's land): each of the dead one of them at its share (a roll each).
-    const mix = maxMix(maxMix(siteDeadMix(state, partyTile(p)), armoredOf(horde && horde.mix)), horde ? null : siteSpecials(state, partyTile(p)));
+    // The dead beasts of the land (deadbeasts.js beastMix), or the ones a horde picked up crossing it.
+    const mix = maxMix(maxMix(maxMix(siteDeadMix(state, partyTile(p)), armoredOf(horde && horde.mix)), horde ? null : siteSpecials(state, partyTile(p))), horde ? null : beastMix(state, partyTile(p)));
     const g = { kind: "zombies", count: Math.max(4, count), power: 1 + hz, name: hz >= 3 ? "the hive's dead" : "the dead" };
     if (mix) {
       g.mix = mix;

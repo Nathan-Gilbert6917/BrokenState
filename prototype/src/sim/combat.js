@@ -65,7 +65,8 @@ import { safeTurn } from "./locks.js"; // gun safes: a charge set on one goes of
 import { applyZType, typeList, typeStrength, zRevealed, strikeBonus, zTick, zombieTurn, nextOfMix, mixList, siteList } from "./zombietypes.js"; // a hive's special dead
 import { ZTYPES, MIDDEAD } from "./hiveconst.js";
 import { ACID, acidAt, acidArmor, acidWeights, acidStep, acidRound, spitterBurst } from "./acid.js"; // a spitter's acid sac bursts when it dies
-import { armorVs, stabsGap, ARMORED, armoredOf, wearPlate } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
+import { armorVs, stabsGap, ARMORED, armoredOf, wearPlate, maxMix } from "./deadsoldiers.js"; // the armoured dead: soldiers, riot police
+import { beastsOf, packAim, beastBite, beastHit, beastDies } from "./deadbeasts.js"; // the dead beasts: worm-ridden animals that walk
 import { traitAim, meleeTraitAim, woundMult, fleetEscape, tactOf, TACT_RANGE } from "./traits.js"; // Brave, Coward, Clumsy, Tough, Frail, Fleet-Footed, Tactical
 import { armourHit, armourExpect, locatedHit, enemyPieces, fitArmour, wearByNumbers, absorbOffscreen, battleArmor, battleDice, roundOf, armourSpec, dropBroken } from "./armour.js"; // per-hit armour: pieces, locations, penetration, wear
 import { noteBrass, pickUpBrass } from "./reloading.js"; // the reloading bench: brass back after a won fight
@@ -2869,7 +2870,7 @@ export function meleeOdds(b, a, t, opts = {}) {
   // a.meleeSk: the Melee skill's part of a.meleeAim (world.js MELEE_SKILL, playerUnit), its own step; tactAura: a Tactical ally
   // near (traits.js); a stun (a flashbang, a taser: throwables.js) and pepper spray (nonlethal.js): half their aim penalty
   // up close; Parry (skills.js)
-  const steps = [["Base, nerve and traits", a.meleeAim - (a.meleeSk || 0)], ["Melee skill", a.meleeSk || 0], ["The weapon", w.meleeAim || 0], ["A Tactical ally near", tactAura(b, a)], ["Target hunkered down", -(t.hunker ? 10 : 0)], ["Striking up at higher ground", -up], ["Stunned", -(a.stun ? a.stun.aim / 2 : 0)], ["Tasered or pepper-sprayed", -nlAimPen(a) / 2], ["Target parries", -(t.parry || 0)]];
+  const steps = [["Base, nerve and traits", a.meleeAim - (a.meleeSk || 0)], ["Melee skill", a.meleeSk || 0], ["The weapon", w.meleeAim || 0], ["A Tactical ally near", tactAura(b, a)], ["Target hunkered down", -(t.hunker ? 10 : 0)], ["Striking up at higher ground", -up], ["Stunned", -(a.stun ? a.stun.aim / 2 : 0)], ["Tasered or pepper-sprayed", -nlAimPen(a) / 2], ["Target parries", -(t.parry || 0)], ["The pack", packAim(b, a, t)]]; // deadbeasts.js: dead dogs on the same person
   let aim = 0;
   for (const [, v] of steps) aim += v; // the same sum, left to right
   const chance = Math.max(10, Math.min(95, Math.round(aim)));
@@ -3701,7 +3702,7 @@ export function createBattle(state, setup) {
   if (map.locked.length) b.doors = map.locked.map(([x, y], i) => ({ id: i + 1, x, y, lock: { kind: "door", open: false, tries: 0, ...(map.cells[idx(x, y)].dk ? { dk: map.cells[idx(x, y)].dk } : {}) } })); // dk: the door's kind (locks.js openOdds: its lock's difficulty, whether it can be kicked)
   if (shellLines.length) say(b, `Shells out of the stock: ${shellLines.join(", ")}.`, "info");
   b.reinfMax = Math.round(b.infection * 5);
-  b.zmix = armoredOf(setup.enemy && setup.enemy.mix); // the dead drawn in later: soldiers among them at a military site
+  b.zmix = maxMix(armoredOf(setup.enemy && setup.enemy.mix), beastsOf(setup.enemy && setup.enemy.mix)); // the dead drawn in later: soldiers among them at a military site, the dead beasts of the land (deadbeasts.js)
   const layout = setup.layout && layouts ? layouts.get(setup.layout) : null;
   const layoutCtx = (phase) => ({
     phase, state, rng, W, H, inside, cellAt: (x, y) => b.cells[idx(x, y)],
@@ -3924,11 +3925,13 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
   if (t.hp > 0) {
     if (t.ztype === "boneback" || t.ztype === "flinger") afterHit(b, t, by, hit, eff); // middead.js
     swarmBite(b, t, by); // carriers.js: a worm swarm's bite can leave the worm in the living
+    beastBite(b, t, by); // deadbeasts.js: a dead beast's bite too
     nlAfterHit(b, t, by, hit); // nonlethal.js: a stun baton's shock
     return eff;
   }
   if (nonLethal && nlDown(b, t, by)) return eff; // knocked out, either side (nonlethal.js; the dead die as usual)
   swarmHit(t, by); // carriers.js: brought down by the worms, they are in them
+  beastHit(b, t, by); // deadbeasts.js: brought down by a dead beast's bite, most of the time
   if (t.gunner) leaveTurret(b, t, true); // a turret's gunner drops back inside (theirs: their own gun on their body)
   if (MED.downedHit(b, t, by, eff)) return eff; // medics.js: a downed survivor hit again is finished; an enemy person goes down first
   if (t.side === "player") {
@@ -3955,6 +3958,7 @@ export function damage(b, t, raw, by, nonLethal = false, hit = null) {
     if (t.ztype === "swarm") t.off = true; // no body: gone from the map
     if (t.ztype === "flinger") onDeath(b, t); // middead.js: the mass it was winding up to throw spills out
     if (t.ztype === "sleeper") sleeperDies(b, t, hit); // sleepers.js: it splits where it lies, or the fire cooks it
+    if (t.beast) beastDies(b, t, hit); // deadbeasts.js: a dead beast may burst into a worm swarm (a cow always), unless the fire cooked it
     const own = bossAI(t);
     if (own && own.death) own.death(b, t); // registerBossAI: the Hivemind's brood collapses with it (hivecrawl.js)
   }
@@ -6727,7 +6731,7 @@ export function createRaid(state, setup) {
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
   if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv); } // who can ride in it (boardVehicle); its upgrades
   b.reinfMax = 0;
-  b.zmix = armoredOf(((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix); // the dead drawn in by the Heat
+  b.zmix = (() => { const m = ((setup.enemy.groups || []).find((g) => g.kind === "zombies") || setup.enemy).mix; return maxMix(armoredOf(m), beastsOf(m)); })(); // the dead drawn in by the Heat: the armoured dead, the dead beasts of the land (deadbeasts.js)
   const occupied = (x, y) => !!unitAt(b, x, y);
   const ok = (x, y) => inside(x, y) && b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occupied(x, y);
   const okIn = (occ, x, y) => b.reach[idx(x, y)] && cellAt(b, x, y).walk && !occ[idx(x, y)]; // ok over the whole map: the cells taken worked out once a scan (occupancy)

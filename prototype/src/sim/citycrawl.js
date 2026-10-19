@@ -38,6 +38,7 @@ import { applyZType, battleTypes, eraKinds } from "./zombietypes.js";
 import { eraTier } from "./hivetech.js";
 import { ZTYPES } from "./hiveconst.js";
 import { MILDEAD, siteDeadMix, maxMix } from "./deadsoldiers.js";
+import { beastMix } from "./deadbeasts.js"; // the city's dead pets among the street's dead
 import { lootItem, itemLoad } from "./inventory.js";
 import { areaSource, spend } from "./itemcond.js"; // the condition of what is found
 import { rollAreaFind } from "./loot.js";
@@ -1199,8 +1200,9 @@ function makeEncounter(state, c, n, ctx) {
       const k = Math.round(enemy.count * sp);
       if (k > 0) enemy.types = { [crawlKind(state, rng)]: k };
     }
-    // The armoured dead of the city (deadsoldiers.js siteDeadMix: riot police, soldiers near a base): no dice.
-    const mil = siteDeadMix(state, c.tile);
+    // The armoured dead of the city (deadsoldiers.js siteDeadMix: riot police, soldiers near a base) and its dead pets
+    // (deadbeasts.js beastMix: dogs and cats loose in the streets): no dice.
+    const mil = maxMix(siteDeadMix(state, c.tile), beastMix(state, c.tile));
     if (mil) {
       enemy.mix = mil;
       const add = battleTypes(mil, enemy.count) || {};
