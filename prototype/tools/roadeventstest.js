@@ -1,11 +1,17 @@
 // Road events (src/sim/events.js) and the newer hub events (src/sim/hubevents.js): every card comes where it should,
-// every choice does something and says so, the autopilot answers each one, and the dice bring them up in play.
+// every choice does something and says so, the autopilot answers each one, and the dice bring them up in play. Then
+// hardcore's year Calder falls (events.js HC_EVENTS, hubevents.js hc_*): only in hardcore and only before the day a
+// normal game would start.
 // Usage: node tools/roadeventstest.js [seed] [rolls=4000] (about half a minute).
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { addBuilding } from "../src/sim/buildings.js";
-import { launchExpedition, partyMembers, carried } from "../src/sim/parties.js";
+import { launchExpedition, partyMembers, carried, giveOrder, partyTile } from "../src/sim/parties.js";
+import { tickHour, day, factionById } from "../src/sim/world.js";
+import { roadTeam } from "../src/sim/hardcore-start.js";
+import { hardcoreEraOffset } from "../src/sim/hardcore-outbreak.js";
+import { hcMilitary } from "../src/sim/hardcore-groups.js";
 import { TRAVEL_EVENT_IDS, travelEventFits, travelEventCard, rollTravelEvent } from "../src/sim/events.js";
-import { HUB_EVENT_IDS, hubEventCard, hubEventWeights, RATS, COLD } from "../src/sim/hubevents.js";
+import { HUB_EVENT_IDS, hubEventCard, hubEventWeights, RATS, COLD, HC_DESERTER } from "../src/sim/hubevents.js";
 import { makeHorde } from "../src/sim/hordes.js";
 import { season } from "../src/sim/weather.js";
 import { foodIn } from "../src/sim/foods.js";
@@ -157,6 +163,147 @@ section("Hub events: the new ones");
   check(rats.text.includes(`${Math.min(RATS.max, Math.max(RATS.min, lose))} food`), "the rats' loss on the card is the code's");
   const cold = hubEventCard(s0, "cold", h0);
   check(cold.choices[0].label.includes(`${COLD.wood * atBase(s0, h0.id).length} firewood`), "the cold snap's firewood is 3 days' heating a head");
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Hardcore: the year Calder falls, on the road");
+const NEW_HC_ROAD = ["hc_gridlock", "hc_checkpoint", "hc_broadcast", "hc_holdouts", "hc_looters", "hc_newdead", "hc_drop"];
+// A hardcore world on day `d` with its team on the road; the tile it meets the event on set up by `pick`.
+function hcWorld(d, pick, seed = SEED) {
+  const st = createWorld({ seed, factionCount: 6, mode: "hardcore" });
+  st.cards.length = 0;
+  st.noWanderers = true;
+  st.hour = (d - 1) * 24 + 12;
+  const p = roadTeam(st);
+  for (const m of partyMembers(st, p)) { m.mood = 50; m.health = 100; }
+  return { st, p, tile: pick(st, p) };
+}
+const roadTile = (st) => tileOf(st, (t) => t.road && t.terrain === "plains");
+const HC_SETUPS = {
+  hc_gridlock: roadTile, hc_checkpoint: roadTile, hc_broadcast: roadTile,
+  hc_holdouts: (st) => tileOf(st, (t) => t.terrain === "suburb"),
+  hc_looters: (st) => tileOf(st, (t) => t.terrain === "suburb"),
+  hc_newdead: roadTile,
+  hc_drop: (st) => tileOf(st, (t) => t.terrain === "plains"),
+};
+for (const id of NEW_HC_ROAD) {
+  check(TRAVEL_EVENT_IDS.includes(id), `${id}: in the road event table`);
+  const w0 = hcWorld(5, HC_SETUPS[id]);
+  check(travelEventFits(w0.st, w0.p, id, w0.tile), `${id}: fits a hardcore run on day 5`);
+  // Never in a normal game, nor once the normal game's start date has passed.
+  const n = world(HOURS.summer, HC_SETUPS[id]);
+  check(!travelEventFits(n.st, n.p, id, n.tile), `${id}: never in a normal game`);
+  const late = hcWorld(hardcoreEraOffset(w0.st) + 2, HC_SETUPS[id]);
+  check(!travelEventFits(late.st, late.p, id, late.tile), `${id}: gone once the outbreak year is over`);
+  const card0 = travelEventCard(w0.st, w0.p, id, w0.tile);
+  check(card0.choices.length >= 2 && !/undefined|NaN/.test(card0.title + card0.text), `${id}: a card (${card0.title}: ${card0.text})`);
+  for (let i = 0; i < card0.choices.length; i++) {
+    for (let k = 0; k < 6; k++) {
+      const { st, p, tile } = hcWorld(5, HC_SETUPS[id], SEED + k);
+      const c = travelEventCard(st, p, id, tile).choices[i];
+      if (!enabled(st, c)) continue;
+      const before = snap(st, p);
+      const text = c.resolve(st);
+      if (!check(typeof text === "string" && text.length > 0 && !/undefined|NaN|\[object/.test(text), `${id} → ${c.label}: text (${text})`)) break;
+      check(snap(st, p) !== before || /^(Move on|Leave it)/.test(c.label) || /Get off our lawn/.test(text), `${id} → ${c.label}: changes something (${text})`);
+      if (k === 0) console.log(`  ${c.label}: ${text}`);
+    }
+  }
+  // The autopilot answers it.
+  const a = hcWorld(5, HC_SETUPS[id]);
+  a.st.autopilot = true;
+  const card = travelEventCard(a.st, a.p, id, a.tile);
+  a.st.cards.push(card);
+  autopilotResolve(a.st);
+  check(!a.st.cards.includes(card) && a.st.log.some((l) => l.text.includes(card.title)), `${id}: answered by the autopilot`);
+}
+{
+  // The relief drop only while the Guard stands; the broadcast marks where the outbreak began.
+  const w = hcWorld(5, HC_SETUPS.hc_drop);
+  const m = hcMilitary(w.st);
+  if (m) { m.fell = true; check(!travelEventFits(w.st, w.p, "hc_drop", w.tile), "no relief drops once the Guard has fallen"); }
+  const b = hcWorld(5, roadTile);
+  const before = b.p.seen.size;
+  travelEventCard(b.st, b.p, "hc_broadcast", b.tile).choices[0].resolve(b.st);
+  check(b.p.seen.size > before && b.st.hives.some((h) => b.p.seen.has(h.tile)), "the broadcast puts the first hive on the map");
+  // In play: a hardcore team's first weeks on the road roll them.
+  const counts = {};
+  const titles = new Set(["Gridlock", "An abandoned checkpoint", "The emergency broadcast", "They would not leave", "Still in uniform", "A relief drop"]);
+  const r = hcWorld(3, roadTile);
+  const ground = r.st.tiles.filter((t) => t.terrain !== "water" && !r.st.bases.some((x) => x.tile === t.id)).map((t) => t.id);
+  let all = 0;
+  for (let i = 0; i < ROLLS; i++) {
+    r.st.hour = (2 + (i % 30)) * 24 + (i % 24);
+    r.p.lastConflict = r.st.hour; r.p.eventHour = -1;
+    const card = rollTravelEvent(r.st, r.p, ground[(i * 7919) % ground.length]);
+    if (!card) continue;
+    all++;
+    if (titles.has(card.title) || / being looted$/.test(card.title)) counts[card.title] = (counts[card.title] || 0) + 1;
+    for (const m of partyMembers(r.st, r.p)) { m.health = 100; m.mood = 50; }
+  }
+  const hcN = Object.values(counts).reduce((a, x) => a + x, 0);
+  console.log(`  first month: ${hcN} of ${all} road cards are the year's own (${Object.entries(counts).map(([t, n]) => `${t} ${n}`).join(", ")})`);
+  check(Object.keys(counts).length >= 5, "most of them come up in the first month");
+  check(hcN > all * 0.15 && hcN < all * 0.6, `a fair share of the road cards, not all of them (${Math.round((100 * hcN) / Math.max(1, all))}%)`);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+section("Hardcore: the year Calder falls, at the hub");
+{
+  const NEW_HC_HUB = ["hc_crowd", "hc_deserter", "hc_silence", "hc_cityfolk"];
+  // A hardcore run whose team has set up its first camp (the hub), on day `d`.
+  const hcHub = (d, seed = SEED) => {
+    const st = createWorld({ seed, factionCount: 6, mode: "hardcore" });
+    st.noWanderers = true;
+    const p = roadTeam(st);
+    p.pitched = true; // staging.js: the hour of pitching skipped (tools/hcstarttest.js)
+    giveOrder(st, p, "establish");
+    for (let k = 0; k < 6 && !st.bases.length; k++) tickHour(st);
+    st.cards.length = 0;
+    st.hour = (d - 1) * 24 + 12;
+    const hb = hub(st);
+    setFood(hb, 80); Object.assign(hb.stock, { water: 40 });
+    return { st, hb };
+  };
+  const { st, hb } = hcHub(12);
+  check(!!hb, "the camp is the hub");
+  const m = hcMilitary(st);
+  if (m) m.strike = m.strike || { phase: "fight", city: st.tiles[0].id }; // the strike force out: deserters walk away from it
+  const w = hubEventWeights(st, hb);
+  for (const id of NEW_HC_HUB) check(HUB_EVENT_IDS.includes(id) && w[id] > 0, `${id}: can come at a hardcore hub on day 12 (${(w[id] || 0).toFixed(2)})`);
+  const { st: n, hb: nh } = (() => { const s2 = createWorld({ seed: SEED, factionCount: 6 }); return { st: s2, hb: hub(s2) }; })();
+  const wn = hubEventWeights(n, nh);
+  check(NEW_HC_HUB.every((id) => wn[id] === 0), "none of them in a normal game");
+  const late = hcHub(hardcoreEraOffset(st) + 2);
+  const wl = hubEventWeights(late.st, late.hb);
+  check(NEW_HC_HUB.every((id) => wl[id] === 0), "none once the outbreak year is over");
+  // The broadcast goes quiet once a run.
+  hubEventCard(st, "hc_silence", hb);
+  check(hubEventWeights(st, hb).hc_silence === 0, "the radio goes quiet only once a run");
+  // Taking in a deserter costs the Guard's goodwill.
+  if (m) {
+    const f = factionById(st, m.id);
+    const card = hubEventCard(st, "hc_deserter", hb);
+    const take = card.choices.find((c) => c.kind === "take");
+    const g0 = f.goodwill;
+    const text = take.resolve(st);
+    check(f.goodwill < g0 && hb && atBase(st, hb.id).some((s) => s.name && text.includes(s.name.split(" ")[0])), `a deserter taken in: ${f.name} goodwill ${g0} → ${f.goodwill} (${text})`);
+    check(take.hint.includes(`goodwill -${HC_DESERTER.goodwill}`), "the card says what it costs");
+  }
+  // Each choice of the hungry crowd and the radio does something (the recruit cards are recruits.js's own).
+  for (const id of ["hc_crowd", "hc_silence"]) {
+    const c0 = hubEventCard(hcHub(12).st, id, hub(hcHub(12).st));
+    for (let i = 0; i < c0.choices.length; i++) {
+      const h2 = hcHub(12);
+      const card = hubEventCard(h2.st, id, h2.hb);
+      const c = card.choices[i];
+      if (!enabled(h2.st, c)) continue;
+      const before = JSON.stringify([h2.hb.stock, atBase(h2.st, h2.hb.id).map((s) => Math.round(s.mood * 100))]);
+      const text = c.resolve(h2.st);
+      check(typeof text === "string" && text.length > 0 && !/undefined|NaN/.test(text) && typeof c.ai === "function" && c.hint, `${id} → ${c.label}: ${text}`);
+      check(JSON.stringify([h2.hb.stock, atBase(h2.st, h2.hb.id).map((s) => Math.round(s.mood * 100))]) !== before, `${id} → ${c.label}: changes something`);
+    }
+  }
 }
 
 console.log(`\n${passed} passed, ${fails} failed`);

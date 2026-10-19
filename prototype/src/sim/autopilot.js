@@ -987,6 +987,14 @@ function pickChoice(state, card, opts, p) {
   if (/^A roadside gas station/.test(t)) return (p && p.vehicle && !careful(P) ? find(/^Hand-pump/) : null) || find(/^Pick through/);
   if (/^An overrun camp/.test(t)) return careful(P) ? find(/^Bury/) : find(/^Search the camp/);
   if (/^A stranger with the worm/.test(t)) return find(/^Leave them food/) || find(/^Move on/);
+  // Hardcore's year Calder falls (events.js HC_EVENTS).
+  if (/^Gridlock$/.test(t)) return (p && p.vehicle ? find(/^Siphon/) : null) || find(/^Go through the luggage/);
+  if (/^An abandoned checkpoint/.test(t)) return careful(P) ? find(/^Leave it/) : find(/^Search the crates/);
+  if (/^The emergency broadcast/.test(t)) return find(/^Listen/) || find(/^Note it/);
+  if (/^They would not leave/.test(t)) return (chance(/^Tell them/) >= 0.4 ? find(/^Tell them/) : null) || find(/^Move on/);
+  if (/^An? .+ being looted$/.test(t)) return (!careful(P) && chance(/^Slip in/) >= 0.75 ? find(/^Slip in/) : null) || find(/^Wait for them/);
+  if (/^Still in uniform/.test(t)) return find(/^Put them down/);
+  if (/^A relief drop/.test(t)) return careful(P) ? find(/^Grab/) : find(/^Take it all/);
   if (/^Tempers flare/.test(t)) return (chance(/^Step in/) >= 0.5 ? find(/^Step in/) : null) || find(/^Let them/);
   if (/^Cold feet/.test(t)) return find(/^Convince/);
   if (/^Horde of /.test(t)) return (p && p.vehicle && partyFuelOf(state, p) >= 8 ? find(/^Outrun/) : null) || find(/^Hide/);

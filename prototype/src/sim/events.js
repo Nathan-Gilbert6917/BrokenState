@@ -26,6 +26,9 @@ import { totalRounds, spendAmmo } from "./rounds.js"; // rounds by calibre
 import { calRounds, partyCals, roundsText } from "./ammo.js"; // a find of rounds named by calibre
 import { swapGun } from "./gundist.js"; // the gun distribution: a crashed Humvee's gun
 import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more trouble on the road
+import { isHardcore } from "./hardcore.js"; // hardcore's year Calder falls: road cards of its own (HC_EVENTS)
+import { hardcoreEraOffset, hcOutbreakCity } from "./hardcore-outbreak.js";
+import { hcMilitary } from "./hardcore-groups.js";
 
 // Things a road card can turn up (tools/loottest.js counts them as sources).
 export const HUMVEE_GEAR = ["ar", "plate", "nvg", "milradio", "rucksack", "carbine", "smokegren", "frag"];
@@ -80,7 +83,7 @@ function addCargo(state, p, key, qty, mix = null) {
   const room = cargoRoom(state, p);
   const take = Math.min(unitsThatFit(room, key), qty);
   p.cargo.supplies[key] = (p.cargo.supplies[key] || 0) + take;
-  const word = key === "wood" ? "firewood" : key;
+  const word = key === "wood" ? "firewood" : key === "water" ? "bottles of water" : key;
   return take < qty ? `${take} ${word} (no room for the rest)` : `${take} ${word}`;
 }
 // What grows wild (an orchard's apples, brambles' berries): `units` days of food split by the table's weights, in
@@ -566,6 +569,179 @@ const EVENTS = [
     },
   },
 ];
+// ---------- hardcore: the year Calder falls (hardcore.js) ----------
+// Road cards only a hardcore run meets, and only before the day a normal game would start (hardcore-outbreak.js
+// hardcoreEraOffset): the evacuation that jammed the roads, the Guard's checkpoints and relief drops while it still
+// stands, the emergency broadcast still on the air, people who would not leave, the first weeks' looters, and the dead
+// still in the clothes they died in. Most come in the first weeks and fade as the months go by (hcFade).
+const hcYear = (st) => isHardcore(st) && day(st) <= hardcoreEraOffset(st);
+const hcFade = (st, days) => Math.exp(-(day(st) - 1) / days);
+const guardStands = (st) => { const m = hcMilitary(st); return !!m && !m.fell; };
+const LOOTED = { town: "corner shop", gas: "gas station", pharmacy: "pharmacy", grocery: "grocery store", supermarket: "supermarket", truckstop: "truck stop" };
+const HC_EVENTS = [
+  {
+    // The evacuation that never got anywhere: cars nose to tail, doors open, luggage on the roofs.
+    id: "hc_gridlock", weight: (st) => 4 * hcFade(st, 30), when: (st, p, t) => hcYear(st) && t.road,
+    card: (st, p, t) => {
+      const risk = Math.min(0.4, 0.05 + t.infection * 0.5);
+      const stuck = (s) => (s.rng.chance(risk) ? ` Not every driver got out. ${injureRandom(s, p, 6, 18, "in an evacuation jam")}` : "");
+      return {
+        title: "Gridlock",
+        text: "Both lanes are solid with cars for a mile, nose to tail, doors hanging open, suitcases still strapped to the roofs. The radio in one of them is still playing to nobody.",
+        choices: [
+          { label: "Siphon the tanks (2 hours)", hint: `2 to 6 fuel; ${pct(risk)} someone is still in their car`, resolve: (s) => { delay(p, 2); const hurtTxt = stuck(s); if (!s.parties.includes(p)) return hurtTxt.trim(); return `A hose and a jerry can: ${addCargo(s, p, "fuel", s.rng.int(2, 6))}.${hurtTxt}`; } },
+          {
+            label: "Go through the luggage (2 hours)", hint: `Food and whatever people packed in a hurry; ${pct(risk)} someone is still in their car`,
+            resolve: (s) => {
+              delay(p, 2);
+              const hurtTxt = stuck(s);
+              if (!s.parties.includes(p)) return hurtTxt.trim();
+              const got = [addCargo(s, p, "food", s.rng.int(2, 4))];
+              if (s.rng.chance(0.5)) { const it = lootItem(s.rng.pick(HIKER_STUFF), "survivor", s.rng); if (addGearToCargo(s, p, it)) got.push(it.name.toLowerCase()); }
+              return `Found ${got.join(" and ")}.${hurtTxt}`;
+            },
+          },
+          { label: "Move on", resolve: () => "The team picks its way past the cars." },
+        ],
+      };
+    },
+  },
+  {
+    // A National Guard checkpoint left when the line fell back: sandbags, a quarantine sign, crates under a tarp.
+    id: "hc_checkpoint", weight: 1.5, when: (st, p, t) => hcYear(st) && t.road && !t.loc,
+    card: (st, p, t) => {
+      const risk = Math.min(0.5, 0.15 + t.infection * 0.4);
+      return {
+        title: "An abandoned checkpoint",
+        text: "Sandbags, a sawhorse barrier and a hand-painted sign: QUARANTINE ZONE, NO ENTRY. The National Guard pulled out in a hurry and left a cot, a dead radio set and crates under a tarp. One of the soldiers never left: they are still sitting in the cab of a truck.",
+        choices: [
+          {
+            label: "Search the crates (2 hours)", hint: `Army rations and rounds, maybe kit; ${pct(risk)} the soldier in the truck had the worm and gets out`,
+            resolve: (s) => {
+              delay(p, 2);
+              const hurtTxt = s.rng.chance(risk) ? ` The soldier in the cab was not dead for long. ${injureRandom(s, p, 10, 25, "at an abandoned checkpoint")}` : "";
+              if (!s.parties.includes(p)) return hurtTxt.trim();
+              const got = [addCargo(s, p, "food", 3, "army"), addCargo(s, p, "ammo", s.rng.int(20, 40))];
+              if (s.rng.chance(0.35)) { const it = lootItem(swapGun("truck:humvee", s.rng.pick(HUMVEE_GEAR), s.rng), "wreck", s.rng); if (addGearToCargo(s, p, it)) got.push(it.name); }
+              return `Found ${got.join(", ")}.${hurtTxt}`;
+            },
+          },
+          { label: "Leave it", resolve: () => "The team gives the truck a wide berth." },
+        ],
+      };
+    },
+  },
+  {
+    // The Emergency Alert System, still on the air the first weeks: where the outbreak began, and where the Guard is.
+    id: "hc_broadcast", weight: (st) => 2 * hcFade(st, 25), when: (st) => hcYear(st) && (st.hives || []).length > 0,
+    card: (st, p, t) => {
+      const city = hcOutbreakCity(st);
+      const from = city != null ? city : t.id;
+      const first = [...st.hives].sort((a, b) => st.grid.distance(a.tile, from) - st.grid.distance(b.tile, from))[0];
+      const m = guardStands(st) ? hcMilitary(st) : null;
+      const mark = (s, tiles) => { for (const id of tiles) p.seen.set(id, snapshot(s, id)); }; // on the map when the team reports
+      return {
+        title: "The emergency broadcast",
+        text: `A car radio in a wreck still has power. Under the alert tones a recorded voice repeats: stay indoors, avoid ${city != null ? tileLabel(st, city) : "the cities"}, where the infection began${m ? `; the National Guard holds ${tileLabel(st, m.tile)}, and it is closed to civilians` : ""}. Nobody has updated it in days.`,
+        choices: [
+          { label: "Note it", hint: "Where the outbreak began goes on the map when the team reports", resolve: (s) => { mark(s, [first.tile, ...(m ? [m.tile] : [])]); return `The team marks where it began, ${compass(s, t.id, first.tile)} of here.`; } },
+          {
+            label: "Listen to the whole loop (2 hours)", hint: "Every hive it names goes on the map when the team reports",
+            resolve: (s) => {
+              delay(p, 2);
+              const all = (s.hives || []).map((h) => h.tile);
+              mark(s, [...all, ...(m ? [m.tile] : [])]);
+              return `Between the tones, a list of places to avoid: ${all.length} ${all.length === 1 ? "hive goes" : "hives go"} on the map.`;
+            },
+          },
+        ],
+      };
+    },
+  },
+  {
+    // People who would not leave: boarded windows, a bedsheet sign, a rifle at an upstairs window.
+    id: "hc_holdouts", weight: 1.5, when: (st, p, t) => hcYear(st) && ["suburb", "plains"].includes(t.terrain),
+    card: (st, p) => ({
+      title: "They would not leave",
+      text: "A house with boarded windows and a bedsheet hung from the porch: WE ARE FINE. GO AWAY. A rifle barrel shows at an upstairs window, and a voice calls down that they are waiting for the Guard to come for them.",
+      choices: [
+        {
+          label: "Tell them what you have seen (1 hour)", hint: `${hint(st, p, "speech", 8)}: they believe you and share what they cannot carry (team mood +2); otherwise they tell you to leave`,
+          resolve: (s) => {
+            delay(p, 1);
+            if (!check(s, p, "speech", 8).ok) return "\"Get off our lawn.\" The rifle does not move.";
+            cheer(partyMembers(s, p), 2);
+            return `The door opens. They are packing to go north, and give the team ${addCargo(s, p, "food", 3, "house")} and ${addCargo(s, p, "meds", 1)} they cannot take.`;
+          },
+        },
+        { label: "Move on", resolve: () => "The rifle follows the team down the street." },
+      ],
+    }),
+  },
+  {
+    // The first weeks' looting: a gang stripping a shop while the town still has people in it.
+    id: "hc_looters", weight: (st) => 2.5 * hcFade(st, 40), when: (st, p, t) => hcYear(st) && (["suburb", "city"].includes(t.terrain) || (!!t.loc && !!LOOTED[t.loc.type])),
+    card: (st, p, t) => {
+      const what = (t.loc && LOOTED[t.loc.type]) || "supermarket";
+      return {
+        title: `A ${what} being looted`,
+        text: `Glass on the pavement and shouting inside: a dozen people are stripping a ${what} into the backs of two pickups, and one of them sits on a hood with a shotgun, watching the street.`,
+        choices: [
+          { label: "Wait for them to go and pick over what is left (3 hours)", resolve: (s) => { delay(p, 3); return `They leave the shelves bare, nearly: ${addCargo(s, p, "food", 2, "shop")}${s.rng.chance(0.5) ? ` and ${addCargo(s, p, "meds", 1)}` : ""}.`; } },
+          {
+            label: "Slip in the back while they are busy", hint: `${hint(st, p, "stealth", 9)}: a share of the good stuff; otherwise they open fire`,
+            resolve: (s) => check(s, p, "stealth", 9).ok
+              ? `In and out the loading dock: ${addCargo(s, p, "food", 4, "shop")}, ${addCargo(s, p, "meds", 2)} and ${addCargo(s, p, "ammo", 10)}.`
+              : `Someone shouts, and the shotgun goes off. ${injureRandom(s, p, 10, 30, "shot by looters")}`,
+          },
+          { label: "Move on", resolve: () => "Not worth getting shot over." },
+        ],
+      };
+    },
+  },
+  {
+    // The dead are new: still in their uniforms. Putting the first ones down weighs on everyone.
+    id: "hc_newdead", weight: (st) => 3 * hcFade(st, 20), when: (st) => hcYear(st),
+    card: (st, p) => ({
+      title: "Still in uniform",
+      text: "A police officer stands in the middle of the road, uniform neat and radio still crackling on their shoulder, swaying. A week ago they were directing traffic. Their eyes are milky, and the holster is still buttoned.",
+      choices: [
+        {
+          label: "Put them down", hint: "Everyone on the team mood -3 (it is all still new); 20% someone is hurt; the pistol and its rounds are yours",
+          resolve: (s) => {
+            cheer(partyMembers(s, p), -3);
+            const hurtTxt = s.rng.chance(0.2) ? ` It takes longer than it should. ${injureRandom(s, p, 5, 15, "putting down the dead")}` : "";
+            if (!s.parties.includes(p)) return hurtTxt.trim();
+            const it = lootItem("pistol", "survivor", s.rng);
+            const gun = addGearToCargo(s, p, it) ? `a ${it.name.toLowerCase()}` : "nothing (no room for the pistol)";
+            return `Nobody talks about it afterwards (mood -3). The team takes ${gun} and ${addCargo(s, p, "ammo", s.rng.int(8, 15))}.${hurtTxt}`;
+          },
+        },
+        { label: "Let them be", hint: "Everyone on the team mood -1", resolve: (s) => { cheer(partyMembers(s, p), -1); return "The team goes round by the gardens and does not look back."; } },
+      ],
+    }),
+  },
+  {
+    // While the Guard stands it drops relief by air; not every pallet lands where it was meant to.
+    id: "hc_drop", weight: 1.2, when: (st, p, t) => hcYear(st) && !t.loc && ["plains", "hills"].includes(t.terrain) && guardStands(st),
+    card: (st, p) => ({
+      title: "A relief drop",
+      text: "A parachute is draped over a hedge at the edge of a field, and under it a pallet stamped with the National Guard's eagle: ration boxes, bottled water, a medical chest. The smoke from its marker is still drifting. Others will have seen it come down.",
+      choices: [
+        { label: "Grab what you can and go (1 hour)", resolve: (s) => { delay(p, 1); return `The team takes ${addCargo(s, p, "food", 3, "military")}, ${addCargo(s, p, "water", 6)} and ${addCargo(s, p, "meds", 1)}.`; } },
+        {
+          label: "Take it all (3 hours)", hint: `Twice as much; ${pct(HC_DROP.risk)} armed strangers come for it and someone is hurt`,
+          resolve: (s) => {
+            delay(p, 3);
+            const got = `${addCargo(s, p, "food", 6, "military")}, ${addCargo(s, p, "water", 12)} and ${addCargo(s, p, "meds", 3)}`;
+            return s.rng.chance(HC_DROP.risk) ? `The team gets ${got}, but not before others arrive with guns. ${injureRandom(s, p, 10, 30, "over a relief drop")}` : `Every box: ${got}.`;
+          },
+        },
+      ],
+    }),
+  },
+];
+export const HC_DROP = { risk: 0.35 };
 // Mood never drops below zero.
 function sulk(s, by) {
   s.mood = Math.max(0, (s.mood || 0) - by);
@@ -582,11 +758,12 @@ function compass(state, from, to) {
   return ["east", "north-east", "north", "north-west", "west", "south-west", "south", "south-east"][i];
 }
 
-export const TRAVEL_EVENT_IDS = EVENTS.map((e) => e.id);
+const ALL_EVENTS = [...EVENTS, ...HC_EVENTS];
+export const TRAVEL_EVENT_IDS = ALL_EVENTS.map((e) => e.id);
 // Whether an event can come on a tile, and its card (tools/roadeventstest.js forces an event).
-export const travelEventFits = (state, p, id, tileId) => !!EVENTS.find((e) => e.id === id)?.when(state, p, state.tiles[tileId]);
+export const travelEventFits = (state, p, id, tileId) => !!ALL_EVENTS.find((e) => e.id === id)?.when(state, p, state.tiles[tileId]);
 export function travelEventCard(state, p, id, tileId) {
-  const ev = EVENTS.find((e) => e.id === id);
+  const ev = ALL_EVENTS.find((e) => e.id === id);
   return guarded(state, p, ev.card(state, p, state.tiles[tileId]), tileId);
 }
 
@@ -615,7 +792,7 @@ export function rollTravelEvent(state, p, tileId) {
   // callers decide for themselves whether an event already came this hour.
   if (p.eventHour === state.hour && hourBefore !== state.hour) return null;
   if (!state.rng.chance(chance)) return null;
-  const options = EVENTS.filter((e) => e.when(state, p, t));
+  const options = ALL_EVENTS.filter((e) => e.when(state, p, t)); // HC_EVENTS: only in hardcore's first year
   if (!options.length) return null;
   const ev = state.rng.weighted(options, (e) => (typeof e.weight === "function" ? e.weight(state, p) : e.weight));
   return guarded(state, p, ev.card(state, p, t), tileId);
