@@ -4,7 +4,7 @@
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, killSurvivor, makeSurvivor } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
-import { strength, peopleUp, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction } from "../src/sim/factions.js";
+import { strength, peopleUp, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction, RAIDS } from "../src/sim/factions.js";
 import { collectRounds } from "../src/sim/loadouts.js";
 import { spawnAiParty } from "../src/sim/parties.js";
 import { createBattle, endBattleNow, closeCombat } from "../src/sim/combat.js";
@@ -15,7 +15,9 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { createVehicle, factionVehicles, upgradesOf, vehicleValue } from "../src/sim/vehicles.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { worksAt } from "../src/sim/groupworks.js";
-import { newNeutralGroup, wanderersDaily } from "../src/sim/wanderers.js";
+import { itemDurMax } from "../src/sim/crafting.js";
+import { newNeutralGroup, wanderersDaily, WANDER } from "../src/sim/wanderers.js";
+import { gunsFrom, kitGunSource } from "../src/sim/gundist.js";
 import { Rng } from "../src/sim/rng.js";
 import * as A from "../src/sim/arsenal.js";
 import * as C from "../src/sim/groupcare.js";
@@ -38,10 +40,11 @@ const check = (ok, msg) => { if (ok) passed++; else { failed++; console.log(`  F
 const section = (t) => console.log(`\n== ${t}`);
 const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; return st; };
 const groupOf = (st, type) => st.factions.find((f) => f.alive && f.type === type) || null;
-// A group of this type (one of the world's, retyped and reseeded if the world has none).
+// A group of this type (one of the world's, retyped and reseeded if the world has none). Its vehicles go too: the
+// new type's are dealt when next read (vehicles.js factionVehicles: a military group's motor pool, its M2 Humvee).
 function typed(st, type, not = []) {
   let f = groupOf(st, type);
-  if (!f || not.includes(f)) { f = st.factions.find((x) => x.alive && !not.includes(x)); f.type = type; A.seedArsenal(st, f); }
+  if (!f || not.includes(f)) { f = st.factions.find((x) => x.alive && !not.includes(x)); f.type = type; delete f.vehicles; A.seedArsenal(st, f); }
   return f;
 }
 const nextDay = (st) => { st.hour += 24; };
@@ -58,7 +61,9 @@ section("Seeding by type, and the world's dice");
   }
   const mil = typed(st, "military"), com = typed(st, "commune", [mil]), rai = typed(st, "raider", [mil, com]);
   const keys = (f) => f.arsenal.items.map((it) => it.key);
-  check(keys(mil).includes("ar") && keys(mil).filter((k) => k === "vest" || k === "plate").length >= mil.pop * 0.9, "the military: assault rifles, and body armour for everyone");
+  // An assault rifle: the kit's "ar", or the gun the distribution dealt in its place (gundist.js swapGun: an M4, a SCAR…).
+  const rifles = gunsFrom(kitGunSource("soldiers"), { near: "ar" });
+  check(keys(mil).some((k) => rifles[k]) && keys(mil).filter((k) => k === "vest" || k === "plate").length >= mil.pop * 0.9, "the military: assault rifles, and body armour for everyone");
   check(!A.arsenalSummary(com).body, "a commune: no body armour");
   check(keys(rai).includes("pipebomb") || keys(rai).includes("molotov"), "raiders: pipe bombs and Molotovs");
   check(mil.arsenal.items.some((it) => it.mods && Object.keys(it.mods).length), "some of the military's guns come with parts fitted");
@@ -84,6 +89,9 @@ section("By the numbers: strength follows the arsenal, close to the old numbers 
   check(worst < 0.12, `day 0: every group within 12% of its old strength (worst ${Math.round(worst * 100)}%)`);
   const st = world();
   const f = typed(st, "raider");
+  // 20 of them with their starting kit dealt for 20: ten rifles arm half of them on every seed (the world's raiders
+  // run 20-27, and among 27 the same ten rifles make them only 18% stronger).
+  f.pop = 20; f.wounded = 0; A.seedArsenal(st, f);
   const s0 = strength(f);
   for (let i = 0; i < 10; i++) A.addToArsenal(st, f, lootItem("ar", "military", [i, "t"]), "test");
   const s1 = strength(f);
@@ -242,6 +250,9 @@ section("Repairs at a workshop, with parts");
   const mech = f.people.find((s) => s.alive && s.location.partyId == null && s.health >= 60);
   mech.skills.mechanics = 6; // members.js: their mechanic, one of their people (repair.js: guns need Mechanics 3)
   const gun = f.arsenal.items.find((x) => x.key === "ar" || x.key === "huntrifle" || x.key === "carbine");
+  // Everything else mended first: they mend the most valuable pieces first, and 10 parts on a fortress's other worn
+  // guns would leave none for this one.
+  for (const it of f.arsenal.items) if (itemDurMax(it) != null) it.dur = itemDurMax(it);
   gun.dur = Math.round(GEAR[gun.key].dur * 0.3);
   const max0 = gun.durMax || GEAR[gun.key].dur;
   // Four days in a row (a group mends every CARE.REPAIR.every days, on a day of its own: day(st) + i stepped by two and,
@@ -262,21 +273,36 @@ section("Desertion and recruiting");
   const hungry = typed(st, "raider"), fed = typed(st, "fortress", [hungry]);
   hungry.pop = 30; setFood(hungry, 0); hungry.lossRecent = 6;
   fed.pop = 30; setFood(fed, 1000);
-  let lostH = 0, lostF = 0;
-  for (let i = 0; i < 60; i++) {
+  // The odds a day (desertDaily's CARE.DESERT.base × desertPressure, at most max) give the 60 days' deserters; 600 days
+  // of the dice must follow them (60 days alone: about 4.4 and 0.7 expected, so one seed in five fell either side).
+  const odds = (f) => Math.min(C.CARE.DESERT.max, C.CARE.DESERT.base * C.desertPressure(st, f));
+  const DAYS = 600;
+  let lostH = 0, lostF = 0, expH = 0, expF = 0;
+  for (let i = 0; i < DAYS; i++) {
     setFood(hungry, 0); setFood(fed, 1000);
+    expH += odds(hungry); expF += odds(fed);
     if (C.desertDaily(st, hungry, i)) lostH++;
     if (C.desertDaily(st, fed, i)) lostF++;
     C.tickGroup(hungry); C.tickGroup(fed);
     hungry.pop = Math.max(hungry.pop, 20);
     st.cards.length = 0;
   }
-  check(lostH >= 2 && lostF <= 1, `a starving group bleeds deserters (${lostH} in 60 days), a well-fed one rarely (${lostF})`);
+  const per60 = (x) => (x * 60) / DAYS;
+  check(per60(expH) >= 2 && per60(expF) <= 1, `a starving group bleeds deserters (${per60(expH).toFixed(1)} in 60 days by the odds), a well-fed one rarely (${per60(expF).toFixed(1)})`);
+  check(lostH >= expH / 2 && lostF <= expF * 2 + 3 && lostH > lostF * 2, `and the dice follow the odds: ${lostH} and ${lostF} deserters in ${DAYS} days (${expH.toFixed(1)} and ${expF.toFixed(1)} expected)`);
+  // Everyone armed first: the deserter is one of their loadouts (issueKit) at random, and a raider gang may have fewer
+  // guns than people (an unarmed one walks out with nothing).
+  for (let i = hungry.arsenal.items.filter((it) => A.isWeaponKey(it.key)).length; i < hungry.pop; i++) A.addToArsenal(st, hungry, lootItem("pistol", "raider", [i, "dp"]), "test");
   const n0 = hungry.arsenal.items.length;
   const w = C.desertOne(st, hungry, 1, "wanderer");
   const { allCarried: AIt } = await import("../src/sim/inventory.js");
   check(w.to === "wanderer" && w.kit.length > 0 && w.kit.every((it) => AIt(w.wanderer.people[0]).includes(it)) && hungry.arsenal.items.length === n0 - w.kit.length, `a deserter on the road carries the group's kit they walked out with (${w.kit.map((it) => it.name).join(", ")}), off its books`);
+  // Any group in reach (CARE.DESERT.range): on some maps the gang's nearest neighbour is further off, and the deserter
+  // takes to the road instead (as designed).
+  const range0 = C.CARE.DESERT.range;
+  C.CARE.DESERT.range = 999;
   const g = C.desertOne(st, hungry, 2, "group");
+  C.CARE.DESERT.range = range0;
   check(g.to === "group" && g.kit.every((it) => g.group.arsenal.items.includes(it)), `one goes over to ${g.group && g.group.name}, kit and all`);
   const p = C.desertOne(st, hungry, 3, "player");
   check(p.to === "player" || !st.bases.some((b) => st.grid.distance(b.tile, hungry.bases[0]) <= C.CARE.DESERT.playerRange), "one comes to your gates (a recruit card) when a base of yours is near");
@@ -289,7 +315,12 @@ section("Desertion and recruiting");
   const pistol = newItem("pistol", 0.8);
   wg.people[0].gear.weapon = pistol;
   const pop0 = com.pop, n = wg.people.length;
+  // Nobody dies or settles elsewhere while they wait (WANDER.SIM's die and settle rolls: a lone wanderer at a 5% a day
+  // join could lose the race to the tile's 1–2% a day death, and on some seeds did).
+  const SIM0 = { ...WANDER.SIM };
+  Object.assign(WANDER.SIM, { DIE: 0, DIE_INF: 0, DIE_HORDE: 0, SETTLE: 0 });
   for (let i = 0; i < 120 && s2.wanderers.groups.includes(wg); i++) { s2.hour += 24; wg.tile = com.bases[0]; wanderersDaily(s2); }
+  Object.assign(WANDER.SIM, SIM0);
   check(com.pop === pop0 + n && com.arsenal.items.includes(pistol), `wanderers at the commune's gate join it (people ${pop0} → ${com.pop}, the pistol in its arsenal)`);
   const rai = typed(s2, "raider", [com]);
   setFood(rai, rai.pop * 10);
@@ -310,8 +341,16 @@ section("Desertion and recruiting");
 section("Type profiles: different mixes of what they do");
 {
   const tally = {};
-  for (const s of [seed, seed + 11]) {
-    const st = world(s);
+  // The raiders measured: the gangs with another group's base in their reach (RAIDS.FACTION_REACH). A gang with nobody
+  // in reach raids only you, and only once the eras' pace allows (eras.js raidPaceOpen): in 120 days, often never. More
+  // worlds (up to 6) until two such gangs have been measured.
+  const inReach = { groups: 0, raid: 0 };
+  let worlds = 0;
+  for (let i = 0; i < 6 && (i < 2 || inReach.groups < 2); i++) {
+    const st = world(seed + 11 * i);
+    worlds++;
+    const reaches = new Set(st.factions.filter((f) => f.type === "raider" && st.factions.some((o) => o !== f && o.bases.some((b) => f.bases.some((t) => st.grid.distance(b, t) <= RAIDS.FACTION_REACH)))).map((f) => f.id));
+    inReach.groups += reaches.size;
     const seen = new Set();
     for (let hr = 0; hr < 24 * 120; hr++) {
       tickHour(st);
@@ -324,17 +363,18 @@ section("Type profiles: different mixes of what they do");
         if (!f) continue;
         const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, war: 0, scav: 0, trade: 0 });
         // A war's raids (diplomacy.js warRaid: q.warId) come from both sides whatever their type: counted apart.
-        if (q.kind === "raid") { if (q.warId != null) t.war++; else t.raid++; }
+        if (q.kind === "raid") { if (q.warId != null) t.war++; else { t.raid++; if (reaches.has(f.id)) inReach.raid++; } }
         if (q.kind === "scav") t.scav++;
       }
     }
     for (const f of st.factions) { const t = (tally[f.type] = tally[f.type] || { groups: 0, raid: 0, war: 0, scav: 0, trade: 0 }); t.groups++; t.trade += f.foodDeal != null ? 1 : 0; t.food = (t.food || 0) + (f.foodBought || 0); }
   }
   const per = (type, k) => (tally[type] ? tally[type][k] / Math.max(1, tally[type].groups) : 0);
-  console.log(`  120 days, 2 worlds: ${Object.entries(tally).map(([k, t]) => `${k} ${t.groups}g raid ${(t.raid / t.groups).toFixed(1)} (war ${(t.war / t.groups).toFixed(1)}) scav ${(t.scav / t.groups).toFixed(1)} bought food ${((t.food || 0) / t.groups).toFixed(0)}`).join("; ")}`);
-  // Against the peaceful types with two or more groups in the two worlds (one group's 120 days is no measure of a type).
+  console.log(`  120 days, ${worlds} worlds: ${Object.entries(tally).map(([k, t]) => `${k} ${t.groups}g raid ${(t.raid / t.groups).toFixed(1)} (war ${(t.war / t.groups).toFixed(1)}) scav ${(t.scav / t.groups).toFixed(1)} bought food ${((t.food || 0) / t.groups).toFixed(0)}`).join("; ")}`);
+  // Against the peaceful types with two or more groups in the worlds (one group's 120 days is no measure of a type).
   const peaceful = ["commune", "traders", "military", "fortress"].filter((k) => tally[k] && tally[k].groups >= 2);
-  check(per("raider", "raid") > Math.max(0, ...peaceful.map((k) => per(k, "raid"))), `raiders raid more than any peaceful type outside a war (${peaceful.map((k) => `${k} ${per(k, "raid").toFixed(1)}`).join(", ")})`);
+  const raiders = inReach.raid / Math.max(1, inReach.groups);
+  check(inReach.groups >= 2 && raiders > Math.max(0, ...peaceful.map((k) => per(k, "raid"))), `raiders raid more than any peaceful type outside a war (${raiders.toFixed(1)} a gang with a group in reach, ${inReach.groups} gangs; ${peaceful.map((k) => `${k} ${per(k, "raid").toFixed(1)}`).join(", ")})`);
   const W = C.GROUP_PRIORITIES;
   check(W.commune.trade > W.raider.trade && W.commune.heal > W.raider.heal && W.raider.raid > W.commune.raid && W.fortress.fortify > W.raider.fortify, "one profile table: communes trade and heal, raiders raid, a fortress fortifies");
   // Short of food: a commune buys it, raiders mostly do not (they raid for it).
@@ -430,7 +470,9 @@ section("Abandoned bases");
   check(G.abandonedPull(heir, { works: { walls: 2 } }) > G.abandonedPull(heir, { works: { farms: 2 } }), "raiders like an abandoned fort better than a farm");
   // Your outpost lost: a group moves in and you get a card.
   const st2 = world(seed + 4), h2 = hub(st2);
-  const tileO = st2.tiles.find((t) => t.loc && st2.grid.distance(t.id, h2.tile) === 3 && !st2.factions.some((f) => f.bases.includes(t.id))).id;
+  // A free tile of land 3 from the hub, a site's first (some maps have no site in that ring; the outpost needs none).
+  const tileO = st2.tiles.filter((t) => t.terrain !== "water" && !t.hive && st2.grid.distance(t.id, h2.tile) === 3 && !st2.factions.some((f) => f.bases.includes(t.id)))
+    .sort((a, b) => (b.loc ? 1 : 0) - (a.loc ? 1 : 0))[0].id;
   const base = { ...JSON.parse(JSON.stringify(h2)), id: 765432, type: "outpost", name: "Old outpost", tile: tileO, buildings: [], stock: {}, armory: [] };
   addBuilding(base, "walls");
   st2.bases.push(base);
@@ -606,24 +648,31 @@ section("Gear's weight in strength: it matters, but numbers still win");
   const old = (r) => 0.6 + 0.4 * r;
   const st = world();
   const rows = [];
-  const sample = (label, type, pop, fill) => {
+  // A starting kit is one draw (hashed): its ratio runs a few percent either side of 1, so "their kit" is the mean of
+  // DRAWS of them (one draw of 0.94 had 15 raiders lose to the 10 best kitted on seed 5).
+  const DRAWS = 8;
+  const sample = (label, type, pop, fill, draws = 1) => {
     const f = st.factions[0];
-    f.type = type; f.pop = pop; f.wounded = 0; f.gear = 1; f.stock.ammo = 999;
-    f.arsenal.items.length = 0; f.arsenal.rev++;
-    for (const it of fill(f)) A.addToArsenal(st, f, it, "test");
-    f.arsenal.gear = 1;
-    rows.push({ label, now: strength(f), base: pop * FACTION_TYPES[type].arms, k: A.kitFactor(f) });
+    let now = 0, k = 0;
+    for (let d = 0; d < draws; d++) {
+      f.type = type; f.pop = pop; f.wounded = 0; f.gear = 1; f.stock.ammo = 999;
+      f.arsenal.items.length = 0; f.arsenal.rev++;
+      for (const it of fill(f, d)) A.addToArsenal(st, f, it, "test");
+      f.arsenal.gear = 1;
+      now += strength(f); k += A.kitFactor(f);
+    }
+    rows.push({ label, now: now / draws, base: pop * FACTION_TYPES[type].arms, k: k / draws });
   };
-  const kit = (f, n) => A.starterKit(st.seed, `${f.name}${n}`, f.type, n);
+  const kit = (f, n, d = 0) => A.starterKit(st.seed, `${f.name}${n}${d ? `#${d}` : ""}`, f.type, n);
   const best = (n) => Array.from({ length: n }, (_, i) => [lootItem("lmg", "military", [i, "b"]), lootItem("plate", "military", [i, "bp"]), lootItem("milhelmet", "military", [i, "bh"]), lootItem("riotarms", "military", [i, "ba"]), lootItem("riotlegs", "military", [i, "bl"])]).flat();
-  sample("raiders, 20, their kit", "raider", 20, (f) => kit(f, 20));
+  sample("raiders, 20, their kit", "raider", 20, (f, d) => kit(f, 20, d), DRAWS);
   sample("raiders, 20, bare hands", "raider", 20, () => []);
   sample("raiders, 10, the best kit there is", "raider", 10, () => best(10));
-  sample("raiders, 15, their kit", "raider", 15, (f) => kit(f, 15));
-  sample("military, 12, their kit", "military", 12, (f) => kit(f, 12));
+  sample("raiders, 15, their kit", "raider", 15, (f, d) => kit(f, 15, d), DRAWS);
+  sample("military, 12, their kit", "military", 12, (f, d) => kit(f, 12, d), DRAWS);
   sample("military, 8, the best kit there is", "military", 8, () => best(8));
-  sample("commune, 30, their kit", "commune", 30, (f) => kit(f, 30));
-  sample("commune, 30, half of them armed", "commune", 30, (f) => kit(f, 15));
+  sample("commune, 30, their kit", "commune", 30, (f, d) => kit(f, 30, d), DRAWS);
+  sample("commune, 30, half of them armed", "commune", 30, (f, d) => kit(f, 15, d), DRAWS);
   sample("commune, 15, the best kit there is", "commune", 15, () => best(15));
   for (const x of rows) {
     const k = x.k, r = k <= 1 ? 1 - (1 - k) / A.ARSENAL.KIT_DOWN : Math.exp((k - 1) / A.ARSENAL.KIT_UP); // the ratio back from the curve
@@ -701,7 +750,12 @@ section("They know your bases as far as they have scouted");
   D.changeRelation(st, friend, near, 60 - D.relation(st, friend, near));
   if (st.groupWorks) worksAt(near, near.bases[0]).radio = 1; // ai-locks: one of them on the air (a radio station: radio.js groupNetwork)
   let heard = 0;
+  // Their turn on the air every KNOW.RADIO.EVERY days, the gossip's own roll forced (as KNOW.SCOUT above): 5–6 turns
+  // at 50% each all missed on some seeds.
+  const C0 = G.KNOW.RADIO.CHANCE;
+  G.KNOW.RADIO.CHANCE = 1;
   for (let d = 0; d < 40 && !heard; d++) { st.hour += 24; heard = G.radioGossip(st, friend, day(st)); }
+  G.KNOW.RADIO.CHANCE = C0;
   check(heard > 0 && !!G.knownBase(st, friend, h.tile), `a friend on the radio tells them where you are (${heard})`);
   // Saves keep each group's frontier.
   const B2 = deserializeState(JSON.parse(JSON.stringify(serializeState(st, { dropCards: true }))));
