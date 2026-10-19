@@ -642,11 +642,16 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     htmlOk(html, "new-run screen (Custom)");
     check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && html.includes("× Huge"), "Custom: width, height and the warning (bigger than Huge)");
   }
-  // Starting people (sim/hardcore.js START_PEOPLE): Hardcore only; greyed out with the reason on a normal start.
+  // Starting people (sim/hardcore.js peopleRange): Normal 1–8 (six by default), Hardcore 1–4.
   {
-    const normalHtml = newRunScreen(createWorld({ seed: seed + 9, factionCount: 7 }), { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: 3 });
-    const nsel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(normalHtml);
-    check(nsel && /disabled/.test(nsel[1]) && normalHtml.includes("Hardcore only"), "normal start: Starting people shown greyed out, Hardcore only");
+    for (const n of [1, 6, 8]) {
+      const nw = createWorld({ seed: seed + 9, factionCount: 7, startPeople: n });
+      const normalHtml = newRunScreen(nw, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: n });
+      htmlOk(normalHtml, `new-run screen (Normal, ${n} starting)`);
+      const nsel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(normalHtml);
+      check(nsel && !/disabled/.test(nsel[1]) && (nsel[2].match(/<option/g) || []).length === 8 && new RegExp(`value="${n}" selected`).test(nsel[2]) && nw.survivors.length === n && (normalHtml.match(/nrcard/g) || []).length === n,
+        `Normal: Starting people 1–8 with ${n} selected, ${n} colonist card${n > 1 ? "s" : ""}`);
+    }
     for (const n of [1, 2, 3, 4]) {
       const w = createWorld({ seed: seed + 9, factionCount: 7, mode: "hardcore", startPeople: n });
       const html = newRunScreen(w, { worldSize: "normal", factionCount: 7, nrMsg: "", startPeople: n });
