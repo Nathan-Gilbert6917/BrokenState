@@ -95,7 +95,7 @@ export const MEDIC = {
   SELF: {
     traumakit: { BASE: 60, MED: 5, MAX: 95 }, tourniquet: { BASE: 35, MED: 5, MAX: 85 },
     REACH: ["tool", "pocket", "rig"],
-    KIT: { soldiers: 0.6, contractors: 0.5, guards: 0.3, escorts: 0.25, militia: 0.15, fighters: 0.15, raiders: 0.1, survivors: 0.08, zealots: 0.03 },
+    KIT: { soldiers: 0.6, contractors: 0.5, guards: 0.3, escorts: 0.25, militia: 0.15, fighters: 0.15, raiders: 0.1, survivors: 0.08, zealots: 0.03, drifters: 0.1 },
   },
 };
 

@@ -39,10 +39,10 @@ export const CARRY = {
   // Soldiers 18.5 (user decision 2026-10-08, "soldiers in full kit move 4, not 5"): a soldier in a plate carrier,
   // or in a rig with a helmet and a rifle, lands in the Heavy band (over 28 kg: 4 tiles); one in a plain vest with
   // a light gun can still be Medium.
-  BASE_KG: { soldiers: 18.5, escorts: 6, contractors: 8, guards: 4, raiders: 3, fighters: 4, militia: 4, zealots: 2, survivors: 3 },
+  BASE_KG: { soldiers: 18.5, escorts: 6, contractors: 8, guards: 4, raiders: 3, fighters: 4, militia: 4, zealots: 2, survivors: 3, drifters: 2 },
   THROW_KG: 0.45, MEDKIT_KG: 0.5,
   // Enemy rigs by kit: [chance, rig key] (a carrier or a tactical vest already has pouches).
-  RIG: { soldiers: [0.85, "chestrig"], escorts: [0.25, "chestrig"], contractors: [0.5, "chestrig"], raiders: [0.3, "makeshiftrig"], fighters: [0.15, "makeshiftrig"], militia: [0.15, "makeshiftrig"] },
+  RIG: { soldiers: [0.85, "chestrig"], escorts: [0.25, "chestrig"], contractors: [0.5, "chestrig"], raiders: [0.3, "makeshiftrig"], fighters: [0.15, "makeshiftrig"], militia: [0.15, "makeshiftrig"], drifters: [0.25, "makeshiftrig"] },
   TACVEST: { guards: 0.5, contractors: 0.3 }, // police and SWAT: a tactical vest instead of a plain vest
   // Packing magazines for a trip (packMags): spares a gun.
   PACK: { rifle: 4, pistol: 3 },

@@ -193,6 +193,7 @@ const newIn = (keys) => [...new Set(keys)].filter((k) => NEW.has(k));
 {
   // The AI groups' armouries: their starting kits and their newcomers.
   for (const type of Object.keys(KIT_OF)) {
+    if (type === "nomad0") continue; // the drifters (nomads.js T0) carry only what they made: a pipe shotgun, never a new gun
     const keys = [];
     for (let s = 0; s < 6; s++) keys.push(...starterKit(s + 1, `G${s}`, type, 30, 1.6).filter((it) => isGun(it.key)).map((it) => it.key));
     check(newIn(keys).length >= 1, `${an(type)} group's starting armoury holds new guns: ${newIn(keys).join(", ") || "none"}`);
