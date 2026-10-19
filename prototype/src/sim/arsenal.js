@@ -65,6 +65,8 @@ import { armKit, seedKit, kitWorthy } from "./carrykit.js"; // carry kit (sectio
 import { swapGun, kitGunSource } from "./gundist.js"; // the gun distribution: which gun a kit, a newcomer, a scavenger or their gunsmith brings
 import { available } from "./trade.js"; // what a group can spare (call time only)
 import { SUPPLIES } from "./data.js";
+import { PEOPLE, memberize, spentThrows, stowGun } from "./fighters.js";
+import { carrierOf, removeMember, memberById, MEMBER, syncMembers, carriers } from "./members.js"; // the group's people: the registry's items are on them // the group's people on the battle map
 
 export const ARSENAL = {
   SPARE: 0.15, // spare weapons a head at the start
@@ -278,10 +280,13 @@ export function addToArsenal(state, f, it, why = "found") {
   put(A, f, it, why);
   return true;
 }
-export function removeFromArsenal(f, it, why = "lost") {
+// opts.keepOn: the person carrying it keeps it (they leave the group with it: a deserter, a refugee).
+export function removeFromArsenal(f, it, why = "lost", opts = {}) {
   const A = f && f.arsenal;
   const i = A ? A.items.indexOf(it) : -1;
   if (i < 0) return false;
+  const c = opts.keepOn ? null : carrierOf(f, it); // members.js: off whoever of theirs carries it (it leaves the group)
+  if (c) c.c.take();
   A.items.splice(i, 1);
   A.rev++;
   stat(A, "out", why);
@@ -428,6 +433,14 @@ const HOME_HANDLERS = ["rescue", "assault", "baseAssault", "rescueRaid"];
 export function armFromArsenal(state, b, u, n) {
   const f = factionById(state, u.factionId);
   if (!f || !f.alive || f.outsider || u.kind !== "human") return;
+  // fighters.js (docs/adr/0001-ai-parity.md): one of the group's people, with what they carry. Below: the old issue
+  // (PEOPLE off, or nobody left at home to send).
+  if (PEOPLE.on && memberize(state, b, u, f.id)) {
+    const setup = b.setup || {};
+    const task = setup.enemy && setup.enemy.arsTask ? setup.enemy.arsTask : HOME_HANDLERS.includes(setup.handler) ? "home" : "field";
+    if (task === "home" && !b.motorPool) placeMotorPool(state, b, f); // their vehicles parked at their base
+    return;
+  }
   if (!ensureArsenal(state, f)) return;
   const setup = b.setup || {};
   const task = setup.enemy && setup.enemy.arsTask ? setup.enemy.arsTask : HOME_HANDLERS.includes(setup.handler) ? "home" : "field";
@@ -551,7 +564,8 @@ export function settleArsenal(state, setup, result, battle = null) {
   const won = result.outcome === "victory"; // you hold the field
   f.arsenalSeen = day(state);
   if (battle && battle.units) {
-    const units = battle.units.filter((u) => u.side === "enemy" && u.arsFid === f.id);
+    settlePeople(state, f, battle, result, out); // fighters.js: the group's people who fought (health, death, what they carried)
+    const units = battle.units.filter((u) => u.side === "enemy" && u.arsFid === f.id && !u.who);
     const raidMap = !!battle.raid;
     for (const u of units) {
       // Thrown in the fight: off the books (what is left is carried, extrasOf).
@@ -604,6 +618,43 @@ export function settleArsenal(state, setup, result, battle = null) {
   }
   return out;
 }
+// A fight on the map, for the group's people who fought in it (fighters.js memberize; docs/adr/0001-ai-parity.md):
+//   - what they threw leaves them and the books; a med kit or a tourniquet wears by the uses it gave;
+//   - the dead and the taken: off the group's list. Their body (fighters.js personBody: what they carried) is on the
+//     field: you holding it (a win, or a raid's body you search), those things leave the books (out.dropped);
+//     them holding it, they gather their own and keep them (spare at home);
+//   - the rest come home as they are: their health what the fight left them (the downed who pulled through 5–15),
+//     their kit worn a use (wearOwned: the old rule; batch 3 of the plan wears it by its hits).
+export function settlePeople(state, f, battle, result, out) {
+  const won = result.outcome === "victory";
+  const raidMap = !!battle.raid;
+  let lost = 0;
+  for (const u of battle.units) {
+    if (!u.who || u.who.fid !== f.id || u.kind !== "human") continue;
+    const s = u.who;
+    if (!memberById(state, s.id)) continue;
+    for (const it of spentThrows(u, s)) removeFromArsenal(f, it, "thrown");
+    settleArsenalLauncher(f, u, !!(u.dead || u.nlTaken || u.captured), (it, why) => removeFromArsenal(f, it, why)); // launchers.js: unfired rounds back in the stores, a fired tube gone
+    if (u.medKit && u.kitUses && f.arsenal.items.includes(u.medKit) && wear(u.medKit, u.kitUses)) removeFromArsenal(f, u.medKit, "used up");
+    for (const k of u.selfKits || []) if (k.item && k.used && k.item !== u.medKit && f.arsenal.items.includes(k.item) && wear(k.item, k.used)) removeFromArsenal(f, k.item, "used up");
+    const taken = !u.dead && (u.nlTaken || u.captured || u.taken || (won && prisonerish(u)));
+    if (u.dead || taken) {
+      const onField = raidMap ? !!u.bodied : won;
+      if (onField) for (const it of u.bodyItems || []) if (removeFromArsenal(f, it, u.dead ? "died:battle" : "taken")) out.dropped.push(it);
+      removeMember(state, f, s, u.dead ? "died" : "taken", { keepKit: !onField });
+      lost++;
+      continue;
+    }
+    const hp = u.down && !u.surr ? 5 + Math.floor(hash01(state.seed, "personhp", s.id, state.hour) * 11) : u.hp;
+    s.health = Math.max(1, Math.min(100, Math.round(hp)));
+    stowGun(u); // fighters.js: what is left in the gun stays in it (the magazines keep theirs); the day's kit-out counts it
+    for (const it of carriedOwn(f, s)) wearOwned(f, it);
+  }
+  if (lost) { noteFight(f, lost, 0); battle.memberLoss = (battle.memberLoss || {}); battle.memberLoss[f.id] = (battle.memberLoss[f.id] || 0) + lost; }
+  syncMembers(state, f);
+}
+const prisonerish = (t) => !!(t.ko || (t.surr && t.tied) || (t.wounded && t.down && (t.stab || t.tied)));
+const carriedOwn = (f, s) => { const own = new Set(f.arsenal.items); return [s.gear.weapon, ...["armor", "head", "arms", "legs"].map((k) => s.gear[k])].filter((it) => it && own.has(it)); };
 // Which of the issued loadouts died (hashed: the same fight always picks the same).
 function pickDead(state, issue, k, tag) {
   if (k <= 0) return [];
@@ -939,7 +990,7 @@ export function inheritArsenal(state, heir, f) {
 // A share of their spare kit to a place of yours (conquest.js captureBase: their stores at the base you took).
 export function arsenalShareTo(state, f, frac, into) {
   if (!f || !f.arsenal || frac <= 0) return [];
-  const used = new Set(issueKit(state, f, f.pop, "home").flatMap(loadoutItems));
+  const used = Array.isArray(f.people) ? carriers(f) : new Set(issueKit(state, f, f.pop, "home").flatMap(loadoutItems)); // members.js: what their people carry is on them
   const spare = f.arsenal.items.filter((it) => !used.has(it));
   const out = spare.slice(0, Math.floor(spare.length * frac));
   for (const it of out) { removeFromArsenal(f, it, "taken"); into.push(it); }

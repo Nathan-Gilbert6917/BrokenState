@@ -242,7 +242,7 @@ export function unjam(b, u) {
 export function jamReload(b, u) {
   if (!u.jam || u.jam.kind !== "double") return false;
   const keep = magIn(u);
-  const phys = u.side === "player" && Array.isArray(u.stack); // physical rounds (mags.js): the magazine comes out with what is in it; reloadPlan lets a swap through on a double feed
+  const phys = (u.side === "player" || !!u.who) && Array.isArray(u.stack); // physical rounds (mags.js): the magazine comes out with what is in it; reloadPlan lets a swap through on a double feed
   if (!phys) loadMag(u, 0);
   if (reloadRefusal(b, u)) { if (!phys) loadMag(u, keep); return false; }
   u.jam = null;

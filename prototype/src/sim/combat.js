@@ -29,7 +29,7 @@
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
 import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as items
-import { survivorById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
+import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
@@ -96,7 +96,9 @@ import { calOf, calName, roundsOf, takeBattleRounds, sideRounds, chooseLoad, ene
 import { loadFx, unitRound, loadRefusal } from "./ammo.js"; // calibre compatibility (2026-10-10): the round loaded, a 5.56 gun's .223
 import { trucksAt, TRUCK_KINDS, truckLoot, truckRng, markOpened, truckName, MILTRUCK, CONVOY_GUARD, guardedTrucks } from "./miltrucks.js"; // Army trucks on the map, their cargo and crews (a convoy's guard)
 import { carAct, settleClaims } from "./foundcars.js"; // any car on a map: get in, keys or hotwire, inspect, claim
-import { armFromArsenal, settleArsenal } from "./arsenal.js"; // group arsenals: their units armed from what the group holds
+import { armFromArsenal, settleArsenal } from "./arsenal.js";
+import { personFromLegacy } from "./fighters.js"; // every human on the map is a person (docs/adr/0001-ai-parity.md)
+import { bandize, settleBand } from "./bands.js"; // nomad bands and visitors: their own people // group arsenals: their units armed from what the group holds
 // Grenade launchers and rockets (section 13) and what explosions do to gear (section 24): a unit's second weapon (u.gl).
 import { fitLauncher, refitLauncher, kitLauncher, launchRefusal, launch, glReloadRefusal, glReload, aiLaunch, launcherBody, launcherLoot, blastLoot, launcherBattleEnd, blownUpCargo, blastHit, blastBox, blastPiles } from "./launchers.js";
 import { fitMags, tracksMags, gunEntry, reloadPlan, doReload, fittedMag, getShells, getShellsRefusal, isShellGun, isMag, magEntryAt, loadMagPlan, loadMagFrom, fillUnit, isStacked, syncMags, unloadMagPlan, unloadMagFrom } from "./mags.js";
@@ -407,13 +409,24 @@ export function finishCombat(state, setup, result) {
   if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there
   settleCarried(state, setup, result, battle); // carry.js: won, the loads set down are picked up again; else they stay on the ground
   settleArsenal(state, setup, result, battle); // arsenal.js: a group's dead lose their kit (or it is picked up), the rest wears, rounds spent
+  settleBand(state, setup, result, battle); // bands.js: a band's dead and taken leave it
   const fn = handlers && handlers.get(setup.handler);
   // While the handler runs, the team is between a battle and its aftermath (conflicts.js releaseStranded skips it).
   state.resolving = (state.resolving || 0) + 1;
+  // members.js: a fight on the map wrote its losses onto the very people who fought (arsenal.js settlePeople); the
+  // handlers' own count of them ("60% of the killed") comes off the head count a second time, so it is given back up
+  // to what the map took. Anything more the handler takes (a base lost, people fleeing it) stands.
+  const loss = battle && battle.memberLoss ? battle.memberLoss : null;
+  const pop0 = loss ? Object.fromEntries(Object.keys(loss).map((id) => [id, (factionById(state, Number(id)) || {}).pop])) : null;
   try {
     if (fn) fn(state, result, setup, battle); // battle: the map it was played on, or null (citycrawl.js keeps a building as it was left)
   } finally {
     state.resolving -= 1;
+  }
+  if (loss) for (const [id, n] of Object.entries(loss)) {
+    const f = factionById(state, Number(id));
+    if (!f || pop0[id] == null || !(f.pop < pop0[id])) continue;
+    f.pop = Math.min(pop0[id], f.pop + Math.min(n, pop0[id] - f.pop));
   }
   while (!state.combat && state.combatQueue && state.combatQueue.length) startCombat(state, state.combatQueue.shift());
 }
@@ -3114,6 +3127,7 @@ export function reload(b, u, type = null) {
 function spendRounds(b, u, w) {
   if (hasMag(u) && !isStacked(u)) loadMag(u, magIn(u) - w.ammo); // (physical rounds: spendShot takes them off the gun's stack and counts them, ammo.js takeBattleRounds)
   if (u.side === "player") spendShot(b, w, u); // rounds of its calibre and loaded type (a turret's belt: .50 BMG or 5.56, turretRounds), or a bow's arrow
+  else if (isStacked(u) && w.ammo) takeBattleRounds(b, u, w.ammo); // fighters.js: anyone else's own rounds, off their gun's stack (never your counts)
 }
 // Can this unit fire its gun right now (ranged weapon, loaded and, for the player, the rounds of its calibre and
 // loaded type there; a bow or crossbow, arrows)? One that cannot fights in melee (a gun or a bow swung as a club: BASH).
@@ -3206,7 +3220,7 @@ export function enemyGhosts(b) {
 // medic is not skilled enough to use it).
 const battleKitBonus = (s) => medKitBonus(s);
 
-export function playerUnit(b, s) {
+export function playerUnit(b, s, side = "player") { // side: fighters.js builds every person on the map with this, whatever their side (docs/adr/0001-ai-parity.md)
   const item = s.gear.weapon;
   const eff = gearEffect(s, item);
   const key = item && eff.usable && WEAPONS[item.key] ? item.key : "fists";
@@ -3223,7 +3237,7 @@ export function playerUnit(b, s) {
   const medKit = tool && GEAR[tool.key] && GEAR[tool.key].medKit ? tool : null;
   const u = {
     fielded, medKit, kitBonus: medKit ? medKitBonus(s) : 0, kitLeft: medKit ? itemDur(medKit) ?? Infinity : 0, kitUses: 0,
-    id: b.nextId++, side: "player", kind: "human", sid: s.id, name: s.name, short: initials(s.name),
+    id: b.nextId++, side, kind: "human", sid: s.id, name: s.name, short: initials(s.name),
     weapon: key, weaponName: key === "fists" ? (item ? `${item.name} (unusable)` : "Fists") : modLabel(item), // "9mm pistol (red dot, suppressor)"
     gm: key === "fists" ? NO_MODS : gunMods(item), gmWeapon: key, // gunmods.js: what its attachments add (shotOdds, shotNoise)
     aim: 40 + skill(s, "shooting") * 2.5 - (1 - mult) * 30 + bravery + ((b.setup && b.setup.relAim && b.setup.relAim[s.id]) || 0) + buzzAim(s) + needsAim(s) + illnessAim(s) + tiredAim(s), // friends alongside, rivals, revenge (relations.js); a hangover (comforts.js); hunger, thirst (needs.js); illness (health.js); tiredness (sleep.js)
@@ -3357,7 +3371,7 @@ export function refitKit(b, u, s) {
 }
 // The fight's start (createBattle, createRaid): the gun and the spares loaded physically (mags.js fillUnit), the stacks
 // it emptied thrown away (ammo.js sweepBoxes) and the unit's round caches rebuilt (the entries read the items' stacks).
-function fillBattleUnit(b, u, s) {
+export function fillBattleUnit(b, u, s) {
   fillUnit(b, u);
   sweepBoxes(s);
   u.boxes = boxesOf(s);
@@ -3545,7 +3559,7 @@ export function enemyUnit(b, rng, kind, power, n) {
   kitLauncher(b, u, kind, p, n, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // launchers.js: an M203 on a soldier's rifle, now and then an RPG (its own dice)
   kitEnemy(b, u, kind, rng && Number.isFinite(rng.state) ? rng.state : b.turn || 0); // carrykit.js: a rig (a guard's tactical vest), spare magazines, the kit's weight → mob (own dice; after the helmet and the launcher: their kg)
   enemyPieces(b, u); // armour.js: their body armour as a piece that wears (the loot keeps what is left; after kitEnemy's tactical vest, with kitHeadgear's helmet)
-  return u;
+  return personFromLegacy(b, rng, u, kind, p); // fighters.js: a person carrying what that kit dealt them, built like yours (docs/adr/0001-ai-parity.md)
 }
 
 const initials = (name) => name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
@@ -3682,6 +3696,7 @@ export function createBattle(state, setup) {
     u.x = c[0]; u.y = c[1];
     if (e.factionId != null && u.kind === "human") u.factionId = e.factionId; // prisoners.js: whose people they are
     if (u.factionId != null) armFromArsenal(state, b, u, hn); // arsenal.js: a group's people fight with what the group holds
+    else if (e.band && u.kind === "human") bandize(state, b, u, e.band); // bands.js: a nomad band's or a visitor band's own people
     b.units.push(u);
   });
   if (setup.third && setup.third.length) placeThird(b, setup.third, rng, pickCells, W); // thirdside.js: soldiers or survivors in the middle
@@ -4384,11 +4399,14 @@ export function combatAct(state, act) {
       const pick = Array.isArray(act.rounds) ? { rounds: act.rounds } : act.mag != null ? { mag: act.mag } : act.clip != null ? { clip: act.clip, load: act.ammo || null } : act.ammo || null;
       if (u.gunner && u.ap < TURRET.RELOAD_AP) return "A new belt takes both actions."; // (before a double feed is cleared by it)
       if (u.ap < reloadCost(b, u, pick) && !u.jam) return reloadRefusal(b, u, pick) || "Not enough actions left to reload."; // mags.js: from the pack: 2 actions
+      const dbl = u.jam && u.jam.kind === "double" && isStacked(u) ? u.jam : null; // physical rounds: the swap goes through on the double feed (mags.js planPlayer), so it is held until the fresh magazine is in
       jamReload(b, u); // gunfire.js: a double feed is cleared by dropping the magazine (then this reload fills a fresh one)
+      if (dbl && !u.jam) u.jam = dbl;
       const why = reloadRefusal(b, u, pick);
       if (why) return why;
       if (u.ap < reloadCost(b, u, pick)) return "Not enough actions left to reload.";
       reload(b, u, pick);
+      if (dbl) u.jam = null;
       if (u.gunner) { u.ap = 0; afterTurretReload(b, u); }
       if (isStacked(u) && u.sid != null) { const s = survivorById(state, u.sid); if (s) tidyRounds(b, u, s); } // the rounds left their stacks (mags.js): emptied ones thrown away, the caches refit
       break;
@@ -5148,7 +5166,7 @@ const magLow = (u) => hasMag(u) && magIn(u) * 2 < magMaxOf(u);
 function aiReload(b, u) {
   if (!isRanged(u) || !hasMag(u)) return false;
   const w = WEAPONS[u.weapon];
-  const mine = u.side === "player" && !!calOf(u.weapon);
+  const mine = (u.side === "player" || isStacked(u)) && !!calOf(u.weapon); // a person's own rounds: the same choice of load as yours (docs/adr/0001-ai-parity.md)
   const spent = mine && !hasShot(b, w, u);
   if (!magEmpty(b, u) && !spent) {
     if (!mine || magIn(u) * 2 > magMaxOf(u) || !((typeFx(typeFor(calOf(u.weapon), u.load)).soft || 1) > 1)) return false;

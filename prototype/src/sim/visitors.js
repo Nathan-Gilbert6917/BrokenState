@@ -927,7 +927,7 @@ function defendAgainst(state, v, base) {
   v.phase = "battle";
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name), siege: bandKit(state, v, base) },
+    enemy: { kind: "raiders", count: clamp(v.size, 1, 14), power: v.power, name: cap1(v.name), siege: bandKit(state, v, base), band: { kind: "visitor", id: v.id } }, // bands.js: the band's own people
     ambush: v.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "outsiderRaid", context: { visitorId: v.id, baseId: base.id, fromTile: v.tile, strength: vStrength(v), siegeHours, surprise: !!v.surprise }, // canRetreat: a way out away from them (deploy.js); they loot and move on; surprise: an unwatched night (watch.js)
     layout: "baseDefence", deploy: true,
   });

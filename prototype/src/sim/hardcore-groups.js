@@ -64,6 +64,7 @@
 // - The aggressive groups (zealots, expansionists) do not raid and nobody declares war while the bands are still
 //   founding: until QUIET_GRACE days after the last band has its hub (QUIET_MAX at the latest).
 // Decisions draw from their own generator (state.hardcore.groups.rng), so they never shift the world's dice.
+import { spendAmmo } from "./rounds.js"; // a group's rounds by calibre
 import { FOODS, typeFind, GROUP_MIX, foodShare, addFoodsTo, foodIn, giveFood, takeFood, typeStray, ageCoarse } from "./foods.js"; // food by type (foods.js)
 import { Rng } from "./rng.js";
 import { FACTION_TYPES, FACTION_COLORS } from "./data.js";
@@ -818,8 +819,8 @@ function launchStrike(state, f, m) {
   f.pop -= sent;
   m.garrison = f.pop;
   m.breakPop = Math.max(M.BREAK_MIN, Math.round(m.garrison * M.GARRISON_BREAK));
-  const ammo = Math.round((f.stock.ammo || 0) * (sent / (sent + f.pop)));
-  f.stock.ammo = (f.stock.ammo || 0) - ammo;
+  const ammo = Math.round(totalRounds(f.stock) * (sent / (sent + f.pop)));
+  spendAmmo(f.stock, ammo); // their share of the rounds, by key (docs/adr/0001-ai-parity.md)
   const { name, the } = strikeName(state, f);
   const city = O && O.city != null ? O.city : hive.tile;
   m.strike = {

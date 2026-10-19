@@ -351,7 +351,7 @@ export function addXp(state, s, key, amt) {
   }
   if ((s.skills[key] || 0) >= SKILL_MAX) s.xp[key] = 0;
   if (up) {
-    log(state, `${first(s)}'s ${SKILL_NAMES[key]} rose to ${skill(s, key)}.`, "good");
+    if (s.fid == null) log(state, `${first(s)}'s ${SKILL_NAMES[key]} rose to ${skill(s, key)}.`, "good"); // members.js: another group's people learn by the same rule, off your log
     checkMilestones(state, s, key);
   }
 }
@@ -375,6 +375,8 @@ function checkMilestones(state, s, key) {
 export function perkCard(state, s, key, ms) {
   const opts = (PERK_TREE[key] && PERK_TREE[key][ms]) || [];
   if (!opts.length) return;
+  // members.js: one of another group's people takes the perk the card's own answer would (perkScore), no card.
+  if (s.fid != null) { const best = opts.map((p) => [p, perkScore(state, s, p.id)]).sort((a, b) => b[1] - a[1] || (a[0].id < b[0].id ? -1 : 1))[0]; if (best) choosePerk(state, s, best[0].id); return; }
   addCard(state, {
     title: `${first(s)} reached ${SKILL_NAMES[key]} ${ms}`,
     text: `${s.name} has a perk point to spend for ${SKILL_NAMES[key]} ${ms}. Pick one perk (it is for good), or decide later from the skill tree on their survivor screen.`,
@@ -415,7 +417,7 @@ export function choosePerk(state, s, id) {
     // The card for that milestone is answered now.
     const tag = `${s.id}:${p.skill}:${p.ms}`;
     for (let i = state.cards.length - 1; i >= 0; i--) if (state.cards[i].perkFor === tag) state.cards.splice(i, 1); // in place
-    log(state, `${first(s)} took the perk ${p.name} (${SKILL_NAMES[p.skill]} ${p.ms}).`, "good");
+    if (s.fid == null) log(state, `${first(s)} took the perk ${p.name} (${SKILL_NAMES[p.skill]} ${p.ms}).`, "good");
   }
   return `${s.name} took ${p.name}: ${p.desc}`;
 }

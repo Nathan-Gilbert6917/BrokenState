@@ -74,6 +74,7 @@
 //   every prisoner of theirs there and carry off a tenth of the stores.
 // Your own people taken captive by other groups are conflicts.js captives, not these; the groups' jails, labour and
 // prisoner trades are groupjails.js (the same JAIL tiers).
+import { totalRounds } from "./rounds.js"; // rounds by calibre
 import { DAY_VALUE, foodText, foodIn, payFood, takeFood, preservedIn, FOODS, addFood } from "./foods.js"; // food by type (foods.js)
 import { SUPPLIES, supValue } from "./data.js";
 import {
@@ -854,7 +855,7 @@ export function gatherIntel(state, p, full = true) {
     if (full) {
       for (const t of f.bases) tiles.add(t);
       f.known = true;
-      f.intel = { day: day(state), pop: f.pop, food: Math.round(foodIn(f.stock)), ammo: Math.round(f.stock.ammo || 0), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
+      f.intel = { day: day(state), pop: f.pop, food: Math.round(foodIn(f.stock)), ammo: Math.round(totalRounds(f.stock)), scrap: Math.round(f.stock.scrap || 0), fuel: Math.round(f.stock.fuel || 0), meds: Math.round(f.stock.meds || 0) };
       lines.push(`${f.name} hold ${f.bases.map((t) => tileLabel(state, t)).join(", ")}: about ${f.pop} people, ${f.intel.food} days of food, ${f.intel.ammo} rounds, ${f.intel.meds} meds, ${f.intel.fuel} fuel.`);
       const jt = jailText(state, f); // groupjails.js: their jail and who is in it (now known)
       if (jt) lines.push(`Their jail: ${jt}.`);

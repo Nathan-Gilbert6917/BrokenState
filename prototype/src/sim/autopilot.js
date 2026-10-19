@@ -18,6 +18,7 @@ import { govFieldWorks, fieldJobs, govSnares, snareLinesWanted, playerWorks, gat
 import { BUILDMAT_FINDS } from "./loot.js"; // building materials: where they are found
 import { traitAim } from "./traits.js"; // Brave, Coward: to hit
 import { fitFromPool } from "./gunmods.js";
+import { itemScore, equipPeople, equipTools } from "./equip.js"; // the one hand-out rule (the AI groups use it too: loadouts.js)
 import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, partPlan, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES, supValue, supWeight } from "./data.js";
@@ -3188,17 +3189,7 @@ export function planCrafts(state, base) {
 }
 
 // ---------- gear from the armory ----------
-export function itemScore(s, item) { // also the roster's Equip best available (sim/bulk.js)
-  if (!item || !GEAR[item.key]) return 0;
-  const d = GEAR[item.key];
-  if (d.slot === "weapon") {
-    const eff = gearEffect(s, item);
-    if (d.launcher) return eff.usable ? 0.5 + 1.5 * eff.mult : -1; // a launcher (launchers.js) is a second weapon: better than empty hands, never instead of a gun
-    return eff.usable ? 0.5 + d.power * eff.mult * (item.quality || 1) * (d.cat === "melee" ? meleeDmgMult(s) : 1) : -1; // a melee weapon by their Melee (world.js MELEE_SKILL): a strong hand keeps a fire axe over a weak gun
-  }
-  if (d.slot === "backpack") return d.carry || 0;
-  return d.power || 0;
-}
+export { itemScore }; // equip.js (the governor's and the AI groups' one rule; sim/bulk.js reads it here)
 
 function equipFromArmory(state, base) {
   if (!base.armory.length) return;
@@ -3206,41 +3197,13 @@ function equipFromArmory(state, base) {
   const people = atBase(state, base.id).filter((s) => !s.pinned).sort((a, b) => combatPower(b) - combatPower(a)); // pinned people keep their kit too
   if (!people.length) return;
   const handed = [];
-  for (const slot of ["weapon", "armor", "head", "arms", "legs", "backpack"]) {
-    for (const s of people) {
-      ensureInv(s);
-      const items = base.armory.filter((it) => slotOf(it.key) === slot);
-      if (!items.length) break;
-      const best = items.sort((a, b) => itemScore(s, b) - itemScore(s, a))[0];
-      if (itemScore(s, best) < itemScore(s, s.gear[slot]) + (s.gear[slot] ? 0.3 : 0.05)) continue; // only real upgrades
-      // Someone with a weapon that works keeps it over a gun with nothing to shoot here (tripgear.js outReady: the outdoor kit
-      // swapped it back for the knife within the hour and the two hand-outs took turns, every hour).
-      if (slot === "weapon" && !outReady(base, s, best) && tripKit(state, base, s).ready) continue;
-      base.armory.splice(base.armory.indexOf(best), 1);
-      if (s.gear[slot]) base.armory.push(s.gear[slot]);
-      s.gear[slot] = best;
-      handed.push(`${first(s)} ${best.name}`);
-    }
-  }
-  // Loose gun attachments to the guns in hand, the best fighters first (gunmods.js: one a mount, only what helps).
-  for (const x of fitFromPool(base.armory, people.map((s) => s.gear.weapon))) handed.push(`${x.mod.name} on ${x.gun.name}`);
-  // carrykit.js: the best rig, plates into the carriers, spare magazines into pouches; worn plates swapped, steel ones mended.
-  for (const x of equipKit(base.armory, people)) handed.push(x.s ? `${first(x.s)} ${x.item.name}` : x.item.name);
+  // equip.js: the slots best fighters first (only real upgrades; a gun with nothing to shoot here is not handed to
+  // someone whose working weapon suits their trips: tripgear.js outReady), loose gun parts, the carry kit.
+  for (const x of equipPeople(base.armory, people, { weaponOk: (s, best) => outReady(base, s, best) || !tripKit(state, base, s).ready })) handed.push(x.gun ? `${x.item.name} on ${x.gun.name}` : x.s ? `${first(x.s)} ${x.item.name}` : x.item.name);
   for (const m of governPlates(state, base, people, { queue: queueRepair, craft: queueCraft })) handed.push(m);
   // Tools for the off hand: a crowbar to a scavenger, a med kit to a medic (else the best Medicine), anything
   // else to whoever has the skill for it. Water filters work from the armory and stay there.
-  for (const item of [...base.armory]) {
-    const d = GEAR[item.key];
-    if (!d || d.slot !== "tool" || d.water) continue;
-    const forScav = !!(d.bonus && d.bonus.scavenging);
-    const free = people.filter((s) => !s.gear.tool && (!d.skill || gearEffect(s, item).usable) && (!forScav || s.role === "scavenge"));
-    if (!free.length) continue;
-    const want = forScav ? (s) => skill(s, "scavenging") : d.medKit ? (s) => (s.role === "medic" ? 20 : 0) + skill(s, "medicine") : (s) => (d.skill ? skill(s, d.skill) : 0);
-    const s = free.sort((a, b) => want(b) - want(a))[0];
-    base.armory.splice(base.armory.indexOf(item), 1);
-    s.gear.tool = item;
-    handed.push(`${first(s)} ${item.name}`);
-  }
+  for (const x of equipTools(base.armory, people, { medic: (s) => s.role === "medic", scavenger: (s) => s.role === "scavenge" })) handed.push(`${first(x.s)} ${x.item.name}`);
   // tripgear.js (trips-plus #2): the outdoor workers out on the land alone get what the fighters left: a weapon for the
   // job, a light for the dusk hunt, light armour, a tourniquet or a kit.
   for (const x of gearOutdoorWorkers(state, base)) handed.push(`${first(x.s)} ${x.item.name}`);

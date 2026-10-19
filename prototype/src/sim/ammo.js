@@ -236,8 +236,28 @@ export function settleAll(state) {
   for (const b of state.bases || []) settleBase(state, b);
   for (const p of state.parties || []) if (p.owner === "player" || p.owner == null) settleParty(state, p);
   if (state.staging && state.staging.stores && hasGeneric(state.staging.stores)) settleRec(state.staging.stores, mixForCals({}), null); // an old save's staging camp (before staging.js migrateStaging)
-  for (const f of state.factions || []) if (f.stock) foldRounds(f.stock); // an AI group keeps one ammo count
-  for (const p of state.parties || []) if (p.owner !== "player" && p.owner != null && p.supplies) { foldRounds(p.supplies); if (p.cargo && p.cargo.supplies && !(p.kind === "caravan" && p.phase === "trading")) foldRounds(p.cargo.supplies); } // their teams too (a caravan at your gates keeps its rounds for the deal)
+  // The AI groups (docs/adr/0001-ai-parity.md): rounds by calibre and type, as yours, generic ammo becoming the rounds
+  // of the guns their people carry and keep (the same rule as a base's, settleBase); their parties' the same.
+  for (const f of state.factions || []) if (f.stock && f.alive !== false) settleGroup(state, f);
+  for (const p of state.parties || []) {
+    if (p.owner === "player" || p.owner == null || !p.supplies) continue;
+    const f = (state.factions || []).find((x) => x.id === p.owner);
+    const cals = groupCals(f);
+    if (hasGeneric(p.supplies)) settleRec(p.supplies, mixForCals(cals), cals);
+    if (p.cargo && p.cargo.supplies && hasGeneric(p.cargo.supplies) && !(p.kind === "caravan" && p.phase === "trading")) settleRec(p.cargo.supplies, mixForCals(cals), cals);
+  }
+}
+// The calibres an AI group's guns shoot: its people's and the kit it keeps (members.js, arsenal.js).
+export const groupCals = (f) => gunCals(f && Array.isArray(f.people) ? f.people.filter((s) => s.alive) : [], f && f.arsenal ? f.arsenal.items : []);
+export function settleGroup(state, f) {
+  const cals = groupCals(f);
+  const mix = mixForCals(cals);
+  const seen = new Set();
+  for (const st of [f.stock, ...Object.values(f.homes || {}).map((h) => h.stock)]) {
+    if (!st || seen.has(st)) continue;
+    seen.add(st);
+    if (hasGeneric(st)) settleRec(st, mix, cals);
+  }
 }
 // An old save: every generic ammo stock of yours becomes rounds split across the calibres of the guns that holder
 // owns (fallback 9mm / 12 gauge), the same total (tools/ammomigrationtest.js).
@@ -538,7 +558,7 @@ function battleKeyRounds(b, u, key) {
 }
 // One of yours with physical rounds in the gun (mags.js isStacked, without the import cycle at load time).
 /** @param {any} u */
-export const stacked = (u) => !!(u && u.side === "player" && Array.isArray(u.stack) && Array.isArray(u.mags) && u.magsW === u.weapon);
+export const stacked = (u) => !!(u && (u.side === "player" || u.who) && Array.isArray(u.stack) && Array.isArray(u.mags) && u.magsW === u.weapon); // mags.js physical: any person (fighters.js)
 // The handload key the unit's next round comes from (takeBattleRounds' order: its own boxes, its teammates', the
 // pools; in each the factory round first), or null for a factory round (or none). gunfire.js reads its make.
 /** @param {any} b @param {any} u */
@@ -562,7 +582,7 @@ export function nextHand(b, u) {
 export function roundsOf(b, u, type) {
   const cal = calOf(u.weapon);
   if (!cal) return 0;
-  if (u.side !== "player") return Infinity;
+  if (u.side !== "player" && !stacked(u)) return Infinity; // (a unit with no rounds of its own: the old endless reserve)
   if (type === "*") return gunCalsOf(u.weapon).reduce((a, c) => a + typesOf(c).reduce((x, t) => x + battleKeyRounds(b, u, ammoKey(c, t)), 0), 0); // every calibre it takes
   return battleKeyRounds(b, u, keyFor(cal, type === undefined ? u.load : type));
 }
@@ -572,7 +592,7 @@ export function roundsOf(b, u, type) {
 /** @param {any} b @param {any} u */
 export function loadsFor(b, u) {
   const cal = calOf(u.weapon);
-  if (!cal || u.side !== "player") return [];
+  if (!cal || (u.side !== "player" && !stacked(u))) return [];
   const cur = loadOf(u);
   return gunLoads(u.weapon).map((id) => { const p = loadParts(cal, id); return { type: id, name: p.cal === cal ? AMMO_TYPES[p.type].name : roundName(cal, id), full: roundName(cal, id), cal: p.cal, n: battleKeyRounds(b, u, ammoKey(p.cal, p.type)) }; })
     .filter((x) => x.n > 0 || x.type === cur).sort((a, c) => (a.type === cur ? -1 : c.type === cur ? 1 : 0));
@@ -609,7 +629,7 @@ export function sideRounds(b) {
   let n = 0;
   for (const p of b.pools || []) n += totalRounds(p);
   for (const o of b.units || []) if (o.side === "player" && o.boxes) for (const it of o.boxes) n += Math.max(0, Math.floor(num(it && it.dur)));
-  for (const o of b.units || []) if (stacked(o)) { n += stackN(o.stack); for (const m of o.mags) if (m.where !== "gun" && m.item) n += stackN(m.item.stack); } // the rounds in the guns and the magazines (mags.js: physical)
+  for (const o of b.units || []) if (o.side === "player" && stacked(o)) { n += stackN(o.stack); for (const m of o.mags) if (m.where !== "gun" && m.item) n += stackN(m.item.stack); } // the rounds in the guns and the magazines (mags.js: physical)
   return n;
 }
 // The load a fighter of yours takes the field with: the gun's own (item.load), else its common round; one the side has
@@ -681,7 +701,7 @@ export function pickLoad(b, u, foes = []) {
   const cal = calOf(u.weapon);
   if (!cal) return null;
   const cur = loadOf(u);
-  const opts = u.side === "player" ? loadsFor(b, u).filter((x) => x.n >= (WEAPONS[u.weapon].ammo || 1)).map((x) => x.type) : [cur];
+  const opts = u.side === "player" || stacked(u) ? loadsFor(b, u).filter((x) => x.n >= (WEAPONS[u.weapon].ammo || 1)).map((x) => x.type) : [cur];
   if (!opts.length) return cur;
   const seen = (foes || []).filter((f) => f && !f.dead);
   if (!seen.length) return opts.includes(cur) ? cur : opts.includes(baseType(cal)) ? baseType(cal) : opts[0];

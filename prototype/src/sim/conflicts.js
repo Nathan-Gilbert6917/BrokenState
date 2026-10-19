@@ -17,6 +17,7 @@
 // ransomed (by radio or envoy with any group, raiders included: ransom.js; during a trade visit or at the gates), or
 // released when goodwill is high. Over time they may escape (likelier with a pin, lockpicks or the keys they kept:
 // location.tool), be recruited by their captors, or die.
+import { spendAmmo } from "./rounds.js"; // a group's rounds by calibre
 import { takeFood, FOODS } from "./foods.js"; // their food, days of it
 import { TERRAIN, GEAR, SUPPLIES, FACTION_TYPES, supValue } from "./data.js";
 import { zombieToughness } from "./hives.js";
@@ -914,7 +915,7 @@ function startFight(state, p, c, ambush, goodwillHit, lead, extra = {}) {
   const carted = state.parties.find((q) => q.owner !== "player" && (q.id === c.aiPartyId || q.id === c.scavPartyId) && q.scav && q.scav.carts > 0);
   startCombat(state, {
     tile: partyTile(p), partyId: p.id,
-    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}), ...(theirs ? { vehicle: theirs.vehicleType, vehiclePartyId: theirs.id } : {}), ...(carted ? { carts: carted.scav.carts, cartPartyId: carted.id } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
+    enemy: { kind: enemy.kind, count: enemy.count, power: enemy.power, factionId: enemy.factionId ?? (f ? f.id : undefined), partyId: c.aiPartyId ?? c.scavPartyId ?? undefined, name: enemy.name, ...(enemy.mix ? { mix: enemy.mix } : {}), ...(theirs ? { vehicle: theirs.vehicleType, vehiclePartyId: theirs.id } : {}), ...(carted ? { carts: carted.scav.carts, cartPartyId: carted.id } : {}) }, // mix: dead soldiers among them (deadsoldiers.js)
     ambush, canRetreat: true, handler: "conflict",
     context: { ...c, lead, goodwillHit, resumePhase: p.conflictResume || "out", ...extra },
   });
@@ -1099,7 +1100,7 @@ function stealChoice(state, p, c, f) {
         const stolen = addCargoRoundsRec(st, p, st.rng.int(15, 40), f ? kindTheme(f.type) : "raider", "steal", partyTile(p), st.hour); // ammo.js: their rounds, by calibre
         const ammo = Object.values(stolen).reduce((a, q) => a + q, 0);
         const food = addCargo(st, p, "food", st.rng.int(4, 10));
-        if (f) { f.stock.ammo = Math.max(0, f.stock.ammo - ammo); takeFood(f.stock, food); } // foods.js: out of their stores
+        if (f) { spendAmmo(f.stock, ammo); takeFood(f.stock, food); } // rounds.js: out of their rounds (docs/adr/0001-ai-parity.md: by calibre); foods.js: their food
         resume(st, p);
         return `You crawl out with ${roundsText(stolen)} and ${food} days of food. Nobody saw a thing.`;
       }
@@ -1678,7 +1679,7 @@ export function defendInPerson(state, raid) {
   const force = raidForce(f, raid.strength);
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, name: `${f.name} raiders`, siege: raid.siege || null, arsTask: baseHasWalls(base) ? "walls" : "raid", ...(raidTurret(state, raid) ? { turret: raidTurret(state, raid) } : {}) }, // siege.js: their ladders, ram and grenades; arsTask: arsenal.js issueKit; turret: the Humvee the raid brought (vehicles.js; on the map: combat.js placeRaidHumvee)
+    enemy: { kind: KIND_OF[f.type], count: force.count, power: force.power, factionId: f.id, partyId: raid.id, name: `${f.name} raiders`, siege: raid.siege || null, arsTask: baseHasWalls(base) ? "walls" : "raid", ...(raidTurret(state, raid) ? { turret: raidTurret(state, raid) } : {}) }, // siege.js: their ladders, ram and grenades; arsTask: arsenal.js issueKit; turret: the Humvee the raid brought (vehicles.js; on the map: combat.js placeRaidHumvee)
     // raid.surprise (watch.js surpriseAt: an unwatched night): they are over the wall and have the first move.
     ambush: raid.surprise ? "enemy" : base.alert ? "player" : null, canRetreat: true, handler: "raidDefense", context: { raidId: raid.id, baseId: base.id, factionId: f.id, surprise: !!raid.surprise, armory0: base.armory.length }, // the way out: away from the attack (deploy.js); armory0: your dead's gear is what lands in the armory after it (arsenal.js)
     layout: "baseDefence", deploy: true, // deploy.js: the base's walls on the map, defenders placed first

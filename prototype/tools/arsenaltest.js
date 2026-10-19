@@ -4,10 +4,11 @@
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, hub, atBase, killSurvivor, makeSurvivor } from "../src/sim/world.js";
 import { FACTION_TYPES, GEAR } from "../src/sim/data.js";
-import { strength, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction } from "../src/sim/factions.js";
+import { strength, peopleUp, factionsDaily, resolveRaidOnPlayer, collapseFaction, resolveRaidOnFaction } from "../src/sim/factions.js";
 import { spawnAiParty } from "../src/sim/parties.js";
 import { createBattle, endBattleNow, closeCombat } from "../src/sim/combat.js";
-import { newItem, lootItem } from "../src/sim/inventory.js";
+import { newItem, lootItem, allCarried } from "../src/sim/inventory.js";
+import { groupArmory } from "../src/sim/rescueraid.js";
 import { fitMod } from "../src/sim/gunmods.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { createVehicle, factionVehicles, upgradesOf, vehicleValue } from "../src/sim/vehicles.js";
@@ -96,7 +97,7 @@ section("By the numbers: strength follows the arsenal, close to the old numbers 
   const s4 = strength(f);
   f.stock.ammo = ammo;
   check(s4 < s3 * 0.8 && s4 >= s3 * 0.65, `out of rounds, their guns count about 70% (${s3.toFixed(1)} → ${s4.toFixed(1)})`);
-  f.wounded = Math.round(f.pop / 2);
+  C.woundGroup(f, Math.round(f.pop / 2)); // members.js: half of their people hurt (the wounded are people with wounds)
   check(strength(f) < s3 * 0.6, `half of them wounded: the wounded do not fight (${strength(f).toFixed(1)})`);
   f.wounded = 0;
   const mil = typed(st, "military");
@@ -154,12 +155,14 @@ section("A raid that gets in takes your gear, and you meet it again");
   const moved = A.raidOnBase(st2, f2, h2, { strength: 30, id: 1 }, { outcome: "broken", theirDead: 1, armory0: a0 });
   check(moved.stole.includes(gun) && f2.arsenal.items.includes(gun), `your dead's ${gun.name} goes with them`);
   check(moved.dropped.length > 0 && moved.dropped.every((it) => h2.armory.includes(it)), "and their own dead's kit stays in your yard (the armory)");
-  // A later fight with them: one of them carries that very rifle, parts and all.
+  // A later fight with them: one of them carries that very rifle, parts and all (loadouts.js: handed out at home,
+  // as their day's kit-out does; never as the fight is set up).
+  peopleUp(st, f);
   const b = createBattle(st, { tile: f.bases[0], baseId: hub(st) ? hub(st).id : null, partyId: null, fighterIds: null,
     enemy: { kind: "raiders", count: 4, power: 4, factionId: f.id, name: "test raiders" }, ambush: null, canRetreat: false, handler: "arsenaltest" });
   if (!hub(st) || !atBase(st, hub(st).id).length) { check(true, "(the hub was lost: battle part skipped)"); }
   else {
-    const u = b.units.find((x) => x.arsItem === rifle);
+    const u = b.units.find((x) => x.item === rifle || x.arsItem === rifle); // fighters.js: the gun in a person's hands
     check(!!u, `a ${f.name} fighter carries the rifle they took (${u ? u.weaponName : "none"})`);
     check(u && u.weaponName.includes("(") && u.gm && u.gm !== A, "with its parts, as the battle line shows");
     st.combat = b;
@@ -191,20 +194,36 @@ section("Losses, wear and the field");
 // ======================================================================================
 section("Healing: meds and medics");
 {
-  const st = world();
-  const run = (type, meds, n = 10) => {
+  // groupmedical.js (docs/adr/0001-ai-parity.md): their people heal by your rules, person by person: a day's rest by
+  // the best Medicine at home, treatments with meds by their medics, infections that worsen without them.
+  const hurt = (f) => f.people.reduce((a, s) => a + (100 - s.health), 0);
+  const run = (type, meds, med = null, n = 10) => {
     const s2 = world(seed + 5);
     const f = typed(s2, type);
-    f.pop = 30; setFood(f, 1000); f.stock.meds = meds; f.wounded = 12;
+    peopleUp(s2, f);
+    setFood(f, 1000); f.stock.meds = meds;
+    if (med != null) for (const p of f.people) p.skills.medicine = med;
+    C.woundGroup(f, 12);
+    const h0 = hurt(f);
     for (let i = 0; i < n; i++) { s2.hour += 24; C.groupCareDaily(s2, f); f.stock.meds = meds ? Math.max(f.stock.meds, meds) : 0; }
-    return f.wounded;
+    return { wounded: C.woundedOf(f), left: hurt(f), h0 };
   };
-  const withMeds = run("commune", 100), noMeds = run("commune", 0);
-  check(withMeds < noMeds, `the wounded heal faster with meds (${withMeds} left) than without (${noMeds} left) after 10 days`);
-  const f1 = typed(st, "commune"), f2 = typed(st, "raider", [f1]);
-  for (const f of [f1, f2]) { f.pop = 30; f.wounded = 10; f.stock.meds = 0; }
-  check(C.medicsOf(f1) > C.medicsOf(f2) && C.healRate(f1).rate > C.healRate(f2).rate, `a commune has more medics (${C.medicsOf(f1)} to ${C.medicsOf(f2)}) and heals faster`);
-  check(C.healRate(f1).die > 0 && (f1.stock.meds = 100) && C.healRate(f1).die < 0.005, "without meds the wounded die more");
+  const withMeds = run("commune", 100, null, 3), noMeds = run("commune", 0, null, 3);
+  check(withMeds.left < noMeds.left, `the wounded heal faster with meds (${Math.round(withMeds.left)} health short) than without (${Math.round(noMeds.left)}) after 3 days (from ${Math.round(withMeds.h0)})`);
+  const doc = run("commune", 0, 12, 4), none = run("commune", 0, 0, 4);
+  check(doc.left < none.left, `a group whose people have Medicine heals faster (${Math.round(doc.left)} short) than one with none (${Math.round(none.left)})`);
+  // An infected wound without meds: half the rest, less 2 a day (medical.js); treated, it is cleaned out.
+  const st3 = world(seed + 6), f3 = typed(st3, "raider");
+  peopleUp(st3, f3); setFood(f3, 1000); f3.stock.meds = 0;
+  const p3 = f3.people[0];
+  p3.health = 20; p3.woundInfected = true;
+  for (const q of f3.people) q.skills.medicine = 0;
+  const hp0 = p3.health;
+  st3.hour += 24; C.groupCareDaily(st3, f3);
+  check(!p3.alive || p3.health < hp0 + 2, `without meds an infected wound barely heals or worsens (${hp0} → ${Math.round(p3.health)})`);
+  f3.stock.meds = 50; for (const q of f3.people) q.skills.medicine = 10;
+  for (let i = 0; i < 6 && p3.woundInfected; i++) { st3.hour += 24; C.groupCareDaily(st3, f3); }
+  check(!p3.woundInfected, "with meds and a medic the infection is cleaned out");
 }
 
 // ======================================================================================
@@ -470,28 +489,28 @@ section("One model: caravan escorts, rescue raids, non-lethal, the profiles");
   for (let i = 0; i < 8 && !took; i++) { took = gangAmbush(st2, gang, q); st2.hour++; }
   check(took && owner.arsenal.items.length < n0 && owner.pop < p0, `a gang takes a commune caravan: its guards' kit and people are gone (${n0} -> ${owner.arsenal.items.length} items, ${p0} -> ${owner.pop} people)`);
   check(gang.arsenal.items.some((it) => it.key === "pistol" && it.quality === 0.8), "and the pistol it carried goes to the gang's fighters");
-  // Rescue raids are fought with everything the group has at home.
+  // Rescue raids are fought with everything the group has at home: their people with what they carry (fighters.js),
+  // the rest on the rack (rescueraid.js groupArmory: what nobody carries).
   const g = typed(st, "military", [f]);
-  const b = { setup: { handler: "rescueRaid", enemy: { count: 3 } }, units: [], nextId: 1, motorPool: [], rescue: { armory: { items: [...g.arsenal.items] } } };
-  const u = { id: 1, side: "enemy", kind: "human", factionId: g.id, dmgMult: 1, armor: 1 };
-  A.armFromArsenal(st, b, u, 1);
+  peopleUp(st, g);
   const best = A.issueKit(st, g, 1, "home")[0].weapon;
-  check(u.arsItem === best && !b.rescue.armory.items.includes(best), "a rescue raid: the base's guards take the best kit, and what they carry is off the rack");
+  const holder = g.people.find((p) => p.gear.weapon === best);
+  check(!!holder && !groupArmory(st, g).includes(best) && groupArmory(st, g).every((it) => !g.people.some((p) => allCarried(p).includes(it))), "a rescue raid: the base's best gun is in one of their people's hands, and the rack holds only what nobody carries");
   check(NL_TAKE.raider === C.GROUP_PRIORITIES.raider.takeAlive && NL_TAKE.zealot === 0, "nonlethal.js NL_TAKE reads the profile table");
-  // Medics and flashbangs (medics.js, throwables.js): out of the arsenal, or none.
+  // Medics and flashbangs (medics.js, throwables.js): what their people carry of the group's own, or none.
   const gd = typed(st, "traders", [f, g]);
-  A.seedArsenal(st, gd);
+  peopleUp(st, gd);
+  for (const p of gd.people) p.skills.medicine = p === gd.people[0] ? 8 : 1;
+  peopleUp(st, gd);
   const kits0 = gd.arsenal.items.filter((it) => A.isMedKitKey(it.key));
-  const bm = { setup: { handler: "x", enemy: { count: 2 } }, units: [], nextId: 1 };
-  const um = { id: 2, side: "enemy", kind: "human", factionId: gd.id, dmgMult: 1, armor: 1, isMedicKit: true, medKit: { key: "bandagekit", name: "Bandage kit" }, kitBonus: 1, medicine: 5, kitLeft: 4, throwables: { flashbang: 5 } };
-  A.armFromArsenal(st, bm, um, 1);
+  const doc = gd.people[0];
+  const kitOn = allCarried(doc).find((it) => A.isMedKitKey(it.key));
+  check(kits0.length > 0 && !!kitOn && kits0.includes(kitOn), `their best Medicine carries one of the group's own kits (${kitOn ? kitOn.name : "none"})`);
   const flashes = gd.arsenal.items.filter((it) => it.key === "flashbang").length;
-  check(kits0.length > 0 && kits0.includes(um.medKit) && um.arsMedKit === um.medKit, `a guards' medic carries the group's own ${um.medKit && um.medKit.name}`);
-  check((um.throwables.flashbang || 0) === Math.min(5, flashes) && um.arsThrows.every((it) => gd.arsenal.items.includes(it)), `and only the flashbangs the group holds (${um.throwables.flashbang || 0} of 5 asked, ${flashes} held)`);
+  const carried = gd.people.reduce((a, p) => a + allCarried(p).filter((it) => it.key === "flashbang").length, 0);
+  check(carried <= flashes && gd.people.every((p) => allCarried(p).filter((it) => it.key === "flashbang").every((it) => gd.arsenal.items.includes(it))), `and only the flashbangs the group holds (${carried} carried of ${flashes})`);
   for (const k of kits0) A.removeFromArsenal(gd, k, "test");
-  const um2 = { id: 3, side: "enemy", kind: "human", factionId: gd.id, dmgMult: 1, armor: 1, isMedicKit: true, medKit: { key: "bandagekit", name: "Bandage kit" }, kitBonus: 1, medicine: 5, kitLeft: 4 };
-  A.armFromArsenal(st, { setup: { handler: "x", enemy: { count: 2 } }, units: [], nextId: 1 }, um2, 1);
-  check(!um2.medKit && !um2.isMedicKit && um2.medicine === 4, "with no kit left in the arsenal, no medic");
+  check(!gd.people.some((p) => allCarried(p).some((it) => A.isMedKitKey(it.key))), "with no kit left in the arsenal, nobody carries one (no medic)");
   check(wallGoal({ type: "fortress", bases: [1] }, 2) > wallGoal({ type: "raider", bases: [1] }, 2), "a fortress walls every base (the profile's walled)");
   const ng = typed(st, "traders", [f, g]);
   A.seedArsenal(st, ng);

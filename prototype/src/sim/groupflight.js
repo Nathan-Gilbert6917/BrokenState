@@ -27,6 +27,7 @@
 // touched. How often (tools/flighttest.js rate; 2026-10-08, six Normal worlds, a year each on the Balanced autopilot):
 // 21 flights, about 3.5 a world-year (0 to 8 a world, most where hordes roam thick), nearly all falling back to another
 // base or settling a new site; none taken in by an ally (there is nearly always a site).
+import { loseBase, gatherStores } from "./groupbases.js"; // their bases as base objects (what is there)
 import { day, log } from "./world.js";
 import { hash01 } from "./skills.js";
 import { weightOf, tickOf } from "./groupcare.js";
@@ -110,12 +111,14 @@ export function fleeBase(state, f, tile, from, how = "ahead", d = day(state)) {
   const lost = Math.min(Math.max(0, f.pop - GROUP_BREAK - 1), Math.round(f.pop * (lo + (hi - lo) * h(state, f.name, tickOf(f), tile, "straggle"))));
   f.pop -= lost;
   if ((f.wounded || 0) > f.pop) f.wounded = f.pop;
-  // What they cannot carry stays (half of it spoiled, the rest in the abandoned base).
-  const share = (how === "overrun" ? F.OVERRUN_LEAVE : F.LEAVE) / f.bases.length;
-  const left = {};
-  for (const [k, q] of Object.entries(f.stock)) { const n = Math.floor((q > 0 ? q : 0) * share); if (n > 0) { left[k] = n; f.stock[k] -= n; } }
+  // What they cannot carry of that base's stores stays (groupbases.js: its own; half of it spoiled, the rest in the
+  // abandoned base); what they carry goes with them to where they go.
   const wasMain = f.bases[0] === tile;
-  f.bases = f.bases.filter((b) => b !== tile);
+  const stay = Math.min(1, (how === "overrun" ? F.OVERRUN_LEAVE : F.LEAVE) * Math.max(1, f.bases.length));
+  const gone = loseBase(state, f, tile);
+  const left = {}, carried = {};
+  for (const [k, q] of Object.entries(gone ? gone.stock : {})) { if (!(typeof q === "number" && q > 0)) continue; const n = Math.floor(q * stay); if (n > 0) left[k] = n; if (q - n > 0) carried[k] = q - n; }
+  f.lossAt = tile; // members.js: the stragglers were the people there
   const rec = leaveGroupBase(state, f, tile, 0); // groupworld.js: its works stand, for whoever comes
   if (rec) for (const [k, n] of Object.entries(left)) rec.stock[k] = Math.floor(n * ABANDON.STOCK);
   if (f.works) delete f.works[tile];
@@ -123,6 +126,7 @@ export function fleeBase(state, f, tile, from, how = "ahead", d = day(state)) {
   f.fledDay = d;
   f.flights = (f.flights || 0) + 1;
   state.stats.groupFlights = (state.stats.groupFlights || 0) + 1;
+  for (const [k, q] of Object.entries(carried)) f.stock[k] = (f.stock[k] || 0) + q; // (an ally takes it all in: joinAlly)
   if (ally) {
     joinAlly(state, f, ally, tile);
   } else {
@@ -142,6 +146,7 @@ function moveCaptives(state, f, from, to) {
 }
 // Taken in by an ally: everything they have goes over, and the group is no more.
 function joinAlly(state, f, ally, tile) {
+  gatherStores(state, f); // groupbases.js: every base's stores go with them
   ally.pop += f.pop;
   for (const [k, q] of Object.entries(f.stock)) if (q > 0) ally.stock[k] = (ally.stock[k] || 0) + q;
   if (f.arsenal) for (const it of [...f.arsenal.items]) { removeFromArsenal(f, it, "joined"); addToArsenal(state, ally, it, "joined"); }

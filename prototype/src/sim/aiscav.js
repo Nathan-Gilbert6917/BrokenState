@@ -52,6 +52,7 @@
 //     same POI (or your team in none), the contest card as before; a group at war with you contests either way.
 //     Their own land's POIs fall by AISCAV.landRate a day like its sites.
 // Decisions use hash01 (skills.js), never the world's random numbers, so the rest of a run draws the same dice.
+import { sortFind, themeOf } from "./ammo.js"; // a find's rounds by the site's calibres
 import { typedFood, siteMix, shopFood, drawShop, unitsOf } from "./foods.js"; // the food a site holds, as items; the shops run down
 import { supplyAmt } from "./rounds.js"; // "food": days of food (foods.js)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
@@ -207,7 +208,9 @@ export function aiScavDaily(state) {
       const t = state.tiles[id];
       const take = Math.min(t.loot - AISCAV.floor, t.loot * AISCAV.landRate);
       if (!(take > 0)) continue;
-      addTo(f.stock, haulFor(t, take, t.loot, AISCAV.landEff * aiWorkMult(f), state)); // carts.js: their carts haul a little more in (coarse)
+      const haul = haulFor(t, take, t.loot, AISCAV.landEff * aiWorkMult(f), state); // carts.js: their carts haul a little more in (coarse)
+      sortFind(haul, themeOf(t.loc ? t.loc.type : null), state.seed, "aiscavland", f.name, id, state.hour); // ammo.js: the site's calibres
+      addTo(f.stock, haul);
       t.loot -= take;
       S.stats.land += take;
     }
@@ -217,7 +220,7 @@ export function aiScavDaily(state) {
       poisOf(t).forEach((_, j) => {
         if (isSitePoi(t, j) || poiPool(t, j) <= AISCAV.floor) return;
         const r = raidPoiAsGroup(state, f, t, j, poiPool(t, j) * AISCAV.landRate, { eff: AISCAV.landPoiEff, heat: 0, news: false, count: false });
-        if (r && r.took > 0) { addTo(f.stock, r.goods); S.stats.land += r.took; }
+        if (r && r.took > 0) { sortFind(r.goods, themeOf(t.loc ? t.loc.type : null), state.seed, "aiscavpoi", f.name, id, j, state.hour); addTo(f.stock, r.goods); S.stats.land += r.took; } // ammo.js: the site's calibres
       });
     }
     // A party out.
@@ -279,6 +282,10 @@ export function scavArrived(state, p) {
   if (p.phase === "home") {
     const S = aiScav(state);
     if (f && f.alive) {
+      // The rounds they found are the site's (ammo.js: its theme's calibres, as your searches there find), never their
+      // own guns' by wishing (docs/adr/0001-ai-parity.md).
+      const st = state.tiles[p.scav.site];
+      sortFind(p.scav.got, themeOf(p.scav.kind || (st && st.loc ? st.loc.type : null)), state.seed, "aiscavrounds", localId(state, p.id), state.hour);
       for (const [k, q] of Object.entries(p.scav.got)) f.stock[k] = (f.stock[k] || 0) + Math.floor(q);
       S.stats.goods += Object.values(p.scav.got).reduce((a, q) => a + Math.floor(q), 0);
       S.stats.gear = (S.stats.gear || 0) + scavFinds(state, f, p).length; // arsenal.js: guns, armour, explosives by the site's gear list

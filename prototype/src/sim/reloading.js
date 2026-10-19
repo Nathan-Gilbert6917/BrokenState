@@ -512,15 +512,16 @@ export function groupPull(state, f) {
   const guns = {};
   for (const it of (f.arsenal && f.arsenal.items) || []) { const c = calOf(it && it.key); if (c) guns[c] = true; }
   if (!Object.keys(guns).length) return 0;
-  const mix = kindMix(f.type);
-  let tot = 0, unused = 0, charge = 0;
-  for (const [k, w] of Object.entries(mix)) { const r = roundOf(k); if (!r) continue; tot += w; if (!guns[r.cal]) { unused += w; charge += w * (pullYield(k).powder); } }
-  if (!(unused > 0) || !(tot > 0)) return 0;
-  const n = Math.floor(Math.min(G.max, num(f.stock.ammo) * (unused / tot) * G.share, num(f.stock.ammo) - f.pop * G.keepHead));
+  // Their rounds by key (docs/adr/0001-ai-parity.md): the calibres none of their guns shoot, a share of them pulled.
+  const keys = Object.keys(f.stock).filter((k) => { const r = roundOf(k); return r && !guns[r.cal] && num(f.stock[k]) >= 1; });
+  const unused = keys.reduce((a, k) => a + Math.floor(num(f.stock[k])), 0);
+  if (!(unused > 0)) return 0;
+  const n = Math.floor(Math.min(G.max, unused * G.share));
   if (!(n >= 1)) return 0;
-  f.stock.ammo -= n;
+  let left = n, charge = 0;
+  for (const k of keys) { if (left <= 0) break; const q = Math.min(left, Math.floor(num(f.stock[k]))); f.stock[k] -= q; left -= q; charge += q * pullYield(k).powder; }
   f.stock.brass = num(f.stock.brass) + n;
-  f.stock.powder = num(f.stock.powder) + Math.floor(n * charge / unused);
+  f.stock.powder = num(f.stock.powder) + Math.floor(charge);
   f.stock.primers = num(f.stock.primers) + Math.floor(n * P.PRIMER);
   f.stock.scrap = num(f.stock.scrap) + Math.floor(n / RELOAD.LEAD);
   f.pulled = num(f.pulled) + n;

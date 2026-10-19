@@ -37,7 +37,7 @@ import { createBattle, combatAct, CELL } from "../src/sim/combat.js";
 import { hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { spawnVisitor, openVisitorTrade, autoVisitorTrade } from "../src/sim/visitors.js";
-import { lootItem } from "../src/sim/inventory.js";
+import { lootItem, newItem } from "../src/sim/inventory.js";
 import { GOV_GUNS, gunWant, pickGunToBuy } from "../src/sim/govguns.js";
 import { ARSENAL, arsenalDaily, ensureArsenal } from "../src/sim/arsenal.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -233,14 +233,17 @@ for (const mode of ["normal", "hardcore"]) {
     const st = createWorld({ seed: 4242, factionCount: 6, mode });
     const made = st.rng.state;
     st.started = true;
-    setAutopilot(st, true, "balanced"); // searches, trades, fights: the swaps on the way
+    // searches, trades, fights: the swaps on the way. Hardcore: the world's own (the groups' finds, trades, fights),
+    // not the governor's: its crew's grab and its first searches find another gun with the distribution on (that is
+    // what the distribution is), and a governor equips a found rifle and plays the day differently.
+    setAutopilot(st, mode !== "hardcore", "balanced");
     for (let h = 0; h < days * 24 && !st.gameOver; h++) tickHour(st);
     GUN_DIST.off = false;
     return { made, ran: st.rng.state };
   };
   const a = run(true, 5), b = run(false, 5);
   check(a.made === b.made, `${mode}: a world is made on the same draws with the distribution off and on`);
-  check(a.ran === b.ran, `${mode}: its first 5 days (the autopilot playing) draw the same (${a.ran} / ${b.ran})`);
+  check(a.ran === b.ran, `${mode}: its first 5 days (${mode === "hardcore" ? "the world playing" : "the autopilot playing"}) draw the same (${a.ran} / ${b.ran})`);
 }
 
 // ---------- new guns in the extra rolls only (data-guns.js GUN_ADDED, GUN_NEWNESS) ----------

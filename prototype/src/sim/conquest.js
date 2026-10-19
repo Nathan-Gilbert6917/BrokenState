@@ -54,6 +54,8 @@
 // - Razing (factions.js baseFate / razeChance, aggressive gangs): razePlayerBase burns a base of yours to the ground
 //   instead: everything goes, its people walk to your nearest base, the tile is a ruin (tile.ruin: a little loot, an
 //   outpost there needs 5 scrap). The hub razed is the hub lost.
+import { peopleHere, syncMembers } from "./members.js"; // the people who live at a base
+import { loseBase, gainBase } from "./groupbases.js"; // their bases as base objects (what is there)
 import { foodIn, packPick, takeItem } from "./foods.js"; // food packed by the days
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { packRounds } from "./ammo.js";
@@ -115,6 +117,9 @@ const history = (state, text) => { const C = ensureConquest(state); C.history.un
 export function peopleAt(state, f, tile) {
   const i = f.bases.indexOf(tile);
   if (i < 0) return 0;
+  if (Array.isArray(f.people) && f.popSeen !== f.pop) syncMembers(state, f); // members.js: a head count changed this hour: the people first
+  const here = peopleHere(f, tile); // members.js: the people who live there
+  if (here != null) return here;
   const w = f.bases.length - 1 + CONQUEST.HOME_WEIGHT;
   return Math.max(1, Math.round((f.pop * (i === 0 ? CONQUEST.HOME_WEIGHT : 1)) / w));
 }
@@ -392,19 +397,20 @@ export function captureBase(state, f, tile, p, info = {}) {
   }
   base.type = noHub ? "hub" : "outpost";
   base.alert = false;
-  // Their stores at this base: half of it is yours, the rest is spoiled, burned or carried off.
+  // Their stores at this base (groupbases.js: what is there, never another base's): half of it is yours, the rest is
+  // spoiled, burned or carried off. A base of yours they held (occ) keeps its own stores: they are in it.
   const got = [];
-  for (const k of Object.keys(f.stock)) {
-    const here = Math.max(0, (f.stock[k] || 0) * share);
-    f.stock[k] = Math.max(0, (f.stock[k] || 0) - here);
+  const lostHome = loseBase(state, f, tile);
+  if (!occ && lostHome) for (const k of Object.keys(lostHome.stock)) {
+    const here = Math.max(0, Number(lostHome.stock[k]) || 0);
     if (!SUPPLIES[k]) continue;
     const q = Math.floor(here * CONQUEST.STOCK_SHARE);
     if (q > 0) { base.stock[k] = (base.stock[k] || 0) + q; got.push(`${q} ${keyWord(k)}`); }
   }
-  // Their spare weapons and armour kept there (arsenal.js): the same share as the stores.
-  const kit = arsenalShareTo(state, f, share * CONQUEST.STOCK_SHARE, base.armory);
+  void share;
+  // Their spare weapons and armour (arsenal.js: kept at their main base; what their people carry fought on them).
+  const kit = home ? arsenalShareTo(state, f, CONQUEST.STOCK_SHARE, base.armory) : [];
   if (kit.length) got.push(kit.length === 1 ? kit[0].name : `${kit.length} pieces of their kit`);
-  f.bases = f.bases.filter((t) => t !== tile);
   state.bases.push(base);
   askBaseName(state, base);
   const seized = home && f.vehicles && f.vehicles.length ? seizeGroupVehicles(state, f, base) : []; // vehicles.js: their Army truck and Humvee are yours
@@ -624,7 +630,7 @@ export function occupyPlayerBase(state, base, f, opts = {}) {
   base.repairs = [];
   base.construction = [];
   base.type = "outpost";
-  f.bases.push(base.tile);
+  gainBase(state, f, base.tile, null, base); // groupbases.js: your base object is theirs now, with what is left in it
   const garrison = Math.max(CONQUEST.GARRISON_MIN, Math.round((opts.garrison || 3) * CONQUEST.GARRISON));
   C.occupied.push({ tile: base.tile, base, name: base.name, factionId: f.id, day: day(state), garrison, garrisonMax: garrison, wasHub, how: opts.retreated ? "retreat" : opts.outcome || "overrun" });
   C.stats.basesLost++;

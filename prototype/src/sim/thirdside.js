@@ -11,6 +11,9 @@
 // your people (damage), overwatch, placing them (createBattle setup.third, createRaid groups with a side) and the
 // result (result.third). A battle with no third side takes exactly the old paths.
 import { enemyUnit, active, los, WEAPONS, say, registerOccupantSide } from "./combat.js";
+import { GEAR } from "./data.js";
+import { lootItem } from "./inventory.js";
+import { refitPerson, fromPerson } from "./fighters.js"; // a person: rebuilt with their own weapon and health
 
 export const THIRD = {
   THREAT_DEAD: 7,      // the dead this close (tiles) are a threat to neutrals
@@ -54,8 +57,21 @@ export function thirdSideUnit(b, u, g, k = 0) {
   if (who) {
     if (who.name) { u.name = who.name; u.short = who.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase(); }
     const w = who.weapon && WEAPONS[who.weapon] ? who.weapon : rec.team === "neutral" ? "fists" : null;
-    if (w) { u.weapon = w; u.weaponName = WEAPONS[w].name; }
-    if (who.hp) { u.hp = Math.min(u.maxHp, who.hp); }
+    if (u.who && who.s && who.s.gear) { // fighters.js: the wanderer themselves, with what they carry and their health
+      const keepName = u.name, keepShort = u.short;
+      fromPerson(null, b, u, who.s);
+      u.name = keepName; u.short = keepShort;
+    } else if (u.who) { // fighters.js: a person: the weapon in their hands, their health as it is (the unit built again from them)
+      const s = u.who;
+      if (w && w !== u.weapon) s.gear.weapon = w === "fists" || !GEAR[w] ? null : lootItem(w, rec.team === "military" ? "military" : "survivor", [b.tileId ?? 0, "third", gi, k]);
+      if (who.hp) s.health = Math.max(1, Math.min(100, who.hp));
+      const keepName = u.name, keepShort = u.short;
+      refitPerson(b, u);
+      u.name = keepName; u.short = keepShort;
+    } else {
+      if (w) { u.weapon = w; u.weaponName = WEAPONS[w].name; }
+      if (who.hp) { u.hp = Math.min(u.maxHp, who.hp); }
+    }
   }
   rec.start += 1;
   // A neutral's body is its own (wanderers.js people), not a raider's kit.
@@ -188,6 +204,8 @@ export function thirdResult(b) {
       team: g.team, name: g.name, factionId: g.factionId, wid: g.wid, start: g.start, hostile: g.hostile,
       met: g.met || mine.some((u) => !u.dead && b.units.some((p) => p.side === "player" && !p.dead && dist(p, u) <= THIRD.SEE)),
       alive: mine.filter((u) => !u.dead).length, dead: mine.filter((u) => u.dead).length, fled: mine.filter((u) => u.fled).length,
+      deadPeople: mine.filter((u) => u.dead && u.who && !u.who.transient).map((u) => u.who), // fighters.js: the very people who fell
+      hurt: mine.filter((u) => !u.dead && u.who && !u.who.transient).map((u) => [u.who, u.hp]),
       gaveUp, taken: enemyStands ? gaveUp : 0, freed: enemyStands ? 0 : gaveUp, held,
     };
   });

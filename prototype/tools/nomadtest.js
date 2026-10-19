@@ -423,8 +423,13 @@ if (!QUICK) {
     check(lateMean >= r.target * 0.6 && Math.max(...counts) <= r.target, `${r.size}: the count stays near the target (mean ${lateMean.toFixed(1)} after day 56, at most ${Math.max(...counts)}, target ${r.target}; overall ${mean.toFixed(1)})`);
     check([1, 2, 3].every((t) => r.maxPop[t] <= T[t].size[1]), `${r.size}: no tier cap passed (${r.maxPop[1]}/${r.maxPop[2]}/${r.maxPop[3]} of ${T[1].size[1]}/${T[2].size[1]}/${T[3].size[1]})`);
     check(r.inFactions === 0 && r.owners === 0, `${r.size}: nobody grew into a base-holding group`);
-    check(r.samples.some((s) => s.tiers === 3) ? S.tiers[2] > 0 && S.tiers[3] > 0 : true, `${r.size}: the later tiers came once unlocked (T2 ${S.tiers[2]}, T3 ${S.tiers[3]})`);
+    // Tier 3 unlocks late (eras.js) and a band of it comes only with the next respawn: one or two a run, so a single
+    // size may see none by luck; across the sizes some must come (below, after the loop).
+    check(r.samples.some((s) => s.tiers >= 2) ? S.tiers[2] > 0 : true, `${r.size}: the second tier came once unlocked (T2 ${S.tiers[2]}, T3 ${S.tiers[3]})`);
   }
+  const unlocked3 = results.filter((r) => r.samples.some((s) => s.tiers === 3));
+  const t3 = unlocked3.reduce((a, r) => a + r.stats.tiers[3], 0);
+  check(!unlocked3.length || t3 > 0, `the third tier came once unlocked, over the ${unlocked3.length} size(s) that unlocked it (${t3} bands)`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

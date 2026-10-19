@@ -17,7 +17,8 @@ import { ensureSkills, CAP_WARD, CAP_STUDY, USE, EARNED_PERKS, PERKS, hasPerk, x
 import { addCondition } from "../src/sim/health.js";
 import { governRoles, setAutopilot } from "../src/sim/autopilot.js";
 import { WORK_TYPES, workState, planBase } from "../src/sim/work.js";
-import { medicTraining, medOf, medicSkillMult, groupHospitalTier, healRate, GROUP_MED, weightOf } from "../src/sim/groupcare.js";
+import { medicTraining, medOf, medicSkillMult, groupHospitalTier, healRate, GROUP_MED, weightOf, woundGroup, groupCareDaily } from "../src/sim/groupcare.js";
+import { peopleUp } from "../src/sim/factions.js";
 import { nextWork, groupWorksDaily, sickbayTier, worksText, groupsBuild, GROUP_WORKS, groupTech, groupSkill } from "../src/sim/groupworks.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { ROLES } from "../src/sim/economy.js";
@@ -252,24 +253,27 @@ console.log("AI groups");
   f.works[f.bases[0]] = { ...(f.works[f.bases[0]] || {}), beds: 1, bench: 1, sickbay: 3 }; // a clinic built
   const tier = groupHospitalTier(st, f);
   check(tier === (st.groupWorks ? 3 : weightOf(f, "sickbayBuilt", GROUP_MED.builtDflt)), `sick bay tier ${t0} → ${tier} with a clinic built`);
-  f.wounded = 6;
-  const before = healRate(f).rate;
-  let xp = 0;
-  // Wounded a third of the time (a fight's wounded heal in about ten days).
-  const wounds = (g, d) => { g.wounded = d % 30 < 10 ? 6 : 0; };
-  for (let d = 0; d < 180; d++) { wounds(f, d); xp += medicTraining(st, f); }
-  f.wounded = 6;
-  check(xp > 0 && m.staff > start[1], `180 days: medics ${start[1]} → ${m.staff}, doctor ${start[0]} → ${m.doc}`);
-  check(m.staff <= m.doc, "the medics stay at or below the doctor");
-  check(healRate(f).rate > before && medicSkillMult(f) > 1, `better medics heal faster (${r1(medicSkillMult(f) * 100) / 100}×)`);
-  // Without a sick bay: no lessons, slower.
-  const g = { type: f.type, pop: 30, wounded: 6, bases: [], works: {}, stock: { meds: 0 } };
-  const saveWorks = st.groupWorks; st.groupWorks = true; // bare-start rules: nothing built, no sick bay
-  check(groupHospitalTier(st, g) === 0, "a bare group has no sick bay");
-  let xpG = 0;
-  for (let d = 0; d < 180; d++) { wounds(g, d); xpG += medicTraining(st, g); }
-  check(xpG < xp * 0.8, `no sick bay: the medics' XP ${Math.round(xpG)} against ${Math.round(xp)} with one (Medicine ${medOf(g).staff} and ${m.staff}; both stop at their doctor's)`);
-  st.groupWorks = saveWorks;
+  // groupmedical.js (docs/adr/0001-ai-parity.md): a group's medics are its people. They learn Medicine by treating
+  // its wounded (skills.js gainXp, as yours do), and a sick bay heals faster (your hospital's numbers).
+  peopleUp(st, f);
+  const medic = f.people.slice().sort((a, c) => (c.skills.medicine || 0) - (a.skills.medicine || 0))[0];
+  const xp0 = (medic.xp && medic.xp.medicine) || 0, lv0 = medic.skills.medicine;
+  f.stock.meds = 500;
+  for (let d = 0; d < 30; d++) { if (d % 10 === 0) woundGroup(f, 6); st.hour += 24; groupCareDaily(st, f); }
+  check(medic.skills.medicine > lv0 || ((medic.xp && medic.xp.medicine) || 0) > xp0, `30 days of wounded: their best medic learns (Medicine ${lv0} → ${medic.skills.medicine})`);
+  const healDay = (tierWorks) => {
+    const s2 = createWorld({ seed: SEED + 3, factionCount: 4 });
+    const g2 = s2.factions[0];
+    g2.works = { [g2.bases[0]]: tierWorks };
+    s2.groupWorks = true;
+    peopleUp(s2, g2);
+    g2.stock.meds = 0;
+    for (const p of g2.people) p.health = 50;
+    s2.hour += 24; groupCareDaily(s2, g2);
+    return g2.people.reduce((a, p) => a + p.health, 0) / g2.people.length;
+  };
+  const bay = healDay({ beds: 1, bench: 1, sickbay: 3 }), bare = healDay({});
+  check(bay > bare, `a clinic heals them faster: ${r1(bay)} health a day on from 50 against ${r1(bare)} with no sick bay`);
 }
 
 // ---------- 6b. AI groups build their sick bays (groupworks.js) ----------
@@ -388,7 +392,8 @@ console.log("Save, load, short run");
   let err = null;
   // (the doctor and the trainee kept from walking away: this is about the training and the save, not their spirits; a
   // 40-day run's random course took the trainee off in despair on day 30 after an unrelated change, 2026-10-12)
-  try { for (let i = 0; i < 24 * 40; i++) { tickHour(st); st.cards.length = 0; for (const s of [ppl[0], ppl[1]]) s.mood = Math.max(s.mood, 60); } } catch (e) { err = e; }
+  // (kept well too: an illness on day 40 puts the trainee on Rest, sickrest.js, and the world's course decides that)
+  try { for (let i = 0; i < 24 * 40; i++) { tickHour(st); st.cards.length = 0; for (const s of [ppl[0], ppl[1]]) { s.mood = Math.max(s.mood, 60); s.conditions = []; if (s.role === "rest" && s.sickWas) { s.role = s.sickWas.role; delete s.sickWas; } } } } catch (e) { err = e; }
   check(!err, `40 autopilot days ran${err ? `: ${err.stack}` : ""}`);
   check(alive(st).every((s) => SKILLS.every((k) => Number.isFinite(s.skills[k]) && Number.isFinite((s.xp && s.xp[k]) || 0))), "no NaN in skills or XP");
   check(st.factions.every((f) => !f.med || (Number.isFinite(f.med.staff) && Number.isFinite(f.med.doc))), "no NaN in the groups' medics");

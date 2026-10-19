@@ -11,7 +11,7 @@ import { createWorld, tickHour, hub, atBase, day, alive, makeSurvivor, checkGame
 import { GEAR } from "../src/sim/data.js";
 import { addBuilding, baseWalls } from "../src/sim/buildings.js";
 import { launchExpedition, partyMembers, partyTile, outpostName, orderOptions, planPath, giveOrder as giveOrderP } from "../src/sim/parties.js";
-import { attitude, recomputeOwnership, resolveRaidOnFaction, resolveRaidOnPlayer, factionsDaily, keepChance, RAIDS, strength } from "../src/sim/factions.js";
+import { attitude, peopleUp, recomputeOwnership, resolveRaidOnFaction, resolveRaidOnPlayer, factionsDaily, keepChance, RAIDS, strength } from "../src/sim/factions.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
 import { createBattle, finishCombat, inEvac, autoPlayerTurn, runEnemyPhase } from "../src/sim/combat.js";
 import { battles as isoBattles } from "./isobattles.js";
@@ -69,6 +69,7 @@ function groupWithTwoBases(st) {
   f.bases.push(t);
   f.pop = Math.max(f.pop, 20);
   recomputeOwnership(st);
+  peopleUp(st, f); // members.js, groupbases.js: their people placed over both bases, the outpost's stores sent out (a day's run)
   return { f, tile: t };
 }
 const tick = (st, hours) => { for (let i = 0; i < hours && !st.gameOver; i++) tickHour(st); };
@@ -79,7 +80,9 @@ section("Taking a base by hand (captureBase)");
   const st = world();
   const { f, tile } = groupWithTwoBases(st);
   const land0 = A.controlledLand(st).pct;
-  const pop0 = f.pop, stock0 = food(f), n0 = st.bases.length;
+  // groupbases.js: a group's stores are at its bases (the main base's f.stock, each outpost's its own).
+  const groupFood = (g) => Object.values(g.homes || {}).reduce((a, hm) => a + (food({ stock: hm.stock }) || 0), 0);
+  const pop0 = f.pop, stock0 = groupFood(f), n0 = st.bases.length;
   const force = C.assaultForce(st, f, tile);
   check(force.count >= 3 && force.power > 0 && force.fortified >= 1, `defenders: ${force.count} × ${force.power}, walls ×${force.fortified}`);
   check(C.assaultForce(st, f, f.bases[0]).count >= force.count, "the main base holds at least as many defenders");
@@ -87,7 +90,7 @@ section("Taking a base by hand (captureBase)");
   const b = st.bases.find((x) => x.tile === tile);
   check(!!b && b.type === "outpost" && b.captured && b.captured.from === f.id, `the base is your outpost (${text.slice(0, 80)}…)`);
   check(st.bases.length === n0 + 1 && !f.bases.includes(tile), "it left their bases list and joined yours");
-  check(f.pop < pop0 && food(f) < stock0 && (food(b) || 0) > 0, `their people and stores fell (${pop0}→${f.pop}), part of the stores is yours (${food(b)} food)`);
+  check(f.pop < pop0 && groupFood(f) < stock0 && (food(b) || 0) > 0, `their people and stores fell (${pop0}→${f.pop}), part of the stores is yours (${food(b)} food)`);
   check(A.controlledLand(st).pct > land0, `your land grew (${(land0 * 100).toFixed(1)}% → ${(A.controlledLand(st).pct * 100).toFixed(1)}%)`);
   check(A.baseRadius(st, b) === A.controlRadius(st, "stronghold"), `a captured group base reaches ${A.baseRadius(st, b)} tiles (an outpost ${A.controlRadius(st, "outpost")})`);
   check(f.alive && st.conquest.stats.taken === 1 && C.infamy(st) > 0, `the group lives on with ${f.bases.length} base(s); infamy ${C.infamy(st)}`);

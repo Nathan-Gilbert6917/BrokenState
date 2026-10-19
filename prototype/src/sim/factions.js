@@ -38,6 +38,9 @@
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
 //   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
 //   bands from outside that settle use it too, visitors.js settleBands).
+import { ensureMembers, syncMembers, placeMembers, moveMember } from "./members.js"; // a group's people (docs/adr/0001-ai-parity.md)
+import { kitOut } from "./loadouts.js"; // what each of them carries
+import { syncBuildings, spreadStores, gatherStores, loseBase, gainBase, stockAt } from "./groupbases.js"; // their bases as base objects
 import { FOODS, foodIn, takeFood, payFood, giveFood, typedFood, typeGoods, typeStray, groupMix, ageCoarse, foodText, addFoodsTo as addItemsTo, groupStartFood, groupFieldFood } from "./foods.js"; // the groups' food by type (coarse: no lots)
 import { groupFoodLand, groupTripLosses, groupWoodLand, groupHomeShare } from "./grouptrips.js"; // the groups' outdoor work, by the job trips' rules (coarsely)
 import { FACTION_TYPES, FACTION_COLORS, GEAR } from "./data.js";
@@ -81,7 +84,7 @@ import { freeOnCollapse } from "./groupjails.js"; // jailhouse: the people a col
 import { groupCookDaily } from "./cooking.js"; // wave 2 cooking: the groups' kitchens cook by your recipes, coarsely
 import { groupWorksDaily, groupEatMult, groupCookShare, groupKitchenDaily, groupKitchenGrowth, fieldsFactor, penFood, growthFactor, workshopFactor, storeFactor, groupBaseDefence, pitchCamp, groupFreezerOn, GROUP_WORKS } from "./groupworks.js"; // barestart: what the groups build
 import { factionVehicles, groupTurretPower, raidTurretPower, loseRaidHumvee, humveeLeftText } from "./vehicles.js"; // a military group's motor pool: the Humvee's M2 in their raids, lost when one fails
-import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
+import { ensureArsenal, groupStrength, kitFactor, arsenalDaily, capSiegeKit, raidOnBase, wallPower, raidCount, clashKit, inheritArsenal, smokeCover, removeFromArsenal, addToArsenal } from "./arsenal.js"; // group arsenals: everyone fights with what their group holds
 import { groupRation, GROUP_EAT } from "./eating.js"; // ration levels for the groups (wave 2 eating)
 import { RATION_LEVELS } from "./meals.js";
 import { festivalDay } from "./festival.js"; // the harvest festival's day: the groups feast too
@@ -98,6 +101,7 @@ import { flightDaily } from "./groupflight.js"; // groups leaving a base they ca
 import { splinterDaily } from "./splinters.js"; // splinter bands
 
 export const RAIDS = {
+  LEFT_BEHIND: 0.5, // groupbases.js: the share of a base's stores left behind when its people give it up and fall back
   CAMP_W: 0.35, // a camp of yours (staging.js) draws a raid this much as often as a base with the same stores
   REACH: 30, FACTION_REACH: 14, SIZE: [0.6, 1.0], CAP: 1.0, MIN: 4, ESCALATE: 0.25, ESC_MAX: 2,
   PLAYER_W: 2.5, GREED: 1500, LAND: 0.2, GRUDGE: 0.5, GRUDGE_MAX: 4, GRUDGE_FADE: 0.01, SIZE_REF: 35, DIST: 12,
@@ -142,6 +146,16 @@ export const GROUP_HIVE = {
 // group has grown to 40–50 or your crawls have thinned the guard first (then +GOODWILL). tools/grouphivetest.js measures it.
 // A group of GROUP_BREAK people or fewer is broken (collapseFaction): every floor that kept groups above 8 (war raids,
 // peace when a side is worn down) lets them be ground down this far.
+// A group's people made to agree with its head count, placed over its bases, their kit handed out (members.js, loadouts.js).
+export function peopleUp(state, f) {
+  if (!f || f.alive === false || f.outsider) return;
+  ensureMembers(state, f);
+  syncMembers(state, f);
+  placeMembers(state, f);
+  kitOut(state, f);
+  syncBuildings(state, f); // groupbases.js: their bases as base objects, with the buildings they put up
+  spreadStores(state, f); // and each outpost's stores out to it (its people's share)
+}
 export const GROUP_BREAK = 3;
 export const groupBroken = (f) => !!f && f.pop <= GROUP_BREAK;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -187,6 +201,7 @@ export function createFactions(state, count) {
     });
     factionVehicles(state.factions[state.factions.length - 1]); // vehicles.js: a military group starts with an Army truck and a Humvee (M2 turret)
     ensureArsenal(state, state.factions[state.factions.length - 1]); // arsenal.js: its weapons, armour and explosives (hashed: the world's dice stay put)
+    peopleUp(state, state.factions[state.factions.length - 1]); // members.js, loadouts.js: its people, each carrying their share of that kit
   });
 }
 
@@ -316,6 +331,8 @@ export function factionsDaily(state) {
     if (!f.alive) continue;
     const def = FACTION_TYPES[f.type];
     tickGroup(f); // groupcare.js: the group's own day count (its daily rolls)
+    syncMembers(state, f); // members.js: the head count and the people made to agree (what the day's events changed)
+    gatherStores(state, f); // groupbases.js: the outposts' stores in to the main base for the day's work
     // Eras (eras.js): from year 3 the aggressive groups arm themselves better every year.
     if (isAggressiveType(f)) f.gear = gangArms(state);
     // Food and growth.
@@ -348,6 +365,7 @@ export function factionsDaily(state) {
     for (const q of state.parties) if (q.owner === f.id && q.rations) away += takeFood(q.rations, Math.max(1, q.heads || 1) * mult, { state }).units;
     const eat = Math.max(0, f.pop * mult - away);
     const hungry = takeFood(f.stock, eat, { state }).units < eat - 1e-6;
+    f.hungryToday = hungry; // groupmedical.js: nobody heals on an empty stomach
     f.foodSpoiled = ageCoarse(f.stock, 1, undefined, { frozen: groupFreezerOn(f) ? GROUP_WORKS.MACH.room : 0 }); // groupworks.js: a running walk-in freezer
     groupTripLosses(state, f); // grouptrips.js: their workers out on the land meet trouble too (fewer losses the better armed)
     // Growth: newcomers by the type's pull (groupcare.js GROUP_PRIORITIES recruit: 0.7 + 0.3 x it, so about as before);
@@ -360,7 +378,8 @@ export function factionsDaily(state) {
     }
     // groupworks.js: without a workshop they make less, without a storehouse they keep less (1 once built).
     const mk = (off ? 1 : FACTION_MAKE) * workshopFactor(state, f), cap = storeFactor(state, f);
-    f.stock.ammo = Math.min(f.pop * 30 * cap, f.stock.ammo + hands * 0.3 * def.arms * mk);
+    // (No rounds from nothing any more: docs/adr/0001-ai-parity.md. Theirs come from the sites they strip, their bench,
+    // trade and the fields they hold, by calibre, as yours do.)
     f.stock.scrap = Math.min(f.pop * 10 * cap, f.stock.scrap + hands * 0.2 * mk);
     f.stock.fuel = Math.min(f.pop * 3 * cap, f.stock.fuel + hands * 0.04 * mk); // fuel is scarce (economy rework)
     f.stock.meds = Math.min(f.pop * 3 * cap, f.stock.meds + hands * 0.04 * mk);
@@ -402,7 +421,7 @@ export function factionsDaily(state) {
         if (agg) t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : (0.4 + (c.loot || 0)) * (1 + 2 / (1 + toYou(c.id) / 6))) * pull(c));
         else t = rng.weighted(cands, (c) => (c.bridge && !c.loc ? bridgeW(c) : 1) * pull(c));
         const fromNothing = !abandonedAt(state, t.id);
-        f.bases.push(t.id);
+        gainBase(state, f, t.id); // groupbases.js: a base object of theirs
         occupyAbandoned(state, f, t.id); // groupworld.js: the works and stores left there are theirs (a card when it was yours)
         if (fromNothing) pitchCamp(state, f, t.id); // groupworks.js: a camp until established (as your outpost camp)
         expanded(f);
@@ -467,6 +486,7 @@ export function factionsDaily(state) {
       }
     }
 
+    peopleUp(state, f); // members.js, loadouts.js: the day's newcomers and losses, who lives where, what each carries
     if (groupBroken(f)) collapseFaction(state, f);
   }
   groupCareWorld(state); // groupcare.js: your deserters may join a group near the base they left
@@ -927,12 +947,16 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
   // Clearly outmatched at a base that is not their main one: they may give it up and fall back to the others.
   if (att > def * RAIDS.ABANDON && target.bases.length > 1 && party.target.tile !== target.bases[0] && rng.chance(RAIDS.ABANDON_CHANCE)) {
     const lost = party.target.tile;
-    target.bases = target.bases.filter((b) => b !== lost);
-    for (const k of Object.keys(target.stock)) { const q = target.stock[k] * 0.1; target.stock[k] -= q; if (attacker) attacker.stock[k] = (attacker.stock[k] || 0) + q; }
-    if (attacker) clashKit(state, attacker, 0, 0, target, 0, "a", 0.2, false); // arsenal.js: the spare kit left behind there, half carried off
+    // groupbases.js: they carry what they can of that base's stores to the others; the rest is left there.
+    const left = loseBase(state, target, lost);
+    const behind = {};
+    if (left) for (const [k, q] of Object.entries(left.stock)) { if (!(typeof q === "number" && q > 0)) continue; const n = q * RAIDS.LEFT_BEHIND; behind[k] = n; target.stock[k] = (target.stock[k] || 0) + q - n; }
     const kept = attacker && rng.chance(keepChance(state, attacker, lost));
-    if (kept) attacker.bases.push(lost);
-    else leaveGroupBase(state, target, lost, 0.5 / Math.max(1, target.bases.length + 1)); // groupworld.js: "it stands empty" was only words: its works stand there for whoever comes (an Occupy order, another group)
+    if (kept) gainBase(state, attacker, lost, behind);
+    else {
+      if (attacker) for (const [k, n] of Object.entries(behind)) { attacker.stock[k] = (attacker.stock[k] || 0) + n / 2; behind[k] = n / 2; } // half looted, half left
+      leaveGroupBase(state, target, lost, 0, behind); // groupworld.js: "it stands empty" was only words: its works stand there for whoever comes (an Occupy order, another group)
+    }
     recomputeOwnership(state);
     state.stats.abandonedBases = (state.stats.abandonedBases || 0) + 1;
     if (report) log(state, `${whom[0].toUpperCase() + whom.slice(1)} gave up ${tileLabel(state, lost)} to ${who} without a fight${kept ? "" : " (it stands empty)"}.`, "info");
@@ -947,19 +971,22 @@ function resolveOrdinaryRaid(state, party, attacker, target, helpPower) {
     // nonlethal.js raidPrisoners: the winners take a share of the beaten alive by type, into their jail (groupjails.js:
     // as many as it holds; the rest sold on, let go or killed by type). Returns those taken alive (fewer dead).
     const taken = raidPrisoners(state, attacker, target, loss);
-    for (const k of Object.keys(target.stock)) {
-      const lost = target.stock[k] * 0.4;
-      target.stock[k] -= lost;
+    const hitStock = stockAt(state, target, party.target.tile); // groupbases.js: the stores at the base hit, not the others'
+    for (const k of Object.keys(hitStock)) {
+      if (typeof hitStock[k] !== "number") continue;
+      const lost = hitStock[k] * 0.4;
+      hitStock[k] -= lost;
       if (attacker) attacker.stock[k] = (attacker.stock[k] || 0) + lost / 2; // half of it is carried home
     }
+    target.lossAt = party.target.tile; // members.js: the dead were the people there
     if (target.bases.length > 1 && rng.chance(0.5)) {
       const lost = party.target.tile;
-      target.bases = target.bases.filter((b) => b !== lost);
+      const lostHome = loseBase(state, target, lost); // groupbases.js: the base object and what is left in it
       target.lostBaseDay = day(state); // valuation.js: they want weapons and defences, and sell off fine things
       const fate = attacker ? baseFate(state, attacker, lost) : "leave"; // keep it, burn it or loot it and go
-      if (fate === "keep") attacker.bases.push(lost);
+      if (fate === "keep") gainBase(state, attacker, lost, lostHome ? lostHome.stock : null);
       else if (fate === "raze") razeGroupBase(state, target, lost, attacker);
-      else if (leaveGroupBase(state, target, lost, 0.5 / Math.max(1, target.bases.length + 1))) state.stats.leftBases = (state.stats.leftBases || 0) + 1; // groupworld.js: looted and left standing, its works there for whoever comes
+      else if (leaveGroupBase(state, target, lost, 0, lostHome ? lostHome.stock : {})) state.stats.leftBases = (state.stats.leftBases || 0) + 1; // groupworld.js: looted and left standing, its works there for whoever comes
       recomputeOwnership(state); // a base changed hands: the land around it follows at once
     }
     if (report) log(state, `${who[0].toUpperCase() + who.slice(1)} hit ${whom} hard (${loss - taken} dead${taken ? `, ${taken} taken prisoner` : ""}${covered ? `; ${covered} got away under smoke` : ""}).`, "danger");
@@ -1033,7 +1060,12 @@ function takeOver(state, f, ruins, by) {
     heir.bases.push(r);
     taken.push(r);
   }
-  heir.pop += state.rng.int(2, 4);
+  const joiners = state.rng.int(2, 4);
+  // members.js: that many of the broken group's own people go over, with what they carry (the rest scatter).
+  const people = Array.isArray(f.people) ? f.people.filter((s) => s.alive).sort((a, b) => hash01(state.seed, "heir", f.name, a.id) - hash01(state.seed, "heir", f.name, b.id)).slice(0, joiners) : [];
+  if (people.length) { if (!Array.isArray(heir.people)) ensureMembers(state, heir); for (const s of people) moveMember(state, f, heir, s, null, { give: (it) => removeFromArsenal(f, it, "taken", { keepOn: true }), take: (it) => addToArsenal(state, heir, it, "taken") }); }
+  else heir.pop += joiners;
+  gatherStores(state, f); // groupbases.js: every base's stores
   for (const k of Object.keys(f.stock)) heir.stock[k] = (heir.stock[k] || 0) + Math.floor((f.stock[k] || 0) / 2);
   inheritArsenal(state, heir, f); // arsenal.js: half their kit, and their vehicles
   state.stats.takeovers = (state.stats.takeovers || 0) + 1;

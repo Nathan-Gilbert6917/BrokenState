@@ -144,7 +144,7 @@ export const nomadTiers = (state) => NOMAD_TIERS.filter((t) => yearOf(state) >= 
 export const tierOf = (b) => N.TIERS[b.tier] || N.TIERS[1];
 export const nomadPower = (state, b) => Math.round((tierOf(b).power + clamp((yearOf(state) - 2) * N.ERA_POWER, 0, N.ERA_POWER_MAX)) * 10) / 10;
 export const nomadStrength = (state, b) => Math.max(0, b.pop) * nomadPower(state, b) + (b.vehicle ? N.VEH_POWER[b.vehicle] || 0 : 0);
-export const nomadEnemy = (state, b) => ({ kind: tierOf(b).kit, count: clamp(b.pop, 1, 14), power: nomadPower(state, b), name: cap1(b.name) });
+export const nomadEnemy = (state, b) => ({ kind: tierOf(b).kit, count: clamp(b.pop, 1, 14), power: nomadPower(state, b), name: cap1(b.name), band: { kind: "nomad", id: b.id } }); // bands.js: the band's own people
 const roundPop = (n) => (n >= 8 ? `about ${n}` : `${n}`);
 export const tierName = (b) => `${tierOf(b).name}`;
 

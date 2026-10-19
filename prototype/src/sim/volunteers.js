@@ -33,6 +33,7 @@
 // The governor (autopilot) asks allies when a hive crawl or a base assault looks marginal (autoAskVolunteers, by its
 // style's STYLES row) and answers the groups' asks by its style (the card's ai scores: Diplomat generous, Turtle stingy).
 // Dice: state.volRng (its own, saved), never the world's.
+import { roundOf } from "./rounds.js"; // a round key's calibre
 import { giveFood, foodIn, DAY_VALUE, moveFoodUnits } from "./foods.js"; // food by type (foods.js)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -344,11 +345,16 @@ function join(state, s, p) {
   giveFood(state, p, days, "travel"); // foods.js: a day's food each day of the span, what travellers carry
   p.supplies.water = (p.supplies.water || 0) + days;
   const f = factionById(state, s.vol.fid);
-  if (f && s.gear.weapon && calOf(s.gear.weapon.key)) { // a gun: rounds of its calibre
-    const got = takeArsenalRounds(f, VOL.BRING.ammo);
+  if (f && s.gear.weapon && calOf(s.gear.weapon.key)) { // a gun: rounds of its calibre, out of their group's (by key: docs/adr/0001-ai-parity.md)
     const cal = calOf(s.gear.weapon.key);
-    const key = cal ? baseKey(cal) : "ammo"; // rounds of their own gun's calibre
-    if (got > 0) p.supplies[key] = (p.supplies[key] || 0) + got;
+    let want = VOL.BRING.ammo;
+    for (const k of Object.keys(f.stock)) {
+      if (want <= 0) break;
+      const r = roundOf(k);
+      if (!r || r.cal !== cal) continue;
+      const q = Math.min(want, Math.floor(f.stock[k] || 0));
+      if (q > 0) { f.stock[k] -= q; p.supplies[k] = (p.supplies[k] || 0) + q; want -= q; }
+    }
   }
   try { weighTeam(state, p); } catch { /* the load is weighed again on the next move */ }
   log(state, `${s.name}, a volunteer from ${s.vol.group}, joined the team at ${tileLabel(state, partyTile(p))} (${days} days' food and water, their own ${s.gear.weapon ? s.gear.weapon.name : "fists"}). Their group's orders, not yours, in a fight.`, "good");

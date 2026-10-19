@@ -288,7 +288,7 @@ const groupOf = (state, type) => {
       const after = st.cards.find((c) => c.title === "After the fight");
       check((p.cargo.supplies.ammo || 0) - ammo0 === (loot.supplies.ammo || 0) && Math.abs((food(p.cargo) || 0) - food0 - (food(loot) || 0)) < 1e-6,
         `the team gains exactly what was on the bodies (ammo +${(p.cargo.supplies.ammo || 0) - ammo0}, on bodies ${loot.supplies.ammo || 0})`);
-      check(p.cargo.gear.length - gear0 === loot.gear.length, "no bonus gun on top of the looted ones");
+      check(p.cargo.gear.length - gear0 === loot.gear.filter((it) => !/^a_/.test(it.key)).length, "no bonus gun on top of the looted ones"); // loose rounds go in as rounds (cargo supplies by key), not gear
       check(poolLoad(p) <= partyCapacity(st, p) + 1e-6, "the team is not over what it can carry");
       check(!!after && /Taken from the bodies/.test(after.text) === (Object.values(loot.supplies).some((q) => q > 0) || loot.gear.length > 0), "the card lists what was taken, once");
     }

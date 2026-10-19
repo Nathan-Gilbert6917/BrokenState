@@ -224,7 +224,7 @@ export function attackCaravan(state, p) {
   log(state, `You turn your guns on the ${f.name.replace(/^The /, "")} caravan at ${base.name}.`, "danger");
   startCombat(state, {
     tile: base.tile, baseId: base.id,
-    enemy: { kind: "guards", count: caravanGuards(f, p), power: Math.round(guardPower(f) * 10) / 10, factionId: f.id, name: `${f.name} caravan guards` },
+    enemy: { kind: "guards", count: caravanGuards(f, p), power: Math.round(guardPower(f) * 10) / 10, factionId: f.id, partyId: p.id, name: `${f.name} caravan guards` }, // members.js: the caravan's own people
     ambush: "player", canRetreat: true, handler: "caravanAttack", context: { caravanId: p.id, baseId: base.id, factionId: f.id },
   });
   return "";

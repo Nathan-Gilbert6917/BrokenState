@@ -38,7 +38,11 @@ import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { interiorOccupants } from "./wanderers.js";
 import { AREAS, CELL, KITS, WEAPONS, RAID_W, RAID_H, enemyUnit, occupantSide, los, active, alertPod, setFloor, placeVehicle, placeCar, removeCar, CAR_LEN } from "./combat.js"; // placeCar: cars are 2 × 3–4 cells
-import { siteDanger } from "./data.js";
+import { siteDanger, GEAR } from "./data.js";
+import { lootItem } from "./inventory.js";
+import { kitSource } from "./itemcond.js";
+import { armPerson } from "./fighters.js";
+import { armFromArsenal } from "./arsenal.js"; // a person given the weapon the occupants list names
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, SIZE_CLASSES } from "./battlesize.js";
@@ -1837,7 +1841,7 @@ export function placeInterior(state, b, map, groups) {
       for (let i = 0; i < Math.max(0, Math.min(20, Math.round(g.count))); i++) {
         const u = enemyUnit(b, rng, g.kind, g.power, ++hn);
         u.aware = false; u.pod = pod;
-        if (g.factionId != null) u.factionId = g.factionId;
+        if (g.factionId != null) { u.factionId = g.factionId; armFromArsenal(state, b, u, hn); } // arsenal.js / fighters.js: one of the group's people
         let c = null;
         if (i === 1 && rng.chance(0.5)) c = rng.pick(roomCells(rooms.find((a) => a.entry) || home).filter(([x, y]) => d2(x, y) >= 6));
         if (!c) c = rng.pick(roomCells(home)) || rng.pick(rooms.filter((a) => !a.locked).flatMap((a) => roomCells(a)).filter(([x, y]) => d2(x, y) >= 6));
@@ -1890,10 +1894,10 @@ export function placeOccupantGroups(state, b, groupsIn, pod = null) {
       for (const p of people) {
         const kind = KITS[p.kit] ? p.kit : "raiders";
         const u = enemyUnit(b, rng, kind, p.power || 4, ++hn);
-        if (p.weapon && WEAPONS[p.weapon] && !WEAPONS[p.weapon].acid) { u.weapon = p.weapon; u.weaponName = WEAPONS[p.weapon].name; }
+        if (p.weapon && WEAPONS[p.weapon] && !WEAPONS[p.weapon].acid && p.weapon !== u.weapon) { if (u.who) armPerson(b, u, GEAR[p.weapon] ? lootItem(p.weapon, kitSource(kind), [b.tileId ?? 0, "occ", u.id]) : null); else { u.weapon = p.weapon; u.weaponName = WEAPONS[p.weapon].name; } } // fighters.js: the person holds it
         if (p.name) { u.name = p.name; u.short = p.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase(); }
         u.aware = !!grp.aware; u.pod = pod; u.occupant = "hostile";
-        if (grp.factionId != null) u.factionId = grp.factionId;
+        if (grp.factionId != null) { u.factionId = grp.factionId; armFromArsenal(state, b, u, hn); } // one of the group's people
         const c = rng.pick(cellsHere());
         if (c) put(u, c, [home.x0 + Math.floor(home.w / 2), home.y0 + Math.floor(home.h / 2)]);
       }

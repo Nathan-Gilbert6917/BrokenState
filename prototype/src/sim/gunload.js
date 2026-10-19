@@ -39,6 +39,11 @@ function record(u, n) {
 // An enemy's (or a third side's) gun off its body or thrown down: the rounds left in it. Returns the item.
 export function enemyGunLoaded(u, item) {
   if (!u || !isGun(item) || item.key !== u.weapon) return item;
+  if (stacked(u)) { // a person's (fighters.js): the very rounds in it, in their order
+    const r = record(u, stackN(u.stack));
+    if (r) { r.key = topKey(u.stack) || r.key; r.stack = copyStack(u.stack); item.loaded = r; }
+    return item;
+  }
   const r = record(u, magIn(u));
   if (r) item.loaded = r;
   return item;

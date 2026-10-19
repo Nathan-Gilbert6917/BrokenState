@@ -841,13 +841,13 @@ export function executeTrade(state) {
     if (!(q > 0)) continue;
     if (ctx.kind === "visit") takeFromParty(ctx.p, k, q);
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) - q;
-    const tk = ctx.kind === "caravan" || (isRoundKey(k) && !pooled(f)) ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts (an outsider's rounds stay by key)
+    const tk = ctx.kind === "caravan" || isRoundKey(k) ? k : groupStockKey(k, f); // a group's own stores: one water pool, one count of parts; rounds by key (docs/adr/0001-ai-parity.md)
     theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" || FOODS[k] ? 0 : stockOf(f, k))) + q; // a group with no figure yet (water, firewood) starts from its comfortable stock
     gave.push(`${q} ${keyWord(k)}`);
   }
   for (const [k, q] of Object.entries(t.ask)) {
     if (!(q > 0)) continue;
-    const tk = ctx.kind === "caravan" || (isRoundKey(k) && !pooled(f)) ? k : groupStockKey(k, f); // a group's own stores: one ammo count, one count of parts; an outsider (visitors.js) keeps its rounds by key, so a team buying them takes them from that key, never from a generic count it no longer has
+    const tk = ctx.kind === "caravan" || isRoundKey(k) ? k : groupStockKey(k, f); // a group's own stores: one count of parts; rounds by key (docs/adr/0001-ai-parity.md: as yours)
     theirSup[tk] = (theirSup[tk] ?? (ctx.kind === "caravan" || FOODS[tk] ? 0 : stockOf(f, tk))) - q;
     if (ctx.kind === "visit") ctx.p.cargo.supplies[k] = (ctx.p.cargo.supplies[k] || 0) + q;
     else ctx.base.stock[k] = (ctx.base.stock[k] || 0) + q;
@@ -1014,9 +1014,10 @@ export function routeExchange(state, p, route, f) {
   const agreed = route.sendQty > 0 ? Math.floor(route.recvQty * Math.min(1, sent / route.sendQty)) : 0;
   const have = Math.max(0, Math.floor(isRoundKey(route.recvKey) ? stockOf(f, route.recvKey) : f.stock[route.recvKey] || 0));
   const give = Math.max(0, Math.min(agreed, maxRecv, have));
-  f.stock[poolKey(route.sendKey)] = (f.stock[poolKey(route.sendKey)] || 0) + sent; // one water pool
+  const sk = isRoundKey(route.sendKey) ? route.sendKey : poolKey(route.sendKey), rk = isRoundKey(route.recvKey) ? route.recvKey : poolKey(route.recvKey); // rounds by key (docs/adr/0001-ai-parity.md)
+  f.stock[sk] = (f.stock[sk] || 0) + sent; // one water pool
   p.cargo.supplies[route.sendKey] = 0;
-  f.stock[poolKey(route.recvKey)] = (f.stock[poolKey(route.recvKey)] || 0) - give; // a round key: out of their one ammo count
+  f.stock[rk] = (f.stock[rk] || 0) - give;
   p.cargo.supplies[route.recvKey] = (p.cargo.supplies[route.recvKey] || 0) + give;
   if (give < agreed) {
     const why = have <= maxRecv ? "that is all they have" : "that is what the load is worth to them today";

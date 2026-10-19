@@ -136,7 +136,8 @@ section("3. Firing: arming range, impact and splash, backblast, over a wall, gat
   check(!launchRefusal(b, g, 7, 5), "2 tiles off: allowed (it simply will not arm)");
   combatAct(st, { type: "launch", unit: g.id, x: 7, y: 5 });
   const d0 = hp0 - e0.hp;
-  check(d0 >= LAUNCH.DUD[0] && d0 <= LAUNCH.DUD[1] && e1.hp === hp1, `inside ${LAUNCH.ARM} tiles: no blast, a slug on the one there (${d0}), nothing next to it`);
+  const tf = e0.tough ?? 1; // armour.js: a person takes it by your rule (their toughness, the piece it lands on)
+  check(d0 > 0 && d0 <= LAUNCH.DUD[1] * tf + 0.01 && e1.hp === hp1, `inside ${LAUNCH.ARM} tiles: no blast, a slug on the one there (${d0}), nothing next to it`);
   check(b.log.some((l) => /does not arm/.test(l.text)), "the log says it did not arm");
   check(glRounds(b, g, "he") === 11 && g.gl.mag === 0 && g.ap === 0, "a round gone from the team's, the launcher empty, the turn spent");
 
@@ -285,6 +286,7 @@ section("4. The AT4 is its own round; the M203 fires from the rifle; reloads");
 }
 
 // ======================================================================================
+const INV = await import("../src/sim/inventory.js");
 section("5. Explosions vs gear: the vehicle, the bodies, cook-off");
 {
   // A body hit by a blast: its gear worn by the damage, its rounds cooked off.
@@ -293,15 +295,18 @@ section("5. Explosions vs gear: the vehicle, the bodies, cook-off");
   const [e] = E(b);
   e.blastDmg = 60;
   const rng1 = new Rng(5), rng2 = new Rng(5);
-  const clean = enemyBody(rng1, { ...e, blastDmg: 0 }, KITS.soldiers);
+  // A person's body is what they carried (fighters.js personBody): the gun's durability before, then the body.
+  const rnds = (x) => { const { allItems: AI } = INV; let n = 0; for (const it of AI(x)) if (it && /^a_/.test(it.key)) n += Math.floor(Number(it.dur) || 0); for (const [k, q] of Object.entries(x.supplies || x.carried || {})) if (/^a_/.test(k)) n += q; return n; }; // loose rounds: boxes they carry, rounds still loose on them
+  const r0 = e.who ? rnds(e.who) : null;
+  const dur0 = e.who ? itemDur(e.who.gear.weapon) : itemDur(enemyBody(rng1, { ...e, blastDmg: 0 }, KITS.soldiers).gear.weapon);
   const body = launcherBody(b, e, enemyBody(rng2, e, KITS.soldiers));
-  const w0 = clean.gear.weapon, w1 = body.gear.weapon;
-  check(w0 && w1 && itemDur(w1) < itemDur(w0), `the gun off a body the blast hit is worn (${itemDur(w0)} → ${itemDur(w1)} of ${itemDurMax(w1)})`);
-  const share = 1 - itemDur(w1) / itemDur(w0);
+  const w1 = body.gear.weapon;
+  check(dur0 != null && w1 && itemDur(w1) < dur0, `the gun off a body the blast hit is worn (${dur0} → ${itemDur(w1)} of ${itemDurMax(w1)})`);
+  const share = 1 - itemDur(w1) / dur0;
   check(share >= 0.14 && share <= 0.52, `by 15–50% (${Math.round(share * 100)}% at 60 blast damage)`);
   check(blastWearShare(0) === LAUNCH.GEAR_WEAR[0] && Math.abs(blastWearShare(60) - LAUNCH.GEAR_WEAR[1]) < 1e-9 && blastWearShare(30) > blastWearShare(10), "scaled by the blast damage taken");
-  const k = Object.keys(clean.supplies).find((x) => /^a_/.test(x));
-  check(!k || (body.supplies[k] || 0) <= clean.supplies[k], `rounds on them cook off (${k}: ${k ? clean.supplies[k] : 0} → ${k ? body.supplies[k] || 0 : 0})`);
+  const r1 = rnds(body);
+  check(r0 == null || r1 <= r0, `rounds on them cook off (${r0} → ${r1})`);
   {
     // Your person after a fight the blasts hit (launcherBattleEnd): everything they carry is worn, the carry kit too
     // (inventory.js allCarried: a rig pouch's magazine, a carrier's plates; a helmet's mounts with the helmet).
@@ -501,8 +506,9 @@ section("5b. A blown-up vehicle is a wreck for good; blasts wear what lies on th
   for (const x of E(b5)) place(x, 30, 1 + E(b5).indexOf(x));
   place(d0, 12, 12); d0.dead = true; d0.hp = 0;
   landEffect(b5, P(b5)[0], { fx: "blast", blast: GL_HE }, 12, 12);
-  const clean = enemyBody(new Rng(9), { ...d0, groundWear: 0 }, KITS.soldiers), worn = launcherBody(b5, d0, enemyBody(new Rng(9), d0, KITS.soldiers));
-  check(d0.groundWear >= 0.3 && itemDur(worn.gear.weapon) < itemDur(clean.gear.weapon), `a body lying where it went off: its gun worn (${itemDur(clean.gear.weapon)} → ${itemDur(worn.gear.weapon)})`);
+  const g0 = d0.who ? itemDur(d0.who.gear.weapon) : itemDur(enemyBody(new Rng(9), { ...d0, groundWear: 0 }, KITS.soldiers).gear.weapon);
+  const worn = launcherBody(b5, d0, enemyBody(new Rng(9), d0, KITS.soldiers));
+  check(d0.groundWear >= 0.3 && worn.gear.weapon && itemDur(worn.gear.weapon) < g0, `a body lying where it went off: its gun worn (${g0} → ${worn.gear.weapon ? itemDur(worn.gear.weapon) : "none"})`);
 }
 
 // ======================================================================================
@@ -593,8 +599,19 @@ section("7. A group's launchers: raiders use the RPG they captured; rounds back 
   A.ensureArsenal(st, f).rounds = { a_rocket_heat: 3 };
   const issue = A.issueKit(st, f, 6, "walls");
   check(issue[0].launcher === rpgIt && issue[0].weapon && !isLauncherKey(issue[0].weapon.key), "a raid on walls: the launcher is issued beside a gun");
+  // The day's kit-out (loadouts.js): the RPG goes to one of their people, the rockets stay in the stores until a fight
+  // draws them; the raid forming takes it along (loadouts.js kitParty).
+  const raidP = { id: 7777, owner: f.id, kind: "raid", path: [], idx: 0, phase: "out" };
+  st.parties.push(raidP); // a live party (members.js syncMembers brings the people of a party that is gone home)
+  {
+    const { peopleUp } = await import("../src/sim/factions.js");
+    const { sendMembers } = await import("../src/sim/members.js");
+    const { kitParty } = await import("../src/sim/loadouts.js");
+    peopleUp(st, f);
+    kitParty(st, f, sendMembers(st, f, raidP, 5), "raid", raidP);
+  }
   const h = hub(st);
-  st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: atBase(st, h.id).slice(0, 3).map((s) => s.id), enemy: { kind: "raiders", count: 5, power: 5, factionId: f.id, name: "test raiders", arsTask: "walls" }, ambush: null, canRetreat: false, handler: "gl", context: {} });
+  st.combat = createBattle(st, { tile: h.tile, baseId: h.id, fighterIds: atBase(st, h.id).slice(0, 3).map((s) => s.id), enemy: { kind: "raiders", count: 5, power: 5, factionId: f.id, partyId: raidP.id, name: "test raiders", arsTask: "walls" }, ambush: null, canRetreat: false, handler: "gl", context: {} });
   const b = st.combat;
   const u = b.units.find((x) => x.arsLauncher === rpgIt);
   check(!!u && u.gl && u.gl.key === "rpg" && u.gl.mag === 1 && u.weapon !== "rpg", `one of their fighters carries it, loaded, a gun in hand (${u ? `${u.weaponName}, ${glLabel(b, u)}` : "none"})`);

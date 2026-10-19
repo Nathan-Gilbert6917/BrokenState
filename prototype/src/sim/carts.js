@@ -105,6 +105,7 @@
 // push a cart loaded with part of their haul, drawn as yours; they let go when their side first moves
 // (enemyCartsLetGo, your battle AI's rule); beaten, the carts and what is left in them are yours; else they keep them.
 // What stays abstract: their caravans carry no carts, and a group's base jobs are not per worker.
+import { localId } from "./world.js"; // ids into the dice: counted from the world's own start
 import { GEAR, SUPPLIES, supWeight, supValue } from "./data.js";
 import { itemLoad, itemKg, ensurePack, ensureInv, lootItem } from "./inventory.js";
 import { siteSource } from "./itemcond.js";
@@ -580,8 +581,8 @@ export function enemyCarts(state, b) {
   if (!q) return 0;
   const who = b.units.filter((u) => u.side === "enemy" && u.kind === "human" && !u.aboard && !u.dead).slice(0, e.carts);
   for (const [i, u] of who.entries()) {
-    const key = hash01(state.seed, "aicart", q.id, i) < 0.5 ? "handcart" : "wheelbarrow";
-    const cart = lootItem(key, siteSource("farm"), hash01(state.seed, "aicartq", q.id, i));
+    const key = hash01(state.seed, "aicart", localId(state, q.id), i) < 0.5 ? "handcart" : "wheelbarrow"; // world.js localId: ids count up across worlds in one process
+    const cart = lootItem(key, siteSource("farm"), hash01(state.seed, "aicartq", localId(state, q.id), i));
     for (const [k, v] of Object.entries(q.scav.got || {})) {
       if (!SUPPLIES[k] || !(v >= 1)) continue;
       const n = Math.min(Math.floor((v * 0.5) / (who.length - i)), Math.floor(cartFree(cart) / Math.max(1e-6, supWeight(k))));
@@ -711,7 +712,7 @@ export function aiCartsHome(state, f, p) {
   if (!site || p.vehicle || (f.carts || 0) >= Math.max(1, f.pop * CART_AI.cap)) return 0;
   const hours = AISCAV.searchHours || 4;
   const chance = 1 - Math.pow(1 - Math.min(1, site.p * CART_AI.find), hours);
-  if (hash01(state.seed, "aicart", f.id, p.id, state.hour) >= chance) return 0;
+  if (hash01(state.seed, "aicart", localId(state, f.id), localId(state, p.id), state.hour) >= chance) return 0; // world.js localId
   f.carts = (f.carts || 0) + 1;
   return 1;
 }

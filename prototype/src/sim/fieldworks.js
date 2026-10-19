@@ -70,6 +70,7 @@
 //   job = { id, type: "build" | "repair" | "demolish" | "stock", fw, baseId, progress, hours, paid: { key: qty } }
 //   base.raidRoads = { tile: { n, last } }: the road tiles raids on that base came down (the governor's roadblocks).
 // Older saves have no state.fieldworks: ensureFW makes an empty one.
+import { totalRounds } from "./rounds.js"; // a group's rounds by calibre
 import { FOODS, foodIn, packPick, giveFood, bestFoodKey } from "./foods.js"; // food by type: caches, stockpiles and catches hold items
 import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId, archerCount, ARROWS } from "./world.js";
 import { BUILDINGS, buildRate, isCamp, isShelter, gatherStalled, underAttack, matName, onUpkeep } from "./buildings.js";
@@ -1857,7 +1858,7 @@ export function groupWants(state, f, mine = groupWorks(state, f), full = false) 
   if (!has("roadblock") && isAggressiveType(f)) { const roads = land.filter((id) => state.tiles[id].road); if (roads.length) return { kind: "roadblock", tile: roads.sort((a, b) => g.distance(b, main) - g.distance(a, main) || a - b)[0] }; }
   if (!has("spikes") && hordeNear) return { kind: "spikes", tile: pickBy((id) => -g.distance(id, hordeNear.tile) * 10 + g.distance(id, main)) };
   if (!has("blind") && has("snares") && game.length) return { kind: "blind", tile: pickBy((id) => (GAME_TERRAIN[state.tiles[id].terrain] || 0) * 10 + g.distance(id, main), game) };
-  if (!has("cache") && isAggressiveType(f) && (f.stock.fuel || 0) + (f.stock.ammo || 0) * 0.05 > 20) return { kind: "cache", tile: pickBy((id) => g.distance(id, main) * 10 - (state.tiles[id].road ? 5 : 0)) };
+  if (!has("cache") && isAggressiveType(f) && (f.stock.fuel || 0) + totalRounds(f.stock) * 0.05 > 20) return { kind: "cache", tile: pickBy((id) => g.distance(id, main) * 10 - (state.tiles[id].road ? 5 : 0)) };
   return null;
 }
 // A group's manned towers near a base add to its defence (factions.js resolveRaidOnFaction via groupworks.js): ×.

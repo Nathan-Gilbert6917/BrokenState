@@ -810,9 +810,11 @@ section("One model of the downed with the non-lethal kit (nonlethal.js): states,
   check(!err && T.dead, `Execute kills a tied prisoner who went down (${err || "no error"})`);
 }
 {
-  // An enemy medic's kit is on their body.
+  // An enemy medic's kit is on their body: a person carrying a kit (fighters.js), as one of yours does.
   const { st, b, ps } = arena({ kind: "soldiers" });
-  const M = MED.makeEnemyMedic(foe(b, "soldiers", 12, 12), "traumakit", 4);
+  const M = foe(b, "soldiers", 12, 12);
+  if (M.who) { const { stow } = await import("../src/sim/inventory.js"); stow(M.who, newItem("traumakit")); MED.fitMedic(M, M.who); }
+  else MED.makeEnemyMedic(M, "traumakit", 4);
   M.dead = true;
   b.units.filter((u) => u.side === "enemy").forEach((u) => { u.dead = true; });
   endBattleNow(st, "victory");

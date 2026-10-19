@@ -39,6 +39,9 @@
 // recruit card. Recruiting: wanderers near their bases join by the profile, food and beds (wandererJoinChance); your
 // own deserters who do not come back may join a group near the base they left (playerDeserters).
 // Every roll is a hash (skills.js hash01): the world's dice are not touched (bar a recruit card's own).
+import { totalRounds, spendAmmo } from "./rounds.js"; // a group's rounds by calibre
+import { MEMBER, woundMembersBy } from "./members.js"; // the wounded are people
+import { groupMedicalDaily } from "./groupmedical.js"; // and heal by your rules
 import { moveFoodUnits, DAY_VALUE, foodIn } from "./foods.js"; // food by type (foods.js)
 import { groupDietPressure } from "./eating.js"; // their rations and the sameness of their food (wave 2 eating)
 import { supplyAmt } from "./rounds.js"; // "food": days of food
@@ -207,10 +210,12 @@ export function tickGroup(f) { f.careTick = (f.careTick || 0) + 1; return f.care
 const known = (state, ...fs) => fs.some((f) => f && f.known);
 
 // ---------- the wounded ----------
-export const woundedOf = (f) => (f ? Math.max(0, Math.min(f.pop || 0, Math.round(f.wounded || 0))) : 0);
+// members.js: a group with people counts those under WOUNDED_BELOW (the wounded are people with wounds).
+export const woundedOf = (f) => (f ? (Array.isArray(f.people) ? f.people.filter((s) => s.alive && s.health < MEMBER.WOUNDED_BELOW).length : Math.max(0, Math.min(f.pop || 0, Math.round(f.wounded || 0)))) : 0);
 export const fitPeople = (f) => Math.max(0, (f.pop || 0) - woundedOf(f));
 export function woundGroup(f, n) {
   if (!f || !(n > 0)) return;
+  if (Array.isArray(f.people)) { woundMembersBy(f, n); f.wounded = woundedOf(f); return; } // members.js: real people, hurt
   f.wounded = Math.min(f.pop || 0, (f.wounded || 0) + Math.round(n));
 }
 // The wounded a fight leaves for `dead` dead.
@@ -289,6 +294,7 @@ function heal(state, f, d) {
   const w = woundedOf(f);
   f.wounded = w;
   if (f.lossRecent) f.lossRecent = f.lossRecent * CARE.DESERT.decay < 0.05 ? 0 : f.lossRecent * CARE.DESERT.decay;
+  if (Array.isArray(f.people)) { const r = groupMedicalDaily(state, f, { hungry: !!f.hungryToday }); f.wounded = woundedOf(f); return r; } // groupmedical.js: your rules, person by person
   if (!w) return;
   const r = healRate(f, groupHospitalTier(state, f));
   if (r.meds) { f.stock.meds -= r.meds; f.medsUsed = (f.medsUsed || 0) + r.meds; }
@@ -417,7 +423,7 @@ export function hungerTrade(state, f, d = day(state)) {
   let want = Math.min(Math.floor(f.pop * H.want - foodIn(f.stock)), Math.floor(foodIn(o.stock) - o.pop * (H.rich - 2)));
   if (want <= 0) return null;
   // Pay with what they can spare most (ammo above 3 a head, scrap, fuel, meds above 1 a head), at their worth.
-  const spare = { ammo: (f.stock.ammo || 0) - f.pop * 3, scrap: f.stock.scrap || 0, fuel: (f.stock.fuel || 0) - f.pop * 0.5, meds: (f.stock.meds || 0) - f.pop };
+  const spare = { ammo: totalRounds(f.stock) - f.pop * 3, scrap: f.stock.scrap || 0, fuel: (f.stock.fuel || 0) - f.pop * 0.5, meds: (f.stock.meds || 0) - f.pop };
   let owed = want * DAY_VALUE * markup; // foods.js: a day's food at an ordinary price
   const paid = {};
   for (const k of ["scrap", "ammo", "fuel", "meds"]) {
@@ -429,7 +435,10 @@ export function hungerTrade(state, f, d = day(state)) {
   }
   if (owed > 0) want = Math.floor(want * (1 - owed / (want * DAY_VALUE * markup)));
   if (want <= 0) return null;
-  for (const [k, q] of Object.entries(paid)) { f.stock[k] -= q; o.stock[k] = (o.stock[k] || 0) + q; }
+  for (const [k, q] of Object.entries(paid)) {
+    if (k === "ammo") { const g = spendAmmo(f.stock, q).keys; delete g.ammo; for (const [rk, n] of Object.entries(g)) o.stock[rk] = (o.stock[rk] || 0) + n; continue; } // rounds by key, from one group's stores to the other's
+    f.stock[k] -= q; o.stock[k] = (o.stock[k] || 0) + q;
+  }
   moveFoodUnits(o, f, want, { state }); // foods.js: the seller's food that spoils soonest
   f.foodDeal = d;
   f.foodBought = (f.foodBought || 0) + want;

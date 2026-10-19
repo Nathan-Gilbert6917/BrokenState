@@ -166,7 +166,9 @@ const clouds = (b) => (b.smoke || []).filter((c) => !c.thick);
     got[kind] = n / M;
   }
   const want = (k) => (FLASH_KIT[k] && FLASH_KIT[k].smokegren ? FLASH_KIT[k].smokegren[0] : 0);
-  check(Object.keys(got).every((k) => Math.abs(got[k] - want(k)) < 0.03), `carried: ${Object.entries(got).map(([k, v]) => `${k} ${Math.round(v * 100)}%`).join(", ")}`);
+  // fighters.js: a person carries what their body would yield, a pocket find among it (now and then a smoke grenade
+  // too): the kit's share at least, a little over.
+  check(Object.keys(got).every((k) => got[k] > want(k) - 0.03 && got[k] - want(k) < 0.06), `carried: ${Object.entries(got).map(([k, v]) => `${k} ${Math.round(v * 100)}%`).join(", ")}`);
   check(got.soldiers > got.militia && got.militia > got.raiders && got.raiders > 0 && got.zealots === 0, "soldiers usually, militia sometimes, raiders rarely, zealots never");
   const count = (type) => starterKit(seed, "eai", type, 20).filter((it) => it.key === "smokegren").length;
   check(count("military") === Math.round(20 * ARSENAL.NONLETHAL.soldiers.smokegren) && count("commune") === Math.round(20 * ARSENAL.NONLETHAL.militia.smokegren) && count("raider") === Math.round(20 * ARSENAL.NONLETHAL.raiders.smokegren),
